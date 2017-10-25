@@ -6,7 +6,7 @@
 /*
 * フォーマットがおおむね有効かどうかを返します。
 */
-inline bool
+static inline bool
 is_valid_format(audio_format_t *format)
 {
 	if (format == NULL) return false;
@@ -28,7 +28,7 @@ is_valid_format(audio_format_t *format)
 * 内部フォーマットかどうかを返します。
 * ただし、周波数とチャンネル数はチェックしません。
 */
-inline bool
+static inline bool
 is_internal_format(audio_format_t *fmt)
 {
 	if (!is_valid_format(fmt)) return false;
@@ -39,7 +39,7 @@ is_internal_format(audio_format_t *fmt)
 }
 
 // いずれかの LINEAR なら true
-inline static bool
+static inline bool
 is_LINEAR(audio_format_t *lane_fmt)
 {
 	return
@@ -51,7 +51,7 @@ is_LINEAR(audio_format_t *lane_fmt)
 }
 
 // いずれかの SLINEAR なら true
-inline static bool
+static inline bool
 is_SIGNED(audio_format_t *lane_fmt)
 {
 	return
@@ -61,7 +61,7 @@ is_SIGNED(audio_format_t *lane_fmt)
 }
 
 // ENDIAN を返す
-inline static int
+static inline int
 data_ENDIAN(audio_format_t *lane_fmt)
 {
 	if (lane_fmt->stride == 8) {
