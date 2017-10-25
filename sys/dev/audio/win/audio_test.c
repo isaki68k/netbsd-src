@@ -61,10 +61,17 @@ main(int ac, char *av[])
 		struct test_file *f = &files[fileidx];
 
 		f->fmt.frequency = freq;
+#if 0
 		f->fmt.encoding = AUDIO_ENCODING_MSM6258;
 		f->fmt.channels = 1;
 		f->fmt.precision = 4;
 		f->fmt.stride = 4;
+#else
+		f->fmt.encoding = AUDIO_ENCODING_SLINEAR_LE;
+		f->fmt.channels = 1;
+		f->fmt.precision = 16;
+		f->fmt.stride = 16;
+#endif
 
 		f->mem.fmt = &f->fmt;
 		f->mem.capacity = 0;
