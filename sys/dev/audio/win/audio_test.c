@@ -1,5 +1,7 @@
+#ifdef _WIN32
 #pragma once
 #include <windows.h>
+#endif
 
 //#define PSG_TEST
 //#define WAV_API_TEST
