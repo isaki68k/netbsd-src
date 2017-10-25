@@ -73,7 +73,7 @@ audio_attach(audio_softc_t **softc)
 	dev->wfx.wFormatTag = WAVE_FORMAT_PCM;
 	dev->wfx.nSamplesPerSec = 44100;
 	dev->wfx.wBitsPerSample = 16;
-	dev->wfx.nChannels = 1;
+	dev->wfx.nChannels = 2;
 	dev->wfx.nBlockAlign = dev->wfx.nChannels * dev->wfx.wBitsPerSample / 8;
 	dev->wfx.nAvgBytesPerSec = dev->wfx.nBlockAlign * dev->wfx.nSamplesPerSec;
 	dev->wfx.cbSize = sizeof(WAVEFORMATEX);
