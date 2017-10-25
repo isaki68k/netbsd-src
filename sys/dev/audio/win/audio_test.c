@@ -141,7 +141,9 @@ main(int ac, char *av[])
 	audio_detach(sc);
 
 	printf("END\n");
+#ifdef _WIN32
 	getchar();
+#endif
 	return 0;
 
 }
