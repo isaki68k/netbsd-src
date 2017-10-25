@@ -7,6 +7,14 @@
 /* アサートするとき定義 */
 #define AUDIO_ASSERT
 
+#ifdef AUDIO_ASSERT
+#define KASSERT(expr)	do {\
+	if (!(expr)) panic(#expr);\
+} while (0)
+#else
+#define KASSERT(expr)	/**/
+#endif
+
 /* 内部フォーマットのビット数 */
 #define AUDIO_INTERNAL_BITS		16
 //#define AUDIO_INTERNAL_BITS		32

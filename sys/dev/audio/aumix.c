@@ -66,9 +66,7 @@ audio_free(void *memblock)
 inline static void
 audio_rational_clear(audio_rational_t *r)
 {
-#ifdef AUDIO_ASSERT
-	if (r == NULL) panic();
-#endif
+	KASSERT(r != NULL);
 	r->i = 0;
 	r->n = 0;
 }
@@ -77,13 +75,12 @@ audio_rational_clear(audio_rational_t *r)
 inline static int
 audio_rational_add(audio_rational_t *r, audio_rational_t *a, int d)
 {
-#ifdef AUDIO_ASSERT
-	if (r == NULL) panic();
-	if (a == NULL) panic();
-	if (d == 0) panic();
-	if (r->n >= d) panic();
-	if (a->n >= d) panic();
-#endif
+	KASSERT(r != NULL);
+	KASSERT(a != NULL);
+	KASSERT(d != 0);
+	KASSERT(r->n < d);
+	KASSERT(a->n < d);
+
 	r->i += a->i;
 	r->n += a->n;
 	if (r->n >= d) {
@@ -192,7 +189,7 @@ framecount_roundup_byte_boundary(int framecount, int stride)
 void
 audio_lane_set_format(audio_lane_t *lane, audio_format_t *fmt)
 {
-	if (!is_valid_format(fmt)) panic();
+	KASSERT(is_valid_format(fmt));
 
 	audio_format_t *lane_fmt = lane->lane_buf.fmt;
 
@@ -329,12 +326,10 @@ audio_lane_unlock(audio_lane_t *lane)
 void
 audio_lane_enconvert(audio_lane_t *lane, audio_encoding_convert_func func, audio_ring_t *dst, audio_ring_t *src)
 {
-#ifdef AUDIO_ASSERT
-	if (lane == NULL) panic();
-	if (func == NULL) panic();
-	if (!is_valid_ring(dst)) panic();
-	if (!is_valid_ring(src)) panic();
-#endif
+	KASSERT(lane != NULL);
+	KASSERT(func != NULL);
+	KASSERT(is_valid_ring(dst));
+	KASSERT(is_valid_ring(src));
 
 	if (src->count <= 0) return;
 	int count = src->count;
@@ -360,12 +355,12 @@ audio_lane_enconvert(audio_lane_t *lane, audio_encoding_convert_func func, audio
 	int slice_count = 0;
 	for (int remain_count = count; remain_count > 0; remain_count -= slice_count) {
 		int dst_count = audio_ring_unround_free_count(arg.dst);
-		if (dst_count == 0) panic();
+		KASSERT(dst_count != 0);
 
 		int src_count = audio_ring_unround_count(arg.src);
 		slice_count = min(remain_count, src_count);
 		slice_count = min(slice_count, dst_count);
-		if (slice_count <= 0) panic();
+		KASSERT(slice_count > 0);
 
 		arg.count = slice_count;
 		func(&arg);
@@ -382,11 +377,9 @@ audio_lane_enconvert(audio_lane_t *lane, audio_encoding_convert_func func, audio
 void
 audio_lane_channel_mix(audio_lane_t *lane, audio_ring_t *dst, audio_ring_t *src)
 {
-#ifdef AUDIO_ASSERT
-	if (lane == NULL) panic();
-	if (!is_valid_ring(dst)) panic();
-	if (!is_valid_ring(src)) panic();
-#endif
+	KASSERT(lane != NULL);
+	KASSERT(is_valid_ring(dst));
+	KASSERT(is_valid_ring(src));
 
 	if (src->count <= 0) return;
 	int count = src->count;
@@ -407,12 +400,12 @@ audio_lane_channel_mix(audio_lane_t *lane, audio_ring_t *dst, audio_ring_t *src)
 	int slice_count = 0;
 	for (int remain_count = count; remain_count > 0; remain_count -= slice_count) {
 		int dst_count = audio_ring_unround_free_count(dst);
-		if (dst_count == 0) panic();
+		KASSERT(dst_count != 0);
 
 		int src_count = audio_ring_unround_count(src);
 		slice_count = min(remain_count, src_count);
 		slice_count = min(slice_count, dst_count);
-		if (slice_count <= 0) panic();
+		KASSERT(slice_count > 0);
 
 		internal_t *sptr = RING_TOP(internal_t, src);
 
@@ -508,11 +501,9 @@ audio_lane_channel_mix(audio_lane_t *lane, audio_ring_t *dst, audio_ring_t *src)
 void
 audio_lane_freq(audio_lane_t *lane, audio_ring_t *dst, audio_ring_t *src)
 {
-#ifdef AUDIO_ASSERT
-	if (lane == NULL) panic();
-	if (is_valid_ring(dst) == false) panic();
-	if (is_valid_ring(src) == false) panic();
-#endif
+	KASSERT(lane);
+	KASSERT(is_valid_ring(dst));
+	KASSERT(is_valid_ring(src));
 
 	if (src->count <= 0) return;
 
@@ -546,7 +537,7 @@ audio_lane_freq(audio_lane_t *lane, audio_ring_t *dst, audio_ring_t *src)
 		int src_count = audio_ring_unround_count(src);
 		if (src_count == 0) break;
 		int dst_count = audio_ring_unround_free_count(dst);
-		if (dst_count == 0) panic();
+		KASSERT(dst_count != 0);
 		slice_count = min(remain_count, dst_count);
 
 #if AUDIO_FREQ_ALGORITHM == AUDIO_FREQ_ALGORITHM_SIMPLE
@@ -595,9 +586,7 @@ audio_lane_freq(audio_lane_t *lane, audio_ring_t *dst, audio_ring_t *src)
 void
 audio_lane_play(audio_lane_t *lane)
 {
-#ifdef AUDIO_ASSERT
-	if (lane == NULL) panic();
-#endif
+	KASSERT(lane);
 
 	/* エンコーディング変換 */
 	if (lane->enconvert_mode == AUDIO_LANE_ENCONVERT_THRU) {
@@ -635,7 +624,7 @@ audio_lane_play(audio_lane_t *lane)
 	} else if (lane->freq_mode == AUDIO_LANE_FREQ_BUFFER) {
 		audio_lane_freq(lane, &lane->lane_buf, lane->step2);
 	} else {
-		panic();
+		panic("freq_mode");
 	}
 }
 
@@ -758,7 +747,7 @@ audio_mixer_play_mix_lane(audio_lanemixer_t *mixer, audio_lane_t *lane)
 		int mix_count = audio_ring_unround_free_count(&lane_mix);
 		int slice_count = min(lane_count, mix_count);
 		slice_count = min(remain_count, slice_count);
-		if (slice_count <= 0) panic();
+		KASSERT(slice_count > 0);
 
 		internal_t *sptr = RING_TOP(internal_t, &lane->lane_buf);
 		internal2_t *dptr = RING_BOT(internal2_t, &lane_mix);
@@ -880,9 +869,7 @@ audio_mixer_play_period(audio_lanemixer_t *mixer /*, bool force */)
 void
 audio_lanemixer_intr(audio_lanemixer_t *mixer, int count)
 {
-	if (count == 0) {
-		panic();
-	}
+	KASSERT(count != 0);
 
 	/* レーンにハードウェア出力が完了したことを通知する */
 	audio_file_t *f;
@@ -1000,9 +987,8 @@ audio_lane_play_write(audio_lane_t *lane, void *buf, int len)
 int//ssize_t
 audio_file_write(audio_file_t *file, void* buf, size_t len)
 {
-#ifdef AUDIO_ASSERT
-	if (buf == NULL) panic();
-#endif
+	KASSERT(buf);
+
 	if (len > INT_MAX) {
 		errno = EINVAL;
 		return -1;

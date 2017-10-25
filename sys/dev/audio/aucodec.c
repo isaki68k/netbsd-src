@@ -70,10 +70,10 @@ audio_codec_initialize(audio_codec_t *codec, audio_format_t *fmt)
 			codec->to_internal = linear32_to_internal;
 			codec->from_internal = internal_to_linear32;
 		} else {
-			panic();
+			panic("unsupported stride %d", fmt->stride);
 		}
 	} else {
-		panic();
+		panic("unsupported encoding");
 	}
 }
 

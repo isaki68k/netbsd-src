@@ -91,14 +91,12 @@ static const uint16_t alaw_to_slinear16[256] = {
 void
 mulaw_to_internal(audio_convert_arg_t *arg)
 {
-#ifdef AUDIO_ASSERT
-	if (!is_valid_convert_arg(arg)) panic();
-	if (arg->src->fmt->encoding != AUDIO_ENCODING_MULAW) panic();
-	if (arg->src->fmt->stride != 8) panic();
-	if (arg->src->fmt->precision != 8) panic();
-	if (!is_internal_format(arg->dst->fmt)) panic();
-	if (arg->src->fmt->channels != arg->dst->fmt->channels) panic();
-#endif
+	KASSERT(is_valid_convert_arg(arg));
+	KASSERT(arg->src->fmt->encoding == AUDIO_ENCODING_MULAW);
+	KASSERT(arg->src->fmt->stride == 8);
+	KASSERT(arg->src->fmt->precision == 8);
+	KASSERT(is_internal_format(arg->dst->fmt));
+	KASSERT(arg->src->fmt->channels == arg->dst->fmt->channels);
 
 	uint8_t *sptr = RING_TOP(uint8_t, arg->src);
 	internal_t *dptr = RING_BOT(internal_t, arg->dst);
@@ -119,14 +117,12 @@ mulaw_to_internal(audio_convert_arg_t *arg)
 void
 internal_to_mulaw(audio_convert_arg_t *arg)
 {
-#ifdef AUDIO_ASSERT
-	if (!is_valid_convert_arg(arg)) panic();
-	if (arg->dst->fmt->encoding != AUDIO_ENCODING_MULAW) panic();
-	if (arg->dst->fmt->stride != 8) panic();
-	if (arg->dst->fmt->precision != 8) panic();
-	if (!is_internal_format(arg->src->fmt)) panic();
-	if (arg->src->fmt->channels != arg->dst->fmt->channels) panic();
-#endif
+	KASSERT(is_valid_convert_arg(arg));
+	KASSERT(arg->dst->fmt->encoding == AUDIO_ENCODING_MULAW);
+	KASSERT(arg->dst->fmt->stride == 8);
+	KASSERT(arg->dst->fmt->precision == 8);
+	KASSERT(is_internal_format(arg->src->fmt));
+	KASSERT(arg->src->fmt->channels == arg->dst->fmt->channels);
 
 	internal_t *sptr = RING_TOP(internal_t, arg->src);
 	uint8_t *dptr = RING_BOT(uint8_t, arg->dst);
@@ -142,7 +138,7 @@ internal_to_mulaw(audio_convert_arg_t *arg)
 		uint8_t r = 0;
 
 		/* XXX NOTIMPL */
-		panic();
+		panic("notimpl");
 
 		*dptr++ = r;
 	}

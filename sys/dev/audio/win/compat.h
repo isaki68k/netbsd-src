@@ -22,7 +22,7 @@ uint32_t __builtin_bswap32(uint32_t a)
 }
 
 inline void
-panic()
+panic(const char *fmt, ...)
 {
 	exit(1);
 }

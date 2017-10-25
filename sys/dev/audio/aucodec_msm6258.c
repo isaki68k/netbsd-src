@@ -142,15 +142,13 @@ pcm2adpcm_step(struct msm6258_codecvar *mc, int16_t a)
 void
 internal_to_msm6258(audio_convert_arg_t *arg)
 {
-#ifdef AUDIO_ASSERT
-	if (!is_valid_convert_arg(arg)) panic();
-	if (arg->dst->fmt->encoding != AUDIO_ENCODING_MSM6258) panic();
-	if (arg->dst->fmt->stride != 4) panic();
-	if (!is_internal_format(arg->src->fmt)) panic();
-	if (arg->src->fmt->channels != arg->dst->fmt->channels) panic();
-	if ((arg->dst->top & 1) != 0) panic();
-	if ((arg->dst->count & 1) != 0) panic();
-#endif
+	KASSERT(is_valid_convert_arg(arg));
+	KASSERT(arg->dst->fmt->encoding == AUDIO_ENCODING_MSM6258);
+	KASSERT(arg->dst->fmt->stride == 4);
+	KASSERT(is_internal_format(arg->src->fmt));
+	KASSERT(arg->src->fmt->channels == arg->dst->fmt->channels);
+	KASSERT((arg->dst->top & 1) == 0);
+	KASSERT((arg->dst->count & 1) == 0);
 
 	internal_t *sptr = RING_TOP(internal_t, arg->src);
 	uint8_t *dptr = RING_BOT_UINT8(arg->dst);
@@ -189,11 +187,9 @@ static inline int16_t
 adpcm2pcm_step(struct msm6258_codecvar *mc, uint8_t b)
 {
 	int estim = (int)mc->mc_estim;
-#ifdef AUDIO_ASSERT
-	if (estim < 0) panic();
-	if (estim >= 49) panic();
-	if (b >= 16) panic();
-#endif
+	KASSERT(estim >= 0);
+	KASSERT(estim < 49);
+	KASSERT(b < 16);
 
 	int d = adpcm_estim[estim] * adpcm_estimindex[b];
 	int a = mc->mc_amp + d;
@@ -218,15 +214,13 @@ adpcm2pcm_step(struct msm6258_codecvar *mc, uint8_t b)
 void
 msm6258_to_internal(audio_convert_arg_t *arg)
 {
-#ifdef AUDIO_ASSERT
-	if (!is_valid_convert_arg(arg)) panic();
-	if (arg->src->fmt->encoding != AUDIO_ENCODING_MSM6258) panic();
-	if (arg->src->fmt->stride != 4) panic();
-	if (!is_internal_format(arg->dst->fmt)) panic();
-	if (arg->src->fmt->channels != arg->dst->fmt->channels) panic();
-	if ((arg->src->top & 1) != 0) panic();
-	if ((arg->src->count & 1) != 0) panic();
-#endif
+	KASSERT(is_valid_convert_arg(arg));
+	KASSERT(arg->src->fmt->encoding == AUDIO_ENCODING_MSM6258);
+	KASSERT(arg->src->fmt->stride == 4);
+	KASSERT(is_internal_format(arg->dst->fmt));
+	KASSERT(arg->src->fmt->channels == arg->dst->fmt->channels);
+	KASSERT((arg->src->top & 1) == 0);
+	KASSERT((arg->src->count & 1) == 0);
 
 	uint8_t *sptr = RING_TOP_UINT8(arg->src);
 	internal_t *dptr = RING_BOT(internal_t, arg->dst);

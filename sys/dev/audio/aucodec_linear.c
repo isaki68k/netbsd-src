@@ -24,13 +24,11 @@
 void
 linear8_to_internal(audio_convert_arg_t *arg)
 {
-#ifdef AUDIO_ASSERT
-	if (!is_valid_convert_arg(arg)) panic();
-	if (!is_LINEAR(arg->src->fmt)) panic();
-	if (arg->src->fmt->stride != 8) panic();
-	if (!is_internal_format(arg->dst->fmt)) panic();
-	if (arg->src->fmt->channels != arg->dst->fmt->channels) panic();
-#endif
+	KASSERT(is_valid_convert_arg(arg));
+	KASSERT(is_LINEAR(arg->src->fmt));
+	KASSERT(arg->src->fmt->stride == 8);
+	KASSERT(is_internal_format(arg->dst->fmt));
+	KASSERT(arg->src->fmt->channels == arg->dst->fmt->channels);
 
 	uint8_t *sptr = RING_TOP(uint8_t, arg->src);
 	internal_t *dptr = RING_BOT(internal_t, arg->dst);
@@ -57,13 +55,11 @@ linear8_to_internal(audio_convert_arg_t *arg)
 void
 internal_to_linear8(audio_convert_arg_t *arg)
 {
-#ifdef AUDIO_ASSERT
-	if (!is_valid_convert_arg(arg)) panic();
-	if (!is_LINEAR(arg->dst->fmt)) panic();
-	if (arg->dst->fmt->stride != 8) panic();
-	if (!is_internal_format(arg->src->fmt)) panic();
-	if (arg->src->fmt->channels != arg->dst->fmt->channels) panic();
-#endif
+	KASSERT(is_valid_convert_arg(arg));
+	KASSERT(is_LINEAR(arg->dst->fmt));
+	KASSERT(arg->dst->fmt->stride == 8);
+	KASSERT(is_internal_format(arg->src->fmt));
+	KASSERT(arg->src->fmt->channels == arg->dst->fmt->channels);
 
 	internal_t *sptr = RING_TOP(internal_t, arg->src);
 	uint8_t *dptr = RING_BOT(uint8_t, arg->dst);
@@ -90,13 +86,11 @@ internal_to_linear8(audio_convert_arg_t *arg)
 void
 linear16_to_internal(audio_convert_arg_t *arg)
 {
-#ifdef AUDIO_ASSERT
-	if (!is_valid_convert_arg(arg)) panic();
-	if (!is_LINEAR(arg->src->fmt)) panic();
-	if (arg->src->fmt->stride != 16) panic();
-	if (!is_internal_format(arg->dst->fmt)) panic();
-	if (arg->src->fmt->channels != arg->dst->fmt->channels) panic();
-#endif
+	KASSERT(is_valid_convert_arg(arg));
+	KASSERT(is_LINEAR(arg->src->fmt));
+	KASSERT(arg->src->fmt->stride == 16);
+	KASSERT(is_internal_format(arg->dst->fmt));
+	KASSERT(arg->src->fmt->channels == arg->dst->fmt->channels);
 
 	uint16_t *sptr = RING_TOP(uint16_t, arg->src);
 	internal_t *dptr = RING_BOT(internal_t, arg->dst);
@@ -160,13 +154,11 @@ linear16_to_internal(audio_convert_arg_t *arg)
 void
 internal_to_linear16(audio_convert_arg_t *arg)
 {
-#ifdef AUDIO_ASSERT
-	if (!is_valid_convert_arg(arg)) panic();
-	if (!is_LINEAR(arg->dst->fmt)) panic();
-	if (arg->dst->fmt->stride != 16) panic();
-	if (!is_internal_format(arg->src->fmt)) panic();
-	if (arg->src->fmt->channels != arg->dst->fmt->channels) panic();
-#endif
+	KASSERT(is_valid_convert_arg(arg));
+	KASSERT(is_LINEAR(arg->dst->fmt));
+	KASSERT(arg->dst->fmt->stride == 16);
+	KASSERT(is_internal_format(arg->src->fmt));
+	KASSERT(arg->src->fmt->channels == arg->dst->fmt->channels);
 
 	internal_t *sptr = RING_TOP(internal_t, arg->src);
 	uint16_t *dptr = RING_BOT(uint16_t, arg->dst);
@@ -230,13 +222,11 @@ internal_to_linear16(audio_convert_arg_t *arg)
 void
 linear24_to_internal(audio_convert_arg_t *arg)
 {
-#ifdef AUDIO_ASSERT
-	if (!is_valid_convert_arg(arg)) panic();
-	if (!is_LINEAR(arg->src->fmt)) panic();
-	if (arg->src->fmt->stride != 24) panic();
-	if (!is_internal_format(arg->dst->fmt)) panic();
-	if (arg->src->fmt->channels != arg->dst->fmt->channels) panic();
-#endif
+	KASSERT(is_valid_convert_arg(arg));
+	KASSERT(is_LINEAR(arg->src->fmt));
+	KASSERT(arg->src->fmt->stride == 24);
+	KASSERT(is_internal_format(arg->dst->fmt));
+	KASSERT(arg->src->fmt->channels == arg->dst->fmt->channels);
 
 	uint8_t *sptr = RING_TOP_UINT8(arg->src);
 	internal_t *dptr = RING_BOT(internal_t, arg->dst);
@@ -278,13 +268,11 @@ linear24_to_internal(audio_convert_arg_t *arg)
 void
 internal_to_linear24(audio_convert_arg_t *arg)
 {
-#ifdef AUDIO_ASSERT
-	if (!is_valid_convert_arg(arg)) panic();
-	if (!is_LINEAR(arg->dst->fmt)) panic();
-	if (arg->dst->fmt->stride != 24) panic();
-	if (!is_internal_format(arg->src->fmt)) panic();
-	if (arg->src->fmt->channels != arg->dst->fmt->channels) panic();
-#endif
+	KASSERT(is_valid_convert_arg(arg));
+	KASSERT(is_LINEAR(arg->dst->fmt));
+	KASSERT(arg->dst->fmt->stride == 24);
+	KASSERT(is_internal_format(arg->src->fmt));
+	KASSERT(arg->src->fmt->channels == arg->dst->fmt->channels);
 
 	internal_t *sptr = RING_TOP(internal_t, arg->src);
 	uint8_t *dptr = RING_BOT_UINT8(arg->dst);
@@ -328,13 +316,11 @@ internal_to_linear24(audio_convert_arg_t *arg)
 void
 linear32_to_internal(audio_convert_arg_t *arg)
 {
-#ifdef AUDIO_ASSERT
-	if (!is_valid_convert_arg(arg)) panic();
-	if (!is_LINEAR(arg->src->fmt)) panic();
-	if (arg->src->fmt->stride != 32) panic();
-	if (!is_internal_format(arg->dst->fmt)) panic();
-	if (arg->src->fmt->channels != arg->dst->fmt->channels) panic();
-#endif
+	KASSERT(is_valid_convert_arg(arg));
+	KASSERT(is_LINEAR(arg->src->fmt));
+	KASSERT(arg->src->fmt->stride == 32);
+	KASSERT(is_internal_format(arg->dst->fmt));
+	KASSERT(arg->src->fmt->channels == arg->dst->fmt->channels);
 
 	uint32_t *sptr = RING_TOP(uint32_t, arg->src);
 	internal_t *dptr = RING_BOT(internal_t, arg->dst);
@@ -371,13 +357,11 @@ linear32_to_internal(audio_convert_arg_t *arg)
 void
 internal_to_linear32(audio_convert_arg_t *arg)
 {
-#ifdef AUDIO_ASSERT
-	if (!is_valid_convert_arg(arg)) panic();
-	if (!is_LINEAR(arg->dst->fmt)) panic();
-	if (arg->dst->fmt->stride != 32) panic();
-	if (!is_internal_format(arg->src->fmt)) panic();
-	if (arg->src->fmt->channels != arg->dst->fmt->channels) panic();
-#endif
+	KASSERT(is_valid_convert_arg(arg));
+	KASSERT(is_LINEAR(arg->dst->fmt));
+	KASSERT(arg->dst->fmt->stride == 32);
+	KASSERT(is_internal_format(arg->src->fmt));
+	KASSERT(arg->src->fmt->channels == arg->dst->fmt->channels);
 
 	internal_t *sptr = RING_TOP(internal_t, arg->src);
 	uint32_t *dptr = RING_BOT(uint32_t, arg->dst);

@@ -57,11 +57,9 @@ is_valid_ring(audio_ring_t *ring)
 static inline int
 audio_ring_round(audio_ring_t *ring, int idx)
 {
-#ifdef AUDIO_ASSERT
-	if (is_valid_ring(ring) == false) panic();
-	if (idx < 0) panic();
-	if (idx >= ring->capacity * 2) panic();
-#endif
+	KASSERT(is_valid_ring(ring));
+	KASSERT(idx >= 0);
+	KASSERT(idx < ring->capacity * 2);
 
 	return idx >= ring->capacity ? idx - ring->capacity : idx;
 }
@@ -72,11 +70,10 @@ audio_ring_round(audio_ring_t *ring, int idx)
 static inline void
 audio_ring_tookfromtop(audio_ring_t *ring, int n)
 {
-#ifdef AUDIO_ASSERT
-	if (!is_valid_ring(ring)) panic();
-	if (n < 0) panic();
-	if (ring->count < n) panic();
-#endif
+	KASSERT(is_valid_ring(ring));
+	KASSERT(n >= 0);
+	KASSERT(ring->count >= n);
+
 	ring->top = audio_ring_round(ring, ring->top + n);
 	ring->count -= n;
 }
@@ -87,11 +84,10 @@ audio_ring_tookfromtop(audio_ring_t *ring, int n)
 static inline void
 audio_ring_appended(audio_ring_t *ring, int n)
 {
-#ifdef AUDIO_ASSERT
-	if (!is_valid_ring(ring)) panic();
-	if (n < 0) panic();
-	if (ring->count + n > ring->capacity) panic();
-#endif
+	KASSERT(is_valid_ring(ring));
+	KASSERT(n >= 0);
+	KASSERT(ring->count + n <= ring->capacity);
+
 	ring->count += n;
 }
 
@@ -111,9 +107,8 @@ audio_ring_bottom(audio_ring_t *ring)
 static inline int
 audio_ring_unround_count(audio_ring_t *ring)
 {
-#ifdef AUDIO_ASSERT
-	if (is_valid_ring(ring) == false) panic();
-#endif
+	KASSERT(is_valid_ring(ring));
+
 	return ring->top + ring->count <= ring->capacity ? ring->count : ring->capacity - ring->top;
 }
 
@@ -124,9 +119,8 @@ audio_ring_unround_count(audio_ring_t *ring)
 static inline int
 audio_ring_unround_free_count(audio_ring_t *ring)
 {
-#ifdef AUDIO_ASSERT
-	if (is_valid_ring(ring) == false) panic();
-#endif
+	KASSERT(is_valid_ring(ring));
+
 	/* ring の unround 終端まで使用されているときは、開始位置はラウンディング後なので < が条件 */
 	if (ring->top + ring->count < ring->capacity) {
 		return ring->capacity - (ring->top + ring->count);
@@ -138,13 +132,12 @@ audio_ring_unround_free_count(audio_ring_t *ring)
 static inline void
 audio_ring_concat(audio_ring_t *dst, audio_ring_t *src, int count)
 {
-#ifdef AUDIO_ASSERT
-	if (!is_valid_ring(dst)) panic();
-	if (!is_valid_ring(src)) panic();
-	if (count < 0) panic();
-	if (dst->fmt->channels != src->fmt->channels) panic();
-	if (dst->fmt->stride != src->fmt->stride) panic();
-#endif
+	KASSERT(is_valid_ring(dst));
+	KASSERT(is_valid_ring(src));
+	KASSERT(count >= 0);
+	KASSERT(dst->fmt->channels == src->fmt->channels);
+	KASSERT(dst->fmt->stride == src->fmt->stride);
+
 	count = min(count, src->count);
 	count = min(count, dst->capacity - dst->count);
 
