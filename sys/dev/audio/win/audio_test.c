@@ -53,7 +53,7 @@ main(int ac, char *av[])
 		FILE *fp = fopen(av[i], "rb");
 		if (fp == NULL) {
 			printf("ERROR: fopen\n");
-			return;
+			return 1;
 		}
 
 		struct test_file *f = &files[fileidx];
