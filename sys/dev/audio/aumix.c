@@ -1,4 +1,5 @@
 #include "aumix.h"
+#include <errno.h>
 #include <stdlib.h>
 #include <memory.h>
 #include <stdbool.h>
