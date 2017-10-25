@@ -125,13 +125,13 @@ main(int ac, char *av[])
 		}
 
 		bool isPlay = false;
-		for (int i = 0; i < ac; i++) {
+		for (int i = 0; i < fileidx; i++) {
 			isPlay |= files[i].play;
 		}
 		if (isPlay == false) break;
 	}
 
-	for (int i = 0; i < ac; i++) {
+	for (int i = 0; i < fileidx; i++) {
 		struct test_file *f = &files[i];
 		audio_lane_play_drain(&f->file->lane_play);
 	}
