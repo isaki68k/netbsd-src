@@ -499,6 +499,8 @@ audio_lane_channel_mix(audio_lane_t *lane, audio_ring_t *dst, audio_ring_t *src)
 			break;
 
 		}
+		audio_ring_appended(dst, slice_count);
+		audio_ring_tookfromtop(src, slice_count);
 	}
 }
 
