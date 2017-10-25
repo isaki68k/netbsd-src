@@ -14,7 +14,10 @@ SRCS+=	\
 SRCS+=	\
 	audio_test.c \
 
-CFLAGS=	-g -std=c99 -I. -I..
+CFLAGS=	-g -std=c99 -I. -I.. \
+	-Wall \
+	-Werror \
+	-Wshadow \
 
 a.out:	${SRCS:.c=.o}
 	${CC} -g -o $@ $> -lm
