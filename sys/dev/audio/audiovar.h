@@ -118,6 +118,30 @@ struct audio_codec
 	void *context;
 };
 
+typedef struct audio_filter audio_filter_t;
+
+/*
+count は、今回のフィルタの実行で「出力」してほしいフレーム数が渡されます。
+count 個のフレームについて、src の有効領域と dst の空き領域のアンラウンディングアクセスが
+呼び出し側によって保証されます。
+周波数変換フィルタに代表される、フレーム数がフィルタの実行前後で変化する処理の場合、
+count の要求を無視して、フィルタ内でラウンディング処理を行っても構いません。
+
+戻り値には、今回のフィルタの実行で出力したフレーム数を返してください。
+*/
+typedef int (*audio_filter_exec_t)(audio_filter_t *filter, int count);
+
+struct audio_filter
+{
+	audio_ring_t *src;
+	audio_ring_t *dst;
+
+	void *context;
+	audio_filter_exec_t exec;
+
+	STAILQ_ENTRY(audio_filter) entry;
+};
+
 struct audio_lane
 {
 	audio_format_t     userio_fmt;		/* ユーザランドとのやり取りで使用するフォーマット */
