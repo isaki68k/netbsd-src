@@ -93,8 +93,8 @@ main(int ac, char *av[])
 		}
 		fclose(fp);
 
-		f->mem.capacity = len * 2;
-		f->mem.count = len * 2;
+		f->mem.capacity = len * 8 / f->fmt.stride;
+		f->mem.count = len * 8 / f->fmt.stride;
 
 		f->play = true;
 		f->wait = i * 5;
