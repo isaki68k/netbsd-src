@@ -659,16 +659,6 @@ audio_mixer_init(audio_lanemixer_t *mixer, audio_softc_t *sc, int mode)
 }
 
 
-void
-audio_lanemixer_play_all(audio_lanemixer_t *mixer)
-{
-	audio_file_t *f;
-	SLIST_FOREACH(f, &mixer->sc->files, entry) {
-		audio_lane_t *lane = &f->lane_play;
-	}
-}
-
-
 /*
  * レーンバッファから 最大 1 ブロックを取り出し、
  * ミキシングして、ハードウェアに再生を通知します。
