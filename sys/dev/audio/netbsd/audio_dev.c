@@ -7,12 +7,15 @@
 #include <unistd.h>
 #include <sys/audioio.h>
 #include <sys/ioctl.h>
+#include <sys/time.h>
 
 struct audio_dev_netbsd
 {
 	int fd;
 	int frame_bytes;
 	audio_format_t fmt;
+	struct timeval tv;
+	int sent_count;
 };
 typedef struct audio_dev_netbsd audio_dev_netbsd_t;
 
@@ -81,10 +84,13 @@ audio_softc_play_start(audio_softc_t *sc)
 	audio_dev_netbsd_t *dev = sc->phys;
 	audio_lanemixer_t *mixer = &sc->mixer_play;
 
+	if (mixer->hw_buf.count <= 0) return;
+
 	lock(sc);
 
+	gettimeofday(&dev->tv, NULL);
+
 	int count;
-	int total = 0;
 	for (int loop = 0; loop < 2; loop++) {
 		count = audio_ring_unround_count(&mixer->hw_buf);
 
@@ -96,13 +102,16 @@ audio_softc_play_start(audio_softc_t *sc)
 			printf("write failed: %s\n", strerror(errno));
 			exit(1);
 		}
-		total += r;
+		dev->sent_count += count;
 
 		audio_ring_tookfromtop(&mixer->hw_buf, count);
 	}
 
-	// intr?
-	audio_lanemixer_intr(mixer, total);
+#if 0
+	// ポーリング内で割り込みエミュレート
+	audio_lanemixer_intr(&sc->mixer_play, dev->sent_count);
+	dev->sent_count = 0;
+#endif
 
 	unlock(sc);
 }
@@ -110,7 +119,26 @@ audio_softc_play_start(audio_softc_t *sc)
 bool
 audio_softc_play_busy(audio_softc_t *sc)
 {
-	return 0;	/* XXX */
+	audio_dev_netbsd_t *dev = sc->phys;
+	struct timeval now, res;
+
+	if (dev->sent_count == 0) {
+		return false;
+	}
+
+	gettimeofday(&now, NULL);
+	timersub(&now, &dev->tv, &res);
+	int64_t usec = (int64_t)res.tv_sec * 1000000 + res.tv_usec;
+	// ポーリング内で割り込みエミュレート
+	int count = (int)(dev->fmt.frequency * usec / 1000000);
+
+printf("dev->sent_count=%d\n", dev->sent_count);
+	if (count > 0) {
+		count = min(count, dev->sent_count);
+		audio_lanemixer_intr(&sc->mixer_play, count);
+		dev->sent_count -= count;
+	}
+	return count > 0;
 }
 
 int
