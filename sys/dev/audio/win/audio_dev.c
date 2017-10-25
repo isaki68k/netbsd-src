@@ -51,7 +51,7 @@ void CALLBACK audio_dev_win32_callback(
 
 		lock(sc);
 		if (wh->dwBufferLength == 0) {
-			panic();
+			panic("wh->dwBufferLentgh == 0");
 		}
 		audio_lanemixer_intr(mixer, wh->dwBufferLength / dev->wfx.nBlockAlign);
 		wh->dwUser = 0;
@@ -91,7 +91,7 @@ audio_attach(audio_softc_t **softc)
 		CALLBACK_FUNCTION);
 #endif
 	if (r != MMSYSERR_NOERROR) {
-		panic();
+		panic("r != MMSYSERR_NOERROR");
 	}
 
 	InitializeCriticalSectionAndSpinCount(&dev->cs, 100);
@@ -109,7 +109,7 @@ audio_attach(audio_softc_t **softc)
 
 		r = waveOutPrepareHeader(dev->handle, &dev->wavehdr[i], sizeof(WAVEHDR));
 		if (r != MMSYSERR_NOERROR) {
-			panic();
+			panic("");
 		}
 
 		/* 一旦 0 においておく */
@@ -143,7 +143,7 @@ audio_detach(audio_softc_t *sc)
 			if (r == WAVERR_STILLPLAYING) {
 				Sleep(100);
 			} else {
-				panic();
+				panic("");
 			}
 		}
 	}
@@ -154,7 +154,7 @@ audio_detach(audio_softc_t *sc)
 		if (r == WAVERR_STILLPLAYING) {
 			Sleep(100);
 		} else {
-			panic();
+			panic("");
 		}
 	}
 	DeleteCriticalSection(&dev->cs);
@@ -223,7 +223,7 @@ audio_softc_play_start(audio_softc_t *sc)
 	MMRESULT r;
 	r = waveOutWrite(dev->handle, wh, sizeof(WAVEHDR));
 	if (r != MMSYSERR_NOERROR) {
-		panic();
+		panic("");
 	}
 #endif
 
