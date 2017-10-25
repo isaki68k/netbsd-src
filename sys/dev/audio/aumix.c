@@ -825,7 +825,7 @@ audio_mixer_play_period(audio_lanemixer_t *mixer /*, bool force */)
 	mptr = mptr0;
 	internal_t *hptr = RING_BOT(internal_t, &mixer->hw_buf);
 	for (int i = 0; i < sample_count; i++) {
-			*hptr++ = *mptr++ >> 4;
+			*hptr++ = *mptr++;
 	}
 	audio_ring_appended(&mixer->hw_buf, count);
 	unlock(mixer->sc);
