@@ -34,7 +34,7 @@ typedef struct {
 
 #define panic(fmt...)	panic_func(__func__, fmt)
 
-static inline void
+static inline void __noreturn
 panic_func(const char *caller, const char *fmt, ...)
 {
 	va_list ap;
