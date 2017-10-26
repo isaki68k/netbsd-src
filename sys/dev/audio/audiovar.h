@@ -104,51 +104,24 @@ struct audio_ring
 	void *sample;			/* サンプル */
 };
 
-struct audio_convert_arg
+typedef struct audio_filter_arg audio_filter_arg_t;
+struct audio_filter_arg
 {
-	audio_ring_t *dst;			/* 変換先の ring */
-	audio_ring_t *src;			/* 変換元の ring */
-	int count;					/* [in]  src から読み取って欲しい変換フレーム数。
-								         このフレーム数分の dst, src アンラウンディングアクセスは保証される。
-								   [out] src から読み取られたフレーム数。
-								 */
-	audio_codec_t *codec;		/* コーデック */
-};
+	const void *src;
+	audio_format_t *src_fmt;
 
-typedef void(*audio_encoding_convert_func)(audio_convert_arg_t *arg);
+	void *dst;
+	audio_format_t *dst_fmt;
 
-struct audio_codec
-{
-	audio_encoding_convert_func to_internal;
-	audio_encoding_convert_func from_internal;
+	int count;		// 今回のフィルタ呼び出しで入出力可能なフレーム数
 
-	audio_format_t fmt;
 	void *context;
 };
-
-typedef struct audio_filter audio_filter_t;
 
 /*
-count は、今回のフィルタの実行で「出力」してほしいフレーム数が渡されます。
-count 個のフレームについて、src の有効領域と dst の空き領域のアンラウンディングアクセスが
-呼び出し側によって保証されます。
-周波数変換フィルタに代表される、フレーム数がフィルタの実行前後で変化する処理の場合、
-count の要求を無視して、フィルタ内でラウンディング処理を行っても構いません。
-
 戻り値には、今回のフィルタの実行で出力したフレーム数を返してください。
 */
-typedef int (*audio_filter_exec_t)(audio_filter_t *filter, int count);
-
-struct audio_filter
-{
-	audio_ring_t *src;
-	audio_ring_t *dst;
-
-	void *context;
-	audio_filter_exec_t exec;
-
-	STAILQ_ENTRY(audio_filter) entry;
-};
+typedef int(*audio_filter_t)(audio_filter_arg_t *arg);
 
 struct audio_lane
 {
@@ -194,6 +167,9 @@ struct audio_lane
 #define AUDIO_LANE_VOLUME_THRU			0x00
 #define AUDIO_LANE_VOLUME_INLINE		0x01
 
+	audio_filter_t     codec;			/* userio <-> lane コーデックフィルタ */
+	audio_filter_arg_t codec_arg;		/* とその引数 */
+
 	audio_format_t     enconvert_fmt;
 	audio_ring_t       enconvert_buf;	/* エンコーディング変換バッファ userio 周波数、userio チャンネル、他は内部フォーマット */
 	audio_ring_t       *step1;			/* エンコーディング変換出力 userio_buf か enconvert_buf を指す */
@@ -208,8 +184,6 @@ struct audio_lane
 
 	audio_rational_t   freq_step;		/* 周波数変換用分数 (変換元周波数 / 変換先周波数) */
 	audio_rational_t   freq_current;	/* 周波数変換用 現在のカウンタ */
-
-	audio_codec_t      codec;			/* userio <-> lane コーデック */
 
 	audio_ring_t       lane_buf;		/* レーンミキサとのバッファ */
 
@@ -242,7 +216,8 @@ struct audio_lanemixer
 	audio_format_t mix_fmt;
 	audio_ring_t   mix_buf;				/* 整数倍精度ミキシングバッファ */
 
-	audio_codec_t      codec;			/* mix <-> hw コーデック */
+	audio_filter_t  codec;				/* mix <-> hw コーデックフィルタ */
+	audio_filter_arg_t codec_arg;		/* その引数 */
 
 	audio_format_t hw_fmt;
 	audio_ring_t   hw_buf;				/* 物理デバイスの入出力バッファ (malloc ではなく allocm で確保する) */

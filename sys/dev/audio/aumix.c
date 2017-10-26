@@ -304,7 +304,10 @@ audio_lane_set_format(audio_lane_t *lane, audio_format_t *fmt)
 	lane->freq_step.n = fmt->frequency % lane->mixer->mix_fmt.frequency;
 	audio_rational_clear(&lane->freq_current);
 
-	audio_codec_initialize(&lane->codec, fmt);
+	lane->codec_arg.src_fmt = &lane->userio_fmt;
+	lane->codec_arg.dst_fmt = &lane->enconvert_fmt;
+
+	lane->codec = audio_MI_codec_filter_init(&lane->codec_arg);
 
 	if (debug) {
 		printf("%s: userfmt=%s\n", __func__, fmt_tostring(&lane->userio_fmt));
@@ -331,10 +334,10 @@ audio_lane_unlock(audio_lane_t *lane)
  src のエンコーディングを変換して dst に投入します。
 */
 void
-audio_lane_enconvert(audio_lane_t *lane, audio_encoding_convert_func func, audio_ring_t *dst, audio_ring_t *src)
+audio_lane_enconvert(audio_lane_t *lane, audio_filter_t filter, audio_ring_t *dst, audio_ring_t *src)
 {
 	KASSERT(lane != NULL);
-	KASSERT(func != NULL);
+	KASSERT(filter != NULL);
 	KASSERT(is_valid_ring(dst));
 	KASSERT(is_valid_ring(src));
 
@@ -354,30 +357,31 @@ audio_lane_enconvert(audio_lane_t *lane, audio_encoding_convert_func func, audio
 	/* 空きがない */
 	if (dst->capacity - dst->count < count) return;
 
-	audio_convert_arg_t arg;
-	arg.dst = dst;
-	arg.src = src;
-	arg.codec = &lane->codec;
+	audio_filter_arg_t *arg = &lane->codec_arg;
 
 	int slice_count = 0;
 	for (int remain_count = count; remain_count > 0; remain_count -= slice_count) {
-		int dst_count = audio_ring_unround_free_count(arg.dst);
+		int dst_count = audio_ring_unround_free_count(dst);
 		KASSERT(dst_count != 0);
 
-		int src_count = audio_ring_unround_count(arg.src);
+		int src_count = audio_ring_unround_count(src);
 		slice_count = min(remain_count, src_count);
 		slice_count = min(slice_count, dst_count);
 		KASSERT(slice_count > 0);
 
-		arg.count = slice_count;
-		func(&arg);
+		arg->dst = RING_BOT_UINT8(dst);
+		arg->src = RING_TOP_UINT8(src);
+		arg->count = slice_count;
+		int done_count = filter(arg);
 
 		/* このフレーム数では変換できない */
-		if (arg.count == 0) {
+		if (done_count == 0) {
 			// ring 再構成とか。
 			break;
 		}
-		slice_count = arg.count;
+		slice_count = done_count;
+		audio_ring_tookfromtop(src, done_count);
+		audio_ring_appended(dst, done_count);
 	}
 }
 
@@ -599,7 +603,7 @@ audio_lane_play(audio_lane_t *lane)
 	if (lane->enconvert_mode == AUDIO_LANE_ENCONVERT_THRU) {
 		/* nop */
 	} else {
-		audio_lane_enconvert(lane, lane->codec.to_internal, lane->step1, &lane->userio_buf);
+		audio_lane_enconvert(lane, lane->codec, lane->step1, &lane->userio_buf);
 	}
 
 	/* チャンネルミキサとチャンネルボリューム */

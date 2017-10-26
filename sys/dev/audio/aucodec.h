@@ -1,8 +1,7 @@
 #pragma once
 
-bool is_valid_convert_arg(audio_convert_arg_t *arg);
+bool is_valid_filter_arg(audio_filter_arg_t *arg);
 
-
-void audio_codec_initialize(audio_codec_t *codec, audio_format_t *fmt);
-void audio_codec_finalize(audio_codec_t *codec);
+audio_filter_t audio_MI_codec_filter_init(audio_filter_arg_t *arg);
+void audio_MI_filter_finalize(audio_filter_arg_t *arg);
 

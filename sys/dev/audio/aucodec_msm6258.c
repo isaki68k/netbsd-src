@@ -139,23 +139,21 @@ pcm2adpcm_step(struct msm6258_codecvar *mc, int16_t a)
 	return s;
 }
 
-void
-internal_to_msm6258(audio_convert_arg_t *arg)
+int
+internal_to_msm6258(audio_filter_arg_t *arg)
 {
-	KASSERT(is_valid_convert_arg(arg));
-	KASSERT(arg->dst->fmt->encoding == AUDIO_ENCODING_MSM6258);
-	KASSERT(arg->dst->fmt->stride == 4);
-	KASSERT(is_internal_format(arg->src->fmt));
-	KASSERT(arg->src->fmt->channels == arg->dst->fmt->channels);
-	KASSERT((arg->dst->top & 1) == 0);
-	KASSERT((arg->dst->count & 1) == 0);
+	KASSERT(is_valid_filter_arg(arg));
+	KASSERT(arg->dst_fmt->encoding == AUDIO_ENCODING_MSM6258);
+	KASSERT(arg->dst_fmt->stride == 4);
+	KASSERT(is_internal_format(arg->src_fmt));
+	KASSERT(arg->src_fmt->channels == arg->dst_fmt->channels);
+	KASSERT((arg->count & 1) == 0);
 
-	internal_t *sptr = RING_TOP(internal_t, arg->src);
-	uint8_t *dptr = RING_BOT_UINT8(arg->dst);
-	arg->count = arg->count & ~1;
-	int sample_count = arg->count * arg->src->fmt->channels;
+	const internal_t *sptr = arg->src;
+	uint8_t *dptr = arg->dst;
+	int sample_count = arg->count * arg->src_fmt->channels;
 
-	struct msm6258_codecvar *mc = arg->codec->context;
+	struct msm6258_codecvar *mc = arg->context;
 
 	for (int i = 0; i < sample_count / 2; i++) {
 		internal_t s;
@@ -175,8 +173,7 @@ internal_to_msm6258(audio_convert_arg_t *arg)
 
 		*dptr++ = (uint8_t)f;
 	}
-	audio_ring_appended(arg->dst, arg->count);
-	audio_ring_tookfromtop(arg->src, arg->count);
+	return arg->count;
 }
 
 
@@ -211,23 +208,21 @@ adpcm2pcm_step(struct msm6258_codecvar *mc, uint8_t b)
 	return mc->mc_amp;
 }
 
-void
-msm6258_to_internal(audio_convert_arg_t *arg)
+int
+msm6258_to_internal(audio_filter_arg_t *arg)
 {
-	KASSERT(is_valid_convert_arg(arg));
-	KASSERT(arg->src->fmt->encoding == AUDIO_ENCODING_MSM6258);
-	KASSERT(arg->src->fmt->stride == 4);
-	KASSERT(is_internal_format(arg->dst->fmt));
-	KASSERT(arg->src->fmt->channels == arg->dst->fmt->channels);
-	KASSERT((arg->src->top & 1) == 0);
-	KASSERT((arg->src->count & 1) == 0);
+	KASSERT(is_valid_filter_arg(arg));
+	KASSERT(arg->src_fmt->encoding == AUDIO_ENCODING_MSM6258);
+	KASSERT(arg->src_fmt->stride == 4);
+	KASSERT(is_internal_format(arg->dst_fmt));
+	KASSERT(arg->src_fmt->channels == arg->dst_fmt->channels);
+	KASSERT((arg->count & 1) == 0);
 
-	uint8_t *sptr = RING_TOP_UINT8(arg->src);
-	internal_t *dptr = RING_BOT(internal_t, arg->dst);
-	arg->count = arg->count & ~1;
-	int sample_count = arg->count * arg->src->fmt->channels;
+	const uint8_t *sptr = arg->src;
+	internal_t *dptr = arg->dst;
+	int sample_count = arg->count * arg->src_fmt->channels;
 
-	struct msm6258_codecvar *mc = arg->codec->context;
+	struct msm6258_codecvar *mc = arg->context;
 
 	for (int i = 0; i < sample_count / 2; i++) {
 		uint8_t a = *sptr++;
@@ -245,7 +240,6 @@ msm6258_to_internal(audio_convert_arg_t *arg)
 #endif
 		*dptr++ = s;
 	}
-	audio_ring_appended(arg->dst, arg->count);
-	audio_ring_tookfromtop(arg->src, arg->count);
+	return arg->count;
 }
 

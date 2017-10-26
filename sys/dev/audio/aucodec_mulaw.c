@@ -88,20 +88,20 @@ static const uint16_t alaw_to_slinear16[256] = {
 	0x03b0, 0x0390, 0x03f0, 0x03d0, 0x0330, 0x0310, 0x0370, 0x0350,
 };
 
-void
-mulaw_to_internal(audio_convert_arg_t *arg)
+int
+mulaw_to_internal(audio_filter_arg_t *arg)
 {
-	KASSERT(is_valid_convert_arg(arg));
-	KASSERT(arg->src->fmt->encoding == AUDIO_ENCODING_MULAW);
-	KASSERT(arg->src->fmt->stride == 8);
-	KASSERT(arg->src->fmt->precision == 8);
-	KASSERT(is_internal_format(arg->dst->fmt));
-	KASSERT(arg->src->fmt->channels == arg->dst->fmt->channels);
+	KASSERT(is_valid_filter_arg(arg));
+	KASSERT(arg->src_fmt->encoding == AUDIO_ENCODING_MULAW);
+	KASSERT(arg->src_fmt->stride == 8);
+	KASSERT(arg->src_fmt->precision == 8);
+	KASSERT(is_internal_format(arg->dst_fmt));
+	KASSERT(arg->src_fmt->channels == arg->dst_fmt->channels);
 
-	uint8_t *sptr = RING_TOP(uint8_t, arg->src);
-	internal_t *dptr = RING_BOT(internal_t, arg->dst);
+	uint8_t *sptr = arg->src;
+	internal_t *dptr = arg->dst;
 
-	int sample_count = arg->count * arg->src->fmt->channels;
+	int sample_count = arg->count * arg->src_fmt->channels;
 	for (int i = 0; i < sample_count; i++) {
 		internal_t s;
 		s = mulaw_to_slinear16HE[*sptr++];
@@ -110,24 +110,23 @@ mulaw_to_internal(audio_convert_arg_t *arg)
 #endif
 		*dptr++ = s;
 	}
-	audio_ring_appended(arg->dst, arg->count);
-	audio_ring_tookfromtop(arg->src, arg->count);
+	return arg->count;
 }
 
-void
-internal_to_mulaw(audio_convert_arg_t *arg)
+int
+internal_to_mulaw(audio_filter_arg_t *arg)
 {
-	KASSERT(is_valid_convert_arg(arg));
-	KASSERT(arg->dst->fmt->encoding == AUDIO_ENCODING_MULAW);
-	KASSERT(arg->dst->fmt->stride == 8);
-	KASSERT(arg->dst->fmt->precision == 8);
-	KASSERT(is_internal_format(arg->src->fmt));
-	KASSERT(arg->src->fmt->channels == arg->dst->fmt->channels);
+	KASSERT(is_valid_filter_arg(arg));
+	KASSERT(arg->dst_fmt->encoding == AUDIO_ENCODING_MULAW);
+	KASSERT(arg->dst_fmt->stride == 8);
+	KASSERT(arg->dst_fmt->precision == 8);
+	KASSERT(is_internal_format(arg->src_fmt));
+	KASSERT(arg->src_fmt->channels == arg->dst_fmt->channels);
 
-	internal_t *sptr = RING_TOP(internal_t, arg->src);
-	uint8_t *dptr = RING_BOT(uint8_t, arg->dst);
+	internal_t *sptr = arg->src;
+	uint8_t *dptr = arg->dst;
 
-	int sample_count = arg->count * arg->src->fmt->channels;
+	int sample_count = arg->count * arg->src_fmt->channels;
 	for (int i = 0; i < sample_count; i++) {
 		internal_t s = *sptr++;
 #if AUDIO_INTERNAL_BITS == 32
@@ -142,7 +141,6 @@ internal_to_mulaw(audio_convert_arg_t *arg)
 
 		*dptr++ = r;
 	}
-	audio_ring_appended(arg->dst, arg->count);
-	audio_ring_tookfromtop(arg->src, arg->count);
+	return arg->count;
 }
 
