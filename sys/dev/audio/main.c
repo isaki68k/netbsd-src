@@ -60,7 +60,6 @@ typedef struct {
 int parse_file(struct test_file *, FILE *, const char *, int);
 uint16_t lebe16toh(uint16_t);
 uint32_t lebe32toh(uint32_t);
-const char *fmt_tostring(audio_format_t *);
 uint64_t filesize(FILE *);
 const char *audio_encoding_name(int);
 const char *tagname(uint32_t);

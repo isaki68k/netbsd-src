@@ -197,7 +197,6 @@ audio_lane_set_format(audio_lane_t *lane, audio_format_t *fmt)
 
 	/* ブロック境界がバイト境界になるように、1ブロックのフレーム数を調整する */
 	lane->userio_frames_of_block = framecount_roundup_byte_boundary(fmt->frequency * AUDIO_BLOCK_msec / 1000, fmt->stride);
-printf("fpb=%d\n", lane->userio_frames_of_block);
 
 	if (fmt->encoding == lane_fmt->encoding
 		&& fmt->precision == lane_fmt->precision
@@ -307,6 +306,13 @@ printf("fpb=%d\n", lane->userio_frames_of_block);
 
 	audio_codec_initialize(&lane->codec, fmt);
 
+	if (debug) {
+		printf("%s: userfmt=%s\n", __func__, fmt_tostring(&lane->userio_fmt));
+		printf(" fmtmode=%d chmix=0x%x freqmode=%d\n",
+			lane->enconvert_mode,
+			lane->chmix_mode,
+			lane->freq_mode);
+	}
 }
 
 void

@@ -272,3 +272,6 @@ struct audio_softc
 
 	void *phys; // 実物理デバイス
 };
+
+extern const char *fmt_tostring(audio_format_t *);
+extern int debug;
