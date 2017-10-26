@@ -236,9 +236,9 @@ parse_file(struct test_file *f, FILE *fp, const char *filename, int adpcm_freq)
 					f->fmt.encoding = AUDIO_ENCODING_SLINEAR_BE;
 				else
 					f->fmt.encoding = AUDIO_ENCODING_SLINEAR_LE;
-				f->fmt.channels = lebe16toh(wf->nChannels);
+				f->fmt.channels = (uint8_t)lebe16toh(wf->nChannels);
 				f->fmt.frequency = lebe32toh(wf->nSamplesPerSec);
-				f->fmt.precision = lebe16toh(wf->wBitsPerSample);
+				f->fmt.precision = (uint8_t)lebe16toh(wf->wBitsPerSample);
 				f->fmt.stride = f->fmt.precision;
 				uint16_t fmtid = lebe16toh(wf->wFormatTag);
 				if (fmtid == 0xfffe) {
@@ -265,7 +265,7 @@ parse_file(struct test_file *f, FILE *fp, const char *filename, int adpcm_freq)
 			exit(1);
 		}
 		// 読み込み開始位置は s
-		fseek(fp, s - hdrbuf, SEEK_SET);
+		fseek(fp, (long)(s - hdrbuf), SEEK_SET);
 		fread(f->mem.sample, 1, len, fp);
 		return len;
 	}
@@ -324,7 +324,7 @@ parse_file(struct test_file *f, FILE *fp, const char *filename, int adpcm_freq)
 	f->fmt.stride = 4;
 	f->fmt.frequency = adpcm_freq;
 
-	len = filesize(fp);
+	len = (int)filesize(fp);
 	f->mem.sample = malloc(len);
 	if (f->mem.sample == NULL) {
 		printf("%s: malloc failed: %d\n", filename, len);
