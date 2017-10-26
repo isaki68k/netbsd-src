@@ -2,12 +2,6 @@
 #pragma once
 #include <windows.h>
 #endif
-
-//#define PSG_TEST
-#define ADPCM_TEST
-
-#ifdef ADPCM_TEST
-
 #include <ctype.h>
 #include <stdio.h>
 #include <math.h>
@@ -70,6 +64,7 @@ const char *fmt_tostring(audio_format_t *);
 uint64_t filesize(FILE *);
 const char *audio_encoding_name(int);
 const char *tagname(uint32_t);
+void play_mml(audio_ring_t *dst, const char *mml);
 
 int debug;
 int rifx;
@@ -77,9 +72,11 @@ int rifx;
 void
 usage()
 {
-	printf("usage: [-f <freq>] <file> [[-f <freq> <file>]...]\n");
-	printf(" -d  debug\n");
-	printf(" -g  (guess) display format only, no playback\n");
+	printf("usage: [options or files...]\n");
+	printf(" -d        debug\n");
+	printf(" -f <freq> set ADPCM frequency\n");
+	printf(" -g        (guess) display format only, no playback\n");
+	printf(" -m <MML>  play MML\n");
 	exit(1);
 }
 
@@ -102,6 +99,7 @@ main(int ac, char *av[])
 	av += 1;
 
 	for (int i = 0; i < ac; i++) {
+		const char *mml = NULL;
 		if (strcmp(av[i], "-d") == 0) {
 			debug++;
 			continue;
@@ -118,26 +116,46 @@ main(int ac, char *av[])
 			continue;
 		}
 
-		FILE *fp = fopen(av[i], "rb");
-		if (fp == NULL) {
-			printf("ERROR: fopen\n");
-			return 1;
-		}
-
 		struct test_file *f = &files[fileidx];
-
-		// ファイル形式を調べて f に色々格納。
-		int len = parse_file(f, fp, av[i], freq);
-		fclose(fp);
-
-		printf("%s: %s\n", av[i], fmt_tostring(&f->fmt));
-		if (opt_g)
-			continue;
-
 		f->mem.fmt = &f->fmt;
 		f->mem.top = 0;
-		f->mem.capacity = len * 8 / f->fmt.stride;
-		f->mem.count = len * 8 / f->fmt.stride;
+
+		if (strcmp(av[i], "-m") == 0) {
+			// -m <MML>
+			i++;
+			if (i == ac)
+				usage();
+			mml = av[i];
+
+			f->fmt.frequency = 44100;
+			f->fmt.encoding = AUDIO_ENCODING_SLINEAR_HE;
+			f->fmt.channels = 1;
+			f->fmt.precision = 16;
+			f->fmt.stride = 16;
+
+			f->mem.capacity = 0;
+			f->mem.count = 0;
+			f->mem.sample = NULL;
+			play_mml(&f->mem, mml);
+		} else {
+			// ファイル名なら音声ファイルとして開く
+			FILE *fp = fopen(av[i], "rb");
+			if (fp == NULL) {
+				printf("ERROR: fopen\n");
+				return 1;
+			}
+
+			// ファイル形式を調べて f に色々格納。
+			int len = parse_file(f, fp, av[i], freq);
+			fclose(fp);
+
+			printf("%s: %s\n", av[i], fmt_tostring(&f->fmt));
+			if (opt_g)
+				continue;
+
+			f->mem.capacity = len * 8 / f->fmt.stride;
+			f->mem.count = len * 8 / f->fmt.stride;
+		}
 
 		f->file = audio_file_open(sc, AUDIO_PLAY);
 		/* この辺は ioctl になる */
@@ -425,168 +443,3 @@ tagname(uint32_t tag)
 	return buf;
 }
 
-#endif
-
-
-#ifdef PSG_TEST
-
-#include <math.h>
-#include "aumix.h"
-#include "audev.h"
-#include <stdio.h>
-#include "auring.h"
-
-void play_mml(audio_ring_t *dst, char *mml);
-
-
-double freqs[] = { 523.251, 587.330, 659.255, 698.456, 783.991, 880.000, 987.767, };
-
-void gen_sin(int16_t *dst, int count, double freq)
-{
-	int vol = 32767;
-	for (int i = 0; i < count; i++) {
-		dst[i] = (int16_t)(sin((double)i * 3.14159 * 2 * freq / 44100) * vol);
-//dst[i] = freq;
-		if (i > (int)((double)count * 0.9)) {
-			if (vol > 0) vol/=2;
-		}
-	}
-}
-
-int gen_MML(int16_t *dst, int count, char *mml)
-{
-	int note_len = 44100 / 2;
-	int oct = 5;
-	int16_t *end = dst + count;
-	int output = 0;
-
-	for (; *mml != 0; mml++) {
-		char c = *mml;
-		int fi = -1;
-		if (c == 'L') {
-			mml++;
-			char *ep;
-			long num = strtol(mml, &ep, 10);
-			if (num <= 0) break;
-			mml = ep - 1;
-			note_len = 44100 / num;
-		}
-		if (c == 'O') {
-			mml++;
-			char *ep;
-			long num = strtol(mml, &ep, 10);
-			if (num <= 0) break;
-			mml = ep - 1;
-			oct = num;
-		}
-		if (c == 'R') {
-			output += note_len;
-			dst += note_len;
-		}
-		if ('C' <= c && c <= 'G') {
-			fi = c - 'C';
-		} else if ('A' <= c && c <= 'B') {
-			fi = c - 'A' + 5;
-		}
-
-		if (output + note_len > count) break;
-		if (fi >= 0) {
-			gen_sin(dst, note_len, freqs[fi] * pow(2, oct - 5));
-			output += note_len;
-			dst += note_len;
-		}
-	}
-	return output;
-}
-
-struct test_file
-{
-	audio_format_t fmt;
-	audio_file_t *file;
-	audio_ring_t mem;
-	bool play;
-	int wait;
-};
-
-int
-main(void)
-{
-	audio_softc_t *sc;
-
-	audio_attach(&sc);
-
-#define N 2
-	struct test_file files[N];
-
-	for (int i = 0; i < N; i++) {
-		struct test_file *f = &files[i];
-
-		f->fmt.frequency = 44100;
-		f->fmt.encoding = AUDIO_ENCODING_SLINEAR_HE;
-		f->fmt.channels = 1;
-		f->fmt.precision = 16;
-		f->fmt.stride = 16;
-
-		f->mem.fmt = &f->fmt;
-		f->mem.capacity = 0;
-		f->mem.top = 0;
-		f->mem.count = 0;
-		f->mem.sample = NULL;
-
-		f->file = audio_file_open(sc, AUDIO_PLAY);
-		/* この辺は ioctl になる */
-		f->file->lane_play.volume = 256;
-		f->file->lane_play.mixer->volume = 256;
-		for (int j = 0; j < 2; j++) {
-			f->file->lane_play.ch_volume[j] = 256;
-		}
-
-		audio_lane_set_format(&f->file->lane_play, &f->fmt);
-
-		char* MML[3] = {
-			"T30O4A1",//"V128T100R60R60T120L4RO4CDEFEDCREFGAGFERCRCRCRCRL8CCDDEEFFL4EDC",
-			"R",//"V128T6000R1T120L4RO4RRRRRRRRCDEFEDCREFGAGFERCRCRCRCRL8CCDDEEFFL4EDC",
-			"R",//"V128T120L4RO4RRRRRRRRRRRRRRRRCDEFEDCREFGAGFERCRCRCRCRL8CCDDEEFFL4EDC",
-		};
-		play_mml(&f->mem, MML[i]);
-		f->play = true;
-		f->wait = i;
-	}
-
-	for (int loop = 0; ; loop++) {
-		for (int i = 0; i < N; i++) {
-			struct test_file *f = &files[i];
-			//if (loop % (f->wait + 1) != 0) continue;
-			int n = min(f->mem.count, 4000);
-			if (n == 0) {
-				f->play = false;
-				audio_lane_play_drain(&f->file->lane_play);
-			} else {
-				//printf("%d %d ", i, n);
-				int len = n * f->fmt.channels * f->fmt.stride / 8;
-				audio_file_write(f->file, RING_TOP(int16_t, &f->mem), len);
-				audio_ring_tookfromtop(&f->mem, n);
-			}
-		}
-
-		bool isPlay = false;
-		for (int i = 0; i < N; i++) {
-			isPlay |= files[i].play;
-		}
-		if (isPlay == false) break;
-	}
-
-	for (int i = 0; i < N; i++) {
-		struct test_file *f = &files[i];
-		audio_lane_play_drain(&f->file->lane_play);
-	}
-
-	//Sleep(1000);
-
-	audio_detach(sc);
-
-	printf("END\n");
-	getchar();
-	return 0;
-}
-#endif

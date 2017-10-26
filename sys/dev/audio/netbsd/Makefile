@@ -10,6 +10,7 @@ SRCS+=	\
 	aucodec_mulaw.c \
 	aumix.c \
 	main.c \
+	synth.c \
 
 CFLAGS=	-g -std=c99 -I. -I.. \
 	-Wall \
