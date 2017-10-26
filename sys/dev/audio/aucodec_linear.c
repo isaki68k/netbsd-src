@@ -30,7 +30,7 @@ linear8_to_internal(audio_filter_arg_t *arg)
 	KASSERT(is_internal_format(arg->dst_fmt));
 	KASSERT(arg->src_fmt->channels == arg->dst_fmt->channels);
 
-	uint8_t *sptr = arg->src;
+	const uint8_t *sptr = arg->src;
 	internal_t *dptr = arg->dst;
 	int sample_count = arg->count * arg->src_fmt->channels;
 
@@ -60,7 +60,7 @@ internal_to_linear8(audio_filter_arg_t *arg)
 	KASSERT(is_internal_format(arg->src_fmt));
 	KASSERT(arg->src_fmt->channels == arg->dst_fmt->channels);
 
-	internal_t *sptr = arg->src;
+	const internal_t *sptr = arg->src;
 	uint8_t *dptr = arg->dst;
 	int sample_count = arg->count * arg->src_fmt->channels;
 
@@ -90,7 +90,7 @@ linear16_to_internal(audio_filter_arg_t *arg)
 	KASSERT(is_internal_format(arg->dst_fmt));
 	KASSERT(arg->src_fmt->channels == arg->dst_fmt->channels);
 
-	uint16_t *sptr = arg->src;
+	const uint16_t *sptr = arg->src;
 	internal_t *dptr = arg->dst;
 	int sample_count = arg->count * arg->src_fmt->channels;
 
@@ -157,7 +157,7 @@ internal_to_linear16(audio_filter_arg_t *arg)
 	KASSERT(is_internal_format(arg->src_fmt));
 	KASSERT(arg->src_fmt->channels == arg->dst_fmt->channels);
 
-	internal_t *sptr = arg->src;
+	const internal_t *sptr = arg->src;
 	uint16_t *dptr = arg->dst;
 	int sample_count = arg->count * arg->src_fmt->channels;
 
@@ -224,7 +224,7 @@ linear24_to_internal(audio_filter_arg_t *arg)
 	KASSERT(is_internal_format(arg->dst_fmt));
 	KASSERT(arg->src_fmt->channels == arg->dst_fmt->channels);
 
-	uint8_t *sptr = arg->src;
+	const uint8_t *sptr = arg->src;
 	internal_t *dptr = arg->dst;
 	int sample_count = arg->count * arg->src_fmt->channels;
 
@@ -269,7 +269,7 @@ internal_to_linear24(audio_filter_arg_t *arg)
 	KASSERT(is_internal_format(arg->src_fmt));
 	KASSERT(arg->src_fmt->channels == arg->dst_fmt->channels);
 
-	internal_t *sptr = arg->src;
+	const internal_t *sptr = arg->src;
 	uint8_t *dptr = arg->dst;
 	int sample_count = arg->count * arg->src_fmt->channels;
 
@@ -316,7 +316,7 @@ linear32_to_internal(audio_filter_arg_t *arg)
 	KASSERT(is_internal_format(arg->dst_fmt));
 	KASSERT(arg->src_fmt->channels == arg->dst_fmt->channels);
 
-	uint32_t *sptr = arg->src;
+	const uint32_t *sptr = arg->src;
 	internal_t *dptr = arg->dst;
 	int sample_count = arg->count * arg->src_fmt->channels;
 
@@ -356,7 +356,7 @@ internal_to_linear32(audio_filter_arg_t *arg)
 	KASSERT(is_internal_format(arg->src_fmt));
 	KASSERT(arg->src_fmt->channels == arg->dst_fmt->channels);
 
-	internal_t *sptr = arg->src;
+	const internal_t *sptr = arg->src;
 	uint32_t *dptr = arg->dst;
 	int sample_count = arg->count * arg->src_fmt->channels;
 
