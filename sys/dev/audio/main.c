@@ -18,31 +18,6 @@ struct test_file
 	int wait;
 };
 
-#if !defined(_WIN32)
-
-typedef struct {
-	uint16_t wFormatTag;
-	uint16_t nChannels;
-	uint32_t nSamplesPerSec;
-	uint32_t nAvgBytesPerSec;
-	uint16_t nBlockAlign;
-	uint16_t wBitsPerSample;
-	uint16_t cbSize;
-} WAVEFORMATEX;
-
-typedef struct {
-	WAVEFORMATEX Format;
-	union {
-		uint16_t wValidBitsPerSample;
-		uint16_t wSamplesPerBlock;
-		uint16_t wReserved;
-	};
-	uint32_t dwChannelMask;
-	// GUID SubFormat;
-} WAVEFORMATEXTENSIBLE;
-
-#endif
-
 typedef struct {
 	uint32_t magic;
 	uint32_t offset;
