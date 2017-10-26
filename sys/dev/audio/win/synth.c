@@ -99,7 +99,6 @@ play_note(audio_ring_t *dst, int count, audio_ring_t *tone, double factor, int v
 	double v = 0;
 	double t = 0;
 	int slice = 0;
-	int n = 0;
 	for (int remain = count; remain > 0; remain -= slice) {
 		slice = min(remain, audio_ring_unround_free_count(dst));
 		if (dst->fmt->stride == 16) {
@@ -135,8 +134,8 @@ play_note(audio_ring_t *dst, int count, audio_ring_t *tone, double factor, int v
 int
 char_to_basekey(char c)
 {
-	c = toupper(c);
-	switch (c) {
+	int ch = toupper((int)c);
+	switch (ch) {
 	case 'A': return 0 + 12;
 	case 'B': return 2 + 12;
 	case 'C': return 3;
@@ -231,7 +230,7 @@ play_mml(audio_ring_t *dst, char *mml)
 	gen_sin(tone);
 
 	while (*mml) {
-		char c = toupper(*mml);
+		int c = toupper((int)*mml);
 		if (c == 'T') {
 			mml++;
 			int t = getnum(&mml);
