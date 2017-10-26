@@ -9,10 +9,7 @@ SRCS+=	\
 	aucodec_msm6258.c \
 	aucodec_mulaw.c \
 	aumix.c \
-
-.PATH:../win
-SRCS+=	\
-	audio_test.c \
+	main.c \
 
 CFLAGS=	-g -std=c99 -I. -I.. \
 	-Wall \
