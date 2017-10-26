@@ -156,17 +156,17 @@
     <ClCompile Include="..\aucodec_msm6258.c" />
     <ClCompile Include="..\aucodec_mulaw.c" />
     <ClCompile Include="..\aumix.c" />
+    <ClCompile Include="..\main.c" />
+    <ClCompile Include="..\synth.c" />
     <ClCompile Include="audio_dev.c" />
-    <ClCompile Include="audio_test.c" />
-    <ClCompile Include="synth.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\aucodec.h" />
+    <ClInclude Include="..\audev.h" />
     <ClInclude Include="..\audiovar.h" />
     <ClInclude Include="..\auformat.h" />
     <ClInclude Include="..\aumix.h" />
     <ClInclude Include="queue.h" />
-    <ClInclude Include="audev.h" />
     <ClInclude Include="..\auring.h" />
     <ClInclude Include="compat.h" />
   </ItemGroup>
