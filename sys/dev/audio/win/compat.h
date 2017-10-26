@@ -63,6 +63,7 @@ uint32_t be32toh(uint32_t a)
 #endif
 }
 
+__noreturn
 inline void
 panic(const char *fmt, ...)
 {
