@@ -51,7 +51,7 @@ audio_attach(audio_softc_t **softc)
 	dev->fmt.stride = 16;
 
 	AUDIO_INITINFO(&ai);
-	ai.mode = AUMODE_PLAY;
+	ai.mode = AUMODE_PLAY | AUMODE_PLAY_ALL;
 	ai.play.sample_rate = dev->fmt.frequency;
 	ai.play.encoding    = dev->fmt.encoding;
 	ai.play.precision   = dev->fmt.precision;
