@@ -1,0 +1,4 @@
+.depends
+.gitignore
+a.out*
+*.o
