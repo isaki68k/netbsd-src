@@ -62,7 +62,6 @@ audio_attach(audio_softc_t **softc)
 		exit(1);
 	}
 	dev->frame_bytes = ai.play.precision / 8 * ai.play.channels;
-printf("frame_bytes=%d\n", dev->frame_bytes);
 
 	audio_mixer_init(&sc->mixer_play, sc, AUDIO_PLAY);
 	audio_mixer_init(&sc->mixer_rec, sc, AUDIO_REC);
@@ -107,12 +106,6 @@ audio_softc_play_start(audio_softc_t *sc)
 		audio_ring_tookfromtop(&mixer->hw_buf, count);
 	}
 
-#if 0
-	// ポーリング内で割り込みエミュレート
-	audio_lanemixer_intr(&sc->mixer_play, dev->sent_count);
-	dev->sent_count = 0;
-#endif
-
 	unlock(sc);
 }
 
@@ -132,7 +125,6 @@ audio_softc_play_busy(audio_softc_t *sc)
 	// ポーリング内で割り込みエミュレート
 	int count = (int)(dev->fmt.frequency * usec / 1000000);
 
-printf("dev->sent_count=%d\n", dev->sent_count);
 	if (count > 0) {
 		count = min(count, dev->sent_count);
 		audio_lanemixer_intr(&sc->mixer_play, count);
