@@ -2,6 +2,9 @@
 #include <mmsystem.h>
 #pragma comment(lib, "winmm.lib")
 
+// Windows 的型キャストを許容する
+#pragma warning(disable: 4312)
+
 #include "aumix.h"
 #include "auring.h"
 #include <stdio.h>
