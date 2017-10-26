@@ -86,9 +86,8 @@ audio_MI_codec_filter_init(audio_filter_arg_t *arg)
 				panic("unsupported stride %d", arg->src_fmt->stride);
 			}
 		}
-	} else {
-		panic("unsupported encoding");
 	}
+	panic("unsupported encoding");
 }
 
 void
