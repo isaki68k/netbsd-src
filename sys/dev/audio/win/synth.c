@@ -5,8 +5,7 @@
 #include <string.h>
 #include "auring.h"
 
-void
-__declspec(noreturn)
+void __noreturn
 synth_error(char *msg)
 {
 	exit(1);

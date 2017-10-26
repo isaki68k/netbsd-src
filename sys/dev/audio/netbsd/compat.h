@@ -9,6 +9,8 @@
 #define min(a,b)	(a < b ? a : b)
 #define max(a,b)	(a > b ? a : b)
 
+#define __noreturn __attribute__((__noreturn__))
+
 #define panic(fmt...)	panic_func(__func__, fmt)
 
 static inline void

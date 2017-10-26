@@ -8,6 +8,8 @@
 #define BIG_ENDIAN 2
 #define BYTE_ORDER LITTLE_ENDIAN
 
+#define __noreturn __declspec(noreturn)
+
 
 inline
 uint16_t __builtin_bswap16(uint16_t a)
