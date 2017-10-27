@@ -8,6 +8,7 @@
 #include <sys/audioio.h>
 #include <sys/ioctl.h>
 #include <sys/time.h>
+#include <pthread.h>
 
 struct audio_dev_netbsd
 {
@@ -15,17 +16,22 @@ struct audio_dev_netbsd
 	int frame_bytes;
 	audio_format_t fmt;
 	int sent_count;
+	pthread_mutex_t mutex;
 };
 typedef struct audio_dev_netbsd audio_dev_netbsd_t;
 
 void
 lock(audio_softc_t *sc)
 {
+	audio_dev_netbsd_t *dev = sc->phys;
+	pthread_mutex_lock(&dev->mutex);
 }
 
 void
 unlock(audio_softc_t *sc)
 {
+	audio_dev_netbsd_t *dev = sc->phys;
+	pthread_mutex_unlock(&dev->mutex);
 }
 
 void
@@ -61,6 +67,8 @@ audio_attach(audio_softc_t **softc)
 		exit(1);
 	}
 	dev->frame_bytes = ai.play.precision / 8 * ai.play.channels;
+
+	pthread_mutex_init(&dev->mutex, NULL);
 
 	audio_mixer_init(&sc->mixer_play, sc, AUDIO_PLAY);
 	audio_mixer_init(&sc->mixer_rec, sc, AUDIO_REC);

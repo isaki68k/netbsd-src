@@ -9,6 +9,9 @@
 #include "aumix.h"
 #include "audev.h"
 #include "auring.h"
+#ifdef USE_PTHREAD
+#include <pthread.h>
+#endif
 
 struct test_file
 {
@@ -17,6 +20,9 @@ struct test_file
 	audio_ring_t mem;
 	bool play;
 	int wait;
+#ifdef USE_PTHREAD
+	pthread_t tid;
+#endif
 };
 
 typedef struct {
@@ -37,6 +43,10 @@ typedef struct {
 	char text[0];
 } AUFileHeader;
 
+int child_loop(struct test_file *, int);
+#ifdef USE_PTHREAD
+void *child(void *);
+#endif
 int parse_file(struct test_file *, FILE *, const char *, int);
 uint16_t lebe16toh(uint16_t);
 uint32_t lebe32toh(uint32_t);
@@ -151,35 +161,34 @@ main(int ac, char *av[])
 		fileidx++;
 	}
 
-	for (int loop = 0; ; loop++) {
-		for (int i = 0; i < fileidx; i++) {
-			struct test_file *f = &files[i];
-			if (f->wait > loop) continue;
-			int n = min(f->mem.count, 625*8);
-			if (n == 0) {
-				f->play = false;
-				audio_track_play_drain(&f->file->track_play);
-			} else {
-				//printf("%d %d ", i, n);
-				int len = n * f->fmt.channels * f->fmt.stride / 8;
-				sys_write(f->file, RING_TOP_UINT8(&f->mem), len);
-				audio_ring_tookfromtop(&f->mem, n);
-			}
+#ifdef USE_PTHREAD
+	for (int i = 0; i < fileidx; i++) {
+		struct test_file *f = &files[i];
+		int r = pthread_create(&f->tid, NULL, child, f);
+		if (r == -1) {
+			printf("pthread_create\n");
+			exit(1);
 		}
-
-		bool isPlay = false;
-		for (int i = 0; i < fileidx; i++) {
-			isPlay |= files[i].play;
-		}
-		if (isPlay == false) break;
 	}
 
 	for (int i = 0; i < fileidx; i++) {
 		struct test_file *f = &files[i];
-		audio_track_play_drain(&f->file->track_play);
+		pthread_join(f->tid, NULL);
 	}
-
-	//Sleep(1000);
+#else
+	for (int loop = 0; ; loop++) {
+		bool isPlay = false;
+		for (int i = 0; i < fileidx; i++) {
+			struct test_file *f = &files[i];
+			if (f->play)
+				child_loop(f, loop);
+			if (f->play)
+				isPlay = true;
+		}
+		if (isPlay == false)
+			break;
+	}
+#endif
 
 	audio_detach(sc);
 
@@ -190,6 +199,39 @@ main(int ac, char *av[])
 	return 0;
 
 }
+
+// ループが終わるときは -1
+int
+child_loop(struct test_file *f, int loop)
+{
+	if (f->wait > loop) return 0;
+	int n = min(f->mem.count, 625*8);
+	if (n == 0) {
+		f->play = false;
+		audio_track_play_drain(&f->file->track_play);
+		return -1;
+	} else {
+		//printf("%d %d ", i, n);
+		int len = n * f->fmt.channels * f->fmt.stride / 8;
+		sys_write(f->file, RING_TOP_UINT8(&f->mem), len);
+		audio_ring_tookfromtop(&f->mem, n);
+		return 0;
+	}
+}
+
+#ifdef USE_PTHREAD
+void *
+child(void *arg)
+{
+	struct test_file *f = arg;
+
+	for (int loop = 0; ; loop++) {
+		if (child_loop(f, loop) == -1)
+			break;
+	}
+	return NULL;
+}
+#endif
 
 #define GETID(ptr) (be32toh(*(uint32_t *)(ptr)))
 #define ID(str)	((str[0]<<24) | (str[1]<<16) | (str[2]<<8) | str[3])

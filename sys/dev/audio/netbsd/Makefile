@@ -13,12 +13,13 @@ SRCS+=	\
 	synth.c \
 
 CFLAGS=	-g -std=c99 -I. -I.. \
+	-DUSE_PTHREAD \
 	-Wall \
 	-Werror \
 	-Wshadow \
 
 a.out:	${SRCS:.c=.o}
-	${CC} -g -o $@ $> -lm
+	${CC} -g -o $@ $> -lm -pthread
 
 clean:
 	rm -rf a.out ${SRCS:.c=.o}
