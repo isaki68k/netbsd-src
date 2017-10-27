@@ -131,7 +131,7 @@ struct audio_track
 	void               *userio_mem;
 	int subframe_buf_used;				/* 1フレーム未満の使用バイト数 */
 
-	int                userio_frames_of_block;	/* ユーザランド周波数での 1 ブロックのフレーム数 */
+	int                userio_frames_per_block;	/* ユーザランド周波数での 1 ブロックのフレーム数 */
 
 	uint16_t ch_volume[AUDIO_MAX_CH];	/* チャンネルバランス用 チャンネルボリューム */
 	uint16_t           volume;			/* トラックボリューム */
@@ -207,7 +207,7 @@ struct audio_trackmixer
 	audio_format_t track_fmt;			/* ミキサのトラック側入出力フォーマット */
 										/* precision == stride は保証 */
 
-	int frames_of_block;				/* 内部周波数での 1 ブロックのフレーム数 */
+	int frames_per_block;				/* 内部周波数での 1 ブロックのフレーム数 */
 
 	uint16_t       volume;				/* 出力マスタボリューム */
 
