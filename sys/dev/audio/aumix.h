@@ -25,7 +25,7 @@ e.g. stereo
  * shift == 0 : no shift
  * shift < 0: right shift, as lsr(abs(shift))
  */
-inline static uint32_t
+static inline uint32_t
 bidi_lsl(uint32_t a, int shift)
 {
 	if (shift > 0) return a << shift;

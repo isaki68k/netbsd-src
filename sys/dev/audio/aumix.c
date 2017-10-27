@@ -64,7 +64,7 @@ audio_free(void *memblock)
  */
 
 /* r = 0 */
-inline static void
+static inline void
 audio_rational_clear(audio_rational_t *r)
 {
 	KASSERT(r != NULL);
@@ -73,7 +73,7 @@ audio_rational_clear(audio_rational_t *r)
 }
 
 /* 共通分母 d の正規化された帯分数 r, a に対し、 r += a を実行し、結果の整数部を返します。 */
-inline static int
+static inline int
 audio_rational_add(audio_rational_t *r, audio_rational_t *a, int d)
 {
 	KASSERT(r != NULL);
@@ -92,7 +92,7 @@ audio_rational_add(audio_rational_t *r, audio_rational_t *a, int d)
 }
 
 /* a > b なら + 、a == b なら 0 , a < b なら - を返します。*/
-inline static int
+static inline int
 audio_rational_cmp(audio_rational_t *a, audio_rational_t *b)
 {
 	int r = a->i - b->i;
@@ -164,7 +164,7 @@ audio_track_init(audio_track_t *track, audio_trackmixer_t *mixer)
 	track->mixed_count = 0;
 }
 
-inline static int
+static inline int
 framecount_roundup_byte_boundary(int framecount, int stride)
 {
 	/* stride が、、、 */
