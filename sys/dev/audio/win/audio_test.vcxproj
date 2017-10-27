@@ -166,6 +166,7 @@
     <ClInclude Include="..\audiovar.h" />
     <ClInclude Include="..\auformat.h" />
     <ClInclude Include="..\aumix.h" />
+    <ClInclude Include="..\uio.h" />
     <ClInclude Include="queue.h" />
     <ClInclude Include="..\auring.h" />
     <ClInclude Include="compat.h" />

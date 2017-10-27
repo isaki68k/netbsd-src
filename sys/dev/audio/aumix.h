@@ -45,9 +45,14 @@ void audio_mixer_play_period(audio_lanemixer_t *mixer);
 void audio_mixer_play_mix_lane(audio_lanemixer_t *mixer, audio_lane_t *lane);
 void audio_lanemixer_intr(audio_lanemixer_t *mixer, int count);
 
-audio_file_t *audio_file_open(audio_softc_t *sc, int mode);
-int/*ssize_t*/ audio_file_write(audio_file_t *file, void* buf, size_t len);
+/* glue layer */
+int audio_write(audio_softc_t *sc, struct uio *uio, int ioflag, audio_file_t *file); /* write の MI 側 */
 
+/* system call emulation */
+audio_file_t *sys_open(audio_softc_t *sc, int mode);
+int/*ssize_t*/ sys_write(audio_file_t *file, void* buf, size_t len);	/* write syscall の Userland 側エミュレート */
+
+/* XXX: 分類未定 */
 int audio_softc_get_hw_capacity(audio_softc_t *sc);
 audio_format_t audio_softc_get_hw_format(audio_softc_t *sc, int mode);
 void* audio_softc_allocm(audio_softc_t *sc, int n);

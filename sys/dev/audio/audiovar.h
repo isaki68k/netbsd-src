@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include "queue.h"
 #include "compat.h"
+#include "uio.h"
 
 /* アサートするとき定義 */
 #define AUDIO_ASSERT
@@ -126,14 +127,12 @@ typedef int(*audio_filter_t)(audio_filter_arg_t *arg);
 struct audio_lane
 {
 	audio_format_t     userio_fmt;		/* ユーザランドとのやり取りで使用するフォーマット */
-	audio_ring_t       userio_buf;		/* ユーザランド側とのやり取りで使用するデータ。
-										sample にメモリはアロケートしないでポインタ操作で使用する。 */
+	audio_ring_t       userio_buf;		/* ユーザランド側とのやり取りで使用するデータ。 */
 										/* XXX: おそらく mmap のときは、アロケートしてそれを公開する */
+	void               *userio_mem;
+	int subframe_buf_used;				/* 1フレーム未満の使用バイト数 */
 
 	int                userio_frames_of_block;	/* ユーザランド周波数での 1 ブロックのフレーム数 */
-
-	uint8_t subframe_buf[AUDIO_MAX_CH * 4];	/* フレーム未満のデータ用を次回の read,write まで保持しておくバイトバッファ */
-	int subframe_buf_used;					/* subframe_buf の使用バイト数 */
 
 	uint16_t ch_volume[AUDIO_MAX_CH];	/* チャンネルバランス用 チャンネルボリューム */
 	uint16_t           volume;			/* レーンボリューム */

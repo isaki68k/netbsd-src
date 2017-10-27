@@ -7,6 +7,7 @@
 #include "audev.h"
 #include "aucodec.h"
 #include "auformat.h"
+#include "uio.h"
 
 int
 gcd(int a, int b)
@@ -198,6 +199,12 @@ audio_lane_set_format(audio_lane_t *lane, audio_format_t *fmt)
 	/* ブロック境界がバイト境界になるように、1ブロックのフレーム数を調整する */
 	lane->userio_frames_of_block = framecount_roundup_byte_boundary(fmt->frequency * AUDIO_BLOCK_msec / 1000, fmt->stride);
 
+	lane->userio_buf.top = 0;
+	lane->userio_buf.capacity = lane->userio_frames_of_block;
+	lane->userio_mem = audio_realloc(lane->userio_mem, RING_BYTELEN(&lane->userio_buf));
+	lane->userio_buf.sample = lane->userio_mem;
+
+
 	if (fmt->encoding == lane_fmt->encoding
 		&& fmt->precision == lane_fmt->precision
 		&& fmt->stride == lane_fmt->stride) {
@@ -308,6 +315,22 @@ audio_lane_set_format(audio_lane_t *lane, audio_format_t *fmt)
 	lane->codec_arg.dst_fmt = &lane->enconvert_fmt;
 
 	lane->codec = audio_MI_codec_filter_init(&lane->codec_arg);
+
+
+	if (lane->enconvert_mode == AUDIO_LANE_ENCONVERT_INLINE) {
+		lane->step1->capacity = lane->userio_buf.capacity;
+		lane->step1->count = 0;
+		lane->step1->top = lane->userio_buf.top;
+		lane->step1->sample = lane->userio_buf.sample;
+	}
+
+	if (lane->chmix_mode & AUDIO_LANE_CHANNEL_INLINE) {
+		lane->step2->capacity = lane->step1->capacity;
+		lane->step2->count = 0;
+		lane->step2->top = lane->step2->top;
+		lane->step2->sample = lane->step2->sample;
+	}
+
 
 	if (debug) {
 		printf("%s: userfmt=%s\n", __func__, fmt_tostring(&lane->userio_fmt));
@@ -818,7 +841,7 @@ audio_mixer_play_period(audio_lanemixer_t *mixer /*, bool force */)
 		vol = (int)((internal2_t)AUDIO_INTERNAL_T_MAX * 256 / overflow);
 		/* 128 までは自動でマスタボリュームを下げる */
 		if (mixer->volume > 128) {
-			mixer->volume--;
+mixer->volume--;
 		}
 	}
 
@@ -836,7 +859,7 @@ audio_mixer_play_period(audio_lanemixer_t *mixer /*, bool force */)
 	mptr = mptr0;
 	internal_t *hptr = RING_BOT(internal_t, &mixer->hw_buf);
 	for (int i = 0; i < sample_count; i++) {
-			*hptr++ = *mptr++;
+		*hptr++ = *mptr++;
 	}
 	audio_ring_appended(&mixer->hw_buf, count);
 	unlock(mixer->sc);
@@ -905,88 +928,57 @@ audio_lane_play_drain(audio_lane_t *lane)
 		WAIT();
 	} while (lane->lane_buf.count > 0
 		|| lane->mixed_count > 0
-		|| lane->hw_count> 0);
+		|| lane->hw_count > 0);
 
 	lane->is_draining = false;
 }
 
+/* write の MI 側 */
 int
-audio_lane_play_write(audio_lane_t *lane, void *buf, int len)
+audio_write(audio_softc_t *sc, struct uio *uio, int ioflag, audio_file_t *file)
 {
-	uint8_t *src = buf;
-	int remain_bytelen = len;
+	int error;
+	audio_lane_t *lane = &file->lane_play;
 
-	/* 前回のフレーム未満データ */
-	if (lane->subframe_buf_used > 0) {
-		int frame_bytelen = lane->userio_fmt.channels * lane->userio_fmt.stride / 8;
-		uint8_t *dst = &lane->subframe_buf[lane->subframe_buf_used];
-		int need = frame_bytelen - lane->subframe_buf_used;
-		if (len < need) {
-			/* 今回のwriteでもまだブロックに満たない */
-			memcpy(dst, src, len);
-			lane->subframe_buf_used += len;
-			return len;
+	while (uio->uio_resid > 0) {
+
+		/* userio の空きバイト数を求める */
+		int free_count = audio_ring_unround_free_count(&lane->userio_buf);
+		int free_bytelen = free_count * lane->userio_fmt.channels * lane->userio_fmt.stride / 8 - lane->subframe_buf_used;
+
+		// 今回 uiomove するバイト数 */
+		int move_bytelen = min(free_bytelen, (int)uio->uio_resid);
+
+		// 今回出来上がるフレーム数 */
+		int framecount = (move_bytelen + lane->subframe_buf_used) * 8 / (lane->userio_fmt.channels * lane->userio_fmt.stride);
+
+		// コピー先アドレスは subframe_buf_used で調整する必要がある
+		uint8_t *dptr = RING_BOT_UINT8(&lane->userio_buf) + lane->subframe_buf_used;
+		// min(bytelen, uio->uio_resid) は uiomove が保証している
+		error = uiomove(dptr, move_bytelen, uio);
+		if (error) {
+			panic("uiomove");
 		}
+		audio_ring_appended(&lane->userio_buf, framecount);
+		
+		// 今回 userio_buf に置いたサブフレームを次回のために求める
+		lane->subframe_buf_used = move_bytelen - framecount * lane->userio_fmt.channels * lane->userio_fmt.stride / 8;
 
-		memcpy(dst, src, need);
-		lane->userio_buf.sample = lane->subframe_buf;
-		lane->userio_buf.capacity = 1;
-		lane->userio_buf.count = 1;
-		lane->userio_buf.top = 0;
-
+		// 今回作った userio を全部レーン再生へ渡す
 		while (lane->userio_buf.count > 0) {
-//			audio_lane_play(lane);
 			audio_mixer_play(lane->mixer);
-			if (lane->userio_buf.count == 0) break;
 			WAIT();
 		}
-
-		lane->subframe_buf_used = 0;
-		src += need;
-		remain_bytelen -= need;
 	}
 
-	lane->userio_buf.sample = src;
-	/* stride < 8 サポートの布石のため、frame_bytelen 相当を再計算する */
-	lane->userio_buf.count = remain_bytelen * 8 / (lane->userio_fmt.channels * lane->userio_fmt.stride);
-	lane->userio_buf.capacity = lane->userio_buf.count;
-	lane->userio_buf.top = 0;
-	int bytelen = lane->userio_buf.count * lane->userio_fmt.channels * lane->userio_fmt.stride / 8;
-	remain_bytelen = remain_bytelen - bytelen;
-
-	if (lane->enconvert_mode == AUDIO_LANE_ENCONVERT_INLINE) {
-		lane->step1->capacity = lane->userio_buf.capacity;
-		lane->step1->count = 0;
-		lane->step1->top = lane->userio_buf.top;
-		lane->step1->sample = lane->userio_buf.sample;
-	}
-
-	if (lane->chmix_mode & AUDIO_LANE_CHANNEL_INLINE) {
-		lane->step2->capacity = lane->step1->capacity;
-		lane->step2->count = 0;
-		lane->step2->top = lane->step2->top;
-		lane->step2->sample = lane->step2->sample;
-	}
-
-	while (lane->userio_buf.count > 0) {
-//		audio_lane_play(lane);
-		audio_mixer_play(lane->mixer);
-		if (lane->userio_buf.count == 0) break;
-		WAIT();
-	}
-
-	if (remain_bytelen > 0) {
-		memcpy(lane->subframe_buf, src + bytelen, remain_bytelen);
-		lane->subframe_buf_used = remain_bytelen;
-	}
-	return len;
+	return 0;
 }
 
 /*
  * ***** audio_file *****
  */
 int//ssize_t
-audio_file_write(audio_file_t *file, void* buf, size_t len)
+sys_write(audio_file_t *file, void* buf, size_t len)
 {
 	KASSERT(buf);
 
@@ -994,12 +986,19 @@ audio_file_write(audio_file_t *file, void* buf, size_t len)
 		errno = EINVAL;
 		return -1;
 	}
-	audio_lane_t *lane = &file->lane_play;
-	return audio_lane_play_write(lane, buf, (int)len);
+
+	struct uio uio = buf_to_uio(buf, len, UIO_READ);
+
+	int error = audio_write(file->sc, &uio, 0, file);
+	if (error) {
+		errno = error;
+		return -1;
+	}
+	return (int)len;
 }
 
 audio_file_t *
-audio_file_open(audio_softc_t *sc, int mode)
+sys_open(audio_softc_t *sc, int mode)
 {
 	audio_file_t *file;
 

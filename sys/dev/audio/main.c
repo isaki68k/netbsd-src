@@ -136,7 +136,7 @@ main(int ac, char *av[])
 			f->mem.count = len * 8 / f->fmt.stride;
 		}
 
-		f->file = audio_file_open(sc, AUDIO_PLAY);
+		f->file = sys_open(sc, AUDIO_PLAY);
 		/* この辺は ioctl になる */
 		f->file->lane_play.volume = 256;
 		f->file->lane_play.mixer->volume = 256;
@@ -162,7 +162,7 @@ main(int ac, char *av[])
 			} else {
 				//printf("%d %d ", i, n);
 				int len = n * f->fmt.channels * f->fmt.stride / 8;
-				audio_file_write(f->file, RING_TOP_UINT8(&f->mem), len);
+				sys_write(f->file, RING_TOP_UINT8(&f->mem), len);
 				audio_ring_tookfromtop(&f->mem, n);
 			}
 		}

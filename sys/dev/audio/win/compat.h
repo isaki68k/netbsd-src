@@ -10,6 +10,7 @@
 
 #define __noreturn __declspec(noreturn)
 
+typedef int64_t off_t;
 
 inline
 uint16_t __builtin_bswap16(uint16_t a)
