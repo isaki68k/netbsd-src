@@ -14,7 +14,6 @@ struct audio_dev_netbsd
 	int fd;
 	int frame_bytes;
 	audio_format_t fmt;
-	struct timeval tv;
 	int sent_count;
 };
 typedef struct audio_dev_netbsd audio_dev_netbsd_t;
@@ -51,7 +50,7 @@ audio_attach(audio_softc_t **softc)
 	dev->fmt.stride = 16;
 
 	AUDIO_INITINFO(&ai);
-	ai.mode = AUMODE_PLAY | AUMODE_PLAY_ALL;
+	ai.mode = AUMODE_PLAY;
 	ai.play.sample_rate = dev->fmt.frequency;
 	ai.play.encoding    = dev->fmt.encoding;
 	ai.play.precision   = dev->fmt.precision;
@@ -87,8 +86,6 @@ audio_softc_play_start(audio_softc_t *sc)
 
 	lock(sc);
 
-	gettimeofday(&dev->tv, NULL);
-
 	int count;
 	for (int loop = 0; loop < 2; loop++) {
 		count = audio_ring_unround_count(&mixer->hw_buf);
@@ -113,24 +110,12 @@ bool
 audio_softc_play_busy(audio_softc_t *sc)
 {
 	audio_dev_netbsd_t *dev = sc->phys;
-	struct timeval now, res;
 
-	if (dev->sent_count == 0) {
-		return false;
+	if (dev->sent_count > 0) {
+		audio_lanemixer_intr(&sc->mixer_play, dev->sent_count);
+		dev->sent_count = 0;
 	}
-
-	gettimeofday(&now, NULL);
-	timersub(&now, &dev->tv, &res);
-	int64_t usec = (int64_t)res.tv_sec * 1000000 + res.tv_usec;
-	// ポーリング内で割り込みエミュレート
-	int count = (int)(dev->fmt.frequency * usec / 1000000);
-
-	if (count > 0) {
-		count = min(count, dev->sent_count);
-		audio_lanemixer_intr(&sc->mixer_play, count);
-		dev->sent_count -= count;
-	}
-	return count > 0;
+	return false;
 }
 
 int
