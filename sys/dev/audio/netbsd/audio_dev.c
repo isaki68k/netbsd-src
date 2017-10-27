@@ -88,7 +88,7 @@ void
 audio_softc_play_start(audio_softc_t *sc)
 {
 	audio_dev_netbsd_t *dev = sc->phys;
-	audio_lanemixer_t *mixer = &sc->mixer_play;
+	audio_trackmixer_t *mixer = &sc->mixer_play;
 
 	if (mixer->hw_buf.count <= 0) return;
 
@@ -120,7 +120,7 @@ audio_softc_play_busy(audio_softc_t *sc)
 	audio_dev_netbsd_t *dev = sc->phys;
 
 	if (dev->sent_count > 0) {
-		audio_lanemixer_intr(&sc->mixer_play, dev->sent_count);
+		audio_trackmixer_intr(&sc->mixer_play, dev->sent_count);
 		dev->sent_count = 0;
 	}
 	return false;
