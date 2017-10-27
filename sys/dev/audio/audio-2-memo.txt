@@ -1,77 +1,77 @@
-(�`�����l���ƃ��[���Ƃ����p����g�p����)
+(チャンネルとレーンという用語を使用する)
 
 Userland
 
 [audioplay]
  input format: s8, u8, s16(le,be), s24(le,be), s32(le,be), mulaw
- �J�[�l�����󂯓���\�ȃt�H�[�}�b�g�ɕϊ����Ȃ���o��
+ カーネルが受け入れ可能なフォーマットに変換しながら出力
 
 MI
  accept:
   [u|s]LINEAR([1..32],[8|16|24|32])[LE|BE]
   mulaw
-  �`�����l����: 1..32
-  ���g��: 1k.. ���炢�B
+  チャンネル数: 1..32
+  周波数: 1k.. ぐらい。
 
 
-[���͕ϊ���]
-���̓G���R�[�f�B���O�ϊ� -> any to MIX enc (s16 or s32�A�R���p�C�����m��)
-  && �G���f�B�A���ϊ�  -> HE
+[入力変換器]
+入力エンコーディング変換 -> any to MIX enc (s16 or s32、コンパイル時確定)
+  && エンディアン変換  -> HE
 
-���g���ϊ� -> any to MIX freq
- (LPF �Ƃ�)
- && �`�����l���~�L�V���O�E�f�~�L�V���O -> to MIX Channels
- ���m�������͂��X�e���I�f�o�C�X�ɏo���Ȃ番�z���Ȃ��Ƃ����Ȃ���
- �X�e���I���͂����m�����f�o�C�X�ɏo���Ȃ獇�����Ȃ��Ƃ����Ȃ�
- �`�����l���o�����X
- && ���[���{�����[��
+周波数変換 -> any to MIX freq
+ (LPF とか)
+ && チャンネルミキシング・デミキシング -> to MIX Channels
+ モノラル入力をステレオデバイスに出すなら分配しないといけないし
+ ステレオ入力をモノラルデバイスに出すなら合成しないといけない
+ チャンネルバランス
+ && レーンボリューム
 
-[���[���~�L�T]
- input: s16HE or s32HE (�R���p�C�����m��)
- ���[���~�L�T�̓���`�����l������ MD Channels �ɓ�����
+[レーンミキサ]
+ input: s16HE or s32HE (コンパイル時確定)
+ レーンミキサの動作チャンネル数は MD Channels に等しい
 
-���[���~�L�V���O
+レーンミキシング
 
-//�o�̓`�����l���o�����X
-//�o�̓}�X�^�{�����[��      (vs�h���C�o�p�ɂƂ��Ă���?)
+//出力チャンネルバランス
+//出力マスタボリューム      (vsドライバ用にとっておく?)
 
-[�o�͕ϊ���]
-�i���g���ϊ��j
-�o�̓G���R�[�f�B���O�ϊ� : s16 or s32 -> MD sXX �ɂ���
- && �G���f�B�A���ϊ� HE -> MD ENDIAN
+[出力変換器]
+（周波数変換）
+出力エンコーディング変換 : s16 or s32 -> MD sXX にする
+ && エンディアン変換 HE -> MD ENDIAN
 
 
 MD
- select: �`�����l���������� ���g�����悭�� �r�b�g����(32,16)�̍������� SLINEAR �� �ł����HE
-  ���g���̗ǂ�: 48k�̔{��, 44.1k�̔{��, �ݒ�\�ȍł��������g�� �̏�
-   (���[�U���w��ł��Ă��ǂ���������Ȃ����E�E�E)
+ select: チャンネルが多くて 周波数がよくて ビット数が(32,16)の高い方で SLINEAR で できればHE
+  周波数の良さ: 48kの倍数, 44.1kの倍数, 設定可能な最も高い周波数 の順
+   (ユーザが指定できても良いかもしれないが・・・)
 
- s16XX -> mulaw �Ƃ��́A���� MD �� mulaw �f�o�C�X�Ȃ� MD �Ŏ���(���邩 MI �̊֐����Ăяo��)
- (24,32)�f�o�C�X�Ƃ��� MD ���ϊ�����B
+ s16XX -> mulaw とかは、もし MD が mulaw デバイスなら MD で実装(するか MI の関数を呼び出す)
+ (24,32)デバイスとかも MD が変換する。
 
- �ő�`�����l����: 18
+ 最大チャンネル数: 18
 
 ------
-�^��
+録音
 
 
 MD
- select: �`�����l���������� ���g���������� �r�b�g����(32,16)�̍������� SLINEAR �� �ł����HE
+ select: チャンネルが多くて 周波数が高くて ビット数が(32,16)の高い方で SLINEAR で できればHE
 
 MI
-[���͕ϊ���]
+[入力変換器]
  MD to s(16 or 32)HE
 
-[�f�~�L�T]
-�`�����l���o�����X
-���[���f�~�L�V���O
-���[���{�����[��
-�`�����l���~�L�V���O�E�f�~�L�V���O -> to Requested Channels
+[デミキサ]
+チャンネルバランス
+レーンデミキシング
+レーンボリューム
+チャンネルミキシング・デミキシング -> to Requested Channels
 
-[�o�͕ϊ���]
-���g���ϊ�
-�G���R�[�f�B���O�ϊ�
-�G���f�B�A���ϊ�
+[出力変換器]
+周波数変換
+エンコーディング変換
+エンディアン変換
 
 Userland
  format: u8, s16le, ...
@@ -81,269 +81,269 @@ Userland
 
 
 
-�o�b�t�@�u���b�N�T�C�Y�� 40ms �ɂ���̂͂ǂ����B
-8kHz : 320�t���[��
-15625Hz: 625�t���[��
-44.1kHz: 1764�t���[��
-48kHz: 1920�t���[��
+バッファブロックサイズを 40ms にするのはどうか。
+8kHz : 320フレーム
+15625Hz: 625フレーム
+44.1kHz: 1764フレーム
+48kHz: 1920フレーム
 
-50ms ���� X68k �Ő�����ɂȂ�Ȃ��Ƃ����ɂ߂ăA���ȗ��R�B
+50ms だと X68k で整数比にならないという極めてアレな理由。
 
 
-write �����
+write される
 
 {
-�Œ� 40ms �Ԃ���o��
-�ϊ�����
-�~�L�T�ɓn��
-��������
-�~�L�T�o�͂ɒʒm����
+最長 40ms ぶん取り出す
+変換する
+ミキサに渡す
+合成する
+ミキサ出力に通知する
 }
 
-[�~�L�T�o��]
-���o���󋵂łȂ���Ζ߂�
-�~�L�T����40ms�Ԃ���o��
-�ϊ�����
-�n�[�h�E�F�A�ɓ]������
+[ミキサ出力]
+取り出す状況でなければ戻る
+ミキサから40msぶん取り出す
+変換する
+ハードウェアに転送する
 
-[�n�[�h�E�F�A]
-�]�������������玟��]�����Ă���ƃ~�L�T�o�͂ɒʒm����
+[ハードウェア]
+転送が完了したら次を転送してくれとミキサ出力に通知する
 
 
  
 ---
-�{�����[��
- ���[�U�����h����:
+ボリューム
+ ユーザランド入力:
   uint8_t vol
    0..126   : vol / 256
    127..255 : (vol+1)/256
-  (127 �͗v�̓{�����[�������ɂ������񂾂�H���Ď�)
- �����`��
+  (127 は要はボリューム半分にしたいんだろ？って事)
+ 内部形式
   uint16_t
 
-���[�U�����h����
- �t���[�������̎��A���͑҂�����������
-  �t���[�������̃f�[�^�͎��i�ɑ��o�ł��Ȃ��̂ő҂B
-  �N���[�Y�A�t���b�V���A�h���C���A�t�H�[�}�b�g�ݒ肪�R�[�������ƁA�s���S�t���[���͔j������B
+ユーザランド入力
+ フレーム未満の時、入力待ちが発生する
+  フレーム未満のデータは次段に送出できないので待つ。
+  クローズ、フラッシュ、ドレイン、フォーマット設定がコールされると、不完全フレームは破棄する。
 
-  ���[���̓G���R�[�f�B���O�ϊ����ɒZ���u���b�N�ɖ�����t�������Ċ��S������B
-   (�����Ŗ�����t���������Ƃ͂ł��Ȃ��B
-    �Ȃ��Ȃ�A�G���R�[�f�B���O��S���m���Ă��Ȃ���΂Ȃ�Ȃ�����B
-    �����͉\�����A���ʂł���B)
- �ϊ��o�b�t�@�󂫑҂�����������(����Ȉꔭwrite���Ȃ�)
- ��{�I�ɁA�u���b�N�t���[���ɕ������Ď��i�֑��o����B
+  レーンはエンコーディング変換時に短いブロックに無音を付け足して完全化する。
+   (ここで無音を付け足すことはできない。
+    なぜなら、エンコーディングを全部知っていなければならないから。
+    実装は可能だが、無駄である。)
+ 変換バッファ空き待ちが発生する(巨大な一発write時など)
+ 基本的に、ブロックフレームに分割して次段へ送出する。
 
-    �Z�����������ɏo��������
-    �f�[�^���������P�ʂœ]�����Ă�����
-    �f�[�^�̒��������[�Ȏ�
-     -> ��{�A�N���[�Y���h���C�����`���t����
+    短い音をすぐに出したい時
+    データを小さい単位で転送してきた時
+    データの長さが半端な時
+     -> 基本、クローズかドレインを義務付ける
  
-�G���R�[�f�B���O�ϊ�
- �u���b�N�t���[���T�C�Y�ȉ��̂Ƃ��͖�����t������(SLINEAR �Ȃ̂�0�t�B���ł���)
-�`�����l���ϊ�
-���g���ϊ�
- �~�L�T�o�b�t�@�󂫑҂�����������
-���[���~�L�V���O
- �o�̓o�b�t�@�󂫑҂�����������
-�n�[�h�E�F�A�o��
- ���R�o�͑҂�����������
- �n�[�h�E�F�A�������t�H�[�}�b�g���T�|�[�g���Ȃ��Ƃ��A���̕ϊ��� MD �h���C�o�̐ӔC�B
+エンコーディング変換
+ ブロックフレームサイズ以下のときは無音を付け足す(SLINEAR なので0フィルでいい)
+チャンネル変換
+周波数変換
+ ミキサバッファ空き待ちが発生する
+レーンミキシング
+ 出力バッファ空き待ちが発生する
+ハードウェア出力
+ 当然出力待ちが発生する
+ ハードウェアが内部フォーマットをサポートしないとき、その変換は MD ドライバの責任。
 
-�^��
-�n�[�h�E�F�A����
- ���͑҂�����������B
- ���͂̓u���b�N�t���[���̃t���[��������܂Ŋ������Ȃ��B
- ���i�ւ͕K���u���b�N�t���[���P�ʂő��o����B
- �����t�H�[�}�b�g�ő��o�B�n�[�h�E�F�A�������t�H�[�}�b�g���T�|�[�g���Ȃ��Ƃ��A���̕ϊ��� MD �h���C�o�̐ӔC�B
+録音
+ハードウェア入力
+ 入力待ちが発生する。
+ 入力はブロックフレーム個のフレームが来るまで完了しない。
+ 次段へは必ずブロックフレーム単位で送出する。
+ 内部フォーマットで送出。ハードウェアが内部フォーマットをサポートしないとき、その変換は MD ドライバの責任。
 
-���[���f�~�L�V���O
- �O�i����̓��͑҂�����������
- �e���[���ɃR�s�[
-���g���ϊ�
- ���[�U�����h����v�����ꂽ���g���֕ϊ�
-�`�����l���ϊ�
- ���[�U�����h����v�����ꂽ�`�����l�����֕ϊ�
-�G���R�[�f�B���O�ϊ�
- ���[�U�����h����v�����ꂽ�G���R�[�f�B���O�֕ϊ�
-���[�U�����h�o��
- �O�i����̓��͑҂�����������
- �]���o�C�g���̓t���[���P�ʂŁB(read �ŗv�������T�C�Y���ǂ߂�Ƃ͌���Ȃ�)
+レーンデミキシング
+ 前段からの入力待ちが発生する
+ 各レーンにコピー
+周波数変換
+ ユーザランドから要求された周波数へ変換
+チャンネル変換
+ ユーザランドから要求されたチャンネル数へ変換
+エンコーディング変換
+ ユーザランドから要求されたエンコーディングへ変換
+ユーザランド出力
+ 前段からの入力待ちが発生する
+ 転送バイト数はフレーム単位で。(read で要求したサイズが読めるとは限らない)
 
-�ނ��������ȁB
-�^������ Userland read �Ԃ̃f�[�^���ǂ����邩������B
+むずかしいな。
+録音時は Userland read 間のデータをどうするかが難しい。
 
 time->
             |------|------|------|------|
 
 read call   ^
 read data   <---------->
-read call                ^                �n�[�h�E�F�A�̓���^�C�~���O�Ǝ���read�Ăяo���͓������Ȃ��̂ŁA���ԂɃt���[�����ł���
-read data               <---------->      �o�b�t�@�����O����ĂĘA�������B���Ⴀ�ǂ��܂Ńo�b�t�@�����O����̂�?
+read call                ^                ハードウェアの動作タイミングと次のread呼び出しは同期しないので、隙間にフレームができる
+read data               <---------->      バッファリングされてて連結される。じゃあどこまでバッファリングするのか?
 OR
-read data                <---------->     �����ԗD��(����͍���̎������Ɠ��)
+read data                <---------->     実時間優先(これは今回の実装だと難しい)
 OR
-read data                 <---------->    ���̃u���b�N����(�������)�B�ꔭ�ő�e��read�𔭍s���邵���Ȃ�
+read data                 <---------->    次のブロックから(音が飛ぶ)。一発で大容量readを発行するしかない
 
 
             |------|------|------|------|
 
 read call   ^
 read data   <---------->
-read call                ^                �n�[�h�E�F�A�̓���^�C�~���O�Ǝ���read�Ăяo���͓������Ȃ��̂ŁA���ԂɃt���[�����ł���
-read data               <---------->      ���ꂮ�炢�Ȃ�킩�邯��
+read call                ^                ハードウェアの動作タイミングと次のread呼び出しは同期しないので、隙間にフレームができる
+read data               <---------->      これぐらいならわかるけど
 
             |------|------|------|------|
 
 read call   ^
 read data   <---------->
-read call                           ^     ����Ȃɒx�����ꂽ��
-read data               <---------->      ����Ȃ�?
+read call                           ^     こんなに遅延されたら
+read data               <---------->      ありなん?
 
 
-��������(1��ɉ��o�C�g�ǂ݂������͂킩���Ă�)�g�[�^�����t���[���ǂݍ��݂�����
-���킩��Ȃ��̂��C�^�C�B�������� RTOS �łȂ��Ƃ����Ȃ��̂ɁB
+そもそも(1回に何バイト読みたいかはわかっても)トータル何フレーム読み込みたいか
+がわからないのがイタイ。ここだけ RTOS でないといけないのに。
 
-�t�]�̔��z
-read �Ř^�����J�n����̂ł͂Ȃ��A
-open, set_format �Ř^�����J�n ���쒆�͂����ƃn�[�h�E�F�A�͘^�����Ă���
+逆転の発想
+read で録音を開始するのではなく、
+open, set_format で録音を開始 動作中はずっとハードウェアは録音しておく
             |------|------|------|------|
 
 open        ^
 read call             ^
 read data   <---------->
 
-open �Ř^�����J�n���� 1 �u���b�N�͏펞circler�o�b�t�@�����O�B
-read ����΂ꂽ��o�b�t�@�����O���ƁA�s�����͎�������̂�҂��ĕԂ��B
+open で録音を開始して 1 ブロックは常時circlerバッファリング。
+read がよばれたらバッファリング分と、不足分は次が来るのを待って返す。
 
-�^�C�~���O�J�E���^���ق����������������
-read ����������؂�グ+1�u���b�N�͓ǂ�ł����Ƃ��ł��������������
- �o�b�t�@�t���b�V�������
+タイミングカウンタ持つほうがいいかもしれん
+read があったら切り上げ+1ブロックは読んでおくとかでもいいかもしれん
+ バッファフラッシュが難しい
 
 
 
-PLAY ONLY �f�o�C�X (�Ȃ�����)
- -> WRONLY �ł̂݊J����
+PLAY ONLY デバイス (ないけど)
+ -> WRONLY でのみ開ける
     RDONLY,RDWR == EACCES
-REC ONLY �f�o�C�X (�Ȃ�����)
- -> RDONLY �ł̂݊J����
+REC ONLY デバイス (ないけど)
+ -> RDONLY でのみ開ける
     WRONLY,RDWR == EACCES
-HALF �f�o�C�X�͂ǂ������
- -> Open ���_�ŕБ����ݒʍs�B
- RDONLY(REC) �ň�l�J������ȍ~ REC �̂�(�S��close�ŏ�����)
-  REC��Ԃ� WRONLY == EPERM
- WRONLY(PLAY)�ň�l�J������ȍ~ PLAY�̂�(�S��close�ŏ�����)
-  PLAY��Ԃ� RDONLY == EPERM
+HALF デバイスはどうするの
+ -> Open 時点で片側交互通行。
+ RDONLY(REC) で一人開いたら以降 REC のみ(全員closeで初期化)
+  REC状態で WRONLY == EPERM
+ WRONLY(PLAY)で一人開いたら以降 PLAYのみ(全員closeで初期化)
+  PLAY状態で RDONLY == EPERM
  RDWR == EACCES
-  -> �������Ȃ��ƒ჌�C�e���V�Ɨ����ł��Ȃ��B�㉽�t���[��r/w�����A����
-     �錾�������Ă��̒ʂ�ɃA�N�Z�X������Ă�����Ȃ�o���邯�ǁA
-     ���������S�Ɍ���ł���Ƃ͌���Ȃ�����A���̕��@�͔񌻎��I�B
-FULL �f�o�C�X
- RDONLY, WRONLY, RDWR ���R�B
+  -> こうしないと低レイテンシと両立できない。後何フレームr/wするよ、って
+     宣言があってその通りにアクセスするっていうんなら出来るけど、
+     将来を完全に決定できるとは限らないから、この方法は非現実的。
+FULL デバイス
+ RDONLY, WRONLY, RDWR 自由。
 
-EROFS ���߂����� EWOFS ���Ȃ����� EPERM �����Ȃ�����
+EROFS が近いけど EWOFS がないから EPERM しかないかな
 
-���邢��
-�@���̂ւ�̏�����S��MIX-MD�Ԃɂ���pxhw���S���B������FULL�Ɍ�����
-PLAY ONLY �� RD �͖�����Ԃ�
-REC ONLY �� WR �͂Ȃɂ����Ȃ�
-HALF �� 1 �u���b�N���Ƃ� RD/WR ��؂芷���ł���悤�ɂȂ��Ă���
- ���̂Ƃ��̃��N�G�X�g�L���[�ɉ����ē��삷��
-  (�^���Đ��̓v�`�v�`�؂�邩������񂵁A������Ԃ���������񂵁A
-�Ȃɂ����Ȃ����������) ����ȕs����ł������񂩁H
+あるいは
+　このへんの処理を全部MIX-MD間にあるpxhwが全部隠蔽してFULLに見せる
+PLAY ONLY は RD は無音を返す
+REC ONLY は WR はなにもしない
+HALF は 1 ブロックごとに RD/WR を切り換えできるようになっていて
+ そのときのリクエストキューに応じて動作する
+  (録音再生はプチプチ切れるかもしれんし、無音を返すかもしれんし、
+なにもしないかもしれん) こんな不安定でもいいんか？
 
-�Đ���p��Userland�Ȃ� WRONLY �ŊJ���΂�����
-�^����p��Userland�Ȃ� RDONLY �ŊJ���΂�����
-�������A���^�C���ɂ��Userland �Ȃ� RDWR �ŊJ���΂���
-�J���Ȃ���Α��G���[�Ń_���ł����ŗǂ��񂶂�Ȃ���
- EACCES �Ȃ�T�|�[�g���Ă܂����
- EPERM �Ȃ瑼�l���g���Ăđʖڂł�
-�@�������Ƃӂ��킵���G���[�R�[�h������Ȃ炻��B�Ƃɂ���
-�@�@��ʂł��邱�Ƃ��d�v
+再生専用のUserlandなら WRONLY で開けばいいし
+録音専用のUserlandなら RDONLY で開けばいいし
+両方リアルタイムにやるUserland なら RDWR で開けばいい
+開けなければ即エラーでダメでしたで良いんじゃないか
+ EACCES ならサポートしてませんよ
+ EPERM なら他人が使ってて駄目です
+　＊もっとふさわしいエラーコードがあるならそれ。とにかく
+　　区別できることが重要
 
-����Ă݂����ǎ����E�̌��ʂ��ǂ��Ȃ����������[�U�����h�\�t�g�͂킩�炸
-�l�Ԃ������u���ꉹ���łȂ��ȁv�ł́A�_���Ȃ񂶂�Ȃ���
-�u�X�s�[�J�[�͂Ȃ����Ă܂����v�u�R���Z���g�͂Ȃ����Ă܂����v
-�u�{�����[���͑傫���Ȃ��Ă܂����v�Ȃ番���邪
-�uHALF�f�o�C�X�ő��̃��[�����^�����Ă܂��񂩁v�͕�������
-��Ř^���Đ��̕Б����ݒʍs���m���ɏ����ł���̂̓I�[�v�����_�Ȃ̂�
-�I�[�v�����_�ł��̂���ԃ��[�U�����h�����₷���Ǝv���B
-�I�[�v���͏o�������� read/write ���_�� EAGAIN �Ȃ�ŕԂ���Ă�
-audio �̓��A���^�C���f�o�C�X�Ȃ̂Ŗ��ɗ����Ȃ��B
+やってみたけど実世界の結果がどうなったかがユーザランドソフトはわからず
+人間だけが「あれ音がでないな」では、ダメなんじゃないの
+「スピーカーはつながってますか」「コンセントはつながってますか」
+「ボリュームは大きくなってますか」なら分かるが
+「HALFデバイスで他のレーンが録音してませんか」は分からんよ
+んで録音再生の片側交互通行が確実に処理できるのはオープン時点なので
+オープン時点でやるのが一番ユーザランドもやりやすいと思う。
+オープンは出来たけど read/write 時点で EAGAIN なりで返されても
+audio はリアルタイムデバイスなので役に立たない。
 
-HALF �͓��ɔ�݊��ύX�����ǁA���Ƃ���
-�u�n�[�h�f�B�X�N�͓��ɊǗ����Ȃ�����Z�N�^�ԍ��ŃA�N�Z�X�v
-�݂����ȏ�Ԃ���
-�u�t�@�C���V�X�e���o�R���Ȃ��A�N�Z�X�͋֎~��v
-�ɂȂ����悤�Ȃ��̂Ȃ̂Ŏd���Ȃ��̂ł͂Ȃ����B
-�r���I�[�v���Ń~�L�T�p�X�X���[��Ԃł��ADMA �܂Ń��[�U�����h����
-����悤�ɂ���C�͂Ȃ��B�t�H�[�}�b�g�݂̂̓��߂ōs�������B
+HALF は特に非互換変更だけど、もともと
+「ハードディスクは特に管理しないからセクタ番号でアクセス」
+みたいな状態から
+「ファイルシステム経由しないアクセスは禁止よ」
+になったようなものなので仕方ないのではないか。
+排他オープンでミキサパススルー状態でも、DMA までユーザランドから
+つつけるようにする気はない。フォーマットのみの透過で行きたい。
 
 
-HALF device 1���[����
+HALF device 1レーン目
 open              setinfo              read              write
 ----------------------------------------------------------------------
 O_WRONLY=OK
                   0=?*                 EBADF             ?*
                   PLAY=OK              EBADF             OK
                   REC=OK(?)*           EBADF             return 0*
-                  PLAY|REC=PLAY*       EBADF             OK(���Ԃ�)*
+                  PLAY|REC=PLAY*       EBADF             OK(たぶん)*
 
 O_RDONLY=OK
                   0=*                  ?*                EBADF
-                  PLAY=OK(?)*          ����*             EBADF
+                  PLAY=OK(?)*          無音*             EBADF
                   REC=OK               OK                EBADF
-                  PLAY|REC=PLAY*       ����*             EBADF
+                  PLAY|REC=PLAY*       無音*             EBADF
 
 O_RDWR=OK 
                   0=*                  ?*                ?*
-                  PLAY=OK              ����*             OK
+                  PLAY=OK              無音*             OK
                   REC=OK               OK                return 0*
-                  PLAY|REC=PLAY        ����*             OK
+                  PLAY|REC=PLAY        無音*             OK
 
 
 
-HALF device 2���[���� (1���[����: PLAY)
+HALF device 2レーン目 (1レーン目: PLAY)
 open              setinfo              read              write
 ----------------------------------------------------------------------
 O_WRONLY=OK
                   0=?                  EBADF             ?
                   PLAY=OK              EBADF             OK
                   REC=OK(?)            EBADF             return 0
-                  PLAY|REC=PLAY        EBADF             OK(���Ԃ�)
+                  PLAY|REC=PLAY        EBADF             OK(たぶん)
 
 O_RDONLY=OK
                   0                    ?                 EBADF
-                  PLAY=OK(?)           ����              EBADF
+                  PLAY=OK(?)           無音              EBADF
                   REC=OK               ???               EBADF
-                  PLAY|REC=PLAY        ����              EBADF
+                  PLAY|REC=PLAY        無音              EBADF
 
 O_RDWR=OK
                   0                    ?                 ?
-                  PLAY=OK              ����              OK
+                  PLAY=OK              無音              OK
                   REC=OK(?)            ???               ?????????
-                  PLAY|REC=PLAY        ����              OK
+                  PLAY|REC=PLAY        無音              OK
 
 
-HALF device 2���[���� (1���[����: REC)
+HALF device 2レーン目 (1レーン目: REC)
 open              setinfo              read              write
 ----------------------------------------------------------------------
 O_WRONLY=OK
                   0=?                  EBADF             ?
                   PLAY=OK              EBADF             OK
                   REC=OK(?)            EBADF             return 0
-                  PLAY|REC=PLAY        EBADF             OK(���Ԃ�)
+                  PLAY|REC=PLAY        EBADF             OK(たぶん)
 
 O_RDONLY=OK
                   0                    ?                 EBADF
-                  PLAY=OK(?)           ����              EBADF
+                  PLAY=OK(?)           無音              EBADF
                   REC=OK               OK                EBADF
-                  PLAY|REC=PLAY        ����              EBADF
+                  PLAY|REC=PLAY        無音              EBADF
 
 O_RDWR=OK
                   0                    ?                 ?
-                  PLAY=OK              ����              OK
+                  PLAY=OK              無音              OK
                   REC=OK               OK                return 0
-                  PLAY|REC=PLAY        ����              OK
+                  PLAY|REC=PLAY        無音              OK
 
 
 
@@ -351,25 +351,25 @@ O_RDWR=OK
 
 
 dev/sound
- �J������O��̏�Ԃ��ێ�����Ă���
- setformat �Ƃ�����Ɗo���Ă���
- �Ō�� setformat ���ꂽ���̂����񌩂���
- setformat ���Ăяo�������A���łɊJ����Ă��郌�[���̏�Ԃ͕ύX����Ȃ�
+ 開いたら前回の状態が保持されている
+ setformat とかすると覚えておく
+ 最後に setformat されたものが次回見える
+ setformat を呼び出した時、すでに開かれているレーンの状態は変更されない
 
 
 
 
 mmap
 
-�����mmap�d�l�̓t���[�������Ă���f�o�C�X�o�b�t�@���̂܂܂������Ă���A
-�Ȃ̂���������Ďg���悤������񂾂낤���H
+現状のmmap仕様はフリーランしているデバイスバッファそのままが見えている、
+なのだがこれって使いようがあるんだろうか？
 
-�J�[�l�����o�b�t�@��������mmap�ł��ăR�~�b�g����AALSA/OSS �̂悤��
-mmap ���������߂��Ă���̂ł͂Ȃ����H
+カーネル内バッファメモリをmmapできてコミットする、ALSA/OSS のような
+mmap 方式が求められているのではないか？
 
 
 
-�Đ��o�b�t�@�t���[
+再生バッファフロー
 
         write(buf,n)                                                          mmap,ioctl(commit)
              |                                                                      |
@@ -379,7 +379,7 @@ mmap ���������߂��Ă���̂ł͂Ȃ����H
              |       === lane ===    |                                              |
              |                       V                                              |
 +--------------------------------------+     EXCL                                   |
-+ userio buf���|�C���g                 +-----------------------------+              |
++ userio bufをポイント                 +-----------------------------+              |
 +--------------------------------------+                             |              |
   |                                  |                               |              |
   +---------*==[encode convert]     +--------+                       |              |
@@ -416,7 +416,7 @@ mmap ���������߂��Ă���̂ł͂Ȃ����H
 + mix  SLinternal2HE        +                                        |              |
 +---------------------------+                                        |              |
               |                                                      |              |
-        [convert encoding]  64->16�Ƃ� HE->(LE,BE)                   |              |
+        [convert encoding]  64->16とか HE->(LE,BE)                   |              |
               |                                                      |              |
               V                                                      |              |
 +---------------------------+                                        |              |
@@ -436,59 +436,59 @@ mmap ���������߂��Ă���̂ł͂Ȃ����H
 +--------------------+
 
 
-�{�����[���̘b
+ボリュームの話
 
-N7 �܂�
+N7 まで
 
-/dev/audio play.gain, play.balance �͗����n�[�h�E�F�A�ɒ���(output.master��������)
-/dev/mixer output.master �̓n�[�h�E�F�A�ɒ���
+/dev/audio play.gain, play.balance は両方ハードウェアに直結(output.masterをいじる)
+/dev/mixer output.master はハードウェアに直結
 
 N8
 
-/dev/audio play.gain �̓\�t�g�E�F�A�Q�C��, play.balance �̓n�[�h�E�F�A�ɒ���
-/dev/mixer output.master �̓n�[�h�E�F�A�ɒ���
+/dev/audio play.gain はソフトウェアゲイン, play.balance はハードウェアに直結
+/dev/mixer output.master はハードウェアに直結
 
-�V����(?)
+新実装(?)
 
-(1) N7 �݊�
-/dev/audio play.gain, play.balance �͗����n�[�h�E�F�A�ɒ���(output.master��������)
-/dev/mixer output.master �̓n�[�h�E�F�A�ɒ���
+(1) N7 互換
+/dev/audio play.gain, play.balance は両方ハードウェアに直結(output.masterをいじる)
+/dev/mixer output.master はハードウェアに直結
 
-(2) N8 �݊�
-/dev/audio play.gain �̓\�t�g�E�F�A�Q�C��, play.balance �̓n�[�h�E�F�A�ɒ���
-/dev/mixer output.master �̓n�[�h�E�F�A�ɒ���
+(2) N8 互換
+/dev/audio play.gain はソフトウェアゲイン, play.balance はハードウェアに直結
+/dev/mixer output.master はハードウェアに直結
 
-(3) /dev/audio �̓\�t�g�E�F�A�����A/dev/mixer �̓n�[�h�E�F�A����
-/dev/audio play.gain �̓\�t�g�E�F�A�Q�C��, play.balance �̓\�t�g�E�F�A�o�����X
-/dev/mixer output.master �̓n�[�h�E�F�A�ɒ���
+(3) /dev/audio はソフトウェア扱い、/dev/mixer はハードウェア扱い
+/dev/audio play.gain はソフトウェアゲイン, play.balance はソフトウェアバランス
+/dev/mixer output.master はハードウェアに直結
 
-�{���� /dev/audio �̓��[�U�����h����͓Ɨ��������[���Ɍ����Ă���B
-�Ȃ̂Ń��[�����̃\�t�g�{�����[���ƃ\�t�g�o�����X������ׂ��Ȃ�ł͂Ȃ����B
-
-
-
-
-
-dev_t dev 		�O���痈��n���h�� ���͌����Ȃ�
-
-audio_softc sc		/dev/audio, /dev/sound, /dev/mixer /dev/audioctl �̃f�o�C�X�\����
-�Ăяo�����ǂ̃f�o�C�X�t�@�C���Ȃ̂��� dev �����ŕ�����B
-
-MD device: hw_if	sc->hw_if ����ăn�[�h�E�F�A�Ƃ���肷��
+本来は /dev/audio はユーザランドからは独立したレーンに見えている。
+なのでレーン毎のソフトボリュームとソフトバランスがあるべきなんではないか。
 
 
 
 
-�`�����l���}�b�s���O
 
-�E�f�t�@�N�g�������MI���͂���ɏ�������B
+dev_t dev 		外から来るハンドル 中は見えない
 
-MI ���� MD �ɓn�����`�����l���̏����� Windows (uaudio) �݊��̏����ő�����B
+audio_softc sc		/dev/audio, /dev/sound, /dev/mixer /dev/audioctl のデバイス構造体
+呼び出しがどのデバイスファイルなのかは dev 引数で分かる。
 
-lane ���󂯎��`�����l�����́Auserland �� setinfo �����`�����l�����B
-lane ���󂯎��`�����l���������AWindows �݊��̏����B
-setinfo �ɍ��͖��� channel_mask �̐ݒ�͂ǂ������?  =>�Ȃɂ������
- setinfo �ł̃`�����l�����Ńf�t�H���g�� channel_mask �l������Z�b�g����
+MD device: hw_if	sc->hw_if を介してハードウェアとやり取りする
+
+
+
+
+チャンネルマッピング
+
+・デファクトがあればMI側はそれに準拠する。
+
+MI から MD に渡されるチャンネルの順序は Windows (uaudio) 互換の順序で送られる。
+
+lane が受け取るチャンネル数は、userland が setinfo したチャンネル数。
+lane が受け取るチャンネル順序が、Windows 互換の順序。
+setinfo に今は無い channel_mask の設定はどうするの?  =>なにがし作る
+ setinfo でのチャンネル数でデフォルトの channel_mask 値を内部セットする
   1 => CENTER
   2 => LEFT | RIGHT
   3 => LEFT | RIGHT | LOWFREQ
@@ -497,13 +497,13 @@ setinfo �ɍ��͖��� channel_mask �̐ݒ�͂ǂ������?  =>�Ȃɂ������
   6 => LEFT | RIGHT | CETNER | LOWFREQ | BACKL | BACKR
 
 
-(lane ���`�����l����������)
-�`�����l�������[�e�B���O�ǂ�����
-��Ɖ��̃`�����l���}�X�N���킩���Ă���̂ŁA�����[�e�B���O�͋Z�p�I�ɂ͉\�Ƃ�������
+(lane がチャンネル合成する)
+チャンネルリルーティングどうする
+上と下のチャンネルマスクがわかっているので、リルーティングは技術的には可能ということ
 
 
-lanemixer ����������`�����l�����́AMD �`�����l�����B
-lanemixer �� MD �֏o�͂���`�����l�������� Windows �݊��̏����B
-channel_mask ���|�[�g�� Windows �݊��ɂȂ�悤�ɂ���
+lanemixer が処理するチャンネル数は、MD チャンネル数。
+lanemixer が MD へ出力するチャンネル順序が Windows 互換の順序。
+channel_mask レポートが Windows 互換になるようにする
 
 
