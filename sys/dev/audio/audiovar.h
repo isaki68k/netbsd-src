@@ -76,7 +76,6 @@ typedef struct audio_trackmixer audio_trackmixer_t;
 typedef struct audio_file audio_file_t;
 typedef struct audio_softc audio_softc_t;
 typedef struct audio_convert_arg audio_convert_arg_t;
-typedef struct audio_codec audio_codec_t;
 
 /*
 * 簡易帯分数表現
