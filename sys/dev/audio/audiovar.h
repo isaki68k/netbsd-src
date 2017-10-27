@@ -240,8 +240,8 @@ struct audio_file
 struct audio_softc
 {
 	SLIST_HEAD(files_head, audio_file) files;		/* 開いているファイルのリスト */
-	audio_trackmixer_t  mixer_play;		/* 接続されている再生ミキサ */
-	audio_trackmixer_t  mixer_rec;		/* 接続されている録音ミキサ */
+	audio_trackmixer_t  pmixer;		/* 接続されている再生ミキサ */
+	audio_trackmixer_t  rmixer;		/* 接続されている録音ミキサ */
 
 	void *phys; // 実物理デバイス
 };

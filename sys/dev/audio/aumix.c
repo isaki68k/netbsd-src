@@ -1006,9 +1006,9 @@ sys_open(audio_softc_t *sc, int mode)
 	file->sc = sc;
 
 	if (mode == AUDIO_PLAY) {
-		audio_track_init(&file->ptrack, &sc->mixer_play);
+		audio_track_init(&file->ptrack, &sc->pmixer);
 	} else {
-		audio_track_init(&file->rtrack, &sc->mixer_rec);
+		audio_track_init(&file->rtrack, &sc->rmixer);
 	}
 
 	SLIST_INSERT_HEAD(&sc->files, file, entry);
