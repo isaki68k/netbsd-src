@@ -148,13 +148,13 @@ main(int ac, char *av[])
 
 		f->file = sys_open(sc, AUDIO_PLAY);
 		/* この辺は ioctl になる */
-		f->file->track_play.volume = 256;
-		f->file->track_play.mixer->volume = 256;
+		f->file->ptrack.volume = 256;
+		f->file->ptrack.mixer->volume = 256;
 		for (int j = 0; j < 2; j++) {
-			f->file->track_play.ch_volume[j] = 256;
+			f->file->ptrack.ch_volume[j] = 256;
 		}
 
-		audio_track_set_format(&f->file->track_play, &f->fmt);
+		audio_track_set_format(&f->file->ptrack, &f->fmt);
 
 		f->play = true;
 		f->wait = i * 5;
@@ -208,7 +208,7 @@ child_loop(struct test_file *f, int loop)
 	int n = min(f->mem.count, 625*8);
 	if (n == 0) {
 		f->play = false;
-		audio_track_play_drain(&f->file->track_play);
+		audio_track_play_drain(&f->file->ptrack);
 		return -1;
 	} else {
 		//printf("%d %d ", i, n);

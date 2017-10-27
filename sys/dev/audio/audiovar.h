@@ -230,8 +230,8 @@ struct audio_trackmixer
 struct audio_file
 {
 	audio_softc_t  *sc;				/* 論理デバイス */
-	audio_track_t   track_play;		/* 再生トラック */
-	audio_track_t   track_rec;		/* 録音トラック */
+	audio_track_t   ptrack;			/* 再生トラック */
+	audio_track_t   rtrack;			/* 録音トラック */
 
 	SLIST_ENTRY(audio_file) entry;
 };
