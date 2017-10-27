@@ -71,8 +71,8 @@ typedef uint64_t uinternal2_t;
 /* 前方参照 */
 typedef struct audio_format audio_format_t;
 typedef struct audio_ring audio_ring_t;
-typedef struct audio_lane audio_lane_t;
-typedef struct audio_lanemixer audio_lanemixer_t;
+typedef struct audio_track audio_track_t;
+typedef struct audio_trackmixer audio_trackmixer_t;
 typedef struct audio_file audio_file_t;
 typedef struct audio_softc audio_softc_t;
 typedef struct audio_convert_arg audio_convert_arg_t;
@@ -124,7 +124,7 @@ struct audio_filter_arg
 */
 typedef int(*audio_filter_t)(audio_filter_arg_t *arg);
 
-struct audio_lane
+struct audio_track
 {
 	audio_format_t     userio_fmt;		/* ユーザランドとのやり取りで使用するフォーマット */
 	audio_ring_t       userio_buf;		/* ユーザランド側とのやり取りで使用するデータ。 */
@@ -135,38 +135,38 @@ struct audio_lane
 	int                userio_frames_of_block;	/* ユーザランド周波数での 1 ブロックのフレーム数 */
 
 	uint16_t ch_volume[AUDIO_MAX_CH];	/* チャンネルバランス用 チャンネルボリューム */
-	uint16_t           volume;			/* レーンボリューム */
+	uint16_t           volume;			/* トラックボリューム */
 
 	bool channelmix_all;
 
 	uint8_t enconvert_mode;
-#define AUDIO_LANE_ENCONVERT_THRU		0x00
-#define AUDIO_LANE_ENCONVERT_INLINE		0x01
-#define AUDIO_LANE_ENCONVERT_BUFFER		0x02
+#define AUDIO_TRACK_ENCONVERT_THRU		0x00
+#define AUDIO_TRACK_ENCONVERT_INLINE		0x01
+#define AUDIO_TRACK_ENCONVERT_BUFFER		0x02
 	uint8_t chmix_mode;
-#define AUDIO_LANE_CHANNEL_THRU			0x00
-#define AUDIO_LANE_CHANNEL_INLINE		0x01
-#define AUDIO_LANE_CHANNEL_BUFFER		0x02
+#define AUDIO_TRACK_CHANNEL_THRU			0x00
+#define AUDIO_TRACK_CHANNEL_INLINE		0x01
+#define AUDIO_TRACK_CHANNEL_BUFFER		0x02
 
-#define AUDIO_LANE_CHANNEL_SHRINK		0x00
-#define AUDIO_LANE_CHANNEL_EXPAND		0x10
-#define AUDIO_LANE_CHANNEL_MIXLR		0x20
-#define AUDIO_LANE_CHANNEL_MIXALL		0x30
-#define AUDIO_LANE_CHANNEL_DUPLR		0x40
-#define AUDIO_LANE_CHANNEL_DUPALL		0x50
-#define AUDIO_LANE_CHANNEL_MIX_MASK		0x70
+#define AUDIO_TRACK_CHANNEL_SHRINK		0x00
+#define AUDIO_TRACK_CHANNEL_EXPAND		0x10
+#define AUDIO_TRACK_CHANNEL_MIXLR		0x20
+#define AUDIO_TRACK_CHANNEL_MIXALL		0x30
+#define AUDIO_TRACK_CHANNEL_DUPLR		0x40
+#define AUDIO_TRACK_CHANNEL_DUPALL		0x50
+#define AUDIO_TRACK_CHANNEL_MIX_MASK		0x70
 
-#define AUDIO_LANE_CHANNEL_VOLUME		0x80
+#define AUDIO_TRACK_CHANNEL_VOLUME		0x80
 
 	uint8_t freq_mode;
-#define AUDIO_LANE_FREQ_THRU			0x00
-#define AUDIO_LANE_FREQ_INLINE			0x01
-#define AUDIO_LANE_FREQ_BUFFER			0x02
+#define AUDIO_TRACK_FREQ_THRU			0x00
+#define AUDIO_TRACK_FREQ_INLINE			0x01
+#define AUDIO_TRACK_FREQ_BUFFER			0x02
 	uint8_t volume_mode;
-#define AUDIO_LANE_VOLUME_THRU			0x00
-#define AUDIO_LANE_VOLUME_INLINE		0x01
+#define AUDIO_TRACK_VOLUME_THRU			0x00
+#define AUDIO_TRACK_VOLUME_INLINE		0x01
 
-	audio_filter_t     codec;			/* userio <-> lane コーデックフィルタ */
+	audio_filter_t     codec;			/* userio <-> track コーデックフィルタ */
 	audio_filter_arg_t codec_arg;		/* とその引数 */
 
 	audio_format_t     enconvert_fmt;
@@ -184,28 +184,28 @@ struct audio_lane
 	audio_rational_t   freq_step;		/* 周波数変換用分数 (変換元周波数 / 変換先周波数) */
 	audio_rational_t   freq_current;	/* 周波数変換用 現在のカウンタ */
 
-	audio_ring_t       lane_buf;		/* レーンミキサとのバッファ */
+	audio_ring_t       track_buf;		/* トラックミキサとのバッファ */
 
-	audio_lanemixer_t  *mixer;			/* 接続されているレーンミキサ */
-	int                mixed_count;		/* レーンミキサのミキサバッファにあって出力を待っているこのレーンのフレーム数 */
-	int                hw_count;		/* レーンミキサのハードウェアバッファにあって出力完了を待っているこのレーンのフレーム数 */
+	audio_trackmixer_t  *mixer;			/* 接続されているトラックミキサ */
+	int                mixed_count;		/* トラックミキサのミキサバッファにあって出力を待っているこのトラックのフレーム数 */
+	int                hw_count;		/* トラックミキサのハードウェアバッファにあって出力完了を待っているこのトラックのフレーム数 */
 
 	bool is_draining;					/* drain 実行中 */
-	bool is_pause;						/* lane_buf への lanemixer からのアクセスを一時停止する */
+	bool is_pause;						/* track_buf への trackmixer からのアクセスを一時停止する */
 
 
 	/* できるかどうか未知 */
 	uint64_t userio_counter;			/* userio_buf の読み書きフレーム数 */
-	uint64_t lane_counter;				/* lane_buf のレーン側読み書きフレーム数 */
+	uint64_t track_counter;				/* track_buf のトラック側読み書きフレーム数 */
 
-	uint64_t lane_mixer_counter;		/* lane_buf のレーンミキサ側読み書きフレーム数 */
+	uint64_t track_mixer_counter;		/* track_buf のトラックミキサ側読み書きフレーム数 */
 	uint64_t mixer_hw_counter; /* mixer <-> hw 入出力フレーム数 */
 	uint64_t hw_complete_counter; /* ハードウェア I/O が完了したフレーム数 */
 };
 
-struct audio_lanemixer
+struct audio_trackmixer
 {
-	audio_format_t lane_fmt;			/* ミキサのレーン側入出力フォーマット */
+	audio_format_t track_fmt;			/* ミキサのトラック側入出力フォーマット */
 										/* precision == stride は保証 */
 
 	int frames_of_block;				/* 内部周波数での 1 ブロックのフレーム数 */
@@ -231,8 +231,8 @@ struct audio_lanemixer
 struct audio_file
 {
 	audio_softc_t  *sc;				/* 論理デバイス */
-	audio_lane_t   lane_play;		/* 再生レーン */
-	audio_lane_t   lane_rec;		/* 録音レーン */
+	audio_track_t   track_play;		/* 再生トラック */
+	audio_track_t   track_rec;		/* 録音トラック */
 
 	SLIST_ENTRY(audio_file) entry;
 };
@@ -241,8 +241,8 @@ struct audio_file
 struct audio_softc
 {
 	SLIST_HEAD(files_head, audio_file) files;		/* 開いているファイルのリスト */
-	audio_lanemixer_t  mixer_play;		/* 接続されている再生ミキサ */
-	audio_lanemixer_t  mixer_rec;		/* 接続されている録音ミキサ */
+	audio_trackmixer_t  mixer_play;		/* 接続されている再生ミキサ */
+	audio_trackmixer_t  mixer_rec;		/* 接続されている録音ミキサ */
 
 	void *phys; // 実物理デバイス
 };

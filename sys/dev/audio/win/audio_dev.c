@@ -49,14 +49,14 @@ void CALLBACK audio_dev_win32_callback(
 	if (uMsg == WOM_DONE) {
 		audio_softc_t *sc = (audio_softc_t*)dwInstance;
 		audio_dev_win32_t *dev = sc->phys;
-		audio_lanemixer_t *mixer = &sc->mixer_play;
+		audio_trackmixer_t *mixer = &sc->mixer_play;
 		WAVEHDR *wh = (WAVEHDR*)dwParam1;
 
 		lock(sc);
 		if (wh->dwBufferLength == 0) {
 			panic("wh->dwBufferLentgh == 0");
 		}
-		audio_lanemixer_intr(mixer, wh->dwBufferLength / dev->wfx.nBlockAlign);
+		audio_trackmixer_intr(mixer, wh->dwBufferLength / dev->wfx.nBlockAlign);
 		wh->dwUser = 0;
 		unlock(sc);
 	}
@@ -174,7 +174,7 @@ void
 audio_softc_play_start(audio_softc_t *sc)
 {
 	audio_dev_win32_t *dev = sc->phys;
-	audio_lanemixer_t *mixer = &sc->mixer_play;
+	audio_trackmixer_t *mixer = &sc->mixer_play;
 
 	lock(sc);
 

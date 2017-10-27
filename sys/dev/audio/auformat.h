@@ -40,41 +40,41 @@ is_internal_format(audio_format_t *fmt)
 
 // いずれかの LINEAR なら true
 static inline bool
-is_LINEAR(audio_format_t *lane_fmt)
+is_LINEAR(audio_format_t *track_fmt)
 {
 	return
-		(lane_fmt->encoding == AUDIO_ENCODING_SLINEAR_LE)
-		|| (lane_fmt->encoding == AUDIO_ENCODING_SLINEAR_BE)
-		|| (lane_fmt->encoding == AUDIO_ENCODING_ULINEAR_LE)
-		|| (lane_fmt->encoding == AUDIO_ENCODING_ULINEAR_BE)
+		(track_fmt->encoding == AUDIO_ENCODING_SLINEAR_LE)
+		|| (track_fmt->encoding == AUDIO_ENCODING_SLINEAR_BE)
+		|| (track_fmt->encoding == AUDIO_ENCODING_ULINEAR_LE)
+		|| (track_fmt->encoding == AUDIO_ENCODING_ULINEAR_BE)
 		;
 }
 
 // いずれかの SLINEAR なら true
 static inline bool
-is_SIGNED(audio_format_t *lane_fmt)
+is_SIGNED(audio_format_t *track_fmt)
 {
 	return
-		(lane_fmt->encoding == AUDIO_ENCODING_SLINEAR_LE)
-		|| (lane_fmt->encoding == AUDIO_ENCODING_SLINEAR_BE)
+		(track_fmt->encoding == AUDIO_ENCODING_SLINEAR_LE)
+		|| (track_fmt->encoding == AUDIO_ENCODING_SLINEAR_BE)
 		;
 }
 
 // ENDIAN を返す
 static inline int
-data_ENDIAN(audio_format_t *lane_fmt)
+data_ENDIAN(audio_format_t *track_fmt)
 {
-	if (lane_fmt->stride == 8) {
+	if (track_fmt->stride == 8) {
 		/* HOST ENDIAN */
 		return BYTE_ORDER;
 	}
 
-	if (lane_fmt->encoding == AUDIO_ENCODING_SLINEAR_LE
-		|| lane_fmt->encoding == AUDIO_ENCODING_ULINEAR_LE) {
+	if (track_fmt->encoding == AUDIO_ENCODING_SLINEAR_LE
+		|| track_fmt->encoding == AUDIO_ENCODING_ULINEAR_LE) {
 		return LITTLE_ENDIAN;
 	}
-	if (lane_fmt->encoding == AUDIO_ENCODING_SLINEAR_BE
-		|| lane_fmt->encoding == AUDIO_ENCODING_ULINEAR_BE) {
+	if (track_fmt->encoding == AUDIO_ENCODING_SLINEAR_BE
+		|| track_fmt->encoding == AUDIO_ENCODING_ULINEAR_BE) {
 		return BIG_ENDIAN;
 	}
 	return BYTE_ORDER;

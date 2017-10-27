@@ -34,16 +34,16 @@ bidi_lsl(uint32_t a, int shift)
 }
 
 
-void audio_lane_init(audio_lane_t *lane, audio_lanemixer_t *mixer);
-void audio_lane_set_format(audio_lane_t *lane, audio_format_t *lane_fmt);
-void audio_lane_play(audio_lane_t *lane);
-void audio_lane_play_drain(audio_lane_t *lane);
+void audio_track_init(audio_track_t *track, audio_trackmixer_t *mixer);
+void audio_track_set_format(audio_track_t *track, audio_format_t *track_fmt);
+void audio_track_play(audio_track_t *track);
+void audio_track_play_drain(audio_track_t *track);
 
-void audio_mixer_init(audio_lanemixer_t *mixer, audio_softc_t *sc, int mode);
-void audio_mixer_play(audio_lanemixer_t *);
-void audio_mixer_play_period(audio_lanemixer_t *mixer);
-void audio_mixer_play_mix_lane(audio_lanemixer_t *mixer, audio_lane_t *lane);
-void audio_lanemixer_intr(audio_lanemixer_t *mixer, int count);
+void audio_mixer_init(audio_trackmixer_t *mixer, audio_softc_t *sc, int mode);
+void audio_mixer_play(audio_trackmixer_t *);
+void audio_mixer_play_period(audio_trackmixer_t *mixer);
+void audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track);
+void audio_trackmixer_intr(audio_trackmixer_t *mixer, int count);
 
 /* glue layer */
 int audio_write(audio_softc_t *sc, struct uio *uio, int ioflag, audio_file_t *file); /* write の MI 側 */
