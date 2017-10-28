@@ -66,6 +66,7 @@ usage()
 	printf(" -f <freq> set ADPCM frequency\n");
 	printf(" -g        (guess) display format only, no playback\n");
 	printf(" -m <MML>  play MML\n");
+	printf(" -w <wait> 1ファイルごとの開始ディレイ (ブロック単位)\n");
 	exit(1);
 }
 
@@ -77,6 +78,7 @@ main(int ac, char *av[])
 	int fileidx = 0;
 	int freq = 15625;
 	int opt_g = 0;		// フォーマットを表示するだけオプション
+	int opt_wait = 0;	// 1ファイルごとの開始ディレイ
 
 	if (ac < 2) {
 		usage();
@@ -102,6 +104,13 @@ main(int ac, char *av[])
 			if (i == ac)
 				usage();
 			freq = atoi(av[i]);
+			continue;
+		}
+		if (strcmp(av[i], "-w") == 0) {
+			i++;
+			if (i == ac)
+				usage();
+			opt_wait = atoi(av[i]);
 			continue;
 		}
 
@@ -157,7 +166,7 @@ main(int ac, char *av[])
 		audio_track_set_format(&f->file->ptrack, &f->fmt);
 
 		f->play = true;
-		f->wait = i * 5;
+		f->wait = i * opt_wait;
 		fileidx++;
 	}
 
