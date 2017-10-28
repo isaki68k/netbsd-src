@@ -706,7 +706,7 @@ audio_mixer_play(audio_trackmixer_t *mixer)
 	int track_count = 0;
 	int track_ready = 0;
 	int mixed = 0;
-	SLIST_FOREACH(f, &mixer->sc->files, entry) {
+	SLIST_FOREACH(f, &mixer->sc->sc_files, entry) {
 		track_count++;
 		audio_track_t *track = &f->ptrack;
 		/* 変換待ちのデータはいね～が */
@@ -870,7 +870,7 @@ mixer->volume--;
 
 	/* トラックにハードウェアへ転送されたことを通知する */
 	audio_file_t *f;
-	SLIST_FOREACH(f, &mixer->sc->files, entry) {
+	SLIST_FOREACH(f, &mixer->sc->sc_files, entry) {
 		audio_track_t *track = &f->ptrack;
 		if (track->mixed_count <= count) {
 			/* 要求転送量が全部転送されている */
@@ -897,7 +897,7 @@ audio_trackmixer_intr(audio_trackmixer_t *mixer, int count)
 
 	/* トラックにハードウェア出力が完了したことを通知する */
 	audio_file_t *f;
-	SLIST_FOREACH(f, &mixer->sc->files, entry) {
+	SLIST_FOREACH(f, &mixer->sc->sc_files, entry) {
 		audio_track_t *track = &f->ptrack;
 		if (track->hw_count <= count) {
 			/* 要求転送量が全部転送されている */
@@ -1006,12 +1006,12 @@ sys_open(audio_softc_t *sc, int mode)
 	file->sc = sc;
 
 	if (mode == AUDIO_PLAY) {
-		audio_track_init(&file->ptrack, &sc->pmixer);
+		audio_track_init(&file->ptrack, &sc->sc_pmixer);
 	} else {
-		audio_track_init(&file->rtrack, &sc->rmixer);
+		audio_track_init(&file->rtrack, &sc->sc_rmixer);
 	}
 
-	SLIST_INSERT_HEAD(&sc->files, file, entry);
+	SLIST_INSERT_HEAD(&sc->sc_files, file, entry);
 
 	return file;
 }

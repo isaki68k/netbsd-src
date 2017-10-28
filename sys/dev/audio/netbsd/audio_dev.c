@@ -70,8 +70,8 @@ audio_attach(audio_softc_t **softc)
 
 	pthread_mutex_init(&dev->mutex, NULL);
 
-	audio_mixer_init(&sc->pmixer, sc, AUDIO_PLAY);
-	audio_mixer_init(&sc->rmixer, sc, AUDIO_REC);
+	audio_mixer_init(&sc->sc_pmixer, sc, AUDIO_PLAY);
+	audio_mixer_init(&sc->sc_rmixer, sc, AUDIO_REC);
 }
 
 void
@@ -88,7 +88,7 @@ void
 audio_softc_play_start(audio_softc_t *sc)
 {
 	audio_dev_netbsd_t *dev = sc->phys;
-	audio_trackmixer_t *mixer = &sc->pmixer;
+	audio_trackmixer_t *mixer = &sc->sc_pmixer;
 
 	if (mixer->hw_buf.count <= 0) return;
 
@@ -120,7 +120,7 @@ audio_softc_play_busy(audio_softc_t *sc)
 	audio_dev_netbsd_t *dev = sc->phys;
 
 	if (dev->sent_count > 0) {
-		audio_trackmixer_intr(&sc->pmixer, dev->sent_count);
+		audio_trackmixer_intr(&sc->sc_pmixer, dev->sent_count);
 		dev->sent_count = 0;
 	}
 	return false;

@@ -49,7 +49,7 @@ void CALLBACK audio_dev_win32_callback(
 	if (uMsg == WOM_DONE) {
 		audio_softc_t *sc = (audio_softc_t*)dwInstance;
 		audio_dev_win32_t *dev = sc->phys;
-		audio_trackmixer_t *mixer = &sc->pmixer;
+		audio_trackmixer_t *mixer = &sc->sc_pmixer;
 		WAVEHDR *wh = (WAVEHDR*)dwParam1;
 
 		lock(sc);
@@ -119,8 +119,8 @@ audio_attach(audio_softc_t **softc)
 		dev->wavehdr[i].dwBufferLength = 0;
 	}
 
-	audio_mixer_init(&sc->pmixer, sc, AUDIO_PLAY);
-	audio_mixer_init(&sc->rmixer, sc, AUDIO_REC);
+	audio_mixer_init(&sc->sc_pmixer, sc, AUDIO_PLAY);
+	audio_mixer_init(&sc->sc_rmixer, sc, AUDIO_REC);
 }
 
 void
@@ -174,7 +174,7 @@ void
 audio_softc_play_start(audio_softc_t *sc)
 {
 	audio_dev_win32_t *dev = sc->phys;
-	audio_trackmixer_t *mixer = &sc->pmixer;
+	audio_trackmixer_t *mixer = &sc->sc_pmixer;
 
 	lock(sc);
 
