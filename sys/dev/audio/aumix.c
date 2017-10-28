@@ -946,6 +946,11 @@ audio_write(audio_softc_t *sc, struct uio *uio, int ioflag, audio_file_t *file)
 		int free_count = audio_ring_unround_free_count(&track->userio_buf);
 		int free_bytelen = free_count * track->userio_fmt.channels * track->userio_fmt.stride / 8 - track->subframe_buf_used;
 
+		if (free_bytelen == 0) {
+			panic("たぶんここで cv wait");
+			continue;
+		}
+
 		// 今回 uiomove するバイト数 */
 		int move_bytelen = min(free_bytelen, (int)uio->uio_resid);
 
