@@ -919,7 +919,7 @@ mixer->volume--;
 	/* ハードウェアへ通知する */
 	TRACE0("start");
 	audio_softc_play_start(mixer->sc);
-
+	mixer->hw_output_counter += count;
 }
 
 void

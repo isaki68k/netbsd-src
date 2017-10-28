@@ -5,6 +5,7 @@
 #endif
 #include <ctype.h>
 #include <stdio.h>
+#include <inttypes.h>
 #include <math.h>
 #include "aumix.h"
 #include "audev.h"
@@ -198,6 +199,16 @@ main(int ac, char *av[])
 			break;
 	}
 #endif
+
+	for (int i = 0; i < fileidx; i++) {
+		struct test_file *f = &files[i];
+		printf("file %d: hw=%" PRIu64 " hw_comp=%" PRIu64 "\n",
+			i,
+			f->file->ptrack.mixer_hw_counter,
+			f->file->ptrack.hw_complete_counter);
+	}
+	printf("mixer: hw_out=%" PRIu64 "\n",
+		files[0].file->ptrack.mixer->hw_output_counter);
 
 	audio_detach(sc);
 

@@ -228,6 +228,8 @@ struct audio_trackmixer
 
 										// 未定
 	int pending_play_period;
+
+	uint64_t hw_output_counter;			/* ハードウェアへの出力フレーム数 */
 };
 
 struct audio_file
