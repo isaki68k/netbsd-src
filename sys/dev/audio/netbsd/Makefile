@@ -16,6 +16,7 @@ CFLAGS=	-g -std=c99 -I. -I.. \
 	-Wall \
 	-Werror \
 	-Wshadow \
+	-Wno-format-zero-length \
 
 a.out:	${SRCS:.c=.o}
 	${CC} -g -o $@ $> -lm -pthread

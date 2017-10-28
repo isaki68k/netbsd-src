@@ -9,6 +9,15 @@
 #include "auformat.h"
 #include "uio.h"
 
+#define AUDIO_TRACE
+#ifdef AUDIO_TRACE
+#define TRACE0()		printf("%s\n", __func__)
+#define TRACE(t, fmt...)	printf("%s #%d ", __func__, (t)->id), printf(fmt), printf("\n")
+#else
+#define TRACE0()		/**/
+#define TRACE(t, fmt...)	/**/
+#endif
+
 int
 gcd(int a, int b)
 {
@@ -136,6 +145,7 @@ audio_format_t default_format = {
 void
 audio_track_init(audio_track_t *track, audio_trackmixer_t *mixer)
 {
+	static int newid = 0;
 	memset(track, 0, sizeof(audio_track_t));
 	track->mixer = mixer;
 
@@ -162,6 +172,9 @@ audio_track_init(audio_track_t *track, audio_trackmixer_t *mixer)
 
 	track->volume = 256;
 	track->mixed_count = 0;
+	track->id = newid++;
+	// ここだけ id が決まってから表示
+	TRACE(track, "");
 }
 
 static inline int
@@ -190,6 +203,7 @@ framecount_roundup_byte_boundary(int framecount, int stride)
 void
 audio_track_set_format(audio_track_t *track, audio_format_t *fmt)
 {
+	TRACE(track, "");
 	KASSERT(is_valid_format(fmt));
 
 	audio_format_t *track_fmt = track->track_buf.fmt;
@@ -620,6 +634,7 @@ audio_track_freq(audio_track_t *track, audio_ring_t *dst, audio_ring_t *src)
 void
 audio_track_play(audio_track_t *track)
 {
+	TRACE(track, "");
 	KASSERT(track);
 
 	/* エンコーディング変換 */
@@ -665,6 +680,7 @@ audio_track_play(audio_track_t *track)
 void
 audio_mixer_init(audio_trackmixer_t *mixer, audio_softc_t *sc, int mode)
 {
+	TRACE0();
 	memset(mixer, 0, sizeof(audio_trackmixer_t));
 	mixer->sc = sc;
 
@@ -700,6 +716,7 @@ audio_mixer_init(audio_trackmixer_t *mixer, audio_softc_t *sc, int mode)
 void
 audio_mixer_play(audio_trackmixer_t *mixer)
 {
+	TRACE0();
 	/* 全部のトラックに聞く */
 
 	audio_file_t *f;
@@ -743,6 +760,7 @@ audio_mixer_play(audio_trackmixer_t *mixer)
 void
 audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track)
 {
+	TRACE(track, "");
 	if (track->track_buf.count <= 0) return;
 	int count = track->track_buf.count;
 
@@ -803,6 +821,7 @@ audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track)
 void
 audio_mixer_play_period(audio_trackmixer_t *mixer /*, bool force */)
 {
+	TRACE0();
 	/* XXX win32 は割り込みから再生 API をコール出来ないので、ポーリングする */
 	if (audio_softc_play_busy(mixer->sc) == false) {
 		audio_softc_play_start(mixer->sc);
@@ -893,6 +912,7 @@ mixer->volume--;
 void
 audio_trackmixer_intr(audio_trackmixer_t *mixer, int count)
 {
+	TRACE0();
 	KASSERT(count != 0);
 
 	/* トラックにハードウェア出力が完了したことを通知する */
@@ -915,6 +935,7 @@ audio_trackmixer_intr(audio_trackmixer_t *mixer, int count)
 void
 audio_track_play_drain(audio_track_t *track)
 {
+	TRACE(track, "");
 	track->is_draining = true;
 
 	/* フレームサイズ未満のため待たされていたデータを破棄 */
@@ -939,6 +960,7 @@ audio_write(audio_softc_t *sc, struct uio *uio, int ioflag, audio_file_t *file)
 {
 	int error;
 	audio_track_t *track = &file->ptrack;
+	TRACE(track, "");
 
 	while (uio->uio_resid > 0) {
 

@@ -200,6 +200,9 @@ struct audio_track
 	uint64_t track_mixer_counter;		/* track_buf のトラックミキサ側読み書きフレーム数 */
 	uint64_t mixer_hw_counter; /* mixer <-> hw 入出力フレーム数 */
 	uint64_t hw_complete_counter; /* ハードウェア I/O が完了したフレーム数 */
+
+	/* デバッグ用 */
+	int id;								/* トラック識別子 */
 };
 
 struct audio_trackmixer
