@@ -300,14 +300,18 @@ parse_file(struct test_file *f, FILE *fp, const char *filename, int adpcm_freq)
 			if (tag == ID("fmt ")) {
 				WAVEFORMATEX *wf = (WAVEFORMATEX *)s;
 				s += len;
-				if (rifx)
-					f->fmt.encoding = AUDIO_ENCODING_SLINEAR_BE;
-				else
-					f->fmt.encoding = AUDIO_ENCODING_SLINEAR_LE;
 				f->fmt.channels = (uint8_t)lebe16toh(wf->nChannels);
 				f->fmt.frequency = lebe32toh(wf->nSamplesPerSec);
 				f->fmt.precision = (uint8_t)lebe16toh(wf->wBitsPerSample);
 				f->fmt.stride = f->fmt.precision;
+				if (rifx) {
+					f->fmt.encoding = AUDIO_ENCODING_SLINEAR_BE;
+				} else {
+					if (f->fmt.precision == 8)
+						f->fmt.encoding = AUDIO_ENCODING_ULINEAR_LE;
+					else
+						f->fmt.encoding = AUDIO_ENCODING_SLINEAR_LE;
+				}
 				uint16_t fmtid = lebe16toh(wf->wFormatTag);
 				if (fmtid == 0xfffe) {
 					// 拡張形式 (今は使ってない)
