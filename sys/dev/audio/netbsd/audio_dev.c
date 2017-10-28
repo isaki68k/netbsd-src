@@ -104,6 +104,7 @@ audio_softc_play_start(audio_softc_t *sc)
 			printf("write failed: %s\n", strerror(errno));
 			exit(1);
 		}
+		audio_ring_tookfromtop(&mixer->hw_buf, count);
 		dev->sent_count += count;
 
 		// 転送終了時刻
@@ -115,8 +116,6 @@ audio_softc_play_start(audio_softc_t *sc)
 		d.tv_usec = r / (dev->fmt.frequency * dev->fmt.precision / 8 *
 			dev->fmt.channels / 1000) * 800;
 		timeradd(&dev->tv, &d, &dev->tv);
-
-		audio_ring_tookfromtop(&mixer->hw_buf, count);
 	}
 
 	unlock(sc);
