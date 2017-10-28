@@ -205,18 +205,24 @@ int
 child_loop(struct test_file *f, int loop)
 {
 	if (f->wait > loop) return 0;
-	int n = min(f->mem.count, 625*8);
-	if (n == 0) {
+
+	// 1ブロック分のフレーム数
+	int frames_per_block = f->fmt.frequency * AUDIO_BLOCK_msec / 1000;
+	// 今回再生するフレーム数
+	int frames = min(f->mem.count, frames_per_block);
+	// フレーム数をバイト数に
+	int bytes = frames * f->fmt.channels * f->fmt.stride / 8;
+
+	sys_write(f->file, RING_TOP_UINT8(&f->mem), bytes);
+	audio_ring_tookfromtop(&f->mem, frames);
+
+	if (frames < frames_per_block) {
+		// 最後のはずなのでドレイン
 		f->play = false;
 		audio_track_play_drain(&f->file->ptrack);
 		return -1;
-	} else {
-		//printf("%d %d ", i, n);
-		int len = n * f->fmt.channels * f->fmt.stride / 8;
-		sys_write(f->file, RING_TOP_UINT8(&f->mem), len);
-		audio_ring_tookfromtop(&f->mem, n);
-		return 0;
 	}
+	return 0;
 }
 
 #ifdef USE_PTHREAD
