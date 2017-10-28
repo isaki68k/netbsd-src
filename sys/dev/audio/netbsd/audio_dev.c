@@ -146,7 +146,9 @@ audio_softc_play_busy(audio_softc_t *sc)
 int
 audio_softc_get_hw_capacity(audio_softc_t *sc)
 {
-	return 65536;	/* XXX */
+	audio_dev_netbsd_t *dev = sc->phys;
+	// 2ブロック分
+	return dev->frame_bytes * dev->fmt.frequency * 40 / 1000 * 2;
 }
 
 void *
