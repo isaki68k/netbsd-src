@@ -765,14 +765,14 @@ audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track)
 	if (track->track_buf.count <= 0) return;
 	int count = track->track_buf.count;
 
-	audio_ring_t track_mix;
-	track_mix = mixer->mix_buf;
-	track_mix.count = track->mixed_count;
+	audio_ring_t mix_buf;
+	mix_buf = mixer->mix_buf;
+	mix_buf.count = track->mixed_count;
 
 	/* 今回ミキシングしたいフレーム数 */
 	if (track->is_draining) {
 		/* ドレイン中は出来る限り実行 */
-		count = min(count, (track_mix.capacity - track_mix.count));
+		count = min(count, (mix_buf.capacity - mix_buf.count));
 		if (count <= 0)
 			panic("is_draining && count <= 0 ?");
 	} else {
@@ -781,20 +781,20 @@ audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track)
 		count = mixer->frames_per_block;
 	}
 
-	if (track_mix.capacity - track_mix.count < count) {
+	if (mix_buf.capacity - mix_buf.count < count) {
 		return;
 	}
 
 	int remain_count = count;
 	for (; remain_count > 0; ) {
 		int track_count = audio_ring_unround_count(&track->track_buf);
-		int mix_count = audio_ring_unround_free_count(&track_mix);
+		int mix_count = audio_ring_unround_free_count(&mix_buf);
 		int slice_count = min(track_count, mix_count);
 		slice_count = min(remain_count, slice_count);
 		KASSERT(slice_count > 0);
 
 		internal_t *sptr = RING_TOP(internal_t, &track->track_buf);
-		internal2_t *dptr = RING_BOT(internal2_t, &track_mix);
+		internal2_t *dptr = RING_BOT(internal2_t, &mix_buf);
 
 		/* 整数倍精度へ変換し、トラックボリュームを適用して加算合成 */
 		int slice_sample = slice_count * mixer->mix_fmt.channels;
@@ -809,7 +809,7 @@ audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track)
 		}
 
 		audio_ring_tookfromtop(&track->track_buf, slice_count);
-		audio_ring_appended(&track_mix, slice_count);
+		audio_ring_appended(&mix_buf, slice_count);
 		remain_count -= slice_count;
 	}
 
