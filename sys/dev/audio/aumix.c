@@ -11,10 +11,18 @@
 
 #define AUDIO_TRACE
 #ifdef AUDIO_TRACE
-#define TRACE0()		printf("%s\n", __func__)
-#define TRACE(t, fmt...)	printf("%s #%d ", __func__, (t)->id), printf(fmt), printf("\n")
+#define TRACE0(fmt...)	do {	\
+	printf("%s ", __func__);	\
+	printf(fmt);	\
+	printf("\n");	\
+} while (0)
+#define TRACE(t, fmt...)	do {	\
+	printf("%s #%d ", __func__, (t)->id);		\
+	printf(fmt);	\
+	printf("\n");	\
+} while (0)
 #else
-#define TRACE0()		/**/
+#define TRACE0(fmt...)		/**/
 #define TRACE(t, fmt...)	/**/
 #endif
 
@@ -634,7 +642,6 @@ audio_track_freq(audio_track_t *track, audio_ring_t *dst, audio_ring_t *src)
 void
 audio_track_play(audio_track_t *track)
 {
-	TRACE(track, "");
 	KASSERT(track);
 
 	/* エンコーディング変換 */
@@ -676,13 +683,14 @@ audio_track_play(audio_track_t *track)
 		panic("freq_mode");
 	}
 
+	TRACE(track, "trackbuf=%d", track->track_buf.count);
 	audio_mixer_play(track->mixer);
 }
 
 void
 audio_mixer_init(audio_trackmixer_t *mixer, audio_softc_t *sc, int mode)
 {
-	TRACE0();
+	TRACE0("");
 	memset(mixer, 0, sizeof(audio_trackmixer_t));
 	mixer->sc = sc;
 
@@ -718,7 +726,7 @@ audio_mixer_init(audio_trackmixer_t *mixer, audio_softc_t *sc, int mode)
 void
 audio_mixer_play(audio_trackmixer_t *mixer)
 {
-	TRACE0();
+	TRACE0("");
 	/* 全部のトラックに聞く */
 
 	audio_file_t *f;
@@ -763,7 +771,6 @@ audio_mixer_play(audio_trackmixer_t *mixer)
 void
 audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track)
 {
-	TRACE(track, "");
 	int count = track->track_buf.count;
 
 	audio_ring_t mix_buf;
@@ -783,6 +790,7 @@ audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track)
 	}
 
 	if (mix_buf.capacity - mix_buf.count < count) {
+		TRACE(track, "mix_buf full");
 		return;
 	}
 
@@ -816,6 +824,7 @@ audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track)
 
 	/* トラックバッファを取り込んだことを反映 */
 	track->mixed_count += count;
+	TRACE(track, "mixed+=%d", count);
 }
 
 /*
@@ -824,7 +833,7 @@ audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track)
 void
 audio_mixer_play_period(audio_trackmixer_t *mixer /*, bool force */)
 {
-	TRACE0();
+	TRACE0("");
 	/* XXX win32 は割り込みから再生 API をコール出来ないので、ポーリングする */
 	if (audio_softc_play_busy(mixer->sc) == false) {
 		audio_softc_play_start(mixer->sc);
@@ -908,6 +917,7 @@ mixer->volume--;
 	}
 
 	/* ハードウェアへ通知する */
+	TRACE0("start");
 	audio_softc_play_start(mixer->sc);
 
 }
@@ -915,7 +925,7 @@ mixer->volume--;
 void
 audio_trackmixer_intr(audio_trackmixer_t *mixer, int count)
 {
-	TRACE0();
+	TRACE0("");
 	KASSERT(count != 0);
 
 	/* トラックにハードウェア出力が完了したことを通知する */
