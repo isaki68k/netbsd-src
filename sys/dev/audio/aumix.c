@@ -773,12 +773,13 @@ audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track)
 	if (track->is_draining) {
 		/* ドレイン中は出来る限り実行 */
 		count = min(count, (track_mix.capacity - track_mix.count));
+		if (count <= 0)
+			panic("is_draining && count <= 0 ?");
 	} else {
 		/* 通常時は 1 ブロック貯まるまで待つ */
 		if (count < mixer->frames_per_block) return;
 		count = mixer->frames_per_block;
 	}
-	if (count <= 0) return;
 
 	if (track_mix.capacity - track_mix.count < count) {
 		return;
