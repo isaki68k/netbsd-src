@@ -833,7 +833,6 @@ audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track)
 void
 audio_mixer_play_period(audio_trackmixer_t *mixer /*, bool force */)
 {
-	TRACE0("");
 	/* XXX win32 は割り込みから再生 API をコール出来ないので、ポーリングする */
 	if (audio_softc_play_busy(mixer->sc) == false) {
 		audio_softc_play_start(mixer->sc);
@@ -845,6 +844,7 @@ audio_mixer_play_period(audio_trackmixer_t *mixer /*, bool force */)
 	int hw_free_count = audio_ring_unround_free_count(&mixer->hw_buf);
 	int count = min(mix_count, hw_free_count);
 	if (count <= 0) {
+		TRACE0("count too short: mix_count=%d hw_free=%d", mix_count, hw_free_count);
 		return;
 	}
 	count = min(count, mixer->frames_per_block);
@@ -917,7 +917,7 @@ mixer->volume--;
 	}
 
 	/* ハードウェアへ通知する */
-	TRACE0("start");
+	TRACE0("start count=%d", count);
 	audio_softc_play_start(mixer->sc);
 	mixer->hw_output_counter += count;
 }
