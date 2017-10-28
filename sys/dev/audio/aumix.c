@@ -730,7 +730,9 @@ audio_mixer_play(audio_trackmixer_t *mixer)
 		audio_track_t *track = &f->ptrack;
 
 		// 合成
-		audio_mixer_play_mix_track(mixer, track);
+		if (track->track_buf.count > 0) {
+			audio_mixer_play_mix_track(mixer, track);
+		}
 
 		if (track->is_draining
 			|| track->mixed_count >= mixer->frames_per_block) {
@@ -762,7 +764,6 @@ void
 audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track)
 {
 	TRACE(track, "");
-	if (track->track_buf.count <= 0) return;
 	int count = track->track_buf.count;
 
 	audio_ring_t mix_buf;
