@@ -142,8 +142,8 @@ main(int ac, char *av[])
 			if (opt_g)
 				continue;
 
-			f->mem.capacity = len * 8 / f->fmt.stride;
-			f->mem.count = len * 8 / f->fmt.stride;
+			f->mem.capacity = len * 8 / f->fmt.stride / f->fmt.channels;
+			f->mem.count = f->mem.capacity;
 		}
 
 		f->file = sys_open(sc, AUDIO_PLAY);
