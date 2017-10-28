@@ -17,6 +17,7 @@ struct audio_dev_netbsd
 	audio_format_t fmt;
 	int sent_count;
 	pthread_mutex_t mutex;
+	struct timeval tv;
 };
 typedef struct audio_dev_netbsd audio_dev_netbsd_t;
 
@@ -54,6 +55,7 @@ audio_attach(audio_softc_t **softc)
 	dev->fmt.frequency = 48000;
 	dev->fmt.precision = 16;
 	dev->fmt.stride = 16;
+	dev->frame_bytes = dev->fmt.precision / 8 * dev->fmt.channels;
 
 	AUDIO_INITINFO(&ai);
 	ai.mode = AUMODE_PLAY;
@@ -66,7 +68,6 @@ audio_attach(audio_softc_t **softc)
 		printf("AUDIO_SETINFO failed\n");
 		exit(1);
 	}
-	dev->frame_bytes = ai.play.precision / 8 * ai.play.channels;
 
 	pthread_mutex_init(&dev->mutex, NULL);
 
@@ -91,22 +92,29 @@ audio_softc_play_start(audio_softc_t *sc)
 	audio_trackmixer_t *mixer = &sc->sc_pmixer;
 
 	if (mixer->hw_buf.count <= 0) return;
+	if (dev->sent_count > 0) return;
 
 	lock(sc);
 
 	int count;
-	for (int loop = 0; loop < 2; loop++) {
-		count = audio_ring_unround_count(&mixer->hw_buf);
-
+	while ((count = audio_ring_unround_count(&mixer->hw_buf)) > 0) {
 		int16_t *src = RING_TOP(int16_t, &mixer->hw_buf);
-		
-		int bytelen = count * dev->frame_bytes;
-		int r = write(dev->fd, src, bytelen);
+		int r = write(dev->fd, src, count * dev->frame_bytes);
 		if (r == -1) {
 			printf("write failed: %s\n", strerror(errno));
 			exit(1);
 		}
 		dev->sent_count += count;
+
+		// 転送終了時刻
+		gettimeofday(&dev->tv, NULL);
+		struct timeval d;
+		d.tv_sec = 0;
+		// 後ろの800は usec->msec に直す1000倍に、
+		// ちょっと前倒しで 0.8 掛けたもの。
+		d.tv_usec = r / (dev->fmt.frequency * dev->fmt.precision / 8 *
+			dev->fmt.channels / 1000) * 800;
+		timeradd(&dev->tv, &d, &dev->tv);
 
 		audio_ring_tookfromtop(&mixer->hw_buf, count);
 	}
@@ -119,10 +127,20 @@ audio_softc_play_busy(audio_softc_t *sc)
 {
 	audio_dev_netbsd_t *dev = sc->phys;
 
+	lock(sc);
 	if (dev->sent_count > 0) {
+		struct timeval now, res;
+		gettimeofday(&now, NULL);
+		timersub(&dev->tv, &now, &res);
+		if (res.tv_sec > 0) {
+			unlock(sc);
+			return true;
+		}
+
 		audio_trackmixer_intr(&sc->sc_pmixer, dev->sent_count);
 		dev->sent_count = 0;
 	}
+	unlock(sc);
 	return false;
 }
 
