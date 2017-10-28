@@ -675,6 +675,8 @@ audio_track_play(audio_track_t *track)
 	} else {
 		panic("freq_mode");
 	}
+
+	audio_mixer_play(track->mixer);
 }
 
 void
@@ -726,9 +728,8 @@ audio_mixer_play(audio_trackmixer_t *mixer)
 	SLIST_FOREACH(f, &mixer->sc->sc_files, entry) {
 		track_count++;
 		audio_track_t *track = &f->ptrack;
-		/* 変換待ちのデータはいね～が */
-		audio_track_play(track);
 
+		// 合成
 		audio_mixer_play_mix_track(mixer, track);
 
 		if (track->is_draining
@@ -993,7 +994,7 @@ audio_write(audio_softc_t *sc, struct uio *uio, int ioflag, audio_file_t *file)
 
 		// 今回作った userio を全部トラック再生へ渡す
 		while (track->userio_buf.count > 0) {
-			audio_mixer_play(track->mixer);
+			audio_track_play(track);
 			WAIT();
 		}
 	}
