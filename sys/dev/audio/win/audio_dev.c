@@ -26,13 +26,13 @@ struct audio_dev_win32
 };
 typedef struct audio_dev_win32 audio_dev_win32_t;
 
-void lock(audio_softc_t *sc)
+void lock(struct audio_softc *sc)
 {
 	audio_dev_win32_t *dev = sc->phys;
 	EnterCriticalSection(&dev->cs);
 }
 
-void unlock(audio_softc_t *sc)
+void unlock(struct audio_softc *sc)
 {
 	audio_dev_win32_t *dev = sc->phys;
 	LeaveCriticalSection(&dev->cs);
@@ -47,7 +47,7 @@ void CALLBACK audio_dev_win32_callback(
 )
 {
 	if (uMsg == WOM_DONE) {
-		audio_softc_t *sc = (audio_softc_t*)dwInstance;
+		struct audio_softc *sc = (struct audio_softc*)dwInstance;
 		audio_dev_win32_t *dev = sc->phys;
 		audio_trackmixer_t *mixer = &sc->sc_pmixer;
 		WAVEHDR *wh = (WAVEHDR*)dwParam1;
@@ -63,10 +63,10 @@ void CALLBACK audio_dev_win32_callback(
 }
 
 void
-audio_attach(audio_softc_t **softc)
+audio_attach(struct audio_softc **softc)
 {
-	audio_softc_t *sc;
-	sc = calloc(1, sizeof(audio_softc_t));
+	struct audio_softc *sc;
+	sc = calloc(1, sizeof(struct audio_softc));
 	*softc = sc;
 	sc->phys = calloc(1, sizeof(audio_dev_win32_t));
 
@@ -124,7 +124,7 @@ audio_attach(audio_softc_t **softc)
 }
 
 void
-audio_detach(audio_softc_t *sc)
+audio_detach(struct audio_softc *sc)
 {
 	audio_dev_win32_t *dev = sc->phys;
 
@@ -171,7 +171,7 @@ audio_detach(audio_softc_t *sc)
 * ***** audio_sc *****
 */
 void
-audio_softc_play_start(audio_softc_t *sc)
+audio_softc_play_start(struct audio_softc *sc)
 {
 	audio_dev_win32_t *dev = sc->phys;
 	audio_trackmixer_t *mixer = &sc->sc_pmixer;
@@ -241,7 +241,7 @@ audio_softc_play_start(audio_softc_t *sc)
 }
 
 bool
-audio_softc_play_busy(audio_softc_t *sc)
+audio_softc_play_busy(struct audio_softc *sc)
 {
 	audio_dev_win32_t *dev = sc->phys;
 	int busy_buf_count = 0;
@@ -251,18 +251,18 @@ audio_softc_play_busy(audio_softc_t *sc)
 	return busy_buf_count > WAVEHDR_COUNT / 2;
 }
 
-int audio_softc_get_hw_capacity(audio_softc_t *sc)
+int audio_softc_get_hw_capacity(struct audio_softc *sc)
 {
 	audio_dev_win32_t *dev = sc->phys;
 	return dev->data_framecount * WAVEHDR_COUNT;
 }
 
-void* audio_softc_allocm(audio_softc_t *sc, int n)
+void* audio_softc_allocm(struct audio_softc *sc, int n)
 {
 	return malloc(n);
 }
 
-audio_format_t audio_softc_get_hw_format(audio_softc_t *sc, int mode)
+audio_format_t audio_softc_get_hw_format(struct audio_softc *sc, int mode)
 {
 	audio_dev_win32_t *dev = sc->phys;
 	audio_format_t rv;

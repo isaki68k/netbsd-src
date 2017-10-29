@@ -74,7 +74,7 @@ usage()
 int
 main(int ac, char *av[])
 {
-	audio_softc_t *sc;
+	struct audio_softc *sc;
 	struct test_file files[16];
 	int fileidx = 0;
 	int freq = 15625;

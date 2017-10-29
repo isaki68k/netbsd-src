@@ -22,23 +22,23 @@ struct audio_dev_netbsd
 typedef struct audio_dev_netbsd audio_dev_netbsd_t;
 
 void
-lock(audio_softc_t *sc)
+lock(struct audio_softc *sc)
 {
 	audio_dev_netbsd_t *dev = sc->phys;
 	pthread_mutex_lock(&dev->mutex);
 }
 
 void
-unlock(audio_softc_t *sc)
+unlock(struct audio_softc *sc)
 {
 	audio_dev_netbsd_t *dev = sc->phys;
 	pthread_mutex_unlock(&dev->mutex);
 }
 
 void
-audio_attach(audio_softc_t **softc)
+audio_attach(struct audio_softc **softc)
 {
-	audio_softc_t *sc;
+	struct audio_softc *sc;
 	audio_dev_netbsd_t *dev;
 	struct audio_info ai;
 	int r;
@@ -76,7 +76,7 @@ audio_attach(audio_softc_t **softc)
 }
 
 void
-audio_detach(audio_softc_t *sc)
+audio_detach(struct audio_softc *sc)
 {
 	audio_dev_netbsd_t *dev = sc->phys;
 
@@ -86,7 +86,7 @@ audio_detach(audio_softc_t *sc)
 }
 
 void
-audio_softc_play_start(audio_softc_t *sc)
+audio_softc_play_start(struct audio_softc *sc)
 {
 	audio_dev_netbsd_t *dev = sc->phys;
 	audio_trackmixer_t *mixer = &sc->sc_pmixer;
@@ -122,7 +122,7 @@ audio_softc_play_start(audio_softc_t *sc)
 }
 
 bool
-audio_softc_play_busy(audio_softc_t *sc)
+audio_softc_play_busy(struct audio_softc *sc)
 {
 	audio_dev_netbsd_t *dev = sc->phys;
 
@@ -144,7 +144,7 @@ audio_softc_play_busy(audio_softc_t *sc)
 }
 
 int
-audio_softc_get_hw_capacity(audio_softc_t *sc)
+audio_softc_get_hw_capacity(struct audio_softc *sc)
 {
 	audio_dev_netbsd_t *dev = sc->phys;
 	// 2ブロック分
@@ -152,13 +152,13 @@ audio_softc_get_hw_capacity(audio_softc_t *sc)
 }
 
 void *
-audio_softc_allocm(audio_softc_t *sc, int n)
+audio_softc_allocm(struct audio_softc *sc, int n)
 {
 	return malloc(n);
 }
 
 audio_format_t
-audio_softc_get_hw_format(audio_softc_t *sc, int mode)
+audio_softc_get_hw_format(struct audio_softc *sc, int mode)
 {
 	audio_dev_netbsd_t *dev = sc->phys;
 	return dev->fmt;

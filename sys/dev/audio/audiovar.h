@@ -74,7 +74,6 @@ typedef struct audio_ring audio_ring_t;
 typedef struct audio_track audio_track_t;
 typedef struct audio_trackmixer audio_trackmixer_t;
 typedef struct audio_file audio_file_t;
-typedef struct audio_softc audio_softc_t;
 typedef struct audio_convert_arg audio_convert_arg_t;
 
 /*
@@ -224,7 +223,7 @@ struct audio_trackmixer
 	audio_ring_t   hw_buf;				/* 物理デバイスの入出力バッファ (malloc ではなく allocm で確保する) */
 	int  hw_count;						/* 物理デバイス入出力中のフレーム数 */
 
-	audio_softc_t  *sc;					/* 論理デバイス */
+	struct audio_softc *sc;				/* 論理デバイス */
 
 										// 未定
 	int pending_play_period;
@@ -234,7 +233,7 @@ struct audio_trackmixer
 
 struct audio_file
 {
-	audio_softc_t  *sc;				/* 論理デバイス */
+	struct audio_softc *sc;			/* 論理デバイス */
 	audio_track_t   ptrack;			/* 再生トラック */
 	audio_track_t   rtrack;			/* 録音トラック */
 

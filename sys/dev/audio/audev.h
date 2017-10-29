@@ -2,14 +2,14 @@
 
 #include "aumix.h"
 
-void audio_attach(audio_softc_t **softc);
-void audio_detach(audio_softc_t *sc);
+void audio_attach(struct audio_softc **softc);
+void audio_detach(struct audio_softc *sc);
 
-void audio_softc_play_start(audio_softc_t *sc);
-bool audio_softc_play_busy(audio_softc_t *sc);
+void audio_softc_play_start(struct audio_softc *sc);
+bool audio_softc_play_busy(struct audio_softc *sc);
 
-void lock(audio_softc_t *sc);
-void unlock(audio_softc_t *sc);
+void lock(struct audio_softc *sc);
+void unlock(struct audio_softc *sc);
 
 
 void WAIT();

@@ -688,7 +688,7 @@ audio_track_play(audio_track_t *track)
 }
 
 void
-audio_mixer_init(audio_trackmixer_t *mixer, audio_softc_t *sc, int mode)
+audio_mixer_init(audio_trackmixer_t *mixer, struct audio_softc *sc, int mode)
 {
 	TRACE0("");
 	memset(mixer, 0, sizeof(audio_trackmixer_t));
@@ -969,7 +969,7 @@ audio_track_play_drain(audio_track_t *track)
 
 /* write の MI 側 */
 int
-audio_write(audio_softc_t *sc, struct uio *uio, int ioflag, audio_file_t *file)
+audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *file)
 {
 	int error;
 	audio_track_t *track = &file->ptrack;
@@ -1038,7 +1038,7 @@ sys_write(audio_file_t *file, void* buf, size_t len)
 }
 
 audio_file_t *
-sys_open(audio_softc_t *sc, int mode)
+sys_open(struct audio_softc *sc, int mode)
 {
 	audio_file_t *file;
 
