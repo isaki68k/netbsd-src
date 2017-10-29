@@ -71,8 +71,8 @@ audio_attach(struct audio_softc **softc)
 
 	pthread_mutex_init(&dev->mutex, NULL);
 
-	audio_mixer_init(&sc->sc_pmixer, sc, AUDIO_PLAY);
-	audio_mixer_init(&sc->sc_rmixer, sc, AUDIO_REC);
+	audio_mixer_init(&sc->sc_pmixer, sc, AUMODE_PLAY);
+	audio_mixer_init(&sc->sc_rmixer, sc, AUMODE_RECORD);
 }
 
 void

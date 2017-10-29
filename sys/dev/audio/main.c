@@ -156,7 +156,7 @@ main(int ac, char *av[])
 			f->mem.count = f->mem.capacity;
 		}
 
-		f->file = sys_open(sc, AUDIO_PLAY);
+		f->file = sys_open(sc, AUMODE_PLAY);
 		/* この辺は ioctl になる */
 		f->file->ptrack.volume = 256;
 		f->file->ptrack.mixer->volume = 256;

@@ -43,8 +43,8 @@ typedef uint64_t uinternal2_t;
 #endif
 
 
-#define AUDIO_PLAY 0x1
-#define AUDIO_REC  0x2
+#define AUMODE_PLAY		(0x01)
+#define AUMODE_RECORD	(0x02)
 
 #define AUDIO_ENCODING_MULAW		0
 #define AUDIO_ENCODING_SLINEAR_LE	1

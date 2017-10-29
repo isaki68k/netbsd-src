@@ -1045,7 +1045,7 @@ sys_open(struct audio_softc *sc, int mode)
 	file = calloc(1, sizeof(audio_file_t));
 	file->sc = sc;
 
-	if (mode == AUDIO_PLAY) {
+	if (mode == AUMODE_PLAY) {
 		audio_track_init(&file->ptrack, &sc->sc_pmixer);
 	} else {
 		audio_track_init(&file->rtrack, &sc->sc_rmixer);
