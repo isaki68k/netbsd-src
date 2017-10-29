@@ -219,7 +219,7 @@ audio_track_set_format(audio_track_t *track, audio_format_t *fmt)
 	track->userio_fmt = *fmt;
 
 	/* ブロック境界がバイト境界になるように、1ブロックのフレーム数を調整する */
-	track->userio_frames_per_block = framecount_roundup_byte_boundary(fmt->frequency * AUDIO_BLOCK_msec / 1000, fmt->stride);
+	track->userio_frames_per_block = framecount_roundup_byte_boundary(fmt->frequency * AUDIO_BLK_MS / 1000, fmt->stride);
 
 	track->userio_buf.top = 0;
 	track->userio_buf.capacity = track->userio_frames_per_block;
@@ -699,7 +699,7 @@ audio_mixer_init(audio_trackmixer_t *mixer, struct audio_softc *sc, int mode)
 	mixer->hw_buf.capacity = audio_softc_get_hw_capacity(mixer->sc);
 	mixer->hw_buf.sample = audio_softc_allocm(mixer->sc, RING_BYTELEN(&mixer->hw_buf));
 
-	mixer->frames_per_block = mixer->hw_fmt.frequency * AUDIO_BLOCK_msec / 1000;
+	mixer->frames_per_block = mixer->hw_fmt.frequency * AUDIO_BLK_MS / 1000;
 
 	mixer->track_fmt.encoding = AUDIO_ENCODING_SLINEAR_HE;
 	mixer->track_fmt.channels = mixer->hw_fmt.channels;
@@ -711,7 +711,7 @@ audio_mixer_init(audio_trackmixer_t *mixer, struct audio_softc *sc, int mode)
 
 	/* 40ms double buffer */
 	mixer->mix_buf.fmt = &mixer->mix_fmt;
-	mixer->mix_buf.capacity = 2 * mixer->mix_fmt.frequency * AUDIO_BLOCK_msec / 1000;
+	mixer->mix_buf.capacity = 2 * mixer->mix_fmt.frequency * AUDIO_BLK_MS / 1000;
 	mixer->mix_buf.sample = audio_realloc(mixer->mix_buf.sample, RING_BYTELEN(&mixer->mix_buf));
 	memset(mixer->mix_buf.sample, 0, RING_BYTELEN(&mixer->mix_buf));
 

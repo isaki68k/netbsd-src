@@ -99,7 +99,7 @@ audio_attach(struct audio_softc **softc)
 
 	InitializeCriticalSectionAndSpinCount(&dev->cs, 100);
 
-	dev->data_bytelen = dev->wfx.nAvgBytesPerSec * AUDIO_BLOCK_msec / 1000;
+	dev->data_bytelen = dev->wfx.nAvgBytesPerSec * AUDIO_BLK_MS / 1000;
 #ifdef DEBUG_ONEBUF
 	dev->data_bytelen = 16 * 1024 * 1024;
 #endif

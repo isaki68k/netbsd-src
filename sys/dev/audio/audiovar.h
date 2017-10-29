@@ -62,7 +62,7 @@ typedef uint64_t uinternal2_t;
 
 /* 1 ブロックの時間サイズ 40ms */
 /* 40ms の場合は (1/40ms)=25=5^2 なので 100 の倍数の周波数のほか、15.625kHz でもフレーム数が整数になる */
-#define AUDIO_BLOCK_msec 40
+#define AUDIO_BLK_MS 40
 
 /* サポートする最大のチャンネル数 */
 #define AUDIO_MAX_CH	18
