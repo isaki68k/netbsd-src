@@ -7,18 +7,18 @@
 * フォーマットがおおむね有効かどうかを返します。
 */
 static inline bool
-is_valid_format(audio_format_t *format)
+is_valid_format(audio_format_t *fmt)
 {
-	if (format == NULL) return false;
+	if (fmt == NULL) return false;
 	/* XXX:この条件どうするか検討 (MSM6258)*/
-	if (format->encoding == AUDIO_ENCODING_MSM6258) {
-		if (format->stride != 4) return false;
+	if (fmt->encoding == AUDIO_ENCODING_MSM6258) {
+		if (fmt->stride != 4) return false;
 	} else {
-		if (format->stride % 8 != 0) return false;
+		if (fmt->stride % 8 != 0) return false;
 	}
-	if (format->precision > format->stride) return false;
-	if (format->channels <= 0) return false;
-	if (format->channels > AUDIO_MAX_CH) return false;
+	if (fmt->precision > fmt->stride) return false;
+	if (fmt->channels <= 0) return false;
+	if (fmt->channels > AUDIO_MAX_CH) return false;
 
 	/* XXX: NO CHECK FOR ENCODING */
 	return true;
@@ -40,41 +40,41 @@ is_internal_format(audio_format_t *fmt)
 
 // いずれかの LINEAR なら true
 static inline bool
-is_LINEAR(audio_format_t *track_fmt)
+is_LINEAR(audio_format_t *fmt)
 {
 	return
-		(track_fmt->encoding == AUDIO_ENCODING_SLINEAR_LE)
-		|| (track_fmt->encoding == AUDIO_ENCODING_SLINEAR_BE)
-		|| (track_fmt->encoding == AUDIO_ENCODING_ULINEAR_LE)
-		|| (track_fmt->encoding == AUDIO_ENCODING_ULINEAR_BE)
+		(fmt->encoding == AUDIO_ENCODING_SLINEAR_LE)
+		|| (fmt->encoding == AUDIO_ENCODING_SLINEAR_BE)
+		|| (fmt->encoding == AUDIO_ENCODING_ULINEAR_LE)
+		|| (fmt->encoding == AUDIO_ENCODING_ULINEAR_BE)
 		;
 }
 
 // いずれかの SLINEAR なら true
 static inline bool
-is_SIGNED(audio_format_t *track_fmt)
+is_SIGNED(audio_format_t *fmt)
 {
 	return
-		(track_fmt->encoding == AUDIO_ENCODING_SLINEAR_LE)
-		|| (track_fmt->encoding == AUDIO_ENCODING_SLINEAR_BE)
+		(fmt->encoding == AUDIO_ENCODING_SLINEAR_LE)
+		|| (fmt->encoding == AUDIO_ENCODING_SLINEAR_BE)
 		;
 }
 
 // ENDIAN を返す
 static inline int
-data_ENDIAN(audio_format_t *track_fmt)
+data_ENDIAN(audio_format_t *fmt)
 {
-	if (track_fmt->stride == 8) {
+	if (fmt->stride == 8) {
 		/* HOST ENDIAN */
 		return BYTE_ORDER;
 	}
 
-	if (track_fmt->encoding == AUDIO_ENCODING_SLINEAR_LE
-		|| track_fmt->encoding == AUDIO_ENCODING_ULINEAR_LE) {
+	if (fmt->encoding == AUDIO_ENCODING_SLINEAR_LE
+		|| fmt->encoding == AUDIO_ENCODING_ULINEAR_LE) {
 		return LITTLE_ENDIAN;
 	}
-	if (track_fmt->encoding == AUDIO_ENCODING_SLINEAR_BE
-		|| track_fmt->encoding == AUDIO_ENCODING_ULINEAR_BE) {
+	if (fmt->encoding == AUDIO_ENCODING_SLINEAR_BE
+		|| fmt->encoding == AUDIO_ENCODING_ULINEAR_BE) {
 		return BIG_ENDIAN;
 	}
 	return BYTE_ORDER;
