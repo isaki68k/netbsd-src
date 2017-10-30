@@ -11,7 +11,7 @@
 */
 
 bool
-is_valid_filter_arg(audio_filter_arg_t *arg)
+is_valid_filter_arg(const audio_filter_arg_t *arg)
 {
 	if (arg == NULL) return false;
 	if (!is_valid_format(arg->src_fmt)) return false;

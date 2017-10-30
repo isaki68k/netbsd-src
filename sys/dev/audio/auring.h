@@ -32,7 +32,7 @@
 #define RING_END_PTR(type, ringptr) ((type*)(ringptr)->sample + (ringptr)->capacity * (ringptr)->fmt->channels)
 
 static inline bool
-is_valid_ring(audio_ring_t *ring)
+is_valid_ring(const audio_ring_t *ring)
 {
 	if (ring == NULL) return false;
 	if (!is_valid_format(ring->fmt)) return false;
@@ -105,7 +105,7 @@ audio_ring_bottom(audio_ring_t *ring)
 * ラウンディングせずにアクセス出来る個数を返します。
 */
 static inline int
-audio_ring_unround_count(audio_ring_t *ring)
+audio_ring_unround_count(const audio_ring_t *ring)
 {
 	KASSERT(is_valid_ring(ring));
 
@@ -117,7 +117,7 @@ audio_ring_unround_count(audio_ring_t *ring)
 * ラウンディングせずにアクセス出来る、空きフレームの個数を返します。
 */
 static inline int
-audio_ring_unround_free_count(audio_ring_t *ring)
+audio_ring_unround_free_count(const audio_ring_t *ring)
 {
 	KASSERT(is_valid_ring(ring));
 

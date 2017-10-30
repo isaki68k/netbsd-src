@@ -439,7 +439,7 @@ lebe32toh(uint32_t x)
 
 // fmt の表示用文字列を返す
 const char *
-fmt_tostring(audio_format_t *fmt)
+fmt_tostring(const audio_format_t *fmt)
 {
 	static char buf[64];
 	char stridebuf[16];
