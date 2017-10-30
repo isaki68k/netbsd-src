@@ -11,19 +11,19 @@
 
 #define AUDIO_TRACE
 #ifdef AUDIO_TRACE
-#define TRACE0(fmt...)	do {	\
+#define TRACE0(fmt, ...)	do {	\
 	printf("%s ", __func__);	\
-	printf(fmt);	\
+	printf(fmt, ## __VA_ARGS__);	\
 	printf("\n");	\
 } while (0)
-#define TRACE(t, fmt...)	do {	\
+#define TRACE(t, fmt, ...)	do {	\
 	printf("%s #%d ", __func__, (t)->id);		\
-	printf(fmt);	\
+	printf(fmt, ## __VA_ARGS__);	\
 	printf("\n");	\
 } while (0)
 #else
-#define TRACE0(fmt...)		/**/
-#define TRACE(t, fmt...)	/**/
+#define TRACE0(fmt, ...)	/**/
+#define TRACE(t, fmt, ...)	/**/
 #endif
 
 int
