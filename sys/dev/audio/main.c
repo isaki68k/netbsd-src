@@ -67,7 +67,7 @@ usage()
 	printf(" -f <freq> set ADPCM frequency\n");
 	printf(" -g        (guess) display format only, no playback\n");
 	printf(" -m <MML>  play MML\n");
-	printf(" -w <wait> 1ファイルごとの開始ディレイ (ブロック単位)\n");
+	printf(" -w <cnt>  delay block count for each files\n");
 	exit(1);
 }
 
