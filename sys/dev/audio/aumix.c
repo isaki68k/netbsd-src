@@ -782,7 +782,7 @@ audio_mixer_play_period(audio_trackmixer_t *mixer /*, bool force */)
 	}
 	count = min(count, mixer->frames_per_block);
 
-	/* オーバーフロー検出も同時開催 */
+	/* オーバーフロー検出 */
 	internal2_t overflow = AUDIO_INTERNAL_T_MAX;
 	internal2_t ovf_minus = AUDIO_INTERNAL_T_MIN;
 
@@ -812,10 +812,12 @@ mixer->volume--;
 	/* ここから ハードウェアチャンネル */
 
 	/* マスタボリューム適用 */
-	mptr = mptr0;
-	for (int i = 0; i < sample_count; i++) {
-		*mptr = *mptr * vol / 256;
-		mptr++;
+	if (vol != 256) {
+		mptr = mptr0;
+		for (int i = 0; i < sample_count; i++) {
+			*mptr = *mptr * vol / 256;
+			mptr++;
+		}
 	}
 
 	/* ハードウェアバッファへ転送 */
