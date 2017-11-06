@@ -11,6 +11,9 @@
 
 //#define DEBUG_ONEBUF
 
+#define DEV_BITS 16
+typedef int16_t DEV_SAMPLE_T;
+
 struct audio_dev_win32
 {
 	HWAVEOUT handle;
@@ -75,7 +78,7 @@ audio_attach(struct audio_softc **softc)
 	dev->deviceID = WAVE_MAPPER;
 	dev->wfx.wFormatTag = WAVE_FORMAT_PCM;
 	dev->wfx.nSamplesPerSec = 44100;
-	dev->wfx.wBitsPerSample = 16;
+	dev->wfx.wBitsPerSample = DEV_BITS;
 	dev->wfx.nChannels = 2;
 	dev->wfx.nBlockAlign = dev->wfx.nChannels * dev->wfx.wBitsPerSample / 8;
 	dev->wfx.nAvgBytesPerSec = dev->wfx.nBlockAlign * dev->wfx.nSamplesPerSec;
@@ -207,7 +210,7 @@ audio_softc_play_start(struct audio_softc *sc)
 		count = audio_ring_unround_count(&mixer->hw_buf);
 		count = min(count, wh_free_count);
 
-		int16_t *src = RING_TOP(int16_t, &mixer->hw_buf);
+		DEV_SAMPLE_T *src = RING_TOP(DEV_SAMPLE_T, &mixer->hw_buf);
 		
 		int bytelen = count * dev->wfx.nBlockAlign;
 		memcpy(dst, src, bytelen);
