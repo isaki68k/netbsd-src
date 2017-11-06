@@ -88,7 +88,7 @@ static const uint16_t alaw_to_slinear16[256] = {
 	0x03b0, 0x0390, 0x03f0, 0x03d0, 0x0330, 0x0310, 0x0370, 0x0350,
 };
 
-int
+void
 mulaw_to_internal(audio_filter_arg_t *arg)
 {
 	KASSERT(is_valid_filter_arg(arg));
@@ -110,10 +110,9 @@ mulaw_to_internal(audio_filter_arg_t *arg)
 #endif
 		*dptr++ = s;
 	}
-	return arg->count;
 }
 
-int
+void
 internal_to_mulaw(audio_filter_arg_t *arg)
 {
 	KASSERT(is_valid_filter_arg(arg));
@@ -141,6 +140,5 @@ internal_to_mulaw(audio_filter_arg_t *arg)
 
 		*dptr++ = r;
 	}
-	return arg->count;
 }
 

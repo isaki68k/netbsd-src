@@ -139,7 +139,7 @@ pcm2adpcm_step(struct msm6258_codecvar *mc, int16_t a)
 	return s;
 }
 
-int
+void
 internal_to_msm6258(audio_filter_arg_t *arg)
 {
 	KASSERT(is_valid_filter_arg(arg));
@@ -173,7 +173,6 @@ internal_to_msm6258(audio_filter_arg_t *arg)
 
 		*dptr++ = (uint8_t)f;
 	}
-	return arg->count;
 }
 
 
@@ -208,7 +207,7 @@ adpcm2pcm_step(struct msm6258_codecvar *mc, uint8_t b)
 	return mc->mc_amp;
 }
 
-int
+void
 msm6258_to_internal(audio_filter_arg_t *arg)
 {
 	KASSERT(is_valid_filter_arg(arg));
@@ -240,6 +239,5 @@ msm6258_to_internal(audio_filter_arg_t *arg)
 #endif
 		*dptr++ = s;
 	}
-	return arg->count;
 }
 

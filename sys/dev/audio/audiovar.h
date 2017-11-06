@@ -118,71 +118,48 @@ struct audio_filter_arg
 };
 
 /*
-戻り値には、今回のフィルタの実行で出力したフレーム数を返してください。
 */
-typedef int(*audio_filter_t)(audio_filter_arg_t *arg);
+typedef void(*audio_filter_t)(audio_filter_arg_t *arg);
 
 struct audio_track
 {
+	int                subframe_buf_used;	/* 1フレーム未満の使用バイト数 */
+
+	int                userio_frames_per_block;	/* ユーザランド周波数での 1 ブロックのフレーム数 */
+	int                framealign;		/* userio_fmt でフレームがバイトアライメントするフレーム数。 必ず 2^n */
+
+	audio_ring_t       *userio_inout;
 	audio_format_t     userio_fmt;		/* ユーザランドとのやり取りで使用するフォーマット */
 	audio_ring_t       userio_buf;		/* ユーザランド側とのやり取りで使用するデータ。 */
 										/* XXX: おそらく mmap のときは、アロケートしてそれを公開する */
-	void               *userio_mem;
-	int subframe_buf_used;				/* 1フレーム未満の使用バイト数 */
-
-	int                userio_frames_per_block;	/* ユーザランド周波数での 1 ブロックのフレーム数 */
-
-	uint16_t ch_volume[AUDIO_MAX_CH];	/* チャンネルバランス用 チャンネルボリューム */
-	uint16_t           volume;			/* トラックボリューム */
-
-	bool channelmix_all;
-
-	uint8_t enconvert_mode;
-#define AUDIO_TRACK_ENCONVERT_THRU		0x00
-#define AUDIO_TRACK_ENCONVERT_INLINE		0x01
-#define AUDIO_TRACK_ENCONVERT_BUFFER		0x02
-	uint8_t chmix_mode;
-#define AUDIO_TRACK_CHANNEL_THRU			0x00
-#define AUDIO_TRACK_CHANNEL_INLINE		0x01
-#define AUDIO_TRACK_CHANNEL_BUFFER		0x02
-
-#define AUDIO_TRACK_CHANNEL_SHRINK		0x00
-#define AUDIO_TRACK_CHANNEL_EXPAND		0x10
-#define AUDIO_TRACK_CHANNEL_MIXLR		0x20
-#define AUDIO_TRACK_CHANNEL_MIXALL		0x30
-#define AUDIO_TRACK_CHANNEL_DUPLR		0x40
-#define AUDIO_TRACK_CHANNEL_DUPALL		0x50
-#define AUDIO_TRACK_CHANNEL_MIX_MASK		0x70
-
-#define AUDIO_TRACK_CHANNEL_VOLUME		0x80
-
-	uint8_t freq_mode;
-#define AUDIO_TRACK_FREQ_THRU			0x00
-#define AUDIO_TRACK_FREQ_INLINE			0x01
-#define AUDIO_TRACK_FREQ_BUFFER			0x02
-	uint8_t volume_mode;
-#define AUDIO_TRACK_VOLUME_THRU			0x00
-#define AUDIO_TRACK_VOLUME_INLINE		0x01
 
 	audio_filter_t     codec;			/* userio <-> track コーデックフィルタ */
 	audio_filter_arg_t codec_arg;		/* とその引数 */
+	audio_ring_t       *codec_in;
+	audio_ring_t       *codec_out;
+	audio_format_t     codec_fmt;
+	audio_ring_t       codec_buf;	/* エンコーディング変換バッファ userio 周波数、userio チャンネル、他は内部フォーマット */
 
-	audio_format_t     enconvert_fmt;
-	audio_ring_t       enconvert_buf;	/* エンコーディング変換バッファ userio 周波数、userio チャンネル、他は内部フォーマット */
-	audio_ring_t       *step1;			/* エンコーディング変換出力 userio_buf か enconvert_buf を指す */
-	void               *enconvert_mem;	/* エンコーディング変換のバッファメモリ */
+	uint16_t  ch_volume[AUDIO_MAX_CH];	/* チャンネルバランス用 チャンネルボリューム */
+	audio_filter_t     chvol;
+	audio_filter_arg_t chvol_arg;
+	audio_ring_t       *chvol_inout;
 
+	audio_filter_t     chmix;
+	audio_filter_arg_t chmix_arg;
+	audio_ring_t       *chmix_in;
+	audio_ring_t       *chmix_out;
 	audio_format_t     chmix_fmt;
 	audio_ring_t       chmix_buf;		/* チャンネル変換用バッファ userio 周波数、他は内部フォーマット */
-	audio_ring_t       *step2;			/* チャンネル変換出力 *step1 か chmix_buf を指す */
-	void               *chmix_mem;
 
-	audio_ring_t       *freq_tmp;		/* インライン周波数変換時の一時バッファ。NULL か step2 を指す */
-
+	audio_ring_t       *freq_in;
+	audio_ring_t       *freq_out;
 	audio_rational_t   freq_step;		/* 周波数変換用分数 (変換元周波数 / 変換先周波数) */
 	audio_rational_t   freq_current;	/* 周波数変換用 現在のカウンタ */
 
 	audio_ring_t       track_buf;		/* トラックミキサとのバッファ */
+
+	uint16_t           volume;			/* トラックボリューム。トラックボリュームはトラックミキサで処理。 */
 
 	audio_trackmixer_t  *mixer;			/* 接続されているトラックミキサ */
 	int                mixed_count;		/* トラックミキサのミキサバッファにあって出力を待っているこのトラックのフレーム数 */

@@ -13,15 +13,12 @@
 * arg->src の arg->count 個の有効フレームと
 * arg->dst の arg->count 個の空きフレームに
 * アンラウンディングでアクセス出来ることを呼び出し側が保証します。
-* 変換に伴い、arg->src, arg->dst の ring ポインタを進めてください。
-* src から読み取られたフレーム数を count にセットしてください。(等しい場合は何もしなくていい)
 */
-
 
 /*
 * [US]LINEAR(?,stride=8){BE|LE} から internal への変換
 */
-int
+void
 linear8_to_internal(audio_filter_arg_t *arg)
 {
 	KASSERT(is_valid_filter_arg(arg));
@@ -45,13 +42,12 @@ linear8_to_internal(audio_filter_arg_t *arg)
 		s ^= xor;
 		*dptr++ = s;
 	}
-	return arg->count;
 }
 
 /*
 * internal から [US]LINEAR(?,stride=8){BE|LE} への変換
 */
-int
+void
 internal_to_linear8(audio_filter_arg_t *arg)
 {
 	KASSERT(is_valid_filter_arg(arg));
@@ -75,13 +71,12 @@ internal_to_linear8(audio_filter_arg_t *arg)
 		s >>= src_lsr;
 		*dptr++ = (uint8_t)s;
 	}
-	return arg->count;
 }
 
 /*
 * [US]LINEAR(?,stride=16){BE|LE} から internal への変換
 */
-int
+void
 linear16_to_internal(audio_filter_arg_t *arg)
 {
 	KASSERT(is_valid_filter_arg(arg));
@@ -142,13 +137,12 @@ linear16_to_internal(audio_filter_arg_t *arg)
 			}
 		}
 	}
-	return arg->count;
 }
 
 /*
 * internal から [US]LINEAR(?,stride=16){BE|LE} への変換
 */
-int
+void
 internal_to_linear16(audio_filter_arg_t *arg)
 {
 	KASSERT(is_valid_filter_arg(arg));
@@ -209,13 +203,12 @@ internal_to_linear16(audio_filter_arg_t *arg)
 			}
 		}
 	}
-	return arg->count;
 }
 
 /*
 * [US]LINEAR(?,stride=24){BE|LE} から internal への変換
 */
-int
+void
 linear24_to_internal(audio_filter_arg_t *arg)
 {
 	KASSERT(is_valid_filter_arg(arg));
@@ -254,13 +247,12 @@ linear24_to_internal(audio_filter_arg_t *arg)
 		s ^= xor;
 		*dptr++ = s;
 	}
-	return arg->count;
 }
 
 /*
 * internal から [US]LINEAR(?,stride=24){BE|LE} への変換
 */
-int
+void
 internal_to_linear24(audio_filter_arg_t *arg)
 {
 	KASSERT(is_valid_filter_arg(arg));
@@ -301,13 +293,12 @@ internal_to_linear24(audio_filter_arg_t *arg)
 		}
 		dptr += 3;
 	}
-	return arg->count;
 }
 
 /*
 * [US]LINEAR(?,stride=32){BE|LE} から internal への変換
 */
-int
+void
 linear32_to_internal(audio_filter_arg_t *arg)
 {
 	KASSERT(is_valid_filter_arg(arg));
@@ -341,13 +332,12 @@ linear32_to_internal(audio_filter_arg_t *arg)
 		s ^= xor;
 		*dptr++ = s;
 	}
-	return arg->count;
 }
 
 /*
 * internal から [US]LINEAR(?,stride=32){BE|LE} への変換
 */
-int
+void
 internal_to_linear32(audio_filter_arg_t *arg)
 {
 	KASSERT(is_valid_filter_arg(arg));
@@ -381,5 +371,4 @@ internal_to_linear32(audio_filter_arg_t *arg)
 		}
 		*dptr++ = u;
 	}
-	return arg->count;
 }
