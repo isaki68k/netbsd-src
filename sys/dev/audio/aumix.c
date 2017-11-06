@@ -580,13 +580,19 @@ audio_track_play(audio_track_t *track)
 		}
 	}
 
+	if (track->codec_out->count == 0) return;
+
 	/* ブロックサイズに整形 */
-	if (track->codec_out->count < track->userio_frames_per_block) {
+	int n = track->userio_frames_per_block - track->codec_out->count;
+	if (n > 0) {
 		if (track->is_draining) {
 			/* TODO: ドレインの条件を、ユーザ指定ドレインとミキサ要求ドレインで分離することになりそう。*/
 			/* 無音をブロックサイズまで埋める */
 			/* 内部フォーマットだとわかっている */
-			memset(RING_BOT_UINT8(track->codec_out), 0, (track->userio_frames_per_block - track->codec_out->count) * track->codec_out->fmt->channels * sizeof(internal_t));
+			TRACE(track, "Append silence %d frames", n);
+
+			memset(RING_BOT_UINT8(track->codec_out), 0, n * track->codec_out->fmt->channels * sizeof(internal_t));
+			audio_ring_appended(track->codec_out, n);
 		} else {
 			// ブロックサイズたまるまで処理をしない
 			return;
@@ -594,6 +600,10 @@ audio_track_play(audio_track_t *track)
 	}
 
 	KASSERT(track->codec_out->count >= track->userio_frames_per_block);
+
+	if (audio_ring_unround_free_count(track->freq_out) < track->mixer->frames_per_block) {
+		return;
+	}
 
 	/* チャンネルボリューム */
 	if (track->chvol != NULL) {
@@ -605,9 +615,6 @@ audio_track_play(audio_track_t *track)
 
 	/* チャンネルミキサ */
 	if (track->chmix != NULL) {
-		if (audio_ring_unround_free_count(track->chmix_out) < track->userio_frames_per_block) {
-			return;
-		}
 		track->chmix_arg.src = RING_TOP(internal_t, track->chmix_in);
 		track->chmix_arg.dst = RING_BOT(internal_t, track->chmix_out);
 		track->chmix(&track->chmix_arg);
@@ -617,9 +624,6 @@ audio_track_play(audio_track_t *track)
 
 	/* 周波数変換 */
 	if (track->freq_in->fmt->frequency != track->freq_out->fmt->frequency) {
-		if (audio_ring_unround_free_count(track->freq_out) < track->mixer->frames_per_block) {
-			return;
-		}
 		audio_track_freq(track, track->freq_out, track->freq_in);
 	} else {
 		if (track->freq_in != track->freq_out) {
