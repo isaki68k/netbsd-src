@@ -11,6 +11,6 @@ bool audio_softc_play_busy(struct audio_softc *sc);
 void lock(struct audio_softc *sc);
 void unlock(struct audio_softc *sc);
 
-
+// OBSOLETE
 void WAIT();
 

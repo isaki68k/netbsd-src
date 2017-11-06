@@ -9,6 +9,10 @@
 #include "auformat.h"
 #include "uio.h"
 
+
+static int audio_waitio(struct audio_softc *sc, void *kcondvar, audio_track_t *track);
+
+
 #define AUDIO_TRACE
 #ifdef AUDIO_TRACE
 #define TRACE0(fmt, ...)	do {	\
@@ -893,8 +897,8 @@ audio_track_play_drain(audio_track_t *track)
 	/* chmix_buf は待つ必要はない */
 
 	do {
+		audio_waitio(track->mixer->sc, NULL, track);
 		audio_mixer_play(track->mixer);
-		WAIT();
 	} while (track->track_buf.count > 0
 		|| track->mixed_count > 0
 		|| track->hw_count > 0);
@@ -917,8 +921,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 		int free_bytelen = free_count * track->userio_fmt.channels * track->userio_fmt.stride / 8 - track->subframe_buf_used;
 
 		if (free_bytelen == 0) {
-			panic("たぶんここで cv wait");
-			continue;
+			audio_waitio(sc, NULL, track);
 		}
 
 		// 今回 uiomove するバイト数 */
@@ -940,12 +943,19 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 		track->subframe_buf_used = move_bytelen - framecount * track->userio_fmt.channels * track->userio_fmt.stride / 8;
 
 		// 今回作った userio を全部トラック再生へ渡す
-		while (track->userio_buf.count > 0) {
-			audio_track_play(track);
-			WAIT();
-		}
+		audio_track_play(track);
 	}
 
+	return 0;
+}
+
+static int
+audio_waitio(struct audio_softc *sc, void *kcondvar, audio_track_t *track)
+{
+	// 本当は割り込みハンドラからトラックが消費されるんだけど
+	// ここで消費をエミュレート。
+	audio_track_play(track);
+	audio_mixer_play(track->mixer);
 	return 0;
 }
 
