@@ -17,6 +17,8 @@ CFLAGS=	-g -std=c99 -I. -I.. \
 	-Werror \
 	-Wshadow \
 	-Wno-format-zero-length \
+	-Wno-unused-variable \
+	-Wno-unused-but-set-variable \
 
 a.out:	${SRCS:.c=.o}
 	${CC} -g -o $@ $> -lm -pthread
