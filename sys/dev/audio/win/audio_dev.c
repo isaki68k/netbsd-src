@@ -276,8 +276,3 @@ audio_format_t audio_softc_get_hw_format(struct audio_softc *sc, int mode)
 	rv.stride = (uint8_t)dev->wfx.wBitsPerSample;
 	return rv;
 }
-
-/* STUB */
-void WAIT() {
-	Sleep(1);
-}
