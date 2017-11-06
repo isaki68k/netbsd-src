@@ -41,6 +41,11 @@
 struct msm6258_codecvar {
 	int16_t		mc_amp;
 	int8_t		mc_estim;
+
+	// フレーム境界がバイト境界にないため、1 サンプルをここでキューする。
+	// ドレイン時にはドロップされるが、許容する。
+	internal_t pending_sample;
+	bool is_pending;
 };
 
 
