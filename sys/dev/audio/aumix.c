@@ -725,48 +725,35 @@ audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track)
 	mix_buf = mixer->mix_buf;
 	mix_buf.count = track->mixed_count;
 
-	/* 今回ミキシングしたいフレーム数 */
-	if (track->is_draining) {
-		/* ドレイン中は出来る限り実行 */
-		count = min(count, (mix_buf.capacity - mix_buf.count));
-	} else {
-		/* 通常時は 1 ブロック貯まるまで待つ */
-		if (count < mixer->frames_per_block) return;
-		count = mixer->frames_per_block;
-	}
+	/* 1 ブロック貯まるまで待つ */
+	if (count < mixer->frames_per_block) return;
+	count = mixer->frames_per_block;
 
 	if (mix_buf.capacity - mix_buf.count < count) {
 		TRACE(track, "mix_buf full");
 		return;
 	}
 
-	int remain_count = count;
-	for (; remain_count > 0; ) {
-		int track_count = audio_ring_unround_count(&track->track_buf);
-		int mix_count = audio_ring_unround_free_count(&mix_buf);
-		int slice_count = min(track_count, mix_count);
-		slice_count = min(remain_count, slice_count);
-		KASSERT(slice_count > 0);
+	KASSERT(audio_ring_unround_count(&track->track_buf) >= count);
+	KASSERT(audio_ring_unround_free_count(&mix_buf) >= count);
 
-		internal_t *sptr = RING_TOP(internal_t, &track->track_buf);
-		internal2_t *dptr = RING_BOT(internal2_t, &mix_buf);
+	internal_t *sptr = RING_TOP(internal_t, &track->track_buf);
+	internal2_t *dptr = RING_BOT(internal2_t, &mix_buf);
 
-		/* 整数倍精度へ変換し、トラックボリュームを適用して加算合成 */
-		int slice_sample = slice_count * mixer->mix_fmt.channels;
-		if (track->volume == 256) {
-			for (int i = 0; i < slice_sample; i++) {
-				*dptr++ += ((internal2_t)*sptr++);
-			}
-		} else {
-			for (int i = 0; i < slice_sample; i++) {
-				*dptr++ += ((internal2_t)*sptr++) * track->volume / 256;
-			}
+	/* 整数倍精度へ変換し、トラックボリュームを適用して加算合成 */
+	int sample_count = count * mixer->mix_fmt.channels;
+	if (track->volume == 256) {
+		for (int i = 0; i < sample_count; i++) {
+			*dptr++ += ((internal2_t)*sptr++);
 		}
-
-		audio_ring_tookfromtop(&track->track_buf, slice_count);
-		audio_ring_appended(&mix_buf, slice_count);
-		remain_count -= slice_count;
+	} else {
+		for (int i = 0; i < sample_count; i++) {
+			*dptr++ += ((internal2_t)*sptr++) * track->volume / 256;
+		}
 	}
+
+	audio_ring_tookfromtop(&track->track_buf, count);
+	audio_ring_appended(&mix_buf, count);
 
 	/* トラックバッファを取り込んだことを反映 */
 	track->mixed_count += count;
