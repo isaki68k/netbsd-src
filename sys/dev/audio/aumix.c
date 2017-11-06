@@ -358,9 +358,10 @@ audio_track_set_format(audio_track_t *track, audio_format_t *fmt)
 		track->userio_buf.sample = audio_free(track->userio_buf.sample);
 	} else {
 		track->userio_inout = &track->userio_buf;
-		// バッファの容量を framealign の倍数にしておけば全体としてバイト境界問題が解決できる
 		track->userio_buf.top = 0;
 		track->userio_buf.count = 0;
+		// バッファの容量を framealign の倍数にしておけば全体としてバイト境界問題が解決できる
+		// レコーディングのときはこの条件が必須になる。再生時は codec のほうで必須になる。
 		track->userio_buf.capacity = track->userio_frames_per_block * track->framealign;
 		track->userio_buf.sample = audio_realloc(track->userio_buf.sample, RING_BYTELEN(&track->userio_buf));
 		// TODO: バッファサイズをページサイズとの間で調整しても良いかも
@@ -389,7 +390,9 @@ audio_track_set_format(audio_track_t *track, audio_format_t *fmt)
 		// XXX: インライン変換はとりあえず置いておく
 		track->codec_buf.top = 0;
 		track->codec_buf.count = 0;
-		track->codec_buf.capacity = track->codec_in->capacity;
+		// バッファの容量を framealign の倍数にしておけば全体としてバイト境界問題が解決できる
+		// ほかのバッファはともかく、このバッファはこの条件が必須。
+		track->codec_buf.capacity = track->userio_frames_per_block * track->framealign;
 		track->codec_buf.sample = audio_realloc(track->codec_buf.sample, RING_BYTELEN(&track->codec_buf));
 	}
 
@@ -399,6 +402,7 @@ audio_track_set_format(audio_track_t *track, audio_format_t *fmt)
 	} else {
 		track->chvol_arg.src_fmt = track->chvol_inout->fmt;
 		track->chvol_arg.dst_fmt = track->chvol_inout->fmt;
+		track->chvol_arg.count = track->userio_frames_per_block;
 		track->chvol_arg.context = track->ch_volume;
 		track->chvol = audio_track_chvol;
 	}
@@ -415,6 +419,7 @@ audio_track_set_format(audio_track_t *track, audio_format_t *fmt)
 		track->chmix_out = &track->chmix_buf;
 		track->chmix_arg.src_fmt = track->chmix_in->fmt;
 		track->chmix_arg.dst_fmt = track->chmix_out->fmt;
+		track->chmix_arg.count = track->userio_frames_per_block;
 		track->chmix_buf.top = 0;
 		track->chmix_buf.count = 0;
 		track->chmix_buf.capacity = track->chmix_in->capacity;
@@ -469,29 +474,24 @@ audio_track_enconvert(audio_track_t *track, audio_filter_t filter, audio_ring_t 
 
 	if (src->count <= 0) return;
 
-	// 1 ブロックを処理する
-	int count = src->count;
+	int dst_count = audio_ring_unround_free_count(dst);
+
+	// stride に応じてアラインする最小ブロックまでを処理する
+	int count = track->userio_frames_per_block * track->framealign;
+	count = min(count, src->count);
+	count = min(count, dst_count);
+
 	// フレームのアライメント位置まで切り捨てる
 	count = count & ~(track->framealign - 1);
 
-	if (count >= track->userio_frames_per_block) {
-		count = track->userio_frames_per_block;
-	} else {
-		if (track->is_draining == false) {
-			// drain 中でなければ 1 ブロック貯まるまで処理しない
-			return;
-		}
+	/* 空きがない */
+	if (count == 0) {
+		// TODO: return して次回をまつかも
+		return;
+//		panic("no idea");
 	}
 
 	audio_filter_arg_t *arg = &track->codec_arg;
-
-	int dst_count = audio_ring_unround_free_count(dst);
-	KASSERT(dst_count != 0);
-	/* 空きがない */
-	if (dst_count < count) {
-		// TODO: return して次回をまつかも
-		panic("");
-	}
 
 	arg->dst = RING_BOT_UINT8(dst);
 	arg->src = RING_TOP_UINT8(src);
@@ -506,42 +506,8 @@ audio_track_enconvert(audio_track_t *track, audio_filter_t filter, audio_ring_t 
 void
 audio_track_channel_mix(audio_track_t *track, audio_ring_t *dst, audio_ring_t *src)
 {
-	KASSERT(track != NULL);
-	KASSERT(is_valid_ring(dst));
-	KASSERT(is_valid_ring(src));
-
-	if (src->count <= 0) return;
-	int count = src->count;
-
-	/* 今回変換したいフレーム数 */
-	if (track->is_draining) {
-		/* ドレイン中は出来る限り実行 */
-		count = min(count, (dst->capacity - dst->count));
-	} else {
-		/* 通常時は 1 ブロック */
-		count = min(count, track->userio_frames_per_block);
-	}
-	if (count <= 0) return;
-
-	/* 空きがない */
-	if (dst->capacity - dst->count < count) return;
-
-	int slice_count = 0;
-	for (int remain_count = count; remain_count > 0; remain_count -= slice_count) {
-		int dst_count = audio_ring_unround_free_count(dst);
-		KASSERT(dst_count != 0);
-
-		int src_count = audio_ring_unround_count(src);
-		slice_count = min(remain_count, src_count);
-		slice_count = min(slice_count, dst_count);
-		KASSERT(slice_count > 0);
-
-		internal_t *sptr = RING_TOP(internal_t, src);
-
-		sptr = RING_TOP(internal_t, src);
-		internal_t *dptr = RING_BOT(internal_t, dst);
-
 #if false
+	// 残骸。またあとで考えるかも
 		case AUDIO_TRACK_CHANNEL_MIXALL:
 			for (int i = 0; i < slice_count; i++) {
 				internal2_t s = 0;
@@ -563,9 +529,6 @@ audio_track_channel_mix(audio_track_t *track, audio_ring_t *dst, audio_ring_t *s
 			}
 			break;
 #endif
-		audio_ring_appended(dst, slice_count);
-		audio_ring_tookfromtop(src, slice_count);
-	}
 }
 
 void
@@ -574,79 +537,31 @@ audio_track_freq(audio_track_t *track, audio_ring_t *dst, audio_ring_t *src)
 	KASSERT(track);
 	KASSERT(is_valid_ring(dst));
 	KASSERT(is_valid_ring(src));
+	KASSERT(src->count > 0);
+	KASSERT(src->fmt->channels == dst->fmt->channels);
 
-	if (src->count <= 0) return;
-
-	/* 通常時は 1 ブロック */
-	int count = track->mixer->frames_per_block;
-	count = min(count, (dst->capacity - dst->count));
-
-	if (track->is_draining) {
-		/* ドレイン中は出来る限り実行 */
-		count = dst->capacity - dst->count;
-	}
-	if (count <= 0) return;
-
-	/* 空きがない */
-	if (dst->capacity - dst->count < count) return;
-
-	audio_rational_t one = { 1, 0 };
-	int cmp1 = audio_rational_cmp(&track->freq_step, &one);
-
-	if (cmp1 == 0) {
-		// 周波数変更なし
-		/* 通常、来ない */
-		count = min(count, src->count);
-		audio_ring_concat(dst, src, count);
+	int count = audio_ring_unround_free_count(dst);
+	
+	if (count <= 0) {
 		return;
+//		panic("not impl");
 	}
+	
+	// 単純法
+	// XXX: 高速化が必要
+	internal_t *dptr = RING_BOT(internal_t, dst);
+	for (int i = 0; i < count; i++) {
+		if (src->count <= 0) break;
 
-	int slice_count = 0;
-	for (int remain_count = count; remain_count > 0; remain_count -= slice_count) {
-		/* 今回処理するフレーム数を決定します。 */
-		int src_count = audio_ring_unround_count(src);
-		if (src_count == 0) break;
-		int dst_count = audio_ring_unround_free_count(dst);
-		KASSERT(dst_count != 0);
-		slice_count = min(remain_count, dst_count);
-
-#if AUDIO_FREQ_ALGORITHM == AUDIO_FREQ_ALGORITHM_SIMPLE
-		// 単純法
-		if (src_count <= track->freq_current.i) {
-			audio_ring_tookfromtop(src, src_count);
-			track->freq_current.i -= src_count;
-			slice_count = 0;
-		} else {
-			internal_t *dptr = RING_BOT(internal_t, dst);
-			for (int i = 0; i < slice_count; i++) {
-				if (track->freq_current.i >= src_count) {
-					slice_count = i;
-					break;
-				}
-				// XXX: 高速化が必要
-				internal_t *sptr = RING_PTR(internal_t, src, track->freq_current.i);
-				for (int ch = 0; ch < dst->fmt->channels; ch++, dptr++, sptr++) {
-					*dptr = *sptr;
-				}
-
-				audio_rational_add(&track->freq_current, &track->freq_step, dst->fmt->frequency);
-			}
-			audio_ring_tookfromtop(src, track->freq_current.i);
-			audio_ring_appended(dst, slice_count);
-			track->freq_current.i = 0;
+		internal_t *sptr = RING_TOP(internal_t, src);
+		for (int ch = 0; ch < dst->fmt->channels; ch++, dptr++, sptr++) {
+			*dptr = *sptr;
 		}
-
-#else
-
-		if (cmp1 < 0) {
-			/* 周波数を上げる */
-			// TODO: 補間法とか
-		} else {
-			/* 周波数を下げる */
-			// TODO: 平均法とか
-		}
-#endif
-
+		
+		audio_rational_add(&track->freq_current, &track->freq_step, dst->fmt->frequency);
+		audio_ring_tookfromtop(src, track->freq_current.i);
+		track->freq_current.i = 0;
+		audio_ring_appended(dst, 1);
 	}
 }
 
@@ -660,21 +575,51 @@ audio_track_play(audio_track_t *track)
 
 	/* エンコーディング変換 */
 	if (track->codec != NULL) {
-		audio_track_enconvert(track, track->codec, track->codec_out, track->codec_in);
+		if (audio_ring_unround_free_count(track->codec_out) > 0) {
+			audio_track_enconvert(track, track->codec, track->codec_out, track->codec_in);
+		}
 	}
+
+	/* ブロックサイズに整形 */
+	if (track->codec_out->count < track->userio_frames_per_block) {
+		if (track->is_draining) {
+			/* TODO: ドレインの条件を、ユーザ指定ドレインとミキサ要求ドレインで分離することになりそう。*/
+			/* 無音をブロックサイズまで埋める */
+			/* 内部フォーマットだとわかっている */
+			memset(RING_BOT_UINT8(track->codec_out), 0, (track->userio_frames_per_block - track->codec_out->count) * track->codec_out->fmt->channels * sizeof(internal_t));
+		} else {
+			// ブロックサイズたまるまで処理をしない
+			return;
+		}
+	}
+
+	KASSERT(track->codec_out->count >= track->userio_frames_per_block);
 
 	/* チャンネルボリューム */
 	if (track->chvol != NULL) {
+		// インプレース変換
+		track->chvol_arg.src = track->chvol_arg.dst = RING_TOP(internal_t, track->chvol_inout);
 		track->chvol(&track->chvol_arg);
+		// インプレース変換なのでリングバッファを進めてはいけない
 	}
 
 	/* チャンネルミキサ */
 	if (track->chmix != NULL) {
-		audio_track_channel_mix(track, track->chmix_out, track->chmix_in);
+		if (audio_ring_unround_free_count(track->chmix_out) < track->userio_frames_per_block) {
+			return;
+		}
+		track->chmix_arg.src = RING_TOP(internal_t, track->chmix_in);
+		track->chmix_arg.dst = RING_BOT(internal_t, track->chmix_out);
+		track->chmix(&track->chmix_arg);
+		audio_ring_appended(track->chmix_out, track->chmix_arg.count);
+		audio_ring_tookfromtop(track->chmix_in, track->chmix_arg.count);
 	}
 
 	/* 周波数変換 */
 	if (track->freq_in->fmt->frequency != track->freq_out->fmt->frequency) {
+		if (audio_ring_unround_free_count(track->freq_out) < track->mixer->frames_per_block) {
+			return;
+		}
 		audio_track_freq(track, track->freq_out, track->freq_in);
 	} else {
 		if (track->freq_in != track->freq_out) {
@@ -780,8 +725,6 @@ audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track)
 	if (track->is_draining) {
 		/* ドレイン中は出来る限り実行 */
 		count = min(count, (mix_buf.capacity - mix_buf.count));
-		if (count <= 0)
-			panic("is_draining && count <= 0 ?");
 	} else {
 		/* 通常時は 1 ブロック貯まるまで待つ */
 		if (count < mixer->frames_per_block) return;
