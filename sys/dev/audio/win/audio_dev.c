@@ -11,6 +11,7 @@
 #include "auintr.h"
 
 //#define DEBUG_ONEBUF
+//#define DEBUG_DUMP
 
 #define DEV_BITS 16
 typedef int16_t DEV_SAMPLE_T;
@@ -148,7 +149,7 @@ audio_detach(struct audio_softc *sc)
 
 		audio_track_play_drain_core(ptrack, true);
 	}
-	printf("output=%d complete=%d\n", sc->sc_pmixer.hw_output_counter, sc->sc_pmixer.hw_complete_counter);
+	printf("output=%d complete=%d\n", (int)sc->sc_pmixer.hw_output_counter, (int)sc->sc_pmixer.hw_complete_counter);
 #endif
 
 	MMRESULT r;
@@ -248,6 +249,8 @@ audio_softc_play_start(struct audio_softc *sc)
 	wh->dwUser = 1;
 
 	MMRESULT r;
+	// わざと \n いれてない
+	printf("WOUT");
 	r = waveOutWrite(dev->handle, wh, sizeof(WAVEHDR));
 	if (r != MMSYSERR_NOERROR) {
 		panic("");
@@ -255,12 +258,16 @@ audio_softc_play_start(struct audio_softc *sc)
 #endif
 
 #ifdef DEBUG_DUMP
+	FILE *fp = fopen("x:\\1.csv", "a+");
+	DEV_SAMPLE_T *src = wh->lpData;
+	count = wh->dwBufferLength / (dev->wfx.wBitsPerSample * dev->wfx.nChannels / 8);
 	for (int i = 0; i < count; i++) {
 		for (int ch = 0; ch < mixer->hw_fmt.channels; ch++) {
-			printf("%d ", *src++);
+			fprintf(fp, "%d,", *src++);
 		}
-		printf("\n");
+		fprintf(fp, "\n");
 	}
+	fclose(fp);
 #endif
 }
 
