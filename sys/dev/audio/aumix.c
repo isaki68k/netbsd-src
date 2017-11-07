@@ -591,7 +591,9 @@ audio_track_play(audio_track_t *track)
 			/* TODO: ドレインの条件を、ユーザ指定ドレインとミキサ要求ドレインで分離することになりそう。*/
 			/* 無音をブロックサイズまで埋める */
 			/* 内部フォーマットだとわかっている */
+			/* ここは入力がブロックサイズ未満の端数だった場合。次段以降がブロックサイズを想定しているので、ここでまず追加。*/
 			TRACE(track, "Append silence %d frames", n);
+			KASSERT(audio_ring_unround_free_count(track->codec_out) >= n);
 
 			memset(RING_BOT_UINT8(track->codec_out), 0, n * track->codec_out->fmt->channels * sizeof(internal_t));
 			audio_ring_appended(track->codec_out, n);
@@ -603,12 +605,10 @@ audio_track_play(audio_track_t *track)
 
 	KASSERT(track->codec_out->count >= track->userio_frames_per_block);
 
-	if (audio_ring_unround_free_count(track->freq_out) < track->mixer->frames_per_block) {
-		return;
-	}
-
 	/* チャンネルボリューム */
-	if (track->chvol != NULL) {
+	if (track->chvol != NULL
+	 && audio_ring_unround_count(track->chvol_in) >= track->chvol_arg.count
+	 && audio_ring_unround_free_count(track->chvol_out) >= track->chvol_arg.count) {
 		track->chvol_arg.src = RING_TOP(internal_t, track->chvol_in);
 		track->chvol_arg.dst = RING_BOT(internal_t, track->chvol_out);
 		track->chvol(&track->chvol_arg);
@@ -617,7 +617,9 @@ audio_track_play(audio_track_t *track)
 	}
 
 	/* チャンネルミキサ */
-	if (track->chmix != NULL) {
+	if (track->chmix != NULL
+	 && audio_ring_unround_count(track->chmix_in) >= track->chmix_arg.count
+	 && audio_ring_unround_free_count(track->chmix_out) >= track->chmix_arg.count) {
 		track->chmix_arg.src = RING_TOP(internal_t, track->chmix_in);
 		track->chmix_arg.dst = RING_BOT(internal_t, track->chmix_out);
 		track->chmix(&track->chmix_arg);
@@ -631,6 +633,22 @@ audio_track_play(audio_track_t *track)
 	} else {
 		if (track->freq_in != track->freq_out) {
 			audio_ring_concat(track->freq_out, track->freq_in, track->mixer->frames_per_block);
+		}
+	}
+
+	if (track->is_draining) {
+		/* TODO: ドレインの条件を、ユーザ指定ドレインとミキサ要求ドレインで分離することになりそう。*/
+		/* 無音をブロックサイズまで埋める */
+		/* 内部フォーマットだとわかっている */
+		/* 周波数変換の結果、ブロック未満の端数フレームが出る */
+		int n = track->track_buf.count % track->mixer->frames_per_block;
+		if (n > 0) {
+			n = track->mixer->frames_per_block - n;
+			TRACE(track, "Append silence %d frames to track_buf", n);
+			KASSERT(audio_ring_unround_free_count(&track->track_buf) >= n);
+
+			memset(RING_BOT_UINT8(&track->track_buf), 0, n * track->track_buf.fmt->channels * sizeof(internal_t));
+			audio_ring_appended(&track->track_buf, n);
 		}
 	}
 
