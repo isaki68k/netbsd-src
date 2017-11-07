@@ -731,24 +731,24 @@ audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track)
 {
 	int count = track->track_buf.count;
 
-	audio_ring_t mix_buf;
-	mix_buf = mixer->mix_buf;
-	mix_buf.count = track->mixed_count;
+	audio_ring_t mix_tmp;
+	mix_tmp = mixer->mix_buf;
+	mix_tmp.count = track->mixed_count;
 
 	/* 1 ブロック貯まるまで待つ */
 	if (count < mixer->frames_per_block) return;
 	count = mixer->frames_per_block;
 
-	if (mix_buf.capacity - mix_buf.count < count) {
+	if (mix_tmp.capacity - mix_tmp.count < count) {
 		TRACE(track, "mix_buf full");
 		return;
 	}
 
 	KASSERT(audio_ring_unround_count(&track->track_buf) >= count);
-	KASSERT(audio_ring_unround_free_count(&mix_buf) >= count);
+	KASSERT(audio_ring_unround_free_count(&mix_tmp) >= count);
 
 	internal_t *sptr = RING_TOP(internal_t, &track->track_buf);
-	internal2_t *dptr = RING_BOT(internal2_t, &mix_buf);
+	internal2_t *dptr = RING_BOT(internal2_t, &mix_tmp);
 
 	/* 整数倍精度へ変換し、トラックボリュームを適用して加算合成 */
 	int sample_count = count * mixer->mix_fmt.channels;
@@ -763,7 +763,6 @@ audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track)
 	}
 
 	audio_ring_tookfromtop(&track->track_buf, count);
-	audio_ring_appended(&mix_buf, count);
 
 	/* トラックバッファを取り込んだことを反映 */
 	track->mixed_count += count;
