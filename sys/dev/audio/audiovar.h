@@ -211,6 +211,7 @@ struct audio_trackmixer
 
 	struct audio_softc *sc;				/* 論理デバイス */
 
+	bool busy;
 										// 未定
 	int pending_play_period;
 

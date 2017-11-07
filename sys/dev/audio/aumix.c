@@ -656,8 +656,10 @@ audio_track_play(audio_track_t *track, bool isdrain)
 		track->track_counter += track->track_buf.count - track_count_0;
 	}
 
-	TRACE(track, "trackbuf=%d", track->track_buf.count);
-	audio_mixer_play(track->mixer);
+//	TRACE(track, "trackbuf=%d", track->track_buf.count);
+	if (track->mixer->busy == false) {
+		audio_mixer_play(track->mixer, false);
+	}
 }
 
 void
@@ -702,6 +704,8 @@ audio_mixer_play(audio_trackmixer_t *mixer, bool isdrain)
 	//TRACE0("");
 	/* 全部のトラックに聞く */
 
+	mixer->busy = true;
+
 	audio_file_t *f;
 	int mixed = 0;
 	if (mixer->mix_buf.count < mixer->mix_buf.capacity) {
@@ -729,10 +733,14 @@ audio_mixer_play(audio_trackmixer_t *mixer, bool isdrain)
 		mixer->mix_buf.count = mixed;
 	}
 
-	/* 全員準備できたか、時間切れならハードウェアに転送 */
-	if (track_ready == track_count
-	|| audio_softc_play_busy(mixer->sc) == false) {
+	// バッファの準備ができたら転送。
+	if (mixer->mix_buf.count >= mixer->frames_per_block
+		&& mixer->hw_buf.capacity - mixer->hw_buf.count >= mixer->frames_per_block) {
 		audio_mixer_play_period(mixer);
+	}
+
+	if (mixer->mix_buf.count == 0 && mixer->hw_buf.count == 0) {
+		mixer->busy = false;
 	}
 }
 
