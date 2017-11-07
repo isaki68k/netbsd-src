@@ -804,7 +804,7 @@ audio_mixer_play_period(audio_trackmixer_t *mixer /*, bool force */)
 	count = min(count, mixer->frames_per_block);
 
 	/* オーバーフロー検出 */
-	internal2_t overflow = AUDIO_INTERNAL_T_MAX;
+	internal2_t ovf_plus = AUDIO_INTERNAL_T_MAX;
 	internal2_t ovf_minus = AUDIO_INTERNAL_T_MIN;
 
 	internal2_t *mptr0 = RING_TOP(internal2_t, &mixer->mix_buf);
@@ -812,18 +812,22 @@ audio_mixer_play_period(audio_trackmixer_t *mixer /*, bool force */)
 
 	int sample_count = count * mixer->mix_fmt.channels;
 	for (int i = 0; i < sample_count; i++) {
-		if (*mptr > overflow) overflow = *mptr;
+		if (*mptr > ovf_plus) ovf_plus = *mptr;
 		if (*mptr < ovf_minus) ovf_minus = *mptr;
 
 		mptr++;
 	}
-	if (-ovf_minus > overflow) overflow = -ovf_minus;
 
 	/* マスタボリュームの自動制御 */
 	int vol = mixer->volume;
-	if (overflow * vol / 256 > AUDIO_INTERNAL_T_MAX) {
+	if (ovf_plus * vol / 256 > AUDIO_INTERNAL_T_MAX) {
 		/* オーバーフローしてたら少なくとも今回はボリュームを下げる */
-		vol = (int)((internal2_t)AUDIO_INTERNAL_T_MAX * 256 / overflow);
+		vol = (int)((internal2_t)AUDIO_INTERNAL_T_MAX * 256 / ovf_plus);
+	}
+	if (ovf_minus * vol / 256 < AUDIO_INTERNAL_T_MIN) {
+		vol = (int)((internal2_t)AUDIO_INTERNAL_T_MIN * 256 / ovf_minus);
+	}
+	if (vol < mixer->volume) {
 		/* 128 までは自動でマスタボリュームを下げる */
 		if (mixer->volume > 128) {
 mixer->volume--;
