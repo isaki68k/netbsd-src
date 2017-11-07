@@ -176,10 +176,10 @@ struct audio_track
 	bool is_pause;						/* track_buf への trackmixer からのアクセスを一時停止する */
 
 
-	/* できるかどうか未知 */
 	uint64_t userio_counter;			/* userio_buf の読み書きフレーム数 */
 	uint64_t track_counter;				/* track_buf のトラック側読み書きフレーム数 */
 
+	/* できるかどうか未知 */
 	uint64_t track_mixer_counter;		/* track_buf のトラックミキサ側読み書きフレーム数 */
 	uint64_t mixer_hw_counter; /* mixer <-> hw 入出力フレーム数 */
 	uint64_t hw_complete_counter; /* ハードウェア I/O が完了したフレーム数 */
