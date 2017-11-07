@@ -746,15 +746,19 @@ audio_mixer_play(audio_trackmixer_t *mixer)
 void
 audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track)
 {
-	int count = track->track_buf.count;
+	/* 1 ブロック貯まるまで待つ */
+	if (track->track_buf.count < mixer->frames_per_block) {
+		TRACE0("track count too short: track_buf.count=%d", track->track_buf.count);
+		return;
+	}
 
+	int count = mixer->frames_per_block;
+
+	// mixer->mix_buf の top 位置から、このトラックの mixed_count までは前回処理済みなので、
+	// コピーしたローカル ring で処理をする。
 	audio_ring_t mix_tmp;
 	mix_tmp = mixer->mix_buf;
 	mix_tmp.count = track->mixed_count;
-
-	/* 1 ブロック貯まるまで待つ */
-	if (count < mixer->frames_per_block) return;
-	count = mixer->frames_per_block;
 
 	if (mix_tmp.capacity - mix_tmp.count < count) {
 		TRACE(track, "mix_buf full");
