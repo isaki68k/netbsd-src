@@ -167,7 +167,10 @@ struct audio_track
 
 	audio_trackmixer_t  *mixer;			/* 接続されているトラックミキサ */
 	int                mixed_count;		/* トラックミキサのミキサバッファにあって出力を待っているこのトラックのフレーム数 */
-	int                hw_count;		/* トラックミキサのハードウェアバッファにあって出力完了を待っているこのトラックのフレーム数 */
+
+										/* トラックミキサでハードウェア出力を待っているブロック情報 */
+	int                completion_blkcount;		// completion_blkID の使用個数
+	uint32_t           completion_blkID[16];	// XXX: 16 は適当
 
 	bool is_draining;					/* drain 実行中 */
 	bool is_pause;						/* track_buf への trackmixer からのアクセスを一時停止する */
@@ -202,7 +205,9 @@ struct audio_trackmixer
 
 	audio_format_t hw_fmt;
 	audio_ring_t   hw_buf;				/* 物理デバイスの入出力バッファ (malloc ではなく allocm で確保する) */
-	int  hw_count;						/* 物理デバイス入出力中のフレーム数 */
+
+	uint32_t       hw_blkID;			/* ハードウェア出力中のブロック ID */
+	uint32_t       hw_cmplID;			/* ハードウェア出力完了のブロック ID */
 
 	struct audio_softc *sc;				/* 論理デバイス */
 

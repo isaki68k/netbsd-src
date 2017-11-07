@@ -863,23 +863,31 @@ mixer->volume--;
 	audio_file_t *f;
 	SLIST_FOREACH(f, &mixer->sc->sc_files, entry) {
 		audio_track_t *track = &f->ptrack;
-		if (track->mixed_count <= count) {
-			/* 要求転送量が全部転送されている */
-			track->hw_count += track->mixed_count;
-			track->mixer_hw_counter += track->mixed_count;
-			track->mixed_count = 0;
-		} else {
-			/* のこりがある */
-			track->hw_count += count;
-			track->mixer_hw_counter += count;
-			track->mixed_count -= count;
+		if (track->mixed_count > 0) {
+			KASSERT(track->completion_blkcount < _countof(track->completion_blkID));
+
+			track->completion_blkID[track->completion_blkcount] = mixer->hw_blkID;
+			track->completion_blkcount++;
+
+			if (track->mixed_count <= count) {
+				/* 要求転送量が全部転送されている */
+				track->mixer_hw_counter += track->mixed_count;
+				track->mixed_count = 0;
+			} else {
+				/* のこりがある */
+				track->mixer_hw_counter += count;
+				track->mixed_count -= count;
+			}
 		}
 	}
 
 	/* ハードウェアへ通知する */
-	TRACE0("start count=%d", count);
+	TRACE0("start count=%d blkid=%d", count, mixer->hw_blkID);
 	audio_softc_play_start(mixer->sc);
 	mixer->hw_output_counter += count;
+
+	// この blkID の出力は終わり。次。
+	mixer->hw_blkID++;
 }
 
 void
@@ -894,23 +902,30 @@ audio_trackmixer_intr(audio_trackmixer_t *mixer, int count)
 	audio_file_t *f;
 	SLIST_FOREACH(f, &mixer->sc->sc_files, entry) {
 		audio_track_t *track = &f->ptrack;
-		if (track->hw_count <= count) {
-			/* 要求転送量が全部転送されている */
-			track->hw_complete_counter += track->hw_count;
-			track->hw_count = 0;
-		} else {
-			/* のこりがある */
-			track->hw_complete_counter += count;
-			track->hw_count -= count;
+		if (track->completion_blkcount > 0) {
+			if (track->completion_blkID[0] < mixer->hw_cmplID) {
+				panic("missing block");
+			}
+
+			if (track->completion_blkID[0] == mixer->hw_cmplID) {
+				track->hw_complete_counter += mixer->frames_per_block;
+				// キューは小さいのでポインタをごそごそするより速いんではないか
+				for (int i = 0; i < track->completion_blkcount - 1; i++) {
+					track->completion_blkID[i] = track->completion_blkID[i + 1];
+				}
+				track->completion_blkcount--;
+			}
 		}
 	}
+	mixer->hw_cmplID++;
 
+#if !false
 	/* XXX win32 は割り込みから再生 API をコール出来ないので、ポーリングする */
 	if (audio_softc_play_busy(mixer->sc) == false) {
 		audio_softc_play_start(mixer->sc);
 	}
-	audio_mixer_play(mixer);
-
+#endif
+	audio_mixer_play(mixer, true);
 }
 
 #ifdef AUDIO_INTR_EMULATED
@@ -948,10 +963,10 @@ audio_track_play_drain_core(audio_track_t *track, bool wait)
 			//audio_mixer_play(track->mixer);
 		} while (track->track_buf.count > 0
 			|| track->mixed_count > 0
-			|| track->hw_count > 0);
+			|| track->completion_blkcount > 0);
 
 		track->is_draining = false;
-		printf("#%d: uio_count=%d trk_count=%d tm=%d mixhw=%d hw_complete=%d\n", track->id,
+		printf("#%d: uio_count=%lld trk_count=%lld tm=%lld mixhw=%lld hw_complete=%lld\n", track->id,
 			track->userio_counter, track->track_counter, 
 			track->track_mixer_counter, track->mixer_hw_counter,
 			track->hw_complete_counter);
