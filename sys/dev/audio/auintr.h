@@ -8,7 +8,7 @@
 
 struct intr_t
 {
-	int code;
+	volatile int code;
 	struct audio_softc *sc;
 
 	audio_trackmixer_t *mixer;

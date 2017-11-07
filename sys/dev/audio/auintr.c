@@ -11,10 +11,13 @@ static struct intr_t intr;
 void
 emu_intr(struct intr_t x)
 {
+#if !true
+	while (intr.code != 0);
+#else
 	if (intr.code != 0) {
-		// 多重割り込みはサポートしていない
 		panic("intr on intr");
 	}
+#endif
 	intr = x;
 }
 
@@ -23,11 +26,13 @@ void
 emu_intr_check()
 {
 	if (intr.code != 0) {
-		switch (intr.code) {
+		struct intr_t y = intr;
+		intr.code = 0;
+
+		switch (y.code) {
 		case INTR_TRACKMIXER:
-			audio_trackmixer_intr(intr.mixer, intr.count);
+			audio_trackmixer_intr(y.mixer, y.count);
 			break;
 		}
-		intr.code = 0;
 	}
 }
