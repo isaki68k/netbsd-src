@@ -945,6 +945,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 			panic("uiomove");
 		}
 		audio_ring_appended(&track->userio_buf, framecount);
+		track->userio_counter += framecount;
 		
 		// 今回 userio_buf に置いたサブフレームを次回のために求める
 		track->subframe_buf_used = move_bytelen - framecount * track->userio_fmt.channels * track->userio_fmt.stride / 8;
