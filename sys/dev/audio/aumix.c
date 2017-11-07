@@ -834,7 +834,7 @@ audio_mixer_play_period(audio_trackmixer_t *mixer /*, bool force */)
 	if (vol < mixer->volume) {
 		/* 128 までは自動でマスタボリュームを下げる */
 		if (mixer->volume > 128) {
-mixer->volume--;
+			mixer->volume--;
 		}
 	}
 
