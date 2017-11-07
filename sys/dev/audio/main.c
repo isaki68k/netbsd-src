@@ -240,9 +240,8 @@ child_loop(struct test_file *f, int loop)
 	audio_ring_tookfromtop(&f->mem, frames);
 
 	if (frames < frames_per_block) {
-		// 最後のはずなのでドレイン
+		// 最後
 		f->play = false;
-		audio_track_play_drain(&f->file->ptrack);
 		return -1;
 	}
 	return 0;
