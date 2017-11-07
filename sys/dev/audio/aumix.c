@@ -554,6 +554,8 @@ audio_track_play(audio_track_t *track)
 {
 	KASSERT(track);
 
+	int track_count_0 = track->track_buf.count;
+
 	/* エンコーディング変換 */
 	if (track->codec != NULL) {
 		int dst_count = audio_ring_unround_free_count(track->codec_out);
@@ -631,6 +633,12 @@ audio_track_play(audio_track_t *track)
 		if (track->freq_in != track->freq_out) {
 			audio_ring_concat(track->freq_out, track->freq_in, track->mixer->frames_per_block);
 		}
+	}
+
+	if (track->userio_inout == &track->track_buf) {
+		track->track_counter = track->userio_counter;
+	} else {
+		track->track_counter += track->track_buf.count - track_count_0;
 	}
 
 	TRACE(track, "trackbuf=%d", track->track_buf.count);
