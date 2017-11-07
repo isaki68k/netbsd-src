@@ -854,6 +854,7 @@ audio_mixer_play_period(audio_trackmixer_t *mixer /*, bool force */)
 	}
 
 	/* ハードウェアバッファへ転送 */
+	// TODO: MD 側フィルタ
 	lock(mixer->sc);
 	mptr = mptr0;
 	internal_t *hptr = RING_BOT(internal_t, &mixer->hw_buf);
