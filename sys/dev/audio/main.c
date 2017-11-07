@@ -168,7 +168,7 @@ main(int ac, char *av[])
 		audio_track_set_format(&f->file->ptrack, &f->fmt);
 
 		f->play = true;
-		f->wait = i * opt_wait;
+		f->wait = opt_wait;
 		fileidx++;
 	}
 
