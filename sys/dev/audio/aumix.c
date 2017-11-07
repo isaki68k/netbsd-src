@@ -8,7 +8,7 @@
 #include "aucodec.h"
 #include "auformat.h"
 #include "uio.h"
-
+#include "auintr.h"
 
 static int audio_waitio(struct audio_softc *sc, void *kcondvar, audio_track_t *track);
 
@@ -775,11 +775,6 @@ audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track)
 void
 audio_mixer_play_period(audio_trackmixer_t *mixer /*, bool force */)
 {
-	/* XXX win32 は割り込みから再生 API をコール出来ないので、ポーリングする */
-	if (audio_softc_play_busy(mixer->sc) == false) {
-		audio_softc_play_start(mixer->sc);
-	}
-
 	/* 今回取り出すフレーム数を決定 */
 
 	int mix_count = audio_ring_unround_count(&mixer->mix_buf);
@@ -888,29 +883,58 @@ audio_trackmixer_intr(audio_trackmixer_t *mixer, int count)
 			track->hw_count -= count;
 		}
 	}
+
+	/* XXX win32 は割り込みから再生 API をコール出来ないので、ポーリングする */
+	if (audio_softc_play_busy(mixer->sc) == false) {
+		audio_softc_play_start(mixer->sc);
+	}
+	audio_mixer_play(mixer);
+
 }
 
-
+#ifdef AUDIO_INTR_EMULATED
 void
 audio_track_play_drain(audio_track_t *track)
 {
+	// 割り込みエミュレートしているときはメインループに制御を戻さないといけない
+	audio_track_play_drain_core(track, false);
+}
+#else
+void
+audio_track_play_drain(audio_track_t *track)
+{
+	audio_track_play_drain_core(track, true);
+}
+#endif
+
+void
+audio_track_play_drain_core(audio_track_t *track, bool wait)
+{
 	TRACE(track, "");
 	track->is_draining = true;
+
+	// 無音挿入させる
+	audio_track_play(track);
 
 	/* フレームサイズ未満のため待たされていたデータを破棄 */
 	track->subframe_buf_used = 0;
 
 	/* userio_buf は待つ必要はない */
 	/* chmix_buf は待つ必要はない */
+	if (wait) {
+		do {
+			audio_waitio(track->mixer->sc, NULL, track);
+			//audio_mixer_play(track->mixer);
+		} while (track->track_buf.count > 0
+			|| track->mixed_count > 0
+			|| track->hw_count > 0);
 
-	do {
-		audio_waitio(track->mixer->sc, NULL, track);
-		audio_mixer_play(track->mixer);
-	} while (track->track_buf.count > 0
-		|| track->mixed_count > 0
-		|| track->hw_count > 0);
-
-	track->is_draining = false;
+		track->is_draining = false;
+		printf("#%d: uio_count=%d trk_count=%d tm=%d mixhw=%d hw_complete=%d\n", track->id,
+			track->userio_counter, track->track_counter, 
+			track->track_mixer_counter, track->mixer_hw_counter,
+			track->hw_complete_counter);
+	}
 }
 
 /* write の MI 側 */
@@ -962,8 +986,21 @@ audio_waitio(struct audio_softc *sc, void *kcondvar, audio_track_t *track)
 {
 	// 本当は割り込みハンドラからトラックが消費されるんだけど
 	// ここで消費をエミュレート。
-	audio_track_play(track);
-	audio_mixer_play(track->mixer);
+
+//	TRACE0("");
+
+	emu_intr_check();
+
+#if false
+	/* 全部のトラックに聞く */
+
+	audio_file_t *f;
+	SLIST_FOREACH(f, &sc->sc_files, entry) {
+		audio_track_t *ptrack = &f->ptrack;
+
+		audio_track_play(ptrack);
+	}
+#endif
 	return 0;
 }
 

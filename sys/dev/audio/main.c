@@ -10,6 +10,7 @@
 #include "aumix.h"
 #include "audev.h"
 #include "auring.h"
+#include "auintr.h"
 #ifdef USE_PTHREAD
 #include <pthread.h>
 #endif
@@ -187,6 +188,8 @@ main(int ac, char *av[])
 	}
 #else
 	for (int loop = 0; ; loop++) {
+		emu_intr_check();
+
 		bool isPlay = false;
 		for (int i = 0; i < fileidx; i++) {
 			struct test_file *f = &files[i];

@@ -159,12 +159,14 @@
     <ClCompile Include="..\main.c" />
     <ClCompile Include="..\synth.c" />
     <ClCompile Include="audio_dev.c" />
+    <ClCompile Include="..\auintr.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\aucodec.h" />
     <ClInclude Include="..\audev.h" />
     <ClInclude Include="..\audiovar.h" />
     <ClInclude Include="..\auformat.h" />
+    <ClInclude Include="..\auintr.h" />
     <ClInclude Include="..\aumix.h" />
     <ClInclude Include="..\uio.h" />
     <ClInclude Include="..\queue.h" />

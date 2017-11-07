@@ -8,6 +8,7 @@
 #include "aumix.h"
 #include "auring.h"
 #include <stdio.h>
+#include "auintr.h"
 
 //#define DEBUG_ONEBUF
 
@@ -59,7 +60,16 @@ void CALLBACK audio_dev_win32_callback(
 		if (wh->dwBufferLength == 0) {
 			panic("wh->dwBufferLentgh == 0");
 		}
+		KASSERT(wh->dwBufferLength % 1764 == 0);
+#ifdef AUDIO_INTR_EMULATED
+		struct intr_t x;
+		x.code = INTR_TRACKMIXER;
+		x.mixer = mixer;
+		x.count = wh->dwBufferLength / dev->wfx.nBlockAlign;
+		emu_intr(x);
+#else
 		audio_trackmixer_intr(mixer, wh->dwBufferLength / dev->wfx.nBlockAlign);
+#endif
 		wh->dwUser = 0;
 		unlock(sc);
 	}
@@ -130,6 +140,16 @@ void
 audio_detach(struct audio_softc *sc)
 {
 	audio_dev_win32_t *dev = sc->phys;
+
+#ifdef AUDIO_INTR_EMULATED
+	audio_file_t *f;
+	SLIST_FOREACH(f, &sc->sc_files, entry) {
+		audio_track_t *ptrack = &f->ptrack;
+
+		audio_track_play_drain_core(ptrack, true);
+	}
+	printf("output=%d complete=%d\n", sc->sc_pmixer.hw_output_counter, sc->sc_pmixer.hw_complete_counter);
+#endif
 
 	MMRESULT r;
 #ifdef DEBUG_ONEBUF
@@ -222,6 +242,7 @@ audio_softc_play_start(struct audio_softc *sc)
 		audio_ring_tookfromtop(&mixer->hw_buf, count);
 	}
 
+	KASSERT(wh->dwBufferLength % 1764 == 0);
 #ifdef DEBUG_ONEBUF
 #else
 	wh->dwUser = 1;

@@ -39,6 +39,8 @@ void audio_track_set_format(audio_track_t *track, audio_format_t *track_fmt);
 void audio_track_play(audio_track_t *track);
 void audio_track_play_drain(audio_track_t *track);
 
+void audio_track_play_drain_core(audio_track_t *track, bool wait);
+
 void audio_mixer_init(audio_trackmixer_t *mixer, struct audio_softc *sc, int mode);
 void audio_mixer_play(audio_trackmixer_t *);
 void audio_mixer_play_period(audio_trackmixer_t *mixer);
