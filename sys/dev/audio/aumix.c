@@ -279,7 +279,6 @@ audio_track_init(audio_track_t *track, audio_trackmixer_t *mixer)
 	audio_track_set_format(track, &default_format);
 
 	track->volume = 256;
-	track->mixed_count = 0;
 	track->id = newid++;
 	// ここだけ id が決まってから表示
 	TRACE(track, "");
@@ -669,7 +668,7 @@ audio_mixer_init(audio_trackmixer_t *mixer, struct audio_softc *sc, int mode)
 
 	/* 40ms double buffer */
 	mixer->mix_buf.fmt = &mixer->mix_fmt;
-	mixer->mix_buf.capacity = 2 * mixer->mix_fmt.frequency * AUDIO_BLK_MS / 1000;
+	mixer->mix_buf.capacity = 2 * mixer->frames_per_block;
 	mixer->mix_buf.sample = audio_realloc(mixer->mix_buf.sample, RING_BYTELEN(&mixer->mix_buf));
 	memset(mixer->mix_buf.sample, 0, RING_BYTELEN(&mixer->mix_buf));
 
