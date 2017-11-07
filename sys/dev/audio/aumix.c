@@ -872,6 +872,8 @@ audio_trackmixer_intr(audio_trackmixer_t *mixer, int count)
 	TRACE0("");
 	KASSERT(count != 0);
 
+	mixer->hw_complete_counter += count;
+
 	/* トラックにハードウェア出力が完了したことを通知する */
 	audio_file_t *f;
 	SLIST_FOREACH(f, &mixer->sc->sc_files, entry) {
