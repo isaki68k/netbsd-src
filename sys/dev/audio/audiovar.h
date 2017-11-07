@@ -27,8 +27,8 @@ typedef int16_t internal_t;
 typedef uint16_t uinternal_t;
 typedef int32_t internal2_t;
 typedef uint32_t uinternal2_t;
-#define AUDIO_INTERNAL_T_MAX	0x7fff
-#define AUDIO_INTERNAL_T_MIN	0x8000
+#define AUDIO_INTERNAL_T_MAX	((internal_t)0x7fff)
+#define AUDIO_INTERNAL_T_MIN	((internal_t)0x8000)
 
 #elif AUDIO_INTERNAL_BITS == 32
 
@@ -36,8 +36,8 @@ typedef int32_t internal_t;
 typedef uint32_t uinternal_t;
 typedef int64_t internal2_t;
 typedef uint64_t uinternal2_t;
-#define AUDIO_INTERNAL_T_MAX	0x7fffffff
-#define AUDIO_INTERNAL_T_MIN	0x80000000
+#define AUDIO_INTERNAL_T_MAX	((internal_t)0x7fffffff)
+#define AUDIO_INTERNAL_T_MIN	((internal_t)0x80000000)
 
 #else
 #error Invalid AUDIO_INTERNAL_BITS
