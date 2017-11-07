@@ -153,14 +153,14 @@ audio_track_chvol(audio_filter_arg_t *arg)
 	KASSERT(arg->src_fmt->channels == arg->dst_fmt->channels);
 	KASSERT(arg->context != NULL);
 	KASSERT(arg->src_fmt->channels <= AUDIO_MAX_CH);
-	KASSERT(arg->src == arg->dst);
 
 	int16_t *ch_volume = arg->context;
+	const internal_t *sptr = arg->src;
 	internal_t *dptr = arg->dst;
 
 	for (int i = 0; i < arg->count; i++) {
-		for (int ch = 0; ch < arg->src_fmt->channels; ch++, dptr++) {
-			*dptr = (internal_t)(((internal2_t)*dptr) * ch_volume[ch] / 256);
+		for (int ch = 0; ch < arg->src_fmt->channels; ch++, sptr++, dptr++) {
+			*dptr = (internal_t)(((internal2_t)*sptr) * ch_volume[ch] / 256);
 		}
 	}
 }
@@ -400,24 +400,30 @@ audio_track_set_format(audio_track_t *track, audio_format_t *fmt)
 		track->codec_buf.sample = audio_realloc(track->codec_buf.sample, RING_BYTELEN(&track->codec_buf));
 	}
 
-	track->chvol_inout = track->codec_out;
+	track->chvol_in = track->codec_out;
 	if (use_chvol == false) {
 		track->chvol = NULL;
+		track->chvol_out = track->chvol_in;
+		track->chvol_buf.sample = audio_free(track->chvol_buf.sample);
 	} else {
-		track->chvol_arg.src_fmt = track->chvol_inout->fmt;
-		track->chvol_arg.dst_fmt = track->chvol_inout->fmt;
+		track->chvol_out = &track->chvol_buf;
+		track->chvol_buf.fmt = track->codec_out->fmt;
+		track->chvol_arg.src_fmt = track->chvol_in->fmt;
+		track->chvol_arg.dst_fmt = track->chvol_out->fmt;
 		track->chvol_arg.count = track->userio_frames_per_block;
 		track->chvol_arg.context = track->ch_volume;
 		track->chvol = audio_track_chvol;
+		track->chvol_buf.capacity = track->userio_frames_per_block;
+		track->chvol_buf.sample = audio_realloc(track->chvol_buf.sample, RING_BYTELEN(&track->chvol_buf));
 	}
 
 	/* chmix_buf は内部フォーマットだが userio 周波数 */
 	// そのほかのフィールドは init で初期化されている
 	track->chmix_fmt.frequency = fmt->frequency;
 
-	track->chmix_in = track->codec_out;
+	track->chmix_in = track->chvol_out;
 	if (fmt->channels == track_fmt->channels) {
-		track->chmix_out = track->codec_out;
+		track->chmix_out = track->chmix_in;
 		track->chmix = NULL;
 	} else {
 		track->chmix_out = &track->chmix_buf;
@@ -611,10 +617,11 @@ audio_track_play(audio_track_t *track)
 
 	/* チャンネルボリューム */
 	if (track->chvol != NULL) {
-		// インプレース変換
-		track->chvol_arg.src = track->chvol_arg.dst = RING_TOP(internal_t, track->chvol_inout);
+		track->chvol_arg.src = RING_TOP(internal_t, track->chvol_in);
+		track->chvol_arg.dst = RING_BOT(internal_t, track->chvol_out);
 		track->chvol(&track->chvol_arg);
-		// インプレース変換なのでリングバッファを進めてはいけない
+		audio_ring_appended(track->chvol_out, track->chvol_arg.count);
+		audio_ring_tookfromtop(track->chvol_in, track->chvol_arg.count);
 	}
 
 	/* チャンネルミキサ */

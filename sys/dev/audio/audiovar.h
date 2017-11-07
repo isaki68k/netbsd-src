@@ -144,7 +144,9 @@ struct audio_track
 	uint16_t  ch_volume[AUDIO_MAX_CH];	/* チャンネルバランス用 チャンネルボリューム */
 	audio_filter_t     chvol;
 	audio_filter_arg_t chvol_arg;
-	audio_ring_t       *chvol_inout;
+	audio_ring_t       *chvol_in;
+	audio_ring_t       *chvol_out;
+	audio_ring_t       chvol_buf;		/* フォーマットは codec_fmt を使用する。*/
 
 	audio_filter_t     chmix;
 	audio_filter_arg_t chmix_arg;
