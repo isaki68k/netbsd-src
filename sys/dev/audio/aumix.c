@@ -482,35 +482,6 @@ audio_track_enconvert(audio_track_t *track, audio_filter_t filter, audio_ring_t 
 	KASSERT(is_valid_ring(dst));
 	KASSERT(is_valid_ring(src));
 
-	if (src->count <= 0) return;
-
-	int dst_count = audio_ring_unround_free_count(dst);
-
-	// stride に応じてアラインする最小ブロックまでを処理する
-	int count = track->userio_frames_per_block * track->framealign;
-	count = min(count, src->count);
-	count = min(count, dst_count);
-
-	// フレームのアライメント位置まで切り捨てる
-	count = count & ~(track->framealign - 1);
-
-	/* 空きがない */
-	if (count == 0) {
-		// TODO: return して次回をまつかも
-		return;
-//		panic("no idea");
-	}
-
-	audio_filter_arg_t *arg = &track->codec_arg;
-
-	arg->dst = RING_BOT_UINT8(dst);
-	arg->src = RING_TOP_UINT8(src);
-	arg->count = count;
-
-	filter(arg);
-
-	audio_ring_tookfromtop(src, count);
-	audio_ring_appended(dst, count);
 }
 
 void
@@ -585,8 +556,28 @@ audio_track_play(audio_track_t *track)
 
 	/* エンコーディング変換 */
 	if (track->codec != NULL) {
+		int dst_count = audio_ring_unround_free_count(track->codec_out);
 		if (audio_ring_unround_free_count(track->codec_out) > 0) {
-			audio_track_enconvert(track, track->codec, track->codec_out, track->codec_in);
+			// stride に応じてアラインする最小ブロックまでを処理する
+			int count = track->userio_frames_per_block * track->framealign;
+			count = min(count, track->codec_in->count);
+			count = min(count, dst_count);
+
+			// フレームのアライメント位置まで切り捨てる
+			count = count & ~(track->framealign - 1);
+
+			if (count > 0) {
+				audio_filter_arg_t *arg = &track->codec_arg;
+
+				arg->dst = RING_BOT_UINT8(track->codec_out);
+				arg->src = RING_TOP_UINT8(track->codec_in);
+				arg->count = count;
+
+				track->codec(arg);
+
+				audio_ring_tookfromtop(track->codec_in, count);
+				audio_ring_appended(track->codec_out, count);
+			}
 		}
 	}
 
