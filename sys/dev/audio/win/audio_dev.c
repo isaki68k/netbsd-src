@@ -288,7 +288,7 @@ audio_softc_play_busy(struct audio_softc *sc)
 	for (int i = 0; i < WAVEHDR_COUNT; i++) {
 		busy_buf_count += (dev->wavehdr[i].dwFlags & WHDR_INQUEUE) ? 1 : 0;
 	}
-	return busy_buf_count > WAVEHDR_COUNT / 2;
+	return busy_buf_count >= WAVEHDR_COUNT;
 }
 
 int audio_softc_get_hw_capacity(struct audio_softc *sc)
