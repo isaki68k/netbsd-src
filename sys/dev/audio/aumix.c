@@ -549,7 +549,7 @@ audio_track_freq(audio_track_t *track, audio_ring_t *dst, audio_ring_t *src)
  * 再生時の入力データを変換してトラックバッファに投入します。
  */
 void
-audio_track_play(audio_track_t *track)
+audio_track_play(audio_track_t *track, bool isdrain)
 {
 	KASSERT(track);
 
@@ -587,8 +587,7 @@ audio_track_play(audio_track_t *track)
 	/* ブロックサイズに整形 */
 	int n = track->userio_frames_per_block - track->codec_out->count;
 	if (n > 0) {
-		if (track->is_draining) {
-			/* TODO: ドレインの条件を、ユーザ指定ドレインとミキサ要求ドレインで分離することになりそう。*/
+		if (isdrain) {
 			/* 無音をブロックサイズまで埋める */
 			/* 内部フォーマットだとわかっている */
 			/* ここは入力がブロックサイズ未満の端数だった場合。次段以降がブロックサイズを想定しているので、ここでまず追加。*/
@@ -636,8 +635,7 @@ audio_track_play(audio_track_t *track)
 		}
 	}
 
-	if (track->is_draining) {
-		/* TODO: ドレインの条件を、ユーザ指定ドレインとミキサ要求ドレインで分離することになりそう。*/
+	if (isdrain) {
 		/* 無音をブロックサイズまで埋める */
 		/* 内部フォーマットだとわかっている */
 		/* 周波数変換の結果、ブロック未満の端数フレームが出る */
@@ -699,39 +697,37 @@ audio_mixer_init(audio_trackmixer_t *mixer, struct audio_softc *sc, int mode)
  * ミキシングして、ハードウェアに再生を通知します。
  */
 void
-audio_mixer_play(audio_trackmixer_t *mixer)
+audio_mixer_play(audio_trackmixer_t *mixer, bool isdrain)
 {
-	TRACE0("");
+	//TRACE0("");
 	/* 全部のトラックに聞く */
 
 	audio_file_t *f;
-	int track_count = 0;
-	int track_ready = 0;
 	int mixed = 0;
-	SLIST_FOREACH(f, &mixer->sc->sc_files, entry) {
-		track_count++;
-		audio_track_t *track = &f->ptrack;
+	if (mixer->mix_buf.count < mixer->mix_buf.capacity) {
+		SLIST_FOREACH(f, &mixer->sc->sc_files, entry) {
+			audio_track_t *track = &f->ptrack;
 
-		// 合成
-		if (track->track_buf.count > 0) {
-			audio_mixer_play_mix_track(mixer, track);
-		}
+			if (track->track_buf.count < mixer->frames_per_block) {
+				audio_track_play(track, isdrain);
+			}
 
-		if (track->is_draining
-			|| track->mixed_count >= mixer->frames_per_block) {
-			track_ready++;
-		}
+			// 合成
+			if (track->track_buf.count > 0) {
+				audio_mixer_play_mix_track(mixer, track);
+			}
 
-		if (track->mixed_count != 0) {
-			if (mixed == 0) {
-				mixed = track->mixed_count;
-			} else {
-				mixed = min(mixed, track->mixed_count);
+			if (track->mixed_count != 0) {
+				if (mixed == 0) {
+					mixed = track->mixed_count;
+				} else {
+					mixed = min(mixed, track->mixed_count);
+				}
 			}
 		}
-	}
 
-	mixer->mix_buf.count = mixed;
+		mixer->mix_buf.count = mixed;
+	}
 
 	/* 全員準備できたか、時間切れならハードウェアに転送 */
 	if (track_ready == track_count
@@ -954,7 +950,7 @@ audio_track_play_drain_core(audio_track_t *track, bool wait)
 	track->is_draining = true;
 
 	// 無音挿入させる
-	audio_track_play(track);
+	audio_track_play(track, true);
 
 	/* フレームサイズ未満のため待たされていたデータを破棄 */
 	track->subframe_buf_used = 0;
@@ -1015,7 +1011,10 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 		track->subframe_buf_used = move_bytelen - framecount * track->userio_fmt.channels * track->userio_fmt.stride / 8;
 
 		// 今回作った userio を全部トラック再生へ渡す
-		audio_track_play(track);
+		audio_track_play(track, false);
+
+		// XXX: エミュレーション用に CPU 割り込み受付
+		audio_waitio(sc, NULL, track);
 	}
 
 	return 0;

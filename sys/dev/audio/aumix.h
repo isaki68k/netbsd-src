@@ -36,13 +36,13 @@ bidi_lsl(uint32_t a, int shift)
 
 void audio_track_init(audio_track_t *track, audio_trackmixer_t *mixer);
 void audio_track_set_format(audio_track_t *track, audio_format_t *track_fmt);
-void audio_track_play(audio_track_t *track);
+void audio_track_play(audio_track_t *track, bool isdrain);
 void audio_track_play_drain(audio_track_t *track);
 
 void audio_track_play_drain_core(audio_track_t *track, bool wait);
 
 void audio_mixer_init(audio_trackmixer_t *mixer, struct audio_softc *sc, int mode);
-void audio_mixer_play(audio_trackmixer_t *);
+void audio_mixer_play(audio_trackmixer_t *, bool isdrain);
 void audio_mixer_play_period(audio_trackmixer_t *mixer);
 void audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track);
 void audio_trackmixer_intr(audio_trackmixer_t *mixer, int count);
