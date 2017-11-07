@@ -194,6 +194,8 @@ audio_detach(struct audio_softc *sc)
 /*
 * ***** audio_sc *****
 */
+static void audio_softc_play_start_core(struct audio_softc *sc);
+
 void
 audio_softc_play_start(struct audio_softc *sc)
 {
@@ -201,6 +203,14 @@ audio_softc_play_start(struct audio_softc *sc)
 	audio_trackmixer_t *mixer = &sc->sc_pmixer;
 
 	lock(sc);
+	audio_softc_play_start_core(sc);
+	unlock(sc);
+}
+
+static void audio_softc_play_start_core(struct audio_softc *sc)
+{
+	audio_dev_win32_t *dev = sc->phys;
+	audio_trackmixer_t *mixer = &sc->sc_pmixer;
 
 	WAVEHDR* wh = NULL;
 	for (int i = 0; i < WAVEHDR_COUNT; i++) {
@@ -209,7 +219,6 @@ audio_softc_play_start(struct audio_softc *sc)
 			break;
 		}
 	}
-	unlock(sc);
 	if (wh == NULL) return;
 
 	uint8_t *dst = (uint8_t*)wh->lpData;
