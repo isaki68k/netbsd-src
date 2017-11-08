@@ -273,14 +273,14 @@ audio_track_freq(audio_filter_arg_t *arg)
 			*dptr = *sptr;
 		}
 
-		audio_rational_add(&track->freq_current, &track->freq_step, dst->fmt->frequency);
+		audio_rational_add(&track->freq_current, &track->freq_step, dst->fmt->sample_rate);
 		audio_ring_tookfromtop(src, track->freq_current.i);
 		track->freq_current.i = 0;
 		audio_ring_appended(dst, 1);
 	}
 }
 
-audio_format_t default_format = {
+audio_params2_t default_format = {
 	AUDIO_ENCODING_MULAW,
 	8000, /* freq */
 	1, /* channels */
@@ -350,9 +350,9 @@ audio_framealign(int stride)
 }
 
 static audio_ring_t *
-init_codec(audio_track_t *track, audio_format_t *srcfmt, audio_ring_t *last_dst)
+init_codec(audio_track_t *track, audio_params2_t *srcfmt, audio_ring_t *last_dst)
 {
-	audio_format_t *dstfmt = last_dst->fmt;
+	audio_params2_t *dstfmt = last_dst->fmt;
 
 	if (srcfmt->encoding == dstfmt->encoding
 	 && srcfmt->precision == dstfmt->precision
@@ -379,7 +379,7 @@ init_codec(audio_track_t *track, audio_format_t *srcfmt, audio_ring_t *last_dst)
 		track->codec.srcbuf.count = 0;
 		// バッファの容量を framealign の倍数にしておけば全体としてバイト境界問題が解決できる
 		// ほかのバッファはともかく、このバッファはこの条件が必須。
-		track->codec.srcbuf.capacity = track->codec.srcfmt.frequency * AUDIO_BLK_MS / 1000 * track->framealign;
+		track->codec.srcbuf.capacity = track->codec.srcfmt.sample_rate * AUDIO_BLK_MS / 1000 * track->framealign;
 		track->codec.srcbuf.sample = audio_realloc(track->codec.srcbuf.sample, RING_BYTELEN(&track->codec.srcbuf));
 
 		return &track->codec.srcbuf;
@@ -387,7 +387,7 @@ init_codec(audio_track_t *track, audio_format_t *srcfmt, audio_ring_t *last_dst)
 }
 
 static audio_ring_t *
-init_chvol(audio_track_t *track, audio_format_t *srcfmt, audio_ring_t *last_dst)
+init_chvol(audio_track_t *track, audio_params2_t *srcfmt, audio_ring_t *last_dst)
 {
 	// チャンネルボリュームが有効かどうか
 	bool use_chvol = false;
@@ -409,7 +409,7 @@ init_chvol(audio_track_t *track, audio_format_t *srcfmt, audio_ring_t *last_dst)
 		// 周波数とチャンネル数がユーザ指定値。
 		track->chvol.srcfmt = *last_dst->fmt;
 		track->chvol.srcbuf.fmt = &track->chvol.srcfmt;
-		track->chvol.srcbuf.capacity = track->chvol.srcfmt.frequency * AUDIO_BLK_MS / 1000; 
+		track->chvol.srcbuf.capacity = track->chvol.srcfmt.sample_rate * AUDIO_BLK_MS / 1000; 
 		track->chvol.srcbuf.sample = audio_realloc(track->chvol.srcbuf.sample, RING_BYTELEN(&track->chvol.srcbuf));
 
 		track->chvol.arg.count = track->chvol.srcbuf.capacity;
@@ -420,7 +420,7 @@ init_chvol(audio_track_t *track, audio_format_t *srcfmt, audio_ring_t *last_dst)
 
 
 static audio_ring_t *
-init_chmix(audio_track_t *track, audio_format_t *srcfmt, audio_ring_t *last_dst)
+init_chmix(audio_track_t *track, audio_params2_t *srcfmt, audio_ring_t *last_dst)
 {
 	int srcch = srcfmt->channels;
 	int dstch = last_dst->fmt->channels;
@@ -447,7 +447,7 @@ init_chmix(audio_track_t *track, audio_format_t *srcfmt, audio_ring_t *last_dst)
 		track->chmix.srcbuf.top = 0;
 		track->chmix.srcbuf.count = 0;
 		// バッファサイズは計算で決められるはずだけど。とりあえず。
-		track->chmix.srcbuf.capacity = track->chmix.srcfmt.frequency * AUDIO_BLK_MS / 1000;
+		track->chmix.srcbuf.capacity = track->chmix.srcfmt.sample_rate * AUDIO_BLK_MS / 1000;
 		track->chmix.srcbuf.sample = audio_realloc(track->chmix.srcbuf.sample, RING_BYTELEN(&track->chmix.srcbuf));
 
 		track->chmix.arg.src_fmt = &track->chmix.srcfmt;
@@ -460,10 +460,10 @@ init_chmix(audio_track_t *track, audio_format_t *srcfmt, audio_ring_t *last_dst)
 
 
 static audio_ring_t*
-init_freq(audio_track_t *track, audio_format_t *srcfmt, audio_ring_t *last_dst)
+init_freq(audio_track_t *track, audio_params2_t *srcfmt, audio_ring_t *last_dst)
 {
-	uint32_t srcfreq = srcfmt->frequency;
-	uint32_t dstfreq = last_dst->fmt->frequency;
+	uint32_t srcfreq = srcfmt->sample_rate;
+	uint32_t dstfreq = last_dst->fmt->sample_rate;
 
 	if (srcfreq == dstfreq) {
 		track->freq.filter = NULL;
@@ -479,11 +479,11 @@ init_freq(audio_track_t *track, audio_format_t *srcfmt, audio_ring_t *last_dst)
 		track->freq.dst = last_dst;
 		// 周波数のみ srcfreq
 		track->freq.srcfmt = *last_dst->fmt;
-		track->freq.srcfmt.frequency = srcfreq;
+		track->freq.srcfmt.sample_rate = srcfreq;
 		track->freq.srcbuf.fmt = &track->freq.srcfmt;
 		track->freq.srcbuf.top = 0;
 		track->freq.srcbuf.count = 0;
-		track->freq.srcbuf.capacity = track->freq.srcfmt.frequency * AUDIO_BLK_MS / 1000;
+		track->freq.srcbuf.capacity = track->freq.srcfmt.sample_rate * AUDIO_BLK_MS / 1000;
 		track->freq.srcbuf.sample = audio_realloc(track->freq.srcbuf.sample, RING_BYTELEN(&track->freq.srcbuf));
 		return &track->freq.srcbuf;
 	}
@@ -494,7 +494,7 @@ init_freq(audio_track_t *track, audio_format_t *srcfmt, audio_ring_t *last_dst)
 * 変換用内部バッファは一度破棄されます。
 */
 void
-audio_track_set_format(audio_track_t *track, audio_format_t *fmt)
+audio_track_set_format(audio_track_t *track, audio_params2_t *fmt)
 {
 	TRACE(track, "");
 	KASSERT(is_valid_format(fmt));
@@ -504,11 +504,11 @@ audio_track_set_format(audio_track_t *track, audio_format_t *fmt)
 	// TODO: まず現在のバッファとかを全部破棄すると分かり易いが。
 
 	track->userio_fmt = *fmt;
-	track->userio_frames_per_block = fmt->frequency * AUDIO_BLK_MS / 1000;
+	track->userio_frames_per_block = fmt->sample_rate * AUDIO_BLK_MS / 1000;
 	track->framealign = audio_framealign(fmt->stride);
 
 	audio_ring_t *last_dst = &track->track_buf;
-	audio_format_t *srcfmt;
+	audio_params2_t *srcfmt;
 	if (track->mode == AUMODE_PLAY) {
 		// 再生はトラックミキサ側から作る
 
@@ -698,11 +698,11 @@ audio_mixer_init(audio_trackmixer_t *mixer, struct audio_softc *sc, int mode)
 	mixer->hw_buf.capacity = audio_softc_get_hw_capacity(mixer->sc);
 	mixer->hw_buf.sample = audio_softc_allocm(mixer->sc, RING_BYTELEN(&mixer->hw_buf));
 
-	mixer->frames_per_block = mixer->hw_fmt.frequency * AUDIO_BLK_MS / 1000;
+	mixer->frames_per_block = mixer->hw_fmt.sample_rate * AUDIO_BLK_MS / 1000;
 
 	mixer->track_fmt.encoding = AUDIO_ENCODING_SLINEAR_HE;
 	mixer->track_fmt.channels = mixer->hw_fmt.channels;
-	mixer->track_fmt.frequency = mixer->hw_fmt.frequency;
+	mixer->track_fmt.sample_rate = mixer->hw_fmt.sample_rate;
 	mixer->track_fmt.precision = mixer->track_fmt.stride = AUDIO_INTERNAL_BITS;
 
 	mixer->mix_fmt = mixer->track_fmt;

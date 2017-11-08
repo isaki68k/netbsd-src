@@ -17,7 +17,7 @@
 
 struct test_file
 {
-	audio_format_t fmt;
+	audio_params2_t fmt;
 	audio_file_t *file;
 	audio_ring_t mem;
 	bool play;
@@ -127,7 +127,7 @@ main(int ac, char *av[])
 				usage();
 			mml = av[i];
 
-			f->fmt.frequency = 44100;
+			f->fmt.sample_rate = 44100;
 			f->fmt.encoding = AUDIO_ENCODING_SLINEAR_HE;
 			f->fmt.channels = 1;
 			f->fmt.precision = 16;
@@ -230,7 +230,7 @@ child_loop(struct test_file *f, int loop)
 	if (f->wait > loop) return 0;
 
 	// 1ブロック分のフレーム数
-	int frames_per_block = f->fmt.frequency * AUDIO_BLK_MS / 1000;
+	int frames_per_block = f->fmt.sample_rate * AUDIO_BLK_MS / 1000;
 	// 今回再生するフレーム数
 	int frames = min(f->mem.count, frames_per_block);
 	// フレーム数をバイト数に
@@ -303,7 +303,7 @@ parse_file(struct test_file *f, FILE *fp, const char *filename, int adpcm_freq)
 				WAVEFORMATEX *wf = (WAVEFORMATEX *)s;
 				s += len;
 				f->fmt.channels = (uint8_t)lebe16toh(wf->nChannels);
-				f->fmt.frequency = lebe32toh(wf->nSamplesPerSec);
+				f->fmt.sample_rate = lebe32toh(wf->nSamplesPerSec);
 				f->fmt.precision = (uint8_t)lebe16toh(wf->wBitsPerSample);
 				f->fmt.stride = f->fmt.precision;
 				if (rifx) {
@@ -375,7 +375,7 @@ parse_file(struct test_file *f, FILE *fp, const char *filename, int adpcm_freq)
 			exit(1);
 		}
 		f->fmt.channels = be32toh(au->channels);
-		f->fmt.frequency = be32toh(au->sample_rate);
+		f->fmt.sample_rate = be32toh(au->sample_rate);
 		f->fmt.stride = f->fmt.precision;
 		len = be32toh(au->length);
 		uint32_t offset = be32toh(au->offset);
@@ -396,7 +396,7 @@ parse_file(struct test_file *f, FILE *fp, const char *filename, int adpcm_freq)
 	f->fmt.channels = 1;
 	f->fmt.precision = 4;
 	f->fmt.stride = 4;
-	f->fmt.frequency = adpcm_freq;
+	f->fmt.sample_rate = adpcm_freq;
 
 	len = (int)filesize(fp);
 	f->mem.sample = malloc(len);
@@ -441,7 +441,7 @@ lebe32toh(uint32_t x)
 
 // fmt の表示用文字列を返す
 const char *
-fmt_tostring(const audio_format_t *fmt)
+fmt_tostring(const audio_params2_t *fmt)
 {
 	static char buf[64];
 	char stridebuf[16];
@@ -456,7 +456,7 @@ fmt_tostring(const audio_format_t *fmt)
 		fmt->precision,
 		stridebuf,
 		fmt->channels,
-		fmt->frequency);
+		fmt->sample_rate);
 	return buf;
 }
 

@@ -1,13 +1,13 @@
 #pragma once
 /*
-* ***** audio_format *****
+* ***** audio_params2 *****
 */
 
 /*
 * フォーマットがおおむね有効かどうかを返します。
 */
 static inline bool
-is_valid_format(const audio_format_t *fmt)
+is_valid_format(const audio_params2_t *fmt)
 {
 	if (fmt == NULL) return false;
 	/* XXX:この条件どうするか検討 (MSM6258)*/
@@ -29,7 +29,7 @@ is_valid_format(const audio_format_t *fmt)
 * ただし、周波数とチャンネル数はチェックしません。
 */
 static inline bool
-is_internal_format(const audio_format_t *fmt)
+is_internal_format(const audio_params2_t *fmt)
 {
 	if (!is_valid_format(fmt)) return false;
 	if (fmt->encoding != AUDIO_ENCODING_SLINEAR_HE) return false;
@@ -40,7 +40,7 @@ is_internal_format(const audio_format_t *fmt)
 
 // いずれかの LINEAR なら true
 static inline bool
-is_LINEAR(const audio_format_t *fmt)
+is_LINEAR(const audio_params2_t *fmt)
 {
 	return
 		(fmt->encoding == AUDIO_ENCODING_SLINEAR_LE)
@@ -52,7 +52,7 @@ is_LINEAR(const audio_format_t *fmt)
 
 // いずれかの SLINEAR なら true
 static inline bool
-is_SIGNED(const audio_format_t *fmt)
+is_SIGNED(const audio_params2_t *fmt)
 {
 	return
 		(fmt->encoding == AUDIO_ENCODING_SLINEAR_LE)
@@ -62,7 +62,7 @@ is_SIGNED(const audio_format_t *fmt)
 
 // ENDIAN を返す
 static inline int
-data_ENDIAN(const audio_format_t *fmt)
+data_ENDIAN(const audio_params2_t *fmt)
 {
 	if (fmt->stride == 8) {
 		/* HOST ENDIAN */

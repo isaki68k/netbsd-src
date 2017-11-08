@@ -213,18 +213,18 @@ void
 play_mml(audio_ring_t *dst, char *mml)
 {
 	audio_ring_t tone0;
-	audio_format_t tone_fmt0;
+	audio_params2_t tone_fmt0;
 	audio_ring_t *tone;
 
 	tone_fmt0.channels = 1;
 	tone_fmt0.encoding = AUDIO_ENCODING_SLINEAR_HE;
-	tone_fmt0.frequency = 44100;
+	tone_fmt0.sample_rate = 44100;
 	tone_fmt0.precision = 32;
 	tone_fmt0.stride = 32;
 
 	tone = &tone0;
 	tone->fmt = &tone_fmt0;
-	tone->capacity = tone->fmt->frequency * tone->fmt->channels * tone->fmt->stride / 8;
+	tone->capacity = tone->fmt->sample_rate * tone->fmt->channels * tone->fmt->stride / 8;
 	tone->sample = malloc(RING_BYTELEN(tone));
 
 	gen_sin(tone);
@@ -260,7 +260,7 @@ play_mml(audio_ring_t *dst, char *mml)
 				double key = half_scale(&mml, basekey);
 				int l = getnum(&mml);
 				if (l <= 0) l = note_len;
-				l = dst->fmt->frequency * 60 * 4 / tempo / l;
+				l = dst->fmt->sample_rate * 60 * 4 / tempo / l;
 
 				int v = volume;
 				if (c == 'R') v = 0;

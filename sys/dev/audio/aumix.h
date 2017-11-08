@@ -35,7 +35,7 @@ bidi_lsl(uint32_t a, int shift)
 
 
 void audio_track_init(audio_track_t *track, audio_trackmixer_t *mixer, int mode);
-void audio_track_set_format(audio_track_t *track, audio_format_t *track_fmt);
+void audio_track_set_format(audio_track_t *track, audio_params2_t *track_fmt);
 void audio_track_play(audio_track_t *track, bool isdrain);
 void audio_track_play_drain(audio_track_t *track);
 
@@ -56,7 +56,7 @@ int/*ssize_t*/ sys_write(audio_file_t *file, void* buf, size_t len);	/* write sy
 
 /* XXX: 分類未定 */
 int audio_softc_get_hw_capacity(struct audio_softc *sc);
-audio_format_t audio_softc_get_hw_format(struct audio_softc *sc, int mode);
+audio_params2_t audio_softc_get_hw_format(struct audio_softc *sc, int mode);
 void* audio_softc_allocm(struct audio_softc *sc, int n);
 void audio_softc_play_start(struct audio_softc *sc);
 

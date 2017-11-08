@@ -302,13 +302,13 @@ void* audio_softc_allocm(struct audio_softc *sc, int n)
 	return malloc(n);
 }
 
-audio_format_t audio_softc_get_hw_format(struct audio_softc *sc, int mode)
+audio_params2_t audio_softc_get_hw_format(struct audio_softc *sc, int mode)
 {
 	audio_dev_win32_t *dev = sc->phys;
-	audio_format_t rv;
+	audio_params2_t rv;
 	rv.encoding = AUDIO_ENCODING_SLINEAR_LE;
 	rv.channels = (uint8_t)dev->wfx.nChannels;
-	rv.frequency = dev->wfx.nSamplesPerSec;
+	rv.sample_rate = dev->wfx.nSamplesPerSec;
 	rv.precision = (uint8_t)dev->wfx.wBitsPerSample;
 	rv.stride = (uint8_t)dev->wfx.wBitsPerSample;
 	return rv;
