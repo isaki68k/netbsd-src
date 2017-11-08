@@ -10,6 +10,8 @@
 
 #define __noreturn __declspec(noreturn)
 
+#define __arraycount(n) _countof(n)
+
 typedef int64_t off_t;
 
 inline

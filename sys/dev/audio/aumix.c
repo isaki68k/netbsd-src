@@ -878,7 +878,7 @@ audio_mixer_play_period(audio_trackmixer_t *mixer /*, bool force */)
 	SLIST_FOREACH(f, &mixer->sc->sc_files, entry) {
 		audio_track_t *track = &f->ptrack;
 		if (track->mixed_count > 0) {
-			KASSERT(track->completion_blkcount < _countof(track->completion_blkID));
+			KASSERT(track->completion_blkcount < __arraycount(track->completion_blkID));
 
 			track->completion_blkID[track->completion_blkcount] = mixer->hw_blkID;
 			track->completion_blkcount++;
