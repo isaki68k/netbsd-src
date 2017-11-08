@@ -14,7 +14,7 @@ struct audio_dev_netbsd
 {
 	int fd;
 	int frame_bytes;
-	audio_format_t fmt;
+	audio_format2_t fmt;
 	int sent_count;
 	pthread_mutex_t mutex;
 	struct timeval tv;
@@ -52,14 +52,14 @@ audio_attach(struct audio_softc **softc)
 
 	dev->fmt.encoding = AUDIO_ENCODING_SLINEAR_LE;
 	dev->fmt.channels = 2;
-	dev->fmt.frequency = 48000;
+	dev->fmt.sample_rate = 48000;
 	dev->fmt.precision = 16;
 	dev->fmt.stride = 16;
 	dev->frame_bytes = dev->fmt.precision / 8 * dev->fmt.channels;
 
 	AUDIO_INITINFO(&ai);
 	ai.mode = AUMODE_PLAY;
-	ai.play.sample_rate = dev->fmt.frequency;
+	ai.play.sample_rate = dev->fmt.sample_rate;
 	ai.play.encoding    = dev->fmt.encoding;
 	ai.play.precision   = dev->fmt.precision;
 	ai.play.channels    = dev->fmt.channels;
@@ -91,20 +91,20 @@ audio_softc_play_start(struct audio_softc *sc)
 	audio_dev_netbsd_t *dev = sc->phys;
 	audio_trackmixer_t *mixer = &sc->sc_pmixer;
 
-	if (mixer->hw_buf.count <= 0) return;
+	if (mixer->hwbuf.count <= 0) return;
 	if (dev->sent_count > 0) return;
 
 	lock(sc);
 
 	int count;
-	while ((count = audio_ring_unround_count(&mixer->hw_buf)) > 0) {
-		int16_t *src = RING_TOP(int16_t, &mixer->hw_buf);
+	while ((count = audio_ring_unround_count(&mixer->hwbuf)) > 0) {
+		int16_t *src = RING_TOP(int16_t, &mixer->hwbuf);
 		int r = write(dev->fd, src, count * dev->frame_bytes);
 		if (r == -1) {
 			printf("write failed: %s\n", strerror(errno));
 			exit(1);
 		}
-		audio_ring_tookfromtop(&mixer->hw_buf, count);
+		audio_ring_tookfromtop(&mixer->hwbuf, count);
 		dev->sent_count += count;
 
 		// 転送終了時刻
@@ -113,7 +113,7 @@ audio_softc_play_start(struct audio_softc *sc)
 		d.tv_sec = 0;
 		// 後ろの800は usec->msec に直す1000倍に、
 		// ちょっと前倒しで 0.8 掛けたもの。
-		d.tv_usec = r / (dev->fmt.frequency * dev->fmt.precision / 8 *
+		d.tv_usec = r / (dev->fmt.sample_rate * dev->fmt.precision / 8 *
 			dev->fmt.channels / 1000) * 800;
 		timeradd(&dev->tv, &d, &dev->tv);
 	}
@@ -148,7 +148,7 @@ audio_softc_get_hw_capacity(struct audio_softc *sc)
 {
 	audio_dev_netbsd_t *dev = sc->phys;
 	// 2ブロック分
-	return dev->frame_bytes * dev->fmt.frequency * 40 / 1000 * 2;
+	return dev->frame_bytes * dev->fmt.sample_rate * 40 / 1000 * 2;
 }
 
 void *
@@ -157,7 +157,7 @@ audio_softc_allocm(struct audio_softc *sc, int n)
 	return malloc(n);
 }
 
-audio_format_t
+audio_format2_t
 audio_softc_get_hw_format(struct audio_softc *sc, int mode)
 {
 	audio_dev_netbsd_t *dev = sc->phys;
