@@ -9,33 +9,33 @@
 */
 
 /* ring の top フレームのポインタを求めます。 */
-#define RING_TOP(type, ringptr) (((type*)(ringptr)->sample) + (ringptr)->top * (ringptr)->fmt->channels)
+#define RING_TOP(type, ringptr) (((type*)(ringptr)->sample) + (ringptr)->top * (ringptr)->fmt.channels)
 
 /* ring の bottom (= top + count、すなわち、最終有効フレームの次) フレームのポインタを求めます。 */
-#define RING_BOT(type, ringptr) (((type*)(ringptr)->sample) + audio_ring_bottom(ringptr) * (ringptr)->fmt->channels)
+#define RING_BOT(type, ringptr) (((type*)(ringptr)->sample) + audio_ring_bottom(ringptr) * (ringptr)->fmt.channels)
 
 /* ring の frame 位置のポインタを求めます。 */
-#define RING_PTR(type, ringptr, frame) (((type*)(ringptr)->sample) + audio_ring_round((ringptr), (ringptr)->top + frame) * (ringptr)->fmt->channels)
+#define RING_PTR(type, ringptr, frame) (((type*)(ringptr)->sample) + audio_ring_round((ringptr), (ringptr)->top + frame) * (ringptr)->fmt.channels)
 
 /* stride=24 用 */
 
 /* ring の top フレームのポインタを求めます。 */
-#define RING_TOP_UINT8(ringptr) (((uint8_t*)(ringptr)->sample) + (ringptr)->top * (ringptr)->fmt->channels * (ringptr)->fmt->stride / 8)
+#define RING_TOP_UINT8(ringptr) (((uint8_t*)(ringptr)->sample) + (ringptr)->top * (ringptr)->fmt.channels * (ringptr)->fmt.stride / 8)
 
 /* ring の bottom (= top + count、すなわち、最終有効フレームの次) フレームのポインタを求めます。 */
-#define RING_BOT_UINT8(ringptr) (((uint8_t*)(ringptr)->sample) + audio_ring_bottom(ringptr) * (ringptr)->fmt->channels * (ringptr)->fmt->stride / 8)
+#define RING_BOT_UINT8(ringptr) (((uint8_t*)(ringptr)->sample) + audio_ring_bottom(ringptr) * (ringptr)->fmt.channels * (ringptr)->fmt.stride / 8)
 
 /* キャパシティをバイト単位で求めます。 */
-#define RING_BYTELEN(ringptr) ((ringptr)->capacity * (ringptr)->fmt->channels * (ringptr)->fmt->stride / 8)
+#define RING_BYTELEN(ringptr) ((ringptr)->capacity * (ringptr)->fmt.channels * (ringptr)->fmt.stride / 8)
 
 /* ring の バッファ終端を求めます。この位置へのアクセスは出来ません。 */
-#define RING_END_PTR(type, ringptr) ((type*)(ringptr)->sample + (ringptr)->capacity * (ringptr)->fmt->channels)
+#define RING_END_PTR(type, ringptr) ((type*)(ringptr)->sample + (ringptr)->capacity * (ringptr)->fmt.channels)
 
 static inline bool
 is_valid_ring(const audio_ring_t *ring)
 {
 	if (ring == NULL) return false;
-	if (!is_valid_format(ring->fmt)) return false;
+	if (!is_valid_format(&ring->fmt)) return false;
 	if (ring->capacity < 0) return false;
 	if (ring->capacity > INT_MAX / 2) return false;
 	if (ring->count < 0) return false;
@@ -136,8 +136,8 @@ audio_ring_concat(audio_ring_t *dst, audio_ring_t *src, int count)
 	KASSERT(is_valid_ring(dst));
 	KASSERT(is_valid_ring(src));
 	KASSERT(count >= 0);
-	KASSERT(dst->fmt->channels == src->fmt->channels);
-	KASSERT(dst->fmt->stride == src->fmt->stride);
+	KASSERT(dst->fmt.channels == src->fmt.channels);
+	KASSERT(dst->fmt.stride == src->fmt.stride);
 
 	count = min(count, src->count);
 	count = min(count, dst->capacity - dst->count);
@@ -146,7 +146,7 @@ audio_ring_concat(audio_ring_t *dst, audio_ring_t *src, int count)
 		int slice = count;
 		slice = audio_ring_unround_count(src);
 		slice = min(slice, audio_ring_unround_free_count(dst));
-		memcpy(RING_BOT_UINT8(dst), RING_TOP_UINT8(src), slice * dst->fmt->channels * dst->fmt->stride / 8);
+		memcpy(RING_BOT_UINT8(dst), RING_TOP_UINT8(src), slice * dst->fmt.channels * dst->fmt.stride / 8);
 		audio_ring_appended(dst, slice);
 		audio_ring_tookfromtop(src, slice);
 		count -= slice;

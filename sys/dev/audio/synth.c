@@ -32,20 +32,20 @@ static
 void
 gen_sin(audio_ring_t *dst)
 {
-	if (dst->fmt->channels != 1) synth_error("ch != 1");
-	if (!is_SIGNED(dst->fmt)) synth_error("!SLINEAR");
+	if (dst->fmt.channels != 1) synth_error("ch != 1");
+	if (!is_SIGNED(&dst->fmt)) synth_error("!SLINEAR");
 
-	if (dst->fmt->stride == 8) {
+	if (dst->fmt.stride == 8) {
 		int8_t *dptr = dst->sample;
 		for (int i = 0; i < dst->capacity; i++) {
 			*dptr++ = (int8_t)((sin(2 * M_PI * i / dst->capacity) + 1) * 256 / 2 - 128);
 		}
-	} else if (dst->fmt->stride == 16) {
+	} else if (dst->fmt.stride == 16) {
 		int16_t *dptr = dst->sample;
 		for (int i = 0; i < dst->capacity; i++) {
 			*dptr++ = (int16_t)((sin(2 * M_PI * i / dst->capacity) + 1) * 65536 / 2 - 32768);
 		}
-	} else if (dst->fmt->stride == 32) {
+	} else if (dst->fmt.stride == 32) {
 		int32_t *dptr = dst->sample;
 		for (int i = 0; i < dst->capacity; i++) {
 			double t = sin(2 * M_PI * i / dst->capacity);
@@ -101,7 +101,7 @@ play_note(audio_ring_t *dst, int count, audio_ring_t *tone, double factor, int v
 	int slice = 0;
 	for (int remain = count; remain > 0; remain -= slice) {
 		slice = min(remain, audio_ring_unround_free_count(dst));
-		if (dst->fmt->stride == 16) {
+		if (dst->fmt.stride == 16) {
 			int16_t *dptr = RING_BOT(int16_t, dst);
 			for (int i = 0; i < slice; i++) {
 				int32_t x = (int32_t)(tone_read(tone, (int)t, (int)(t + factor)) * v);
@@ -117,7 +117,7 @@ play_note(audio_ring_t *dst, int count, audio_ring_t *tone, double factor, int v
 					v = v0 * (slice - i) / 4410;
 				}
 			}
-		} else if (dst->fmt->stride == 32) {
+		} else if (dst->fmt.stride == 32) {
 			int32_t *dptr = RING_BOT(int32_t, dst);
 			for (int i = 0; i < slice; i++) {
 				int32_t x = (int32_t)(tone_read(tone, (int)t, (int)(t + factor)) * v);
@@ -187,7 +187,7 @@ int getnum(char **str)
 void
 ring_expand(audio_ring_t *ring, int newcapacity)
 {
-	ring->sample = realloc(ring->sample, newcapacity * ring->fmt->channels * ring->fmt->stride / 8);
+	ring->sample = realloc(ring->sample, newcapacity * ring->fmt.channels * ring->fmt.stride / 8);
 	int newfree = newcapacity - ring->capacity;
 	int unround = ring->capacity == 0 ? 0 : audio_ring_unround_count(ring);
 	int round = ring->count - unround;
@@ -196,15 +196,15 @@ ring_expand(audio_ring_t *ring, int newcapacity)
 
 	if (bounce > 0) {
 		memcpy(
-			(int8_t*)ring->sample + ring->capacity * ring->fmt->channels * ring->fmt->stride / 8,
+			(int8_t*)ring->sample + ring->capacity * ring->fmt.channels * ring->fmt.stride / 8,
 			(int8_t*)ring->sample,
-			bounce * ring->fmt->channels * ring->fmt->stride / 8);
+			bounce * ring->fmt.channels * ring->fmt.stride / 8);
 	}
 	if (move > 0) {
 		memmove(
 			(int8_t*)ring->sample,
-			(int8_t*)ring->sample + bounce * ring->fmt->channels * ring->fmt->stride / 8,
-			move * ring->fmt->channels * ring->fmt->stride / 8);
+			(int8_t*)ring->sample + bounce * ring->fmt.channels * ring->fmt.stride / 8,
+			move * ring->fmt.channels * ring->fmt.stride / 8);
 	}
 	ring->capacity = newcapacity;
 }
@@ -223,8 +223,8 @@ play_mml(audio_ring_t *dst, char *mml)
 	tone_fmt0.stride = 32;
 
 	tone = &tone0;
-	tone->fmt = &tone_fmt0;
-	tone->capacity = tone->fmt->sample_rate * tone->fmt->channels * tone->fmt->stride / 8;
+	tone->fmt = tone_fmt0;
+	tone->capacity = tone->fmt.sample_rate * tone->fmt.channels * tone->fmt.stride / 8;
 	tone->sample = malloc(RING_BYTELEN(tone));
 
 	gen_sin(tone);
@@ -260,7 +260,7 @@ play_mml(audio_ring_t *dst, char *mml)
 				double key = half_scale(&mml, basekey);
 				int l = getnum(&mml);
 				if (l <= 0) l = note_len;
-				l = dst->fmt->sample_rate * 60 * 4 / tempo / l;
+				l = dst->fmt.sample_rate * 60 * 4 / tempo / l;
 
 				int v = volume;
 				if (c == 'R') v = 0;

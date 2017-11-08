@@ -18,7 +18,6 @@
 
 struct test_file
 {
-	audio_format2_t fmt;
 	audio_file_t *file;
 	audio_ring_t mem;
 	bool play;
@@ -118,7 +117,6 @@ main(int ac, char *av[])
 		}
 
 		struct test_file *f = &files[fileidx];
-		f->mem.fmt = &f->fmt;
 		f->mem.top = 0;
 
 		if (strcmp(av[i], "-m") == 0) {
@@ -128,11 +126,11 @@ main(int ac, char *av[])
 				usage();
 			mml = av[i];
 
-			f->fmt.sample_rate = 44100;
-			f->fmt.encoding = AUDIO_ENCODING_SLINEAR_HE;
-			f->fmt.channels = 1;
-			f->fmt.precision = 16;
-			f->fmt.stride = 16;
+			f->mem.fmt.sample_rate = 44100;
+			f->mem.fmt.encoding = AUDIO_ENCODING_SLINEAR_HE;
+			f->mem.fmt.channels = 1;
+			f->mem.fmt.precision = 16;
+			f->mem.fmt.stride = 16;
 
 			f->mem.capacity = 0;
 			f->mem.count = 0;
@@ -150,23 +148,23 @@ main(int ac, char *av[])
 			int len = parse_file(f, fp, av[i], freq);
 			fclose(fp);
 
-			printf("%s: %s\n", av[i], fmt_tostring(&f->fmt));
+			printf("%s: %s\n", av[i], fmt_tostring(&f->mem.fmt));
 			if (opt_g)
 				continue;
 
-			if (f->fmt.encoding == AUDIO_ENCODING_MSM6258) {
+			if (f->mem.fmt.encoding == AUDIO_ENCODING_MSM6258) {
 				// MSM6258 -> SLINEAR16(internal format)
 				uint8_t *tmp = malloc(len * 4);
 				audio_format2_t dstfmt;
 				dstfmt.encoding = AUDIO_ENCODING_SLINEAR_HE;
-				dstfmt.sample_rate = f->fmt.sample_rate;
+				dstfmt.sample_rate = f->mem.fmt.sample_rate;
 				dstfmt.precision = AUDIO_INTERNAL_BITS;
 				dstfmt.stride = AUDIO_INTERNAL_BITS;
-				dstfmt.channels = f->fmt.channels;
+				dstfmt.channels = f->mem.fmt.channels;
 				audio_filter_arg_t arg;
 				arg.context = msm6258_context_create();
 				arg.src = f->mem.sample;
-				arg.srcfmt = &f->fmt;
+				arg.srcfmt = &f->mem.fmt;
 				arg.dst = tmp;
 				arg.dstfmt = &dstfmt;
 				arg.count = len * 2;
@@ -175,10 +173,10 @@ main(int ac, char *av[])
 				// かきかえ
 				free(f->mem.sample);
 				f->mem.sample = tmp;
-				f->fmt = dstfmt;
+				f->mem.fmt = dstfmt;
 				f->mem.capacity = len * 2;
 			} else {
-				f->mem.capacity = len * 8 / f->fmt.stride / f->fmt.channels;
+				f->mem.capacity = len * 8 / f->mem.fmt.stride / f->mem.fmt.channels;
 			}
 			f->mem.count = f->mem.capacity;
 		}
@@ -191,7 +189,7 @@ main(int ac, char *av[])
 			f->file->ptrack.ch_volume[j] = 256;
 		}
 
-		audio_track_set_format(&f->file->ptrack, &f->fmt);
+		audio_track_set_format(&f->file->ptrack, &f->mem.fmt);
 
 		f->play = true;
 		f->wait = opt_wait;
@@ -256,11 +254,11 @@ child_loop(struct test_file *f, int loop)
 	if (f->wait > loop) return 0;
 
 	// 1ブロック分のフレーム数
-	int frames_per_block = f->fmt.sample_rate * AUDIO_BLK_MS / 1000;
+	int frames_per_block = f->mem.fmt.sample_rate * AUDIO_BLK_MS / 1000;
 	// 今回再生するフレーム数
 	int frames = min(f->mem.count, frames_per_block);
 	// フレーム数をバイト数に
-	int bytes = frames * f->fmt.channels * f->fmt.stride / 8;
+	int bytes = frames * f->mem.fmt.channels * f->mem.fmt.stride / 8;
 
 	sys_write(f->file, RING_TOP_UINT8(&f->mem), bytes);
 	audio_ring_tookfromtop(&f->mem, frames);
@@ -328,17 +326,17 @@ parse_file(struct test_file *f, FILE *fp, const char *filename, int adpcm_freq)
 			if (tag == ID("fmt ")) {
 				WAVEFORMATEX *wf = (WAVEFORMATEX *)s;
 				s += len;
-				f->fmt.channels = (uint8_t)lebe16toh(wf->nChannels);
-				f->fmt.sample_rate = lebe32toh(wf->nSamplesPerSec);
-				f->fmt.precision = (uint8_t)lebe16toh(wf->wBitsPerSample);
-				f->fmt.stride = f->fmt.precision;
+				f->mem.fmt.channels = (uint8_t)lebe16toh(wf->nChannels);
+				f->mem.fmt.sample_rate = lebe32toh(wf->nSamplesPerSec);
+				f->mem.fmt.precision = (uint8_t)lebe16toh(wf->wBitsPerSample);
+				f->mem.fmt.stride = f->mem.fmt.precision;
 				if (rifx) {
-					f->fmt.encoding = AUDIO_ENCODING_SLINEAR_BE;
+					f->mem.fmt.encoding = AUDIO_ENCODING_SLINEAR_BE;
 				} else {
-					if (f->fmt.precision == 8)
-						f->fmt.encoding = AUDIO_ENCODING_ULINEAR_LE;
+					if (f->mem.fmt.precision == 8)
+						f->mem.fmt.encoding = AUDIO_ENCODING_ULINEAR_LE;
 					else
-						f->fmt.encoding = AUDIO_ENCODING_SLINEAR_LE;
+						f->mem.fmt.encoding = AUDIO_ENCODING_SLINEAR_LE;
 				}
 				uint16_t fmtid = lebe16toh(wf->wFormatTag);
 				if (fmtid == 0xfffe) {
@@ -377,32 +375,32 @@ parse_file(struct test_file *f, FILE *fp, const char *filename, int adpcm_freq)
 		uint32_t format = be32toh(au->format);
 		switch (format) {
 		 case SND_FORMAT_MULAW_8:
-			f->fmt.encoding = AUDIO_ENCODING_MULAW;
-			f->fmt.precision = 8;
+			f->mem.fmt.encoding = AUDIO_ENCODING_MULAW;
+			f->mem.fmt.precision = 8;
 			break;
 		 case SND_FORMAT_LINEAR_8:
-			f->fmt.encoding = AUDIO_ENCODING_SLINEAR_BE;
-			f->fmt.precision = 8;
+			f->mem.fmt.encoding = AUDIO_ENCODING_SLINEAR_BE;
+			f->mem.fmt.precision = 8;
 			break;
 		 case SND_FORMAT_LINEAR_16:
-			f->fmt.encoding = AUDIO_ENCODING_SLINEAR_BE;
-			f->fmt.precision = 16;
+			f->mem.fmt.encoding = AUDIO_ENCODING_SLINEAR_BE;
+			f->mem.fmt.precision = 16;
 			break;
 		 case SND_FORMAT_LINEAR_24:
-			f->fmt.encoding = AUDIO_ENCODING_SLINEAR_BE;
-			f->fmt.precision = 24;
+			f->mem.fmt.encoding = AUDIO_ENCODING_SLINEAR_BE;
+			f->mem.fmt.precision = 24;
 			break;
 		 case SND_FORMAT_LINEAR_32:
-			f->fmt.encoding = AUDIO_ENCODING_SLINEAR_BE;
-			f->fmt.precision = 32;
+			f->mem.fmt.encoding = AUDIO_ENCODING_SLINEAR_BE;
+			f->mem.fmt.precision = 32;
 			break;
 		 default:
 			printf("%s: Unknown format: format=%d\n", filename, format);
 			exit(1);
 		}
-		f->fmt.channels = be32toh(au->channels);
-		f->fmt.sample_rate = be32toh(au->sample_rate);
-		f->fmt.stride = f->fmt.precision;
+		f->mem.fmt.channels = be32toh(au->channels);
+		f->mem.fmt.sample_rate = be32toh(au->sample_rate);
+		f->mem.fmt.stride = f->mem.fmt.precision;
 		len = be32toh(au->length);
 		uint32_t offset = be32toh(au->offset);
 
@@ -418,11 +416,11 @@ parse_file(struct test_file *f, FILE *fp, const char *filename, int adpcm_freq)
 	}
 
 	// ADPCM
-	f->fmt.encoding = AUDIO_ENCODING_MSM6258;
-	f->fmt.channels = 1;
-	f->fmt.precision = 4;
-	f->fmt.stride = 4;
-	f->fmt.sample_rate = adpcm_freq;
+	f->mem.fmt.encoding = AUDIO_ENCODING_MSM6258;
+	f->mem.fmt.channels = 1;
+	f->mem.fmt.precision = 4;
+	f->mem.fmt.stride = 4;
+	f->mem.fmt.sample_rate = adpcm_freq;
 
 	len = (int)filesize(fp);
 	f->mem.sample = malloc(len);

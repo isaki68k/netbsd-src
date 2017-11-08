@@ -253,7 +253,7 @@ audio_track_freq(audio_filter_arg_t *arg)
 	KASSERT(is_valid_ring(dst));
 	KASSERT(is_valid_ring(src));
 	KASSERT(src->count > 0);
-	KASSERT(src->fmt->channels == dst->fmt->channels);
+	KASSERT(src->fmt.channels == dst->fmt.channels);
 
 	int count = audio_ring_unround_free_count(dst);
 
@@ -269,11 +269,11 @@ audio_track_freq(audio_filter_arg_t *arg)
 		if (src->count <= 0) break;
 
 		internal_t *sptr = RING_TOP(internal_t, src);
-		for (int ch = 0; ch < dst->fmt->channels; ch++, dptr++, sptr++) {
+		for (int ch = 0; ch < dst->fmt.channels; ch++, dptr++, sptr++) {
 			*dptr = *sptr;
 		}
 
-		audio_rational_add(&track->freq_current, &track->freq_step, dst->fmt->sample_rate);
+		audio_rational_add(&track->freq_current, &track->freq_step, dst->fmt.sample_rate);
 		audio_ring_tookfromtop(src, track->freq_current.i);
 		track->freq_current.i = 0;
 		audio_ring_appended(dst, 1);
@@ -299,7 +299,6 @@ audio_track_init(audio_track_t *track, audio_trackmixer_t *mixer, int mode)
 
 	track->mixer = mixer;
 	track->mode = mode;
-	track->outputbuf.fmt = &track->outputfmt;
 
 	// 固定初期値
 	track->volume = 256;
@@ -354,7 +353,7 @@ static audio_ring_t *
 init_codec(audio_track_t *track, audio_ring_t *last_dst)
 {
 	audio_format2_t *srcfmt = &track->inputfmt;
-	audio_format2_t *dstfmt = last_dst->fmt;
+	audio_format2_t *dstfmt = &last_dst->fmt;
 
 	if (srcfmt->encoding == dstfmt->encoding
 	 && srcfmt->precision == dstfmt->precision
@@ -366,21 +365,21 @@ init_codec(audio_track_t *track, audio_ring_t *last_dst)
 		// エンコーディングを変換する
 		track->codec.dst = last_dst;
 
-		track->codec.srcfmt = *dstfmt;
-		track->codec.srcfmt.encoding = srcfmt->encoding;
-		track->codec.srcfmt.precision = srcfmt->precision;
-		track->codec.srcfmt.stride = srcfmt->stride;
+		// arg のために先にフォーマットを作る
+		track->codec.srcbuf.fmt = *dstfmt;
+		track->codec.srcbuf.fmt.encoding = srcfmt->encoding;
+		track->codec.srcbuf.fmt.precision = srcfmt->precision;
+		track->codec.srcbuf.fmt.stride = srcfmt->stride;
 
-		track->codec.arg.srcfmt = &track->codec.srcfmt;
+		track->codec.arg.srcfmt = &track->codec.srcbuf.fmt;
 		track->codec.arg.dstfmt = dstfmt;
 		track->codec.filter = audio_MI_codec_filter_init(&track->codec.arg);
 
 		// TODO: codec デストラクタコール
 		// XXX: インライン変換はとりあえず置いておく
-		track->codec.srcbuf.fmt = &track->codec.srcfmt;
 		track->codec.srcbuf.top = 0;
 		track->codec.srcbuf.count = 0;
-		track->codec.srcbuf.capacity = track->codec.srcfmt.sample_rate * AUDIO_BLK_MS / 1000;
+		track->codec.srcbuf.capacity = track->codec.srcbuf.fmt.sample_rate * AUDIO_BLK_MS / 1000;
 		track->codec.srcbuf.sample = audio_realloc(track->codec.srcbuf.sample, RING_BYTELEN(&track->codec.srcbuf));
 
 		return &track->codec.srcbuf;
@@ -391,7 +390,7 @@ static audio_ring_t *
 init_chvol(audio_track_t *track, audio_ring_t *last_dst)
 {
 	audio_format2_t *srcfmt = &track->inputfmt;
-	audio_format2_t *dstfmt = last_dst->fmt;
+	audio_format2_t *dstfmt = &last_dst->fmt;
 
 	// チャンネルボリュームが有効かどうか
 	bool use_chvol = false;
@@ -410,9 +409,8 @@ init_chvol(audio_track_t *track, audio_ring_t *last_dst)
 		track->chvol.dst = last_dst;
 
 		// 周波数とチャンネル数がユーザ指定値。
-		track->chvol.srcfmt = *dstfmt;
-		track->chvol.srcbuf.fmt = &track->chvol.srcfmt;
-		track->chvol.srcbuf.capacity = track->chvol.srcfmt.sample_rate * AUDIO_BLK_MS / 1000; 
+		track->chvol.srcbuf.fmt = *dstfmt;
+		track->chvol.srcbuf.capacity = track->chvol.srcbuf.fmt.sample_rate * AUDIO_BLK_MS / 1000; 
 		track->chvol.srcbuf.sample = audio_realloc(track->chvol.srcbuf.sample, RING_BYTELEN(&track->chvol.srcbuf));
 
 		track->chvol.arg.count = track->chvol.srcbuf.capacity;
@@ -426,7 +424,7 @@ static audio_ring_t *
 init_chmix(audio_track_t *track, audio_ring_t *last_dst)
 {
 	audio_format2_t *srcfmt = &track->inputfmt;
-	audio_format2_t *dstfmt = last_dst->fmt;
+	audio_format2_t *dstfmt = &last_dst->fmt;
 
 	int srcch = srcfmt->channels;
 	int dstch = dstfmt->channels;
@@ -447,17 +445,16 @@ init_chmix(audio_track_t *track, audio_ring_t *last_dst)
 
 		track->chmix.dst = last_dst;
 		// チャンネル数を srcch にする
-		track->chmix.srcfmt = *dstfmt;
-		track->chmix.srcfmt.channels = srcch;
-		track->chmix.srcbuf.fmt = &track->chmix.srcfmt;
+		track->chmix.srcbuf.fmt = *dstfmt;
+		track->chmix.srcbuf.fmt.channels = srcch;
 		track->chmix.srcbuf.top = 0;
 		track->chmix.srcbuf.count = 0;
 		// バッファサイズは計算で決められるはずだけど。とりあえず。
-		track->chmix.srcbuf.capacity = track->chmix.srcfmt.sample_rate * AUDIO_BLK_MS / 1000;
+		track->chmix.srcbuf.capacity = track->chmix.srcbuf.fmt.sample_rate * AUDIO_BLK_MS / 1000;
 		track->chmix.srcbuf.sample = audio_realloc(track->chmix.srcbuf.sample, RING_BYTELEN(&track->chmix.srcbuf));
 
-		track->chmix.arg.srcfmt = &track->chmix.srcfmt;
-		track->chmix.arg.dstfmt = last_dst->fmt;
+		track->chmix.arg.srcfmt = &track->chmix.srcbuf.fmt;
+		track->chmix.arg.dstfmt = dstfmt;
 
 		return &track->chmix.srcbuf;
 	}
@@ -467,7 +464,7 @@ static audio_ring_t*
 init_freq(audio_track_t *track, audio_ring_t *last_dst)
 {
 	audio_format2_t *srcfmt = &track->inputfmt;
-	audio_format2_t *dstfmt = last_dst->fmt;
+	audio_format2_t *dstfmt = &last_dst->fmt;
 
 	uint32_t srcfreq = srcfmt->sample_rate;
 	uint32_t dstfreq = dstfmt->sample_rate;
@@ -485,12 +482,11 @@ init_freq(audio_track_t *track, audio_ring_t *last_dst)
 		track->freq.filter = audio_track_freq;
 		track->freq.dst = last_dst;
 		// 周波数のみ srcfreq
-		track->freq.srcfmt = *dstfmt;
-		track->freq.srcfmt.sample_rate = srcfreq;
-		track->freq.srcbuf.fmt = &track->freq.srcfmt;
+		track->freq.srcbuf.fmt = *dstfmt;
+		track->freq.srcbuf.fmt.sample_rate = srcfreq;
 		track->freq.srcbuf.top = 0;
 		track->freq.srcbuf.count = 0;
-		track->freq.srcbuf.capacity = track->freq.srcfmt.sample_rate * AUDIO_BLK_MS / 1000;
+		track->freq.srcbuf.capacity = track->freq.srcbuf.fmt.sample_rate * AUDIO_BLK_MS / 1000;
 		track->freq.srcbuf.sample = audio_realloc(track->freq.srcbuf.sample, RING_BYTELEN(&track->freq.srcbuf));
 		return &track->freq.srcbuf;
 	}
@@ -516,7 +512,7 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *fmt)
 
 		track->inputfmt = *fmt;
 
-		track->outputfmt = track->mixer->track_fmt;
+		track->outputbuf.fmt =  track->mixer->track_fmt;
 
 		last_dst = init_freq(track, last_dst);
 		last_dst = init_chmix(track, last_dst);
@@ -527,7 +523,7 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *fmt)
 
 		track->inputfmt = track->mixer->track_fmt;
 
-		track->outputfmt = *fmt;
+		track->outputbuf.fmt = *fmt;
 
 		last_dst = init_codec(track, last_dst);
 		last_dst = init_chvol(track, last_dst);
@@ -539,10 +535,9 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *fmt)
 	track->input = last_dst;
 
 	// 出力フォーマットに従って outputbuf を作る
-	track->outputbuf.fmt = &track->outputfmt;
 	track->outputbuf.top = 0;
 	track->outputbuf.count = 0;
-	track->outputbuf.capacity = 16 * track->outputbuf.fmt->sample_rate * AUDIO_BLK_MS / 1000;
+	track->outputbuf.capacity = 16 * track->outputbuf.fmt.sample_rate * AUDIO_BLK_MS / 1000;
 	track->outputbuf.sample = audio_realloc(track->outputbuf.sample, RING_BYTELEN(&track->outputbuf));
 
 	if (debug) {
@@ -606,7 +601,7 @@ audio_track_play(audio_track_t *track, bool isdrain)
 			TRACE(track, "Append silence %d frames", n);
 			KASSERT(audio_ring_unround_free_count(track->codec.dst) >= n);
 
-			memset(RING_BOT_UINT8(track->codec.dst), 0, n * track->codec.dst->fmt->channels * sizeof(internal_t));
+			memset(RING_BOT_UINT8(track->codec.dst), 0, n * track->codec.dst->fmt.channels * sizeof(internal_t));
 			audio_ring_appended(track->codec.dst, n);
 		} else {
 			// ブロックサイズたまるまで処理をしない
@@ -658,7 +653,7 @@ audio_track_play(audio_track_t *track, bool isdrain)
 			TRACE(track, "Append silence %d frames to track_buf", n);
 			KASSERT(audio_ring_unround_free_count(&track->outputbuf) >= n);
 
-			memset(RING_BOT_UINT8(&track->outputbuf), 0, n * track->outputbuf.fmt->channels * sizeof(internal_t));
+			memset(RING_BOT_UINT8(&track->outputbuf), 0, n * track->outputbuf.fmt.channels * sizeof(internal_t));
 			audio_ring_appended(&track->outputbuf, n);
 		}
 	}
@@ -682,23 +677,20 @@ audio_mixer_init(audio_trackmixer_t *mixer, struct audio_softc *sc, int mode)
 	memset(mixer, 0, sizeof(audio_trackmixer_t));
 	mixer->sc = sc;
 
-	mixer->hw_fmt = audio_softc_get_hw_format(mixer->sc, mode);
-	mixer->hw_buf.fmt = &mixer->hw_fmt;
+	mixer->hw_buf.fmt = audio_softc_get_hw_format(mixer->sc, mode);
 	mixer->hw_buf.capacity = audio_softc_get_hw_capacity(mixer->sc);
 	mixer->hw_buf.sample = audio_softc_allocm(mixer->sc, RING_BYTELEN(&mixer->hw_buf));
 
-	mixer->frames_per_block = mixer->hw_fmt.sample_rate * AUDIO_BLK_MS / 1000;
+	mixer->frames_per_block = mixer->hw_buf.fmt.sample_rate * AUDIO_BLK_MS / 1000;
 
 	mixer->track_fmt.encoding = AUDIO_ENCODING_SLINEAR_HE;
-	mixer->track_fmt.channels = mixer->hw_fmt.channels;
-	mixer->track_fmt.sample_rate = mixer->hw_fmt.sample_rate;
+	mixer->track_fmt.channels = mixer->hw_buf.fmt.channels;
+	mixer->track_fmt.sample_rate = mixer->hw_buf.fmt.sample_rate;
 	mixer->track_fmt.precision = mixer->track_fmt.stride = AUDIO_INTERNAL_BITS;
 
-	mixer->mix_fmt = mixer->track_fmt;
-	mixer->mix_fmt.precision = mixer->mix_fmt.stride = AUDIO_INTERNAL_BITS * 2;
-
 	/* 40ms double buffer */
-	mixer->mix_buf.fmt = &mixer->mix_fmt;
+	mixer->mix_buf.fmt = mixer->track_fmt;
+	mixer->mix_buf.fmt.precision = mixer->mix_buf.fmt.stride = AUDIO_INTERNAL_BITS * 2;
 	mixer->mix_buf.capacity = 2 * mixer->frames_per_block;
 	mixer->mix_buf.sample = audio_realloc(mixer->mix_buf.sample, RING_BYTELEN(&mixer->mix_buf));
 	memset(mixer->mix_buf.sample, 0, RING_BYTELEN(&mixer->mix_buf));
@@ -789,7 +781,7 @@ audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track)
 	internal2_t *dptr = RING_BOT(internal2_t, &mix_tmp);
 
 	/* 整数倍精度へ変換し、トラックボリュームを適用して加算合成 */
-	int sample_count = count * mixer->mix_fmt.channels;
+	int sample_count = count * mixer->mix_buf.fmt.channels;
 	if (track->volume == 256) {
 		for (int i = 0; i < sample_count; i++) {
 			*dptr++ += ((internal2_t)*sptr++);
@@ -831,7 +823,7 @@ audio_mixer_play_period(audio_trackmixer_t *mixer /*, bool force */)
 	internal2_t *mptr0 = RING_TOP(internal2_t, &mixer->mix_buf);
 	internal2_t *mptr = mptr0;
 
-	int sample_count = count * mixer->mix_fmt.channels;
+	int sample_count = count * mixer->mix_buf.fmt.channels;
 	for (int i = 0; i < sample_count; i++) {
 		if (*mptr > ovf_plus) ovf_plus = *mptr;
 		if (*mptr < ovf_minus) ovf_minus = *mptr;

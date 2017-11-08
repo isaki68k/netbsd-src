@@ -98,7 +98,7 @@ struct audio_format2
 
 struct audio_ring
 {
-	audio_format2_t *fmt;	/* フォーマット */
+	audio_format2_t fmt;	/* フォーマット */
 	int  capacity;			/* 容量(フレーム) */
 	int  top;				/* 先頭フレーム位置 */
 	int  count;				/* 有効フレーム量 */
@@ -129,7 +129,6 @@ struct audio_stage
 	audio_filter_arg_t arg;
 	audio_ring_t *dst;
 	audio_ring_t srcbuf;
-	audio_format2_t srcfmt;
 };
 typedef struct audio_stage audio_stage_t;
 
@@ -141,7 +140,6 @@ struct audio_track
 	audio_format2_t     inputfmt;		// このトラックに入力するフォーマット
 	audio_ring_t       *input;			// このトラックに入力するとき使用するバッファへのポインタ
 
-	audio_format2_t     outputfmt;		// このトラックから出力するフォーマット
 	audio_ring_t        outputbuf;		/* トラックの出力バッファ */
 
 	audio_stage_t       codec;			// エンコーディング変換ステージ
@@ -179,20 +177,17 @@ struct audio_track
 
 struct audio_trackmixer
 {
-	audio_format2_t track_fmt;			/* ミキサのトラック側入出力フォーマット */
-										/* precision == stride は保証 */
+	audio_format2_t track_fmt;
 
 	int frames_per_block;				/* 内部周波数での 1 ブロックのフレーム数 */
 
 	uint16_t       volume;				/* 出力マスタボリューム */
 
-	audio_format2_t mix_fmt;
 	audio_ring_t   mix_buf;				/* 整数倍精度ミキシングバッファ */
 
 	audio_filter_t  codec;				/* mix <-> hw コーデックフィルタ */
 	audio_filter_arg_t codec_arg;		/* その引数 */
 
-	audio_format2_t hw_fmt;
 	audio_ring_t   hw_buf;				/* 物理デバイスの入出力バッファ (malloc ではなく allocm で確保する) */
 
 	uint32_t       hw_blkID;			/* ハードウェア出力中のブロック ID */
