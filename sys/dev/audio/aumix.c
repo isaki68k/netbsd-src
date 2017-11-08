@@ -503,8 +503,8 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *fmt)
 
 	// TODO: まず現在のバッファとかを全部破棄すると分かり易いが。
 
-	track->userio_fmt = *fmt;
-	track->userio_frames_per_block = fmt->sample_rate * AUDIO_BLK_MS / 1000;
+	track->inputfmt = *fmt;
+	track->input_frames_per_block = fmt->sample_rate * AUDIO_BLK_MS / 1000;
 	track->framealign = audio_framealign(fmt->stride);
 
 	audio_ring_t *last_dst = &track->track_buf;
@@ -512,7 +512,7 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *fmt)
 	if (track->mode == AUMODE_PLAY) {
 		// 再生はトラックミキサ側から作る
 
-		track->mixer_inout = &track->track_buf;
+		track->output = &track->track_buf;
 		srcfmt = fmt;
 
 		/* track_buf は内部フォーマット */
@@ -527,19 +527,19 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *fmt)
 		last_dst = init_chvol(track, srcfmt, last_dst);
 		last_dst = init_codec(track, srcfmt, last_dst);
 
-		track->userio_inout = last_dst;
+		track->input = last_dst;
 
 	} else {
 		// 録音はユーザランド側から作る
 
-		track->userio_inout = &track->track_buf;
+		track->input = &track->track_buf;
 		srcfmt = &track->mixer->track_fmt;
 
 		/* track_buf はユーザフォーマット */
-		track->track_buf.fmt = &track->userio_fmt;
+		track->track_buf.fmt = &track->inputfmt;
 		track->track_buf.top = 0;
 		track->track_buf.count = 0;
-		track->track_buf.capacity = 16 * track->userio_frames_per_block;
+		track->track_buf.capacity = 16 * track->input_frames_per_block;
 		track->track_buf.sample = audio_realloc(track->track_buf.sample, RING_BYTELEN(&track->track_buf));
 
 		last_dst = init_codec(track, srcfmt, last_dst);
@@ -547,11 +547,11 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *fmt)
 		last_dst = init_chmix(track, srcfmt, last_dst);
 		last_dst = init_freq(track, srcfmt, last_dst);
 
-		track->mixer_inout = last_dst;
+		track->output = last_dst;
 	}
 
 	if (debug) {
-		printf("%s: userfmt=%s\n", __func__, fmt_tostring(&track->userio_fmt));
+		printf("%s: userfmt=%s\n", __func__, fmt_tostring(&track->inputfmt));
 	}
 }
 
@@ -583,7 +583,7 @@ audio_track_play(audio_track_t *track, bool isdrain)
 		int dst_count = audio_ring_unround_free_count(track->codec.dst);
 		if (audio_ring_unround_free_count(&track->codec.srcbuf) > 0) {
 			// stride に応じてアラインする最小ブロックまでを処理する
-			int count = track->userio_frames_per_block * track->framealign;
+			int count = track->input_frames_per_block * track->framealign;
 			count = min(count, track->codec.srcbuf.count);
 			count = min(count, dst_count);
 
@@ -608,7 +608,7 @@ audio_track_play(audio_track_t *track, bool isdrain)
 	if (track->codec.dst->count == 0) return;
 
 	/* ブロックサイズに整形 */
-	int n = track->userio_frames_per_block - track->codec.dst->count;
+	int n = track->input_frames_per_block - track->codec.dst->count;
 	if (n > 0) {
 		if (isdrain) {
 			/* 無音をブロックサイズまで埋める */
@@ -625,7 +625,7 @@ audio_track_play(audio_track_t *track, bool isdrain)
 		}
 	}
 
-	KASSERT(track->codec.dst->count >= track->userio_frames_per_block);
+	KASSERT(track->codec.dst->count >= track->input_frames_per_block);
 
 	/* チャンネルボリューム */
 	if (track->chvol.filter != NULL
@@ -646,7 +646,7 @@ audio_track_play(audio_track_t *track, bool isdrain)
 		track->chmix.arg.dst = RING_BOT(internal_t, track->chmix.dst);
 
 		// XXX ほんとうは setformat での値のはず
-		track->chmix.arg.count = track->userio_frames_per_block;
+		track->chmix.arg.count = track->input_frames_per_block;
 
 		track->chmix.filter(&track->chmix.arg);
 		audio_ring_appended(track->chmix.dst, track->chmix.arg.count);
@@ -674,10 +674,10 @@ audio_track_play(audio_track_t *track, bool isdrain)
 		}
 	}
 
-	if (track->userio_inout == &track->track_buf) {
-		track->track_counter = track->userio_counter;
+	if (track->input == &track->track_buf) {
+		track->outputcounter = track->inputcounter;
 	} else {
-		track->track_counter += track->track_buf.count - track_count_0;
+		track->outputcounter += track->track_buf.count - track_count_0;
 	}
 
 //	TRACE(track, "trackbuf=%d", track->track_buf.count);
@@ -1000,7 +1000,7 @@ audio_track_play_drain_core(audio_track_t *track, bool wait)
 
 		track->is_draining = false;
 		printf("#%d: uio_count=%lld trk_count=%lld tm=%lld mixhw=%lld hw_complete=%lld\n", track->id,
-			track->userio_counter, track->track_counter, 
+			track->inputcounter, track->outputcounter, 
 			track->track_mixer_counter, track->mixer_hw_counter,
 			track->hw_complete_counter);
 	}
@@ -1017,8 +1017,8 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 	while (uio->uio_resid > 0) {
 
 		/* userio の空きバイト数を求める */
-		int free_count = audio_ring_unround_free_count(track->userio_inout);
-		int free_bytelen = free_count * track->userio_fmt.channels * track->userio_fmt.stride / 8 - track->subframe_buf_used;
+		int free_count = audio_ring_unround_free_count(track->input);
+		int free_bytelen = free_count * track->inputfmt.channels * track->inputfmt.stride / 8 - track->subframe_buf_used;
 
 		if (free_bytelen == 0) {
 			audio_waitio(sc, NULL, track);
@@ -1028,20 +1028,20 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 		int move_bytelen = min(free_bytelen, (int)uio->uio_resid);
 
 		// 今回出来上がるフレーム数 */
-		int framecount = (move_bytelen + track->subframe_buf_used) * 8 / (track->userio_fmt.channels * track->userio_fmt.stride);
+		int framecount = (move_bytelen + track->subframe_buf_used) * 8 / (track->inputfmt.channels * track->inputfmt.stride);
 
 		// コピー先アドレスは subframe_buf_used で調整する必要がある
-		uint8_t *dptr = RING_BOT_UINT8(track->userio_inout) + track->subframe_buf_used;
+		uint8_t *dptr = RING_BOT_UINT8(track->input) + track->subframe_buf_used;
 		// min(bytelen, uio->uio_resid) は uiomove が保証している
 		error = uiomove(dptr, move_bytelen, uio);
 		if (error) {
 			panic("uiomove");
 		}
-		audio_ring_appended(track->userio_inout, framecount);
-		track->userio_counter += framecount;
+		audio_ring_appended(track->input, framecount);
+		track->inputcounter += framecount;
 		
 		// 今回 userio_buf に置いたサブフレームを次回のために求める
-		track->subframe_buf_used = move_bytelen - framecount * track->userio_fmt.channels * track->userio_fmt.stride / 8;
+		track->subframe_buf_used = move_bytelen - framecount * track->inputfmt.channels * track->inputfmt.stride / 8;
 
 		// 今回作った userio を全部トラック再生へ渡す
 		audio_track_play(track, false);

@@ -138,11 +138,14 @@ struct audio_track
 	int mode;								/* AUMODE_PLAY or AUMODE_RECORD */
 	int                subframe_buf_used;	/* 1フレーム未満の使用バイト数 */
 
-	int                userio_frames_per_block;	/* ユーザランド周波数での 1 ブロックのフレーム数 */
-	int                framealign;		/* userio_fmt でフレームがバイトアライメントするフレーム数。 必ず 2^n */
+	int                input_frames_per_block;	/* トラックへの入力周波数での 1 ブロックのフレーム数 */
+	int                framealign;		/* inputfmt でフレームがバイトアライメントするフレーム数。 必ず 2^n */
 
-	audio_format2_t     userio_fmt;
-	audio_ring_t       *userio_inout;	// ユーザランド側がアクセスするリングバッファへのポインタ
+	audio_format2_t     inputfmt;		// このトラックに入力するフォーマット
+	audio_ring_t       *input;			// このトラックに入力するとき使用するバッファへのポインタ
+
+	audio_format2_t     outputfmt;		// このトラックから出力するフォーマット
+	audio_ring_t       *output;			// このトラックから出力するとき使用するバッファへのポインタ
 
 	audio_stage_t       codec;			// エンコーディング変換ステージ
 	audio_stage_t       chvol;			// チャンネルボリュームステージ
@@ -150,9 +153,7 @@ struct audio_track
 	audio_stage_t       freq;			// 周波数変換ステージ
 
 	audio_ring_t       track_buf;		/* トラックのバッファ */
-
-	audio_ring_t       *mixer_inout;	// トラックミキサがアクセスするリングバッファへのポインタ
-
+	
 	audio_rational_t   freq_step;		/* 周波数変換用分数 (変換元周波数 / 変換先周波数) */
 	audio_rational_t   freq_current;	/* 周波数変換用 現在のカウンタ */
 
@@ -169,8 +170,8 @@ struct audio_track
 	bool is_draining;					/* drain 実行中 */
 	bool is_pause;						/* track_buf への trackmixer からのアクセスを一時停止する */
 
-	uint64_t userio_counter;			/* userio_buf の読み書きフレーム数 */
-	uint64_t track_counter;				/* track_buf のトラック側読み書きフレーム数 */
+	uint64_t inputcounter;				/* トラックに入力されたフレーム数 */
+	uint64_t outputcounter;				/* トラックから出力されたフレーム数 */
 
 	/* できるかどうか未知 */
 	uint64_t track_mixer_counter;		/* track_buf のトラックミキサ側読み書きフレーム数 */
