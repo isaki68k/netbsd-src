@@ -299,6 +299,7 @@ audio_track_init(audio_track_t *track, audio_trackmixer_t *mixer, int mode)
 
 	track->mixer = mixer;
 	track->mode = mode;
+	track->track_buf.fmt = &track->outputfmt;
 
 	// 固定初期値
 	track->volume = 256;

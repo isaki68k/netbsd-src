@@ -151,7 +151,6 @@ struct audio_track
 	audio_stage_t       chmix;			// チャンネルミックスステージ
 	audio_stage_t       freq;			// 周波数変換ステージ
 
-	
 	audio_rational_t   freq_step;		/* 周波数変換用分数 (変換元周波数 / 変換先周波数) */
 	audio_rational_t   freq_current;	/* 周波数変換用 現在のカウンタ */
 
