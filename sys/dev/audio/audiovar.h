@@ -144,7 +144,7 @@ struct audio_track
 	audio_ring_t       *input;			// このトラックに入力するとき使用するバッファへのポインタ
 
 	audio_format2_t     outputfmt;		// このトラックから出力するフォーマット
-	audio_ring_t        track_buf;		/* トラックの出力バッファ */
+	audio_ring_t        outputbuf;		/* トラックの出力バッファ */
 
 	audio_stage_t       codec;			// エンコーディング変換ステージ
 	audio_stage_t       chvol;			// チャンネルボリュームステージ
@@ -165,13 +165,13 @@ struct audio_track
 	uint32_t           completion_blkID[16];	// XXX: 16 は適当
 
 	bool is_draining;					/* drain 実行中 */
-	bool is_pause;						/* track_buf への trackmixer からのアクセスを一時停止する */
+	bool is_pause;						/* outputbuf への trackmixer からのアクセスを一時停止する */
 
 	uint64_t inputcounter;				/* トラックに入力されたフレーム数 */
 	uint64_t outputcounter;				/* トラックから出力されたフレーム数 */
 
 	/* できるかどうか未知 */
-	uint64_t track_mixer_counter;		/* track_buf のトラックミキサ側読み書きフレーム数 */
+	uint64_t track_mixer_counter;		/* outputbuf のトラックミキサ側読み書きフレーム数 */
 	uint64_t mixer_hw_counter; /* mixer <-> hw 入出力フレーム数 */
 	uint64_t hw_complete_counter; /* ハードウェア I/O が完了したフレーム数 */
 

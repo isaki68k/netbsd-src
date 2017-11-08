@@ -299,7 +299,7 @@ audio_track_init(audio_track_t *track, audio_trackmixer_t *mixer, int mode)
 
 	track->mixer = mixer;
 	track->mode = mode;
-	track->track_buf.fmt = &track->outputfmt;
+	track->outputbuf.fmt = &track->outputfmt;
 
 	// 固定初期値
 	track->volume = 256;
@@ -510,7 +510,7 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *fmt)
 
 	// TODO: まず現在のバッファとかを全部破棄すると分かり易いが。
 
-	audio_ring_t *last_dst = &track->track_buf;
+	audio_ring_t *last_dst = &track->outputbuf;
 	if (track->mode == AUMODE_PLAY) {
 		// 再生はトラックミキサ側から作る
 
@@ -541,12 +541,12 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *fmt)
 	// 入力バッファは先頭のステージ相当品
 	track->input = last_dst;
 
-	// 出力フォーマットに従って track_buf を作る
-	track->track_buf.fmt = &track->outputfmt;
-	track->track_buf.top = 0;
-	track->track_buf.count = 0;
-	track->track_buf.capacity = 16 * track->track_buf.fmt->sample_rate * AUDIO_BLK_MS / 1000;
-	track->track_buf.sample = audio_realloc(track->track_buf.sample, RING_BYTELEN(&track->track_buf));
+	// 出力フォーマットに従って outputbuf を作る
+	track->outputbuf.fmt = &track->outputfmt;
+	track->outputbuf.top = 0;
+	track->outputbuf.count = 0;
+	track->outputbuf.capacity = 16 * track->outputbuf.fmt->sample_rate * AUDIO_BLK_MS / 1000;
+	track->outputbuf.sample = audio_realloc(track->outputbuf.sample, RING_BYTELEN(&track->outputbuf));
 
 	if (debug) {
 		printf("%s: userfmt=%s\n", __func__, fmt_tostring(&track->inputfmt));
@@ -574,7 +574,7 @@ audio_track_play(audio_track_t *track, bool isdrain)
 {
 	KASSERT(track);
 
-	int track_count_0 = track->track_buf.count;
+	int track_count_0 = track->outputbuf.count;
 
 	/* エンコーディング変換 */
 	if (track->codec.filter != NULL) {
@@ -658,24 +658,24 @@ audio_track_play(audio_track_t *track, bool isdrain)
 		/* 無音をブロックサイズまで埋める */
 		/* 内部フォーマットだとわかっている */
 		/* 周波数変換の結果、ブロック未満の端数フレームが出る */
-		int n = track->track_buf.count % track->mixer->frames_per_block;
+		int n = track->outputbuf.count % track->mixer->frames_per_block;
 		if (n > 0) {
 			n = track->mixer->frames_per_block - n;
 			TRACE(track, "Append silence %d frames to track_buf", n);
-			KASSERT(audio_ring_unround_free_count(&track->track_buf) >= n);
+			KASSERT(audio_ring_unround_free_count(&track->outputbuf) >= n);
 
-			memset(RING_BOT_UINT8(&track->track_buf), 0, n * track->track_buf.fmt->channels * sizeof(internal_t));
-			audio_ring_appended(&track->track_buf, n);
+			memset(RING_BOT_UINT8(&track->outputbuf), 0, n * track->outputbuf.fmt->channels * sizeof(internal_t));
+			audio_ring_appended(&track->outputbuf, n);
 		}
 	}
 
-	if (track->input == &track->track_buf) {
+	if (track->input == &track->outputbuf) {
 		track->outputcounter = track->inputcounter;
 	} else {
-		track->outputcounter += track->track_buf.count - track_count_0;
+		track->outputcounter += track->outputbuf.count - track_count_0;
 	}
 
-//	TRACE(track, "trackbuf=%d", track->track_buf.count);
+//	TRACE(track, "trackbuf=%d", track->outputbuf.count);
 	if (track->mixer->busy == false) {
 		audio_mixer_play(track->mixer, false);
 	}
@@ -731,12 +731,12 @@ audio_mixer_play(audio_trackmixer_t *mixer, bool isdrain)
 		SLIST_FOREACH(f, &mixer->sc->sc_files, entry) {
 			audio_track_t *track = &f->ptrack;
 
-			if (track->track_buf.count < mixer->frames_per_block) {
+			if (track->outputbuf.count < mixer->frames_per_block) {
 				audio_track_play(track, isdrain);
 			}
 
 			// 合成
-			if (track->track_buf.count > 0) {
+			if (track->outputbuf.count > 0) {
 				audio_mixer_play_mix_track(mixer, track);
 			}
 
@@ -770,8 +770,8 @@ void
 audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track)
 {
 	/* 1 ブロック貯まるまで待つ */
-	if (track->track_buf.count < mixer->frames_per_block) {
-		TRACE0("track count too short: track_buf.count=%d", track->track_buf.count);
+	if (track->outputbuf.count < mixer->frames_per_block) {
+		TRACE0("track count too short: track_buf.count=%d", track->outputbuf.count);
 		return;
 	}
 
@@ -788,10 +788,10 @@ audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track)
 		return;
 	}
 
-	KASSERT(audio_ring_unround_count(&track->track_buf) >= count);
+	KASSERT(audio_ring_unround_count(&track->outputbuf) >= count);
 	KASSERT(audio_ring_unround_free_count(&mix_tmp) >= count);
 
-	internal_t *sptr = RING_TOP(internal_t, &track->track_buf);
+	internal_t *sptr = RING_TOP(internal_t, &track->outputbuf);
 	internal2_t *dptr = RING_BOT(internal2_t, &mix_tmp);
 
 	/* 整数倍精度へ変換し、トラックボリュームを適用して加算合成 */
@@ -806,7 +806,7 @@ audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track)
 		}
 	}
 
-	audio_ring_tookfromtop(&track->track_buf, count);
+	audio_ring_tookfromtop(&track->outputbuf, count);
 
 	/* トラックバッファを取り込んだことを反映 */
 	track->mixed_count += count;
@@ -989,7 +989,7 @@ audio_track_play_drain_core(audio_track_t *track, bool wait)
 		do {
 			audio_waitio(track->mixer->sc, NULL, track);
 			//audio_mixer_play(track->mixer);
-		} while (track->track_buf.count > 0
+		} while (track->outputbuf.count > 0
 			|| track->mixed_count > 0
 			|| track->completion_blkcount > 0);
 
