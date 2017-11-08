@@ -18,7 +18,7 @@ is_valid_format(const audio_params2_t *fmt)
 	}
 	if (fmt->precision > fmt->stride) return false;
 	if (fmt->channels <= 0) return false;
-	if (fmt->channels > AUDIO_MAX_CH) return false;
+	if (fmt->channels > AUDIO_MAX_CHANNELS) return false;
 
 	/* XXX: NO CHECK FOR ENCODING */
 	return true;

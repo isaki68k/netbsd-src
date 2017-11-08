@@ -152,7 +152,7 @@ audio_track_chvol(audio_filter_arg_t *arg)
 	KASSERT(is_valid_filter_arg(arg));
 	KASSERT(arg->src_fmt->channels == arg->dst_fmt->channels);
 	KASSERT(arg->context != NULL);
-	KASSERT(arg->src_fmt->channels <= AUDIO_MAX_CH);
+	KASSERT(arg->src_fmt->channels <= AUDIO_MAX_CHANNELS);
 
 	int16_t *ch_volume = arg->context;
 	const internal_t *sptr = arg->src;
@@ -302,7 +302,7 @@ audio_track_init(audio_track_t *track, audio_trackmixer_t *mixer, int mode)
 
 	// 固定初期値
 	track->volume = 256;
-	for (int i = 0; i < AUDIO_MAX_CH; i++) {
+	for (int i = 0; i < AUDIO_MAX_CHANNELS; i++) {
 		track->ch_volume[i] = 256;
 	}
 

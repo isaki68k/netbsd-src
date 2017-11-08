@@ -67,7 +67,7 @@ typedef uint64_t uinternal2_t;
 #define AUDIO_BLK_MS 400
 
 /* サポートする最大のチャンネル数 */
-#define AUDIO_MAX_CH	18
+#define AUDIO_MAX_CHANNELS	18
 
 
 /* 前方参照 */
@@ -156,7 +156,7 @@ struct audio_track
 	audio_rational_t   freq_step;		/* 周波数変換用分数 (変換元周波数 / 変換先周波数) */
 	audio_rational_t   freq_current;	/* 周波数変換用 現在のカウンタ */
 
-	uint16_t  ch_volume[AUDIO_MAX_CH];	/* チャンネルバランス用 チャンネルボリューム */
+	uint16_t  ch_volume[AUDIO_MAX_CHANNELS];	/* チャンネルバランス用 チャンネルボリューム */
 	uint16_t           volume;			/* トラックボリューム。トラックボリュームはトラックミキサで処理。 */
 
 	audio_trackmixer_t  *mixer;			/* 接続されているトラックミキサ */
