@@ -123,7 +123,7 @@ struct audio_filter_arg
 */
 typedef void(*audio_filter_t)(audio_filter_arg_t *arg);
 
-struct audio_ring_filter
+struct audio_stage
 {
 	audio_filter_t filter;
 	audio_filter_arg_t arg;
@@ -131,7 +131,7 @@ struct audio_ring_filter
 	audio_ring_t srcbuf;
 	audio_format2_t srcfmt;
 };
-typedef struct audio_ring_filter audio_ring_filter_t;
+typedef struct audio_stage audio_stage_t;
 
 struct audio_track
 {
@@ -144,10 +144,10 @@ struct audio_track
 	audio_format2_t     userio_fmt;
 	audio_ring_t       *userio_inout;	// ユーザランド側がアクセスするリングバッファへのポインタ
 
-	audio_ring_filter_t codec;			// エンコーディング変換ステージ
-	audio_ring_filter_t chvol;			// チャンネルボリュームステージ
-	audio_ring_filter_t chmix;			// チャンネルミックスステージ
-	audio_ring_filter_t freq;			// 周波数変換ステージ
+	audio_stage_t       codec;			// エンコーディング変換ステージ
+	audio_stage_t       chvol;			// チャンネルボリュームステージ
+	audio_stage_t       chmix;			// チャンネルミックスステージ
+	audio_stage_t       freq;			// 周波数変換ステージ
 
 	audio_ring_t       track_buf;		/* トラックのバッファ */
 
