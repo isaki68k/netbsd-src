@@ -183,7 +183,7 @@ struct audio_trackmixer
 
 	uint16_t       volume;				/* 出力マスタボリューム */
 
-	audio_ring_t   mix_buf;				/* 整数倍精度ミキシングバッファ */
+	audio_ring_t   mixbuf;				/* 整数倍精度ミキシングバッファ */
 
 	audio_filter_t  codec;				/* mix <-> hw コーデックフィルタ */
 	audio_filter_arg_t codec_arg;		/* その引数 */
