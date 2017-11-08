@@ -139,7 +139,6 @@ struct audio_track
 	int                subframe_buf_used;	/* 1フレーム未満の使用バイト数 */
 
 	int                input_frames_per_block;	/* トラックへの入力周波数での 1 ブロックのフレーム数 */
-	int                framealign;		/* inputfmt でフレームがバイトアライメントするフレーム数。 必ず 2^n */
 
 	audio_format2_t     inputfmt;		// このトラックに入力するフォーマット
 	audio_ring_t       *input;			// このトラックに入力するとき使用するバッファへのポインタ

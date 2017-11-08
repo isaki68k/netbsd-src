@@ -379,9 +379,7 @@ init_codec(audio_track_t *track, audio_ring_t *last_dst)
 		track->codec.srcbuf.fmt = &track->codec.srcfmt;
 		track->codec.srcbuf.top = 0;
 		track->codec.srcbuf.count = 0;
-		// バッファの容量を framealign の倍数にしておけば全体としてバイト境界問題が解決できる
-		// ほかのバッファはともかく、このバッファはこの条件が必須。
-		track->codec.srcbuf.capacity = track->codec.srcfmt.sample_rate * AUDIO_BLK_MS / 1000 * track->framealign;
+		track->codec.srcbuf.capacity = track->codec.srcfmt.sample_rate * AUDIO_BLK_MS / 1000;
 		track->codec.srcbuf.sample = audio_realloc(track->codec.srcbuf.sample, RING_BYTELEN(&track->codec.srcbuf));
 
 		return &track->codec.srcbuf;
@@ -517,7 +515,6 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *fmt)
 
 		track->inputfmt = *fmt;
 		track->input_frames_per_block = fmt->sample_rate * AUDIO_BLK_MS / 1000;
-		track->framealign = audio_framealign(fmt->stride);
 
 		track->outputfmt = track->mixer->track_fmt;
 
@@ -531,8 +528,6 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *fmt)
 		track->inputfmt = track->mixer->track_fmt;
 		// XXX 不要？
 		track->input_frames_per_block = track->inputfmt.sample_rate * AUDIO_BLK_MS / 1000;
-		// XXX 不要?
-		track->framealign = audio_framealign(track->inputfmt.stride);
 
 		track->outputfmt = *fmt;
 
@@ -585,12 +580,9 @@ audio_track_play(audio_track_t *track, bool isdrain)
 		int dst_count = audio_ring_unround_free_count(track->codec.dst);
 		if (audio_ring_unround_free_count(&track->codec.srcbuf) > 0) {
 			// stride に応じてアラインする最小ブロックまでを処理する
-			int count = track->input_frames_per_block * track->framealign;
+			int count = track->input_frames_per_block;
 			count = min(count, track->codec.srcbuf.count);
 			count = min(count, dst_count);
-
-			// フレームのアライメント位置まで切り捨てる
-			count = count & ~(track->framealign - 1);
 
 			if (count > 0) {
 				audio_filter_arg_t *arg = &track->codec.arg;
