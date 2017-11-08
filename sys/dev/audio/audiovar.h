@@ -123,46 +123,40 @@ struct audio_filter_arg
 */
 typedef void(*audio_filter_t)(audio_filter_arg_t *arg);
 
+struct audio_ring_filter
+{
+	audio_filter_t filter;
+	audio_filter_arg_t arg;
+	audio_ring_t *dst;
+	audio_ring_t srcbuf;
+	audio_format_t srcfmt;
+};
+typedef struct audio_ring_filter audio_ring_filter_t;
+
 struct audio_track
 {
+	int mode;								/* AUMODE_PLAY or AUMODE_RECORD */
 	int                subframe_buf_used;	/* 1フレーム未満の使用バイト数 */
 
 	int                userio_frames_per_block;	/* ユーザランド周波数での 1 ブロックのフレーム数 */
 	int                framealign;		/* userio_fmt でフレームがバイトアライメントするフレーム数。 必ず 2^n */
 
-	audio_ring_t       *userio_inout;
-	audio_format_t     userio_fmt;		/* ユーザランドとのやり取りで使用するフォーマット */
-	audio_ring_t       userio_buf;		/* ユーザランド側とのやり取りで使用するデータ。 */
-										/* XXX: おそらく mmap のときは、アロケートしてそれを公開する */
+	audio_format_t     userio_fmt;
+	audio_ring_t       *userio_inout;	// ユーザランド側がアクセスするリングバッファへのポインタ
 
-	audio_filter_t     codec;			/* userio <-> track コーデックフィルタ */
-	audio_filter_arg_t codec_arg;		/* とその引数 */
-	audio_ring_t       *codec_in;
-	audio_ring_t       *codec_out;
-	audio_format_t     codec_fmt;
-	audio_ring_t       codec_buf;	/* エンコーディング変換バッファ userio 周波数、userio チャンネル、他は内部フォーマット */
+	audio_ring_filter_t codec;			// エンコーディング変換ステージ
+	audio_ring_filter_t chvol;			// チャンネルボリュームステージ
+	audio_ring_filter_t chmix;			// チャンネルミックスステージ
+	audio_ring_filter_t freq;			// 周波数変換ステージ
 
-	uint16_t  ch_volume[AUDIO_MAX_CH];	/* チャンネルバランス用 チャンネルボリューム */
-	audio_filter_t     chvol;
-	audio_filter_arg_t chvol_arg;
-	audio_ring_t       *chvol_in;
-	audio_ring_t       *chvol_out;
-	audio_ring_t       chvol_buf;		/* フォーマットは codec_fmt を使用する。*/
+	audio_ring_t       track_buf;		/* トラックのバッファ */
 
-	audio_filter_t     chmix;
-	audio_filter_arg_t chmix_arg;
-	audio_ring_t       *chmix_in;
-	audio_ring_t       *chmix_out;
-	audio_format_t     chmix_fmt;
-	audio_ring_t       chmix_buf;		/* チャンネル変換用バッファ userio 周波数、他は内部フォーマット */
+	audio_ring_t       *mixer_inout;	// トラックミキサがアクセスするリングバッファへのポインタ
 
-	audio_ring_t       *freq_in;
-	audio_ring_t       *freq_out;
 	audio_rational_t   freq_step;		/* 周波数変換用分数 (変換元周波数 / 変換先周波数) */
 	audio_rational_t   freq_current;	/* 周波数変換用 現在のカウンタ */
 
-	audio_ring_t       track_buf;		/* トラックミキサとのバッファ */
-
+	uint16_t  ch_volume[AUDIO_MAX_CH];	/* チャンネルバランス用 チャンネルボリューム */
 	uint16_t           volume;			/* トラックボリューム。トラックボリュームはトラックミキサで処理。 */
 
 	audio_trackmixer_t  *mixer;			/* 接続されているトラックミキサ */
@@ -174,7 +168,6 @@ struct audio_track
 
 	bool is_draining;					/* drain 実行中 */
 	bool is_pause;						/* track_buf への trackmixer からのアクセスを一時停止する */
-
 
 	uint64_t userio_counter;			/* userio_buf の読み書きフレーム数 */
 	uint64_t track_counter;				/* track_buf のトラック側読み書きフレーム数 */
