@@ -145,14 +145,13 @@ struct audio_track
 	audio_ring_t       *input;			// このトラックに入力するとき使用するバッファへのポインタ
 
 	audio_format2_t     outputfmt;		// このトラックから出力するフォーマット
-	audio_ring_t       *output;			// このトラックから出力するとき使用するバッファへのポインタ
+	audio_ring_t        track_buf;		/* トラックの出力バッファ */
 
 	audio_stage_t       codec;			// エンコーディング変換ステージ
 	audio_stage_t       chvol;			// チャンネルボリュームステージ
 	audio_stage_t       chmix;			// チャンネルミックスステージ
 	audio_stage_t       freq;			// 周波数変換ステージ
 
-	audio_ring_t       track_buf;		/* トラックのバッファ */
 	
 	audio_rational_t   freq_step;		/* 周波数変換用分数 (変換元周波数 / 変換先周波数) */
 	audio_rational_t   freq_current;	/* 周波数変換用 現在のカウンタ */
