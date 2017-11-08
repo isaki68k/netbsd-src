@@ -11,6 +11,7 @@
 #include "audev.h"
 #include "auring.h"
 #include "auintr.h"
+#include "aucodec.h"
 #ifdef USE_PTHREAD
 #include <pthread.h>
 #endif
@@ -153,7 +154,32 @@ main(int ac, char *av[])
 			if (opt_g)
 				continue;
 
-			f->mem.capacity = len * 8 / f->fmt.stride / f->fmt.channels;
+			if (f->fmt.encoding == AUDIO_ENCODING_MSM6258) {
+				// MSM6258 -> SLINEAR16(internal format)
+				uint8_t *tmp = malloc(len * 4);
+				audio_format2_t dstfmt;
+				dstfmt.encoding = AUDIO_ENCODING_SLINEAR_HE;
+				dstfmt.sample_rate = f->fmt.sample_rate;
+				dstfmt.precision = AUDIO_INTERNAL_BITS;
+				dstfmt.stride = AUDIO_INTERNAL_BITS;
+				dstfmt.channels = f->fmt.channels;
+				audio_filter_arg_t arg;
+				arg.context = msm6258_context_create();
+				arg.src = f->mem.sample;
+				arg.srcfmt = &f->fmt;
+				arg.dst = tmp;
+				arg.dstfmt = &dstfmt;
+				arg.count = len * 2;
+				msm6258_to_internal(&arg);
+				msm6258_context_destroy(arg.context);
+				// かきかえ
+				free(f->mem.sample);
+				f->mem.sample = tmp;
+				f->fmt = dstfmt;
+				f->mem.capacity = len * 2;
+			} else {
+				f->mem.capacity = len * 8 / f->fmt.stride / f->fmt.channels;
+			}
 			f->mem.count = f->mem.capacity;
 		}
 
@@ -270,7 +296,7 @@ static inline int IDC(uint32_t value) {
 
 // ファイル形式を調べて f->fmt にパラメータをセット、
 // ファイル(データ)本体を f->mem.sample にセットする。
-// 戻り値はデータ本体の長さ。
+// 戻り値はデータ本体のバイト数。
 int
 parse_file(struct test_file *f, FILE *fp, const char *filename, int adpcm_freq)
 {
