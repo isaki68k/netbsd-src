@@ -213,7 +213,7 @@ void
 play_mml(audio_ring_t *dst, char *mml)
 {
 	audio_ring_t tone0;
-	audio_params2_t tone_fmt0;
+	audio_format2_t tone_fmt0;
 	audio_ring_t *tone;
 
 	tone_fmt0.channels = 1;

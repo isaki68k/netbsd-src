@@ -71,7 +71,7 @@ typedef uint64_t uinternal2_t;
 
 
 /* 前方参照 */
-typedef struct audio_params2 audio_params2_t;
+typedef struct audio_format2 audio_format2_t;
 typedef struct audio_ring audio_ring_t;
 typedef struct audio_track audio_track_t;
 typedef struct audio_trackmixer audio_trackmixer_t;
@@ -87,7 +87,7 @@ typedef struct audio_rational {
 } audio_rational_t;
 
 /* フォーマット */
-struct audio_params2
+struct audio_format2
 {
 	int32_t  encoding;		/* AUDIO_ENCODING */
 	uint32_t sample_rate;	/* Hz */
@@ -98,7 +98,7 @@ struct audio_params2
 
 struct audio_ring
 {
-	audio_params2_t *fmt;	/* フォーマット */
+	audio_format2_t *fmt;	/* フォーマット */
 	int  capacity;			/* 容量(フレーム) */
 	int  top;				/* 先頭フレーム位置 */
 	int  count;				/* 有効フレーム量 */
@@ -109,10 +109,10 @@ typedef struct audio_filter_arg audio_filter_arg_t;
 struct audio_filter_arg
 {
 	const void *src;
-	audio_params2_t *srcfmt;
+	audio_format2_t *srcfmt;
 
 	void *dst;
-	audio_params2_t *dstfmt;
+	audio_format2_t *dstfmt;
 
 	int count;		// 今回のフィルタ呼び出しで入出力可能なフレーム数
 
@@ -129,7 +129,7 @@ struct audio_ring_filter
 	audio_filter_arg_t arg;
 	audio_ring_t *dst;
 	audio_ring_t srcbuf;
-	audio_params2_t srcfmt;
+	audio_format2_t srcfmt;
 };
 typedef struct audio_ring_filter audio_ring_filter_t;
 
@@ -141,7 +141,7 @@ struct audio_track
 	int                userio_frames_per_block;	/* ユーザランド周波数での 1 ブロックのフレーム数 */
 	int                framealign;		/* userio_fmt でフレームがバイトアライメントするフレーム数。 必ず 2^n */
 
-	audio_params2_t     userio_fmt;
+	audio_format2_t     userio_fmt;
 	audio_ring_t       *userio_inout;	// ユーザランド側がアクセスするリングバッファへのポインタ
 
 	audio_ring_filter_t codec;			// エンコーディング変換ステージ
@@ -183,20 +183,20 @@ struct audio_track
 
 struct audio_trackmixer
 {
-	audio_params2_t track_fmt;			/* ミキサのトラック側入出力フォーマット */
+	audio_format2_t track_fmt;			/* ミキサのトラック側入出力フォーマット */
 										/* precision == stride は保証 */
 
 	int frames_per_block;				/* 内部周波数での 1 ブロックのフレーム数 */
 
 	uint16_t       volume;				/* 出力マスタボリューム */
 
-	audio_params2_t mix_fmt;
+	audio_format2_t mix_fmt;
 	audio_ring_t   mix_buf;				/* 整数倍精度ミキシングバッファ */
 
 	audio_filter_t  codec;				/* mix <-> hw コーデックフィルタ */
 	audio_filter_arg_t codec_arg;		/* その引数 */
 
-	audio_params2_t hw_fmt;
+	audio_format2_t hw_fmt;
 	audio_ring_t   hw_buf;				/* 物理デバイスの入出力バッファ (malloc ではなく allocm で確保する) */
 
 	uint32_t       hw_blkID;			/* ハードウェア出力中のブロック ID */
@@ -231,5 +231,5 @@ struct audio_softc
 	void *phys; // 実物理デバイス
 };
 
-extern const char *fmt_tostring(const audio_params2_t *);
+extern const char *fmt_tostring(const audio_format2_t *);
 extern int debug;

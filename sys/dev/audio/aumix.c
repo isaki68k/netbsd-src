@@ -280,7 +280,7 @@ audio_track_freq(audio_filter_arg_t *arg)
 	}
 }
 
-audio_params2_t default_format = {
+audio_format2_t default_format = {
 	AUDIO_ENCODING_MULAW,
 	8000, /* freq */
 	1, /* channels */
@@ -350,9 +350,9 @@ audio_framealign(int stride)
 }
 
 static audio_ring_t *
-init_codec(audio_track_t *track, audio_params2_t *srcfmt, audio_ring_t *last_dst)
+init_codec(audio_track_t *track, audio_format2_t *srcfmt, audio_ring_t *last_dst)
 {
-	audio_params2_t *dstfmt = last_dst->fmt;
+	audio_format2_t *dstfmt = last_dst->fmt;
 
 	if (srcfmt->encoding == dstfmt->encoding
 	 && srcfmt->precision == dstfmt->precision
@@ -387,7 +387,7 @@ init_codec(audio_track_t *track, audio_params2_t *srcfmt, audio_ring_t *last_dst
 }
 
 static audio_ring_t *
-init_chvol(audio_track_t *track, audio_params2_t *srcfmt, audio_ring_t *last_dst)
+init_chvol(audio_track_t *track, audio_format2_t *srcfmt, audio_ring_t *last_dst)
 {
 	// チャンネルボリュームが有効かどうか
 	bool use_chvol = false;
@@ -420,7 +420,7 @@ init_chvol(audio_track_t *track, audio_params2_t *srcfmt, audio_ring_t *last_dst
 
 
 static audio_ring_t *
-init_chmix(audio_track_t *track, audio_params2_t *srcfmt, audio_ring_t *last_dst)
+init_chmix(audio_track_t *track, audio_format2_t *srcfmt, audio_ring_t *last_dst)
 {
 	int srcch = srcfmt->channels;
 	int dstch = last_dst->fmt->channels;
@@ -460,7 +460,7 @@ init_chmix(audio_track_t *track, audio_params2_t *srcfmt, audio_ring_t *last_dst
 
 
 static audio_ring_t*
-init_freq(audio_track_t *track, audio_params2_t *srcfmt, audio_ring_t *last_dst)
+init_freq(audio_track_t *track, audio_format2_t *srcfmt, audio_ring_t *last_dst)
 {
 	uint32_t srcfreq = srcfmt->sample_rate;
 	uint32_t dstfreq = last_dst->fmt->sample_rate;
@@ -494,7 +494,7 @@ init_freq(audio_track_t *track, audio_params2_t *srcfmt, audio_ring_t *last_dst)
 * 変換用内部バッファは一度破棄されます。
 */
 void
-audio_track_set_format(audio_track_t *track, audio_params2_t *fmt)
+audio_track_set_format(audio_track_t *track, audio_format2_t *fmt)
 {
 	TRACE(track, "");
 	KASSERT(is_valid_format(fmt));
@@ -508,7 +508,7 @@ audio_track_set_format(audio_track_t *track, audio_params2_t *fmt)
 	track->framealign = audio_framealign(fmt->stride);
 
 	audio_ring_t *last_dst = &track->track_buf;
-	audio_params2_t *srcfmt;
+	audio_format2_t *srcfmt;
 	if (track->mode == AUMODE_PLAY) {
 		// 再生はトラックミキサ側から作る
 

@@ -17,7 +17,7 @@
 
 struct test_file
 {
-	audio_params2_t fmt;
+	audio_format2_t fmt;
 	audio_file_t *file;
 	audio_ring_t mem;
 	bool play;
@@ -441,7 +441,7 @@ lebe32toh(uint32_t x)
 
 // fmt の表示用文字列を返す
 const char *
-fmt_tostring(const audio_params2_t *fmt)
+fmt_tostring(const audio_format2_t *fmt)
 {
 	static char buf[64];
 	char stridebuf[16];
