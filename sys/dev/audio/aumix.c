@@ -569,47 +569,6 @@ audio_track_unlock(audio_track_t *track)
 }
 
 /*
- src のエンコーディングを変換して dst に投入します。
-*/
-void
-audio_track_enconvert(audio_track_t *track, audio_filter_t filter, audio_ring_t *dst, audio_ring_t *src)
-{
-	KASSERT(track != NULL);
-	KASSERT(filter != NULL);
-	KASSERT(is_valid_ring(dst));
-	KASSERT(is_valid_ring(src));
-
-}
-
-void
-audio_track_channel_mix(audio_track_t *track, audio_ring_t *dst, audio_ring_t *src)
-{
-#if false
-	// 残骸。またあとで考えるかも
-		case AUDIO_TRACK_CHANNEL_MIXALL:
-			for (int i = 0; i < slice_count; i++) {
-				internal2_t s = 0;
-				for (int ch = 0; ch < src->fmt->channels; ch++, dptr++) {
-					s += (internal2_t)dptr[ch];
-				}
-				*dptr = s / src->fmt->channels;
-				dptr++;
-			}
-			break;
-
-		case AUDIO_TRACK_CHANNEL_DUPALL:
-			for (int i = 0; i < slice_count; i++) {
-				for (int ch = 0; ch < dst->fmt->channels; ch++) {
-					*dptr = dptr[0];
-					dptr++;
-				}
-				dptr++;
-			}
-			break;
-#endif
-}
-
-/*
  * 再生時の入力データを変換してトラックバッファに投入します。
  */
 void
