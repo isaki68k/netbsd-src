@@ -515,7 +515,6 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *fmt)
 		// 再生はトラックミキサ側から作る
 
 		track->inputfmt = *fmt;
-		track->input_frames_per_block = fmt->sample_rate * AUDIO_BLK_MS / 1000;
 
 		track->outputfmt = track->mixer->track_fmt;
 
@@ -527,8 +526,6 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *fmt)
 		// 録音はユーザランド側から作る
 
 		track->inputfmt = track->mixer->track_fmt;
-		// XXX 不要？
-		track->input_frames_per_block = track->inputfmt.sample_rate * AUDIO_BLK_MS / 1000;
 
 		track->outputfmt = *fmt;
 
@@ -578,32 +575,29 @@ audio_track_play(audio_track_t *track, bool isdrain)
 
 	/* エンコーディング変換 */
 	if (track->codec.filter != NULL) {
-		int dst_count = audio_ring_unround_free_count(track->codec.dst);
-		if (audio_ring_unround_free_count(&track->codec.srcbuf) > 0) {
-			// stride に応じてアラインする最小ブロックまでを処理する
-			int count = track->input_frames_per_block;
-			count = min(count, track->codec.srcbuf.count);
-			count = min(count, dst_count);
+		int srccount = audio_ring_unround_count(&track->codec.srcbuf);
+		int dstcount = audio_ring_unround_free_count(track->codec.dst);
 
-			if (count > 0) {
-				audio_filter_arg_t *arg = &track->codec.arg;
+		int count = min(srccount, dstcount);
+		
+		if (count > 0) {
+			audio_filter_arg_t *arg = &track->codec.arg;
 
-				arg->dst = RING_BOT_UINT8(track->codec.dst);
-				arg->src = RING_TOP_UINT8(&track->codec.srcbuf);
-				arg->count = count;
+			arg->dst = RING_BOT_UINT8(track->codec.dst);
+			arg->src = RING_TOP_UINT8(&track->codec.srcbuf);
+			arg->count = count;
 
-				track->codec.filter(arg);
+			track->codec.filter(arg);
 
-				audio_ring_tookfromtop(&track->codec.srcbuf, count);
-				audio_ring_appended(track->codec.dst, count);
-			}
+			audio_ring_tookfromtop(&track->codec.srcbuf, count);
+			audio_ring_appended(track->codec.dst, count);
 		}
 	}
 
 	if (track->codec.dst->count == 0) return;
 
 	/* ブロックサイズに整形 */
-	int n = track->input_frames_per_block - track->codec.dst->count;
+	int n = track->codec.dst->capacity - track->codec.dst->count;
 	if (n > 0) {
 		if (isdrain) {
 			/* 無音をブロックサイズまで埋める */
@@ -620,8 +614,8 @@ audio_track_play(audio_track_t *track, bool isdrain)
 		}
 	}
 
-	KASSERT(track->codec.dst->count >= track->input_frames_per_block);
-
+	KASSERT(track->codec.dst->count == track->codec.dst->capacity);
+	
 	/* チャンネルボリューム */
 	if (track->chvol.filter != NULL
 	 && audio_ring_unround_count(&track->chvol.srcbuf) >= track->chvol.arg.count
@@ -641,7 +635,7 @@ audio_track_play(audio_track_t *track, bool isdrain)
 		track->chmix.arg.dst = RING_BOT(internal_t, track->chmix.dst);
 
 		// XXX ほんとうは setformat での値のはず
-		track->chmix.arg.count = track->input_frames_per_block;
+		track->chmix.arg.count = track->chmix.srcbuf.count;
 
 		track->chmix.filter(&track->chmix.arg);
 		audio_ring_appended(track->chmix.dst, track->chmix.arg.count);
