@@ -109,10 +109,10 @@ typedef struct audio_filter_arg audio_filter_arg_t;
 struct audio_filter_arg
 {
 	const void *src;
-	audio_params2_t *src_fmt;
+	audio_params2_t *srcfmt;
 
 	void *dst;
-	audio_params2_t *dst_fmt;
+	audio_params2_t *dstfmt;
 
 	int count;		// 今回のフィルタ呼び出しで入出力可能なフレーム数
 

@@ -148,15 +148,15 @@ void
 internal_to_msm6258(audio_filter_arg_t *arg)
 {
 	KASSERT(is_valid_filter_arg(arg));
-	KASSERT(arg->dst_fmt->encoding == AUDIO_ENCODING_MSM6258);
-	KASSERT(arg->dst_fmt->stride == 4);
-	KASSERT(is_internal_format(arg->src_fmt));
-	KASSERT(arg->src_fmt->channels == arg->dst_fmt->channels);
+	KASSERT(arg->dstfmt->encoding == AUDIO_ENCODING_MSM6258);
+	KASSERT(arg->dstfmt->stride == 4);
+	KASSERT(is_internal_format(arg->srcfmt));
+	KASSERT(arg->srcfmt->channels == arg->dstfmt->channels);
 	KASSERT((arg->count & 1) == 0);
 
 	const internal_t *sptr = arg->src;
 	uint8_t *dptr = arg->dst;
-	int sample_count = arg->count * arg->src_fmt->channels;
+	int sample_count = arg->count * arg->srcfmt->channels;
 
 	struct msm6258_codecvar *mc = arg->context;
 
@@ -216,15 +216,15 @@ void
 msm6258_to_internal(audio_filter_arg_t *arg)
 {
 	KASSERT(is_valid_filter_arg(arg));
-	KASSERT(arg->src_fmt->encoding == AUDIO_ENCODING_MSM6258);
-	KASSERT(arg->src_fmt->stride == 4);
-	KASSERT(is_internal_format(arg->dst_fmt));
-	KASSERT(arg->src_fmt->channels == arg->dst_fmt->channels);
+	KASSERT(arg->srcfmt->encoding == AUDIO_ENCODING_MSM6258);
+	KASSERT(arg->srcfmt->stride == 4);
+	KASSERT(is_internal_format(arg->dstfmt));
+	KASSERT(arg->srcfmt->channels == arg->dstfmt->channels);
 	KASSERT((arg->count & 1) == 0);
 
 	const uint8_t *sptr = arg->src;
 	internal_t *dptr = arg->dst;
-	int sample_count = arg->count * arg->src_fmt->channels;
+	int sample_count = arg->count * arg->srcfmt->channels;
 
 	struct msm6258_codecvar *mc = arg->context;
 

@@ -92,16 +92,16 @@ void
 mulaw_to_internal(audio_filter_arg_t *arg)
 {
 	KASSERT(is_valid_filter_arg(arg));
-	KASSERT(arg->src_fmt->encoding == AUDIO_ENCODING_MULAW);
-	KASSERT(arg->src_fmt->stride == 8);
-	KASSERT(arg->src_fmt->precision == 8);
-	KASSERT(is_internal_format(arg->dst_fmt));
-	KASSERT(arg->src_fmt->channels == arg->dst_fmt->channels);
+	KASSERT(arg->srcfmt->encoding == AUDIO_ENCODING_MULAW);
+	KASSERT(arg->srcfmt->stride == 8);
+	KASSERT(arg->srcfmt->precision == 8);
+	KASSERT(is_internal_format(arg->dstfmt));
+	KASSERT(arg->srcfmt->channels == arg->dstfmt->channels);
 
 	const uint8_t *sptr = arg->src;
 	internal_t *dptr = arg->dst;
 
-	int sample_count = arg->count * arg->src_fmt->channels;
+	int sample_count = arg->count * arg->srcfmt->channels;
 	for (int i = 0; i < sample_count; i++) {
 		internal_t s;
 		s = mulaw_to_slinear16HE[*sptr++];
@@ -116,16 +116,16 @@ void
 internal_to_mulaw(audio_filter_arg_t *arg)
 {
 	KASSERT(is_valid_filter_arg(arg));
-	KASSERT(arg->dst_fmt->encoding == AUDIO_ENCODING_MULAW);
-	KASSERT(arg->dst_fmt->stride == 8);
-	KASSERT(arg->dst_fmt->precision == 8);
-	KASSERT(is_internal_format(arg->src_fmt));
-	KASSERT(arg->src_fmt->channels == arg->dst_fmt->channels);
+	KASSERT(arg->dstfmt->encoding == AUDIO_ENCODING_MULAW);
+	KASSERT(arg->dstfmt->stride == 8);
+	KASSERT(arg->dstfmt->precision == 8);
+	KASSERT(is_internal_format(arg->srcfmt));
+	KASSERT(arg->srcfmt->channels == arg->dstfmt->channels);
 
 	const internal_t *sptr = arg->src;
 	uint8_t *dptr = arg->dst;
 
-	int sample_count = arg->count * arg->src_fmt->channels;
+	int sample_count = arg->count * arg->srcfmt->channels;
 	for (int i = 0; i < sample_count; i++) {
 		internal_t s = *sptr++;
 #if AUDIO_INTERNAL_BITS == 32

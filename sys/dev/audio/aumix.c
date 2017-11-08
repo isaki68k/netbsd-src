@@ -150,16 +150,16 @@ static void
 audio_track_chvol(audio_filter_arg_t *arg)
 {
 	KASSERT(is_valid_filter_arg(arg));
-	KASSERT(arg->src_fmt->channels == arg->dst_fmt->channels);
+	KASSERT(arg->srcfmt->channels == arg->dstfmt->channels);
 	KASSERT(arg->context != NULL);
-	KASSERT(arg->src_fmt->channels <= AUDIO_MAX_CHANNELS);
+	KASSERT(arg->srcfmt->channels <= AUDIO_MAX_CHANNELS);
 
 	int16_t *ch_volume = arg->context;
 	const internal_t *sptr = arg->src;
 	internal_t *dptr = arg->dst;
 
 	for (int i = 0; i < arg->count; i++) {
-		for (int ch = 0; ch < arg->src_fmt->channels; ch++, sptr++, dptr++) {
+		for (int ch = 0; ch < arg->srcfmt->channels; ch++, sptr++, dptr++) {
 			*dptr = (internal_t)(((internal2_t)*sptr) * ch_volume[ch] / 256);
 		}
 	}
@@ -179,7 +179,7 @@ audio_track_chmix_mixLR(audio_filter_arg_t *arg)
 		s += (internal2_t)sptr[1];
 		*dptr = s / 2;
 		dptr++;
-		sptr += arg->src_fmt->channels;
+		sptr += arg->srcfmt->channels;
 	}
 }
 
@@ -194,16 +194,16 @@ audio_track_chmix_dupLR(audio_filter_arg_t *arg)
 	for (int i = 0; i < arg->count; i++) {
 		dptr[0] = sptr[0];
 		dptr[1] = sptr[0];
-		dptr += arg->dst_fmt->channels;
+		dptr += arg->dstfmt->channels;
 		sptr++;
 	}
-	if (arg->dst_fmt->channels > 2) {
+	if (arg->dstfmt->channels > 2) {
 		dptr = arg->dst;
 		for (int i = 0; i < arg->count; i++) {
-			for (int ch = 2; ch < arg->dst_fmt->channels; ch++) {
+			for (int ch = 2; ch < arg->dstfmt->channels; ch++) {
 				dptr[ch] = 0;
 			}
-			dptr += arg->dst_fmt->channels;
+			dptr += arg->dstfmt->channels;
 		}
 	}
 }
@@ -217,10 +217,10 @@ audio_track_chmix_shrink(audio_filter_arg_t *arg)
 	internal_t *dptr = arg->dst;
 
 	for (int i = 0; i < arg->count; i++) {
-		for (int ch = 0; ch < arg->dst_fmt->channels; ch++) {
+		for (int ch = 0; ch < arg->dstfmt->channels; ch++) {
 			*dptr++ = sptr[ch];
 		}
-		sptr += arg->src_fmt->channels;
+		sptr += arg->srcfmt->channels;
 	}
 }
 
@@ -233,10 +233,10 @@ audio_track_chmix_expand(audio_filter_arg_t *arg)
 	internal_t *dptr = arg->dst;
 
 	for (int i = 0; i < arg->count; i++) {
-		for (int ch = 0; ch < arg->src_fmt->channels; ch++) {
+		for (int ch = 0; ch < arg->srcfmt->channels; ch++) {
 			*dptr++ = *sptr++;
 		}
-		for (int ch = arg->src_fmt->channels; ch < arg->dst_fmt->channels; ch++) {
+		for (int ch = arg->srcfmt->channels; ch < arg->dstfmt->channels; ch++) {
 			*dptr++ = 0;
 		}
 	}
@@ -369,8 +369,8 @@ init_codec(audio_track_t *track, audio_params2_t *srcfmt, audio_ring_t *last_dst
 
 		track->codec.srcbuf.fmt = &track->codec.srcfmt;
 		track->codec.dst = last_dst;
-		track->codec.arg.src_fmt = &track->codec.srcfmt;
-		track->codec.arg.dst_fmt = dstfmt;
+		track->codec.arg.srcfmt = &track->codec.srcfmt;
+		track->codec.arg.dstfmt = dstfmt;
 		track->codec.filter = audio_MI_codec_filter_init(&track->codec.arg);
 
 		// TODO: codec デストラクタコール
@@ -450,8 +450,8 @@ init_chmix(audio_track_t *track, audio_params2_t *srcfmt, audio_ring_t *last_dst
 		track->chmix.srcbuf.capacity = track->chmix.srcfmt.sample_rate * AUDIO_BLK_MS / 1000;
 		track->chmix.srcbuf.sample = audio_realloc(track->chmix.srcbuf.sample, RING_BYTELEN(&track->chmix.srcbuf));
 
-		track->chmix.arg.src_fmt = &track->chmix.srcfmt;
-		track->chmix.arg.dst_fmt = last_dst->fmt;
+		track->chmix.arg.srcfmt = &track->chmix.srcfmt;
+		track->chmix.arg.dstfmt = last_dst->fmt;
 
 		return &track->chmix.srcbuf;
 	}
