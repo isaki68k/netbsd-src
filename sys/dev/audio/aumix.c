@@ -647,7 +647,7 @@ audio_track_play(audio_track_t *track, bool isdrain)
 		/* 無音をブロックサイズまで埋める */
 		/* 内部フォーマットだとわかっている */
 		/* 周波数変換の結果、ブロック未満の端数フレームが出る */
-		int n = track->outputbuf.count % track->mixer->frames_per_block;
+		n = track->outputbuf.count % track->mixer->frames_per_block;
 		if (n > 0) {
 			n = track->mixer->frames_per_block - n;
 			TRACE(track, "Append silence %d frames to track_buf", n);
@@ -980,10 +980,10 @@ audio_track_play_drain_core(audio_track_t *track, bool wait)
 			|| track->completion_blkcount > 0);
 
 		track->is_draining = false;
-		printf("#%d: uio_count=%lld trk_count=%lld tm=%lld mixhw=%lld hw_complete=%lld\n", track->id,
-			track->inputcounter, track->outputcounter, 
-			track->track_mixer_counter, track->mixer_hw_counter,
-			track->hw_complete_counter);
+		printf("#%d: uio_count=%d trk_count=%d tm=%d mixhw=%d hw_complete=%d\n", track->id,
+			(int)track->inputcounter, (int)track->outputcounter,
+			(int)track->track_mixer_counter, (int)track->mixer_hw_counter,
+			(int)track->hw_complete_counter);
 	}
 }
 
