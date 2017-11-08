@@ -188,7 +188,7 @@ struct audio_trackmixer
 	audio_filter_t  codec;				/* mix <-> hw コーデックフィルタ */
 	audio_filter_arg_t codec_arg;		/* その引数 */
 
-	audio_ring_t   hw_buf;				/* 物理デバイスの入出力バッファ (malloc ではなく allocm で確保する) */
+	audio_ring_t   hwbuf;				/* 物理デバイスの入出力バッファ (malloc ではなく allocm で確保する) */
 
 	uint32_t       hw_blkID;			/* ハードウェア出力中のブロック ID */
 	uint32_t       hw_cmplID;			/* ハードウェア出力完了のブロック ID */

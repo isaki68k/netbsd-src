@@ -677,15 +677,15 @@ audio_mixer_init(audio_trackmixer_t *mixer, struct audio_softc *sc, int mode)
 	memset(mixer, 0, sizeof(audio_trackmixer_t));
 	mixer->sc = sc;
 
-	mixer->hw_buf.fmt = audio_softc_get_hw_format(mixer->sc, mode);
-	mixer->hw_buf.capacity = audio_softc_get_hw_capacity(mixer->sc);
-	mixer->hw_buf.sample = audio_softc_allocm(mixer->sc, RING_BYTELEN(&mixer->hw_buf));
+	mixer->hwbuf.fmt = audio_softc_get_hw_format(mixer->sc, mode);
+	mixer->hwbuf.capacity = audio_softc_get_hw_capacity(mixer->sc);
+	mixer->hwbuf.sample = audio_softc_allocm(mixer->sc, RING_BYTELEN(&mixer->hwbuf));
 
-	mixer->frames_per_block = mixer->hw_buf.fmt.sample_rate * AUDIO_BLK_MS / 1000;
+	mixer->frames_per_block = mixer->hwbuf.fmt.sample_rate * AUDIO_BLK_MS / 1000;
 
 	mixer->track_fmt.encoding = AUDIO_ENCODING_SLINEAR_HE;
-	mixer->track_fmt.channels = mixer->hw_buf.fmt.channels;
-	mixer->track_fmt.sample_rate = mixer->hw_buf.fmt.sample_rate;
+	mixer->track_fmt.channels = mixer->hwbuf.fmt.channels;
+	mixer->track_fmt.sample_rate = mixer->hwbuf.fmt.sample_rate;
 	mixer->track_fmt.precision = mixer->track_fmt.stride = AUDIO_INTERNAL_BITS;
 
 	/* 40ms double buffer */
@@ -740,11 +740,11 @@ audio_mixer_play(audio_trackmixer_t *mixer, bool isdrain)
 
 	// バッファの準備ができたら転送。
 	if (mixer->mixbuf.count >= mixer->frames_per_block
-		&& mixer->hw_buf.capacity - mixer->hw_buf.count >= mixer->frames_per_block) {
+		&& mixer->hwbuf.capacity - mixer->hwbuf.count >= mixer->frames_per_block) {
 		audio_mixer_play_period(mixer);
 	}
 
-	if (mixer->mixbuf.count == 0 && mixer->hw_buf.count == 0) {
+	if (mixer->mixbuf.count == 0 && mixer->hwbuf.count == 0) {
 		mixer->busy = false;
 	}
 }
@@ -808,7 +808,7 @@ audio_mixer_play_period(audio_trackmixer_t *mixer /*, bool force */)
 	/* 今回取り出すフレーム数を決定 */
 
 	int mix_count = audio_ring_unround_count(&mixer->mixbuf);
-	int hw_free_count = audio_ring_unround_free_count(&mixer->hw_buf);
+	int hw_free_count = audio_ring_unround_free_count(&mixer->hwbuf);
 	int count = min(mix_count, hw_free_count);
 	if (count <= 0) {
 		TRACE0("count too short: mix_count=%d hw_free=%d", mix_count, hw_free_count);
@@ -862,11 +862,11 @@ audio_mixer_play_period(audio_trackmixer_t *mixer /*, bool force */)
 	// TODO: MD 側フィルタ
 	lock(mixer->sc);
 	mptr = mptr0;
-	internal_t *hptr = RING_BOT(internal_t, &mixer->hw_buf);
+	internal_t *hptr = RING_BOT(internal_t, &mixer->hwbuf);
 	for (int i = 0; i < sample_count; i++) {
 		*hptr++ = *mptr++;
 	}
-	audio_ring_appended(&mixer->hw_buf, count);
+	audio_ring_appended(&mixer->hwbuf, count);
 	unlock(mixer->sc);
 
 	/* 使用済みミキサメモリを次回のために 0 フィルする */
