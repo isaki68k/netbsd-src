@@ -197,7 +197,6 @@ struct audio_trackmixer
 
 	bool busy;
 										// 未定
-	int pending_play_period;
 
 	uint64_t hw_output_counter;			/* ハードウェアへの出力フレーム数 */
 	uint64_t hw_complete_counter;		/* ハードウェアが出力完了したフレーム数 */
