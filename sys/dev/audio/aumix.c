@@ -32,6 +32,19 @@ static int audio_waitio(struct audio_softc *sc, void *kcondvar, audio_track_t *t
 #define TRACE(t, fmt, ...)	/**/
 #endif
 
+#if defined(_KERNEL)
+#define x_malloc(mem)			kern_malloc(mem, M_NOWAIT)
+#define x_realloc(mem, size)	kern_realloc(mem, size, M_NOWAIT)
+#define x_free(mem)				kern_free(mem)
+#else
+#define x_malloc(mem)			malloc(mem)
+#define x_realloc(mem, size)	realloc(mem, size)
+#define x_free(mem)				free(mem)
+#endif
+
+void *audio_realloc(void *memblock, size_t bytes);
+void *audio_free(void *memblock);
+
 
 /* メモリアロケーションの STUB */
 
@@ -40,14 +53,14 @@ audio_realloc(void *memblock, size_t bytes)
 {
 	if (memblock != NULL) {
 		if (bytes != 0) {
-			return realloc(memblock, bytes);
+			return x_realloc(memblock, bytes);
 		} else {
-			free(memblock);
+			x_free(memblock);
 			return NULL;
 		}
 	} else {
 		if (bytes != 0) {
-			return malloc(bytes);
+			return x_malloc(bytes);
 		} else {
 			return NULL;
 		}
@@ -58,7 +71,7 @@ void *
 audio_free(void *memblock)
 {
 	if (memblock != NULL) {
-		free(memblock);
+		x_free(memblock);
 	}
 	return NULL;
 }
