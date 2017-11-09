@@ -32,24 +32,6 @@ static int audio_waitio(struct audio_softc *sc, void *kcondvar, audio_track_t *t
 #define TRACE(t, fmt, ...)	/**/
 #endif
 
-int
-gcd(int a, int b)
-{
-	int t;
-	if (a == b) return a;
-	if (a < b) {
-		t = a;
-		a = b;
-		b = t;
-	}
-
-	while (b > 0) {
-		t = b;
-		b = a % b;
-		a = t;
-	}
-	return a;
-}
 
 /* メモリアロケーションの STUB */
 
