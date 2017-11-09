@@ -253,9 +253,35 @@ static int audio_get_props(struct audio_softc *);
 static bool audio_can_playback(struct audio_softc *);
 static bool audio_can_capture(struct audio_softc *);
 static int audio_check_params(struct audio_params *);
-static int audio_check_params2(audio_format2_t *);
+static int audio_check_params2(const audio_format2_t *);
 static int audio_vchan_autoconfig_xxx(struct audio_softc *, int);
 static void audio_prepare_enc_xxx(struct audio_softc *sc);
+
+static inline struct audio_params
+format2_to_params(const audio_format2_t *f2)
+{
+	audio_params_t p;
+
+	p.sample_rate = f2->sample_rate;
+	p.channels    = f2->channels;
+	p.encoding    = f2->encoding;
+	p.validbits   = f2->precision;
+	p.precision   = f2->stride;
+	return p;
+}
+
+static inline audio_format2_t
+params_to_format2(const struct audio_params *p)
+{
+	audio_format2_t f2;
+
+	f2.sample_rate = p->sample_rate;
+	f2.channels    = p->channels;
+	f2.encoding    = p->encoding;
+	f2.precision   = p->validbits;
+	f2.stride      = p->precision;
+	return f2;
+}
 
 
 static void mixer_init(struct audio_softc *);
@@ -2066,15 +2092,10 @@ audio_check_params(struct audio_params *p)
 }
 
 static int
-audio_check_params2(audio_format2_t *p2)
+audio_check_params2(const audio_format2_t *p2)
 {
 	struct audio_params p;
-
-	p.sample_rate = p2->sample_rate;
-	p.channels    = p2->channels;
-	p.encoding    = p2->encoding;
-	p.precision   = p2->precision;
-	p.validbits   = p2->stride;
+	p = format2_to_params(p2);
 	return audio_check_params(&p);
 }
 
@@ -2201,7 +2222,6 @@ audio_file_set_defaults(struct audio_softc *sc, audio_file_t *file)
 	KASSERT(mutex_owned(sc->sc_lock));
 
 	AUDIO_INITINFO(&ai);
-	// XXX 型の問題が解決すれば代入だけになる
 	if ((file->mode & AUMODE_PLAY) != 0) {
 		ai.play.sample_rate   = audio_default.sample_rate;
 		ai.play.encoding      = audio_default.encoding;
@@ -2345,7 +2365,6 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	}
 
 	/* Set default value */
-	// XXX 構造体が一緒になれば代入文だけですむ
 	pfmt.sample_rate = sc->sc_ai.play.sample_rate;
 	pfmt.channels    = sc->sc_ai.play.channels;
 	pfmt.encoding    = sc->sc_ai.play.encoding;
