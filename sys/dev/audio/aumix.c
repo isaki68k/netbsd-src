@@ -673,7 +673,7 @@ audio_track_play(audio_track_t *track, bool isdrain)
 }
 
 void
-audio_mixer_init(audio_trackmixer_t *mixer, struct audio_softc *sc, int mode)
+audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 {
 	TRACE0("");
 	memset(mixer, 0, sizeof(audio_trackmixer_t));
