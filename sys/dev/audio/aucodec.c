@@ -32,10 +32,6 @@ audio_MI_codec_filter_init(audio_filter_arg_t *arg)
 		if (arg->dstfmt->encoding == AUDIO_ENCODING_MULAW) {
 			return internal_to_mulaw;
 		} else
-		if (arg->dstfmt->encoding == AUDIO_ENCODING_MSM6258) {
-			arg->context = msm6258_context_create();
-			return internal_to_msm6258;
-		} else
 		if (is_LINEAR(arg->dstfmt)) {
 			if (arg->dstfmt->stride == 8) {
 				return internal_to_linear8;
@@ -52,10 +48,6 @@ audio_MI_codec_filter_init(audio_filter_arg_t *arg)
 	} else if (is_internal_format(arg->dstfmt)) {
 		if (arg->srcfmt->encoding == AUDIO_ENCODING_MULAW) {
 			return mulaw_to_internal;
-		} else
-		if (arg->srcfmt->encoding == AUDIO_ENCODING_MSM6258) {
-			arg->context = msm6258_context_create();
-			return msm6258_to_internal;
 		} else
 		if (is_LINEAR(arg->srcfmt)) {
 			if (arg->srcfmt->stride == 8) {
@@ -77,9 +69,5 @@ audio_MI_codec_filter_init(audio_filter_arg_t *arg)
 void
 audio_MI_filter_finalize(audio_filter_arg_t *arg)
 {
-	if (arg->context) {
-		// まあとりあえず
-		msm6258_context_destroy(arg->context);
-	}
 }
 
