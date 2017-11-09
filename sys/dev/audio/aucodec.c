@@ -1,10 +1,11 @@
-
+#if !defined(_KERNEL)
 #include <stdbool.h>
 
 #include "audiovar.h"
 #include "auring.h"
 #include "aucodec.h"
 #include "auformat.h"
+#endif // !_KERNEL
 
 /*
 * ***** audio_filter_arg *****

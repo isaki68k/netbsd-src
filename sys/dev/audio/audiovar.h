@@ -1,5 +1,7 @@
 #pragma once
 
+#if defined(_KERNEL)
+#else
 #include <stdint.h>
 #include <stdbool.h>
 #include "queue.h"
@@ -16,6 +18,7 @@
 #else
 #define KASSERT(expr)	/**/
 #endif
+#endif // _KERNEL
 
 /* 内部フォーマットのビット数 */
 #define AUDIO_INTERNAL_BITS		16
@@ -44,6 +47,7 @@ typedef uint64_t uinternal2_t;
 #endif
 
 
+#if !defined(_KERNEL)
 #define AUMODE_PLAY		(0x01)
 #define AUMODE_RECORD	(0x02)
 
@@ -55,19 +59,20 @@ typedef uint64_t uinternal2_t;
 #define AUDIO_ENCODING_MSM6258		6258
 #define AUDIO_ENCODING_RAWBYTE		32767
 
-#if BYTE_ORDER == LITTLE_ENDIAN
-#define AUDIO_ENCODING_SLINEAR_HE	AUDIO_ENCODING_SLINEAR_LE
-#else
-#define AUDIO_ENCODING_SLINEAR_HE	AUDIO_ENCODING_SLINEAR_BE
-#endif
+/* サポートする最大のチャンネル数 */
+#define AUDIO_MAX_CHANNELS	18
+#endif // _KERNEL
 
 /* 1 ブロックの時間サイズ 40ms */
 /* 40ms の場合は (1/40ms)=25=5^2 なので 100 の倍数の周波数のほか、15.625kHz でもフレーム数が整数になる */
 // XXX: エミュレーション出来ないので 400 にしておく。
 #define AUDIO_BLK_MS 400
 
-/* サポートする最大のチャンネル数 */
-#define AUDIO_MAX_CHANNELS	18
+#if BYTE_ORDER == LITTLE_ENDIAN
+#define AUDIO_ENCODING_SLINEAR_HE	AUDIO_ENCODING_SLINEAR_LE
+#else
+#define AUDIO_ENCODING_SLINEAR_HE	AUDIO_ENCODING_SLINEAR_BE
+#endif
 
 
 /* 前方参照 */
@@ -211,6 +216,7 @@ struct audio_file
 	SLIST_ENTRY(audio_file) entry;
 };
 
+#if !defined(_KERNEL)
 /* Userland から見えるデバイス */
 struct audio_softc
 {
@@ -220,6 +226,7 @@ struct audio_softc
 
 	void *phys; // 実物理デバイス
 };
+#endif // _KERNEL
 
 extern const char *fmt_tostring(const audio_format2_t *);
 extern int debug;

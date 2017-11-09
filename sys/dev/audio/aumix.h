@@ -1,10 +1,12 @@
 #pragma once
 
+#if !defined(_KERNEL)
 #include <stdint.h>
 #include "compat.h"
 #include "queue.h"
 #include <stdbool.h>
 #include "audiovar.h"
+#endif
 
 /*
 e.g. stereo
@@ -50,9 +52,13 @@ void audio_trackmixer_intr(audio_trackmixer_t *mixer, int count);
 /* glue layer */
 int audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *file); /* write の MI 側 */
 
+#if !defined(_KERNEL)
+
 /* system call emulation */
 audio_file_t *sys_open(struct audio_softc *sc, int mode);
 int/*ssize_t*/ sys_write(audio_file_t *file, void* buf, size_t len);	/* write syscall の Userland 側エミュレート */
+
+#endif // _KERNEL
 
 /* XXX: 分類未定 */
 int audio_softc_get_hw_capacity(struct audio_softc *sc);

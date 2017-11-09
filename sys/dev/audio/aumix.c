@@ -1,3 +1,4 @@
+#if !defined(_KERNEL)
 #include "aumix.h"
 #include <errno.h>
 #include <stdlib.h>
@@ -12,6 +13,7 @@
 
 static int audio_waitio(struct audio_softc *sc, void *kcondvar, audio_track_t *track);
 
+#endif // !_KERNEL
 
 #define AUDIO_TRACE
 #ifdef AUDIO_TRACE

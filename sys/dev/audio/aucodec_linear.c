@@ -1,4 +1,4 @@
-
+#if !defined(_KERNEL)
 #include <stdint.h>
 #include <stdbool.h>
 #include "compat.h"
@@ -6,6 +6,7 @@
 #include "auring.h"
 #include "auformat.h"
 #include "aucodec.h"
+#endif // !_KERNEL
 
 /*
 * ***** 変換関数 *****
