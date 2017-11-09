@@ -1013,60 +1013,6 @@ audiorescan(device_t self, const char *ifattr, const int *flags)
 }
 
 
-int
-au_portof(struct audio_softc *sc, char *name, int class)
-{
-	mixer_devinfo_t mi;
-
-	for (mi.index = 0; audio_query_devinfo(sc, &mi) == 0; mi.index++) {
-		if (mi.mixer_class == class && strcmp(mi.label.name, name) == 0)
-			return mi.index;
-	}
-	return -1;
-}
-
-void
-au_setup_ports(struct audio_softc *sc, struct au_mixer_ports *ports,
-	       mixer_devinfo_t *mi, const struct portname *tbl)
-{
-	int i, j;
-
-	ports->index = mi->index;
-	if (mi->type == AUDIO_MIXER_ENUM) {
-		ports->isenum = true;
-		for(i = 0; tbl[i].name; i++)
-		    for(j = 0; j < mi->un.e.num_mem; j++)
-			if (strcmp(mi->un.e.member[j].label.name,
-						    tbl[i].name) == 0) {
-				ports->allports |= tbl[i].mask;
-				ports->aumask[ports->nports] = tbl[i].mask;
-				ports->misel[ports->nports] =
-				    mi->un.e.member[j].ord;
-				ports->miport[ports->nports] =
-				    au_portof(sc, mi->un.e.member[j].label.name,
-				    mi->mixer_class);
-				if (ports->mixerout != -1 &&
-				    ports->miport[ports->nports] != -1)
-					ports->isdual = true;
-				++ports->nports;
-			}
-	} else if (mi->type == AUDIO_MIXER_SET) {
-		for(i = 0; tbl[i].name; i++)
-		    for(j = 0; j < mi->un.s.num_mem; j++)
-			if (strcmp(mi->un.s.member[j].label.name,
-						tbl[i].name) == 0) {
-				ports->allports |= tbl[i].mask;
-				ports->aumask[ports->nports] = tbl[i].mask;
-				ports->misel[ports->nports] =
-				    mi->un.s.member[j].mask;
-				ports->miport[ports->nports] =
-				    au_portof(sc, mi->un.s.member[j].label.name,
-				    mi->mixer_class);
-				++ports->nports;
-			}
-	}
-}
-
 /*
  * Called from hardware driver.  This is where the MI audio driver gets
  * probed/attached to the hardware driver.
@@ -4217,300 +4163,6 @@ audio_set_defaults(struct audio_softc *sc, u_int mode,
 }
 
 int
-au_set_lr_value(struct	audio_softc *sc, mixer_ctrl_t *ct, int l, int r)
-{
-
-	KASSERT(mutex_owned(sc->sc_lock));
-
-	ct->type = AUDIO_MIXER_VALUE;
-	ct->un.value.num_channels = 2;
-	ct->un.value.level[AUDIO_MIXER_LEVEL_LEFT] = l;
-	ct->un.value.level[AUDIO_MIXER_LEVEL_RIGHT] = r;
-	if (audio_set_port(sc, ct) == 0)
-		return 0;
-	ct->un.value.num_channels = 1;
-	ct->un.value.level[AUDIO_MIXER_LEVEL_MONO] = (l+r)/2;
-	return audio_set_port(sc, ct);
-}
-
-int
-au_set_gain(struct audio_softc *sc, struct au_mixer_ports *ports,
-	    int gain, int balance)
-{
-	mixer_ctrl_t ct;
-	int i, error;
-	int l, r;
-	u_int mask;
-	int nset;
-
-	KASSERT(mutex_owned(sc->sc_lock));
-
-	if (balance == AUDIO_MID_BALANCE) {
-		l = r = gain;
-	} else if (balance < AUDIO_MID_BALANCE) {
-		l = gain;
-		r = (balance * gain) / AUDIO_MID_BALANCE;
-	} else {
-		r = gain;
-		l = ((AUDIO_RIGHT_BALANCE - balance) * gain)
-		    / AUDIO_MID_BALANCE;
-	}
-	DPRINTF(("au_set_gain: gain=%d balance=%d, l=%d r=%d\n",
-		 gain, balance, l, r));
-
-	if (ports->index == -1) {
-	usemaster:
-		if (ports->master == -1)
-			return 0; /* just ignore it silently */
-		ct.dev = ports->master;
-		error = au_set_lr_value(sc, &ct, l, r);
-	} else {
-		ct.dev = ports->index;
-		if (ports->isenum) {
-			ct.type = AUDIO_MIXER_ENUM;
-			error = audio_get_port(sc, &ct);
-			if (error)
-				return error;
-			if (ports->isdual) {
-				if (ports->cur_port == -1)
-					ct.dev = ports->master;
-				else
-					ct.dev = ports->miport[ports->cur_port];
-				error = au_set_lr_value(sc, &ct, l, r);
-			} else {
-				for(i = 0; i < ports->nports; i++)
-				    if (ports->misel[i] == ct.un.ord) {
-					    ct.dev = ports->miport[i];
-					    if (ct.dev == -1 ||
-						au_set_lr_value(sc, &ct, l, r))
-						    goto usemaster;
-					    else
-						    break;
-				    }
-			}
-		} else {
-			ct.type = AUDIO_MIXER_SET;
-			error = audio_get_port(sc, &ct);
-			if (error)
-				return error;
-			mask = ct.un.mask;
-			nset = 0;
-			for(i = 0; i < ports->nports; i++) {
-				if (ports->misel[i] & mask) {
-				    ct.dev = ports->miport[i];
-				    if (ct.dev != -1 &&
-					au_set_lr_value(sc, &ct, l, r) == 0)
-					    nset++;
-				}
-			}
-			if (nset == 0)
-				goto usemaster;
-		}
-	}
-	if (!error)
-		mixer_signal(sc);
-	return error;
-}
-
-int
-au_get_lr_value(struct	audio_softc *sc, mixer_ctrl_t *ct, int *l, int *r)
-{
-	int error;
-
-	KASSERT(mutex_owned(sc->sc_lock));
-
-	ct->un.value.num_channels = 2;
-	if (audio_get_port(sc, ct) == 0) {
-		*l = ct->un.value.level[AUDIO_MIXER_LEVEL_LEFT];
-		*r = ct->un.value.level[AUDIO_MIXER_LEVEL_RIGHT];
-	} else {
-		ct->un.value.num_channels = 1;
-		error = audio_get_port(sc, ct);
-		if (error)
-			return error;
-		*r = *l = ct->un.value.level[AUDIO_MIXER_LEVEL_MONO];
-	}
-	return 0;
-}
-
-void
-au_get_gain(struct audio_softc *sc, struct au_mixer_ports *ports,
-	    u_int *pgain, u_char *pbalance)
-{
-	mixer_ctrl_t ct;
-	int i, l, r, n;
-	int lgain, rgain;
-
-	KASSERT(mutex_owned(sc->sc_lock));
-
-	lgain = AUDIO_MAX_GAIN / 2;
-	rgain = AUDIO_MAX_GAIN / 2;
-	if (ports->index == -1) {
-	usemaster:
-		if (ports->master == -1)
-			goto bad;
-		ct.dev = ports->master;
-		ct.type = AUDIO_MIXER_VALUE;
-		if (au_get_lr_value(sc, &ct, &lgain, &rgain))
-			goto bad;
-	} else {
-		ct.dev = ports->index;
-		if (ports->isenum) {
-			ct.type = AUDIO_MIXER_ENUM;
-			if (audio_get_port(sc, &ct))
-				goto bad;
-			ct.type = AUDIO_MIXER_VALUE;
-			if (ports->isdual) {
-				if (ports->cur_port == -1)
-					ct.dev = ports->master;
-				else
-					ct.dev = ports->miport[ports->cur_port];
-				au_get_lr_value(sc, &ct, &lgain, &rgain);
-			} else {
-				for(i = 0; i < ports->nports; i++)
-				    if (ports->misel[i] == ct.un.ord) {
-					    ct.dev = ports->miport[i];
-					    if (ct.dev == -1 ||
-						au_get_lr_value(sc, &ct,
-								&lgain, &rgain))
-						    goto usemaster;
-					    else
-						    break;
-				    }
-			}
-		} else {
-			ct.type = AUDIO_MIXER_SET;
-			if (audio_get_port(sc, &ct))
-				goto bad;
-			ct.type = AUDIO_MIXER_VALUE;
-			lgain = rgain = n = 0;
-			for(i = 0; i < ports->nports; i++) {
-				if (ports->misel[i] & ct.un.mask) {
-					ct.dev = ports->miport[i];
-					if (ct.dev == -1 ||
-					    au_get_lr_value(sc, &ct, &l, &r))
-						goto usemaster;
-					else {
-						lgain += l;
-						rgain += r;
-						n++;
-					}
-				}
-			}
-			if (n != 0) {
-				lgain /= n;
-				rgain /= n;
-			}
-		}
-	}
-bad:
-	if (lgain == rgain) {	/* handles lgain==rgain==0 */
-		*pgain = lgain;
-		*pbalance = AUDIO_MID_BALANCE;
-	} else if (lgain < rgain) {
-		*pgain = rgain;
-		/* balance should be > AUDIO_MID_BALANCE */
-		*pbalance = AUDIO_RIGHT_BALANCE -
-			(AUDIO_MID_BALANCE * lgain) / rgain;
-	} else /* lgain > rgain */ {
-		*pgain = lgain;
-		/* balance should be < AUDIO_MID_BALANCE */
-		*pbalance = (AUDIO_MID_BALANCE * rgain) / lgain;
-	}
-}
-
-int
-au_set_port(struct audio_softc *sc, struct au_mixer_ports *ports, u_int port)
-{
-	mixer_ctrl_t ct;
-	int i, error, use_mixerout;
-
-	KASSERT(mutex_owned(sc->sc_lock));
-
-	use_mixerout = 1;
-	if (port == 0) {
-		if (ports->allports == 0)
-			return 0;		/* Allow this special case. */
-		else if (ports->isdual) {
-			if (ports->cur_port == -1) {
-				return 0;
-			} else {
-				port = ports->aumask[ports->cur_port];
-				ports->cur_port = -1;
-				use_mixerout = 0;
-			}
-		}
-	}
-	if (ports->index == -1)
-		return EINVAL;
-	ct.dev = ports->index;
-	if (ports->isenum) {
-		if (port & (port-1))
-			return EINVAL; /* Only one port allowed */
-		ct.type = AUDIO_MIXER_ENUM;
-		error = EINVAL;
-		for(i = 0; i < ports->nports; i++)
-			if (ports->aumask[i] == port) {
-				if (ports->isdual && use_mixerout) {
-					ct.un.ord = ports->mixerout;
-					ports->cur_port = i;
-				} else {
-					ct.un.ord = ports->misel[i];
-				}
-				error = audio_set_port(sc, &ct);
-				break;
-			}
-	} else {
-		ct.type = AUDIO_MIXER_SET;
-		ct.un.mask = 0;
-		for(i = 0; i < ports->nports; i++)
-			if (ports->aumask[i] & port)
-				ct.un.mask |= ports->misel[i];
-		if (port != 0 && ct.un.mask == 0)
-			error = EINVAL;
-		else
-			error = audio_set_port(sc, &ct);
-	}
-	if (!error)
-		mixer_signal(sc);
-	return error;
-}
-
-int
-au_get_port(struct audio_softc *sc, struct au_mixer_ports *ports)
-{
-	mixer_ctrl_t ct;
-	int i, aumask;
-
-	KASSERT(mutex_owned(sc->sc_lock));
-
-	if (ports->index == -1)
-		return 0;
-	ct.dev = ports->index;
-	ct.type = ports->isenum ? AUDIO_MIXER_ENUM : AUDIO_MIXER_SET;
-	if (audio_get_port(sc, &ct))
-		return 0;
-	aumask = 0;
-	if (ports->isenum) {
-		if (ports->isdual && ports->cur_port != -1) {
-			if (ports->mixerout == ct.un.ord)
-				aumask = ports->aumask[ports->cur_port];
-			else
-				ports->cur_port = -1;
-		}
-		if (aumask == 0)
-			for(i = 0; i < ports->nports; i++)
-				if (ports->misel[i] == ct.un.ord)
-					aumask = ports->aumask[i];
-	} else {
-		for(i = 0; i < ports->nports; i++)
-			if (ct.un.mask & ports->misel[i])
-				aumask |= ports->aumask[i];
-	}
-	return aumask;
-}
-
-int
 audiosetinfo(struct audio_softc *sc, struct audio_info *ai, bool reset,
 	     struct virtual_channel *vc)
 {
@@ -4947,6 +4599,145 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int buf_only_mode,
 	return 0;
 }
 
+static int
+audio_get_props(struct audio_softc *sc)
+{
+	const struct audio_hw_if *hw;
+	int props;
+
+	KASSERT(mutex_owned(sc->sc_lock));
+
+	hw = sc->hw_if;
+	props = hw->get_props(sc->hw_hdl);
+
+	/*
+	 * if neither playback nor capture properties are reported,
+	 * assume both are supported by the device driver
+	 */
+	if ((props & (AUDIO_PROP_PLAYBACK|AUDIO_PROP_CAPTURE)) == 0)
+		props |= (AUDIO_PROP_PLAYBACK | AUDIO_PROP_CAPTURE);
+
+	props |= AUDIO_PROP_MMAP;
+
+	return props;
+}
+
+static bool
+audio_can_playback(struct audio_softc *sc)
+{
+	return audio_get_props(sc) & AUDIO_PROP_PLAYBACK ? true : false;
+}
+
+static bool
+audio_can_capture(struct audio_softc *sc)
+{
+	return audio_get_props(sc) & AUDIO_PROP_CAPTURE ? true : false;
+}
+
+#ifdef AUDIO_PM_IDLE
+static void
+audio_idle(void *arg)
+{
+	device_t dv = arg;
+	struct audio_softc *sc = device_private(dv);
+
+#ifdef PNP_DEBUG
+	extern int pnp_debug_idle;
+	if (pnp_debug_idle)
+		printf("%s: idle handler called\n", device_xname(dv));
+#endif
+
+	sc->sc_idle = true;
+
+	/* XXX joerg Make pmf_device_suspend handle children? */
+	if (!pmf_device_suspend(dv, PMF_Q_SELF))
+		return;
+
+	if (!pmf_device_suspend(sc->sc_dev, PMF_Q_SELF))
+		pmf_device_resume(dv, PMF_Q_SELF);
+}
+
+static void
+audio_activity(device_t dv, devactive_t type)
+{
+	struct audio_softc *sc = device_private(dv);
+
+	if (type != DVA_SYSTEM)
+		return;
+
+	callout_schedule(&sc->sc_idle_counter, audio_idle_timeout * hz);
+
+	sc->sc_idle = false;
+	if (!device_is_active(dv)) {
+		/* XXX joerg How to deal with a failing resume... */
+		pmf_device_resume(sc->sc_dev, PMF_Q_SELF);
+		pmf_device_resume(dv, PMF_Q_SELF);
+	}
+}
+#endif
+
+static bool
+audio_suspend(device_t dv, const pmf_qual_t *qual)
+{
+	struct audio_softc *sc = device_private(dv);
+	struct audio_chan *chan;
+	const struct audio_hw_if *hwp = sc->hw_if;
+	struct virtual_channel *vc;
+	bool pbus, rbus;
+
+	pbus = rbus = false;
+	mutex_enter(sc->sc_lock);
+	audio_mixer_capture(sc);
+	SIMPLEQ_FOREACH(chan, &sc->sc_audiochan, entries) {
+		vc = chan->vc;
+		if (vc->sc_pbus && !pbus)
+			pbus = true;
+		if (vc->sc_rbus && !rbus)
+			rbus = true;
+	}
+	mutex_enter(sc->sc_intr_lock);
+	if (pbus == true)
+		hwp->halt_output(sc->hw_hdl);
+	if (rbus == true)
+		hwp->halt_input(sc->hw_hdl);
+	mutex_exit(sc->sc_intr_lock);
+#ifdef AUDIO_PM_IDLE
+	callout_halt(&sc->sc_idle_counter, sc->sc_lock);
+#endif
+	mutex_exit(sc->sc_lock);
+
+	return true;
+}
+
+static bool
+audio_resume(device_t dv, const pmf_qual_t *qual)
+{
+	struct audio_softc *sc = device_private(dv);
+	struct audio_chan *chan;
+	struct virtual_channel *vc;
+	
+	mutex_enter(sc->sc_lock);
+	sc->sc_trigger_started = false;
+	sc->sc_rec_started = false;
+
+	audio_set_vchan_defaults(sc,
+	    AUMODE_PLAY | AUMODE_PLAY_ALL | AUMODE_RECORD);
+
+	audio_mixer_restore(sc);
+	SIMPLEQ_FOREACH(chan, &sc->sc_audiochan, entries) {
+		vc = chan->vc;
+		if (vc->sc_lastinfovalid == true)
+			audiosetinfo(sc, &vc->sc_lastinfo, true, vc);
+		if (vc->sc_pbus == true && !vc->sc_mpr.pause)
+			audiostartp(sc, vc);
+		if (vc->sc_rbus == true && !vc->sc_mrr.pause)
+			audiostartr(sc, vc);
+	}
+	mutex_exit(sc->sc_lock);
+
+	return true;
+}
+
 /*
  * Mixer driver
  */
@@ -5119,57 +4910,354 @@ mixer_ioctl(struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		 IOCPARM_LEN(cmd), (char)IOCGROUP(cmd), cmd&0xff, error));
 	return error;
 }
-#endif /* NAUDIO > 0 */
-
-#if NAUDIO == 0 && (NMIDI > 0 || NMIDIBUS > 0)
-#include <sys/param.h>
-#include <sys/systm.h>
-#include <sys/device.h>
-#include <sys/audioio.h>
-#include <dev/audio_if.h>
-#endif
-
-#if NAUDIO > 0 || (NMIDI > 0 || NMIDIBUS > 0)
 int
-audioprint(void *aux, const char *pnp)
+au_portof(struct audio_softc *sc, char *name, int class)
 {
-	struct audio_attach_args *arg;
-	const char *type;
+	mixer_devinfo_t mi;
 
-	if (pnp != NULL) {
-		arg = aux;
-		switch (arg->type) {
-		case AUDIODEV_TYPE_AUDIO:
-			type = "audio";
-			break;
-		case AUDIODEV_TYPE_MIDI:
-			type = "midi";
-			break;
-		case AUDIODEV_TYPE_OPL:
-			type = "opl";
-			break;
-		case AUDIODEV_TYPE_MPU:
-			type = "mpu";
-			break;
-		default:
-			panic("audioprint: unknown type %d", arg->type);
-		}
-		aprint_normal("%s at %s", type, pnp);
+	for (mi.index = 0; audio_query_devinfo(sc, &mi) == 0; mi.index++) {
+		if (mi.mixer_class == class && strcmp(mi.label.name, name) == 0)
+			return mi.index;
 	}
-	return UNCONF;
+	return -1;
 }
 
-#endif /* NAUDIO > 0 || (NMIDI > 0 || NMIDIBUS > 0) */
-
-#if NAUDIO > 0
-device_t
-audio_get_device(struct audio_softc *sc)
+void
+au_setup_ports(struct audio_softc *sc, struct au_mixer_ports *ports,
+	       mixer_devinfo_t *mi, const struct portname *tbl)
 {
-	return sc->sc_dev;
-}
-#endif
+	int i, j;
 
-#if NAUDIO > 0
+	ports->index = mi->index;
+	if (mi->type == AUDIO_MIXER_ENUM) {
+		ports->isenum = true;
+		for(i = 0; tbl[i].name; i++)
+		    for(j = 0; j < mi->un.e.num_mem; j++)
+			if (strcmp(mi->un.e.member[j].label.name,
+						    tbl[i].name) == 0) {
+				ports->allports |= tbl[i].mask;
+				ports->aumask[ports->nports] = tbl[i].mask;
+				ports->misel[ports->nports] =
+				    mi->un.e.member[j].ord;
+				ports->miport[ports->nports] =
+				    au_portof(sc, mi->un.e.member[j].label.name,
+				    mi->mixer_class);
+				if (ports->mixerout != -1 &&
+				    ports->miport[ports->nports] != -1)
+					ports->isdual = true;
+				++ports->nports;
+			}
+	} else if (mi->type == AUDIO_MIXER_SET) {
+		for(i = 0; tbl[i].name; i++)
+		    for(j = 0; j < mi->un.s.num_mem; j++)
+			if (strcmp(mi->un.s.member[j].label.name,
+						tbl[i].name) == 0) {
+				ports->allports |= tbl[i].mask;
+				ports->aumask[ports->nports] = tbl[i].mask;
+				ports->misel[ports->nports] =
+				    mi->un.s.member[j].mask;
+				ports->miport[ports->nports] =
+				    au_portof(sc, mi->un.s.member[j].label.name,
+				    mi->mixer_class);
+				++ports->nports;
+			}
+	}
+}
+
+int
+au_set_lr_value(struct	audio_softc *sc, mixer_ctrl_t *ct, int l, int r)
+{
+
+	KASSERT(mutex_owned(sc->sc_lock));
+
+	ct->type = AUDIO_MIXER_VALUE;
+	ct->un.value.num_channels = 2;
+	ct->un.value.level[AUDIO_MIXER_LEVEL_LEFT] = l;
+	ct->un.value.level[AUDIO_MIXER_LEVEL_RIGHT] = r;
+	if (audio_set_port(sc, ct) == 0)
+		return 0;
+	ct->un.value.num_channels = 1;
+	ct->un.value.level[AUDIO_MIXER_LEVEL_MONO] = (l+r)/2;
+	return audio_set_port(sc, ct);
+}
+
+int
+au_get_lr_value(struct	audio_softc *sc, mixer_ctrl_t *ct, int *l, int *r)
+{
+	int error;
+
+	KASSERT(mutex_owned(sc->sc_lock));
+
+	ct->un.value.num_channels = 2;
+	if (audio_get_port(sc, ct) == 0) {
+		*l = ct->un.value.level[AUDIO_MIXER_LEVEL_LEFT];
+		*r = ct->un.value.level[AUDIO_MIXER_LEVEL_RIGHT];
+	} else {
+		ct->un.value.num_channels = 1;
+		error = audio_get_port(sc, ct);
+		if (error)
+			return error;
+		*r = *l = ct->un.value.level[AUDIO_MIXER_LEVEL_MONO];
+	}
+	return 0;
+}
+
+int
+au_set_gain(struct audio_softc *sc, struct au_mixer_ports *ports,
+	    int gain, int balance)
+{
+	mixer_ctrl_t ct;
+	int i, error;
+	int l, r;
+	u_int mask;
+	int nset;
+
+	KASSERT(mutex_owned(sc->sc_lock));
+
+	if (balance == AUDIO_MID_BALANCE) {
+		l = r = gain;
+	} else if (balance < AUDIO_MID_BALANCE) {
+		l = gain;
+		r = (balance * gain) / AUDIO_MID_BALANCE;
+	} else {
+		r = gain;
+		l = ((AUDIO_RIGHT_BALANCE - balance) * gain)
+		    / AUDIO_MID_BALANCE;
+	}
+	DPRINTF(("au_set_gain: gain=%d balance=%d, l=%d r=%d\n",
+		 gain, balance, l, r));
+
+	if (ports->index == -1) {
+	usemaster:
+		if (ports->master == -1)
+			return 0; /* just ignore it silently */
+		ct.dev = ports->master;
+		error = au_set_lr_value(sc, &ct, l, r);
+	} else {
+		ct.dev = ports->index;
+		if (ports->isenum) {
+			ct.type = AUDIO_MIXER_ENUM;
+			error = audio_get_port(sc, &ct);
+			if (error)
+				return error;
+			if (ports->isdual) {
+				if (ports->cur_port == -1)
+					ct.dev = ports->master;
+				else
+					ct.dev = ports->miport[ports->cur_port];
+				error = au_set_lr_value(sc, &ct, l, r);
+			} else {
+				for(i = 0; i < ports->nports; i++)
+				    if (ports->misel[i] == ct.un.ord) {
+					    ct.dev = ports->miport[i];
+					    if (ct.dev == -1 ||
+						au_set_lr_value(sc, &ct, l, r))
+						    goto usemaster;
+					    else
+						    break;
+				    }
+			}
+		} else {
+			ct.type = AUDIO_MIXER_SET;
+			error = audio_get_port(sc, &ct);
+			if (error)
+				return error;
+			mask = ct.un.mask;
+			nset = 0;
+			for(i = 0; i < ports->nports; i++) {
+				if (ports->misel[i] & mask) {
+				    ct.dev = ports->miport[i];
+				    if (ct.dev != -1 &&
+					au_set_lr_value(sc, &ct, l, r) == 0)
+					    nset++;
+				}
+			}
+			if (nset == 0)
+				goto usemaster;
+		}
+	}
+	if (!error)
+		mixer_signal(sc);
+	return error;
+}
+
+void
+au_get_gain(struct audio_softc *sc, struct au_mixer_ports *ports,
+	    u_int *pgain, u_char *pbalance)
+{
+	mixer_ctrl_t ct;
+	int i, l, r, n;
+	int lgain, rgain;
+
+	KASSERT(mutex_owned(sc->sc_lock));
+
+	lgain = AUDIO_MAX_GAIN / 2;
+	rgain = AUDIO_MAX_GAIN / 2;
+	if (ports->index == -1) {
+	usemaster:
+		if (ports->master == -1)
+			goto bad;
+		ct.dev = ports->master;
+		ct.type = AUDIO_MIXER_VALUE;
+		if (au_get_lr_value(sc, &ct, &lgain, &rgain))
+			goto bad;
+	} else {
+		ct.dev = ports->index;
+		if (ports->isenum) {
+			ct.type = AUDIO_MIXER_ENUM;
+			if (audio_get_port(sc, &ct))
+				goto bad;
+			ct.type = AUDIO_MIXER_VALUE;
+			if (ports->isdual) {
+				if (ports->cur_port == -1)
+					ct.dev = ports->master;
+				else
+					ct.dev = ports->miport[ports->cur_port];
+				au_get_lr_value(sc, &ct, &lgain, &rgain);
+			} else {
+				for(i = 0; i < ports->nports; i++)
+				    if (ports->misel[i] == ct.un.ord) {
+					    ct.dev = ports->miport[i];
+					    if (ct.dev == -1 ||
+						au_get_lr_value(sc, &ct,
+								&lgain, &rgain))
+						    goto usemaster;
+					    else
+						    break;
+				    }
+			}
+		} else {
+			ct.type = AUDIO_MIXER_SET;
+			if (audio_get_port(sc, &ct))
+				goto bad;
+			ct.type = AUDIO_MIXER_VALUE;
+			lgain = rgain = n = 0;
+			for(i = 0; i < ports->nports; i++) {
+				if (ports->misel[i] & ct.un.mask) {
+					ct.dev = ports->miport[i];
+					if (ct.dev == -1 ||
+					    au_get_lr_value(sc, &ct, &l, &r))
+						goto usemaster;
+					else {
+						lgain += l;
+						rgain += r;
+						n++;
+					}
+				}
+			}
+			if (n != 0) {
+				lgain /= n;
+				rgain /= n;
+			}
+		}
+	}
+bad:
+	if (lgain == rgain) {	/* handles lgain==rgain==0 */
+		*pgain = lgain;
+		*pbalance = AUDIO_MID_BALANCE;
+	} else if (lgain < rgain) {
+		*pgain = rgain;
+		/* balance should be > AUDIO_MID_BALANCE */
+		*pbalance = AUDIO_RIGHT_BALANCE -
+			(AUDIO_MID_BALANCE * lgain) / rgain;
+	} else /* lgain > rgain */ {
+		*pgain = lgain;
+		/* balance should be < AUDIO_MID_BALANCE */
+		*pbalance = (AUDIO_MID_BALANCE * rgain) / lgain;
+	}
+}
+
+int
+au_set_port(struct audio_softc *sc, struct au_mixer_ports *ports, u_int port)
+{
+	mixer_ctrl_t ct;
+	int i, error, use_mixerout;
+
+	KASSERT(mutex_owned(sc->sc_lock));
+
+	use_mixerout = 1;
+	if (port == 0) {
+		if (ports->allports == 0)
+			return 0;		/* Allow this special case. */
+		else if (ports->isdual) {
+			if (ports->cur_port == -1) {
+				return 0;
+			} else {
+				port = ports->aumask[ports->cur_port];
+				ports->cur_port = -1;
+				use_mixerout = 0;
+			}
+		}
+	}
+	if (ports->index == -1)
+		return EINVAL;
+	ct.dev = ports->index;
+	if (ports->isenum) {
+		if (port & (port-1))
+			return EINVAL; /* Only one port allowed */
+		ct.type = AUDIO_MIXER_ENUM;
+		error = EINVAL;
+		for(i = 0; i < ports->nports; i++)
+			if (ports->aumask[i] == port) {
+				if (ports->isdual && use_mixerout) {
+					ct.un.ord = ports->mixerout;
+					ports->cur_port = i;
+				} else {
+					ct.un.ord = ports->misel[i];
+				}
+				error = audio_set_port(sc, &ct);
+				break;
+			}
+	} else {
+		ct.type = AUDIO_MIXER_SET;
+		ct.un.mask = 0;
+		for(i = 0; i < ports->nports; i++)
+			if (ports->aumask[i] & port)
+				ct.un.mask |= ports->misel[i];
+		if (port != 0 && ct.un.mask == 0)
+			error = EINVAL;
+		else
+			error = audio_set_port(sc, &ct);
+	}
+	if (!error)
+		mixer_signal(sc);
+	return error;
+}
+
+int
+au_get_port(struct audio_softc *sc, struct au_mixer_ports *ports)
+{
+	mixer_ctrl_t ct;
+	int i, aumask;
+
+	KASSERT(mutex_owned(sc->sc_lock));
+
+	if (ports->index == -1)
+		return 0;
+	ct.dev = ports->index;
+	ct.type = ports->isenum ? AUDIO_MIXER_ENUM : AUDIO_MIXER_SET;
+	if (audio_get_port(sc, &ct))
+		return 0;
+	aumask = 0;
+	if (ports->isenum) {
+		if (ports->isdual && ports->cur_port != -1) {
+			if (ports->mixerout == ct.un.ord)
+				aumask = ports->aumask[ports->cur_port];
+			else
+				ports->cur_port = -1;
+		}
+		if (aumask == 0)
+			for(i = 0; i < ports->nports; i++)
+				if (ports->misel[i] == ct.un.ord)
+					aumask = ports->aumask[i];
+	} else {
+		for(i = 0; i < ports->nports; i++)
+			if (ct.un.mask & ports->misel[i])
+				aumask |= ports->aumask[i];
+	}
+	return aumask;
+}
+
 static void
 audio_mixer_capture(struct audio_softc *sc)
 {
@@ -5214,110 +5302,6 @@ audio_mixer_restore(struct audio_softc *sc)
 		sc->hw_if->commit_settings(sc->hw_hdl);
 
 	return;
-}
-
-#ifdef AUDIO_PM_IDLE
-static void
-audio_idle(void *arg)
-{
-	device_t dv = arg;
-	struct audio_softc *sc = device_private(dv);
-
-#ifdef PNP_DEBUG
-	extern int pnp_debug_idle;
-	if (pnp_debug_idle)
-		printf("%s: idle handler called\n", device_xname(dv));
-#endif
-
-	sc->sc_idle = true;
-
-	/* XXX joerg Make pmf_device_suspend handle children? */
-	if (!pmf_device_suspend(dv, PMF_Q_SELF))
-		return;
-
-	if (!pmf_device_suspend(sc->sc_dev, PMF_Q_SELF))
-		pmf_device_resume(dv, PMF_Q_SELF);
-}
-
-static void
-audio_activity(device_t dv, devactive_t type)
-{
-	struct audio_softc *sc = device_private(dv);
-
-	if (type != DVA_SYSTEM)
-		return;
-
-	callout_schedule(&sc->sc_idle_counter, audio_idle_timeout * hz);
-
-	sc->sc_idle = false;
-	if (!device_is_active(dv)) {
-		/* XXX joerg How to deal with a failing resume... */
-		pmf_device_resume(sc->sc_dev, PMF_Q_SELF);
-		pmf_device_resume(dv, PMF_Q_SELF);
-	}
-}
-#endif
-
-static bool
-audio_suspend(device_t dv, const pmf_qual_t *qual)
-{
-	struct audio_softc *sc = device_private(dv);
-	struct audio_chan *chan;
-	const struct audio_hw_if *hwp = sc->hw_if;
-	struct virtual_channel *vc;
-	bool pbus, rbus;
-
-	pbus = rbus = false;
-	mutex_enter(sc->sc_lock);
-	audio_mixer_capture(sc);
-	SIMPLEQ_FOREACH(chan, &sc->sc_audiochan, entries) {
-		vc = chan->vc;
-		if (vc->sc_pbus && !pbus)
-			pbus = true;
-		if (vc->sc_rbus && !rbus)
-			rbus = true;
-	}
-	mutex_enter(sc->sc_intr_lock);
-	if (pbus == true)
-		hwp->halt_output(sc->hw_hdl);
-	if (rbus == true)
-		hwp->halt_input(sc->hw_hdl);
-	mutex_exit(sc->sc_intr_lock);
-#ifdef AUDIO_PM_IDLE
-	callout_halt(&sc->sc_idle_counter, sc->sc_lock);
-#endif
-	mutex_exit(sc->sc_lock);
-
-	return true;
-}
-
-static bool
-audio_resume(device_t dv, const pmf_qual_t *qual)
-{
-	struct audio_softc *sc = device_private(dv);
-	struct audio_chan *chan;
-	struct virtual_channel *vc;
-	
-	mutex_enter(sc->sc_lock);
-	sc->sc_trigger_started = false;
-	sc->sc_rec_started = false;
-
-	audio_set_vchan_defaults(sc,
-	    AUMODE_PLAY | AUMODE_PLAY_ALL | AUMODE_RECORD);
-
-	audio_mixer_restore(sc);
-	SIMPLEQ_FOREACH(chan, &sc->sc_audiochan, entries) {
-		vc = chan->vc;
-		if (vc->sc_lastinfovalid == true)
-			audiosetinfo(sc, &vc->sc_lastinfo, true, vc);
-		if (vc->sc_pbus == true && !vc->sc_mpr.pause)
-			audiostartp(sc, vc);
-		if (vc->sc_rbus == true && !vc->sc_mrr.pause)
-			audiostartr(sc, vc);
-	}
-	mutex_exit(sc->sc_lock);
-
-	return true;
 }
 
 static void
@@ -5386,40 +5370,101 @@ audio_volume_toggle(device_t dv)
 }
 
 static int
-audio_get_props(struct audio_softc *sc)
+audio_query_devinfo(struct audio_softc *sc, mixer_devinfo_t *di)
 {
-	const struct audio_hw_if *hw;
-	int props;
+	char mixLabel[255];
 
 	KASSERT(mutex_owned(sc->sc_lock));
 
-	hw = sc->hw_if;
-	props = hw->get_props(sc->hw_hdl);
+	if (sc->sc_static_nmixer_states == 0 || sc->sc_nmixer_states == 0)
+		goto hardware;
 
-	/*
-	 * if neither playback nor capture properties are reported,
-	 * assume both are supported by the device driver
-	 */
-	if ((props & (AUDIO_PROP_PLAYBACK|AUDIO_PROP_CAPTURE)) == 0)
-		props |= (AUDIO_PROP_PLAYBACK | AUDIO_PROP_CAPTURE);
+	if (di->index >= sc->sc_static_nmixer_states - 1 &&
+	    di->index < sc->sc_nmixer_states) {
+		if (di->index == sc->sc_static_nmixer_states - 1) {
+			di->mixer_class = sc->sc_static_nmixer_states -1;
+			di->next = di->prev = AUDIO_MIXER_LAST;
+			strcpy(di->label.name, AudioCvirtchan);
+			di->type = AUDIO_MIXER_CLASS;
+		} else if ((di->index - sc->sc_static_nmixer_states) % 2 == 0) {
+			di->mixer_class = sc->sc_static_nmixer_states -1;
+			snprintf(mixLabel, sizeof(mixLabel), AudioNdac"%d",
+			    (di->index - sc->sc_static_nmixer_states) / 2);
+			strcpy(di->label.name, mixLabel);
+			di->type = AUDIO_MIXER_VALUE;
+			di->next = di->prev = AUDIO_MIXER_LAST;
+			di->un.v.num_channels = 1;
+			strcpy(di->un.v.units.name, AudioNvolume);
+		} else {
+			di->mixer_class = sc->sc_static_nmixer_states -1;
+			snprintf(mixLabel, sizeof(mixLabel),
+			    AudioNmicrophone "%d",
+			    (di->index - sc->sc_static_nmixer_states) / 2);
+			strcpy(di->label.name, mixLabel);
+			di->type = AUDIO_MIXER_VALUE;
+			di->next = di->prev = AUDIO_MIXER_LAST;
+			di->un.v.num_channels = 1;
+			strcpy(di->un.v.units.name, AudioNvolume);
+		}
 
-	props |= AUDIO_PROP_MMAP;
+		return 0;
+	}
 
-	return props;
+hardware:
+	return sc->hw_if->query_devinfo(sc->hw_hdl, di);
 }
 
-static bool
-audio_can_playback(struct audio_softc *sc)
+#endif /* NAUDIO > 0 */
+
+#if NAUDIO == 0 && (NMIDI > 0 || NMIDIBUS > 0)
+#include <sys/param.h>
+#include <sys/systm.h>
+#include <sys/device.h>
+#include <sys/audioio.h>
+#include <dev/audio_if.h>
+#endif
+
+#if NAUDIO > 0 || (NMIDI > 0 || NMIDIBUS > 0)
+int
+audioprint(void *aux, const char *pnp)
 {
-	return audio_get_props(sc) & AUDIO_PROP_PLAYBACK ? true : false;
+	struct audio_attach_args *arg;
+	const char *type;
+
+	if (pnp != NULL) {
+		arg = aux;
+		switch (arg->type) {
+		case AUDIODEV_TYPE_AUDIO:
+			type = "audio";
+			break;
+		case AUDIODEV_TYPE_MIDI:
+			type = "midi";
+			break;
+		case AUDIODEV_TYPE_OPL:
+			type = "opl";
+			break;
+		case AUDIODEV_TYPE_MPU:
+			type = "mpu";
+			break;
+		default:
+			panic("audioprint: unknown type %d", arg->type);
+		}
+		aprint_normal("%s at %s", type, pnp);
+	}
+	return UNCONF;
 }
 
-static bool
-audio_can_capture(struct audio_softc *sc)
+#endif /* NAUDIO > 0 || (NMIDI > 0 || NMIDIBUS > 0) */
+
+#if NAUDIO > 0
+device_t
+audio_get_device(struct audio_softc *sc)
 {
-	return audio_get_props(sc) & AUDIO_PROP_CAPTURE ? true : false;
+	return sc->sc_dev;
 }
+#endif
 
+#if NAUDIO > 0
 int
 mix_read(void *arg)
 {
@@ -5748,51 +5793,6 @@ audio_get_port(struct audio_softc *sc, mixer_ctrl_t *mc)
 	*level = *vol;
 	return 0;
 
-}
-
-static int
-audio_query_devinfo(struct audio_softc *sc, mixer_devinfo_t *di)
-{
-	char mixLabel[255];
-
-	KASSERT(mutex_owned(sc->sc_lock));
-
-	if (sc->sc_static_nmixer_states == 0 || sc->sc_nmixer_states == 0)
-		goto hardware;
-
-	if (di->index >= sc->sc_static_nmixer_states - 1 &&
-	    di->index < sc->sc_nmixer_states) {
-		if (di->index == sc->sc_static_nmixer_states - 1) {
-			di->mixer_class = sc->sc_static_nmixer_states -1;
-			di->next = di->prev = AUDIO_MIXER_LAST;
-			strcpy(di->label.name, AudioCvirtchan);
-			di->type = AUDIO_MIXER_CLASS;
-		} else if ((di->index - sc->sc_static_nmixer_states) % 2 == 0) {
-			di->mixer_class = sc->sc_static_nmixer_states -1;
-			snprintf(mixLabel, sizeof(mixLabel), AudioNdac"%d",
-			    (di->index - sc->sc_static_nmixer_states) / 2);
-			strcpy(di->label.name, mixLabel);
-			di->type = AUDIO_MIXER_VALUE;
-			di->next = di->prev = AUDIO_MIXER_LAST;
-			di->un.v.num_channels = 1;
-			strcpy(di->un.v.units.name, AudioNvolume);
-		} else {
-			di->mixer_class = sc->sc_static_nmixer_states -1;
-			snprintf(mixLabel, sizeof(mixLabel),
-			    AudioNmicrophone "%d",
-			    (di->index - sc->sc_static_nmixer_states) / 2);
-			strcpy(di->label.name, mixLabel);
-			di->type = AUDIO_MIXER_VALUE;
-			di->next = di->prev = AUDIO_MIXER_LAST;
-			di->un.v.num_channels = 1;
-			strcpy(di->un.v.units.name, AudioNvolume);
-		}
-
-		return 0;
-	}
-
-hardware:
-	return sc->hw_if->query_devinfo(sc->hw_hdl, di);
 }
 
 static int
