@@ -47,7 +47,10 @@ typedef uint64_t uinternal2_t;
 #endif
 
 
-#if !defined(_KERNEL)
+#if defined(_KERNEL)
+#define AUDIO_ENCODING_MULAW		AUDIO_ENCODING_ULAW
+#define AUDIO_ENCODING_MSM6258		AUDIO_ENCODING_ADPCM
+#else
 #define AUMODE_PLAY		(0x01)
 #define AUMODE_RECORD	(0x02)
 

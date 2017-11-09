@@ -1,4 +1,8 @@
-#if !defined(_KERNEL)
+#if defined(_KERNEL)
+#include <dev/audio/aumix.h>
+#include <dev/audio/auring.h>
+#include <dev/audio/aucodec.h>
+#else
 #include "aumix.h"
 #include <errno.h>
 #include <stdlib.h>
@@ -10,9 +14,6 @@
 #include "auformat.h"
 #include "uio.h"
 #include "auintr.h"
-
-static int audio_waitio(struct audio_softc *sc, void *kcondvar, audio_track_t *track);
-
 #endif // !_KERNEL
 
 #define AUDIO_TRACE
@@ -36,6 +37,8 @@ static int audio_waitio(struct audio_softc *sc, void *kcondvar, audio_track_t *t
 #define x_malloc(mem)			kern_malloc(mem, M_NOWAIT)
 #define x_realloc(mem, size)	kern_realloc(mem, size, M_NOWAIT)
 #define x_free(mem)				kern_free(mem)
+#define lock(x)					/*とりあえず*/
+#define unlock(x)				/*とりあえず*/
 #else
 #define x_malloc(mem)			malloc(mem)
 #define x_realloc(mem, size)	realloc(mem, size)
@@ -44,6 +47,15 @@ static int audio_waitio(struct audio_softc *sc, void *kcondvar, audio_track_t *t
 
 void *audio_realloc(void *memblock, size_t bytes);
 void *audio_free(void *memblock);
+int16_t audio_volume_to_inner(uint8_t v);
+uint8_t audio_volume_to_outer(int16_t v);
+void audio_track_lock(audio_track_t *track);
+void audio_track_unlock(audio_track_t *track);
+
+#if !defined(_KERNEL)
+typedef void kcondvar_t;
+static int audio_waitio(struct audio_softc *sc, kcondvar_t *chan, audio_track_t *track);
+#endif // !_KERNEL
 
 
 /* メモリアロケーションの STUB */
@@ -930,7 +942,7 @@ audio_trackmixer_intr(audio_trackmixer_t *mixer, int count)
 	}
 	mixer->hw_cmplID++;
 
-#if !false
+#if !defined(_KERNEL)
 	/* XXX win32 は割り込みから再生 API をコール出来ないので、ポーリングする */
 	if (audio_softc_play_busy(mixer->sc) == false) {
 		audio_softc_play_start(mixer->sc);
@@ -1063,8 +1075,19 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 }
 
 static int
-audio_waitio(struct audio_softc *sc, void *kcondvar, audio_track_t *track)
+audio_waitio(struct audio_softc *sc, kcondvar_t *chan, audio_track_t *track)
 {
+#if defined(_KERNEL)
+	// XXX 自分がいなくなることを想定する必要があるのかどうか
+	int error;
+
+	KASSERT(mutex_owned(sc->sc_lock));
+
+	/* Wait for pending I/O to complete. */
+	error = cv_wait_sig(chan, sc->sc_lock);
+
+	return error;
+#else
 	// 本当は割り込みハンドラからトラックが消費されるんだけど
 	// ここで消費をエミュレート。
 
@@ -1083,8 +1106,10 @@ audio_waitio(struct audio_softc *sc, void *kcondvar, audio_track_t *track)
 	}
 #endif
 	return 0;
+#endif
 }
 
+#if !defined(_KERNEL)
 /*
  * ***** audio_file *****
  */
@@ -1126,3 +1151,4 @@ sys_open(struct audio_softc *sc, int mode)
 
 	return file;
 }
+#endif // !_KERNEL

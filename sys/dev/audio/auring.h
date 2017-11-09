@@ -1,8 +1,13 @@
 #pragma once
 
+#if defined(_KERNEL)
+#include <dev/audio/audiovar.h>
+#include <dev/audio/auformat.h>
+#else
 #include <memory.h>
 #include "audiovar.h"
 #include "auformat.h"
+#endif
 
 /*
 * ***** audio_ring *****

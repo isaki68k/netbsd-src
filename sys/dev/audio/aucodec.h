@@ -17,7 +17,7 @@ void linear16_to_internal(audio_filter_arg_t *);
 void linear24_to_internal(audio_filter_arg_t *);
 void linear32_to_internal(audio_filter_arg_t *);
 
-void *msm6258_context_create();
+void *msm6258_context_create(void);
 void msm6258_context_destroy(void *context);
 void internal_to_msm6258(audio_filter_arg_t *arg);
 void msm6258_to_internal(audio_filter_arg_t *arg);

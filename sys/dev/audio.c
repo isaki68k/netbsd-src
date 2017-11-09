@@ -202,7 +202,7 @@ static void	audio_softintr_wr(void *);
 
 static int audio_enter(dev_t, struct audio_softc **);
 static void audio_exit(struct audio_softc *);
-static int audio_waitio(struct audio_softc *, kcondvar_t *);
+static int audio_waitio(struct audio_softc *, kcondvar_t *, audio_track_t *);
 
 static int audioclose(struct file *);
 static int audioread(struct file *, off_t *, struct uio *, kauth_cred_t, int);
@@ -861,19 +861,7 @@ audio_exit(struct audio_softc *sc)
 /*
  * Wait for I/O to complete, releasing device lock.
  */
-// XXX 自分がいなくなることを想定する必要があるのかどうか
-static int __unused
-audio_waitio(struct audio_softc *sc, kcondvar_t *chan)
-{
-	int error;
-
-	KASSERT(mutex_owned(sc->sc_lock));
-
-	/* Wait for pending I/O to complete. */
-	error = cv_wait_sig(chan, sc->sc_lock);
-
-	return error;
-}
+// 本当はここに audio_waitio()
 
 // XXX audiobell はここなのか?
 
