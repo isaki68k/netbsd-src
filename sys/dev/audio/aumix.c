@@ -548,10 +548,6 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *fmt)
 	track->outputbuf.count = 0;
 	track->outputbuf.capacity = 16 * track->outputbuf.fmt.sample_rate * AUDIO_BLK_MS / 1000;
 	track->outputbuf.sample = audio_realloc(track->outputbuf.sample, RING_BYTELEN(&track->outputbuf));
-
-	if (debug) {
-		printf("%s: userfmt=%s\n", __func__, fmt_tostring(&track->inputfmt));
-	}
 }
 
 
