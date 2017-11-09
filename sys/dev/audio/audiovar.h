@@ -213,6 +213,11 @@ struct audio_file
 	audio_track_t   ptrack;			/* 再生トラック */
 	audio_track_t   rtrack;			/* 録音トラック */
 
+	int mode;						/* AUMODE_* (incl. AUMODE_PLAY_ALL) */
+#if defined(_KERNEL)
+	dev_t dev;						/* デバイスファイルへのバックリンク */
+#endif
+
 	SLIST_ENTRY(audio_file) entry;
 };
 
