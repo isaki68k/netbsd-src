@@ -1,4 +1,5 @@
 #include "aumix.h"
+#include "auintr.h"
 #include "auring.h"
 #include <errno.h>
 #include <fcntl.h>
@@ -93,6 +94,7 @@ audio_softc_play_start(struct audio_softc *sc)
 
 	if (mixer->hwbuf.count <= 0) return;
 	if (dev->sent_count > 0) return;
+printf("%s\n", __func__);
 
 	lock(sc);
 
@@ -115,6 +117,7 @@ audio_softc_play_start(struct audio_softc *sc)
 		// ちょっと前倒しで 0.8 掛けたもの。
 		d.tv_usec = r / (dev->fmt.sample_rate * dev->fmt.precision / 8 *
 			dev->fmt.channels / 1000) * 800;
+printf("usec=%d\n", (int)d.tv_usec);
 		timeradd(&dev->tv, &d, &dev->tv);
 	}
 
@@ -132,11 +135,20 @@ audio_softc_play_busy(struct audio_softc *sc)
 		gettimeofday(&now, NULL);
 		timersub(&dev->tv, &now, &res);
 		if (res.tv_sec > 0) {
+			// まだ転送完了時刻になってないのでビジーということにする
 			unlock(sc);
 			return true;
 		}
 
+#ifdef AUDIO_INTR_EMULATED
+		struct intr_t x;
+		x.code = INTR_TRACKMIXER;
+		x.mixer = &sc->sc_pmixer;
+		x.count = dev->sent_count;
+		emu_intr(x);
+#else
 		audio_trackmixer_intr(&sc->sc_pmixer, dev->sent_count);
+#endif
 		dev->sent_count = 0;
 	}
 	unlock(sc);

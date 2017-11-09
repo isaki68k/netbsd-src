@@ -8,6 +8,7 @@ SRCS+=	\
 	aucodec_linear.c \
 	aucodec_msm6258.c \
 	aucodec_mulaw.c \
+	auintr.c \
 	aumix.c \
 	main.c \
 	synth.c \
