@@ -81,6 +81,9 @@ struct audio_softc {
 	audio_trackmixer_t *sc_pmixer;	/* null if play not supported by hw */
 	audio_trackmixer_t *sc_rmixer;	/* null if rec not supported by hw */
 
+	audio_format2_t sc_phwfmt;
+	audio_format2_t sc_rhwfmt;
+
 	bool		sc_full_duplex;		/* device in full duplex mode */
 	bool		sc_can_playback;	/* device can playback */
 	bool		sc_can_capture;		/* device can capture */
@@ -2108,21 +2111,33 @@ audio_vchan_autoconfig_xxx(struct audio_softc *sc, int mode)
 	return EINVAL;
 #else
 	// とりあえずほぼ互換動作
-	audio_params_t params;
+	audio_params_t pfmt, rfmt;
 	int error;
 	int i, j;
 
-	params.encoding = AUDIO_ENCODING_SLINEAR_NE;
-	params.precision = AUDIO_INTERNAL_BITS; 
-	params.validbits = AUDIO_INTERNAL_BITS;
+	pfmt.encoding = AUDIO_ENCODING_SLINEAR_NE;
+	pfmt.precision = AUDIO_INTERNAL_BITS; 
+	pfmt.validbits = AUDIO_INTERNAL_BITS;
 	error = 0;
 	for (i = 0; i < __arraycount(auto_config_channels); i++) {
-		params.channels = auto_config_channels[i];
+		pfmt.channels = auto_config_channels[i];
 		for (j = 0; j < __arraycount(auto_config_freq); j++) {
-			params.sample_rate = auto_config_freq[j];
-			error = audio_set_params(sc, mode, &params, &params);
-			if (error == 0)
-				return 0;
+			pfmt.sample_rate = auto_config_freq[j];
+
+			// コピー
+			rfmt = pfmt;
+			error = audio_set_params(sc, mode, &pfmt, &rfmt);
+			if (error != 0)
+				continue;
+
+			// セットできた
+			if ((mode & AUMODE_PLAY) != 0) {
+				sc->sc_phwfmt = params_to_format2(&pfmt);
+			}
+			if ((mode & AUMODE_RECORD) != 0) {
+				sc->sc_rhwfmt = params_to_format2(&rfmt);
+			}
+			return 0;
 		}
 	}
 	return EINVAL;

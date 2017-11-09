@@ -682,9 +682,38 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 	memset(mixer, 0, sizeof(audio_trackmixer_t));
 	mixer->sc = sc;
 
+#if defined(_KERNEL)
+	// XXX とりあえず
+	if (mode == AUMODE_PLAY)
+		mixer->hwbuf.fmt = sc->sc_phwfmt;
+	else
+		mixer->hwbuf.fmt = sc->sc_rhwfmt;
+
+	int framelen = mixer->hwbuf.fmt.stride * mixer->hwbuf.fmt.channels;
+	int capacity = (mixer->hwbuf.fmt.precision * AUDIO_BLK_MS / 1000) * 2;
+	int bufsize = capacity * framelen;
+	if (sc->hw_if->round_buffersize) {
+		int rounded;
+		rounded = sc->hw_if->round_buffersize(sc->hw_hdl, mode, bufsize);
+		// 縮められても困る?
+		if (rounded != bufsize) {
+			aprint_error_dev(sc->dev, "buffer size not configured"
+			    "%d -> %d\n", bufsize, rounded);
+			return;
+		}
+	}
+
+	if (sc->hw_if->allocm) {
+		mixer->hwbuf.sample = sc->hw_if->allocm(sc->hw_hdl, mode,
+		    bufsize);
+	} else {
+		mixer->hwbuf.sample = kmem_zalloc(bufsize, KM_SLEEP);
+	}
+#else
 	mixer->hwbuf.fmt = audio_softc_get_hw_format(mixer->sc, mode);
 	mixer->hwbuf.capacity = audio_softc_get_hw_capacity(mixer->sc);
 	mixer->hwbuf.sample = audio_softc_allocm(mixer->sc, RING_BYTELEN(&mixer->hwbuf));
+#endif
 
 	mixer->frames_per_block = mixer->hwbuf.fmt.sample_rate * AUDIO_BLK_MS / 1000;
 
