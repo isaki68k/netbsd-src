@@ -979,6 +979,37 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 	audio_track_t *track = &file->ptrack;
 	TRACE(track, "");
 
+#if defined(_KERNEL)
+	KASSERT(mutex_owned(sc->sc_lock));
+
+	if (sc->hw_if == NULL)
+		return ENXIO;
+
+	if (uio->uio_resid == 0) {
+		sc->sc_eof++;
+		return 0;
+	}
+
+#ifdef AUDIO_PM_IDLE
+	if (device_is_active(&sc->dev) || sc->sc_idle)
+		device_active(&sc->dev, DVA_SYSTEM);
+#endif
+
+	/*
+	 * If half-duplex and currently recording, throw away data.
+	 */
+	// half-duplex で録音中なら、このデータは捨てる。XXX どうするか
+	if (!sc->sc_full_duplex && file->rtrack.mode != 0) {
+		uio->uio_offset += uio->uio_resid;
+		uio->uio_resid = 0;
+		DPRINTF(("audio_write: half-dpx read busy\n"));
+		return 0;
+	}
+
+	// XXX playdrop と PLAY_ALL はちょっと後回し
+
+#endif // _KERNEL
+
 	while (uio->uio_resid > 0) {
 
 		/* userio の空きバイト数を求める */
