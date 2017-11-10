@@ -54,7 +54,7 @@ void CALLBACK audio_dev_win32_callback(
 	if (uMsg == WOM_DONE) {
 		struct audio_softc *sc = (struct audio_softc*)dwInstance;
 		audio_dev_win32_t *dev = sc->phys;
-		audio_trackmixer_t *mixer = &sc->sc_pmixer;
+		audio_trackmixer_t *mixer = sc->sc_pmixer;
 		WAVEHDR *wh = (WAVEHDR*)dwParam1;
 
 		lock(sc);
@@ -83,6 +83,8 @@ audio_attach(struct audio_softc **softc)
 	sc = calloc(1, sizeof(struct audio_softc));
 	*softc = sc;
 	sc->phys = calloc(1, sizeof(audio_dev_win32_t));
+	sc->sc_pmixer = &sc->pmixer0;
+	sc->sc_rmixer = &sc->rmixer0;
 
 	audio_dev_win32_t *dev = sc->phys;
 	/* こっちが一次情報 */
@@ -133,8 +135,8 @@ audio_attach(struct audio_softc **softc)
 		dev->wavehdr[i].dwBufferLength = 0;
 	}
 
-	audio_mixer_init(sc, &sc->sc_pmixer, AUMODE_PLAY);
-	audio_mixer_init(sc, &sc->sc_rmixer, AUMODE_RECORD);
+	audio_mixer_init(sc, sc->sc_pmixer, AUMODE_PLAY);
+	audio_mixer_init(sc, sc->sc_rmixer, AUMODE_RECORD);
 }
 
 void
@@ -149,7 +151,7 @@ audio_detach(struct audio_softc *sc)
 
 		audio_track_play_drain_core(ptrack, true);
 	}
-	printf("output=%d complete=%d\n", (int)sc->sc_pmixer.hw_output_counter, (int)sc->sc_pmixer.hw_complete_counter);
+	printf("output=%d complete=%d\n", (int)sc->sc_pmixer->hw_output_counter, (int)sc->sc_pmixer->hw_complete_counter);
 #endif
 
 	MMRESULT r;
@@ -200,7 +202,7 @@ void
 audio_softc_play_start(struct audio_softc *sc)
 {
 	audio_dev_win32_t *dev = sc->phys;
-	audio_trackmixer_t *mixer = &sc->sc_pmixer;
+	audio_trackmixer_t *mixer = sc->sc_pmixer;
 
 	lock(sc);
 	audio_softc_play_start_core(sc);
@@ -210,7 +212,7 @@ audio_softc_play_start(struct audio_softc *sc)
 static void audio_softc_play_start_core(struct audio_softc *sc)
 {
 	audio_dev_win32_t *dev = sc->phys;
-	audio_trackmixer_t *mixer = &sc->sc_pmixer;
+	audio_trackmixer_t *mixer = sc->sc_pmixer;
 
 	WAVEHDR* wh = NULL;
 	for (int i = 0; i < WAVEHDR_COUNT; i++) {

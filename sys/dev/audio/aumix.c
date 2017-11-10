@@ -89,7 +89,6 @@ void audio_track_lock(audio_track_t *track);
 void audio_track_unlock(audio_track_t *track);
 
 #if !defined(_KERNEL)
-typedef void kcondvar_t;
 static int audio_waitio(struct audio_softc *sc, audio_track_t *track);
 #endif // !_KERNEL
 
@@ -1201,9 +1200,9 @@ sys_open(struct audio_softc *sc, int mode)
 	file->sc = sc;
 
 	if (mode == AUMODE_PLAY) {
-		audio_track_init(&file->ptrack, &sc->sc_pmixer, AUMODE_PLAY);
+		audio_track_init(&file->ptrack, sc->sc_pmixer, AUMODE_PLAY);
 	} else {
-		audio_track_init(&file->rtrack, &sc->sc_rmixer, AUMODE_RECORD);
+		audio_track_init(&file->rtrack, sc->sc_rmixer, AUMODE_RECORD);
 	}
 
 	SLIST_INSERT_HEAD(&sc->sc_files, file, entry);
