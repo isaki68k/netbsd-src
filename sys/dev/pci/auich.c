@@ -260,6 +260,7 @@ CFATTACH_DECL2_NEW(auich, sizeof(struct auich_softc),
 static int	auich_open(void *, int);
 static void	auich_close(void *);
 static int	auich_query_encoding(void *, struct audio_encoding *);
+static int	auich_query_format(void *, struct audio_format *, int);
 static int	auich_set_params(void *, int, int, audio_params_t *,
 		    audio_params_t *, stream_filter_list_t *,
 		    stream_filter_list_t *);
@@ -333,6 +334,7 @@ static const struct audio_hw_if auich_hw_if = {
 	auich_trigger_input,
 	NULL,			/* dev_ioctl */
 	auich_get_locks,
+	auich_query_format,
 };
 
 #define AUICH_FORMATS_1CH	0
@@ -961,6 +963,35 @@ auich_query_encoding(void *v, struct audio_encoding *aep)
 	sc = (struct auich_softc *)v;
 	return auconv_query_encoding(
 	    sc->sc_spdif ? sc->sc_spdif_encodings : sc->sc_encodings, aep);
+}
+
+static int
+auich_query_format(void *v, struct audio_format *afp, int idx)
+{
+	struct auich_softc *sc;
+	const struct audio_format *format;
+	int nf;
+	int i, j;
+
+	sc = (struct auich_softc *)v;
+	if (sc->sc_spdif) {
+		format = auich_spdif_formats;
+		nf = __arraycount(auich_spdif_formats);
+	} else {
+		format = sc->sc_audio_formats;
+		nf = AUICH_AUDIO_NFORMATS;
+	}
+	j = 0;
+	for (i = 0; i < nf; i++) {
+		if (!AUFMT_IS_VALID(&format[i]))
+			continue;
+		if (j == idx) {
+			*afp = format[i];
+			return 0;
+		}
+		j++;
+	}
+	return ENOENT;
 }
 
 static int

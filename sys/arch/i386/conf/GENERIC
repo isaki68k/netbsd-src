@@ -20,6 +20,8 @@
 
 include 	"arch/i386/conf/std.i386"
 
+makeoptions DEBUG="-Wno-missing-field-initializers"
+
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
 #ident		"GENERIC-$Revision: 1.1169 $"

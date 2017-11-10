@@ -247,8 +247,7 @@ static int audio_file_setinfo_check(audio_format2_t *,
 static int audio_file_setinfo_set(audio_track_t *, audio_format2_t *,
 	const struct audio_prinfo *, bool);
 static int audio_setinfo_hw(struct audio_softc *, struct audio_info *);
-static int audio_set_params(struct audio_softc *, int,
-	audio_params_t *, audio_params_t *);
+static int audio_set_params(struct audio_softc *);
 static int audiogetinfo(struct audio_softc *, struct audio_info *, int,
 	audio_file_t *);
 static int audio_getenc(struct audio_softc *, struct audio_encoding *);
@@ -257,7 +256,9 @@ static bool audio_can_playback(struct audio_softc *);
 static bool audio_can_capture(struct audio_softc *);
 static int audio_check_params(struct audio_params *);
 static int audio_check_params2(const audio_format2_t *);
-static int audio_vchan_autoconfig_xxx(struct audio_softc *, int);
+static int xxx_select_freq(const struct audio_format *);
+static int xxx_config_hwfmt(struct audio_softc *, audio_format2_t *, int);
+static int audio_xxx_config(struct audio_softc *, int);
 static void audio_prepare_enc_xxx(struct audio_softc *sc);
 
 static inline struct audio_params
@@ -352,10 +353,6 @@ const struct audio_params audio_default = {
 	.validbits = 8,
 	.channels = 1,
 };
-
-static int auto_config_channels[] = { 2, AUDIO_MAX_CHANNELS, 10, 8, 6, 4, 1 };
-static int auto_config_freq[] = { 48000, 44100, 96000, 192000, 32000,
-			   22050, 16000, 11025, 8000, 4000 };
 
 static const struct portname itable[] = {
 	{ AudioNmicrophone,	AUDIO_MICROPHONE },
@@ -462,48 +459,36 @@ audioattach(device_t parent, device_t self, void *aux)
 	aprint_naive("\n");
 	aprint_normal("\n");
 
-	/* probe hw params and init track mixer */
-	if (sc->sc_can_capture) {
-		mutex_enter(sc->sc_lock);
-		error = audio_vchan_autoconfig_xxx(sc, AUMODE_RECORD);
-		mutex_exit(sc->sc_lock);
-		if (error == 0) {
-			sc->sc_rmixer = kmem_zalloc(sizeof(*sc->sc_rmixer),
-			    KM_SLEEP);
-			audio_mixer_init(sc, sc->sc_rmixer, AUMODE_RECORD);
-			aprint_normal_dev(sc->dev,
-			    "slinear%d, %dch, %dHz for recording\n",
-			    AUDIO_INTERNAL_BITS,
-			    sc->sc_rmixer->hwbuf.fmt.channels,
-			    sc->sc_rmixer->hwbuf.fmt.sample_rate);
-		} else {
-			aprint_error_dev(sc->dev,
-			    "No recording mode available\n");
-			sc->sc_can_capture = false;
-		}
-	}
-	if (sc->sc_can_playback) {
-		mutex_enter(sc->sc_lock);
-		error = audio_vchan_autoconfig_xxx(sc, AUMODE_PLAY);
-		mutex_exit(sc->sc_lock);
-		if (error == 0) {
-			sc->sc_pmixer = kmem_zalloc(sizeof(*sc->sc_pmixer),
-			    KM_SLEEP);
-			audio_mixer_init(sc, sc->sc_pmixer, AUMODE_PLAY);
-			aprint_normal_dev(sc->dev,
-			    "slinear%d, %dch, %dHz for playback\n",
-			    AUDIO_INTERNAL_BITS,
-			    sc->sc_pmixer->hwbuf.fmt.channels,
-			    sc->sc_pmixer->hwbuf.fmt.sample_rate);
-		} else {
-			aprint_error_dev(sc->dev,
-			    "No playback mode available\n");
-			sc->sc_can_playback = false;
-		}
-	}
+	// play と capture が両方立ってない状況はたぶん起きない
+
+	/* probe hw params */
+	error = audio_xxx_config(sc, is_indep);
+
 	if (sc->sc_can_capture == false && sc->sc_can_playback == false) {
 		sc->hw_if = NULL;
 		return;
+	}
+
+	/* init track mixer */
+	if (sc->sc_can_capture) {
+		sc->sc_rmixer = kmem_zalloc(sizeof(*sc->sc_rmixer),
+		    KM_SLEEP);
+		audio_mixer_init(sc, sc->sc_rmixer, AUMODE_RECORD);
+		aprint_normal_dev(sc->dev,
+		    "slinear%d, %dch, %dHz for recording\n",
+		    AUDIO_INTERNAL_BITS,
+		    sc->sc_rmixer->hwbuf.fmt.channels,
+		    sc->sc_rmixer->hwbuf.fmt.sample_rate);
+	}
+	if (sc->sc_can_playback) {
+		sc->sc_pmixer = kmem_zalloc(sizeof(*sc->sc_pmixer),
+		    KM_SLEEP);
+		audio_mixer_init(sc, sc->sc_pmixer, AUMODE_PLAY);
+		aprint_normal_dev(sc->dev,
+		    "slinear%d, %dch, %dHz for playback\n",
+		    AUDIO_INTERNAL_BITS,
+		    sc->sc_pmixer->hwbuf.fmt.channels,
+		    sc->sc_pmixer->hwbuf.fmt.sample_rate);
 	}
 
 	/* Set hw full-duplex if necessary */
@@ -2102,46 +2087,167 @@ audio_check_params2(const audio_format2_t *p2)
 	return audio_check_params(&p);
 }
 
-// mode に応じて再生か録音のハードウェアパラメータを決定。
-// slinear<Internal>_NE, channel, frequency
+// 周波数を選択する。
+// XXX アルゴリズムどうすっかね
+// 48kHz、44.1kHz をサポートしてれば優先して使用。
+// そうでなければとりあえず最高周波数にしとくか。
 static int
-audio_vchan_autoconfig_xxx(struct audio_softc *sc, int mode)
+xxx_select_freq(const struct audio_format *fmt)
 {
-#ifdef NEW_AUDIO_AUTOCONF
-	return EINVAL;
-#else
-	// とりあえずほぼ互換動作
-	audio_params_t pfmt, rfmt;
-	int error;
-	int i, j;
+	int freq;
+	int j;
 
-	pfmt.encoding = AUDIO_ENCODING_SLINEAR_NE;
-	pfmt.precision = AUDIO_INTERNAL_BITS; 
-	pfmt.validbits = AUDIO_INTERNAL_BITS;
-	error = 0;
-	for (i = 0; i < __arraycount(auto_config_channels); i++) {
-		pfmt.channels = auto_config_channels[i];
-		for (j = 0; j < __arraycount(auto_config_freq); j++) {
-			pfmt.sample_rate = auto_config_freq[j];
-
-			// コピー
-			rfmt = pfmt;
-			error = audio_set_params(sc, mode, &pfmt, &rfmt);
-			if (error != 0)
-				continue;
-
-			// セットできた
-			if ((mode & AUMODE_PLAY) != 0) {
-				sc->sc_phwfmt = params_to_format2(&pfmt);
-			}
-			if ((mode & AUMODE_RECORD) != 0) {
-				sc->sc_rhwfmt = params_to_format2(&rfmt);
-			}
-			return 0;
+	if (fmt->frequency_type == 0) {
+		int low = fmt->frequency[0];
+		int high = fmt->frequency[1];
+		freq = 48000;
+		if (low <= freq && freq <= high) {
+			return freq;
 		}
+		freq = 44100;
+		if (low <= freq && freq <= high) {
+			return freq;
+		}
+		return high;
+	} else {
+		freq = 48000;
+		for (j = 0; j < fmt->frequency_type; j++) {
+			if (fmt->frequency[j] == freq) {
+				return freq;
+			}
+		}
+		freq = 44100;
+		for (j = 0; j < fmt->frequency_type; j++) {
+			if (fmt->frequency[j] == freq) {
+				return freq;
+			}
+		}
+		return fmt->frequency[fmt->frequency_type - 1];
 	}
-	return EINVAL;
-#endif
+}
+
+// 再生か録音(mode) の HW フォーマットを決定する
+static int
+xxx_config_hwfmt(struct audio_softc *sc, audio_format2_t *cand, int mode)
+{
+	struct audio_format fmt;
+	int error;
+	int i;
+
+	// 初期値
+	// enc/prec/stride は固定。(XXX 逆エンディアン対応するか?)
+	// channels/frequency はいいやつを選びたい
+	cand->encoding    = AUDIO_ENCODING_SLINEAR_NE;
+	cand->precision   = AUDIO_INTERNAL_BITS;
+	cand->stride      = AUDIO_INTERNAL_BITS;
+	cand->channels    = 1;
+	cand->sample_rate = 0;	// 番兵
+
+	for (i = 0; ; i++) {
+		error = sc->hw_if->query_format(sc->hw_hdl, &fmt, i);
+		if (error == ENOENT)
+			break;
+		if (error)
+			return error;
+
+		if ((fmt.mode & mode) == 0) {
+			printf("fmt[%d] skip; mode not %d\n", i, mode);
+			continue;
+		}
+
+		if (fmt.encoding != AUDIO_ENCODING_SLINEAR_NE) {
+			printf("fmt[%d] skip; enc=%d\n", i, fmt.encoding);
+			continue;
+		}
+		if (fmt.precision != AUDIO_INTERNAL_BITS ||
+		    fmt.validbits != AUDIO_INTERNAL_BITS) {
+			printf("fmt[%d] skip; precision %d/%d\n", i,
+			    fmt.validbits, fmt.precision);
+			continue;
+		}
+		if (fmt.channels < cand->channels) {
+			printf("fmt[%d] skip; channels %d < %d\n", i,
+			    fmt.channels, cand->channels);
+			continue;
+		}
+		int freq = xxx_select_freq(&fmt);
+		// XXX うーん
+		if (freq < cand->sample_rate) {
+			printf("fmt[%d] skip; frequency %d < %d\n", i,
+			    freq, cand->sample_rate);
+			continue;
+		}
+
+		// cand 更新
+		cand->channels = fmt.channels;
+		cand->sample_rate = freq;
+		printf("fmt[%d] cand ch=%d freq=%d\n", i,
+		    cand->channels, cand->sample_rate);
+	}
+
+	if (cand->sample_rate == 0) {
+		printf("%s no fmt\n", __func__);
+		return ENXIO;
+	}
+	return 0;
+}
+
+// sc_playback/capture に応じて再生か録音のフォーマットを選択して設定する。
+// だめだった方は false にする。
+//
+// independent デバイスなら
+//  あれば再生フォーマットを選定
+//  あれば録音フォーマットを選定
+//  両方を設定
+// not independent デバイスなら
+//  再生があれば
+//   再生でフォーマットを選定。録音側にもコピー
+//  else
+//   録音でフォーマットを選定。再生側にもコピー
+//  両方を設定
+static int
+audio_xxx_config(struct audio_softc *sc, int is_indep)
+{
+	audio_format2_t fmt;
+	int mode;
+	int error;
+
+	if (is_indep) {
+		/* independent devices */
+		if (sc->sc_can_playback) {
+			error = xxx_config_hwfmt(sc, &sc->sc_phwfmt,
+			    AUMODE_PLAY);
+			if (error)
+				sc->sc_can_playback = false;
+		}
+		if (sc->sc_can_capture) {
+			error = xxx_config_hwfmt(sc, &sc->sc_rhwfmt,
+			    AUMODE_RECORD);
+			if (error)
+				sc->sc_can_capture = false;
+		}
+	} else {
+		/* not independent devices */
+		if (sc->sc_can_playback) {
+			mode = AUMODE_PLAY;
+		} else {
+			mode = AUMODE_RECORD;
+		}
+		error = xxx_config_hwfmt(sc, &fmt, mode);
+		if (error) {
+			sc->sc_can_playback = false;
+			sc->sc_can_capture = false;
+			return error;
+		}
+		sc->sc_phwfmt = fmt;
+		sc->sc_rhwfmt = fmt;
+	}
+
+	error = audio_set_params(sc);
+	if (error)
+		return error;
+
+	return error;
 }
 
 #define MAX_ENCODINGS	(16)	/* hw(max:10) + emulated(current:6) */
@@ -2631,28 +2737,33 @@ abort1:
 }
 
 // HW に対する set_param あたり。
-// pp, rp は in/out parameter?
+// setmode に PLAY_ALL は立っていない。
+// indepでないデバイスなら
+//  - pp, rp は同じ値がすでにセットされている。
+// pp, rp は in/out parameter ではなくす。
+// hw->set_params は値を変更できない。(無視する)
 static int
-audio_set_params(struct audio_softc *sc, int setmode,
-	audio_params_t *pp, audio_params_t *rp)
+audio_set_params(struct audio_softc *sc)
 {
+	audio_params_t pp, rp;
 	int error;
+	int setmode;
 	int usemode;
-	int indep;
 
-	indep = audio_get_props(sc) & AUDIO_PROP_INDEPENDENT;
-	if (!indep) {
-		if (setmode == AUMODE_RECORD)
-			*pp = *rp;
-		else if (setmode == AUMODE_PLAY)
-			*rp = *pp;
-	}
+	setmode = 0;
+	if (sc->sc_can_playback)
+		setmode |= AUMODE_PLAY;
+	if (sc->sc_can_capture)
+		setmode |= AUMODE_RECORD;
+
+	usemode = setmode;
+	pp = format2_to_params(&sc->sc_phwfmt);
+	rp = format2_to_params(&sc->sc_rhwfmt);
 
 	// XXX HWフィルタ
 
-	usemode = setmode & (AUMODE_PLAY | AUMODE_RECORD);
 	error = sc->hw_if->set_params(sc->hw_hdl, setmode, usemode,
-	    pp, rp, NULL, NULL);
+	    &pp, &rp, NULL, NULL);
 	if (error) {
 		DPRINTF(("%s: set_params failed with %d\n",
 		    __func__, error));
@@ -2664,23 +2775,13 @@ audio_set_params(struct audio_softc *sc, int setmode,
 		if (error) {
 			DPRINTF(("%s: commit_settings failed with %d\n",
 			    __func__, error));
-			/* XXX nothing to do ? */
 			return error;
-		}
-	}
-
-	if (!indep) {
-		/* XXX for !indep device, we have to use the same
-		 * parameters for the hardware, not userland */
-		if (setmode == AUMODE_RECORD) {
-			*pp = *rp;
-		} else if (setmode == AUMODE_PLAY) {
-			*rp = *pp;
 		}
 	}
 
 	/* construct new filter chain */
 	// XXX
+
 	DPRINTF(("%s: filter setup is completed.\n", __func__));
 
 	return 0;
