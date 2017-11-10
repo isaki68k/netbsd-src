@@ -34,6 +34,7 @@
  *	close 			x	x
  *	drain 			x	x
  *	query_encoding		-	x
+ *	query_format		-	x	たぶん
  *	set_params 		-	x
  *	round_blocksize		-	x
  *	commit_settings		-	x
