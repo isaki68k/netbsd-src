@@ -67,3 +67,4 @@ audio_format2_t audio_softc_get_hw_format(struct audio_softc *sc, int mode);
 void* audio_softc_allocm(struct audio_softc *sc, int n);
 void audio_softc_play_start(struct audio_softc *sc);
 
+audio_filter_t audio_softc_init_codec_filter(struct audio_softc *sc, audio_filter_arg_t *arg);
