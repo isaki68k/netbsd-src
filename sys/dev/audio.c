@@ -2268,7 +2268,9 @@ xxx_config_hwfmt(struct audio_softc *sc, audio_format2_t *cand, int mode)
 	cand->channels    = 1;
 	cand->sample_rate = 0;	// 番兵
 
+	mutex_enter(sc->sc_lock);
 	nformats = sc->hw_if->query_format(sc->hw_hdl, &formats);
+	mutex_exit(sc->sc_lock);
 	if (nformats == 0)
 		return ENXIO;
 	for (i = 0; i < nformats; i++) {
@@ -2905,9 +2907,11 @@ audio_set_params(struct audio_softc *sc)
 	rfilters.set = stream_filter_list_set;
 #endif
 
+	mutex_enter(sc->sc_lock);
 	error = sc->hw_if->set_params(sc->hw_hdl, setmode, usemode,
 	    &pp, &rp, &pfilters, &rfilters);
 	if (error) {
+		mutex_exit(sc->sc_lock);
 		DPRINTF(("%s: set_params failed with %d\n",
 		    __func__, error));
 		return error;
@@ -2916,11 +2920,13 @@ audio_set_params(struct audio_softc *sc)
 	if (sc->hw_if->commit_settings) {
 		error = sc->hw_if->commit_settings(sc->hw_hdl);
 		if (error) {
+			mutex_exit(sc->sc_lock);
 			DPRINTF(("%s: commit_settings failed with %d\n",
 			    __func__, error));
 			return error;
 		}
 	}
+	mutex_exit(sc->sc_lock);
 
 	/* construct new filter chain */
 	// XXX
