@@ -281,21 +281,21 @@ options 	MPBIOS_SCANPCI		# MPBIOS configures PCI roots
 options 	VGA_POST		# in-kernel support for VGA POST
 
 # ACPI devices
-acpiacad*	at acpi?		# ACPI AC Adapter
-acpibat*	at acpi?		# ACPI Battery
-acpibut*	at acpi?		# ACPI Button
-acpidalb*	at acpi?		# Direct Application Launch Button
-acpiec* 	at acpi?		# ACPI Embedded Controller (late)
-acpiecdt*	at acpi?		# ACPI Embedded Controller (early)
-acpifan*	at acpi?		# ACPI Fan
-acpilid*	at acpi?		# ACPI Lid Switch
+#acpiacad*	at acpi?		# ACPI AC Adapter
+#acpibat*	at acpi?		# ACPI Battery
+#acpibut*	at acpi?		# ACPI Button
+#acpidalb*	at acpi?		# Direct Application Launch Button
+#acpiec* 	at acpi?		# ACPI Embedded Controller (late)
+#acpiecdt*	at acpi?		# ACPI Embedded Controller (early)
+#acpifan*	at acpi?		# ACPI Fan
+#acpilid*	at acpi?		# ACPI Lid Switch
 #acpipmtr*	at acpi?		# ACPI Power Meter (experimental)
 #acpismbus*	at acpi?		# ACPI SMBus CMI (experimental)
-acpitz* 	at acpi?		# ACPI Thermal Zone
-acpivga*	at acpi?		# ACPI Display Adapter
-acpiout*	at acpivga?		# ACPI Display Output Device
-acpiwdrt*	at acpi?		# ACPI Watchdog Resource Table
-acpiwmi*	at acpi?		# ACPI WMI Mapper
+#acpitz* 	at acpi?		# ACPI Thermal Zone
+#acpivga*	at acpi?		# ACPI Display Adapter
+#acpiout*	at acpivga?		# ACPI Display Output Device
+#acpiwdrt*	at acpi?		# ACPI Watchdog Resource Table
+#acpiwmi*	at acpi?		# ACPI WMI Mapper
 
 # Mainboard devices
 aibs*		at acpi?		# ASUSTeK AI Booster hardware monitor
@@ -318,16 +318,16 @@ sdhc*		at acpi?		# SD Host Controller
 sony*		at acpi?		# Sony Notebook Controller
 spic*		at acpi?		# Sony Programmable I/O Controller
 wsmouse*	at spic?		# mouse
-thinkpad*	at acpi?		# IBM/Lenovo Thinkpad hotkeys
+#thinkpad*	at acpi?		# IBM/Lenovo Thinkpad hotkeys
 #tpm*		at acpi?		# ACPI TPM (Experimental)
 ug*		at acpi?		# Abit uGuru Hardware monitor
 valz*		at acpi?		# Toshiba Dynabook hotkeys
 wb*		at acpi?		# Winbond W83L518D SD/MMC reader
 sdmmc*		at wb?			# SD/MMC bus
-wmidell*	at acpiwmibus?		# Dell WMI mappings
-wmieeepc*	at acpiwmibus?		# Asus Eee PC WMI mappings
-wmihp*		at acpiwmibus?		# HP WMI mappings
-wmimsi* 	at acpiwmibus?		# MSI WMI mappings
+#wmidell*	at acpiwmibus?		# Dell WMI mappings
+#wmieeepc*	at acpiwmibus?		# Asus Eee PC WMI mappings
+#wmihp*		at acpiwmibus?		# HP WMI mappings
+#wmimsi* 	at acpiwmibus?		# MSI WMI mappings
 
 # Basic Bus Support
 
