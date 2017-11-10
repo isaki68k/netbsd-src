@@ -692,8 +692,8 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 	else
 		mixer->hwbuf.fmt = sc->sc_rhwfmt;
 
-	int framelen = mixer->hwbuf.fmt.stride * mixer->hwbuf.fmt.channels;
-	int capacity = (mixer->hwbuf.fmt.precision * AUDIO_BLK_MS / 1000) * 2;
+	int framelen = mixer->hwbuf.fmt.channels * mixer->hwbuf.fmt.stride / NBBY;
+	int capacity = (mixer->hwbuf.fmt.sample_rate * AUDIO_BLK_MS / 1000) * 2;
 	int bufsize = capacity * framelen;
 	if (sc->hw_if->round_buffersize) {
 		int rounded;
