@@ -69,6 +69,7 @@ usage()
 	printf(" -g        (guess) display format only, no playback\n");
 	printf(" -m <MML>  play MML\n");
 	printf(" -w <cnt>  delay block count for each files\n");
+	printf(" -v <vol>  track volume (0..256)\n");
 	exit(1);
 }
 
@@ -81,6 +82,7 @@ main(int ac, char *av[])
 	int freq = 15625;
 	int opt_g = 0;		// フォーマットを表示するだけオプション
 	int opt_wait = 0;	// 1ファイルごとの開始ディレイ
+	int opt_vol = 256;
 
 	if (ac < 2) {
 		usage();
@@ -113,6 +115,13 @@ main(int ac, char *av[])
 			if (i == ac)
 				usage();
 			opt_wait = atoi(av[i]);
+			continue;
+		}
+		if (strcmp(av[i], "-v") == 0) {
+			i++;
+			if (i == ac)
+				usage();
+			opt_vol = atoi(av[i]);
 			continue;
 		}
 
@@ -183,7 +192,7 @@ main(int ac, char *av[])
 
 		f->file = sys_open(sc, AUMODE_PLAY);
 		/* この辺は ioctl になる */
-		f->file->ptrack.volume = 256;
+		f->file->ptrack.volume = opt_vol;
 		f->file->ptrack.mixer->volume = 256;
 		for (int j = 0; j < 2; j++) {
 			f->file->ptrack.ch_volume[j] = 256;
