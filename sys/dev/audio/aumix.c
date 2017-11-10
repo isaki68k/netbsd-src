@@ -759,22 +759,12 @@ audio_mixer_play(audio_trackmixer_t *mixer, bool isdrain)
 			if (track->outputbuf.count > 0) {
 				audio_mixer_play_mix_track(mixer, track);
 			}
-
-			if (track->mixed_count != 0) {
-				if (mixed == 0) {
-					mixed = track->mixed_count;
-				} else {
-					mixed = min(mixed, track->mixed_count);
-				}
-			}
 		}
-
-		mixer->mixbuf.count = mixed;
 	}
 
 	// バッファの準備ができたら転送。
-	if (mixer->mixbuf.count >= mixer->frames_per_block
-		&& mixer->hwbuf.capacity - mixer->hwbuf.count >= mixer->frames_per_block) {
+	if (mixer->hwbuf.capacity - mixer->hwbuf.count >= mixer->frames_per_block) {
+		mixer->mixbuf.count = mixer->frames_per_block;
 		audio_mixer_play_period(mixer);
 	}
 
@@ -795,17 +785,18 @@ audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track)
 		return;
 	}
 
+	// このトラックが処理済みならなにもしない
+	if (mixer->mixseq < track->seq) return;
+
 	int count = mixer->frames_per_block;
 
-	// mixer->mixbuf の top 位置から、このトラックの mixed_count までは前回処理済みなので、
-	// コピーしたローカル ring で処理をする。
+	// トラックごとなのでコピーしたローカル ring で処理をする。
 	audio_ring_t mix_tmp;
 	mix_tmp = mixer->mixbuf;
-	mix_tmp.count = track->mixed_count;
+	mix_tmp.count = 0;
 
 	if (mix_tmp.capacity - mix_tmp.count < count) {
-		TRACE(track, "mix_buf full");
-		return;
+		panic("mix_buf full");
 	}
 
 	KASSERT(audio_ring_unround_count(&track->outputbuf) >= count);
@@ -830,6 +821,7 @@ audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track)
 
 	/* トラックバッファを取り込んだことを反映 */
 	track->mixed_count += count;
+	track->seq = mixer->mixseq + 1;
 	TRACE(track, "mixed+=%d", count);
 }
 
@@ -849,6 +841,8 @@ audio_mixer_play_period(audio_trackmixer_t *mixer /*, bool force */)
 		return;
 	}
 	count = min(count, mixer->frames_per_block);
+
+	mixer->mixseq++;
 
 	/* オーバーフロー検出 */
 	internal2_t ovf_plus = AUDIO_INTERNAL_T_MAX;
@@ -907,39 +901,14 @@ audio_mixer_play_period(audio_trackmixer_t *mixer /*, bool force */)
 	memset(mptr0, 0, sample_count * sizeof(internal2_t));
 	audio_ring_tookfromtop(&mixer->mixbuf, count);
 
-	/* トラックにハードウェアへ転送されたことを通知する */
-	audio_file_t *f;
-	SLIST_FOREACH(f, &mixer->sc->sc_files, entry) {
-		audio_track_t *track = &f->ptrack;
-		if (track->mixed_count > 0) {
-			KASSERT(track->completion_blkcount < __arraycount(track->completion_blkID));
-
-			track->completion_blkID[track->completion_blkcount] = mixer->hw_blkID;
-			track->completion_blkcount++;
-
-			if (track->mixed_count <= count) {
-				/* 要求転送量が全部転送されている */
-				track->mixer_hw_counter += track->mixed_count;
-				track->mixed_count = 0;
-			} else {
-				/* のこりがある */
-				track->mixer_hw_counter += count;
-				track->mixed_count -= count;
-			}
-		}
-	}
-
 	/* ハードウェアへ通知する */
-	TRACE0("start count=%d blkid=%d", count, mixer->hw_blkID);
+	TRACE0("start count=%d mixseq=%d hwseq=%d", count, (int)mixer->mixseq, (int)mixer->hwseq);
 #if defined(_KERNEL)
 	audiostartp(mixer->sc);
 #else
 	audio_softc_play_start(mixer->sc);
 #endif
 	mixer->hw_output_counter += count;
-
-	// この blkID の出力は終わり。次。
-	mixer->hw_blkID++;
 }
 
 void
@@ -949,27 +918,7 @@ audio_trackmixer_intr(audio_trackmixer_t *mixer, int count)
 	KASSERT(count != 0);
 
 	mixer->hw_complete_counter += count;
-
-	/* トラックにハードウェア出力が完了したことを通知する */
-	audio_file_t *f;
-	SLIST_FOREACH(f, &mixer->sc->sc_files, entry) {
-		audio_track_t *track = &f->ptrack;
-		if (track->completion_blkcount > 0) {
-			if (track->completion_blkID[0] < mixer->hw_cmplID) {
-				panic("missing block");
-			}
-
-			if (track->completion_blkID[0] == mixer->hw_cmplID) {
-				track->hw_complete_counter += mixer->frames_per_block;
-				// キューは小さいのでポインタをごそごそするより速いんではないか
-				for (int i = 0; i < track->completion_blkcount - 1; i++) {
-					track->completion_blkID[i] = track->completion_blkID[i + 1];
-				}
-				track->completion_blkcount--;
-			}
-		}
-	}
-	mixer->hw_cmplID++;
+	mixer->hwseq++;
 
 #if !defined(_KERNEL)
 	/* XXX win32 は割り込みから再生 API をコール出来ないので、ポーリングする */
@@ -1015,7 +964,7 @@ audio_track_play_drain_core(audio_track_t *track, bool wait)
 			//audio_mixer_play(track->mixer);
 		} while (track->outputbuf.count > 0
 			|| track->mixed_count > 0
-			|| track->completion_blkcount > 0);
+			|| track->seq < track->mixer->hwseq);
 
 		track->is_draining = false;
 		printf("#%d: uio_count=%d trk_count=%d tm=%d mixhw=%d hw_complete=%d\n", track->id,
