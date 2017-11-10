@@ -949,6 +949,8 @@ audio_track_play_drain(audio_track_t *track)
 void
 audio_track_play_drain_core(audio_track_t *track, bool wait)
 {
+	struct audio_softc *sc = track->mixer->sc;
+
 	TRACE(track, "");
 	track->is_draining = true;
 
@@ -962,7 +964,7 @@ audio_track_play_drain_core(audio_track_t *track, bool wait)
 	/* chmix_buf は待つ必要はない */
 	if (wait) {
 		do {
-			audio_waitio(track->mixer->sc, NULL, track);
+			audio_waitio(sc, &sc->sc_wchan, track);
 			//audio_mixer_play(track->mixer);
 		} while (track->outputbuf.count > 0
 			|| track->seq > track->mixer->hwseq);
@@ -1021,7 +1023,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 		int free_bytelen = free_count * track->inputfmt.channels * track->inputfmt.stride / 8 - track->subframe_buf_used;
 
 		if (free_bytelen == 0) {
-			audio_waitio(sc, NULL, track);
+			audio_waitio(sc, &sc->sc_wchan, track);
 		}
 
 		// 今回 uiomove するバイト数 */
