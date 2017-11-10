@@ -2130,8 +2130,8 @@ xxx_select_freq(const struct audio_format *fmt)
 static int
 xxx_config_hwfmt(struct audio_softc *sc, audio_format2_t *cand, int mode)
 {
-	struct audio_format fmt;
-	int error;
+	const struct audio_format *formats;
+	int nformats;
 	int i;
 
 	// 初期値
@@ -2143,34 +2143,37 @@ xxx_config_hwfmt(struct audio_softc *sc, audio_format2_t *cand, int mode)
 	cand->channels    = 1;
 	cand->sample_rate = 0;	// 番兵
 
-	for (i = 0; ; i++) {
-		error = sc->hw_if->query_format(sc->hw_hdl, &fmt, i);
-		if (error == ENOENT)
-			break;
-		if (error)
-			return error;
+	nformats = sc->hw_if->query_format(sc->hw_hdl, &formats);
+	if (nformats == 0)
+		return ENXIO;
+	for (i = 0; i < nformats; i++) {
+		const struct audio_format *fmt = &formats[i];
 
-		if ((fmt.mode & mode) == 0) {
-			printf("fmt[%d] skip; mode not %d\n", i, mode);
+		if (!AUFMT_IS_VALID(fmt)) {
+			printf("fmt[%d] skip; INVALID\n", i);
+			continue;
+		}
+		if ((fmt->mode & mode) == 0) {
+			printf("fmt[%d] skip; mode not match %d\n", i, mode);
 			continue;
 		}
 
-		if (fmt.encoding != AUDIO_ENCODING_SLINEAR_NE) {
-			printf("fmt[%d] skip; enc=%d\n", i, fmt.encoding);
+		if (fmt->encoding != AUDIO_ENCODING_SLINEAR_NE) {
+			printf("fmt[%d] skip; enc=%d\n", i, fmt->encoding);
 			continue;
 		}
-		if (fmt.precision != AUDIO_INTERNAL_BITS ||
-		    fmt.validbits != AUDIO_INTERNAL_BITS) {
+		if (fmt->precision != AUDIO_INTERNAL_BITS ||
+		    fmt->validbits != AUDIO_INTERNAL_BITS) {
 			printf("fmt[%d] skip; precision %d/%d\n", i,
-			    fmt.validbits, fmt.precision);
+			    fmt->validbits, fmt->precision);
 			continue;
 		}
-		if (fmt.channels < cand->channels) {
+		if (fmt->channels < cand->channels) {
 			printf("fmt[%d] skip; channels %d < %d\n", i,
-			    fmt.channels, cand->channels);
+			    fmt->channels, cand->channels);
 			continue;
 		}
-		int freq = xxx_select_freq(&fmt);
+		int freq = xxx_select_freq(fmt);
 		// XXX うーん
 		if (freq < cand->sample_rate) {
 			printf("fmt[%d] skip; frequency %d < %d\n", i,
@@ -2179,7 +2182,7 @@ xxx_config_hwfmt(struct audio_softc *sc, audio_format2_t *cand, int mode)
 		}
 
 		// cand 更新
-		cand->channels = fmt.channels;
+		cand->channels = fmt->channels;
 		cand->sample_rate = freq;
 		printf("fmt[%d] cand ch=%d freq=%d\n", i,
 		    cand->channels, cand->sample_rate);
@@ -2189,6 +2192,8 @@ xxx_config_hwfmt(struct audio_softc *sc, audio_format2_t *cand, int mode)
 		printf("%s no fmt\n", __func__);
 		return ENXIO;
 	}
+	printf("%s selected: ch=%d freq=%d\n", __func__,
+	    cand->channels, cand->sample_rate);
 	return 0;
 }
 
