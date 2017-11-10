@@ -748,31 +748,30 @@ audio_mixer_play(audio_trackmixer_t *mixer, bool isdrain)
 	mixer->busy = true;
 
 	// ダブルバッファを埋める
-	for (int i = 0; i < 2; i++) {
+	// ダブルバッファ条件
+	while (
+		mixer->mixseq < mixer->hwseq + 2
+	 && mixer->hwbuf.capacity - mixer->hwbuf.count > 0) {
 
-		if (mixer->hwbuf.capacity - mixer->hwbuf.count >= mixer->frames_per_block) {
+		audio_file_t *f;
+		int mixed = 0;
+		SLIST_FOREACH(f, &mixer->sc->sc_files, entry) {
+			audio_track_t *track = &f->ptrack;
 
-			audio_file_t *f;
-			int mixed = 0;
-			SLIST_FOREACH(f, &mixer->sc->sc_files, entry) {
-				audio_track_t *track = &f->ptrack;
-
-				if (track->outputbuf.count < mixer->frames_per_block) {
-					audio_track_play(track, isdrain);
-				}
-
-				// 合成
-				if (track->outputbuf.count > 0) {
-					mixed += audio_mixer_play_mix_track(mixer, track);
-				}
+			if (track->outputbuf.count < mixer->frames_per_block) {
+				audio_track_play(track, isdrain);
 			}
 
-			if (mixed > 0) {
-				// バッファの準備ができたら転送。
-				mixer->mixbuf.count = mixer->frames_per_block;
-				audio_mixer_play_period(mixer);
+			// 合成
+			if (track->outputbuf.count > 0) {
+				mixed += audio_mixer_play_mix_track(mixer, track);
 			}
 		}
+		if (mixed == 0) break;
+
+		// バッファの準備ができたら転送。
+		mixer->mixbuf.count = mixer->frames_per_block;
+		audio_mixer_play_period(mixer);
 	}
 
 	if (mixer->hwseq == mixer->mixseq) {
