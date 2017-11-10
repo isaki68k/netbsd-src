@@ -883,6 +883,7 @@ audio_attach_mi(const struct audio_hw_if *ahwp, void *hdlp, device_t dev)
 #ifdef AUDIO_DEBUG
 void	audio_printsc(struct audio_softc *);
 void	audio_print_params(const char *, struct audio_params *);
+void	audio_print_format2(const char *, const audio_format2_t *);
 
 void
 audio_printsc(struct audio_softc *sc)
@@ -895,6 +896,13 @@ audio_print_params(const char *s, struct audio_params *p)
 {
 	printf("%s enc=%u %uch %u/%ubit %uHz\n", s, p->encoding, p->channels,
 	       p->validbits, p->precision, p->sample_rate);
+}
+
+void
+audio_print_format2(const char *s, const audio_format2_t *f2)
+{
+	struct audio_params p = format2_to_params(f2);
+	audio_print_params(s, &p);
 }
 #endif
 
@@ -2661,9 +2669,9 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 		printf("setting mode to %d (pchanges=%d rchanges=%d)\n",
 		    mode, pchanges, rchanges);
 		if (pchanges)
-			print_audio_params2("setting play mode:", &pfmt);
+			audio_print_format2("setting play mode:", &pfmt);
 		if (rchanges)
-			print_audio_params2("setting rec  mode:", &rfmt);
+			audio_print_format2("setting rec  mode:", &rfmt);
 #endif
 	}
 
