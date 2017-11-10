@@ -1896,7 +1896,7 @@ filt_audiowrite(struct knote *kn, long hint)
 	// 再生バッファの空きバイト数を kn_data に入れて、
 	// 空きがあるかどうかを返す?
 	kn->kn_data = (buf->capacity - buf->count) *
-	    (track->inputfmt.stride * track->inputfmt.channels);
+	    (track->inputfmt.channels * track->inputfmt.stride / NBBY);
 
 	mutex_exit(sc->sc_intr_lock);
 
@@ -3026,7 +3026,8 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 		// たぶんバッファ中の現在位置でいいんじゃないかなあ
 		// 入力エンコーディングバイト数換算
 		p->seek = ptrack->outputbuf.count *
-		    (ptrack->inputfmt.stride * ptrack->inputfmt.channels);
+		    (ptrack->inputfmt.channels *
+		     ptrack->inputfmt.stride / NBBY);
 		// XXX カウンタそのままでよさそう
 		p->samples = ptrack->inputcounter;
 		p->eof = sc->sc_eof;
@@ -3037,13 +3038,15 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 		p->active = sc->sc_pmixer->busy;// XXX ?
 		// XXX 入力エンコーディング換算
 		p->buffer_size = ptrack->outputbuf.capacity *
-		    (ptrack->inputfmt.stride * ptrack->inputfmt.channels);
+		    (ptrack->inputfmt.channels *
+		     ptrack->inputfmt.stride / NBBY);
 	}
 	if (rtrack) {
 		// たぶんバッファ中の現在位置でいいんじゃないかなあ
 		// 入力エンコーディングバイト数換算
 		r->seek = rtrack->outputbuf.count *
-		    (rtrack->outputbuf.fmt.stride * ptrack->outputbuf.fmt.channels);
+		    (rtrack->outputbuf.fmt.channels *
+		     rtrack->outputbuf.fmt.stride / NBBY);
 		// XXX カウンタそのままでよさそう
 		r->samples = rtrack->outputcounter;
 		r->eof = sc->sc_eof;
@@ -3053,7 +3056,8 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 		r->open = 1;
 		r->active = sc->sc_rmixer->busy;// XXX ?
 		r->buffer_size = rtrack->outputbuf.capacity *
-		    (rtrack->outputbuf.fmt.stride * rtrack->outputbuf.fmt.channels);
+		    (rtrack->outputbuf.fmt.channels *
+		     rtrack->outputbuf.fmt.stride / NBBY);
 	}
 
 	// XXX 再生と録音でチャンネル数が違う場合があるので
@@ -3067,7 +3071,8 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 		mixer = sc->sc_pmixer;
 	}
 	fmt = &mixer->hwbuf.fmt;
-	ai->blocksize = mixer->frames_per_block * fmt->stride * fmt->channels;
+	ai->blocksize = mixer->frames_per_block *
+	    fmt->channels * fmt->stride / NBBY;
 	ai->mode = file->mode;
 	/* hiwat, lowat are meaningless in current implementation */
 	ai->hiwat = 0;
