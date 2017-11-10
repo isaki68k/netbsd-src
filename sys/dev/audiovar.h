@@ -85,6 +85,7 @@ int audiobellioctl(struct file *, u_long, void *);
 // とりあえず
 #include <dev/audio/audiovar.h>
 #include <dev/audio/aumix.h>
+#include <dev/audio/auring.h>
 #if 0
 /*
  * Initial/default block duration is both configurable and patchable.

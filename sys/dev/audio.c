@@ -1955,9 +1955,11 @@ audiostartr(struct audio_softc *sc)
 int
 audiostartp(struct audio_softc *sc)
 {
+	audio_trackmixer_t *mixer;
 	int error;
+	int blksize;
 
-	KASSERT(mutex_owned(sc->sc_lock));
+	//KASSERT(mutex_owned(sc->sc_lock));
 
 	error = 0;
 	DPRINTF(("audiostartp\n"));
@@ -1965,10 +1967,30 @@ audiostartp(struct audio_softc *sc)
 	if (!audio_can_playback(sc))
 		return EINVAL;
 
+	mixer = sc->sc_pmixer;
+	blksize = mixer->frames_per_block *
+	    mixer->hwbuf.fmt.channels * mixer->hwbuf.fmt.stride / NBBY;
+
+	if (sc->hw_if->trigger_output) {
+		audio_params_t params;
+		params = format2_to_params(&mixer->hwbuf.fmt);
+		error = sc->hw_if->trigger_output(sc->hw_hdl,
+		    RING_TOP(internal_t, &mixer->hwbuf),
+		    RING_BOT(internal_t, &mixer->hwbuf),
+		    blksize, audio_pintr, sc, &params);
+	} else {
+		error = sc->hw_if->start_output(sc->hw_hdl,
+		    RING_TOP(internal_t, &mixer->hwbuf),
+		    blksize, audio_pintr, sc);
+	}
+	if (error) {
+		printf("%s failed: %d\n", __func__, error);
+		return error;
+	}
+
 	// ここで再生ループ起動
 	sc->sc_pbusy = true;
-
-	return error;
+	return 0;
 }
 
 // audio_pint_silence いるかどうかは今後
@@ -2023,12 +2045,16 @@ void __unused
 audio_pintr(void *v)
 {
 	struct audio_softc *sc;
+	audio_trackmixer_t *mixer;
 
 	sc = v;
+	mixer = sc->sc_pmixer;
 
 	// 次のループを回す
 	// XXX カウントとは
-	audio_trackmixer_intr(sc->sc_pmixer, 1/*count?*/);
+	int count = mixer->frames_per_block;
+	audio_ring_tookfromtop(&mixer->hwbuf, count);
+	audio_trackmixer_intr(sc->sc_pmixer, count);
 }
 
 /*
