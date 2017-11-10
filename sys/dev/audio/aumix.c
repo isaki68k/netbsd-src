@@ -723,10 +723,9 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 	mixer->track_fmt.sample_rate = mixer->hwbuf.fmt.sample_rate;
 	mixer->track_fmt.precision = mixer->track_fmt.stride = AUDIO_INTERNAL_BITS;
 
-	/* 40ms double buffer */
 	mixer->mixbuf.fmt = mixer->track_fmt;
 	mixer->mixbuf.fmt.precision = mixer->mixbuf.fmt.stride = AUDIO_INTERNAL_BITS * 2;
-	mixer->mixbuf.capacity = 2 * mixer->frames_per_block;
+	mixer->mixbuf.capacity = mixer->frames_per_block;
 	mixer->mixbuf.sample = audio_realloc(mixer->mixbuf.sample, RING_BYTELEN(&mixer->mixbuf));
 	memset(mixer->mixbuf.sample, 0, RING_BYTELEN(&mixer->mixbuf));
 
