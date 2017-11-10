@@ -110,7 +110,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 
 #include <uvm/uvm.h>
 
-#define AUDIO_DEBUG	1
+#define AUDIO_DEBUG	2
 #ifdef AUDIO_DEBUG
 #define DPRINTF(x)	if (audiodebug) printf x
 #define DPRINTFN(n,x)	if (audiodebug>(n)) printf x

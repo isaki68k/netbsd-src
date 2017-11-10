@@ -567,6 +567,8 @@ audio_track_unlock(audio_track_t *track)
 static int
 audio_append_slience(audio_track_t *track, audio_ring_t *ring)
 {
+TRACE(track, "");
+	KASSERT(track);
 	KASSERT(is_internal_format(&ring->fmt));
 
 	if (ring->count == 0) return 0;
@@ -743,7 +745,7 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 void
 audio_mixer_play(audio_trackmixer_t *mixer, bool isdrain)
 {
-	//TRACE0("");
+	TRACE0("enter");
 	/* 全部のトラックに聞く */
 
 	mixer->busy = true;
@@ -786,6 +788,7 @@ audio_mixer_play(audio_trackmixer_t *mixer, bool isdrain)
 int
 audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track)
 {
+TRACE(track, "enter");
 	/* 1 ブロック貯まるまで待つ */
 	if (track->outputbuf.count < mixer->frames_per_block) {
 		TRACE0("track count too short: track_buf.count=%d", track->outputbuf.count);
@@ -839,6 +842,7 @@ audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track)
 void
 audio_mixer_play_period(audio_trackmixer_t *mixer /*, bool force */)
 {
+TRACE0("enter");
 	/* 今回取り出すフレーム数を決定 */
 
 	int mix_count = audio_ring_unround_count(&mixer->mixbuf);
@@ -991,6 +995,9 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 	if (sc->hw_if == NULL)
 		return ENXIO;
 
+	DPRINTFN(1, ("%s: resid=%zu\n", __func__,
+	    uio->uio_resid));
+
 	if (uio->uio_resid == 0) {
 		sc->sc_eof++;
 		return 0;
@@ -1066,9 +1073,11 @@ audio_waitio(struct audio_softc *sc, kcondvar_t *chan, audio_track_t *track)
 
 	KASSERT(mutex_owned(sc->sc_lock));
 
+	DPRINTFN(1, ("%s start\n", __func__));
 	/* Wait for pending I/O to complete. */
 	error = cv_wait_sig(chan, sc->sc_lock);
 
+	DPRINTFN(1, ("%s error=%d\n", __func__, error));
 	return error;
 #else
 	// 本当は割り込みハンドラからトラックが消費されるんだけど
