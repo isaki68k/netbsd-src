@@ -537,22 +537,12 @@ audioattach(device_t parent, device_t self, void *aux)
 	/* probe hw params */
 	error = audio_xxx_config(sc, is_indep);
 
-	if (sc->sc_can_capture == false && sc->sc_can_playback == false) {
+	if (sc->sc_can_playback == false && sc->sc_can_capture == false) {
 		sc->hw_if = NULL;
 		return;
 	}
 
 	/* init track mixer */
-	if (sc->sc_can_capture) {
-		sc->sc_rmixer = kmem_zalloc(sizeof(*sc->sc_rmixer),
-		    KM_SLEEP);
-		audio_mixer_init(sc, sc->sc_rmixer, AUMODE_RECORD);
-		aprint_normal_dev(sc->dev,
-		    "slinear%d, %dch, %dHz for recording\n",
-		    AUDIO_INTERNAL_BITS,
-		    sc->sc_rmixer->hwbuf.fmt.channels,
-		    sc->sc_rmixer->hwbuf.fmt.sample_rate);
-	}
 	if (sc->sc_can_playback) {
 		sc->sc_pmixer = kmem_zalloc(sizeof(*sc->sc_pmixer),
 		    KM_SLEEP);
@@ -562,6 +552,16 @@ audioattach(device_t parent, device_t self, void *aux)
 		    AUDIO_INTERNAL_BITS,
 		    sc->sc_pmixer->hwbuf.fmt.channels,
 		    sc->sc_pmixer->hwbuf.fmt.sample_rate);
+	}
+	if (sc->sc_can_capture) {
+		sc->sc_rmixer = kmem_zalloc(sizeof(*sc->sc_rmixer),
+		    KM_SLEEP);
+		audio_mixer_init(sc, sc->sc_rmixer, AUMODE_RECORD);
+		aprint_normal_dev(sc->dev,
+		    "slinear%d, %dch, %dHz for recording\n",
+		    AUDIO_INTERNAL_BITS,
+		    sc->sc_rmixer->hwbuf.fmt.channels,
+		    sc->sc_rmixer->hwbuf.fmt.sample_rate);
 	}
 
 	/* Set hw full-duplex if necessary */
