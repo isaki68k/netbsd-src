@@ -71,6 +71,85 @@ typedef struct audio_params {
 /* The default audio mode: 8 kHz mono mu-law */
 extern const struct audio_params audio_default;
 
+struct audio_format {
+	/**
+	 * Device-dependent audio drivers may use this field freely.
+	 */
+	void *driver_data;
+
+	/**
+	 * combination of AUMODE_PLAY and AUMODE_RECORD
+	 */
+	int32_t mode;
+
+	/**
+	 * Encoding type.  AUDIO_ENCODING_*.
+	 * Don't use AUDIO_ENCODING_SLINEAR/ULINEAR/LINEAR/LINEAR8
+	 */
+	u_int encoding;
+
+	/**
+	 * The size of valid bits in one sample.
+	 * It must be <= precision.
+	 */
+	u_int validbits;
+
+	/**
+	 * The bit size of one sample.
+	 * It must be >= validbits, and is usualy a multiple of 8.
+	 */
+	u_int precision;
+
+	/**
+	 * The number of channels.  >= 1
+	 */
+	u_int channels;
+
+	u_int channel_mask;
+#define	AUFMT_UNKNOWN_POSITION		0U
+#define	AUFMT_FRONT_LEFT		0x00001U /* USB audio compatible */
+#define	AUFMT_FRONT_RIGHT		0x00002U /* USB audio compatible */
+#define	AUFMT_FRONT_CENTER		0x00004U /* USB audio compatible */
+#define	AUFMT_LOW_FREQUENCY		0x00008U /* USB audio compatible */
+#define	AUFMT_BACK_LEFT			0x00010U /* USB audio compatible */
+#define	AUFMT_BACK_RIGHT		0x00020U /* USB audio compatible */
+#define	AUFMT_FRONT_LEFT_OF_CENTER	0x00040U /* USB audio compatible */
+#define	AUFMT_FRONT_RIGHT_OF_CENTER	0x00080U /* USB audio compatible */
+#define	AUFMT_BACK_CENTER		0x00100U /* USB audio compatible */
+#define	AUFMT_SIDE_LEFT			0x00200U /* USB audio compatible */
+#define	AUFMT_SIDE_RIGHT		0x00400U /* USB audio compatible */
+#define	AUFMT_TOP_CENTER		0x00800U /* USB audio compatible */
+#define	AUFMT_TOP_FRONT_LEFT		0x01000U
+#define	AUFMT_TOP_FRONT_CENTER		0x02000U
+#define	AUFMT_TOP_FRONT_RIGHT		0x04000U
+#define	AUFMT_TOP_BACK_LEFT		0x08000U
+#define	AUFMT_TOP_BACK_CENTER		0x10000U
+#define	AUFMT_TOP_BACK_RIGHT		0x20000U
+
+#define	AUFMT_MONAURAL		AUFMT_FRONT_CENTER
+#define	AUFMT_STEREO		(AUFMT_FRONT_LEFT | AUFMT_FRONT_RIGHT)
+#define	AUFMT_SURROUND4		(AUFMT_STEREO | AUFMT_BACK_LEFT \
+				| AUFMT_BACK_RIGHT)
+#define	AUFMT_DOLBY_5_1		(AUFMT_SURROUND4 | AUFMT_FRONT_CENTER \
+				| AUFMT_LOW_FREQUENCY)
+
+	/**
+	 * 0: frequency[0] is lower limit, and frequency[1] is higher limit.
+	 * 1-16: frequency[0] to frequency[frequency_type-1] are valid.
+	 */
+	u_int frequency_type;
+
+#define	AUFMT_MAX_FREQUENCIES	16
+	/**
+	 * sampling rates
+	 */
+	u_int frequency[AUFMT_MAX_FREQUENCIES];
+};
+
+#define	AUFMT_INVALIDATE(fmt)	(fmt)->mode |= 0x80000000
+#define	AUFMT_VALIDATE(fmt)	(fmt)->mode &= 0x7fffffff
+#define	AUFMT_IS_VALID(fmt)	(((fmt)->mode & 0x80000000) == 0)
+
 /**
  * audio stream buffer
  */
