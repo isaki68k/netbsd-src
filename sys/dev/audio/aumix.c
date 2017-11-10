@@ -927,12 +927,6 @@ audio_trackmixer_intr(audio_trackmixer_t *mixer, int count)
 	mixer->hw_complete_counter += count;
 	mixer->hwseq++;
 
-#if !defined(_KERNEL)
-	/* XXX win32 は割り込みから再生 API をコール出来ないので、ポーリングする */
-	if (audio_softc_play_busy(mixer->sc) == false) {
-		audio_softc_play_start(mixer->sc);
-	}
-#endif
 	audio_mixer_play(mixer, true);
 }
 
