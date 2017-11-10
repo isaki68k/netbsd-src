@@ -1440,7 +1440,9 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 		// kauth?
 
 		if (sc->hw_if->open) {
+			mutex_enter(sc->sc_intr_lock);
 			error = sc->hw_if->open(sc->hw_hdl, af->mode);
+			mutex_exit(sc->sc_intr_lock);
 			if (error)
 				goto bad;
 		}
@@ -1454,7 +1456,9 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 				} else {
 					on = 0;
 				}
+				mutex_enter(sc->sc_intr_lock);
 				error = sc->hw_if->speaker_ctl(sc->hw_hdl, on);
+				mutex_exit(sc->sc_intr_lock);
 				if (error)
 					goto bad;
 			}
@@ -1485,11 +1489,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	return error;
 
 bad:
-	// エラー処理
-	// XXX ?
-	//audio_file_close(af);
 	kmem_free(af, sizeof(*af));
-
 	return error;
 }
 
