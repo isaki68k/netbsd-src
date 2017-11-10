@@ -162,7 +162,6 @@ struct audio_track
 	uint16_t           volume;			/* トラックボリューム。トラックボリュームはトラックミキサで処理。 */
 
 	audio_trackmixer_t  *mixer;			/* 接続されているトラックミキサ */
-	int                mixed_count;		/* トラックミキサのミキサバッファにあって出力を待っているこのトラックのフレーム数 */
 
 	uint64_t seq;	// トラックミキサが引き取ったシーケンス番号
 

@@ -820,7 +820,7 @@ audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track)
 	audio_ring_tookfromtop(&track->outputbuf, count);
 
 	/* トラックバッファを取り込んだことを反映 */
-	track->mixed_count += count;
+	// mixseq はこの時点ではまだ前回の値なのでトラック側へは +1 
 	track->seq = mixer->mixseq + 1;
 	TRACE(track, "mixed+=%d", count);
 }
@@ -963,7 +963,6 @@ audio_track_play_drain_core(audio_track_t *track, bool wait)
 			audio_waitio(track->mixer->sc, NULL, track);
 			//audio_mixer_play(track->mixer);
 		} while (track->outputbuf.count > 0
-			|| track->mixed_count > 0
 			|| track->seq < track->mixer->hwseq);
 
 		track->is_draining = false;
