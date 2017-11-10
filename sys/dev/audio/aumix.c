@@ -1076,20 +1076,8 @@ audio_waitio(struct audio_softc *sc, kcondvar_t *chan, audio_track_t *track)
 	// 本当は割り込みハンドラからトラックが消費されるんだけど
 	// ここで消費をエミュレート。
 
-//	TRACE0("");
-
 	emu_intr_check();
 
-#if false
-	/* 全部のトラックに聞く */
-
-	audio_file_t *f;
-	SLIST_FOREACH(f, &sc->sc_files, entry) {
-		audio_track_t *ptrack = &f->ptrack;
-
-		audio_track_play(ptrack);
-	}
-#endif
 	return 0;
 #endif
 }
