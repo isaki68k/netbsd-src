@@ -705,6 +705,7 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 			return;
 		}
 	}
+	mixer->hwbuf.capacity = capacity;
 
 	if (sc->hw_if->allocm) {
 		mixer->hwbuf.sample = sc->hw_if->allocm(sc->hw_hdl, mode,
