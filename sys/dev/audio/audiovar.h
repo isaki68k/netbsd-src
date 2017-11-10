@@ -189,6 +189,7 @@ struct audio_track
 
 struct audio_trackmixer
 {
+	int mode;							/* AUMODE_PLAY or AUMODE_RECORD */
 	audio_format2_t track_fmt;			/* track <-> trackmixer フォーマット */
 
 	int frames_per_block;				/* 内部周波数での 1 ブロックのフレーム数 */
