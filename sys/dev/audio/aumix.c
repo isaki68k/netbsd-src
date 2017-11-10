@@ -1052,8 +1052,10 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 		// 今回作った userio を全部トラック再生へ渡す
 		audio_track_play(track, false);
 
+#if !defined(_KERNEL)
 		// XXX: エミュレーション用に CPU 割り込み受付
 		audio_waitio(sc, NULL, track);
+#endif
 	}
 
 	return 0;
