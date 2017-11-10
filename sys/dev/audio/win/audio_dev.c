@@ -230,17 +230,17 @@ static void audio_softc_play_start_core(struct audio_softc *sc)
 	int wh_free_count = dev->data_framecount;
 #endif
 
-	if (mixer->outputbuf.count <= 0) {
+	if (mixer->hwbuf.count <= 0) {
 		return;
 	}
 
 	int count;
 
 	for (int loop = 0; loop < 2; loop++) {
-		count = audio_ring_unround_count(&mixer->outputbuf);
+		count = audio_ring_unround_count(&mixer->hwbuf);
 		count = min(count, wh_free_count);
 
-		DEV_SAMPLE_T *src = RING_TOP(DEV_SAMPLE_T, &mixer->outputbuf);
+		DEV_SAMPLE_T *src = RING_TOP(DEV_SAMPLE_T, &mixer->hwbuf);
 		
 		int bytelen = count * dev->wfx.nBlockAlign;
 		memcpy(dst, src, bytelen);
@@ -249,7 +249,7 @@ static void audio_softc_play_start_core(struct audio_softc *sc)
 		wh->dwBufferLength += bytelen;
 		wh_free_count -= count;
 
-		audio_ring_tookfromtop(&mixer->outputbuf, count);
+		audio_ring_tookfromtop(&mixer->hwbuf, count);
 	}
 
 	KASSERT(wh->dwBufferLength % 1764 == 0);

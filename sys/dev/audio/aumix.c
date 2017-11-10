@@ -575,7 +575,7 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *fmt)
 
 		track->inputfmt = *fmt;
 
-		track->outputbuf.fmt =  track->mixer->inputfmt;
+		track->outputbuf.fmt =  track->mixer->track_fmt;
 
 		last_dst = init_freq(track, last_dst);
 		last_dst = init_chmix(track, last_dst);
@@ -584,7 +584,7 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *fmt)
 	} else {
 		// 録音はユーザランド側から作る
 
-		track->inputfmt = track->mixer->outputbuf.fmt;
+		track->inputfmt = track->mixer->track_fmt;
 
 		track->outputbuf.fmt = *fmt;
 
@@ -739,9 +739,6 @@ audio_track_play(audio_track_t *track, bool isdrain)
 }
 
 void
-internal2_to_internal(audio_filter_arg_t *arg);
-
-void
 audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 {
 	memset(mixer, 0, sizeof(audio_trackmixer_t));
@@ -783,89 +780,22 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 	mixer->hwbuf.sample = audio_softc_allocm(mixer->sc, RING_BYTELEN(&mixer->hwbuf));
 #endif
 
-	mixer->mode = mode;
+	mixer->frames_per_block = mixer->hwbuf.fmt.sample_rate * AUDIO_BLK_MS / 1000;
+
+	mixer->track_fmt.encoding = AUDIO_ENCODING_SLINEAR_HE;
+	mixer->track_fmt.channels = mixer->hwbuf.fmt.channels;
+	mixer->track_fmt.sample_rate = mixer->hwbuf.fmt.sample_rate;
+	mixer->track_fmt.precision = mixer->track_fmt.stride = AUDIO_INTERNAL_BITS;
+
+	mixer->mixbuf.fmt = mixer->track_fmt;
+	mixer->mixbuf.fmt.precision = mixer->mixbuf.fmt.stride = AUDIO_INTERNAL_BITS * 2;
+	mixer->mixbuf.capacity = mixer->frames_per_block;
+	mixer->mixbuf.sample = audio_realloc(mixer->mixbuf.sample, RING_BYTELEN(&mixer->mixbuf));
+	memset(mixer->mixbuf.sample, 0, RING_BYTELEN(&mixer->mixbuf));
+
 	mixer->volume = 256;
-
-	audio_format2_t hwfmt = audio_softc_get_hw_format(mixer->sc, mode);
-	audio_format2_t internalfmt;
-	internalfmt.encoding = AUDIO_ENCODING_SLINEAR_HE;
-	internalfmt.sample_rate = hwfmt.sample_rate;
-	internalfmt.channels = hwfmt.channels;
-	internalfmt.precision = AUDIO_INTERNAL_BITS;
-	internalfmt.stride = AUDIO_INTERNAL_BITS;
-
-	mixer->frames_per_block = hwfmt.sample_rate * AUDIO_BLK_MS / 1000;
-	mixer->hwframealign = audio_framealign(hwfmt.stride);
-
-	audio_ring_t *last_dst = &mixer->outputbuf;
-	if (mixer->mode == AUMODE_PLAY) {
-		// 再生はハードウェア側から作る
-		mixer->inputfmt = internalfmt;
-		mixer->outputbuf.fmt = hwfmt;
-
-		mixer->outputbuf.capacity = audio_softc_get_hw_capacity(mixer->sc);
-		mixer->outputbuf.sample = audio_softc_allocm(mixer->sc, RING_BYTELEN(&mixer->outputbuf));
-
-		mixer->codec.srcbuf.fmt = internalfmt;
-		mixer->codec.arg.srcfmt = &mixer->codec.srcbuf.fmt;
-		mixer->codec.arg.dstfmt = &last_dst->fmt;
-		mixer->codec.filter = audio_softc_init_codec_filter(mixer->sc, &mixer->codec.arg);
-		if (mixer->codec.filter != NULL) {
-			mixer->codec.dst = last_dst;
-			// hwframealign を掛けることで、mixer->hwframealign 回のアクセスでアラインすることを保証する
-			mixer->codec.srcbuf.capacity = mixer->frames_per_block * mixer->hwframealign;
-			mixer->codec.srcbuf.sample = audio_realloc(mixer->codec.srcbuf.sample, RING_BYTELEN(&mixer->codec.srcbuf));
-			last_dst = &mixer->codec.srcbuf;
-		}
-
-		mixer->mix.dst = last_dst;
-		mixer->mix.filter = internal2_to_internal;
-		// 整数倍精度バッファ
-		mixer->mix.srcbuf.fmt = internalfmt;
-		mixer->mix.srcbuf.fmt.precision = AUDIO_INTERNAL_BITS * 2;
-		mixer->mix.srcbuf.fmt.stride = AUDIO_INTERNAL_BITS * 2;
-		mixer->mix.srcbuf.capacity = mixer->frames_per_block;
-		mixer->mix.srcbuf.sample = audio_realloc(mixer->mix.srcbuf.sample, RING_BYTELEN(&mixer->mix.srcbuf));
-		// XXX: なくす
-		memset(mixer->mix.srcbuf.sample, 0, RING_BYTELEN(&mixer->mix.srcbuf));
-
-		mixer->mix.arg.src = mixer->mix.srcbuf.sample;
-		mixer->mix.arg.dst = last_dst->sample;
-		mixer->mix.arg.count = mixer->frames_per_block;
-		mixer->mix.arg.srcfmt = &mixer->mix.srcbuf.fmt;
-		mixer->mix.arg.dstfmt = &last_dst->fmt;
-
-		last_dst = &mixer->mix.srcbuf;
-	} else {
-		// 録音はトラック側から作る
-		mixer->inputfmt = hwfmt;
-		mixer->outputbuf.fmt = internalfmt;
-		mixer->outputbuf.capacity = mixer->frames_per_block;
-
-		// mix ステージは使用しない
-		mixer->mix.filter = NULL;
-
-		mixer->codec.srcbuf.fmt = hwfmt;
-		mixer->codec.arg.srcfmt = &mixer->codec.srcbuf.fmt;
-		mixer->codec.arg.dstfmt = &last_dst->fmt;
-		mixer->codec.filter = audio_softc_init_codec_filter(mixer->sc, &mixer->codec.arg);
-		if (mixer->codec.filter != NULL) {
-			mixer->outputbuf.sample = audio_realloc(mixer->outputbuf.sample, RING_BYTELEN(&mixer->outputbuf));
-
-			mixer->codec.dst = last_dst;
-			// hwframealign を掛けることで、mixer->hwframealign 回のアクセスでアラインすることを保証する
-			mixer->codec.srcbuf.capacity = mixer->frames_per_block * mixer->hwframealign;
-			mixer->codec.srcbuf.sample = audio_softc_allocm(mixer->sc, RING_BYTELEN(&mixer->codec.srcbuf));
-			last_dst = &mixer->codec.srcbuf;
-		} else {
-			// ステージが 0 段になったので直接アクセスさせる
-			mixer->outputbuf.sample = audio_softc_allocm(mixer->sc, RING_BYTELEN(&mixer->outputbuf));
-		}
-	}
-
-	mixer->input = last_dst;
-
 }
+
 
 /*
  * トラックバッファから 最大 1 ブロックを取り出し、
@@ -885,7 +815,7 @@ audio_mixer_play(audio_trackmixer_t *mixer, bool isdrain)
 	// ダブルバッファ条件
 	while (
 		mixer->mixseq < mixer->hwseq + 2
-	 && mixer->outputbuf.capacity - mixer->outputbuf.count > 0) {
+	 && mixer->hwbuf.capacity - mixer->hwbuf.count > 0) {
 
 		TRACE0("while mixseq=%d hwseq=%d cap=%d cnt=%d",
 			(int)mixer->mixseq, (int)mixer->hwseq,
@@ -908,7 +838,7 @@ audio_mixer_play(audio_trackmixer_t *mixer, bool isdrain)
 		if (mixed == 0) break;
 
 		// バッファの準備ができたら転送。
-		mixer->mix.srcbuf.count = mixer->frames_per_block;
+		mixer->mixbuf.count = mixer->frames_per_block;
 		audio_mixer_play_period(mixer);
 
 #if defined(_KERNEL)
@@ -942,7 +872,7 @@ audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track)
 
 	// トラックごとなのでコピーしたローカル ring で処理をする。
 	audio_ring_t mix_tmp;
-	mix_tmp = mixer->mix.srcbuf;
+	mix_tmp = mixer->mixbuf;
 	mix_tmp.count = 0;
 
 	if (mix_tmp.capacity - mix_tmp.count < count) {
@@ -956,7 +886,7 @@ audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track)
 	internal2_t *dptr = RING_BOT(internal2_t, &mix_tmp);
 
 	/* 整数倍精度へ変換し、トラックボリュームを適用して加算合成 */
-	int sample_count = count * mix_tmp.fmt.channels;
+	int sample_count = count * mixer->mixbuf.fmt.channels;
 	if (track->volume == 256) {
 		for (int i = 0; i < sample_count; i++) {
 			*dptr++ += ((internal2_t)*sptr++);
@@ -988,8 +918,8 @@ audio_mixer_play_period(audio_trackmixer_t *mixer /*, bool force */)
 {
 	/* 今回取り出すフレーム数を決定 */
 
-	int mix_count = audio_ring_unround_count(&mixer->mix.srcbuf);
-	int hw_free_count = audio_ring_unround_free_count(mixer->mix.dst);
+	int mix_count = audio_ring_unround_count(&mixer->mixbuf);
+	int hw_free_count = audio_ring_unround_free_count(&mixer->hwbuf);
 	int count = min(mix_count, hw_free_count);
 	if (count <= 0) {
 		TRACE0("count too short: mix_count=%d hw_free=%d", mix_count, hw_free_count);
@@ -1003,10 +933,10 @@ audio_mixer_play_period(audio_trackmixer_t *mixer /*, bool force */)
 	internal2_t ovf_plus = AUDIO_INTERNAL_T_MAX;
 	internal2_t ovf_minus = AUDIO_INTERNAL_T_MIN;
 
-	internal2_t *mptr0 = RING_TOP(internal2_t, &mixer->mix.srcbuf);
+	internal2_t *mptr0 = RING_TOP(internal2_t, &mixer->mixbuf);
 	internal2_t *mptr = mptr0;
 
-	int sample_count = count * mixer->mix.srcbuf.fmt.channels;
+	int sample_count = count * mixer->mixbuf.fmt.channels;
 	for (int i = 0; i < sample_count; i++) {
 		if (*mptr > ovf_plus) ovf_plus = *mptr;
 		if (*mptr < ovf_minus) ovf_minus = *mptr;
@@ -1030,6 +960,8 @@ audio_mixer_play_period(audio_trackmixer_t *mixer /*, bool force */)
 		}
 	}
 
+	/* ここから ハードウェアチャンネル */
+
 	/* マスタボリューム適用 */
 	if (vol != 256) {
 		mptr = mptr0;
@@ -1039,36 +971,20 @@ audio_mixer_play_period(audio_trackmixer_t *mixer /*, bool force */)
 		}
 	}
 
-	/* ここから ハードウェアチャンネル */
-
 	/* ハードウェアバッファへ転送 */
+	// TODO: MD 側フィルタ
 	lock(mixer->sc);
-
-	if (mixer->mix.filter != NULL) {
-		mixer->mix.filter(&mixer->mix.arg);
-		audio_ring_appended(mixer->mix.dst, count);
-
-		/* 使用済みミキサメモリを次回のために 0 フィルする */
-		// XXX: なくす
-		memset(mptr0, 0, sample_count * sizeof(internal2_t));
-		audio_ring_tookfromtop(&mixer->mix.srcbuf, count);
+	mptr = mptr0;
+	internal_t *hptr = RING_BOT(internal_t, &mixer->hwbuf);
+	for (int i = 0; i < sample_count; i++) {
+		*hptr++ = *mptr++;
 	}
-
-	if (mixer->codec.filter != NULL) {
-		int count = audio_ring_unround_count(&mixer->codec.srcbuf);
-		// フレームのアライメント位置まで切り捨てる
-		count = count & ~(mixer->hwframealign - 1);
-		mixer->codec.arg.count = count;
-		KASSERT(audio_ring_unround_free_count(mixer->codec.dst) >= count);
-
-		mixer->codec.arg.src = RING_TOP_UINT8(&mixer->codec.srcbuf);
-		mixer->codec.arg.dst = mixer->codec.dst;
-		mixer->codec.filter(&mixer->codec.arg);
-		audio_ring_appended(mixer->codec.dst, count);
-		audio_ring_tookfromtop(&mixer->codec.srcbuf, count);
-	}
-
+	audio_ring_appended(&mixer->hwbuf, count);
 	unlock(mixer->sc);
+
+	/* 使用済みミキサメモリを次回のために 0 フィルする */
+	memset(mptr0, 0, sample_count * sizeof(internal2_t));
+	audio_ring_tookfromtop(&mixer->mixbuf, count);
 
 	/* ハードウェアへ通知する */
 	TRACE0("start count=%d mixseq=%d hwseq=%d", count, (int)mixer->mixseq, (int)mixer->hwseq);
@@ -1076,24 +992,6 @@ audio_mixer_play_period(audio_trackmixer_t *mixer /*, bool force */)
 	audio_softc_play_start(mixer->sc);
 #endif
 	mixer->hw_output_counter += count;
-}
-
-void
-internal2_to_internal(audio_filter_arg_t *arg)
-{
-	const internal2_t *psrc = arg->src;
-	internal_t *pdst = arg->dst;
-	int sample_count = arg->count * arg->dstfmt->channels;
-
-	for (int i = 0; i < sample_count; i++) {
-		*pdst++ = *psrc++;
-	}
-}
-
-void
-internal_to_misaligned(audio_filter_arg_t *arg)
-{
-
 }
 
 void
@@ -1313,11 +1211,3 @@ sys_open(struct audio_softc *sc, int mode)
 	return file;
 }
 #endif // !_KERNEL
-
-
-audio_filter_t
-audio_softc_init_codec_filter(struct audio_softc *sc, audio_filter_arg_t *arg)
-{
-	// 実際は関数ポインタ呼び出しでなんらか初期化してもらうとか。
-	return NULL;
-}

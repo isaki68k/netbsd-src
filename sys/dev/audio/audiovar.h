@@ -193,18 +193,15 @@ struct audio_trackmixer
 	audio_format2_t track_fmt;			/* track <-> trackmixer フォーマット */
 
 	int frames_per_block;				/* 内部周波数での 1 ブロックのフレーム数 */
-	int hwframealign;					// ハードウェアのフォーマットでフレームがバイトアラインするフレーム数
 
 	uint16_t       volume;				/* 出力マスタボリューム */
 
-	audio_format2_t     inputfmt;		// このトラックミキサに入力するフォーマット
-	audio_ring_t *input;				// トラックミキサ入力バッファへのポインタ
+	audio_ring_t   mixbuf;				/* 整数倍精度ミキシングバッファ */
 
-	audio_stage_t  mix;					// ミキシングステージ
-	audio_stage_t  codec;				// エンコーディング変換ステージ
+	audio_filter_t  codec;				/* mix <-> hw コーデックフィルタ */
+	audio_filter_arg_t codec_arg;		/* その引数 */
 
-	audio_ring_t   outputbuf;			// トラックミキサ出力バッファ
-										// PLAY 時は allocm で確保する
+	audio_ring_t   hwbuf;				/* 物理デバイスの入出力バッファ (malloc ではなく allocm で確保する) */
 
 	uint64_t mixseq;	// ミキシング中のシーケンス番号
 	uint64_t hwseq;		// ハードウェア出力完了したシーケンス番号
