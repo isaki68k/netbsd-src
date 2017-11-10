@@ -1,4 +1,65 @@
 /* vi:set ts=8: */
+/*
+ * Locking: there are two locks.
+ *
+ * - sc_lock, provided by the underlying driver.  This is an adaptive lock,
+ *   returned in the second parameter to hw_if->get_locks().  It is known
+ *   as the "thread lock".
+ *
+ *   It serializes access to state in all places except the
+ *   driver's interrupt service routine.  This lock is taken from process
+ *   context (example: access to /dev/audio).  It is also taken from soft
+ *   interrupt handlers in this module, primarily to serialize delivery of
+ *   wakeups.  This lock may be used/provided by modules external to the
+ *   audio subsystem, so take care not to introduce a lock order problem.
+ *   LONG TERM SLEEPS MUST NOT OCCUR WITH THIS LOCK HELD.
+ *
+ * - sc_intr_lock, provided by the underlying driver.  This may be either a
+ *   spinlock (at IPL_SCHED or IPL_VM) or an adaptive lock (IPL_NONE or
+ *   IPL_SOFT*), returned in the first parameter to hw_if->get_locks().  It
+ *   is known as the "interrupt lock".
+ *
+ *   It provides atomic access to the device's hardware state, and to audio
+ *   channel data that may be accessed by the hardware driver's ISR.
+ *   In all places outside the ISR, sc_lock must be held before taking
+ *   sc_intr_lock.  This is to ensure that groups of hardware operations are
+ *   made atomically.  SLEEPS CANNOT OCCUR WITH THIS LOCK HELD.
+ *
+ * List of hardware interface methods, and which locks are held when each
+ * is called by this module:
+ *
+ *	METHOD			INTR	THREAD  NOTES
+ *	----------------------- ------- -------	-------------------------
+ *	open 			x	x
+ *	close 			x	x
+ *	drain 			x	x
+ *	query_encoding		-	x
+ *	set_params 		-	x
+ *	round_blocksize		-	x
+ *	commit_settings		-	x
+ *	init_output 		x	x
+ *	init_input 		x	x
+ *	start_output 		x	x
+ *	start_input 		x	x
+ *	halt_output 		x	x
+ *	halt_input 		x	x
+ *	speaker_ctl 		x	x
+ *	getdev 			-	x
+ *	setfd 			-	x
+ *	set_port 		-	x
+ *	get_port 		-	x
+ *	query_devinfo 		-	x
+ *	allocm 			-	-	Called at attach time
+ *	freem 			-	-	Called at attach time
+ *	round_buffersize 	-	x
+ *	mappage 		-	-	Mem. unchanged after attach
+ *	get_props 		-	x
+ *	trigger_output 		x	x
+ *	trigger_input 		x	x
+ *	dev_ioctl 		-	x
+ *	get_locks 		-	-	Called at attach time
+ */
+
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD$");
 
