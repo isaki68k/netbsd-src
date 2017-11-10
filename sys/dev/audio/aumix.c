@@ -576,7 +576,7 @@ audio_append_slience(audio_track_t *track, audio_ring_t *ring)
 		return 0;
 	}
 
-	int n = ring->capacity - ring->count;
+	int n = (ring->capacity - ring->count) % fpb;
 	
 	TRACE(track, "Append silence %d frames", n);
 	KASSERT(audio_ring_unround_free_count(ring) >= n);
@@ -660,7 +660,8 @@ audio_track_play(audio_track_t *track, bool isdrain)
 	if (isdrain) {
 		/* 無音をブロックサイズまで埋める */
 		/* 内部フォーマットだとわかっている */
-		/* 周波数変換の結果、ブロック未満の端数フレームが出る */
+		/* 周波数変換の結果、ブロック未満の端数フレームが出ることもあるし、
+		変換なしのときは入力自体が半端なときもあろう */
 		audio_append_slience(track, &track->outputbuf);
 	}
 
@@ -671,7 +672,8 @@ audio_track_play(audio_track_t *track, bool isdrain)
 	}
 
 //	TRACE(track, "trackbuf=%d", track->outputbuf.count);
-	if (track->mixer->busy == false) {
+	// 1 トラック目の再生開始可能条件を満たしたらミキサ起動
+	if (track->mixer->busy == false && track->outputbuf.count >= track->mixer->frames_per_block) {
 		audio_mixer_play(track->mixer, false);
 	}
 }
@@ -745,11 +747,13 @@ audio_mixer_play(audio_trackmixer_t *mixer, bool isdrain)
 
 	mixer->busy = true;
 
-	if (mixer->hwbuf.capacity - mixer->hwbuf.count >= mixer->frames_per_block) {
+	// ダブルバッファを埋める
+	for (int i = 0; i < 2; i++) {
 
-		audio_file_t *f;
-		int mixed = 0;
-		if (mixer->mixbuf.count < mixer->mixbuf.capacity) {
+		if (mixer->hwbuf.capacity - mixer->hwbuf.count >= mixer->frames_per_block) {
+
+			audio_file_t *f;
+			int mixed = 0;
 			SLIST_FOREACH(f, &mixer->sc->sc_files, entry) {
 				audio_track_t *track = &f->ptrack;
 
@@ -762,16 +766,16 @@ audio_mixer_play(audio_trackmixer_t *mixer, bool isdrain)
 					mixed += audio_mixer_play_mix_track(mixer, track);
 				}
 			}
-		}
 
-		if (mixed > 0) {
-			// バッファの準備ができたら転送。
-			mixer->mixbuf.count = mixer->frames_per_block;
-			audio_mixer_play_period(mixer);
+			if (mixed > 0) {
+				// バッファの準備ができたら転送。
+				mixer->mixbuf.count = mixer->frames_per_block;
+				audio_mixer_play_period(mixer);
+			}
 		}
 	}
 
-	if (mixer->mixbuf.count == 0 && mixer->hwbuf.count == 0) {
+	if (mixer->hwseq == mixer->mixseq) {
 		mixer->busy = false;
 	}
 }
@@ -784,7 +788,7 @@ audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track)
 {
 	/* 1 ブロック貯まるまで待つ */
 	if (track->outputbuf.count < mixer->frames_per_block) {
-		panic("track count too short: track_buf.count=%d", track->outputbuf.count);
+		TRACE0("track count too short: track_buf.count=%d", track->outputbuf.count);
 		return 0;
 	}
 
