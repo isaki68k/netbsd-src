@@ -198,7 +198,7 @@ struct audio_softc {
 
 #include <uvm/uvm.h>
 
-/* #define AUDIO_DEBUG	1 */
+#define AUDIO_DEBUG	1
 #ifdef AUDIO_DEBUG
 #define DPRINTF(x)	if (audiodebug) printf x
 #define DPRINTFN(n,x)	if (audiodebug>(n)) printf x
