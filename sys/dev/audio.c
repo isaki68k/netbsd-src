@@ -2970,7 +2970,7 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 	if ((file->mode & AUMODE_RECORD) != 0)
 		rtrack = &file->rtrack;
 
-	memset(&ai, 0, sizeof(ai));
+	memset(ai, 0, sizeof(*ai));
 
 	// XXX 常に inputfmt が埋まってれば if いらない
 	if (ptrack) {
