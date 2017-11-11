@@ -567,7 +567,6 @@ audio_track_unlock(audio_track_t *track)
 static int
 audio_append_slience(audio_track_t *track, audio_ring_t *ring)
 {
-TRACE(track, "");
 	KASSERT(track);
 	KASSERT(is_internal_format(&ring->fmt));
 
@@ -745,7 +744,9 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 void
 audio_mixer_play(audio_trackmixer_t *mixer, bool isdrain)
 {
-	TRACE0("enter");
+	TRACE0("start mixseq=%d hwseq=%d cap=%d cnt=%d",
+		(int)mixer->mixseq, (int)mixer->hwseq,
+		mixer->hwbuf.capacity, mixer->hwbuf.count);
 	/* 全部のトラックに聞く */
 
 	mixer->busy = true;
@@ -755,6 +756,10 @@ audio_mixer_play(audio_trackmixer_t *mixer, bool isdrain)
 	while (
 		mixer->mixseq < mixer->hwseq + 2
 	 && mixer->hwbuf.capacity - mixer->hwbuf.count > 0) {
+
+		TRACE0("while mixseq=%d hwseq=%d cap=%d cnt=%d",
+			(int)mixer->mixseq, (int)mixer->hwseq,
+			mixer->hwbuf.capacity, mixer->hwbuf.count);
 
 		audio_file_t *f;
 		int mixed = 0;
@@ -777,6 +782,7 @@ audio_mixer_play(audio_trackmixer_t *mixer, bool isdrain)
 		audio_mixer_play_period(mixer);
 	}
 
+	TRACE0("hwseq=%d mixseq=%d", (int)mixer->hwseq, (int)mixer->mixseq);
 	if (mixer->hwseq == mixer->mixseq) {
 		mixer->busy = false;
 	}
@@ -788,7 +794,6 @@ audio_mixer_play(audio_trackmixer_t *mixer, bool isdrain)
 int
 audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track)
 {
-TRACE(track, "enter");
 	/* 1 ブロック貯まるまで待つ */
 	if (track->outputbuf.count < mixer->frames_per_block) {
 		TRACE0("track count too short: track_buf.count=%d", track->outputbuf.count);
@@ -842,7 +847,6 @@ TRACE(track, "enter");
 void
 audio_mixer_play_period(audio_trackmixer_t *mixer /*, bool force */)
 {
-TRACE0("enter");
 	/* 今回取り出すフレーム数を決定 */
 
 	int mix_count = audio_ring_unround_count(&mixer->mixbuf);
@@ -926,11 +930,13 @@ TRACE0("enter");
 void
 audio_trackmixer_intr(audio_trackmixer_t *mixer, int count)
 {
-	TRACE0("");
 	KASSERT(count != 0);
 
 	mixer->hw_complete_counter += count;
 	mixer->hwseq++;
+	TRACE0("++hwsec=%d cmplcnt=%d",
+		(int)mixer->hwseq,
+		(int)mixer->hw_complete_counter);
 
 	audio_mixer_play(mixer, true);
 }

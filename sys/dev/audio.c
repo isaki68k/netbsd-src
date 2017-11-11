@@ -1962,7 +1962,7 @@ audiostartp(struct audio_softc *sc)
 	//KASSERT(mutex_owned(sc->sc_lock));
 
 	error = 0;
-	DPRINTF(("audiostartp\n"));
+	DPRINTF(("audiostartp busy=%d\n", sc->sc_pbusy));
 
 	if (!audio_can_playback(sc))
 		return EINVAL;
@@ -2049,6 +2049,7 @@ audio_pintr(void *v)
 
 	sc = v;
 	mixer = sc->sc_pmixer;
+	DPRINTFN(2, ("%s hwbuf.count=%d\n", __func__, mixer->hwbuf.count));
 
 	// 次のループを回す
 	// XXX カウントとは
