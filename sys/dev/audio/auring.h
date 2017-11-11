@@ -92,7 +92,11 @@ audio_ring_appended(audio_ring_t *ring, int n)
 {
 	KASSERT(is_valid_ring(ring));
 	KASSERT(n >= 0);
-	KASSERT(ring->count + n <= ring->capacity);
+	//KASSERT(ring->count + n <= ring->capacity);
+	if (!(ring->count + n <= ring->capacity)) {
+		panic("ring->count=%d n=%d ring->capacity=%d",
+			ring->count, n, ring->capacity);
+	}
 
 	ring->count += n;
 }

@@ -993,16 +993,13 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 {
 	int error;
 	audio_track_t *track = &file->ptrack;
-	TRACE(track, "");
+	TRACE(track, "resid=%u", (int)uio->uio_resid);
 
 #if defined(_KERNEL)
 	KASSERT(mutex_owned(sc->sc_lock));
 
 	if (sc->hw_if == NULL)
 		return ENXIO;
-
-	DPRINTFN(1, ("%s: resid=%zu\n", __func__,
-	    uio->uio_resid));
 
 	if (uio->uio_resid == 0) {
 		sc->sc_eof++;
@@ -1034,6 +1031,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 		/* userio の空きバイト数を求める */
 		int free_count = audio_ring_unround_free_count(track->input);
 		int free_bytelen = free_count * track->inputfmt.channels * track->inputfmt.stride / 8 - track->subframe_buf_used;
+		TRACE(track, "free=%d", free_count);
 
 		if (free_bytelen == 0) {
 			audio_waitio(sc, &sc->sc_wchan, track);
@@ -1079,11 +1077,11 @@ audio_waitio(struct audio_softc *sc, kcondvar_t *chan, audio_track_t *track)
 
 	KASSERT(mutex_owned(sc->sc_lock));
 
-	DPRINTFN(1, ("%s start\n", __func__));
+	TRACE(track, "wait");
 	/* Wait for pending I/O to complete. */
 	error = cv_wait_sig(chan, sc->sc_lock);
 
-	DPRINTFN(1, ("%s error=%d\n", __func__, error));
+	TRACE(track, "error=%d", error);
 	return error;
 #else
 	// 本当は割り込みハンドラからトラックが消費されるんだけど
