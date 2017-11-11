@@ -920,7 +920,8 @@ audio_mixer_play_period(audio_trackmixer_t *mixer /*, bool force */)
 	/* ハードウェアへ通知する */
 	TRACE0("start count=%d mixseq=%d hwseq=%d", count, (int)mixer->mixseq, (int)mixer->hwseq);
 #if defined(_KERNEL)
-	audiostartp(mixer->sc);
+	if (!mixer->sc->sc_pbusy)
+		audiostartp(mixer->sc);
 #else
 	audio_softc_play_start(mixer->sc);
 #endif

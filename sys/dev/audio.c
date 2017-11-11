@@ -1955,6 +1955,8 @@ audiostartr(struct audio_softc *sc)
 	return error;
 }
 
+// ハードウェア再生を開始する。
+// sc_pbusy でない時 (HW 再生がとまっている時) だけ呼び出せる。
 int
 audiostartp(struct audio_softc *sc)
 {
@@ -1963,6 +1965,7 @@ audiostartp(struct audio_softc *sc)
 	int blksize;
 
 	//KASSERT(mutex_owned(sc->sc_lock));
+	KASSERT(!sc->sc_pbusy);
 
 	error = 0;
 	DPRINTF(("audiostartp busy=%d\n", sc->sc_pbusy));
