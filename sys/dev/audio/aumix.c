@@ -1035,6 +1035,10 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 
 		if (free_bytelen == 0) {
 			audio_waitio(sc, &sc->sc_wchan, track);
+#if defined(_KERNEL)	/* XXX ifdef? */
+			// free_count 再計算のため戻る
+			continue;
+#endif
 		}
 
 		// 今回 uiomove するバイト数 */
