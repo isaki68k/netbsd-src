@@ -223,7 +223,7 @@ static int audio_file_setinfo_check(audio_format2_t *,
 static int audio_file_setinfo_set(audio_track_t *, audio_format2_t *,
 	const struct audio_prinfo *, bool);
 static int audio_setinfo_hw(struct audio_softc *, struct audio_info *);
-static int audio_set_params(struct audio_softc *);
+static int audio_set_params(struct audio_softc *, int);
 static int audiogetinfo(struct audio_softc *, struct audio_info *, int,
 	audio_file_t *);
 static int audio_getenc(struct audio_softc *, struct audio_encoding *);
@@ -234,6 +234,8 @@ static int audio_check_params(struct audio_params *);
 static int audio_check_params2(const audio_format2_t *);
 static int xxx_select_freq(const struct audio_format *);
 static int xxx_config_hwfmt(struct audio_softc *, audio_format2_t *, int);
+static int xxx_config_by_format(struct audio_softc *, audio_format2_t *, int);
+static int xxx_config_by_encoding(struct audio_softc *, audio_format2_t *, int);
 static int audio_xxx_config(struct audio_softc *, int);
 static void audio_prepare_enc_xxx(struct audio_softc *sc);
 
@@ -2214,6 +2216,17 @@ xxx_select_freq(const struct audio_format *fmt)
 static int
 xxx_config_hwfmt(struct audio_softc *sc, audio_format2_t *cand, int mode)
 {
+	if (sc->hw_if->query_format) {
+		return xxx_config_by_format(sc, cand, mode);
+	} else {
+		return xxx_config_by_encoding(sc, cand, mode);
+	}
+}
+
+// HW フォーマットを query_format を使って決定する
+static int
+xxx_config_by_format(struct audio_softc *sc, audio_format2_t *cand, int mode)
+{
 	const struct audio_format *formats;
 	int nformats;
 	int i;
@@ -2283,6 +2296,49 @@ xxx_config_hwfmt(struct audio_softc *sc, audio_format2_t *cand, int mode)
 	return 0;
 }
 
+// HW フォーマットを query_format を使わずに決定する
+// とても query_format を書き起こせないような古いドライバ向けなので、
+// 探索パラメータはこれでよい。
+static int
+xxx_config_by_encoding(struct audio_softc *sc, audio_format2_t *cand, int mode)
+{
+	static int freqlist[] = { 48000, 44100, 22050, 11025, 8000, 4000 };
+	audio_format2_t fmt;
+	int ch, i, freq;
+	int error;
+
+	fmt.encoding  = AUDIO_ENCODING_SLINEAR_LE;
+	fmt.precision = AUDIO_INTERNAL_BITS;
+	fmt.stride    = AUDIO_INTERNAL_BITS;
+
+	for (ch = 2; ch > 0; ch--) {
+		for (i = 0; i < __arraycount(freqlist); i++) {
+			freq = freqlist[i];
+
+			fmt.channels = ch;
+			fmt.sample_rate = freq;
+			if (mode == AUMODE_PLAY) {
+				sc->sc_phwfmt = fmt;
+			} else {
+				sc->sc_rhwfmt = fmt;
+			}
+			error = audio_set_params(sc, mode);
+			if (error == 0) {
+				// 設定できたのでこれを採用
+				*cand = fmt;
+				printf("%s selected: ch=%d freq=%d\n", __func__,
+				    cand->channels,
+				    cand->sample_rate);
+				return 0;
+			}
+			printf("%s trying ch=%d freq=%d failed\n", __func__,
+				    cand->channels,
+				    cand->sample_rate);
+		}
+	}
+	return ENXIO;
+}
+
 // sc_playback/capture に応じて再生か録音のフォーマットを選択して設定する。
 // だめだった方は false にする。
 //
@@ -2334,7 +2390,13 @@ audio_xxx_config(struct audio_softc *sc, int is_indep)
 		sc->sc_rhwfmt = fmt;
 	}
 
-	error = audio_set_params(sc);
+	mode = 0;
+	if (sc->sc_can_playback)
+		mode |= AUMODE_PLAY;
+	if (sc->sc_can_capture)
+		mode |= AUMODE_RECORD;
+
+	error = audio_set_params(sc, mode);
 	if (error)
 		return error;
 
@@ -2834,21 +2896,14 @@ abort1:
 // pp, rp は in/out parameter ではなくす。
 // hw->set_params は値を変更できない。(無視する)
 static int
-audio_set_params(struct audio_softc *sc)
+audio_set_params(struct audio_softc *sc, int setmode)
 {
 	audio_params_t pp, rp;
 	int error;
-	int setmode;
 	int usemode;
 #ifdef OLD_FILTER
 	stream_filter_list_t pfilters, rfilters;
 #endif
-
-	setmode = 0;
-	if (sc->sc_can_playback)
-		setmode |= AUMODE_PLAY;
-	if (sc->sc_can_capture)
-		setmode |= AUMODE_RECORD;
 
 	usemode = setmode;
 	pp = format2_to_params(&sc->sc_phwfmt);
