@@ -2062,6 +2062,11 @@ audio_pintr(void *v)
 	int count = mixer->frames_per_block;
 	audio_ring_tookfromtop(&mixer->hwbuf, count);
 	audio_trackmixer_intr(sc->sc_pmixer, count);
+	if (mixer->hwbuf.count == 0) {
+		DPRINTFN(2, ("%s halt\n", __func__));
+		sc->hw_if->halt_output(sc->hw_hdl);
+		sc->sc_pbusy = false;
+	}
 }
 
 /*

@@ -837,7 +837,12 @@ audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track)
 	/* トラックバッファを取り込んだことを反映 */
 	// mixseq はこの時点ではまだ前回の値なのでトラック側へは +1 
 	track->seq = mixer->mixseq + 1;
-	TRACE(track, "seq=%d, mixed+=%d", (int)track->seq, count);
+#if defined(_KERNEL)
+	// outputbuf の空きを待ってる人に通知
+	struct audio_softc *sc = track->mixer->sc;
+	cv_broadcast(&sc->sc_wchan);
+#endif
+	TRACE(track, "broadcast; trseq=%d count=%d", (int)track->seq, count);
 	return 1;
 }
 
