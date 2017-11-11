@@ -1360,7 +1360,10 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 		}
 
 		/* Set speaker mode if half duplex */
-		if (!sc->sc_full_duplex) {
+		// XXX audio(9) にはハーフで録再を切り替える際に使うと
+		// 書いてある気がするんだけど、あと
+		// Full dup で録再同時に起きてたらどうするのかとか。
+		if (!sc->sc_full_duplex || 1/*XXX*/) {
 			if (sc->hw_if->speaker_ctl) {
 				int on;
 				if ((af->mode & AUMODE_PLAY) != 0) {
