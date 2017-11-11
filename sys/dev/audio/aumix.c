@@ -565,7 +565,7 @@ audio_track_unlock(audio_track_t *track)
 
 // ring が空でなく 1 ブロックに満たない時、1ブロックまで無音を追加します。
 static int
-audio_append_slience(audio_track_t *track, audio_ring_t *ring)
+audio_append_silence(audio_track_t *track, audio_ring_t *ring)
 {
 	KASSERT(track);
 	KASSERT(is_internal_format(&ring->fmt));
@@ -612,7 +612,7 @@ audio_apply_stage(audio_track_t *track, audio_stage_t *stage, bool isdrain)
 
 		/* ブロックサイズに整形 */
 		if (isdrain) {
-			audio_append_slience(track, stage->dst);
+			audio_append_silence(track, stage->dst);
 		} else {
 			int fpb = stage->dst->fmt.sample_rate * AUDIO_BLK_MS / 1000;
 			if (stage->dst->count < fpb) {
@@ -663,7 +663,7 @@ audio_track_play(audio_track_t *track, bool isdrain)
 		/* 内部フォーマットだとわかっている */
 		/* 周波数変換の結果、ブロック未満の端数フレームが出ることもあるし、
 		変換なしのときは入力自体が半端なときもあろう */
-		audio_append_slience(track, &track->outputbuf);
+		audio_append_silence(track, &track->outputbuf);
 	}
 
 	if (track->input == &track->outputbuf) {
