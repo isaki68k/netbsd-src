@@ -46,6 +46,8 @@ typedef uint64_t uinternal2_t;
 #error Invalid AUDIO_INTERNAL_BITS
 #endif
 
+// 出力バッファのブロック数
+#define NBLKOUT	(16)
 
 #if defined(_KERNEL)
 #define AUDIO_ENCODING_MULAW		AUDIO_ENCODING_ULAW

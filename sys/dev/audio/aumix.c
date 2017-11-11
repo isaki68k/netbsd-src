@@ -546,7 +546,7 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *fmt)
 	// 出力フォーマットに従って outputbuf を作る
 	track->outputbuf.top = 0;
 	track->outputbuf.count = 0;
-	track->outputbuf.capacity = 16 * track->outputbuf.fmt.sample_rate * AUDIO_BLK_MS / 1000;
+	track->outputbuf.capacity = NBLKOUT * track->outputbuf.fmt.sample_rate * AUDIO_BLK_MS / 1000;
 	track->outputbuf.sample = audio_realloc(track->outputbuf.sample, RING_BYTELEN(&track->outputbuf));
 }
 
