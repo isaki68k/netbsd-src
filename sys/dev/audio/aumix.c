@@ -1040,7 +1040,11 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 		TRACE(track, "free=%d", free_count);
 
 		if (free_bytelen == 0) {
-			audio_waitio(sc, &sc->sc_wchan, track);
+			error = audio_waitio(sc, &sc->sc_wchan, track);
+			if (error < 0)
+				error = EINTR;	/* XXX ? */
+			if (error)
+				return error;
 #if defined(_KERNEL)	/* XXX ifdef? */
 			// free_count 再計算のため戻る
 			continue;
