@@ -682,7 +682,6 @@ audio_track_play(audio_track_t *track, bool isdrain)
 void
 audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 {
-	TRACE0("");
 	memset(mixer, 0, sizeof(audio_trackmixer_t));
 	mixer->sc = sc;
 
@@ -715,6 +714,8 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 		mixer->hwbuf.sample = kmem_zalloc(bufsize, KM_SLEEP);
 	}
 #else
+	TRACE0("");
+
 	mixer->hwbuf.fmt = audio_softc_get_hw_format(mixer->sc, mode);
 	mixer->hwbuf.capacity = audio_softc_get_hw_capacity(mixer->sc);
 	mixer->hwbuf.sample = audio_softc_allocm(mixer->sc, RING_BYTELEN(&mixer->hwbuf));
