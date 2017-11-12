@@ -16,6 +16,42 @@
 #include "auintr.h"
 #endif // !_KERNEL
 
+/*
+ * カーネル内
+ *
+ * (1人目)
+ * audio_write
+ *  v
+ * audio_track_play
+ *  v 変換
+ * audiostartp
+ *  v ミキサ駆動
+ * audio_mixer_play
+ *  v 合成
+ * audio_mixer_play_period
+ *  v HW変換
+ * audio_start_output
+ *  :
+ *
+ * audio_pintr
+ *  v
+ * audio_trackmixer_intr
+ *  v
+ * audio_mixer_play
+ *  v
+ * audio_mixer_play_period
+ *  v
+ * audio_start_output
+ *  :
+ *
+ * (2人目)
+ * audio_write
+ *  v
+ * audio_track_play
+ *  v
+ * (audiostartp不要)
+ */
+
 #define AUDIO_TRACE
 #ifdef AUDIO_TRACE
 #define TRACE0(fmt, ...)	do {	\
@@ -672,10 +708,15 @@ audio_track_play(audio_track_t *track, bool isdrain)
 		track->outputcounter += track->outputbuf.count - track_count_0;
 	}
 
-//	TRACE(track, "trackbuf=%d", track->outputbuf.count);
+	TRACE(track, "busy=%d outbuf.cnt=%d", track->mixer->busy,
+		track->outputbuf.count);
 	// 1 トラック目の再生開始可能条件を満たしたらミキサ起動
 	if (track->mixer->busy == false && track->outputbuf.count >= track->mixer->frames_per_block) {
+#if defined(_KERNEL)
+		audiostartp(track->mixer->sc);
+#else
 		audio_mixer_play(track->mixer, false);
+#endif
 	}
 }
 
@@ -781,6 +822,11 @@ audio_mixer_play(audio_trackmixer_t *mixer, bool isdrain)
 		// バッファの準備ができたら転送。
 		mixer->mixbuf.count = mixer->frames_per_block;
 		audio_mixer_play_period(mixer);
+
+#if defined(_KERNEL)
+		// カーネルなら、1回転送できたら戻るはず
+		return;
+#endif
 	}
 
 	TRACE0("hwseq=%d mixseq=%d", (int)mixer->hwseq, (int)mixer->mixseq);
@@ -925,10 +971,7 @@ audio_mixer_play_period(audio_trackmixer_t *mixer /*, bool force */)
 
 	/* ハードウェアへ通知する */
 	TRACE0("start count=%d mixseq=%d hwseq=%d", count, (int)mixer->mixseq, (int)mixer->hwseq);
-#if defined(_KERNEL)
-	if (!mixer->sc->sc_pbusy)
-		audiostartp(mixer->sc);
-#else
+#if !defined(_KERNEL)
 	audio_softc_play_start(mixer->sc);
 #endif
 	mixer->hw_output_counter += count;

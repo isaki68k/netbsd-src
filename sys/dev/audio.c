@@ -137,6 +137,8 @@ int	audio_idle_timeout = 30;
 #define AUDIO_ENCODING_ULINEAR_NE AUDIO_ENCODING_ULINEAR_BE
 #endif
 
+#define sc_pbusy sc_pmixer->busy
+
 struct portname {
 	const char *name;
 	int mask;
@@ -210,6 +212,7 @@ static int audio_mmap(struct audio_softc *, off_t *, size_t, int, int *, int *,
 
 static int audiostartr(struct audio_softc *);
 static int audiostartp(struct audio_softc *);
+static int audio_start_output(struct audio_softc *);
 static void audio_pintr(void *);
 static void audio_rintr(void *);
 
@@ -1957,27 +1960,43 @@ audiostartr(struct audio_softc *sc)
 	return error;
 }
 
-// ハードウェア再生を開始する。
-// sc_pbusy でない時 (HW 再生がとまっている時) だけ呼び出せる。
+// 再生ミキサーを始動する。
+// 再生ミキサーがとまっている時(!sc_pbusyの時)だけ呼び出せる。
 int
 audiostartp(struct audio_softc *sc)
+{
+	KASSERT(mutex_owned(sc->sc_lock));
+	//KASSERT(!sc->sc_pbusy);
+
+	DPRINTF(("audiostartp busy=%d\n", sc->sc_pbusy));
+	if (sc->sc_pbusy == true)
+		return 0;
+
+	if (!audio_can_playback(sc))
+		return EINVAL;
+
+	audio_mixer_play(sc->sc_pmixer, false/*XXX?*/);
+
+	audio_start_output(sc);
+	return 0;
+}
+
+// HW 再生を開始する。
+// trigger なら最初の1回だけ呼ぶこと。
+// start なら1回ごとに呼ぶこと。
+static int
+audio_start_output(struct audio_softc *sc)
 {
 	audio_trackmixer_t *mixer;
 	int error;
 	int blksize;
 
-	//KASSERT(mutex_owned(sc->sc_lock));
-	KASSERT(!sc->sc_pbusy);
-
 	error = 0;
-	DPRINTF(("audiostartp busy=%d\n", sc->sc_pbusy));
-
-	if (!audio_can_playback(sc))
-		return EINVAL;
-
 	mixer = sc->sc_pmixer;
 	blksize = mixer->frames_per_block *
 	    mixer->hwbuf.fmt.channels * mixer->hwbuf.fmt.stride / NBBY;
+
+	DPRINTF(("%s\n", __func__));
 
 	if (sc->hw_if->trigger_output) {
 		audio_params_t params;
@@ -1996,8 +2015,6 @@ audiostartp(struct audio_softc *sc)
 		return error;
 	}
 
-	// ここで再生ループ起動
-	sc->sc_pbusy = true;
 	return 0;
 }
 
@@ -2057,18 +2074,22 @@ audio_pintr(void *v)
 
 	sc = v;
 	mixer = sc->sc_pmixer;
-	DPRINTFN(2, ("%s hwbuf.count=%d\n", __func__, mixer->hwbuf.count));
+	DPRINTF(("%s hwbuf.count=%d\n", __func__, mixer->hwbuf.count));
 
 	// 次のループを回す
-	// XXX カウントとは
 	int count = mixer->frames_per_block;
 	audio_ring_tookfromtop(&mixer->hwbuf, count);
 	audio_trackmixer_intr(sc->sc_pmixer, count);
+
+	if (sc->hw_if->trigger_output == NULL)
+		audio_start_output(mixer->sc);
+#if 0
 	if (mixer->hwbuf.count == 0) {
-		DPRINTFN(2, ("%s halt\n", __func__));
+		DPRINTF(("%s halt\n", __func__));
 		sc->hw_if->halt_output(sc->hw_hdl);
 		sc->sc_pbusy = false;
 	}
+#endif
 }
 
 /*
