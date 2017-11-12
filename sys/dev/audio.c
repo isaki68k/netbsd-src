@@ -2076,6 +2076,10 @@ audio_pintr(void *v)
 	mixer = sc->sc_pmixer;
 	DPRINTF(("%s hwbuf.count=%d\n", __func__, mixer->hwbuf.count));
 
+	/* XXX どうすべ */
+	if (mixer->hwbuf.count == 0)
+		return;
+
 	// 次のループを回す
 	int count = mixer->frames_per_block;
 	audio_ring_tookfromtop(&mixer->hwbuf, count);
