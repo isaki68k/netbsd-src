@@ -1422,6 +1422,8 @@ audio_drain(struct audio_softc *sc, audio_track_t *track)
 int
 audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 {
+	int error;
+
 	KASSERT(mutex_owned(sc->sc_lock));
 
 	// いる?
@@ -1429,7 +1431,7 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 	//	return ENXIO;
 
 	// これが最後の録音トラックなら、halt_input を呼ぶ?
-	if (sc->sc_ropens == 1 && (flags & FREAD) != 0) {
+	if ((flags & FREAD) != 0) {
 		// SB とかいくつかのドライバは halt_input と halt_output に
 		// 同じルーチンを使用しているので、その場合は full duplex なら
 		// halt_input を呼ばなくする?。ドライバのほうを直すべき。
@@ -1438,10 +1440,22 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 		 * to halt input and output so don't halt input if
 		 * in full duplex mode.  These drivers should be fixed.
 		 */
-		// XXX これはドライバのほうを先に直せばこれだけで済む
-		sc->hw_if->halt_input(sc->hw_hdl);
-
-		sc->sc_rbusy = false;
+		// XXX これはドライバのほうを先に直せば済む話
+		if (sc->sc_ropens == 1) {
+			if (sc->sc_rbusy) {
+				DPRINTF(("%s halt_input\n", __func__));
+				mutex_enter(sc->sc_intr_lock);
+				error = sc->hw_if->halt_input(sc->hw_hdl);
+				mutex_exit(sc->sc_intr_lock);
+				if (error) {
+					aprint_error_dev(sc->dev,
+					    "halt_input failed with %d\n",
+					    error);
+				}
+				sc->sc_rbusy = false;
+			}
+		}
+		sc->sc_ropens--;
 	}
 
 	// 再生トラックなら、audio_drain を呼ぶ
@@ -1450,13 +1464,36 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 		//audio_file_drain(sc);	// ?
 
 		if (sc->sc_popens == 1) {
+			if (sc->sc_pbusy) {
+				DPRINTF(("%s halt_output\n", __func__));
+				mutex_enter(sc->sc_intr_lock);
+				error = sc->hw_if->halt_output(sc->hw_hdl);
+				mutex_exit(sc->sc_intr_lock);
+				if (error) {
+					aprint_error_dev(sc->dev,
+					    "halt_output failed with %d\n",
+					    error);
+				}
+				sc->sc_pbusy = false;
+			}
+		}
+		sc->sc_popens--;
+	}
+
+	// 最後なら close
+	if (sc->sc_popens + sc->sc_ropens == 0) {
+		if (sc->hw_if->close) {
+			DPRINTF(("%s hw_if close\n", __func__));
+			mutex_enter(sc->sc_intr_lock);
+			sc->hw_if->close(sc->hw_hdl);
+			mutex_exit(sc->sc_intr_lock);
 		}
 	}
 
-
-	// hw->close を呼ぶ
 	// cred 解放?
 	// リソース解放
+	SLIST_REMOVE(&sc->sc_files, file, audio_file, entry);
+	kmem_free(file, sizeof(*file));
 	return 0;
 }
 
@@ -2087,13 +2124,6 @@ audio_pintr(void *v)
 
 	if (sc->hw_if->trigger_output == NULL)
 		audio_start_output(mixer->sc);
-#if 0
-	if (mixer->hwbuf.count == 0) {
-		DPRINTF(("%s halt\n", __func__));
-		sc->hw_if->halt_output(sc->hw_hdl);
-		sc->sc_pbusy = false;
-	}
-#endif
 }
 
 /*
