@@ -2042,14 +2042,20 @@ audio_start_output(struct audio_softc *sc)
 		    RING_TOP(internal_t, &mixer->hwbuf),
 		    RING_BOT(internal_t, &mixer->hwbuf),
 		    blksize, audio_pintr, sc, &params);
+		if (error) {
+			aprint_error_dev(sc->dev,
+			    "trigger_output failed with %d\n", error);
+			return error;
+		}
 	} else {
 		error = sc->hw_if->start_output(sc->hw_hdl,
 		    RING_TOP(internal_t, &mixer->hwbuf),
 		    blksize, audio_pintr, sc);
-	}
-	if (error) {
-		printf("%s failed: %d\n", __func__, error);
-		return error;
+		if (error) {
+			aprint_error_dev(sc->dev,
+			    "start_output failed with %d\n", error);
+			return error;
+		}
 	}
 
 	return 0;
@@ -2307,50 +2313,50 @@ xxx_config_by_format(struct audio_softc *sc, audio_format2_t *cand, int mode)
 		const struct audio_format *fmt = &formats[i];
 
 		if (!AUFMT_IS_VALID(fmt)) {
-			printf("fmt[%d] skip; INVALID\n", i);
+			DPRINTF(("fmt[%d] skip; INVALID\n", i));
 			continue;
 		}
 		if ((fmt->mode & mode) == 0) {
-			printf("fmt[%d] skip; mode not match %d\n", i, mode);
+			DPRINTF(("fmt[%d] skip; mode not match %d\n", i, mode));
 			continue;
 		}
 
 		if (fmt->encoding != AUDIO_ENCODING_SLINEAR_NE) {
-			printf("fmt[%d] skip; enc=%d\n", i, fmt->encoding);
+			DPRINTF(("fmt[%d] skip; enc=%d\n", i, fmt->encoding));
 			continue;
 		}
 		if (fmt->precision != AUDIO_INTERNAL_BITS ||
 		    fmt->validbits != AUDIO_INTERNAL_BITS) {
-			printf("fmt[%d] skip; precision %d/%d\n", i,
-			    fmt->validbits, fmt->precision);
+			DPRINTF(("fmt[%d] skip; precision %d/%d\n", i,
+			    fmt->validbits, fmt->precision));
 			continue;
 		}
 		if (fmt->channels < cand->channels) {
-			printf("fmt[%d] skip; channels %d < %d\n", i,
-			    fmt->channels, cand->channels);
+			DPRINTF(("fmt[%d] skip; channels %d < %d\n", i,
+			    fmt->channels, cand->channels));
 			continue;
 		}
 		int freq = xxx_select_freq(fmt);
 		// XXX うーん
 		if (freq < cand->sample_rate) {
-			printf("fmt[%d] skip; frequency %d < %d\n", i,
-			    freq, cand->sample_rate);
+			DPRINTF(("fmt[%d] skip; frequency %d < %d\n", i,
+			    freq, cand->sample_rate));
 			continue;
 		}
 
 		// cand 更新
 		cand->channels = fmt->channels;
 		cand->sample_rate = freq;
-		printf("fmt[%d] cand ch=%d freq=%d\n", i,
-		    cand->channels, cand->sample_rate);
+		DPRINTF(("fmt[%d] cand ch=%d freq=%d\n", i,
+		    cand->channels, cand->sample_rate));
 	}
 
 	if (cand->sample_rate == 0) {
-		printf("%s no fmt\n", __func__);
+		DPRINTF(("%s no fmt\n", __func__));
 		return ENXIO;
 	}
-	printf("%s selected: ch=%d freq=%d\n", __func__,
-	    cand->channels, cand->sample_rate);
+	DPRINTF(("%s selected: ch=%d freq=%d\n", __func__,
+	    cand->channels, cand->sample_rate));
 	return 0;
 }
 
@@ -2383,14 +2389,16 @@ xxx_config_by_encoding(struct audio_softc *sc, audio_format2_t *cand, int mode)
 			if (error == 0) {
 				// 設定できたのでこれを採用
 				*cand = fmt;
-				printf("%s selected: ch=%d freq=%d\n", __func__,
+				DPRINTF(("%s selected: ch=%d freq=%d\n",
+				    __func__,
 				    fmt.channels,
-				    fmt.sample_rate);
+				    fmt.sample_rate));
 				return 0;
 			}
-			printf("%s trying ch=%d freq=%d failed\n", __func__,
-				    fmt.channels,
-				    fmt.sample_rate);
+			DPRINTF(("%s trying ch=%d freq=%d failed\n",
+			    __func__,
+			    fmt.channels,
+			    fmt.sample_rate));
 		}
 	}
 	return ENXIO;
