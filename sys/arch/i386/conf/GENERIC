@@ -1674,6 +1674,7 @@ pseudo-device	bridge			# simple inter-network bridging
 
 # miscellaneous pseudo-devices
 pseudo-device	pty			# pseudo-terminals
+pseudo-device	pad
 pseudo-device	sequencer		# MIDI sequencer
 # rnd works; RND_COM does not on port i386 yet.
 #options 	RND_COM			# use "com" randomness as well (BROKEN)
