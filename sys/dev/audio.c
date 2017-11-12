@@ -2317,11 +2317,10 @@ xxx_config_by_encoding(struct audio_softc *sc, audio_format2_t *cand, int mode)
 
 			fmt.channels = ch;
 			fmt.sample_rate = freq;
-			if (mode == AUMODE_PLAY) {
+			if ((mode & AUMODE_PLAY) != 0)
 				sc->sc_phwfmt = fmt;
-			} else {
+			if ((mode & AUMODE_RECORD) != 0)
 				sc->sc_rhwfmt = fmt;
-			}
 			error = audio_set_params(sc, mode);
 			if (error == 0) {
 				// 設定できたのでこれを採用
@@ -2375,11 +2374,11 @@ audio_xxx_config(struct audio_softc *sc, int is_indep)
 		}
 	} else {
 		/* not independent devices */
-		if (sc->sc_can_playback) {
-			mode = AUMODE_PLAY;
-		} else {
-			mode = AUMODE_RECORD;
-		}
+		mode = 0;
+		if (sc->sc_can_playback)
+			mode |= AUMODE_PLAY;
+		if (sc->sc_can_capture)
+			mode |= AUMODE_RECORD;
 		error = xxx_config_hwfmt(sc, &fmt, mode);
 		if (error) {
 			sc->sc_can_playback = false;
