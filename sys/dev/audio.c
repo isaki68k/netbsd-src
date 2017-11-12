@@ -2216,9 +2216,12 @@ xxx_select_freq(const struct audio_format *fmt)
 static int
 xxx_config_hwfmt(struct audio_softc *sc, audio_format2_t *cand, int mode)
 {
+	// 分かりやすさのため、しばらくどっち使ったか表示しとく
 	if (sc->hw_if->query_format) {
+		aprint_normal_dev(sc->dev, "use new query_format method\n");
 		return xxx_config_by_format(sc, cand, mode);
 	} else {
+		aprint_normal_dev(sc->dev, "use old set_param method\n");
 		return xxx_config_by_encoding(sc, cand, mode);
 	}
 }
