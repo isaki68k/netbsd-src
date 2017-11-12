@@ -1393,11 +1393,33 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 		}
 	}
 
+	// init_input/output
+	if ((af->mode & AUMODE_PLAY) != 0 && sc->sc_popens == 0) {
+		if (sc->hw_if->init_output) {
+			audio_ring_t *hwbuf = &sc->sc_pmixer->hwbuf;
+			error = sc->hw_if->init_output(sc->hw_hdl,
+			    hwbuf->sample,
+			    hwbuf->capacity *
+			    hwbuf->fmt.channels * hwbuf->fmt.stride / NBBY);
+			if (error)
+				goto bad;
+		}
+	}
+	if ((af->mode & AUMODE_RECORD) != 0 && sc->sc_ropens == 0) {
+		if (sc->hw_if->init_input) {
+			audio_ring_t *hwbuf = &sc->sc_rmixer->hwbuf;
+			error = sc->hw_if->init_input(sc->hw_hdl,
+			    hwbuf->sample,
+			    hwbuf->capacity *
+			    hwbuf->fmt.channels * hwbuf->fmt.stride / NBBY);
+			if (error)
+				goto bad;
+		}
+	}
+
 	error = fd_allocfile(&fp, &fd);
 	if (error)
 		goto bad;
-
-	DPRINTF(("audio_open: done sc_mode = 0x%x\n", af->mode));
 
 	// このミキサーどうするか
 	//grow_mixer_states(sc, 2);
