@@ -77,7 +77,10 @@ audio_ring_tookfromtop(audio_ring_t *ring, int n)
 {
 	KASSERT(is_valid_ring(ring));
 	KASSERT(n >= 0);
-	KASSERT(ring->count >= n);
+	//KASSERT(ring->count >= n);
+	if (!(ring->count >= n)) {
+		panic("ring->count=%d n=%d", ring->count, n);
+	}
 
 	ring->top = audio_ring_round(ring, ring->top + n);
 	ring->count -= n;
