@@ -2118,7 +2118,7 @@ audio_softintr_wr(void *cookie)
  * If no more buffers to play, output zero instead.
  * Do a wakeup if necessary.
  */
-void __unused
+void
 audio_pintr(void *v)
 {
 	struct audio_softc *sc;
