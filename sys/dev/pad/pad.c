@@ -464,10 +464,10 @@ pad_set_params(void *opaque, int setmode, int usemode,
 	KASSERT(mutex_owned(&sc->sc_lock));
 
 	if (auconv_set_converter(pad_formats, PAD_NFORMATS, AUMODE_PLAY,
-	    play, true, pfil) < 0)
+	    play, false, pfil) < 0)
 		return EINVAL;
 	if (auconv_set_converter(pad_formats, PAD_NFORMATS, AUMODE_RECORD,
-	    rec, true, rfil) < 0)
+	    rec, false, rfil) < 0)
 		return EINVAL;
 
 	if (pfil->req_size > 0)
