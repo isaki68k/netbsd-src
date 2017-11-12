@@ -1443,7 +1443,7 @@ bad:
 	return error;
 }
 
-int __unused
+int
 audio_drain(struct audio_softc *sc, audio_track_t *track)
 {
 	return 0;
@@ -1491,7 +1491,7 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 	// 再生トラックなら、audio_drain を呼ぶ
 	// 最後の再生トラックなら、hw audio_drain、halt_output を呼ぶ
 	if ((flags & FWRITE) != 0) {
-		//audio_file_drain(sc);	// ?
+		audio_drain(sc, &file->ptrack);
 
 		if (sc->sc_popens == 1) {
 			if (sc->sc_pbusy) {
@@ -1703,6 +1703,7 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		printf("AUDIO_DRAIN not implemented\n");
 		// audio_drain 呼んで
 		// 最後の再生トラックなら hw_if->drain をコールする
+		error = audio_drain(sc, &file->ptrack);
 		break;
 
 	case AUDIO_GETDEV:
