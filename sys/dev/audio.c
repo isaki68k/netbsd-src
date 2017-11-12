@@ -1354,7 +1354,9 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	// }
 	if (sc->sc_popens + sc->sc_ropens == 0) {
 		/* First open */
-		// kauth?
+
+		sc->sc_cred = kauth_cred_get();
+		kauth_cred_hold(sc->sc_cred);
 
 		if (sc->hw_if->open) {
 			mutex_enter(sc->sc_intr_lock);
@@ -1382,6 +1384,12 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 				if (error)
 					goto bad;
 			}
+		}
+	} else /* if (sc->sc_multiuser == false) */ {
+		uid_t euid = kauth_cred_geteuid(kauth_cred_get());
+		if (euid != 0 && kauth_cred_geteuid(sc->sc_cred) != euid) {
+			error = EPERM;
+			goto bad;
 		}
 	}
 
@@ -1488,9 +1496,10 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 			sc->hw_if->close(sc->hw_hdl);
 			mutex_exit(sc->sc_intr_lock);
 		}
+
+		kauth_cred_free(sc->sc_cred);
 	}
 
-	// cred 解放?
 	// リソース解放
 	SLIST_REMOVE(&sc->sc_files, file, audio_file, entry);
 	kmem_free(file, sizeof(*file));

@@ -161,6 +161,8 @@ struct audio_softc {
 
 	int		sc_eof;		/* EOF, i.e. zero sized write, counter */
 
+	kauth_cred_t sc_cred;
+
 	mixer_ctrl_t	*sc_mixer_state;
 	int		sc_nmixer_states;
 	int		sc_static_nmixer_states;
