@@ -2327,13 +2327,13 @@ xxx_config_by_encoding(struct audio_softc *sc, audio_format2_t *cand, int mode)
 				// 設定できたのでこれを採用
 				*cand = fmt;
 				printf("%s selected: ch=%d freq=%d\n", __func__,
-				    cand->channels,
-				    cand->sample_rate);
+				    fmt.channels,
+				    fmt.sample_rate);
 				return 0;
 			}
 			printf("%s trying ch=%d freq=%d failed\n", __func__,
-				    cand->channels,
-				    cand->sample_rate);
+				    fmt.channels,
+				    fmt.sample_rate);
 		}
 	}
 	return ENXIO;
