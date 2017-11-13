@@ -199,8 +199,8 @@ static int audio_drain(struct audio_softc *, audio_track_t *);
 static int audio_close(struct audio_softc *, int, audio_file_t *);
 static int audio_read(struct audio_softc *, struct uio *, int, audio_file_t *);
 //static int audio_write(struct audio_softc *, struct uio *, int, audio_file_t *);
-static void audio_clear(struct audio_softc *);
-static void audio_clear_intr_unlocked(struct audio_softc *sc);
+static void audio_file_clear(struct audio_softc *, audio_file_t *);
+static void audio_hw_clear(struct audio_softc *);
 static int audio_ioctl(dev_t, struct audio_softc *, u_long, void *, int,
 		       struct lwp *, audio_file_t *);
 static int audio_poll(struct audio_softc *, int, struct lwp *, audio_file_t *);
@@ -1571,17 +1571,46 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 	return error;	/* XXX */
 }
 
-// 再生中なら再生を停止
-// 録音中なら録音を停止 (最後の録音停止時だけ halt_input 呼んでるけど)
-void __unused
-audio_clear(struct audio_softc *sc)
+// 従来は、再生も録音もその場で停止、hw halt_input/output も呼ぶ、だった。
+// drain と違ってその場で終了させる。
+// 呼ばれていた場所は以下の2箇所。
+// o audio_ioctl AUDIO_FLUSH で一切合切クリアする時
+// o audiosetinfo でパラメータを変更する必要がある時
+// なので、これは track(file) に対する処理に変わる、でいいんじゃなかろうか。
+//
+// この file の再生 track と録音 track を即座に空にします。
+// ミキサーおよび HW には関与しません。
+void
+audio_file_clear(struct audio_softc *sc, audio_file_t *file)
 {
-	// clear とは
+	audio_track_t *track;
+
+	// XXX 元々ハードウェア転送にも手を出すので intr_lock も必要だったが、
+	// 今は track の outputbuf のロックだけでよくなったのでは?
+	// track outputbuf のロックについては後ほど検討。
+	//KASSERT(mutex_owned(sc->sc_intr_lock));
+
+	// XXX track_clear() があってもいいかも
+	if ((file->mode & AUMODE_PLAY) != 0) {
+		track = &file->ptrack;
+		track->outputbuf.count = 0;
+		track->subframe_buf_used = 0;
+	}
+	if ((file->mode & AUMODE_RECORD) != 0) {
+		track = &file->rtrack;
+		track->outputbuf.count = 0;
+		track->subframe_buf_used = 0;
+	}
 }
 
-void __unused
-audio_clear_intr_unlocked(struct audio_softc *sc)
+// こっちは HW の再生/録音をクリアする??
+// 入出力port の切り替えのために必要らしいけど、ほんとか。
+void
+audio_hw_clear(struct audio_softc *sc)
 {
+	mutex_enter(sc->sc_intr_lock);
+	DPRINTF(("%s not implemented\n", __func__));
+	mutex_exit(sc->sc_intr_lock);
 }
 
 // ここに audio_write
@@ -2781,8 +2810,7 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	}
 
 	if (SPECIFIED(ai->mode) || pchanges || rchanges) {
-		// XXX どこまでどうなる?
-		audio_clear_intr_unlocked(sc);
+		audio_file_clear(sc, file);
 #ifdef AUDIO_DEBUG
 		printf("setting mode to %d (pchanges=%d rchanges=%d)\n",
 		    mode, pchanges, rchanges);
@@ -2919,7 +2947,7 @@ audio_setinfo_hw(struct audio_softc *sc, struct audio_info *ai)
 	rport = 0;
 
 	if (SPECIFIED(p->port) || SPECIFIED(r->port)) {
-		audio_clear_intr_unlocked(sc);
+		audio_hw_clear(sc);
 		cleared = true;
 	}
 	if (SPECIFIED(p->port)) {
