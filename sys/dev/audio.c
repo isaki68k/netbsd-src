@@ -183,7 +183,7 @@ static void	audio_softintr_wr(void *);
 
 static int audio_enter(dev_t, struct audio_softc **);
 static void audio_exit(struct audio_softc *);
-static int audio_waitio(struct audio_softc *, kcondvar_t *, audio_track_t *);
+static int audio_waitio(struct audio_softc *, audio_track_t *);
 
 static int audioclose(struct file *);
 static int audioread(struct file *, off_t *, struct uio *, kauth_cred_t, int);
@@ -390,9 +390,6 @@ audioattach(device_t parent, device_t self, void *aux)
 	sa = (struct audio_attach_args *)aux;
 	hw_if = sa->hwif;
 	hdlp = sa->hdl;
-
-	cv_init(&sc->sc_rchan, "audiord");
-	cv_init(&sc->sc_wchan, "audiowr");
 
 	if (hw_if == NULL || hw_if->get_locks == NULL) {
 		panic("audioattach: missing hw_if method");
@@ -714,11 +711,9 @@ audiodetach(device_t self, int flags)
 
 	/* Start draining existing accessors of the device. */
 	// なぜここで config_detach_children() ?
-	mutex_enter(sc->sc_lock);
+
+	// XXX 元々ここで dying 立てて wchan/rchan を broadcast してた
 	sc->sc_dying = true;
-	cv_broadcast(&sc->sc_wchan);
-	cv_broadcast(&sc->sc_rchan);
-	mutex_exit(sc->sc_lock);
 
 	/* locate the major number */
 	maj = cdevsw_lookup_major(&audio_cdevsw);
@@ -769,9 +764,6 @@ audiodetach(device_t self, int flags)
 #endif
 	seldestroy(&sc->sc_rsel);
 	seldestroy(&sc->sc_wsel);
-
-	cv_destroy(&sc->sc_rchan);
-	cv_destroy(&sc->sc_wchan);
 
 	return 0;
 }
@@ -1316,8 +1308,10 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 		af->mode |= AUMODE_PLAY;
 	if ((flags & FREAD) != 0 && audio_can_capture(sc))
 		af->mode |= AUMODE_RECORD;
-	if (af->mode == 0)
-		return ENXIO;
+	if (af->mode == 0) {
+		error = ENXIO;
+		goto bad1;
+	}
 
 	// トラックの初期化
 	// トラックバッファの初期化
@@ -1343,7 +1337,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 		error = audio_file_setinfo(sc, af, &ai);
 	}
 	if (error)
-		goto bad;
+		goto bad2;
 
 	// 録再合わせて1本目のオープンなら {
 	//	kauth の処理?
@@ -1363,7 +1357,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 			error = sc->hw_if->open(sc->hw_hdl, af->mode);
 			mutex_exit(sc->sc_intr_lock);
 			if (error)
-				goto bad;
+				goto bad2;
 		}
 
 		/* Set speaker mode if half duplex */
@@ -1382,14 +1376,14 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 				error = sc->hw_if->speaker_ctl(sc->hw_hdl, on);
 				mutex_exit(sc->sc_intr_lock);
 				if (error)
-					goto bad;
+					goto bad2;
 			}
 		}
 	} else /* if (sc->sc_multiuser == false) */ {
 		uid_t euid = kauth_cred_geteuid(kauth_cred_get());
 		if (euid != 0 && kauth_cred_geteuid(sc->sc_cred) != euid) {
 			error = EPERM;
-			goto bad;
+			goto bad2;
 		}
 	}
 
@@ -1402,7 +1396,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 			    hwbuf->capacity *
 			    hwbuf->fmt.channels * hwbuf->fmt.stride / NBBY);
 			if (error)
-				goto bad;
+				goto bad2;
 		}
 	}
 	if ((af->mode & AUMODE_RECORD) != 0 && sc->sc_ropens == 0) {
@@ -1413,13 +1407,13 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 			    hwbuf->capacity *
 			    hwbuf->fmt.channels * hwbuf->fmt.stride / NBBY);
 			if (error)
-				goto bad;
+				goto bad2;
 		}
 	}
 
 	error = fd_allocfile(&fp, &fd);
 	if (error)
-		goto bad;
+		goto bad2;
 
 	// このミキサーどうするか
 	//grow_mixer_states(sc, 2);
@@ -1438,7 +1432,12 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	*nfp = fp;
 	return error;
 
-bad:
+bad2:
+	if ((af->mode & AUMODE_PLAY) != 0)
+		cv_destroy(&af->ptrack.outchan);
+	if ((af->mode & AUMODE_RECORD) != 0)
+		cv_destroy(&af->rtrack.outchan);
+bad1:
 	kmem_free(af, sizeof(*af));
 	return error;
 }
@@ -1485,6 +1484,8 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 				sc->sc_rbusy = false;
 			}
 		}
+		cv_destroy(&file->rtrack.outchan);
+
 		sc->sc_ropens--;
 	}
 
@@ -1507,6 +1508,8 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 				sc->sc_pbusy = false;
 			}
 		}
+		cv_destroy(&file->ptrack.outchan);
+
 		sc->sc_popens--;
 	}
 
@@ -2103,7 +2106,7 @@ audio_softintr_rd(void *cookie)
 	pid_t pid;
 
 	mutex_enter(sc->sc_lock);
-	cv_broadcast(&sc->sc_rchan);
+	// XXX 元々ここで rchan を broadcast してた
 	selnotify(&sc->sc_rsel, 0, NOTE_SUBMIT);
 	if ((pid = sc->sc_async_audio) != 0) {
 		DPRINTFN(3, ("audio_softintr_rd: sending SIGIO %d\n", pid));
@@ -2123,7 +2126,7 @@ audio_softintr_wr(void *cookie)
 	pid_t pid;
 
 	mutex_enter(sc->sc_lock);
-	cv_broadcast(&sc->sc_wchan);
+	// XXX 元々ここで wchan を broadcast してた
 	selnotify(&sc->sc_wsel, 0, NOTE_SUBMIT);
 	if ((pid = sc->sc_async_audio) != 0) {
 		DPRINTFN(3, ("audio_softintr_wr: sending SIGIO %d\n", pid));

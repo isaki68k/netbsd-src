@@ -155,6 +155,7 @@ struct audio_track
 	audio_ring_t       *input;			// このトラックに入力するとき使用するバッファへのポインタ
 
 	audio_ring_t        outputbuf;		/* トラックの出力バッファ */
+	kcondvar_t          outchan;		// 出力バッファが空いたことの通知用
 
 	audio_stage_t       codec;			// エンコーディング変換ステージ
 	audio_stage_t       chvol;			// チャンネルボリュームステージ

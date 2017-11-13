@@ -90,7 +90,7 @@ void audio_track_unlock(audio_track_t *track);
 
 #if !defined(_KERNEL)
 typedef void kcondvar_t;
-static int audio_waitio(struct audio_softc *sc, kcondvar_t *chan, audio_track_t *track);
+static int audio_waitio(struct audio_softc *sc, audio_track_t *track);
 #endif // !_KERNEL
 
 
@@ -344,6 +344,7 @@ audio_track_init(audio_track_t *track, audio_trackmixer_t *mixer, int mode)
 
 	track->mixer = mixer;
 	track->mode = mode;
+	cv_init(&track->outchan, mode == AUMODE_PLAY ? "audiowr" : "audiord");
 
 	// 固定初期値
 	track->volume = 256;
@@ -885,9 +886,8 @@ audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track)
 	// mixseq はこの時点ではまだ前回の値なのでトラック側へは +1 
 	track->seq = mixer->mixseq + 1;
 #if defined(_KERNEL)
-	// outputbuf の空きを待ってる人に通知
-	struct audio_softc *sc = track->mixer->sc;
-	cv_broadcast(&sc->sc_wchan);
+	// audio_write() に空きが出来たことを通知
+	cv_broadcast(&track->outchan);
 #endif
 	TRACE(track, "broadcast; trseq=%d count=%d", (int)track->seq, count);
 	return 1;
@@ -1024,7 +1024,7 @@ audio_track_play_drain_core(audio_track_t *track, bool wait)
 	/* chmix_buf は待つ必要はない */
 	if (wait) {
 		do {
-			audio_waitio(sc, &sc->sc_wchan, track);
+			audio_waitio(sc, track);
 			//audio_mixer_play(track->mixer);
 		} while (track->outputbuf.count > 0
 			|| track->seq > track->mixer->hwseq);
@@ -1084,7 +1084,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 		TRACE(track, "free=%d", free_count);
 
 		if (free_bytelen == 0) {
-			error = audio_waitio(sc, &sc->sc_wchan, track);
+			error = audio_waitio(sc, track);
 			if (error < 0)
 				error = EINTR;	/* XXX ? */
 			if (error)
@@ -1119,7 +1119,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 
 #if !defined(_KERNEL)
 		// XXX: エミュレーション用に CPU 割り込み受付
-		audio_waitio(sc, NULL, track);
+		audio_waitio(sc, track);
 #endif
 	}
 
@@ -1127,7 +1127,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 }
 
 static int
-audio_waitio(struct audio_softc *sc, kcondvar_t *chan, audio_track_t *track)
+audio_waitio(struct audio_softc *sc, audio_track_t *track)
 {
 #if defined(_KERNEL)
 	// XXX 自分がいなくなることを想定する必要があるのかどうか
@@ -1137,7 +1137,7 @@ audio_waitio(struct audio_softc *sc, kcondvar_t *chan, audio_track_t *track)
 
 	TRACE(track, "wait");
 	/* Wait for pending I/O to complete. */
-	error = cv_wait_sig(chan, sc->sc_lock);
+	error = cv_wait_sig(&track->outchan, sc->sc_lock);
 
 	TRACE(track, "error=%d", error);
 	return error;
