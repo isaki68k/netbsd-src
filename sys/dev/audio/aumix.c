@@ -798,8 +798,16 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 	}
 
 	mixer->volume = 256;
+
+	cv_init(&mixer->intrcv, "audiodr");
 }
 
+void
+audio_mixer_destroy(audio_trackmixer_t *mixer)
+{
+	// あとでいろいろたす
+	cv_destroy(&mixer->intrcv);
+}
 
 /*
  * トラックバッファから 最大 1 ブロックを取り出し、
@@ -1005,6 +1013,8 @@ audio_trackmixer_intr(audio_trackmixer_t *mixer, int count)
 
 	mixer->hw_complete_counter += count;
 	mixer->hwseq++;
+	// drain 待ちしている人のために通知
+	cv_broadcast(&mixer->intrcv);
 	TRACE0("++hwsec=%d cmplcnt=%d",
 		(int)mixer->hwseq,
 		(int)mixer->hw_complete_counter);
@@ -1012,7 +1022,7 @@ audio_trackmixer_intr(audio_trackmixer_t *mixer, int count)
 	audio_mixer_play(mixer, true);
 }
 
-#ifdef AUDIO_INTR_EMULATED
+#if !defined(_KERNEL)
 void
 audio_track_play_drain(audio_track_t *track)
 {
@@ -1030,7 +1040,9 @@ audio_track_play_drain(audio_track_t *track)
 void
 audio_track_play_drain_core(audio_track_t *track, bool wait)
 {
-	struct audio_softc *sc = track->mixer->sc;
+	audio_trackmixer_t *mixer = track->mixer;
+	struct audio_softc *sc = mixer->sc;
+	int error;
 
 	TRACE(track, "");
 	track->is_draining = true;
@@ -1041,14 +1053,14 @@ audio_track_play_drain_core(audio_track_t *track, bool wait)
 	/* フレームサイズ未満のため待たされていたデータを破棄 */
 	track->subframe_buf_used = 0;
 
-	/* userio_buf は待つ必要はない */
-	/* chmix_buf は待つ必要はない */
 	if (wait) {
-		do {
-			audio_waitio(sc, track);
-			//audio_mixer_play(track->mixer);
-		} while (track->outputbuf.count > 0
-			|| track->seq > track->mixer->hwseq);
+		while (track->seq > mixer->hwseq) {
+			error = cv_wait_sig(&mixer->intrcv, sc->sc_lock);
+			if (error) {
+				printf("cv_wait_sig failed %d\n", error);
+				return;
+			}
+		}
 
 		track->is_draining = false;
 		printf("#%d: uio_count=%d trk_count=%d tm=%d mixhw=%d hw_complete=%d\n", track->id,

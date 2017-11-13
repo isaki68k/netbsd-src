@@ -206,6 +206,8 @@ struct audio_trackmixer
 
 	audio_ring_t   hwbuf;				/* 物理デバイスの入出力バッファ (malloc ではなく allocm で確保する) */
 
+	kcondvar_t     intrcv;				/* 割り込みを通知する? */
+
 	uint64_t mixseq;	// ミキシング中のシーケンス番号
 	uint64_t hwseq;		// ハードウェア出力完了したシーケンス番号
 

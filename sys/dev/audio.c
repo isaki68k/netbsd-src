@@ -137,8 +137,6 @@ int	audio_idle_timeout = 30;
 #define AUDIO_ENCODING_ULINEAR_NE AUDIO_ENCODING_ULINEAR_BE
 #endif
 
-#define sc_pbusy sc_pmixer->busy
-
 struct portname {
 	const char *name;
 	int mask;
@@ -749,6 +747,14 @@ audiodetach(device_t self, int flags)
 
 	/* free resources */
 	// ここでリソース解放
+	if (sc->sc_pmixer) {
+		audio_mixer_destroy(sc->sc_pmixer);
+		kmem_free(sc->sc_pmixer, sizeof(*sc->sc_pmixer));
+	}
+	if (sc->sc_rmixer) {
+		audio_mixer_destroy(sc->sc_rmixer);
+		kmem_free(sc->sc_rmixer, sizeof(*sc->sc_rmixer));
+	}
 
 	if (sc->sc_sih_rd) {
 		softint_disestablish(sc->sc_sih_rd);
@@ -1445,6 +1451,7 @@ bad1:
 int
 audio_drain(struct audio_softc *sc, audio_track_t *track)
 {
+	audio_track_play_drain(track);
 	return 0;
 }
 
@@ -1703,7 +1710,6 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 
 	case AUDIO_DRAIN:
 		DPRINTF(("AUDIO_DRAIN\n"));
-		printf("AUDIO_DRAIN not implemented\n");
 		// audio_drain 呼んで
 		// 最後の再生トラックなら hw_if->drain をコールする
 		error = audio_drain(sc, &file->ptrack);
@@ -2032,14 +2038,15 @@ audiostartr(struct audio_softc *sc)
 	return error;
 }
 
-// 再生ミキサーを始動する。
-// 再生ミキサーがとまっている時(!sc_pbusyの時)だけ呼び出せる。
+// 再生ループを開始する。
+// 再生ループがとまっている時(!sc_pbusyの時)だけ呼び出せる。
+// mixer->busy とは独立。
 int
 audiostartp(struct audio_softc *sc)
 {
 	KASSERT(mutex_owned(sc->sc_lock));
-	//KASSERT(!sc->sc_pbusy);
 
+	//KASSERT(!sc->sc_pbusy);
 	DPRINTF(("audiostartp busy=%d\n", sc->sc_pbusy));
 	if (sc->sc_pbusy == true)
 		return 0;
@@ -2047,6 +2054,7 @@ audiostartp(struct audio_softc *sc)
 	if (!audio_can_playback(sc))
 		return EINVAL;
 
+	sc->sc_pbusy = true;
 	audio_mixer_play(sc->sc_pmixer, false/*XXX?*/);
 
 	audio_start_output(sc);
