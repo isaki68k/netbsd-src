@@ -854,11 +854,6 @@ audio_mixer_play(audio_trackmixer_t *mixer, bool isdrain)
 
 		// バッファの準備ができたら転送。
 		audio_mixer_play_period(mixer);
-
-#if defined(_KERNEL)
-		// カーネルなら、1回転送できたら戻るはず
-		return;
-#endif
 	}
 
 	/* ハードウェアへ通知する */
