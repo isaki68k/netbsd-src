@@ -827,7 +827,8 @@ void
 audio_mixer_destroy(audio_trackmixer_t *mixer)
 {
 	// あとでいろいろたす
-	cv_destroy(&mixer->intrcv);
+
+	// intrcv を cv_destroy() してはいけないっぽい。KASSERT で死ぬ。
 }
 
 /*
