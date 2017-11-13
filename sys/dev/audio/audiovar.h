@@ -230,8 +230,6 @@ struct audio_file
 };
 
 #if !defined(_KERNEL)
-typedef void kcondvar_t;
-
 /* Userland から見えるデバイス */
 struct audio_softc
 {

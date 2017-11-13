@@ -13,6 +13,7 @@
 #define __arraycount(n) _countof(n)
 
 typedef int64_t off_t;
+typedef void *kcondvar_t;
 
 inline
 uint16_t __builtin_bswap16(uint16_t a)
@@ -71,4 +72,16 @@ inline void
 panic(const char *fmt, ...)
 {
 	exit(1);
+}
+
+inline void
+cv_init(kcondvar_t *cv, const char *msg)
+{
+	// nop
+}
+
+inline void
+cv_destroy(kcondvar_t *cv)
+{
+	// nop
 }
