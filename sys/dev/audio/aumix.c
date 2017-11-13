@@ -754,7 +754,8 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 		mixer->hwbuf.fmt = sc->sc_rhwfmt;
 
 	int framelen = mixer->hwbuf.fmt.channels * mixer->hwbuf.fmt.stride / NBBY;
-	int capacity = (mixer->hwbuf.fmt.sample_rate * AUDIO_BLK_MS / 1000) * 2;
+	mixer->frames_per_block = mixer->hwbuf.fmt.sample_rate * AUDIO_BLK_MS / 1000;
+	int capacity = mixer->frames_per_block * 16;
 	int bufsize = capacity * framelen;
 	if (sc->hw_if->round_buffersize) {
 		int rounded;
@@ -762,11 +763,24 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 		// 縮められても困る?
 		if (rounded != bufsize) {
 			aprint_error_dev(sc->dev, "buffer size not configured"
-			    "%d -> %d\n", bufsize, rounded);
+			    " %d -> %d\n", bufsize, rounded);
 			return;
 		}
 	}
 	mixer->hwbuf.capacity = capacity;
+
+	int blksize = mixer->frames_per_block * framelen;
+	if (sc->hw_if->round_blocksize) {
+		int rounded;
+		audio_params_t p = format2_to_params(&mixer->hwbuf.fmt);
+		rounded = sc->hw_if->round_blocksize(sc->hw_hdl, blksize, mode, &p);
+		// 違っていても困る?
+		if (rounded != blksize) {
+			aprint_error_dev(sc->dev, "blksize not configured"
+			    " %d -> %d\n", blksize, rounded);
+			return;
+		}
+	}
 
 	if (sc->hw_if->allocm) {
 		mixer->hwbuf.sample = sc->hw_if->allocm(sc->hw_hdl, mode,
@@ -780,9 +794,9 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 	mixer->hwbuf.fmt = audio_softc_get_hw_format(mixer->sc, mode);
 	mixer->hwbuf.capacity = audio_softc_get_hw_capacity(mixer->sc);
 	mixer->hwbuf.sample = audio_softc_allocm(mixer->sc, RING_BYTELEN(&mixer->hwbuf));
-#endif
 
 	mixer->frames_per_block = mixer->hwbuf.fmt.sample_rate * AUDIO_BLK_MS / 1000;
+#endif
 
 	mixer->track_fmt.encoding = AUDIO_ENCODING_SLINEAR_HE;
 	mixer->track_fmt.channels = mixer->hwbuf.fmt.channels;
