@@ -419,6 +419,7 @@ init_codec(audio_track_t *track, audio_ring_t *last_dst)
 	 && srcfmt->stride == dstfmt->stride) {
 		// チャンネル数以外が等しければエンコーディング変換不要
 		track->codec.filter = NULL;
+		audio_free(track->codec.srcbuf.sample);
 		return last_dst;
 	} else {
 		// エンコーディングを変換する
@@ -462,6 +463,7 @@ init_chvol(audio_track_t *track, audio_ring_t *last_dst)
 
 	if (use_chvol == false) {
 		track->chvol.filter = NULL;
+		audio_free(track->chvol.srcbuf.sample);
 		return last_dst;
 	} else {
 		track->chvol.filter = audio_track_chvol;
@@ -490,6 +492,7 @@ init_chmix(audio_track_t *track, audio_ring_t *last_dst)
 
 	if (srcch == dstch) {
 		track->chmix.filter = NULL;
+		audio_free(track->chmix.srcbuf.sample);
 		return last_dst;
 	} else {
 		if (srcch == 2 && dstch == 1) {
@@ -530,6 +533,7 @@ init_freq(audio_track_t *track, audio_ring_t *last_dst)
 
 	if (srcfreq == dstfreq) {
 		track->freq.filter = NULL;
+		audio_free(track->freq.srcbuf.sample);
 		return last_dst;
 	} else {
 		track->freq_step.i = srcfreq / dstfreq;
