@@ -793,7 +793,6 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 		mixer->mixfmt.stride *= 2;
 		int n = mixer->frames_per_block * mixer->mixfmt.channels * mixer->mixfmt.stride / 8;
 		mixer->mixsample = audio_realloc(mixer->mixsample, n);
-		memset(mixer->mixsample, 0, n);
 	} else {
 		// 合成バッファは使用しない
 	}
@@ -837,7 +836,7 @@ audio_mixer_play(audio_trackmixer_t *mixer, bool isdrain)
 
 			// 合成
 			if (track->outputbuf.count > 0) {
-				mixed += audio_mixer_play_mix_track(mixer, track);
+				mixed = audio_mixer_play_mix_track(mixer, track, mixed);
 			}
 		}
 		if (mixed == 0) break;
@@ -859,18 +858,20 @@ audio_mixer_play(audio_trackmixer_t *mixer, bool isdrain)
 
 /*
 * トラックバッファから取り出し、ミキシングします。
+* mixed: 現在の合成トラックカウンタ
+* return: 合成済みトラックカウンタ。
 */
 int
-audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track)
+audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int mixed)
 {
 	/* 1 ブロック貯まるまで待つ */
 	if (track->outputbuf.count < mixer->frames_per_block) {
 		TRACE0("track count too short: track_buf.count=%d", track->outputbuf.count);
-		return 0;
+		return mixed;
 	}
 
 	// このトラックが処理済みならなにもしない
-	if (mixer->mixseq < track->seq) return 0;
+	if (mixer->mixseq < track->seq) return mixed;
 
 	int count = mixer->frames_per_block;
 
@@ -881,13 +882,27 @@ audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track)
 
 	/* 整数倍精度へ変換し、トラックボリュームを適用して加算合成 */
 	int sample_count = count * mixer->mixfmt.channels;
-	if (track->volume == 256) {
-		for (int i = 0; i < sample_count; i++) {
-			*dptr++ += ((internal2_t)*sptr++);
+	if (mixed == 0) {
+		// 最初のトラック合成は代入
+		if (track->volume == 256) {
+			for (int i = 0; i < sample_count; i++) {
+				*dptr++ = ((internal2_t)*sptr++);
+			}
+		} else {
+			for (int i = 0; i < sample_count; i++) {
+				*dptr++ = ((internal2_t)*sptr++) * track->volume / 256;
+			}
 		}
 	} else {
-		for (int i = 0; i < sample_count; i++) {
-			*dptr++ += ((internal2_t)*sptr++) * track->volume / 256;
+		// 2本め以降なら加算合成
+		if (track->volume == 256) {
+			for (int i = 0; i < sample_count; i++) {
+				*dptr++ += ((internal2_t)*sptr++);
+			}
+		} else {
+			for (int i = 0; i < sample_count; i++) {
+				*dptr++ += ((internal2_t)*sptr++) * track->volume / 256;
+			}
 		}
 	}
 
@@ -901,7 +916,7 @@ audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track)
 	cv_broadcast(&track->outchan);
 #endif
 	TRACE(track, "broadcast; trseq=%d count=%d", (int)track->seq, count);
-	return 1;
+	return mixed + 1;
 }
 
 /*
@@ -974,9 +989,6 @@ audio_mixer_play_period(audio_trackmixer_t *mixer /*, bool force */)
 	}
 	audio_ring_appended(&mixer->hwbuf, count);
 	unlock(mixer->sc);
-
-	/* 使用済みミキサメモリを次回のために 0 フィルする */
-	memset(mptr0, 0, sample_count * sizeof(internal2_t));
 
 	/* ハードウェアへ通知する */
 	TRACE0("start count=%d mixseq=%d hwseq=%d", count, (int)mixer->mixseq, (int)mixer->hwseq);
