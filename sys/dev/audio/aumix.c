@@ -1162,7 +1162,6 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 static int
 audio_waitio(struct audio_softc *sc, audio_track_t *track)
 {
-#if defined(_KERNEL)
 	// XXX 自分がいなくなることを想定する必要があるのかどうか
 	int error;
 
@@ -1174,14 +1173,6 @@ audio_waitio(struct audio_softc *sc, audio_track_t *track)
 
 	TRACE(track, "error=%d", error);
 	return error;
-#else
-	// 本当は割り込みハンドラからトラックが消費されるんだけど
-	// ここで消費をエミュレート。
-
-	emu_intr_check();
-
-	return 0;
-#endif
 }
 
 #if !defined(_KERNEL)

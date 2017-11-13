@@ -92,9 +92,10 @@ cv_broadcast(kcondvar_t *cv)
 	// nop
 }
 
-inline int
-cv_wait_sig(kcondvar_t *cv, void *lock)
+int cv_wait_sig(kcondvar_t *cv, void *lock);
+
+static inline int
+mutex_owned(void *mutex)
 {
-	// nop
-	return 0;
+	return 1;
 }

@@ -42,6 +42,9 @@
     <ClCompile Include="..\auintr.c">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
+    <ClCompile Include="compat.c">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="compat.h">
