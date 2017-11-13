@@ -1068,7 +1068,7 @@ audio_track_play_drain_core(audio_track_t *track, bool wait)
 		}
 
 		track->is_draining = false;
-		printf("#%d: uio_count=%d trk_count=%d tm=%d mixhw=%d hw_complete=%d\n", track->id,
+		TRACE(track, "uio_count=%d trk_count=%d tm=%d mixhw=%d hw_complete=%d",
 			(int)track->inputcounter, (int)track->outputcounter,
 			(int)track->track_mixer_counter, (int)track->mixer_hw_counter,
 			(int)track->hw_complete_counter);
