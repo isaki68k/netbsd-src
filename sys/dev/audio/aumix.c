@@ -82,7 +82,7 @@
 #endif
 
 void *audio_realloc(void *memblock, size_t bytes);
-void *audio_free(void *memblock);
+void audio_free(void *memblock);
 int16_t audio_volume_to_inner(uint8_t v);
 uint8_t audio_volume_to_outer(int16_t v);
 void audio_track_lock(audio_track_t *track);
@@ -115,13 +115,13 @@ audio_realloc(void *memblock, size_t bytes)
 	}
 }
 
-void *
+void
 audio_free(void *memblock)
 {
 	if (memblock != NULL) {
 		x_free(memblock);
+		memblock = NULL;
 	}
-	return NULL;
 }
 
 
