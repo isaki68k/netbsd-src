@@ -110,6 +110,7 @@ struct audio_format2
 	uint8_t  stride;		/* ex.32 (packing bits of sample) */
 };
 
+// リングバッファ
 struct audio_ring
 {
 	audio_format2_t fmt;	/* フォーマット */
