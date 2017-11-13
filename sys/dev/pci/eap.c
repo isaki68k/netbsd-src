@@ -55,6 +55,7 @@ __KERNEL_RCSID(0, "$NetBSD: eap.c,v 1.97 2017/06/01 02:45:11 chs Exp $");
 
 #include "midi.h"
 #include "joy_eap.h"
+#include "opt_audio.h"
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -111,6 +112,7 @@ CFATTACH_DECL_NEW(eap, sizeof(struct eap_softc),
 
 static int	eap_open(void *, int);
 static int	eap_query_encoding(void *, struct audio_encoding *);
+static int	eap_query_format(void *, const struct audio_format **);
 static int	eap_set_params(void *, int, int, audio_params_t *,
 			       audio_params_t *, stream_filter_list_t *,
 			       stream_filter_list_t *);
@@ -187,6 +189,7 @@ static const struct audio_hw_if eap1370_hw_if = {
 	eap_trigger_input,
 	NULL,
 	eap_get_locks,
+	eap_query_format,
 };
 
 static const struct audio_hw_if eap1371_hw_if = {
@@ -218,6 +221,7 @@ static const struct audio_hw_if eap1371_hw_if = {
 	eap_trigger_input,
 	NULL,
 	eap_get_locks,
+	eap_query_format,
 };
 
 #if NMIDI > 0
@@ -1015,6 +1019,13 @@ eap_query_encoding(void *addr, struct audio_encoding *fp)
 }
 
 static int
+eap_query_format(void *addr, const struct audio_format **afp)
+{
+	*afp = eap_formats;
+	return EAP_NFORMATS;
+}
+
+static int
 eap_set_params(void *addr, int setmode, int usemode,
 	       audio_params_t *play, audio_params_t *rec,
 	       stream_filter_list_t *pfil, stream_filter_list_t *rfil)
@@ -1028,6 +1039,7 @@ eap_set_params(void *addr, int setmode, int usemode,
 
 	ei = addr;
 	sc = device_private(ei->parent);
+#if !defined(AUDIO2)
 	/*
 	 * The es1370 only has one clock, so make the sample rates match.
 	 * This only applies for ADC/DAC2. The FM DAC is handled below.
@@ -1045,6 +1057,7 @@ eap_set_params(void *addr, int setmode, int usemode,
 				return EINVAL;
 		}
 	}
+#endif
 
 	for (mode = AUMODE_RECORD; mode != -1;
 	     mode = mode == AUMODE_RECORD ? AUMODE_PLAY : -1) {
@@ -1053,10 +1066,12 @@ eap_set_params(void *addr, int setmode, int usemode,
 
 		p = mode == AUMODE_PLAY ? play : rec;
 
+#if !defined(AUDIO2)
 		if (p->sample_rate < 4000 || p->sample_rate > 48000 ||
 		    (p->precision != 8 && p->precision != 16) ||
 		    (p->channels != 1 && p->channels != 2))
 			return EINVAL;
+#endif
 
 		fil = mode == AUMODE_PLAY ? pfil : rfil;
 		i = auconv_set_converter(eap_formats, EAP_NFORMATS,
@@ -1104,6 +1119,7 @@ eap_set_params(void *addr, int setmode, int usemode,
 		DPRINTFN(2, ("eap_set_params: old ICSC = 0x%08x\n", div));
 
 		div &= ~EAP_WTSRSEL;
+#if !defined(AUDIO2)
 		if (play->sample_rate < 8268)
 			div |= EAP_WTSRSEL_5;
 		else if (play->sample_rate < 16537)
@@ -1111,6 +1127,7 @@ eap_set_params(void *addr, int setmode, int usemode,
 		else if (play->sample_rate < 33075)
 			div |= EAP_WTSRSEL_22;
 		else
+#endif
 			div |= EAP_WTSRSEL_44;
 
 		EWRITE4(sc, EAP_ICSC, div);
@@ -1125,7 +1142,11 @@ eap_round_blocksize(void *addr, int blk, int mode,
     const audio_params_t *param)
 {
 
+#if defined(AUDIO2)
+	return blk;			/* &-32 is not alignment */
+#else
 	return blk & -32;	/* keep good alignment */
+#endif
 }
 
 static int
@@ -1790,9 +1811,25 @@ eap_mappage(void *addr, void *mem, off_t off, int prot)
 static int
 eap_get_props(void *addr)
 {
+#if defined(AUDIO2)
+	struct eap_instance *ei;
+	struct eap_softc *sc;
+	int prop;
+
+	ei = addr;
+	sc = device_private(ei->parent);
+	prop = AUDIO_PROP_MMAP | AUDIO_PROP_FULLDUPLEX |
+	    AUDIO_PROP_INDEPENDENT;
+	/* The es1370 only has one clock, so it's not independent */
+	if (!sc->sc_1371 && ei->index == EAP_DAC2)
+		prop &= ~AUDIO_PROP_INDEPENDENT;
+
+	return prop;
+#else
 
 	return AUDIO_PROP_MMAP | AUDIO_PROP_INDEPENDENT |
 	    AUDIO_PROP_FULLDUPLEX;
+#endif
 }
 
 static void
