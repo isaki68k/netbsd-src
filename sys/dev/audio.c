@@ -1647,7 +1647,6 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		// バッファをクリアし、エラーカウンタをリセットし、そして
 		// 現在のサンプリングモードで再生と録音を再開します。
 		DPRINTF(("AUDIO_FLUSH\n"));
-		printf("AUDIO_FLUSH\n");
 		break;
 
 	/*
