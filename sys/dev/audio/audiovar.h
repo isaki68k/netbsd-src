@@ -200,8 +200,9 @@ struct audio_trackmixer
 	audio_format2_t mixfmt;				// PLAY 合成用整数倍精度フォーマット
 	void *mixsample;					// PLAY 合成用整数倍精度バッファ
 
-	audio_filter_t  codec;				/* mix <-> hw コーデックフィルタ */
-	audio_filter_arg_t codec_arg;		/* その引数 */
+	audio_filter_t  codec;				// MD が要求する追加のコーデック
+	audio_filter_arg_t codec_arg;		// その引数
+	audio_ring_t    codecbuf;			// コーデック用バッファ。ストライド変換の吸収
 
 	audio_ring_t   hwbuf;				/* 物理デバイスの入出力バッファ (malloc ではなく allocm で確保する) */
 
