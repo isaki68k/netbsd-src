@@ -2080,8 +2080,8 @@ audio_start_output(struct audio_softc *sc)
 		audio_params_t params;
 		params = format2_to_params(&mixer->hwbuf.fmt);
 		error = sc->hw_if->trigger_output(sc->hw_hdl,
-		    RING_TOP(internal_t, &mixer->hwbuf),
-		    RING_BOT(internal_t, &mixer->hwbuf),
+		    mixer->hwbuf.sample,
+		    RING_END_PTR(internal_t, &mixer->hwbuf),
 		    blksize, audio_pintr, sc, &params);
 		if (error) {
 			aprint_error_dev(sc->dev,
