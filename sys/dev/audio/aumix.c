@@ -786,11 +786,17 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 	mixer->track_fmt.sample_rate = mixer->hwbuf.fmt.sample_rate;
 	mixer->track_fmt.precision = mixer->track_fmt.stride = AUDIO_INTERNAL_BITS;
 
-	mixer->mixbuf.fmt = mixer->track_fmt;
-	mixer->mixbuf.fmt.precision = mixer->mixbuf.fmt.stride = AUDIO_INTERNAL_BITS * 2;
-	mixer->mixbuf.capacity = mixer->frames_per_block;
-	mixer->mixbuf.sample = audio_realloc(mixer->mixbuf.sample, RING_BYTELEN(&mixer->mixbuf));
-	memset(mixer->mixbuf.sample, 0, RING_BYTELEN(&mixer->mixbuf));
+	if (mode == AUMODE_PLAY) {
+		// 合成バッファ
+		mixer->mixfmt = mixer->track_fmt;
+		mixer->mixfmt.precision *= 2;
+		mixer->mixfmt.stride *= 2;
+		int n = mixer->frames_per_block * mixer->mixfmt.channels * mixer->mixfmt.stride / 8;
+		mixer->mixsample = audio_realloc(mixer->mixsample, n);
+		memset(mixer->mixsample, 0, n);
+	} else {
+		// 合成バッファは使用しない
+	}
 
 	mixer->volume = 256;
 }
@@ -837,7 +843,6 @@ audio_mixer_play(audio_trackmixer_t *mixer, bool isdrain)
 		if (mixed == 0) break;
 
 		// バッファの準備ができたら転送。
-		mixer->mixbuf.count = mixer->frames_per_block;
 		audio_mixer_play_period(mixer);
 
 #if defined(_KERNEL)
@@ -869,23 +874,13 @@ audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track)
 
 	int count = mixer->frames_per_block;
 
-	// トラックごとなのでコピーしたローカル ring で処理をする。
-	audio_ring_t mix_tmp;
-	mix_tmp = mixer->mixbuf;
-	mix_tmp.count = 0;
-
-	if (mix_tmp.capacity - mix_tmp.count < count) {
-		panic("mix_buf full");
-	}
-
 	KASSERT(audio_ring_unround_count(&track->outputbuf) >= count);
-	KASSERT(audio_ring_unround_free_count(&mix_tmp) >= count);
 
 	internal_t *sptr = RING_TOP(internal_t, &track->outputbuf);
-	internal2_t *dptr = RING_BOT(internal2_t, &mix_tmp);
+	internal2_t *dptr = mixer->mixsample;
 
 	/* 整数倍精度へ変換し、トラックボリュームを適用して加算合成 */
-	int sample_count = count * mixer->mixbuf.fmt.channels;
+	int sample_count = count * mixer->mixfmt.channels;
 	if (track->volume == 256) {
 		for (int i = 0; i < sample_count; i++) {
 			*dptr++ += ((internal2_t)*sptr++);
@@ -917,14 +912,13 @@ audio_mixer_play_period(audio_trackmixer_t *mixer /*, bool force */)
 {
 	/* 今回取り出すフレーム数を決定 */
 
-	int mix_count = audio_ring_unround_count(&mixer->mixbuf);
+	int mix_count = mixer->frames_per_block;
 	int hw_free_count = audio_ring_unround_free_count(&mixer->hwbuf);
 	int count = min(mix_count, hw_free_count);
 	if (count <= 0) {
 		TRACE0("count too short: mix_count=%d hw_free=%d", mix_count, hw_free_count);
 		return;
 	}
-	count = min(count, mixer->frames_per_block);
 
 	mixer->mixseq++;
 
@@ -932,10 +926,10 @@ audio_mixer_play_period(audio_trackmixer_t *mixer /*, bool force */)
 	internal2_t ovf_plus = AUDIO_INTERNAL_T_MAX;
 	internal2_t ovf_minus = AUDIO_INTERNAL_T_MIN;
 
-	internal2_t *mptr0 = RING_TOP(internal2_t, &mixer->mixbuf);
+	internal2_t *mptr0 = mixer->mixsample;
 	internal2_t *mptr = mptr0;
 
-	int sample_count = count * mixer->mixbuf.fmt.channels;
+	int sample_count = count * mixer->mixfmt.channels;
 	for (int i = 0; i < sample_count; i++) {
 		if (*mptr > ovf_plus) ovf_plus = *mptr;
 		if (*mptr < ovf_minus) ovf_minus = *mptr;
@@ -983,7 +977,6 @@ audio_mixer_play_period(audio_trackmixer_t *mixer /*, bool force */)
 
 	/* 使用済みミキサメモリを次回のために 0 フィルする */
 	memset(mptr0, 0, sample_count * sizeof(internal2_t));
-	audio_ring_tookfromtop(&mixer->mixbuf, count);
 
 	/* ハードウェアへ通知する */
 	TRACE0("start count=%d mixseq=%d hwseq=%d", count, (int)mixer->mixseq, (int)mixer->hwseq);
