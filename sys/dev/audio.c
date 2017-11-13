@@ -4202,7 +4202,8 @@ audio_modcmd(modcmd_t cmd, void *arg)
 //   取得しているっぽい
 // x gain の範囲チェックは誰がしてるんだ
 // x suspend 中に uaudio が消えるケースはまた後で
-// x audio_clear がどうして非対称なのか
+// x audio_clear が最後の録音停止時には halt_input を呼んでいるが
+//   再生停止については halt_output を呼んでいないけど、なんで?
 // x audio_clear はたぶんハード/ソフトレイヤを分離する必要がある
 // o monitor_gain の get/set は commit してもいいかも
 // x SETFD (hw_if->setfd) はバグってるけど誰も使ってないので、
