@@ -85,3 +85,16 @@ cv_destroy(kcondvar_t *cv)
 {
 	// nop
 }
+
+inline void
+cv_broadcast(kcondvar_t *cv)
+{
+	// nop
+}
+
+inline int
+cv_wait_sig(kcondvar_t *cv, void *lock)
+{
+	// nop
+	return 0;
+}

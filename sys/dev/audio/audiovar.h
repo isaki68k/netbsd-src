@@ -248,6 +248,7 @@ struct audio_softc
 	void *phys; // 実物理デバイス
 	audio_trackmixer_t pmixer0;
 	audio_trackmixer_t rmixer0;
+	void *sc_lock;
 };
 #endif // _KERNEL
 
