@@ -1652,12 +1652,17 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		/* All handled in the upper FS layer. */
 		break;
 
-#if 0
 	case FIONREAD:
 		// 入力バッファにあるバイト数
-		*(int *)addr = audio_stream_get_used(vc->sc_rustream);
+		// XXX 動作未確認
+		if ((file->mode & AUMODE_RECORD) != 0) {
+			audio_ring_t *outbuf = &file->rtrack.outputbuf;
+			*(int *)addr = outbuf->count *
+			    (outbuf->fmt.channels * outbuf->fmt.stride / NBBY);
+		} else {
+			*(int *)addr = 0;
+		}
 		break;
-#endif
 
 	case FIOASYNC:
 		if (*(int *)addr) {
