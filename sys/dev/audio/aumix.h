@@ -37,6 +37,7 @@ bidi_lsl(uint32_t a, int shift)
 
 
 void audio_track_init(audio_track_t *track, audio_trackmixer_t *mixer, int mode);
+void audio_track_destroy(audio_track_t *track);
 void audio_track_set_format(audio_track_t *track, audio_format2_t *track_fmt);
 void audio_track_play(audio_track_t *track, bool isdrain);
 void audio_track_play_drain(audio_track_t *track);

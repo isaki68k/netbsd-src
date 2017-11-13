@@ -1434,9 +1434,9 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 
 bad2:
 	if ((af->mode & AUMODE_PLAY) != 0)
-		cv_destroy(&af->ptrack.outchan);
+		audio_track_destroy(&af->ptrack);
 	if ((af->mode & AUMODE_RECORD) != 0)
-		cv_destroy(&af->rtrack.outchan);
+		audio_track_destroy(&af->rtrack);
 bad1:
 	kmem_free(af, sizeof(*af));
 	return error;
@@ -1484,7 +1484,7 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 				sc->sc_rbusy = false;
 			}
 		}
-		cv_destroy(&file->rtrack.outchan);
+		audio_track_destroy(&file->rtrack);
 
 		sc->sc_ropens--;
 	}
@@ -1508,7 +1508,7 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 				sc->sc_pbusy = false;
 			}
 		}
-		cv_destroy(&file->ptrack.outchan);
+		audio_track_destroy(&file->ptrack);
 
 		sc->sc_popens--;
 	}

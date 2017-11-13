@@ -356,6 +356,19 @@ audio_track_init(audio_track_t *track, audio_trackmixer_t *mixer, int mode)
 	audio_track_set_format(track, &default_format);
 }
 
+// track 内のすべてのリソースを解放します。
+// track 自身は解放しません。(file 内のメンバとして確保されているため)
+void
+audio_track_destroy(audio_track_t *track)
+{
+	audio_free(track->codec.srcbuf.sample);
+	audio_free(track->chvol.srcbuf.sample);
+	audio_free(track->chmix.srcbuf.sample);
+	audio_free(track->freq.srcbuf.sample);
+	audio_free(track->outputbuf.sample);
+	cv_destroy(&track->outchan);
+}
+
 static inline int
 framecount_roundup_byte_boundary(int framecount, int stride)
 {
