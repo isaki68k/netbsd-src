@@ -1397,10 +1397,12 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	if ((af->mode & AUMODE_PLAY) != 0 && sc->sc_popens == 0) {
 		if (sc->hw_if->init_output) {
 			audio_ring_t *hwbuf = &sc->sc_pmixer->hwbuf;
+			mutex_enter(sc->sc_intr_lock);
 			error = sc->hw_if->init_output(sc->hw_hdl,
 			    hwbuf->sample,
 			    hwbuf->capacity *
 			    hwbuf->fmt.channels * hwbuf->fmt.stride / NBBY);
+			mutex_exit(sc->sc_intr_lock);
 			if (error)
 				goto bad2;
 		}
@@ -1408,10 +1410,12 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	if ((af->mode & AUMODE_RECORD) != 0 && sc->sc_ropens == 0) {
 		if (sc->hw_if->init_input) {
 			audio_ring_t *hwbuf = &sc->sc_rmixer->hwbuf;
+			mutex_enter(sc->sc_intr_lock);
 			error = sc->hw_if->init_input(sc->hw_hdl,
 			    hwbuf->sample,
 			    hwbuf->capacity *
 			    hwbuf->fmt.channels * hwbuf->fmt.stride / NBBY);
+			mutex_exit(sc->sc_intr_lock);
 			if (error)
 				goto bad2;
 		}
@@ -2087,7 +2091,10 @@ audiostartp(struct audio_softc *sc)
 		return EINVAL;
 
 	sc->sc_pbusy = true;
+
+	mutex_enter(sc->sc_intr_lock);
 	audio_mixer_play(sc->sc_pmixer, false/*XXX?*/);
+	mutex_exit(sc->sc_intr_lock);
 
 	audio_start_output(sc);
 	return 0;
@@ -2103,6 +2110,9 @@ audio_start_output(struct audio_softc *sc)
 	int error;
 	int blksize;
 
+	KASSERT(mutex_owned(sc->sc_lock));
+	KASSERT(!mutex_owned(sc->sc_intr_lock));
+
 	error = 0;
 	mixer = sc->sc_pmixer;
 	blksize = mixer->frames_per_block *
@@ -2113,19 +2123,23 @@ audio_start_output(struct audio_softc *sc)
 	if (sc->hw_if->trigger_output) {
 		audio_params_t params;
 		params = format2_to_params(&mixer->hwbuf.fmt);
+		mutex_enter(sc->sc_intr_lock);
 		error = sc->hw_if->trigger_output(sc->hw_hdl,
 		    mixer->hwbuf.sample,
 		    RING_END_PTR(internal_t, &mixer->hwbuf),
 		    blksize, audio_pintr, sc, &params);
+		mutex_exit(sc->sc_intr_lock);
 		if (error) {
 			aprint_error_dev(sc->dev,
 			    "trigger_output failed with %d\n", error);
 			return error;
 		}
 	} else {
+		mutex_enter(sc->sc_intr_lock);
 		error = sc->hw_if->start_output(sc->hw_hdl,
 		    RING_TOP(internal_t, &mixer->hwbuf),
 		    blksize, audio_pintr, sc);
+		mutex_exit(sc->sc_intr_lock);
 		if (error) {
 			aprint_error_dev(sc->dev,
 			    "start_output failed with %d\n", error);
@@ -2191,6 +2205,9 @@ audio_pintr(void *v)
 	audio_trackmixer_t *mixer;
 
 	sc = v;
+
+	KASSERT(mutex_owned(sc->sc_intr_lock));
+
 	mixer = sc->sc_pmixer;
 	DPRINTF(("%s hwbuf.count=%d\n", __func__, mixer->hwbuf.count));
 

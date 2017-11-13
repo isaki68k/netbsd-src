@@ -759,7 +759,9 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 	int bufsize = capacity * framelen;
 	if (sc->hw_if->round_buffersize) {
 		int rounded;
+		mutex_enter(sc->sc_lock);
 		rounded = sc->hw_if->round_buffersize(sc->hw_hdl, mode, bufsize);
+		mutex_exit(sc->sc_lock);
 		// 縮められても困る?
 		if (rounded != bufsize) {
 			aprint_error_dev(sc->dev, "buffer size not configured"
@@ -773,7 +775,9 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 	if (sc->hw_if->round_blocksize) {
 		int rounded;
 		audio_params_t p = format2_to_params(&mixer->hwbuf.fmt);
+		mutex_enter(sc->sc_lock);
 		rounded = sc->hw_if->round_blocksize(sc->hw_hdl, blksize, mode, &p);
+		mutex_exit(sc->sc_lock);
 		// 違っていても困る?
 		if (rounded != blksize) {
 			aprint_error_dev(sc->dev, "blksize not configured"
@@ -833,6 +837,11 @@ audio_mixer_destroy(audio_trackmixer_t *mixer)
 void
 audio_mixer_play(audio_trackmixer_t *mixer, bool isdrain)
 {
+	struct audio_softc *sc;
+
+	sc = mixer->sc;
+	KASSERT(mutex_owned(sc->sc_intr_lock));
+
 	TRACE0("start mixseq=%d hwseq=%d cap=%d cnt=%d",
 		(int)mixer->mixseq, (int)mixer->hwseq,
 		mixer->hwbuf.capacity, mixer->hwbuf.count);
@@ -954,6 +963,11 @@ audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int 
 void
 audio_mixer_play_period(audio_trackmixer_t *mixer /*, bool force */)
 {
+	struct audio_softc *sc;
+
+	sc = mixer->sc;
+	KASSERT(mutex_owned(sc->sc_intr_lock));
+
 	/* 今回取り出すフレーム数を決定 */
 
 	int mix_count = mixer->frames_per_block;
@@ -1010,19 +1024,23 @@ audio_mixer_play_period(audio_trackmixer_t *mixer /*, bool force */)
 
 	/* ハードウェアバッファへ転送 */
 	// TODO: MD 側フィルタ
-	lock(mixer->sc);
+	lock(sc);
 	mptr = mptr0;
 	internal_t *hptr = RING_BOT(internal_t, &mixer->hwbuf);
 	for (int i = 0; i < sample_count; i++) {
 		*hptr++ = *mptr++;
 	}
 	audio_ring_appended(&mixer->hwbuf, count);
-	unlock(mixer->sc);
+	unlock(sc);
 }
 
 void
 audio_trackmixer_intr(audio_trackmixer_t *mixer, int count)
 {
+	struct audio_softc *sc;
+
+	sc = mixer->sc;
+	KASSERT(mutex_owned(sc->sc_intr_lock));
 	KASSERT(count != 0);
 
 	mixer->hw_complete_counter += count;
@@ -1059,6 +1077,9 @@ audio_track_play_drain_core(audio_track_t *track, bool wait)
 	int error;
 
 	TRACE(track, "");
+	KASSERT(mutex_owned(sc->sc_lock));
+	KASSERT(!mutex_owned(sc->sc_intr_lock));
+
 	track->is_draining = true;
 
 	// 無音挿入させる
