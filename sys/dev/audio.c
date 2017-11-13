@@ -1534,7 +1534,6 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 
 	// リソース解放
 	SLIST_REMOVE(&sc->sc_files, file, audio_file, entry);
-	kmem_free(file, sizeof(audio_file_t));
 	return 0;
 }
 
