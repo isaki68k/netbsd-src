@@ -858,6 +858,15 @@ audio_mixer_play(audio_trackmixer_t *mixer, bool isdrain)
 #endif
 	}
 
+	/* ハードウェアへ通知する */
+	if (mixer->hwbuf.count >= 0) {
+		TRACE0("start mixseq=%d hwseq=%d", (int)mixer->mixseq, (int)mixer->hwseq);
+#if !defined(_KERNEL)
+		audio_softc_play_start(mixer->sc);
+#endif
+		mixer->hw_output_counter += mixer->frames_per_block;
+	}
+
 	TRACE0("hwseq=%d mixseq=%d", (int)mixer->hwseq, (int)mixer->mixseq);
 	if (mixer->hwseq == mixer->mixseq) {
 		mixer->busy = false;
@@ -997,13 +1006,6 @@ audio_mixer_play_period(audio_trackmixer_t *mixer /*, bool force */)
 	}
 	audio_ring_appended(&mixer->hwbuf, count);
 	unlock(mixer->sc);
-
-	/* ハードウェアへ通知する */
-	TRACE0("start count=%d mixseq=%d hwseq=%d", count, (int)mixer->mixseq, (int)mixer->hwseq);
-#if !defined(_KERNEL)
-	audio_softc_play_start(mixer->sc);
-#endif
-	mixer->hw_output_counter += count;
 }
 
 void
