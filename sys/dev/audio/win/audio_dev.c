@@ -46,9 +46,9 @@ void unlock(struct audio_softc *sc)
 void CALLBACK audio_dev_win32_callback(
 	HWAVEOUT hwo,
 	UINT uMsg,
-	DWORD dwInstance,
-	DWORD dwParam1,
-	DWORD dwParam2
+	DWORD_PTR dwInstance,
+	DWORD_PTR dwParam1,
+	DWORD_PTR dwParam2
 )
 {
 	if (uMsg == WOM_DONE) {
