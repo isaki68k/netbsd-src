@@ -134,14 +134,14 @@ extern void	padattach(int);
 static int	pad_add_block(pad_softc_t *, uint8_t *, int);
 static int	pad_get_block(pad_softc_t *, pad_block_t *, int);
 
-dev_type_open(pad_open);
-dev_type_close(pad_close);
-dev_type_read(pad_read);
+dev_type_open(pad_dev_open);
+dev_type_close(pad_dev_close);
+dev_type_read(pad_dev_read);
 
 const struct cdevsw pad_cdevsw = {
-	.d_open = pad_open,
-	.d_close = pad_close,
-	.d_read = pad_read,
+	.d_open = pad_dev_open,
+	.d_close = pad_dev_close,
+	.d_read = pad_dev_read,
 	.d_write = nowrite,
 	.d_ioctl = noioctl,
 	.d_stop = nostop,
@@ -315,7 +315,7 @@ pad_detach(device_t self, int flags)
 }
 
 int
-pad_open(dev_t dev, int flags, int fmt, struct lwp *l)
+pad_dev_open(dev_t dev, int flags, int fmt, struct lwp *l)
 {
 	pad_softc_t *sc;
 
@@ -330,7 +330,7 @@ pad_open(dev_t dev, int flags, int fmt, struct lwp *l)
 }
 
 int
-pad_close(dev_t dev, int flags, int fmt, struct lwp *l)
+pad_dev_close(dev_t dev, int flags, int fmt, struct lwp *l)
 {
 	pad_softc_t *sc;
 
@@ -349,7 +349,7 @@ pad_close(dev_t dev, int flags, int fmt, struct lwp *l)
 #define TIMENEXTREAD	    (int64_t)(BYTESTOSLEEP * 1000000 / PAD_BYTES_PER_SEC)
 
 int
-pad_read(dev_t dev, struct uio *uio, int flags)
+pad_dev_read(dev_t dev, struct uio *uio, int flags)
 {
 	struct timeval now;
 	uint64_t nowusec, lastusec;
