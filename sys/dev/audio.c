@@ -449,32 +449,46 @@ audioattach(device_t parent, device_t self, void *aux)
 	/* probe hw params */
 	error = audio_xxx_config(sc, is_indep);
 
-	if (sc->sc_can_playback == false && sc->sc_can_capture == false) {
-		sc->hw_if = NULL;
-		return;
-	}
-
 	/* init track mixer */
 	if (sc->sc_can_playback) {
 		sc->sc_pmixer = kmem_zalloc(sizeof(*sc->sc_pmixer),
 		    KM_SLEEP);
-		audio_mixer_init(sc, sc->sc_pmixer, AUMODE_PLAY);
-		aprint_normal_dev(sc->dev,
-		    "slinear%d, %dch, %dHz for playback\n",
-		    AUDIO_INTERNAL_BITS,
-		    sc->sc_pmixer->hwbuf.fmt.channels,
-		    sc->sc_pmixer->hwbuf.fmt.sample_rate);
+		error = audio_mixer_init(sc, sc->sc_pmixer, AUMODE_PLAY);
+		if (error == 0) {
+			aprint_normal_dev(sc->dev,
+			    "slinear%d, %dch, %dHz for playback\n",
+			    AUDIO_INTERNAL_BITS,
+			    sc->sc_pmixer->hwbuf.fmt.channels,
+			    sc->sc_pmixer->hwbuf.fmt.sample_rate);
+		} else {
+			aprint_error_dev(sc->dev,
+			    "configuring playback mode failed\n");
+			kmem_free(sc->sc_pmixer, sizeof(*sc->sc_pmixer));
+			sc->sc_pmixer = NULL;
+			sc->sc_can_playback = false;
+		}
 	}
 	if (sc->sc_can_capture) {
 		sc->sc_rmixer = kmem_zalloc(sizeof(*sc->sc_rmixer),
 		    KM_SLEEP);
-		audio_mixer_init(sc, sc->sc_rmixer, AUMODE_RECORD);
-		aprint_normal_dev(sc->dev,
-		    "slinear%d, %dch, %dHz for recording\n",
-		    AUDIO_INTERNAL_BITS,
-		    sc->sc_rmixer->hwbuf.fmt.channels,
-		    sc->sc_rmixer->hwbuf.fmt.sample_rate);
+		error = audio_mixer_init(sc, sc->sc_rmixer, AUMODE_RECORD);
+		if (error == 0) {
+			aprint_normal_dev(sc->dev,
+			    "slinear%d, %dch, %dHz for record\n",
+			    AUDIO_INTERNAL_BITS,
+			    sc->sc_rmixer->hwbuf.fmt.channels,
+			    sc->sc_rmixer->hwbuf.fmt.sample_rate);
+		} else {
+			aprint_error_dev(sc->dev,
+			    "configuring record mode failed\n");
+			kmem_free(sc->sc_rmixer, sizeof(*sc->sc_rmixer));
+			sc->sc_rmixer = NULL;
+			sc->sc_can_capture = false;
+		}
 	}
+
+	if (sc->sc_can_playback == false && sc->sc_can_capture == false)
+		goto bad0;
 
 	/* Set hw full-duplex if necessary */
 	if (sc->sc_full_duplex) {
@@ -484,10 +498,9 @@ audioattach(device_t parent, device_t self, void *aux)
 			mutex_exit(sc->sc_lock);
 			if (error) {
 				aprint_error_dev(sc->dev,
-				    "Setting full-duplex failed: %d\n",
+				    "setting full-duplex failed with %d\n",
 				    error);
-				sc->hw_if = NULL;
-				return;
+				goto bad1;
 			}
 		}
 	}
@@ -535,6 +548,24 @@ audioattach(device_t parent, device_t self, void *aux)
 #endif
 
 	// audiorescan いらないはず
+	return;
+
+bad1:
+	if (sc->sc_can_capture) {
+		audio_mixer_destroy(sc->sc_rmixer);
+		kmem_free(sc->sc_rmixer, sizeof(*sc->sc_rmixer));
+	}
+	if (sc->sc_can_playback) {
+		audio_mixer_destroy(sc->sc_pmixer);
+		kmem_free(sc->sc_pmixer, sizeof(*sc->sc_pmixer));
+	}
+bad0:
+	// アタッチがエラーを返せない構造なので、ここでエラーになっても
+	// デバイス自体は出来てしまう。そこで hw_if == NULL なら
+	// configure されてないものとする。という運用。コメント書けよ。
+	sc->hw_if = NULL;
+	aprint_error_dev(sc->dev, "disabled\n");
+	return;
 }
 
 /* called from audioattach() */

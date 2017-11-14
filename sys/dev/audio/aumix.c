@@ -740,7 +740,7 @@ audio_track_play(audio_track_t *track, bool isdrain)
 	}
 }
 
-void
+int
 audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 {
 	memset(mixer, 0, sizeof(audio_trackmixer_t));
@@ -766,7 +766,7 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 		if (rounded != bufsize) {
 			aprint_error_dev(sc->dev, "buffer size not configured"
 			    " %d -> %d\n", bufsize, rounded);
-			return;
+			return ENXIO;
 		}
 	}
 	mixer->hwbuf.capacity = capacity;
@@ -782,7 +782,7 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 		if (rounded != blksize) {
 			aprint_error_dev(sc->dev, "blksize not configured"
 			    " %d -> %d\n", blksize, rounded);
-			return;
+			return ENXIO;
 		}
 	}
 
@@ -821,6 +821,7 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 	mixer->volume = 256;
 
 	cv_init(&mixer->intrcv, "audiodr");
+	return 0;
 }
 
 void

@@ -44,7 +44,7 @@ void audio_track_play_drain(audio_track_t *track);
 
 void audio_track_play_drain_core(audio_track_t *track, bool wait);
 
-void audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode);
+int audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode);
 void audio_mixer_destroy(audio_trackmixer_t *mixer);
 void audio_mixer_play(audio_trackmixer_t *, bool isdrain);
 void audio_mixer_play_period(audio_trackmixer_t *mixer);
