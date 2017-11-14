@@ -1524,6 +1524,7 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 					    error);
 				}
 				sc->sc_rbusy = false;
+				sc->sc_rmixer->hwbuf.top = 0;
 			}
 		}
 		audio_track_destroy(&file->rtrack);
@@ -1548,6 +1549,7 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 					    error);
 				}
 				sc->sc_pbusy = false;
+				sc->sc_pmixer->hwbuf.top = 0;
 			}
 		}
 		audio_track_destroy(&file->ptrack);
