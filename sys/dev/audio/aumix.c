@@ -728,8 +728,8 @@ audio_track_play(audio_track_t *track, bool isdrain)
 		track->outputcounter += track->outputbuf.count - track_count_0;
 	}
 
-	TRACE(track, "busy=%d outbuf.cnt=%d", track->mixer->busy,
-		track->outputbuf.count);
+	TRACE(track, "busy=%d outbuf=%d/%d", track->mixer->busy,
+		track->outputbuf.count, track->outputbuf.capacity);
 	// 1 トラック目の再生開始可能条件を満たしたらミキサ起動
 	if (track->mixer->busy == false && track->outputbuf.count >= track->mixer->frames_per_block) {
 #if defined(_KERNEL)
@@ -844,9 +844,9 @@ audio_mixer_play(audio_trackmixer_t *mixer, bool isdrain)
 	sc = mixer->sc;
 	KASSERT(mutex_owned(sc->sc_intr_lock));
 
-	TRACE0("start mixseq=%d hwseq=%d cap=%d cnt=%d",
+	TRACE0("start mixseq=%d hwseq=%d hwbuf=%d/%d",
 		(int)mixer->mixseq, (int)mixer->hwseq,
-		mixer->hwbuf.capacity, mixer->hwbuf.count);
+		mixer->hwbuf.count, mixer->hwbuf.capacity);
 	/* 全部のトラックに聞く */
 
 	mixer->busy = true;
@@ -857,9 +857,9 @@ audio_mixer_play(audio_trackmixer_t *mixer, bool isdrain)
 		mixer->mixseq < mixer->hwseq + 2
 	 && mixer->hwbuf.capacity - mixer->hwbuf.count > 0) {
 
-		TRACE0("while mixseq=%d hwseq=%d cap=%d cnt=%d",
+		TRACE0("while mixseq=%d hwseq=%d hwbuf=%d/%d",
 			(int)mixer->mixseq, (int)mixer->hwseq,
-			mixer->hwbuf.capacity, mixer->hwbuf.count);
+			mixer->hwbuf.count, mixer->hwbuf.capacity);
 
 		audio_file_t *f;
 		int mixed = 0;
@@ -883,15 +883,15 @@ audio_mixer_play(audio_trackmixer_t *mixer, bool isdrain)
 
 	/* ハードウェアへ通知する */
 	if (mixer->hwbuf.count >= 0) {
-		TRACE0("start mixseq=%d hwseq=%d", (int)mixer->mixseq, (int)mixer->hwseq);
 #if !defined(_KERNEL)
+		TRACE0("notify mixseq=%d hwseq=%d", (int)mixer->mixseq, (int)mixer->hwseq);
 		audio_softc_play_start(mixer->sc);
 #endif
 		mixer->hw_output_counter += mixer->frames_per_block;
 	}
 
-	TRACE0("hwseq=%d mixseq=%d", (int)mixer->hwseq, (int)mixer->mixseq);
-	if (mixer->hwseq == mixer->mixseq) {
+	TRACE0("mixseq=%d hwseq=%d", (int)mixer->mixseq, (int)mixer->hwseq);
+	if (mixer->mixseq == mixer->hwseq) {
 		mixer->busy = false;
 	}
 }
@@ -906,7 +906,8 @@ audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int 
 {
 	/* 1 ブロック貯まるまで待つ */
 	if (track->outputbuf.count < mixer->frames_per_block) {
-		TRACE0("track count too short: track_buf.count=%d", track->outputbuf.count);
+		TRACE0("track count(%d) < fpb(%d); return",
+		    track->outputbuf.count, mixer->frames_per_block);
 		return mixed;
 	}
 
@@ -1034,6 +1035,7 @@ audio_mixer_play_period(audio_trackmixer_t *mixer /*, bool force */)
 	}
 	audio_ring_appended(&mixer->hwbuf, count);
 	unlock(sc);
+	TRACE0("hwbuf=%d/%d", mixer->hwbuf.count, mixer->hwbuf.capacity);
 }
 
 void
@@ -1049,9 +1051,10 @@ audio_trackmixer_intr(audio_trackmixer_t *mixer, int count)
 	mixer->hwseq++;
 	// drain 待ちしている人のために通知
 	cv_broadcast(&mixer->intrcv);
-	TRACE0("++hwsec=%d cmplcnt=%d",
+	TRACE0("++hwsec=%d cmplcnt=%d hwbuf=%d/%d",
 		(int)mixer->hwseq,
-		(int)mixer->hw_complete_counter);
+		(int)mixer->hw_complete_counter,
+		mixer->hwbuf.count, mixer->hwbuf.capacity);
 
 	audio_mixer_play(mixer, true);
 }

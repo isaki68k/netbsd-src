@@ -2149,7 +2149,7 @@ audio_start_output(struct audio_softc *sc)
 	blksize = mixer->frames_per_block *
 	    mixer->hwbuf.fmt.channels * mixer->hwbuf.fmt.stride / NBBY;
 
-	DPRINTF(("%s blksize=%d\n", __func__, blksize));
+	DPRINTF(("%s blksize=%d bytes\n", __func__, blksize));
 
 	if (sc->hw_if->trigger_output) {
 		audio_params_t params;
