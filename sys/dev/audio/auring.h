@@ -84,7 +84,6 @@ audio_ring_tookfromtop(audio_ring_t *ring, int n)
 
 	ring->top = audio_ring_round(ring, ring->top + n);
 	ring->count -= n;
-	if (ring->count == 0) ring->top = 0;
 }
 
 /*
