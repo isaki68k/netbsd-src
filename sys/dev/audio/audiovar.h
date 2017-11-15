@@ -252,3 +252,16 @@ format2_to_params(const audio_format2_t *f2)
 	p.precision = f2->stride;
 	return p;
 }
+
+static inline audio_format2_t
+params_to_format2(const struct audio_params *p)
+{
+	audio_format2_t f2;
+
+	f2.sample_rate = p->sample_rate;
+	f2.channels    = p->channels;
+	f2.encoding    = p->encoding;
+	f2.precision   = p->validbits;
+	f2.stride      = p->precision;
+	return f2;
+}

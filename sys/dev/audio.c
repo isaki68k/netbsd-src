@@ -249,32 +249,6 @@ static void stream_filter_list_set(stream_filter_list_t *, int,
 		stream_filter_factory_t, const audio_params_t *);
 #endif
 
-static inline struct audio_params
-format2_to_params(const audio_format2_t *f2)
-{
-	audio_params_t p;
-
-	p.sample_rate = f2->sample_rate;
-	p.channels    = f2->channels;
-	p.encoding    = f2->encoding;
-	p.validbits   = f2->precision;
-	p.precision   = f2->stride;
-	return p;
-}
-
-static inline audio_format2_t
-params_to_format2(const struct audio_params *p)
-{
-	audio_format2_t f2;
-
-	f2.sample_rate = p->sample_rate;
-	f2.channels    = p->channels;
-	f2.encoding    = p->encoding;
-	f2.precision   = p->validbits;
-	f2.stride      = p->precision;
-	return f2;
-}
-
 
 static void mixer_init(struct audio_softc *);
 static int mixer_open(dev_t, struct audio_softc *, int, int, struct lwp *,
