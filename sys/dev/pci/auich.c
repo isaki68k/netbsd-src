@@ -1033,21 +1033,15 @@ auich_set_params(void *v, int setmode, int usemode,
 			continue;
 
 		if (sc->sc_codectype == AC97_CODEC_TYPE_AUDIO) {
-			if (p->sample_rate <  8000 ||
-			    p->sample_rate > 48000)
-				return EINVAL;
-
 			if (!sc->sc_spdif)
 				index = auconv_set_converter(sc->sc_audio_formats,
-				    AUICH_AUDIO_NFORMATS, mode, p, TRUE, fil);
+				    AUICH_AUDIO_NFORMATS, mode, p, false, fil);
 			else
 				index = auconv_set_converter(auich_spdif_formats,
-				    AUICH_SPDIF_NFORMATS, mode, p, TRUE, fil);
+				    AUICH_SPDIF_NFORMATS, mode, p, false, fil);
 		} else {
-			if (p->sample_rate != 8000 && p->sample_rate != 16000)
-				return EINVAL;
 			index = auconv_set_converter(sc->sc_modem_formats,
-			    AUICH_MODEM_NFORMATS, mode, p, TRUE, fil);
+			    AUICH_MODEM_NFORMATS, mode, p, false, fil);
 		}
 		if (index < 0)
 			return EINVAL;
