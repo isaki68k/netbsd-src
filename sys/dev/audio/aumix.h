@@ -54,6 +54,7 @@ void audio_mixer_play(audio_trackmixer_t *, bool isdrain);
 void audio_mixer_play_period(audio_trackmixer_t *mixer);
 int  audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req, int mixed);
 void audio_trackmixer_intr(audio_trackmixer_t *mixer, int count);
+bool audio_trackmixer_play(audio_trackmixer_t *mixer);
 
 /* glue layer */
 int audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *file); /* write の MI 側 */
