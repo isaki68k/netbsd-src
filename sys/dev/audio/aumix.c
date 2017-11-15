@@ -1141,7 +1141,7 @@ audio_track_play_drain_core(audio_track_t *track, bool wait)
 
 	TRACE(track, "");
 	KASSERT(mutex_owned(sc->sc_lock));
-	KASSERT(!mutex_owned(sc->sc_intr_lock));
+	//KASSERT(!mutex_owned(sc->sc_intr_lock));
 
 	track->is_draining = true;
 
