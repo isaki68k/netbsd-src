@@ -4291,6 +4291,7 @@ audio_modcmd(modcmd_t cmd, void *arg)
 //  - pause と他の設定変更を同時にするのはやめたほうがいい
 //  - 全体的にロールバックできてなさそう
 // x audio(4) に AUDIO_PERROR がない (RERROR はある)
+// x audio(9) の allocm のプロトタイプがおかしい?
 // x AUDIO_RERROR はサンプル数と読めるが、実際に返すのはバイト数。
 // x lastinfo を全トラックが持っているが、ハードウェア部分は1つの lastinfo
 //   に分離しないと、suspend/resume の時におかしくなっている。
