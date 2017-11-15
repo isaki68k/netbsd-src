@@ -65,6 +65,7 @@ void CALLBACK audio_dev_win32_callback(
 #ifdef AUDIO_INTR_EMULATED
 		struct intr_t x;
 		x.code = INTR_TRACKMIXER;
+		x.sc = sc;
 		x.mixer = mixer;
 		x.count = wh->dwBufferLength / dev->wfx.nBlockAlign;
 		emu_intr(x);
@@ -85,6 +86,8 @@ audio_attach(struct audio_softc **softc)
 	sc->phys = calloc(1, sizeof(audio_dev_win32_t));
 	sc->sc_pmixer = &sc->pmixer0;
 	sc->sc_rmixer = &sc->rmixer0;
+	sc->sc_lock = &sc->sc_lock0;
+	sc->sc_intr_lock = &sc->sc_intr_lock0;
 
 	audio_dev_win32_t *dev = sc->phys;
 	/* こっちが一次情報 */
@@ -149,7 +152,7 @@ audio_detach(struct audio_softc *sc)
 	SLIST_FOREACH(f, &sc->sc_files, entry) {
 		audio_track_t *ptrack = &f->ptrack;
 
-		audio_track_play_drain_core(ptrack, true);
+		audio_track_play_drain(ptrack, true);
 	}
 	printf("output=%d complete=%d\n", (int)sc->sc_pmixer->hw_output_counter, (int)sc->sc_pmixer->hw_complete_counter);
 #endif

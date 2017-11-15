@@ -1115,10 +1115,14 @@ audio_trackmixer_intr(audio_trackmixer_t *mixer, int count)
 
 #if !defined(_KERNEL)
 void
-audio_track_play_drain(audio_track_t *track)
+audio_track_play_drain(audio_track_t *track, bool wait)
 {
 	// 割り込みエミュレートしているときはメインループに制御を戻さないといけない
-	audio_track_play_drain_core(track, false);
+	audio_trackmixer_t *mixer = track->mixer;
+	struct audio_softc *sc = mixer->sc;
+	mutex_enter(sc->sc_lock);
+	audio_track_play_drain_core(track, wait);
+	mutex_exit(sc->sc_lock);
 }
 #else
 void

@@ -97,5 +97,17 @@ int cv_wait_sig(kcondvar_t *cv, void *lock);
 static inline int
 mutex_owned(void *mutex)
 {
-	return 1;
+	return (*(int*)mutex != 0);
+}
+
+static inline void
+mutex_enter(void *mutex)
+{
+	*(int*)mutex = 1;
+}
+
+static inline void
+mutex_exit(void *mutex)
+{
+	*(int*)mutex = 0;
 }
