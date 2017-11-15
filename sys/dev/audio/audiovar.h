@@ -249,6 +249,7 @@ struct audio_softc
 	audio_trackmixer_t pmixer0;
 	audio_trackmixer_t rmixer0;
 	void *sc_lock;
+	void *sc_intr_lock;
 };
 #endif // _KERNEL
 
