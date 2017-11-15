@@ -683,6 +683,8 @@ audio_apply_stage(audio_track_t *track, audio_stage_t *stage, bool isdrain)
 static int
 audio_track_play_input(audio_track_t *track)
 {
+	if (track->uio == NULL) return 0;
+
 	/* input の空きバイト数を求める */
 	int free_count = audio_ring_unround_free_count(track->input);
 	int free_bytelen = free_count * track->inputfmt.channels * track->inputfmt.stride / 8 - track->subframe_buf_used;
@@ -1204,16 +1206,20 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 	track->uio = uio;
 	audio_mixer_play(sc->sc_pmixer, false);
 
+	error = 0;
 	while (uio->uio_resid > 0) {
 		error = audio_waitio(sc, track);
 		if (error < 0) {
 			error = EINTR;
 		}
 		if (error) {
-			return error;
+			break;
 		}
 	}
-	return 0;
+
+	// finally
+	track->uio = NULL;
+	return error;
 }
 
 static int
