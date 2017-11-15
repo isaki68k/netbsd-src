@@ -1320,9 +1320,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 		audio_track_play(track, false);
 
 		if (wake == false) {
-			mutex_enter(sc->sc_intr_lock);
 			wake = audio_trackmixer_play(sc->sc_pmixer);
-			mutex_exit(sc->sc_intr_lock);
 		}
 
 
