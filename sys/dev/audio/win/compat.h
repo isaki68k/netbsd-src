@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include "queue.h"
 
 #define LITTLE_ENDIAN 1
 #define BIG_ENDIAN 2
@@ -14,6 +15,37 @@
 
 typedef int64_t off_t;
 typedef void *kcondvar_t;
+
+struct audio_hw_if {
+	void *(*allocm)(void *, int, size_t);
+	void (*freem)(void *, void *, size_t);
+};
+
+// audiovar.h の前方参照
+typedef struct audio_trackmixer audio_trackmixer_t;
+
+/* Userland から見えるデバイス */
+struct audio_softc
+{
+	SLIST_HEAD(files_head, audio_file) sc_files;		/* 開いているファイルのリスト */
+	audio_trackmixer_t  *sc_pmixer;		/* 接続されている再生ミキサ */
+	audio_trackmixer_t  *sc_rmixer;		/* 接続されている録音ミキサ */
+	void *sc_lock;
+	void *sc_intr_lock;
+	struct audio_hw_if *hw_if;
+	void *hw_hdl;
+
+	kcondvar_t *sc_wchan;
+	kcondvar_t *sc_rchan;
+
+	void *phys; // 実物理デバイス
+
+	int sc_lock0;
+	int sc_intr_lock0;
+	struct audio_hw_if hw_if0;
+};
+
+void audio_softc_init(struct audio_softc *sc);
 
 inline
 uint16_t __builtin_bswap16(uint16_t a)

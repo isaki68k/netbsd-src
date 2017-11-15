@@ -841,7 +841,7 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 
 	mixer->hwbuf.fmt = audio_softc_get_hw_format(mixer->sc, mode);
 	mixer->hwbuf.capacity = audio_softc_get_hw_capacity(mixer->sc);
-	mixer->hwbuf.sample = audio_softc_allocm(mixer->sc, RING_BYTELEN(&mixer->hwbuf));
+	mixer->hwbuf.sample = sc->hw_if->allocm(NULL, 0, RING_BYTELEN(&mixer->hwbuf));
 
 	mixer->frames_per_block = mixer->hwbuf.fmt.sample_rate * AUDIO_BLK_MS / 1000;
 #endif
@@ -874,15 +874,11 @@ audio_mixer_destroy(audio_trackmixer_t *mixer, int mode)
 	struct audio_softc *sc = mixer->sc;
 
 	if (mixer->hwbuf.sample != NULL) {
-#if defined(_KERNEL)
 		if (sc->hw_if->freem) {
 			sc->hw_if->freem(sc->hw_hdl, mixer->hwbuf.sample, mode);
 		} else {
 			kern_free(mixer->hwbuf.sample);
 		}
-#else
-		audio_softc_freem(mixer->hwbuf.sample);
-#endif
 		mixer->hwbuf.sample = NULL;
 	}
 

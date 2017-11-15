@@ -236,26 +236,6 @@ struct audio_file
 	SLIST_ENTRY(audio_file) entry;
 };
 
-#if !defined(_KERNEL)
-/* Userland から見えるデバイス */
-struct audio_softc
-{
-	SLIST_HEAD(files_head, audio_file) sc_files;		/* 開いているファイルのリスト */
-	audio_trackmixer_t  *sc_pmixer;		/* 接続されている再生ミキサ */
-	audio_trackmixer_t  *sc_rmixer;		/* 接続されている録音ミキサ */
-	void *sc_lock;
-	void *sc_intr_lock;
-
-	kcondvar_t *sc_wchan;
-	kcondvar_t *sc_rchan;
-
-	void *phys; // 実物理デバイス
-	audio_trackmixer_t pmixer0;
-	audio_trackmixer_t rmixer0;
-	int sc_lock0;
-	int sc_intr_lock0;
-};
-#endif // _KERNEL
 
 extern const char *fmt_tostring(const audio_format2_t *);
 extern int debug;

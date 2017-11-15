@@ -9,6 +9,7 @@
 #include "auring.h"
 #include <stdio.h>
 #include "auintr.h"
+#include "compat.h"
 
 //#define DEBUG_ONEBUF
 //#define DEBUG_DUMP
@@ -42,6 +43,17 @@ void unlock(struct audio_softc *sc)
 	audio_dev_win32_t *dev = sc->phys;
 	LeaveCriticalSection(&dev->cs);
 }
+
+void *win_allocm(void *hdl, int direction, size_t size)
+{
+	return malloc(size);
+}
+
+void win_freem(void *hdl, void *addr, size_t size)
+{
+	free(addr);
+}
+
 
 void CALLBACK audio_dev_win32_callback(
 	HWAVEOUT hwo,
@@ -83,11 +95,11 @@ audio_attach(struct audio_softc **softc)
 	struct audio_softc *sc;
 	sc = calloc(1, sizeof(struct audio_softc));
 	*softc = sc;
+	audio_softc_init(sc);
+	sc->hw_if->allocm = win_allocm;
+	sc->hw_if->freem = win_freem;
+
 	sc->phys = calloc(1, sizeof(audio_dev_win32_t));
-	sc->sc_pmixer = &sc->pmixer0;
-	sc->sc_rmixer = &sc->rmixer0;
-	sc->sc_lock = &sc->sc_lock0;
-	sc->sc_intr_lock = &sc->sc_intr_lock0;
 
 	audio_dev_win32_t *dev = sc->phys;
 	/* こっちが一次情報 */
@@ -300,11 +312,6 @@ int audio_softc_get_hw_capacity(struct audio_softc *sc)
 {
 	audio_dev_win32_t *dev = sc->phys;
 	return dev->data_framecount * WAVEHDR_COUNT;
-}
-
-void* audio_softc_allocm(struct audio_softc *sc, int n)
-{
-	return malloc(n);
 }
 
 audio_format2_t audio_softc_get_hw_format(struct audio_softc *sc, int mode)
