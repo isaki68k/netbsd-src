@@ -54,19 +54,8 @@
 
 #define AUDIO_TRACE
 #ifdef AUDIO_TRACE
-#define TRACE0(fmt, ...)	do {	\
-	struct timeval tv;\
-	getmicrotime(&tv);\
-	printf("%d.%06d ", (int)tv.tv_sec%60, (int)tv.tv_usec); \
-	printf("%s ", __func__);	\
-	printf(fmt, ## __VA_ARGS__);	\
-	printf("\n");	\
-} while (0)
-#define TRACE(t, fmt, ...)	do {	\
-	printf("%s #%d ", __func__, (t)->id);		\
-	printf(fmt, ## __VA_ARGS__);	\
-	printf("\n");	\
-} while (0)
+#define TRACE0(fmt, ...)	audio_trace0(__func__, fmt, ## __VA_ARGS__)
+#define TRACE(t, fmt, ...)	audio_trace(__func__, t, fmt, ## __VA_ARGS__)
 #else
 #define TRACE0(fmt, ...)	/**/
 #define TRACE(t, fmt, ...)	/**/
@@ -77,6 +66,8 @@
 #define unlock(x)				/*とりあえず*/
 #endif
 
+void audio_trace0(const char *funcname, const char *fmt, ...);
+void audio_trace(const char *funcname, audio_track_t *track, const char *fmt, ...);
 void *audio_realloc(void *memblock, size_t bytes);
 void audio_free(void *memblock);
 int16_t audio_volume_to_inner(uint8_t v);
@@ -89,6 +80,36 @@ void audio_trackmixer_output(audio_trackmixer_t *mixer);
 static int audio_waitio(struct audio_softc *sc, audio_track_t *track);
 #endif // !_KERNEL
 
+
+void
+audio_trace0(const char *funcname, const char *fmt, ...)
+{
+	struct timeval tv;
+	va_list ap;
+
+	getmicrotime(&tv);
+	printf("%d.%06d ", (int)tv.tv_sec%60, (int)tv.tv_usec);
+	printf("%s ", funcname);
+	va_start(ap, fmt);
+	vprintf(fmt, ap);
+	va_end(ap);
+	printf("\n");
+}
+
+void
+audio_trace(const char *funcname, audio_track_t *track, const char *fmt, ...)
+{
+	struct timeval tv;
+	va_list ap;
+
+	getmicrotime(&tv);
+	printf("%d.%06d ", (int)tv.tv_sec%60, (int)tv.tv_usec);
+	printf("%s #%d ", funcname, track->id);
+	va_start(ap, fmt);
+	vprintf(fmt, ap);
+	va_end(ap);
+	printf("\n");
+}
 
 /* メモリアロケーションの STUB */
 
