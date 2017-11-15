@@ -36,9 +36,6 @@ struct audio_softc
 	void *hw_hdl;
 	int sc_eof;
 
-	kcondvar_t *sc_wchan;
-	kcondvar_t *sc_rchan;
-
 	void *phys; // 実物理デバイス
 
 	int sc_lock0;
