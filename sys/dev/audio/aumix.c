@@ -55,6 +55,9 @@
 #define AUDIO_TRACE
 #ifdef AUDIO_TRACE
 #define TRACE0(fmt, ...)	do {	\
+	struct timeval tv;\
+	getmicrotime(&tv);\
+	printf("%d.%06d ", (int)tv.tv_sec%60, (int)tv.tv_usec); \
 	printf("%s ", __func__);	\
 	printf(fmt, ## __VA_ARGS__);	\
 	printf("\n");	\
@@ -1152,6 +1155,8 @@ audio_trackmixer_output(audio_trackmixer_t *mixer)
 {
 	struct audio_softc *sc;
 	KASSERT(mixer->hwbuf.count >= mixer->frames_per_block);
+	TRACE0("hwbuf=%d/%d/%d",
+	    mixer->hwbuf.top, mixer->hwbuf.count, mixer->hwbuf.capacity);
 
 	sc = mixer->sc;
 
