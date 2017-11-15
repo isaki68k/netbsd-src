@@ -52,6 +52,13 @@ __KERNEL_RCSID(0, "$NetBSD: pad.c,v 1.38 2017/07/01 05:50:10 nat Exp $");
 
 #include <dev/pad/padvar.h>
 
+#define PAD_DEBUG
+#ifdef PAD_DEBUG
+#define DPRINTF(fmt...)	printf(fmt)
+#else
+#define DPRINTF(fmt...) /**/
+#endif
+
 #define PADUNIT(x)	minor(x)
 
 #define PADFREQ		44100
@@ -79,7 +86,6 @@ static void	pad_attach(device_t, device_t, void *);
 static int	pad_detach(device_t, int);
 static void	pad_childdet(device_t, device_t);
 
-static int	pad_audio_open(void *, int);
 static int	pad_query_encoding(void *, struct audio_encoding *);
 static int	pad_set_params(void *, int, int,
 				audio_params_t *, audio_params_t *,
@@ -95,8 +101,9 @@ static int	pad_set_port(void *, mixer_ctrl_t *);
 static int	pad_get_port(void *, mixer_ctrl_t *);
 static int	pad_query_devinfo(void *, mixer_devinfo_t *);
 static int	pad_get_props(void *);
-static int	pad_round_blocksize(void *, int, int, const audio_params_t *);
 static void	pad_get_locks(void *, kmutex_t **, kmutex_t **);
+
+static void	pad_done_output(void *);
 
 static stream_filter_t *pad_swvol_filter_le(struct audio_softc *,
     const audio_params_t *, const audio_params_t *);
@@ -107,7 +114,6 @@ static void	pad_swvol_dtor(stream_filter_t *);
 static bool	pad_is_attached;	/* Do we have an audio* child? */
 
 static const struct audio_hw_if pad_hw_if = {
-	.open = pad_audio_open,
 	.query_encoding = pad_query_encoding,
 	.set_params = pad_set_params,
 	.start_output = pad_start_output,
@@ -119,7 +125,6 @@ static const struct audio_hw_if pad_hw_if = {
 	.get_port = pad_get_port,
 	.query_devinfo = pad_query_devinfo,
 	.get_props = pad_get_props,
-	.round_blocksize = pad_round_blocksize,
 	.get_locks = pad_get_locks,
 };
 
@@ -163,6 +168,7 @@ padattach(int n)
 	cfdata_t cf;
 
 	aprint_debug("pad: requested %d units\n", n);
+	DPRINTF("%s: requested %d units\n", __func__, n);
 
 	err = config_cfattach_attach(pad_cd.cd_name, &pad_ca);
 	if (err) {
@@ -223,9 +229,6 @@ pad_get_block(pad_softc_t *sc, pad_block_t *pb, int blksize)
 	KASSERT(mutex_owned(&sc->sc_lock));
 	KASSERT(pb != NULL);
 
-	if (sc->sc_buflen < blksize)
-		return ERESTART;
-
 	pb->pb_ptr = (sc->sc_audiobuf + sc->sc_rpos);
 	if (sc->sc_rpos + blksize < PAD_BUFSIZE) {
 		pb->pb_len = blksize;
@@ -273,6 +276,7 @@ pad_attach(device_t parent, device_t self, void *opaque)
 	cv_init(&sc->sc_condvar, device_xname(self));
 	mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_NONE);
 	mutex_init(&sc->sc_intr_lock, MUTEX_DEFAULT, IPL_NONE);
+	callout_init(&sc->sc_pcallout, 0/*XXX?*/);
 
 	sc->sc_swvol = 255;
 	sc->sc_buflen = 0;
@@ -325,7 +329,9 @@ pad_dev_open(dev_t dev, int flags, int fmt, struct lwp *l)
 
 	if (atomic_swap_uint(&sc->sc_open, 1) != 0)
 		return EBUSY;
-	
+
+	DPRINTF("%s -> %d\n", __func__, sc->sc_open);
+
 	return 0;
 }
 
@@ -338,8 +344,10 @@ pad_dev_close(dev_t dev, int flags, int fmt, struct lwp *l)
 	if (sc == NULL)
 		return ENXIO;
 
+	// こっちも atomic にしないとだめなんでは
 	KASSERT(sc->sc_open > 0);
 	sc->sc_open = 0;
+	DPRINTF("%s -> %d\n", __func__, sc->sc_open);
 
 	return 0;
 }
@@ -351,13 +359,9 @@ pad_dev_close(dev_t dev, int flags, int fmt, struct lwp *l)
 int
 pad_dev_read(dev_t dev, struct uio *uio, int flags)
 {
-	struct timeval now;
-	uint64_t nowusec, lastusec;
 	pad_softc_t *sc;
 	pad_block_t pb;
-	void (*intr)(void *);
-	void *intrarg;
-	int err, wait_ticks;
+	int err;
 
 	sc = device_lookup_private(&pad_cd, PADUNIT(dev));
 	if (sc == NULL)
@@ -365,79 +369,32 @@ pad_dev_read(dev_t dev, struct uio *uio, int flags)
 
 	err = 0;
 
+	DPRINTF("%s: resid=%zu\n", __func__, uio->uio_resid);
 	while (uio->uio_resid > 0 && !err) {
 		mutex_enter(&sc->sc_lock);
-		intr = sc->sc_intr;
-		intrarg = sc->sc_intrarg;
 
-		getmicrotime(&now);
-		nowusec = (now.tv_sec * 1000000) + now.tv_usec;
-		lastusec = (sc->sc_last.tv_sec * 1000000) +
-		     sc->sc_last.tv_usec;
-		if (lastusec + TIMENEXTREAD > nowusec) {
-			if (sc->sc_bytes_count >= BYTESTOSLEEP) {
-				sc->sc_remainder +=
-				    ((lastusec + TIMENEXTREAD) - nowusec);
+		if (sc->sc_buflen == 0) {
+			DPRINTF("%s: wait\n", __func__);
+			err = cv_wait_sig(&sc->sc_condvar, &sc->sc_lock);
+			mutex_exit(&sc->sc_lock);
+			DPRINTF("%s: wake up %d\n", __func__, err);
+			if (err) {
+				if (err == ERESTART)
+					err = EINTR;
+				break;
 			}
-			
-			wait_ticks = (hz * sc->sc_remainder) / 1000000;
-			if (wait_ticks > 0) {
-				sc->sc_remainder -= wait_ticks * 1000000 / hz;
-				kpause("padwait", TRUE, wait_ticks,
-				    &sc->sc_lock);
-			}
+			continue;
 		}
-
-		if (sc->sc_bytes_count >= BYTESTOSLEEP)
-			sc->sc_bytes_count -= BYTESTOSLEEP;
 
 		err = pad_get_block(sc, &pb, min(uio->uio_resid, PAD_BLKSIZE));
-		if (!err) {
-			getmicrotime(&sc->sc_last);
-			sc->sc_bytes_count += pb.pb_len;
-			mutex_exit(&sc->sc_lock);
-			err = uiomove(pb.pb_ptr, pb.pb_len, uio);
-			continue;
-		}
-
-		if (intr) {
-			mutex_enter(&sc->sc_intr_lock);
-			kpreempt_disable();
-			(*intr)(intrarg);
-			kpreempt_enable();
-			mutex_exit(&sc->sc_intr_lock);
-			intr = sc->sc_intr;
-			intrarg = sc->sc_intrarg;
-			err = 0;
-			mutex_exit(&sc->sc_lock);
-			continue;
-		}
-		err = cv_wait_sig(&sc->sc_condvar, &sc->sc_lock);
-		if (err != 0) {
-			mutex_exit(&sc->sc_lock);
-			break;
-		}
-
 		mutex_exit(&sc->sc_lock);
+		if (err)
+			break;
+		DPRINTF("%s: move %d\n", __func__, pb.pb_len);
+		uiomove(pb.pb_ptr, pb.pb_len, uio);
 	}
 
 	return err;
-}
-
-static int
-pad_audio_open(void *opaque, int flags)
-{
-	pad_softc_t *sc;
-	sc = opaque;
-
-	if (sc->sc_open == 0)
-		return EIO;
-
-	getmicrotime(&sc->sc_last);
-	sc->sc_bytes_count = 0;
-	sc->sc_remainder = 0;
-
-	return 0;
 }
 
 static int
@@ -494,12 +451,11 @@ pad_start_output(void *opaque, void *block, int blksize,
 {
 	pad_softc_t *sc;
 	int err;
+	int ms;
 
 	sc = (pad_softc_t *)opaque;
 
 	KASSERT(mutex_owned(&sc->sc_lock));
-	if (!sc->sc_open)
-		return EIO;
 
 	sc->sc_intr = intr;
 	sc->sc_intrarg = intrarg;
@@ -508,6 +464,10 @@ pad_start_output(void *opaque, void *block, int blksize,
 	err = pad_add_block(sc, block, blksize);
 
 	cv_broadcast(&sc->sc_condvar);
+
+	ms = blksize * 1000 / PADCHAN / (PADPREC / NBBY) / PADFREQ;
+	DPRINTF("%s: blksize=%d ms=%d\n", __func__, blksize, ms);
+	callout_reset(&sc->sc_pcallout, mstohz(ms), pad_done_output, sc);
 
 	return err;
 }
@@ -532,8 +492,10 @@ pad_halt_output(void *opaque)
 
 	sc = (pad_softc_t *)opaque;
 
+	DPRINTF("%s\n", __func__);
 	KASSERT(mutex_owned(&sc->sc_lock));
 
+	callout_stop(&sc->sc_pcallout);
 	sc->sc_intr = NULL;
 	sc->sc_intrarg = NULL;
 	sc->sc_buflen = 0;
@@ -552,6 +514,18 @@ pad_halt_input(void *opaque)
 	KASSERT(mutex_owned(&sc->sc_lock));
 
 	return 0;
+}
+
+static void
+pad_done_output(void *arg)
+{
+	pad_softc_t *sc;
+
+	DPRINTF("%s\n", __func__);
+	sc = (pad_softc_t *)arg;
+	callout_stop(&sc->sc_pcallout);
+
+	(*sc->sc_intr)(sc->sc_intrarg);
 }
 
 static int
@@ -655,18 +629,6 @@ pad_get_props(void *opaque)
 	KASSERT(mutex_owned(&sc->sc_lock));
 
 	return 0;
-}
-
-static int
-pad_round_blocksize(void *opaque, int blksize, int mode,
-    const audio_params_t *p)
-{
-	pad_softc_t *sc __diagused;
-
-	sc = (pad_softc_t *)opaque;
-	KASSERT(mutex_owned(&sc->sc_lock));
-
-	return PAD_BLKSIZE;
 }
 
 static void

@@ -40,6 +40,7 @@ typedef struct pad_softc {
 	kcondvar_t	sc_condvar;
 	kmutex_t	sc_lock;
 	kmutex_t	sc_intr_lock;
+	callout_t	sc_pcallout;
 	bool		sc_dying;
 
 	device_t	sc_audiodev;
@@ -52,9 +53,6 @@ typedef struct pad_softc {
 	uint32_t	sc_rpos, sc_wpos;
 
 	uint8_t		sc_swvol;
-	struct timeval	sc_last;
-	int		sc_bytes_count;
-	uint32_t	sc_remainder;
 } pad_softc_t;
 
 #endif /* !_SYS_DEV_PAD_PADVAR_H */
