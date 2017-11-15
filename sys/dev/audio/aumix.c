@@ -953,9 +953,10 @@ audio2_halt_output(audio_trackmixer_t *mixer)
 {
 	struct audio_softc *sc = mixer->sc;
 
-	sc->sc_pbusy = false;
-
 	sc->hw_if->halt_output(sc->hw_hdl);
+
+	sc->sc_pbusy = false;
+	mixer->hwbuf.top = 0;
 }
 
 // トラックミキサ起動になる可能性のある再生要求
