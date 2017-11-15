@@ -1208,11 +1208,15 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 #endif // _KERNEL
 
 	track->uio = uio;
+	mutex_enter(sc->sc_intr_lock);
 	audio_mixer_play(sc->sc_pmixer, false);
+	mutex_exit(sc->sc_intr_lock);
 
 	error = 0;
 	while (uio->uio_resid > 0) {
+		mutex_enter(sc->sc_lock);
 		error = audio_waitio(sc, track);
+		mutex_exit(sc->sc_lock);
 		if (error < 0) {
 			error = EINTR;
 		}
