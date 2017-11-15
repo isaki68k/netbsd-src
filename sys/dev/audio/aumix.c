@@ -720,7 +720,7 @@ audio_track_play(audio_track_t *track, bool isdrain)
 
 	// 入力
 	if (audio_track_play_input(track) != 0) {
-		return;
+		if (isdrain == false) return;
 	}
 
 	/* エンコーディング変換 */
