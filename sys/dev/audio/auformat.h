@@ -79,3 +79,15 @@ data_ENDIAN(const audio_format2_t *fmt)
 	}
 	return BYTE_ORDER;
 }
+
+static inline int
+frametobyte(const audio_format2_t *fmt, int frames)
+{
+	return frames * fmt->channels * fmt->stride / 8;
+}
+
+static inline int
+frame_per_block_roundup(const audio_format2_t *fmt)
+{
+	return (fmt->sample_rate * AUDIO_BLK_MS + 999) / 1000;
+}

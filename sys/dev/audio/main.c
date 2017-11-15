@@ -263,7 +263,7 @@ child_loop(struct test_file *f, int loop)
 	if (f->wait > loop) return 0;
 
 	// 1ブロック分のフレーム数
-	int frames_per_block = f->mem.fmt.sample_rate * AUDIO_BLK_MS / 1000;
+	int frames_per_block = frame_per_block_roundup(&f->mem.fmt);
 	// 今回再生するフレーム数
 	int frames = min(f->mem.count, frames_per_block);
 	// フレーム数をバイト数に
