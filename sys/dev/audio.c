@@ -2101,6 +2101,7 @@ audiostartr(struct audio_softc *sc)
 int
 audiostartp(struct audio_softc *sc)
 {
+#if 0
 	KASSERT(mutex_owned(sc->sc_lock));
 
 	//KASSERT(!sc->sc_pbusy);
@@ -2118,6 +2119,9 @@ audiostartp(struct audio_softc *sc)
 	mutex_exit(sc->sc_intr_lock);
 
 	audio_start_output(sc);
+#else
+printf("%s\n", __func__);
+#endif
 	return 0;
 }
 
