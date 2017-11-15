@@ -1501,17 +1501,29 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 	//if (sc->sc_opens == 0 && sc->sc_recopens == 0)
 	//	return ENXIO;
 
+	// SB とかいくつかのドライバは halt_input と halt_output に
+	// 同じルーチンを使用しているので、その場合は full duplex なら
+	// halt_input を呼ばなくする?。ドライバのほうを直すべき。
+	/*
+	 * XXX Some drivers (e.g. SB) use the same routine
+	 * to halt input and output so don't halt input if
+	 * in full duplex mode.  These drivers should be fixed.
+	 */
+	// XXX これはドライバのほうを先に直せば済む話
+	if ((flags & (FREAD | FWRITE)) == (FREAD | FWRITE) &&
+	    sc->sc_full_duplex == false &&
+	    sc->hw_if->halt_input == sc->hw_if->halt_output &&
+	    sc->sc_ropens == 1) {
+		aprint_error_dev(sc->dev,
+		    "%s has halt_input == halt_output. Please fix it\n",
+		    device_xname(sc->sc_dev));
+		// そうは言いつつもとりあえず回避はしておく
+		sc->sc_rbusy = false;
+		sc->sc_rmixer->hwbuf.top = 0;
+	}
+
 	// これが最後の録音トラックなら、halt_input を呼ぶ?
 	if ((flags & FREAD) != 0) {
-		// SB とかいくつかのドライバは halt_input と halt_output に
-		// 同じルーチンを使用しているので、その場合は full duplex なら
-		// halt_input を呼ばなくする?。ドライバのほうを直すべき。
-		/*
-		 * XXX Some drivers (e.g. SB) use the same routine
-		 * to halt input and output so don't halt input if
-		 * in full duplex mode.  These drivers should be fixed.
-		 */
-		// XXX これはドライバのほうを先に直せば済む話
 		if (sc->sc_ropens == 1) {
 			if (sc->sc_rbusy) {
 				DPRINTF(("%s halt_input\n", __func__));
