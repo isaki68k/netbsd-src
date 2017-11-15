@@ -52,7 +52,7 @@ int audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode
 void audio_mixer_destroy(audio_trackmixer_t *mixer, int mode);
 void audio_mixer_play(audio_trackmixer_t *, bool isdrain);
 void audio_mixer_play_period(audio_trackmixer_t *mixer);
-int  audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int mixed);
+int  audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req, int mixed);
 void audio_trackmixer_intr(audio_trackmixer_t *mixer, int count);
 
 /* glue layer */

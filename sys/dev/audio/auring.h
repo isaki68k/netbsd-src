@@ -36,6 +36,8 @@
 /* ring の バッファ終端を求めます。この位置へのアクセスは出来ません。 */
 #define RING_END_PTR(type, ringptr) ((type*)(ringptr)->sample + (ringptr)->capacity * (ringptr)->fmt.channels)
 
+#define RING_END_UINT8(ringptr) (((uint8_t*)(ringptr)->sample + frametobyte(&(ringptr)->fmt, (ringptr)->capacity)))
+
 static inline bool
 is_valid_ring(const audio_ring_t *ring)
 {

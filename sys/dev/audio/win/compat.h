@@ -50,6 +50,8 @@ struct audio_softc
 	void *hw_hdl;
 	int sc_eof;
 
+	bool sc_pbusy;
+
 	void *phys; // 実物理デバイス
 
 	int sc_lock0;

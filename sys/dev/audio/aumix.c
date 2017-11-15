@@ -80,6 +80,7 @@ int16_t audio_volume_to_inner(uint8_t v);
 uint8_t audio_volume_to_outer(int16_t v);
 void audio_track_lock(audio_track_t *track);
 void audio_track_unlock(audio_track_t *track);
+void audio_trackmixer_output(audio_trackmixer_t *mixer);
 
 #if !defined(_KERNEL)
 static int audio_waitio(struct audio_softc *sc, audio_track_t *track);
@@ -774,14 +775,6 @@ audio_track_play(audio_track_t *track, bool isdrain)
 #endif
 	TRACE(track, "busy=%d outbuf=%d/%d%s", track->mixer->busy,
 		track->outputbuf.count, track->outputbuf.capacity, buf);
-	// 1 トラック目の再生開始可能条件を満たしたらミキサ起動
-	if (track->mixer->busy == false && track->outputbuf.count >= track->mixer->frames_per_block) {
-#if defined(_KERNEL)
-		audiostartp(track->mixer->sc);
-#else
-		audio_mixer_play(track->mixer, false);
-#endif
-	}
 }
 
 int
@@ -891,70 +884,105 @@ audio_mixer_destroy(audio_trackmixer_t *mixer, int mode)
 	// intrcv を cv_destroy() してはいけないっぽい。KASSERT で死ぬ。
 }
 
-/*
- * トラックバッファから 最大 1 ブロックを取り出し、
- * ミキシングして、ハードウェアに再生を通知します。
- */
-void
-audio_mixer_play(audio_trackmixer_t *mixer, bool isdrain)
+static int
+audio_trackmixer_mixall(audio_trackmixer_t *mixer, int req, bool isdrain)
+{
+	audio_file_t *f;
+	int mixed = 0;
+	SLIST_FOREACH(f, &mixer->sc->sc_files, entry) {
+		audio_track_t *track = &f->ptrack;
+
+		if (track->outputbuf.count < req) {
+			audio_track_play(track, isdrain);
+		}
+
+		// 合成
+		if (track->outputbuf.count > 0) {
+			mixed = audio_mixer_play_mix_track(mixer, track, req, mixed);
+		}
+	}
+	return mixed;
+}
+
+static void
+audio2_pintr(void *arg)
+{
+	// XXX: STUB
+}
+
+static int
+audio2_trigger_output(audio_trackmixer_t *mixer, void *start, void *end, int blksize)
+{
+	struct audio_softc *sc;
+	sc = mixer->sc;
+	KASSERT(sc->hw_if->trigger_output != NULL);
+
+	audio_params_t params;
+	// TODO: params 作る
+	int error = sc->hw_if->trigger_output(sc->hw_hdl, start, end, blksize, audio2_pintr, sc, &params);
+	return error;
+}
+
+static int
+audio2_start_output(audio_trackmixer_t *mixer, void *start, int blksize)
+{
+	struct audio_softc *sc;
+	sc = mixer->sc;
+	KASSERT(sc->hw_if->start_output != NULL);
+
+	int error = sc->hw_if->start_output(sc->hw_hdl, start, blksize, audio2_pintr, sc);
+	return error;
+}
+
+static void
+stop(audio_trackmixer_t *mixer)
+{
+	mixer->sc->sc_pbusy = false;
+	// TODO: halt
+}
+
+// トラックミキサ起動になる可能性のある再生要求
+// トラックミキサが起動したら true を返します。
+bool
+audio_trackmixer_play(audio_trackmixer_t *mixer)
 {
 	struct audio_softc *sc;
 
 	sc = mixer->sc;
-	KASSERT(mutex_owned(sc->sc_intr_lock));
+	KASSERT(mutex_owned(sc->sc_lock));
+
+	// トラックミキサが起動していたら、割り込みから駆動されるので true を返しておく
+	if (sc->sc_pbusy) return true;
 
 	TRACE0("begin mixseq=%d hwseq=%d hwbuf=%d/%d/%d",
 		(int)mixer->mixseq, (int)mixer->hwseq,
 		mixer->hwbuf.top, mixer->hwbuf.count, mixer->hwbuf.capacity);
-	/* 全部のトラックに聞く */
-
-	mixer->busy = true;
 
 	// ダブルバッファを埋める
-	// ダブルバッファ条件
-	while (
-		mixer->mixseq < mixer->hwseq + 2
-	 && mixer->hwbuf.capacity - mixer->hwbuf.count > 0) {
 
-		TRACE0("while mixseq=%d hwseq=%d hwbuf=%d/%d/%d",
-			(int)mixer->mixseq, (int)mixer->hwseq,
-			mixer->hwbuf.top, mixer->hwbuf.count, mixer->hwbuf.capacity);
-
-		audio_file_t *f;
-		int mixed = 0;
-		SLIST_FOREACH(f, &mixer->sc->sc_files, entry) {
-			audio_track_t *track = &f->ptrack;
-
-			if (track->outputbuf.count < mixer->frames_per_block) {
-				audio_track_play(track, isdrain);
-			}
-
-			// 合成
-			if (track->outputbuf.count > 0) {
-				mixed = audio_mixer_play_mix_track(mixer, track, mixed);
-			}
+	if (mixer->hwbuf.capacity - mixer->hwbuf.count >= mixer->frames_per_block) {
+		int mixed = audio_trackmixer_mixall(mixer, 2 * mixer->frames_per_block, false);
+		if (mixed == 0) {
+			TRACE0("data not mixed");
+			return false;
 		}
-		if (mixed == 0) break;
 
 		// バッファの準備ができたら転送。
+		mutex_enter(sc->sc_intr_lock);
 		audio_mixer_play_period(mixer);
+		if (mixer->hwbuf.count >= mixer->frames_per_block * 2) {
+			if (sc->sc_pbusy == false) {
+				audio_trackmixer_output(mixer);
+			}
+		}
+		mutex_exit(sc->sc_intr_lock);
 	}
+
 	TRACE0("end   mixseq=%d hwseq=%d hwbuf=%d/%d/%d",
 		(int)mixer->mixseq, (int)mixer->hwseq,
 		mixer->hwbuf.top, mixer->hwbuf.count, mixer->hwbuf.capacity);
 
-	/* ハードウェアへ通知する */
-	if (mixer->hwbuf.count >= 0) {
-#if !defined(_KERNEL)
-		audio_softc_play_start(mixer->sc);
-#endif
-		mixer->hw_output_counter += mixer->frames_per_block;
-	}
-
-	if (mixer->mixseq == mixer->hwseq) {
-		mixer->busy = false;
-		TRACE0("busy false");
-	}
+	return sc->sc_pbusy;
 }
 
 /*
@@ -963,12 +991,12 @@ audio_mixer_play(audio_trackmixer_t *mixer, bool isdrain)
 * return: 合成済みトラックカウンタ。
 */
 int
-audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int mixed)
+audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req, int mixed)
 {
-	/* 1 ブロック貯まるまで待つ */
-	if (track->outputbuf.count < mixer->frames_per_block) {
-		TRACE0("track count(%d) < fpb(%d); return",
-		    track->outputbuf.count, mixer->frames_per_block);
+	/* req フレーム貯まるまで待つ */
+	if (track->outputbuf.count < req) {
+		TRACE(track, "track count(%d) < req(%d); return",
+		    track->outputbuf.count, req);
 		return mixed;
 	}
 
@@ -1100,6 +1128,32 @@ audio_mixer_play_period(audio_trackmixer_t *mixer /*, bool force */)
 	    mixer->hwbuf.top, mixer->hwbuf.count, mixer->hwbuf.capacity);
 }
 
+// ハードウェアバッファから 1 ブロック出力
+void
+audio_trackmixer_output(audio_trackmixer_t *mixer)
+{
+	struct audio_softc *sc;
+	KASSERT(mixer->hwbuf.count >= mixer->frames_per_block);
+
+	sc = mixer->sc;
+
+	if (sc->hw_if->trigger_output) {
+		if (!sc->sc_pbusy) {
+			audio2_trigger_output(
+				mixer,
+				mixer->hwbuf.sample,
+				RING_END_UINT8(&mixer->hwbuf),
+				frametobyte(&mixer->hwbuf.fmt, mixer->frames_per_block));
+		}
+	} else {
+		audio2_start_output(
+			mixer,
+			RING_TOP_UINT8(&mixer->hwbuf),
+			frametobyte(&mixer->hwbuf.fmt, mixer->frames_per_block));
+	}
+	sc->sc_pbusy = true;
+}
+
 void
 audio_trackmixer_intr(audio_trackmixer_t *mixer, int count)
 {
@@ -1111,6 +1165,25 @@ audio_trackmixer_intr(audio_trackmixer_t *mixer, int count)
 
 	mixer->hw_complete_counter += count;
 	mixer->hwseq++;
+
+	// まず出力待ちのシーケンスを出力
+	if (mixer->hwbuf.count >= mixer->frames_per_block) {
+		audio_trackmixer_output(mixer);
+
+		// 次のバッファを用意する
+		int mixed = audio_trackmixer_mixall(mixer, mixer->frames_per_block, true);
+		if (mixed == 0) {
+			if (sc->hw_if->trigger_output) {
+//				audio_append_silence
+			}
+		} else {
+			audio_mixer_play_period(mixer);
+		}
+	} else {
+		stop(mixer);
+		mixer->busy = false;
+	}
+
 	// drain 待ちしている人のために通知
 	cv_broadcast(&mixer->intrcv);
 	TRACE0("++hwsec=%d cmplcnt=%d hwbuf=%d/%d/%d",
@@ -1118,7 +1191,6 @@ audio_trackmixer_intr(audio_trackmixer_t *mixer, int count)
 		(int)mixer->hw_complete_counter,
 		mixer->hwbuf.top, mixer->hwbuf.count, mixer->hwbuf.capacity);
 
-	audio_mixer_play(mixer, true);
 }
 
 #if !defined(_KERNEL)
@@ -1215,19 +1287,31 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 #endif // _KERNEL
 
 	track->uio = uio;
-	mutex_enter(sc->sc_intr_lock);
-	audio_mixer_play(sc->sc_pmixer, false);
-	mutex_exit(sc->sc_intr_lock);
 
 	error = 0;
+	bool wake = false;
 	while (uio->uio_resid > 0) {
-		error = audio_waitio(sc, track);
-		if (error < 0) {
-			error = EINTR;
+		if (track->input->capacity - track->input->count == 0) {
+			error = audio_waitio(sc, track);
+			if (error < 0) {
+				error = EINTR;
+			}
+			if (error) {
+				break;
+			}
 		}
-		if (error) {
-			break;
+		audio_track_play(track, false);
+
+		if (wake == false) {
+			mutex_enter(sc->sc_intr_lock);
+			wake = audio_trackmixer_play(sc->sc_pmixer);
+			mutex_exit(sc->sc_intr_lock);
 		}
+
+
+#if !defined(_KERNEL)
+		emu_intr_check();
+#endif
 	}
 
 	// finally
