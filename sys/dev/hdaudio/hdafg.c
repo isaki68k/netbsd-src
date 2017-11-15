@@ -78,6 +78,7 @@ __KERNEL_RCSID(0, "$NetBSD: hdafg.c,v 1.13 2017/08/04 00:25:23 mrg Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_hdaudio.h"
+#include "opt_audio.h"
 #endif
 
 #include "hdaudiovar.h"
@@ -358,6 +359,7 @@ CFATTACH_DECL2_NEW(
 );
 
 static int	hdafg_query_encoding(void *, struct audio_encoding *);
+static int	hdafg_query_format(void *, const struct audio_format **);
 static int	hdafg_set_params(void *, int, int,
 				   audio_params_t *,
 				   audio_params_t *,
@@ -404,6 +406,7 @@ static const struct audio_hw_if hdafg_hw_if = {
 	.trigger_output		= hdafg_trigger_output,
 	.trigger_input		= hdafg_trigger_input,
 	.get_locks		= hdafg_get_locks,
+	.query_format	= hdafg_query_format,
 };
 
 static int
@@ -3931,6 +3934,15 @@ hdafg_query_encoding(void *opaque, struct audio_encoding *ae)
 }
 
 static int
+hdafg_query_format(void *opaque, const struct audio_format **afp)
+{
+	struct hdaudio_audiodev *ad = opaque;
+
+	*afp = ad->ad_formats;
+	return ad->ad_nformats;
+}
+
+static int
 hdafg_set_params(void *opaque, int setmode, int usemode,
     audio_params_t *play, audio_params_t *rec,
     stream_filter_list_t *pfil, stream_filter_list_t *rfil)
@@ -3974,6 +3986,19 @@ hdafg_round_blocksize(void *opaque, int blksize, int mode,
 		return 128;
 	}
 
+#if defined(AUDIO2)
+	(void)nblksize;
+
+	if (blksize < 128)
+		blksize = 128;
+
+	/* Make sure there are enough BDL descriptors */
+	bufsize = st->st_data.dma_size;
+	if (bufsize > HDAUDIO_BDL_MAX * blksize) {
+		blksize = bufsize / HDAUDIO_BDL_MAX;
+	}
+	return blksize;
+#else
 	if (blksize > 8192)
 		blksize = 8192;
 	else if (blksize < 0)
@@ -3992,6 +4017,7 @@ hdafg_round_blocksize(void *opaque, int blksize, int mode,
 	}
 
 	return nblksize;
+#endif
 }
 
 static int
