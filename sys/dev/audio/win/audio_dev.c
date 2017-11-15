@@ -54,6 +54,13 @@ void win_freem(void *hdl, void *addr, size_t size)
 	free(addr);
 }
 
+int
+win_start_output(void *hdl, void *blk, int blksize, void(*intr)(void *), void *arg)
+{
+	struct audio_softc *sc = hdl;
+	audio_softc_play_start(sc);
+	return 0;
+}
 
 void CALLBACK audio_dev_win32_callback(
 	HWAVEOUT hwo,
@@ -98,6 +105,8 @@ audio_attach(struct audio_softc **softc)
 	audio_softc_init(sc);
 	sc->hw_if->allocm = win_allocm;
 	sc->hw_if->freem = win_freem;
+	sc->hw_if->start_output = win_start_output;
+	sc->hw_hdl = sc;
 
 	sc->phys = calloc(1, sizeof(audio_dev_win32_t));
 
@@ -212,6 +221,7 @@ audio_detach(struct audio_softc *sc)
 * ***** audio_sc *****
 */
 static void audio_softc_play_start_core(struct audio_softc *sc);
+
 
 void
 audio_softc_play_start(struct audio_softc *sc)

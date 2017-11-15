@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,9 +22,17 @@ struct kcondvar {
 	volatile int v;
 };
 
+struct audio_params {
+	void *dummy;
+};
+typedef struct audio_params audio_params_t;
+
 struct audio_hw_if {
 	void *(*allocm)(void *, int, size_t);
 	void (*freem)(void *, void *, size_t);
+
+	int (*start_output)(void *, void *, int, void(*)(void *), void *);
+	int (*trigger_output)(void *, void *, void *, int, void(*)(void *), void *, const audio_params_t *);
 };
 
 // audiovar.h の前方参照
