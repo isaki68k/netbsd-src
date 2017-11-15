@@ -62,6 +62,12 @@ win_start_output(void *hdl, void *blk, int blksize, void(*intr)(void *), void *a
 	return 0;
 }
 
+int
+win_halt_output(void *hdl)
+{
+	return 0;
+}
+
 void CALLBACK audio_dev_win32_callback(
 	HWAVEOUT hwo,
 	UINT uMsg,
@@ -106,6 +112,7 @@ audio_attach(struct audio_softc **softc)
 	sc->hw_if->allocm = win_allocm;
 	sc->hw_if->freem = win_freem;
 	sc->hw_if->start_output = win_start_output;
+	sc->hw_if->halt_output = win_halt_output;
 	sc->hw_hdl = sc;
 
 	sc->phys = calloc(1, sizeof(audio_dev_win32_t));

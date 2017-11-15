@@ -33,6 +33,8 @@ struct audio_hw_if {
 
 	int (*start_output)(void *, void *, int, void(*)(void *), void *);
 	int (*trigger_output)(void *, void *, void *, int, void(*)(void *), void *, const audio_params_t *);
+
+	int (*halt_output)(void *);
 };
 
 // audiovar.h の前方参照
