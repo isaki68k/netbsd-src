@@ -1836,42 +1836,30 @@ audio_poll(struct audio_softc *sc, int events, struct lwp *l,
 	audio_file_t *file)
 {
 	int revents;
-	//int used;
 
 	KASSERT(mutex_owned(sc->sc_lock));
 
 	DPRINTF(("audio_poll: events=0x%x mode=%d\n", events, file->mode));
 
+	// XXX 動作未確認
+
+	// HW が Half Duplex でも、ソフトウェアレイヤは常に Full Duplex。
+	// でいいはず。
+
 	revents = 0;
 	if (events & (POLLIN | POLLRDNORM)) {
-#if 0 // half duplex のくだりはどうするか
-		used = audio_stream_get_used(vc->sc_rustream);
-		/*
-		 * If half duplex and playing, audio_read() will generate
-		 * silence at the play rate; poll for silence being
-		 * available.  Otherwise, poll for recorded sound.
-		 */
-		if ((!vc->sc_full_duplex && (vc->sc_mode & AUMODE_PLAY))
-		     ? vc->sc_mpr.stamp > vc->sc_wstamp :
-		    used > vc->sc_mrr.usedlow)
-			revents |= events & (POLLIN | POLLRDNORM);
-#endif
+		if ((file->mode & AUMODE_RECORD) != 0) {
+			audio_ring_t *buf = &file->rtrack.outputbuf;
+			if (buf->count > 0)
+				revents |= events & (POLLIN | POLLRDNORM);
+		}
 	}
-
 	if (events & (POLLOUT | POLLWRNORM)) {
-#if 0 // half duplex のくだりはどうするか
-		used = audio_stream_get_used(vc->sc_pustream);
-		/*
-		 * If half duplex and recording, audio_write() will throw
-		 * away play data, which means we are always ready to write.
-		 * Otherwise, poll for play buffer being below its low water
-		 * mark.
-		 */
-		if ((!vc->sc_full_duplex && (vc->sc_mode & AUMODE_RECORD)) ||
-		    (!(vc->sc_mode & AUMODE_PLAY_ALL) && vc->sc_playdrop > 0) ||
-		    (used <= vc->sc_mpr.usedlow))
-			revents |= events & (POLLOUT | POLLWRNORM);
-#endif
+		if ((file->mode & AUMODE_PLAY) != 0) {
+			audio_ring_t *buf = &file->ptrack.outputbuf;
+			if (buf->count < buf->capacity)
+				revents |= events & (POLLOUT | POLLWRNORM);
+		}
 	}
 
 	if (revents == 0) {
