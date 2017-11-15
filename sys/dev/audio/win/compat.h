@@ -111,3 +111,22 @@ mutex_exit(void *mutex)
 {
 	*(int*)mutex = 0;
 }
+
+#define M_NOWAIT	(0)
+static inline void *
+kern_malloc(size_t size, int flags)
+{
+	return malloc(size);
+}
+
+static inline void *
+kern_realloc(void *ptr, size_t size, int flags)
+{
+	return realloc(ptr, size);
+}
+
+static inline void
+kern_free(void *ptr)
+{
+	free(ptr);
+}

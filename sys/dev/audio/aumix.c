@@ -70,15 +70,8 @@
 #endif
 
 #if defined(_KERNEL)
-#define x_malloc(mem)			kern_malloc(mem, M_NOWAIT)
-#define x_realloc(mem, size)	kern_realloc(mem, size, M_NOWAIT)
-#define x_free(mem)				kern_free(mem)
 #define lock(x)					/*とりあえず*/
 #define unlock(x)				/*とりあえず*/
-#else
-#define x_malloc(mem)			malloc(mem)
-#define x_realloc(mem, size)	realloc(mem, size)
-#define x_free(mem)				free(mem)
 #endif
 
 void *audio_realloc(void *memblock, size_t bytes);
@@ -100,14 +93,14 @@ audio_realloc(void *memblock, size_t bytes)
 {
 	if (memblock != NULL) {
 		if (bytes != 0) {
-			return x_realloc(memblock, bytes);
+			return kern_realloc(memblock, bytes, M_NOWAIT);
 		} else {
-			x_free(memblock);
+			kern_free(memblock);
 			return NULL;
 		}
 	} else {
 		if (bytes != 0) {
-			return x_malloc(bytes);
+			return kern_malloc(bytes, M_NOWAIT);
 		} else {
 			return NULL;
 		}
@@ -118,7 +111,7 @@ void
 audio_free(void *memblock)
 {
 	if (memblock != NULL) {
-		x_free(memblock);
+		kern_free(memblock);
 	}
 }
 
