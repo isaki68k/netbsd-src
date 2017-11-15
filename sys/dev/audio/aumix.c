@@ -1013,10 +1013,10 @@ audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int 
 	/* トラックバッファを取り込んだことを反映 */
 	// mixseq はこの時点ではまだ前回の値なのでトラック側へは +1 
 	track->seq = mixer->mixseq + 1;
-#if defined(_KERNEL)
+
 	// audio_write() に空きが出来たことを通知
 	cv_broadcast(&track->outchan);
-#endif
+
 	TRACE(track, "broadcast; trseq=%d count=%d", (int)track->seq, count);
 	return mixed + 1;
 }

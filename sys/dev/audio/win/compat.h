@@ -14,7 +14,12 @@
 #define __arraycount(n) _countof(n)
 
 typedef int64_t off_t;
-typedef void *kcondvar_t;
+
+typedef struct kcondvar kcondvar_t;
+
+struct kcondvar {
+	volatile int v;
+};
 
 struct audio_hw_if {
 	void *(*allocm)(void *, int, size_t);
@@ -107,7 +112,7 @@ panic(const char *fmt, ...)
 inline void
 cv_init(kcondvar_t *cv, const char *msg)
 {
-	// nop
+	cv->v = 0;
 }
 
 inline void
@@ -119,7 +124,7 @@ cv_destroy(kcondvar_t *cv)
 inline void
 cv_broadcast(kcondvar_t *cv)
 {
-	// nop
+	cv->v = 1;
 }
 
 int cv_wait_sig(kcondvar_t *cv, void *lock);
