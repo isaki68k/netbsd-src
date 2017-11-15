@@ -34,6 +34,7 @@ struct audio_softc
 	void *sc_intr_lock;
 	struct audio_hw_if *hw_if;
 	void *hw_hdl;
+	int sc_eof;
 
 	kcondvar_t *sc_wchan;
 	kcondvar_t *sc_rchan;

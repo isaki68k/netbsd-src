@@ -1186,7 +1186,6 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 
 	KASSERT(mutex_owned(sc->sc_lock));
 
-#if defined(_KERNEL)
 	if (sc->hw_if == NULL)
 		return ENXIO;
 
@@ -1200,6 +1199,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 		device_active(&sc->dev, DVA_SYSTEM);
 #endif
 
+#if defined(_KERNEL)
 	/*
 	 * If half-duplex and currently recording, throw away data.
 	 */
@@ -1212,7 +1212,6 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 	}
 
 	// XXX playdrop と PLAY_ALL はちょっと後回し
-
 #endif // _KERNEL
 
 	track->uio = uio;
