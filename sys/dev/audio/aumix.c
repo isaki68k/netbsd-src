@@ -1188,9 +1188,9 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 	audio_track_t *track = &file->ptrack;
 	TRACE(track, "resid=%u", (int)uio->uio_resid);
 
-#if defined(_KERNEL)
 	KASSERT(mutex_owned(sc->sc_lock));
 
+#if defined(_KERNEL)
 	if (sc->hw_if == NULL)
 		return ENXIO;
 
@@ -1226,9 +1226,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 
 	error = 0;
 	while (uio->uio_resid > 0) {
-		mutex_enter(sc->sc_lock);
 		error = audio_waitio(sc, track);
-		mutex_exit(sc->sc_lock);
 		if (error < 0) {
 			error = EINTR;
 		}
@@ -1274,7 +1272,9 @@ sys_write(audio_file_t *file, void* buf, size_t len)
 
 	struct uio uio = buf_to_uio(buf, len, UIO_READ);
 
+	mutex_enter(file->sc->sc_lock);
 	int error = audio_write(file->sc, &uio, 0, file);
+	mutex_exit(file->sc->sc_lock);
 	if (error) {
 		errno = error;
 		return -1;
