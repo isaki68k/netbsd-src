@@ -680,6 +680,38 @@ audio_apply_stage(audio_track_t *track, audio_stage_t *stage, bool isdrain)
 	return true;
 }
 
+static int
+audio_track_play_input(audio_track_t *track)
+{
+	/* input の空きバイト数を求める */
+	int free_count = audio_ring_unround_free_count(track->input);
+	int free_bytelen = free_count * track->inputfmt.channels * track->inputfmt.stride / 8 - track->subframe_buf_used;
+	TRACE(track, "free=%d", free_count);
+
+	if (free_bytelen == 0) {
+		return EAGAIN;
+	}
+
+	// 今回 uiomove するバイト数 */
+	int move_bytelen = min(free_bytelen, (int)track->uio->uio_resid);
+
+	// 今回出来上がるフレーム数 */
+	int framecount = (move_bytelen + track->subframe_buf_used) * 8 / (track->inputfmt.channels * track->inputfmt.stride);
+
+	// コピー先アドレスは subframe_buf_used で調整する必要がある
+	uint8_t *dptr = RING_BOT_UINT8(track->input) + track->subframe_buf_used;
+	// min(bytelen, uio->uio_resid) は uiomove が保証している
+	int error = uiomove(dptr, move_bytelen, track->uio);
+	if (error) {
+		panic("uiomove");
+	}
+	audio_ring_appended(track->input, framecount);
+	track->inputcounter += framecount;
+
+	// 今回 input に置いたサブフレームを次回のために求める
+	track->subframe_buf_used = move_bytelen - framecount * track->inputfmt.channels * track->inputfmt.stride / 8;
+	return 0;
+}
 
 /*
  * 再生時の入力データを変換してトラックバッファに投入します。
@@ -690,6 +722,11 @@ audio_track_play(audio_track_t *track, bool isdrain)
 	KASSERT(track);
 
 	int track_count_0 = track->outputbuf.count;
+
+	// 入力
+	if (audio_track_play_input(track) != 0) {
+		return;
+	}
 
 	/* エンコーディング変換 */
 	if (audio_apply_stage(track, &track->codec, isdrain) == false) {
@@ -1164,51 +1201,18 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 
 #endif // _KERNEL
 
+	track->uio = uio;
+	audio_mixer_play(sc->sc_pmixer, false);
+
 	while (uio->uio_resid > 0) {
-
-		/* userio の空きバイト数を求める */
-		int free_count = audio_ring_unround_free_count(track->input);
-		int free_bytelen = free_count * track->inputfmt.channels * track->inputfmt.stride / 8 - track->subframe_buf_used;
-		TRACE(track, "free=%d", free_count);
-
-		if (free_bytelen == 0) {
-			error = audio_waitio(sc, track);
-			if (error < 0)
-				error = EINTR;	/* XXX ? */
-			if (error)
-				return error;
-			// free_count 再計算のため戻る
-			continue;
+		error = audio_waitio(sc, track);
+		if (error < 0) {
+			error = EINTR;
 		}
-
-		// 今回 uiomove するバイト数 */
-		int move_bytelen = min(free_bytelen, (int)uio->uio_resid);
-
-		// 今回出来上がるフレーム数 */
-		int framecount = (move_bytelen + track->subframe_buf_used) * 8 / (track->inputfmt.channels * track->inputfmt.stride);
-
-		// コピー先アドレスは subframe_buf_used で調整する必要がある
-		uint8_t *dptr = RING_BOT_UINT8(track->input) + track->subframe_buf_used;
-		// min(bytelen, uio->uio_resid) は uiomove が保証している
-		error = uiomove(dptr, move_bytelen, uio);
 		if (error) {
-			panic("uiomove");
+			return error;
 		}
-		audio_ring_appended(track->input, framecount);
-		track->inputcounter += framecount;
-		
-		// 今回 userio_buf に置いたサブフレームを次回のために求める
-		track->subframe_buf_used = move_bytelen - framecount * track->inputfmt.channels * track->inputfmt.stride / 8;
-
-		// 今回作った userio を全部トラック再生へ渡す
-		audio_track_play(track, false);
-
-#if !defined(_KERNEL)
-		// XXX: エミュレーション用に CPU 割り込み受付
-		audio_waitio(sc, track);
-#endif
 	}
-
 	return 0;
 }
 
