@@ -907,18 +907,31 @@ audio_trackmixer_mixall(audio_trackmixer_t *mixer, int req, bool isdrain)
 static void
 audio2_pintr(void *arg)
 {
-	// XXX: STUB
+	struct audio_softc *sc;
+	audio_trackmixer_t *mixer;
+
+	sc = arg;
+	KASSERT(mutex_owned(sc->sc_intr_lock));
+
+	mixer = sc->sc_pmixer;
+	TRACE0("hwbuf.count=%d", mixer->hwbuf.count);
+
+	int count = mixer->frames_per_block;
+	audio_ring_tookfromtop(&mixer->hwbuf, count);
+	audio_trackmixer_intr(mixer, count);
 }
 
 static int
 audio2_trigger_output(audio_trackmixer_t *mixer, void *start, void *end, int blksize)
 {
-	struct audio_softc *sc;
-	sc = mixer->sc;
+	struct audio_softc *sc = mixer->sc;
+
 	KASSERT(sc->hw_if->trigger_output != NULL);
+	KASSERT(mutex_owned(sc->sc_intr_lock));
 
 	audio_params_t params;
 	// TODO: params 作る
+	params = format2_to_params(&mixer->hwbuf.fmt);
 	int error = sc->hw_if->trigger_output(sc->hw_hdl, start, end, blksize, audio2_pintr, sc, &params);
 	return error;
 }
@@ -926,19 +939,23 @@ audio2_trigger_output(audio_trackmixer_t *mixer, void *start, void *end, int blk
 static int
 audio2_start_output(audio_trackmixer_t *mixer, void *start, int blksize)
 {
-	struct audio_softc *sc;
-	sc = mixer->sc;
+	struct audio_softc *sc = mixer->sc;
+
 	KASSERT(sc->hw_if->start_output != NULL);
+	KASSERT(mutex_owned(sc->sc_intr_lock));
 
 	int error = sc->hw_if->start_output(sc->hw_hdl, start, blksize, audio2_pintr, sc);
 	return error;
 }
 
 static void
-stop(audio_trackmixer_t *mixer)
+audio2_halt_output(audio_trackmixer_t *mixer)
 {
-	mixer->sc->sc_pbusy = false;
-	// TODO: halt
+	struct audio_softc *sc = mixer->sc;
+
+	sc->sc_pbusy = false;
+
+	sc->hw_if->halt_output(sc->hw_hdl);
 }
 
 // トラックミキサ起動になる可能性のある再生要求
@@ -1180,7 +1197,7 @@ audio_trackmixer_intr(audio_trackmixer_t *mixer, int count)
 			audio_mixer_play_period(mixer);
 		}
 	} else {
-		stop(mixer);
+		audio2_halt_output(mixer);
 		mixer->busy = false;
 	}
 

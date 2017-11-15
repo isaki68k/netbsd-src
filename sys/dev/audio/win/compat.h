@@ -23,7 +23,11 @@ struct kcondvar {
 };
 
 struct audio_params {
-	void *dummy;
+	int sample_rate;
+	int channels;
+	int encoding;
+	int validbits;
+	int precision;
 };
 typedef struct audio_params audio_params_t;
 

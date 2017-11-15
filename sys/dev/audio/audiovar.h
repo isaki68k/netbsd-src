@@ -239,3 +239,16 @@ struct audio_file
 
 extern const char *fmt_tostring(const audio_format2_t *);
 extern int debug;
+
+static inline struct audio_params
+format2_to_params(const audio_format2_t *f2)
+{
+	audio_params_t p;
+
+	p.sample_rate = f2->sample_rate;
+	p.channels = f2->channels;
+	p.encoding = f2->encoding;
+	p.validbits = f2->precision;
+	p.precision = f2->stride;
+	return p;
+}
