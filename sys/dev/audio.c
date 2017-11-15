@@ -1904,18 +1904,30 @@ filt_audioread(struct knote *kn, long hint)
 {
 	struct audio_softc *sc;
 	audio_file_t *file;
+	audio_track_t *track;
+	audio_ring_t *buf;
+	audio_format2_t *fmt;
 
 	file = kn->kn_hook;
 	sc = file->sc;
+	track = &file->rtrack;
+	buf = &track->outputbuf;
+	fmt = &track->outputbuf.fmt;
+
+	// XXX READ 可能な時しかここ来ないのかな?
 
 	mutex_enter(sc->sc_intr_lock);
-	// XXX なんだこれ
 #if 0
+	// XXX なんだこれ
 	if ((file->mode & AUMODE_RECORD) != 0)
 		kn->kn_data = vc->sc_mpr.stamp - vc->sc_wstamp;
 	else
 		kn->kn_data = audio_stream_get_used(vc->sc_rustream)
 			- vc->sc_mrr.usedlow;
+#else
+	// 録音バッファに空きがあるかどうかならこれでいいんでは。
+	kn->kn_data = (buf->capacity - buf->count) *
+	    (fmt->channels * fmt->stride / NBBY);
 #endif
 	mutex_exit(sc->sc_intr_lock);
 
@@ -1950,11 +1962,13 @@ filt_audiowrite(struct knote *kn, long hint)
 	audio_file_t *file;
 	audio_track_t *track;
 	audio_ring_t *buf;
+	audio_format2_t *fmt;
 
 	file = kn->kn_hook;
 	sc = file->sc;
 	track = &file->ptrack;
 	buf = &track->outputbuf;
+	fmt = &track->inputfmt;
 
 	// XXX WRITE 可能な時しかここ来ないのかな?
 
@@ -1963,7 +1977,7 @@ filt_audiowrite(struct knote *kn, long hint)
 	// 再生バッファの空きバイト数を kn_data に入れて、
 	// 空きがあるかどうかを返す?
 	kn->kn_data = (buf->capacity - buf->count) *
-	    (track->inputfmt.channels * track->inputfmt.stride / NBBY);
+	    (fmt->channels * fmt->stride / NBBY);
 
 	mutex_exit(sc->sc_intr_lock);
 
