@@ -841,7 +841,7 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 		mixer->hwbuf.sample = sc->hw_if->allocm(sc->hw_hdl, mode,
 		    bufsize);
 	} else {
-		mixer->hwbuf.sample = kmem_zalloc(bufsize, KM_SLEEP);
+		mixer->hwbuf.sample = kern_malloc(bufsize, M_NOWAIT);
 	}
 #else
 	TRACE0("");
@@ -876,9 +876,28 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 }
 
 void
-audio_mixer_destroy(audio_trackmixer_t *mixer)
+audio_mixer_destroy(audio_trackmixer_t *mixer, int mode)
 {
-	// あとでいろいろたす
+	struct audio_softc *sc = mixer->sc;
+
+	if (mixer->hwbuf.sample != NULL) {
+#if defined(_KERNEL)
+		if (sc->hw_if->freem) {
+			sc->hw_if->freem(sc->hw_hdl, mixer->hwbuf.sample, mode);
+		} else {
+			kern_free(mixer->hwbuf.sample);
+		}
+#else
+		audio_softc_freem(mixer->hwbuf.sample);
+#endif
+		mixer->hwbuf.sample = NULL;
+	}
+
+	if (mode == AUMODE_PLAY) {
+		kern_free(mixer->mixsample);
+	} else {
+		// 合成バッファは使用しない
+	}
 
 	// intrcv を cv_destroy() してはいけないっぽい。KASSERT で死ぬ。
 }
