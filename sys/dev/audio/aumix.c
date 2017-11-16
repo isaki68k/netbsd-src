@@ -700,9 +700,9 @@ audio_apply_stage(audio_track_t *track, audio_stage_t *stage, bool isdrain)
 }
 
 static int
-audio_track_play_input(audio_track_t *track)
+audio_track_play_input(audio_track_t *track, struct uio *uio)
 {
-	if (track->uio == NULL) return 0;
+	KASSERT(uio);
 
 	/* input の空きバイト数を求める */
 	int free_count = audio_ring_unround_free_count(track->input);
@@ -714,7 +714,7 @@ audio_track_play_input(audio_track_t *track)
 	}
 
 	// 今回 uiomove するバイト数 */
-	int move_bytelen = min(free_bytelen, (int)track->uio->uio_resid);
+	int move_bytelen = min(free_bytelen, (int)uio->uio_resid);
 
 	// 今回出来上がるフレーム数 */
 	int framecount = (move_bytelen + track->subframe_buf_used) * 8 / (track->inputfmt.channels * track->inputfmt.stride);
@@ -722,9 +722,10 @@ audio_track_play_input(audio_track_t *track)
 	// コピー先アドレスは subframe_buf_used で調整する必要がある
 	uint8_t *dptr = RING_BOT_UINT8(track->input) + track->subframe_buf_used;
 	// min(bytelen, uio->uio_resid) は uiomove が保証している
-	int error = uiomove(dptr, move_bytelen, track->uio);
+	int error = uiomove(dptr, move_bytelen, uio);
 	if (error) {
-		panic("uiomove");
+		TRACE(track, "uio error=%d", error);
+		return error;
 	}
 	audio_ring_appended(track->input, framecount);
 	track->inputcounter += framecount;
@@ -743,11 +744,6 @@ audio_track_play(audio_track_t *track, bool isdrain)
 	KASSERT(track);
 
 	int track_count_0 = track->outputbuf.count;
-
-	// 入力
-	if (audio_track_play_input(track) != 0) {
-		if (isdrain == false) return;
-	}
 
 	/* エンコーディング変換 */
 	if (audio_apply_stage(track, &track->codec, isdrain) == false) {
@@ -1348,12 +1344,11 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 	// XXX playdrop と PLAY_ALL はちょっと後回し
 #endif // _KERNEL
 
-	track->uio = uio;
-
 	error = 0;
 	bool wake = false;
 	while (uio->uio_resid > 0) {
-		if (track->input->capacity - track->input->count == 0) {
+		error = audio_track_play_input(track, uio);
+		if (error == EAGAIN) {
 			error = audio_waitio(sc, track);
 			if (error < 0) {
 				error = EINTR;
@@ -1361,7 +1356,10 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 			if (error) {
 				break;
 			}
+		} else if (error) {
+			break;
 		}
+
 		audio_track_play(track, false);
 
 		if (wake == false) {
@@ -1375,7 +1373,6 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 	}
 
 	// finally
-	track->uio = NULL;
 	return error;
 }
 

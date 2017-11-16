@@ -152,8 +152,6 @@ struct audio_track
 	int mode;								/* AUMODE_PLAY or AUMODE_RECORD */
 	int                subframe_buf_used;	/* 1フレーム未満の使用バイト数 */
 
-	struct uio *uio;					// 入出力 uio
-
 	audio_format2_t     inputfmt;		// このトラックに入力するフォーマット
 	audio_ring_t       *input;			// このトラックに入力するとき使用するバッファへのポインタ
 
