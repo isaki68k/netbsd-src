@@ -36,6 +36,32 @@ unlock(struct audio_softc *sc)
 	pthread_mutex_unlock(&dev->mutex);
 }
 
+void *
+netbsd_allocm(void *hdl, int direction, size_t size)
+{
+	return malloc(size);
+}
+
+void
+netbsd_freem(void *hdl, void *addr, size_t size)
+{
+	free(addr);
+}
+
+int
+netbsd_start_output(void *hdl, void *blk, int blksize, void(*intr)(void *), void *arg)
+{
+	struct audio_softc *sc = hdl;
+	audio_softc_play_start(sc);
+	return 0;
+}
+
+int
+netbsd_halt_output(void *hdl)
+{
+	return 0;
+}
+
 void
 audio_attach(struct audio_softc **softc)
 {
@@ -46,6 +72,13 @@ audio_attach(struct audio_softc **softc)
 
 	sc = calloc(1, sizeof(*sc));
 	*softc = sc;
+	audio_softc_init(sc);
+	sc->hw_if->allocm = netbsd_allocm;
+	sc->hw_if->freem = netbsd_freem;
+	sc->hw_if->start_output = netbsd_start_output;
+	sc->hw_if->halt_output = netbsd_halt_output;
+	sc->hw_hdl = sc;
+
 	sc->phys = calloc(1, sizeof(*dev));
 
 	dev = sc->phys;
@@ -72,8 +105,8 @@ audio_attach(struct audio_softc **softc)
 
 	pthread_mutex_init(&dev->mutex, NULL);
 
-	audio_mixer_init(sc, &sc->sc_pmixer, AUMODE_PLAY);
-	audio_mixer_init(sc, &sc->sc_rmixer, AUMODE_RECORD);
+	audio_mixer_init(sc, sc->sc_pmixer, AUMODE_PLAY);
+	audio_mixer_init(sc, sc->sc_rmixer, AUMODE_RECORD);
 }
 
 void
@@ -90,7 +123,7 @@ void
 audio_softc_play_start(struct audio_softc *sc)
 {
 	audio_dev_netbsd_t *dev = sc->phys;
-	audio_trackmixer_t *mixer = &sc->sc_pmixer;
+	audio_trackmixer_t *mixer = sc->sc_pmixer;
 
 	if (mixer->hwbuf.count <= 0) return;
 	if (dev->sent_count > 0) return;
@@ -143,7 +176,7 @@ audio_softc_play_busy(struct audio_softc *sc)
 #ifdef AUDIO_INTR_EMULATED
 		struct intr_t x;
 		x.code = INTR_TRACKMIXER;
-		x.mixer = &sc->sc_pmixer;
+		x.mixer = sc->sc_pmixer;
 		x.count = dev->sent_count;
 		emu_intr(x);
 #else

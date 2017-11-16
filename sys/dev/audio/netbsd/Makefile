@@ -12,6 +12,7 @@ SRCS+=	\
 	aumix.c \
 	main.c \
 	synth.c \
+	compat.c \
 
 CFLAGS=	-g -std=c99 -I. -I.. \
 	-Wall \
