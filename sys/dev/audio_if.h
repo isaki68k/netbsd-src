@@ -40,6 +40,7 @@
 #include <sys/types.h>
 #include <sys/audioio.h>
 #include <sys/mutex.h>
+#include <dev/audio/aufilter.h>
 
 /* check we have an audio(4) configured into kernel */
 #if defined(_KERNEL_OPT)
@@ -322,6 +323,7 @@ struct audio_hw_if {
 	void	(*get_locks)(void *, kmutex_t **, kmutex_t **);
 
 	int (*query_format)(void *, const struct audio_format **);
+	audio_filter_t (*get_swcode)(void *, int, audio_filter_arg_t *);
 };
 
 struct audio_attach_args {

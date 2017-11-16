@@ -1,12 +1,14 @@
 #pragma once
 
 #if defined(_KERNEL)
+#include <dev/audio/aufilter.h>
 #else
 #include <stdint.h>
 #include <stdbool.h>
 #include "queue.h"
 #include "compat.h"
 #include "uio.h"
+#include "aufilter.h"
 
 /* アサートするとき定義 */
 #define AUDIO_ASSERT
@@ -19,32 +21,6 @@
 #define KASSERT(expr)	/**/
 #endif
 #endif // _KERNEL
-
-/* 内部フォーマットのビット数 */
-#define AUDIO_INTERNAL_BITS		16
-//#define AUDIO_INTERNAL_BITS		32
-
-#if AUDIO_INTERNAL_BITS == 16
-
-typedef int16_t internal_t;
-typedef uint16_t uinternal_t;
-typedef int32_t internal2_t;
-typedef uint32_t uinternal2_t;
-#define AUDIO_INTERNAL_T_MAX	((internal_t)0x7fff)
-#define AUDIO_INTERNAL_T_MIN	((internal_t)0x8000)
-
-#elif AUDIO_INTERNAL_BITS == 32
-
-typedef int32_t internal_t;
-typedef uint32_t uinternal_t;
-typedef int64_t internal2_t;
-typedef uint64_t uinternal2_t;
-#define AUDIO_INTERNAL_T_MAX	((internal_t)0x7fffffff)
-#define AUDIO_INTERNAL_T_MIN	((internal_t)0x80000000)
-
-#else
-#error Invalid AUDIO_INTERNAL_BITS
-#endif
 
 // 出力バッファのブロック数
 #define NBLKOUT	(16)
@@ -71,7 +47,7 @@ typedef uint64_t uinternal2_t;
 /* 1 ブロックの時間サイズ 40ms */
 /* 40ms の場合は (1/40ms)=25=5^2 なので 100 の倍数の周波数のほか、15.625kHz でもフレーム数が整数になる */
 #if defined(_KERNEL)
-#define AUDIO_BLK_MS 40
+#define AUDIO_BLK_MS 80
 #else
 // XXX: エミュレーション出来ないので 400 にしておく。
 #define AUDIO_BLK_MS 400
@@ -85,7 +61,6 @@ typedef uint64_t uinternal2_t;
 
 
 /* 前方参照 */
-typedef struct audio_format2 audio_format2_t;
 typedef struct audio_ring audio_ring_t;
 typedef struct audio_track audio_track_t;
 typedef struct audio_trackmixer audio_trackmixer_t;
@@ -100,16 +75,6 @@ typedef struct audio_rational {
 	int n;
 } audio_rational_t;
 
-/* フォーマット */
-struct audio_format2
-{
-	int32_t  encoding;		/* AUDIO_ENCODING */
-	uint32_t sample_rate;	/* Hz */
-	uint8_t  channels;		/* 1.. */
-	uint8_t  precision;		/* ex.24 (valid bits of sample, must precision <= stride) */
-	uint8_t  stride;		/* ex.32 (packing bits of sample) */
-};
-
 // リングバッファ
 struct audio_ring
 {
@@ -119,24 +84,6 @@ struct audio_ring
 	int  count;				/* 有効フレーム量 */
 	void *sample;			/* サンプル */
 };
-
-typedef struct audio_filter_arg audio_filter_arg_t;
-struct audio_filter_arg
-{
-	const void *src;
-	audio_format2_t *srcfmt;
-
-	void *dst;
-	audio_format2_t *dstfmt;
-
-	int count;		// 今回のフィルタ呼び出しで入出力可能なフレーム数
-
-	void *context;
-};
-
-/*
-*/
-typedef void(*audio_filter_t)(audio_filter_arg_t *arg);
 
 struct audio_stage
 {
@@ -201,7 +148,7 @@ struct audio_trackmixer
 	void *mixsample;					// PLAY 合成用整数倍精度バッファ
 
 	audio_filter_t  codec;				// MD が要求する追加のコーデック
-	audio_filter_arg_t codec_arg;		// その引数
+	audio_filter_arg_t codecarg;		// その引数
 	audio_ring_t    codecbuf;			// コーデック用バッファ。ストライド変換の吸収
 
 	audio_ring_t   hwbuf;				/* 物理デバイスの入出力バッファ (malloc ではなく allocm で確保する) */

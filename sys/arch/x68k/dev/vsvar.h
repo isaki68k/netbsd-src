@@ -106,4 +106,6 @@ struct vs_softc {
 	void (*sc_rintr)(void *);
 	void *sc_parg;
 	void *sc_rarg;
+
+	struct msm6258_codecvar sc_codecvar;
 };

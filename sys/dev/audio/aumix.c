@@ -812,10 +812,9 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 	else
 		mixer->hwbuf.fmt = sc->sc_rhwfmt;
 
-	int framelen = mixer->hwbuf.fmt.channels * mixer->hwbuf.fmt.stride / NBBY;
 	mixer->frames_per_block = frame_per_block_roundup(&mixer->hwbuf.fmt);
 	int capacity = mixer->frames_per_block * 16;
-	int bufsize = capacity * framelen;
+	int bufsize = frametobyte(&mixer->hwbuf.fmt, capacity);
 	if (sc->hw_if->round_buffersize) {
 		int rounded;
 		mutex_enter(sc->sc_lock);
@@ -830,7 +829,7 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 	}
 	mixer->hwbuf.capacity = capacity;
 
-	int blksize = mixer->frames_per_block * framelen;
+	int blksize = frametobyte(&mixer->hwbuf.fmt, mixer->frames_per_block);
 	if (sc->hw_if->round_blocksize) {
 		int rounded;
 		audio_params_t p = format2_to_params(&mixer->hwbuf.fmt);
@@ -875,6 +874,17 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 		mixer->mixsample = audio_realloc(mixer->mixsample, n);
 	} else {
 		// 合成バッファは使用しない
+	}
+
+	if (sc->hw_if->get_swcode) {
+		mixer->codecarg.srcfmt = &mixer->track_fmt;
+		mixer->codecarg.dstfmt = &mixer->hwbuf.fmt;
+		mixer->codec = sc->hw_if->get_swcode(sc->hw_hdl, mode, &mixer->codecarg);
+		if (mixer->codec) {
+			mixer->codecbuf.fmt = mixer->track_fmt;
+			mixer->codecbuf.capacity = mixer->frames_per_block;
+			mixer->codecbuf.sample = audio_realloc(mixer->codecbuf.sample, RING_BYTELEN(&mixer->codecbuf));
+		}
 	}
 
 	mixer->volume = 256;
@@ -1158,14 +1168,32 @@ audio_mixer_play_period(audio_trackmixer_t *mixer /*, bool force */)
 		}
 	}
 
+
 	/* ハードウェアバッファへ転送 */
-	// TODO: MD 側フィルタ
 	lock(sc);
 	mptr = mptr0;
-	internal_t *hptr = RING_BOT(internal_t, &mixer->hwbuf);
+	internal_t *hptr;
+	// MD 側フィルタがあれば internal2_t -> internal_t を codecbuf へ
+	if (mixer->codec) {
+		hptr = RING_BOT(internal_t, &mixer->codecbuf);
+	} else {
+		hptr = RING_BOT(internal_t, &mixer->hwbuf);
+	}
+
 	for (int i = 0; i < sample_count; i++) {
 		*hptr++ = *mptr++;
 	}
+
+	// MD 側フィルタ
+	if (mixer->codec) {
+		audio_ring_appended(&mixer->codecbuf, count);
+		mixer->codecarg.src = RING_TOP_UINT8(&mixer->codecbuf);
+		mixer->codecarg.dst = RING_BOT_UINT8(&mixer->hwbuf);
+		mixer->codecarg.count = count;
+		mixer->codec(&mixer->codecarg);
+		audio_ring_tookfromtop(&mixer->codecbuf, mixer->codecarg.count);
+	}
+
 	audio_ring_appended(&mixer->hwbuf, count);
 	unlock(sc);
 	TRACE0("hwbuf=%d/%d/%d",

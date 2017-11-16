@@ -430,8 +430,9 @@ audioattach(device_t parent, device_t self, void *aux)
 		error = audio_mixer_init(sc, sc->sc_pmixer, AUMODE_PLAY);
 		if (error == 0) {
 			aprint_normal_dev(sc->dev,
-			    "slinear%d, %dch, %dHz for playback\n",
-			    AUDIO_INTERNAL_BITS,
+			    "encoding=%d prec=%d, %dch, %dHz for playback\n",
+			    sc->sc_pmixer->hwbuf.fmt.encoding,
+			    sc->sc_pmixer->hwbuf.fmt.stride,
 			    sc->sc_pmixer->hwbuf.fmt.channels,
 			    sc->sc_pmixer->hwbuf.fmt.sample_rate);
 		} else {
@@ -2443,6 +2444,7 @@ xxx_config_by_format(struct audio_softc *sc, audio_format2_t *cand, int mode)
 	mutex_exit(sc->sc_lock);
 	if (nformats == 0)
 		return ENXIO;
+
 	for (i = 0; i < nformats; i++) {
 		const struct audio_format *fmt = &formats[i];
 
@@ -2455,17 +2457,20 @@ xxx_config_by_format(struct audio_softc *sc, audio_format2_t *cand, int mode)
 			continue;
 		}
 
-		if (fmt->encoding != AUDIO_ENCODING_SLINEAR_NE) {
+		if (cand->sample_rate != 0 &&
+		    fmt->encoding != AUDIO_ENCODING_SLINEAR_NE) {
 			DPRINTF(("fmt[%d] skip; enc=%d\n", i, fmt->encoding));
 			continue;
 		}
-		if (fmt->precision != AUDIO_INTERNAL_BITS ||
-		    fmt->validbits != AUDIO_INTERNAL_BITS) {
+		if (cand->sample_rate != 0 &&
+		    (fmt->precision != AUDIO_INTERNAL_BITS ||
+		     fmt->validbits != AUDIO_INTERNAL_BITS)) {
 			DPRINTF(("fmt[%d] skip; precision %d/%d\n", i,
 			    fmt->validbits, fmt->precision));
 			continue;
 		}
-		if (fmt->channels < cand->channels) {
+		if (cand->sample_rate != 0 &&
+		    fmt->channels < cand->channels) {
 			DPRINTF(("fmt[%d] skip; channels %d < %d\n", i,
 			    fmt->channels, cand->channels));
 			continue;
@@ -2479,7 +2484,10 @@ xxx_config_by_format(struct audio_softc *sc, audio_format2_t *cand, int mode)
 		}
 
 		// cand 更新
+		cand->encoding = fmt->encoding;
 		cand->channels = fmt->channels;
+		cand->precision = fmt->validbits;
+		cand->stride = fmt->precision;
 		cand->sample_rate = freq;
 		DPRINTF(("fmt[%d] cand ch=%d freq=%d\n", i,
 		    cand->channels, cand->sample_rate));
