@@ -1000,10 +1000,10 @@ audio_trackmixer_play(audio_trackmixer_t *mixer)
 		(int)mixer->mixseq, (int)mixer->hwseq,
 		mixer->hwbuf.top, mixer->hwbuf.count, mixer->hwbuf.capacity);
 
-	// ダブルバッファを埋める
+	// ハードウェアバッファを埋める
 
 	if (mixer->hwbuf.capacity - mixer->hwbuf.count >= mixer->frames_per_block) {
-		int mixed = audio_trackmixer_mixall(mixer, 2 * mixer->frames_per_block, false);
+		int mixed = audio_trackmixer_mixall(mixer, mixer->frames_per_block, false);
 		if (mixed == 0) {
 			TRACE0("data not mixed");
 			return false;
@@ -1012,7 +1012,7 @@ audio_trackmixer_play(audio_trackmixer_t *mixer)
 		// バッファの準備ができたら転送。
 		mutex_enter(sc->sc_intr_lock);
 		audio_mixer_play_period(mixer);
-		if (mixer->hwbuf.count >= mixer->frames_per_block * 2) {
+		if (mixer->hwbuf.count >= mixer->frames_per_block) {
 			if (sc->sc_pbusy == false) {
 				audio_trackmixer_output(mixer);
 			}
@@ -1210,23 +1210,32 @@ audio_trackmixer_intr(audio_trackmixer_t *mixer, int count)
 
 	mixer->hw_complete_counter += count;
 	mixer->hwseq++;
+	bool later = false;
 
 	// まず出力待ちのシーケンスを出力
 	if (mixer->hwbuf.count >= mixer->frames_per_block) {
 		audio_trackmixer_output(mixer);
+	} else {
+		later = true;
+	}
 
-		// 次のバッファを用意する
-		int mixed = audio_trackmixer_mixall(mixer, mixer->frames_per_block, true);
-		if (mixed == 0) {
-			if (sc->hw_if->trigger_output) {
+	// 次のバッファを用意する
+	int mixed = audio_trackmixer_mixall(mixer, mixer->frames_per_block, true);
+	if (mixed == 0) {
+		if (sc->hw_if->trigger_output) {
 //				audio_append_silence
-			}
-		} else {
-			audio_mixer_play_period(mixer);
 		}
 	} else {
+		audio_mixer_play_period(mixer);
+	}
+
+	if (mixer->hwbuf.count == 0) {
 		audio2_halt_output(mixer);
 		mixer->busy = false;
+	} else {
+		if (later) {
+			audio_trackmixer_output(mixer);
+		}
 	}
 
 	// drain 待ちしている人のために通知
@@ -1359,8 +1368,8 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 		} else if (error) {
 			break;
 		}
-
 		audio_track_play(track, false);
+
 
 		if (wake == false) {
 			wake = audio_trackmixer_play(sc->sc_pmixer);
