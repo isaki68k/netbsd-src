@@ -5,6 +5,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "queue.h"
+// timeval
+#include <winsock.h>
 
 #define LITTLE_ENDIAN 1
 #define BIG_ENDIAN 2
@@ -181,4 +183,12 @@ static inline void
 kern_free(void *ptr)
 {
 	free(ptr);
+}
+
+static inline void
+getmicrotime(struct timeval *tv)
+{
+	int64_t t = GetTickCount64();
+	tv->tv_sec = (long)(t / 1000);
+	tv->tv_usec = (long)((t % 1000) * 1000);
 }
