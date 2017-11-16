@@ -1655,8 +1655,33 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 	// ioctl ターゲットチャンネルを探す
 	// XXX SETCHAN,GETCHAN はどうするか
 
-	DPRINTF(("audio_ioctl(%lu,'%c',%lu)\n",
-		 IOCPARM_LEN(cmd), (char)IOCGROUP(cmd), cmd&0xff));
+#if defined(AUDIO_DEBUG)
+	const char *ioctlnames[] = {
+		" AUDIO_GETINFO",
+		" AUDIO_SETINFO",
+		" AUDIO_DRAIN",
+		" AUDIO_FLUSH",
+		" AUDIO_WSEEK",
+		" AUDIO_RERROR",
+		" AUDIO_GETDEV",
+		" AUDIO_GETENC",
+		" AUDIO_GETFD",
+		" AUDIO_SETFD",
+		" AUDIO_PERROR",
+		" AUDIO_GETIOFFS",
+		" AUDIO_GETOOFFS",
+		" AUDIO_GETPROPS",
+		" AUDIO_GETBUFINFO",
+		" AUDIO_SETCHAN",
+		" AUDIO_GETCHAN",
+	};
+	int nameidx = (cmd & 0xff) - 21;
+	const char *ioctlname = "";
+	if (0 <= nameidx && nameidx < __arraycount(ioctlname))
+		ioctlname = ioctlnames[nameidx];
+	DPRINTF(("audio_ioctl(%lu,'%c',%lu)%s\n",
+		 IOCPARM_LEN(cmd), (char)IOCGROUP(cmd), cmd&0xff, ioctlname));
+#endif
 	if (sc->hw_if == NULL)
 		return ENXIO;
 	error = 0;
@@ -1703,7 +1728,6 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		// このコマンドはすべての再生と録音を停止し、すべてのキューの
 		// バッファをクリアし、エラーカウンタをリセットし、そして
 		// 現在のサンプリングモードで再生と録音を再開します。
-		DPRINTF(("AUDIO_FLUSH\n"));
 		break;
 
 	/*
@@ -1743,7 +1767,6 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 #endif
 
 	case AUDIO_SETINFO:
-		DPRINTF(("AUDIO_SETINFO mode=0x%x\n", file->mode));
 		error = audio_file_setinfo(sc, file, (struct audio_info *)addr);
 		if (error)
 			break;
@@ -1754,40 +1777,33 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		break;
 
 	case AUDIO_GETINFO:
-		DPRINTF(("AUDIO_GETINFO\n"));
 		error = audiogetinfo(sc, (struct audio_info *)addr, 1, file);
 		break;
 
 	case AUDIO_GETBUFINFO:
-		DPRINTF(("AUDIO_GETBUFINFO\n"));
 		error = audiogetinfo(sc, (struct audio_info *)addr, 0, file);
 		break;
 
 	case AUDIO_DRAIN:
-		DPRINTF(("AUDIO_DRAIN\n"));
 		// audio_drain 呼んで
 		// 最後の再生トラックなら hw_if->drain をコールする
 		error = audio_drain(sc, &file->ptrack);
 		break;
 
 	case AUDIO_GETDEV:
-		DPRINTF(("AUDIO_GETDEV\n"));
 		error = sc->hw_if->getdev(sc->hw_hdl, (audio_device_t *)addr);
 		break;
 
 	case AUDIO_GETENC:
-		DPRINTF(("AUDIO_GETENC\n"));
 		error = audio_getenc(sc, addr);
 		break;
 
 	case AUDIO_GETFD:
-		DPRINTF(("AUDIO_GETFD\n"));
 		// XXX Full duplex かどうか
 		//*(int *)addr = 1;
 		break;
 
 	case AUDIO_SETFD:
-		DPRINTF(("AUDIO_SETFD\n"));
 		//fd = *(int *)addr;
 		// XXX 仕様を決める必要がある
 		// audio(4)
@@ -1798,7 +1814,6 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		break;
 
 	case AUDIO_GETPROPS:
-		DPRINTF(("AUDIO_GETPROPS\n"));
 		*(int *)addr = audio_get_props(sc);
 		break;
 
@@ -1812,8 +1827,9 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		}
 		break;
 	}
-	DPRINTF(("audio_ioctl(%lu,'%c',%lu) result %d\n",
-		 IOCPARM_LEN(cmd), (char)IOCGROUP(cmd), cmd&0xff, error));
+	DPRINTF(("audio_ioctl(%lu,'%c',%lu)%s result %d\n",
+		 IOCPARM_LEN(cmd), (char)IOCGROUP(cmd), cmd&0xff, ioctlname,
+		 error));
 	return error;
 }
 
