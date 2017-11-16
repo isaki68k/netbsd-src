@@ -1314,6 +1314,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 
 	af = kmem_zalloc(sizeof(audio_file_t), KM_SLEEP);
 	af->sc = sc;
+	af->dev = dev;
 	af->mode = 0;
 	if ((flags & FWRITE) != 0 && audio_can_playback(sc))
 		af->mode |= AUMODE_PLAY;
