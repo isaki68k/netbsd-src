@@ -38,6 +38,7 @@ typedef struct pad_softc {
 	void		*sc_intrarg;
 
 	kcondvar_t	sc_condvar;
+	kmutex_t	sc_cond_lock;
 	kmutex_t	sc_lock;
 	kmutex_t	sc_intr_lock;
 	callout_t	sc_pcallout;
@@ -46,7 +47,6 @@ typedef struct pad_softc {
 	device_t	sc_audiodev;
 	int		sc_blksize;
 
-#define PAD_BLKSIZE	8192
 #define PAD_BUFSIZE	65536
 	uint8_t		sc_audiobuf[PAD_BUFSIZE];
 	uint32_t	sc_buflen;
