@@ -1460,8 +1460,7 @@ bad1:
 int
 audio_drain(struct audio_softc *sc, audio_track_t *track)
 {
-	audio_track_play_drain(track);
-	return 0;
+	return audio_track_play_drain(track);
 }
 
 int

@@ -1242,7 +1242,7 @@ audio_trackmixer_intr(audio_trackmixer_t *mixer, int count)
 }
 
 #if !defined(_KERNEL)
-void
+int
 audio_track_play_drain(audio_track_t *track, bool wait)
 {
 	// 割り込みエミュレートしているときはメインループに制御を戻さないといけない
@@ -1251,16 +1251,18 @@ audio_track_play_drain(audio_track_t *track, bool wait)
 	mutex_enter(sc->sc_lock);
 	audio_track_play_drain_core(track, wait);
 	mutex_exit(sc->sc_lock);
+	return 0;
 }
 #else
-void
+int
 audio_track_play_drain(audio_track_t *track)
 {
-	audio_track_play_drain_core(track, true);
+	return audio_track_play_drain_core(track, true);
 }
 #endif
 
-void
+// errno を返します。
+int
 audio_track_play_drain_core(audio_track_t *track, bool wait)
 {
 	audio_trackmixer_t *mixer = track->mixer;
@@ -1284,7 +1286,9 @@ audio_track_play_drain_core(audio_track_t *track, bool wait)
 			error = cv_wait_sig(&mixer->intrcv, sc->sc_lock);
 			if (error) {
 				printf("cv_wait_sig failed %d\n", error);
-				return;
+				if (error < 0)
+					error = EINTR;
+				return error;
 			}
 		}
 
@@ -1294,6 +1298,7 @@ audio_track_play_drain_core(audio_track_t *track, bool wait)
 			(int)track->track_mixer_counter, (int)track->mixer_hw_counter,
 			(int)track->hw_complete_counter);
 	}
+	return 0;
 }
 
 /* write の MI 側 */

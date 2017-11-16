@@ -41,12 +41,12 @@ void audio_track_destroy(audio_track_t *track);
 void audio_track_set_format(audio_track_t *track, audio_format2_t *track_fmt);
 void audio_track_play(audio_track_t *track, bool isdrain);
 #if defined(_KERNEL)
-void audio_track_play_drain(audio_track_t *track);
+int audio_track_play_drain(audio_track_t *track);
 #else
-void audio_track_play_drain(audio_track_t *track, bool wait);
+int audio_track_play_drain(audio_track_t *track, bool wait);
 #endif
 
-void audio_track_play_drain_core(audio_track_t *track, bool wait);
+int audio_track_play_drain_core(audio_track_t *track, bool wait);
 
 int audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode);
 void audio_mixer_destroy(audio_trackmixer_t *mixer, int mode);
