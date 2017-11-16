@@ -909,6 +909,8 @@ audio_mixer_destroy(audio_trackmixer_t *mixer, int mode)
 	// intrcv を cv_destroy() してはいけないっぽい。KASSERT で死ぬ。
 }
 
+// 全トラックを req フレーム分合成します。
+// 合成が行われれば 1 以上を返す?
 static int
 audio_trackmixer_mixall(audio_trackmixer_t *mixer, int req, bool isdrain)
 {
@@ -1030,8 +1032,9 @@ audio_trackmixer_play(audio_trackmixer_t *mixer)
 
 /*
 * トラックバッファから取り出し、ミキシングします。
-* mixed: 現在の合成トラックカウンタ
-* return: 合成済みトラックカウンタ。
+* mixed には呼び出し時点までの合成済みトラック数を渡します。
+* 戻り値はこの関数終了時での合成済みトラック数)です。
+* つまりこのトラックを合成すれば mixed + 1 を返します。
 */
 int
 audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req, int mixed)
