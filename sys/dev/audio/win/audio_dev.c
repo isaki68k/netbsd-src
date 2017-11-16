@@ -292,8 +292,6 @@ static void audio_softc_play_start_core(struct audio_softc *sc)
 	wh->dwUser = 1;
 
 	MMRESULT r;
-	// わざと \n いれてない
-	printf("WOUT");
 	r = waveOutWrite(dev->handle, wh, sizeof(WAVEHDR));
 	if (r != MMSYSERR_NOERROR) {
 		panic("");
