@@ -331,7 +331,7 @@ parse_file(struct test_file *f, FILE *fp, const char *filename, int adpcm_freq)
 			tag = GETID(s); s += 4;
 			len = lebe32toh(*(uint32_t *)s); s += 4;
 			if (debug)
-				printf("tag=%s len=%d", tagname(tag), len);
+				printf("tag=%s len=%d\n", tagname(tag), len);
 			if (tag == ID("fmt ")) {
 				WAVEFORMATEX *wf = (WAVEFORMATEX *)s;
 				s += len;
@@ -520,7 +520,7 @@ tagname(uint32_t tag)
 {
 	static char buf[32];
 
-	snprintf(buf, sizeof(buf), "%x '%c%c%c%c' ",
+	snprintf(buf, sizeof(buf), "%x '%c%c%c%c'",
 		tag,
 		IDC(tag>>24),
 		IDC(tag>>16),
