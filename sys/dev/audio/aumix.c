@@ -798,8 +798,9 @@ audio_track_play(audio_track_t *track, bool isdrain)
 	if (track->codec.filter)
 		n += snprintf(buf + n, 100 - n, " e=%d", track->codec.srcbuf.count);
 #endif
-	TRACE(track, "busy=%d outbuf=%d/%d%s", track->mixer->busy,
-		track->outputbuf.count, track->outputbuf.capacity, buf);
+	TRACE(track, "end busy=%d outbuf=%d/%d/%d%s", track->mixer->busy,
+	    track->outputbuf.top, track->outputbuf.count, track->outputbuf.capacity,
+	    buf);
 }
 
 int
