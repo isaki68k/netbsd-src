@@ -17,39 +17,40 @@
 #endif // !_KERNEL
 
 /*
- * カーネル内
+ * -N7
+ * audio_write {
+ *  uioからバッファを作成
+ *  audiostartp {
+ *   start/trigger ..1ブロック出力/trigger開始
+ *  }
+ * }
+ * audio_pint {
+ *  (必要なら)(フィルタ内に留まってるデータから)バッファを作成
+ *  start_output ..1ブロック出力
+ * }
  *
- * (1人目)
- * audio_write
- *  v
- * audio_track_play
- *  v 変換
- * audiostartp
- *  v ミキサ駆動
- * audio_mixer_play
- *  v 合成
- * audio_mixer_play_period
- *  v HW変換
- * audio_start_output
- *  :
+ * ---
  *
- * audio_pintr
- *  v
- * audio_trackmixer_intr
- *  v
- * audio_mixer_play
- *  v
- * audio_mixer_play_period
- *  v
- * audio_start_output
- *  :
- *
- * (2人目)
- * audio_write
- *  v
- * audio_track_play
- *  v
- * (audiostartp不要)
+ * audio_write {
+ *  audio_trackmixer_play {
+ *   audio_trackmixer_mixall {
+ *    audio_track_play .. uioからoutbufまでの変換
+ *    audio_mixer_play_mix_track ..合成
+ *   }
+ *   audio_mixer_play_period ..HW変換
+ *   if (ready)
+ *    audio_trackmixer_output ..1ブロック出力
+ *  }
+ * }
+ * audio2_pintr {
+ *  audio_trackmixer_intr {
+ *   audio_trackmixer_output ..1ブロック出力
+ *   audio_trackmixer_mixall {
+ *    audio_track_play .. uioからoutbufまでの変換
+ *    audio_mixer_play_mix_track ..合成
+ *   }
+ *   audio_mixer_play_period
+ * }
  */
 
 #define AUDIO_TRACE
