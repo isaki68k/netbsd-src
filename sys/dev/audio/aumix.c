@@ -1274,6 +1274,14 @@ audio_track_play_drain_core(audio_track_t *track, bool wait)
 	KASSERT(mutex_owned(sc->sc_lock));
 	//KASSERT(!mutex_owned(sc->sc_intr_lock));
 
+	// このトラックが空なら何もすることがない
+	// XXX 本当は途中の変換バッファも全部洗う必要があるが
+	// XXX というか outputbuf だけで知れるほうが楽なんでは。
+	if (track->outputbuf.count == 0) {
+		TRACE(track, "no data");
+		return 0;
+	}
+
 	track->is_draining = true;
 
 	// 無音挿入させる
