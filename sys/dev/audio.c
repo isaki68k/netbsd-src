@@ -1468,6 +1468,7 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 {
 	int error;
 
+	DPRINTF(("%s flags=0x%x\n", __func__, flags));
 	KASSERT(mutex_owned(sc->sc_lock));
 
 	// いる?
