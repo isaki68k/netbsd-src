@@ -244,6 +244,10 @@ static int xxx_config_by_format(struct audio_softc *, audio_format2_t *, int);
 static int xxx_config_by_encoding(struct audio_softc *, audio_format2_t *, int);
 static int audio_xxx_config(struct audio_softc *, int);
 static void audio_prepare_enc_xxx(struct audio_softc *sc);
+static void audio_format2_tostr(char *, size_t, const audio_format2_t *);
+#ifdef AUDIO_DEBUG
+static void audio_print_format2(const char *, const audio_format2_t *);
+#endif
 
 #ifdef OLD_FILTER
 static void stream_filter_list_append(stream_filter_list_t *,
@@ -321,6 +325,28 @@ const struct audio_params audio_default = {
 	.channels = 1,
 };
 
+static const char *encoding_names[] = {
+	"none",
+	AudioEmulaw,
+	AudioEalaw,
+	"pcm16",
+	"pcm8",
+	AudioEadpcm,
+	AudioEslinear_le,
+	AudioEslinear_be,
+	AudioEulinear_le,
+	AudioEulinear_be,
+	AudioEslinear,
+	AudioEulinear,
+	AudioEmpeg_l1_stream,
+	AudioEmpeg_l1_packets,
+	AudioEmpeg_l1_system
+	AudioEmpeg_l2_stream,
+	AudioEmpeg_l2_packets,
+	AudioEmpeg_l2_system,
+	AudioEac3,
+};
+
 static const struct portname itable[] = {
 	{ AudioNmicrophone,	AUDIO_MICROPHONE },
 	{ AudioNline,		AUDIO_LINE_IN },
@@ -357,6 +383,7 @@ audioattach(device_t parent, device_t self, void *aux)
 	struct audio_softc *sc;
 	struct audio_attach_args *sa;
 	const struct audio_hw_if *hw_if;
+	char fmtstr[64];
 	void *hdlp;
 	bool is_indep;
 	int props;
@@ -434,12 +461,10 @@ audioattach(device_t parent, device_t self, void *aux)
 		    KM_SLEEP);
 		error = audio_mixer_init(sc, sc->sc_pmixer, AUMODE_PLAY);
 		if (error == 0) {
-			aprint_normal_dev(sc->dev,
-			    "encoding=%d prec=%d, %dch, %dHz for playback\n",
-			    sc->sc_pmixer->hwbuf.fmt.encoding,
-			    sc->sc_pmixer->hwbuf.fmt.stride,
-			    sc->sc_pmixer->hwbuf.fmt.channels,
-			    sc->sc_pmixer->hwbuf.fmt.sample_rate);
+			audio_format2_tostr(fmtstr, sizeof(fmtstr),
+			    &sc->sc_pmixer->hwbuf.fmt);
+			aprint_normal_dev(sc->dev, "%s for playback\n",
+			    fmtstr);
 		} else {
 			aprint_error_dev(sc->dev,
 			    "configuring playback mode failed\n");
@@ -453,11 +478,10 @@ audioattach(device_t parent, device_t self, void *aux)
 		    KM_SLEEP);
 		error = audio_mixer_init(sc, sc->sc_rmixer, AUMODE_RECORD);
 		if (error == 0) {
-			aprint_normal_dev(sc->dev,
-			    "slinear%d, %dch, %dHz for record\n",
-			    AUDIO_INTERNAL_BITS,
-			    sc->sc_rmixer->hwbuf.fmt.channels,
-			    sc->sc_rmixer->hwbuf.fmt.sample_rate);
+			audio_format2_tostr(fmtstr, sizeof(fmtstr),
+			    &sc->sc_rmixer->hwbuf.fmt);
+			aprint_normal_dev(sc->dev, "%s for recording\n",
+			    fmtstr);
 		} else {
 			aprint_error_dev(sc->dev,
 			    "configuring record mode failed\n");
@@ -805,25 +829,6 @@ audio_attach_mi(const struct audio_hw_if *ahwp, void *hdlp, device_t dev)
 	arg.hdl = hdlp;
 	return config_found(dev, &arg, audioprint);
 }
-
-#ifdef AUDIO_DEBUG
-void	audio_print_params(const char *, struct audio_params *);
-void	audio_print_format2(const char *, const audio_format2_t *);
-
-void
-audio_print_params(const char *s, struct audio_params *p)
-{
-	printf("%s enc=%u %uch %u/%ubit %uHz\n", s, p->encoding, p->channels,
-	       p->validbits, p->precision, p->sample_rate);
-}
-
-void
-audio_print_format2(const char *s, const audio_format2_t *f2)
-{
-	struct audio_params p = format2_to_params(f2);
-	audio_print_params(s, &p);
-}
-#endif
 
 #ifdef OLD_FILTER
 static void
@@ -3453,6 +3458,41 @@ audio_resume(device_t dv, const pmf_qual_t *qual)
 
 	return true;
 }
+
+static void
+audio_format2_tostr(char *buf, size_t bufsize, const audio_format2_t *fmt)
+{
+	int n;
+
+	n = 0;
+	if (fmt->encoding < __arraycount(encoding_names)) {
+		n += snprintf(buf + n, bufsize - n, "%s",
+		    encoding_names[fmt->encoding]);
+	} else {
+		n += snprintf(buf + n, bufsize - n, "unknown_encoding=%d",
+		    fmt->encoding);
+	}
+	if (fmt->precision == fmt->stride) {
+		n += snprintf(buf + n, bufsize - n, " %dbit", fmt->precision);
+	} else {
+		n += snprintf(buf + n, bufsize - n, " %d/%dbit",
+			fmt->precision, fmt->stride);
+	}
+
+	snprintf(buf + n, bufsize - n, " %uch %uHz",
+	    fmt->channels, fmt->sample_rate);
+}
+
+#ifdef AUDIO_DEBUG
+static void
+audio_print_format2(const char *s, const audio_format2_t *fmt)
+{
+	char fmtstr[64];
+
+	audio_format2_tostr(fmtstr, sizeof(fmtstr), fmt);
+	printf("%s %s\n", s, fmtstr);
+}
+#endif
 
 /*
  * Mixer driver
