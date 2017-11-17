@@ -387,6 +387,7 @@ audioattach(device_t parent, device_t self, void *aux)
 	void *hdlp;
 	bool is_indep;
 	int props;
+	int blkms;
 	int error;
 
 	sc = device_private(self);
@@ -463,8 +464,11 @@ audioattach(device_t parent, device_t self, void *aux)
 		if (error == 0) {
 			audio_format2_tostr(fmtstr, sizeof(fmtstr),
 			    &sc->sc_pmixer->hwbuf.fmt);
-			aprint_normal_dev(sc->dev, "%s for playback\n",
-			    fmtstr);
+			blkms = sc->sc_pmixer->blktime_n * 1000 /
+			    sc->sc_pmixer->blktime_d;
+			aprint_normal_dev(sc->dev,
+			    "%s, blk %dms for playback\n",
+			    fmtstr, blkms);
 		} else {
 			aprint_error_dev(sc->dev,
 			    "configuring playback mode failed\n");
@@ -480,8 +484,11 @@ audioattach(device_t parent, device_t self, void *aux)
 		if (error == 0) {
 			audio_format2_tostr(fmtstr, sizeof(fmtstr),
 			    &sc->sc_rmixer->hwbuf.fmt);
-			aprint_normal_dev(sc->dev, "%s for recording\n",
-			    fmtstr);
+			blkms = sc->sc_rmixer->blktime_n * 1000 /
+			    sc->sc_rmixer->blktime_d;
+			aprint_normal_dev(sc->dev,
+			    "%s, blk %dms for recording\n",
+			    fmtstr, blkms);
 		} else {
 			aprint_error_dev(sc->dev,
 			    "configuring record mode failed\n");
