@@ -332,17 +332,19 @@ audio_track_freq(audio_filter_arg_t *arg)
 	// 単純法
 	// XXX: 高速化が必要
 	internal_t *dptr = RING_BOT(internal_t, dst);
+	audio_rational_t tmp = track->freq_current;
 	for (int i = 0; i < count; i++) {
-		if (src->count <= 0) break;
+		audio_rational_add(&tmp, &track->freq_step, dst->fmt.sample_rate);
+		if (tmp.i > src->count) break;
 
 		internal_t *sptr = RING_TOP(internal_t, src);
 		for (int ch = 0; ch < dst->fmt.channels; ch++, dptr++, sptr++) {
 			*dptr = *sptr;
 		}
 
-		audio_rational_add(&track->freq_current, &track->freq_step, dst->fmt.sample_rate);
-		audio_ring_tookfromtop(src, track->freq_current.i);
-		track->freq_current.i = 0;
+		audio_ring_tookfromtop(src, tmp.i);
+		tmp.i = 0;
+		track->freq_current = tmp;
 		audio_ring_appended(dst, 1);
 	}
 }
