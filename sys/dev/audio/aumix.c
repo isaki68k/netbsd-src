@@ -53,8 +53,13 @@
  * }
  */
 
-#define AUDIO_TRACE
-#ifdef AUDIO_TRACE
+// カーネルの場合は audio.c の AUDIO_DEBUG だけで制御する
+// テストプログラムの場合はここの AUDIO_DEBUG で制御する
+#if !defined(_KERNEL)
+#define AUDIO_DEBUG 2
+#endif
+
+#if AUDIO_DEBUG > 2
 #define TRACE0(fmt, ...)	audio_trace0(__func__, fmt, ## __VA_ARGS__)
 #define TRACE(t, fmt, ...)	audio_trace(__func__, t, fmt, ## __VA_ARGS__)
 #else
@@ -1376,7 +1381,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 	if (!sc->sc_full_duplex && file->rtrack.mode != 0) {
 		uio->uio_offset += uio->uio_resid;
 		uio->uio_resid = 0;
-		DPRINTF(("audio_write: half-dpx read busy\n"));
+		DPRINTF(1, "audio_write: half-dpx read busy\n");
 		return 0;
 	}
 

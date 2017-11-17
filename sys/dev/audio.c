@@ -110,14 +110,19 @@ __KERNEL_RCSID(0, "$NetBSD$");
 
 #include <uvm/uvm.h>
 
-#define AUDIO_DEBUG	2
+// デバッグレベルは
+// 1: open/close/set_param等
+// 2: read/write/ioctlシステムコールくらいまでは含む
+// 3: TRACEも含む
+#define AUDIO_DEBUG	1
 #ifdef AUDIO_DEBUG
-#define DPRINTF(x)	if (audiodebug) printf x
-#define DPRINTFN(n,x)	if (audiodebug>(n)) printf x
+#define DPRINTF(n, fmt...)	do {	\
+	if (audiodebug >= (n))		\
+		printf(fmt);		\
+} while (0)
 int	audiodebug = AUDIO_DEBUG;
 #else
-#define DPRINTF(x)
-#define DPRINTFN(n,x)
+#define DPRINTF(n,x)
 #endif
 
 #define ROUNDSIZE(x)	(x) &= -16	/* round to nice boundary */
@@ -341,8 +346,8 @@ audiomatch(device_t parent, cfdata_t match, void *aux)
 	struct audio_attach_args *sa;
 
 	sa = aux;
-	DPRINTF(("%s: type=%d sa=%p hw=%p\n",
-	     __func__, sa->type, sa, sa->hwif));
+	DPRINTF(1, "%s: type=%d sa=%p hw=%p\n",
+	     __func__, sa->type, sa, sa->hwif);
 	return (sa->type == AUDIODEV_TYPE_AUDIO) ? 1 : 0;
 }
 
@@ -486,10 +491,10 @@ audioattach(device_t parent, device_t self, void *aux)
 	    audio_softintr_wr, sc);
 
 	mixer_init(sc);
-	DPRINTF(("audio_attach: inputs ports=0x%x, input master=%d, "
+	DPRINTF(2, "audio_attach: inputs ports=0x%x, input master=%d, "
 		 "output ports=0x%x, output master=%d\n",
 		 sc->sc_inports.allports, sc->sc_inports.master,
-		 sc->sc_outports.allports, sc->sc_outports.master));
+		 sc->sc_outports.allports, sc->sc_outports.master);
 
 	// sysctl ここ?
 
@@ -711,7 +716,7 @@ audiodetach(device_t self, int flags)
 	//int rc;
 
 	sc = device_private(self);
-	DPRINTF(("%s: sc=%p flags=%d\n", __func__, sc, flags));
+	DPRINTF(1, "%s: sc=%p flags=%d\n", __func__, sc, flags);
 
 	/* Start draining existing accessors of the device. */
 	// なぜここで config_detach_children() ?
@@ -1310,8 +1315,8 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	if (sc->hw_if == NULL)
 		return ENXIO;
 
-	DPRINTF(("audio_open: flags=0x%x sc=%p hdl=%p\n",
-		 flags, sc, sc->hw_hdl));
+	DPRINTF(1, "audio_open: flags=0x%x sc=%p hdl=%p\n",
+		 flags, sc, sc->hw_hdl);
 
 	af = kmem_zalloc(sizeof(audio_file_t), KM_SLEEP);
 	af->sc = sc;
@@ -1470,7 +1475,7 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 {
 	int error;
 
-	DPRINTF(("%s flags=0x%x\n", __func__, flags));
+	DPRINTF(1, "%s flags=0x%x\n", __func__, flags);
 	KASSERT(mutex_owned(sc->sc_lock));
 
 	// いる?
@@ -1502,7 +1507,7 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 	if ((flags & FREAD) != 0) {
 		if (sc->sc_ropens == 1) {
 			if (sc->sc_rbusy) {
-				DPRINTF(("%s halt_input\n", __func__));
+				DPRINTF(2, "%s halt_input\n", __func__);
 				mutex_enter(sc->sc_intr_lock);
 				error = sc->hw_if->halt_input(sc->hw_hdl);
 				mutex_exit(sc->sc_intr_lock);
@@ -1527,7 +1532,7 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 
 		if (sc->sc_popens == 1) {
 			if (sc->sc_pbusy) {
-				DPRINTF(("%s halt_output\n", __func__));
+				DPRINTF(2, "%s halt_output\n", __func__);
 				mutex_enter(sc->sc_intr_lock);
 				error = sc->hw_if->halt_output(sc->hw_hdl);
 				mutex_exit(sc->sc_intr_lock);
@@ -1548,7 +1553,7 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 	// 最後なら close
 	if (sc->sc_popens + sc->sc_ropens == 0) {
 		if (sc->hw_if->close) {
-			DPRINTF(("%s hw_if close\n", __func__));
+			DPRINTF(2, "%s hw_if close\n", __func__);
 			mutex_enter(sc->sc_intr_lock);
 			sc->hw_if->close(sc->hw_hdl);
 			mutex_exit(sc->sc_intr_lock);
@@ -1634,7 +1639,7 @@ void
 audio_hw_clear(struct audio_softc *sc)
 {
 	mutex_enter(sc->sc_intr_lock);
-	DPRINTF(("%s not implemented\n", __func__));
+	DPRINTF(1, "%s not implemented\n", __func__);
 	mutex_exit(sc->sc_intr_lock);
 }
 
@@ -1681,8 +1686,8 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 	const char *ioctlname = "";
 	if (0 <= nameidx && nameidx < __arraycount(ioctlname))
 		ioctlname = ioctlnames[nameidx];
-	DPRINTF(("audio_ioctl(%lu,'%c',%lu)%s\n",
-		 IOCPARM_LEN(cmd), (char)IOCGROUP(cmd), cmd&0xff, ioctlname));
+	DPRINTF(2, "audio_ioctl(%lu,'%c',%lu)%s\n",
+		 IOCPARM_LEN(cmd), (char)IOCGROUP(cmd), cmd&0xff, ioctlname);
 #endif
 	if (sc->hw_if == NULL)
 		return ENXIO;
@@ -1720,8 +1725,8 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 				error = EBUSY;
 			else
 				sc->sc_async_audio = curproc->p_pid;
-			DPRINTF(("audio_ioctl: FIOASYNC pid %d\n",
-			    sc->sc_async_audio));
+			DPRINTF(2, "audio_ioctl: FIOASYNC pid %d\n",
+			    sc->sc_async_audio);
 		} else
 			sc->sc_async_audio = 0;
 		break;
@@ -1824,14 +1829,14 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 			error = sc->hw_if->dev_ioctl(sc->hw_hdl,
 			    cmd, addr, flag, l);
 		} else {
-			DPRINTF(("audio_ioctl: unknown ioctl\n"));
+			DPRINTF(2, "audio_ioctl: unknown ioctl\n");
 			error = EINVAL;
 		}
 		break;
 	}
-	DPRINTF(("audio_ioctl(%lu,'%c',%lu)%s result %d\n",
+	DPRINTF(2, "audio_ioctl(%lu,'%c',%lu)%s result %d\n",
 		 IOCPARM_LEN(cmd), (char)IOCGROUP(cmd), cmd&0xff, ioctlname,
-		 error));
+		 error);
 	return error;
 }
 
@@ -1843,7 +1848,7 @@ audio_poll(struct audio_softc *sc, int events, struct lwp *l,
 
 	KASSERT(mutex_owned(sc->sc_lock));
 
-	DPRINTF(("audio_poll: events=0x%x mode=%d\n", events, file->mode));
+	DPRINTF(2, "audio_poll: events=0x%x mode=%d\n", events, file->mode);
 
 	// XXX 動作未確認
 
@@ -2026,7 +2031,7 @@ audio_mmap(struct audio_softc *sc, off_t *offp, size_t len, int prot,
 	if (sc->hw_if == NULL)
 		return ENXIO;
 
-	DPRINTF(("audio_mmap: off=%lld, prot=%d\n", (long long)(*offp), prot));
+	DPRINTF(2, "audio_mmap: off=%lld, prot=%d\n", (long long)(*offp), prot);
 	if (!(audio_get_props(sc) & AUDIO_PROP_MMAP))
 		return ENOTSUP;
 
@@ -2102,7 +2107,7 @@ audiostartr(struct audio_softc *sc)
 
 	KASSERT(mutex_owned(sc->sc_lock));
 
-	DPRINTF(("audiostartr\n"));
+	DPRINTF(2, "audiostartr\n");
 
 	if (!audio_can_capture(sc))
 		return EINVAL;
@@ -2123,7 +2128,7 @@ audiostartp(struct audio_softc *sc)
 	KASSERT(mutex_owned(sc->sc_lock));
 
 	//KASSERT(!sc->sc_pbusy);
-	DPRINTF(("audiostartp busy=%d\n", sc->sc_pbusy));
+	DPRINTF(2, "audiostartp busy=%d\n", sc->sc_pbusy);
 	if (sc->sc_pbusy == true)
 		return 0;
 
@@ -2161,7 +2166,7 @@ audio_start_output(struct audio_softc *sc)
 	blksize = mixer->frames_per_block *
 	    mixer->hwbuf.fmt.channels * mixer->hwbuf.fmt.stride / NBBY;
 
-	DPRINTF(("%s blksize=%d bytes\n", __func__, blksize));
+	DPRINTF(2, "%s blksize=%d bytes\n", __func__, blksize);
 
 	if (sc->hw_if->trigger_output) {
 		audio_params_t params;
@@ -2206,7 +2211,7 @@ audio_softintr_rd(void *cookie)
 	// XXX 元々ここで rchan を broadcast してた
 	selnotify(&sc->sc_rsel, 0, NOTE_SUBMIT);
 	if ((pid = sc->sc_async_audio) != 0) {
-		DPRINTFN(3, ("audio_softintr_rd: sending SIGIO %d\n", pid));
+		DPRINTF(3, "audio_softintr_rd: sending SIGIO %d\n", pid);
 		mutex_enter(proc_lock);
 		if ((p = proc_find(pid)) != NULL)
 			psignal(p, SIGIO);
@@ -2226,7 +2231,7 @@ audio_softintr_wr(void *cookie)
 	// XXX 元々ここで wchan を broadcast してた
 	selnotify(&sc->sc_wsel, 0, NOTE_SUBMIT);
 	if ((pid = sc->sc_async_audio) != 0) {
-		DPRINTFN(3, ("audio_softintr_wr: sending SIGIO %d\n", pid));
+		DPRINTF(3, "audio_softintr_wr: sending SIGIO %d\n", pid);
 		mutex_enter(proc_lock);
 		if ((p = proc_find(pid)) != NULL)
 			psignal(p, SIGIO);
@@ -2252,7 +2257,7 @@ audio_pintr(void *v)
 	KASSERT(mutex_owned(sc->sc_intr_lock));
 
 	mixer = sc->sc_pmixer;
-	DPRINTF(("%s hwbuf.count=%d\n", __func__, mixer->hwbuf.count));
+	DPRINTF(3, "%s hwbuf.count=%d\n", __func__, mixer->hwbuf.count);
 
 	/* XXX どうすべ */
 	if (mixer->hwbuf.count == 0)
@@ -2449,37 +2454,37 @@ xxx_config_by_format(struct audio_softc *sc, audio_format2_t *cand, int mode)
 		const struct audio_format *fmt = &formats[i];
 
 		if (!AUFMT_IS_VALID(fmt)) {
-			DPRINTF(("fmt[%d] skip; INVALID\n", i));
+			DPRINTF(1, "fmt[%d] skip; INVALID\n", i);
 			continue;
 		}
 		if ((fmt->mode & mode) == 0) {
-			DPRINTF(("fmt[%d] skip; mode not match %d\n", i, mode));
+			DPRINTF(1, "fmt[%d] skip; mode not match %d\n", i, mode);
 			continue;
 		}
 
 		if (cand->sample_rate != 0 &&
 		    fmt->encoding != AUDIO_ENCODING_SLINEAR_NE) {
-			DPRINTF(("fmt[%d] skip; enc=%d\n", i, fmt->encoding));
+			DPRINTF(1, "fmt[%d] skip; enc=%d\n", i, fmt->encoding);
 			continue;
 		}
 		if (cand->sample_rate != 0 &&
 		    (fmt->precision != AUDIO_INTERNAL_BITS ||
 		     fmt->validbits != AUDIO_INTERNAL_BITS)) {
-			DPRINTF(("fmt[%d] skip; precision %d/%d\n", i,
-			    fmt->validbits, fmt->precision));
+			DPRINTF(1, "fmt[%d] skip; precision %d/%d\n", i,
+			    fmt->validbits, fmt->precision);
 			continue;
 		}
 		if (cand->sample_rate != 0 &&
 		    fmt->channels < cand->channels) {
-			DPRINTF(("fmt[%d] skip; channels %d < %d\n", i,
-			    fmt->channels, cand->channels));
+			DPRINTF(1, "fmt[%d] skip; channels %d < %d\n", i,
+			    fmt->channels, cand->channels);
 			continue;
 		}
 		int freq = xxx_select_freq(fmt);
 		// XXX うーん
 		if (freq < cand->sample_rate) {
-			DPRINTF(("fmt[%d] skip; frequency %d < %d\n", i,
-			    freq, cand->sample_rate));
+			DPRINTF(1, "fmt[%d] skip; frequency %d < %d\n", i,
+			    freq, cand->sample_rate);
 			continue;
 		}
 
@@ -2489,16 +2494,16 @@ xxx_config_by_format(struct audio_softc *sc, audio_format2_t *cand, int mode)
 		cand->precision = fmt->validbits;
 		cand->stride = fmt->precision;
 		cand->sample_rate = freq;
-		DPRINTF(("fmt[%d] cand ch=%d freq=%d\n", i,
-		    cand->channels, cand->sample_rate));
+		DPRINTF(1, "fmt[%d] cand ch=%d freq=%d\n", i,
+		    cand->channels, cand->sample_rate);
 	}
 
 	if (cand->sample_rate == 0) {
-		DPRINTF(("%s no fmt\n", __func__));
+		DPRINTF(1, "%s no fmt\n", __func__);
 		return ENXIO;
 	}
-	DPRINTF(("%s selected: ch=%d freq=%d\n", __func__,
-	    cand->channels, cand->sample_rate));
+	DPRINTF(1, "%s selected: ch=%d freq=%d\n", __func__,
+	    cand->channels, cand->sample_rate);
 	return 0;
 }
 
@@ -2531,16 +2536,16 @@ xxx_config_by_encoding(struct audio_softc *sc, audio_format2_t *cand, int mode)
 			if (error == 0) {
 				// 設定できたのでこれを採用
 				*cand = fmt;
-				DPRINTF(("%s selected: ch=%d freq=%d\n",
+				DPRINTF(1, "%s selected: ch=%d freq=%d\n",
 				    __func__,
 				    fmt.channels,
-				    fmt.sample_rate));
+				    fmt.sample_rate);
 				return 0;
 			}
-			DPRINTF(("%s trying ch=%d freq=%d failed\n",
+			DPRINTF(1, "%s trying ch=%d freq=%d failed\n",
 			    __func__,
 			    fmt.channels,
-			    fmt.sample_rate));
+			    fmt.sample_rate);
 		}
 	}
 	return ENXIO;
@@ -3132,8 +3137,8 @@ audio_set_params(struct audio_softc *sc, int setmode)
 	    &pp, &rp, &pfilters, &rfilters);
 	if (error) {
 		mutex_exit(sc->sc_lock);
-		DPRINTF(("%s: set_params failed with %d\n",
-		    __func__, error));
+		DPRINTF(1, "%s: set_params failed with %d\n",
+		    __func__, error);
 		return error;
 	}
 
@@ -3141,8 +3146,8 @@ audio_set_params(struct audio_softc *sc, int setmode)
 		error = sc->hw_if->commit_settings(sc->hw_hdl);
 		if (error) {
 			mutex_exit(sc->sc_lock);
-			DPRINTF(("%s: commit_settings failed with %d\n",
-			    __func__, error));
+			DPRINTF(1, "%s: commit_settings failed with %d\n",
+			    __func__, error);
 			return error;
 		}
 	}
@@ -3151,7 +3156,7 @@ audio_set_params(struct audio_softc *sc, int setmode)
 	/* construct new filter chain */
 	// XXX
 
-	DPRINTF(("%s: filter setup is completed.\n", __func__));
+	DPRINTF(1, "%s: filter setup is completed.\n", __func__);
 
 	return 0;
 }
@@ -3472,7 +3477,7 @@ mixer_open(dev_t dev, struct audio_softc *sc, int flags,
 	if (sc->hw_if == NULL)
 		return  ENXIO;
 
-	DPRINTF(("mixer_open: flags=0x%x sc=%p\n", flags, sc));
+	DPRINTF(1, "mixer_open: flags=0x%x sc=%p\n", flags, sc);
 
 	error = fd_allocfile(&fp, &fd);
 	if (error)
@@ -3539,7 +3544,7 @@ mixer_close(struct audio_softc *sc, int flags, audio_file_t *file)
 	if (sc->hw_if == NULL)
 		return ENXIO;
 
-	DPRINTF(("mixer_close: sc %p\n", sc));
+	DPRINTF(1, "mixer_close: sc %p\n", sc);
 	mixer_remove(sc);
 
 	return 0;
@@ -3554,8 +3559,8 @@ mixer_ioctl(struct audio_softc *sc, u_long cmd, void *addr, int flag,
 	mixer_ctrl_t *mc;
 	int error;
 
-	DPRINTF(("mixer_ioctl(%lu,'%c',%lu)\n",
-		 IOCPARM_LEN(cmd), (char)IOCGROUP(cmd), cmd&0xff));
+	DPRINTF(2, "mixer_ioctl(%lu,'%c',%lu)\n",
+		 IOCPARM_LEN(cmd), (char)IOCGROUP(cmd), cmd&0xff);
 	hw = sc->hw_if;
 	if (hw == NULL)
 		return ENXIO;
@@ -3582,18 +3587,18 @@ mixer_ioctl(struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		break;
 
 	case AUDIO_GETDEV:
-		DPRINTF(("AUDIO_GETDEV\n"));
+		DPRINTF(2, "AUDIO_GETDEV\n");
 		error = hw->getdev(sc->hw_hdl, (audio_device_t *)addr);
 		break;
 
 	case AUDIO_MIXER_DEVINFO:
-		DPRINTF(("AUDIO_MIXER_DEVINFO\n"));
+		DPRINTF(2, "AUDIO_MIXER_DEVINFO\n");
 		((mixer_devinfo_t *)addr)->un.v.delta = 0; /* default */
 		error = audio_query_devinfo(sc, (mixer_devinfo_t *)addr);
 		break;
 
 	case AUDIO_MIXER_READ:
-		DPRINTF(("AUDIO_MIXER_READ\n"));
+		DPRINTF(2, "AUDIO_MIXER_READ\n");
 		mc = (mixer_ctrl_t *)addr;
 
 		if (device_is_active(sc->sc_dev))
@@ -3609,7 +3614,7 @@ mixer_ioctl(struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		break;
 
 	case AUDIO_MIXER_WRITE:
-		DPRINTF(("AUDIO_MIXER_WRITE\n"));
+		DPRINTF(2, "AUDIO_MIXER_WRITE\n");
 		error = audio_set_port(sc, (mixer_ctrl_t *)addr);
 		if (!error && hw->commit_settings)
 			error = hw->commit_settings(sc->hw_hdl);
@@ -3624,8 +3629,8 @@ mixer_ioctl(struct audio_softc *sc, u_long cmd, void *addr, int flag,
 			error = EINVAL;
 		break;
 	}
-	DPRINTF(("mixer_ioctl(%lu,'%c',%lu) result %d\n",
-		 IOCPARM_LEN(cmd), (char)IOCGROUP(cmd), cmd&0xff, error));
+	DPRINTF(2, "mixer_ioctl(%lu,'%c',%lu) result %d\n",
+		 IOCPARM_LEN(cmd), (char)IOCGROUP(cmd), cmd&0xff, error);
 	return error;
 }
 
@@ -3743,8 +3748,8 @@ au_set_gain(struct audio_softc *sc, struct au_mixer_ports *ports,
 		l = ((AUDIO_RIGHT_BALANCE - balance) * gain)
 		    / AUDIO_MID_BALANCE;
 	}
-	DPRINTF(("au_set_gain: gain=%d balance=%d, l=%d r=%d\n",
-		 gain, balance, l, r));
+	DPRINTF(2, "au_set_gain: gain=%d balance=%d, l=%d r=%d\n",
+		 gain, balance, l, r);
 
 	if (ports->index == -1) {
 	usemaster:
