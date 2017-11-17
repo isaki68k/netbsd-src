@@ -52,7 +52,7 @@ __KERNEL_RCSID(0, "$NetBSD: pad.c,v 1.38 2017/07/01 05:50:10 nat Exp $");
 
 #include <dev/pad/padvar.h>
 
-#define PAD_DEBUG
+/* #define PAD_DEBUG */
 #ifdef PAD_DEBUG
 #define DPRINTF(fmt...)	printf(fmt)
 #else
