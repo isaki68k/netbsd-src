@@ -522,9 +522,9 @@ init_chmix(audio_track_t *track, audio_ring_t *last_dst)
 		track->chmix.srcbuf.sample = NULL;
 		return last_dst;
 	} else {
-		if (srcch == 2 && dstch == 1) {
+		if (srcch >= 2 && dstch == 1) {
 			track->chmix.filter = audio_track_chmix_mixLR;
-		} else if (srcch == 1 && dstch == 2) {
+		} else if (srcch == 1 && dstch >= 2) {
 			track->chmix.filter = audio_track_chmix_dupLR;
 		} else if (srcch > dstch) {
 			track->chmix.filter = audio_track_chmix_shrink;
