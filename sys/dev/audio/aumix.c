@@ -853,7 +853,7 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 	int capacity = mixer->frames_per_block * 16;
 	int bufsize = frametobyte(&mixer->hwbuf.fmt, capacity);
 	if (sc->hw_if->round_buffersize) {
-		int rounded;
+		size_t rounded;
 		mutex_enter(sc->sc_lock);
 		rounded = sc->hw_if->round_buffersize(sc->hw_hdl, mode, bufsize);
 		mutex_exit(sc->sc_lock);
