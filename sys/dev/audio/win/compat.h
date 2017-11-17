@@ -14,6 +14,7 @@
 #define BYTE_ORDER LITTLE_ENDIAN
 
 #define __noreturn __declspec(noreturn)
+#define __diagused
 
 #define __arraycount(n) _countof(n)
 
