@@ -1010,7 +1010,7 @@ audio2_halt_output(audio_trackmixer_t *mixer)
 // トラックミキサ起動になる可能性のある再生要求
 // トラックミキサが起動したら true を返します。
 bool
-audio_trackmixer_play(audio_trackmixer_t *mixer)
+audio_trackmixer_play(audio_trackmixer_t *mixer, bool force)
 {
 	struct audio_softc *sc;
 
@@ -1036,10 +1036,8 @@ audio_trackmixer_play(audio_trackmixer_t *mixer)
 
 		// バッファの準備ができたら転送。
 		audio_mixer_play_period(mixer);
-		if (mixer->hwbuf.count >= mixer->frames_per_block) {
-			if (sc->sc_pbusy == false) {
-				audio_trackmixer_output(mixer);
-			}
+		if (force || mixer->hwbuf.count >= mixer->frames_per_block * 2) {
+			audio_trackmixer_output(mixer);
 		}
 	}
 
@@ -1321,18 +1319,20 @@ audio_track_play_drain_core(audio_track_t *track, bool wait)
 	KASSERT(mutex_owned(sc->sc_lock));
 	//KASSERT(!mutex_owned(sc->sc_intr_lock));
 
+	track->is_draining = true;
+
 	// 必要があれば無音挿入させる
 	audio_track_play(track, true);
 
-	// このトラックが空なら何もすることがない
-	// audio_track_play が途中のバッファの面倒を全部みてくれるので
-	// outputbuf だけ調べれば足りる。
-	if (track->outputbuf.count == 0) {
-		TRACE(track, "no data");
-		return 0;
-	}
+	// トラックバッファが空になっても、ミキサ側で処理中のデータが
+	// あるかもしれない
 
-	track->is_draining = true;
+	if (sc->sc_pbusy == false) {
+		// トラックミキサが動作していないときは、動作させる
+		mutex_enter(sc->sc_intr_lock);
+		audio_trackmixer_play(mixer, true);
+		mutex_exit(sc->sc_intr_lock);
+	}
 
 	/* フレームサイズ未満のため待たされていたデータを破棄 */
 	track->subframe_buf_used = 0;
@@ -1416,7 +1416,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 		audio_track_play(track, false);
 
 		if (wake == false) {
-			wake = audio_trackmixer_play(sc->sc_pmixer);
+			wake = audio_trackmixer_play(sc->sc_pmixer, false);
 		}
 		mutex_exit(sc->sc_intr_lock);
 
