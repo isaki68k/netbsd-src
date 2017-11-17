@@ -827,6 +827,9 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 		mixer->hwbuf.fmt = sc->sc_phwfmt;
 	else
 		mixer->hwbuf.fmt = sc->sc_rhwfmt;
+#else
+	mixer->hwbuf.fmt = audio_softc_get_hw_format(mixer->sc, mode);
+#endif
 
 	mixer->frames_per_block = frame_per_block_roundup(mixer, &mixer->hwbuf.fmt);
 	int blksize = frametobyte(&mixer->hwbuf.fmt, mixer->frames_per_block);
@@ -872,15 +875,6 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 	} else {
 		mixer->hwbuf.sample = kern_malloc(bufsize, M_NOWAIT);
 	}
-#else
-	TRACE0("");
-
-	mixer->hwbuf.fmt = audio_softc_get_hw_format(mixer->sc, mode);
-	mixer->hwbuf.capacity = audio_softc_get_hw_capacity(mixer->sc);
-	mixer->hwbuf.sample = sc->hw_if->allocm(NULL, 0, RING_BYTELEN(&mixer->hwbuf));
-
-	mixer->frames_per_block = frame_per_block_roundup(mixer, &mixer->hwbuf.fmt);
-#endif
 
 	mixer->track_fmt.encoding = AUDIO_ENCODING_SLINEAR_HE;
 	mixer->track_fmt.channels = mixer->hwbuf.fmt.channels;
