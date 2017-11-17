@@ -612,3 +612,113 @@ in
  o. 倍精度の大きなバッファは必要ないよね
  o. ロック粒度の問題も
 
+
+APIレイヤみたいなもの：
+
+
+audio                             audio2
+
+audiowrite
+             ----------------------->audio_write
+
+                                    audio_track_play()
+audiostartp  <-----------------------
+         -------------------------->audio_mixer_play()
+                   <================
+audio_start_output
+               ====================>return to audio_track_play
+                                    return to audio_write
+return to audiowrite
+
+
+<intr>
+audio_pintr
+        --------------------------->audio_trackmixer_intr
+                <====================
+audio_start_output
+
+
+audiowrite {
+ // API glue
+ audio_write {
+  // uio を track構造体 にセットするだけ
+  audio_mixer_play {
+   // 再生ループ本体
+   audio_track_play; // uio -> track.outputbuf まで担当
+   audiostartp相当
+   {
+     一回目だったら trigger なら trigger_start するとか
+   }
+  }
+ }
+}
+
+
+
+
+     |----|----|----|
+          ^
+          trig
+
+mix(seq0)
+trigger(seq0)
+mix(seq1)
+return;
+
+if intr(seq0) {
+ if exist(seq1) {
+   trigger(seq1);
+   mix(seq2);
+ } else {
+   addsilence();
+ }
+}
+
+trackmixer_play()
+{
+	mix(seq0)
+	output(seq0)
+	mix(seq1)
+	if seq1 == NULL {
+		silence(seq1)
+	}
+	return
+}
+
+intr()
+{
+	output(seq1)
+        trackmixer_play();
+}
+
+
+
+
+トラック 0 とトラック 1 がブロックサイズ未満になるような書き込みになるケース
+(周波数が微妙な時にトラックの outbuf へブロックサイズ以下の単位で出来上がるケース)
+
+44.1kHz = fpb = 1764 frames
+トラック 0 が 1763 frame write
+ track[0].outbuf で待たされる
+トラック 1 が 1763 frame write
+ track[1].outbuf で待たされる
+トラック 0 が 1763 frame write
+ track[0].outbuf が 1764 超えたので
+ trackmixer.mix されて
+ track[0][0..1763] と track[1][0..1762] がミキシングされる
+ 出力される
+この時点で
+ track[0].outbuf.count = 1762
+ track[1].outbuf.count = 0
+トラック 1 が 1763 frame write
+ 
+
+＝＝＝＝＝＝＝＝＝＝＝＝
+Quad buffering
+
+1 blk 置く
+0.5 blk を trigger には指示する
+
+0.5 blk の intr が帰ってきたら次の 1 blk を置く
+
+
