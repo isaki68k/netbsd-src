@@ -1003,7 +1003,7 @@ audio2_pintr(void *arg)
 
 	int count = mixer->frames_per_block;
 	audio_ring_tookfromtop(&mixer->hwbuf, count);
-	audio_trackmixer_intr(mixer, count);
+	audio_trackmixer_intr(mixer);
 }
 
 static int
@@ -1280,15 +1280,14 @@ audio_trackmixer_output(audio_trackmixer_t *mixer)
 }
 
 void
-audio_trackmixer_intr(audio_trackmixer_t *mixer, int count)
+audio_trackmixer_intr(audio_trackmixer_t *mixer)
 {
 	struct audio_softc *sc;
 
 	sc = mixer->sc;
 	KASSERT(mutex_owned(sc->sc_intr_lock));
-	KASSERT(count != 0);
 
-	mixer->hw_complete_counter += count;
+	mixer->hw_complete_counter += mixer->frames_per_block;
 	mixer->hwseq++;
 	bool later = false;
 

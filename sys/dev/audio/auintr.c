@@ -32,7 +32,7 @@ emu_intr_check()
 		switch (y.code) {
 		case INTR_TRACKMIXER:
 			mutex_enter(y.sc->sc_intr_lock);
-			audio_trackmixer_intr(y.mixer, y.count);
+			audio_trackmixer_intr(y.mixer);
 			mutex_exit(y.sc->sc_intr_lock);
 			break;
 		}
