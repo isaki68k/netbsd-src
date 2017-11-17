@@ -709,6 +709,9 @@ audio_apply_stage(audio_track_t *track, audio_stage_t *stage, bool isdrain)
 static int
 audio_track_play_input(audio_track_t *track, struct uio *uio)
 {
+	struct audio_softc *sc = track->mixer->sc;
+
+	KASSERT(mutex_owned(sc->sc_intr_lock));
 	KASSERT(uio);
 
 	/* input の空きバイト数を求める */
@@ -729,7 +732,10 @@ audio_track_play_input(audio_track_t *track, struct uio *uio)
 	// コピー先アドレスは subframe_buf_used で調整する必要がある
 	uint8_t *dptr = RING_BOT_UINT8(track->input) + track->subframe_buf_used;
 	// min(bytelen, uio->uio_resid) は uiomove が保証している
+	// uiomove は intr_lock 持ってるとコールできない
+	mutex_exit(sc->sc_intr_lock);
 	int error = uiomove(dptr, move_bytelen, uio);
+	mutex_enter(sc->sc_intr_lock);
 	if (error) {
 		TRACE(track, "uio error=%d", error);
 		return error;
@@ -1010,6 +1016,7 @@ audio_trackmixer_play(audio_trackmixer_t *mixer)
 
 	sc = mixer->sc;
 	KASSERT(mutex_owned(sc->sc_lock));
+	KASSERT(mutex_owned(sc->sc_intr_lock));
 
 	// トラックミキサが起動していたら、割り込みから駆動されるので true を返しておく
 	if (sc->sc_pbusy) return true;
@@ -1028,14 +1035,12 @@ audio_trackmixer_play(audio_trackmixer_t *mixer)
 		}
 
 		// バッファの準備ができたら転送。
-		mutex_enter(sc->sc_intr_lock);
 		audio_mixer_play_period(mixer);
 		if (mixer->hwbuf.count >= mixer->frames_per_block) {
 			if (sc->sc_pbusy == false) {
 				audio_trackmixer_output(mixer);
 			}
 		}
-		mutex_exit(sc->sc_intr_lock);
 	}
 
 	TRACE0("end   mixseq=%d hwseq=%d hwbuf=%d/%d/%d",
@@ -1393,7 +1398,9 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 	error = 0;
 	bool wake = false;
 	while (uio->uio_resid > 0) {
+		mutex_enter(sc->sc_intr_lock);
 		error = audio_track_play_input(track, uio);
+		mutex_exit(sc->sc_intr_lock);
 		if (error == EAGAIN) {
 			error = audio_waitio(sc, track);
 			if (error < 0) {
@@ -1405,13 +1412,13 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 		} else if (error) {
 			break;
 		}
+		mutex_enter(sc->sc_intr_lock);
 		audio_track_play(track, false);
-
 
 		if (wake == false) {
 			wake = audio_trackmixer_play(sc->sc_pmixer);
 		}
-
+		mutex_exit(sc->sc_intr_lock);
 
 #if !defined(_KERNEL)
 		emu_intr_check();
