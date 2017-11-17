@@ -43,7 +43,9 @@ struct audio_hw_if {
 	int (*trigger_output)(void *, void *, void *, int, void(*)(void *), void *, const audio_params_t *);
 
 	int (*halt_output)(void *);
-	audio_filter_t(*get_swcode)(void *, int, audio_filter_arg_t *);
+	audio_filter_t (*get_swcode)(void *, int, audio_filter_arg_t *);
+	int (*round_blocksize)(void *, int, int, const audio_params_t *);
+	size_t (*round_buffersize)(void *, int, size_t);
 };
 
 // audiovar.h の前方参照
@@ -62,6 +64,7 @@ struct audio_softc
 	int sc_eof;
 
 	bool sc_pbusy;
+	void *dev;
 
 	void *phys; // 実物理デバイス
 
@@ -195,3 +198,5 @@ getmicrotime(struct timeval *tv)
 	tv->tv_sec = (long)(t / 1000);
 	tv->tv_usec = (long)((t % 1000) * 1000);
 }
+
+void aprint_error_dev(void *, const char *fmt, ...);

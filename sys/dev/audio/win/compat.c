@@ -27,3 +27,7 @@ audio_softc_init(struct audio_softc *sc)
 	sc->hw_if = &sc->hw_if0;
 }
 
+void
+aprint_error_dev(void *dev, const char *fmt, ...)
+{
+}
