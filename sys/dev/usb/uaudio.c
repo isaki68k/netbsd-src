@@ -337,6 +337,7 @@ Static int	uaudio_open(void *, int);
 Static void	uaudio_close(void *);
 Static int	uaudio_drain(void *);
 Static int	uaudio_query_encoding(void *, struct audio_encoding *);
+Static int	uaudio_query_format(void *, const struct audio_format **);
 Static int	uaudio_set_params
 	(void *, int, int, struct audio_params *, struct audio_params *,
 	 stream_filter_list_t *, stream_filter_list_t *);
@@ -385,6 +386,7 @@ Static const struct audio_hw_if uaudio_hw_if = {
 	uaudio_trigger_input,
 	NULL,
 	uaudio_get_locks,
+	uaudio_query_format,
 };
 
 int uaudio_match(device_t, cfdata_t, void *);
@@ -575,6 +577,16 @@ uaudio_query_encoding(void *addr, struct audio_encoding *fp)
 		return ENXIO;
 
 	return auconv_query_encoding(sc->sc_encodings, fp);
+}
+
+Static int
+uaudio_query_format(void *addr, const struct audio_format **afp)
+{
+	struct uaudio_softc *sc;
+
+	sc = addr;
+	*afp = sc->sc_formats;
+	return sc->sc_nformats;
 }
 
 Static const usb_interface_descriptor_t *
