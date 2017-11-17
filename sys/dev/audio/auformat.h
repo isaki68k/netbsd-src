@@ -87,7 +87,7 @@ frametobyte(const audio_format2_t *fmt, int frames)
 }
 
 static inline int
-frame_per_block_roundup(const audio_format2_t *fmt)
+frame_per_block_roundup(const audio_trackmixer_t *mixer, const audio_format2_t *fmt)
 {
-	return (fmt->sample_rate * AUDIO_BLK_MS + 999) / 1000;
+	return (fmt->sample_rate * mixer->blktime_n + mixer->blktime_d - 1) / mixer->blktime_d;
 }

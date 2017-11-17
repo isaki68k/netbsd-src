@@ -464,7 +464,7 @@ init_codec(audio_track_t *track, audio_ring_t *last_dst)
 		// XXX: インライン変換はとりあえず置いておく
 		track->codec.srcbuf.top = 0;
 		track->codec.srcbuf.count = 0;
-		track->codec.srcbuf.capacity = frame_per_block_roundup(&track->codec.srcbuf.fmt);
+		track->codec.srcbuf.capacity = frame_per_block_roundup(track->mixer, &track->codec.srcbuf.fmt);
 		track->codec.srcbuf.sample = audio_realloc(track->codec.srcbuf.sample, RING_BYTELEN(&track->codec.srcbuf));
 
 		return &track->codec.srcbuf;
@@ -497,7 +497,7 @@ init_chvol(audio_track_t *track, audio_ring_t *last_dst)
 
 		// 周波数とチャンネル数がユーザ指定値。
 		track->chvol.srcbuf.fmt = *dstfmt;
-		track->chvol.srcbuf.capacity = frame_per_block_roundup(&track->chvol.srcbuf.fmt);
+		track->chvol.srcbuf.capacity = frame_per_block_roundup(track->mixer, &track->chvol.srcbuf.fmt);
 		track->chvol.srcbuf.sample = audio_realloc(track->chvol.srcbuf.sample, RING_BYTELEN(&track->chvol.srcbuf));
 
 		track->chvol.arg.count = track->chvol.srcbuf.capacity;
@@ -539,7 +539,7 @@ init_chmix(audio_track_t *track, audio_ring_t *last_dst)
 		track->chmix.srcbuf.top = 0;
 		track->chmix.srcbuf.count = 0;
 		// バッファサイズは計算で決められるはずだけど。とりあえず。
-		track->chmix.srcbuf.capacity = frame_per_block_roundup(&track->chmix.srcbuf.fmt);
+		track->chmix.srcbuf.capacity = frame_per_block_roundup(track->mixer, &track->chmix.srcbuf.fmt);
 		track->chmix.srcbuf.sample = audio_realloc(track->chmix.srcbuf.sample, RING_BYTELEN(&track->chmix.srcbuf));
 
 		track->chmix.arg.srcfmt = &track->chmix.srcbuf.fmt;
@@ -577,7 +577,7 @@ init_freq(audio_track_t *track, audio_ring_t *last_dst)
 		track->freq.srcbuf.fmt.sample_rate = srcfreq;
 		track->freq.srcbuf.top = 0;
 		track->freq.srcbuf.count = 0;
-		track->freq.srcbuf.capacity = frame_per_block_roundup(&track->freq.srcbuf.fmt);
+		track->freq.srcbuf.capacity = frame_per_block_roundup(track->mixer, &track->freq.srcbuf.fmt);
 		track->freq.srcbuf.sample = audio_realloc(track->freq.srcbuf.sample, RING_BYTELEN(&track->freq.srcbuf));
 		return &track->freq.srcbuf;
 	}
@@ -628,7 +628,7 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *fmt)
 	// 出力フォーマットに従って outputbuf を作る
 	track->outputbuf.top = 0;
 	track->outputbuf.count = 0;
-	track->outputbuf.capacity = NBLKOUT * frame_per_block_roundup(&track->outputbuf.fmt);
+	track->outputbuf.capacity = NBLKOUT * frame_per_block_roundup(track->mixer, &track->outputbuf.fmt);
 	track->outputbuf.sample = audio_realloc(track->outputbuf.sample, RING_BYTELEN(&track->outputbuf));
 }
 
@@ -654,7 +654,7 @@ audio_append_silence(audio_track_t *track, audio_ring_t *ring)
 
 	if (ring->count == 0) return 0;
 
-	int fpb = frame_per_block_roundup(&ring->fmt);
+	int fpb = frame_per_block_roundup(track->mixer, &ring->fmt);
 	if (ring->count >= fpb) {
 		return 0;
 	}
@@ -696,7 +696,7 @@ audio_apply_stage(audio_track_t *track, audio_stage_t *stage, bool isdrain)
 		if (isdrain) {
 			audio_append_silence(track, stage->dst);
 		} else {
-			int fpb = frame_per_block_roundup(&stage->dst->fmt);
+			int fpb = frame_per_block_roundup(track->mixer, &stage->dst->fmt);
 			if (stage->dst->count < fpb) {
 				// ブロックサイズたまるまで処理をしない
 				return false;
@@ -818,6 +818,9 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 	memset(mixer, 0, sizeof(audio_trackmixer_t));
 	mixer->sc = sc;
 
+	mixer->blktime_d = 1000;
+	mixer->blktime_n = AUDIO_BLK_MS;
+
 #if defined(_KERNEL)
 	// XXX とりあえず
 	if (mode == AUMODE_PLAY)
@@ -825,7 +828,7 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 	else
 		mixer->hwbuf.fmt = sc->sc_rhwfmt;
 
-	mixer->frames_per_block = frame_per_block_roundup(&mixer->hwbuf.fmt);
+	mixer->frames_per_block = frame_per_block_roundup(mixer, &mixer->hwbuf.fmt);
 	int blksize = frametobyte(&mixer->hwbuf.fmt, mixer->frames_per_block);
 	if (sc->hw_if->round_blocksize) {
 		int rounded;
@@ -835,9 +838,15 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 		mutex_exit(sc->sc_lock);
 		// 違っていても困る?
 		if (rounded != blksize) {
-			aprint_error_dev(sc->dev, "blksize not configured"
-			    " %d -> %d\n", blksize, rounded);
-			return ENXIO;
+			if ((rounded * 8) % (mixer->hwbuf.fmt.stride * mixer->hwbuf.fmt.channels) != 0) {
+				aprint_error_dev(sc->dev, "blksize not configured"
+					" %d -> %d\n", blksize, rounded);
+				return ENXIO;
+			}
+			// 再計算
+			mixer->frames_per_block = rounded * 8 / (mixer->hwbuf.fmt.stride * mixer->hwbuf.fmt.channels);
+			mixer->blktime_n = mixer->frames_per_block;
+			mixer->blktime_d = mixer->hwbuf.fmt.sample_rate;
 		}
 	}
 
@@ -870,7 +879,7 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 	mixer->hwbuf.capacity = audio_softc_get_hw_capacity(mixer->sc);
 	mixer->hwbuf.sample = sc->hw_if->allocm(NULL, 0, RING_BYTELEN(&mixer->hwbuf));
 
-	mixer->frames_per_block = frame_per_block_roundup(&mixer->hwbuf.fmt);
+	mixer->frames_per_block = frame_per_block_roundup(mixer, &mixer->hwbuf.fmt);
 #endif
 
 	mixer->track_fmt.encoding = AUDIO_ENCODING_SLINEAR_HE;

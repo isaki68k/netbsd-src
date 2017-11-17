@@ -160,6 +160,9 @@ struct audio_trackmixer
 
 	struct audio_softc *sc;				/* 論理デバイス */
 
+	int blktime_n; // ブロックの秒の分子 初期値は AUDIO_BLK_MS
+	int blktime_d; // ブロックの秒の分母 初期値は 1000
+
 	bool busy;
 										// 未定
 
