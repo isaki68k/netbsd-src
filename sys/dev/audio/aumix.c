@@ -789,7 +789,7 @@ audio_track_play(audio_track_t *track, bool isdrain)
 		track->outputcounter += track->outputbuf.count - track_count_0;
 	}
 
-#if defined(AUDIO_TRACE)
+#if AUDIO_DEBUG > 2
 	char buf[100];
 	int n = 0;
 	if (track->freq.filter)
@@ -800,10 +800,10 @@ audio_track_play(audio_track_t *track, bool isdrain)
 		n += snprintf(buf + n, 100 - n, " v=%d", track->chvol.srcbuf.count);
 	if (track->codec.filter)
 		n += snprintf(buf + n, 100 - n, " e=%d", track->codec.srcbuf.count);
-#endif
 	TRACE(track, "end busy=%d outbuf=%d/%d/%d%s", track->mixer->busy,
 	    track->outputbuf.top, track->outputbuf.count, track->outputbuf.capacity,
 	    buf);
+#endif
 }
 
 int
