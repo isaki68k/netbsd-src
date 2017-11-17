@@ -807,15 +807,8 @@ audio_attach_mi(const struct audio_hw_if *ahwp, void *hdlp, device_t dev)
 }
 
 #ifdef AUDIO_DEBUG
-void	audio_printsc(struct audio_softc *);
 void	audio_print_params(const char *, struct audio_params *);
 void	audio_print_format2(const char *, const audio_format2_t *);
-
-void
-audio_printsc(struct audio_softc *sc)
-{
-	printf("%s not impl\n", __func__);
-}
 
 void
 audio_print_params(const char *s, struct audio_params *p)
