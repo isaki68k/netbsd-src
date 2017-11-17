@@ -47,7 +47,7 @@
 /* 1 ブロックの時間サイズ 40ms */
 /* 40ms の場合は (1/40ms)=25=5^2 なので 100 の倍数の周波数のほか、15.625kHz でもフレーム数が整数になる */
 #if defined(_KERNEL)
-#define AUDIO_BLK_MS 80
+#define AUDIO_BLK_MS 40
 #else
 // XXX: エミュレーション出来ないので 400 にしておく。
 #define AUDIO_BLK_MS 400
