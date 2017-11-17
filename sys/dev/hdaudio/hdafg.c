@@ -3281,18 +3281,23 @@ hdafg_stream_intr(struct hdaudio_stream *st)
 {
 	struct hdaudio_audiodev *ad = st->st_cookie;
 	int handled = 0;
+//#define PAUSE_DMA
+#ifdef PAUSE_DMA
 	uint8_t ctl0;
 	struct hdaudio_softc *sc = ad->ad_sc->sc_host;
+#endif
 
 	(void)hda_read1(ad->ad_sc->sc_host, HDAUDIO_SD_STS(st->st_shift));
 	hda_write1(ad->ad_sc->sc_host, HDAUDIO_SD_STS(st->st_shift),
 	    HDAUDIO_STS_DESE | HDAUDIO_STS_FIFOE | HDAUDIO_STS_BCIS);
 
+#ifdef PAUSE_DMA
 	// pause DMA
 	int snum = st->st_shift;
 	ctl0 = hda_read1(sc, HDAUDIO_SD_CTL0(snum));
 	ctl0 &= ~HDAUDIO_CTL_RUN;
 	hda_write1(sc, HDAUDIO_SD_CTL0(snum), ctl0);
+#endif
 
 	mutex_spin_enter(&ad->ad_sc->sc_intr_lock);
 	/* XXX test (sts & HDAUDIO_STS_BCIS)? */
@@ -3305,12 +3310,14 @@ hdafg_stream_intr(struct hdaudio_stream *st)
 	}
 	mutex_spin_exit(&ad->ad_sc->sc_intr_lock);
 
+#ifdef PAUSE_DMA
 	// resume DMA
 	ctl0 = hda_read1(sc, HDAUDIO_SD_CTL0(snum));
 	if (ctl0 & HDAUDIO_CTL_IOCE) {
 		ctl0 |= HDAUDIO_CTL_RUN;
 		hda_write1(sc, HDAUDIO_SD_CTL0(snum), ctl0);
 	}
+#endif
 
 	return handled;
 }
