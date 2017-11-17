@@ -826,6 +826,21 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 		mixer->hwbuf.fmt = sc->sc_rhwfmt;
 
 	mixer->frames_per_block = frame_per_block_roundup(&mixer->hwbuf.fmt);
+	int blksize = frametobyte(&mixer->hwbuf.fmt, mixer->frames_per_block);
+	if (sc->hw_if->round_blocksize) {
+		int rounded;
+		audio_params_t p = format2_to_params(&mixer->hwbuf.fmt);
+		mutex_enter(sc->sc_lock);
+		rounded = sc->hw_if->round_blocksize(sc->hw_hdl, blksize, mode, &p);
+		mutex_exit(sc->sc_lock);
+		// 違っていても困る?
+		if (rounded != blksize) {
+			aprint_error_dev(sc->dev, "blksize not configured"
+			    " %d -> %d\n", blksize, rounded);
+			return ENXIO;
+		}
+	}
+
 	int capacity = mixer->frames_per_block * 16;
 	int bufsize = frametobyte(&mixer->hwbuf.fmt, capacity);
 	if (sc->hw_if->round_buffersize) {
@@ -841,21 +856,6 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 		}
 	}
 	mixer->hwbuf.capacity = capacity;
-
-	int blksize = frametobyte(&mixer->hwbuf.fmt, mixer->frames_per_block);
-	if (sc->hw_if->round_blocksize) {
-		int rounded;
-		audio_params_t p = format2_to_params(&mixer->hwbuf.fmt);
-		mutex_enter(sc->sc_lock);
-		rounded = sc->hw_if->round_blocksize(sc->hw_hdl, blksize, mode, &p);
-		mutex_exit(sc->sc_lock);
-		// 違っていても困る?
-		if (rounded != blksize) {
-			aprint_error_dev(sc->dev, "blksize not configured"
-			    " %d -> %d\n", blksize, rounded);
-			return ENXIO;
-		}
-	}
 
 	if (sc->hw_if->allocm) {
 		mixer->hwbuf.sample = sc->hw_if->allocm(sc->hw_hdl, mode,
