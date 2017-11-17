@@ -1119,7 +1119,7 @@ audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int 
 void
 audio_mixer_play_period(audio_trackmixer_t *mixer /*, bool force */)
 {
-	struct audio_softc *sc;
+	struct audio_softc *sc __diagused;
 
 	sc = mixer->sc;
 	KASSERT(mutex_owned(sc->sc_intr_lock));
