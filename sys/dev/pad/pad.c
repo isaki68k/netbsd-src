@@ -306,6 +306,7 @@ pad_detach(device_t self, int flags)
 	mutex_destroy(&sc->sc_lock);
 	mutex_destroy(&sc->sc_intr_lock);
 	cv_destroy(&sc->sc_condvar);
+	callout_destroy(&sc->sc_pcallout);
 
 	auconv_delete_encodings(sc->sc_encodings);
 
