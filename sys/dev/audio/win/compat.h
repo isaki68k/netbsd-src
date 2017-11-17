@@ -7,6 +7,7 @@
 #include "queue.h"
 // timeval
 #include <winsock.h>
+#include "aufilter.h"
 
 #define LITTLE_ENDIAN 1
 #define BIG_ENDIAN 2
@@ -41,6 +42,7 @@ struct audio_hw_if {
 	int (*trigger_output)(void *, void *, void *, int, void(*)(void *), void *, const audio_params_t *);
 
 	int (*halt_output)(void *);
+	audio_filter_t(*get_swcode)(void *, int, audio_filter_arg_t *);
 };
 
 // audiovar.h の前方参照
