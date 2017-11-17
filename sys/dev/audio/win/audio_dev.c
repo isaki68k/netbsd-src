@@ -86,7 +86,7 @@ void CALLBACK audio_dev_win32_callback(
 		if (wh->dwBufferLength == 0) {
 			panic("wh->dwBufferLentgh == 0");
 		}
-		KASSERT(wh->dwBufferLength % 1764 == 0);
+//		KASSERT(wh->dwBufferLength % 1764 == 0);
 #ifdef AUDIO_INTR_EMULATED
 		struct intr_t x;
 		x.code = INTR_TRACKMIXER;
@@ -121,7 +121,7 @@ audio_attach(struct audio_softc **softc)
 	/* こっちが一次情報 */
 	dev->deviceID = WAVE_MAPPER;
 	dev->wfx.wFormatTag = WAVE_FORMAT_PCM;
-	dev->wfx.nSamplesPerSec = 44100;
+	dev->wfx.nSamplesPerSec = 48000;
 	dev->wfx.wBitsPerSample = DEV_BITS;
 	dev->wfx.nChannels = 2;
 	dev->wfx.nBlockAlign = dev->wfx.nChannels * dev->wfx.wBitsPerSample / 8;
@@ -286,7 +286,7 @@ static void audio_softc_play_start_core(struct audio_softc *sc)
 		audio_ring_tookfromtop(&mixer->hwbuf, count);
 	}
 
-	KASSERT(wh->dwBufferLength % 1764 == 0);
+//	KASSERT(wh->dwBufferLength % 1764 == 0);
 #ifdef DEBUG_ONEBUF
 #else
 	wh->dwUser = 1;
