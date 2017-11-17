@@ -831,7 +831,8 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 	mixer->hwbuf.fmt = audio_softc_get_hw_format(mixer->sc, mode);
 #endif
 
-	mixer->frames_per_block = frame_per_block_roundup(mixer, &mixer->hwbuf.fmt);
+	mixer->frames_per_block = frame_per_block_roundup(mixer, &mixer->hwbuf.fmt)
+		* audio_framealign(mixer->hwbuf.fmt.stride);
 	int blksize = frametobyte(&mixer->hwbuf.fmt, mixer->frames_per_block);
 	if (sc->hw_if->round_blocksize) {
 		int rounded;
@@ -848,10 +849,10 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 			}
 			// 再計算
 			mixer->frames_per_block = rounded * 8 / (mixer->hwbuf.fmt.stride * mixer->hwbuf.fmt.channels);
-			mixer->blktime_n = mixer->frames_per_block;
-			mixer->blktime_d = mixer->hwbuf.fmt.sample_rate;
 		}
 	}
+	mixer->blktime_n = mixer->frames_per_block;
+	mixer->blktime_d = mixer->hwbuf.fmt.sample_rate;
 
 	int capacity = mixer->frames_per_block * 16;
 	int bufsize = frametobyte(&mixer->hwbuf.fmt, capacity);
