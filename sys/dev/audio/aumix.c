@@ -1001,8 +1001,6 @@ audio2_pintr(void *arg)
 	mixer = sc->sc_pmixer;
 	TRACE0("hwbuf.count=%d", mixer->hwbuf.count);
 
-	int count = mixer->frames_per_block;
-	audio_ring_tookfromtop(&mixer->hwbuf, count);
 	audio_trackmixer_intr(mixer);
 }
 
@@ -1290,6 +1288,8 @@ audio_trackmixer_intr(audio_trackmixer_t *mixer)
 	mixer->hw_complete_counter += mixer->frames_per_block;
 	mixer->hwseq++;
 	bool later = false;
+
+	audio_ring_tookfromtop(&mixer->hwbuf, mixer->frames_per_block);
 
 	// まず出力待ちのシーケンスを出力
 	if (mixer->hwbuf.count >= mixer->frames_per_block) {

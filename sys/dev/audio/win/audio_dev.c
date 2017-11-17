@@ -282,8 +282,6 @@ static void audio_softc_play_start_core(struct audio_softc *sc)
 		dst += bytelen;
 		wh->dwBufferLength += bytelen;
 		wh_free_count -= count;
-
-		audio_ring_tookfromtop(&mixer->hwbuf, count);
 	}
 
 //	KASSERT(wh->dwBufferLength % 1764 == 0);
