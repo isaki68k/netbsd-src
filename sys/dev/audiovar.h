@@ -130,6 +130,8 @@ struct audio_softc {
 
 	audio_format2_t sc_phwfmt;
 	audio_format2_t sc_rhwfmt;
+	audio_filter_reg_t sc_xxx_pfilreg;
+	audio_filter_reg_t sc_xxx_rfilreg;
 
 	bool		sc_full_duplex;		/* device in full duplex mode */
 	bool		sc_can_playback;	/* device can playback */

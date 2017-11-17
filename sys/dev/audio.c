@@ -404,7 +404,7 @@ audioattach(device_t parent, device_t self, void *aux)
 
 #ifdef DIAGNOSTIC
 	if (hw_if->query_encoding == NULL ||
-	    hw_if->set_params == NULL ||
+	    (hw_if->set_params == NULL && hw_if->set_params2 == NULL) ||
 	    (hw_if->start_output == NULL && hw_if->trigger_output == NULL) ||
 	    (hw_if->start_input == NULL && hw_if->trigger_input == NULL) ||
 	    hw_if->halt_output == NULL ||
@@ -2484,20 +2484,17 @@ xxx_config_by_format(struct audio_softc *sc, audio_format2_t *cand, int mode)
 			continue;
 		}
 
-		if (cand->sample_rate != 0 &&
-		    fmt->encoding != AUDIO_ENCODING_SLINEAR_NE) {
+		if (fmt->encoding != AUDIO_ENCODING_SLINEAR_NE) {
 			DPRINTF(1, "fmt[%d] skip; enc=%d\n", i, fmt->encoding);
 			continue;
 		}
-		if (cand->sample_rate != 0 &&
-		    (fmt->precision != AUDIO_INTERNAL_BITS ||
+		if ((fmt->precision != AUDIO_INTERNAL_BITS ||
 		     fmt->validbits != AUDIO_INTERNAL_BITS)) {
 			DPRINTF(1, "fmt[%d] skip; precision %d/%d\n", i,
 			    fmt->validbits, fmt->precision);
 			continue;
 		}
-		if (cand->sample_rate != 0 &&
-		    fmt->channels < cand->channels) {
+		if (fmt->channels < cand->channels) {
 			DPRINTF(1, "fmt[%d] skip; channels %d < %d\n", i,
 			    fmt->channels, cand->channels);
 			continue;
@@ -2511,10 +2508,7 @@ xxx_config_by_format(struct audio_softc *sc, audio_format2_t *cand, int mode)
 		}
 
 		// cand 更新
-		cand->encoding = fmt->encoding;
 		cand->channels = fmt->channels;
-		cand->precision = fmt->validbits;
-		cand->stride = fmt->precision;
 		cand->sample_rate = freq;
 		DPRINTF(1, "fmt[%d] cand ch=%d freq=%d\n", i,
 		    cand->channels, cand->sample_rate);
@@ -3156,36 +3150,54 @@ static int
 audio_set_params(struct audio_softc *sc, int setmode)
 {
 	audio_params_t pp, rp;
+	stream_filter_list_t pfilters, rfilters;
+	audio_filter_reg_t pfilters2, rfilters2;
 	int error;
 	int usemode;
-#ifdef OLD_FILTER
-	stream_filter_list_t pfilters, rfilters;
-#endif
+	bool use_set_params2;
+
+	// set_params2 が定義されてればそっちを使う
+	use_set_params2 = (sc->hw_if->set_params2 != NULL);
+	if (use_set_params2)
+		DPRINTF(2, "%s use_set_params2\n", __func__);
 
 	usemode = setmode;
 	pp = format2_to_params(&sc->sc_phwfmt);
 	rp = format2_to_params(&sc->sc_rhwfmt);
 
-	// XXX HWフィルタ
-#ifdef OLD_FILTER
-	memset(&pfilters, 0, sizeof(pfilters));
-	memset(&rfilters, 0, sizeof(rfilters));
-	pfilters.append = stream_filter_list_append;
-	pfilters.prepend = stream_filter_list_prepend;
-	pfilters.set = stream_filter_list_set;
-	rfilters.append = stream_filter_list_append;
-	rfilters.prepend = stream_filter_list_prepend;
-	rfilters.set = stream_filter_list_set;
-#endif
+	if (use_set_params2) {
+		memset(&pfilters2, 0, sizeof(pfilters2));
+		memset(&rfilters2, 0, sizeof(rfilters2));
+	} else {
+		memset(&pfilters, 0, sizeof(pfilters));
+		memset(&rfilters, 0, sizeof(rfilters));
+		pfilters.append = stream_filter_list_append;
+		pfilters.prepend = stream_filter_list_prepend;
+		pfilters.set = stream_filter_list_set;
+		rfilters.append = stream_filter_list_append;
+		rfilters.prepend = stream_filter_list_prepend;
+		rfilters.set = stream_filter_list_set;
+	}
 
 	mutex_enter(sc->sc_lock);
-	error = sc->hw_if->set_params(sc->hw_hdl, setmode, usemode,
-	    &pp, &rp, &pfilters, &rfilters);
-	if (error) {
-		mutex_exit(sc->sc_lock);
-		DPRINTF(1, "%s: set_params failed with %d\n",
-		    __func__, error);
-		return error;
+	if (use_set_params2) {
+		error = sc->hw_if->set_params2(sc->hw_hdl, setmode, usemode,
+		    &pp, &rp, &pfilters2, &rfilters2);
+		if (error) {
+			mutex_exit(sc->sc_lock);
+			DPRINTF(1, "%s: set_params2 failed with %d\n",
+			    __func__, error);
+			return error;
+		}
+	} else {
+		error = sc->hw_if->set_params(sc->hw_hdl, setmode, usemode,
+		    &pp, &rp, &pfilters, &rfilters);
+		if (error) {
+			mutex_exit(sc->sc_lock);
+			DPRINTF(1, "%s: set_params failed with %d\n",
+			    __func__, error);
+			return error;
+		}
 	}
 
 	if (sc->hw_if->commit_settings) {
@@ -3199,10 +3211,12 @@ audio_set_params(struct audio_softc *sc, int setmode)
 	}
 	mutex_exit(sc->sc_lock);
 
-	/* construct new filter chain */
-	// XXX
-
-	DPRINTF(1, "%s: filter setup is completed.\n", __func__);
+	sc->sc_phwfmt = params_to_format2(&pp);
+	sc->sc_rhwfmt = params_to_format2(&rp);
+	if (use_set_params2) {
+		sc->sc_xxx_pfilreg = pfilters2;
+		sc->sc_xxx_rfilreg = rfilters2;
+	}
 
 	return 0;
 }

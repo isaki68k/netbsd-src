@@ -918,16 +918,20 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 		// 合成バッファは使用しない
 	}
 
-	if (sc->hw_if->get_swcode) {
-		mixer->codecarg.srcfmt = &mixer->track_fmt;
-		mixer->codecarg.dstfmt = &mixer->hwbuf.fmt;
-		mixer->codec = sc->hw_if->get_swcode(sc->hw_hdl, mode, &mixer->codecarg);
-		if (mixer->codec) {
-			mixer->codecbuf.fmt = mixer->track_fmt;
-			mixer->codecbuf.capacity = mixer->frames_per_block;
-			mixer->codecbuf.sample = audio_realloc(mixer->codecbuf.sample, RING_BYTELEN(&mixer->codecbuf));
-		}
+	// XXX どうするか
+	audio_filter_reg_t *reg;
+	if (mode == AUMODE_PLAY) {
+		reg = &sc->sc_xxx_pfilreg;
+	} else {
+		reg = &sc->sc_xxx_rfilreg;
 	}
+	mixer->codec = reg->codec;
+	mixer->codecarg.context = reg->context;
+	mixer->codecarg.srcfmt = &mixer->track_fmt;
+	mixer->codecarg.dstfmt = &mixer->hwbuf.fmt;
+	mixer->codecbuf.fmt = mixer->track_fmt;
+	mixer->codecbuf.capacity = mixer->frames_per_block;
+	mixer->codecbuf.sample = audio_realloc(mixer->codecbuf.sample, RING_BYTELEN(&mixer->codecbuf));
 
 	mixer->volume = 256;
 

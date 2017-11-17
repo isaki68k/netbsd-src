@@ -53,3 +53,9 @@ struct audio_filter_arg
 
 typedef void(*audio_filter_t)(audio_filter_arg_t *arg);
 
+// フィルタ登録用
+// hw_if->set_params2() からフィルタを登録するときに使う構造体
+typedef struct audio_filter_reg {
+	audio_filter_t codec;
+	void *context;
+} audio_filter_reg_t;

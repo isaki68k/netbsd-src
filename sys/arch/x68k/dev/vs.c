@@ -77,8 +77,8 @@ static int  vs_open(void *, int);
 static void vs_close(void *);
 static int  vs_query_encoding(void *, struct audio_encoding *);
 static int  vs_query_format(void *, const struct audio_format **);
-static int  vs_set_params(void *, int, int, audio_params_t *,
-	audio_params_t *, stream_filter_list_t *, stream_filter_list_t *);
+static int  vs_set_params2(void *, int, int, audio_params_t *,
+	audio_params_t *, audio_filter_reg_t *, audio_filter_reg_t *);
 static int  vs_init_output(void *, void *, int);
 static int  vs_init_input(void *, void *, int);
 static int  vs_start_input(void *, void *, int, void (*)(void *), void *);
@@ -97,7 +97,6 @@ static void vs_freem(void *, void *, size_t);
 static size_t vs_round_buffersize(void *, int, size_t);
 static int  vs_get_props(void *);
 static void vs_get_locks(void *, kmutex_t **, kmutex_t **);
-static audio_filter_t vs_get_swcode(void *, int, audio_filter_arg_t *);
 
 /* lower functions */
 static int vs_round_sr(u_long);
@@ -116,7 +115,7 @@ static const struct audio_hw_if vs_hw_if = {
 	vs_close,
 	NULL,			/* drain */
 	vs_query_encoding,
-	vs_set_params,
+	NULL,			/* set_params */
 	NULL,			/* round_blocksize */
 	NULL,			/* commit_settings */
 	vs_init_output,
@@ -141,7 +140,7 @@ static const struct audio_hw_if vs_hw_if = {
 	NULL,
 	vs_get_locks,
 	vs_query_format,
-	vs_get_swcode,
+	vs_set_params2,
 };
 
 static struct audio_device vs_device = {
@@ -151,11 +150,10 @@ static struct audio_device vs_device = {
 };
 
 static const struct audio_format vs_formats[] = {
-/*
 	{ NULL, AUMODE_PLAY | AUMODE_RECORD, AUDIO_ENCODING_SLINEAR_BE, 16, 16,
 	  1, AUFMT_MONAURAL, 5,
 	  { VS_RATE_3K, VS_RATE_5K, VS_RATE_7K, VS_RATE_10K, VS_RATE_15K } },
-*/
+
 	{ NULL, AUMODE_PLAY | AUMODE_RECORD, AUDIO_ENCODING_ADPCM, 4, 4,
 	  1, AUFMT_MONAURAL, 5,
 	  { VS_RATE_3K, VS_RATE_5K, VS_RATE_7K, VS_RATE_10K, VS_RATE_15K } },
@@ -381,9 +379,9 @@ vs_round_sr(u_long rate)
 }
 
 static int
-vs_set_params(void *hdl, int setmode, int usemode,
+vs_set_params2(void *hdl, int setmode, int usemode,
 	audio_params_t *play, audio_params_t *rec,
-	stream_filter_list_t *pfil, stream_filter_list_t *rfil)
+	audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
 {
 	struct vs_softc *sc;
 	int rate;
@@ -401,8 +399,24 @@ vs_set_params(void *hdl, int setmode, int usemode,
 		DPRINTF(1, ("rate not matched\n"));
 		return EINVAL;
 	}
-
 	sc->sc_current.rate = rate;
+
+	if (play->encoding == AUDIO_ENCODING_SLINEAR_BE) {
+		if ((setmode & AUMODE_PLAY) != 0) {
+			play->encoding = AUDIO_ENCODING_ADPCM;
+			play->validbits = 4;
+			play->precision = 4;
+			pfil->codec = internal_to_msm6258;
+			pfil->context = &sc->sc_codecvar;
+		}
+		if ((setmode & AUMODE_RECORD) != 0) {
+			rec->encoding = AUDIO_ENCODING_ADPCM;
+			rec->validbits = 4;
+			rec->precision = 4;
+			rfil->codec = msm6258_to_internal;
+			rfil->context = &sc->sc_codecvar;
+		}
+	}
 
 	DPRINTF(1, ("accepted\n"));
 	return 0;
@@ -770,21 +784,6 @@ vs_get_locks(void *hdl, kmutex_t **intr, kmutex_t **thread)
 	sc = hdl;
 	*intr = &sc->sc_intr_lock;
 	*thread = &sc->sc_lock;
-}
-
-static audio_filter_t
-vs_get_swcode(void *hdl, int mode, audio_filter_arg_t *arg)
-{
-	struct vs_softc *sc;
-
-	DPRINTF(1, ("vs_get_swcode\n"));
-	sc = hdl;
-	arg->context = &sc->sc_codecvar;
-	if (mode == AUMODE_PLAY) {
-		return internal_to_msm6258;
-	} else {
-		return msm6258_to_internal;
-	}
 }
 
 #endif /* NAUDIO > 0 && NVS > 0*/

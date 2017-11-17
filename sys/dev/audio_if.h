@@ -323,7 +323,27 @@ struct audio_hw_if {
 	void	(*get_locks)(void *, kmutex_t **, kmutex_t **);
 
 	int (*query_format)(void *, const struct audio_format **);
-	audio_filter_t (*get_swcode)(void *, int, audio_filter_arg_t *);
+
+	// set_param かこっちのどちらか片方のみを有効にすること。
+	// set_params2 があればこちらが優先して使われる。
+	//
+	// 引数は (void *hdl, int setmode, int usemode,
+	//  audio_params_t *play, audio_params_t *rec,
+	//  audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
+	// で、1行目は set_params() と同じ。
+	// play, rec もほぼ同じ。MI 側が設定したいパラメータが入っているので
+	// HW をこのパラメータに設定すること。
+	// その際 HW フィルタを使用するなら *pfil、*rfil の codec (と必要なら
+	// context) を埋めて返すこと。pfil, rfil のメンバはデフォルト NULL で
+	// 埋められているので、codec、context を使わなければ触らなくていい。
+	// フィルタを使用してエンコーディングが変わる場合には *play, *rec の
+	// encoding/precision/validbits を更新すること。channels/sample_rate は
+	// HW に適切なものが与えられているはずなので更新してはいけない
+	// (更新しないといけないとすれば query_format がおかしい)。
+	// 戻り値は errno を返すこと。
+	int	(*set_params2)(void *, int, int,
+		    audio_params_t *, audio_params_t *,
+		    audio_filter_reg_t *, audio_filter_reg_t *);
 };
 
 struct audio_attach_args {

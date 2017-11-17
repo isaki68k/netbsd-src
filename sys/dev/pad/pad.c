@@ -29,6 +29,10 @@
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD: pad.c,v 1.38 2017/07/01 05:50:10 nat Exp $");
 
+#ifdef _KERNEL_OPT
+#include "opt_audio.h"
+#endif
+
 #include <sys/types.h>
 #include <sys/param.h>
 #include <sys/conf.h>
@@ -48,7 +52,11 @@ __KERNEL_RCSID(0, "$NetBSD: pad.c,v 1.38 2017/07/01 05:50:10 nat Exp $");
 #include <dev/audio_if.h>
 #include <dev/audiovar.h>
 #include <dev/auconv.h>
+#if defined(AUDIO2)
+#include <dev/audio/aufilter.h>
+#else
 #include <dev/auvolconv.h>
+#endif
 
 #include <dev/pad/padvar.h>
 
@@ -87,9 +95,9 @@ static int	pad_detach(device_t, int);
 static void	pad_childdet(device_t, device_t);
 
 static int	pad_query_encoding(void *, struct audio_encoding *);
-static int	pad_set_params(void *, int, int,
+static int	pad_set_params2(void *, int, int,
 				audio_params_t *, audio_params_t *,
-				stream_filter_list_t *, stream_filter_list_t *);
+			    audio_filter_reg_t *, audio_filter_reg_t *);
 static int	pad_start_output(void *, void *, int,
 				    void (*)(void *), void *);
 static int	pad_start_input(void *, void *, int,
@@ -104,18 +112,13 @@ static int	pad_get_props(void *);
 static void	pad_get_locks(void *, kmutex_t **, kmutex_t **);
 
 static void	pad_done_output(void *);
-
-static stream_filter_t *pad_swvol_filter_le(struct audio_softc *,
-    const audio_params_t *, const audio_params_t *);
-static stream_filter_t *pad_swvol_filter_be(struct audio_softc *,
-    const audio_params_t *, const audio_params_t *);
-static void	pad_swvol_dtor(stream_filter_t *);
+static void	pad_swvol_codec(audio_filter_arg_t *);
 
 static bool	pad_is_attached;	/* Do we have an audio* child? */
 
 static const struct audio_hw_if pad_hw_if = {
 	.query_encoding = pad_query_encoding,
-	.set_params = pad_set_params,
+	.set_params2 = pad_set_params2,
 	.start_output = pad_start_output,
 	.start_input = pad_start_input,
 	.halt_output = pad_halt_output,
@@ -404,9 +407,9 @@ pad_query_encoding(void *opaque, struct audio_encoding *ae)
 }
 
 static int
-pad_set_params(void *opaque, int setmode, int usemode,
+pad_set_params2(void *opaque, int setmode, int usemode,
     audio_params_t *play, audio_params_t *rec,
-    stream_filter_list_t *pfil, stream_filter_list_t *rfil)
+	audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
 {
 	pad_softc_t *sc __diagused;
 
@@ -414,27 +417,20 @@ pad_set_params(void *opaque, int setmode, int usemode,
 
 	KASSERT(mutex_owned(&sc->sc_lock));
 
-	if (auconv_set_converter(pad_formats, PAD_NFORMATS, AUMODE_PLAY,
-	    play, false, pfil) < 0)
-		return EINVAL;
-	if (auconv_set_converter(pad_formats, PAD_NFORMATS, AUMODE_RECORD,
-	    rec, false, rfil) < 0)
-		return EINVAL;
-
-	if (pfil->req_size > 0)
-		play = &pfil->filters[0].param;
-	switch (play->encoding) {
-	case AUDIO_ENCODING_SLINEAR_LE:
-		if (play->precision == 16 && play->validbits == 16)
-			pfil->prepend(pfil, pad_swvol_filter_le, play);
-		break;
-	case AUDIO_ENCODING_SLINEAR_BE:
-		if (play->precision == 16 && play->validbits == 16)
-			pfil->prepend(pfil, pad_swvol_filter_be, play);
-		break;
-	default:
-		break;
+	if ((setmode & AUMODE_PLAY) != 0) {
+		if (auconv_set_converter2(pad_formats, PAD_NFORMATS,
+		    AUMODE_PLAY, play) < 0)
+			return EINVAL;
 	}
+	if ((setmode & AUMODE_RECORD) != 0) {
+		if (auconv_set_converter2(pad_formats, PAD_NFORMATS,
+		    AUMODE_RECORD, rec) < 0)
+			return EINVAL;
+	}
+
+	// 元々再生側しかなかった
+	pfil->codec = pad_swvol_codec;
+	pfil->context = sc;
 
 	return 0;
 }
@@ -641,47 +637,21 @@ pad_get_locks(void *opaque, kmutex_t **intr, kmutex_t **thread)
 	*thread = &sc->sc_lock;
 }
 
-static stream_filter_t *
-pad_swvol_filter_le(struct audio_softc *asc,
-    const audio_params_t *from, const audio_params_t *to)
-{
-	auvolconv_filter_t *this;
-	device_t dev = audio_get_device(asc);
-	struct pad_softc *sc = device_private(dev);
-
-	this = kmem_alloc(sizeof(auvolconv_filter_t), KM_SLEEP);
-	this->base.base.fetch_to = auvolconv_slinear16_le_fetch_to;
-	this->base.dtor = pad_swvol_dtor;
-	this->base.set_fetcher = stream_filter_set_fetcher;
-	this->base.set_inputbuffer = stream_filter_set_inputbuffer;
-	this->vol = &sc->sc_swvol;
-
-	return (stream_filter_t *)this;
-}
-
-static stream_filter_t *
-pad_swvol_filter_be(struct audio_softc *asc,
-    const audio_params_t *from, const audio_params_t *to)
-{
-	auvolconv_filter_t *this;
-	device_t dev = audio_get_device(asc);
-	struct pad_softc *sc = device_private(dev);
-
-	this = kmem_alloc(sizeof(auvolconv_filter_t), KM_SLEEP);
-	this->base.base.fetch_to = auvolconv_slinear16_be_fetch_to;
-	this->base.dtor = pad_swvol_dtor;
-	this->base.set_fetcher = stream_filter_set_fetcher;
-	this->base.set_inputbuffer = stream_filter_set_inputbuffer;
-	this->vol = &sc->sc_swvol;
-
-	return (stream_filter_t *)this;
-}
-
 static void
-pad_swvol_dtor(stream_filter_t *this)
+pad_swvol_codec(audio_filter_arg_t *arg)
 {
-	if (this)
-		kmem_free(this, sizeof(auvolconv_filter_t));
+	struct pad_softc *sc = arg->context;
+	const internal_t *src;
+	internal_t *dst;
+	int i;
+
+	src = arg->src;
+	dst = arg->dst;
+	for (i = 0; i < arg->count; i++) {
+		internal2_t v = (internal2_t)(*src++);
+		v = v * sc->sc_swvol / 255;
+		*dst++ = (internal_t)v;
+	}
 }
 
 #ifdef _MODULE
