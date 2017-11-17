@@ -716,7 +716,7 @@ audio_track_play_input(audio_track_t *track, struct uio *uio)
 
 	/* input の空きバイト数を求める */
 	int free_count = audio_ring_unround_free_count(track->input);
-	int free_bytelen = free_count * track->inputfmt.channels * track->inputfmt.stride / 8 - track->subframe_buf_used;
+	int free_bytelen = frametobyte(&track->inputfmt, free_count) - track->subframe_buf_used;
 	TRACE(track, "free=%d", free_count);
 
 	if (free_bytelen == 0) {
@@ -744,7 +744,7 @@ audio_track_play_input(audio_track_t *track, struct uio *uio)
 	track->inputcounter += framecount;
 
 	// 今回 input に置いたサブフレームを次回のために求める
-	track->subframe_buf_used = move_bytelen - framecount * track->inputfmt.channels * track->inputfmt.stride / 8;
+	track->subframe_buf_used += move_bytelen - framecount * track->inputfmt.channels * track->inputfmt.stride / 8;
 	return 0;
 }
 
