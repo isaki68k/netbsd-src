@@ -1746,16 +1746,16 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 	 * Number of read (write) samples dropped.  We don't know where or
 	 * when they were dropped.
 	 */
-#if 0
 	// サンプル数と言ってるがバイト数のようだ
 	case AUDIO_RERROR:
-		*(int *)addr = vc->sc_mrr.drops;
+		// XXX 未実装
+		*(int *)addr = 0;
 		break;
 
 	case AUDIO_PERROR:
-		*(int *)addr = vc->sc_mpr.drops;
+		// XXX 未実装
+		*(int *)addr = 0;
 		break;
-#endif
 
 	/*
 	 * Offsets into buffer.
