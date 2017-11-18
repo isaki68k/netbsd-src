@@ -1127,7 +1127,7 @@ audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int 
 void
 audio_mixer_play_period(audio_trackmixer_t *mixer /*, bool force */)
 {
-	struct audio_softc *sc __diagused;
+	struct audio_softc *sc;
 
 	sc = mixer->sc;
 	KASSERT(mutex_owned(sc->sc_intr_lock));
@@ -1172,6 +1172,8 @@ audio_mixer_play_period(audio_trackmixer_t *mixer /*, bool force */)
 		/* 128 までは自動でマスタボリュームを下げる */
 		if (mixer->volume > 128) {
 			mixer->volume--;
+			aprint_normal_dev(sc->dev, "auto volume adjust: volume %d\n",
+			    mixer->volume);
 		}
 	}
 
