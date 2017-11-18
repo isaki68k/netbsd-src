@@ -1169,9 +1169,10 @@ audio_mixer_play_period(audio_trackmixer_t *mixer /*, bool force */)
 		vol = (int)((internal2_t)AUDIO_INTERNAL_T_MIN * 256 / ovf_minus);
 	}
 	if (vol < mixer->volume) {
-		/* 128 までは自動でマスタボリュームを下げる */
+		// 128 までは自動でマスタボリュームを下げる
+		// 今の値の 95% ずつに下げていってみる
 		if (mixer->volume > 128) {
-			mixer->volume--;
+			mixer->volume = mixer->volume * 95 / 100;
 			aprint_normal_dev(sc->dev, "auto volume adjust: volume %d\n",
 			    mixer->volume);
 		}
