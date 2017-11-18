@@ -237,7 +237,7 @@ static int audio_get_props(struct audio_softc *);
 static bool audio_can_playback(struct audio_softc *);
 static bool audio_can_capture(struct audio_softc *);
 static int audio_check_params(struct audio_params *);
-static int audio_check_params2(const audio_format2_t *);
+static int audio_check_params2(audio_format2_t *);
 static int xxx_select_freq(const struct audio_format *);
 static int xxx_config_hwfmt(struct audio_softc *, audio_format2_t *, int);
 static int xxx_config_by_format(struct audio_softc *, audio_format2_t *, int);
@@ -2371,12 +2371,19 @@ audio_check_params(struct audio_params *p)
 	return 0;
 }
 
+// XXX 実際にはチェックといいつつ、古いエンコーディングの翻訳も兼ねていて
+// なんかもう何がなにやらである。
 static int
-audio_check_params2(const audio_format2_t *p2)
+audio_check_params2(audio_format2_t *f2)
 {
 	struct audio_params p;
-	p = format2_to_params(p2);
-	return audio_check_params(&p);
+	int error;
+
+	p = format2_to_params(f2);
+	error = audio_check_params(&p);
+	*f2 = params_to_format2(&p);
+
+	return error;
 }
 
 // 周波数を選択する。

@@ -593,7 +593,11 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *fmt)
 	TRACE(track, "");
 	KASSERT(is_valid_format(fmt));
 
-	// TODO: 入力値チェックをどこかでやる。
+	// 入力値チェック
+#if defined(_KERNEL)
+	// XXX audio.c にある。どうしたもんか
+	audio_check_params2(fmt);
+#endif
 
 	// TODO: まず現在のバッファとかを全部破棄すると分かり易いが。
 
