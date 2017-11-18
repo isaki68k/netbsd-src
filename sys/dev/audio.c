@@ -521,6 +521,16 @@ audioattach(device_t parent, device_t self, void *aux)
 	sc->sc_sih_wr = softint_establish(SOFTINT_SERIAL | SOFTINT_MPSAFE,
 	    audio_softintr_wr, sc);
 
+	/* Initialize sc_ai for /dev/sound */
+	sc->sc_ai.play.sample_rate   = audio_default.sample_rate;
+	sc->sc_ai.play.encoding      = audio_default.encoding;
+	sc->sc_ai.play.precision     = audio_default.validbits;
+	sc->sc_ai.play.channels      = audio_default.channels;
+	sc->sc_ai.record.sample_rate = audio_default.sample_rate;
+	sc->sc_ai.record.encoding    = audio_default.encoding;
+	sc->sc_ai.record.precision   = audio_default.validbits;
+	sc->sc_ai.record.channels    = audio_default.channels;
+
 	mixer_init(sc);
 	DPRINTF(2, "audio_attach: inputs ports=0x%x, input master=%d, "
 		 "output ports=0x%x, output master=%d\n",
