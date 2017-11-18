@@ -3344,8 +3344,8 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 	    fmt->channels * fmt->stride / NBBY;
 	ai->mode = file->mode;
 	/* hiwat, lowat are meaningless in current implementation */
-	ai->hiwat = 0;
-	ai->lowat = 0;
+	ai->hiwat = 8;
+	ai->lowat = 6;
 
 	if (need_mixerinfo) {
 		p->port = au_get_port(sc, &sc->sc_outports);
