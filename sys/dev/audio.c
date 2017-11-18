@@ -2898,17 +2898,10 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	}
 
 	/* Set default value */
-	pfmt.sample_rate = sc->sc_ai.play.sample_rate;
-	pfmt.channels    = sc->sc_ai.play.channels;
-	pfmt.encoding    = sc->sc_ai.play.encoding;
-	pfmt.precision   = sc->sc_ai.play.precision;
-	rfmt.sample_rate = sc->sc_ai.record.sample_rate;
-	rfmt.channels    = sc->sc_ai.record.channels;
-	rfmt.encoding    = sc->sc_ai.record.encoding;
-	rfmt.precision   = sc->sc_ai.record.precision;
-	// XXX とりあえずね
-	pfmt.stride      = pfmt.precision;
-	rfmt.stride      = rfmt.precision;
+	if (play)
+		pfmt = play->inputfmt;
+	if (rec)
+		rfmt = rec->inputfmt;
 
 	/* Overwrite if specified */
 	mode = (file->mode & (AUMODE_PLAY | AUMODE_RECORD));
