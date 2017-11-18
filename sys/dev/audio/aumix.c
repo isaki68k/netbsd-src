@@ -855,7 +855,7 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 	mixer->blktime_d = mixer->hwbuf.fmt.sample_rate;
 
 	int capacity = mixer->frames_per_block * 16;
-	int bufsize = frametobyte(&mixer->hwbuf.fmt, capacity);
+	size_t bufsize = frametobyte(&mixer->hwbuf.fmt, capacity);
 	if (sc->hw_if->round_buffersize) {
 		size_t rounded;
 		mutex_enter(sc->sc_lock);
@@ -864,7 +864,7 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 		// 縮められても困る?
 		if (rounded != bufsize) {
 			aprint_error_dev(sc->dev, "buffer size not configured"
-			    " %d -> %d\n", bufsize, rounded);
+			    " %zu -> %zu\n", bufsize, rounded);
 			return ENXIO;
 		}
 	}
