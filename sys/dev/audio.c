@@ -1669,28 +1669,28 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 
 #if defined(AUDIO_DEBUG)
 	const char *ioctlnames[] = {
-		" AUDIO_GETINFO",
-		" AUDIO_SETINFO",
-		" AUDIO_DRAIN",
-		" AUDIO_FLUSH",
-		" AUDIO_WSEEK",
-		" AUDIO_RERROR",
-		" AUDIO_GETDEV",
-		" AUDIO_GETENC",
-		" AUDIO_GETFD",
-		" AUDIO_SETFD",
-		" AUDIO_PERROR",
-		" AUDIO_GETIOFFS",
-		" AUDIO_GETOOFFS",
-		" AUDIO_GETPROPS",
-		" AUDIO_GETBUFINFO",
-		" AUDIO_SETCHAN",
-		" AUDIO_GETCHAN",
+		" AUDIO_GETINFO",	// 21
+		" AUDIO_SETINFO",	// 22
+		" AUDIO_DRAIN",		// 23
+		" AUDIO_FLUSH",		// 24
+		" AUDIO_WSEEK",		// 25
+		" AUDIO_RERROR",	// 26
+		" AUDIO_GETDEV",	// 27
+		" AUDIO_GETENC",	// 28
+		" AUDIO_GETFD",		// 29
+		" AUDIO_SETFD",		// 30
+		" AUDIO_PERROR",	// 31
+		" AUDIO_GETIOFFS",	// 32
+		" AUDIO_GETOOFFS",	// 33
+		" AUDIO_GETPROPS",	// 34
+		" AUDIO_GETBUFINFO",	// 35
+		" AUDIO_SETCHAN",	// 36
+		" AUDIO_GETCHAN",	// 37
 	};
-	int nameidx = (cmd & 0xff) - 21;
+	int nameidx = (cmd & 0xff);
 	const char *ioctlname = "";
-	if (0 <= nameidx && nameidx < __arraycount(ioctlname))
-		ioctlname = ioctlnames[nameidx];
+	if (21 <= nameidx && nameidx <=37)
+		ioctlname = ioctlnames[nameidx - 21];
 	DPRINTF(2, "audio_ioctl(%lu,'%c',%lu)%s\n",
 		 IOCPARM_LEN(cmd), (char)IOCGROUP(cmd), cmd&0xff, ioctlname);
 #endif
@@ -2842,6 +2842,31 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	if ((file->mode & AUMODE_RECORD) != 0)
 		rec = &file->rtrack;
 
+#if AUDIO_DEBUG
+	if (SPECIFIED(ai->hiwat))
+		printf("%s hiwat=%d\n", __func__, ai->hiwat);
+	if (SPECIFIED(ai->lowat))
+		printf("%s lowat=%d\n", __func__, ai->lowat);
+	if (SPECIFIED(ai->play.gain))
+		printf("%s play.gain=%d\n", __func__, ai->play.gain);
+	if (SPECIFIED(ai->record.gain))
+		printf("%s record.gain=%d\n", __func__, ai->record.gain);
+	if (SPECIFIED_CH(ai->play.balance))
+		printf("%s play.balance=%d\n", __func__, ai->play.balance);
+	if (SPECIFIED_CH(ai->record.balance))
+		printf("%s record.balance=%d\n", __func__, ai->record.balance);
+	if (SPECIFIED(ai->play.port))
+		printf("%s play.port=%d\n", __func__, ai->play.port);
+	if (SPECIFIED(ai->record.port))
+		printf("%s record.port=%d\n", __func__, ai->record.port);
+	if (SPECIFIED(ai->monitor_gain))
+		printf("%s monitor_gain=%d\n", __func__, ai->monitor_gain);
+	if (SPECIFIED_CH(ai->play.pause))
+		printf("%s play.pause=%d\n", __func__, ai->play.pause);
+	if (SPECIFIED_CH(ai->record.pause))
+		printf("%s record.pause=%d\n", __func__, ai->record.pause);
+#endif
+
 	/* XXX shut up gcc */
 	memset(&saved_pfmt, 0, sizeof(saved_pfmt));
 	saved_pvolume = 0;
@@ -2970,8 +2995,14 @@ audio_file_setinfo_check(audio_format2_t *fmt, const struct audio_prinfo *info)
 	}
 
 	if (changes) {
-		if (audio_check_params2(fmt) != 0)
+		if (audio_check_params2(fmt) != 0) {
+#if AUDIO_DEBUG > 1
+			char fmtbuf[64];
+			audio_format2_tostr(fmtbuf, sizeof(fmtbuf), fmt);
+			DPRINTF(0, "%s failed: %s\n", __func__, fmtbuf);
+#endif
 			return -1;
+		}
 	}
 
 	return changes;
