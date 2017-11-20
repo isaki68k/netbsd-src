@@ -79,10 +79,7 @@ audio_ring_tookfromtop(audio_ring_t *ring, int n)
 {
 	KASSERT(is_valid_ring(ring));
 	KASSERT(n >= 0);
-	//KASSERT(ring->count >= n);
-	if (!(ring->count >= n)) {
-		panic("ring->count=%d n=%d", ring->count, n);
-	}
+	KASSERTMSG(ring->count >= n, "ring->count=%d n=%d", ring->count, n);
 
 	ring->top = audio_ring_round(ring, ring->top + n);
 	ring->count -= n;
@@ -96,11 +93,9 @@ audio_ring_appended(audio_ring_t *ring, int n)
 {
 	KASSERT(is_valid_ring(ring));
 	KASSERT(n >= 0);
-	//KASSERT(ring->count + n <= ring->capacity);
-	if (!(ring->count + n <= ring->capacity)) {
-		panic("ring->count=%d n=%d ring->capacity=%d",
-			ring->count, n, ring->capacity);
-	}
+	KASSERTMSG(ring->count + n <= ring->capacity,
+		"ring->count=%d n=%d ring->capacity=%d",
+		ring->count, n, ring->capacity);
 
 	ring->count += n;
 }
@@ -172,11 +167,7 @@ static inline void
 audio_ring_simplify(audio_ring_t *ring)
 {
 	KASSERT(is_valid_ring(ring));
-#if defined(AUDIO_ASSERT)
-	if (ring->top + ring->count > ring->capacity) {
-		panic("rounded");
-	}
-#endif
+	KASSERTMSG(ring->top + ring->count <= ring->capacity, "rounded");
 
 	if (ring->top == 0) return;
 	if (ring->count == 0) {

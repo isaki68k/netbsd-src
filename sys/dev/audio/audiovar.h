@@ -17,6 +17,9 @@
 #define KASSERT(expr)	do {\
 	if (!(expr)) panic(#expr);\
 } while (0)
+#define KASSERTMSG(expr, fmt...)	do {\
+	if (!(expr)) panic(#expr);\
+} while (0)
 #else
 #define KASSERT(expr)	/**/
 #endif
