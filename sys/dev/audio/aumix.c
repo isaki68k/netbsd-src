@@ -693,13 +693,22 @@ audio_append_silence(audio_track_t *track, audio_ring_t *ring)
 
 // このステージで処理を中断するときは false を返します。
 static bool
-audio_apply_stage(audio_track_t *track, audio_stage_t *stage, bool isdrain)
+audio_apply_stage(audio_track_t *track, audio_stage_t *stage, bool isdrain, bool isfreq)
 {
 	if (stage->filter != NULL) {
 		int srccount = audio_ring_unround_count(&stage->srcbuf);
 		int dstcount = audio_ring_unround_free_count(stage->dst);
 		
-		int count = min(srccount, dstcount);
+		int count;
+		if (isfreq) {
+			if (isdrain) {
+				audio_append_silence(track, &stage->srcbuf);
+			}
+			if (srccount == 0) return isdrain;
+			count = min(dstcount, track->mixer->frames_per_block);
+		} else {
+			count = min(srccount, dstcount);
+		}
 
 		if (count > 0) {
 			audio_filter_arg_t *arg = &stage->arg;
@@ -710,8 +719,10 @@ audio_apply_stage(audio_track_t *track, audio_stage_t *stage, bool isdrain)
 
 			stage->filter(arg);
 
-			audio_ring_tookfromtop(&stage->srcbuf, count);
-			audio_ring_appended(stage->dst, count);
+			if (!isfreq) {
+				audio_ring_tookfromtop(&stage->srcbuf, count);
+				audio_ring_appended(stage->dst, count);
+			}
 		}
 
 		/* ブロックサイズに整形 */
@@ -781,29 +792,23 @@ audio_track_play(audio_track_t *track, bool isdrain)
 	int track_count_0 = track->outputbuf.count;
 
 	/* エンコーディング変換 */
-	if (audio_apply_stage(track, &track->codec, isdrain) == false) {
+	if (audio_apply_stage(track, &track->codec, isdrain, false) == false) {
 		return;
 	}
 
 	/* チャンネルボリューム */
-	if (audio_apply_stage(track, &track->chvol, isdrain) == false) {
+	if (audio_apply_stage(track, &track->chvol, isdrain, false) == false) {
 		return;
 	}
 
 	/* チャンネルミキサ */
-	if (audio_apply_stage(track, &track->chmix, isdrain) == false) {
+	if (audio_apply_stage(track, &track->chmix, isdrain, false) == false) {
 		return;
 	}
 
 	/* 周波数変換 */
-	// フレーム数が前後で変わるので apply 使えない
-	if (track->freq.filter != NULL) {
-		if (track->freq.srcbuf.count > 0) {
-			track->freq.arg.src = RING_TOP_UINT8(&track->freq.srcbuf);
-			track->freq.arg.dst = RING_BOT_UINT8(track->freq.dst);
-			track->freq.arg.count = frame_per_block_roundup(track->mixer, &track->freq.dst->fmt);
-			track->freq.filter(&track->freq.arg);
-		}
+	if (audio_apply_stage(track, &track->freq, isdrain, true) == false) {
+		return;
 	}
 
 	if (isdrain) {
