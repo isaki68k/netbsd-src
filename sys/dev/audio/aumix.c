@@ -723,6 +723,7 @@ audio_apply_stage(audio_track_t *track, audio_stage_t *stage, bool isdrain, bool
 				audio_ring_tookfromtop(&stage->srcbuf, count);
 				audio_ring_appended(stage->dst, count);
 			}
+			audio_ring_simplify(&stage->srcbuf);
 		}
 
 		/* ブロックサイズに整形 */

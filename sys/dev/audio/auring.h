@@ -166,3 +166,23 @@ audio_ring_concat(audio_ring_t *dst, audio_ring_t *src, int count)
 	}
 }
 
+// ラウンドしていないリングバッファをバッファ先頭の位置に詰めます。
+// ハードウェア ring に対して呼び出してはいけません。
+static inline void
+audio_ring_simplify(audio_ring_t *ring)
+{
+	KASSERT(is_valid_ring(ring));
+#if defined(AUDIO_ASSERT)
+	if (ring->top + ring->count > ring->capacity) {
+		panic("rounded");
+	}
+#endif
+
+	if (ring->top == 0) return;
+	if (ring->count == 0) {
+		ring->top = 0;
+		return;
+	}
+	memmove(ring->sample, RING_TOP_UINT8(ring), frametobyte(&ring->fmt, ring->count));
+	ring->top = 0;
+}
