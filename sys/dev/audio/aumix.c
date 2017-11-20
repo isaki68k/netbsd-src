@@ -350,7 +350,7 @@ audio_track_freq_simple(audio_filter_arg_t *arg)
 #endif
 		}
 
-		for (int ch = 0; ch < dst->fmt.channels; ch++, dptr) {
+		for (int ch = 0; ch < dst->fmt.channels; ch++) {
 			*dptr++ = sptr[ch];
 		}
 		audio_rational_add(&tmp, &track->freq_step, dst->fmt.sample_rate);
