@@ -56,6 +56,8 @@ int  audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track,
 void audio_trackmixer_intr(audio_trackmixer_t *mixer);
 bool audio_trackmixer_play(audio_trackmixer_t *mixer, bool force);
 
+int  audio2_halt_output(struct audio_softc *sc);
+
 /* glue layer */
 int audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *file); /* write の MI 側 */
 

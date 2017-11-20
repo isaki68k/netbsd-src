@@ -1547,17 +1547,14 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 
 		if (sc->sc_popens == 1) {
 			if (sc->sc_pbusy) {
-				DPRINTF(2, "%s halt_output\n", __func__);
 				mutex_enter(sc->sc_intr_lock);
-				error = sc->hw_if->halt_output(sc->hw_hdl);
+				error = audio2_halt_output(sc);
 				mutex_exit(sc->sc_intr_lock);
 				if (error) {
 					aprint_error_dev(sc->dev,
 					    "halt_output failed with %d\n",
 					    error);
 				}
-				sc->sc_pbusy = false;
-				sc->sc_pmixer->hwbuf.top = 0;
 			}
 		}
 		audio_track_destroy(&file->ptrack);

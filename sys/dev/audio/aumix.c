@@ -1033,16 +1033,21 @@ audio2_start_output(audio_trackmixer_t *mixer, void *start, int blksize)
 	return error;
 }
 
-static void
-audio2_halt_output(audio_trackmixer_t *mixer)
+int
+audio2_halt_output(struct audio_softc *sc)
 {
-	struct audio_softc *sc = mixer->sc;
+	int error;
 
-	TRACE0("halt_output");
-	sc->hw_if->halt_output(sc->hw_hdl);
+	TRACE0("");
+	KASSERT(mutex_owned(sc->sc_lock));
+	KASSERT(mutex_owned(sc->sc_intr_lock));
 
+	error = sc->hw_if->halt_output(sc->hw_hdl);
+	// エラーが起きても停止は停止する
 	sc->sc_pbusy = false;
-	mixer->hwbuf.top = 0;
+	sc->sc_pmixer->hwbuf.top = 0;
+
+	return error;
 }
 
 // トラックミキサ起動になる可能性のある再生要求
