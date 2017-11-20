@@ -270,7 +270,7 @@ static void audio_softc_play_start_core(struct audio_softc *sc)
 
 	int count;
 
-	for (int loop = 0; loop < 2; loop++) {
+	for (int loop = 0; loop < 1; loop++) {
 		count = audio_ring_unround_count(&mixer->hwbuf);
 		count = min(count, wh_free_count);
 
