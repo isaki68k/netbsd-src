@@ -3297,7 +3297,7 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 		p->error = 0;			// XXX
 		p->waiting = 0;			/* open never hangs */
 		p->open = 1;
-		p->active = sc->sc_pmixer->busy;// XXX ?
+		p->active = sc->sc_pbusy;// XXX 厳密ではない ?
 		// XXX 入力エンコーディング換算
 		p->buffer_size = ptrack->outputbuf.capacity *
 		    (ptrack->inputfmt.channels *
@@ -3316,7 +3316,7 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 		r->error = 0;			// XXX
 		r->waiting = 0;			/* open never hangs */
 		r->open = 1;
-		r->active = sc->sc_rmixer->busy;// XXX ?
+		r->active = sc->sc_rbusy;// XXX ?
 		r->buffer_size = rtrack->outputbuf.capacity *
 		    (rtrack->outputbuf.fmt.channels *
 		     rtrack->outputbuf.fmt.stride / NBBY);
@@ -3464,9 +3464,9 @@ audio_suspend(device_t dv, const pmf_qual_t *qual)
 	audio_mixer_capture(sc);
 	// XXX mixer をとめる?
 	mutex_enter(sc->sc_intr_lock);
-	if (sc->sc_pmixer->busy)
+	if (sc->sc_pbusy)
 		sc->hw_if->halt_output(sc->hw_hdl);
-	if (sc->sc_rmixer->busy)
+	if (sc->sc_rbusy)
 		sc->hw_if->halt_input(sc->hw_hdl);
 	mutex_exit(sc->sc_intr_lock);
 #ifdef AUDIO_PM_IDLE

@@ -163,7 +163,6 @@ struct audio_trackmixer
 	int blktime_n; // ブロックの秒の分子 初期値は AUDIO_BLK_MS
 	int blktime_d; // ブロックの秒の分母 初期値は 1000
 
-	bool busy;
 										// 未定
 
 	uint64_t hw_output_counter;			/* ハードウェアへの出力フレーム数 */

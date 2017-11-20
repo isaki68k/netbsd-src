@@ -831,7 +831,7 @@ audio_track_play(audio_track_t *track, bool isdrain)
 		n += snprintf(buf + n, 100 - n, " v=%d", track->chvol.srcbuf.count);
 	if (track->codec.filter)
 		n += snprintf(buf + n, 100 - n, " e=%d", track->codec.srcbuf.count);
-	TRACE(track, "end busy=%d outbuf=%d/%d/%d%s", track->mixer->busy,
+	TRACE(track, "end pbusy=%d outbuf=%d/%d/%d%s", track->mixer->sc->sc_pbusy,
 	    track->outputbuf.top, track->outputbuf.count, track->outputbuf.capacity,
 	    buf);
 #endif
@@ -1303,7 +1303,6 @@ audio_trackmixer_intr(audio_trackmixer_t *mixer, int count)
 
 	if (mixer->hwbuf.count == 0) {
 		audio2_halt_output(mixer);
-		mixer->busy = false;
 	} else {
 		if (later) {
 			audio_trackmixer_output(mixer);
