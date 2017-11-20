@@ -1058,6 +1058,7 @@ audio2_halt_output(struct audio_softc *sc)
 	// エラーが起きても停止は停止する
 	sc->sc_pbusy = false;
 	sc->sc_pmixer->hwbuf.top = 0;
+	sc->sc_pmixer->hwbuf.count = 0;
 
 	return error;
 }
