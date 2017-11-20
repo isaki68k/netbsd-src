@@ -1296,20 +1296,18 @@ audio_trackmixer_intr(audio_trackmixer_t *mixer, int count)
 
 	// 次のバッファを用意する
 	int mixed = audio_trackmixer_mixall(mixer, mixer->frames_per_block, true);
-	if (mixed == 0) {
-		if (sc->hw_if->trigger_output) {
-//				audio_append_silence
-		}
-	} else {
+	if (mixed != 0) {
 		audio_mixer_play_period(mixer);
 	}
 
 	if (mixer->hwbuf.count == 0) {
-		audio2_halt_output(mixer);
-	} else {
-		if (later) {
-			audio_trackmixer_output(mixer);
-		}
+		// 無音挿入
+		memset(mixer->mixsample, 0, frametobyte(&mixer->mixfmt, mixer->frames_per_block));
+		audio_mixer_play_period(mixer);
+	}
+
+	if (later) {
+		audio_trackmixer_output(mixer);
 	}
 
 	// drain 待ちしている人のために通知
