@@ -313,6 +313,7 @@ static void
 audio_track_freq_simple(audio_filter_arg_t *arg)
 {
 	audio_track_t *track = arg->context;
+	struct audio_softc *sc = track->mixer->sc __diagused;
 	audio_ring_t *src = &track->freq.srcbuf;
 	audio_ring_t *dst = track->freq.dst;
 
@@ -321,6 +322,7 @@ audio_track_freq_simple(audio_filter_arg_t *arg)
 	KASSERT(is_valid_ring(src));
 	KASSERT(src->count > 0);
 	KASSERT(src->fmt.channels == dst->fmt.channels);
+	KASSERT(mutex_owned(sc->sc_intr_lock));
 
 #if defined(AUDIO_ASSERT)
 	// ここで arg->count は dst に書き込み要求されているフレーム数。
@@ -671,8 +673,11 @@ audio_track_unlock(audio_track_t *track)
 static int
 audio_append_silence(audio_track_t *track, audio_ring_t *ring)
 {
+	struct audio_softc *sc = track->mixer->sc __diagused;
+
 	KASSERT(track);
 	KASSERT(is_internal_format(&ring->fmt));
+	KASSERT(mutex_owned(sc->sc_intr_lock));
 
 	if (ring->count == 0) return 0;
 
@@ -788,7 +793,10 @@ audio_track_play_input(audio_track_t *track, struct uio *uio)
 void
 audio_track_play(audio_track_t *track, bool isdrain)
 {
+	struct audio_softc *sc = track->mixer->sc __diagused;
+
 	KASSERT(track);
+	KASSERT(mutex_owned(sc->sc_intr_lock));
 
 	int track_count_0 = track->outputbuf.count;
 
@@ -974,8 +982,12 @@ audio_mixer_destroy(audio_trackmixer_t *mixer, int mode)
 static int
 audio_trackmixer_mixall(audio_trackmixer_t *mixer, int req, bool isdrain)
 {
+	struct audio_softc *sc = mixer->sc __diagused;
 	audio_file_t *f;
 	int mixed = 0;
+
+	KASSERT(mutex_owned(sc->sc_intr_lock));
+
 	SLIST_FOREACH(f, &mixer->sc->sc_files, entry) {
 		audio_track_t *track = &f->ptrack;
 
