@@ -163,6 +163,8 @@ struct audio_softc {
 
 	kauth_cred_t sc_cred;
 
+	struct sysctllog *sc_log;
+
 	mixer_ctrl_t	*sc_mixer_state;
 	int		sc_nmixer_states;
 	int		sc_static_nmixer_states;

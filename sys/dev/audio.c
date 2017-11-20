@@ -242,6 +242,7 @@ static int xxx_config_hwfmt(struct audio_softc *, audio_format2_t *, int);
 static int xxx_config_by_format(struct audio_softc *, audio_format2_t *, int);
 static int xxx_config_by_encoding(struct audio_softc *, audio_format2_t *, int);
 static int audio_xxx_config(struct audio_softc *, int);
+static int audio_sysctl_volume(SYSCTLFN_PROTO);
 static void audio_prepare_enc_xxx(struct audio_softc *sc);
 static void audio_format2_tostr(char *, size_t, const audio_format2_t *);
 #ifdef AUDIO_DEBUG
@@ -382,6 +383,7 @@ audioattach(device_t parent, device_t self, void *aux)
 	struct audio_softc *sc;
 	struct audio_attach_args *sa;
 	const struct audio_hw_if *hw_if;
+	const struct sysctlnode *node;
 	char fmtstr[64];
 	void *hdlp;
 	bool is_indep;
@@ -536,7 +538,25 @@ audioattach(device_t parent, device_t self, void *aux)
 		 sc->sc_inports.allports, sc->sc_inports.master,
 		 sc->sc_outports.allports, sc->sc_outports.master);
 
-	// sysctl ここ?
+	sysctl_createv(&sc->sc_log, 0, NULL, &node,
+		0,
+		CTLTYPE_NODE, device_xname(sc->dev),
+		SYSCTL_DESCR("audio test"),
+		NULL, 0,
+		NULL, 0,
+		CTL_HW,
+		CTL_CREATE, CTL_EOL);
+
+	if (node != NULL) {
+		sysctl_createv(&sc->sc_log, 0, NULL, NULL,
+			CTLFLAG_READWRITE,
+			CTLTYPE_INT, "volume",
+			SYSCTL_DESCR("software volume test"),
+			audio_sysctl_volume, 0,
+			(void *)sc, 0,
+			CTL_HW, node->sysctl_num,
+			CTL_CREATE, CTL_EOL);
+	}
 
 	selinit(&sc->sc_rsel);
 	selinit(&sc->sc_wsel);
@@ -3323,6 +3343,34 @@ static bool
 audio_can_capture(struct audio_softc *sc)
 {
 	return sc->sc_can_capture;
+}
+
+static int
+audio_sysctl_volume(SYSCTLFN_ARGS)
+{
+	struct sysctlnode node;
+	struct audio_softc *sc;
+	int t, error;
+
+	node = *rnode;
+	sc = node.sysctl_data;
+
+	if (sc->sc_pmixer)
+		t = sc->sc_pmixer->volume;
+	else
+		t = -1;
+	node.sysctl_data = &t;
+	error = sysctl_lookup(SYSCTLFN_CALL(&node));
+	if (error || newp == NULL)
+		return error;
+
+	if (sc->sc_pmixer == NULL)
+		return EINVAL;
+	if (t < 0)
+		return EINVAL;
+
+	sc->sc_pmixer->volume = t;
+	return 0;
 }
 
 #ifdef AUDIO_PM_IDLE
