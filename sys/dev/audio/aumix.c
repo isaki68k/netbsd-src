@@ -1062,14 +1062,13 @@ audio_trackmixer_play(audio_trackmixer_t *mixer, bool force)
 
 	if (mixer->hwbuf.capacity - mixer->hwbuf.count >= mixer->frames_per_block) {
 		int mixed = audio_trackmixer_mixall(mixer, mixer->frames_per_block, false);
-		if (mixed == 0) {
-			TRACE0("data not mixed");
-			return false;
-		}
 
 		// バッファの準備ができたら転送。
-		audio_mixer_play_period(mixer);
-		if (force || mixer->hwbuf.count >= mixer->frames_per_block * 2) {
+		if (mixed) {
+			audio_mixer_play_period(mixer);
+		}
+		int minimum = (force) ? 1 : 2;
+		if (mixer->hwbuf.count >= mixer->frames_per_block * minimum) {
 			audio_trackmixer_output(mixer);
 		}
 	}
@@ -1430,7 +1429,6 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 #endif // _KERNEL
 
 	error = 0;
-	bool wake = false;
 	while (uio->uio_resid > 0) {
 		mutex_enter(sc->sc_intr_lock);
 		error = audio_track_play_input(track, uio);
@@ -1449,9 +1447,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 		mutex_enter(sc->sc_intr_lock);
 		audio_track_play(track, false);
 
-		if (wake == false) {
-			wake = audio_trackmixer_play(sc->sc_pmixer, false);
-		}
+		audio_trackmixer_play(sc->sc_pmixer, false);
 		mutex_exit(sc->sc_intr_lock);
 
 #if !defined(_KERNEL)
