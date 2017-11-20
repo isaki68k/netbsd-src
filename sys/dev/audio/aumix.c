@@ -1253,10 +1253,10 @@ audio_trackmixer_output(audio_trackmixer_t *mixer)
 	struct audio_softc *sc;
 
 	sc = mixer->sc;
-	KASSERT(mixer->hwbuf.count >= mixer->frames_per_block);
 	TRACE0("pbusy=%d hwbuf=%d/%d/%d",
 	    sc->sc_pbusy,
 	    mixer->hwbuf.top, mixer->hwbuf.count, mixer->hwbuf.capacity);
+	KASSERT(mixer->hwbuf.count >= mixer->frames_per_block);
 
 	if (sc->hw_if->trigger_output) {
 		if (!sc->sc_pbusy) {
