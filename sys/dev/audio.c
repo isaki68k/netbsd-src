@@ -215,7 +215,6 @@ static int audio_mmap(struct audio_softc *, off_t *, size_t, int, int *, int *,
 
 static int audiostartr(struct audio_softc *);
 static int audiostartp(struct audio_softc *);
-static int audio_start_output(struct audio_softc *);
 static void audio_pintr(void *);
 static void audio_rintr(void *);
 
@@ -2136,77 +2135,7 @@ audiostartr(struct audio_softc *sc)
 int
 audiostartp(struct audio_softc *sc)
 {
-#if 0
-	KASSERT(mutex_owned(sc->sc_lock));
-
-	//KASSERT(!sc->sc_pbusy);
-	DPRINTF(2, "audiostartp busy=%d\n", sc->sc_pbusy);
-	if (sc->sc_pbusy == true)
-		return 0;
-
-	if (!audio_can_playback(sc))
-		return EINVAL;
-
-	sc->sc_pbusy = true;
-
-	mutex_enter(sc->sc_intr_lock);
-	audio_mixer_play(sc->sc_pmixer, false/*XXX?*/);
-	mutex_exit(sc->sc_intr_lock);
-
-	audio_start_output(sc);
-#else
-printf("%s\n", __func__);
-#endif
-	return 0;
-}
-
-// HW 再生を開始する。
-// trigger なら最初の1回だけ呼ぶこと。
-// start なら1回ごとに呼ぶこと。
-static int
-audio_start_output(struct audio_softc *sc)
-{
-	audio_trackmixer_t *mixer;
-	int error;
-	int blksize;
-
-	KASSERT(mutex_owned(sc->sc_lock));
-	KASSERT(!mutex_owned(sc->sc_intr_lock));
-
-	error = 0;
-	mixer = sc->sc_pmixer;
-	blksize = mixer->frames_per_block *
-	    mixer->hwbuf.fmt.channels * mixer->hwbuf.fmt.stride / NBBY;
-
-	DPRINTF(2, "%s blksize=%d bytes\n", __func__, blksize);
-
-	if (sc->hw_if->trigger_output) {
-		audio_params_t params;
-		params = format2_to_params(&mixer->hwbuf.fmt);
-		mutex_enter(sc->sc_intr_lock);
-		error = sc->hw_if->trigger_output(sc->hw_hdl,
-		    mixer->hwbuf.sample,
-		    RING_END_PTR(internal_t, &mixer->hwbuf),
-		    blksize, audio_pintr, sc, &params);
-		mutex_exit(sc->sc_intr_lock);
-		if (error) {
-			aprint_error_dev(sc->dev,
-			    "trigger_output failed with %d\n", error);
-			return error;
-		}
-	} else {
-		mutex_enter(sc->sc_intr_lock);
-		error = sc->hw_if->start_output(sc->hw_hdl,
-		    RING_TOP(internal_t, &mixer->hwbuf),
-		    blksize, audio_pintr, sc);
-		mutex_exit(sc->sc_intr_lock);
-		if (error) {
-			aprint_error_dev(sc->dev,
-			    "start_output failed with %d\n", error);
-			return error;
-		}
-	}
-
+	printf("%s not used\n", __func__);
 	return 0;
 }
 
@@ -2258,30 +2187,10 @@ audio_softintr_wr(void *cookie)
  * If no more buffers to play, output zero instead.
  * Do a wakeup if necessary.
  */
-void
+void __unused
 audio_pintr(void *v)
 {
-	struct audio_softc *sc;
-	audio_trackmixer_t *mixer;
-
-	sc = v;
-
-	KASSERT(mutex_owned(sc->sc_intr_lock));
-
-	mixer = sc->sc_pmixer;
-	DPRINTF(3, "%s hwbuf.count=%d\n", __func__, mixer->hwbuf.count);
-
-	/* XXX どうすべ */
-	if (mixer->hwbuf.count == 0)
-		return;
-
-	// 次のループを回す
-	int count = mixer->frames_per_block;
-	audio_ring_tookfromtop(&mixer->hwbuf, count);
-	audio_trackmixer_intr(sc->sc_pmixer, count);
-
-	if (sc->hw_if->trigger_output == NULL)
-		audio_start_output(mixer->sc);
+	panic("%s is not used\n", __func__);
 }
 
 /*
@@ -2292,15 +2201,7 @@ audio_pintr(void *v)
 void __unused
 audio_rintr(void *v)
 {
-#if 0	// XXX not yet
-	struct audio_softc *sc;
-
-	sc = v;
-
-	//audio_trackmixer_rintr(sc, 1/*count?*/);
-
-	// 次のループを回す
-#endif
+	panic("%s is not used\n", __func__);
 }
 
 // SLINEAR -> SLINEAR_NE
