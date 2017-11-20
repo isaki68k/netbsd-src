@@ -167,6 +167,7 @@
     <ClInclude Include="..\aucodec.h" />
     <ClInclude Include="..\audev.h" />
     <ClInclude Include="..\audiovar.h" />
+    <ClInclude Include="..\aufilter.h" />
     <ClInclude Include="..\auformat.h" />
     <ClInclude Include="..\auintr.h" />
     <ClInclude Include="..\aumix.h" />
