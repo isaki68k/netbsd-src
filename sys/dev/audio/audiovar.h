@@ -152,7 +152,7 @@ struct audio_trackmixer
 	audio_ring_t    codecbuf;			// コーデック用バッファ。ストライド変換の吸収
 
 	audio_ring_t   hwbuf;				/* 物理デバイスの入出力バッファ (malloc ではなく allocm で確保する) */
-
+	int hwblks;							// hwbuf のブロック数
 	kcondvar_t     intrcv;				/* 割り込みを通知する? */
 
 	uint64_t mixseq;	// ミキシング中のシーケンス番号

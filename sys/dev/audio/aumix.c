@@ -850,6 +850,7 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 
 	mixer->blktime_d = 1000;
 	mixer->blktime_n = AUDIO_BLK_MS;
+	mixer->hwblks = 16;
 
 #if defined(_KERNEL)
 	// XXX とりあえず
@@ -884,7 +885,7 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 	mixer->blktime_n = mixer->frames_per_block;
 	mixer->blktime_d = mixer->hwbuf.fmt.sample_rate;
 
-	int capacity = mixer->frames_per_block * 16;
+	int capacity = mixer->frames_per_block * mixer->hwblks;
 	size_t bufsize = frametobyte(&mixer->hwbuf.fmt, capacity);
 	if (sc->hw_if->round_buffersize) {
 		size_t rounded;
@@ -1070,7 +1071,7 @@ audio_trackmixer_play(audio_trackmixer_t *mixer, bool force)
 		if (mixed) {
 			audio_mixer_play_period(mixer);
 		}
-		int minimum = (force) ? 1 : 2;
+		int minimum = (force) ? 1 : mixer->hwblks;
 		if (mixer->hwbuf.count >= mixer->frames_per_block * minimum) {
 			audio_trackmixer_output(mixer);
 		}
