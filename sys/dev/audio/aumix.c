@@ -310,7 +310,7 @@ audio_track_chmix_expand(audio_filter_arg_t *arg)
 }
 
 static void
-audio_track_freq(audio_filter_arg_t *arg)
+audio_track_freq_simple(audio_filter_arg_t *arg)
 {
 	audio_track_t *track = arg->context;
 	audio_ring_t *src = &track->freq.srcbuf;
@@ -322,31 +322,47 @@ audio_track_freq(audio_filter_arg_t *arg)
 	KASSERT(src->count > 0);
 	KASSERT(src->fmt.channels == dst->fmt.channels);
 
-	int count = audio_ring_unround_free_count(dst);
-
-	if (count <= 0) {
-		return;
-		//		panic("not impl");
+#if defined(AUDIO_ASSERT)
+	// ここで arg->count は dst に書き込み要求されているフレーム数。
+	int src_require = (arg->count * src->fmt.sample_rate + dst->fmt.sample_rate - 1) / dst->fmt.sample_rate;
+	if (src_require > src->count) {
+		panic("src_read(%d) < src_count(%d)", src_require, src->count);
 	}
+#endif
 
-	// 単純法
-	// XXX: 高速化が必要
-	internal_t *dptr = RING_BOT(internal_t, dst);
+	const internal_t *sptr = arg->src;
+	internal_t *dptr = arg->dst;
 	audio_rational_t tmp = track->freq_current;
-	for (int i = 0; i < count; i++) {
-		audio_rational_add(&tmp, &track->freq_step, dst->fmt.sample_rate);
-		if (tmp.i > src->count) break;
 
-		internal_t *sptr = RING_TOP(internal_t, src);
-		for (int ch = 0; ch < dst->fmt.channels; ch++, dptr++, sptr++) {
-			*dptr = *sptr;
+	int src_read0 = audio_ring_unround_count(src);
+	int src_read = 0;
+
+	for (int i = 0; i < arg->count; i++) {
+		if (src_read > src_read0) {
+			audio_ring_tookfromtop(src, src_read0);
+			src_read0 = src->count;
+			src_read = 0;
+			sptr = src->sample;
+#if defined(AUDIO_ASSERT)
+			if (src_read0 == 0) {
+				panic("src exhausted");
+			}
+#endif
 		}
 
-		audio_ring_tookfromtop(src, tmp.i);
-		tmp.i = 0;
-		track->freq_current = tmp;
-		audio_ring_appended(dst, 1);
+		for (int ch = 0; ch < dst->fmt.channels; ch++, dptr) {
+			*dptr++ = sptr[ch];
+		}
+		audio_rational_add(&tmp, &track->freq_step, dst->fmt.sample_rate);
+		if (tmp.i > 0) {
+			src_read += tmp.i;
+			sptr += tmp.i * src->fmt.channels;
+			tmp.i = 0;
+		}
 	}
+	audio_ring_tookfromtop(src, src_read);
+	audio_ring_appended(dst, arg->count);
+	track->freq_current = tmp;
 }
 
 audio_format2_t default_format = {
@@ -569,8 +585,10 @@ init_freq(audio_track_t *track, audio_ring_t *last_dst)
 		audio_rational_clear(&track->freq_current);
 
 		track->freq.arg.context = track;
+		track->freq.arg.srcfmt = &track->freq.srcbuf.fmt;
+		track->freq.arg.dstfmt = &last_dst->fmt;
 
-		track->freq.filter = audio_track_freq;
+		track->freq.filter = audio_track_freq_simple;
 		track->freq.dst = last_dst;
 		// 周波数のみ srcfreq
 		track->freq.srcbuf.fmt = *dstfmt;
@@ -781,6 +799,9 @@ audio_track_play(audio_track_t *track, bool isdrain)
 	// フレーム数が前後で変わるので apply 使えない
 	if (track->freq.filter != NULL) {
 		if (track->freq.srcbuf.count > 0) {
+			track->freq.arg.src = RING_TOP_UINT8(&track->freq.srcbuf);
+			track->freq.arg.dst = RING_BOT_UINT8(track->freq.dst);
+			track->freq.arg.count = frame_per_block_roundup(track->mixer, &track->freq.dst->fmt);
 			track->freq.filter(&track->freq.arg);
 		}
 	}
