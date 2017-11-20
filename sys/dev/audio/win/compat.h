@@ -200,3 +200,5 @@ getmicrotime(struct timeval *tv)
 }
 
 void aprint_error_dev(void *, const char *fmt, ...);
+
+void aprint_normal_dev(void *, const char *fmt, ...);

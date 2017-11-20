@@ -31,3 +31,8 @@ void
 aprint_error_dev(void *dev, const char *fmt, ...)
 {
 }
+
+void
+aprint_normal_dev(void *dev, const char *fmt, ...)
+{
+}
