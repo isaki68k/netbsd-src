@@ -1328,22 +1328,21 @@ audio_track_play_drain_core(audio_track_t *track, bool wait)
 
 	TRACE(track, "");
 	KASSERT(mutex_owned(sc->sc_lock));
-	//KASSERT(!mutex_owned(sc->sc_intr_lock));
+	KASSERT(!mutex_owned(sc->sc_intr_lock));
 
 	track->is_draining = true;
 
 	// 必要があれば無音挿入させる
+	mutex_enter(sc->sc_intr_lock);
 	audio_track_play(track, true);
 
-	// トラックバッファが空になっても、ミキサ側で処理中のデータが
-	// あるかもしれない
-
 	if (sc->sc_pbusy == false) {
+		// トラックバッファが空になっても、ミキサ側で処理中のデータが
+		// あるかもしれない
 		// トラックミキサが動作していないときは、動作させる
-		mutex_enter(sc->sc_intr_lock);
 		audio_trackmixer_play(mixer, true);
-		mutex_exit(sc->sc_intr_lock);
 	}
+	mutex_exit(sc->sc_intr_lock);
 
 	/* フレームサイズ未満のため待たされていたデータを破棄 */
 	track->subframe_buf_used = 0;
