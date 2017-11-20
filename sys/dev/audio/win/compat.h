@@ -65,6 +65,8 @@ struct audio_softc
 
 	bool sc_pbusy;
 	void *dev;
+	audio_filter_reg_t sc_xxx_pfilreg;
+	audio_filter_reg_t sc_xxx_rfilreg;
 
 	void *phys; // 実物理デバイス
 
