@@ -341,7 +341,7 @@ TRACE0("src_req=%d src->count=%d", src_require, src->count);
 	int src_read = 0;
 
 	for (int i = 0; i < arg->count; i++) {
-		if (src_read > src_read0) {
+		if (src_read >= src_read0) {
 			audio_ring_tookfromtop(src, src_read0);
 			src_read0 = src->count;
 			src_read = 0;
