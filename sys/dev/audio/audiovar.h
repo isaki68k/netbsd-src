@@ -17,7 +17,7 @@
 #define KASSERT(expr)	do {\
 	if (!(expr)) panic(#expr);\
 } while (0)
-#define KASSERTMSG(expr, fmt...)	do {\
+#define KASSERTMSG(expr, fmt, ...)	do {\
 	if (!(expr)) panic(#expr);\
 } while (0)
 #else
