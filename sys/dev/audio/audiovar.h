@@ -115,6 +115,7 @@ struct audio_track
 
 	audio_rational_t   freq_step;		/* 周波数変換用分数 (変換元周波数 / 変換先周波数) */
 	audio_rational_t   freq_current;	/* 周波数変換用 現在のカウンタ */
+	int32_t            freq_coef;		// 周波数変換用係数
 
 	uint16_t  ch_volume[AUDIO_MAX_CHANNELS];	/* チャンネルバランス用 チャンネルボリューム */
 	uint16_t           volume;			/* トラックボリューム。トラックボリュームはトラックミキサで処理。 */

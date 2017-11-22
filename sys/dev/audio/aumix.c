@@ -329,7 +329,6 @@ audio_track_freq_up(audio_filter_arg_t *arg)
 	const internal_t *sptr = arg->src;
 	internal_t *dptr = arg->dst;
 	audio_rational_t tmp = track->freq_current;
-	int d = dst->fmt.sample_rate;
 	const internal_t *sptr1;
 
 	for (int i = 0; i < arg->count; i++) {
@@ -345,9 +344,11 @@ audio_track_freq_up(audio_filter_arg_t *arg)
 			if (src->count <= 1) {
 				break;
 			}
-			int b = 256 * tmp.n / d;
+			// 加算前の下駄 2^22 を脱ぐ
+			int b = tmp.n * track->freq_coef / (1 << 22);
 			int a = 256 - b;
 			for (int ch = 0; ch < dst->fmt.channels; ch++) {
+				// 加算後の下駄 2^8 を脱ぐ
 				*dptr++ = (sptr[ch] * a + sptr1[ch] * b) / 256;
 			}
 		}
@@ -390,10 +391,6 @@ audio_track_freq_down(audio_filter_arg_t *arg)
 	const internal_t *sptr2;
 	int src_taken = -1;
 
-	// inv_d = 変換先周波数の逆数を << (8 + 12) したもの
-	// 除算を追い出すため、逆数を求める。
-	int inv_d = 256 * 4194304 / dst->fmt.sample_rate;
-
 	for (int i = 0; i < arg->count; i++) {
 
 		if (tmp.n == 0) {
@@ -410,9 +407,11 @@ audio_track_freq_down(audio_filter_arg_t *arg)
 			}
 			sptr1 = sptr0 + tmp.i * src->fmt.channels;
 			sptr2 = sptr1 + src->fmt.channels;
-			int b = tmp.n * inv_d / 4194304;
+			// 加算前の下駄 2^22 を脱ぐ
+			int b = tmp.n * track->freq_coef / (1 << 22);
 			int a = 256 - b;
 			for (int ch = 0; ch < dst->fmt.channels; ch++) {
+				// 加算後の下駄 2^8 を脱ぐ
 				*dptr++ = (sptr1[ch] * a + sptr2[ch] * b) / 256;
 			}
 		}
@@ -644,6 +643,10 @@ init_freq(audio_track_t *track, audio_ring_t *last_dst)
 		track->freq_step.i = srcfreq / dstfreq;
 		track->freq_step.n = srcfreq % dstfreq;
 		audio_rational_clear(&track->freq_current);
+		// 除算をループから追い出すため、変換先周波数の逆数を求める。
+		// 変換先周波数の逆数を << (8 + 22) したもの
+		// 8 は加算後の下駄で、22 は加算前の下駄。
+		track->freq_coef = (1 << (8 + 22)) / dstfreq;
 
 		track->freq.arg.context = track;
 		track->freq.arg.srcfmt = &track->freq.srcbuf.fmt;
