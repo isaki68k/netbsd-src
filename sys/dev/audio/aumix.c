@@ -730,6 +730,7 @@ audio_track_unlock(audio_track_t *track)
 }
 
 // ring が空でなく 1 ブロックに満たない時、1ブロックまで無音を追加します。
+// 追加したフレーム数を返します。
 static int
 audio_append_silence(audio_track_t *track, audio_ring_t *ring)
 {
@@ -758,8 +759,8 @@ audio_append_silence(audio_track_t *track, audio_ring_t *ring)
 }
 
 // このステージで処理を中断するときは false を返します。
-static bool
-audio_apply_stage(audio_track_t *track, audio_stage_t *stage, bool isdrain, bool isfreq)
+static void
+audio_apply_stage(audio_track_t *track, audio_stage_t *stage, bool isfreq)
 {
 	if (stage->filter != NULL) {
 		int srccount = audio_ring_unround_count(&stage->srcbuf);
@@ -767,10 +768,9 @@ audio_apply_stage(audio_track_t *track, audio_stage_t *stage, bool isdrain, bool
 		
 		int count;
 		if (isfreq) {
-			if (isdrain) {
-				audio_append_silence(track, &stage->srcbuf);
+			if (srccount == 0) {
+				panic("freq but srccount=0");
 			}
-			if (srccount == 0) return isdrain;
 			count = min(dstcount, track->mixer->frames_per_block);
 		} else {
 			count = min(srccount, dstcount);
@@ -791,19 +791,7 @@ audio_apply_stage(audio_track_t *track, audio_stage_t *stage, bool isdrain, bool
 			}
 			audio_ring_simplify(&stage->srcbuf);
 		}
-
-		/* ブロックサイズに整形 */
-		if (isdrain) {
-			audio_append_silence(track, stage->dst);
-		} else {
-			int fpb = frame_per_block_roundup(track->mixer, &stage->dst->fmt);
-			if (stage->dst->count < fpb) {
-				// ブロックサイズたまるまで処理をしない
-				return false;
-			}
-		}
 	}
-	return true;
 }
 
 static int
@@ -863,23 +851,30 @@ audio_track_play(audio_track_t *track, bool isdrain)
 	int track_count_0 = track->outputbuf.count;
 
 	/* エンコーディング変換 */
-	if (audio_apply_stage(track, &track->codec, isdrain, false) == false) {
-		return;
-	}
+	audio_apply_stage(track, &track->codec, false);
 
 	/* チャンネルボリューム */
-	if (audio_apply_stage(track, &track->chvol, isdrain, false) == false) {
-		return;
-	}
+	audio_apply_stage(track, &track->chvol, false);
 
 	/* チャンネルミキサ */
-	if (audio_apply_stage(track, &track->chmix, isdrain, false) == false) {
-		return;
-	}
+	audio_apply_stage(track, &track->chmix, false);
 
 	/* 周波数変換 */
-	if (audio_apply_stage(track, &track->freq, isdrain, true) == false) {
-		return;
+	if (track->freq.filter != NULL) {
+		int n = 0;
+		if (isdrain) {
+			n = audio_append_silence(track, &track->freq.srcbuf);
+			if (n > 0) {
+				TRACE(track, "freq.srcbuf appended silence %d frames", n);
+			}
+		}
+		if (track->freq.srcbuf.count > 0) {
+			audio_apply_stage(track, &track->freq, true);
+		}
+		if (n > 0 && track->freq.srcbuf.count > 0) {
+			TRACE(track, "freq.srcbuf cleanup count=%d", track->freq.srcbuf.count);
+			track->freq.srcbuf.count = 0;
+		}
 	}
 
 	if (isdrain) {
@@ -887,7 +882,10 @@ audio_track_play(audio_track_t *track, bool isdrain)
 		/* 内部フォーマットだとわかっている */
 		/* 周波数変換の結果、ブロック未満の端数フレームが出ることもあるし、
 		変換なしのときは入力自体が半端なときもあろう */
-		audio_append_silence(track, &track->outputbuf);
+		int n = audio_append_silence(track, &track->outputbuf);
+		if (n > 0) {
+			TRACE(track, "track.outputbuf appended silence %d frames", n);
+		}
 	}
 
 	if (track->input == &track->outputbuf) {
