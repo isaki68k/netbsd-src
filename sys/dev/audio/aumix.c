@@ -310,7 +310,7 @@ audio_track_chmix_expand(audio_filter_arg_t *arg)
 }
 
 static void
-audio_track_freq_simple(audio_filter_arg_t *arg)
+audio_track_freq_up(audio_filter_arg_t *arg)
 {
 	audio_track_t *track = arg->context;
 	struct audio_softc *sc __diagused;
@@ -324,49 +324,104 @@ audio_track_freq_simple(audio_filter_arg_t *arg)
 	KASSERT(src->count > 0);
 	KASSERT(src->fmt.channels == dst->fmt.channels);
 	KASSERT(mutex_owned(sc->sc_intr_lock));
-
-	// ここで arg->count は dst に書き込み要求されているフレーム数。
-#if AUDIO_DEBUG > 1
-	int src_require = (arg->count * src->fmt.sample_rate + dst->fmt.sample_rate - 1) / dst->fmt.sample_rate;
-TRACE0("src_req=%d src->count=%d", src_require, src->count);
-#endif
-	KASSERTMSG(src_require <= src->count,
-		"src_require=%d src->count=%d", src_require, src->count);
+	KASSERT(src->top == 0);
 
 	const internal_t *sptr = arg->src;
 	internal_t *dptr = arg->dst;
 	audio_rational_t tmp = track->freq_current;
-
-	int src_read0 = audio_ring_unround_count(src);
-	int src_read = 0;
+	int d = dst->fmt.sample_rate;
+	const internal_t *sptr1;
 
 	for (int i = 0; i < arg->count; i++) {
-		if (src_read >= src_read0) {
-			audio_ring_tookfromtop(src, src_read0);
-			src_read0 = src->count;
-			src_read = 0;
-			sptr = src->sample;
-#if defined(AUDIO_DEBUG)
-			if (src_read0 == 0) {
-				panic("src exhausted");
+		if (tmp.n == 0) {
+			if (src->count <= 0) {
+				break;
 			}
-#endif
+			for (int ch = 0; ch < dst->fmt.channels; ch++) {
+				*dptr++ = sptr[ch];
+			}
+		} else {
+			sptr1 = sptr + src->fmt.channels;
+			if (src->count <= 1) {
+				break;
+			}
+			int b = 256 * tmp.n / d;
+			int a = 256 - b;
+			for (int ch = 0; ch < dst->fmt.channels; ch++) {
+				*dptr++ = (sptr[ch] * a + sptr1[ch] * b) / 256;
+			}
 		}
-
-		for (int ch = 0; ch < dst->fmt.channels; ch++) {
-			*dptr++ = sptr[ch];
-		}
+		dst->count++;
 		audio_rational_add(&tmp, &track->freq_step, dst->fmt.sample_rate);
 		if (tmp.i > 0) {
-			src_read += tmp.i;
-			sptr += tmp.i * src->fmt.channels;
+			// 周波数を上げるので、ソース側は 1 以下のステップが保証されている
+			KASSERT(tmp.i == 1);
+			sptr += src->fmt.channels;
 			tmp.i = 0;
+			src->top++;
+			src->count--;
 		}
 	}
-	audio_ring_tookfromtop(src, src_read);
-	audio_ring_appended(dst, arg->count);
+
 	track->freq_current = tmp;
 }
+
+static void
+audio_track_freq_down(audio_filter_arg_t *arg)
+{
+	audio_track_t *track = arg->context;
+	struct audio_softc *sc __diagused;
+	audio_ring_t *src = &track->freq.srcbuf;
+	audio_ring_t *dst = track->freq.dst;
+
+	sc = track->mixer->sc;
+	KASSERT(track);
+	KASSERT(is_valid_ring(dst));
+	KASSERT(is_valid_ring(src));
+	KASSERT(src->count > 0);
+	KASSERT(src->fmt.channels == dst->fmt.channels);
+	KASSERT(mutex_owned(sc->sc_intr_lock));
+	KASSERT(src->top == 0);
+
+	const internal_t *sptr0 = arg->src;
+	internal_t *dptr = arg->dst;
+	audio_rational_t tmp = track->freq_current;
+	int d = dst->fmt.sample_rate;
+	const internal_t *sptr1;
+	const internal_t *sptr2;
+	int src_taken = -1;
+
+	for (int i = 0; i < arg->count; i++) {
+
+		if (tmp.n == 0) {
+			if (tmp.i > src->count) {
+				break;
+			}
+			sptr1 = sptr0 + tmp.i * src->fmt.channels;
+			for (int ch = 0; ch < dst->fmt.channels; ch++) {
+				*dptr++ = sptr1[ch];
+			}
+		} else {
+			if (tmp.i + 1 > src->count) {
+				break;
+			}
+			sptr1 = sptr0 + tmp.i * src->fmt.channels;
+			sptr2 = sptr1 + src->fmt.channels;
+			int b = 256 * tmp.n / d;
+			int a = 256 - b;
+			for (int ch = 0; ch < dst->fmt.channels; ch++) {
+				*dptr++ = (sptr1[ch] * a + sptr2[ch] * b) / 256;
+			}
+		}
+		dst->count++;
+		src_taken = tmp.i;
+		audio_rational_add(&tmp, &track->freq_step, dst->fmt.sample_rate);
+	}
+	audio_ring_tookfromtop(src, src_taken + 1);
+	tmp.i = 0;
+	track->freq_current = tmp;
+}
+
 
 audio_format2_t default_format = {
 	AUDIO_ENCODING_MULAW,
@@ -591,7 +646,11 @@ init_freq(audio_track_t *track, audio_ring_t *last_dst)
 		track->freq.arg.srcfmt = &track->freq.srcbuf.fmt;
 		track->freq.arg.dstfmt = &last_dst->fmt;
 
-		track->freq.filter = audio_track_freq_simple;
+		if (srcfreq < dstfreq) {
+			track->freq.filter = audio_track_freq_up;
+		} else {
+			track->freq.filter = audio_track_freq_down;
+		}
 		track->freq.dst = last_dst;
 		// 周波数のみ srcfreq
 		track->freq.srcbuf.fmt = *dstfmt;
