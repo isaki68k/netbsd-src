@@ -827,9 +827,11 @@ audio_track_play_input(audio_track_t *track, struct uio *uio)
 	uint8_t *dptr = RING_BOT_UINT8(track->input) + track->subframe_buf_used;
 	// min(bytelen, uio->uio_resid) は uiomove が保証している
 	// uiomove は intr_lock 持ってるとコールできない
+	track->uiobusy = true;
 	mutex_exit(sc->sc_intr_lock);
 	int error = uiomove(dptr, move_bytelen, uio);
 	mutex_enter(sc->sc_intr_lock);
+	track->uiobusy = false;
 	if (error) {
 		TRACE(track, "uio error=%d", error);
 		return error;
@@ -1058,7 +1060,7 @@ audio_trackmixer_mixall(audio_trackmixer_t *mixer, int req, bool isdrain)
 	SLIST_FOREACH(f, &mixer->sc->sc_files, entry) {
 		audio_track_t *track = &f->ptrack;
 
-		if (track->outputbuf.count < req) {
+		if (track->outputbuf.count < req && track->uiobusy == false) {
 			audio_track_play(track, isdrain);
 		}
 
