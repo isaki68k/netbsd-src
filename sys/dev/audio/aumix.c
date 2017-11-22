@@ -325,13 +325,13 @@ audio_track_freq_simple(audio_filter_arg_t *arg)
 	KASSERT(src->fmt.channels == dst->fmt.channels);
 	KASSERT(mutex_owned(sc->sc_intr_lock));
 
-#if defined(AUDIO_ASSERT)
 	// ここで arg->count は dst に書き込み要求されているフレーム数。
+#if AUDIO_DEBUG > 1
 	int src_require = (arg->count * src->fmt.sample_rate + dst->fmt.sample_rate - 1) / dst->fmt.sample_rate;
-	if (src_require > src->count) {
-		panic("src_read(%d) < src_count(%d)", src_require, src->count);
-	}
+TRACE0("src_req=%d src->count=%d", src_require, src->count);
 #endif
+	KASSERTMSG(src_require <= src->count,
+		"src_require=%d src->count=%d", src_require, src->count);
 
 	const internal_t *sptr = arg->src;
 	internal_t *dptr = arg->dst;
@@ -346,7 +346,7 @@ audio_track_freq_simple(audio_filter_arg_t *arg)
 			src_read0 = src->count;
 			src_read = 0;
 			sptr = src->sample;
-#if defined(AUDIO_ASSERT)
+#if defined(AUDIO_DEBUG)
 			if (src_read0 == 0) {
 				panic("src exhausted");
 			}
