@@ -313,10 +313,11 @@ static void
 audio_track_freq_simple(audio_filter_arg_t *arg)
 {
 	audio_track_t *track = arg->context;
-	struct audio_softc *sc = track->mixer->sc __diagused;
+	struct audio_softc *sc __diagused;
 	audio_ring_t *src = &track->freq.srcbuf;
 	audio_ring_t *dst = track->freq.dst;
 
+	sc = track->mixer->sc;
 	KASSERT(track);
 	KASSERT(is_valid_ring(dst));
 	KASSERT(is_valid_ring(src));
@@ -673,8 +674,9 @@ audio_track_unlock(audio_track_t *track)
 static int
 audio_append_silence(audio_track_t *track, audio_ring_t *ring)
 {
-	struct audio_softc *sc = track->mixer->sc __diagused;
+	struct audio_softc *sc __diagused;
 
+	sc = track->mixer->sc;
 	KASSERT(track);
 	KASSERT(is_internal_format(&ring->fmt));
 	KASSERT(mutex_owned(sc->sc_intr_lock));
@@ -793,8 +795,9 @@ audio_track_play_input(audio_track_t *track, struct uio *uio)
 void
 audio_track_play(audio_track_t *track, bool isdrain)
 {
-	struct audio_softc *sc = track->mixer->sc __diagused;
+	struct audio_softc *sc __diagused;
 
+	sc = track->mixer->sc;
 	KASSERT(track);
 	KASSERT(mutex_owned(sc->sc_intr_lock));
 
@@ -982,10 +985,11 @@ audio_mixer_destroy(audio_trackmixer_t *mixer, int mode)
 static int
 audio_trackmixer_mixall(audio_trackmixer_t *mixer, int req, bool isdrain)
 {
-	struct audio_softc *sc = mixer->sc __diagused;
+	struct audio_softc *sc __diagused;
 	audio_file_t *f;
 	int mixed = 0;
 
+	sc = mixer->sc;
 	KASSERT(mutex_owned(sc->sc_intr_lock));
 
 	SLIST_FOREACH(f, &mixer->sc->sc_files, entry) {
@@ -1300,7 +1304,7 @@ audio_trackmixer_output(audio_trackmixer_t *mixer)
 void
 audio_trackmixer_intr(audio_trackmixer_t *mixer)
 {
-	struct audio_softc *sc;
+	struct audio_softc *sc __diagused;
 
 	sc = mixer->sc;
 	KASSERT(mutex_owned(sc->sc_intr_lock));
