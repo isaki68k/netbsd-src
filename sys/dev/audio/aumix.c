@@ -386,10 +386,13 @@ audio_track_freq_down(audio_filter_arg_t *arg)
 	const internal_t *sptr0 = arg->src;
 	internal_t *dptr = arg->dst;
 	audio_rational_t tmp = track->freq_current;
-	int d = dst->fmt.sample_rate;
 	const internal_t *sptr1;
 	const internal_t *sptr2;
 	int src_taken = -1;
+
+	// inv_d = 変換先周波数の逆数を << (8 + 12) したもの
+	// 除算を追い出すため、逆数を求める。
+	int inv_d = 256 * 4194304 / dst->fmt.sample_rate;
 
 	for (int i = 0; i < arg->count; i++) {
 
@@ -407,7 +410,7 @@ audio_track_freq_down(audio_filter_arg_t *arg)
 			}
 			sptr1 = sptr0 + tmp.i * src->fmt.channels;
 			sptr2 = sptr1 + src->fmt.channels;
-			int b = 256 * tmp.n / d;
+			int b = tmp.n * inv_d / 4194304;
 			int a = 256 - b;
 			for (int ch = 0; ch < dst->fmt.channels; ch++) {
 				*dptr++ = (sptr1[ch] * a + sptr2[ch] * b) / 256;
