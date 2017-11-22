@@ -68,6 +68,28 @@ win_halt_output(void *hdl)
 	return 0;
 }
 
+void
+win_kick_intr(struct audio_softc *sc, WAVEHDR *wh)
+{
+	audio_dev_win32_t *dev = sc->phys;
+	audio_trackmixer_t *mixer = sc->sc_pmixer;
+
+	// processed
+	if (wh->dwUser == 0) return;
+
+	wh->dwUser = 0;
+#ifdef AUDIO_INTR_EMULATED
+	struct intr_t x;
+	x.code = INTR_TRACKMIXER;
+	x.sc = sc;
+	x.mixer = mixer;
+	x.count = wh->dwBufferLength / dev->wfx.nBlockAlign;
+	emu_intr(x);
+#else
+	audio_trackmixer_intr(mixer, wh->dwBufferLength / dev->wfx.nBlockAlign);
+#endif
+}
+
 void CALLBACK audio_dev_win32_callback(
 	HWAVEOUT hwo,
 	UINT uMsg,
@@ -78,26 +100,13 @@ void CALLBACK audio_dev_win32_callback(
 {
 	if (uMsg == WOM_DONE) {
 		struct audio_softc *sc = (struct audio_softc*)dwInstance;
-		audio_dev_win32_t *dev = sc->phys;
-		audio_trackmixer_t *mixer = sc->sc_pmixer;
 		WAVEHDR *wh = (WAVEHDR*)dwParam1;
 
 		lock(sc);
 		if (wh->dwBufferLength == 0) {
 			panic("wh->dwBufferLentgh == 0");
 		}
-//		KASSERT(wh->dwBufferLength % 1764 == 0);
-#ifdef AUDIO_INTR_EMULATED
-		struct intr_t x;
-		x.code = INTR_TRACKMIXER;
-		x.sc = sc;
-		x.mixer = mixer;
-		x.count = wh->dwBufferLength / dev->wfx.nBlockAlign;
-		emu_intr(x);
-#else
-		audio_trackmixer_intr(mixer, wh->dwBufferLength / dev->wfx.nBlockAlign);
-#endif
-		wh->dwUser = 0;
+		win_kick_intr(sc, wh);
 		unlock(sc);
 	}
 }
@@ -241,11 +250,9 @@ audio_softc_play_start(struct audio_softc *sc)
 	unlock(sc);
 }
 
-static void audio_softc_play_start_core(struct audio_softc *sc)
+static WAVEHDR*
+win_trygetwh(audio_dev_win32_t *dev)
 {
-	audio_dev_win32_t *dev = sc->phys;
-	audio_trackmixer_t *mixer = sc->sc_pmixer;
-
 	WAVEHDR* wh = NULL;
 	for (int i = 0; i < WAVEHDR_COUNT; i++) {
 		if ((dev->wavehdr[i].dwFlags & WHDR_INQUEUE) == 0 && !dev->wavehdr[i].dwUser) {
@@ -253,6 +260,15 @@ static void audio_softc_play_start_core(struct audio_softc *sc)
 			break;
 		}
 	}
+	return wh;
+}
+
+static void audio_softc_play_start_core(struct audio_softc *sc)
+{
+	audio_dev_win32_t *dev = sc->phys;
+	audio_trackmixer_t *mixer = sc->sc_pmixer;
+
+	WAVEHDR* wh = win_trygetwh(dev);
 	if (wh == NULL) return;
 
 	uint8_t *dst = (uint8_t*)wh->lpData;
@@ -294,6 +310,11 @@ static void audio_softc_play_start_core(struct audio_softc *sc)
 	if (r != MMSYSERR_NOERROR) {
 		panic("");
 	}
+
+	if (win_trygetwh(dev) != NULL) {
+		win_kick_intr(sc, wh);
+	}
+
 #endif
 
 #ifdef DEBUG_DUMP
