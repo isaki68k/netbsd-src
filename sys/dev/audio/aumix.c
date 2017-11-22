@@ -241,10 +241,14 @@ audio_track_chmix_mixLR(audio_filter_arg_t *arg)
 	internal_t *dptr = arg->dst;
 
 	for (int i = 0; i < arg->count; i++) {
+#if false
 		internal2_t s;
 		s = (internal2_t)sptr[0];
 		s += (internal2_t)sptr[1];
 		*dptr = s / 2;
+#else
+		*dptr = sptr[0] / 2 + sptr[1] / 2;
+#endif
 		dptr++;
 		sptr += arg->srcfmt->channels;
 	}
