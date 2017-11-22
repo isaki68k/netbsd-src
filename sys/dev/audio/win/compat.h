@@ -21,8 +21,13 @@
 typedef int64_t off_t;
 
 typedef struct kcondvar kcondvar_t;
+typedef struct kmutex kmutex_t;
 
 struct kcondvar {
+	volatile int v;
+};
+
+struct kmutex {
 	volatile int v;
 };
 
@@ -57,8 +62,8 @@ struct audio_softc
 	SLIST_HEAD(files_head, audio_file) sc_files;		/* 開いているファイルのリスト */
 	audio_trackmixer_t  *sc_pmixer;		/* 接続されている再生ミキサ */
 	audio_trackmixer_t  *sc_rmixer;		/* 接続されている録音ミキサ */
-	void *sc_lock;
-	void *sc_intr_lock;
+	kmutex_t *sc_lock;
+	kmutex_t *sc_intr_lock;
 	struct audio_hw_if *hw_if;
 	void *hw_hdl;
 	int sc_eof;
@@ -70,8 +75,8 @@ struct audio_softc
 
 	void *phys; // 実物理デバイス
 
-	int sc_lock0;
-	int sc_intr_lock0;
+	kmutex_t sc_lock0;
+	kmutex_t sc_intr_lock0;
 	struct audio_hw_if hw_if0;
 };
 
@@ -154,24 +159,35 @@ cv_broadcast(kcondvar_t *cv)
 	cv->v = 1;
 }
 
-int cv_wait_sig(kcondvar_t *cv, void *lock);
+int cv_wait_sig(kcondvar_t *cv, kmutex_t *lock);
 
 static inline int
-mutex_owned(void *mutex)
+mutex_owned(kmutex_t *mutex)
 {
-	return (*(int*)mutex != 0);
+	return (mutex->v != 0);
 }
 
 static inline void
-mutex_enter(void *mutex)
+mutex_enter(kmutex_t *mutex)
 {
-	*(int*)mutex = 1;
+	mutex->v = 1;
 }
 
 static inline void
-mutex_exit(void *mutex)
+mutex_exit(kmutex_t *mutex)
 {
-	*(int*)mutex = 0;
+	mutex->v = 0;
+}
+
+static inline int
+mutex_tryenter(kmutex_t *mutex)
+{
+	if (mutex_owned(mutex)) {
+		return 0;
+	} else {
+		mutex_enter(mutex);
+		return 1;
+	}
 }
 
 #define M_NOWAIT	(0)
