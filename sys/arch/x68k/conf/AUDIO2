@@ -34,7 +34,7 @@ maxusers	8
 ## Options for variants of the m68k MPU
 ## you must have at least the correct one; REQUIRED
 options 	M68030
-options 	M68040
+#options 	M68040
 options 	M68060
 ## If you want an optimized kernel for a specific processor, use either:
 #makeoptions	CMACHFLAGS="-m68030"
@@ -45,8 +45,8 @@ options 	M68060
 #### System options specific to the x68k port
 
 options 	EXTENDED_MEMORY		# support for >16MB memory
-options 	FPU_EMULATE		# software fpu emulation for MC68030
-options 	FPSP			# floating point emulation for MC68040
+#options 	FPU_EMULATE		# software fpu emulation for MC68030
+#options 	FPSP			# floating point emulation for MC68040
 options 	M060SP			# int/fp emulation for MC68060
 #options 	JUPITER			# support for "Jupiter-X" accelerator
 #options 	MAPPEDCOPY		# use page mapping for large copyin/copyout
@@ -118,7 +118,7 @@ options 	DDB			# kernel dynamic debugger
 ## Adds code to the kernel that does internal consistency checks, and will
 ## cause the kernel to panic if corruption of internal data structures
 ## is detected.
-options 	DIAGNOSTIC	# extra kernel sanity checking
+#options 	DIAGNOSTIC	# extra kernel sanity checking
 
 ## Enable (possibly expensive) debugging code that may also display messages
 ## on the system console
@@ -173,7 +173,7 @@ file-system	TMPFS		# Efficient memory file-system
 #file-system	UDF		# experimental - OSTA UDF CD/DVD file-system
 
 ## File system options.
-options 	NFSSERVER	# Sun NFS-compatible filesystem server
+#options 	NFSSERVER	# Sun NFS-compatible filesystem server
 #options 	QUOTA		# legacy UFS quotas
 #options 	QUOTA2		# new, in-filesystem UFS quotas
 #options 	FFS_EI		# FFS Endian Independent support
@@ -243,8 +243,8 @@ scsirom1 at intio0 addr 0xea0020		# External SCSI BIOS
 spc0	at scsirom0				# genuin SCSI
 spc1	at scsirom1				# genuin SCSI
 scsibus* at spc?
-mha0	at scsirom1				# Mankai MK-HA1 (Mach-2)
-scsibus* at mha0
+#mha0	at scsirom1				# Mankai MK-HA1 (Mach-2)
+#scsibus* at mha0
 
 sd*	at scsibus? target ? lun ?	# SCSI disks
 cd*	at scsibus? target ? lun ?	# SCSI CD-ROMs
@@ -433,8 +433,8 @@ pseudo-device	vnd
 
 ## RAIDframe disk driver: software RAID driver.  See raid(4).
 
-pseudo-device	raid	
-options 	RAID_AUTOCONFIG		# auto-configuration of RAID components
+#pseudo-device	raid
+#options 	RAID_AUTOCONFIG		# auto-configuration of RAID components
 # Options to enable various other RAIDframe RAID types.
 # options 	RF_INCLUDE_EVENODD=1
 # options 	RF_INCLUDE_RAID5_RS=1
@@ -483,7 +483,7 @@ pseudo-device	bpfilter
 ## for IPv6
 pseudo-device	gif			# IPv[46] over IPv[46] tunnel (RFC1933)
 #pseudo-device	faith			# IPv[46] tcp relay translation i/f
-pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
+#pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
 
 ## IEEE 802.1Q Virtual LAN encapsulation, see vlan(4).
 pseudo-device	vlan
@@ -491,7 +491,7 @@ pseudo-device	vlan
 ## Simple inter-network traffic bridging
 pseudo-device	bridge
 #options 	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
-pseudo-device	agr			# IEEE 802.3ad link aggregation
+#pseudo-device	agr			# IEEE 802.3ad link aggregation
 
 #### Other device configuration
 
