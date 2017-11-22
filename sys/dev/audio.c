@@ -104,7 +104,6 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <dev/audio_if.h>
 #include <dev/audiovar.h>
 #include <dev/auconv.h>
-#include <dev/auvolconv.h>
 
 #include <machine/endian.h>
 
