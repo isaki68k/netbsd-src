@@ -236,7 +236,7 @@ vs_attach(device_t parent, device_t self, void *aux)
 	sc->sc_prev_vd = NULL;
 	sc->sc_active = 0;
 	mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_NONE);
-	mutex_init(&sc->sc_intr_lock, MUTEX_DEFAULT, IPL_SCHED);
+	mutex_init(&sc->sc_intr_lock, MUTEX_DEFAULT, IPL_VM);
 
 	/* XXX */
 	bus_space_map(iot, PPI_ADDR, PPI_MAPSIZE, BUS_SPACE_MAP_SHIFTED,
