@@ -8,12 +8,11 @@ define	midisyn
 
 # audio device attributes
 #
-define	mulaw: auconv
 define	auconv
 
 # audio and midi devices, attaches to audio hardware driver
 #
-device	audio {}: audiodev, auconv, mulaw
+device	audio {}: audiodev, auconv
 attach	audio at audiobus
 device	midi: audio
 attach	midi at midibus
@@ -27,4 +26,3 @@ file	dev/audio.c			audio			needs-flag
 file	dev/midi.c			midi			needs-flag
 file	dev/midictl.c			midisyn
 file	dev/midisyn.c			midisyn
-file	dev/mulaw.c			mulaw			needs-flag
