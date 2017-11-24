@@ -1256,20 +1256,24 @@ audio_mixer_play_period(audio_trackmixer_t *mixer /*, bool force */)
 
 	/* マスタボリュームの自動制御 */
 	int vol = mixer->volume;
-	if (ovf_plus * vol / 256 > AUDIO_INTERNAL_T_MAX) {
+	if (ovf_plus > (internal2_t)AUDIO_INTERNAL_T_MAX
+	 || ovf_minus < (internal2_t)AUDIO_INTERNAL_T_MIN) {
+		// TODO: AUDIO_INTERNAL2_T_MIN チェック?
+		internal2_t ovf = ovf_plus;
+		if (ovf < -ovf_minus) ovf = -ovf_minus;
+
 		/* オーバーフローしてたら少なくとも今回はボリュームを下げる */
-		vol = (int)((internal2_t)AUDIO_INTERNAL_T_MAX * 256 / ovf_plus);
-	}
-	if (ovf_minus * vol / 256 < AUDIO_INTERNAL_T_MIN) {
-		vol = (int)((internal2_t)AUDIO_INTERNAL_T_MIN * 256 / ovf_minus);
-	}
-	if (vol < mixer->volume) {
-		// 128 までは自動でマスタボリュームを下げる
-		// 今の値の 95% ずつに下げていってみる
-		if (mixer->volume > 128) {
-			mixer->volume = mixer->volume * 95 / 100;
-			aprint_normal_dev(sc->dev, "auto volume adjust: volume %d\n",
-			    mixer->volume);
+		int vol2 = (int)((internal2_t)AUDIO_INTERNAL_T_MAX * 256 / ovf);
+		if (vol2 < vol) vol = vol2;
+
+		if (vol < mixer->volume) {
+			// 128 までは自動でマスタボリュームを下げる
+			// 今の値の 95% ずつに下げていってみる
+			if (mixer->volume > 128) {
+				mixer->volume = mixer->volume * 95 / 100;
+				aprint_normal_dev(sc->dev, "auto volume adjust: volume %d\n",
+					mixer->volume);
+			}
 		}
 	}
 
