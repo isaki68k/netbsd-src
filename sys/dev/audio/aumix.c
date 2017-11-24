@@ -2,6 +2,7 @@
 #include <dev/audio/aumix.h>
 #include <dev/audio/auring.h>
 #include <dev/audio/aucodec.h>
+#include <sys/intr.h>
 #else
 #include "aumix.h"
 #include <errno.h>
@@ -894,7 +895,7 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 	memset(mixer, 0, sizeof(audio_trackmixer_t));
 	mixer->sc = sc;
 
-	mixer->softintr = softintr_establish(IPL_SOFTNET, audio_trackmixer_softintr, mixer);
+	mixer->softintr = softint_establish(IPL_SOFTNET, audio_trackmixer_softintr, mixer);
 
 	mixer->blktime_d = 1000;
 	mixer->blktime_n = AUDIO_BLK_MS;
@@ -1013,7 +1014,7 @@ audio_mixer_destroy(audio_trackmixer_t *mixer, int mode)
 		// 合成バッファは使用しない
 	}
 
-	softintr_disestablish(mixer->softintr);
+	softint_disestablish(mixer->softintr);
 
 	// intrcv を cv_destroy() してはいけないっぽい。KASSERT で死ぬ。
 }
@@ -1379,7 +1380,7 @@ audio_trackmixer_intr(audio_trackmixer_t *mixer)
 
 	// ハードウェア割り込みでは待機関数が使えないため、
 	// softintr へ転送。
-	softintr_schedule(mixer->softintr);
+	softint_schedule(mixer->softintr);
 
 	TRACE0("HW_INT ++hwsec=%d cmplcnt=%d hwbuf=%d/%d/%d",
 		(int)mixer->hwseq,
