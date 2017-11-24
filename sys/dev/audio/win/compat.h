@@ -220,3 +220,13 @@ getmicrotime(struct timeval *tv)
 void aprint_error_dev(void *, const char *fmt, ...);
 
 void aprint_normal_dev(void *, const char *fmt, ...);
+
+static inline uint32_t
+atomic_cas_32(volatile uint32_t *ptr, uint32_t expected, uint32_t newvalue)
+{
+	uint32_t rv = *ptr;
+	if (rv == expected) {
+		*ptr = newvalue;
+	}
+	return rv;
+}
