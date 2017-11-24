@@ -230,3 +230,34 @@ atomic_cas_32(volatile uint32_t *ptr, uint32_t expected, uint32_t newvalue)
 	}
 	return rv;
 }
+
+
+#define IPL_SOFTNET 3
+
+struct softintr_XXX
+{
+	void (*func)(void *);
+	void *arg;
+};
+
+static inline void *
+softintr_establish(int level, void(*fun)(void *), void *arg)
+{
+	struct softintr_XXX *rv = malloc(sizeof(struct softintr_XXX));
+	rv->func = fun;
+	rv->arg = arg;
+	return rv;
+}
+
+static inline void
+softintr_disestablish(void *cookie)
+{
+	free(cookie);
+}
+
+static inline void
+softintr_schedule(void *cookie)
+{
+	struct softintr_XXX *intr = cookie;
+	intr->func(intr->arg);
+}
