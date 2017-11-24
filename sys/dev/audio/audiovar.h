@@ -101,7 +101,6 @@ struct audio_track
 {
 	int mode;								/* AUMODE_PLAY or AUMODE_RECORD */
 	int                subframe_buf_used;	/* 1フレーム未満の使用バイト数 */
-	bool uiobusy;						// uiomove 中は true
 
 	audio_format2_t     inputfmt;		// このトラックに入力するフォーマット
 	audio_ring_t       *input;			// このトラックに入力するとき使用するバッファへのポインタ
@@ -130,6 +129,8 @@ struct audio_track
 
 	uint64_t inputcounter;				/* トラックに入力されたフレーム数 */
 	uint64_t outputcounter;				/* トラックから出力されたフレーム数 */
+
+	volatile uint32_t track_cl;			// track cooperative lock
 
 	/* できるかどうか未知 */
 	uint64_t track_mixer_counter;		/* outputbuf のトラックミキサ側読み書きフレーム数 */
@@ -167,6 +168,9 @@ struct audio_trackmixer
 
 	int blktime_n; // ブロックの秒の分子 初期値は AUDIO_BLK_MS
 	int blktime_d; // ブロックの秒の分母 初期値は 1000
+
+// not impl
+//	volatile uint32_t trackmixer_cl;	// trackmixer cooperative lock
 
 										// 未定
 
