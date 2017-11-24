@@ -386,11 +386,11 @@ audio_track_freq_down(audio_filter_arg_t *arg)
 	internal_t *dptr = arg->dst;
 	audio_rational_t tmp = track->freq_current;
 	const internal_t *sptr1;
-	const internal_t *sptr2;
 	int src_taken = -1;
 
 	for (int i = 0; i < arg->count; i++) {
-
+//#define AUDIO_FREQ_HQ
+#if defined(AUDIO_FREQ_HQ)
 		if (tmp.n == 0) {
 			if (tmp.i >= src->count) {
 				break;
@@ -400,6 +400,7 @@ audio_track_freq_down(audio_filter_arg_t *arg)
 				*dptr++ = sptr1[ch];
 			}
 		} else {
+			const internal_t *sptr2;
 			if (tmp.i + 1 > src->count) {
 				break;
 			}
@@ -413,6 +414,15 @@ audio_track_freq_down(audio_filter_arg_t *arg)
 				*dptr++ = (sptr1[ch] * a + sptr2[ch] * b) / 256;
 			}
 		}
+#else
+		if (tmp.i >= src->count) {
+			break;
+		}
+		sptr1 = sptr0 + tmp.i * src->fmt.channels;
+		for (int ch = 0; ch < dst->fmt.channels; ch++) {
+			*dptr++ = sptr1[ch];
+		}
+#endif
 		dst->count++;
 		src_taken = tmp.i;
 		audio_rational_add(&tmp, &track->freq_step, dst->fmt.sample_rate);
