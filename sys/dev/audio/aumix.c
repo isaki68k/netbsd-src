@@ -789,7 +789,6 @@ audio_apply_stage(audio_track_t *track, audio_stage_t *stage, bool isfreq)
 				audio_ring_tookfromtop(&stage->srcbuf, count);
 				audio_ring_appended(stage->dst, count);
 			}
-			audio_ring_simplify(&stage->srcbuf);
 		}
 	}
 }
@@ -861,6 +860,28 @@ audio_track_play(audio_track_t *track, bool isdrain)
 		}
 		if (track->freq.srcbuf.count > 0) {
 			audio_apply_stage(track, &track->freq, true);
+			// freq の入力はバッファ先頭から。
+			// サブフレームの問題があるので、top 位置以降の全域をずらす。
+			if (track->freq.srcbuf.top != 0) {
+				if (track->freq.srcbuf.top + track->freq.srcbuf.count > track->freq.srcbuf.capacity) {
+					panic("srcbuf broken, %d/%d/%d\n",
+						track->freq.srcbuf.top,
+						track->freq.srcbuf.count,
+						track->freq.srcbuf.capacity);
+				}
+				uint8_t *s = track->freq.srcbuf.sample;
+				uint8_t *p = RING_TOP_UINT8(&track->freq.srcbuf);
+				uint8_t *e = RING_END_UINT8(&track->freq.srcbuf);
+				for (; p < e; s++, p++) {
+					*s = *p;
+				}
+/*
+				memmove(track->freq.srcbuf.sample,
+					p,
+					e - p);
+*/
+				track->freq.srcbuf.top = 0;
+			}
 		}
 		if (n > 0 && track->freq.srcbuf.count > 0) {
 			TRACE(track, "freq.srcbuf cleanup count=%d", track->freq.srcbuf.count);
