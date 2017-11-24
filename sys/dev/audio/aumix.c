@@ -1036,7 +1036,7 @@ audio_mixer_destroy(audio_trackmixer_t *mixer, int mode)
 // 合成が行われれば 1 以上を返す?
 // mixer->softintrlock を取得して呼び出してください。
 static int
-audio_trackmixer_mixall(audio_trackmixer_t *mixer, int req)
+audio_trackmixer_mixall(audio_trackmixer_t *mixer, int req, bool isintr)
 {
 	struct audio_softc *sc;
 	audio_file_t *f;
@@ -1049,7 +1049,7 @@ audio_trackmixer_mixall(audio_trackmixer_t *mixer, int req)
 		audio_track_t *track = &f->ptrack;
 
 		if (track->outputbuf.count < req) {
-			audio_track_play(track, false);
+			audio_track_play(track, isintr);
 		}
 
 		// 合成
@@ -1142,7 +1142,7 @@ audio_trackmixer_play(audio_trackmixer_t *mixer, bool force)
 	// ハードウェアバッファを埋める
 
 	if (mixer->hwbuf.capacity - mixer->hwbuf.count >= mixer->frames_per_block) {
-		int mixed = audio_trackmixer_mixall(mixer, mixer->frames_per_block);
+		int mixed = audio_trackmixer_mixall(mixer, mixer->frames_per_block, false);
 
 		// バッファの準備ができたら転送。
 		if (mixed) {
@@ -1418,8 +1418,9 @@ audio_trackmixer_softintr(void *arg)
 	}
 
 	// 次のバッファを用意する
-	int mixed = audio_trackmixer_mixall(mixer, mixer->frames_per_block);
-	if (mixed != 0) {
+	while (mixer->hwbuf.count < mixer->frames_per_block * 2) {
+		int mixed = audio_trackmixer_mixall(mixer, mixer->frames_per_block, true);
+		if (mixed == 0) break;
 		audio_mixer_play_period(mixer);
 	}
 
