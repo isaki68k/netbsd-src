@@ -1559,31 +1559,31 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 
 	audio_trackmixer_t *mixer = track->mixer;
 
+	mutex_enter(&mixer->softintrlock);
 	while (uio->uio_resid > 0) {
-		mutex_enter(&mixer->softintrlock);
 		error = audio_track_play_input(track, uio);
 		if (error == EAGAIN) {
 			mutex_exit(&mixer->softintrlock);
 			error = audio_waitio(sc, track);
+			mutex_enter(&mixer->softintrlock);
 			if (error < 0) {
 				error = EINTR;
 			}
 			if (error) {
 				break;
 			}
-			mutex_enter(&mixer->softintrlock);
 		} else if (error) {
 			break;
 		}
 		audio_track_play(track, false);
 
 		audio_trackmixer_play(sc->sc_pmixer, false);
-		mutex_exit(&mixer->softintrlock);
 
 #if !defined(_KERNEL)
 		emu_intr_check();
 #endif
 	}
+	mutex_exit(&mixer->softintrlock);
 
 	return error;
 }
