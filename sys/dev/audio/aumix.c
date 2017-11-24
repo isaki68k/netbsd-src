@@ -1392,6 +1392,9 @@ static void
 audio_trackmixer_softintr(void *arg)
 {
 	audio_trackmixer_t *mixer = arg;
+	struct audio_softc *sc = mixer->sc;
+
+	KASSERT(!mutex_owned(sc->sc_intr_lock));
 
 	mutex_enter(&mixer->softintrlock);
 
@@ -1414,7 +1417,9 @@ audio_trackmixer_softintr(void *arg)
 	}
 
 	if (later) {
+		mutex_enter(sc->sc_intr_lock);
 		audio_trackmixer_output(mixer);
+		mutex_exit(sc->sc_intr_lock);
 	}
 	// finally
 	mutex_exit(&mixer->softintrlock);
@@ -1425,7 +1430,6 @@ audio_trackmixer_softintr(void *arg)
 		(int)mixer->hwseq,
 		(int)mixer->hw_complete_counter,
 		mixer->hwbuf.top, mixer->hwbuf.count, mixer->hwbuf.capacity);
-
 }
 
 #if !defined(_KERNEL)
