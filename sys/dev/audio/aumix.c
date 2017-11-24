@@ -895,7 +895,7 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 	memset(mixer, 0, sizeof(audio_trackmixer_t));
 	mixer->sc = sc;
 
-	mixer->softintr = softint_establish(IPL_SOFTNET, audio_trackmixer_softintr, mixer);
+	mixer->softintr = softint_establish(SOFTINT_SERIAL, audio_trackmixer_softintr, mixer);
 
 	mixer->blktime_d = 1000;
 	mixer->blktime_n = AUDIO_BLK_MS;
