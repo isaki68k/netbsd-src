@@ -78,8 +78,8 @@ void *audio_realloc(void *memblock, size_t bytes);
 void audio_free(void *memblock);
 int16_t audio_volume_to_inner(uint8_t v);
 uint8_t audio_volume_to_outer(int16_t v);
-void audio_track_cl(audio_track_t *track);
-void audio_track_uncl(audio_track_t *track);
+static void audio_track_cl(audio_track_t *track);
+static void audio_track_uncl(audio_track_t *track);
 void audio_trackmixer_output(audio_trackmixer_t *mixer);
 
 #if !defined(_KERNEL)
@@ -339,11 +339,9 @@ static void
 audio_track_freq_up(audio_filter_arg_t *arg)
 {
 	audio_track_t *track = arg->context;
-	struct audio_softc *sc __diagused;
 	audio_ring_t *src = &track->freq.srcbuf;
 	audio_ring_t *dst = track->freq.dst;
 
-	sc = track->mixer->sc;
 	KASSERT(track);
 	KASSERT(is_valid_ring(dst));
 	KASSERT(is_valid_ring(src));
@@ -396,11 +394,9 @@ static void
 audio_track_freq_down(audio_filter_arg_t *arg)
 {
 	audio_track_t *track = arg->context;
-	struct audio_softc *sc __diagused;
 	audio_ring_t *src = &track->freq.srcbuf;
 	audio_ring_t *dst = track->freq.dst;
 
-	sc = track->mixer->sc;
 	KASSERT(track);
 	KASSERT(is_valid_ring(dst));
 	KASSERT(is_valid_ring(src));
@@ -752,9 +748,6 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *fmt)
 static int
 audio_append_silence(audio_track_t *track, audio_ring_t *ring)
 {
-	struct audio_softc *sc __diagused;
-
-	sc = track->mixer->sc;
 	KASSERT(track);
 	KASSERT(is_internal_format(&ring->fmt));
 
@@ -814,8 +807,6 @@ audio_apply_stage(audio_track_t *track, audio_stage_t *stage, bool isfreq)
 static int
 audio_track_play_input(audio_track_t *track, struct uio *uio)
 {
-	struct audio_softc *sc = track->mixer->sc;
-
 	KASSERT(uio);
 
 	/* input の空きバイト数を求める */
@@ -856,9 +847,6 @@ audio_track_play_input(audio_track_t *track, struct uio *uio)
 void
 audio_track_play(audio_track_t *track, bool isdrain)
 {
-	struct audio_softc *sc __diagused;
-
-	sc = track->mixer->sc;
 	KASSERT(track);
 
 	int track_count_0 = track->outputbuf.count;
