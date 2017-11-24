@@ -78,9 +78,8 @@ void *audio_realloc(void *memblock, size_t bytes);
 void audio_free(void *memblock);
 int16_t audio_volume_to_inner(uint8_t v);
 uint8_t audio_volume_to_outer(int16_t v);
-static void audio_track_cl(audio_track_t *track);
-static void audio_track_uncl(audio_track_t *track);
 void audio_trackmixer_output(audio_trackmixer_t *mixer);
+static void audio_trackmixer_softintr(void *arg);
 
 #if !defined(_KERNEL)
 static int audio_waitio(struct audio_softc *sc, audio_track_t *track);
@@ -212,28 +211,6 @@ audio_volume_to_outer(int16_t v)
 /*
  * ***** audio_track *****
  */
-
-// track_cl フラグをセットします。
-// 割り込みコンテキストから呼び出すことはできません。
-static inline void
-audio_track_cl(audio_track_t *track)
-{
-	struct audio_softc *sc = track->mixer->sc;
-	mutex_enter(sc->sc_intr_lock);
-	track->track_cl = 1;
-	mutex_exit(sc->sc_intr_lock);
-}
-
-// track_cl フラグをリセットします。
-// 割り込みコンテキストから呼び出すことはできません。
-static inline void
-audio_track_uncl(audio_track_t *track)
-{
-	struct audio_softc *sc = track->mixer->sc;
-	mutex_enter(sc->sc_intr_lock);
-	track->track_cl = 0;
-	mutex_exit(sc->sc_intr_lock);
-}
 
 static void
 audio_track_chvol(audio_filter_arg_t *arg)
@@ -465,7 +442,6 @@ audio_track_init(audio_track_t *track, audio_trackmixer_t *mixer, int mode)
 	track->mixer = mixer;
 	track->mode = mode;
 	cv_init(&track->outchan, mode == AUMODE_PLAY ? "audiowr" : "audiord");
-	track->track_cl = 0;
 
 	// 固定初期値
 	track->volume = 256;
@@ -918,6 +894,8 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 	memset(mixer, 0, sizeof(audio_trackmixer_t));
 	mixer->sc = sc;
 
+	mixer->softintr = softintr_establish(IPL_SOFTNET, audio_trackmixer_softintr, mixer);
+
 	mixer->blktime_d = 1000;
 	mixer->blktime_n = AUDIO_BLK_MS;
 	mixer->hwblks = 16;
@@ -1035,13 +1013,14 @@ audio_mixer_destroy(audio_trackmixer_t *mixer, int mode)
 		// 合成バッファは使用しない
 	}
 
+	softintr_disestablish(mixer->softintr);
+
 	// intrcv を cv_destroy() してはいけないっぽい。KASSERT で死ぬ。
 }
 
 // 全トラックを req フレーム分合成します。
 // 合成が行われれば 1 以上を返す?
-// isintr: 割り込みからコールするときは true を渡す。
-// 割り込みコンテキスト以外から呼び出してください。
+// mixer->softintrlock を取得して呼び出してください。
 static int
 audio_trackmixer_mixall(audio_trackmixer_t *mixer, int req)
 {
@@ -1050,7 +1029,7 @@ audio_trackmixer_mixall(audio_trackmixer_t *mixer, int req)
 	int mixed = 0;
 
 	sc = mixer->sc;
-	KASSERT(!mutex_owned(sc->sc_intr_lock));
+	KASSERT(mutex_owned(&mixer->softintrlock));
 
 	SLIST_FOREACH(f, &sc->sc_files, entry) {
 		audio_track_t *track = &f->ptrack;
@@ -1062,36 +1041,6 @@ audio_trackmixer_mixall(audio_trackmixer_t *mixer, int req)
 		// 合成
 		if (track->outputbuf.count > 0) {
 			mixed = audio_mixer_play_mix_track(mixer, track, req, mixed);
-		}
-	}
-	return mixed;
-}
-
-// トラックミキシングを実行します。
-// 割り込みコンテキストからのみ呼び出してください。
-static int
-audio_trackmixer_mixall_intr(audio_trackmixer_t *mixer)
-{
-	struct audio_softc *sc;
-	audio_file_t *f;
-	int mixed = 0;
-
-	sc = mixer->sc;
-	KASSERT(mutex_owned(sc->sc_intr_lock));
-
-	SLIST_FOREACH(f, &sc->sc_files, entry) {
-		audio_track_t *track = &f->ptrack;
-
-		// 協調的ロックされているトラックは、今回ミキシングしない
-		if (track->track_cl) continue;
-
-		if (track->outputbuf.count < mixer->frames_per_block) {
-			audio_track_play(track, true);
-		}
-
-		// 合成
-		if (track->outputbuf.count > 0) {
-			mixed = audio_mixer_play_mix_track(mixer, track, mixer->frames_per_block, mixed);
 		}
 	}
 	return mixed;
@@ -1416,19 +1365,39 @@ audio_trackmixer_intr(audio_trackmixer_t *mixer)
 
 	mixer->hw_complete_counter += mixer->frames_per_block;
 	mixer->hwseq++;
-	bool later = false;
 
 	audio_ring_tookfromtop(&mixer->hwbuf, mixer->frames_per_block);
 
 	// まず出力待ちのシーケンスを出力
 	if (mixer->hwbuf.count >= mixer->frames_per_block) {
 		audio_trackmixer_output(mixer);
-	} else {
+	}
+
+	// ハードウェア割り込みでは待機関数が使えないため、
+	// softintr へ転送。
+	softintr_schedule(mixer->softintr);
+
+	TRACE0("HW_INT ++hwsec=%d cmplcnt=%d hwbuf=%d/%d/%d",
+		(int)mixer->hwseq,
+		(int)mixer->hw_complete_counter,
+		mixer->hwbuf.top, mixer->hwbuf.count, mixer->hwbuf.capacity);
+}
+
+static void
+audio_trackmixer_softintr(void *arg)
+{
+	audio_trackmixer_t *mixer = arg;
+
+	mutex_enter(&mixer->softintrlock);
+
+	bool later = false;
+
+	if (mixer->hwbuf.count < mixer->frames_per_block) {
 		later = true;
 	}
 
 	// 次のバッファを用意する
-	int mixed = audio_trackmixer_mixall_intr(mixer);
+	int mixed = audio_trackmixer_mixall(mixer, mixer->frames_per_block);
 	if (mixed != 0) {
 		audio_mixer_play_period(mixer);
 	}
@@ -1442,10 +1411,12 @@ audio_trackmixer_intr(audio_trackmixer_t *mixer)
 	if (later) {
 		audio_trackmixer_output(mixer);
 	}
+	// finally
+	mutex_exit(&mixer->softintrlock);
 
 	// drain 待ちしている人のために通知
 	cv_broadcast(&mixer->intrcv);
-	TRACE0("++hwsec=%d cmplcnt=%d hwbuf=%d/%d/%d",
+	TRACE0("SW_INT ++hwsec=%d cmplcnt=%d hwbuf=%d/%d/%d",
 		(int)mixer->hwseq,
 		(int)mixer->hw_complete_counter,
 		mixer->hwbuf.top, mixer->hwbuf.count, mixer->hwbuf.capacity);
@@ -1487,7 +1458,8 @@ audio_track_play_drain_core(audio_track_t *track, bool wait)
 	track->is_draining = true;
 
 	// 必要があれば無音挿入させる
-	audio_track_cl(track);
+
+	mutex_enter(&mixer->softintrlock);
 
 	audio_track_play(track, true);
 
@@ -1500,7 +1472,7 @@ audio_track_play_drain_core(audio_track_t *track, bool wait)
 	/* フレームサイズ未満のため待たされていたデータを破棄 */
 	track->subframe_buf_used = 0;
 
-	audio_track_uncl(track);
+	mutex_exit(&mixer->softintrlock);
 
 	if (wait) {
 		while (track->seq > mixer->hwseq) {
@@ -1562,12 +1534,13 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 
 	error = 0;
 
-	audio_track_cl(track);
+	audio_trackmixer_t *mixer = track->mixer;
 
 	while (uio->uio_resid > 0) {
+		mutex_enter(&mixer->softintrlock);
 		error = audio_track_play_input(track, uio);
 		if (error == EAGAIN) {
-			audio_track_uncl(track);
+			mutex_exit(&mixer->softintrlock);
 			error = audio_waitio(sc, track);
 			if (error < 0) {
 				error = EINTR;
@@ -1575,21 +1548,19 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 			if (error) {
 				break;
 			}
-			audio_track_cl(track);
+			mutex_enter(&mixer->softintrlock);
 		} else if (error) {
 			break;
 		}
 		audio_track_play(track, false);
 
 		audio_trackmixer_play(sc->sc_pmixer, false);
+		mutex_exit(&mixer->softintrlock);
 
 #if !defined(_KERNEL)
 		emu_intr_check();
 #endif
 	}
-
-	// finally
-	audio_track_uncl(track);
 
 	return error;
 }
