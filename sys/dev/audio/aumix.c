@@ -451,7 +451,9 @@ audio_track_init(audio_track_t *track, audio_trackmixer_t *mixer, int mode)
 	}
 
 	// デフォルトフォーマットでセット
+	mutex_enter(&track->mixer->softintrlock);
 	audio_track_set_format(track, &default_format);
+	mutex_exit(&track->mixer->softintrlock);
 }
 
 // track 内のすべてのリソースを解放します。
@@ -676,6 +678,7 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *fmt)
 {
 	TRACE(track, "");
 	KASSERT(is_valid_format(fmt));
+	KASSERT(mutex_owned(&track->mixer->softintrlock));
 
 	// 入力値チェック
 #if defined(_KERNEL)

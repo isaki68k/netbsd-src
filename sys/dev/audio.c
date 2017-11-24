@@ -2935,8 +2935,11 @@ audio_file_setinfo_set(audio_track_t *track, audio_format2_t *fmt,
 	const struct audio_prinfo *info, bool modechange)
 {
 
-	if (modechange)
+	if (modechange) {
+		mutex_enter(&track->mixer->softintrlock);
 		audio_track_set_format(track, fmt);
+		mutex_exit(&track->mixer->softintrlock);
+	}
 
 	if (SPECIFIED(info->gain)) {
 		if (info->gain > 255)
