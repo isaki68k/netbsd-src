@@ -392,7 +392,7 @@ audio_track_freq_down(audio_filter_arg_t *arg)
 	for (int i = 0; i < arg->count; i++) {
 
 		if (tmp.n == 0) {
-			if (tmp.i > src->count) {
+			if (tmp.i >= src->count) {
 				break;
 			}
 			sptr1 = sptr0 + tmp.i * src->fmt.channels;
