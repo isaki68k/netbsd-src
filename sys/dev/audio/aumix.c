@@ -401,7 +401,7 @@ audio_track_freq_down(audio_filter_arg_t *arg)
 			}
 		} else {
 			const internal_t *sptr2;
-			if (tmp.i + 1 > src->count) {
+			if (tmp.i + 1 >= src->count) {
 				break;
 			}
 			sptr1 = sptr0 + tmp.i * src->fmt.channels;
