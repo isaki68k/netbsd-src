@@ -1661,9 +1661,9 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 
 	error = 0;
 
+#if defined(AUDIO_SOFTINTR)
 	audio_trackmixer_t *mixer = track->mixer;
 
-#if defined(AUDIO_SOFTINTR)
 	mutex_enter(&mixer->softintrlock);
 #else
 	audio_track_cl(track);
