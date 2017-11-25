@@ -458,27 +458,30 @@ audio_track_freq_down(audio_filter_arg_t *arg)
 	track->freq_current = tmp;
 }
 
-
-audio_format2_t default_format = {
-	AUDIO_ENCODING_MULAW,
-	8000, /* freq */
-	1, /* channels */
-	8, /* precision */
-	8, /* stride */
-};
-
 void
 audio_track_init(audio_track_t *track, audio_trackmixer_t *mixer, int mode)
 {
+	struct audio_softc *sc = mixer->sc;
+	audio_format2_t *default_format;
+	const char *cvname;
 	static int newid = 0;
+
 	memset(track, 0, sizeof(audio_track_t));
 	track->id = newid++;
 	// ここだけ id が決まってから表示
 	TRACE(track, "");
 
+	if (mode == AUMODE_PLAY) {
+		cvname = "audiowr";
+		default_format = &sc->sc_pparams;
+	} else {
+		cvname = "audiord";
+		default_format = &sc->sc_rparams;
+	}
+
 	track->mixer = mixer;
 	track->mode = mode;
-	cv_init(&track->outchan, mode == AUMODE_PLAY ? "audiowr" : "audiord");
+	cv_init(&track->outchan, cvname);
 #if !defined(AUDIO_SOFTINTR)
 	track->track_cl = 0;
 #endif
@@ -495,7 +498,7 @@ audio_track_init(audio_track_t *track, audio_trackmixer_t *mixer, int mode)
 #else
 	mutex_enter(track->mixer->sc->sc_intr_lock);
 #endif
-	audio_track_set_format(track, &default_format);
+	audio_track_set_format(track, default_format);
 #if defined(AUDIO_SOFTINTR)
 	mutex_exit(&track->mixer->softintrlock);
 #else

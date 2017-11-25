@@ -523,15 +523,13 @@ audioattach(device_t parent, device_t self, void *aux)
 	sc->sc_sih_wr = softint_establish(SOFTINT_SERIAL | SOFTINT_MPSAFE,
 	    audio_softintr_wr, sc);
 
-	/* Initialize sc_ai for /dev/sound */
-	sc->sc_ai.play.sample_rate   = audio_default.sample_rate;
-	sc->sc_ai.play.encoding      = audio_default.encoding;
-	sc->sc_ai.play.precision     = audio_default.validbits;
-	sc->sc_ai.play.channels      = audio_default.channels;
-	sc->sc_ai.record.sample_rate = audio_default.sample_rate;
-	sc->sc_ai.record.encoding    = audio_default.encoding;
-	sc->sc_ai.record.precision   = audio_default.validbits;
-	sc->sc_ai.record.channels    = audio_default.channels;
+	// /dev/sound のデフォルト値
+	sc->sc_pparams = params_to_format2(&audio_default);
+	sc->sc_rparams = params_to_format2(&audio_default);
+
+	// XXX sc_ai の初期化について考えないといけない
+	// 今は sc_ai が一度でも初期化されたかどうかフラグがあるが
+	// できればなくしたい。
 
 	mixer_init(sc);
 	DPRINTF(2, "audio_attach: inputs ports=0x%x, input master=%d, "
@@ -2656,21 +2654,22 @@ audio_file_set_defaults(struct audio_softc *sc, audio_file_t *file)
 
 	KASSERT(mutex_owned(sc->sc_lock));
 
+	/* default parameters */
+	sc->sc_rparams = params_to_format2(&audio_default);
+	sc->sc_pparams = params_to_format2(&audio_default);
+
 	AUDIO_INITINFO(&ai);
-	if ((file->mode & AUMODE_PLAY) != 0) {
-		ai.play.sample_rate   = audio_default.sample_rate;
-		ai.play.encoding      = audio_default.encoding;
-		ai.play.channels      = audio_default.channels;
-		ai.play.precision     = audio_default.precision;
-		ai.play.pause         = false;
-	}
-	if ((file->mode & AUMODE_RECORD) != 0) {
-		ai.record.sample_rate = audio_default.sample_rate;
-		ai.record.encoding    = audio_default.encoding;
-		ai.record.channels    = audio_default.channels;
-		ai.record.precision   = audio_default.precision;
-		ai.record.pause	      = false;
-	}
+	ai.record.sample_rate = sc->sc_rparams.sample_rate;
+	ai.record.encoding    = sc->sc_rparams.encoding;
+	ai.record.channels    = sc->sc_rparams.channels;
+	ai.record.precision   = sc->sc_rparams.precision;
+	ai.record.pause	      = false;
+	ai.play.sample_rate   = sc->sc_pparams.sample_rate;
+	ai.play.encoding      = sc->sc_pparams.encoding;
+	ai.play.channels      = sc->sc_pparams.channels;
+	ai.play.precision     = sc->sc_pparams.precision;
+	ai.play.pause         = false;
+	// XXX ここもたぶん元どおり file->mode だけでいいはず
 	ai.mode = file->mode & (AUMODE_PLAY | AUMODE_RECORD);
 
 	return audio_file_setinfo(sc, file, &ai);
@@ -2780,6 +2779,56 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 		rec = &file->rtrack;
 
 #if AUDIO_DEBUG
+	char buf[80];
+	int n = 0;
+#define SNPRINTF(fmt...) do {	\
+	n += snprintf(buf + n, sizeof(buf) - n, fmt);	\
+} while (0)
+
+	if (SPECIFIED(p->encoding)) {
+		SNPRINTF(" enc=%d", p->encoding);
+		pchanges++;
+	}
+	if (SPECIFIED(p->precision)) {
+		SNPRINTF(" prec=%d", p->precision);
+		pchanges++;
+	}
+	if (SPECIFIED(p->channels)) {
+		SNPRINTF(" ch=%d", p->channels);
+		pchanges++;
+	}
+	if (SPECIFIED(p->sample_rate)) {
+		SNPRINTF(" freq=%d", p->sample_rate);
+		pchanges++;
+	}
+	if (pchanges) {
+		printf("%s play:%s\n", __func__, buf);
+		pchanges = 0;
+	}
+
+	if (SPECIFIED(r->encoding)) {
+		SNPRINTF(" enc=%d", r->encoding);
+		rchanges++;
+	}
+	if (SPECIFIED(r->precision)) {
+		SNPRINTF(" r->ec=%d", r->precision);
+		rchanges++;
+	}
+	if (SPECIFIED(r->channels)) {
+		SNPRINTF(" ch=%d", r->channels);
+		rchanges++;
+	}
+	if (SPECIFIED(r->sample_rate)) {
+		SNPRINTF(" freq=%d", r->sample_rate);
+		rchanges++;
+	}
+	if (rchanges) {
+		printf("%s rec:%s\n", __func__, buf);
+		rchanges = 0;
+	}
+
+	if (SPECIFIED(ai->mode))
+		printf("%s mode=%d\n", __func__, ai->mode);
 	if (SPECIFIED(ai->hiwat))
 		printf("%s hiwat=%d\n", __func__, ai->hiwat);
 	if (SPECIFIED(ai->lowat))
@@ -2825,10 +2874,9 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	}
 
 	/* Set default value */
-	if (play)
-		pfmt = play->inputfmt;
-	if (rec)
-		rfmt = rec->inputfmt;
+	// sc_[pr]params が現在の /dev/sound の設定値
+	pfmt = sc->sc_pparams;
+	rfmt = sc->sc_rparams;
 
 	/* Overwrite if specified */
 	mode = (file->mode & (AUMODE_PLAY | AUMODE_RECORD));
@@ -2871,11 +2919,13 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 		error = audio_file_setinfo_set(play, &pfmt, p, pchanges);
 		if (error)
 			goto abort1;
+		sc->sc_pparams = pfmt;
 	}
 	if (rchanges) {
 		error = audio_file_setinfo_set(rec, &rfmt, r, rchanges);
 		if (error)
 			goto abort2;
+		sc->sc_rparams = rfmt;
 	}
 
 	file->mode = mode;
@@ -2893,6 +2943,7 @@ abort1:
 		bk.play.gain = saved_pvolume;
 		bk.play.pause = saved_ppause;
 		audio_file_setinfo_set(play, &saved_pfmt, &bk.play, true);
+		sc->sc_pparams = saved_pfmt;
 	}
 	return error;
 }
@@ -3198,36 +3249,22 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 		p->channels    = ptrack->inputfmt.channels;
 		p->precision   = ptrack->inputfmt.precision;
 		p->encoding    = ptrack->inputfmt.encoding;
-	} else if (ISDEVSOUND(file->dev)) {
-		/* fill with /dev/sound's default */
-		p->sample_rate = sc->sc_ai.play.sample_rate;
-		p->channels    = sc->sc_ai.play.channels;
-		p->precision   = sc->sc_ai.play.precision;
-		p->encoding    = sc->sc_ai.play.encoding;
 	} else {
-		/* fill with /dev/audio's default */
-		p->sample_rate = audio_default.sample_rate;
-		p->channels    = audio_default.channels;
-		p->precision   = audio_default.precision;
-		p->encoding    = audio_default.encoding;
+		p->sample_rate = sc->sc_pparams.sample_rate;
+		p->channels    = sc->sc_pparams.channels;
+		p->precision   = sc->sc_pparams.precision;
+		p->encoding    = sc->sc_pparams.encoding;
 	}
 	if (rtrack) {
 		r->sample_rate = rtrack->outputbuf.fmt.sample_rate;
 		r->channels    = rtrack->outputbuf.fmt.channels;
 		r->precision   = rtrack->outputbuf.fmt.precision;
 		r->encoding    = rtrack->outputbuf.fmt.encoding;
-	} else if (ISDEVSOUND(file->dev)) {
-		/* fill with /dev/sound's default */
-		r->sample_rate = sc->sc_ai.record.sample_rate;
-		r->channels    = sc->sc_ai.record.channels;
-		r->precision   = sc->sc_ai.record.precision;
-		r->encoding    = sc->sc_ai.record.encoding;
 	} else {
-		/* fill with /dev/audio's default */
-		r->sample_rate = audio_default.sample_rate;
-		r->channels    = audio_default.channels;
-		r->precision   = audio_default.precision;
-		r->encoding    = audio_default.encoding;
+		r->sample_rate = sc->sc_rparams.sample_rate;
+		r->channels    = sc->sc_rparams.channels;
+		r->precision   = sc->sc_rparams.precision;
+		r->encoding    = sc->sc_rparams.encoding;
 	}
 
 	// audio(4) より
