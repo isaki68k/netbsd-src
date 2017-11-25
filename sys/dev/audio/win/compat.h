@@ -232,7 +232,7 @@ atomic_cas_32(volatile uint32_t *ptr, uint32_t expected, uint32_t newvalue)
 }
 
 
-#define IPL_SOFTNET 3
+#define SOFTINT_SERIAL 3
 
 struct softintr_XXX
 {
