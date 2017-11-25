@@ -57,7 +57,7 @@
 // x68k では 40 (-> 80msec) ではアンダーランが発生するので
 // 80 (-> 160msec) に増やしておく。どうするかはまた。
 #if defined(x68k)
-#define AUDIO_BLK_MS 80
+#define AUDIO_BLK_MS 160
 #else
 #define AUDIO_BLK_MS 40
 #endif
