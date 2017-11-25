@@ -241,7 +241,7 @@ struct softintr_XXX
 };
 
 static inline void *
-softintr_establish(int level, void(*fun)(void *), void *arg)
+softint_establish(int level, void(*fun)(void *), void *arg)
 {
 	struct softintr_XXX *rv = malloc(sizeof(struct softintr_XXX));
 	rv->func = fun;
@@ -250,13 +250,13 @@ softintr_establish(int level, void(*fun)(void *), void *arg)
 }
 
 static inline void
-softintr_disestablish(void *cookie)
+softint_disestablish(void *cookie)
 {
 	free(cookie);
 }
 
 static inline void
-softintr_schedule(void *cookie)
+softint_schedule(void *cookie)
 {
 	struct softintr_XXX *intr = cookie;
 	intr->func(intr->arg);
