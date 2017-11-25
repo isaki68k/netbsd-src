@@ -1488,6 +1488,9 @@ audio_trackmixer_intr(audio_trackmixer_t *mixer)
 	if (later) {
 		audio_trackmixer_output(mixer);
 	}
+
+	// drain 待ちしている人のために通知
+	cv_broadcast(&mixer->intrcv);
 #endif
 
 	TRACE0("HW_INT ++hwsec=%d cmplcnt=%d hwbuf=%d/%d/%d",
