@@ -236,11 +236,13 @@ static bool audio_can_playback(struct audio_softc *);
 static bool audio_can_capture(struct audio_softc *);
 static int audio_check_params(struct audio_params *);
 static int audio_check_params2(audio_format2_t *);
-static int xxx_select_freq(const struct audio_format *);
-static int xxx_config_hwfmt(struct audio_softc *, audio_format2_t *, int);
-static int xxx_config_by_format(struct audio_softc *, audio_format2_t *, int);
-static int xxx_config_by_encoding(struct audio_softc *, audio_format2_t *, int);
-static int audio_xxx_config(struct audio_softc *, int);
+static int audio_select_freq(const struct audio_format *);
+static int audio_hw_config_fmt(struct audio_softc *, audio_format2_t *, int);
+static int audio_hw_config_by_format(struct audio_softc *, audio_format2_t *,
+	int);
+static int audio_hw_config_by_encoding(struct audio_softc *, audio_format2_t *,
+	int);
+static int audio_hw_config(struct audio_softc *, int);
 static int audio_sysctl_volume(SYSCTLFN_PROTO);
 static void audio_prepare_enc_xxx(struct audio_softc *sc);
 static void audio_format2_tostr(char *, size_t, const audio_format2_t *);
@@ -454,7 +456,7 @@ audioattach(device_t parent, device_t self, void *aux)
 	// play と capture が両方立ってない状況はたぶん起きない
 
 	/* probe hw params */
-	error = audio_xxx_config(sc, is_indep);
+	error = audio_hw_config(sc, is_indep);
 
 	/* init track mixer */
 	if (sc->sc_can_playback) {
@@ -2330,7 +2332,7 @@ audio_check_params2(audio_format2_t *f2)
 // 48kHz、44.1kHz をサポートしてれば優先して使用。
 // そうでなければとりあえず最高周波数にしとくか。
 static int
-xxx_select_freq(const struct audio_format *fmt)
+audio_select_freq(const struct audio_format *fmt)
 {
 	int freq;
 	int j;
@@ -2366,21 +2368,22 @@ xxx_select_freq(const struct audio_format *fmt)
 
 // 再生か録音(mode) の HW フォーマットを決定する
 static int
-xxx_config_hwfmt(struct audio_softc *sc, audio_format2_t *cand, int mode)
+audio_hw_config_fmt(struct audio_softc *sc, audio_format2_t *cand, int mode)
 {
 	// 分かりやすさのため、しばらくどっち使ったか表示しとく
 	if (sc->hw_if->query_format) {
 		aprint_normal_dev(sc->dev, "use new query_format method\n");
-		return xxx_config_by_format(sc, cand, mode);
+		return audio_hw_config_by_format(sc, cand, mode);
 	} else {
 		aprint_normal_dev(sc->dev, "use old set_param method\n");
-		return xxx_config_by_encoding(sc, cand, mode);
+		return audio_hw_config_by_encoding(sc, cand, mode);
 	}
 }
 
 // HW フォーマットを query_format を使って決定する
 static int
-xxx_config_by_format(struct audio_softc *sc, audio_format2_t *cand, int mode)
+audio_hw_config_by_format(struct audio_softc *sc, audio_format2_t *cand,
+	int mode)
 {
 	const struct audio_format *formats;
 	int nformats;
@@ -2428,7 +2431,7 @@ xxx_config_by_format(struct audio_softc *sc, audio_format2_t *cand, int mode)
 			    fmt->channels, cand->channels);
 			continue;
 		}
-		int freq = xxx_select_freq(fmt);
+		int freq = audio_select_freq(fmt);
 		// XXX うーん
 		if (freq < cand->sample_rate) {
 			DPRINTF(1, "fmt[%d] skip; frequency %d < %d\n", i,
@@ -2456,7 +2459,8 @@ xxx_config_by_format(struct audio_softc *sc, audio_format2_t *cand, int mode)
 // とても query_format を書き起こせないような古いドライバ向けなので、
 // 探索パラメータはこれでよい。
 static int
-xxx_config_by_encoding(struct audio_softc *sc, audio_format2_t *cand, int mode)
+audio_hw_config_by_encoding(struct audio_softc *sc, audio_format2_t *cand,
+	int mode)
 {
 	static int freqlist[] = { 48000, 44100, 22050, 11025, 8000, 4000 };
 	audio_format2_t fmt;
@@ -2510,7 +2514,7 @@ xxx_config_by_encoding(struct audio_softc *sc, audio_format2_t *cand, int mode)
 //   録音でフォーマットを選定。再生側にもコピー
 //  両方を設定
 static int
-audio_xxx_config(struct audio_softc *sc, int is_indep)
+audio_hw_config(struct audio_softc *sc, int is_indep)
 {
 	audio_format2_t fmt;
 	int mode;
@@ -2519,13 +2523,13 @@ audio_xxx_config(struct audio_softc *sc, int is_indep)
 	if (is_indep) {
 		/* independent devices */
 		if (sc->sc_can_playback) {
-			error = xxx_config_hwfmt(sc, &sc->sc_phwfmt,
+			error = audio_hw_config_fmt(sc, &sc->sc_phwfmt,
 			    AUMODE_PLAY);
 			if (error)
 				sc->sc_can_playback = false;
 		}
 		if (sc->sc_can_capture) {
-			error = xxx_config_hwfmt(sc, &sc->sc_rhwfmt,
+			error = audio_hw_config_fmt(sc, &sc->sc_rhwfmt,
 			    AUMODE_RECORD);
 			if (error)
 				sc->sc_can_capture = false;
@@ -2537,7 +2541,7 @@ audio_xxx_config(struct audio_softc *sc, int is_indep)
 			mode |= AUMODE_PLAY;
 		if (sc->sc_can_capture)
 			mode |= AUMODE_RECORD;
-		error = xxx_config_hwfmt(sc, &fmt, mode);
+		error = audio_hw_config_fmt(sc, &fmt, mode);
 		if (error) {
 			sc->sc_can_playback = false;
 			sc->sc_can_capture = false;
