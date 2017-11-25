@@ -1517,9 +1517,17 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 
 	// リストから削除
 	// XXX: rmixer のロック
+#if defined(AUDIO_SOFTINTR)
 	mutex_enter(&sc->sc_pmixer->softintrlock);
+#else
+	mutex_enter(sc->sc_intr_lock);
+#endif
 	SLIST_REMOVE(&sc->sc_files, file, audio_file, entry);
+#if defined(AUDIO_SOFTINTR)
 	mutex_exit(&sc->sc_pmixer->softintrlock);
+#else
+	mutex_exit(sc->sc_intr_lock);
+#endif
 
 	// SB とかいくつかのドライバは halt_input と halt_output に
 	// 同じルーチンを使用しているので、その場合は full duplex なら
@@ -2936,9 +2944,17 @@ audio_file_setinfo_set(audio_track_t *track, audio_format2_t *fmt,
 {
 
 	if (modechange) {
+#if defined(AUDIO_SOFTINTR)
 		mutex_enter(&track->mixer->softintrlock);
+#else
+		mutex_enter(track->mixer->sc->sc_intr_lock);
+#endif
 		audio_track_set_format(track, fmt);
+#if defined(AUDIO_SOFTINTR)
 		mutex_exit(&track->mixer->softintrlock);
+#else
+		mutex_exit(track->mixer->sc->sc_intr_lock);
+#endif
 	}
 
 	if (SPECIFIED(info->gain)) {

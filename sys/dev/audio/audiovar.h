@@ -47,6 +47,9 @@
 #define AUDIO_MAX_CHANNELS	18
 #endif // _KERNEL
 
+// softintr を使うとき ON にしてください
+//#define AUDIO_SOFTINTR
+
 /* 1 ブロックの時間サイズ 40ms */
 /* 40ms の場合は (1/40ms)=25=5^2 なので 100 の倍数の周波数のほか、15.625kHz でもフレーム数が整数になる */
 #if defined(_KERNEL)
@@ -130,6 +133,10 @@ struct audio_track
 	uint64_t inputcounter;				/* トラックに入力されたフレーム数 */
 	uint64_t outputcounter;				/* トラックから出力されたフレーム数 */
 
+#if !defined(AUDIO_SOFTINTR)
+	volatile uint32_t track_cl;			// track cooperative lock
+#endif
+
 	/* できるかどうか未知 */
 	uint64_t track_mixer_counter;		/* outputbuf のトラックミキサ側読み書きフレーム数 */
 	uint64_t mixer_hw_counter; /* mixer <-> hw 入出力フレーム数 */
@@ -167,9 +174,10 @@ struct audio_trackmixer
 	int blktime_n; // ブロックの秒の分子 初期値は AUDIO_BLK_MS
 	int blktime_d; // ブロックの秒の分母 初期値は 1000
 
+#if defined(AUDIO_SOFTINTR)
 	kmutex_t softintrlock;				// softintr mutex
 	void *softintr;						// softintr cookie
-
+#endif
 										// 未定
 
 	uint64_t hw_output_counter;			/* ハードウェアへの出力フレーム数 */

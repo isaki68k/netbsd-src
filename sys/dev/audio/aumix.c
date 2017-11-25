@@ -80,7 +80,9 @@ void audio_free(void *memblock);
 int16_t audio_volume_to_inner(uint8_t v);
 uint8_t audio_volume_to_outer(int16_t v);
 void audio_trackmixer_output(audio_trackmixer_t *mixer);
+#if defined(AUDIO_SOFTINTR)
 static void audio_trackmixer_softintr(void *arg);
+#endif
 
 #if !defined(_KERNEL)
 static int audio_waitio(struct audio_softc *sc, audio_track_t *track);
@@ -212,6 +214,30 @@ audio_volume_to_outer(int16_t v)
 /*
  * ***** audio_track *****
  */
+
+#if !defined(AUDIO_SOFTINTR)
+// track_cl フラグをセットします。
+// 割り込みコンテキストから呼び出すことはできません。
+static inline void
+audio_track_cl(audio_track_t *track)
+{
+	struct audio_softc *sc = track->mixer->sc;
+	mutex_enter(sc->sc_intr_lock);
+	track->track_cl = 1;
+	mutex_exit(sc->sc_intr_lock);
+}
+
+// track_cl フラグをリセットします。
+// 割り込みコンテキストから呼び出すことはできません。
+static inline void
+audio_track_uncl(audio_track_t *track)
+{
+	struct audio_softc *sc = track->mixer->sc;
+	mutex_enter(sc->sc_intr_lock);
+	track->track_cl = 0;
+	mutex_exit(sc->sc_intr_lock);
+}
+#endif
 
 static void
 audio_track_chvol(audio_filter_arg_t *arg)
@@ -453,6 +479,9 @@ audio_track_init(audio_track_t *track, audio_trackmixer_t *mixer, int mode)
 	track->mixer = mixer;
 	track->mode = mode;
 	cv_init(&track->outchan, mode == AUMODE_PLAY ? "audiowr" : "audiord");
+#if !defined(AUDIO_SOFTINTR)
+	track->track_cl = 0;
+#endif
 
 	// 固定初期値
 	track->volume = 256;
@@ -461,9 +490,17 @@ audio_track_init(audio_track_t *track, audio_trackmixer_t *mixer, int mode)
 	}
 
 	// デフォルトフォーマットでセット
+#if defined(AUDIO_SOFTINTR)
 	mutex_enter(&track->mixer->softintrlock);
+#else
+	mutex_enter(track->mixer->sc->sc_intr_lock);
+#endif
 	audio_track_set_format(track, &default_format);
+#if defined(AUDIO_SOFTINTR)
 	mutex_exit(&track->mixer->softintrlock);
+#else
+	mutex_exit(track->mixer->sc->sc_intr_lock);
+#endif
 }
 
 // track 内のすべてのリソースを解放します。
@@ -688,7 +725,11 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *fmt)
 {
 	TRACE(track, "");
 	KASSERT(is_valid_format(fmt));
+#if defined(AUDIO_SOFTINTR)
 	KASSERT(mutex_owned(&track->mixer->softintrlock));
+#else
+	KASSERT(mutex_owned(track->mixer->sc->sc_intr_lock));
+#endif
 
 	// 入力値チェック
 #if defined(_KERNEL)
@@ -924,7 +965,9 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 	memset(mixer, 0, sizeof(audio_trackmixer_t));
 	mixer->sc = sc;
 
+#if defined(AUDIO_SOFTINTR)
 	mixer->softintr = softint_establish(SOFTINT_SERIAL, audio_trackmixer_softintr, mixer);
+#endif
 
 	mixer->blktime_d = 1000;
 	mixer->blktime_n = AUDIO_BLK_MS;
@@ -1043,7 +1086,9 @@ audio_mixer_destroy(audio_trackmixer_t *mixer, int mode)
 		// 合成バッファは使用しない
 	}
 
+#if defined(AUDIO_SOFTINTR)
 	softint_disestablish(mixer->softintr);
+#endif
 
 	// intrcv を cv_destroy() してはいけないっぽい。KASSERT で死ぬ。
 }
@@ -1059,10 +1104,19 @@ audio_trackmixer_mixall(audio_trackmixer_t *mixer, int req, bool isintr)
 	int mixed = 0;
 
 	sc = mixer->sc;
+#if defined(AUDIO_SOFTINTR)
 	KASSERT(mutex_owned(&mixer->softintrlock));
+#endif
 
 	SLIST_FOREACH(f, &sc->sc_files, entry) {
 		audio_track_t *track = &f->ptrack;
+
+#if !defined(AUDIO_SOFTINTR)
+		if (isintr) {
+			// 協調的ロックされているトラックは、今回ミキシングしない。
+			if (track->track_cl) continue;
+		}
+#endif
 
 		if (track->outputbuf.count < req) {
 			audio_track_play(track, isintr);
@@ -1407,9 +1461,34 @@ audio_trackmixer_intr(audio_trackmixer_t *mixer)
 		audio_trackmixer_output(mixer);
 	}
 
+#if defined(AUDIO_SOFTINTR)
 	// ハードウェア割り込みでは待機関数が使えないため、
 	// softintr へ転送。
 	softint_schedule(mixer->softintr);
+
+#else
+	bool later = false;
+
+	if (mixer->hwbuf.count < mixer->frames_per_block) {
+		later = true;
+	}
+
+	// 次のバッファを用意する
+	int mixed = audio_trackmixer_mixall(mixer, mixer->frames_per_block, true);
+	if (mixed) {
+		audio_mixer_play_period(mixer);
+	}
+
+	if (mixer->hwbuf.count == 0) {
+		// 無音挿入
+		memset(mixer->mixsample, 0, frametobyte(&mixer->mixfmt, mixer->frames_per_block));
+		audio_mixer_play_period(mixer);
+	}
+
+	if (later) {
+		audio_trackmixer_output(mixer);
+	}
+#endif
 
 	TRACE0("HW_INT ++hwsec=%d cmplcnt=%d hwbuf=%d/%d/%d",
 		(int)mixer->hwseq,
@@ -1417,6 +1496,7 @@ audio_trackmixer_intr(audio_trackmixer_t *mixer)
 		mixer->hwbuf.top, mixer->hwbuf.count, mixer->hwbuf.capacity);
 }
 
+#if defined(AUDIO_SOFTINTR)
 static void
 audio_trackmixer_softintr(void *arg)
 {
@@ -1461,6 +1541,7 @@ audio_trackmixer_softintr(void *arg)
 		(int)mixer->hw_complete_counter,
 		mixer->hwbuf.top, mixer->hwbuf.count, mixer->hwbuf.capacity);
 }
+#endif
 
 #if !defined(_KERNEL)
 int
@@ -1497,8 +1578,11 @@ audio_track_play_drain_core(audio_track_t *track, bool wait)
 	track->is_draining = true;
 
 	// 必要があれば無音挿入させる
-
+#if defined(AUDIO_SOFTINTR)
 	mutex_enter(&mixer->softintrlock);
+#else
+	audio_track_cl(track);
+#endif
 
 	audio_track_play(track, true);
 
@@ -1511,7 +1595,11 @@ audio_track_play_drain_core(audio_track_t *track, bool wait)
 	/* フレームサイズ未満のため待たされていたデータを破棄 */
 	track->subframe_buf_used = 0;
 
+#if defined(AUDIO_SOFTINTR)
 	mutex_exit(&mixer->softintrlock);
+#else
+	audio_track_uncl(track);
+#endif
 
 	if (wait) {
 		while (track->seq > mixer->hwseq) {
@@ -1575,13 +1663,27 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 
 	audio_trackmixer_t *mixer = track->mixer;
 
+#if defined(AUDIO_SOFTINTR)
 	mutex_enter(&mixer->softintrlock);
+#else
+	audio_track_cl(track);
+#endif
+
 	while (uio->uio_resid > 0) {
 		error = audio_track_play_input(track, uio);
 		if (error == EAGAIN) {
+#if defined(AUDIO_SOFTINTR)
 			mutex_exit(&mixer->softintrlock);
+#else
+			audio_track_uncl(track);
+#endif
 			error = audio_waitio(sc, track);
+
+#if defined(AUDIO_SOFTINTR)
 			mutex_enter(&mixer->softintrlock);
+#else
+			audio_track_cl(track);
+#endif
 			if (error < 0) {
 				error = EINTR;
 			}
@@ -1599,7 +1701,11 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 		emu_intr_check();
 #endif
 	}
+#if defined(AUDIO_SOFTINTR)
 	mutex_exit(&mixer->softintrlock);
+#else
+	audio_track_uncl(track);
+#endif
 
 	return error;
 }
