@@ -863,23 +863,18 @@ audio_track_play(audio_track_t *track, bool isdrain)
 			// freq の入力はバッファ先頭から。
 			// サブフレームの問題があるので、top 位置以降の全域をずらす。
 			if (track->freq.srcbuf.top != 0) {
+#if defined(AUDIO_DEBUG)
 				if (track->freq.srcbuf.top + track->freq.srcbuf.count > track->freq.srcbuf.capacity) {
 					panic("srcbuf broken, %d/%d/%d\n",
 						track->freq.srcbuf.top,
 						track->freq.srcbuf.count,
 						track->freq.srcbuf.capacity);
 				}
+#endif
 				uint8_t *s = track->freq.srcbuf.sample;
 				uint8_t *p = RING_TOP_UINT8(&track->freq.srcbuf);
 				uint8_t *e = RING_END_UINT8(&track->freq.srcbuf);
-				for (; p < e; s++, p++) {
-					*s = *p;
-				}
-/*
-				memmove(track->freq.srcbuf.sample,
-					p,
-					e - p);
-*/
+				memmove(s, p, e - p);
 				track->freq.srcbuf.top = 0;
 			}
 		}
