@@ -361,9 +361,6 @@ struct audio_attach_args {
 device_t audio_attach_mi(const struct audio_hw_if *, void *, device_t);
 int	audioprint(void *, const char *);
 
-/* Get the hw device from an audio softc */
-device_t audio_get_device(struct audio_softc *);
-
 /* Device identity flags */
 #define SOUND_DEVICE		0
 #define AUDIO_DEVICE		0x80

@@ -4335,15 +4335,6 @@ audioprint(void *aux, const char *pnp)
 
 #endif /* NAUDIO > 0 || (NMIDI > 0 || NMIDIBUS > 0) */
 
-/* XXX pad から呼ばれる */
-#if NAUDIO > 0
-device_t
-audio_get_device(struct audio_softc *sc)
-{
-	return sc->sc_dev;
-}
-#endif
-
 #ifdef _MODULE
 
 extern struct cfdriver audio_cd;
