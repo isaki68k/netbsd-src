@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.S,v 1.3 2017/10/29 11:28:30 maxv Exp $	*/
+/*	$NetBSD: locore.S,v 1.6 2017/11/26 10:21:20 maxv Exp $	*/
 
 /*
  * Copyright (c) 1998, 2000, 2007, 2008, 2016, 2017 The NetBSD Foundation, Inc.
@@ -583,9 +583,24 @@ END(start)
 
 /* -------------------------------------------------------------------------- */
 
+ENTRY(cpuid)
+	movq	%rbx,%r8
+	movq	%rdi,%rax
+	movq	%rsi,%rcx
+	movq	%rdx,%rsi
+	cpuid
+	movl	%eax,0(%rsi)
+	movl	%ebx,4(%rsi)
+	movl	%ecx,8(%rsi)
+	movl	%edx,12(%rsi)
+	movq	%r8,%rbx
+	ret
+END(cpuid)
+
 ENTRY(lidt)
 	lidt	(%rdi)
 	ret
+END(lidt)
 
 ENTRY(rdtsc)
 	xorq	%rax,%rax
@@ -593,9 +608,32 @@ ENTRY(rdtsc)
 	shlq	$32,%rdx
 	orq	%rdx,%rax
 	ret
+END(rdtsc)
+
+ENTRY(rdseed)
+	rdseed	%rax
+	jc	.Lrdseed_success
+	movq	$(-1),%rax
+	ret
+.Lrdseed_success:
+	movq	%rax,(%rdi)
+	xorq	%rax,%rax
+	ret
+END(rdseed)
+
+ENTRY(rdrand)
+	rdrand	%rax
+	jc	.Lrdrand_success
+	movq	$(-1),%rax
+	ret
+.Lrdrand_success:
+	movq	%rax,(%rdi)
+	xorq	%rax,%rax
+	ret
+END(rdrand)
 
 ENTRY(jump_kernel)
 	movq	_C_LABEL(stkva),%rsp
-	movq	$exec_kernel,%rax
-	jmpq	*%rax
-
+	xorq	%rbp,%rbp
+	callq	exec_kernel
+END(jump_kernel)

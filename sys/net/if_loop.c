@@ -1,4 +1,4 @@
-/*	$NetBSD: if_loop.c,v 1.96 2017/10/23 09:32:00 msaitoh Exp $	*/
+/*	$NetBSD: if_loop.c,v 1.100 2017/12/06 07:40:16 ozaki-r Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -65,7 +65,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_loop.c,v 1.96 2017/10/23 09:32:00 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_loop.c,v 1.100 2017/12/06 07:40:16 ozaki-r Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -182,8 +182,8 @@ loop_clone_create(struct if_clone *ifc, int unit)
 	if_initname(ifp, ifc->ifc_name, unit);
 
 	ifp->if_mtu = LOMTU;
-	ifp->if_flags = IFF_LOOPBACK | IFF_MULTICAST | IFF_RUNNING;
-	ifp->if_extflags = IFEF_OUTPUT_MPSAFE;
+	ifp->if_flags = IFF_LOOPBACK | IFF_MULTICAST;
+	ifp->if_extflags = IFEF_MPSAFE;
 	ifp->if_ioctl = loioctl;
 	ifp->if_output = looutput;
 #ifdef ALTQ
@@ -211,6 +211,8 @@ loop_clone_create(struct if_clone *ifc, int unit)
 	MOWNER_ATTACH(ifp->if_mowner);
 #endif
 
+	ifp->if_flags |= IFF_RUNNING;
+
 	return (0);
 }
 
@@ -220,6 +222,8 @@ loop_clone_destroy(struct ifnet *ifp)
 
 	if (ifp == lo0ifp)
 		return (EPERM);
+
+	ifp->if_flags &= ~IFF_RUNNING;
 
 #ifdef MBUFTRACE
 	MOWNER_DETACH(ifp->if_mowner);
@@ -247,7 +251,7 @@ looutput(struct ifnet *ifp, struct mbuf *m, const struct sockaddr *dst,
 
 	MCLAIM(m, ifp->if_mowner);
 
-	KERNEL_LOCK(1, NULL);
+	KERNEL_LOCK_UNLESS_NET_MPSAFE();
 
 	if ((m->m_flags & M_PKTHDR) == 0)
 		panic("looutput: no header mbuf");
@@ -373,7 +377,7 @@ looutput(struct ifnet *ifp, struct mbuf *m, const struct sockaddr *dst,
 	schednetisr(isr);
 	splx(s);
 out:
-	KERNEL_UNLOCK_ONE(NULL);
+	KERNEL_UNLOCK_UNLESS_NET_MPSAFE();
 	return error;
 }
 

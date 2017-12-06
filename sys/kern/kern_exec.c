@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_exec.c,v 1.449 2017/10/20 19:06:46 riastradh Exp $	*/
+/*	$NetBSD: kern_exec.c,v 1.453 2017/11/13 22:01:45 christos Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -59,7 +59,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_exec.c,v 1.449 2017/10/20 19:06:46 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_exec.c,v 1.453 2017/11/13 22:01:45 christos Exp $");
 
 #include "opt_exec.h"
 #include "opt_execfmt.h"
@@ -338,15 +338,25 @@ check_exec(struct lwp *l, struct exec_package *epp, struct pathbuf *pb)
 	struct nameidata nd;
 	size_t		resid;
 
+#if 1
+	// grab the absolute pathbuf here before namei() trashes it.
+	pathbuf_copystring(pb, epp->ep_resolvedname, PATH_MAX);
+#endif
 	NDINIT(&nd, LOOKUP, FOLLOW | LOCKLEAF | TRYEMULROOT, pb);
 
 	/* first get the vnode */
 	if ((error = namei(&nd)) != 0)
 		return error;
 	epp->ep_vp = vp = nd.ni_vp;
+#if 0
+	/*
+	 * XXX: can't use nd.ni_pnbuf, because although pb contains an
+	 * absolute path, nd.ni_pnbuf does not if the path contains symlinks.
+	 */
 	/* normally this can't fail */
 	error = copystr(nd.ni_pnbuf, epp->ep_resolvedname, PATH_MAX, NULL);
 	KASSERT(error == 0);
+#endif
 
 #ifdef DIAGNOSTIC
 	/* paranoia (take this out once namei stuff stabilizes) */
@@ -925,55 +935,15 @@ execve_free_data(struct execve_data *data)
 }
 
 static void
-pathexec(struct exec_package *epp, struct lwp *l, const char *pathstring)
+pathexec(struct proc *p, const char *resolvedname)
 {
-	const char		*commandname;
-	size_t			commandlen;
-	char			*path;
-	struct proc 		*p = l->l_proc;
+	KASSERT(resolvedname[0] == '/');
 
 	/* set command name & other accounting info */
-	commandname = strrchr(epp->ep_resolvedname, '/');
-	if (commandname != NULL) {
-		commandname++;
-	} else {
-		commandname = epp->ep_resolvedname;
-	}
-	commandlen = min(strlen(commandname), MAXCOMLEN);
-	(void)memcpy(p->p_comm, commandname, commandlen);
-	p->p_comm[commandlen] = '\0';
+	strlcpy(p->p_comm, strrchr(resolvedname, '/') + 1, sizeof(p->p_comm));
 
-
-	/*
-	 * If the path starts with /, we don't need to do any work.
-	 * This handles the majority of the cases.
-	 * In the future perhaps we could canonicalize it?
-	 */
-	path = PNBUF_GET();
-	if (pathstring[0] == '/') {
-		(void)strlcpy(path, pathstring, MAXPATHLEN);
-		epp->ep_path = path;
-	}
-#ifdef notyet
-	/*
-	 * Although this works most of the time [since the entry was just
-	 * entered in the cache] we don't use it because it will fail for
-	 * entries that are not placed in the cache because their name is
-	 * longer than NCHNAMLEN and it is not the cleanest interface,
-	 * because there could be races. When the namei cache is re-written,
-	 * this can be changed to use the appropriate function.
-	 */
-	else if (!(error = vnode_to_path(path, MAXPATHLEN, p->p_textvp, l, p)))
-		epp->ep_path = path;
-#endif
-	else {
-#ifdef notyet
-		printf("Cannot get path for pid %d [%s] (error %d)\n",
-		    (int)p->p_pid, p->p_comm, error);
-#endif
-		PNBUF_PUT(path);
- 		epp->ep_path = NULL;
-	}
+	kmem_strfree(p->p_path);
+	p->p_path = kmem_strdupsize(resolvedname, NULL, KM_SLEEP);
 }
 
 /* XXX elsewhere */
@@ -1194,7 +1164,7 @@ execve_runproc(struct lwp *l, struct execve_data * restrict data,
 	if (error != 0)
 		goto exec_abort;
 
-	pathexec(epp, l, data->ed_pathstring);
+	pathexec(p, epp->ep_resolvedname);
 
 	char * const newstack = STACK_GROW(vm->vm_minsaddr, epp->ep_ssize);
 
@@ -1463,10 +1433,6 @@ copyoutargs(struct execve_data * restrict data, struct lwp *l,
 	error = (*epp->ep_esch->es_copyargs)(l, epp,
 	    &data->ed_arginfo, &newargs, data->ed_argp);
 
-	if (epp->ep_path) {
-		PNBUF_PUT(epp->ep_path);
-		epp->ep_path = NULL;
-	}
 	if (error) {
 		DPRINTF(("%s: copyargs failed %d\n", __func__, error));
 		return error;
@@ -2258,7 +2224,7 @@ posix_spawn_fa_free(struct posix_spawn_file_actions *fa, size_t len)
 		struct posix_spawn_file_actions_entry *fae = &fa->fae[i];
 		if (fae->fae_action != FAE_OPEN)
 			continue;
-		kmem_free(fae->fae_path, strlen(fae->fae_path) + 1);
+		kmem_strfree(fae->fae_path);
 	}
 	if (fa->len > 0)
 		kmem_free(fa->fae, sizeof(*fa->fae) * fa->len);

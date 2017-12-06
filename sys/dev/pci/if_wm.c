@@ -1,4 +1,4 @@
-/*	$NetBSD: if_wm.c,v 1.542 2017/10/23 23:29:38 knakahara Exp $	*/
+/*	$NetBSD: if_wm.c,v 1.546 2017/11/30 09:24:18 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2001, 2002, 2003, 2004 Wasabi Systems, Inc.
@@ -83,7 +83,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.542 2017/10/23 23:29:38 knakahara Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.546 2017/11/30 09:24:18 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_net_mpsafe.h"
@@ -1853,7 +1853,13 @@ wm_attach(device_t parent, device_t self, void *aux)
 
 	/* Allocation settings */
 	max_type = PCI_INTR_TYPE_MSIX;
-	counts[PCI_INTR_TYPE_MSIX] = sc->sc_nqueues + 1;
+	/*
+	 * 82583 has a MSI-X capability in the PCI configuration space but
+	 * it doesn't support it. At least the document doesn't say anything
+	 * about MSI-X.
+	 */
+	counts[PCI_INTR_TYPE_MSIX]
+	    = (sc->sc_type == WM_T_82583) ? 0 : sc->sc_nqueues + 1;
 	counts[PCI_INTR_TYPE_MSI] = 1;
 	counts[PCI_INTR_TYPE_INTX] = 1;
 	/* overridden by disable flags */
@@ -2630,7 +2636,7 @@ alloc_retry:
 	ifp->if_softc = sc;
 	ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
 #ifdef WM_MPSAFE
-	ifp->if_extflags = IFEF_START_MPSAFE;
+	ifp->if_extflags = IFEF_MPSAFE;
 #endif
 	ifp->if_ioctl = wm_ioctl;
 	if ((sc->sc_flags & WM_F_NEWQUEUE) != 0) {
@@ -2670,11 +2676,12 @@ alloc_retry:
 	case WM_T_82571:
 	case WM_T_82572:
 	case WM_T_82574:
+	case WM_T_82583:
 	case WM_T_82575:
 	case WM_T_82576:
 	case WM_T_82580:
 	case WM_T_I350:
-	case WM_T_I354: /* XXXX ok? */
+	case WM_T_I354:
 	case WM_T_I210:
 	case WM_T_I211:
 	case WM_T_80003:
@@ -2692,7 +2699,6 @@ alloc_retry:
 		break;
 	case WM_T_82542_2_0:
 	case WM_T_82542_2_1:
-	case WM_T_82583:
 	case WM_T_ICH8:
 		/* No support for jumbo frame */
 		break;
@@ -6990,7 +6996,7 @@ wm_start(struct ifnet *ifp)
 	struct wm_txqueue *txq = &sc->sc_queue[0].wmq_txq;
 
 #ifdef WM_MPSAFE
-	KASSERT(ifp->if_extflags & IFEF_START_MPSAFE);
+	KASSERT(if_is_mpsafe(ifp));
 #endif
 	/*
 	 * ifp->if_obytes and ifp->if_omcasts are added in if_transmit()@if.c.
@@ -7583,7 +7589,7 @@ wm_nq_start(struct ifnet *ifp)
 	struct wm_txqueue *txq = &sc->sc_queue[0].wmq_txq;
 
 #ifdef WM_MPSAFE
-	KASSERT(ifp->if_extflags & IFEF_START_MPSAFE);
+	KASSERT(if_is_mpsafe(ifp));
 #endif
 	/*
 	 * ifp->if_obytes and ifp->if_omcasts are added in if_transmit()@if.c.
@@ -8108,11 +8114,11 @@ wm_rxdesc_get_vlantag(struct wm_rxqueue *rxq, int idx)
 	struct wm_softc *sc = rxq->rxq_sc;
 
 	if (sc->sc_type == WM_T_82574)
-		return EXTRXC_VLAN_ID(rxq->rxq_ext_descs[idx].erx_ctx.erxc_vlan);
+		return rxq->rxq_ext_descs[idx].erx_ctx.erxc_vlan;
 	else if ((sc->sc_flags & WM_F_NEWQUEUE) != 0)
-		return NQRXC_VLAN_ID(rxq->rxq_nq_descs[idx].nqrx_ctx.nrxc_vlan);
+		return rxq->rxq_nq_descs[idx].nqrx_ctx.nrxc_vlan;
 	else
-		return WRX_VLAN_ID(rxq->rxq_descs[idx].wrx_special);
+		return rxq->rxq_descs[idx].wrx_special;
 }
 
 static inline int

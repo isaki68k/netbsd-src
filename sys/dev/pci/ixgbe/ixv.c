@@ -1,4 +1,4 @@
-/*$NetBSD: ixv.c,v 1.73 2017/10/23 09:31:18 msaitoh Exp $*/
+/*$NetBSD: ixv.c,v 1.75 2017/12/06 04:08:50 msaitoh Exp $*/
 
 /******************************************************************************
 
@@ -1391,7 +1391,7 @@ ixv_setup_interface(device_t dev, struct adapter *adapter)
 	ifp->if_softc = adapter;
 	ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
 #ifdef IXGBE_MPSAFE
-	ifp->if_extflags = IFEF_START_MPSAFE;
+	ifp->if_extflags = IFEF_MPSAFE;
 #endif
 	ifp->if_ioctl = ixv_ioctl;
 	if (adapter->feat_en & IXGBE_FEATURE_LEGACY_TX) {
@@ -1592,9 +1592,6 @@ ixv_initialize_rss_mapping(struct adapter *adapter)
 		    __func__);
 	if (rss_hash_config & RSS_HASHTYPE_RSS_UDP_IPV4)
 		mrqc |= IXGBE_MRQC_RSS_FIELD_IPV4_UDP;
-	if (rss_hash_config & RSS_HASHTYPE_RSS_UDP_IPV4_EX)
-		device_printf(adapter->dev, "%s: RSS_HASHTYPE_RSS_UDP_IPV4_EX defined, but not supported\n",
-		    __func__);
 	if (rss_hash_config & RSS_HASHTYPE_RSS_UDP_IPV6)
 		mrqc |= IXGBE_MRQC_RSS_FIELD_IPV6_UDP;
 	if (rss_hash_config & RSS_HASHTYPE_RSS_UDP_IPV6_EX)
