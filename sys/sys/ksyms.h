@@ -1,4 +1,4 @@
-/*	$NetBSD: ksyms.h,v 1.35 2017/11/04 22:17:55 christos Exp $	*/
+/*	$NetBSD: ksyms.h,v 1.37 2017/11/06 17:56:25 christos Exp $	*/
 
 /*
  * Copyright (c) 2001, 2003 Anders Magnusson (ragge@ludd.luth.se).
@@ -30,8 +30,8 @@
 #ifndef _SYS_KSYMS_H_
 #define _SYS_KSYMS_H_
 
-#ifndef ELFSIZE
-#define ELFSIZE ARCH_ELFSIZE
+#if !defined(ELFSIZE) && !defined(_RUMPKERNEL)
+#define ELFSIZE KERN_ELFSIZE
 #endif
 #include <sys/exec_elf.h>
 

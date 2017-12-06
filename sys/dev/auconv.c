@@ -1,4 +1,4 @@
-/*	$NetBSD: auconv.c,v 1.33 2017/10/02 07:06:15 nat Exp $	*/
+/*	$NetBSD: auconv.c,v 1.34 2017/11/07 01:15:42 nat Exp $	*/
 
 /*
  * Copyright (c) 1996 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: auconv.c,v 1.33 2017/10/02 07:06:15 nat Exp $");
+__KERNEL_RCSID(0, "$NetBSD: auconv.c,v 1.34 2017/11/07 01:15:42 nat Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_audio.h"
@@ -142,7 +142,6 @@ struct conv_table {
  */
 static const struct conv_table s8_table[] = {
 	TABLE_LIST(32, 32, 8)
-	TABLE_LIST(24, 32, 8)
 	TABLE_LIST(24, 24, 8)
 	TABLE_LIST(16, 16, 8)
 	TABLE_LIST(8, 8, 8)
@@ -152,7 +151,6 @@ static const struct conv_table s8_table[] = {
 	{0, 0, 0, NULL, NULL}};
 static const struct conv_table u8_table[] = {
 	TABLE_LIST(32, 32, 8)
-	TABLE_LIST(24, 32, 8)
 	TABLE_LIST(24, 24, 8)
 	TABLE_LIST(16, 16, 8)
 	TABLE_LIST(8, 8, 8)
@@ -162,7 +160,6 @@ static const struct conv_table u8_table[] = {
 	{0, 0, 0, NULL, NULL}};
 static const struct conv_table s16le_table[] = {
 	TABLE_LIST(32, 32, 16)
-	TABLE_LIST(24, 32, 16)
 	TABLE_LIST(24, 24, 16)
 	TABLE_LIST(16, 16, 16)
 	TABLE_LIST(8, 8, 16)
@@ -172,7 +169,6 @@ static const struct conv_table s16le_table[] = {
 	{0, 0, 0, NULL, NULL}};
 static const struct conv_table s16be_table[] = {
 	TABLE_LIST(32, 32, 16)
-	TABLE_LIST(24, 32, 16)
 	TABLE_LIST(24, 24, 16)
 	TABLE_LIST(16, 16, 16)
 	TABLE_LIST(8, 8, 16)
@@ -182,7 +178,6 @@ static const struct conv_table s16be_table[] = {
 	{0, 0, 0, NULL, NULL}};
 static const struct conv_table u16le_table[] = {
 	TABLE_LIST(32, 32, 16)
-	TABLE_LIST(24, 32, 16)
 	TABLE_LIST(24, 24, 16)
 	TABLE_LIST(16, 16, 16)
 	TABLE_LIST(8, 8, 16)
@@ -192,7 +187,6 @@ static const struct conv_table u16le_table[] = {
 	{0, 0, 0, NULL, NULL}};
 static const struct conv_table u16be_table[] = {
 	TABLE_LIST(32, 32, 16)
-	TABLE_LIST(24, 32, 16)
 	TABLE_LIST(24, 24, 16)
 	TABLE_LIST(16, 16, 16)
 	TABLE_LIST(8, 8, 16)
@@ -203,7 +197,6 @@ static const struct conv_table u16be_table[] = {
 #ifdef notdef
 static const struct conv_table s24le_table[] = {
 	TABLE_LIST(32, 32, 24)
-	TABLE_LIST(24, 32, 24)
 	TABLE_LIST(24, 24, 24)
 	TABLE_LIST(16, 16, 24)
 	TABLE_LIST(8, 8, 24)
@@ -213,7 +206,6 @@ static const struct conv_table s24le_table[] = {
 	{0, 0, 0, NULL, NULL}};
 static const struct conv_table s24be_table[] = {
 	TABLE_LIST(32, 32, 24)
-	TABLE_LIST(24, 32, 24)
 	TABLE_LIST(24, 24, 24)
 	TABLE_LIST(16, 16, 24)
 	TABLE_LIST(8, 8, 24)
@@ -223,7 +215,6 @@ static const struct conv_table s24be_table[] = {
 	{0, 0, 0, NULL, NULL}};
 static const struct conv_table u24le_table[] = {
 	TABLE_LIST(32, 32, 24)
-	TABLE_LIST(24, 32, 24)
 	TABLE_LIST(24, 24, 24)
 	TABLE_LIST(16, 16, 24)
 	TABLE_LIST(8, 8, 24)
@@ -233,7 +224,6 @@ static const struct conv_table u24le_table[] = {
 	{0, 0, 0, NULL, NULL}};
 static const struct conv_table u24be_table[] = {
 	TABLE_LIST(32, 32, 24)
-	TABLE_LIST(24, 32, 24)
 	TABLE_LIST(24, 24, 24)
 	TABLE_LIST(16, 16, 24)
 	TABLE_LIST(8, 8, 24)
@@ -244,7 +234,6 @@ static const struct conv_table u24be_table[] = {
 #endif
 static const struct conv_table s32le_table[] = {
 	TABLE_LIST(32, 32, 32)
-	TABLE_LIST(24, 32, 32)
 	TABLE_LIST(24, 24, 32)
 	TABLE_LIST(16, 16, 32)
 	TABLE_LIST(8, 8, 32)
@@ -254,7 +243,6 @@ static const struct conv_table s32le_table[] = {
 	{0, 0, 0, NULL, NULL}};
 static const struct conv_table s32be_table[] = {
 	TABLE_LIST(32, 32, 32)
-	TABLE_LIST(24, 32, 32)
 	TABLE_LIST(24, 24, 32)
 	TABLE_LIST(16, 16, 32)
 	TABLE_LIST(8, 8, 32)
@@ -264,7 +252,6 @@ static const struct conv_table s32be_table[] = {
 	{0, 0, 0, NULL, NULL}};
 static const struct conv_table u32le_table[] = {
 	TABLE_LIST(32, 32, 32)
-	TABLE_LIST(24, 32, 32)
 	TABLE_LIST(24, 24, 32)
 	TABLE_LIST(16, 16, 32)
 	TABLE_LIST(8, 8, 32)
@@ -274,7 +261,6 @@ static const struct conv_table u32le_table[] = {
 	{0, 0, 0, NULL, NULL}};
 static const struct conv_table u32be_table[] = {
 	TABLE_LIST(32, 32, 32)
-	TABLE_LIST(24, 32, 32)
 	TABLE_LIST(24, 24, 32)
 	TABLE_LIST(16, 16, 32)
 	TABLE_LIST(8, 8, 32)
@@ -313,7 +299,6 @@ static const struct conv_table u32be_table[] = {
 
 static const struct conv_table mulaw_table[] = {
 	MULAW_LIST(32, 32, 32)
-	MULAW_LIST(24, 32, 24)
 	MULAW_LIST(24, 24, 24)
 	MULAW_LIST(16, 16, 16)
 	{AUDIO_ENCODING_SLINEAR_LE, 8, 8,
@@ -323,7 +308,6 @@ static const struct conv_table mulaw_table[] = {
 	{0, 0, 0, NULL, NULL}};
 static const struct conv_table alaw_table[] = {
 	ALAW_LIST(32, 32, 32)
-	ALAW_LIST(24, 32, 24)
 	ALAW_LIST(24, 24, 24)
 	ALAW_LIST(16, 16, 16)
 	{AUDIO_ENCODING_SLINEAR_LE, 8, 8,
@@ -710,10 +694,6 @@ LINEARN_LINEAR(32, 32, 32);
 LINEARN_LINEAR(32, 32, 24);
 LINEARN_LINEAR(32, 32, 16);
 LINEARN_LINEAR(32, 32, 8);
-LINEARN_LINEAR(24, 32, 32);
-LINEARN_LINEAR(24, 32, 24);
-LINEARN_LINEAR(24, 32, 16);
-LINEARN_LINEAR(24, 32, 8);
 LINEARN_LINEAR(24, 24, 32);
 LINEARN_LINEAR(24, 24, 24);
 LINEARN_LINEAR(24, 24, 16);

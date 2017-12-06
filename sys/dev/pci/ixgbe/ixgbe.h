@@ -1,6 +1,7 @@
-/* $NetBSD: ixgbe.h,v 1.27 2017/11/02 08:41:15 msaitoh Exp $ */
+/* $NetBSD: ixgbe.h,v 1.29 2017/12/06 04:08:50 msaitoh Exp $ */
 
 /******************************************************************************
+  SPDX-License-Identifier: BSD-3-Clause
 
   Copyright (c) 2001-2017, Intel Corporation
   All rights reserved.
@@ -718,6 +719,8 @@ int  ixgbe_setup_receive_structures(struct adapter *);
 void ixgbe_free_receive_structures(struct adapter *);
 void ixgbe_txeof(struct tx_ring *);
 bool ixgbe_rxeof(struct ix_queue *);
+
+const struct sysctlnode *ixgbe_sysctl_instance(struct adapter *);
 
 #include "ixgbe_bypass.h"
 #include "ixgbe_sriov.h"

@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.1169 2017/10/23 08:08:53 skrll Exp $
+# $NetBSD: GENERIC,v 1.1172 2017/11/30 11:56:45 jmcneill Exp $
 #
 # GENERIC machine description file
 #
@@ -22,7 +22,7 @@ include 	"arch/i386/conf/std.i386"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident		"GENERIC-$Revision: 1.1169 $"
+#ident		"GENERIC-$Revision: 1.1172 $"
 
 maxusers	64		# estimated number of users
 
@@ -167,6 +167,7 @@ file-system	TMPFS		# Efficient memory file-system
 # File system options
 options 	QUOTA		# legacy UFS quotas
 options 	QUOTA2		# new, in-filesystem UFS quotas
+#options 	DISKLABEL_EI	# disklabel Endian Independent support
 options 	FFS_EI		# FFS Endian Independent support
 options 	WAPBL		# File system journaling support
 #options 	UFS_DIRHASH	# UFS Large Directory Hashing - Experimental
@@ -350,6 +351,7 @@ joy*		at acpi?		# Joystick/Game port
 mpu*		at acpi?		# Roland MPU-401 MIDI UART
 pckbc*		at acpi?		# PC keyboard controller
 pcppi*		at acpi?		# AT-style speaker sound
+qemufwcfg*	at acpi?		# QEMU Firmware Configuration device
 sdhc*		at acpi?		# SD Host Controller
 sony*		at acpi?		# Sony Miscellaneous Controller
 thinkpad*	at acpi?		# IBM/Lenovo Thinkpad hotkeys
@@ -1594,10 +1596,12 @@ geodecntr* at geodegcb? 		# AMD Geode SC1100 high res. counter
 weasel* at pci?
 
 # Virtio devices
-virtio*	at pci? dev ? function ?	# Virtio PCI device
-viomb*	at virtio?			# Virtio memory balloon device
-ld*	at virtio?			# Virtio disk device
-vioif*	at virtio?			# Virtio network device
+virtio* at pci? dev ? function ?	# Virtio PCI device
+viomb* at virtio?			# Virtio memory balloon device
+ld* at virtio?				# Virtio disk device
+vioif* at virtio?			# Virtio network device
+viornd* at virtio?			# Virtio entropy device
+vioscsi* at virtio?			# Virtio SCSI device
 
 
 # Pull in optional local configuration

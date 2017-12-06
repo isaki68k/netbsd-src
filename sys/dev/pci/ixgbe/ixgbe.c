@@ -1,4 +1,4 @@
-/* $NetBSD: ixgbe.c,v 1.109 2017/11/02 08:41:15 msaitoh Exp $ */
+/* $NetBSD: ixgbe.c,v 1.115 2017/12/06 04:08:50 msaitoh Exp $ */
 
 /******************************************************************************
 
@@ -257,7 +257,6 @@ static void	ixgbe_handle_msf(void *);
 static void	ixgbe_handle_mod(void *);
 static void	ixgbe_handle_phy(void *);
 
-const struct sysctlnode *ixgbe_sysctl_instance(struct adapter *);
 static ixgbe_vendor_info_t *ixgbe_lookup(const struct pci_attach_args *);
 
 /************************************************************************
@@ -273,6 +272,9 @@ DRIVER_MODULE(ix, pci, ix_driver, ix_devclass, 0, 0);
 
 MODULE_DEPEND(ix, pci, 1, 1, 1);
 MODULE_DEPEND(ix, ether, 1, 1, 1);
+#ifdef DEV_NETMAP
+MODULE_DEPEND(ix, netmap, 1, 1, 1);
+#endif
 #endif
 
 /*
@@ -499,9 +501,6 @@ ixgbe_initialize_rss_mapping(struct adapter *adapter)
 		mrqc |= IXGBE_MRQC_RSS_FIELD_IPV6_EX_TCP;
 	if (rss_hash_config & RSS_HASHTYPE_RSS_UDP_IPV4)
 		mrqc |= IXGBE_MRQC_RSS_FIELD_IPV4_UDP;
-	if (rss_hash_config & RSS_HASHTYPE_RSS_UDP_IPV4_EX)
-		device_printf(adapter->dev, "%s: RSS_HASHTYPE_RSS_UDP_IPV4_EX defined, but not supported\n",
-		    __func__);
 	if (rss_hash_config & RSS_HASHTYPE_RSS_UDP_IPV6)
 		mrqc |= IXGBE_MRQC_RSS_FIELD_IPV6_UDP;
 	if (rss_hash_config & RSS_HASHTYPE_RSS_UDP_IPV6_EX)
@@ -853,6 +852,7 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 	} else
 		adapter->num_segs = IXGBE_82598_SCATTER;
 
+	hw->mac.ops.set_lan_id(hw);
 	ixgbe_init_device_features(adapter);
 
 	if (ixgbe_configure_interrupts(adapter)) {
@@ -1003,8 +1003,13 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 		high = (nvmreg >> 12) & 0x0f;
 		low = (nvmreg >> 4) & 0xff;
 		id = nvmreg & 0x000f;
-		aprint_normal(" PHY FW Revision %u.%02x ID 0x%x,", high, low,
-		    id);
+		aprint_normal(" PHY FW Revision %u.", high);
+		if (hw->mac.type == ixgbe_mac_X540)
+			str = "%x";
+		else
+			str = "%02x";
+		aprint_normal(str, low);
+		aprint_normal(" ID 0x%x,", id);
 		break;
 	default:
 		break;
@@ -1069,7 +1074,11 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 		break;
 	}
 
-	if (hw->phy.id != 0) {
+	/*
+	 *  Print PHY ID only for copper PHY. On device which has SFP(+) cage
+	 * and a module is inserted, phy.id is not MII PHY id but SFF 8024 ID.
+	 */
+	if (hw->phy.media_type == ixgbe_media_type_copper) {
 		uint16_t id1, id2;
 		int oui, model, rev;
 		const char *descr;
@@ -1210,7 +1219,7 @@ ixgbe_setup_interface(device_t dev, struct adapter *adapter)
 	ifp->if_softc = adapter;
 	ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
 #ifdef IXGBE_MPSAFE
-	ifp->if_extflags = IFEF_START_MPSAFE;
+	ifp->if_extflags = IFEF_MPSAFE;
 #endif
 	ifp->if_ioctl = ixgbe_ioctl;
 #if __FreeBSD_version >= 1100045
@@ -2176,15 +2185,17 @@ ixgbe_setup_vlan_hw_support(struct adapter *adapter)
 		return;
 
 	/* Setup the queues for vlans */
-	for (i = 0; i < adapter->num_queues; i++) {
-		rxr = &adapter->rx_rings[i];
-		/* On 82599 the VLAN enable is per/queue in RXDCTL */
-		if (hw->mac.type != ixgbe_mac_82598EB) {
-			ctrl = IXGBE_READ_REG(hw, IXGBE_RXDCTL(rxr->me));
-			ctrl |= IXGBE_RXDCTL_VME;
-			IXGBE_WRITE_REG(hw, IXGBE_RXDCTL(rxr->me), ctrl);
+	if (ec->ec_capenable & ETHERCAP_VLAN_HWTAGGING) {
+		for (i = 0; i < adapter->num_queues; i++) {
+			rxr = &adapter->rx_rings[i];
+			/* On 82599 the VLAN enable is per/queue in RXDCTL */
+			if (hw->mac.type != ixgbe_mac_82598EB) {
+				ctrl = IXGBE_READ_REG(hw, IXGBE_RXDCTL(rxr->me));
+				ctrl |= IXGBE_RXDCTL_VME;
+				IXGBE_WRITE_REG(hw, IXGBE_RXDCTL(rxr->me), ctrl);
+			}
+			rxr->vtag_strip = TRUE;
 		}
-		rxr->vtag_strip = TRUE;
 	}
 
 	if ((ec->ec_capenable & ETHERCAP_VLAN_HWFILTER) == 0)
@@ -5972,7 +5983,6 @@ ixgbe_configure_interrupts(struct adapter *adapter)
 
 	if (ixgbe_num_queues != 0)
 		queues = ixgbe_num_queues;
-	/* Set max queues to 8 when autoconfiguring */
 	else
 		queues = min(queues,
 		    min(mac->max_tx_queues, mac->max_rx_queues));

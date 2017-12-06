@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_event.c,v 1.96 2017/10/25 08:12:39 maya Exp $	*/
+/*	$NetBSD: kern_event.c,v 1.101 2017/11/30 20:25:55 christos Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2009 The NetBSD Foundation, Inc.
@@ -58,7 +58,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_event.c,v 1.96 2017/10/25 08:12:39 maya Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_event.c,v 1.101 2017/11/30 20:25:55 christos Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -108,6 +108,7 @@ static void	filt_timerdetach(struct knote *);
 static int	filt_timer(struct knote *, long hint);
 
 static const struct fileops kqueueops = {
+	.fo_name = "kqueue",
 	.fo_read = (void *)enxio,
 	.fo_write = (void *)enxio,
 	.fo_ioctl = kqueue_ioctl,
@@ -370,9 +371,7 @@ kfilter_register(const char *name, const struct filterops *filtops,
 	/* Adding new slot */
 	kfilter = &user_kfilters[user_kfilterc++];
 reuse:
-	kfilter->namelen = strlen(name) + 1;
-	kfilter->name = kmem_alloc(kfilter->namelen, KM_SLEEP);
-	memcpy(__UNCONST(kfilter->name), name, kfilter->namelen);
+	kfilter->name = kmem_strdupsize(name, &kfilter->namelen, KM_SLEEP);
 
 	kfilter->filter = (kfilter - user_kfilters) + EVFILT_SYSCOUNT;
 
@@ -984,6 +983,10 @@ kqueue_register(struct kqueue *kq, struct kevent *kev)
 		}
 		mutex_enter(&fdp->fd_lock);
 		ff = fdp->fd_dt->dt_ff[fd];
+		if (ff->ff_refcnt & FR_CLOSING) {
+			error = EBADF;
+			goto doneunlock;
+		}
 		if (fd <= fdp->fd_lastkqfile) {
 			SLIST_FOREACH(kn, &ff->ff_knlist, kn_link) {
 				if (kq == kn->kn_kq &&
@@ -1061,12 +1064,14 @@ kqueue_register(struct kqueue *kq, struct kevent *kev)
 			error = (*kfilter->filtops->f_attach)(kn);
 			KERNEL_UNLOCK_ONE(NULL);	/* XXXSMP */
 			if (error != 0) {
-#ifdef DIAGNOSTIC
-				printf("%s: event type %d not supported for "
-				    "file type %d (error %d)\n", __func__,
-				    kn->kn_filter, kn->kn_obj ?
-				    ((file_t *)kn->kn_obj)->f_type : -1, error);
+#ifdef DEBUG
+				const file_t *ft = kn->kn_obj;
+				uprintf("%s: event type %d not supported for "
+				    "file type %d/%s (error %d)\n", __func__,
+				    kn->kn_filter, ft ? ft->f_type : -1,
+				    ft ? ft->f_ops->fo_name : "?", error);
 #endif
+
 				/* knote_detach() drops fdp->fd_lock */
 				knote_detach(kn, fdp, false);
 				goto done;
@@ -1098,8 +1103,7 @@ kqueue_register(struct kqueue *kq, struct kevent *kev)
 	} else {
 		if (kn == NULL) {
 			error = ENOENT;
-		 	mutex_exit(&fdp->fd_lock);
-			goto done;
+			goto doneunlock;
 		}
 		if (kev->flags & EV_DELETE) {
 			/* knote_detach() drops fdp->fd_lock */
@@ -1120,6 +1124,7 @@ kqueue_register(struct kqueue *kq, struct kevent *kev)
 	if ((kev->flags & EV_ENABLE)) {
 		knote_enqueue(kn);
 	}
+doneunlock:
 	mutex_exit(&fdp->fd_lock);
  done:
 	rw_exit(&kqueue_filter_lock);
