@@ -16,7 +16,10 @@
 /* ring の top フレームのポインタを求めます。 */
 #define RING_TOP(type, ringptr) (((type*)(ringptr)->sample) + (ringptr)->top * (ringptr)->fmt.channels)
 
-/* ring の bottom (= top + count、すなわち、最終有効フレームの次) フレームのポインタを求めます。 */
+// ring の bottom (= top + count、すなわち、最終有効フレームの次) フレームの
+// ポインタを求めます。
+// type が internal_t か internal2_t の場合のみ使用できます。
+// hwbuf のポインタはこちらではなく RING_BOT_UINT8() で取得してください。
 #define RING_BOT(type, ringptr) (((type*)(ringptr)->sample) + audio_ring_bottom(ringptr) * (ringptr)->fmt.channels)
 
 /* ring の frame 位置のポインタを求めます。 */
@@ -27,7 +30,9 @@
 /* ring の top フレームのポインタを求めます。 */
 #define RING_TOP_UINT8(ringptr) (((uint8_t*)(ringptr)->sample) + (ringptr)->top * (ringptr)->fmt.channels * (ringptr)->fmt.stride / 8)
 
-/* ring の bottom (= top + count、すなわち、最終有効フレームの次) フレームのポインタを求めます。 */
+// ring の bottom (= top + count、すなわち、最終有効フレームの次) フレームの
+// ポインタを求めます。HWbuf は 4bit/sample の可能性があるため RING_BOT() では
+// なく必ずこちらを使用してください。
 #define RING_BOT_UINT8(ringptr) (((uint8_t*)(ringptr)->sample) + audio_ring_bottom(ringptr) * (ringptr)->fmt.channels * (ringptr)->fmt.stride / 8)
 
 /* キャパシティをバイト単位で求めます。 */
