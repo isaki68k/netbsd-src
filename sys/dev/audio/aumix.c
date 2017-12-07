@@ -1699,10 +1699,8 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 			if (error < 0) {
 				error = EINTR;
 			}
-			if (error) {
-				break;
-			}
-		} else if (error) {
+		}
+		if (error) {
 			break;
 		}
 		audio_track_play(track, false);
