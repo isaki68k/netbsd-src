@@ -41,18 +41,46 @@
 static inline bool
 is_valid_ring(const audio_ring_t *ring)
 {
-	if (ring == NULL) return false;
-	if (!is_valid_format(&ring->fmt)) return false;
-	if (ring->capacity < 0) return false;
-	if (ring->capacity > INT_MAX / 2) return false;
-	if (ring->count < 0) return false;
-	if (ring->count > ring->capacity) return false;
+	KASSERT(ring != NULL);
+
+	if (!is_valid_format(&ring->fmt)) {
+		TRACE0("is_valid_format() failed");
+		return false;
+	}
+	if (ring->capacity < 0) {
+		TRACE0("capacity(%d) < 0", ring->capacity);
+		return false;
+	}
+	if (ring->capacity > INT_MAX / 2) {
+		TRACE0("capacity(%d) > INT_MAX/2", ring->capacity);
+		return false;
+	}
+	if (ring->count < 0) {
+		TRACE0("count(%d) < 0", ring->count);
+		return false;
+	}
+	if (ring->count > ring->capacity) {
+		TRACE0("count(%d) < capacity(%d)", ring->count, ring->capacity);
+		return false;
+	}
 	if (ring->capacity == 0) {
-		if (ring->sample != NULL) return false;
+		if (ring->sample != NULL) {
+			TRACE0("capacity == 0 but sample != NULL");
+			return false;
+		}
 	} else {
-		if (ring->sample == NULL) return false;
-		if (ring->top < 0) return false;
-		if (ring->top >= ring->capacity) return false;
+		if (ring->sample == NULL) {
+			TRACE0("capacity != 0 but sample == NULL");
+			return false;
+		}
+		if (ring->top < 0) {
+			TRACE0("top(%d) < 0", ring->top);
+			return false;
+		}
+		if (ring->top >= ring->capacity) {
+			TRACE0("top(%d) >= capacity(%d)", ring->top, ring->capacity);
+			return false;
+		}
 	}
 	return true;
 }
