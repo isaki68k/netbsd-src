@@ -1658,15 +1658,16 @@ audio_file_clear(struct audio_softc *sc, audio_file_t *file)
 	//KASSERT(mutex_owned(sc->sc_intr_lock));
 
 	// XXX track_clear() があってもいいかも
+	// XXX 周波数変換バッファに端数がたまる可能性があるはずだがそれは
 	if ((file->mode & AUMODE_PLAY) != 0) {
 		track = &file->ptrack;
 		track->outputbuf.count = 0;
-		track->subframe_buf_used = 0;
+		track->usrbuf.count = 0;
 	}
 	if ((file->mode & AUMODE_RECORD) != 0) {
 		track = &file->rtrack;
 		track->outputbuf.count = 0;
-		track->subframe_buf_used = 0;
+		track->usrbuf.count = 0;
 	}
 }
 

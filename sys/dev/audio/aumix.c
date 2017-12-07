@@ -495,6 +495,7 @@ audio_track_init(audio_track_t *track, audio_trackmixer_t *mixer, int mode)
 void
 audio_track_destroy(audio_track_t *track)
 {
+	audio_free(track->usrbuf.sample);
 	audio_free(track->codec.srcbuf.sample);
 	audio_free(track->chvol.srcbuf.sample);
 	audio_free(track->chmix.srcbuf.sample);
@@ -754,6 +755,15 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *fmt)
 	// 入力バッファは先頭のステージ相当品
 	track->input = last_dst;
 
+	// 入力フォーマットに従って usrbuf を作る
+	track->usrbuf.fmt = *fmt;
+	track->usrbuf.top = 0;
+	track->usrbuf.count = 0;
+	track->usrbuf.capacity = NBLKOUT *
+	    frametobyte(&track->inputfmt, track->input->capacity);
+	track->usrbuf.sample = audio_realloc(track->usrbuf.sample,
+	    track->usrbuf.capacity);
+
 	// 出力フォーマットに従って outputbuf を作る
 	track->outputbuf.top = 0;
 	track->outputbuf.count = 0;
@@ -824,37 +834,38 @@ audio_apply_stage(audio_track_t *track, audio_stage_t *stage, bool isfreq)
 static int
 audio_track_play_input(audio_track_t *track, struct uio *uio)
 {
+	audio_ring_t *usrbuf;
+	int freebytes, movebytes;
+	int error;
+	uint8_t *dptr;
 	KASSERT(uio);
 
-	/* input の空きバイト数を求める */
-	int free_count = audio_ring_unround_free_count(track->input);
-	int free_bytelen = frametobyte(&track->inputfmt, free_count) - track->subframe_buf_used;
-	TRACE(track, "free=%d", free_count);
+	usrbuf = &track->usrbuf;
+	TRACE(track, "resid=%zu usrbuf=%d/%d/%d", uio->uio_resid,
+		usrbuf->top, usrbuf->count, usrbuf->capacity);
 
-	if (free_bytelen == 0) {
-		return EAGAIN;
+	// usrbuf の空きバイト数を求める
+	if (usrbuf->top + usrbuf->count < usrbuf->capacity) {
+		freebytes = usrbuf->capacity - (usrbuf->top + usrbuf->count);
+	} else {
+		freebytes = usrbuf->capacity - usrbuf->count;
 	}
+	if (freebytes == 0)
+		return EAGAIN;
 
-	// 今回 uiomove するバイト数 */
-	int move_bytelen = min(free_bytelen, (int)uio->uio_resid);
+	// 今回 uiomove するバイト数
+	movebytes = min(freebytes, (int)uio->uio_resid);
 
-	// 今回出来上がるフレーム数 */
-	int framecount = (move_bytelen + track->subframe_buf_used) * 8 / (track->inputfmt.channels * track->inputfmt.stride);
-
-	// コピー先アドレスは subframe_buf_used で調整する必要がある
-	uint8_t *dptr = RING_BOT_UINT8(track->input) + track->subframe_buf_used;
-	// min(bytelen, uio->uio_resid) は uiomove が保証している
-	// uiomove は intr_lock 持ってるとコールできない
-	int error = uiomove(dptr, move_bytelen, uio);
+	TRACE(track, "freebytes=%d movebytes=%d", freebytes, movebytes);
+	dptr = (uint8_t *)usrbuf->sample + audio_ring_bottom(usrbuf);
+	error = uiomove(dptr, movebytes, uio);
 	if (error) {
-		TRACE(track, "uio error=%d", error);
+		TRACE(track, "uiomove error=%d", error);
 		return error;
 	}
-	audio_ring_appended(track->input, framecount);
-	track->inputcounter += framecount;
+	audio_ring_appended(usrbuf, movebytes);
+	track->inputcounter += movebytes;
 
-	// 今回 input に置いたサブフレームを次回のために求める
-	track->subframe_buf_used += move_bytelen - framecount * track->inputfmt.channels * track->inputfmt.stride / 8;
 	return 0;
 }
 
@@ -867,6 +878,19 @@ audio_track_play(audio_track_t *track, bool isdrain)
 	KASSERT(track);
 
 	int track_count_0 = track->outputbuf.count;
+
+	// usrbuf からコピー
+	// XXX usrbuf が1ブロック以上たまってなくてもここに来るかどうか
+	int count = audio_ring_unround_free_count(track->input);
+	int bytes = frametobyte(&track->inputfmt, count);
+	if (track->usrbuf.count < bytes) {
+		return;
+	}
+	memcpy(RING_BOT(internal_t, track->input),
+	    RING_TOP(uint8_t, &track->usrbuf),
+		bytes);
+	audio_ring_appended(track->input, count);
+	audio_ring_tookfromtop(&track->usrbuf, bytes);
 
 	/* エンコーディング変換 */
 	audio_apply_stage(track, &track->codec, false);
@@ -1582,8 +1606,6 @@ audio_track_play_drain_core(audio_track_t *track, bool wait)
 		// トラックミキサが動作していないときは、動作させる
 		audio_trackmixer_play(mixer, true);
 	}
-	/* フレームサイズ未満のため待たされていたデータを破棄 */
-	track->subframe_buf_used = 0;
 
 #if defined(AUDIO_SOFTINTR)
 	mutex_exit(&mixer->softintrlock);

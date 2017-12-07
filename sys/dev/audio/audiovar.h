@@ -123,7 +123,8 @@ typedef struct audio_stage audio_stage_t;
 struct audio_track
 {
 	int mode;								/* AUMODE_PLAY or AUMODE_RECORD */
-	int                subframe_buf_used;	/* 1フレーム未満の使用バイト数 */
+
+	audio_ring_t        usrbuf;			// ユーザ入出力バッファ
 
 	audio_format2_t     inputfmt;		// このトラックに入力するフォーマット
 	audio_ring_t       *input;			// このトラックに入力するとき使用するバッファへのポインタ
