@@ -109,11 +109,6 @@ __KERNEL_RCSID(0, "$NetBSD$");
 
 #include <uvm/uvm.h>
 
-// デバッグレベルは
-// 1: open/close/set_param等
-// 2: read/write/ioctlシステムコールくらいまでは含む
-// 3: TRACEも含む
-#define AUDIO_DEBUG	1
 #ifdef AUDIO_DEBUG
 #define DPRINTF(n, fmt...)	do {	\
 	if (audiodebug >= (n))		\

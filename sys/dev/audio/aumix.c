@@ -54,27 +54,11 @@
  * }
  */
 
-// カーネルの場合は audio.c の AUDIO_DEBUG だけで制御する
-// テストプログラムの場合はここの AUDIO_DEBUG で制御する
-#if !defined(_KERNEL)
-#define AUDIO_DEBUG 2
-#endif
-
-#if AUDIO_DEBUG > 2
-#define TRACE0(fmt, ...)	audio_trace0(__func__, fmt, ## __VA_ARGS__)
-#define TRACE(t, fmt, ...)	audio_trace(__func__, t, fmt, ## __VA_ARGS__)
-#else
-#define TRACE0(fmt, ...)	/**/
-#define TRACE(t, fmt, ...)	/**/
-#endif
-
 #if defined(_KERNEL)
 #define lock(x)					/*とりあえず*/
 #define unlock(x)				/*とりあえず*/
 #endif
 
-void audio_trace0(const char *funcname, const char *fmt, ...);
-void audio_trace(const char *funcname, audio_track_t *track, const char *fmt, ...);
 void *audio_realloc(void *memblock, size_t bytes);
 void audio_free(void *memblock);
 int16_t audio_volume_to_inner(uint8_t v);

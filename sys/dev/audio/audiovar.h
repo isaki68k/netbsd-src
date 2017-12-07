@@ -23,7 +23,20 @@
 #else
 #define KASSERT(expr)	/**/
 #endif
+
+// カーネルの場合は audio.c の AUDIO_DEBUG だけで制御する
+// テストプログラムの場合はここの AUDIO_DEBUG で制御する
+#define AUDIO_DEBUG 2
+
 #endif // _KERNEL
+
+#if AUDIO_DEBUG > 2
+#define TRACE0(fmt, ...)	audio_trace0(__func__, fmt, ## __VA_ARGS__)
+#define TRACE(t, fmt, ...)	audio_trace(__func__, t, fmt, ## __VA_ARGS__)
+#else
+#define TRACE0(fmt, ...)	/**/
+#define TRACE(t, fmt, ...)	/**/
+#endif
 
 // 出力バッファのブロック数
 #define NBLKOUT	(16)
@@ -208,6 +221,9 @@ struct audio_file
 
 extern const char *fmt_tostring(const audio_format2_t *);
 extern int debug;
+
+extern void audio_trace0(const char *funcname, const char *fmt, ...);
+extern void audio_trace(const char *funcname, audio_track_t *track, const char *fmt, ...);
 
 static inline struct audio_params
 format2_to_params(const audio_format2_t *f2)
