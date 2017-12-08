@@ -223,6 +223,49 @@ audio_track_uncl(audio_track_t *track)
 }
 #endif
 
+static inline void
+audio_track_enter_colock(audio_track_t *track)
+{
+#if defined(AUDIO_SOFTINTR)
+	mutex_enter(&track->mixer->softintrlock);
+#else
+	audio_track_cl(track);
+#endif
+}
+
+static inline void
+audio_track_leave_colock(audio_track_t *track)
+{
+#if defined(AUDIO_SOFTINTR)
+	mutex_exit(&track->mixer->softintrlock);
+#else
+	audio_track_uncl(track);
+#endif
+}
+
+static inline kmutex_t *
+audio_mixer_get_lock(audio_trackmixer_t *mixer)
+{
+#if defined(AUDIO_SOFTINTR)
+	return &mixer->softintrlock;
+#else
+	return mixer->sc->sc_intr_lock;
+#endif
+}
+
+static inline void
+audio_mixer_enter_lock(audio_trackmixer_t *mixer)
+{
+	mutex_enter(audio_mixer_get_lock(mixer));
+}
+
+static inline void
+audio_mixer_leave_lock(audio_trackmixer_t *mixer)
+{
+	mutex_exit(audio_mixer_get_lock(mixer));
+}
+
+
 static void
 audio_track_chvol(audio_filter_arg_t *arg)
 {
@@ -477,17 +520,9 @@ audio_track_init(audio_track_t *track, audio_trackmixer_t *mixer, int mode)
 	}
 
 	// デフォルトフォーマットでセット
-#if defined(AUDIO_SOFTINTR)
-	mutex_enter(&track->mixer->softintrlock);
-#else
-	mutex_enter(track->mixer->sc->sc_intr_lock);
-#endif
+	audio_mixer_enter_lock(mixer);
 	audio_track_set_format(track, default_format);
-#if defined(AUDIO_SOFTINTR)
-	mutex_exit(&track->mixer->softintrlock);
-#else
-	mutex_exit(track->mixer->sc->sc_intr_lock);
-#endif
+	audio_mixer_leave_lock(mixer);
 }
 
 // track 内のすべてのリソースを解放します。
@@ -713,11 +748,7 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *fmt)
 {
 	TRACE(track, "");
 	KASSERT(is_valid_format(fmt));
-#if defined(AUDIO_SOFTINTR)
-	KASSERT(mutex_owned(&track->mixer->softintrlock));
-#else
-	KASSERT(mutex_owned(track->mixer->sc->sc_intr_lock));
-#endif
+	KASSERT(mutex_owned(audio_mixer_get_lock(track->mixer)));
 
 	// 入力値チェック
 #if defined(_KERNEL)
@@ -1602,11 +1633,8 @@ audio_track_play_drain_core(audio_track_t *track, bool wait)
 	track->is_draining = true;
 
 	// 必要があれば無音挿入させる
-#if defined(AUDIO_SOFTINTR)
-	mutex_enter(&mixer->softintrlock);
-#else
-	audio_track_cl(track);
-#endif
+
+	audio_track_enter_colock(track);
 
 	audio_track_play(track, true);
 
@@ -1617,11 +1645,7 @@ audio_track_play_drain_core(audio_track_t *track, bool wait)
 		audio_trackmixer_play(mixer, true);
 	}
 
-#if defined(AUDIO_SOFTINTR)
-	mutex_exit(&mixer->softintrlock);
-#else
-	audio_track_uncl(track);
-#endif
+	audio_track_leave_colock(track);
 
 	if (wait) {
 		while (track->seq > mixer->hwseq) {
@@ -1683,29 +1707,14 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 
 	error = 0;
 
-#if defined(AUDIO_SOFTINTR)
-	audio_trackmixer_t *mixer = track->mixer;
-
-	mutex_enter(&mixer->softintrlock);
-#else
-	audio_track_cl(track);
-#endif
+	audio_track_enter_colock(track);
 
 	while (uio->uio_resid > 0) {
 		error = audio_track_play_input(track, uio);
 		if (error == EAGAIN) {
-#if defined(AUDIO_SOFTINTR)
-			mutex_exit(&mixer->softintrlock);
-#else
-			audio_track_uncl(track);
-#endif
+			audio_track_leave_colock(track);
 			error = audio_waitio(sc, track);
-
-#if defined(AUDIO_SOFTINTR)
-			mutex_enter(&mixer->softintrlock);
-#else
-			audio_track_cl(track);
-#endif
+			audio_track_enter_colock(track);
 			if (error < 0) {
 				error = EINTR;
 			}
@@ -1721,11 +1730,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 		emu_intr_check();
 #endif
 	}
-#if defined(AUDIO_SOFTINTR)
-	mutex_exit(&mixer->softintrlock);
-#else
-	audio_track_uncl(track);
-#endif
+	audio_track_leave_colock(track);
 
 	return error;
 }
