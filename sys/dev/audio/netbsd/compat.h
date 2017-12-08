@@ -8,6 +8,7 @@
 #include <sys/endian.h>
 #include <sys/queue.h>
 #include <sys/time.h>
+#include "aufilter.h"
 
 #define min(a,b)	(a < b ? a : b)
 #define max(a,b)	(a > b ? a : b)
@@ -35,21 +36,27 @@ typedef struct {
 	// GUID SubFormat;
 } WAVEFORMATEXTENSIBLE;
 
-typedef struct kcondvar {
+// Windows 側と同じになるんだが
+typedef struct kcondvar kcondvar_t;
+typedef struct kmutex kmutex_t;
+
+struct kcondvar {
 	volatile int v;
-} kcondvar_t;
+};
 
-typedef struct audio_params {
+struct kmutex {
+	volatile int v;
+};
+
+// Windows 側と同じになるんだが
+struct audio_params {
 	int sample_rate;
-	int precision;
-	int encoding;
 	int channels;
+	int encoding;
 	int validbits;
-} audio_params_t;
-
-typedef struct kmutex {
-	int dummy;
-} kmutex_t;
+	int precision;
+};
+typedef struct audio_params audio_params_t;
 
 // Windows 側と同じになるんだが
 struct audio_hw_if {
@@ -60,6 +67,8 @@ struct audio_hw_if {
 	int (*trigger_output)(void *, void *, void *, int, void(*)(void *), void *, const audio_params_t *);
 
 	int (*halt_output)(void *);
+	int (*round_blocksize)(void *, int, int, const audio_params_t *);
+	size_t (*round_buffersize)(void *, int, size_t);
 };
 
 // audiovar.h の前方参照
@@ -71,18 +80,23 @@ struct audio_softc
 	SLIST_HEAD(files_head, audio_file) sc_files;		/* 開いているファイルのリスト */
 	audio_trackmixer_t  *sc_pmixer;		/* 接続されている再生ミキサ */
 	audio_trackmixer_t  *sc_rmixer;		/* 接続されている録音ミキサ */
-	void *sc_lock;
-	void *sc_intr_lock;
+	kmutex_t *sc_lock;
+	kmutex_t *sc_intr_lock;
 	struct audio_hw_if *hw_if;
 	void *hw_hdl;
 	int sc_eof;
 
 	bool sc_pbusy;
+	void *dev;
+	audio_filter_reg_t sc_xxx_pfilreg;
+	audio_filter_reg_t sc_xxx_rfilreg;
+	audio_format2_t sc_pparams;
+	audio_format2_t sc_rparams;
 
 	void *phys; // 実物理デバイス
 
-	int sc_lock0;
-	int sc_intr_lock0;
+	kmutex_t sc_lock0;
+	kmutex_t sc_intr_lock0;
 	struct audio_hw_if hw_if0;
 };
 
@@ -125,21 +139,32 @@ cv_broadcast(kcondvar_t *cv)
 int cv_wait_sig(kcondvar_t *cv, void *lock);
 
 static inline int
-mutex_owned(void *mutex)
+mutex_owned(kmutex_t *mutex)
 {
-	return (*(int*)mutex != 0);
+	return (mutex->v != 0);
 }
 
 static inline void
-mutex_enter(void *mutex)
+mutex_enter(kmutex_t *mutex)
 {
-	*(int*)mutex = 1;
+	mutex->v = 1;
 }
 
 static inline void
-mutex_exit(void *mutex)
+mutex_exit(kmutex_t *mutex)
 {
-	*(int*)mutex = 0;
+	mutex->v = 0;
+}
+
+static inline int
+mutex_tryenter(kmutex_t *mutex)
+{
+	if (mutex_owned(mutex)) {
+		return 0;
+	} else {
+		mutex_enter(mutex);
+		return 1;
+	}
 }
 
 #define M_NOWAIT	(0)
@@ -165,4 +190,24 @@ static inline void
 getmicrotime(struct timeval *tv)
 {
 	gettimeofday(tv, NULL);
+}
+
+static inline void
+aprint_error_dev(void *dev, const char *fmt, ...)
+{
+	va_list ap;
+
+	va_start(ap, fmt);
+	vprintf(fmt, ap);
+	va_end(ap);
+}
+
+static inline void
+aprint_normal_dev(void *dev, const char *fmt, ...)
+{
+	va_list ap;
+
+	va_start(ap, fmt);
+	vprintf(fmt, ap);
+	va_end(ap);
 }
