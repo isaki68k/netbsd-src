@@ -763,6 +763,7 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *fmt)
 	    frametobyte(&track->inputfmt, track->input->capacity);
 	track->usrbuf.sample = audio_realloc(track->usrbuf.sample,
 	    track->usrbuf.capacity);
+	track->usrbuf_lowat = 0;
 
 	// 出力フォーマットに従って outputbuf を作る
 	track->outputbuf.top = 0;
@@ -835,26 +836,35 @@ static int
 audio_track_play_input(audio_track_t *track, struct uio *uio)
 {
 	audio_ring_t *usrbuf;
-	int freebytes, movebytes;
+	int freebytes;
+	int movebytes;
 	int error;
 	uint8_t *dptr;
 	KASSERT(uio);
 
 	usrbuf = &track->usrbuf;
-	TRACE(track, "resid=%zu usrbuf=%d/%d/%d", uio->uio_resid,
-		usrbuf->top, usrbuf->count, usrbuf->capacity);
+	TRACE(track, "resid=%zu usrbuf=%d/%d/%d lo=%d", uio->uio_resid,
+		usrbuf->top, usrbuf->count, usrbuf->capacity,
+	    track->usrbuf_lowat);
 
 	// usrbuf の空きバイト数を求める
+	freebytes = usrbuf->capacity - usrbuf->count;
 	if (usrbuf->top + usrbuf->count < usrbuf->capacity) {
-		freebytes = usrbuf->capacity - (usrbuf->top + usrbuf->count);
+		movebytes = usrbuf->capacity - (usrbuf->top + usrbuf->count);
 	} else {
-		freebytes = usrbuf->capacity - usrbuf->count;
+		movebytes = freebytes;
 	}
+	/* set lowat if usrbuf is full */
 	if (freebytes == 0)
+		track->usrbuf_lowat = usrbuf->capacity * 1 / 4;
+
+	/* check lowat */
+	if (freebytes < track->usrbuf_lowat)
 		return EAGAIN;
+	track->usrbuf_lowat = 0;
 
 	// 今回 uiomove するバイト数
-	movebytes = min(freebytes, (int)uio->uio_resid);
+	movebytes = min(movebytes, (int)uio->uio_resid);
 
 	TRACE(track, "freebytes=%d movebytes=%d", freebytes, movebytes);
 	dptr = (uint8_t *)usrbuf->sample + audio_ring_bottom(usrbuf);
