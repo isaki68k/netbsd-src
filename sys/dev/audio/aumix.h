@@ -40,13 +40,7 @@ void audio_track_init(audio_track_t *track, audio_trackmixer_t *mixer, int mode)
 void audio_track_destroy(audio_track_t *track);
 void audio_track_set_format(audio_track_t *track, audio_format2_t *track_fmt);
 void audio_track_play(audio_track_t *track, bool isdrain);
-#if defined(_KERNEL)
-int audio_track_play_drain(audio_track_t *track);
-#else
-int audio_track_play_drain(audio_track_t *track, bool wait);
-#endif
-
-int audio_track_play_drain_core(audio_track_t *track, bool wait);
+int audio_track_drain(audio_track_t *track, bool wait);
 
 int audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode);
 void audio_mixer_destroy(audio_trackmixer_t *mixer, int mode);
@@ -66,6 +60,7 @@ int audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_
 /* system call emulation */
 audio_file_t *sys_open(struct audio_softc *sc, int mode);
 int/*ssize_t*/ sys_write(audio_file_t *file, void* buf, size_t len);	/* write syscall の Userland 側エミュレート */
+int sys_ioctl_drain(audio_track_t *track, bool wait);	/* ioctl(AUDIO_DRAIN) */
 
 #endif // _KERNEL
 

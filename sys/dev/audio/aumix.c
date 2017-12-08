@@ -1598,29 +1598,9 @@ audio_trackmixer_softintr(void *arg)
 }
 #endif
 
-#if !defined(_KERNEL)
-int
-audio_track_play_drain(audio_track_t *track, bool wait)
-{
-	// 割り込みエミュレートしているときはメインループに制御を戻さないといけない
-	audio_trackmixer_t *mixer = track->mixer;
-	struct audio_softc *sc = mixer->sc;
-	mutex_enter(sc->sc_lock);
-	audio_track_play_drain_core(track, wait);
-	mutex_exit(sc->sc_lock);
-	return 0;
-}
-#else
-int
-audio_track_play_drain(audio_track_t *track)
-{
-	return audio_track_play_drain_core(track, true);
-}
-#endif
-
 // errno を返します。
 int
-audio_track_play_drain_core(audio_track_t *track, bool wait)
+audio_track_drain(audio_track_t *track, bool wait)
 {
 	audio_trackmixer_t *mixer = track->mixer;
 	struct audio_softc *sc = mixer->sc;
@@ -1794,5 +1774,20 @@ sys_open(struct audio_softc *sc, int mode)
 	SLIST_INSERT_HEAD(&sc->sc_files, file, entry);
 
 	return file;
+}
+
+// ioctl(AUDIO_DRAIN) 相当
+int
+sys_ioctl_drain(audio_track_t *track, bool wait)
+{
+	// 割り込みエミュレートしているときはメインループに制御を戻さないといけない
+	audio_trackmixer_t *mixer = track->mixer;
+	struct audio_softc *sc = mixer->sc;
+
+	mutex_enter(sc->sc_lock);
+	audio_track_drain(track, wait);
+	mutex_exit(sc->sc_lock);
+
+	return 0;
 }
 #endif // !_KERNEL
