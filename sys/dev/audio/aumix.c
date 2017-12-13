@@ -63,10 +63,16 @@ void *audio_realloc(void *memblock, size_t bytes);
 void audio_free(void *memblock);
 int16_t audio_volume_to_inner(uint8_t v);
 uint8_t audio_volume_to_outer(int16_t v);
+static int audio_trackmixer_mixall(audio_trackmixer_t *mixer, int req,
+	bool isintr);
 void audio_trackmixer_output(audio_trackmixer_t *mixer);
 #if defined(AUDIO_SOFTINTR)
 static void audio_trackmixer_softintr(void *arg);
 #endif
+static int audio2_trigger_output(audio_trackmixer_t *mixer, void *start,
+	void *end, int blksize);
+static int audio2_start_output(audio_trackmixer_t *mixer, void *start,
+	int blksize);
 
 #if !defined(_KERNEL)
 static int audio_waitio(struct audio_softc *sc, audio_track_t *track);
@@ -1145,103 +1151,6 @@ audio_mixer_destroy(audio_trackmixer_t *mixer, int mode)
 	// intrcv を cv_destroy() してはいけないっぽい。KASSERT で死ぬ。
 }
 
-// 全トラックを req フレーム分合成します。
-// 合成が行われれば 1 以上を返す?
-// mixer->softintrlock を取得して呼び出してください。
-static int
-audio_trackmixer_mixall(audio_trackmixer_t *mixer, int req, bool isintr)
-{
-	struct audio_softc *sc;
-	audio_file_t *f;
-	int mixed = 0;
-
-	sc = mixer->sc;
-#if defined(AUDIO_SOFTINTR)
-	KASSERT(mutex_owned(&mixer->softintrlock));
-#endif
-
-	SLIST_FOREACH(f, &sc->sc_files, entry) {
-		audio_track_t *track = &f->ptrack;
-
-#if !defined(AUDIO_SOFTINTR)
-		if (isintr) {
-			// 協調的ロックされているトラックは、今回ミキシングしない。
-			if (track->track_cl) continue;
-		}
-#endif
-
-		if (track->outputbuf.count < req) {
-			audio_track_play(track, isintr);
-		}
-
-		// 合成
-		if (track->outputbuf.count > 0) {
-			mixed = audio_mixer_play_mix_track(mixer, track, req, mixed);
-		}
-	}
-	return mixed;
-}
-
-static void
-audio2_pintr(void *arg)
-{
-	struct audio_softc *sc;
-	audio_trackmixer_t *mixer;
-
-	sc = arg;
-	KASSERT(mutex_owned(sc->sc_intr_lock));
-
-	mixer = sc->sc_pmixer;
-	TRACE0("hwbuf.count=%d", mixer->hwbuf.count);
-
-	audio_trackmixer_intr(mixer);
-}
-
-static int
-audio2_trigger_output(audio_trackmixer_t *mixer, void *start, void *end, int blksize)
-{
-	struct audio_softc *sc = mixer->sc;
-
-	KASSERT(sc->hw_if->trigger_output != NULL);
-	KASSERT(mutex_owned(sc->sc_intr_lock));
-
-	audio_params_t params;
-	// TODO: params 作る
-	params = format2_to_params(&mixer->hwbuf.fmt);
-	int error = sc->hw_if->trigger_output(sc->hw_hdl, start, end, blksize, audio2_pintr, sc, &params);
-	return error;
-}
-
-static int
-audio2_start_output(audio_trackmixer_t *mixer, void *start, int blksize)
-{
-	struct audio_softc *sc = mixer->sc;
-
-	KASSERT(sc->hw_if->start_output != NULL);
-	KASSERT(mutex_owned(sc->sc_intr_lock));
-
-	int error = sc->hw_if->start_output(sc->hw_hdl, start, blksize, audio2_pintr, sc);
-	return error;
-}
-
-int
-audio2_halt_output(struct audio_softc *sc)
-{
-	int error;
-
-	TRACE0("");
-	KASSERT(mutex_owned(sc->sc_lock));
-	KASSERT(mutex_owned(sc->sc_intr_lock));
-
-	error = sc->hw_if->halt_output(sc->hw_hdl);
-	// エラーが起きても停止は停止する
-	sc->sc_pbusy = false;
-	sc->sc_pmixer->hwbuf.top = 0;
-	sc->sc_pmixer->hwbuf.count = 0;
-
-	return error;
-}
-
 // トラックミキサ起動になる可能性のある再生要求
 // トラックミキサが起動したら true を返します。
 // 割り込みコンテキストから呼び出してはいけません。
@@ -1284,6 +1193,43 @@ audio_trackmixer_play(audio_trackmixer_t *mixer, bool force)
 		mixer->hwbuf.top, mixer->hwbuf.count, mixer->hwbuf.capacity);
 
 	return sc->sc_pbusy;
+}
+
+// 全トラックを req フレーム分合成します。
+// 合成が行われれば 1 以上を返す?
+// mixer->softintrlock を取得して呼び出してください。
+static int
+audio_trackmixer_mixall(audio_trackmixer_t *mixer, int req, bool isintr)
+{
+	struct audio_softc *sc;
+	audio_file_t *f;
+	int mixed = 0;
+
+	sc = mixer->sc;
+#if defined(AUDIO_SOFTINTR)
+	KASSERT(mutex_owned(&mixer->softintrlock));
+#endif
+
+	SLIST_FOREACH(f, &sc->sc_files, entry) {
+		audio_track_t *track = &f->ptrack;
+
+#if !defined(AUDIO_SOFTINTR)
+		if (isintr) {
+			// 協調的ロックされているトラックは、今回ミキシングしない。
+			if (track->track_cl) continue;
+		}
+#endif
+
+		if (track->outputbuf.count < req) {
+			audio_track_play(track, isintr);
+		}
+
+		// 合成
+		if (track->outputbuf.count > 0) {
+			mixed = audio_mixer_play_mix_track(mixer, track, req, mixed);
+		}
+	}
+	return mixed;
 }
 
 /*
@@ -1597,6 +1543,66 @@ audio_trackmixer_softintr(void *arg)
 		mixer->hwbuf.top, mixer->hwbuf.count, mixer->hwbuf.capacity);
 }
 #endif
+
+static void
+audio2_pintr(void *arg)
+{
+	struct audio_softc *sc;
+	audio_trackmixer_t *mixer;
+
+	sc = arg;
+	KASSERT(mutex_owned(sc->sc_intr_lock));
+
+	mixer = sc->sc_pmixer;
+	TRACE0("hwbuf.count=%d", mixer->hwbuf.count);
+
+	audio_trackmixer_intr(mixer);
+}
+
+static int
+audio2_trigger_output(audio_trackmixer_t *mixer, void *start, void *end, int blksize)
+{
+	struct audio_softc *sc = mixer->sc;
+
+	KASSERT(sc->hw_if->trigger_output != NULL);
+	KASSERT(mutex_owned(sc->sc_intr_lock));
+
+	audio_params_t params;
+	// TODO: params 作る
+	params = format2_to_params(&mixer->hwbuf.fmt);
+	int error = sc->hw_if->trigger_output(sc->hw_hdl, start, end, blksize, audio2_pintr, sc, &params);
+	return error;
+}
+
+static int
+audio2_start_output(audio_trackmixer_t *mixer, void *start, int blksize)
+{
+	struct audio_softc *sc = mixer->sc;
+
+	KASSERT(sc->hw_if->start_output != NULL);
+	KASSERT(mutex_owned(sc->sc_intr_lock));
+
+	int error = sc->hw_if->start_output(sc->hw_hdl, start, blksize, audio2_pintr, sc);
+	return error;
+}
+
+int
+audio2_halt_output(struct audio_softc *sc)
+{
+	int error;
+
+	TRACE0("");
+	KASSERT(mutex_owned(sc->sc_lock));
+	KASSERT(mutex_owned(sc->sc_intr_lock));
+
+	error = sc->hw_if->halt_output(sc->hw_hdl);
+	// エラーが起きても停止は停止する
+	sc->sc_pbusy = false;
+	sc->sc_pmixer->hwbuf.top = 0;
+	sc->sc_pmixer->hwbuf.count = 0;
+
+	return error;
+}
 
 // errno を返します。
 int
