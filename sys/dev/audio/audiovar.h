@@ -148,7 +148,7 @@ struct audio_track
 	int32_t            freq_coef;		// 周波数変換用係数
 
 	uint16_t  ch_volume[AUDIO_MAX_CHANNELS];	/* チャンネルバランス用 チャンネルボリューム */
-	uint16_t           volume;			/* トラックボリューム。トラックボリュームはトラックミキサで処理。 */
+	uint               volume;			/* トラックボリューム。トラックボリュームはトラックミキサで処理。 */
 
 	audio_trackmixer_t  *mixer;			/* 接続されているトラックミキサ */
 
@@ -180,7 +180,7 @@ struct audio_trackmixer
 
 	int frames_per_block;				/* 内部周波数での 1 ブロックのフレーム数 */
 
-	uint16_t       volume;				/* 出力マスタボリューム */
+	uint           volume;				/* 出力マスタボリューム */
 
 	audio_format2_t mixfmt;				// PLAY 合成用整数倍精度フォーマット
 	void *mixsample;					// PLAY 合成用整数倍精度バッファ
