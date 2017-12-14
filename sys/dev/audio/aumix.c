@@ -1003,6 +1003,7 @@ audio_track_play(audio_track_t *track, bool isdrain)
 #if AUDIO_DEBUG > 2
 	char buf[100];
 	int n = 0;
+	buf[n] = '\0';
 	if (track->freq.filter)
 		n += snprintf(buf + n, 100 - n, " f=%d", track->freq.srcbuf.count);
 	if (track->chmix.filter)
