@@ -1018,9 +1018,11 @@ audio_track_play(audio_track_t *track, bool isdrain)
 		n += snprintf(buf + n, 100 - n, " v=%d", track->chvol.srcbuf.count);
 	if (track->codec.filter)
 		n += snprintf(buf + n, 100 - n, " e=%d", track->codec.srcbuf.count);
-	TRACE(track, "end pbusy=%d outbuf=%d/%d/%d%s", track->mixer->sc->sc_pbusy,
+	TRACE(track, "end out=%d/%d/%d%s usr=%d/%d/%d",
 	    track->outputbuf.top, track->outputbuf.count, track->outputbuf.capacity,
-	    buf);
+	    buf,
+		track->usrbuf.top, track->usrbuf.count, track->usrbuf.capacity
+	);
 #endif
 }
 
@@ -1405,7 +1407,8 @@ audio_mixer_play_period(audio_trackmixer_t *mixer /*, bool force */)
 
 	audio_ring_appended(&mixer->hwbuf, count);
 
-	TRACE0("hwbuf=%d/%d/%d",
+	TRACE0("done mixseq=%d hwbuf=%d/%d/%d",
+	    (int)mixer->mixseq,
 		mixer->hwbuf.top, mixer->hwbuf.count, mixer->hwbuf.capacity);
 
 	if (need_exit) {
@@ -1461,6 +1464,11 @@ audio_trackmixer_intr(audio_trackmixer_t *mixer)
 
 	audio_ring_tookfromtop(&mixer->hwbuf, mixer->frames_per_block);
 
+	TRACE0("HW_INT ++hwseq=%d cmplcnt=%d hwbuf=%d/%d/%d",
+		(int)mixer->hwseq,
+		(int)mixer->hw_complete_counter,
+		mixer->hwbuf.top, mixer->hwbuf.count, mixer->hwbuf.capacity);
+
 	// まず出力待ちのシーケンスを出力
 	if (mixer->hwbuf.count >= mixer->frames_per_block) {
 		audio_trackmixer_output(mixer);
@@ -1497,11 +1505,6 @@ audio_trackmixer_intr(audio_trackmixer_t *mixer)
 	// drain 待ちしている人のために通知
 	cv_broadcast(&mixer->intrcv);
 #endif
-
-	TRACE0("HW_INT ++hwsec=%d cmplcnt=%d hwbuf=%d/%d/%d",
-		(int)mixer->hwseq,
-		(int)mixer->hw_complete_counter,
-		mixer->hwbuf.top, mixer->hwbuf.count, mixer->hwbuf.capacity);
 }
 
 #if defined(AUDIO_SOFTINTR)
@@ -1544,7 +1547,7 @@ audio_trackmixer_softintr(void *arg)
 
 	// drain 待ちしている人のために通知
 	cv_broadcast(&mixer->intrcv);
-	TRACE0("SW_INT ++hwsec=%d cmplcnt=%d hwbuf=%d/%d/%d",
+	TRACE0("SW_INT ++hwseq=%d cmplcnt=%d hwbuf=%d/%d/%d",
 		(int)mixer->hwseq,
 		(int)mixer->hw_complete_counter,
 		mixer->hwbuf.top, mixer->hwbuf.count, mixer->hwbuf.capacity);
@@ -1561,7 +1564,6 @@ audio2_pintr(void *arg)
 	KASSERT(mutex_owned(sc->sc_intr_lock));
 
 	mixer = sc->sc_pmixer;
-	TRACE0("hwbuf.count=%d", mixer->hwbuf.count);
 
 	audio_trackmixer_intr(mixer);
 }
@@ -1619,7 +1621,7 @@ audio_track_drain(audio_track_t *track, bool wait)
 	struct audio_softc *sc = mixer->sc;
 	int error;
 
-	TRACE(track, "");
+	TRACE(track, "start");
 	KASSERT(mutex_owned(sc->sc_lock));
 	KASSERT(!mutex_owned(sc->sc_intr_lock));
 
@@ -1642,6 +1644,8 @@ audio_track_drain(audio_track_t *track, bool wait)
 
 	if (wait) {
 		while (track->seq > mixer->hwseq) {
+			TRACE(track, "trkseq=%d hwseq=%d",
+			    (int)track->seq, (int)mixer->hwseq);
 			error = cv_wait_sig(&mixer->intrcv, sc->sc_lock);
 			if (error) {
 				printf("cv_wait_sig failed %d\n", error);
@@ -1652,10 +1656,8 @@ audio_track_drain(audio_track_t *track, bool wait)
 		}
 
 		track->is_draining = false;
-		TRACE(track, "uio_count=%d trk_count=%d tm=%d mixhw=%d hw_complete=%d",
-			(int)track->inputcounter, (int)track->outputcounter,
-			(int)track->track_mixer_counter, (int)track->mixer_hw_counter,
-			(int)track->hw_complete_counter);
+		TRACE(track, "done trk_inp=%d trk_out=%d",
+			(int)track->inputcounter, (int)track->outputcounter);
 	}
 	return 0;
 }
