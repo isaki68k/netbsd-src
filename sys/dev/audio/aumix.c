@@ -927,17 +927,27 @@ audio_track_play_input(audio_track_t *track, struct uio *uio)
 void
 audio_track_play(audio_track_t *track, bool isdrain)
 {
+	int inpbuf_frames_per_block;
+	int usrbuf_framebytes;
+
 	KASSERT(track);
 
 	int track_count_0 = track->outputbuf.count;
 
-	// usrbuf からコピー
-	int count = audio_ring_unround_free_count(track->input);
-	int bytes = frametobyte(&track->inputfmt, count);
+	inpbuf_frames_per_block = frame_per_block_roundup(track->mixer,
+	    &track->input->fmt);
+	usrbuf_framebytes = frametobyte(&track->input->fmt,
+	    inpbuf_frames_per_block);
+
 	// XXX usrbuf が1ブロック以上たまってなくてもここに来るかどうか
-	if (track->usrbuf.count < bytes) {
+	if (track->usrbuf.count < usrbuf_framebytes) {
 		return;
 	}
+
+	// usrbuf からコピー
+	int count = audio_ring_unround_free_count(track->input);
+	count = min(count, inpbuf_frames_per_block);
+	int bytes = frametobyte(&track->inputfmt, count);
 	if (track->usrbuf.top + bytes < track->usrbuf.capacity) {
 		memcpy(RING_BOT(internal_t, track->input),
 		    (uint8_t *)track->usrbuf.sample + track->usrbuf.top,
