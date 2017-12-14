@@ -793,7 +793,6 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *fmt)
 	track->input = last_dst;
 
 	// 入力フォーマットに従って usrbuf を作る
-	track->usrbuf.fmt = *fmt;
 	track->usrbuf.top = 0;
 	track->usrbuf.count = 0;
 	track->usrbuf.capacity = NBLKOUT *
@@ -801,6 +800,12 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *fmt)
 	track->usrbuf.sample = audio_realloc(track->usrbuf.sample,
 	    track->usrbuf.capacity);
 	track->usrbuf_lowat = 0;
+	// usrbuf の fmt は1フレーム=1バイトになるようにしておくが
+	// 基本 fmt は参照せず 1フレーム=1バイトでコーディングしたほうがいいか。
+	track->usrbuf.fmt = *fmt;
+	track->usrbuf.fmt.channels = 1;
+	track->usrbuf.fmt.precision = 8;
+	track->usrbuf.fmt.stride = 8;
 
 	// 出力フォーマットに従って outputbuf を作る
 	track->outputbuf.top = 0;
@@ -927,17 +932,31 @@ audio_track_play(audio_track_t *track, bool isdrain)
 	int track_count_0 = track->outputbuf.count;
 
 	// usrbuf からコピー
-	// XXX usrbuf が1ブロック以上たまってなくてもここに来るかどうか
 	int count = audio_ring_unround_free_count(track->input);
 	int bytes = frametobyte(&track->inputfmt, count);
+	// XXX usrbuf が1ブロック以上たまってなくてもここに来るかどうか
 	if (track->usrbuf.count < bytes) {
 		return;
 	}
-	memcpy(RING_BOT(internal_t, track->input),
-	    RING_TOP(uint8_t, &track->usrbuf),
-		bytes);
+	if (track->usrbuf.top + bytes < track->usrbuf.capacity) {
+		memcpy(RING_BOT(internal_t, track->input),
+		    (uint8_t *)track->usrbuf.sample + track->usrbuf.top,
+			bytes);
+		audio_ring_tookfromtop(&track->usrbuf, bytes);
+	} else {
+		int bytes1 = audio_ring_unround_count(&track->usrbuf);
+		memcpy(RING_BOT(internal_t, track->input),
+		    (uint8_t *)track->usrbuf.sample + track->usrbuf.top,
+			bytes1);
+		audio_ring_tookfromtop(&track->usrbuf, bytes1);
+
+		int bytes2 = bytes - bytes1;
+		memcpy((uint8_t *)(RING_BOT(internal_t, track->input)) + bytes1,
+		    (uint8_t *)track->usrbuf.sample + track->usrbuf.top,
+		    bytes2);
+		audio_ring_tookfromtop(&track->usrbuf, bytes2);
+	}
 	audio_ring_appended(track->input, count);
-	audio_ring_tookfromtop(&track->usrbuf, bytes);
 
 	/* エンコーディング変換 */
 	audio_apply_stage(track, &track->codec, false);
