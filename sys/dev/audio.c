@@ -2801,6 +2801,7 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	}
 	if (pchanges) {
 		printf("%s play:%s\n", __func__, buf);
+		n = 0;
 		pchanges = 0;
 	}
 
@@ -2809,7 +2810,7 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 		rchanges++;
 	}
 	if (SPECIFIED(r->precision)) {
-		SNPRINTF(" r->ec=%d", r->precision);
+		SNPRINTF(" prec=%d", r->precision);
 		rchanges++;
 	}
 	if (SPECIFIED(r->channels)) {
