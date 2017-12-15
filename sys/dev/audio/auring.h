@@ -112,7 +112,8 @@ audio_ring_tookfromtop(audio_ring_t *ring, int n)
 {
 	KASSERT(is_valid_ring(ring));
 	KASSERT(n >= 0);
-	KASSERTMSG(ring->count >= n, "ring->count=%d n=%d", ring->count, n);
+	KASSERTMSG(ring->count >= n, "%s: ring->count=%d n=%d",
+	    __func__, ring->count, n);
 
 	ring->top = audio_ring_round(ring, ring->top + n);
 	ring->count -= n;
@@ -127,8 +128,8 @@ audio_ring_appended(audio_ring_t *ring, int n)
 	KASSERT(is_valid_ring(ring));
 	KASSERT(n >= 0);
 	KASSERTMSG(ring->count + n <= ring->capacity,
-		"ring->count=%d n=%d ring->capacity=%d",
-		ring->count, n, ring->capacity);
+		"%s: ring->count=%d n=%d ring->capacity=%d",
+		__func__, ring->count, n, ring->capacity);
 
 	ring->count += n;
 }
