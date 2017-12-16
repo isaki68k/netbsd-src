@@ -88,7 +88,7 @@ int audiobellioctl(struct file *, u_long, void *);
 // 1: open/close/set_param等
 // 2: read/write/ioctlシステムコールくらいまでは含む
 // 3: TRACEも含む
-#define AUDIO_DEBUG	1
+#define AUDIO_DEBUG	3
 
 #include <dev/audio/audiovar.h>
 #include <dev/audio/aumix.h>

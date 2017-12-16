@@ -1446,6 +1446,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 			if (error)
 				goto bad2;
 		}
+		audio_pmixer_start(sc->sc_pmixer, false);
 	}
 	if ((af->mode & AUMODE_RECORD) != 0 && sc->sc_ropens == 0) {
 		if (sc->hw_if->init_input) {
@@ -1459,6 +1460,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 			if (error)
 				goto bad2;
 		}
+		//audio_rmixer_start(sc->sc_rmixer, false);
 	}
 
 	error = fd_allocfile(&fp, &fd);
