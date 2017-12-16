@@ -1700,8 +1700,6 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 
 	error = 0;
 
-	audio_track_enter_colock(track);
-
 	// inp_thres は usrbuf に書き込む際の閾値。
 	// usrbuf.count が inp_thres より小さければ uiomove する。
 	// o PLAY なら常にコピーなので capacity を設定
@@ -1754,6 +1752,8 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 			    usrbuf->top, usrbuf->count, usrbuf->capacity);
 		}
 
+		audio_track_enter_colock(track);
+
 		while (track->usrbuf.count >= out_thres && error == 0) {
 			if (track->outputbuf.count == track->outputbuf.capacity) {
 				// trkbuf が一杯ならここで待機
@@ -1773,11 +1773,12 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 
 			audio_trackmixer_play(sc->sc_pmixer, false);
 		}
+
+		audio_track_leave_colock(track);
 #if !defined(_KERNEL)
 		emu_intr_check();
 #endif
 	}
-	audio_track_leave_colock(track);
 
 	return error;
 }
