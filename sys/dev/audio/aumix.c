@@ -799,7 +799,6 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *fmt)
 	    frametobyte(&track->inputfmt, track->input->capacity);
 	track->usrbuf.sample = audio_realloc(track->usrbuf.sample,
 	    track->usrbuf.capacity);
-	track->usrbuf_lowat = 0;
 	// usrbuf の fmt は1フレーム=1バイトになるようにしておくが
 	// 基本 fmt は参照せず 1フレーム=1バイトでコーディングしたほうがいいか。
 	track->usrbuf.fmt = *fmt;
@@ -874,53 +873,6 @@ audio_apply_stage(audio_track_t *track, audio_stage_t *stage, bool isfreq)
 	}
 }
 
-static int
-audio_track_play_input(audio_track_t *track, struct uio *uio)
-{
-	audio_ring_t *usrbuf;
-	int freebytes;
-	int movebytes;
-	int error;
-	uint8_t *dptr;
-	KASSERT(uio);
-
-	usrbuf = &track->usrbuf;
-	TRACE(track, "resid=%zu usrbuf=%d/%d/%d lo=%d", uio->uio_resid,
-		usrbuf->top, usrbuf->count, usrbuf->capacity,
-	    track->usrbuf_lowat);
-
-	// usrbuf の空きバイト数を求める
-	freebytes = usrbuf->capacity - usrbuf->count;
-	if (usrbuf->top + usrbuf->count < usrbuf->capacity) {
-		movebytes = usrbuf->capacity - (usrbuf->top + usrbuf->count);
-	} else {
-		movebytes = freebytes;
-	}
-	/* set lowat if usrbuf is full */
-	if (freebytes == 0)
-		track->usrbuf_lowat = usrbuf->capacity * 1 / 4;
-
-	/* check lowat */
-	if (freebytes < track->usrbuf_lowat)
-		return EAGAIN;
-	track->usrbuf_lowat = 0;
-
-	// 今回 uiomove するバイト数
-	movebytes = min(movebytes, (int)uio->uio_resid);
-
-	TRACE(track, "freebytes=%d movebytes=%d", freebytes, movebytes);
-	dptr = (uint8_t *)usrbuf->sample + audio_ring_bottom(usrbuf);
-	error = uiomove(dptr, movebytes, uio);
-	if (error) {
-		TRACE(track, "uiomove error=%d", error);
-		return error;
-	}
-	audio_ring_appended(usrbuf, movebytes);
-	track->inputcounter += movebytes;
-
-	return 0;
-}
-
 /*
  * 再生時の入力データを変換してトラックバッファに投入します。
  */
@@ -928,7 +880,8 @@ void
 audio_track_play(audio_track_t *track, bool isdrain)
 {
 	int inpbuf_frames_per_block;
-	int usrbuf_framebytes;
+	int blockbytes;	// usrbuf および input の1ブロックのバイト数
+	int movebytes;	// usrbuf から input に転送するバイト数
 
 	KASSERT(track);
 
@@ -936,31 +889,55 @@ audio_track_play(audio_track_t *track, bool isdrain)
 
 	inpbuf_frames_per_block = frame_per_block_roundup(track->mixer,
 	    &track->input->fmt);
-	usrbuf_framebytes = frametobyte(&track->input->fmt,
-	    inpbuf_frames_per_block);
+	blockbytes = frametobyte(&track->input->fmt, inpbuf_frames_per_block);
 
-	// XXX usrbuf が1ブロック以上たまってなくてもここに来るかどうか
-	if (track->usrbuf.count < usrbuf_framebytes) {
-		return;
+	// usrbuf が1ブロックに満たない場合、
+	// - drain 中なら、足りない分を無音で埋めて処理を続ける
+	// - PLAY なら、足りない分を無音で埋めて処理を続ける
+	// - PLAY_ALL なら、何もせず帰る
+	if (track->usrbuf.count < blockbytes) {
+		if (isdrain == false && (track->mode & AUMODE_PLAY_ALL) != 0) {
+			return;
+		}
 	}
 
-	// usrbuf からコピー
+	// usrbuf からコピー。
+
 	int count = audio_ring_unround_free_count(track->input);
+#if 0
+	// XXX 本当は input 以降のバッファが1ブロック以下で細切れにならない
+	// ように(できれば)したほうがいいと思うのだが、今は周波数変換の
+	// 端数が出るので、これは起こりうる。
+	if (count < inpbuf_frames_per_block) {
+		panic("count(%d) < inpbuf_frames_per_block(%d)",
+		    count, inpbuf_frames_per_block);
+	}
+#endif
+	// input バッファに空きがない
+	if (count == 0) {
+		return;
+	}
 	count = min(count, inpbuf_frames_per_block);
-	int bytes = frametobyte(&track->inputfmt, count);
-	if (track->usrbuf.top + bytes < track->usrbuf.capacity) {
+	// 入力に4bitは来ないので1フレームは必ず1バイト以上ある。
+	int framesize = frametobyte(&track->input->fmt, 1);
+	// count は usrbuf からコピーするフレーム数。
+	// movebytes は usrbuf からコピーするバイト数。
+	// ただし1フレーム未満のバイトはコピーしない。
+	count = min(count, track->usrbuf.count / framesize);
+	movebytes = count * framesize;
+	if (track->usrbuf.top + movebytes < track->usrbuf.capacity) {
 		memcpy(RING_BOT(internal_t, track->input),
 		    (uint8_t *)track->usrbuf.sample + track->usrbuf.top,
-			bytes);
-		audio_ring_tookfromtop(&track->usrbuf, bytes);
+		    movebytes);
+		audio_ring_tookfromtop(&track->usrbuf, movebytes);
 	} else {
 		int bytes1 = audio_ring_unround_count(&track->usrbuf);
 		memcpy(RING_BOT(internal_t, track->input),
 		    (uint8_t *)track->usrbuf.sample + track->usrbuf.top,
-			bytes1);
+		    bytes1);
 		audio_ring_tookfromtop(&track->usrbuf, bytes1);
 
-		int bytes2 = bytes - bytes1;
+		int bytes2 = movebytes - bytes1;
 		memcpy((uint8_t *)(RING_BOT(internal_t, track->input)) + bytes1,
 		    (uint8_t *)track->usrbuf.sample + track->usrbuf.top,
 		    bytes2);
@@ -1725,23 +1702,77 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 
 	audio_track_enter_colock(track);
 
-	while (uio->uio_resid > 0) {
-		error = audio_track_play_input(track, uio);
-		if (error == EAGAIN) {
-			audio_track_leave_colock(track);
-			error = audio_waitio(sc, track);
-			audio_track_enter_colock(track);
-			if (error < 0) {
-				error = EINTR;
+	// inp_thres は usrbuf に書き込む際の閾値。
+	// usrbuf.count が inp_thres より小さければ uiomove する。
+	// o PLAY なら常にコピーなので capacity を設定
+	// o PLAY_ALL なら1ブロックあれば十分なので block size を設定
+	//
+	// out_thres は usrbuf から読み出す際の閾値。
+	// trkbuf.count が out_thres より大きければ変換処理を行う。
+	// o PLAY なら常に変換処理をしたいので 0 に設定
+	// o PLAY_ALL なら1ブロック溜まってから処理なので block size を設定
+	audio_ring_t *usrbuf = &track->usrbuf;
+	int inp_thres;
+	int out_thres;
+	if (0/*PLAY_ALL*/) {
+		inp_thres = usrbuf->capacity;
+		out_thres = 0;
+	} else {
+		int usrbuf_blksize = track->inputfmt.sample_rate
+		    * track->inputfmt.channels
+		    * track->inputfmt.stride / NBBY
+		    * AUDIO_BLK_MS / 1000;
+		inp_thres = usrbuf_blksize;
+		out_thres = usrbuf_blksize;
+	}
+	TRACE(track, "resid=%zd inp_thres=%d out_thres=%d",
+	    uio->uio_resid, inp_thres, out_thres);
+
+	error = 0;
+	while (uio->uio_resid > 0 && error == 0) {
+		// usrbuf 閾値に満たなければコピー
+		TRACE(track, "while resid=%zd usrbuf=%d/%d/%d",
+		    uio->uio_resid,
+		    usrbuf->top, usrbuf->count, usrbuf->capacity);
+		if (usrbuf->count < inp_thres) {
+			int freebytes;
+			int movebytes;
+			freebytes = audio_ring_unround_free_count(usrbuf);
+			movebytes = min(freebytes, uio->uio_resid);
+			uint8_t *dst;
+			dst = (uint8_t *)usrbuf->sample + audio_ring_bottom(usrbuf);
+			error = uiomove(dst, movebytes, uio);
+			if (error) {
+				TRACE(track, "uiomove(len=%d) failed: %d",
+				    movebytes, error);
+				break;
 			}
+			audio_ring_appended(usrbuf, movebytes);
+			track->inputcounter += movebytes;
+			TRACE(track, "uiomove(len=%d) usrbuf=%d/%d/%d",
+			    movebytes,
+			    usrbuf->top, usrbuf->count, usrbuf->capacity);
 		}
-		if (error) {
-			break;
+
+		while (track->usrbuf.count >= out_thres && error == 0) {
+			if (track->outputbuf.count == track->outputbuf.capacity) {
+				// trkbuf が一杯ならここで待機
+				audio_track_leave_colock(track);
+				error = audio_waitio(sc, track);
+				audio_track_enter_colock(track);
+				if (error != 0) {
+					if (error < 0) {
+						error = EINTR;
+					}
+					return error;
+				}
+				continue;
+			}
+
+			audio_track_play(track, false);
+
+			audio_trackmixer_play(sc->sc_pmixer, false);
 		}
-		audio_track_play(track, false);
-
-		audio_trackmixer_play(sc->sc_pmixer, false);
-
 #if !defined(_KERNEL)
 		emu_intr_check();
 #endif

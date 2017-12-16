@@ -125,12 +125,6 @@ struct audio_track
 	int mode;								/* AUMODE_PLAY or AUMODE_RECORD */
 
 	audio_ring_t        usrbuf;			// ユーザ入出力バッファ
-	// usrbuf に細切れの uiomove が頻発するのを防ぐための lowat。
-	// 通常 hiwat,lowat は使用量だがここでは演算回数を1回ケチるため
-	// 空き容量の lowat としている。つまり一旦 lowat が設定されると
-	// 空き容量が lowat を超えるまで転送を行わない。
-	// そして lowat が設定されていない時は 0 にする。
-	int                 usrbuf_lowat;	// ユーザ入力の free lowat
 
 	audio_format2_t     inputfmt;		// このトラックに入力するフォーマット
 	audio_ring_t       *input;			// このトラックに入力するとき使用するバッファへのポインタ

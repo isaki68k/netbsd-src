@@ -1663,13 +1663,11 @@ audio_file_clear(struct audio_softc *sc, audio_file_t *file)
 		track = &file->ptrack;
 		track->outputbuf.count = 0;
 		track->usrbuf.count = 0;
-		track->usrbuf_lowat = 0;
 	}
 	if ((file->mode & AUMODE_RECORD) != 0) {
 		track = &file->rtrack;
 		track->outputbuf.count = 0;
 		track->usrbuf.count = 0;
-		track->usrbuf_lowat = 0;
 	}
 }
 
