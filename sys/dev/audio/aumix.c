@@ -758,7 +758,7 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *fmt)
 	// TODO: まず現在のバッファとかを全部破棄すると分かり易いが。
 
 	audio_ring_t *last_dst = &track->outputbuf;
-	if (track->mode == AUMODE_PLAY) {
+	if (audio_track_is_playback(track)) {
 		// 再生はトラックミキサ側から作る
 
 		track->inputfmt = *fmt;

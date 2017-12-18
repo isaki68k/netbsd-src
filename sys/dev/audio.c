@@ -254,6 +254,29 @@ static void stream_filter_list_set(stream_filter_list_t *, int,
 		stream_filter_factory_t, const audio_params_t *);
 #endif
 
+static inline bool
+audio_file_can_playback(const audio_file_t *file)
+{
+	return ((file->mode & (AUMODE_PLAY | AUMODE_PLAY_ALL)) != 0);
+}
+
+static inline bool
+audio_file_can_record(const audio_file_t *file)
+{
+	return ((file->mode & AUMODE_RECORD) != 0);
+}
+
+static inline bool
+audio_track_is_playback(const audio_track_t *track)
+{
+	return ((track->mode & (AUMODE_PLAY | AUMODE_PLAY_ALL)) != 0);
+}
+
+static inline bool
+audio_track_is_record(const audio_track_t *track)
+{
+	return ((track->mode & AUMODE_RECORD) != 0);
+}
 
 static void mixer_init(struct audio_softc *);
 static int mixer_open(dev_t, struct audio_softc *, int, int, struct lwp *,
@@ -1361,10 +1384,10 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 
 	// トラックの初期化
 	// トラックバッファの初期化
-	if ((af->mode & AUMODE_PLAY) != 0) {
+	if (audio_file_can_playback(af)) {
 		audio_track_init(&af->ptrack, sc->sc_pmixer, AUMODE_PLAY);
 	}
-	if ((af->mode & AUMODE_RECORD) != 0) {
+	if (audio_file_can_record(af)) {
 		audio_track_init(&af->rtrack, sc->sc_rmixer, AUMODE_RECORD);
 	}
 
@@ -1413,7 +1436,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 		if (!sc->sc_full_duplex || 1/*XXX*/) {
 			if (sc->hw_if->speaker_ctl) {
 				int on;
-				if ((af->mode & AUMODE_PLAY) != 0) {
+				if (audio_file_can_playback(af)) {
 					on = 1;
 				} else {
 					on = 0;
@@ -1434,7 +1457,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	}
 
 	// init_input/output
-	if ((af->mode & AUMODE_PLAY) != 0 && sc->sc_popens == 0) {
+	if (audio_file_can_playback(af) && sc->sc_popens == 0) {
 		if (sc->hw_if->init_output) {
 			audio_ring_t *hwbuf = &sc->sc_pmixer->hwbuf;
 			mutex_enter(sc->sc_intr_lock);
@@ -1448,7 +1471,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 		}
 		audio_pmixer_start(sc->sc_pmixer, false);
 	}
-	if ((af->mode & AUMODE_RECORD) != 0 && sc->sc_ropens == 0) {
+	if (audio_file_can_record(af) && sc->sc_ropens == 0) {
 		if (sc->hw_if->init_input) {
 			audio_ring_t *hwbuf = &sc->sc_rmixer->hwbuf;
 			mutex_enter(sc->sc_intr_lock);
@@ -1471,9 +1494,9 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	//grow_mixer_states(sc, 2);
 
 	// オープンカウント++
-	if ((af->mode & AUMODE_PLAY) != 0)
+	if (audio_file_can_playback(af))
 		sc->sc_popens++;
-	if ((af->mode & AUMODE_RECORD) != 0)
+	if (audio_file_can_record(af))
 		sc->sc_ropens++;
 
 	SLIST_INSERT_HEAD(&sc->sc_files, af, entry);
@@ -1485,9 +1508,9 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	return error;
 
 bad2:
-	if ((af->mode & AUMODE_PLAY) != 0)
+	if (audio_file_can_playback(af))
 		audio_track_destroy(&af->ptrack);
-	if ((af->mode & AUMODE_RECORD) != 0)
+	if (audio_file_can_record(af))
 		audio_track_destroy(&af->rtrack);
 bad1:
 	kmem_free(af, sizeof(*af));
@@ -1618,7 +1641,7 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 	if (sc->hw_if == NULL)
 		return ENXIO;
 
-	if ((file->mode & AUMODE_RECORD) != 0)
+	if (!audio_file_can_record(file))
 		return ENXIO;
 
 	// mmaped なら error
@@ -1661,12 +1684,12 @@ audio_file_clear(struct audio_softc *sc, audio_file_t *file)
 
 	// XXX track_clear() があってもいいかも
 	// XXX 周波数変換バッファに端数がたまる可能性があるはずだがそれは
-	if ((file->mode & AUMODE_PLAY) != 0) {
+	if (audio_file_can_playback(file)) {
 		track = &file->ptrack;
 		track->outputbuf.count = 0;
 		track->usrbuf.count = 0;
 	}
-	if ((file->mode & AUMODE_RECORD) != 0) {
+	if (audio_file_can_record(file)) {
 		track = &file->rtrack;
 		track->outputbuf.count = 0;
 		track->usrbuf.count = 0;
@@ -1750,7 +1773,7 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 	case FIONREAD:
 		// 入力バッファにあるバイト数
 		// XXX 動作未確認
-		if ((file->mode & AUMODE_RECORD) != 0) {
+		if (audio_file_can_record(file)) {
 			audio_ring_t *outbuf = &file->rtrack.outputbuf;
 			*(int *)addr = outbuf->count *
 			    (outbuf->fmt.channels * outbuf->fmt.stride / NBBY);
@@ -1897,14 +1920,14 @@ audio_poll(struct audio_softc *sc, int events, struct lwp *l,
 
 	revents = 0;
 	if (events & (POLLIN | POLLRDNORM)) {
-		if ((file->mode & AUMODE_RECORD) != 0) {
+		if (audio_file_can_record(file)) {
 			audio_ring_t *buf = &file->rtrack.outputbuf;
 			if (buf->count > 0)
 				revents |= events & (POLLIN | POLLRDNORM);
 		}
 	}
 	if (events & (POLLOUT | POLLWRNORM)) {
-		if ((file->mode & AUMODE_PLAY) != 0) {
+		if (audio_file_can_playback(file)) {
 			audio_ring_t *buf = &file->ptrack.outputbuf;
 			if (buf->count < buf->capacity)
 				revents |= events & (POLLOUT | POLLWRNORM);
@@ -1956,7 +1979,7 @@ filt_audioread(struct knote *kn, long hint)
 	mutex_enter(sc->sc_intr_lock);
 #if 0
 	// XXX なんだこれ
-	if ((file->mode & AUMODE_RECORD) != 0)
+	if (audio_file_can_record(file))
 		kn->kn_data = vc->sc_mpr.stamp - vc->sc_wstamp;
 	else
 		kn->kn_data = audio_stream_get_used(vc->sc_rustream)
@@ -2771,9 +2794,9 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	pchanges = 0;
 	rchanges = 0;
 
-	if ((file->mode & AUMODE_PLAY) != 0)
+	if (audio_file_can_playback(file))
 		play = &file->ptrack;
-	if ((file->mode & AUMODE_RECORD) != 0)
+	if (audio_file_can_record(file))
 		rec = &file->rtrack;
 
 #if AUDIO_DEBUG
@@ -3235,9 +3258,9 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 
 	ptrack = NULL;
 	rtrack = NULL;
-	if ((file->mode & AUMODE_PLAY) != 0)
+	if (audio_file_can_playback(file))
 		ptrack = &file->ptrack;
-	if ((file->mode & AUMODE_RECORD) != 0)
+	if (audio_file_can_record(file))
 		rtrack = &file->rtrack;
 
 	memset(ai, 0, sizeof(*ai));
