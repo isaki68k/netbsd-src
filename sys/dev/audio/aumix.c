@@ -484,6 +484,10 @@ audio_track_freq_down(audio_filter_arg_t *arg)
 	track->freq_current = tmp;
 }
 
+// トラックを初期化します。
+// mixer は接続先のミキサを指定します。
+// mode は再生なら AUMODE_PLAY、録音なら AUMODE_RECORD を指定します。
+// 単に録音再生のどちら側かだけなので AUMODE_PLAY_ALL は関係ありません。
 void
 audio_track_init(audio_track_t *track, audio_trackmixer_t *mixer, int mode)
 {
@@ -1019,6 +1023,9 @@ audio_track_play(audio_track_t *track, bool isdrain)
 #endif
 }
 
+// ミキサを初期化します。
+// mode は再生なら AUMODE_PLAY、録音なら AUMODE_RECORD を指定します。
+// 単に録音再生のどちら側かだけなので AUMODE_PLAY_ALL は関係ありません。
 int
 audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 {
