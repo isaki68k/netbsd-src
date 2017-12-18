@@ -122,7 +122,13 @@ typedef struct audio_stage audio_stage_t;
 
 struct audio_track
 {
-	int mode;								/* AUMODE_PLAY or AUMODE_RECORD */
+	// このトラックの再生/録音モード。AUMODE_*
+	// 録音トラックなら AUMODE_RECORD。
+	// 再生トラックなら AUMODE_PLAY は必ず立っている。
+	// 再生トラックで PLAY モードなら AUMODE_PLAY のみ。
+	// 再生トラックで PLAY_ALL モードなら AUMODE_PLAY | AUMODE_PLAY_ALL。
+	// file->mode は録再トラックの mode を OR したものと一致しているはず。
+	int mode;
 
 	audio_ring_t        usrbuf;			// ユーザ入出力バッファ
 
@@ -211,7 +217,10 @@ struct audio_file
 	audio_track_t   ptrack;			/* 再生トラック */
 	audio_track_t   rtrack;			/* 録音トラック */
 
-	int mode;						/* AUMODE_* (incl. AUMODE_PLAY_ALL) */
+	// この file の再生/録音モード。AUMODE_* (PLAY_ALL も含む)
+	// ptrack.mode は (mode & (AUMODE_PLAY | AUMODE_PLAY_ALL)) と、
+	// rtrack.mode は (mode & AUMODE_RECORD) と等しいはず。
+	int mode;
 #if defined(_KERNEL)
 	dev_t dev;						/* デバイスファイルへのバックリンク */
 #endif

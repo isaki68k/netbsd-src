@@ -219,8 +219,8 @@ static int audio_file_setinfo(struct audio_softc *, audio_file_t *,
 	const struct audio_info *);
 static int audio_file_setinfo_check(audio_format2_t *,
 	const struct audio_prinfo *);
-static int audio_file_setinfo_set(audio_track_t *, audio_format2_t *,
-	const struct audio_prinfo *, bool);
+static int audio_file_setinfo_set(audio_track_t *, const struct audio_prinfo *,
+	bool, audio_format2_t *, int);
 static int audio_setinfo_hw(struct audio_softc *, struct audio_info *);
 static int audio_set_params(struct audio_softc *, int);
 static int audiogetinfo(struct audio_softc *, struct audio_info *, int,
@@ -257,7 +257,7 @@ static void stream_filter_list_set(stream_filter_list_t *, int,
 static inline bool
 audio_file_can_playback(const audio_file_t *file)
 {
-	return ((file->mode & (AUMODE_PLAY | AUMODE_PLAY_ALL)) != 0);
+	return ((file->mode & AUMODE_PLAY) != 0);
 }
 
 static inline bool
@@ -269,7 +269,7 @@ audio_file_can_record(const audio_file_t *file)
 static inline bool
 audio_track_is_playback(const audio_track_t *track)
 {
-	return ((track->mode & (AUMODE_PLAY | AUMODE_PLAY_ALL)) != 0);
+	return ((track->mode & AUMODE_PLAY) != 0);
 }
 
 static inline bool
@@ -2690,8 +2690,7 @@ audio_file_set_defaults(struct audio_softc *sc, audio_file_t *file)
 	ai.play.channels      = sc->sc_pparams.channels;
 	ai.play.precision     = sc->sc_pparams.precision;
 	ai.play.pause         = false;
-	// XXX ここもたぶん元どおり file->mode だけでいいはず
-	ai.mode = file->mode & (AUMODE_PLAY | AUMODE_RECORD);
+	ai.mode = file->mode;
 
 	return audio_file_setinfo(sc, file, &ai);
 }
@@ -2785,6 +2784,7 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	int saved_rvolume;
 	int saved_ppause;
 	int saved_rpause;
+	int saved_mode;
 	int error;
 
 	p = &ai->play;
@@ -2894,6 +2894,7 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 		saved_rvolume = rec->volume;
 		saved_rpause = rec->is_pause;
 	}
+	saved_mode = file->mode;
 
 	/* Set default value */
 	// sc_[pr]params が現在の /dev/sound の設定値
@@ -2901,7 +2902,7 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	rfmt = sc->sc_rparams;
 
 	/* Overwrite if specified */
-	mode = (file->mode & (AUMODE_PLAY | AUMODE_RECORD));
+	mode = file->mode;
 	if (SPECIFIED(ai->mode)) {
 		mode = ai->mode;
 		if ((mode & AUMODE_PLAY_ALL) != 0)
@@ -2926,8 +2927,12 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	if (SPECIFIED(ai->mode) || pchanges || rchanges) {
 		audio_file_clear(sc, file);
 #ifdef AUDIO_DEBUG
-		printf("setting mode to %d (pchanges=%d rchanges=%d)\n",
-		    mode, pchanges, rchanges);
+		char modebuf[64];
+		snprintb(modebuf, sizeof(modebuf),
+		    "\177\020" "b\0PLAY\0" "b\2PLAY_ALL\0" "b\1RECORD\0",
+		    mode);
+		printf("setting mode to %s (pchanges=%d rchanges=%d)\n",
+		    modebuf, pchanges, rchanges);
 		if (pchanges)
 			audio_print_format2("setting play mode:", &pfmt);
 		if (rchanges)
@@ -2937,20 +2942,22 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 
 	/* Set */
 	error = 0;
+	file->mode = mode;
 	if (pchanges) {
-		error = audio_file_setinfo_set(play, &pfmt, p, pchanges);
+		error = audio_file_setinfo_set(play, p, pchanges, &pfmt,
+		    (mode & (AUMODE_PLAY | AUMODE_PLAY_ALL)));
 		if (error)
 			goto abort1;
 		sc->sc_pparams = pfmt;
 	}
 	if (rchanges) {
-		error = audio_file_setinfo_set(rec, &rfmt, r, rchanges);
+		error = audio_file_setinfo_set(rec, r, rchanges, &rfmt,
+		    (mode & AUMODE_RECORD));
 		if (error)
 			goto abort2;
 		sc->sc_rparams = rfmt;
 	}
 
-	file->mode = mode;
 	return 0;
 
 	/* Rollback */
@@ -2958,13 +2965,15 @@ abort2:
 	AUDIO_INITINFO(&bk);
 	bk.record.gain = saved_rvolume;
 	bk.record.pause = saved_rpause;
-	audio_file_setinfo_set(rec, &saved_rfmt, &bk.record, true);
+	audio_file_setinfo_set(rec, &bk.record, true, &saved_rfmt,
+	    (saved_mode & AUMODE_RECORD));
 abort1:
 	if (play) {
 		AUDIO_INITINFO(&bk);
 		bk.play.gain = saved_pvolume;
 		bk.play.pause = saved_ppause;
-		audio_file_setinfo_set(play, &saved_pfmt, &bk.play, true);
+		audio_file_setinfo_set(play, &bk.play, true, &saved_pfmt,
+		    (saved_mode & (AUMODE_PLAY | AUMODE_PLAY_ALL)));
 		sc->sc_pparams = saved_pfmt;
 	}
 	return error;
@@ -3011,13 +3020,15 @@ audio_file_setinfo_check(audio_format2_t *fmt, const struct audio_prinfo *info)
 	return changes;
 }
 
-// modechange なら track に fmt を設定する。
+// modechange なら track に mode, fmt を設定する。
 // あと(modechangeに関わらず) info のソフトウェアパラメータも設定する。
+// mode は再生トラックなら AUMODE_PLAY{,_ALL}、録音トラックなら AUMODE_RECORD
+// のように該当するビットだけを渡すこと。
 // 成功すれば0、失敗なら errno
 // ここではロールバックしない。
 static int
-audio_file_setinfo_set(audio_track_t *track, audio_format2_t *fmt,
-	const struct audio_prinfo *info, bool modechange)
+audio_file_setinfo_set(audio_track_t *track, const struct audio_prinfo *info,
+	bool modechange, audio_format2_t *fmt, int mode)
 {
 
 	if (modechange) {
@@ -3026,6 +3037,7 @@ audio_file_setinfo_set(audio_track_t *track, audio_format2_t *fmt,
 #else
 		mutex_enter(track->mixer->sc->sc_intr_lock);
 #endif
+		track->mode = mode;
 		audio_track_set_format(track, fmt);
 #if defined(AUDIO_SOFTINTR)
 		mutex_exit(&track->mixer->softintrlock);
