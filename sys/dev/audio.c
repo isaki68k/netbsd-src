@@ -254,24 +254,28 @@ static void stream_filter_list_set(stream_filter_list_t *, int,
 		stream_filter_factory_t, const audio_params_t *);
 #endif
 
+// この file が再生可能なら true を返します。
 static inline bool
 audio_file_can_playback(const audio_file_t *file)
 {
 	return ((file->mode & AUMODE_PLAY) != 0);
 }
 
+// この file が録音可能なら true を返します。
 static inline bool
 audio_file_can_record(const audio_file_t *file)
 {
 	return ((file->mode & AUMODE_RECORD) != 0);
 }
 
+// この track が再生トラックなら true を返します。
 static inline bool
 audio_track_is_playback(const audio_track_t *track)
 {
 	return ((track->mode & AUMODE_PLAY) != 0);
 }
 
+// この track が録音トラックなら true を返します。
 static inline bool
 audio_track_is_record(const audio_track_t *track)
 {
