@@ -35,12 +35,12 @@
  * audio_open {
  *  audio_pmixer_start {
  *   audio_pmixer_process.. 全トラック合成・HWバッファ作成
- *   audio_trackmixer_output .. 1ブロック出力
+ *   audio_pmixer_output .. 1ブロック出力
  *  }
  * }
  * audio2_pintr {
- *  audio_trackmixer_intr {
- *   audio_trackmixer_output ..1ブロック出力
+ *  audio_pmixer_intr {
+ *   audio_pmixer_output ..1ブロック出力
  *   audio_pmixer_process.. 全トラック合成・HWバッファ作成
  * }
  * audio_write {
@@ -57,11 +57,10 @@ void *audio_realloc(void *memblock, size_t bytes);
 void audio_free(void *memblock);
 int16_t audio_volume_to_inner(uint8_t v);
 uint8_t audio_volume_to_outer(int16_t v);
-static int audio_trackmixer_mixall(audio_trackmixer_t *mixer, int req,
-	bool isintr);
-void audio_trackmixer_output(audio_trackmixer_t *mixer);
+static int audio_pmixer_mixall(audio_trackmixer_t *mixer, int req, bool isintr);
+void audio_pmixer_output(audio_trackmixer_t *mixer);
 #if defined(AUDIO_SOFTINTR)
-static void audio_trackmixer_softintr(void *arg);
+static void audio_pmixer_softintr(void *arg);
 #endif
 static int audio2_trigger_output(audio_trackmixer_t *mixer, void *start,
 	void *end, int blksize);
@@ -1027,7 +1026,7 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 	mixer->sc = sc;
 
 #if defined(AUDIO_SOFTINTR)
-	mixer->softintr = softint_establish(SOFTINT_SERIAL, audio_trackmixer_softintr, mixer);
+	mixer->softintr = softint_establish(SOFTINT_SERIAL, audio_pmixer_softintr, mixer);
 #endif
 
 	mixer->blktime_d = 1000;
@@ -1180,7 +1179,7 @@ audio_pmixer_start(audio_trackmixer_t *mixer, bool force)
 
 		// トラックミキサ出力開始
 		mutex_enter(sc->sc_intr_lock);
-		audio_trackmixer_output(mixer);
+		audio_pmixer_output(mixer);
 		mutex_exit(sc->sc_intr_lock);
 	}
 
@@ -1195,7 +1194,7 @@ audio_pmixer_start(audio_trackmixer_t *mixer, bool force)
 // 合成されたトラック数を返します。
 // mixer->softintrlock を取得して呼び出してください。
 static int
-audio_trackmixer_mixall(audio_trackmixer_t *mixer, int req, bool isintr)
+audio_pmixer_mixall(audio_trackmixer_t *mixer, int req, bool isintr)
 {
 	struct audio_softc *sc;
 	audio_file_t *f;
@@ -1218,7 +1217,7 @@ audio_trackmixer_mixall(audio_trackmixer_t *mixer, int req, bool isintr)
 
 		// 合成
 		if (track->outputbuf.count > 0) {
-			mixed = audio_mixer_play_mix_track(mixer, track, req, mixed);
+			mixed = audio_pmixer_mix_track(mixer, track, req, mixed);
 		}
 	}
 	return mixed;
@@ -1231,7 +1230,7 @@ audio_trackmixer_mixall(audio_trackmixer_t *mixer, int req, bool isintr)
 * つまりこのトラックを合成すれば mixed + 1 を返します。
 */
 int
-audio_mixer_play_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req, int mixed)
+audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req, int mixed)
 {
 	/* req フレーム貯まるまで待つ */
 	if (track->outputbuf.count < req) {
@@ -1318,7 +1317,7 @@ audio_pmixer_process(audio_trackmixer_t *mixer /*, bool force */)
 	mixer->mixseq++;
 
 	// 全トラックを合成
-	mixed = audio_trackmixer_mixall(mixer, mixer->frames_per_block, true);
+	mixed = audio_pmixer_mixall(mixer, mixer->frames_per_block, true);
 	if (mixed == 0) {
 		// 無音
 		memset(mixer->mixsample, 0,
@@ -1415,7 +1414,7 @@ audio_pmixer_process(audio_trackmixer_t *mixer /*, bool force */)
 // ハードウェアバッファから 1 ブロック出力
 // sc_intr_lock で呼び出してください。
 void
-audio_trackmixer_output(audio_trackmixer_t *mixer)
+audio_pmixer_output(audio_trackmixer_t *mixer)
 {
 	struct audio_softc *sc;
 
@@ -1447,7 +1446,7 @@ audio_trackmixer_output(audio_trackmixer_t *mixer)
 // 割り込みハンドラ
 // sc_intr_lock で呼び出されます。
 void
-audio_trackmixer_intr(audio_trackmixer_t *mixer)
+audio_pmixer_intr(audio_trackmixer_t *mixer)
 {
 	struct audio_softc *sc __diagused;
 
@@ -1466,7 +1465,7 @@ audio_trackmixer_intr(audio_trackmixer_t *mixer)
 
 	// まず出力待ちのシーケンスを出力
 	if (mixer->hwbuf.count >= mixer->frames_per_block) {
-		audio_trackmixer_output(mixer);
+		audio_pmixer_output(mixer);
 	}
 
 #if defined(AUDIO_SOFTINTR)
@@ -1485,7 +1484,7 @@ audio_trackmixer_intr(audio_trackmixer_t *mixer)
 	audio_pmixer_process(mixer);
 
 	if (later) {
-		audio_trackmixer_output(mixer);
+		audio_pmixer_output(mixer);
 	}
 
 	// drain 待ちしている人のために通知
@@ -1495,7 +1494,7 @@ audio_trackmixer_intr(audio_trackmixer_t *mixer)
 
 #if defined(AUDIO_SOFTINTR)
 static void
-audio_trackmixer_softintr(void *arg)
+audio_pmixer_softintr(void *arg)
 {
 	audio_trackmixer_t *mixer = arg;
 	struct audio_softc *sc = mixer->sc;
@@ -1515,7 +1514,7 @@ audio_trackmixer_softintr(void *arg)
 
 	if (later) {
 		mutex_enter(sc->sc_intr_lock);
-		audio_trackmixer_output(mixer);
+		audio_pmixer_output(mixer);
 		mutex_exit(sc->sc_intr_lock);
 	}
 	// finally
@@ -1541,7 +1540,7 @@ audio2_pintr(void *arg)
 
 	mixer = sc->sc_pmixer;
 
-	audio_trackmixer_intr(mixer);
+	audio_pmixer_intr(mixer);
 }
 
 static int
