@@ -1689,16 +1689,18 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 	audio_ring_t *usrbuf = &track->usrbuf;
 	int inp_thres;
 	int out_thres;
-	if (0/*PLAY_ALL*/) {
-		inp_thres = usrbuf->capacity;
-		out_thres = 0;
-	} else {
+	if ((track->mode & AUMODE_PLAY_ALL) != 0) {
+		/* PLAY_ALL */
 		int usrbuf_blksize = track->inputfmt.sample_rate
 		    * track->inputfmt.channels
 		    * track->inputfmt.stride / NBBY
 		    * AUDIO_BLK_MS / 1000;
 		inp_thres = usrbuf_blksize;
 		out_thres = usrbuf_blksize;
+	} else {
+		/* PLAY */
+		inp_thres = usrbuf->capacity;
+		out_thres = 0;
 	}
 	TRACE(track, "resid=%zd inp_thres=%d out_thres=%d",
 	    uio->uio_resid, inp_thres, out_thres);
