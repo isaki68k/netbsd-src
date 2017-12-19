@@ -4458,3 +4458,7 @@ audio_modcmd(modcmd_t cmd, void *arg)
 //   invalid argument
 //   sysctl -w hw.uaudio0.channels=2
 //   9->2
+// x PLAY モードで少なくともフィルタが設定されてない時はフレーム境界を
+//   意識していないので、途切れる直前のフレームが不完全なものになりそう。
+//   ただし認識できるような問題にはならなさそう。次フレームの開始が
+//   ずれることはなさげ。
