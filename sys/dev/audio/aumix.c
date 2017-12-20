@@ -1637,6 +1637,29 @@ audio_track_drain(audio_track_t *track, bool wait)
 	return 0;
 }
 
+// track の usrbuf に bottom から len バイトを uiomove します。
+// リングバッファの折り返しはしません。
+static inline int
+audio_write_uiomove(audio_track_t *track, int bottom, int len, struct uio *uio)
+{
+	audio_ring_t *usrbuf;
+	int error;
+
+	usrbuf = &track->usrbuf;
+	error = uiomove((uint8_t *)usrbuf->sample + bottom, len, uio);
+	if (error) {
+		TRACE(track, "uiomove(len=%d) failed: %d",
+		    len, error);
+		return error;
+	}
+	audio_ring_appended(usrbuf, len);
+	track->inputcounter += len;
+	TRACE(track, "uiomove(len=%d) usrbuf=%d/%d/%d",
+	    len,
+	    usrbuf->top, usrbuf->count, usrbuf->capacity);
+	return 0;
+}
+
 /* write の MI 側 */
 int
 audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *file)
@@ -1707,28 +1730,38 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 
 	error = 0;
 	while (uio->uio_resid > 0 && error == 0) {
-		// usrbuf 閾値に満たなければコピー
+		int bytes;
+
 		TRACE(track, "while resid=%zd usrbuf=%d/%d/%d",
 		    uio->uio_resid,
 		    usrbuf->top, usrbuf->count, usrbuf->capacity);
+
+		// usrbuf 閾値に満たなければ、可能な限りを一度にコピー
 		if (usrbuf->count < inp_thres) {
-			int freebytes;
-			int movebytes;
-			freebytes = audio_ring_unround_free_count(usrbuf);
-			movebytes = min(freebytes, uio->uio_resid);
-			uint8_t *dst;
-			dst = (uint8_t *)usrbuf->sample + audio_ring_bottom(usrbuf);
-			error = uiomove(dst, movebytes, uio);
-			if (error) {
-				TRACE(track, "uiomove(len=%d) failed: %d",
-				    movebytes, error);
-				break;
+			bytes = min(usrbuf->capacity - usrbuf->count,
+			    uio->uio_resid);
+			int bottom = audio_ring_bottom(usrbuf);
+			if (bottom  + bytes < usrbuf->capacity) {
+				error = audio_write_uiomove(track, bottom,
+				    bytes, uio);
+				if (error)
+					break;
+			} else {
+				int bytes1;
+				int bytes2;
+
+				bytes1 = usrbuf->capacity - bottom;
+				error = audio_write_uiomove(track, bottom,
+				    bytes1, uio);
+				if (error)
+					break;
+
+				bytes2 = bytes - bytes1;
+				error = audio_write_uiomove(track, 0,
+				    bytes2, uio);
+				if (error)
+					break;
 			}
-			audio_ring_appended(usrbuf, movebytes);
-			track->inputcounter += movebytes;
-			TRACE(track, "uiomove(len=%d) usrbuf=%d/%d/%d",
-			    movebytes,
-			    usrbuf->top, usrbuf->count, usrbuf->capacity);
 		}
 
 		audio_track_enter_colock(track);
