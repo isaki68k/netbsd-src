@@ -18,16 +18,6 @@ cv_wait_sig(kcondvar_t *cv, kmutex_t *lock)
 }
 
 void
-audio_softc_init(struct audio_softc *sc)
-{
-	sc->sc_pmixer = malloc(sizeof(audio_trackmixer_t));
-	sc->sc_rmixer = malloc(sizeof(audio_trackmixer_t));
-	sc->sc_lock = &sc->sc_lock0;
-	sc->sc_intr_lock = &sc->sc_intr_lock0;
-	sc->hw_if = &sc->hw_if0;
-}
-
-void
 aprint_error_dev(void *dev, const char *fmt, ...)
 {
 }

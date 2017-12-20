@@ -3,6 +3,7 @@
 #if !defined(_KERNEL)
 #include <stdint.h>
 #include "compat.h"
+#include "userland.h"
 #include "queue.h"
 #include <stdbool.h>
 #include "audiovar.h"

@@ -13,6 +13,7 @@ SRCS+=	\
 	main.c \
 	synth.c \
 	compat.c \
+	userland.c \
 
 CFLAGS=	-g -std=c99 -I. -I.. \
 	-Wall \

@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include "auintr.h"
 #include "compat.h"
+#include "userland.h"
 
 //#define DEBUG_ONEBUF
 //#define DEBUG_DUMP

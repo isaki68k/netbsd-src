@@ -2,7 +2,7 @@
 #include "auintr.h"
 
 int
-cv_wait_sig(kcondvar_t *cv, void *lock)
+cv_wait_sig(kcondvar_t *cv, kmutex_t *lock)
 {
 	// 本当は割り込みハンドラからトラックが消費されるんだけど
 	// ここで消費をエミュレート。
@@ -18,11 +18,21 @@ cv_wait_sig(kcondvar_t *cv, void *lock)
 }
 
 void
-audio_softc_init(struct audio_softc *sc)
+aprint_error_dev(void *dev, const char *fmt, ...)
 {
-	sc->sc_pmixer = malloc(sizeof(audio_trackmixer_t));
-	sc->sc_rmixer = malloc(sizeof(audio_trackmixer_t));
-	sc->sc_lock = &sc->sc_lock0;
-	sc->sc_intr_lock = &sc->sc_intr_lock0;
-	sc->hw_if = &sc->hw_if0;
+	va_list ap;
+
+	va_start(ap, fmt);
+	vprintf(fmt, ap);
+	va_end(ap);
+}
+
+void
+aprint_normal_dev(void *dev, const char *fmt, ...)
+{
+	va_list ap;
+
+	va_start(ap, fmt);
+	vprintf(fmt, ap);
+	va_end(ap);
 }
