@@ -116,15 +116,9 @@ void
 audio_attach(struct audio_softc **softc)
 {
 	struct audio_softc *sc;
+
 	sc = calloc(1, sizeof(struct audio_softc));
 	*softc = sc;
-	audio_softc_init(sc);
-	sc->hw_if->allocm = win_allocm;
-	sc->hw_if->freem = win_freem;
-	sc->hw_if->start_output = win_start_output;
-	sc->hw_if->halt_output = win_halt_output;
-	sc->hw_hdl = sc;
-
 	sc->phys = calloc(1, sizeof(audio_dev_win32_t));
 
 	audio_dev_win32_t *dev = sc->phys;
@@ -176,8 +170,14 @@ audio_attach(struct audio_softc **softc)
 		dev->wavehdr[i].dwBufferLength = 0;
 	}
 
+	audio_softc_init(sc);
 	audio_mixer_init(sc, sc->sc_pmixer, AUMODE_PLAY);
 	audio_mixer_init(sc, sc->sc_rmixer, AUMODE_RECORD);
+	sc->hw_if->allocm = win_allocm;
+	sc->hw_if->freem = win_freem;
+	sc->hw_if->start_output = win_start_output;
+	sc->hw_if->halt_output = win_halt_output;
+	sc->hw_hdl = sc;
 }
 
 void

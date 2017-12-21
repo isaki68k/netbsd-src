@@ -1,6 +1,7 @@
 #include "compat.h"
 #include "userland.h"
 #include "audiovar.h"
+#include "aumix.h"
 
 // この file が再生可能なら true を返します。
 bool
@@ -48,4 +49,7 @@ audio_softc_init(struct audio_softc *sc)
 	sc->hw_if = &sc->hw_if0;
 	sc->sc_pparams = audio_default;
 	sc->sc_pparams = audio_default;
+
+	audio_mixer_init(sc, sc->sc_pmixer, AUMODE_PLAY);
+	audio_mixer_init(sc, sc->sc_rmixer, AUMODE_RECORD);
 }

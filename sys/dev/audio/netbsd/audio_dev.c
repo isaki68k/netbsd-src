@@ -72,13 +72,6 @@ audio_attach(struct audio_softc **softc)
 
 	sc = calloc(1, sizeof(*sc));
 	*softc = sc;
-	audio_softc_init(sc);
-	sc->hw_if->allocm = netbsd_allocm;
-	sc->hw_if->freem = netbsd_freem;
-	sc->hw_if->start_output = netbsd_start_output;
-	sc->hw_if->halt_output = netbsd_halt_output;
-	sc->hw_hdl = sc;
-
 	sc->phys = calloc(1, sizeof(*dev));
 
 	dev = sc->phys;
@@ -105,8 +98,15 @@ audio_attach(struct audio_softc **softc)
 
 	pthread_mutex_init(&dev->mutex, NULL);
 
+	audio_softc_init(sc);
 	audio_mixer_init(sc, sc->sc_pmixer, AUMODE_PLAY);
 	audio_mixer_init(sc, sc->sc_rmixer, AUMODE_RECORD);
+
+	sc->hw_if->allocm = netbsd_allocm;
+	sc->hw_if->freem = netbsd_freem;
+	sc->hw_if->start_output = netbsd_start_output;
+	sc->hw_if->halt_output = netbsd_halt_output;
+	sc->hw_hdl = sc;
 }
 
 void
