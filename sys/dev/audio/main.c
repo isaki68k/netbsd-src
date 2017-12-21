@@ -7,6 +7,8 @@
 #include <stdio.h>
 #include <inttypes.h>
 #include <math.h>
+#include <signal.h>
+#include <sys/time.h>
 #include "aumix.c"
 #ifdef USE_PTHREAD
 #include <pthread.h>
@@ -50,6 +52,12 @@ enum {
 	CMD_PERF,
 };
 
+struct freqdata {
+	int srcfreq;
+	int dstfreq;
+	const char *name;
+};
+
 int child_loop(struct test_file *, int);
 #ifdef USE_PTHREAD
 void *child(void *);
@@ -59,7 +67,10 @@ int cmd_set_file(const char *);
 int cmd_set_mml(const char *);
 int cmd_play();
 int cmd_perf(const char *);
+int cmd_perf_freq();
 int cmd_perf_freq_up();
+int cmd_perf_freq_down();
+int cmd_perf_freq_main(struct freqdata *);
 int parse_file(struct test_file *, FILE *, const char *, int);
 uint16_t lebe16toh(uint16_t);
 uint32_t lebe32toh(uint32_t);
@@ -157,7 +168,7 @@ main(int ac, char *av[])
 	i++;
 
 	// コマンドごとにその後の引数
-	int r;
+	int r = 0;
 	switch (cmd) {
 	 case CMD_FILE:
 		for (; i < ac; i++) {
@@ -629,48 +640,128 @@ tagname(uint32_t tag)
 	return buf;
 }
 
+// テストパターン
+struct testdata {
+	const char *testname;
+	int (*funcname)();
+} perfdata[] = {
+	{ "freq",		cmd_perf_freq },
+	{ "freq_up",	cmd_perf_freq_up },
+	{ "freq_down",	cmd_perf_freq_down },
+	{ NULL, NULL },
+};
+
 int
 cmd_perf(const char *testname)
 {
-	if (strcmp(testname, "freq_up") == 0) {
-		cmd_perf_freq_up();
-	} else {
-		printf("perf:\n");
-		printf(" freq_u\n");
-		exit(1);
+	for (int i = 0; perfdata[i].testname != NULL; i++) {
+		if (strcmp(perfdata[i].testname, testname) == 0) {
+			(perfdata[i].funcname)();
+			return 0;
+		}
 	}
+
+	// 一覧を表示しとくか
+	for (int i = 0; perfdata[i].testname != NULL; i++) {
+		printf(" %s", perfdata[i].testname);
+	}
+	printf("\n");
+	return 1;
+}
+
+int
+cmd_perf_freq()
+{
+	cmd_perf_freq_up();
+	cmd_perf_freq_down();
 	return 0;
 }
 
 int
 cmd_perf_freq_up()
 {
+	struct freqdata pattern[] = {
+		{ 44100, 48000,	"44.1->48" },
+		{ 8000,  48000, "8->48" },
+		{ -1, -1, NULL },
+	};
+	return cmd_perf_freq_main(pattern);
+}
+
+int
+cmd_perf_freq_down()
+{
+	struct freqdata pattern[] = {
+		{ 48000, 44100,	"48->44.1" },
+		{ 48000, 8000,	"48->8" },
+		{ -1, -1, NULL },
+	};
+	return cmd_perf_freq_main(pattern);
+}
+
+volatile int signaled;
+
+void
+sigalrm(int signo)
+{
+	signaled = 1;
+}
+
+int
+cmd_perf_freq_main(struct freqdata *pattern)
+{
 	struct test_file *f = &files[fileidx];
 	audio_track_t *track;
+	struct timeval start, end, result;
+	struct itimerval it;
+
+	signal(SIGALRM, sigalrm);
+	memset(&it, 0, sizeof(it));
+	it.it_value.tv_sec = 3;
 
 	f->file = sys_open(sc, AUMODE_PLAY);
 	track = &f->file->ptrack;
-	track->inputfmt.encoding = AUDIO_ENCODING_SLINEAR_HE;
-	track->inputfmt.precision = 16;
-	track->inputfmt.stride = 16;
-	track->inputfmt.channels = 2;
-	track->inputfmt.sample_rate = 44100;
-	track->input = &track->freq.srcbuf;
-	track->outputbuf.fmt = track->inputfmt;
-	track->outputbuf.fmt.sample_rate = 48000;
-	track->outputbuf.top = 0;
-	track->outputbuf.count = 0;
-	track->outputbuf.capacity = frame_per_block_roundup(track->mixer,
-	    &track->outputbuf.fmt);
-	track->outputbuf.sample = audio_realloc(track->outputbuf.sample,
-	    RING_BYTELEN(&track->outputbuf));
-	init_freq(track, &track->outputbuf);
+	for (int i = 0; pattern[i].name != NULL; i++) {
+		track->inputfmt.encoding = AUDIO_ENCODING_SLINEAR_HE;
+		track->inputfmt.precision = 16;
+		track->inputfmt.stride = 16;
+		track->inputfmt.channels = 2;
+		track->inputfmt.sample_rate = pattern[i].srcfreq;
+		track->input = &track->freq.srcbuf;
+		track->outputbuf.fmt = track->inputfmt;
+		track->outputbuf.fmt.sample_rate = pattern[i].dstfreq;
+		track->outputbuf.top = 0;
+		track->outputbuf.count = 0;
+		track->outputbuf.capacity = frame_per_block_roundup(track->mixer,
+		    &track->outputbuf.fmt);
+		track->outputbuf.sample = audio_realloc(track->outputbuf.sample,
+		    RING_BYTELEN(&track->outputbuf));
+		init_freq(track, &track->outputbuf);
 
-	track->freq.srcbuf.count = 4410;
-	track->freq.arg.src = track->freq.srcbuf.sample;
-	track->freq.arg.dst = track->outputbuf.sample;
-	track->freq.arg.count = track->outputbuf.capacity;
-	track->freq.filter(&track->freq.arg);
+		uint64_t count;
+		printf("%-8s: ", pattern[i].name);
+		fflush(stdout);
+
+		setitimer(ITIMER_REAL, &it, NULL);
+		gettimeofday(&start, NULL);
+		for (count = 0, signaled = 0; signaled == 0; count++) {
+			track->freq.srcbuf.count = track->inputfmt.sample_rate * 40 /1000;
+			track->freq.arg.src = track->freq.srcbuf.sample;
+			track->freq.arg.dst = track->outputbuf.sample;
+			track->freq.arg.count = track->outputbuf.capacity;
+
+			track->freq.srcbuf.top = 0;
+			track->outputbuf.top = 0;
+			track->outputbuf.count = 0;
+			track->freq.filter(&track->freq.arg);
+			//printf("dst count = %d\n", track->outputbuf.count);
+		}
+		gettimeofday(&end, NULL);
+		timersub(&end, &start, &result);
+
+		printf("%d %5.1f times/msec\n", (int)count,
+			(double)count/((uint64_t)result.tv_sec*1000 + result.tv_usec/1000));
+	}
 
 	return 0;
 }
