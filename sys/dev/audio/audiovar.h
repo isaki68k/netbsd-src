@@ -145,9 +145,22 @@ struct audio_track
 	audio_stage_t       chmix;			// チャンネルミックスステージ
 	audio_stage_t       freq;			// 周波数変換ステージ
 
+//#define FREQ_ORIG	// 元の実装
+//#define FREQ_CYCLE	// 周波数でなく周期比を使う
+#define FREQ_CYCLE2	// 周期を65536との比にする
+
+#if defined(FREQ_CYCLE2)
+	unsigned int        freq_step;		/* 周波数変換用、周期比 */
+	unsigned int        freq_current;	/* 周波数変換用、現在のカウンタ */
+#elif defined(FREQ_CYCLE)
+	unsigned int        freq_current;	/* 周波数変換用、現在のカウンタ */
+#elif defined(FREQ_ORIG)
 	audio_rational_t   freq_step;		/* 周波数変換用分数 (変換元周波数 / 変換先周波数) */
 	audio_rational_t   freq_current;	/* 周波数変換用 現在のカウンタ */
 	int32_t            freq_coef;		// 周波数変換用係数
+#else
+#error unknown FREQ_*
+#endif
 
 	uint16_t  ch_volume[AUDIO_MAX_CHANNELS];	/* チャンネルバランス用 チャンネルボリューム */
 	uint               volume;			/* トラックボリューム。トラックボリュームはトラックミキサで処理。 */
