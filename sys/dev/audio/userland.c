@@ -30,6 +30,14 @@ audio_track_is_record(const audio_track_t *track)
 	return ((track->mode & AUMODE_RECORD) != 0);
 }
 
+static const struct audio_format2 audio_default = {
+	.sample_rate = 8000,
+	.encoding = AUDIO_ENCODING_MULAW,
+	.precision = 8,
+	.stride = 8,
+	.channels = 1,
+};
+
 void
 audio_softc_init(struct audio_softc *sc)
 {
@@ -38,4 +46,16 @@ audio_softc_init(struct audio_softc *sc)
 	sc->sc_lock = &sc->sc_lock0;
 	sc->sc_intr_lock = &sc->sc_intr_lock0;
 	sc->hw_if = &sc->hw_if0;
+	sc->sc_pparams = audio_default;
+	sc->sc_pparams = audio_default;
+}
+
+kmutex_t *
+audio_mixer_get_lock(audio_trackmixer_t *mixer)
+{
+#if defined(AUDIO_SOFTINTR)
+	return &mixer->softintrlock;
+#else
+	return mixer->sc->sc_intr_lock;
+#endif
 }
