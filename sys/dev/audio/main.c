@@ -45,10 +45,21 @@ typedef struct {
 	char text[0];
 } AUFileHeader;
 
+enum {
+	CMD_NONE = 0,
+	CMD_FILE,
+	CMD_PLAY,
+	CMD_MML,
+};
+
 int child_loop(struct test_file *, int);
 #ifdef USE_PTHREAD
 void *child(void *);
 #endif
+int cmd_print_file(const char *);
+int cmd_set_file(const char *);
+int cmd_set_mml(const char *);
+int cmd_play();
 int parse_file(struct test_file *, FILE *, const char *, int);
 uint16_t lebe16toh(uint16_t);
 uint32_t lebe32toh(uint32_t);
@@ -57,50 +68,52 @@ const char *audio_encoding_name(int);
 const char *tagname(uint32_t);
 void play_mml(audio_ring_t *dst, const char *mml);
 
+struct audio_softc *sc;
+struct test_file files[16];
 int debug;
 int rifx;
+int fileidx;
+int freq;
+int opt_wait;	// 1ファイルごとの開始ディレイ
+int opt_vol;
 
 void
 usage()
 {
-	printf("usage: [options or files...]\n");
+	printf("usage: [options] <cmd> [files...]\n");
+	printf("options:\n");
 	printf(" -d        debug\n");
 	printf(" -f <freq> set ADPCM frequency\n");
-	printf(" -g        (guess) display format only, no playback\n");
-	printf(" -m <MML>  play MML\n");
 	printf(" -w <cnt>  delay block count for each files\n");
 	printf(" -v <vol>  track volume (0..256)\n");
+	printf("cmd:\n");
+	printf(" file <files...>  print format (without playback)\n");
+	printf(" play <files...>  play files\n");
+	printf(" mml  <mml>       play mml\n");
 	exit(1);
 }
 
 int
 main(int ac, char *av[])
 {
-	struct audio_softc *sc;
-	struct test_file files[16];
-	int fileidx = 0;
-	int freq = 15625;
-	int opt_g = 0;		// フォーマットを表示するだけオプション
-	int opt_wait = 0;	// 1ファイルごとの開始ディレイ
-	int opt_vol = 256;
+	int i;
+	int cmd;
 
 	if (ac < 2) {
 		usage();
 	}
 
-	audio_attach(&sc);
-
 	ac -= 1;
 	av += 1;
 
-	for (int i = 0; i < ac; i++) {
+	freq = 15625;
+	opt_vol = 256;
+
+	// 先にオプション
+	for (i = 0; i < ac; i++) {
 		const char *mml = NULL;
 		if (strcmp(av[i], "-d") == 0) {
 			debug++;
-			continue;
-		}
-		if (strcmp(av[i], "-g") == 0) {
-			opt_g = 1;
 			continue;
 		}
 		if (strcmp(av[i], "-f") == 0) {
@@ -124,87 +137,168 @@ main(int ac, char *av[])
 			opt_vol = atoi(av[i]);
 			continue;
 		}
-
-		struct test_file *f = &files[fileidx];
-		f->mem.top = 0;
-
-		if (strcmp(av[i], "-m") == 0) {
-			// -m <MML>
-			i++;
-			if (i == ac)
-				usage();
-			mml = av[i];
-
-			f->mem.fmt.sample_rate = 44100;
-			f->mem.fmt.encoding = AUDIO_ENCODING_SLINEAR_HE;
-			f->mem.fmt.channels = 1;
-			f->mem.fmt.precision = 16;
-			f->mem.fmt.stride = 16;
-
-			f->mem.capacity = 0;
-			f->mem.count = 0;
-			f->mem.sample = NULL;
-			play_mml(&f->mem, mml);
-		} else {
-			// ファイル名なら音声ファイルとして開く
-			FILE *fp = fopen(av[i], "rb");
-			if (fp == NULL) {
-				printf("ERROR: fopen\n");
-				return 1;
-			}
-
-			// ファイル形式を調べて f に色々格納。
-			int len = parse_file(f, fp, av[i], freq);
-			fclose(fp);
-
-			printf("%s: %s\n", av[i], fmt_tostring(&f->mem.fmt));
-			if (opt_g)
-				continue;
-
-			if (f->mem.fmt.encoding == AUDIO_ENCODING_MSM6258) {
-				// MSM6258 -> SLINEAR16(internal format)
-				uint8_t *tmp = malloc(len * 4);
-				audio_format2_t dstfmt;
-				dstfmt.encoding = AUDIO_ENCODING_SLINEAR_HE;
-				dstfmt.sample_rate = f->mem.fmt.sample_rate;
-				dstfmt.precision = AUDIO_INTERNAL_BITS;
-				dstfmt.stride = AUDIO_INTERNAL_BITS;
-				dstfmt.channels = f->mem.fmt.channels;
-				audio_filter_arg_t arg;
-				arg.context = msm6258_context_create();
-				arg.src = f->mem.sample;
-				arg.srcfmt = &f->mem.fmt;
-				arg.dst = tmp;
-				arg.dstfmt = &dstfmt;
-				arg.count = len * 2;
-				msm6258_to_internal(&arg);
-				msm6258_context_destroy(arg.context);
-				// かきかえ
-				free(f->mem.sample);
-				f->mem.sample = tmp;
-				f->mem.fmt = dstfmt;
-				f->mem.capacity = len * 2;
-			} else {
-				f->mem.capacity = len * 8 / f->mem.fmt.stride / f->mem.fmt.channels;
-			}
-			f->mem.count = f->mem.capacity;
-		}
-
-		f->file = sys_open(sc, AUMODE_PLAY);
-		/* この辺は ioctl になる */
-		f->file->ptrack.volume = opt_vol;
-		f->file->ptrack.mixer->volume = 256;
-		for (int j = 0; j < 2; j++) {
-			f->file->ptrack.ch_volume[j] = 256;
-		}
-
-		audio_track_set_format(&f->file->ptrack, &f->mem.fmt);
-
-		f->play = true;
-		f->wait = opt_wait;
-		fileidx++;
+		break;
 	}
 
+	// コマンド名
+	if (i == ac)
+		usage();
+	if (strcmp(av[i], "file") == 0) {
+		cmd = CMD_FILE;
+	} else if (strcmp(av[i], "play") == 0) {
+		cmd = CMD_PLAY;
+	} else if (strcmp(av[i], "mml") == 0) {
+		cmd = CMD_MML;
+	} else {
+		usage();
+	}
+	i++;
+
+	// コマンドごとにその後の引数
+	int r;
+	switch (cmd) {
+	 case CMD_FILE:
+		for (; i < ac; i++) {
+			r = cmd_print_file(av[i]);
+			if (r != 0)
+				break;
+		}
+		break;
+	 case CMD_PLAY:
+		audio_attach(&sc);
+		for (; i < ac; i++) {
+			r = cmd_set_file(av[i]);
+			if (r != 0)
+				break;
+		}
+		r = cmd_play();
+		audio_detach(sc);
+		break;
+	 case CMD_MML:
+		audio_attach(&sc);
+		r = cmd_set_mml(av[i]);
+		r = cmd_play();
+		audio_detach(sc);
+		break;
+	}
+
+#ifdef _WIN32
+	printf("END\n");
+	getchar();
+#endif
+	return r;
+}
+
+// filename のヘッダとか内容を表示します。
+int
+cmd_print_file(const char *filename)
+{
+	struct test_file *f = &files[fileidx];
+
+	// ファイル名なら音声ファイルとして開く
+	FILE *fp = fopen(filename, "rb");
+	if (fp == NULL) {
+		printf("ERROR: fopen: %s\n", filename);
+		return 1;
+	}
+
+	// ファイル形式を調べて f に色々格納。
+	int len = parse_file(f, fp, filename, freq);
+	fclose(fp);
+
+	printf("%s: %s\n", filename, fmt_tostring(&f->mem.fmt));
+	return 0;
+}
+
+// MML を再生します。
+int
+cmd_set_mml(const char *mml)
+{
+	struct test_file *f = &files[fileidx];
+
+	f->mem.top = 0;
+	f->mem.fmt.sample_rate = 44100;
+	f->mem.fmt.encoding = AUDIO_ENCODING_SLINEAR_HE;
+	f->mem.fmt.channels = 1;
+	f->mem.fmt.precision = 16;
+	f->mem.fmt.stride = 16;
+
+	f->mem.capacity = 0;
+	f->mem.count = 0;
+	f->mem.sample = NULL;
+	play_mml(&f->mem, mml);
+	return 0;
+}
+
+// filename を再生用にセットします。
+int
+cmd_set_file(const char *filename)
+{
+	struct test_file *f = &files[fileidx];
+	f->mem.top = 0;
+
+	// ファイル名なら音声ファイルとして開く
+	FILE *fp = fopen(filename, "rb");
+	if (fp == NULL) {
+		printf("ERROR: fopen: %s\n", filename);
+		return 1;
+	}
+
+	// ファイル形式を調べて f に色々格納。
+	int len = parse_file(f, fp, filename, freq);
+	fclose(fp);
+
+	printf("%s: %s\n", filename, fmt_tostring(&f->mem.fmt));
+
+	if (f->mem.fmt.encoding == AUDIO_ENCODING_MSM6258) {
+		// MSM6258 -> SLINEAR16(internal format)
+		uint8_t *tmp = malloc(len * 4);
+		audio_format2_t dstfmt;
+		dstfmt.encoding = AUDIO_ENCODING_SLINEAR_HE;
+		dstfmt.sample_rate = f->mem.fmt.sample_rate;
+		dstfmt.precision = AUDIO_INTERNAL_BITS;
+		dstfmt.stride = AUDIO_INTERNAL_BITS;
+		dstfmt.channels = f->mem.fmt.channels;
+		audio_filter_arg_t arg;
+		arg.context = msm6258_context_create();
+		arg.src = f->mem.sample;
+		arg.srcfmt = &f->mem.fmt;
+		arg.dst = tmp;
+		arg.dstfmt = &dstfmt;
+		arg.count = len * 2;
+		msm6258_to_internal(&arg);
+		msm6258_context_destroy(arg.context);
+		// かきかえ
+		free(f->mem.sample);
+		f->mem.sample = tmp;
+		f->mem.fmt = dstfmt;
+		f->mem.capacity = len * 2;
+	} else {
+		f->mem.capacity = len * 8 / f->mem.fmt.stride / f->mem.fmt.channels;
+	}
+	f->mem.count = f->mem.capacity;
+
+	f->file = sys_open(sc, AUMODE_PLAY);
+	/* この辺は ioctl になる */
+	f->file->ptrack.volume = opt_vol;
+	f->file->ptrack.mixer->volume = 256;
+	for (int j = 0; j < 2; j++) {
+		f->file->ptrack.ch_volume[j] = 256;
+	}
+
+	mutex_enter(audio_mixer_get_lock(sc->sc_pmixer));
+	audio_track_set_format(&f->file->ptrack, &f->mem.fmt);
+	mutex_exit(audio_mixer_get_lock(sc->sc_pmixer));
+
+	f->play = true;
+	f->wait = opt_wait;
+	fileidx++;
+	return 0;
+}
+
+int
+cmd_play()
+{
 #ifdef USE_PTHREAD
 	for (int i = 0; i < fileidx; i++) {
 		struct test_file *f = &files[i];
@@ -246,12 +340,6 @@ main(int ac, char *av[])
 	printf("mixer: hw_out=%" PRIu64 "\n",
 		files[0].file->ptrack.mixer->hw_output_counter);
 
-	audio_detach(sc);
-
-	printf("END\n");
-#ifdef _WIN32
-	getchar();
-#endif
 	return 0;
 
 }
