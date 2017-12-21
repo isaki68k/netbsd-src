@@ -49,13 +49,3 @@ audio_softc_init(struct audio_softc *sc)
 	sc->sc_pparams = audio_default;
 	sc->sc_pparams = audio_default;
 }
-
-kmutex_t *
-audio_mixer_get_lock(audio_trackmixer_t *mixer)
-{
-#if defined(AUDIO_SOFTINTR)
-	return &mixer->softintrlock;
-#else
-	return mixer->sc->sc_intr_lock;
-#endif
-}

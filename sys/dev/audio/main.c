@@ -7,11 +7,7 @@
 #include <stdio.h>
 #include <inttypes.h>
 #include <math.h>
-#include "aumix.h"
-#include "audev.h"
-#include "auring.h"
-#include "auintr.h"
-#include "aucodec.h"
+#include "aumix.c"
 #ifdef USE_PTHREAD
 #include <pthread.h>
 #endif
@@ -50,6 +46,8 @@ enum {
 	CMD_FILE,
 	CMD_PLAY,
 	CMD_MML,
+	CMD_TEST,
+	CMD_PERF,
 };
 
 int child_loop(struct test_file *, int);
@@ -60,6 +58,8 @@ int cmd_print_file(const char *);
 int cmd_set_file(const char *);
 int cmd_set_mml(const char *);
 int cmd_play();
+int cmd_perf(const char *);
+int cmd_perf_freq_up();
 int parse_file(struct test_file *, FILE *, const char *, int);
 uint16_t lebe16toh(uint16_t);
 uint32_t lebe32toh(uint32_t);
@@ -149,6 +149,8 @@ main(int ac, char *av[])
 		cmd = CMD_PLAY;
 	} else if (strcmp(av[i], "mml") == 0) {
 		cmd = CMD_MML;
+	} else if (strcmp(av[i], "perf") == 0) {
+		cmd = CMD_PERF;
 	} else {
 		usage();
 	}
@@ -179,6 +181,14 @@ main(int ac, char *av[])
 		r = cmd_set_mml(av[i]);
 		r = cmd_play();
 		audio_detach(sc);
+		break;
+
+	 case CMD_PERF:
+		for (; i < ac; i++) {
+			r = cmd_perf(av[i]);
+			if (r != 0)
+				break;
+		}
 		break;
 	}
 
@@ -617,3 +627,22 @@ tagname(uint32_t tag)
 	return buf;
 }
 
+int
+cmd_perf(const char *testname)
+{
+	if (strcmp(testname, "freq_up") == 0) {
+		cmd_perf_freq_up();
+	} else {
+		printf("perf:\n");
+		printf(" freq_u\n");
+		exit(1);
+	}
+	return 0;
+}
+
+int
+cmd_perf_freq_up()
+{
+	audio_track_freq_up(NULL);
+	return 0;
+}

@@ -9,7 +9,6 @@ SRCS+=	\
 	aucodec_msm6258.c \
 	aucodec_mulaw.c \
 	auintr.c \
-	aumix.c \
 	main.c \
 	synth.c \
 	compat.c \
