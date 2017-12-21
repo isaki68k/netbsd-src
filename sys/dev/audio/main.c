@@ -184,11 +184,13 @@ main(int ac, char *av[])
 		break;
 
 	 case CMD_PERF:
+		audio_attach(&sc);
 		for (; i < ac; i++) {
 			r = cmd_perf(av[i]);
 			if (r != 0)
 				break;
 		}
+		audio_detach(sc);
 		break;
 	}
 
@@ -643,6 +645,32 @@ cmd_perf(const char *testname)
 int
 cmd_perf_freq_up()
 {
-	audio_track_freq_up(NULL);
+	struct test_file *f = &files[fileidx];
+	audio_track_t *track;
+
+	f->file = sys_open(sc, AUMODE_PLAY);
+	track = &f->file->ptrack;
+	track->inputfmt.encoding = AUDIO_ENCODING_SLINEAR_HE;
+	track->inputfmt.precision = 16;
+	track->inputfmt.stride = 16;
+	track->inputfmt.channels = 2;
+	track->inputfmt.sample_rate = 44100;
+	track->input = &track->freq.srcbuf;
+	track->outputbuf.fmt = track->inputfmt;
+	track->outputbuf.fmt.sample_rate = 48000;
+	track->outputbuf.top = 0;
+	track->outputbuf.count = 0;
+	track->outputbuf.capacity = frame_per_block_roundup(track->mixer,
+	    &track->outputbuf.fmt);
+	track->outputbuf.sample = audio_realloc(track->outputbuf.sample,
+	    RING_BYTELEN(&track->outputbuf));
+	init_freq(track, &track->outputbuf);
+
+	track->freq.srcbuf.count = 4410;
+	track->freq.arg.src = track->freq.srcbuf.sample;
+	track->freq.arg.dst = track->outputbuf.sample;
+	track->freq.arg.count = track->outputbuf.capacity;
+	track->freq.filter(&track->freq.arg);
+
 	return 0;
 }
