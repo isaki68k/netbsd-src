@@ -46,7 +46,9 @@ struct audio_filter_arg
 	void *dst;
 	audio_format2_t *dstfmt;
 
-	int count;		// 今回のフィルタ呼び出しで入出力可能なフレーム数
+	// 今回のフィルタ呼び出しで入出力可能なフレーム数
+	// (内部で使用する周波数変換フィルタの場合は出力フレーム数)
+	int count;
 
 	void *context;
 };
