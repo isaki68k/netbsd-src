@@ -2,17 +2,18 @@
 SRCS+=	\
 	audio_dev.c
 
-.PATH:..
 SRCS+=	\
-	aucodec.c \
-	aucodec_linear.c \
-	aucodec_msm6258.c \
-	aucodec_mulaw.c \
-	auintr.c \
-	main.c \
-	synth.c \
+	../aucodec.c \
+	../aucodec_linear.c \
+	../aucodec_msm6258.c \
+	../aucodec_mulaw.c \
+	../auintr.c \
+	../main.c \
+	../synth.c \
+	../userland.c \
 	compat.c \
-	userland.c \
+
+OBJS=${SRCS:S,.c,.o,:S,../,,}
 
 CFLAGS=	-g -std=c99 -I. -I.. \
 	-Wall \
@@ -22,8 +23,17 @@ CFLAGS=	-g -std=c99 -I. -I.. \
 	-Wno-unused-variable \
 	-Wno-unused-but-set-variable \
 
-a.out:	${SRCS:.c=.o}
+a.out:	${OBJS}
 	${CC} -g -o $@ $> -lm -pthread
 
+.PHONY: clean
 clean:
-	rm -rf a.out ${SRCS:.c=.o}
+	rm -rf a.out *.o
+
+.PHONY: depend
+depend:
+	${CC} -MM ${CFLAGS} ${SRCS} > .depend
+
+.if exists(.depend)
+.include ".depend"
+.endif
