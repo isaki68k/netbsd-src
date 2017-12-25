@@ -15,7 +15,8 @@ SRCS+=	\
 
 OBJS=${SRCS:S,.c,.o,:S,../,,}
 
-CFLAGS=	-g -std=c99 -I. -I.. \
+CFLAGS=	-O2 -g -std=c99 -I. -I.. \
+	-fno-strict-aliasing \
 	-Wall \
 	-Werror \
 	-Wshadow \
