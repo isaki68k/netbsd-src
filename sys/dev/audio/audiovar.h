@@ -151,6 +151,7 @@ struct audio_track
 #if defined(FREQ_CYCLE2)
 	unsigned int        freq_step;		/* 周波数変換用、周期比 */
 	unsigned int        freq_current;	/* 周波数変換用、現在のカウンタ */
+	unsigned int        freq_leap;		/* 周波数変換用、補正値 */
 #elif defined(FREQ_ORIG)
 	audio_rational_t   freq_step;		/* 周波数変換用分数 (変換元周波数 / 変換先周波数) */
 	audio_rational_t   freq_current;	/* 周波数変換用 現在のカウンタ */

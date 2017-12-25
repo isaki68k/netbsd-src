@@ -414,6 +414,13 @@ audio_track_freq_up(audio_filter_arg_t *arg)
 			t -= 65536;
 		}
 	}
+	// 補正
+	t += track->freq_leap;
+	if (t >= 65536) {
+		src->top++;
+		src->count--;
+		t -= 65536;
+	}
 	track->freq_current = t;
 
 #elif defined(FREQ_ORIG)
@@ -489,6 +496,7 @@ audio_track_freq_down(audio_filter_arg_t *arg)
 		t += step;
 	}
 	dst->count += arg->count;
+	t += track->freq_leap;
 	// XXX うーんなんだこの min
 	audio_ring_tookfromtop(src, min(t / 65536, src->count));
 	track->freq_current = t % 65536;
@@ -781,8 +789,16 @@ init_freq(audio_track_t *track, audio_ring_t *last_dst)
 #if defined(FREQ_CYCLE2)
 		track->freq_current = 0;
 
-		// step は dstfreq を 65536 とした時の src/dst 比
+		// freq_step は dstfreq を 65536 とした時の src/dst 比
 		track->freq_step = (uint64_t)srcfreq * 65536 / dstfreq;
+
+		// freq_leap は1ブロックごとの freq_step の補正値
+		// を四捨五入したもの。
+		int dst_capacity = frame_per_block_roundup(track->mixer,
+		    dstfmt);
+		int mod = (uint64_t)srcfreq * 65536 % dstfreq;
+		track->freq_leap = (mod * dst_capacity + dstfreq / 2) / dstfreq;
+
 		if (track->freq_step < 65536) {
 #elif defined(FREQ_ORIG)
 		track->freq_step.i = srcfreq / dstfreq;
