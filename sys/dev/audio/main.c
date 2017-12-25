@@ -406,7 +406,13 @@ child(void *arg)
 #endif
 
 #define GETID(ptr) (be32toh(*(uint32_t *)(ptr)))
-#define ID(str)	((str[0]<<24) | (str[1]<<16) | (str[2]<<8) | str[3])
+static inline uint32_t ID(const char *str) {
+	const unsigned char *ustr = (const unsigned char *)str;
+	return (ustr[0] << 24)
+	     | (ustr[1] << 16)
+	     | (ustr[2] << 8)
+	     | (ustr[3]);
+}
 static inline int IDC(uint32_t value) {
 	value &= 0xff;
 	return isprint(value) ? value : '?';
