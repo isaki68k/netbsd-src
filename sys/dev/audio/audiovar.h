@@ -23,6 +23,7 @@
 } while (0)
 #else
 #define KASSERT(expr)	/**/
+#define KASSERTMSG(expr, fmt, ...)	/**/
 #endif
 
 // カーネルの場合は audio.c の AUDIO_DEBUG だけで制御する
