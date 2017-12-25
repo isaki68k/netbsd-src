@@ -369,7 +369,6 @@ audio_track_chmix_expand(audio_filter_arg_t *arg)
 //
 // src->dst	44->48	8->48	48->44	48->8	[times/msec]
 // ORIG		 48.7	 60.2	 91.8	610.6
-// CYCLE	  4.6	  5.3	112.9	605.7
 // CYCLE2	 65.9	 78.8	154.4	837.8
 
 static void
@@ -413,36 +412,6 @@ audio_track_freq_up(audio_filter_arg_t *arg)
 			src->top++;
 			src->count--;
 			t -= 65536;
-		}
-	}
-	track->freq_current = t;
-
-#elif defined(FREQ_CYCLE)
-	int t = track->freq_current;
-	int srcfreq = src->fmt.sample_rate;
-	int dstfreq = dst->fmt.sample_rate;
-
-	for (int i = 0; i < arg->count; i++) {
-		internal_t curr;
-		internal_t next;
-		internal_t a;
-		internal2_t diff;
-
-		for (int ch = 0; ch < dst->fmt.channels; ch++) {
-			curr = sptr[ch];
-			next = sptr[ch + src->fmt.channels];
-			a = next - curr;
-			diff = a * t / dstfreq;
-			*dptr++ = sptr[ch] + diff;
-		}
-		dst->count++;
-
-		t += srcfreq;
-		if (t >= dstfreq) {
-			sptr += src->fmt.channels;
-			src->top++;
-			src->count--;
-			t -= dstfreq;
 		}
 	}
 	track->freq_current = t;
@@ -523,24 +492,6 @@ audio_track_freq_down(audio_filter_arg_t *arg)
 	// XXX うーんなんだこの min
 	audio_ring_tookfromtop(src, min(t / 65536, src->count));
 	track->freq_current = t % 65536;
-
-#elif defined(FREQ_CYCLE)
-	unsigned int t = track->freq_current;
-	int srcfreq = src->fmt.sample_rate;
-	int dstfreq = dst->fmt.sample_rate;
-	int nch = dst->fmt.channels;
-
-	for (int i = 0; i < arg->count && t / dstfreq < src->count; i++) {
-		const internal_t *sptr1;
-		sptr1 = sptr0 + (t / dstfreq) * nch;
-		for (int ch = 0; ch < nch; ch++) {
-			*dptr++ = sptr1[ch];
-		}
-		t += srcfreq;
-	}
-	dst->count += arg->count;
-	audio_ring_tookfromtop(src, t / dstfreq);
-	track->freq_current = t % dstfreq;
 
 #elif defined(FREQ_ORIG)
 	audio_rational_t tmp = track->freq_current;
@@ -833,10 +784,6 @@ init_freq(audio_track_t *track, audio_ring_t *last_dst)
 		// step は dstfreq を 65536 とした時の src/dst 比
 		track->freq_step = (uint64_t)srcfreq * 65536 / dstfreq;
 		if (track->freq_step < 65536) {
-#elif defined(FREQ_CYCLE)
-		track->freq_current = 0;
-
-		if (srcfreq < dstfreq) {
 #elif defined(FREQ_ORIG)
 		track->freq_step.i = srcfreq / dstfreq;
 		track->freq_step.n = srcfreq % dstfreq;
