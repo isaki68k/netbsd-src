@@ -2,7 +2,7 @@
 
 #include "aumix.h"
 
-void audio_attach(struct audio_softc **softc);
+void audio_attach(struct audio_softc **softc, bool hw);
 void audio_detach(struct audio_softc *sc);
 
 void audio_softc_play_start(struct audio_softc *sc);

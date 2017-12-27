@@ -178,7 +178,7 @@ main(int ac, char *av[])
 		}
 		break;
 	 case CMD_PLAY:
-		audio_attach(&sc);
+		audio_attach(&sc, true);
 		for (; i < ac; i++) {
 			r = cmd_set_file(av[i]);
 			if (r != 0)
@@ -188,14 +188,14 @@ main(int ac, char *av[])
 		audio_detach(sc);
 		break;
 	 case CMD_MML:
-		audio_attach(&sc);
+		audio_attach(&sc, true);
 		r = cmd_set_mml(av[i]);
 		r = cmd_play();
 		audio_detach(sc);
 		break;
 
 	 case CMD_PERF:
-		audio_attach(&sc);
+		audio_attach(&sc, false);
 		for (; i < ac; i++) {
 			r = cmd_perf(av[i]);
 			if (r != 0)

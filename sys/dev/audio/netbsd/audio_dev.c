@@ -62,8 +62,9 @@ netbsd_halt_output(void *hdl)
 	return 0;
 }
 
+// hw が true なら OS のオーディオデバイスをオープンします。
 void
-audio_attach(struct audio_softc **softc)
+audio_attach(struct audio_softc **softc, bool hw)
 {
 	struct audio_softc *sc;
 	audio_dev_netbsd_t *dev;
@@ -75,7 +76,7 @@ audio_attach(struct audio_softc **softc)
 	sc->phys = calloc(1, sizeof(*dev));
 
 	dev = sc->phys;
-	dev->fd = open("/dev/sound", O_RDWR);
+	dev->fd = -1;
 
 	dev->fmt.encoding = AUDIO_ENCODING_SLINEAR_LE;
 	dev->fmt.channels = 2;
@@ -83,18 +84,6 @@ audio_attach(struct audio_softc **softc)
 	dev->fmt.precision = 16;
 	dev->fmt.stride = 16;
 	dev->frame_bytes = dev->fmt.precision / 8 * dev->fmt.channels;
-
-	AUDIO_INITINFO(&ai);
-	ai.mode = AUMODE_PLAY;
-	ai.play.sample_rate = dev->fmt.sample_rate;
-	ai.play.encoding    = dev->fmt.encoding;
-	ai.play.precision   = dev->fmt.precision;
-	ai.play.channels    = dev->fmt.channels;
-	r = ioctl(dev->fd, AUDIO_SETINFO, &ai);
-	if (r == -1) {
-		printf("AUDIO_SETINFO failed\n");
-		exit(1);
-	}
 
 	pthread_mutex_init(&dev->mutex, NULL);
 
@@ -107,6 +96,28 @@ audio_attach(struct audio_softc **softc)
 	sc->hw_if->start_output = netbsd_start_output;
 	sc->hw_if->halt_output = netbsd_halt_output;
 	sc->hw_hdl = sc;
+
+	if (hw) {
+		const char *devname = "/dev/sound";
+
+		dev->fd = open(devname, O_RDWR);
+		if (dev->fd == -1) {
+			printf("open failed: %s\n", devname);
+			exit(1);
+		}
+
+		AUDIO_INITINFO(&ai);
+		ai.mode = AUMODE_PLAY;
+		ai.play.sample_rate = dev->fmt.sample_rate;
+		ai.play.encoding    = dev->fmt.encoding;
+		ai.play.precision   = dev->fmt.precision;
+		ai.play.channels    = dev->fmt.channels;
+		r = ioctl(dev->fd, AUDIO_SETINFO, &ai);
+		if (r == -1) {
+			printf("AUDIO_SETINFO failed\n");
+			exit(1);
+		}
+	}
 }
 
 void
@@ -114,7 +125,10 @@ audio_detach(struct audio_softc *sc)
 {
 	audio_dev_netbsd_t *dev = sc->phys;
 
-	close(dev->fd);
+	if (dev->fd != -1) {
+		close(dev->fd);
+		dev->fd = -1;
+	}
 	free(dev);
 	sc->phys = NULL;
 }
