@@ -24,12 +24,12 @@ CFLAGS=	-O2 -g -std=c99 -I. -I.. \
 	-Wno-unused-variable \
 	-Wno-unused-but-set-variable \
 
-a.out:	${OBJS}
+a.out.${MACHINE}:	${OBJS}
 	${CC} -g -o $@ $> -lm -pthread
 
 .PHONY: clean
 clean:
-	rm -rf a.out *.o
+	rm -rf a.out.* *.o
 
 .PHONY: depend
 depend:
