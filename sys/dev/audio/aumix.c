@@ -895,6 +895,33 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *fmt)
 	track->outputbuf.count = 0;
 	track->outputbuf.capacity = NBLKOUT * frame_per_block_roundup(track->mixer, &track->outputbuf.fmt);
 	track->outputbuf.sample = audio_realloc(track->outputbuf.sample, RING_BYTELEN(&track->outputbuf));
+
+#if AUDIO_DEBUG > 1
+	char buf[100];
+	int n;
+	n = snprintf(buf, sizeof(buf), " out=%d",
+	    track->outputbuf.capacity *
+	    frametobyte(&track->outputbuf.fmt, 1));
+	if (track->freq.filter)
+		n += snprintf(buf + n, sizeof(buf) - n, " freq=%d",
+		    track->freq.srcbuf.capacity *
+		    frametobyte(&track->freq.srcbuf.fmt, 1));
+	if (track->chmix.filter)
+		n += snprintf(buf + n, sizeof(buf) - n, " chmix=%d",
+		    track->chmix.srcbuf.capacity *
+		    frametobyte(&track->chmix.srcbuf.fmt, 1));
+	if (track->chvol.filter)
+		n += snprintf(buf + n, sizeof(buf) - n, " chvol=%d",
+		    track->chvol.srcbuf.capacity *
+		    frametobyte(&track->chvol.srcbuf.fmt, 1));
+	if (track->codec.filter)
+		n += snprintf(buf + n, sizeof(buf) - n, " codec=%d",
+		    track->codec.srcbuf.capacity *
+		    frametobyte(&track->codec.srcbuf.fmt, 1));
+	n += snprintf(buf + n, sizeof(buf) - n, " usr=%d",
+	    track->usrbuf.capacity);
+	DPRINTF(1, "%s: bufsize:%s\n", __func__, buf);
+#endif
 }
 
 // ring が空でなく 1 ブロックに満たない時、1ブロックまで無音を追加します。
