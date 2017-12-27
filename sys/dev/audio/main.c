@@ -765,8 +765,13 @@ cmd_perf_freq_main(struct freqdata *pattern)
 		gettimeofday(&end, NULL);
 		timersub(&end, &start, &result);
 
+#if defined(__m68k__)
+		printf("%d %5.1f times/sec\n", (int)count,
+			(double)count/(result.tv_sec + (double)result.tv_usec/1000000));
+#else
 		printf("%d %5.1f times/msec\n", (int)count,
 			(double)count/((uint64_t)result.tv_sec*1000 + result.tv_usec/1000));
+#endif
 	}
 
 	return 0;
