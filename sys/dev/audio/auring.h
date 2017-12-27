@@ -49,41 +49,46 @@ is_valid_ring(const audio_ring_t *ring)
 	KASSERT(ring != NULL);
 
 	if (!is_valid_format(&ring->fmt)) {
-		TRACE0("is_valid_format() failed");
+		printf("%s: is_valid_format() failed\n", __func__);
 		return false;
 	}
 	if (ring->capacity < 0) {
-		TRACE0("capacity(%d) < 0", ring->capacity);
+		printf("%s: capacity(%d) < 0\n", __func__, ring->capacity);
 		return false;
 	}
 	if (ring->capacity > INT_MAX / 2) {
-		TRACE0("capacity(%d) > INT_MAX/2", ring->capacity);
+		printf("%s: capacity(%d) > INT_MAX/2\n", __func__,
+		    ring->capacity);
 		return false;
 	}
 	if (ring->count < 0) {
-		TRACE0("count(%d) < 0", ring->count);
+		printf("%s: count(%d) < 0\n", __func__, ring->count);
 		return false;
 	}
 	if (ring->count > ring->capacity) {
-		TRACE0("count(%d) < capacity(%d)", ring->count, ring->capacity);
+		printf("%s: count(%d) < capacity(%d)\n", __func__,
+		    ring->count, ring->capacity);
 		return false;
 	}
 	if (ring->capacity == 0) {
 		if (ring->sample != NULL) {
-			TRACE0("capacity == 0 but sample != NULL");
+			printf("%s: capacity == 0 but sample != NULL\n",
+			    __func__);
 			return false;
 		}
 	} else {
 		if (ring->sample == NULL) {
-			TRACE0("capacity != 0 but sample == NULL");
+			printf("%s: capacity != 0 but sample == NULL\n",
+			    __func__);
 			return false;
 		}
 		if (ring->top < 0) {
-			TRACE0("top(%d) < 0", ring->top);
+			printf("%s: top(%d) < 0\n", __func__, ring->top);
 			return false;
 		}
 		if (ring->top >= ring->capacity) {
-			TRACE0("top(%d) >= capacity(%d)", ring->top, ring->capacity);
+			printf("%s: top(%d) >= capacity(%d)\n", __func__,
+			    ring->top, ring->capacity);
 			return false;
 		}
 	}
