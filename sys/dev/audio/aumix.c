@@ -706,6 +706,8 @@ init_codec(audio_track_t *track, audio_ring_t *last_dst)
 		track->codec.srcbuf.capacity = frame_per_block_roundup(track->mixer, &track->codec.srcbuf.fmt);
 		track->codec.srcbuf.sample = audio_realloc(track->codec.srcbuf.sample, RING_BYTELEN(&track->codec.srcbuf));
 		if (track->codec.srcbuf.sample == NULL) {
+			DPRINTF(1, "%s: malloc(%d) failed\n", __func__,
+			    RING_BYTELEN(&track->codec.srcbuf));
 			last_dst = NULL;
 			goto done;
 		}
@@ -749,6 +751,8 @@ init_chvol(audio_track_t *track, audio_ring_t *last_dst)
 		track->chvol.srcbuf.capacity = frame_per_block_roundup(track->mixer, &track->chvol.srcbuf.fmt);
 		track->chvol.srcbuf.sample = audio_realloc(track->chvol.srcbuf.sample, RING_BYTELEN(&track->chvol.srcbuf));
 		if (track->chvol.srcbuf.sample == NULL) {
+			DPRINTF(1, "%s: malloc(%d) failed\n", __func__,
+			    RING_BYTELEN(&track->chvol.srcbuf));
 			last_dst = NULL;
 			goto done;
 		}
@@ -801,6 +805,8 @@ init_chmix(audio_track_t *track, audio_ring_t *last_dst)
 		track->chmix.srcbuf.capacity = frame_per_block_roundup(track->mixer, &track->chmix.srcbuf.fmt);
 		track->chmix.srcbuf.sample = audio_realloc(track->chmix.srcbuf.sample, RING_BYTELEN(&track->chmix.srcbuf));
 		if (track->chmix.srcbuf.sample == NULL) {
+			DPRINTF(1, "%s: malloc(%d) failed\n", __func__,
+			    RING_BYTELEN(&track->chmix.srcbuf));
 			last_dst = NULL;
 			goto done;
 		}
@@ -877,6 +883,8 @@ init_freq(audio_track_t *track, audio_ring_t *last_dst)
 		track->freq.srcbuf.capacity = frame_per_block_roundup(track->mixer, &track->freq.srcbuf.fmt);
 		track->freq.srcbuf.sample = audio_realloc(track->freq.srcbuf.sample, RING_BYTELEN(&track->freq.srcbuf));
 		if (track->freq.srcbuf.sample == NULL) {
+			DPRINTF(1, "%s: malloc(%d) failed\n", __func__,
+			    RING_BYTELEN(&track->freq.srcbuf));
 			last_dst = NULL;
 			goto done;
 		}
@@ -949,8 +957,11 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *fmt)
 	    frametobyte(&track->inputfmt, track->input->capacity);
 	track->usrbuf.sample = audio_realloc(track->usrbuf.sample,
 	    track->usrbuf.capacity);
-	if (track->usrbuf.sample == NULL)
+	if (track->usrbuf.sample == NULL) {
+		DPRINTF(1, "%s: malloc usrbuf(%d) failed\n", __func__,
+		    track->usrbuf.capacity);
 		goto error;
+	}
 	// usrbuf の fmt は1フレーム=1バイトになるようにしておくが
 	// 基本 fmt は参照せず 1フレーム=1バイトでコーディングしたほうがいいか。
 	track->usrbuf.fmt = *fmt;
@@ -963,8 +974,11 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *fmt)
 	track->outputbuf.count = 0;
 	track->outputbuf.capacity = NBLKOUT * frame_per_block_roundup(track->mixer, &track->outputbuf.fmt);
 	track->outputbuf.sample = audio_realloc(track->outputbuf.sample, RING_BYTELEN(&track->outputbuf));
-	if (track->outputbuf.sample == NULL)
+	if (track->outputbuf.sample == NULL) {
+		DPRINTF(1, "%s: malloc outbuf(%d) failed\n", __func__,
+		    RING_BYTELEN(&track->outputbuf));
 		goto error;
+	}
 
 #if AUDIO_DEBUG > 1
 	char buf[100];
