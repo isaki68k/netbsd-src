@@ -53,8 +53,14 @@
 #define unlock(x)				/*とりあえず*/
 #endif
 
+#define audio_free(mem)	do {	\
+	if (mem != NULL) {	\
+		kern_free(mem);	\
+		mem = NULL;	\
+	}	\
+} while (0)
+
 void *audio_realloc(void *memblock, size_t bytes);
-void audio_free(void *memblock);
 int16_t audio_volume_to_inner(uint8_t v);
 uint8_t audio_volume_to_outer(int16_t v);
 static int audio_pmixer_mixall(audio_trackmixer_t *mixer, int req, bool isintr);
@@ -120,14 +126,6 @@ audio_realloc(void *memblock, size_t bytes)
 		} else {
 			return NULL;
 		}
-	}
-}
-
-void
-audio_free(void *memblock)
-{
-	if (memblock != NULL) {
-		kern_free(memblock);
 	}
 }
 
@@ -662,7 +660,6 @@ init_codec(audio_track_t *track, audio_ring_t *last_dst)
 		// チャンネル数以外が等しければエンコーディング変換不要
 		track->codec.filter = NULL;
 		audio_free(track->codec.srcbuf.sample);
-		track->codec.srcbuf.sample = NULL;
 		return last_dst;
 	} else {
 		// エンコーディングを変換する
@@ -707,7 +704,6 @@ init_chvol(audio_track_t *track, audio_ring_t *last_dst)
 	if (use_chvol == false) {
 		track->chvol.filter = NULL;
 		audio_free(track->chvol.srcbuf.sample);
-		track->chvol.srcbuf.sample = NULL;
 		return last_dst;
 	} else {
 		track->chvol.filter = audio_track_chvol;
@@ -737,7 +733,6 @@ init_chmix(audio_track_t *track, audio_ring_t *last_dst)
 	if (srcch == dstch) {
 		track->chmix.filter = NULL;
 		audio_free(track->chmix.srcbuf.sample);
-		track->chmix.srcbuf.sample = NULL;
 		return last_dst;
 	} else {
 		if (srcch >= 2 && dstch == 1) {
@@ -779,7 +774,6 @@ init_freq(audio_track_t *track, audio_ring_t *last_dst)
 	if (srcfreq == dstfreq) {
 		track->freq.filter = NULL;
 		audio_free(track->freq.srcbuf.sample);
-		track->freq.srcbuf.sample = NULL;
 		return last_dst;
 	} else {
 		track->freq.arg.context = track;
