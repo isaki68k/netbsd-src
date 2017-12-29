@@ -200,9 +200,8 @@ audio_volume_to_outer(int16_t v)
 // track_cl フラグをセットします。
 // 割り込みコンテキストから呼び出すことはできません。
 static inline void
-audio_track_cl(audio_track_t *track)
+audio_track_cl(struct audio_softc *sc, audio_track_t *track)
 {
-	struct audio_softc *sc = track->mixer->sc;
 	mutex_enter(sc->sc_intr_lock);
 	track->track_cl = 1;
 	mutex_exit(sc->sc_intr_lock);
@@ -211,9 +210,8 @@ audio_track_cl(audio_track_t *track)
 // track_cl フラグをリセットします。
 // 割り込みコンテキストから呼び出すことはできません。
 static inline void
-audio_track_uncl(audio_track_t *track)
+audio_track_uncl(struct audio_softc *sc, audio_track_t *track)
 {
-	struct audio_softc *sc = track->mixer->sc;
 	mutex_enter(sc->sc_intr_lock);
 	track->track_cl = 0;
 	mutex_exit(sc->sc_intr_lock);
@@ -221,22 +219,22 @@ audio_track_uncl(audio_track_t *track)
 #endif
 
 static inline void
-audio_track_enter_colock(audio_track_t *track)
+audio_track_enter_colock(struct audio_softc *sc, audio_track_t *track)
 {
 #if defined(AUDIO_SOFTINTR)
 	mutex_enter(&track->mixer->softintrlock);
 #else
-	audio_track_cl(track);
+	audio_track_cl(sc, track);
 #endif
 }
 
 static inline void
-audio_track_leave_colock(audio_track_t *track)
+audio_track_leave_colock(struct audio_softc *sc, audio_track_t *track)
 {
 #if defined(AUDIO_SOFTINTR)
 	mutex_exit(&track->mixer->softintrlock);
 #else
-	audio_track_uncl(track);
+	audio_track_uncl(sc, track);
 #endif
 }
 
@@ -1776,9 +1774,9 @@ audio_track_drain(audio_track_t *track, bool wait)
 
 	// 必要があれば無音挿入させる
 
-	audio_track_enter_colock(track);
+	audio_track_enter_colock(sc, track);
 	audio_track_play(track, true);
-	audio_track_leave_colock(track);
+	audio_track_leave_colock(sc, track);
 
 	if (wait) {
 		while (track->seq > mixer->hwseq) {
@@ -1927,14 +1925,14 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 			}
 		}
 
-		audio_track_enter_colock(track);
+		audio_track_enter_colock(sc, track);
 
 		while (track->usrbuf.count >= out_thres && error == 0) {
 			if (track->outputbuf.count == track->outputbuf.capacity) {
 				// trkbuf が一杯ならここで待機
-				audio_track_leave_colock(track);
+				audio_track_leave_colock(sc, track);
 				error = audio_waitio(sc, track);
-				audio_track_enter_colock(track);
+				audio_track_enter_colock(sc, track);
 				if (error != 0) {
 					if (error < 0) {
 						error = EINTR;
@@ -1947,7 +1945,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 			audio_track_play(track, false);
 		}
 
-		audio_track_leave_colock(track);
+		audio_track_leave_colock(sc, track);
 #if !defined(_KERNEL)
 		emu_intr_check();
 #endif
