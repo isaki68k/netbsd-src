@@ -662,6 +662,10 @@ audio_framealign(int stride)
 	}
 }
 
+// track の codec ステージを必要に応じて初期化します。
+// 成功すれば、codec ステージが必要なら初期化した上で、いずれにしても
+// 更新された last_dst を返します。
+// 失敗すれば(今のところ ENOMEM のみ) NULL を返します。
 static audio_ring_t *
 init_codec(audio_track_t *track, audio_ring_t *last_dst)
 {
@@ -704,6 +708,10 @@ done:
 	return last_dst;
 }
 
+// track の chvol ステージを必要に応じて初期化します。
+// 成功すれば、chvol ステージが必要なら初期化した上で、いずれにしても
+// 更新された last_dst を返します。
+// 失敗すれば(今のところ ENOMEM のみ) NULL を返します。
 static audio_ring_t *
 init_chvol(audio_track_t *track, audio_ring_t *last_dst)
 {
@@ -744,6 +752,10 @@ done:
 }
 
 
+// track の chmix ステージを必要に応じて初期化します。
+// 成功すれば、chmix ステージが必要なら初期化した上で、いずれにしても
+// 更新された last_dst を返します。
+// 失敗すれば(今のところ ENOMEM のみ) NULL を返します。
 static audio_ring_t *
 init_chmix(audio_track_t *track, audio_ring_t *last_dst)
 {
@@ -790,6 +802,10 @@ done:
 	return last_dst;
 }
 
+// track の freq ステージを必要に応じて初期化します。
+// 成功すれば、freq ステージが必要なら初期化した上で、いずれにしても
+// 更新された last_dst を返します。
+// 失敗すれば(今のところ ENOMEM のみ) NULL を返します。
 static audio_ring_t *
 init_freq(audio_track_t *track, audio_ring_t *last_dst)
 {
@@ -856,10 +872,8 @@ done:
 	return last_dst;
 }
 
-/*
-* トラックのユーザランド側フォーマットを設定します。
-* 変換用内部バッファは一度破棄されます。
-*/
+// トラックのユーザランド側フォーマットを設定します。
+// 変換用内部バッファは一度破棄されます。
 int
 audio_track_set_format(audio_track_t *track, audio_format2_t *fmt)
 {
