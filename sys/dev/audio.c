@@ -1389,14 +1389,12 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	// トラックの初期化
 	// トラックバッファの初期化
 	if (audio_file_can_playback(af)) {
-		error = audio_track_init(&af->ptrack, sc->sc_pmixer,
-		    AUMODE_PLAY);
+		error = audio_track_init(sc, &af->ptrack, AUMODE_PLAY);
 		if (error)
 			goto bad1;
 	}
 	if (audio_file_can_record(af)) {
-		error = audio_track_init(&af->rtrack, sc->sc_rmixer,
-		    AUMODE_RECORD);
+		error = audio_track_init(sc, &af->rtrack, AUMODE_RECORD);
 		if (error)
 			goto bad2;
 	}

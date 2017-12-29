@@ -554,15 +554,14 @@ audio_track_freq_down(audio_filter_arg_t *arg)
 // トラックを初期化します。
 // 初期化できれば 0 を返して *trackp に初期化済みのトラックを格納します。
 // 初期化できなければ errno を返し、*trackp は変更しません。
-// mixer は接続先のミキサを指定します。
 // mode は再生なら AUMODE_PLAY、録音なら AUMODE_RECORD を指定します。
 // 単に録音再生のどちら側かだけなので AUMODE_PLAY_ALL は関係ありません。
 int
-audio_track_init(audio_track_t **trackp, audio_trackmixer_t *mixer, int mode)
+audio_track_init(struct audio_softc *sc, audio_track_t **trackp, int mode)
 {
-	struct audio_softc *sc = mixer->sc;
 	audio_track_t *track;
 	audio_format2_t *default_format;
+	audio_trackmixer_t *mixer;
 	const char *cvname;
 	int error;
 	static int newid = 0;
@@ -576,9 +575,11 @@ audio_track_init(audio_track_t **trackp, audio_trackmixer_t *mixer, int mode)
 	if (mode == AUMODE_PLAY) {
 		cvname = "audiowr";
 		default_format = &sc->sc_pparams;
+		mixer = sc->sc_pmixer;
 	} else {
 		cvname = "audiord";
 		default_format = &sc->sc_rparams;
+		mixer = sc->sc_rmixer;
 	}
 
 	track->mixer = mixer;
@@ -2006,9 +2007,9 @@ sys_open(struct audio_softc *sc, int mode)
 	file->sc = sc;
 
 	if (mode == AUMODE_PLAY) {
-		audio_track_init(&file->ptrack, sc->sc_pmixer, AUMODE_PLAY);
+		audio_track_init(sc, &file->ptrack, AUMODE_PLAY);
 	} else {
-		audio_track_init(&file->rtrack, sc->sc_rmixer, AUMODE_RECORD);
+		audio_track_init(sc, &file->rtrack, AUMODE_RECORD);
 	}
 
 	SLIST_INSERT_HEAD(&sc->sc_files, file, entry);
