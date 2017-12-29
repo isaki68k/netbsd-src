@@ -1518,11 +1518,15 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	return error;
 
 bad3:
-	if (audio_file_can_record(af))
-		audio_track_destroy(&af->rtrack);
+	if (af->rtrack) {
+		audio_track_destroy(af->rtrack);
+		af->rtrack = NULL;
+	}
 bad2:
-	if (audio_file_can_playback(af))
-		audio_track_destroy(&af->ptrack);
+	if (af->ptrack) {
+		audio_track_destroy(af->ptrack);
+		af->ptrack = NULL;
+	}
 bad1:
 	kmem_free(af, sizeof(*af));
 	return error;
@@ -1598,7 +1602,8 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 				sc->sc_rmixer->hwbuf.top = 0;
 			}
 		}
-		audio_track_destroy(&file->rtrack);
+		audio_track_destroy(file->rtrack);
+		file->rtrack = NULL;
 
 		sc->sc_ropens--;
 	}
@@ -1606,7 +1611,7 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 	// 再生トラックなら、audio_drain を呼ぶ
 	// 最後の再生トラックなら、hw audio_drain、halt_output を呼ぶ
 	if ((flags & FWRITE) != 0) {
-		audio_drain(sc, &file->ptrack);
+		audio_drain(sc, file->ptrack);
 
 		if (sc->sc_popens == 1) {
 			if (sc->sc_pbusy) {
@@ -1620,7 +1625,8 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 				}
 			}
 		}
-		audio_track_destroy(&file->ptrack);
+		audio_track_destroy(file->ptrack);
+		file->ptrack = NULL;
 
 		sc->sc_popens--;
 	}
@@ -1696,12 +1702,12 @@ audio_file_clear(struct audio_softc *sc, audio_file_t *file)
 	// XXX track_clear() があってもいいかも
 	// XXX 周波数変換バッファに端数がたまる可能性があるはずだがそれは
 	if (audio_file_can_playback(file)) {
-		track = &file->ptrack;
+		track = file->ptrack;
 		track->outputbuf.count = 0;
 		track->usrbuf.count = 0;
 	}
 	if (audio_file_can_record(file)) {
-		track = &file->rtrack;
+		track = file->rtrack;
 		track->outputbuf.count = 0;
 		track->usrbuf.count = 0;
 	}
@@ -1784,8 +1790,8 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 	case FIONREAD:
 		// 入力バッファにあるバイト数
 		// XXX 動作未確認
-		if (audio_file_can_record(file)) {
-			audio_ring_t *outbuf = &file->rtrack.outputbuf;
+		if (file->rtrack) {
+			audio_ring_t *outbuf = &file->rtrack->outputbuf;
 			*(int *)addr = outbuf->count *
 			    (outbuf->fmt.channels * outbuf->fmt.stride / NBBY);
 		} else {
@@ -1868,7 +1874,7 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 	case AUDIO_DRAIN:
 		// audio_drain 呼んで
 		// 最後の再生トラックなら hw_if->drain をコールする
-		error = audio_drain(sc, &file->ptrack);
+		error = audio_drain(sc, file->ptrack);
 		break;
 
 	case AUDIO_GETDEV:
@@ -1931,15 +1937,15 @@ audio_poll(struct audio_softc *sc, int events, struct lwp *l,
 
 	revents = 0;
 	if (events & (POLLIN | POLLRDNORM)) {
-		if (audio_file_can_record(file)) {
-			audio_ring_t *buf = &file->rtrack.outputbuf;
+		if (file->rtrack) {
+			audio_ring_t *buf = &file->rtrack->outputbuf;
 			if (buf->count > 0)
 				revents |= events & (POLLIN | POLLRDNORM);
 		}
 	}
 	if (events & (POLLOUT | POLLWRNORM)) {
-		if (audio_file_can_playback(file)) {
-			audio_ring_t *buf = &file->ptrack.outputbuf;
+		if (file->ptrack) {
+			audio_ring_t *buf = &file->ptrack->outputbuf;
 			if (buf->count < buf->capacity)
 				revents |= events & (POLLOUT | POLLWRNORM);
 		}
@@ -1981,7 +1987,7 @@ filt_audioread(struct knote *kn, long hint)
 
 	file = kn->kn_hook;
 	sc = file->sc;
-	track = &file->rtrack;
+	track = file->rtrack;
 	buf = &track->outputbuf;
 	fmt = &track->outputbuf.fmt;
 
@@ -2037,7 +2043,7 @@ filt_audiowrite(struct knote *kn, long hint)
 
 	file = kn->kn_hook;
 	sc = file->sc;
-	track = &file->ptrack;
+	track = file->ptrack;
 	buf = &track->outputbuf;
 	fmt = &track->inputfmt;
 
@@ -2801,15 +2807,11 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 
 	p = &ai->play;
 	r = &ai->record;
-	play = NULL;
-	rec = NULL;
 	pchanges = 0;
 	rchanges = 0;
 
-	if (audio_file_can_playback(file))
-		play = &file->ptrack;
-	if (audio_file_can_record(file))
-		rec = &file->rtrack;
+	play = file->ptrack;
+	rec = file->rtrack;
 
 #if AUDIO_DEBUG
 	char buf[80];
@@ -3286,12 +3288,8 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 	if (hw == NULL)		/* HW has not attached */
 		return ENXIO;
 
-	ptrack = NULL;
-	rtrack = NULL;
-	if (audio_file_can_playback(file))
-		ptrack = &file->ptrack;
-	if (audio_file_can_record(file))
-		rtrack = &file->rtrack;
+	ptrack = file->ptrack;
+	rtrack = file->rtrack;
 
 	memset(ai, 0, sizeof(*ai));
 

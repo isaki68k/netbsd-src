@@ -227,8 +227,14 @@ struct audio_trackmixer
 struct audio_file
 {
 	struct audio_softc *sc;			/* 論理デバイス */
-	audio_track_t   ptrack;			/* 再生トラック */
-	audio_track_t   rtrack;			/* 録音トラック */
+
+	// ptrack, rtrack はトラックが無効なら NULL。
+	// mode に AUMODE_{PLAY,RECORD} が立っていても該当側の ptrack, rtrack
+	// が NULL という状態はありえる。例えば、上位から PLAY を指定されたが
+	// 何らかの理由で ptrack が有効に出来なかった、あるいはクローズに
+	// 向かっている最中ですでにこのトラックが解放された、とか。
+	audio_track_t   *ptrack;		/* 再生トラック */
+	audio_track_t   *rtrack;		/* 録音トラック */
 
 	// この file の再生/録音モード。AUMODE_* (PLAY_ALL も含む)
 	// ptrack.mode は (mode & (AUMODE_PLAY | AUMODE_PLAY_ALL)) と、

@@ -551,20 +551,24 @@ audio_track_freq_down(audio_filter_arg_t *arg)
 #endif
 }
 
-// トラックを初期化します。戻り値は errno です。
+// トラックを初期化します。
+// 初期化できれば 0 を返して *trackp に初期化済みのトラックを格納します。
+// 初期化できなければ errno を返し、*trackp は変更しません。
 // mixer は接続先のミキサを指定します。
 // mode は再生なら AUMODE_PLAY、録音なら AUMODE_RECORD を指定します。
 // 単に録音再生のどちら側かだけなので AUMODE_PLAY_ALL は関係ありません。
 int
-audio_track_init(audio_track_t *track, audio_trackmixer_t *mixer, int mode)
+audio_track_init(audio_track_t **trackp, audio_trackmixer_t *mixer, int mode)
 {
 	struct audio_softc *sc = mixer->sc;
+	audio_track_t *track;
 	audio_format2_t *default_format;
 	const char *cvname;
 	int error;
 	static int newid = 0;
 
-	memset(track, 0, sizeof(audio_track_t));
+	track = kmem_zalloc(sizeof(*track), KM_SLEEP);
+
 	track->id = newid++;
 	// ここだけ id が決まってから表示
 	TRACE(track, "");
@@ -594,12 +598,18 @@ audio_track_init(audio_track_t *track, audio_trackmixer_t *mixer, int mode)
 	audio_mixer_enter_lock(mixer);
 	error = audio_track_set_format(track, default_format);
 	audio_mixer_leave_lock(mixer);
+	if (error)
+		goto error;
 
+	*trackp = track;
+	return 0;
+
+error:
+	audio_track_destroy(track);
 	return error;
 }
 
-// track 内のすべてのリソースを解放します。
-// track 自身は解放しません。(file 内のメンバとして確保されているため)
+// track のすべてのリソースと track 自身を解放します。
 void
 audio_track_destroy(audio_track_t *track)
 {
@@ -610,6 +620,8 @@ audio_track_destroy(audio_track_t *track)
 	audio_free(track->freq.srcbuf.sample);
 	audio_free(track->outputbuf.sample);
 	cv_destroy(&track->outchan);
+
+	kmem_free(track, sizeof(*track));
 }
 
 static inline int
@@ -1363,7 +1375,7 @@ audio_pmixer_mixall(audio_trackmixer_t *mixer, int req, bool isintr)
 #endif
 
 	SLIST_FOREACH(f, &sc->sc_files, entry) {
-		audio_track_t *track = &f->ptrack;
+		audio_track_t *track = f->ptrack;
 
 #if !defined(AUDIO_SOFTINTR)
 		if (isintr) {
@@ -1815,7 +1827,7 @@ int
 audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *file)
 {
 	int error;
-	audio_track_t *track = &file->ptrack;
+	audio_track_t *track = file->ptrack;
 	TRACE(track, "resid=%u", (int)uio->uio_resid);
 
 	KASSERT(mutex_owned(sc->sc_lock));
@@ -1838,7 +1850,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 	 * If half-duplex and currently recording, throw away data.
 	 */
 	// half-duplex で録音中なら、このデータは捨てる。XXX どうするか
-	if (!sc->sc_full_duplex && file->rtrack.mode != 0) {
+	if (!sc->sc_full_duplex && file->rtrack) {
 		uio->uio_offset += uio->uio_resid;
 		uio->uio_resid = 0;
 		DPRINTF(1, "audio_write: half-dpx read busy\n");
