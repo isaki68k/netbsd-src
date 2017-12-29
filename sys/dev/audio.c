@@ -1986,6 +1986,7 @@ filt_audioread(struct knote *kn, long hint)
 	file = kn->kn_hook;
 	sc = file->sc;
 	track = file->rtrack;
+	KASSERT(track);
 	buf = &track->outputbuf;
 	fmt = &track->outputbuf.fmt;
 
@@ -2042,6 +2043,7 @@ filt_audiowrite(struct knote *kn, long hint)
 	file = kn->kn_hook;
 	sc = file->sc;
 	track = file->ptrack;
+	KASSERT(track);
 	buf = &track->outputbuf;
 	fmt = &track->inputfmt;
 
@@ -3048,6 +3050,8 @@ audio_file_setinfo_set(audio_track_t *track, const struct audio_prinfo *info,
 	int error;
 
 	if (modechange) {
+		KASSERT(track);
+
 #if defined(AUDIO_SOFTINTR)
 		mutex_enter(&track->mixer->softintrlock);
 #else

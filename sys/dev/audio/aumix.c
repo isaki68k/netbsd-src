@@ -221,6 +221,8 @@ audio_track_uncl(struct audio_softc *sc, audio_track_t *track)
 static inline void
 audio_track_enter_colock(struct audio_softc *sc, audio_track_t *track)
 {
+	KASSERT(track);
+
 #if defined(AUDIO_SOFTINTR)
 	mutex_enter(&track->mixer->softintrlock);
 #else
@@ -231,6 +233,8 @@ audio_track_enter_colock(struct audio_softc *sc, audio_track_t *track)
 static inline void
 audio_track_leave_colock(struct audio_softc *sc, audio_track_t *track)
 {
+	KASSERT(track);
+
 #if defined(AUDIO_SOFTINTR)
 	mutex_exit(&track->mixer->softintrlock);
 #else
@@ -612,6 +616,11 @@ error:
 void
 audio_track_destroy(audio_track_t *track)
 {
+	// 関数仕様を track は NULL 許容にしてもいいけど、これを呼ぶところは
+	// たいてい track が NULL でないと分かっていて呼んでるはずなので
+	// ASSERT のほうがよかろう。
+	KASSERT(track);
+
 	audio_free(track->usrbuf.sample);
 	audio_free(track->codec.srcbuf.sample);
 	audio_free(track->chvol.srcbuf.sample);
@@ -669,6 +678,8 @@ audio_framealign(int stride)
 static audio_ring_t *
 init_codec(audio_track_t *track, audio_ring_t *last_dst)
 {
+	KASSERT(track);
+
 	audio_format2_t *srcfmt = &track->inputfmt;
 	audio_format2_t *dstfmt = &last_dst->fmt;
 
@@ -715,6 +726,8 @@ done:
 static audio_ring_t *
 init_chvol(audio_track_t *track, audio_ring_t *last_dst)
 {
+	KASSERT(track);
+
 	audio_format2_t *srcfmt = &track->inputfmt;
 	audio_format2_t *dstfmt = &last_dst->fmt;
 
@@ -759,6 +772,8 @@ done:
 static audio_ring_t *
 init_chmix(audio_track_t *track, audio_ring_t *last_dst)
 {
+	KASSERT(track);
+
 	audio_format2_t *srcfmt = &track->inputfmt;
 	audio_format2_t *dstfmt = &last_dst->fmt;
 
@@ -809,6 +824,8 @@ done:
 static audio_ring_t *
 init_freq(audio_track_t *track, audio_ring_t *last_dst)
 {
+	KASSERT(track);
+
 	audio_format2_t *srcfmt = &track->inputfmt;
 	audio_format2_t *dstfmt = &last_dst->fmt;
 
@@ -877,6 +894,8 @@ done:
 int
 audio_track_set_format(audio_track_t *track, audio_format2_t *fmt)
 {
+	KASSERT(track);
+
 	TRACE(track, "");
 	KASSERT(is_valid_format(fmt));
 	KASSERT(mutex_owned(audio_mixer_get_lock(track->mixer)));
@@ -1014,6 +1033,8 @@ audio_append_silence(audio_track_t *track, audio_ring_t *ring)
 static void
 audio_apply_stage(audio_track_t *track, audio_stage_t *stage, bool isfreq)
 {
+	KASSERT(track);
+
 	if (stage->filter != NULL) {
 		int srccount = audio_ring_unround_count(&stage->srcbuf);
 		int dstcount = audio_ring_unround_free_count(stage->dst);
@@ -1389,6 +1410,8 @@ audio_pmixer_mixall(audio_trackmixer_t *mixer, int req, bool isintr)
 
 	SLIST_FOREACH(f, &sc->sc_files, entry) {
 		audio_track_t *track = f->ptrack;
+
+		KASSERT(track);
 
 #if !defined(AUDIO_SOFTINTR)
 		if (isintr) {
@@ -1776,11 +1799,14 @@ audio2_halt_output(struct audio_softc *sc)
 int
 audio_track_drain(audio_track_t *track, bool wait)
 {
-	audio_trackmixer_t *mixer = track->mixer;
-	struct audio_softc *sc = mixer->sc;
+	audio_trackmixer_t *mixer;
+	struct audio_softc *sc;
 	int error;
 
+	KASSERT(track);
 	TRACE(track, "start");
+	mixer = track->mixer;
+	sc = mixer->sc;
 	KASSERT(mutex_owned(sc->sc_lock));
 	KASSERT(!mutex_owned(sc->sc_intr_lock));
 
@@ -1841,6 +1867,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 {
 	int error;
 	audio_track_t *track = file->ptrack;
+	KASSERT(track);
 	TRACE(track, "resid=%u", (int)uio->uio_resid);
 
 	KASSERT(mutex_owned(sc->sc_lock));
@@ -1974,6 +2001,7 @@ audio_waitio(struct audio_softc *sc, audio_track_t *track)
 	// XXX 自分がいなくなることを想定する必要があるのかどうか
 	int error;
 
+	KASSERT(track);
 	KASSERT(mutex_owned(sc->sc_lock));
 
 	TRACE(track, "wait");
