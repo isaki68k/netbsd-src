@@ -551,16 +551,17 @@ audio_track_freq_down(audio_filter_arg_t *arg)
 #endif
 }
 
-// トラックを初期化します。
+// トラックを初期化します。戻り値は errno です。
 // mixer は接続先のミキサを指定します。
 // mode は再生なら AUMODE_PLAY、録音なら AUMODE_RECORD を指定します。
 // 単に録音再生のどちら側かだけなので AUMODE_PLAY_ALL は関係ありません。
-void
+int
 audio_track_init(audio_track_t *track, audio_trackmixer_t *mixer, int mode)
 {
 	struct audio_softc *sc = mixer->sc;
 	audio_format2_t *default_format;
 	const char *cvname;
+	int error;
 	static int newid = 0;
 
 	memset(track, 0, sizeof(audio_track_t));
@@ -591,8 +592,10 @@ audio_track_init(audio_track_t *track, audio_trackmixer_t *mixer, int mode)
 
 	// デフォルトフォーマットでセット
 	audio_mixer_enter_lock(mixer);
-	audio_track_set_format(track, default_format);
+	error = audio_track_set_format(track, default_format);
 	audio_mixer_leave_lock(mixer);
+
+	return error;
 }
 
 // track 内のすべてのリソースを解放します。
@@ -654,14 +657,9 @@ init_codec(audio_track_t *track, audio_ring_t *last_dst)
 	audio_format2_t *srcfmt = &track->inputfmt;
 	audio_format2_t *dstfmt = &last_dst->fmt;
 
-	if (srcfmt->encoding == dstfmt->encoding
-	 && srcfmt->precision == dstfmt->precision
-	 && srcfmt->stride == dstfmt->stride) {
-		// チャンネル数以外が等しければエンコーディング変換不要
-		track->codec.filter = NULL;
-		audio_free(track->codec.srcbuf.sample);
-		return last_dst;
-	} else {
+	if (srcfmt->encoding != dstfmt->encoding
+	 || srcfmt->precision != dstfmt->precision
+	 || srcfmt->stride != dstfmt->stride) {
 		// エンコーディングを変換する
 		track->codec.dst = last_dst;
 
@@ -681,9 +679,18 @@ init_codec(audio_track_t *track, audio_ring_t *last_dst)
 		track->codec.srcbuf.count = 0;
 		track->codec.srcbuf.capacity = frame_per_block_roundup(track->mixer, &track->codec.srcbuf.fmt);
 		track->codec.srcbuf.sample = audio_realloc(track->codec.srcbuf.sample, RING_BYTELEN(&track->codec.srcbuf));
+		if (track->codec.srcbuf.sample == NULL) {
+			last_dst = NULL;
+			goto done;
+		}
 
 		return &track->codec.srcbuf;
 	}
+
+done:
+	track->codec.filter = NULL;
+	audio_free(track->codec.srcbuf.sample);
+	return last_dst;
 }
 
 static audio_ring_t *
@@ -701,11 +708,7 @@ init_chvol(audio_track_t *track, audio_ring_t *last_dst)
 		}
 	}
 
-	if (use_chvol == false) {
-		track->chvol.filter = NULL;
-		audio_free(track->chvol.srcbuf.sample);
-		return last_dst;
-	} else {
+	if (use_chvol == true) {
 		track->chvol.filter = audio_track_chvol;
 		track->chvol.dst = last_dst;
 
@@ -713,11 +716,20 @@ init_chvol(audio_track_t *track, audio_ring_t *last_dst)
 		track->chvol.srcbuf.fmt = *dstfmt;
 		track->chvol.srcbuf.capacity = frame_per_block_roundup(track->mixer, &track->chvol.srcbuf.fmt);
 		track->chvol.srcbuf.sample = audio_realloc(track->chvol.srcbuf.sample, RING_BYTELEN(&track->chvol.srcbuf));
+		if (track->chvol.srcbuf.sample == NULL) {
+			last_dst = NULL;
+			goto done;
+		}
 
 		track->chvol.arg.count = track->chvol.srcbuf.capacity;
 		track->chvol.arg.context = track->ch_volume;
 		return &track->chvol.srcbuf;
 	}
+
+done:
+	track->chvol.filter = NULL;
+	audio_free(track->chvol.srcbuf.sample);
+	return last_dst;
 }
 
 
@@ -730,11 +742,7 @@ init_chmix(audio_track_t *track, audio_ring_t *last_dst)
 	int srcch = srcfmt->channels;
 	int dstch = dstfmt->channels;
 
-	if (srcch == dstch) {
-		track->chmix.filter = NULL;
-		audio_free(track->chmix.srcbuf.sample);
-		return last_dst;
-	} else {
+	if (srcch != dstch) {
 		if (srcch >= 2 && dstch == 1) {
 			track->chmix.filter = audio_track_chmix_mixLR;
 		} else if (srcch == 1 && dstch >= 2) {
@@ -754,15 +762,24 @@ init_chmix(audio_track_t *track, audio_ring_t *last_dst)
 		// バッファサイズは計算で決められるはずだけど。とりあえず。
 		track->chmix.srcbuf.capacity = frame_per_block_roundup(track->mixer, &track->chmix.srcbuf.fmt);
 		track->chmix.srcbuf.sample = audio_realloc(track->chmix.srcbuf.sample, RING_BYTELEN(&track->chmix.srcbuf));
+		if (track->chmix.srcbuf.sample == NULL) {
+			last_dst = NULL;
+			goto done;
+		}
 
 		track->chmix.arg.srcfmt = &track->chmix.srcbuf.fmt;
 		track->chmix.arg.dstfmt = dstfmt;
 
 		return &track->chmix.srcbuf;
 	}
+
+done:
+	track->chmix.filter = NULL;
+	audio_free(track->chmix.srcbuf.sample);
+	return last_dst;
 }
 
-static audio_ring_t*
+static audio_ring_t *
 init_freq(audio_track_t *track, audio_ring_t *last_dst)
 {
 	audio_format2_t *srcfmt = &track->inputfmt;
@@ -771,11 +788,7 @@ init_freq(audio_track_t *track, audio_ring_t *last_dst)
 	uint32_t srcfreq = srcfmt->sample_rate;
 	uint32_t dstfreq = dstfmt->sample_rate;
 
-	if (srcfreq == dstfreq) {
-		track->freq.filter = NULL;
-		audio_free(track->freq.srcbuf.sample);
-		return last_dst;
-	} else {
+	if (srcfreq != dstfreq) {
 		track->freq.arg.context = track;
 		track->freq.arg.srcfmt = &track->freq.srcbuf.fmt;
 		track->freq.arg.dstfmt = &last_dst->fmt;
@@ -819,15 +832,24 @@ init_freq(audio_track_t *track, audio_ring_t *last_dst)
 		track->freq.srcbuf.count = 0;
 		track->freq.srcbuf.capacity = frame_per_block_roundup(track->mixer, &track->freq.srcbuf.fmt);
 		track->freq.srcbuf.sample = audio_realloc(track->freq.srcbuf.sample, RING_BYTELEN(&track->freq.srcbuf));
+		if (track->freq.srcbuf.sample == NULL) {
+			last_dst = NULL;
+			goto done;
+		}
 		return &track->freq.srcbuf;
 	}
+
+done:
+	track->freq.filter = NULL;
+	audio_free(track->freq.srcbuf.sample);
+	return last_dst;
 }
 
 /*
 * トラックのユーザランド側フォーマットを設定します。
 * 変換用内部バッファは一度破棄されます。
 */
-void
+int
 audio_track_set_format(audio_track_t *track, audio_format2_t *fmt)
 {
 	TRACE(track, "");
@@ -847,24 +869,30 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *fmt)
 		// 再生はトラックミキサ側から作る
 
 		track->inputfmt = *fmt;
-
 		track->outputbuf.fmt =  track->mixer->track_fmt;
 
-		last_dst = init_freq(track, last_dst);
-		last_dst = init_chmix(track, last_dst);
-		last_dst = init_chvol(track, last_dst);
-		last_dst = init_codec(track, last_dst);
+		if ((last_dst = init_freq(track, last_dst)) == NULL)
+			goto error;
+		if ((last_dst = init_chmix(track, last_dst)) == NULL)
+			goto error;
+		if ((last_dst = init_chvol(track, last_dst)) == NULL)
+			goto error;
+		if ((last_dst = init_codec(track, last_dst)) == NULL)
+			goto error;
 	} else {
 		// 録音はユーザランド側から作る
 
 		track->inputfmt = track->mixer->track_fmt;
-
 		track->outputbuf.fmt = *fmt;
 
-		last_dst = init_codec(track, last_dst);
-		last_dst = init_chvol(track, last_dst);
-		last_dst = init_chmix(track, last_dst);
-		last_dst = init_freq(track, last_dst);
+		if ((last_dst = init_codec(track, last_dst)) == NULL)
+			goto error;
+		if ((last_dst = init_chvol(track, last_dst)) == NULL)
+			goto error;
+		if ((last_dst = init_chmix(track, last_dst)) == NULL)
+			goto error;
+		if ((last_dst = init_freq(track, last_dst)) == NULL)
+			goto error;
 	}
 
 	// 入力バッファは先頭のステージ相当品
@@ -877,6 +905,8 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *fmt)
 	    frametobyte(&track->inputfmt, track->input->capacity);
 	track->usrbuf.sample = audio_realloc(track->usrbuf.sample,
 	    track->usrbuf.capacity);
+	if (track->usrbuf.sample == NULL)
+		goto error;
 	// usrbuf の fmt は1フレーム=1バイトになるようにしておくが
 	// 基本 fmt は参照せず 1フレーム=1バイトでコーディングしたほうがいいか。
 	track->usrbuf.fmt = *fmt;
@@ -889,6 +919,8 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *fmt)
 	track->outputbuf.count = 0;
 	track->outputbuf.capacity = NBLKOUT * frame_per_block_roundup(track->mixer, &track->outputbuf.fmt);
 	track->outputbuf.sample = audio_realloc(track->outputbuf.sample, RING_BYTELEN(&track->outputbuf));
+	if (track->outputbuf.sample == NULL)
+		goto error;
 
 #if AUDIO_DEBUG > 1
 	char buf[100];
@@ -916,6 +948,16 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *fmt)
 	    track->usrbuf.capacity);
 	DPRINTF(1, "%s: bufsize:%s\n", __func__, buf);
 #endif
+	return 0;
+
+error:
+	audio_free(track->usrbuf.sample);
+	audio_free(track->codec.srcbuf.sample);
+	audio_free(track->chvol.srcbuf.sample);
+	audio_free(track->chmix.srcbuf.sample);
+	audio_free(track->freq.srcbuf.sample);
+	audio_free(track->outputbuf.sample);
+	return ENOMEM;
 }
 
 // ring が空でなく 1 ブロックに満たない時、1ブロックまで無音を追加します。

@@ -1389,10 +1389,16 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	// トラックの初期化
 	// トラックバッファの初期化
 	if (audio_file_can_playback(af)) {
-		audio_track_init(&af->ptrack, sc->sc_pmixer, AUMODE_PLAY);
+		error = audio_track_init(&af->ptrack, sc->sc_pmixer,
+		    AUMODE_PLAY);
+		if (error)
+			goto bad1;
 	}
 	if (audio_file_can_record(af)) {
-		audio_track_init(&af->rtrack, sc->sc_rmixer, AUMODE_RECORD);
+		error = audio_track_init(&af->rtrack, sc->sc_rmixer,
+		    AUMODE_RECORD);
+		if (error)
+			goto bad2;
 	}
 
 	/*
@@ -1410,7 +1416,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 		error = audio_file_setinfo(sc, af, &ai);
 	}
 	if (error)
-		goto bad2;
+		goto bad3;
 
 	// 録再合わせて1本目のオープンなら {
 	//	kauth の処理?
@@ -1430,7 +1436,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 			error = sc->hw_if->open(sc->hw_hdl, af->mode);
 			mutex_exit(sc->sc_intr_lock);
 			if (error)
-				goto bad2;
+				goto bad3;
 		}
 
 		/* Set speaker mode if half duplex */
@@ -1449,14 +1455,14 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 				error = sc->hw_if->speaker_ctl(sc->hw_hdl, on);
 				mutex_exit(sc->sc_intr_lock);
 				if (error)
-					goto bad2;
+					goto bad3;
 			}
 		}
 	} else /* if (sc->sc_multiuser == false) */ {
 		uid_t euid = kauth_cred_geteuid(kauth_cred_get());
 		if (euid != 0 && kauth_cred_geteuid(sc->sc_cred) != euid) {
 			error = EPERM;
-			goto bad2;
+			goto bad3;
 		}
 	}
 
@@ -1471,7 +1477,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 			    hwbuf->fmt.channels * hwbuf->fmt.stride / NBBY);
 			mutex_exit(sc->sc_intr_lock);
 			if (error)
-				goto bad2;
+				goto bad3;
 		}
 		audio_pmixer_start(sc->sc_pmixer, false);
 	}
@@ -1485,14 +1491,14 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 			    hwbuf->fmt.channels * hwbuf->fmt.stride / NBBY);
 			mutex_exit(sc->sc_intr_lock);
 			if (error)
-				goto bad2;
+				goto bad3;
 		}
 		//audio_rmixer_start(sc->sc_rmixer, false);
 	}
 
 	error = fd_allocfile(&fp, &fd);
 	if (error)
-		goto bad2;
+		goto bad3;
 
 	// このミキサーどうするか
 	//grow_mixer_states(sc, 2);
@@ -1511,11 +1517,12 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	*nfp = fp;
 	return error;
 
+bad3:
+	if (audio_file_can_record(af))
+		audio_track_destroy(&af->rtrack);
 bad2:
 	if (audio_file_can_playback(af))
 		audio_track_destroy(&af->ptrack);
-	if (audio_file_can_record(af))
-		audio_track_destroy(&af->rtrack);
 bad1:
 	kmem_free(af, sizeof(*af));
 	return error;
@@ -2768,6 +2775,7 @@ audio_file_set_defaults(struct audio_softc *sc, audio_file_t *file)
 	}
 #endif
 
+// XXX see issue #23
 static int
 audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	const struct audio_info *ai)
@@ -2917,6 +2925,7 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 			/* Play takes precedence */
 			mode &= ~AUMODE_RECORD;
 	}
+	// ここから mode は変更後の希望するモード。
 	if (play && (mode & AUMODE_PLAY) != 0) {
 		pchanges = audio_file_setinfo_check(&pfmt, p);
 		if (pchanges == -1)
@@ -2947,14 +2956,14 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	/* Set */
 	error = 0;
 	file->mode = mode;
-	if (pchanges) {
+	if (play) {
 		error = audio_file_setinfo_set(play, p, pchanges, &pfmt,
 		    (mode & (AUMODE_PLAY | AUMODE_PLAY_ALL)));
 		if (error)
 			goto abort1;
 		sc->sc_pparams = pfmt;
 	}
-	if (rchanges) {
+	if (rec) {
 		error = audio_file_setinfo_set(rec, r, rchanges, &rfmt,
 		    (mode & AUMODE_RECORD));
 		if (error)
@@ -2966,13 +2975,15 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 
 	/* Rollback */
 abort2:
-	AUDIO_INITINFO(&bk);
-	bk.record.gain = saved_rvolume;
-	bk.record.pause = saved_rpause;
-	audio_file_setinfo_set(rec, &bk.record, true, &saved_rfmt,
-	    (saved_mode & AUMODE_RECORD));
+	if (error != ENOMEM) {
+		AUDIO_INITINFO(&bk);
+		bk.record.gain = saved_rvolume;
+		bk.record.pause = saved_rpause;
+		audio_file_setinfo_set(rec, &bk.record, true, &saved_rfmt,
+		    (saved_mode & AUMODE_RECORD));
+	}
 abort1:
-	if (play) {
+	if (play && error != ENOMEM) {
 		AUDIO_INITINFO(&bk);
 		bk.play.gain = saved_pvolume;
 		bk.play.pause = saved_ppause;
@@ -3034,6 +3045,7 @@ static int
 audio_file_setinfo_set(audio_track_t *track, const struct audio_prinfo *info,
 	bool modechange, audio_format2_t *fmt, int mode)
 {
+	int error;
 
 	if (modechange) {
 #if defined(AUDIO_SOFTINTR)
@@ -3042,12 +3054,14 @@ audio_file_setinfo_set(audio_track_t *track, const struct audio_prinfo *info,
 		mutex_enter(track->mixer->sc->sc_intr_lock);
 #endif
 		track->mode = mode;
-		audio_track_set_format(track, fmt);
+		error = audio_track_set_format(track, fmt);
 #if defined(AUDIO_SOFTINTR)
 		mutex_exit(&track->mixer->softintrlock);
 #else
 		mutex_exit(track->mixer->sc->sc_intr_lock);
 #endif
+		if (error)
+			return error;
 	}
 
 	if (SPECIFIED(info->gain)) {
