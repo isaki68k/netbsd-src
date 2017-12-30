@@ -632,45 +632,6 @@ audio_track_destroy(audio_track_t *track)
 	kmem_free(track, sizeof(*track));
 }
 
-static inline int
-framecount_roundup_byte_boundary(int framecount, int stride)
-{
-	/* stride が、、、 */
-	if ((stride & 7) == 0) {
-		/* 8 の倍数なのでそのままでいい */
-		return framecount;
-	} else if ((stride & 3) == 0) {
-		/* 4 の倍数なので framecount が奇数なら +1 して 2 の倍数を返す */
-		return framecount + (framecount & 1);
-	} else if ((stride & 1) == 0) {
-		/* 2 の倍数なので {0, 3, 2, 1} を足して 4 の倍数を返す */
-		return framecount + ((4 - (framecount & 3)) & 3);
-	} else {
-		/* 8 とは互いに素なので {0,7,6,5,4,3,2,1} を足して 8 の倍数を返す */
-		return framecount + ((8 - (framecount & 7)) & 7);
-	}
-}
-
-/* stride に応じて、バイト境界に整列するフレーム数を求めます。 */
-static inline int
-audio_framealign(int stride)
-{
-	/* stride が、、、 */
-	if ((stride & 7) == 0) {
-		/* 8 の倍数なのでそのままでバイト境界 */
-		return 1;
-	} else if ((stride & 3) == 0) {
-		/* 4 の倍数なので 2 フレームでバイト境界 */
-		return 2;
-	} else if ((stride & 1) == 0) {
-		/* 2 の倍数なので 4 フレームでバイト境界 */
-		return 4;
-	} else {
-		/* 8 とは互いに素なので 8 フレームでバイト境界 */
-		return 8;
-	}
-}
-
 // track の codec ステージを必要に応じて初期化します。
 // 成功すれば、codec ステージが必要なら初期化した上で、いずれにしても
 // 更新された last_dst を返します。
@@ -1233,6 +1194,80 @@ audio_track_play(audio_track_t *track, bool isdrain)
 #endif
 }
 
+// blktime は1ブロックの時間 [msec]。
+//
+// 例えば HW freq = 44100 に対して、
+// blktime 50 msec は 2205 frame/block でこれは割りきれるので問題ないが、
+// blktime 25 msec は 1102.5 frame/block となり、フレーム数が整数にならない。
+// この場合 frame/block を切り捨てるなり切り上げるなりすれば整数にはなる。
+// 例えば切り捨てて 1102 frame/block とするとこれに相当する1ブロックの時間は
+// 24.9886… [msec] と割りきれなくなる。周波数がシステム中で1つしかなければ
+// これでも構わないが、AUDIO2 ではブロック単位で周波数変換を行うため極力
+// 整数にしておきたい (整数にしておいても割りきれないケースは出るが後述)。
+//
+// ここではより多くの周波数に対して frame/block が整数になりやすいよう
+// AUDIO_BLK_MS の初期値を 40 msec に設定してある。
+//   8000 [Hz] * 40 [msec] = 320 [frame/block] (8000Hz - 48000Hz 系)
+//  11025 [Hz] * 40 [msec] = 441 [frame/block] (44100Hz 系)
+//  15625 [Hz] * 40 [msec] = 625 [frame/block]
+//
+// これにより主要な周波数についてはわりと誤差(端数)なく周波数変換が行える。
+// 例えば 44100 [Hz] を 48000 [Hz] に変換する場合 40 [msec] ブロックなら
+//  44100 [Hz] * 40 [msec] = 1764 [frame/block]
+//                           1920 [frame/block] = 48000 [Hz] * 40 [msec]
+// となり、1764 フレームを 1920 フレームに変換すればよいことになる。
+// ただし、入力周波数も HW 周波数も任意であるため、周波数変換前後で
+// frame/block が必ずしもきりのよい値になるとは限らないが、そこはどのみち
+// 仕方ない。(あくまで、主要な周波数で割り切れやすい、ということ)
+//
+// また、いくつかの変態ハードウェアではさらに手当てが必要。
+//
+// 1) vs(4) x68k MSM6258 ADPCM
+//  vs(4) は 15625 Hz、4bit、1channel である。このため
+//  blktime 40 [msec] は 625 [frame/block] と割りきれる値になるが、これは
+//  同時に 312.5 [byte/block] であり、バイト数が割りきれないため、これは不可。
+//  blktime 80 [msec] であれば 1250 [frame/block] = 625 [byte/block] となる
+//  のでこれなら可。
+//  vs(4) 以外はすべて stride が 8 の倍数なので、この「frame/block は割り
+//  切れるのに byte/block にすると割りきれない」問題は起きない。
+//
+//  # 世の中には 3bit per frame とかいう ADPCM もあるにはあるが、
+//  # 現行 NetBSD はこれをサポートしておらず、今更今後サポートするとも
+//  # 思えないのでこれについては考慮しない。やりたい人がいたら頑張って。
+//
+// 2) aucc(4) amiga
+//  周波数が変態だが詳細未調査。
+
+// mixer(.hwbuf.fmt) から blktime [msec] を計算します。
+// 割りきれないなど計算できなかった場合は 0 を返します。
+static u_int
+audio_mixer_calc_blktime(audio_trackmixer_t *mixer)
+{
+	audio_format2_t *fmt;
+	u_int blktime;
+	u_int frames_per_block;
+
+	fmt = &mixer->hwbuf.fmt;
+
+	// XXX とりあえず手抜き実装。あとでかんがえる
+
+	blktime = AUDIO_BLK_MS;
+
+	// 8 の倍数以外の stride は今のところ 4 しかない。
+	if (fmt->stride == 4) {
+		frames_per_block = fmt->sample_rate * blktime / 1000;
+		if ((frames_per_block & 1) != 0)
+			blktime *= 2;
+	}
+#ifdef DIAGNOSTIC
+	else if (fmt->stride % 8 != 0) {
+		panic("unsupported HW stride %d", fmt->stride);
+	}
+#endif
+
+	return blktime;
+}
+
 // ミキサを初期化します。
 // mode は再生なら AUMODE_PLAY、録音なら AUMODE_RECORD を指定します。
 // 単に録音再生のどちら側かだけなので AUMODE_PLAY_ALL は関係ありません。
@@ -1246,10 +1281,6 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 	mixer->softintr = softint_establish(SOFTINT_SERIAL, audio_pmixer_softintr, mixer);
 #endif
 
-	mixer->blktime_d = 1000;
-	mixer->blktime_n = AUDIO_BLK_MS;
-	mixer->hwblks = 16;
-
 #if defined(_KERNEL)
 	// XXX とりあえず
 	if (mode == AUMODE_PLAY)
@@ -1260,8 +1291,11 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 	mixer->hwbuf.fmt = audio_softc_get_hw_format(mixer->sc, mode);
 #endif
 
-	mixer->frames_per_block = frame_per_block_roundup(mixer, &mixer->hwbuf.fmt)
-		* audio_framealign(mixer->hwbuf.fmt.stride);
+	mixer->blktime_d = 1000;
+	mixer->blktime_n = audio_mixer_calc_blktime(mixer);
+	mixer->hwblks = 16;
+
+	mixer->frames_per_block = frame_per_block_roundup(mixer, &mixer->hwbuf.fmt);
 	int blksize = frametobyte(&mixer->hwbuf.fmt, mixer->frames_per_block);
 	if (sc->hw_if->round_blocksize) {
 		int rounded;
@@ -1930,10 +1964,8 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 	int out_thres;
 	if ((track->mode & AUMODE_PLAY_ALL) != 0) {
 		/* PLAY_ALL */
-		int usrbuf_blksize = track->inputfmt.sample_rate
-		    * track->inputfmt.channels
-		    * track->inputfmt.stride / NBBY
-		    * AUDIO_BLK_MS / 1000;
+		int usrbuf_blksize = frametobyte(&track->inputfmt,
+		    frame_per_block_roundup(track->mixer, &track->inputfmt));
 		inp_thres = usrbuf_blksize;
 		out_thres = usrbuf_blksize;
 	} else {
