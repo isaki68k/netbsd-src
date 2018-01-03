@@ -190,7 +190,7 @@ audio_detach(struct audio_softc *sc)
 	SLIST_FOREACH(f, &sc->sc_files, entry) {
 		audio_track_t *ptrack = &f->ptrack;
 
-		sys_ioctl_drain(ptrack, true);
+		sys_ioctl_drain(ptrack);
 	}
 	printf("output=%d complete=%d\n", (int)sc->sc_pmixer->hw_output_counter, (int)sc->sc_pmixer->hw_complete_counter);
 #endif

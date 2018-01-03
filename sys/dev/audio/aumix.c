@@ -1848,7 +1848,7 @@ audio2_halt_output(struct audio_softc *sc)
 
 // errno を返します。
 int
-audio_track_drain(audio_track_t *track, bool wait)
+audio_track_drain(audio_track_t *track)
 {
 	audio_trackmixer_t *mixer;
 	struct audio_softc *sc;
@@ -1869,23 +1869,21 @@ audio_track_drain(audio_track_t *track, bool wait)
 	audio_track_play(track, true);
 	audio_track_leave_colock(sc, track);
 
-	if (wait) {
-		while (track->seq > mixer->hwseq) {
-			TRACE(track, "trkseq=%d hwseq=%d",
-			    (int)track->seq, (int)mixer->hwseq);
-			error = cv_wait_sig(&mixer->intrcv, sc->sc_lock);
-			if (error) {
-				printf("cv_wait_sig failed %d\n", error);
-				if (error < 0)
-					error = EINTR;
-				return error;
-			}
+	while (track->seq > mixer->hwseq) {
+		TRACE(track, "trkseq=%d hwseq=%d",
+		    (int)track->seq, (int)mixer->hwseq);
+		error = cv_wait_sig(&mixer->intrcv, sc->sc_lock);
+		if (error) {
+			printf("cv_wait_sig failed %d\n", error);
+			if (error < 0)
+				error = EINTR;
+			return error;
 		}
-
-		track->is_draining = false;
-		TRACE(track, "done trk_inp=%d trk_out=%d",
-			(int)track->inputcounter, (int)track->outputcounter);
 	}
+
+	track->is_draining = false;
+	TRACE(track, "done trk_inp=%d trk_out=%d",
+		(int)track->inputcounter, (int)track->outputcounter);
 	return 0;
 }
 
@@ -2108,14 +2106,14 @@ sys_open(struct audio_softc *sc, int mode)
 
 // ioctl(AUDIO_DRAIN) 相当
 int
-sys_ioctl_drain(audio_track_t *track, bool wait)
+sys_ioctl_drain(audio_track_t *track)
 {
 	// 割り込みエミュレートしているときはメインループに制御を戻さないといけない
 	audio_trackmixer_t *mixer = track->mixer;
 	struct audio_softc *sc = mixer->sc;
 
 	mutex_enter(sc->sc_lock);
-	audio_track_drain(track, wait);
+	audio_track_drain(track);
 	mutex_exit(sc->sc_lock);
 
 	return 0;
