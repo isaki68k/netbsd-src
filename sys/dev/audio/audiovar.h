@@ -43,9 +43,7 @@
 // 出力バッファのブロック数
 #define NBLKOUT	(4)
 
-#if defined(_KERNEL)
-#define AUDIO_ENCODING_MSM6258		AUDIO_ENCODING_ADPCM
-#else
+#if !defined(_KERNEL)
 #define AUMODE_PLAY		(0x01)
 #define AUMODE_RECORD	(0x02)
 
@@ -54,7 +52,7 @@
 #define AUDIO_ENCODING_SLINEAR_BE	2
 #define AUDIO_ENCODING_ULINEAR_LE	3
 #define AUDIO_ENCODING_ULINEAR_BE	4
-#define AUDIO_ENCODING_MSM6258		6258
+#define AUDIO_ENCODING_ADPCM		5
 #define AUDIO_ENCODING_RAWBYTE		32767
 
 /* サポートする最大のチャンネル数 */

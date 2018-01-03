@@ -11,7 +11,7 @@ is_valid_format(const audio_format2_t *fmt)
 {
 	if (fmt == NULL) return false;
 	/* XXX:この条件どうするか検討 (MSM6258)*/
-	if (fmt->encoding == AUDIO_ENCODING_MSM6258) {
+	if (fmt->encoding == AUDIO_ENCODING_ADPCM) {
 		if (fmt->stride != 4) return false;
 	} else {
 		if (fmt->stride % 8 != 0) return false;

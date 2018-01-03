@@ -273,7 +273,7 @@ cmd_set_file(const char *filename)
 
 	printf("%s: %s\n", filename, fmt_tostring(&f->mem.fmt));
 
-	if (f->mem.fmt.encoding == AUDIO_ENCODING_MSM6258) {
+	if (f->mem.fmt.encoding == AUDIO_ENCODING_ADPCM) {
 		// MSM6258 -> SLINEAR16(internal format)
 		uint8_t *tmp = malloc(len * 4);
 		audio_format2_t dstfmt;
@@ -542,7 +542,7 @@ parse_file(struct test_file *f, FILE *fp, const char *filename, int adpcm_freq)
 	}
 
 	// ADPCM
-	f->mem.fmt.encoding = AUDIO_ENCODING_MSM6258;
+	f->mem.fmt.encoding = AUDIO_ENCODING_ADPCM;
 	f->mem.fmt.channels = 1;
 	f->mem.fmt.precision = 4;
 	f->mem.fmt.stride = 4;
@@ -626,7 +626,7 @@ audio_encoding_name(int enc)
 		return "ULINEAR_LE";
 	if (enc == AUDIO_ENCODING_ULINEAR_BE)
 		return "ULINEAR_BE";
-	if (enc == AUDIO_ENCODING_MSM6258)
+	if (enc == AUDIO_ENCODING_ADPCM)
 		return "MSM6258";
 	sprintf(buf, "enc=%d", enc);
 	return buf;
