@@ -41,7 +41,7 @@
 #endif
 
 // 出力バッファのブロック数
-#define NBLKOUT	(16)
+#define NBLKOUT	(4)
 
 #if defined(_KERNEL)
 #define AUDIO_ENCODING_MULAW		AUDIO_ENCODING_ULAW
