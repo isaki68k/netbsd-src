@@ -1863,15 +1863,25 @@ audio_track_drain(audio_track_t *track)
 
 	track->is_draining = true;
 
-	// 必要があれば無音挿入させる
-
+	// トラックに書き込まれたデータは audio_write() 時点で基本的に
+	// outputbuf に変換済み。ただし最終ブロックだけが1ブロックに満たない
+	// ため (満たない場合) usrbuf に滞留しているため、この1ブロックを
+	// 無音パディングして outputbuf に書き込む。
+	// そのためここは1回だけでいい。
 	audio_track_enter_colock(sc, track);
 	audio_track_play(track, true);
 	audio_track_leave_colock(sc, track);
 
-	while (track->seq > mixer->hwseq) {
-		TRACE(track, "trkseq=%d hwseq=%d",
-		    (int)track->seq, (int)mixer->hwseq);
+	for (;;) {
+		// 終了条件判定の前に表示したい
+		TRACE(track, "trkseq=%d hwseq=%d out=%d/%d/%d",
+		    (int)track->seq, (int)mixer->hwseq,
+		    track->outputbuf.top, track->outputbuf.count,
+		    track->outputbuf.capacity);
+
+		if (track->outputbuf.count == 0 && track->seq <= mixer->hwseq)
+			break;
+
 		error = cv_wait_sig(&mixer->intrcv, sc->sc_lock);
 		if (error) {
 			printf("cv_wait_sig failed %d\n", error);
