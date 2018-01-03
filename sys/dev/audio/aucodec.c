@@ -29,7 +29,7 @@ audio_MI_codec_filter_init(audio_filter_arg_t *arg)
 	arg->context = NULL;
 
 	if (is_internal_format(arg->srcfmt)) {
-		if (arg->dstfmt->encoding == AUDIO_ENCODING_MULAW) {
+		if (arg->dstfmt->encoding == AUDIO_ENCODING_ULAW) {
 			return internal_to_mulaw;
 		} else
 		if (is_LINEAR(arg->dstfmt)) {
@@ -46,7 +46,7 @@ audio_MI_codec_filter_init(audio_filter_arg_t *arg)
 			}
 		}
 	} else if (is_internal_format(arg->dstfmt)) {
-		if (arg->srcfmt->encoding == AUDIO_ENCODING_MULAW) {
+		if (arg->srcfmt->encoding == AUDIO_ENCODING_ULAW) {
 			return mulaw_to_internal;
 		} else
 		if (is_LINEAR(arg->srcfmt)) {

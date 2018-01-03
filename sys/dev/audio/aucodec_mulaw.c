@@ -94,7 +94,7 @@ void
 mulaw_to_internal(audio_filter_arg_t *arg)
 {
 	KASSERT(is_valid_filter_arg(arg));
-	KASSERT(arg->srcfmt->encoding == AUDIO_ENCODING_MULAW);
+	KASSERT(arg->srcfmt->encoding == AUDIO_ENCODING_ULAW);
 	KASSERT(arg->srcfmt->stride == 8);
 	KASSERT(arg->srcfmt->precision == 8);
 	KASSERT(is_internal_format(arg->dstfmt));
@@ -118,7 +118,7 @@ void
 internal_to_mulaw(audio_filter_arg_t *arg)
 {
 	KASSERT(is_valid_filter_arg(arg));
-	KASSERT(arg->dstfmt->encoding == AUDIO_ENCODING_MULAW);
+	KASSERT(arg->dstfmt->encoding == AUDIO_ENCODING_ULAW);
 	KASSERT(arg->dstfmt->stride == 8);
 	KASSERT(arg->dstfmt->precision == 8);
 	KASSERT(is_internal_format(arg->srcfmt));

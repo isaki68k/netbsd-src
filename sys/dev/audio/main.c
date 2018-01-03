@@ -501,7 +501,7 @@ parse_file(struct test_file *f, FILE *fp, const char *filename, int adpcm_freq)
 		uint32_t format = be32toh(au->format);
 		switch (format) {
 		 case SND_FORMAT_MULAW_8:
-			f->mem.fmt.encoding = AUDIO_ENCODING_MULAW;
+			f->mem.fmt.encoding = AUDIO_ENCODING_ULAW;
 			f->mem.fmt.precision = 8;
 			break;
 		 case SND_FORMAT_LINEAR_8:
@@ -616,8 +616,8 @@ audio_encoding_name(int enc)
 {
 	static char buf[16];
 
-	if (enc == AUDIO_ENCODING_MULAW)
-		return "MULAW";
+	if (enc == AUDIO_ENCODING_ULAW)
+		return "ULAW";
 	if (enc == AUDIO_ENCODING_SLINEAR_LE)
 		return "SLINEAR_LE";
 	if (enc == AUDIO_ENCODING_SLINEAR_BE)

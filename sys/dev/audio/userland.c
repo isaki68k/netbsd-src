@@ -33,7 +33,7 @@ audio_track_is_record(const audio_track_t *track)
 
 static const struct audio_format2 audio_default = {
 	.sample_rate = 8000,
-	.encoding = AUDIO_ENCODING_MULAW,
+	.encoding = AUDIO_ENCODING_ULAW,
 	.precision = 8,
 	.stride = 8,
 	.channels = 1,
