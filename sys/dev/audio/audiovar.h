@@ -65,6 +65,10 @@
 // softintr を使うとき ON にしてください
 //#define AUDIO_SOFTINTR
 
+// 周波数変換実装
+//#define FREQ_ORIG	// 元の実装
+#define FREQ_CYCLE2	// 周波数ではなく65536を基準にした周期比にする
+
 /* 1 ブロックの時間サイズ 40ms */
 /* 40ms の場合は (1/40ms)=25=5^2 なので 100 の倍数の周波数のほか、15.625kHz でもフレーム数が整数になる */
 #if defined(_KERNEL)
@@ -95,6 +99,7 @@ typedef struct audio_trackmixer audio_trackmixer_t;
 typedef struct audio_file audio_file_t;
 typedef struct audio_convert_arg audio_convert_arg_t;
 
+#if defined(FREQ_ORIG)
 /*
 * 簡易帯分数表現
 */
@@ -102,6 +107,7 @@ typedef struct audio_rational {
 	int i;
 	int n;
 } audio_rational_t;
+#endif
 
 // リングバッファ
 struct audio_ring
@@ -144,9 +150,6 @@ struct audio_track
 	audio_stage_t       chvol;			// チャンネルボリュームステージ
 	audio_stage_t       chmix;			// チャンネルミックスステージ
 	audio_stage_t       freq;			// 周波数変換ステージ
-
-//#define FREQ_ORIG	// 元の実装
-#define FREQ_CYCLE2	// 周波数ではなく65536を基準にした周期比にする
 
 #if defined(FREQ_CYCLE2)
 	unsigned int        freq_step;		/* 周波数変換用、周期比 */

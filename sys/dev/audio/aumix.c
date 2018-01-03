@@ -130,6 +130,7 @@ audio_realloc(void *memblock, size_t bytes)
 }
 
 
+#if defined(FREQ_ORIG)
 /*
  * ***** audio_rational *****
  */
@@ -172,6 +173,7 @@ audio_rational_cmp(audio_rational_t *a, audio_rational_t *b)
 	}
 	return r;
 }
+#endif /* FREQ_ORIG */
 
 /*
  * audio_volume
