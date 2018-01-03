@@ -996,7 +996,6 @@ audio_append_silence(audio_track_t *track, audio_ring_t *ring)
 
 	int n = (ring->capacity - ring->count) % fpb;
 	
-	TRACE(track, "Append silence %d frames", n);
 	KASSERT(audio_ring_unround_free_count(ring) >= n);
 
 	memset(RING_BOT_UINT8(ring), 0, n * ring->fmt.channels * sizeof(internal_t));
@@ -1537,7 +1536,8 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req,
 	// audio_write() に空きが出来たことを通知
 	cv_broadcast(&track->outchan);
 
-	TRACE(track, "broadcast; trseq=%d count=%d", (int)track->seq, count);
+	TRACE(track, "broadcast; trseq=%d out=%d/%d/%d", (int)track->seq,
+	    track->outputbuf.top, track->outputbuf.count, track->outputbuf.capacity);
 	return mixed + 1;
 }
 
@@ -1674,9 +1674,12 @@ audio_pmixer_output(audio_trackmixer_t *mixer)
 	sc = mixer->sc;
 	KASSERT(mutex_owned(sc->sc_intr_lock));
 
+#if 0
+	// 今はここと呼び出し元とでログを出力し比べる必要ないので一旦無効に
 	TRACE0("pbusy=%d hwbuf=%d/%d/%d",
 	    sc->sc_pbusy,
 	    mixer->hwbuf.top, mixer->hwbuf.count, mixer->hwbuf.capacity);
+#endif
 	KASSERT(mixer->hwbuf.count >= mixer->frames_per_block);
 
 	if (sc->hw_if->trigger_output) {
