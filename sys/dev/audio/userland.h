@@ -1,5 +1,9 @@
 #pragma once
 
+// テストプログラムの場合はここの AUDIO_DEBUG で制御する。
+// カーネル内はこれではなく sys/dev/audio.c の AUDIO_DEBUG で制御する。
+#define AUDIO_DEBUG 2
+
 #include <string.h>
 
 #define DPRINTF(n, fmt, ...)	printf(fmt, ## __VA_ARGS__)

@@ -26,10 +26,6 @@
 #define KASSERTMSG(expr, fmt, ...)	/**/
 #endif
 
-// カーネルの場合は audio.c の AUDIO_DEBUG だけで制御する
-// テストプログラムの場合はここの AUDIO_DEBUG で制御する
-#define AUDIO_DEBUG 2
-
 #endif // _KERNEL
 
 #if AUDIO_DEBUG > 2
