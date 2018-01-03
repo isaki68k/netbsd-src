@@ -1,5 +1,9 @@
 #pragma once
 
+#include <string.h>
+
+#define DPRINTF(n, fmt, ...)	printf(fmt, ## __VA_ARGS__)
+
 #define AUMODE_PLAY		(0x01)
 #define AUMODE_RECORD	(0x02)
 #define AUMODE_PLAY_ALL	(0x04)
@@ -146,6 +150,24 @@ static inline void
 kern_free(void *ptr)
 {
 	free(ptr);
+}
+
+#define KM_SLEEP	(0)
+
+static inline void *
+kmem_zalloc(size_t size, int flags)
+{
+	void *p;
+	p = kern_malloc(size, 0);
+	if (p)
+		memset(p, 0, size);
+	return p;
+}
+
+static inline void
+kmem_free(void *p, size_t size)
+{
+	kern_free(p);
 }
 
 void aprint_error_dev(void *, const char *fmt, ...);

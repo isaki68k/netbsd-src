@@ -303,14 +303,14 @@ cmd_set_file(const char *filename)
 
 	f->file = sys_open(sc, AUMODE_PLAY);
 	/* この辺は ioctl になる */
-	f->file->ptrack.volume = opt_vol;
-	f->file->ptrack.mixer->volume = 256;
+	f->file->ptrack->volume = opt_vol;
+	f->file->ptrack->mixer->volume = 256;
 	for (int j = 0; j < 2; j++) {
-		f->file->ptrack.ch_volume[j] = 256;
+		f->file->ptrack->ch_volume[j] = 256;
 	}
 
 	mutex_enter(audio_mixer_get_lock(sc->sc_pmixer));
-	audio_track_set_format(&f->file->ptrack, &f->mem.fmt);
+	audio_track_set_format(f->file->ptrack, &f->mem.fmt);
 	mutex_exit(audio_mixer_get_lock(sc->sc_pmixer));
 
 	f->play = true;
@@ -357,11 +357,11 @@ cmd_play()
 		struct test_file *f = &files[i];
 		printf("file %d: hw=%" PRIu64 " hw_comp=%" PRIu64 "\n",
 			i,
-			f->file->ptrack.mixer_hw_counter,
-			f->file->ptrack.hw_complete_counter);
+			f->file->ptrack->mixer_hw_counter,
+			f->file->ptrack->hw_complete_counter);
 	}
 	printf("mixer: hw_out=%" PRIu64 "\n",
-		files[0].file->ptrack.mixer->hw_output_counter);
+		files[0].file->ptrack->mixer->hw_output_counter);
 
 	return 0;
 
@@ -374,7 +374,7 @@ child_loop(struct test_file *f, int loop)
 	if (f->wait > loop) return 0;
 
 	// 1ブロック分のフレーム数
-	int frames_per_block = frame_per_block_roundup(f->file->ptrack.mixer, &f->mem.fmt);
+	int frames_per_block = frame_per_block_roundup(f->file->ptrack->mixer, &f->mem.fmt);
 	// 今回再生するフレーム数
 	int frames = min(f->mem.count, frames_per_block);
 	// フレーム数をバイト数に
@@ -726,7 +726,7 @@ cmd_perf_freq_main(struct freqdata *pattern)
 	it.it_value.tv_sec = 3;
 
 	f->file = sys_open(sc, AUMODE_PLAY);
-	track = &f->file->ptrack;
+	track = f->file->ptrack;
 	for (int i = 0; pattern[i].name != NULL; i++) {
 		track->inputfmt.encoding = AUDIO_ENCODING_SLINEAR_HE;
 		track->inputfmt.precision = 16;
