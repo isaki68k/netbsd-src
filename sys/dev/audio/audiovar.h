@@ -48,18 +48,15 @@
 
 /* 1 ブロックの時間サイズ 40ms */
 /* 40ms の場合は (1/40ms)=25=5^2 なので 100 の倍数の周波数のほか、15.625kHz でもフレーム数が整数になる */
-#if defined(_KERNEL)
 // XXX とりあえず
 // x68k では 40 (-> 80msec) ではアンダーランが発生するので
 // 80 (-> 160msec) に増やしておく。どうするかはまた。
+#if !defined(AUDIO_BLK_MS)
 #if defined(x68k)
 #define AUDIO_BLK_MS 160
 #else
 #define AUDIO_BLK_MS 40
 #endif
-#else
-// XXX: エミュレーション出来ないので 400 にしておく。
-#define AUDIO_BLK_MS 400
 #endif
 
 #if BYTE_ORDER == LITTLE_ENDIAN
