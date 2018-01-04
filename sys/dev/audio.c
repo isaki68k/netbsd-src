@@ -3373,11 +3373,8 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 
 	if (ptrack) {
 		// たぶんバッファ中の現在位置でいいんじゃないかなあ
-		// 入力エンコーディングバイト数換算
-		p->seek = ptrack->outputbuf.count *
-		    (ptrack->inputfmt.channels *
-		     ptrack->inputfmt.stride / NBBY);
-		// XXX カウンタそのままでよさそう
+		// XXX ただどのバッファをさすべきかはよく分からん
+		p->seek = ptrack->usrbuf.top;
 		p->samples = ptrack->inputcounter;
 		p->eof = sc->sc_eof;
 		p->pause = ptrack->is_pause;
@@ -3392,12 +3389,9 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 	}
 	if (rtrack) {
 		// たぶんバッファ中の現在位置でいいんじゃないかなあ
-		// 入力エンコーディングバイト数換算
-		r->seek = rtrack->outputbuf.count *
-		    (rtrack->outputbuf.fmt.channels *
-		     rtrack->outputbuf.fmt.stride / NBBY);
-		// XXX カウンタそのままでよさそう
-		r->samples = rtrack->outputcounter;
+		// XXX ただどのバッファをさすべきかはよく分からん
+		r->seek = rtrack->usrbuf.top;
+		r->samples = rtrack->inputcounter;
 		r->eof = sc->sc_eof;
 		r->pause = rtrack->is_pause;
 		r->error = 0;			// XXX
