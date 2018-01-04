@@ -389,6 +389,40 @@ CFATTACH_DECL3_NEW(audio, sizeof(struct audio_softc),
 
 extern struct cfdriver audio_cd;
 
+#if 1
+static char *audio_buildinfo;
+
+// ビルドオプションを文字列にします。(開発用)
+// テスト用なので解放してません。
+static void
+make_buildinfo(void)
+{
+	char buf[100];
+	int n;
+
+	n = 0;
+	n += snprintf(buf, sizeof(buf), "AUDIO_BLK_MS=%d", AUDIO_BLK_MS);
+	n += snprintf(buf + n, sizeof(buf) - n, ", NBLKOUT=%d", NBLKOUT);
+#if defined(AUDIO_SOFTINTR)
+	n += snprintf(buf + n, sizeof(buf) - n, ", SOFTINTR");
+#endif
+#if defined(FREQ_ORIG)
+	n += snprintf(buf + n, sizeof(buf) - n, ", FREQ_ORIG");
+#endif
+#if defined(FREQ_CYCLE2)
+	n += snprintf(buf + n, sizeof(buf) - n, ", FREQ_CYCLE2");
+#endif
+#if defined(START_ON_OPEN)
+	n += snprintf(buf + n, sizeof(buf) - n, ", START_ON_OPEN");
+#endif
+
+	audio_buildinfo = malloc(strlen(buf) + 1, M_NOWAIT, 0);
+	if (audio_buildinfo) {
+		strcpy(audio_buildinfo, buf);
+	}
+}
+#endif
+
 static int
 audiomatch(device_t parent, cfdata_t match, void *aux)
 {
@@ -573,10 +607,21 @@ audioattach(device_t parent, device_t self, void *aux)
 			CTLFLAG_READWRITE,
 			CTLTYPE_INT, "volume",
 			SYSCTL_DESCR("software volume test"),
-			audio_sysctl_volume, 0,
-			(void *)sc, 0,
-			CTL_HW, node->sysctl_num,
-			CTL_CREATE, CTL_EOL);
+			audio_sysctl_volume, 0, (void *)sc, 0,
+			CTL_HW, node->sysctl_num, CTL_CREATE, CTL_EOL);
+
+#if 1
+		// デバッグ用のビルドオプション表示
+		if (audio_buildinfo == NULL)
+			make_buildinfo();
+
+		sysctl_createv(&sc->sc_log, 0, NULL, NULL,
+			CTLFLAG_PERMANENT,
+			CTLTYPE_STRING, "buildinfo",
+			SYSCTL_DESCR("audio build options"),
+			NULL, 0, audio_buildinfo, 0,
+			CTL_HW, node->sysctl_num, CTL_CREATE, CTL_EOL);
+#endif
 	}
 
 	selinit(&sc->sc_rsel);
