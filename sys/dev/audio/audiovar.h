@@ -46,14 +46,13 @@
 //#define FREQ_ORIG	// 元の実装
 #define FREQ_CYCLE2	// 周波数ではなく65536を基準にした周期比にする
 
-/* 1 ブロックの時間サイズ 40ms */
-/* 40ms の場合は (1/40ms)=25=5^2 なので 100 の倍数の周波数のほか、15.625kHz でもフレーム数が整数になる */
-// XXX とりあえず
-// x68k では 40 (-> 80msec) ではアンダーランが発生するので
-// 80 (-> 160msec) に増やしておく。どうするかはまた。
+// 1 ブロックの時間 [msec]
+// 40ms の場合は (1/40ms) = 25 = 5^2 なので 100 の倍数の周波数のほか、
+// 15.625kHz でもフレーム数が整数になるので、40 を基本にする。
 #if !defined(AUDIO_BLK_MS)
 #if defined(x68k)
-#define AUDIO_BLK_MS 160
+// x68k では 40msec だと長い曲でアンダーランするので伸ばしておく
+#define AUDIO_BLK_MS 320
 #else
 #define AUDIO_BLK_MS 40
 #endif
