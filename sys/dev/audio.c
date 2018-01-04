@@ -3336,7 +3336,6 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 
 	memset(ai, 0, sizeof(*ai));
 
-	// XXX 常に inputfmt が埋まってれば if いらない
 	if (ptrack) {
 		p->sample_rate = ptrack->inputfmt.sample_rate;
 		p->channels    = ptrack->inputfmt.channels;
