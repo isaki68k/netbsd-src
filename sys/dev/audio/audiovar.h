@@ -16,22 +16,6 @@
 #include "userland.h"
 #include "uio.h"
 #include "aufilter.h"
-
-/* アサートするとき定義 */
-#define AUDIO_ASSERT
-
-#ifdef AUDIO_ASSERT
-#define KASSERT(expr)	do {\
-	if (!(expr)) panic(#expr);\
-} while (0)
-#define KASSERTMSG(expr, fmt, ...)	do {\
-	if (!(expr)) panic(#expr);\
-} while (0)
-#else
-#define KASSERT(expr)	/**/
-#define KASSERTMSG(expr, fmt, ...)	/**/
-#endif
-
 #endif // _KERNEL
 
 #if AUDIO_DEBUG > 2

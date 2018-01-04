@@ -2,11 +2,26 @@
 
 #include <string.h>
 
+// アサートするとき定義
+#define AUDIO_ASSERT
+
 // ユーザランドで数十 msec オーダーで割り込み上げるエミュレーションは
 // 大変なので伸ばしておく。
 #define AUDIO_BLK_MS 400
 
 #define DPRINTF(n, fmt, ...)	printf(fmt, ## __VA_ARGS__)
+
+#ifdef AUDIO_ASSERT
+#define KASSERT(expr)	do {\
+	if (!(expr)) panic(#expr);\
+} while (0)
+#define KASSERTMSG(expr, fmt, ...)	do {\
+	if (!(expr)) panic(#expr);\
+} while (0)
+#else
+#define KASSERT(expr)	/**/
+#define KASSERTMSG(expr, fmt, ...)	/**/
+#endif
 
 #define AUMODE_PLAY		(0x01)
 #define AUMODE_RECORD	(0x02)
