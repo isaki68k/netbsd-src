@@ -1294,7 +1294,13 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 
 	mixer->blktime_d = 1000;
 	mixer->blktime_n = audio_mixer_calc_blktime(mixer);
+#if defined(START_ON_OPEN)
+	// 特に制約はないので適当。NBLKOUT と同じでもいいけど
 	mixer->hwblks = 16;
+#else
+	// hwblks は NBLKOUT でなければならない
+	mixer->hwblks = NBLKOUT;
+#endif
 
 	mixer->frames_per_block = frame_per_block_roundup(mixer, &mixer->hwbuf.fmt);
 	int blksize = frametobyte(&mixer->hwbuf.fmt, mixer->frames_per_block);
@@ -1425,15 +1431,30 @@ audio_pmixer_start(audio_trackmixer_t *mixer, bool force)
 		(int)mixer->mixseq, (int)mixer->hwseq,
 		mixer->hwbuf.top, mixer->hwbuf.count, mixer->hwbuf.capacity);
 
-	// バッファを埋める
+#if defined(START_ON_OPEN)
+	// 空なら1ブロック埋める
 	if (mixer->hwbuf.count < mixer->frames_per_block) {
-		audio_pmixer_process(mixer);
+		audio_pmixer_process(mixer, false);
 
 		// トラックミキサ出力開始
 		mutex_enter(sc->sc_intr_lock);
 		audio_pmixer_output(mixer);
 		mutex_exit(sc->sc_intr_lock);
 	}
+#else
+	// hwbuf に1ブロック以上の空きがあればブロックを追加
+	if (mixer->hwbuf.capacity - mixer->hwbuf.count >= mixer->frames_per_block) {
+		audio_pmixer_process(mixer, false);
+
+		int minimum = (force) ? 1 : mixer->hwblks;
+		if (mixer->hwbuf.count >= mixer->frames_per_block * minimum) {
+			// トラックミキサ出力開始
+			mutex_enter(sc->sc_intr_lock);
+			audio_pmixer_output(mixer);
+			mutex_exit(sc->sc_intr_lock);
+		}
+	}
+#endif
 
 	TRACE0("end   mixseq=%d hwseq=%d hwbuf=%d/%d/%d",
 		(int)mixer->mixseq, (int)mixer->hwseq,
@@ -1466,6 +1487,12 @@ audio_pmixer_mixall(audio_trackmixer_t *mixer, int req, bool isintr)
 		if (isintr) {
 			// 協調的ロックされているトラックは、今回ミキシングしない。
 			if (track->track_cl) continue;
+		}
+#endif
+
+#if !defined(START_ON_OPEN)
+		if (track->outputbuf.count < req) {
+			audio_track_play(track, isintr);
 		}
 #endif
 
@@ -1548,8 +1575,11 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req,
 // (hwbuf からハードウェアへの転送はここでは行いません)
 // 呼び出し時の sc_intr_lock の状態はどちらでもよく、hwbuf へのアクセスを
 // sc_intr_lock でこの関数が保護します。
+// !START_ON_OPEN の時は intr が true なら割り込みコンテキストからの呼び出し、
+// false ならプロセスコンテキストからの呼び出しを示す。
+// (START_ON_OPEN なら常に割り込みコンテキストからの呼び出しなので不要)
 void
-audio_pmixer_process(audio_trackmixer_t *mixer /*, bool force */)
+audio_pmixer_process(audio_trackmixer_t *mixer, bool isintr)
 {
 	struct audio_softc *sc;
 	int mixed;
@@ -1572,7 +1602,7 @@ audio_pmixer_process(audio_trackmixer_t *mixer /*, bool force */)
 	mixer->mixseq++;
 
 	// 全トラックを合成
-	mixed = audio_pmixer_mixall(mixer, mixer->frames_per_block, true);
+	mixed = audio_pmixer_mixall(mixer, mixer->frames_per_block, isintr);
 	if (mixed == 0) {
 		// 無音
 		memset(mixer->mixsample, 0,
@@ -1676,8 +1706,7 @@ audio_pmixer_output(audio_trackmixer_t *mixer)
 	sc = mixer->sc;
 	KASSERT(mutex_owned(sc->sc_intr_lock));
 
-#if 0
-	// 今はここと呼び出し元とでログを出力し比べる必要ないので一旦無効に
+#if !defined(START_ON_OPEN)
 	TRACE0("pbusy=%d hwbuf=%d/%d/%d",
 	    sc->sc_pbusy,
 	    mixer->hwbuf.top, mixer->hwbuf.count, mixer->hwbuf.capacity);
@@ -1739,7 +1768,7 @@ audio_pmixer_intr(audio_trackmixer_t *mixer)
 	}
 
 	// 次のバッファを用意する
-	audio_pmixer_process(mixer);
+	audio_pmixer_process(mixer, true);
 
 	if (later) {
 		audio_pmixer_output(mixer);
@@ -1768,7 +1797,8 @@ audio_pmixer_softintr(void *arg)
 	}
 
 	// 次のバッファを用意する
-	audio_pmixer_process(mixer);
+	// XXX ソフトウェア割り込みはプロセスコンテキストでいいのかな
+	audio_pmixer_process(mixer, false);
 
 	if (later) {
 		mutex_enter(sc->sc_intr_lock);
@@ -1872,6 +1902,14 @@ audio_track_drain(audio_track_t *track)
 	// そのためここは1回だけでいい。
 	audio_track_enter_colock(sc, track);
 	audio_track_play(track, true);
+#if !defined(START_ON_OPEN)
+	if (sc->sc_pbusy == false) {
+		// トラックバッファが空になっても、ミキサ側で処理中のデータが
+		// あるかもしれない。
+		// トラックミキサが動作していないときは、動作させる。
+		audio_pmixer_start(mixer, true);
+	}
+#endif
 	audio_track_leave_colock(sc, track);
 
 	for (;;) {
@@ -2043,6 +2081,9 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 			}
 
 			audio_track_play(track, false);
+#if !defined(START_ON_OPEN)
+			audio_pmixer_start(sc->sc_pmixer, false);
+#endif
 		}
 
 		audio_track_leave_colock(sc, track);
