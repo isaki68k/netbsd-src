@@ -1,5 +1,11 @@
 #pragma once
 
+// デバッグレベルは
+// 1: open/close/set_param等
+// 2: read/write/ioctlシステムコールくらいまでは含む
+// 3: TRACEも含む
+#define AUDIO_DEBUG	3
+
 #if defined(_KERNEL)
 #include <dev/audio/aufilter.h>
 #else

@@ -2,10 +2,6 @@
 
 #include <string.h>
 
-// テストプログラムの場合はここの AUDIO_DEBUG で制御する。
-// カーネル内はこれではなく sys/dev/audio.c の AUDIO_DEBUG で制御する。
-#define AUDIO_DEBUG 2
-
 // ユーザランドで数十 msec オーダーで割り込み上げるエミュレーションは
 // 大変なので伸ばしておく。
 #define AUDIO_BLK_MS 400
