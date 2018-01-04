@@ -2862,7 +2862,7 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	play = file->ptrack;
 	rec = file->rtrack;
 
-#if AUDIO_DEBUG
+#if AUDIO_DEBUG > 1
 	char buf[80];
 	int n = 0;
 #define SNPRINTF(fmt...) do {	\
