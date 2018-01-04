@@ -116,7 +116,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 } while (0)
 int	audiodebug = AUDIO_DEBUG;
 #else
-#define DPRINTF(n,x)
+#define DPRINTF(n, fmt...)	do { } while (0)
 #endif
 
 #define ROUNDSIZE(x)	(x) &= -16	/* round to nice boundary */
