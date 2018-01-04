@@ -214,9 +214,6 @@ struct audio_file
 };
 
 
-extern const char *fmt_tostring(const audio_format2_t *);
-extern int debug;
-
 extern void audio_trace0(const char *funcname, const char *fmt, ...)
 	__attribute__((__format__(printf, 2, 3)));
 extern void audio_trace(const char *funcname, audio_track_t *track,
