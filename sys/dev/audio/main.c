@@ -242,7 +242,7 @@ cmd_set_mml(const char *mml)
 
 	f->mem.top = 0;
 	f->mem.fmt.sample_rate = 44100;
-	f->mem.fmt.encoding = AUDIO_ENCODING_SLINEAR_HE;
+	f->mem.fmt.encoding = AUDIO_ENCODING_SLINEAR_NE;
 	f->mem.fmt.channels = 1;
 	f->mem.fmt.precision = 16;
 	f->mem.fmt.stride = 16;
@@ -278,7 +278,7 @@ cmd_set_file(const char *filename)
 		// MSM6258 -> SLINEAR16(internal format)
 		uint8_t *tmp = malloc(len * 4);
 		audio_format2_t dstfmt;
-		dstfmt.encoding = AUDIO_ENCODING_SLINEAR_HE;
+		dstfmt.encoding = AUDIO_ENCODING_SLINEAR_NE;
 		dstfmt.sample_rate = f->mem.fmt.sample_rate;
 		dstfmt.precision = AUDIO_INTERNAL_BITS;
 		dstfmt.stride = AUDIO_INTERNAL_BITS;
@@ -729,7 +729,7 @@ cmd_perf_freq_main(struct freqdata *pattern)
 	f->file = sys_open(sc, AUMODE_PLAY);
 	track = f->file->ptrack;
 	for (int i = 0; pattern[i].name != NULL; i++) {
-		track->inputfmt.encoding = AUDIO_ENCODING_SLINEAR_HE;
+		track->inputfmt.encoding = AUDIO_ENCODING_SLINEAR_NE;
 		track->inputfmt.precision = 16;
 		track->inputfmt.stride = 16;
 		track->inputfmt.channels = 2;

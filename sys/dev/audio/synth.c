@@ -217,7 +217,7 @@ play_mml(audio_ring_t *dst, char *mml)
 	audio_ring_t *tone;
 
 	tone_fmt0.channels = 1;
-	tone_fmt0.encoding = AUDIO_ENCODING_SLINEAR_HE;
+	tone_fmt0.encoding = AUDIO_ENCODING_SLINEAR_NE;
 	tone_fmt0.sample_rate = 44100;
 	tone_fmt0.precision = 32;
 	tone_fmt0.stride = 32;

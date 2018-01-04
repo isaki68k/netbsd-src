@@ -128,14 +128,6 @@ int	audiodebug = AUDIO_DEBUG;
 int	audio_idle_timeout = 30;
 #endif
 
-#if BYTE_ORDER == LITTLE_ENDIAN
-#define AUDIO_ENCODING_SLINEAR_NE AUDIO_ENCODING_SLINEAR_LE
-#define AUDIO_ENCODING_ULINEAR_NE AUDIO_ENCODING_ULINEAR_LE
-#else
-#define AUDIO_ENCODING_SLINEAR_NE AUDIO_ENCODING_SLINEAR_BE
-#define AUDIO_ENCODING_ULINEAR_NE AUDIO_ENCODING_ULINEAR_BE
-#endif
-
 struct portname {
 	const char *name;
 	int mask;

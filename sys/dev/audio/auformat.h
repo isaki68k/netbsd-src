@@ -32,7 +32,7 @@ static inline bool
 is_internal_format(const audio_format2_t *fmt)
 {
 	if (!is_valid_format(fmt)) return false;
-	if (fmt->encoding != AUDIO_ENCODING_SLINEAR_HE) return false;
+	if (fmt->encoding != AUDIO_ENCODING_SLINEAR_NE) return false;
 	if (fmt->precision != AUDIO_INTERNAL_BITS) return false;
 	if (fmt->stride != AUDIO_INTERNAL_BITS) return false;
 	return true;
