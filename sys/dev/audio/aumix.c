@@ -1515,11 +1515,18 @@ audio_pmixer_mixall(audio_trackmixer_t *mixer, int req, bool isintr)
 int
 audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req, int mixed)
 {
-	/* req フレーム貯まるまで待つ */
+	// req フレーム(通常1ブロック分)に満たない場合、
+	// - PLAY_ALL なら今回は処理しない (貯まるまで待つ)。
+	// - PLAY(_SYNC) なら無音で埋めて処理する。
 	if (track->outputbuf.count < req) {
-		TRACE(track, "track count(%d) < req(%d); return",
-		    track->outputbuf.count, req);
-		return mixed;
+		if ((track->mode & AUMODE_PLAY_ALL) != 0) {
+			TRACE(track, "track count(%d) < req(%d); return",
+			    track->outputbuf.count, req);
+			return mixed;
+		} else {
+			audio_append_silence(track, &track->outputbuf);
+			// XXX ここで?落とした playdrop をカウント?
+		}
 	}
 
 	// このトラックが処理済みならなにもしない
@@ -2008,21 +2015,28 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 	//
 	// out_thres は usrbuf から読み出す際の閾値。
 	// trkbuf.count が out_thres より大きければ変換処理を行う。
-	// o PLAY なら常に変換処理をしたいので 0 に設定
+	// o PLAY なら常に変換処理をしたいので 1[フレーム] に設定
 	// o PLAY_ALL なら1ブロック溜まってから処理なので block size を設定
+	//
+	// force は 1ブロックに満たない場合にミキサを開始するか否か。
+	// o PLAY なら1ブロック未満でも常に開始するため true
+	// o PLAY_ALL なら1ブロック貯まるまで開始しないので false
 	audio_ring_t *usrbuf = &track->usrbuf;
 	int inp_thres;
 	int out_thres;
+	bool force;
 	if ((track->mode & AUMODE_PLAY_ALL) != 0) {
 		/* PLAY_ALL */
 		int usrbuf_blksize = frametobyte(&track->inputfmt,
 		    frame_per_block_roundup(track->mixer, &track->inputfmt));
 		inp_thres = usrbuf_blksize;
 		out_thres = usrbuf_blksize;
+		force = false;
 	} else {
 		/* PLAY */
 		inp_thres = usrbuf->capacity;
-		out_thres = 0;
+		out_thres = 1;
+		force = true;
 	}
 	TRACE(track, "resid=%zd inp_thres=%d out_thres=%d",
 	    uio->uio_resid, inp_thres, out_thres);
@@ -2082,7 +2096,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 
 			audio_track_play(track, false);
 #if !defined(START_ON_OPEN)
-			audio_pmixer_start(sc->sc_pmixer, false);
+			audio_pmixer_start(sc->sc_pmixer, force);
 #endif
 		}
 
