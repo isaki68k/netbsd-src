@@ -1999,8 +1999,6 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 	// XXX playdrop と PLAY_ALL はちょっと後回し
 #endif // _KERNEL
 
-	error = 0;
-
 	// inp_thres は usrbuf に書き込む際の閾値。
 	// usrbuf.count が inp_thres より小さければ uiomove する。
 	// o PLAY なら常にコピーなので capacity を設定
