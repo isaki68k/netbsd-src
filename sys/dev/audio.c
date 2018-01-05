@@ -3424,10 +3424,7 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 		p->waiting = 0;			/* open never hangs */
 		p->open = 1;
 		p->active = sc->sc_pbusy;// XXX 厳密ではない ?
-		// XXX 入力エンコーディング換算
-		p->buffer_size = ptrack->outputbuf.capacity *
-		    (ptrack->inputfmt.channels *
-		     ptrack->inputfmt.stride / NBBY);
+		p->buffer_size = ptrack->usrbuf.capacity;
 	}
 	if (rtrack) {
 		// たぶんバッファ中の現在位置でいいんじゃないかなあ
@@ -3448,16 +3445,9 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 	// XXX 再生と録音でチャンネル数が違う場合があるので
 	// ブロックサイズは同じにはならないのだが、
 	// もう仕方ないので異なる場合は再生側で代表するか?
-	audio_trackmixer_t *mixer;
-	audio_format2_t *fmt;
-	if (ptrack == NULL) {
-		mixer = sc->sc_rmixer;
-	} else {
-		mixer = sc->sc_pmixer;
-	}
-	fmt = &mixer->hwbuf.fmt;
-	ai->blocksize = mixer->frames_per_block *
-	    fmt->channels * fmt->stride / NBBY;
+	audio_track_t *track;
+	track = ptrack ?: rtrack;
+	ai->blocksize = track->usrbuf_blksize;
 	ai->mode = file->mode;
 	/* hiwat, lowat are meaningless in current implementation */
 	ai->hiwat = 8;

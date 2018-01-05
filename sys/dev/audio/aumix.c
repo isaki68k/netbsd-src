@@ -914,10 +914,12 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *fmt)
 	track->input = last_dst;
 
 	// 入力フォーマットに従って usrbuf を作る
+	track->usrbuf_nblks = NBLKOUT;
+	track->usrbuf_blksize = frametobyte(&track->inputfmt,
+	    track->input->capacity);
 	track->usrbuf.top = 0;
 	track->usrbuf.count = 0;
-	track->usrbuf.capacity = NBLKOUT *
-	    frametobyte(&track->inputfmt, track->input->capacity);
+	track->usrbuf.capacity = track->usrbuf_nblks * track->usrbuf_blksize;
 	track->usrbuf.sample = audio_realloc(track->usrbuf.sample,
 	    track->usrbuf.capacity);
 	if (track->usrbuf.sample == NULL) {

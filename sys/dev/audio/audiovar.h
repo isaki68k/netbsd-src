@@ -113,6 +113,8 @@ struct audio_track
 	int mode;
 
 	audio_ring_t        usrbuf;			// ユーザ入出力バッファ
+	u_int               usrbuf_nblks;	// usrbuf のブロック数
+	u_int               usrbuf_blksize;	// usrbuf のブロックサイズ
 
 	audio_format2_t     inputfmt;		// このトラックに入力するフォーマット
 	audio_ring_t       *input;			// このトラックに入力するとき使用するバッファへのポインタ
