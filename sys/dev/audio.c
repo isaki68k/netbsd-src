@@ -3450,8 +3450,9 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 	ai->blocksize = track->usrbuf_blksize;
 	ai->mode = file->mode;
 	/* hiwat, lowat are meaningless in current implementation */
-	ai->hiwat = 8;
-	ai->lowat = 6;
+	// XXX inp_thres あたりと一緒になんとかしたほうがいいかも
+	ai->hiwat = NBLKOUT;
+	ai->lowat = 1;
 
 	if (need_mixerinfo) {
 		p->port = au_get_port(sc, &sc->sc_outports);
