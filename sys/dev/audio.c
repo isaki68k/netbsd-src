@@ -2753,34 +2753,76 @@ audio_file_set_defaults(struct audio_softc *sc, audio_file_t *file)
 	return audio_file_setinfo(sc, file, &ai);
 }
 
-// ai の値を反映させる。
+// audioinfo の各パラメータについて。
 //
-// ai.{play,record}.sample_rate
-// ai.{play,record}.encoding
-// ai.{play,record}.precision
-// ai.{play,record}.channels
-//	再生/録音パラメータ。
-//	現在有効でない側は無視する。sc的にではなくこのfd的に有効かどうかでは?
-//	通常は Upper Lane のみ。将来的に COOKED モードなら HW のみ。
+// ai.{play,record}.sample_rate		(R/W)
+// ai.{play,record}.encoding		(R/W)
+// ai.{play,record}.precision		(R/W)
+// ai.{play,record}.channels		(R/W)
+//	再生/録音フォーマット。
+//	現在有効でないトラック側は無視する。
 //
-// ai.mode			.. 再生/録音のどちらのモードか。
-// ai.{hiwat,lowat}
-//	これは Upper Lane
+// ai.mode				(R/W)
+//	再生/録音モード。AUMODE_*
+//	XXX ai.mode = PLAY だったところに ai.mode = RECORD とか指定すると
+//	    何が起きるか。何が起きるべきか。
 //
-// ai.{play,record}.gain	.. ソフトウェアボリューム
-//	これは Upper Lane。(N8 以降)
+// ai.{hiwat,lowat}			(R/W)
+//	再生トラックの hiwat/lowat。単位はブロック。
 //
-// ai.{play,record}.balance	.. 左右バランス
-//	現在はハードウェア(ミキサー)だが、将来的には UpperLane にすべき。
+// ai.{play,record}.gain		(R/W)
+//	ボリューム。0-255。
+//	N7 以前は HW ミキサのボリュームと連動していた。
+//	N8 はこれをソフトウェアボリュームにしようとしてバグっている。
+//	理想的にはソフトウェアボリュームでもいいような気がするが。
 //
-// ai.{play,record}.port	.. 入出力ポート
-// ai.monitor_gain			.. 録音モニターゲイン?
-//	これはハードウェア(ミキサー)
+// ai.{play,record}.balance		(R/W)
+//	左右バランス。0-64。32 が中心。
+//	N7 以前は gain と balance をセットで扱うようなインタフェースだったが
+//	N8 ではバランスは HW ミキサーに任せたまま。
+//	理想的にはソフトウェアバランスでもいいような気がするが。
 //
-// ai.{play,record}.pause	.. 一時停止?
-//	Upper Lane とハードウェア両方??
-//	何をどこまで一時停止するかによる?
+// ai.{play,record}.port		(R/W)
+//	入出力ポート。これは HW ミキサー情報。
 //
+// ai.monitor_gain			(R/W)
+//	録音モニターゲイン(?)。これは HW ミキサー情報。
+//
+// ai.{play,record}.pause		(R/W)
+//	トラックの一時停止なら non-zero。
+//
+// ai.{play,record}.seek		(R/-)
+//	バッファ上のポインタ位置。usrbuf にすべか。
+//
+// ai.{play,record}.avail_ports		(R/-)
+//	これは HW ミキサー情報。
+//
+// ai.{play,record}.buffer_size		(R/-)
+//	バッファサイズ[byte]。usrbuf をさすのでいいか。
+//
+// ai.{play,record}.samples		(R/-)
+//	usrbuf に受け取った / usrbuf から引き渡したサンプル数
+//	or バイト数。このへん単位の定義が曖昧。
+//
+// ai.{play,record}.eof			(R/-)
+//	EOF に到達した回数?
+//
+// ai.{play,record}.error		(R/-)
+//	アンダーフロー/オーバーフローの起きた回数
+//
+// ai.{play,record}.waiting		(R/-)
+//	他のプロセスが open 待ちしていれば non-zero。
+//	今は起きないので常にゼロ。
+//
+// ai.{play,record}.open		(R/-)
+//	オープンされていれば non-zero。
+//
+// ai.{play,record}.active		(R/-)
+//	IO がアクティブなら non-zero。
+//
+// ai.blocksize				(R/-)
+//	audioio.h には HW ブロックサイズとコメントがあるが、
+//	今は usrbuf の1ブロックサイズ[byte]にしたほうがよさげ。
 //
 #if 0
 	// HALF-DUPLEX
