@@ -1589,20 +1589,6 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 	//if (sc->sc_opens == 0 && sc->sc_recopens == 0)
 	//	return ENXIO;
 
-	// リストから削除
-	// XXX: rmixer のロック
-#if defined(AUDIO_SOFTINTR)
-	mutex_enter(&sc->sc_pmixer->softintrlock);
-#else
-	mutex_enter(sc->sc_intr_lock);
-#endif
-	SLIST_REMOVE(&sc->sc_files, file, audio_file, entry);
-#if defined(AUDIO_SOFTINTR)
-	mutex_exit(&sc->sc_pmixer->softintrlock);
-#else
-	mutex_exit(sc->sc_intr_lock);
-#endif
-
 	// SB とかいくつかのドライバは halt_input と halt_output に
 	// 同じルーチンを使用しているので、その場合は full duplex なら
 	// halt_input を呼ばなくする?。ドライバのほうを直すべき。
@@ -1681,6 +1667,20 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 
 		kauth_cred_free(sc->sc_cred);
 	}
+
+	// リストから削除
+	// XXX: rmixer のロック
+#if defined(AUDIO_SOFTINTR)
+	mutex_enter(&sc->sc_pmixer->softintrlock);
+#else
+	mutex_enter(sc->sc_intr_lock);
+#endif
+	SLIST_REMOVE(&sc->sc_files, file, audio_file, entry);
+#if defined(AUDIO_SOFTINTR)
+	mutex_exit(&sc->sc_pmixer->softintrlock);
+#else
+	mutex_exit(sc->sc_intr_lock);
+#endif
 
 	return 0;
 }
