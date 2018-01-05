@@ -61,9 +61,14 @@ void audio_pmixer_output(audio_trackmixer_t *mixer);
 #if defined(AUDIO_SOFTINTR)
 static void audio_pmixer_softintr(void *arg);
 #endif
+static void audio_rmixer_input(audio_trackmixer_t *mixer);
 static int audio2_trigger_output(audio_trackmixer_t *mixer, void *start,
 	void *end, int blksize);
 static int audio2_start_output(audio_trackmixer_t *mixer, void *start,
+	int blksize);
+static int audio2_trigger_input(audio_trackmixer_t *mixer, void *start,
+	void *end, int blksize);
+static int audio2_start_input(audio_trackmixer_t *mixer, void *start,
 	int blksize);
 
 #if !defined(_KERNEL)
@@ -100,6 +105,40 @@ audio_trace(const char *funcname, audio_track_t *track, const char *fmt, ...)
 	va_end(ap);
 	printf("\n");
 }
+
+#if AUDIO_DEBUG > 2
+static void
+audio_debug_bufs(char *buf, int bufsize, audio_track_t *track)
+{
+	int n;
+
+	n = snprintf(buf, bufsize, "out=%d/%d/%d",
+	    track->outputbuf.top, track->outputbuf.count,
+	    track->outputbuf.capacity);
+	if (track->freq.filter)
+		n += snprintf(buf + n, bufsize - n, " f=%d",
+		    track->freq.srcbuf.count);
+	if (track->chmix.filter)
+		n += snprintf(buf + n, bufsize - n, " m=%d",
+		    track->chmix.srcbuf.count);
+	if (track->chvol.filter)
+		n += snprintf(buf + n, bufsize - n, " v=%d",
+		    track->chvol.srcbuf.count);
+	if (track->codec.filter)
+		n += snprintf(buf + n, bufsize - n, " e=%d",
+		    track->codec.srcbuf.count);
+	snprintf(buf + n, bufsize - n, " usr=%d/%d/%d",
+	    track->usrbuf.top, track->usrbuf.count, track->usrbuf.capacity);
+}
+// track 内のバッファの状態をデバッグ表示します。
+#define AUDIO_DEBUG_BUFS(track, msg)	do {	\
+	char buf[100];	\
+	audio_debug_bufs(buf, sizeof(buf), track);	\
+	TRACE(track, "%s %s", msg, buf);	\
+} while (0)
+#else
+#define AUDIO_DEBUG_BUFS(track, msg)	/**/
+#endif
 
 /* メモリアロケーションの STUB */
 
@@ -854,10 +893,14 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 
 	// TODO: まず現在のバッファとかを全部破棄すると分かり易いが。
 
-	audio_ring_t *last_dst = &track->outputbuf;
+	// ユーザランド側バッファ
+	// ただし usrbuf は基本これを参照せずに、バイトバッファとして扱う
+	track->usrbuf.fmt = *usrfmt;
+
+	audio_ring_t *last_dst;
 	if (audio_track_is_playback(track)) {
 		// 再生はトラックミキサ側から作る
-
+		last_dst = &track->outputbuf;
 		track->inputfmt = *usrfmt;
 		track->outputbuf.fmt =  track->mixer->track_fmt;
 
@@ -871,9 +914,9 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 			goto error;
 	} else {
 		// 録音はユーザランド側から作る
-
+		last_dst = &track->usrbuf;
 		track->inputfmt = track->mixer->track_fmt;
-		track->outputbuf.fmt = *usrfmt;
+		track->outputbuf.fmt = track->mixer->track_fmt;
 
 		if ((last_dst = init_codec(track, last_dst)) == NULL)
 			goto error;
@@ -885,13 +928,13 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 			goto error;
 	}
 
-	// 入力バッファは先頭のステージ相当品
+	// 入力バッファ
 	track->input = last_dst;
 
-	// 入力フォーマットに従って usrbuf を作る
+	// usrfmt に従って usrbuf を作る
 	track->usrbuf_nblks = NBLKOUT;
-	track->usrbuf_blksize = frametobyte(&track->inputfmt,
-	    track->input->capacity);
+	track->usrbuf_blksize = frametobyte(&track->usrbuf.fmt,
+	    frame_per_block_roundup(track->mixer, &track->usrbuf.fmt));
 	track->usrbuf.top = 0;
 	track->usrbuf.count = 0;
 	track->usrbuf.capacity = track->usrbuf_nblks * track->usrbuf_blksize;
@@ -902,12 +945,6 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 		    track->usrbuf.capacity);
 		goto error;
 	}
-	// usrbuf の fmt は1フレーム=1バイトになるようにしておくが
-	// 基本 fmt は参照せず 1フレーム=1バイトでコーディングしたほうがいいか。
-	track->usrbuf.fmt = *usrfmt;
-	track->usrbuf.fmt.channels = 1;
-	track->usrbuf.fmt.precision = 8;
-	track->usrbuf.fmt.stride = 8;
 
 	// 出力フォーマットに従って outputbuf を作る
 	track->outputbuf.top = 0;
@@ -1152,24 +1189,43 @@ audio_track_play(audio_track_t *track, bool isdrain)
 		track->outputcounter += track->outputbuf.count - track_count_0;
 	}
 
-#if AUDIO_DEBUG > 2
-	char buf[100];
-	int n = 0;
-	buf[n] = '\0';
-	if (track->freq.filter)
-		n += snprintf(buf + n, 100 - n, " f=%d", track->freq.srcbuf.count);
-	if (track->chmix.filter)
-		n += snprintf(buf + n, 100 - n, " m=%d", track->chmix.srcbuf.count);
-	if (track->chvol.filter)
-		n += snprintf(buf + n, 100 - n, " v=%d", track->chvol.srcbuf.count);
-	if (track->codec.filter)
-		n += snprintf(buf + n, 100 - n, " e=%d", track->codec.srcbuf.count);
-	TRACE(track, "end out=%d/%d/%d%s usr=%d/%d/%d",
-	    track->outputbuf.top, track->outputbuf.count, track->outputbuf.capacity,
-	    buf,
-		track->usrbuf.top, track->usrbuf.count, track->usrbuf.capacity
-	);
-#endif
+	AUDIO_DEBUG_BUFS(track, "end");
+}
+
+// 録音時、ミキサーによってトラックの outputbuf に渡されたブロックを
+// ユーザランド用に変換します。
+void
+audio_track_record(audio_track_t *track)
+{
+	int count;
+
+	KASSERT(track);
+
+	TRACE(track, "");
+
+	// 処理するフレーム数
+	count = audio_ring_unround_count(track->input);
+	count = min(count, track->mixer->frames_per_block);
+	if (count == 0)
+		return;
+
+	// 周波数変換
+	if (track->freq.filter != NULL) {
+		TRACE(track, "not implement");
+	}
+
+	// チャンネルミキサ
+	audio_apply_stage(track, &track->chmix, false);
+
+	// チャンネルボリューム
+	audio_apply_stage(track, &track->chvol, false);
+
+	// エンコーディング変換
+	audio_apply_stage(track, &track->codec, false);
+
+	// XXX カウンタの意味をもうちょい定義したほうがいい
+
+	AUDIO_DEBUG_BUFS(track, "end");
 }
 
 // blktime は1ブロックの時間 [msec]。
@@ -1458,7 +1514,8 @@ audio_pmixer_mixall(audio_trackmixer_t *mixer, int req, bool isintr)
 	SLIST_FOREACH(f, &sc->sc_files, entry) {
 		audio_track_t *track = f->ptrack;
 
-		KASSERT(track);
+		if (track == NULL)
+			continue;
 
 #if !defined(AUDIO_SOFTINTR)
 		if (isintr) {
@@ -1680,7 +1737,7 @@ audio_pmixer_process(audio_trackmixer_t *mixer, bool isintr)
 	}
 }
 
-// ハードウェアバッファから 1 ブロック出力
+// ハードウェアバッファから 1 ブロック出力します。
 // sc_intr_lock で呼び出してください。
 void
 audio_pmixer_output(audio_trackmixer_t *mixer)
@@ -1801,6 +1858,134 @@ audio_pmixer_softintr(void *arg)
 }
 #endif
 
+// 録音ミキサを起動します。起動できれば true を返します。
+// すでに起動されていれば何もせず true を返します。
+// 割り込みコンテキストから呼び出してはいけません。
+bool
+audio_rmixer_start(audio_trackmixer_t *mixer)
+{
+	struct audio_softc *sc;
+
+	sc = mixer->sc;
+	KASSERT(mutex_owned(sc->sc_lock));
+	KASSERT(!mutex_owned(sc->sc_intr_lock));
+
+	// すでに再生ミキサが起動していたら、true を返す
+	if (sc->sc_pbusy)
+		return true;
+
+	TRACE0("begin");
+
+	mutex_enter(sc->sc_intr_lock);
+	audio_rmixer_input(mixer);
+	mutex_exit(sc->sc_intr_lock);
+
+	return sc->sc_pbusy;
+}
+
+// hwbuf を全トラックへ分配します。
+void
+audio_rmixer_process(audio_trackmixer_t *mixer)
+{
+	struct audio_softc *sc;
+	audio_file_t *f;
+
+	sc = mixer->sc;
+
+	// 今回取り出すフレーム数を決定
+	// 実際には hwbuf はブロック単位で変動するはずなので
+	// count は1ブロック分になるはず
+	int hw_count = audio_ring_unround_count(&mixer->hwbuf);
+	int frame_count = min(hw_count, mixer->frames_per_block);
+	if (frame_count <= 0) {
+		TRACE0("count too short: hw_count=%d frames_per_block=%d",
+		    hw_count, mixer->frames_per_block);
+		return;
+	}
+	int sample_count = frame_count * mixer->mixfmt.channels;
+
+	// 全トラックへ分配
+	SLIST_FOREACH(f, &sc->sc_files, entry) {
+		audio_track_t *track = f->rtrack;
+
+		if (track == NULL)
+			continue;
+
+		// XXX input は今の所1ブロックしかないはずだが
+		// XXX なんかいろいろこれでいいんかな
+		audio_ring_t *input = track->input;
+		memcpy(RING_BOT(internal_t, input),
+		    RING_TOP(internal_t, &mixer->hwbuf),
+		    sample_count * mixer->hwbuf.fmt.stride / 8);
+		audio_ring_appended(input, frame_count);
+
+		// XXX シーケンスいるんだっけ
+
+		// audio_read() にブロックが来たことを通知
+		cv_broadcast(&track->outchan);
+
+		TRACE(track, "broadcast; out=%d/%d/%d",
+		    track->outputbuf.top, track->outputbuf.count, track->outputbuf.capacity);
+	}
+
+	audio_ring_tookfromtop(&mixer->hwbuf, frame_count);
+}
+
+// ハードウェアバッファに1ブロック入力を開始します。
+// sc_intr_lock で呼び出してください。
+static void
+audio_rmixer_input(audio_trackmixer_t *mixer)
+{
+	struct audio_softc *sc;
+
+	sc = mixer->sc;
+	KASSERT(mutex_owned(sc->sc_intr_lock));
+
+	if (sc->hw_if->trigger_input) {
+		if (!sc->sc_rbusy) {
+			audio2_trigger_input(
+				mixer,
+				mixer->hwbuf.sample,
+				RING_END_UINT8(&mixer->hwbuf),
+				frametobyte(&mixer->hwbuf.fmt, mixer->frames_per_block));
+		}
+	} else {
+		audio2_start_input(
+			mixer,
+			RING_TOP_UINT8(&mixer->hwbuf),
+			frametobyte(&mixer->hwbuf.fmt, mixer->frames_per_block));
+	}
+	sc->sc_rbusy = true;
+}
+
+// 割り込みハンドラ
+// sc_intr_lock で呼び出されます。
+void
+audio_rmixer_intr(audio_trackmixer_t *mixer)
+{
+	struct audio_softc *sc __diagused;
+
+	sc = mixer->sc;
+	KASSERT(mutex_owned(sc->sc_intr_lock));
+
+	mixer->hw_complete_counter += mixer->frames_per_block;
+	mixer->hwseq++;
+
+	audio_ring_appended(&mixer->hwbuf, mixer->frames_per_block);
+
+	TRACE0("HW_INT ++hwseq=%d cmplcnt=%d hwbuf=%d/%d/%d",
+		(int)mixer->hwseq,
+		(int)mixer->hw_complete_counter,
+		mixer->hwbuf.top, mixer->hwbuf.count, mixer->hwbuf.capacity);
+
+	// このバッファを分配する
+	audio_rmixer_process(mixer);
+
+	// 次のバッファを要求
+	audio_rmixer_input(mixer);
+}
+
+
 static void
 audio2_pintr(void *arg)
 {
@@ -1858,6 +2043,69 @@ audio2_halt_output(struct audio_softc *sc)
 	sc->sc_pmixer->hwbuf.count = 0;
 	sc->sc_pmixer->mixseq = 0;
 	sc->sc_pmixer->hwseq = 0;
+
+	return error;
+}
+
+static void
+audio2_rintr(void *arg)
+{
+	struct audio_softc *sc;
+	audio_trackmixer_t *mixer;
+
+	sc = arg;
+	KASSERT(mutex_owned(sc->sc_intr_lock));
+
+	mixer = sc->sc_rmixer;
+
+	audio_rmixer_intr(mixer);
+}
+
+static int
+audio2_trigger_input(audio_trackmixer_t *mixer, void *start, void *end, int blksize)
+{
+	struct audio_softc *sc = mixer->sc;
+
+	KASSERT(sc->hw_if->trigger_input != NULL);
+	KASSERT(mutex_owned(sc->sc_intr_lock));
+
+	audio_params_t params;
+	// TODO: params 作る
+	params = format2_to_params(&mixer->hwbuf.fmt);
+	int error = sc->hw_if->trigger_input(sc->hw_hdl, start, end, blksize,
+	    audio2_rintr, sc, &params);
+	return error;
+}
+
+static int
+audio2_start_input(audio_trackmixer_t *mixer, void *start, int blksize)
+{
+	struct audio_softc *sc = mixer->sc;
+
+	KASSERT(sc->hw_if->start_input != NULL);
+	KASSERT(mutex_owned(sc->sc_intr_lock));
+
+	int error = sc->hw_if->start_input(sc->hw_hdl, start, blksize,
+	    audio2_rintr, sc);
+	return error;
+}
+
+int
+audio2_halt_input(struct audio_softc *sc)
+{
+	int error;
+
+	TRACE0("");
+	KASSERT(mutex_owned(sc->sc_lock));
+	KASSERT(mutex_owned(sc->sc_intr_lock));
+
+	error = sc->hw_if->halt_input(sc->hw_hdl);
+	// エラーが起きても停止は停止する
+	sc->sc_rbusy = false;
+	sc->sc_rmixer->hwbuf.top = 0;
+	sc->sc_rmixer->hwbuf.count = 0;
+	sc->sc_rmixer->mixseq = 0;
+	sc->sc_rmixer->hwseq = 0;
 
 	return error;
 }
@@ -1932,8 +2180,7 @@ audio_write_uiomove(audio_track_t *track, int bottom, int len, struct uio *uio)
 	usrbuf = &track->usrbuf;
 	error = uiomove((uint8_t *)usrbuf->sample + bottom, len, uio);
 	if (error) {
-		TRACE(track, "uiomove(len=%d) failed: %d",
-		    len, error);
+		TRACE(track, "uiomove(len=%d) failed: %d", len, error);
 		return error;
 	}
 	audio_ring_appended(usrbuf, len);
@@ -2079,6 +2326,119 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 #if !defined(_KERNEL)
 		emu_intr_check();
 #endif
+	}
+
+	return error;
+}
+
+// track の usrbuf の top から len バイトを uiomove します。
+// リングバッファの折り返しはしません。
+static inline int
+audio_read_uiomove(audio_track_t *track, int top, int len, struct uio *uio)
+{
+	audio_ring_t *usrbuf;
+	int error;
+
+	usrbuf = &track->usrbuf;
+	error = uiomove((uint8_t *)usrbuf->sample + top, len, uio);
+	if (error) {
+		TRACE(track, "uiomove(len=%d) failed: %d", len, error);
+		return error;
+	}
+	audio_ring_tookfromtop(usrbuf, len);
+	track->outputcounter += len;	// XXX カウンタのin/outこっちでいいか
+	TRACE(track, "uiomove(len=%d) usrbuf=%d/%d/%d",
+	    len,
+	    usrbuf->top, usrbuf->count, usrbuf->capacity);
+	return 0;
+}
+
+int
+audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
+	audio_file_t *file)
+{
+	int error;
+	audio_track_t *track = file->rtrack;
+	KASSERT(track);
+	TRACE(track, "resid=%u", (int)uio->uio_resid);
+
+	KASSERT(mutex_owned(sc->sc_lock));
+
+	if (sc->hw_if == NULL)
+		return ENXIO;
+
+	// XXX read(0) はどうなる?
+	if (uio->uio_resid == 0) {
+		sc->sc_eof++;
+		return 0;
+	}
+
+	// mmaped なら error
+
+#ifdef AUDIO_PM_IDLE
+	if (device_is_active(&sc->dev) || sc->sc_idle)
+		device_active(&sc->dev, DVA_SYSTEM);
+#endif
+
+	/*
+	 * If hardware is half-duplex and currently playing, return
+	 * silence blocks based on the number of blocks we have output.
+	 */
+	// ハードウェアが half-duplex で現在再生中なら、無音ブロックを返す
+	// ここは外部仕様になるので変えない
+	// XXX ちょっと後回し
+
+	TRACE(track, "resid=%zd", uio->uio_resid);
+
+	error = 0;
+	while (uio->uio_resid > 0 && error == 0) {
+		int bytes;
+
+		audio_ring_t *usrbuf = &track->usrbuf;
+		audio_track_enter_colock(sc, track);
+
+		TRACE(track, "while resid=%zd usrbuf=%d/%d/%d",
+		    uio->uio_resid,
+		    usrbuf->top, usrbuf->count, usrbuf->capacity);
+
+		if (track->input->count == 0) {
+			// rec バッファが空ならここで待機
+#if !defined(START_ON_OPEN)
+			audio_rmixer_start(sc->sc_rmixer);
+#endif
+			if (ioflag & IO_NDELAY)
+				return EWOULDBLOCK;
+
+			audio_track_leave_colock(sc, track);
+			error = audio_waitio(sc, track);
+			if (error)
+				return error;
+			continue;
+		}
+
+		audio_track_record(track);
+		audio_track_leave_colock(sc, track);
+
+		bytes = min(usrbuf->count, uio->uio_resid);
+		int top = usrbuf->top;
+		if (top + bytes < usrbuf->capacity) {
+			error = audio_read_uiomove(track, top, bytes, uio);
+			if (error)
+				break;
+		} else {
+			int bytes1;
+			int bytes2;
+
+			bytes1 = usrbuf->capacity - top;
+			error = audio_read_uiomove(track, top, bytes1, uio);
+			if (error)
+				break;
+
+			bytes2 = bytes - bytes1;
+			error = audio_read_uiomove(track, 0, bytes2, uio);
+			if (error)
+				break;
+		}
 	}
 
 	return error;

@@ -42,6 +42,7 @@ void audio_track_destroy(audio_track_t *track);
 int audio_track_set_format(audio_track_t *track, audio_format2_t *track_fmt);
 void audio_track_play(audio_track_t *track, bool isdrain);
 int audio_track_drain(audio_track_t *track);
+void audio_track_record(audio_track_t *track);
 
 int audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode);
 void audio_mixer_destroy(audio_trackmixer_t *mixer, int mode);
@@ -49,11 +50,17 @@ bool audio_pmixer_start(audio_trackmixer_t *mixer, bool force);
 void audio_pmixer_process(audio_trackmixer_t *mixer, bool isintr);
 int  audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req, int mixed);
 void audio_pmixer_intr(audio_trackmixer_t *mixer);
+bool audio_rmixer_start(audio_trackmixer_t *mixer);
+void audio_rmixer_process(audio_trackmixer_t *mixer);
+void audio_rmixer_intr(audio_trackmixer_t *mixer);
 
 int  audio2_halt_output(struct audio_softc *sc);
+int  audio2_halt_input(struct audio_softc *sc);
 
 /* glue layer */
 int audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *file); /* write の MI 側 */
+int audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
+	audio_file_t *file);
 
 #if !defined(_KERNEL)
 

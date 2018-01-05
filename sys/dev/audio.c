@@ -188,7 +188,7 @@ static int audio_open(dev_t, struct audio_softc *, int, int, struct lwp *,
 		      struct file **);
 static int audio_drain(struct audio_softc *, audio_track_t *);
 static int audio_close(struct audio_softc *, int, audio_file_t *);
-static int audio_read(struct audio_softc *, struct uio *, int, audio_file_t *);
+//static int audio_read(struct audio_softc *, struct uio *, int, audio_file_t *);
 //static int audio_write(struct audio_softc *, struct uio *, int, audio_file_t *);
 static void audio_file_clear(struct audio_softc *, audio_file_t *);
 static void audio_hw_clear(struct audio_softc *);
@@ -1685,39 +1685,7 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 	return 0;
 }
 
-int
-audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
-	audio_file_t *file)
-{
-	int error;
-
-	KASSERT(mutex_owned(sc->sc_lock));
-
-	// いる?
-	if (sc->hw_if == NULL)
-		return ENXIO;
-
-	if (!audio_file_can_record(file))
-		return ENXIO;
-
-	// mmaped なら error
-
-#ifdef AUDIO_PM_IDLE
-	if (device_is_active(&sc->dev) || sc->sc_idle)
-		device_active(&sc->dev, DVA_SYSTEM);
-#endif
-
-	error = 0;
-	/*
-	 * If hardware is half-duplex and currently playing, return
-	 * silence blocks based on the number of blocks we have output.
-	 */
-	// ハードウェアが half-duplex で現在再生中なら、無音ブロックを返す
-	// ここは外部仕様になるので変えない
-
-	// そうでなければリード
-	return error;	/* XXX */
-}
+// ここに audio_read
 
 // 従来は、再生も録音もその場で停止、hw halt_input/output も呼ぶ、だった。
 // drain と違ってその場で終了させる。
