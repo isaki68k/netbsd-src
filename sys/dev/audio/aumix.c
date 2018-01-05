@@ -2068,13 +2068,13 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 				// trkbuf が一杯ならここで待機
 				audio_track_leave_colock(sc, track);
 				error = audio_waitio(sc, track);
-				audio_track_enter_colock(sc, track);
 				if (error != 0) {
 					if (error < 0) {
 						error = EINTR;
 					}
 					return error;
 				}
+				audio_track_enter_colock(sc, track);
 				continue;
 			}
 
