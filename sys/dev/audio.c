@@ -3467,7 +3467,7 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 		}
 		if (rtrack) {
 			au_get_gain(sc, &sc->sc_inports, &gain, &ri->balance);
-			ri->gain = ptrack->volume;
+			ri->gain = rtrack->volume;
 		}
 
 		if (sc->sc_monitor_port != -1) {
