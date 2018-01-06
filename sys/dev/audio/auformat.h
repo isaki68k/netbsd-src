@@ -86,6 +86,8 @@ frametobyte(const audio_format2_t *fmt, int frames)
 	return frames * fmt->channels * fmt->stride / 8;
 }
 
+// 周波数が fmt(.sample_rate) で表されるエンコーディングの
+// 1ブロックのフレーム数を返します。
 static inline int
 frame_per_block_roundup(const audio_trackmixer_t *mixer, const audio_format2_t *fmt)
 {
