@@ -48,11 +48,6 @@
  * }
  */
 
-#if defined(_KERNEL)
-#define lock(x)					/*とりあえず*/
-#define unlock(x)				/*とりあえず*/
-#endif
-
 #define audio_free(mem)	do {	\
 	if (mem != NULL) {	\
 		kern_free(mem);	\
