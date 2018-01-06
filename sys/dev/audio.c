@@ -2869,8 +2869,8 @@ static int
 audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	const struct audio_info *ai)
 {
-	const struct audio_prinfo *p;
-	const struct audio_prinfo *r;
+	const struct audio_prinfo *pi;
+	const struct audio_prinfo *ri;
 	audio_track_t *play;
 	audio_track_t *rec;
 	audio_format2_t pfmt;
@@ -2888,8 +2888,8 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	int saved_mode;
 	int error;
 
-	p = &ai->play;
-	r = &ai->record;
+	pi = &ai->play;
+	ri = &ai->record;
 	pchanges = 0;
 	rchanges = 0;
 
@@ -2903,20 +2903,20 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	n += snprintf(buf + n, sizeof(buf) - n, fmt);	\
 } while (0)
 
-	if (SPECIFIED(p->encoding)) {
-		SNPRINTF(" enc=%d", p->encoding);
+	if (SPECIFIED(pi->encoding)) {
+		SNPRINTF(" enc=%d", pi->encoding);
 		pchanges++;
 	}
-	if (SPECIFIED(p->precision)) {
-		SNPRINTF(" prec=%d", p->precision);
+	if (SPECIFIED(pi->precision)) {
+		SNPRINTF(" prec=%d", pi->precision);
 		pchanges++;
 	}
-	if (SPECIFIED(p->channels)) {
-		SNPRINTF(" ch=%d", p->channels);
+	if (SPECIFIED(pi->channels)) {
+		SNPRINTF(" ch=%d", pi->channels);
 		pchanges++;
 	}
-	if (SPECIFIED(p->sample_rate)) {
-		SNPRINTF(" freq=%d", p->sample_rate);
+	if (SPECIFIED(pi->sample_rate)) {
+		SNPRINTF(" freq=%d", pi->sample_rate);
 		pchanges++;
 	}
 	if (pchanges) {
@@ -2925,20 +2925,20 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 		pchanges = 0;
 	}
 
-	if (SPECIFIED(r->encoding)) {
-		SNPRINTF(" enc=%d", r->encoding);
+	if (SPECIFIED(ri->encoding)) {
+		SNPRINTF(" enc=%d", ri->encoding);
 		rchanges++;
 	}
-	if (SPECIFIED(r->precision)) {
-		SNPRINTF(" prec=%d", r->precision);
+	if (SPECIFIED(ri->precision)) {
+		SNPRINTF(" prec=%d", ri->precision);
 		rchanges++;
 	}
-	if (SPECIFIED(r->channels)) {
-		SNPRINTF(" ch=%d", r->channels);
+	if (SPECIFIED(ri->channels)) {
+		SNPRINTF(" ch=%d", ri->channels);
 		rchanges++;
 	}
-	if (SPECIFIED(r->sample_rate)) {
-		SNPRINTF(" freq=%d", r->sample_rate);
+	if (SPECIFIED(ri->sample_rate)) {
+		SNPRINTF(" freq=%d", ri->sample_rate);
 		rchanges++;
 	}
 	if (rchanges) {
@@ -3012,12 +3012,12 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	}
 	// ここから mode は変更後の希望するモード。
 	if (play && (mode & AUMODE_PLAY) != 0) {
-		pchanges = audio_file_setinfo_check(&pfmt, p);
+		pchanges = audio_file_setinfo_check(&pfmt, pi);
 		if (pchanges == -1)
 			return EINVAL;
 	}
 	if (rec && (mode & AUMODE_RECORD) != 0) {
-		rchanges = audio_file_setinfo_check(&rfmt, r);
+		rchanges = audio_file_setinfo_check(&rfmt, ri);
 		if (rchanges == -1)
 			return EINVAL;
 	}
@@ -3042,14 +3042,14 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	error = 0;
 	file->mode = mode;
 	if (play) {
-		error = audio_file_setinfo_set(play, p, pchanges, &pfmt,
+		error = audio_file_setinfo_set(play, pi, pchanges, &pfmt,
 		    (mode & (AUMODE_PLAY | AUMODE_PLAY_ALL)));
 		if (error)
 			goto abort1;
 		sc->sc_pparams = pfmt;
 	}
 	if (rec) {
-		error = audio_file_setinfo_set(rec, r, rchanges, &rfmt,
+		error = audio_file_setinfo_set(rec, ri, rchanges, &rfmt,
 		    (mode & AUMODE_RECORD));
 		if (error)
 			goto abort2;
@@ -3172,8 +3172,8 @@ audio_file_setinfo_set(audio_track_t *track, const struct audio_prinfo *info,
 static int
 audio_setinfo_hw(struct audio_softc *sc, struct audio_info *ai)
 {
-	struct audio_prinfo *p;
-	struct audio_prinfo *r;
+	struct audio_prinfo *pi;
+	struct audio_prinfo *ri;
 	int pbusy;
 	int rbusy;
 	u_int pport;
@@ -3186,8 +3186,8 @@ audio_setinfo_hw(struct audio_softc *sc, struct audio_info *ai)
 	bool cleared;
 	int error;
 
-	p = &ai->play;
-	r = &ai->record;
+	pi = &ai->play;
+	ri = &ai->record;
 	pbusy = sc->sc_pbusy;
 	rbusy = sc->sc_rbusy;
 	cleared = false;
@@ -3197,32 +3197,32 @@ audio_setinfo_hw(struct audio_softc *sc, struct audio_info *ai)
 	pport = 0;
 	rport = 0;
 
-	if (SPECIFIED(p->port) || SPECIFIED(r->port)) {
+	if (SPECIFIED(pi->port) || SPECIFIED(ri->port)) {
 		audio_hw_clear(sc);
 		cleared = true;
 	}
-	if (SPECIFIED(p->port)) {
+	if (SPECIFIED(pi->port)) {
 		pport = au_get_port(sc, &sc->sc_outports);
-		error = au_set_port(sc, &sc->sc_outports, p->port);
+		error = au_set_port(sc, &sc->sc_outports, pi->port);
 		if (error)
 			goto abort1;
 	}
-	if (SPECIFIED(r->port)) {
+	if (SPECIFIED(ri->port)) {
 		rport = au_get_port(sc, &sc->sc_inports);
-		error = au_set_port(sc, &sc->sc_inports, r->port);
+		error = au_set_port(sc, &sc->sc_inports, ri->port);
 		if (error)
 			goto abort2;
 	}
 
-	if (SPECIFIED_CH(p->balance)) {
+	if (SPECIFIED_CH(pi->balance)) {
 		au_get_gain(sc, &sc->sc_outports, &pgain, &pbalance);
-		error = au_set_gain(sc, &sc->sc_outports, pgain, p->balance);
+		error = au_set_gain(sc, &sc->sc_outports, pgain, pi->balance);
 		if (error)
 			goto abort3;
 	}
-	if (SPECIFIED_CH(r->balance)) {
+	if (SPECIFIED_CH(ri->balance)) {
 		au_get_gain(sc, &sc->sc_inports, &rgain, &rbalance);
-		error = au_set_gain(sc, &sc->sc_inports, rgain, r->balance);
+		error = au_set_gain(sc, &sc->sc_inports, rgain, ri->balance);
 		if (error)
 			goto abort4;
 	}
@@ -3253,16 +3253,16 @@ abort5:
 			au_set_monitor_gain(sc, monitor_gain);
 	}
 abort4:
-	if (SPECIFIED_CH(r->balance))
+	if (SPECIFIED_CH(ri->balance))
 		au_set_gain(sc, &sc->sc_inports, rgain, rbalance);
 abort3:
-	if (SPECIFIED_CH(p->balance))
+	if (SPECIFIED_CH(pi->balance))
 		au_set_gain(sc, &sc->sc_outports, pgain, pbalance);
 abort2:
-	if (SPECIFIED(r->port))
+	if (SPECIFIED(ri->port))
 		au_set_port(sc, &sc->sc_inports, rport);
 abort1:
-	if (SPECIFIED(p->port))
+	if (SPECIFIED(pi->port))
 		au_set_port(sc, &sc->sc_outports, pport);
 	if (cleared) {
 		if (pbusy)
@@ -3360,15 +3360,15 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 	audio_file_t *file)
 {
 	const struct audio_hw_if *hw;
-	struct audio_prinfo *r, *p;
+	struct audio_prinfo *ri, *pi;
 	audio_track_t *ptrack;
 	audio_track_t *rtrack;
 	int gain;
 
 	KASSERT(mutex_owned(sc->sc_lock));
 
-	r = &ai->record;
-	p = &ai->play;
+	ri = &ai->record;
+	pi = &ai->play;
 	hw = sc->hw_if;
 	if (hw == NULL)		/* HW has not attached */
 		return ENXIO;
@@ -3379,26 +3379,26 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 	memset(ai, 0, sizeof(*ai));
 
 	if (ptrack) {
-		p->sample_rate = ptrack->inputfmt.sample_rate;
-		p->channels    = ptrack->inputfmt.channels;
-		p->precision   = ptrack->inputfmt.precision;
-		p->encoding    = ptrack->inputfmt.encoding;
+		pi->sample_rate = ptrack->inputfmt.sample_rate;
+		pi->channels    = ptrack->inputfmt.channels;
+		pi->precision   = ptrack->inputfmt.precision;
+		pi->encoding    = ptrack->inputfmt.encoding;
 	} else {
-		p->sample_rate = sc->sc_pparams.sample_rate;
-		p->channels    = sc->sc_pparams.channels;
-		p->precision   = sc->sc_pparams.precision;
-		p->encoding    = sc->sc_pparams.encoding;
+		pi->sample_rate = sc->sc_pparams.sample_rate;
+		pi->channels    = sc->sc_pparams.channels;
+		pi->precision   = sc->sc_pparams.precision;
+		pi->encoding    = sc->sc_pparams.encoding;
 	}
 	if (rtrack) {
-		r->sample_rate = rtrack->outputbuf.fmt.sample_rate;
-		r->channels    = rtrack->outputbuf.fmt.channels;
-		r->precision   = rtrack->outputbuf.fmt.precision;
-		r->encoding    = rtrack->outputbuf.fmt.encoding;
+		ri->sample_rate = rtrack->outputbuf.fmt.sample_rate;
+		ri->channels    = rtrack->outputbuf.fmt.channels;
+		ri->precision   = rtrack->outputbuf.fmt.precision;
+		ri->encoding    = rtrack->outputbuf.fmt.encoding;
 	} else {
-		r->sample_rate = sc->sc_rparams.sample_rate;
-		r->channels    = sc->sc_rparams.channels;
-		r->precision   = sc->sc_rparams.precision;
-		r->encoding    = sc->sc_rparams.encoding;
+		ri->sample_rate = sc->sc_rparams.sample_rate;
+		ri->channels    = sc->sc_rparams.channels;
+		ri->precision   = sc->sc_rparams.precision;
+		ri->encoding    = sc->sc_rparams.encoding;
 	}
 
 	// audio(4) より
@@ -3416,28 +3416,28 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 	if (ptrack) {
 		// たぶんバッファ中の現在位置でいいんじゃないかなあ
 		// XXX ただどのバッファをさすべきかはよく分からん
-		p->seek = ptrack->usrbuf.top;
-		p->samples = ptrack->inputcounter;
-		p->eof = sc->sc_eof;
-		p->pause = ptrack->is_pause;
-		p->error = 0;			// XXX
-		p->waiting = 0;			/* open never hangs */
-		p->open = 1;
-		p->active = sc->sc_pbusy;// XXX 厳密ではない ?
-		p->buffer_size = ptrack->usrbuf.capacity;
+		pi->seek = ptrack->usrbuf.top;
+		pi->samples = ptrack->inputcounter;
+		pi->eof = sc->sc_eof;
+		pi->pause = ptrack->is_pause;
+		pi->error = 0;			// XXX
+		pi->waiting = 0;			/* open never hangs */
+		pi->open = 1;
+		pi->active = sc->sc_pbusy;// XXX 厳密ではない ?
+		pi->buffer_size = ptrack->usrbuf.capacity;
 	}
 	if (rtrack) {
 		// たぶんバッファ中の現在位置でいいんじゃないかなあ
 		// XXX ただどのバッファをさすべきかはよく分からん
-		r->seek = rtrack->usrbuf.top;
-		r->samples = rtrack->inputcounter;
-		r->eof = sc->sc_eof;
-		r->pause = rtrack->is_pause;
-		r->error = 0;			// XXX
-		r->waiting = 0;			/* open never hangs */
-		r->open = 1;
-		r->active = sc->sc_rbusy;// XXX ?
-		r->buffer_size = rtrack->outputbuf.capacity *
+		ri->seek = rtrack->usrbuf.top;
+		ri->samples = rtrack->inputcounter;
+		ri->eof = sc->sc_eof;
+		ri->pause = rtrack->is_pause;
+		ri->error = 0;			// XXX
+		ri->waiting = 0;			/* open never hangs */
+		ri->open = 1;
+		ri->active = sc->sc_rbusy;// XXX ?
+		ri->buffer_size = rtrack->outputbuf.capacity *
 		    (rtrack->outputbuf.fmt.channels *
 		     rtrack->outputbuf.fmt.stride / NBBY);
 	}
@@ -3455,19 +3455,19 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 	ai->lowat = 1;
 
 	if (need_mixerinfo) {
-		p->port = au_get_port(sc, &sc->sc_outports);
-		r->port = au_get_port(sc, &sc->sc_inports);
+		pi->port = au_get_port(sc, &sc->sc_outports);
+		ri->port = au_get_port(sc, &sc->sc_inports);
 
-		p->avail_ports = sc->sc_outports.allports;
-		r->avail_ports = sc->sc_inports.allports;
+		pi->avail_ports = sc->sc_outports.allports;
+		ri->avail_ports = sc->sc_inports.allports;
 
 		if (ptrack) {
-			au_get_gain(sc, &sc->sc_outports, &gain, &p->balance);
-			p->gain = ptrack->volume;
+			au_get_gain(sc, &sc->sc_outports, &gain, &pi->balance);
+			pi->gain = ptrack->volume;
 		}
 		if (rtrack) {
-			au_get_gain(sc, &sc->sc_inports, &gain, &r->balance);
-			r->gain = ptrack->volume;
+			au_get_gain(sc, &sc->sc_inports, &gain, &ri->balance);
+			ri->gain = ptrack->volume;
 		}
 
 		if (sc->sc_monitor_port != -1) {
