@@ -3152,8 +3152,11 @@ audio_file_setinfo_set(audio_track_t *track, const struct audio_prinfo *info,
 	}
 
 	if (SPECIFIED(info->gain)) {
-		if (info->gain > 255)
+		if (info->gain > AUDIO_MAX_GAIN) {
+			DPRINTF(1, "%s: info.gain(%d) out of range\n",
+			    __func__, info->gain);
 			return EINVAL;
+		}
 		track->volume = info->gain;
 	}
 	if (SPECIFIED_CH(info->pause)) {
