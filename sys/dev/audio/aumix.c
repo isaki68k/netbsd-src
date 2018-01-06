@@ -1899,10 +1899,10 @@ audio_track_drain(audio_track_t *track)
 
 	track->is_draining = true;
 
-	// トラックに書き込まれたデータは audio_write() 時点で基本的に
-	// outputbuf に変換済み。ただし最終ブロックだけが1ブロックに満たない
-	// ため (満たない場合) usrbuf に滞留しているため、この1ブロックを
-	// 無音パディングして outputbuf に書き込む。
+	// トラックに書き込まれたデータは audio_write() によって基本的に
+	// outputbuf に変換済み。ただし最終ブロックだけ、1ブロックに満たない
+	// 場合はそれが usrbuf に滞留しているため、この1ブロックを
+	// 無音パディングして outputbuf に書き込む動作が必要。
 	// そのためここは1回だけでいい。
 	audio_track_enter_colock(sc, track);
 	audio_track_play(track, true);
