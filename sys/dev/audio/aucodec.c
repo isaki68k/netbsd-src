@@ -63,6 +63,14 @@ audio_MI_codec_filter_init(audio_filter_arg_t *arg)
 			}
 		}
 	}
+
+#if defined(AUDIO_DEBUG)
+	char buf[100];
+	audio_format2_tostr(buf, sizeof(buf), arg->srcfmt);
+	printf("%s: src %s\n", __func__, buf);
+	audio_format2_tostr(buf, sizeof(buf), arg->dstfmt);
+	printf("%s: dst %s\n", __func__, buf);
+#endif
 	panic("unsupported encoding");
 }
 
