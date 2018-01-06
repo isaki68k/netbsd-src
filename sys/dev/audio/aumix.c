@@ -838,18 +838,18 @@ done:
 // トラックのユーザランド側フォーマットを設定します。
 // 変換用内部バッファは一度破棄されます。
 int
-audio_track_set_format(audio_track_t *track, audio_format2_t *fmt)
+audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 {
 	KASSERT(track);
 
 	TRACE(track, "");
-	KASSERT(is_valid_format(fmt));
+	KASSERT(is_valid_format(usrfmt));
 	KASSERT(mutex_owned(audio_mixer_get_lock(track->mixer)));
 
 	// 入力値チェック
 #if defined(_KERNEL)
 	// XXX audio.c にある。どうしたもんか
-	audio_check_params2(fmt);
+	audio_check_params2(usrfmt);
 #endif
 
 	// TODO: まず現在のバッファとかを全部破棄すると分かり易いが。
@@ -858,7 +858,7 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *fmt)
 	if (audio_track_is_playback(track)) {
 		// 再生はトラックミキサ側から作る
 
-		track->inputfmt = *fmt;
+		track->inputfmt = *usrfmt;
 		track->outputbuf.fmt =  track->mixer->track_fmt;
 
 		if ((last_dst = init_freq(track, last_dst)) == NULL)
@@ -873,7 +873,7 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *fmt)
 		// 録音はユーザランド側から作る
 
 		track->inputfmt = track->mixer->track_fmt;
-		track->outputbuf.fmt = *fmt;
+		track->outputbuf.fmt = *usrfmt;
 
 		if ((last_dst = init_codec(track, last_dst)) == NULL)
 			goto error;
@@ -904,7 +904,7 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *fmt)
 	}
 	// usrbuf の fmt は1フレーム=1バイトになるようにしておくが
 	// 基本 fmt は参照せず 1フレーム=1バイトでコーディングしたほうがいいか。
-	track->usrbuf.fmt = *fmt;
+	track->usrbuf.fmt = *usrfmt;
 	track->usrbuf.fmt.channels = 1;
 	track->usrbuf.fmt.precision = 8;
 	track->usrbuf.fmt.stride = 8;
