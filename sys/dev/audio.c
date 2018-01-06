@@ -3157,7 +3157,7 @@ audio_file_setinfo_set(audio_track_t *track, const struct audio_prinfo *info,
 			    __func__, info->gain);
 			return EINVAL;
 		}
-		track->volume = info->gain;
+		track->volume = audio_volume_to_inner(info->gain);
 	}
 	if (SPECIFIED_CH(info->pause)) {
 		track->is_pause = info->pause;
@@ -3466,11 +3466,11 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 
 		if (ptrack) {
 			au_get_gain(sc, &sc->sc_outports, &gain, &pi->balance);
-			pi->gain = ptrack->volume;
+			pi->gain = audio_volume_to_outer(ptrack->volume);
 		}
 		if (rtrack) {
 			au_get_gain(sc, &sc->sc_inports, &gain, &ri->balance);
-			ri->gain = rtrack->volume;
+			ri->gain = audio_volume_to_outer(rtrack->volume);
 		}
 
 		if (sc->sc_monitor_port != -1) {
@@ -3530,6 +3530,7 @@ audio_can_capture(struct audio_softc *sc)
 	return sc->sc_can_capture;
 }
 
+// デバッグ目的なのでボリュームは内部表現(0..256)
 static int
 audio_sysctl_volume(SYSCTLFN_ARGS)
 {

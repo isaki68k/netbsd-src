@@ -56,8 +56,6 @@
 } while (0)
 
 void *audio_realloc(void *memblock, size_t bytes);
-int16_t audio_volume_to_inner(uint8_t v);
-uint8_t audio_volume_to_outer(int16_t v);
 static int audio_pmixer_mixall(audio_trackmixer_t *mixer, int req, bool isintr);
 void audio_pmixer_output(audio_trackmixer_t *mixer);
 #if defined(AUDIO_SOFTINTR)
@@ -169,24 +167,6 @@ audio_rational_cmp(audio_rational_t *a, audio_rational_t *b)
 	return r;
 }
 #endif /* FREQ_ORIG */
-
-/*
- * audio_volume
- */
-
- /* ユーザランドなどで使用される 0.255 ボリュームを、トラック内の 0..256 ボリュームに変換します。 */
-int16_t
-audio_volume_to_inner(uint8_t v)
-{
-	return v < 127 ? v : (int16_t)v + 1;
-}
-
-/* トラック内の 0..256 ボリュームを、外部で使用される 0..255 ボリュームに変換します。 */
-uint8_t
-audio_volume_to_outer(int16_t v)
-{
-	return v < 127 ? v : v - 1;
-}
 
 
 /*

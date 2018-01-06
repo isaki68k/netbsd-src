@@ -140,7 +140,7 @@ struct audio_track
 #endif
 
 	uint16_t  ch_volume[AUDIO_MAX_CHANNELS];	/* チャンネルバランス用 チャンネルボリューム */
-	uint               volume;			/* トラックボリューム。トラックボリュームはトラックミキサで処理。 */
+	uint               volume;			// トラックボリューム (内部表現 0..256)
 
 	audio_trackmixer_t  *mixer;			/* 接続されているトラックミキサ */
 
@@ -257,4 +257,20 @@ params_to_format2(const struct audio_params *p)
 	f2.precision   = p->validbits;
 	f2.stride      = p->precision;
 	return f2;
+}
+
+// ユーザランドで使用される 0..255 ボリュームを、トラック内の内部表現である
+// 0..256 ボリュームに変換します。
+static inline u_int
+audio_volume_to_inner(u_int v)
+{
+	return v < 127 ? v : v + 1;
+}
+
+// トラック内の内部表現である 0..256 ボリュームを、外部で使用される 0..255
+// ボリュームに変換します。
+static inline u_int
+audio_volume_to_outer(u_int v)
+{
+	return v < 127 ? v : v - 1;
 }
