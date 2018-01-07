@@ -1871,7 +1871,7 @@ audio_rmixer_start(audio_trackmixer_t *mixer)
 	KASSERT(!mutex_owned(sc->sc_intr_lock));
 
 	// すでに再生ミキサが起動していたら、true を返す
-	if (sc->sc_pbusy)
+	if (sc->sc_rbusy)
 		return true;
 
 	TRACE0("begin");
@@ -1880,7 +1880,7 @@ audio_rmixer_start(audio_trackmixer_t *mixer)
 	audio_rmixer_input(mixer);
 	mutex_exit(sc->sc_intr_lock);
 
-	return sc->sc_pbusy;
+	return sc->sc_rbusy;
 }
 
 // hwbuf を全トラックへ分配します。
