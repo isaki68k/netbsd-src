@@ -1419,6 +1419,7 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 {
 	memset(mixer, 0, sizeof(audio_trackmixer_t));
 	mixer->sc = sc;
+	mixer->mode = mode;
 
 #if defined(AUDIO_SOFTINTR)
 	mixer->softintr = softint_establish(SOFTINT_SERIAL, audio_pmixer_softintr, mixer);
@@ -1526,10 +1527,15 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 	return 0;
 }
 
+// ミキサを終了しリソースを解放します。
+// mixer 自身のメモリは解放しません。
 void
-audio_mixer_destroy(audio_trackmixer_t *mixer, int mode)
+audio_mixer_destroy(struct audio_softc *sc, audio_trackmixer_t *mixer)
 {
-	struct audio_softc *sc = mixer->sc;
+	int mode;
+
+	mode = mixer->mode;
+	KASSERT(mode == AUMODE_PLAY || mode == AUMODE_RECORD);
 
 	if (mixer->hwbuf.sample != NULL) {
 		if (sc->hw_if->freem) {
@@ -1540,10 +1546,8 @@ audio_mixer_destroy(audio_trackmixer_t *mixer, int mode)
 		mixer->hwbuf.sample = NULL;
 	}
 
-	if (mode == AUMODE_PLAY) {
+	if (mixer->mixsample != NULL) {
 		kern_free(mixer->mixsample);
-	} else {
-		// 合成バッファは使用しない
 	}
 
 #if defined(AUDIO_SOFTINTR)

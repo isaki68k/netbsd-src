@@ -650,11 +650,11 @@ audioattach(device_t parent, device_t self, void *aux)
 
 bad1:
 	if (sc->sc_can_capture) {
-		audio_mixer_destroy(sc->sc_rmixer, AUMODE_RECORD);
+		audio_mixer_destroy(sc, sc->sc_rmixer);
 		kmem_free(sc->sc_rmixer, sizeof(*sc->sc_rmixer));
 	}
 	if (sc->sc_can_playback) {
-		audio_mixer_destroy(sc->sc_pmixer, AUMODE_PLAY);
+		audio_mixer_destroy(sc, sc->sc_pmixer);
 		kmem_free(sc->sc_pmixer, sizeof(*sc->sc_pmixer));
 	}
 bad0:
@@ -877,11 +877,11 @@ audiodetach(device_t self, int flags)
 	/* free resources */
 	// ここでリソース解放
 	if (sc->sc_pmixer) {
-		audio_mixer_destroy(sc->sc_pmixer, AUMODE_PLAY);
+		audio_mixer_destroy(sc, sc->sc_pmixer);
 		kmem_free(sc->sc_pmixer, sizeof(*sc->sc_pmixer));
 	}
 	if (sc->sc_rmixer) {
-		audio_mixer_destroy(sc->sc_rmixer, AUMODE_RECORD);
+		audio_mixer_destroy(sc, sc->sc_rmixer);
 		kmem_free(sc->sc_rmixer, sizeof(*sc->sc_rmixer));
 	}
 

@@ -45,7 +45,7 @@ int audio_track_drain(audio_track_t *track);
 void audio_track_record(audio_track_t *track);
 
 int audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode);
-void audio_mixer_destroy(audio_trackmixer_t *mixer, int mode);
+void audio_mixer_destroy(struct audio_softc *sc, audio_trackmixer_t *mixer);
 bool audio_pmixer_start(audio_trackmixer_t *mixer, bool force);
 void audio_pmixer_process(audio_trackmixer_t *mixer, bool isintr);
 int  audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req, int mixed);
