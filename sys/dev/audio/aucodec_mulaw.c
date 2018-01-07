@@ -20,7 +20,7 @@
 */
 
 /* XXX: 値がおかしい? */
-static const uint16_t mulaw_to_slinear16HE[256] = {
+static const uint16_t mulaw_to_slinear16[256] = {
 	0x8284, 0x8684, 0x8a84, 0x8e84, 0x9284, 0x9684, 0x9a84, 0x9e84,
 	0xa284, 0xa684, 0xaa84, 0xae84, 0xb284, 0xb684, 0xba84, 0xbe84,
 	0xc184, 0xc384, 0xc584, 0xc784, 0xc984, 0xcb84, 0xcd84, 0xcf84,
@@ -106,7 +106,7 @@ mulaw_to_internal(audio_filter_arg_t *arg)
 	int sample_count = arg->count * arg->srcfmt->channels;
 	for (int i = 0; i < sample_count; i++) {
 		internal_t s;
-		s = mulaw_to_slinear16HE[*sptr++];
+		s = mulaw_to_slinear16[*sptr++];
 #if AUDIO_INTERNAL_BITS == 32
 		s *= 0x00010000;
 #endif
