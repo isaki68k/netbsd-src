@@ -399,7 +399,7 @@ audio_track_freq_up(audio_filter_arg_t *arg)
 	KASSERT(is_valid_ring(src));
 	KASSERT(src->count > 0);
 	KASSERT(src->fmt.channels == dst->fmt.channels);
-	KASSERT(src->top == 0);
+	KASSERT(src->top % track->mixer->frames_per_block == 0);
 
 	const internal_t *sptr = arg->src;
 	internal_t *dptr = arg->dst;
@@ -494,7 +494,7 @@ audio_track_freq_down(audio_filter_arg_t *arg)
 	KASSERT(is_valid_ring(src));
 	KASSERT(src->count > 0);
 	KASSERT(src->fmt.channels == dst->fmt.channels);
-	KASSERT(src->top == 0);
+	KASSERT(src->top % track->mixer->frames_per_block == 0);
 
 	const internal_t *sptr0 = arg->src;
 	internal_t *dptr = arg->dst;
