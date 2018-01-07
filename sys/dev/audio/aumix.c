@@ -56,19 +56,19 @@
 } while (0)
 
 void *audio_realloc(void *memblock, size_t bytes);
-static int audio_pmixer_mixall(audio_trackmixer_t *mixer, int req, bool isintr);
-void audio_pmixer_output(audio_trackmixer_t *mixer);
+static int audio_pmixer_mixall(struct audio_softc *sc, bool isintr);
+void audio_pmixer_output(struct audio_softc *sc);
 #if defined(AUDIO_SOFTINTR)
 static void audio_pmixer_softintr(void *arg);
 #endif
-static void audio_rmixer_input(audio_trackmixer_t *mixer);
-static int audio2_trigger_output(audio_trackmixer_t *mixer, void *start,
+static void audio_rmixer_input(struct audio_softc *sc);
+static int audio2_trigger_output(struct audio_softc *sc, void *start,
 	void *end, int blksize);
-static int audio2_start_output(audio_trackmixer_t *mixer, void *start,
+static int audio2_start_output(struct audio_softc *sc, void *start,
 	int blksize);
-static int audio2_trigger_input(audio_trackmixer_t *mixer, void *start,
+static int audio2_trigger_input(struct audio_softc *sc, void *start,
 	void *end, int blksize);
-static int audio2_start_input(audio_trackmixer_t *mixer, void *start,
+static int audio2_start_input(struct audio_softc *sc, void *start,
 	int blksize);
 
 #if !defined(_KERNEL)
@@ -1422,7 +1422,8 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 	mixer->mode = mode;
 
 #if defined(AUDIO_SOFTINTR)
-	mixer->softintr = softint_establish(SOFTINT_SERIAL, audio_pmixer_softintr, mixer);
+	mixer->softintr = softint_establish(SOFTINT_SERIAL,
+	    audio_pmixer_softintr, sc);
 #endif
 
 #if defined(_KERNEL)
@@ -1561,11 +1562,10 @@ audio_mixer_destroy(struct audio_softc *sc, audio_trackmixer_t *mixer)
 // すでに起動されていれば何もせず true を返します。
 // 割り込みコンテキストから呼び出してはいけません。
 bool
-audio_pmixer_start(audio_trackmixer_t *mixer, bool force)
+audio_pmixer_start(struct audio_softc *sc, bool force)
 {
-	struct audio_softc *sc;
+	audio_trackmixer_t *mixer;
 
-	sc = mixer->sc;
 	KASSERT(mutex_owned(sc->sc_lock));
 	KASSERT(!mutex_owned(sc->sc_intr_lock));
 
@@ -1573,6 +1573,7 @@ audio_pmixer_start(audio_trackmixer_t *mixer, bool force)
 	if (sc->sc_pbusy)
 		return true;
 
+	mixer = sc->sc_pmixer;
 	TRACE0("begin mixseq=%d hwseq=%d hwbuf=%d/%d/%d",
 		(int)mixer->mixseq, (int)mixer->hwseq,
 		mixer->hwbuf.top, mixer->hwbuf.count, mixer->hwbuf.capacity);
@@ -1580,23 +1581,23 @@ audio_pmixer_start(audio_trackmixer_t *mixer, bool force)
 #if defined(START_ON_OPEN)
 	// 空なら1ブロック埋める
 	if (mixer->hwbuf.count < mixer->frames_per_block) {
-		audio_pmixer_process(mixer, false);
+		audio_pmixer_process(sc, false);
 
 		// トラックミキサ出力開始
 		mutex_enter(sc->sc_intr_lock);
-		audio_pmixer_output(mixer);
+		audio_pmixer_output(sc);
 		mutex_exit(sc->sc_intr_lock);
 	}
 #else
 	// hwbuf に1ブロック以上の空きがあればブロックを追加
 	if (mixer->hwbuf.capacity - mixer->hwbuf.count >= mixer->frames_per_block) {
-		audio_pmixer_process(mixer, false);
+		audio_pmixer_process(sc, false);
 
 		int minimum = (force) ? 1 : mixer->hwblks;
 		if (mixer->hwbuf.count >= mixer->frames_per_block * minimum) {
 			// トラックミキサ出力開始
 			mutex_enter(sc->sc_intr_lock);
-			audio_pmixer_output(mixer);
+			audio_pmixer_output(sc);
 			mutex_exit(sc->sc_intr_lock);
 		}
 	}
@@ -1613,16 +1614,20 @@ audio_pmixer_start(audio_trackmixer_t *mixer, bool force)
 // 合成されたトラック数を返します。
 // mixer->softintrlock を取得して呼び出してください。
 static int
-audio_pmixer_mixall(audio_trackmixer_t *mixer, int req, bool isintr)
+audio_pmixer_mixall(struct audio_softc *sc, bool isintr)
 {
-	struct audio_softc *sc;
+	audio_trackmixer_t *mixer;
 	audio_file_t *f;
+	int req;
 	int mixed = 0;
 
-	sc = mixer->sc;
+	mixer = sc->sc_pmixer;
 #if defined(AUDIO_SOFTINTR)
 	KASSERT(mutex_owned(&mixer->softintrlock));
 #endif
+
+	// XXX frames_per_block そのままのほうが分かりやすいような
+	req = mixer->frames_per_block;
 
 	SLIST_FOREACH(f, &sc->sc_files, entry) {
 		audio_track_t *track = f->ptrack;
@@ -1733,13 +1738,13 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req,
 // false ならプロセスコンテキストからの呼び出しを示す。
 // (START_ON_OPEN なら常に割り込みコンテキストからの呼び出しなので不要)
 void
-audio_pmixer_process(audio_trackmixer_t *mixer, bool isintr)
+audio_pmixer_process(struct audio_softc *sc, bool isintr)
 {
-	struct audio_softc *sc;
+	audio_trackmixer_t *mixer;
 	int mixed;
 	internal2_t *mptr;
 
-	sc = mixer->sc;
+	mixer = sc->sc_pmixer;
 
 	// 今回取り出すフレーム数を決定
 	// 実際には hwbuf はブロック単位で変動するはずなので
@@ -1756,7 +1761,7 @@ audio_pmixer_process(audio_trackmixer_t *mixer, bool isintr)
 	mixer->mixseq++;
 
 	// 全トラックを合成
-	mixed = audio_pmixer_mixall(mixer, mixer->frames_per_block, isintr);
+	mixed = audio_pmixer_mixall(sc, isintr);
 	if (mixed == 0) {
 		// 無音
 		memset(mixer->mixsample, 0,
@@ -1853,13 +1858,13 @@ audio_pmixer_process(audio_trackmixer_t *mixer, bool isintr)
 // ハードウェアバッファから 1 ブロック出力します。
 // sc_intr_lock で呼び出してください。
 void
-audio_pmixer_output(audio_trackmixer_t *mixer)
+audio_pmixer_output(struct audio_softc *sc)
 {
-	struct audio_softc *sc;
+	audio_trackmixer_t *mixer;
 
-	sc = mixer->sc;
 	KASSERT(mutex_owned(sc->sc_intr_lock));
 
+	mixer = sc->sc_pmixer;
 #if !defined(START_ON_OPEN)
 	TRACE0("pbusy=%d hwbuf=%d/%d/%d",
 	    sc->sc_pbusy,
@@ -1870,14 +1875,14 @@ audio_pmixer_output(audio_trackmixer_t *mixer)
 	if (sc->hw_if->trigger_output) {
 		if (!sc->sc_pbusy) {
 			audio2_trigger_output(
-				mixer,
+				sc,
 				mixer->hwbuf.sample,
 				RING_END_UINT8(&mixer->hwbuf),
 				frametobyte(&mixer->hwbuf.fmt, mixer->frames_per_block));
 		}
 	} else {
 		audio2_start_output(
-			mixer,
+			sc,
 			RING_TOP_UINT8(&mixer->hwbuf),
 			frametobyte(&mixer->hwbuf.fmt, mixer->frames_per_block));
 	}
@@ -1887,13 +1892,13 @@ audio_pmixer_output(audio_trackmixer_t *mixer)
 // 割り込みハンドラ
 // sc_intr_lock で呼び出されます。
 void
-audio_pmixer_intr(audio_trackmixer_t *mixer)
+audio_pmixer_intr(struct audio_softc *sc)
 {
-	struct audio_softc *sc __diagused;
+	audio_trackmixer_t *mixer;
 
-	sc = mixer->sc;
 	KASSERT(mutex_owned(sc->sc_intr_lock));
 
+	mixer = sc->sc_pmixer;
 	mixer->hw_complete_counter += mixer->frames_per_block;
 	mixer->hwseq++;
 
@@ -1906,7 +1911,7 @@ audio_pmixer_intr(audio_trackmixer_t *mixer)
 
 	// まず出力待ちのシーケンスを出力
 	if (mixer->hwbuf.count >= mixer->frames_per_block) {
-		audio_pmixer_output(mixer);
+		audio_pmixer_output(sc);
 	}
 
 #if defined(AUDIO_SOFTINTR)
@@ -1922,10 +1927,10 @@ audio_pmixer_intr(audio_trackmixer_t *mixer)
 	}
 
 	// 次のバッファを用意する
-	audio_pmixer_process(mixer, true);
+	audio_pmixer_process(sc, true);
 
 	if (later) {
-		audio_pmixer_output(mixer);
+		audio_pmixer_output(sc);
 	}
 
 	// drain 待ちしている人のために通知
@@ -1937,8 +1942,8 @@ audio_pmixer_intr(audio_trackmixer_t *mixer)
 static void
 audio_pmixer_softintr(void *arg)
 {
-	audio_trackmixer_t *mixer = arg;
-	struct audio_softc *sc = mixer->sc;
+	struct audio_softc *sc = arg;
+	audio_trackmixer_t *mixer = sc->sc_pmixer;
 
 	KASSERT(!mutex_owned(sc->sc_intr_lock));
 
@@ -1952,11 +1957,11 @@ audio_pmixer_softintr(void *arg)
 
 	// 次のバッファを用意する
 	// XXX ソフトウェア割り込みはプロセスコンテキストでいいのかな
-	audio_pmixer_process(mixer, false);
+	audio_pmixer_process(sc, false);
 
 	if (later) {
 		mutex_enter(sc->sc_intr_lock);
-		audio_pmixer_output(mixer);
+		audio_pmixer_output(sc);
 		mutex_exit(sc->sc_intr_lock);
 	}
 	// finally
@@ -1975,11 +1980,8 @@ audio_pmixer_softintr(void *arg)
 // すでに起動されていれば何もせず true を返します。
 // 割り込みコンテキストから呼び出してはいけません。
 bool
-audio_rmixer_start(audio_trackmixer_t *mixer)
+audio_rmixer_start(struct audio_softc *sc)
 {
-	struct audio_softc *sc;
-
-	sc = mixer->sc;
 	KASSERT(mutex_owned(sc->sc_lock));
 	KASSERT(!mutex_owned(sc->sc_intr_lock));
 
@@ -1990,7 +1992,7 @@ audio_rmixer_start(audio_trackmixer_t *mixer)
 	TRACE0("begin");
 
 	mutex_enter(sc->sc_intr_lock);
-	audio_rmixer_input(mixer);
+	audio_rmixer_input(sc);
 	mutex_exit(sc->sc_intr_lock);
 
 	return sc->sc_rbusy;
@@ -1998,12 +2000,12 @@ audio_rmixer_start(audio_trackmixer_t *mixer)
 
 // 録音できた hwbuf のブロックを全録音トラックへ分配します。
 void
-audio_rmixer_process(audio_trackmixer_t *mixer)
+audio_rmixer_process(struct audio_softc *sc)
 {
-	struct audio_softc *sc;
+	audio_trackmixer_t *mixer;
 	audio_file_t *f;
 
-	sc = mixer->sc;
+	mixer = sc->sc_rmixer;
 
 	// 今回取り出すフレーム数を決定
 	// 実際には hwbuf はブロック単位で変動するはずなので
@@ -2055,24 +2057,24 @@ audio_rmixer_process(audio_trackmixer_t *mixer)
 // ハードウェアバッファに1ブロック入力を開始します。
 // sc_intr_lock で呼び出してください。
 static void
-audio_rmixer_input(audio_trackmixer_t *mixer)
+audio_rmixer_input(struct audio_softc *sc)
 {
-	struct audio_softc *sc;
+	audio_trackmixer_t *mixer;
 
-	sc = mixer->sc;
+	mixer = sc->sc_rmixer;
 	KASSERT(mutex_owned(sc->sc_intr_lock));
 
 	if (sc->hw_if->trigger_input) {
 		if (!sc->sc_rbusy) {
 			audio2_trigger_input(
-				mixer,
+				sc,
 				mixer->hwbuf.sample,
 				RING_END_UINT8(&mixer->hwbuf),
 				frametobyte(&mixer->hwbuf.fmt, mixer->frames_per_block));
 		}
 	} else {
 		audio2_start_input(
-			mixer,
+			sc,
 			RING_TOP_UINT8(&mixer->hwbuf),
 			frametobyte(&mixer->hwbuf.fmt, mixer->frames_per_block));
 	}
@@ -2082,11 +2084,11 @@ audio_rmixer_input(audio_trackmixer_t *mixer)
 // 割り込みハンドラ
 // sc_intr_lock で呼び出されます。
 void
-audio_rmixer_intr(audio_trackmixer_t *mixer)
+audio_rmixer_intr(struct audio_softc *sc)
 {
-	struct audio_softc *sc __diagused;
+	audio_trackmixer_t *mixer;
 
-	sc = mixer->sc;
+	mixer = sc->sc_rmixer;
 	KASSERT(mutex_owned(sc->sc_intr_lock));
 
 	mixer->hw_complete_counter += mixer->frames_per_block;
@@ -2100,10 +2102,10 @@ audio_rmixer_intr(audio_trackmixer_t *mixer)
 		mixer->hwbuf.top, mixer->hwbuf.count, mixer->hwbuf.capacity);
 
 	// このバッファを分配する
-	audio_rmixer_process(mixer);
+	audio_rmixer_process(sc);
 
 	// 次のバッファを要求
-	audio_rmixer_input(mixer);
+	audio_rmixer_input(sc);
 }
 
 
@@ -2111,25 +2113,24 @@ static void
 audio2_pintr(void *arg)
 {
 	struct audio_softc *sc;
-	audio_trackmixer_t *mixer;
 
 	sc = arg;
 	KASSERT(mutex_owned(sc->sc_intr_lock));
 
-	mixer = sc->sc_pmixer;
-
-	audio_pmixer_intr(mixer);
+	audio_pmixer_intr(sc);
 }
 
 static int
-audio2_trigger_output(audio_trackmixer_t *mixer, void *start, void *end, int blksize)
+audio2_trigger_output(struct audio_softc *sc, void *start, void *end,
+	int blksize)
 {
-	struct audio_softc *sc = mixer->sc;
+	audio_trackmixer_t *mixer;
+	audio_params_t params;
 
 	KASSERT(sc->hw_if->trigger_output != NULL);
 	KASSERT(mutex_owned(sc->sc_intr_lock));
 
-	audio_params_t params;
+	mixer = sc->sc_pmixer;
 	// TODO: params 作る
 	params = format2_to_params(&mixer->hwbuf.fmt);
 	int error = sc->hw_if->trigger_output(sc->hw_hdl, start, end, blksize, audio2_pintr, sc, &params);
@@ -2137,9 +2138,8 @@ audio2_trigger_output(audio_trackmixer_t *mixer, void *start, void *end, int blk
 }
 
 static int
-audio2_start_output(audio_trackmixer_t *mixer, void *start, int blksize)
+audio2_start_output(struct audio_softc *sc, void *start, int blksize)
 {
-	struct audio_softc *sc = mixer->sc;
 
 	KASSERT(sc->hw_if->start_output != NULL);
 	KASSERT(mutex_owned(sc->sc_intr_lock));
@@ -2172,25 +2172,24 @@ static void
 audio2_rintr(void *arg)
 {
 	struct audio_softc *sc;
-	audio_trackmixer_t *mixer;
 
 	sc = arg;
 	KASSERT(mutex_owned(sc->sc_intr_lock));
 
-	mixer = sc->sc_rmixer;
-
-	audio_rmixer_intr(mixer);
+	audio_rmixer_intr(sc);
 }
 
 static int
-audio2_trigger_input(audio_trackmixer_t *mixer, void *start, void *end, int blksize)
+audio2_trigger_input(struct audio_softc *sc, void *start, void *end,
+	int blksize)
 {
-	struct audio_softc *sc = mixer->sc;
+	audio_trackmixer_t *mixer;
+	audio_params_t params;
 
 	KASSERT(sc->hw_if->trigger_input != NULL);
 	KASSERT(mutex_owned(sc->sc_intr_lock));
 
-	audio_params_t params;
+	mixer = sc->sc_rmixer;
 	// TODO: params 作る
 	params = format2_to_params(&mixer->hwbuf.fmt);
 	int error = sc->hw_if->trigger_input(sc->hw_hdl, start, end, blksize,
@@ -2199,9 +2198,8 @@ audio2_trigger_input(audio_trackmixer_t *mixer, void *start, void *end, int blks
 }
 
 static int
-audio2_start_input(audio_trackmixer_t *mixer, void *start, int blksize)
+audio2_start_input(struct audio_softc *sc, void *start, int blksize)
 {
-	struct audio_softc *sc = mixer->sc;
 
 	KASSERT(sc->hw_if->start_input != NULL);
 	KASSERT(mutex_owned(sc->sc_intr_lock));
@@ -2260,7 +2258,7 @@ audio_track_drain(audio_track_t *track)
 		// トラックバッファが空になっても、ミキサ側で処理中のデータが
 		// あるかもしれない。
 		// トラックミキサが動作していないときは、動作させる。
-		audio_pmixer_start(mixer, true);
+		audio_pmixer_start(sc, true);
 	}
 #endif
 	audio_track_leave_colock(sc, track);
@@ -2439,7 +2437,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 
 			audio_track_play(track, false);
 #if !defined(START_ON_OPEN)
-			audio_pmixer_start(sc->sc_pmixer, force);
+			audio_pmixer_start(sc, force);
 #endif
 		}
 
@@ -2526,7 +2524,7 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 		if (track->input->count == 0 && track->usrbuf.count == 0) {
 			// バッファが空ならここで待機
 #if !defined(START_ON_OPEN)
-			audio_rmixer_start(sc->sc_rmixer);
+			audio_rmixer_start(sc);
 #endif
 			if (ioflag & IO_NDELAY)
 				return EWOULDBLOCK;
