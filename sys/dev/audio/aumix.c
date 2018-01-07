@@ -1125,7 +1125,7 @@ audio_track_play(audio_track_t *track, bool isdrain)
 {
 	int inpbuf_frames_per_block;
 	int blockbytes;	// usrbuf および input の1ブロックのバイト数
-	int movebytes;	// usrbuf から input に転送するバイト数
+	int bytes;		// usrbuf から input に転送するバイト数
 
 	KASSERT(track);
 
@@ -1161,33 +1161,43 @@ audio_track_play(audio_track_t *track, bool isdrain)
 	if (count == 0) {
 		return;
 	}
-	count = min(count, inpbuf_frames_per_block);
-	// 入力に4bitは来ないので1フレームは必ず1バイト以上ある。
-	int framesize = frametobyte(&track->input->fmt, 1);
-	// count は usrbuf からコピーするフレーム数。
-	// movebytes は usrbuf からコピーするバイト数。
-	// ただし1フレーム未満のバイトはコピーしない。
-	count = min(count, track->usrbuf.count / framesize);
-	movebytes = count * framesize;
-	if (track->usrbuf.top + movebytes < track->usrbuf.capacity) {
-		memcpy(RING_BOT(internal_t, track->input),
-		    (uint8_t *)track->usrbuf.sample + track->usrbuf.top,
-		    movebytes);
-		audio_ring_tookfromtop(&track->usrbuf, movebytes);
-	} else {
-		int bytes1 = audio_ring_unround_count(&track->usrbuf);
-		memcpy(RING_BOT(internal_t, track->input),
-		    (uint8_t *)track->usrbuf.sample + track->usrbuf.top,
-		    bytes1);
-		audio_ring_tookfromtop(&track->usrbuf, bytes1);
 
-		int bytes2 = movebytes - bytes1;
-		memcpy((uint8_t *)(RING_BOT(internal_t, track->input)) + bytes1,
-		    (uint8_t *)track->usrbuf.sample + track->usrbuf.top,
+	// usrbuf から input へ
+	audio_ring_t *usrbuf = &track->usrbuf;
+	audio_ring_t *input = track->input;
+	// 入力(usrfmt) に 4bit は来ないので1フレームは必ず1バイト以上ある
+	int framesize = frametobyte(&input->fmt, 1);
+	KASSERT(framesize >= 1);
+	// count は usrbuf からコピーするフレーム数。
+	// bytes は usrbuf からコピーするバイト数。
+	// ただし1フレーム未満のバイトはコピーしない。
+	count = min(count, usrbuf->count / framesize);
+	bytes = count * framesize;
+	if (usrbuf->top + bytes < usrbuf->capacity) {
+		memcpy((uint8_t *)input->sample +
+		        audio_ring_bottom(input) * framesize,
+		    (uint8_t *)usrbuf->sample + usrbuf->top,
+		    bytes);
+		audio_ring_appended(input, count);
+		audio_ring_tookfromtop(usrbuf, bytes);
+	} else {
+		int bytes1 = audio_ring_unround_count(usrbuf);
+		KASSERT(bytes1 % framesize == 0);
+		memcpy((uint8_t *)input->sample +
+		        audio_ring_bottom(input) * framesize,
+		    (uint8_t *)usrbuf->sample + usrbuf->top,
+		    bytes1);
+		audio_ring_appended(input, bytes1 / framesize);
+		audio_ring_tookfromtop(usrbuf, bytes1);
+
+		int bytes2 = bytes - bytes1;
+		memcpy((uint8_t *)input->sample +
+		        audio_ring_bottom(input) * framesize,
+		    (uint8_t *)usrbuf->sample + usrbuf->top,
 		    bytes2);
-		audio_ring_tookfromtop(&track->usrbuf, bytes2);
+		audio_ring_appended(input, bytes2 / framesize);
+		audio_ring_tookfromtop(usrbuf, bytes2);
 	}
-	audio_ring_appended(track->input, count);
 
 	/* エンコーディング変換 */
 	audio_apply_stage(track, &track->codec, false);
