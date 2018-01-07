@@ -1201,13 +1201,13 @@ audio_track_record(audio_track_t *track)
 
 	KASSERT(track);
 
-	TRACE(track, "");
-
 	// 処理するフレーム数
 	count = audio_ring_unround_count(track->input);
 	count = min(count, track->mixer->frames_per_block);
-	if (count == 0)
+	if (count == 0) {
+		TRACE(track, "count == 0");
 		return;
+	}
 
 	// 周波数変換
 	if (track->freq.filter != NULL) {
