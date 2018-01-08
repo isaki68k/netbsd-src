@@ -201,8 +201,8 @@ static int audio_mmap(struct audio_softc *, off_t *, size_t, int, int *, int *,
 
 static int audiostartr(struct audio_softc *);
 static int audiostartp(struct audio_softc *);
-static void audio_pintr(void *);
-static void audio_rintr(void *);
+//static void audio_pintr(void *);
+//static void audio_rintr(void *);
 
 static int audio_query_devinfo(struct audio_softc *, mixer_devinfo_t *);
 
@@ -2265,22 +2265,14 @@ audio_softintr_wr(void *cookie)
  * If no more buffers to play, output zero instead.
  * Do a wakeup if necessary.
  */
-void __unused
-audio_pintr(void *v)
-{
-	panic("%s is not used\n", __func__);
-}
+// ここに audio_pintr
 
 /*
  * Called from HW driver module on completion of DMA input.
  * Mark it as input in the ring buffer (fiddle pointers).
  * Do a wakeup if necessary.
  */
-void __unused
-audio_rintr(void *v)
-{
-	panic("%s is not used\n", __func__);
-}
+// ここに audio_rintr
 
 // SLINEAR -> SLINEAR_NE
 // {U,S}LINEAR8_* は {U,S}LINEAR8_LE を代表値として使う
