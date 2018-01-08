@@ -55,6 +55,65 @@ audio_softc_init(struct audio_softc *sc)
 	audio_mixer_init(sc, sc->sc_rmixer, AUMODE_RECORD);
 }
 
+/*
+ * ***** audio_file *****
+ */
+int//ssize_t
+sys_write(audio_file_t *file, void* buf, size_t len)
+{
+	KASSERT(buf);
+
+	if (len > INT_MAX) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	struct uio uio = buf_to_uio(buf, len, UIO_READ);
+
+	mutex_enter(file->sc->sc_lock);
+	int error = audio_write(file->sc, &uio, 0, file);
+	mutex_exit(file->sc->sc_lock);
+	if (error) {
+		errno = error;
+		return -1;
+	}
+	return (int)len;
+}
+
+audio_file_t *
+sys_open(struct audio_softc *sc, int mode)
+{
+	audio_file_t *file;
+
+	file = calloc(1, sizeof(audio_file_t));
+	file->sc = sc;
+
+	if (mode == AUMODE_PLAY) {
+		audio_track_init(sc, &file->ptrack, AUMODE_PLAY);
+	} else {
+		audio_track_init(sc, &file->rtrack, AUMODE_RECORD);
+	}
+
+	SLIST_INSERT_HEAD(&sc->sc_files, file, entry);
+
+	return file;
+}
+
+// ioctl(AUDIO_DRAIN) 相当
+int
+sys_ioctl_drain(audio_track_t *track)
+{
+	// 割り込みエミュレートしているときはメインループに制御を戻さないといけない
+	audio_trackmixer_t *mixer = track->mixer;
+	struct audio_softc *sc = mixer->sc;
+
+	mutex_enter(sc->sc_lock);
+	audio_track_drain(track);
+	mutex_exit(sc->sc_lock);
+
+	return 0;
+}
+
 void
 audio_format2_tostr(char *buf, size_t bufsize, const audio_format2_t *fmt)
 {
