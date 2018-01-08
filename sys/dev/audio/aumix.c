@@ -62,14 +62,6 @@ void audio_pmixer_output(struct audio_softc *sc);
 static void audio_pmixer_softintr(void *arg);
 #endif
 static void audio_rmixer_input(struct audio_softc *sc);
-static int audio2_trigger_output(struct audio_softc *sc, void *start,
-	void *end, int blksize);
-static int audio2_start_output(struct audio_softc *sc, void *start,
-	int blksize);
-static int audio2_trigger_input(struct audio_softc *sc, void *start,
-	void *end, int blksize);
-static int audio2_start_input(struct audio_softc *sc, void *start,
-	int blksize);
 
 #if !defined(_KERNEL)
 static int audio_waitio(struct audio_softc *sc, audio_track_t *track);
@@ -1861,6 +1853,11 @@ void
 audio_pmixer_output(struct audio_softc *sc)
 {
 	audio_trackmixer_t *mixer;
+	audio_params_t params;
+	void *start;
+	void *end;
+	int blksize;
+	int error;
 
 	KASSERT(mutex_owned(sc->sc_intr_lock));
 
@@ -1872,19 +1869,35 @@ audio_pmixer_output(struct audio_softc *sc)
 #endif
 	KASSERT(mixer->hwbuf.count >= mixer->frames_per_block);
 
+	blksize = frametobyte(&mixer->hwbuf.fmt, mixer->frames_per_block);
+
 	if (sc->hw_if->trigger_output) {
+		/* trigger (at once) */
 		if (!sc->sc_pbusy) {
-			audio2_trigger_output(
-				sc,
-				mixer->hwbuf.sample,
-				RING_END_UINT8(&mixer->hwbuf),
-				frametobyte(&mixer->hwbuf.fmt, mixer->frames_per_block));
+			start = mixer->hwbuf.sample;
+			end = RING_END_UINT8(&mixer->hwbuf);
+			// TODO: params 作る
+			params = format2_to_params(&mixer->hwbuf.fmt);
+
+			error = sc->hw_if->trigger_output(sc->hw_hdl,
+			    start, end, blksize, audio_pintr, sc, &params);
+			if (error) {
+				DPRINTF(1, "%s trigger_output failed: %d\n",
+				    __func__, error);
+				return;
+			}
 		}
 	} else {
-		audio2_start_output(
-			sc,
-			RING_TOP_UINT8(&mixer->hwbuf),
-			frametobyte(&mixer->hwbuf.fmt, mixer->frames_per_block));
+		/* start (everytime) */
+		start = RING_TOP_UINT8(&mixer->hwbuf);
+
+		error = sc->hw_if->start_output(sc->hw_hdl,
+		    start, blksize, audio_pintr, sc);
+		if (error) {
+			DPRINTF(1, "%s start_output failed: %d\n",
+			    __func__, error);
+			return;
+		}
 	}
 	sc->sc_pbusy = true;
 }
@@ -2062,23 +2075,44 @@ static void
 audio_rmixer_input(struct audio_softc *sc)
 {
 	audio_trackmixer_t *mixer;
+	audio_params_t params;
+	void *start;
+	void *end;
+	int blksize;
+	int error;
 
-	mixer = sc->sc_rmixer;
 	KASSERT(mutex_owned(sc->sc_intr_lock));
 
+	mixer = sc->sc_rmixer;
+	blksize = frametobyte(&mixer->hwbuf.fmt, mixer->frames_per_block);
+
 	if (sc->hw_if->trigger_input) {
+		/* trigger (at once) */
 		if (!sc->sc_rbusy) {
-			audio2_trigger_input(
-				sc,
-				mixer->hwbuf.sample,
-				RING_END_UINT8(&mixer->hwbuf),
-				frametobyte(&mixer->hwbuf.fmt, mixer->frames_per_block));
+			start = mixer->hwbuf.sample;
+			end = RING_END_UINT8(&mixer->hwbuf);
+			// TODO: params 作る
+			params = format2_to_params(&mixer->hwbuf.fmt);
+
+			error = sc->hw_if->trigger_input(sc->hw_hdl,
+			    start, end, blksize, audio_rintr, sc, &params);
+			if (error) {
+				DPRINTF(1, "%s trigger_input failed: %d\n",
+				    __func__, error);
+				return;
+			}
 		}
 	} else {
-		audio2_start_input(
-			sc,
-			RING_TOP_UINT8(&mixer->hwbuf),
-			frametobyte(&mixer->hwbuf.fmt, mixer->frames_per_block));
+		/* start (everytime) */
+		start = RING_TOP_UINT8(&mixer->hwbuf);
+
+		error = sc->hw_if->start_input(sc->hw_hdl,
+		    start, blksize, audio_rintr, sc);
+		if (error) {
+			DPRINTF(1, "%s start_input failed: %d\n",
+			    __func__, error);
+			return;
+		}
 	}
 	sc->sc_rbusy = true;
 }
@@ -2112,37 +2146,6 @@ audio_rintr(void *arg)
 	audio_rmixer_input(sc);
 }
 
-
-static int
-audio2_trigger_output(struct audio_softc *sc, void *start, void *end,
-	int blksize)
-{
-	audio_trackmixer_t *mixer;
-	audio_params_t params;
-
-	KASSERT(sc->hw_if->trigger_output != NULL);
-	KASSERT(mutex_owned(sc->sc_intr_lock));
-
-	mixer = sc->sc_pmixer;
-	// TODO: params 作る
-	params = format2_to_params(&mixer->hwbuf.fmt);
-	int error = sc->hw_if->trigger_output(sc->hw_hdl, start, end, blksize,
-	    audio_pintr, sc, &params);
-	return error;
-}
-
-static int
-audio2_start_output(struct audio_softc *sc, void *start, int blksize)
-{
-
-	KASSERT(sc->hw_if->start_output != NULL);
-	KASSERT(mutex_owned(sc->sc_intr_lock));
-
-	int error = sc->hw_if->start_output(sc->hw_hdl, start, blksize,
-	    audio_pintr, sc);
-	return error;
-}
-
 int
 audio2_halt_output(struct audio_softc *sc)
 {
@@ -2160,36 +2163,6 @@ audio2_halt_output(struct audio_softc *sc)
 	sc->sc_pmixer->mixseq = 0;
 	sc->sc_pmixer->hwseq = 0;
 
-	return error;
-}
-
-static int
-audio2_trigger_input(struct audio_softc *sc, void *start, void *end,
-	int blksize)
-{
-	audio_trackmixer_t *mixer;
-	audio_params_t params;
-
-	KASSERT(sc->hw_if->trigger_input != NULL);
-	KASSERT(mutex_owned(sc->sc_intr_lock));
-
-	mixer = sc->sc_rmixer;
-	// TODO: params 作る
-	params = format2_to_params(&mixer->hwbuf.fmt);
-	int error = sc->hw_if->trigger_input(sc->hw_hdl, start, end, blksize,
-	    audio_rintr, sc, &params);
-	return error;
-}
-
-static int
-audio2_start_input(struct audio_softc *sc, void *start, int blksize)
-{
-
-	KASSERT(sc->hw_if->start_input != NULL);
-	KASSERT(mutex_owned(sc->sc_intr_lock));
-
-	int error = sc->hw_if->start_input(sc->hw_hdl, start, blksize,
-	    audio_rintr, sc);
 	return error;
 }
 
