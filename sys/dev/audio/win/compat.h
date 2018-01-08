@@ -19,6 +19,7 @@
 #define __arraycount(n) _countof(n)
 
 typedef int64_t off_t;
+typedef uint64_t dev_t;
 
 inline
 uint16_t __builtin_bswap16(uint16_t a)

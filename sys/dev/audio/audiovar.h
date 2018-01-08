@@ -219,9 +219,7 @@ struct audio_file
 	// ptrack.mode は (mode & (AUMODE_PLAY | AUMODE_PLAY_ALL)) と、
 	// rtrack.mode は (mode & AUMODE_RECORD) と等しいはず。
 	int mode;
-#if defined(_KERNEL)
 	dev_t dev;						/* デバイスファイルへのバックリンク */
-#endif
 
 	SLIST_ENTRY(audio_file) entry;
 };
