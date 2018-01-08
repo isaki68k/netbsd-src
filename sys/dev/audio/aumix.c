@@ -945,23 +945,23 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 			goto error;
 	}
 #if 0
-		/* debug */
-		if (track->freq.filter) {
-			audio_print_format2("freq src", &track->freq.srcbuf.fmt);
-			audio_print_format2("freq dst", &track->freq.dst->fmt);
-		}
-		if (track->chmix.filter) {
-			audio_print_format2("chmix src", &track->chmix.srcbuf.fmt);
-			audio_print_format2("chmix dst", &track->chmix.dst->fmt);
-		}
-		if (track->chvol.filter) {
-			audio_print_format2("chvol src", &track->chvol.srcbuf.fmt);
-			audio_print_format2("chvol dst", &track->chvol.dst->fmt);
-		}
-		if (track->codec.filter) {
-			audio_print_format2("codec src", &track->codec.srcbuf.fmt);
-			audio_print_format2("codec dst", &track->codec.dst->fmt);
-		}
+	/* debug */
+	if (track->freq.filter) {
+		audio_print_format2("freq src", &track->freq.srcbuf.fmt);
+		audio_print_format2("freq dst", &track->freq.dst->fmt);
+	}
+	if (track->chmix.filter) {
+		audio_print_format2("chmix src", &track->chmix.srcbuf.fmt);
+		audio_print_format2("chmix dst", &track->chmix.dst->fmt);
+	}
+	if (track->chvol.filter) {
+		audio_print_format2("chvol src", &track->chvol.srcbuf.fmt);
+		audio_print_format2("chvol dst", &track->chvol.dst->fmt);
+	}
+	if (track->codec.filter) {
+		audio_print_format2("codec src", &track->codec.srcbuf.fmt);
+		audio_print_format2("codec dst", &track->codec.dst->fmt);
+	}
 #endif
 
 	// 入力バッファ
