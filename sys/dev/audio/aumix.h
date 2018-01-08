@@ -49,10 +49,10 @@ void audio_mixer_destroy(struct audio_softc *sc, audio_trackmixer_t *mixer);
 bool audio_pmixer_start(struct audio_softc *sc, bool force);
 void audio_pmixer_process(struct audio_softc *sc, bool isintr);
 int  audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req, int mixed);
-void audio_pmixer_intr(struct audio_softc *sc);
 bool audio_rmixer_start(struct audio_softc *sc);
 void audio_rmixer_process(struct audio_softc *sc);
-void audio_rmixer_intr(struct audio_softc *sc);
+void audio_pintr(void *arg);
+void audio_rintr(void *arg);
 
 int  audio2_halt_output(struct audio_softc *sc);
 int  audio2_halt_input(struct audio_softc *sc);

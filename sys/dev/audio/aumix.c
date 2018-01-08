@@ -62,10 +62,7 @@ void audio_pmixer_output(struct audio_softc *sc);
 static void audio_pmixer_softintr(void *arg);
 #endif
 static void audio_rmixer_input(struct audio_softc *sc);
-
-#if !defined(_KERNEL)
 static int audio_waitio(struct audio_softc *sc, audio_track_t *track);
-#endif // !_KERNEL
 
 
 void
@@ -1904,7 +1901,7 @@ audio_pmixer_output(struct audio_softc *sc)
 
 // 割り込みハンドラです。
 // sc_intr_lock で呼び出されます。
-static void
+void
 audio_pintr(void *arg)
 {
 	struct audio_softc *sc;
@@ -2119,7 +2116,7 @@ audio_rmixer_input(struct audio_softc *sc)
 
 // 割り込みハンドラです。
 // sc_intr_lock で呼び出されます。
-static void
+void
 audio_rintr(void *arg)
 {
 	struct audio_softc *sc;

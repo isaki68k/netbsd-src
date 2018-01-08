@@ -2,6 +2,7 @@
 #include "userland.h"
 #include "audiovar.h"
 #include "aumix.h"
+#include <errno.h>
 
 // この file が再生可能なら true を返します。
 bool
@@ -52,4 +53,23 @@ audio_softc_init(struct audio_softc *sc)
 
 	audio_mixer_init(sc, sc->sc_pmixer, AUMODE_PLAY);
 	audio_mixer_init(sc, sc->sc_rmixer, AUMODE_RECORD);
+}
+
+void
+audio_format2_tostr(char *buf, size_t bufsize, const audio_format2_t *fmt)
+{
+	int n;
+
+	n = 0;
+	n += snprintf(buf + n, bufsize - n, "enc=%d", fmt->encoding);
+
+	if (fmt->precision == fmt->stride) {
+		n += snprintf(buf + n, bufsize - n, " %dbit", fmt->precision);
+	} else {
+		n += snprintf(buf + n, bufsize - n, " %d/%dbit",
+			fmt->precision, fmt->stride);
+	}
+
+	snprintf(buf + n, bufsize - n, " %uch %uHz",
+	    fmt->channels, fmt->sample_rate);
 }

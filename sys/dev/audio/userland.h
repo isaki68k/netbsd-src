@@ -38,6 +38,8 @@
 /* サポートする最大のチャンネル数 */
 #define AUDIO_MAX_CHANNELS	18
 
+#define IO_NDELAY	0
+
 typedef struct kcondvar kcondvar_t;
 typedef struct kmutex kmutex_t;
 
@@ -64,8 +66,12 @@ struct audio_hw_if {
 
 	int (*start_output)(void *, void *, int, void(*)(void *), void *);
 	int (*trigger_output)(void *, void *, void *, int, void(*)(void *), void *, const audio_params_t *);
-
 	int (*halt_output)(void *);
+
+	int (*start_input)(void *, void *, int, void(*)(void *), void *);
+	int (*trigger_input)(void *, void *, void *, int, void(*)(void *), void *, const audio_params_t *);
+	int (*halt_input)(void *);
+
 	audio_filter_t (*get_swcode)(void *, int, audio_filter_arg_t *);
 	int (*round_blocksize)(void *, int, int, const audio_params_t *);
 	size_t (*round_buffersize)(void *, int, size_t);
@@ -88,6 +94,7 @@ struct audio_softc
 	int sc_eof;
 
 	bool sc_pbusy;
+	bool sc_rbusy;
 	void *dev;
 	audio_filter_reg_t sc_xxx_pfilreg;
 	audio_filter_reg_t sc_xxx_rfilreg;
@@ -238,3 +245,6 @@ extern bool audio_file_can_playback(const audio_file_t *file);
 extern bool audio_file_can_record(const audio_file_t *file);
 extern bool audio_track_is_playback(const audio_track_t *track);
 extern bool audio_track_is_record(const audio_track_t *track);
+
+extern void audio_format2_tostr(char *buf, size_t bufsize,
+	const audio_format2_t *fmt);
