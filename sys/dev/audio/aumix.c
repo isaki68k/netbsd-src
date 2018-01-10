@@ -1504,17 +1504,20 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 		reg = &sc->sc_xxx_rfilreg;
 	}
 	mixer->codec = reg->codec;
-	mixer->codecarg.context = reg->context;
-	if (mode == AUMODE_PLAY) {
-		mixer->codecarg.srcfmt = &mixer->track_fmt;
-		mixer->codecarg.dstfmt = &mixer->hwbuf.fmt;
-	} else {
-		mixer->codecarg.srcfmt = &mixer->hwbuf.fmt;
-		mixer->codecarg.dstfmt = &mixer->track_fmt;
+	if (mixer->codec) {
+		mixer->codecarg.context = reg->context;
+		if (mode == AUMODE_PLAY) {
+			mixer->codecarg.srcfmt = &mixer->track_fmt;
+			mixer->codecarg.dstfmt = &mixer->hwbuf.fmt;
+		} else {
+			mixer->codecarg.srcfmt = &mixer->hwbuf.fmt;
+			mixer->codecarg.dstfmt = &mixer->track_fmt;
+		}
+		mixer->codecbuf.fmt = mixer->track_fmt;
+		mixer->codecbuf.capacity = mixer->frames_per_block;
+		mixer->codecbuf.sample = audio_realloc(mixer->codecbuf.sample,
+		    RING_BYTELEN(&mixer->codecbuf));
 	}
-	mixer->codecbuf.fmt = mixer->track_fmt;
-	mixer->codecbuf.capacity = mixer->frames_per_block;
-	mixer->codecbuf.sample = audio_realloc(mixer->codecbuf.sample, RING_BYTELEN(&mixer->codecbuf));
 
 	mixer->volume = 256;
 
@@ -1541,9 +1544,8 @@ audio_mixer_destroy(struct audio_softc *sc, audio_trackmixer_t *mixer)
 		mixer->hwbuf.sample = NULL;
 	}
 
-	if (mixer->mixsample != NULL) {
-		kern_free(mixer->mixsample);
-	}
+	audio_free(mixer->codecbuf.sample);
+	audio_free(mixer->mixsample);
 
 #if defined(AUDIO_SOFTINTR)
 	softint_disestablish(mixer->softintr);
