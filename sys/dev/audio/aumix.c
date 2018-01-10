@@ -1718,6 +1718,37 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req,
 	return mixed + 1;
 }
 
+/*
+ * In cases with MD filter:
+ *
+ *           track track ...
+ *               v v
+ *                +  mix (with internal2_t)
+ *                |  master volume (with internal2_t)
+ *                v
+ *    mixsample [::::]                  double-sized 1 block (ring) buffer
+ *                |
+ *                |  convert internal2_t -> internal_t
+ *                v
+ *    codecbuf  [....]                  1 block (ring) buffer
+ *                |
+ *                |  convert to hw format
+ *                v
+ *    hwbuf     [............]          N blocks ring buffer
+ *
+ * In cases without MD filter:
+ *
+ *    mixsample [::::]                  double-sized 1 block (ring) buffer
+ *                |
+ *                |  convert internal2_t -> internal_t
+ *                v
+ *    hwbuf     [............]          N blocks ring buffer
+ *
+ * mixsample: slinear_NE, double-sized internal precision, HW ch, HW freq.
+ * codecbuf:  slinear_NE, internal precision,              HW ch, HW freq.
+ * hwbuf:     HW encoding, HW precision,                   HW ch, HW freq.
+ */
+
 // 全トラックを倍精度ミキシングバッファで合成し、
 // 倍精度ミキシングバッファから hwbuf への変換を行います。
 // (hwbuf からハードウェアへの転送はここでは行いません)
@@ -2009,6 +2040,29 @@ audio_rmixer_start(struct audio_softc *sc)
 
 	return sc->sc_rbusy;
 }
+
+/*
+ * In cases with MD filter:
+ *
+ *    hwbuf     [............]          N blocks ring buffer
+ *                |
+ *                | convert from hw format
+ *                v
+ *    codecbuf  [....]                  1 block (ring) buffer
+ *               |  |
+ *               v  v
+ *            track track ...
+ *
+ * In cases without MD filter:
+ *
+ *    hwbuf     [............]          N blocks ring buffer
+ *               |  |
+ *               v  v
+ *            track track ...
+ *
+ * hwbuf:     HW encoding, HW precision, HW ch, HW freq.
+ * codecbuf:  slinear_NE, internal precision, HW ch, HW freq.
+ */
 
 // 録音できた hwbuf のブロックを全録音トラックへ分配します。
 void
