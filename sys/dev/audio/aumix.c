@@ -2101,7 +2101,7 @@ audio_rmixer_input(struct audio_softc *sc)
 		}
 	} else {
 		/* start (everytime) */
-		start = RING_TOP_UINT8(&mixer->hwbuf);
+		start = RING_BOT_UINT8(&mixer->hwbuf);
 
 		error = sc->hw_if->start_input(sc->hw_hdl,
 		    start, blksize, audio_rintr, sc);
