@@ -1505,8 +1505,13 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 	}
 	mixer->codec = reg->codec;
 	mixer->codecarg.context = reg->context;
-	mixer->codecarg.srcfmt = &mixer->track_fmt;
-	mixer->codecarg.dstfmt = &mixer->hwbuf.fmt;
+	if (mode == AUMODE_PLAY) {
+		mixer->codecarg.srcfmt = &mixer->track_fmt;
+		mixer->codecarg.dstfmt = &mixer->hwbuf.fmt;
+	} else {
+		mixer->codecarg.srcfmt = &mixer->hwbuf.fmt;
+		mixer->codecarg.dstfmt = &mixer->track_fmt;
+	}
 	mixer->codecbuf.fmt = mixer->track_fmt;
 	mixer->codecbuf.capacity = mixer->frames_per_block;
 	mixer->codecbuf.sample = audio_realloc(mixer->codecbuf.sample, RING_BYTELEN(&mixer->codecbuf));
@@ -2069,6 +2074,7 @@ void
 audio_rmixer_process(struct audio_softc *sc)
 {
 	audio_trackmixer_t *mixer;
+	audio_ring_t *mixersrc;
 	audio_file_t *f;
 
 	mixer = sc->sc_rmixer;
@@ -2083,6 +2089,19 @@ audio_rmixer_process(struct audio_softc *sc)
 		return;
 	}
 	int bytes = frametobyte(&mixer->mixfmt, count);
+
+	// MD 側フィルタ
+	if (mixer->codec) {
+		mixer->codecarg.src = RING_TOP_UINT8(&mixer->hwbuf);
+		mixer->codecarg.dst = RING_BOT_UINT8(&mixer->codecbuf);
+		mixer->codecarg.count = count;
+		mixer->codec(&mixer->codecarg);
+		audio_ring_tookfromtop(&mixer->hwbuf, mixer->codecarg.count);
+		audio_ring_appended(&mixer->codecbuf, mixer->codecarg.count);
+		mixersrc = &mixer->codecbuf;
+	} else {
+		mixersrc = &mixer->hwbuf;
+	}
 
 	// 全トラックへ分配
 	SLIST_FOREACH(f, &sc->sc_files, entry) {
@@ -2104,7 +2123,7 @@ audio_rmixer_process(struct audio_softc *sc)
 		KASSERT(input->count % mixer->frames_per_block == 0);
 
 		memcpy(RING_BOT(internal_t, input),
-		    RING_TOP(internal_t, &mixer->hwbuf),
+		    RING_TOP(internal_t, mixersrc),
 		    bytes);
 		audio_ring_appended(input, count);
 
@@ -2117,7 +2136,7 @@ audio_rmixer_process(struct audio_softc *sc)
 		    input->top, input->count, input->capacity);
 	}
 
-	audio_ring_tookfromtop(&mixer->hwbuf, count);
+	audio_ring_tookfromtop(mixersrc, count);
 }
 
 // ハードウェアバッファに1ブロック入力を開始します。
