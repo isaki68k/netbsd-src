@@ -17,37 +17,6 @@
 #include "auintr.h"
 #endif // !_KERNEL
 
-/*
- * -N7
- * audio_write {
- *  uioからバッファを作成
- *  audiostartp {
- *   start/trigger ..1ブロック出力/trigger開始
- *  }
- * }
- * audio_pint {
- *  (必要なら)(フィルタ内に留まってるデータから)バッファを作成
- *  start_output ..1ブロック出力
- * }
- *
- * ---
- *
- * audio_open {
- *  audio_pmixer_start {
- *   audio_pmixer_process.. 全トラック合成・HWバッファ作成
- *   audio_pmixer_output .. 1ブロック出力
- *  }
- * }
- * audio_pintr {
- *  audio_pmixer_intr {
- *   audio_pmixer_output ..1ブロック出力
- *   audio_pmixer_process.. 全トラック合成・HWバッファ作成
- * }
- * audio_write {
- *  audio_track_play .. トラックバッファ作成
- * }
- */
-
 #define audio_free(mem)	do {	\
 	if (mem != NULL) {	\
 		kern_free(mem);	\
