@@ -61,17 +61,3 @@ int  audio2_halt_input(struct audio_softc *sc);
 int audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *file); /* write の MI 側 */
 int audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 	audio_file_t *file);
-
-#if !defined(_KERNEL)
-
-/* system call emulation */
-audio_file_t *sys_open(struct audio_softc *sc, int mode);
-int/*ssize_t*/ sys_write(audio_file_t *file, void* buf, size_t len);	/* write syscall の Userland 側エミュレート */
-int sys_ioctl_drain(audio_track_t *track);	/* ioctl(AUDIO_DRAIN) */
-
-#endif // _KERNEL
-
-/* XXX: 分類未定 */
-int audio_softc_get_hw_capacity(struct audio_softc *sc);
-void audio_softc_play_start(struct audio_softc *sc);
-

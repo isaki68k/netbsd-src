@@ -10,7 +10,6 @@
 #include <memory.h>
 #include <stdbool.h>
 #include "auring.h"
-#include "audev.h"
 #include "aucodec.h"
 #include "auformat.h"
 #include "uio.h"

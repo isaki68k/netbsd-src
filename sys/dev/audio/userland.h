@@ -248,5 +248,25 @@ extern bool audio_file_can_record(const audio_file_t *file);
 extern bool audio_track_is_playback(const audio_track_t *track);
 extern bool audio_track_is_record(const audio_track_t *track);
 
+/* system call emulation */
+extern audio_file_t *sys_open(struct audio_softc *sc, int mode);
+extern int/*ssize_t*/ sys_write(audio_file_t *file, void* buf, size_t len);	/* write syscall の Userland 側エミュレート */
+extern int sys_ioctl_drain(audio_track_t *track);	/* ioctl(AUDIO_DRAIN) */
+
 extern void audio_format2_tostr(char *buf, size_t bufsize,
 	const audio_format2_t *fmt);
+
+extern void audio_attach(struct audio_softc **softc, bool hw);
+extern void audio_detach(struct audio_softc *sc);
+
+extern void audio_softc_play_start(struct audio_softc *sc);
+extern bool audio_softc_play_busy(struct audio_softc *sc);
+
+extern void lock(struct audio_softc *sc);
+extern void unlock(struct audio_softc *sc);
+
+extern int audio_softc_get_hw_capacity(struct audio_softc *sc);
+
+// OBSOLETE
+extern void WAIT();
+
