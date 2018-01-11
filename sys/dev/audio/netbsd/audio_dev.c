@@ -206,12 +206,6 @@ audio_softc_get_hw_capacity(struct audio_softc *sc)
 	return dev->frame_bytes * dev->fmt.sample_rate * 40 / 1000 * 2;
 }
 
-void *
-audio_softc_allocm(struct audio_softc *sc, int n)
-{
-	return malloc(n);
-}
-
 audio_format2_t
 audio_softc_get_hw_format(struct audio_softc *sc, int mode)
 {

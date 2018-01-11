@@ -74,6 +74,5 @@ int sys_ioctl_drain(audio_track_t *track);	/* ioctl(AUDIO_DRAIN) */
 /* XXX: 分類未定 */
 int audio_softc_get_hw_capacity(struct audio_softc *sc);
 audio_format2_t audio_softc_get_hw_format(struct audio_softc *sc, int mode);
-void* audio_softc_allocm(struct audio_softc *sc, int n);
 void audio_softc_play_start(struct audio_softc *sc);
 
