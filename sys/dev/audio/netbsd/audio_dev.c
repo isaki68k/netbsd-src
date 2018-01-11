@@ -6,7 +6,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <sys/audioio.h>
 #include <sys/ioctl.h>
 #include <sys/time.h>
 #include <pthread.h>

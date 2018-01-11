@@ -18,6 +18,18 @@
 
 #define __arraycount(n) _countof(n)
 
+/* <sys/audioio.h> */
+#define AUMODE_PLAY		(0x01)
+#define AUMODE_RECORD	(0x02)
+#define AUMODE_PLAY_ALL	(0x04)
+
+#define AUDIO_ENCODING_ULAW		0
+#define AUDIO_ENCODING_SLINEAR_LE	1
+#define AUDIO_ENCODING_SLINEAR_BE	2
+#define AUDIO_ENCODING_ULINEAR_LE	3
+#define AUDIO_ENCODING_ULINEAR_BE	4
+#define AUDIO_ENCODING_ADPCM		5
+
 typedef int64_t off_t;
 typedef uint64_t dev_t;
 

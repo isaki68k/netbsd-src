@@ -23,16 +23,10 @@
 #define KASSERTMSG(expr, fmt, ...)	/**/
 #endif
 
-#define AUMODE_PLAY		(0x01)
-#define AUMODE_RECORD	(0x02)
-#define AUMODE_PLAY_ALL	(0x04)
-
-#define AUDIO_ENCODING_ULAW		0
-#define AUDIO_ENCODING_SLINEAR_LE	1
-#define AUDIO_ENCODING_SLINEAR_BE	2
-#define AUDIO_ENCODING_ULINEAR_LE	3
-#define AUDIO_ENCODING_ULINEAR_BE	4
-#define AUDIO_ENCODING_ADPCM		5
+/*
+ * sys/audioio.h にある他の定数は compat.h で定義する。
+ * NetBSD 側プログラムは定数がシステムと一致してないといけないため。
+ */
 #define AUDIO_ENCODING_RAWBYTE		32767	/* これは AUDIO2 独自 */
 
 /* サポートする最大のチャンネル数 */

@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/audioio.h>
 #include <sys/endian.h>
 #include <sys/queue.h>
 #include <sys/time.h>
