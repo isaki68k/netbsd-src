@@ -1,9 +1,6 @@
 #include "audiovar.h"
 #include "aumix.h"
 
-// 割り込みエミュレーション。
-#define AUDIO_INTR_EMULATED
-
 #define INTR_TRACKMIXER		1
 
 struct intr_t

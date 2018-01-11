@@ -187,15 +187,11 @@ audio_softc_play_busy(struct audio_softc *sc)
 			return true;
 		}
 
-#ifdef AUDIO_INTR_EMULATED
 		struct intr_t x;
 		x.code = INTR_TRACKMIXER;
 		x.mixer = sc->sc_pmixer;
 		x.count = dev->sent_count;
 		emu_intr(x);
-#else
-		audio_trackmixer_intr(&sc->sc_pmixer, dev->sent_count);
-#endif
 		dev->sent_count = 0;
 	}
 	unlock(sc);

@@ -79,16 +79,12 @@ win_kick_intr(struct audio_softc *sc, WAVEHDR *wh)
 	if (wh->dwUser == 0) return;
 
 	wh->dwUser = 0;
-#ifdef AUDIO_INTR_EMULATED
 	struct intr_t x;
 	x.code = INTR_TRACKMIXER;
 	x.sc = sc;
 	x.mixer = mixer;
 	x.count = wh->dwBufferLength / dev->wfx.nBlockAlign;
 	emu_intr(x);
-#else
-	audio_trackmixer_intr(mixer, wh->dwBufferLength / dev->wfx.nBlockAlign);
-#endif
 }
 
 void CALLBACK audio_dev_win32_callback(
@@ -185,7 +181,6 @@ audio_detach(struct audio_softc *sc)
 {
 	audio_dev_win32_t *dev = sc->phys;
 
-#ifdef AUDIO_INTR_EMULATED
 	audio_file_t *f;
 	SLIST_FOREACH(f, &sc->sc_files, entry) {
 		audio_track_t *ptrack = &f->ptrack;
@@ -193,7 +188,6 @@ audio_detach(struct audio_softc *sc)
 		sys_ioctl_drain(ptrack);
 	}
 	printf("output=%d complete=%d\n", (int)sc->sc_pmixer->hw_output_counter, (int)sc->sc_pmixer->hw_complete_counter);
-#endif
 
 	MMRESULT r;
 #ifdef DEBUG_ONEBUF
