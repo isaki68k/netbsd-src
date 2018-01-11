@@ -1384,15 +1384,11 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 	    audio_pmixer_softintr, sc);
 #endif
 
-#if defined(_KERNEL)
 	// XXX とりあえず
 	if (mode == AUMODE_PLAY)
 		mixer->hwbuf.fmt = sc->sc_phwfmt;
 	else
 		mixer->hwbuf.fmt = sc->sc_rhwfmt;
-#else
-	mixer->hwbuf.fmt = audio_softc_get_hw_format(mixer->sc, mode);
-#endif
 
 	mixer->blktime_d = 1000;
 	mixer->blktime_n = audio_mixer_calc_blktime(mixer);

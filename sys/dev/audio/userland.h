@@ -100,6 +100,8 @@ struct audio_softc
 	audio_filter_reg_t sc_xxx_rfilreg;
 	audio_format2_t sc_pparams;
 	audio_format2_t sc_rparams;
+	audio_format2_t sc_phwfmt;
+	audio_format2_t sc_rhwfmt;
 
 	void *phys; // 実物理デバイス
 

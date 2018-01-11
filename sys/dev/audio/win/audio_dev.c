@@ -166,6 +166,13 @@ audio_attach(struct audio_softc **softc)
 		dev->wavehdr[i].dwBufferLength = 0;
 	}
 
+	/* hw format */
+	sc->sc_phwfmt.encoding = AUDIO_ENCODING_SLINEAR_LE;
+	sc->sc_phwfmt.channels = (uint8_t)dev->wfx.nChannels;
+	sc->sc_phwfmt.sample_rate = dev->wfx.nSamplesPerSec;
+	sc->sc_phwfmt.precision = (uint8_t)dev->wfx.wBitsPerSample;
+	sc->sc_phwfmt.stride = (uint8_t)dev->wfx.wBitsPerSample;
+
 	audio_softc_init(sc);
 	sc->hw_if->allocm = win_allocm;
 	sc->hw_if->freem = win_freem;
@@ -341,14 +348,3 @@ int audio_softc_get_hw_capacity(struct audio_softc *sc)
 	return dev->data_framecount * WAVEHDR_COUNT;
 }
 
-audio_format2_t audio_softc_get_hw_format(struct audio_softc *sc, int mode)
-{
-	audio_dev_win32_t *dev = sc->phys;
-	audio_format2_t rv;
-	rv.encoding = AUDIO_ENCODING_SLINEAR_LE;
-	rv.channels = (uint8_t)dev->wfx.nChannels;
-	rv.sample_rate = dev->wfx.nSamplesPerSec;
-	rv.precision = (uint8_t)dev->wfx.wBitsPerSample;
-	rv.stride = (uint8_t)dev->wfx.wBitsPerSample;
-	return rv;
-}

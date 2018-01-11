@@ -15,7 +15,6 @@ struct audio_dev_netbsd
 {
 	int fd;
 	int frame_bytes;
-	audio_format2_t fmt;
 	int sent_count;
 	pthread_mutex_t mutex;
 	struct timeval tv;
@@ -78,12 +77,12 @@ audio_attach(struct audio_softc **softc, bool hw)
 	dev = sc->phys;
 	dev->fd = -1;
 
-	dev->fmt.encoding = AUDIO_ENCODING_SLINEAR_LE;
-	dev->fmt.channels = 2;
-	dev->fmt.sample_rate = 48000;
-	dev->fmt.precision = 16;
-	dev->fmt.stride = 16;
-	dev->frame_bytes = dev->fmt.precision / 8 * dev->fmt.channels;
+	sc->sc_phwfmt.encoding = AUDIO_ENCODING_SLINEAR_LE;
+	sc->sc_phwfmt.channels = 2;
+	sc->sc_phwfmt.sample_rate = 48000;
+	sc->sc_phwfmt.precision = 16;
+	sc->sc_phwfmt.stride = 16;
+	dev->frame_bytes = sc->sc_phwfmt.precision / 8 * sc->sc_phwfmt.channels;
 
 	pthread_mutex_init(&dev->mutex, NULL);
 
@@ -106,10 +105,10 @@ audio_attach(struct audio_softc **softc, bool hw)
 
 		AUDIO_INITINFO(&ai);
 		ai.mode = AUMODE_PLAY;
-		ai.play.sample_rate = dev->fmt.sample_rate;
-		ai.play.encoding    = dev->fmt.encoding;
-		ai.play.precision   = dev->fmt.precision;
-		ai.play.channels    = dev->fmt.channels;
+		ai.play.sample_rate = sc->sc_phwfmt.sample_rate;
+		ai.play.encoding    = sc->sc_phwfmt.encoding;
+		ai.play.precision   = sc->sc_phwfmt.precision;
+		ai.play.channels    = sc->sc_phwfmt.channels;
 		r = ioctl(dev->fd, AUDIO_SETINFO, &ai);
 		if (r == -1) {
 			printf("AUDIO_SETINFO failed\n");
@@ -160,8 +159,9 @@ printf("%s\n", __func__);
 		d.tv_sec = 0;
 		// 後ろの800は usec->msec に直す1000倍に、
 		// ちょっと前倒しで 0.8 掛けたもの。
-		d.tv_usec = r / (dev->fmt.sample_rate * dev->fmt.precision / 8 *
-			dev->fmt.channels / 1000) * 800;
+		d.tv_usec = r / (sc->sc_phwfmt.sample_rate *
+			sc->sc_phwfmt.precision / 8 * sc->sc_phwfmt.channels / 1000) *
+			800;
 printf("usec=%d\n", (int)d.tv_usec);
 		timeradd(&dev->tv, &d, &dev->tv);
 	}
@@ -201,14 +201,7 @@ audio_softc_get_hw_capacity(struct audio_softc *sc)
 {
 	audio_dev_netbsd_t *dev = sc->phys;
 	// 2ブロック分
-	return dev->frame_bytes * dev->fmt.sample_rate * 40 / 1000 * 2;
-}
-
-audio_format2_t
-audio_softc_get_hw_format(struct audio_softc *sc, int mode)
-{
-	audio_dev_netbsd_t *dev = sc->phys;
-	return dev->fmt;
+	return dev->frame_bytes * sc->sc_phwfmt.sample_rate * 40 / 1000 * 2;
 }
 
 void
