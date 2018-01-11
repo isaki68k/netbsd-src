@@ -34,7 +34,8 @@
 
 // 周波数変換実装
 //#define FREQ_ORIG	// 元の実装
-#define FREQ_CYCLE2	// 周波数ではなく65536を基準にした周期比にする
+//#define FREQ_CYCLE2	// 周波数ではなく65536を基準にした周期比にする
+#define FREQ_SHIFT	// ソースを1サンプルずらす。(CYCLE2 から派生)
 
 // ミキサ駆動方式
 // START_ON_OPEN は、audio_open() 時にミキサを駆動しておき、
@@ -146,7 +147,13 @@ struct audio_track
 	audio_stage_t	chmix;		/* channel mix stage */
 	audio_stage_t	freq;		/* frequency conversion stage */
 
-#if defined(FREQ_CYCLE2)
+#if defined(FREQ_SHIFT)
+	u_int		freq_step;	// 周波数変換用、周期比
+	u_int		freq_current;	// 周波数変換用、現在のカウンタ
+	u_int		freq_leap;	// 周波数変換用、補正値
+	internal_t	freq_prev[AUDIO_MAX_CHANNELS];	// 前回値
+	internal_t	freq_curr[AUDIO_MAX_CHANNELS];	// 直近値
+#elif defined(FREQ_CYCLE2)
 	u_int		freq_step;	// 周波数変換用、周期比
 	u_int		freq_current;	// 周波数変換用、現在のカウンタ
 	u_int		freq_leap;	// 周波数変換用、補正値

@@ -92,8 +92,10 @@ audio_debug_bufs(char *buf, int bufsize, audio_track_t *track)
 	    track->outputbuf.top, track->outputbuf.count,
 	    track->outputbuf.capacity);
 	if (track->freq.filter)
-		n += snprintf(buf + n, bufsize - n, " f=%d",
-		    track->freq.srcbuf.count);
+		n += snprintf(buf + n, bufsize - n, " f=%d/%d/%d",
+		    track->freq.srcbuf.top,
+		    track->freq.srcbuf.count,
+		    track->freq.srcbuf.capacity);
 	if (track->chmix.filter)
 		n += snprintf(buf + n, bufsize - n, " m=%d",
 		    track->chmix.srcbuf.count);
@@ -316,8 +318,9 @@ audio_track_chmix_expand(audio_filter_arg_t *arg)
 // AUDIO_ASSERT なしで main.c による計測。@ amd64 (nao)
 //
 // src->dst	44->48	8->48	48->44	48->8	[times/msec]
-// ORIG		 48.7	 60.2	 91.8	610.6
-// CYCLE2	 65.9	 78.8	154.4	837.8
+// ORIG		 49.2	 60.8	 91.4	639.5
+// CYCLE2	 67.7	 80.9	163.2	902.8
+// SHIFT	 67.6	 60.2	163.5	903.7
 
 static void
 audio_track_freq_up(audio_filter_arg_t *arg)
@@ -335,7 +338,143 @@ audio_track_freq_up(audio_filter_arg_t *arg)
 
 	const internal_t *sptr = arg->src;
 	internal_t *dptr = arg->dst;
-#if defined(FREQ_CYCLE2)
+#if defined(FREQ_SHIFT)
+	// 周波数変換は入出力周波数の比 (srcfreq / dstfreq) で計算を行う。
+	// そのまま分数で計算するのがシンプルだが、ここでは除算回数を減らす
+	// ため dstfreq を 65536 とした時の src/dst 比を用いる。
+	// なおこのアイデアは S44PLAY.X から拝借したもの。
+	//  http://stdkmd.com/kohx3/
+	//
+	// 例えば入力 24kHz を 48kHz に変換する場合は src/dst = 32768/65536 と
+	// なり、この分子 32768 が track->freq_step である。
+	// 原理としては出力1サンプルごとに変数(ここでは t)に freq_step を
+	// 加算していき、これが 65536 以上になるごとに入力を行って、その間を
+	// 補間する。
+	//
+	// 入出力周波数の組み合わせによっては freq_step が整数にならない場合も
+	// 当然ある。例えば入力 8kHz を 48kHz に変換する場合
+	//  freq_step = 8000 / 48000 * 65536 = 10922.6666…
+	// となる。
+	// この場合出力1サンプルあたり理論値よりも 0.6666 ずつカウントが少なく
+	// なるわけなので、これをブロックごとに補正する。
+	// 1ブロックの時間 AUDIO_BLK_MS が標準の 40msec であれば、出力周波数
+	// 48kHz に対する1ブロックの出力サンプル数は
+	//  dstcount = 48000[Hz] * 0.04[sec] = 1920
+	// より 1920個なので、補正値は
+	//  freq_leap = 0.6666… * 1920 = 1280
+	// となる。つまり 8kHz を 48kHz に変換する場合、1920 出力サンプルごとに
+	// t にこの 1280 を足すことで周波数変換誤差は出なくなる。
+	//
+	// さらに freq_leap が整数にならないような入出力周波数の組み合わせも
+	// もちろんありうるが、日常使う程度の組み合わせではほぼ発生しないと
+	// 思うし、また発生したとしてもその誤差は 10^-6 以下でありこれは水晶
+	// 振動子の誤差程度かそれ以下であるので、用途に対しては十分許容できる
+	// と思う。
+
+	// 補間はブロック単位での処理がしやすいように入力を1サンプルずらして(?)
+	// 補間を行なっている。このため厳密には位相が 1/dstfreq 分だけ遅れる
+	// ことになるが、これによる観測可能な影響があるとは思えない。
+	/*
+	 * Example)
+	 * srcfreq:dstfreq = 1:3
+	 *
+	 *  A - -
+	 *  |
+	 *  |
+	 *  |     B - -
+	 *  +-----+-----> input timeframe
+	 *  0     1
+	 *
+	 *  0     1
+	 *  +-----+-----> input timeframe
+	 *  |     A
+	 *  |   x   x
+	 *  | x       x
+	 *  x          (B)
+	 *  +-+-+-+-+-+-> output timeframe
+	 *  0 1 2 3 4 5
+	 */
+
+	internal_t prev[AUDIO_MAX_CHANNELS];
+	internal_t curr[AUDIO_MAX_CHANNELS];
+	internal_t grad[AUDIO_MAX_CHANNELS];
+	unsigned int t;
+	int step = track->freq_step;
+	u_int channels;
+	u_int ch;
+
+	channels = src->fmt.channels;
+
+	// 前回の最終サンプル
+	for (ch = 0; ch < channels; ch++) {
+		prev[ch] = track->freq_prev[ch];
+		curr[ch] = track->freq_curr[ch];
+		grad[ch] = curr[ch] - prev[ch];
+	}
+
+	t = track->freq_current;
+//#define DEBUG
+#if defined(DEBUG)
+#define PRINTF(fmt...)	printf(fmt)
+#else
+#define PRINTF(fmt...)	/**/
+#endif
+	int srccount = src->count;
+	PRINTF("start step=%d", step);
+	PRINTF(" dstcount=%d srccount=%d", dst->count, src->count - srccount);
+	PRINTF(" prev=%d curr=%d grad=%d", prev[0], curr[0], grad[0]);
+	PRINTF(" t=%d\n", t);
+
+	int i;
+	for (i = 0; i < arg->count; i++) {
+		PRINTF("i=%d t=%5d", i, t);
+		if (t >= 65536) {
+			for (ch = 0; ch < channels; ch++) {
+				// 前回値
+				prev[ch] = curr[ch];
+				// 今回値
+				curr[ch] = *sptr++;
+				// 傾き
+				grad[ch] = curr[ch] - prev[ch];
+			}
+			PRINTF(" prev=%d s[%d]=%d",
+			    prev[0], src->count - srccount, curr[0]);
+
+			// 更新
+			t -= 65536;
+			srccount--;
+			if (srccount < 0) {
+				PRINTF(" break\n");
+				break;
+			}
+		}
+
+		for (ch = 0; ch < channels; ch++) {
+			*dptr++ = prev[ch] + (internal2_t)grad[ch] * t / 65536;
+#if defined(DEBUG)
+			if (ch == 0)
+				printf(" t=%5d *d=%d", t, dptr[-1]);
+#endif
+		}
+		dst->count++;
+		t += step;
+
+		PRINTF("\n");
+	}
+	PRINTF("end prev=%d curr=%d\n", prev[0], curr[0]);
+
+	audio_ring_tookfromtop(src, src->count);
+
+	// 補正
+	t += track->freq_leap;
+
+	track->freq_current = t;
+	for (ch = 0; ch < channels; ch++) {
+		track->freq_prev[ch] = prev[ch];
+		track->freq_curr[ch] = curr[ch];
+	}
+
+#elif defined(FREQ_CYCLE2)
 	unsigned int t = track->freq_current;
 	int step = track->freq_step;
 
@@ -430,7 +569,7 @@ audio_track_freq_down(audio_filter_arg_t *arg)
 
 	const internal_t *sptr0 = arg->src;
 	internal_t *dptr = arg->dst;
-#if defined(FREQ_CYCLE2)
+#if defined(FREQ_CYCLE2) || defined(FREQ_SHIFT)
 	unsigned int t = track->freq_current;
 	unsigned int step = track->freq_step;
 	int nch = dst->fmt.channels;
@@ -759,7 +898,30 @@ init_freq(audio_track_t *track, audio_ring_t *last_dst)
 		track->freq.arg.srcfmt = &track->freq.srcbuf.fmt;
 		track->freq.arg.dstfmt = &last_dst->fmt;
 
-#if defined(FREQ_CYCLE2)
+#if defined(FREQ_SHIFT)
+		memset(track->freq_prev, 0, sizeof(track->freq_prev));
+		memset(track->freq_curr, 0, sizeof(track->freq_curr));
+
+		// freq_step は dstfreq を 65536 とした時の src/dst 比
+		track->freq_step = (uint64_t)srcfreq * 65536 / dstfreq;
+
+		// freq_leap は1ブロックごとの freq_step の補正値
+		// を四捨五入したもの。
+		int dst_capacity = frame_per_block_roundup(track->mixer,
+		    dstfmt);
+		int mod = (uint64_t)srcfreq * 65536 % dstfreq;
+		track->freq_leap = (mod * dst_capacity + dstfreq / 2) / dstfreq;
+
+		if (track->freq_step < 65536) {
+			track->freq.filter = audio_track_freq_up;
+			// 初回に繰り上がりを起こすため 0 ではなく 65536 で初期化
+			track->freq_current = 65536;
+		} else {
+			track->freq.filter = audio_track_freq_down;
+			// こっちは 0 からでいい
+			track->freq_current = 0;
+		}
+#elif defined(FREQ_CYCLE2)
 		track->freq_current = 0;
 
 		// freq_step は dstfreq を 65536 とした時の src/dst 比
@@ -773,6 +935,10 @@ init_freq(audio_track_t *track, audio_ring_t *last_dst)
 		track->freq_leap = (mod * dst_capacity + dstfreq / 2) / dstfreq;
 
 		if (track->freq_step < 65536) {
+			track->freq.filter = audio_track_freq_up;
+		} else {
+			track->freq.filter = audio_track_freq_down;
+		}
 #elif defined(FREQ_ORIG)
 		track->freq_step.i = srcfreq / dstfreq;
 		track->freq_step.n = srcfreq % dstfreq;
@@ -783,13 +949,13 @@ init_freq(audio_track_t *track, audio_ring_t *last_dst)
 		track->freq_coef = (1 << (8 + 22)) / dstfreq;
 
 		if (srcfreq < dstfreq) {
-#else
-#error unknown FREQ
-#endif
 			track->freq.filter = audio_track_freq_up;
 		} else {
 			track->freq.filter = audio_track_freq_down;
 		}
+#else
+#error unknown FREQ
+#endif
 		track->freq.dst = last_dst;
 		// 周波数のみ srcfreq
 		track->freq.srcbuf.fmt = *dstfmt;
@@ -1154,6 +1320,8 @@ audio_track_play(audio_track_t *track, bool isdrain)
 			audio_apply_stage(track, &track->freq, true);
 			// freq の入力はバッファ先頭から。
 			// サブフレームの問題があるので、top 位置以降の全域をずらす。
+#if !defined(FREQ_SHIFT)
+			// FREQ_SHIFT なら半端は出ないはず
 			if (track->freq.srcbuf.top != 0) {
 				KASSERTMSG(track->freq.srcbuf.top +
 				           track->freq.srcbuf.count <=
@@ -1168,6 +1336,7 @@ audio_track_play(audio_track_t *track, bool isdrain)
 				memmove(s, p, e - p);
 				track->freq.srcbuf.top = 0;
 			}
+#endif
 		}
 		if (n > 0 && track->freq.srcbuf.count > 0) {
 			TRACE(track, "freq.srcbuf cleanup count=%d", track->freq.srcbuf.count);
@@ -2205,7 +2374,14 @@ audio_track_clear(struct audio_softc *sc, audio_track_t *track)
 		track->chmix.srcbuf.count = 0;
 	if (track->freq.filter) {
 		track->freq.srcbuf.count = 0;
-#if defined(FREQ_CYCLE2) || defined(FREQ_ORIG)
+#if defined(FREQ_SHIFT)
+		if (track->freq_step < 65536)
+			track->freq_current = 65536;
+		else
+			track->freq_current = 0;
+		memset(track->freq_prev, 0, sizeof(track->freq_prev));
+		memset(track->freq_curr, 0, sizeof(track->freq_curr));
+#elif defined(FREQ_CYCLE2) || defined(FREQ_ORIG)
 		track->freq_current = 0;
 #else
 #error unknown FREQ_*
