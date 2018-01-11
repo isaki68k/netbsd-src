@@ -2059,7 +2059,7 @@ audio_rmixer_process(struct audio_softc *sc)
 		TRACE0("count %d: too short", count);
 		return;
 	}
-	int bytes = frametobyte(&mixer->mixfmt, count);
+	int bytes = frametobyte(&mixer->track_fmt, count);
 
 	// MD 側フィルタ
 	if (mixer->codec) {
