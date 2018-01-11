@@ -3446,13 +3446,32 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 static int
 audio_getenc(struct audio_softc *sc, struct audio_encoding *ae)
 {
-	if (ae->index < 0)
-		return EINVAL;
-	if (ae->index >= sc->sc_encodings_count)
-		return EINVAL;
+	int error;
 
-	memcpy(ae, &sc->sc_encodings[ae->index], sizeof(*ae));
-	return 0;
+	DPRINTF(2, "query_encoding[%d] ", ae->index);
+	if (ae->index >= 0) {
+		error = sc->hw_if->query_encoding(sc->hw_hdl, ae);
+	} else {
+		error = EINVAL;
+	}
+
+#if AUDIO_DEBUG > 1
+	if (error) {
+		DPRINTF(2, "error=%d\n", error);
+	} else {
+		DPRINTF(2, "name=\"%s\" enc=", ae->name);
+		if (ae->encoding < __arraycount(encoding_names)) {
+			DPRINTF(2, "%s", encoding_names[ae->encoding]);
+		} else {
+			DPRINTF(2, "?(%d)", ae->encoding);
+		}
+		DPRINTF(2, " prec=%d flags=%d(%s)\n",
+		    ae->precision,
+		    ae->flags,
+		    ae->flags == 0 ? "native" : "EMULATED");
+	}
+#endif
+	return error;
 }
 
 static int
