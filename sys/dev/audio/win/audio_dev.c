@@ -167,8 +167,6 @@ audio_attach(struct audio_softc **softc)
 	}
 
 	audio_softc_init(sc);
-	audio_mixer_init(sc, sc->sc_pmixer, AUMODE_PLAY);
-	audio_mixer_init(sc, sc->sc_rmixer, AUMODE_RECORD);
 	sc->hw_if->allocm = win_allocm;
 	sc->hw_if->freem = win_freem;
 	sc->hw_if->start_output = win_start_output;

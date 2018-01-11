@@ -88,8 +88,6 @@ audio_attach(struct audio_softc **softc, bool hw)
 	pthread_mutex_init(&dev->mutex, NULL);
 
 	audio_softc_init(sc);
-	audio_mixer_init(sc, sc->sc_pmixer, AUMODE_PLAY);
-	audio_mixer_init(sc, sc->sc_rmixer, AUMODE_RECORD);
 
 	sc->hw_if->allocm = netbsd_allocm;
 	sc->hw_if->freem = netbsd_freem;
