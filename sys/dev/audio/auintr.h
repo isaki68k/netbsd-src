@@ -8,7 +8,13 @@ struct intr_t
 	volatile int code;
 	struct audio_softc *sc;
 
+#if defined(_WIN32)
 	audio_trackmixer_t *mixer;
+#else
+	// XXX Windows 側もこれに揃えたほうがいい
+	void (*func)(void *);
+	void *arg;
+#endif
 	int count;
 };
 

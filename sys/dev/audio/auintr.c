@@ -32,7 +32,12 @@ emu_intr_check()
 		switch (y.code) {
 		case INTR_TRACKMIXER:
 			mutex_enter(y.sc->sc_intr_lock);
+#if defined(_WIN32)
 			audio_pintr(y.sc);
+#else
+			// 指定された func、arg を呼ぶ
+			y.func(y.arg);
+#endif
 			mutex_exit(y.sc->sc_intr_lock);
 			break;
 		}
