@@ -88,12 +88,18 @@ int fileidx;
 int freq;
 int opt_wait;	// 1ファイルごとの開始ディレイ
 int opt_vol;
+#if !defined(_WIN32)
+const char *devicefile;
+#endif
 
 void
 usage()
 {
 	printf("usage: [options] <cmd> [files...]\n");
 	printf("options:\n");
+#if !defined(_WIN32)
+	printf(" -D <dev>  device name (default: /dev/sound)\n");
+#endif
 	printf(" -d        debug\n");
 	printf(" -f <freq> set ADPCM frequency\n");
 	printf(" -w <cnt>  delay block count for each files\n");
@@ -120,10 +126,22 @@ main(int ac, char *av[])
 
 	freq = 15625;
 	opt_vol = 256;
+#if !defined(_WIN32)
+	devicefile = "/dev/sound";
+#endif
 
 	// 先にオプション
 	for (i = 0; i < ac; i++) {
 		const char *mml = NULL;
+#if !defined(_WIN32)
+		if (strcmp(av[i], "-D") == 0) {
+			i++;
+			if (i == ac)
+				usage();
+			devicefile = av[i];
+			continue;
+		}
+#endif
 		if (strcmp(av[i], "-d") == 0) {
 			debug++;
 			continue;

@@ -10,6 +10,8 @@
 #include <sys/time.h>
 #include <pthread.h>
 
+extern const char *devicefile;
+
 struct audio_dev_netbsd
 {
 	int fd;
@@ -88,11 +90,9 @@ audio_attach(struct audio_softc **softc, bool hw)
 	sc->hw_hdl = sc;
 
 	if (hw) {
-		const char *devname = "/dev/sound";
-
-		dev->fd = open(devname, O_RDWR);
+		dev->fd = open(devicefile, O_RDWR);
 		if (dev->fd == -1) {
-			printf("open failed: %s\n", devname);
+			printf("open failed: %s\n", devicefile);
 			exit(1);
 		}
 
