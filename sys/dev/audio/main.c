@@ -108,6 +108,7 @@ usage()
 	printf(" file <files...>  print format (without playback)\n");
 	printf(" play <files...>  play files\n");
 	printf(" mml  <mml>       play mml\n");
+	printf(" perf <testname>  performance test\n");
 	exit(1);
 }
 
