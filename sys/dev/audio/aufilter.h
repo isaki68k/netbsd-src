@@ -37,19 +37,25 @@ struct audio_format2
 	uint8_t  stride;		/* ex.32 (packing bits of sample) */
 };
 
+// フィルタに渡されるパラメータ一式です。
 typedef struct audio_filter_arg audio_filter_arg_t;
 struct audio_filter_arg
 {
+	// 入力サンプルです。
 	const void *src;
+	// 入力形式です。
 	audio_format2_t *srcfmt;
 
+	// 出力サンプル用のバッファです。
 	void *dst;
+	// 出力形式です。
 	audio_format2_t *dstfmt;
 
-	// 今回のフィルタ呼び出しで入出力可能なフレーム数
+	// 今回のフィルタ呼び出しで入出力可能なフレーム数です。
 	// (内部で使用する周波数変換フィルタの場合は出力フレーム数)
 	int count;
 
+	// フィルタ固有のデータ用に使用できます。
 	void *context;
 };
 
