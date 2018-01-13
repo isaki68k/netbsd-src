@@ -342,9 +342,3 @@ audio_softc_play_busy(struct audio_softc *sc)
 	return busy_buf_count >= WAVEHDR_COUNT;
 }
 
-int audio_softc_get_hw_capacity(struct audio_softc *sc)
-{
-	audio_dev_win32_t *dev = sc->phys;
-	return dev->data_framecount * WAVEHDR_COUNT;
-}
-

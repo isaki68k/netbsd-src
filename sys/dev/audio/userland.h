@@ -259,8 +259,6 @@ extern bool audio_softc_play_busy(struct audio_softc *sc);
 extern void lock(struct audio_softc *sc);
 extern void unlock(struct audio_softc *sc);
 
-extern int audio_softc_get_hw_capacity(struct audio_softc *sc);
-
 // OBSOLETE
 extern void WAIT();
 

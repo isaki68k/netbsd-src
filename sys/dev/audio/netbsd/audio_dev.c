@@ -149,11 +149,3 @@ netbsd_start_output(void *hdl, void *blk, int blksize, void(*intr)(void *), void
 	unlock(sc);
 	return 0;
 }
-
-int
-audio_softc_get_hw_capacity(struct audio_softc *sc)
-{
-	audio_dev_netbsd_t *dev = sc->phys;
-	// 2ブロック分
-	return dev->frame_bytes * sc->sc_phwfmt.sample_rate * 40 / 1000 * 2;
-}
