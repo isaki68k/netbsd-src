@@ -1086,24 +1086,30 @@ audio_track_play(audio_track_t *track, bool isdrain)
 
 	KASSERT(track);
 
+	// この時点で usrbuf にデータはあるかも知れないしないかも知れない。
+	// また input (outputbuf を指している可能性がある) にもデータはあるかも
+	// 知れないしないかも知れないので、ここでチェックすること。
+
 	int track_count_0 = track->outputbuf.count;
 
 	inpbuf_frames_per_block = frame_per_block_roundup(track->mixer,
 	    &track->input->fmt);
 	blockbytes = frametobyte(&track->input->fmt, inpbuf_frames_per_block);
 
-	// usrbuf が1ブロックに満たない場合、
-	// - drain 中なら、足りない分を無音で埋めて処理を続ける
-	// - PLAY なら、足りない分を無音で埋めて処理を続ける
-	// - PLAY_ALL なら、何もせず帰る
+	// usrbuf が1ブロックに満たない場合、以下のようにする。
+	// o drain 中なら
+	//   - PLAY/PLAY_ALL ともに、バッファ分だけ処理をする
+	//     (不足分はミキサで無音挿入される)。
+	// o drain 中でなければ
+	//   - PLAY なら、バッファ分だけ処理する (不足分はミキサで無音挿入)。
+	//   - PLAY_ALL なら、今回は何もせず帰る
 	if (track->usrbuf.count < blockbytes) {
 		if (isdrain == false && (track->mode & AUMODE_PLAY_ALL) != 0) {
 			return;
 		}
 	}
 
-	// usrbuf からコピー。
-
+	// input バッファの空きを調べる
 	int count = audio_ring_unround_free_count(track->input);
 #if 0
 	// XXX 本当は input 以降のバッファが1ブロック以下で細切れにならない
@@ -1119,7 +1125,7 @@ audio_track_play(audio_track_t *track, bool isdrain)
 		return;
 	}
 
-	// usrbuf から input へ
+	// usrbuf から input へコピー
 	audio_ring_t *usrbuf = &track->usrbuf;
 	audio_ring_t *input = track->input;
 	// 入力(usrfmt) に 4bit は来ないので1フレームは必ず1バイト以上ある
