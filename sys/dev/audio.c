@@ -1697,37 +1697,21 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 
 // ここに audio_read
 
-// 従来は、再生も録音もその場で停止、hw halt_input/output も呼ぶ、だった。
-// drain と違ってその場で終了させる。
-// 呼ばれていた場所は以下の2箇所。
+// この file の再生 track と録音 track を即座に空にします。
+// ミキサーおよび HW には関与しません。呼ばれるのは以下の2か所から:
 // o audio_ioctl AUDIO_FLUSH で一切合切クリアする時
 // o audiosetinfo でパラメータを変更する必要がある時
-// なので、これは track(file) に対する処理に変わる、でいいんじゃなかろうか。
 //
-// この file の再生 track と録音 track を即座に空にします。
-// ミキサーおよび HW には関与しません。
-void
+// 元々 audio_clear() で、録音再生をその場で停止して hw halt_input/output も
+// 呼んでいた (呼ぶ必要があったのかどうかは分からない)。
+static void
 audio_file_clear(struct audio_softc *sc, audio_file_t *file)
 {
-	audio_track_t *track;
 
-	// XXX 元々ハードウェア転送にも手を出すので intr_lock も必要だったが、
-	// 今は track の outputbuf のロックだけでよくなったのでは?
-	// track outputbuf のロックについては後ほど検討。
-	//KASSERT(mutex_owned(sc->sc_intr_lock));
-
-	// XXX track_clear() があってもいいかも
-	// XXX 周波数変換バッファに端数がたまる可能性があるはずだがそれは
-	if (file->ptrack) {
-		track = file->ptrack;
-		track->outputbuf.count = 0;
-		track->usrbuf.count = 0;
-	}
-	if (file->rtrack) {
-		track = file->rtrack;
-		track->outputbuf.count = 0;
-		track->usrbuf.count = 0;
-	}
+	if (file->ptrack)
+		audio_track_clear(sc, file->ptrack);
+	if (file->rtrack)
+		audio_track_clear(sc, file->rtrack);
 }
 
 // こっちは HW の再生/録音をクリアする??
@@ -1864,6 +1848,7 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		// このコマンドはすべての再生と録音を停止し、すべてのキューの
 		// バッファをクリアし、エラーカウンタをリセットし、そして
 		// 現在のサンプリングモードで再生と録音を再開します。
+		audio_file_clear(sc, file);
 		break;
 
 	/*

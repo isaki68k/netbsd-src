@@ -2238,6 +2238,44 @@ audio2_halt_input(struct audio_softc *sc)
 	return error;
 }
 
+// トラックをフラッシュします。
+// 現在の動作を停止し、すべてのキューとバッファをクリアし、
+// エラーカウンタをリセットします。
+// これでええんかなあ。
+void
+audio_track_clear(struct audio_softc *sc, audio_track_t *track)
+{
+
+	KASSERT(track);
+	TRACE(track, "clear");
+
+	KASSERT(mutex_owned(sc->sc_lock));
+	KASSERT(!mutex_owned(sc->sc_intr_lock));
+
+	track->usrbuf.count = 0;
+	// 内部情報も全部クリア
+	if (track->codec.filter)
+		track->codec.srcbuf.count = 0;
+	if (track->chvol.filter)
+		track->chvol.srcbuf.count = 0;
+	if (track->chmix.filter)
+		track->chmix.srcbuf.count = 0;
+	if (track->freq.filter) {
+		track->freq.srcbuf.count = 0;
+#if defined(FREQ_CYCLE2) || defined(FREQ_ORIG)
+		track->freq_current = 0;
+#else
+#error unknown FREQ_*
+#endif
+	}
+	// バッファをクリアすれば動作は自然と停止する
+	mutex_enter(sc->sc_intr_lock);
+	track->outputbuf.count = 0;
+	mutex_exit(sc->sc_intr_lock);
+
+	// カウンタクリア
+}
+
 // errno を返します。
 int
 audio_track_drain(audio_track_t *track)
