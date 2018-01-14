@@ -1407,7 +1407,7 @@ eap*	at pci? dev ? function ?	# Ensoniq AudioPCI
 # ISA Plug-and-Play audio devices
 #ess*	at isapnp?			# ESS Tech ES1887, ES1888, ES888 audio
 #guspnp* at isapnp?			# Gravis Ultra Sound PnP audio
-sb*	at isapnp?			# SoundBlaster-compatible audio
+#sb*	at isapnp?			# SoundBlaster-compatible audio
 #wss*	at isapnp?			# Windows Sound System
 #ym*	at isapnp?			# Yamaha OPL3-SA[23] audio
 
@@ -1417,7 +1417,7 @@ sb*	at isapnp?			# SoundBlaster-compatible audio
 #ess0	at isa? port 0x220 irq 5 drq 1 drq2 5	# ESS 18XX
 #gus0	at isa? port 0x220 irq 7 drq 1 drq2 6	# Gravis Ultra Sound
 #pas0	at isa? port 0x220 irq 7 drq 1		# ProAudio Spectrum
-sb0	at isa? port 0x220 irq 5 drq 1 drq2 5	# SoundBlaster
+#sb0	at isa? port 0x220 irq 5 drq 1 drq2 5	# SoundBlaster
 #wss0	at isa? port 0x530 irq 10 drq 0	drq2 1	# Windows Sound System
 #cms0	at isa? port 0x220			# Creative Music System
 
@@ -1427,7 +1427,7 @@ sb0	at isa? port 0x220 irq 5 drq 1 drq2 5	# SoundBlaster
 #opl*	at eso?
 #opl*	at ess?
 #opl*	at fms?
-opl*	at sb?
+#opl*	at sb?
 #opl*	at sv?
 #opl*	at wss?
 #opl*	at yds?
@@ -1446,7 +1446,7 @@ audio*	at audiobus?
 #mpu*	at cmpci?
 #mpu*	at eso?
 #mpu*	at fms?
-mpu*	at sb?
+#mpu*	at sb?
 #mpu*	at yds?
 #mpu*	at ym?
 
