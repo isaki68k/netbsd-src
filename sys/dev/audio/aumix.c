@@ -2279,6 +2279,8 @@ audio_track_drain(audio_track_t *track)
 				error = EINTR;
 			return error;
 		}
+		if (sc->sc_dying)
+			return EIO;
 	}
 
 	track->is_draining = false;
@@ -2575,7 +2577,8 @@ audio_waitio(struct audio_softc *sc, audio_track_t *track)
 	TRACE(track, "wait");
 	/* Wait for pending I/O to complete. */
 	error = cv_wait_sig(&track->outchan, sc->sc_lock);
-
+	if (sc->sc_dying)
+		error = EIO;
 	TRACE(track, "error=%d", error);
 	return error;
 }

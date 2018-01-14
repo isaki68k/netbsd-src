@@ -830,6 +830,7 @@ static int
 audiodetach(device_t self, int flags)
 {
 	struct audio_softc *sc;
+	audio_file_t *f;
 	int maj, mn;
 	//int rc;
 
@@ -839,8 +840,17 @@ audiodetach(device_t self, int flags)
 	/* Start draining existing accessors of the device. */
 	// なぜここで config_detach_children() ?
 
-	// XXX 元々ここで dying 立てて wchan/rchan を broadcast してた
+	// 稼働中のトラックを終了させる
+	mutex_enter(sc->sc_lock);
 	sc->sc_dying = true;
+	SLIST_FOREACH(f, &sc->sc_files, entry) {
+		if (f->ptrack)
+			cv_broadcast(&f->ptrack->outchan);
+		if (f->rtrack)
+			cv_broadcast(&f->rtrack->outchan);
+	}
+	cv_broadcast(&sc->sc_pmixer->intrcv);
+	mutex_exit(sc->sc_lock);
 
 	/* locate the major number */
 	maj = cdevsw_lookup_major(&audio_cdevsw);
@@ -1542,13 +1552,14 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	// このミキサーどうするか
 	//grow_mixer_states(sc, 2);
 
+	mutex_enter(sc->sc_intr_lock);
 	// オープンカウント++
 	if (audio_file_can_playback(af))
 		sc->sc_popens++;
 	if (audio_file_can_record(af))
 		sc->sc_ropens++;
-
 	SLIST_INSERT_HEAD(&sc->sc_files, af, entry);
+	mutex_exit(sc->sc_intr_lock);
 
 	error = fd_clone(fp, fd, flags, &audio_fileops, af);
 	KASSERT(error == EMOVEFD);
