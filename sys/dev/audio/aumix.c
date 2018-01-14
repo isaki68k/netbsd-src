@@ -1608,6 +1608,11 @@ audio_pmixer_mixall(struct audio_softc *sc, bool isintr)
 		}
 #endif
 
+		if (track->is_pause) {
+			TRACE(track, "paused");
+			continue;
+		}
+
 #if !defined(START_ON_OPEN)
 		if (track->outputbuf.count < req) {
 			audio_track_play(track, isintr);
@@ -2081,6 +2086,11 @@ audio_rmixer_process(struct audio_softc *sc)
 
 		if (track == NULL)
 			continue;
+
+		if (track->is_pause) {
+			TRACE(track, "paused");
+			continue;
+		}
 
 		// 空いてなければ古い方から捨てる?
 		audio_ring_t *input = track->input;
