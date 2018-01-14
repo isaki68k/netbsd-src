@@ -1423,7 +1423,6 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	af = kmem_zalloc(sizeof(audio_file_t), KM_SLEEP);
 	af->sc = sc;
 	af->dev = dev;
-	af->mode = 0;
 	if ((flags & FWRITE) != 0 && audio_can_playback(sc))
 		af->mode |= AUMODE_PLAY;
 	if ((flags & FREAD) != 0 && audio_can_capture(sc))
@@ -1768,8 +1767,32 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 
 	KASSERT(mutex_owned(sc->sc_lock));
 
+#if defined(USE_SETCHAN)
 	// ioctl ターゲットチャンネルを探す
-	// XXX SETCHAN,GETCHAN はどうするか
+	// XXX デバッグ用
+	if (file->ioctl_target != 0) {
+		audio_file_t *f;
+		audio_file_t *target;
+
+		target = NULL;
+		SLIST_FOREACH(f, &sc->sc_files, entry) {
+			if (f->ptrack && f->ptrack->id == file->ioctl_target) {
+				target = f;
+				break;
+			}
+			if (f->rtrack && f->rtrack->id == file->ioctl_target) {
+				target = f;
+				break;
+			}
+		}
+		if (target == NULL) {
+			DPRINTF(1, "%s: ioctl_target %d not found\n",
+			    __func__, file->ioctl_target);
+			return EBADF;
+		}
+		file = target;
+	}
+#endif /* USE_SETCHAN */
 
 #if defined(AUDIO_DEBUG)
 	const char *ioctlnames[] = {
@@ -1802,7 +1825,15 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		return ENXIO;
 	error = 0;
 	switch (cmd) {
-#if 0
+#if defined(USE_SETCHAN)
+	case AUDIO_SETCHAN:
+		if ((int *)addr != NULL && *(int *)addr > 0) {
+			file->ioctl_target = *(int *)addr;
+			DPRINTF(1, "AUDIO_SETCHAN target id = %d\n",
+			    file->ioctl_target);
+		}
+		break;
+#else
 	case AUDIO_GETCHAN:
 		if ((int *)addr != NULL)
 			*(int*)addr = chan->chan;

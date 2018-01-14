@@ -45,6 +45,10 @@
 // ミキサを駆動、drain でもミキサを駆動。停止はどこ?
 //#define START_ON_OPEN
 
+// AUDIO_SETCHAN ioctl
+// デバッグ用に AUDIO_SETCHAN ioctl を有効にします。
+#define USE_SETCHAN
+
 // 1 ブロックの時間 [msec]
 // 40ms の場合は (1/40ms) = 25 = 5^2 なので 100 の倍数の周波数のほか、
 // 15.625kHz でもフレーム数が整数になるので、40 を基本にする。
@@ -220,6 +224,10 @@ struct audio_file
 	// rtrack.mode は (mode & AUMODE_RECORD) と等しいはず。
 	int mode;
 	dev_t dev;						/* デバイスファイルへのバックリンク */
+
+#if defined(USE_SETCHAN)
+	int ioctl_target;				// ioctl 発行先トラック番号
+#endif
 
 	SLIST_ENTRY(audio_file) entry;
 };
