@@ -2285,8 +2285,6 @@ audio_track_drain(audio_track_t *track)
 		error = cv_wait_sig(&mixer->intrcv, sc->sc_lock);
 		if (error) {
 			printf("cv_wait_sig failed %d\n", error);
-			if (error < 0)
-				error = EINTR;
 			return error;
 		}
 		if (sc->sc_dying)
@@ -2436,12 +2434,8 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 				// trkbuf が一杯ならここで待機
 				audio_track_leave_colock(sc, track);
 				error = audio_waitio(sc, track);
-				if (error != 0) {
-					if (error < 0) {
-						error = EINTR;
-					}
+				if (error != 0)
 					return error;
-				}
 				audio_track_enter_colock(sc, track);
 				continue;
 			}
