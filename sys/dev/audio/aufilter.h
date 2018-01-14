@@ -44,12 +44,12 @@ struct audio_filter_arg
 	// 入力サンプルです。
 	const void *src;
 	// 入力形式です。
-	audio_format2_t *srcfmt;
+	const audio_format2_t *srcfmt;
 
 	// 出力サンプル用のバッファです。
 	void *dst;
 	// 出力形式です。
-	audio_format2_t *dstfmt;
+	const audio_format2_t *dstfmt;
 
 	// 今回のフィルタ呼び出しで入出力可能なフレーム数です。
 	// (内部で使用する周波数変換フィルタの場合は出力フレーム数)
