@@ -246,20 +246,6 @@ static void stream_filter_list_set(stream_filter_list_t *, int,
 		stream_filter_factory_t, const audio_params_t *);
 #endif
 
-// この file が再生可能なら true を返します。
-static inline bool
-audio_file_can_playback(const audio_file_t *file)
-{
-	return ((file->mode & AUMODE_PLAY) != 0);
-}
-
-// この file が録音可能なら true を返します。
-static inline bool
-audio_file_can_record(const audio_file_t *file)
-{
-	return ((file->mode & AUMODE_RECORD) != 0);
-}
-
 // この track が再生トラックなら true を返します。
 static inline bool
 audio_track_is_playback(const audio_track_t *track)
@@ -1434,12 +1420,12 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 
 	// トラックの初期化
 	// トラックバッファの初期化
-	if (audio_file_can_playback(af)) {
+	if ((af->mode & AUMODE_PLAY) != 0) {
 		error = audio_track_init(sc, &af->ptrack, AUMODE_PLAY);
 		if (error)
 			goto bad1;
 	}
-	if (audio_file_can_record(af)) {
+	if ((af->mode & AUMODE_RECORD) != 0) {
 		error = audio_track_init(sc, &af->rtrack, AUMODE_RECORD);
 		if (error)
 			goto bad2;
@@ -1490,7 +1476,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 		if (!sc->sc_full_duplex || 1/*XXX*/) {
 			if (sc->hw_if->speaker_ctl) {
 				int on;
-				if (audio_file_can_playback(af)) {
+				if (af->ptrack) {
 					on = 1;
 				} else {
 					on = 0;
@@ -1511,7 +1497,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	}
 
 	// init_input/output
-	if (audio_file_can_playback(af) && sc->sc_popens == 0) {
+	if (af->ptrack && sc->sc_popens == 0) {
 		if (sc->hw_if->init_output) {
 			audio_ring_t *hwbuf = &sc->sc_pmixer->hwbuf;
 			mutex_enter(sc->sc_intr_lock);
@@ -1527,7 +1513,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 		audio_pmixer_start(sc->sc_pmixer, false);
 #endif
 	}
-	if (audio_file_can_record(af) && sc->sc_ropens == 0) {
+	if (af->rtrack && sc->sc_ropens == 0) {
 		if (sc->hw_if->init_input) {
 			audio_ring_t *hwbuf = &sc->sc_rmixer->hwbuf;
 			mutex_enter(sc->sc_intr_lock);
@@ -1553,9 +1539,9 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 
 	mutex_enter(sc->sc_intr_lock);
 	// オープンカウント++
-	if (audio_file_can_playback(af))
+	if (af->ptrack)
 		sc->sc_popens++;
-	if (audio_file_can_record(af))
+	if (af->rtrack)
 		sc->sc_ropens++;
 	SLIST_INSERT_HEAD(&sc->sc_files, af, entry);
 	mutex_exit(sc->sc_intr_lock);
@@ -1729,12 +1715,12 @@ audio_file_clear(struct audio_softc *sc, audio_file_t *file)
 
 	// XXX track_clear() があってもいいかも
 	// XXX 周波数変換バッファに端数がたまる可能性があるはずだがそれは
-	if (audio_file_can_playback(file)) {
+	if (file->ptrack) {
 		track = file->ptrack;
 		track->outputbuf.count = 0;
 		track->usrbuf.count = 0;
 	}
-	if (audio_file_can_record(file)) {
+	if (file->rtrack) {
 		track = file->rtrack;
 		track->outputbuf.count = 0;
 		track->usrbuf.count = 0;
@@ -2057,7 +2043,7 @@ filt_audioread(struct knote *kn, long hint)
 	mutex_enter(sc->sc_intr_lock);
 #if 0
 	// XXX なんだこれ
-	if (audio_file_can_record(file))
+	if (file->rtrack)
 		kn->kn_data = vc->sc_mpr.stamp - vc->sc_wstamp;
 	else
 		kn->kn_data = audio_stream_get_used(vc->sc_rustream)
