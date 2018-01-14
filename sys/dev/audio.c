@@ -393,6 +393,9 @@ make_buildinfo(void)
 #if defined(START_ON_OPEN)
 	n += snprintf(buf + n, sizeof(buf) - n, ", START_ON_OPEN");
 #endif
+#if defined(USE_SETCHAN)
+	n += snprintf(buf + n, sizeof(buf) - n, ", USE_SETCHAN");
+#endif
 
 	audio_buildinfo = malloc(strlen(buf) + 1, M_NOWAIT, 0);
 	if (audio_buildinfo) {
