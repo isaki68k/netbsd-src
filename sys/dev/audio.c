@@ -1589,6 +1589,17 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 	//if (sc->sc_opens == 0 && sc->sc_recopens == 0)
 	//	return ENXIO;
 
+	// このディスクリプタが RD/WR のどのモードでオープンされたかは
+	// flags の FREAD/FWRITE ビットで分かるが、現在どちらのトラックが
+	// 有効かは file->ptrack、file->rtrack が !NULL で判断すること。
+	// flags はユーザが open 時に指示したモード(O_RDWR とか)。
+	// file->mode はそれと HW 特性を AND したもの (例えば再生専用 HW
+	// に対して O_RDWR しても file->mode は AUMODE_PLAY のみ)。
+	// file->ptrack、file->rtrack は file->mode が有効な方のうち実際に
+	// トラックが用意できたかどうかなので、
+	// file->mode が AUMODE_PLAY | AUMODE_RECORD であっても (何らかの
+	// エラーなどで) file->rtrack = NULL とかはあり得る。
+
 	// SB とかいくつかのドライバは halt_input と halt_output に
 	// 同じルーチンを使用しているので、その場合は full duplex なら
 	// halt_input を呼ばなくする?。ドライバのほうを直すべき。
@@ -1598,7 +1609,7 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 	 * in full duplex mode.  These drivers should be fixed.
 	 */
 	// XXX これはドライバのほうを先に直せば済む話
-	if ((flags & (FREAD | FWRITE)) == (FREAD | FWRITE) &&
+	if ((file->ptrack != NULL && file->rtrack != NULL) &&
 	    sc->sc_full_duplex == false &&
 	    sc->hw_if->halt_input == sc->hw_if->halt_output &&
 	    sc->sc_ropens == 1) {
@@ -1611,7 +1622,7 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 	}
 
 	// これが最後の録音トラックなら、halt_input を呼ぶ?
-	if ((flags & FREAD) != 0) {
+	if (file->rtrack) {
 		if (sc->sc_ropens == 1) {
 			if (sc->sc_rbusy) {
 				DPRINTF(2, "%s halt_input\n", __func__);
@@ -1635,7 +1646,7 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 
 	// 再生トラックなら、audio_drain を呼ぶ
 	// 最後の再生トラックなら、hw audio_drain、halt_output を呼ぶ
-	if ((flags & FWRITE) != 0) {
+	if (file->ptrack) {
 		audio_drain(sc, file->ptrack);
 
 		if (sc->sc_popens == 1) {
