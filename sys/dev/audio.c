@@ -3422,9 +3422,7 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 		ri->waiting = 0;			/* open never hangs */
 		ri->open = 1;
 		ri->active = sc->sc_rbusy;// XXX ?
-		ri->buffer_size = rtrack->outputbuf.capacity *
-		    (rtrack->outputbuf.fmt.channels *
-		     rtrack->outputbuf.fmt.stride / NBBY);
+		ri->buffer_size = rtrack->usrbuf.capacity;
 	}
 
 	// XXX 再生と録音でチャンネル数が違う場合があるので
