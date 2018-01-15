@@ -1728,9 +1728,9 @@ audio_hw_clear(struct audio_softc *sc)
 
 // たぶん audio_ioctl はハードウェアレイヤの変更は行わないはずなので
 // これ実行中に同時に他の操作が来ても大丈夫?
-// AUDIO_FLUSH .. ハードウェアレイヤまで手を出すかどうか
-// AUDIO_DRAIN .. どこまで drain するか
-// AUDIO_SETFD .. たぶんソフトウェアレイヤで済ませるはず
+// AUDIO_FLUSH .. トラックまでしか触らない。
+// AUDIO_DRAIN .. トラックまでしか触らない。
+// AUDIO_SETFD .. これもたぶんトラックだけで済ませたほうがいい。
 int
 audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 	    struct lwp *l, audio_file_t *file)
