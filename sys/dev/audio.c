@@ -1822,9 +1822,7 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		// 入力バッファにあるバイト数
 		// XXX 動作未確認
 		if (file->rtrack) {
-			audio_ring_t *outbuf = &file->rtrack->outputbuf;
-			*(int *)addr = outbuf->count *
-			    (outbuf->fmt.channels * outbuf->fmt.stride / NBBY);
+			*(int *)addr = file->rtrack->usrbuf.count;
 		} else {
 			*(int *)addr = 0;
 		}
@@ -1970,15 +1968,15 @@ audio_poll(struct audio_softc *sc, int events, struct lwp *l,
 	revents = 0;
 	if (events & (POLLIN | POLLRDNORM)) {
 		if (file->rtrack) {
-			audio_ring_t *buf = &file->rtrack->outputbuf;
-			if (buf->count > 0)
+			audio_ring_t *usrbuf = &file->rtrack->usrbuf;
+			if (usrbuf->count > 0)
 				revents |= events & (POLLIN | POLLRDNORM);
 		}
 	}
 	if (events & (POLLOUT | POLLWRNORM)) {
 		if (file->ptrack) {
-			audio_ring_t *buf = &file->ptrack->outputbuf;
-			if (buf->count < buf->capacity)
+			audio_ring_t *usrbuf = &file->ptrack->usrbuf;
+			if (usrbuf->count < usrbuf->capacity)
 				revents |= events & (POLLOUT | POLLWRNORM);
 		}
 	}
@@ -2013,32 +2011,21 @@ filt_audioread(struct knote *kn, long hint)
 {
 	struct audio_softc *sc;
 	audio_file_t *file;
-	audio_track_t *track;
-	audio_ring_t *buf;
-	audio_format2_t *fmt;
+	audio_ring_t *usrbuf;
 
 	file = kn->kn_hook;
 	sc = file->sc;
-	track = file->rtrack;
-	KASSERT(track);
-	buf = &track->outputbuf;
-	fmt = &track->outputbuf.fmt;
 
 	// XXX READ 可能な時しかここ来ないのかな?
 
+	// XXX 仕様がよくわからんけど、
+	// 録音バッファのバイト数を調べるだけじゃいかんのか?
+
 	mutex_enter(sc->sc_intr_lock);
-#if 0
-	// XXX なんだこれ
-	if (file->rtrack)
-		kn->kn_data = vc->sc_mpr.stamp - vc->sc_wstamp;
-	else
-		kn->kn_data = audio_stream_get_used(vc->sc_rustream)
-			- vc->sc_mrr.usedlow;
-#else
-	// 録音バッファに空きがあるかどうかならこれでいいんでは。
-	kn->kn_data = (buf->capacity - buf->count) *
-	    (fmt->channels * fmt->stride / NBBY);
-#endif
+	if (file->rtrack) {
+		usrbuf = &file->rtrack->usrbuf;
+		kn->kn_data = usrbuf->count;
+	}
 	mutex_exit(sc->sc_intr_lock);
 
 	return kn->kn_data > 0;
@@ -2070,26 +2057,21 @@ filt_audiowrite(struct knote *kn, long hint)
 {
 	struct audio_softc *sc;
 	audio_file_t *file;
-	audio_track_t *track;
-	audio_ring_t *buf;
-	audio_format2_t *fmt;
+	audio_ring_t *usrbuf;
 
 	file = kn->kn_hook;
 	sc = file->sc;
-	track = file->ptrack;
-	KASSERT(track);
-	buf = &track->outputbuf;
-	fmt = &track->inputfmt;
 
 	// XXX WRITE 可能な時しかここ来ないのかな?
 
+	// XXX 仕様がよくわからんけど、
+	// 再生バッファの空きバイト数を調べるだけじゃいかんのか?
+
 	mutex_enter(sc->sc_intr_lock);
-
-	// 再生バッファの空きバイト数を kn_data に入れて、
-	// 空きがあるかどうかを返す?
-	kn->kn_data = (buf->capacity - buf->count) *
-	    (fmt->channels * fmt->stride / NBBY);
-
+	if (file->ptrack) {
+		usrbuf = &file->ptrack->usrbuf;
+		kn->kn_data = usrbuf->capacity - usrbuf->count;
+	}
 	mutex_exit(sc->sc_intr_lock);
 
 	return kn->kn_data > 0;
