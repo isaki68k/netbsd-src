@@ -2291,6 +2291,11 @@ audio_track_drain(audio_track_t *track)
 	KASSERT(mutex_owned(sc->sc_lock));
 	KASSERT(!mutex_owned(sc->sc_intr_lock));
 
+	// pause 中なら今溜まってるものは全部無視してこのまま終わってよし
+	if (track->is_pause) {
+		track->pstate = AUDIO_STATE_CLEAR;
+		TRACE(track, "pause -> clear");
+	}
 	// トラックにデータがなくても drain は ミキサのループが数回回って
 	// 問題なく終わるが、クリーンならさすがに早期終了しても
 	// いいんじゃなかろうか。
