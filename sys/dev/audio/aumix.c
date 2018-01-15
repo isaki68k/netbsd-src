@@ -2291,7 +2291,15 @@ audio_track_drain(audio_track_t *track)
 	KASSERT(mutex_owned(sc->sc_lock));
 	KASSERT(!mutex_owned(sc->sc_intr_lock));
 
-	track->is_draining = true;
+	// トラックにデータがなくても drain は ミキサのループが数回回って
+	// 問題なく終わるが、クリーンならさすがに早期終了しても
+	// いいんじゃなかろうか。
+	if (track->pstate == AUDIO_STATE_CLEAR) {
+		TRACE(track, "no need to drain");
+		return 0;
+	}
+
+	track->pstate = AUDIO_STATE_DRAINING;
 
 	// トラックに書き込まれたデータは audio_write() によって基本的に
 	// outputbuf に変換済み。ただし最終ブロックだけ、1ブロックに満たない
@@ -2329,7 +2337,7 @@ audio_track_drain(audio_track_t *track)
 			return EIO;
 	}
 
-	track->is_draining = false;
+	track->pstate = AUDIO_STATE_CLEAR;
 	TRACE(track, "done trk_inp=%d trk_out=%d",
 		(int)track->inputcounter, (int)track->outputcounter);
 	return 0;
@@ -2429,6 +2437,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 	TRACE(track, "resid=%zd inp_thres=%d out_thres=%d",
 	    uio->uio_resid, inp_thres, out_thres);
 
+	track->pstate = AUDIO_STATE_RUNNING;
 	error = 0;
 	while (uio->uio_resid > 0 && error == 0) {
 		int bytes;

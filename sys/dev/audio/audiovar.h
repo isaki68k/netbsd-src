@@ -106,6 +106,12 @@ struct audio_stage
 };
 typedef struct audio_stage audio_stage_t;
 
+typedef enum {
+	AUDIO_STATE_CLEAR,		// データなし (drain不要)
+	AUDIO_STATE_RUNNING,		// データあり
+	AUDIO_STATE_DRAINING,		// drain 中
+} audio_state_t;
+
 struct audio_track
 {
 	// このトラックの再生/録音モード。AUMODE_*
@@ -150,7 +156,7 @@ struct audio_track
 
 	uint64_t seq;	// トラックミキサが引き取ったシーケンス番号
 
-	bool is_draining;					/* drain 実行中 */
+	audio_state_t pstate;				// 再生のステート
 	bool is_pause;						/* outputbuf への trackmixer からのアクセスを一時停止する */
 
 	uint64_t inputcounter;				/* トラックに入力されたフレーム数 */
