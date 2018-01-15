@@ -1877,11 +1877,10 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 	 * How many bytes will elapse until mike hears the first
 	 * sample of what we write next?
 	 */
-#if 0
 	case AUDIO_WSEEK:
-		*(u_long *)addr = audio_stream_get_used(vc->sc_pustream);
+		if (file->ptrack)
+			*(u_long *)addr = file->ptrack->usrbuf.count;
 		break;
-#endif
 
 	case AUDIO_SETINFO:
 		error = audio_file_setinfo(sc, file, (struct audio_info *)addr);
