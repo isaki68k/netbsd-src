@@ -1800,11 +1800,9 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 	switch (cmd) {
 #if defined(USE_SETCHAN)
 	case AUDIO_SETCHAN:
-		if ((int *)addr != NULL && *(int *)addr > 0) {
-			file->ioctl_target = *(int *)addr;
-			DPRINTF(1, "AUDIO_SETCHAN target id = %d\n",
-			    file->ioctl_target);
-		}
+		file->ioctl_target = *(int *)addr;
+		DPRINTF(1, "AUDIO_SETCHAN target id = %d\n",
+		    file->ioctl_target);
 		break;
 #else
 	case AUDIO_GETCHAN:
