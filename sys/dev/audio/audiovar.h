@@ -155,6 +155,8 @@ struct audio_track
 
 	uint64_t inputcounter;				/* トラックに入力されたフレーム数 */
 	uint64_t outputcounter;				/* トラックから出力されたフレーム数 */
+	uint64_t inputbytes;				// ユーザランドから入力されたバイト数
+	uint64_t outputbytes;				// ユーザランドに出力したバイト数
 
 #if !defined(AUDIO_SOFTINTR)
 	volatile uint32_t track_cl;			// track cooperative lock
