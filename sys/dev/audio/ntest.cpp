@@ -87,6 +87,7 @@ main(int ac, char *av[])
 
 		for (int j = 0; testtable[j].name != NULL; j++) {
 			testtable[j].func();
+			testname[0] = '\0';
 		}
 	} else {
 		// -a なしなら cmd か test
@@ -106,6 +107,7 @@ main(int ac, char *av[])
 			for (int j = 0; testtable[j].name != NULL; j++) {
 				if (strcmp(av[i], testtable[j].name) == 0) {
 					testtable[j].func();
+					testname[0] = '\0';
 				}
 			}
 		}
