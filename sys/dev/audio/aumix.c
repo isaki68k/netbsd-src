@@ -860,6 +860,7 @@ done:
 
 // トラックのユーザランド側フォーマットを設定します。
 // 変換用内部バッファは一度破棄されます。
+// 成功すれば 0、失敗すれば errno を返します。
 int
 audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 {
