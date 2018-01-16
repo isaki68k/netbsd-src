@@ -2437,7 +2437,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 	} else {
 		/* PLAY */
 		inp_thres = usrbuf->capacity;
-		out_thres = 1;
+		out_thres = frametobyte(&track->inputfmt, 1);
 		force = true;
 	}
 	TRACE(track, "resid=%zd inp_thres=%d out_thres=%d",

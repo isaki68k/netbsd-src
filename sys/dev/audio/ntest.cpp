@@ -479,6 +479,35 @@ test_encoding_2()
 	}
 }
 
+void
+test_drain_1(void)
+{
+	int r;
+	int fd;
+
+	fd = open(devicename, O_WRONLY);
+	if (fd == -1)
+		err(1, "open");
+
+	TEST("drain_1");
+	// 1フレーム4バイト、PLAY に設定
+	struct audio_info ai;
+	AUDIO_INITINFO(&ai);
+	ai.play.encoding = AUDIO_ENCODING_SLINEAR_LE;
+	ai.play.precision = 16;
+	ai.play.channels = 2;
+	ai.play.sample_rate = 44100;
+	ai.mode = AUMODE_PLAY;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
+	if (r == -1)
+		err(1, "AUDIO_SETINFO");
+	// 1バイト書いて close
+	r = WRITE(fd, &r, 1);
+	XP_EQ(1, r);
+	r = CLOSE(fd);
+	XP_EQ(0, r);
+}
+
 // AUDIO_WSEEK の動作確認
 void
 test_AUDIO_WSEEK_1(void)
@@ -540,6 +569,7 @@ struct testtable testtable[] = {
 	DEF(open_1),
 	DEF(encoding_1),
 	DEF(encoding_2),
+	DEF(drain_1),
 	DEF(AUDIO_WSEEK_1),
 	{ NULL, NULL },
 };
