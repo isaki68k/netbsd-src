@@ -3054,6 +3054,10 @@ audio_file_setinfo_check(audio_format2_t *fmt, const struct audio_prinfo *info)
 
 	changes = 0;
 	if (SPECIFIED(info->sample_rate)) {
+		if (info->sample_rate < AUDIO_MIN_FREQUENCY)
+			return -1;
+		if (info->sample_rate > AUDIO_MAX_FREQUENCY)
+			return -1;
 		fmt->sample_rate = info->sample_rate;
 		changes = 1;
 	}

@@ -61,6 +61,15 @@
 #endif
 #endif
 
+// サポートする最大/最小周波数。
+// 最小は、実用的に意味があるかはともかく 4kHz 未満をセットできる骨董品も
+// 中にはあることを考慮してこのくらいまでは許してやろう。
+// ちなみに OpenBSD は下限 4000Hz で現状妥当な数字だと思う。
+// 最大は 384000 (hdaudio規格?) でもいいけど確認できないので、とりあえず
+// このくらいでたちまち勘弁してもらえないか。
+#define AUDIO_MIN_FREQUENCY (1000)
+#define AUDIO_MAX_FREQUENCY	(192000)
+
 #if BYTE_ORDER == LITTLE_ENDIAN
 #define AUDIO_ENCODING_SLINEAR_NE AUDIO_ENCODING_SLINEAR_LE
 #define AUDIO_ENCODING_ULINEAR_NE AUDIO_ENCODING_ULINEAR_LE
