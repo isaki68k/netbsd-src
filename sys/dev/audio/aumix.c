@@ -63,6 +63,29 @@ audio_trace(const char *funcname, audio_track_t *track, const char *fmt, ...)
 	printf("\n");
 }
 
+void
+audio_tracef(const char *funcname, audio_file_t *file, const char *fmt, ...)
+{
+	char pbuf[16], rbuf[16];
+	struct timeval tv;
+	va_list ap;
+
+	pbuf[0] = '\0';
+	rbuf[0] = '\0';
+	if (file->ptrack)
+		snprintf(pbuf, sizeof(pbuf), "#%d", file->ptrack->id);
+	if (file->rtrack)
+		snprintf(rbuf, sizeof(rbuf), "#%d", file->rtrack->id);
+
+	getmicrotime(&tv);
+	printf("%d.%06d ", (int)tv.tv_sec%60, (int)tv.tv_usec);
+	printf("%s {%s,%s} ", funcname, pbuf, rbuf);
+	va_start(ap, fmt);
+	vprintf(fmt, ap);
+	va_end(ap);
+	printf("\n");
+}
+
 #if AUDIO_DEBUG > 2
 static void
 audio_debug_bufs(char *buf, int bufsize, audio_track_t *track)

@@ -21,9 +21,11 @@
 #if AUDIO_DEBUG > 2
 #define TRACE0(fmt, ...)	audio_trace0(__func__, fmt, ## __VA_ARGS__)
 #define TRACE(t, fmt, ...)	audio_trace(__func__, t, fmt, ## __VA_ARGS__)
+#define TRACEF(f, fmt, ...)	audio_tracef(__func__, f, fmt, ## __VA_ARGS__)
 #else
 #define TRACE0(fmt, ...)	/**/
 #define TRACE(t, fmt, ...)	/**/
+#define TRACEF(f, fmt, ...)	/**/
 #endif
 
 // 出力バッファのブロック数
@@ -253,6 +255,9 @@ struct audio_file
 extern void audio_trace0(const char *funcname, const char *fmt, ...)
 	__attribute__((__format__(printf, 2, 3)));
 extern void audio_trace(const char *funcname, audio_track_t *track,
+	const char *fmt, ...)
+	__attribute__((__format__(printf, 3, 4)));
+extern void audio_tracef(const char *funcname, audio_file_t *file,
 	const char *fmt, ...)
 	__attribute__((__format__(printf, 3, 4)));
 
