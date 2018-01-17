@@ -2137,6 +2137,7 @@ audio_rmixer_process(struct audio_softc *sc)
 		if (input->capacity - input->count < mixer->frames_per_block) {
 			int drops = mixer->frames_per_block -
 			    (input->capacity - input->count);
+			track->dropframes += drops;
 			TRACE(track, "drop %d frames: inp=%d/%d/%d",
 			    drops,
 			    input->top, input->count, input->capacity);
