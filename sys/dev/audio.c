@@ -1730,7 +1730,7 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 	    struct lwp *l, audio_file_t *file)
 {
 	//struct audio_offset *ao;
-	int error/*, offs*//*, fd*/;
+	int error/*, offs*/, fd;
 
 	KASSERT(mutex_owned(sc->sc_lock));
 
@@ -1922,18 +1922,18 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		break;
 
 	case AUDIO_GETFD:
-		// XXX Full duplex かどうか
-		//*(int *)addr = 1;
+		// HW が Full Duplex かどうかを返します。
+		*(int *)addr = sc->sc_full_duplex;
 		break;
 
 	case AUDIO_SETFD:
-		//fd = *(int *)addr;
-		// XXX 仕様を決める必要がある
-		// audio(4)
-		// Full-duplex デバイスでは、読み書きは干渉なく同時に行える。
-		// full-duplex 可能なデバイスが R/W モードでオープンされた場合
-		// play の half-duplex として開始する。full-duplex にするには
-		// 明示的にセットが必要。
+		// HW が Full Duplex なら SETFD(1) のみ、
+		// HW が Half Duplex なら SETFD(0) のみを (設定を変更せずに)
+		// 成功にします。
+		fd = *(int *)addr;
+		if ((sc->sc_full_duplex != 0 && fd == 0) ||
+		    (sc->sc_full_duplex == 0 && fd != 0))
+			error = EINVAL;
 		break;
 
 	case AUDIO_GETPROPS:

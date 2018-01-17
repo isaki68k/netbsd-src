@@ -765,6 +765,83 @@ test_AUDIO_WSEEK_1(void)
 	CLOSE(fd);
 }
 
+void
+test_AUDIO_GETFD(void)
+{
+	int r;
+	int fd;
+	int n;
+	int props;
+	int expected;
+
+	TEST("AUDIO_GETFD");
+
+	fd = OPEN(devicename, O_WRONLY);
+	if (fd == -1)
+		err(1, "open: %s", devicename);
+
+	// プロパティから Full/Half を知る (GETPROPS は信頼できるものとする)
+	r = IOCTL(fd, AUDIO_GETPROPS, &props, "");
+	XP_EQ(0, r);
+
+	if (props & AUDIO_PROP_FULLDUPLEX)
+		expected = 1;
+	else
+		expected = 0;
+
+	n = 0;
+	r = IOCTL(fd, AUDIO_GETFD, &n, "");
+	XP_EQ(0, r);
+	XP_EQ(expected, n);
+
+	CLOSE(fd);
+}
+
+void
+test_AUDIO_SETFD(void)
+{
+	int r;
+	int fd;
+	int n;
+	int props;
+	int expected;
+
+	fd = OPEN(devicename, O_WRONLY);
+	if (fd == -1)
+		err(1, "open: %s", devicename);
+
+	// プロパティから Full/Half を知る (GETPROPS は信頼できるものとする)
+	r = IOCTL(fd, AUDIO_GETPROPS, &props, "");
+	XP_EQ(0, r);
+
+	if (props & AUDIO_PROP_FULLDUPLEX)
+		expected = 1;
+	else
+		expected = 0;
+
+	TEST("AUDIO_SETFD_0");
+	n = 0;
+	r = IOCTL(fd, AUDIO_SETFD, &n, "0");
+	if (props & AUDIO_PROP_FULLDUPLEX) {
+		XP_EQ(-1, r);
+		XP_EQ(EINVAL, errno);
+	} else {
+		XP_EQ(0, r);
+	}
+
+	TEST("AUDIO_SETFD_1");
+	n = 1;
+	r = IOCTL(fd, AUDIO_SETFD, &n, "1");
+	if (props & AUDIO_PROP_FULLDUPLEX) {
+		XP_EQ(0, r);
+	} else {
+		XP_EQ(-1, r);
+		XP_EQ(EINVAL, errno);
+	}
+
+	CLOSE(fd);
+}
+
 // コマンド一覧
 #define DEF(x)	{ #x, cmd_ ## x }
 struct cmdtable cmdtable[] = {
@@ -788,6 +865,8 @@ struct testtable testtable[] = {
 	DEF(FIOASYNC_4),
 	DEF(FIOASYNC_5),
 	DEF(AUDIO_WSEEK_1),
+	DEF(AUDIO_GETFD),
+	DEF(AUDIO_SETFD),
 	{ NULL, NULL },
 };
 
