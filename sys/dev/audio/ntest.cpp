@@ -151,7 +151,6 @@ init()
 // テスト名
 #define TEST(name...)	do {	\
 	snprintf(testname, sizeof(testname), name);	\
-	testcount++;	\
 	printf("%s\n", testname);	\
 } while (0)
 
@@ -171,6 +170,7 @@ void xp_fail(int line, const char *fmt, ...)
 #define XP_EQ(exp, act)	xp_eq(__LINE__, exp, act)
 void xp_eq(int line, int exp, int act)
 {
+	testcount++;
 	if (exp != act)
 		xp_fail(line, "expects %d but %d", exp, act);
 }
