@@ -170,6 +170,8 @@ struct audio_track
 	audio_state_t pstate;				// 再生のステート
 	bool is_pause;						/* outputbuf への trackmixer からのアクセスを一時停止する */
 
+	void *sih_wr;						/* softint cookie for write */
+
 	uint64_t inputcounter;				/* トラックに入力されたフレーム数 */
 	uint64_t outputcounter;				/* トラックから出力されたフレーム数 */
 	uint64_t inputbytes;				// ユーザランドから入力されたバイト数
@@ -243,6 +245,8 @@ struct audio_file
 	// rtrack.mode は (mode & AUMODE_RECORD) と等しいはず。
 	int mode;
 	dev_t dev;						/* デバイスファイルへのバックリンク */
+
+	pid_t async_audio;				/* process who wants audio SIGIO */
 
 #if defined(USE_SETCHAN)
 	int ioctl_target;				// ioctl 発行先トラック番号

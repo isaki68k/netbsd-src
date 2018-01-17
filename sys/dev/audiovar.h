@@ -148,9 +148,7 @@ struct audio_softc {
 
 	struct	selinfo sc_wsel; /* write selector */
 	struct	selinfo sc_rsel; /* read selector */
-	pid_t		sc_async_audio;	/* process who wants audio SIGIO */
 	void		*sc_sih_rd;
-	void		*sc_sih_wr;
 	struct	mixer_asyncs {
 		struct mixer_asyncs *next;
 		pid_t	pid;

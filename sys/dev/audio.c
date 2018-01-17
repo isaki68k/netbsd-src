@@ -557,8 +557,6 @@ audioattach(device_t parent, device_t self, void *aux)
 
 	sc->sc_sih_rd = softint_establish(SOFTINT_SERIAL | SOFTINT_MPSAFE,
 	    audio_softintr_rd, sc);
-	sc->sc_sih_wr = softint_establish(SOFTINT_SERIAL | SOFTINT_MPSAFE,
-	    audio_softintr_wr, sc);
 
 	// /dev/sound のデフォルト値
 	sc->sc_pparams = params_to_format2(&audio_default);
@@ -887,10 +885,6 @@ audiodetach(device_t self, int flags)
 	if (sc->sc_sih_rd) {
 		softint_disestablish(sc->sc_sih_rd);
 		sc->sc_sih_rd = NULL;
-	}
-	if (sc->sc_sih_wr) {
-		softint_disestablish(sc->sc_sih_wr);
-		sc->sc_sih_wr = NULL;
 	}
 
 #ifdef AUDIO_PM_IDLE
@@ -1830,14 +1824,22 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 
 	case FIOASYNC:
 		if (*(int *)addr) {
-			if (sc->sc_async_audio != 0)
-				error = EBUSY;
-			else
-				sc->sc_async_audio = curproc->p_pid;
-			DPRINTF(2, "audio_ioctl: FIOASYNC pid %d\n",
-			    sc->sc_async_audio);
-		} else
-			sc->sc_async_audio = 0;
+			file->async_audio = curproc->p_pid;
+			if (file->ptrack && file->ptrack->sih_wr == NULL) {
+				file->ptrack->sih_wr = softint_establish(
+				    SOFTINT_SERIAL | SOFTINT_MPSAFE,
+				    audio_softintr_wr, file);
+			}
+			DPRINTF(2, "%s: FIOASYNC pid %d\n", __func__,
+			    file->async_audio);
+		} else {
+			file->async_audio = 0;
+			if (file->ptrack && file->ptrack->sih_wr) {
+				softint_disestablish(file->ptrack->sih_wr);
+				file->ptrack->sih_wr = NULL;
+			}
+			DPRINTF(2, "%s: FIOASYNC off\n", __func__);
+		}
 		break;
 
 	case AUDIO_FLUSH:
@@ -2225,38 +2227,86 @@ audiostartp(struct audio_softc *sc)
 
 // audio_pint_silence いるかどうかは今後
 
+/*
+ * SIGIO derivery for record.
+ *
+ * o softintr cookie for record is one per device.  Initialize on attach()
+ *   and release on detach().
+// o audio_rmixer_process で全録音トラックへの分配が終ったところで
+//   1回ソフトウエア割り込みを要求。
+// o ソフトウェア割り込みで、すべての async 録音トラックに対して SIGIO を
+//   投げる。
+// o このため
+//  - audio_rmixer_process -> open and set FAIOASYNC -> audoi_softintr_rd
+//    の順でオープンされたトラックについては、録音データがまだ到着していない
+//    にも関わらずシグナルが届くことになるがこれは許容する。
+ */
+
+// 録音時は rmixer_process から (リスナーが何人いても) 1回だけこれが呼ばれる
+// ので、async 設定しているプロセス全員にここで SIGIO を配送すればよい。
 static void
 audio_softintr_rd(void *cookie)
 {
 	struct audio_softc *sc = cookie;
+	audio_file_t *f;
 	proc_t *p;
 	pid_t pid;
 
 	mutex_enter(sc->sc_lock);
 	// XXX 元々ここで rchan を broadcast してた
 	selnotify(&sc->sc_rsel, 0, NOTE_SUBMIT);
-	if ((pid = sc->sc_async_audio) != 0) {
-		DPRINTF(3, "audio_softintr_rd: sending SIGIO %d\n", pid);
-		mutex_enter(proc_lock);
-		if ((p = proc_find(pid)) != NULL)
-			psignal(p, SIGIO);
-		mutex_exit(proc_lock);
+	SLIST_FOREACH(f, &sc->sc_files, entry) {
+		pid = f->async_audio;
+		if (pid != 0) {
+			DPRINTF(3, "%s: sending SIGIO %d\n", __func__, pid);
+			mutex_enter(proc_lock);
+			if ((p = proc_find(pid)) != NULL)
+				psignal(p, SIGIO);
+			mutex_exit(proc_lock);
+		}
 	}
 	mutex_exit(sc->sc_lock);
 }
 
+/*
+ * SIGIO derivery for playback.
+ *
+ * o softintr cookie for playback is one per play track.  Initialize on
+ *   FIOASYNC(on) and release FIOASYNC(off) or close.
+//   オープンで初期化/クローズで解放にしてもいいけど、再生オープンする人
+//   に比べて ASYNC 使う人は少ないと思うので。
+// o 再生ミキサで ASYNC トラックのバッファを消費した際に lowat を下回ったら、
+//   ソフトウェア割り込みを要求。
+// o ソフトウェア割り込みで、このトラックに対して SIGIO を投げる。
+ */
+
 static void
 audio_softintr_wr(void *cookie)
 {
-	struct audio_softc *sc = cookie;
+	struct audio_softc *sc;
+	audio_file_t *file;
+	audio_file_t *f;
 	proc_t *p;
 	pid_t pid;
+	bool found;
 
+	file = cookie;
+	sc = file->sc;
+	TRACEF(file, "");
+
+	// 自分自身がまだ有効かどうか調べる
+	found = false;
 	mutex_enter(sc->sc_lock);
-	// XXX 元々ここで wchan を broadcast してた
-	selnotify(&sc->sc_wsel, 0, NOTE_SUBMIT);
-	if ((pid = sc->sc_async_audio) != 0) {
-		DPRINTF(3, "audio_softintr_wr: sending SIGIO %d\n", pid);
+	SLIST_FOREACH(f, &sc->sc_files, entry) {
+		if (f == file) {
+			found = true;
+			break;
+		}
+	}
+	if (found) {
+		selnotify(&sc->sc_wsel, 0, NOTE_SUBMIT);
+		pid = file->async_audio;
+		DPRINTF(3, "%s: sending SIGIO %d\n", __func__, pid);
 		mutex_enter(proc_lock);
 		if ((p = proc_find(pid)) != NULL)
 			psignal(p, SIGIO);

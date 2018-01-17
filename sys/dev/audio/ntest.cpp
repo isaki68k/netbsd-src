@@ -226,6 +226,14 @@ int debug_write(int line, int fd, const void *addr, size_t len)
 	DRESULT(r);
 }
 
+#define READ(fd, addr, len)	debug_read(__LINE__, fd, addr, len)
+int debug_read(int line, int fd, void *addr, size_t len)
+{
+	DPRINTFF(line, "read(%d, %p, %zd)", fd, addr, len);
+	int r = read(fd, addr, len);
+	DRESULT(r);
+}
+
 // addrstr は値についてのコメント。ex.
 //	int onoff = 0;
 //	ioctl(fd, SWITCH, onoff); -> IOCTL(fd, SWITCH, onoff, "off")
@@ -540,6 +548,177 @@ test_drain_2(void)
 	XP_EQ(0, r);
 }
 
+// FIOASYNC が同時に2人設定できるか
+void
+test_FIOASYNC_1(void)
+{
+	int r;
+	int fd0, fd1;
+	int val;
+
+	TEST("FIOASYNC_1");
+
+	// 1人目が ASYNC on
+	fd0 = OPEN(devicename, O_WRONLY);
+	if (fd0 == -1)
+		err(1, "open");
+	val = 1;
+	r = IOCTL(fd0, FIOASYNC, &val, "on");
+	XP_EQ(0, r);
+
+	// 続いて2人目が ASYNC on
+	fd1 = OPEN(devicename, O_WRONLY);
+	if (fd0 == -1)
+		err(1, "open");
+	val = 1;
+	r = IOCTL(fd1, FIOASYNC, &val, "on");
+	XP_EQ(0, r);
+
+	CLOSE(fd0);
+	CLOSE(fd1);
+}
+
+// FIOASYNC が別トラックに影響を与えないこと
+void
+test_FIOASYNC_2(void)
+{
+	int r;
+	int fd0, fd1;
+	int val;
+
+	TEST("FIOASYNC_2");
+
+	// 1人目が ASYNC on
+	fd0 = OPEN(devicename, O_WRONLY);
+	if (fd0 == -1)
+		err(1, "open");
+	val = 1;
+	r = IOCTL(fd0, FIOASYNC, &val, "on");
+	XP_EQ(0, r);
+
+	// 続いて2人目が ASYNC off
+	fd1 = OPEN(devicename, O_WRONLY);
+	if (fd0 == -1)
+		err(1, "open");
+	val = 0;
+	r = IOCTL(fd1, FIOASYNC, &val, "off");
+	XP_EQ(0, r);
+
+	CLOSE(fd0);
+	CLOSE(fd1);
+}
+
+// FIOASYNC リセットのタイミング
+void
+test_FIOASYNC_3(void)
+{
+	int r;
+	int fd0, fd1;
+	int val;
+
+	TEST("FIOASYNC_3");
+
+	// 1人目がオープン
+	fd0 = OPEN(devicename, O_WRONLY);
+	if (fd0 == -1)
+		err(1, "open");
+
+	// 2人目が ASYNC on してクローズ。2人目の ASYNC 状態は無効
+	fd1 = OPEN(devicename, O_WRONLY);
+	if (fd0 == -1)
+		err(1, "open");
+	val = 1;
+	r = IOCTL(fd1, FIOASYNC, &val, "on");
+	XP_EQ(0, r);
+	CLOSE(fd1);
+
+	// もう一回2人目がオープンして ASYNC on
+	fd1 = OPEN(devicename, O_WRONLY);
+	if (fd0 == -1)
+		err(1, "open");
+	val = 1;
+	r = IOCTL(fd1, FIOASYNC, &val, "on");
+	XP_EQ(0, r);
+	CLOSE(fd1);
+	CLOSE(fd0);
+}
+
+volatile int sigio_caught;
+void
+signal_FIOASYNC_4(int signo)
+{
+	if (signo == SIGIO)
+		sigio_caught = 1;
+}
+
+// 書き込みで SIGIO が飛んでくるか
+void
+test_FIOASYNC_4(void)
+{
+	int r;
+	int fd;
+	int val;
+
+	TEST("FIOASYNC_4");
+	signal(SIGIO, signal_FIOASYNC_4);
+	sigio_caught = 0;
+
+	fd = OPEN(devicename, O_WRONLY);
+	if (fd == -1)
+		err(1, "open");
+
+	val = 1;
+	r = IOCTL(fd, FIOASYNC, &val, "on");
+	XP_EQ(0, r);
+
+	r = WRITE(fd, &r, 4);
+	XP_EQ(4, r);
+
+	for (int i = 0; i < 10 && sigio_caught == 0; i++) {
+		usleep(10000);
+	}
+	XP_EQ(1, sigio_caught);
+
+	CLOSE(fd);
+
+	signal(SIGIO, SIG_IGN);
+	sigio_caught = 0;
+}
+
+// 録音で SIGIO が飛んでくるか
+void
+test_FIOASYNC_5(void)
+{
+	int r;
+	int fd;
+	int val;
+
+	TEST("FIOASYNC_5");
+	signal(SIGIO, signal_FIOASYNC_4);
+	sigio_caught = 0;
+
+	fd = OPEN(devicename, O_RDONLY);
+	if (fd == -1)
+		err(1, "open");
+
+	val = 1;
+	r = IOCTL(fd, FIOASYNC, &val, "on");
+	XP_EQ(0, r);
+
+	r = READ(fd, &r, 4);
+	XP_EQ(4, r);
+
+	for (int i = 0; i < 10 && sigio_caught == 0; i++) {
+		usleep(10000);
+	}
+	XP_EQ(1, sigio_caught);
+
+	CLOSE(fd);
+
+	signal(SIGIO, SIG_IGN);
+	sigio_caught = 0;
+}
+
 // AUDIO_WSEEK の動作確認
 void
 test_AUDIO_WSEEK_1(void)
@@ -603,6 +782,11 @@ struct testtable testtable[] = {
 	DEF(encoding_2),
 	DEF(drain_1),
 	DEF(drain_2),
+	DEF(FIOASYNC_1),
+	DEF(FIOASYNC_2),
+	DEF(FIOASYNC_3),
+	DEF(FIOASYNC_4),
+	DEF(FIOASYNC_5),
 	DEF(AUDIO_WSEEK_1),
 	{ NULL, NULL },
 };

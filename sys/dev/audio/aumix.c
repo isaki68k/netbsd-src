@@ -624,6 +624,10 @@ audio_track_destroy(audio_track_t *track)
 	audio_free(track->freq.srcbuf.sample);
 	audio_free(track->outputbuf.sample);
 	cv_destroy(&track->outchan);
+	if (track->sih_wr) {
+		softint_disestablish(track->sih_wr);
+		track->sih_wr = NULL;
+	}
 
 	kmem_free(track, sizeof(*track));
 }
@@ -1721,6 +1725,18 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req,
 
 	TRACE(track, "broadcast; trseq=%d out=%d/%d/%d", (int)track->seq,
 	    track->outputbuf.top, track->outputbuf.count, track->outputbuf.capacity);
+
+	// usrbuf が空いたら(lowat を下回ったら) シグナルを送る
+	// XXX ここで usrbuf が空いたかどうかを見るのもどうかと思うが
+	int lowat = track->usrbuf.capacity / 2;	// XXX lowat ないのでとりあえず
+	if (track->usrbuf.count <= lowat && !track->is_pause) {
+		if (track->sih_wr) {
+			kpreempt_disable();
+			softint_schedule(track->sih_wr);
+			kpreempt_enable();
+		}
+	}
+
 	return mixed + 1;
 }
 
@@ -2143,6 +2159,9 @@ audio_rmixer_process(struct audio_softc *sc)
 	}
 
 	audio_ring_tookfromtop(mixersrc, count);
+
+	// SIGIO を通知(する必要があるかどうかは向こうで判断する)
+	softint_schedule(sc->sc_sih_rd);
 }
 
 // ハードウェアバッファに1ブロック入力を開始します。
