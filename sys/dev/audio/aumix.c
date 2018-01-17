@@ -2406,7 +2406,7 @@ audio_write_uiomove(audio_track_t *track, int bottom, int len, struct uio *uio)
 		return error;
 	}
 	audio_ring_appended(usrbuf, len);
-	track->inputbytes += len;
+	track->useriobytes += len;
 	TRACE(track, "uiomove(len=%d) usrbuf=%d/%d/%d",
 	    len,
 	    usrbuf->top, usrbuf->count, usrbuf->capacity);
@@ -2565,7 +2565,7 @@ audio_read_uiomove(audio_track_t *track, int top, int len, struct uio *uio)
 		return error;
 	}
 	audio_ring_tookfromtop(usrbuf, len);
-	track->outputbytes += len;
+	track->useriobytes += len;
 	TRACE(track, "uiomove(len=%d) usrbuf=%d/%d/%d",
 	    len,
 	    usrbuf->top, usrbuf->count, usrbuf->capacity);
