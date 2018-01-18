@@ -1578,7 +1578,7 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 	audio_track_t *oldtrack;
 	int error;
 
-	DPRINTF(1, "%s\n", __func__);
+	DPRINTF(1, "%s start\n", __func__);
 	TRACEF(file, "start popens=%d ropens=%d", sc->sc_popens, sc->sc_ropens);
 	KASSERT(mutex_owned(sc->sc_lock));
 
@@ -1691,7 +1691,7 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 	SLIST_REMOVE(&sc->sc_files, file, audio_file, entry);
 	mutex_exit(sc->sc_intr_lock);
 
-	DPRINTF(3, "close done\n");
+	DPRINTF(3, "%s: close done\n", __func__);
 	return 0;
 }
 
