@@ -568,7 +568,7 @@ audio_track_init(struct audio_softc *sc, audio_track_t **trackp, int mode)
 
 	track->id = newid++;
 	// ここだけ id が決まってから表示
-	TRACE(track, "");
+	TRACE(track, "for %s", mode == AUMODE_PLAY ? "playback" : "recording");
 
 	if (mode == AUMODE_PLAY) {
 		cvname = "audiowr";

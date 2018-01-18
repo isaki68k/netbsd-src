@@ -1549,6 +1549,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	KASSERT(error == EMOVEFD);
 
 	*nfp = fp;
+	TRACEF(af, "done");
 	return error;
 
 bad3:
@@ -1577,7 +1578,8 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 {
 	int error;
 
-	DPRINTF(1, "%s flags=0x%x\n", __func__, flags);
+	DPRINTF(1, "%s\n", __func__);
+	TRACEF(file, "start popens=%d ropens=%d", sc->sc_popens, sc->sc_ropens);
 	KASSERT(mutex_owned(sc->sc_lock));
 
 	// いる?
@@ -1690,6 +1692,7 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 	mutex_exit(sc->sc_intr_lock);
 #endif
 
+	DPRINTF(3, "close done\n");
 	return 0;
 }
 
@@ -2274,7 +2277,7 @@ audio_softintr_rd(void *cookie)
 	SLIST_FOREACH(f, &sc->sc_files, entry) {
 		pid = f->async_audio;
 		if (pid != 0) {
-			DPRINTF(3, "%s: sending SIGIO %d\n", __func__, pid);
+			TRACEF(f, "sending SIGIO %d", pid);
 			mutex_enter(proc_lock);
 			if ((p = proc_find(pid)) != NULL)
 				psignal(p, SIGIO);
@@ -2308,7 +2311,7 @@ audio_softintr_wr(void *cookie)
 
 	file = cookie;
 	sc = file->sc;
-	TRACEF(file, "");
+	TRACEF(file, "start");
 
 	// 自分自身がまだ有効かどうか調べる
 	found = false;
@@ -2322,7 +2325,7 @@ audio_softintr_wr(void *cookie)
 	if (found) {
 		selnotify(&sc->sc_wsel, 0, NOTE_SUBMIT);
 		pid = file->async_audio;
-		DPRINTF(3, "%s: sending SIGIO %d\n", __func__, pid);
+		TRACEF(file, "sending SIGIO %d", pid);
 		mutex_enter(proc_lock);
 		if ((p = proc_find(pid)) != NULL)
 			psignal(p, SIGIO);
