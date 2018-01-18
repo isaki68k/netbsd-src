@@ -3451,7 +3451,7 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 		// XXX ただどのバッファをさすべきかはよく分からん
 		pi->seek = ptrack->usrbuf.top;
 		pi->samples = ptrack->inputcounter;
-		pi->eof = sc->sc_eof;
+		pi->eof = ptrack->eofcounter;
 		pi->pause = ptrack->is_pause;
 		pi->error = 0;			// XXX
 		pi->waiting = 0;			/* open never hangs */
@@ -3464,7 +3464,7 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 		// XXX ただどのバッファをさすべきかはよく分からん
 		ri->seek = rtrack->usrbuf.top;
 		ri->samples = rtrack->inputcounter;
-		ri->eof = sc->sc_eof;
+		ri->eof = 0;
 		ri->pause = rtrack->is_pause;
 		ri->error = 0;			// XXX
 		ri->waiting = 0;			/* open never hangs */

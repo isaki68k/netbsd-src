@@ -2327,7 +2327,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 		return ENXIO;
 
 	if (uio->uio_resid == 0) {
-		sc->sc_eof++;
+		track->eofcounter++;
 		return 0;
 	}
 

@@ -890,6 +890,83 @@ test_AUDIO_SETFD_RDWR(void)
 	CLOSE(fd);
 }
 
+void
+test_AUDIO_GETINFO_eof(void)
+{
+	struct audio_info ai;
+	int r;
+	int fd, fd1;
+	int n;
+
+	TEST("AUDIO_GETINFO_eof");
+	fd = OPEN(devicename, O_RDWR);
+	if (fd == -1)
+		err(1, "open");
+
+	// 最初は 0
+	r = IOCTL(fd, AUDIO_GETINFO, &ai, "");
+	XP_EQ(0, r);
+	XP_EQ(0, ai.play.eof);
+	XP_EQ(0, ai.record.eof);
+
+	// 0バイト書き込むと上がる
+	r = WRITE(fd, &r, 0);
+	if (r == -1)
+		err(1, "write");
+	r = IOCTL(fd, AUDIO_GETINFO, &ai, "");
+	XP_EQ(0, r);
+	XP_EQ(1, ai.play.eof);
+	XP_EQ(0, ai.record.eof);
+
+	// 1バイト以上を書き込んでも上がらない
+	r = WRITE(fd, &r, 4);
+	if (r == -1)
+		err(1, "write");
+	memset(&ai, 0, sizeof(ai));
+	r = IOCTL(fd, AUDIO_GETINFO, &ai, "");
+	XP_EQ(0, r);
+	XP_EQ(1, ai.play.eof);
+	XP_EQ(0, ai.record.eof);
+
+	// もう一度0バイト書き込むと上がる
+	r = WRITE(fd, &r, 0);
+	if (r == -1)
+		err(1, "write");
+	memset(&ai, 0, sizeof(ai));
+	r = IOCTL(fd, AUDIO_GETINFO, &ai, "");
+	XP_EQ(0, r);
+	XP_EQ(2, ai.play.eof);
+	XP_EQ(0, ai.record.eof);
+
+	// 別ディスクリプタと干渉しないこと
+	if (netbsd >= 8) {
+		fd1 = OPEN(devicename, O_RDWR);
+		if (fd1 == -1)
+			err(1, "open");
+		memset(&ai, 0, sizeof(ai));
+		r = IOCTL(fd1, AUDIO_GETINFO, &ai, "");
+		XP_EQ(0, r);
+		XP_EQ(0, ai.play.eof);
+		XP_EQ(0, ai.record.eof);
+		CLOSE(fd1);
+	}
+
+	CLOSE(fd);
+
+	// オープンしなおすとリセット
+	fd = OPEN(devicename, O_RDWR);
+	if (fd == -1)
+		err(1, "open");
+
+	r = IOCTL(fd, AUDIO_GETINFO, &ai, "");
+	XP_EQ(0, r);
+	XP_EQ(0, ai.play.eof);
+	XP_EQ(0, ai.record.eof);
+
+	CLOSE(fd);
+}
+
+
 // コマンド一覧
 #define DEF(x)	{ #x, cmd_ ## x }
 struct cmdtable cmdtable[] = {
@@ -915,6 +992,7 @@ struct testtable testtable[] = {
 	DEF(AUDIO_WSEEK_1),
 	DEF(AUDIO_SETFD_ONLY),
 	DEF(AUDIO_SETFD_RDWR),
+	DEF(AUDIO_GETINFO_eof),
 	{ NULL, NULL },
 };
 

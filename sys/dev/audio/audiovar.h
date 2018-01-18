@@ -175,6 +175,7 @@ struct audio_track
 	uint64_t	outputcounter;	/* トラックから出力されたフレーム数 */
 	uint64_t	useriobytes;	// ユーザランド入出力されたバイト数
 	uint64_t	dropframes;	/* # of frames dropped in recording */
+	int		eofcounter;	/* # of zero sized write */
 
 	volatile uint32_t track_cl;	/* track cooperative lock */
 

@@ -1153,6 +1153,13 @@ open */</p></td>
 
 <p style="margin-left:20%;">};</p>
 
+<p class=bad style="margin-left:20%">
+eof カウンタがデバイスごとに1つしかないので、
+あるディスクリプタで eof カウンタが上がると別ディスクリプタでも同じ値が読める。
+全 VC が閉じられるとリセットされる。
+この変数になんの意味があるかはともかく、おそらく元の仕様の意図はそうではない。
+</p>
+
 <p style="margin-left:20%; margin-top: 1em">Note: many
 hardware audio drivers require identical playback and
 recording sample rates, sample encodings, and channel
