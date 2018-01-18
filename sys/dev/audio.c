@@ -217,6 +217,8 @@ static int audio_setinfo_hw(struct audio_softc *, struct audio_info *);
 static int audio_set_params(struct audio_softc *, int);
 static int audiogetinfo(struct audio_softc *, struct audio_info *, int,
 	audio_file_t *);
+static int audio_file_set_full_duplex(struct audio_softc *, audio_file_t *,
+	bool);
 static int audio_getenc(struct audio_softc *, struct audio_encoding *);
 static int audio_get_props(struct audio_softc *);
 static bool audio_can_playback(struct audio_softc *);
@@ -1634,6 +1636,7 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 		audio_track_destroy(file->rtrack);
 		file->rtrack = NULL;
 
+		KASSERT(sc->sc_ropens > 0);
 		sc->sc_ropens--;
 	}
 
@@ -1657,6 +1660,7 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 		audio_track_destroy(file->ptrack);
 		file->ptrack = NULL;
 
+		KASSERT(sc->sc_popens > 0);
 		sc->sc_popens--;
 	}
 
@@ -1922,18 +1926,25 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		break;
 
 	case AUDIO_GETFD:
-		// HW が Full Duplex かどうかを返します。
-		*(int *)addr = sc->sc_full_duplex;
+		// file が現在 Full Duplex かどうかを返す。
+		if (file->ptrack && file->rtrack)
+			*(int *)addr = 1;
+		else
+			*(int *)addr = 0;
 		break;
 
 	case AUDIO_SETFD:
-		// HW が Full Duplex なら SETFD(1) のみ、
-		// HW が Half Duplex なら SETFD(0) のみを (設定を変更せずに)
-		// 成功にします。
+		// HW が Full Duplex なら Full/Half 切り替え可能。
+		// HW が Half Duplex なら Full への切り替えは ENOTTY。
 		fd = *(int *)addr;
-		if ((sc->sc_full_duplex != 0 && fd == 0) ||
-		    (sc->sc_full_duplex == 0 && fd != 0))
-			error = EINVAL;
+		if (sc->sc_full_duplex) {
+			error = audio_file_set_full_duplex(sc, file, fd);
+		} else {
+			if (fd)
+				error = ENOTTY;
+			else
+				error = 0;
+		}
 		break;
 
 	case AUDIO_GETPROPS:
@@ -3503,6 +3514,44 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 		}
 	}
 
+	return 0;
+}
+
+// file の Duplex を切り替えます。
+// HW には影響しません。HW が Half Duplex の時は呼び出してはいけません。
+static int
+audio_file_set_full_duplex(struct audio_softc *sc, audio_file_t *file,
+	bool fdup)
+{
+	int error;
+
+	if (fdup) {
+		/* Half to Full */
+		if (file->ptrack && file->rtrack)
+			return 0;
+		if (file->ptrack == NULL) {
+			error = audio_track_init(sc, &file->ptrack,
+			    AUMODE_PLAY);
+			if (error)
+				return error;
+			sc->sc_popens++;
+		}
+		if (file->rtrack == NULL) {
+			error = audio_track_init(sc, &file->rtrack,
+			    AUMODE_RECORD);
+			if (error)
+				return error;
+			sc->sc_ropens++;
+		}
+	} else {
+		/* Full to Half */
+		if (file->ptrack && file->rtrack) {
+			audio_track_destroy(file->rtrack);
+			file->rtrack = NULL;
+			KASSERT(sc->sc_ropens > 0);
+			sc->sc_ropens--;
+		}
+	}
 	return 0;
 }
 
