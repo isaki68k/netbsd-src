@@ -28,6 +28,7 @@ void init();
 
 int debug;
 int netbsd;
+int props;
 char testname[100];
 int testcount;
 int failcount;
@@ -60,6 +61,7 @@ main(int ac, char *av[])
 
 	testname[0] = '\0';
 	devicename = "/dev/sound0";
+	props = -1;
 
 	// global option
 	opt_all = 0;
@@ -148,6 +150,26 @@ init()
 
 	if (debug)
 		printf("netbsd = %d\n", netbsd);
+}
+
+// デバイスのプロパティを取得します。
+int
+getprops()
+{
+	// GETPROPS のための open/ioctl/close が信頼できるかどうかは悩ましいが
+	// とりあえずね
+	if (props == -1) {
+		int fd;
+		int r;
+
+		fd = open(devicename, O_WRONLY);
+		if (fd == -1)
+			err(1, "getprops: open: %s", devicename);
+		r = ioctl(fd, AUDIO_GETPROPS, &props);
+		if (r == -1)
+			err(1, "getprops:AUDIO_GETPROPS");
+		close(fd);
+	}
 }
 
 // テスト名
@@ -777,78 +799,93 @@ test_AUDIO_WSEEK_1(void)
 }
 
 void
-test_AUDIO_GETFD(void)
+test_AUDIO_SETFD_ONLY(void)
 {
 	int r;
 	int fd;
 	int n;
-	int props;
-	int expected;
+	int hwfull;
 
-	TEST("AUDIO_GETFD");
+	// プロパティから Full/Half を知る
+	getprops();
+	hwfull = (props & AUDIO_PROP_FULLDUPLEX) ? 1 : 0;
 
-	fd = OPEN(devicename, O_WRONLY);
-	if (fd == -1)
-		err(1, "open: %s", devicename);
+	// O_xxONLY でオープンすると GETFD == 0 になる
+	for (int mode = 0; mode <= 1; mode++) {
+		TEST("AUDIO_SETFD_ONLY_%s", openmodetable[mode]);
 
-	// プロパティから Full/Half を知る (GETPROPS は信頼できるものとする)
-	r = IOCTL(fd, AUDIO_GETPROPS, &props, "");
-	XP_EQ(0, r);
+		fd = OPEN(devicename, mode);
+		if (fd == -1)
+			err(1, "open: %s", devicename);
 
-	if (props & AUDIO_PROP_FULLDUPLEX)
-		expected = 1;
-	else
-		expected = 0;
+		// オープン直後は常に Half
+		n = 0;
+		r = IOCTL(fd, AUDIO_GETFD, &n, "");
+		XP_EQ(0, r);
+		XP_EQ(0, n);
 
-	n = 0;
-	r = IOCTL(fd, AUDIO_GETFD, &n, "");
-	XP_EQ(0, r);
-	XP_EQ(expected, n);
+		// でも Full には変更できる (O_xxONLY はあくまで初期値?)
+		n = 1;
+		r = IOCTL(fd, AUDIO_SETFD, &n, "on");
+		if (hwfull) {
+			XP_EQ(0, r);
+		} else {
+			XP_EQ(-1, r);
+			if (r == -1)
+				XP_EQ(ENOTTY, errno);
+		}
 
-	CLOSE(fd);
+		// HW Full Duplex なら変更できていること
+		// HW Half Duplex なら変更できていないこと
+		n = 0;
+		r = IOCTL(fd, AUDIO_GETFD, &n, "");
+		XP_EQ(0, r);
+		XP_EQ(hwfull, n);
+
+		CLOSE(fd);
+	}
 }
 
 void
-test_AUDIO_SETFD(void)
+test_AUDIO_SETFD_RDWR(void)
 {
 	int r;
 	int fd;
 	int n;
-	int props;
-	int expected;
+	int hwfull;
 
-	fd = OPEN(devicename, O_WRONLY);
+	getprops();
+	hwfull = (props & AUDIO_PROP_FULLDUPLEX) ? 1 : 0;
+
+	TEST("AUDIO_GETFD_RDWR");
+	fd = OPEN(devicename, O_RDWR);
 	if (fd == -1)
 		err(1, "open: %s", devicename);
 
-	// プロパティから Full/Half を知る (GETPROPS は信頼できるものとする)
-	r = IOCTL(fd, AUDIO_GETPROPS, &props, "");
-	XP_EQ(0, r);
-
-	if (props & AUDIO_PROP_FULLDUPLEX)
-		expected = 1;
-	else
-		expected = 0;
-
-	TEST("AUDIO_SETFD_0");
+	// O_RDWR でオープンだと
+	// HW full duplex なら FULL
+	// HW half duplex なら Half になる
 	n = 0;
-	r = IOCTL(fd, AUDIO_SETFD, &n, "0");
-	if (props & AUDIO_PROP_FULLDUPLEX) {
-		XP_EQ(-1, r);
-		XP_EQ(EINVAL, errno);
-	} else {
+	r = IOCTL(fd, AUDIO_GETFD, &n, "");
+	XP_EQ(0, r);
+	XP_EQ(hwfull, n);
+
+	// HW が Full なら Full に切り替え可能
+	n = 1;
+	r = IOCTL(fd, AUDIO_SETFD, &n, "on");
+	if (hwfull) {
 		XP_EQ(0, r);
+	} else {
+		XP_EQ(-1, r);
+		if (r == -1)
+			XP_EQ(ENOTTY, errno);
 	}
 
-	TEST("AUDIO_SETFD_1");
-	n = 1;
-	r = IOCTL(fd, AUDIO_SETFD, &n, "1");
-	if (props & AUDIO_PROP_FULLDUPLEX) {
-		XP_EQ(0, r);
-	} else {
-		XP_EQ(-1, r);
-		XP_EQ(EINVAL, errno);
-	}
+	// 切り替えたあとの GETFD
+	n = 0;
+	r = IOCTL(fd, AUDIO_GETFD, &n, "");
+	XP_EQ(0, r);
+	XP_EQ(hwfull, n);
 
 	CLOSE(fd);
 }
@@ -876,8 +913,8 @@ struct testtable testtable[] = {
 	DEF(FIOASYNC_4),
 	DEF(FIOASYNC_5),
 	DEF(AUDIO_WSEEK_1),
-	DEF(AUDIO_GETFD),
-	DEF(AUDIO_SETFD),
+	DEF(AUDIO_SETFD_ONLY),
+	DEF(AUDIO_SETFD_RDWR),
 	{ NULL, NULL },
 };
 
