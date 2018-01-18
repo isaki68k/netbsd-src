@@ -341,6 +341,7 @@ cmd_FIOASYNC(int ac, char *av[])
 void
 test_open_1(void)
 {
+	struct audio_info ai;
 	int fd;
 	int r;
 
@@ -349,6 +350,13 @@ test_open_1(void)
 		TEST("open_%s", openmodetable[mode]);
 		fd = OPEN(devicename, mode);
 		XP_NE(-1, fd);
+
+		memset(&ai, 0, sizeof(ai));
+		r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+		XP_EQ(0, r);
+		XP_EQ(0, ai.play.pause);
+		XP_EQ(0, ai.record.pause);
+
 		r = CLOSE(fd);
 		XP_EQ(0, r);
 	}
@@ -904,7 +912,7 @@ test_AUDIO_GETINFO_eof(void)
 		err(1, "open");
 
 	// 最初は 0
-	r = IOCTL(fd, AUDIO_GETINFO, &ai, "");
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
 	XP_EQ(0, r);
 	XP_EQ(0, ai.play.eof);
 	XP_EQ(0, ai.record.eof);
@@ -913,7 +921,7 @@ test_AUDIO_GETINFO_eof(void)
 	r = WRITE(fd, &r, 0);
 	if (r == -1)
 		err(1, "write");
-	r = IOCTL(fd, AUDIO_GETINFO, &ai, "");
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
 	XP_EQ(0, r);
 	XP_EQ(1, ai.play.eof);
 	XP_EQ(0, ai.record.eof);
@@ -923,7 +931,7 @@ test_AUDIO_GETINFO_eof(void)
 	if (r == -1)
 		err(1, "write");
 	memset(&ai, 0, sizeof(ai));
-	r = IOCTL(fd, AUDIO_GETINFO, &ai, "");
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
 	XP_EQ(0, r);
 	XP_EQ(1, ai.play.eof);
 	XP_EQ(0, ai.record.eof);
@@ -933,7 +941,7 @@ test_AUDIO_GETINFO_eof(void)
 	if (r == -1)
 		err(1, "write");
 	memset(&ai, 0, sizeof(ai));
-	r = IOCTL(fd, AUDIO_GETINFO, &ai, "");
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
 	XP_EQ(0, r);
 	XP_EQ(2, ai.play.eof);
 	XP_EQ(0, ai.record.eof);
@@ -944,7 +952,7 @@ test_AUDIO_GETINFO_eof(void)
 		if (fd1 == -1)
 			err(1, "open");
 		memset(&ai, 0, sizeof(ai));
-		r = IOCTL(fd1, AUDIO_GETINFO, &ai, "");
+		r = IOCTL(fd1, AUDIO_GETBUFINFO, &ai, "");
 		XP_EQ(0, r);
 		XP_EQ(0, ai.play.eof);
 		XP_EQ(0, ai.record.eof);
@@ -958,7 +966,7 @@ test_AUDIO_GETINFO_eof(void)
 	if (fd == -1)
 		err(1, "open");
 
-	r = IOCTL(fd, AUDIO_GETINFO, &ai, "");
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
 	XP_EQ(0, r);
 	XP_EQ(0, ai.play.eof);
 	XP_EQ(0, ai.record.eof);
