@@ -12,9 +12,57 @@
        pre   { margin-top: 0; margin-bottom: 0; }
        table { margin-top: 0; margin-bottom: 0; }
 </style>
+<style type="text/css">
+/*	color: #ff2800;	*/	/* 赤 */
+/*	color: #0041ff;	*/	/* 青 */
+/*	color: #35a16b;	*/	/* 緑 */
+
+SPAN.n7 {
+	background-color: #ffd1d1;	/* 明るいピンク */
+}
+
+P.n7 {
+	background-color: #ffd1d1;	/* 明るいピンク */
+}
+P.n7:before {
+	content: "(N7)";
+	background-color: #ffd1d1;	/* 明るいピンク */
+	position: absolute;
+	left: 5%;
+}
+
+SPAN.n8 {
+	background-color: #b4ebfa;	/* 明るい空色 */
+}
+P.n8 {
+	background-color: #b4ebfa;	/* 明るい空色 */
+}
+P.n8:before {
+	content: "(N8)";
+	background-color: #b4ebfa;	/* 明るい空色 */
+	position: absolute;
+	left: 5%;
+}
+P.n9 {
+	background-color: #87e7b0;	/* 明るい緑 */
+}
+P.n9:before {
+	content: "(A2)";
+	background-color: #87e7b0;	/* 明るい緑 */
+	position: absolute;
+	left: 5%;
+}
+</style>
 <title></title>
 </head>
 <body>
+ベースにしたのは NetBSD 7.1 の audio.4,v 1.72。<br>
+NetBSD 8 部分は audio.4,v 1.79。<br>
+<p>
+凡例:<br>
+<p class=n7 style="margin-left:8%;">背景ピンクの文章は NetBSD 7 から 8 になって削除されたところ。</p>
+<p class=n8 style="margin-left:8%;">背景水色の文章は NetBSD 8 で追加されたところ。</p>
+<p class=n9 style="margin-left:8%;">背景緑の文章は AUDIO2 で改訂したいところ。</p>
 
 <hr>
 
@@ -63,10 +111,20 @@ audio mixer functions.</p>
 accepts the same ioctl(2) operations as <i>/dev/sound</i>,
 but no other operations.</p>
 
-<p style="margin-left:8%; margin-top: 1em">In contrast to
+<p class=n7 style="margin-left:8%; margin-top: 1em">In contrast to
 <i>/dev/sound</i> which has the exclusive open property
 <i>/dev/audioctl</i> can be opened at any time and can be
 used to manipulate the audio device while it is in use.</p>
+<p class=n8 style="margin-left:8%;"><i>/dev/sound</i>
+and <i>/dev/audio</i> can be opened at <i>any</i> time and
+audio sources of different precision and playback parameters
+i.e frequency will be mixed and played back
+simultaneously.</p>
+
+<p class=n8 style="margin-left:8%; margin-top: 1em"><i>/dev/audioctl</i>
+can be used to manipulate the audio device while it is in
+use.</p>
+
 
 <p style="margin-top: 1em" valign="top"><b>SAMPLING
 DEVICES</b></p>
@@ -78,13 +136,76 @@ is opened read-only (write-only) the device is set to
 half-duplex record (play) mode with recording (playing)
 unpaused and playing (recording) paused. When
 <i>/dev/sound</i> is opened, it maintains the previous audio
-sample mode and record/playback mode. In all other respects
+sample mode and record/playback mode <span class=n8>most recently set on
+<i>/dev/sound</i> by any open channel</span>. In all other respects
 <i>/dev/audio</i> and <i>/dev/sound</i> are identical.</p>
 
-<p style="margin-left:8%; margin-top: 1em">Only one process
+<p class=n7 style="margin-left:8%; margin-top: 1em">Only one process
 may hold open a sampling device at a given time (although
 file descriptors may be shared between processes once the
 first open completes).</p>
+
+<p style="background-color: #b4ebfa; margin-top: 1em" valign="top"><b>VIRTUAL
+CHANNELS</b></p>
+
+<p class=n8 style="margin-left:8%;">Any process may open a sampling
+device at a given time. Any number of devices per process
+and file descriptors may be shared between processes.</p>
+
+<p class=n8 style="margin-left:8%; margin-top: 1em">Virtual channels
+are converted to a common format, signed linear encoding,
+frequency channels and precision. These can be modified to
+taste by the following sysctl(8) variables.</p>
+
+
+<p class=n8 style="margin-left:12%; margin-top: 1em" valign="top">hw.driverN.precision</p>
+
+
+<p class=n8 style="margin-left:12%; margin-top: 1em" valign="top">hw.driverN.frequency</p>
+
+
+<p class=n8 style="margin-left:12%; margin-top: 1em" valign="top">hw.driverN.channels</p>
+
+
+<p class=n8 style="margin-left:12%; margin-top: 1em" valign="top">hw.driverN.multiuser</p>
+
+<p class=n8 style="margin-left:8%; margin-top: 1em">Where
+<i>driverN</i> corresponds to the underlying audio device
+driver and device number. e.g In the case of an hdafg
+supported device the variables would be: hw.hdafg0.channels,
+hw.hdafg0.precision, hw.hdafg0.frequency.</p>
+
+<p class=n8 style="margin-left:8%; margin-top: 1em">For best
+results, values close to the underlying hardware should be
+chosen. These variables may only be changed when the
+sampling device is not in use.</p>
+
+<p class=n8 style="margin-left:8%; margin-top: 1em">An additional
+sysctl(8) variable determines if multiple users are allowed
+to access the sampling device, hw.driverN.multiuser.</p>
+
+<p class=n8 style="margin-left:8%; margin-top: 1em">By default it is
+set to false. This means that the sampling device may be
+only used by <i>one</i> user at a time. Other users (except
+root) attempting to open the sampling device will be
+denied.</p>
+
+<p class=n8 style="margin-left:8%; margin-top: 1em">If set to true,
+all users may access the sampling device at any time.</p>
+
+<p class=n8 style="margin-left:8%; margin-top: 1em">Each virtual
+channel has a corresponding mixer:</p>
+
+<p class=n8 style="margin-left:12%; margin-top: 1em" valign="top">vchan.dacN Output
+volume</p>
+
+<p class=n8 style="margin-left:12%; margin-top: 1em" valign="top">vchan.micN
+Recording volume</p>
+
+<p class=n8 style="margin-left:8%; margin-top: 1em">Where N is the
+virtual channel number. e.g vchan.dac0 controlling playback
+volume and vchan.mic0 controlling recording volume for the
+first virtual channel.</p>
 
 <p style="margin-left:8%; margin-top: 1em">On a half-duplex
 device, writes while recording is in progress will be
@@ -119,8 +240,8 @@ frequently enough, it will simply miss samples.</p>
 
 <p style="margin-left:8%; margin-top: 1em">The audio device
 is normally accessed with read(2) or write(2) calls, but it
-can also be mapped into user memory with mmap(2) (when
-supported by the device). Once the device has been mapped it
+can also be mapped into user memory with mmap(2) <span class=n7>(when
+supported by the device)</span>. Once the device has been mapped it
 can no longer be accessed by read or write; all access is by
 reading and writing to the mapped memory. The device appears
 as a block of memory of size <i>buffersize</i> (as available
@@ -145,14 +266,26 @@ is changed.</p>
 <p style="margin-left:8%; margin-top: 1em">The following
 ioctl(2) commands are supported on the sample devices:</p>
 
-<p style="margin-top: 1em" valign="top">AUDIO_FLUSH</p>
+<p class=n8 style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_GETCHAN
+(int)</p>
+
+<p class=n8 style="margin-left:20%;">This command will return the
+audio channel in use.</p>
+
+<p class=n8 style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_SETCHAN
+(int)</p>
+
+<p class=n8 style="margin-left:20%;">This command will select the
+audio channel for subsequent ioctl calls.</p>
+
+<p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_FLUSH</p>
 
 <p style="margin-left:20%;">This command stops all playback
 and recording, clears all queued buffers, resets error
 counters, and restarts recording and playback as appropriate
 for the current sampling mode.</p>
 
-<p style="margin-top: 1em" valign="top">AUDIO_RERROR
+<p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_RERROR
 (int)</p>
 
 <p style="margin-left:20%;">This command fetches the count
@@ -160,7 +293,7 @@ of dropped input samples into its integer argument. There is
 no information regarding when in the sample stream they were
 dropped.</p>
 
-<p style="margin-top: 1em" valign="top">AUDIO_WSEEK
+<p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_WSEEK
 (u_long)</p>
 
 <p style="margin-left:20%;">This command fetches the count
@@ -168,13 +301,13 @@ of samples that are queued ahead of the first sample in the
 most recent sample block written into its integer
 argument.</p>
 
-<p style="margin-top: 1em" valign="top">AUDIO_DRAIN</p>
+<p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_DRAIN</p>
 
 <p style="margin-left:20%;">This command suspends the
 calling process until all queued playback samples have been
 played by the hardware.</p>
 
-<p style="margin-top: 1em" valign="top">AUDIO_GETDEV
+<p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_GETDEV
 (audio_device_t)</p>
 
 <p style="margin-left:20%;">This command fetches the
@@ -188,13 +321,13 @@ char version[MAX_AUDIO_DEV_LEN]; <br>
 char config[MAX_AUDIO_DEV_LEN]; <br>
 } audio_device_t;</p>
 
-<p style="margin-top: 1em" valign="top">AUDIO_GETFD
+<p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_GETFD
 (int)</p>
 
 <p style="margin-left:20%;">The command returns the current
 setting of the full duplex mode.</p>
 
-<p style="margin-top: 1em" valign="top">AUDIO_GETENC
+<p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_GETENC
 (audio_encoding_t)</p>
 
 <p style="margin-left:20%;">This command is used
@@ -261,7 +394,7 @@ the supported encodings, start with an index field of 0 and
 continue with successive encodings (1, 2, ...) until the
 command returns an error.</p>
 
-<p style="margin-top: 1em" valign="top">AUDIO_SETFD
+<p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_SETFD
 (int)</p>
 
 <p style="margin-left:20%;">This command sets the device
@@ -271,7 +404,7 @@ a zero value. If the device does not support full-duplex
 operation, attempting to set full-duplex mode returns an
 error.</p>
 
-<p style="margin-top: 1em" valign="top">AUDIO_GETPROPS
+<p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_GETPROPS
 (int)</p>
 
 <p style="margin-left:20%;">This command gets a bit set of
@@ -280,36 +413,36 @@ the corresponding bit is set, otherwise it is not. The
 properties can have the following values:</p>
 
 
-<p style="margin-top: 1em" valign="top">AUDIO_PROP_FULLDUPLEX</p>
+<p style="margin-left:22%;margin-top: 1em" valign="top">AUDIO_PROP_FULLDUPLEX</p>
 
-<p style="margin-left:57%; margin-top: 1em">the device
+<p style="margin-left:27%">the device
 admits full duplex operation.</p>
 
-<p valign="top">AUDIO_PROP_MMAP</p>
+<p style="margin-left:22%">AUDIO_PROP_MMAP</p>
 
-<p style="margin-left:57%; margin-top: 1em">the device can
+<p style="margin-left:27%">the device can
 be used with mmap(2).</p>
 
-<p valign="top">AUDIO_PROP_INDEPENDENT</p>
+<p style="margin-left:22%">AUDIO_PROP_INDEPENDENT</p>
 
-<p style="margin-left:57%; margin-top: 1em">the device can
+<p style="margin-left:27%">the device can
 set the playing and recording encoding parameters
 independently.</p>
 
-<p valign="top">AUDIO_PROP_PLAYBACK</p>
+<p style="margin-left:22%">AUDIO_PROP_PLAYBACK</p>
 
-<p style="margin-left:57%; margin-top: 1em">the device is
+<p style="margin-left:27%">the device is
 capable of audio playback.</p>
 
-<p valign="top">AUDIO_PROP_CAPTURE</p>
+<p style="margin-left:22%">AUDIO_PROP_CAPTURE</p>
 
-<p style="margin-left:57%; margin-top: 1em">the device is
+<p style="margin-left:27%">the device is
 capable of audio capture.</p>
 
-<p style="margin-top: 1em" valign="top">AUDIO_GETIOFFS
+<p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_GETIOFFS
 (audio_offset_t)</p>
 
-<p style="margin-top: 1em" valign="top">AUDIO_GETOOFFS
+<p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_GETOOFFS
 (audio_offset_t)</p>
 
 <p style="margin-left:20%;">This command fetches the
@@ -367,13 +500,13 @@ buffer */</p></td>
 
 <p style="margin-left:20%;">} audio_offset_t;</p>
 
-<p style="margin-top: 1em" valign="top">AUDIO_GETINFO
+<p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_GETINFO
 (audio_info_t)</p>
 
-<p style="margin-top: 1em" valign="top">AUDIO_GETBUFINFO
+<p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_GETBUFINFO
 (audio_info_t)</p>
 
-<p style="margin-top: 1em" valign="top">AUDIO_SETINFO
+<p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_SETINFO
 (audio_info_t)</p>
 
 <p style="margin-left:20%;">Get or set audio information as
@@ -608,9 +741,7 @@ audio_info {</p>
 <p style="margin-left:20%; margin-top: 1em">When setting
 the current state with AUDIO_SETINFO, the audio_info
 structure should first be initialized with AUDIO_INITINFO
-(</p>
-
-<p valign="top">&amp;info ) and then the particular values
+(&amp;info ) and then the particular values
 to be changed should be set. This allows the audio driver to
 only set those things that you wish to change and eliminates
 the need to query the device with AUDIO_GETINFO or
@@ -1011,57 +1142,57 @@ set.</p>
 parameter can have the following values:</p>
 
 
-<p style="margin-top: 1em" valign="top">AUDIO_ENCODING_ULAW</p>
+<p style="margin-left:22%; margin-top: 1em" valign="top">AUDIO_ENCODING_ULAW</p>
 
-<p style="margin-left:62%; margin-top: 1em">mu-law
+<p style="margin-left:27%">mu-law
 encoding, 8 bits/sample</p>
 
-<p valign="top">AUDIO_ENCODING_ALAW</p>
+<p style="margin-left:22%">AUDIO_ENCODING_ALAW</p>
 
-<p style="margin-left:62%; margin-top: 1em">A-law encoding,
+<p style="margin-left:27%">A-law encoding,
 8 bits/sample</p>
 
-<p valign="top">AUDIO_ENCODING_SLINEAR</p>
+<p style="margin-left:22%">AUDIO_ENCODING_SLINEAR</p>
 
-<p style="margin-left:62%; margin-top: 1em">two&rsquo;s
+<p style="margin-left:27%">two&rsquo;s
 complement signed linear encoding with the platform byte
 order</p>
 
-<p valign="top">AUDIO_ENCODING_ULINEAR</p>
+<p style="margin-left:22%">AUDIO_ENCODING_ULINEAR</p>
 
-<p style="margin-left:62%; margin-top: 1em">unsigned linear
+<p style="margin-left:27%">unsigned linear
 encoding with the platform byte order</p>
 
-<p valign="top">AUDIO_ENCODING_ADPCM</p>
+<p style="margin-left:22%">AUDIO_ENCODING_ADPCM</p>
 
-<p style="margin-left:62%; margin-top: 1em">ADPCM encoding,
+<p style="margin-left:27%">ADPCM encoding,
 8 bits/sample</p>
 
-<p valign="top">AUDIO_ENCODING_SLINEAR_LE</p>
+<p style="margin-left:22%">AUDIO_ENCODING_SLINEAR_LE</p>
 
-<p style="margin-left:62%; margin-top: 1em">two&rsquo;s
+<p style="margin-left:27%">two&rsquo;s
 complement signed linear encoding with little endian byte
 order</p>
 
-<p valign="top">AUDIO_ENCODING_SLINEAR_BE</p>
+<p style="margin-left:22%">AUDIO_ENCODING_SLINEAR_BE</p>
 
-<p style="margin-left:62%; margin-top: 1em">two&rsquo;s
+<p style="margin-left:27%">two&rsquo;s
 complement signed linear encoding with big endian byte
 order</p>
 
-<p valign="top">AUDIO_ENCODING_ULINEAR_LE</p>
+<p style="margin-left:22%">AUDIO_ENCODING_ULINEAR_LE</p>
 
-<p style="margin-left:62%; margin-top: 1em">unsigned linear
+<p style="margin-left:27%">unsigned linear
 encoding with little endian byte order</p>
 
-<p valign="top">AUDIO_ENCODING_ULINEAR_BE</p>
+<p style="margin-left:22%">AUDIO_ENCODING_ULINEAR_BE</p>
 
-<p style="margin-left:62%; margin-top: 1em">unsigned linear
+<p style="margin-left:27%">unsigned linear
 encoding with big endian byte order</p>
 
-<p valign="top">AUDIO_ENCODING_AC3</p>
+<p style="margin-left:22%">AUDIO_ENCODING_AC3</p>
 
-<p style="margin-left:62%; margin-top: 1em">Dolby Digital
+<p style="margin-left:27%">Dolby Digital
 AC3</p>
 
 <p style="margin-left:20%; margin-top: 1em">The
@@ -1077,37 +1208,37 @@ AUDIO_MID_BALANCE.</p>
 should be a combination of:</p>
 
 
-<p style="margin-top: 1em" valign="top">AUDIO_MICROPHONE</p>
+<p style="margin-left:22%; margin-top: 1em">AUDIO_MICROPHONE</p>
 
-<p style="margin-left:48%; margin-top: 1em">to select
+<p style="margin-left:27%">to select
 microphone input.</p>
 
-<p valign="top">AUDIO_LINE_IN</p>
+<p style="margin-left:22%">AUDIO_LINE_IN</p>
 
-<p style="margin-left:48%; margin-top: 1em">to select line
+<p style="margin-left:27%">to select line
 input.</p>
 
-<p valign="top">AUDIO_CD</p>
+<p style="margin-left:22%">AUDIO_CD</p>
 
-<p style="margin-left:48%; margin-top: 1em">to select CD
+<p style="margin-left:27%">to select CD
 input.</p>
 
 <p style="margin-left:20%; margin-top: 1em">The output port
 should be a combination of:</p>
 
-<p style="margin-top: 1em" valign="top">AUDIO_SPEAKER</p>
+<p style="margin-left:22%; margin-top: 1em">AUDIO_SPEAKER</p>
 
-<p style="margin-left:46%; margin-top: 1em">to select
+<p style="margin-left:27%">to select
 speaker output.</p>
 
-<p valign="top">AUDIO_HEADPHONE</p>
+<p style="margin-left:22%">AUDIO_HEADPHONE</p>
 
-<p style="margin-left:46%; margin-top: 1em">to select
+<p style="margin-left:27%">to select
 headphone output.</p>
 
-<p valign="top">AUDIO_LINE_OUT</p>
+<p style="margin-left:22%">AUDIO_LINE_OUT</p>
 
-<p style="margin-left:46%; margin-top: 1em">to select line
+<p style="margin-left:27%">to select line
 output.</p>
 
 <p style="margin-left:20%; margin-top: 1em">The available
@@ -1142,16 +1273,16 @@ DEVICE</b></p>
 not support read(2) or write(2). It supports the following
 ioctl(2) commands:</p>
 
-<p style="margin-top: 1em" valign="top">AUDIO_GETDEV
+<p style="margin-left:12%;margin-top: 1em">AUDIO_GETDEV
 (audio_device_t)</p>
 
 <p style="margin-left:20%;">This command is the same as
 described above for the sampling devices.</p>
 
-<p style="margin-top: 1em" valign="top">AUDIO_MIXER_READ
+<p style="margin-left:12%;margin-top: 1em">AUDIO_MIXER_READ
 (mixer_ctrl_t)</p>
 
-<p style="margin-top: 1em" valign="top">AUDIO_MIXER_WRITE
+<p style="margin-left:12%;margin-top: 1em">AUDIO_MIXER_WRITE
 (mixer_ctrl_t)</p>
 
 <p style="margin-left:20%;">These commands read the current
@@ -1299,7 +1430,7 @@ mixer device types and is not used for AUDIO_MIXER_READ or
 AUDIO_MIXER_WRITE.</p>
 
 
-<p style="margin-top: 1em" valign="top">AUDIO_MIXER_DEVINFO
+<p style="margin-left:12%;margin-top: 1em">AUDIO_MIXER_DEVINFO
 (mixer_devinfo_t)</p>
 
 <p style="margin-left:20%;">This command is used
@@ -1760,14 +1891,19 @@ controls because they use a name from one of the AudioC*
 string values.</p>
 
 <p style="margin-top: 1em" valign="top"><b>FILES</b> <br>
+<p style="margin-left:8%">
 /dev/audio <br>
+<p style="margin-left:8%">
 /dev/audioctl <br>
+<p style="margin-left:8%">
 /dev/sound <br>
-/dev/mixer <b><br>
-SEE ALSO</b></p>
+<p style="margin-left:8%">
+/dev/mixer <br>
+
+<p style="margin-top: 1em" valign="top"><b>SEE ALSO</b> <br>
 
 <p style="margin-left:8%;">audioctl(1), mixerctl(1),
-ioctl(2), ossaudio(3), midi(4), radio(4)</p>
+ioctl(2), ossaudio(3), midi(4), radio(4)<span class=n8>, sysctl(8)</span></p>
 
 <p style="margin-left:8%; margin-top: 1em"><b>ISA bus</b>
 <br>
@@ -1788,12 +1924,15 @@ bba(4)</p>
 <p style="margin-left:8%; margin-top: 1em"><b>USB</b> <br>
 uaudio(4)</p>
 
-<p style="margin-top: 1em" valign="top"><b>BUGS</b></p>
+<p style="margin-top: 1em" valign="top"><span class=n7><b>BUGS</b></span></p>
 
-<p style="margin-left:8%;">If the device is used in mmap(2)
+<p class=n7 style="margin-left:8%;">If the device is used in mmap(2)
 it is currently always mapped for writing (playing) due to
 VM system weirdness.</p>
 
+<p style="margin-top: 1em" valign="top"><span class=n8><b>HISTORY</b></span></p>
+<p class=n8 style="margin-left:8%;">Support for virtual channels and
+mixing first appeared in NetBSD&nbsp;8.0.</p>
 
 <p style="margin-left:8%; margin-top: 1em">NetBSD&nbsp;7.1.1
 September&nbsp;5, 2011 NetBSD&nbsp;7.1.1</p>
