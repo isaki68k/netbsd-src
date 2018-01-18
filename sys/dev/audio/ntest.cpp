@@ -112,8 +112,10 @@ main(int ac, char *av[])
 			}
 		}
 	}
-	printf("Result: %d tests, %d success, %d failed\n",
-		testcount, testcount - failcount, failcount);
+	printf("Result: %d tests, %d success", testcount, testcount - failcount);
+	if (failcount > 0)
+		printf(", %d failed", failcount);
+	printf("\n");
 	return 0;
 }
 
