@@ -420,10 +420,12 @@ non-zero value, or into half-duplex operation if it contains
 a zero value. If the device does not support full-duplex
 operation, attempting to set full-duplex mode returns an
 error.</p>
-<p class=bad style="margin-left:20%;">自VC の Full/Half 状態を変更して
-HWの状態を直接変更している。
-他の VC の Full/Half 状態は放置だが、
-整合性とかなんかいろいろ大丈夫なんだろうか。</p>
+<p class=bad style="margin-left:20%;">
+自VC の Full/Half 状態だけでなく
+setfd インタフェースで HWの状態を直接変更している。
+setfd インタフェースでデバッグ printf 以上のことをしている
+MD ドライバは1つも存在しないので影響は顕在化しないが
+本来はおかしいはず。</p>
 
 <p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_GETPROPS
 (int)</p>
