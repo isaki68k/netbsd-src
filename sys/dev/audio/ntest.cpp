@@ -102,10 +102,10 @@ main(int ac, char *av[])
 			}
 		}
 
-		// そうでなければ指定されたやつを順にテスト
+		// そうでなければ指定されたやつ(前方一致)を順にテスト
 		for (i = 0; i < ac; i++) {
 			for (int j = 0; testtable[j].name != NULL; j++) {
-				if (strcmp(av[i], testtable[j].name) == 0) {
+				if (strncmp(av[i], testtable[j].name, strlen(av[i])) == 0) {
 					testtable[j].func();
 					testname[0] = '\0';
 				}
