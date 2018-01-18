@@ -43,6 +43,7 @@ P.n8:before {
 	position: absolute;
 	left: 5%;
 }
+
 P.n9 {
 	background-color: #87e7b0;	/* 明るい緑 */
 }
@@ -51,6 +52,15 @@ P.n9:before {
 	background-color: #87e7b0;	/* 明るい緑 */
 	position: absolute;
 	left: 5%;
+}
+
+P.bad {
+	color: #ff2800;	/* 赤 */
+	font-weight: bold;
+}
+P.comment {
+	color: black;
+	font-weight: bold;
 }
 </style>
 <title></title>
@@ -63,6 +73,8 @@ NetBSD 8 部分は audio.4,v 1.79。<br>
 <p class=n7 style="margin-left:8%;">背景ピンクの文章は NetBSD 7 から 8 になって削除されたところ。</p>
 <p class=n8 style="margin-left:8%;">背景水色の文章は NetBSD 8 で追加されたところ。</p>
 <p class=n9 style="margin-left:8%;">背景緑の文章は AUDIO2 で改訂したいところ。</p>
+<p class=comment style="margin-left:8%;">黒太字は NetBSD 7 からある問題についてのコメント</p>
+<p class=bad style="margin-left:8%;">赤太字は NetBSD 8 の問題についてのコメント</p>
 
 <hr>
 
@@ -277,6 +289,9 @@ audio channel in use.</p>
 
 <p class=n8 style="margin-left:20%;">This command will select the
 audio channel for subsequent ioctl calls.</p>
+<p class=bad style="margin-left:20%">他のユーザのVCを認証なく指定できて
+(その後の ioctl で VC 状態を変更できて) しまうのでセキュリティ上アウト
+→ <a href="http://gnats.netbsd.org/52627">kern/52627</a></p>
 
 <p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_FLUSH</p>
 
@@ -292,6 +307,8 @@ for the current sampling mode.</p>
 of dropped input samples into its integer argument. There is
 no information regarding when in the sample stream they were
 dropped.</p>
+<p class=comment style="margin-left:20%">サンプル数と書いてあるが、
+バイト数を返すことにしたい。たしかそんな PR が出てた気がする。</p>
 
 <p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_WSEEK
 (u_long)</p>
@@ -403,6 +420,10 @@ non-zero value, or into half-duplex operation if it contains
 a zero value. If the device does not support full-duplex
 operation, attempting to set full-duplex mode returns an
 error.</p>
+<p class=bad style="margin-left:20%;">自VC の Full/Half 状態を変更して
+HWの状態を直接変更している。
+他の VC の Full/Half 状態は放置だが、
+整合性とかなんかいろいろ大丈夫なんだろうか。</p>
 
 <p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_GETPROPS
 (int)</p>
