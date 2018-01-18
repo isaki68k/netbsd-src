@@ -1533,12 +1533,12 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	// このミキサーどうするか
 	//grow_mixer_states(sc, 2);
 
-	mutex_enter(sc->sc_intr_lock);
 	// オープンカウント++
 	if (af->ptrack)
 		sc->sc_popens++;
 	if (af->rtrack)
 		sc->sc_ropens++;
+	mutex_enter(sc->sc_intr_lock);
 	SLIST_INSERT_HEAD(&sc->sc_files, af, entry);
 	mutex_exit(sc->sc_intr_lock);
 
@@ -1549,6 +1549,8 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	TRACEF(af, "done");
 	return error;
 
+	// ここの track は sc_files につながっていないので、
+	// intr_lock とらずに track_destroy() を呼んでいいはず。
 bad3:
 	if (af->rtrack) {
 		audio_track_destroy(af->rtrack);
@@ -1573,6 +1575,7 @@ audio_drain(struct audio_softc *sc, audio_track_t *track)
 int
 audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 {
+	audio_track_t *oldtrack;
 	int error;
 
 	DPRINTF(1, "%s\n", __func__);
@@ -1611,8 +1614,10 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 		    "%s has halt_input == halt_output. Please fix it\n",
 		    device_xname(sc->sc_dev));
 		// そうは言いつつもとりあえず回避はしておく
+		mutex_enter(sc->sc_intr_lock);
 		sc->sc_rbusy = false;
 		sc->sc_rmixer->hwbuf.top = 0;
+		mutex_exit(sc->sc_intr_lock);
 	}
 
 	// これが最後の録音トラックなら、halt_input を呼ぶ?
@@ -1632,8 +1637,11 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 				sc->sc_rmixer->hwbuf.top = 0;
 			}
 		}
-		audio_track_destroy(file->rtrack);
+		oldtrack = file->rtrack;
+		mutex_enter(sc->sc_intr_lock);
 		file->rtrack = NULL;
+		mutex_exit(sc->sc_intr_lock);
+		audio_track_destroy(oldtrack);
 
 		KASSERT(sc->sc_ropens > 0);
 		sc->sc_ropens--;
@@ -1656,8 +1664,11 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 				}
 			}
 		}
-		audio_track_destroy(file->ptrack);
+		oldtrack = file->ptrack;
+		mutex_enter(sc->sc_intr_lock);
 		file->ptrack = NULL;
+		mutex_exit(sc->sc_intr_lock);
+		audio_track_destroy(oldtrack);
 
 		KASSERT(sc->sc_popens > 0);
 		sc->sc_popens--;
@@ -1676,7 +1687,6 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 	}
 
 	// リストから削除
-	// XXX: rmixer のロック
 	mutex_enter(sc->sc_intr_lock);
 	SLIST_REMOVE(&sc->sc_files, file, audio_file, entry);
 	mutex_exit(sc->sc_intr_lock);
@@ -3507,6 +3517,7 @@ static int
 audio_file_set_full_duplex(struct audio_softc *sc, audio_file_t *file,
 	bool fdup)
 {
+	audio_track_t *track;
 	int error;
 
 	if (fdup) {
@@ -3514,24 +3525,31 @@ audio_file_set_full_duplex(struct audio_softc *sc, audio_file_t *file,
 		if (file->ptrack && file->rtrack)
 			return 0;
 		if (file->ptrack == NULL) {
-			error = audio_track_init(sc, &file->ptrack,
-			    AUMODE_PLAY);
+			error = audio_track_init(sc, &track, AUMODE_PLAY);
 			if (error)
 				return error;
+			mutex_enter(sc->sc_intr_lock);
+			file->ptrack = track;
+			mutex_exit(sc->sc_intr_lock);
 			sc->sc_popens++;
 		}
 		if (file->rtrack == NULL) {
-			error = audio_track_init(sc, &file->rtrack,
-			    AUMODE_RECORD);
+			error = audio_track_init(sc, &track, AUMODE_RECORD);
 			if (error)
 				return error;
+			mutex_enter(sc->sc_intr_lock);
+			file->rtrack = track;
+			mutex_exit(sc->sc_intr_lock);
 			sc->sc_ropens++;
 		}
 	} else {
 		/* Full to Half */
 		if (file->ptrack && file->rtrack) {
-			audio_track_destroy(file->rtrack);
+			track = file->rtrack;
+			mutex_enter(sc->sc_intr_lock);
 			file->rtrack = NULL;
+			mutex_exit(sc->sc_intr_lock);
+			audio_track_destroy(track);
 			KASSERT(sc->sc_ropens > 0);
 			sc->sc_ropens--;
 		}

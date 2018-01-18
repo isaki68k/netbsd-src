@@ -507,6 +507,9 @@ audio_track_freq_down(audio_filter_arg_t *arg)
 // 初期化できなければ errno を返し、*trackp は変更しません。
 // mode は再生なら AUMODE_PLAY、録音なら AUMODE_RECORD を指定します。
 // 単に録音再生のどちら側かだけなので AUMODE_PLAY_ALL は関係ありません。
+// trackp には sc_files に繋がっている file 構造体内のポインタを直接
+// 指定してはいけません。呼び出し側で一旦受け取って sc_intr_lock を
+// とってから繋ぎ変えてください。
 int
 audio_track_init(struct audio_softc *sc, audio_track_t **trackp, int mode)
 {
@@ -516,6 +519,8 @@ audio_track_init(struct audio_softc *sc, audio_track_t **trackp, int mode)
 	const char *cvname;
 	int error;
 	static int newid = 0;
+
+	KASSERT(!mutex_owned(sc->sc_intr_lock));
 
 	track = kmem_zalloc(sizeof(*track), KM_SLEEP);
 
@@ -544,9 +549,7 @@ audio_track_init(struct audio_softc *sc, audio_track_t **trackp, int mode)
 	}
 
 	// デフォルトフォーマットでセット
-	mutex_enter(mixer->sc->sc_intr_lock);
 	error = audio_track_set_format(track, default_format);
-	mutex_exit(mixer->sc->sc_intr_lock);
 	if (error)
 		goto error;
 
@@ -559,6 +562,9 @@ error:
 }
 
 // track のすべてのリソースと track 自身を解放します。
+// sc_files に繋がっている file 構造体内の [pr]track ポインタを直接
+// 指定してはいけません。呼び出し側で sc_intr_lock をとった上でリストから
+// 外したものを指定してください。
 void
 audio_track_destroy(audio_track_t *track)
 {
@@ -838,6 +844,8 @@ done:
 // トラックのユーザランド側フォーマットを設定します。
 // 変換用内部バッファは一度破棄されます。
 // 成功すれば 0、失敗すれば errno を返します。
+// outputbuf を解放・再取得する可能性があるため、track が sc_files 上にある
+// 場合は必ず intr_lock 取得してから呼び出してください。
 int
 audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 {
@@ -845,7 +853,6 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 
 	TRACE(track, "");
 	KASSERT(is_valid_format(usrfmt));
-	KASSERT(mutex_owned(track->mixer->sc->sc_intr_lock));
 
 	// 入力値チェック
 #if defined(_KERNEL)
