@@ -299,6 +299,8 @@ audio channel for subsequent ioctl calls.</p>
 and recording, clears all queued buffers, resets error
 counters, and restarts recording and playback as appropriate
 for the current sampling mode.</p>
+<p class=comment style="margin-left:20%">
+エラーカウンタをリセットするとあるが、具体的にどれか確認すること。</p>
 
 <p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_RERROR
 (int)</p>
@@ -323,6 +325,8 @@ argument.</p>
 <p style="margin-left:20%;">This command suspends the
 calling process until all queued playback samples have been
 played by the hardware.</p>
+<p class=bad style="margin-left:20%">
+x68k くらいの遅マシンでは drain の挙動がなんか変。</p>
 
 <p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_GETDEV
 (audio_device_t)</p>
@@ -1233,6 +1237,12 @@ should be in the range [AUDIO_MIN_GAIN, AUDIO_MAX_GAIN] and
 the balance in the range [AUDIO_LEFT_BALANCE,
 AUDIO_RIGHT_BALANCE] with the normal setting at
 AUDIO_MID_BALANCE.</p>
+<p class=bad style="margin-left:20%">
+balance と gain は元々セットで HW ミキサーを指していたが、
+このうち gain の設定だけ VC のマスターボリュームの変更に書き換えられ、
+gain の取得と balance の設定・取得は HW ミキサーのままなので、いろいろ整合していない。
+PR が出ている → <a href="https://gnats.netbsd.org/52781">kern/52781</a>
+</p>
 
 <p style="margin-left:20%; margin-top: 1em">The input port
 should be a combination of:</p>
