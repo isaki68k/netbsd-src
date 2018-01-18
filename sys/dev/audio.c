@@ -383,9 +383,6 @@ make_buildinfo(void)
 	n = 0;
 	n += snprintf(buf, sizeof(buf), "AUDIO_BLK_MS=%d", AUDIO_BLK_MS);
 	n += snprintf(buf + n, sizeof(buf) - n, ", NBLKOUT=%d", NBLKOUT);
-#if defined(AUDIO_SOFTINTR)
-	n += snprintf(buf + n, sizeof(buf) - n, ", SOFTINTR");
-#endif
 #if defined(FREQ_ORIG)
 	n += snprintf(buf + n, sizeof(buf) - n, ", FREQ_ORIG");
 #endif
@@ -1680,17 +1677,9 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 
 	// リストから削除
 	// XXX: rmixer のロック
-#if defined(AUDIO_SOFTINTR)
-	mutex_enter(&sc->sc_pmixer->softintrlock);
-#else
 	mutex_enter(sc->sc_intr_lock);
-#endif
 	SLIST_REMOVE(&sc->sc_files, file, audio_file, entry);
-#if defined(AUDIO_SOFTINTR)
-	mutex_exit(&sc->sc_pmixer->softintrlock);
-#else
 	mutex_exit(sc->sc_intr_lock);
-#endif
 
 	DPRINTF(3, "close done\n");
 	return 0;
@@ -3174,18 +3163,10 @@ audio_file_setinfo_set(audio_track_t *track, const struct audio_prinfo *info,
 	if (modechange) {
 		KASSERT(track);
 
-#if defined(AUDIO_SOFTINTR)
-		mutex_enter(&track->mixer->softintrlock);
-#else
 		mutex_enter(track->mixer->sc->sc_intr_lock);
-#endif
 		track->mode = mode;
 		error = audio_track_set_format(track, fmt);
-#if defined(AUDIO_SOFTINTR)
-		mutex_exit(&track->mixer->softintrlock);
-#else
 		mutex_exit(track->mixer->sc->sc_intr_lock);
-#endif
 		if (error)
 			return error;
 	}

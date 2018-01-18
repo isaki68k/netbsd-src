@@ -32,9 +32,6 @@
 // 出力バッファのブロック数
 #define NBLKOUT	(4)
 
-// softintr を使うとき ON にしてください
-//#define AUDIO_SOFTINTR
-
 // 周波数変換実装
 //#define FREQ_ORIG	// 元の実装
 #define FREQ_CYCLE2	// 周波数ではなく65536を基準にした周期比にする
@@ -179,9 +176,7 @@ struct audio_track
 	uint64_t	useriobytes;	// ユーザランド入出力されたバイト数
 	uint64_t	dropframes;	/* # of frames dropped in recording */
 
-#if !defined(AUDIO_SOFTINTR)
 	volatile uint32_t track_cl;	/* track cooperative lock */
-#endif
 
 	// 以下できるかどうか未知
 
@@ -224,11 +219,6 @@ struct audio_trackmixer
 	/* initial blktime n/d = AUDIO_BLK_MS / 1000 */
 	int		blktime_n;	/* blk time numerator */
 	int		blktime_d;	/* blk time denominator */
-
-#if defined(AUDIO_SOFTINTR)
-	kmutex_t	softintrlock;	/* softintr mutex */
-	void		*softintr;	/* softintr cookie */
-#endif
 
 	// 以下未定
 
