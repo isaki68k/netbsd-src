@@ -191,6 +191,11 @@ void xp_fail(int line, const char *fmt, ...)
 	printf("\n");
 	failcount++;
 }
+#define XP_SKIP()	xp_skip(__LINE__)
+void xp_skip(int line)
+{
+	/* nothing to do */
+}
 #define XP_EQ(exp, act)	xp_eq(__LINE__, exp, act)
 void xp_eq(int line, int exp, int act)
 {
@@ -425,7 +430,15 @@ test_encoding_1(void)
 					ai.play.sample_rate = freq;
 					ai.mode = AUMODE_PLAY_ALL;
 					r = IOCTL(fd, AUDIO_SETINFO, &ai, "play");
-					XP_EQ(0, r);
+					if (netbsd >= 8) {
+						XP_EQ(0, r);
+					} else {
+						if (r == 0) {
+							XP_EQ(0, r);
+						} else {
+							XP_SKIP();
+						}
+					}
 
 					CLOSE(fd);
 				}
@@ -598,6 +611,10 @@ test_FIOASYNC_1(void)
 	int val;
 
 	TEST("FIOASYNC_1");
+	if (netbsd < 8) {
+		XP_SKIP();
+		return;
+	}
 
 	// 1人目が ASYNC on
 	fd0 = OPEN(devicename, O_WRONLY);
@@ -628,6 +645,10 @@ test_FIOASYNC_2(void)
 	int val;
 
 	TEST("FIOASYNC_2");
+	if (netbsd < 8) {
+		XP_SKIP();
+		return;
+	}
 
 	// 1人目が ASYNC on
 	fd0 = OPEN(devicename, O_WRONLY);
@@ -658,6 +679,10 @@ test_FIOASYNC_3(void)
 	int val;
 
 	TEST("FIOASYNC_3");
+	if (netbsd < 8) {
+		XP_SKIP();
+		return;
+	}
 
 	// 1人目がオープン
 	fd0 = OPEN(devicename, O_WRONLY);
