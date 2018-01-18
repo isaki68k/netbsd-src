@@ -32,7 +32,8 @@ int props;
 char testname[100];
 int testcount;
 int failcount;
-const char *devicename;
+const char *devaudio = "/dev/audio0";
+const char *devsound = "/dev/sound0";
 extern struct cmdtable cmdtable[];
 extern struct testtable testtable[];
 
@@ -60,7 +61,6 @@ main(int ac, char *av[])
 	int opt_all;
 
 	testname[0] = '\0';
-	devicename = "/dev/sound0";
 	props = -1;
 
 	// global option
@@ -162,9 +162,9 @@ getprops()
 		int fd;
 		int r;
 
-		fd = open(devicename, O_WRONLY);
+		fd = open(devaudio, O_WRONLY);
 		if (fd == -1)
-			err(1, "getprops: open: %s", devicename);
+			err(1, "getprops: open: %s", devaudio);
 		r = ioctl(fd, AUDIO_GETPROPS, &props);
 		if (r == -1)
 			err(1, "getprops:AUDIO_GETPROPS");
@@ -299,9 +299,9 @@ int debug_close(int line, int fd)
 int
 cmd_FIONREAD_null(int ac, char *av[])
 {
-	int fd = OPEN(devicename, O_RDWR);
+	int fd = OPEN(devaudio, O_RDWR);
 	if (fd == -1)
-		err(1, "open: %s", devicename);
+		err(1, "open: %s", devaudio);
 
 	int r = IOCTL(fd, FIONREAD, NULL, "NULL");
 	if (r == -1)
@@ -327,9 +327,9 @@ cmd_FIOASYNC(int ac, char *av[])
 	n = atoi(av[1]);
 	printf("FIOASYNC %d\n", n);
 
-	fd = OPEN(devicename, O_WRONLY);
+	fd = OPEN(devaudio, O_WRONLY);
 	if (fd == -1)
-		err(1, "open: %s", devicename);
+		err(1, "open: %s", devaudio);
 
 	r = IOCTL(fd, FIOASYNC, &n, av[1]);
 	if (r == -1)
@@ -353,7 +353,7 @@ test_open_1(void)
 	// 再生専用デバイスのテストとか Half はまた
 	for (int mode = 0; mode <= 2; mode++) {
 		TEST("open_%s", openmodetable[mode]);
-		fd = OPEN(devicename, mode);
+		fd = OPEN(devaudio, mode);
 		XP_NE(-1, fd);
 
 		memset(&ai, 0, sizeof(ai));
@@ -418,7 +418,7 @@ test_encoding_1(void)
 						enc, prec, ch, freq);
 
 					TEST("encoding_1(%s)", buf);
-					fd = OPEN(devicename, O_WRONLY);
+					fd = OPEN(devaudio, O_WRONLY);
 					if (fd == -1)
 						err(1, "open");
 
@@ -462,7 +462,7 @@ test_encoding_2()
 	for (int i = 0; i < __arraycount(prectable); i++) {
 		int prec = prectable[i];
 		TEST("encoding_2(prec=%d)", prec);
-		fd = OPEN(devicename, O_WRONLY);
+		fd = OPEN(devaudio, O_WRONLY);
 		if (fd == -1)
 			err(1, "open");
 
@@ -487,7 +487,7 @@ test_encoding_2()
 	for (int i = 0; i < __arraycount(chtable); i++) {
 		int ch = chtable[i];
 		TEST("encoding_2(ch=%d)", ch);
-		fd = OPEN(devicename, O_WRONLY);
+		fd = OPEN(devaudio, O_WRONLY);
 		if (fd == -1)
 			err(1, "open");
 
@@ -523,7 +523,7 @@ test_encoding_2()
 		if (netbsd <= 8)
 			continue;
 
-		fd = OPEN(devicename, O_WRONLY);
+		fd = OPEN(devaudio, O_WRONLY);
 		if (fd == -1)
 			err(1, "open");
 
@@ -549,7 +549,7 @@ test_drain_1(void)
 	int r;
 	int fd;
 
-	fd = open(devicename, O_WRONLY);
+	fd = open(devaudio, O_WRONLY);
 	if (fd == -1)
 		err(1, "open");
 
@@ -579,7 +579,7 @@ test_drain_2(void)
 	int r;
 	int fd;
 
-	fd = open(devicename, O_WRONLY);
+	fd = open(devaudio, O_WRONLY);
 	if (fd == -1)
 		err(1, "open");
 
@@ -617,7 +617,7 @@ test_FIOASYNC_1(void)
 	}
 
 	// 1人目が ASYNC on
-	fd0 = OPEN(devicename, O_WRONLY);
+	fd0 = OPEN(devaudio, O_WRONLY);
 	if (fd0 == -1)
 		err(1, "open");
 	val = 1;
@@ -625,7 +625,7 @@ test_FIOASYNC_1(void)
 	XP_EQ(0, r);
 
 	// 続いて2人目が ASYNC on
-	fd1 = OPEN(devicename, O_WRONLY);
+	fd1 = OPEN(devaudio, O_WRONLY);
 	if (fd0 == -1)
 		err(1, "open");
 	val = 1;
@@ -651,7 +651,7 @@ test_FIOASYNC_2(void)
 	}
 
 	// 1人目が ASYNC on
-	fd0 = OPEN(devicename, O_WRONLY);
+	fd0 = OPEN(devaudio, O_WRONLY);
 	if (fd0 == -1)
 		err(1, "open");
 	val = 1;
@@ -659,7 +659,7 @@ test_FIOASYNC_2(void)
 	XP_EQ(0, r);
 
 	// 続いて2人目が ASYNC off
-	fd1 = OPEN(devicename, O_WRONLY);
+	fd1 = OPEN(devaudio, O_WRONLY);
 	if (fd0 == -1)
 		err(1, "open");
 	val = 0;
@@ -685,12 +685,12 @@ test_FIOASYNC_3(void)
 	}
 
 	// 1人目がオープン
-	fd0 = OPEN(devicename, O_WRONLY);
+	fd0 = OPEN(devaudio, O_WRONLY);
 	if (fd0 == -1)
 		err(1, "open");
 
 	// 2人目が ASYNC on してクローズ。2人目の ASYNC 状態は無効
-	fd1 = OPEN(devicename, O_WRONLY);
+	fd1 = OPEN(devaudio, O_WRONLY);
 	if (fd0 == -1)
 		err(1, "open");
 	val = 1;
@@ -699,7 +699,7 @@ test_FIOASYNC_3(void)
 	CLOSE(fd1);
 
 	// もう一回2人目がオープンして ASYNC on
-	fd1 = OPEN(devicename, O_WRONLY);
+	fd1 = OPEN(devaudio, O_WRONLY);
 	if (fd0 == -1)
 		err(1, "open");
 	val = 1;
@@ -729,7 +729,7 @@ test_FIOASYNC_4(void)
 	signal(SIGIO, signal_FIOASYNC_4);
 	sigio_caught = 0;
 
-	fd = OPEN(devicename, O_WRONLY);
+	fd = OPEN(devaudio, O_WRONLY);
 	if (fd == -1)
 		err(1, "open");
 
@@ -763,7 +763,7 @@ test_FIOASYNC_5(void)
 	signal(SIGIO, signal_FIOASYNC_4);
 	sigio_caught = 0;
 
-	fd = OPEN(devicename, O_RDONLY);
+	fd = OPEN(devaudio, O_RDONLY);
 	if (fd == -1)
 		err(1, "open");
 
@@ -793,9 +793,9 @@ test_AUDIO_WSEEK_1(void)
 	int fd;
 	int n;
 
-	fd = OPEN(devicename, O_WRONLY);
+	fd = OPEN(devaudio, O_WRONLY);
 	if (fd == -1)
-		err(1, "open: %s", devicename);
+		err(1, "open: %s", devaudio);
 
 	struct audio_info ai;
 	AUDIO_INITINFO(&ai);
@@ -847,9 +847,9 @@ test_AUDIO_SETFD_ONLY(void)
 	for (int mode = 0; mode <= 1; mode++) {
 		TEST("AUDIO_SETFD_ONLY_%s", openmodetable[mode]);
 
-		fd = OPEN(devicename, mode);
+		fd = OPEN(devaudio, mode);
 		if (fd == -1)
-			err(1, "open: %s", devicename);
+			err(1, "open: %s", devaudio);
 
 		// オープン直後は常に Half
 		n = 0;
@@ -891,9 +891,9 @@ test_AUDIO_SETFD_RDWR(void)
 	hwfull = (props & AUDIO_PROP_FULLDUPLEX) ? 1 : 0;
 
 	TEST("AUDIO_GETFD_RDWR");
-	fd = OPEN(devicename, O_RDWR);
+	fd = OPEN(devaudio, O_RDWR);
 	if (fd == -1)
-		err(1, "open: %s", devicename);
+		err(1, "open: %s", devaudio);
 
 	// O_RDWR でオープンだと
 	// HW full duplex なら FULL
@@ -932,7 +932,7 @@ test_AUDIO_GETINFO_eof(void)
 	int n;
 
 	TEST("AUDIO_GETINFO_eof");
-	fd = OPEN(devicename, O_RDWR);
+	fd = OPEN(devaudio, O_RDWR);
 	if (fd == -1)
 		err(1, "open");
 
@@ -973,7 +973,7 @@ test_AUDIO_GETINFO_eof(void)
 
 	// 別ディスクリプタと干渉しないこと
 	if (netbsd >= 8) {
-		fd1 = OPEN(devicename, O_RDWR);
+		fd1 = OPEN(devaudio, O_RDWR);
 		if (fd1 == -1)
 			err(1, "open");
 		memset(&ai, 0, sizeof(ai));
@@ -987,7 +987,7 @@ test_AUDIO_GETINFO_eof(void)
 	CLOSE(fd);
 
 	// オープンしなおすとリセット
-	fd = OPEN(devicename, O_RDWR);
+	fd = OPEN(devaudio, O_RDWR);
 	if (fd == -1)
 		err(1, "open");
 
