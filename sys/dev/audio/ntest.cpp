@@ -174,6 +174,13 @@ void xp_eq(int line, int exp, int act)
 	if (exp != act)
 		xp_fail(line, "expects %d but %d", exp, act);
 }
+#define XP_NE(exp, act)	xp_ne(__LINE__, exp, act)
+void xp_ne(int line, int exp, int act)
+{
+	testcount++;
+	if (exp == act)
+		xp_fail(line, "expects != %d but %d", exp, act);
+}
 
 #define DPRINTF(fmt...)	do {	\
 	if (debug)	\
@@ -317,7 +324,9 @@ test_open_1(void)
 	for (int mode = 0; mode <= 2; mode++) {
 		TEST("open_%s", openmodetable[mode]);
 		fd = OPEN(devicename, mode);
-		CLOSE(fd);
+		XP_NE(-1, fd);
+		r = CLOSE(fd);
+		XP_EQ(0, r);
 	}
 }
 
