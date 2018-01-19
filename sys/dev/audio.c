@@ -207,7 +207,6 @@ static int audiostartp(struct audio_softc *);
 
 static int audio_query_devinfo(struct audio_softc *, mixer_devinfo_t *);
 
-static int audio_file_set_defaults(struct audio_softc *, audio_file_t *);
 static int audio_file_setinfo(struct audio_softc *, audio_file_t *,
 	const struct audio_info *);
 static int audio_file_setinfo_check(audio_format2_t *,
@@ -558,6 +557,8 @@ audioattach(device_t parent, device_t self, void *aux)
 	// /dev/sound のデフォルト値
 	sc->sc_pparams = params_to_format2(&audio_default);
 	sc->sc_rparams = params_to_format2(&audio_default);
+	sc->sc_ppause = false;
+	sc->sc_rpause = false;
 
 	// XXX sc_ai の初期化について考えないといけない
 	// 今は sc_ai が一度でも初期化されたかどうかフラグがあるが
@@ -1387,6 +1388,7 @@ int
 audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
     struct lwp *l, struct file **nfp)
 {
+	struct audio_info ai;
 	struct file *fp;
 	audio_file_t *af;
 	int fd;
@@ -1430,15 +1432,21 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	 * The /dev/audio is always (re)set to 8-bit MU-Law mono
 	 * For the other devices, you get what they were last set to.
 	 */
+	AUDIO_INITINFO(&ai);
 	if (ISDEVAUDIO(dev)) {
-		error = audio_file_set_defaults(sc, af);
-	} else {
-		struct audio_info ai;
-
-		AUDIO_INITINFO(&ai);
-		ai.mode = af->mode;
-		error = audio_file_setinfo(sc, af, &ai);
+		ai.play.sample_rate   = audio_default.sample_rate;
+		ai.play.encoding      = audio_default.encoding;
+		ai.play.channels      = audio_default.channels;
+		ai.play.precision     = audio_default.precision;
+		ai.play.pause         = false;
+		ai.record.sample_rate = audio_default.sample_rate;
+		ai.record.encoding    = audio_default.encoding;
+		ai.record.channels    = audio_default.channels;
+		ai.record.precision   = audio_default.precision;
+		ai.record.pause       = false;
 	}
+	ai.mode = af->mode;
+	error = audio_file_setinfo(sc, af, &ai);
 	if (error)
 		goto bad3;
 
@@ -1898,7 +1906,7 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		if (error)
 			break;
 		/* update last_ai if /dev/sound */
-		// XXX need_mixerinfo は false にして構わないはず
+		/* XXX これたぶん違うんじゃないかなあ */
 		if (ISDEVSOUND(dev))
 			error = audiogetinfo(sc, &sc->sc_ai, 0, file);
 		break;
@@ -2673,34 +2681,6 @@ audio_hw_config(struct audio_softc *sc, int is_indep)
 	return error;
 }
 
-// この audio_file を /dev/audio のデフォルト値(mulaw)に設定する
-static int
-audio_file_set_defaults(struct audio_softc *sc, audio_file_t *file)
-{
-	struct audio_info ai;
-
-	KASSERT(mutex_owned(sc->sc_lock));
-
-	/* default parameters */
-	sc->sc_rparams = params_to_format2(&audio_default);
-	sc->sc_pparams = params_to_format2(&audio_default);
-
-	AUDIO_INITINFO(&ai);
-	ai.record.sample_rate = sc->sc_rparams.sample_rate;
-	ai.record.encoding    = sc->sc_rparams.encoding;
-	ai.record.channels    = sc->sc_rparams.channels;
-	ai.record.precision   = sc->sc_rparams.precision;
-	ai.record.pause	      = false;
-	ai.play.sample_rate   = sc->sc_pparams.sample_rate;
-	ai.play.encoding      = sc->sc_pparams.encoding;
-	ai.play.channels      = sc->sc_pparams.channels;
-	ai.play.precision     = sc->sc_pparams.precision;
-	ai.play.pause         = false;
-	ai.mode = file->mode;
-
-	return audio_file_setinfo(sc, file, &ai);
-}
-
 // audioinfo の各パラメータについて。
 //
 // ai.{play,record}.sample_rate		(R/W)
@@ -2812,7 +2792,9 @@ audio_file_set_defaults(struct audio_softc *sc, audio_file_t *file)
 	}
 #endif
 
-// XXX see issue #23
+// ai に基づいて file の両トラックを諸々セットする。
+// ai のうち初期値のままのところは sc_[pr]params, sc_[pr]pause が使われる。
+// セットできれば sc_[pr]params, sc_[pr]pause も更新する。
 static int
 audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	const struct audio_info *ai)
@@ -2823,6 +2805,8 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	audio_track_t *rec;
 	audio_format2_t pfmt;
 	audio_format2_t rfmt;
+	bool ppause;
+	bool rpause;
 	int pchanges;
 	int rchanges;
 	int mode;
@@ -2942,9 +2926,11 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	saved_mode = file->mode;
 
 	/* Set default value */
-	// sc_[pr]params が現在の /dev/sound の設定値
+	// sc_[pr]params, sc_[pr]pause が現在の /dev/sound の設定値
 	pfmt = sc->sc_pparams;
 	rfmt = sc->sc_rparams;
+	ppause = sc->sc_ppause;
+	rpause = sc->sc_rpause;
 
 	/* Overwrite if specified */
 	mode = file->mode;
@@ -2963,11 +2949,15 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 		pchanges = audio_file_setinfo_check(&pfmt, pi);
 		if (pchanges == -1)
 			return EINVAL;
+		if (SPECIFIED_CH(pi->pause))
+			ppause = pi->pause;
 	}
 	if (rec && (mode & AUMODE_RECORD) != 0) {
 		rchanges = audio_file_setinfo_check(&rfmt, ri);
 		if (rchanges == -1)
 			return EINVAL;
+		if (SPECIFIED_CH(ri->pause))
+			ppause = ri->pause;
 	}
 
 	if (SPECIFIED(ai->mode) || pchanges || rchanges) {
@@ -2990,18 +2980,26 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	error = 0;
 	file->mode = mode;
 	if (play) {
+		play->is_pause = ppause;
 		error = audio_file_setinfo_set(play, pi, pchanges, &pfmt,
 		    (mode & (AUMODE_PLAY | AUMODE_PLAY_ALL)));
 		if (error)
 			goto abort1;
+
+		/* update sticky parameters */
 		sc->sc_pparams = pfmt;
+		sc->sc_ppause = ppause;
 	}
 	if (rec) {
+		rec->is_pause = rpause;
 		error = audio_file_setinfo_set(rec, ri, rchanges, &rfmt,
 		    (mode & AUMODE_RECORD));
 		if (error)
 			goto abort2;
+
+		/* update sticky parameters */
 		sc->sc_rparams = rfmt;
+		sc->sc_rpause = rpause;
 	}
 
 	return 0;
@@ -3009,20 +3007,21 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	/* Rollback */
 abort2:
 	if (error != ENOMEM) {
+		rec->is_pause = saved_rpause;
 		AUDIO_INITINFO(&bk);
 		bk.record.gain = saved_rvolume;
-		bk.record.pause = saved_rpause;
 		audio_file_setinfo_set(rec, &bk.record, true, &saved_rfmt,
 		    (saved_mode & AUMODE_RECORD));
 	}
 abort1:
 	if (play && error != ENOMEM) {
+		play->is_pause = saved_ppause;
 		AUDIO_INITINFO(&bk);
 		bk.play.gain = saved_pvolume;
-		bk.play.pause = saved_ppause;
 		audio_file_setinfo_set(play, &bk.play, true, &saved_pfmt,
 		    (saved_mode & (AUMODE_PLAY | AUMODE_PLAY_ALL)));
 		sc->sc_pparams = saved_pfmt;
+		sc->sc_ppause = saved_ppause;
 	}
 	return error;
 }
@@ -3102,9 +3101,6 @@ audio_file_setinfo_set(audio_track_t *track, const struct audio_prinfo *info,
 			return EINVAL;
 		}
 		track->volume = audio_volume_to_inner(info->gain);
-	}
-	if (SPECIFIED_CH(info->pause)) {
-		track->is_pause = info->pause;
 	}
 
 	return 0;

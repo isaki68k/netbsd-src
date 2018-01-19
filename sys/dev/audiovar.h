@@ -141,8 +141,12 @@ struct audio_softc {
 	int sc_ropens;
 	bool			sc_pbusy;	/* output DMA in progress */
 	bool			sc_rbusy;	/* input DMA in progress */
+
+	// この4つが /dev/sound で引き継がれる non-volatile パラメータ
 	audio_format2_t sc_pparams;	/* play encoding parameters */
 	audio_format2_t sc_rparams;	/* record encoding parameters */
+	bool 		sc_ppause;
+	bool		sc_rpause;
 
 	struct audio_info sc_ai;	/* recent info for /dev/sound */
 
