@@ -1029,12 +1029,17 @@ signal_FIOASYNC_4(int signo)
 }
 
 // 書き込みで SIGIO が飛んでくるか
+// いまいち N7 でシグナルが飛んでくる条件が分からん。
+// PLAY_ALL でブロックサイズ書き込んだら飛んでくるようだ。
+// PLAY/PLAY_ALL で 4バイト書き込むとかではだめだった。
 void
 test_FIOASYNC_4(void)
 {
+	struct audio_info ai;
 	int r;
 	int fd;
 	int val;
+	char *data;
 
 	TEST("FIOASYNC_4");
 	signal(SIGIO, signal_FIOASYNC_4);
@@ -1044,12 +1049,22 @@ test_FIOASYNC_4(void)
 	if (fd == -1)
 		err(1, "open");
 
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	if (r == -1)
+		err(1, "ioctl");
+	if (ai.blocksize == 0)
+		errx(1, "blocksize == 0");
+	data = (char *)malloc(ai.blocksize);
+	if (data == NULL)
+		err(1, "malloc");
+	memset(data, 0, ai.blocksize);
+
 	val = 1;
 	r = IOCTL(fd, FIOASYNC, &val, "on");
 	XP_EQ(0, r);
 
-	r = WRITE(fd, &r, 4);
-	XP_EQ(4, r);
+	r = WRITE(fd, data, ai.blocksize);
+	XP_EQ(ai.blocksize, r);
 
 	for (int i = 0; i < 10 && sigio_caught == 0; i++) {
 		usleep(10000);
@@ -1057,6 +1072,7 @@ test_FIOASYNC_4(void)
 	XP_EQ(1, sigio_caught);
 
 	CLOSE(fd);
+	free(data);
 
 	signal(SIGIO, SIG_IGN);
 	sigio_caught = 0;
