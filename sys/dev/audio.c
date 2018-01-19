@@ -119,7 +119,6 @@ int	audiodebug = AUDIO_DEBUG;
 #define DPRINTF(n, fmt...)	do { } while (0)
 #endif
 
-#define ROUNDSIZE(x)	(x) &= -16	/* round to nice boundary */
 #define SPECIFIED(x)	((x) != ~0)
 #define SPECIFIED_CH(x)	((x) != (u_char)~0)
 
