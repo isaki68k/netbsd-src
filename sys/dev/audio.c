@@ -1404,7 +1404,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	af->sc = sc;
 	af->dev = dev;
 	if ((flags & FWRITE) != 0 && audio_can_playback(sc))
-		af->mode |= AUMODE_PLAY;
+		af->mode |= AUMODE_PLAY | AUMODE_PLAY_ALL;
 	if ((flags & FREAD) != 0 && audio_can_capture(sc))
 		af->mode |= AUMODE_RECORD;
 	if (af->mode == 0) {
