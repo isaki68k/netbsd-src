@@ -327,10 +327,21 @@ test_open_1(void)
 	struct audio_info ai;
 	int fd;
 	int r;
+	int expmode[] = {
+		AUMODE_RECORD,
+		AUMODE_PLAY | AUMODE_PLAY_ALL,
+		AUMODE_PLAY | AUMODE_PLAY_ALL | AUMODE_RECORD,
+	};
+	int exppopen[] = {
+		0, 1, 1,
+	};
+	int expropen[] = {
+		1, 0, 1,
+	};
 
 	// 再生専用デバイスのテストとか Half はまた
 	for (int mode = 0; mode <= 2; mode++) {
-		TEST("open_%s", openmodetable[mode]);
+		TEST("open_1(%s)", openmodetable[mode]);
 		fd = OPEN(devaudio, mode);
 		XP_NE(-1, fd);
 
@@ -339,10 +350,332 @@ test_open_1(void)
 		XP_EQ(0, r);
 		XP_EQ(0, ai.play.pause);
 		XP_EQ(0, ai.record.pause);
+		XP_EQ(exppopen[mode], ai.play.open);
+		XP_EQ(expropen[mode], ai.record.open);
+		XP_EQ(expmode[mode], ai.mode);
 
 		r = CLOSE(fd);
 		XP_EQ(0, r);
 	}
+}
+
+// /dev/audio は何回開いても初期値は同じ
+void
+test_open_2(void)
+{
+	struct audio_info ai, ai0;
+	int fd;
+	int r;
+
+	TEST("open_2");
+
+	// オープンして初期値をチェック
+	fd = OPEN(devaudio, O_WRONLY);
+	if (fd == -1)
+		err(1, "open");
+	memset(&ai, 0, sizeof(ai));
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	XP_EQ(0, r);
+
+	XP_NE(0, ai.blocksize);
+	XP_NE(0, ai.hiwat);
+	XP_NE(0, ai.lowat);
+	XP_EQ(AUMODE_PLAY | AUMODE_PLAY_ALL, ai.mode);
+	// play
+	XP_EQ(8000, ai.play.sample_rate);
+	XP_EQ(1, ai.play.channels);
+	XP_EQ(8, ai.play.precision);
+	XP_EQ(AUDIO_ENCODING_ULAW, ai.play.encoding);
+	// gain
+	// port
+	XP_EQ(0, ai.play.seek);
+	// avail_ports
+	XP_NE(0, ai.play.buffer_size);
+	XP_EQ(0, ai.play.samples);
+	XP_EQ(0, ai.play.eof);
+	XP_EQ(0, ai.play.pause);
+	XP_EQ(0, ai.play.error);
+	XP_EQ(0, ai.play.waiting);
+	// balance
+	XP_EQ(1, ai.play.open);
+	XP_EQ(0, ai.play.active);
+	// record
+	XP_EQ(8000, ai.record.sample_rate);
+	XP_EQ(1, ai.record.channels);
+	XP_EQ(8, ai.record.precision);
+	XP_EQ(AUDIO_ENCODING_ULAW, ai.record.encoding);
+	// gain
+	// port
+	XP_EQ(0, ai.record.seek);
+	// avail_ports
+	XP_NE(0, ai.record.buffer_size);
+	XP_EQ(0, ai.record.samples);
+	XP_EQ(0, ai.record.eof);
+	XP_EQ(0, ai.record.pause);
+	XP_EQ(0, ai.record.error);
+	XP_EQ(0, ai.record.waiting);
+	// balance
+	XP_EQ(0, ai.record.open);
+	XP_EQ(0, ai.record.active);
+	// これを保存しておく
+	ai0 = ai;
+
+	// できるだけ変更
+	AUDIO_INITINFO(&ai);
+	if (ai0.hiwat > 0)
+		ai.hiwat = ai0.hiwat - 1;
+	if (ai0.lowat < ai0.hiwat)
+		ai.lowat = ai0.lowat + 1;
+	ai.mode = AUMODE_PLAY;
+	ai.play.sample_rate = 11025;
+	ai.play.channels = 2;
+	ai.play.precision = 16;
+	ai.play.encoding = AUDIO_ENCODING_SLINEAR_LE;
+	ai.play.pause = 1;
+	ai.record.sample_rate = 11025;
+	ai.record.channels = 2;
+	ai.record.precision = 16;
+	ai.record.encoding = AUDIO_ENCODING_SLINEAR_LE;
+	ai.record.pause = 1;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "ai");
+	if (r == -1)
+		err(1, "AUDIO_SETINFO");
+	CLOSE(fd);
+
+	// 再オープンしてチェック
+	fd = OPEN(devaudio, O_WRONLY);
+	if (fd == -1)
+		err(1, "open");
+	memset(&ai, 0, sizeof(ai));
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	XP_EQ(0, r);
+
+	XP_NE(0, ai.blocksize);
+	XP_NE(0, ai.hiwat);
+	XP_NE(0, ai.lowat);
+	XP_EQ(AUMODE_PLAY | AUMODE_PLAY_ALL, ai.mode);
+	// play
+	XP_EQ(8000, ai.play.sample_rate);
+	XP_EQ(1, ai.play.channels);
+	XP_EQ(8, ai.play.precision);
+	XP_EQ(AUDIO_ENCODING_ULAW, ai.play.encoding);
+	// gain
+	// port
+	XP_EQ(0, ai.play.seek);
+	// avail_ports
+	XP_NE(0, ai.play.buffer_size);
+	XP_EQ(0, ai.play.samples);
+	XP_EQ(0, ai.play.eof);
+	XP_EQ(0, ai.play.pause);
+	XP_EQ(0, ai.play.error);
+	XP_EQ(0, ai.play.waiting);
+	// balance
+	XP_EQ(1, ai.play.open);
+	XP_EQ(0, ai.play.active);
+	// record
+	XP_EQ(8000, ai.record.sample_rate);
+	XP_EQ(1, ai.record.channels);
+	XP_EQ(8, ai.record.precision);
+	XP_EQ(AUDIO_ENCODING_ULAW, ai.record.encoding);
+	// gain
+	// port
+	XP_EQ(0, ai.record.seek);
+	// avail_ports
+	XP_NE(0, ai.record.buffer_size);
+	XP_EQ(0, ai.record.samples);
+	XP_EQ(0, ai.record.eof);
+	XP_EQ(0, ai.record.pause);
+	XP_EQ(0, ai.record.error);
+	XP_EQ(0, ai.record.waiting);
+	// balance
+	XP_EQ(0, ai.record.open);
+	XP_EQ(0, ai.record.active);
+
+	CLOSE(fd);
+}
+
+// /dev/sound は前回の値がみえる
+void
+test_open_3(void)
+{
+	struct audio_info ai, ai0;
+	int fd;
+	int r;
+
+	TEST("open_3");
+
+	// まず /dev/audio 開いて初期化させておく
+	fd = OPEN(devaudio, O_RDONLY);
+	if (fd == -1)
+		err(1, "open");
+	CLOSE(fd);
+
+	// オープンして初期値をチェック
+	fd = OPEN(devsound, O_WRONLY);
+	if (fd == -1)
+		err(1, "open");
+	memset(&ai, 0, sizeof(ai));
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	XP_EQ(0, r);
+
+	// audio の初期値と同じものが見えるはず
+	XP_NE(0, ai.blocksize);
+	// hiwat, lowat
+	XP_EQ(AUMODE_PLAY | AUMODE_PLAY_ALL, ai.mode);
+	// play
+	XP_EQ(8000, ai.play.sample_rate);
+	XP_EQ(1, ai.play.channels);
+	XP_EQ(8, ai.play.precision);
+	XP_EQ(AUDIO_ENCODING_ULAW, ai.play.encoding);
+	// gain
+	// port
+	XP_EQ(0, ai.play.seek);
+	// avail_ports
+	XP_NE(0, ai.play.buffer_size);
+	XP_EQ(0, ai.play.samples);
+	XP_EQ(0, ai.play.eof);
+	XP_EQ(0, ai.play.pause);
+	XP_EQ(0, ai.play.error);
+	XP_EQ(0, ai.play.waiting);
+	// balance
+	XP_EQ(1, ai.play.open);
+	XP_EQ(0, ai.play.active);
+	// record
+	XP_EQ(8000, ai.record.sample_rate);
+	XP_EQ(1, ai.record.channels);
+	XP_EQ(8, ai.record.precision);
+	XP_EQ(AUDIO_ENCODING_ULAW, ai.record.encoding);
+	// gain
+	// port
+	XP_EQ(0, ai.record.seek);
+	// avail_ports
+	XP_NE(0, ai.record.buffer_size);
+	XP_EQ(0, ai.record.samples);
+	XP_EQ(0, ai.record.eof);
+	XP_EQ(0, ai.record.pause);
+	XP_EQ(0, ai.record.error);
+	XP_EQ(0, ai.record.waiting);
+	// balance
+	XP_EQ(0, ai.record.open);
+	XP_EQ(0, ai.record.active);
+
+	// できるだけ変更
+	AUDIO_INITINFO(&ai);
+	ai.mode = AUMODE_PLAY_ALL;
+	ai.play.sample_rate = 11025;
+	ai.play.channels = 2;
+	ai.play.precision = 16;
+	ai.play.encoding = AUDIO_ENCODING_SLINEAR_LE;
+	ai.play.pause = 1;
+	ai.record.sample_rate = 11025;
+	ai.record.channels = 2;
+	ai.record.precision = 16;
+	ai.record.encoding = AUDIO_ENCODING_SLINEAR_LE;
+	ai.record.pause = 1;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "ai");
+	if (r == -1)
+		err(1, "AUDIO_SETINFO");
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai0, "ai0");
+	if (r == -1)
+		err(1, "AUDIO_GETBUFINFO");
+	CLOSE(fd);
+
+	// 再オープンしてチェック
+	fd = OPEN(devsound, O_WRONLY);
+	if (fd == -1)
+		err(1, "open");
+	memset(&ai, 0, sizeof(ai));
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	XP_EQ(0, r);
+
+	XP_NE(0, ai.blocksize);
+	// hiwat, lowat は変化する
+	XP_EQ(AUMODE_PLAY | AUMODE_PLAY_ALL, ai.mode);
+	// play
+	XP_EQ(ai0.play.sample_rate, ai.play.sample_rate);
+	XP_EQ(ai0.play.channels, ai.play.channels);
+	XP_EQ(ai0.play.precision, ai.play.precision);
+	XP_EQ(ai0.play.encoding, ai.play.encoding);
+	// gain
+	// port
+	XP_EQ(0, ai.play.seek);
+	// avail_ports
+	XP_NE(0, ai.play.buffer_size);
+	XP_EQ(0, ai.play.samples);
+	XP_EQ(0, ai.play.eof);
+	XP_EQ(ai0.play.pause, ai.play.pause);
+	XP_EQ(0, ai.play.error);
+	XP_EQ(0, ai.play.waiting);
+	// balance
+	XP_EQ(1, ai.play.open);
+	XP_EQ(0, ai.play.active);
+	// record
+	XP_EQ(ai0.record.sample_rate, ai.record.sample_rate);
+	XP_EQ(ai0.record.channels, ai.record.channels);
+	XP_EQ(ai0.record.precision, ai.record.precision);
+	XP_EQ(ai0.record.encoding, ai.record.encoding);
+	// gain
+	// port
+	XP_EQ(0, ai.record.seek);
+	// avail_ports
+	XP_NE(0, ai.record.buffer_size);
+	XP_EQ(0, ai.record.samples);
+	XP_EQ(0, ai.record.eof);
+	XP_EQ(ai0.record.pause, ai.record.pause);
+	XP_EQ(0, ai.record.error);
+	XP_EQ(0, ai.record.waiting);
+	// balance
+	XP_EQ(0, ai.record.open);
+	XP_EQ(0, ai.record.active);
+
+	CLOSE(fd);
+}
+
+// /dev/sound -> /dev/audio -> /dev/sound と開くと2回目の sound は
+// audio の設定に影響される。
+// /dev/audio と /dev/sound の設定は互いに独立しているわけではなく、
+// 内部設定は1つで、
+// /dev/sound はそれを継承して使い、/dev/audio はそれを初期化して使う。
+// というイメージのようだ。
+void
+test_open_4(void)
+{
+	struct audio_info ai, ai0;
+	int fd;
+	int r;
+
+	TEST("open_4");
+
+	// まず /dev/sound を開いて適当に設定。
+	// 代表値でエンコーディングだけ変える。
+	// このケースでだけ open_2、open_3 とは挙動が違う項目が一つだけ
+	// あるとかだと捕捉できないが、さすがにいいだろう…。
+	fd = OPEN(devsound, O_WRONLY);
+	if (fd == -1)
+		err(1, "open");
+	AUDIO_INITINFO(&ai);
+	ai.play.encoding = AUDIO_ENCODING_SLINEAR_LE;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
+	if (r == -1)
+		err(1, "AUDIO_SETINFO");
+	CLOSE(fd);
+
+	// 続いて /dev/audio をオープン。オープンしただけで自身は mulaw になる
+	fd = OPEN(devaudio, O_WRONLY);
+	if (fd == -1)
+		err(1, "open");
+	CLOSE(fd);
+
+	// 再び /dev/sound をオープン。
+	fd = OPEN(devsound, O_WRONLY);
+	if (fd == -1)
+		err(1, "open");
+	memset(&ai, 0, sizeof(ai));
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	if (r == -1)
+		err(1, "AUDIO_GETBUFINFO");
+	XP_EQ(AUDIO_ENCODING_ULAW, ai.play.encoding);
+	CLOSE(fd);
 }
 
 // SETINFO の受付エンコーディング
@@ -990,6 +1323,9 @@ struct cmdtable cmdtable[] = {
 #define DEF(x)	{ #x, test_ ## x }
 struct testtable testtable[] = {
 	DEF(open_1),
+	DEF(open_2),
+	DEF(open_3),
+	DEF(open_4),
 	DEF(encoding_1),
 	DEF(encoding_2),
 	DEF(drain_1),
