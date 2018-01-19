@@ -894,7 +894,7 @@ test_drain_2(void)
 	if (fd == -1)
 		err(1, "open");
 
-	TEST("drain_1");
+	TEST("drain_2");
 	struct audio_info ai;
 	AUDIO_INITINFO(&ai);
 	ai.play.encoding = AUDIO_ENCODING_SLINEAR_LE;
@@ -1104,6 +1104,8 @@ test_AUDIO_WSEEK_1(void)
 	int fd;
 	int n;
 
+	TEST("AUDIO_WSEEK_1");
+
 	fd = OPEN(devaudio, O_WRONLY);
 	if (fd == -1)
 		err(1, "open: %s", devaudio);
@@ -1121,7 +1123,6 @@ test_AUDIO_WSEEK_1(void)
 		err(1, "AUDIO_SETINFO.pause");
 
 	// 初期状態だと 0 バイトになる
-	TEST("AUDIO_WSEEK_0bytes");
 	n = 0;
 	r = IOCTL(fd, AUDIO_WSEEK, &n, "");
 	if (r == -1)
@@ -1130,7 +1131,6 @@ test_AUDIO_WSEEK_1(void)
 
 	// 4バイト書き込むと 4になる
 	// N7 では 0 になる。要調査。
-	TEST("AUDIO_WSEEK_4bytes");
 	r = WRITE(fd, &r, 4);
 	if (r == -1)
 		err(1, "write(4)");
@@ -1156,7 +1156,7 @@ test_AUDIO_SETFD_ONLY(void)
 
 	// O_xxONLY でオープンすると GETFD == 0 になる
 	for (int mode = 0; mode <= 1; mode++) {
-		TEST("AUDIO_SETFD_ONLY_%s", openmodetable[mode]);
+		TEST("AUDIO_SETFD_ONLY(%s)", openmodetable[mode]);
 
 		fd = OPEN(devaudio, mode);
 		if (fd == -1)
