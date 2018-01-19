@@ -106,18 +106,27 @@ main(int ac, char *av[])
 
 		// そうでなければ指定されたやつ(前方一致)を順にテスト
 		for (i = 0; i < ac; i++) {
+			bool found = false;
 			for (int j = 0; testtable[j].name != NULL; j++) {
 				if (strncmp(av[i], testtable[j].name, strlen(av[i])) == 0) {
+					found = true;
 					testtable[j].func();
 					testname[0] = '\0';
 				}
 			}
+			if (found == false) {
+				printf("test not found: %s\n", av[i]);
+				exit(1);
+			}
 		}
 	}
-	printf("Result: %d tests, %d success", testcount, testcount - failcount);
-	if (failcount > 0)
-		printf(", %d failed", failcount);
-	printf("\n");
+	if (testcount > 0) {
+		printf("Result: %d tests, %d success",
+			testcount, testcount - failcount);
+		if (failcount > 0)
+			printf(", %d failed", failcount);
+		printf("\n");
+	}
 	return 0;
 }
 
