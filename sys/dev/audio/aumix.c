@@ -2277,7 +2277,7 @@ audio_track_drain(audio_track_t *track)
 
 		error = cv_wait_sig(&mixer->intrcv, sc->sc_lock);
 		if (error) {
-			printf("cv_wait_sig failed %d\n", error);
+			TRACE(track, "cv_wait_sig failed %d", error);
 			return error;
 		}
 		if (sc->sc_dying)
