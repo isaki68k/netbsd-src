@@ -311,37 +311,6 @@ cmd_FIONREAD_null(int ac, char *av[])
 	return 0;
 }
 
-// FIOASYNC の動作を確認する。
-// N8 だと一人が FIOASYNC 設定してると2人目は EBUSY らしいが、
-// 前の人のは解除できるような気がする。
-int
-cmd_FIOASYNC(int ac, char *av[])
-{
-	int r;
-	int fd;
-	int n;
-
-	if (ac < 2)
-		errx(1, "usage: FIOASYNC <0/1>");
-
-	n = atoi(av[1]);
-	printf("FIOASYNC %d\n", n);
-
-	fd = OPEN(devaudio, O_WRONLY);
-	if (fd == -1)
-		err(1, "open: %s", devaudio);
-
-	r = IOCTL(fd, FIOASYNC, &n, av[1]);
-	if (r == -1)
-		err(1, "FIOASYNC(%d)", n);
-
-	printf("Hit any key to close\n");
-	getchar();
-
-	CLOSE(fd);
-	return 0;
-}
-
 // open/close
 void
 test_open_1(void)
@@ -1004,7 +973,6 @@ test_AUDIO_GETINFO_eof(void)
 #define DEF(x)	{ #x, cmd_ ## x }
 struct cmdtable cmdtable[] = {
 	DEF(FIONREAD_null),
-	DEF(FIOASYNC),
 	{ NULL, NULL },
 };
 #undef DEF
