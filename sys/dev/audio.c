@@ -233,7 +233,6 @@ static int audio_hw_config_by_encoding(struct audio_softc *, audio_format2_t *,
 	int);
 static int audio_hw_config(struct audio_softc *, int);
 static int audio_sysctl_volume(SYSCTLFN_PROTO);
-static void audio_prepare_enc_xxx(struct audio_softc *sc);
 static void audio_format2_tostr(char *, size_t, const audio_format2_t *);
 #ifdef AUDIO_DEBUG
 static void audio_print_format2(const char *, const audio_format2_t *);
@@ -2673,90 +2672,6 @@ audio_hw_config(struct audio_softc *sc, int is_indep)
 		return error;
 
 	return error;
-}
-
-#define MAX_ENCODINGS	(16)	/* hw(max:10) + emulated(current:6) */
-
-/* Encodings supported by audio layer */
-static const audio_encoding_t audio_stdXXX_encodings[] = {
-#define EMULATED AUDIO_ENCODINGFLAG_EMULATED
-	{ 0, AudioEulinear_le, AUDIO_ENCODING_ULINEAR_LE, 8,  EMULATED },
-	{ 1, AudioEslinear_le, AUDIO_ENCODING_SLINEAR_LE, 16, EMULATED },
-	{ 2, AudioEslinear_le, AUDIO_ENCODING_SLINEAR_LE, 24, EMULATED },
-	{ 3, AudioEslinear_le, AUDIO_ENCODING_SLINEAR_LE, 32, EMULATED },
-	{ 4, AudioEmulaw,      AUDIO_ENCODING_ULAW, 8, EMULATED },
-	{ 5, AudioEalaw,       AUDIO_ENCODING_ALAW, 8, EMULATED },
-#undef EMULATED
-};
-
-void __unused
-audio_prepare_enc_xxx(struct audio_softc *sc)
-{
-	struct audio_encoding enc;
-	struct audio_encoding matched;
-	int idx;
-	int dst;
-	int i;
-	int hwmax;
-	int stdmax;
-	int error;
-	bool found;
-
-	stdmax = __arraycount(audio_stdXXX_encodings);
-
-	/* Find preferrable encoding とついでに数を数える */
-	memset(&matched, 0, sizeof(matched));
-	for (idx = 0; ; idx++) {
-		memset(&enc, 0, sizeof(enc));
-		enc.index = idx;
-		error = sc->hw_if->query_encoding(sc->hw_hdl, &enc);
-		if (error)
-			break;
-
-		if (enc.encoding == AUDIO_ENCODING_SLINEAR_NE &&
-		    enc.precision == AUDIO_INTERNAL_BITS &&
-		    matched.encoding == 0 /* first match */) {
-			matched = enc;
-		}
-	}
-	hwmax = idx;
-
-
-	/*
-	 * Prepare sc_encodings for AUDIO_GETENC.
-	 */
-	sc->sc_encodings = kmem_zalloc((stdmax + hwmax) *
-	    sizeof(struct audio_encoding), KM_SLEEP);
-
-	/* Copy standard encodings first */
-	memcpy(sc->sc_encodings, &audio_stdXXX_encodings,
-	    sizeof(audio_stdXXX_encodings));
-
-	/* Enumerates encodings supported by hw driver */
-	for (idx = 0, dst = stdmax; idx < hwmax; idx++) {
-		memset(&enc, 0, sizeof(enc));
-		enc.index = idx;
-		error = sc->hw_if->query_encoding(sc->hw_hdl, &enc);
-		if (error)
-			break;
-
-		found = false;
-		for (i = 0; i < stdmax; i++) {
-			/* Clear EMULATED flag if hw supports it natively */
-			if (enc.encoding == sc->sc_encodings[i].encoding &&
-			    enc.precision == sc->sc_encodings[i].precision &&
-			    enc.flags == 0) {
-				sc->sc_encodings[i].flags = 0;
-				found = true;
-			}
-		}
-		if (!found) {
-			/* Otherwise, append */
-			memcpy(&sc->sc_encodings[dst], &enc, sizeof(enc));
-			dst++;
-		}
-	}
-	sc->sc_encodings_count = dst;
 }
 
 // この audio_file を /dev/audio のデフォルト値(mulaw)に設定する
