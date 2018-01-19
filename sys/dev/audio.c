@@ -109,6 +109,8 @@ __KERNEL_RCSID(0, "$NetBSD$");
 
 #include <uvm/uvm.h>
 
+#include "ioconf.h"
+
 #ifdef AUDIO_DEBUG
 #define DPRINTF(n, fmt...)	do {	\
 	if (audiodebug >= (n))		\
@@ -364,8 +366,6 @@ static const struct portname otable[] = {
 CFATTACH_DECL3_NEW(audio, sizeof(struct audio_softc),
     audiomatch, audioattach, audiodetach, audioactivate, NULL, NULL,
     DVF_DETACH_SHUTDOWN);
-
-extern struct cfdriver audio_cd;
 
 #if 1
 static char *audio_buildinfo;
@@ -4467,7 +4467,6 @@ audioprint(void *aux, const char *pnp)
 
 #ifdef _MODULE
 
-extern struct cfdriver audio_cd;
 devmajor_t audio_bmajor = -1, audio_cmajor = -1;
 
 #include "ioconf.c"
