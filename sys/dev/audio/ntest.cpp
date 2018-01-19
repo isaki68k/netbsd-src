@@ -205,19 +205,19 @@ void xp_skip(int line)
 {
 	/* nothing to do */
 }
-#define XP_EQ(exp, act)	xp_eq(__LINE__, exp, act)
-void xp_eq(int line, int exp, int act)
+#define XP_EQ(exp, act)	xp_eq(__LINE__, exp, act, #act)
+void xp_eq(int line, int exp, int act, const char *varname)
 {
 	testcount++;
 	if (exp != act)
-		xp_fail(line, "expects %d but %d", exp, act);
+		xp_fail(line, "%s expects %d but %d", varname, exp, act);
 }
-#define XP_NE(exp, act)	xp_ne(__LINE__, exp, act)
-void xp_ne(int line, int exp, int act)
+#define XP_NE(exp, act)	xp_ne(__LINE__, exp, act, #act)
+void xp_ne(int line, int exp, int act, const char *varname)
 {
 	testcount++;
 	if (exp == act)
-		xp_fail(line, "expects != %d but %d", exp, act);
+		xp_fail(line, "%s expects != %d but %d", varname, exp, act);
 }
 
 #define DPRINTF(fmt...)	do {	\
