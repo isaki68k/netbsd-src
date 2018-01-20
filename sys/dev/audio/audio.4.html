@@ -160,8 +160,27 @@ Write-only でオープンしたら再生モードになって録音は pause �
 sample mode and record/playback mode <span class=n8>most recently set on
 <i>/dev/sound</i> by any open channel</span>. In all other respects
 <i>/dev/audio</i> and <i>/dev/sound</i> are identical.</p>
-<p class=comment style="margin-left:8%">
-/dev/sound、N7 では pause は維持される仕様のようだ。
+<p class=a2 style="margin-left:8%">
+/dev/sound は直近の設定値を引き継ぐが、
+N7 では /dev/audio に対する設定も /dev/sound の引き継ぎ対象に含まれる
+(/dev/sound → /dev/audio → /dev/sound すると2回目の /dev/sound は
+/dev/audio の設定値になる)。
+N8 では /dev/audio に対する設定は引き継ぎ対象にならない
+(先の例でいうと2回目の /dev/sound は1回目の /dev/sound の設定値になる)。
+AUDIO2 では N7 の動作に準拠している。
+</p>
+<p class=a2 style="margin-left:8%">
+ここでいう引き継ぎは AUDIO_SETINFO の以下のパラメータ。<br>
+　o play.encoding<br>
+　o play.precision<br>
+　o play.channls<br>
+　o play.sample_rate<br>
+　o play.pause<br>
+　o record.encoding<br>
+　o record.precision<br>
+　o record.channls<br>
+　o record.sample_rate<br>
+　o record.pause<br>
 </p>
 
 <p class=n7 style="margin-left:8%; margin-top: 1em">Only one process
@@ -608,6 +627,14 @@ AUDIO_BLK_MS でコンパイル時に変更できるようにしたい。
 エンコーディングを変更するとブロックサイズは常に追従する。
 スティッキーモードは実装しない予定。
 </p>
+<p class=a2 style="margin-left:20%">
+元々この構造体の blocksize は録音再生の区別がないが、
+AUDIO2 では録音トラックと再生トラックの blocksize は同じとは限らない。
+現在のディスクリプタが再生のみなら再生 blocksize を、
+録音のみなら録音 blocksize を返すが、録音再生が同時に有効な場合は仕方ないので
+再生 blocksize を返す。
+どうしたもんだかこれ。
+</p>
 
 <p style="margin-left:20%; margin-top: 1em">
 <pre style="margin-left:20%">struct audio_prinfo {
@@ -713,6 +740,23 @@ encoding with big endian byte order</p>
 <p style="margin-left:27%">Dolby Digital
 AC3</p>
 
+<p class=bad style="margin-left:20%">
+ユーザランドから受け付けるエンコーディングは N7 までと異なり
+MI で一元的に扱うようになったが、どれを受け付けるのかはソース嫁状態。
+</p>
+<p class=a2 style="margin-left:20%">
+AUDIO2 では以下を受け付ける。<br>
+　o AUDIO_ENCODING_SLINEAR_{LE,BE} 8, 16, 24/24, 32 bit<br>
+　o AUDIO_ENCODING_ULINEAR_{LE,BE} 8, 16, 24/24, 32 bit<br>
+　o AUDIO_ENCODING_ULAW 8bit<br>
+24/24 とか要るのかという気はするけど、コンバータにそんなにコストかかってないので今のところおいてある。<br>
+ULINEAR8 はまだしも、16bit 以上の ULINEAR も受け付ける必要あるのか?という気はするが、コンバータにそんなにコストがかかってないので今のところおいてある。
+</p>
+<p class=a2 style="margin-left:20%">
+AUDIO_GETENC のところでも触れたように、
+この情報を返す ioctl を新設したほうがいい気はしている。
+</p>
+
 <p style="margin-left:20%; margin-top: 1em">The
 <i>gain</i>, <i>port</i> and <i>balance</i> settings provide
 simple shortcuts to the richer mixer interface described
@@ -775,6 +819,18 @@ is the total size of the audio buffer. The buffer size
 divided by the <i>blocksize</i> gives the maximum value for
 <i>hiwat</i>. Currently the <i>buffer_size</i> can only be
 read and not set.</p>
+<p class=a2 style="margin-left:20%">
+AUDIO2 ではオープンしていない方のトラック
+(例えば O_WRONLY でオープンした場合の録音側) の buffer_size は 0 になる。
+N7 および N8 では常にどちらも 0 でないバッファサイズが返されると思う。
+これは、N7/N8 実装は録音再生がそこまで独立した構造にはなっておらず
+(たぶん)常に両方のバッファを確保しているため。
+一方 AUDIO2 実装では録音と再生を明確に分離し、
+使わないほうのトラックは一切リソースを確保していないためである。
+もちろん AUDIO_SETFD を発行すれば両方見えるようになる。
+使わないほうのバッファのパラメータなので問題になることはないと思いたい。
+</p>
+
 
 <p style="margin-left:20%; margin-top: 1em">The <i>seek</i>
 and <i>samples</i> fields are only used by AUDIO_GETINFO and
