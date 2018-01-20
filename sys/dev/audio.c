@@ -3360,29 +3360,25 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 	// ...
 
 	if (ptrack) {
-		// たぶんバッファ中の現在位置でいいんじゃないかなあ
-		// XXX ただどのバッファをさすべきかはよく分からん
 		pi->seek = ptrack->usrbuf.top;
 		pi->samples = ptrack->inputcounter;
 		pi->eof = ptrack->eofcounter;
 		pi->pause = ptrack->is_pause;
 		pi->error = 0;			// XXX
-		pi->waiting = 0;			/* open never hangs */
+		pi->waiting = 0;		/* open never hangs */
 		pi->open = 1;
-		pi->active = sc->sc_pbusy;// XXX 厳密ではない ?
+		pi->active = sc->sc_pbusy;
 		pi->buffer_size = ptrack->usrbuf.capacity;
 	}
 	if (rtrack) {
-		// たぶんバッファ中の現在位置でいいんじゃないかなあ
-		// XXX ただどのバッファをさすべきかはよく分からん
 		ri->seek = rtrack->usrbuf.top;
 		ri->samples = rtrack->inputcounter;
 		ri->eof = 0;
 		ri->pause = rtrack->is_pause;
 		ri->error = 0;			// XXX
-		ri->waiting = 0;			/* open never hangs */
+		ri->waiting = 0;		/* open never hangs */
 		ri->open = 1;
-		ri->active = sc->sc_rbusy;// XXX ?
+		ri->active = sc->sc_rbusy;
 		ri->buffer_size = rtrack->usrbuf.capacity;
 	}
 
