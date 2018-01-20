@@ -354,6 +354,23 @@ test_open_1(void)
 		XP_EQ(expropen[mode], ai.record.open);
 		XP_EQ(expmode[mode], ai.mode);
 
+		if (netbsd <= 8) {
+			// N7、N8 では使わないほうのトラックのバッファも常にある
+			XP_NE(0, ai.play.buffer_size);
+			XP_NE(0, ai.record.buffer_size);
+		} else {
+			// AUDIO2 では使わないほうのバッファは確保してない
+			if (exppopen[mode])
+				XP_NE(0, ai.play.buffer_size);
+			else
+				XP_EQ(0, ai.play.buffer_size);
+
+			if (expropen[mode])
+				XP_NE(0, ai.record.buffer_size);
+			else
+				XP_EQ(0, ai.record.buffer_size);
+		}
+
 		r = CLOSE(fd);
 		XP_EQ(0, r);
 	}
