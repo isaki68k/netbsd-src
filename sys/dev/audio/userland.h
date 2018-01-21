@@ -96,6 +96,9 @@ struct audio_softc
 	audio_format2_t sc_rparams;
 	audio_format2_t sc_phwfmt;
 	audio_format2_t sc_rhwfmt;
+	void *sc_sih_rd;
+	void *sc_sih_wr;
+	bool sc_dying;
 
 	void *phys; // 実物理デバイス
 
@@ -235,6 +238,16 @@ softint_schedule(void *cookie)
 {
 	struct softintr_XXX *intr = cookie;
 	intr->func(intr->arg);
+}
+
+static inline void
+kpreempt_enable(void)
+{
+}
+
+static inline void
+kpreempt_disable(void)
+{
 }
 
 extern bool audio_file_can_playback(const audio_file_t *file);

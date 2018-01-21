@@ -329,9 +329,7 @@ cmd_set_file(const char *filename)
 		f->file->ptrack->ch_volume[j] = 256;
 	}
 
-	mutex_enter(audio_mixer_get_lock(sc->sc_pmixer));
 	audio_track_set_format(f->file->ptrack, &f->mem.fmt);
-	mutex_exit(audio_mixer_get_lock(sc->sc_pmixer));
 
 	f->play = true;
 	f->wait = opt_wait;
