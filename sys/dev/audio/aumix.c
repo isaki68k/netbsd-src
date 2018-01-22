@@ -1030,9 +1030,8 @@ audio_apply_stage(audio_track_t *track, audio_stage_t *stage, bool isfreq)
 		
 		int count;
 		if (isfreq) {
-			if (srccount == 0) {
-				panic("freq but srccount=0");
-			}
+			KASSERTMSG(srccount > 0,
+			    "freq but srccount == %d", srccount);
 			count = min(dstcount, track->mixer->frames_per_block);
 		} else {
 			count = min(srccount, dstcount);
@@ -1156,14 +1155,13 @@ audio_track_play(audio_track_t *track, bool isdrain)
 			// freq の入力はバッファ先頭から。
 			// サブフレームの問題があるので、top 位置以降の全域をずらす。
 			if (track->freq.srcbuf.top != 0) {
-#if defined(AUDIO_DEBUG)
-				if (track->freq.srcbuf.top + track->freq.srcbuf.count > track->freq.srcbuf.capacity) {
-					panic("srcbuf broken, %d/%d/%d\n",
-						track->freq.srcbuf.top,
-						track->freq.srcbuf.count,
-						track->freq.srcbuf.capacity);
-				}
-#endif
+				KASSERTMSG(track->freq.srcbuf.top +
+				           track->freq.srcbuf.count <=
+				           track->freq.srcbuf.capacity,
+				    "srcbuf broken, %d/%d/%d",
+				    track->freq.srcbuf.top,
+				    track->freq.srcbuf.count,
+				    track->freq.srcbuf.capacity);
 				uint8_t *s = track->freq.srcbuf.sample;
 				uint8_t *p = RING_TOP_UINT8(&track->freq.srcbuf);
 				uint8_t *e = RING_END_UINT8(&track->freq.srcbuf);
