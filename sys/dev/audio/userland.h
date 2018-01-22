@@ -252,6 +252,13 @@ kpreempt_disable(void)
 
 extern bool audio_track_is_playback(const audio_track_t *track);
 extern bool audio_track_is_record(const audio_track_t *track);
+static inline int
+audio_check_params2(audio_format2_t *f2)
+{
+	// 後方互換性からの変換は起きないはずだし
+	// 入力に問題がなければ何もおきないので、とりあえずこれでいい。
+	return 0;
+}
 
 /* system call emulation */
 extern audio_file_t *sys_open(struct audio_softc *sc, int mode);

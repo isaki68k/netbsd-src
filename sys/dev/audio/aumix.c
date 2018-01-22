@@ -854,10 +854,7 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 	KASSERT(is_valid_format(usrfmt));
 
 	// 入力値チェック
-#if defined(_KERNEL)
-	// XXX audio.c にある。どうしたもんか
 	audio_check_params2(usrfmt);
-#endif
 
 	// TODO: まず現在のバッファとかを全部破棄すると分かり易いが。
 
