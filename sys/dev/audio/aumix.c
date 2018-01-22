@@ -1092,16 +1092,6 @@ audio_track_play(audio_track_t *track, bool isdrain)
 
 	// input バッファの空きを調べる
 	int count = audio_ring_unround_free_count(track->input);
-#if 0
-	// XXX 本当は input 以降のバッファが1ブロック以下で細切れにならない
-	// ように(できれば)したほうがいいと思うのだが、今は周波数変換の
-	// 端数が出るので、これは起こりうる。
-	if (count < inpbuf_frames_per_block) {
-		panic("count(%d) < inpbuf_frames_per_block(%d)",
-		    count, inpbuf_frames_per_block);
-	}
-#endif
-	// input バッファに空きがない
 	if (count == 0) {
 		return;
 	}
