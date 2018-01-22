@@ -11,13 +11,9 @@ static struct intr_t intr;
 void
 emu_intr(struct intr_t x)
 {
-#if !true
-	while (intr.code != 0);
-#else
 	if (intr.code != 0) {
 		panic("intr on intr");
 	}
-#endif
 	intr = x;
 }
 
