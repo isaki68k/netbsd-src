@@ -2135,6 +2135,9 @@ audio_rintr(void *arg)
 	audio_rmixer_input(sc);
 }
 
+// 再生ミキサを停止します。
+// 関連するパラメータもクリアするため、基本的には halt_output を
+// 直接呼び出すのではなく、こちらを呼んでください。
 int
 audio2_halt_output(struct audio_softc *sc)
 {
@@ -2155,6 +2158,9 @@ audio2_halt_output(struct audio_softc *sc)
 	return error;
 }
 
+// 録音ミキサを停止します。
+// 関連するパラメータもクリアするため、基本的には halt_input を
+// 直接呼び出すのではなく、こちらを呼んでください。
 int
 audio2_halt_input(struct audio_softc *sc)
 {

@@ -1633,15 +1633,13 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 			if (sc->sc_rbusy) {
 				DPRINTF(2, "%s halt_input\n", __func__);
 				mutex_enter(sc->sc_intr_lock);
-				error = sc->hw_if->halt_input(sc->hw_hdl);
+				error = audio2_halt_input(sc);
 				mutex_exit(sc->sc_intr_lock);
 				if (error) {
 					aprint_error_dev(sc->dev,
 					    "halt_input failed with %d\n",
 					    error);
 				}
-				sc->sc_rbusy = false;
-				sc->sc_rmixer->hwbuf.top = 0;
 			}
 		}
 		oldtrack = file->rtrack;
@@ -3611,9 +3609,9 @@ audio_suspend(device_t dv, const pmf_qual_t *qual)
 	// XXX mixer をとめる?
 	mutex_enter(sc->sc_intr_lock);
 	if (sc->sc_pbusy)
-		sc->hw_if->halt_output(sc->hw_hdl);
+		audio2_halt_output(sc);
 	if (sc->sc_rbusy)
-		sc->hw_if->halt_input(sc->hw_hdl);
+		audio2_halt_input(sc);
 	mutex_exit(sc->sc_intr_lock);
 #ifdef AUDIO_PM_IDLE
 	callout_halt(&sc->sc_idle_counter, sc->sc_lock);
