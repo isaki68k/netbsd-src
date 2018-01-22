@@ -4,20 +4,6 @@
 #include "aumix.h"
 #include <errno.h>
 
-// この file が再生可能なら true を返します。
-bool
-audio_file_can_playback(const audio_file_t *file)
-{
-	return ((file->mode & AUMODE_PLAY) != 0);
-}
-
-// この file が録音可能なら true を返します。
-bool
-audio_file_can_record(const audio_file_t *file)
-{
-	return ((file->mode & AUMODE_RECORD) != 0);
-}
-
 // この track が再生トラックなら true を返します。
 bool
 audio_track_is_playback(const audio_track_t *track)

@@ -250,8 +250,6 @@ kpreempt_disable(void)
 {
 }
 
-extern bool audio_file_can_playback(const audio_file_t *file);
-extern bool audio_file_can_record(const audio_file_t *file);
 extern bool audio_track_is_playback(const audio_track_t *track);
 extern bool audio_track_is_record(const audio_track_t *track);
 
