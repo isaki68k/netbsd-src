@@ -2739,7 +2739,7 @@ audio_hw_config(struct audio_softc *sc, int is_indep)
 //	EOF に到達した回数?
 //
 // ai.{play,record}.error		(R/-)
-//	アンダーフロー/オーバーフローの起きた回数
+//	アンダーフロー/オーバーフローの起きたら non-zero。
 //
 // ai.{play,record}.waiting		(R/-)
 //	他のプロセスが open 待ちしていれば non-zero。
