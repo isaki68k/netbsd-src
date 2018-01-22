@@ -320,7 +320,7 @@ audio_track_chmix_expand(audio_filter_arg_t *arg)
 // src->dst	44->48	8->48	48->44	48->8	[times/msec]
 // ORIG		 49.2	 60.8	 91.4	639.5
 // CYCLE2	 67.7	 80.9	163.2	902.8
-// SHIFT	 67.6	 60.2	163.5	903.7
+// SHIFT	 61.6	113.5	163.5	903.7
 
 static void
 audio_track_freq_up(audio_filter_arg_t *arg)
@@ -456,7 +456,6 @@ audio_track_freq_up(audio_filter_arg_t *arg)
 				printf(" t=%5d *d=%d", t, dptr[-1]);
 #endif
 		}
-		dst->count++;
 		t += step;
 
 		PRINTF("\n");
@@ -464,6 +463,7 @@ audio_track_freq_up(audio_filter_arg_t *arg)
 	PRINTF("end prev=%d curr=%d\n", prev[0], curr[0]);
 
 	audio_ring_tookfromtop(src, src->count);
+	audio_ring_appended(dst, i);
 
 	// 補正
 	t += track->freq_leap;
