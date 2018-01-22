@@ -1018,7 +1018,7 @@ audio_append_silence(audio_track_t *track, audio_ring_t *ring)
 	return n;
 }
 
-// このステージで処理を中断するときは false を返します。
+// ステージの共通処理です。
 static void
 audio_apply_stage(audio_track_t *track, audio_stage_t *stage, bool isfreq)
 {
