@@ -2398,7 +2398,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 			bytes = min(usrbuf->capacity - usrbuf->count,
 			    uio->uio_resid);
 			int bottom = audio_ring_bottom(usrbuf);
-			if (bottom + bytes < usrbuf->capacity) {
+			if (bottom + bytes <= usrbuf->capacity) {
 				error = audio_write_uiomove(track, bottom,
 				    bytes, uio);
 				if (error)
@@ -2540,7 +2540,7 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 
 		bytes = min(usrbuf->count, uio->uio_resid);
 		int top = usrbuf->top;
-		if (top + bytes < usrbuf->capacity) {
+		if (top + bytes <= usrbuf->capacity) {
 			error = audio_read_uiomove(track, top, bytes, uio);
 			if (error)
 				break;
