@@ -320,7 +320,7 @@ audio_track_chmix_expand(audio_filter_arg_t *arg)
 // src->dst	44->48	8->48	48->44	48->8	[times/msec]
 // ORIG		 49.2	 60.8	 91.4	639.5
 // CYCLE2	 67.7	 80.9	163.2	902.8
-// SHIFT	 61.6	113.5	163.5	903.7
+// SHIFT	 61.6	113.5	176.4	940.4
 
 static void
 audio_track_freq_up(audio_filter_arg_t *arg)
@@ -574,7 +574,8 @@ audio_track_freq_down(audio_filter_arg_t *arg)
 	unsigned int step = track->freq_step;
 	int nch = dst->fmt.channels;
 
-	for (int i = 0; i < arg->count && t / 65536 < src->count; i++) {
+	int i;
+	for (i = 0; i < arg->count && t / 65536 < src->count; i++) {
 		const internal_t *sptr1;
 		sptr1 = sptr0 + (t / 65536) * nch;
 		for (int ch = 0; ch < nch; ch++) {
@@ -582,10 +583,9 @@ audio_track_freq_down(audio_filter_arg_t *arg)
 		}
 		t += step;
 	}
-	dst->count += arg->count;
 	t += track->freq_leap;
-	// XXX うーんなんだこの min
-	audio_ring_tookfromtop(src, min(t / 65536, src->count));
+	audio_ring_tookfromtop(src, src->count);
+	audio_ring_appended(dst, i);
 	track->freq_current = t % 65536;
 
 #elif defined(FREQ_ORIG)
