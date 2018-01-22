@@ -1587,7 +1587,7 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 #if AUDIO_DEBUG > 2
 	TRACEF(file, "start po=%d ro=%d", sc->sc_popens, sc->sc_ropens);
 #else
-	DPRINTF(1, "%s start\n", __func__);
+	DPRINTF(1, "%s\n", __func__);
 #endif
 	KASSERT(mutex_owned(sc->sc_lock));
 
