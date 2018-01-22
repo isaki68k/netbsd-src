@@ -1,9 +1,4 @@
-#if defined(_KERNEL)
-#include <dev/audio/aumix.h>
-#include <dev/audio/auring.h>
-#include <dev/audio/aucodec.h>
-#include <sys/intr.h>
-#else
+#if defined(USERLAND_TEST)
 #include "aumix.h"
 #include <errno.h>
 #include <stdlib.h>
@@ -13,7 +8,12 @@
 #include "aucodec.h"
 #include "auformat.h"
 #include "uio.h"
-#endif // !_KERNEL
+#else
+#include <dev/audio/aumix.h>
+#include <dev/audio/auring.h>
+#include <dev/audio/aucodec.h>
+#include <sys/intr.h>
+#endif // USERLAND_TEST
 
 #define audio_free(mem)	do {	\
 	if (mem != NULL) {	\
@@ -1510,13 +1510,13 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
 	KASSERT(mutex_owned(sc->sc_lock));
 	KASSERT(!mutex_owned(sc->sc_intr_lock));
 
-#if defined(_KERNEL)
+#if defined(USERLAND_TEST)
+	// ユーザランドエミュレーション側では割り込みがないので
+	// 毎回スタートさせて start_output を呼んでいる。
+#else
 	// すでに再生ミキサが起動していたら、true を返す
 	if (sc->sc_pbusy)
 		return true;
-#else
-	// ユーザランドエミュレーション側では割り込みがないので
-	// 毎回スタートさせて start_output を呼んでいる。
 #endif
 
 	mixer = sc->sc_pmixer;
@@ -1926,7 +1926,7 @@ audio_pintr(void *arg)
 		audio_pmixer_output(sc);
 	}
 
-#if !defined(_KERNEL)
+#if defined(USERLAND_TEST)
 	// ユーザランドエミュレーションは割り込み駆動ではないので
 	// 処理はここまで。
 	return;
