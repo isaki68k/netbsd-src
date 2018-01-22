@@ -16,7 +16,7 @@
 	if (!(expr)) panic(#expr);\
 } while (0)
 #define KASSERTMSG(expr, fmt, ...)	do {\
-	if (!(expr)) panic(#expr);\
+	if (!(expr)) panic(fmt, ## __VA_ARGS__);\
 } while (0)
 #else
 #define KASSERT(expr)	/**/
