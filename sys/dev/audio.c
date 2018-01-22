@@ -1595,16 +1595,14 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 	//if (sc->sc_opens == 0 && sc->sc_recopens == 0)
 	//	return ENXIO;
 
-	// このディスクリプタが RD/WR のどのモードでオープンされたかは
-	// flags の FREAD/FWRITE ビットで分かるが、現在どちらのトラックが
-	// 有効かは file->ptrack、file->rtrack が !NULL で判断すること。
-	// flags はユーザが open 時に指示したモード(O_RDWR とか)。
-	// file->mode はそれと HW 特性を AND したもの (例えば再生専用 HW
-	// に対して O_RDWR しても file->mode は AUMODE_PLAY のみ)。
-	// file->ptrack、file->rtrack は file->mode が有効な方のうち実際に
-	// トラックが用意できたかどうかなので、
-	// file->mode が AUMODE_PLAY | AUMODE_RECORD であっても (何らかの
-	// エラーなどで) file->rtrack = NULL とかはあり得る。
+	// 現在どちらのトラックが有効かは file->ptrack、file->rtrack が
+	// !NULL で判断すること。
+	// flags はユーザが open 時に指示したモードだが、実際には
+	// flags よりトラックが少ない場合もあるし (例えば O_RDWR でオープン
+	// しようとして片方のトラックがエラーだとか、HW が再生専用だとか)、
+	// 反対に flags よりトラックが多い場合もある (例えば O_WRONLY で
+	// オープンした後に AUDIO_SETFD で録音トラックを生やすことも出来る)。
+	// そのためここで引数の flags を見る意味はたぶんない。
 
 	// SB とかいくつかのドライバは halt_input と halt_output に
 	// 同じルーチンを使用しているので、その場合は full duplex なら
