@@ -138,13 +138,10 @@ netbsd_start_output(void *hdl, void *blk, int blksize, void(*intr)(void *), void
 	}
 	dev->sent_count += blksize / dev->frame_bytes;
 
-	// 割り込み予約
-	struct intr_t x;
-	x.code = INTR_TRACKMIXER;
-	x.sc = sc;
-	x.func = intr;
-	x.arg = arg;
-	emu_intr(x);
+	// ユーザランドプログラムの場合、
+	// ハードウェアへの転送が終わったことに相当するのでここで直接
+	// 割り込みハンドラを呼び出す。あっちに加工がしてある。
+	intr(arg);
 
 	unlock(sc);
 	return 0;

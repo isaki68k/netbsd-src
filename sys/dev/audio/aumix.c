@@ -1511,9 +1511,14 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
 	KASSERT(mutex_owned(sc->sc_lock));
 	KASSERT(!mutex_owned(sc->sc_intr_lock));
 
+#if defined(_KERNEL)
 	// すでに再生ミキサが起動していたら、true を返す
 	if (sc->sc_pbusy)
 		return true;
+#else
+	// ユーザランドエミュレーション側では割り込みがないので
+	// 毎回スタートさせて start_output を呼んでいる。
+#endif
 
 	mixer = sc->sc_pmixer;
 	TRACE0("begin mixseq=%d hwseq=%d hwbuf=%d/%d/%d",
@@ -1921,6 +1926,12 @@ audio_pintr(void *arg)
 	if (mixer->hwbuf.count >= mixer->frames_per_block) {
 		audio_pmixer_output(sc);
 	}
+
+#if !defined(_KERNEL)
+	// ユーザランドエミュレーションは割り込み駆動ではないので
+	// 処理はここまで。
+	return;
+#endif
 
 	bool later = false;
 
@@ -2441,9 +2452,6 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 		}
 
 		audio_track_leave_colock(sc, track);
-#if !defined(_KERNEL)
-		emu_intr_check();
-#endif
 	}
 
 	return error;
