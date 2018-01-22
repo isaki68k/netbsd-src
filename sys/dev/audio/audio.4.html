@@ -65,6 +65,10 @@ P.a2 {
 P.a2:before {
 	content: "・";
 }
+SPAN.a2 {
+	color: #0041ff;	/* 青 */
+	font-weight: bold;
+}
 </style>
 <title></title>
 </head>
@@ -362,8 +366,20 @@ audio channel for subsequent ioctl calls.</p>
 and recording, clears all queued buffers, resets error
 counters, and restarts recording and playback as appropriate
 for the current sampling mode.</p>
+<p class=a2 style="margin-left:20%">stops all playback and recoring とあるが
+stops this playback and recoding track と再定義したい。</p>
 <p class=comment style="margin-left:20%">
-エラーカウンタをリセットするとあるが、具体的にどれか確認すること。</p>
+ここでいうエラーカウンタはドロップ数 AUDIO_[PR]ERROR の値を指す。</p>
+
+<p style="margin-left:12%;margin-top: 1em" valign="top"><span class=a2
+>AUDIO_PERROR (int)</span></p>
+
+<p style="margin-left:20%"><span class=a2>This command fetches the count
+of dropped output bytes into its integer argument. There is
+no information regarding when in the sample stream they were
+dropped.</span></p>
+<p class=a2 style="margin-left:20%">N7 からの問題だが、
+manpage に AUDIO_PERROR が抜けている。</p>
 
 <p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_RERROR
 (int)</p>
