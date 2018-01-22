@@ -1,5 +1,4 @@
 #include "aumix.h"
-#include "auintr.h"
 #include "auring.h"
 #include <errno.h>
 #include <fcntl.h>

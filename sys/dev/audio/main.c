@@ -356,8 +356,6 @@ cmd_play()
 	}
 #else
 	for (int loop = 0; ; loop++) {
-		emu_intr_check();
-
 		bool isPlay = false;
 		for (int i = 0; i < fileidx; i++) {
 			struct test_file *f = &files[i];

@@ -8,7 +8,6 @@
 #include "aumix.h"
 #include "auring.h"
 #include <stdio.h>
-#include "auintr.h"
 #include "compat.h"
 #include "userland.h"
 

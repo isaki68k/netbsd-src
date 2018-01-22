@@ -13,7 +13,6 @@
 #include "aucodec.h"
 #include "auformat.h"
 #include "uio.h"
-#include "auintr.h"
 #endif // !_KERNEL
 
 #define audio_free(mem)	do {	\

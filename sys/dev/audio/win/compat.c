@@ -1,5 +1,5 @@
 #include "compat.h"
-#include "auintr.h"
+#include "userland.h"
 
 int
 cv_wait_sig(kcondvar_t *cv, kmutex_t *lock)
