@@ -754,8 +754,7 @@ cmd_perf_freq_main(struct freqdata *pattern)
 		track->outputbuf.fmt.sample_rate = pattern[i].dstfreq;
 		track->outputbuf.top = 0;
 		track->outputbuf.count = 0;
-		track->outputbuf.capacity = frame_per_block_roundup(track->mixer,
-		    &track->outputbuf.fmt);
+		track->outputbuf.capacity = track->outputbuf.fmt.sample_rate * 40 /1000;
 		track->outputbuf.sample = audio_realloc(track->outputbuf.sample,
 		    RING_BYTELEN(&track->outputbuf));
 		init_freq(track, &track->outputbuf);
@@ -767,12 +766,12 @@ cmd_perf_freq_main(struct freqdata *pattern)
 		setitimer(ITIMER_REAL, &it, NULL);
 		gettimeofday(&start, NULL);
 		for (count = 0, signaled = 0; signaled == 0; count++) {
-			track->freq.srcbuf.count = track->inputfmt.sample_rate * 40 /1000;
 			track->freq.arg.src = track->freq.srcbuf.sample;
 			track->freq.arg.dst = track->outputbuf.sample;
 			track->freq.arg.count = track->outputbuf.capacity;
 
 			track->freq.srcbuf.top = 0;
+			track->freq.srcbuf.count = track->inputfmt.sample_rate * 40 /1000;
 			track->outputbuf.top = 0;
 			track->outputbuf.count = 0;
 			track->freq.filter(&track->freq.arg);

@@ -318,8 +318,8 @@ audio_track_chmix_expand(audio_filter_arg_t *arg)
 // AUDIO_ASSERT なしで main.c による計測。@ amd64 (nao)
 //
 // src->dst	44->48	8->48	48->44	48->8	[times/msec]
-// ORIG		 49.2	 60.8	 91.4	639.5
-// SHIFT	 61.6	113.5	176.4	940.4
+// ORIG		 38.1	 56.3	 81.9	 532.2
+// SHIFT	 85.4	139.2	203.0	1040.9
 
 static void
 audio_track_freq_up(audio_filter_arg_t *arg)
