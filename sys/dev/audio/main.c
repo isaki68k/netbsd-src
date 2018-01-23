@@ -67,7 +67,6 @@ int cmd_set_file(const char *);
 int cmd_set_mml(const char *);
 int cmd_play();
 int cmd_perf(const char *);
-int cmd_perf_freq();
 int cmd_perf_freq_up();
 int cmd_perf_freq_down();
 int cmd_perf_freq_main(struct freqdata *);
@@ -677,7 +676,6 @@ struct testdata {
 	const char *testname;
 	int (*funcname)();
 } perfdata[] = {
-	{ "freq",		cmd_perf_freq },
 	{ "freq_up",	cmd_perf_freq_up },
 	{ "freq_down",	cmd_perf_freq_down },
 	{ NULL, NULL },
@@ -686,27 +684,25 @@ struct testdata {
 int
 cmd_perf(const char *testname)
 {
+	bool found = false;
+
 	for (int i = 0; perfdata[i].testname != NULL; i++) {
-		if (strcmp(perfdata[i].testname, testname) == 0) {
+		if (strncmp(testname, perfdata[i].testname, strlen(testname)) == 0) {
 			(perfdata[i].funcname)();
-			return 0;
+			found = true;
 		}
 	}
 
-	// 一覧を表示しとくか
-	for (int i = 0; perfdata[i].testname != NULL; i++) {
-		printf(" %s", perfdata[i].testname);
+	if (found) {
+		return 0;
+	} else {
+		// 一覧を表示しとくか
+		for (int i = 0; perfdata[i].testname != NULL; i++) {
+			printf(" %s", perfdata[i].testname);
+		}
+		printf("\n");
+		return 1;
 	}
-	printf("\n");
-	return 1;
-}
-
-int
-cmd_perf_freq()
-{
-	cmd_perf_freq_up();
-	cmd_perf_freq_down();
-	return 0;
 }
 
 int
