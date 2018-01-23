@@ -88,6 +88,7 @@ int fileidx;
 int freq;
 int opt_wait;	// 1ファイルごとの開始ディレイ
 int opt_vol;
+int audio_blk_ms;
 #if !defined(_WIN32)
 const char *devicefile;
 #endif
@@ -102,6 +103,7 @@ usage()
 #endif
 	printf(" -d        debug\n");
 	printf(" -f <freq> set ADPCM frequency\n");
+	printf(" -m <msec> AUDIO_BLK_MS (default: 40)\n");
 	printf(" -w <cnt>  delay block count for each files\n");
 	printf(" -v <vol>  track volume (0..256)\n");
 	printf("cmd:\n");
@@ -127,6 +129,7 @@ main(int ac, char *av[])
 
 	freq = 15625;
 	opt_vol = 256;
+	audio_blk_ms = 40;
 #if !defined(_WIN32)
 	devicefile = "/dev/sound";
 #endif
@@ -152,6 +155,13 @@ main(int ac, char *av[])
 			if (i == ac)
 				usage();
 			freq = atoi(av[i]);
+			continue;
+		}
+		if (strcmp(av[i], "-m") == 0) {
+			i++;
+			if (i == ac)
+				usage();
+			audio_blk_ms = atoi(av[i]);
 			continue;
 		}
 		if (strcmp(av[i], "-w") == 0) {

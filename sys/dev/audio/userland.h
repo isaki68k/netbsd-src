@@ -5,9 +5,9 @@
 // アサートするとき定義
 #define AUDIO_ASSERT
 
-// ユーザランドで数十 msec オーダーで割り込み上げるエミュレーションは
-// 大変なので伸ばしておく。
-#define AUDIO_BLK_MS 400
+// ユーザランドはグローバル変数 audio_blk_ms を使う。
+// デフォルト 40msec で -m オプションで変更可能。
+#define AUDIO_BLK_MS audio_blk_ms
 
 #define DPRINTF(n, fmt, ...)	printf(fmt, ## __VA_ARGS__)
 
@@ -276,6 +276,8 @@ extern bool audio_softc_play_busy(struct audio_softc *sc);
 
 extern void lock(struct audio_softc *sc);
 extern void unlock(struct audio_softc *sc);
+
+extern int audio_blk_ms;
 
 // OBSOLETE
 extern void WAIT();
