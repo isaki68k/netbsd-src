@@ -744,6 +744,7 @@ cmd_perf_freq_main(struct freqdata *pattern)
 {
 	struct test_file *f = &files[fileidx];
 	audio_track_t *track;
+	audio_format2_t srcfmt;
 	struct timeval start, end, result;
 	struct itimerval it;
 
@@ -754,20 +755,18 @@ cmd_perf_freq_main(struct freqdata *pattern)
 	f->file = sys_open(sc, AUMODE_PLAY);
 	track = f->file->ptrack;
 	for (int i = 0; pattern[i].name != NULL; i++) {
-		track->inputfmt.encoding = AUDIO_ENCODING_SLINEAR_NE;
-		track->inputfmt.precision = 16;
-		track->inputfmt.stride = 16;
-		track->inputfmt.channels = 2;
-		track->inputfmt.sample_rate = pattern[i].srcfreq;
-		track->input = &track->freq.srcbuf;
-		track->outputbuf.fmt = track->inputfmt;
-		track->outputbuf.fmt.sample_rate = pattern[i].dstfreq;
-		track->outputbuf.top = 0;
-		track->outputbuf.count = 0;
-		track->outputbuf.capacity = track->outputbuf.fmt.sample_rate * 40 /1000;
-		track->outputbuf.sample = audio_realloc(track->outputbuf.sample,
-		    RING_BYTELEN(&track->outputbuf));
-		init_freq(track, &track->outputbuf);
+		// dst fmt
+		track->mixer->track_fmt.sample_rate = pattern[i].dstfreq;
+		// src fmt
+		srcfmt = track->mixer->track_fmt;
+		srcfmt.sample_rate = pattern[i].srcfreq;
+		// set
+		int r = audio_track_set_format(track, &srcfmt);
+		if (r != 0) {
+			printf("%s: audio_track_set_format failed: %s\n",
+				__func__, strerror(errno));
+			exit(1);
+		}
 
 		uint64_t count;
 		printf("%-8s: ", pattern[i].name);
@@ -776,16 +775,12 @@ cmd_perf_freq_main(struct freqdata *pattern)
 		setitimer(ITIMER_REAL, &it, NULL);
 		gettimeofday(&start, NULL);
 		for (count = 0, signaled = 0; signaled == 0; count++) {
-			track->freq.arg.src = track->freq.srcbuf.sample;
-			track->freq.arg.dst = track->outputbuf.sample;
-			track->freq.arg.count = track->outputbuf.capacity;
-
 			track->freq.srcbuf.top = 0;
-			track->freq.srcbuf.count = track->inputfmt.sample_rate * 40 /1000;
+			track->freq.srcbuf.count = frame_per_block_roundup(track->mixer,
+				&srcfmt);
 			track->outputbuf.top = 0;
 			track->outputbuf.count = 0;
-			track->freq.filter(&track->freq.arg);
-			//printf("dst count = %d\n", track->outputbuf.count);
+			audio_apply_stage(track, &track->freq, true);
 		}
 		gettimeofday(&end, NULL);
 		timersub(&end, &start, &result);
