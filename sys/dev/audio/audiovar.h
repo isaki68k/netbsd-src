@@ -34,7 +34,6 @@
 
 // 周波数変換実装
 //#define FREQ_ORIG	// 元の実装
-//#define FREQ_CYCLE2	// 周波数ではなく65536を基準にした周期比にする
 #define FREQ_SHIFT	// ソースを1サンプルずらす。(CYCLE2 から派生)
 
 // ミキサ駆動方式
@@ -153,10 +152,6 @@ struct audio_track
 	u_int		freq_leap;	// 周波数変換用、補正値
 	internal_t	freq_prev[AUDIO_MAX_CHANNELS];	// 前回値
 	internal_t	freq_curr[AUDIO_MAX_CHANNELS];	// 直近値
-#elif defined(FREQ_CYCLE2)
-	u_int		freq_step;	// 周波数変換用、周期比
-	u_int		freq_current;	// 周波数変換用、現在のカウンタ
-	u_int		freq_leap;	// 周波数変換用、補正値
 #elif defined(FREQ_ORIG)
 	audio_rational_t freq_step;	// 周波数変換用分数 (srcfreq/dstfreq)
 	audio_rational_t freq_current;	// 周波数変換用 現在のカウンタ

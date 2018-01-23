@@ -319,7 +319,6 @@ audio_track_chmix_expand(audio_filter_arg_t *arg)
 //
 // src->dst	44->48	8->48	48->44	48->8	[times/msec]
 // ORIG		 49.2	 60.8	 91.4	639.5
-// CYCLE2	 67.7	 80.9	163.2	902.8
 // SHIFT	 61.6	113.5	176.4	940.4
 
 static void
@@ -474,42 +473,6 @@ audio_track_freq_up(audio_filter_arg_t *arg)
 		track->freq_curr[ch] = curr[ch];
 	}
 
-#elif defined(FREQ_CYCLE2)
-	unsigned int t = track->freq_current;
-	int step = track->freq_step;
-
-	for (int i = 0; i < arg->count && src->count > 0; i++) {
-		internal_t curr;
-		internal_t next;
-		internal_t a;
-		internal2_t diff;
-
-		for (int ch = 0; ch < dst->fmt.channels; ch++) {
-			curr = sptr[ch];
-			next = sptr[ch + src->fmt.channels];
-			a = next - curr;
-			diff = a * t / 65536;
-			*dptr++ = curr + diff;
-		}
-		dst->count++;
-
-		t += step;
-		if (t >= 65536) {
-			sptr += src->fmt.channels;
-			src->top++;
-			src->count--;
-			t -= 65536;
-		}
-	}
-	// 補正
-	t += track->freq_leap;
-	if (t >= 65536) {
-		src->top++;
-		src->count--;
-		t -= 65536;
-	}
-	track->freq_current = t;
-
 #elif defined(FREQ_ORIG)
 	audio_rational_t tmp = track->freq_current;
 	const internal_t *sptr1;
@@ -569,7 +532,7 @@ audio_track_freq_down(audio_filter_arg_t *arg)
 
 	const internal_t *sptr0 = arg->src;
 	internal_t *dptr = arg->dst;
-#if defined(FREQ_CYCLE2) || defined(FREQ_SHIFT)
+#if defined(FREQ_SHIFT)
 	unsigned int t = track->freq_current;
 	unsigned int step = track->freq_step;
 	int nch = dst->fmt.channels;
@@ -594,32 +557,6 @@ audio_track_freq_down(audio_filter_arg_t *arg)
 	int src_taken = -1;
 
 	for (int i = 0; i < arg->count; i++) {
-//#define AUDIO_FREQ_HQ
-#if defined(AUDIO_FREQ_HQ)
-		if (tmp.n == 0) {
-			if (tmp.i >= src->count) {
-				break;
-			}
-			sptr1 = sptr0 + tmp.i * src->fmt.channels;
-			for (int ch = 0; ch < dst->fmt.channels; ch++) {
-				*dptr++ = sptr1[ch];
-			}
-		} else {
-			const internal_t *sptr2;
-			if (tmp.i + 1 >= src->count) {
-				break;
-			}
-			sptr1 = sptr0 + tmp.i * src->fmt.channels;
-			sptr2 = sptr1 + src->fmt.channels;
-			// 加算前の下駄 2^22 を脱ぐ
-			int b = tmp.n * track->freq_coef / (1 << 22);
-			int a = 256 - b;
-			for (int ch = 0; ch < dst->fmt.channels; ch++) {
-				// 加算後の下駄 2^8 を脱ぐ
-				*dptr++ = (sptr1[ch] * a + sptr2[ch] * b) / 256;
-			}
-		}
-#else
 		if (tmp.i >= src->count) {
 			break;
 		}
@@ -627,7 +564,6 @@ audio_track_freq_down(audio_filter_arg_t *arg)
 		for (int ch = 0; ch < dst->fmt.channels; ch++) {
 			*dptr++ = sptr1[ch];
 		}
-#endif
 		dst->count++;
 		src_taken = tmp.i;
 		audio_rational_add(&tmp, &track->freq_step, dst->fmt.sample_rate);
@@ -920,24 +856,6 @@ init_freq(audio_track_t *track, audio_ring_t *last_dst)
 			track->freq.filter = audio_track_freq_down;
 			// こっちは 0 からでいい
 			track->freq_current = 0;
-		}
-#elif defined(FREQ_CYCLE2)
-		track->freq_current = 0;
-
-		// freq_step は dstfreq を 65536 とした時の src/dst 比
-		track->freq_step = (uint64_t)srcfreq * 65536 / dstfreq;
-
-		// freq_leap は1ブロックごとの freq_step の補正値
-		// を四捨五入したもの。
-		int dst_capacity = frame_per_block_roundup(track->mixer,
-		    dstfmt);
-		int mod = (uint64_t)srcfreq * 65536 % dstfreq;
-		track->freq_leap = (mod * dst_capacity + dstfreq / 2) / dstfreq;
-
-		if (track->freq_step < 65536) {
-			track->freq.filter = audio_track_freq_up;
-		} else {
-			track->freq.filter = audio_track_freq_down;
 		}
 #elif defined(FREQ_ORIG)
 		track->freq_step.i = srcfreq / dstfreq;
@@ -2381,8 +2299,8 @@ audio_track_clear(struct audio_softc *sc, audio_track_t *track)
 			track->freq_current = 0;
 		memset(track->freq_prev, 0, sizeof(track->freq_prev));
 		memset(track->freq_curr, 0, sizeof(track->freq_curr));
-#elif defined(FREQ_CYCLE2) || defined(FREQ_ORIG)
-		track->freq_current = 0;
+#elif defined(FREQ_ORIG)
+		audio_rational_clear(&track->freq_current);
 #else
 #error unknown FREQ_*
 #endif
