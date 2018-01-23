@@ -419,8 +419,8 @@ audio_track_freq_up(audio_filter_arg_t *arg)
 #define PRINTF(fmt...)	/**/
 #endif
 	int srccount = src->count;
-	PRINTF("start step=%d", step);
-	PRINTF(" dstcount=%d srccount=%d", dst->count, src->count - srccount);
+	PRINTF("start step=%d leap=%d", step, track->freq_leap);
+	PRINTF(" srccount=%d arg->count=%d", src->count, arg->count);
 	PRINTF(" prev=%d curr=%d grad=%d", prev[0], curr[0], grad[0]);
 	PRINTF(" t=%d\n", t);
 
