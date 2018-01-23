@@ -30,7 +30,7 @@ static int audio_waitio(struct audio_softc *sc, audio_track_t *track);
 
 
 void
-audio_trace0(const char *funcname, const char *fmt, ...)
+audio_trace(const char *funcname, const char *fmt, ...)
 {
 	struct timeval tv;
 	va_list ap;
@@ -45,7 +45,7 @@ audio_trace0(const char *funcname, const char *fmt, ...)
 }
 
 void
-audio_trace(const char *funcname, audio_track_t *track, const char *fmt, ...)
+audio_tracet(const char *funcname, audio_track_t *track, const char *fmt, ...)
 {
 	struct timeval tv;
 	va_list ap;
@@ -112,7 +112,7 @@ audio_debug_bufs(char *buf, int bufsize, audio_track_t *track)
 #define AUDIO_DEBUG_BUFS(track, msg)	do {	\
 	char buf[100];	\
 	audio_debug_bufs(buf, sizeof(buf), track);	\
-	TRACE(track, "%s %s", msg, buf);	\
+	TRACET(track, "%s %s", msg, buf);	\
 } while (0)
 #else
 #define AUDIO_DEBUG_BUFS(track, msg)	/**/
@@ -600,7 +600,7 @@ audio_track_init(struct audio_softc *sc, audio_track_t **trackp, int mode)
 
 	track->id = newid++;
 	// ここだけ id が決まってから表示
-	TRACE(track, "for %s", mode == AUMODE_PLAY ? "playback" : "recording");
+	TRACET(track, "for %s", mode == AUMODE_PLAY ? "playback" : "recording");
 
 	if (mode == AUMODE_PLAY) {
 		cvname = "audiowr";
@@ -934,7 +934,7 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 {
 	KASSERT(track);
 
-	TRACE(track, "");
+	TRACET(track, "");
 	KASSERT(is_valid_format(usrfmt));
 
 	// 入力値チェック
@@ -1231,7 +1231,7 @@ audio_track_play(audio_track_t *track, bool isdrain)
 		if (isdrain) {
 			n = audio_append_silence(track, &track->freq.srcbuf);
 			if (n > 0) {
-				TRACE(track, "freq.srcbuf appended silence %d frames", n);
+				TRACET(track, "freq.srcbuf appended silence %d frames", n);
 			}
 		}
 		if (track->freq.srcbuf.count > 0) {
@@ -1257,7 +1257,7 @@ audio_track_play(audio_track_t *track, bool isdrain)
 #endif
 		}
 		if (n > 0 && track->freq.srcbuf.count > 0) {
-			TRACE(track, "freq.srcbuf cleanup count=%d", track->freq.srcbuf.count);
+			TRACET(track, "freq.srcbuf cleanup count=%d", track->freq.srcbuf.count);
 			track->freq.srcbuf.count = 0;
 		}
 	}
@@ -1269,7 +1269,7 @@ audio_track_play(audio_track_t *track, bool isdrain)
 		変換なしのときは入力自体が半端なときもあろう */
 		int n = audio_append_silence(track, &track->outputbuf);
 		if (n > 0) {
-			TRACE(track, "track.outputbuf appended silence %d frames", n);
+			TRACET(track, "track.outputbuf appended silence %d frames", n);
 		}
 	}
 
@@ -1296,7 +1296,7 @@ audio_track_record(audio_track_t *track)
 	count = audio_ring_unround_count(track->input);
 	count = min(count, track->mixer->frames_per_block);
 	if (count == 0) {
-		TRACE(track, "count == 0");
+		TRACET(track, "count == 0");
 		return;
 	}
 
@@ -1592,7 +1592,7 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
 #endif
 
 	mixer = sc->sc_pmixer;
-	TRACE0("begin mixseq=%d hwseq=%d hwbuf=%d/%d/%d",
+	TRACE("begin mixseq=%d hwseq=%d hwbuf=%d/%d/%d",
 		(int)mixer->mixseq, (int)mixer->hwseq,
 		mixer->hwbuf.top, mixer->hwbuf.count, mixer->hwbuf.capacity);
 
@@ -1621,7 +1621,7 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
 	}
 #endif
 
-	TRACE0("end   mixseq=%d hwseq=%d hwbuf=%d/%d/%d",
+	TRACE("end   mixseq=%d hwseq=%d hwbuf=%d/%d/%d",
 		(int)mixer->mixseq, (int)mixer->hwseq,
 		mixer->hwbuf.top, mixer->hwbuf.count, mixer->hwbuf.capacity);
 
@@ -1656,7 +1656,7 @@ audio_pmixer_mixall(struct audio_softc *sc, bool isintr)
 		}
 
 		if (track->is_pause) {
-			TRACE(track, "paused");
+			TRACET(track, "paused");
 			continue;
 		}
 
@@ -1688,7 +1688,7 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req,
 	// - PLAY(_SYNC) なら無音で埋めて処理する。
 	if (track->outputbuf.count < req) {
 		if ((track->mode & AUMODE_PLAY_ALL) != 0) {
-			TRACE(track, "track count(%d) < req(%d); return",
+			TRACET(track, "track count(%d) < req(%d); return",
 			    track->outputbuf.count, req);
 			return mixed;
 		} else {
@@ -1742,7 +1742,7 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req,
 	// audio_write() に空きが出来たことを通知
 	cv_broadcast(&track->outchan);
 
-	TRACE(track, "broadcast; trseq=%d out=%d/%d/%d", (int)track->seq,
+	TRACET(track, "broadcast; trseq=%d out=%d/%d/%d", (int)track->seq,
 	    track->outputbuf.top, track->outputbuf.count, track->outputbuf.capacity);
 
 	// usrbuf が空いたら(lowat を下回ったら) シグナルを送る
@@ -1813,7 +1813,7 @@ audio_pmixer_process(struct audio_softc *sc, bool isintr)
 	int hw_free_count = audio_ring_unround_free_count(&mixer->hwbuf);
 	int frame_count = min(hw_free_count, mixer->frames_per_block);
 	if (frame_count <= 0) {
-		TRACE0("count too short: hw_free=%d frames_per_block=%d",
+		TRACE("count too short: hw_free=%d frames_per_block=%d",
 		    hw_free_count, mixer->frames_per_block);
 		return;
 	}
@@ -1906,7 +1906,7 @@ audio_pmixer_process(struct audio_softc *sc, bool isintr)
 
 	audio_ring_appended(&mixer->hwbuf, frame_count);
 
-	TRACE0("done mixseq=%d hwbuf=%d/%d/%d%s",
+	TRACE("done mixseq=%d hwbuf=%d/%d/%d%s",
 	    (int)mixer->mixseq,
 	    mixer->hwbuf.top, mixer->hwbuf.count, mixer->hwbuf.capacity,
 	    (mixed == 0) ? " silent" : "");
@@ -1932,7 +1932,7 @@ audio_pmixer_output(struct audio_softc *sc)
 
 	mixer = sc->sc_pmixer;
 #if !defined(START_ON_OPEN)
-	TRACE0("pbusy=%d hwbuf=%d/%d/%d",
+	TRACE("pbusy=%d hwbuf=%d/%d/%d",
 	    sc->sc_pbusy,
 	    mixer->hwbuf.top, mixer->hwbuf.count, mixer->hwbuf.capacity);
 #endif
@@ -1988,7 +1988,7 @@ audio_pintr(void *arg)
 
 	audio_ring_tookfromtop(&mixer->hwbuf, mixer->frames_per_block);
 
-	TRACE0("HW_INT ++hwseq=%d cmplcnt=%d hwbuf=%d/%d/%d",
+	TRACE("HW_INT ++hwseq=%d cmplcnt=%d hwbuf=%d/%d/%d",
 		(int)mixer->hwseq,
 		(int)mixer->hw_complete_counter,
 		mixer->hwbuf.top, mixer->hwbuf.count, mixer->hwbuf.capacity);
@@ -2034,7 +2034,7 @@ audio_rmixer_start(struct audio_softc *sc)
 	if (sc->sc_rbusy)
 		return true;
 
-	TRACE0("begin");
+	TRACE("begin");
 
 	mutex_enter(sc->sc_intr_lock);
 	audio_rmixer_input(sc);
@@ -2082,7 +2082,7 @@ audio_rmixer_process(struct audio_softc *sc)
 	int count = audio_ring_unround_count(&mixer->hwbuf);
 	count = min(count, mixer->frames_per_block);
 	if (count <= 0) {
-		TRACE0("count %d: too short", count);
+		TRACE("count %d: too short", count);
 		return;
 	}
 	int bytes = frametobyte(&mixer->track_fmt, count);
@@ -2108,7 +2108,7 @@ audio_rmixer_process(struct audio_softc *sc)
 			continue;
 
 		if (track->is_pause) {
-			TRACE(track, "paused");
+			TRACET(track, "paused");
 			continue;
 		}
 
@@ -2118,7 +2118,7 @@ audio_rmixer_process(struct audio_softc *sc)
 			int drops = mixer->frames_per_block -
 			    (input->capacity - input->count);
 			track->dropframes += drops;
-			TRACE(track, "drop %d frames: inp=%d/%d/%d",
+			TRACET(track, "drop %d frames: inp=%d/%d/%d",
 			    drops,
 			    input->top, input->count, input->capacity);
 			audio_ring_tookfromtop(input, drops);
@@ -2135,7 +2135,7 @@ audio_rmixer_process(struct audio_softc *sc)
 		// audio_read() にブロックが来たことを通知
 		cv_broadcast(&track->outchan);
 
-		TRACE(track, "broadcast; inp=%d/%d/%d",
+		TRACET(track, "broadcast; inp=%d/%d/%d",
 		    input->top, input->count, input->capacity);
 	}
 
@@ -2210,7 +2210,7 @@ audio_rintr(void *arg)
 
 	audio_ring_appended(&mixer->hwbuf, mixer->frames_per_block);
 
-	TRACE0("HW_INT ++hwseq=%d cmplcnt=%d hwbuf=%d/%d/%d",
+	TRACE("HW_INT ++hwseq=%d cmplcnt=%d hwbuf=%d/%d/%d",
 		(int)mixer->hwseq,
 		(int)mixer->hw_complete_counter,
 		mixer->hwbuf.top, mixer->hwbuf.count, mixer->hwbuf.capacity);
@@ -2230,7 +2230,7 @@ audio2_halt_output(struct audio_softc *sc)
 {
 	int error;
 
-	TRACE0("");
+	TRACE("");
 	KASSERT(mutex_owned(sc->sc_lock));
 	KASSERT(mutex_owned(sc->sc_intr_lock));
 
@@ -2253,7 +2253,7 @@ audio2_halt_input(struct audio_softc *sc)
 {
 	int error;
 
-	TRACE0("");
+	TRACE("");
 	KASSERT(mutex_owned(sc->sc_lock));
 	KASSERT(mutex_owned(sc->sc_intr_lock));
 
@@ -2277,7 +2277,7 @@ audio_track_clear(struct audio_softc *sc, audio_track_t *track)
 {
 
 	KASSERT(track);
-	TRACE(track, "clear");
+	TRACET(track, "clear");
 
 	KASSERT(mutex_owned(sc->sc_lock));
 	KASSERT(!mutex_owned(sc->sc_intr_lock));
@@ -2322,7 +2322,7 @@ audio_track_drain(audio_track_t *track)
 	int error;
 
 	KASSERT(track);
-	TRACE(track, "start");
+	TRACET(track, "start");
 	mixer = track->mixer;
 	sc = mixer->sc;
 	KASSERT(mutex_owned(sc->sc_lock));
@@ -2331,13 +2331,13 @@ audio_track_drain(audio_track_t *track)
 	// pause 中なら今溜まってるものは全部無視してこのまま終わってよし
 	if (track->is_pause) {
 		track->pstate = AUDIO_STATE_CLEAR;
-		TRACE(track, "pause -> clear");
+		TRACET(track, "pause -> clear");
 	}
 	// トラックにデータがなくても drain は ミキサのループが数回回って
 	// 問題なく終わるが、クリーンならさすがに早期終了しても
 	// いいんじゃなかろうか。
 	if (track->pstate == AUDIO_STATE_CLEAR) {
-		TRACE(track, "no need to drain");
+		TRACET(track, "no need to drain");
 		return 0;
 	}
 
@@ -2362,7 +2362,7 @@ audio_track_drain(audio_track_t *track)
 
 	for (;;) {
 		// 終了条件判定の前に表示したい
-		TRACE(track, "trkseq=%d hwseq=%d out=%d/%d/%d",
+		TRACET(track, "trkseq=%d hwseq=%d out=%d/%d/%d",
 		    (int)track->seq, (int)mixer->hwseq,
 		    track->outputbuf.top, track->outputbuf.count,
 		    track->outputbuf.capacity);
@@ -2372,7 +2372,7 @@ audio_track_drain(audio_track_t *track)
 
 		error = cv_wait_sig(&mixer->intrcv, sc->sc_lock);
 		if (error) {
-			TRACE(track, "cv_wait_sig failed %d", error);
+			TRACET(track, "cv_wait_sig failed %d", error);
 			return error;
 		}
 		if (sc->sc_dying)
@@ -2380,7 +2380,7 @@ audio_track_drain(audio_track_t *track)
 	}
 
 	track->pstate = AUDIO_STATE_CLEAR;
-	TRACE(track, "done trk_inp=%d trk_out=%d",
+	TRACET(track, "done trk_inp=%d trk_out=%d",
 		(int)track->inputcounter, (int)track->outputcounter);
 	return 0;
 }
@@ -2396,12 +2396,12 @@ audio_write_uiomove(audio_track_t *track, int bottom, int len, struct uio *uio)
 	usrbuf = &track->usrbuf;
 	error = uiomove((uint8_t *)usrbuf->sample + bottom, len, uio);
 	if (error) {
-		TRACE(track, "uiomove(len=%d) failed: %d", len, error);
+		TRACET(track, "uiomove(len=%d) failed: %d", len, error);
 		return error;
 	}
 	audio_ring_appended(usrbuf, len);
 	track->useriobytes += len;
-	TRACE(track, "uiomove(len=%d) usrbuf=%d/%d/%d",
+	TRACET(track, "uiomove(len=%d) usrbuf=%d/%d/%d",
 	    len,
 	    usrbuf->top, usrbuf->count, usrbuf->capacity);
 	return 0;
@@ -2414,7 +2414,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 	int error;
 	audio_track_t *track = file->ptrack;
 	KASSERT(track);
-	TRACE(track, "resid=%u", (int)uio->uio_resid);
+	TRACET(track, "resid=%u", (int)uio->uio_resid);
 
 	KASSERT(mutex_owned(sc->sc_lock));
 
@@ -2476,7 +2476,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 		out_thres = frametobyte(&track->inputfmt, 1);
 		force = true;
 	}
-	TRACE(track, "resid=%zd inp_thres=%d out_thres=%d",
+	TRACET(track, "resid=%zd inp_thres=%d out_thres=%d",
 	    uio->uio_resid, inp_thres, out_thres);
 
 	track->pstate = AUDIO_STATE_RUNNING;
@@ -2484,7 +2484,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 	while (uio->uio_resid > 0 && error == 0) {
 		int bytes;
 
-		TRACE(track, "while resid=%zd usrbuf=%d/%d/%d",
+		TRACET(track, "while resid=%zd usrbuf=%d/%d/%d",
 		    uio->uio_resid,
 		    usrbuf->top, usrbuf->count, usrbuf->capacity);
 
@@ -2552,12 +2552,12 @@ audio_read_uiomove(audio_track_t *track, int top, int len, struct uio *uio)
 	usrbuf = &track->usrbuf;
 	error = uiomove((uint8_t *)usrbuf->sample + top, len, uio);
 	if (error) {
-		TRACE(track, "uiomove(len=%d) failed: %d", len, error);
+		TRACET(track, "uiomove(len=%d) failed: %d", len, error);
 		return error;
 	}
 	audio_ring_tookfromtop(usrbuf, len);
 	track->useriobytes += len;
-	TRACE(track, "uiomove(len=%d) usrbuf=%d/%d/%d",
+	TRACET(track, "uiomove(len=%d) usrbuf=%d/%d/%d",
 	    len,
 	    usrbuf->top, usrbuf->count, usrbuf->capacity);
 	return 0;
@@ -2570,7 +2570,7 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 	int error;
 	audio_track_t *track = file->rtrack;
 	KASSERT(track);
-	TRACE(track, "resid=%u", (int)uio->uio_resid);
+	TRACET(track, "resid=%u", (int)uio->uio_resid);
 
 	KASSERT(mutex_owned(sc->sc_lock));
 
@@ -2598,7 +2598,7 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 	// ここは外部仕様になるので変えない
 	// XXX ちょっと後回し
 
-	TRACE(track, "resid=%zd", uio->uio_resid);
+	TRACET(track, "resid=%zd", uio->uio_resid);
 
 	error = 0;
 	while (uio->uio_resid > 0 && error == 0) {
@@ -2607,7 +2607,7 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 		audio_ring_t *usrbuf = &track->usrbuf;
 		audio_track_enter_colock(sc, track);
 
-		TRACE(track, "while resid=%zd input=%d/%d/%d usrbuf=%d/%d/%d",
+		TRACET(track, "while resid=%zd input=%d/%d/%d usrbuf=%d/%d/%d",
 		    uio->uio_resid,
 		    track->input->top, track->input->count, track->input->capacity,
 		    usrbuf->top, usrbuf->count, usrbuf->capacity);
@@ -2664,11 +2664,11 @@ audio_waitio(struct audio_softc *sc, audio_track_t *track)
 	KASSERT(track);
 	KASSERT(mutex_owned(sc->sc_lock));
 
-	TRACE(track, "wait");
+	TRACET(track, "wait");
 	/* Wait for pending I/O to complete. */
 	error = cv_wait_sig(&track->outchan, sc->sc_lock);
 	if (sc->sc_dying)
 		error = EIO;
-	TRACE(track, "error=%d", error);
+	TRACET(track, "error=%d", error);
 	return error;
 }

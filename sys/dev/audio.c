@@ -1696,7 +1696,7 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 	SLIST_REMOVE(&sc->sc_files, file, audio_file, entry);
 	mutex_exit(sc->sc_intr_lock);
 
-	TRACE0("done");
+	TRACE("done");
 	return 0;
 }
 
