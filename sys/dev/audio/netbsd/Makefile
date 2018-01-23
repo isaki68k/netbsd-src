@@ -15,7 +15,6 @@ SRCS+=	\
 OBJS=${SRCS:S,.c,.o,:S,../,,}
 
 CFLAGS=	-O2 -g -std=c99 -I. -I.. \
-	-DUSERLAND_TEST \
 	-fno-strict-aliasing \
 	-Wall \
 	-Werror \
