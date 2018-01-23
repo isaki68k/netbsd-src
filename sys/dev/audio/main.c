@@ -70,6 +70,7 @@ int cmd_perf(const char *);
 int cmd_perf_freq_up();
 int cmd_perf_freq_down();
 int cmd_perf_freq_main(struct freqdata *);
+int cmd_perf_chmix_mixLR();
 int parse_file(struct test_file *, FILE *, const char *, int);
 uint16_t lebe16toh(uint16_t);
 uint32_t lebe32toh(uint32_t);
@@ -678,6 +679,7 @@ struct testdata {
 } perfdata[] = {
 	{ "freq_up",	cmd_perf_freq_up },
 	{ "freq_down",	cmd_perf_freq_down },
+	{ "chmix_mixLR",cmd_perf_chmix_mixLR },
 	{ NULL, NULL },
 };
 
@@ -789,6 +791,62 @@ cmd_perf_freq_main(struct freqdata *pattern)
 			(double)count/((uint64_t)result.tv_sec*1000 + result.tv_usec/1000));
 #endif
 	}
+
+	return 0;
+}
+
+int
+cmd_perf_chmix_mixLR()
+{
+	struct test_file *f = &files[fileidx];
+	audio_track_t *track;
+	audio_format2_t srcfmt;
+	struct timeval start, end, result;
+	struct itimerval it;
+
+	signal(SIGALRM, sigalrm);
+	memset(&it, 0, sizeof(it));
+	it.it_value.tv_sec = 3;
+
+	f->file = sys_open(sc, AUMODE_PLAY);
+	track = f->file->ptrack;
+	// dst fmt
+	track->mixer->track_fmt.channels = 1;
+	// src fmt
+	srcfmt = track->mixer->track_fmt;
+	srcfmt.channels = 2;
+	// set
+	int r = audio_track_set_format(track, &srcfmt);
+	if (r != 0) {
+		printf("%s: audio_track_set_format failed: %s\n",
+			__func__, strerror(errno));
+		exit(1);
+	}
+
+	uint64_t count;
+	printf("mixLR: ");
+	fflush(stdout);
+
+	setitimer(ITIMER_REAL, &it, NULL);
+	gettimeofday(&start, NULL);
+	for (count = 0, signaled = 0; signaled == 0; count++) {
+		track->chmix.srcbuf.top = 0;
+		track->chmix.srcbuf.count = frame_per_block_roundup(track->mixer,
+			&srcfmt);
+		track->outputbuf.top = 0;
+		track->outputbuf.count = 0;
+		audio_apply_stage(track, &track->chmix, false);
+	}
+	gettimeofday(&end, NULL);
+	timersub(&end, &start, &result);
+
+#if defined(__m68k__)
+	printf("%d %5.1f times/sec\n", (int)count,
+		(double)count/(result.tv_sec + (double)result.tv_usec/1000000));
+#else
+	printf("%d %5.1f times/msec\n", (int)count,
+		(double)count/((uint64_t)result.tv_sec*1000 + result.tv_usec/1000));
+#endif
 
 	return 0;
 }
