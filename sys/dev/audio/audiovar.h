@@ -82,7 +82,6 @@
 typedef struct audio_track audio_track_t;
 typedef struct audio_trackmixer audio_trackmixer_t;
 typedef struct audio_file audio_file_t;
-typedef struct audio_convert_arg audio_convert_arg_t;
 
 /* ring buffer */
 typedef struct {
