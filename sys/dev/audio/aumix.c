@@ -1453,9 +1453,10 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 	}
 
 	mixer->track_fmt.encoding = AUDIO_ENCODING_SLINEAR_NE;
+	mixer->track_fmt.precision = AUDIO_INTERNAL_BITS;
+	mixer->track_fmt.stride = AUDIO_INTERNAL_BITS;
 	mixer->track_fmt.channels = mixer->hwbuf.fmt.channels;
 	mixer->track_fmt.sample_rate = mixer->hwbuf.fmt.sample_rate;
-	mixer->track_fmt.precision = mixer->track_fmt.stride = AUDIO_INTERNAL_BITS;
 
 	if (mode == AUMODE_PLAY) {
 		// 合成バッファ
