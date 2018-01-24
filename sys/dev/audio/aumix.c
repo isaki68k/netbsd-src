@@ -1000,6 +1000,74 @@ audio_append_silence(audio_track_t *track, audio_ring_t *ring)
 	return n;
 }
 
+// どこに書くのがいいか分からんけど、フィルタの仕様みたいなもの。
+//
+// 概要
+//	変換フィルタは以下に分類できます。
+//	  1. ユーザランド側フィルタ
+//	   1a. 周波数変換フィルタ
+//	   1b. それ以外のフィルタ
+//	  2. HW フィルタ
+//
+//	1 のユーザランド側フィルタはすべて audio layer が責任を持っています
+//	ので MD ドライバは通常使用することはありません。ただし HW フォーマット
+//	が mulaw なデバイスのように、audio layer が持っている
+//	mulaw <-> internal_t 変換関数をそのまま利用できる場合にはこれを使用
+//	することが可能です。
+//
+//	audio layer が MD ドライバに受け渡すフォーマットは内部形式と呼ぶもので、
+//	slinear_NE、16 bit、HW channels、HW frequency です。HW がこれをそのまま
+//	扱えるのなら MD フィルタは不要、encoding/precision を変換する必要が
+//	あれば MD フィルタが必要です。MD フィルタは通常 slinear_NE、16bit と
+//	HW エンコーディングの変換だけを受け持ちます。
+//
+//	変換関数(フィルタ)は以下のプロトタイプを持ちます。
+//
+//	  typedef struct {
+//		const void *src;
+//		const audio_format2_t *srcfmt;
+//		void *dst;
+//		const audio_format2_t *dstfmt;
+//		int count;
+//		void *context;
+//	  } audio_filter_arg_t;
+//
+//	  void filter(audio_filter_arg_t *arg);
+//
+//	変換に必要なパラメータは arg として渡されます。filter() は arg->src
+//	から arg->count 個のフレームを読み込んで変換し arg->dst から
+//	arg->count 個のフレームに出力します。arg->src および arg->dst は
+//	arg->count フレームの読み書きが連続して行えることを保証しています。
+//
+//	arg->count 個を全部処理する前の早期終了や途中でのエラー終了は今の所
+//	認められていません。また arg->src、arg->dst ポインタの進み具合によって
+//	呼び出し元に実際の読み込み数や書き込み数を通知することは出来ませんので
+//	arg->src、arg->dst は filter() 側で破壊(変更)しても構いません。
+//
+//	同様に arg->count も filter() 側で破壊(変更)可能です。
+//
+//	arg->srcfmt, arg->dstfmt には入出力のフォーマットが記述されています。
+//	通常フィルタは自分自身が何から何への変換なのかを知っているので入出力
+//	フォーマットをチェックする必要はないでしょう (例えば mulaw から
+//	internal_t への変換、など)。一方リニア PCM から internal_t への変換を
+//	すべて受け持つフィルタの場合は srcfmt をチェックする必要があるでしょう。
+//
+//	context はフィルタ自身が自由に使用可能なポインタです。audio layer は
+//	この値について一切関与しません。
+//
+// 周波数変換フィルタ
+//	周波数変換フィルタだけ入出力のフレーム数が変化するため、いろいろと
+//	特別対応が必要です。まず入出力リングバッファは再生/録音の両方向とも
+//	freq.srcbuf、freq.dst なのでそれはもう直接使ってしまうことにします。
+//
+//	つまり filter() 呼び出し時点で要求出力フレーム数は arg->count フレーム、
+//	入力可能なフレーム数は freq.srcbuf.count フレームです。
+//
+//	変換処理によって消費した入力フレーム数は freq.srcbuf を、出力した
+//	フレーム数は freq.dst を filter() 側が更新してください。
+//	arg->count は破壊(変更)して構いません。
+//
+
 // ステージの共通処理です。
 // stage があれば(stage->filter != NULL なら)、このステージの変換を行います。
 // stage から arg を用意して stage->filter を処理します。

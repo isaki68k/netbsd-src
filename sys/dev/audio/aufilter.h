@@ -41,7 +41,7 @@ struct audio_format2
 typedef struct audio_filter_arg audio_filter_arg_t;
 struct audio_filter_arg
 {
-	// 入力サンプルです。
+	// 入力サンプルの開始位置です。
 	const void *src;
 	// 入力形式です。
 	const audio_format2_t *srcfmt;
@@ -51,8 +51,10 @@ struct audio_filter_arg
 	// 出力形式です。
 	const audio_format2_t *dstfmt;
 
-	// 今回のフィルタ呼び出しで入出力可能なフレーム数です。
-	// (内部で使用する周波数変換フィルタの場合は出力フレーム数)
+	// 今回のフィルタ呼び出しで出力すべきフレーム数です。
+	// フィルタはこのフレーム数を必ず出力してください。
+	// 周波数変換フィルタ以外では入力フレーム数も同じになります。
+	// フィルタはこの変数 arg->count の値を破壊しても構いません。
 	int count;
 
 	// フィルタ固有のデータ用に使用できます。
