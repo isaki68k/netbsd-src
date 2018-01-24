@@ -1133,6 +1133,10 @@ audio_append_silence(audio_track_t *track, audio_ring_t *ring)
 }
 
 // ステージの共通処理です。
+// stage があれば(stage->filter != NULL なら)、このステージの変換を行います。
+// stage から arg を用意して stage->filter を処理します。
+// 周波数変換以外なら src, dst のカウンタはここで進めます。
+// 周波数変換なら src, dst のカウンタはフィルタ側で進めてください。
 static void
 audio_apply_stage(audio_track_t *track, audio_stage_t *stage, bool isfreq)
 {
