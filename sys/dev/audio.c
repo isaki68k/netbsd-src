@@ -4366,11 +4366,15 @@ audio_volume_toggle(device_t dv)
 	mutex_exit(sc->sc_lock);
 }
 
+static void
+unitscopy(mixer_devinfo_t *di, const char *name)
+{
+	strlcpy(di->un.v.units.name, name, sizeof(di->un.v.units.name));
+}
+
 static int
 audio_query_devinfo(struct audio_softc *sc, mixer_devinfo_t *di)
 {
-	char mixLabel[255];
-
 	KASSERT(mutex_owned(sc->sc_lock));
 
 	if (sc->sc_static_nmixer_states == 0 || sc->sc_nmixer_states == 0)
@@ -4381,27 +4385,27 @@ audio_query_devinfo(struct audio_softc *sc, mixer_devinfo_t *di)
 		if (di->index == sc->sc_static_nmixer_states - 1) {
 			di->mixer_class = sc->sc_static_nmixer_states -1;
 			di->next = di->prev = AUDIO_MIXER_LAST;
-			strcpy(di->label.name, AudioCvirtchan);
+			strlcpy(di->label.name, AudioCvirtchan,
+			    sizeof(di->label.name));
 			di->type = AUDIO_MIXER_CLASS;
 		} else if ((di->index - sc->sc_static_nmixer_states) % 2 == 0) {
 			di->mixer_class = sc->sc_static_nmixer_states -1;
-			snprintf(mixLabel, sizeof(mixLabel), AudioNdac"%d",
+			snprintf(di->label.name, sizeof(di->label.name),
+			    AudioNdac"%d",
 			    (di->index - sc->sc_static_nmixer_states) / 2);
-			strcpy(di->label.name, mixLabel);
 			di->type = AUDIO_MIXER_VALUE;
 			di->next = di->prev = AUDIO_MIXER_LAST;
 			di->un.v.num_channels = 1;
-			strcpy(di->un.v.units.name, AudioNvolume);
+			unitscopy(di, AudioNvolume);
 		} else {
 			di->mixer_class = sc->sc_static_nmixer_states -1;
-			snprintf(mixLabel, sizeof(mixLabel),
+			snprintf(di->label.name, sizeof(di->label.name),
 			    AudioNmicrophone "%d",
 			    (di->index - sc->sc_static_nmixer_states) / 2);
-			strcpy(di->label.name, mixLabel);
 			di->type = AUDIO_MIXER_VALUE;
 			di->next = di->prev = AUDIO_MIXER_LAST;
 			di->un.v.num_channels = 1;
-			strcpy(di->un.v.units.name, AudioNvolume);
+			unitscopy(di, AudioNvolume);
 		}
 
 		return 0;
