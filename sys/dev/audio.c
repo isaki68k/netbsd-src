@@ -306,6 +306,7 @@ const struct cdevsw audio_cdevsw = {
 };
 
 const struct fileops audio_fileops = {
+	.fo_name = "audio",
 	.fo_read = audioread,
 	.fo_write = audiowrite,
 	.fo_ioctl = audioioctl,
