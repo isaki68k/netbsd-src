@@ -394,8 +394,8 @@ audio_track_freq_up(audio_filter_arg_t *arg)
 	}
 
 	t = track->freq_current;
-//#define DEBUG
-#if defined(DEBUG)
+//#define FREQ_DEBUG
+#if defined(FREQ_DEBUG)
 #define PRINTF(fmt...)	printf(fmt)
 #else
 #define PRINTF(fmt...)	/**/
@@ -432,7 +432,7 @@ audio_track_freq_up(audio_filter_arg_t *arg)
 
 		for (ch = 0; ch < channels; ch++) {
 			*dptr++ = prev[ch] + (internal2_t)grad[ch] * t / 65536;
-#if defined(DEBUG)
+#if defined(FREQ_DEBUG)
 			if (ch == 0)
 				printf(" t=%5d *d=%d", t, dptr[-1]);
 #endif
