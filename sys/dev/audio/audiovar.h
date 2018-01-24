@@ -61,6 +61,9 @@
 #endif
 #endif
 
+// C の実装定義動作を使用する。
+#define AUDIO_USE_C_IMPLEMENTATION_DEFINED_BEHAVIOR
+
 // サポートする最大/最小周波数。
 // 最小は、実用的に意味があるかはともかく 4kHz 未満をセットできる骨董品も
 // 中にはあることを考慮してこのくらいまでは許してやろう。
