@@ -27,20 +27,16 @@ typedef uint64_t uinternal2_t;
 #endif
 
 /* フォーマット */
-typedef struct audio_format2 audio_format2_t;
-struct audio_format2
-{
+typedef struct {
 	int32_t  encoding;		/* AUDIO_ENCODING */
 	uint32_t sample_rate;	/* Hz */
 	uint8_t  channels;		/* 1.. */
 	uint8_t  precision;		/* ex.24 (valid bits of sample, must precision <= stride) */
 	uint8_t  stride;		/* ex.32 (packing bits of sample) */
-};
+} audio_format2_t;
 
 // フィルタに渡されるパラメータ一式です。
-typedef struct audio_filter_arg audio_filter_arg_t;
-struct audio_filter_arg
-{
+typedef struct {
 	// 入力サンプルの開始位置です。
 	const void *src;
 	// 入力形式です。
@@ -59,13 +55,13 @@ struct audio_filter_arg
 
 	// フィルタ固有のデータ用に使用できます。
 	void *context;
-};
+} audio_filter_arg_t;
 
 typedef void(*audio_filter_t)(audio_filter_arg_t *arg);
 
 // フィルタ登録用
 // hw_if->set_params2() からフィルタを登録するときに使う構造体
-typedef struct audio_filter_reg {
+typedef struct {
 	audio_filter_t codec;
 	void *context;
 } audio_filter_reg_t;

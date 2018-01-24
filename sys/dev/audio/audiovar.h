@@ -79,31 +79,27 @@
 
 
 // 前方参照
-typedef struct audio_ring audio_ring_t;
 typedef struct audio_track audio_track_t;
 typedef struct audio_trackmixer audio_trackmixer_t;
 typedef struct audio_file audio_file_t;
 typedef struct audio_convert_arg audio_convert_arg_t;
 
 /* ring buffer */
-struct audio_ring
-{
+typedef struct {
 	audio_format2_t fmt;	/* format */
 	int  capacity;		/* capacity by frame */
 	int  top;		/* top frame position */
 	int  count;		/* available frame count */
 	void *sample;		/* sample ptr */
-};
+} audio_ring_t;
 
 /* conversion stage */
-struct audio_stage
-{
+typedef struct {
 	audio_filter_t filter;
 	audio_filter_arg_t arg;
 	audio_ring_t *dst;
 	audio_ring_t srcbuf;
-};
-typedef struct audio_stage audio_stage_t;
+} audio_stage_t;
 
 typedef enum {
 	AUDIO_STATE_CLEAR,	/* no data, no need to drain */
@@ -111,8 +107,7 @@ typedef enum {
 	AUDIO_STATE_DRAINING,	/* now draining */
 } audio_state_t;
 
-struct audio_track
-{
+struct audio_track {
 	// このトラックの再生/録音モード。AUMODE_*
 	// 録音トラックなら AUMODE_RECORD。
 	// 再生トラックなら AUMODE_PLAY は必ず立っている。
@@ -176,8 +171,7 @@ struct audio_track
 	int		id;		/* track id for debug */
 };
 
-struct audio_trackmixer
-{
+struct audio_trackmixer {
 	int		mode;		/* AUMODE_PLAY or AUMODE_RECORD */
 	audio_format2_t	track_fmt;	/* track <-> trackmixer format */
 
@@ -214,8 +208,7 @@ struct audio_trackmixer
 	uint64_t	hw_complete_counter;
 };
 
-struct audio_file
-{
+struct audio_file {
 	struct audio_softc *sc;
 
 	// ptrack, rtrack はトラックが無効なら NULL。

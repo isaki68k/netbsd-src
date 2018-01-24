@@ -18,7 +18,7 @@ audio_track_is_record(const audio_track_t *track)
 	return ((track->mode & AUMODE_RECORD) != 0);
 }
 
-static const struct audio_format2 audio_default = {
+static const audio_format2_t audio_default = {
 	.sample_rate = 8000,
 	.encoding = AUDIO_ENCODING_ULAW,
 	.precision = 8,
