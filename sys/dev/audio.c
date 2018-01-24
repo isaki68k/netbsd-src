@@ -1312,7 +1312,6 @@ audiokqfilter(struct file *fp, struct knote *kn)
 {
 	struct audio_softc *sc;
 	audio_file_t *file;
-	int rv;
 	dev_t dev;
 	int error;
 
@@ -1328,19 +1327,19 @@ audiokqfilter(struct file *fp, struct knote *kn)
 	switch (AUDIODEV(file->dev)) {
 	case SOUND_DEVICE:
 	case AUDIO_DEVICE:
-		rv = audio_kqfilter(sc, file, kn);
+		error = audio_kqfilter(sc, file, kn);
 		break;
 	case AUDIOCTL_DEVICE:
 	case MIXER_DEVICE:
-		rv = ENODEV;
+		error = ENODEV;
 		break;
 	default:
-		rv = ENXIO;
+		error = ENXIO;
 		break;
 	}
 	audio_exit(sc);
 
-	return rv;
+	return error;
 }
 
 // これだけ audio_fop_mmap で命名規則おかしかったので変えた
