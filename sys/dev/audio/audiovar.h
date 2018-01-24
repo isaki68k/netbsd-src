@@ -187,7 +187,7 @@ struct audio_trackmixer {
 
 	audio_ring_t	hwbuf;		/* HW I/O buf */
 	int		hwblks;		/* number of blocks in hwbuf */
-	kcondvar_t	intrcv;		// 割り込みを通知する?
+	kcondvar_t	draincv;	// drain 用に割り込みを通知する?
 
 	uint64_t	mixseq;		/* seq# currently being mixed */
 	uint64_t	hwseq;		/* seq# HW output completed */

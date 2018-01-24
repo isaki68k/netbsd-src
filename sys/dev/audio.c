@@ -835,7 +835,7 @@ audiodetach(device_t self, int flags)
 		if (f->rtrack)
 			cv_broadcast(&f->rtrack->outchan);
 	}
-	cv_broadcast(&sc->sc_pmixer->intrcv);
+	cv_broadcast(&sc->sc_pmixer->draincv);
 	mutex_exit(sc->sc_lock);
 
 	/* locate the major number */

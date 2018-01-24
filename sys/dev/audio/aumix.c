@@ -1494,7 +1494,7 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 
 	mixer->volume = 256;
 
-	cv_init(&mixer->intrcv, "audiodr");
+	cv_init(&mixer->draincv, "audiodr");
 	return 0;
 }
 
@@ -1520,7 +1520,7 @@ audio_mixer_destroy(struct audio_softc *sc, audio_trackmixer_t *mixer)
 	audio_free(mixer->codecbuf.sample);
 	audio_free(mixer->mixsample);
 
-	// intrcv を cv_destroy() してはいけないっぽい。KASSERT で死ぬ。
+	// draincv を cv_destroy() してはいけないっぽい。KASSERT で死ぬ。
 }
 
 // 再生ミキサを起動します。起動できれば true を返します。
@@ -1970,7 +1970,7 @@ audio_pintr(void *arg)
 	}
 
 	// drain 待ちしている人のために通知
-	cv_broadcast(&mixer->intrcv);
+	cv_broadcast(&mixer->draincv);
 }
 
 // 録音ミキサを起動します。起動できれば true を返します。
@@ -2316,7 +2316,7 @@ audio_track_drain(audio_track_t *track)
 		if (track->outputbuf.count == 0 && track->seq <= mixer->hwseq)
 			break;
 
-		error = cv_wait_sig(&mixer->intrcv, sc->sc_lock);
+		error = cv_wait_sig(&mixer->draincv, sc->sc_lock);
 		if (error) {
 			TRACET(track, "cv_wait_sig failed %d", error);
 			return error;
