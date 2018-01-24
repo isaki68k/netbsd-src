@@ -32,10 +32,6 @@
 // 出力バッファのブロック数
 #define NBLKOUT	(4)
 
-// 周波数変換実装
-//#define FREQ_ORIG	// 元の実装
-#define FREQ_SHIFT	// ソースを1サンプルずらす。(CYCLE2 から派生)
-
 // ミキサ駆動方式
 // START_ON_OPEN は、audio_open() 時にミキサを駆動しておき、
 // audio_write() 時はトラック処理だけを行う。ミキサは常時駆動していて
@@ -89,14 +85,6 @@ typedef struct audio_trackmixer audio_trackmixer_t;
 typedef struct audio_file audio_file_t;
 typedef struct audio_convert_arg audio_convert_arg_t;
 
-#if defined(FREQ_ORIG)
-// 簡易帯分数表現
-typedef struct audio_rational {
-	int i;
-	int n;
-} audio_rational_t;
-#endif
-
 /* ring buffer */
 struct audio_ring
 {
@@ -149,19 +137,11 @@ struct audio_track
 	audio_stage_t	chmix;		/* channel mix stage */
 	audio_stage_t	freq;		/* frequency conversion stage */
 
-#if defined(FREQ_SHIFT)
 	u_int		freq_step;	// 周波数変換用、周期比
 	u_int		freq_current;	// 周波数変換用、現在のカウンタ
 	u_int		freq_leap;	// 周波数変換用、補正値
 	internal_t	freq_prev[AUDIO_MAX_CHANNELS];	// 前回値
 	internal_t	freq_curr[AUDIO_MAX_CHANNELS];	// 直近値
-#elif defined(FREQ_ORIG)
-	audio_rational_t freq_step;	// 周波数変換用分数 (srcfreq/dstfreq)
-	audio_rational_t freq_current;	// 周波数変換用 現在のカウンタ
-	int32_t		freq_coef;	// 周波数変換用係数
-#else
-#error unknown FREQ_*
-#endif
 
 	uint16_t ch_volume[AUDIO_MAX_CHANNELS];	/* channel volume(0..256) */
 	u_int		volume;		/* track volume (0..256) */

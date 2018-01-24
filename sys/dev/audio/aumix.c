@@ -140,52 +140,6 @@ audio_realloc(void *memblock, size_t bytes)
 }
 
 
-#if defined(FREQ_ORIG)
-/*
- * ***** audio_rational *****
- */
-
-/* r = 0 */
-static inline void
-audio_rational_clear(audio_rational_t *r)
-{
-	KASSERT(r != NULL);
-	r->i = 0;
-	r->n = 0;
-}
-
-/* 共通分母 d の正規化された帯分数 r, a に対し、 r += a を実行し、結果の整数部を返します。 */
-static inline int
-audio_rational_add(audio_rational_t *r, audio_rational_t *a, int d)
-{
-	KASSERT(r != NULL);
-	KASSERT(a != NULL);
-	KASSERT(d != 0);
-	KASSERT(r->n < d);
-	KASSERT(a->n < d);
-
-	r->i += a->i;
-	r->n += a->n;
-	if (r->n >= d) {
-		r->i += 1;
-		r->n -= d;
-	}
-	return r->i;
-}
-
-/* a > b なら + 、a == b なら 0 , a < b なら - を返します。*/
-static inline int
-audio_rational_cmp(audio_rational_t *a, audio_rational_t *b)
-{
-	int r = a->i - b->i;
-	if (r == 0) {
-		r = a->n - b->n;
-	}
-	return r;
-}
-#endif /* FREQ_ORIG */
-
-
 /*
  * ***** audio_track *****
  */
@@ -343,10 +297,9 @@ audio_track_chmix_expand(audio_filter_arg_t *arg)
 	}
 }
 
-// AUDIO_ASSERT なしで main.c による計測。@ amd64 (nao)
+// AUDIO_ASSERT なしで main.c による計測。
 //
-// src->dst	44->48	8->48	48->44	48->8	[times/msec]
-// ORIG		 49.2	 60.8	 90.8	 608.0
+//  (amd64)	44->48	8->48	48->44	48->8	[times/msec]
 // SHIFT	 64.1	112.9	178.6	 977.1
 //  (x68k)	44->48	8->48	48->44	48->8	[times/sec]
 // SHIFT	 47.7	 64.8	128.5	 687.5
@@ -367,7 +320,7 @@ audio_track_freq_up(audio_filter_arg_t *arg)
 
 	const internal_t *sptr = arg->src;
 	internal_t *dptr = arg->dst;
-#if defined(FREQ_SHIFT)
+
 	// 周波数変換は入出力周波数の比 (srcfreq / dstfreq) で計算を行う。
 	// そのまま分数で計算するのがシンプルだが、ここでは除算回数を減らす
 	// ため dstfreq を 65536 とした時の src/dst 比を用いる。
@@ -502,48 +455,6 @@ audio_track_freq_up(audio_filter_arg_t *arg)
 		track->freq_prev[ch] = prev[ch];
 		track->freq_curr[ch] = curr[ch];
 	}
-
-#elif defined(FREQ_ORIG)
-	audio_rational_t tmp = track->freq_current;
-	const internal_t *sptr1;
-
-	for (int i = 0; i < arg->count; i++) {
-		if (tmp.n == 0) {
-			if (src->count <= 0) {
-				break;
-			}
-			for (int ch = 0; ch < dst->fmt.channels; ch++) {
-				*dptr++ = sptr[ch];
-			}
-		} else {
-			sptr1 = sptr + src->fmt.channels;
-			if (src->count <= 1) {
-				break;
-			}
-			// 加算前の下駄 2^22 を脱ぐ
-			int b = tmp.n * track->freq_coef / (1 << 22);
-			int a = 256 - b;
-			for (int ch = 0; ch < dst->fmt.channels; ch++) {
-				// 加算後の下駄 2^8 を脱ぐ
-				*dptr++ = (sptr[ch] * a + sptr1[ch] * b) / 256;
-			}
-		}
-		dst->count++;
-		audio_rational_add(&tmp, &track->freq_step, dst->fmt.sample_rate);
-		if (tmp.i > 0) {
-			// 周波数を上げるので、ソース側は 1 以下のステップが保証されている
-			KASSERT(tmp.i == 1);
-			sptr += src->fmt.channels;
-			tmp.i = 0;
-			src->top++;
-			src->count--;
-		}
-	}
-
-	track->freq_current = tmp;
-#else
-#error unknown FREQ
-#endif
 }
 
 static void
@@ -562,7 +473,6 @@ audio_track_freq_down(audio_filter_arg_t *arg)
 
 	const internal_t *sptr0 = arg->src;
 	internal_t *dptr = arg->dst;
-#if defined(FREQ_SHIFT)
 	unsigned int t = track->freq_current;
 	unsigned int step = track->freq_step;
 	int nch = dst->fmt.channels;
@@ -580,30 +490,6 @@ audio_track_freq_down(audio_filter_arg_t *arg)
 	audio_ring_tookfromtop(src, src->count);
 	audio_ring_appended(dst, i);
 	track->freq_current = t % 65536;
-
-#elif defined(FREQ_ORIG)
-	audio_rational_t tmp = track->freq_current;
-	const internal_t *sptr1;
-	int src_taken = -1;
-
-	for (int i = 0; i < arg->count; i++) {
-		if (tmp.i >= src->count) {
-			break;
-		}
-		sptr1 = sptr0 + tmp.i * src->fmt.channels;
-		for (int ch = 0; ch < dst->fmt.channels; ch++) {
-			*dptr++ = sptr1[ch];
-		}
-		dst->count++;
-		src_taken = tmp.i;
-		audio_rational_add(&tmp, &track->freq_step, dst->fmt.sample_rate);
-	}
-	audio_ring_tookfromtop(src, src_taken + 1);
-	tmp.i = 0;
-	track->freq_current = tmp;
-#else
-#error unknown FREQ
-#endif
 }
 
 // トラックを初期化します。
@@ -864,7 +750,6 @@ init_freq(audio_track_t *track, audio_ring_t *last_dst)
 		track->freq.arg.srcfmt = &track->freq.srcbuf.fmt;
 		track->freq.arg.dstfmt = &last_dst->fmt;
 
-#if defined(FREQ_SHIFT)
 		memset(track->freq_prev, 0, sizeof(track->freq_prev));
 		memset(track->freq_curr, 0, sizeof(track->freq_curr));
 
@@ -887,23 +772,6 @@ init_freq(audio_track_t *track, audio_ring_t *last_dst)
 			// こっちは 0 からでいい
 			track->freq_current = 0;
 		}
-#elif defined(FREQ_ORIG)
-		track->freq_step.i = srcfreq / dstfreq;
-		track->freq_step.n = srcfreq % dstfreq;
-		audio_rational_clear(&track->freq_current);
-		// 除算をループから追い出すため、変換先周波数の逆数を求める。
-		// 変換先周波数の逆数を << (8 + 22) したもの
-		// 8 は加算後の下駄で、22 は加算前の下駄。
-		track->freq_coef = (1 << (8 + 22)) / dstfreq;
-
-		if (srcfreq < dstfreq) {
-			track->freq.filter = audio_track_freq_up;
-		} else {
-			track->freq.filter = audio_track_freq_down;
-		}
-#else
-#error unknown FREQ
-#endif
 		track->freq.dst = last_dst;
 		// 周波数のみ srcfreq
 		track->freq.srcbuf.fmt = *dstfmt;
@@ -1270,25 +1138,6 @@ audio_track_play(audio_track_t *track, bool isdrain)
 		}
 		if (track->freq.srcbuf.count > 0) {
 			audio_apply_stage(track, &track->freq, true);
-			// freq の入力はバッファ先頭から。
-			// サブフレームの問題があるので、top 位置以降の全域をずらす。
-#if !defined(FREQ_SHIFT)
-			// FREQ_SHIFT なら半端は出ないはず
-			if (track->freq.srcbuf.top != 0) {
-				KASSERTMSG(track->freq.srcbuf.top +
-				           track->freq.srcbuf.count <=
-				           track->freq.srcbuf.capacity,
-				    "srcbuf broken, %d/%d/%d",
-				    track->freq.srcbuf.top,
-				    track->freq.srcbuf.count,
-				    track->freq.srcbuf.capacity);
-				uint8_t *s = track->freq.srcbuf.sample;
-				uint8_t *p = RING_TOP_UINT8(&track->freq.srcbuf);
-				uint8_t *e = RING_END_UINT8(&track->freq.srcbuf);
-				memmove(s, p, e - p);
-				track->freq.srcbuf.top = 0;
-			}
-#endif
 		}
 		if (n > 0 && track->freq.srcbuf.count > 0) {
 			TRACET(track, "freq.srcbuf cleanup count=%d", track->freq.srcbuf.count);
@@ -2326,18 +2175,12 @@ audio_track_clear(struct audio_softc *sc, audio_track_t *track)
 		track->chmix.srcbuf.count = 0;
 	if (track->freq.filter) {
 		track->freq.srcbuf.count = 0;
-#if defined(FREQ_SHIFT)
 		if (track->freq_step < 65536)
 			track->freq_current = 65536;
 		else
 			track->freq_current = 0;
 		memset(track->freq_prev, 0, sizeof(track->freq_prev));
 		memset(track->freq_curr, 0, sizeof(track->freq_curr));
-#elif defined(FREQ_ORIG)
-		audio_rational_clear(&track->freq_current);
-#else
-#error unknown FREQ_*
-#endif
 	}
 	// バッファをクリアすれば動作は自然と停止する
 	mutex_enter(sc->sc_intr_lock);
