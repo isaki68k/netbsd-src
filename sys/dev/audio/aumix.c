@@ -348,6 +348,8 @@ audio_track_chmix_expand(audio_filter_arg_t *arg)
 // src->dst	44->48	8->48	48->44	48->8	[times/msec]
 // ORIG		 49.2	 60.8	 90.8	 608.0
 // SHIFT	 64.1	112.9	178.6	 977.1
+//  (x68k)	44->48	8->48	48->44	48->8	[times/sec]
+// SHIFT	 47.7	 64.8	128.5	 687.5
 
 static void
 audio_track_freq_up(audio_filter_arg_t *arg)
