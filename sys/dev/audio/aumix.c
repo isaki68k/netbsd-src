@@ -744,6 +744,8 @@ init_chvol(audio_track_t *track, audio_ring_t *last_dst)
 
 		// 周波数とチャンネル数がユーザ指定値。
 		track->chvol.srcbuf.fmt = *dstfmt;
+		track->chvol.srcbuf.top = 0;
+		track->chvol.srcbuf.count = 0;
 		track->chvol.srcbuf.capacity = frame_per_block_roundup(track->mixer, &track->chvol.srcbuf.fmt);
 		track->chvol.srcbuf.sample = audio_realloc(track->chvol.srcbuf.sample, RING_BYTELEN(&track->chvol.srcbuf));
 		if (track->chvol.srcbuf.sample == NULL) {
@@ -753,7 +755,8 @@ init_chvol(audio_track_t *track, audio_ring_t *last_dst)
 			goto done;
 		}
 
-		track->chvol.arg.count = track->chvol.srcbuf.capacity;
+		track->chvol.arg.srcfmt = &track->chvol.srcbuf.fmt;
+		track->chvol.arg.dstfmt = dstfmt;
 		track->chvol.arg.context = track->ch_volume;
 		return &track->chvol.srcbuf;
 	}
