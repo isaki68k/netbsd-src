@@ -641,16 +641,16 @@ static void
 pad_swvol_codec(audio_filter_arg_t *arg)
 {
 	struct pad_softc *sc = arg->context;
-	const internal_t *src;
-	internal_t *dst;
+	const aint_t *src;
+	aint_t *dst;
 	int i;
 
 	src = arg->src;
 	dst = arg->dst;
 	for (i = 0; i < arg->count; i++) {
-		internal2_t v = (internal2_t)(*src++);
+		aint2_t v = (aint2_t)(*src++);
 		v = v * sc->sc_swvol / 255;
-		*dst++ = (internal_t)v;
+		*dst++ = (aint_t)v;
 	}
 }
 

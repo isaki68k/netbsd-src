@@ -18,7 +18,7 @@
 
 // ring の bottom (= top + count、すなわち、最終有効フレームの次) フレームの
 // ポインタを求めます。
-// type が internal_t か internal2_t の場合のみ使用できます。
+// type が aint_t か aint2_t の場合のみ使用できます。
 // hwbuf のポインタはこちらではなく RING_BOT_UINT8() で取得してください。
 #define RING_BOT(type, ringptr) (((type*)(ringptr)->sample) + audio_ring_bottom(ringptr) * (ringptr)->fmt.channels)
 

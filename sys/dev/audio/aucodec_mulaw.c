@@ -137,11 +137,11 @@ mulaw_to_internal(audio_filter_arg_t *arg)
 	KASSERT(arg->srcfmt->channels == arg->dstfmt->channels);
 
 	const uint8_t *sptr = arg->src;
-	internal_t *dptr = arg->dst;
+	aint_t *dptr = arg->dst;
 
 	int sample_count = arg->count * arg->srcfmt->channels;
 	for (int i = 0; i < sample_count; i++) {
-		internal_t s;
+		aint_t s;
 		s = mulaw_to_slinear16[*sptr++];
 #if AUDIO_INTERNAL_BITS == 32
 		s *= 0x00010000;
@@ -160,12 +160,12 @@ internal_to_mulaw(audio_filter_arg_t *arg)
 	KASSERT(is_internal_format(arg->srcfmt));
 	KASSERT(arg->srcfmt->channels == arg->dstfmt->channels);
 
-	const internal_t *sptr = arg->src;
+	const aint_t *sptr = arg->src;
 	uint8_t *dptr = arg->dst;
 
 	int sample_count = arg->count * arg->srcfmt->channels;
 	for (int i = 0; i < sample_count; i++) {
-		internal_t s = *sptr++;
+		aint_t s = *sptr++;
 #if AUDIO_INTERNAL_BITS == 32
 		s >>= 16;
 #endif

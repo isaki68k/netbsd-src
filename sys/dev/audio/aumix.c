@@ -178,12 +178,12 @@ audio_track_chvol(audio_filter_arg_t *arg)
 	KASSERT(arg->srcfmt->channels <= AUDIO_MAX_CHANNELS);
 
 	int16_t *ch_volume = arg->context;
-	const internal_t *sptr = arg->src;
-	internal_t *dptr = arg->dst;
+	const aint_t *sptr = arg->src;
+	aint_t *dptr = arg->dst;
 
 	for (int i = 0; i < arg->count; i++) {
 		for (int ch = 0; ch < arg->srcfmt->channels; ch++, sptr++, dptr++) {
-			*dptr = (internal_t)(((internal2_t)*sptr) * ch_volume[ch] / 256);
+			*dptr = (aint_t)(((aint2_t)*sptr) * ch_volume[ch] / 256);
 		}
 	}
 }
@@ -193,20 +193,20 @@ audio_track_chmix_mixLR(audio_filter_arg_t *arg)
 {
 	KASSERT(is_valid_filter_arg(arg));
 
-	const internal_t *sptr = arg->src;
-	internal_t *dptr = arg->dst;
+	const aint_t *sptr = arg->src;
+	aint_t *dptr = arg->dst;
 
 	// L と R、2つのサンプルの算術平均を取る。
 	//  mixed = (L + R) / 2;
 	// のように先に加算をしてしまうと整数オーバーフローが起きうる。
-	// internal2_t にキャストしてから演算すれば問題ないが、このために
+	// aint2_t にキャストしてから演算すれば問題ないが、このために
 	// そこまでするかという気はする。
 	//
 	// そこで L と R を先に割っておいてから足す。
 	//  mixed = (L / 2) + (R / 2);  // (1)
 	// この式で例えば L = 1, R = 1 の場合数学的には答えは1 になってほしいが
 	// 先に切り捨てが起きるため答えは 0 となり、誤差は全域で最大
-	// (internal_t が 16bit の場合) 1/65536 (かな?)。
+	// (aint_t が 16bit の場合) 1/65536 (かな?)。
 	//
 	// ところで C で負数の除算は 0 方向への丸めと定義されているため、
 	// アセンブラの算術右シフトだけでは実現できず (算術右シフトはマイナス
@@ -220,7 +220,7 @@ audio_track_chmix_mixLR(audio_filter_arg_t *arg)
 	// https://gcc.gnu.org/onlinedocs/gcc-5.5.0/gcc/ (section 4.5)
 	// もし許されるなら使いたいところ。
 	//  mixed = (L >> 1) + (R >> 1); // (2)
-	// この場合の誤差は負領域のみで最大 (internal_t が 16bit の場合)
+	// この場合の誤差は負領域のみで最大 (aint_t が 16bit の場合)
 	// 1/65536 (かな?)。
 	//
 	//	amd64 [times/msec]	x68k [times/sec]
@@ -243,8 +243,8 @@ audio_track_chmix_dupLR(audio_filter_arg_t *arg)
 {
 	KASSERT(is_valid_filter_arg(arg));
 
-	const internal_t *sptr = arg->src;
-	internal_t *dptr = arg->dst;
+	const aint_t *sptr = arg->src;
+	aint_t *dptr = arg->dst;
 
 	for (int i = 0; i < arg->count; i++) {
 		dptr[0] = sptr[0];
@@ -268,8 +268,8 @@ audio_track_chmix_shrink(audio_filter_arg_t *arg)
 {
 	KASSERT(is_valid_filter_arg(arg));
 
-	const internal_t *sptr = arg->src;
-	internal_t *dptr = arg->dst;
+	const aint_t *sptr = arg->src;
+	aint_t *dptr = arg->dst;
 
 	for (int i = 0; i < arg->count; i++) {
 		for (int ch = 0; ch < arg->dstfmt->channels; ch++) {
@@ -284,8 +284,8 @@ audio_track_chmix_expand(audio_filter_arg_t *arg)
 {
 	KASSERT(is_valid_filter_arg(arg));
 
-	const internal_t *sptr = arg->src;
-	internal_t *dptr = arg->dst;
+	const aint_t *sptr = arg->src;
+	aint_t *dptr = arg->dst;
 
 	for (int i = 0; i < arg->count; i++) {
 		for (int ch = 0; ch < arg->srcfmt->channels; ch++) {
@@ -350,8 +350,8 @@ audio_track_freq_up(audio_filter_arg_t *arg)
 	KASSERT(src->fmt.channels == dst->fmt.channels);
 	KASSERT(src->top % track->mixer->frames_per_block == 0);
 
-	const internal_t *sptr = arg->src;
-	internal_t *dptr = arg->dst;
+	const aint_t *sptr = arg->src;
+	aint_t *dptr = arg->dst;
 
 	// 補間はブロック単位での処理がしやすいように入力を1サンプルずらして(?)
 	// 補間を行なっている。このため厳密には位相が 1/dstfreq 分だけ遅れる
@@ -377,9 +377,9 @@ audio_track_freq_up(audio_filter_arg_t *arg)
 	 *  0 1 2 3 4 5
 	 */
 
-	internal_t prev[AUDIO_MAX_CHANNELS];
-	internal_t curr[AUDIO_MAX_CHANNELS];
-	internal_t grad[AUDIO_MAX_CHANNELS];
+	aint_t prev[AUDIO_MAX_CHANNELS];
+	aint_t curr[AUDIO_MAX_CHANNELS];
+	aint_t grad[AUDIO_MAX_CHANNELS];
 	unsigned int t;
 	int step = track->freq_step;
 	u_int channels;
@@ -432,7 +432,7 @@ audio_track_freq_up(audio_filter_arg_t *arg)
 		}
 
 		for (ch = 0; ch < channels; ch++) {
-			*dptr++ = prev[ch] + (internal2_t)grad[ch] * t / 65536;
+			*dptr++ = prev[ch] + (aint2_t)grad[ch] * t / 65536;
 #if defined(FREQ_DEBUG)
 			if (ch == 0)
 				printf(" t=%5d *d=%d", t, dptr[-1]);
@@ -472,15 +472,15 @@ audio_track_freq_down(audio_filter_arg_t *arg)
 	KASSERT(src->fmt.channels == dst->fmt.channels);
 	KASSERT(src->top % track->mixer->frames_per_block == 0);
 
-	const internal_t *sptr0 = arg->src;
-	internal_t *dptr = arg->dst;
+	const aint_t *sptr0 = arg->src;
+	aint_t *dptr = arg->dst;
 	unsigned int t = track->freq_current;
 	unsigned int step = track->freq_step;
 	int nch = dst->fmt.channels;
 
 	int i;
 	for (i = 0; i < arg->count && t / 65536 < src->count; i++) {
-		const internal_t *sptr1;
+		const aint_t *sptr1;
 		sptr1 = sptr0 + (t / 65536) * nch;
 		for (int ch = 0; ch < nch; ch++) {
 			*dptr++ = sptr1[ch];
@@ -996,7 +996,7 @@ audio_append_silence(audio_track_t *track, audio_ring_t *ring)
 	
 	KASSERT(audio_ring_unround_free_count(ring) >= n);
 
-	memset(RING_BOT_UINT8(ring), 0, n * ring->fmt.channels * sizeof(internal_t));
+	memset(RING_BOT_UINT8(ring), 0, n * ring->fmt.channels * sizeof(aint_t));
 	audio_ring_appended(ring, n);
 	return n;
 }
@@ -1013,7 +1013,7 @@ audio_append_silence(audio_track_t *track, audio_ring_t *ring)
 //	1 のユーザランド側フィルタはすべて audio layer が責任を持っています
 //	ので MD ドライバは通常使用することはありません。ただし HW フォーマット
 //	が mulaw なデバイスのように、audio layer が持っている
-//	mulaw <-> internal_t 変換関数をそのまま利用できる場合にはこれを使用
+//	mulaw <-> aint_t 変換関数をそのまま利用できる場合にはこれを使用
 //	することが可能です。
 //
 //	audio layer が MD ドライバに受け渡すフォーマットは内部形式と呼ぶもので、
@@ -1050,7 +1050,7 @@ audio_append_silence(audio_track_t *track, audio_ring_t *ring)
 //	arg->srcfmt, arg->dstfmt には入出力のフォーマットが記述されています。
 //	通常フィルタは自分自身が何から何への変換なのかを知っているので入出力
 //	フォーマットをチェックする必要はないでしょう (例えば mulaw から
-//	internal_t への変換、など)。一方リニア PCM から internal_t への変換を
+//	aint_t への変換、など)。一方リニア PCM から aint_t への変換を
 //	すべて受け持つフィルタの場合は srcfmt をチェックする必要があるでしょう。
 //
 //	context はフィルタ自身が自由に使用可能なポインタです。audio layer は
@@ -1662,8 +1662,8 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req,
 
 	KASSERT(audio_ring_unround_count(&track->outputbuf) >= count);
 
-	internal_t *sptr = RING_TOP(internal_t, &track->outputbuf);
-	internal2_t *dptr = mixer->mixsample;
+	aint_t *sptr = RING_TOP(aint_t, &track->outputbuf);
+	aint2_t *dptr = mixer->mixsample;
 
 	/* 整数倍精度へ変換し、トラックボリュームを適用して加算合成 */
 	int sample_count = count * mixer->mixfmt.channels;
@@ -1671,22 +1671,22 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req,
 		// 最初のトラック合成は代入
 		if (track->volume == 256) {
 			for (int i = 0; i < sample_count; i++) {
-				*dptr++ = ((internal2_t)*sptr++);
+				*dptr++ = ((aint2_t)*sptr++);
 			}
 		} else {
 			for (int i = 0; i < sample_count; i++) {
-				*dptr++ = ((internal2_t)*sptr++) * track->volume / 256;
+				*dptr++ = ((aint2_t)*sptr++) * track->volume / 256;
 			}
 		}
 	} else {
 		// 2本め以降なら加算合成
 		if (track->volume == 256) {
 			for (int i = 0; i < sample_count; i++) {
-				*dptr++ += ((internal2_t)*sptr++);
+				*dptr++ += ((aint2_t)*sptr++);
 			}
 		} else {
 			for (int i = 0; i < sample_count; i++) {
-				*dptr++ += ((internal2_t)*sptr++) * track->volume / 256;
+				*dptr++ += ((aint2_t)*sptr++) * track->volume / 256;
 			}
 		}
 	}
@@ -1722,12 +1722,12 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req,
  *
  *           track track ...
  *               v v
- *                +  mix (with internal2_t)
- *                |  master volume (with internal2_t)
+ *                +  mix (with aint2_t)
+ *                |  master volume (with aint2_t)
  *                v
  *    mixsample [::::]                  double-sized 1 block (ring) buffer
  *                |
- *                |  convert internal2_t -> internal_t
+ *                |  convert aint2_t -> aint_t
  *                v
  *    codecbuf  [....]                  1 block (ring) buffer
  *                |
@@ -1739,7 +1739,7 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req,
  *
  *    mixsample [::::]                  double-sized 1 block (ring) buffer
  *                |
- *                |  convert internal2_t -> internal_t
+ *                |  convert aint2_t -> aint_t
  *                v
  *    hwbuf     [............]          N blocks ring buffer
  *
@@ -1761,7 +1761,7 @@ audio_pmixer_process(struct audio_softc *sc, bool isintr)
 {
 	audio_trackmixer_t *mixer;
 	int mixed;
-	internal2_t *mptr;
+	aint2_t *mptr;
 
 	mixer = sc->sc_pmixer;
 
@@ -1787,8 +1787,8 @@ audio_pmixer_process(struct audio_softc *sc, bool isintr)
 		    frametobyte(&mixer->mixfmt, frame_count));
 	} else {
 		// オーバーフロー検出
-		internal2_t ovf_plus = AUDIO_INTERNAL_T_MAX;
-		internal2_t ovf_minus = AUDIO_INTERNAL_T_MIN;
+		aint2_t ovf_plus = AINT_T_MAX;
+		aint2_t ovf_minus = AINT_T_MIN;
 
 		mptr = mixer->mixsample;
 
@@ -1801,15 +1801,15 @@ audio_pmixer_process(struct audio_softc *sc, bool isintr)
 
 		// マスタボリュームの自動制御
 		int vol = mixer->volume;
-		if (ovf_plus > (internal2_t)AUDIO_INTERNAL_T_MAX
-		 || ovf_minus < (internal2_t)AUDIO_INTERNAL_T_MIN) {
-			// TODO: AUDIO_INTERNAL2_T_MIN チェック?
-			internal2_t ovf = ovf_plus;
+		if (ovf_plus > (aint2_t)AINT_T_MAX
+		 || ovf_minus < (aint2_t)AINT_T_MIN) {
+			// TODO: AINT2_T_MIN チェック?
+			aint2_t ovf = ovf_plus;
 			if (ovf < -ovf_minus) ovf = -ovf_minus;
 
 			// オーバーフローしてたら少なくとも今回はボリュームを
 			// 下げる
-			int vol2 = (int)((internal2_t)AUDIO_INTERNAL_T_MAX * 256 / ovf);
+			int vol2 = (int)((aint2_t)AINT_T_MAX * 256 / ovf);
 			if (vol2 < vol) vol = vol2;
 
 			if (vol < mixer->volume) {
@@ -1840,12 +1840,12 @@ audio_pmixer_process(struct audio_softc *sc, bool isintr)
 	int need_exit = mutex_tryenter(sc->sc_intr_lock);
 
 	mptr = mixer->mixsample;
-	internal_t *hptr;
-	// MD 側フィルタがあれば internal2_t -> internal_t を codecbuf へ
+	aint_t *hptr;
+	// MD 側フィルタがあれば aint2_t -> aint_t を codecbuf へ
 	if (mixer->codec) {
-		hptr = RING_BOT(internal_t, &mixer->codecbuf);
+		hptr = RING_BOT(aint_t, &mixer->codecbuf);
 	} else {
-		hptr = RING_BOT(internal_t, &mixer->hwbuf);
+		hptr = RING_BOT(aint_t, &mixer->hwbuf);
 	}
 
 	for (int i = 0; i < sample_count; i++) {
@@ -2083,8 +2083,8 @@ audio_rmixer_process(struct audio_softc *sc)
 		}
 		KASSERT(input->count % mixer->frames_per_block == 0);
 
-		memcpy(RING_BOT(internal_t, input),
-		    RING_TOP(internal_t, mixersrc),
+		memcpy(RING_BOT(aint_t, input),
+		    RING_TOP(aint_t, mixersrc),
 		    bytes);
 		audio_ring_appended(input, count);
 

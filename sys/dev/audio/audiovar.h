@@ -134,8 +134,8 @@ struct audio_track {
 	u_int		freq_step;	// 周波数変換用、周期比
 	u_int		freq_current;	// 周波数変換用、現在のカウンタ
 	u_int		freq_leap;	// 周波数変換用、補正値
-	internal_t	freq_prev[AUDIO_MAX_CHANNELS];	// 前回値
-	internal_t	freq_curr[AUDIO_MAX_CHANNELS];	// 直近値
+	aint_t		freq_prev[AUDIO_MAX_CHANNELS];	// 前回値
+	aint_t		freq_curr[AUDIO_MAX_CHANNELS];	// 直近値
 
 	uint16_t ch_volume[AUDIO_MAX_CHANNELS];	/* channel volume(0..256) */
 	u_int		volume;		/* track volume (0..256) */

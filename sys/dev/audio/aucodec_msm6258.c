@@ -44,7 +44,7 @@ struct msm6258_codecvar {
 
 	// フレーム境界がバイト境界にないため、1 サンプルをここでキューする。
 	// ドレイン時にはドロップされるが、許容する。
-	internal_t pending_sample;
+	aint_t pending_sample;
 	bool is_pending;
 };
 
@@ -154,14 +154,14 @@ internal_to_msm6258(audio_filter_arg_t *arg)
 	KASSERT(arg->srcfmt->channels == arg->dstfmt->channels);
 	KASSERT((arg->count & 1) == 0);
 
-	const internal_t *sptr = arg->src;
+	const aint_t *sptr = arg->src;
 	uint8_t *dptr = arg->dst;
 	int sample_count = arg->count * arg->srcfmt->channels;
 
 	struct msm6258_codecvar *mc = arg->context;
 
 	for (int i = 0; i < sample_count / 2; i++) {
-		internal_t s;
+		aint_t s;
 		uint8_t f;
 
 		s = *sptr++;
@@ -223,14 +223,14 @@ msm6258_to_internal(audio_filter_arg_t *arg)
 	KASSERT((arg->count & 1) == 0);
 
 	const uint8_t *sptr = arg->src;
-	internal_t *dptr = arg->dst;
+	aint_t *dptr = arg->dst;
 	int sample_count = arg->count * arg->srcfmt->channels;
 
 	struct msm6258_codecvar *mc = arg->context;
 
 	for (int i = 0; i < sample_count / 2; i++) {
 		uint8_t a = *sptr++;
-		internal_t s;
+		aint_t s;
 
 		s = adpcm2pcm_step(mc, a & 0x0f);
 #if AUDIO_INTERNAL_BITS == 32

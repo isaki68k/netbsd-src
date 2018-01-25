@@ -6,21 +6,21 @@
 
 #if AUDIO_INTERNAL_BITS == 16
 
-typedef int16_t internal_t;
-typedef uint16_t uinternal_t;
-typedef int32_t internal2_t;
-typedef uint32_t uinternal2_t;
-#define AUDIO_INTERNAL_T_MAX	((internal_t)0x7fff)
-#define AUDIO_INTERNAL_T_MIN	((internal_t)0x8000)
+typedef int16_t  aint_t;	/* audio          integer */
+typedef uint16_t auint_t;	/* audio unsigned integer */
+typedef int32_t  aint2_t;	/* audio          wide integer */
+typedef uint32_t auint2_t;	/* audio unsigned wide integer */
+#define AINT_T_MAX	((aint_t)0x7fff)
+#define AINT_T_MIN	((aint_t)0x8000)
 
 #elif AUDIO_INTERNAL_BITS == 32
 
-typedef int32_t internal_t;
-typedef uint32_t uinternal_t;
-typedef int64_t internal2_t;
-typedef uint64_t uinternal2_t;
-#define AUDIO_INTERNAL_T_MAX	((internal_t)0x7fffffff)
-#define AUDIO_INTERNAL_T_MIN	((internal_t)0x80000000)
+typedef int32_t  aint_t;
+typedef uint32_t auint_t;
+typedef int64_t  aint2_t;
+typedef uint64_t auint2_t;
+#define AINT_T_MAX	((aint_t)0x7fffffff)
+#define AINT_T_MIN	((aint_t)0x80000000)
 
 #else
 #error Invalid AUDIO_INTERNAL_BITS

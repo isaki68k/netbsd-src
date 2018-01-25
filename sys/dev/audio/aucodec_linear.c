@@ -29,15 +29,15 @@ linear8_to_internal(audio_filter_arg_t *arg)
 	KASSERT(arg->srcfmt->channels == arg->dstfmt->channels);
 
 	const uint8_t *sptr = arg->src;
-	internal_t *dptr = arg->dst;
+	aint_t *dptr = arg->dst;
 	int sample_count = arg->count * arg->srcfmt->channels;
 
 	int src_lsl = AUDIO_INTERNAL_BITS - arg->srcfmt->precision;
 	/* unsigned convert to signed */
-	uinternal_t xor = is_SIGNED(arg->srcfmt) ? 0 : (1 << (AUDIO_INTERNAL_BITS - 1));
+	auint_t xor = is_SIGNED(arg->srcfmt) ? 0 : (1 << (AUDIO_INTERNAL_BITS - 1));
 
 	for (int i = 0; i < sample_count; i++) {
-		internal_t s;
+		aint_t s;
 		s = *sptr++;
 		s <<= src_lsl;
 		s ^= xor;
@@ -57,16 +57,16 @@ internal_to_linear8(audio_filter_arg_t *arg)
 	KASSERT(is_internal_format(arg->srcfmt));
 	KASSERT(arg->srcfmt->channels == arg->dstfmt->channels);
 
-	const internal_t *sptr = arg->src;
+	const aint_t *sptr = arg->src;
 	uint8_t *dptr = arg->dst;
 	int sample_count = arg->count * arg->srcfmt->channels;
 
 	int src_lsr = AUDIO_INTERNAL_BITS - arg->dstfmt->precision;
 	/* unsigned convert to signed */
-	uinternal_t xor = is_SIGNED(arg->dstfmt) ? 0 : (1 << (AUDIO_INTERNAL_BITS - 1));
+	auint_t xor = is_SIGNED(arg->dstfmt) ? 0 : (1 << (AUDIO_INTERNAL_BITS - 1));
 
 	for (int i = 0; i < sample_count; i++) {
-		internal_t s;
+		aint_t s;
 		s = *sptr++;
 		s ^= xor;
 		s >>= src_lsr;
@@ -87,12 +87,12 @@ linear16_to_internal(audio_filter_arg_t *arg)
 	KASSERT(arg->srcfmt->channels == arg->dstfmt->channels);
 
 	const uint16_t *sptr = arg->src;
-	internal_t *dptr = arg->dst;
+	aint_t *dptr = arg->dst;
 	int sample_count = arg->count * arg->srcfmt->channels;
 
 	int src_lsl = AUDIO_INTERNAL_BITS - arg->srcfmt->precision;
 	/* unsigned convert to signed */
-	uinternal_t xor = is_SIGNED(arg->srcfmt) ? 0 : (1 << (AUDIO_INTERNAL_BITS - 1));
+	auint_t xor = is_SIGNED(arg->srcfmt) ? 0 : (1 << (AUDIO_INTERNAL_BITS - 1));
 
 	/* 16bit だけ高速化するとかでも良いかもしれない。 */
 	if (data_ENDIAN(arg->srcfmt) == BYTE_ORDER) {
@@ -152,13 +152,13 @@ internal_to_linear16(audio_filter_arg_t *arg)
 	KASSERT(is_internal_format(arg->srcfmt));
 	KASSERT(arg->srcfmt->channels == arg->dstfmt->channels);
 
-	const internal_t *sptr = arg->src;
+	const aint_t *sptr = arg->src;
 	uint16_t *dptr = arg->dst;
 	int sample_count = arg->count * arg->srcfmt->channels;
 
 	int src_lsr = AUDIO_INTERNAL_BITS - arg->dstfmt->precision;
 	/* unsigned convert to signed */
-	uinternal_t xor = is_SIGNED(arg->dstfmt) ? 0 : (1 << (AUDIO_INTERNAL_BITS - 1));
+	auint_t xor = is_SIGNED(arg->dstfmt) ? 0 : (1 << (AUDIO_INTERNAL_BITS - 1));
 
 	/* 16bit だけ高速化するとかでも良いかもしれない。 */
 	if (data_ENDIAN(arg->srcfmt) == BYTE_ORDER) {
@@ -219,13 +219,13 @@ linear24_to_internal(audio_filter_arg_t *arg)
 	KASSERT(arg->srcfmt->channels == arg->dstfmt->channels);
 
 	const uint8_t *sptr = arg->src;
-	internal_t *dptr = arg->dst;
+	aint_t *dptr = arg->dst;
 	int sample_count = arg->count * arg->srcfmt->channels;
 
 	/* 一旦 32bit にする */
 	int src_lsl = 32 - arg->srcfmt->precision;
 	/* unsigned convert to signed */
-	uinternal_t xor = is_SIGNED(arg->srcfmt) ? 0 : (1 << (AUDIO_INTERNAL_BITS - 1));
+	auint_t xor = is_SIGNED(arg->srcfmt) ? 0 : (1 << (AUDIO_INTERNAL_BITS - 1));
 
 	/* 遅くてもコードサイズを優先して目をつぶる */
 
@@ -244,7 +244,7 @@ linear24_to_internal(audio_filter_arg_t *arg)
 #if AUDIO_INTERNAL_BITS == 16
 		u >>= 16;
 #endif
-		internal_t s = u;
+		aint_t s = u;
 		s ^= xor;
 		*dptr++ = s;
 	}
@@ -262,21 +262,21 @@ internal_to_linear24(audio_filter_arg_t *arg)
 	KASSERT(is_internal_format(arg->srcfmt));
 	KASSERT(arg->srcfmt->channels == arg->dstfmt->channels);
 
-	const internal_t *sptr = arg->src;
+	const aint_t *sptr = arg->src;
 	uint8_t *dptr = arg->dst;
 	int sample_count = arg->count * arg->srcfmt->channels;
 
 	/* 一旦 32bit にする */
 	int src_lsr = 32 - arg->dstfmt->precision;
 	/* unsigned convert to signed */
-	uinternal_t xor = is_SIGNED(arg->dstfmt) ? 0 : (1 << (AUDIO_INTERNAL_BITS - 1));
+	auint_t xor = is_SIGNED(arg->dstfmt) ? 0 : (1 << (AUDIO_INTERNAL_BITS - 1));
 
 	/* 遅くてもコードサイズを優先して目をつぶる */
 
 	bool is_dst_LE = (data_ENDIAN(arg->dstfmt) == LITTLE_ENDIAN);
 
 	for (int i = 0; i < sample_count; i++) {
-		internal_t s = *sptr++;
+		aint_t s = *sptr++;
 		s ^= xor;
 		uint32_t u = s;
 #if AUDIO_INTERNAL_BITS == 16
@@ -309,12 +309,12 @@ linear32_to_internal(audio_filter_arg_t *arg)
 	KASSERT(arg->srcfmt->channels == arg->dstfmt->channels);
 
 	const uint32_t *sptr = arg->src;
-	internal_t *dptr = arg->dst;
+	aint_t *dptr = arg->dst;
 	int sample_count = arg->count * arg->srcfmt->channels;
 
 	int src_lsl = 32 - arg->srcfmt->precision;
 	/* unsigned convert to signed */
-	uinternal_t xor = is_SIGNED(arg->srcfmt) ? 0 : (1 << (AUDIO_INTERNAL_BITS - 1));
+	auint_t xor = is_SIGNED(arg->srcfmt) ? 0 : (1 << (AUDIO_INTERNAL_BITS - 1));
 
 	/* 遅くてもコードサイズを優先して目をつぶる */
 
@@ -329,7 +329,7 @@ linear32_to_internal(audio_filter_arg_t *arg)
 #if AUDIO_INTERNAL_BITS == 16
 		u >>= 16;
 #endif
-		internal_t s = u;
+		aint_t s = u;
 		s ^= xor;
 		*dptr++ = s;
 	}
@@ -347,20 +347,20 @@ internal_to_linear32(audio_filter_arg_t *arg)
 	KASSERT(is_internal_format(arg->srcfmt));
 	KASSERT(arg->srcfmt->channels == arg->dstfmt->channels);
 
-	const internal_t *sptr = arg->src;
+	const aint_t *sptr = arg->src;
 	uint32_t *dptr = arg->dst;
 	int sample_count = arg->count * arg->srcfmt->channels;
 
 	int src_lsr = 32 - arg->dstfmt->precision;
 	/* unsigned convert to signed */
-	uinternal_t xor = is_SIGNED(arg->dstfmt) ? 0 : (1 << (AUDIO_INTERNAL_BITS - 1));
+	auint_t xor = is_SIGNED(arg->dstfmt) ? 0 : (1 << (AUDIO_INTERNAL_BITS - 1));
 
 	/* 遅くてもコードサイズを優先して目をつぶる */
 
 	bool is_dst_HE = (data_ENDIAN(arg->dstfmt) == BYTE_ORDER);
 
 	for (int i = 0; i < sample_count; i++) {
-		internal_t s = *sptr++;
+		aint_t s = *sptr++;
 		s ^= xor;
 		uint32_t u = s;
 #if AUDIO_INTERNAL_BITS == 16
