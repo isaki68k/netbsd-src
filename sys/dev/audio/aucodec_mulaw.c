@@ -2,22 +2,10 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "compat.h"
-
 #include "auring.h"
 #include "auformat.h"
 #include "aucodec.h"
 #endif // !_KERNEL
-
-
-/*
-* ***** 変換関数 *****
-* 変換関数では、
-* arg->src の arg->count 個の有効フレームと
-* arg->dst の arg->count 個の空きフレームに
-* アンラウンディングでアクセス出来ることを呼び出し側が保証します。
-* 変換に伴い、arg->src, arg->dst の ring ポインタを進めてください。
-* src から読み取られたフレーム数を count にセットしてください。(等しい場合は何もしなくていい)
-*/
 
 /* XXX: 値がおかしい? */
 static const uint16_t mulaw_to_slinear16[256] = {
