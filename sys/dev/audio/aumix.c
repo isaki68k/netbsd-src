@@ -584,12 +584,22 @@ audio_track_destroy(audio_track_t *track)
 bool
 is_valid_filter_arg(const audio_filter_arg_t *arg)
 {
-	if (arg == NULL) return false;
-	if (!is_valid_format(arg->srcfmt)) return false;
-	if (!is_valid_format(arg->dstfmt)) return false;
-	if (arg->src == NULL) return false;
-	if (arg->dst == NULL) return false;
-	if (arg->count <= 0) return false;
+	KASSERT(arg != NULL);
+
+	KASSERT(arg->src != NULL);
+	KASSERT(arg->dst != NULL);
+	if (!is_valid_format(arg->srcfmt)) {
+		printf("%s: invalid srcfmt\n", __func__);
+		return false;
+	}
+	if (!is_valid_format(arg->dstfmt)) {
+		printf("%s: invalid dstfmt\n", __func__);
+		return false;
+	}
+	if (arg->count <= 0) {
+		printf("%s: count(%d) < 0\n", __func__, arg->count);
+		return false;
+	}
 	return true;
 }
 
