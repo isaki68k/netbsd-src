@@ -297,12 +297,11 @@ audio_track_chmix_expand(audio_filter_arg_t *arg)
 	}
 }
 
-// AUDIO_ASSERT なしで main.c による計測。
+// AUDIO_DEBUG=1、AUDIO_ASSERT なしで main.c による計測。
 //
-//  (amd64)	44->48	8->48	48->44	48->8	[times/msec]
-// SHIFT	 64.1	112.9	178.6	 977.1
-//  (x68k)	44->48	8->48	48->44	48->8	[times/sec]
-// SHIFT	 47.7	 64.8	128.5	 687.5
+//        44->48    8->48   48->44    48->8	[times/msec]
+// amd64    70.9    113.4    177.8    984.8	Pentium DC E5400/2.7GHz
+// x68k    0.048    0.065    0.129    0.688	68030/30MHz
 
 static void
 audio_track_freq_up(audio_filter_arg_t *arg)
@@ -1069,7 +1068,7 @@ audio_append_silence(audio_track_t *track, audio_ring_t *ring)
 //
 
 // 変換ステージを実行します。
-// stage があれば(stage->filter != NULL なら)、このステージの変換を行います。
+// stage->filter != NULL の時だけ呼び出してください。
 // stage から arg を用意して stage->filter を処理します。
 // 周波数変換なら src, dst のカウンタはフィルタ側で進めてください。
 // 周波数変換以外なら src, dst のカウンタはここで進めます。
@@ -1077,33 +1076,32 @@ static void
 audio_apply_stage(audio_track_t *track, audio_stage_t *stage, bool isfreq)
 {
 	KASSERT(track);
+	KASSERT(stage->filter);
 
-	if (stage->filter != NULL) {
-		int srccount = audio_ring_unround_count(&stage->srcbuf);
-		int dstcount = audio_ring_unround_free_count(stage->dst);
-		
-		int count;
-		if (isfreq) {
-			KASSERTMSG(srccount > 0,
-			    "freq but srccount == %d", srccount);
-			count = min(dstcount, track->mixer->frames_per_block);
-		} else {
-			count = min(srccount, dstcount);
-		}
+	int srccount = audio_ring_unround_count(&stage->srcbuf);
+	int dstcount = audio_ring_unround_free_count(stage->dst);
+	int count;
 
-		if (count > 0) {
-			audio_filter_arg_t *arg = &stage->arg;
+	if (isfreq) {
+		KASSERTMSG(srccount > 0,
+		    "freq but srccount == %d", srccount);
+		count = min(dstcount, track->mixer->frames_per_block);
+	} else {
+		count = min(srccount, dstcount);
+	}
 
-			arg->src = RING_TOP_UINT8(&stage->srcbuf);
-			arg->dst = RING_BOT_UINT8(stage->dst);
-			arg->count = count;
+	if (count > 0) {
+		audio_filter_arg_t *arg = &stage->arg;
 
-			stage->filter(arg);
+		arg->src = RING_TOP_UINT8(&stage->srcbuf);
+		arg->dst = RING_BOT_UINT8(stage->dst);
+		arg->count = count;
 
-			if (!isfreq) {
-				audio_ring_tookfromtop(&stage->srcbuf, count);
-				audio_ring_appended(stage->dst, count);
-			}
+		stage->filter(arg);
+
+		if (!isfreq) {
+			audio_ring_tookfromtop(&stage->srcbuf, count);
+			audio_ring_appended(stage->dst, count);
 		}
 	}
 }
@@ -1186,17 +1184,20 @@ audio_track_play(audio_track_t *track, bool isdrain)
 		audio_ring_tookfromtop(usrbuf, bytes2);
 	}
 
-	/* エンコーディング変換 */
-	audio_apply_stage(track, &track->codec, false);
+	// エンコーディング変換
+	if (track->codec.filter)
+		audio_apply_stage(track, &track->codec, false);
 
-	/* チャンネルボリューム */
-	audio_apply_stage(track, &track->chvol, false);
+	// チャンネルボリューム
+	if (track->chvol.filter)
+		audio_apply_stage(track, &track->chvol, false);
 
-	/* チャンネルミキサ */
-	audio_apply_stage(track, &track->chmix, false);
+	// チャンネルミキサ
+	if (track->chmix.filter)
+		audio_apply_stage(track, &track->chmix, false);
 
-	/* 周波数変換 */
-	if (track->freq.filter != NULL) {
+	// 周波数変換
+	if (track->freq.filter) {
 		int n = 0;
 		if (isdrain) {
 			n = audio_append_silence(track, &track->freq.srcbuf);
@@ -1252,7 +1253,7 @@ audio_track_record(audio_track_t *track)
 	}
 
 	// 周波数変換
-	if (track->freq.filter != NULL) {
+	if (track->freq.filter) {
 		if (track->freq.srcbuf.count > 0) {
 			audio_apply_stage(track, &track->freq, true);
 			// XXX freq の入力は先頭からでなくてよいか?
@@ -1260,13 +1261,16 @@ audio_track_record(audio_track_t *track)
 	}
 
 	// チャンネルミキサ
-	audio_apply_stage(track, &track->chmix, false);
+	if (track->chmix.filter)
+		audio_apply_stage(track, &track->chmix, false);
 
 	// チャンネルボリューム
-	audio_apply_stage(track, &track->chvol, false);
+	if (track->chvol.filter)
+		audio_apply_stage(track, &track->chvol, false);
 
 	// エンコーディング変換
-	audio_apply_stage(track, &track->codec, false);
+	if (track->codec.filter)
+		audio_apply_stage(track, &track->codec, false);
 
 	// outputbuf から usrbuf へ
 	audio_ring_t *outputbuf = &track->outputbuf;
