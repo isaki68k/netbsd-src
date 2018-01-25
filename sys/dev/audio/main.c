@@ -71,7 +71,7 @@ int cmd_perf_freq_up();
 int cmd_perf_freq_down();
 int cmd_perf_freq_main(struct freqdata *);
 int cmd_perf_chmix_mixLR();
-int parse_file(struct test_file *, FILE *, const char *, int);
+int parse_file(struct test_file *, FILE *, const char *);
 uint16_t lebe16toh(uint16_t);
 uint32_t lebe32toh(uint32_t);
 const char *fmt_tostring(const audio_format2_t *);
@@ -85,7 +85,6 @@ struct test_file files[16];
 int debug;
 int rifx;
 int fileidx;
-int freq;
 int opt_wait;	// 1ファイルごとの開始ディレイ
 int opt_vol;
 int audio_blk_ms;
@@ -102,7 +101,6 @@ usage()
 	printf(" -D <dev>  device name (default: /dev/sound)\n");
 #endif
 	printf(" -d        debug\n");
-	printf(" -f <freq> set ADPCM frequency\n");
 	printf(" -m <msec> AUDIO_BLK_MS (default: 40)\n");
 	printf(" -w <cnt>  delay block count for each files\n");
 	printf(" -v <vol>  track volume (0..256)\n");
@@ -127,7 +125,6 @@ main(int ac, char *av[])
 	ac -= 1;
 	av += 1;
 
-	freq = 15625;
 	opt_vol = 256;
 	audio_blk_ms = 40;
 #if !defined(_WIN32)
@@ -148,13 +145,6 @@ main(int ac, char *av[])
 #endif
 		if (strcmp(av[i], "-d") == 0) {
 			debug++;
-			continue;
-		}
-		if (strcmp(av[i], "-f") == 0) {
-			i++;
-			if (i == ac)
-				usage();
-			freq = atoi(av[i]);
 			continue;
 		}
 		if (strcmp(av[i], "-m") == 0) {
@@ -256,7 +246,7 @@ cmd_print_file(const char *filename)
 	}
 
 	// ファイル形式を調べて f に色々格納。
-	int len = parse_file(f, fp, filename, freq);
+	int len = parse_file(f, fp, filename);
 	fclose(fp);
 
 	printf("%s: %s\n", filename, fmt_tostring(&f->mem.fmt));
@@ -298,37 +288,12 @@ cmd_set_file(const char *filename)
 	}
 
 	// ファイル形式を調べて f に色々格納。
-	int len = parse_file(f, fp, filename, freq);
+	int len = parse_file(f, fp, filename);
 	fclose(fp);
 
 	printf("%s: %s\n", filename, fmt_tostring(&f->mem.fmt));
 
-	if (f->mem.fmt.encoding == AUDIO_ENCODING_ADPCM) {
-		// MSM6258 -> SLINEAR16(internal format)
-		uint8_t *tmp = malloc(len * 4);
-		audio_format2_t dstfmt;
-		dstfmt.encoding = AUDIO_ENCODING_SLINEAR_NE;
-		dstfmt.sample_rate = f->mem.fmt.sample_rate;
-		dstfmt.precision = AUDIO_INTERNAL_BITS;
-		dstfmt.stride = AUDIO_INTERNAL_BITS;
-		dstfmt.channels = f->mem.fmt.channels;
-		audio_filter_arg_t arg;
-		arg.context = msm6258_context_create();
-		arg.src = f->mem.sample;
-		arg.srcfmt = &f->mem.fmt;
-		arg.dst = tmp;
-		arg.dstfmt = &dstfmt;
-		arg.count = len * 2;
-		msm6258_to_internal(&arg);
-		msm6258_context_destroy(arg.context);
-		// かきかえ
-		free(f->mem.sample);
-		f->mem.sample = tmp;
-		f->mem.fmt = dstfmt;
-		f->mem.capacity = len * 2;
-	} else {
-		f->mem.capacity = len * 8 / f->mem.fmt.stride / f->mem.fmt.channels;
-	}
+	f->mem.capacity = len * 8 / f->mem.fmt.stride / f->mem.fmt.channels;
 	f->mem.count = f->mem.capacity;
 
 	f->file = sys_open(sc, AUMODE_PLAY);
@@ -448,7 +413,7 @@ static inline int IDC(uint32_t value) {
 // ファイル(データ)本体を f->mem.sample にセットする。
 // 戻り値はデータ本体のバイト数。
 int
-parse_file(struct test_file *f, FILE *fp, const char *filename, int adpcm_freq)
+parse_file(struct test_file *f, FILE *fp, const char *filename)
 {
 	char hdrbuf[256];
 	uint32_t tag;
@@ -567,21 +532,8 @@ parse_file(struct test_file *f, FILE *fp, const char *filename, int adpcm_freq)
 		return len;
 	}
 
-	// ADPCM
-	f->mem.fmt.encoding = AUDIO_ENCODING_ADPCM;
-	f->mem.fmt.channels = 1;
-	f->mem.fmt.precision = 4;
-	f->mem.fmt.stride = 4;
-	f->mem.fmt.sample_rate = adpcm_freq;
-
-	len = (int)filesize(fp);
-	f->mem.sample = malloc(len);
-	if (f->mem.sample == NULL) {
-		printf("%s: malloc failed: %d\n", filename, len);
-		exit(1);
-	}
-	fread(f->mem.sample, 1, len, fp);
-	return len;
+	printf("unknown file format\n");
+	exit(1);
 }
 
 // ファイルサイズを取得する。ついでにポジションを 0 に戻す。

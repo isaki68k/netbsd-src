@@ -5,7 +5,6 @@ SRCS+=	\
 SRCS+=	\
 	../aucodec.c \
 	../aucodec_linear.c \
-	../aucodec_msm6258.c \
 	../aucodec_mulaw.c \
 	../main.c \
 	../synth.c \
