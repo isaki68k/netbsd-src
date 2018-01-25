@@ -23,6 +23,7 @@
 } while (0)
 
 void *audio_realloc(void *memblock, size_t bytes);
+static audio_filter_t audio_track_get_codec_filter(const audio_filter_arg_t *);
 static int audio_pmixer_mixall(struct audio_softc *sc, bool isintr);
 void audio_pmixer_output(struct audio_softc *sc);
 static void audio_rmixer_input(struct audio_softc *sc);
@@ -579,6 +580,78 @@ audio_track_destroy(audio_track_t *track)
 	kmem_free(track, sizeof(*track));
 }
 
+// arg が正しくなければ false を返します。
+bool
+is_valid_filter_arg(const audio_filter_arg_t *arg)
+{
+	if (arg == NULL) return false;
+	if (!is_valid_format(arg->srcfmt)) return false;
+	if (!is_valid_format(arg->dstfmt)) return false;
+	if (arg->src == NULL) return false;
+	if (arg->dst == NULL) return false;
+	if (arg->count <= 0) return false;
+	return true;
+}
+
+// arg に応じて変換フィルタを返します。
+// arg は src か dst のどちらか一方が internal 形式でなければなりません。
+// 変換できない組み合わせの場合は NULL を返します。
+static audio_filter_t
+audio_track_get_codec_filter(const audio_filter_arg_t *arg)
+{
+
+	if (is_internal_format(arg->srcfmt)) {
+		if (arg->dstfmt->encoding == AUDIO_ENCODING_ULAW) {
+			return internal_to_mulaw;
+		} else if (is_LINEAR(arg->dstfmt)) {
+			if (arg->dstfmt->stride == 8) {
+				return internal_to_linear8;
+			} else if (arg->dstfmt->stride == 16) {
+				return internal_to_linear16;
+			} else if (arg->dstfmt->stride == 24) {
+				return internal_to_linear24;
+			} else if (arg->dstfmt->stride == 32) {
+				return internal_to_linear32;
+			} else {
+				DPRINTF(1, "%s: unsupported %s stride %d\n",
+				    __func__, "dst", arg->dstfmt->stride);
+				goto abort;
+			}
+		}
+	} else if (is_internal_format(arg->dstfmt)) {
+		if (arg->srcfmt->encoding == AUDIO_ENCODING_ULAW) {
+			return mulaw_to_internal;
+		} else if (is_LINEAR(arg->srcfmt)) {
+			if (arg->srcfmt->stride == 8) {
+				return linear8_to_internal;
+			} else if (arg->srcfmt->stride == 16) {
+				return linear16_to_internal;
+			} else if (arg->srcfmt->stride == 24) {
+				return linear24_to_internal;
+			} else if (arg->srcfmt->stride == 32) {
+				return linear32_to_internal;
+			} else {
+				DPRINTF(1, "%s: unsupported %s stride %d\n",
+				    __func__, "src", arg->srcfmt->stride);
+				goto abort;
+			}
+		}
+	}
+
+	DPRINTF(1, "unsupported encoding\n");
+abort:
+#if defined(AUDIO_DEBUG)
+	{
+		char buf[100];
+		audio_format2_tostr(buf, sizeof(buf), arg->srcfmt);
+		printf("%s: src %s\n", __func__, buf);
+		audio_format2_tostr(buf, sizeof(buf), arg->dstfmt);
+		printf("%s: dst %s\n", __func__, buf);
+	}
+#endif
+	return NULL;
+}
+
 // track の codec ステージを必要に応じて初期化します。
 // 成功すれば、codec ステージが必要なら初期化した上で、いずれにしても
 // 更新された last_dst を返します。
@@ -605,7 +678,13 @@ init_codec(audio_track_t *track, audio_ring_t *last_dst)
 
 		track->codec.arg.srcfmt = &track->codec.srcbuf.fmt;
 		track->codec.arg.dstfmt = dstfmt;
-		track->codec.filter = audio_MI_codec_filter_init(&track->codec.arg);
+		track->codec.arg.context = NULL;
+		track->codec.filter = audio_track_get_codec_filter(&track->codec.arg);
+		if (track->codec.filter == NULL) {
+			DPRINTF(1, "%s: get_codec_filter failed\n", __func__);
+			last_dst = NULL;
+			goto done;
+		}
 
 		// XXX: インライン変換はとりあえず置いておく
 		track->codec.srcbuf.top = 0;
