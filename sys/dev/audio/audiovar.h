@@ -45,6 +45,9 @@
 // デバッグ用に AUDIO_SETCHAN ioctl を有効にします。
 #define USE_SETCHAN
 
+// ユーザランドフォーマットとして [US]Linear24/24 をサポートします。
+//#define AUDIO_SUPPORT_LINEAR24
+
 // 1 ブロックの時間 [msec]
 // 40ms の場合は (1/40ms) = 25 = 5^2 なので 100 の倍数の周波数のほか、
 // 15.625kHz でもフレーム数が整数になるので、40 を基本にする。

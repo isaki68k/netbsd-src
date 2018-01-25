@@ -197,6 +197,7 @@ internal_to_linear16(audio_filter_arg_t *arg)
 	}
 }
 
+#if defined(AUDIO_SUPPORT_LINEAR24)
 /*
 * [US]LINEAR(?,stride=24){BE|LE} から internal への変換
 */
@@ -286,6 +287,7 @@ internal_to_linear24(audio_filter_arg_t *arg)
 		dptr += 3;
 	}
 }
+#endif /* AUDIO_SUPPORT_LINEAR24 */
 
 /*
 * [US]LINEAR(?,stride=32){BE|LE} から internal への変換

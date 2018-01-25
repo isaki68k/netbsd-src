@@ -618,8 +618,10 @@ audio_track_get_codec_filter(const audio_filter_arg_t *arg)
 				return internal_to_linear8;
 			} else if (arg->dstfmt->stride == 16) {
 				return internal_to_linear16;
+#if defined(AUDIO_SUPPORT_LINEAR24)
 			} else if (arg->dstfmt->stride == 24) {
 				return internal_to_linear24;
+#endif
 			} else if (arg->dstfmt->stride == 32) {
 				return internal_to_linear32;
 			} else {
@@ -636,8 +638,10 @@ audio_track_get_codec_filter(const audio_filter_arg_t *arg)
 				return linear8_to_internal;
 			} else if (arg->srcfmt->stride == 16) {
 				return linear16_to_internal;
+#if defined(AUDIO_SUPPORT_LINEAR24)
 			} else if (arg->srcfmt->stride == 24) {
 				return linear24_to_internal;
+#endif
 			} else if (arg->srcfmt->stride == 32) {
 				return linear32_to_internal;
 			} else {
