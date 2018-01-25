@@ -607,7 +607,6 @@ init_codec(audio_track_t *track, audio_ring_t *last_dst)
 		track->codec.arg.dstfmt = dstfmt;
 		track->codec.filter = audio_MI_codec_filter_init(&track->codec.arg);
 
-		// TODO: codec デストラクタコール
 		// XXX: インライン変換はとりあえず置いておく
 		track->codec.srcbuf.top = 0;
 		track->codec.srcbuf.count = 0;

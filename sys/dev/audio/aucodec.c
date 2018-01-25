@@ -73,9 +73,3 @@ audio_MI_codec_filter_init(audio_filter_arg_t *arg)
 #endif
 	panic("unsupported encoding");
 }
-
-void
-audio_MI_filter_finalize(audio_filter_arg_t *arg)
-{
-}
-
