@@ -54,6 +54,10 @@ P.bad7:before {
 	content: "・";
 }
 
+SPAN.bad {
+	color: rgb(255,40,0);	/* 赤 */
+	font-weight: bold;
+}
 P.bad {
 	color: rgb(255,40,0);	/* 赤 */
 	font-weight: bold;
@@ -297,11 +301,19 @@ opened for both reading and writing it will start in
 half-duplex play mode; full-duplex mode has to be set
 explicitly.</p>
 <p class=comment style="margin-left:8%">
+2文目
 「Full-duplex 対応オーディオデバイスは reading または writing の
 どちらでオープンされても、half-duplex 再生モードになる。
 full-duplex モードには明示的にセットする必要がある」
-要動作確認。
+とあるが、
+N7、N8、AUDIO2 いずれも現在の実装での挙動は以下の通り。<br>
+Full-Duplex HW で open(O_RDONLY) なら half-duplex 録音モード、<br>
+Full-Duplex HW で open(O_WRONLY) なら half-duplex 再生モード、<br>
+Full-Duplex HW で open(O_RDWR) なら full-duplex 再生録音モードになる。<br>
+Half-Duplex HW での挙動は未調査。<br>
 </p>
+
+
 
 <p style="margin-left:8%; margin-top: 1em">On either type
 of device, if the playback mode is paused then silence is
@@ -392,8 +404,8 @@ stops this playback and recoding track と再定義したい。</p>
 of dropped output bytes into its integer argument. There is
 no information regarding when in the sample stream they were
 dropped.</span></p>
-<p class=a2 style="margin-left:20%">N7 からの問題だが、
-manpage に AUDIO_PERROR が抜けている。</p>
+<p class=bad7 style="margin-left:20%">
+この ioctl は以前から実装されているが manpage に AUDIO_PERROR が抜けている。</p>
 
 <p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_RERROR
 (int)</p>
@@ -562,15 +574,14 @@ the audio_offset structure.</p>
 
 <p style="margin-left:20%;">Get or set audio information as
 encoded in the audio_info structure.</p>
-<p class=bad style="margin-left:20%">
+<p class=bad7 style="margin-left:20%">
 設定項目が多いので設定中にエラーが起きると本来は全部ロールバックしないと
-いけないような気がするのと初期の頃のソースは一応その辺も
+いけないような気がするのと最初期の頃(20年前)のソースは一応その辺も
 意識してあったように見えるが、
-(N7 以前からだが)
-今となってはもう複雑すぎてロールバックは一切お察しのような気がする。</p>
+その後すぐに複雑になりすぎてロールバックは一切お察しのような気がする。</p>
 <p class=a2 style="margin-left:20%">
 一応エラーの際には完全にロールバックを目指すようには作っているが、
-今まで10年近くロールバックしない動作だったので逆に問題になるかも知れない。
+今まで10年以上ロールバックしない動作だったので逆に問題になるかも知れない。
 </p>
 
 <p style="margin-left:20%; margin-top: 1em">
@@ -690,13 +701,15 @@ AUDIO2 では録音トラックと再生トラックの blocksize は同じと�
 };</pre>
 </p>
 
-<p class=bad class=ul style="margin-left:20%">
-sample_rate = 0 を設定すると、システムコールが無限ループになって(?)帰ってこない。
-N7 以前でも起きる。
+<p class=bad7 style="margin-left:20%">
+sample_rate = 0 を設定すると、システムコールが無限ループになって(?)
+帰ってこない。
+shutdown も出来なくなる。
+ここまでは N7 以前でも起きる。
+<span class=bad>
 N7 以前ならオーディオデバイスを開けるのは高々1人なので
 それ以上影響は広がらないが、N8 だといくらでもオープンできるので以下略。
-ちなみに shutdown も出来なくなる。
-</ul>
+</span>
 </p>
 <p class=bad style="margin-left:20%">
 eof カウンタが VC 分離できていない。
