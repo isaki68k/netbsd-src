@@ -405,7 +405,7 @@ test_open_2(void)
 	// port
 	XP_EQ(0, ai.play.seek);
 	// avail_ports
-	XP_NE(0, ai.play.buffer_size);
+	XP_BUFFSIZE(1, ai.play.buffer_size);
 	XP_EQ(0, ai.play.samples);
 	XP_EQ(0, ai.play.eof);
 	XP_EQ(0, ai.play.pause);
@@ -423,7 +423,7 @@ test_open_2(void)
 	// port
 	XP_EQ(0, ai.record.seek);
 	// avail_ports
-	XP_NE(0, ai.record.buffer_size);
+	XP_BUFFSIZE((netbsd <= 8), ai.record.buffer_size);
 	XP_EQ(0, ai.record.samples);
 	XP_EQ(0, ai.record.eof);
 	XP_EQ(0, ai.record.pause);
@@ -497,7 +497,7 @@ test_open_2(void)
 	// port
 	XP_EQ(0, ai.record.seek);
 	// avail_ports
-	XP_NE(0, ai.record.buffer_size);
+	XP_BUFFSIZE((netbsd <= 8), ai.record.buffer_size);
 	XP_EQ(0, ai.record.samples);
 	XP_EQ(0, ai.record.eof);
 	XP_EQ(0, ai.record.pause);
@@ -567,7 +567,7 @@ test_open_3(void)
 	// port
 	XP_EQ(0, ai.record.seek);
 	// avail_ports
-	XP_NE(0, ai.record.buffer_size);
+	XP_BUFFSIZE((netbsd <= 8), ai.record.buffer_size);
 	XP_EQ(0, ai.record.samples);
 	XP_EQ(0, ai.record.eof);
 	XP_EQ(0, ai.record.pause);
@@ -637,7 +637,7 @@ test_open_3(void)
 	// port
 	XP_EQ(0, ai.record.seek);
 	// avail_ports
-	XP_NE(0, ai.record.buffer_size);
+	XP_BUFFSIZE((netbsd <= 8), ai.record.buffer_size);
 	XP_EQ(0, ai.record.samples);
 	XP_EQ(0, ai.record.eof);
 	XP_EQ(ai0.record.pause, ai.record.pause);
