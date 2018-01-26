@@ -13,63 +13,75 @@
        table { margin-top: 0; margin-bottom: 0; }
 </style>
 <style type="text/css">
-/*	color: #ff2800;	*/	/* 赤 */
-/*	color: #0041ff;	*/	/* 青 */
-/*	color: #35a16b;	*/	/* 緑 */
-/*	color: #ffff99; */	/* クリーム */
+/*	color: rgb(255,40,0);	*/	/* 赤 */
+/*	color: rgb(0,65,255);	*/	/* 青 */
+/*	color: rgb(53,161,107);	*/	/* 緑 */
+/*	color: rgb(255,209,209); */	/* ピンク */
+/*	color: rgb(255,255,153); */	/* クリーム */
 
 SPAN.n7 {
-	background-color: #ffd1d1;	/* 明るいピンク */
+	background-color: rgb(255,255,153);	/* クリーム */
 }
 
 P.n7 {
-	background-color: #ffd1d1;	/* 明るいピンク */
+	background-color: rgb(255,255,153);	/* クリーム */
 }
 P.n7:before {
 	content: "(N7)";
-	background-color: #ffd1d1;	/* 明るいピンク */
+	background-color: rgb(255,255,153);	/* クリーム */
 	position: absolute;
 	left: 5%;
 }
 
 SPAN.n8 {
-	background-color: #ffff99;	/* クリーム */
+	background-color: rgb(255,209,209);	/* ピンク */
 }
 P.n8 {
-	background-color: #ffff99;	/* クリーム */
+	background-color: rgb(255,209,209);	/* ピンク */
 }
 P.n8:before {
 	content: "(N8)";
-	background-color: #ffff99;	/* クリーム */
+	background-color: rgb(255,209,209);	/* ピンク */
 	position: absolute;
 	left: 5%;
 }
 
+P.bad7 {
+	color: rgb(255,153,0);	/* 橙色 */
+	font-weight: bold;
+}
+P.bad7:before {
+	content: "・";
+}
+
 P.bad {
-	color: #ff2800;	/* 赤 */
+	color: rgb(255,40,0);	/* 赤 */
 	font-weight: bold;
 }
 P.bad:before {
 	content: "・";
 }
-P.comment {
-	color: #35a16b;	/* 緑 */
+
+SPAN.a2 {
+	color: rgb(0,65,255);	/* 青 */
 	font-weight: bold;
 }
-P.comment:before {
-	content: "・";
-}
 P.a2 {
-	color: #0041ff;	/* 青 */
+	color: rgb(0,65,255);	/* 青 */
 	font-weight: bold;
 }
 P.a2:before {
 	content: "・";
 }
-SPAN.a2 {
-	color: #0041ff;	/* 青 */
+
+P.comment {
+	color: rgb(53,161,107);	/* 緑 */
 	font-weight: bold;
 }
+P.comment:before {
+	content: "・";
+}
+
 </style>
 <title></title>
 </head>
@@ -78,8 +90,9 @@ SPAN.a2 {
 NetBSD 8 部分は audio.4,v 1.79。<br>
 <p>
 凡例:<br>
-<p class=n7 style="margin-left:8%;">背景ピンクの文章は NetBSD 7 から 8 になって削除されたところ。</p>
-<p class=n8 style="margin-left:8%;">背景黄色の文章は NetBSD 8 で追加されたところ。</p>
+<p class=n7 style="margin-left:8%;">背景黄色の文章は NetBSD 7 から 8 になって削除されたところ。</p>
+<p class=n8 style="margin-left:8%;">背景赤の文章は NetBSD 8 で追加されたところ。</p>
+<p class=bad7 style="margin-left:8%;">橙太字は NetBSD 7 からある問題についてのコメント</p>
 <p class=bad style="margin-left:8%;">赤太字は NetBSD 8 の問題についてのコメント</p>
 <p class=a2 style="margin-left:8%;">青太字は AUDIO2 での仕様(案)。</p>
 <p class=comment style="margin-left:8%;">緑太字はその他のコメント</p>
@@ -193,7 +206,7 @@ may hold open a sampling device at a given time (although
 file descriptors may be shared between processes once the
 first open completes).</p>
 
-<p style="background-color: #ffff99; margin-top: 1em" valign="top"><b>VIRTUAL
+<p style="background-color: rgb(255,209,209); margin-top: 1em" valign="top"><b>VIRTUAL
 CHANNELS</b></p>
 
 <p class=n8 style="margin-left:8%;">Any process may open a sampling
