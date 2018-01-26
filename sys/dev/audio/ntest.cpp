@@ -1481,20 +1481,14 @@ test_AUDIO_SETINFO_mode()
 			if (r == 0) {
 				mode = ai.mode & (AUMODE_PLAY | AUMODE_RECORD);
 				XP_EQ(aumodes[j], mode);
-				if (netbsd <= 8) {
-					// N7 では常にオープン時の状態を返すようだ
-					// たぶん切り替わりを考慮してないバグ
-					XP_EQ(mode2popen[i], ai.play.open);
-					XP_EQ(mode2ropen[i], ai.record.open);
-				} else {
-					XP_EQ(mode2popen[j], ai.play.open);
-					XP_EQ(mode2ropen[j], ai.record.open);
-				}
+				// mode に関係なく当初のオープンモードを維持するのかな?
+				XP_EQ(mode2popen[i], ai.play.open);
+				XP_EQ(mode2ropen[i], ai.record.open);
 				// N7、N8 では buffer_size は常に非ゼロなので調べない
 				if (netbsd >= 9) {
-					XP_BUFFSIZE((aumodes[j] & AUMODE_PLAY),
+					XP_BUFFSIZE((aumodes[i] & AUMODE_PLAY),
 						ai.play.buffer_size);
-					XP_BUFFSIZE((aumodes[j] & AUMODE_RECORD),
+					XP_BUFFSIZE((aumodes[i] & AUMODE_RECORD),
 						ai.record.buffer_size);
 				}
 			}
