@@ -1234,7 +1234,7 @@ test_AUDIO_SETFD_RDWR(void)
 	getprops();
 	hwfull = (props & AUDIO_PROP_FULLDUPLEX) ? 1 : 0;
 
-	TEST("AUDIO_GETFD_RDWR");
+	TEST("AUDIO_SETFD_RDWR");
 	fd = OPEN(devaudio, O_RDWR);
 	if (fd == -1)
 		err(1, "open: %s", devaudio);
