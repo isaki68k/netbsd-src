@@ -668,15 +668,20 @@ abort:
 
 // track の codec ステージを必要に応じて初期化します。
 // 成功すれば、codec ステージが必要なら初期化した上で、いずれにしても
-// 更新された last_dst を返します。
-// 失敗すれば(今のところ ENOMEM のみ) NULL を返します。
-static audio_ring_t *
-init_codec(audio_track_t *track, audio_ring_t *last_dst)
+// 更新された last_dst を last_dstp に格納して、0 を返します。
+// 失敗すれば last_dstp は更新せずに errno を返します。
+static int
+init_codec(audio_track_t *track, audio_ring_t **last_dstp)
 {
+	audio_ring_t *last_dst;
+	int error;
+
 	KASSERT(track);
 
+	last_dst = *last_dstp;
 	audio_format2_t *srcfmt = &track->inputfmt;
 	audio_format2_t *dstfmt = &last_dst->fmt;
+	error = 0;
 
 	if (srcfmt->encoding != dstfmt->encoding
 	 || srcfmt->precision != dstfmt->precision
@@ -696,8 +701,8 @@ init_codec(audio_track_t *track, audio_ring_t *last_dst)
 		track->codec.filter = audio_track_get_codec_filter(&track->codec.arg);
 		if (track->codec.filter == NULL) {
 			DPRINTF(1, "%s: get_codec_filter failed\n", __func__);
-			last_dst = NULL;
-			goto done;
+			error = EINVAL;
+			goto abort;
 		}
 
 		// XXX: インライン変換はとりあえず置いておく
@@ -708,30 +713,36 @@ init_codec(audio_track_t *track, audio_ring_t *last_dst)
 		if (track->codec.srcbuf.sample == NULL) {
 			DPRINTF(1, "%s: malloc(%d) failed\n", __func__,
 			    RING_BYTELEN(&track->codec.srcbuf));
-			last_dst = NULL;
-			goto done;
+			error = ENOMEM;
+			goto abort;
 		}
 
-		return &track->codec.srcbuf;
+		*last_dstp = &track->codec.srcbuf;
+		return 0;
 	}
 
-done:
+abort:
 	track->codec.filter = NULL;
 	audio_free(track->codec.srcbuf.sample);
-	return last_dst;
+	return error;
 }
 
 // track の chvol ステージを必要に応じて初期化します。
 // 成功すれば、chvol ステージが必要なら初期化した上で、いずれにしても
-// 更新された last_dst を返します。
-// 失敗すれば(今のところ ENOMEM のみ) NULL を返します。
-static audio_ring_t *
-init_chvol(audio_track_t *track, audio_ring_t *last_dst)
+// 更新された last_dst を last_dstp に格納して、0 を返します。
+// 失敗すれば last_dstp は更新せずに errno を返します。
+static int
+init_chvol(audio_track_t *track, audio_ring_t **last_dstp)
 {
+	audio_ring_t *last_dst;
+	int error;
+
 	KASSERT(track);
 
+	last_dst = *last_dstp;
 	audio_format2_t *srcfmt = &track->inputfmt;
 	audio_format2_t *dstfmt = &last_dst->fmt;
+	error = 0;
 
 	// チャンネルボリュームが有効かどうか
 	bool use_chvol = false;
@@ -755,34 +766,41 @@ init_chvol(audio_track_t *track, audio_ring_t *last_dst)
 		if (track->chvol.srcbuf.sample == NULL) {
 			DPRINTF(1, "%s: malloc(%d) failed\n", __func__,
 			    RING_BYTELEN(&track->chvol.srcbuf));
-			last_dst = NULL;
-			goto done;
+			error = ENOMEM;
+			goto abort;
 		}
 
 		track->chvol.arg.srcfmt = &track->chvol.srcbuf.fmt;
 		track->chvol.arg.dstfmt = dstfmt;
 		track->chvol.arg.context = track->ch_volume;
-		return &track->chvol.srcbuf;
+
+		*last_dstp = &track->chvol.srcbuf;
+		return 0;
 	}
 
-done:
+abort:
 	track->chvol.filter = NULL;
 	audio_free(track->chvol.srcbuf.sample);
-	return last_dst;
+	return error;
 }
 
 
 // track の chmix ステージを必要に応じて初期化します。
 // 成功すれば、chmix ステージが必要なら初期化した上で、いずれにしても
-// 更新された last_dst を返します。
-// 失敗すれば(今のところ ENOMEM のみ) NULL を返します。
-static audio_ring_t *
-init_chmix(audio_track_t *track, audio_ring_t *last_dst)
+// 更新された last_dst を last_dstp に格納して、0 を返します。
+// 失敗すれば last_dstp は更新せずに errno を返します。
+static int
+init_chmix(audio_track_t *track, audio_ring_t **last_dstp)
 {
+	audio_ring_t *last_dst;
+	int error;
+
 	KASSERT(track);
 
+	last_dst = *last_dstp;
 	audio_format2_t *srcfmt = &track->inputfmt;
 	audio_format2_t *dstfmt = &last_dst->fmt;
+	error = 0;
 
 	int srcch = srcfmt->channels;
 	int dstch = dstfmt->channels;
@@ -810,33 +828,39 @@ init_chmix(audio_track_t *track, audio_ring_t *last_dst)
 		if (track->chmix.srcbuf.sample == NULL) {
 			DPRINTF(1, "%s: malloc(%d) failed\n", __func__,
 			    RING_BYTELEN(&track->chmix.srcbuf));
-			last_dst = NULL;
-			goto done;
+			error = ENOMEM;
+			goto abort;
 		}
 
 		track->chmix.arg.srcfmt = &track->chmix.srcbuf.fmt;
 		track->chmix.arg.dstfmt = dstfmt;
 
-		return &track->chmix.srcbuf;
+		*last_dstp = &track->chmix.srcbuf;
+		return 0;
 	}
 
-done:
+abort:
 	track->chmix.filter = NULL;
 	audio_free(track->chmix.srcbuf.sample);
-	return last_dst;
+	return error;
 }
 
 // track の freq ステージを必要に応じて初期化します。
 // 成功すれば、freq ステージが必要なら初期化した上で、いずれにしても
-// 更新された last_dst を返します。
-// 失敗すれば(今のところ ENOMEM のみ) NULL を返します。
-static audio_ring_t *
-init_freq(audio_track_t *track, audio_ring_t *last_dst)
+// 更新された last_dst を last_dstp に格納して、0 を返します。
+// 失敗すれば last_dstp は更新せずに errno を返します。
+static int
+init_freq(audio_track_t *track, audio_ring_t **last_dstp)
 {
+	audio_ring_t *last_dst;
+	int error;
+
 	KASSERT(track);
 
+	last_dst = *last_dstp;
 	audio_format2_t *srcfmt = &track->inputfmt;
 	audio_format2_t *dstfmt = &last_dst->fmt;
+	error = 0;
 
 	uint32_t srcfreq = srcfmt->sample_rate;
 	uint32_t dstfreq = dstfmt->sample_rate;
@@ -879,16 +903,18 @@ init_freq(audio_track_t *track, audio_ring_t *last_dst)
 		if (track->freq.srcbuf.sample == NULL) {
 			DPRINTF(1, "%s: malloc(%d) failed\n", __func__,
 			    RING_BYTELEN(&track->freq.srcbuf));
-			last_dst = NULL;
-			goto done;
+			error = ENOMEM;
+			goto abort;
 		}
-		return &track->freq.srcbuf;
+
+		*last_dstp = &track->freq.srcbuf;
+		return 0;
 	}
 
-done:
+abort:
 	track->freq.filter = NULL;
 	audio_free(track->freq.srcbuf.sample);
-	return last_dst;
+	return error;
 }
 
 // 再生時
@@ -926,8 +952,9 @@ done:
 int
 audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 {
-	KASSERT(track);
+	int error;
 
+	KASSERT(track);
 	TRACET(track, "");
 	KASSERT(is_valid_format(usrfmt));
 
@@ -946,26 +973,26 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 		track->inputfmt = *usrfmt;
 		track->outputbuf.fmt =  track->mixer->track_fmt;
 
-		if ((last_dst = init_freq(track, last_dst)) == NULL)
+		if ((error = init_freq(track, &last_dst)) != 0)
 			goto error;
-		if ((last_dst = init_chmix(track, last_dst)) == NULL)
+		if ((error = init_chmix(track, &last_dst)) != 0)
 			goto error;
-		if ((last_dst = init_chvol(track, last_dst)) == NULL)
+		if ((error = init_chvol(track, &last_dst)) != 0)
 			goto error;
-		if ((last_dst = init_codec(track, last_dst)) == NULL)
+		if ((error = init_codec(track, &last_dst)) != 0)
 			goto error;
 	} else {
 		// 録音はユーザランド側から作る
 		track->inputfmt = track->mixer->track_fmt;
 		track->outputbuf.fmt = *usrfmt;
 
-		if ((last_dst = init_codec(track, last_dst)) == NULL)
+		if ((error = init_codec(track, &last_dst)) != 0)
 			goto error;
-		if ((last_dst = init_chvol(track, last_dst)) == NULL)
+		if ((error = init_chvol(track, &last_dst)) != 0)
 			goto error;
-		if ((last_dst = init_chmix(track, last_dst)) == NULL)
+		if ((error = init_chmix(track, &last_dst)) != 0)
 			goto error;
-		if ((last_dst = init_freq(track, last_dst)) == NULL)
+		if ((error = init_freq(track, &last_dst)) != 0)
 			goto error;
 	}
 #if 0
@@ -1000,6 +1027,7 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 		if (track->input->sample == NULL) {
 			DPRINTF(1, "%s: malloc input(%d) failed\n", __func__,
 			    RING_BYTELEN(track->input));
+			error = ENOMEM;
 			goto error;
 		}
 	}
@@ -1015,6 +1043,7 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 	if (track->outputbuf.sample == NULL) {
 		DPRINTF(1, "%s: malloc outbuf(%d) failed\n", __func__,
 		    RING_BYTELEN(&track->outputbuf));
+		error = ENOMEM;
 		goto error;
 	}
 
@@ -1030,6 +1059,7 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 	if (track->usrbuf.sample == NULL) {
 		DPRINTF(1, "%s: malloc usrbuf(%d) failed\n", __func__,
 		    track->usrbuf.capacity);
+		error = ENOMEM;
 		goto error;
 	}
 
@@ -1069,7 +1099,7 @@ error:
 	audio_free(track->chmix.srcbuf.sample);
 	audio_free(track->freq.srcbuf.sample);
 	audio_free(track->outputbuf.sample);
-	return ENOMEM;
+	return error;
 }
 
 // ring が空でなく 1 ブロックに満たない時、1ブロックまで無音を追加します。
