@@ -220,6 +220,22 @@ void xp_ne(int line, int exp, int act, const char *varname)
 		xp_fail(line, "%s expects != %d but %d", varname, exp, act);
 }
 
+// ai.*.buffer_size が期待通りか調べる
+// bool exp が true なら buffer_size の期待値は非ゼロ、
+// exp が false なら buffer_size の期待値はゼロ。
+#define XP_BUFFSIZE(exp, act)	xp_buffsize(__LINE__, exp, act, #act)
+void xp_buffsize(int line, bool exp, int act, const char *varname)
+{
+	testcount++;
+	if (exp) {
+		if (act == 0)
+			xp_fail(line, "%s expects non-zero but %d", varname, act);
+	} else {
+		if (act != 0)
+			xp_fail(line, "%s expects zero but %d", varname, act);
+	}
+}
+
 #define DPRINTF(fmt...)	do {	\
 	if (debug)	\
 		printf(fmt);	\
@@ -320,6 +336,15 @@ cmd_FIONREAD_null(int ac, char *av[])
 	return 0;
 }
 
+// O_* を PLAY 側がオープンされてるかに変換
+int mode2popen[] = {
+	0, 1, 1,
+};
+// O_* を RECORD 側がオープンされてるかに変換
+int mode2ropen[] = {
+	1, 0, 1,
+};
+
 // open/close
 void
 test_open_1(void)
@@ -331,12 +356,6 @@ test_open_1(void)
 		AUMODE_RECORD,
 		AUMODE_PLAY | AUMODE_PLAY_ALL,
 		AUMODE_PLAY | AUMODE_PLAY_ALL | AUMODE_RECORD,
-	};
-	int exppopen[] = {
-		0, 1, 1,
-	};
-	int expropen[] = {
-		1, 0, 1,
 	};
 
 	// 再生専用デバイスのテストとか Half はまた
@@ -350,8 +369,8 @@ test_open_1(void)
 		XP_EQ(0, r);
 		XP_EQ(0, ai.play.pause);
 		XP_EQ(0, ai.record.pause);
-		XP_EQ(exppopen[mode], ai.play.open);
-		XP_EQ(expropen[mode], ai.record.open);
+		XP_EQ(mode2popen[mode], ai.play.open);
+		XP_EQ(mode2ropen[mode], ai.record.open);
 		XP_EQ(expmode[mode], ai.mode);
 
 		if (netbsd <= 8) {
@@ -360,15 +379,8 @@ test_open_1(void)
 			XP_NE(0, ai.record.buffer_size);
 		} else {
 			// AUDIO2 では使わないほうのバッファは確保してない
-			if (exppopen[mode])
-				XP_NE(0, ai.play.buffer_size);
-			else
-				XP_EQ(0, ai.play.buffer_size);
-
-			if (expropen[mode])
-				XP_NE(0, ai.record.buffer_size);
-			else
-				XP_EQ(0, ai.record.buffer_size);
+			XP_BUFFSIZE(mode2popen[mode], ai.play.buffer_size);
+			XP_BUFFSIZE(mode2ropen[mode], ai.record.buffer_size);
 		}
 
 		r = CLOSE(fd);
@@ -1178,6 +1190,7 @@ test_AUDIO_WSEEK_1(void)
 void
 test_AUDIO_SETFD_ONLY(void)
 {
+	struct audio_info ai;
 	int r;
 	int fd;
 	int n;
@@ -1219,6 +1232,14 @@ test_AUDIO_SETFD_ONLY(void)
 		XP_EQ(0, r);
 		XP_EQ(hwfull, n);
 
+		// GETINFO の ai.*.open は変化しないようだ (いいのか?)
+		r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+		XP_EQ(0, r);
+		if (netbsd <= 8) {
+			XP_EQ(mode2popen[mode], ai.play.open);
+			XP_EQ(mode2ropen[mode], ai.record.open);
+		}
+
 		CLOSE(fd);
 	}
 }
@@ -1226,6 +1247,7 @@ test_AUDIO_SETFD_ONLY(void)
 void
 test_AUDIO_SETFD_RDWR(void)
 {
+	struct audio_info ai;
 	int r;
 	int fd;
 	int n;
@@ -1263,6 +1285,15 @@ test_AUDIO_SETFD_RDWR(void)
 	r = IOCTL(fd, AUDIO_GETFD, &n, "");
 	XP_EQ(0, r);
 	XP_EQ(hwfull, n);
+
+	// ここは FULL->FULL への切り替えなので *.open は変化しない。
+	// XXX Half Duplex HW の場合は
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	XP_EQ(0, r);
+	if (netbsd <= 8) {
+		XP_EQ(1, ai.play.open);
+		XP_EQ(1, ai.record.open);
+	}
 
 	CLOSE(fd);
 }
@@ -1343,6 +1374,74 @@ test_AUDIO_GETINFO_eof(void)
 	CLOSE(fd);
 }
 
+// SETINFO で mode が切り替わるケース
+void
+test_AUDIO_SETINFO_mode()
+{
+	struct audio_info ai;
+	int r;
+	int fd;
+	int n;
+	int mode;
+	int aumodes[] = {
+		AUMODE_RECORD,	// O_RDONLY
+		AUMODE_PLAY,	// O_WRONLY
+		AUMODE_PLAY | AUMODE_RECORD,	// O_RDWR
+	};
+
+	for (int i = 0; i < __arraycount(aumodes); i++) {
+		for (int j = 0; j < __arraycount(aumodes); j++) {
+			// i が変更前の O_*、j が変更後の O_*
+			TEST("AUDIO_SETINFO_mode(%s->%s)",
+				openmodetable[i], openmodetable[j]);
+			fd = OPEN(devaudio, i);
+			if (fd == -1)
+				err(1, "open");
+
+			// オープン状態と一致してることが前提
+			memset(&ai, 0, sizeof(ai));
+			r = IOCTL(fd, AUDIO_GETINFO, &ai, "");
+			if (r == -1)
+				err(1, "ioctl");
+			mode = ai.mode & (AUMODE_PLAY | AUMODE_RECORD);
+			XP_EQ(aumodes[i], mode);
+			XP_EQ(mode2popen[i], ai.play.open);
+			XP_EQ(mode2ropen[i], ai.record.open);
+			// N7、N8 では buffer_size は常に非ゼロなので調べない
+			if (netbsd >= 9) {
+				XP_BUFFSIZE((aumodes[i] & AUMODE_PLAY), ai.play.buffer_size);
+				XP_BUFFSIZE((aumodes[i] & AUMODE_RECORD),ai.record.buffer_size);
+			}
+
+			// mode を変える
+			ai.mode = aumodes[j];
+			r = IOCTL(fd, AUDIO_SETINFO, &ai, "mode");
+			XP_EQ(0, r);
+			if (r == 0) {
+				mode = ai.mode & (AUMODE_PLAY | AUMODE_RECORD);
+				XP_EQ(aumodes[j], mode);
+				if (netbsd <= 8) {
+					// N7 では常にオープン時の状態を返すようだ
+					// たぶん切り替わりを考慮してないバグ
+					XP_EQ(mode2popen[i], ai.play.open);
+					XP_EQ(mode2ropen[i], ai.record.open);
+				} else {
+					XP_EQ(mode2popen[j], ai.play.open);
+					XP_EQ(mode2ropen[j], ai.record.open);
+				}
+				// N7、N8 では buffer_size は常に非ゼロなので調べない
+				if (netbsd >= 9) {
+					XP_BUFFSIZE((aumodes[j] & AUMODE_PLAY),
+						ai.play.buffer_size);
+					XP_BUFFSIZE((aumodes[j] & AUMODE_RECORD),
+						ai.record.buffer_size);
+				}
+			}
+
+			close(fd);
+		}
+	}
+}
 
 // コマンド一覧
 #define DEF(x)	{ #x, cmd_ ## x }
@@ -1372,6 +1471,7 @@ struct testtable testtable[] = {
 	DEF(AUDIO_SETFD_ONLY),
 	DEF(AUDIO_SETFD_RDWR),
 	DEF(AUDIO_GETINFO_eof),
+	DEF(AUDIO_SETINFO_mode),
 	{ NULL, NULL },
 };
 
