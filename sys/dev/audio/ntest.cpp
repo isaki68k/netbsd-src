@@ -309,7 +309,7 @@ int mode2ropen[] = {
 	1, 0, 1,
 };
 
-// open/close
+// オープンモードによるオープン直後の状態を調べる
 void
 test_open_1(void)
 {
@@ -333,6 +333,7 @@ test_open_1(void)
 		XP_EQ(0, r);
 		XP_EQ(0, ai.play.pause);
 		XP_EQ(0, ai.record.pause);
+		// O_RDWR でオープンすると最初から Full duplex になっているようだ
 		XP_EQ(mode2popen[mode], ai.play.open);
 		XP_EQ(mode2ropen[mode], ai.record.open);
 		XP_EQ(expmode[mode], ai.mode);
@@ -1151,6 +1152,12 @@ test_AUDIO_WSEEK_1(void)
 	CLOSE(fd);
 }
 
+// SETFD は N7 ならオープンモードに関わらず audio layer の状態を変えるの意
+// (で同時に MD の状態も必要なら変える)。GETFD は audio layer の duplex 状態
+// を取得するだけ。
+// N8 はソースコード上踏襲しているので見た目の動作は同じだが、検討した上での
+// それかどうかが謎。
+
 void
 test_AUDIO_SETFD_ONLY(void)
 {
@@ -1164,7 +1171,6 @@ test_AUDIO_SETFD_ONLY(void)
 	getprops();
 	hwfull = (props & AUDIO_PROP_FULLDUPLEX) ? 1 : 0;
 
-	// O_xxONLY でオープンすると GETFD == 0 になる
 	for (int mode = 0; mode <= 1; mode++) {
 		TEST("AUDIO_SETFD_ONLY(%s)", openmodetable[mode]);
 
@@ -1178,31 +1184,61 @@ test_AUDIO_SETFD_ONLY(void)
 		XP_EQ(0, r);
 		XP_EQ(0, n);
 
-		// でも Full には変更できる (O_xxONLY はあくまで初期値?)
+		// Full duplex に設定しようとすると、
+		// o N7 では、HW Full なら設定できる、HW Half ならエラー。
+		// o AUDIO2 では、オープンモードが RDWR でないのでこれはエラー。
 		n = 1;
 		r = IOCTL(fd, AUDIO_SETFD, &n, "on");
-		if (hwfull) {
-			XP_EQ(0, r);
+		if (netbsd <= 8) {
+			if (hwfull) {
+				XP_EQ(0, r);
+			} else {
+				XP_EQ(-1, r);
+				if (r == -1)
+					XP_EQ(ENOTTY, errno);
+			}
 		} else {
 			XP_EQ(-1, r);
 			if (r == -1)
 				XP_EQ(ENOTTY, errno);
 		}
 
-		// HW Full Duplex なら変更できていること
-		// HW Half Duplex なら変更できていないこと
+		// 取得してみると、
+		// o N7 では、HW Full なら 1、HW Half なら 0 のまま。
+		// o AUDIO2 では直近の SETFD がエラーなので変化しない。
 		n = 0;
 		r = IOCTL(fd, AUDIO_GETFD, &n, "");
 		XP_EQ(0, r);
-		XP_EQ(hwfull, n);
+		if (netbsd <= 8) {
+			XP_EQ(hwfull, n);
+		} else {
+			XP_EQ(0, n);
+		}
 
-		// GETINFO の ai.*.open は変化しないようだ (いいのか?)
+		// GETINFO の ai.*.open などトラック状態は変化しない。
 		r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
 		XP_EQ(0, r);
-		if (netbsd <= 8) {
-			XP_EQ(mode2popen[mode], ai.play.open);
-			XP_EQ(mode2ropen[mode], ai.record.open);
-		}
+		XP_EQ(mode2popen[mode], ai.play.open);
+		XP_EQ(mode2ropen[mode], ai.record.open);
+
+		// Half duplex に設定しようとすると、
+		// o N7 では、HW Full なら設定できる、HW Half なら何も起きず成功。
+		n = 0;
+		r = IOCTL(fd, AUDIO_SETFD, &n, "off");
+		XP_EQ(0, r);
+
+		// 取得してみると、
+		// o N7 では、HW Full なら 0、HW Half なら 0 のまま。
+		n = 0;
+		r = IOCTL(fd, AUDIO_GETFD, &n, "");
+		XP_EQ(0, r);
+		XP_EQ(0, n);
+
+		// GETINFO の ai.*.open などトラック状態は変化しない。
+		r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+		XP_EQ(0, r);
+		XP_EQ(mode2popen[mode], ai.play.open);
+		XP_EQ(mode2ropen[mode], ai.record.open);
 
 		CLOSE(fd);
 	}
@@ -1225,15 +1261,16 @@ test_AUDIO_SETFD_RDWR(void)
 	if (fd == -1)
 		err(1, "open: %s", devaudio);
 
-	// O_RDWR でオープンだと
-	// HW full duplex なら FULL
-	// HW half duplex なら Half になる
+	// O_RDWR オープン直後は
+	// HW Full なら Full、
+	// HW Half なら Half になる。
 	n = 0;
 	r = IOCTL(fd, AUDIO_GETFD, &n, "");
 	XP_EQ(0, r);
 	XP_EQ(hwfull, n);
 
-	// HW が Full なら Full に切り替え可能
+	// Full duplex に設定しようとすると
+	// HW Full なら設定できる(何も起きない)、HW Half ならエラー
 	n = 1;
 	r = IOCTL(fd, AUDIO_SETFD, &n, "on");
 	if (hwfull) {
@@ -1244,20 +1281,49 @@ test_AUDIO_SETFD_RDWR(void)
 			XP_EQ(ENOTTY, errno);
 	}
 
-	// 切り替えたあとの GETFD
+	// 取得してみると、
+	// o N7 では、HW Full なら 1、HW Half なら 0 のまま。
 	n = 0;
 	r = IOCTL(fd, AUDIO_GETFD, &n, "");
 	XP_EQ(0, r);
 	XP_EQ(hwfull, n);
 
-	// ここは FULL->FULL への切り替えなので *.open は変化しない。
-	// XXX Half Duplex HW の場合は
+	// GETINFO の ai.*.open などトラック状態は変化しない。
 	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
 	XP_EQ(0, r);
+	XP_EQ(1, ai.play.open);
+	XP_EQ(1, ai.record.open);
+
+	// Half duplex に設定しようとすると、
+	// o N7 では、HW Full なら設定できる、HW Half なら何も起きず成功。
+	// o AUDIO2 では、EINVAL
+	n = 0;
+	r = IOCTL(fd, AUDIO_SETFD, &n, "off");
 	if (netbsd <= 8) {
-		XP_EQ(1, ai.play.open);
-		XP_EQ(1, ai.record.open);
+		XP_EQ(0, r);
+	} else {
+		XP_EQ(-1, r);
+		if (r == -1)
+			XP_EQ(EINVAL, errno);
 	}
+
+	// 取得してみると、
+	// o N7 では、HW Full なら 0、HW Half なら 0 のまま。
+	// o AUDIO2 では、直近の SETFD が失敗してるので変化しない。
+	n = 0;
+	r = IOCTL(fd, AUDIO_GETFD, &n, "");
+	XP_EQ(0, r);
+	if (netbsd <= 8) {
+		XP_EQ(0, n);
+	} else {
+		XP_EQ(hwfull, n);
+	}
+
+	// GETINFO の ai.*.open などトラック状態は変化しない。
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	XP_EQ(0, r);
+	XP_EQ(1, ai.play.open);
+	XP_EQ(1, ai.record.open);
 
 	CLOSE(fd);
 }

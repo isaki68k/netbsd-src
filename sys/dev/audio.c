@@ -217,8 +217,6 @@ static int audio_setinfo_hw(struct audio_softc *, struct audio_info *);
 static int audio_set_params(struct audio_softc *, int);
 static int audiogetinfo(struct audio_softc *, struct audio_info *, int,
 	audio_file_t *);
-static int audio_file_set_full_duplex(struct audio_softc *, audio_file_t *,
-	bool);
 static int audio_getenc(struct audio_softc *, struct audio_encoding *);
 static int audio_get_props(struct audio_softc *);
 static bool audio_can_playback(struct audio_softc *);
@@ -1598,11 +1596,9 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 	// 現在どちらのトラックが有効かは file->ptrack、file->rtrack が
 	// !NULL で判断すること。
 	// flags はユーザが open 時に指示したモードだが、実際には
-	// flags よりトラックが少ない場合もあるし (例えば O_RDWR でオープン
-	// しようとして片方のトラックがエラーだとか、HW が再生専用だとか)、
-	// 反対に flags よりトラックが多い場合もある (例えば O_WRONLY で
-	// オープンした後に AUDIO_SETFD で録音トラックを生やすことも出来る)。
-	// そのためここで引数の flags を見る意味はたぶんない。
+	// flags よりトラックが少ない場合もある (例えば O_RDWR でオープン
+	// しようとして片方のトラックがエラーだとか、HW が再生専用だとか)。
+	// そのためここで引数の flags を見てはいけない。
 
 	// SB とかいくつかのドライバは halt_input と halt_output に
 	// 同じルーチンを使用しているので、その場合は full duplex なら
@@ -1942,16 +1938,16 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		break;
 
 	case AUDIO_SETFD:
-		// HW が Full Duplex なら Full/Half 切り替え可能。
-		// HW が Half Duplex なら Full への切り替えは ENOTTY。
+		// 状態を変えないのなら黙って成功しておく。
+		// Half -> Full は従来通り ENOTTY。
+		// Full -> Half は禁止なので EINVAL。
 		fd = *(int *)addr;
-		if (sc->sc_full_duplex) {
-			error = audio_file_set_full_duplex(sc, file, fd);
+		if (file->ptrack && file->rtrack) {
+			if (fd == 0)
+				return EINVAL;
 		} else {
 			if (fd)
-				error = ENOTTY;
-			else
-				error = 0;
+				return ENOTTY;
 		}
 		break;
 
@@ -2944,6 +2940,7 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 			/* Play takes precedence */
 			mode &= ~AUMODE_RECORD;
 	}
+
 	// ここから mode は変更後の希望するモード。
 	if (play && (mode & AUMODE_PLAY) != 0) {
 		pchanges = audio_file_setinfo_check(&pfmt, pi);
@@ -3414,52 +3411,6 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 		}
 	}
 
-	return 0;
-}
-
-// file の Duplex を切り替えます。
-// HW には影響しません。HW が Half Duplex の時は呼び出してはいけません。
-static int
-audio_file_set_full_duplex(struct audio_softc *sc, audio_file_t *file,
-	bool fdup)
-{
-	audio_track_t *track;
-	int error;
-
-	if (fdup) {
-		/* Half to Full */
-		if (file->ptrack && file->rtrack)
-			return 0;
-		if (file->ptrack == NULL) {
-			error = audio_track_init(sc, &track, AUMODE_PLAY);
-			if (error)
-				return error;
-			mutex_enter(sc->sc_intr_lock);
-			file->ptrack = track;
-			mutex_exit(sc->sc_intr_lock);
-			sc->sc_popens++;
-		}
-		if (file->rtrack == NULL) {
-			error = audio_track_init(sc, &track, AUMODE_RECORD);
-			if (error)
-				return error;
-			mutex_enter(sc->sc_intr_lock);
-			file->rtrack = track;
-			mutex_exit(sc->sc_intr_lock);
-			sc->sc_ropens++;
-		}
-	} else {
-		/* Full to Half */
-		if (file->ptrack && file->rtrack) {
-			track = file->rtrack;
-			mutex_enter(sc->sc_intr_lock);
-			file->rtrack = NULL;
-			mutex_exit(sc->sc_intr_lock);
-			audio_track_destroy(track);
-			KASSERT(sc->sc_ropens > 0);
-			sc->sc_ropens--;
-		}
-	}
 	return 0;
 }
 
