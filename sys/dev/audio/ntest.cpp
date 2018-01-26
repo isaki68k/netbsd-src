@@ -25,6 +25,8 @@ void init();
 int debug;
 int netbsd;
 int props;
+int hwfull;
+int x68k;
 char testname[100];
 int testcount;
 int failcount;
@@ -52,6 +54,8 @@ main(int ac, char *av[])
 
 	testname[0] = '\0';
 	props = -1;
+	hwfull = 0;
+	x68k = 0;
 
 	// global option
 	opt_all = 0;
@@ -150,6 +154,7 @@ getprops()
 	// GETPROPS のための open/ioctl/close が信頼できるかどうかは悩ましいが
 	// とりあえずね
 	if (props == -1) {
+		audio_device_t dev;
 		int fd;
 		int r;
 
@@ -159,6 +164,13 @@ getprops()
 		r = ioctl(fd, AUDIO_GETPROPS, &props);
 		if (r == -1)
 			err(1, "getprops:AUDIO_GETPROPS");
+		hwfull = (props & AUDIO_PROP_FULLDUPLEX) ? 1 : 0;
+
+		r = ioctl(fd, AUDIO_GETDEV, &dev);
+		if (r == -1)
+			err(1, "getprops:AUDIO_GETDEV");
+		if (strcmp(dev.config, "vs") == 0)
+			x68k = 1;
 		close(fd);
 	}
 }
@@ -322,6 +334,8 @@ test_open_1(void)
 		AUMODE_PLAY | AUMODE_PLAY_ALL | AUMODE_RECORD,
 	};
 
+	getprops();
+
 	// 再生専用デバイスのテストとか Half はまた
 	for (int mode = 0; mode <= 2; mode++) {
 		TEST("open_1(%s)", openmodetable[mode]);
@@ -336,7 +350,12 @@ test_open_1(void)
 		// O_RDWR でオープンすると最初から Full duplex になっているようだ
 		XP_EQ(mode2popen[mode], ai.play.open);
 		XP_EQ(mode2ropen[mode], ai.record.open);
-		XP_EQ(expmode[mode], ai.mode);
+		if (hwfull == 0 && mode == O_RDWR) {
+			// HW Half で O_RDWR なら PLAY のみになる
+			XP_EQ(AUMODE_PLAY | AUMODE_PLAY_ALL, ai.mode);
+		} else {
+			XP_EQ(expmode[mode], ai.mode);
+		}
 
 		if (netbsd <= 8) {
 			// N7、N8 では使わないほうのトラックのバッファも常にある
@@ -358,10 +377,12 @@ void
 test_open_2(void)
 {
 	struct audio_info ai, ai0;
+	int channels;
 	int fd;
 	int r;
 
 	TEST("open_2");
+	getprops();
 
 	// オープンして初期値をチェック
 	fd = OPEN(devaudio, O_WRONLY);
@@ -415,6 +436,7 @@ test_open_2(void)
 	ai0 = ai;
 
 	// できるだけ変更
+	channels = (netbsd <= 7 && x68k) ? 1 : 2;
 	AUDIO_INITINFO(&ai);
 	if (ai0.hiwat > 0)
 		ai.hiwat = ai0.hiwat - 1;
@@ -422,12 +444,12 @@ test_open_2(void)
 		ai.lowat = ai0.lowat + 1;
 	ai.mode = AUMODE_PLAY;
 	ai.play.sample_rate = 11025;
-	ai.play.channels = 2;
+	ai.play.channels = channels;
 	ai.play.precision = 16;
 	ai.play.encoding = AUDIO_ENCODING_SLINEAR_LE;
 	ai.play.pause = 1;
 	ai.record.sample_rate = 11025;
-	ai.record.channels = 2;
+	ai.record.channels = channels;
 	ai.record.precision = 16;
 	ai.record.encoding = AUDIO_ENCODING_SLINEAR_LE;
 	ai.record.pause = 1;
@@ -493,10 +515,12 @@ void
 test_open_3(void)
 {
 	struct audio_info ai, ai0;
+	int channels;
 	int fd;
 	int r;
 
 	TEST("open_3");
+	getprops();
 
 	// まず /dev/audio 開いて初期化させておく
 	fd = OPEN(devaudio, O_RDONLY);
@@ -554,15 +578,16 @@ test_open_3(void)
 	XP_EQ(0, ai.record.active);
 
 	// できるだけ変更
+	channels = (netbsd <= 7 && x68k) ? 1 : 2;
 	AUDIO_INITINFO(&ai);
 	ai.mode = AUMODE_PLAY_ALL;
 	ai.play.sample_rate = 11025;
-	ai.play.channels = 2;
+	ai.play.channels = channels;
 	ai.play.precision = 16;
 	ai.play.encoding = AUDIO_ENCODING_SLINEAR_LE;
 	ai.play.pause = 1;
 	ai.record.sample_rate = 11025;
-	ai.record.channels = 2;
+	ai.record.channels = channels;
 	ai.record.precision = 16;
 	ai.record.encoding = AUDIO_ENCODING_SLINEAR_LE;
 	ai.record.pause = 1;
@@ -854,18 +879,20 @@ test_drain_1(void)
 	int r;
 	int fd;
 
+	TEST("drain_1");
+	getprops();
+
 	fd = open(devaudio, O_WRONLY);
 	if (fd == -1)
 		err(1, "open");
 
-	TEST("drain_1");
-	// 1フレーム4バイト、PLAY に設定
 	struct audio_info ai;
 	AUDIO_INITINFO(&ai);
+	// 1フレーム複数バイト、PLAY に設定
 	ai.play.encoding = AUDIO_ENCODING_SLINEAR_LE;
 	ai.play.precision = 16;
-	ai.play.channels = 2;
-	ai.play.sample_rate = 44100;
+	ai.play.channels = (netbsd <= 7 && x68k) ? 1 : 2;
+	ai.play.sample_rate = 11050;
 	ai.mode = AUMODE_PLAY;
 	r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
 	if (r == -1)
@@ -884,17 +911,19 @@ test_drain_2(void)
 	int r;
 	int fd;
 
+	TEST("drain_2");
+	getprops();
+
 	fd = open(devaudio, O_WRONLY);
 	if (fd == -1)
 		err(1, "open");
 
-	TEST("drain_2");
 	struct audio_info ai;
 	AUDIO_INITINFO(&ai);
 	ai.play.encoding = AUDIO_ENCODING_SLINEAR_LE;
 	ai.play.precision = 16;
-	ai.play.channels = 2;
-	ai.play.sample_rate = 44100;
+	ai.play.channels = (netbsd <= 7 && x68k) ? 1 : 2;
+	ai.play.sample_rate = 11050;
 	ai.mode = AUMODE_PLAY;
 	ai.play.pause = 1;
 	r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
@@ -1115,6 +1144,7 @@ test_AUDIO_WSEEK_1(void)
 	int n;
 
 	TEST("AUDIO_WSEEK_1");
+	getprops();
 
 	fd = OPEN(devaudio, O_WRONLY);
 	if (fd == -1)
@@ -1124,8 +1154,8 @@ test_AUDIO_WSEEK_1(void)
 	AUDIO_INITINFO(&ai);
 	ai.play.encoding = AUDIO_ENCODING_SLINEAR_LE;
 	ai.play.precision = 8;
-	ai.play.channels = 2;
-	ai.play.sample_rate = 44100;
+	ai.play.channels = (netbsd <= 7 && x68k) ? 1 : 2;
+	ai.play.sample_rate = 11050;
 	ai.play.pause = 1;
 	ai.mode = AUMODE_PLAY_ALL;
 	r = IOCTL(fd, AUDIO_SETINFO, &ai, "pause=1");
@@ -1165,11 +1195,8 @@ test_AUDIO_SETFD_ONLY(void)
 	int r;
 	int fd;
 	int n;
-	int hwfull;
 
-	// プロパティから Full/Half を知る
 	getprops();
-	hwfull = (props & AUDIO_PROP_FULLDUPLEX) ? 1 : 0;
 
 	for (int mode = 0; mode <= 1; mode++) {
 		TEST("AUDIO_SETFD_ONLY(%s)", openmodetable[mode]);
@@ -1251,12 +1278,10 @@ test_AUDIO_SETFD_RDWR(void)
 	int r;
 	int fd;
 	int n;
-	int hwfull;
-
-	getprops();
-	hwfull = (props & AUDIO_PROP_FULLDUPLEX) ? 1 : 0;
 
 	TEST("AUDIO_SETFD_RDWR");
+	getprops();
+
 	fd = OPEN(devaudio, O_RDWR);
 	if (fd == -1)
 		err(1, "open: %s", devaudio);
@@ -1419,6 +1444,7 @@ test_AUDIO_SETINFO_mode()
 		AUMODE_PLAY | AUMODE_RECORD,	// O_RDWR
 	};
 
+	getprops();
 	for (int i = 0; i < __arraycount(aumodes); i++) {
 		for (int j = 0; j < __arraycount(aumodes); j++) {
 			// i が変更前の O_*、j が変更後の O_*
@@ -1434,7 +1460,12 @@ test_AUDIO_SETINFO_mode()
 			if (r == -1)
 				err(1, "ioctl");
 			mode = ai.mode & (AUMODE_PLAY | AUMODE_RECORD);
-			XP_EQ(aumodes[i], mode);
+			if (hwfull == 0 && i == O_RDWR) {
+				// HW Half で O_RDWR は AUMODE_PLAY になる
+				XP_EQ(AUMODE_PLAY, mode);
+			} else {
+				XP_EQ(aumodes[i], mode);
+			}
 			XP_EQ(mode2popen[i], ai.play.open);
 			XP_EQ(mode2ropen[i], ai.record.open);
 			// N7、N8 では buffer_size は常に非ゼロなので調べない
