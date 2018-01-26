@@ -15,10 +15,6 @@
 #include <sys/param.h>
 #include <sys/sysctl.h>
 
-struct cmdtable {
-	const char *name;
-	int (*func)(int, char *[]);
-};
 struct testtable {
 	const char *name;
 	void (*func)(void);
@@ -34,17 +30,11 @@ int testcount;
 int failcount;
 const char *devaudio = "/dev/audio0";
 const char *devsound = "/dev/sound0";
-extern struct cmdtable cmdtable[];
 extern struct testtable testtable[];
 
 void __attribute__((__noreturn__))
 usage()
 {
-	// cmd は一度に1つ。任意の引数あり。
-	printf(" %s <cmd> [<arg...>]\n", getprogname());
-	for (int i = 0; cmdtable[i].name != NULL; i++) {
-		printf("\t%s\n", cmdtable[i].name);
-	}
 	// test は複数列挙できる。
 	printf(" %s {-a | <testname...>}\n", getprogname());
 	for (int i = 0; testtable[i].name != NULL; i++) {
@@ -92,17 +82,9 @@ main(int ac, char *av[])
 			testname[0] = '\0';
 		}
 	} else {
-		// -a なしなら cmd か test
+		// -a なしなら test
 		if (ac == 0)
 			usage();
-
-		// 先頭が cmd なら一つだけ受け取って処理
-		for (int j = 0; cmdtable[j].name != NULL; j++) {
-			if (strcmp(av[0], cmdtable[j].name) == 0) {
-				cmdtable[j].func(ac, av);
-				return 0;
-			}
-		}
 
 		// そうでなければ指定されたやつ(前方一致)を順にテスト
 		for (i = 0; i < ac; i++) {
@@ -317,24 +299,6 @@ int debug_close(int line, int fd)
 }
 
 // ---
-
-// ioctl FIONREAD の引数が NULL だったら何がおきるか。
-// -> ioctl 上位(kern/sys_generic.c) が領域を用意してそこに書き込んでから
-// copyout で転送するため、NULL は直接渡ってこないようだ。
-int
-cmd_FIONREAD_null(int ac, char *av[])
-{
-	int fd = OPEN(devaudio, O_RDWR);
-	if (fd == -1)
-		err(1, "open: %s", devaudio);
-
-	int r = IOCTL(fd, FIONREAD, NULL, "NULL");
-	if (r == -1)
-		err(1, "FIONREAD");
-
-	CLOSE(fd);
-	return 0;
-}
 
 // O_* を PLAY 側がオープンされてるかに変換
 int mode2popen[] = {
@@ -1442,14 +1406,6 @@ test_AUDIO_SETINFO_mode()
 		}
 	}
 }
-
-// コマンド一覧
-#define DEF(x)	{ #x, cmd_ ## x }
-struct cmdtable cmdtable[] = {
-	DEF(FIONREAD_null),
-	{ NULL, NULL },
-};
-#undef DEF
 
 // テスト一覧
 #define DEF(x)	{ #x, test_ ## x }

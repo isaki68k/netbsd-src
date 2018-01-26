@@ -1,9 +1,12 @@
 CPPFLAGS+=	-g
 
-all:	ntest.$(MACHINE)
+all:	ncmd.${MACHINE} ntest.$(MACHINE)
+
+ncmd.$(MACHINE):	ncmd.o
+	$(CC) -g -o $@ $>
 
 ntest.$(MACHINE):	ntest.o
 	$(CC) -g -o $@ $>
 
 clean:
-	rm -rf ntest.o
+	rm -rf ncmd.o ntest.o
