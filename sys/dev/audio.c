@@ -1909,23 +1909,19 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 
 	case AUDIO_GETFD:
 		// file が現在 Full Duplex かどうかを返す。
-		if (file->ptrack && file->rtrack)
-			*(int *)addr = 1;
-		else
-			*(int *)addr = 0;
+		*(int *)addr = file->full_duplex;
 		break;
 
 	case AUDIO_SETFD:
-		// 状態を変えないのなら黙って成功しておく。
-		// Half -> Full は従来通り ENOTTY。
-		// Full -> Half は禁止なので EINVAL。
+		// ここはほぼ従来通り。ただし setfd は呼ばない。
 		fd = *(int *)addr;
-		if (file->ptrack && file->rtrack) {
-			if (fd == 0)
-				return EINVAL;
+		if ((audio_get_props(sc) & AUDIO_PROP_FULLDUPLEX)) {
+			file->full_duplex = fd;
 		} else {
 			if (fd)
-				return ENOTTY;
+				error = ENOTTY;
+			else
+				error = 0;
 		}
 		break;
 
@@ -2920,6 +2916,56 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 		if ((mode & AUMODE_PLAY) != 0 && !sc->sc_full_duplex)
 			/* Play takes precedence */
 			mode &= ~AUMODE_RECORD;
+
+		if (!sc->sc_full_duplex) {
+			// Half duplex なら
+			// 自身が1本目で PLAY     なら PLAY のまま
+			// 自身が1本目で      REC なら REC  のまま
+			// 自身が1本目で PLAY|REC なら PLAY にする
+			// 先客が PLAY で自分が PLAY     なら PLAY のまま
+			// 先客が PLAY で自分が      REC なら ENODEV ?
+			// 先客が PLAY で自分が PLAY|REC なら PLAY にする
+			// 先客が REC  で自分が PLAY     なら ENODEV ?
+			// 先客が REC  で自分が      REC なら REC のまま
+			// 先客が REC  で自分が PLAY|REC なら REC にする?
+
+			// sc_files には自身が含まれる場合(ioctl)と
+			// 含まれない場合(open)の両方がある。
+			bool found;
+			audio_file_t *f;
+			/* Play takes precedence */
+			if ((mode & AUMODE_PLAY) != 0) {
+				found = false;
+				mutex_enter(sc->sc_intr_lock);
+				SLIST_FOREACH(f, &sc->sc_files, entry) {
+					if (f == file)
+						continue;
+					if ((f->mode & AUMODE_RECORD) != 0) {
+						found = true;
+						break;
+					}
+				}
+				mutex_exit(sc->sc_intr_lock);
+				if (found)
+					return ENODEV;
+				mode &= ~AUMODE_RECORD;
+			}
+			if ((mode & AUMODE_RECORD) != 0) {
+				found = false;
+				mutex_enter(sc->sc_intr_lock);
+				SLIST_FOREACH(f, &sc->sc_files, entry) {
+					if (f == file)
+						continue;
+					if ((f->mode & AUMODE_PLAY) != 0) {
+						found = true;
+						break;
+					}
+				}
+				mutex_exit(sc->sc_intr_lock);
+				if (found)
+					return ENODEV;
+			}
+		}
 	}
 
 	// ここから mode は変更後の希望するモード。
