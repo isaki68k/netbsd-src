@@ -715,7 +715,7 @@ test_encoding_1(void)
 		AUDIO_ENCODING_ULINEAR,		// for backward compatibility
 	};
 	int prectable[] = {
-		8, 16, 24, 32,
+		8, 16, 32,
 	};
 	int chtable[] = {
 		1, 2, 4, 8, 12,
@@ -787,7 +787,7 @@ test_encoding_2()
 
 	// 本当はサポートしている以外全部なんだが
 	int prectable[] = {
-		0, 4,
+		0, 4, 24,
 	};
 	for (int i = 0; i < __arraycount(prectable); i++) {
 		int prec = prectable[i];
