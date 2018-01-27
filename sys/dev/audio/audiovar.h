@@ -159,7 +159,8 @@ struct audio_track {
 	uint64_t	dropframes;	/* # of frames dropped in recording */
 	int		eofcounter;	/* # of zero sized write */
 
-	volatile uint32_t track_cl;	/* track cooperative lock */
+	// プロセスコンテキストが track を使用中なら true。
+	volatile bool	in_use;		/* track cooperative lock */
 
 	// 以下できるかどうか未知
 

@@ -1704,7 +1704,7 @@ audio_pmixer_mixall(struct audio_softc *sc, bool isintr)
 			continue;
 
 		// 協調的ロックされているトラックは、今回ミキシングしない。
-		if (isintr && track->track_cl) {
+		if (isintr && track->in_use) {
 			TRACET(track, "in use");
 			continue;
 		}
@@ -2389,11 +2389,11 @@ audio_track_drain(audio_track_t *track)
 	// 無音パディングして outputbuf に書き込む動作が必要。
 	// そのためここは1回だけでいい。
 	mutex_enter(sc->sc_intr_lock);
-	track->track_cl = 1;
+	track->in_use = true;
 	mutex_exit(sc->sc_intr_lock);
 	audio_track_play(track);
 	mutex_enter(sc->sc_intr_lock);
-	track->track_cl = 0;
+	track->in_use = false;
 	mutex_exit(sc->sc_intr_lock);
 #if !defined(START_ON_OPEN)
 	if (sc->sc_pbusy == false) {
@@ -2571,11 +2571,11 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 				continue;
 			}
 
-			track->track_cl = 1;
+			track->in_use = true;
 			mutex_exit(sc->sc_intr_lock);
 			audio_track_play(track);
 			mutex_enter(sc->sc_intr_lock);
-			track->track_cl = 0;
+			track->in_use = false;
 			mutex_exit(sc->sc_intr_lock);
 #if !defined(START_ON_OPEN)
 			audio_pmixer_start(sc, force);
@@ -2671,11 +2671,11 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 			continue;
 		}
 
-		track->track_cl = 1;
+		track->in_use = true;
 		mutex_exit(sc->sc_intr_lock);
 		audio_track_record(track);
 		mutex_enter(sc->sc_intr_lock);
-		track->track_cl = 0;
+		track->in_use = false;
 		mutex_exit(sc->sc_intr_lock);
 
 		bytes = min(usrbuf->count, uio->uio_resid);
