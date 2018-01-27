@@ -1763,7 +1763,11 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req,
 			}
 		} else {
 			for (int i = 0; i < sample_count; i++) {
+#if defined(AUDIO_USE_C_IMPLEMENTATION_DEFINED_BEHAVIOR) && defined(__GNUC__)
+				*dptr++ = ((aint2_t)*sptr++) * track->volume >> 8;
+#else
 				*dptr++ = ((aint2_t)*sptr++) * track->volume / 256;
+#endif
 			}
 		}
 	} else {
@@ -1774,7 +1778,11 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req,
 			}
 		} else {
 			for (int i = 0; i < sample_count; i++) {
+#if defined(AUDIO_USE_C_IMPLEMENTATION_DEFINED_BEHAVIOR) && defined(__GNUC__)
+				*dptr++ += ((aint2_t)*sptr++) * track->volume >> 8;
+#else
 				*dptr++ += ((aint2_t)*sptr++) * track->volume / 256;
+#endif
 			}
 		}
 	}
