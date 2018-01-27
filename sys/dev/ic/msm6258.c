@@ -113,7 +113,7 @@ pcm2adpcm_step(struct msm6258_codecvar *mc, int16_t a)
 void
 internal_to_msm6258(audio_filter_arg_t *arg)
 {
-	KASSERT(arg->dstfmt->encoding == AUDIO_ENCODING_MSM6258);
+	KASSERT(arg->dstfmt->encoding == AUDIO_ENCODING_ADPCM);
 	KASSERT(arg->dstfmt->stride == 4);
 	KASSERT(is_internal_format(arg->srcfmt));
 	KASSERT(arg->srcfmt->channels == arg->dstfmt->channels);
@@ -180,7 +180,7 @@ adpcm2pcm_step(struct msm6258_codecvar *mc, uint8_t b)
 void
 msm6258_to_internal(audio_filter_arg_t *arg)
 {
-	KASSERT(arg->srcfmt->encoding == AUDIO_ENCODING_MSM6258);
+	KASSERT(arg->srcfmt->encoding == AUDIO_ENCODING_ADPCM);
 	KASSERT(arg->srcfmt->stride == 4);
 	KASSERT(is_internal_format(arg->dstfmt));
 	KASSERT(arg->srcfmt->channels == arg->dstfmt->channels);
