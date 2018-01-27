@@ -145,31 +145,6 @@ audio_realloc(void *memblock, size_t bytes)
  * ***** audio_track *****
  */
 
-// track_cl フラグをセットします。
-// 割り込みコンテキストから呼び出すことはできません。
-static inline void
-audio_track_enter_colock(struct audio_softc *sc, audio_track_t *track)
-{
-	KASSERT(track);
-
-	mutex_enter(sc->sc_intr_lock);
-	track->track_cl = 1;
-	mutex_exit(sc->sc_intr_lock);
-}
-
-// track_cl フラグをリセットします。
-// 割り込みコンテキストから呼び出すことはできません。
-static inline void
-audio_track_leave_colock(struct audio_softc *sc, audio_track_t *track)
-{
-	KASSERT(track);
-
-	mutex_enter(sc->sc_intr_lock);
-	track->track_cl = 0;
-	mutex_exit(sc->sc_intr_lock);
-}
-
-
 static void
 audio_track_chvol(audio_filter_arg_t *arg)
 {
@@ -1728,9 +1703,10 @@ audio_pmixer_mixall(struct audio_softc *sc, bool isintr)
 		if (track == NULL)
 			continue;
 
-		if (isintr) {
-			// 協調的ロックされているトラックは、今回ミキシングしない。
-			if (track->track_cl) continue;
+		// 協調的ロックされているトラックは、今回ミキシングしない。
+		if (isintr && track->track_cl) {
+			TRACET(track, "in use");
+			continue;
 		}
 
 		if (track->is_pause) {
@@ -2412,8 +2388,13 @@ audio_track_drain(audio_track_t *track)
 	// 場合はそれが usrbuf に滞留しているため、この1ブロックを
 	// 無音パディングして outputbuf に書き込む動作が必要。
 	// そのためここは1回だけでいい。
-	audio_track_enter_colock(sc, track);
+	mutex_enter(sc->sc_intr_lock);
+	track->track_cl = 1;
+	mutex_exit(sc->sc_intr_lock);
 	audio_track_play(track);
+	mutex_enter(sc->sc_intr_lock);
+	track->track_cl = 0;
+	mutex_exit(sc->sc_intr_lock);
 #if !defined(START_ON_OPEN)
 	if (sc->sc_pbusy == false) {
 		// トラックバッファが空になっても、ミキサ側で処理中のデータが
@@ -2422,7 +2403,6 @@ audio_track_drain(audio_track_t *track)
 		audio_pmixer_start(sc, true);
 	}
 #endif
-	audio_track_leave_colock(sc, track);
 
 	for (;;) {
 		// 終了条件判定の前に表示したい
@@ -2580,26 +2560,27 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 			}
 		}
 
-		audio_track_enter_colock(sc, track);
-
 		while (track->usrbuf.count >= out_thres && error == 0) {
+			mutex_enter(sc->sc_intr_lock);
 			if (track->outputbuf.count == track->outputbuf.capacity) {
+				mutex_exit(sc->sc_intr_lock);
 				// trkbuf が一杯ならここで待機
-				audio_track_leave_colock(sc, track);
 				error = audio_waitio(sc, track);
 				if (error != 0)
 					return error;
-				audio_track_enter_colock(sc, track);
 				continue;
 			}
 
+			track->track_cl = 1;
+			mutex_exit(sc->sc_intr_lock);
 			audio_track_play(track);
+			mutex_enter(sc->sc_intr_lock);
+			track->track_cl = 0;
+			mutex_exit(sc->sc_intr_lock);
 #if !defined(START_ON_OPEN)
 			audio_pmixer_start(sc, force);
 #endif
 		}
-
-		audio_track_leave_colock(sc, track);
 	}
 
 	return error;
@@ -2667,32 +2648,35 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 	error = 0;
 	while (uio->uio_resid > 0 && error == 0) {
 		int bytes;
-
 		audio_ring_t *usrbuf = &track->usrbuf;
-		audio_track_enter_colock(sc, track);
 
 		TRACET(track, "while resid=%zd input=%d/%d/%d usrbuf=%d/%d/%d",
 		    uio->uio_resid,
 		    track->input->top, track->input->count, track->input->capacity,
 		    usrbuf->top, usrbuf->count, usrbuf->capacity);
 
+		mutex_enter(sc->sc_intr_lock);
 		if (track->input->count == 0 && track->usrbuf.count == 0) {
 			// バッファが空ならここで待機
+			mutex_exit(sc->sc_intr_lock);
 #if !defined(START_ON_OPEN)
 			audio_rmixer_start(sc);
 #endif
 			if (ioflag & IO_NDELAY)
 				return EWOULDBLOCK;
 
-			audio_track_leave_colock(sc, track);
 			error = audio_waitio(sc, track);
 			if (error)
 				return error;
 			continue;
 		}
 
+		track->track_cl = 1;
+		mutex_exit(sc->sc_intr_lock);
 		audio_track_record(track);
-		audio_track_leave_colock(sc, track);
+		mutex_enter(sc->sc_intr_lock);
+		track->track_cl = 0;
+		mutex_exit(sc->sc_intr_lock);
 
 		bytes = min(usrbuf->count, uio->uio_resid);
 		int top = usrbuf->top;
