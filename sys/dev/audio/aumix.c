@@ -1764,26 +1764,15 @@ audio_pmixer_mixall(struct audio_softc *sc, bool isintr)
 int
 audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req, int mixed)
 {
-	// req フレーム(通常1ブロック分)に満たない場合、
-	// - PLAY_ALL なら今回は処理しない (貯まるまで待つ)。
-	// - PLAY(_SYNC) なら無音で埋めて処理する。
-	if (track->outputbuf.count < req) {
-		if ((track->mode & AUMODE_PLAY_ALL) != 0) {
-			TRACET(track, "track count(%d) < req(%d); return",
-			    track->outputbuf.count, req);
-			return mixed;
-		} else {
-			audio_append_silence(track, &track->outputbuf);
-			// XXX ここで?落とした playdrop をカウント?
-		}
-	}
+	// 現時点で outputbuf に溜まってるやつを最大1ブロック分処理する。
+
+	// XXX ここで?落とした playdrop をカウント?
 
 	// このトラックが処理済みならなにもしない
 	if (mixer->mixseq < track->seq) return mixed;
 
-	int count = mixer->frames_per_block;
-
-	KASSERT(audio_ring_unround_count(&track->outputbuf) >= count);
+	int count = audio_ring_unround_count(&track->outputbuf);
+	count = min(count, mixer->frames_per_block);
 
 	aint_t *sptr = RING_TOP(aint_t, &track->outputbuf);
 	aint2_t *dptr = mixer->mixsample;
