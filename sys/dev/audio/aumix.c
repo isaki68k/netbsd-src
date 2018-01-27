@@ -471,7 +471,9 @@ audio_track_freq_down(audio_filter_arg_t *arg)
 	KASSERT(is_valid_ring(src));
 	KASSERT(src->count > 0);
 	KASSERT(src->fmt.channels == dst->fmt.channels);
-	KASSERT(src->top % track->mixer->frames_per_block == 0);
+	KASSERTMSG(src->top % track->mixer->frames_per_block == 0,
+	    "src->top=%d fpb=%d",
+	    src->top, track->mixer->frames_per_block);
 
 	const aint_t *sptr0 = arg->src;
 	aint_t *dptr = arg->dst;
@@ -1244,6 +1246,7 @@ audio_track_play(audio_track_t *track, bool isdrain)
 	int bytes;		// usrbuf から input に転送するバイト数
 
 	KASSERT(track);
+	TRACET(track, "start pstate=%d isdrain=%d", track->pstate, isdrain);
 
 	// この時点で usrbuf にデータはあるかも知れないしないかも知れない。
 	// また input (outputbuf を指している可能性がある) にもデータはあるかも
@@ -1271,6 +1274,7 @@ audio_track_play(audio_track_t *track, bool isdrain)
 	// input バッファの空きを調べる
 	int count = audio_ring_unround_free_count(track->input);
 	if (count == 0) {
+		TRACET(track, "input buffer full");
 		return;
 	}
 
@@ -1745,6 +1749,7 @@ audio_pmixer_mixall(struct audio_softc *sc, bool isintr)
 
 #if !defined(START_ON_OPEN)
 		if (track->outputbuf.count < req) {
+			TRACET(track, "process");
 			audio_track_play(track, isintr);
 		}
 #endif
@@ -1752,6 +1757,8 @@ audio_pmixer_mixall(struct audio_softc *sc, bool isintr)
 		// 合成
 		if (track->outputbuf.count > 0) {
 			mixed = audio_pmixer_mix_track(mixer, track, req, mixed);
+		} else {
+			TRACET(track, "not mix");
 		}
 	}
 	return mixed;
@@ -2407,8 +2414,8 @@ audio_track_drain(audio_track_t *track)
 
 	// pause 中なら今溜まってるものは全部無視してこのまま終わってよし
 	if (track->is_pause) {
-		track->pstate = AUDIO_STATE_CLEAR;
 		TRACET(track, "pause -> clear");
+		track->pstate = AUDIO_STATE_CLEAR;
 	}
 	// トラックにデータがなくても drain は ミキサのループが数回回って
 	// 問題なく終わるが、クリーンならさすがに早期終了しても
