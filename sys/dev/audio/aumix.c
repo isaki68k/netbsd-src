@@ -1239,14 +1239,14 @@ audio_apply_stage(audio_track_t *track, audio_stage_t *stage, bool isfreq)
  * 再生時の入力データを変換してトラックバッファに投入します。
  */
 void
-audio_track_play(audio_track_t *track, bool isdrain)
+audio_track_play(audio_track_t *track)
 {
 	int inpbuf_frames_per_block;
 	int blockbytes;	// usrbuf および input の1ブロックのバイト数
 	int bytes;		// usrbuf から input に転送するバイト数
 
 	KASSERT(track);
-	TRACET(track, "start pstate=%d isdrain=%d", track->pstate, isdrain);
+	TRACET(track, "start pstate=%d", track->pstate);
 
 	// この時点で usrbuf にデータはあるかも知れないしないかも知れない。
 	// また input (outputbuf を指している可能性がある) にもデータはあるかも
@@ -1266,7 +1266,9 @@ audio_track_play(audio_track_t *track, bool isdrain)
 	//   - PLAY なら、バッファ分だけ処理する (不足分はミキサで無音挿入)。
 	//   - PLAY_ALL なら、今回は何もせず帰る
 	if (track->usrbuf.count < blockbytes) {
-		if (isdrain == false && (track->mode & AUMODE_PLAY_ALL) != 0) {
+		if (track->pstate != AUDIO_STATE_DRAINING &&
+		    (track->mode & AUMODE_PLAY_ALL) != 0) {
+			TRACET(track, "not enough; return");
 			return;
 		}
 	}
@@ -1330,7 +1332,7 @@ audio_track_play(audio_track_t *track, bool isdrain)
 	// 周波数変換
 	if (track->freq.filter) {
 		int n = 0;
-		if (isdrain) {
+		if (track->pstate == AUDIO_STATE_DRAINING) {
 			n = audio_append_silence(track, &track->freq.srcbuf);
 			if (n > 0) {
 				TRACET(track, "freq.srcbuf appended silence %d frames", n);
@@ -1342,17 +1344,6 @@ audio_track_play(audio_track_t *track, bool isdrain)
 		if (n > 0 && track->freq.srcbuf.count > 0) {
 			TRACET(track, "freq.srcbuf cleanup count=%d", track->freq.srcbuf.count);
 			track->freq.srcbuf.count = 0;
-		}
-	}
-
-	if (isdrain) {
-		/* 無音をブロックサイズまで埋める */
-		/* 内部フォーマットだとわかっている */
-		/* 周波数変換の結果、ブロック未満の端数フレームが出ることもあるし、
-		変換なしのときは入力自体が半端なときもあろう */
-		int n = audio_append_silence(track, &track->outputbuf);
-		if (n > 0) {
-			TRACET(track, "track.outputbuf appended silence %d frames", n);
 		}
 	}
 
@@ -1750,7 +1741,7 @@ audio_pmixer_mixall(struct audio_softc *sc, bool isintr)
 #if !defined(START_ON_OPEN)
 		if (track->outputbuf.count < req) {
 			TRACET(track, "process");
-			audio_track_play(track, isintr);
+			audio_track_play(track);
 		}
 #endif
 
@@ -2433,7 +2424,7 @@ audio_track_drain(audio_track_t *track)
 	// 無音パディングして outputbuf に書き込む動作が必要。
 	// そのためここは1回だけでいい。
 	audio_track_enter_colock(sc, track);
-	audio_track_play(track, true);
+	audio_track_play(track);
 #if !defined(START_ON_OPEN)
 	if (sc->sc_pbusy == false) {
 		// トラックバッファが空になっても、ミキサ側で処理中のデータが
@@ -2613,7 +2604,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 				continue;
 			}
 
-			audio_track_play(track, false);
+			audio_track_play(track);
 #if !defined(START_ON_OPEN)
 			audio_pmixer_start(sc, force);
 #endif
