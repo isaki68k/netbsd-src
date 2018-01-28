@@ -67,6 +67,7 @@ int cmd_set_file(const char *);
 int cmd_set_mml(const char *);
 int cmd_play();
 int cmd_perf(const char *);
+int cmd_perf_codec_slinear_to_mulaw();
 int cmd_perf_freq_up();
 int cmd_perf_freq_down();
 int cmd_perf_freq_main(struct freqdata *);
@@ -629,6 +630,7 @@ struct testdata {
 	const char *testname;
 	int (*funcname)();
 } perfdata[] = {
+	{ "codec_slinear_to_mulaw",	cmd_perf_codec_slinear_to_mulaw },
 	{ "freq_up",	cmd_perf_freq_up },
 	{ "freq_down",	cmd_perf_freq_down },
 	{ "chmix_mixLR",cmd_perf_chmix_mixLR },
@@ -689,6 +691,61 @@ sigalrm(int signo)
 	signaled = 1;
 }
 
+int
+cmd_perf_codec_slinear_to_mulaw()
+{
+	struct test_file *f = &files[fileidx];
+	audio_track_t *track;
+	audio_format2_t srcfmt;
+	struct timeval start, end, result;
+	struct itimerval it;
+
+	signal(SIGALRM, sigalrm);
+	memset(&it, 0, sizeof(it));
+	it.it_value.tv_sec = 3;
+
+	f->file = sys_open(sc, AUMODE_RECORD);
+	track = f->file->rtrack;
+	// src fmt
+	srcfmt = track->mixer->track_fmt;
+	srcfmt.encoding = AUDIO_ENCODING_ULAW;
+	srcfmt.precision = 8;
+	srcfmt.stride = 8;
+	// set
+	int r = audio_track_set_format(track, &srcfmt);
+	if (r != 0) {
+		printf("%s: audio_track_set_format failed: %s\n",
+			__func__, strerror(errno));
+		exit(1);
+	}
+
+	uint64_t count;
+	printf("slinear_to_mulaw: ");
+	fflush(stdout);
+
+	setitimer(ITIMER_REAL, &it, NULL);
+	gettimeofday(&start, NULL);
+	for (count = 0, signaled = 0; signaled == 0; count++) {
+		track->codec.srcbuf.top = 0;
+		track->codec.srcbuf.count = frame_per_block_roundup(track->mixer,
+			&srcfmt);
+		track->outputbuf.top = 0;
+		track->outputbuf.count = 0;
+		audio_apply_stage(track, &track->codec, false);
+	}
+	gettimeofday(&end, NULL);
+	timersub(&end, &start, &result);
+
+#if defined(__m68k__)
+	printf("%d %5.1f times/sec\n", (int)count,
+		(double)count/(result.tv_sec + (double)result.tv_usec/1000000));
+#else
+	printf("%d %5.1f times/msec\n", (int)count,
+		(double)count/((uint64_t)result.tv_sec*1000 + result.tv_usec/1000));
+#endif
+
+	return 0;
+}
 int
 cmd_perf_freq_main(struct freqdata *pattern)
 {
