@@ -2791,6 +2791,7 @@ audio_hw_config(struct audio_softc *sc, int is_indep)
 // ai に基づいて file の両トラックを諸々セットする。
 // ai のうち初期値のままのところは sc_[pr]params, sc_[pr]pause が使われる。
 // セットできれば sc_[pr]params, sc_[pr]pause も更新する。
+// オープン時に呼ばれる時は file はまだ sc_files には繋がっていない。
 static int
 audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	const struct audio_info *ai)
@@ -2815,6 +2816,8 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	int saved_rpause;
 	int saved_mode;
 	int error;
+
+	KASSERT(mutex_owned(sc->sc_lock));
 
 	pi = &ai->play;
 	ri = &ai->record;
