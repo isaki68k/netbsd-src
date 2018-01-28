@@ -1595,7 +1595,10 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 
 	mixer->volume = 256;
 
-	cv_init(&mixer->draincv, "audiodr");
+	/* draincv is used only for playback */
+	if (mode == AUMODE_PLAY)
+		cv_init(&mixer->draincv, "audiodr");
+
 	return 0;
 }
 
