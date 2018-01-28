@@ -76,6 +76,7 @@ audio_attach(struct audio_softc **softc, bool hw)
 	sc->sc_phwfmt.sample_rate = 48000;
 	sc->sc_phwfmt.precision = 16;
 	sc->sc_phwfmt.stride = 16;
+	sc->sc_rhwfmt = sc->sc_phwfmt;
 	dev->frame_bytes = sc->sc_phwfmt.precision / 8 * sc->sc_phwfmt.channels;
 
 	pthread_mutex_init(&dev->mutex, NULL);
