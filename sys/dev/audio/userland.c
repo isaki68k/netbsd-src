@@ -101,6 +101,15 @@ sys_ioctl_drain(audio_track_t *track)
 }
 
 void
+audio_print_format2(const char *s, const audio_format2_t *fmt)
+{
+	char fmtstr[64];
+
+	audio_format2_tostr(fmtstr, sizeof(fmtstr), fmt);
+	printf("%s %s\n", s, fmtstr);
+}
+
+void
 audio_format2_tostr(char *buf, size_t bufsize, const audio_format2_t *fmt)
 {
 	int n;

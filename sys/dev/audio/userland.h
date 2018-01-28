@@ -265,6 +265,7 @@ extern audio_file_t *sys_open(struct audio_softc *sc, int mode);
 extern int/*ssize_t*/ sys_write(audio_file_t *file, void* buf, size_t len);	/* write syscall の Userland 側エミュレート */
 extern int sys_ioctl_drain(audio_track_t *track);	/* ioctl(AUDIO_DRAIN) */
 
+extern void audio_print_format2(const char *, const audio_format2_t *);
 extern void audio_format2_tostr(char *buf, size_t bufsize,
 	const audio_format2_t *fmt);
 
