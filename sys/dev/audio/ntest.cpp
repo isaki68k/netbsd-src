@@ -14,6 +14,7 @@
 #include <sys/ioctl.h>
 #include <sys/param.h>
 #include <sys/sysctl.h>
+#include <sys/wait.h>
 
 struct testtable {
 	const char *name;
@@ -1156,6 +1157,55 @@ test_readwrite_2(void)
 	}
 }
 
+// 別ディスクリプタを同時に読み書き
+void
+test_readwrite_3()
+{
+	char buf[1024];
+	int fd0, fd1;
+	int r;
+	int status;
+	pid_t pid;
+
+	TEST("readwrite_3");
+	getprops();
+
+	memset(buf, 0, sizeof(buf));
+
+	fd0 = OPEN(devaudio, O_WRONLY);
+	if (fd0 == -1)
+		err(1, "open");
+
+	fd1 = OPEN(devaudio, O_RDONLY);
+	if (fd1 == -1)
+		err(1, "open");
+
+	pid = fork();
+	if (pid == -1)
+		err(1, "fork");
+	if (pid == 0) {
+		// child (read)
+		for (int i = 0; i < 10; i++) {
+			r = READ(fd1, buf, sizeof(buf));
+			if (r == -1)
+				err(1, "read(i=%d)", i);
+		}
+		exit(0);
+	} else {
+		// parent (write)
+		for (int i = 0; i < 10; i++) {
+			r = WRITE(fd0, buf, sizeof(buf));
+			if (r == -1)
+				err(1, "write(i=%d)", i);
+		}
+		waitpid(pid, &status, 0);
+	}
+
+	CLOSE(fd0);
+	CLOSE(fd1);
+	XP_EQ(0, 0);
+}
+
 // FIOASYNC が同時に2人設定できるか
 void
 test_FIOASYNC_1(void)
@@ -1725,6 +1775,7 @@ struct testtable testtable[] = {
 	DEF(drain_2),
 	DEF(readwrite_1),
 	DEF(readwrite_2),
+	DEF(readwrite_3),
 	DEF(FIOASYNC_1),
 	DEF(FIOASYNC_2),
 	DEF(FIOASYNC_3),
