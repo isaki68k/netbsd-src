@@ -2490,16 +2490,6 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 		device_active(&sc->dev, DVA_SYSTEM);
 #endif
 
-	/*
-	 * If half-duplex and currently recording, throw away data.
-	 */
-	if (!file->full_duplex && (file->mode & AUMODE_RECORD)) {
-		uio->uio_offset += uio->uio_resid;
-		uio->uio_resid = 0;
-		DPRINTF(1, "%s: half-dpx read busy\n", __func__);
-		return 0;
-	}
-
 	// XXX playdrop と PLAY_ALL はちょっと後回し
 
 	// inp_thres は usrbuf に書き込む際の閾値。
@@ -2625,7 +2615,6 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 	audio_file_t *file)
 {
 	int error;
-	int cc;
 	audio_track_t *track = file->rtrack;
 	KASSERT(track);
 	TRACET(track, "resid=%u", (int)uio->uio_resid);
@@ -2642,37 +2631,11 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 		device_active(&sc->dev, DVA_SYSTEM);
 #endif
 
-	/*
-	 * If hardware is half-duplex and currently playing, return
-	 * silence blocks based on the number of blocks we have output.
-	 */
-	if (!file->full_duplex && (file->mode & AUMODE_PLAY)) {
-		while (uio->uio_resid > 0 && !error) {
-			for (;;) {
-				/*
-				 * No need to lock, as any wakeup will be
-				 * held for us while holding sc_lock.
-				 */
-				cc = track->usrbuf.count;	// でいいのかな?
-				TRACET(track, "cc=%d", cc);
-				if (cc > 0)
-					break;
-				if ((ioflag & IO_NDELAY))
-					return EWOULDBLOCK;
-				error = audio_waitio(sc, track);
-				if (error)
-					return error;
-			}
-
-			if (uio->uio_resid < cc)
-				cc = uio->uio_resid;
-			DPRINTF(2, "%s: reading in write mode, cc=%d\n",
-			    __func__, cc);
-
-			// audio_silence_copyout
-printf("silence_copyout cc=%d\n", cc);
-		}
-		return error;
+	// 自分が O_RDWR でオープンしてあれば read() を発行することは出来るが、
+	// HW が half-duplex で自分か他の誰かによって play が選択されていると
+	// この read() はエラー。
+	if ((file->mode & AUMODE_RECORD) == 0) {
+		return EBADF;
 	}
 
 	TRACET(track, "resid=%zd", uio->uio_resid);

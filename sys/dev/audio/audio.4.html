@@ -293,6 +293,10 @@ progress will be filled with silence but delayed to return
 at the current sampling rate. If both playback and recording
 are requested on a half-duplex device, playback mode takes
 precedence and recordings will get silence.</p>
+<p class=bad style="margin-left:8%">
+N8 では Half-Duplex HW に対して open(O_WRONLY) してwrite()と、
+open(O_RDONLY) して read を同時に行うと read がブロックするようだ。
+</p>
 
 <p style="margin-left:8%; margin-top: 1em">On a full-duplex
 device, reads and writes may operate concurrently without
@@ -307,15 +311,28 @@ explicitly.</p>
 full-duplex モードには明示的にセットする必要がある」
 とあるが、
 N7、N8 いずれも現在の実装での挙動は以下の通り。<br>
-Full-Duplex HW で open(O_RDONLY) なら half-duplex 録音モード、<br>
-Full-Duplex HW で open(O_WRONLY) なら half-duplex 再生モード、<br>
-Full-Duplex HW で open(O_RDWR) なら full-duplex 再生録音モードになる。<br>
-Half-Duplex HW での挙動は未調査。<br>
+open(O_RDONLY) は Full/Half-Duplex どちらの HW でも half-duplex 録音モード、<br>
+open(O_WRONLY) は Full/Half-Duplex どちらの HW でも half-duplex 再生モード、<br>
+open(O_RDWR) は Half-Duplex HW では half-duplex 再生モード、
+Full-Duplex HW では full-duplex 再生録音モード(?)になる。<br>
+これはこれで manpage を修正したほうがいい。
 </p>
 <p class=a2 style="margin-left:8%">
-AUDIO2 もこの動作に合わせる。</p>
-<p class=a2 style="margin-left:8%">
-manpage を修正したほうがいい。</p>
+AUDIO2 では<br>
+Full-Duplex HW については<br>
+o open(O_RDONLY) なら half-duplex 録音モード(従来通り)、<br>
+o open(O_WRONLY) なら half-duplex 再生モード(従来通り)、<br>
+o open(O_RDWR) なら full-duplex 再生録音モード(?) (従来の実装通り)、<br>
+Half-Duplex HW については<br>
+o open(O_RDONLY) はすでに再生モードの人がいればエラー、いなければ
+half-duplex 録音モード、<br>
+o open(O_WRONLY) はすでに録音モードの人がいればエラー、いなければ
+half-duplex 再生モード、<br>
+o open(O_RDWR) はすでに録音モードの人がいればエラー、いなければ
+half-duplex 再生モード、<br>
+と定義したい。
+Half HW の「O_RDWR を再生側に倒す」という考え方は従来仕様にならったもの。
+</p>
 
 
 

@@ -701,6 +701,9 @@ test_open_4(void)
 }
 
 // オープン、多重オープン時の mode
+// N8 では HW Full/Half によらず常に full duplex かのようにオープン出来るが
+// read/write がおかしいので、よくない。
+// AUDIO2 では HW Half ならおかしい組み合わせは弾く。
 void
 test_open_5()
 {
@@ -728,7 +731,7 @@ test_open_5()
 		// fd0 の期待値		fd1 の期待値(-errnoはエラー)
 		{ AUMODE_RECORD,	AUMODE_RECORD },	// REC, REC
 		{ AUMODE_RECORD,	-ENODEV },			// REC, PLAY
-		{ AUMODE_RECORD,	AUMODE_RECORD },	// REC, BOTH
+		{ AUMODE_RECORD,	-ENODEV },			// REC, BOTH
 		{ AUMODE_PLAY,		-ENODEV },			// PLAY, REC
 		{ AUMODE_PLAY,		AUMODE_PLAY },		// PLAY, PLAY
 		{ AUMODE_PLAY,		AUMODE_PLAY },		// PLAY, BOTH
@@ -1044,8 +1047,26 @@ test_readwrite_1(void)
 	int fd0, fd1;
 	int r;
 	int n;
+	struct {
+		bool canwrite;
+		bool canread;
+	} expfulltable[] = {
+		{ 0, 1 },	// REC
+		{ 1, 0 },	// PLAY
+		{ 1, 1 },	// BOTH
+	}, exphalftable[] = {
+		{ 0, 1 },	// REC
+		{ 1, 0 },	// PLAY
+		{ 1, 0 },	// BOTH
+	}, *exptable;
 
 	getprops();
+	// HW が Full/Half で期待値が違う
+	if (hwfull) {
+		exptable = expfulltable;
+	} else {
+		exptable = exphalftable;
+	}
 
 	AUDIO_INITINFO(&ai);
 	ai.play.pause = 1;
@@ -1053,6 +1074,8 @@ test_readwrite_1(void)
 
 	for (int i = 0; i <= 2; i++) {
 		TEST("readwrite_1(%s)", openmodetable[i]);
+		bool canwrite = exptable[i].canwrite;
+		bool canread = exptable[i].canread;
 
 		fd0 = OPEN(devaudio, i);
 		if (fd0 == -1)
@@ -1066,7 +1089,7 @@ test_readwrite_1(void)
 		// write は mode2popen[] が期待値
 		memset(buf, 0, sizeof(buf));
 		r = WRITE(fd0, buf, sizeof(buf));
-		if (mode2popen[i]) {
+		if (canwrite) {
 			XP_EQ(10, r);
 		} else {
 			XP_EQ(-1, r);
@@ -1077,7 +1100,7 @@ test_readwrite_1(void)
 		// read は mode2ropen[] が期待値
 		// N7 は 1バイト以上 read しようとするとブロックする?
 		r = READ(fd0, buf, 0);
-		if (mode2ropen[i]) {
+		if (canread) {
 			XP_EQ(0, r);
 		} else {
 			XP_EQ(-1, r);
@@ -1089,9 +1112,11 @@ test_readwrite_1(void)
 	}
 }
 
-// HWFull/Half によらず1本目も2本目も互いに影響なく各自の
-// open mode の方の操作(read/write)はできるようだ。
-// 時系列的に衝突のない場合。
+// N8 は HWFull/Half によらず1本目も2本目も互いに影響なく各自の
+// open mode でオープンでき、(open mode によって許されている) read/write は
+// 時系列的に衝突しなければできるようだ。pause してるからだけかもしれない。
+//
+// AUDIO2 では HWHalf なら full duplex 操作になる open を禁止する。
 void
 test_readwrite_2(void)
 {
@@ -1100,6 +1125,32 @@ test_readwrite_2(void)
 	int fd0, fd1;
 	int r;
 	int n;
+	struct {
+		bool canopen;
+		bool canwrite;
+		bool canread;
+	} expfulltable[] = {
+		{ 1, 0, 1 },	// REC, REC
+		{ 1, 1, 0 },	// REC, PLAY
+		{ 1, 1, 1 },	// REC, BOTH
+		{ 1, 0, 1 },	// PLAY, REC
+		{ 1, 1, 0 },	// PLAY, PLAY
+		{ 1, 1, 1 },	// PLAY, BOTH
+		{ 1, 0, 1 },	// BOTH, REC
+		{ 1, 1, 0 },	// BOTH, PLAY
+		{ 1, 1, 1 },	// BOTH, BOTH
+	},
+	exphalftable[] = {
+		{ 1, 0, 1 },	// REC, REC
+		{ 0, 0, 0 },	// REC, PLAY
+		{ 0, 0, 0 },	// REC, BOTH
+		{ 0, 0, 0 },	// PLAY, REC
+		{ 1, 1, 0 },	// PLAY, PLAY
+		{ 1, 1, 0 },	// PLAY, BOTH
+		{ 0, 0, 0 },	// BOTH, REC
+		{ 1, 1, 0 },	// BOTH, PLAY
+		{ 0, 0, 0 },	// BOTH, BOTH
+	}, *exptable;
 
 	getprops();
 
@@ -1107,6 +1158,12 @@ test_readwrite_2(void)
 	if (netbsd <= 7) {
 		XP_SKIP();
 		return;
+	}
+	// HW が Full/Half で期待値が違う
+	if (hwfull) {
+		exptable = expfulltable;
+	} else {
+		exptable = exphalftable;
 	}
 
 	AUDIO_INITINFO(&ai);
@@ -1116,6 +1173,14 @@ test_readwrite_2(void)
 	for (int i = 0; i <= 2; i++) {
 		for (int j = 0; j <= 2; j++) {
 			TEST("readwrite_2(%s,%s)", openmodetable[i], openmodetable[j]);
+			bool canopen  = exptable[i * 3 + j].canopen;
+			bool canwrite = exptable[i * 3 + j].canwrite;
+			bool canread  = exptable[i * 3 + j].canread;
+
+			if (canopen == false) {
+				XP_SKIP();
+				continue;
+			}
 
 			fd0 = OPEN(devaudio, i);
 			if (fd0 == -1)
@@ -1133,7 +1198,7 @@ test_readwrite_2(void)
 			// write は mode2popen[] が期待値
 			memset(buf, 0, sizeof(buf));
 			r = WRITE(fd1, buf, sizeof(buf));
-			if (mode2popen[j]) {
+			if (canwrite) {
 				XP_EQ(10, r);
 			} else {
 				XP_EQ(-1, r);
@@ -1143,7 +1208,7 @@ test_readwrite_2(void)
 
 			// read は mode2ropen[] が期待値
 			r = READ(fd1, buf, 0);
-			if (mode2ropen[j]) {
+			if (canread) {
 				XP_EQ(0, r);
 			} else {
 				XP_EQ(-1, r);
@@ -1158,6 +1223,7 @@ test_readwrite_2(void)
 }
 
 // 別ディスクリプタを同時に読み書き
+// HW Half ではこの操作は行えない
 void
 test_readwrite_3()
 {
@@ -1169,6 +1235,20 @@ test_readwrite_3()
 
 	TEST("readwrite_3");
 	getprops();
+	// N7 では多重オープンは出来ないので、このテストは無効
+	if (netbsd <= 7) {
+		XP_SKIP();
+		return;
+	}
+	if (hwfull == 0) {
+		// N8 では read がブロックするバグ
+		if (netbsd <= 8) {
+			XP_FAIL("not tested; it will block");
+			return;
+		}
+		// AUDIO2 では HalfHW に対して R+W の多重オープンはできない
+		XP_SKIP();
+	}
 
 	memset(buf, 0, sizeof(buf));
 
@@ -1180,6 +1260,9 @@ test_readwrite_3()
 	if (fd1 == -1)
 		err(1, "open");
 
+	// 事前に吐き出しておかないと fork 後に出力が重複する?
+	fflush(stdout);
+	fflush(stderr);
 	pid = fork();
 	if (pid == -1)
 		err(1, "fork");
@@ -1608,6 +1691,8 @@ test_AUDIO_GETINFO_eof(void)
 	int n;
 
 	TEST("AUDIO_GETINFO_eof");
+	getprops();
+
 	fd = OPEN(devaudio, O_RDWR);
 	if (fd == -1)
 		err(1, "open");
@@ -1655,14 +1740,16 @@ test_AUDIO_GETINFO_eof(void)
 	XP_EQ(0, ai.record.eof);
 
 	// 0バイト読んでも上がらない
-	r = READ(fd, &r, 0);
-	if (r == -1)
-		err(1, "read");
-	memset(&ai, 0, sizeof(ai));
-	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
-	XP_EQ(0, r);
-	XP_EQ(2, ai.play.eof);
-	XP_EQ(0, ai.record.eof);
+	if (hwfull) {
+		r = READ(fd, &r, 0);
+		if (r == -1)
+			err(1, "read");
+		memset(&ai, 0, sizeof(ai));
+		r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+		XP_EQ(0, r);
+		XP_EQ(2, ai.play.eof);
+		XP_EQ(0, ai.record.eof);
+	}
 
 	// 別ディスクリプタと干渉しないこと
 	if (netbsd >= 8) {

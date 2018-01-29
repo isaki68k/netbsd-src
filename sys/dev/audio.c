@@ -2903,26 +2903,12 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 		mode = ai->mode;
 		if ((mode & AUMODE_PLAY_ALL) != 0)
 			mode |= AUMODE_PLAY;
-#if 0
-		// 一本目ならそうかもしれないが
-		// 二本目以降はどうしたものか
-		if ((mode & AUMODE_PLAY) != 0 && !sc->sc_full_duplex)
-			/* Play takes precedence */
-			mode &= ~AUMODE_RECORD;
-#endif
 
+		// Half duplex なら
+		// 1.PLAY | REC なら PLAY として
+		// 2.PLAY なら、他に REC  がいればエラー、いなければ PLAY
+		// 3.REC  なら、他に PLAY がいればエラー、いなければ REC
 		if ((audio_get_props(sc) & AUDIO_PROP_FULLDUPLEX) == 0) {
-			// Half duplex なら
-			// 自身が1本目で PLAY     なら PLAY のまま
-			// 自身が1本目で      REC なら REC  のまま
-			// 自身が1本目で PLAY|REC なら PLAY にする
-			// 先客が PLAY で自分が PLAY     なら PLAY のまま
-			// 先客が PLAY で自分が      REC なら ENODEV ?
-			// 先客が PLAY で自分が PLAY|REC なら PLAY にする
-			// 先客が REC  で自分が PLAY     なら ENODEV ?
-			// 先客が REC  で自分が      REC なら REC のまま
-			// 先客が REC  で自分が PLAY|REC なら REC にする?
-
 			// sc_files には自身が含まれる場合(ioctl)と
 			// 含まれない場合(open)の両方がある。
 			bool found;
