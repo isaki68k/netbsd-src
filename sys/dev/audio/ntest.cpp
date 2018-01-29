@@ -1034,6 +1034,128 @@ test_drain_2(void)
 	XP_EQ(0, r);
 }
 
+// HWFull/Half によらず open mode の方の操作(read/write)はできる。
+void
+test_readwrite_1(void)
+{
+	struct audio_info ai;
+	char buf[10];
+	int fd0, fd1;
+	int r;
+	int n;
+
+	getprops();
+
+	AUDIO_INITINFO(&ai);
+	ai.play.pause = 1;
+	ai.record.pause = 1;
+
+	for (int i = 0; i <= 2; i++) {
+		TEST("readwrite_1(%s)", openmodetable[i]);
+
+		fd0 = OPEN(devaudio, i);
+		if (fd0 == -1)
+			err(1, "open");
+
+		// 書き込みを伴うので音がでないよう pause しとく
+		r = IOCTL(fd0, AUDIO_SETINFO, &ai, "pause");
+		if (r == -1)
+			err(1, "ioctl");
+
+		// write は mode2popen[] が期待値
+		memset(buf, 0, sizeof(buf));
+		r = WRITE(fd0, buf, sizeof(buf));
+		if (mode2popen[i]) {
+			XP_EQ(10, r);
+		} else {
+			XP_EQ(-1, r);
+			if (r == -1)
+				XP_EQ(EBADF, errno);
+		}
+
+		// read は mode2ropen[] が期待値
+		// N7 は 1バイト以上 read しようとするとブロックする?
+		r = READ(fd0, buf, 0);
+		if (mode2ropen[i]) {
+			XP_EQ(0, r);
+		} else {
+			XP_EQ(-1, r);
+			if (r == -1)
+				XP_EQ(EBADF, errno);
+		}
+
+		CLOSE(fd0);
+	}
+}
+
+// HWFull/Half によらず1本目も2本目も互いに影響なく各自の
+// open mode の方の操作(read/write)はできるようだ。
+// 時系列的に衝突のない場合。
+void
+test_readwrite_2(void)
+{
+	struct audio_info ai;
+	char buf[10];
+	int fd0, fd1;
+	int r;
+	int n;
+
+	getprops();
+
+	// N7 は多重オープンはできない
+	if (netbsd <= 7) {
+		XP_SKIP();
+		return;
+	}
+
+	AUDIO_INITINFO(&ai);
+	ai.play.pause = 1;
+	ai.record.pause = 1;
+
+	for (int i = 0; i <= 2; i++) {
+		for (int j = 0; j <= 2; j++) {
+			TEST("readwrite_2(%s,%s)", openmodetable[i], openmodetable[j]);
+
+			fd0 = OPEN(devaudio, i);
+			if (fd0 == -1)
+				err(1, "open");
+
+			fd1 = OPEN(devaudio, j);
+			if (fd1 == -1)
+				err(1, "open");
+
+			// 書き込みを伴うので音がでないよう pause しとく
+			r = IOCTL(fd1, AUDIO_SETINFO, &ai, "pause");
+			if (r == -1)
+				err(1, "ioctl");
+
+			// write は mode2popen[] が期待値
+			memset(buf, 0, sizeof(buf));
+			r = WRITE(fd1, buf, sizeof(buf));
+			if (mode2popen[j]) {
+				XP_EQ(10, r);
+			} else {
+				XP_EQ(-1, r);
+				if (r == -1)
+					XP_EQ(EBADF, errno);
+			}
+
+			// read は mode2ropen[] が期待値
+			r = READ(fd1, buf, 0);
+			if (mode2ropen[j]) {
+				XP_EQ(0, r);
+			} else {
+				XP_EQ(-1, r);
+				if (r == -1)
+					XP_EQ(EBADF, errno);
+			}
+
+			CLOSE(fd0);
+			CLOSE(fd1);
+		}
+	}
+}
+
 // FIOASYNC が同時に2人設定できるか
 void
 test_FIOASYNC_1(void)
@@ -1601,6 +1723,8 @@ struct testtable testtable[] = {
 	DEF(encoding_2),
 	DEF(drain_1),
 	DEF(drain_2),
+	DEF(readwrite_1),
+	DEF(readwrite_2),
 	DEF(FIOASYNC_1),
 	DEF(FIOASYNC_2),
 	DEF(FIOASYNC_3),
