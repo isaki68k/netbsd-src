@@ -179,30 +179,6 @@ audio_ring_unround_free_count(const audio_ring_t *ring)
 	}
 }
 
-static inline void
-audio_ring_concat(audio_ring_t *dst, audio_ring_t *src, int count)
-{
-	KASSERT(is_valid_ring(dst));
-	KASSERT(is_valid_ring(src));
-	KASSERT(count >= 0);
-	KASSERT(dst->fmt.channels == src->fmt.channels);
-	KASSERT(dst->fmt.stride == src->fmt.stride);
-
-	count = min(count, src->count);
-	count = min(count, dst->capacity - dst->count);
-
-	while (count > 0) {
-		int slice = count;
-		slice = audio_ring_unround_count(src);
-		slice = min(slice, audio_ring_unround_free_count(dst));
-		memcpy(RING_BOT_UINT8(dst), RING_TOP_UINT8(src),
-		    slice * dst->fmt.channels * dst->fmt.stride / 8);
-		audio_ring_appended(dst, slice);
-		audio_ring_tookfromtop(src, slice);
-		count -= slice;
-	}
-}
-
 // ラウンドしていないリングバッファをバッファ先頭の位置に詰めます。
 // ハードウェア ring に対して呼び出してはいけません。
 static inline void
