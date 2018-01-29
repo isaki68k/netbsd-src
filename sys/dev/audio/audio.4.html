@@ -809,11 +809,16 @@ MI で一元的に扱うようになったが、どれを受け付けるのか�
 </p>
 <p class=a2 style="margin-left:20%">
 AUDIO2 では以下を受け付ける。<br>
-　o AUDIO_ENCODING_SLINEAR_{LE,BE} 8, 16, 24/24, 32 bit<br>
-　o AUDIO_ENCODING_ULINEAR_{LE,BE} 8, 16, 24/24, 32 bit<br>
+　o AUDIO_ENCODING_SLINEAR_{LE,BE} 8, 16, 32 bit<br>
+　o AUDIO_ENCODING_ULINEAR_{LE,BE} 8, 16, 32 bit<br>
 　o AUDIO_ENCODING_ULAW 8bit<br>
-24/24 とか要るのかという気はするけど、コンバータにそんなにコストかかってないので今のところおいてある。<br>
-ULINEAR8 はまだしも、16bit 以上の ULINEAR も受け付ける必要あるのか?という気はするが、コンバータにそんなにコストがかかってないので今のところおいてある。
+</p>
+<p class=a2 style="margin-left:20%">
+24/24 はデフォルト受け付けなくても誰も困らないだろう。
+(今の所) audiovar.h の AUDIO_SUPPORT_LINEAR24 を on にすれば受け付ける。
+カーネルオプションにはしてもいいかも。
+これを足すと amd64 で 1300バイトだけ text segment が増える。
+32bit も要るのかなあという気はしないでもないが。
 </p>
 <p class=a2 style="margin-left:20%">
 AUDIO_GETENC のところでも触れたように、
