@@ -319,6 +319,12 @@ int debug_close(int line, int fd)
 
 // ---
 
+// O_* を AUMODE_* に変換
+int mode2aumode[] = {
+	AUMODE_RECORD,
+	AUMODE_PLAY | AUMODE_PLAY_ALL,
+	AUMODE_PLAY | AUMODE_PLAY_ALL | AUMODE_RECORD,
+};
 // O_* を PLAY 側がオープンされてるかに変換
 int mode2popen[] = {
 	0, 1, 1,
@@ -335,15 +341,10 @@ test_open_1(void)
 	struct audio_info ai;
 	int fd;
 	int r;
-	int expmode[] = {
-		AUMODE_RECORD,
-		AUMODE_PLAY | AUMODE_PLAY_ALL,
-		AUMODE_PLAY | AUMODE_PLAY_ALL | AUMODE_RECORD,
-	};
 
 	getprops();
 
-	// 再生専用デバイスのテストとか Half はまた
+	// 再生専用デバイスのテストとかはまた
 	for (int mode = 0; mode <= 2; mode++) {
 		TEST("open_1(%s)", openmodetable[mode]);
 		fd = OPEN(devaudio, mode);
@@ -354,15 +355,9 @@ test_open_1(void)
 		XP_EQ(0, r);
 		XP_EQ(0, ai.play.pause);
 		XP_EQ(0, ai.record.pause);
-		// O_RDWR でオープンすると最初から Full duplex になっているようだ
 		XP_EQ(mode2popen[mode], ai.play.open);
 		XP_EQ(mode2ropen[mode], ai.record.open);
-		if (hwfull == 0 && mode == O_RDWR) {
-			// HW Half で O_RDWR なら PLAY のみになる
-			XP_EQ(AUMODE_PLAY | AUMODE_PLAY_ALL, ai.mode);
-		} else {
-			XP_EQ(expmode[mode], ai.mode);
-		}
+		// ai.mode は open_5 で調べている
 
 		if (netbsd <= 8) {
 			// N7、N8 では使わないほうのトラックのバッファも常にある
@@ -702,6 +697,102 @@ test_open_4(void)
 		err(1, "AUDIO_GETBUFINFO");
 	XP_EQ(AUDIO_ENCODING_ULAW, ai.play.encoding);
 	CLOSE(fd);
+}
+
+// オープン、多重オープン時の mode
+void
+test_open_5()
+{
+	struct audio_info ai;
+	int fd0, fd1;
+	int r;
+	int actmode;
+#define AUMODE_BOTH (AUMODE_PLAY | AUMODE_RECORD)
+	struct {
+		int mode0;
+		int mode1;
+	} expfulltable[] = {
+		// fd0 の期待値		fd1 の期待値(-errnoはエラー)
+		{ AUMODE_RECORD,	AUMODE_RECORD },	// REC, REC
+		{ AUMODE_RECORD,	AUMODE_PLAY },		// REC, PLAY
+		{ AUMODE_RECORD,	AUMODE_BOTH },		// REC, BOTH
+		{ AUMODE_PLAY,		AUMODE_RECORD },	// PLAY, REC
+		{ AUMODE_PLAY,		AUMODE_PLAY },		// PLAY, PLAY
+		{ AUMODE_PLAY,		AUMODE_BOTH },		// PLAY, BOTH
+		{ AUMODE_BOTH,		AUMODE_RECORD },	// BOTH, REC
+		{ AUMODE_BOTH,		AUMODE_PLAY },		// BOTH, PLAY
+		{ AUMODE_BOTH,		AUMODE_BOTH },		// BOTH, BOTH
+	},
+	exphalftable[] = {
+		// fd0 の期待値		fd1 の期待値(-errnoはエラー)
+		{ AUMODE_RECORD,	AUMODE_RECORD },	// REC, REC
+		{ AUMODE_RECORD,	-ENODEV },			// REC, PLAY
+		{ AUMODE_RECORD,	AUMODE_RECORD },	// REC, BOTH
+		{ AUMODE_PLAY,		-ENODEV },			// PLAY, REC
+		{ AUMODE_PLAY,		AUMODE_PLAY },		// PLAY, PLAY
+		{ AUMODE_PLAY,		AUMODE_PLAY },		// PLAY, BOTH
+		{ AUMODE_PLAY,		-ENODEV },			// BOTH, REC
+		{ AUMODE_PLAY,		AUMODE_PLAY },		// BOTH, PLAY
+		{ AUMODE_PLAY,		AUMODE_PLAY },		// BOTH, BOTH
+	}, *exptable;
+
+	getprops();
+	// HW が Full/Half で期待値が違う
+	if (hwfull) {
+		exptable = expfulltable;
+	} else {
+		exptable = exphalftable;
+	}
+
+	// 1本目をオープン
+	for (int i = 0; i <= 2; i++) {
+		for (int j = 0; j <= 2; j++) {
+			TEST("open_5(%s,%s)",
+				openmodetable[i], openmodetable[j]);
+
+			// 1本目
+			fd0 = OPEN(devaudio, i);
+			if (fd0 == -1)
+				err(1, "open");
+			r = IOCTL(fd0, AUDIO_GETBUFINFO, &ai, "");
+			if (r == -1)
+				err(1, "ioctl");
+			actmode = ai.mode & (AUMODE_PLAY | AUMODE_RECORD);
+			XP_EQ(exptable[i * 3 + j].mode0, actmode);
+
+			// N7 では多重オープンはできない
+			if (netbsd >= 8) {
+				// 2本目
+				fd1 = OPEN(devaudio, j);
+				if (exptable[i * 3 + j].mode1 >= 0) {
+					// オープンできることを期待するケース
+					XP_NE(-1, fd1);
+					r = IOCTL(fd1, AUDIO_GETBUFINFO, &ai, "");
+					XP_EQ(0, r);
+					if (r == 0) {
+						actmode = ai.mode & (AUMODE_PLAY | AUMODE_RECORD);
+						XP_EQ(exptable[i * 3 + j].mode1, actmode);
+					}
+				} else {
+					// オープンできないことを期待するケース
+					XP_EQ(-1, fd1);
+					if (fd1 == -1) {
+						XP_EQ(-exptable[i * 3 + j].mode1, errno);
+					} else {
+						r = IOCTL(fd1, AUDIO_GETBUFINFO, &ai, "");
+						XP_EQ(0, r);
+						if (r == 0) {
+							actmode = ai.mode & (AUMODE_PLAY | AUMODE_RECORD);
+							XP_FAIL("expects error but %d", actmode);
+						}
+					}
+				}
+				if (fd1 >= 0)
+					CLOSE(fd1);
+			}
+			CLOSE(fd0);
+		}
+	}
 }
 
 // SETINFO の受付エンコーディング
@@ -1529,6 +1620,7 @@ struct testtable testtable[] = {
 	DEF(open_2),
 	DEF(open_3),
 	DEF(open_4),
+	DEF(open_5),
 	DEF(encoding_1),
 	DEF(encoding_2),
 	DEF(drain_1),
