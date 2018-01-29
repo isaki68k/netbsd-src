@@ -1822,14 +1822,14 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req,
 }
 
 /*
- * In cases with MD filter:
+ * When playing back with MD filter:
  *
  *           track track ...
  *               v v
  *                +  mix (with aint2_t)
  *                |  master volume (with aint2_t)
  *                v
- *    mixsample [::::]                  double-sized 1 block (ring) buffer
+ *    mixsample [::::]                  wide-sized 1 block (ring) buffer
  *                |
  *                |  convert aint2_t -> aint_t
  *                v
@@ -1839,9 +1839,9 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req,
  *                v
  *    hwbuf     [............]          N blocks ring buffer
  *
- * In cases without MD filter:
+ * When playingback without MD filter:
  *
- *    mixsample [::::]                  double-sized 1 block (ring) buffer
+ *    mixsample [::::]                  wide-sized 1 block (ring) buffer
  *                |
  *                |  convert aint2_t -> aint_t
  *                v
@@ -2106,7 +2106,7 @@ audio_rmixer_start(struct audio_softc *sc)
 }
 
 /*
- * In cases with MD filter:
+ * When recording with MD filter:
  *
  *    hwbuf     [............]          N blocks ring buffer
  *                |
@@ -2117,7 +2117,7 @@ audio_rmixer_start(struct audio_softc *sc)
  *               v  v
  *            track track ...
  *
- * In cases without MD filter:
+ * When recording without MD filter:
  *
  *    hwbuf     [............]          N blocks ring buffer
  *               |  |
