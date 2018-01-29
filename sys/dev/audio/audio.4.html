@@ -458,10 +458,10 @@ argument.</p>
 
 <p style="margin-left:20%;">The command returns the current
 setting of the full duplex mode.</p>
-<p class=a2 style="margin-left:20%">この ioctl は obsolete にしたい。
-後方互換性のため、
-HW が full duplex capable で O_RDWR オープンされていれば 1 を返し、
-それ以外は 0 を返すとかはどうか。
+<p class=a2 style="margin-left:20%">
+このコマンドは file レイヤーの full duplex mode の現在の設定を返す。
+HW の状態ではない。
+</p>
 
 <p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_GETENC
 (audio_encoding_t)</p>
@@ -516,17 +516,11 @@ setfd インタフェースでデバッグ printf 以上のことをしている
 MD ドライバは1つも存在しないので影響は顕在化しないが
 本来はおかしいはず。</p>
 <p class=a2 style="margin-left:20%">
-この ioctl は obsolete にしたい。
-HW の状態をユーザが変える必要はないし変えるべきではない。</p>
-<p class=a2 style="margin-left:20%">
-後方互換性のため、<br>
-GETFD が 0 を返す状態での SETFD(0) は何もせずに成功、<br>
-GETFD が 1 を返す状態での SETFD(1) は何もせずに成功、<br>
-GETFD が 0 を返す状態での SETFD(1) エラー ENOTTY としたい。
-</p>
-<p class=a2 style="margin-left:20%">
-GETFD が 1 を返す状態での SETFD(0) は、非互換にはなるが、
-N7 では成功していたが AUDIO2 ではエラー EINVAL を返すくらいにしておきたい。
+このコマンドは、
+引数が非ゼロなら file レイヤー (HW ではない)を full duplex モードにする、
+あるいは引数がゼロなら half duplex モードにする
+HW が full duplex モードをサポートしていなければ、
+full duplex モードへセットする試みはエラー(ENOTTY)になる。
 </p>
 
 <p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_GETPROPS
