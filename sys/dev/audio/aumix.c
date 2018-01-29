@@ -889,32 +889,44 @@ abort:
 	return error;
 }
 
-// 再生時
-//            write
-//             v uimove
-//  usrbuf   [...............]  byte ring buffer
-//             v memcpy
-//  codec src[....]             1 block (ring) buffer   <-- stage input
-//        dst -+
-//             v convert
-//  freq  src[....]             1 block (ring) buffer
-//        dst -+
-//             v convert
-//  outputbuf[...............]  N blocks ring buffer
-//
-//
-// 録音時
-//  freq  src[...............]  N blocks ring buffer    <-- stage input
-//        dst -+
-//             v convert
-//  codec src[.....]            1 block (ring) buffer
-//        dst -+
-//             v convert
-//  outputbuf[.....]            1 block (ring) buffer
-//             v memcpy
-//  usrbuf   [...............]  byte ring buffer
-//             v uiomove
-//            read
+/*
+ * When playing back: (e.g. if codec and freq stage are valid)
+ *
+ *               write
+ *                | uiomove
+ *                v
+ *  usrbuf      [...............]  byte ring buffer
+ *                | memcpy
+ *                v
+ *  codec.srcbuf[....]             1 block (ring) buffer   <-- stage input
+ *       .dst ----+
+ *                | convert
+ *                v
+ *  freq.srcbuf [....]             1 block (ring) buffer
+ *      .dst  ----+
+ *                | convert
+ *                v
+ *  outputbuf   [...............]  N blocks ring buffer
+ *
+ *
+ * When recording:
+ *
+ *  freq.srcbuf [...............]  N blocks ring buffer    <-- stage input
+ *      .dst  ----+
+ *                | convert
+ *                v
+ *  codec.srcbuf[.....]            1 block (ring) buffer
+ *       .dst ----+
+ *                | convert
+ *                v
+ *  outputbuf   [.....]            1 block (ring) buffer
+ *                | memcpy
+ *                v
+ *  usrbuf      [...............]  byte ring buffer
+ *                | uiomove
+ *                v
+ *               read
+ */
 
 // トラックのユーザランド側フォーマットを設定します。
 // 変換用内部バッファは一度破棄されます。
