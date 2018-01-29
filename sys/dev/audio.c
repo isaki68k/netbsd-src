@@ -1380,6 +1380,11 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	af = kmem_zalloc(sizeof(audio_file_t), KM_SLEEP);
 	af->sc = sc;
 	af->dev = dev;
+
+	af->full_duplex =
+	    ((flags & (FWRITE | FREAD)) == (FWRITE | FREAD)) &&
+	    (audio_get_props(sc) & AUDIO_PROP_FULLDUPLEX);
+
 	if ((flags & FWRITE) != 0 && audio_can_playback(sc))
 		af->mode |= AUMODE_PLAY | AUMODE_PLAY_ALL;
 	if ((flags & FREAD) != 0 && audio_can_capture(sc))
