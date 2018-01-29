@@ -1373,6 +1373,13 @@ test_AUDIO_GETINFO_eof(void)
 	if (fd == -1)
 		err(1, "open");
 
+	// 書き込みを伴うので pause にしとく
+	AUDIO_INITINFO(&ai);
+	ai.play.pause = 1;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "pause");
+	if (r == -1)
+		err(1, "ioctl");
+
 	// 最初は 0
 	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
 	XP_EQ(0, r);
