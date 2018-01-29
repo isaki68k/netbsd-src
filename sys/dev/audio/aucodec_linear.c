@@ -7,9 +7,7 @@
 #include "aucodec.h"
 #endif // !_KERNEL
 
-/*
-* [US]LINEAR(?,stride=8){BE|LE} から internal への変換
-*/
+// [US]LINEAR(?,stride=8){BE|LE} から internal への変換
 void
 linear8_to_internal(audio_filter_arg_t *arg)
 {
@@ -24,7 +22,7 @@ linear8_to_internal(audio_filter_arg_t *arg)
 	int sample_count = arg->count * arg->srcfmt->channels;
 
 	int src_lsl = AUDIO_INTERNAL_BITS - arg->srcfmt->precision;
-	/* unsigned convert to signed */
+	/* unsigned -> signed */
 	auint_t xor = audio_format2_is_signed(arg->srcfmt)
 	    ? 0 : (1 << (AUDIO_INTERNAL_BITS - 1));
 
@@ -37,9 +35,7 @@ linear8_to_internal(audio_filter_arg_t *arg)
 	}
 }
 
-/*
-* internal から [US]LINEAR(?,stride=8){BE|LE} への変換
-*/
+// internal から [US]LINEAR(?,stride=8){BE|LE} への変換
 void
 internal_to_linear8(audio_filter_arg_t *arg)
 {
@@ -54,7 +50,7 @@ internal_to_linear8(audio_filter_arg_t *arg)
 	int sample_count = arg->count * arg->srcfmt->channels;
 
 	int src_lsr = AUDIO_INTERNAL_BITS - arg->dstfmt->precision;
-	/* unsigned convert to signed */
+	/* unsigned -> signed */
 	auint_t xor = audio_format2_is_signed(arg->dstfmt)
 	    ? 0 : (1 << (AUDIO_INTERNAL_BITS - 1));
 
@@ -67,9 +63,7 @@ internal_to_linear8(audio_filter_arg_t *arg)
 	}
 }
 
-/*
-* [US]LINEAR(?,stride=16){BE|LE} から internal への変換
-*/
+// [US]LINEAR(?,stride=16){BE|LE} から internal への変換
 void
 linear16_to_internal(audio_filter_arg_t *arg)
 {
@@ -84,11 +78,11 @@ linear16_to_internal(audio_filter_arg_t *arg)
 	int sample_count = arg->count * arg->srcfmt->channels;
 
 	int src_lsl = AUDIO_INTERNAL_BITS - arg->srcfmt->precision;
-	/* unsigned convert to signed */
+	/* unsigned -> signed */
 	auint_t xor = audio_format2_is_signed(arg->srcfmt)
 	    ? 0 : (1 << (AUDIO_INTERNAL_BITS - 1));
 
-	/* 16bit だけ高速化するとかでも良いかもしれない。 */
+	// 16bit だけ高速化するとかでも良いかもしれない。
 	if (audio_format2_endian(arg->srcfmt) == BYTE_ORDER) {
 		if (src_lsl == 0) {
 			if (xor == 0) {
@@ -134,9 +128,7 @@ linear16_to_internal(audio_filter_arg_t *arg)
 	}
 }
 
-/*
-* internal から [US]LINEAR(?,stride=16){BE|LE} への変換
-*/
+// internal から [US]LINEAR(?,stride=16){BE|LE} への変換
 void
 internal_to_linear16(audio_filter_arg_t *arg)
 {
@@ -151,11 +143,11 @@ internal_to_linear16(audio_filter_arg_t *arg)
 	int sample_count = arg->count * arg->srcfmt->channels;
 
 	int src_lsr = AUDIO_INTERNAL_BITS - arg->dstfmt->precision;
-	/* unsigned convert to signed */
+	/* unsigned -> signed */
 	auint_t xor = audio_format2_is_signed(arg->dstfmt)
 	    ? 0 : (1 << (AUDIO_INTERNAL_BITS - 1));
 
-	/* 16bit だけ高速化するとかでも良いかもしれない。 */
+	// 16bit だけ高速化するとかでも良いかもしれない。
 	if (audio_format2_endian(arg->srcfmt) == BYTE_ORDER) {
 		if (src_lsr == 0) {
 			if (xor == 0) {
@@ -202,9 +194,7 @@ internal_to_linear16(audio_filter_arg_t *arg)
 }
 
 #if defined(AUDIO_SUPPORT_LINEAR24)
-/*
-* [US]LINEAR(?,stride=24){BE|LE} から internal への変換
-*/
+// [US]LINEAR(?,stride=24){BE|LE} から internal への変換
 void
 linear24_to_internal(audio_filter_arg_t *arg)
 {
@@ -218,13 +208,13 @@ linear24_to_internal(audio_filter_arg_t *arg)
 	aint_t *dptr = arg->dst;
 	int sample_count = arg->count * arg->srcfmt->channels;
 
-	/* 一旦 32bit にする */
+	// 一旦 32bit にする
 	int src_lsl = 32 - arg->srcfmt->precision;
-	/* unsigned convert to signed */
+	/* unsigned -> signed */
 	auint_t xor = audio_format2_is_signed(arg->srcfmt)
 	    ? 0 : (1 << (AUDIO_INTERNAL_BITS - 1));
 
-	/* 遅くてもコードサイズを優先して目をつぶる */
+	// 遅くてもコードサイズを優先して目をつぶる
 
 	bool is_src_LE = (audio_format2_endian(arg->srcfmt) == LITTLE_ENDIAN);
 
@@ -247,9 +237,7 @@ linear24_to_internal(audio_filter_arg_t *arg)
 	}
 }
 
-/*
-* internal から [US]LINEAR(?,stride=24){BE|LE} への変換
-*/
+// internal から [US]LINEAR(?,stride=24){BE|LE} への変換
 void
 internal_to_linear24(audio_filter_arg_t *arg)
 {
@@ -263,13 +251,13 @@ internal_to_linear24(audio_filter_arg_t *arg)
 	uint8_t *dptr = arg->dst;
 	int sample_count = arg->count * arg->srcfmt->channels;
 
-	/* 一旦 32bit にする */
+	// 一旦 32bit にする
 	int src_lsr = 32 - arg->dstfmt->precision;
-	/* unsigned convert to signed */
+	/* unsigned -> signed */
 	auint_t xor = audio_format2_is_signed(arg->dstfmt)
 	    ? 0 : (1 << (AUDIO_INTERNAL_BITS - 1));
 
-	/* 遅くてもコードサイズを優先して目をつぶる */
+	// 遅くてもコードサイズを優先して目をつぶる
 
 	bool is_dst_LE = (audio_format2_endian(arg->dstfmt) == LITTLE_ENDIAN);
 
@@ -295,9 +283,7 @@ internal_to_linear24(audio_filter_arg_t *arg)
 }
 #endif /* AUDIO_SUPPORT_LINEAR24 */
 
-/*
-* [US]LINEAR(?,stride=32){BE|LE} から internal への変換
-*/
+// [US]LINEAR(?,stride=32){BE|LE} から internal への変換
 void
 linear32_to_internal(audio_filter_arg_t *arg)
 {
@@ -312,11 +298,11 @@ linear32_to_internal(audio_filter_arg_t *arg)
 	int sample_count = arg->count * arg->srcfmt->channels;
 
 	int src_lsl = 32 - arg->srcfmt->precision;
-	/* unsigned convert to signed */
+	/* unsigned -> signed */
 	auint_t xor = audio_format2_is_signed(arg->srcfmt)
 	    ? 0 : (1 << (AUDIO_INTERNAL_BITS - 1));
 
-	/* 遅くてもコードサイズを優先して目をつぶる */
+	// 遅くてもコードサイズを優先して目をつぶる
 
 	bool is_src_HE = (audio_format2_endian(arg->srcfmt) == BYTE_ORDER);
 
@@ -335,9 +321,7 @@ linear32_to_internal(audio_filter_arg_t *arg)
 	}
 }
 
-/*
-* internal から [US]LINEAR(?,stride=32){BE|LE} への変換
-*/
+// internal から [US]LINEAR(?,stride=32){BE|LE} への変換
 void
 internal_to_linear32(audio_filter_arg_t *arg)
 {
@@ -352,11 +336,11 @@ internal_to_linear32(audio_filter_arg_t *arg)
 	int sample_count = arg->count * arg->srcfmt->channels;
 
 	int src_lsr = 32 - arg->dstfmt->precision;
-	/* unsigned convert to signed */
+	/* unsigned -> signed */
 	auint_t xor = audio_format2_is_signed(arg->dstfmt)
 	    ? 0 : (1 << (AUDIO_INTERNAL_BITS - 1));
 
-	/* 遅くてもコードサイズを優先して目をつぶる */
+	// 遅くてもコードサイズを優先して目をつぶる
 
 	bool is_dst_HE = (audio_format2_endian(arg->dstfmt) == BYTE_ORDER);
 
