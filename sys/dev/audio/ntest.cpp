@@ -176,10 +176,17 @@ getprops()
 }
 
 // テスト名
-#define TEST(name...)	do {	\
-	snprintf(testname, sizeof(testname), name);	\
-	printf("%s\n", testname);	\
-} while (0)
+static inline void TEST(const char *, ...) __printflike(1, 2);
+static inline void
+TEST(const char *name, ...)
+{
+	va_list ap;
+
+	va_start(ap, name);
+	vsnprintf(testname, sizeof(testname), name, ap);
+	va_end(ap);
+	printf("%s\n", testname);
+}
 
 // 検査
 #define XP_FAIL(fmt...)	xp_fail(__LINE__, fmt)

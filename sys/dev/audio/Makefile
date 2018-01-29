@@ -1,4 +1,5 @@
 CPPFLAGS+=	-g
+CPPFLAGS+=	-Wformat
 
 all:	ncmd.${MACHINE} ntest.$(MACHINE)
 
