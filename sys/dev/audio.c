@@ -533,22 +533,9 @@ audioattach(device_t parent, device_t self, void *aux)
 	}
 
 	if (sc->sc_can_playback == false && sc->sc_can_capture == false)
-		goto bad0;
+		goto bad;
 
-	/* Set hw full-duplex if necessary */
-	if (sc->sc_full_duplex) {
-		if (sc->hw_if->setfd) {
-			mutex_enter(sc->sc_lock);
-			error = sc->hw_if->setfd(sc->hw_hdl, 1);
-			mutex_exit(sc->sc_lock);
-			if (error) {
-				aprint_error_dev(sc->dev,
-				    "setting full-duplex failed with %d\n",
-				    error);
-				goto bad1;
-			}
-		}
-	}
+	// setfd は誰一人実装してないし廃止したい方向
 
 	sc->sc_sih_rd = softint_establish(SOFTINT_SERIAL | SOFTINT_MPSAFE,
 	    audio_softintr_rd, sc);
@@ -632,16 +619,7 @@ audioattach(device_t parent, device_t self, void *aux)
 	// audiorescan いらないはず
 	return;
 
-bad1:
-	if (sc->sc_can_capture) {
-		audio_mixer_destroy(sc, sc->sc_rmixer);
-		kmem_free(sc->sc_rmixer, sizeof(*sc->sc_rmixer));
-	}
-	if (sc->sc_can_playback) {
-		audio_mixer_destroy(sc, sc->sc_pmixer);
-		kmem_free(sc->sc_pmixer, sizeof(*sc->sc_pmixer));
-	}
-bad0:
+bad:
 	// アタッチがエラーを返せない構造なので、ここでエラーになっても
 	// デバイス自体は出来てしまう。そこで hw_if == NULL なら
 	// configure されてないものとする。という運用。コメント書けよ。
