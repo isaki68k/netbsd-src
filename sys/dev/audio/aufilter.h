@@ -1,6 +1,6 @@
 #pragma once
 
-/* 内部フォーマットのビット数 */
+// 内部フォーマットのビット数
 #define AUDIO_INTERNAL_BITS		16
 //#define AUDIO_INTERNAL_BITS		32
 
@@ -26,12 +26,13 @@ typedef uint64_t auint2_t;
 #error Invalid AUDIO_INTERNAL_BITS
 #endif
 
-/* フォーマット */
+/* format */
 typedef struct {
 	int32_t  encoding;		/* AUDIO_ENCODING */
-	uint32_t sample_rate;	/* Hz */
+	uint32_t sample_rate;		/* Hz */
 	uint8_t  channels;		/* 1.. */
-	uint8_t  precision;		/* ex.24 (valid bits of sample, must precision <= stride) */
+	uint8_t  precision;		/* ex.24 (valid bits of sample,
+					   must precision <= stride) */
 	uint8_t  stride;		/* ex.32 (packing bits of sample) */
 } audio_format2_t;
 
