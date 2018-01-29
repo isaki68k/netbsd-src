@@ -119,7 +119,6 @@ audio_debug_bufs(char *buf, int bufsize, audio_track_t *track)
 #define AUDIO_DEBUG_BUFS(track, msg)	/**/
 #endif
 
-/* メモリアロケーションの STUB */
 
 void *
 audio_realloc(void *memblock, size_t bytes)
@@ -140,10 +139,6 @@ audio_realloc(void *memblock, size_t bytes)
 	}
 }
 
-
-/*
- * ***** audio_track *****
- */
 
 static void
 audio_track_chvol(audio_filter_arg_t *arg)
@@ -1734,12 +1729,10 @@ audio_pmixer_mixall(struct audio_softc *sc, bool isintr)
 	return mixed;
 }
 
-/*
-* トラックバッファから取り出し、ミキシングします。
-* mixed には呼び出し時点までの合成済みトラック数を渡します。
-* 戻り値はこの関数終了時での合成済みトラック数)です。
-* つまりこのトラックを合成すれば mixed + 1 を返します。
-*/
+// トラックバッファから取り出し、ミキシングします。
+// mixed には呼び出し時点までの合成済みトラック数を渡します。
+// 戻り値はこの関数終了時での合成済みトラック数)です。
+// つまりこのトラックを合成すれば mixed + 1 を返します。
 int
 audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req, int mixed)
 {
@@ -2462,7 +2455,6 @@ audio_write_uiomove(audio_track_t *track, int bottom, int len, struct uio *uio)
 	return 0;
 }
 
-/* write の MI 側 */
 int
 audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *file)
 {
