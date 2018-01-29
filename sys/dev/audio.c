@@ -463,8 +463,7 @@ audioattach(device_t parent, device_t self, void *aux)
 	props = audio_get_props(sc);
 	mutex_exit(sc->sc_lock);
 
-	sc->sc_full_duplex = (props & AUDIO_PROP_FULLDUPLEX);
-	if (sc->sc_full_duplex) {
+	if ((props & AUDIO_PROP_FULLDUPLEX) != 0) {
 		aprint_normal(": full duplex");
 	} else {
 		aprint_normal(": half duplex");
@@ -1451,7 +1450,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 		// XXX audio(9) にはハーフで録再を切り替える際に使うと
 		// 書いてある気がするんだけど、あと
 		// Full dup で録再同時に起きてたらどうするのかとか。
-		if (!sc->sc_full_duplex || 1/*XXX*/) {
+		if (1/*XXX*/) {
 			if (sc->hw_if->speaker_ctl) {
 				int on;
 				if (af->ptrack) {
@@ -1588,7 +1587,7 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 	 */
 	// XXX これはドライバのほうを先に直せば済む話
 	if ((file->ptrack != NULL && file->rtrack != NULL) &&
-	    sc->sc_full_duplex == false &&
+	    (audio_get_props(sc) & AUDIO_PROP_FULLDUPLEX) == 0 &&
 	    sc->hw_if->halt_input == sc->hw_if->halt_output &&
 	    sc->sc_ropens == 1) {
 		aprint_error_dev(sc->dev,
@@ -2748,18 +2747,6 @@ audio_hw_config(struct audio_softc *sc, int is_indep)
 	//	REC -> rec
 	//	PLAY|REC -> ENODEV?
 	//
-
-	if (SPECIFIED(ai->mode)) {
-		modechange = true;
-		mode = ai->mode;
-		/* sanity check */
-		if ((mode & AUMODE_PLAY_ALL) != 0)
-			mode |= AUMODE_PLAY;
-		/* XXX ここらへんどうするか */
-		if ((mode & AUMODE_PLAY) != 0 && sc->sc_full_duplex)
-			/* Play takes precedence */
-			mode &= ~AUMODE_RECORD;
-	}
 #endif
 
 // ai に基づいて file の両トラックを諸々セットする。
@@ -2911,13 +2898,15 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 		mode = ai->mode;
 		if ((mode & AUMODE_PLAY_ALL) != 0)
 			mode |= AUMODE_PLAY;
+#if 0
 		// 一本目ならそうかもしれないが
 		// 二本目以降はどうしたものか
 		if ((mode & AUMODE_PLAY) != 0 && !sc->sc_full_duplex)
 			/* Play takes precedence */
 			mode &= ~AUMODE_RECORD;
+#endif
 
-		if (!sc->sc_full_duplex) {
+		if ((audio_get_props(sc) & AUDIO_PROP_FULLDUPLEX) == 0) {
 			// Half duplex なら
 			// 自身が1本目で PLAY     なら PLAY のまま
 			// 自身が1本目で      REC なら REC  のまま
