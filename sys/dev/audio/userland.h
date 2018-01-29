@@ -85,7 +85,6 @@ struct audio_softc
 	kmutex_t *sc_intr_lock;
 	struct audio_hw_if *hw_if;
 	void *hw_hdl;
-	int sc_eof;
 
 	bool sc_pbusy;
 	bool sc_rbusy;

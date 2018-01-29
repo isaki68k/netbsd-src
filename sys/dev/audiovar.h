@@ -163,8 +163,6 @@ struct audio_softc {
 	kmutex_t	*sc_lock;
 	bool		sc_dying;
 
-	int		sc_eof;		/* EOF, i.e. zero sized write, counter */
-
 	kauth_cred_t sc_cred;
 
 	struct sysctllog *sc_log;

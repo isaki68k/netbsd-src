@@ -2637,12 +2637,6 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 	if (sc->hw_if == NULL)
 		return ENXIO;
 
-	// XXX read(0) はどうなる?
-	if (uio->uio_resid == 0) {
-		sc->sc_eof++;
-		return 0;
-	}
-
 	// mmaped なら error
 
 #ifdef AUDIO_PM_IDLE

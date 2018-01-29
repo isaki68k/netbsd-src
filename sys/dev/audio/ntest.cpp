@@ -1408,6 +1408,16 @@ test_AUDIO_GETINFO_eof(void)
 	XP_EQ(2, ai.play.eof);
 	XP_EQ(0, ai.record.eof);
 
+	// 0バイト読んでも上がらない
+	r = READ(fd, &r, 0);
+	if (r == -1)
+		err(1, "read");
+	memset(&ai, 0, sizeof(ai));
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	XP_EQ(0, r);
+	XP_EQ(2, ai.play.eof);
+	XP_EQ(0, ai.record.eof);
+
 	// 別ディスクリプタと干渉しないこと
 	if (netbsd >= 8) {
 		fd1 = OPEN(devaudio, O_RDWR);
