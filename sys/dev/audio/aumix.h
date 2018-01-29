@@ -21,22 +21,6 @@ e.g. stereo
  */
 
 
-
-/*
- * bidirectional logical shift left
- * shift > 0 : left shift
- * shift == 0 : no shift
- * shift < 0: right shift, as lsr(abs(shift))
- */
-static inline uint32_t
-bidi_lsl(uint32_t a, int shift)
-{
-	if (shift > 0) return a << shift;
-	if (shift < 0) return a >> -shift;
-	return a;
-}
-
-
 int audio_track_init(struct audio_softc *sc, audio_track_t **track, int mode);
 void audio_track_destroy(audio_track_t *track);
 int audio_track_set_format(audio_track_t *track, audio_format2_t *track_fmt);
