@@ -33,7 +33,7 @@ void
 gen_sin(audio_ring_t *dst)
 {
 	if (dst->fmt.channels != 1) synth_error("ch != 1");
-	if (!is_SIGNED(&dst->fmt)) synth_error("!SLINEAR");
+	if (!audio_format2_is_signed(&dst->fmt)) synth_error("!SLINEAR");
 
 	if (dst->fmt.stride == 8) {
 		int8_t *dptr = dst->sample;

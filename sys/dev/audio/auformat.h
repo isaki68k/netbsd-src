@@ -53,7 +53,7 @@ is_internal_format(const audio_format2_t *fmt)
 
 // いずれかの LINEAR なら true
 static inline bool
-is_LINEAR(const audio_format2_t *fmt)
+audio_format2_is_linear(const audio_format2_t *fmt)
 {
 	return
 		(fmt->encoding == AUDIO_ENCODING_SLINEAR_LE)
@@ -65,7 +65,7 @@ is_LINEAR(const audio_format2_t *fmt)
 
 // いずれかの SLINEAR なら true
 static inline bool
-is_SIGNED(const audio_format2_t *fmt)
+audio_format2_is_signed(const audio_format2_t *fmt)
 {
 	return
 		(fmt->encoding == AUDIO_ENCODING_SLINEAR_LE)
@@ -75,7 +75,7 @@ is_SIGNED(const audio_format2_t *fmt)
 
 // ENDIAN を返す
 static inline int
-data_ENDIAN(const audio_format2_t *fmt)
+audio_format2_endian(const audio_format2_t *fmt)
 {
 	if (fmt->stride == 8) {
 		/* HOST ENDIAN */

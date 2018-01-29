@@ -590,7 +590,7 @@ audio_track_get_codec_filter(const audio_filter_arg_t *arg)
 	if (is_internal_format(arg->srcfmt)) {
 		if (arg->dstfmt->encoding == AUDIO_ENCODING_ULAW) {
 			return internal_to_mulaw;
-		} else if (is_LINEAR(arg->dstfmt)) {
+		} else if (audio_format2_is_linear(arg->dstfmt)) {
 			if (arg->dstfmt->stride == 8) {
 				return internal_to_linear8;
 			} else if (arg->dstfmt->stride == 16) {
@@ -610,7 +610,7 @@ audio_track_get_codec_filter(const audio_filter_arg_t *arg)
 	} else if (is_internal_format(arg->dstfmt)) {
 		if (arg->srcfmt->encoding == AUDIO_ENCODING_ULAW) {
 			return mulaw_to_internal;
-		} else if (is_LINEAR(arg->srcfmt)) {
+		} else if (audio_format2_is_linear(arg->srcfmt)) {
 			if (arg->srcfmt->stride == 8) {
 				return linear8_to_internal;
 			} else if (arg->srcfmt->stride == 16) {
