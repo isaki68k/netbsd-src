@@ -2,9 +2,9 @@
  * 実環境での動作テスト用
  */
 
-#include <err.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -115,6 +115,41 @@ main(int ac, char *av[])
 		printf("\n");
 	}
 	return 0;
+}
+
+// err(3) ぽい自前関数
+#define err(code, fmt...)	xp_err(code, __LINE__, fmt)
+void xp_err(int, int, const char *, ...) __printflike(3, 4) __dead;
+void
+xp_err(int code, int line, const char *fmt, ...)
+{
+	va_list ap;
+	int backup_errno;
+
+	backup_errno = errno;
+	printf(" ERR %d: ", line);
+	va_start(ap, fmt);
+	vprintf(fmt, ap);
+	va_end(ap);
+	printf(": %s\n", strerror(backup_errno));
+
+	exit(code);
+}
+
+#define errx(code, fmt...)	xp_errx(code, __LINE__, fmt)
+void xp_errx(int, int, const char *, ...) __printflike(3, 4) __dead;
+void
+xp_errx(int code, int line, const char *fmt, ...)
+{
+	va_list ap;
+
+	printf(" ERR %d: ", line);
+	va_start(ap, fmt);
+	vprintf(fmt, ap);
+	va_end(ap);
+	printf("\n");
+
+	exit(code);
 }
 
 void
