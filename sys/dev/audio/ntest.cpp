@@ -880,6 +880,14 @@ test_encoding_1(void)
 				for (int m = 0; m < __arraycount(freqtable); m++) {
 					int freq = freqtable[m];
 
+					// AUDIO2/x68k ではメモリ足りなくてこける可能性
+					if (netbsd >= 9 && x68k) {
+						if (ch == 12)
+							continue;
+						if (freq == 192000)
+							continue;
+					}
+
 					char buf[100];
 					snprintf(buf, sizeof(buf), "enc=%d,prec=%d,ch=%d,freq=%d",
 						enc, prec, ch, freq);
