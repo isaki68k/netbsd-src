@@ -1248,6 +1248,7 @@ test_readwrite_3()
 		}
 		// AUDIO2 では HalfHW に対して R+W の多重オープンはできない
 		XP_SKIP();
+		return;
 	}
 
 	memset(buf, 0, sizeof(buf));
@@ -1540,7 +1541,8 @@ test_AUDIO_WSEEK_1(void)
 // を取得するだけ。
 // N8 はソースコード上踏襲しているので見た目の動作は同じだが、検討した上での
 // それかどうかが謎。
-
+// AUDIO2 では GETFD は実質 HW の duplex を取得するのと等価。SETFD は
+// 今とは違う方には変更できない。
 void
 test_AUDIO_SETFD_ONLY(void)
 {
@@ -1565,11 +1567,18 @@ test_AUDIO_SETFD_ONLY(void)
 		XP_EQ(0, n);
 
 		// Full duplex に設定しようとすると、
-		// HW Full なら設定できる、HW Half ならエラー。
+		// N7: HW Full なら設定できる、HW Half ならエラー。
+		// AUDIO2: 変更は出来ない
 		n = 1;
 		r = IOCTL(fd, AUDIO_SETFD, &n, "on");
-		if (hwfull) {
-			XP_EQ(0, r);
+		if (netbsd <= 7) {
+			if (hwfull) {
+				XP_EQ(0, r);
+			} else {
+				XP_EQ(-1, r);
+				if (r == -1)
+					XP_EQ(ENOTTY, errno);
+			}
 		} else {
 			XP_EQ(-1, r);
 			if (r == -1)
@@ -1577,11 +1586,16 @@ test_AUDIO_SETFD_ONLY(void)
 		}
 
 		// 取得してみると、
-		// HW Full なら 1、HW Half なら 0 のまま。
+		// N7: HW Full なら 1、HW Half なら 0 のまま。
+		// AUDIO2: 変わっていないこと。
 		n = 0;
 		r = IOCTL(fd, AUDIO_GETFD, &n, "");
 		XP_EQ(0, r);
-		XP_EQ(hwfull, n);
+		if (netbsd <= 7) {
+			XP_EQ(hwfull, n);
+		} else {
+			XP_EQ(0, n);
+		}
 
 		// GETINFO の ai.*.open などトラック状態は変化しない。
 		r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
@@ -1590,13 +1604,15 @@ test_AUDIO_SETFD_ONLY(void)
 		XP_EQ(mode2ropen[mode], ai.record.open);
 
 		// Half duplex に設定しようとすると、
-		// HW Full なら設定できる、HW Half なら何も起きず成功。
+		// N7: HW Full なら設定できる、HW Half なら何も起きず成功。
+		// AUDIO2: 実質変わらないので成功する。
 		n = 0;
 		r = IOCTL(fd, AUDIO_SETFD, &n, "off");
 		XP_EQ(0, r);
 
 		// 取得してみると、
-		// HW Full なら 0、HW Half なら 0 のまま。
+		// N7: HW Full なら 0、HW Half なら 0 のまま。
+		// AUDIO2: 変わっていないこと。
 		n = 0;
 		r = IOCTL(fd, AUDIO_GETFD, &n, "");
 		XP_EQ(0, r);
@@ -1628,8 +1644,8 @@ test_AUDIO_SETFD_RDWR(void)
 		err(1, "open: %s", devaudio);
 
 	// O_RDWR オープン直後は必ず Half と manpage に書いてあるが
-	// N7 は HW Full なら Full になる。仕様か実装がどっちかバグ。
-	// どうしたものか。とりあえず N7 の実装に合わせておく。
+	// N7: HW Full なら Full になる。manpage のバグということにしておく。
+	// AUDIO2: HW Full なら Full、HW Half なら Half になる。
 	n = 0;
 	r = IOCTL(fd, AUDIO_GETFD, &n, "");
 	XP_EQ(0, r);
@@ -1661,17 +1677,33 @@ test_AUDIO_SETFD_RDWR(void)
 	XP_EQ(1, ai.record.open);
 
 	// Half duplex に設定しようとすると、
-	// HW Full なら設定できる、HW Half なら何も起きず成功。
+	// N7: HW Full なら設定できる、HW Half なら何も起きず成功。
+	// AUDIO2: HW Full ならエラー、HW Half なら何も起きず成功。
 	n = 0;
 	r = IOCTL(fd, AUDIO_SETFD, &n, "off");
-	XP_EQ(0, r);
+	if (netbsd <= 7) {
+		XP_EQ(0, r);
+	} else {
+		if (hwfull) {
+			XP_EQ(-1, r);
+			if (r == -1)
+				XP_EQ(ENOTTY, errno);
+		} else {
+			XP_EQ(0, r);
+		}
+	}
 
 	// 取得してみると、
-	// HW Full なら 0、HW Half なら 0 のまま。
+	// N7: HW Full なら 0、HW Half なら 0 のまま。
+	// AUDIO2: HW Full なら 1、HW Half なら 0 のまま。
 	n = 0;
 	r = IOCTL(fd, AUDIO_GETFD, &n, "");
 	XP_EQ(0, r);
-	XP_EQ(0, n);
+	if (netbsd <= 7) {
+		XP_EQ(0, n);
+	} else {
+		XP_EQ(hwfull, n);
+	}
 
 	// GETINFO の ai.*.open などトラック状態は変化しない。
 	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");

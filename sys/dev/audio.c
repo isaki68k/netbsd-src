@@ -1380,11 +1380,6 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	af = kmem_zalloc(sizeof(audio_file_t), KM_SLEEP);
 	af->sc = sc;
 	af->dev = dev;
-
-	af->full_duplex =
-	    ((flags & (FWRITE | FREAD)) == (FWRITE | FREAD)) &&
-	    (audio_get_props(sc) & AUDIO_PROP_FULLDUPLEX);
-
 	if ((flags & FWRITE) != 0 && audio_can_playback(sc))
 		af->mode |= AUMODE_PLAY | AUMODE_PLAY_ALL;
 	if ((flags & FREAD) != 0 && audio_can_capture(sc))
@@ -1912,20 +1907,28 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		break;
 
 	case AUDIO_GETFD:
-		// file が現在 Full Duplex かどうかを返す。
-		*(int *)addr = file->full_duplex;
+		// 現在のディスクリプタが full duplex かどうかを返す。
+		if ((file->mode & (AUMODE_PLAY | AUMODE_RECORD)) ==
+		    (AUMODE_PLAY | AUMODE_RECORD)) {
+			fd = 1;
+		} else {
+			fd = 0;
+		}
+		*(int *)addr = fd;
 		break;
 
 	case AUDIO_SETFD:
-		// ここはほぼ従来通り。ただし setfd は呼ばない。
+		// HW が full duplex なら half duplex への変更は認めない。
+		// この操作に意味があるとは思えない。
+		// HW が half duplex なら full duplex へは変更できない(自明)。
 		fd = *(int *)addr;
-		if ((audio_get_props(sc) & AUDIO_PROP_FULLDUPLEX)) {
-			file->full_duplex = fd;
+		if ((file->mode & (AUMODE_PLAY | AUMODE_RECORD)) ==
+		    (AUMODE_PLAY | AUMODE_RECORD)) {
+			if (fd == 0)
+				error = ENOTTY;
 		} else {
 			if (fd)
 				error = ENOTTY;
-			else
-				error = 0;
 		}
 		break;
 

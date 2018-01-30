@@ -476,8 +476,10 @@ argument.</p>
 <p style="margin-left:20%;">The command returns the current
 setting of the full duplex mode.</p>
 <p class=a2 style="margin-left:20%">
-このコマンドは file レイヤーの full duplex mode の現在の設定を返す。
+このコマンドはディスクリプタが full duplex かどうかを返す。
 HW の状態ではない。
+HW が Full duplex でかつディスクリプタが O_RDWR でオープンされていれば
+full duplex、それ以外は half duplex となる。
 </p>
 
 <p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_GETENC
@@ -529,17 +531,29 @@ operation, attempting to set full-duplex mode returns an
 error.</p>
 <p class=bad style="margin-left:20%;">
 自VC の Full/Half 状態だけでなく
-setfd インタフェースで HWの状態を直接変更している。
-setfd インタフェースでデバッグ printf 以上のことをしている
+hw_if-&gt;setfd で HWの状態を直接変更している。
+hw_if-&gt;setfd でデバッグ printf 以上のことをしている
 MD ドライバは1つも存在しないので影響は顕在化しないが
-本来はおかしいはず。</p>
-<p class=a2 style="margin-left:20%">
-このコマンドは、
-引数が非ゼロなら file レイヤー (HW ではない)を full duplex モードにする、
-あるいは引数がゼロなら half duplex モードにする
-HW が full duplex モードをサポートしていなければ、
-full duplex モードへセットする試みはエラー(ENOTTY)になる。
+本来はおかしい。</p>
+<p class=comment style="margin-left:20%">
+本来 open 当初は必ず Half duplex でその後これを使って Full duplex に変える
+という運用を想定していたようだが(少なくとも manpage のほうは)、
+いつからか open 時から(可能なら) Full duplex になっている。
 </p>
+<p class=a2 style="margin-left:20%">
+AUDIO2 ではオープン後に Full/Half を変更することは禁止したので、
+実質 obsolete である。
+ただし後方互換性のため、
+現在 Full duplex の時の引数非ゼロ(Full duplex への変更)と、
+現在 Half duplex の時の引数ゼロ(Half duplex への変更)は
+影響がないので成功する。
+それ以外はエラー ENOTTY になる。
+</p>
+<p class=a2 style="margin-left:20%">
+Full duplex を Half duplex に変更することが出来なくなるが、
+意図や使い道が分からないし、動作も定義もされてないし、たぶんいらない。
+</p>
+
 
 <p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_GETPROPS
 (int)</p>

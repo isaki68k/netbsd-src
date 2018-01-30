@@ -229,7 +229,6 @@ struct audio_file {
 	dev_t		dev;		// デバイスファイルへのバックリンク
 
 	pid_t		async_audio;	/* process who wants audio SIGIO */
-	int		full_duplex;	/* track in full duplex mode */
 
 #if defined(USE_SETCHAN)
 	int ioctl_target;		// ioctl 発行先トラック番号
