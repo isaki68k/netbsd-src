@@ -436,6 +436,10 @@ FIOASYNC が VC 分離されていない。
 別のプロセスBが FIOASYNC をセットしてクローズしても
 まだ FIOASYNC がリセットされず、次にオープンしても FIOASYNC をセットできない。
 </p>
+<p class=a2 style="margin-left:8%">
+AUDIO2 では修正済み。
+FIOASYNC はファイルディスクリプタごとに独立している。
+</p>
 
 <p style="margin-left:8%; margin-top: 1em">The following
 ioctl(2) commands are supported on the sample devices:</p>
@@ -512,6 +516,10 @@ calling process until all queued playback samples have been
 played by the hardware.</p>
 <p class=bad style="margin-left:20%">
 x68k くらいの遅マシンでは drain の挙動がなんか変。</p>
+<p class=a2 style="margin-left:20%">
+AUDIO2 では問題ない。
+ただし VirtualBox はエミュレーション精度が甘いので実機通りにはならない可能性があることは分かっている(がこっちの問題ではない)。
+</p>
 
 <p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_GETDEV
 (audio_device_t)</p>
@@ -847,11 +855,19 @@ N7 以前ならオーディオデバイスを開けるのは高々1人なので
 それ以上影響は広がらないが、N8 だといくらでもオープンできるので以下略。
 </span>
 </p>
+<p class=a2 style="margin-left:20%">
+AUDIO2 ではカーネルが受け付ける sample_rate を
+1000Hz から 192000Hz までと定義した。
+hdaudio(4) が規格上 384kHz とか扱えるらしいけど、誰か検証よろしく。
+</p>
 <p class=bad style="margin-left:20%">
 eof カウンタが VC 分離できていない。
 あるディスクリプタで eof カウンタが上がると別ディスクリプタでも同じ値が読める。
 全 VC が閉じられるとリセットされる。
 この変数になんの意味があるかはともかく、おそらく元の仕様の意図はそうではない。
+</p>
+<p class=a2 style="margin-left:20%">
+eof カウンタはファイルディスクリプタごとにした。
 </p>
 
 <p style="margin-left:20%; margin-top: 1em">Note: many
