@@ -46,6 +46,19 @@ P.n8:before {
 	left: 5%;
 }
 
+SPAN.n9 {
+	background-color: rgb(180,235,250);	/* 明るい空色 */
+}
+P.n9 {
+	background-color: rgb(180,235,250);	/* 明るい空色 */
+}
+P.n9:before {
+	content: "(A2)";
+	background-color: rgb(180,235,250);	/* 明るい空色 */
+	position: absolute;
+	left: 5%;
+}
+
 P.bad7 {
 	color: rgb(255,153,0);	/* 橙色 */
 	font-weight: bold;
@@ -212,8 +225,24 @@ first open completes).</p>
 
 <p style="background-color: rgb(255,209,209); margin-top: 1em" valign="top"><b>VIRTUAL
 CHANNELS</b></p>
+<p class=bad style="margin-left:0%">
+名前がおかしい。
+virtual でない channel はモノラルとか L とか R で、
+virtual channel がオーディオストリームのことを指しているのは違和感がある。
+</p>
+<p class=a2 style="margin-left:0%">
+AUDIO2 では、1つの再生または録音単位をトラックと呼ぶ。
+1つ以内の再生と1つ以内の録音の組からなる1つのファイルディスクリプタに
+対応するところの名前が未定。
+</p>
+<p class=a2 style="margin-left:0%">
+あとセクションもここではない気がする。
+</p>
 
 <p class=n8 style="margin-left:8%;">Any process may open a sampling
+device at a given time. Any number of devices per process
+and file descriptors may be shared between processes.</p>
+<p class=n9 style="margin-left:8%;">Any process may open a sampling
 device at a given time. Any number of devices per process
 and file descriptors may be shared between processes.</p>
 
@@ -240,9 +269,15 @@ sysctl で HW で有効でない値をセットしてもエラーにならない
 
 <p class=bad style="margin-left:12%; margin-top:1em">
 そもそもこれらを sysctl で設定させるのがおかしい。</p>
+<p class=a2 style="margin-left:12%">
+AUDIO2 ではこの sysctl は採用しない。</p>
 
 
 <p class=n8 style="margin-left:12%; margin-top: 1em" valign="top">hw.driverN.multiuser</p>
+<p class=a2 style="margin-left:12%">
+これは今の所引き継ぎ予定。
+ただし名前は hw.audioN.multiuser にする。
+</p>
 
 <p class=n8 style="margin-left:8%; margin-top: 1em">Where
 <i>driverN</i> corresponds to the underlying audio device
@@ -258,6 +293,13 @@ hw.hdafg0.* のようなMD名ではなく hw.audio0.* を使うべき。
 results, values close to the underlying hardware should be
 chosen. These variables may only be changed when the
 sampling device is not in use.</p>
+<p class=bad style="margin-left:8%">
+ユーザにそれを選択させるとかおかしい。
+</p>
+<p class=a2 style="margin-left:8%">
+この行は削除。
+AUDIO2 では自動で選択する。
+</p>
 
 <p class=n8 style="margin-left:8%; margin-top: 1em">An additional
 sysctl(8) variable determines if multiple users are allowed
@@ -271,6 +313,10 @@ denied.</p>
 
 <p class=n8 style="margin-left:8%; margin-top: 1em">If set to true,
 all users may access the sampling device at any time.</p>
+<p class=comment style="margin-left:8%">
+厳密に言えば、あるユーザがオープンしていても、
+別のユーザもいつでもオープンできるということ。
+</p>
 
 <p class=n8 style="margin-left:8%; margin-top: 1em">Each virtual
 channel has a corresponding mixer:</p>
@@ -285,6 +331,9 @@ Recording volume</p>
 virtual channel number. e.g vchan.dac0 controlling playback
 volume and vchan.mic0 controlling recording volume for the
 first virtual channel.</p>
+<p class=a2 style="margin-left:8%">
+AUDIO2 ではこのミキサパラメータはない。
+</p>
 
 <p style="margin-left:8%; margin-top: 1em">On a half-duplex
 device, writes while recording is in progress will be
@@ -406,6 +455,9 @@ audio channel for subsequent ioctl calls.</p>
 (ユーザにも特権にも関係なく) 他のVCを指定することができて
 (その後の ioctl でその VC の状態を変更できて) しまうのでセキュリティ上アウト
 → <a href="http://gnats.netbsd.org/52627">kern/52627</a></p>
+<p class=a2 style="margin-left:20%">
+AUDIO2 ではこの2つの ioctl は廃止。必要ない。
+</p>
 
 <p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_FLUSH</p>
 
@@ -413,8 +465,13 @@ audio channel for subsequent ioctl calls.</p>
 and recording, clears all queued buffers, resets error
 counters, and restarts recording and playback as appropriate
 for the current sampling mode.</p>
-<p class=a2 style="margin-left:20%">stops all playback and recoring とあるが
-stops this playback and recoding track と再定義したい。</p>
+<p class=bad style="margin-left:20%">
+stops all playback and recoring は他のVCにも影響を与えるように読めないだろうか。
+</p>
+<p class=a2 style="margin-left:20%">
+「stops all playback and recoring」→
+「このディスクリプタ(?)の再生と録音をすべて停止」とか、
+影響がこれだけであることは明確にしておきたい。</p>
 <p class=comment style="margin-left:20%">
 ここでいうエラーカウンタはドロップ数 AUDIO_[PR]ERROR の値を指す。</p>
 
@@ -426,7 +483,8 @@ of dropped output bytes into its integer argument. There is
 no information regarding when in the sample stream they were
 dropped.</span></p>
 <p class=bad7 style="margin-left:20%">
-この ioctl は以前から実装されているが manpage に AUDIO_PERROR が抜けている。</p>
+この ioctl は以前から実装されているが、
+manpage には AUDIO_RERROR だけあって AUDIO_PERROR が抜けている。</p>
 
 <p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_RERROR
 (int)</p>
@@ -479,7 +537,7 @@ setting of the full duplex mode.</p>
 このコマンドはディスクリプタが full duplex かどうかを返す。
 HW の状態ではない。
 HW が Full duplex でかつディスクリプタが O_RDWR でオープンされていれば
-full duplex、それ以外は half duplex となる。
+full duplex、それ以外は half duplex とする。
 </p>
 
 <p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_GETENC
@@ -536,22 +594,24 @@ hw_if-&gt;setfd でデバッグ printf 以上のことをしている
 MD ドライバは1つも存在しないので影響は顕在化しないが
 本来はおかしい。</p>
 <p class=comment style="margin-left:20%">
-本来 open 当初は必ず Half duplex でその後これを使って Full duplex に変える
-という運用を想定していたようだが(少なくとも manpage のほうは)、
-いつからか open 時から(可能なら) Full duplex になっている。
+本来 open 直後は必ず Half duplex 状態になっており
+その後必要ならこの ioctl で Full duplex に変える
+という運用を想定していたようだが(少なくともこの manpage の最初のほうにそう書いてある)、
+実装のほうは open 直後から(可能なら) Full duplex になるようになっている。
 </p>
 <p class=a2 style="margin-left:20%">
-AUDIO2 ではオープン後に Full/Half を変更することは禁止したので、
-実質 obsolete である。
+AUDIO2 ではオープン時に確定した Full/Half 状態を
+オープン後に変更することは禁止したいので、
+実質この ioctl は obsolete とする。
 ただし後方互換性のため、
 現在 Full duplex の時の引数非ゼロ(Full duplex への変更)と、
 現在 Half duplex の時の引数ゼロ(Half duplex への変更)は
-影響がないので成功する。
-それ以外はエラー ENOTTY になる。
+影響がないので成功し、
+それ以外はエラー ENOTTY になる、とする。
 </p>
 <p class=a2 style="margin-left:20%">
 Full duplex を Half duplex に変更することが出来なくなるが、
-意図や使い道が分からないし、動作も定義もされてないし、たぶんいらない。
+意図や使い道が分からないし、たぶん困らないだろう。
 </p>
 
 
@@ -609,6 +669,7 @@ the audio_offset structure.</p>
 	u_int	deltablks;	/* Blocks transferred since last checked */
 	u_int	offset;		/* Physical transfer offset in buffer */
 }</pre></p>
+<p class=comment style="margin-left:20%">この2つは未調査。</p>
 
 <p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_GETINFO
 (audio_info_t)</p>
