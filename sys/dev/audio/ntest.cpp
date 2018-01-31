@@ -257,6 +257,48 @@ void xp_ne(int line, int exp, int act, const char *varname)
 		xp_fail(line, "%s expects != %d but %d", varname, exp, act);
 }
 
+// システムコールの結果 exp になることを期待
+#define XP_SYS_EQ(exp, act)	xp_sys_eq(__LINE__, exp, act, #act)
+void xp_sys_eq(int line, int exp, int act, const char *varname)
+{
+	testcount++;
+	if (exp != act) {
+		if (act == -1) {
+			xp_fail(line, "%s expects %d but -1,err#%d(%s)", varname, exp,
+				errno, strerror(errno));
+		} else {
+			xp_eq(line, exp, act, varname);
+		}
+	}
+}
+// システムコールの結果成功することを期待
+// open(2) のように返ってくる成功値が分からない場合用
+#define XP_SYS_OK(act)	xp_sys_ok(__LINE__, act, #act)
+void xp_sys_ok(int line, int act, const char *varname)
+{
+	testcount++;
+	if (act == -1)
+		xp_fail(line, "%s expects success but -1,err#%d(%s)",
+			varname, errno, strerror(errno));
+}
+// システムコールがexperrnoで失敗することを期待
+#define XP_SYS_NG(experrno, act) xp_sys_ng(__LINE__, experrno, act, #act)
+void xp_sys_ng(int line, int experrno, int act, const char *varname)
+{
+	testcount++;
+	if (act != -1) {
+		xp_fail(line, "%s expects -1,err#%d but %d",
+			varname, experrno, act);
+	} else if (experrno != errno) {
+		char acterrbuf[100];
+		int acterrno = errno;
+		strlcpy(acterrbuf, strerror(acterrno), sizeof(acterrbuf));
+		xp_fail(line, "%s expects -1,err#%d(%s) but -1,err#%d(%s)",
+			varname, experrno, strerror(experrno),
+			acterrno, acterrbuf);
+	}
+}
+
 // ai.*.buffer_size が期待通りか調べる
 // bool exp が true なら buffer_size の期待値は非ゼロ、
 // exp が false なら buffer_size の期待値はゼロ。
@@ -384,11 +426,11 @@ test_open_1(void)
 	for (int mode = 0; mode <= 2; mode++) {
 		TEST("open_1(%s)", openmodetable[mode]);
 		fd = OPEN(devaudio, mode);
-		XP_NE(-1, fd);
+		XP_SYS_OK(fd);
 
 		memset(&ai, 0, sizeof(ai));
 		r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
-		XP_EQ(0, r);
+		XP_SYS_EQ(0, r);
 		XP_EQ(0, ai.play.pause);
 		XP_EQ(0, ai.record.pause);
 		XP_EQ(mode2popen[mode], ai.play.open);
@@ -406,7 +448,7 @@ test_open_1(void)
 		}
 
 		r = CLOSE(fd);
-		XP_EQ(0, r);
+		XP_SYS_EQ(0, r);
 	}
 }
 
@@ -428,7 +470,7 @@ test_open_2(void)
 		err(1, "open");
 	memset(&ai, 0, sizeof(ai));
 	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
-	XP_EQ(0, r);
+	XP_SYS_EQ(0, r);
 
 	XP_NE(0, ai.blocksize);
 	XP_NE(0, ai.hiwat);
@@ -502,7 +544,7 @@ test_open_2(void)
 		err(1, "open");
 	memset(&ai, 0, sizeof(ai));
 	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
-	XP_EQ(0, r);
+	XP_SYS_EQ(0, r);
 
 	XP_NE(0, ai.blocksize);
 	XP_NE(0, ai.hiwat);
@@ -572,7 +614,7 @@ test_open_3(void)
 		err(1, "open");
 	memset(&ai, 0, sizeof(ai));
 	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
-	XP_EQ(0, r);
+	XP_SYS_EQ(0, r);
 
 	// audio の初期値と同じものが見えるはず
 	XP_NE(0, ai.blocksize);
@@ -643,7 +685,7 @@ test_open_3(void)
 		err(1, "open");
 	memset(&ai, 0, sizeof(ai));
 	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
-	XP_EQ(0, r);
+	XP_SYS_EQ(0, r);
 
 	XP_NE(0, ai.blocksize);
 	// hiwat, lowat は変化する
@@ -805,16 +847,16 @@ test_open_5()
 				fd1 = OPEN(devaudio, j);
 				if (exptable[i * 3 + j].mode1 >= 0) {
 					// オープンできることを期待するケース
-					XP_NE(-1, fd1);
+					XP_SYS_OK(fd1);
 					r = IOCTL(fd1, AUDIO_GETBUFINFO, &ai, "");
-					XP_EQ(0, r);
+					XP_SYS_EQ(0, r);
 					if (r == 0) {
 						actmode = ai.mode & (AUMODE_PLAY | AUMODE_RECORD);
 						XP_EQ(exptable[i * 3 + j].mode1, actmode);
 					}
 				} else {
 					// オープンできないことを期待するケース
-					XP_EQ(-1, fd1);
+					XP_SYS_NG(ENODEV, fd1);
 					if (fd1 == -1) {
 						XP_EQ(-exptable[i * 3 + j].mode1, errno);
 					} else {
@@ -906,10 +948,11 @@ test_encoding_1(void)
 					ai.mode = AUMODE_PLAY_ALL;
 					r = IOCTL(fd, AUDIO_SETINFO, &ai, "play");
 					if (netbsd >= 8) {
-						XP_EQ(0, r);
+						XP_SYS_EQ(0, r);
 					} else {
+						// N7 は失敗しても気にしないことにする
 						if (r == 0) {
-							XP_EQ(0, r);
+							XP_SYS_EQ(0, r);
 						} else {
 							XP_SKIP();
 						}
@@ -949,9 +992,7 @@ test_encoding_2()
 		ai.play.sample_rate = 1000;
 		ai.mode = AUMODE_PLAY_ALL;
 		r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
-		XP_EQ(-1, r);
-		if (r == -1)
-			XP_EQ(EINVAL, errno);
+		XP_SYS_NG(EINVAL, r);
 
 		CLOSE(fd);
 	}
@@ -974,9 +1015,7 @@ test_encoding_2()
 		ai.play.sample_rate = 1000;
 		ai.mode = AUMODE_PLAY_ALL;
 		r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
-		XP_EQ(-1, r);
-		if (r == -1)
-			XP_EQ(EINVAL, errno);
+		XP_SYS_NG(EINVAL, r);
 
 		CLOSE(fd);
 	}
@@ -1010,9 +1049,7 @@ test_encoding_2()
 		ai.play.sample_rate = freq;
 		ai.mode = AUMODE_PLAY_ALL;
 		r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
-		XP_EQ(-1, r);
-		if (r == -1)
-			XP_EQ(EINVAL, errno);
+		XP_SYS_NG(EINVAL, r);
 
 		CLOSE(fd);
 	}
@@ -1044,9 +1081,9 @@ test_drain_1(void)
 		err(1, "AUDIO_SETINFO");
 	// 1バイト書いて close
 	r = WRITE(fd, &r, 1);
-	XP_EQ(1, r);
+	XP_SYS_EQ(1, r);
 	r = CLOSE(fd);
-	XP_EQ(0, r);
+	XP_SYS_EQ(0, r);
 }
 
 // pause したまま drain
@@ -1076,9 +1113,9 @@ test_drain_2(void)
 		err(1, "AUDIO_SETINFO");
 	// 4バイト書いて close
 	r = WRITE(fd, &r, 4);
-	XP_EQ(4, r);
+	XP_SYS_EQ(4, r);
 	r = CLOSE(fd);
-	XP_EQ(0, r);
+	XP_SYS_EQ(0, r);
 }
 
 // HWFull/Half によらず open mode の方の操作(read/write)はできる。
@@ -1133,22 +1170,18 @@ test_readwrite_1(void)
 		memset(buf, 0, sizeof(buf));
 		r = WRITE(fd0, buf, sizeof(buf));
 		if (canwrite) {
-			XP_EQ(10, r);
+			XP_SYS_EQ(10, r);
 		} else {
-			XP_EQ(-1, r);
-			if (r == -1)
-				XP_EQ(EBADF, errno);
+			XP_SYS_NG(EBADF, r);
 		}
 
 		// read は mode2ropen[] が期待値
 		// N7 は 1バイト以上 read しようとするとブロックする?
 		r = READ(fd0, buf, 0);
 		if (canread) {
-			XP_EQ(0, r);
+			XP_SYS_EQ(0, r);
 		} else {
-			XP_EQ(-1, r);
-			if (r == -1)
-				XP_EQ(EBADF, errno);
+			XP_SYS_NG(EBADF, r);
 		}
 
 		CLOSE(fd0);
@@ -1242,21 +1275,17 @@ test_readwrite_2(void)
 			memset(buf, 0, sizeof(buf));
 			r = WRITE(fd1, buf, sizeof(buf));
 			if (canwrite) {
-				XP_EQ(10, r);
+				XP_SYS_EQ(10, r);
 			} else {
-				XP_EQ(-1, r);
-				if (r == -1)
-					XP_EQ(EBADF, errno);
+				XP_SYS_NG(EBADF, r);
 			}
 
 			// read は mode2ropen[] が期待値
 			r = READ(fd1, buf, 0);
 			if (canread) {
-				XP_EQ(0, r);
+				XP_SYS_EQ(0, r);
 			} else {
-				XP_EQ(-1, r);
-				if (r == -1)
-					XP_EQ(EBADF, errno);
+				XP_SYS_NG(EBADF, r);
 			}
 
 			CLOSE(fd0);
@@ -1330,6 +1359,7 @@ test_readwrite_3()
 
 	CLOSE(fd0);
 	CLOSE(fd1);
+	// ここまで来れば自動的に成功とする
 	XP_EQ(0, 0);
 }
 
@@ -1353,7 +1383,7 @@ test_FIOASYNC_1(void)
 		err(1, "open");
 	val = 1;
 	r = IOCTL(fd0, FIOASYNC, &val, "on");
-	XP_EQ(0, r);
+	XP_SYS_EQ(0, r);
 
 	// 続いて2人目が ASYNC on
 	fd1 = OPEN(devaudio, O_WRONLY);
@@ -1361,7 +1391,7 @@ test_FIOASYNC_1(void)
 		err(1, "open");
 	val = 1;
 	r = IOCTL(fd1, FIOASYNC, &val, "on");
-	XP_EQ(0, r);
+	XP_SYS_EQ(0, r);
 
 	CLOSE(fd0);
 	CLOSE(fd1);
@@ -1426,7 +1456,7 @@ test_FIOASYNC_3(void)
 		err(1, "open");
 	val = 1;
 	r = IOCTL(fd1, FIOASYNC, &val, "on");
-	XP_EQ(0, r);
+	XP_SYS_EQ(0, r);
 	CLOSE(fd1);
 
 	// もう一回2人目がオープンして ASYNC on
@@ -1435,7 +1465,7 @@ test_FIOASYNC_3(void)
 		err(1, "open");
 	val = 1;
 	r = IOCTL(fd1, FIOASYNC, &val, "on");
-	XP_EQ(0, r);
+	XP_SYS_EQ(0, r);
 	CLOSE(fd1);
 	CLOSE(fd0);
 }
@@ -1481,10 +1511,10 @@ test_FIOASYNC_4(void)
 
 	val = 1;
 	r = IOCTL(fd, FIOASYNC, &val, "on");
-	XP_EQ(0, r);
+	XP_SYS_EQ(0, r);
 
 	r = WRITE(fd, data, ai.blocksize);
-	XP_EQ(ai.blocksize, r);
+	XP_SYS_EQ(ai.blocksize, r);
 
 	for (int i = 0; i < 10 && sigio_caught == 0; i++) {
 		usleep(10000);
@@ -1516,10 +1546,10 @@ test_FIOASYNC_5(void)
 
 	val = 1;
 	r = IOCTL(fd, FIOASYNC, &val, "on");
-	XP_EQ(0, r);
+	XP_SYS_EQ(0, r);
 
 	r = READ(fd, &r, 4);
-	XP_EQ(4, r);
+	XP_SYS_EQ(4, r);
 
 	for (int i = 0; i < 10 && sigio_caught == 0; i++) {
 		usleep(10000);
@@ -1562,8 +1592,7 @@ test_AUDIO_WSEEK_1(void)
 	// 初期状態だと 0 バイトになる
 	n = 0;
 	r = IOCTL(fd, AUDIO_WSEEK, &n, "");
-	if (r == -1)
-		err(1, "AUDIO_WSEEK(1)");
+	XP_SYS_EQ(0, r);
 	XP_EQ(0, n);
 
 	// 4バイト書き込むと 4になる
@@ -1572,8 +1601,7 @@ test_AUDIO_WSEEK_1(void)
 	if (r == -1)
 		err(1, "write(4)");
 	r = IOCTL(fd, AUDIO_WSEEK, &n, "");
-	if (r == -1)
-		err(1, "AUDIO_WSEEK(2)");
+	XP_SYS_EQ(0, r);
 	XP_EQ(4, n);
 
 	CLOSE(fd);
@@ -1606,7 +1634,7 @@ test_AUDIO_SETFD_ONLY(void)
 		// オープン直後は常に Half
 		n = 0;
 		r = IOCTL(fd, AUDIO_GETFD, &n, "");
-		XP_EQ(0, r);
+		XP_SYS_EQ(0, r);
 		XP_EQ(0, n);
 
 		// Full duplex に設定しようとすると、
@@ -1616,16 +1644,12 @@ test_AUDIO_SETFD_ONLY(void)
 		r = IOCTL(fd, AUDIO_SETFD, &n, "on");
 		if (netbsd <= 7) {
 			if (hwfull) {
-				XP_EQ(0, r);
+				XP_SYS_EQ(0, r);
 			} else {
-				XP_EQ(-1, r);
-				if (r == -1)
-					XP_EQ(ENOTTY, errno);
+				XP_SYS_NG(ENOTTY, r);
 			}
 		} else {
-			XP_EQ(-1, r);
-			if (r == -1)
-				XP_EQ(ENOTTY, errno);
+			XP_SYS_NG(ENOTTY, r);
 		}
 
 		// 取得してみると、
@@ -1633,7 +1657,7 @@ test_AUDIO_SETFD_ONLY(void)
 		// AUDIO2: 変わっていないこと。
 		n = 0;
 		r = IOCTL(fd, AUDIO_GETFD, &n, "");
-		XP_EQ(0, r);
+		XP_SYS_EQ(0, r);
 		if (netbsd <= 7) {
 			XP_EQ(hwfull, n);
 		} else {
@@ -1642,7 +1666,7 @@ test_AUDIO_SETFD_ONLY(void)
 
 		// GETINFO の ai.*.open などトラック状態は変化しない。
 		r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
-		XP_EQ(0, r);
+		XP_SYS_EQ(0, r);
 		XP_EQ(mode2popen[mode], ai.play.open);
 		XP_EQ(mode2ropen[mode], ai.record.open);
 
@@ -1651,19 +1675,19 @@ test_AUDIO_SETFD_ONLY(void)
 		// AUDIO2: 実質変わらないので成功する。
 		n = 0;
 		r = IOCTL(fd, AUDIO_SETFD, &n, "off");
-		XP_EQ(0, r);
+		XP_SYS_EQ(0, r);
 
 		// 取得してみると、
 		// N7: HW Full なら 0、HW Half なら 0 のまま。
 		// AUDIO2: 変わっていないこと。
 		n = 0;
 		r = IOCTL(fd, AUDIO_GETFD, &n, "");
-		XP_EQ(0, r);
+		XP_SYS_EQ(0, r);
 		XP_EQ(0, n);
 
 		// GETINFO の ai.*.open などトラック状態は変化しない。
 		r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
-		XP_EQ(0, r);
+		XP_SYS_EQ(0, r);
 		XP_EQ(mode2popen[mode], ai.play.open);
 		XP_EQ(mode2ropen[mode], ai.record.open);
 
@@ -1691,7 +1715,7 @@ test_AUDIO_SETFD_RDWR(void)
 	// AUDIO2: HW Full なら Full、HW Half なら Half になる。
 	n = 0;
 	r = IOCTL(fd, AUDIO_GETFD, &n, "");
-	XP_EQ(0, r);
+	XP_SYS_EQ(0, r);
 	XP_EQ(hwfull, n);
 
 	// Full duplex に設定しようとすると
@@ -1699,23 +1723,21 @@ test_AUDIO_SETFD_RDWR(void)
 	n = 1;
 	r = IOCTL(fd, AUDIO_SETFD, &n, "on");
 	if (hwfull) {
-		XP_EQ(0, r);
+		XP_SYS_EQ(0, r);
 	} else {
-		XP_EQ(-1, r);
-		if (r == -1)
-			XP_EQ(ENOTTY, errno);
+		XP_SYS_NG(ENOTTY, r);
 	}
 
 	// 取得してみると、
 	// HW Full なら 1、HW Half なら 0 のまま。
 	n = 0;
 	r = IOCTL(fd, AUDIO_GETFD, &n, "");
-	XP_EQ(0, r);
+	XP_SYS_EQ(0, r);
 	XP_EQ(hwfull, n);
 
 	// GETINFO の ai.*.open などトラック状態は変化しない。
 	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
-	XP_EQ(0, r);
+	XP_SYS_EQ(0, r);
 	XP_EQ(1, ai.play.open);
 	XP_EQ(1, ai.record.open);
 
@@ -1725,14 +1747,12 @@ test_AUDIO_SETFD_RDWR(void)
 	n = 0;
 	r = IOCTL(fd, AUDIO_SETFD, &n, "off");
 	if (netbsd <= 7) {
-		XP_EQ(0, r);
+		XP_SYS_EQ(0, r);
 	} else {
 		if (hwfull) {
-			XP_EQ(-1, r);
-			if (r == -1)
-				XP_EQ(ENOTTY, errno);
+			XP_SYS_NG(ENOTTY, r);
 		} else {
-			XP_EQ(0, r);
+			XP_SYS_EQ(0, r);
 		}
 	}
 
@@ -1741,7 +1761,7 @@ test_AUDIO_SETFD_RDWR(void)
 	// AUDIO2: HW Full なら 1、HW Half なら 0 のまま。
 	n = 0;
 	r = IOCTL(fd, AUDIO_GETFD, &n, "");
-	XP_EQ(0, r);
+	XP_SYS_EQ(0, r);
 	if (netbsd <= 7) {
 		XP_EQ(0, n);
 	} else {
@@ -1750,7 +1770,7 @@ test_AUDIO_SETFD_RDWR(void)
 
 	// GETINFO の ai.*.open などトラック状態は変化しない。
 	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
-	XP_EQ(0, r);
+	XP_SYS_EQ(0, r);
 	XP_EQ(1, ai.play.open);
 	XP_EQ(1, ai.record.open);
 
@@ -1781,7 +1801,7 @@ test_AUDIO_GETINFO_eof(void)
 
 	// 最初は 0
 	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
-	XP_EQ(0, r);
+	XP_SYS_EQ(0, r);
 	XP_EQ(0, ai.play.eof);
 	XP_EQ(0, ai.record.eof);
 
@@ -1790,7 +1810,7 @@ test_AUDIO_GETINFO_eof(void)
 	if (r == -1)
 		err(1, "write");
 	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
-	XP_EQ(0, r);
+	XP_SYS_EQ(0, r);
 	XP_EQ(1, ai.play.eof);
 	XP_EQ(0, ai.record.eof);
 
@@ -1800,7 +1820,7 @@ test_AUDIO_GETINFO_eof(void)
 		err(1, "write");
 	memset(&ai, 0, sizeof(ai));
 	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
-	XP_EQ(0, r);
+	XP_SYS_EQ(0, r);
 	XP_EQ(1, ai.play.eof);
 	XP_EQ(0, ai.record.eof);
 
@@ -1810,7 +1830,7 @@ test_AUDIO_GETINFO_eof(void)
 		err(1, "write");
 	memset(&ai, 0, sizeof(ai));
 	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
-	XP_EQ(0, r);
+	XP_SYS_EQ(0, r);
 	XP_EQ(2, ai.play.eof);
 	XP_EQ(0, ai.record.eof);
 
@@ -1821,7 +1841,7 @@ test_AUDIO_GETINFO_eof(void)
 			err(1, "read");
 		memset(&ai, 0, sizeof(ai));
 		r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
-		XP_EQ(0, r);
+		XP_SYS_EQ(0, r);
 		XP_EQ(2, ai.play.eof);
 		XP_EQ(0, ai.record.eof);
 	}
@@ -1833,7 +1853,7 @@ test_AUDIO_GETINFO_eof(void)
 			err(1, "open");
 		memset(&ai, 0, sizeof(ai));
 		r = IOCTL(fd1, AUDIO_GETBUFINFO, &ai, "");
-		XP_EQ(0, r);
+		XP_SYS_EQ(0, r);
 		XP_EQ(0, ai.play.eof);
 		XP_EQ(0, ai.record.eof);
 		CLOSE(fd1);
@@ -1847,7 +1867,7 @@ test_AUDIO_GETINFO_eof(void)
 		err(1, "open");
 
 	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
-	XP_EQ(0, r);
+	XP_SYS_EQ(0, r);
 	XP_EQ(0, ai.play.eof);
 	XP_EQ(0, ai.record.eof);
 
@@ -1902,7 +1922,7 @@ test_AUDIO_SETINFO_mode()
 			// mode を変える
 			ai.mode = aumodes[j];
 			r = IOCTL(fd, AUDIO_SETINFO, &ai, "mode");
-			XP_EQ(0, r);
+			XP_SYS_EQ(0, r);
 			if (r == 0) {
 				mode = ai.mode & (AUMODE_PLAY | AUMODE_RECORD);
 				XP_EQ(aumodes[j], mode);
