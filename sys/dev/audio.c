@@ -2903,9 +2903,15 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	/* Overwrite if specified */
 	mode = file->mode;
 	if (SPECIFIED(ai->mode)) {
-		mode = ai->mode;
-		if ((mode & AUMODE_PLAY_ALL) != 0)
-			mode |= AUMODE_PLAY;
+		// ai->mode で PLAY/REC モードを変更することはできないので
+		// 出来ることは実質 PLAY モード時の PLAY_ALL ビットの上げ
+		// 下ろしだけになる。
+		if ((file->mode & AUMODE_PLAY) != 0) {
+			mode = (file->mode & (AUMODE_PLAY | AUMODE_RECORD))
+			    | (ai->mode & AUMODE_PLAY_ALL);
+		} else {
+			mode = file->mode;
+		}
 
 		// Half duplex なら
 		// 1.PLAY | REC なら PLAY として

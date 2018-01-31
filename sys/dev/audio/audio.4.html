@@ -728,10 +728,29 @@ field should be set to AUMODE_PLAY, AUMODE_RECORD,
 AUMODE_PLAY_ALL, or a bitwise OR combination of the three.
 Only full-duplex audio devices support simultaneous record
 and playback.</p>
+<p class=bad7 style="margin-left:20%">
+mode には何がセットされていてもこの ioctl がエラーにはならない。
+ただし次に AUDIO_GETINFO してみて何が取得できるかとはまったく別。
+そしてここで取得できる mode はセット後の何の動作にはまったく影響しないようだ。
+分かりにくすぎというかバグでは。
+</p>
 <p class=a2 style="margin-left:20%">
-mode の変更は O_WRONLY オープンか O_RDWR オープンで再生トラックが存在する場合に
-AUMODE_PLAY か AUMODE_PLAY_ALL かを切り替えるためだけに使用できる。
-それ以外の組み合わせは無効。エラーにするか。
+指定された mode に設定変更できなければ EINVAL なり何なりのエラーにしたい
+ところだが、従来との互換性を考えて ioctl はエラーにはしない。
+</p>
+<p class=a2 style="margin-left:20%">
+AUDIO2 ではオープン後の録音再生方向の変更を認めていないので、
+AUDIO_SETINFO の mode は、
+再生モードが有効な場合に AUMODE_PLAY_ALL ビットの状態を適用することだけ、
+とする。
+AUMODE_PLAY_ALL ビット以外のビットは無視する。
+また再生が有効でない場合にもこの指定値は無視する。
+</p>
+<p class=a2 style="margin-left:20%">
+AUDIO_GETINFO で取得できるのは、
+オープン時に確定した AUMODE_PLAY, AUMODE_RECORD,
+(AUMODE_PLAY | AUMODE_RECORD) のいずれかによる録音再生モードと、
+AUMODE_PLAY が立っている時に AUMODE_PLAY_ALL ビットが立っているかどうかである。
 </p>
 
 <p style="margin-left:20%; margin-top: 1em"><i>hiwat</i>
