@@ -345,6 +345,12 @@ static const char *openmodetable[] = {
 	"O_WRONLY",
 	"O_RDWR",
 };
+static const char *aumodetable[] = {
+	"RECORD",
+	"PLAY",
+	"PLAY|REC",
+	"AUMODE_0",
+};
 
 // システムコールはこのマクロを経由して呼ぶ
 #define OPEN(name, mode)	debug_open(__LINE__, name, mode)
@@ -1876,9 +1882,10 @@ test_AUDIO_GETINFO_eof(void)
 
 // SETINFO で mode が切り替わるケース
 void
-test_AUDIO_SETINFO_mode()
+test_AUDIO_SETINFO_mode1()
 {
 	struct audio_info ai;
+	char buf[10];
 	int r;
 	int fd;
 	int n;
@@ -1887,14 +1894,62 @@ test_AUDIO_SETINFO_mode()
 		AUMODE_RECORD,	// O_RDONLY
 		AUMODE_PLAY,	// O_WRONLY
 		AUMODE_PLAY | AUMODE_RECORD,	// O_RDWR
+		0,				// j だけで使用、PLAYもRECも立ってない
 	};
+#define PLAY AUMODE_PLAY
+#define REC  AUMODE_RECORD
+#define BOTH (PLAY | REC)
+	struct {
+		int mode0;	// オープン直後の mode
+		int mode1;	// SETINFO 後に GETINFO して読める mode
+	} expfulltable[] = {
+		{ REC,	REC  },	// RDONLY->REC
+		{ REC,	PLAY },	// RDONLY->PLAY
+		{ REC,	PLAY },	// RDONLY->BOTH
+		{ REC,	0	},	// RDONLY->0
+		{ PLAY,	REC },	// WRONLY->REC
+		{ PLAY, PLAY },	// WRONLY->PLAY
+		{ PLAY, PLAY },	// WRONLY->BOTH <- *1
+		{ PLAY, 0	},	// WRONLY->0
+		{ BOTH,	REC },	// RDWR->REC
+		{ BOTH,	PLAY },	// RDWR->PLAY
+		{ BOTH,	BOTH },	// RDWR->BOTH
+		{ BOTH,	0	},	// RDWR->0
+		// N7: 上の表中 *1 のところ、open(O_WRONLY) して AUDIO_SETINFO で
+		// AUMODE_PLAY | AUMODE_RECORD をセットしてから AUDIO_GETINFO すると
+		// AUMODE_PLAY になっている。O_RDWR でないから両方は立てさせない
+		// というかすかな意図は分かるが全体的にでたらめすぎる。
+	}, exphalftable[] = {
+		{ REC,	REC  },	// RDONLY->REC
+		{ REC,	PLAY },	// RDONLY->PLAY
+		{ REC,	PLAY },	// RDONLY->BOTH
+		{ REC,	0	},	// RDONLY->0
+		{ PLAY,	REC },	// WRONLY->REC
+		{ PLAY, PLAY },	// WRONLY->PLAY
+		{ PLAY, PLAY },	// WRONLY->BOTH
+		{ PLAY, 0	},	// WRONLY->0
+		{ PLAY,	REC },	// RDWR->REC
+		{ PLAY,	PLAY },	// RDWR->PLAY
+		{ PLAY,	PLAY },	// RDWR->BOTH
+		{ PLAY,	0	},	// RDWR->0
+		// N7: HW Half だと (PLAY|REC) は全部 PLAY 側に倒される。
+	}, *exptable;
+#undef PLAY
+#undef REC
+#undef BOTH
 
 	getprops();
-	for (int i = 0; i < __arraycount(aumodes); i++) {
+	if (hwfull) {
+		exptable = expfulltable;
+	} else {
+		exptable = exphalftable;
+	}
+
+	for (int i = 0; i <= 2; i++) {
 		for (int j = 0; j < __arraycount(aumodes); j++) {
 			// i が変更前の O_*、j が変更後の O_*
 			TEST("AUDIO_SETINFO_mode(%s->%s)",
-				openmodetable[i], openmodetable[j]);
+				openmodetable[i], aumodetable[j]);
 			fd = OPEN(devaudio, i);
 			if (fd == -1)
 				err(1, "open");
@@ -1905,12 +1960,7 @@ test_AUDIO_SETINFO_mode()
 			if (r == -1)
 				err(1, "ioctl");
 			mode = ai.mode & (AUMODE_PLAY | AUMODE_RECORD);
-			if (hwfull == 0 && i == O_RDWR) {
-				// HW Half で O_RDWR は AUMODE_PLAY になる
-				XP_EQ(AUMODE_PLAY, mode);
-			} else {
-				XP_EQ(aumodes[i], mode);
-			}
+			XP_EQ(exptable[i * 4 + j].mode0, mode);
 			XP_EQ(mode2popen[i], ai.play.open);
 			XP_EQ(mode2ropen[i], ai.record.open);
 			// N7、N8 では buffer_size は常に非ゼロなので調べない
@@ -1924,8 +1974,13 @@ test_AUDIO_SETINFO_mode()
 			r = IOCTL(fd, AUDIO_SETINFO, &ai, "mode");
 			XP_SYS_EQ(0, r);
 			if (r == 0) {
+				r = IOCTL(fd, AUDIO_GETINFO, &ai, "");
+				XP_SYS_EQ(0, r);
 				mode = ai.mode & (AUMODE_PLAY | AUMODE_RECORD);
-				XP_EQ(aumodes[j], mode);
+				// N7 では O_RDONLY/O_WRONLY オープンで AUMODE_PLAY|REC の
+				// 両方を立てようとすると AUMODE_PLAY になる。
+				// O_WRONLY はわかるけど、O_RDONLY でそれはバグなのでは。
+				XP_EQ(exptable[i * 4 + j].mode1, mode);
 				// mode に関係なく当初のオープンモードを維持するのかな?
 				XP_EQ(mode2popen[i], ai.play.open);
 				XP_EQ(mode2ropen[i], ai.record.open);
@@ -1938,9 +1993,79 @@ test_AUDIO_SETINFO_mode()
 				}
 			}
 
-			close(fd);
+			// 書き込みが出来るかどうかはオープン時の mode によるようだ。
+			// オープン後に変えた mode は適用されない。
+			r = WRITE(fd, buf, 0);
+			if ((aumodes[i] & AUMODE_PLAY) != 0) {
+				XP_SYS_EQ(0, r);
+			} else {
+				XP_SYS_NG(EBADF, r);
+			}
+
+			// 読み込みが出来るかどうかはオープン時の mode によるようだ。
+			// オープン後に変えた mode は適用されない。
+			r = READ(fd, buf, 0);
+			if ((aumodes[i] & AUMODE_RECORD) != 0) {
+				XP_SYS_EQ(0, r);
+			} else {
+				XP_SYS_NG(EBADF, r);
+			}
+
+			CLOSE(fd);
 		}
 	}
+}
+
+// SETINFO で mode が切り替わるケース (PLAY/PLAY_ALL 中心)
+void
+test_AUDIO_SETINFO_mode2()
+{
+	struct audio_info ai;
+	int r;
+	int fd;
+	int n;
+	int mode;
+#define PLAY AUMODE_PLAY
+#define ALL  AUMODE_PLAY_ALL
+	struct {
+		int setmode;	// 設定値
+		int expmode7;	// N7の期待値
+		int expmode;	// 期待値
+	} exptable[] = {
+		// 設定値	N7期待値	期待値
+		{ 0,		0,			PLAY|ALL },	// 不正値
+		{ PLAY,		PLAY,		PLAY },		// PLAY に変更
+		{ ALL,		PLAY|ALL,	PLAY|ALL },	// ALL だけでも PLAY|ALL になる
+		{ PLAY|ALL,	PLAY|ALL,	PLAY|ALL },	// PLAY|ALL
+		{ 8,		8,			PLAY|ALL },	// AUMODE_* でないビットは不正
+	};
+
+	getprops();
+
+	// 全組み合わせは面倒なので代表値だけでいいだろう
+	fd = OPEN(devaudio, O_WRONLY);
+	if (fd == -1)
+		err(1, "open");
+
+	for (int i = 0; i < __arraycount(exptable); i++) {
+		TEST("AUDIO_SETINFO_mode2(%d)", i);
+
+		AUDIO_INITINFO(&ai);
+		ai.mode = exptable[i].setmode;
+		r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
+		XP_SYS_EQ(0, r);
+
+		r = IOCTL(fd, AUDIO_GETINFO, &ai, "");
+		XP_SYS_EQ(0, r);
+		if (r == 0) {
+			if (netbsd <= 8) {
+				XP_EQ(exptable[i].expmode7, ai.mode);
+			} else {
+				XP_EQ(exptable[i].expmode, ai.mode);
+			}
+		}
+	}
+	CLOSE(fd);
 }
 
 // テスト一覧
@@ -1967,7 +2092,8 @@ struct testtable testtable[] = {
 	DEF(AUDIO_SETFD_ONLY),
 	DEF(AUDIO_SETFD_RDWR),
 	DEF(AUDIO_GETINFO_eof),
-	DEF(AUDIO_SETINFO_mode),
+	DEF(AUDIO_SETINFO_mode1),
+	DEF(AUDIO_SETINFO_mode2),
 	{ NULL, NULL },
 };
 
