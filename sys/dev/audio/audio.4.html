@@ -528,18 +528,6 @@ argument.</p>
 } audio_device_t;</pre>
 </p>
 
-<p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_GETFD
-(int)</p>
-
-<p style="margin-left:20%;">The command returns the current
-setting of the full duplex mode.</p>
-<p class=a2 style="margin-left:20%">
-このコマンドはディスクリプタが full duplex かどうかを返す。
-HW の状態ではない。
-HW が Full duplex でかつディスクリプタが O_RDWR でオープンされていれば
-full duplex、それ以外は half duplex とする。
-</p>
-
 <p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_GETENC
 (audio_encoding_t)</p>
 
@@ -577,6 +565,22 @@ the supported encodings, start with an index field of 0 and
 continue with successive encodings (1, 2, ...) until the
 command returns an error.</p>
 
+
+<p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_GETFD
+(int)</p>
+
+<p style="margin-left:20%;">The command returns the current
+setting of the full duplex mode.</p>
+<p class=a2 style="margin-left:20%">
+元の manpage はなぜか AUDIO_GETFD、AUDIO_GETENC、AUDIO_SETFD の順に並んでいて
+読みにくいので、AUDIO_GETFD を AUDIO_SETFD の近くに移動した。
+</p>
+<p class=a2 style="margin-left:20%">
+このコマンドはディスクリプタが full duplex かどうかを返す。
+HW の状態ではない。
+HW が Full duplex でかつディスクリプタが O_RDWR でオープンされていれば
+full duplex、それ以外は half duplex とする。
+</p>
 
 <p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_SETFD
 (int)</p>
