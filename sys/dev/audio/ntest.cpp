@@ -1912,38 +1912,42 @@ test_AUDIO_SETINFO_mode()
 		{ O_RDONLY,	R,		R|A  ,		  A|P,		R },
 		{ O_RDONLY,	R,		R|A|P,		  A|P,		R },
 		{ O_RDONLY,	R,		  0x8,		  0x8,		R },
+		{ O_RDONLY,	R,		  0x9,		  0x9,		R },
 
-		{ O_WRONLY,	A|P,	  0x0,		  0x0,		  A|P },
-		{ O_WRONLY,	A|P,	    P,		    P,		  A|P },
-		{ O_WRONLY,	A|P,	  A  ,		  A|P,		  A|P },
-		{ O_WRONLY,	A|P,	  A|P,		  A|P,		  A|P },
-		{ O_WRONLY,	A|P,	R    ,		R    ,		  A|P },
-		{ O_WRONLY,	A|P,	R|  P,		    P,		  A|P },
-		{ O_WRONLY,	A|P,	R|A  ,		  A|P,		  A|P },
-		{ O_WRONLY,	A|P,	R|A|P,		  A|P,		  A|P },
-		{ O_WRONLY,	A|P,	  0x8,		  0x8,		  A|P },
+		{ O_WRONLY,	  A|P,	  0x0,		  0x0,		    P },
+		{ O_WRONLY,	  A|P,	    P,		    P,		    P },
+		{ O_WRONLY,	  A|P,	  A  ,		  A|P,		  A|P },
+		{ O_WRONLY,	  A|P,	  A|P,		  A|P,		  A|P },
+		{ O_WRONLY,	  A|P,	R    ,		R    ,		    P },
+		{ O_WRONLY,	  A|P,	R|  P,		    P,		    P },
+		{ O_WRONLY,	  A|P,	R|A  ,		  A|P,		  A|P },
+		{ O_WRONLY,	  A|P,	R|A|P,		  A|P,		  A|P },
+		{ O_WRONLY,	  A|P,	  0x8,		  0x8,		    P },
+		{ O_WRONLY,	  A|P,	  0x9,		  0x9,		    P },
 
 		// HWFull の場合
-		{ O_RDWR,	R|A|P,	  0x0,		  0x0,		R|A|P },
-		{ O_RDWR,	R|A|P,	    P,		    P,		R|A|P },
+		{ O_RDWR,	R|A|P,	  0x0,		  0x0,		R|  P },
+		{ O_RDWR,	R|A|P,	    P,		    P,		R|  P },
 		{ O_RDWR,	R|A|P,	  A  ,		  A|P,		R|A|P },
 		{ O_RDWR,	R|A|P,	  A|P,		  A|P,		R|A|P },
-		{ O_RDWR,	R|A|P,	R    ,		R    ,		R|A|P },
-		{ O_RDWR,	R|A|P,	R|  P,		R|  P,		R|A|P },
+		{ O_RDWR,	R|A|P,	R    ,		R    ,		R|  P },
+		{ O_RDWR,	R|A|P,	R|  P,		R|  P,		R|  P },
 		{ O_RDWR,	R|A|P,	R|A  ,		R|A|P,		R|A|P },
 		{ O_RDWR,	R|A|P,	R|A|P,		R|A|P,		R|A|P },
-		{ O_RDWR,	R|A|P,	  0x8,		  0x8,		R|A|P },
+		{ O_RDWR,	R|A|P,	  0x8,		  0x8,		R|  P },
+		{ O_RDWR,	R|A|P,	  0x9,		  0x9,		R|  P },
 
 		// HWHalf の場合 (-O_RDWR を取り出した時に加工する)
-		{ -O_RDWR,	  A|P,	  0x0,		  0x0,		  A|P },
-		{ -O_RDWR,	  A|P,	    P,		    P,		  A|P },
+		{ -O_RDWR,	  A|P,	  0x0,		  0x0,		    P },
+		{ -O_RDWR,	  A|P,	    P,		    P,		    P },
 		{ -O_RDWR,	  A|P,	  A  ,		  A|P,		  A|P },
 		{ -O_RDWR,	  A|P,	  A|P,		  A|P,		  A|P },
-		{ -O_RDWR,	  A|P,	R    ,		R    ,		  A|P },
-		{ -O_RDWR,	  A|P,	R|  P,		    P,		  A|P },
+		{ -O_RDWR,	  A|P,	R    ,		R    ,		    P },
+		{ -O_RDWR,	  A|P,	R|  P,		    P,		    P },
 		{ -O_RDWR,	  A|P,	R|A  ,		  A|P,		  A|P },
 		{ -O_RDWR,	  A|P,	R|A|P,		  A|P,		  A|P },
-		{ -O_RDWR,	  A|P,	  0x8,		  0x8,		  A|P },
+		{ -O_RDWR,	  A|P,	  0x8,		  0x8,		    P },
+		{ -O_RDWR,	  A|P,	  0x9,		  0x9,		    P },
 	};
 #undef P
 #undef A
@@ -1996,9 +2000,12 @@ test_AUDIO_SETINFO_mode()
 		XP_EQ(mode2popen[openmode], ai.play.open);
 		XP_EQ(mode2ropen[openmode], ai.record.open);
 		// N7、N8 では buffer_size は常に非ゼロなので調べない
+		// A2: バッファは O_RDWR なら HWHalf でも両方確保される。
+		// Half なのを判定するほうが後なのでやむをえないか。
+		// 確保されてたらいけないわけでもないだろうし(無駄ではあるけど)。
 		if (netbsd >= 9) {
-			XP_BUFFSIZE((expmode & AUMODE_PLAY), ai.play.buffer_size);
-			XP_BUFFSIZE((expmode & AUMODE_RECORD),ai.record.buffer_size);
+			XP_BUFFSIZE(mode2popen[openmode], ai.play.buffer_size);
+			XP_BUFFSIZE(mode2ropen[openmode], ai.record.buffer_size);
 		}
 
 		// mode を変える
@@ -2017,24 +2024,24 @@ test_AUDIO_SETINFO_mode()
 			XP_EQ(mode2ropen[openmode], ai.record.open);
 			// N7、N8 では buffer_size は常に非ゼロなので調べない
 			if (netbsd >= 9) {
-				XP_BUFFSIZE((expmode & AUMODE_PLAY), ai.play.buffer_size);
-				XP_BUFFSIZE((expmode & AUMODE_RECORD), ai.record.buffer_size);
+				XP_BUFFSIZE(mode2popen[openmode], ai.play.buffer_size);
+				XP_BUFFSIZE(mode2ropen[openmode], ai.record.buffer_size);
 			}
 		}
 
-		// 書き込みが出来るかどうかはオープン時の mode によるようだ。
+		// 書き込みが出来るかどうかはオープン時の inimode によるようだ。
 		// オープン後に変えた mode は適用されない。
 		r = WRITE(fd, buf, 0);
-		if (mode2popen[openmode]) {
+		if ((inimode & AUMODE_PLAY) != 0) {
 			XP_SYS_EQ(0, r);
 		} else {
 			XP_SYS_NG(EBADF, r);
 		}
 
-		// 読み込みが出来るかどうかはオープン時の mode によるようだ。
+		// 読み込みが出来るかどうかはオープン時の inimode によるようだ。
 		// オープン後に変えた mode は適用されない。
 		r = READ(fd, buf, 0);
-		if (mode2ropen[openmode]) {
+		if ((inimode & AUMODE_RECORD) != 0) {
 			XP_SYS_EQ(0, r);
 		} else {
 			XP_SYS_NG(EBADF, r);
