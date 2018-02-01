@@ -1480,7 +1480,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 			audio_ring_t *hwbuf = &sc->sc_pmixer->hwbuf;
 			mutex_enter(sc->sc_intr_lock);
 			error = sc->hw_if->init_output(sc->hw_hdl,
-			    hwbuf->sample,
+			    hwbuf->mem,
 			    hwbuf->capacity *
 			    hwbuf->fmt.channels * hwbuf->fmt.stride / NBBY);
 			mutex_exit(sc->sc_intr_lock);
@@ -1493,7 +1493,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 			audio_ring_t *hwbuf = &sc->sc_rmixer->hwbuf;
 			mutex_enter(sc->sc_intr_lock);
 			error = sc->hw_if->init_input(sc->hw_hdl,
-			    hwbuf->sample,
+			    hwbuf->mem,
 			    hwbuf->capacity *
 			    hwbuf->fmt.channels * hwbuf->fmt.stride / NBBY);
 			mutex_exit(sc->sc_intr_lock);

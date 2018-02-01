@@ -83,7 +83,7 @@ typedef struct {
 	int  capacity;		/* capacity by frame */
 	int  top;		/* top frame position */
 	int  count;		/* available frame count */
-	void *sample;		/* sample ptr */
+	void *mem;		/* sample ptr */
 } audio_ring_t;
 
 /* conversion stage */

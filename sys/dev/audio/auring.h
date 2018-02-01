@@ -11,33 +11,33 @@
 
 // ring の top フレームのポインタを求めます。
 #define RING_TOP(type, ringptr) \
-	(((type*)(ringptr)->sample) + (ringptr)->top * (ringptr)->fmt.channels)
+	(((type*)(ringptr)->mem) + (ringptr)->top * (ringptr)->fmt.channels)
 
 // ring の bottom (= top + count、すなわち、最終有効フレームの次) フレームの
 // ポインタを求めます。
 // type が aint_t か aint2_t の場合のみ使用できます。
 // hwbuf のポインタはこちらではなく RING_BOT_UINT8() で取得してください。
 #define RING_BOT(type, ringptr) \
-	(((type*)(ringptr)->sample) + \
+	(((type*)(ringptr)->mem) + \
 	    audio_ring_bottom(ringptr) * (ringptr)->fmt.channels)
 
 // ring の frame 位置のポインタを求めます。
 #define RING_PTR(type, ringptr, frame) \
-	(((type*)(ringptr)->sample) + audio_ring_round((ringptr), \
+	(((type*)(ringptr)->mem) + audio_ring_round((ringptr), \
 	    (ringptr)->top + frame) * (ringptr)->fmt.channels)
 
 // stride=24 用
 
 // ring の top フレームのポインタを求めます。
 #define RING_TOP_UINT8(ringptr) \
-	(((uint8_t*)(ringptr)->sample) + \
+	(((uint8_t*)(ringptr)->mem) + \
 	    (ringptr)->top * (ringptr)->fmt.channels * (ringptr)->fmt.stride / 8)
 
 // ring の bottom (= top + count、すなわち、最終有効フレームの次) フレームの
 // ポインタを求めます。HWbuf は 4bit/sample の可能性があるため RING_BOT() では
 // なく必ずこちらを使用してください。
 #define RING_BOT_UINT8(ringptr) \
-	(((uint8_t*)(ringptr)->sample) + audio_ring_bottom(ringptr) * \
+	(((uint8_t*)(ringptr)->mem) + audio_ring_bottom(ringptr) * \
 	    (ringptr)->fmt.channels * (ringptr)->fmt.stride / 8)
 
 // キャパシティをバイト単位で求めます。
@@ -47,11 +47,11 @@
 
 // ring の バッファ終端を求めます。この位置へのアクセスは出来ません。
 #define RING_END_PTR(type, ringptr) \
-	((type*)(ringptr)->sample + \
+	((type*)(ringptr)->mem + \
 	    (ringptr)->capacity * (ringptr)->fmt.channels)
 
 #define RING_END_UINT8(ringptr) \
-	(((uint8_t*)(ringptr)->sample + \
+	(((uint8_t*)(ringptr)->mem + \
 	    frametobyte(&(ringptr)->fmt, (ringptr)->capacity)))
 
 static inline bool
@@ -82,14 +82,14 @@ is_valid_ring(const audio_ring_t *ring)
 		return false;
 	}
 	if (ring->capacity == 0) {
-		if (ring->sample != NULL) {
-			printf("%s: capacity == 0 but sample != NULL\n",
+		if (ring->mem != NULL) {
+			printf("%s: capacity == 0 but mem != NULL\n",
 			    __func__);
 			return false;
 		}
 	} else {
-		if (ring->sample == NULL) {
-			printf("%s: capacity != 0 but sample == NULL\n",
+		if (ring->mem == NULL) {
+			printf("%s: capacity != 0 but mem == NULL\n",
 			    __func__);
 			return false;
 		}
