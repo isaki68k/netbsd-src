@@ -147,7 +147,7 @@ struct audio_track {
 	uint64_t	inputcounter;	/* トラックに入力されたフレーム数 */
 	uint64_t	outputcounter;	/* トラックから出力されたフレーム数 */
 	uint64_t	useriobytes;	// ユーザランド入出力されたバイト数
-	uint64_t	dropframes;	/* # of frames dropped in recording */
+	uint64_t	dropframes;	/* # of dropped frames */
 	int		eofcounter;	/* # of zero sized write */
 
 	// プロセスコンテキストが track を使用中なら true。

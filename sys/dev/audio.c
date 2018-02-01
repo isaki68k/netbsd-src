@@ -1845,8 +1845,13 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		break;
 
 	case AUDIO_PERROR:
-		// XXX 未実装
-		*(int *)addr = 0;
+		// ここでカウントしてるのはユーザからの write が1ブロックに
+		// 満たずに落としたフレーム数なので、バイト数としては
+		// ユーザ指定フォーマット換算となる。
+		if (file->ptrack) {
+			*(int *)addr = frametobyte(&file->ptrack->inputfmt,
+			    file->ptrack->dropframes);
+		}
 		break;
 
 	/*

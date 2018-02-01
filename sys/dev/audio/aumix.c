@@ -1260,9 +1260,8 @@ audio_track_play(audio_track_t *track)
 	int inpbuf_frames_per_block;
 	int count;
 	int framesize;	// input の1フレームのバイト数
-	int blockbytes;	// usrbuf および input の1ブロックのバイト数
 	int bytes;		// usrbuf から input に転送するバイト数
-	int filled;
+	u_int dropcount;
 
 	KASSERT(track);
 	TRACET(track, "start pstate=%d", track->pstate);
@@ -1279,30 +1278,13 @@ audio_track_play(audio_track_t *track)
 
 	usrbuf = &track->usrbuf;
 	input = track->input;
+	dropcount = 0;
 
 	inpbuf_frames_per_block = frame_per_block_roundup(track->mixer,
 	    &input->fmt);
-	blockbytes = frametobyte(&input->fmt, inpbuf_frames_per_block);
 	// 入力(usrfmt) に 4bit は来ないので1フレームは必ず1バイト以上ある
 	framesize = frametobyte(&input->fmt, 1);
 	KASSERT(framesize >= 1);
-
-	// usrbuf が1ブロックに満たない場合、以下のようにする。
-	// o drain 中なら
-	//   - PLAY/PLAY_ALL ともに、バッファ分だけ処理をする
-	//     (不足分はミキサで無音挿入される)。
-	// o drain 中でなければ
-	//   - PLAY なら、バッファ分だけ処理する (不足分はミキサで無音挿入)。
-	//   - PLAY_ALL なら、今回は何もせず帰る
-	filled = 1;
-	if (usrbuf->count < blockbytes) {
-		if (track->pstate != AUDIO_STATE_DRAINING &&
-		    (track->mode & AUMODE_PLAY_ALL) != 0) {
-			TRACET(track, "not enough; return");
-			return;
-		}
-		filled = 0;
-	}
 
 	// usrbuf の次段(input) も空いてるはず
 	count = audio_ring_unround_free_count(input);
@@ -1314,6 +1296,30 @@ audio_track_play(audio_track_t *track)
 	// ただし1フレーム未満のバイトはコピーしない。
 	count = min(count, usrbuf->count / framesize);
 	bytes = count * framesize;
+
+	// 今回処理するバイト数(bytes) が1ブロックに満たない場合、
+	//  drain AUMODE
+	//  ----- ------
+	//  no    PLAY  : 溜まっていないのでここで帰る
+	//  no    SYNC  : dropframes加算する。  リングバッファリセット。
+	//  yes   PLAY  : dropframes加算しない。リングバッファリセット。
+	//  yes   SYNC  : dropframes加算しない。リングバッファリセット。
+	if (count < inpbuf_frames_per_block) {
+		dropcount = inpbuf_frames_per_block - count;
+
+		if (track->pstate != AUDIO_STATE_DRAINING) {
+			if ((track->mode & AUMODE_PLAY_ALL)) {
+				// PLAY_ALL なら溜まるまで待つ
+				TRACET(track, "not enough; return");
+				return;
+			} else {
+				// ここで1ブロックに満たなければ
+				// 落ちる(落ちた)ということ
+				track->dropframes += dropcount;
+			}
+		}
+	}
+
 	if (usrbuf->top + bytes < usrbuf->capacity) {
 		memcpy((uint8_t *)input->mem +
 		        audio_ring_bottom(input) * framesize,
@@ -1375,7 +1381,7 @@ audio_track_play(audio_track_t *track)
 		}
 	}
 
-	if (!filled) {
+	if (dropcount != 0) {
 		// 変換が1ブロックぴったりでない場合、変換バッファのポインタが
 		// バッファ途中を指すことになるのでこれをクリアする。
 		// ここの変換バッファは、前後のリングバッファとの対称性で
@@ -1802,8 +1808,6 @@ int
 audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req, int mixed)
 {
 	// 現時点で outputbuf に溜まってるやつを最大1ブロック分処理する。
-
-	// XXX ここで?落とした playdrop をカウント?
 
 	// このトラックが処理済みならなにもしない
 	if (mixer->mixseq < track->seq) return mixed;
