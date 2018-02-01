@@ -1614,6 +1614,7 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 		mutex_enter(sc->sc_intr_lock);
 		file->rtrack = NULL;
 		mutex_exit(sc->sc_intr_lock);
+		TRACET(oldtrack, "dropframes=%" PRIu64, oldtrack->dropframes);
 		audio_track_destroy(oldtrack);
 
 		KASSERT(sc->sc_ropens > 0);
@@ -1641,6 +1642,7 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 		mutex_enter(sc->sc_intr_lock);
 		file->ptrack = NULL;
 		mutex_exit(sc->sc_intr_lock);
+		TRACET(oldtrack, "dropframes=%" PRIu64, oldtrack->dropframes);
 		audio_track_destroy(oldtrack);
 
 		KASSERT(sc->sc_popens > 0);
