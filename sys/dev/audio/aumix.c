@@ -1255,8 +1255,11 @@ audio_apply_stage(audio_track_t *track, audio_stage_t *stage, bool isfreq)
 void
 audio_track_play(audio_track_t *track)
 {
+	audio_ring_t *usrbuf;
+	audio_ring_t *input;
 	int inpbuf_frames_per_block;
 	int count;
+	int framesize;	// input の1フレームのバイト数
 	int blockbytes;	// usrbuf および input の1ブロックのバイト数
 	int bytes;		// usrbuf から input に転送するバイト数
 	int filled;
@@ -1274,9 +1277,15 @@ audio_track_play(audio_track_t *track)
 
 	int track_count_0 = track->outputbuf.count;
 
+	usrbuf = &track->usrbuf;
+	input = track->input;
+
 	inpbuf_frames_per_block = frame_per_block_roundup(track->mixer,
-	    &track->input->fmt);
-	blockbytes = frametobyte(&track->input->fmt, inpbuf_frames_per_block);
+	    &input->fmt);
+	blockbytes = frametobyte(&input->fmt, inpbuf_frames_per_block);
+	// 入力(usrfmt) に 4bit は来ないので1フレームは必ず1バイト以上ある
+	framesize = frametobyte(&input->fmt, 1);
+	KASSERT(framesize >= 1);
 
 	// usrbuf が1ブロックに満たない場合、以下のようにする。
 	// o drain 中なら
@@ -1286,7 +1295,7 @@ audio_track_play(audio_track_t *track)
 	//   - PLAY なら、バッファ分だけ処理する (不足分はミキサで無音挿入)。
 	//   - PLAY_ALL なら、今回は何もせず帰る
 	filled = 1;
-	if (track->usrbuf.count < blockbytes) {
+	if (usrbuf->count < blockbytes) {
 		if (track->pstate != AUDIO_STATE_DRAINING &&
 		    (track->mode & AUMODE_PLAY_ALL) != 0) {
 			TRACET(track, "not enough; return");
@@ -1296,15 +1305,10 @@ audio_track_play(audio_track_t *track)
 	}
 
 	// usrbuf の次段(input) も空いてるはず
-	count = audio_ring_unround_free_count(track->input);
+	count = audio_ring_unround_free_count(input);
 	KASSERT(count >= 0);
 
 	// usrbuf から input へコピー
-	audio_ring_t *usrbuf = &track->usrbuf;
-	audio_ring_t *input = track->input;
-	// 入力(usrfmt) に 4bit は来ないので1フレームは必ず1バイト以上ある
-	int framesize = frametobyte(&input->fmt, 1);
-	KASSERT(framesize >= 1);
 	// count は usrbuf からコピーするフレーム数。
 	// bytes は usrbuf からコピーするバイト数。
 	// ただし1フレーム未満のバイトはコピーしない。
