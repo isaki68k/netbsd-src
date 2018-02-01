@@ -23,7 +23,8 @@
 } while (0)
 
 void *audio_realloc(void *memblock, size_t bytes);
-static audio_filter_t audio_track_get_codec_filter(const audio_filter_arg_t *);
+static audio_filter_t audio_track_get_codec(const audio_format2_t *,
+	const audio_format2_t *);
 static int audio_pmixer_mixall(struct audio_softc *sc, bool isintr);
 void audio_pmixer_output(struct audio_softc *sc);
 static void audio_rmixer_input(struct audio_softc *sc);
@@ -575,50 +576,50 @@ is_valid_filter_arg(const audio_filter_arg_t *arg)
 	return true;
 }
 
-// arg に応じて変換フィルタを返します。
-// arg は src か dst のどちらか一方が internal 形式でなければなりません。
+// src, dst のフォーマットに応じて変換フィルタを返します。
+// src か dst のどちらか一方が internal 形式でなければなりません。
 // 変換できない組み合わせの場合は NULL を返します。
 static audio_filter_t
-audio_track_get_codec_filter(const audio_filter_arg_t *arg)
+audio_track_get_codec(const audio_format2_t *src, const audio_format2_t *dst)
 {
 
-	if (is_internal_format(arg->srcfmt)) {
-		if (arg->dstfmt->encoding == AUDIO_ENCODING_ULAW) {
+	if (is_internal_format(src)) {
+		if (dst->encoding == AUDIO_ENCODING_ULAW) {
 			return internal_to_mulaw;
-		} else if (audio_format2_is_linear(arg->dstfmt)) {
-			if (arg->dstfmt->stride == 8) {
+		} else if (audio_format2_is_linear(dst)) {
+			if (dst->stride == 8) {
 				return internal_to_linear8;
-			} else if (arg->dstfmt->stride == 16) {
+			} else if (dst->stride == 16) {
 				return internal_to_linear16;
 #if defined(AUDIO_SUPPORT_LINEAR24)
-			} else if (arg->dstfmt->stride == 24) {
+			} else if (dst->stride == 24) {
 				return internal_to_linear24;
 #endif
-			} else if (arg->dstfmt->stride == 32) {
+			} else if (dst->stride == 32) {
 				return internal_to_linear32;
 			} else {
 				DPRINTF(1, "%s: unsupported %s stride %d\n",
-				    __func__, "dst", arg->dstfmt->stride);
+				    __func__, "dst", dst->stride);
 				goto abort;
 			}
 		}
-	} else if (is_internal_format(arg->dstfmt)) {
-		if (arg->srcfmt->encoding == AUDIO_ENCODING_ULAW) {
+	} else if (is_internal_format(dst)) {
+		if (src->encoding == AUDIO_ENCODING_ULAW) {
 			return mulaw_to_internal;
-		} else if (audio_format2_is_linear(arg->srcfmt)) {
-			if (arg->srcfmt->stride == 8) {
+		} else if (audio_format2_is_linear(src)) {
+			if (src->stride == 8) {
 				return linear8_to_internal;
-			} else if (arg->srcfmt->stride == 16) {
+			} else if (src->stride == 16) {
 				return linear16_to_internal;
 #if defined(AUDIO_SUPPORT_LINEAR24)
-			} else if (arg->srcfmt->stride == 24) {
+			} else if (src->stride == 24) {
 				return linear24_to_internal;
 #endif
-			} else if (arg->srcfmt->stride == 32) {
+			} else if (src->stride == 32) {
 				return linear32_to_internal;
 			} else {
 				DPRINTF(1, "%s: unsupported %s stride %d\n",
-				    __func__, "src", arg->srcfmt->stride);
+				    __func__, "src", src->stride);
 				goto abort;
 			}
 		}
@@ -629,9 +630,9 @@ abort:
 #if defined(AUDIO_DEBUG)
 	{
 		char buf[100];
-		audio_format2_tostr(buf, sizeof(buf), arg->srcfmt);
+		audio_format2_tostr(buf, sizeof(buf), src);
 		printf("%s: src %s\n", __func__, buf);
-		audio_format2_tostr(buf, sizeof(buf), arg->dstfmt);
+		audio_format2_tostr(buf, sizeof(buf), dst);
 		printf("%s: dst %s\n", __func__, buf);
 	}
 #endif
@@ -661,16 +662,13 @@ audio_track_init_codec(audio_track_t *track, audio_ring_t **last_dstp)
 		// エンコーディングを変換する
 		track->codec.dst = last_dst;
 
-		// arg のために先にフォーマットを作る
 		track->codec.srcbuf.fmt = *dstfmt;
 		track->codec.srcbuf.fmt.encoding = srcfmt->encoding;
 		track->codec.srcbuf.fmt.precision = srcfmt->precision;
 		track->codec.srcbuf.fmt.stride = srcfmt->stride;
 
-		track->codec.arg.srcfmt = &track->codec.srcbuf.fmt;
-		track->codec.arg.dstfmt = dstfmt;
-		track->codec.arg.context = NULL;
-		track->codec.filter = audio_track_get_codec_filter(&track->codec.arg);
+		track->codec.filter = audio_track_get_codec(&track->codec.srcbuf.fmt,
+		    dstfmt);
 		if (track->codec.filter == NULL) {
 			DPRINTF(1, "%s: get_codec_filter failed\n", __func__);
 			error = EINVAL;
@@ -688,6 +686,10 @@ audio_track_init_codec(audio_track_t *track, audio_ring_t **last_dstp)
 			error = ENOMEM;
 			goto abort;
 		}
+
+		track->codec.arg.srcfmt = &track->codec.srcbuf.fmt;
+		track->codec.arg.dstfmt = dstfmt;
+		track->codec.arg.context = NULL;
 
 		*last_dstp = &track->codec.srcbuf;
 		return 0;
