@@ -168,10 +168,12 @@ xp_errx(int code, int line, const char *fmt, ...)
 void
 init(int unit)
 {
+	audio_device_t dev;
 	char name[256];
 	size_t len;
 	int r;
 	int rel;
+	int fd;
 
 	snprintf(devaudio, sizeof(devaudio), "/dev/audio%d", unit);
 	snprintf(devsound, sizeof(devsound), "/dev/sound%d", unit);
@@ -199,34 +201,25 @@ init(int unit)
 
 	if (debug)
 		printf("netbsd = %d\n", netbsd);
-}
 
-// デバイスのプロパティを取得します。
-int
-getprops()
-{
+	// デバイスのプロパティを取得
 	// GETPROPS のための open/ioctl/close が信頼できるかどうかは悩ましいが
 	// とりあえずね
-	if (props == -1) {
-		audio_device_t dev;
-		int fd;
-		int r;
 
-		fd = open(devaudio, O_WRONLY);
-		if (fd == -1)
-			err(1, "getprops: open: %s", devaudio);
-		r = ioctl(fd, AUDIO_GETPROPS, &props);
-		if (r == -1)
-			err(1, "getprops:AUDIO_GETPROPS");
-		hwfull = (props & AUDIO_PROP_FULLDUPLEX) ? 1 : 0;
+	fd = open(devaudio, O_WRONLY);
+	if (fd == -1)
+		err(1, "init: open: %s", devaudio);
+	r = ioctl(fd, AUDIO_GETPROPS, &props);
+	if (r == -1)
+		err(1, "init:AUDIO_GETPROPS");
+	hwfull = (props & AUDIO_PROP_FULLDUPLEX) ? 1 : 0;
 
-		r = ioctl(fd, AUDIO_GETDEV, &dev);
-		if (r == -1)
-			err(1, "getprops:AUDIO_GETDEV");
-		if (strcmp(dev.config, "vs") == 0)
-			x68k = 1;
-		close(fd);
-	}
+	r = ioctl(fd, AUDIO_GETDEV, &dev);
+	if (r == -1)
+		err(1, "init:AUDIO_GETDEV");
+	if (strcmp(dev.config, "vs") == 0)
+		x68k = 1;
+	close(fd);
 }
 
 // テスト名
@@ -444,8 +437,6 @@ test_open_1(void)
 	int fd;
 	int r;
 
-	getprops();
-
 	// 再生専用デバイスのテストとかはまた
 	for (int mode = 0; mode <= 2; mode++) {
 		TEST("open_1(%s)", openmodetable[mode]);
@@ -486,7 +477,6 @@ test_open_2(void)
 	int r;
 
 	TEST("open_2");
-	getprops();
 
 	// オープンして初期値をチェック
 	fd = OPEN(devaudio, O_WRONLY);
@@ -624,7 +614,6 @@ test_open_3(void)
 	int r;
 
 	TEST("open_3");
-	getprops();
 
 	// まず /dev/audio 開いて初期化させておく
 	fd = OPEN(devaudio, O_RDONLY);
@@ -841,7 +830,6 @@ test_open_5()
 		{ AUMODE_PLAY,		AUMODE_PLAY },		// BOTH, BOTH
 	}, *exptable;
 
-	getprops();
 	// HW が Full/Half で期待値が違う
 	if (hwfull) {
 		exptable = expfulltable;
@@ -1086,7 +1074,6 @@ test_drain_1(void)
 	int fd;
 
 	TEST("drain_1");
-	getprops();
 
 	fd = open(devaudio, O_WRONLY);
 	if (fd == -1)
@@ -1118,7 +1105,6 @@ test_drain_2(void)
 	int fd;
 
 	TEST("drain_2");
-	getprops();
 
 	fd = open(devaudio, O_WRONLY);
 	if (fd == -1)
@@ -1164,7 +1150,6 @@ test_readwrite_1(void)
 		{ 1, 0 },	// BOTH
 	}, *exptable;
 
-	getprops();
 	// HW が Full/Half で期待値が違う
 	if (hwfull) {
 		exptable = expfulltable;
@@ -1252,8 +1237,6 @@ test_readwrite_2(void)
 		{ 0, 0, 0 },	// BOTH, BOTH
 	}, *exptable;
 
-	getprops();
-
 	// N7 は多重オープンはできない
 	if (netbsd <= 7) {
 		XP_SKIP();
@@ -1330,7 +1313,6 @@ test_readwrite_3()
 	pid_t pid;
 
 	TEST("readwrite_3");
-	getprops();
 	// N7 では多重オープンは出来ないので、このテストは無効
 	if (netbsd <= 7) {
 		XP_SKIP();
@@ -1595,7 +1577,6 @@ test_AUDIO_WSEEK_1(void)
 	int n;
 
 	TEST("AUDIO_WSEEK_1");
-	getprops();
 
 	fd = OPEN(devaudio, O_WRONLY);
 	if (fd == -1)
@@ -1645,8 +1626,6 @@ test_AUDIO_SETFD_ONLY(void)
 	int r;
 	int fd;
 	int n;
-
-	getprops();
 
 	for (int mode = 0; mode <= 1; mode++) {
 		TEST("AUDIO_SETFD_ONLY(%s)", openmodetable[mode]);
@@ -1728,7 +1707,6 @@ test_AUDIO_SETFD_RDWR(void)
 	int n;
 
 	TEST("AUDIO_SETFD_RDWR");
-	getprops();
 
 	fd = OPEN(devaudio, O_RDWR);
 	if (fd == -1)
@@ -1810,7 +1788,6 @@ test_AUDIO_GETINFO_eof(void)
 	int n;
 
 	TEST("AUDIO_GETINFO_eof");
-	getprops();
 
 	fd = OPEN(devaudio, O_RDWR);
 	if (fd == -1)
@@ -1969,8 +1946,6 @@ test_AUDIO_SETINFO_mode()
 #undef P
 #undef A
 #undef R
-
-	getprops();
 
 	for (int i = 0; i < __arraycount(exptable); i++) {
 		int openmode = exptable[i].openmode;
