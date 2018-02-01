@@ -178,21 +178,3 @@ audio_ring_unround_free_count(const audio_ring_t *ring)
 		return ring->capacity - ring->count;
 	}
 }
-
-// ラウンドしていないリングバッファをバッファ先頭の位置に詰めます。
-// ハードウェア ring に対して呼び出してはいけません。
-static inline void
-audio_ring_simplify(audio_ring_t *ring)
-{
-	KASSERT(is_valid_ring(ring));
-	KASSERTMSG(ring->top + ring->count <= ring->capacity, "rounded");
-
-	if (ring->top == 0) return;
-	if (ring->count == 0) {
-		ring->top = 0;
-		return;
-	}
-	memmove(ring->sample, RING_TOP_UINT8(ring),
-	    frametobyte(&ring->fmt, ring->count));
-	ring->top = 0;
-}
