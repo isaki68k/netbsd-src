@@ -647,13 +647,18 @@ static int
 audio_track_init_codec(audio_track_t *track, audio_ring_t **last_dstp)
 {
 	audio_ring_t *last_dst;
+	audio_ring_t *srcbuf;
+	audio_format2_t *srcfmt;
+	audio_format2_t *dstfmt;
+	audio_filter_arg_t *arg;
 	int error;
 
 	KASSERT(track);
 
 	last_dst = *last_dstp;
-	audio_format2_t *srcfmt = &track->inputfmt;
-	audio_format2_t *dstfmt = &last_dst->fmt;
+	dstfmt = &last_dst->fmt;
+	srcfmt = &track->inputfmt;
+	srcbuf = &track->codec.srcbuf;
 	error = 0;
 
 	if (srcfmt->encoding != dstfmt->encoding
@@ -662,12 +667,12 @@ audio_track_init_codec(audio_track_t *track, audio_ring_t **last_dstp)
 		// エンコーディングを変換する
 		track->codec.dst = last_dst;
 
-		track->codec.srcbuf.fmt = *dstfmt;
-		track->codec.srcbuf.fmt.encoding = srcfmt->encoding;
-		track->codec.srcbuf.fmt.precision = srcfmt->precision;
-		track->codec.srcbuf.fmt.stride = srcfmt->stride;
+		srcbuf->fmt = *dstfmt;
+		srcbuf->fmt.encoding = srcfmt->encoding;
+		srcbuf->fmt.precision = srcfmt->precision;
+		srcbuf->fmt.stride = srcfmt->stride;
 
-		track->codec.filter = audio_track_get_codec(&track->codec.srcbuf.fmt,
+		track->codec.filter = audio_track_get_codec(&srcbuf->fmt,
 		    dstfmt);
 		if (track->codec.filter == NULL) {
 			DPRINTF(1, "%s: get_codec_filter failed\n", __func__);
@@ -675,29 +680,29 @@ audio_track_init_codec(audio_track_t *track, audio_ring_t **last_dstp)
 			goto abort;
 		}
 
-		// XXX: インライン変換はとりあえず置いておく
-		track->codec.srcbuf.top = 0;
-		track->codec.srcbuf.count = 0;
-		track->codec.srcbuf.capacity = frame_per_block_roundup(track->mixer, &track->codec.srcbuf.fmt);
-		track->codec.srcbuf.sample = audio_realloc(track->codec.srcbuf.sample, RING_BYTELEN(&track->codec.srcbuf));
-		if (track->codec.srcbuf.sample == NULL) {
+		srcbuf->top = 0;
+		srcbuf->count = 0;
+		srcbuf->capacity = frame_per_block_roundup(track->mixer, &srcbuf->fmt);
+		srcbuf->sample = audio_realloc(srcbuf->sample, RING_BYTELEN(srcbuf));
+		if (srcbuf->sample == NULL) {
 			DPRINTF(1, "%s: malloc(%d) failed\n", __func__,
-			    RING_BYTELEN(&track->codec.srcbuf));
+			    RING_BYTELEN(srcbuf));
 			error = ENOMEM;
 			goto abort;
 		}
 
-		track->codec.arg.srcfmt = &track->codec.srcbuf.fmt;
-		track->codec.arg.dstfmt = dstfmt;
-		track->codec.arg.context = NULL;
+		arg = &track->codec.arg;
+		arg->srcfmt = &srcbuf->fmt;
+		arg->dstfmt = dstfmt;
+		arg->context = NULL;
 
-		*last_dstp = &track->codec.srcbuf;
+		*last_dstp = srcbuf;
 		return 0;
 	}
 
 abort:
 	track->codec.filter = NULL;
-	audio_free(track->codec.srcbuf.sample);
+	audio_free(srcbuf->sample);
 	return error;
 }
 
@@ -709,13 +714,18 @@ static int
 audio_track_init_chvol(audio_track_t *track, audio_ring_t **last_dstp)
 {
 	audio_ring_t *last_dst;
+	audio_ring_t *srcbuf;
+	audio_format2_t *srcfmt;
+	audio_format2_t *dstfmt;
+	audio_filter_arg_t *arg;
 	int error;
 
 	KASSERT(track);
 
 	last_dst = *last_dstp;
-	audio_format2_t *srcfmt = &track->inputfmt;
-	audio_format2_t *dstfmt = &last_dst->fmt;
+	dstfmt = &last_dst->fmt;
+	srcfmt = &track->inputfmt;
+	srcbuf = &track->chvol.srcbuf;
 	error = 0;
 
 	// チャンネルボリュームが有効かどうか
@@ -728,36 +738,37 @@ audio_track_init_chvol(audio_track_t *track, audio_ring_t **last_dstp)
 	}
 
 	if (use_chvol == true) {
-		track->chvol.filter = audio_track_chvol;
 		track->chvol.dst = last_dst;
+		track->chvol.filter = audio_track_chvol;
 
-		// 周波数とチャンネル数がユーザ指定値。
-		track->chvol.srcbuf.fmt = *dstfmt;
-		track->chvol.srcbuf.top = 0;
-		track->chvol.srcbuf.count = 0;
-		track->chvol.srcbuf.capacity = frame_per_block_roundup(track->mixer, &track->chvol.srcbuf.fmt);
-		track->chvol.srcbuf.sample = audio_realloc(track->chvol.srcbuf.sample, RING_BYTELEN(&track->chvol.srcbuf));
-		if (track->chvol.srcbuf.sample == NULL) {
+		srcbuf->fmt = *dstfmt;
+		/* no format conversion occurs */
+
+		srcbuf->top = 0;
+		srcbuf->count = 0;
+		srcbuf->capacity = frame_per_block_roundup(track->mixer, &srcbuf->fmt);
+		srcbuf->sample = audio_realloc(srcbuf->sample, RING_BYTELEN(srcbuf));
+		if (srcbuf->sample == NULL) {
 			DPRINTF(1, "%s: malloc(%d) failed\n", __func__,
-			    RING_BYTELEN(&track->chvol.srcbuf));
+			    RING_BYTELEN(srcbuf));
 			error = ENOMEM;
 			goto abort;
 		}
 
-		track->chvol.arg.srcfmt = &track->chvol.srcbuf.fmt;
-		track->chvol.arg.dstfmt = dstfmt;
-		track->chvol.arg.context = track->ch_volume;
+		arg = &track->chvol.arg;
+		arg->srcfmt = &srcbuf->fmt;
+		arg->dstfmt = dstfmt;
+		arg->context = track->ch_volume;
 
-		*last_dstp = &track->chvol.srcbuf;
+		*last_dstp = srcbuf;
 		return 0;
 	}
 
 abort:
 	track->chvol.filter = NULL;
-	audio_free(track->chvol.srcbuf.sample);
+	audio_free(srcbuf->sample);
 	return error;
 }
-
 
 // track の chmix ステージを必要に応じて初期化します。
 // 成功すれば、chmix ステージが必要なら初期化した上で、いずれにしても
@@ -767,19 +778,27 @@ static int
 audio_track_init_chmix(audio_track_t *track, audio_ring_t **last_dstp)
 {
 	audio_ring_t *last_dst;
+	audio_ring_t *srcbuf;
+	audio_format2_t *srcfmt;
+	audio_format2_t *dstfmt;
+	audio_filter_arg_t *arg;
+	int srcch;
+	int dstch;
 	int error;
 
 	KASSERT(track);
 
 	last_dst = *last_dstp;
-	audio_format2_t *srcfmt = &track->inputfmt;
-	audio_format2_t *dstfmt = &last_dst->fmt;
+	dstfmt = &last_dst->fmt;
+	srcfmt = &track->inputfmt;
+	srcbuf = &track->chmix.srcbuf;
 	error = 0;
 
-	int srcch = srcfmt->channels;
-	int dstch = dstfmt->channels;
-
+	srcch = srcfmt->channels;
+	dstch = dstfmt->channels;
 	if (srcch != dstch) {
+		track->chmix.dst = last_dst;
+
 		if (srcch >= 2 && dstch == 1) {
 			track->chmix.filter = audio_track_chmix_mixLR;
 		} else if (srcch == 1 && dstch >= 2) {
@@ -790,32 +809,33 @@ audio_track_init_chmix(audio_track_t *track, audio_ring_t **last_dstp)
 			track->chmix.filter = audio_track_chmix_expand;
 		}
 
-		track->chmix.dst = last_dst;
-		// チャンネル数を srcch にする
-		track->chmix.srcbuf.fmt = *dstfmt;
-		track->chmix.srcbuf.fmt.channels = srcch;
-		track->chmix.srcbuf.top = 0;
-		track->chmix.srcbuf.count = 0;
+		srcbuf->fmt = *dstfmt;
+		srcbuf->fmt.channels = srcch;
+
+		srcbuf->top = 0;
+		srcbuf->count = 0;
 		// バッファサイズは計算で決められるはずだけど。とりあえず。
-		track->chmix.srcbuf.capacity = frame_per_block_roundup(track->mixer, &track->chmix.srcbuf.fmt);
-		track->chmix.srcbuf.sample = audio_realloc(track->chmix.srcbuf.sample, RING_BYTELEN(&track->chmix.srcbuf));
-		if (track->chmix.srcbuf.sample == NULL) {
+		srcbuf->capacity = frame_per_block_roundup(track->mixer, &srcbuf->fmt);
+		srcbuf->sample = audio_realloc(srcbuf->sample, RING_BYTELEN(srcbuf));
+		if (srcbuf->sample == NULL) {
 			DPRINTF(1, "%s: malloc(%d) failed\n", __func__,
-			    RING_BYTELEN(&track->chmix.srcbuf));
+			    RING_BYTELEN(srcbuf));
 			error = ENOMEM;
 			goto abort;
 		}
 
-		track->chmix.arg.srcfmt = &track->chmix.srcbuf.fmt;
-		track->chmix.arg.dstfmt = dstfmt;
+		arg = &track->chmix.arg;
+		arg->srcfmt = &srcbuf->fmt;
+		arg->dstfmt = dstfmt;
+		arg->context = NULL;
 
-		*last_dstp = &track->chmix.srcbuf;
+		*last_dstp = srcbuf;
 		return 0;
 	}
 
 abort:
 	track->chmix.filter = NULL;
-	audio_free(track->chmix.srcbuf.sample);
+	audio_free(srcbuf->sample);
 	return error;
 }
 
@@ -827,22 +847,26 @@ static int
 audio_track_init_freq(audio_track_t *track, audio_ring_t **last_dstp)
 {
 	audio_ring_t *last_dst;
+	audio_ring_t *srcbuf;
+	audio_format2_t *srcfmt;
+	audio_format2_t *dstfmt;
+	audio_filter_arg_t *arg;
+	uint32_t srcfreq;
+	uint32_t dstfreq;
 	int error;
 
 	KASSERT(track);
 
 	last_dst = *last_dstp;
-	audio_format2_t *srcfmt = &track->inputfmt;
-	audio_format2_t *dstfmt = &last_dst->fmt;
+	dstfmt = &last_dst->fmt;
+	srcfmt = &track->inputfmt;
+	srcbuf = &track->freq.srcbuf;
 	error = 0;
 
-	uint32_t srcfreq = srcfmt->sample_rate;
-	uint32_t dstfreq = dstfmt->sample_rate;
-
+	srcfreq = srcfmt->sample_rate;
+	dstfreq = dstfmt->sample_rate;
 	if (srcfreq != dstfreq) {
-		track->freq.arg.context = track;
-		track->freq.arg.srcfmt = &track->freq.srcbuf.fmt;
-		track->freq.arg.dstfmt = &last_dst->fmt;
+		track->freq.dst = last_dst;
 
 		memset(track->freq_prev, 0, sizeof(track->freq_prev));
 		memset(track->freq_curr, 0, sizeof(track->freq_curr));
@@ -866,28 +890,33 @@ audio_track_init_freq(audio_track_t *track, audio_ring_t **last_dstp)
 			// こっちは 0 からでいい
 			track->freq_current = 0;
 		}
-		track->freq.dst = last_dst;
-		// 周波数のみ srcfreq
-		track->freq.srcbuf.fmt = *dstfmt;
-		track->freq.srcbuf.fmt.sample_rate = srcfreq;
-		track->freq.srcbuf.top = 0;
-		track->freq.srcbuf.count = 0;
-		track->freq.srcbuf.capacity = frame_per_block_roundup(track->mixer, &track->freq.srcbuf.fmt);
-		track->freq.srcbuf.sample = audio_realloc(track->freq.srcbuf.sample, RING_BYTELEN(&track->freq.srcbuf));
-		if (track->freq.srcbuf.sample == NULL) {
+
+		srcbuf->fmt = *dstfmt;
+		srcbuf->fmt.sample_rate = srcfreq;
+
+		srcbuf->top = 0;
+		srcbuf->count = 0;
+		srcbuf->capacity = frame_per_block_roundup(track->mixer, &srcbuf->fmt);
+		srcbuf->sample = audio_realloc(srcbuf->sample, RING_BYTELEN(srcbuf));
+		if (srcbuf->sample == NULL) {
 			DPRINTF(1, "%s: malloc(%d) failed\n", __func__,
-			    RING_BYTELEN(&track->freq.srcbuf));
+			    RING_BYTELEN(srcbuf));
 			error = ENOMEM;
 			goto abort;
 		}
 
-		*last_dstp = &track->freq.srcbuf;
+		arg = &track->freq.arg;
+		arg->srcfmt = &srcbuf->fmt;
+		arg->dstfmt = dstfmt;/*&last_dst->fmt;*/
+		arg->context = track;
+
+		*last_dstp = srcbuf;
 		return 0;
 	}
 
 abort:
 	track->freq.filter = NULL;
-	audio_free(track->freq.srcbuf.sample);
+	audio_free(srcbuf->sample);
 	return error;
 }
 
