@@ -643,7 +643,7 @@ abort:
 // 更新された last_dst を last_dstp に格納して、0 を返します。
 // 失敗すれば last_dstp は更新せずに errno を返します。
 static int
-init_codec(audio_track_t *track, audio_ring_t **last_dstp)
+audio_track_init_codec(audio_track_t *track, audio_ring_t **last_dstp)
 {
 	audio_ring_t *last_dst;
 	int error;
@@ -704,7 +704,7 @@ abort:
 // 更新された last_dst を last_dstp に格納して、0 を返します。
 // 失敗すれば last_dstp は更新せずに errno を返します。
 static int
-init_chvol(audio_track_t *track, audio_ring_t **last_dstp)
+audio_track_init_chvol(audio_track_t *track, audio_ring_t **last_dstp)
 {
 	audio_ring_t *last_dst;
 	int error;
@@ -762,7 +762,7 @@ abort:
 // 更新された last_dst を last_dstp に格納して、0 を返します。
 // 失敗すれば last_dstp は更新せずに errno を返します。
 static int
-init_chmix(audio_track_t *track, audio_ring_t **last_dstp)
+audio_track_init_chmix(audio_track_t *track, audio_ring_t **last_dstp)
 {
 	audio_ring_t *last_dst;
 	int error;
@@ -822,7 +822,7 @@ abort:
 // 更新された last_dst を last_dstp に格納して、0 を返します。
 // 失敗すれば last_dstp は更新せずに errno を返します。
 static int
-init_freq(audio_track_t *track, audio_ring_t **last_dstp)
+audio_track_init_freq(audio_track_t *track, audio_ring_t **last_dstp)
 {
 	audio_ring_t *last_dst;
 	int error;
@@ -957,26 +957,26 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 		track->inputfmt = *usrfmt;
 		track->outputbuf.fmt =  track->mixer->track_fmt;
 
-		if ((error = init_freq(track, &last_dst)) != 0)
+		if ((error = audio_track_init_freq(track, &last_dst)) != 0)
 			goto error;
-		if ((error = init_chmix(track, &last_dst)) != 0)
+		if ((error = audio_track_init_chmix(track, &last_dst)) != 0)
 			goto error;
-		if ((error = init_chvol(track, &last_dst)) != 0)
+		if ((error = audio_track_init_chvol(track, &last_dst)) != 0)
 			goto error;
-		if ((error = init_codec(track, &last_dst)) != 0)
+		if ((error = audio_track_init_codec(track, &last_dst)) != 0)
 			goto error;
 	} else {
 		// 録音はユーザランド側から作る
 		track->inputfmt = track->mixer->track_fmt;
 		track->outputbuf.fmt = *usrfmt;
 
-		if ((error = init_codec(track, &last_dst)) != 0)
+		if ((error = audio_track_init_codec(track, &last_dst)) != 0)
 			goto error;
-		if ((error = init_chvol(track, &last_dst)) != 0)
+		if ((error = audio_track_init_chvol(track, &last_dst)) != 0)
 			goto error;
-		if ((error = init_chmix(track, &last_dst)) != 0)
+		if ((error = audio_track_init_chmix(track, &last_dst)) != 0)
 			goto error;
-		if ((error = init_freq(track, &last_dst)) != 0)
+		if ((error = audio_track_init_freq(track, &last_dst)) != 0)
 			goto error;
 	}
 #if 0
