@@ -795,6 +795,10 @@ audiodetach(device_t self, int flags)
 	sc = device_private(self);
 	DPRINTF(1, "%s: sc=%p flags=%d\n", __func__, sc, flags);
 
+	/* device is not initialized */
+	if (sc->hw_if == NULL)
+		return 0;
+
 	/* Start draining existing accessors of the device. */
 	// なぜここで config_detach_children() ?
 
