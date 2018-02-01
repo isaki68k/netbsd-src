@@ -1249,6 +1249,7 @@ audio_apply_stage(audio_track_t *track, audio_stage_t *stage, bool isfreq)
 }
 
 // 再生時の入力データを変換してトラックバッファに投入します。
+// usrbuf が空でない時だけ呼び出してください(呼び出し側でチェック)。
 void
 audio_track_play(audio_track_t *track)
 {
@@ -1259,9 +1260,10 @@ audio_track_play(audio_track_t *track)
 	KASSERT(track);
 	TRACET(track, "start pstate=%d", track->pstate);
 
-	// この時点で usrbuf にデータはあるかも知れないしないかも知れない。
-	// また input (outputbuf を指している可能性がある) にもデータはあるかも
+	// この時点で usrbuf は空ではない。
+	// input (outputbuf を指している可能性がある) はデータはあるかも
 	// 知れないしないかも知れないので、ここでチェックすること。
+	KASSERT(track->usrbuf.count > 0);
 
 	int track_count_0 = track->outputbuf.count;
 
@@ -1284,12 +1286,19 @@ audio_track_play(audio_track_t *track)
 		}
 	}
 
-	// input バッファの空きを調べる
-	int count = audio_ring_unround_free_count(track->input);
+	// outputbuf に空きがなければ実行できない (途中段には滞留させない)
+	int count = audio_ring_unround_free_count(&track->outputbuf);
 	if (count == 0) {
-		TRACET(track, "input buffer full");
+		TRACET(track, "output buffer full");
 		return;
 	}
+	// 空きが1ブロック未満とかいう半端なことはないはず
+	KASSERTMSG(count >= frame_per_block_roundup(track->mixer, &track->outputbuf.fmt),
+	    "count=%d fpb=%d",
+	    count, frame_per_block_roundup(track->mixer, &track->outputbuf.fmt));
+
+	count = audio_ring_unround_free_count(track->input);
+	KASSERT(count >= 0);
 
 	// usrbuf から input へコピー
 	audio_ring_t *usrbuf = &track->usrbuf;
@@ -1736,7 +1745,7 @@ audio_pmixer_mixall(struct audio_softc *sc, bool isintr)
 			continue;
 		}
 
-		if (track->outputbuf.count < req) {
+		if (track->outputbuf.count < req && track->usrbuf.count > 0) {
 			TRACET(track, "process");
 			audio_track_play(track);
 		}
