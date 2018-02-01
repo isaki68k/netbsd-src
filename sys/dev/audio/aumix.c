@@ -2403,21 +2403,8 @@ audio_track_drain(audio_track_t *track)
 		TRACET(track, "no need to drain");
 		return 0;
 	}
-
 	track->pstate = AUDIO_STATE_DRAINING;
 
-	// トラックに書き込まれたデータは audio_write() によって基本的に
-	// outputbuf に変換済み。ただし最終ブロックだけ、1ブロックに満たない
-	// 場合はそれが usrbuf に滞留しているため、この1ブロックを
-	// 無音パディングして outputbuf に書き込む動作が必要。
-	// そのためここは1回だけでいい。
-	mutex_enter(sc->sc_intr_lock);
-	track->in_use = true;
-	mutex_exit(sc->sc_intr_lock);
-	audio_track_play(track);
-	mutex_enter(sc->sc_intr_lock);
-	track->in_use = false;
-	mutex_exit(sc->sc_intr_lock);
 	if (sc->sc_pbusy == false) {
 		// トラックバッファが空になっても、ミキサ側で処理中のデータが
 		// あるかもしれない。
