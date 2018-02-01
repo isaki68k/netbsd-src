@@ -1217,9 +1217,7 @@ audio_apply_stage(audio_track_t *track, audio_stage_t *stage, bool isfreq)
 	}
 }
 
-/*
- * 再生時の入力データを変換してトラックバッファに投入します。
- */
+// 再生時の入力データを変換してトラックバッファに投入します。
 void
 audio_track_play(audio_track_t *track)
 {
@@ -1742,7 +1740,7 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req,
 	aint_t *sptr = RING_TOP(aint_t, &track->outputbuf);
 	aint2_t *dptr = mixer->mixsample;
 
-	/* 整数倍精度へ変換し、トラックボリュームを適用して加算合成 */
+	// 整数倍精度へ変換し、トラックボリュームを適用して加算合成
 	int sample_count = count * mixer->mixfmt.channels;
 	if (mixed == 0) {
 		// 最初のトラック合成は代入
@@ -1778,7 +1776,7 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req,
 
 	audio_ring_tookfromtop(&track->outputbuf, count);
 
-	/* トラックバッファを取り込んだことを反映 */
+	// トラックバッファを取り込んだことを反映
 	// mixseq はこの時点ではまだ前回の値なのでトラック側へは +1 
 	track->seq = mixer->mixseq + 1;
 
