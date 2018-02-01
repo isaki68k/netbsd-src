@@ -1256,6 +1256,7 @@ audio_track_play(audio_track_t *track)
 	int inpbuf_frames_per_block;
 	int blockbytes;	// usrbuf および input の1ブロックのバイト数
 	int bytes;		// usrbuf から input に転送するバイト数
+	int filled;
 
 	KASSERT(track);
 	TRACET(track, "start pstate=%d", track->pstate);
@@ -1278,12 +1279,14 @@ audio_track_play(audio_track_t *track)
 	// o drain 中でなければ
 	//   - PLAY なら、バッファ分だけ処理する (不足分はミキサで無音挿入)。
 	//   - PLAY_ALL なら、今回は何もせず帰る
+	filled = 1;
 	if (track->usrbuf.count < blockbytes) {
 		if (track->pstate != AUDIO_STATE_DRAINING &&
 		    (track->mode & AUMODE_PLAY_ALL) != 0) {
 			TRACET(track, "not enough; return");
 			return;
 		}
+		filled = 0;
 	}
 
 	// outputbuf に空きがなければ実行できない (途中段には滞留させない)
@@ -1369,6 +1372,32 @@ audio_track_play(audio_track_t *track)
 		if (n > 0 && track->freq.srcbuf.count > 0) {
 			TRACET(track, "freq.srcbuf cleanup count=%d", track->freq.srcbuf.count);
 			track->freq.srcbuf.count = 0;
+		}
+	}
+
+	if (!filled) {
+		// 変換が1ブロックぴったりでない場合、変換バッファのポインタが
+		// バッファ途中を指すことになるのでこれをクリアする。
+		// ここの変換バッファは、前後のリングバッファとの対称性で
+		// リングバッファの形にしてあるが運用上はただのバッファなので、
+		// ポインタが途中を指されていると困る。
+		// これが起きるのは PLAY_SYNC か drain 中の時。
+		TRACET(track, "reset stage");
+		if (track->codec.filter) {
+			KASSERT(track->codec.srcbuf.count == 0);
+			track->codec.srcbuf.top = 0;
+		}
+		if (track->chvol.filter) {
+			KASSERT(track->chvol.srcbuf.count == 0);
+			track->chvol.srcbuf.top = 0;
+		}
+		if (track->chmix.filter) {
+			KASSERT(track->chmix.srcbuf.count == 0);
+			track->chmix.srcbuf.top = 0;
+		}
+		if (track->freq.filter) {
+			KASSERT(track->freq.srcbuf.count == 0);
+			track->freq.srcbuf.top = 0;
 		}
 	}
 
