@@ -385,9 +385,6 @@ make_buildinfo(void)
 #if defined(FREQ_CYCLE2)
 	n += snprintf(buf + n, sizeof(buf) - n, ", FREQ_CYCLE2");
 #endif
-#if defined(START_ON_OPEN)
-	n += snprintf(buf + n, sizeof(buf) - n, ", START_ON_OPEN");
-#endif
 #if defined(USE_SETCHAN)
 	n += snprintf(buf + n, sizeof(buf) - n, ", USE_SETCHAN");
 #endif
@@ -1486,9 +1483,6 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 			if (error)
 				goto bad3;
 		}
-#if defined(START_ON_OPEN)
-		audio_pmixer_start(sc->sc_pmixer, false);
-#endif
 	}
 	if (af->rtrack && sc->sc_ropens == 0) {
 		if (sc->hw_if->init_input) {
@@ -1502,9 +1496,6 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 			if (error)
 				goto bad3;
 		}
-#if defined(START_ON_OPEN)
-		//audio_rmixer_start(sc->sc_rmixer, false);
-#endif
 	}
 
 	error = fd_allocfile(&fp, &fd);

@@ -32,15 +32,6 @@
 // 出力バッファのブロック数
 #define NBLKOUT	(4)
 
-// ミキサ駆動方式
-// START_ON_OPEN は、audio_open() 時にミキサを駆動しておき、
-// audio_write() 時はトラック処理だけを行う。ミキサは常時駆動していて
-// 準備の出来たトラックのブロックだけを拾っていく方式。
-// audio_close() でミキサループを停止する。
-// START_ON_OPEN でない場合は、audio_write() で1ブロック以上溜まったら
-// ミキサを駆動、drain でもミキサを駆動。停止はどこ?
-//#define START_ON_OPEN
-
 // AUDIO_SETCHAN ioctl
 // デバッグ用に AUDIO_SETCHAN ioctl を有効にします。
 #define USE_SETCHAN
