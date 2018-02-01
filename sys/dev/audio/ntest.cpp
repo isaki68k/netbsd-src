@@ -22,7 +22,7 @@ struct testtable {
 	void (*func)(void);
 };
 
-void init();
+void init(int);
 
 int debug;
 int netbsd;
@@ -32,15 +32,18 @@ int x68k;
 char testname[100];
 int testcount;
 int failcount;
-const char *devaudio = "/dev/audio0";
-const char *devsound = "/dev/sound0";
+char devaudio[16];
+char devsound[16];
 extern struct testtable testtable[];
 
 void __attribute__((__noreturn__))
 usage()
 {
 	// test は複数列挙できる。
-	printf(" %s {-a | <testname...>}\n", getprogname());
+	printf("usage: %s [<options>] {-a | <testname...>}\n", getprogname());
+	printf("  -d: debug\n");
+	printf("  -u <unit>: audio/sound device unit number (defualt:0)\n");
+	printf(" testname:\n");
 	for (int i = 0; testtable[i].name != NULL; i++) {
 		printf("\t%s\n", testtable[i].name);
 	}
@@ -53,21 +56,30 @@ main(int ac, char *av[])
 	int i;
 	int c;
 	int opt_all;
+	int unit;
 
 	testname[0] = '\0';
 	props = -1;
 	hwfull = 0;
 	x68k = 0;
+	unit = 0;
 
 	// global option
 	opt_all = 0;
-	while ((c = getopt(ac, av, "ad")) != -1) {
+	while ((c = getopt(ac, av, "adu:")) != -1) {
 		switch (c) {
 		 case 'a':
 			opt_all = 1;
 			break;
 		 case 'd':
 			debug++;
+			break;
+		 case 'u':
+			unit = atoi(optarg);
+			if (unit < 0) {
+				printf("invalid device unit: %d\n", unit);
+				exit(1);
+			}
 			break;
 		 default:
 			usage();
@@ -76,7 +88,7 @@ main(int ac, char *av[])
 	ac -= optind;
 	av += optind;
 
-	init();
+	init(unit);
 
 	if (opt_all) {
 		// -a なら引数なしで、全項目テスト
@@ -154,12 +166,17 @@ xp_errx(int code, int line, const char *fmt, ...)
 }
 
 void
-init()
+init(int unit)
 {
 	char name[256];
 	size_t len;
 	int r;
 	int rel;
+
+	snprintf(devaudio, sizeof(devaudio), "/dev/audio%d", unit);
+	snprintf(devsound, sizeof(devsound), "/dev/sound%d", unit);
+	if (debug)
+		printf("unit = %d\n", unit);
 
 	// バージョンを適当に判断。
 	// 7 系なら 7
