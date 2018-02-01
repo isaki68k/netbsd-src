@@ -1355,7 +1355,12 @@ audio_track_play(audio_track_t *track)
 		if (track->pstate == AUDIO_STATE_DRAINING) {
 			n = audio_append_silence(track, &track->freq.srcbuf);
 			if (n > 0) {
-				TRACET(track, "freq.srcbuf appended silence %d frames", n);
+				TRACET(track,
+				    "freq.srcbuf add silence %d -> %d/%d/%d",
+				    n,
+				    track->freq.srcbuf.top,
+				    track->freq.srcbuf.count,
+				    track->freq.srcbuf.capacity);
 			}
 		}
 		if (track->freq.srcbuf.count > 0) {
