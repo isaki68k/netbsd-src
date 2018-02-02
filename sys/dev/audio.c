@@ -3376,7 +3376,7 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 		pi->samples = ptrack->inputcounter;
 		pi->eof = ptrack->eofcounter;
 		pi->pause = ptrack->is_pause;
-		pi->error = 0;			// XXX
+		pi->error = (ptrack->dropframes != 0) ? 1 : 0;
 		pi->waiting = 0;		/* open never hangs */
 		pi->open = 1;
 		pi->active = sc->sc_pbusy;
@@ -3387,7 +3387,7 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 		ri->samples = rtrack->inputcounter;
 		ri->eof = 0;
 		ri->pause = rtrack->is_pause;
-		ri->error = 0;			// XXX
+		ri->error = (rtrack->dropframes != 0) ? 1 : 0;
 		ri->waiting = 0;		/* open never hangs */
 		ri->open = 1;
 		ri->active = sc->sc_rbusy;
