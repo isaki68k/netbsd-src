@@ -12,6 +12,7 @@
 #include <sys/audioio.h>
 #include <sys/cdefs.h>
 #include <sys/ioctl.h>
+#include <sys/mman.h>
 #include <sys/param.h>
 #include <sys/sysctl.h>
 
@@ -297,11 +298,68 @@ cmd_playsync(int ac, char *av[])
 	free(wav);
 }
 
+// pyon_s16le.wav を途中で DRAIN 発行して、続けてみる。
+int
+cmd_drain(int ac, char *av[])
+{
+	struct audio_info ai;
+	char *buf;
+	int fd;
+	int ff;
+	int r;
+
+	fd = OPEN(devaudio, O_WRONLY);
+	if (fd == -1)
+		err(1, "open");
+
+	AUDIO_INITINFO(&ai);
+	ai.play.encoding = AUDIO_ENCODING_SLINEAR_LE;
+	ai.play.precision = 16;
+	ai.play.channels = 1;
+	ai.play.sample_rate = 44100;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
+	if (r == -1)
+		err(1, "AUDIO_SETINFO");
+
+	ff = OPEN("pyon_s16le.wav", O_RDONLY);
+	if (ff == -1)
+		err(1, "open: pyon_s16le.wav");
+
+	buf = (char *)mmap(NULL, 305228, PROT_READ, MAP_FILE, ff, 0);
+	if (buf == MAP_FAILED)
+		err(1, "mmap");
+
+	r = WRITE(fd, buf + 44, 152592);
+	if (r == -1)
+		err(1, "write1");
+	if (r < 152592)
+		errx(1, "write1: too short: %d", r);
+
+	r = IOCTL(fd, AUDIO_DRAIN, 0, "");
+	if (r == -1)
+		err(1, "drain");
+
+	printf("sleep 1\n");
+	sleep(1);
+
+	r = WRITE(fd, buf + 44 + 152592, 152592);
+	if (r == -1)
+		err(1, "write2");
+	if (r < 152592)
+		errx(1, "write2: too short: %d", r);
+
+	CLOSE(fd);
+	munmap(buf, 305228);
+	CLOSE(ff);
+	return 0;
+}
+
 // コマンド一覧
 #define DEF(x)	{ #x, cmd_ ## x }
 struct cmdtable cmdtable[] = {
 	DEF(SETFD),
 	DEF(playsync),
+	DEF(drain),
 	{ NULL, NULL },
 };
 #undef DEF
