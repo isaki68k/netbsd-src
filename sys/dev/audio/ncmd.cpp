@@ -20,14 +20,20 @@ struct cmdtable {
 	int (*func)(int, char *[]);
 };
 
+void init(int);
+
 int debug;
+char devaudio[16];
+char devsound[16];
 extern struct cmdtable cmdtable[];
 
 void __attribute__((__noreturn__))
 usage()
 {
 	// cmd は一度に1つ。任意の引数あり。
-	printf(" %s <cmd> [<arg...>]\n", getprogname());
+	printf("usage: %s <cmd> [<arg...>]\n", getprogname());
+	printf("  -d: debug\n");
+	printf("  -u <unit>: audio/sound device unit number (defualt:0)\n");
 	for (int i = 0; cmdtable[i].name != NULL; i++) {
 		printf("\t%s\n", cmdtable[i].name);
 	}
@@ -39,12 +45,22 @@ main(int ac, char *av[])
 {
 	int i;
 	int c;
+	int unit;
+
+	unit = 0;
 
 	// global option
-	while ((c = getopt(ac, av, "d")) != -1) {
+	while ((c = getopt(ac, av, "du:")) != -1) {
 		switch (c) {
 		 case 'd':
 			debug++;
+			break;
+		 case 'u':
+			unit = atoi(optarg);
+			if (unit < 0) {
+				printf("invalid device unit: %d\n", unit);
+				exit(1);
+			}
 			break;
 		 default:
 			usage();
@@ -52,6 +68,8 @@ main(int ac, char *av[])
 	}
 	ac -= optind;
 	av += optind;
+
+	init(unit);
 
 	if (ac == 0)
 		usage();
@@ -66,6 +84,15 @@ main(int ac, char *av[])
 
 	usage();
 	return 0;
+}
+
+void
+init(int unit)
+{
+	snprintf(devaudio, sizeof(devaudio), "/dev/audio%d", unit);
+	snprintf(devsound, sizeof(devsound), "/dev/sound%d", unit);
+	if (debug)
+		printf("unit = %d\n", unit);
 }
 
 #define DPRINTF(fmt...)	do {	\
@@ -171,7 +198,7 @@ cmd_SETFD(int ac, char *av[])
 		err(1, "open: %s", av[1]);
 
 	// Half-Duplex でオープン
-	fd = OPEN("/dev/audio", O_RDONLY);
+	fd = OPEN(devaudio, O_RDONLY);
 	if (fd == -1)
 		err(1, "open");
 
