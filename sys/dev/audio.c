@@ -385,9 +385,6 @@ make_buildinfo(void)
 #if defined(FREQ_CYCLE2)
 	n += snprintf(buf + n, sizeof(buf) - n, ", FREQ_CYCLE2");
 #endif
-#if defined(USE_SETCHAN)
-	n += snprintf(buf + n, sizeof(buf) - n, ", USE_SETCHAN");
-#endif
 
 	audio_buildinfo = malloc(strlen(buf) + 1, M_NOWAIT, 0);
 	if (audio_buildinfo) {
@@ -1715,33 +1712,6 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 
 	KASSERT(mutex_owned(sc->sc_lock));
 
-#if defined(USE_SETCHAN)
-	// ioctl ターゲットチャンネルを探す
-	// XXX デバッグ用
-	if (file->ioctl_target != 0) {
-		audio_file_t *f;
-		audio_file_t *target;
-
-		target = NULL;
-		SLIST_FOREACH(f, &sc->sc_files, entry) {
-			if (f->ptrack && f->ptrack->id == file->ioctl_target) {
-				target = f;
-				break;
-			}
-			if (f->rtrack && f->rtrack->id == file->ioctl_target) {
-				target = f;
-				break;
-			}
-		}
-		if (target == NULL) {
-			DPRINTF(1, "%s: ioctl_target %d not found\n",
-			    __func__, file->ioctl_target);
-			return EBADF;
-		}
-		file = target;
-	}
-#endif /* USE_SETCHAN */
-
 #if defined(AUDIO_DEBUG)
 	const char *ioctlnames[] = {
 		" AUDIO_GETINFO",	// 21
@@ -1773,22 +1743,6 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		return ENXIO;
 	error = 0;
 	switch (cmd) {
-#if defined(USE_SETCHAN)
-	case AUDIO_SETCHAN:
-		file->ioctl_target = *(int *)addr;
-		DPRINTF(1, "AUDIO_SETCHAN target id = %d\n",
-		    file->ioctl_target);
-		break;
-#else
-	case AUDIO_GETCHAN:
-		if ((int *)addr != NULL)
-			*(int*)addr = chan->chan;
-		break;
-	case AUDIO_SETCHAN:
-		if ((int *)addr != NULL && *(int*)addr > 0)
-			chan->deschan = *(int*)addr;
-		break;
-#endif
 	case FIONBIO:
 		/* All handled in the upper FS layer. */
 		break;
