@@ -1315,6 +1315,12 @@ audio_track_play(audio_track_t *track)
 			} else {
 				// ここで1ブロックに満たなければ
 				// 落ちる(落ちた)ということ
+
+				// playdrop は今落とし中のフレーム数
+				// 回復運転のために数えておく必要がある
+				track->playdrop += dropcount;
+				// dropframes は数え上げるだけ。
+				// 1回でも落ちれば play.error を立てるため
 				track->dropframes += dropcount;
 			}
 		}
@@ -2424,6 +2430,8 @@ audio_track_clear(struct audio_softc *sc, audio_track_t *track)
 	mutex_exit(sc->sc_intr_lock);
 
 	// カウンタクリア
+	track->dropframes = 0;
+	track->playdrop = 0;
 }
 
 // errno を返します。
@@ -2513,6 +2521,8 @@ int
 audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *file)
 {
 	int error;
+	int framesize;
+	int count;
 	audio_track_t *track = file->ptrack;
 	KASSERT(track);
 	TRACET(track, "resid=%u", (int)uio->uio_resid);
@@ -2531,8 +2541,6 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 	if (device_is_active(&sc->dev) || sc->sc_idle)
 		device_active(&sc->dev, DVA_SYSTEM);
 #endif
-
-	// XXX playdrop と PLAY_ALL はちょっと後回し
 
 	// inp_thres は usrbuf に書き込む際の閾値。
 	// usrbuf.count が inp_thres より小さければ uiomove する。
@@ -2602,6 +2610,20 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 				if (error)
 					break;
 			}
+		}
+
+		// 前回落としたフレーム分を回復運転のため取り去る
+		// write されるバイトバッファがフレーム境界に揃っている
+		// 保証はないので、usrbuf にコピーした後でなければならない
+		if ((track->mode & AUMODE_PLAY_ALL) == 0 &&
+		    track->playdrop != 0) {
+			framesize = frametobyte(&track->inputfmt, 1);
+			count = min(usrbuf->count / framesize, track->playdrop);
+			audio_ring_tookfromtop(usrbuf, count * framesize);
+			track->playdrop -= count * framesize;
+			TRACET(track, "drop %d -> usr=%d/%d/%d",
+			    count * framesize,
+			    usrbuf->top, usrbuf->count, usrbuf->capacity);
 		}
 
 		while (track->usrbuf.count >= out_thres && error == 0) {

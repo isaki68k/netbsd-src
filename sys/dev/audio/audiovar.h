@@ -140,6 +140,7 @@ struct audio_track {
 	uint64_t	seq;		/* seq# picked up by track mixer */
 
 	audio_state_t	pstate;		/* playback state */
+	int		playdrop;	/* current drop frames */
 	bool		is_pause;
 
 	void		*sih_wr;	/* softint cookie for write */
