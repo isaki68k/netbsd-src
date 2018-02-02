@@ -224,11 +224,84 @@ cmd_SETFD(int ac, char *av[])
 	return 0;
 }
 
+// PLAY_SYNC でブロックサイズずつ書き込んでみる。
+// 引数(double) はブロックサイズ長に対する書き込みの割合
+// N7 だと ratio=1 でも <1 でも途切れた音が出る?
+// error が点灯する条件はよく分からん。VirtualBox だと <1 なら点灯する。
+// VMwarePlayer だと値によって変わるようだ。
+int
+cmd_playsync(int ac, char *av[])
+{
+	struct audio_info ai;
+	char *wav;
+	char *buf;
+	int wavsize;
+	int fd;
+	int r;
+	int n;
+	double ratio;
+	int sinewave[] = {
+		0, 0xb0, 0x80, 0xb0, 0, 0x30, 0x00, 0x30
+	};
+
+	if (ac < 2)
+		ratio = 1;
+	else
+		ratio = atof(av[1]);
+	printf("ratio = %5.1f\n", ratio);
+
+	fd = OPEN(devaudio, O_WRONLY);
+	if (fd == -1)
+		err(1, "open");
+
+	AUDIO_INITINFO(&ai);
+	ai.mode = AUMODE_PLAY;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "mode");
+	if (r == -1)
+		err(1, "AUDIO_SETINFO");
+
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	if (r == -1)
+		err(1, "AUDIO_GETINFO");
+	printf("ai.blocksize=%d\n", ai.blocksize);
+
+	wavsize = ai.blocksize;
+	wav = (char *)malloc(wavsize);
+	if (wav == NULL)
+		err(1, "malloc");
+	buf = (char *)malloc(wavsize);
+	if (buf == NULL)
+		err(1, "malloc");
+
+	// 三角波
+	// mulaw 8kHz で 1kHz を想定しているけど、適当
+	for (int i = 0; i < wavsize; i++) {
+		wav[i] = sinewave[i % 8];
+	}
+	int len = wavsize * ratio;
+	printf("write len = %d\n", len);
+	for (int i = 0; i < 5; i++) {
+		r = WRITE(fd, wav, len);
+		if (r == -1)
+			err(1, "write");
+		if (r != len)
+			errx(1, "write: too short: %d", r);
+	}
+
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	if (r == -1)
+		err(1, "AUDIO_GETINFO");
+	printf("ai.play.error = %d\n", ai.play.error);
+
+	CLOSE(fd);
+	free(wav);
+}
 
 // コマンド一覧
 #define DEF(x)	{ #x, cmd_ ## x }
 struct cmdtable cmdtable[] = {
 	DEF(SETFD),
+	DEF(playsync),
 	{ NULL, NULL },
 };
 #undef DEF

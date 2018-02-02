@@ -1128,6 +1128,56 @@ test_drain_2(void)
 	XP_SYS_EQ(0, r);
 }
 
+// PLAY_SYNC でブロックサイズずつ書き込む
+// 期待通りの音が出るかは分からないので、play.error が0なことだけ確認
+void
+test_playsync_1(void)
+{
+	struct audio_info ai;
+	char *wav;
+	int wavsize;
+	int fd;
+	int r;
+	int n;
+
+	TEST("playsync_1");
+
+	fd = OPEN(devaudio, O_WRONLY);
+	if (fd == -1)
+		err(1, "open");
+
+	AUDIO_INITINFO(&ai);
+	ai.mode = AUMODE_PLAY;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "mode");
+	XP_SYS_EQ(0, r);
+
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+
+	wavsize = ai.blocksize;
+	wav = (char *)malloc(wavsize);
+	if (wav == NULL)
+		err(1, "malloc");
+	memset(wav, 0, wavsize);
+
+	for (int i = 0; i < 5; i++) {
+		r = WRITE(fd, wav, wavsize);
+		XP_SYS_EQ(wavsize, r);
+	}
+
+	// ブロックサイズで書き込めばエラーにはならないらしいが、
+	// ブロックサイズ未満で書き込んでエラーになるかどうかの条件が分からないので
+	// ブロックサイズ未満のテストは保留。
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+	XP_EQ(0, ai.play.error);
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+
+	free(wav);
+}
+
 // HWFull/Half によらず open mode の方の操作(read/write)はできる。
 void
 test_readwrite_1(void)
@@ -2055,6 +2105,7 @@ struct testtable testtable[] = {
 	DEF(encoding_2),
 	DEF(drain_1),
 	DEF(drain_2),
+	DEF(playsync_1),
 	DEF(readwrite_1),
 	DEF(readwrite_2),
 	DEF(readwrite_3),
