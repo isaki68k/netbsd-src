@@ -36,17 +36,17 @@ gen_sin(audio_ring_t *dst)
 	if (!audio_format2_is_signed(&dst->fmt)) synth_error("!SLINEAR");
 
 	if (dst->fmt.stride == 8) {
-		int8_t *dptr = dst->sample;
+		int8_t *dptr = dst->mem;
 		for (int i = 0; i < dst->capacity; i++) {
 			*dptr++ = (int8_t)((sin(2 * M_PI * i / dst->capacity) + 1) * 256 / 2 - 128);
 		}
 	} else if (dst->fmt.stride == 16) {
-		int16_t *dptr = dst->sample;
+		int16_t *dptr = dst->mem;
 		for (int i = 0; i < dst->capacity; i++) {
 			*dptr++ = (int16_t)((sin(2 * M_PI * i / dst->capacity) + 1) * 65536 / 2 - 32768);
 		}
 	} else if (dst->fmt.stride == 32) {
-		int32_t *dptr = dst->sample;
+		int32_t *dptr = dst->mem;
 		for (int i = 0; i < dst->capacity; i++) {
 			double t = sin(2 * M_PI * i / dst->capacity);
 //			*dptr++ = (int32_t)((t + 1) * 4294967296.0 / 2 - 2147483648.0);
@@ -187,7 +187,7 @@ int getnum(char **str)
 void
 ring_expand(audio_ring_t *ring, int newcapacity)
 {
-	ring->sample = realloc(ring->sample, newcapacity * ring->fmt.channels * ring->fmt.stride / 8);
+	ring->mem = realloc(ring->mem, newcapacity * ring->fmt.channels * ring->fmt.stride / 8);
 	int newfree = newcapacity - ring->capacity;
 	int unround = ring->capacity == 0 ? 0 : audio_ring_unround_count(ring);
 	int round = ring->count - unround;
@@ -196,14 +196,14 @@ ring_expand(audio_ring_t *ring, int newcapacity)
 
 	if (bounce > 0) {
 		memcpy(
-			(int8_t*)ring->sample + ring->capacity * ring->fmt.channels * ring->fmt.stride / 8,
-			(int8_t*)ring->sample,
+			(int8_t*)ring->mem + ring->capacity * ring->fmt.channels * ring->fmt.stride / 8,
+			(int8_t*)ring->mem,
 			bounce * ring->fmt.channels * ring->fmt.stride / 8);
 	}
 	if (move > 0) {
 		memmove(
-			(int8_t*)ring->sample,
-			(int8_t*)ring->sample + bounce * ring->fmt.channels * ring->fmt.stride / 8,
+			(int8_t*)ring->mem,
+			(int8_t*)ring->mem + bounce * ring->fmt.channels * ring->fmt.stride / 8,
 			move * ring->fmt.channels * ring->fmt.stride / 8);
 	}
 	ring->capacity = newcapacity;
@@ -225,7 +225,7 @@ play_mml(audio_ring_t *dst, char *mml)
 	tone = &tone0;
 	tone->fmt = tone_fmt0;
 	tone->capacity = tone->fmt.sample_rate * tone->fmt.channels * tone->fmt.stride / 8;
-	tone->sample = malloc(RING_BYTELEN(tone));
+	tone->mem = malloc(RING_BYTELEN(tone));
 
 	gen_sin(tone);
 

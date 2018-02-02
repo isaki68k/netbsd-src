@@ -269,7 +269,7 @@ cmd_set_mml(const char *mml)
 
 	f->mem.capacity = 0;
 	f->mem.count = 0;
-	f->mem.sample = NULL;
+	f->mem.mem = NULL;
 	play_mml(&f->mem, mml);
 	return 0;
 }
@@ -344,16 +344,6 @@ cmd_play()
 			break;
 	}
 #endif
-
-	for (int i = 0; i < fileidx; i++) {
-		struct test_file *f = &files[i];
-		printf("file %d: hw=%" PRIu64 " hw_comp=%" PRIu64 "\n",
-			i,
-			f->file->ptrack->mixer_hw_counter,
-			f->file->ptrack->hw_complete_counter);
-	}
-	printf("mixer: hw_out=%" PRIu64 "\n",
-		files[0].file->ptrack->mixer->hw_output_counter);
 
 	return 0;
 
@@ -475,14 +465,14 @@ parse_file(struct test_file *f, FILE *fp, const char *filename)
 			}
 		}
 
-		f->mem.sample = malloc(len);
-		if (f->mem.sample == NULL) {
+		f->mem.mem = malloc(len);
+		if (f->mem.mem == NULL) {
 			printf("%s: malloc failed: %d\n", filename, len);
 			exit(1);
 		}
 		// 読み込み開始位置は s
 		fseek(fp, (long)(s - hdrbuf), SEEK_SET);
-		fread(f->mem.sample, 1, len, fp);
+		fread(f->mem.mem, 1, len, fp);
 		return len;
 	}
 
@@ -522,14 +512,14 @@ parse_file(struct test_file *f, FILE *fp, const char *filename)
 		len = be32toh(au->length);
 		uint32_t offset = be32toh(au->offset);
 
-		f->mem.sample = malloc(len);
-		if (f->mem.sample == NULL) {
+		f->mem.mem = malloc(len);
+		if (f->mem.mem == NULL) {
 			printf("%s: malloc failed: %d\n", filename, len);
 			exit(1);
 		}
 		// 読み込み開始位置は offset
 		fseek(fp, offset, SEEK_SET);
-		fread(f->mem.sample, 1, len, fp);
+		fread(f->mem.mem, 1, len, fp);
 		return len;
 	}
 
