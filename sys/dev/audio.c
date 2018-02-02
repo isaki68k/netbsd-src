@@ -379,12 +379,6 @@ make_buildinfo(void)
 	n = 0;
 	n += snprintf(buf, sizeof(buf), "AUDIO_BLK_MS=%d", AUDIO_BLK_MS);
 	n += snprintf(buf + n, sizeof(buf) - n, ", NBLKOUT=%d", NBLKOUT);
-#if defined(FREQ_ORIG)
-	n += snprintf(buf + n, sizeof(buf) - n, ", FREQ_ORIG");
-#endif
-#if defined(FREQ_CYCLE2)
-	n += snprintf(buf + n, sizeof(buf) - n, ", FREQ_CYCLE2");
-#endif
 
 	audio_buildinfo = malloc(strlen(buf) + 1, M_NOWAIT, 0);
 	if (audio_buildinfo) {
