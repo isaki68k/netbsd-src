@@ -2409,14 +2409,21 @@ audio_track_clear(struct audio_softc *sc, audio_track_t *track)
 
 	track->usrbuf.count = 0;
 	// 内部情報も全部クリア
-	if (track->codec.filter)
+	if (track->codec.filter) {
 		track->codec.srcbuf.count = 0;
-	if (track->chvol.filter)
+		track->codec.srcbuf.top = 0;
+	}
+	if (track->chvol.filter) {
 		track->chvol.srcbuf.count = 0;
-	if (track->chmix.filter)
+		track->chvol.srcbuf.top = 0;
+	}
+	if (track->chmix.filter) {
 		track->chmix.srcbuf.count = 0;
+		track->chmix.srcbuf.top = 0;
+	}
 	if (track->freq.filter) {
 		track->freq.srcbuf.count = 0;
+		track->freq.srcbuf.top = 0;
 		if (track->freq_step < 65536)
 			track->freq_current = 65536;
 		else
