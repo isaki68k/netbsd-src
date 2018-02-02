@@ -154,15 +154,6 @@ struct audio_track {
 	// プロセスコンテキストが track を使用中なら true。
 	volatile bool	in_use;		/* track cooperative lock */
 
-	// 以下できるかどうか未知
-
-	// outputbuf のトラックミキサ側読み書きフレーム数
-	uint64_t	track_mixer_counter;
-	// mixer <-> hw 入出力フレーム数
-	uint64_t	mixer_hw_counter;
-	// ハードウェア I/O が完了したフレーム数
-	uint64_t	hw_complete_counter;
-
 	int		id;		/* track id for debug */
 };
 
@@ -197,8 +188,6 @@ struct audio_trackmixer {
 
 	// 以下未定
 
-	// ハードウェアへの出力フレーム数
-	uint64_t	hw_output_counter;
 	// ハードウェアが出力完了したフレーム数
 	uint64_t	hw_complete_counter;
 };
