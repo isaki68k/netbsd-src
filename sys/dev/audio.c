@@ -2964,6 +2964,8 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 		pchanges = audio_file_setinfo_check(&pfmt, pi);
 		if (pchanges == -1)
 			return EINVAL;
+		if (SPECIFIED(ai->mode))
+			pchanges = 1;
 		if (SPECIFIED_CH(pi->pause))
 			ppause = pi->pause;
 	}
@@ -2971,11 +2973,13 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 		rchanges = audio_file_setinfo_check(&rfmt, ri);
 		if (rchanges == -1)
 			return EINVAL;
+		if (SPECIFIED(ai->mode))
+			rchanges = 1;
 		if (SPECIFIED_CH(ri->pause))
 			ppause = ri->pause;
 	}
 
-	if (SPECIFIED(ai->mode) || pchanges || rchanges) {
+	if (pchanges || rchanges) {
 		audio_file_clear(sc, file);
 #ifdef AUDIO_DEBUG
 		char modebuf[64];
@@ -2994,7 +2998,7 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	/* Set */
 	error = 0;
 	file->mode = mode;
-	if (play) {
+	if (pchanges) {
 		play->is_pause = ppause;
 		error = audio_file_setinfo_set(play, pi, pchanges, &pfmt,
 		    (mode & (AUMODE_PLAY | AUMODE_PLAY_ALL)));
@@ -3005,7 +3009,7 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 		sc->sc_pparams = pfmt;
 		sc->sc_ppause = ppause;
 	}
-	if (rec) {
+	if (rchanges) {
 		rec->is_pause = rpause;
 		error = audio_file_setinfo_set(rec, ri, rchanges, &rfmt,
 		    (mode & AUMODE_RECORD));
