@@ -1219,12 +1219,14 @@ audioioctl(struct file *fp, u_long cmd, void *addr)
 static int
 audiostat(struct file *fp, struct stat *st)
 {
+	audio_file_t *file;
 
 	KASSERT(fp->f_audioctx);
+	file = (audio_file_t *)fp->f_audioctx;
 
 	memset(st, 0, sizeof(*st));
 
-	st->st_dev = ((audio_file_t *)fp->f_audioctx)->dev;
+	st->st_dev = file->dev;
 	st->st_uid = kauth_cred_geteuid(fp->f_cred);
 	st->st_gid = kauth_cred_getegid(fp->f_cred);
 	st->st_mode = S_IFCHR;
