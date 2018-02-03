@@ -1072,9 +1072,7 @@ audioclose(struct file *fp)
 	int error;
 	dev_t dev;
 
-	if (fp->f_audioctx == NULL)
-		return EIO;	/* XXX:NS Why is this needed. */
-
+	KASSERT(fp->f_audioctx);
 	file = (audio_file_t *)fp->f_audioctx;
 	dev = file->dev;
 
@@ -1114,9 +1112,7 @@ audioread(struct file *fp, off_t *offp, struct uio *uio, kauth_cred_t cred,
 	int error;
 	dev_t dev;
 
-	if (fp->f_audioctx == NULL)
-		return EIO;
-
+	KASSERT(fp->f_audioctx);
 	file = (audio_file_t *)fp->f_audioctx;
 	dev = file->dev;
 
@@ -1153,9 +1149,7 @@ audiowrite(struct file *fp, off_t *offp, struct uio *uio, kauth_cred_t cred,
 	int error;
 	dev_t dev;
 
-	if (fp->f_audioctx == NULL)
-		return EIO;
-
+	KASSERT(fp->f_audioctx);
 	file = (audio_file_t *)fp->f_audioctx;
 	dev = file->dev;
 
@@ -1192,9 +1186,7 @@ audioioctl(struct file *fp, u_long cmd, void *addr)
 	int error;
 	dev_t dev;
 
-	if (fp->f_audioctx == NULL)
-		return EIO;
-
+	KASSERT(fp->f_audioctx);
 	file = (audio_file_t *)fp->f_audioctx;
 	dev = file->dev;
 
@@ -1227,8 +1219,8 @@ audioioctl(struct file *fp, u_long cmd, void *addr)
 static int
 audiostat(struct file *fp, struct stat *st)
 {
-	if (fp->f_audioctx == NULL)
-		return EIO;
+
+	KASSERT(fp->f_audioctx);
 
 	memset(st, 0, sizeof(*st));
 
@@ -1248,9 +1240,7 @@ audiopoll(struct file *fp, int events)
 	int revents;
 	dev_t dev;
 
-	if (fp->f_audioctx == NULL)
-		return POLLERR;
-
+	KASSERT(fp->f_audioctx);
 	file = (audio_file_t *)fp->f_audioctx;
 	dev = file->dev;
 
@@ -1283,9 +1273,7 @@ audiokqfilter(struct file *fp, struct knote *kn)
 	dev_t dev;
 	int error;
 
-	if (fp->f_audioctx == NULL)
-		return EIO;
-
+	KASSERT(fp->f_audioctx);
 	file = (audio_file_t *)fp->f_audioctx;
 	dev = file->dev;
 
@@ -1320,9 +1308,7 @@ audiommap(struct file *fp, off_t *offp, size_t len, int prot, int *flagsp,
 	dev_t dev;
 	int error;
 
-	if (fp->f_audioctx == NULL)
-		return EIO;
-
+	KASSERT(fp->f_audioctx);
 	file = (audio_file_t *)fp->f_audioctx;
 	dev = file->dev;
 
