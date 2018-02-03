@@ -28,12 +28,15 @@ int debug;
 int netbsd;
 int props;
 int hwfull;
+char hwconfig[16];
+char hwconfig9[16];	// audio%d
 int x68k;
 char testname[100];
 int testcount;
 int failcount;
 char devaudio[16];
 char devsound[16];
+char devaudioctl[16];
 extern struct testtable testtable[];
 
 void __attribute__((__noreturn__))
@@ -177,6 +180,8 @@ init(int unit)
 
 	snprintf(devaudio, sizeof(devaudio), "/dev/audio%d", unit);
 	snprintf(devsound, sizeof(devsound), "/dev/sound%d", unit);
+	snprintf(devaudioctl, sizeof(devaudioctl), "/dev/audioctl%d", unit);
+	snprintf(hwconfig9, sizeof(hwconfig9), "audio%d", unit);
 	if (debug)
 		printf("unit = %d\n", unit);
 
@@ -214,9 +219,27 @@ init(int unit)
 		err(1, "init:AUDIO_GETPROPS");
 	hwfull = (props & AUDIO_PROP_FULLDUPLEX) ? 1 : 0;
 
+	// NetBSD8 の sysctl 用に MD 名を取得。
+	// GETDEV で得られる値の定義がないので、現物合わせでよしなに頑張るorz
 	r = ioctl(fd, AUDIO_GETDEV, &dev);
 	if (r == -1)
 		err(1, "init:AUDIO_GETDEV");
+	if (strcmp(dev.config, "eap") == 0 ||
+	    strcmp(dev.config, "vs") == 0)
+	{
+		// config に MD デバイス名(unit 番号なし)が入っているパターン
+		// o eap (VMware Player)
+		// o vs (x68k)
+		// サウンドカードが2つはないのでへーきへーき…
+		snprintf(hwconfig, sizeof(hwconfig), "%s0", dev.config);
+	} else {
+		// そうでなければとりあえず
+		// config に MD デバイス名(unit 番号あり)が入ってるパターン
+		// o auich (VirtualBox)
+		strlcpy(hwconfig, dev.config, sizeof(hwconfig));
+	}
+
+	// ショートカット
 	if (strcmp(dev.config, "vs") == 0)
 		x68k = 1;
 	close(fd);
@@ -410,6 +433,55 @@ int debug_close(int line, int fd)
 	DPRINTFF(line, "close(%d)", fd);
 	int r = close(fd);
 	DRESULT(r);
+}
+
+#define GETUID()	debug_getuid(__LINE__)
+uid_t debug_getuid(int line)
+{
+	DPRINTFF(line, "getuid");
+	uid_t r = getuid();
+	DRESULT(r);
+}
+
+#define SETEUID(id)	debug_seteuid(__LINE__, id)
+int debug_seteuid(int line, uid_t id)
+{
+	DPRINTFF(line, "seteuid(%d)", (int)id);
+	int r = seteuid(id);
+	DRESULT(r);
+}
+
+#define SYSCTLBYNAME(name, oldp, oldlenp, newp, newlen, msg)	\
+	debug_sysctlbyname(__LINE__, name, oldp, oldlenp, newp, newlen, msg)
+int debug_sysctlbyname(int line, const char *name, void *oldp, size_t *oldlenp,
+	const void *newp, size_t newlen, const char *msg)
+{
+	DPRINTFF(line, "sysctlbyname(\"%s\", %s)", name, msg);
+	int r = sysctlbyname(name, oldp, oldlenp, newp, newlen);
+	DRESULT(r);
+}
+
+#define SYSTEM(cmd)	debug_system(__LINE__, cmd)
+int debug_system(int line, const char *cmd)
+{
+	DPRINTFF(line, "system(\"%s\")", cmd);
+	int r = system(cmd);
+	DRESULT(r);
+}
+
+// ---
+
+// sysctl で使う HW デバイス名を返します。
+// N8 では MD 名(vs0 とか)、
+// N9 では audioN です。
+const char *
+hwconfigname()
+{
+	if (netbsd <= 8) {
+		return hwconfig;
+	} else {
+		return hwconfig9;
+	}
 }
 
 // ---
@@ -2093,6 +2165,241 @@ test_AUDIO_SETINFO_mode()
 	}
 }
 
+// audio デバイスオープン中に audioctl がオープンできること
+void
+test_audioctl_open_1()
+{
+	int fd;
+	int ctl;
+	int r;
+	int fmode;
+	int cmode;
+
+	for (fmode = 0; fmode <= 2; fmode++) {
+		if (fmode == O_WRONLY && (props & AUDIO_PROP_PLAYBACK) == 0)
+			continue;
+		if (fmode == O_RDONLY && (props & AUDIO_PROP_CAPTURE) == 0)
+			continue;
+
+		for (cmode = 0; cmode <= 2; cmode++) {
+			TEST("audioctl_open_1(%s,%s)",
+				openmodetable[fmode], openmodetable[cmode]);
+
+			fd = OPEN(devaudio, fmode);
+			if (fd == -1)
+				err(1, "open");
+
+			ctl = OPEN(devaudioctl, cmode);
+			XP_SYS_OK(ctl);
+
+			r = CLOSE(ctl);
+			XP_SYS_EQ(0, r);
+
+			r = CLOSE(fd);
+			XP_SYS_EQ(0, r);
+		}
+	}
+}
+
+// audioctl デバイスオープン中に audio がオープンできること
+void
+test_audioctl_open_2()
+{
+	int fd;
+	int ctl;
+	int r;
+	int fmode;
+	int cmode;
+
+	for (fmode = 0; fmode <= 2; fmode++) {
+		if (fmode == O_WRONLY && (props & AUDIO_PROP_PLAYBACK) == 0)
+			continue;
+		if (fmode == O_RDONLY && (props & AUDIO_PROP_CAPTURE) == 0)
+			continue;
+
+		for (cmode = 0; cmode <= 2; cmode++) {
+			TEST("audioctl_open_2(%s,%s)",
+				openmodetable[fmode], openmodetable[cmode]);
+
+			ctl = OPEN(devaudioctl, cmode);
+			XP_SYS_OK(ctl);
+
+			fd = OPEN(devaudio, fmode);
+			XP_SYS_OK(fd);
+
+			r = CLOSE(fd);
+			XP_SYS_EQ(0, r);
+
+			r = CLOSE(ctl);
+			XP_SYS_EQ(0, r);
+		}
+	}
+}
+
+// audioctl の多重オープン
+void
+test_audioctl_open_3()
+{
+	int ctl0;
+	int ctl1;
+	int r;
+	uid_t ouid;
+
+	TEST("audioctl_open_3");
+
+	ctl0 = OPEN(devaudioctl, O_RDWR);
+	if (ctl0 == -1)
+		err(1, "open");
+
+	ctl1 = OPEN(devaudioctl, O_RDWR);
+	XP_SYS_OK(ctl1);
+
+	r = CLOSE(ctl0);
+	XP_SYS_EQ(0, r);
+
+	r = CLOSE(ctl1);
+	XP_SYS_EQ(0, r);
+}
+
+// audio とは別ユーザでも audioctl はオープンできること
+// パーミッションはもう _1 と _2 でやったのでいいか
+void
+test_audioctl_open_4()
+{
+	char name[32];
+	char cmd[64];
+	int fd;
+	int fc;
+	int r;
+	int multiuser;
+	uid_t ouid;
+
+	// /dev/audio を root がオープンした後で
+	// /dev/audioctl を一般ユーザがオープンする
+	for (int i = 0; i <= 1; i++) {
+		// N7 には multiuser の概念がない
+		// AUDIO2 は未実装
+		if (netbsd != 8) {
+			if (i == 1)
+				break;
+			TEST("audioctl_open_4");
+		} else {
+			multiuser = 1 - i;
+			TEST("audioctl_open_4(multiuser%d)", multiuser);
+
+			snprintf(name, sizeof(name), "hw.%s.multiuser", hwconfigname());
+			snprintf(cmd, sizeof(cmd),
+				"sysctl -w %s=%d > /dev/null", name, multiuser);
+			r = SYSTEM(cmd);
+			if (r == -1)
+				err(1, "system: %s", cmd);
+			if (r != 0)
+				errx(1, "system failed: %s", cmd);
+
+			// 確認
+			int newval = 0;
+			size_t len = sizeof(newval);
+			r = SYSCTLBYNAME(name, &newval, &len, NULL, 0, "get");
+			if (r == -1)
+				err(1, "multiuser");
+			if (newval != multiuser)
+				errx(1, "set multiuser=%d failed", multiuser);
+		}
+
+		fd = OPEN(devaudio, O_RDWR);
+		if (fd == -1)
+			err(1, "open");
+
+		ouid = GETUID();
+		r = SETEUID(1);
+		if (r == -1)
+			err(1, "setuid");
+
+		fc = OPEN(devaudioctl, O_RDWR);
+		XP_SYS_OK(fc);
+		if (fc != -1) {
+			r = CLOSE(fc);
+			XP_SYS_EQ(0, r);
+		}
+
+		r = SETEUID(ouid);
+		if (r == -1)
+			err(1, "setuid");
+
+		r = CLOSE(fd);
+		XP_SYS_EQ(0, r);
+	}
+}
+
+// audioctl とは別ユーザでも audio はオープンできること
+void
+test_audioctl_open_5()
+{
+	char name[32];
+	char cmd[64];
+	int fd;
+	int fc;
+	int r;
+	int multiuser;
+	uid_t ouid;
+
+	// /dev/audioctl を root がオープンした後で
+	// /dev/audio を一般ユーザがオープンする
+	for (int i = 0; i <= 1; i++) {
+		// N7 には multiuser の概念がない
+		// AUDIO2 は未実装
+		if (netbsd != 8) {
+			if (i == 1)
+				break;
+			TEST("audioctl_open_5");
+		} else {
+			multiuser = 1 - i;
+			TEST("audioctl_open_5(multiuser%d)", multiuser);
+
+			snprintf(name, sizeof(name), "hw.%s.multiuser", hwconfigname());
+			snprintf(cmd, sizeof(cmd),
+				"sysctl -w %s=%d > /dev/null", name, multiuser);
+			r = SYSTEM(cmd);
+			if (r == -1)
+				err(1, "system: %s", cmd);
+			if (r != 0)
+				errx(1, "system failed: %s", cmd);
+
+			// 確認
+			int newval = 0;
+			size_t len = sizeof(newval);
+			r = SYSCTLBYNAME(name, &newval, &len, NULL, 0, "get");
+			if (r == -1)
+				err(1, "multiuser");
+			if (newval != multiuser)
+				errx(1, "set multiuser=%d failed", multiuser);
+		}
+
+		fc = OPEN(devaudioctl, O_RDWR);
+		if (fc == -1)
+			err(1, "open");
+
+		ouid = GETUID();
+		r = SETEUID(1);
+		if (r == -1)
+			err(1, "setuid");
+
+		fd = OPEN(devaudio, O_RDWR);
+		XP_SYS_OK(fd);
+		if (fd != -1) {
+			r = CLOSE(fd);
+			XP_SYS_EQ(0, r);
+		}
+
+		r = SETEUID(ouid);
+		if (r == -1)
+			err(1, "setuid");
+
+		r = CLOSE(fc);
+		XP_SYS_EQ(0, r);
+	}
+}
+
 // テスト一覧
 #define DEF(x)	{ #x, test_ ## x }
 struct testtable testtable[] = {
@@ -2119,6 +2426,11 @@ struct testtable testtable[] = {
 	DEF(AUDIO_SETFD_RDWR),
 	DEF(AUDIO_GETINFO_eof),
 	DEF(AUDIO_SETINFO_mode),
+	DEF(audioctl_open_1),
+	DEF(audioctl_open_2),
+	DEF(audioctl_open_3),
+	DEF(audioctl_open_4),
+	DEF(audioctl_open_5),
 	{ NULL, NULL },
 };
 
