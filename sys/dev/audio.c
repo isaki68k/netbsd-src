@@ -2667,33 +2667,6 @@ audio_hw_config(struct audio_softc *sc, int is_indep)
 //	audioio.h には HW ブロックサイズとコメントがあるが、
 //	今は usrbuf の1ブロックサイズ[byte]にしたほうがよさげ。
 //
-#if 0
-	// HALF-DUPLEX
-	// 1本目:
-	//	PLAY -> play
-	//	REC -> rec
-	//	PLAY|REC -> play
-	// 2本目:
-	//	1本目がplay: PLAY -> play
-	//	1本目がplay: REC  -> ENODEV?
-	//	1本目がplay: PLAY|REC -> PLAY -> play
-	//	1本目がrec:  PLAY -> ENODEV?
-	//	1本目がrec:  REC  -> rec
-	//	1本目がrec:  PLAY|REC -> PLAY -> ENODEV?
-	//
-	// 再生専用デバイス
-	// 1本目:
-	//	PLAY -> play
-	//	REC -> ENODEV?
-	//	PLAY|REC -> PLAY -> play
-	//
-	// 録音専用デバイス
-	// 1本目:
-	//	PLAY -> ENODEV?
-	//	REC -> rec
-	//	PLAY|REC -> ENODEV?
-	//
-#endif
 
 // ai に基づいて file の両トラックを諸々セットする。
 // ai のうち初期値のままのところは sc_[pr]params, sc_[pr]pause が使われる。
