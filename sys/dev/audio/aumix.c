@@ -970,7 +970,6 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 	int error;
 
 	KASSERT(track);
-	TRACET(track, "");
 	KASSERT(is_valid_format(usrfmt));
 
 	// 入力値チェック
@@ -1103,7 +1102,11 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 		    frametobyte(&track->codec.srcbuf.fmt, 1));
 	n += snprintf(buf + n, sizeof(buf) - n, " usr=%d",
 	    track->usrbuf.capacity);
-	DPRINTF(1, "%s: bufsize:%s\n", __func__, buf);
+#if AUDIO_DEBUG > 2
+	TRACET(track, "bufsize%s", buf);
+#else
+	DEBUG(2, "%s: %bufsize%s\n", __func__, buf);
+#endif
 #endif
 	return 0;
 

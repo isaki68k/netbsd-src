@@ -1361,8 +1361,11 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	if (sc->hw_if == NULL)
 		return ENXIO;
 
-	DPRINTF(1, "%s: flags=0x%x sc=%p hdl=%p\n",
-	    __func__, flags, sc, sc->hw_hdl);
+#if AUDIO_DEBUG > 2
+	TRACE("start po=%d ro=%d", sc->sc_popens, sc->sc_ropens);
+#else
+	DPRINTF(1, "%s\n", __func__);
+#endif
 
 	af = kmem_zalloc(sizeof(audio_file_t), KM_SLEEP);
 	af->sc = sc;
@@ -2153,8 +2156,11 @@ audioctl_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	if (sc->hw_if == NULL)
 		return ENXIO;
 
-	DPRINTF(1, "%s: flags=0x%x sc=%p hdl=%p\n",
-	    __func__, flags, sc, sc->hw_hdl);
+#if AUDIO_DEBUG > 2
+	TRACE("");
+#else
+	DPRINTF(1, "%s\n", __func__);
+#endif
 
 	error = fd_allocfile(&fp, &fd);
 	if (error)
