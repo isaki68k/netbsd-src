@@ -200,6 +200,9 @@ static int audio_kqfilter(struct audio_softc *, audio_file_t *, struct knote *);
 static int audio_mmap(struct audio_softc *, off_t *, size_t, int, int *, int *,
 	struct uvm_object **, int *, audio_file_t *);
 
+static int audioctl_open(dev_t, struct audio_softc *, int, int, struct lwp *,
+	struct file **);
+
 static int audiostartr(struct audio_softc *);
 static int audiostartp(struct audio_softc *);
 //static void audio_pintr(void *);
@@ -1049,8 +1052,10 @@ audioopen(dev_t dev, int flags, int ifmt, struct lwp *l)
 	switch (AUDIODEV(dev)) {
 	case SOUND_DEVICE:
 	case AUDIO_DEVICE:
-	case AUDIOCTL_DEVICE:
 		error = audio_open(dev, sc, flags, ifmt, l, &fp);
+		break;
+	case AUDIOCTL_DEVICE:
+		error = audioctl_open(dev, sc, flags, ifmt, l, &fp);
 		break;
 	case MIXER_DEVICE:
 		error = mixer_open(dev, sc, flags, ifmt, l, &fp);
@@ -1083,8 +1088,10 @@ audioclose(struct file *fp)
 	switch (AUDIODEV(dev)) {
 	case SOUND_DEVICE:
 	case AUDIO_DEVICE:
-	case AUDIOCTL_DEVICE:
 		error = audio_close(sc, fp->f_flag, file);
+		break;
+	case AUDIOCTL_DEVICE:
+		error = 0;
 		break;
 	case MIXER_DEVICE:
 		error = mixer_close(sc, fp->f_flag, file);
@@ -1354,8 +1361,8 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	if (sc->hw_if == NULL)
 		return ENXIO;
 
-	DPRINTF(1, "audio_open: flags=0x%x sc=%p hdl=%p\n",
-		 flags, sc, sc->hw_hdl);
+	DPRINTF(1, "%s: flags=0x%x sc=%p hdl=%p\n",
+	    __func__, flags, sc, sc->hw_hdl);
 
 	af = kmem_zalloc(sizeof(audio_file_t), KM_SLEEP);
 	af->sc = sc;
@@ -2126,6 +2133,44 @@ audio_mmap(struct audio_softc *sc, off_t *offp, size_t len, int prot,
 	*flagsp = MAP_SHARED;
 #endif
 	return 0;
+}
+
+/*
+ * /dev/audioctl can be opend at any time without interference with
+ * any /dev/audio or /dev/sound.
+ */
+static int
+audioctl_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
+	struct lwp *l, struct file **nfp)
+{
+	struct file *fp;
+	audio_file_t *af;
+	int fd;
+	int error;
+
+	KASSERT(mutex_owned(sc->sc_lock));
+
+	if (sc->hw_if == NULL)
+		return ENXIO;
+
+	DPRINTF(1, "%s: flags=0x%x sc=%p hdl=%p\n",
+	    __func__, flags, sc, sc->hw_hdl);
+
+	error = fd_allocfile(&fp, &fd);
+	if (error)
+		return error;
+
+	af = kmem_zalloc(sizeof(audio_file_t), KM_SLEEP);
+	af->sc = sc;
+	af->dev = dev;
+
+	// sc_files にはつながなくていいはず
+
+	error = fd_clone(fp, fd, flags, &audio_fileops, af);
+	KASSERT(error == EMOVEFD);
+
+	*nfp = fp;
+	return error;
 }
 
 // audiostart{p,r} の呼び出し元
