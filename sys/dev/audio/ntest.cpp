@@ -960,6 +960,80 @@ test_open_5()
 	}
 }
 
+// 別ユーザとのオープン
+void
+test_open_6()
+{
+	char name[32];
+	char cmd[64];
+	int multiuser;
+	int fd0;
+	int fd1;
+	int r;
+	uid_t ouid;
+
+	for (int i = 0; i <= 1; i++) {
+		// N7 には multiuser の概念がない
+		// AUDIO2 は未実装
+		if (netbsd != 8) {
+			if (i == 1)
+				break;
+			multiuser = 0;
+			TEST("open_6");
+		} else {
+			multiuser = 1 - i;
+			TEST("open_6(multiuser%d)", multiuser);
+
+			snprintf(name, sizeof(name), "hw.%s.multiuser", hwconfigname());
+			snprintf(cmd, sizeof(cmd),
+				"sysctl -w %s=%d > /dev/null", name, multiuser);
+			r = SYSTEM(cmd);
+			if (r == -1)
+				err(1, "system: %s", cmd);
+			if (r != 0)
+				errx(1, "system failed: %s", cmd);
+
+			// 確認
+			int newval = 0;
+			size_t len = sizeof(newval);
+			r = SYSCTLBYNAME(name, &newval, &len, NULL, 0, "get");
+			if (r == -1)
+				err(1, "multiuser");
+			if (newval != multiuser)
+				errx(1, "set multiuser=%d failed", multiuser);
+		}
+
+		fd0 = OPEN(devaudio, O_WRONLY);
+		if (fd0 == -1)
+			err(1, "open");
+
+		ouid = GETUID();
+		r = SETEUID(1);
+		if (r == -1)
+			err(1, "setuid");
+
+		fd1 = OPEN(devaudio, O_WRONLY);
+		if (multiuser) {
+			// 別ユーザもオープン可能
+			XP_SYS_OK(fd1);
+		} else {
+			// 別ユーザはオープンできない
+			XP_SYS_NG(EPERM, fd1);
+		}
+		if (fd1 != -1) {
+			r = CLOSE(fd1);
+			XP_SYS_EQ(0, r);
+		}
+
+		r = SETEUID(ouid);
+		if (r == -1)
+			err(1, "setuid");
+
+		r = CLOSE(fd0);
+		XP_SYS_EQ(0, r);
+	}
+}
+
 // SETINFO の受付エンコーディング
 // 正しく変換できるかどうかまではここでは調べない。
 void
@@ -2408,6 +2482,7 @@ struct testtable testtable[] = {
 	DEF(open_3),
 	DEF(open_4),
 	DEF(open_5),
+	DEF(open_6),
 	DEF(encoding_1),
 	DEF(encoding_2),
 	DEF(drain_1),
