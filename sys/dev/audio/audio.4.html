@@ -417,7 +417,26 @@ is normally accessed with read(2) or write(2) calls, but it
 can also be mapped into user memory with mmap(2) <span class=n7>(when
 supported by the device)</span>. Once the device has been mapped it
 can no longer be accessed by read or write; all access is by
-reading and writing to the mapped memory. The device appears
+reading and writing to the mapped memory.
+</p>
+<p class=bad7 style="margin-left:8%">
+「mmap されると read や write によるアクセスはすべて出来なくなる」
+ように読めるが、
+実際には mmap されるのは再生バッファだけで、
+この制限が録音バッファのほうには及んでいない。
+そのため (O_RDWR なら) mmap した後も read は発行できる。
+バグなのか仕様なのか。
+</p>
+<p class=a2 style="margin-left:8%">
+AUDIO2 では mmap されると read も write もエラーになる、にする?
+</p>
+<p class=a2 style="margin-left:8%">
+その read/write の
+エラーコードが従来 EINVAL (Invalid Argument) だったが、
+EPERM (Operation not permitted) のほうがいいんじゃないかと思うので変えてみる。
+</p>
+<p style="margin-left:8%">
+The device appears
 as a block of memory of size <i>buffersize</i> (as available
 via AUDIO_GETINFO or AUDIO_GETBUFINFO). The device driver
 will continuously move data from this buffer from/to the
@@ -425,12 +444,20 @@ audio hardware, wrapping around at the end of the buffer. To
 find out where the hardware is currently accessing data in
 the buffer the AUDIO_GETIOFFS and AUDIO_GETOOFFS calls can
 be used. The playing and recording buffers are distinct and
-must be mapped separately if both are to be used. Only
+must be mapped separately if both are to be used.
+</p>
+<p class=bad7 style="margin-left:8%">
+本来は再生バッファを PROT_WRITE、録音バッファを PROT_READ で別々に
+mmap させるつもりだったようだが、
+VM あたりの制約によりこれが実現できず、今はこのフラグに関係なく
+常に再生バッファの mmap のみ可能。
+もう manpage の記載を修正したほうがいいのでは。
+</p>
+<p style="margin-left:8%">
+Only
 encodings that are not emulated (i.e. where
 AUDIO_ENCODINGFLAG_EMULATED is not set) work properly for a
 mapped device.</p>
-<p class=comment style="margin-left:8%">mmap(2) 全般は後回し。
-現行仕様に問題が多い。</p>
 
 <p style="margin-left:8%; margin-top: 1em">The audio
 device, like most devices, can be used in <i>select</i>, can

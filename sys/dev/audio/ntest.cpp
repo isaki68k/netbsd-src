@@ -13,6 +13,7 @@
 #include <sys/audioio.h>
 #include <sys/cdefs.h>
 #include <sys/ioctl.h>
+#include <sys/mman.h>
 #include <sys/param.h>
 #include <sys/sysctl.h>
 #include <sys/wait.h>
@@ -315,6 +316,14 @@ void xp_sys_ok(int line, int act, const char *varname)
 		xp_fail(line, "%s expects success but -1,err#%d(%s)",
 			varname, errno, strerror(errno));
 }
+void xp_sys_ok(int line, void *act, const char *varname)
+{
+	testcount++;
+	if (act == (void *)-1)
+		xp_fail(line, "%s expects success but -1,err#%d(%s)",
+			varname, errno, strerror(errno));
+}
+
 // システムコールがexperrnoで失敗することを期待
 #define XP_SYS_NG(experrno, act) xp_sys_ng(__LINE__, experrno, act, #act)
 void xp_sys_ng(int line, int experrno, int act, const char *varname)
@@ -322,6 +331,21 @@ void xp_sys_ng(int line, int experrno, int act, const char *varname)
 	testcount++;
 	if (act != -1) {
 		xp_fail(line, "%s expects -1,err#%d but %d",
+			varname, experrno, act);
+	} else if (experrno != errno) {
+		char acterrbuf[100];
+		int acterrno = errno;
+		strlcpy(acterrbuf, strerror(acterrno), sizeof(acterrbuf));
+		xp_fail(line, "%s expects -1,err#%d(%s) but -1,err#%d(%s)",
+			varname, experrno, strerror(experrno),
+			acterrno, acterrbuf);
+	}
+}
+void xp_sys_ng(int line, int experrno, void *act, const char *varname)
+{
+	testcount++;
+	if (act != (void *)-1) {
+		xp_fail(line, "%s expects -1,err#%d but %p",
 			varname, experrno, act);
 	} else if (experrno != errno) {
 		char acterrbuf[100];
@@ -369,6 +393,20 @@ void xp_buffsize(int line, bool exp, int act, const char *varname)
 			r, backup_errno, strerror(backup_errno));	\
 	} else {	\
 		DPRINTF(" = %d\n", r);	\
+	}	\
+	errno = backup_errno;	\
+	return r;	\
+} while (0)
+
+// ポインタ版 (mmap)
+// -1 は -1 と表示してくれたほうが分かりやすい
+#define DRESULT_PTR(r)	do {	\
+	int backup_errno = errno;	\
+	if ((r) == (void *)-1) {	\
+		DPRINTF(" = -1, err#%d %s\n",	\
+			backup_errno, strerror(backup_errno));	\
+	} else {	\
+		DPRINTF(" = %p\n", r);	\
 	}	\
 	errno = backup_errno;	\
 	return r;	\
@@ -432,6 +470,70 @@ int debug_close(int line, int fd)
 {
 	DPRINTFF(line, "close(%d)", fd);
 	int r = close(fd);
+	DRESULT(r);
+}
+
+#define MMAP(ptr, len, prot, flags, fd, offset)	\
+	debug_mmap(__LINE__, ptr, len, prot, flags, fd, offset)
+void *debug_mmap(int line, void *ptr, int len, int prot, int flags, int fd,
+	int offset)
+{
+	char protbuf[256];
+	char flagbuf[256];
+	int n;
+
+#define ADDFLAG(buf, var, name)	do {	\
+	if (((var) & (name)))	\
+		n = strlcat(buf, "|" #name, sizeof(buf));	\
+		var &= ~(name);	\
+} while (0)
+
+	n = 0;
+	protbuf[n] = '\0';
+	if (prot == 0) {
+		strlcpy(protbuf, "|PROT_NONE", sizeof(protbuf));
+	} else {
+		ADDFLAG(protbuf, prot, PROT_EXEC);
+		ADDFLAG(protbuf, prot, PROT_WRITE);
+		ADDFLAG(protbuf, prot, PROT_READ);
+		if (prot != 0)
+			snprintf(protbuf + n, sizeof(protbuf) - n, "|prot=0x%x", prot);
+	}
+
+	n = 0;
+	flagbuf[n] = '\0';
+	if (flags == 0) {
+		strlcpy(flagbuf, "|MAP_FILE", sizeof(flagbuf));
+	} else {
+		ADDFLAG(flagbuf, flags, MAP_SHARED);
+		ADDFLAG(flagbuf, flags, MAP_PRIVATE);
+		ADDFLAG(flagbuf, flags, MAP_FIXED);
+		ADDFLAG(flagbuf, flags, MAP_INHERIT);
+		ADDFLAG(flagbuf, flags, MAP_HASSEMAPHORE);
+		ADDFLAG(flagbuf, flags, MAP_TRYFIXED);
+		ADDFLAG(flagbuf, flags, MAP_WIRED);
+		ADDFLAG(flagbuf, flags, MAP_ANON);
+		if ((flags & MAP_ALIGNMENT_MASK)) {
+			n += snprintf(flagbuf + n, sizeof(flagbuf) - n, "|MAP_ALIGN(%d)",
+				((flags & MAP_ALIGNMENT_MASK) >> MAP_ALIGNMENT_SHIFT));
+			flags &= ~MAP_ALIGNMENT_MASK;
+		}
+		if (flags != 0)
+			n += snprintf(flagbuf + n, sizeof(flagbuf) - n, "|flag=0x%x",
+				flags);
+	}
+
+	DPRINTFF(line, "mmap(%p, %d, %s, %s, %d, %d)",
+		ptr, len, protbuf + 1, flagbuf + 1, fd, offset);
+	void *r = mmap(ptr, len, prot, flags, fd, offset);
+	DRESULT_PTR(r);
+}
+
+#define MUNMAP(ptr, len)	debug_munmap(__LINE__, ptr, len)
+int debug_munmap(int line, void *ptr, int len)
+{
+	DPRINTFF(line, "munmap(%p, %d)", ptr, len);
+	int r = munmap(ptr, len);
 	DRESULT(r);
 }
 
@@ -1585,6 +1687,565 @@ test_readwrite_3()
 	CLOSE(fd1);
 	// ここまで来れば自動的に成功とする
 	XP_EQ(0, 0);
+}
+
+// mmap できる mode と prot の組み合わせ
+// それと mmap 出来たら read/write は出来ないのテスト
+void
+test_mmap_1()
+{
+	struct audio_info ai;
+	int fd;
+	int r;
+	int len;
+	int prot;
+	void *ptr;
+	struct {
+		int mode;
+		int prot;
+		int exp;	// AUDIO2 で mmap が成功するか
+	} exptable[] = {
+		// 現状 VM システムの制約で mmap は再生バッファに対してのみのようだ。
+		// prot はぶっちゃけ見ていないようだ。
+		// N7 では open mode に関わらず再生バッファは存在するので mmap は
+		// 常に成功する。
+		// AUDIO2 では再生バッファがあれば成功なので O_RDONLY 以外なら成功
+		{ O_RDONLY,	PROT_NONE,				0 },
+		{ O_RDONLY,	PROT_READ,				0 },
+		{ O_RDONLY,	PROT_WRITE,				0 },
+		{ O_RDONLY,	PROT_READ | PROT_WRITE,	0 },
+
+		{ O_WRONLY,	PROT_NONE,				1 },
+		{ O_WRONLY,	PROT_READ,				1 },
+		{ O_WRONLY,	PROT_WRITE,				1 },
+		{ O_WRONLY,	PROT_READ | PROT_WRITE,	1 },
+
+		// HWFull の場合
+		{ O_RDWR,	PROT_NONE,				1 },
+		{ O_RDWR,	PROT_READ,				1 },
+		{ O_RDWR,	PROT_WRITE,				1 },
+		{ O_RDWR,	PROT_READ | PROT_WRITE,	1 },
+
+		// HWHalf の場合 (-O_RDWR を取り出した時に加工する)
+		{ -O_RDWR,	PROT_NONE,				1 },
+		{ -O_RDWR,	PROT_READ,				1 },
+		{ -O_RDWR,	PROT_WRITE,				1 },
+		{ -O_RDWR,	PROT_READ | PROT_WRITE,	1 },
+	};
+
+	if ((props & AUDIO_PROP_MMAP) == 0) {
+		TEST("mmap_1");
+		return;
+	}
+
+	for (int i = 0; i < __arraycount(exptable); i++) {
+		int mode = exptable[i].mode;
+		int prot = exptable[i].prot;
+		int expected = exptable[i].exp;
+		int half;
+
+		half = 0;
+		if (hwfull) {
+			// HWFull なら O_RDWR のほう
+			if (mode < 0)
+				continue;
+		} else {
+			// HWHalf なら O_RDWR は負数のほう
+			if (mode == O_RDWR)
+				continue;
+			if (mode == -O_RDWR) {
+				mode = O_RDWR;
+				half = 1;
+			}
+		}
+
+		// N7、N8 なら mmap 自体は常に成功する
+		if (netbsd <= 8)
+			expected = 1;
+
+		char protbuf[32];
+		if (prot == 0) {
+			strlcpy(protbuf, "PROT_NONE", sizeof(protbuf));
+		} else {
+			snprintb_m(protbuf, sizeof(protbuf),
+				"\177\020" "b\1PROT_WRITE\0b\0PROT_READ\0", prot, 0);
+		}
+		TEST("mmap_1(%s,%s)", openmodetable[mode], protbuf);
+
+		fd = OPEN(devaudio, mode);
+		if (fd == -1)
+			err(1, "open");
+
+		r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "get");
+		if (r == -1)
+			err(1, "AUDIO_GETINFO");
+
+		// 再生側しかサポートしていないのでこれでいい
+		len = ai.play.buffer_size;
+
+		// pause にしとく
+		AUDIO_INITINFO(&ai);
+		ai.play.pause = 1;
+		ai.record.pause = 1;
+		r = IOCTL(fd, AUDIO_SETINFO, &ai, "pause");
+		if (r == -1)
+			err(1, "AUDIO_SETINFO");
+
+		ptr = MMAP(NULL, len, prot, MAP_FILE, fd, 0);
+		if (expected == 0) {
+			XP_SYS_NG(EACCES, ptr);
+		} else {
+			XP_SYS_OK(ptr);
+
+			// read トラックは mmap フラグ立ってないので read は出来てしまう
+			if (mode == O_RDONLY || (mode == O_RDWR && hwfull)) {
+				r = READ(fd, &ai, 0);
+				XP_SYS_EQ(0, r);
+			}
+			// write は出来なくなること
+			if (mode == O_WRONLY || mode == O_RDWR) {
+				r = WRITE(fd, &ai, 4);
+				if (netbsd <= 8)
+					XP_SYS_NG(EINVAL, r);
+				else
+					XP_SYS_NG(EPERM, r);
+			}
+
+			r = MUNMAP(ptr, len);
+			XP_SYS_EQ(0, r);
+		}
+
+		// 再生側の pause が効いてること
+		// 録音側はどっちらけなので調べない
+		if (mode != O_RDONLY) {
+			r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+			XP_SYS_EQ(0, r);
+			XP_EQ(1, ai.play.pause);
+		}
+
+		r = CLOSE(fd);
+		XP_SYS_EQ(0, r);
+
+		// N7 では mmap したディスクリプタをクローズした直後は
+		// オープンが失敗する気がする…。
+		// なのでここで一回オープンしてリセット(?)しておく。
+		if (netbsd <= 7) {
+			fd = OPEN(devaudio, mode);
+			if (fd != -1)
+				CLOSE(fd);
+		}
+	}
+}
+
+// mmap の len と offset パラメータ
+void
+test_mmap_2()
+{
+	struct audio_info ai;
+	int fd;
+	int r;
+	int prot;
+	size_t len;
+	off_t offset;
+	void *ptr;
+	int bufsize;
+	int pagesize;
+
+	if ((props & AUDIO_PROP_MMAP) == 0) {
+		TEST("mmap_2");
+		return;
+	}
+
+	// とりあえず再生側のことしか考えなくていいか。
+
+	len = sizeof(pagesize);
+	r = SYSCTLBYNAME("hw.pagesize", &pagesize, &len, NULL, 0, "get");
+	if (r == -1)
+		err(1, "sysctl");
+
+	fd = OPEN(devaudio, O_WRONLY);
+	if (fd == -1)
+		err(1, "open");
+
+	// buffer_size 取得
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	if (r == -1)
+		err(1, "AUDIO_GETINFO");
+	bufsize = ai.play.buffer_size;
+
+	// バッファサイズのほうが大きい場合とページサイズのほうが大きい場合が
+	// あって、どっちらけ。
+	int lsize = roundup2(bufsize, pagesize);
+
+	struct {
+		size_t len;
+		off_t offset;
+		int exp;
+	} table[] = {
+		// len		offset	expected
+		{ 0,		0,		0 },		// len=0 だけど構わないらしい
+		{ 1,		0,		0 },		// len が短くても構わないらしい
+		{ lsize,	0,		0 },		// 大きい方ぴったり
+		{ lsize + 1,0,		EOVERFLOW },// それを超えてはいけない
+
+		{ 0,		-1,		EINVAL },	// 負数
+		{ 0,	lsize,		0 },		// これは意味ないはずだが計算上 OK...
+		{ 0,	lsize + 1,	EOVERFLOW },// 足して超えるので NG
+		{ 1,	lsize,		EOVERFLOW },// 足して超えるので NG
+	};
+
+	for (int i = 0; i < __arraycount(table); i++) {
+		len = table[i].len;
+		offset = table[i].offset;
+		int exp = table[i].exp;
+		TEST("mmap_2(len=%d,offset=%d)", (int)len, (int)offset);
+
+		ptr = MMAP(NULL, len, PROT_WRITE, MAP_FILE, fd, offset);
+		if (exp == 0) {
+			XP_SYS_OK(ptr);
+		} else {
+			// N7 時点ではまだ EOVERFLOW のチェックがなかった
+			if (netbsd <= 7 && exp == EOVERFLOW)
+				exp = EINVAL;
+			XP_SYS_NG(exp, ptr);
+		}
+
+		if (ptr != MAP_FAILED) {
+			r = MUNMAP(ptr, len);
+			XP_SYS_EQ(0, r);
+		}
+	}
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+
+	// N7 では mmap したディスクリプタをクローズした直後は
+	// オープンが失敗する。
+	// なのでここで一回オープンしてリセット(?)しておく。
+	if (netbsd <= 7) {
+		fd = OPEN(devaudio, O_WRONLY);
+		if (fd != -1)
+			CLOSE(fd);
+	}
+}
+
+// mmap するとすぐに動き始める
+void
+test_mmap_3()
+{
+	struct audio_info ai;
+	int fd;
+	int r;
+	int len;
+	int prot;
+	void *ptr;
+
+	// とりあえず再生側のことしか考えなくていいか。
+	TEST("mmap_3");
+	if ((props & AUDIO_PROP_MMAP) == 0) {
+		return;
+	}
+
+	fd = OPEN(devaudio, O_WRONLY);
+	if (fd == -1)
+		err(1, "open");
+
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "get");
+	if (r == -1)
+		err(1, "AUDIO_GETINFO");
+	len = ai.play.buffer_size;
+
+	ptr = MMAP(NULL, len, prot, MAP_FILE, fd, 0);
+	XP_SYS_OK(ptr);
+
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "get");
+	XP_SYS_EQ(0, r);
+	XP_EQ(1, ai.play.active);
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+
+	// N7 では mmap したディスクリプタをクローズした直後は
+	// オープンが失敗する。
+	// なのでここで一回オープンしてリセット(?)しておく。
+	if (netbsd <= 7) {
+		fd = OPEN(devaudio, O_WRONLY);
+		if (fd != -1)
+			CLOSE(fd);
+	}
+}
+
+// 同一ディスクリプタで二重 mmap
+void
+test_mmap_4()
+{
+	struct audio_info ai;
+	int fd;
+	int r;
+	int len;
+	int prot;
+	void *ptr;
+	void *ptr2;
+
+	TEST("mmap_4");
+	if ((props & AUDIO_PROP_MMAP) == 0) {
+		return;
+	}
+
+	fd = OPEN(devaudio, O_WRONLY);
+	if (fd == -1)
+		err(1, "open");
+
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "get");
+	if (r == -1)
+		err(1, "AUDIO_GETINFO");
+	len = ai.play.buffer_size;
+
+	ptr = MMAP(NULL, len, prot, MAP_FILE, fd, 0);
+	XP_SYS_OK(ptr);
+
+	// N7 では成功するようだが意図してるのかどうか分からん。
+	// N8 も成功するようだが意図してるのかどうか分からん。
+	ptr2 = MMAP(NULL, len, prot, MAP_FILE, fd, 0);
+	XP_SYS_OK(ptr2);
+	if (ptr2 != MAP_FAILED) {
+		r = MUNMAP(ptr2, len);
+		XP_SYS_EQ(0, r);
+	}
+
+	r = MUNMAP(ptr, len);
+	XP_SYS_EQ(0, r);
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+
+	// N7 では mmap したディスクリプタをクローズした直後は
+	// オープンが失敗する。
+	// なのでここで一回オープンしてリセット(?)しておく。
+	if (netbsd <= 7) {
+		fd = OPEN(devaudio, O_WRONLY);
+		if (fd != -1)
+			CLOSE(fd);
+	}
+}
+
+// 別ディスクリプタで mmap
+void
+test_mmap_5()
+{
+	struct audio_info ai;
+	int fd0;
+	int fd1;
+	int r;
+	int len;
+	int prot;
+	void *ptr0;
+	void *ptr1;
+
+	TEST("mmap_5");
+	// 多重オープンはできない
+	if (netbsd <= 7)
+		return;
+	if ((props & AUDIO_PROP_MMAP) == 0) {
+		return;
+	}
+
+	fd0 = OPEN(devaudio, O_WRONLY);
+	if (fd0 == -1)
+		err(1, "open");
+
+	r = IOCTL(fd0, AUDIO_GETBUFINFO, &ai, "get");
+	if (r == -1)
+		err(1, "AUDIO_GETINFO");
+	len = ai.play.buffer_size;
+
+	fd1 = OPEN(devaudio, O_WRONLY);
+	if (fd1 == -1)
+		err(1, "open");
+
+	ptr0 = MMAP(NULL, len, prot, MAP_FILE, fd0, 0);
+	XP_SYS_OK(ptr0);
+
+	ptr1 = MMAP(NULL, len, prot, MAP_FILE, fd1, 0);
+	XP_SYS_OK(ptr1);
+
+	r = MUNMAP(ptr1, len);
+	XP_SYS_EQ(0, r);
+
+	r = CLOSE(fd1);
+	XP_SYS_EQ(0, r);
+
+	r = MUNMAP(ptr0, len);
+	XP_SYS_EQ(0, r);
+
+	r = CLOSE(fd0);
+	XP_SYS_EQ(0, r);
+}
+
+// mmap 前に GET[IO]OFFS すると、既に次のポジションがセットされているようだ。
+// N7 だと RDONLY でも WRONLY でも同じ値が読めるようだ。
+// GETIOFFS は初期オフセット 0 だがどうせこっちは動いてないはず。
+void
+test_mmap_6()
+{
+	struct audio_info ai;
+	struct audio_offset ao;
+	int fd;
+	int r;
+
+	for (int mode = 0; mode <= 2; mode++) {
+		TEST("mmap_6(%s)", openmodetable[mode]);
+
+		fd = OPEN(devaudio, mode);
+		if (fd == -1)
+			err(1, "open");
+
+		r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+		if (r == -1)
+			err(1, "AUDIO_GETINFO");
+
+		r = IOCTL(fd, AUDIO_GETOOFFS, &ao, "");
+		XP_SYS_EQ(0, r);
+		XP_EQ(0, ao.samples);			// 転送バイト数 0
+		XP_EQ(0, ao.deltablks);			// 前回チェック時の転送ブロック数 0
+		if (netbsd == 9 && mode == O_RDONLY) {
+			// N7, N8 は常にトラックとかがあるのでいつでも ao.offset が
+			// 次のブロックを指せるが、AUDIO2 では O_RDONLY だと再生トラックは
+			// 存在しないので、再生ブロックサイズもない。
+			// これはやむを得ないか。
+			XP_EQ(0, ao.offset);
+		} else {
+			XP_EQ(ai.blocksize, ao.offset);	// これから転送する位置は次ブロック
+		}
+
+		r = IOCTL(fd, AUDIO_GETIOFFS, &ao, "");
+		XP_SYS_EQ(0, r);
+		XP_EQ(0, ao.samples);			// 転送バイト数 0
+		XP_EQ(0, ao.deltablks);			// 前回チェック時の転送ブロック数 0
+		XP_EQ(0, ao.offset);			// 0
+
+		r = CLOSE(fd);
+		XP_SYS_EQ(0, r);
+	}
+}
+
+// 1ブロック write した後に GETOOFFS すると
+void
+test_mmap_7()
+{
+	struct audio_info ai;
+	struct audio_offset ao;
+	char *buf;
+	int fd;
+	int r;
+
+	TEST("mmap_7");
+	if (x68k && netbsd <= 7) {
+		// HW エンコードにセットするあたりのテストが面倒
+		return;
+	}
+
+	fd = OPEN(devaudio, O_WRONLY);
+	if (fd == -1)
+		err(1, "open");
+
+	AUDIO_INITINFO(&ai);
+	ai.play.encoding = AUDIO_ENCODING_SLINEAR_LE;
+	ai.play.precision = 16;
+	ai.play.channels = 2;
+	ai.play.sample_rate = 48000;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
+	if (r == -1)
+		err(1, "AUDIO_SETINFO");
+
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	if (r == -1)
+		err(1, "AUDIO_GETINFO");
+
+	buf = (char *)malloc(ai.blocksize);
+	if (buf == NULL)
+		err(1, "malloc");
+	memset(buf, 0, ai.blocksize);
+
+	r = WRITE(fd, buf, ai.blocksize);
+	XP_SYS_EQ(ai.blocksize, r);
+
+	r = IOCTL(fd, AUDIO_GETOOFFS, &ao, "");
+	XP_SYS_EQ(0, r);
+	XP_EQ(0, ao.samples);			// まだ mmap 転送はしてない
+	XP_EQ(0, ao.deltablks);			// 前回チェック時の転送ブロック数
+	XP_EQ(ai.blocksize, ao.offset);	// 次ブロック
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+}
+
+// mmap 開始
+void
+test_mmap_8()
+{
+	struct audio_info ai;
+	struct audio_offset ao;
+	char *ptr;
+	int fd;
+	int r;
+
+	TEST("mmap_8");
+	if (x68k && netbsd <= 7) {
+		// HW エンコードにセットするあたりのテストが面倒
+		return;
+	}
+
+	fd = OPEN(devaudio, O_WRONLY);
+	if (fd == -1)
+		err(1, "open");
+
+	AUDIO_INITINFO(&ai);
+	ai.play.encoding = AUDIO_ENCODING_SLINEAR_LE;
+	ai.play.precision = 16;
+	ai.play.channels = 2;
+	ai.play.sample_rate = 48000;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
+	if (r == -1)
+		err(1, "AUDIO_SETINFO");
+
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	if (r == -1)
+		err(1, "AUDIO_GETINFO");
+
+	ptr = (char *)MMAP(NULL, ai.play.buffer_size, 0, 0, fd, 0);
+	XP_SYS_OK(ptr);
+
+	// 雑なテスト
+	// mmap 直後は理想的には samples = 0、offset = blksize になる。
+
+	r = IOCTL(fd, AUDIO_GETOOFFS, &ao, "");
+	XP_SYS_EQ(0, r);
+	XP_EQ(0, ao.samples);			// まだ書き込みはない
+	XP_EQ(0, ao.deltablks);			// 前回チェック時の転送ブロック数
+	XP_EQ(ai.blocksize, ao.offset);	//
+
+	usleep(50 * 1000);
+	// 50msec 後には理想的には samples は 1ブロック分、offset ももう
+	// 1ブロック分進んでいるはず。
+
+	r = IOCTL(fd, AUDIO_GETOOFFS, &ao, "");
+	XP_SYS_EQ(0, r);
+	XP_EQ(ai.blocksize, ao.samples);// 1ブロック書き込み済み
+	XP_EQ(1, ao.deltablks);			// 前回チェック時の転送ブロック数
+	XP_EQ(ai.blocksize * 2, ao.offset);	//
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+
+	// N7 では mmap したディスクリプタをクローズした直後は
+	// オープンが失敗する。
+	// なのでここで一回オープンしてリセット(?)しておく。
+	if (netbsd <= 7) {
+		fd = OPEN(devaudio, O_WRONLY);
+		if (fd != -1)
+			CLOSE(fd);
+	}
 }
 
 // FIOASYNC が同時に2人設定できるか
@@ -2760,6 +3421,14 @@ struct testtable testtable[] = {
 	DEF(readwrite_1),
 	DEF(readwrite_2),
 	DEF(readwrite_3),
+	DEF(mmap_1),
+	DEF(mmap_2),
+	DEF(mmap_3),
+	DEF(mmap_4),
+	DEF(mmap_5),
+	DEF(mmap_6),
+	DEF(mmap_7),
+	DEF(mmap_8),
 	DEF(FIOASYNC_1),
 	DEF(FIOASYNC_2),
 	DEF(FIOASYNC_3),

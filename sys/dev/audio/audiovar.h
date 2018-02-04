@@ -106,8 +106,12 @@ struct audio_track {
 	int mode;
 
 	audio_ring_t	usrbuf;		/* user i/o buffer */
-	u_int		usrbuf_nblks;	/* block num of usrbuf */
-	u_int		usrbuf_blksize;	/* block size of usrbuf */
+	u_int		usrbuf_nblks;	/* num of blocks in usrbuf */
+	u_int		usrbuf_blksize;	/* usrbuf block size in bytes */
+	struct uvm_object *uobj;
+	bool		mmapped;	/* device is mmap()-ed */
+	u_int		usrbuf_stamp;	/* transferred bytes from/to stage */
+	u_int		usrbuf_stamp_last; /* last stamp */
 
 	audio_format2_t	inputfmt;	/* track input format. */
 					/* userfmt for play, mixerfmt for rec */

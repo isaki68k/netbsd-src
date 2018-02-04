@@ -23,6 +23,8 @@
 } while (0)
 
 void *audio_realloc(void *memblock, size_t bytes);
+static int audio_realloc_usrbuf(audio_track_t *, int);
+static void audio_free_usrbuf(audio_track_t *);
 static audio_filter_t audio_track_get_codec(const audio_format2_t *,
 	const audio_format2_t *);
 static int audio_pmixer_mixall(struct audio_softc *sc, bool isintr);
@@ -140,6 +142,96 @@ audio_realloc(void *memblock, size_t bytes)
 	}
 }
 
+// usrbuf を newbufsize で確保し直します。
+// usrbuf は mmap されるためこちらを使用してください。
+// usrbuf.capacity を更新する前に呼び出してください。
+// メモリが確保できれば track->mem、track->capacity をセットし 0 を返します。
+// 確保できなければ track->mem、track->capacity をクリアし errno を返します。
+static int
+audio_realloc_usrbuf(audio_track_t *track, int newbufsize)
+{
+	vaddr_t vstart;
+	vsize_t oldvsize;
+	vsize_t newvsize;
+	int error;
+
+	KASSERT(newbufsize > 0);
+
+	/* Get a nonzero multiple of PAGE_SIZE */
+	newvsize = roundup2(MAX(newbufsize, PAGE_SIZE), PAGE_SIZE);
+
+	if (track->usrbuf.mem != NULL) {
+		oldvsize = roundup2(MAX(track->usrbuf.capacity, PAGE_SIZE),
+		    PAGE_SIZE);
+		if (oldvsize == newvsize) {
+			track->usrbuf.capacity = newbufsize;
+			return 0;
+		}
+		vstart = (vaddr_t)track->usrbuf.mem;
+		uvm_unmap(kernel_map, vstart, vstart + oldvsize);
+		/* uvm_unmap also detach uobj */
+		track->uobj = NULL;		/* paranoia */
+		track->usrbuf.mem = NULL;
+	}
+
+	/* Create a uvm anonymous object */
+	track->uobj = uao_create(newvsize, 0);
+
+	/* Map it into the kernel virtual address space */
+	vstart = 0;
+	error = uvm_map(kernel_map, &vstart, newvsize, track->uobj, 0, 0,
+	    UVM_MAPFLAG(UVM_PROT_RW, UVM_PROT_RW, UVM_INH_NONE,
+	    UVM_ADV_RANDOM, 0));
+	if (error) {
+		DPRINTF(1, "%s: uvm_map failed\n", __func__);
+		uao_detach(track->uobj);	/* release reference */
+		goto abort;
+	}
+
+	error = uvm_map_pageable(kernel_map, vstart, vstart + newvsize,
+	    false, 0);
+	if (error) {
+		DPRINTF(1, "%s: uvm_map_pageable failed\n", __func__);
+		uvm_unmap(kernel_map, vstart, vstart + newvsize);
+		/* uvm_unmap also detach uobj */
+		goto abort;
+	}
+
+	track->usrbuf.mem = (void *)vstart;
+	track->usrbuf.capacity = newbufsize;
+	memset(track->usrbuf.mem, 0, newvsize);
+	return 0;
+
+	/* failure */
+abort:
+	track->uobj = NULL;		/* paranoia */
+	track->usrbuf.mem = NULL;
+	track->usrbuf.capacity = 0;
+	return error;
+}
+
+static void
+audio_free_usrbuf(audio_track_t *track)
+{
+	vaddr_t vstart;
+	vsize_t vsize;
+
+	vstart = (vaddr_t)track->usrbuf.mem;
+	vsize = roundup2(MAX(track->usrbuf.capacity, PAGE_SIZE), PAGE_SIZE);
+	if (track->usrbuf.mem != NULL) {
+		/*
+		 * Unmap the kernel mapping.  uvm_unmap releases the
+		 * reference to the uvm object, and this should be the
+		 * last virtual mapping of the uvm object, so no need
+		 * to explicitly release (`detach') the object.
+		 */
+		uvm_unmap(kernel_map, vstart, vstart + vsize);
+
+		track->uobj = NULL;
+		track->usrbuf.mem = NULL;
+		track->usrbuf.capacity = 0;
+	}
+}
 
 static void
 audio_track_chvol(audio_filter_arg_t *arg)
@@ -538,7 +630,7 @@ audio_track_destroy(audio_track_t *track)
 	// ASSERT のほうがよかろう。
 	KASSERT(track);
 
-	audio_free(track->usrbuf.mem);
+	audio_free_usrbuf(track);
 	audio_free(track->codec.srcbuf.mem);
 	audio_free(track->chvol.srcbuf.mem);
 	audio_free(track->chmix.srcbuf.mem);
@@ -926,7 +1018,7 @@ abort:
  *               write
  *                | uiomove
  *                v
- *  usrbuf      [...............]  byte ring buffer
+ *  usrbuf      [...............]  byte ring buffer (mmap-able)
  *                | memcpy
  *                v
  *  codec.srcbuf[....]             1 block (ring) buffer   <-- stage input
@@ -953,10 +1045,13 @@ abort:
  *  outputbuf   [.....]            1 block (ring) buffer
  *                | memcpy
  *                v
- *  usrbuf      [...............]  byte ring buffer
+ *  usrbuf      [...............]  byte ring buffer (mmap-able *)
  *                | uiomove
  *                v
  *               read
+ *
+ *    *: recoding usrbuf is also mmap-able due to symmetry with playback
+ *       but for now it will not be mmapped.
  */
 
 // トラックのユーザランド側フォーマットを設定します。
@@ -968,6 +1063,7 @@ int
 audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 {
 	int error;
+	int newbufsize;
 
 	KASSERT(track);
 	KASSERT(is_valid_format(usrfmt));
@@ -1062,18 +1158,16 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 	}
 
 	// usrfmt に従って usrbuf を作る
+	track->usrbuf.top = 0;
+	track->usrbuf.count = 0;
 	track->usrbuf_nblks = NBLKOUT;
 	track->usrbuf_blksize = frametobyte(&track->usrbuf.fmt,
 	    frame_per_block_roundup(track->mixer, &track->usrbuf.fmt));
-	track->usrbuf.top = 0;
-	track->usrbuf.count = 0;
-	track->usrbuf.capacity = track->usrbuf_nblks * track->usrbuf_blksize;
-	track->usrbuf.mem = audio_realloc(track->usrbuf.mem,
-	    track->usrbuf.capacity);
-	if (track->usrbuf.mem == NULL) {
+	newbufsize = track->usrbuf_nblks * track->usrbuf_blksize;
+	error = audio_realloc_usrbuf(track, newbufsize);
+	if (error) {
 		DPRINTF(1, "%s: malloc usrbuf(%d) failed\n", __func__,
-		    track->usrbuf.capacity);
-		error = ENOMEM;
+		    newbufsize);
 		goto error;
 	}
 
@@ -1111,7 +1205,7 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 	return 0;
 
 error:
-	audio_free(track->usrbuf.mem);
+	audio_free_usrbuf(track);
 	audio_free(track->codec.srcbuf.mem);
 	audio_free(track->chvol.srcbuf.mem);
 	audio_free(track->chmix.srcbuf.mem);
@@ -1787,6 +1881,17 @@ audio_pmixer_mixall(struct audio_softc *sc, bool isintr)
 		if (track->is_pause) {
 			TRACET(track, "skip; paused");
 			continue;
+		}
+
+		// mmap トラックならここで入力があったことにみせかける
+		if (track->mmapped) {
+			audio_ring_appended(&track->usrbuf, track->usrbuf_blksize);
+			track->usrbuf_stamp += track->usrbuf_blksize;
+			TRACET(track, "mmap; usr=%d/%d/%d stamp=%d",
+			    track->usrbuf.top,
+			    track->usrbuf.count,
+			    track->usrbuf.capacity,
+			    track->usrbuf_stamp);
 		}
 
 		if (track->outputbuf.count < req && track->usrbuf.count > 0) {
@@ -2542,6 +2647,10 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 	if (sc->hw_if == NULL)
 		return ENXIO;
 
+	// N8 までは EINVAL だったがこっちのほうがよかろう
+	if (track->mmapped)
+		return EPERM;
+
 	if (uio->uio_resid == 0) {
 		track->eofcounter++;
 		return 0;
@@ -2697,7 +2806,9 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 	if (sc->hw_if == NULL)
 		return ENXIO;
 
-	// mmaped なら error
+	// N8 までは EINVAL だったがこっちのほうがよかろう
+	if (track->mmapped)
+		return EPERM;
 
 #ifdef AUDIO_PM_IDLE
 	if (device_is_active(&sc->dev) || sc->sc_idle)

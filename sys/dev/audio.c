@@ -1712,8 +1712,11 @@ int
 audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 	    struct lwp *l, audio_file_t *file)
 {
-	//struct audio_offset *ao;
-	int error/*, offs*/, fd;
+	struct audio_offset *ao;
+	audio_track_t *track;
+	u_int stamp;
+	u_int offs;
+	int error, fd;
 
 	KASSERT(mutex_owned(sc->sc_lock));
 
@@ -1819,11 +1822,48 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 	 * Offsets into buffer.
 	 */
 	case AUDIO_GETIOFFS:
+		ao = (struct audio_offset *)addr;
+		ao->samples = 0;
+		ao->deltablks = 0;
+		ao->offset = 0;
+		break;
+
 	case AUDIO_GETOOFFS:
-		// このコマンドはハードウェアの DMA がput(get)しようとしている
-		// 入力(出力)バッファでの現在のオフセットを取得します?。
-		// これは mmap(2) システムコールによってデバイスバッファが
-		// ユーザスペースから見えてる場合に有用です。
+		ao = (struct audio_offset *)addr;
+		track = file->ptrack;
+		if (track == NULL) {
+			// track がなければダミーデータで埋めるしかない
+			ao->samples = 0;
+			ao->deltablks = 0;
+			ao->offset = 0;
+			break;
+		}
+		// XXX N7 との互換性を維持するにはこうするわけだが、
+		// こんなコーナーケースに行数割いてまで揃える必要あるかしら。
+		// GETOOFFS で offset を取得した後 mmap する人がいれば
+		// この動作は必要。
+		if (!track->mmapped) {
+			// mmap されてない時もダミーデータを用意するしかない?
+			ao->samples = 0;
+			ao->deltablks = 0;
+			ao->offset = track->usrbuf_blksize;
+			break;
+		}
+		mutex_enter(sc->sc_intr_lock);
+		/* figure out where next DMA will start */
+		stamp = track->usrbuf_stamp;
+		offs = track->usrbuf.top;
+		mutex_exit(sc->sc_intr_lock);
+
+		ao->samples = stamp;
+		ao->deltablks = (stamp / track->usrbuf_blksize) -
+		    (track->usrbuf_stamp_last / track->usrbuf_blksize);
+		track->usrbuf_stamp_last = stamp;
+		ao->offset = (offs + track->usrbuf_blksize) %
+		    track->usrbuf.capacity;
+
+		TRACET(track, "GETOOFFS: samples=%u deltablks=%u offset=%u",
+		    ao->samples, ao->deltablks, ao->offset);
 		break;
 
 	/*
@@ -2081,18 +2121,16 @@ audio_mmap(struct audio_softc *sc, off_t *offp, size_t len, int prot,
 	int *flagsp, int *advicep, struct uvm_object **uobjp, int *maxprotp,
 	audio_file_t *file)
 {
-	// あとでかんがえる
-#if 0
-	struct audio_ringbuffer *cb;
+	audio_track_t *track;
+	vsize_t vsize;
 
 	KASSERT(mutex_owned(sc->sc_lock));
 
 	if (sc->hw_if == NULL)
 		return ENXIO;
 
-	DPRINTF(2, "audio_mmap: off=%lld, prot=%d\n", (long long)(*offp), prot);
-	if (!(audio_get_props(sc) & AUDIO_PROP_MMAP))
-		return ENOTSUP;
+	DPRINTF(2, "%s: off=%lld, prot=%d\n",
+	    __func__, (long long)(*offp), prot);
 
 	if (*offp < 0)
 		return EINVAL;
@@ -2110,44 +2148,52 @@ audio_mmap(struct audio_softc *sc, off_t *offp, size_t len, int prot,
 	 *    only.
 	 * So, alas, we always map the play buffer for now.
 	 */
+	// read/write どちらのバッファをマップするか決めるのに prot を使う
+	// この案はうまくいかない。
+	// VM システムは(少なくとも)以下の2つの点で壊れている。
+	// 1) メモリを VM_PROT_WRITE でマップして書き込むと SIGSEGV になる。
+	//    なので再生バッファには VM_PROT_READ|VM_PROT_WRITE を使わないと
+	//    いけない。
+	// 2) mmap を VM_PROT_READ|VM_PROT_WRITE でコールしたとしても
+	//    VM_PROT_READ のみで audio_mmap が呼び出される場合がある?
+	// なので再生バッファだけをマップすることにする。
 	if (prot == (VM_PROT_READ|VM_PROT_WRITE) ||
 	    prot == VM_PROT_WRITE)
-		cb = &vc->sc_mpr;
+		track = file->ptrack;
 	else if (prot == VM_PROT_READ)
-		cb = &vc->sc_mrr;
+		track = file->rtrack;
 	else
 		return EINVAL;
 #else
-	cb = &vc->sc_mpr;
+	track = file->ptrack;
 #endif
+	if (track == NULL)
+		return EACCES;
 
-	if (len > cb->s.bufsize || *offp > (uint)(cb->s.bufsize - len))
+	vsize = roundup2(MAX(track->usrbuf.capacity, PAGE_SIZE), PAGE_SIZE);
+	if (len > vsize)
+		return EOVERFLOW;
+	if (*offp > (uint)(vsize - len))
 		return EOVERFLOW;
 
-	if (!cb->mmapped) {
-		cb->mmapped = true;
-		if (cb == &vc->sc_mpr) {
-			audio_fill_silence(&cb->s.param, cb->s.start,
-					   cb->s.bufsize);
-			vc->sc_pustream = &cb->s;
-			if (!vc->sc_pbus && !vc->sc_mpr.pause)
-				(void)audiostartp(sc, vc);
-		} else if (cb == &vc->sc_mrr) {
-			vc->sc_rustream = &cb->s;
-			if (!vc->sc_rbus && !sc->sc_mixring.sc_mrr.pause)
-				(void)audiostartr(sc, vc);
-		}
+	// 二重 mmap したらどうなるか
+	if (!track->mmapped) {
+		track->mmapped = true;
+
+		// XXX ここで元は audio_fill_silence
+		if (!track->is_pause)
+			audio_pmixer_start(sc, true);
+		/* XXX mmapping record buffer is not supported */
 	}
 
 	/* get ringbuffer */
-	*uobjp = cb->uobj;
+	*uobjp = track->uobj;
 
 	/* Acquire a reference for the mmap.  munmap will release.*/
 	uao_reference(*uobjp);
 	*maxprotp = prot;
 	*advicep = UVM_ADV_RANDOM;
 	*flagsp = MAP_SHARED;
-#endif
 	return 0;
 }
 
