@@ -1780,12 +1780,12 @@ audio_pmixer_mixall(struct audio_softc *sc, bool isintr)
 
 		// 協調的ロックされているトラックは、今回ミキシングしない。
 		if (isintr && track->in_use) {
-			TRACET(track, "in use");
+			TRACET(track, "skip; in use");
 			continue;
 		}
 
 		if (track->is_pause) {
-			TRACET(track, "paused");
+			TRACET(track, "skip; paused");
 			continue;
 		}
 
@@ -1794,12 +1794,12 @@ audio_pmixer_mixall(struct audio_softc *sc, bool isintr)
 			audio_track_play(track);
 		}
 
-		// 合成
-		if (track->outputbuf.count > 0) {
-			mixed = audio_pmixer_mix_track(mixer, track, req, mixed);
-		} else {
-			TRACET(track, "not mix");
+		if (track->outputbuf.count == 0) {
+			TRACET(track, "skip; empty");
+			continue;
 		}
+		// 合成
+		mixed = audio_pmixer_mix_track(mixer, track, req, mixed);
 	}
 	return mixed;
 }
