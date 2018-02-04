@@ -175,8 +175,13 @@ simultaneously.</p>
 can be used to manipulate the audio device while it is in
 use.</p>
 <p class=bad style="margin-left:8%">
-/dev/audioctl の仕様が曖昧。
-sysctl hw.*.multiuser == 0 だと、/dev/audioctl もその影響を受けるが正しいか。
+hw.*.multiuser == 0 下において、
+/dev/audio か /dev/sound を誰かがオープンしていると、
+他の人が /dev/audioctl をオープンできないバグがある。
+また、逆、つまり /dev/audioctl を誰かがオープンしていると
+他の人が /dev/audio か /dev/sound をオープンできないというバグもある。
+hw.*.multiuser == 0 であっても /dev/audioctl は
+/dev/audio、/dev/sound の状況に関わらず常にオープンできるのが仕様。
 </p>
 
 
@@ -290,7 +295,9 @@ supported device the variables would be: hw.hdafg0.channels,
 hw.hdafg0.precision, hw.hdafg0.frequency.</p>
 <p class=bad style="margin-left:8%">
 hw.hdafg0.* のようなMD名ではなく hw.audio0.* を使うべき。
-実際 hdafg(4) は hw.hdafg に独自の ioctl を持っている。
+実際 hdafg(4) は hw.hdafg に独自の ioctl を持っているし、
+そもそも今自分がアクセスしている audioN に対応する
+MD デバイス名をプログラムから知る術がない。
 </p>
 
 <p class=n8 style="margin-left:8%; margin-top: 1em">For best
