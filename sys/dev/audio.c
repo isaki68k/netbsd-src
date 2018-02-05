@@ -2936,7 +2936,7 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 		if (SPECIFIED(ai->mode))
 			rchanges = 1;
 		if (SPECIFIED_CH(ri->pause))
-			ppause = ri->pause;
+			rpause = ri->pause;
 	}
 
 	if (pchanges || rchanges) {
