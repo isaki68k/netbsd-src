@@ -1018,7 +1018,13 @@ test_open_6()
 			XP_SYS_OK(fd1);
 		} else {
 			// 別ユーザはオープンできない
-			XP_SYS_NG(EPERM, fd1);
+			// N7 は EBUSY (Device Busy)
+			// N8 は EPERM (Operation not permitted)
+			// N7 はデバイス1つなので Device Busy は適切だと思う。
+			if (netbsd == 7)
+				XP_SYS_NG(EBUSY, fd1);
+			else
+				XP_SYS_NG(EPERM, fd1);
 		}
 		if (fd1 != -1) {
 			r = CLOSE(fd1);
@@ -2340,7 +2346,7 @@ test_AUDIO_SETINFO_params2()
 
 	// 1本目のパラメータを変える
 	AUDIO_INITINFO(&ai);
-	ai.play.channels = 2;
+	ai.play.sample_rate = 11025;
 	r = IOCTL(fd0, AUDIO_SETINFO, &ai, "");
 	XP_SYS_EQ(0, r);
 
@@ -2350,7 +2356,7 @@ test_AUDIO_SETINFO_params2()
 
 	// 2本目で同じパラメータを変える
 	AUDIO_INITINFO(&ai);
-	ai.play.channels = 3;
+	ai.play.sample_rate = 16000;
 	r = IOCTL(fd1, AUDIO_SETINFO, &ai, "");
 	XP_SYS_EQ(0, r);
 
@@ -2360,11 +2366,11 @@ test_AUDIO_SETINFO_params2()
 	r = IOCTL(fd0, AUDIO_SETINFO, &ai, "");
 	XP_SYS_EQ(0, r);
 
-	// channels は 2 のままであること
+	// sample_rate は 11k のままであること
 	r = IOCTL(fd0, AUDIO_GETBUFINFO, &ai, "");
 	XP_SYS_EQ(0, r);
 	XP_EQ(AUDIO_ENCODING_SLINEAR_LE, ai.play.encoding);
-	XP_EQ(2, ai.play.channels);
+	XP_EQ(11025, ai.play.sample_rate);
 
 	r = CLOSE(fd0);
 	XP_SYS_EQ(0, r);
