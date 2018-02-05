@@ -1399,6 +1399,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	 */
 	AUDIO_INITINFO(&ai);
 	if (ISDEVAUDIO(dev)) {
+		// /dev/audio は毎回初期化
 		ai.play.sample_rate   = audio_default.sample_rate;
 		ai.play.encoding      = audio_default.encoding;
 		ai.play.channels      = audio_default.channels;
@@ -1409,6 +1410,18 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 		ai.record.channels    = audio_default.channels;
 		ai.record.precision   = audio_default.precision;
 		ai.record.pause       = false;
+	} else {
+		// sc_[pr]params, sc_[pr]pause が現在の /dev/sound の設定値
+		ai.play.sample_rate   = sc->sc_pparams.sample_rate;
+		ai.play.encoding      = sc->sc_pparams.encoding;
+		ai.play.channels      = sc->sc_pparams.channels;
+		ai.play.precision     = sc->sc_pparams.precision;
+		ai.play.pause         = sc->sc_ppause;
+		ai.record.sample_rate = sc->sc_rparams.sample_rate;
+		ai.record.encoding    = sc->sc_rparams.encoding;
+		ai.record.channels    = sc->sc_rparams.channels;
+		ai.record.precision   = sc->sc_rparams.precision;
+		ai.record.pause       = sc->sc_rpause;
 	}
 	ai.mode = af->mode;
 	error = audio_file_setinfo(sc, af, &ai);
@@ -2733,8 +2746,6 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	audio_track_t *rec;
 	audio_format2_t pfmt;
 	audio_format2_t rfmt;
-	bool ppause;
-	bool rpause;
 	int pchanges;
 	int rchanges;
 	int mode;
@@ -2842,25 +2853,20 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	saved_rvolume = 0;
 	saved_rpause = 0;
 
-	/* Save current parameters */
+	/* Set default value and save current parameters */
 	if (play) {
+		pfmt = play->inputfmt;
 		saved_pfmt = play->inputfmt;
 		saved_pvolume = play->volume;
 		saved_ppause = play->is_pause;
 	}
 	if (rec) {
+		rfmt = rec->outputbuf.fmt;
 		saved_rfmt = rec->outputbuf.fmt;
 		saved_rvolume = rec->volume;
 		saved_rpause = rec->is_pause;
 	}
 	saved_mode = file->mode;
-
-	/* Set default value */
-	// sc_[pr]params, sc_[pr]pause が現在の /dev/sound の設定値
-	pfmt = sc->sc_pparams;
-	rfmt = sc->sc_rparams;
-	ppause = sc->sc_ppause;
-	rpause = sc->sc_rpause;
 
 	/* Overwrite if specified */
 	mode = file->mode;
@@ -2920,23 +2926,19 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	}
 
 	// ここから mode は変更後の希望するモード。
-	if (play && (mode & AUMODE_PLAY) != 0) {
+	if (play) {
 		pchanges = audio_file_setinfo_check(&pfmt, pi);
 		if (pchanges == -1)
 			return EINVAL;
 		if (SPECIFIED(ai->mode))
 			pchanges = 1;
-		if (SPECIFIED_CH(pi->pause))
-			ppause = pi->pause;
 	}
-	if (rec && (mode & AUMODE_RECORD) != 0) {
+	if (rec) {
 		rchanges = audio_file_setinfo_check(&rfmt, ri);
 		if (rchanges == -1)
 			return EINVAL;
 		if (SPECIFIED(ai->mode))
 			rchanges = 1;
-		if (SPECIFIED_CH(ri->pause))
-			rpause = ri->pause;
 	}
 
 	if (pchanges || rchanges) {
@@ -2955,30 +2957,34 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 #endif
 	}
 
-	/* Set */
+	/* Set to track and update sticky parameters */
 	error = 0;
 	file->mode = mode;
-	if (pchanges) {
-		play->is_pause = ppause;
-		error = audio_file_setinfo_set(play, pi, pchanges, &pfmt,
-		    (mode & (AUMODE_PLAY | AUMODE_PLAY_ALL)));
-		if (error)
-			goto abort1;
-
-		/* update sticky parameters */
-		sc->sc_pparams = pfmt;
-		sc->sc_ppause = ppause;
+	if (play) {
+		if (SPECIFIED_CH(pi->pause)) {
+			play->is_pause = pi->pause;
+			sc->sc_ppause = pi->pause;
+		}
+		if (pchanges) {
+			error = audio_file_setinfo_set(play, pi, pchanges,
+			    &pfmt, (mode & (AUMODE_PLAY | AUMODE_PLAY_ALL)));
+			if (error)
+				goto abort1;
+			sc->sc_pparams = pfmt;
+		}
 	}
-	if (rchanges) {
-		rec->is_pause = rpause;
-		error = audio_file_setinfo_set(rec, ri, rchanges, &rfmt,
-		    (mode & AUMODE_RECORD));
-		if (error)
-			goto abort2;
-
-		/* update sticky parameters */
-		sc->sc_rparams = rfmt;
-		sc->sc_rpause = rpause;
+	if (rec) {
+		if (SPECIFIED_CH(ri->pause)) {
+			rec->is_pause = ri->pause;
+			sc->sc_rpause = ri->pause;
+		}
+		if (rchanges) {
+			error = audio_file_setinfo_set(rec, ri, rchanges,
+			    &rfmt, (mode & AUMODE_RECORD));
+			if (error)
+				goto abort2;
+			sc->sc_rparams = rfmt;
+		}
 	}
 
 	return 0;
