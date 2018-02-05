@@ -2239,6 +2239,243 @@ test_AUDIO_SETINFO_mode()
 	}
 }
 
+// {play,rec}.params の設定がきくか。
+void
+test_AUDIO_SETINFO_params()
+{
+	struct audio_info ai;
+	int r;
+	int fd;
+
+	for (int openmode = 0; openmode <= 2; openmode++) {
+		for (int aimode = 0; aimode <= 1; aimode++) {
+			for (int pause = 0; pause <= 1; pause++) {
+				// aimode は ai.mode を変更するかどうか
+				// pause は ai.*.pause を変更するかどうか
+
+				// rec のみだと ai.mode は変更できない
+				if (openmode == O_RDONLY && aimode == 1)
+					continue;
+
+				// half だと O_RDWR は O_WRONLY と同じ
+				if (hwfull == 0 && openmode == O_RDWR)
+					continue;
+
+				TEST("AUDIO_SETINFO_params(%s,mode%d,pause%d)",
+					openmodetable[openmode], aimode, pause);
+
+				fd = OPEN(devaudio, openmode);
+				if (fd == -1)
+					err(1, "open");
+
+				AUDIO_INITINFO(&ai);
+				// params が全部独立して効くかどうかは大変なのでとりあえず
+				// channels で代表させる。
+				ai.play.channels = 2;
+				ai.record.channels = 2;
+				if (aimode)
+					ai.mode = mode2aumode[openmode] & ~AUMODE_PLAY_ALL;
+				if (pause) {
+					ai.play.pause = 1;
+					ai.record.pause = 1;
+				}
+
+				r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
+				XP_SYS_EQ(0, r);
+
+				r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+				XP_SYS_EQ(0, r);
+				int expmode = (aimode)
+					? mode2aumode[openmode] & ~AUMODE_PLAY_ALL
+					: mode2aumode[openmode];
+				XP_EQ(expmode, ai.mode);
+				if (openmode == O_RDONLY) {
+					// play なし
+					if (netbsd <= 8)
+						XP_EQ(pause, ai.play.pause);
+					else
+						XP_EQ(0, ai.play.pause);
+				} else {
+					// play あり
+					XP_EQ(2, ai.play.channels);
+					XP_EQ(pause, ai.play.pause);
+				}
+				if (openmode == O_WRONLY) {
+					// rec なし
+					if (netbsd <= 8)
+						XP_EQ(pause, ai.record.pause);
+					else
+						XP_EQ(0, ai.record.pause);
+				} else {
+					// rec あり
+					XP_EQ(2, ai.record.channels);
+					XP_EQ(pause, ai.record.pause);
+				}
+
+				r = CLOSE(fd);
+				XP_SYS_EQ(0, r);
+			}
+		}
+	}
+}
+
+// 別のディスクリプタでの SETINFO に干渉されないこと
+void
+test_AUDIO_SETINFO_params2()
+{
+	struct audio_info ai;
+	int r;
+	int fd0;
+	int fd1;
+
+	// N7 は多重オープンはできない
+	if (netbsd <= 7)
+		return;
+
+	TEST("AUDIO_SETINFO_params2");
+
+	fd0 = OPEN(devaudio, O_WRONLY);
+	if (fd0 == -1)
+		err(1, "open");
+
+	// 1本目のパラメータを変える
+	AUDIO_INITINFO(&ai);
+	ai.play.channels = 2;
+	r = IOCTL(fd0, AUDIO_SETINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+
+	fd1 = OPEN(devaudio, O_WRONLY);
+	if (fd1 == -1)
+		err(1, "open");
+
+	// 2本目で同じパラメータを変える
+	AUDIO_INITINFO(&ai);
+	ai.play.channels = 3;
+	r = IOCTL(fd1, AUDIO_SETINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+
+	// 1本目のパラメータ変更の続き
+	AUDIO_INITINFO(&ai);
+	ai.play.encoding = AUDIO_ENCODING_SLINEAR_LE;
+	r = IOCTL(fd0, AUDIO_SETINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+
+	// channels は 2 のままであること
+	r = IOCTL(fd0, AUDIO_GETBUFINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+	XP_EQ(AUDIO_ENCODING_SLINEAR_LE, ai.play.encoding);
+	XP_EQ(2, ai.play.channels);
+
+	r = CLOSE(fd0);
+	XP_SYS_EQ(0, r);
+	r = CLOSE(fd1);
+	XP_SYS_EQ(0, r);
+}
+
+// pause の設定がきくか。
+// play のみ、rec のみ、play/rec 両方について
+// ai.mode 変更ありなし、ai.play.* 変更ありなしについて調べる
+void
+test_AUDIO_SETINFO_pause()
+{
+	struct audio_info ai;
+	int r;
+	int fd;
+
+	for (int openmode = 0; openmode <= 2; openmode++) {
+		for (int aimode = 0; aimode <= 1; aimode++) {
+			for (int param = 0; param <= 1; param++) {
+				// aimode は ai.mode を変更するかどうか
+				// param は ai.*.param を変更するかどうか
+
+				// rec のみだと ai.mode は変更できない
+				if (openmode == O_RDONLY && aimode == 1)
+					continue;
+
+				// half だと O_RDWR は O_WRONLY と同じ
+				if (hwfull == 0 && openmode == O_RDWR)
+					continue;
+
+				TEST("AUDIO_SETINFO_pause(%s,mode%d,param%d)",
+					openmodetable[openmode], aimode, param);
+
+				fd = OPEN(devaudio, openmode);
+				if (fd == -1)
+					err(1, "open");
+
+				// pause をあげる
+				AUDIO_INITINFO(&ai);
+				ai.play.pause = 1;
+				ai.record.pause = 1;
+				if (aimode)
+					ai.mode = mode2aumode[openmode] & ~AUMODE_PLAY_ALL;
+				if (param) {
+					ai.play.channels = 2;
+					ai.record.channels = 2;
+				}
+
+				r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
+				XP_SYS_EQ(0, r);
+
+				r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+				XP_SYS_EQ(0, r);
+				int expmode = (aimode)
+					? mode2aumode[openmode] & ~AUMODE_PLAY_ALL
+					: mode2aumode[openmode];
+				XP_EQ(expmode, ai.mode);
+				if (openmode == O_RDONLY) {
+					// play がない
+					if (netbsd <= 8)
+						XP_EQ(1, ai.play.pause);
+					else
+						XP_EQ(0, ai.play.pause);
+				} else {
+					// play がある
+					XP_EQ(1, ai.play.pause);
+					XP_EQ(param ? 2 : 1, ai.play.channels);
+				}
+				if (openmode == O_WRONLY) {
+					// rec がない
+					if (netbsd <= 8)
+						XP_EQ(1, ai.record.pause);
+					else
+						XP_EQ(0, ai.record.pause);
+				} else {
+					XP_EQ(1, ai.record.pause);
+					XP_EQ(param ? 2 : 1, ai.record.channels);
+				}
+
+				// pause を下げるテストもやる?
+				AUDIO_INITINFO(&ai);
+				ai.play.pause = 0;
+				ai.record.pause = 0;
+				if (aimode)
+					ai.mode = mode2aumode[openmode];
+				if (param) {
+					ai.play.channels = 1;
+					ai.record.channels = 1;
+				}
+
+				r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
+				XP_SYS_EQ(0, r);
+
+				r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+				XP_SYS_EQ(0, r);
+				XP_EQ(mode2aumode[openmode], ai.mode);
+				XP_EQ(0, ai.play.pause);
+				XP_EQ(0, ai.record.pause);
+				if (openmode != O_RDONLY)
+					XP_EQ(1, ai.play.channels);
+				if (openmode != O_WRONLY)
+					XP_EQ(1, ai.record.channels);
+
+				r = CLOSE(fd);
+				XP_SYS_EQ(0, r);
+			}
+		}
+	}
+}
+
 // audio デバイスオープン中に audioctl がオープンできること
 void
 test_audioctl_open_1()
@@ -2501,6 +2738,9 @@ struct testtable testtable[] = {
 	DEF(AUDIO_SETFD_RDWR),
 	DEF(AUDIO_GETINFO_eof),
 	DEF(AUDIO_SETINFO_mode),
+	DEF(AUDIO_SETINFO_params),
+	DEF(AUDIO_SETINFO_params2),
+	DEF(AUDIO_SETINFO_pause),
 	DEF(audioctl_open_1),
 	DEF(audioctl_open_2),
 	DEF(audioctl_open_3),
