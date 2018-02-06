@@ -1340,35 +1340,51 @@ test_readwrite_1(void)
 	int r;
 	int n;
 	struct {
+		int openmode;
 		bool canwrite;
 		bool canread;
-	} expfulltable[] = {
-		{ 0, 1 },	// REC
-		{ 1, 0 },	// PLAY
-		{ 1, 1 },	// BOTH
-	}, exphalftable[] = {
-		{ 0, 1 },	// REC
-		{ 1, 0 },	// PLAY
-		{ 1, 0 },	// BOTH
+	} exp7table[] = {
+		{ O_RDONLY,	0, 1 },
+		{ O_WRONLY,	1, 0 },
+		{ O_RDWR,	1, 1 },
+		{ -O_RDWR,	1, 1 },	// Half でも一応両方アクセスは出来る(ダミー)
+		{ 99, },			// 仕方ないので番兵
+	}, exp9table[] = {
+		{ O_RDONLY,	0, 1 },
+		{ O_WRONLY,	1, 0 },
+		{ O_RDWR,	1, 1 },
+		{ -O_RDWR,	1, 0 },	// Half なら Play と同等になる
+		{ 99, },			// 仕方ないので番兵
 	}, *exptable;
 
-	// HW が Full/Half で期待値が違う
-	if (hwfull) {
-		exptable = expfulltable;
-	} else {
-		exptable = exphalftable;
-	}
+	if (netbsd <= 8)
+		exptable = exp7table;
+	else
+		exptable = exp9table;
 
 	AUDIO_INITINFO(&ai);
 	ai.play.pause = 1;
 	ai.record.pause = 1;
 
-	for (int i = 0; i <= 2; i++) {
-		TEST("readwrite_1(%s)", openmodetable[i]);
+	for (int i = 0; exptable[i].openmode != 99 ; i++) {
+		int openmode = exptable[i].openmode;
 		bool canwrite = exptable[i].canwrite;
 		bool canread = exptable[i].canread;
+		if (hwfull) {
+			// HWFull なら O_RDWR のほう
+			if (openmode < 0)
+				continue;
+		} else {
+			// HWHalf なら O_RDWR は負数のほう
+			if (openmode == O_RDWR)
+				continue;
+			if (openmode == -O_RDWR) {
+				openmode = O_RDWR;
+			}
+		}
+		TEST("readwrite_1(%s)", openmodetable[openmode]);
 
-		fd0 = OPEN(devaudio, i);
+		fd0 = OPEN(devaudio, openmode);
 		if (fd0 == -1)
 			err(1, "open");
 
@@ -2223,19 +2239,29 @@ test_AUDIO_SETINFO_mode()
 			}
 		}
 
-		// 書き込みが出来るかどうかはオープン時の inimode によるようだ。
+		// 書き込みが出来るかどうかは
+		// N7: オープン時の openmode による
+		// A2: オープン時の inimode による、としたい
 		// オープン後に変えた mode は適用されない。
+		bool canwrite = (netbsd <= 8)
+			? (openmode != O_RDONLY)
+			: ((inimode & AUMODE_PLAY) != 0);
 		r = WRITE(fd, buf, 0);
-		if ((inimode & AUMODE_PLAY) != 0) {
+		if (canwrite) {
 			XP_SYS_EQ(0, r);
 		} else {
 			XP_SYS_NG(EBADF, r);
 		}
 
-		// 読み込みが出来るかどうかはオープン時の inimode によるようだ。
+		// 読み込みが出来るかどうかは
+		// N7: オープン時の openmode による
+		// A2: オープン時の inimode による、としたい
 		// オープン後に変えた mode は適用されない。
+		bool canread = (netbsd <= 8)
+			? (openmode != O_WRONLY)
+			: ((inimode & AUMODE_RECORD) != 0);
 		r = READ(fd, buf, 0);
-		if ((inimode & AUMODE_RECORD) != 0) {
+		if (canread) {
 			XP_SYS_EQ(0, r);
 		} else {
 			XP_SYS_NG(EBADF, r);
@@ -2276,9 +2302,9 @@ test_AUDIO_SETINFO_params()
 
 				AUDIO_INITINFO(&ai);
 				// params が全部独立して効くかどうかは大変なのでとりあえず
-				// channels で代表させる。
-				ai.play.channels = 2;
-				ai.record.channels = 2;
+				// sample_rate で代表させる。
+				ai.play.sample_rate = 11025;
+				ai.record.sample_rate = 11025;
 				if (aimode)
 					ai.mode = mode2aumode[openmode] & ~AUMODE_PLAY_ALL;
 				if (pause) {
@@ -2303,7 +2329,7 @@ test_AUDIO_SETINFO_params()
 						XP_EQ(0, ai.play.pause);
 				} else {
 					// play あり
-					XP_EQ(2, ai.play.channels);
+					XP_EQ(11025, ai.play.sample_rate);
 					XP_EQ(pause, ai.play.pause);
 				}
 				if (openmode == O_WRONLY) {
@@ -2314,7 +2340,7 @@ test_AUDIO_SETINFO_params()
 						XP_EQ(0, ai.record.pause);
 				} else {
 					// rec あり
-					XP_EQ(2, ai.record.channels);
+					XP_EQ(11025, ai.record.sample_rate);
 					XP_EQ(pause, ai.record.pause);
 				}
 
@@ -2416,8 +2442,8 @@ test_AUDIO_SETINFO_pause()
 				if (aimode)
 					ai.mode = mode2aumode[openmode] & ~AUMODE_PLAY_ALL;
 				if (param) {
-					ai.play.channels = 2;
-					ai.record.channels = 2;
+					ai.play.sample_rate = 11025;
+					ai.record.sample_rate = 11025;
 				}
 
 				r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
@@ -2438,7 +2464,7 @@ test_AUDIO_SETINFO_pause()
 				} else {
 					// play がある
 					XP_EQ(1, ai.play.pause);
-					XP_EQ(param ? 2 : 1, ai.play.channels);
+					XP_EQ(param ? 11025 : 8000, ai.play.sample_rate);
 				}
 				if (openmode == O_WRONLY) {
 					// rec がない
@@ -2448,7 +2474,7 @@ test_AUDIO_SETINFO_pause()
 						XP_EQ(0, ai.record.pause);
 				} else {
 					XP_EQ(1, ai.record.pause);
-					XP_EQ(param ? 2 : 1, ai.record.channels);
+					XP_EQ(param ? 11025 : 8000, ai.record.sample_rate);
 				}
 
 				// pause を下げるテストもやる?
@@ -2458,8 +2484,8 @@ test_AUDIO_SETINFO_pause()
 				if (aimode)
 					ai.mode = mode2aumode[openmode];
 				if (param) {
-					ai.play.channels = 1;
-					ai.record.channels = 1;
+					ai.play.sample_rate = 16000;
+					ai.record.sample_rate = 16000;
 				}
 
 				r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
@@ -2471,9 +2497,9 @@ test_AUDIO_SETINFO_pause()
 				XP_EQ(0, ai.play.pause);
 				XP_EQ(0, ai.record.pause);
 				if (openmode != O_RDONLY)
-					XP_EQ(1, ai.play.channels);
+					XP_EQ(param ? 16000 : 8000, ai.play.sample_rate);
 				if (openmode != O_WRONLY)
-					XP_EQ(1, ai.record.channels);
+					XP_EQ(param ? 16000 : 8000, ai.record.sample_rate);
 
 				r = CLOSE(fd);
 				XP_SYS_EQ(0, r);
