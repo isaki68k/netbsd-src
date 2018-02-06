@@ -257,6 +257,7 @@ TEST(const char *name, ...)
 	vsnprintf(testname, sizeof(testname), name, ap);
 	va_end(ap);
 	printf("%s\n", testname);
+	fflush(stdout);
 }
 
 // 検査
@@ -270,6 +271,7 @@ void xp_fail(int line, const char *fmt, ...)
 	vprintf(fmt, ap);
 	va_end(ap);
 	printf("\n");
+	fflush(stdout);
 	failcount++;
 }
 #define XP_SKIP()	xp_skip(__LINE__)
