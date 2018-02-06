@@ -1419,6 +1419,11 @@ audio_track_play(audio_track_t *track)
 		}
 	}
 
+	// stamp はハードウェアで再生したバイト数に相当するので
+	// 無音挿入分も入れてここでカウントする。
+	// この時点で必ず1ブロック分になってる気がする。
+	track->usrbuf_stamp += count * framesize;
+
 	if (usrbuf->top + bytes < usrbuf->capacity) {
 		memcpy((uint8_t *)input->mem +
 		        audio_ring_bottom(input) * framesize,
@@ -1882,12 +1887,10 @@ audio_pmixer_mixall(struct audio_softc *sc, bool isintr)
 		// mmap トラックならここで入力があったことにみせかける
 		if (track->mmapped) {
 			audio_ring_appended(&track->usrbuf, track->usrbuf_blksize);
-			track->usrbuf_stamp += track->usrbuf_blksize;
-			TRACET(track, "mmap; usr=%d/%d/%d stamp=%d",
+			TRACET(track, "mmap; usr=%d/%d/%d",
 			    track->usrbuf.top,
 			    track->usrbuf.count,
-			    track->usrbuf.capacity,
-			    track->usrbuf_stamp);
+			    track->usrbuf.capacity);
 		}
 
 		if (track->outputbuf.count < req && track->usrbuf.count > 0) {

@@ -1838,17 +1838,6 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 			ao->offset = 0;
 			break;
 		}
-		// XXX N7 との互換性を維持するにはこうするわけだが、
-		// こんなコーナーケースに行数割いてまで揃える必要あるかしら。
-		// GETOOFFS で offset を取得した後 mmap する人がいれば
-		// この動作は必要。
-		if (!track->mmapped) {
-			// mmap されてない時もダミーデータを用意するしかない?
-			ao->samples = 0;
-			ao->deltablks = 0;
-			ao->offset = track->usrbuf_blksize;
-			break;
-		}
 		mutex_enter(sc->sc_intr_lock);
 		/* figure out where next DMA will start */
 		stamp = track->usrbuf_stamp;
@@ -1859,6 +1848,7 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		ao->deltablks = (stamp / track->usrbuf_blksize) -
 		    (track->usrbuf_stamp_last / track->usrbuf_blksize);
 		track->usrbuf_stamp_last = stamp;
+		offs = (offs / track->usrbuf_blksize) * track->usrbuf_blksize;
 		ao->offset = (offs + track->usrbuf_blksize) %
 		    track->usrbuf.capacity;
 
