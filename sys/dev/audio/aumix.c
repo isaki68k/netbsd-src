@@ -1354,7 +1354,6 @@ audio_track_play(audio_track_t *track)
 {
 	audio_ring_t *usrbuf;
 	audio_ring_t *input;
-	int inpbuf_frames_per_block;
 	int count;
 	int framesize;	// input の1フレームのバイト数
 	int bytes;		// usrbuf から input に転送するバイト数
@@ -1377,21 +1376,18 @@ audio_track_play(audio_track_t *track)
 	input = track->input;
 	dropcount = 0;
 
-	inpbuf_frames_per_block = frame_per_block_roundup(track->mixer,
-	    &input->fmt);
 	// 入力(usrfmt) に 4bit は来ないので1フレームは必ず1バイト以上ある
 	framesize = frametobyte(&input->fmt, 1);
 	KASSERT(framesize >= 1);
 
 	// usrbuf の次段(input) も空いてるはず
-	count = audio_ring_unround_free_count(input);
-	KASSERT(count >= 0);
+	KASSERT(audio_ring_unround_free_count(input) > 0);
 
-	// usrbuf から input へコピー
+	// usrbuf の最大1ブロックを input へコピー
 	// count は usrbuf からコピーするフレーム数。
 	// bytes は usrbuf からコピーするバイト数。
 	// ただし1フレーム未満のバイトはコピーしない。
-	count = min(count, usrbuf->count / framesize);
+	count = min(usrbuf->count, track->usrbuf_blksize) / framesize;
 	bytes = count * framesize;
 
 	// 今回処理するバイト数(bytes) が1ブロックに満たない場合、
@@ -1401,8 +1397,8 @@ audio_track_play(audio_track_t *track)
 	//  no    SYNC  : dropframes加算する。  リングバッファリセット。
 	//  yes   PLAY  : dropframes加算しない。リングバッファリセット。
 	//  yes   SYNC  : dropframes加算しない。リングバッファリセット。
-	if (count < inpbuf_frames_per_block) {
-		dropcount = inpbuf_frames_per_block - count;
+	if (count < track->usrbuf_blksize / framesize) {
+		dropcount = track->usrbuf_blksize / framesize - count;
 
 		if (track->pstate != AUDIO_STATE_DRAINING) {
 			if ((track->mode & AUMODE_PLAY_ALL)) {
