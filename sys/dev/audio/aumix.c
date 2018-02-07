@@ -1886,6 +1886,8 @@ audio_pmixer_mixall(struct audio_softc *sc, bool isintr)
 
 		// mmap トラックならここで入力があったことにみせかける
 		if (track->mmapped) {
+			// XXX appended じゃなく直接操作してウィンドウを移動みたいに
+			// したほうがいいんじゃないか。
 			audio_ring_appended(&track->usrbuf, track->usrbuf_blksize);
 			TRACET(track, "mmap; usr=%d/%d/%d",
 			    track->usrbuf.top,
