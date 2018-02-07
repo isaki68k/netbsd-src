@@ -1961,14 +1961,8 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req,
 	}
 
 	// outputbuf が1ブロック未満であっても、カウンタはブロック境界に
-	// いなければならないため、半端な位置なら(でカウントが0 なら、というか
-	// 0のはずなので)、top をクリアする。
-	// 次の境界位置でもいいけど先頭に戻しても影響ない。
-	audio_ring_tookfromtop(&track->outputbuf, count);
-	if (count < mixer->frames_per_block) {
-		KASSERT(track->outputbuf.count == 0);
-		track->outputbuf.top = 0;
-	}
+	// いなければならないため、count ではなく frames_per_block を足す。
+	audio_ring_tookfromtop(&track->outputbuf, mixer->frames_per_block);
 
 	// トラックバッファを取り込んだことを反映
 	// mixseq はこの時点ではまだ前回の値なのでトラック側へは +1 
