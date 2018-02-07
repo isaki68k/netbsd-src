@@ -428,10 +428,10 @@ reading and writing to the mapped memory.
 バグなのか仕様なのか。
 </p>
 <p class=a2 style="margin-left:8%">
-AUDIO2 では mmap されると read も write もエラーになる、にする?
+AUDIO2 でも今のところ同じ動作 (read は行える) になる。
 </p>
 <p class=a2 style="margin-left:8%">
-その read/write の
+その時の write の
 エラーコードが従来 EINVAL (Invalid Argument) だったが、
 EPERM (Operation not permitted) のほうがいいんじゃないかと思うので変えてみる。
 </p>
@@ -458,6 +458,13 @@ Only
 encodings that are not emulated (i.e. where
 AUDIO_ENCODINGFLAG_EMULATED is not set) work properly for a
 mapped device.</p>
+<p class=bad style="margin-left:8%">
+N8 では AUDIO_ENCODINGFLAG_EMULRATED の有無に関わらず mmap は動作するので
+この一文は正しくない。
+</p>
+<p class=a2 style="margin-left:8%">
+AUDIO2 でも同様なので、この一文は削除していいのでは。
+</p>
 
 <p style="margin-left:8%; margin-top: 1em">The audio
 device, like most devices, can be used in <i>select</i>, can
@@ -683,6 +690,13 @@ admits full duplex operation.</p>
 
 <p style="margin-left:27%">the device can
 be used with mmap(2).</p>
+<p class=bad style="margin-left:27%">
+N8 ではこのフラグはハードウェアプロパティではなくなっているが
+(ソフトウェアエミュレーションに近い)、どうしたものか。
+</p>
+<p class=a2 style="margin-left:27%">
+AUDIO2 でも同様。
+</p>
 
 <p style="margin-left:22%">AUDIO_PROP_INDEPENDENT</p>
 
@@ -709,6 +723,11 @@ capable of audio capture.</p>
 <p style="margin-left:20%;">This command fetches the
 current offset in the input(output) buffer where the audio
 hardware&rsquo;s DMA engine will be putting(getting) data.
+</p>
+<p class=bad style="margin-left:20%">
+少なくとも N8 以降はハードウェアとか DMA 関係なくなってきてる気がする。
+</p>
+<p style="margin-left:20%">
 It mostly useful when the device buffer is available in user
 space via the mmap(2) call. The information is returned in
 the audio_offset structure.</p>
@@ -719,7 +738,6 @@ the audio_offset structure.</p>
 	u_int	deltablks;	/* Blocks transferred since last checked */
 	u_int	offset;		/* Physical transfer offset in buffer */
 }</pre></p>
-<p class=comment style="margin-left:20%">この2つは未調査。</p>
 
 <p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_GETINFO
 (audio_info_t)</p>
@@ -1751,7 +1769,9 @@ uaudio(4)</p>
 <p class=n7 style="margin-left:8%;">If the device is used in mmap(2)
 it is currently always mapped for writing (playing) due to
 VM system weirdness.</p>
-<p class=bad style="margin-left:8%">これ解決したんだっけ?</p>
+<p class=bad style="margin-left:8%">
+この問題は解決してないので削除しちゃだめ。
+</p>
 
 <p style="margin-top: 1em" valign="top"><span class=n8><b>HISTORY</b></span></p>
 <p class=n8 style="margin-left:8%;">Support for virtual channels and
