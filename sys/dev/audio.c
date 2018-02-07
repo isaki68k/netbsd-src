@@ -1848,9 +1848,11 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		ao->deltablks = (stamp / track->usrbuf_blksize) -
 		    (track->usrbuf_stamp_last / track->usrbuf_blksize);
 		track->usrbuf_stamp_last = stamp;
-		offs = (offs / track->usrbuf_blksize) * track->usrbuf_blksize;
-		ao->offset = (offs + track->usrbuf_blksize) %
-		    track->usrbuf.capacity;
+		offs = rounddown(offs, track->usrbuf_blksize)
+		    + track->usrbuf_blksize;
+		if (offs >= track->usrbuf.capacity)
+			offs -= track->usrbuf.capacity;
+		ao->offset = offs;
 
 		TRACET(track, "GETOOFFS: samples=%u deltablks=%u offset=%u",
 		    ao->samples, ao->deltablks, ao->offset);
