@@ -2131,19 +2131,25 @@ test_mmap_6()
 	}
 }
 
-// 1ブロック write した後に GETOOFFS すると
+// mmap_7, 8 の共通部
 void
-test_mmap_7()
+test_mmap_7_8_common(int type)
 {
 	struct audio_info ai;
 	struct audio_offset ao;
 	char *buf;
 	int fd;
 	int r;
+	int blocksize;
 
-	TEST("mmap_7");
-	if (x68k && netbsd <= 7) {
-		// HW エンコードにセットするあたりのテストが面倒
+	// N7、N8 はなぜかこの PR に書いてあるとおりにならない
+	if (netbsd <= 8) {
+		XP_SKIP();
+		return;
+	}
+	// A2 の type0 は今のところ仕様
+	if (netbsd == 9 && type == 0) {
+		XP_SKIP();
 		return;
 	}
 
@@ -2152,10 +2158,9 @@ test_mmap_7()
 		err(1, "open");
 
 	AUDIO_INITINFO(&ai);
-	ai.play.encoding = AUDIO_ENCODING_SLINEAR_LE;
-	ai.play.precision = 16;
-	ai.play.channels = 2;
-	ai.play.sample_rate = 48000;
+	ai.play.pause = 1;
+	if (type == 0)
+		ai.blocksize = 1024;
 	r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
 	if (r == -1)
 		err(1, "AUDIO_SETINFO");
@@ -2163,28 +2168,92 @@ test_mmap_7()
 	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
 	if (r == -1)
 		err(1, "AUDIO_GETINFO");
+	if (type == 0) {
+		// 1024バイトが設定できること
+		XP_EQ(1024, ai.blocksize);
+		blocksize = 1024;
+	} else {
+		// カーネルのブロックサイズを取得
+		blocksize = ai.blocksize;
+	}
 
-	buf = (char *)malloc(ai.blocksize);
+	buf = (char *)malloc(blocksize);
 	if (buf == NULL)
 		err(1, "malloc");
-	memset(buf, 0, ai.blocksize);
+	memset(buf, 0, blocksize);
 
-	r = WRITE(fd, buf, ai.blocksize);
-	XP_SYS_EQ(ai.blocksize, r);
-
+	// オープン直後の GETOOFFS
 	r = IOCTL(fd, AUDIO_GETOOFFS, &ao, "");
 	XP_SYS_EQ(0, r);
-	XP_EQ(0, ao.samples);			// まだ mmap 転送はしてない
-	XP_EQ(0, ao.deltablks);			// 前回チェック時の転送ブロック数
-	XP_EQ(ai.blocksize, ao.offset);	// 次ブロック
+	XP_EQ(0, ao.samples);			// まだ何も書いてない
+	XP_EQ(0, ao.deltablks);
+	XP_EQ(blocksize, ao.offset);	// 次ブロックを指している
+
+	// 1ブロック書き込み
+	r = WRITE(fd, buf, blocksize);
+	XP_SYS_EQ(blocksize, r);
+
+	// 1ブロック書き込み後の GETOOFFS
+	r = IOCTL(fd, AUDIO_GETOOFFS, &ao, "");
+	XP_SYS_EQ(0, r);
+	XP_EQ(blocksize, ao.samples);	// 1ブロック
+	XP_EQ(1, ao.deltablks);				// 前回チェック時の転送ブロック数
+	XP_EQ(blocksize * 2, ao.offset);	// 次ブロック
+
+	// pause 解除
+	AUDIO_INITINFO(&ai);
+	ai.play.pause = 0;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+
+	// pause 解除後の GETOOFFS
+	r = IOCTL(fd, AUDIO_GETOOFFS, &ao, "");
+	XP_SYS_EQ(0, r);
+	XP_EQ(blocksize, ao.samples);
+	XP_EQ(0, ao.deltablks);
+	XP_EQ(blocksize * 2, ao.offset);
+
+	// もう1ブロック書き込み
+	r = WRITE(fd, buf, blocksize);
+	XP_SYS_EQ(blocksize, r);
+	r = IOCTL(fd, AUDIO_DRAIN, NULL, "");
+	XP_SYS_EQ(0, r);
+
+	// 書き込み完了後の GETOOFFS
+	r = IOCTL(fd, AUDIO_GETOOFFS, &ao, "");
+	XP_SYS_EQ(0, r);
+	XP_EQ(blocksize * 2, ao.samples);
+	XP_EQ(1, ao.deltablks);
+	XP_EQ(blocksize * 3, ao.offset);
 
 	r = CLOSE(fd);
 	XP_SYS_EQ(0, r);
+
+	free(buf);
+}
+
+// 1ブロック write した後に GETOOFFS する。
+// 1ブロックは 1024 バイト。
+// PR kern/50613
+void
+test_mmap_7()
+{
+	TEST("mmap_7");
+	test_mmap_7_8_common(0);
+}
+
+// 1ブロック write した後に GETOOFFS する。
+// 1ブロックはネイティブブロックサイズ。
+void
+test_mmap_8()
+{
+	TEST("mmap_8");
+	test_mmap_7_8_common(1);
 }
 
 // mmap 開始
 void
-test_mmap_8()
+test_mmap_9()
 {
 	struct audio_info ai;
 	struct audio_offset ao;
@@ -2192,7 +2261,7 @@ test_mmap_8()
 	int fd;
 	int r;
 
-	TEST("mmap_8");
+	TEST("mmap_9");
 	if (x68k && netbsd <= 7) {
 		// HW エンコードにセットするあたりのテストが面倒
 		return;
@@ -3431,6 +3500,7 @@ struct testtable testtable[] = {
 	DEF(mmap_6),
 	DEF(mmap_7),
 	DEF(mmap_8),
+	DEF(mmap_9),
 	DEF(FIOASYNC_1),
 	DEF(FIOASYNC_2),
 	DEF(FIOASYNC_3),
