@@ -3195,11 +3195,12 @@ test_AUDIO_SETINFO_params2()
 	int fd0;
 	int fd1;
 
-	// N7 は多重オープンはできない
-	if (netbsd <= 7)
-		return;
-
 	TEST("AUDIO_SETINFO_params2");
+	// N7 は多重オープンはできない
+	if (netbsd <= 7) {
+		XP_SKIP("NetBSD7 does not support multi-open");
+		return;
+	}
 
 	fd0 = OPEN(devaudio, O_WRONLY);
 	if (fd0 == -1)
@@ -3232,6 +3233,50 @@ test_AUDIO_SETINFO_params2()
 	XP_SYS_EQ(0, r);
 	XP_EQ(AUDIO_ENCODING_SLINEAR_LE, ai.play.encoding);
 	XP_EQ(11025, ai.play.sample_rate);
+
+	r = CLOSE(fd0);
+	XP_SYS_EQ(0, r);
+	r = CLOSE(fd1);
+	XP_SYS_EQ(0, r);
+}
+
+void
+test_AUDIO_SETINFO_params3()
+{
+	struct audio_info ai;
+	int fd0;
+	int fd1;
+	int r;
+
+	TEST("AUDIO_SETINFO_params3");
+	if (netbsd <= 7) {
+		XP_SKIP("NetBSD7 does not support multi-open");
+		return;
+	}
+
+	// 1本目 /dev/audio を再生側だけ開く
+	fd0 = OPEN(devaudio, O_WRONLY);
+	if (fd0 == -1)
+		err(1, "open");
+
+	// 2本目 /dev/audio を両方開く
+	fd1 = OPEN(devaudio, O_RDWR);
+	if (fd1 == -1)
+		err(1, "open");
+
+	// 2本目で両トラックを SETINFO
+	AUDIO_INITINFO(&ai);
+	ai.play.sample_rate = 11025;
+	ai.record.sample_rate = 11025;
+	r = IOCTL(fd1, AUDIO_SETINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+
+	// 1本目で GETINFO しても両トラックとも影響を受けていないこと
+	memset(&ai, 0, sizeof(ai));
+	r = IOCTL(fd0, AUDIO_GETINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+	XP_EQ(8000, ai.play.sample_rate);
+	XP_EQ(8000, ai.record.sample_rate);
 
 	r = CLOSE(fd0);
 	XP_SYS_EQ(0, r);
@@ -3628,6 +3673,7 @@ struct testtable testtable[] = {
 	DEF(AUDIO_SETINFO_mode),
 	DEF(AUDIO_SETINFO_params),
 	DEF(AUDIO_SETINFO_params2),
+	DEF(AUDIO_SETINFO_params3),
 	DEF(AUDIO_SETINFO_pause),
 	DEF(audioctl_open_1),
 	DEF(audioctl_open_2),

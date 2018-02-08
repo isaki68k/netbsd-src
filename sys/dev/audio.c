@@ -3349,6 +3349,11 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 		pi->channels    = ptrack->inputfmt.channels;
 		pi->precision   = ptrack->inputfmt.precision;
 		pi->encoding    = ptrack->inputfmt.encoding;
+	} else if (ISDEVAUDIO(file->dev)) {
+		pi->sample_rate = audio_default.sample_rate;
+		pi->channels    = audio_default.channels;
+		pi->precision   = audio_default.precision;
+		pi->encoding    = audio_default.encoding;
 	} else {
 		pi->sample_rate = sc->sc_pparams.sample_rate;
 		pi->channels    = sc->sc_pparams.channels;
@@ -3360,6 +3365,11 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 		ri->channels    = rtrack->outputbuf.fmt.channels;
 		ri->precision   = rtrack->outputbuf.fmt.precision;
 		ri->encoding    = rtrack->outputbuf.fmt.encoding;
+	} else if (ISDEVAUDIO(file->dev)) {
+		ri->sample_rate = audio_default.sample_rate;
+		ri->channels    = audio_default.channels;
+		ri->precision   = audio_default.precision;
+		ri->encoding    = audio_default.encoding;
 	} else {
 		ri->sample_rate = sc->sc_rparams.sample_rate;
 		ri->channels    = sc->sc_rparams.channels;
