@@ -676,9 +676,20 @@ test_open_2(void)
 	int channels;
 	int fd;
 	int r;
+	bool pbuff, rbuff;
 
 	for (int mode = 0; mode <= 2; mode++) {
 		TEST("open_2(%s)", openmodetable[mode]);
+
+		// N7、N8 では常に両方のバッファが存在する
+		// AUDIO2 では mode による
+		if (netbsd <= 8) {
+			pbuff = true;
+			rbuff = true;
+		} else {
+			pbuff = mode2popen_full[mode];
+			rbuff = mode2ropen_full[mode];
+		}
 
 		// オープンして初期値をチェック
 		fd = OPEN(devaudio, mode);
@@ -702,7 +713,7 @@ test_open_2(void)
 		// port
 		XP_EQ(0, ai.play.seek);
 		// avail_ports
-		XP_BUFFSIZE(1, ai.play.buffer_size);
+		XP_BUFFSIZE(pbuff, ai.play.buffer_size);
 		XP_EQ(0, ai.play.samples);
 		XP_EQ(0, ai.play.eof);
 		XP_EQ(0, ai.play.pause);
@@ -720,7 +731,7 @@ test_open_2(void)
 		// port
 		XP_EQ(0, ai.record.seek);
 		// avail_ports
-		XP_BUFFSIZE((netbsd <= 8), ai.record.buffer_size);
+		XP_BUFFSIZE(rbuff, ai.record.buffer_size);
 		XP_EQ(0, ai.record.samples);
 		XP_EQ(0, ai.record.eof);
 		XP_EQ(0, ai.record.pause);
@@ -783,7 +794,7 @@ test_open_2(void)
 		// port
 		XP_EQ(0, ai.play.seek);
 		// avail_ports
-		XP_NE(0, ai.play.buffer_size);
+		XP_BUFFSIZE(pbuff, ai.play.buffer_size);
 		XP_EQ(0, ai.play.samples);
 		XP_EQ(0, ai.play.eof);
 		XP_EQ(0, ai.play.pause);
@@ -801,7 +812,7 @@ test_open_2(void)
 		// port
 		XP_EQ(0, ai.record.seek);
 		// avail_ports
-		XP_BUFFSIZE((netbsd <= 8), ai.record.buffer_size);
+		XP_BUFFSIZE(rbuff, ai.record.buffer_size);
 		XP_EQ(0, ai.record.samples);
 		XP_EQ(0, ai.record.eof);
 		XP_EQ(0, ai.record.pause);
@@ -834,6 +845,7 @@ test_open_3(void)
 	int fd;
 	int r;
 	int aimode;
+	bool pbuff, rbuff;
 
 	// N8 だと panic する。
 	// 録音を止めてないのか分からないけど、O_RDWR オープンですでに
@@ -845,6 +857,16 @@ test_open_3(void)
 
 	for (int mode = 0; mode <= 2; mode++) {
 		TEST("open_3(%s)", openmodetable[mode]);
+
+		// N7、N8 では常に両方のバッファが存在する
+		// AUDIO2 では mode による
+		if (netbsd <= 8) {
+			pbuff = true;
+			rbuff = true;
+		} else {
+			pbuff = mode2popen_full[mode];
+			rbuff = mode2ropen_full[mode];
+		}
 
 		// まず /dev/audio を RDWR で開いて両方初期化させておく
 		fd = OPEN(devaudio, O_RDWR);
@@ -875,7 +897,7 @@ test_open_3(void)
 		// port
 		XP_EQ(0, ai.play.seek);
 		// avail_ports
-		XP_NE(0, ai.play.buffer_size);
+		XP_BUFFSIZE(pbuff, ai.play.buffer_size);
 		XP_EQ(0, ai.play.samples);
 		XP_EQ(0, ai.play.eof);
 		XP_EQ(0, ai.play.pause);
@@ -893,7 +915,7 @@ test_open_3(void)
 		// port
 		XP_EQ(0, ai.record.seek);
 		// avail_ports
-		XP_BUFFSIZE((netbsd <= 8), ai.record.buffer_size);
+		XP_BUFFSIZE(rbuff, ai.record.buffer_size);
 		XP_EQ(0, ai.record.samples);
 		XP_EQ(0, ai.record.eof);
 		XP_EQ(0, ai.record.pause);
@@ -947,7 +969,7 @@ test_open_3(void)
 		// port
 		XP_EQ(0, ai.play.seek);
 		// avail_ports
-		XP_NE(0, ai.play.buffer_size);
+		XP_BUFFSIZE(pbuff, ai.play.buffer_size);
 		XP_EQ(0, ai.play.samples);
 		XP_EQ(0, ai.play.eof);
 		XP_EQ(ai0.play.pause, ai.play.pause);
@@ -965,7 +987,7 @@ test_open_3(void)
 		// port
 		XP_EQ(0, ai.record.seek);
 		// avail_ports
-		XP_BUFFSIZE((netbsd <= 8), ai.record.buffer_size);
+		XP_BUFFSIZE(rbuff, ai.record.buffer_size);
 		XP_EQ(0, ai.record.samples);
 		XP_EQ(0, ai.record.eof);
 		XP_EQ(ai0.record.pause, ai.record.pause);
