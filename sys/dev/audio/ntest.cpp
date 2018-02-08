@@ -35,6 +35,7 @@ int x68k;
 char testname[100];
 int testcount;
 int failcount;
+int skipcount;
 char devaudio[16];
 char devsound[16];
 char devaudioctl[16];
@@ -129,6 +130,8 @@ main(int ac, char *av[])
 			testcount, testcount - failcount);
 		if (failcount > 0)
 			printf(", %d failed", failcount);
+		if (skipcount > 0)
+			printf(" (, %d skipped)", skipcount);
 		printf("\n");
 	}
 	return 0;
@@ -274,11 +277,20 @@ void xp_fail(int line, const char *fmt, ...)
 	fflush(stdout);
 	failcount++;
 }
-#define XP_SKIP()	xp_skip(__LINE__)
-void xp_skip(int line)
+#define XP_SKIP(fmt...)	xp_skip(__LINE__, fmt)
+void xp_skip(int line, const char *fmt, ...)
 {
-	/* nothing to do */
+	va_list ap;
+
+	printf(" SKIP %d: ", line);
+	va_start(ap, fmt);
+	vprintf(fmt, ap);
+	va_end(ap);
+	printf("\n");
+	fflush(stdout);
+	skipcount++;
 }
+
 #define XP_EQ(exp, act)	xp_eq(__LINE__, exp, act, #act)
 void xp_eq(int line, int exp, int act, const char *varname)
 {
@@ -1159,6 +1171,12 @@ test_open_6()
 	int r;
 	uid_t ouid;
 
+	if (geteuid() != 0) {
+		TEST("open_6");
+		XP_SKIP("This test must be priviledged user");
+		return;
+	}
+
 	for (int i = 0; i <= 1; i++) {
 		// N7 には multiuser の概念がない
 		// AUDIO2 は未実装
@@ -1305,7 +1323,7 @@ test_encoding_1(void)
 						if (r == 0) {
 							XP_SYS_EQ(0, r);
 						} else {
-							XP_SKIP();
+							XP_SKIP("XXX not checked");
 						}
 					}
 
@@ -1644,7 +1662,8 @@ test_readwrite_2(void)
 
 	// N7 は多重オープンはできない
 	if (netbsd <= 7) {
-		XP_SKIP();
+		TEST("readwrite_2");
+		XP_SKIP("N7 does not support multi-open");
 		return;
 	}
 	// HW が Full/Half で期待値が違う
@@ -1665,8 +1684,9 @@ test_readwrite_2(void)
 			bool canwrite = exptable[i * 3 + j].canwrite;
 			bool canread  = exptable[i * 3 + j].canread;
 
+			// XXX オープンできない組み合わせはオープンできない検査すべき?
 			if (canopen == false) {
-				XP_SKIP();
+				XP_SKIP("XXX");
 				continue;
 			}
 
@@ -1720,7 +1740,7 @@ test_readwrite_3()
 	TEST("readwrite_3");
 	// N7 では多重オープンは出来ないので、このテストは無効
 	if (netbsd <= 7) {
-		XP_SKIP();
+		XP_SKIP("N7 does not support multi-open");
 		return;
 	}
 	if (hwfull == 0) {
@@ -1730,7 +1750,7 @@ test_readwrite_3()
 			return;
 		}
 		// AUDIO2 では HalfHW に対して R+W の多重オープンはできない
-		XP_SKIP();
+		XP_SKIP("AUDIO2 does not support R+W open on half HW");
 		return;
 	}
 
@@ -2227,12 +2247,12 @@ test_mmap_7_8_common(int type)
 
 	// N7、N8 はなぜかこの PR に書いてあるとおりにならない
 	if (netbsd <= 8) {
-		XP_SKIP();
+		XP_SKIP("This test does not work on N7/N8");
 		return;
 	}
 	// A2 の type0 は今のところ仕様
 	if (netbsd == 9 && type == 0) {
-		XP_SKIP();
+		XP_SKIP("On AUDIO2 it can not set blocksize");
 		return;
 	}
 
@@ -2412,7 +2432,7 @@ test_FIOASYNC_1(void)
 
 	TEST("FIOASYNC_1");
 	if (netbsd < 8) {
-		XP_SKIP();
+		XP_SKIP("NetBSD7 does not support multi-open");
 		return;
 	}
 
@@ -2446,7 +2466,7 @@ test_FIOASYNC_2(void)
 
 	TEST("FIOASYNC_2");
 	if (netbsd < 8) {
-		XP_SKIP();
+		XP_SKIP("NetBSD7 does not support multi-open");
 		return;
 	}
 
@@ -2480,7 +2500,7 @@ test_FIOASYNC_3(void)
 
 	TEST("FIOASYNC_3");
 	if (netbsd < 8) {
-		XP_SKIP();
+		XP_SKIP("NetBSD7 does not support multi-open");
 		return;
 	}
 
@@ -3432,6 +3452,12 @@ test_audioctl_open_4()
 	int multiuser;
 	uid_t ouid;
 
+	if (geteuid() != 0) {
+		TEST("audioctl_open_4");
+		XP_SKIP("This test must be priviledged user");
+		return;
+	}
+
 	// /dev/audio を root がオープンした後で
 	// /dev/audioctl を一般ユーザがオープンする
 	for (int i = 0; i <= 1; i++) {
@@ -3500,6 +3526,12 @@ test_audioctl_open_5()
 	int r;
 	int multiuser;
 	uid_t ouid;
+
+	if (geteuid() != 0) {
+		TEST("audioctl_open_5");
+		XP_SKIP("This test must be priviledged user");
+		return;
+	}
 
 	// /dev/audioctl を root がオープンした後で
 	// /dev/audio を一般ユーザがオープンする
