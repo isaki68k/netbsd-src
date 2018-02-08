@@ -880,10 +880,26 @@ test_open_3(void)
 			rbuff = mode2ropen_full[mode];
 		}
 
-		// まず /dev/audio を RDWR で開いて両方初期化させておく
-		fd = OPEN(devaudio, O_RDWR);
-		if (fd == -1)
-			err(1, "open");
+		// まず /dev/audio を RDWR で開いて両方初期化させておく。
+		// ただし NetBSD8 は audio と sound が分離されてるので別コード。
+		if (netbsd == 8) {
+			fd = OPEN(devsound, O_RDWR);
+			if (fd == -1)
+				err(1, "open");
+			AUDIO_INITINFO(&ai);
+			ai.play.encoding = AUDIO_ENCODING_ULAW;
+			ai.play.precision = 8;
+			ai.play.channels = 1;
+			ai.play.sample_rate = 8000;
+			ai.play.pause = 0;
+			ai.record = ai.play;
+			r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
+			XP_SYS_EQ(0, r);
+		} else {
+			fd = OPEN(devaudio, O_RDWR);
+			if (fd == -1)
+				err(1, "open");
+		}
 		r = CLOSE(fd);
 		XP_SYS_EQ(0, r);
 
