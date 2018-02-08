@@ -2746,8 +2746,8 @@ audio_hw_config(struct audio_softc *sc, int is_indep)
 //	バッファサイズ[byte]。usrbuf をさすのでいいか。
 //
 // ai.{play,record}.samples		(R/-)
-//	usrbuf に受け取った / usrbuf から引き渡したサンプル数
-//	or バイト数。このへん単位の定義が曖昧。
+//	usrbuf に受け取った / usrbuf から引き渡したサンプル数。
+//	サンプル数と言っているがこれはバイト数のこと。
 //
 // ai.{play,record}.eof			(R/-)
 //	EOF に到達した回数?
@@ -3390,8 +3390,8 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 	// ...
 
 	if (ptrack) {
-		pi->seek = ptrack->usrbuf.top;
-		pi->samples = ptrack->inputcounter;
+		pi->seek = ptrack->usrbuf.count;
+		pi->samples = ptrack->usrbuf_stamp;
 		pi->eof = ptrack->eofcounter;
 		pi->pause = ptrack->is_pause;
 		pi->error = (ptrack->dropframes != 0) ? 1 : 0;
@@ -3401,8 +3401,8 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 		pi->buffer_size = ptrack->usrbuf.capacity;
 	}
 	if (rtrack) {
-		ri->seek = rtrack->usrbuf.top;
-		ri->samples = rtrack->inputcounter;
+		ri->seek = rtrack->usrbuf.count;
+		ri->samples = rtrack->usrbuf_stamp;
 		ri->eof = 0;
 		ri->pause = rtrack->is_pause;
 		ri->error = (rtrack->dropframes != 0) ? 1 : 0;

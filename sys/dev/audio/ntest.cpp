@@ -2848,6 +2848,74 @@ test_AUDIO_SETFD_RDWR(void)
 	CLOSE(fd);
 }
 
+// ai.play.seek、ai.play.samples が取得できるか確認
+void
+test_AUDIO_GETINFO_seek()
+{
+	struct audio_info ai;
+	int r;
+	int fd;
+	char *buf;
+	int bufsize;
+
+	TEST("AUDIO_GETINFO_seek");
+
+	fd = OPEN(devaudio, O_WRONLY);
+	if (fd == -1)
+		err(1, "open");
+
+	// 1サンプル != 1バイトにしたい
+	AUDIO_INITINFO(&ai);
+	ai.play.encoding = AUDIO_ENCODING_SLINEAR_LE;
+	ai.play.precision = 16;
+	ai.play.channels = x68k ? 1 : 2;
+	ai.play.sample_rate = 16000;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+
+	// 最初は seek も samples もゼロ
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+	XP_EQ(0, ai.play.seek);
+	XP_EQ(0, ai.play.samples);
+	// ついでにここでバッファサイズを取得
+	bufsize = ai.play.buffer_size;
+
+	buf = (char *)malloc(bufsize);
+	if (buf == NULL)
+		err(1, "malloc");
+	memset(buf, 0, bufsize);
+
+	// 残り全部を書き込む (リングバッファのポインタが先頭に戻るはず)
+	r = WRITE(fd, buf, bufsize);
+	XP_SYS_EQ(bufsize, r);
+	r = IOCTL(fd, AUDIO_DRAIN, NULL, "");
+	XP_SYS_EQ(0, r);
+
+	// seek は折り返して 0 に戻ること?
+	// samples は計上を続けることだけど、
+	// N7 はカウントがぴったり合わないようだ
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+	XP_EQ(0, ai.play.seek);
+	if (netbsd <= 8) {
+		if (bufsize != ai.play.samples && ai.play.samples > bufsize * 9 / 10) {
+			XP_SKIP("ai.play.samples expects %d but %d"
+			        " (unknown few drops?)",
+				bufsize, ai.play.samples);
+		} else {
+			XP_EQ(bufsize, ai.play.samples);
+		}
+	} else {
+		XP_EQ(bufsize, ai.play.samples);
+	}
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+
+	free(buf);
+}
+
 void
 test_AUDIO_GETINFO_eof(void)
 {
@@ -3685,6 +3753,7 @@ struct testtable testtable[] = {
 	DEF(AUDIO_WSEEK_1),
 	DEF(AUDIO_SETFD_ONLY),
 	DEF(AUDIO_SETFD_RDWR),
+	DEF(AUDIO_GETINFO_seek),
 	DEF(AUDIO_GETINFO_eof),
 	DEF(AUDIO_SETINFO_mode),
 	DEF(AUDIO_SETINFO_params),
