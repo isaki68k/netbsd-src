@@ -859,11 +859,11 @@ test_open_3(void)
 	int aimode;
 	bool pbuff, rbuff;
 
-	// N8 だと panic する。
+	// N8 eap だと panic する。
 	// 録音を止めてないのか分からないけど、O_RDWR オープンですでに
 	// eap の録音側が動いてるみたいな感じで怒られる。しらん。
-	if (netbsd == 8) {
-		XP_FAIL("it causes panic");
+	if (netbsd == 8 && strncmp(hwconfig, "eap", 3) == 0) {
+		XP_FAIL("it causes panic on NetBSD8 + eap");
 		return;
 	}
 
