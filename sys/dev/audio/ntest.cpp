@@ -590,20 +590,44 @@ hwconfigname()
 
 // ---
 
-// O_* を AUMODE_* に変換
-int mode2aumode[] = {
+// O_* を AUMODE_* に変換。HW Full 固定
+int mode2aumode_full[] = {
 	AUMODE_RECORD,
 	AUMODE_PLAY | AUMODE_PLAY_ALL,
 	AUMODE_PLAY | AUMODE_PLAY_ALL | AUMODE_RECORD,
 };
-// O_* を PLAY 側がオープンされてるかに変換
-int mode2popen[] = {
+// O_* を AUMODE_* に変換 (hwfull を考慮)
+int mode2aumode(int mode)
+{
+	int aumode = mode2aumode_full[mode];
+	if (hwfull == 0 && mode == O_RDWR)
+		aumode &= ~AUMODE_RECORD;
+	return aumode;
+}
+
+// O_* を PLAY 側がオープンされているかに変換。HW Full 固定
+int mode2popen_full[] = {
 	0, 1, 1,
 };
-// O_* を RECORD 側がオープンされてるかに変換
-int mode2ropen[] = {
+// O_* を PLAY 側がオープンされてるかに変換 (hwfull を考慮、ただし同じになる)
+int mode2popen(int mode)
+{
+	return mode2popen_full[mode];
+}
+
+// O_* を RECORD 側がオープンされてるかに変換。HW Full 固定
+int mode2ropen_full[] = {
 	1, 0, 1,
 };
+// O_* を RECORD 側がオープンされてるかに変換 (hwfull を考慮)
+int mode2ropen(int mode)
+{
+	int rec = mode2ropen_full[mode];
+	if (hwfull == 0 && mode == O_RDWR)
+		rec = 0;
+	return rec;
+}
+
 
 // オープンモードによるオープン直後の状態を調べる
 void
@@ -624,8 +648,8 @@ test_open_1(void)
 		XP_SYS_EQ(0, r);
 		XP_EQ(0, ai.play.pause);
 		XP_EQ(0, ai.record.pause);
-		XP_EQ(mode2popen[mode], ai.play.open);
-		XP_EQ(mode2ropen[mode], ai.record.open);
+		XP_EQ(mode2popen_full[mode], ai.play.open);
+		XP_EQ(mode2ropen_full[mode], ai.record.open);
 		// ai.mode は open_5 で調べている
 
 		if (netbsd <= 8) {
@@ -634,8 +658,8 @@ test_open_1(void)
 			XP_NE(0, ai.record.buffer_size);
 		} else {
 			// AUDIO2 では使わないほうのバッファは確保してない
-			XP_BUFFSIZE(mode2popen[mode], ai.play.buffer_size);
-			XP_BUFFSIZE(mode2ropen[mode], ai.record.buffer_size);
+			XP_BUFFSIZE(mode2popen_full[mode], ai.play.buffer_size);
+			XP_BUFFSIZE(mode2ropen_full[mode], ai.record.buffer_size);
 		}
 
 		r = CLOSE(fd);
@@ -643,7 +667,8 @@ test_open_1(void)
 	}
 }
 
-// /dev/audio は何回開いても初期値は同じ
+// /dev/audio は何回開いても初期値は同じ。
+// /dev/audio の初期値確認、いろいろ変更して close、もう一度開いて初期値確認。
 void
 test_open_2(void)
 {
@@ -652,135 +677,155 @@ test_open_2(void)
 	int fd;
 	int r;
 
-	TEST("open_2");
+	for (int mode = 0; mode <= 2; mode++) {
+		TEST("open_2(%s)", openmodetable[mode]);
 
-	// オープンして初期値をチェック
-	fd = OPEN(devaudio, O_WRONLY);
-	if (fd == -1)
-		err(1, "open");
-	memset(&ai, 0, sizeof(ai));
-	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
-	XP_SYS_EQ(0, r);
+		// オープンして初期値をチェック
+		fd = OPEN(devaudio, mode);
+		if (fd == -1)
+			err(1, "open");
+		memset(&ai, 0, sizeof(ai));
+		r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+		XP_SYS_EQ(0, r);
 
-	XP_NE(0, ai.blocksize);
-	XP_NE(0, ai.hiwat);
-	XP_NE(0, ai.lowat);
-	XP_EQ(AUMODE_PLAY | AUMODE_PLAY_ALL, ai.mode);
-	// play
-	XP_EQ(8000, ai.play.sample_rate);
-	XP_EQ(1, ai.play.channels);
-	XP_EQ(8, ai.play.precision);
-	XP_EQ(AUDIO_ENCODING_ULAW, ai.play.encoding);
-	// gain
-	// port
-	XP_EQ(0, ai.play.seek);
-	// avail_ports
-	XP_BUFFSIZE(1, ai.play.buffer_size);
-	XP_EQ(0, ai.play.samples);
-	XP_EQ(0, ai.play.eof);
-	XP_EQ(0, ai.play.pause);
-	XP_EQ(0, ai.play.error);
-	XP_EQ(0, ai.play.waiting);
-	// balance
-	XP_EQ(1, ai.play.open);
-	XP_EQ(0, ai.play.active);
-	// record
-	XP_EQ(8000, ai.record.sample_rate);
-	XP_EQ(1, ai.record.channels);
-	XP_EQ(8, ai.record.precision);
-	XP_EQ(AUDIO_ENCODING_ULAW, ai.record.encoding);
-	// gain
-	// port
-	XP_EQ(0, ai.record.seek);
-	// avail_ports
-	XP_BUFFSIZE((netbsd <= 8), ai.record.buffer_size);
-	XP_EQ(0, ai.record.samples);
-	XP_EQ(0, ai.record.eof);
-	XP_EQ(0, ai.record.pause);
-	XP_EQ(0, ai.record.error);
-	XP_EQ(0, ai.record.waiting);
-	// balance
-	XP_EQ(0, ai.record.open);
-	XP_EQ(0, ai.record.active);
-	// これを保存しておく
-	ai0 = ai;
+		XP_NE(0, ai.blocksize);
+		XP_NE(0, ai.hiwat);
+		XP_NE(0, ai.lowat);
+		XP_EQ(mode2aumode(mode), ai.mode);
 
-	// できるだけ変更
-	channels = (netbsd <= 7 && x68k) ? 1 : 2;
-	AUDIO_INITINFO(&ai);
-	if (ai0.hiwat > 0)
-		ai.hiwat = ai0.hiwat - 1;
-	if (ai0.lowat < ai0.hiwat)
-		ai.lowat = ai0.lowat + 1;
-	ai.mode = AUMODE_PLAY;
-	ai.play.sample_rate = 11025;
-	ai.play.channels = channels;
-	ai.play.precision = 16;
-	ai.play.encoding = AUDIO_ENCODING_SLINEAR_LE;
-	ai.play.pause = 1;
-	ai.record.sample_rate = 11025;
-	ai.record.channels = channels;
-	ai.record.precision = 16;
-	ai.record.encoding = AUDIO_ENCODING_SLINEAR_LE;
-	ai.record.pause = 1;
-	r = IOCTL(fd, AUDIO_SETINFO, &ai, "ai");
-	if (r == -1)
-		err(1, "AUDIO_SETINFO");
-	CLOSE(fd);
+		// play
+		XP_EQ(8000, ai.play.sample_rate);
+		XP_EQ(1, ai.play.channels);
+		XP_EQ(8, ai.play.precision);
+		XP_EQ(AUDIO_ENCODING_ULAW, ai.play.encoding);
+		// gain
+		// port
+		XP_EQ(0, ai.play.seek);
+		// avail_ports
+		XP_BUFFSIZE(1, ai.play.buffer_size);
+		XP_EQ(0, ai.play.samples);
+		XP_EQ(0, ai.play.eof);
+		XP_EQ(0, ai.play.pause);
+		XP_EQ(0, ai.play.error);
+		XP_EQ(0, ai.play.waiting);
+		// balance
+		XP_EQ(mode2popen_full[mode], ai.play.open);
+		XP_EQ(0, ai.play.active);
+		// record
+		XP_EQ(8000, ai.record.sample_rate);
+		XP_EQ(1, ai.record.channels);
+		XP_EQ(8, ai.record.precision);
+		XP_EQ(AUDIO_ENCODING_ULAW, ai.record.encoding);
+		// gain
+		// port
+		XP_EQ(0, ai.record.seek);
+		// avail_ports
+		XP_BUFFSIZE((netbsd <= 8), ai.record.buffer_size);
+		XP_EQ(0, ai.record.samples);
+		XP_EQ(0, ai.record.eof);
+		XP_EQ(0, ai.record.pause);
+		XP_EQ(0, ai.record.error);
+		XP_EQ(0, ai.record.waiting);
+		// balance
+		XP_EQ(mode2ropen_full[mode], ai.record.open);
+		if (netbsd <= 7) {
+			// N7 は録音が有効ならオープン直後から active になるらしい。
+			XP_EQ(mode2ropen(mode), ai.record.active);
+		} else {
+			// オープンしただけではまだアクティブにならない。
+			XP_EQ(0, ai.record.active);
+		}
+		// これを保存しておく
+		ai0 = ai;
 
-	// 再オープンしてチェック
-	fd = OPEN(devaudio, O_WRONLY);
-	if (fd == -1)
-		err(1, "open");
-	memset(&ai, 0, sizeof(ai));
-	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
-	XP_SYS_EQ(0, r);
+		// できるだけ変更
+		channels = (netbsd <= 7 && x68k) ? 1 : 2;
+		AUDIO_INITINFO(&ai);
+		if (ai0.hiwat > 0)
+			ai.hiwat = ai0.hiwat - 1;
+		if (ai0.lowat < ai0.hiwat)
+			ai.lowat = ai0.lowat + 1;
+		ai.mode = ai.mode & ~AUMODE_PLAY_ALL;
+		ai.play.sample_rate = 11025;
+		ai.play.channels = channels;
+		ai.play.precision = 16;
+		ai.play.encoding = AUDIO_ENCODING_SLINEAR_LE;
+		ai.play.pause = 1;
+		ai.record.sample_rate = 11025;
+		ai.record.channels = channels;
+		ai.record.precision = 16;
+		ai.record.encoding = AUDIO_ENCODING_SLINEAR_LE;
+		ai.record.pause = 1;
+		r = IOCTL(fd, AUDIO_SETINFO, &ai, "ai");
+		if (r == -1)
+			err(1, "AUDIO_SETINFO");
+		r = CLOSE(fd);
+		XP_SYS_EQ(0, r);
 
-	XP_NE(0, ai.blocksize);
-	XP_NE(0, ai.hiwat);
-	XP_NE(0, ai.lowat);
-	XP_EQ(AUMODE_PLAY | AUMODE_PLAY_ALL, ai.mode);
-	// play
-	XP_EQ(8000, ai.play.sample_rate);
-	XP_EQ(1, ai.play.channels);
-	XP_EQ(8, ai.play.precision);
-	XP_EQ(AUDIO_ENCODING_ULAW, ai.play.encoding);
-	// gain
-	// port
-	XP_EQ(0, ai.play.seek);
-	// avail_ports
-	XP_NE(0, ai.play.buffer_size);
-	XP_EQ(0, ai.play.samples);
-	XP_EQ(0, ai.play.eof);
-	XP_EQ(0, ai.play.pause);
-	XP_EQ(0, ai.play.error);
-	XP_EQ(0, ai.play.waiting);
-	// balance
-	XP_EQ(1, ai.play.open);
-	XP_EQ(0, ai.play.active);
-	// record
-	XP_EQ(8000, ai.record.sample_rate);
-	XP_EQ(1, ai.record.channels);
-	XP_EQ(8, ai.record.precision);
-	XP_EQ(AUDIO_ENCODING_ULAW, ai.record.encoding);
-	// gain
-	// port
-	XP_EQ(0, ai.record.seek);
-	// avail_ports
-	XP_BUFFSIZE((netbsd <= 8), ai.record.buffer_size);
-	XP_EQ(0, ai.record.samples);
-	XP_EQ(0, ai.record.eof);
-	XP_EQ(0, ai.record.pause);
-	XP_EQ(0, ai.record.error);
-	XP_EQ(0, ai.record.waiting);
-	// balance
-	XP_EQ(0, ai.record.open);
-	XP_EQ(0, ai.record.active);
+		// 再オープンしてチェック
+		fd = OPEN(devaudio, mode);
+		if (fd == -1)
+			err(1, "open");
+		memset(&ai, 0, sizeof(ai));
+		r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+		XP_SYS_EQ(0, r);
 
-	CLOSE(fd);
+		XP_NE(0, ai.blocksize);
+		XP_NE(0, ai.hiwat);
+		XP_NE(0, ai.lowat);
+		XP_EQ(mode2aumode(mode), ai.mode);
+		// play
+		XP_EQ(8000, ai.play.sample_rate);
+		XP_EQ(1, ai.play.channels);
+		XP_EQ(8, ai.play.precision);
+		XP_EQ(AUDIO_ENCODING_ULAW, ai.play.encoding);
+		// gain
+		// port
+		XP_EQ(0, ai.play.seek);
+		// avail_ports
+		XP_NE(0, ai.play.buffer_size);
+		XP_EQ(0, ai.play.samples);
+		XP_EQ(0, ai.play.eof);
+		XP_EQ(0, ai.play.pause);
+		XP_EQ(0, ai.play.error);
+		XP_EQ(0, ai.play.waiting);
+		// balance
+		XP_EQ(mode2popen_full[mode], ai.play.open);
+		XP_EQ(0, ai.play.active);
+		// record
+		XP_EQ(8000, ai.record.sample_rate);
+		XP_EQ(1, ai.record.channels);
+		XP_EQ(8, ai.record.precision);
+		XP_EQ(AUDIO_ENCODING_ULAW, ai.record.encoding);
+		// gain
+		// port
+		XP_EQ(0, ai.record.seek);
+		// avail_ports
+		XP_BUFFSIZE((netbsd <= 8), ai.record.buffer_size);
+		XP_EQ(0, ai.record.samples);
+		XP_EQ(0, ai.record.eof);
+		XP_EQ(0, ai.record.pause);
+		XP_EQ(0, ai.record.error);
+		XP_EQ(0, ai.record.waiting);
+		// balance
+		XP_EQ(mode2ropen_full[mode], ai.record.open);
+		if (netbsd <= 7) {
+			// N7 は録音が有効ならオープン直後から active になるらしい。
+			XP_EQ(mode2ropen(mode), ai.record.active);
+		} else {
+			// オープンしただけではまだアクティブにならない。
+			XP_EQ(0, ai.record.active);
+		}
+
+		r = CLOSE(fd);
+		XP_SYS_EQ(0, r);
+	}
 }
 
 // /dev/sound は前回の値がみえる
+// /dev/audio を一旦開いて初期化しておき、
+// /dev/sound の初期値がそれになることを確認、
+// いろいろ変更して close、もう一度開いて残っていることを確認。
 void
 test_open_3(void)
 {
@@ -788,135 +833,151 @@ test_open_3(void)
 	int channels;
 	int fd;
 	int r;
+	int aimode;
 
-	TEST("open_3");
+	// N8 だと panic する。
+	// 録音を止めてないのか分からないけど、O_RDWR オープンですでに
+	// eap の録音側が動いてるみたいな感じで怒られる。しらん。
+	if (netbsd == 8) {
+		XP_FAIL("it causes panic");
+		return;
+	}
 
-	// まず /dev/audio 開いて初期化させておく
-	fd = OPEN(devaudio, O_RDONLY);
-	if (fd == -1)
-		err(1, "open");
-	CLOSE(fd);
+	for (int mode = 0; mode <= 2; mode++) {
+		TEST("open_3(%s)", openmodetable[mode]);
 
-	// オープンして初期値をチェック
-	fd = OPEN(devsound, O_WRONLY);
-	if (fd == -1)
-		err(1, "open");
-	memset(&ai, 0, sizeof(ai));
-	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
-	XP_SYS_EQ(0, r);
+		// まず /dev/audio を RDWR で開いて両方初期化させておく
+		fd = OPEN(devaudio, O_RDWR);
+		if (fd == -1)
+			err(1, "open");
+		r = CLOSE(fd);
+		XP_SYS_EQ(0, r);
 
-	// audio の初期値と同じものが見えるはず
-	XP_NE(0, ai.blocksize);
-	// hiwat, lowat
-	XP_EQ(AUMODE_PLAY | AUMODE_PLAY_ALL, ai.mode);
-	// play
-	XP_EQ(8000, ai.play.sample_rate);
-	XP_EQ(1, ai.play.channels);
-	XP_EQ(8, ai.play.precision);
-	XP_EQ(AUDIO_ENCODING_ULAW, ai.play.encoding);
-	// gain
-	// port
-	XP_EQ(0, ai.play.seek);
-	// avail_ports
-	XP_NE(0, ai.play.buffer_size);
-	XP_EQ(0, ai.play.samples);
-	XP_EQ(0, ai.play.eof);
-	XP_EQ(0, ai.play.pause);
-	XP_EQ(0, ai.play.error);
-	XP_EQ(0, ai.play.waiting);
-	// balance
-	XP_EQ(1, ai.play.open);
-	XP_EQ(0, ai.play.active);
-	// record
-	XP_EQ(8000, ai.record.sample_rate);
-	XP_EQ(1, ai.record.channels);
-	XP_EQ(8, ai.record.precision);
-	XP_EQ(AUDIO_ENCODING_ULAW, ai.record.encoding);
-	// gain
-	// port
-	XP_EQ(0, ai.record.seek);
-	// avail_ports
-	XP_BUFFSIZE((netbsd <= 8), ai.record.buffer_size);
-	XP_EQ(0, ai.record.samples);
-	XP_EQ(0, ai.record.eof);
-	XP_EQ(0, ai.record.pause);
-	XP_EQ(0, ai.record.error);
-	XP_EQ(0, ai.record.waiting);
-	// balance
-	XP_EQ(0, ai.record.open);
-	XP_EQ(0, ai.record.active);
+		// オープンして初期値をチェック
+		fd = OPEN(devsound, mode);
+		if (fd == -1)
+			err(1, "open");
+		memset(&ai, 0, sizeof(ai));
+		r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+		XP_SYS_EQ(0, r);
 
-	// できるだけ変更
-	channels = (netbsd <= 7 && x68k) ? 1 : 2;
-	AUDIO_INITINFO(&ai);
-	ai.mode = AUMODE_PLAY_ALL;
-	ai.play.sample_rate = 11025;
-	ai.play.channels = channels;
-	ai.play.precision = 16;
-	ai.play.encoding = AUDIO_ENCODING_SLINEAR_LE;
-	ai.play.pause = 1;
-	ai.record.sample_rate = 11025;
-	ai.record.channels = channels;
-	ai.record.precision = 16;
-	ai.record.encoding = AUDIO_ENCODING_SLINEAR_LE;
-	ai.record.pause = 1;
-	r = IOCTL(fd, AUDIO_SETINFO, &ai, "ai");
-	if (r == -1)
-		err(1, "AUDIO_SETINFO");
-	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai0, "ai0");
-	if (r == -1)
-		err(1, "AUDIO_GETBUFINFO");
-	CLOSE(fd);
+		// audio の初期値と同じものが見えるはず
+		XP_NE(0, ai.blocksize);
+		// hiwat, lowat
+		XP_EQ(mode2aumode(mode), ai.mode);
+		aimode = ai.mode;
+		// play
+		XP_EQ(8000, ai.play.sample_rate);
+		XP_EQ(1, ai.play.channels);
+		XP_EQ(8, ai.play.precision);
+		XP_EQ(AUDIO_ENCODING_ULAW, ai.play.encoding);
+		// gain
+		// port
+		XP_EQ(0, ai.play.seek);
+		// avail_ports
+		XP_NE(0, ai.play.buffer_size);
+		XP_EQ(0, ai.play.samples);
+		XP_EQ(0, ai.play.eof);
+		XP_EQ(0, ai.play.pause);
+		XP_EQ(0, ai.play.error);
+		XP_EQ(0, ai.play.waiting);
+		// balance
+		XP_EQ(mode2popen_full[mode], ai.play.open);
+		XP_EQ(0, ai.play.active);
+		// record
+		XP_EQ(8000, ai.record.sample_rate);
+		XP_EQ(1, ai.record.channels);
+		XP_EQ(8, ai.record.precision);
+		XP_EQ(AUDIO_ENCODING_ULAW, ai.record.encoding);
+		// gain
+		// port
+		XP_EQ(0, ai.record.seek);
+		// avail_ports
+		XP_BUFFSIZE((netbsd <= 8), ai.record.buffer_size);
+		XP_EQ(0, ai.record.samples);
+		XP_EQ(0, ai.record.eof);
+		XP_EQ(0, ai.record.pause);
+		XP_EQ(0, ai.record.error);
+		XP_EQ(0, ai.record.waiting);
+		// balance
+		XP_EQ(mode2ropen_full[mode], ai.record.open);
+		XP_EQ(0, ai.record.active);
 
-	// 再オープンしてチェック
-	fd = OPEN(devsound, O_WRONLY);
-	if (fd == -1)
-		err(1, "open");
-	memset(&ai, 0, sizeof(ai));
-	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
-	XP_SYS_EQ(0, r);
+		// できるだけ変更
+		channels = (netbsd <= 7 && x68k) ? 1 : 2;
+		AUDIO_INITINFO(&ai);
+		ai.mode = aimode & ~AUMODE_PLAY_ALL;
+		ai.play.sample_rate = 11025;
+		ai.play.channels = channels;
+		ai.play.precision = 16;
+		ai.play.encoding = AUDIO_ENCODING_SLINEAR_LE;
+		ai.play.pause = 1;
+		ai.record.sample_rate = 11025;
+		ai.record.channels = channels;
+		ai.record.precision = 16;
+		ai.record.encoding = AUDIO_ENCODING_SLINEAR_LE;
+		ai.record.pause = 1;
+		r = IOCTL(fd, AUDIO_SETINFO, &ai, "ai");
+		if (r == -1)
+			err(1, "AUDIO_SETINFO");
+		r = IOCTL(fd, AUDIO_GETBUFINFO, &ai0, "ai0");
+		if (r == -1)
+			err(1, "AUDIO_GETBUFINFO");
+		r = CLOSE(fd);
+		XP_SYS_EQ(0, r);
 
-	XP_NE(0, ai.blocksize);
-	// hiwat, lowat は変化する
-	XP_EQ(AUMODE_PLAY | AUMODE_PLAY_ALL, ai.mode);
-	// play
-	XP_EQ(ai0.play.sample_rate, ai.play.sample_rate);
-	XP_EQ(ai0.play.channels, ai.play.channels);
-	XP_EQ(ai0.play.precision, ai.play.precision);
-	XP_EQ(ai0.play.encoding, ai.play.encoding);
-	// gain
-	// port
-	XP_EQ(0, ai.play.seek);
-	// avail_ports
-	XP_NE(0, ai.play.buffer_size);
-	XP_EQ(0, ai.play.samples);
-	XP_EQ(0, ai.play.eof);
-	XP_EQ(ai0.play.pause, ai.play.pause);
-	XP_EQ(0, ai.play.error);
-	XP_EQ(0, ai.play.waiting);
-	// balance
-	XP_EQ(1, ai.play.open);
-	XP_EQ(0, ai.play.active);
-	// record
-	XP_EQ(ai0.record.sample_rate, ai.record.sample_rate);
-	XP_EQ(ai0.record.channels, ai.record.channels);
-	XP_EQ(ai0.record.precision, ai.record.precision);
-	XP_EQ(ai0.record.encoding, ai.record.encoding);
-	// gain
-	// port
-	XP_EQ(0, ai.record.seek);
-	// avail_ports
-	XP_BUFFSIZE((netbsd <= 8), ai.record.buffer_size);
-	XP_EQ(0, ai.record.samples);
-	XP_EQ(0, ai.record.eof);
-	XP_EQ(ai0.record.pause, ai.record.pause);
-	XP_EQ(0, ai.record.error);
-	XP_EQ(0, ai.record.waiting);
-	// balance
-	XP_EQ(0, ai.record.open);
-	XP_EQ(0, ai.record.active);
+		// 再オープンしてチェック
+		fd = OPEN(devsound, mode);
+		if (fd == -1)
+			err(1, "open");
+		memset(&ai, 0, sizeof(ai));
+		r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+		XP_SYS_EQ(0, r);
 
-	CLOSE(fd);
+		XP_NE(0, ai.blocksize);
+		// hiwat, lowat は変化する
+		// mode は引き継がない
+		XP_EQ(mode2aumode(mode), ai.mode);
+		// play
+		XP_EQ(ai0.play.sample_rate, ai.play.sample_rate);
+		XP_EQ(ai0.play.channels, ai.play.channels);
+		XP_EQ(ai0.play.precision, ai.play.precision);
+		XP_EQ(ai0.play.encoding, ai.play.encoding);
+		// gain
+		// port
+		XP_EQ(0, ai.play.seek);
+		// avail_ports
+		XP_NE(0, ai.play.buffer_size);
+		XP_EQ(0, ai.play.samples);
+		XP_EQ(0, ai.play.eof);
+		XP_EQ(ai0.play.pause, ai.play.pause);
+		XP_EQ(0, ai.play.error);
+		XP_EQ(0, ai.play.waiting);
+		// balance
+		XP_EQ(mode2popen_full[mode], ai.play.open);
+		XP_EQ(0, ai.play.active);
+		// record
+		XP_EQ(ai0.record.sample_rate, ai.record.sample_rate);
+		XP_EQ(ai0.record.channels, ai.record.channels);
+		XP_EQ(ai0.record.precision, ai.record.precision);
+		XP_EQ(ai0.record.encoding, ai.record.encoding);
+		// gain
+		// port
+		XP_EQ(0, ai.record.seek);
+		// avail_ports
+		XP_BUFFSIZE((netbsd <= 8), ai.record.buffer_size);
+		XP_EQ(0, ai.record.samples);
+		XP_EQ(0, ai.record.eof);
+		XP_EQ(ai0.record.pause, ai.record.pause);
+		XP_EQ(0, ai.record.error);
+		XP_EQ(0, ai.record.waiting);
+		// balance
+		XP_EQ(mode2ropen_full[mode], ai.record.open);
+		XP_EQ(0, ai.record.active);
+
+		r = CLOSE(fd);
+		XP_SYS_EQ(0, r);
+	}
 }
 
 // /dev/sound -> /dev/audio -> /dev/sound と開くと2回目の sound は
@@ -2620,8 +2681,8 @@ test_AUDIO_SETFD_ONLY(void)
 		// GETINFO の ai.*.open などトラック状態は変化しない。
 		r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
 		XP_SYS_EQ(0, r);
-		XP_EQ(mode2popen[mode], ai.play.open);
-		XP_EQ(mode2ropen[mode], ai.record.open);
+		XP_EQ(mode2popen_full[mode], ai.play.open);
+		XP_EQ(mode2ropen_full[mode], ai.record.open);
 
 		// Half duplex に設定しようとすると、
 		// N7: HW Full なら設定できる、HW Half なら何も起きず成功。
@@ -2641,8 +2702,8 @@ test_AUDIO_SETFD_ONLY(void)
 		// GETINFO の ai.*.open などトラック状態は変化しない。
 		r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
 		XP_SYS_EQ(0, r);
-		XP_EQ(mode2popen[mode], ai.play.open);
-		XP_EQ(mode2ropen[mode], ai.record.open);
+		XP_EQ(mode2popen_full[mode], ai.play.open);
+		XP_EQ(mode2ropen_full[mode], ai.record.open);
 
 		CLOSE(fd);
 	}
@@ -2939,15 +3000,15 @@ test_AUDIO_SETINFO_mode()
 		if (r == -1)
 			err(1, "ioctl");
 		XP_EQ(inimode, ai.mode);
-		XP_EQ(mode2popen[openmode], ai.play.open);
-		XP_EQ(mode2ropen[openmode], ai.record.open);
+		XP_EQ(mode2popen_full[openmode], ai.play.open);
+		XP_EQ(mode2ropen_full[openmode], ai.record.open);
 		// N7、N8 では buffer_size は常に非ゼロなので調べない
 		// A2: バッファは O_RDWR なら HWHalf でも両方確保される。
 		// Half なのを判定するほうが後なのでやむをえないか。
 		// 確保されてたらいけないわけでもないだろうし(無駄ではあるけど)。
 		if (netbsd >= 9) {
-			XP_BUFFSIZE(mode2popen[openmode], ai.play.buffer_size);
-			XP_BUFFSIZE(mode2ropen[openmode], ai.record.buffer_size);
+			XP_BUFFSIZE(mode2popen_full[openmode], ai.play.buffer_size);
+			XP_BUFFSIZE(mode2ropen_full[openmode], ai.record.buffer_size);
 		}
 
 		// mode を変える
@@ -2962,12 +3023,12 @@ test_AUDIO_SETINFO_mode()
 			XP_SYS_EQ(0, r);
 			XP_EQ(expmode, ai.mode);
 			// mode に関係なく当初のオープンモードを維持するようだ
-			XP_EQ(mode2popen[openmode], ai.play.open);
-			XP_EQ(mode2ropen[openmode], ai.record.open);
+			XP_EQ(mode2popen_full[openmode], ai.play.open);
+			XP_EQ(mode2ropen_full[openmode], ai.record.open);
 			// N7、N8 では buffer_size は常に非ゼロなので調べない
 			if (netbsd >= 9) {
-				XP_BUFFSIZE(mode2popen[openmode], ai.play.buffer_size);
-				XP_BUFFSIZE(mode2ropen[openmode], ai.record.buffer_size);
+				XP_BUFFSIZE(mode2popen_full[openmode], ai.play.buffer_size);
+				XP_BUFFSIZE(mode2ropen_full[openmode], ai.record.buffer_size);
 			}
 		}
 
@@ -3038,7 +3099,7 @@ test_AUDIO_SETINFO_params()
 				ai.play.sample_rate = 11025;
 				ai.record.sample_rate = 11025;
 				if (aimode)
-					ai.mode = mode2aumode[openmode] & ~AUMODE_PLAY_ALL;
+					ai.mode = mode2aumode_full[openmode] & ~AUMODE_PLAY_ALL;
 				if (pause) {
 					ai.play.pause = 1;
 					ai.record.pause = 1;
@@ -3050,8 +3111,8 @@ test_AUDIO_SETINFO_params()
 				r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
 				XP_SYS_EQ(0, r);
 				int expmode = (aimode)
-					? mode2aumode[openmode] & ~AUMODE_PLAY_ALL
-					: mode2aumode[openmode];
+					? mode2aumode_full[openmode] & ~AUMODE_PLAY_ALL
+					: mode2aumode_full[openmode];
 				XP_EQ(expmode, ai.mode);
 				if (openmode == O_RDONLY) {
 					// play なし
@@ -3172,7 +3233,7 @@ test_AUDIO_SETINFO_pause()
 				ai.play.pause = 1;
 				ai.record.pause = 1;
 				if (aimode)
-					ai.mode = mode2aumode[openmode] & ~AUMODE_PLAY_ALL;
+					ai.mode = mode2aumode_full[openmode] & ~AUMODE_PLAY_ALL;
 				if (param) {
 					ai.play.sample_rate = 11025;
 					ai.record.sample_rate = 11025;
@@ -3184,8 +3245,8 @@ test_AUDIO_SETINFO_pause()
 				r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
 				XP_SYS_EQ(0, r);
 				int expmode = (aimode)
-					? mode2aumode[openmode] & ~AUMODE_PLAY_ALL
-					: mode2aumode[openmode];
+					? mode2aumode_full[openmode] & ~AUMODE_PLAY_ALL
+					: mode2aumode_full[openmode];
 				XP_EQ(expmode, ai.mode);
 				if (openmode == O_RDONLY) {
 					// play がない
@@ -3214,7 +3275,7 @@ test_AUDIO_SETINFO_pause()
 				ai.play.pause = 0;
 				ai.record.pause = 0;
 				if (aimode)
-					ai.mode = mode2aumode[openmode];
+					ai.mode = mode2aumode_full[openmode];
 				if (param) {
 					ai.play.sample_rate = 16000;
 					ai.record.sample_rate = 16000;
@@ -3225,7 +3286,7 @@ test_AUDIO_SETINFO_pause()
 
 				r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
 				XP_SYS_EQ(0, r);
-				XP_EQ(mode2aumode[openmode], ai.mode);
+				XP_EQ(mode2aumode_full[openmode], ai.mode);
 				XP_EQ(0, ai.play.pause);
 				XP_EQ(0, ai.record.pause);
 				if (openmode != O_RDONLY)
