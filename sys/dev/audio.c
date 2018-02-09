@@ -1953,7 +1953,17 @@ audio_poll(struct audio_softc *sc, int events, struct lwp *l,
 
 	KASSERT(mutex_owned(sc->sc_lock));
 
-	DPRINTF(2, "audio_poll: events=0x%x mode=%d\n", events, file->mode);
+#if AUDIO_DEBUG > 2
+#define POLLEV_BITMAP "\177\020" \
+	    "b\10WRBAND\0" \
+	    "b\7RDBAND\0" "b\6RDNORM\0" "b\5NVAL\0" "b\4HUP\0" \
+	    "b\3ERR\0" "b\2OUT\0" "b\1PRI\0" "b\0IN\0"
+	char evbuf[64];
+	snprintb(evbuf, sizeof(evbuf), POLLEV_BITMAP, events);
+	TRACEF(file, "events=%s", evbuf);
+#else
+	DPRINTF(2, "%s: events=0x%x mode=%d\n", __func__, events, file->mode);
+#endif
 
 	// XXX 動作未確認
 
@@ -1984,6 +1994,12 @@ audio_poll(struct audio_softc *sc, int events, struct lwp *l,
 			selrecord(l, &sc->sc_wsel);
 	}
 
+#if AUDIO_DEBUG > 2
+	snprintb(evbuf, sizeof(evbuf), POLLEV_BITMAP, revents);
+	TRACEF(file, "revents=%s", evbuf);
+#else
+	DPRINTF(2, "%s: revents=0x%x\n", __func__, revents);
+#endif
 	return revents;
 }
 
