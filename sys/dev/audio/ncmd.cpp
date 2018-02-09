@@ -15,6 +15,7 @@
 #include <sys/mman.h>
 #include <sys/param.h>
 #include <sys/sysctl.h>
+#include <sys/time.h>
 
 struct cmdtable {
 	const char *name;
@@ -24,6 +25,7 @@ struct cmdtable {
 void init(int);
 
 int debug;
+int x68k;
 char devaudio[16];
 char devsound[16];
 extern struct cmdtable cmdtable[];
@@ -48,6 +50,7 @@ main(int ac, char *av[])
 	int c;
 	int unit;
 
+	x68k = 0;
 	unit = 0;
 
 	// global option
@@ -90,10 +93,26 @@ main(int ac, char *av[])
 void
 init(int unit)
 {
+	audio_device_t dev;
+	int fd;
+	int r;
+
 	snprintf(devaudio, sizeof(devaudio), "/dev/audio%d", unit);
 	snprintf(devsound, sizeof(devsound), "/dev/sound%d", unit);
 	if (debug)
 		printf("unit = %d\n", unit);
+
+	fd = open(devaudio, O_WRONLY);
+	if (fd == -1)
+		err(1, "init: open: %s", devaudio);
+	r = ioctl(fd, AUDIO_GETDEV, &dev);
+	if (r == -1)
+		err(1, "init:AUDIO_GETDEV");
+
+	// ショートカット
+	if (strcmp(dev.config, "vs") == 0)
+		x68k = 1;
+	close(fd);
 }
 
 #define DPRINTF(fmt...)	do {	\
@@ -296,6 +315,84 @@ cmd_playsync(int ac, char *av[])
 
 	CLOSE(fd);
 	free(wav);
+
+	return 0;
+}
+
+// write が戻ってくるまでの時間を調べてみる。
+// 引数は 1つ目がバッファサイズに対する1回の書き込み長の割合、省略なら1.0
+int
+cmd_writetime(int ac, char *av[])
+{
+	struct audio_info ai;
+	struct timeval start, end, result;
+	struct timeval total;
+	char *buf;
+	int bufsize;
+	int fd;
+	int r;
+	double ratio;
+
+	ratio = 1;
+	switch (ac) {
+	 case 2:
+		ratio = atof(av[1]);
+		/* FALLTHROUGH */
+	 case 1:
+		break;
+	 default:
+		errx(1, "invalid argument");
+	}
+
+	fd = OPEN(devaudio, O_WRONLY);
+	if (fd == -1)
+		err(1, "open");
+
+	AUDIO_INITINFO(&ai);
+	ai.play.encoding = AUDIO_ENCODING_SLINEAR_LE;
+	ai.play.precision = 16;
+	ai.play.channels = x68k ? 1 : 2;
+	ai.play.sample_rate = x68k ? 16000 : 48000;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
+	if (r == -1)
+		err(1, "AUDIO_SETINFO");
+
+	// bufsize を取得
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	if (r == -1)
+		err(1, "AUDIO_GETINFO");
+	bufsize = (double)ai.play.buffer_size * ratio;
+	printf("bufsize = %d (ratio=%4.2f)\n", bufsize, ratio);
+
+	buf = (char *)malloc(bufsize);
+	if (buf == NULL)
+		err(1, "malloc");
+	memset(buf, 0, bufsize);
+
+	memset(&total, 0, sizeof(total));
+	for (int i = 0; i < 5; i++) {
+		gettimeofday(&start, NULL);
+		r = WRITE(fd, buf, bufsize);
+		if (r == -1)
+			err(1, "write");
+		if (r != bufsize)
+			errx(1, "write: too short");
+		gettimeofday(&end, NULL);
+		timersub(&end, &start, &result);
+		timeradd(&total, &result, &total);
+		printf("write %d.%06d\n", (int)result.tv_sec, (int)result.tv_usec);
+	}
+
+	gettimeofday(&start, NULL);
+	CLOSE(fd);
+	gettimeofday(&end, NULL);
+	timersub(&end, &start, &result);
+	timeradd(&total, &result, &total);
+	printf("drain %d.%06d\n", (int)result.tv_sec, (int)result.tv_usec);
+	printf("total %d.%06d\n", (int)total.tv_sec, (int)total.tv_usec);
+
+	free(buf);
+	return 0;
 }
 
 // pyon_s16le.wav を途中で DRAIN 発行して、続けてみる。
@@ -359,6 +456,7 @@ cmd_drain(int ac, char *av[])
 struct cmdtable cmdtable[] = {
 	DEF(SETFD),
 	DEF(playsync),
+	DEF(writetime),
 	DEF(drain),
 	{ NULL, NULL },
 };
