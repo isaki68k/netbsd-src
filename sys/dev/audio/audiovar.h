@@ -61,7 +61,7 @@
 // 最大は 384000 (hdaudio規格?) でもいいけど確認できないので、とりあえず
 // このくらいでたちまち勘弁してもらえないか。
 #define AUDIO_MIN_FREQUENCY (1000)
-#define AUDIO_MAX_FREQUENCY	(192000)
+#define AUDIO_MAX_FREQUENCY (192000)
 
 #if BYTE_ORDER == LITTLE_ENDIAN
 #define AUDIO_ENCODING_SLINEAR_NE AUDIO_ENCODING_SLINEAR_LE
