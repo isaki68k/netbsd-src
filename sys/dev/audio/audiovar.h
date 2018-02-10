@@ -30,7 +30,11 @@
 #endif
 
 // 出力バッファのブロック数
+#if defined(x68k)
 #define NBLKOUT	(4)
+#else
+#define NBLKOUT	(8)
+#endif
 
 // ハードウェアバッファのブロック数
 // must be NBLKHW != NBLKOUT
