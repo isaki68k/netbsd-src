@@ -1835,6 +1835,7 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
 	if (mixer->hwbuf.capacity - mixer->hwbuf.count >= mixer->frames_per_block) {
 		audio_pmixer_process(sc, false);
 
+		// XXX 1 or 2 ではどうだろう
 		int minimum = (force) ? 1 : mixer->hwblks;
 		if (mixer->hwbuf.count >= mixer->frames_per_block * minimum) {
 			// トラックミキサ出力開始
