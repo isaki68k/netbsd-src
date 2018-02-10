@@ -32,6 +32,10 @@
 // 出力バッファのブロック数
 #define NBLKOUT	(4)
 
+// ハードウェアバッファのブロック数
+// must be NBLKHW != NBLKOUT
+#define NBLKHW (3)
+
 // ユーザランドフォーマットとして [US]Linear24/24 をサポートします。
 //#define AUDIO_SUPPORT_LINEAR24
 

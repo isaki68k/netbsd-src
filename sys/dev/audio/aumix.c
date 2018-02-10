@@ -1684,8 +1684,7 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 
 	mixer->blktime_d = 1000;
 	mixer->blktime_n = audio_mixer_calc_blktime(mixer);
-	// hwblks は NBLKOUT でなければならない
-	mixer->hwblks = NBLKOUT;
+	mixer->hwblks = NBLKHW;
 
 	mixer->frames_per_block = frame_per_block_roundup(mixer, &mixer->hwbuf.fmt);
 	int blksize = frametobyte(&mixer->hwbuf.fmt, mixer->frames_per_block);
