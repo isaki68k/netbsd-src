@@ -1827,9 +1827,10 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
 #endif
 
 	mixer = sc->sc_pmixer;
-	TRACE("begin mixseq=%d hwseq=%d hwbuf=%d/%d/%d",
+	TRACE("begin mixseq=%d hwseq=%d hwbuf=%d/%d/%d%s",
 		(int)mixer->mixseq, (int)mixer->hwseq,
-		mixer->hwbuf.top, mixer->hwbuf.count, mixer->hwbuf.capacity);
+		mixer->hwbuf.top, mixer->hwbuf.count, mixer->hwbuf.capacity,
+		force ? " force" : "");
 
 	// hwbuf に1ブロック以上の空きがあればブロックを追加
 	if (mixer->hwbuf.capacity - mixer->hwbuf.count >= mixer->frames_per_block) {
@@ -1844,9 +1845,15 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
 		}
 	}
 
+#if AUDIO_DEBUG > 2
+	// たいていこの行の途中で割り込みかかって行が分断されるので
+	// 読みやすさのためにちょっと割り込み禁止して表示。
+	mutex_enter(sc->sc_intr_lock);
 	TRACE("end   mixseq=%d hwseq=%d hwbuf=%d/%d/%d",
 		(int)mixer->mixseq, (int)mixer->hwseq,
 		mixer->hwbuf.top, mixer->hwbuf.count, mixer->hwbuf.capacity);
+	mutex_exit(sc->sc_intr_lock);
+#endif
 
 	return sc->sc_pbusy;
 }
