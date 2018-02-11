@@ -2059,6 +2059,7 @@ filt_audiowdetach(struct knote *kn)
 	struct audio_softc *sc;
 	audio_file_t *file;
 
+	TRACE("kn=%p", kn);
 	file = kn->kn_hook;
 	sc = file->sc;
 
@@ -2089,6 +2090,7 @@ filt_audiowrite(struct knote *kn, long hint)
 	}
 	mutex_exit(sc->sc_intr_lock);
 
+	TRACE("kn=%p data=%d\n", kn, (int)kn->kn_data);
 	return kn->kn_data > 0;
 }
 
@@ -2103,6 +2105,8 @@ int
 audio_kqfilter(struct audio_softc *sc, audio_file_t *file, struct knote *kn)
 {
 	struct klist *klist;
+
+	TRACEF(file, "kn=%p kn_filter=%x", kn, (int)kn->kn_filter);
 
 	switch (kn->kn_filter) {
 	case EVFILT_READ:
