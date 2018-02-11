@@ -1029,12 +1029,12 @@ abort:
  *      .dst  ----+
  *                | convert
  *                v
- *  outputbuf   [...............]  N blocks ring buffer
+ *  outputbuf   [...............]  NBLKOUT blocks ring buffer
  *
  *
  * When recording:
  *
- *  freq.srcbuf [...............]  N blocks ring buffer    <-- stage input
+ *  freq.srcbuf [...............]  NBLKOUT blocks ring buffer <-- stage input
  *      .dst  ----+
  *                | convert
  *                v
@@ -2024,7 +2024,7 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req,
  *                |
  *                |  convert to hw format
  *                v
- *    hwbuf     [............]          N blocks ring buffer
+ *    hwbuf     [............]          NBLKHW blocks ring buffer
  *
  * When playingback without MD filter:
  *
@@ -2032,7 +2032,7 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req,
  *                |
  *                |  convert aint2_t -> aint_t
  *                v
- *    hwbuf     [............]          N blocks ring buffer
+ *    hwbuf     [............]          NBLKHW blocks ring buffer
  *
  * mixsample: slinear_NE, double-sized internal precision, HW ch, HW freq.
  * codecbuf:  slinear_NE, internal precision,              HW ch, HW freq.
@@ -2308,7 +2308,7 @@ audio_rmixer_start(struct audio_softc *sc)
 /*
  * When recording with MD filter:
  *
- *    hwbuf     [............]          N blocks ring buffer
+ *    hwbuf     [............]          NBLKHW blocks ring buffer
  *                |
  *                | convert from hw format
  *                v
@@ -2319,7 +2319,7 @@ audio_rmixer_start(struct audio_softc *sc)
  *
  * When recording without MD filter:
  *
- *    hwbuf     [............]          N blocks ring buffer
+ *    hwbuf     [............]          NBLKHW blocks ring buffer
  *               |  |
  *               v  v
  *            track track ...
