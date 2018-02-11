@@ -2228,16 +2228,16 @@ audio_pintr(void *arg)
 		(int)mixer->hw_complete_counter,
 		mixer->hwbuf.top, mixer->hwbuf.count, mixer->hwbuf.capacity);
 
-	// まず出力待ちのシーケンスを出力
-	if (mixer->hwbuf.count >= mixer->frames_per_block) {
-		audio_pmixer_output(sc);
-	}
-
 #if !defined(_KERNEL)
 	// ユーザランドエミュレーションは割り込み駆動ではないので
 	// 処理はここまで。
 	return;
 #endif
+
+	// まず出力待ちのシーケンスを出力
+	if (mixer->hwbuf.count >= mixer->frames_per_block) {
+		audio_pmixer_output(sc);
+	}
 
 	bool later = false;
 
