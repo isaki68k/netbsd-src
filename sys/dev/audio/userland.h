@@ -1,6 +1,8 @@
 #pragma once
 
 #include <string.h>
+#include <errno.h>
+#include <sys/param.h>
 
 // アサートするとき定義
 #define AUDIO_ASSERT
@@ -246,6 +248,53 @@ kpreempt_enable(void)
 
 static inline void
 kpreempt_disable(void)
+{
+}
+
+#define PAGE_SIZE	(4096)
+#define UVM_MAPFLAG(a,b,c,d,e)	(0)
+typedef off_t voff_t;
+typedef int uvm_flag_t;
+struct vm_map {
+};
+struct uvm_object {
+};
+
+extern struct vm_map *kernel_map;
+
+static inline int
+uvm_map(struct vm_map *map, vaddr_t *startp, vsize_t size,
+	struct uvm_object *uobj, voff_t uoffset, vsize_t align, uvm_flag_t flags)
+{
+	void *p;
+	p = malloc(size);
+	if (p == NULL)
+		return ENOMEM;
+	*startp = (vaddr_t)p;
+	return 0;
+}
+
+static inline void
+uvm_unmap(struct vm_map *map, vaddr_t start, vaddr_t end)
+{
+	free((void *)start);
+}
+
+static inline int
+uvm_map_pageable(struct vm_map *map, vaddr_t start, vaddr_t end,
+	bool new_pageable, int lockflags)
+{
+	return 0;
+}
+
+static inline struct uvm_object *
+uao_create(vsize_t size, int flags)
+{
+	return NULL;
+}
+
+static inline void
+uao_detach(struct uvm_object *uobj)
 {
 }
 
