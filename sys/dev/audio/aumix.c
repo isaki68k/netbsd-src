@@ -1806,7 +1806,8 @@ audio_mixer_destroy(struct audio_softc *sc, audio_trackmixer_t *mixer)
 	audio_free(mixer->codecbuf.mem);
 	audio_free(mixer->mixsample);
 
-	// draincv を cv_destroy() してはいけないっぽい。KASSERT で死ぬ。
+	if (mode == AUMODE_PLAY)
+		cv_destroy(&mixer->draincv);
 }
 
 // 再生ミキサを起動します。起動できれば true を返します。
