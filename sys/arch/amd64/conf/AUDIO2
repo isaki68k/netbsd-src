@@ -109,8 +109,8 @@ options 	DDB		# in-kernel debugger
 #options 	DDB_COMMANDONENTER="bt"	# execute command when ddb is entered
 #options 	DDB_ONPANIC=1	# see also sysctl(7): `ddb.onpanic'
 options 	DDB_HISTORY_SIZE=512	# enable history editing in DDB
-#options 	KGDB		# remote debugger
-#options 	KGDB_DEVNAME="\"com\"",KGDB_DEVADDR=0x3f8,KGDB_DEVRATE=9600
+options 	KGDB		# remote debugger
+options 	KGDB_DEVNAME="\"com\"",KGDB_DEVADDR=0x3f8,KGDB_DEVRATE=9600
 #makeoptions	DEBUG="-g"	# compile full symbol table for CTF
 #options 	SYSCALL_STATS	# per syscall counts
 #options 	SYSCALL_TIMES	# per syscall times
@@ -302,7 +302,7 @@ options 	VGA_POST		# in-kernel support for VGA POST
 aibs*		at acpi?		# ASUSTeK AI Booster hardware monitor
 asus*		at acpi?		# ASUS hotkeys
 attimer*	at acpi?		# AT Timer
-#com*		at acpi?		# Serial communications interface
+com*		at acpi?		# Serial communications interface
 #fdc*		at acpi?		# Floppy disk controller
 fujbp*		at acpi?		# Fujitsu Brightness & Pointer
 fujhk*		at acpi?		# Fujitsu Hotkeys
@@ -343,7 +343,7 @@ options 	AGP_X86
 pcib*	at pci? dev ? function ?	# PCI-ISA bridges
 ppb*	at pci? dev ? function ?	# PCI-PCI bridges
 # XXX 'puc's aren't really bridges, but there's no better place for them here
-puc*	at pci? dev ? function ?	# PCI "universal" comm. cards
+#puc*	at pci? dev ? function ?	# PCI "universal" comm. cards
 
 #amdpcib* at pci? dev ? function ?	# AMD 8111 PCI-ISA w/ HPET
 #hpet*	at amdpcib?
@@ -361,10 +361,10 @@ aapic*	at pci? dev ? function ?	# AMD 8131 IO apic
 agp*	at pchb?
 
 # ISA bus support
-isa0	at mainbus?
+#isa0	at mainbus?
 isa0	at pcib?
 #isa0	at amdpcib?
-isa0	at ichlpcib?
+#isa0	at ichlpcib?
 
 # CardBus bridge support
 #cbb*		at pci? dev ? function ?
@@ -433,7 +433,7 @@ tpm*	at isa? iomem 0xfed40000 irq 7
 # Serial Devices
 
 # PCI serial interfaces
-com*	at puc? port ?			# 16x50s on "universal" comm boards
+#com*	at puc? port ?			# 16x50s on "universal" comm boards
 cy*	at pci? dev ? function ?	# Cyclades Cyclom-Y serial boards
 cz*	at pci? dev ? function ?	# Cyclades-Z multi-port serial boards
 
