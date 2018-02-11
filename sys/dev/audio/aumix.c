@@ -1057,8 +1057,11 @@ abort:
 // トラックのユーザランド側フォーマットを設定します。
 // 変換用内部バッファは一度破棄されます。
 // 成功すれば 0、失敗すれば errno を返します。
-// outputbuf を解放・再取得する可能性があるため、track が sc_files 上にある
-// 場合は必ず intr_lock 取得してから呼び出してください。
+// uvm 関連のルーチンが非 intr_lock 状態であることを要求するため、必ず
+// intr_lock でない状態で呼び出してください。
+// ただし outputbuf を解放・再取得する可能性があるため、track が sc_files
+// 上にある場合 (audio_file_setinfo_set() から呼ばれる時) は、in_use を
+// セットしてから呼び出してください。
 int
 audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 {
@@ -1067,6 +1070,7 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 
 	KASSERT(track);
 	KASSERT(is_valid_format(usrfmt));
+	KASSERT(!mutex_owned(track->mixer->sc->sc_intr_lock));
 
 	// 入力値チェック
 	audio_check_params2(usrfmt);
@@ -2342,8 +2346,13 @@ audio_rmixer_process(struct audio_softc *sc)
 		if (track == NULL)
 			continue;
 
+		if (track->in_use) {
+			TRACET(track, "skip; in use");
+			continue;
+		}
+
 		if (track->is_pause) {
-			TRACET(track, "paused");
+			TRACET(track, "skip; paused");
 			continue;
 		}
 

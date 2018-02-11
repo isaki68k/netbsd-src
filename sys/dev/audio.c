@@ -3126,8 +3126,12 @@ audio_file_setinfo_set(audio_track_t *track, const struct audio_prinfo *info,
 		KASSERT(track);
 
 		mutex_enter(track->mixer->sc->sc_intr_lock);
+		track->in_use = true;
+		mutex_exit(track->mixer->sc->sc_intr_lock);
 		track->mode = mode;
 		error = audio_track_set_format(track, fmt);
+		mutex_enter(track->mixer->sc->sc_intr_lock);
+		track->in_use = false;
 		mutex_exit(track->mixer->sc->sc_intr_lock);
 		if (error)
 			return error;
