@@ -1837,10 +1837,16 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
 
 	// hwbuf に1ブロック以上の空きがあればブロックを追加
 	if (mixer->hwbuf.capacity - mixer->hwbuf.count >= mixer->frames_per_block) {
+		int minimum;
+
 		audio_pmixer_process(sc, false);
 
+#if defined(AUDIO_HW_DOUBLE_BUFFER)
 		// XXX 1 or 2 ではどうだろう
-		int minimum = (force) ? 1 : mixer->hwblks;
+		minimum = (force) ? 1 : mixer->hwblks;
+#else
+		minimum = 1;
+#endif
 		if (mixer->hwbuf.count >= mixer->frames_per_block * minimum) {
 			// トラックミキサ出力開始
 			mutex_enter(sc->sc_intr_lock);
@@ -2238,6 +2244,12 @@ audio_pintr(void *arg)
 	return;
 #endif
 
+#if defined(AUDIO_HW_DOUBLE_BUFFER)
+	// ブロック0 の出力が終わったら用意されているはずのブロック1 を
+	// すぐに出力しておいて、その後ブロック2 の作成に取りかかる。
+	// これで遅マシンでも再生を途切れさせずに HW ブロックが作成できるが、
+	// その代わりレイテンシは1ブロック分上がる。
+
 	// まず出力待ちのシーケンスを出力
 	if (mixer->hwbuf.count >= mixer->frames_per_block) {
 		audio_pmixer_output(sc);
@@ -2255,6 +2267,16 @@ audio_pintr(void *arg)
 	if (later) {
 		audio_pmixer_output(sc);
 	}
+#else
+	// その場で次のブロックを作成して再生
+	// レイテンシは下げられるが、マシンパワーがないと再生が途切れる。
+
+	// バッファを作成
+	audio_pmixer_process(sc, true);
+
+	// 出力
+	audio_pmixer_output(sc);
+#endif
 
 	// drain 待ちしている人のために通知
 	cv_broadcast(&mixer->draincv);

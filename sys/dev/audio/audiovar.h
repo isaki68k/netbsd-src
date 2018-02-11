@@ -55,6 +55,13 @@
 #endif
 #endif
 
+// ミキサでダブルバッファを使うかどうか。
+// on にするとレイテンシが1ブロック分増える代わりに HW への再生が途切れる
+// ことはなくなる。
+// off にすると1ブロックのレイテンシは減るがマシンパワーがないと HW 再生が
+// 途切れる。(速ければへーきへーきという可能性もある)
+#define AUDIO_HW_DOUBLE_BUFFER
+
 // C の実装定義動作を使用する。
 #define AUDIO_USE_C_IMPLEMENTATION_DEFINED_BEHAVIOR
 

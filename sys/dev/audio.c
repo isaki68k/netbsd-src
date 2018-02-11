@@ -383,6 +383,10 @@ make_buildinfo(void)
 	n += snprintf(buf, sizeof(buf), "AUDIO_BLK_MS=%d", AUDIO_BLK_MS);
 	n += snprintf(buf + n, sizeof(buf) - n, ", NBLKOUT=%d", NBLKOUT);
 
+#if defined(AUDIO_HW_DOUBLE_BUFFER)
+	n += snprintf(buf + n, sizeof(buf) - n, ", HW_DOUBLE_BUFFER");
+#endif
+
 	audio_buildinfo = malloc(strlen(buf) + 1, M_NOWAIT, 0);
 	if (audio_buildinfo) {
 		strcpy(audio_buildinfo, buf);
