@@ -87,41 +87,42 @@ audio_tracef(const char *funcname, audio_file_t *file, const char *fmt, ...)
 }
 
 #if AUDIO_DEBUG > 2
-static void
-audio_debug_bufs(char *buf, int bufsize, audio_track_t *track)
-{
-	int n;
+struct audio_track_debugbuf {
+	char outbuf[32];
+	char freq[32];
+	char chvol[32];
+	char chmix[32];
+	char codec[32];
+	char usrbuf[32];
+};
 
-	n = snprintf(buf, bufsize, "out=%d/%d/%d",
+// track の各バッファの状態を buf に出力します。
+static void
+audio_track_bufstat(audio_track_t *track, struct audio_track_debugbuf *buf)
+{
+	memset(buf, 0, sizeof(*buf));
+
+	snprintf(buf->outbuf, sizeof(buf->outbuf), " out=%d/%d/%d",
 	    track->outputbuf.top, track->outputbuf.count,
 	    track->outputbuf.capacity);
 	if (track->freq.filter)
-		n += snprintf(buf + n, bufsize - n, " f=%d/%d/%d",
+		snprintf(buf->freq, sizeof(buf->freq), " f=%d/%d/%d",
 		    track->freq.srcbuf.top,
 		    track->freq.srcbuf.count,
 		    track->freq.srcbuf.capacity);
 	if (track->chmix.filter)
-		n += snprintf(buf + n, bufsize - n, " m=%d",
+		snprintf(buf->chmix, sizeof(buf->chmix), " m=%d",
 		    track->chmix.srcbuf.count);
 	if (track->chvol.filter)
-		n += snprintf(buf + n, bufsize - n, " v=%d",
+		snprintf(buf->chvol, sizeof(buf->chvol), " v=%d",
 		    track->chvol.srcbuf.count);
 	if (track->codec.filter)
-		n += snprintf(buf + n, bufsize - n, " e=%d",
+		snprintf(buf->codec, sizeof(buf->codec), " e=%d",
 		    track->codec.srcbuf.count);
-	snprintf(buf + n, bufsize - n, " usr=%d/%d/%d",
+	snprintf(buf->usrbuf, sizeof(buf->usrbuf), " usr=%d/%d/%d",
 	    track->usrbuf.top, track->usrbuf.count, track->usrbuf.capacity);
 }
-// track 内のバッファの状態をデバッグ表示します。
-#define AUDIO_DEBUG_BUFS(track, msg)	do {	\
-	char buf[100];	\
-	audio_debug_bufs(buf, sizeof(buf), track);	\
-	TRACET(track, "%s %s", msg, buf);	\
-} while (0)
-#else
-#define AUDIO_DEBUG_BUFS(track, msg)	/**/
 #endif
-
 
 void *
 audio_realloc(void *memblock, size_t bytes)
@@ -1175,36 +1176,39 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 		goto error;
 	}
 
-#if AUDIO_DEBUG > 1
-	// XXX record の時は freq ->..-> codec -> out -> usr の順だが
-	char buf[100];
-	int n;
-	n = snprintf(buf, sizeof(buf), " out=%d",
+#if AUDIO_DEBUG > 2
+	struct audio_track_debugbuf m;
+
+	memset(&m, 0, sizeof(m));
+	snprintf(m.outbuf, sizeof(m.outbuf), " out=%d",
 	    track->outputbuf.capacity *
 	    frametobyte(&track->outputbuf.fmt, 1));
 	if (track->freq.filter)
-		n += snprintf(buf + n, sizeof(buf) - n, " freq=%d",
+		snprintf(m.freq, sizeof(m.freq), " freq=%d",
 		    track->freq.srcbuf.capacity *
 		    frametobyte(&track->freq.srcbuf.fmt, 1));
 	if (track->chmix.filter)
-		n += snprintf(buf + n, sizeof(buf) - n, " chmix=%d",
+		snprintf(m.chmix, sizeof(m.chmix), " chmix=%d",
 		    track->chmix.srcbuf.capacity *
 		    frametobyte(&track->chmix.srcbuf.fmt, 1));
 	if (track->chvol.filter)
-		n += snprintf(buf + n, sizeof(buf) - n, " chvol=%d",
+		snprintf(m.chvol, sizeof(m.chvol), " chvol=%d",
 		    track->chvol.srcbuf.capacity *
 		    frametobyte(&track->chvol.srcbuf.fmt, 1));
 	if (track->codec.filter)
-		n += snprintf(buf + n, sizeof(buf) - n, " codec=%d",
+		snprintf(m.codec, sizeof(m.codec), " codec=%d",
 		    track->codec.srcbuf.capacity *
 		    frametobyte(&track->codec.srcbuf.fmt, 1));
-	n += snprintf(buf + n, sizeof(buf) - n, " usr=%d",
-	    track->usrbuf.capacity);
-#if AUDIO_DEBUG > 2
-	TRACET(track, "bufsize%s", buf);
-#else
-	DEBUG(2, "%s: %bufsize%s\n", __func__, buf);
-#endif
+	snprintf(m.usrbuf, sizeof(m.usrbuf),
+	    " usr=%d", track->usrbuf.capacity);
+
+	if (audio_track_is_playback(track)) {
+		TRACET(track, "bufsize%s%s%s%s%s%s",
+		    m.outbuf, m.freq, m.chmix, m.chvol, m.codec, m.usrbuf);
+	} else {
+		TRACET(track, "bufsize%s%s%s%s%s%s",
+		    m.freq, m.chmix, m.chvol, m.codec, m.outbuf, m.usrbuf);
+	}
 #endif
 	return 0;
 
@@ -1516,7 +1520,12 @@ audio_track_play(audio_track_t *track)
 		track->outputcounter += track->outputbuf.count - track_count_0;
 	}
 
-	AUDIO_DEBUG_BUFS(track, "end");
+#if AUDIO_DEBUG > 2
+	struct audio_track_debugbuf m;
+	audio_track_bufstat(track, &m);
+	TRACET(track, "end%s%s%s%s%s%s",
+	    m.outbuf, m.freq, m.chvol, m.chmix, m.codec, m.usrbuf);
+#endif
 }
 
 // 録音時、ミキサーによってトラックの input に渡されたブロックを
@@ -1593,7 +1602,12 @@ audio_track_record(audio_track_t *track)
 
 	// XXX カウンタ
 
-	AUDIO_DEBUG_BUFS(track, "end");
+#if AUDIO_DEBUG > 2
+	struct audio_track_debugbuf m;
+	audio_track_bufstat(track, &m);
+	TRACET(track, "end%s%s%s%s%s%s",
+	    m.freq, m.chvol, m.chmix, m.codec, m.outbuf, m.usrbuf);
+#endif
 }
 
 // blktime は1ブロックの時間 [msec]。
