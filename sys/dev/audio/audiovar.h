@@ -30,11 +30,16 @@
 #endif
 
 // 出力バッファのブロック数
+/* Number of output buffer's blocks.  Must be != NBLKHW */
 #define NBLKOUT	(4)
 
 // ハードウェアバッファのブロック数
-// must be NBLKHW != NBLKOUT
+/* Number of HW buffer's blocks. */
 #define NBLKHW (3)
+
+// ユーザバッファの最小ブロック数
+/* Minimum number of usrbuf's blocks. */
+#define AUMINNOBLK	(3)
 
 // ユーザランドフォーマットとして [US]Linear24/24 をサポートします。
 //#define AUDIO_SUPPORT_LINEAR24
@@ -117,7 +122,6 @@ struct audio_track {
 	int mode;
 
 	audio_ring_t	usrbuf;		/* user i/o buffer */
-	u_int		usrbuf_nblks;	/* num of blocks in usrbuf */
 	u_int		usrbuf_blksize;	/* usrbuf block size in bytes */
 	struct uvm_object *uobj;
 	bool		mmapped;	/* device is mmap()-ed */
