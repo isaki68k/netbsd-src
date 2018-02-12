@@ -689,6 +689,7 @@ test_open_2(void)
 	int fd;
 	int r;
 	bool pbuff, rbuff;
+	int buff_size;
 
 	for (int mode = 0; mode <= 2; mode++) {
 		TEST("open_2(%s)", openmodetable[mode]);
@@ -712,8 +713,19 @@ test_open_2(void)
 		XP_SYS_EQ(0, r);
 
 		XP_NE(0, ai.blocksize);
-		XP_NE(0, ai.hiwat);
-		XP_NE(0, ai.lowat);
+		buff_size = (mode == O_RDONLY)
+			? ai.record.buffer_size
+			: ai.play.buffer_size;
+		if (netbsd == 9 && mode == O_RDONLY) {
+			// AUDIO2 では RDONLY なら play track がなく rec track が見える
+			// どうしたものか。
+			XP_EQ(buff_size / ai.blocksize - 1, ai.hiwat);
+			XP_EQ(0, ai.lowat);
+		} else {
+			// それ以外は play track が見えるべき。
+			XP_EQ(buff_size / ai.blocksize, ai.hiwat);
+			XP_EQ(buff_size * 3 / 4 / ai.blocksize, ai.lowat);
+		}
 		XP_EQ(mode2aumode(mode), ai.mode);
 
 		// play
@@ -794,8 +806,16 @@ test_open_2(void)
 		XP_SYS_EQ(0, r);
 
 		XP_NE(0, ai.blocksize);
-		XP_NE(0, ai.hiwat);
-		XP_NE(0, ai.lowat);
+		if (netbsd == 9 && mode == O_RDONLY) {
+			// AUDIO2 では RDONLY なら play track がなく rec track が見える
+			// どうしたものか。
+			XP_EQ(buff_size / ai.blocksize - 1, ai.hiwat);
+			XP_EQ(0, ai.lowat);
+		} else {
+			// それ以外は play track が見えるべき。
+			XP_EQ(buff_size / ai.blocksize, ai.hiwat);
+			XP_EQ(buff_size * 3 / 4 / ai.blocksize, ai.lowat);
+		}
 		XP_EQ(mode2aumode(mode), ai.mode);
 		// play
 		XP_EQ(8000, ai.play.sample_rate);
@@ -858,6 +878,7 @@ test_open_3(void)
 	int r;
 	int aimode;
 	bool pbuff, rbuff;
+	int buff_size;
 
 	// N8 eap だと panic する。
 	// 録音を止めてないのか分からないけど、O_RDWR オープンですでに
@@ -913,7 +934,19 @@ test_open_3(void)
 
 		// audio の初期値と同じものが見えるはず
 		XP_NE(0, ai.blocksize);
-		// hiwat, lowat
+		buff_size = (mode == O_RDONLY)
+			? ai.record.buffer_size
+			: ai.play.buffer_size;
+		if (netbsd == 9 && mode == O_RDONLY) {
+			// AUDIO2 では RDONLY なら play track がなく rec track が見える
+			// どうしたものか。
+			XP_EQ(buff_size / ai.blocksize - 1, ai.hiwat);
+			XP_EQ(0, ai.lowat);
+		} else {
+			// それ以外は play track が見えるべき。
+			XP_EQ(buff_size / ai.blocksize, ai.hiwat);
+			XP_EQ(buff_size * 3 / 4 / ai.blocksize, ai.lowat);
+		}
 		XP_EQ(mode2aumode(mode), ai.mode);
 		aimode = ai.mode;
 		// play
@@ -967,6 +1000,8 @@ test_open_3(void)
 		ai.record.precision = 16;
 		ai.record.encoding = AUDIO_ENCODING_SLINEAR_LE;
 		ai.record.pause = 1;
+		ai.hiwat--;
+		ai.lowat++;
 		r = IOCTL(fd, AUDIO_SETINFO, &ai, "ai");
 		if (r == -1)
 			err(1, "AUDIO_SETINFO");
@@ -985,7 +1020,16 @@ test_open_3(void)
 		XP_SYS_EQ(0, r);
 
 		XP_NE(0, ai.blocksize);
-		// hiwat, lowat は変化する
+		if (netbsd == 9 && mode == O_RDONLY) {
+			// AUDIO2 では RDONLY なら play track がなく rec track が見える
+			// どうしたものか。
+			XP_EQ(buff_size / ai.blocksize - 1, ai.hiwat);
+			XP_EQ(0, ai.lowat);
+		} else {
+			// それ以外は play track が見えるべき。
+			XP_EQ(buff_size / ai.blocksize, ai.hiwat);
+			XP_EQ(buff_size * 3 / 4 / ai.blocksize, ai.lowat);
+		}
 		// mode は引き継がない
 		XP_EQ(mode2aumode(mode), ai.mode);
 		// play

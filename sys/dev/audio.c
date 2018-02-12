@@ -216,6 +216,8 @@ static int audio_file_setinfo_check(audio_format2_t *,
 	const struct audio_prinfo *);
 static int audio_file_setinfo_set(audio_track_t *, const struct audio_prinfo *,
 	bool, audio_format2_t *, int);
+static void audio_track_setinfo_water(audio_track_t *,
+	const struct audio_info *);
 static int audio_setinfo_hw(struct audio_softc *, struct audio_info *);
 static int audio_set_params(struct audio_softc *, int);
 static int audiogetinfo(struct audio_softc *, struct audio_info *, int,
@@ -3034,6 +3036,9 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 				goto abort1;
 			sc->sc_pparams = pfmt;
 		}
+		/* Change water marks after initializing the buffers. */
+		if (SPECIFIED(ai->hiwat) || SPECIFIED(ai->lowat))
+			audio_track_setinfo_water(play, ai);
 	}
 	if (rec) {
 		if (SPECIFIED_CH(ri->pause)) {
@@ -3155,6 +3160,41 @@ audio_file_setinfo_set(audio_track_t *track, const struct audio_prinfo *info,
 	}
 
 	return 0;
+}
+
+/*
+ * Change water marks for playback track if specfied.
+ */
+static void
+audio_track_setinfo_water(audio_track_t *track, const struct audio_info *ai)
+{
+	u_int blks;
+	u_int maxblks;
+	u_int blksize;
+
+	KASSERT(audio_track_is_playback(track));
+
+	blksize = track->usrbuf_blksize;
+	maxblks = track->usrbuf.capacity / blksize;
+
+	if (SPECIFIED(ai->hiwat)) {
+		blks = ai->hiwat;
+		if (blks > maxblks)
+			blks = maxblks;
+		if (blks < 2)
+			blks = 2;
+		track->usrbuf_hiwat = blks * blksize;
+	}
+	if (SPECIFIED(ai->lowat)) {
+		blks = ai->lowat;
+		if (blks > maxblks - 1)
+			blks = maxblks - 1;
+		track->usrbuf_lowat = blks * blksize;
+	}
+	if (SPECIFIED(ai->hiwat) || SPECIFIED(ai->lowat)) {
+		if (track->usrbuf_lowat > track->usrbuf_hiwat - blksize)
+			track->usrbuf_lowat = track->usrbuf_hiwat - blksize;
+	}
 }
 
 // ai のうちハードウェア設定部分を担当する。
@@ -3446,11 +3486,10 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 	audio_track_t *track;
 	track = ptrack ?: rtrack;
 	ai->blocksize = track->usrbuf_blksize;
+
 	ai->mode = file->mode;
-	/* hiwat, lowat are meaningless in current implementation */
-	// XXX inp_thres あたりと一緒になんとかしたほうがいいかも
-	ai->hiwat = NBLKOUT;
-	ai->lowat = 1;
+	ai->hiwat = track->usrbuf_hiwat / track->usrbuf_blksize;
+	ai->lowat = track->usrbuf_lowat / track->usrbuf_blksize;
 
 	if (need_mixerinfo) {
 		pi->port = au_get_port(sc, &sc->sc_outports);

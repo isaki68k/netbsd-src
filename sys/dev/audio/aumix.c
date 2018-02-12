@@ -1068,6 +1068,7 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 {
 	int error;
 	int newbufsize;
+	u_int oldblksize;
 
 	KASSERT(track);
 	KASSERT(is_valid_format(usrfmt));
@@ -1106,6 +1107,7 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 	// XXX 初期値の mulaw でも 64KB 取るので、/dev/audio 開いて 48k に設定
 	//     すると 16page 確保してすぐ解放して 15page 再確保ってなるけど
 	//     どうなん…。
+	oldblksize = track->usrbuf_blksize;
 	track->usrbuf_blksize = frametobyte(&track->usrbuf.fmt,
 	    frame_per_block_roundup(track->mixer, &track->usrbuf.fmt));
 	track->usrbuf.top = 0;
@@ -1119,6 +1121,21 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 		goto error;
 	}
 
+	/* Recalc water mark. */
+	if (track->usrbuf_blksize != oldblksize) {
+		if (audio_track_is_playback(track)) {
+			/* Set high at 100%, low at 75%.  */
+			track->usrbuf_hiwat = track->usrbuf.capacity;
+			track->usrbuf_lowat = track->usrbuf.capacity * 3 / 4;
+		} else {
+			/* Set high at 100% minus 1block(?), low at 0% */
+			track->usrbuf_hiwat = track->usrbuf.capacity -
+			    track->usrbuf_blksize;
+			track->usrbuf_lowat = 0;
+		}
+	}
+
+	/* Stage buffer */
 	audio_ring_t *last_dst = &track->outputbuf;
 	if (audio_track_is_playback(track)) {
 		// 再生はトラックミキサ側から作る

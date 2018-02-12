@@ -127,6 +127,8 @@ struct audio_track {
 	bool		mmapped;	/* device is mmap()-ed */
 	u_int		usrbuf_stamp;	/* transferred bytes from/to stage */
 	u_int		usrbuf_stamp_last; /* last stamp */
+	u_int		usrbuf_hiwat;	/* high water mark in bytes */
+	u_int		usrbuf_lowat;	/* low water mark in bytes */
 
 	audio_format2_t	inputfmt;	/* track input format. */
 					/* userfmt for play, mixerfmt for rec */
