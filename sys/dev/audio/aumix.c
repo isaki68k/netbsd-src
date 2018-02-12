@@ -1077,8 +1077,47 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 	audio_check_params2(usrfmt);
 
 	// ユーザランド側バッファ
-	// ただし usrbuf は基本これを参照せずに、バイトバッファとして扱う
+	// 大きさは (ブロックサイズ * AUMINNOBLK) か 64KB の大きいほうにする。
+	// ただし usrbuf は基本この fmt を参照せずに、バイトバッファとして扱う。
 	track->usrbuf.fmt = *usrfmt;
+
+	// 参考: 1ブロック(40msec)は
+	// mulaw/8kHz/1ch で 320 byte    = 204 blocks/64KB
+	// s16/48kHz/2ch  で 7680 byte   = 8 blocks/64KB
+	// s16/48kHz/8ch  で 30720 byte  = 90KB/3blocks
+	// s16/96kHz/8ch  で 61440 byte  = 180KB/3blocks
+	// s32/192kHz/8ch で 245760 byte = 720KB/3blocks
+	//
+	// ちなみに N7 は 64KB を if->round_buffersize() したものとしている。
+	// ブロックサイズが 64KB を越えるケースはどうなるか未調査。
+	/*
+	 * For example,
+	 * 1) If usrbuf_blksize = 7056 (s16/44.1k/2ch) and PAGE_SIZE = 8192,
+	 *     newbufsize = rounddown(65536 / 7056) = 63504
+	 *     newvsize = roundup2(63504, PAGE_SIZE) = 65536
+	 *    Therefore it maps 8 * 8K pages and usrbuf->capacity = 63504.
+	 *
+	 * 2) If usrbuf_blksize = 7680 (s16/48k/2ch) and PAGE_SIZE = 4096,
+	 *     newbufsize = rounddown(65536 / 7680) = 61440
+	 *     newvsize = roundup2(61440, PAGE_SIZE) = 61440 (= 15 pages)
+	 *    Therefore it maps 15 * 4K pages and usrbuf->capacity = 61440.
+	 */
+	// XXX 64KB と言っておいて 15ページしかとらないケースがあるの大丈夫かな
+	// XXX 初期値の mulaw でも 64KB 取るので、/dev/audio 開いて 48k に設定
+	//     すると 16page 確保してすぐ解放して 15page 再確保ってなるけど
+	//     どうなん…。
+	track->usrbuf_blksize = frametobyte(&track->usrbuf.fmt,
+	    frame_per_block_roundup(track->mixer, &track->usrbuf.fmt));
+	track->usrbuf.top = 0;
+	track->usrbuf.count = 0;
+	newbufsize = MAX(track->usrbuf_blksize * AUMINNOBLK, 65536);
+	newbufsize = rounddown(newbufsize, track->usrbuf_blksize);
+	error = audio_realloc_usrbuf(track, newbufsize);
+	if (error) {
+		DPRINTF(1, "%s: malloc usrbuf(%d) failed\n", __func__,
+		    newbufsize);
+		goto error;
+	}
 
 	audio_ring_t *last_dst = &track->outputbuf;
 	if (audio_track_is_playback(track)) {
@@ -1157,48 +1196,6 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 		DPRINTF(1, "%s: malloc outbuf(%d) failed\n", __func__,
 		    RING_BYTELEN(&track->outputbuf));
 		error = ENOMEM;
-		goto error;
-	}
-
-	// usrbuf を作る
-	// (ブロックサイズ * AUMINNOBLK) か 64KB の大きいほう。
-
-	// 参考: 1ブロック(40msec)は
-	// mulaw/8kHz/1ch で 320 byte    = 204 blocks/64KB
-	// s16/48kHz/2ch  で 7680 byte   = 8 blocks/64KB
-	// s16/48kHz/8ch  で 30720 byte  = 90KB/3blocks
-	// s16/96kHz/8ch  で 61440 byte  = 180KB/3blocks
-	// s32/192kHz/8ch で 245760 byte = 720KB/3blocks
-	//
-	// ちなみに N7 は 64KB を if->round_buffersize() したものとしている。
-	// ブロックサイズが 64KB を越えるケースはどうなるか未調査。
-
-	/*
-	 * For example,
-	 * 1) If usrbuf_blksize = 7056 (s16/44.1k/2ch) and PAGE_SIZE = 8192,
-	 *     newbufsize = rounddown(65536 / 7056) = 63504
-	 *     newvsize = roundup2(63504, PAGE_SIZE) = 65536
-	 *    Therefore it maps 8 * 8K pages and usrbuf->capacity = 63504.
-	 *
-	 * 2) If usrbuf_blksize = 7680 (s16/48k/2ch) and PAGE_SIZE = 4096,
-	 *     newbufsize = rounddown(65536 / 7680) = 61440
-	 *     newvsize = roundup2(61440, PAGE_SIZE) = 61440 (= 15 pages)
-	 *    Therefore it maps 15 * 4K pages and usrbuf->capacity = 61440.
-	 */
-	// XXX 64KB と言っておいて 15ページしかとらないケースがあるの大丈夫かな
-	// XXX 初期値の mulaw でも 64KB 取るので、/dev/audio 開いて 48k に設定
-	//     すると 16page 確保してすぐ解放して 15page 再確保ってなるけど
-	//     どうなん…。
-	track->usrbuf_blksize = frametobyte(&track->usrbuf.fmt,
-	    frame_per_block_roundup(track->mixer, &track->usrbuf.fmt));
-	track->usrbuf.top = 0;
-	track->usrbuf.count = 0;
-	newbufsize = MAX(track->usrbuf_blksize * AUMINNOBLK, 65536);
-	newbufsize = rounddown(newbufsize, track->usrbuf_blksize);
-	error = audio_realloc_usrbuf(track, newbufsize);
-	if (error) {
-		DPRINTF(1, "%s: malloc usrbuf(%d) failed\n", __func__,
-		    newbufsize);
 		goto error;
 	}
 
