@@ -776,6 +776,7 @@ test_open_2(void)
 		// できるだけ変更
 		channels = (netbsd <= 7 && x68k) ? 1 : 2;
 		AUDIO_INITINFO(&ai);
+		ai.blocksize = ai0.blocksize * 2;
 		if (ai0.hiwat > 0)
 			ai.hiwat = ai0.hiwat - 1;
 		if (ai0.lowat < ai0.hiwat)
@@ -805,17 +806,9 @@ test_open_2(void)
 		r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
 		XP_SYS_EQ(0, r);
 
-		XP_NE(0, ai.blocksize);
-		if (netbsd == 9 && mode == O_RDONLY) {
-			// AUDIO2 では RDONLY なら play track がなく rec track が見える
-			// どうしたものか。
-			XP_EQ(buff_size / ai.blocksize - 1, ai.hiwat);
-			XP_EQ(0, ai.lowat);
-		} else {
-			// それ以外は play track が見えるべき。
-			XP_EQ(buff_size / ai.blocksize, ai.hiwat);
-			XP_EQ(buff_size * 3 / 4 / ai.blocksize, ai.lowat);
-		}
+		XP_EQ(ai0.blocksize, ai.blocksize);
+		XP_EQ(ai0.hiwat, ai.hiwat);
+		XP_EQ(ai0.lowat, ai.lowat);
 		XP_EQ(mode2aumode(mode), ai.mode);
 		// play
 		XP_EQ(8000, ai.play.sample_rate);
@@ -826,7 +819,7 @@ test_open_2(void)
 		// port
 		XP_EQ(0, ai.play.seek);
 		// avail_ports
-		XP_BUFFSIZE(pbuff, ai.play.buffer_size);
+		XP_EQ(ai0.play.buffer_size, ai.play.buffer_size);
 		XP_EQ(0, ai.play.samples);
 		XP_EQ(0, ai.play.eof);
 		XP_EQ(0, ai.play.pause);
@@ -844,7 +837,7 @@ test_open_2(void)
 		// port
 		XP_EQ(0, ai.record.seek);
 		// avail_ports
-		XP_BUFFSIZE(rbuff, ai.record.buffer_size);
+		XP_EQ(ai0.record.buffer_size, ai.record.buffer_size);
 		XP_EQ(0, ai.record.samples);
 		XP_EQ(0, ai.record.eof);
 		XP_EQ(0, ai.record.pause);
@@ -989,6 +982,7 @@ test_open_3(void)
 		// できるだけ変更
 		channels = (netbsd <= 7 && x68k) ? 1 : 2;
 		AUDIO_INITINFO(&ai);
+		ai.blocksize = ai.blocksize * 2;
 		ai.mode = aimode & ~AUMODE_PLAY_ALL;
 		ai.play.sample_rate = 11025;
 		ai.play.channels = channels;
@@ -1019,7 +1013,8 @@ test_open_3(void)
 		r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
 		XP_SYS_EQ(0, r);
 
-		XP_NE(0, ai.blocksize);
+		XP_EQ(ai0.blocksize, ai.blocksize);
+		// hiwat, lowat は引き継がない
 		if (netbsd == 9 && mode == O_RDONLY) {
 			// AUDIO2 では RDONLY なら play track がなく rec track が見える
 			// どうしたものか。
