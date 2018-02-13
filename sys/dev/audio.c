@@ -3183,17 +3183,18 @@ audio_track_setinfo_water(audio_track_t *track, const struct audio_info *ai)
 			blks = maxblks;
 		if (blks < 2)
 			blks = 2;
-		track->usrbuf_hiwat = blks * blksize;
+		track->usrbuf_usedhigh = blks * blksize;
 	}
 	if (SPECIFIED(ai->lowat)) {
 		blks = ai->lowat;
 		if (blks > maxblks - 1)
 			blks = maxblks - 1;
-		track->usrbuf_lowat = blks * blksize;
+		track->usrbuf_usedlow = blks * blksize;
 	}
 	if (SPECIFIED(ai->hiwat) || SPECIFIED(ai->lowat)) {
-		if (track->usrbuf_lowat > track->usrbuf_hiwat - blksize)
-			track->usrbuf_lowat = track->usrbuf_hiwat - blksize;
+		if (track->usrbuf_usedlow > track->usrbuf_usedhigh - blksize)
+			track->usrbuf_usedlow = track->usrbuf_usedhigh -
+			    blksize;
 	}
 }
 
@@ -3488,8 +3489,8 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 	ai->blocksize = track->usrbuf_blksize;
 
 	ai->mode = file->mode;
-	ai->hiwat = track->usrbuf_hiwat / track->usrbuf_blksize;
-	ai->lowat = track->usrbuf_lowat / track->usrbuf_blksize;
+	ai->hiwat = track->usrbuf_usedhigh / track->usrbuf_blksize;
+	ai->lowat = track->usrbuf_usedlow / track->usrbuf_blksize;
 
 	if (need_mixerinfo) {
 		pi->port = au_get_port(sc, &sc->sc_outports);

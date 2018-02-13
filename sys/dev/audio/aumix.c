@@ -1125,13 +1125,13 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 	if (track->usrbuf_blksize != oldblksize) {
 		if (audio_track_is_playback(track)) {
 			/* Set high at 100%, low at 75%.  */
-			track->usrbuf_hiwat = track->usrbuf.capacity;
-			track->usrbuf_lowat = track->usrbuf.capacity * 3 / 4;
+			track->usrbuf_usedhigh = track->usrbuf.capacity;
+			track->usrbuf_usedlow = track->usrbuf.capacity * 3 / 4;
 		} else {
 			/* Set high at 100% minus 1block(?), low at 0% */
-			track->usrbuf_hiwat = track->usrbuf.capacity -
+			track->usrbuf_usedhigh = track->usrbuf.capacity -
 			    track->usrbuf_blksize;
-			track->usrbuf_lowat = 0;
+			track->usrbuf_usedlow = 0;
 		}
 	}
 
