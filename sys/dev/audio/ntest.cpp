@@ -237,11 +237,21 @@ init(int unit)
 		// サウンドカードが2つはないのでへーきへーき…
 		snprintf(hwconfig, sizeof(hwconfig), "%s0", dev.config);
 	} else {
-		// そうでなければとりあえず
+		// そうでなければ
+		// MDデバイス名が入っていないパターン
+		// o hdafg (mai)
 		// config に MD デバイス名(unit 番号あり)が入ってるパターン
 		// o auich (VirtualBox)
-		strlcpy(hwconfig, dev.config, sizeof(hwconfig));
+
+		// XXX orz
+		if (strcmp(dev.config, "01h") == 0) {
+			strlcpy(hwconfig, "hdafg0", sizeof(hwconfig));
+		} else {
+			strlcpy(hwconfig, dev.config, sizeof(hwconfig));
+		}
 	}
+	if (debug)
+		printf("hwconfig = %s\n", hwconfig);
 
 	// ショートカット
 	if (strcmp(dev.config, "vs") == 0)
@@ -3511,6 +3521,184 @@ test_AUDIO_SETINFO_pause()
 	}
 }
 
+// SETINFO で設定した hiwat, lowat が GETINFO でどう見えるか。
+void
+test_AUDIO_SETINFO_hiwat1()
+{
+	struct audio_info ai;
+	int fd;
+	int r;
+	u_int inihi;
+	u_int inilo;
+	u_int max;
+
+	fd = OPEN(devaudio, O_WRONLY);
+	if (fd == -1)
+		err(1, "open");
+
+	// オープン直後の状態は open_[23] で調べてあるので、
+	// ここでは初期状態だけ取得。
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	inihi = ai.hiwat;
+	inilo = ai.lowat;
+	max = ai.play.buffer_size / ai.blocksize;
+	if (debug) {
+		printf("inihi=%d inilow=%d, buff_size=%d blksize=%d\n",
+			inihi, inilo, ai.play.buffer_size, ai.blocksize);
+	}
+
+	struct {
+		u_int hiwat;
+		u_int lowat;
+		u_int exphi;
+		u_int explo;
+	} table[] = {
+		{ max,		-1,		max,	inilo },	// hi=max
+		{ max+1,	-1,		max,	inilo },	// hi=max 越え
+		{ max-1,	-1,		max-1,	inilo },	// max-1は指定可能
+		{ inihi,	0,		inihi,	0 },		// lo=0 は可能
+		{ -1,		1,		inihi,	1 },		// lo=1 は可能
+		{ -1,		max-1,	inihi,	max-1 },	// lo=max-1
+		{ -1,		max,	inihi,	max-1 },	// lo=max はNG
+		{ -1,		max+1,	inihi,	max-1 },	// lo=max+1 もNG
+		{ max-1,	max-1,	max-1,	max-2 },	// hi==lo
+		{ max-1,	max,	max-1,	max-2 },	// hi<lo
+		{ max-1,	max+1,	max-1,	max-2 },	// lo>MAX
+		{ max,		max,	max,	max-1 },	// hi==lo==MAX
+		{ 0,		0,		2,		0 },		// hi=0 は不可
+		{ 1,		0,		2,		0 },		// hi=1 は不可
+		{ 2,		0,		2,		0 },		// hi=2 は可
+		{ 2,		1,		2,		1 },		// {2,1} は可
+	};
+
+	for (int i = 0; i < __arraycount(table); i++) {
+		u_int hiwat = table[i].hiwat;
+		u_int lowat = table[i].lowat;
+		u_int exphi = table[i].exphi;
+		u_int explo = table[i].explo;
+
+		TEST("AUDIO_SETINFO_hiwat1(%d,%d)", hiwat, lowat);
+
+		AUDIO_INITINFO(&ai);
+		ai.hiwat = hiwat;
+		ai.lowat = lowat;
+		ai.blocksize = 0;
+		r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
+		XP_SYS_EQ(0, r);
+
+		// XXX どうしてこうなるのか理解出来ない
+		if (netbsd <= 8 && x68k) {
+			if (exphi > 340)
+				exphi = 340;
+			if (explo >= exphi)
+				explo = exphi - 1;
+		}
+
+		r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+		XP_SYS_EQ(0, r);
+		XP_EQ(exphi, ai.hiwat);
+		XP_EQ(explo, ai.lowat);
+	}
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+}
+
+// SETINFO で設定した params によって hiwat, lowat がどうなるか。
+void
+test_AUDIO_SETINFO_hiwat2()
+{
+	struct audio_info ai;
+	int fd;
+	int r;
+	struct {
+		int encoding;
+		int precision;
+		int channels;
+		int sample_rate;
+		int expblk;
+		int expbuf;
+	} table[] = {
+#define AE_ULAW		AUDIO_ENCODING_ULAW
+#define AE_LINEAR	AUDIO_ENCODING_SLINEAR_LE
+		// enc	prec	ch	rate	blksize	bufsize
+		{ AE_ULAW,	  8, 1, 8000,	320,	65280 },
+		{ AE_LINEAR, 16, 1, 16000,	1280,	65280 },
+		{ AE_LINEAR, 16, 2, 44100,	7056,	63504 },
+		{ AE_LINEAR, 16, 2, 48000,	7680,	61440 },
+		{ AE_LINEAR, 16, 4, 48000,	15360,	61440 },
+	};
+
+	fd = OPEN(devaudio, O_WRONLY);
+	if (fd == -1)
+		err(1, "open");
+
+	for (int i = 0; i < __arraycount(table); i++) {
+		int enc = table[i].encoding;
+		int prec = table[i].precision;
+		int ch = table[i].channels;
+		int freq = table[i].sample_rate;
+		int expblk = table[i].expblk;
+		int expbuf = table[i].expbuf;
+		int exphi;
+		int explo;
+
+		TEST("AUDIO_SETINFO_hiwat2(%d,%d,%d,%d)", enc, prec, ch, freq);
+
+		AUDIO_INITINFO(&ai);
+		ai.play.encoding = enc;
+		ai.play.precision = prec;
+		ai.play.channels = ch;
+		ai.play.sample_rate = freq;
+		if (netbsd <= 8) {
+			// ブロックサイズはこちらから指示する。
+			// N7 での blocksize=0 の挙動は理解不能。
+			ai.blocksize = expblk;
+		} else {
+			// A2 では blocksize の sticky は実装しないので、
+			// params が変わると自動的に blocksize も変わる。
+		}
+		r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
+		if (r == -1) {
+			XP_SKIP("cannot set encoding on this environment.");
+			continue;
+		} else {
+			XP_SYS_EQ(0, r);
+		}
+
+		r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+		XP_SYS_EQ(0, r);
+		if (netbsd <= 8) {
+			// N7/N8 ではバッファサイズは 65536 固定
+			expbuf = 65536;
+			// N7/N8 ではブロックサイズは MD によって制約が異なる orz
+			if (strcmp(hwconfig, "hdafg0") == 0) {
+				// hdafg は 2^n に繰上げ
+				int a = expblk;
+				for (expblk = 1; expblk < a; expblk *= 2)
+					;
+			} else if (strcmp(hwconfig, "eap0") == 0) {
+				// eap は下位5ビットを落とす
+				expblk &= -32;
+			}
+		}
+		// hiwat, lowat はそのブロックサイズから計算
+		exphi = expbuf / expblk;
+		explo = expbuf * 3 / 4 / expblk;
+		if (debug) {
+			printf("expbuf=%d expblk=%d exphi=%d explo=%d\n",
+				expbuf, expblk, exphi, explo);
+		}
+		XP_EQ(expbuf, ai.play.buffer_size);
+		XP_EQ(expblk, ai.blocksize);
+		XP_EQ(exphi, ai.hiwat);
+		XP_EQ(explo, ai.lowat);
+	}
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+}
+
 // audio デバイスオープン中に audioctl がオープンできること
 void
 test_audioctl_open_1()
@@ -3799,6 +3987,8 @@ struct testtable testtable[] = {
 	DEF(AUDIO_SETINFO_params2),
 	DEF(AUDIO_SETINFO_params3),
 	DEF(AUDIO_SETINFO_pause),
+	DEF(AUDIO_SETINFO_hiwat1),
+	DEF(AUDIO_SETINFO_hiwat2),
 	DEF(audioctl_open_1),
 	DEF(audioctl_open_2),
 	DEF(audioctl_open_3),
