@@ -2837,6 +2837,8 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 			mutex_enter(sc->sc_intr_lock);
 			if (track->outputbuf.count == track->outputbuf.capacity) {
 				mutex_exit(sc->sc_intr_lock);
+				if ((ioflag & IO_NDELAY))
+					return EWOULDBLOCK;
 				// trkbuf が一杯ならここで待機
 				error = audio_waitio(sc, track);
 				if (error != 0)
