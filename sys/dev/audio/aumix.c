@@ -1695,7 +1695,6 @@ audio_track_record(audio_track_t *track)
 //  周波数が変態だが詳細未調査。
 
 // mixer(.hwbuf.fmt) から blktime [msec] を計算します。
-// 割りきれないなど計算できなかった場合は 0 を返します。
 static u_int
 audio_mixer_calc_blktime(audio_trackmixer_t *mixer)
 {
