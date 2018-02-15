@@ -1922,9 +1922,8 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
 	return sc->sc_pbusy;
 }
 
-// 全トラックを req フレーム分合成します。
+// 全トラックを 1ブロック分合成します。
 // 合成されたトラック数を返します。
-// mixer->softintrlock を取得して呼び出してください。
 static int
 audio_pmixer_mixall(struct audio_softc *sc, bool isintr)
 {
