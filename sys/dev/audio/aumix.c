@@ -2018,15 +2018,14 @@ audio_mixer_destroy(struct audio_softc *sc, audio_trackmixer_t *mixer)
 		cv_destroy(&mixer->draincv);
 }
 
-// 再生ミキサを起動します。起動できれば true を返します。
-// すでに起動されていれば何もせず true を返します。
+// 再生ミキサを起動します。
 // 割り込みコンテキストから呼び出してはいけません。
 /*
  * audio_pmixer_start:
  *	Starts playback mixer.
  *	It must not be called from the interrupt context.
  */
-bool
+void
 audio_pmixer_start(struct audio_softc *sc, bool force)
 {
 	audio_trackmixer_t *mixer;
@@ -2037,7 +2036,7 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
 #if defined(_KERNEL)
 	// すでに再生ミキサが起動していたら、true を返す
 	if (sc->sc_pbusy)
-		return true;
+		return;
 #else
 	// ユーザランドエミュレーション側では割り込みがないので
 	// 毎回スタートさせて start_output を呼んでいる。
@@ -2078,8 +2077,6 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
 		mixer->hwbuf.top, mixer->hwbuf.count, mixer->hwbuf.capacity);
 	mutex_exit(sc->sc_intr_lock);
 #endif
-
-	return sc->sc_pbusy;
 }
 
 // 全トラックを 1ブロック分合成します。
@@ -2525,15 +2522,14 @@ audio_pintr(void *arg)
 	cv_broadcast(&mixer->draincv);
 }
 
-// 録音ミキサを起動します。起動できれば true を返します。
-// すでに起動されていれば何もせず true を返します。
+// 録音ミキサを起動します。
 // 割り込みコンテキストから呼び出してはいけません。
 /*
  * audio_rmixer_start:
  *	Starts record mixer.
  *	It must not be called from the interrupt context.
  */
-bool
+void
 audio_rmixer_start(struct audio_softc *sc)
 {
 	KASSERT(mutex_owned(sc->sc_lock));
@@ -2541,15 +2537,13 @@ audio_rmixer_start(struct audio_softc *sc)
 
 	// すでに再生ミキサが起動していたら、true を返す
 	if (sc->sc_rbusy)
-		return true;
+		return;
 
 	TRACE("begin");
 
 	mutex_enter(sc->sc_intr_lock);
 	audio_rmixer_input(sc);
 	mutex_exit(sc->sc_intr_lock);
-
-	return sc->sc_rbusy;
 }
 
 /*
