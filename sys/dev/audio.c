@@ -3385,7 +3385,6 @@ static int
 audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 	audio_file_t *file)
 {
-	const struct audio_hw_if *hw;
 	struct audio_prinfo *ri, *pi;
 	audio_track_t *ptrack;
 	audio_track_t *rtrack;
@@ -3395,10 +3394,6 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 
 	ri = &ai->record;
 	pi = &ai->play;
-	hw = sc->hw_if;
-	if (hw == NULL)		/* HW has not attached */
-		return ENXIO;
-
 	ptrack = file->ptrack;
 	rtrack = file->rtrack;
 
