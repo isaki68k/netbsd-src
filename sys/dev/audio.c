@@ -1987,7 +1987,7 @@ audio_poll(struct audio_softc *sc, int events, struct lwp *l,
 	if (events & (POLLOUT | POLLWRNORM)) {
 		if (file->ptrack) {
 			audio_ring_t *usrbuf = &file->ptrack->usrbuf;
-			if (usrbuf->count < usrbuf->capacity)
+			if (usrbuf->count < file->ptrack->usrbuf_usedhigh)
 				revents |= events & (POLLOUT | POLLWRNORM);
 		}
 	}
@@ -2081,7 +2081,7 @@ filt_audiowrite(struct knote *kn, long hint)
 
 	if (file->ptrack) {
 		usrbuf = &file->ptrack->usrbuf;
-		kn->kn_data = usrbuf->capacity - usrbuf->count;
+		kn->kn_data = file->ptrack->usrbuf_usedhigh - usrbuf->count;
 	}
 
 	TRACE("kn=%p data=%d\n", kn, (int)kn->kn_data);

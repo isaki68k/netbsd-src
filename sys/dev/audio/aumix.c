@@ -132,8 +132,8 @@ audio_track_bufstat(audio_track_t *track, struct audio_track_debugbuf *buf)
 	if (track->codec.filter)
 		snprintf(buf->codec, sizeof(buf->codec), " e=%d",
 		    track->codec.srcbuf.count);
-	snprintf(buf->usrbuf, sizeof(buf->usrbuf), " usr=%d/%d/%d",
-	    track->usrbuf.top, track->usrbuf.count, track->usrbuf.capacity);
+	snprintf(buf->usrbuf, sizeof(buf->usrbuf), " usr=%d/%d/H%d",
+	    track->usrbuf.top, track->usrbuf.count, track->usrbuf_usedhigh);
 }
 #endif
 
@@ -2061,25 +2061,17 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
 		mixer->hwbuf.top, mixer->hwbuf.count, mixer->hwbuf.capacity,
 		force ? " force" : "");
 
-	// hwbuf に1ブロック以上の空きがあればブロックを追加
-	if (mixer->hwbuf.capacity - mixer->hwbuf.count >= mixer->frames_per_block) {
-		int minimum;
-
+	// 通常は2ブロック貯めてから再生開始したい。
+	// force ならそういうわけにいかないので1ブロックで再生開始する。
+	int minimum = (force) ? 1 : 2;
+	while (mixer->hwbuf.count < mixer->frames_per_block * minimum) {
 		audio_pmixer_process(sc, false);
-
-#if defined(AUDIO_HW_DOUBLE_BUFFER)
-		// XXX 1 or 2 ではどうだろう
-		minimum = (force) ? 1 : mixer->hwblks;
-#else
-		minimum = 1;
-#endif
-		if (mixer->hwbuf.count >= mixer->frames_per_block * minimum) {
-			// トラックミキサ出力開始
-			mutex_enter(sc->sc_intr_lock);
-			audio_pmixer_output(sc);
-			mutex_exit(sc->sc_intr_lock);
-		}
 	}
+
+	// トラックミキサ出力開始
+	mutex_enter(sc->sc_intr_lock);
+	audio_pmixer_output(sc);
+	mutex_exit(sc->sc_intr_lock);
 
 	TRACE("end   mixseq=%d hwseq=%d hwbuf=%d/%d/%d",
 		(int)mixer->mixseq, (int)mixer->hwseq,
@@ -2128,7 +2120,7 @@ audio_pmixer_mixall(struct audio_softc *sc, bool isintr)
 			// XXX appended じゃなく直接操作してウィンドウを移動みたいに
 			// したほうがいいんじゃないか。
 			audio_ring_appended(&track->usrbuf, track->usrbuf_blksize);
-			ITRACET(track, "mmap; usr=%d/%d/%d",
+			ITRACET(track, "mmap; usr=%d/%d/C%d",
 			    track->usrbuf.top,
 			    track->usrbuf.count,
 			    track->usrbuf.capacity);
@@ -2224,8 +2216,7 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req,
 
 	// usrbuf が空いたら(lowat を下回ったら) シグナルを送る
 	// XXX ここで usrbuf が空いたかどうかを見るのもどうかと思うが
-	int lowat = track->usrbuf.capacity / 2;	// XXX lowat ないのでとりあえず
-	if (track->usrbuf.count <= lowat && !track->is_pause) {
+	if (track->usrbuf.count <= track->usrbuf_usedlow && !track->is_pause) {
 		if (track->sih_wr) {
 			kpreempt_disable();
 			softint_schedule(track->sih_wr);
@@ -2978,11 +2969,6 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 		device_active(&sc->dev, DVA_SYSTEM);
 #endif
 
-	// inp_thres は usrbuf に書き込む際の閾値。
-	// usrbuf.count が inp_thres より小さければ uiomove する。
-	// o PLAY なら常にコピーなので capacity を設定
-	// o PLAY_ALL なら1ブロックあれば十分なので block size を設定
-	//
 	// out_thres は usrbuf から読み出す際の閾値。
 	// trkbuf.count が out_thres より大きければ変換処理を行う。
 	// o PLAY なら常に変換処理をしたいので 1[フレーム] に設定
@@ -2992,60 +2978,63 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 	// o PLAY なら1ブロック未満でも常に開始するため true
 	// o PLAY_ALL なら1ブロック貯まるまで開始しないので false
 	audio_ring_t *usrbuf = &track->usrbuf;
-	int inp_thres;
 	int out_thres;
-	bool force;
 	if ((track->mode & AUMODE_PLAY_ALL) != 0) {
 		/* PLAY_ALL */
-		int usrbuf_blksize = frametobyte(&track->inputfmt,
+		out_thres = frametobyte(&track->inputfmt,
 		    frame_per_block_roundup(track->mixer, &track->inputfmt));
-		inp_thres = usrbuf_blksize;
-		out_thres = usrbuf_blksize;
-		force = false;
 	} else {
 		/* PLAY */
-		inp_thres = usrbuf->capacity;
 		out_thres = frametobyte(&track->inputfmt, 1);
-		force = true;
 	}
-	TRACET(track, "resid=%zd inp_thres=%d out_thres=%d",
-	    uio->uio_resid, inp_thres, out_thres);
+	TRACET(track, "resid=%zd out_thres=%d", uio->uio_resid, out_thres);
 
 	track->pstate = AUDIO_STATE_RUNNING;
 	error = 0;
 	while (uio->uio_resid > 0 && error == 0) {
 		int bytes;
 
-		TRACET(track, "while resid=%zd usrbuf=%d/%d/%d",
+		TRACET(track, "while resid=%zd usrbuf=%d/%d/H%d",
 		    uio->uio_resid,
-		    usrbuf->top, usrbuf->count, usrbuf->capacity);
+		    usrbuf->top, usrbuf->count, track->usrbuf_usedhigh);
 
-		// usrbuf 閾値に満たなければ、可能な限りを一度にコピー
-		if (usrbuf->count < inp_thres) {
-			bytes = min(usrbuf->capacity - usrbuf->count,
-			    uio->uio_resid);
-			int bottom = audio_ring_bottom(usrbuf);
-			if (bottom + bytes <= usrbuf->capacity) {
-				error = audio_write_uiomove(track, bottom,
-				    bytes, uio);
-				if (error)
-					break;
-			} else {
-				int bytes1;
-				int bytes2;
+		// XXX 実際には待つ前に drop を計算してしまったほうがいいはず
 
-				bytes1 = usrbuf->capacity - bottom;
-				error = audio_write_uiomove(track, bottom,
-				    bytes1, uio);
-				if (error)
-					break;
-
-				bytes2 = bytes - bytes1;
-				error = audio_write_uiomove(track, 0,
-				    bytes2, uio);
-				if (error)
-					break;
+		// usrbuf が一杯ならここで待つ
+		while (usrbuf->count >= track->usrbuf_usedhigh) {
+			if ((ioflag & IO_NDELAY)) {
+				error = EWOULDBLOCK;
+				goto abort;
 			}
+			TRACET(track, "sleep usrbuf=%d/H%d",
+			    usrbuf->count, track->usrbuf_usedhigh);
+			error = audio_waitio(sc, track);
+			if (error)
+				goto abort;
+		}
+
+		/* Write to the conversion stage as much as possible. */
+		// usrbuf にコピー
+		bytes = min(track->usrbuf_usedhigh - usrbuf->count,
+		    uio->uio_resid);
+		int bottom = audio_ring_bottom(usrbuf);
+		if (bottom + bytes <= usrbuf->capacity) {
+			error = audio_write_uiomove(track, bottom, bytes, uio);
+			if (error)
+				break;
+		} else {
+			int bytes1;
+			int bytes2;
+
+			bytes1 = usrbuf->capacity - bottom;
+			error = audio_write_uiomove(track, bottom, bytes1, uio);
+			if (error)
+				break;
+
+			bytes2 = bytes - bytes1;
+			error = audio_write_uiomove(track, 0, bytes2, uio);
+			if (error)
+				break;
 		}
 
 		// 前回落としたフレーム分を回復運転のため取り去る
@@ -3062,28 +3051,19 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 			    usrbuf->top, usrbuf->count, usrbuf->capacity);
 		}
 
-		while (track->usrbuf.count >= out_thres && error == 0) {
-			mutex_enter(sc->sc_intr_lock);
-			if (track->outputbuf.count == track->outputbuf.capacity) {
+		mutex_enter(sc->sc_intr_lock);
+		if (track->usrbuf.count >= out_thres &&
+		    track->outputbuf.count < track->mixer->frames_per_block) {
+				track->in_use = true;
 				mutex_exit(sc->sc_intr_lock);
-				if ((ioflag & IO_NDELAY)) {
-					error = EWOULDBLOCK;
-					goto abort;
-				}
-				// trkbuf が一杯ならここで待機
-				error = audio_waitio(sc, track);
-				if (error)
-					goto abort;
-				continue;
-			}
+				audio_track_play(track);
+				mutex_enter(sc->sc_intr_lock);
+				track->in_use = false;
+		}
+		mutex_exit(sc->sc_intr_lock);
 
-			track->in_use = true;
-			mutex_exit(sc->sc_intr_lock);
-			audio_track_play(track);
-			mutex_enter(sc->sc_intr_lock);
-			track->in_use = false;
-			mutex_exit(sc->sc_intr_lock);
-
+		if (!track->is_pause) {
+			bool force = ((track->mode & AUMODE_PLAY_ALL) == 0);
 			audio_pmixer_start(sc, force);
 		}
 	}
