@@ -2355,24 +2355,24 @@ audio_softintr_wr(void *cookie)
 	audio_file_t *f;
 	proc_t *p;
 	pid_t pid;
-	bool found;
 
 	file = cookie;
 	sc = file->sc;
 	TRACEF(file, "start");
 
 	// 自分自身がまだ有効かどうか調べる
-	found = false;
+	pid = 0;
 	mutex_enter(sc->sc_lock);
+	mutex_enter(sc->sc_intr_lock);
 	SLIST_FOREACH(f, &sc->sc_files, entry) {
 		if (f == file) {
-			found = true;
+			pid = file->async_audio;
 			break;
 		}
 	}
-	if (found) {
+	mutex_exit(sc->sc_intr_lock);
+	if (pid != 0) {
 		selnotify(&sc->sc_wsel, 0, NOTE_SUBMIT);
-		pid = file->async_audio;
 		TRACEF(file, "sending SIGIO %d", pid);
 		mutex_enter(proc_lock);
 		if ((p = proc_find(pid)) != NULL)
