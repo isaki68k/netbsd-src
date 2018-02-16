@@ -3414,10 +3414,10 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 	memset(ai, 0, sizeof(*ai));
 
 	if (ptrack) {
-		pi->sample_rate = ptrack->inputfmt.sample_rate;
-		pi->channels    = ptrack->inputfmt.channels;
-		pi->precision   = ptrack->inputfmt.precision;
-		pi->encoding    = ptrack->inputfmt.encoding;
+		pi->sample_rate = ptrack->usrbuf.fmt.sample_rate;
+		pi->channels    = ptrack->usrbuf.fmt.channels;
+		pi->precision   = ptrack->usrbuf.fmt.precision;
+		pi->encoding    = ptrack->usrbuf.fmt.encoding;
 	} else if (ISDEVAUDIO(file->dev)) {
 		pi->sample_rate = audio_default.sample_rate;
 		pi->channels    = audio_default.channels;
@@ -3430,10 +3430,10 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 		pi->encoding    = sc->sc_pparams.encoding;
 	}
 	if (rtrack) {
-		ri->sample_rate = rtrack->outputbuf.fmt.sample_rate;
-		ri->channels    = rtrack->outputbuf.fmt.channels;
-		ri->precision   = rtrack->outputbuf.fmt.precision;
-		ri->encoding    = rtrack->outputbuf.fmt.encoding;
+		ri->sample_rate = rtrack->usrbuf.fmt.sample_rate;
+		ri->channels    = rtrack->usrbuf.fmt.channels;
+		ri->precision   = rtrack->usrbuf.fmt.precision;
+		ri->encoding    = rtrack->usrbuf.fmt.encoding;
 	} else if (ISDEVAUDIO(file->dev)) {
 		ri->sample_rate = audio_default.sample_rate;
 		ri->channels    = audio_default.channels;
