@@ -1,0 +1,232 @@
+<html>
+<head>
+<meta http-equiv="Contents-Type" content="text/html; charset=utf-8">
+<style type="text/css">
+P.p {
+	margin-left: 2em;
+}
+PRE.p {
+	margin-left: 3em;
+}
+</style>
+</head>
+<body>
+<h3>Problems of NetBSD 8 audio</h3>
+<hr>
+<ul>
+
+<li>オープンしただけで録音が開始される(ケースがある?) (2018/02)
+<p class="p">
+ただ一部それを想定していないようで、eap(4) だと死ぬ。
+</p>
+
+<li>AUDIO_GETINFO の ai.play.eof が VC 分離できていない (2018/02)
+<p class="p">
+何の意味があるかはともかく、
+eof カウンタが分離されておらず全ディスクリプタで共用されている。
+</p>
+
+<li>Half Duplex 対応が甘い (2018/02)
+<p class="p">
+Half Duplex HW に対する考察が色々足りない。
+元々 7 以前の時点でもちょっと微妙ではあったが、
+あれはあれでシングルストリームなので一応成立はしていた。
+が、そのままマルチストリームに持ち込んでも適用はできない。
+特に O_RDWR オープンの挙動。
+</p>
+
+<li>sysctl のデバイス名を取得する方法がない (2018/02)
+<p class="p">
+sysctl hw.&lt;dev&gt; の dev は hdafg0 とか vs0 みたいな名前だが、
+これをプログラムから取得できる方法がない。
+一部のデバイスは AUDIO_GETDEV の3つあるどれかにデバイス名を
+返すものもあるが、どれに返るかは任意だし unit number のありなしも任意なので、
+使えない。
+そもそも frequency、precision、channels を sysctl で設定させようという発想がおかしい。
+</p>
+
+<li>/dev/audioctl をオープンできない場合がある (2018/02)
+<p class="p">
+/dev/audio か /dev/sound を誰かがオープンしていると、 他の人が /dev/audioctl をオープンできないバグがある。 また、逆、つまり /dev/audioctl を誰かがオープンしていると 他の人が /dev/audio か /dev/sound をオープンできないというバグもある。
+</p>
+
+<li>FIOASYNC が分離できていない (2018/01)
+<p class="p">
+FIOASYNC が VC 分離できていないため、
+非同期モードを設定しても、他の人がオフに出来る。特権に関係なく。
+また FIOASYNC が最終クローズでしかクリアされないなど。
+</p>
+
+<li>gain が設定できない (2017/12)
+<p class="p">
+<a href="http://gnats.netbsd.org/52781">kern/52781</a> (from martin@)。
+gain の設定は VC のソフトウェアボリュームに変更されたが、
+gain の取得と balance の設定・取得が HW ミキサーのままなので不整合。
+</p>
+
+<li>Speed up improvements… (2017/11)
+<p class="p">
+<a href="http://www.nerv.org/netbsd/changeset.cgi?id=20171128T073527Z.0bfbebe6774dd83892cfd226402bc83f19ef4ea7#src/sys/dev/audio.c">audio.c,v 1.441</a>
+</p>
+
+<li>AUDIO_SETFD で setfd を呼んではいけないはず (2017/10)
+<p class="p">
+ioctl の AUDIO_SETFD で、setfd を呼んで HW の Full/Half Duplex
+を設定してるが、これはおかしい。
+けど setfd を実装しているドライバは皆無なのでセーフセーフ?
+</p>
+
+<li>ついでに: pad(4) が色々やばい (2017/10)
+<p class="p">
+まだ手が回らない。
+</p>
+
+<li>ついでに: -current の pad(4) の open がメモリリークしている (2017/10)
+<p class="p">
+pad_open() がメモリリークしている。
+<pre class="p">
+while (1) {
+	int fd = open("/dev/pad", O_WRONLY);
+	close(fd);
+}
+</pre>
+</p>
+
+<li>audio beep の高精度(笑)正弦波 (2017/10)
+<p class="p">
+4KB の高精度データがある。貴重な1ページ消費するとか勘弁してほしい。
+元は 64バイトのデータだった。
+なお元実装のほうが音がきれいな模様。
+</p>
+
+<li>audio beep もたぶん色々やばそう (2017/10)
+<p class="p">
+ぱっと見。まだ手が回らない。
+</p>
+
+<li>/dev/speaker もたぶん色々やばそう (2017/10)
+<p class="p">
+ぱっと見。まだ手が回らない。
+</p>
+
+<li>AUDIO_SETCHAN/AUDIO_GETCHAN がアウト (2017/10)
+<p class="p">
+<a href="http://gnats.netbsd.org/52627">kern/52627</a>。
+</p>
+
+<li>15625Hz デバイスが認識されない (2017/07)
+<p class="p">
+プローブアルゴリズムがタコいため、15625Hz のようなデバイス(vs(4))が
+アタッチできない。
+</p>
+
+<li>3ch 以上のデバイスでも 2ch としか認識されない (2017/10)
+<p class="p">
+3ch 以上、あるいは 48000Hz 超をサポートしているデバイスでも
+2ch、48000Hz としか認識されない。
+プローブアルゴリズムがタコいため。
+</p>
+
+<li>sc_lchan (2017/10)
+<p class="p">
+sc_lchan はもう使われていない。
+</p>
+
+<li>AUDIO_GETENC が返す集合が正しくない (2017/10)
+<p class="p">
+<a href="http://gnats.netbsd.org/52585">kern/52585</a>。
+</p>
+
+<li>init_input/init_output の呼び出しが過多あるいは不足 (2017/08)
+<p class="p">
+影響を受けるのは esm(4) だけだけど。
+<s><a href="http://gnats.netbsd.org/52580">kern/52580</a></s>、
+<s><a href="http://gnats.netbsd.org/52581">kern/52581</a></s>、
+<s><a href="http://gnats.netbsd.org/52582">kern/52582</a></s>。
+修正済み。
+</p>
+
+<li>LINEARN_TO_LINEAR マクロ (2017/09)
+<p class="p">
+320パターンのリニア系相互変換を行うマクロだが 80% 以上のパターンで正しく
+ないし、無限ループになる組み合わせもある
+→ <s><a href="http://gnats.netbsd.org/52586">kern/52586</a></s>。
+一応実装自体は修正されたらしいが、
+そもそもこんな相互変換おかしい。
+</p>
+
+<li>audiodetach がリソースリークしてる気がする (2017/09)
+<p class="p">
+ちゃんと見てないけど、オープン中の VC は解放しなくていいのかな。
+</p>
+
+<li>再生開始時に前の音が一瞬再生される (2017/08)
+<p class="p">
+たぶん HW バッファの整合がとれてない。
+速いマシンだとほぼ分からないが遅いマシンだとよく分かる。
+遅いからではなく (遅いからだったとしてもだめだが)
+遅マシンだと顕著に分かるのだと思う。
+</p>
+
+</ul>
+
+
+<hr>
+NetBSD 7 (以前) からある問題
+<ul>
+
+<li>poll(2) で O_RDONLY に対して POLLOUT がセットされる (2018/02)
+<p class="p">
+O_RDONLY ディスクリプタに対して poll(POLLOUT) すると POLLOUT が返る。
+当然 write(2) は出来ない。
+</p>
+
+<li>pad(4) への書き込みでプロセスがハングするケースがあるようだ (2018/01)
+<p class="p">
+詳細未調査。
+</p>
+
+<li>周波数 0Hz を設定するとプロセスがハングする (2017/11)
+<p class="p">
+これだけでプロセスが不死身になる。shutdown も効かなくなる。
+<pre class="p">
+fd = open("/dev/audio", O_WRONLY);
+AUDIO_INITINFO(&amp;ai);
+ai.play.sample_rate = 0;
+ioctl(fd, AUDIO_SETINFO, &amp;ai);
+write(fd, buf, bufsize);
+</pre>
+</p>
+
+<li>mmap(2) すると次の open(2) が失敗する (2017/10)
+<p class="p">
+mmap されたフラグを close() でも落としていないため、
+次の open 時に(フィルタの設定をしようとしたところで)こける。
+でこのエラーハンドリング中に(たぶん意図せず) mmap されたフラグもクリア
+しているため、その次の open は成功する。
+<pre class="p">
+fd = open("/dev/audio");	// success
+mmap(..., fd, ...);		// success
+ :
+close(fd);	// success
+
+// 2nd open
+fd = open("/dev/audio");	// failure
+
+// 3rd open
+fd = open("/dev/audio");	// success
+</pre>
+</p>
+<p class="p">
+NetBSD8 はこの mmap フラグが VC ごとになって生存期間が open-close 間に
+なったため、発現しない。
+</p>
+
+<li>再生中にデタッチすると死ぬ (2017/10)
+<p class="p">
+USB audio とかで再生中にデタッチすると死ぬ。
+NetBSD 7 も同様。
+</p>
+
+</body>
+</html>
