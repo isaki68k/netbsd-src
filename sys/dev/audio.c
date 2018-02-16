@@ -2018,9 +2018,7 @@ filt_audiordetach(struct knote *kn)
 	file = kn->kn_hook;
 	sc = file->sc;
 
-	mutex_enter(sc->sc_intr_lock);
 	SLIST_REMOVE(&sc->sc_rsel.sel_klist, kn, knote, kn_selnext);
-	mutex_exit(sc->sc_intr_lock);
 }
 
 static int
@@ -2065,9 +2063,7 @@ filt_audiowdetach(struct knote *kn)
 	file = kn->kn_hook;
 	sc = file->sc;
 
-	mutex_enter(sc->sc_intr_lock);
 	SLIST_REMOVE(&sc->sc_wsel.sel_klist, kn, knote, kn_selnext);
-	mutex_exit(sc->sc_intr_lock);
 }
 
 static int
