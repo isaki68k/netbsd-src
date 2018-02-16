@@ -649,8 +649,6 @@ audio_track_init(struct audio_softc *sc, audio_track_t **trackp, int mode)
 	int error;
 	static int newid = 0;
 
-	KASSERT(!mutex_owned(sc->sc_intr_lock));
-
 	track = kmem_zalloc(sizeof(*track), KM_SLEEP);
 
 	track->id = newid++;
@@ -1198,7 +1196,6 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 
 	KASSERT(track);
 	KASSERT(is_valid_format(usrfmt));
-	KASSERT(!mutex_owned(track->mixer->sc->sc_intr_lock));
 
 	// 入力値チェック
 	audio_check_params2(usrfmt);
@@ -2035,7 +2032,6 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
 	audio_trackmixer_t *mixer;
 
 	KASSERT(mutex_owned(sc->sc_lock));
-	KASSERT(!mutex_owned(sc->sc_intr_lock));
 
 #if defined(_KERNEL)
 	// すでに再生ミキサが起動していたら、true を返す
@@ -2418,8 +2414,6 @@ audio_pmixer_output(struct audio_softc *sc)
 	int blksize;
 	int error;
 
-	KASSERT(mutex_owned(sc->sc_intr_lock));
-
 	mixer = sc->sc_pmixer;
 	TRACE("pbusy=%d hwbuf=%d/%d/%d",
 	    sc->sc_pbusy,
@@ -2541,7 +2535,6 @@ void
 audio_rmixer_start(struct audio_softc *sc)
 {
 	KASSERT(mutex_owned(sc->sc_lock));
-	KASSERT(!mutex_owned(sc->sc_intr_lock));
 
 	// すでに再生ミキサが起動していたら、true を返す
 	if (sc->sc_rbusy)
@@ -2682,8 +2675,6 @@ audio_rmixer_input(struct audio_softc *sc)
 	int blksize;
 	int error;
 
-	KASSERT(mutex_owned(sc->sc_intr_lock));
-
 	mixer = sc->sc_rmixer;
 	blksize = frametobyte(&mixer->hwbuf.fmt, mixer->frames_per_block);
 
@@ -2822,7 +2813,6 @@ audio_track_clear(struct audio_softc *sc, audio_track_t *track)
 	TRACET(track, "clear");
 
 	KASSERT(mutex_owned(sc->sc_lock));
-	KASSERT(!mutex_owned(sc->sc_intr_lock));
 
 	track->usrbuf.count = 0;
 	// 内部情報も全部クリア
@@ -2876,7 +2866,6 @@ audio_track_drain(audio_track_t *track)
 	mixer = track->mixer;
 	sc = mixer->sc;
 	KASSERT(mutex_owned(sc->sc_lock));
-	KASSERT(!mutex_owned(sc->sc_intr_lock));
 
 	// pause 中なら今溜まってるものは全部無視してこのまま終わってよし
 	if (track->is_pause) {
