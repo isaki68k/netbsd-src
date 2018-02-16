@@ -1867,18 +1867,19 @@ audio_mixer_calc_blktime(audio_trackmixer_t *mixer)
 }
 
 // ミキサを初期化します。
+// mixer はゼロフィルされているものとします。
 // mode は再生なら AUMODE_PLAY、録音なら AUMODE_RECORD を指定します。
 // 単に録音再生のどちら側かだけなので AUMODE_PLAY_ALL は関係ありません。
 /*
  * audio_mixer_init:
  *	Initialize the mixer.
- *	For mode, specify AUMODE_PLAY for playback, AUMODE_RECORD for record.
- *	AUMODE_PLAY_ALL does not matter here.
+ *	'mixer' should be zero-filled.
+ *	For 'mode', specify AUMODE_PLAY for playback, AUMODE_RECORD for
+ *	record.  AUMODE_PLAY_ALL does not matter here.
  */
 int
 audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 {
-	memset(mixer, 0, sizeof(audio_trackmixer_t));
 	mixer->sc = sc;
 	mixer->mode = mode;
 
