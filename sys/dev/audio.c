@@ -2024,7 +2024,7 @@ filt_audiordetach(struct knote *kn)
 static int
 filt_audioread(struct knote *kn, long hint)
 {
-	struct audio_softc *sc;
+	struct audio_softc *sc __unused;
 	audio_file_t *file;
 	audio_ring_t *usrbuf;
 
@@ -2036,12 +2036,10 @@ filt_audioread(struct knote *kn, long hint)
 	// XXX 仕様がよくわからんけど、
 	// 録音バッファのバイト数を調べるだけじゃいかんのか?
 
-	mutex_enter(sc->sc_intr_lock);
 	if (file->rtrack) {
 		usrbuf = &file->rtrack->usrbuf;
 		kn->kn_data = usrbuf->count;
 	}
-	mutex_exit(sc->sc_intr_lock);
 
 	return kn->kn_data > 0;
 }
@@ -2069,7 +2067,7 @@ filt_audiowdetach(struct knote *kn)
 static int
 filt_audiowrite(struct knote *kn, long hint)
 {
-	struct audio_softc *sc;
+	struct audio_softc *sc __unused;
 	audio_file_t *file;
 	audio_ring_t *usrbuf;
 
@@ -2081,12 +2079,10 @@ filt_audiowrite(struct knote *kn, long hint)
 	// XXX 仕様がよくわからんけど、
 	// 再生バッファの空きバイト数を調べるだけじゃいかんのか?
 
-	mutex_enter(sc->sc_intr_lock);
 	if (file->ptrack) {
 		usrbuf = &file->ptrack->usrbuf;
 		kn->kn_data = usrbuf->capacity - usrbuf->count;
 	}
-	mutex_exit(sc->sc_intr_lock);
 
 	TRACE("kn=%p data=%d\n", kn, (int)kn->kn_data);
 	return kn->kn_data > 0;
@@ -2123,9 +2119,7 @@ audio_kqfilter(struct audio_softc *sc, audio_file_t *file, struct knote *kn)
 
 	kn->kn_hook = file;
 
-	mutex_enter(sc->sc_intr_lock);
 	SLIST_INSERT_HEAD(klist, kn, kn_selnext);
-	mutex_exit(sc->sc_intr_lock);
 
 	return 0;
 }
