@@ -2100,6 +2100,7 @@ audio_kqfilter(struct audio_softc *sc, audio_file_t *file, struct knote *kn)
 {
 	struct klist *klist;
 
+	KASSERT(mutex_owned(sc->sc_lock));
 	TRACEF(file, "kn=%p kn_filter=%x", kn, (int)kn->kn_filter);
 
 	switch (kn->kn_filter) {
