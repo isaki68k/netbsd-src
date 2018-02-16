@@ -271,7 +271,11 @@ audio_track_chvol(audio_filter_arg_t *arg)
 
 	for (int i = 0; i < arg->count; i++) {
 		for (int ch = 0; ch < arg->srcfmt->channels; ch++, sptr++, dptr++) {
+#if defined(AUDIO_USE_C_IMPLEMENTATION_DEFINED_BEHAVIOR) && defined(__GNUC__)
+			*dptr = (aint_t)(((aint2_t)*sptr) * ch_volume[ch] >> 8);
+#else
 			*dptr = (aint_t)(((aint2_t)*sptr) * ch_volume[ch] / 256);
+#endif
 		}
 	}
 }
@@ -2347,7 +2351,11 @@ audio_pmixer_process(struct audio_softc *sc, bool isintr)
 		if (vol != 256) {
 			mptr = mixer->mixsample;
 			for (int i = 0; i < sample_count; i++) {
+#if defined(AUDIO_USE_C_IMPLEMENTATION_DEFINED_BEHAVIOR) && defined(__GNUC__)
+				*mptr = *mptr * vol >> 8;
+#else
 				*mptr = *mptr * vol / 256;
+#endif
 				mptr++;
 			}
 		}
