@@ -3052,12 +3052,14 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 			mutex_enter(sc->sc_intr_lock);
 			if (track->outputbuf.count == track->outputbuf.capacity) {
 				mutex_exit(sc->sc_intr_lock);
-				if ((ioflag & IO_NDELAY))
-					return EWOULDBLOCK;
+				if ((ioflag & IO_NDELAY)) {
+					error = EWOULDBLOCK;
+					goto abort;
+				}
 				// trkbuf が一杯ならここで待機
 				error = audio_waitio(sc, track);
-				if (error != 0)
-					return error;
+				if (error)
+					goto abort;
 				continue;
 			}
 
@@ -3072,6 +3074,8 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 		}
 	}
 
+abort:
+	TRACET(track, "done error=%d", error);
 	return error;
 }
 
