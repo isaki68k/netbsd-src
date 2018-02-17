@@ -232,6 +232,8 @@ struct audio_file {
 };
 
 
+extern void audio_vtrace(const char *funcname, const char *header,
+	const char *fmt, va_list ap);
 extern void audio_trace(const char *funcname, const char *fmt, ...)
 	__attribute__((__format__(printf, 2, 3)));
 extern void audio_tracet(const char *funcname, audio_track_t *track,

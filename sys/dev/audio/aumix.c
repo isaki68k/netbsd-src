@@ -32,58 +32,63 @@ void audio_pmixer_output(struct audio_softc *sc);
 static void audio_rmixer_input(struct audio_softc *sc);
 static int audio_waitio(struct audio_softc *sc, audio_track_t *track);
 
+void
+audio_vtrace(const char *funcname, const char *header, const char *fmt,
+	va_list ap)
+{
+	char buf[256];
+	struct timeval tv;
+	int n;
+
+	n = 0;
+	buf[0] = '\0';
+	getmicrotime(&tv);
+	n += snprintf(buf + n, sizeof(buf) - n, "%02d.%06d %s %s",
+	    (int)tv.tv_sec % 60, (int)tv.tv_usec, funcname, header);
+	n += vsnprintf(buf + n, sizeof(buf) - n, fmt, ap);
+	printf("%s\n", buf);
+}
 
 void
 audio_trace(const char *funcname, const char *fmt, ...)
 {
-	struct timeval tv;
 	va_list ap;
 
-	getmicrotime(&tv);
-	printf("%d.%06d ", (int)tv.tv_sec%60, (int)tv.tv_usec);
-	printf("%s ", funcname);
 	va_start(ap, fmt);
-	vprintf(fmt, ap);
+	audio_vtrace(funcname, "", fmt, ap);
 	va_end(ap);
-	printf("\n");
 }
 
 void
 audio_tracet(const char *funcname, audio_track_t *track, const char *fmt, ...)
 {
-	struct timeval tv;
+	char hdr[16];
 	va_list ap;
 
-	getmicrotime(&tv);
-	printf("%d.%06d ", (int)tv.tv_sec%60, (int)tv.tv_usec);
-	printf("%s #%d ", funcname, track->id);
+	snprintf(hdr, sizeof(hdr), "#%d ", track->id);
 	va_start(ap, fmt);
-	vprintf(fmt, ap);
+	audio_vtrace(funcname, hdr, fmt, ap);
 	va_end(ap);
-	printf("\n");
 }
 
 void
 audio_tracef(const char *funcname, audio_file_t *file, const char *fmt, ...)
 {
-	char pbuf[16], rbuf[16];
-	struct timeval tv;
+	char hdr[32];
+	char phdr[16], rhdr[16];
 	va_list ap;
 
-	pbuf[0] = '\0';
-	rbuf[0] = '\0';
+	phdr[0] = '\0';
+	rhdr[0] = '\0';
 	if (file->ptrack)
-		snprintf(pbuf, sizeof(pbuf), "#%d", file->ptrack->id);
+		snprintf(phdr, sizeof(phdr), "#%d", file->ptrack->id);
 	if (file->rtrack)
-		snprintf(rbuf, sizeof(rbuf), "#%d", file->rtrack->id);
+		snprintf(rhdr, sizeof(rhdr), "#%d", file->rtrack->id);
+	snprintf(hdr, sizeof(hdr), "{%s,%s} ", phdr, rhdr);
 
-	getmicrotime(&tv);
-	printf("%d.%06d ", (int)tv.tv_sec%60, (int)tv.tv_usec);
-	printf("%s {%s,%s} ", funcname, pbuf, rbuf);
 	va_start(ap, fmt);
-	vprintf(fmt, ap);
+	audio_vtrace(funcname, hdr, fmt, ap);
 	va_end(ap);
-	printf("\n");
 }
 
 #if AUDIO_DEBUG > 2
