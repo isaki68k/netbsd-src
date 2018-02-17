@@ -15,6 +15,7 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/param.h>
+#include <poll.h>
 #include <sys/sysctl.h>
 #include <sys/wait.h>
 
@@ -558,6 +559,14 @@ int debug_munmap(int line, void *ptr, int len)
 {
 	DPRINTFF(line, "munmap(%p, %d)", ptr, len);
 	int r = munmap(ptr, len);
+	DRESULT(r);
+}
+
+#define POLL(pfd, nfd, timeout)	debug_poll(__LINE__, pfd, nfd, timeout)
+int debug_poll(int line, struct pollfd *pfd, int nfd, int timeout)
+{
+	DPRINTFF(line, "poll(%p, %d, %d)", pfd, nfd, timeout);
+	int r = poll(pfd, nfd, timeout);
 	DRESULT(r);
 }
 
@@ -2487,6 +2496,247 @@ test_mmap_9()
 	}
 }
 
+// openmode と poll の関係
+void
+test_poll_1()
+{
+	struct pollfd pfd;
+	char buf[1];
+	int fd;
+	int r;
+	struct {
+		int openmode;
+		int events;
+		int exp_revents;
+#define IN POLLIN
+#define OUT POLLOUT
+	} fulltable[] = {
+		// openmode	events	exp_revents
+		{ O_RDONLY,	IN,		0 },		// 正常だがデータがないはず=※1
+		{ O_RDONLY,	OUT,	0 },		// OUTは成立しない=※2
+		{ O_RDONLY, IN|OUT,	0 },		// ※1 && ※2
+
+		{ O_WRONLY,	IN,		0 },		// INは成立しない
+		{ O_WRONLY,	OUT,	OUT },		// 正常
+		{ O_WRONLY,	IN|OUT,	OUT },		// INは成立しない
+
+		{ O_RDWR,	IN,		0 },		// 正常がデータがないはず
+		{ O_RDWR,	OUT,	OUT },		// 正常
+		{ O_RDWR,	IN|OUT,	OUT },		// ※1
+		{ 99 },
+	}, halftable[] = {
+		{ O_RDONLY,	IN,		0 },		// 正常だがデータがないはず=※1
+		{ O_RDONLY,	OUT,	0 },		// OUTは成立しない=※2
+		{ O_RDONLY, IN|OUT,	0 },		// ※1 && ※2
+
+		{ O_WRONLY,	IN,		0 },		// INは成立しない
+		{ O_WRONLY,	OUT,	OUT },		// 正常
+		{ O_WRONLY,	IN|OUT,	OUT },		// INは成立しない
+
+		{ O_RDWR,	IN,		0 },		// 正常がデータがないはず
+		{ O_RDWR,	OUT,	OUT },		// 正常
+		{ O_RDWR,	IN|OUT,	OUT },		// ※1
+		{ 99 },
+#undef IN
+#undef OUT
+	}, *table;
+
+	if (hwfull)
+		table = fulltable;
+	else
+		table = halftable;
+
+	for (int i = 0; table[i].openmode != 99; i++) {
+		int openmode = table[i].openmode;
+		int events = table[i].events;
+		int exp_revents = table[i].exp_revents;
+		int exp = (exp_revents != 0) ? 1 : 0;
+
+		char evbuf[64];
+		snprintb(evbuf, sizeof(evbuf), 
+			"\177\020" \
+		    "b\10WRBAND\0" \
+		    "b\7RDBAND\0" "b\6RDNORM\0" "b\5NVAL\0" "b\4HUP\0" \
+		    "b\3ERR\0" "b\2OUT\0" "b\1PRI\0" "b\0IN\0",
+			events);
+		TEST("poll_1(%s,%s)", openmodetable[openmode], evbuf);
+
+		fd = OPEN(devaudio, openmode);
+		if (fd == -1)
+			err(1, "open");
+
+		memset(&pfd, 0, sizeof(pfd));
+		pfd.fd = fd;
+		pfd.events = events;
+
+		r = POLL(&pfd, 1, 100);
+		XP_SYS_EQ(exp, r);
+#if 0
+		// ※2
+		// RDONLY に対して OUT は成立しないはずだが N7 は成立してしまう
+		// ようだ。実際には OUT が立ったところで write(2) はできないので
+		// (readwrite_1 参照)、成立するのはおかしく、たぶんチェックが甘い。
+		// まあこんなの調べる人いないから困らないけど。
+		if (netbsd <= 8 && openmode == O_RDONLY && (exp_revents!=pfd.revents)) {
+			if ((exp_revents & ~POLLOUT) == (pfd.revents & ~POLLOUT)) {
+				XP_SKIP("poll(2) bug: useless POLLOUT is set");
+			} else {
+				XP_EQ(exp_revents, pfd.revents);
+			}
+		} else {
+			XP_EQ(exp_revents, pfd.revents);
+		}
+#endif
+			XP_EQ(exp_revents, pfd.revents);
+
+		r = CLOSE(fd);
+		XP_SYS_EQ(0, r);
+	}
+}
+
+// poll、空で POLLOUT のテスト
+void
+test_poll_2()
+{
+	struct pollfd pfd;
+	int fd;
+	int r;
+
+	TEST("poll_2");
+
+	fd = OPEN(devaudio, O_WRONLY);
+	if (fd == -1)
+		err(1, "open");
+
+	memset(&pfd, 0, sizeof(pfd));
+	pfd.fd = fd;
+	pfd.events = POLLOUT;
+
+	// 空の状態でチェック。タイムアウト0でも成功するはず
+	r = POLL(&pfd, 1, 0);
+	XP_SYS_EQ(1, r);
+	XP_EQ(POLLOUT, pfd.revents);
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+}
+
+// poll、バッファフルで POLLOUT のテスト
+void
+test_poll_3()
+{
+	struct audio_info ai;
+	struct pollfd pfd;
+	int fd;
+	int r;
+	char *buf;
+	int buflen;
+
+	TEST("poll_3");
+
+	fd = OPEN(devaudio, O_WRONLY);
+	if (fd == -1)
+		err(1, "open");
+
+	// pause セット
+	AUDIO_INITINFO(&ai);
+	ai.play.pause = 1;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+
+	// バッファサイズ取得
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+
+	// 書き込み
+	buflen = ai.play.buffer_size;
+	buf = (char *)malloc(buflen);
+	if (buf == NULL)
+		err(1, "malloc");
+	r = WRITE(fd, buf, buflen);
+	XP_SYS_EQ(buflen, r);
+
+	// AUDIO2 ではさらにもう1ブロック書き込まないと POLLOUT は消灯しない。
+	// これで何のテストになるのかちょっと分からんけど。
+	if (netbsd == 9) {
+		r = WRITE(fd, buf, ai.blocksize);
+		XP_SYS_EQ(ai.blocksize, r);
+	}
+
+	// poll
+	memset(&pfd, 0, sizeof(pfd));
+	pfd.fd = fd;
+	pfd.events = POLLOUT;
+	r = POLL(&pfd, 1, 0);
+	XP_SYS_EQ(0, r);
+	XP_EQ(0, pfd.revents);
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+}
+
+// poll、hiwat 設定してバッファフルで POLLOUT のテスト
+void
+test_poll_4()
+{
+	struct audio_info ai;
+	struct pollfd pfd;
+	int fd;
+	int r;
+	char *buf;
+	int buflen;
+	int newhiwat;
+
+	TEST("poll_4");
+
+	fd = OPEN(devaudio, O_WRONLY);
+	if (fd == -1)
+		err(1, "open");
+
+	// バッファサイズ、hiwat 取得
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+	// なんでもいいので変更する
+	newhiwat = ai.lowat;
+
+	// pause、hiwat 設定
+	AUDIO_INITINFO(&ai);
+	ai.play.pause = 1;
+	ai.hiwat = newhiwat;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+
+	// hiwat 再取得
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+
+	// 書き込み
+	buflen = ai.blocksize * ai.hiwat;
+	buf = (char *)malloc(buflen);
+	if (buf == NULL)
+		err(1, "malloc");
+	r = WRITE(fd, buf, buflen);
+	XP_SYS_EQ(buflen, r);
+
+	// AUDIO2 ではさらにもう1ブロック書き込まないと POLLOUT は消灯しない。
+	// これで何のテストになるのかちょっと分からんけど。
+	if (netbsd == 9) {
+		r = WRITE(fd, buf, ai.blocksize);
+		XP_SYS_EQ(ai.blocksize, r);
+	}
+
+	// poll
+	memset(&pfd, 0, sizeof(pfd));
+	pfd.fd = fd;
+	pfd.events = POLLOUT;
+	r = POLL(&pfd, 1, 0);
+	XP_SYS_EQ(0, r);
+	XP_EQ(0, pfd.revents);
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+}
+
 // FIOASYNC が同時に2人設定できるか
 void
 test_FIOASYNC_1(void)
@@ -3972,6 +4222,10 @@ struct testtable testtable[] = {
 	DEF(mmap_7),
 	DEF(mmap_8),
 	DEF(mmap_9),
+	DEF(poll_1),
+	DEF(poll_2),
+	DEF(poll_3),
+	DEF(poll_4),
 	DEF(FIOASYNC_1),
 	DEF(FIOASYNC_2),
 	DEF(FIOASYNC_3),
