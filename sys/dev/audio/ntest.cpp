@@ -893,8 +893,7 @@ test_open_3(void)
 	int buff_size;
 
 	// N8 eap だと panic する。
-	// 録音を止めてないのか分からないけど、O_RDWR オープンですでに
-	// eap の録音側が動いてるみたいな感じで怒られる。しらん。
+	// ncmd.cpp の cmd_eap_input 参照。
 	if (netbsd == 8 && strncmp(hwconfig, "eap", 3) == 0) {
 		XP_FAIL("it causes panic on NetBSD8 + eap");
 		return;

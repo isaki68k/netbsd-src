@@ -451,6 +451,38 @@ cmd_drain(int ac, char *av[])
 	return 0;
 }
 
+// N8 で panic: eap_trigger_input: already running を起こす
+int
+cmd_eap_input(int ac, char *av[])
+{
+	struct audio_info ai;
+	int fd;
+	int r;
+
+	fd = OPEN(devsound, O_RDONLY);
+	if (fd == -1)
+		err(1, "open");
+
+	AUDIO_INITINFO(&ai);
+	ai.record.pause = 1;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
+	if (r == -1)
+		err(1, "ioctl");
+	CLOSE(fd);
+
+	fd = OPEN(devsound, O_RDONLY);
+	if (fd == -1)
+		err(1, "open");
+	CLOSE(fd);
+
+	fd = OPEN(devsound, O_RDONLY);
+	if (fd == -1)
+		err(1, "open");
+	CLOSE(fd);
+
+	return 0;
+}
+
 // コマンド一覧
 #define DEF(x)	{ #x, cmd_ ## x }
 struct cmdtable cmdtable[] = {
@@ -458,6 +490,7 @@ struct cmdtable cmdtable[] = {
 	DEF(playsync),
 	DEF(writetime),
 	DEF(drain),
+	DEF(eap_input),
 	{ NULL, NULL },
 };
 #undef DEF
