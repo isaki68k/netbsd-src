@@ -176,6 +176,9 @@ struct audio_softc {
 
 	struct audio_encoding *sc_encodings;
 	int sc_encodings_count;
+#if AUDIO_DEBUG == 3
+	bool sc_intr;
+#endif
 };
 
 #endif /* _SYS_DEV_AUDIOVAR_H_ */

@@ -4,7 +4,8 @@
 // デバッグレベルは
 // 1: open/close/set_param等
 // 2: read/write/ioctlシステムコールくらいまでは含む
-// 3: TRACEも含む
+// 3: 割り込み以外のTRACEも含む
+// 4: 割り込み内のTRACEも含む (ただしデッドロックの場合あり)
 #define AUDIO_DEBUG	3
 
 #if defined(_KERNEL)
@@ -18,6 +19,26 @@
 #include "uio.h"
 #include "aufilter.h"
 #endif // _KERNEL
+
+#if AUDIO_DEBUG == 4
+/* Always enabled */
+#define ITRACE		TRACE
+#define ITRACET		TRACET
+#elif AUDIO_DEBUG == 3
+/* Enable if here is not interrupt context... */
+#define ITRACE(fmt, ...)	do {	\
+	if (!sc->sc_intr)	\
+		TRACE(fmt, ## __VA_ARGS__);	\
+} while (0)
+#define ITRACET(t, fmt, ...)	do {	\
+	if (!(t)->mixer->sc->sc_intr)	\
+		TRACET(t, fmt, ## __VA_ARGS__);	\
+} while (0)
+#else
+/* Always disabled */
+#define ITRACE(fmt, ...)	/**/
+#define ITRACET(t, fmt, ...)	/**/
+#endif
 
 #if AUDIO_DEBUG > 2
 #define TRACE(fmt, ...)		audio_trace(__func__, fmt, ## __VA_ARGS__)
