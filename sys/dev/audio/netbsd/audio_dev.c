@@ -1,5 +1,3 @@
-#include "aumix.h"
-#include "auring.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -8,68 +6,65 @@
 #include <sys/ioctl.h>
 #include <sys/time.h>
 #include <pthread.h>
+#include "audiovar.h"
 
 extern const char *devicefile;
 
-struct audio_dev_netbsd
+struct userland_softc
 {
+	struct audio_softc *asc;	/* back link */
+
 	int fd;
 	int frame_bytes;
 	int sent_count;
-	pthread_mutex_t mutex;
+	kmutex_t sc_lock;
+	kmutex_t sc_intr_lock;
 	struct timeval tv;
 };
-typedef struct audio_dev_netbsd audio_dev_netbsd_t;
 
-int netbsd_start_output(void *, void *, int, void(*)(void *), void *);
-
-void
-lock(struct audio_softc *sc)
-{
-	audio_dev_netbsd_t *dev = sc->phys;
-	pthread_mutex_lock(&dev->mutex);
-}
-
-void
-unlock(struct audio_softc *sc)
-{
-	audio_dev_netbsd_t *dev = sc->phys;
-	pthread_mutex_unlock(&dev->mutex);
-}
+int userland_start_output(void *, void *, int, void(*)(void *), void *);
 
 void *
-netbsd_allocm(void *hdl, int direction, size_t size)
+userland_allocm(void *hdl, int direction, size_t size)
 {
 	return malloc(size);
 }
 
 void
-netbsd_freem(void *hdl, void *addr, size_t size)
+userland_freem(void *hdl, void *addr, size_t size)
 {
 	free(addr);
 }
 
 int
-netbsd_halt_output(void *hdl)
+userland_halt_output(void *hdl)
 {
 	return 0;
 }
 
+struct audio_hw_if userland_hw_if = {
+	.start_output = userland_start_output,
+	.halt_output = userland_halt_output,
+	.allocm = userland_allocm,
+	.freem = userland_freem,
+};
+
 // hw が true なら OS のオーディオデバイスをオープンします。
 void
-audio_attach(struct audio_softc **softc, bool hw)
+audio_attach(struct audio_softc **scp, bool hw)
 {
 	struct audio_softc *sc;
-	audio_dev_netbsd_t *dev;
+	struct userland_softc *usc;
 	struct audio_info ai;
 	int r;
 
 	sc = calloc(1, sizeof(*sc));
-	*softc = sc;
-	sc->phys = calloc(1, sizeof(*dev));
+	*scp = sc;
+	usc = calloc(1, sizeof(*usc));
+	sc->hw_hdl = usc;
 
-	dev = sc->phys;
-	dev->fd = -1;
+	usc->asc = sc;
+	usc->fd = -1;
 
 	sc->sc_phwfmt.encoding = AUDIO_ENCODING_SLINEAR_LE;
 	sc->sc_phwfmt.channels = 2;
@@ -77,21 +72,17 @@ audio_attach(struct audio_softc **softc, bool hw)
 	sc->sc_phwfmt.precision = 16;
 	sc->sc_phwfmt.stride = 16;
 	sc->sc_rhwfmt = sc->sc_phwfmt;
-	dev->frame_bytes = sc->sc_phwfmt.precision / 8 * sc->sc_phwfmt.channels;
+	usc->frame_bytes = sc->sc_phwfmt.precision / 8 * sc->sc_phwfmt.channels;
 
-	pthread_mutex_init(&dev->mutex, NULL);
+	sc->hw_if = &userland_hw_if;
+	sc->sc_lock = &usc->sc_lock;
+	sc->sc_intr_lock = &usc->sc_intr_lock;
 
 	audio_softc_init(sc);
 
-	sc->hw_if->allocm = netbsd_allocm;
-	sc->hw_if->freem = netbsd_freem;
-	sc->hw_if->start_output = netbsd_start_output;
-	sc->hw_if->halt_output = netbsd_halt_output;
-	sc->hw_hdl = sc;
-
 	if (hw) {
-		dev->fd = open(devicefile, O_RDWR);
-		if (dev->fd == -1) {
+		usc->fd = open(devicefile, O_RDWR);
+		if (usc->fd == -1) {
 			printf("open failed: %s\n", devicefile);
 			exit(1);
 		}
@@ -102,7 +93,7 @@ audio_attach(struct audio_softc **softc, bool hw)
 		ai.play.encoding    = sc->sc_phwfmt.encoding;
 		ai.play.precision   = sc->sc_phwfmt.precision;
 		ai.play.channels    = sc->sc_phwfmt.channels;
-		r = ioctl(dev->fd, AUDIO_SETINFO, &ai);
+		r = ioctl(usc->fd, AUDIO_SETINFO, &ai);
 		if (r == -1) {
 			printf("AUDIO_SETINFO failed\n");
 			exit(1);
@@ -113,36 +104,32 @@ audio_attach(struct audio_softc **softc, bool hw)
 void
 audio_detach(struct audio_softc *sc)
 {
-	audio_dev_netbsd_t *dev = sc->phys;
+	struct userland_softc *usc = sc->hw_hdl;
 
-	if (dev->fd != -1) {
-		close(dev->fd);
-		dev->fd = -1;
+	if (usc->fd != -1) {
+		close(usc->fd);
+		usc->fd = -1;
 	}
-	free(dev);
-	sc->phys = NULL;
+	free(usc);
+	sc->hw_hdl = NULL;
 }
 
 int
-netbsd_start_output(void *hdl, void *blk, int blksize, void(*intr)(void *), void *arg)
+userland_start_output(void *hdl, void *blk, int blksize, void(*intr)(void *), void *arg)
 {
-	struct audio_softc *sc = hdl;
-	audio_dev_netbsd_t *dev = sc->phys;
+	struct userland_softc *usc = hdl;
 
-	lock(sc);
-
-	int r = write(dev->fd, blk, blksize);
+	int r = write(usc->fd, blk, blksize);
 	if (r == -1) {
 		printf("write failed: %s\n", strerror(errno));
 		exit(1);
 	}
-	dev->sent_count += blksize / dev->frame_bytes;
+	usc->sent_count += blksize / usc->frame_bytes;
 
 	// ユーザランドプログラムの場合、
 	// ハードウェアへの転送が終わったことに相当するのでここで直接
 	// 割り込みハンドラを呼び出す。あっちに加工がしてある。
 	intr(arg);
 
-	unlock(sc);
 	return 0;
 }

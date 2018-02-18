@@ -13,6 +13,7 @@ SRCS+=	\
 OBJS=${SRCS:S,.c,.o,:S,../,,}
 
 CFLAGS=	-O2 -g -std=c99 -I. -I.. \
+	-DAUDIO2 \
 	-fno-strict-aliasing \
 	-Wall \
 	-Werror \

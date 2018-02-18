@@ -434,6 +434,10 @@ audio_volume_to_outer(u_int v)
 	return v < 127 ? v : v - 1;
 }
 
+#if defined(_KERNEL)
 #include <dev/audio/auring.h>
+#else
+#include "auring.h"
+#endif
 
 #endif /* _SYS_DEV_AUDIOVAR2_H_ */

@@ -1,7 +1,6 @@
 #include "compat.h"
 #include "userland.h"
 #include "audiovar.h"
-#include "aumix.h"
 #include <errno.h>
 
 // この track が再生トラックなら true を返します。
@@ -31,9 +30,6 @@ audio_softc_init(struct audio_softc *sc)
 {
 	sc->sc_pmixer = malloc(sizeof(audio_trackmixer_t));
 	sc->sc_rmixer = malloc(sizeof(audio_trackmixer_t));
-	sc->sc_lock = &sc->sc_lock0;
-	sc->sc_intr_lock = &sc->sc_intr_lock0;
-	sc->hw_if = &sc->hw_if0;
 	sc->sc_pparams = audio_default;
 	sc->sc_rparams = audio_default;
 

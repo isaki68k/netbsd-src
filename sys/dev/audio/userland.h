@@ -47,6 +47,17 @@ struct kmutex {
 	volatile int v;
 };
 
+struct file {
+};
+struct lwp {
+};
+struct device {
+};
+typedef struct device device_t;
+struct selinfo {
+};
+
+
 struct audio_params {
 	int sample_rate;
 	int channels;
@@ -78,36 +89,7 @@ typedef struct audio_trackmixer audio_trackmixer_t;
 typedef struct audio_track audio_track_t;
 typedef struct audio_file audio_file_t;
 
-struct audio_softc
-{
-	SLIST_HEAD(files_head, audio_file) sc_files;		/* 開いているファイルのリスト */
-	audio_trackmixer_t  *sc_pmixer;		/* 接続されている再生ミキサ */
-	audio_trackmixer_t  *sc_rmixer;		/* 接続されている録音ミキサ */
-	kmutex_t *sc_lock;
-	kmutex_t *sc_intr_lock;
-	struct audio_hw_if *hw_if;
-	void *hw_hdl;
-
-	bool sc_pbusy;
-	bool sc_rbusy;
-	void *dev;
-	audio_filter_reg_t sc_xxx_pfilreg;
-	audio_filter_reg_t sc_xxx_rfilreg;
-	audio_format2_t sc_pparams;
-	audio_format2_t sc_rparams;
-	audio_format2_t sc_phwfmt;
-	audio_format2_t sc_rhwfmt;
-	void *sc_sih_rd;
-	void *sc_sih_wr;
-	bool sc_dying;
-	bool sc_intr;
-
-	void *phys; // 実物理デバイス
-
-	kmutex_t sc_lock0;
-	kmutex_t sc_intr_lock0;
-	struct audio_hw_if hw_if0;
-};
+struct audio_softc;
 
 void audio_softc_init(struct audio_softc *sc);
 
@@ -197,9 +179,9 @@ kmem_free(void *p, size_t size)
 	kern_free(p);
 }
 
-void aprint_error_dev(void *, const char *fmt, ...);
+void aprint_error_dev(device_t, const char *fmt, ...);
 
-void aprint_normal_dev(void *, const char *fmt, ...);
+void aprint_normal_dev(device_t, const char *fmt, ...);
 
 static inline uint32_t
 atomic_cas_32(volatile uint32_t *ptr, uint32_t expected, uint32_t newvalue)

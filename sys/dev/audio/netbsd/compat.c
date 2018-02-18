@@ -14,7 +14,7 @@ cv_wait_sig(kcondvar_t *cv, kmutex_t *lock)
 }
 
 void
-aprint_error_dev(void *dev, const char *fmt, ...)
+aprint_error_dev(device_t dev, const char *fmt, ...)
 {
 	va_list ap;
 
@@ -24,7 +24,7 @@ aprint_error_dev(void *dev, const char *fmt, ...)
 }
 
 void
-aprint_normal_dev(void *dev, const char *fmt, ...)
+aprint_normal_dev(device_t dev, const char *fmt, ...)
 {
 	va_list ap;
 
