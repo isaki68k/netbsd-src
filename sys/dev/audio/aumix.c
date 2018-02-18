@@ -13,13 +13,6 @@
 #include "uio.h"
 #endif
 
-#define audio_free(mem)	do {	\
-	if (mem != NULL) {	\
-		kern_free(mem);	\
-		mem = NULL;	\
-	}	\
-} while (0)
-
 #if AUDIO_DEBUG == 3
 #define AUDIO_INTR_BEGIN(sc)	(sc)->sc_intr = true
 #define AUDIO_INTR_END(sc)	(sc)->sc_intr = false
@@ -158,6 +151,19 @@ audio_realloc(void *memblock, size_t bytes)
 		}
 	}
 }
+
+/*
+ * audio_free:
+ *	Free 'mem' if available.
+ *	And initialize the pointer.  For this reason, this is implemented
+ *	as macro.
+ */
+#define audio_free(mem)	do {	\
+	if (mem != NULL) {	\
+		kern_free(mem);	\
+		mem = NULL;	\
+	}	\
+} while (0)
 
 // usrbuf を newbufsize で確保し直します。
 // usrbuf は mmap されるためこちらを使用してください。
