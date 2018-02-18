@@ -688,15 +688,13 @@ audio_track_init(struct audio_softc *sc, audio_track_t **trackp, int mode)
 
 	// デフォルトフォーマットでセット
 	error = audio_track_set_format(track, default_format);
-	if (error)
-		goto error;
+	if (error) {
+		audio_track_destroy(track);
+		return error;
+	}
 
 	*trackp = track;
 	return 0;
-
-error:
-	audio_track_destroy(track);
-	return error;
 }
 
 // track のすべてのリソースと track 自身を解放します。
