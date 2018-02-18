@@ -100,6 +100,7 @@ struct audio_softc
 	void *sc_sih_rd;
 	void *sc_sih_wr;
 	bool sc_dying;
+	bool sc_intr;
 
 	void *phys; // 実物理デバイス
 
