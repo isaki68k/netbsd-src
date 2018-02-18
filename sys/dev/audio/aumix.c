@@ -1418,7 +1418,7 @@ audio_append_silence(audio_track_t *track, audio_ring_t *ring)
 	}
 
 	int n = (ring->capacity - ring->count) % fpb;
-	
+
 	KASSERT(audio_ring_unround_free_count(ring) >= n);
 
 	memset(RING_BOT_UINT8(ring), 0, n * ring->fmt.channels * sizeof(aint_t));
@@ -2204,7 +2204,7 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req,
 	audio_ring_tookfromtop(&track->outputbuf, mixer->frames_per_block);
 
 	// トラックバッファを取り込んだことを反映
-	// mixseq はこの時点ではまだ前回の値なのでトラック側へは +1 
+	// mixseq はこの時点ではまだ前回の値なのでトラック側へは +1
 	track->seq = mixer->mixseq + 1;
 
 	// audio_write() に空きが出来たことを通知

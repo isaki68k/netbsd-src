@@ -1335,7 +1335,7 @@ audiommap(struct file *fp, off_t *offp, size_t len, int prot, int *flagsp,
 	case SOUND_DEVICE:
 	case AUDIO_DEVICE:
 		error = audio_mmap(sc, offp, len, prot, flagsp, advicep,
-		    uobjp, maxprotp, file);	
+		    uobjp, maxprotp, file);
 		break;
 	case AUDIOCTL_DEVICE:
 	case MIXER_DEVICE:
