@@ -299,7 +299,7 @@ audio_track_chvol(audio_filter_arg_t *arg)
 
 /*
  * audio_track_chmix_mixLR:
- *	This filter performs stereo-to-mono (2ch-1ch) conversion.
+ *	This filter performs conversion from stereo (or more channels) to mono.
  */
 static void
 audio_track_chmix_mixLR(audio_filter_arg_t *arg)
@@ -353,7 +353,7 @@ audio_track_chmix_mixLR(audio_filter_arg_t *arg)
 
 /*
  * audio_track_chmix_dupLR:
- *	This filter performs mono-stereo (1ch to 2ch or more) conversion.
+ *	This filter performs conversion from mono to stereo (or more channels).
  */
 static void
 audio_track_chmix_dupLR(audio_filter_arg_t *arg)
