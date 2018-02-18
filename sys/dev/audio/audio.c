@@ -1609,7 +1609,7 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 			if (sc->sc_rbusy) {
 				DPRINTF(2, "%s halt_input\n", __func__);
 				mutex_enter(sc->sc_intr_lock);
-				error = audio2_halt_input(sc);
+				error = audio_rmixer_halt(sc);
 				mutex_exit(sc->sc_intr_lock);
 				if (error) {
 					aprint_error_dev(sc->dev,
@@ -1637,7 +1637,7 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 		if (sc->sc_popens == 1) {
 			if (sc->sc_pbusy) {
 				mutex_enter(sc->sc_intr_lock);
-				error = audio2_halt_output(sc);
+				error = audio_pmixer_halt(sc);
 				mutex_exit(sc->sc_intr_lock);
 				if (error) {
 					aprint_error_dev(sc->dev,
@@ -3651,9 +3651,9 @@ audio_suspend(device_t dv, const pmf_qual_t *qual)
 	// XXX mixer をとめる?
 	mutex_enter(sc->sc_intr_lock);
 	if (sc->sc_pbusy)
-		audio2_halt_output(sc);
+		audio_pmixer_halt(sc);
 	if (sc->sc_rbusy)
-		audio2_halt_input(sc);
+		audio_rmixer_halt(sc);
 	mutex_exit(sc->sc_intr_lock);
 #ifdef AUDIO_PM_IDLE
 	callout_halt(&sc->sc_idle_counter, sc->sc_lock);

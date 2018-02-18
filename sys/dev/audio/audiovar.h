@@ -384,8 +384,8 @@ void audio_rmixer_process(struct audio_softc *sc);
 void audio_pintr(void *arg);
 void audio_rintr(void *arg);
 
-int  audio2_halt_output(struct audio_softc *sc);
-int  audio2_halt_input(struct audio_softc *sc);
+int  audio_pmixer_halt(struct audio_softc *sc);
+int  audio_rmixer_halt(struct audio_softc *sc);
 
 /* glue layer */
 int audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *file); /* write の MI 側 */

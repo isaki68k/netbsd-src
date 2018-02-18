@@ -2749,13 +2749,13 @@ audio_rintr(void *arg)
 // 関連するパラメータもクリアするため、基本的には halt_output を
 // 直接呼び出すのではなく、こちらを呼んでください。
 /*
- * audio2_halt_output:
+ * audio_pmixer_halt:
  *	Halt playback mixer.
  *	This function also clears related parameters, so call this function
  *	instead of calling halt_output directly.
  */
 int
-audio2_halt_output(struct audio_softc *sc)
+audio_pmixer_halt(struct audio_softc *sc)
 {
 	int error;
 
@@ -2778,13 +2778,13 @@ audio2_halt_output(struct audio_softc *sc)
 // 関連するパラメータもクリアするため、基本的には halt_input を
 // 直接呼び出すのではなく、こちらを呼んでください。
 /*
- * audio2_halt_input:
+ * audio_rmixer_halt:
  *	Halt recording mixer.
  *	This function also clears related parameters, so call this function
  *	instead of calling halt_input directly.
  */
 int
-audio2_halt_input(struct audio_softc *sc)
+audio_rmixer_halt(struct audio_softc *sc)
 {
 	int error;
 
