@@ -2075,155 +2075,6 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
 		mixer->hwbuf.top, mixer->hwbuf.count, mixer->hwbuf.capacity);
 }
 
-// 全トラックを 1ブロック分合成します。
-// 合成されたトラック数を返します。
-/*
- * audio_pmixer_mixall:
- *	Mix all tracks one block.
- *	It returns the number of mixed tracks.
- */
-static int
-audio_pmixer_mixall(struct audio_softc *sc, bool isintr)
-{
-	audio_trackmixer_t *mixer;
-	audio_file_t *f;
-	int req;
-	int mixed = 0;
-
-	mixer = sc->sc_pmixer;
-
-	// XXX frames_per_block そのままのほうが分かりやすいような
-	req = mixer->frames_per_block;
-
-	SLIST_FOREACH(f, &sc->sc_files, entry) {
-		audio_track_t *track = f->ptrack;
-
-		if (track == NULL)
-			continue;
-
-		// 協調的ロックされているトラックは、今回ミキシングしない。
-		if (isintr && track->in_use) {
-			ITRACET(track, "skip; in use");
-			continue;
-		}
-
-		if (track->is_pause) {
-			ITRACET(track, "skip; paused");
-			continue;
-		}
-
-		// mmap トラックならここで入力があったことにみせかける
-		if (track->mmapped) {
-			// XXX appended じゃなく直接操作してウィンドウを移動みたいに
-			// したほうがいいんじゃないか。
-			audio_ring_appended(&track->usrbuf, track->usrbuf_blksize);
-			ITRACET(track, "mmap; usr=%d/%d/C%d",
-			    track->usrbuf.top,
-			    track->usrbuf.count,
-			    track->usrbuf.capacity);
-		}
-
-		if (track->outputbuf.count < req && track->usrbuf.count > 0) {
-			ITRACET(track, "process");
-			audio_track_play(track);
-		}
-
-		if (track->outputbuf.count == 0) {
-			ITRACET(track, "skip; empty");
-			continue;
-		}
-		// 合成
-		mixed = audio_pmixer_mix_track(mixer, track, req, mixed);
-	}
-	return mixed;
-}
-
-// トラックバッファから取り出し、ミキシングします。
-// mixed には呼び出し時点までの合成済みトラック数を渡します。
-// 戻り値はこの関数終了時での合成済みトラック数)です。
-// つまりこのトラックを合成すれば mixed + 1 を返します。
-/*
- * audio_pmixer_mix_track:
- *	Mix one track.
- *	'mixed' specifies the number of tracks mixed so far.
- *	It returns the number of tracks mixed.  In other words,
- *	it returns mixed+1 if this track is mixed.
- */
-int
-audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req, int mixed)
-{
-	// 現時点で outputbuf に溜まってるやつを最大1ブロック分処理する。
-
-	// このトラックが処理済みならなにもしない
-	if (mixer->mixseq < track->seq) return mixed;
-
-	int count = audio_ring_unround_count(&track->outputbuf);
-	count = min(count, mixer->frames_per_block);
-
-	aint_t *sptr = RING_TOP(aint_t, &track->outputbuf);
-	aint2_t *dptr = mixer->mixsample;
-
-	// 整数倍精度へ変換し、トラックボリュームを適用して加算合成
-	int sample_count = count * mixer->mixfmt.channels;
-	if (mixed == 0) {
-		// 最初のトラック合成は代入
-		if (track->volume == 256) {
-			for (int i = 0; i < sample_count; i++) {
-				*dptr++ = ((aint2_t)*sptr++);
-			}
-		} else {
-			for (int i = 0; i < sample_count; i++) {
-#if defined(AUDIO_USE_C_IMPLEMENTATION_DEFINED_BEHAVIOR) && defined(__GNUC__)
-				*dptr++ = ((aint2_t)*sptr++) * track->volume >> 8;
-#else
-				*dptr++ = ((aint2_t)*sptr++) * track->volume / 256;
-#endif
-			}
-		}
-	} else {
-		// 2本め以降なら加算合成
-		if (track->volume == 256) {
-			for (int i = 0; i < sample_count; i++) {
-				*dptr++ += ((aint2_t)*sptr++);
-			}
-		} else {
-			for (int i = 0; i < sample_count; i++) {
-#if defined(AUDIO_USE_C_IMPLEMENTATION_DEFINED_BEHAVIOR) && defined(__GNUC__)
-				*dptr++ += ((aint2_t)*sptr++) * track->volume >> 8;
-#else
-				*dptr++ += ((aint2_t)*sptr++) * track->volume / 256;
-#endif
-			}
-		}
-	}
-
-	// outputbuf が1ブロック未満であっても、カウンタはブロック境界に
-	// いなければならないため、count ではなく frames_per_block を足す。
-	audio_ring_tookfromtop(&track->outputbuf, mixer->frames_per_block);
-
-	// トラックバッファを取り込んだことを反映
-	// mixseq はこの時点ではまだ前回の値なのでトラック側へは +1
-	track->seq = mixer->mixseq + 1;
-
-	// audio_write() に空きが出来たことを通知
-	cv_broadcast(&track->outchan);
-
-	ITRACET(track, "broadcast; trseq=%d out=%d/%d/%d", (int)track->seq,
-	    track->outputbuf.top, track->outputbuf.count, track->outputbuf.capacity);
-
-	// usrbuf が空いたら(lowat を下回ったら) シグナルを送る
-	// XXX ここで usrbuf が空いたかどうかを見るのもどうかと思うが
-	if (track->usrbuf.count <= track->usrbuf_usedlow && !track->is_pause) {
-		if (track->sih_wr) {
-			kpreempt_disable();
-			softint_schedule(track->sih_wr);
-			kpreempt_enable();
-		}
-	}
-
-	return mixed + 1;
-}
-
 /*
  * When playing back with MD filter:
  *
@@ -2390,6 +2241,155 @@ audio_pmixer_process(struct audio_softc *sc, bool isintr)
 	if (need_exit) {
 		mutex_exit(sc->sc_intr_lock);
 	}
+}
+
+// 全トラックを 1ブロック分合成します。
+// 合成されたトラック数を返します。
+/*
+ * audio_pmixer_mixall:
+ *	Mix all tracks one block.
+ *	It returns the number of mixed tracks.
+ */
+static int
+audio_pmixer_mixall(struct audio_softc *sc, bool isintr)
+{
+	audio_trackmixer_t *mixer;
+	audio_file_t *f;
+	int req;
+	int mixed = 0;
+
+	mixer = sc->sc_pmixer;
+
+	// XXX frames_per_block そのままのほうが分かりやすいような
+	req = mixer->frames_per_block;
+
+	SLIST_FOREACH(f, &sc->sc_files, entry) {
+		audio_track_t *track = f->ptrack;
+
+		if (track == NULL)
+			continue;
+
+		// 協調的ロックされているトラックは、今回ミキシングしない。
+		if (isintr && track->in_use) {
+			ITRACET(track, "skip; in use");
+			continue;
+		}
+
+		if (track->is_pause) {
+			ITRACET(track, "skip; paused");
+			continue;
+		}
+
+		// mmap トラックならここで入力があったことにみせかける
+		if (track->mmapped) {
+			// XXX appended じゃなく直接操作してウィンドウを移動みたいに
+			// したほうがいいんじゃないか。
+			audio_ring_appended(&track->usrbuf, track->usrbuf_blksize);
+			ITRACET(track, "mmap; usr=%d/%d/C%d",
+			    track->usrbuf.top,
+			    track->usrbuf.count,
+			    track->usrbuf.capacity);
+		}
+
+		if (track->outputbuf.count < req && track->usrbuf.count > 0) {
+			ITRACET(track, "process");
+			audio_track_play(track);
+		}
+
+		if (track->outputbuf.count == 0) {
+			ITRACET(track, "skip; empty");
+			continue;
+		}
+		// 合成
+		mixed = audio_pmixer_mix_track(mixer, track, req, mixed);
+	}
+	return mixed;
+}
+
+// トラックバッファから取り出し、ミキシングします。
+// mixed には呼び出し時点までの合成済みトラック数を渡します。
+// 戻り値はこの関数終了時での合成済みトラック数)です。
+// つまりこのトラックを合成すれば mixed + 1 を返します。
+/*
+ * audio_pmixer_mix_track:
+ *	Mix one track.
+ *	'mixed' specifies the number of tracks mixed so far.
+ *	It returns the number of tracks mixed.  In other words,
+ *	it returns mixed+1 if this track is mixed.
+ */
+int
+audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req, int mixed)
+{
+	// 現時点で outputbuf に溜まってるやつを最大1ブロック分処理する。
+
+	// このトラックが処理済みならなにもしない
+	if (mixer->mixseq < track->seq) return mixed;
+
+	int count = audio_ring_unround_count(&track->outputbuf);
+	count = min(count, mixer->frames_per_block);
+
+	aint_t *sptr = RING_TOP(aint_t, &track->outputbuf);
+	aint2_t *dptr = mixer->mixsample;
+
+	// 整数倍精度へ変換し、トラックボリュームを適用して加算合成
+	int sample_count = count * mixer->mixfmt.channels;
+	if (mixed == 0) {
+		// 最初のトラック合成は代入
+		if (track->volume == 256) {
+			for (int i = 0; i < sample_count; i++) {
+				*dptr++ = ((aint2_t)*sptr++);
+			}
+		} else {
+			for (int i = 0; i < sample_count; i++) {
+#if defined(AUDIO_USE_C_IMPLEMENTATION_DEFINED_BEHAVIOR) && defined(__GNUC__)
+				*dptr++ = ((aint2_t)*sptr++) * track->volume >> 8;
+#else
+				*dptr++ = ((aint2_t)*sptr++) * track->volume / 256;
+#endif
+			}
+		}
+	} else {
+		// 2本め以降なら加算合成
+		if (track->volume == 256) {
+			for (int i = 0; i < sample_count; i++) {
+				*dptr++ += ((aint2_t)*sptr++);
+			}
+		} else {
+			for (int i = 0; i < sample_count; i++) {
+#if defined(AUDIO_USE_C_IMPLEMENTATION_DEFINED_BEHAVIOR) && defined(__GNUC__)
+				*dptr++ += ((aint2_t)*sptr++) * track->volume >> 8;
+#else
+				*dptr++ += ((aint2_t)*sptr++) * track->volume / 256;
+#endif
+			}
+		}
+	}
+
+	// outputbuf が1ブロック未満であっても、カウンタはブロック境界に
+	// いなければならないため、count ではなく frames_per_block を足す。
+	audio_ring_tookfromtop(&track->outputbuf, mixer->frames_per_block);
+
+	// トラックバッファを取り込んだことを反映
+	// mixseq はこの時点ではまだ前回の値なのでトラック側へは +1
+	track->seq = mixer->mixseq + 1;
+
+	// audio_write() に空きが出来たことを通知
+	cv_broadcast(&track->outchan);
+
+	ITRACET(track, "broadcast; trseq=%d out=%d/%d/%d", (int)track->seq,
+	    track->outputbuf.top, track->outputbuf.count, track->outputbuf.capacity);
+
+	// usrbuf が空いたら(lowat を下回ったら) シグナルを送る
+	// XXX ここで usrbuf が空いたかどうかを見るのもどうかと思うが
+	if (track->usrbuf.count <= track->usrbuf_usedlow && !track->is_pause) {
+		if (track->sih_wr) {
+			kpreempt_disable();
+			softint_schedule(track->sih_wr);
+			kpreempt_enable();
+		}
+	}
+
+	return mixed + 1;
 }
 
 // ハードウェアバッファから 1 ブロック出力します。
