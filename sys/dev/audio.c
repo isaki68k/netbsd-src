@@ -147,6 +147,9 @@
  *	get_locks 		-	-	Called at attach time
  */
 
+#if defined(AUDIO2)
+#include "dev/audio/audio.c"
+#else
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.442 2017/11/30 20:25:54 christos Exp $");
 
@@ -6272,3 +6275,4 @@ audio_modcmd(modcmd_t cmd, void *arg)
 
 	return error;
 }
+#endif /* AUDIO2 */
