@@ -1,5 +1,7 @@
 // vi:set ts=8:
-#pragma once
+
+#ifndef _SYS_DEV_AUDIOVAR2_H_
+#define _SYS_DEV_AUDIOVAR2_H_
 
 // デバッグレベルは
 // 1: open/close/set_param等
@@ -9,6 +11,13 @@
 #define AUDIO_DEBUG	3
 
 #if defined(_KERNEL)
+#include <sys/condvar.h>
+#include <sys/proc.h>
+#include <sys/queue.h>
+
+#include <dev/audio_if.h>
+#include <dev/auconv.h>
+
 #include <dev/audio/aufilter.h>
 #else
 #include <stdint.h>
@@ -104,6 +113,14 @@
 #define AUDIO_ENCODING_ULINEAR_NE AUDIO_ENCODING_ULINEAR_BE
 #endif
 
+#define AUOPEN_READ	0x01
+#define AUOPEN_WRITE	0x02
+
+/* Interfaces for audiobell. */
+int audiobellopen(dev_t, int, int, struct lwp *, struct file **);
+int audiobellclose(struct file *);
+int audiobellwrite(struct file *, off_t *, struct uio *, kauth_cred_t, int);
+int audiobellioctl(struct file *, u_long, void *);
 
 // 前方参照
 typedef struct audio_track audio_track_t;
@@ -252,6 +269,91 @@ struct audio_file {
 	SLIST_ENTRY(audio_file) entry;
 };
 
+#define AUDIO_N_PORTS 4
+
+struct au_mixer_ports {
+	int	index;		/* index of port-selector mixerctl */
+	int	master;		/* index of master mixerctl */
+	int	nports;		/* number of selectable ports */
+	bool	isenum;		/* selector is enum type */
+	u_int	allports;	/* all aumasks or'd */
+	u_int	aumask[AUDIO_N_PORTS];	/* exposed value of "ports" */
+	int	misel [AUDIO_N_PORTS];	/* ord of port, for selector */
+	int	miport[AUDIO_N_PORTS];	/* index of port's mixerctl */
+	bool	isdual;		/* has working mixerout */
+	int	mixerout;	/* ord of mixerout, for dual case */
+	int	cur_port;	/* the port that gain actually controls when
+				   mixerout is selected, for dual case */
+};
+
+struct audio_softc {
+	device_t	dev;
+
+	// NULL なら sc はあるが autoconfig に失敗したので無効になってる
+	// audio1 at ... attached
+	// audio1: ... config failed
+	// みたいな状態
+	const struct audio_hw_if *hw_if; /* Hardware interface */
+	void		*hw_hdl;	/* Hardware driver handle */
+	device_t	sc_dev;		/* Hardware device struct */
+
+	SLIST_HEAD(, audio_file) sc_files;	/* list of open descriptor */
+
+	audio_trackmixer_t *sc_pmixer;	/* null if play not supported by hw */
+	audio_trackmixer_t *sc_rmixer;	/* null if rec not supported by hw */
+
+	audio_format2_t sc_phwfmt;
+	audio_format2_t sc_rhwfmt;
+	audio_filter_reg_t sc_xxx_pfilreg;
+	audio_filter_reg_t sc_xxx_rfilreg;
+
+	bool		sc_can_playback;	/* device can playback */
+	bool		sc_can_capture;		/* device can capture */
+
+	int sc_popens;
+	int sc_ropens;
+	bool			sc_pbusy;	/* output DMA in progress */
+	bool			sc_rbusy;	/* input DMA in progress */
+
+	// この4つが /dev/sound で引き継がれる non-volatile パラメータ
+	audio_format2_t sc_pparams;	/* play encoding parameters */
+	audio_format2_t sc_rparams;	/* record encoding parameters */
+	bool 		sc_ppause;
+	bool		sc_rpause;
+
+	struct audio_info sc_ai;	/* recent info for /dev/sound */
+
+	struct	selinfo sc_wsel; /* write selector */
+	struct	selinfo sc_rsel; /* read selector */
+	void		*sc_sih_rd;
+	struct	mixer_asyncs {
+		struct mixer_asyncs *next;
+		pid_t	pid;
+	} *sc_async_mixer;  /* processes who want mixer SIGIO */
+
+	/* Locks and sleep channels for reading, writing and draining. */
+	kmutex_t	*sc_intr_lock;
+	kmutex_t	*sc_lock;
+	bool		sc_dying;
+
+	kauth_cred_t sc_cred;
+
+	struct sysctllog *sc_log;
+
+	mixer_ctrl_t	*sc_mixer_state;
+	int		sc_nmixer_states;
+	int		sc_static_nmixer_states;
+	struct au_mixer_ports sc_inports;
+	struct au_mixer_ports sc_outports;
+	int		sc_monitor_port;
+	u_int	sc_lastgain;
+
+	struct audio_encoding *sc_encodings;
+	int sc_encodings_count;
+#if AUDIO_DEBUG == 3
+	bool sc_intr;
+#endif
+};
 
 extern void audio_vtrace(const char *funcname, const char *header,
 	const char *fmt, va_list ap);
@@ -305,3 +407,8 @@ audio_volume_to_outer(u_int v)
 {
 	return v < 127 ? v : v - 1;
 }
+
+#include <dev/audio/aumix.h>
+#include <dev/audio/auring.h>
+
+#endif /* _SYS_DEV_AUDIOVAR2_H_ */

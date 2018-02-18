@@ -63,6 +63,9 @@
  *
  *	From: Header: audiovar.h,v 1.3 93/07/18 14:07:25 mccanne Exp  (LBL)
  */
+#if defined(AUDIO2)
+#include <dev/audio/audiovar.h>
+#else
 #ifndef _SYS_DEV_AUDIOVAR_H_
 #define _SYS_DEV_AUDIOVAR_H_
 
@@ -82,17 +85,11 @@ int audiobellclose(struct file *);
 int audiobellwrite(struct file *, off_t *, struct uio *, kauth_cred_t, int);
 int audiobellioctl(struct file *, u_long, void *);
 
-// とりあえず
-#include <dev/audio/audiovar.h>
-#include <dev/audio/aumix.h>
-#include <dev/audio/auring.h>
-#if 0
 /*
  * Initial/default block duration is both configurable and patchable.
  */
 #ifndef AUDIO_BLK_MS
 #define AUDIO_BLK_MS	50	/* 50 ms */
-#endif
 #endif
 
 #define AUDIO_N_PORTS 4
@@ -182,3 +179,4 @@ struct audio_softc {
 };
 
 #endif /* _SYS_DEV_AUDIOVAR_H_ */
+#endif /* AUDIO2 */
