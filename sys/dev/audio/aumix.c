@@ -1766,7 +1766,8 @@ audio_track_record(audio_track_t *track)
 	// count は usrbuf にコピーするフレーム数。
 	// bytes は usrbuf にコピーするバイト数。
 	count = outputbuf->count;
-	count = min(count, (usrbuf->capacity - usrbuf->count) / framesize);
+	count = min(count,
+	    (track->usrbuf_usedhigh - usrbuf->count) / framesize);
 	bytes = count * framesize;
 	if (audio_ring_bottom(usrbuf) + bytes < usrbuf->capacity) {
 		memcpy((uint8_t *)usrbuf->mem + audio_ring_bottom(usrbuf),
@@ -2932,7 +2933,7 @@ audio_write_uiomove(audio_track_t *track, int bottom, int len, struct uio *uio)
 	}
 	audio_ring_appended(usrbuf, len);
 	track->useriobytes += len;
-	TRACET(track, "uiomove(len=%d) usrbuf=%d/%d/%d",
+	TRACET(track, "uiomove(len=%d) usrbuf=%d/%d/C%d",
 	    len,
 	    usrbuf->top, usrbuf->count, usrbuf->capacity);
 	return 0;
@@ -3044,9 +3045,9 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 			count = min(usrbuf->count / framesize, track->playdrop);
 			audio_ring_tookfromtop(usrbuf, count * framesize);
 			track->playdrop -= count * framesize;
-			TRACET(track, "drop %d -> usr=%d/%d/%d",
+			TRACET(track, "drop %d -> usr=%d/%d/H%d",
 			    count * framesize,
-			    usrbuf->top, usrbuf->count, usrbuf->capacity);
+			    usrbuf->top, usrbuf->count, track->usrbuf_usedhigh);
 		}
 
 		mutex_enter(sc->sc_intr_lock);
@@ -3087,7 +3088,7 @@ audio_read_uiomove(audio_track_t *track, int top, int len, struct uio *uio)
 	}
 	audio_ring_tookfromtop(usrbuf, len);
 	track->useriobytes += len;
-	TRACET(track, "uiomove(len=%d) usrbuf=%d/%d/%d",
+	TRACET(track, "uiomove(len=%d) usrbuf=%d/%d/C%d",
 	    len,
 	    usrbuf->top, usrbuf->count, usrbuf->capacity);
 	return 0;
@@ -3130,10 +3131,10 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 		int bytes;
 		audio_ring_t *usrbuf = &track->usrbuf;
 
-		TRACET(track, "while resid=%zd input=%d/%d/%d usrbuf=%d/%d/%d",
+		TRACET(track, "while resid=%zd input=%d/%d/%d usrbuf=%d/%d/H%d",
 		    uio->uio_resid,
 		    track->input->top, track->input->count, track->input->capacity,
-		    usrbuf->top, usrbuf->count, usrbuf->capacity);
+		    usrbuf->top, usrbuf->count, track->usrbuf_usedhigh);
 
 		mutex_enter(sc->sc_intr_lock);
 		if (track->input->count == 0 && track->usrbuf.count == 0) {
