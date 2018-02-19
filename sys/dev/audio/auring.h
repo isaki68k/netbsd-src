@@ -123,7 +123,7 @@ static inline void
 audio_ring_tookfromtop(audio_ring_t *ring, int n)
 {
 	KASSERT(is_valid_ring(ring));
-	KASSERT(n >= 0);
+	KASSERTMSG(n >= 0, "%s: n=%d", __func__, n);
 	KASSERTMSG(ring->count >= n, "%s: ring->count=%d n=%d",
 	    __func__, ring->count, n);
 
