@@ -310,7 +310,3 @@ extern void lock(struct audio_softc *sc);
 extern void unlock(struct audio_softc *sc);
 
 extern int audio_blk_ms;
-
-// OBSOLETE
-extern void WAIT();
-
