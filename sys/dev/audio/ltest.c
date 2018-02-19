@@ -259,15 +259,16 @@ test_linear_to(int enc, int prec, void (*func)(audio_filter_arg_t *))
 	s = src;
 	for (int i = 0; i < count; i++) {
 		// input
+		val = 0;
 		switch (stride) {
 		 case 8:
 			val = *s++;
 			break;
 		 case 16:
 			if (enc_is_LE(enc))
-				val = le16toh(*(uint16_t *)s);
+				val = le16toh(*(const uint16_t *)s);
 			else
-				val = be16toh(*(uint16_t *)s);
+				val = be16toh(*(const uint16_t *)s);
 			s += 2;
 			break;
 		 case 24:
@@ -283,9 +284,9 @@ test_linear_to(int enc, int prec, void (*func)(audio_filter_arg_t *))
 			break;
 		 case 32:
 			if (enc_is_LE(enc))
-				val = le32toh(*(uint32_t *)s);
+				val = le32toh(*(const uint32_t *)s);
 			else
-				val = be32toh(*(uint32_t *)s);
+				val = be32toh(*(const uint32_t *)s);
 			s += 4;
 			break;
 		}
