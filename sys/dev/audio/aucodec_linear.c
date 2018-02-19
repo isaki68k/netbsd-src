@@ -148,7 +148,7 @@ internal_to_linear16(audio_filter_arg_t *arg)
 	    ? 0 : (1 << (AUDIO_INTERNAL_BITS - 1));
 
 	// 16bit だけ高速化するとかでも良いかもしれない。
-	if (audio_format2_endian(arg->srcfmt) == BYTE_ORDER) {
+	if (audio_format2_endian(arg->dstfmt) == BYTE_ORDER) {
 		if (src_lsr == 0) {
 			if (xor == 0) {
 				memcpy(dptr, sptr, sample_count * 2);
