@@ -7,7 +7,7 @@
 #include "aucodec.h"
 #endif // !_KERNEL
 
-// [US]LINEAR(?,stride=8){BE|LE} から internal への変換
+// [US]LINEAR8 から internal への変換
 void
 linear8_to_internal(audio_filter_arg_t *arg)
 {
@@ -15,11 +15,11 @@ linear8_to_internal(audio_filter_arg_t *arg)
 	aint_t *d;
 	auint_t xor;
 	u_int sample_count;
-	u_int src_lsl;
 	u_int i;
 
 	KASSERT(is_valid_filter_arg(arg));
 	KASSERT(audio_format2_is_linear(arg->srcfmt));
+	KASSERT(arg->srcfmt->precision == 8);
 	KASSERT(arg->srcfmt->stride == 8);
 	KASSERT(is_internal_format(arg->dstfmt));
 	KASSERT(arg->srcfmt->channels == arg->dstfmt->channels);
@@ -28,7 +28,6 @@ linear8_to_internal(audio_filter_arg_t *arg)
 	d = arg->dst;
 	sample_count = arg->count * arg->srcfmt->channels;
 
-	src_lsl = AUDIO_INTERNAL_BITS - arg->srcfmt->precision;
 	/* unsigned -> signed */
 	xor = audio_format2_is_signed(arg->srcfmt)
 	    ? 0 : (1 << (AUDIO_INTERNAL_BITS - 1));
@@ -37,13 +36,13 @@ linear8_to_internal(audio_filter_arg_t *arg)
 		aint_t val;
 
 		val = *s++;
-		val <<= src_lsl;
+		val <<= AUDIO_INTERNAL_BITS - 8;
 		val ^= xor;
 		*d++ = val;
 	}
 }
 
-// internal から [US]LINEAR(?,stride=8){BE|LE} への変換
+// internal から [US]LINEAR8 への変換
 void
 internal_to_linear8(audio_filter_arg_t *arg)
 {
@@ -51,11 +50,11 @@ internal_to_linear8(audio_filter_arg_t *arg)
 	uint8_t *d;
 	auint_t xor;
 	u_int sample_count;
-	u_int src_lsr;
 	u_int i;
 
 	KASSERT(is_valid_filter_arg(arg));
 	KASSERT(audio_format2_is_linear(arg->dstfmt));
+	KASSERT(arg->dstfmt->precision == 8);
 	KASSERT(arg->dstfmt->stride == 8);
 	KASSERT(is_internal_format(arg->srcfmt));
 	KASSERT(arg->srcfmt->channels == arg->dstfmt->channels);
@@ -64,7 +63,6 @@ internal_to_linear8(audio_filter_arg_t *arg)
 	d = arg->dst;
 	sample_count = arg->count * arg->srcfmt->channels;
 
-	src_lsr = AUDIO_INTERNAL_BITS - arg->dstfmt->precision;
 	/* unsigned -> signed */
 	xor = audio_format2_is_signed(arg->dstfmt)
 	    ? 0 : (1 << (AUDIO_INTERNAL_BITS - 1));
@@ -73,12 +71,12 @@ internal_to_linear8(audio_filter_arg_t *arg)
 		aint_t val;
 		val = *s++;
 		val ^= xor;
-		val >>= src_lsr;
+		val >>= AUDIO_INTERNAL_BITS - 8;
 		*d++ = (uint8_t)val;
 	}
 }
 
-// [US]LINEAR(?,stride=16){BE|LE} から internal への変換
+// [US]LINEAR16{BE|LE} から internal への変換
 void
 linear16_to_internal(audio_filter_arg_t *arg)
 {
@@ -91,6 +89,7 @@ linear16_to_internal(audio_filter_arg_t *arg)
 
 	KASSERT(is_valid_filter_arg(arg));
 	KASSERT(audio_format2_is_linear(arg->srcfmt));
+	KASSERT(arg->srcfmt->precision == 16);
 	KASSERT(arg->srcfmt->stride == 16);
 	KASSERT(is_internal_format(arg->dstfmt));
 	KASSERT(arg->srcfmt->channels == arg->dstfmt->channels);
@@ -150,7 +149,7 @@ linear16_to_internal(audio_filter_arg_t *arg)
 	}
 }
 
-// internal から [US]LINEAR(?,stride=16){BE|LE} への変換
+// internal から [US]LINEAR16{BE|LE} への変換
 void
 internal_to_linear16(audio_filter_arg_t *arg)
 {
@@ -163,6 +162,7 @@ internal_to_linear16(audio_filter_arg_t *arg)
 
 	KASSERT(is_valid_filter_arg(arg));
 	KASSERT(audio_format2_is_linear(arg->dstfmt));
+	KASSERT(arg->dstfmt->precision == 16);
 	KASSERT(arg->dstfmt->stride == 16);
 	KASSERT(is_internal_format(arg->srcfmt));
 	KASSERT(arg->srcfmt->channels == arg->dstfmt->channels);
@@ -223,20 +223,20 @@ internal_to_linear16(audio_filter_arg_t *arg)
 }
 
 #if defined(AUDIO_SUPPORT_LINEAR24)
-// [US]LINEAR(?,stride=24){BE|LE} から internal への変換
+// [US]LINEAR24{BE|LE} から internal への変換
 void
 linear24_to_internal(audio_filter_arg_t *arg)
 {
 	const uint8_t *s;
 	aint_t *d;
 	auint_t xor;
-	u_int src_lsl;
 	u_int sample_count;
 	u_int i;
 	bool is_src_LE;
 
 	KASSERT(is_valid_filter_arg(arg));
 	KASSERT(audio_format2_is_linear(arg->srcfmt));
+	KASSERT(arg->srcfmt->precision == 24);
 	KASSERT(arg->srcfmt->stride == 24);
 	KASSERT(is_internal_format(arg->dstfmt));
 	KASSERT(arg->srcfmt->channels == arg->dstfmt->channels);
@@ -245,8 +245,6 @@ linear24_to_internal(audio_filter_arg_t *arg)
 	d = arg->dst;
 	sample_count = arg->count * arg->srcfmt->channels;
 
-	// 一旦 32bit にする
-	src_lsl = 32 - arg->srcfmt->precision;
 	/* unsigned -> signed */
 	xor = audio_format2_is_signed(arg->srcfmt)
 	    ? 0 : (1 << (AUDIO_INTERNAL_BITS - 1));
@@ -264,16 +262,17 @@ linear24_to_internal(audio_filter_arg_t *arg)
 		}
 		s += 3;
 
-		val <<= src_lsl;
-#if AUDIO_INTERNAL_BITS == 16
-		val >>= 16;
+#if AUDIO_INTERNAL_BITS < 24
+		val >>= 24 - AUDIO_INTERNAL_BITS;
+#else
+		val <<= AUDIO_INTERNAL_BITS - 24;
 #endif
 		val ^= xor;
 		*d++ = val;
 	}
 }
 
-// internal から [US]LINEAR(?,stride=24){BE|LE} への変換
+// internal から [US]LINEAR24{BE|LE} への変換
 void
 internal_to_linear24(audio_filter_arg_t *arg)
 {
@@ -281,12 +280,12 @@ internal_to_linear24(audio_filter_arg_t *arg)
 	uint8_t *d;
 	auint_t xor;
 	u_int sample_count;
-	u_int src_lsr;
 	u_int i;
 	bool is_dst_LE;
 
 	KASSERT(is_valid_filter_arg(arg));
 	KASSERT(audio_format2_is_linear(arg->dstfmt));
+	KASSERT(arg->dstfmt->precision == 24);
 	KASSERT(arg->dstfmt->stride == 24);
 	KASSERT(is_internal_format(arg->srcfmt));
 	KASSERT(arg->srcfmt->channels == arg->dstfmt->channels);
@@ -295,8 +294,6 @@ internal_to_linear24(audio_filter_arg_t *arg)
 	d = arg->dst;
 	sample_count = arg->count * arg->srcfmt->channels;
 
-	// 一旦 32bit にする
-	src_lsr = 32 - arg->dstfmt->precision;
 	/* unsigned -> signed */
 	xor = audio_format2_is_signed(arg->dstfmt)
 	    ? 0 : (1 << (AUDIO_INTERNAL_BITS - 1));
@@ -308,10 +305,11 @@ internal_to_linear24(audio_filter_arg_t *arg)
 	for (i = 0; i < sample_count; i++) {
 		uint32_t val = *s++;
 		val ^= xor;
-#if AUDIO_INTERNAL_BITS == 16
-		val <<= 16;
+#if AUDIO_INTERNAL_BITS < 24
+		val <<= 24 - AUDIO_INTERNAL_BITS;
+#else
+		val >>= AUDIO_INTERNAL_BITS - 24;
 #endif
-		val >>= src_lsr;
 		if (is_dst_LE) {
 			d[0] = val & 0xff;
 			d[1] = (val >> 8) & 0xff;
@@ -326,7 +324,7 @@ internal_to_linear24(audio_filter_arg_t *arg)
 }
 #endif /* AUDIO_SUPPORT_LINEAR24 */
 
-// [US]LINEAR(?,stride=32){BE|LE} から internal への変換
+// [US]LINEAR32{BE|LE} から internal への変換
 void
 linear32_to_internal(audio_filter_arg_t *arg)
 {
@@ -334,12 +332,12 @@ linear32_to_internal(audio_filter_arg_t *arg)
 	aint_t *d;
 	auint_t xor;
 	u_int sample_count;
-	u_int src_lsl;
 	u_int i;
 	bool is_src_NE;
 
 	KASSERT(is_valid_filter_arg(arg));
 	KASSERT(audio_format2_is_linear(arg->srcfmt));
+	KASSERT(arg->srcfmt->precision == 32);
 	KASSERT(arg->srcfmt->stride == 32);
 	KASSERT(is_internal_format(arg->dstfmt));
 	KASSERT(arg->srcfmt->channels == arg->dstfmt->channels);
@@ -348,7 +346,6 @@ linear32_to_internal(audio_filter_arg_t *arg)
 	d = arg->dst;
 	sample_count = arg->count * arg->srcfmt->channels;
 
-	src_lsl = 32 - arg->srcfmt->precision;
 	/* unsigned -> signed */
 	xor = audio_format2_is_signed(arg->srcfmt)
 	    ? 0 : (1 << (AUDIO_INTERNAL_BITS - 1));
@@ -362,16 +359,13 @@ linear32_to_internal(audio_filter_arg_t *arg)
 		if (!is_src_NE) {
 			val = __builtin_bswap32(val);
 		}
-		val <<= src_lsl;
-#if AUDIO_INTERNAL_BITS == 16
-		val >>= 16;
-#endif
+		val >>= 32 - AUDIO_INTERNAL_BITS;
 		val ^= xor;
 		*d++ = val;
 	}
 }
 
-// internal から [US]LINEAR(?,stride=32){BE|LE} への変換
+// internal から [US]LINEAR32{BE|LE} への変換
 void
 internal_to_linear32(audio_filter_arg_t *arg)
 {
@@ -379,12 +373,12 @@ internal_to_linear32(audio_filter_arg_t *arg)
 	uint32_t *d;
 	auint_t xor;
 	u_int sample_count;
-	u_int src_lsr;
 	u_int i;
 	bool is_dst_NE;
 
 	KASSERT(is_valid_filter_arg(arg));
 	KASSERT(audio_format2_is_linear(arg->dstfmt));
+	KASSERT(arg->dstfmt->precision == 32);
 	KASSERT(arg->dstfmt->stride == 32);
 	KASSERT(is_internal_format(arg->srcfmt));
 	KASSERT(arg->srcfmt->channels == arg->dstfmt->channels);
@@ -393,7 +387,6 @@ internal_to_linear32(audio_filter_arg_t *arg)
 	d = arg->dst;
 	sample_count = arg->count * arg->srcfmt->channels;
 
-	src_lsr = 32 - arg->dstfmt->precision;
 	/* unsigned -> signed */
 	xor = audio_format2_is_signed(arg->dstfmt)
 	    ? 0 : (1 << (AUDIO_INTERNAL_BITS - 1));
@@ -405,10 +398,7 @@ internal_to_linear32(audio_filter_arg_t *arg)
 	for (i = 0; i < sample_count; i++) {
 		uint32_t val = *s++;
 		val ^= xor;
-#if AUDIO_INTERNAL_BITS == 16
-		val <<= 16;
-#endif
-		val >>= src_lsr;
+		val <<= 32 - AUDIO_INTERNAL_BITS;
 		if (!is_dst_NE) {
 			val = __builtin_bswap32(val);
 		}
