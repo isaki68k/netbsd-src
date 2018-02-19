@@ -16,6 +16,7 @@
 #include <sys/mman.h>
 #include <sys/param.h>
 #include <poll.h>
+#include <sys/event.h>
 #include <sys/sysctl.h>
 #include <sys/wait.h>
 
@@ -567,6 +568,32 @@ int debug_poll(int line, struct pollfd *pfd, int nfd, int timeout)
 {
 	DPRINTFF(line, "poll(%p, %d, %d)", pfd, nfd, timeout);
 	int r = poll(pfd, nfd, timeout);
+	DRESULT(r);
+}
+
+#define KQUEUE()	debug_kqueue(__LINE__)
+int debug_kqueue(int line)
+{
+	DPRINTFF(line, "kqueue()");
+	int r = kqueue();
+	DRESULT(r);
+}
+
+#define KEVENT_SET(kq, kev, nev)	debug_kevent_set(__LINE__, kq, kev, nev)
+int debug_kevent_set(int line, int kq, struct kevent *kev, size_t nev)
+{
+	DPRINTFF(line, "kevent_set(%d, %p, %zd)", kq, kev, nev);
+	int r = kevent(kq, kev, nev, NULL, 0, NULL);
+	DRESULT(r);
+}
+
+#define KEVENT_POLL(kq, kev, nev, ts) \
+	debug_kevent_poll(__LINE__, kq, kev, nev, ts)
+int debug_kevent_poll(int line, int kq, struct kevent *kev, size_t nev,
+	const struct timespec *ts)
+{
+	DPRINTFF(line, "kevent_poll(%d, %p, %zd, %p)", kq, kev, nev, ts);
+	int r = kevent(kq, NULL, 0, kev, nev, ts);
 	DRESULT(r);
 }
 
@@ -4195,6 +4222,90 @@ test_audioctl_open_5()
 	}
 }
 
+// /dev/audioctl はどのモードでオープンしても read/write できないこと。
+void
+test_audioctl_rw(void)
+{
+	char buf[1];
+	int fd;
+	int r;
+
+	for (int mode = 0; mode <= 2; mode++) {
+		TEST("audioctl_rw(%s)", openmodetable[mode]);
+		fd = OPEN(devaudioctl, mode);
+		if (fd == -1)
+			err(1, "open");
+
+		if (mode2popen_full[mode]) {
+			r = WRITE(fd, buf, sizeof(buf));
+			XP_SYS_NG(ENODEV, r);
+		}
+
+		if (mode2ropen_full[mode]) {
+			r = READ(fd, buf, sizeof(buf));
+			XP_SYS_NG(ENODEV, r);
+		}
+
+		r = CLOSE(fd);
+		XP_SYS_EQ(0, r);
+	}
+}
+
+// /dev/audioctl への poll は常に成功扱いのようだ
+void
+test_audioctl_poll()
+{
+	struct pollfd pfd;
+	int fd;
+	int r;
+
+	TEST("audioctl_poll");
+	fd = OPEN(devaudioctl, O_WRONLY);
+	if (fd == -1)
+		err(1, "open");
+
+	pfd.fd = fd;
+	pfd.events = POLLOUT;
+	r = POLL(&pfd, 1, 1);
+	XP_SYS_EQ(0, r);
+	XP_EQ(0, pfd.revents);
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+}
+
+// /dev/audioctl は kqueue できないこと (mode別はさすがにいいだろう)
+void
+test_audioctl_kqueue()
+{
+	struct kevent kev;
+	int fd;
+	int kq;
+	int r;
+
+	TEST("audioctl_kqueue");
+	fd = OPEN(devaudioctl, O_WRONLY);
+	if (fd == -1)
+		err(1, "open");
+
+	kq = KQUEUE();
+	XP_SYS_OK(kq);
+
+	EV_SET(&kev, fd, EVFILT_WRITE, EV_ADD, 0, 0, 0);
+	r = KEVENT_SET(kq, &kev, 1);
+	// N7: たぶん poll と同じ常時成功扱いにしようとしたのだと思うが、
+	// バグがあって 1 (== EPERM) が返ってくる。
+	// A2 では ENODEV を返すことにした。
+	if (netbsd == 7) {
+		XP_SYS_NG(1/*EPERM*/, r);
+	} else {
+		XP_SYS_NG(ENODEV, r);
+	}
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+}
+
 // テスト一覧
 #define DEF(x)	{ #x, test_ ## x }
 struct testtable testtable[] = {
@@ -4247,6 +4358,9 @@ struct testtable testtable[] = {
 	DEF(audioctl_open_3),
 	DEF(audioctl_open_4),
 	DEF(audioctl_open_5),
+	DEF(audioctl_rw),
+	DEF(audioctl_poll),
+	DEF(audioctl_kqueue),
 	{ NULL, NULL },
 };
 
