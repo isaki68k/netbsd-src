@@ -2,7 +2,9 @@ CPPFLAGS+=	-g
 CPPFLAGS+=	-Wformat
 LIBS+=	-lutil
 
-all:	ncmd.${MACHINE} ntest.$(MACHINE) ncmd.x68k ntest.x68k
+CPPFLAGS.ltest=	-I. -Inetbsd
+
+all:	ncmd.${MACHINE} ntest.$(MACHINE) ncmd.x68k ntest.x68k ltest
 
 ncmd.$(MACHINE):	ncmd.o
 	$(CC) -g -o $@ $>
@@ -22,5 +24,8 @@ ntest.x68k:	ntest.cpp
 		$(CPPFLAGS) \
 		-o $@ $> $(LIBS)
 
+ltest:	ltest.c
+	$(CC) ${CPPFLAGS} ${CPPFLAGS.ltest} -std=c99 -o $@ $> $(LIBS)
+
 clean:
-	rm -rf ncmd.o ntest.o
+	rm -rf ncmd.o ntest.o ltest
