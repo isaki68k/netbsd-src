@@ -291,24 +291,16 @@ test_linear_to(int enc, int prec, void (*func)(audio_filter_arg_t *))
 			break;
 		}
 
-		// length (internal = 16bit)
-		switch (stride) {
-		 case 8:
-			val <<= 8;
-			break;
-		 case 16:
-			break;
-		 case 24:
-			val >>= 8;
-			break;
-		 case 32:
-			val >>= 16;
-			break;
+		// length
+		if (stride < AUDIO_INTERNAL_BITS) {
+			val <<= AUDIO_INTERNAL_BITS - stride;
+		} else if (stride > AUDIO_INTERNAL_BITS) {
+			val >>= stride - AUDIO_INTERNAL_BITS;
 		}
 
 		// unsigned -> signed
 		if (enc_is_unsigned(enc)) {
-			val ^= 0x8000;
+			val ^= 1U << (AUDIO_INTERNAL_BITS - 1);
 		}
 
 		exp[i] = val;
@@ -339,8 +331,9 @@ test_linear_to(int enc, int prec, void (*func)(audio_filter_arg_t *))
 		if (exp[i] != dst[i]) {
 			uint16_t uexp = exp[i];
 			uint16_t udst = dst[i];
-			xp_fail(__LINE__, "dst[%d] expects %04x but %04x", i,
-				uexp, udst);
+			xp_fail(__LINE__, "dst[%d] expects %0*x but %0*x", i,
+				AUDIO_INTERNAL_BITS / 8, uexp,
+				AUDIO_INTERNAL_BITS / 8, udst);
 		}
 	}
 }
@@ -410,7 +403,7 @@ test_to_linear(int enc, int prec, void (*func)(audio_filter_arg_t *))
 	for (int i = 0; i < count; i++) {
 		src[i] = i + 1;
 		if (i % 2 == 1)
-			src[i] |= 0x8000;
+			src[i] |= 1U << (AUDIO_INTERNAL_BITS - 1);
 	}
 
 	// src から答え exp を作成
@@ -418,24 +411,16 @@ test_to_linear(int enc, int prec, void (*func)(audio_filter_arg_t *))
 	for (int i = 0; i < count; i++) {
 		if (enc_is_unsigned(enc)) {
 			// unsigned -> signed
-			val = (int32_t)(aint_t)(src[i] ^ 0x8000);
+			val = (int32_t)(aint_t)(src[i] ^ (1U << (AUDIO_INTERNAL_BITS - 1)));
 		} else {
 			val = src[i];
 		}
 
-		// length (internal = 16bit)
-		switch (stride) {
-		 case 8:
-			val >>= 8;
-			break;
-		 case 16:
-			break;
-		 case 24:
-			val <<= 8;
-			break;
-		 case 32:
-			val <<= 16;
-			break;
+		// length
+		if (stride < AUDIO_INTERNAL_BITS) {
+			val >>= AUDIO_INTERNAL_BITS - stride;
+		} else if (stride > AUDIO_INTERNAL_BITS) {
+			val <<= stride - AUDIO_INTERNAL_BITS;
 		}
 
 		// output
