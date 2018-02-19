@@ -3057,11 +3057,11 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 		mutex_enter(sc->sc_intr_lock);
 		if (track->usrbuf.count >= out_thres &&
 		    track->outputbuf.count < track->mixer->frames_per_block) {
-				track->in_use = true;
-				mutex_exit(sc->sc_intr_lock);
-				audio_track_play(track);
-				mutex_enter(sc->sc_intr_lock);
-				track->in_use = false;
+			track->in_use = true;
+			mutex_exit(sc->sc_intr_lock);
+			audio_track_play(track);
+			mutex_enter(sc->sc_intr_lock);
+			track->in_use = false;
 		}
 		mutex_exit(sc->sc_intr_lock);
 
