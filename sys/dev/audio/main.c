@@ -630,8 +630,11 @@ test_mixer_calc_blktime()
 		{ 8,	48000,	40 },
 		{ 4,	15625,	80 },
 	};
+	int failcount;
 
 	// XXX AUDIO_BLK_MS を変えるテストは難しい。
+	printf("mixer_calc_blktime:\n");
+	failcount = 0;
 	for (int i = 0; i < __arraycount(table); i++) {
 		audio_trackmixer_t mixer;
 		memset(&mixer, 0, sizeof(mixer));
@@ -642,7 +645,13 @@ test_mixer_calc_blktime()
 		if (actual != table[i].expected) {
 			printf("test %d expects %d but %d\n",
 				i, table[i].expected, actual);
+			failcount++;
 		}
+	}
+	if (failcount == 0) {
+		printf("ok\n");
+	} else {
+		printf("%d failed\n", failcount);
 	}
 	return 0;
 }
