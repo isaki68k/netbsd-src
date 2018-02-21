@@ -58,6 +58,11 @@ struct freqdata {
 	const char *name;
 };
 
+struct testdata {
+	const char *testname;
+	int (*funcname)();
+};
+
 int child_loop(struct test_file *, int);
 #ifdef USE_PTHREAD
 void *child(void *);
@@ -66,7 +71,10 @@ int cmd_print_file(const char *);
 int cmd_set_file(const char *);
 int cmd_set_mml(const char *);
 int cmd_play();
+int cmd_test_main(const char *, struct testdata *);
+int cmd_test(const char *);
 int cmd_perf(const char *);
+int cmd_test_mixer_calc_blktime();
 int cmd_perf_codec_slinear_to_mulaw();
 int cmd_perf_codec_linear16_to_internal();
 int cmd_perf_freq_up();
@@ -111,6 +119,7 @@ usage()
 	printf(" play <files...>  play files\n");
 	printf(" mml  <mml>       play mml\n");
 	printf(" perf <testname>  performance test\n");
+	printf(" test <testname>  test\n");
 	exit(1);
 }
 
@@ -184,6 +193,8 @@ main(int ac, char *av[])
 		cmd = CMD_MML;
 	} else if (strcmp(av[i], "perf") == 0) {
 		cmd = CMD_PERF;
+	} else if (strcmp(av[i], "test") == 0) {
+		cmd = CMD_TEST;
 	} else {
 		usage();
 	}
@@ -220,6 +231,16 @@ main(int ac, char *av[])
 		audio_attach(&sc, false);
 		for (; i < ac; i++) {
 			r = cmd_perf(av[i]);
+			if (r != 0)
+				break;
+		}
+		audio_detach(sc);
+		break;
+
+	 case CMD_TEST:
+		audio_attach(&sc, false);
+		for (; i < ac; i++) {
+			r = cmd_test(av[i]);
 			if (r != 0)
 				break;
 		}
@@ -617,10 +638,13 @@ tagname(uint32_t tag)
 }
 
 // テストパターン
-struct testdata {
-	const char *testname;
-	int (*funcname)();
-} perfdata[] = {
+struct testdata testdata[] = {
+	{ "mixer_calc_blktime",		cmd_test_mixer_calc_blktime },
+	{ NULL, NULL },
+};
+
+// パフォーマンステスト
+struct testdata perfdata[] = {
 	{ "codec_slinear_to_mulaw",	cmd_perf_codec_slinear_to_mulaw },
 	{ "codec_linear16_to_internal", cmd_perf_codec_linear16_to_internal },
 	{ "freq_up",	cmd_perf_freq_up },
@@ -632,11 +656,24 @@ struct testdata {
 int
 cmd_perf(const char *testname)
 {
+	return cmd_test_main(testname, perfdata);
+}
+
+int
+cmd_test(const char *testname)
+{
+	return cmd_test_main(testname, testdata);
+}
+
+// test と perf の共通部
+int
+cmd_test_main(const char *testname, struct testdata *testlist)
+{
 	bool found = false;
 
-	for (int i = 0; perfdata[i].testname != NULL; i++) {
-		if (strncmp(testname, perfdata[i].testname, strlen(testname)) == 0) {
-			(perfdata[i].funcname)();
+	for (int i = 0; testlist[i].testname != NULL; i++) {
+		if (strncmp(testname, testlist[i].testname, strlen(testname)) == 0) {
+			(testlist[i].funcname)();
 			found = true;
 		}
 	}
@@ -645,12 +682,41 @@ cmd_perf(const char *testname)
 		return 0;
 	} else {
 		// 一覧を表示しとくか
-		for (int i = 0; perfdata[i].testname != NULL; i++) {
-			printf(" %s", perfdata[i].testname);
+		for (int i = 0; testlist[i].testname != NULL; i++) {
+			printf(" %s", testlist[i].testname);
 		}
 		printf("\n");
 		return 1;
 	}
+}
+
+int
+cmd_test_mixer_calc_blktime()
+{
+	struct {
+		int stride;
+		int sample_rate;
+		int expected;
+	} table[] = {
+		{ 8,	11025,	40 },
+		{ 8,	48000,	40 },
+		{ 4,	15625,	80 },
+	};
+
+	// XXX AUDIO_BLK_MS を変えるテストは難しい。
+	for (int i = 0; i < __arraycount(table); i++) {
+		audio_trackmixer_t mixer;
+		memset(&mixer, 0, sizeof(mixer));
+		mixer.hwbuf.fmt.stride = table[i].stride;
+		mixer.hwbuf.fmt.sample_rate = table[i].sample_rate;
+
+		u_int actual = audio_mixer_calc_blktime(&mixer);
+		if (actual != table[i].expected) {
+			printf("test %d expects %d but %d\n",
+				i, table[i].expected, actual);
+		}
+	}
+	return 0;
 }
 
 int
