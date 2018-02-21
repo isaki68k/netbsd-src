@@ -27,26 +27,6 @@
 #include "aufilter.h"
 #endif // _KERNEL
 
-#if AUDIO_DEBUG == 4
-/* Always enabled */
-#define ITRACE		TRACE
-#define ITRACET		TRACET
-#elif AUDIO_DEBUG == 3
-/* Enable if here is not interrupt context... */
-#define ITRACE(fmt, ...)	do {	\
-	if (!sc->sc_intr)	\
-		TRACE(fmt, ## __VA_ARGS__);	\
-} while (0)
-#define ITRACET(t, fmt, ...)	do {	\
-	if (!(t)->mixer->sc->sc_intr)	\
-		TRACET(t, fmt, ## __VA_ARGS__);	\
-} while (0)
-#else
-/* Always disabled */
-#define ITRACE(fmt, ...)	/**/
-#define ITRACET(t, fmt, ...)	/**/
-#endif
-
 #if AUDIO_DEBUG > 2
 #define TRACE(fmt, ...)		audio_trace(__func__, fmt, ## __VA_ARGS__)
 #define TRACET(t, fmt, ...)	audio_tracet(__func__, t, fmt, ## __VA_ARGS__)

@@ -12,14 +12,6 @@
 #include "auformat.h"
 #endif
 
-#if AUDIO_DEBUG == 3
-#define AUDIO_INTR_BEGIN(sc)	(sc)->sc_intr = true
-#define AUDIO_INTR_END(sc)	(sc)->sc_intr = false
-#else
-#define AUDIO_INTR_BEGIN(sc)	/**/
-#define AUDIO_INTR_END(sc)	/**/
-#endif
-
 void *audio_realloc(void *memblock, size_t bytes);
 static int audio_realloc_usrbuf(audio_track_t *, int);
 static void audio_free_usrbuf(audio_track_t *);
@@ -37,6 +29,12 @@ audio_vtrace(const char *funcname, const char *header, const char *fmt,
 	char buf[256];
 	struct timeval tv;
 	int n;
+
+	// デバッグレベル4だけ割り込み中のトレースも出力する
+#if AUDIO_DEBUG < 4
+	if (cpu_intr_p())
+		return;
+#endif
 
 	n = 0;
 	buf[0] = '\0';
@@ -1562,7 +1560,7 @@ audio_track_play(audio_track_t *track)
 	u_int dropcount;
 
 	KASSERT(track);
-	ITRACET(track, "start pstate=%d", track->pstate);
+	TRACET(track, "start pstate=%d", track->pstate);
 
 	// この時点で usrbuf は空ではない。
 	KASSERT(track->usrbuf.count > 0);
@@ -1605,7 +1603,7 @@ audio_track_play(audio_track_t *track)
 		if (track->pstate != AUDIO_STATE_DRAINING) {
 			if ((track->mode & AUMODE_PLAY_ALL)) {
 				// PLAY_ALL なら溜まるまで待つ
-				ITRACET(track, "not enough; return");
+				TRACET(track, "not enough; return");
 				return;
 			} else {
 				// ここで1ブロックに満たなければ
@@ -1670,7 +1668,7 @@ audio_track_play(audio_track_t *track)
 		int n = 0;
 		n = audio_append_silence(track, &track->freq.srcbuf);
 		if (n > 0) {
-			ITRACET(track,
+			TRACET(track,
 			    "freq.srcbuf add silence %d -> %d/%d/%d",
 			    n,
 			    track->freq.srcbuf.top,
@@ -1689,7 +1687,7 @@ audio_track_play(audio_track_t *track)
 		// リングバッファの形にしてあるが運用上はただのバッファなので、
 		// ポインタが途中を指されていると困る。
 		// これが起きるのは PLAY_SYNC か drain 中の時。
-		ITRACET(track, "reset stage");
+		TRACET(track, "reset stage");
 		if (track->codec.filter) {
 			KASSERT(track->codec.srcbuf.count == 0);
 			track->codec.srcbuf.top = 0;
@@ -1717,7 +1715,7 @@ audio_track_play(audio_track_t *track)
 #if AUDIO_DEBUG > 2
 	struct audio_track_debugbuf m;
 	audio_track_bufstat(track, &m);
-	ITRACET(track, "end%s%s%s%s%s%s",
+	TRACET(track, "end%s%s%s%s%s%s",
 	    m.outbuf, m.freq, m.chvol, m.chmix, m.codec, m.usrbuf);
 #endif
 }
@@ -1736,7 +1734,7 @@ audio_track_record(audio_track_t *track)
 	count = audio_ring_unround_count(track->input);
 	count = min(count, track->mixer->frames_per_block);
 	if (count == 0) {
-		ITRACET(track, "count == 0");
+		TRACET(track, "count == 0");
 		return;
 	}
 
@@ -1800,7 +1798,7 @@ audio_track_record(audio_track_t *track)
 #if AUDIO_DEBUG > 2
 	struct audio_track_debugbuf m;
 	audio_track_bufstat(track, &m);
-	ITRACET(track, "end%s%s%s%s%s%s",
+	TRACET(track, "end%s%s%s%s%s%s",
 	    m.freq, m.chvol, m.chmix, m.codec, m.outbuf, m.usrbuf);
 #endif
 }
@@ -2141,7 +2139,7 @@ audio_pmixer_process(struct audio_softc *sc, bool isintr)
 	int hw_free_count = audio_ring_unround_free_count(&mixer->hwbuf);
 	int frame_count = min(hw_free_count, mixer->frames_per_block);
 	if (frame_count <= 0) {
-		ITRACE("count too short: hw_free=%d frames_per_block=%d",
+		TRACE("count too short: hw_free=%d frames_per_block=%d",
 		    hw_free_count, mixer->frames_per_block);
 		return;
 	}
@@ -2238,7 +2236,7 @@ audio_pmixer_process(struct audio_softc *sc, bool isintr)
 
 	audio_ring_appended(&mixer->hwbuf, frame_count);
 
-	ITRACE("done mixseq=%d hwbuf=%d/%d/%d%s",
+	TRACE("done mixseq=%d hwbuf=%d/%d/%d%s",
 	    (int)mixer->mixseq,
 	    mixer->hwbuf.top, mixer->hwbuf.count, mixer->hwbuf.capacity,
 	    (mixed == 0) ? " silent" : "");
@@ -2276,12 +2274,12 @@ audio_pmixer_mixall(struct audio_softc *sc, bool isintr)
 
 		// 協調的ロックされているトラックは、今回ミキシングしない。
 		if (isintr && track->in_use) {
-			ITRACET(track, "skip; in use");
+			TRACET(track, "skip; in use");
 			continue;
 		}
 
 		if (track->is_pause) {
-			ITRACET(track, "skip; paused");
+			TRACET(track, "skip; paused");
 			continue;
 		}
 
@@ -2290,19 +2288,19 @@ audio_pmixer_mixall(struct audio_softc *sc, bool isintr)
 			// XXX appended じゃなく直接操作してウィンドウを移動みたいに
 			// したほうがいいんじゃないか。
 			audio_ring_appended(&track->usrbuf, track->usrbuf_blksize);
-			ITRACET(track, "mmap; usr=%d/%d/C%d",
+			TRACET(track, "mmap; usr=%d/%d/C%d",
 			    track->usrbuf.top,
 			    track->usrbuf.count,
 			    track->usrbuf.capacity);
 		}
 
 		if (track->outputbuf.count < req && track->usrbuf.count > 0) {
-			ITRACET(track, "process");
+			TRACET(track, "process");
 			audio_track_play(track);
 		}
 
 		if (track->outputbuf.count == 0) {
-			ITRACET(track, "skip; empty");
+			TRACET(track, "skip; empty");
 			continue;
 		}
 		// 合成
@@ -2381,7 +2379,7 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req,
 	// audio_write() に空きが出来たことを通知
 	cv_broadcast(&track->outchan);
 
-	ITRACET(track, "broadcast; trseq=%d out=%d/%d/%d", (int)track->seq,
+	TRACET(track, "broadcast; trseq=%d out=%d/%d/%d", (int)track->seq,
 	    track->outputbuf.top, track->outputbuf.count, track->outputbuf.capacity);
 
 	// usrbuf が空いたら(lowat を下回ったら) シグナルを送る
@@ -2415,7 +2413,7 @@ audio_pmixer_output(struct audio_softc *sc)
 	int error;
 
 	mixer = sc->sc_pmixer;
-	ITRACE("pbusy=%d hwbuf=%d/%d/%d",
+	TRACE("pbusy=%d hwbuf=%d/%d/%d",
 	    sc->sc_pbusy,
 	    mixer->hwbuf.top, mixer->hwbuf.count, mixer->hwbuf.capacity);
 	KASSERT(mixer->hwbuf.count >= mixer->frames_per_block);
@@ -2468,7 +2466,6 @@ audio_pintr(void *arg)
 
 	sc = arg;
 	KASSERT(mutex_owned(sc->sc_intr_lock));
-	AUDIO_INTR_BEGIN(sc);
 
 	mixer = sc->sc_pmixer;
 	mixer->hw_complete_counter += mixer->frames_per_block;
@@ -2476,7 +2473,7 @@ audio_pintr(void *arg)
 
 	audio_ring_tookfromtop(&mixer->hwbuf, mixer->frames_per_block);
 
-	ITRACE("HW_INT ++hwseq=%d cmplcnt=%d hwbuf=%d/%d/%d",
+	TRACE("HW_INT ++hwseq=%d cmplcnt=%d hwbuf=%d/%d/%d",
 		(int)mixer->hwseq,
 		(int)mixer->hw_complete_counter,
 		mixer->hwbuf.top, mixer->hwbuf.count, mixer->hwbuf.capacity);
@@ -2484,7 +2481,6 @@ audio_pintr(void *arg)
 #if !defined(_KERNEL)
 	// ユーザランドエミュレーションは割り込み駆動ではないので
 	// 処理はここまで。
-	AUDIO_INTR_END(sc);
 	return;
 #endif
 
@@ -2524,8 +2520,6 @@ audio_pintr(void *arg)
 
 	// drain 待ちしている人のために通知
 	cv_broadcast(&mixer->draincv);
-
-	AUDIO_INTR_END(sc);
 }
 
 // 録音ミキサを起動します。
@@ -2594,7 +2588,7 @@ audio_rmixer_process(struct audio_softc *sc)
 	int count = audio_ring_unround_count(&mixer->hwbuf);
 	count = min(count, mixer->frames_per_block);
 	if (count <= 0) {
-		ITRACE("count %d: too short", count);
+		TRACE("count %d: too short", count);
 		return;
 	}
 	int bytes = frametobyte(&mixer->track_fmt, count);
@@ -2620,12 +2614,12 @@ audio_rmixer_process(struct audio_softc *sc)
 			continue;
 
 		if (track->in_use) {
-			ITRACET(track, "skip; in use");
+			TRACET(track, "skip; in use");
 			continue;
 		}
 
 		if (track->is_pause) {
-			ITRACET(track, "skip; paused");
+			TRACET(track, "skip; paused");
 			continue;
 		}
 
@@ -2635,7 +2629,7 @@ audio_rmixer_process(struct audio_softc *sc)
 			int drops = mixer->frames_per_block -
 			    (input->capacity - input->count);
 			track->dropframes += drops;
-			ITRACET(track, "drop %d frames: inp=%d/%d/%d",
+			TRACET(track, "drop %d frames: inp=%d/%d/%d",
 			    drops,
 			    input->top, input->count, input->capacity);
 			audio_ring_tookfromtop(input, drops);
@@ -2652,7 +2646,7 @@ audio_rmixer_process(struct audio_softc *sc)
 		// audio_read() にブロックが来たことを通知
 		cv_broadcast(&track->outchan);
 
-		ITRACET(track, "broadcast; inp=%d/%d/%d",
+		TRACET(track, "broadcast; inp=%d/%d/%d",
 		    input->top, input->count, input->capacity);
 	}
 
@@ -2727,7 +2721,6 @@ audio_rintr(void *arg)
 	audio_trackmixer_t *mixer;
 
 	sc = arg;
-	AUDIO_INTR_BEGIN(sc);
 	KASSERT(mutex_owned(sc->sc_intr_lock));
 
 	mixer = sc->sc_rmixer;
@@ -2736,7 +2729,7 @@ audio_rintr(void *arg)
 
 	audio_ring_appended(&mixer->hwbuf, mixer->frames_per_block);
 
-	ITRACE("HW_INT ++hwseq=%d cmplcnt=%d hwbuf=%d/%d/%d",
+	TRACE("HW_INT ++hwseq=%d cmplcnt=%d hwbuf=%d/%d/%d",
 		(int)mixer->hwseq,
 		(int)mixer->hw_complete_counter,
 		mixer->hwbuf.top, mixer->hwbuf.count, mixer->hwbuf.capacity);
@@ -2746,8 +2739,6 @@ audio_rintr(void *arg)
 
 	// 次のバッファを要求
 	audio_rmixer_input(sc);
-
-	AUDIO_INTR_END(sc);
 }
 
 // 再生ミキサを停止します。

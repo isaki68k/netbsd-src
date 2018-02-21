@@ -338,6 +338,12 @@ uao_detach(struct uvm_object *uobj)
 {
 }
 
+static inline int
+cpu_intr_p()
+{
+	return 0;
+}
+
 extern bool audio_track_is_playback(const audio_track_t *track);
 extern bool audio_track_is_record(const audio_track_t *track);
 static inline int
