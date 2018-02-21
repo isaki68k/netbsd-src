@@ -22,7 +22,6 @@
 #else
 #include <stdint.h>
 #include <stdbool.h>
-#include "queue.h"
 #include "compat.h"
 #include "userland.h"
 #include "uio.h"
