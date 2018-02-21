@@ -14,7 +14,6 @@
 #include "audiovar.h"
 #include "aucodec.h"
 #include "auformat.h"
-#include "uio.h"
 #include "aucodec_linear.c"
 
 struct testtable {

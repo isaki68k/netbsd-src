@@ -10,7 +10,6 @@
 #include "audiovar.h"
 #include "aucodec.h"
 #include "auformat.h"
-#include "uio.h"
 #endif
 
 #if AUDIO_DEBUG == 3

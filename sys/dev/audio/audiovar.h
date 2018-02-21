@@ -24,7 +24,6 @@
 #include <stdbool.h>
 #include "compat.h"
 #include "userland.h"
-#include "uio.h"
 #include "aufilter.h"
 #endif // _KERNEL
 
