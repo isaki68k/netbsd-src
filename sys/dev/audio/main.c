@@ -1,8 +1,9 @@
 #include <ctype.h>
-#include <stdio.h>
 #include <inttypes.h>
 #include <math.h>
 #include <signal.h>
+#include <stdio.h>
+#include <unistd.h>
 #include <sys/time.h>
 #include "aumix.c"
 
@@ -53,13 +54,12 @@ struct testdata {
 };
 
 int child_loop(struct test_file *, int);
-int cmd_print_file(const char *);
+int cmd_print_file(int, char **);
+int print_file(const char *);
 int cmd_set_file(const char *);
 int cmd_set_mml(const char *);
 int cmd_play();
-int cmd_test_main(const char *, struct testdata *);
-int cmd_test(const char *);
-int cmd_perf(const char *);
+int cmd_test(int, char **, struct testdata*);
 int cmd_test_mixer_calc_blktime();
 int cmd_perf_codec_slinear_to_mulaw();
 int cmd_perf_codec_linear16_to_internal();
@@ -75,6 +75,9 @@ uint64_t filesize(FILE *);
 const char *audio_encoding_name(int);
 const char *tagname(uint32_t);
 void play_mml(audio_ring_t *dst, const char *mml);
+
+extern struct testdata testdata[];
+extern struct testdata perfdata[];
 
 struct audio_softc *sc;
 struct test_file files[16];
@@ -108,89 +111,70 @@ usage()
 int
 main(int ac, char *av[])
 {
-	int i;
+	int c;
 	int cmd;
-
-	if (ac < 2) {
-		usage();
-	}
-
-	ac -= 1;
-	av += 1;
 
 	opt_vol = 256;
 	audio_blk_ms = 40;
 	devicefile = "/dev/sound";
 
-	// 先にオプション
-	for (i = 0; i < ac; i++) {
-		const char *mml = NULL;
-		if (strcmp(av[i], "-D") == 0) {
-			i++;
-			if (i == ac)
-				usage();
-			devicefile = av[i];
-			continue;
-		}
-		if (strcmp(av[i], "-d") == 0) {
+	while ((c = getopt(ac, av, "D:dm:w:v:")) != -1) {
+		switch (c) {
+		 case 'D':
+			devicefile = optarg;
+			break;
+		 case 'd':
 			debug++;
-			continue;
+			break;
+		 case 'm':
+			audio_blk_ms = atoi(optarg);
+			break;
+		 case 'w':
+			opt_wait = atoi(optarg);
+			break;
+		 case 'v':
+			opt_vol = atoi(optarg);
+			break;
+		 default:
+			usage();
+			break;
 		}
-		if (strcmp(av[i], "-m") == 0) {
-			i++;
-			if (i == ac)
-				usage();
-			audio_blk_ms = atoi(av[i]);
-			continue;
-		}
-		if (strcmp(av[i], "-w") == 0) {
-			i++;
-			if (i == ac)
-				usage();
-			opt_wait = atoi(av[i]);
-			continue;
-		}
-		if (strcmp(av[i], "-v") == 0) {
-			i++;
-			if (i == ac)
-				usage();
-			opt_vol = atoi(av[i]);
-			continue;
-		}
-		break;
 	}
+	ac -= optind;
+	av += optind;
 
 	// コマンド名
-	if (i == ac)
+	if (ac == 0)
 		usage();
-	if (strcmp(av[i], "file") == 0) {
+	if (strcmp(av[0], "file") == 0) {
 		cmd = CMD_FILE;
-	} else if (strcmp(av[i], "play") == 0) {
+	} else if (strcmp(av[0], "play") == 0) {
 		cmd = CMD_PLAY;
-	} else if (strcmp(av[i], "mml") == 0) {
+	} else if (strcmp(av[0], "mml") == 0) {
 		cmd = CMD_MML;
-	} else if (strcmp(av[i], "perf") == 0) {
+	} else if (strcmp(av[0], "perf") == 0) {
 		cmd = CMD_PERF;
-	} else if (strcmp(av[i], "test") == 0) {
+	} else if (strcmp(av[0], "test") == 0) {
 		cmd = CMD_TEST;
 	} else {
 		usage();
 	}
-	i++;
+	ac -= optind;
+	av += optind;
 
 	// コマンドごとにその後の引数
 	int r = 0;
 	switch (cmd) {
 	 case CMD_FILE:
-		for (; i < ac; i++) {
-			r = cmd_print_file(av[i]);
-			if (r != 0)
-				break;
-		}
+		if (ac == 0)
+			usage();
+		r = cmd_print_file(ac, av);
 		break;
 	 case CMD_PLAY:
+		if (ac == 0)
+			usage();
 		audio_attach(&sc, true);
-		for (; i < ac; i++) {
+		for (int i = 0; i < ac; i++) {
 			r = cmd_set_file(av[i]);
 			if (r != 0)
 				break;
@@ -199,29 +183,21 @@ main(int ac, char *av[])
 		audio_detach(sc);
 		break;
 	 case CMD_MML:
+		if (ac != 1)
+			usage();
 		audio_attach(&sc, true);
-		r = cmd_set_mml(av[i]);
+		r = cmd_set_mml(av[0]);
 		r = cmd_play();
 		audio_detach(sc);
 		break;
 
 	 case CMD_PERF:
-		audio_attach(&sc, false);
-		for (; i < ac; i++) {
-			r = cmd_perf(av[i]);
-			if (r != 0)
-				break;
-		}
-		audio_detach(sc);
-		break;
-
 	 case CMD_TEST:
 		audio_attach(&sc, false);
-		for (; i < ac; i++) {
-			r = cmd_test(av[i]);
-			if (r != 0)
-				break;
-		}
+		if (cmd == CMD_PERF)
+			r = cmd_test(ac, av, perfdata);
+		else
+			r = cmd_test(ac, av, testdata);
 		audio_detach(sc);
 		break;
 	}
@@ -229,9 +205,18 @@ main(int ac, char *av[])
 	return r;
 }
 
+int
+cmd_print_file(int ac, char *av[])
+{
+	for (int i = 0; i < ac; i++) {
+		print_file(av[i]);
+	}
+	return 0;
+}
+
 // filename のヘッダとか内容を表示します。
 int
-cmd_print_file(const char *filename)
+print_file(const char *filename)
 {
 	struct test_file *f = &files[fileidx];
 
@@ -597,41 +582,40 @@ struct testdata perfdata[] = {
 	{ NULL, NULL },
 };
 
-int
-cmd_perf(const char *testname)
-{
-	return cmd_test_main(testname, perfdata);
-}
-
-int
-cmd_test(const char *testname)
-{
-	return cmd_test_main(testname, testdata);
-}
-
 // test と perf の共通部
 int
-cmd_test_main(const char *testname, struct testdata *testlist)
+cmd_test(int ac, char *av[], struct testdata *testlist)
 {
-	bool found = false;
+	int i;
+	bool found;
 
-	for (int i = 0; testlist[i].testname != NULL; i++) {
-		if (strncmp(testname, testlist[i].testname, strlen(testname)) == 0) {
+	/* -a なら all */
+	if (ac == 1 && strcmp(av[0], "-a") == 0) {
+		for (i = 0; testlist[i].testname != NULL; i++) {
 			(testlist[i].funcname)();
-			found = true;
+		}
+		return 0 ;
+	}
+	/* そうでなければ順にマッチするものをテスト */
+	found = false;
+	for (i = 0; i < ac; i++) {
+		for (int j = 0; testlist[j].testname != NULL; j++) {
+			if (strncmp(av[i], testlist[j].testname, strlen(av[i])) == 0) {
+				(testlist[j].funcname)();
+				found = true;
+			}
 		}
 	}
 
-	if (found) {
-		return 0;
-	} else {
-		// 一覧を表示しとくか
-		for (int i = 0; testlist[i].testname != NULL; i++) {
-			printf(" %s", testlist[i].testname);
+	if (!found) {
+		// 一つもなければ一覧を表示しとくか
+		printf("valid testnames are:\n");
+		for (i = 0; testlist[i].testname != NULL; i++) {
+			printf(" %s\n", testlist[i].testname);
 		}
-		printf("\n");
 		return 1;
 	}
+	return 0;
 }
 
 int
