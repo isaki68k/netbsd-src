@@ -60,13 +60,13 @@ int cmd_set_file(const char *);
 int cmd_set_mml(const char *);
 int cmd_play();
 int cmd_test(int, char **, struct testdata*);
-int cmd_test_mixer_calc_blktime();
-int cmd_perf_codec_slinear_to_mulaw();
-int cmd_perf_codec_linear16_to_internal();
-int cmd_perf_freq_up();
-int cmd_perf_freq_down();
-int cmd_perf_freq_main(struct freqdata *);
-int cmd_perf_chmix_mixLR();
+int test_mixer_calc_blktime();
+int perf_codec_slinear_to_mulaw();
+int perf_codec_linear16_to_internal();
+int perf_freq_up();
+int perf_freq_down();
+int perf_freq_main(struct freqdata *);
+int perf_chmix_mixLR();
 int parse_file(struct test_file *, FILE *, const char *);
 uint16_t lebe16toh(uint16_t);
 uint32_t lebe32toh(uint32_t);
@@ -568,17 +568,17 @@ tagname(uint32_t tag)
 
 // テストパターン
 struct testdata testdata[] = {
-	{ "mixer_calc_blktime",		cmd_test_mixer_calc_blktime },
+	{ "mixer_calc_blktime",		test_mixer_calc_blktime },
 	{ NULL, NULL },
 };
 
 // パフォーマンステスト
 struct testdata perfdata[] = {
-	{ "codec_slinear_to_mulaw",	cmd_perf_codec_slinear_to_mulaw },
-	{ "codec_linear16_to_internal", cmd_perf_codec_linear16_to_internal },
-	{ "freq_up",	cmd_perf_freq_up },
-	{ "freq_down",	cmd_perf_freq_down },
-	{ "chmix_mixLR",cmd_perf_chmix_mixLR },
+	{ "codec_slinear_to_mulaw",	perf_codec_slinear_to_mulaw },
+	{ "codec_linear16_to_internal", perf_codec_linear16_to_internal },
+	{ "freq_up",	perf_freq_up },
+	{ "freq_down",	perf_freq_down },
+	{ "chmix_mixLR",perf_chmix_mixLR },
 	{ NULL, NULL },
 };
 
@@ -619,7 +619,7 @@ cmd_test(int ac, char *av[], struct testdata *testlist)
 }
 
 int
-cmd_test_mixer_calc_blktime()
+test_mixer_calc_blktime()
 {
 	struct {
 		int stride;
@@ -648,25 +648,25 @@ cmd_test_mixer_calc_blktime()
 }
 
 int
-cmd_perf_freq_up()
+perf_freq_up()
 {
 	struct freqdata pattern[] = {
 		{ 44100, 48000,	"44.1->48" },
 		{ 8000,  48000, "8->48" },
 		{ -1, -1, NULL },
 	};
-	return cmd_perf_freq_main(pattern);
+	return perf_freq_main(pattern);
 }
 
 int
-cmd_perf_freq_down()
+perf_freq_down()
 {
 	struct freqdata pattern[] = {
 		{ 48000, 44100,	"48->44.1" },
 		{ 48000, 8000,	"48->8" },
 		{ -1, -1, NULL },
 	};
-	return cmd_perf_freq_main(pattern);
+	return perf_freq_main(pattern);
 }
 
 volatile int signaled;
@@ -678,7 +678,7 @@ sigalrm(int signo)
 }
 
 int
-cmd_perf_codec_slinear_to_mulaw()
+perf_codec_slinear_to_mulaw()
 {
 	struct test_file *f = &files[fileidx];
 	audio_track_t *track;
@@ -734,7 +734,7 @@ cmd_perf_codec_slinear_to_mulaw()
 }
 
 int
-cmd_perf_codec_linear16_to_internal()
+perf_codec_linear16_to_internal()
 {
 	struct test_file *f = &files[fileidx];
 	audio_track_t *track;
@@ -794,7 +794,7 @@ cmd_perf_codec_linear16_to_internal()
 }
 
 int
-cmd_perf_freq_main(struct freqdata *pattern)
+perf_freq_main(struct freqdata *pattern)
 {
 	struct test_file *f = &files[fileidx];
 	audio_track_t *track;
@@ -852,7 +852,7 @@ cmd_perf_freq_main(struct freqdata *pattern)
 }
 
 int
-cmd_perf_chmix_mixLR()
+perf_chmix_mixLR()
 {
 	struct test_file *f = &files[fileidx];
 	audio_track_t *track;
