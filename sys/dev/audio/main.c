@@ -1,8 +1,3 @@
-#ifdef _WIN32
-#pragma once
-#define _CRT_SECURE_NO_WARNINGS
-#include <windows.h>
-#endif
 #include <ctype.h>
 #include <stdio.h>
 #include <inttypes.h>
@@ -10,9 +5,6 @@
 #include <signal.h>
 #include <sys/time.h>
 #include "aumix.c"
-#ifdef USE_PTHREAD
-#include <pthread.h>
-#endif
 
 struct test_file
 {
@@ -20,9 +12,6 @@ struct test_file
 	audio_ring_t mem;
 	bool play;
 	int wait;
-#ifdef USE_PTHREAD
-	pthread_t tid;
-#endif
 };
 
 typedef struct {
@@ -64,9 +53,6 @@ struct testdata {
 };
 
 int child_loop(struct test_file *, int);
-#ifdef USE_PTHREAD
-void *child(void *);
-#endif
 int cmd_print_file(const char *);
 int cmd_set_file(const char *);
 int cmd_set_mml(const char *);
@@ -98,18 +84,14 @@ int fileidx;
 int opt_wait;	// 1ファイルごとの開始ディレイ
 int opt_vol;
 int audio_blk_ms;
-#if !defined(_WIN32)
 const char *devicefile;
-#endif
 
 void
 usage()
 {
 	printf("usage: [options] <cmd> [files...]\n");
 	printf("options:\n");
-#if !defined(_WIN32)
 	printf(" -D <dev>  device name (default: /dev/sound)\n");
-#endif
 	printf(" -d        debug\n");
 	printf(" -m <msec> AUDIO_BLK_MS (default: 40)\n");
 	printf(" -w <cnt>  delay block count for each files\n");
@@ -138,14 +120,11 @@ main(int ac, char *av[])
 
 	opt_vol = 256;
 	audio_blk_ms = 40;
-#if !defined(_WIN32)
 	devicefile = "/dev/sound";
-#endif
 
 	// 先にオプション
 	for (i = 0; i < ac; i++) {
 		const char *mml = NULL;
-#if !defined(_WIN32)
 		if (strcmp(av[i], "-D") == 0) {
 			i++;
 			if (i == ac)
@@ -153,7 +132,6 @@ main(int ac, char *av[])
 			devicefile = av[i];
 			continue;
 		}
-#endif
 		if (strcmp(av[i], "-d") == 0) {
 			debug++;
 			continue;
@@ -248,10 +226,6 @@ main(int ac, char *av[])
 		break;
 	}
 
-#ifdef _WIN32
-	printf("END\n");
-	getchar();
-#endif
 	return r;
 }
 
@@ -338,21 +312,6 @@ cmd_set_file(const char *filename)
 int
 cmd_play()
 {
-#ifdef USE_PTHREAD
-	for (int i = 0; i < fileidx; i++) {
-		struct test_file *f = &files[i];
-		int r = pthread_create(&f->tid, NULL, child, f);
-		if (r == -1) {
-			printf("pthread_create\n");
-			exit(1);
-		}
-	}
-
-	for (int i = 0; i < fileidx; i++) {
-		struct test_file *f = &files[i];
-		pthread_join(f->tid, NULL);
-	}
-#else
 	for (int loop = 0; ; loop++) {
 		bool isPlay = false;
 		for (int i = 0; i < fileidx; i++) {
@@ -365,7 +324,6 @@ cmd_play()
 		if (isPlay == false)
 			break;
 	}
-#endif
 
 	return 0;
 
@@ -394,20 +352,6 @@ child_loop(struct test_file *f, int loop)
 	}
 	return 0;
 }
-
-#ifdef USE_PTHREAD
-void *
-child(void *arg)
-{
-	struct test_file *f = arg;
-
-	for (int loop = 0; ; loop++) {
-		if (child_loop(f, loop) == -1)
-			break;
-	}
-	return NULL;
-}
-#endif
 
 #define GETID(ptr) (be32toh(*(uint32_t *)(ptr)))
 static inline uint32_t ID(const char *str) {
