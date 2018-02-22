@@ -742,6 +742,29 @@ perf_codec_slinear_to_mulaw()
 	return 0;
 }
 
+const char *
+encname(int enc)
+{
+	static char buf[16];
+	switch (enc) {
+	 case AUDIO_ENCODING_SLINEAR_LE:	return "SLINEAR_LE";
+	 case AUDIO_ENCODING_SLINEAR_BE:	return "SLINEAR_BE";
+	 case AUDIO_ENCODING_ULINEAR_LE:	return "ULINEAR_LE";
+	 case AUDIO_ENCODING_ULINEAR_BE:	return "ULINEAR_BE";
+	 default:
+		snprintf(buf, sizeof(buf), "enc%d", enc);
+		return buf;
+	}
+}
+
+#if BYTE_ORDER == LITTLE_ENDIAN
+#define AUDIO_ENCODING_SLINEAR_OE AUDIO_ENCODING_SLINEAR_BE
+#define AUDIO_ENCODING_ULINEAR_OE AUDIO_ENCODING_ULINEAR_BE
+#else
+#define AUDIO_ENCODING_SLINEAR_OE AUDIO_ENCODING_SLINEAR_LE
+#define AUDIO_ENCODING_ULINEAR_OE AUDIO_ENCODING_ULINEAR_LE
+#endif
+
 int
 perf_codec_linear16_to_internal()
 {
@@ -750,6 +773,11 @@ perf_codec_linear16_to_internal()
 	audio_format2_t srcfmt;
 	struct timeval start, end, result;
 	struct itimerval it;
+	int enc[3] = {
+		AUDIO_ENCODING_SLINEAR_OE,
+		AUDIO_ENCODING_ULINEAR_NE,
+		AUDIO_ENCODING_ULINEAR_OE,
+	};
 
 	signal(SIGALRM, sigalrm);
 	memset(&it, 0, sizeof(it));
@@ -757,47 +785,46 @@ perf_codec_linear16_to_internal()
 
 	f->file = sys_open(sc, AUMODE_PLAY);
 	track = f->file->ptrack;
-	// src fmt
-	srcfmt = track->mixer->track_fmt;
-#if BYTE_ORDER == LITTLE_ENDIAN
-	srcfmt.encoding = AUDIO_ENCODING_SLINEAR_BE;
-#else
-	srcfmt.encoding = AUDIO_ENCODING_SLINEAR_LE;
-#endif
-	srcfmt.precision = 16;
-	srcfmt.stride = 16;
-	// set
-	int r = audio_track_set_format(track, &srcfmt);
-	if (r != 0) {
-		printf("%s: audio_track_set_format failed: %s\n",
-			__func__, strerror(errno));
-		exit(1);
-	}
 
-	uint64_t count;
-	printf("linear16_to_internal: ");
-	fflush(stdout);
+	for (int i = 0; i < __arraycount(enc); i++) {
+		printf("linear16_to_internal(%s): ", encname(enc[i]));
+		fflush(stdout);
 
-	setitimer(ITIMER_REAL, &it, NULL);
-	gettimeofday(&start, NULL);
-	for (count = 0, signaled = 0; signaled == 0; count++) {
-		track->codec.srcbuf.top = 0;
-		track->codec.srcbuf.count = frame_per_block_roundup(track->mixer,
-			&srcfmt);
-		track->outputbuf.top = 0;
-		track->outputbuf.count = 0;
-		audio_apply_stage(track, &track->codec, false);
-	}
-	gettimeofday(&end, NULL);
-	timersub(&end, &start, &result);
+		// src fmt
+		srcfmt = track->mixer->track_fmt;
+		srcfmt.encoding = enc[i];
+		srcfmt.precision = 16;
+		srcfmt.stride = 16;
+		// set
+		int r = audio_track_set_format(track, &srcfmt);
+		if (r != 0) {
+			printf("%s: audio_track_set_format failed: %s\n",
+				__func__, strerror(errno));
+			exit(1);
+		}
+
+		setitimer(ITIMER_REAL, &it, NULL);
+		gettimeofday(&start, NULL);
+		uint64_t count;
+		for (count = 0, signaled = 0; signaled == 0; count++) {
+			track->codec.srcbuf.top = 0;
+			track->codec.srcbuf.count = frame_per_block_roundup(track->mixer,
+				&srcfmt);
+			track->outputbuf.top = 0;
+			track->outputbuf.count = 0;
+			audio_apply_stage(track, &track->codec, false);
+		}
+		gettimeofday(&end, NULL);
+		timersub(&end, &start, &result);
 
 #if defined(__m68k__)
-	printf("%d %5.1f times/sec\n", (int)count,
-		(double)count/(result.tv_sec + (double)result.tv_usec/1000000));
+		printf("%d %5.1f times/sec\n", (int)count,
+			(double)count/(result.tv_sec + (double)result.tv_usec/1000000));
 #else
-	printf("%d %5.1f times/msec\n", (int)count,
-		(double)count/((uint64_t)result.tv_sec*1000 + result.tv_usec/1000));
+		printf("%d %5.1f times/msec\n", (int)count,
+			(double)count/((uint64_t)result.tv_sec*1000 + result.tv_usec/1000));
 #endif
+	}
 
 	return 0;
 }
