@@ -92,6 +92,7 @@ linear16_to_internal(audio_filter_arg_t *arg)
 	u_int sample_count;
 	u_int src_lsl;
 	u_int i;
+	bool is_src_NE;
 
 	KASSERT(is_valid_filter_arg(arg));
 	KASSERT(audio_format2_is_linear(arg->srcfmt));
@@ -105,49 +106,33 @@ linear16_to_internal(audio_filter_arg_t *arg)
 	sample_count = arg->count * arg->srcfmt->channels;
 
 	src_lsl = AUDIO_INTERNAL_BITS - 16;
-	xor = audio_format2_is_signed(arg->srcfmt)
-	    ? 0 : (1 << (AUDIO_INTERNAL_BITS - 1));
+	xor = audio_format2_is_signed(arg->srcfmt) ? 0 : 0x8000;
+	is_src_NE = (audio_format2_endian(arg->srcfmt) == BYTE_ORDER);
 
-	// 16bit だけ高速化するとかでも良いかもしれない。
-	if (audio_format2_endian(arg->srcfmt) == BYTE_ORDER) {
-		if (src_lsl == 0) {
-			// NE、シフト不要、同符号なら変換不要なのでここにはこない
-			KASSERT(xor != 0);
-			for (i = 0; i < sample_count; i++) {
-				*d++ = (*s++) ^ xor;
-			}
-		} else {
-			if (xor == 0) {
-				for (i = 0; i < sample_count; i++) {
-					*d++ = (*s++) << src_lsl;
-				}
-			} else {
-				for (i = 0; i < sample_count; i++) {
-					*d++ = (*s++ << src_lsl) ^ xor;
-				}
-			}
+	// BE マシンでは LE->BE 変換が多用されるためこれのパフォーマンスは下げず、
+	// 残りの組み合わせはまず呼ばれないのでサイズ最適化する。
+	//                               展開	this
+	// slinear16_BE -> slinear16_LE: 232	232
+	// ulinear16_LE -> slinear16_LE: 278	232
+	// ulinear16_BE -> slinear16_LE: 139	116
+	if (__predict_true(xor == 0) && is_src_NE == false) {
+		/* slinear16_OE to slinear<AI>_NE */
+		for (i = 0; i < sample_count; i++) {
+			uint16_t val;
+			val = *s++;
+			val = __builtin_bswap16(val);
+			*d++ = (auint_t)val << src_lsl;
 		}
 	} else {
-		if (src_lsl == 0) {
-			if (xor == 0) {
-				for (i = 0; i < sample_count; i++) {
-					*d++ = __builtin_bswap16(*s++);
-				}
-			} else {
-				for (i = 0; i < sample_count; i++) {
-					*d++ = __builtin_bswap16(*s++) ^ xor;
-				}
-			}
-		} else {
-			if (xor == 0) {
-				for (i = 0; i < sample_count; i++) {
-					*d++ = __builtin_bswap16(*s++) << src_lsl;
-				}
-			} else {
-				for (i = 0; i < sample_count; i++) {
-					*d++ = (__builtin_bswap16(*s++) << src_lsl) ^ xor;
-				}
-			}
+		/* slinear16_NE      to slinear<AI>_NE */
+		/* ulinear16_{NE,OE} to slinear<AI>_NE */
+		for (i = 0; i < sample_count; i++) {
+			uint16_t val;
+			val = *s++;
+			if (!is_src_NE)
+				val = __builtin_bswap16(val);
+			val ^= xor;
+			*d++ = (auint_t)val << src_lsl;
 		}
 	}
 }
@@ -166,6 +151,7 @@ internal_to_linear16(audio_filter_arg_t *arg)
 	u_int sample_count;
 	u_int src_lsr;
 	u_int i;
+	bool is_dst_NE;
 
 	KASSERT(is_valid_filter_arg(arg));
 	KASSERT(audio_format2_is_linear(arg->dstfmt));
@@ -179,49 +165,27 @@ internal_to_linear16(audio_filter_arg_t *arg)
 	sample_count = arg->count * arg->srcfmt->channels;
 
 	src_lsr = AUDIO_INTERNAL_BITS - 16;
-	xor = audio_format2_is_signed(arg->dstfmt)
-	    ? 0 : (1 << (AUDIO_INTERNAL_BITS - 1));
+	xor = audio_format2_is_signed(arg->dstfmt) ? 0 : 0x8000;
+	is_dst_NE = (audio_format2_endian(arg->dstfmt) == BYTE_ORDER);
 
-	// 16bit だけ高速化するとかでも良いかもしれない。
-	if (audio_format2_endian(arg->dstfmt) == BYTE_ORDER) {
-		if (src_lsr == 0) {
-			// NE、シフト不要、同符号なら変換不要なのでここにはこない
-			KASSERT(xor != 0);
-			for (i = 0; i < sample_count; i++) {
-				*d++ = (uint16_t)((*s++) ^ xor);
-			}
-		} else {
-			if (xor == 0) {
-				for (i = 0; i < sample_count; i++) {
-					*d++ = (uint16_t)((*s++) >> src_lsr);
-				}
-			} else {
-				for (i = 0; i < sample_count; i++) {
-					*d++ = (uint16_t)((*s++ ^ xor) >> src_lsr);
-				}
-			}
+	if (__predict_true(xor == 0) && is_dst_NE == false) {
+		/* slinear<AI>_NE -> slinear16_OE */
+		for (i = 0; i < sample_count; i++) {
+			uint16_t val;
+			val = (*s++) >> src_lsr;
+			val = __builtin_bswap16(val);
+			*d++ = val;
 		}
 	} else {
-		if (src_lsr == 0) {
-			if (xor == 0) {
-				for (i = 0; i < sample_count; i++) {
-					*d++ = __builtin_bswap16(*s++);
-				}
-			} else {
-				for (i = 0; i < sample_count; i++) {
-					*d++ = __builtin_bswap16(*s++ ^ xor);
-				}
-			}
-		} else {
-			if (xor == 0) {
-				for (i = 0; i < sample_count; i++) {
-					*d++ = __builtin_bswap16(*s++ >> src_lsr);
-				}
-			} else {
-				for (i = 0; i < sample_count; i++) {
-					*d++ = __builtin_bswap16((*s++ ^ xor) >> src_lsr);
-				}
-			}
+		/* slinear<AI>_NE -> slinear16_NE */
+		/* slinear<AI>_NE -> ulinear16_{NE,OE} */
+		for (i = 0; i < sample_count; i++) {
+			uint16_t val;
+			val = (*s++) >> src_lsr;
+			val ^= xor;
+			if (!is_dst_NE)
+				val = __builtin_bswap16(val);
+			*d++ = val;
 		}
 	}
 }
