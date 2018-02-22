@@ -104,12 +104,11 @@ linear16_to_internal(audio_filter_arg_t *arg)
 	xor = audio_format2_is_signed(arg->srcfmt) ? 0 : 0x8000;
 	is_src_NE = (audio_format2_endian(arg->srcfmt) == BYTE_ORDER);
 
-	// BE マシンでは LE->BE 変換が多用されるためこれのパフォーマンスは下げず、
-	// 残りの組み合わせはまず呼ばれないのでサイズ最適化する。
-	//                               展開	this
-	// slinear16_BE -> slinear16_LE: 232	232
-	// ulinear16_LE -> slinear16_LE: 278	232
-	// ulinear16_BE -> slinear16_LE: 139	116
+	/*
+	 * slinear16_OppositeEndian to slinear16_NativeEndian is expanded
+	 * because it is used so much especially on big endian machines.
+	 * Other conversions are compressed because they are rarely used.
+	 */
 	if (__predict_true(xor == 0) && is_src_NE == false) {
 		/* slinear16_OE to slinear<AI>_NE */
 		for (i = 0; i < sample_count; i++) {
@@ -163,6 +162,11 @@ internal_to_linear16(audio_filter_arg_t *arg)
 	xor = audio_format2_is_signed(arg->dstfmt) ? 0 : 0x8000;
 	is_dst_NE = (audio_format2_endian(arg->dstfmt) == BYTE_ORDER);
 
+	/*
+	 * slinear16_NativeEndian to slinear16_OppositeEndian is expanded
+	 * because it is used so much especially on big endian machines.
+	 * Other conversions are compressed because they are rarely used.
+	 */
 	if (__predict_true(xor == 0) && is_dst_NE == false) {
 		/* slinear<AI>_NE -> slinear16_OE */
 		for (i = 0; i < sample_count; i++) {
