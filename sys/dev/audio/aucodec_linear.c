@@ -111,12 +111,10 @@ linear16_to_internal(audio_filter_arg_t *arg)
 	// 16bit だけ高速化するとかでも良いかもしれない。
 	if (audio_format2_endian(arg->srcfmt) == BYTE_ORDER) {
 		if (src_lsl == 0) {
-			if (xor == 0) {
-				memcpy(d, s, sample_count * 2);
-			} else {
-				for (i = 0; i < sample_count; i++) {
-					*d++ = (*s++) ^ xor;
-				}
+			// NE、シフト不要、同符号なら変換不要なのでここにはこない
+			KASSERT(xor != 0);
+			for (i = 0; i < sample_count; i++) {
+				*d++ = (*s++) ^ xor;
 			}
 		} else {
 			if (xor == 0) {
@@ -187,12 +185,10 @@ internal_to_linear16(audio_filter_arg_t *arg)
 	// 16bit だけ高速化するとかでも良いかもしれない。
 	if (audio_format2_endian(arg->dstfmt) == BYTE_ORDER) {
 		if (src_lsr == 0) {
-			if (xor == 0) {
-				memcpy(d, s, sample_count * 2);
-			} else {
-				for (i = 0; i < sample_count; i++) {
-					*d++ = (uint16_t)((*s++) ^ xor);
-				}
+			// NE、シフト不要、同符号なら変換不要なのでここにはこない
+			KASSERT(xor != 0);
+			for (i = 0; i < sample_count; i++) {
+				*d++ = (uint16_t)((*s++) ^ xor);
 			}
 		} else {
 			if (xor == 0) {
