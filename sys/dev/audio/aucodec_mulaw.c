@@ -114,9 +114,18 @@ static const uint16_t alaw_to_slinear16[256] = {
 	0x03b0, 0x0390, 0x03f0, 0x03d0, 0x0330, 0x0310, 0x0370, 0x0350,
 };
 
+/*
+ * mulaw_to_internal:
+ *	This filter performs conversion from mulaw to internal format.
+ */
 void
 mulaw_to_internal(audio_filter_arg_t *arg)
 {
+	const uint8_t *s;
+	aint_t *d;
+	u_int sample_count;
+	u_int i;
+
 	KASSERT(is_valid_filter_arg(arg));
 	KASSERT(arg->srcfmt->encoding == AUDIO_ENCODING_ULAW);
 	KASSERT(arg->srcfmt->stride == 8);
@@ -124,23 +133,30 @@ mulaw_to_internal(audio_filter_arg_t *arg)
 	KASSERT(is_internal_format(arg->dstfmt));
 	KASSERT(arg->srcfmt->channels == arg->dstfmt->channels);
 
-	const uint8_t *sptr = arg->src;
-	aint_t *dptr = arg->dst;
+	s = arg->src;
+	d = arg->dst;
+	sample_count = arg->count * arg->srcfmt->channels;
 
-	int sample_count = arg->count * arg->srcfmt->channels;
-	for (int i = 0; i < sample_count; i++) {
-		aint_t s;
-		s = mulaw_to_slinear16[*sptr++];
-#if AUDIO_INTERNAL_BITS == 32
-		s *= 0x00010000;
-#endif
-		*dptr++ = s;
+	for (i = 0; i < sample_count; i++) {
+		aint_t val;
+		val = mulaw_to_slinear16[*s++];
+		val <<= AUDIO_INTERNAL_BITS - 16;
+		*d++ = val;
 	}
 }
 
+/*
+ * internal_to_mulaw:
+ *	This filter performs conversion from internal format to mulaw.
+ */
 void
 internal_to_mulaw(audio_filter_arg_t *arg)
 {
+	const aint_t *s;
+	uint8_t *d;
+	u_int sample_count;
+	u_int i;
+
 	KASSERT(is_valid_filter_arg(arg));
 	KASSERT(arg->dstfmt->encoding == AUDIO_ENCODING_ULAW);
 	KASSERT(arg->dstfmt->stride == 8);
@@ -148,15 +164,13 @@ internal_to_mulaw(audio_filter_arg_t *arg)
 	KASSERT(is_internal_format(arg->srcfmt));
 	KASSERT(arg->srcfmt->channels == arg->dstfmt->channels);
 
-	const aint_t *sptr = arg->src;
-	uint8_t *dptr = arg->dst;
+	s = arg->src;
+	d = arg->dst;
+	sample_count = arg->count * arg->srcfmt->channels;
 
-	int sample_count = arg->count * arg->srcfmt->channels;
-	for (int i = 0; i < sample_count; i++) {
-		aint_t s = *sptr++;
-#if AUDIO_INTERNAL_BITS == 32
-		s >>= 16;
-#endif
-		*dptr++ = slinear8_to_mulaw[(uint8_t)(s >> 8)];
+	for (i = 0; i < sample_count; i++) {
+		uint8_t val;
+		val = (*s++) >> (AUDIO_INTERNAL_BITS - 8);
+		*d++ = slinear8_to_mulaw[val];
 	}
 }
