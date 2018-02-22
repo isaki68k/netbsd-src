@@ -104,7 +104,7 @@ linear16_to_internal(audio_filter_arg_t *arg)
 	d = arg->dst;
 	sample_count = arg->count * arg->srcfmt->channels;
 
-	src_lsl = AUDIO_INTERNAL_BITS - arg->srcfmt->precision;
+	src_lsl = AUDIO_INTERNAL_BITS - 16;
 	xor = audio_format2_is_signed(arg->srcfmt)
 	    ? 0 : (1 << (AUDIO_INTERNAL_BITS - 1));
 
@@ -178,7 +178,7 @@ internal_to_linear16(audio_filter_arg_t *arg)
 	d = arg->dst;
 	sample_count = arg->count * arg->srcfmt->channels;
 
-	src_lsr = AUDIO_INTERNAL_BITS - arg->dstfmt->precision;
+	src_lsr = AUDIO_INTERNAL_BITS - 16;
 	xor = audio_format2_is_signed(arg->dstfmt)
 	    ? 0 : (1 << (AUDIO_INTERNAL_BITS - 1));
 
