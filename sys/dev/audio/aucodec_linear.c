@@ -7,7 +7,10 @@
 #include "aucodec.h"
 #endif // !_KERNEL
 
-// [US]LINEAR8 から internal への変換
+/*
+ * linear8_to_internal:
+ *	This filter performs conversion from [US]LINEAR8 to internal format.
+ */
 void
 linear8_to_internal(audio_filter_arg_t *arg)
 {
@@ -27,8 +30,6 @@ linear8_to_internal(audio_filter_arg_t *arg)
 	s = arg->src;
 	d = arg->dst;
 	sample_count = arg->count * arg->srcfmt->channels;
-
-	/* unsigned -> signed */
 	xor = audio_format2_is_signed(arg->srcfmt)
 	    ? 0 : (1 << (AUDIO_INTERNAL_BITS - 1));
 
@@ -42,7 +43,10 @@ linear8_to_internal(audio_filter_arg_t *arg)
 	}
 }
 
-// internal から [US]LINEAR8 への変換
+/*
+ * internal_to_linear8:
+ *	This filter performs conversion from internal format to [US]LINEAR8.
+ */
 void
 internal_to_linear8(audio_filter_arg_t *arg)
 {
@@ -62,8 +66,6 @@ internal_to_linear8(audio_filter_arg_t *arg)
 	s = arg->src;
 	d = arg->dst;
 	sample_count = arg->count * arg->srcfmt->channels;
-
-	/* unsigned -> signed */
 	xor = audio_format2_is_signed(arg->dstfmt)
 	    ? 0 : (1 << (AUDIO_INTERNAL_BITS - 1));
 
@@ -76,7 +78,11 @@ internal_to_linear8(audio_filter_arg_t *arg)
 	}
 }
 
-// [US]LINEAR16{BE|LE} から internal への変換
+/*
+ * linear16_to_internal:
+ *	This filter performs conversion from [US]LINEAR16{LE,BE} to internal
+ *	format.
+ */
 void
 linear16_to_internal(audio_filter_arg_t *arg)
 {
@@ -99,7 +105,6 @@ linear16_to_internal(audio_filter_arg_t *arg)
 	sample_count = arg->count * arg->srcfmt->channels;
 
 	src_lsl = AUDIO_INTERNAL_BITS - arg->srcfmt->precision;
-	/* unsigned -> signed */
 	xor = audio_format2_is_signed(arg->srcfmt)
 	    ? 0 : (1 << (AUDIO_INTERNAL_BITS - 1));
 
@@ -149,7 +154,11 @@ linear16_to_internal(audio_filter_arg_t *arg)
 	}
 }
 
-// internal から [US]LINEAR16{BE|LE} への変換
+/*
+ * internal_to_linear16:
+ *	This filter performs conversion from internal format to
+ *	[US]LINEAR16{LE,BE}.
+ */
 void
 internal_to_linear16(audio_filter_arg_t *arg)
 {
@@ -172,7 +181,6 @@ internal_to_linear16(audio_filter_arg_t *arg)
 	sample_count = arg->count * arg->srcfmt->channels;
 
 	src_lsr = AUDIO_INTERNAL_BITS - arg->dstfmt->precision;
-	/* unsigned -> signed */
 	xor = audio_format2_is_signed(arg->dstfmt)
 	    ? 0 : (1 << (AUDIO_INTERNAL_BITS - 1));
 
@@ -223,7 +231,11 @@ internal_to_linear16(audio_filter_arg_t *arg)
 }
 
 #if defined(AUDIO_SUPPORT_LINEAR24)
-// [US]LINEAR24{BE|LE} から internal への変換
+/*
+ * linear24_to_internal:
+ *	This filter performs conversion from [US]LINEAR24/24{LE,BE} to
+ *	internal format.  It's rerely used so it's size optimization.
+ */
 void
 linear24_to_internal(audio_filter_arg_t *arg)
 {
@@ -244,12 +256,8 @@ linear24_to_internal(audio_filter_arg_t *arg)
 	s = arg->src;
 	d = arg->dst;
 	sample_count = arg->count * arg->srcfmt->channels;
-
-	/* unsigned -> signed */
 	xor = audio_format2_is_signed(arg->srcfmt)
 	    ? 0 : (1 << (AUDIO_INTERNAL_BITS - 1));
-
-	// 遅くてもコードサイズを優先して目をつぶる
 
 	is_src_LE = (audio_format2_endian(arg->srcfmt) == LITTLE_ENDIAN);
 
@@ -272,7 +280,11 @@ linear24_to_internal(audio_filter_arg_t *arg)
 	}
 }
 
-// internal から [US]LINEAR24{BE|LE} への変換
+/*
+ * internal_to_linear24:
+ *	This filter performs conversion from internal format to
+ *	[US]LINEAR24/24{LE,BE}.  It's rarely used so it's size optimization.
+ */
 void
 internal_to_linear24(audio_filter_arg_t *arg)
 {
@@ -293,12 +305,8 @@ internal_to_linear24(audio_filter_arg_t *arg)
 	s = arg->src;
 	d = arg->dst;
 	sample_count = arg->count * arg->srcfmt->channels;
-
-	/* unsigned -> signed */
 	xor = audio_format2_is_signed(arg->dstfmt)
 	    ? 0 : (1 << (AUDIO_INTERNAL_BITS - 1));
-
-	// 遅くてもコードサイズを優先して目をつぶる
 
 	is_dst_LE = (audio_format2_endian(arg->dstfmt) == LITTLE_ENDIAN);
 
@@ -324,7 +332,11 @@ internal_to_linear24(audio_filter_arg_t *arg)
 }
 #endif /* AUDIO_SUPPORT_LINEAR24 */
 
-// [US]LINEAR32{BE|LE} から internal への変換
+/*
+ * linear32_to_internal:
+ *	This filter performs conversion from [US]LINEAR32{LE,BE} to internal
+ *	format.  It's rarely used so it's size optimization.
+ */
 void
 linear32_to_internal(audio_filter_arg_t *arg)
 {
@@ -345,12 +357,8 @@ linear32_to_internal(audio_filter_arg_t *arg)
 	s = arg->src;
 	d = arg->dst;
 	sample_count = arg->count * arg->srcfmt->channels;
-
-	/* unsigned -> signed */
 	xor = audio_format2_is_signed(arg->srcfmt)
 	    ? 0 : (1 << (AUDIO_INTERNAL_BITS - 1));
-
-	// 遅くてもコードサイズを優先して目をつぶる
 
 	is_src_NE = (audio_format2_endian(arg->srcfmt) == BYTE_ORDER);
 
@@ -365,7 +373,11 @@ linear32_to_internal(audio_filter_arg_t *arg)
 	}
 }
 
-// internal から [US]LINEAR32{BE|LE} への変換
+/*
+ * internal_to_linear32:
+ *	This filter performs conversion from internal format to
+ *	[US]LINEAR32{LE,BE}.  It's rarely used so it's size optimization.
+ */
 void
 internal_to_linear32(audio_filter_arg_t *arg)
 {
@@ -386,12 +398,8 @@ internal_to_linear32(audio_filter_arg_t *arg)
 	s = arg->src;
 	d = arg->dst;
 	sample_count = arg->count * arg->srcfmt->channels;
-
-	/* unsigned -> signed */
 	xor = audio_format2_is_signed(arg->dstfmt)
 	    ? 0 : (1 << (AUDIO_INTERNAL_BITS - 1));
-
-	// 遅くてもコードサイズを優先して目をつぶる
 
 	is_dst_NE = (audio_format2_endian(arg->dstfmt) == BYTE_ORDER);
 
