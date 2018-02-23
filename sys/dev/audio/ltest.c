@@ -15,6 +15,7 @@
 #include "aucodec.h"
 #include "auformat.h"
 #include "aucodec_linear.c"
+#include "aucodec_mulaw.c"
 
 struct testtable {
 	const char *name;
@@ -513,6 +514,121 @@ test_internal_to_linear32()
 	test_to_linear(AUDIO_ENCODING_ULINEAR_BE, 32, internal_to_linear32);
 }
 
+// slinear14
+// rawvalue   +33/-32 offset
+// 8158..4063 (8191..4096), 16 interval of 256	= 0x80 + interval
+// 4062..2015 (4095..2048), 16 interval of 128	= 0x90 + interval
+// 2014.. 991 (2047..1024), 16 interval of  64	= 0xa0 + interval
+//  991.. 479 (1023.. 512), 16 interval of  32	= 0xb0 + interval
+//  478.. 223 ( 511.. 256), 16 interval of  16	= 0xc0 + interval
+//  222..  95 ( 255.. 128), 16 interval of   8	= 0xd0 + interval
+//   94..  31 ( 127..  64), 16 interval of   4	= 0xe0 + interval
+//   30..   1 (  63..  34), 15 interval of   2	= 0xf0 + interval
+// (         ->  63..  32 , 16 interval)
+//    0                                      	= 0xff
+
+// 32764..16384 = 0x7ffc..0x4000, 1024x16 = 80+
+//      .. 8192,  512x16 = 90+
+//      .. 4096,  256x16 = a0+
+//      .. 2048,  128x16 = b0+
+//      .. 1024,   64x16 = c0+
+//      ..  512,   32x16 = d0+
+//      ..  256,   16x16 = e0+
+//      ..  136,    8x15 = f0+
+// 0                     = ff
+// -1                    = 7f
+//   -64..  -35,    8x15 = 70+
+//  -128..  -65
+
+void
+test_mulaw_to_internal()
+{
+	audio_filter_arg_t arg;
+	audio_format2_t srcfmt, intfmt;
+	int count = 256;
+	uint8_t src[count];
+	aint_t dst[count];
+	aint_t exp[count];
+
+	TEST("mulaw_to_internal");
+
+	memset(dst, 0, sizeof(dst));
+	for (int i = 0; i < __arraycount(src); i++) {
+		// src を作成
+		src[i] = (int8_t)(uint8_t)i;
+
+		// src から答え exp を作成
+		int x;
+		int b, off;
+		char m = i;
+		if (m < (char)0x90)			b = 8158, off = 256;
+		else if (m < (char)0xa0)	b = 4062, off = 128;
+		else if (m < (char)0xb0)	b = 2014, off = 64;
+		else if (m < (char)0xc0)	b = 990, off = 32;
+		else if (m < (char)0xd0)	b = 478, off = 16;
+		else if (m < (char)0xe0)	b = 222, off = 8;
+		else if (m < (char)0xf0)	b = 94, off = 4;
+		else if (m < (char)0xff)	b = 30, off = 2;
+		else if (m == (char)0xff)	b = 0, off = 0;
+		else if (m < (char)0x10)	b = -8159, off = 256;
+		else if (m < (char)0x20)	b = -4063, off = 128;
+		else if (m < (char)0x30)	b = -2015, off = 64;
+		else if (m < (char)0x40)	b = -991, off = 32;
+		else if (m < (char)0x50)	b = -479, off = 16;
+		else if (m < (char)0x60)	b = -223, off = 8;
+		else if (m < (char)0x70)	b = -95, off = 4;
+		else if (m < (char)0x7f)	b = -31, off = 2;
+		else if (m == (char)0x7f)	b = -1, off = 0;
+
+#if 0
+		// これが wikipedia の式をそのまま起こしたもの
+		if (m < 0)
+			x = b - (m & 0xf) * off;
+		else
+			x = b + (m & 0xf) * off;
+#else
+		// これが NetBSD7 のテーブル生成式
+		if (m < 0)
+			x = b - (m & 0xf) * off - (off - 1) / 2;
+		else
+			x = b + (m & 0xf) * off + (off + 1) / 2;
+#endif
+		exp[i] = x << 2;
+	}
+
+	// 呼び出し
+	srcfmt.encoding = AUDIO_ENCODING_ULAW;
+	srcfmt.precision = 8;
+	srcfmt.stride = 8;
+	srcfmt.channels = 1;
+	srcfmt.sample_rate = 8000;
+	intfmt.encoding = AUDIO_ENCODING_SLINEAR_NE;
+	intfmt.precision = AUDIO_INTERNAL_BITS;
+	intfmt.stride = AUDIO_INTERNAL_BITS;
+	intfmt.channels = 1;
+	intfmt.sample_rate = 8000;
+	// src を dst に変換して dst と exp を比較。
+	arg.srcfmt = &srcfmt;
+	arg.dstfmt = &intfmt;
+	arg.src = src;
+	arg.dst = dst;
+	arg.count = count / intfmt.channels;
+	mulaw_to_internal(&arg);
+
+	// 照合
+	for (int i = 0; i < count; i++) {
+		testcount++;
+		if (exp[i] != dst[i]) {
+			uint16_t uexp = exp[i];
+			uint16_t udst = dst[i];
+			xp_fail(__LINE__, "dst[0x%02x] expects 0x%0*x(%d) but 0x%0*x(%d)",
+				i,
+				AUDIO_INTERNAL_BITS / 4, uexp, exp[i] >> 2,
+				AUDIO_INTERNAL_BITS / 4, udst, dst[i] >> 2);
+		}
+	}
+}
+
 // テスト一覧
 #define DEF(x)	{ #x, test_ ## x }
 struct testtable testtable[] = {
@@ -524,5 +640,6 @@ struct testtable testtable[] = {
 	DEF(internal_to_linear16),
 	DEF(internal_to_linear24),
 	DEF(internal_to_linear32),
+	DEF(mulaw_to_internal),
 	{ NULL, NULL },
 };
