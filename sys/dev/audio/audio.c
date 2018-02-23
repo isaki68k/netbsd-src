@@ -4550,7 +4550,6 @@ audio_modcmd(modcmd_t cmd, void *arg)
 
 #include <dev/audio/aumix.c>
 #include <dev/audio/aucodec_linear.c>
-#include <dev/audio/aucodec_mulaw.c>
 
 
 // x audioctl play.gain と mixerctl outputs.master は N7 では連動していたし
