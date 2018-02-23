@@ -473,8 +473,8 @@ audio_track_freq_up(audio_filter_arg_t *arg)
 	audio_ring_t *dst = track->freq.dst;
 
 	KASSERT(track);
-	KASSERT(is_valid_ring(dst));
-	KASSERT(is_valid_ring(src));
+	KASSERT(audio_ring_is_valid(dst));
+	KASSERT(audio_ring_is_valid(src));
 	KASSERT(src->count > 0);
 	KASSERT(src->fmt.channels == dst->fmt.channels);
 	KASSERT(src->top % track->mixer->frames_per_block == 0);
@@ -605,8 +605,8 @@ audio_track_freq_down(audio_filter_arg_t *arg)
 	audio_ring_t *dst = track->freq.dst;
 
 	KASSERT(track);
-	KASSERT(is_valid_ring(dst));
-	KASSERT(is_valid_ring(src));
+	KASSERT(audio_ring_is_valid(dst));
+	KASSERT(audio_ring_is_valid(src));
 	KASSERT(src->count > 0);
 	KASSERT(src->fmt.channels == dst->fmt.channels);
 	KASSERTMSG(src->top % track->mixer->frames_per_block == 0,

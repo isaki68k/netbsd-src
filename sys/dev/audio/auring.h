@@ -55,7 +55,7 @@
 	    frametobyte(&(ringptr)->fmt, (ringptr)->capacity)))
 
 static inline bool
-is_valid_ring(const audio_ring_t *ring)
+audio_ring_is_valid(const audio_ring_t *ring)
 {
 	KASSERT(ring != NULL);
 
@@ -111,7 +111,7 @@ is_valid_ring(const audio_ring_t *ring)
 static inline int
 audio_ring_round(audio_ring_t *ring, int idx)
 {
-	KASSERT(is_valid_ring(ring));
+	KASSERT(audio_ring_is_valid(ring));
 	KASSERT(idx >= 0);
 	KASSERT(idx < ring->capacity * 2);
 
@@ -122,7 +122,7 @@ audio_ring_round(audio_ring_t *ring, int idx)
 static inline void
 audio_ring_tookfromtop(audio_ring_t *ring, int n)
 {
-	KASSERT(is_valid_ring(ring));
+	KASSERT(audio_ring_is_valid(ring));
 	KASSERTMSG(n >= 0, "%s: n=%d", __func__, n);
 	KASSERTMSG(ring->count >= n, "%s: ring->count=%d n=%d",
 	    __func__, ring->count, n);
@@ -135,7 +135,7 @@ audio_ring_tookfromtop(audio_ring_t *ring, int n)
 static inline void
 audio_ring_appended(audio_ring_t *ring, int n)
 {
-	KASSERT(is_valid_ring(ring));
+	KASSERT(audio_ring_is_valid(ring));
 	KASSERT(n >= 0);
 	KASSERTMSG(ring->count + n <= ring->capacity,
 		"%s: ring->count=%d n=%d ring->capacity=%d",
@@ -157,7 +157,7 @@ audio_ring_bottom(audio_ring_t *ring)
 static inline int
 audio_ring_unround_count(const audio_ring_t *ring)
 {
-	KASSERT(is_valid_ring(ring));
+	KASSERT(audio_ring_is_valid(ring));
 
 	return ring->top + ring->count <= ring->capacity
 	    ? ring->count : ring->capacity - ring->top;
@@ -168,7 +168,7 @@ audio_ring_unround_count(const audio_ring_t *ring)
 static inline int
 audio_ring_unround_free_count(const audio_ring_t *ring)
 {
-	KASSERT(is_valid_ring(ring));
+	KASSERT(audio_ring_is_valid(ring));
 
 	// ring の unround 終端まで使用されているときは、
 	// 開始位置はラウンディング後なので < が条件
