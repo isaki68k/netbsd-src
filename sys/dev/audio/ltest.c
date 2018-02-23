@@ -24,6 +24,7 @@ struct testtable {
 
 int debug;
 char testname[100];
+int compat7;
 int testcount;
 int failcount;
 int skipcount;
@@ -34,6 +35,7 @@ usage()
 {
 	// test は複数列挙できる。
 	printf("usage: %s [<options>] {-a | <testname...>}\n", getprogname());
+	printf("  -7: test as compat with netbsd-7\n");
 	printf("  -d: debug\n");
 	printf(" testname:\n");
 	for (int i = 0; testtable[i].name != NULL; i++) {
@@ -52,8 +54,11 @@ int main(int ac, char *av[])
 
 	// global option
 	opt_all = 0;
-	while ((c = getopt(ac, av, "ad")) != -1) {
+	while ((c = getopt(ac, av, "7ad")) != -1) {
 		switch (c) {
+		 case '7':
+			compat7 = 1;
+			break;
 		 case 'a':
 			opt_all = 1;
 			break;
@@ -629,6 +634,110 @@ test_mulaw_to_internal()
 	}
 }
 
+void
+test_internal_to_mulaw()
+{
+	audio_filter_arg_t arg;
+	audio_format2_t intfmt, dstfmt;
+	int count = 16384;
+	aint_t *src;
+	uint8_t *dst;
+	uint8_t *exp;
+
+	TEST("internal_to_mulaw");
+
+	src = malloc(count * sizeof(*src));
+	dst = malloc(count * sizeof(*dst));
+	exp = malloc(count * sizeof(*exp));
+	memset(dst, 0, count * sizeof(*dst));
+	for (int i = 0; i < count; i++) {
+		// src を作成
+		src[i] = ((int16_t)(i << 2)) << (AUDIO_INTERNAL_BITS - 16);
+
+		// src から答え exp を作成
+		int x;
+		int b, off, m;
+		x = src[i] >> 2;
+
+		if(debug)printf("i=%d x=%d", i, x);
+		if (compat7) {
+			// NetBSD7 は入力を slinear8 とした256段階しか使ってない。
+			x >>= 6;
+			x <<= 6;
+			if(debug)printf("->%d", x);
+		}
+
+		if (x > 4062)    	b = 8158,	off = -256, m = 0x80;
+		else if (x > 2014)	b = 4062,	off = -128,	m = 0x90;
+		else if (x > 990)	b = 2014,	off = -64,	m = 0xa0;
+		else if (x > 478)	b = 990,	off = -32,	m = 0xb0;
+		else if (x > 222)	b = 478,	off = -16,	m = 0xc0;
+		else if (x > 94)	b = 222,	off = -8,	m = 0xd0;
+		else if (x > 30)	b = 94, 	off = -4,	m = 0xe0;
+		else if (x > 0) 	b = 30, 	off = -2,	m = 0xf0;
+		else if (x == 0)	b = 0,		off = 0,	m = 0xff;
+		else if (x < -4063)	b = -8159,	off = 256,	m = 0x00;
+		else if (x < -2015)	b = -4063,	off = 128,	m = 0x10;
+		else if (x < -991)	b = -2015,	off = 64,	m = 0x20;
+		else if (x < -479)	b = -991,	off = 32,	m = 0x30;
+		else if (x < -223)	b = -479,	off = 16,	m = 0x40;
+		else if (x < -95)	b = -223,	off = 8,	m = 0x50;
+		else if (x < -31)	b = -95,	off = 4,	m = 0x60;
+		else if (x < -1)	b = -31,	off = 2,	m = 0x70;
+		else if (x == -1)	b = -1, 	off = 0,	m = 0x7f;
+
+		if(debug)printf(", b=%d off=%d, m=0x%02x", b, off, m);
+
+		int j = 0;
+		// wikipedia 通り 14bit
+		if (x > 0) {
+			for (j = 0; j < 16; j++) {
+				if (x > b + off * (j + 1))
+					break;
+			}
+		} else if (x < -1) {
+			for (j = 0; j < 16; j++) {
+				if (x < b + off * (j + 1))
+					break;
+			}
+		}
+		if(debug)printf("\texp=0x%02x\n", m+j);
+		exp[i] = m + j;
+	}
+
+	// 呼び出し
+	dstfmt.encoding = AUDIO_ENCODING_ULAW;
+	dstfmt.precision = 8;
+	dstfmt.stride = 8;
+	dstfmt.channels = 1;
+	dstfmt.sample_rate = 8000;
+	intfmt.encoding = AUDIO_ENCODING_SLINEAR_NE;
+	intfmt.precision = AUDIO_INTERNAL_BITS;
+	intfmt.stride = AUDIO_INTERNAL_BITS;
+	intfmt.channels = 1;
+	intfmt.sample_rate = 8000;
+	// src を dst に変換して dst と exp を比較。
+	arg.srcfmt = &intfmt;
+	arg.dstfmt = &dstfmt;
+	arg.src = src;
+	arg.dst = dst;
+	arg.count = count / intfmt.channels;
+	internal_to_mulaw(&arg);
+
+	// 照合
+	for (int i = 0; i < count; i++) {
+		testcount++;
+		if (exp[i] != dst[i]) {
+			xp_fail(__LINE__, "dst[0x%02x](%d) expects 0x%02x but 0x%02x",
+				i, src[i] >> 2, exp[i], dst[i]);
+		}
+	}
+
+	free(src);
+	free(dst);
+	free(exp);
+}
+
 // テスト一覧
 #define DEF(x)	{ #x, test_ ## x }
 struct testtable testtable[] = {
@@ -641,5 +750,6 @@ struct testtable testtable[] = {
 	DEF(internal_to_linear24),
 	DEF(internal_to_linear32),
 	DEF(mulaw_to_internal),
+	DEF(internal_to_mulaw),
 	{ NULL, NULL },
 };
