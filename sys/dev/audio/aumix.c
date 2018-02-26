@@ -1892,6 +1892,7 @@ audio_mixer_calc_blktime(audio_trackmixer_t *mixer)
 /*
  * audio_mixer_init:
  *	Initialize the mixer.
+ *	This function returns 0 on sucessful.  Otherwise returns errno.
  *	'mixer' should be zero-filled.
  *	For 'mode', specify AUMODE_PLAY for playback, AUMODE_RECORD for
  *	record.  AUMODE_PLAY_ALL does not matter here.
@@ -1900,7 +1901,9 @@ int
 audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 {
 	int len;
+	int error;
 
+	error = 0;
 	mixer->sc = sc;
 	mixer->mode = mode;
 
@@ -1953,10 +1956,19 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 	mixer->hwbuf.capacity = capacity;
 
 	if (sc->hw_if->allocm) {
-		mixer->hwbuf.mem = sc->hw_if->allocm(sc->hw_hdl, mode,
-		    bufsize);
+		mixer->hwbuf.mem = sc->hw_if->allocm(sc->hw_hdl, mode, bufsize);
+		if (mixer->hwbuf.mem == NULL) {
+			aprint_error_dev(sc->dev, "%s: allocm(%zu) failed",
+			    __func__, bufsize);
+			return ENOMEM;
+		}
 	} else {
 		mixer->hwbuf.mem = kern_malloc(bufsize, M_NOWAIT);
+		if (mixer->hwbuf.mem == NULL) {
+			aprint_error_dev(sc->dev, "%s: malloc(%zu) failed",
+			    __func__, bufsize);
+			return ENOMEM;
+		}
 	}
 
 	mixer->track_fmt.encoding = AUDIO_ENCODING_SLINEAR_NE;
@@ -1970,8 +1982,15 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 		mixer->mixfmt = mixer->track_fmt;
 		mixer->mixfmt.precision *= 2;
 		mixer->mixfmt.stride *= 2;
-		int n = mixer->frames_per_block * mixer->mixfmt.channels * mixer->mixfmt.stride / 8;
-		mixer->mixsample = audio_realloc(mixer->mixsample, n);
+		// XXX マクロとか使えないんだっけ
+		len = mixer->frames_per_block * mixer->mixfmt.channels * mixer->mixfmt.stride / 8;
+		mixer->mixsample = audio_realloc(mixer->mixsample, len);
+		if (mixer->mixsample == NULL) {
+			aprint_error_dev(sc->dev, "%s: malloc(%d) failed",
+			    __func__, len);
+			error = ENOMEM;
+			goto abort;
+		}
 	} else {
 		// 合成バッファは使用しない
 	}
@@ -1997,7 +2016,12 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 		mixer->codecbuf.capacity = mixer->frames_per_block;
 		len = audio_ring_bytelen(&mixer->codecbuf);
 		mixer->codecbuf.mem = audio_realloc(mixer->codecbuf.mem, len);
-		// XXX error check
+		if (mixer->codecbuf.mem == NULL) {
+			aprint_error_dev(sc->dev, "%s: malloc(%d) failed",
+			    __func__, len);
+			error = ENOMEM;
+			goto abort;
+		}
 	}
 
 	mixer->volume = 256;
@@ -2007,6 +2031,10 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 		cv_init(&mixer->draincv, "audiodr");
 
 	return 0;
+
+abort:
+	audio_mixer_destroy(sc, mixer);
+	return error;
 }
 
 // ミキサを終了しリソースを解放します。
