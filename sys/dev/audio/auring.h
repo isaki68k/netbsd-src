@@ -9,6 +9,10 @@
 #include "auformat.h"
 #endif
 
+/*
+ * Validate audio_ring_t.
+ * If successful, return true.  Otherwise, return false printing message.
+ */
 static inline bool
 audio_ring_is_valid(const audio_ring_t *ring)
 {
@@ -63,6 +67,9 @@ audio_ring_is_valid(const audio_ring_t *ring)
 
 // idx をラウンディングします。
 // 加算方向で、加算量が ring->capacity 以下のケースのみサポートします。
+/*
+ * Round idx.  idx must be non-negative and less than capacity.
+ */
 static inline int
 audio_ring_round(const audio_ring_t *ring, int idx)
 {
@@ -75,6 +82,9 @@ audio_ring_round(const audio_ring_t *ring, int idx)
 
 // ring の tail 位置(head+used位置) を返します。
 // この位置は、最終有効フレームの次のフレーム位置に相当します。
+/*
+ * Return ring's tail (= head + used) position.
+ */
 static inline int
 audio_ring_tail(const audio_ring_t *ring)
 {
@@ -82,6 +92,11 @@ audio_ring_tail(const audio_ring_t *ring)
 }
 
 // ring の head フレームのポインタを求めます。
+/*
+ * Return ring's head pointer.
+ * This function can be used only if the stride of the 'ring' is equals to
+ * the internal stride.  Don't use this for hw buffer.
+ */
 static inline aint_t *
 audio_ring_headptr(const audio_ring_t *ring)
 {
@@ -91,6 +106,11 @@ audio_ring_headptr(const audio_ring_t *ring)
 // ring の tail (= head + used、すなわち、最終有効フレームの次) フレームの
 // ポインタを求めます。
 // hwbuf のポインタはこちらではなく RING_BOT_UINT8() で取得してください。
+/*
+ * Return ring's tail (= head + used) pointer.
+ * This function can be used only if the stride of the 'ring' is equals to
+ * the internal stride.  Don't use this for hw buffer.
+ */
 static inline aint_t *
 audio_ring_tailptr(const audio_ring_t *ring)
 {
@@ -98,6 +118,11 @@ audio_ring_tailptr(const audio_ring_t *ring)
 }
 
 // ring の head フレームのポインタを求めます。
+/*
+ * Return ring's head pointer.
+ * This function can be used even if the stride of the 'ring' is equal to
+ * or not equal to the internal stride.
+ */
 static inline uint8_t *
 audio_ring_headptr_stride(const audio_ring_t *ring)
 {
@@ -108,6 +133,11 @@ audio_ring_headptr_stride(const audio_ring_t *ring)
 // ring の tail (= head + used、すなわち、最終有効フレームの次) フレームの
 // ポインタを求めます。HWbuf は 4bit/sample の可能性があるため RING_BOT() では
 // なく必ずこちらを使用してください。
+/*
+ * Return ring's tail pointer.
+ * This function can be used even if the stride of the 'ring' is equal to
+ * or not equal to the internal stride.
+ */
 static inline uint8_t *
 audio_ring_tailptr_stride(audio_ring_t *ring)
 {
@@ -116,6 +146,9 @@ audio_ring_tailptr_stride(audio_ring_t *ring)
 }
 
 // キャパシティをバイト単位で求めます。
+/*
+ * Return ring's capacity in bytes.
+ */
 static inline int
 audio_ring_bytelen(const audio_ring_t *ring)
 {
@@ -124,6 +157,11 @@ audio_ring_bytelen(const audio_ring_t *ring)
 }
 
 // ring->head から n 個取り出したことにします。
+/*
+ * Take out n frames from head of ring.
+ * This function only manipurates counters.  It doesn't manipurates actual
+ * buffer data.
+ */
 static inline void
 audio_ring_take(audio_ring_t *ring, int n)
 {
@@ -137,6 +175,11 @@ audio_ring_take(audio_ring_t *ring, int n)
 }
 
 // ring tail に n 個付け足したことにします。
+/*
+ * Append n frames into tail of ring.
+ * This function only manipurates counters.  It doesn't manipurates actual
+ * buffer data.
+ */
 static inline void
 audio_ring_push(audio_ring_t *ring, int n)
 {
@@ -151,6 +194,9 @@ audio_ring_push(audio_ring_t *ring, int n)
 
 // ring->head の位置からの有効フレームにアクセスしようとするとき、
 // ラウンディングせずにアクセス出来る個数を返します。
+/*
+ * Return the number of contiguous frames in used.
+ */
 static inline int
 audio_ring_get_contig_used(const audio_ring_t *ring)
 {
@@ -162,6 +208,9 @@ audio_ring_get_contig_used(const audio_ring_t *ring)
 
 // audio_ring_tail の位置から空きフレームにアクセスしようとするとき、
 // ラウンディングせずにアクセス出来る、空きフレームの個数を返します。
+/*
+ * Return the number of contiguous free frames.
+ */
 static inline int
 audio_ring_get_contig_free(const audio_ring_t *ring)
 {
