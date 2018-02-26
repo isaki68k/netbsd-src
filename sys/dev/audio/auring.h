@@ -100,6 +100,8 @@ audio_ring_tail(const audio_ring_t *ring)
 static inline aint_t *
 audio_ring_headptr(const audio_ring_t *ring)
 {
+	KASSERT(ring->fmt.stride == sizeof(aint_t) * NBBY);
+
 	return (aint_t *)ring->mem + ring->head * ring->fmt.channels;
 }
 
@@ -114,6 +116,8 @@ audio_ring_headptr(const audio_ring_t *ring)
 static inline aint_t *
 audio_ring_tailptr(const audio_ring_t *ring)
 {
+	KASSERT(ring->fmt.stride == sizeof(aint_t) * NBBY);
+
 	return (aint_t *)ring->mem + audio_ring_tail(ring) * ring->fmt.channels;
 }
 
