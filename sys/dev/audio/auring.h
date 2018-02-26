@@ -10,15 +10,14 @@
 #endif
 
 // ring の top フレームのポインタを求めます。
-#define RING_TOP(type, ringptr) \
-	(((type*)(ringptr)->mem) + (ringptr)->top * (ringptr)->fmt.channels)
+#define RING_TOP(ringptr) \
+	(((aint_t *)(ringptr)->mem) + (ringptr)->top * (ringptr)->fmt.channels)
 
 // ring の bottom (= top + count、すなわち、最終有効フレームの次) フレームの
 // ポインタを求めます。
-// type が aint_t か aint2_t の場合のみ使用できます。
 // hwbuf のポインタはこちらではなく RING_BOT_UINT8() で取得してください。
-#define RING_BOT(type, ringptr) \
-	(((type*)(ringptr)->mem) + \
+#define RING_BOT(ringptr) \
+	(((aint_t *)(ringptr)->mem) + \
 	    audio_ring_bottom(ringptr) * (ringptr)->fmt.channels)
 
 // stride=24 用

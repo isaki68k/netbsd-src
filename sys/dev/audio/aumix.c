@@ -2215,9 +2215,9 @@ audio_pmixer_process(struct audio_softc *sc, bool isintr)
 	aint_t *hptr;
 	// MD 側フィルタがあれば aint2_t -> aint_t を codecbuf へ
 	if (mixer->codec) {
-		hptr = RING_BOT(aint_t, &mixer->codecbuf);
+		hptr = RING_BOT(&mixer->codecbuf);
 	} else {
-		hptr = RING_BOT(aint_t, &mixer->hwbuf);
+		hptr = RING_BOT(&mixer->hwbuf);
 	}
 
 	for (int i = 0; i < sample_count; i++) {
@@ -2331,7 +2331,7 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req,
 	int count = audio_ring_get_contig_used(&track->outputbuf);
 	count = min(count, mixer->frames_per_block);
 
-	aint_t *sptr = RING_TOP(aint_t, &track->outputbuf);
+	aint_t *sptr = RING_TOP(&track->outputbuf);
 	aint2_t *dptr = mixer->mixsample;
 
 	// 整数倍精度へ変換し、トラックボリュームを適用して加算合成
@@ -2636,8 +2636,8 @@ audio_rmixer_process(struct audio_softc *sc)
 		}
 		KASSERT(input->count % mixer->frames_per_block == 0);
 
-		memcpy(RING_BOT(aint_t, input),
-		    RING_TOP(aint_t, mixersrc),
+		memcpy(RING_BOT(input),
+		    RING_TOP(mixersrc),
 		    bytes);
 		audio_ring_push(input, count);
 
