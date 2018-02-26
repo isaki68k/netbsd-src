@@ -114,7 +114,7 @@ typedef struct {
 	audio_format2_t fmt;	/* format */
 	int  capacity;		/* capacity by frame */
 	int  head;		/* head position in frame */
-	int  count;		/* available frame count */
+	int  used;		/* used frame count */
 	void *mem;		/* sample ptr */
 } audio_ring_t;
 

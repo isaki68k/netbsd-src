@@ -27,13 +27,13 @@ audio_ring_is_valid(const audio_ring_t *ring)
 		    ring->capacity);
 		return false;
 	}
-	if (ring->count < 0) {
-		printf("%s: count(%d) < 0\n", __func__, ring->count);
+	if (ring->used < 0) {
+		printf("%s: used(%d) < 0\n", __func__, ring->used);
 		return false;
 	}
-	if (ring->count > ring->capacity) {
-		printf("%s: count(%d) < capacity(%d)\n", __func__,
-		    ring->count, ring->capacity);
+	if (ring->used > ring->capacity) {
+		printf("%s: used(%d) < capacity(%d)\n", __func__,
+		    ring->used, ring->capacity);
 		return false;
 	}
 	if (ring->capacity == 0) {
@@ -73,12 +73,12 @@ audio_ring_round(const audio_ring_t *ring, int idx)
 	return idx >= ring->capacity ? idx - ring->capacity : idx;
 }
 
-// ring の tail 位置(head+count位置) を返します。
+// ring の tail 位置(head+used位置) を返します。
 // この位置は、最終有効フレームの次のフレーム位置に相当します。
 static inline int
 audio_ring_tail(const audio_ring_t *ring)
 {
-	return audio_ring_round(ring, ring->head + ring->count);
+	return audio_ring_round(ring, ring->head + ring->used);
 }
 
 // ring の head フレームのポインタを求めます。
@@ -88,7 +88,7 @@ RING_TOP(const audio_ring_t *ring)
 	return (aint_t *)ring->mem + ring->head * ring->fmt.channels;
 }
 
-// ring の tail (= head + count、すなわち、最終有効フレームの次) フレームの
+// ring の tail (= head + used、すなわち、最終有効フレームの次) フレームの
 // ポインタを求めます。
 // hwbuf のポインタはこちらではなく RING_BOT_UINT8() で取得してください。
 static inline aint_t *
@@ -107,7 +107,7 @@ RING_TOP_UINT8(const audio_ring_t *ring)
 	    ring->head * ring->fmt.channels * ring->fmt.stride / 8;
 }
 
-// ring の tail (= head + count、すなわち、最終有効フレームの次) フレームの
+// ring の tail (= head + used、すなわち、最終有効フレームの次) フレームの
 // ポインタを求めます。HWbuf は 4bit/sample の可能性があるため RING_BOT() では
 // なく必ずこちらを使用してください。
 static inline uint8_t *
@@ -131,11 +131,11 @@ audio_ring_take(audio_ring_t *ring, int n)
 {
 	KASSERT(audio_ring_is_valid(ring));
 	KASSERTMSG(n >= 0, "%s: n=%d", __func__, n);
-	KASSERTMSG(ring->count >= n, "%s: ring->count=%d n=%d",
-	    __func__, ring->count, n);
+	KASSERTMSG(ring->used >= n, "%s: ring->used=%d n=%d",
+	    __func__, ring->used, n);
 
 	ring->head = audio_ring_round(ring, ring->head + n);
-	ring->count -= n;
+	ring->used -= n;
 }
 
 // ring tail に n 個付け足したことにします。
@@ -144,11 +144,11 @@ audio_ring_push(audio_ring_t *ring, int n)
 {
 	KASSERT(audio_ring_is_valid(ring));
 	KASSERT(n >= 0);
-	KASSERTMSG(ring->count + n <= ring->capacity,
-		"%s: ring->count=%d n=%d ring->capacity=%d",
-		__func__, ring->count, n, ring->capacity);
+	KASSERTMSG(ring->used + n <= ring->capacity,
+		"%s: ring->used=%d n=%d ring->capacity=%d",
+		__func__, ring->used, n, ring->capacity);
 
-	ring->count += n;
+	ring->used += n;
 }
 
 // ring->head の位置からの有効フレームにアクセスしようとするとき、
@@ -158,8 +158,8 @@ audio_ring_get_contig_used(const audio_ring_t *ring)
 {
 	KASSERT(audio_ring_is_valid(ring));
 
-	return ring->head + ring->count <= ring->capacity
-	    ? ring->count : ring->capacity - ring->head;
+	return ring->head + ring->used <= ring->capacity
+	    ? ring->used : ring->capacity - ring->head;
 }
 
 // audio_ring_tail の位置から空きフレームにアクセスしようとするとき、
@@ -171,9 +171,9 @@ audio_ring_get_contig_free(const audio_ring_t *ring)
 
 	// ring の折り返し終端まで使用されているときは、
 	// 開始位置はラウンディング後なので < が条件
-	if (ring->head + ring->count < ring->capacity) {
-		return ring->capacity - (ring->head + ring->count);
+	if (ring->head + ring->used < ring->capacity) {
+		return ring->capacity - (ring->head + ring->used);
 	} else {
-		return ring->capacity - ring->count;
+		return ring->capacity - ring->used;
 	}
 }

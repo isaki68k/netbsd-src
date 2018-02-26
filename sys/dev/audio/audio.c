@@ -1765,7 +1765,7 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		// 入力バッファにあるバイト数
 		// XXX 動作未確認
 		if (file->rtrack) {
-			*(int *)addr = file->rtrack->usrbuf.count;
+			*(int *)addr = file->rtrack->usrbuf.used;
 		} else {
 			*(int *)addr = 0;
 		}
@@ -1870,7 +1870,7 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 	 */
 	case AUDIO_WSEEK:
 		if (file->ptrack)
-			*(u_long *)addr = file->ptrack->usrbuf.count;
+			*(u_long *)addr = file->ptrack->usrbuf.used;
 		break;
 
 	case AUDIO_SETINFO:
@@ -1980,14 +1980,14 @@ audio_poll(struct audio_softc *sc, int events, struct lwp *l,
 	if (events & (POLLIN | POLLRDNORM)) {
 		if (file->rtrack) {
 			audio_ring_t *usrbuf = &file->rtrack->usrbuf;
-			if (usrbuf->count > 0)
+			if (usrbuf->used > 0)
 				revents |= events & (POLLIN | POLLRDNORM);
 		}
 	}
 	if (events & (POLLOUT | POLLWRNORM)) {
 		if (file->ptrack) {
 			audio_ring_t *usrbuf = &file->ptrack->usrbuf;
-			if (usrbuf->count < file->ptrack->usrbuf_usedhigh)
+			if (usrbuf->used < file->ptrack->usrbuf_usedhigh)
 				revents |= events & (POLLOUT | POLLWRNORM);
 		}
 	}
@@ -2038,7 +2038,7 @@ filt_audioread(struct knote *kn, long hint)
 
 	if (file->rtrack) {
 		usrbuf = &file->rtrack->usrbuf;
-		kn->kn_data = usrbuf->count;
+		kn->kn_data = usrbuf->used;
 	}
 
 	return kn->kn_data > 0;
@@ -2081,7 +2081,7 @@ filt_audiowrite(struct knote *kn, long hint)
 
 	if (file->ptrack) {
 		usrbuf = &file->ptrack->usrbuf;
-		kn->kn_data = file->ptrack->usrbuf_usedhigh - usrbuf->count;
+		kn->kn_data = file->ptrack->usrbuf_usedhigh - usrbuf->used;
 	}
 
 	TRACE("kn=%p data=%d\n", kn, (int)kn->kn_data);
@@ -3445,7 +3445,7 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 	// ...
 
 	if (ptrack) {
-		pi->seek = ptrack->usrbuf.count;
+		pi->seek = ptrack->usrbuf.used;
 		pi->samples = ptrack->usrbuf_stamp;
 		pi->eof = ptrack->eofcounter;
 		pi->pause = ptrack->is_pause;
@@ -3456,7 +3456,7 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 		pi->buffer_size = ptrack->usrbuf.capacity;
 	}
 	if (rtrack) {
-		ri->seek = rtrack->usrbuf.count;
+		ri->seek = rtrack->usrbuf.used;
 		ri->samples = rtrack->usrbuf_stamp;
 		ri->eof = 0;
 		ri->pause = rtrack->is_pause;

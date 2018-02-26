@@ -242,7 +242,7 @@ cmd_set_file(const char *filename)
 	printf("%s: %s\n", filename, fmt_tostring(&f->mem.fmt));
 
 	f->mem.capacity = len * 8 / f->mem.fmt.stride / f->mem.fmt.channels;
-	f->mem.count = f->mem.capacity;
+	f->mem.used = f->mem.capacity;
 
 	f->file = sys_open(sc, AUMODE_PLAY);
 	/* この辺は ioctl になる */
@@ -289,7 +289,7 @@ child_loop(struct test_file *f, int loop)
 	// 1ブロック分のフレーム数
 	int frames_per_block = frame_per_block_roundup(f->file->ptrack->mixer, &f->mem.fmt);
 	// 今回再生するフレーム数
-	int frames = min(f->mem.count, frames_per_block);
+	int frames = min(f->mem.used, frames_per_block);
 	// フレーム数をバイト数に
 	int bytes = frames * f->mem.fmt.channels * f->mem.fmt.stride / 8;
 
@@ -688,10 +688,10 @@ perf_codec_slinear_to_mulaw()
 	gettimeofday(&start, NULL);
 	for (count = 0, signaled = 0; signaled == 0; count++) {
 		track->codec.srcbuf.head = 0;
-		track->codec.srcbuf.count = frame_per_block_roundup(track->mixer,
+		track->codec.srcbuf.used = frame_per_block_roundup(track->mixer,
 			&srcfmt);
 		track->outputbuf.head = 0;
-		track->outputbuf.count = 0;
+		track->outputbuf.used = 0;
 		audio_apply_stage(track, &track->codec, false);
 	}
 	gettimeofday(&end, NULL);
@@ -766,10 +766,10 @@ perf_codec_linear16_to_internal()
 		uint64_t count;
 		for (count = 0, signaled = 0; signaled == 0; count++) {
 			track->codec.srcbuf.head = 0;
-			track->codec.srcbuf.count = frame_per_block_roundup(track->mixer,
+			track->codec.srcbuf.used = frame_per_block_roundup(track->mixer,
 				&srcfmt);
 			track->outputbuf.head = 0;
-			track->outputbuf.count = 0;
+			track->outputbuf.used = 0;
 			audio_apply_stage(track, &track->codec, false);
 		}
 		gettimeofday(&end, NULL);
@@ -824,10 +824,10 @@ perf_freq_main(struct freqdata *pattern)
 		gettimeofday(&start, NULL);
 		for (count = 0, signaled = 0; signaled == 0; count++) {
 			track->freq.srcbuf.head = 0;
-			track->freq.srcbuf.count = frame_per_block_roundup(track->mixer,
+			track->freq.srcbuf.used = frame_per_block_roundup(track->mixer,
 				&srcfmt);
 			track->outputbuf.head = 0;
-			track->outputbuf.count = 0;
+			track->outputbuf.used = 0;
 			audio_apply_stage(track, &track->freq, true);
 		}
 		gettimeofday(&end, NULL);
@@ -881,10 +881,10 @@ perf_chmix_mixLR()
 	gettimeofday(&start, NULL);
 	for (count = 0, signaled = 0; signaled == 0; count++) {
 		track->chmix.srcbuf.head = 0;
-		track->chmix.srcbuf.count = frame_per_block_roundup(track->mixer,
+		track->chmix.srcbuf.used = frame_per_block_roundup(track->mixer,
 			&srcfmt);
 		track->outputbuf.head = 0;
-		track->outputbuf.count = 0;
+		track->outputbuf.used = 0;
 		audio_apply_stage(track, &track->chmix, false);
 	}
 	gettimeofday(&end, NULL);
