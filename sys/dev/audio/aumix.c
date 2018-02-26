@@ -578,8 +578,8 @@ audio_track_freq_up(audio_filter_arg_t *arg)
 	}
 	PRINTF("end prev=%d curr=%d\n", prev[0], curr[0]);
 
-	audio_ring_tookfromtop(src, src->count);
-	audio_ring_appended(dst, i);
+	audio_ring_take(src, src->count);
+	audio_ring_push(dst, i);
 
 	// 補正
 	t += track->freq_leap;
@@ -629,8 +629,8 @@ audio_track_freq_down(audio_filter_arg_t *arg)
 		t += step;
 	}
 	t += track->freq_leap;
-	audio_ring_tookfromtop(src, src->count);
-	audio_ring_appended(dst, i);
+	audio_ring_take(src, src->count);
+	audio_ring_push(dst, i);
 	track->freq_current = t % 65536;
 }
 
@@ -1423,7 +1423,7 @@ audio_append_silence(audio_track_t *track, audio_ring_t *ring)
 	KASSERT(audio_ring_unround_free_count(ring) >= n);
 
 	memset(RING_BOT_UINT8(ring), 0, n * ring->fmt.channels * sizeof(aint_t));
-	audio_ring_appended(ring, n);
+	audio_ring_push(ring, n);
 	return n;
 }
 
@@ -1539,8 +1539,8 @@ audio_apply_stage(audio_track_t *track, audio_stage_t *stage, bool isfreq)
 		stage->filter(arg);
 
 		if (!isfreq) {
-			audio_ring_tookfromtop(&stage->srcbuf, count);
-			audio_ring_appended(stage->dst, count);
+			audio_ring_take(&stage->srcbuf, count);
+			audio_ring_push(stage->dst, count);
 		}
 	}
 }
@@ -1629,8 +1629,8 @@ audio_track_play(audio_track_t *track)
 		        audio_ring_bottom(input) * framesize,
 		    (uint8_t *)usrbuf->mem + usrbuf->top,
 		    bytes);
-		audio_ring_appended(input, count);
-		audio_ring_tookfromtop(usrbuf, bytes);
+		audio_ring_push(input, count);
+		audio_ring_take(usrbuf, bytes);
 	} else {
 		int bytes1 = audio_ring_unround_count(usrbuf);
 		KASSERT(bytes1 % framesize == 0);
@@ -1638,16 +1638,16 @@ audio_track_play(audio_track_t *track)
 		        audio_ring_bottom(input) * framesize,
 		    (uint8_t *)usrbuf->mem + usrbuf->top,
 		    bytes1);
-		audio_ring_appended(input, bytes1 / framesize);
-		audio_ring_tookfromtop(usrbuf, bytes1);
+		audio_ring_push(input, bytes1 / framesize);
+		audio_ring_take(usrbuf, bytes1);
 
 		int bytes2 = bytes - bytes1;
 		memcpy((uint8_t *)input->mem +
 		        audio_ring_bottom(input) * framesize,
 		    (uint8_t *)usrbuf->mem + usrbuf->top,
 		    bytes2);
-		audio_ring_appended(input, bytes2 / framesize);
-		audio_ring_tookfromtop(usrbuf, bytes2);
+		audio_ring_push(input, bytes2 / framesize);
+		audio_ring_take(usrbuf, bytes2);
 	}
 
 	// エンコーディング変換
@@ -1774,23 +1774,23 @@ audio_track_record(audio_track_t *track)
 		memcpy((uint8_t *)usrbuf->mem + audio_ring_bottom(usrbuf),
 		    (uint8_t *)outputbuf->mem + outputbuf->top * framesize,
 		    bytes);
-		audio_ring_appended(usrbuf, bytes);
-		audio_ring_tookfromtop(outputbuf, count);
+		audio_ring_push(usrbuf, bytes);
+		audio_ring_take(outputbuf, count);
 	} else {
 		int bytes1 = audio_ring_unround_count(usrbuf);
 		KASSERT(bytes1 % framesize == 0);
 		memcpy((uint8_t *)usrbuf->mem + audio_ring_bottom(usrbuf),
 		    (uint8_t *)outputbuf->mem + outputbuf->top * framesize,
 		    bytes1);
-		audio_ring_appended(usrbuf, bytes1);
-		audio_ring_tookfromtop(outputbuf, bytes1 / framesize);
+		audio_ring_push(usrbuf, bytes1);
+		audio_ring_take(outputbuf, bytes1 / framesize);
 
 		int bytes2 = bytes - bytes1;
 		memcpy((uint8_t *)usrbuf->mem + audio_ring_bottom(usrbuf),
 		    (uint8_t *)outputbuf->mem + outputbuf->top * framesize,
 		    bytes2);
-		audio_ring_appended(usrbuf, bytes2);
-		audio_ring_tookfromtop(outputbuf, bytes2 / framesize);
+		audio_ring_push(usrbuf, bytes2);
+		audio_ring_take(outputbuf, bytes2 / framesize);
 	}
 
 	// XXX カウンタ
@@ -2226,15 +2226,15 @@ audio_pmixer_process(struct audio_softc *sc, bool isintr)
 
 	// MD 側フィルタ
 	if (mixer->codec) {
-		audio_ring_appended(&mixer->codecbuf, frame_count);
+		audio_ring_push(&mixer->codecbuf, frame_count);
 		mixer->codecarg.src = RING_TOP_UINT8(&mixer->codecbuf);
 		mixer->codecarg.dst = RING_BOT_UINT8(&mixer->hwbuf);
 		mixer->codecarg.count = frame_count;
 		mixer->codec(&mixer->codecarg);
-		audio_ring_tookfromtop(&mixer->codecbuf, mixer->codecarg.count);
+		audio_ring_take(&mixer->codecbuf, mixer->codecarg.count);
 	}
 
-	audio_ring_appended(&mixer->hwbuf, frame_count);
+	audio_ring_push(&mixer->hwbuf, frame_count);
 
 	TRACE("done mixseq=%d hwbuf=%d/%d/%d%s",
 	    (int)mixer->mixseq,
@@ -2285,9 +2285,9 @@ audio_pmixer_mixall(struct audio_softc *sc, bool isintr)
 
 		// mmap トラックならここで入力があったことにみせかける
 		if (track->mmapped) {
-			// XXX appended じゃなく直接操作してウィンドウを移動みたいに
+			// XXX push じゃなく直接操作してウィンドウを移動みたいに
 			// したほうがいいんじゃないか。
-			audio_ring_appended(&track->usrbuf, track->usrbuf_blksize);
+			audio_ring_push(&track->usrbuf, track->usrbuf_blksize);
 			TRACET(track, "mmap; usr=%d/%d/C%d",
 			    track->usrbuf.top,
 			    track->usrbuf.count,
@@ -2370,7 +2370,7 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req,
 
 	// outputbuf が1ブロック未満であっても、カウンタはブロック境界に
 	// いなければならないため、count ではなく frames_per_block を足す。
-	audio_ring_tookfromtop(&track->outputbuf, mixer->frames_per_block);
+	audio_ring_take(&track->outputbuf, mixer->frames_per_block);
 
 	// トラックバッファを取り込んだことを反映
 	// mixseq はこの時点ではまだ前回の値なのでトラック側へは +1
@@ -2471,7 +2471,7 @@ audio_pintr(void *arg)
 	mixer->hw_complete_counter += mixer->frames_per_block;
 	mixer->hwseq++;
 
-	audio_ring_tookfromtop(&mixer->hwbuf, mixer->frames_per_block);
+	audio_ring_take(&mixer->hwbuf, mixer->frames_per_block);
 
 	TRACE("HW_INT ++hwseq=%d cmplcnt=%d hwbuf=%d/%d/%d",
 		(int)mixer->hwseq,
@@ -2599,8 +2599,8 @@ audio_rmixer_process(struct audio_softc *sc)
 		mixer->codecarg.dst = RING_BOT_UINT8(&mixer->codecbuf);
 		mixer->codecarg.count = count;
 		mixer->codec(&mixer->codecarg);
-		audio_ring_tookfromtop(&mixer->hwbuf, mixer->codecarg.count);
-		audio_ring_appended(&mixer->codecbuf, mixer->codecarg.count);
+		audio_ring_take(&mixer->hwbuf, mixer->codecarg.count);
+		audio_ring_push(&mixer->codecbuf, mixer->codecarg.count);
 		mixersrc = &mixer->codecbuf;
 	} else {
 		mixersrc = &mixer->hwbuf;
@@ -2632,14 +2632,14 @@ audio_rmixer_process(struct audio_softc *sc)
 			TRACET(track, "drop %d frames: inp=%d/%d/%d",
 			    drops,
 			    input->top, input->count, input->capacity);
-			audio_ring_tookfromtop(input, drops);
+			audio_ring_take(input, drops);
 		}
 		KASSERT(input->count % mixer->frames_per_block == 0);
 
 		memcpy(RING_BOT(aint_t, input),
 		    RING_TOP(aint_t, mixersrc),
 		    bytes);
-		audio_ring_appended(input, count);
+		audio_ring_push(input, count);
 
 		// XXX シーケンスいるんだっけ
 
@@ -2650,7 +2650,7 @@ audio_rmixer_process(struct audio_softc *sc)
 		    input->top, input->count, input->capacity);
 	}
 
-	audio_ring_tookfromtop(mixersrc, count);
+	audio_ring_take(mixersrc, count);
 
 	// SIGIO を通知(する必要があるかどうかは向こうで判断する)
 	softint_schedule(sc->sc_sih_rd);
@@ -2727,7 +2727,7 @@ audio_rintr(void *arg)
 	mixer->hw_complete_counter += mixer->frames_per_block;
 	mixer->hwseq++;
 
-	audio_ring_appended(&mixer->hwbuf, mixer->frames_per_block);
+	audio_ring_push(&mixer->hwbuf, mixer->frames_per_block);
 
 	TRACE("HW_INT ++hwseq=%d cmplcnt=%d hwbuf=%d/%d/%d",
 		(int)mixer->hwseq,
@@ -2925,7 +2925,7 @@ audio_write_uiomove(audio_track_t *track, int bottom, int len, struct uio *uio)
 		TRACET(track, "uiomove(len=%d) failed: %d", len, error);
 		return error;
 	}
-	audio_ring_appended(usrbuf, len);
+	audio_ring_push(usrbuf, len);
 	track->useriobytes += len;
 	TRACET(track, "uiomove(len=%d) usrbuf=%d/%d/C%d",
 	    len,
@@ -3037,7 +3037,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 		    track->playdrop != 0) {
 			framesize = frametobyte(&track->inputfmt, 1);
 			count = min(usrbuf->count / framesize, track->playdrop);
-			audio_ring_tookfromtop(usrbuf, count * framesize);
+			audio_ring_take(usrbuf, count * framesize);
 			track->playdrop -= count * framesize;
 			TRACET(track, "drop %d -> usr=%d/%d/H%d",
 			    count * framesize,
@@ -3080,7 +3080,7 @@ audio_read_uiomove(audio_track_t *track, int top, int len, struct uio *uio)
 		TRACET(track, "uiomove(len=%d) failed: %d", len, error);
 		return error;
 	}
-	audio_ring_tookfromtop(usrbuf, len);
+	audio_ring_take(usrbuf, len);
 	track->useriobytes += len;
 	TRACET(track, "uiomove(len=%d) usrbuf=%d/%d/C%d",
 	    len,

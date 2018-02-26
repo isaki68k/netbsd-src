@@ -120,7 +120,7 @@ audio_ring_round(audio_ring_t *ring, int idx)
 
 // ring->top から n 個取り出したことにします。
 static inline void
-audio_ring_tookfromtop(audio_ring_t *ring, int n)
+audio_ring_take(audio_ring_t *ring, int n)
 {
 	KASSERT(audio_ring_is_valid(ring));
 	KASSERTMSG(n >= 0, "%s: n=%d", __func__, n);
@@ -133,7 +133,7 @@ audio_ring_tookfromtop(audio_ring_t *ring, int n)
 
 // ring bottom に n 個付け足したことにします。
 static inline void
-audio_ring_appended(audio_ring_t *ring, int n)
+audio_ring_push(audio_ring_t *ring, int n)
 {
 	KASSERT(audio_ring_is_valid(ring));
 	KASSERT(n >= 0);

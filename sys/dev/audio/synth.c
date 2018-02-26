@@ -127,7 +127,7 @@ play_note(audio_ring_t *dst, int count, audio_ring_t *tone, double factor, int v
 				v = v;// *0.9999;
 			}
 		}
-		audio_ring_appended(dst, slice);
+		audio_ring_push(dst, slice);
 	}
 }
 

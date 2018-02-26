@@ -328,7 +328,7 @@ child_loop(struct test_file *f, int loop)
 	int bytes = frames * f->mem.fmt.channels * f->mem.fmt.stride / 8;
 
 	sys_write(f->file, RING_TOP_UINT8(&f->mem), bytes);
-	audio_ring_tookfromtop(&f->mem, frames);
+	audio_ring_take(&f->mem, frames);
 
 	if (frames < frames_per_block) {
 		// 最後
