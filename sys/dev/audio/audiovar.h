@@ -332,9 +332,6 @@ struct audio_softc {
 
 	struct audio_encoding *sc_encodings;
 	int sc_encodings_count;
-#if AUDIO_DEBUG == 3
-	bool sc_intr;
-#endif
 };
 
 extern void audio_vtrace(const char *funcname, const char *header,
