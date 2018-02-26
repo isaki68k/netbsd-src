@@ -100,7 +100,7 @@ play_note(audio_ring_t *dst, int count, audio_ring_t *tone, double factor, int v
 	double t = 0;
 	int slice = 0;
 	for (int remain = count; remain > 0; remain -= slice) {
-		slice = min(remain, audio_ring_unround_free_count(dst));
+		slice = min(remain, audio_ring_get_contig_free(dst));
 		if (dst->fmt.stride == 16) {
 			int16_t *dptr = RING_BOT(int16_t, dst);
 			for (int i = 0; i < slice; i++) {
@@ -189,8 +189,8 @@ ring_expand(audio_ring_t *ring, int newcapacity)
 {
 	ring->mem = realloc(ring->mem, newcapacity * ring->fmt.channels * ring->fmt.stride / 8);
 	int newfree = newcapacity - ring->capacity;
-	int unround = ring->capacity == 0 ? 0 : audio_ring_unround_count(ring);
-	int round = ring->count - unround;
+	int contig = ring->capacity == 0 ? 0 : audio_ring_get_contig_used(ring);
+	int round = ring->count - contig;
 	int bounce = min(round, newfree);
 	int move = round - bounce;
 

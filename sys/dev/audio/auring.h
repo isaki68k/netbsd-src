@@ -155,7 +155,7 @@ audio_ring_bottom(audio_ring_t *ring)
 // ring->top の位置からの有効フレームにアクセスしようとするとき、
 // ラウンディングせずにアクセス出来る個数を返します。
 static inline int
-audio_ring_unround_count(const audio_ring_t *ring)
+audio_ring_get_contig_used(const audio_ring_t *ring)
 {
 	KASSERT(audio_ring_is_valid(ring));
 
@@ -166,11 +166,11 @@ audio_ring_unround_count(const audio_ring_t *ring)
 // audio_ring_bottom の位置から空きフレームにアクセスしようとするとき、
 // ラウンディングせずにアクセス出来る、空きフレームの個数を返します。
 static inline int
-audio_ring_unround_free_count(const audio_ring_t *ring)
+audio_ring_get_contig_free(const audio_ring_t *ring)
 {
 	KASSERT(audio_ring_is_valid(ring));
 
-	// ring の unround 終端まで使用されているときは、
+	// ring の折り返し終端まで使用されているときは、
 	// 開始位置はラウンディング後なので < が条件
 	if (ring->top + ring->count < ring->capacity) {
 		return ring->capacity - (ring->top + ring->count);

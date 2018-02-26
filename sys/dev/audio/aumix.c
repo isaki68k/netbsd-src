@@ -1420,7 +1420,7 @@ audio_append_silence(audio_track_t *track, audio_ring_t *ring)
 
 	int n = (ring->capacity - ring->count) % fpb;
 
-	KASSERT(audio_ring_unround_free_count(ring) >= n);
+	KASSERT(audio_ring_get_contig_free(ring) >= n);
 
 	memset(RING_BOT_UINT8(ring), 0, n * ring->fmt.channels * sizeof(aint_t));
 	audio_ring_push(ring, n);
@@ -1517,8 +1517,8 @@ audio_apply_stage(audio_track_t *track, audio_stage_t *stage, bool isfreq)
 	KASSERT(track);
 	KASSERT(stage->filter);
 
-	int srccount = audio_ring_unround_count(&stage->srcbuf);
-	int dstcount = audio_ring_unround_free_count(stage->dst);
+	int srccount = audio_ring_get_contig_used(&stage->srcbuf);
+	int dstcount = audio_ring_get_contig_free(stage->dst);
 	int count;
 
 	if (isfreq) {
@@ -1565,7 +1565,7 @@ audio_track_play(audio_track_t *track)
 	// この時点で usrbuf は空ではない。
 	KASSERT(track->usrbuf.count > 0);
 	// また outputbuf に1ブロック以上の空きがある。
-	count = audio_ring_unround_free_count(&track->outputbuf);
+	count = audio_ring_get_contig_free(&track->outputbuf);
 	KASSERTMSG(count >= frame_per_block_roundup(track->mixer, &track->outputbuf.fmt),
 	    "count=%d fpb=%d",
 	    count, frame_per_block_roundup(track->mixer, &track->outputbuf.fmt));
@@ -1581,7 +1581,7 @@ audio_track_play(audio_track_t *track)
 	KASSERT(framesize >= 1);
 
 	// usrbuf の次段(input) も空いてるはず
-	KASSERT(audio_ring_unround_free_count(input) > 0);
+	KASSERT(audio_ring_get_contig_free(input) > 0);
 
 	// usrbuf の最大1ブロックを input へコピー
 	// count は usrbuf からコピーするフレーム数。
@@ -1632,7 +1632,7 @@ audio_track_play(audio_track_t *track)
 		audio_ring_push(input, count);
 		audio_ring_take(usrbuf, bytes);
 	} else {
-		int bytes1 = audio_ring_unround_count(usrbuf);
+		int bytes1 = audio_ring_get_contig_used(usrbuf);
 		KASSERT(bytes1 % framesize == 0);
 		memcpy((uint8_t *)input->mem +
 		        audio_ring_bottom(input) * framesize,
@@ -1731,7 +1731,7 @@ audio_track_record(audio_track_t *track)
 	KASSERT(track);
 
 	// 処理するフレーム数
-	count = audio_ring_unround_count(track->input);
+	count = audio_ring_get_contig_used(track->input);
 	count = min(count, track->mixer->frames_per_block);
 	if (count == 0) {
 		TRACET(track, "count == 0");
@@ -1777,7 +1777,7 @@ audio_track_record(audio_track_t *track)
 		audio_ring_push(usrbuf, bytes);
 		audio_ring_take(outputbuf, count);
 	} else {
-		int bytes1 = audio_ring_unround_count(usrbuf);
+		int bytes1 = audio_ring_get_contig_used(usrbuf);
 		KASSERT(bytes1 % framesize == 0);
 		memcpy((uint8_t *)usrbuf->mem + audio_ring_bottom(usrbuf),
 		    (uint8_t *)outputbuf->mem + outputbuf->top * framesize,
@@ -2136,7 +2136,7 @@ audio_pmixer_process(struct audio_softc *sc, bool isintr)
 	// 今回取り出すフレーム数を決定
 	// 実際には hwbuf はブロック単位で変動するはずなので
 	// count は1ブロック分になるはず
-	int hw_free_count = audio_ring_unround_free_count(&mixer->hwbuf);
+	int hw_free_count = audio_ring_get_contig_free(&mixer->hwbuf);
 	int frame_count = min(hw_free_count, mixer->frames_per_block);
 	if (frame_count <= 0) {
 		TRACE("count too short: hw_free=%d frames_per_block=%d",
@@ -2328,7 +2328,7 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req,
 	// このトラックが処理済みならなにもしない
 	if (mixer->mixseq < track->seq) return mixed;
 
-	int count = audio_ring_unround_count(&track->outputbuf);
+	int count = audio_ring_get_contig_used(&track->outputbuf);
 	count = min(count, mixer->frames_per_block);
 
 	aint_t *sptr = RING_TOP(aint_t, &track->outputbuf);
@@ -2585,7 +2585,7 @@ audio_rmixer_process(struct audio_softc *sc)
 	// 今回取り出すフレーム数を決定
 	// 実際には hwbuf はブロック単位で変動するはずなので
 	// count は1ブロック分になるはず
-	int count = audio_ring_unround_count(&mixer->hwbuf);
+	int count = audio_ring_get_contig_used(&mixer->hwbuf);
 	count = min(count, mixer->frames_per_block);
 	if (count <= 0) {
 		TRACE("count %d: too short", count);
