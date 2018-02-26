@@ -1430,7 +1430,8 @@ audio_append_silence(audio_track_t *track, audio_ring_t *ring)
 
 	KASSERT(audio_ring_get_contig_free(ring) >= n);
 
-	memset(RING_BOT(ring), 0, n * ring->fmt.channels * sizeof(aint_t));
+	memset(audio_ring_tailptr(ring), 0,
+	    n * ring->fmt.channels * sizeof(aint_t));
 	audio_ring_push(ring, n);
 	return n;
 }
@@ -1540,8 +1541,8 @@ audio_apply_stage(audio_track_t *track, audio_stage_t *stage, bool isfreq)
 	if (count > 0) {
 		audio_filter_arg_t *arg = &stage->arg;
 
-		arg->src = RING_TOP_UINT8(&stage->srcbuf);
-		arg->dst = RING_BOT_UINT8(stage->dst);
+		arg->src = audio_ring_headptr_stride(&stage->srcbuf);
+		arg->dst = audio_ring_tailptr_stride(stage->dst);
 		arg->count = count;
 
 		stage->filter(arg);
@@ -2254,9 +2255,9 @@ audio_pmixer_process(struct audio_softc *sc, bool isintr)
 	aint_t *hptr;
 	// MD 側フィルタがあれば aint2_t -> aint_t を codecbuf へ
 	if (mixer->codec) {
-		hptr = RING_BOT(&mixer->codecbuf);
+		hptr = audio_ring_tailptr(&mixer->codecbuf);
 	} else {
-		hptr = RING_BOT(&mixer->hwbuf);
+		hptr = audio_ring_tailptr(&mixer->hwbuf);
 	}
 
 	for (int i = 0; i < sample_count; i++) {
@@ -2266,8 +2267,8 @@ audio_pmixer_process(struct audio_softc *sc, bool isintr)
 	// MD 側フィルタ
 	if (mixer->codec) {
 		audio_ring_push(&mixer->codecbuf, frame_count);
-		mixer->codecarg.src = RING_TOP_UINT8(&mixer->codecbuf);
-		mixer->codecarg.dst = RING_BOT_UINT8(&mixer->hwbuf);
+		mixer->codecarg.src = audio_ring_headptr_stride(&mixer->codecbuf);
+		mixer->codecarg.dst = audio_ring_tailptr_stride(&mixer->hwbuf);
 		mixer->codecarg.count = frame_count;
 		mixer->codec(&mixer->codecarg);
 		audio_ring_take(&mixer->codecbuf, mixer->codecarg.count);
@@ -2370,7 +2371,7 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req,
 	int count = audio_ring_get_contig_used(&track->outputbuf);
 	count = min(count, mixer->frames_per_block);
 
-	aint_t *sptr = RING_TOP(&track->outputbuf);
+	aint_t *sptr = audio_ring_headptr(&track->outputbuf);
 	aint2_t *dptr = mixer->mixsample;
 
 	// 整数倍精度へ変換し、トラックボリュームを適用して加算合成
@@ -2477,7 +2478,7 @@ audio_pmixer_output(struct audio_softc *sc)
 		}
 	} else {
 		/* start (everytime) */
-		start = RING_TOP_UINT8(&mixer->hwbuf);
+		start = audio_ring_headptr_stride(&mixer->hwbuf);
 
 		error = sc->hw_if->start_output(sc->hw_hdl,
 		    start, blksize, audio_pintr, sc);
@@ -2634,8 +2635,8 @@ audio_rmixer_process(struct audio_softc *sc)
 
 	// MD 側フィルタ
 	if (mixer->codec) {
-		mixer->codecarg.src = RING_TOP_UINT8(&mixer->hwbuf);
-		mixer->codecarg.dst = RING_BOT_UINT8(&mixer->codecbuf);
+		mixer->codecarg.src = audio_ring_headptr_stride(&mixer->hwbuf);
+		mixer->codecarg.dst = audio_ring_tailptr_stride(&mixer->codecbuf);
 		mixer->codecarg.count = count;
 		mixer->codec(&mixer->codecarg);
 		audio_ring_take(&mixer->hwbuf, mixer->codecarg.count);
@@ -2675,8 +2676,8 @@ audio_rmixer_process(struct audio_softc *sc)
 		}
 		KASSERT(input->used % mixer->frames_per_block == 0);
 
-		memcpy(RING_BOT(input),
-		    RING_TOP(mixersrc),
+		memcpy(audio_ring_tailptr(input),
+		    audio_ring_headptr(mixersrc),
 		    bytes);
 		audio_ring_push(input, count);
 
@@ -2733,7 +2734,7 @@ audio_rmixer_input(struct audio_softc *sc)
 		}
 	} else {
 		/* start (everytime) */
-		start = RING_BOT_UINT8(&mixer->hwbuf);
+		start = audio_ring_tailptr_stride(&mixer->hwbuf);
 
 		error = sc->hw_if->start_input(sc->hw_hdl,
 		    start, blksize, audio_rintr, sc);

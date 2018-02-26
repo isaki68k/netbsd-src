@@ -83,7 +83,7 @@ audio_ring_tail(const audio_ring_t *ring)
 
 // ring の head フレームのポインタを求めます。
 static inline aint_t *
-RING_TOP(const audio_ring_t *ring)
+audio_ring_headptr(const audio_ring_t *ring)
 {
 	return (aint_t *)ring->mem + ring->head * ring->fmt.channels;
 }
@@ -92,16 +92,14 @@ RING_TOP(const audio_ring_t *ring)
 // ポインタを求めます。
 // hwbuf のポインタはこちらではなく RING_BOT_UINT8() で取得してください。
 static inline aint_t *
-RING_BOT(const audio_ring_t *ring)
+audio_ring_tailptr(const audio_ring_t *ring)
 {
 	return (aint_t *)ring->mem + audio_ring_tail(ring) * ring->fmt.channels;
 }
 
-// stride=24 用
-
 // ring の head フレームのポインタを求めます。
 static inline uint8_t *
-RING_TOP_UINT8(const audio_ring_t *ring)
+audio_ring_headptr_stride(const audio_ring_t *ring)
 {
 	return (uint8_t *)ring->mem +
 	    ring->head * ring->fmt.channels * ring->fmt.stride / 8;
@@ -111,7 +109,7 @@ RING_TOP_UINT8(const audio_ring_t *ring)
 // ポインタを求めます。HWbuf は 4bit/sample の可能性があるため RING_BOT() では
 // なく必ずこちらを使用してください。
 static inline uint8_t *
-RING_BOT_UINT8(audio_ring_t *ring)
+audio_ring_tailptr_stride(audio_ring_t *ring)
 {
 	return (uint8_t *)ring->mem +
 	    audio_ring_tail(ring) * ring->fmt.channels * ring->fmt.stride / 8;
