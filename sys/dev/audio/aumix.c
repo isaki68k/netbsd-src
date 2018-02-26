@@ -1416,6 +1416,9 @@ audio_append_silence(audio_track_t *track, audio_ring_t *ring)
 	KASSERT(track);
 	KASSERT(is_internal_format(&ring->fmt));
 
+	// XXX n の計算あれでいいんだろうか。最初から contig_free じゃなくて?
+	// XXX memset の長さ frametobyte じゃなくて?
+
 	if (ring->count == 0) return 0;
 
 	int fpb = frame_per_block_roundup(track->mixer, &ring->fmt);
@@ -1427,7 +1430,7 @@ audio_append_silence(audio_track_t *track, audio_ring_t *ring)
 
 	KASSERT(audio_ring_get_contig_free(ring) >= n);
 
-	memset(RING_BOT_UINT8(ring), 0, n * ring->fmt.channels * sizeof(aint_t));
+	memset(RING_BOT(ring), 0, n * ring->fmt.channels * sizeof(aint_t));
 	audio_ring_push(ring, n);
 	return n;
 }
