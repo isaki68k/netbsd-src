@@ -772,7 +772,7 @@ static audio_filter_t
 audio_track_get_codec(const audio_format2_t *src, const audio_format2_t *dst)
 {
 
-	if (is_internal_format(src)) {
+	if (audio_format2_is_internal(src)) {
 		if (dst->encoding == AUDIO_ENCODING_ULAW) {
 			return internal_to_mulaw;
 		} else if (audio_format2_is_linear(dst)) {
@@ -792,7 +792,7 @@ audio_track_get_codec(const audio_format2_t *src, const audio_format2_t *dst)
 				goto abort;
 			}
 		}
-	} else if (is_internal_format(dst)) {
+	} else if (audio_format2_is_internal(dst)) {
 		if (src->encoding == AUDIO_ENCODING_ULAW) {
 			return mulaw_to_internal;
 		} else if (audio_format2_is_linear(src)) {
@@ -1414,7 +1414,7 @@ static int
 audio_append_silence(audio_track_t *track, audio_ring_t *ring)
 {
 	KASSERT(track);
-	KASSERT(is_internal_format(&ring->fmt));
+	KASSERT(audio_format2_is_internal(&ring->fmt));
 
 	// XXX n の計算あれでいいんだろうか。最初から contig_free じゃなくて?
 	// XXX memset の長さ frametobyte じゃなくて?

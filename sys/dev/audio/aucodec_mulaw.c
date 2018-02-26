@@ -147,7 +147,7 @@ mulaw_to_internal(audio_filter_arg_t *arg)
 	KASSERT(arg->srcfmt->encoding == AUDIO_ENCODING_ULAW);
 	KASSERT(arg->srcfmt->stride == 8);
 	KASSERT(arg->srcfmt->precision == 8);
-	KASSERT(is_internal_format(arg->dstfmt));
+	KASSERT(audio_format2_is_internal(arg->dstfmt));
 	KASSERT(arg->srcfmt->channels == arg->dstfmt->channels);
 
 	s = arg->src;
@@ -178,7 +178,7 @@ internal_to_mulaw(audio_filter_arg_t *arg)
 	KASSERT(arg->dstfmt->encoding == AUDIO_ENCODING_ULAW);
 	KASSERT(arg->dstfmt->stride == 8);
 	KASSERT(arg->dstfmt->precision == 8);
-	KASSERT(is_internal_format(arg->srcfmt));
+	KASSERT(audio_format2_is_internal(arg->srcfmt));
 	KASSERT(arg->srcfmt->channels == arg->dstfmt->channels);
 
 	s = arg->src;

@@ -35,7 +35,7 @@ audio_format2_is_valid(const audio_format2_t *fmt)
 // 内部フォーマットかどうかを返します。
 // ただし、周波数とチャンネル数はチェックしません。
 static inline bool
-is_internal_format(const audio_format2_t *fmt)
+audio_format2_is_internal(const audio_format2_t *fmt)
 {
 	if (!audio_format2_is_valid(fmt)) return false;
 	if (fmt->encoding != AUDIO_ENCODING_SLINEAR_NE) return false;
