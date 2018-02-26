@@ -1406,8 +1406,8 @@ error:
 // 追加したフレーム数を返します。
 /*
  * audio_append_silence:
- *	Fill the silence frames (in the internal format) up to 1 block
- *	when the ring is not empty and less than 1 block.
+ *	Fill the silence frames (in the internal format) up to 1 block if
+ *	the ring is less than 1 block and not empty.
  *	It returns the number of appended frames.
  */
 static int
