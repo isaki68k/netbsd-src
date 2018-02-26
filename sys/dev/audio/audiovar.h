@@ -113,7 +113,7 @@ typedef struct audio_file audio_file_t;
 typedef struct {
 	audio_format2_t fmt;	/* format */
 	int  capacity;		/* capacity by frame */
-	int  top;		/* top frame position */
+	int  head;		/* head position in frame */
 	int  count;		/* available frame count */
 	void *mem;		/* sample ptr */
 } audio_ring_t;

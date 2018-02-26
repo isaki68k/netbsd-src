@@ -1599,7 +1599,7 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 		// そうは言いつつもとりあえず回避はしておく
 		mutex_enter(sc->sc_intr_lock);
 		sc->sc_rbusy = false;
-		sc->sc_rmixer->hwbuf.top = 0;
+		sc->sc_rmixer->hwbuf.head = 0;
 		mutex_exit(sc->sc_intr_lock);
 	}
 
@@ -1847,7 +1847,7 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		mutex_enter(sc->sc_intr_lock);
 		/* figure out where next DMA will start */
 		stamp = track->usrbuf_stamp;
-		offs = track->usrbuf.top;
+		offs = track->usrbuf.head;
 		mutex_exit(sc->sc_intr_lock);
 
 		ao->samples = stamp;

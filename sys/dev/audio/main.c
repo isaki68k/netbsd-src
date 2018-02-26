@@ -226,7 +226,7 @@ int
 cmd_set_file(const char *filename)
 {
 	struct test_file *f = &files[fileidx];
-	f->mem.top = 0;
+	f->mem.head = 0;
 
 	// ファイル名なら音声ファイルとして開く
 	FILE *fp = fopen(filename, "rb");
@@ -687,10 +687,10 @@ perf_codec_slinear_to_mulaw()
 	setitimer(ITIMER_REAL, &it, NULL);
 	gettimeofday(&start, NULL);
 	for (count = 0, signaled = 0; signaled == 0; count++) {
-		track->codec.srcbuf.top = 0;
+		track->codec.srcbuf.head = 0;
 		track->codec.srcbuf.count = frame_per_block_roundup(track->mixer,
 			&srcfmt);
-		track->outputbuf.top = 0;
+		track->outputbuf.head = 0;
 		track->outputbuf.count = 0;
 		audio_apply_stage(track, &track->codec, false);
 	}
@@ -765,10 +765,10 @@ perf_codec_linear16_to_internal()
 		gettimeofday(&start, NULL);
 		uint64_t count;
 		for (count = 0, signaled = 0; signaled == 0; count++) {
-			track->codec.srcbuf.top = 0;
+			track->codec.srcbuf.head = 0;
 			track->codec.srcbuf.count = frame_per_block_roundup(track->mixer,
 				&srcfmt);
-			track->outputbuf.top = 0;
+			track->outputbuf.head = 0;
 			track->outputbuf.count = 0;
 			audio_apply_stage(track, &track->codec, false);
 		}
@@ -823,10 +823,10 @@ perf_freq_main(struct freqdata *pattern)
 		setitimer(ITIMER_REAL, &it, NULL);
 		gettimeofday(&start, NULL);
 		for (count = 0, signaled = 0; signaled == 0; count++) {
-			track->freq.srcbuf.top = 0;
+			track->freq.srcbuf.head = 0;
 			track->freq.srcbuf.count = frame_per_block_roundup(track->mixer,
 				&srcfmt);
-			track->outputbuf.top = 0;
+			track->outputbuf.head = 0;
 			track->outputbuf.count = 0;
 			audio_apply_stage(track, &track->freq, true);
 		}
@@ -880,10 +880,10 @@ perf_chmix_mixLR()
 	setitimer(ITIMER_REAL, &it, NULL);
 	gettimeofday(&start, NULL);
 	for (count = 0, signaled = 0; signaled == 0; count++) {
-		track->chmix.srcbuf.top = 0;
+		track->chmix.srcbuf.head = 0;
 		track->chmix.srcbuf.count = frame_per_block_roundup(track->mixer,
 			&srcfmt);
-		track->outputbuf.top = 0;
+		track->outputbuf.head = 0;
 		track->outputbuf.count = 0;
 		audio_apply_stage(track, &track->chmix, false);
 	}
