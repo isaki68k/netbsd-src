@@ -9,39 +9,6 @@
 #include "auformat.h"
 #endif
 
-// ring の top フレームのポインタを求めます。
-#define RING_TOP(ringptr) \
-	(((aint_t *)(ringptr)->mem) + (ringptr)->top * (ringptr)->fmt.channels)
-
-// ring の bottom (= top + count、すなわち、最終有効フレームの次) フレームの
-// ポインタを求めます。
-// hwbuf のポインタはこちらではなく RING_BOT_UINT8() で取得してください。
-#define RING_BOT(ringptr) \
-	(((aint_t *)(ringptr)->mem) + \
-	    audio_ring_bottom(ringptr) * (ringptr)->fmt.channels)
-
-// stride=24 用
-
-// ring の top フレームのポインタを求めます。
-#define RING_TOP_UINT8(ringptr) \
-	(((uint8_t*)(ringptr)->mem) + \
-	    (ringptr)->top * (ringptr)->fmt.channels * (ringptr)->fmt.stride / 8)
-
-// ring の bottom (= top + count、すなわち、最終有効フレームの次) フレームの
-// ポインタを求めます。HWbuf は 4bit/sample の可能性があるため RING_BOT() では
-// なく必ずこちらを使用してください。
-#define RING_BOT_UINT8(ringptr) \
-	(((uint8_t*)(ringptr)->mem) + audio_ring_bottom(ringptr) * \
-	    (ringptr)->fmt.channels * (ringptr)->fmt.stride / 8)
-
-// キャパシティをバイト単位で求めます。
-static inline int
-audio_ring_bytelen(const audio_ring_t *ring)
-{
-	// return frametobyte(ring, ring->capacity)
-	return ring->capacity * ring->fmt.channels * ring->fmt.stride / 8;
-}
-
 static inline bool
 audio_ring_is_valid(const audio_ring_t *ring)
 {
@@ -97,13 +64,66 @@ audio_ring_is_valid(const audio_ring_t *ring)
 // idx をラウンディングします。
 // 加算方向で、加算量が ring->capacity 以下のケースのみサポートします。
 static inline int
-audio_ring_round(audio_ring_t *ring, int idx)
+audio_ring_round(const audio_ring_t *ring, int idx)
 {
 	KASSERT(audio_ring_is_valid(ring));
 	KASSERT(idx >= 0);
 	KASSERT(idx < ring->capacity * 2);
 
 	return idx >= ring->capacity ? idx - ring->capacity : idx;
+}
+
+// ring の bottom 位置(top+count位置) を返します。
+// この位置は、最終有効フレームの次のフレーム位置に相当します。
+static inline int
+audio_ring_bottom(const audio_ring_t *ring)
+{
+	return audio_ring_round(ring, ring->top + ring->count);
+}
+
+// ring の top フレームのポインタを求めます。
+static inline aint_t *
+RING_TOP(const audio_ring_t *ring)
+{
+	return (aint_t *)ring->mem + ring->top * ring->fmt.channels;
+}
+
+// ring の bottom (= top + count、すなわち、最終有効フレームの次) フレームの
+// ポインタを求めます。
+// hwbuf のポインタはこちらではなく RING_BOT_UINT8() で取得してください。
+static inline aint_t *
+RING_BOT(const audio_ring_t *ring)
+{
+	return (aint_t *)ring->mem +
+	    audio_ring_bottom(ring) * ring->fmt.channels;
+}
+
+// stride=24 用
+
+// ring の top フレームのポインタを求めます。
+static inline uint8_t *
+RING_TOP_UINT8(const audio_ring_t *ring)
+{
+	return (uint8_t *)ring->mem +
+	    ring->top * ring->fmt.channels * ring->fmt.stride / 8;
+}
+
+// ring の bottom (= top + count、すなわち、最終有効フレームの次) フレームの
+// ポインタを求めます。HWbuf は 4bit/sample の可能性があるため RING_BOT() では
+// なく必ずこちらを使用してください。
+static inline uint8_t *
+RING_BOT_UINT8(audio_ring_t *ring)
+{
+	return (uint8_t *)ring->mem +
+	    audio_ring_bottom(ring) * ring->fmt.channels * ring->fmt.stride / 8;
+}
+
+// キャパシティをバイト単位で求めます。
+static inline int
+audio_ring_bytelen(const audio_ring_t *ring)
+{
+	// return frametobyte(ring, ring->capacity)
+	return ring->capacity * ring->fmt.channels * ring->fmt.stride / 8;
 }
 
 // ring->top から n 個取り出したことにします。
@@ -130,14 +150,6 @@ audio_ring_push(audio_ring_t *ring, int n)
 		__func__, ring->count, n, ring->capacity);
 
 	ring->count += n;
-}
-
-// ring の bottom 位置(top+count位置) を返します。
-// この位置は、最終有効フレームの次のフレーム位置に相当します。
-static inline int
-audio_ring_bottom(audio_ring_t *ring)
-{
-	return audio_ring_round(ring, ring->top + ring->count);
 }
 
 // ring->top の位置からの有効フレームにアクセスしようとするとき、
