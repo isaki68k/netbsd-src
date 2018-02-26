@@ -200,7 +200,7 @@ struct audio_trackmixer {
 
 	int		frames_per_block; /* number of frames in 1 block */
 
-	u_int		volume;		/* output SW master volume (0.256) */
+	u_int		volume;		/* output SW master volume (0..256) */
 
 	audio_format2_t	mixfmt;
 	void		*mixsample;	/* wide-int-sized mixing buf */
