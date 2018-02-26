@@ -744,11 +744,11 @@ is_valid_filter_arg(const audio_filter_arg_t *arg)
 
 	KASSERT(arg->src != NULL);
 	KASSERT(arg->dst != NULL);
-	if (!is_valid_format(arg->srcfmt)) {
+	if (!audio_format2_is_valid(arg->srcfmt)) {
 		printf("%s: invalid srcfmt\n", __func__);
 		return false;
 	}
-	if (!is_valid_format(arg->dstfmt)) {
+	if (!audio_format2_is_valid(arg->dstfmt)) {
 		printf("%s: invalid dstfmt\n", __func__);
 		return false;
 	}
@@ -1212,7 +1212,7 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 	int len;
 
 	KASSERT(track);
-	KASSERT(is_valid_format(usrfmt));
+	KASSERT(audio_format2_is_valid(usrfmt));
 
 	// 入力値チェック
 	audio_check_params2(usrfmt);

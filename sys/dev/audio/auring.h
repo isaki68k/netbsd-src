@@ -18,8 +18,8 @@ audio_ring_is_valid(const audio_ring_t *ring)
 {
 	KASSERT(ring != NULL);
 
-	if (!is_valid_format(&ring->fmt)) {
-		printf("%s: is_valid_format() failed\n", __func__);
+	if (!audio_format2_is_valid(&ring->fmt)) {
+		printf("%s: audio_format2_is_valid() failed\n", __func__);
 		return false;
 	}
 	if (ring->capacity < 0) {

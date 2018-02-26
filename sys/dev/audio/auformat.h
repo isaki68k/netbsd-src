@@ -2,7 +2,7 @@
 
 // フォーマットがおおむね有効かどうかを返します。
 static inline bool
-is_valid_format(const audio_format2_t *fmt)
+audio_format2_is_valid(const audio_format2_t *fmt)
 {
 	KASSERT(fmt);
 
@@ -37,7 +37,7 @@ is_valid_format(const audio_format2_t *fmt)
 static inline bool
 is_internal_format(const audio_format2_t *fmt)
 {
-	if (!is_valid_format(fmt)) return false;
+	if (!audio_format2_is_valid(fmt)) return false;
 	if (fmt->encoding != AUDIO_ENCODING_SLINEAR_NE) return false;
 	if (fmt->precision != AUDIO_INTERNAL_BITS) return false;
 	if (fmt->stride != AUDIO_INTERNAL_BITS) return false;
