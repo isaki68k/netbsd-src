@@ -2424,7 +2424,7 @@ audio_pmixer_output(struct audio_softc *sc)
 		/* trigger (at once) */
 		if (!sc->sc_pbusy) {
 			start = mixer->hwbuf.mem;
-			end = RING_END_UINT8(&mixer->hwbuf);
+			end = (uint8_t *)start + RING_BYTELEN(&mixer->hwbuf);
 			// TODO: params 作る
 			params = format2_to_params(&mixer->hwbuf.fmt);
 
@@ -2680,7 +2680,7 @@ audio_rmixer_input(struct audio_softc *sc)
 		/* trigger (at once) */
 		if (!sc->sc_rbusy) {
 			start = mixer->hwbuf.mem;
-			end = RING_END_UINT8(&mixer->hwbuf);
+			end = (uint8_t *)start + RING_BYTELEN(&mixer->hwbuf);
 			// TODO: params 作る
 			params = format2_to_params(&mixer->hwbuf.fmt);
 

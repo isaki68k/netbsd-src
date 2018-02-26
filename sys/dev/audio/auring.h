@@ -40,10 +40,6 @@
 	((ringptr)->capacity * (ringptr)->fmt.channels * \
 	    (ringptr)->fmt.stride / 8)
 
-#define RING_END_UINT8(ringptr) \
-	(((uint8_t*)(ringptr)->mem + \
-	    frametobyte(&(ringptr)->fmt, (ringptr)->capacity)))
-
 static inline bool
 audio_ring_is_valid(const audio_ring_t *ring)
 {
