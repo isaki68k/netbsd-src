@@ -847,6 +847,7 @@ audio_track_init_codec(audio_track_t *track, audio_ring_t **last_dstp)
 	audio_format2_t *srcfmt;
 	audio_format2_t *dstfmt;
 	audio_filter_arg_t *arg;
+	int len;
 	int error;
 
 	KASSERT(track);
@@ -879,10 +880,10 @@ audio_track_init_codec(audio_track_t *track, audio_ring_t **last_dstp)
 		srcbuf->top = 0;
 		srcbuf->count = 0;
 		srcbuf->capacity = frame_per_block_roundup(track->mixer, &srcbuf->fmt);
-		srcbuf->mem = audio_realloc(srcbuf->mem, RING_BYTELEN(srcbuf));
+		len = audio_ring_bytelen(srcbuf);
+		srcbuf->mem = audio_realloc(srcbuf->mem, len);
 		if (srcbuf->mem == NULL) {
-			DPRINTF(1, "%s: malloc(%d) failed\n", __func__,
-			    RING_BYTELEN(srcbuf));
+			DPRINTF(1, "%s: malloc(%d) failed\n", __func__, len);
 			error = ENOMEM;
 			goto abort;
 		}
@@ -921,6 +922,7 @@ audio_track_init_chvol(audio_track_t *track, audio_ring_t **last_dstp)
 	audio_format2_t *srcfmt;
 	audio_format2_t *dstfmt;
 	audio_filter_arg_t *arg;
+	int len;
 	int error;
 
 	KASSERT(track);
@@ -950,10 +952,10 @@ audio_track_init_chvol(audio_track_t *track, audio_ring_t **last_dstp)
 		srcbuf->top = 0;
 		srcbuf->count = 0;
 		srcbuf->capacity = frame_per_block_roundup(track->mixer, &srcbuf->fmt);
-		srcbuf->mem = audio_realloc(srcbuf->mem, RING_BYTELEN(srcbuf));
+		len = audio_ring_bytelen(srcbuf);
+		srcbuf->mem = audio_realloc(srcbuf->mem, len);
 		if (srcbuf->mem == NULL) {
-			DPRINTF(1, "%s: malloc(%d) failed\n", __func__,
-			    RING_BYTELEN(srcbuf));
+			DPRINTF(1, "%s: malloc(%d) failed\n", __func__, len);
 			error = ENOMEM;
 			goto abort;
 		}
@@ -994,6 +996,7 @@ audio_track_init_chmix(audio_track_t *track, audio_ring_t **last_dstp)
 	audio_filter_arg_t *arg;
 	int srcch;
 	int dstch;
+	int len;
 	int error;
 
 	KASSERT(track);
@@ -1026,10 +1029,10 @@ audio_track_init_chmix(audio_track_t *track, audio_ring_t **last_dstp)
 		srcbuf->count = 0;
 		// バッファサイズは計算で決められるはずだけど。とりあえず。
 		srcbuf->capacity = frame_per_block_roundup(track->mixer, &srcbuf->fmt);
-		srcbuf->mem = audio_realloc(srcbuf->mem, RING_BYTELEN(srcbuf));
+		len = audio_ring_bytelen(srcbuf);
+		srcbuf->mem = audio_realloc(srcbuf->mem, len);
 		if (srcbuf->mem == NULL) {
-			DPRINTF(1, "%s: malloc(%d) failed\n", __func__,
-			    RING_BYTELEN(srcbuf));
+			DPRINTF(1, "%s: malloc(%d) failed\n", __func__, len);
 			error = ENOMEM;
 			goto abort;
 		}
@@ -1070,6 +1073,7 @@ audio_track_init_freq(audio_track_t *track, audio_ring_t **last_dstp)
 	audio_filter_arg_t *arg;
 	uint32_t srcfreq;
 	uint32_t dstfreq;
+	int len;
 	int error;
 
 	KASSERT(track);
@@ -1114,10 +1118,10 @@ audio_track_init_freq(audio_track_t *track, audio_ring_t **last_dstp)
 		srcbuf->top = 0;
 		srcbuf->count = 0;
 		srcbuf->capacity = frame_per_block_roundup(track->mixer, &srcbuf->fmt);
-		srcbuf->mem = audio_realloc(srcbuf->mem, RING_BYTELEN(srcbuf));
+		len = audio_ring_bytelen(srcbuf);
+		srcbuf->mem = audio_realloc(srcbuf->mem, len);
 		if (srcbuf->mem == NULL) {
-			DPRINTF(1, "%s: malloc(%d) failed\n", __func__,
-			    RING_BYTELEN(srcbuf));
+			DPRINTF(1, "%s: malloc(%d) failed\n", __func__, len);
 			error = ENOMEM;
 			goto abort;
 		}
@@ -1205,6 +1209,7 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 	int error;
 	int newbufsize;
 	u_int oldblksize;
+	int len;
 
 	KASSERT(track);
 	KASSERT(is_valid_format(usrfmt));
@@ -1326,11 +1331,11 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 	if (audio_track_is_record(track)) {
 		track->input->capacity = NBLKOUT *
 		    frame_per_block_roundup(track->mixer, &track->input->fmt);
-		track->input->mem = audio_realloc(track->input->mem,
-		    RING_BYTELEN(track->input));
+		len = audio_ring_bytelen(track->input);
+		track->input->mem = audio_realloc(track->input->mem, len);
 		if (track->input->mem == NULL) {
 			DPRINTF(1, "%s: malloc input(%d) failed\n", __func__,
-			    RING_BYTELEN(track->input));
+			    len);
 			error = ENOMEM;
 			goto error;
 		}
@@ -1343,10 +1348,10 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 	track->outputbuf.capacity = frame_per_block_roundup(track->mixer, &track->outputbuf.fmt);
 	if (audio_track_is_playback(track))
 		track->outputbuf.capacity *= NBLKOUT;
-	track->outputbuf.mem = audio_realloc(track->outputbuf.mem, RING_BYTELEN(&track->outputbuf));
+	len = audio_ring_bytelen(&track->outputbuf);
+	track->outputbuf.mem = audio_realloc(track->outputbuf.mem, len);
 	if (track->outputbuf.mem == NULL) {
-		DPRINTF(1, "%s: malloc outbuf(%d) failed\n", __func__,
-		    RING_BYTELEN(&track->outputbuf));
+		DPRINTF(1, "%s: malloc outbuf(%d) failed\n", __func__, len);
 		error = ENOMEM;
 		goto error;
 	}
@@ -1894,6 +1899,8 @@ audio_mixer_calc_blktime(audio_trackmixer_t *mixer)
 int
 audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 {
+	int len;
+
 	mixer->sc = sc;
 	mixer->mode = mode;
 
@@ -1988,8 +1995,9 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 		}
 		mixer->codecbuf.fmt = mixer->track_fmt;
 		mixer->codecbuf.capacity = mixer->frames_per_block;
-		mixer->codecbuf.mem = audio_realloc(mixer->codecbuf.mem,
-		    RING_BYTELEN(&mixer->codecbuf));
+		len = audio_ring_bytelen(&mixer->codecbuf);
+		mixer->codecbuf.mem = audio_realloc(mixer->codecbuf.mem, len);
+		// XXX error check
 	}
 
 	mixer->volume = 256;
@@ -2424,7 +2432,7 @@ audio_pmixer_output(struct audio_softc *sc)
 		/* trigger (at once) */
 		if (!sc->sc_pbusy) {
 			start = mixer->hwbuf.mem;
-			end = (uint8_t *)start + RING_BYTELEN(&mixer->hwbuf);
+			end = (uint8_t *)start + audio_ring_bytelen(&mixer->hwbuf);
 			// TODO: params 作る
 			params = format2_to_params(&mixer->hwbuf.fmt);
 
@@ -2680,7 +2688,7 @@ audio_rmixer_input(struct audio_softc *sc)
 		/* trigger (at once) */
 		if (!sc->sc_rbusy) {
 			start = mixer->hwbuf.mem;
-			end = (uint8_t *)start + RING_BYTELEN(&mixer->hwbuf);
+			end = (uint8_t *)start + audio_ring_bytelen(&mixer->hwbuf);
 			// TODO: params 作る
 			params = format2_to_params(&mixer->hwbuf.fmt);
 

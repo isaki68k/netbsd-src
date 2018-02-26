@@ -35,9 +35,12 @@
 	    (ringptr)->fmt.channels * (ringptr)->fmt.stride / 8)
 
 // キャパシティをバイト単位で求めます。
-#define RING_BYTELEN(ringptr) \
-	((ringptr)->capacity * (ringptr)->fmt.channels * \
-	    (ringptr)->fmt.stride / 8)
+static inline int
+audio_ring_bytelen(const audio_ring_t *ring)
+{
+	// return frametobyte(ring, ring->capacity)
+	return ring->capacity * ring->fmt.channels * ring->fmt.stride / 8;
+}
 
 static inline bool
 audio_ring_is_valid(const audio_ring_t *ring)
