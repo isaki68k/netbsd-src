@@ -21,11 +21,6 @@
 	(((type*)(ringptr)->mem) + \
 	    audio_ring_bottom(ringptr) * (ringptr)->fmt.channels)
 
-// ring の frame 位置のポインタを求めます。
-#define RING_PTR(type, ringptr, frame) \
-	(((type*)(ringptr)->mem) + audio_ring_round((ringptr), \
-	    (ringptr)->top + frame) * (ringptr)->fmt.channels)
-
 // stride=24 用
 
 // ring の top フレームのポインタを求めます。
@@ -44,11 +39,6 @@
 #define RING_BYTELEN(ringptr) \
 	((ringptr)->capacity * (ringptr)->fmt.channels * \
 	    (ringptr)->fmt.stride / 8)
-
-// ring の バッファ終端を求めます。この位置へのアクセスは出来ません。
-#define RING_END_PTR(type, ringptr) \
-	((type*)(ringptr)->mem + \
-	    (ringptr)->capacity * (ringptr)->fmt.channels)
 
 #define RING_END_UINT8(ringptr) \
 	(((uint8_t*)(ringptr)->mem + \

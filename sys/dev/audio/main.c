@@ -37,7 +37,6 @@ enum {
 	CMD_NONE = 0,
 	CMD_FILE,
 	CMD_PLAY,
-	CMD_MML,
 	CMD_TEST,
 	CMD_PERF,
 };
@@ -57,7 +56,6 @@ int child_loop(struct test_file *, int);
 int cmd_print_file(int, char **);
 int print_file(const char *);
 int cmd_set_file(const char *);
-int cmd_set_mml(const char *);
 int cmd_play();
 int cmd_test(int, char **, struct testdata*);
 int test_mixer_calc_blktime();
@@ -74,7 +72,6 @@ const char *fmt_tostring(const audio_format2_t *);
 uint64_t filesize(FILE *);
 const char *audio_encoding_name(int);
 const char *tagname(uint32_t);
-void play_mml(audio_ring_t *dst, const char *mml);
 
 extern struct testdata testdata[];
 extern struct testdata perfdata[];
@@ -102,7 +99,6 @@ usage()
 	printf("cmd:\n");
 	printf(" file <files...>  print format (without playback)\n");
 	printf(" play <files...>  play files\n");
-	printf(" mml  <mml>       play mml\n");
 	printf(" perf <testname>  performance test\n");
 	printf(" test <testname>  test\n");
 	exit(1);
@@ -150,8 +146,6 @@ main(int ac, char *av[])
 		cmd = CMD_FILE;
 	} else if (strcmp(av[0], "play") == 0) {
 		cmd = CMD_PLAY;
-	} else if (strcmp(av[0], "mml") == 0) {
-		cmd = CMD_MML;
 	} else if (strcmp(av[0], "perf") == 0) {
 		cmd = CMD_PERF;
 	} else if (strcmp(av[0], "test") == 0) {
@@ -179,14 +173,6 @@ main(int ac, char *av[])
 			if (r != 0)
 				break;
 		}
-		r = cmd_play();
-		audio_detach(sc);
-		break;
-	 case CMD_MML:
-		if (ac != 1)
-			usage();
-		audio_attach(&sc, true);
-		r = cmd_set_mml(av[0]);
 		r = cmd_play();
 		audio_detach(sc);
 		break;
@@ -232,26 +218,6 @@ print_file(const char *filename)
 	fclose(fp);
 
 	printf("%s: %s\n", filename, fmt_tostring(&f->mem.fmt));
-	return 0;
-}
-
-// MML を再生します。
-int
-cmd_set_mml(const char *mml)
-{
-	struct test_file *f = &files[fileidx];
-
-	f->mem.top = 0;
-	f->mem.fmt.sample_rate = 44100;
-	f->mem.fmt.encoding = AUDIO_ENCODING_SLINEAR_NE;
-	f->mem.fmt.channels = 1;
-	f->mem.fmt.precision = 16;
-	f->mem.fmt.stride = 16;
-
-	f->mem.capacity = 0;
-	f->mem.count = 0;
-	f->mem.mem = NULL;
-	play_mml(&f->mem, mml);
 	return 0;
 }
 

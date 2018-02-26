@@ -6,7 +6,6 @@ SRCS+=	\
 	../aucodec_linear.c \
 	../aucodec_mulaw.c \
 	../main.c \
-	../synth.c \
 	../userland.c \
 	compat.c \
 
