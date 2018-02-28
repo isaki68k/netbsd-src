@@ -98,7 +98,7 @@ audio_ring_tail(const audio_ring_t *ring)
  * the internal stride.  Don't use this for hw buffer.
  */
 static inline aint_t *
-audio_ring_headptr(const audio_ring_t *ring)
+audio_ring_headptr_aint(const audio_ring_t *ring)
 {
 	KASSERT(ring->fmt.stride == sizeof(aint_t) * NBBY);
 
@@ -114,7 +114,7 @@ audio_ring_headptr(const audio_ring_t *ring)
  * the internal stride.  Don't use this for hw buffer.
  */
 static inline aint_t *
-audio_ring_tailptr(const audio_ring_t *ring)
+audio_ring_tailptr_aint(const audio_ring_t *ring)
 {
 	KASSERT(ring->fmt.stride == sizeof(aint_t) * NBBY);
 
@@ -128,7 +128,7 @@ audio_ring_tailptr(const audio_ring_t *ring)
  * or not equal to the internal stride.
  */
 static inline uint8_t *
-audio_ring_headptr_stride(const audio_ring_t *ring)
+audio_ring_headptr(const audio_ring_t *ring)
 {
 	return (uint8_t *)ring->mem +
 	    ring->head * ring->fmt.channels * ring->fmt.stride / 8;
@@ -143,7 +143,7 @@ audio_ring_headptr_stride(const audio_ring_t *ring)
  * or not equal to the internal stride.
  */
 static inline uint8_t *
-audio_ring_tailptr_stride(audio_ring_t *ring)
+audio_ring_tailptr(audio_ring_t *ring)
 {
 	return (uint8_t *)ring->mem +
 	    audio_ring_tail(ring) * ring->fmt.channels * ring->fmt.stride / 8;
