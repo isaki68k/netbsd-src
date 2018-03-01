@@ -69,6 +69,7 @@ audio_ring_is_valid(const audio_ring_t *ring)
 // 加算方向で、加算量が ring->capacity 以下のケースのみサポートします。
 /*
  * Round idx.  idx must be non-negative and less than 2 * capacity.
+ * This is a private function.
  */
 static inline int
 audio_ring_round(const audio_ring_t *ring, int idx)
@@ -135,7 +136,7 @@ static inline uint8_t *
 audio_ring_headptr(const audio_ring_t *ring)
 {
 	return (uint8_t *)ring->mem +
-	    ring->head * ring->fmt.channels * ring->fmt.stride / 8;
+	    ring->head * ring->fmt.channels * ring->fmt.stride / NBBY;
 }
 
 // ring の tail (= head + used、すなわち、最終有効フレームの次) フレームの
@@ -150,7 +151,7 @@ static inline uint8_t *
 audio_ring_tailptr(audio_ring_t *ring)
 {
 	return (uint8_t *)ring->mem +
-	    audio_ring_tail(ring) * ring->fmt.channels * ring->fmt.stride / 8;
+	    audio_ring_tail(ring) * ring->fmt.channels * ring->fmt.stride / NBBY;
 }
 
 // キャパシティをバイト単位で求めます。
@@ -161,7 +162,7 @@ static inline int
 audio_ring_bytelen(const audio_ring_t *ring)
 {
 	// return frametobyte(ring, ring->capacity)
-	return ring->capacity * ring->fmt.channels * ring->fmt.stride / 8;
+	return ring->capacity * ring->fmt.channels * ring->fmt.stride / NBBY;
 }
 
 // ring->head から n 個取り出したことにします。

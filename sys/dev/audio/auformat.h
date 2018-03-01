@@ -13,7 +13,7 @@ audio_format2_is_valid(const audio_format2_t *fmt)
 			return false;
 		}
 	} else {
-		if ((fmt->stride % 8) != 0) {
+		if ((fmt->stride % NBBY) != 0) {
 			printf("%s: fmt->stride=%d\n", __func__, fmt->stride);
 			return false;
 		}
@@ -85,7 +85,7 @@ audio_format2_endian(const audio_format2_t *fmt)
 static inline int
 frametobyte(const audio_format2_t *fmt, int frames)
 {
-	return frames * fmt->channels * fmt->stride / 8;
+	return frames * fmt->channels * fmt->stride / NBBY;
 }
 
 // 周波数が fmt(.sample_rate) で表されるエンコーディングの

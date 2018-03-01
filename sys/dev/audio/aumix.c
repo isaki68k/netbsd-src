@@ -1881,7 +1881,7 @@ audio_mixer_calc_blktime(audio_trackmixer_t *mixer)
 			blktime *= 2;
 	}
 #ifdef DIAGNOSTIC
-	else if (fmt->stride % 8 != 0) {
+	else if (fmt->stride % NBBY != 0) {
 		panic("unsupported HW stride %d", fmt->stride);
 	}
 #endif
@@ -1931,13 +1931,13 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 		mutex_exit(sc->sc_lock);
 		// 違っていても困る?
 		if (rounded != blksize) {
-			if ((rounded * 8) % (mixer->hwbuf.fmt.stride * mixer->hwbuf.fmt.channels) != 0) {
+			if ((rounded * NBBY) % (mixer->hwbuf.fmt.stride * mixer->hwbuf.fmt.channels) != 0) {
 				aprint_error_dev(sc->dev, "blksize not configured"
 					" %d -> %d\n", blksize, rounded);
 				return ENXIO;
 			}
 			// 再計算
-			mixer->frames_per_block = rounded * 8 / (mixer->hwbuf.fmt.stride * mixer->hwbuf.fmt.channels);
+			mixer->frames_per_block = rounded * NBBY / (mixer->hwbuf.fmt.stride * mixer->hwbuf.fmt.channels);
 		}
 	}
 	mixer->blktime_n = mixer->frames_per_block;
@@ -1987,7 +1987,7 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 		mixer->mixfmt.precision *= 2;
 		mixer->mixfmt.stride *= 2;
 		// XXX マクロとか使えないんだっけ
-		len = mixer->frames_per_block * mixer->mixfmt.channels * mixer->mixfmt.stride / 8;
+		len = mixer->frames_per_block * mixer->mixfmt.channels * mixer->mixfmt.stride / NBBY;
 		mixer->mixsample = audio_realloc(mixer->mixsample, len);
 		if (mixer->mixsample == NULL) {
 			aprint_error_dev(sc->dev, "%s: malloc(%d) failed",
