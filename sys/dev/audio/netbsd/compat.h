@@ -39,16 +39,20 @@ typedef struct {
 
 #define panic(fmt...)	panic_func(__func__, fmt)
 
+extern int panic_msgout;
+
 static inline void __noreturn
 panic_func(const char *caller, const char *fmt, ...)
 {
 	va_list ap;
 
-	printf("panic: %s: ", caller);
-	va_start(ap, fmt);
-	vprintf(fmt, ap);
-	va_end(ap);
-	printf("\n");
+	if (panic_msgout) {
+		printf("panic: %s: ", caller);
+		va_start(ap, fmt);
+		vprintf(fmt, ap);
+		va_end(ap);
+		printf("\n");
+	}
 
 	abort();
 }

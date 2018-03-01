@@ -1,6 +1,9 @@
 #include "compat.h"
 #include "userland.h"
 
+// panic メッセージを表示するかどうか制御する。テスト用。
+int panic_msgout = 1;
+
 int
 cv_wait_sig(kcondvar_t *cv, kmutex_t *lock)
 {
