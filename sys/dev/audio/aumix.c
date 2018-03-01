@@ -1239,7 +1239,7 @@ abort:
 /*
  * audio_track_set_format:
  *	Set the userland format of this track.
- *	All internal conversion buffer may be released and reallocated.
+ *	It will release and reallocate all internal conversion buffers.
  *	It returns 0 if successful.  Otherwise it returns errno with clearing
  *	all internal buffers.
  *	It must be called without intr_lock since uvm_* routines require
