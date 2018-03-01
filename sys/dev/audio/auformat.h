@@ -32,8 +32,10 @@ audio_format2_is_valid(const audio_format2_t *fmt)
 	return true;
 }
 
-// 内部フォーマットかどうかを返します。
-// ただし、周波数とチャンネル数はチェックしません。
+/*
+ * Return true if 'fmt' is the internal format.
+ * However it does not check for frequency and number of channels.
+ */
 static inline bool
 audio_format2_is_internal(const audio_format2_t *fmt)
 {
@@ -44,7 +46,9 @@ audio_format2_is_internal(const audio_format2_t *fmt)
 	return true;
 }
 
-// いずれかの LINEAR なら true
+/*
+ * Return true if fmt's encoding is one of LINEAR.
+ */
 static inline bool
 audio_format2_is_linear(const audio_format2_t *fmt)
 {
@@ -54,7 +58,9 @@ audio_format2_is_linear(const audio_format2_t *fmt)
 	    || (fmt->encoding == AUDIO_ENCODING_ULINEAR_BE);
 }
 
-// いずれかの SLINEAR なら true
+/*
+ * Return true if fmt's encoding is one of SLINEAR.
+ */
 static inline bool
 audio_format2_is_signed(const audio_format2_t *fmt)
 {
@@ -62,7 +68,9 @@ audio_format2_is_signed(const audio_format2_t *fmt)
 	    || (fmt->encoding == AUDIO_ENCODING_SLINEAR_BE);
 }
 
-// ENDIAN を返す
+/*
+ * Return fmt's endian as LITTLE_ENDIAN or BIG_ENDIAN.
+ */
 static inline int
 audio_format2_endian(const audio_format2_t *fmt)
 {
