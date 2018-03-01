@@ -780,7 +780,7 @@ audio_track_destroy(audio_track_t *track)
 
 /*
  * is_valid_filter_arg:
- *	It returns whether filter argument 'arg' is correct.
+ *	Return true if filter argument 'arg' is correct.
  */
 bool
 is_valid_filter_arg(const audio_filter_arg_t *arg)

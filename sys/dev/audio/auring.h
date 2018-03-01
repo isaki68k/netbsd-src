@@ -10,8 +10,7 @@
 #endif
 
 /*
- * Validate audio_ring_t.
- * If successful, return true.  Otherwise, return false printing message.
+ * Return true if 'ring' is correct.
  */
 static inline bool
 audio_ring_is_valid(const audio_ring_t *ring)
