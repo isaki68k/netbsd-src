@@ -4,6 +4,7 @@
  */
 
 #include <inttypes.h>
+#include <setjmp.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,6 +17,7 @@
 #include "auformat.h"
 #include "aucodec_linear.c"
 #include "aucodec_mulaw.c"
+#include "netbsd/compat.c"
 
 struct testtable {
 	const char *name;
@@ -738,6 +740,496 @@ test_internal_to_mulaw()
 	free(exp);
 }
 
+// テスト用に ring を用意。
+audio_ring_t *
+ring_init(int capacity)
+{
+	audio_ring_t *ring;
+
+	ring = (audio_ring_t *)malloc(sizeof(*ring));
+	ring->fmt.encoding = AUDIO_ENCODING_ULAW;
+	ring->fmt.precision = 8;
+	ring->fmt.stride = 8;
+	ring->fmt.channels = 1;
+	ring->fmt.sample_rate = 8000;
+	ring->capacity = capacity;
+	ring->head = 0;
+	ring->used = 0;
+	ring->mem = malloc(ring->capacity * ring->fmt.stride / NBBY);
+
+	return ring;
+}
+
+// テスト用に aint_t の ring を用意。
+audio_ring_t *
+ring_init_aint(int capacity)
+{
+	audio_ring_t *ring;
+
+	ring = (audio_ring_t *)malloc(sizeof(*ring));
+	ring->fmt.encoding = AUDIO_ENCODING_SLINEAR_NE;
+	ring->fmt.precision = AUDIO_INTERNAL_BITS;
+	ring->fmt.stride = AUDIO_INTERNAL_BITS;
+	ring->fmt.channels = 2;
+	ring->fmt.sample_rate = 8000;
+	ring->capacity = capacity;
+	ring->head = 0;
+	ring->used = 0;
+	ring->mem = malloc(ring->capacity * ring->fmt.stride / NBBY);
+
+	return ring;
+}
+
+// abort をトラップする
+jmp_buf jmp;
+void
+signal_abort(int signo)
+{
+	longjmp(jmp, 1);
+}
+
+void
+test_audio_ring_round()
+{
+	struct {
+		int idx;
+		int exp;
+	} table[] = {
+		// exp==-1 はKASSERTになるケース
+		{ 0,	0 },
+		{ 1,	1 },
+		{ 2,	2 },
+		{ 3,	0 },
+		{ 4,	1 },
+		{ 5,	2 },
+		{ 6,	-1 },
+	};
+	audio_ring_t *ring = ring_init(3);
+
+	TEST("audio_ring_round");
+	signal(SIGABRT, signal_abort);
+
+	for (int i = 0; i < __arraycount(table); i++) {
+		int idx = table[i].idx;
+		int exp = table[i].exp;
+
+		if (exp >= 0) {
+			// 正常なケース
+			int act = audio_ring_round(ring, idx);
+			XP_EQ(exp, act);
+		} else {
+			// KASSERT になるケース
+			panic_msgout = 0;
+			int aborted = setjmp(jmp);
+			if (aborted == 0) {
+				audio_ring_round(ring, idx);
+			}
+			panic_msgout = 1;
+			XP_EQ(1, aborted);
+		}
+	}
+
+	signal(SIGABRT, SIG_DFL);
+}
+
+void
+test_audio_ring_tail()
+{
+	struct {
+		int head;
+		int used;
+		int exp;
+	} table[] = {
+		{ 0, 0,		0 },
+		{ 0, 1,		1 },
+		{ 0, 2,		2 },
+		{ 0, 3,		0 },
+		{ 1, 0,		1 },
+		{ 1, 1,		2 },
+		{ 1, 2,		0 },
+		{ 1, 3,		1 },
+		{ 2, 0,		2 },
+		{ 2, 1,		0 },
+		{ 2, 2,		1 },
+		{ 2, 3,		2 },
+	};
+	audio_ring_t *ring = ring_init(3);
+
+	TEST("audio_ring_tail");
+	for (int i = 0; i < __arraycount(table); i++) {
+		int head = table[i].head;
+		int used = table[i].used;
+		int exp = table[i].exp;
+
+		ring->head = head;
+		ring->used = used;
+		int act = audio_ring_tail(ring);
+		XP_EQ(exp, act);
+	}
+}
+
+void
+test_audio_ring_headptr_aint()
+{
+	int capacity = 3;
+	audio_ring_t *ring = ring_init_aint(capacity);
+
+	TEST("audio_ring_headptr_aint");
+	for (int i = 0; i < capacity; i++) {
+		int head = i;
+		int exp = i * ring->fmt.channels * ring->fmt.stride / NBBY;
+
+		ring->head = head;
+		void *act = audio_ring_headptr_aint(ring);
+		XP_EQ(exp, (int)((uint8_t *)act - (uint8_t *)ring->mem));
+	}
+}
+
+void
+test_audio_ring_tailptr_aint()
+{
+	int capacity = 3;
+	audio_ring_t *ring = ring_init_aint(capacity);
+
+	TEST("audio_ring_tailptr_aint");
+	for (int i = 0; i < capacity; i++) {
+		int used = i;
+		int exp = i * ring->fmt.channels * ring->fmt.stride / NBBY;
+
+		ring->used = used;
+		void *act = audio_ring_tailptr_aint(ring);
+		XP_EQ(exp, (int)((uint8_t *)act - (uint8_t *)ring->mem));
+	}
+}
+
+void
+test_audio_ring_headptr()
+{
+	int capacity = 3;
+	audio_ring_t *ring = ring_init(capacity);
+
+	TEST("audio_ring_headptr");
+	for (int i = 0; i < capacity; i++) {
+		int head = i;
+		int exp = i * ring->fmt.channels * ring->fmt.stride / NBBY;
+
+		ring->head = head;
+		void *act = audio_ring_headptr(ring);
+		XP_EQ(exp, (int)((uint8_t *)act - (uint8_t *)ring->mem));
+	}
+}
+
+void
+test_audio_ring_tailptr()
+{
+	int capacity = 3;
+	audio_ring_t *ring = ring_init(capacity);
+
+	TEST("audio_ring_tailptr");
+	for (int i = 0; i < capacity; i++) {
+		int used = i;
+		int exp = i * ring->fmt.channels * ring->fmt.stride / NBBY;
+
+		ring->used = used;
+		void *act = audio_ring_tailptr(ring);
+		XP_EQ(exp, (int)((uint8_t *)act - (uint8_t *)ring->mem));
+	}
+}
+
+void
+test_audio_ring_bytelen()
+{
+	TEST("audio_ring_bytelen");
+
+	for (int i = 1; i < 3; i++) {
+		audio_ring_t *ring = ring_init(i);
+		int exp = ring->capacity * ring->fmt.channels * ring->fmt.stride / NBBY;
+		XP_EQ(exp, audio_ring_bytelen(ring));
+	}
+
+	for (int i = 1; i < 3; i++) {
+		audio_ring_t *ring = ring_init_aint(i);
+		int exp = ring->capacity * ring->fmt.channels * ring->fmt.stride / NBBY;
+		XP_EQ(exp, audio_ring_bytelen(ring));
+	}
+}
+
+void
+test_audio_ring_take()
+{
+	struct {
+		int head;
+		int used;
+		int take;
+		bool result;
+		int exphead;
+		int expused;
+	} table[] = {
+#define FALSE	false, 0, 0
+		//hd us tk	res  期待するhead,used
+		{ 0, 0, 0,	true, 0, 0 },
+		{ 0, 0, 1,	FALSE },
+		{ 0, 0, 2,	FALSE },
+		{ 0, 0, 3,	FALSE },
+		{ 0, 1, 0,	true, 0, 1 },
+		{ 0, 1, 1,	true, 1, 0 },
+		{ 0, 1, 2,	FALSE },
+		{ 0, 1, 3,	FALSE },
+		{ 0, 2, 0,	true, 0, 2 },
+		{ 0, 2, 1,	true, 1, 1 },
+		{ 0, 2, 2,	true, 2, 0 },
+		{ 0, 2, 3,	FALSE },
+		{ 0, 3, 0,	true, 0, 3 },
+		{ 0, 3, 1,	true, 1, 2 },
+		{ 0, 3, 2,	true, 2, 1 },
+		{ 0, 3, 3,	true, 0, 0 },
+
+		{ 1, 0, 0,	true, 1, 0 },
+		{ 1, 0, 1,	FALSE },
+		{ 1, 0, 2,	FALSE },
+		{ 1, 0, 3,	FALSE },
+		{ 1, 1, 0,	true, 1, 1 },
+		{ 1, 1, 1,	true, 2, 0 },
+		{ 1, 1, 2,	FALSE },
+		{ 1, 1, 3,	FALSE },
+		{ 1, 2, 0,	true, 1, 2 },
+		{ 1, 2, 1,	true, 2, 1 },
+		{ 1, 2, 2,	true, 0, 0 },
+		{ 1, 2, 3,	FALSE },
+		{ 1, 3, 0,	true, 1, 3 },
+		{ 1, 3, 1,	true, 2, 2 },
+		{ 1, 3, 2,	true, 0, 1 },
+		{ 1, 3, 3,	true, 1, 0 },
+
+		{ 2, 0, 0,	true, 2, 0 },
+		{ 2, 0, 1,	FALSE },
+		{ 2, 0, 2,	FALSE },
+		{ 2, 0, 3,	FALSE },
+		{ 2, 1, 0,	true, 2, 1 },
+		{ 2, 1, 1,	true, 0, 0 },
+		{ 2, 1, 2,	FALSE },
+		{ 2, 1, 3,	FALSE },
+		{ 2, 2, 0,	true, 2, 2 },
+		{ 2, 2, 1,	true, 0, 1 },
+		{ 2, 2, 2,	true, 1, 0 },
+		{ 2, 2, 3,	FALSE },
+		{ 2, 3, 0,	true, 2, 3 },
+		{ 2, 3, 1,	true, 0, 2 },
+		{ 2, 3, 2,	true, 1, 1 },
+		{ 2, 3, 3,	true, 2, 0 },
+#undef FALSE
+	};
+	audio_ring_t *ring = ring_init(3);
+
+	TEST("audio_ring_take");
+	signal(SIGABRT, signal_abort);
+
+	for (int i = 0; i < __arraycount(table); i++) {
+		int head = table[i].head;
+		int used = table[i].used;
+		int take = table[i].take;
+		bool result = table[i].result;
+		int exphead = table[i].exphead;
+		int expused = table[i].expused;
+		//TEST("audio_ring_take(%d,%d,%d)", head, used, take);
+
+		ring->head = head;
+		ring->used = used;
+
+		if (result) {
+			// 正常なケース
+			audio_ring_take(ring, take);
+			XP_EQ(exphead, ring->head);
+			XP_EQ(expused, ring->used);
+		} else {
+			// KASSERT になるケース
+			panic_msgout = 0;
+			int aborted = setjmp(jmp);
+			if (aborted == 0) {
+				audio_ring_take(ring, take);
+			}
+			panic_msgout = 1;
+			XP_EQ(1, aborted);
+		}
+	}
+
+	signal(SIGABRT, SIG_DFL);
+}
+
+void
+test_audio_ring_push()
+{
+	struct {
+		int head;
+		int used;
+		int push;
+		bool result;
+		int exphead;
+		int expused;
+	} table[] = {
+#define FALSE	false, 0, 0
+		//hd us ps	res  期待するhead,used
+		{ 0, 0, 0,	true, 0, 0 },
+		{ 0, 0, 1,	true, 0, 1 },
+		{ 0, 0, 2,	true, 0, 2 },
+		{ 0, 0, 3,	true, 0, 3 },
+		{ 0, 1, 0,	true, 0, 1 },
+		{ 0, 1, 1,	true, 0, 2 },
+		{ 0, 1, 2,	true, 0, 3 },
+		{ 0, 1, 3,	FALSE },
+		{ 0, 2, 0,	true, 0, 2 },
+		{ 0, 2, 1,	true, 0, 3 },
+		{ 0, 2, 2,	FALSE },
+		{ 0, 2, 3,	FALSE },
+		{ 0, 3, 0,	true, 0, 3 },
+		{ 0, 3, 1,	FALSE },
+		{ 0, 3, 2,	FALSE },
+		{ 0, 3, 3,	FALSE },
+
+		{ 1, 0, 0,	true, 1, 0 },
+		{ 1, 0, 1,	true, 1, 1 },
+		{ 1, 0, 2,	true, 1, 2 },
+		{ 1, 0, 3,	true, 1, 3 },
+		{ 1, 1, 0,	true, 1, 1 },
+		{ 1, 1, 1,	true, 1, 2 },
+		{ 1, 1, 2,	true, 1, 3 },
+		{ 1, 1, 3,	FALSE },
+		{ 1, 2, 0,	true, 1, 2 },
+		{ 1, 2, 1,	true, 1, 3 },
+		{ 1, 2, 2,	FALSE },
+		{ 1, 2, 3,	FALSE },
+		{ 1, 3, 0,	true, 1, 3 },
+		{ 1, 3, 1,	FALSE },
+		{ 1, 3, 2,	FALSE },
+		{ 1, 3, 3,	FALSE },
+
+		{ 2, 0, 0,	true, 2, 0 },
+		{ 2, 0, 1,	true, 2, 1 },
+		{ 2, 0, 2,	true, 2, 2 },
+		{ 2, 0, 3,	true, 2, 3 },
+		{ 2, 1, 0,	true, 2, 1 },
+		{ 2, 1, 1,	true, 2, 2 },
+		{ 2, 1, 2,	true, 2, 3 },
+		{ 2, 1, 3,	FALSE },
+		{ 2, 2, 0,	true, 2, 2 },
+		{ 2, 2, 1,	true, 2, 3 },
+		{ 2, 2, 2,	FALSE },
+		{ 2, 2, 3,	FALSE },
+		{ 2, 3, 0,	true, 2, 3 },
+		{ 2, 3, 1,	FALSE },
+		{ 2, 3, 2,	FALSE },
+		{ 2, 3, 3,	FALSE },
+#undef FALSE
+	};
+	audio_ring_t *ring = ring_init(3);
+
+	TEST("audio_ring_push");
+	signal(SIGABRT, signal_abort);
+
+	for (int i = 0; i < __arraycount(table); i++) {
+		int head = table[i].head;
+		int used = table[i].used;
+		int push = table[i].push;
+		bool result = table[i].result;
+		int exphead = table[i].exphead;
+		int expused = table[i].expused;
+		//TEST("audio_ring_push(%d,%d,%d)", head, used, push);
+
+		ring->head = head;
+		ring->used = used;
+
+		if (result) {
+			// 正常なケース
+			audio_ring_push(ring, push);
+			XP_EQ(exphead, ring->head);
+			XP_EQ(expused, ring->used);
+		} else {
+			// KASSERT になるケース
+			panic_msgout = 0;
+			int aborted = setjmp(jmp);
+			if (aborted == 0) {
+				audio_ring_push(ring, push);
+			}
+			panic_msgout = 1;
+			XP_EQ(1, aborted);
+		}
+	}
+
+	signal(SIGABRT, SIG_DFL);
+}
+
+void
+test_audio_ring_get_contig_used()
+{
+	struct {
+		int head;
+		int used;
+		int exp;
+	} table[] = {
+		{ 0, 0,		0 },
+		{ 0, 1,		1 },
+		{ 0, 2,		2 },
+		{ 0, 3,		3 },
+		{ 1, 0,		0 },
+		{ 1, 1,		1 },
+		{ 1, 2,		2 },
+		{ 1, 3,		2 },
+		{ 2, 0,		0 },
+		{ 2, 1,		1 },
+		{ 2, 2,		1 },
+		{ 2, 3,		1 },
+	};
+	audio_ring_t *ring = ring_init(3);
+
+	TEST("audio_ring_get_contig_used");
+	for (int i = 0; i < __arraycount(table); i++) {
+		int head = table[i].head;
+		int used = table[i].used;
+		int exp = table[i].exp;
+		//TEST("audio_ring_get_contig_used(%d,%d)", head, used);
+
+		ring->head = head;
+		ring->used = used;
+		XP_EQ(exp, audio_ring_get_contig_used(ring));
+	}
+}
+
+void
+test_audio_ring_get_contig_free()
+{
+	struct {
+		int head;
+		int used;
+		int exp;
+	} table[] = {
+		{ 0, 0,		3 },
+		{ 0, 1,		2 },
+		{ 0, 2,		1 },
+		{ 0, 3,		0 },
+		{ 1, 0,		2 },
+		{ 1, 1,		1 },
+		{ 1, 2,		1 },
+		{ 1, 3,		0 },
+		{ 2, 0,		1 },
+		{ 2, 1,		2 },
+		{ 2, 2,		1 },
+		{ 2, 3,		0 },
+	};
+	audio_ring_t *ring = ring_init(3);
+
+	TEST("audio_ring_get_contig_free");
+	for (int i = 0; i < __arraycount(table); i++) {
+		int head = table[i].head;
+		int used = table[i].used;
+		int exp = table[i].exp;
+		//TEST("audio_ring_get_contig_free(%d,%d)", head, used);
+
+		ring->head = head;
+		ring->used = used;
+		XP_EQ(exp, audio_ring_get_contig_free(ring));
+	}
+}
+
 // テスト一覧
 #define DEF(x)	{ #x, test_ ## x }
 struct testtable testtable[] = {
@@ -751,5 +1243,16 @@ struct testtable testtable[] = {
 	DEF(internal_to_linear32),
 	DEF(mulaw_to_internal),
 	DEF(internal_to_mulaw),
+	DEF(audio_ring_round),
+	DEF(audio_ring_tail),
+	DEF(audio_ring_headptr_aint),
+	DEF(audio_ring_tailptr_aint),
+	DEF(audio_ring_headptr),
+	DEF(audio_ring_tailptr),
+	DEF(audio_ring_bytelen),
+	DEF(audio_ring_take),
+	DEF(audio_ring_push),
+	DEF(audio_ring_get_contig_used),
+	DEF(audio_ring_get_contig_free),
 	{ NULL, NULL },
 };
