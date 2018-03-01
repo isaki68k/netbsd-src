@@ -635,9 +635,20 @@ audio_track_freq_up(audio_filter_arg_t *arg)
 static void
 audio_track_freq_down(audio_filter_arg_t *arg)
 {
-	audio_track_t *track = arg->context;
-	audio_ring_t *src = &track->freq.srcbuf;
-	audio_ring_t *dst = track->freq.dst;
+	audio_track_t *track;
+	audio_ring_t *src;
+	audio_ring_t *dst;
+	const aint_t *s0;
+	aint_t *d;
+	u_int i;
+	u_int t;
+	u_int step;
+	int ch;
+	int nchannels;
+
+	track = arg->context;
+	src = &track->freq.srcbuf;
+	dst = track->freq.dst;
 
 	KASSERT(track);
 	KASSERT(audio_ring_is_valid(dst));
@@ -648,18 +659,17 @@ audio_track_freq_down(audio_filter_arg_t *arg)
 	    "src->head=%d fpb=%d",
 	    src->head, track->mixer->frames_per_block);
 
-	const aint_t *sptr0 = arg->src;
-	aint_t *dptr = arg->dst;
-	unsigned int t = track->freq_current;
-	unsigned int step = track->freq_step;
-	int nch = dst->fmt.channels;
+	s0 = arg->src;
+	d = arg->dst;
+	t = track->freq_current;
+	step = track->freq_step;
+	nchannels = dst->fmt.channels;
 
-	int i;
 	for (i = 0; i < arg->count && t / 65536 < src->used; i++) {
-		const aint_t *sptr1;
-		sptr1 = sptr0 + (t / 65536) * nch;
-		for (int ch = 0; ch < nch; ch++) {
-			*dptr++ = sptr1[ch];
+		const aint_t *s;
+		s = s0 + (t / 65536) * nchannels;
+		for (ch = 0; ch < nchannels; ch++) {
+			*d++ = s[ch];
 		}
 		t += step;
 	}
