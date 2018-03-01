@@ -68,7 +68,7 @@ audio_ring_is_valid(const audio_ring_t *ring)
 // idx をラウンディングします。
 // 加算方向で、加算量が ring->capacity 以下のケースのみサポートします。
 /*
- * Round idx.  idx must be non-negative and less than capacity.
+ * Round idx.  idx must be non-negative and less than 2 * capacity.
  */
 static inline int
 audio_ring_round(const audio_ring_t *ring, int idx)
