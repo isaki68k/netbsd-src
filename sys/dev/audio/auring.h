@@ -77,7 +77,11 @@ audio_ring_round(const audio_ring_t *ring, int idx)
 	KASSERT(idx >= 0);
 	KASSERT(idx < ring->capacity * 2);
 
-	return idx >= ring->capacity ? idx - ring->capacity : idx;
+	if (idx < ring->capacity) {
+		return idx;
+	} else {
+		return idx - ring->capacity;
+	}
 }
 
 // ring の tail 位置(head+used位置) を返します。
@@ -206,8 +210,11 @@ audio_ring_get_contig_used(const audio_ring_t *ring)
 {
 	KASSERT(audio_ring_is_valid(ring));
 
-	return ring->head + ring->used <= ring->capacity
-	    ? ring->used : ring->capacity - ring->head;
+	if (ring->head + ring->used <= ring->capacity) {
+		return ring->used;
+	} else {
+		return ring->capacity - ring->head;
+	}
 }
 
 // audio_ring_tail の位置から空きフレームにアクセスしようとするとき、
