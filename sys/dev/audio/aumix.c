@@ -3021,10 +3021,13 @@ audio_write_uiomove(audio_track_t *track, int tail, int len, struct uio *uio)
 int
 audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *file)
 {
+	audio_track_t *track;
+	audio_ring_t *usrbuf;
 	int error;
 	int framesize;
 	int count;
-	audio_track_t *track = file->ptrack;
+
+	track = file->ptrack;
 	KASSERT(track);
 	TRACET(track, "begin");
 
@@ -3055,7 +3058,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *f
 	// force は 1ブロックに満たない場合にミキサを開始するか否か。
 	// o PLAY なら1ブロック未満でも常に開始するため true
 	// o PLAY_ALL なら1ブロック貯まるまで開始しないので false
-	audio_ring_t *usrbuf = &track->usrbuf;
+	usrbuf = &track->usrbuf;
 	int out_thres;
 	if ((track->mode & AUMODE_PLAY_ALL) != 0) {
 		/* PLAY_ALL */
@@ -3177,8 +3180,10 @@ int
 audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 	audio_file_t *file)
 {
+	audio_track_t *track;
 	int error;
-	audio_track_t *track = file->rtrack;
+
+	track = file->rtrack;
 	KASSERT(track);
 	TRACET(track, "resid=%u", (int)uio->uio_resid);
 
@@ -3207,8 +3212,10 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 
 	error = 0;
 	while (uio->uio_resid > 0 && error == 0) {
+		audio_ring_t *usrbuf;
 		int bytes;
-		audio_ring_t *usrbuf = &track->usrbuf;
+
+		usrbuf = &track->usrbuf;
 
 		TRACET(track, "while resid=%zd input=%d/%d/%d usrbuf=%d/%d/H%d",
 		    uio->uio_resid,
