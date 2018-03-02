@@ -5,7 +5,7 @@
 <html>
 <head>
 <meta name="generator" content="groff -Thtml, see www.gnu.org">
-<meta http-equiv="Content-Type" content="text/html; charset=US-ASCII">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
 <meta name="Content-Style" content="text/css">
 <style type="text/css">
 p.p1 {
@@ -23,6 +23,26 @@ dt.p1 {
 }
 dd.p1 {
 	margin-left: 12%;
+}
+
+SPAN.n7 {
+	background-color: rgb(255,255,153);	/* クリーム */
+}
+
+P.n7 {
+	background-color: rgb(255,255,153);	/* クリーム */
+}
+SPAN.bad {
+	color: rgb(255,40,0);	/* 赤 */
+	font-weight: bold;
+}
+SPAN.comment {
+	color: rgb(53,161,107);	/* 緑 */
+	font-weight: bold;
+}
+SPAN.a2 {
+	color: rgb(0,65,255);	/* 青 */
+	font-weight: bold;
 }
 </style>
 <title></title>
@@ -106,13 +126,20 @@ typedef struct audio_params {
 The high level audio driver attaches to the low level driver when the
 latter calls audio_attach_mi.  This call should be</p>
 
-<pre class=p1>
+<pre class=p1><span class=n7>
 void
 audio_attach_mi(ahwp, hdl, dev)
     struct audio_hw_if *ahwp;
     void *hdl;
     struct device *dev;
+</span>
 </pre>
+<span class=comment style="margin-left: 12%; margin-top: 0">
+↑いつの書式だよ。<Br>
+<tt style="margin-left: 12%">
+void audio_attach_mi(struct audio_hw_if *ahwp, void *hdl, device_t dev)
+</tt>
+</span>
 
 <p class=p1>
      The <tt>audio_hw_if</tt> struct is as shown above.
@@ -134,7 +161,8 @@ audio_attach_mi(ahwp, hdl, dev)
 
 <p class=p1>
      The fields of <tt>audio_hw_if</tt> are described in some more detail below.	 Some
-     fields are optional and can be set to 0 if not needed.
+     fields are optional and can be set to <span class=n7>0</span>
+	<span class=comment>NULL</span> if not needed.
 </p>
 
 <dl>
@@ -145,6 +173,27 @@ audio_attach_mi(ahwp, hdl, dev)
 	     is matched by a call to close.  Return 0 on success, otherwise an
 	     error code.
 </dd>
+<dd class=p1><span class=bad>
+これを呼ぶのは録音再生合わせて1つ目のオープン時。
+flags はその時上位から渡される flags (FREAD | FWRITE みたいなやつ)。
+なので、1本目が再生オープンなら open(hdl, FWRITE) を呼ぶが、
+1本目をオープンしたまま続けて2本目が録音オープンされても open() は呼ばない。
+このため、録音前には open(hdl, FREAD) が呼ばれることを期待していた
+HWドライバはまずいはず。
+<br>
+dev/isa/aria.c<br>
+dev/pci/emuxki.c
+</span></dd>
+<dd class=p1><span class=comment>
+記録のため。
+Half HW で、open(hdl, FREAD | FWRITE) の呼び出しが失敗する例は
+arch/evbarm/mini2440/audio_mini2440.c。
+</span></dd>
+<dd class=p1><span class=a2>
+これをふまえて AUDIO2 では、open の呼び出しは録音再生合わせて1つ目のオープン時のみとし、flags は HW Full なら必ず FREAD | FWRITE、HW Half なら
+open 時の flags を渡すことにする。
+綱渡りだけどたぶん大丈夫。
+</span></dd>
 
 <dt class=p1>void close(void *hdl)
 </dt>
@@ -160,6 +209,14 @@ audio_attach_mi(ahwp, hdl, dev)
 	     remain in to be played that could be lost when close is called.
 	     Return 0 on success, otherwise an error code.
 </dd>
+<dd class=p1><span class=bad>
+NetBSD8 での呼び方は意味があるとは思えない。
+</span>
+</dd>
+<dd class=p1><span class=a2>
+AUDIO2 では drain は廃止する?。
+</span>
+</dd>
 
 <dt class=p1>int query_encoding(void *hdl, struct audio_encoding *ae)
 </dt>
@@ -168,6 +225,12 @@ audio_attach_mi(ahwp, hdl, dev)
 	     audio_encoding structure and return 0 or, if there is no encoding
 	     with the given number, return <tt>EINVAL</tt>.
 </dd>
+<dd class=p1><span class=bad>
+NetBSD8 では使われなくなっている。
+</span></dd>
+<dd class=p1><span class=a2>
+AUDIO2 では廃止する。代わりに query_format を新設したい。
+</span></dd>
 
 <dt class=p1>int set_params(void *hdl, int setmode, int usemode,
 	     audio_params_t *play, audio_params_t *rec,
@@ -247,6 +310,9 @@ audio_attach_mi(ahwp, hdl, dev)
 	     parameters from play is copied into rec after the call to
 	     set_params.  Return 0 on success, otherwise an error code.
 </dd>
+<dd class=p1><span class=a2>
+AUDIO2 ではこれを廃止する。代わりに set_params2(仮名)を新設。
+</span></dd>
 
 <dt class=p1>
      int round_blocksize(void *hdl, int bs, int mode,
@@ -360,6 +426,9 @@ audio_attach_mi(ahwp, hdl, dev)
 	     device has <tt>AUDIO_PROP_FULLDUPLEX</tt> set.  Return 0 on success,
 	     otherwise an error code.
 </dd>
+<dd class=p1><span class=a2>
+AUDIO2 ではこれを廃止する。現状これを実装している HW ドライバは皆無だし。
+</span></dd>
 
 <dt class=p1>
      int set_port(void *hdl, mixer_ctrl_t *mc)
@@ -427,6 +496,12 @@ audio_attach_mi(ahwp, hdl, dev)
 	     prot.  Returns -1 on failure, or a machine dependent opaque value
 	     on success.
 </dd>
+<dd class=p1><span class=bad>
+NetBSD8 では使われなくなっている。
+</span></dd>
+<dd class=p1><span class=a2>
+AUDIO2 ではこれを廃止する?
+</span></dd>
 
 <dt class=p1>
      int get_props(void *hdl)
@@ -434,6 +509,9 @@ audio_attach_mi(ahwp, hdl, dev)
 <dd class=p1>
 	     Should return the device properties; i.e., a combination of
 	     <tt>AUDIO_PROP_xxx</tt>.
+</dd>
+<dd class=p1><span class=a2>
+mappage 廃止に伴い、<tt>AUDIO_PROP_MMAP</tt> も返さなくてよいことにする?
 </dd>
 
 <dt class=p1>
