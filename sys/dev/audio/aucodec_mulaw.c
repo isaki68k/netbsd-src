@@ -16,7 +16,21 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include "aucodec.h"
 #endif // !_KERNEL
 
-//#define TABLE
+// internal_to_mulaw
+//
+// 1) 8bitテーブル方式 (従来版)
+//	本来14bitに対して精度がリニア8bit分しかない。がたぶん聞いても分からん。
+//	テーブル一発なので速い。
+//	amd64: 55+256(=311) byte, 313.2 times/sec
+//	x68k:  64+256(=320) byte
+//
+// 2) 14ビット計算方式 (MULAW_HQ_ENC)
+//	精度はフルスペック。
+//	サイズは8bit テーブルと比べて半分だが4-5倍遅い。
+//	amd64: 150 byte,           68.4 times/sec
+//	x68k:  138 byte,
+//
+//#define MULAW_HQ_ENC
 
 #if 0
 #define MPRINTF(fmt, ...)	printf(fmt, ## __VA_ARGS__)
@@ -59,7 +73,7 @@ static const uint16_t mulaw_to_slinear16[256] = {
 	0x0038, 0x0030, 0x0028, 0x0020, 0x0018, 0x0010, 0x0008, 0x0000,
 };
 
-#if defined(TABLE)
+#if !defined(MULAW_HQ_ENC)
 static const uint8_t slinear8_to_mulaw[256] = {
 	0xff, 0xe7, 0xdb, 0xd3, 0xcd, 0xc9, 0xc5, 0xc1,
 	0xbe, 0xbc, 0xba, 0xb8, 0xb6, 0xb4, 0xb2, 0xb0,
@@ -186,11 +200,11 @@ internal_to_mulaw(audio_filter_arg_t *arg)
 	sample_count = arg->count * arg->srcfmt->channels;
 
 	for (i = 0; i < sample_count; i++) {
-#if defined(TABLE)
+#if !defined(MULAW_HQ_ENC)
 		uint8_t val;
 		val = (*s++) >> (AUDIO_INTERNAL_BITS - 8);
 		*d++ = slinear8_to_mulaw[val];
-#elif 1
+#else
 		int32_t val;
 		uint8_t m;
 		int clz;
@@ -214,68 +228,6 @@ internal_to_mulaw(audio_filter_arg_t *arg)
 			clz = 7;
 		m |= clz << 4;
 		m |= ~(val >> (AUDIO_INTERNAL_BITS - 16 + 10 - clz)) & 0x0f;
-		MPRINTF("m=0x%02x\n", m);
-		*d++ = m;
-#elif 1
-		int32_t val;
-		uint8_t m;
-		int clz;
-
-		val = (int)(*s++) << (32 - AUDIO_INTERNAL_BITS);
-		MPRINTF("val32=%08x ", val);
-		if (val < 0) {
-			val = ~val;
-			m = 0;
-		} else {
-			m = 0x80;
-		}
-		if (val > (8158 << 18))
-			val = (8158 << 18);
-		val += 33 << 18;	/* bias */
-		MPRINTF("val32=%08x ", val);
-
-		clz = __builtin_clz(val) - 1;
-		MPRINTF("clz=%d ", clz);
-		if (clz > 7)
-			clz = 7;
-		m |= (clz << 4) | (~(val >> (26 - clz)) & 0x0f);
-		MPRINTF("m=0x%02x\n", m);
-		*d++ = m;
-#else
-		int16_t input;
-		int16_t val;
-		uint8_t m;
-		int clz;
-
-		input = (*s++) >> (AUDIO_INTERNAL_BITS - 16);
-		// 上位14ビットが有効
-		// f e d c b a 0 9 8 7 6 5 4 3 2 1 0
-		// S A B C D E F G H I J K N N N x x
-
-		val = input >> 2;
-		// f e d c b a 0 9 8 7 6 5 4 3 2 1 0
-		// S S S A B C D E F G H I J K N N N
-		MPRINTF("val14=%d ", val);
-
-		MPRINTF("S%d ", input < 0 ? 1 : 0);
-
-		if (val < 0)
-			val = ~val;
-		if (val > 8158)
-			val = 8158;
-		val += 33;	/* bias */
-		val <<= 3;
-		MPRINTF("val13=%d(0x%04x) ", val, val & 0xffffU);
-		// f e d c b a 0 9 8 7 6 5 4 3 2 1 0
-		// A B C D E F G H I J K N N N 0 0 0  (ABCD..NN != 0)
-
-		clz = __builtin_clz((uint32_t)(uint16_t)val) - 16;
-		MPRINTF("clz=%d ", clz);
-		if (clz > 7)
-			clz = 7;
-		m = ((input >= 0) ? 0x80 : 0)
-		    | (clz << 4)
-		    | (~(val >> (11 - clz)) & 0x0f);
 		MPRINTF("m=0x%02x\n", m);
 		*d++ = m;
 #endif
