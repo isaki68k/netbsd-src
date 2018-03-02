@@ -1471,7 +1471,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 				error = sc->hw_if->speaker_ctl(sc->hw_hdl, on);
 				mutex_exit(sc->sc_intr_lock);
 				if (error)
-					goto bad3;
+					goto bad4;
 			}
 		}
 	} else /* if (sc->sc_multiuser == false) */ {
@@ -1493,7 +1493,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 			    hwbuf->fmt.channels * hwbuf->fmt.stride / NBBY);
 			mutex_exit(sc->sc_intr_lock);
 			if (error)
-				goto bad3;
+				goto bad4;
 		}
 	}
 	if (af->rtrack && sc->sc_ropens == 0) {
@@ -1506,13 +1506,13 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 			    hwbuf->fmt.channels * hwbuf->fmt.stride / NBBY);
 			mutex_exit(sc->sc_intr_lock);
 			if (error)
-				goto bad3;
+				goto bad4;
 		}
 	}
 
 	error = fd_allocfile(&fp, &fd);
 	if (error)
-		goto bad3;
+		goto bad4;
 
 	// このミキサーどうするか
 	//grow_mixer_states(sc, 2);
@@ -1535,6 +1535,14 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 
 	// ここの track は sc_files につながっていないので、
 	// intr_lock とらずに track_destroy() を呼んでいいはず。
+bad4:
+	if (sc->sc_popens + sc->sc_ropens == 0) {
+		if (sc->hw_if->close) {
+			mutex_enter(sc->sc_intr_lock);
+			sc->hw_if->close(sc->hw_hdl);
+			mutex_exit(sc->sc_intr_lock);
+		}
+	}
 bad3:
 	if (af->rtrack) {
 		audio_track_destroy(af->rtrack);
