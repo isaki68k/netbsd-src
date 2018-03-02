@@ -780,6 +780,13 @@ ring_init_aint(int capacity)
 	return ring;
 }
 
+void
+ring_free(audio_ring_t *ring)
+{
+	free(ring->mem);
+	free(ring);
+}
+
 // abort をトラップする
 jmp_buf jmp;
 void
@@ -830,6 +837,7 @@ test_audio_ring_round()
 	}
 
 	signal(SIGABRT, SIG_DFL);
+	ring_free(ring);
 }
 
 void
@@ -866,6 +874,8 @@ test_audio_ring_tail()
 		int act = audio_ring_tail(ring);
 		XP_EQ(exp, act);
 	}
+
+	ring_free(ring);
 }
 
 void
@@ -883,6 +893,8 @@ test_audio_ring_headptr_aint()
 		void *act = audio_ring_headptr_aint(ring);
 		XP_EQ(exp, (int)((uint8_t *)act - (uint8_t *)ring->mem));
 	}
+
+	ring_free(ring);
 }
 
 void
@@ -900,6 +912,8 @@ test_audio_ring_tailptr_aint()
 		void *act = audio_ring_tailptr_aint(ring);
 		XP_EQ(exp, (int)((uint8_t *)act - (uint8_t *)ring->mem));
 	}
+
+	ring_free(ring);
 }
 
 void
@@ -917,6 +931,8 @@ test_audio_ring_headptr()
 		void *act = audio_ring_headptr(ring);
 		XP_EQ(exp, (int)((uint8_t *)act - (uint8_t *)ring->mem));
 	}
+
+	ring_free(ring);
 }
 
 void
@@ -934,6 +950,8 @@ test_audio_ring_tailptr()
 		void *act = audio_ring_tailptr(ring);
 		XP_EQ(exp, (int)((uint8_t *)act - (uint8_t *)ring->mem));
 	}
+
+	ring_free(ring);
 }
 
 void
@@ -945,12 +963,14 @@ test_audio_ring_bytelen()
 		audio_ring_t *ring = ring_init(i);
 		int exp = ring->capacity * ring->fmt.channels * ring->fmt.stride / NBBY;
 		XP_EQ(exp, audio_ring_bytelen(ring));
+		ring_free(ring);
 	}
 
 	for (int i = 1; i < 3; i++) {
 		audio_ring_t *ring = ring_init_aint(i);
 		int exp = ring->capacity * ring->fmt.channels * ring->fmt.stride / NBBY;
 		XP_EQ(exp, audio_ring_bytelen(ring));
+		ring_free(ring);
 	}
 }
 
@@ -1054,6 +1074,7 @@ test_audio_ring_take()
 	}
 
 	signal(SIGABRT, SIG_DFL);
+	ring_free(ring);
 }
 
 void
@@ -1156,6 +1177,7 @@ test_audio_ring_push()
 	}
 
 	signal(SIGABRT, SIG_DFL);
+	ring_free(ring);
 }
 
 void
@@ -1192,6 +1214,8 @@ test_audio_ring_get_contig_used()
 		ring->used = used;
 		XP_EQ(exp, audio_ring_get_contig_used(ring));
 	}
+
+	ring_free(ring);
 }
 
 void
@@ -1228,6 +1252,8 @@ test_audio_ring_get_contig_free()
 		ring->used = used;
 		XP_EQ(exp, audio_ring_get_contig_free(ring));
 	}
+
+	ring_free(ring);
 }
 
 // テスト一覧
