@@ -1,0 +1,1374 @@
+<!-- Creator     : groff version 1.19.2 -->
+<!-- CreationDate: Fri Mar  2 13:29:19 2018 -->
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN"
+"http://www.w3.org/TR/html4/loose.dtd">
+<html>
+<head>
+<meta name="generator" content="groff -Thtml, see www.gnu.org">
+<meta http-equiv="Content-Type" content="text/html; charset=US-ASCII">
+<meta name="Content-Style" content="text/css">
+<style type="text/css">
+       p     { margin-top: 0; margin-bottom: 0; }
+       pre   { margin-top: 0; margin-bottom: 0; }
+       table { margin-top: 0; margin-bottom: 0; }
+</style>
+<title></title>
+</head>
+<body>
+
+<hr>
+
+
+<table width="100%" border=0 rules="none" frame="void"
+       cellspacing="0" cellpadding="0">
+<tr valign="top" align="left">
+<td width="8%">
+
+
+<p valign="top">The audio device driver is divided into a
+high level, hardware independent layer, and a low level
+hardware dependent layer. The interface between these is the
+structure. struct audio_hw_if {</p></td>
+<td width="7%">
+
+
+<p valign="top">int</p></td>
+<td width="8%">
+
+
+<p valign="top">(*open)(void *, int);</p></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="46%">
+</td>
+<tr valign="top" align="left">
+<td width="8%"></td>
+<td width="7%">
+
+
+<p valign="top">void</p></td>
+<td width="8%">
+
+
+<p valign="top">(*close)(void *);</p></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="46%">
+</td>
+<tr valign="top" align="left">
+<td width="8%"></td>
+<td width="7%">
+
+
+<p valign="top">int</p></td>
+<td width="8%">
+
+
+<p valign="top">(*drain)(void *);</p></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="46%">
+</td>
+<tr valign="top" align="left">
+<td width="8%">
+</td>
+<td width="7%">
+
+
+<p valign="top">int</p></td>
+<td width="8%">
+
+
+<p valign="top">(*query_encoding)(void *, struct
+audio_encoding *);</p></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="46%">
+</td>
+<tr valign="top" align="left">
+<td width="8%"></td>
+<td width="7%">
+
+
+<p valign="top">int</p></td>
+<td width="8%">
+
+
+<p valign="top">(*set_params)(void *, int, int,</p></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="46%">
+</td>
+<tr valign="top" align="left">
+<td width="8%"></td>
+<td width="7%">
+</td>
+<td width="8%">
+
+
+<p valign="top">audio_params_t *, audio_params_t *,</p></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="46%">
+</td>
+<tr valign="top" align="left">
+<td width="8%"></td>
+<td width="7%">
+</td>
+<td width="8%">
+
+
+<p valign="top">stream_filter_list_t *,
+stream_filter_list_t *);</p></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="46%">
+</td>
+<tr valign="top" align="left">
+<td width="8%"></td>
+<td width="7%">
+
+
+<p valign="top">int</p></td>
+<td width="8%">
+
+
+<p valign="top">(*round_blocksize)(void *, int, int, const
+audio_params_t *);</p></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="46%">
+</td>
+<tr valign="top" align="left">
+<td width="8%">
+</td>
+<td width="7%">
+
+
+<p valign="top">int</p></td>
+<td width="8%">
+
+
+<p valign="top">(*commit_settings)(void *);</p></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="46%">
+</td>
+<tr valign="top" align="left">
+<td width="8%">
+</td>
+<td width="7%">
+
+
+<p valign="top">int</p></td>
+<td width="8%">
+
+
+<p valign="top">(*init_output)(void *, void *, int);</p></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="46%">
+</td>
+<tr valign="top" align="left">
+<td width="8%"></td>
+<td width="7%">
+
+
+<p valign="top">int</p></td>
+<td width="8%">
+
+
+<p valign="top">(*init_input)(void *, void *, int);</p></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="46%">
+</td>
+<tr valign="top" align="left">
+<td width="8%"></td>
+<td width="7%">
+
+
+<p valign="top">int</p></td>
+<td width="8%">
+
+
+<p valign="top">(*start_output)(void *, void *, int, void
+(*)(void *),</p></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="46%">
+</td>
+<tr valign="top" align="left">
+<td width="8%"></td>
+<td width="7%">
+
+
+<p valign="top">void *);</p></td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="46%">
+</td>
+<tr valign="top" align="left">
+<td width="8%"></td>
+<td width="7%">
+
+
+<p valign="top">int</p></td>
+<td width="8%">
+
+
+<p valign="top">(*start_input)(void *, void *, int, void
+(*)(void *),</p></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="46%">
+</td>
+<tr valign="top" align="left">
+<td width="8%"></td>
+<td width="7%">
+</td>
+<td width="8%">
+
+
+<p valign="top">void *);</p></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="46%">
+</td>
+<tr valign="top" align="left">
+<td width="8%"></td>
+<td width="7%">
+
+
+<p valign="top">int</p></td>
+<td width="8%">
+
+
+<p valign="top">(*halt_output)(void *);</p></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="46%">
+</td>
+<tr valign="top" align="left">
+<td width="8%"></td>
+<td width="7%">
+
+
+<p valign="top">int</p></td>
+<td width="8%">
+
+
+<p valign="top">(*halt_input)(void *);</p></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="46%">
+</td>
+<tr valign="top" align="left">
+<td width="8%">
+</td>
+<td width="7%">
+
+
+<p valign="top">int</p></td>
+<td width="8%">
+
+
+<p valign="top">(*speaker_ctl)(void *, int); #define
+SPKR_ON 1 #define SPKR_OFF 0</p></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="46%">
+</td>
+<tr valign="top" align="left">
+<td width="8%">
+</td>
+<td width="7%">
+
+
+<p valign="top">int</p></td>
+<td width="8%">
+
+
+<p valign="top">(*getdev)(void *, struct audio_device
+*);</p> </td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="46%">
+</td>
+<tr valign="top" align="left">
+<td width="8%"></td>
+<td width="7%">
+
+
+<p valign="top">int</p></td>
+<td width="8%">
+
+
+<p valign="top">(*setfd)(void *, int);</p></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="46%">
+</td>
+<tr valign="top" align="left">
+<td width="8%">
+</td>
+<td width="7%">
+
+
+<p valign="top">int</p></td>
+<td width="8%">
+
+
+<p valign="top">(*set_port)(void *, mixer_ctrl_t *);</p></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="46%">
+</td>
+<tr valign="top" align="left">
+<td width="8%"></td>
+<td width="7%">
+
+
+<p valign="top">int</p></td>
+<td width="8%">
+
+
+<p valign="top">(*get_port)(void *, mixer_ctrl_t *);</p></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="46%">
+</td>
+<tr valign="top" align="left">
+<td width="8%">
+</td>
+<td width="7%">
+
+
+<p valign="top">int</p></td>
+<td width="8%">
+
+
+<p valign="top">(*query_devinfo)(void *, mixer_devinfo_t
+*);</p> </td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="46%">
+</td>
+<tr valign="top" align="left">
+<td width="8%">
+</td>
+<td width="7%">
+
+
+<p valign="top">void</p></td>
+<td width="8%">
+
+
+<p valign="top">*(*allocm)(void *, int, size_t, struct
+malloc_type *, int);</p></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="46%">
+</td>
+<tr valign="top" align="left">
+<td width="8%"></td>
+<td width="7%">
+
+
+<p valign="top">void</p></td>
+<td width="8%">
+
+
+<p valign="top">(*freem)(void *, void *, struct malloc_type
+*);</p> </td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="46%">
+</td>
+<tr valign="top" align="left">
+<td width="8%"></td>
+<td width="7%">
+
+
+<p valign="top">size_t</p></td>
+<td width="8%"></td>
+<td width="8%">
+
+
+<p valign="top">(*round_buffersize)(void *, int,
+size_t);</p> </td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="46%">
+</td>
+<tr valign="top" align="left">
+<td width="8%"></td>
+<td width="7%">
+
+
+<p valign="top">paddr_t</p></td>
+<td width="8%"></td>
+<td width="8%">
+
+
+<p valign="top">(*mappage)(void *, void *, off_t, int);</p></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="46%">
+</td>
+<tr valign="top" align="left">
+<td width="8%">
+</td>
+<td width="7%">
+
+
+<p valign="top">int</p></td>
+<td width="8%">
+
+
+<p valign="top">(*get_props)(void *);</p></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="46%">
+</td>
+<tr valign="top" align="left">
+<td width="8%">
+</td>
+<td width="7%">
+
+
+<p valign="top">int</p></td>
+<td width="8%">
+
+
+<p valign="top">(*trigger_output)(void *, void *, void *,
+int,</p> </td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="46%">
+</td>
+<tr valign="top" align="left">
+<td width="8%"></td>
+<td width="7%">
+</td>
+<td width="8%">
+
+
+<p valign="top">void (*)(void *), void *, const
+audio_params_t *);</p></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="46%">
+</td>
+<tr valign="top" align="left">
+<td width="8%"></td>
+<td width="7%">
+
+
+<p valign="top">int</p></td>
+<td width="8%">
+
+
+<p valign="top">(*trigger_input)(void *, void *, void *,
+int,</p> </td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="46%">
+</td>
+<tr valign="top" align="left">
+<td width="8%"></td>
+<td width="7%">
+</td>
+<td width="8%">
+
+
+<p valign="top">void (*)(void *), void *, const
+audio_params_t *);</p></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="46%">
+</td>
+<tr valign="top" align="left">
+<td width="8%"></td>
+<td width="7%">
+
+
+<p valign="top">int</p></td>
+<td width="8%">
+
+
+<p valign="top">(*dev_ioctl)(void *, u_long, void *, int,
+struct lwp *);</p></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="46%">
+</td>
+<tr valign="top" align="left">
+<td width="8%"></td>
+<td width="7%">
+
+
+<p valign="top">void</p></td>
+<td width="8%">
+
+
+<p valign="top">(*get_locks)(void *, kmutex_t **, kmutex_t
+**); };</p></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="46%">
+</td>
+<tr valign="top" align="left">
+<td width="8%">
+
+
+<p valign="top">typedef struct audio_params {</p></td>
+<td width="7%">
+
+
+<p valign="top">u_int</p></td>
+<td width="8%"></td>
+<td width="8%">
+
+
+<p valign="top">sample_rate;</p></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="8%">
+
+
+<p valign="top">/* sample rate */</p></td>
+<td width="46%">
+</td>
+<tr valign="top" align="left">
+<td width="8%"></td>
+<td width="7%">
+
+
+<p valign="top">u_int</p></td>
+<td width="8%"></td>
+<td width="8%">
+
+
+<p valign="top">encoding;</p></td>
+<td width="7%"></td>
+<td width="8%">
+
+
+<p valign="top">/* e.g. mu-law, linear, etc */</p></td>
+<td width="8%"></td>
+<td width="46%">
+</td>
+<tr valign="top" align="left">
+<td width="8%"></td>
+<td width="7%">
+
+
+<p valign="top">u_int</p></td>
+<td width="8%"></td>
+<td width="8%">
+
+
+<p valign="top">precision;</p></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="8%">
+
+
+<p valign="top">/* bits/subframe */</p></td>
+<td width="46%">
+</td>
+<tr valign="top" align="left">
+<td width="8%"></td>
+<td width="7%">
+
+
+<p valign="top">u_int</p></td>
+<td width="8%"></td>
+<td width="8%">
+
+
+<p valign="top">validbits;</p></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="8%">
+
+
+<p valign="top">/* valid bits in a subframe */</p></td>
+<td width="46%">
+</td>
+<tr valign="top" align="left">
+<td width="8%"></td>
+<td width="7%">
+
+
+<p valign="top">u_int</p></td>
+<td width="8%"></td>
+<td width="8%">
+
+
+<p valign="top">channels;</p></td>
+<td width="7%"></td>
+<td width="8%">
+
+
+<p valign="top">/* mono(1), stereo(2) */ } audio_params_t;
+The high level audio driver attaches to the low level driver
+when the latter calls This call should be</p></td>
+<td width="8%"></td>
+<td width="46%">
+</td>
+</table>
+
+<p valign="top">void</p>
+
+<table width="100%" border=0 rules="none" frame="void"
+       cellspacing="0" cellpadding="0">
+<tr valign="top" align="left">
+
+
+<p valign="top">audio_attach_mi(ahwp, hdl, dev)</p><td width="6%"></td>
+<td width="2%"></td>
+<td width="7%">
+
+
+<p valign="top">struct audio_hw_if *ahwp;</p></td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="54%">
+</td>
+<tr valign="top" align="left">
+<td width="6%"></td>
+<td width="2%"></td>
+<td width="7%">
+
+
+<p valign="top">void *hdl;</p></td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="54%">
+</td>
+<tr valign="top" align="left">
+<td width="6%"></td>
+<td width="2%"></td>
+<td width="7%">
+
+
+<p valign="top">struct device *dev; The struct is as shown
+above. The argument is a handle to some low level data
+structure. It is sent as the first argument to all the
+functions in when the high level driver calls them. is the
+device struct for the hardware device. The upper layer of
+the audio driver allocates one buffer for playing and one
+for recording. It handles the buffering of data from the
+user processes in these. The data is presented to the lower
+level in smaller chunks, called blocks. If, during playback,
+there is no data available from the user process when the
+hardware request another block a block of silence will be
+used instead. Furthermore, if the user process does not read
+data quickly enough during recording data will be thrown
+away. The fields of are described in some more detail below.
+Some fields are optional and can be set to 0 if not needed.
+optional, is called when the audio device is opened. It
+should initialize the hardware for I/O. Every successful
+call to is matched by a call to Return 0 on success,
+otherwise an error code. optional, is called when the audio
+device is closed. optional, is called before the device is
+closed or when is called. It should make sure that no
+samples remain in to be played that could be lost when is
+called. Return 0 on success, otherwise an error code. is
+used when is called. It should fill the structure and return
+0 or, if there is no encoding with the given number, return
+EINVAL. Called to set the audio encoding mode. is a
+combination of the and flags to indicate which mode(s) are
+to be set. is also a combination of these flags, but
+indicates the current mode of the device (i.e., the value of
+in the struct). The and structures contain the encoding
+parameters that should be set. The values of the structures
+may also be modified if the hardware cannot be set to
+exactly the requested mode (e.g., if the requested sampling
+rate is not supported, but one close enough is). If the
+hardware requires software assistance with some encoding
+(e.g., it might be lacking mu-law support) it should fill
+the for playing or for recording with conversion
+information. For example, if requests [8000Hz, mu-law,
+8/8bit, 1ch] and the hardware does not support 8bit mu-law,
+but 16bit slinear_le, the driver should call with and
+audio_params_t representing [8000Hz, slinear_le, 16/16bit,
+2ch]. If the driver needs multiple conversions, a conversion
+nearest to the hardware should be set to the head of or The
+definition of follows: typedef struct stream_filter_list
+{</p> </td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="54%">
+</td>
+<tr valign="top" align="left">
+<td width="6%"></td>
+<td width="2%"></td>
+<td width="7%">
+
+
+<p valign="top">void (*append)(struct stream_filter_list
+*,</p> </td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="54%">
+</td>
+<tr valign="top" align="left">
+<td width="6%"></td>
+<td width="2%"></td>
+<td width="7%">
+</td>
+<td width="8%">
+
+
+<p valign="top">stream_filter_factory_t,</p></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="54%">
+</td>
+<tr valign="top" align="left">
+<td width="6%"></td>
+<td width="2%"></td>
+<td width="7%">
+</td>
+<td width="8%">
+
+
+<p valign="top">const audio_params_t *);</p></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="54%">
+</td>
+<tr valign="top" align="left">
+<td width="6%"></td>
+<td width="2%"></td>
+<td width="7%">
+
+
+<p valign="top">void (*prepend)(struct stream_filter_list
+*,</p> </td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="54%">
+</td>
+<tr valign="top" align="left">
+<td width="6%"></td>
+<td width="2%"></td>
+<td width="7%">
+</td>
+<td width="8%">
+</td>
+<td width="8%">
+
+
+<p valign="top">stream_filter_factory_t,</p></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="54%">
+</td>
+<tr valign="top" align="left">
+<td width="6%"></td>
+<td width="2%"></td>
+<td width="7%">
+</td>
+<td width="8%">
+</td>
+<td width="8%">
+
+
+<p valign="top">const audio_params_t *);</p></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="54%">
+</td>
+<tr valign="top" align="left">
+<td width="6%"></td>
+<td width="2%"></td>
+<td width="7%">
+
+
+<p valign="top">void (*set)(struct stream_filter_list *,
+int,</p> </td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="54%">
+</td>
+<tr valign="top" align="left">
+<td width="6%"></td>
+<td width="2%"></td>
+<td width="7%">
+</td>
+<td width="8%">
+
+
+<p valign="top">stream_filter_factory_t,</p></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="54%">
+</td>
+<tr valign="top" align="left">
+<td width="6%"></td>
+<td width="2%"></td>
+<td width="7%">
+</td>
+<td width="8%">
+
+
+<p valign="top">const audio_params_t *);</p></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="54%">
+</td>
+<tr valign="top" align="left">
+<td width="6%"></td>
+<td width="2%"></td>
+<td width="7%">
+
+
+<p valign="top">int req_size;</p></td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="54%">
+</td>
+<tr valign="top" align="left">
+<td width="6%"></td>
+<td width="2%"></td>
+<td width="7%">
+
+
+<p valign="top">struct stream_filter_req {</p></td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="54%">
+</td>
+<tr valign="top" align="left">
+<td width="6%"></td>
+<td width="2%"></td>
+<td width="7%">
+</td>
+<td width="8%">
+
+
+<p valign="top">stream_filter_factory_t *factory;</p></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="54%">
+</td>
+<tr valign="top" align="left">
+<td width="6%"></td>
+<td width="2%"></td>
+<td width="7%">
+</td>
+<td width="8%">
+
+
+<p valign="top">audio_params_t param; /* from-param for
+recording,</p> </td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="54%">
+</td>
+<tr valign="top" align="left">
+<td width="6%"></td>
+<td width="2%"></td>
+<td width="7%">
+</td>
+<td width="8%">
+</td>
+<td width="8%">
+</td>
+<td width="7%">
+</td>
+<td width="8%">
+
+
+<p valign="top">to-param for playing */</p></td>
+<td width="54%">
+</td>
+<tr valign="top" align="left">
+<td width="6%"></td>
+<td width="2%"></td>
+<td width="7%">
+
+
+<p valign="top">} filters[AUDIO_MAX_FILTERS]; }
+stream_filter_list_t; For playing, constructs conversions as
+follows:</p> </td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="54%">
+</td>
+<tr valign="top" align="left">
+<td width="6%"></td>
+<td width="2%"></td>
+<td width="7%">
+
+
+<p valign="top">(play) == write(2) input</p></td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="54%">
+</td>
+<tr valign="top" align="left">
+<td width="6%"></td>
+<td width="2%"></td>
+<td width="7%">
+
+
+<p valign="top">|</p></td>
+<td width="8%">
+
+
+
+<p valign="top">pfil-&gt;filters[pfil-&gt;req_size-1].factory</p> </td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="54%">
+</td>
+<tr valign="top" align="left">
+<td width="6%"></td>
+<td width="2%"></td>
+<td width="7%">
+
+
+
+<p valign="top">(pfil-&gt;filters[pfil-&gt;req_size-1].param)</p> </td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="54%">
+</td>
+<tr valign="top" align="left">
+<td width="6%"></td>
+<td width="2%"></td>
+<td width="7%">
+
+
+<p valign="top">|</p></td>
+<td width="8%">
+
+
+
+<p valign="top">pfil-&gt;filters[pfil-&gt;req_size-2].factory</p> </td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="54%">
+</td>
+<tr valign="top" align="left">
+<td width="6%"></td>
+<td width="2%"></td>
+<td width="7%">
+
+
+<p valign="top">:</p></td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="54%">
+</td>
+<tr valign="top" align="left">
+<td width="6%"></td>
+<td width="2%"></td>
+<td width="7%">
+
+
+<p valign="top">|</p></td>
+<td width="8%">
+
+
+<p valign="top">pfil-&gt;filters[1].factory</p></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="54%">
+</td>
+<tr valign="top" align="left">
+<td width="6%"></td>
+<td width="2%"></td>
+<td width="7%">
+
+
+<p valign="top">(pfil-&gt;filters[1].param)</p></td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="54%">
+</td>
+<tr valign="top" align="left">
+<td width="6%"></td>
+<td width="2%"></td>
+<td width="7%">
+
+
+<p valign="top">|</p></td>
+<td width="8%">
+
+
+<p valign="top">pfil-&gt;filters[0].factory</p></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="54%">
+</td>
+<tr valign="top" align="left">
+<td width="6%"></td>
+<td width="2%"></td>
+<td width="7%">
+
+
+<p valign="top">(pfil-&gt;filters[0].param) == hardware
+input For recording, constructs conversions as follows:</p></td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="54%">
+</td>
+<tr valign="top" align="left">
+<td width="6%"></td>
+<td width="2%"></td>
+<td width="7%">
+
+
+<p valign="top">(rfil-&gt;filters[0].param) == hardware
+output</p> </td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="54%">
+</td>
+<tr valign="top" align="left">
+<td width="6%"></td>
+<td width="2%"></td>
+<td width="7%">
+
+
+<p valign="top">|</p></td>
+<td width="8%">
+
+
+<p valign="top">rfil-&gt;filters[0].factory</p></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="54%">
+</td>
+<tr valign="top" align="left">
+<td width="6%"></td>
+<td width="2%"></td>
+<td width="7%">
+
+
+<p valign="top">(rfil-&gt;filters[1].param)</p></td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="54%">
+</td>
+<tr valign="top" align="left">
+<td width="6%"></td>
+<td width="2%"></td>
+<td width="7%">
+
+
+<p valign="top">|</p></td>
+<td width="8%">
+
+
+<p valign="top">rfil-&gt;filters[1].factory</p></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="54%">
+</td>
+<tr valign="top" align="left">
+<td width="6%"></td>
+<td width="2%"></td>
+<td width="7%">
+
+
+<p valign="top">:</p></td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="54%">
+</td>
+<tr valign="top" align="left">
+<td width="6%"></td>
+<td width="2%"></td>
+<td width="7%">
+
+
+<p valign="top">|</p></td>
+<td width="8%">
+
+
+
+<p valign="top">rfil-&gt;filters[rfil-&gt;req_size-2].factory</p> </td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="54%">
+</td>
+<tr valign="top" align="left">
+<td width="6%"></td>
+<td width="2%"></td>
+<td width="7%">
+
+
+
+<p valign="top">(rfil-&gt;filters[rfil-&gt;req_size-1].param)</p> </td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="54%">
+</td>
+<tr valign="top" align="left">
+<td width="6%"></td>
+<td width="2%"></td>
+<td width="7%">
+
+
+<p valign="top">|</p></td>
+<td width="8%">
+
+
+
+<p valign="top">rfil-&gt;filters[rfil-&gt;req_size-1].factory</p> </td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="54%">
+</td>
+<tr valign="top" align="left">
+<td width="6%"></td>
+<td width="2%"></td>
+<td width="7%">
+
+
+<p valign="top">(rec) == read(2) output If the device does
+not have the property the same value is passed in both and
+and the encoding parameters from is copied into after the
+call to Return 0 on success, otherwise an error code.
+optional, is called with the block size, that has been
+computed by the upper layer, or and encoding parameters for
+the hardware. It should return a block size, possibly
+changed according to the needs of the hardware driver.
+optional, is called after all calls to and are done. A
+hardware driver that needs to get the hardware in and out of
+command mode for each change can save all the changes during
+previous calls and do them all here. Return 0 on success,
+otherwise an error code. optional, is called before any
+output starts, but when the total of the output has been
+determined. It can be used to initialize looping DMA for
+hardware that needs that. Return 0 on success, otherwise an
+error code. optional, is called before any input starts, but
+when the total of the input has been determined. It can be
+used to initialize looping DMA for hardware that needs that.
+Return 0 on success, otherwise an error code. is called to
+start the transfer of bytes from to the audio hardware. The
+call should return when the data transfer has been initiated
+(normally with DMA). When the hardware is ready to accept
+more samples the function should be called with the argument
+Calling will normally initiate another call to Return 0 on
+success, otherwise an error code. is called to start the
+transfer of bytes to from the audio hardware. The call
+should return when the data transfer has been initiated
+(normally with DMA). When the hardware is ready to deliver
+more samples the function should be called with the argument
+Calling will normally initiate another call to Return 0 on
+success, otherwise an error code. is called to abort the
+output transfer (started by in progress. Return 0 on
+success, otherwise an error code. is called to abort the
+input transfer (started by in progress. Return 0 on success,
+otherwise an error code. optional, is called when a half
+duplex device changes between playing and recording. It can,
+e.g., be used to turn on and off the speaker. Return 0 on
+success, otherwise an error code. Should fill the struct
+with relevant information about the driver. Return 0 on
+success, otherwise an error code. optional, is called when
+is used, but only if the device has AUDIO_PROP_FULLDUPLEX
+set. Return 0 on success, otherwise an error code. is called
+in when is used. It should take data from the struct at set
+the corresponding mixer values. Return 0 on success,
+otherwise an error code. is called in when is used. It
+should fill the struct. Return 0 on success, otherwise an
+error code. is called in when is used. It should fill the
+struct. Return 0 on success, otherwise an error code.
+optional, is called to allocate the device buffers. If not
+present is used instead (with the same arguments but the
+first two). The reason for using a device dependent routine
+instead of is that some buses need special allocation to do
+DMA. Returns the address of the buffer, or 0 on failure.
+optional, is called to free memory allocated by If not
+supplied is used. optional, is called at startup to
+determine the audio buffer size. The upper layer supplies
+the suggested size in which the hardware driver can then
+change if needed. E.g., DMA on the ISA bus cannot exceed
+65536 bytes. optional, is called for Should return the map
+value for the page at offset from address mapped with
+protection Returns -1 on failure, or a machine dependent
+opaque value on success. Should return the device
+properties; i.e., a combination of AUDIO_PROP_xxx. optional,
+is called to start the transfer of data from the circular
+buffer delimited by and to the audio hardware, parameterized
+as in The call should return when the data transfer has been
+initiated (normally with DMA). When the hardware is finished
+transferring each sized block, the function should be called
+with the argument (typically from the audio hardware
+interrupt service routine). Once started the transfer may be
+stopped using Return 0 on success, otherwise an error code.
+optional, is called to start the transfer of data from the
+audio hardware, parameterized as in to the circular buffer
+delimited by and The call should return when the data
+transfer has been initiated (normally with DMA). When the
+hardware is finished transferring each sized block, the
+function should be called with the argument (typically from
+the audio hardware interrupt service routine). Once started
+the transfer may be stopped using Return 0 on success,
+otherwise an error code. optional, is called when an is not
+recognized by the generic audio driver. Return 0 on success,
+otherwise an error code. Returns the interrupt and thread
+locks to the common audio layer. The method should define
+certain mixer controls for to be able to change the port and
+gain, and to read them, as follows. If the record mixer is
+capable of input from more than one source, it should define
+in class This mixer control should be of type or and
+enumerate the possible input sources. Each of the named
+sources for which the recording level can be set should have
+a control in the class of type except the source is special,
+and will never have its own control. Its selection
+signifies, rather, that various sources in class will be
+combined and presented to the single recording output in the
+same fashion that the sources of class are combined and
+presented to the playback output(s). If the overall
+recording level can be changed, regardless of the input
+source, then this control should be named and be of class
+Controls for various sources that affect only the playback
+output, as opposed to recording, should be in the class, as
+of course should any controls that affect both playback and
+recording. If the play mixer is capable of output to more
+than one destination, it should define in class This mixer
+control should be of type or and enumerate the possible
+destinations. For each of the named destinations for which
+the output level can be set, there should be a control in
+the class of type If the overall output level can be
+changed, which is invariably the case, then this control
+should be named and be of class There&rsquo;s one additional
+source recognized specially by and to be presented as
+monitor_gain, and that is a control named of class This
+interface first appeared in</p></td>
+<td width="8%"></td>
+<td width="8%"></td>
+<td width="7%"></td>
+<td width="8%"></td>
+<td width="54%">
+</td>
+ </table>
+<hr>
+</body>
+</html>
