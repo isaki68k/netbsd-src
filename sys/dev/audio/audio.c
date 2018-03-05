@@ -1448,8 +1448,37 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 		kauth_cred_hold(sc->sc_cred);
 
 		if (sc->hw_if->open) {
+			int hwflags;
+
+			// hw_if->open() は録音再生合わせて1本目のオープン時
+			// のみ呼び出すので、Full Duplex HW の場合
+			// hw_if->open() に渡す flags はこの open の flags に
+			// 関係なく常に FREAD | FWRITE でなければならない。
+			// 1本目が再生のみだろうと録音のみだろうと、2本目が
+			// 同じ方向のオープンとは限らないため。
+			// see also: dev/isa/aria.c
+			//
+			// 一方、Half Duplex HW では当然 FREAD と FWRITE が
+			// 同時に立つことはあり得ないので、必ず有効な片方だけ
+			// にしなければならない。
+			// see also: arch/evbarm/mini2440/audio_mini2440.c
+
+			if ((audio_get_props(sc) & AUDIO_PROP_FULLDUPLEX)) {
+				hwflags = FREAD | FWRITE;
+			} else {
+				// af->mode から flags を再構成。
+				// flags はユーザ指定値、それを他ディスクリプタ
+				// のオープン状況と擦り合わせた結果が af->mode
+				// に入っている (see audio_file_setinfo())。
+				hwflags = 0;
+				if ((af->mode & AUMODE_PLAY) != 0)
+					hwflags |= FWRITE;
+				if ((af->mode & AUMODE_RECORD) != 0)
+					hwflags |= FREAD;
+			}
+
 			mutex_enter(sc->sc_intr_lock);
-			error = sc->hw_if->open(sc->hw_hdl, flags);
+			error = sc->hw_if->open(sc->hw_hdl, hwflags);
 			mutex_exit(sc->sc_intr_lock);
 			if (error)
 				goto bad3;
