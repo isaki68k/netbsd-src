@@ -2246,10 +2246,13 @@ audio_pmixer_process(struct audio_softc *sc, bool isintr)
 		m = mixer->mixsample;
 
 		for (int i = 0; i < sample_count; i++) {
-			if (*m > ovf_plus) ovf_plus = *m;
-			if (*m < ovf_minus) ovf_minus = *m;
+			aint2_t val;
 
-			m++;
+			val = *m++;
+			if (val > ovf_plus)
+				ovf_plus = val;
+			else if (val < ovf_minus)
+				ovf_minus = val;
 		}
 
 		// マスタボリュームの自動制御
