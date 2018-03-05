@@ -2297,7 +2297,7 @@ audio_pmixer_process(struct audio_softc *sc, bool isintr)
 	// ここから ハードウェアチャンネル
 
 	// ハードウェアバッファへ転送
-	int need_exit = mutex_tryenter(sc->sc_intr_lock);
+	int lock_owned = mutex_tryenter(sc->sc_intr_lock);
 
 	m = mixer->mixsample;
 	aint_t *h;
@@ -2329,7 +2329,7 @@ audio_pmixer_process(struct audio_softc *sc, bool isintr)
 	    mixer->hwbuf.head, mixer->hwbuf.used, mixer->hwbuf.capacity,
 	    (mixed == 0) ? " silent" : "");
 
-	if (need_exit) {
+	if (lock_owned) {
 		mutex_exit(sc->sc_intr_lock);
 	}
 }
