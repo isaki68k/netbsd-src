@@ -1779,8 +1779,11 @@ audio_track_play(audio_track_t *track)
 void
 audio_track_record(audio_track_t *track)
 {
+	audio_ring_t *outputbuf;
+	audio_ring_t *usrbuf;
 	int count;
 	int bytes;
+	int framesize;
 
 	KASSERT(track);
 
@@ -1813,10 +1816,10 @@ audio_track_record(audio_track_t *track)
 		audio_apply_stage(track, &track->codec, false);
 
 	// outputbuf から usrbuf へ
-	audio_ring_t *outputbuf = &track->outputbuf;
-	audio_ring_t *usrbuf = &track->usrbuf;
+	outputbuf = &track->outputbuf;
+	usrbuf = &track->usrbuf;
 	// 出力(outputbuf)に 4bit は来ないので1フレームは必ず1バイト以上ある
-	int framesize = frametobyte(&outputbuf->fmt, 1);
+	framesize = frametobyte(&outputbuf->fmt, 1);
 	KASSERT(framesize >= 1);
 	// count は usrbuf にコピーするフレーム数。
 	// bytes は usrbuf にコピーするバイト数。
@@ -1831,7 +1834,9 @@ audio_track_record(audio_track_t *track)
 		audio_ring_push(usrbuf, bytes);
 		audio_ring_take(outputbuf, count);
 	} else {
-		int bytes1 = audio_ring_get_contig_used(usrbuf);
+		int bytes1, bytes2;
+
+		bytes1 = audio_ring_get_contig_used(usrbuf);
 		KASSERT(bytes1 % framesize == 0);
 		memcpy((uint8_t *)usrbuf->mem + audio_ring_tail(usrbuf),
 		    (uint8_t *)outputbuf->mem + outputbuf->head * framesize,
@@ -1839,7 +1844,7 @@ audio_track_record(audio_track_t *track)
 		audio_ring_push(usrbuf, bytes1);
 		audio_ring_take(outputbuf, bytes1 / framesize);
 
-		int bytes2 = bytes - bytes1;
+		bytes2 = bytes - bytes1;
 		memcpy((uint8_t *)usrbuf->mem + audio_ring_tail(usrbuf),
 		    (uint8_t *)outputbuf->mem + outputbuf->head * framesize,
 		    bytes2);
@@ -1950,6 +1955,9 @@ int
 audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 {
 	int len;
+	int blksize;
+	int capacity;
+	size_t bufsize;
 	int error;
 
 	error = 0;
@@ -1967,7 +1975,7 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 	mixer->hwblks = NBLKHW;
 
 	mixer->frames_per_block = frame_per_block_roundup(mixer, &mixer->hwbuf.fmt);
-	int blksize = frametobyte(&mixer->hwbuf.fmt, mixer->frames_per_block);
+	blksize = frametobyte(&mixer->hwbuf.fmt, mixer->frames_per_block);
 	if (sc->hw_if->round_blocksize) {
 		int rounded;
 		audio_params_t p = format2_to_params(&mixer->hwbuf.fmt);
@@ -1988,8 +1996,8 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 	mixer->blktime_n = mixer->frames_per_block;
 	mixer->blktime_d = mixer->hwbuf.fmt.sample_rate;
 
-	int capacity = mixer->frames_per_block * mixer->hwblks;
-	size_t bufsize = frametobyte(&mixer->hwbuf.fmt, capacity);
+	capacity = mixer->frames_per_block * mixer->hwblks;
+	bufsize = frametobyte(&mixer->hwbuf.fmt, capacity);
 	if (sc->hw_if->round_buffersize) {
 		size_t rounded;
 		mutex_enter(sc->sc_lock);
@@ -2128,6 +2136,7 @@ void
 audio_pmixer_start(struct audio_softc *sc, bool force)
 {
 	audio_trackmixer_t *mixer;
+	int minimum;
 
 	KASSERT(mutex_owned(sc->sc_lock));
 
@@ -2148,7 +2157,7 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
 
 	// 通常は2ブロック貯めてから再生開始したい。
 	// force ならそういうわけにいかないので1ブロックで再生開始する。
-	int minimum = (force) ? 1 : 2;
+	minimum = (force) ? 1 : 2;
 	while (mixer->hwbuf.used < mixer->frames_per_block * minimum) {
 		audio_pmixer_process(sc, false);
 	}
@@ -2213,22 +2222,28 @@ void
 audio_pmixer_process(struct audio_softc *sc, bool isintr)
 {
 	audio_trackmixer_t *mixer;
+	int hw_free_count;
+	int frame_count;
+	int sample_count;
 	int mixed;
+	int lock_owned;
+	int i;
 	aint2_t *m;
+	aint_t *h;
 
 	mixer = sc->sc_pmixer;
 
 	// 今回取り出すフレーム数を決定
 	// 実際には hwbuf はブロック単位で変動するはずなので
 	// count は1ブロック分になるはず
-	int hw_free_count = audio_ring_get_contig_free(&mixer->hwbuf);
-	int frame_count = min(hw_free_count, mixer->frames_per_block);
+	hw_free_count = audio_ring_get_contig_free(&mixer->hwbuf);
+	frame_count = min(hw_free_count, mixer->frames_per_block);
 	if (frame_count <= 0) {
 		TRACE("count too short: hw_free=%d frames_per_block=%d",
 		    hw_free_count, mixer->frames_per_block);
 		return;
 	}
-	int sample_count = frame_count * mixer->mixfmt.channels;
+	sample_count = frame_count * mixer->mixfmt.channels;
 
 	mixer->mixseq++;
 
@@ -2240,12 +2255,14 @@ audio_pmixer_process(struct audio_softc *sc, bool isintr)
 		    frametobyte(&mixer->mixfmt, frame_count));
 	} else {
 		// オーバーフロー検出
-		aint2_t ovf_plus = AINT_T_MAX;
-		aint2_t ovf_minus = AINT_T_MIN;
+		aint2_t ovf_plus;
+		aint2_t ovf_minus;
+		int vol;
 
+		ovf_plus = AINT_T_MAX;
+		ovf_minus = AINT_T_MIN;
 		m = mixer->mixsample;
-
-		for (int i = 0; i < sample_count; i++) {
+		for (i = 0; i < sample_count; i++) {
 			aint2_t val;
 
 			val = *m++;
@@ -2256,17 +2273,22 @@ audio_pmixer_process(struct audio_softc *sc, bool isintr)
 		}
 
 		// マスタボリュームの自動制御
-		int vol = mixer->volume;
+		vol = mixer->volume;
 		if (ovf_plus > (aint2_t)AINT_T_MAX
 		 || ovf_minus < (aint2_t)AINT_T_MIN) {
+			aint2_t ovf;
+			int vol2;
+
 			// TODO: AINT2_T_MIN チェック?
-			aint2_t ovf = ovf_plus;
-			if (ovf < -ovf_minus) ovf = -ovf_minus;
+			ovf = ovf_plus;
+			if (ovf < -ovf_minus)
+				ovf = -ovf_minus;
 
 			// オーバーフローしてたら少なくとも今回はボリュームを
 			// 下げる
-			int vol2 = (int)((aint2_t)AINT_T_MAX * 256 / ovf);
-			if (vol2 < vol) vol = vol2;
+			vol2 = (int)((aint2_t)AINT_T_MAX * 256 / ovf);
+			if (vol2 < vol)
+				vol = vol2;
 
 			if (vol < mixer->volume) {
 				// 128 までは自動でマスタボリュームを下げる
@@ -2283,7 +2305,7 @@ audio_pmixer_process(struct audio_softc *sc, bool isintr)
 		// マスタボリューム適用
 		if (vol != 256) {
 			m = mixer->mixsample;
-			for (int i = 0; i < sample_count; i++) {
+			for (i = 0; i < sample_count; i++) {
 #if defined(AUDIO_USE_C_IMPLEMENTATION_DEFINED_BEHAVIOR) && defined(__GNUC__)
 				*m = *m * vol >> 8;
 #else
@@ -2297,10 +2319,9 @@ audio_pmixer_process(struct audio_softc *sc, bool isintr)
 	// ここから ハードウェアチャンネル
 
 	// ハードウェアバッファへ転送
-	int lock_owned = mutex_tryenter(sc->sc_intr_lock);
+	lock_owned = mutex_tryenter(sc->sc_intr_lock);
 
 	m = mixer->mixsample;
-	aint_t *h;
 	// MD 側フィルタがあれば aint2_t -> aint_t を codecbuf へ
 	if (mixer->codec) {
 		h = audio_ring_tailptr_aint(&mixer->codecbuf);
@@ -2308,7 +2329,7 @@ audio_pmixer_process(struct audio_softc *sc, bool isintr)
 		h = audio_ring_tailptr_aint(&mixer->hwbuf);
 	}
 
-	for (int i = 0; i < sample_count; i++) {
+	for (i = 0; i < sample_count; i++) {
 		*h++ = *m++;
 	}
 
@@ -2409,29 +2430,36 @@ audio_pmixer_mixall(struct audio_softc *sc, bool isintr)
  *	it returns mixed+1 if this track is mixed.
  */
 int
-audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req, int mixed)
+audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track,
+	int req, int mixed)
 {
+	int count;
+	int sample_count;
+	int i;
+	const aint_t *s;
+	aint2_t *d;
+
 	// 現時点で outputbuf に溜まってるやつを最大1ブロック分処理する。
 
 	// このトラックが処理済みならなにもしない
 	if (mixer->mixseq < track->seq) return mixed;
 
-	int count = audio_ring_get_contig_used(&track->outputbuf);
+	count = audio_ring_get_contig_used(&track->outputbuf);
 	count = min(count, mixer->frames_per_block);
 
-	aint_t *s = audio_ring_headptr_aint(&track->outputbuf);
-	aint2_t *d = mixer->mixsample;
+	s = audio_ring_headptr_aint(&track->outputbuf);
+	d = mixer->mixsample;
 
 	// 整数倍精度へ変換し、トラックボリュームを適用して加算合成
-	int sample_count = count * mixer->mixfmt.channels;
+	sample_count = count * mixer->mixfmt.channels;
 	if (mixed == 0) {
 		// 最初のトラック合成は代入
 		if (track->volume == 256) {
-			for (int i = 0; i < sample_count; i++) {
+			for (i = 0; i < sample_count; i++) {
 				*d++ = ((aint2_t)*s++);
 			}
 		} else {
-			for (int i = 0; i < sample_count; i++) {
+			for (i = 0; i < sample_count; i++) {
 #if defined(AUDIO_USE_C_IMPLEMENTATION_DEFINED_BEHAVIOR) && defined(__GNUC__)
 				*d++ = ((aint2_t)*s++) * track->volume >> 8;
 #else
@@ -2442,11 +2470,11 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req,
 	} else {
 		// 2本め以降なら加算合成
 		if (track->volume == 256) {
-			for (int i = 0; i < sample_count; i++) {
+			for (i = 0; i < sample_count; i++) {
 				*d++ += ((aint2_t)*s++);
 			}
 		} else {
-			for (int i = 0; i < sample_count; i++) {
+			for (i = 0; i < sample_count; i++) {
 #if defined(AUDIO_USE_C_IMPLEMENTATION_DEFINED_BEHAVIOR) && defined(__GNUC__)
 				*d++ += ((aint2_t)*s++) * track->volume >> 8;
 #else
@@ -2667,19 +2695,21 @@ audio_rmixer_process(struct audio_softc *sc)
 	audio_trackmixer_t *mixer;
 	audio_ring_t *mixersrc;
 	audio_file_t *f;
+	int count;
+	int bytes;
 
 	mixer = sc->sc_rmixer;
 
 	// 今回取り出すフレーム数を決定
 	// 実際には hwbuf はブロック単位で変動するはずなので
 	// count は1ブロック分になるはず
-	int count = audio_ring_get_contig_used(&mixer->hwbuf);
+	count = audio_ring_get_contig_used(&mixer->hwbuf);
 	count = min(count, mixer->frames_per_block);
 	if (count <= 0) {
 		TRACE("count %d: too short", count);
 		return;
 	}
-	int bytes = frametobyte(&mixer->track_fmt, count);
+	bytes = frametobyte(&mixer->track_fmt, count);
 
 	// MD 側フィルタ
 	if (mixer->codec) {
@@ -2697,6 +2727,7 @@ audio_rmixer_process(struct audio_softc *sc)
 	// 全トラックへ分配
 	SLIST_FOREACH(f, &sc->sc_files, entry) {
 		audio_track_t *track = f->rtrack;
+		audio_ring_t *input;
 
 		if (track == NULL)
 			continue;
@@ -2712,7 +2743,7 @@ audio_rmixer_process(struct audio_softc *sc)
 		}
 
 		// 空いてなければ古い方から捨てる?
-		audio_ring_t *input = track->input;
+		input = track->input;
 		if (input->capacity - input->used < mixer->frames_per_block) {
 			int drops = mixer->frames_per_block -
 			    (input->capacity - input->used);
@@ -3022,7 +3053,8 @@ audio_write_uiomove(audio_track_t *track, int tail, int len, struct uio *uio)
 }
 
 int
-audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *file)
+audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
+	audio_file_t *file)
 {
 	audio_track_t *track;
 	audio_ring_t *usrbuf;
