@@ -514,8 +514,8 @@ audio_track_freq_up(audio_filter_arg_t *arg)
 	KASSERT(src->fmt.channels == dst->fmt.channels);
 	KASSERT(src->head % track->mixer->frames_per_block == 0);
 
-	const aint_t *sptr = arg->src;
-	aint_t *dptr = arg->dst;
+	const aint_t *s = arg->src;
+	aint_t *d = arg->dst;
 
 	// 補間はブロック単位での処理がしやすいように入力を1サンプルずらして(?)
 	// 補間を行なっている。このため厳密には位相が 1/dstfreq 分だけ遅れる
@@ -584,7 +584,7 @@ audio_track_freq_up(audio_filter_arg_t *arg)
 				// 前回値
 				prev[ch] = curr[ch];
 				// 今回値
-				curr[ch] = *sptr++;
+				curr[ch] = *s++;
 				// 傾き
 				grad[ch] = curr[ch] - prev[ch];
 			}
@@ -601,10 +601,10 @@ audio_track_freq_up(audio_filter_arg_t *arg)
 		}
 
 		for (ch = 0; ch < channels; ch++) {
-			*dptr++ = prev[ch] + (aint2_t)grad[ch] * t / 65536;
+			*d++ = prev[ch] + (aint2_t)grad[ch] * t / 65536;
 #if defined(FREQ_DEBUG)
 			if (ch == 0)
-				printf(" t=%5d *d=%d", t, dptr[-1]);
+				printf(" t=%5d *d=%d", t, d[-1]);
 #endif
 		}
 		t += step;
@@ -2214,7 +2214,7 @@ audio_pmixer_process(struct audio_softc *sc, bool isintr)
 {
 	audio_trackmixer_t *mixer;
 	int mixed;
-	aint2_t *mptr;
+	aint2_t *m;
 
 	mixer = sc->sc_pmixer;
 
@@ -2243,13 +2243,13 @@ audio_pmixer_process(struct audio_softc *sc, bool isintr)
 		aint2_t ovf_plus = AINT_T_MAX;
 		aint2_t ovf_minus = AINT_T_MIN;
 
-		mptr = mixer->mixsample;
+		m = mixer->mixsample;
 
 		for (int i = 0; i < sample_count; i++) {
-			if (*mptr > ovf_plus) ovf_plus = *mptr;
-			if (*mptr < ovf_minus) ovf_minus = *mptr;
+			if (*m > ovf_plus) ovf_plus = *m;
+			if (*m < ovf_minus) ovf_minus = *m;
 
-			mptr++;
+			m++;
 		}
 
 		// マスタボリュームの自動制御
@@ -2279,14 +2279,14 @@ audio_pmixer_process(struct audio_softc *sc, bool isintr)
 
 		// マスタボリューム適用
 		if (vol != 256) {
-			mptr = mixer->mixsample;
+			m = mixer->mixsample;
 			for (int i = 0; i < sample_count; i++) {
 #if defined(AUDIO_USE_C_IMPLEMENTATION_DEFINED_BEHAVIOR) && defined(__GNUC__)
-				*mptr = *mptr * vol >> 8;
+				*m = *m * vol >> 8;
 #else
-				*mptr = *mptr * vol / 256;
+				*m = *m * vol / 256;
 #endif
-				mptr++;
+				m++;
 			}
 		}
 	}
@@ -2296,17 +2296,17 @@ audio_pmixer_process(struct audio_softc *sc, bool isintr)
 	// ハードウェアバッファへ転送
 	int need_exit = mutex_tryenter(sc->sc_intr_lock);
 
-	mptr = mixer->mixsample;
-	aint_t *hptr;
+	m = mixer->mixsample;
+	aint_t *h;
 	// MD 側フィルタがあれば aint2_t -> aint_t を codecbuf へ
 	if (mixer->codec) {
-		hptr = audio_ring_tailptr_aint(&mixer->codecbuf);
+		h = audio_ring_tailptr_aint(&mixer->codecbuf);
 	} else {
-		hptr = audio_ring_tailptr_aint(&mixer->hwbuf);
+		h = audio_ring_tailptr_aint(&mixer->hwbuf);
 	}
 
 	for (int i = 0; i < sample_count; i++) {
-		*hptr++ = *mptr++;
+		*h++ = *m++;
 	}
 
 	// MD 側フィルタ
@@ -2416,8 +2416,8 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req,
 	int count = audio_ring_get_contig_used(&track->outputbuf);
 	count = min(count, mixer->frames_per_block);
 
-	aint_t *sptr = audio_ring_headptr_aint(&track->outputbuf);
-	aint2_t *dptr = mixer->mixsample;
+	aint_t *s = audio_ring_headptr_aint(&track->outputbuf);
+	aint2_t *d = mixer->mixsample;
 
 	// 整数倍精度へ変換し、トラックボリュームを適用して加算合成
 	int sample_count = count * mixer->mixfmt.channels;
@@ -2425,14 +2425,14 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req,
 		// 最初のトラック合成は代入
 		if (track->volume == 256) {
 			for (int i = 0; i < sample_count; i++) {
-				*dptr++ = ((aint2_t)*sptr++);
+				*d++ = ((aint2_t)*s++);
 			}
 		} else {
 			for (int i = 0; i < sample_count; i++) {
 #if defined(AUDIO_USE_C_IMPLEMENTATION_DEFINED_BEHAVIOR) && defined(__GNUC__)
-				*dptr++ = ((aint2_t)*sptr++) * track->volume >> 8;
+				*d++ = ((aint2_t)*s++) * track->volume >> 8;
 #else
-				*dptr++ = ((aint2_t)*sptr++) * track->volume / 256;
+				*d++ = ((aint2_t)*s++) * track->volume / 256;
 #endif
 			}
 		}
@@ -2440,14 +2440,14 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req,
 		// 2本め以降なら加算合成
 		if (track->volume == 256) {
 			for (int i = 0; i < sample_count; i++) {
-				*dptr++ += ((aint2_t)*sptr++);
+				*d++ += ((aint2_t)*s++);
 			}
 		} else {
 			for (int i = 0; i < sample_count; i++) {
 #if defined(AUDIO_USE_C_IMPLEMENTATION_DEFINED_BEHAVIOR) && defined(__GNUC__)
-				*dptr++ += ((aint2_t)*sptr++) * track->volume >> 8;
+				*d++ += ((aint2_t)*s++) * track->volume >> 8;
 #else
-				*dptr++ += ((aint2_t)*sptr++) * track->volume / 256;
+				*d++ += ((aint2_t)*s++) * track->volume / 256;
 #endif
 			}
 		}
