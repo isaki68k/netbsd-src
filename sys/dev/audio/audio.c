@@ -1449,7 +1449,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 
 		if (sc->hw_if->open) {
 			mutex_enter(sc->sc_intr_lock);
-			error = sc->hw_if->open(sc->hw_hdl, af->mode);
+			error = sc->hw_if->open(sc->hw_hdl, flags);
 			mutex_exit(sc->sc_intr_lock);
 			if (error)
 				goto bad3;
