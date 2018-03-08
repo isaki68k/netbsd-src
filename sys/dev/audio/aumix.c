@@ -906,7 +906,6 @@ audio_track_init_codec(audio_track_t *track, audio_ring_t **last_dstp)
 	if (srcfmt->encoding != dstfmt->encoding
 	 || srcfmt->precision != dstfmt->precision
 	 || srcfmt->stride != dstfmt->stride) {
-		// エンコーディングを変換する
 		track->codec.dst = last_dst;
 
 		srcbuf->fmt = *dstfmt;
@@ -978,7 +977,7 @@ audio_track_init_chvol(audio_track_t *track, audio_ring_t **last_dstp)
 	srcbuf = &track->chvol.srcbuf;
 	error = 0;
 
-	// チャンネルボリュームが有効かどうか
+	/* Check whether channel volume conversion is necessary. */
 	bool use_chvol = false;
 	for (int ch = 0; ch < srcfmt->channels; ch++) {
 		if (track->ch_volume[ch] != 256) {
@@ -1323,7 +1322,7 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 	/* Stage buffer */
 	audio_ring_t *last_dst = &track->outputbuf;
 	if (audio_track_is_playback(track)) {
-		// 再生はトラックミキサ側から作る
+		/* On playback, initialize from the mixer side in order. */
 		track->inputfmt = *usrfmt;
 		track->outputbuf.fmt =  track->mixer->track_fmt;
 
@@ -1336,7 +1335,7 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 		if ((error = audio_track_init_codec(track, &last_dst)) != 0)
 			goto error;
 	} else {
-		// 録音はユーザランド側から作る
+		/* On recording, initialize from userland side in order. */
 		track->inputfmt = track->mixer->track_fmt;
 		track->outputbuf.fmt = *usrfmt;
 
@@ -1369,7 +1368,7 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 	}
 #endif
 
-	// 入力バッファ
+	/* Stage input buffer */
 	track->input = last_dst;
 	// 録音時は先頭のステージをリングバッファにする
 	// XXX もっとましな方法でやったほうがいい
@@ -1388,6 +1387,11 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 
 	// 出力フォーマットに従って outputbuf を作る
 	// 再生側 outputbuf は NBLKOUT 分。録音側は1ブロックでいい。
+	/*
+	 * Output buffer.
+	 * On the playback track, its capacity is NBLKOUT blocks.
+	 * On the recording track, its capacity is 1 block.
+	 */
 	track->outputbuf.head = 0;
 	track->outputbuf.used = 0;
 	track->outputbuf.capacity = frame_per_block_roundup(track->mixer, &track->outputbuf.fmt);
@@ -1617,8 +1621,10 @@ audio_track_play(audio_track_t *track)
 	TRACET(track, "start pstate=%d", track->pstate);
 
 	// この時点で usrbuf は空ではない。
+	/* At this point usrbuf should not be empty. */
 	KASSERT(track->usrbuf.used > 0);
 	// また outputbuf に1ブロック以上の空きがある。
+	/* Also, outputbuf should be available at least one block. */
 	count = audio_ring_get_contig_free(&track->outputbuf);
 	KASSERTMSG(count >= frame_per_block_roundup(track->mixer, &track->outputbuf.fmt),
 	    "count=%d fpb=%d",
@@ -1631,16 +1637,27 @@ audio_track_play(audio_track_t *track)
 	dropcount = 0;
 
 	// 入力(usrfmt) に 4bit は来ないので1フレームは必ず1バイト以上ある
+	/*
+	 * framesize is always 1 byte or more since all formats supported as
+	 * usrfmt(=input) have 8bit or more stride.
+	 */
 	framesize = frametobyte(&input->fmt, 1);
 	KASSERT(framesize >= 1);
 
 	// usrbuf の次段(input) も空いてるはず
+	/* The next stage of usrbuf (=input) should be available. */
 	KASSERT(audio_ring_get_contig_free(input) > 0);
 
 	// usrbuf の最大1ブロックを input へコピー
 	// count は usrbuf からコピーするフレーム数。
 	// bytes は usrbuf からコピーするバイト数。
 	// ただし1フレーム未満のバイトはコピーしない。
+	/*
+	 * Copy usrbuf up to 1block to input buffer.
+	 * count is the number of frames to copy from usrbuf.
+	 * bytes is the number of bytes to copy from usrbuf.  However it is
+	 * not copied less than 1 frame.
+	 */
 	count = min(usrbuf->used, track->usrbuf_blksize) / framesize;
 	bytes = count * framesize;
 
@@ -1657,17 +1674,28 @@ audio_track_play(audio_track_t *track)
 		if (track->pstate != AUDIO_STATE_DRAINING) {
 			if ((track->mode & AUMODE_PLAY_ALL)) {
 				// PLAY_ALL なら溜まるまで待つ
+				/* For PLAY_ALL, wait until filled. */
 				TRACET(track, "not enough; return");
 				return;
 			} else {
 				// ここで1ブロックに満たなければ
 				// 落ちる(落ちた)ということ
+				/* Drop occurred. */
 
 				// playdrop は今落とし中のフレーム数
 				// 回復運転のために数えておく必要がある
+				/*
+				 * playdrop is the number of frames currently
+				 * being dropped.  It is necessary to remember
+				 * due to recover sync.
+				 */
 				track->playdrop += dropcount;
 				// dropframes は数え上げるだけ。
 				// 1回でも落ちれば play.error を立てるため
+				/*
+				 * dropframes only counts up due to set
+				 * play.error if drops even once.
+				 */
 				track->dropframes += dropcount;
 			}
 		}
@@ -1705,19 +1733,27 @@ audio_track_play(audio_track_t *track)
 	}
 
 	// エンコーディング変換
+	/* Encoding conversion */
 	if (track->codec.filter)
 		audio_apply_stage(track, &track->codec, false);
 
 	// チャンネルボリューム
+	/* Channel volume */
 	if (track->chvol.filter)
 		audio_apply_stage(track, &track->chvol, false);
 
 	// チャンネルミキサ
+	/* Channel mix */
 	if (track->chmix.filter)
 		audio_apply_stage(track, &track->chmix, false);
 
 	// 周波数変換
 	// 1ブロックごとに誤差補正があるので必ず1ブロックにする
+	/* Frequency conversion */
+	/*
+	 * Since the frequency conversion needs correction for each block,
+	 * it rounds up to 1 block.
+	 */
 	if (track->freq.filter) {
 		int n = 0;
 		n = audio_append_silence(track, &track->freq.srcbuf);
@@ -1741,6 +1777,15 @@ audio_track_play(audio_track_t *track)
 		// リングバッファの形にしてあるが運用上はただのバッファなので、
 		// ポインタが途中を指されていると困る。
 		// これが起きるのは PLAY_SYNC か drain 中の時。
+		/*
+		 * Clear all conversion buffer pointer if the conversion was
+		 * not exactly one block.  These conversion stage buffers are
+		 * certainly circular buffers because of symmetry with the
+		 * previous and next stage buffer.  However, since they are
+		 * treated as simple contiguous buffers in operation, so head
+		 * always should point 0.  This may happen during PLAY(_SYNC)
+		 * or drain-age.
+		 */
 		TRACET(track, "reset stage");
 		if (track->codec.filter) {
 			KASSERT(track->codec.srcbuf.used == 0);
@@ -1788,6 +1833,7 @@ audio_track_record(audio_track_t *track)
 	KASSERT(track);
 
 	// 処理するフレーム数
+	/* number of frames to process */
 	count = audio_ring_get_contig_used(track->input);
 	count = min(count, track->mixer->frames_per_block);
 	if (count == 0) {
@@ -1796,6 +1842,7 @@ audio_track_record(audio_track_t *track)
 	}
 
 	// 周波数変換
+	/* Frequency conversion */
 	if (track->freq.filter) {
 		if (track->freq.srcbuf.used > 0) {
 			audio_apply_stage(track, &track->freq, true);
@@ -1804,25 +1851,37 @@ audio_track_record(audio_track_t *track)
 	}
 
 	// チャンネルミキサ
+	/* Channel Mix */
 	if (track->chmix.filter)
 		audio_apply_stage(track, &track->chmix, false);
 
 	// チャンネルボリューム
+	/* Channel Volume */
 	if (track->chvol.filter)
 		audio_apply_stage(track, &track->chvol, false);
 
 	// エンコーディング変換
+	/* Encoding Conversion */
 	if (track->codec.filter)
 		audio_apply_stage(track, &track->codec, false);
 
 	// outputbuf から usrbuf へ
+	/* Copy from outputbuf to usrbuf */
 	outputbuf = &track->outputbuf;
 	usrbuf = &track->usrbuf;
 	// 出力(outputbuf)に 4bit は来ないので1フレームは必ず1バイト以上ある
+	/*
+	 * framesize is always 1 byte or more since all formats supported as
+	 * usrfmt(=output) have 8bit or more stride.
+	 */
 	framesize = frametobyte(&outputbuf->fmt, 1);
 	KASSERT(framesize >= 1);
 	// count は usrbuf にコピーするフレーム数。
 	// bytes は usrbuf にコピーするバイト数。
+	/*
+	 * count is the number of frames to copy to usrbuf.
+	 * bytes is the number of bytes to copy to usrbuf.
+	 */
 	count = outputbuf->used;
 	count = min(count,
 	    (track->usrbuf_usedhigh - usrbuf->used) / framesize);
@@ -2163,6 +2222,7 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
 	}
 
 	// トラックミキサ出力開始
+	/* Start output */
 	mutex_enter(sc->sc_intr_lock);
 	audio_pmixer_output(sc);
 	mutex_exit(sc->sc_intr_lock);
@@ -2254,11 +2314,12 @@ audio_pmixer_process(struct audio_softc *sc, bool isintr)
 		memset(mixer->mixsample, 0,
 		    frametobyte(&mixer->mixfmt, frame_count));
 	} else {
-		// オーバーフロー検出
 		aint2_t ovf_plus;
 		aint2_t ovf_minus;
 		int vol;
 
+		// オーバーフロー検出
+		/* Overflow detection */
 		ovf_plus = AINT_T_MAX;
 		ovf_minus = AINT_T_MIN;
 		m = mixer->mixsample;
@@ -2273,6 +2334,7 @@ audio_pmixer_process(struct audio_softc *sc, bool isintr)
 		}
 
 		// マスタボリュームの自動制御
+		/* Master Volume Auto Adjust */
 		vol = mixer->volume;
 		if (ovf_plus > (aint2_t)AINT_T_MAX
 		 || ovf_minus < (aint2_t)AINT_T_MIN) {
@@ -2286,6 +2348,7 @@ audio_pmixer_process(struct audio_softc *sc, bool isintr)
 
 			// オーバーフローしてたら少なくとも今回はボリュームを
 			// 下げる
+			/* Turn down the volume if overflow occured. */
 			vol2 = (int)((aint2_t)AINT_T_MAX * 256 / ovf);
 			if (vol2 < vol)
 				vol = vol2;
@@ -2293,6 +2356,7 @@ audio_pmixer_process(struct audio_softc *sc, bool isintr)
 			if (vol < mixer->volume) {
 				// 128 までは自動でマスタボリュームを下げる
 				// 今の値の 95% ずつに下げていってみる
+				/* Turn down gradually to 128. */
 				if (mixer->volume > 128) {
 					mixer->volume = mixer->volume * 95 / 100;
 					aprint_normal_dev(sc->dev,
@@ -2303,6 +2367,7 @@ audio_pmixer_process(struct audio_softc *sc, bool isintr)
 		}
 
 		// マスタボリューム適用
+		/* Apply Master Volume. */
 		if (vol != 256) {
 			m = mixer->mixsample;
 			for (i = 0; i < sample_count; i++) {
