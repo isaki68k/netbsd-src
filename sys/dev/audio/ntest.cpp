@@ -526,12 +526,18 @@ int debug_read(int line, int fd, void *addr, size_t len)
 // addrstr は値についてのコメント。ex.
 //	int onoff = 0;
 //	ioctl(fd, SWITCH, onoff); -> IOCTL(fd, SWITCH, onoff, "off")
-#define IOCTL(fd, name, addr, addrstr)	\
-	debug_ioctl(__LINE__, fd, name, #name, addr, addrstr)
+#define IOCTL(fd, name, addr, addrfmt...)	\
+	debug_ioctl(__LINE__, fd, name, #name, addr, addrfmt)
 int debug_ioctl(int line, int fd, u_long name, const char *namestr,
-	void *addr, const char *addrstr)
+	void *addr, const char *addrfmt, ...)
 {
-	DPRINTFF(line, "ioctl(%d, %s, %s)", fd, namestr, addrstr);
+	char addrbuf[100];
+	va_list ap;
+
+	va_start(ap, addrfmt);
+	vsnprintf(addrbuf, sizeof(addrbuf), addrfmt, ap);
+	va_end(ap);
+	DPRINTFF(line, "ioctl(%d, %s, %s)", fd, namestr, addrbuf);
 	int r = ioctl(fd, name, addr);
 	DRESULT(r);
 }
@@ -4073,7 +4079,7 @@ test_AUDIO_GETENC_1()
 
 		memset(e, 0, sizeof(*e));
 		e->index = idx;
-		r = IOCTL(fd, AUDIO_GETENC, e, "");
+		r = IOCTL(fd, AUDIO_GETENC, e, "index=%d", idx);
 		if (r != 0) {
 			XP_SYS_NG(EINVAL, r);
 			break;
@@ -4123,7 +4129,7 @@ test_AUDIO_GETENC_1()
 	// エラーが出た次のインデックスもエラーになるはず
 	DESC("GETENC[next]");
 	e->index = idx + 1;
-	r = IOCTL(fd, AUDIO_GETENC, e, "");
+	r = IOCTL(fd, AUDIO_GETENC, e, "index=%d", e->index);
 	XP_SYS_NG(EINVAL, r);
 
 	r = CLOSE(fd);
@@ -4235,7 +4241,7 @@ test_AUDIO_GETENC_2()
 
 	memset(&enc, 0, sizeof(enc));
 	enc.index = -1;
-	r = IOCTL(fd, AUDIO_GETENC, &enc, "");
+	r = IOCTL(fd, AUDIO_GETENC, &enc, "index=-1");
 	XP_SYS_NG(EINVAL, r);
 
 	r = CLOSE(fd);
