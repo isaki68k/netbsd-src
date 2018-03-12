@@ -3508,12 +3508,14 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 	// ブロックサイズは同じにはならないのだが、
 	// もう仕方ないので異なる場合は再生側で代表するか?
 	audio_track_t *track;
+	// ptrack があれば ptrack、なければ rtrack、それもなければ何もしない
 	track = ptrack ?: rtrack;
-	ai->blocksize = track->usrbuf_blksize;
-
+	if (track) {
+		ai->blocksize = track->usrbuf_blksize;
+		ai->hiwat = track->usrbuf_usedhigh / track->usrbuf_blksize;
+		ai->lowat = track->usrbuf_usedlow / track->usrbuf_blksize;
+	}
 	ai->mode = file->mode;
-	ai->hiwat = track->usrbuf_usedhigh / track->usrbuf_blksize;
-	ai->lowat = track->usrbuf_usedlow / track->usrbuf_blksize;
 
 	if (need_mixerinfo) {
 		pi->port = au_get_port(sc, &sc->sc_outports);
