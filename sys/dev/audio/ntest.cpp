@@ -49,6 +49,7 @@ char hwconfig[16];
 char hwconfig9[16];	// audio%d
 int x68k;
 char testname[100];
+char descname[100];
 int testcount;
 int failcount;
 int skipcount;
@@ -80,6 +81,7 @@ main(int ac, char *av[])
 	int unit;
 
 	testname[0] = '\0';
+	descname[0] = '\0';
 	props = -1;
 	hwfull = 0;
 	x68k = 0;
@@ -119,6 +121,7 @@ main(int ac, char *av[])
 		for (int j = 0; testtable[j].name != NULL; j++) {
 			testtable[j].func();
 			testname[0] = '\0';
+			descname[0] = '\0';
 		}
 	} else {
 		// -a なしなら test
@@ -133,6 +136,7 @@ main(int ac, char *av[])
 					found = true;
 					testtable[j].func();
 					testname[0] = '\0';
+					descname[0] = '\0';
 				}
 			}
 			if (found == false) {
@@ -287,6 +291,20 @@ TEST(const char *name, ...)
 	va_end(ap);
 	printf("%s\n", testname);
 	fflush(stdout);
+
+	descname[0] = '\0';
+}
+
+// テスト詳細
+static inline void DESC(const char *, ...) __printflike(1, 2);
+static inline void
+DESC(const char *name, ...)
+{
+	va_list ap;
+
+	va_start(ap, name);
+	vsnprintf(descname, sizeof(descname), name, ap);
+	va_end(ap);
 }
 
 // 検査
@@ -295,7 +313,10 @@ void xp_fail(int line, const char *fmt, ...)
 {
 	va_list ap;
 
-	printf(" FAIL %d: %s ", line, testname);
+	printf(" FAIL %d: %s", line, testname);
+	if (descname[0])
+		printf("(%s)", descname);
+	printf(": ");
 	va_start(ap, fmt);
 	vprintf(fmt, ap);
 	va_end(ap);
@@ -308,7 +329,10 @@ void xp_skip(int line, const char *fmt, ...)
 {
 	va_list ap;
 
-	printf(" SKIP %d: ", line);
+	printf(" SKIP %d: %s", line, testname);
+	if (descname[0])
+		printf("(%s)", descname);
+	printf(": ");
 	va_start(ap, fmt);
 	vprintf(fmt, ap);
 	va_end(ap);
@@ -717,8 +741,9 @@ test_open_1(void)
 	int r;
 
 	// 再生専用デバイスのテストとかはまた
+	TEST("open_1");
 	for (int mode = 0; mode <= 2; mode++) {
-		TEST("open_1(%s)", openmodetable[mode]);
+		DESC("%s", openmodetable[mode]);
 		fd = OPEN(devaudio, mode);
 		XP_SYS_OK(fd);
 
@@ -758,8 +783,9 @@ test_open_2(void)
 	bool pbuff, rbuff;
 	int buff_size;
 
+	TEST("open_2");
 	for (int mode = 0; mode <= 2; mode++) {
-		TEST("open_2(%s)", openmodetable[mode]);
+		DESC("%s", openmodetable[mode]);
 
 		// N7、N8 では常に両方のバッファが存在する
 		// AUDIO2 では mode による
@@ -940,6 +966,8 @@ test_open_3(void)
 	bool pbuff, rbuff;
 	int buff_size;
 
+	TEST("open_3");
+
 	// N8 eap だと panic する。
 	// ncmd.cpp の cmd_eap_input 参照。
 	if (netbsd == 8 && strncmp(hwconfig, "eap", 3) == 0) {
@@ -948,7 +976,7 @@ test_open_3(void)
 	}
 
 	for (int mode = 0; mode <= 2; mode++) {
-		TEST("open_3(%s)", openmodetable[mode]);
+		DESC("%s", openmodetable[mode]);
 
 		// N7、N8 では常に両方のバッファが存在する
 		// AUDIO2 では mode による
@@ -1229,11 +1257,11 @@ test_open_5()
 		exptable = exphalftable;
 	}
 
+	TEST("open_5");
 	// 1本目をオープン
 	for (int i = 0; i <= 2; i++) {
 		for (int j = 0; j <= 2; j++) {
-			TEST("open_5(%s,%s)",
-				openmodetable[i], openmodetable[j]);
+			DESC("%s,%s", openmodetable[i], openmodetable[j]);
 
 			// 1本目
 			fd0 = OPEN(devaudio, i);
@@ -1292,8 +1320,8 @@ test_open_6()
 	int r;
 	uid_t ouid;
 
+	TEST("open_6");
 	if (geteuid() != 0) {
-		TEST("open_6");
 		XP_SKIP("This test must be priviledged user");
 		return;
 	}
@@ -1305,10 +1333,9 @@ test_open_6()
 			if (i == 1)
 				break;
 			multiuser = 0;
-			TEST("open_6");
 		} else {
 			multiuser = 1 - i;
-			TEST("open_6(multiuser%d)", multiuser);
+			DESC("multiuser%d", multiuser);
 
 			snprintf(name, sizeof(name), "hw.%s.multiuser", hwconfigname());
 			snprintf(cmd, sizeof(cmd),
@@ -1392,6 +1419,8 @@ test_encoding_1(void)
 	int freqtable[] = {
 		1000, 192000,
 	};
+
+	TEST("encoding_1");
 	for (int i = 0; i < __arraycount(enctable); i++) {
 		int enc = enctable[i];
 		for (int j = 0; j < __arraycount(prectable); j++) {
@@ -1424,7 +1453,7 @@ test_encoding_1(void)
 					snprintf(buf, sizeof(buf), "enc=%d,prec=%d,ch=%d,freq=%d",
 						enc, prec, ch, freq);
 
-					TEST("encoding_1(%s)", buf);
+					DESC("%s", buf);
 					fd = OPEN(devaudio, O_WRONLY);
 					if (fd == -1)
 						err(1, "open");
@@ -1463,13 +1492,14 @@ test_encoding_2()
 
 	// リニア、異常系
 
+	TEST("encoding_2");
 	// 本当はサポートしている以外全部なんだが
 	int prectable[] = {
 		0, 4, 24,
 	};
 	for (int i = 0; i < __arraycount(prectable); i++) {
 		int prec = prectable[i];
-		TEST("encoding_2(prec=%d)", prec);
+		DESC("prec%d", prec);
 		fd = OPEN(devaudio, O_WRONLY);
 		if (fd == -1)
 			err(1, "open");
@@ -1492,7 +1522,7 @@ test_encoding_2()
 	};
 	for (int i = 0; i < __arraycount(chtable); i++) {
 		int ch = chtable[i];
-		TEST("encoding_2(ch=%d)", ch);
+		DESC("ch%d", ch);
 		fd = OPEN(devaudio, O_WRONLY);
 		if (fd == -1)
 			err(1, "open");
@@ -1515,7 +1545,7 @@ test_encoding_2()
 	};
 	for (int i = 0; i < __arraycount(freqtable); i++) {
 		int freq = freqtable[i];
-		TEST("encoding_3(freq=%d)", freq);
+		DESC("freq%d", freq);
 
 		// XXX freq=0 は NetBSD<=8 ではプロセスが無限ループに入ってしまう
 		if (freq == 0 && netbsd <= 8) {
@@ -1681,6 +1711,7 @@ test_readwrite_1(void)
 		{ 99, },			// 仕方ないので番兵
 	}, *exptable;
 
+	TEST("readwrite_1");
 	if (netbsd <= 8)
 		exptable = exp7table;
 	else
@@ -1706,7 +1737,7 @@ test_readwrite_1(void)
 				openmode = O_RDWR;
 			}
 		}
-		TEST("readwrite_1(%s)", openmodetable[openmode]);
+		DESC("%s", openmodetable[openmode]);
 
 		fd = OPEN(devaudio, openmode);
 		if (fd == -1)
@@ -1791,13 +1822,14 @@ test_readwrite_2(void)
 		exptable = exphalftable;
 	}
 
+	TEST("readwrite_2");
 	AUDIO_INITINFO(&ai);
 	ai.play.pause = 1;
 	ai.record.pause = 1;
 
 	for (int i = 0; i <= 2; i++) {
 		for (int j = 0; j <= 2; j++) {
-			TEST("readwrite_2(%s,%s)", openmodetable[i], openmodetable[j]);
+			DESC("%s,%s", openmodetable[i], openmodetable[j]);
 			bool canopen  = exptable[i * 3 + j].canopen;
 			bool canwrite = exptable[i * 3 + j].canwrite;
 			bool canread  = exptable[i * 3 + j].canread;
@@ -1955,8 +1987,8 @@ test_mmap_1()
 		{ -O_RDWR,	PROT_READ | PROT_WRITE,	1 },
 	};
 
+	TEST("mmap_1");
 	if ((props & AUDIO_PROP_MMAP) == 0) {
-		TEST("mmap_1");
 		return;
 	}
 
@@ -1989,7 +2021,7 @@ test_mmap_1()
 			snprintb_m(protbuf, sizeof(protbuf),
 				"\177\020" "b\1PROT_WRITE\0b\0PROT_READ\0", prot, 0);
 		}
-		TEST("mmap_1(%s,%s)", openmodetable[mode], protbuf);
+		DESC("%s,%s", openmodetable[mode], protbuf);
 
 		fd = OPEN(devaudio, mode);
 		if (fd == -1)
@@ -2069,8 +2101,8 @@ test_mmap_2()
 	int bufsize;
 	int pagesize;
 
+	TEST("mmap_2");
 	if ((props & AUDIO_PROP_MMAP) == 0) {
-		TEST("mmap_2");
 		return;
 	}
 
@@ -2116,7 +2148,7 @@ test_mmap_2()
 		len = table[i].len;
 		offset = table[i].offset;
 		int exp = table[i].exp;
-		TEST("mmap_2(len=%d,offset=%d)", (int)len, (int)offset);
+		DESC("len=%d,offset=%d", (int)len, (int)offset);
 
 		ptr = MMAP(NULL, len, PROT_WRITE, MAP_FILE, fd, offset);
 		if (exp == 0) {
@@ -2308,8 +2340,9 @@ test_mmap_6()
 	int fd;
 	int r;
 
+	TEST("mmap_6");
 	for (int mode = 0; mode <= 2; mode++) {
-		TEST("mmap_6(%s)", openmodetable[mode]);
+		TEST("%s", openmodetable[mode]);
 
 		fd = OPEN(devaudio, mode);
 		if (fd == -1)
@@ -2581,6 +2614,7 @@ test_poll_1()
 	else
 		table = halftable;
 
+	TEST("poll_1");
 	for (int i = 0; table[i].openmode != 99; i++) {
 		int openmode = table[i].openmode;
 		int events = table[i].events;
@@ -2594,7 +2628,7 @@ test_poll_1()
 		    "b\7RDBAND\0" "b\6RDNORM\0" "b\5NVAL\0" "b\4HUP\0" \
 		    "b\3ERR\0" "b\2OUT\0" "b\1PRI\0" "b\0IN\0",
 			events);
-		TEST("poll_1(%s,%s)", openmodetable[openmode], evbuf);
+		DESC("%s,%s", openmodetable[openmode], evbuf);
 
 		fd = OPEN(devaudio, openmode);
 		if (fd == -1)
@@ -3030,8 +3064,9 @@ test_AUDIO_SETFD_ONLY(void)
 	int fd;
 	int n;
 
+	TEST("AUDIO_SETFD_ONLY");
 	for (int mode = 0; mode <= 1; mode++) {
-		TEST("AUDIO_SETFD_ONLY(%s)", openmodetable[mode]);
+		DESC("%s", openmodetable[mode]);
 
 		fd = OPEN(devaudio, mode);
 		if (fd == -1)
@@ -3415,6 +3450,7 @@ test_AUDIO_SETINFO_mode()
 #undef A
 #undef R
 
+	TEST("AUDIO_SETINFO_mode");
 	for (int i = 0; i < __arraycount(exptable); i++) {
 		int openmode = exptable[i].openmode;
 		int inimode = exptable[i].inimode;
@@ -3443,7 +3479,7 @@ test_AUDIO_SETINFO_mode()
 		snprintb_m(setmodestr, sizeof(setmodestr),
 			"\177\020b\1REC\0b\2ALL\0b\0PLAY\0", setmode, 0);
 
-		TEST("AUDIO_SETINFO_mode(%s%s,%s)",
+		DESC("%s%s,%s",
 			half ? "H:" : "",
 			openmodetable[openmode], setmodestr);
 
@@ -3529,6 +3565,7 @@ test_AUDIO_SETINFO_params()
 	int r;
 	int fd;
 
+	TEST("AUDIO_SETINFO_params");
 	for (int openmode = 0; openmode <= 2; openmode++) {
 		for (int aimode = 0; aimode <= 1; aimode++) {
 			for (int pause = 0; pause <= 1; pause++) {
@@ -3543,7 +3580,7 @@ test_AUDIO_SETINFO_params()
 				if (hwfull == 0 && openmode == O_RDWR)
 					continue;
 
-				TEST("AUDIO_SETINFO_params(%s,mode%d,pause%d)",
+				DESC("%s,mode%d,pause%d",
 					openmodetable[openmode], aimode, pause);
 
 				fd = OPEN(devaudio, openmode);
@@ -3709,6 +3746,7 @@ test_AUDIO_SETINFO_pause()
 	int r;
 	int fd;
 
+	TEST("AUDIO_SETINFO_pause");
 	for (int openmode = 0; openmode <= 2; openmode++) {
 		for (int aimode = 0; aimode <= 1; aimode++) {
 			for (int param = 0; param <= 1; param++) {
@@ -3723,7 +3761,7 @@ test_AUDIO_SETINFO_pause()
 				if (hwfull == 0 && openmode == O_RDWR)
 					continue;
 
-				TEST("AUDIO_SETINFO_pause(%s,mode%d,param%d)",
+				DESC("%s,mode%d,param%d",
 					openmodetable[openmode], aimode, param);
 
 				fd = OPEN(devaudio, openmode);
@@ -3853,13 +3891,14 @@ test_AUDIO_SETINFO_hiwat1()
 		{ 2,		1,		2,		1 },		// {2,1} は可
 	};
 
+	TEST("AUDIO_SETINFO_hiwat1");
 	for (int i = 0; i < __arraycount(table); i++) {
 		u_int hiwat = table[i].hiwat;
 		u_int lowat = table[i].lowat;
 		u_int exphi = table[i].exphi;
 		u_int explo = table[i].explo;
 
-		TEST("AUDIO_SETINFO_hiwat1(%d,%d)", hiwat, lowat);
+		DESC("%d,%d", hiwat, lowat);
 
 		AUDIO_INITINFO(&ai);
 		ai.hiwat = hiwat;
@@ -3915,6 +3954,7 @@ test_AUDIO_SETINFO_hiwat2()
 	if (fd == -1)
 		err(1, "open");
 
+	TEST("AUDIO_SETINFO_hiwat2");
 	for (int i = 0; i < __arraycount(table); i++) {
 		int enc = table[i].encoding;
 		int prec = table[i].precision;
@@ -3925,7 +3965,7 @@ test_AUDIO_SETINFO_hiwat2()
 		int exphi;
 		int explo;
 
-		TEST("AUDIO_SETINFO_hiwat2(%d,%d,%d,%d)", enc, prec, ch, freq);
+		DESC("%d,%d,%d,%d", enc, prec, ch, freq);
 
 		AUDIO_INITINFO(&ai);
 		ai.play.encoding = enc;
@@ -4027,8 +4067,9 @@ test_AUDIO_GETENC_1()
 	// 2 は GETENC には現れないが互換性でサポートしているもの
 	memset(&result, 0, sizeof(result));
 
+	TEST("AUDIO_GETENC_1");
 	for (idx = 0; ; idx++) {
-		TEST("AUDIO_GETENC_1(GETENC,%d)", idx);
+		DESC("GETENC[%d]", idx);
 
 		memset(e, 0, sizeof(*e));
 		e->index = idx;
@@ -4080,6 +4121,7 @@ test_AUDIO_GETENC_1()
 	}
 
 	// エラーが出た次のインデックスもエラーになるはず
+	DESC("GETENC[next]");
 	e->index = idx + 1;
 	r = IOCTL(fd, AUDIO_GETENC, e, "");
 	XP_SYS_NG(EINVAL, r);
@@ -4113,7 +4155,7 @@ test_AUDIO_GETENC_1()
 		for (int j = 0; j < preccount; j++) {
 			int prec = (j == 0) ? 4 : j * 8;
 			snprintf(buf, sizeof(buf), "%s:%d", encoding_names[i], prec);
-			TEST("AUDIO_GETENC_1(SET,%s)", buf);
+			DESC("SET,%s", buf);
 
 			AUDIO_INITINFO(&ai);
 			ai.play.encoding = i;
@@ -4210,6 +4252,7 @@ test_audioctl_open_1()
 	int fmode;
 	int cmode;
 
+	TEST("audioctl_open_1");
 	for (fmode = 0; fmode <= 2; fmode++) {
 		if (fmode == O_WRONLY && (props & AUDIO_PROP_PLAYBACK) == 0)
 			continue;
@@ -4217,8 +4260,7 @@ test_audioctl_open_1()
 			continue;
 
 		for (cmode = 0; cmode <= 2; cmode++) {
-			TEST("audioctl_open_1(%s,%s)",
-				openmodetable[fmode], openmodetable[cmode]);
+			DESC("%s,%s", openmodetable[fmode], openmodetable[cmode]);
 
 			fd = OPEN(devaudio, fmode);
 			if (fd == -1)
@@ -4246,6 +4288,7 @@ test_audioctl_open_2()
 	int fmode;
 	int cmode;
 
+	TEST("audioctl_open_2");
 	for (fmode = 0; fmode <= 2; fmode++) {
 		if (fmode == O_WRONLY && (props & AUDIO_PROP_PLAYBACK) == 0)
 			continue;
@@ -4253,8 +4296,7 @@ test_audioctl_open_2()
 			continue;
 
 		for (cmode = 0; cmode <= 2; cmode++) {
-			TEST("audioctl_open_2(%s,%s)",
-				openmodetable[fmode], openmodetable[cmode]);
+			DESC("%s,%s", openmodetable[fmode], openmodetable[cmode]);
 
 			ctl = OPEN(devaudioctl, cmode);
 			XP_SYS_OK(ctl);
@@ -4308,8 +4350,8 @@ test_audioctl_open_4()
 	int multiuser;
 	uid_t ouid;
 
+	TEST("audioctl_open_4");
 	if (geteuid() != 0) {
-		TEST("audioctl_open_4");
 		XP_SKIP("This test must be priviledged user");
 		return;
 	}
@@ -4322,10 +4364,9 @@ test_audioctl_open_4()
 		if (netbsd != 8) {
 			if (i == 1)
 				break;
-			TEST("audioctl_open_4");
 		} else {
 			multiuser = 1 - i;
-			TEST("audioctl_open_4(multiuser%d)", multiuser);
+			DESC("multiuser%d", multiuser);
 
 			snprintf(name, sizeof(name), "hw.%s.multiuser", hwconfigname());
 			snprintf(cmd, sizeof(cmd),
@@ -4383,8 +4424,8 @@ test_audioctl_open_5()
 	int multiuser;
 	uid_t ouid;
 
+	TEST("audioctl_open_5");
 	if (geteuid() != 0) {
-		TEST("audioctl_open_5");
 		XP_SKIP("This test must be priviledged user");
 		return;
 	}
@@ -4397,10 +4438,9 @@ test_audioctl_open_5()
 		if (netbsd != 8) {
 			if (i == 1)
 				break;
-			TEST("audioctl_open_5");
 		} else {
 			multiuser = 1 - i;
-			TEST("audioctl_open_5(multiuser%d)", multiuser);
+			DESC("multiuser%d", multiuser);
 
 			snprintf(name, sizeof(name), "hw.%s.multiuser", hwconfigname());
 			snprintf(cmd, sizeof(cmd),
@@ -4454,8 +4494,9 @@ test_audioctl_rw(void)
 	int fd;
 	int r;
 
+	TEST("audioctl_rw");
 	for (int mode = 0; mode <= 2; mode++) {
-		TEST("audioctl_rw(%s)", openmodetable[mode]);
+		DESC("%s", openmodetable[mode]);
 		fd = OPEN(devaudioctl, mode);
 		if (fd == -1)
 			err(1, "open");

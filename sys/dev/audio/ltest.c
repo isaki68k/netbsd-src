@@ -26,6 +26,7 @@ struct testtable {
 
 int debug;
 char testname[100];
+char descname[100];
 int compat7;
 int testcount;
 int failcount;
@@ -53,6 +54,7 @@ int main(int ac, char *av[])
 	int opt_all;
 
 	testname[0] = '\0';
+	descname[0] = '\0';
 
 	// global option
 	opt_all = 0;
@@ -82,6 +84,7 @@ int main(int ac, char *av[])
 		for (int j = 0; testtable[j].name != NULL; j++) {
 			testtable[j].func();
 			testname[0] = '\0';
+			descname[0] = '\0';
 		}
 	} else {
 		// -a なしなら test
@@ -96,6 +99,7 @@ int main(int ac, char *av[])
 					found = true;
 					testtable[j].func();
 					testname[0] = '\0';
+					descname[0] = '\0';
 				}
 			}
 			if (found == false) {
@@ -129,6 +133,20 @@ TEST(const char *name, ...)
 	va_end(ap);
 	printf("%s\n", testname);
 	fflush(stdout);
+
+	descname[0] = '\0';
+}
+
+// テスト詳細
+static inline void DESC(const char *, ...) __printflike(1, 2);
+static inline void
+DESC(const char *name, ...)
+{
+	va_list ap;
+
+	va_start(ap, name);
+	vsnprintf(descname, sizeof(descname), name, ap);
+	va_end(ap);
 }
 
 // 検査
@@ -137,7 +155,10 @@ void xp_fail(int line, const char *fmt, ...)
 {
 	va_list ap;
 
-	printf(" FAIL %d: %s ", line, testname);
+	printf(" FAIL %d: %s", line, testname);
+	if (descname[0])
+		printf("(%s)", descname);
+	printf(": ");
 	va_start(ap, fmt);
 	vprintf(fmt, ap);
 	va_end(ap);
@@ -150,7 +171,10 @@ void xp_skip(int line, const char *fmt, ...)
 {
 	va_list ap;
 
-	printf(" SKIP %d: ", line);
+	printf(" SKIP %d: %s", line, testname);
+	if (descname[0])
+		printf("(%s)", descname);
+	printf(": ");
 	va_start(ap, fmt);
 	vprintf(fmt, ap);
 	va_end(ap);
