@@ -1256,10 +1256,11 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 	int len;
 
 	KASSERT(track);
-	KASSERT(audio_format2_is_valid(usrfmt));
 
 	// 入力値チェック
-	audio_check_params2(usrfmt);
+	error = audio_check_params2(usrfmt);
+	if (error)
+		return error;
 
 	// ユーザランド側バッファ
 	// 大きさは (ブロックサイズ * AUMINNOBLK) か 64KB の大きいほうにする。
