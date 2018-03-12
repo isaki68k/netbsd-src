@@ -20,6 +20,20 @@
 #include <sys/sysctl.h>
 #include <sys/wait.h>
 
+#if !defined(AUDIO_ENCODING_SLINEAR_NE)
+#if BYTE_ORDER == LITTLE_ENDIAN
+#define AUDIO_ENCODING_SLINEAR_NE AUDIO_ENCODING_SLINEAR_LE
+#define AUDIO_ENCODING_ULINEAR_NE AUDIO_ENCODING_ULINEAR_LE
+#define AUDIO_ENCODING_SLINEAR_OE AUDIO_ENCODING_SLINEAR_BE
+#define AUDIO_ENCODING_ULINEAR_OE AUDIO_ENCODING_ULINEAR_BE
+#else
+#define AUDIO_ENCODING_SLINEAR_NE AUDIO_ENCODING_SLINEAR_BE
+#define AUDIO_ENCODING_ULINEAR_NE AUDIO_ENCODING_ULINEAR_BE
+#define AUDIO_ENCODING_SLINEAR_OE AUDIO_ENCODING_SLINEAR_LE
+#define AUDIO_ENCODING_ULINEAR_OE AUDIO_ENCODING_ULINEAR_LE
+#endif
+#endif
+
 struct testtable {
 	const char *name;
 	void (*func)(void);
@@ -310,6 +324,13 @@ void xp_eq(int line, int exp, int act, const char *varname)
 	if (exp != act)
 		xp_fail(line, "%s expects %d but %d", varname, exp, act);
 }
+void xp_eq(int line, const char *exp, const char *act, const char *varname)
+{
+	testcount++;
+	if (strcmp(exp, act) != 0)
+		xp_fail(line, "%s expects \"%s\" but \"%s\"", varname, exp, act);
+}
+
 #define XP_NE(exp, act)	xp_ne(__LINE__, exp, act, #act)
 void xp_ne(int line, int exp, int act, const char *varname)
 {
@@ -3975,6 +3996,225 @@ test_AUDIO_SETINFO_hiwat2()
 	XP_SYS_EQ(0, r);
 }
 
+/* from audio.c */
+static const char *encoding_names[] = {
+	"none",
+	AudioEmulaw,
+	AudioEalaw,
+	"pcm16",
+	"pcm8",
+	AudioEadpcm,
+	AudioEslinear_le,
+	AudioEslinear_be,
+	AudioEulinear_le,
+	AudioEulinear_be,
+	AudioEslinear,
+	AudioEulinear,
+	AudioEmpeg_l1_stream,
+	AudioEmpeg_l1_packets,
+	AudioEmpeg_l1_system,
+	AudioEmpeg_l2_stream,
+	AudioEmpeg_l2_packets,
+	AudioEmpeg_l2_system,
+	AudioEac3,
+};
+
+void
+test_AUDIO_GETENC_1()
+{
+	char buf[32];
+	struct audio_info ai;
+	audio_encoding_t e0, *e = &e0;
+	int fd;
+	int r;
+	int idx;
+	bool fulldup;
+	int enccount = AUDIO_ENCODING_AC3 + 1;
+	int preccount = 5;
+	int result[enccount][preccount];
+
+	fd = OPEN(devaudioctl, O_RDONLY);
+	if (fd == -1)
+		err(1, "open");
+
+	// result の1列目は encoding、2列目は precision(4/8/16/24/32)。
+	// 1 は GETENC でサポートしているもの
+	// 2 は GETENC には現れないが互換性でサポートしているもの
+	memset(&result, 0, sizeof(result));
+
+	for (idx = 0; ; idx++) {
+		TEST("AUDIO_GETENC_1(GETENC,%d)", idx);
+
+		memset(e, 0, sizeof(*e));
+		e->index = idx;
+		r = IOCTL(fd, AUDIO_GETENC, e, "");
+		if (r != 0) {
+			XP_SYS_NG(EINVAL, r);
+			break;
+		}
+		// 成功なら戻り値についてざっと調べる
+		XP_EQ(idx, e->index);
+		if (0 <= e->encoding && e->encoding <= AUDIO_ENCODING_AC3) {
+			XP_EQ(encoding_names[e->encoding], e->name);
+		} else {
+			XP_FAIL("e->encoding %d", e->encoding);
+		}
+		switch (e->precision) {
+		 case 4:
+		 case 8:
+		 case 16:
+		 case 24:
+		 case 32:
+			break;
+		 default:
+			XP_FAIL("e->precision %d", e->precision);
+			break;
+		}
+		XP_EQ(0, (e->flags & ~AUDIO_ENCODINGFLAG_EMULATED));
+
+		result[e->encoding][e->precision/ 8] = 1;
+
+		// compatibility
+		if (e->encoding == AUDIO_ENCODING_SLINEAR && e->precision == 8) {
+			result[AUDIO_ENCODING_SLINEAR_LE][1] = 2;
+			result[AUDIO_ENCODING_SLINEAR_BE][1] = 2;
+		}
+		if (e->encoding == AUDIO_ENCODING_ULINEAR && e->precision == 8) {
+			result[AUDIO_ENCODING_ULINEAR_LE][1] = 2;
+			result[AUDIO_ENCODING_ULINEAR_BE][1] = 2;
+			result[AUDIO_ENCODING_PCM8][1] = 2;		// うーんこの…
+			result[AUDIO_ENCODING_PCM16][1] = 2;	// うーんこの…
+		}
+		if (e->encoding == AUDIO_ENCODING_SLINEAR_NE && e->precision == 16) {
+			result[AUDIO_ENCODING_SLINEAR][2] = 2;
+			result[AUDIO_ENCODING_PCM16][2] = 2;	// うーんこの…
+		}
+		if (e->encoding == AUDIO_ENCODING_ULINEAR_NE && e->precision == 16) {
+			result[AUDIO_ENCODING_ULINEAR][2] = 2;
+		}
+	}
+
+	// エラーが出た次のインデックスもエラーになるはず
+	e->index = idx + 1;
+	r = IOCTL(fd, AUDIO_GETENC, e, "");
+	XP_SYS_NG(EINVAL, r);
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+
+	// デバッグ表示
+	if (debug) {
+		for (int i = 0; i < enccount; i++) {
+			printf("result[%2d] %15s", i, encoding_names[i]);
+			for (int j = 0; j < preccount; j++) {
+				printf(" %d", result[i][j]);
+			}
+			printf("\n");
+		}
+	}
+
+	//
+	// そのエンコーディングが実際にセットできるか
+	//
+
+	fulldup = (props & AUDIO_PROP_FULLDUPLEX);
+	if (fulldup) {
+		fd = OPEN(devaudio, O_RDWR);
+		if (fd == -1)
+			err(1, "open");
+	}
+
+	for (int i = 0; i < enccount; i++) {
+		for (int j = 0; j < preccount; j++) {
+			int prec = (j == 0) ? 4 : j * 8;
+			snprintf(buf, sizeof(buf), "%s:%d", encoding_names[i], prec);
+			TEST("AUDIO_GETENC_1(SET,%s)", buf);
+
+			AUDIO_INITINFO(&ai);
+			ai.play.encoding = i;
+			ai.play.precision = prec;
+			ai.play.channels = 1;		/* 知る方法がない */
+			ai.play.sample_rate = 8000;	/* 知る方法がない */
+			ai.record = ai.play;
+
+			if (fulldup) {
+				// Full Dup なら一度に R/W 両方テスト
+				ai.mode = AUMODE_PLAY_ALL | AUMODE_RECORD;
+
+				r = IOCTL(fd, AUDIO_SETINFO, &ai, buf);
+				if (result[i][j]) {
+					// 成功するはず
+					XP_SYS_EQ(0, r);
+				} else {
+					// 失敗するはず
+					XP_SYS_NG(EINVAL, r);
+				}
+			} else {
+				// Half Dup なら R/W いちいち別々にテスト
+				fd = OPEN(devaudio, O_WRONLY);
+				XP_SYS_OK(fd);
+
+				ai.mode = AUMODE_PLAY_ALL;
+				r = IOCTL(fd, AUDIO_SETINFO, &ai, buf);
+				if (result[i][j]) {
+					// 成功するはず
+					XP_SYS_EQ(0, r);
+				} else {
+					// 失敗するはず
+					XP_SYS_NG(EINVAL, r);
+				}
+
+				r = CLOSE(fd);
+				XP_SYS_EQ(0, r);
+
+				fd = OPEN(devaudio, O_RDONLY);
+				XP_SYS_OK(fd);
+
+				ai.mode = AUMODE_RECORD;
+				r = IOCTL(fd, AUDIO_SETINFO, &ai, buf);
+				if (result[i][j]) {
+					// 成功するはず
+					XP_SYS_EQ(0, r);
+				} else {
+					// 失敗するはず
+					XP_SYS_NG(EINVAL, r);
+				}
+
+				r = CLOSE(fd);
+				XP_SYS_EQ(0, r);
+			}
+		}
+	}
+
+	if (fulldup) {
+		r = CLOSE(fd);
+		XP_SYS_EQ(0, r);
+	}
+}
+
+// 引数が正しくないケース
+void
+test_AUDIO_GETENC_2()
+{
+	audio_encoding_t enc;
+	int fd;
+	int r;
+
+	TEST("AUDIO_GETENC_2");
+
+	fd = OPEN(devaudio, O_WRONLY);
+	if (fd == -1)
+		err(1, "open");
+
+	memset(&enc, 0, sizeof(enc));
+	enc.index = -1;
+	r = IOCTL(fd, AUDIO_GETENC, &enc, "");
+	XP_SYS_NG(EINVAL, r);
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+}
+
 // audio デバイスオープン中に audioctl がオープンできること
 void
 test_audioctl_open_1()
@@ -4353,6 +4593,8 @@ struct testtable testtable[] = {
 	DEF(AUDIO_SETINFO_pause),
 	DEF(AUDIO_SETINFO_hiwat1),
 	DEF(AUDIO_SETINFO_hiwat2),
+	DEF(AUDIO_GETENC_1),
+	DEF(AUDIO_GETENC_2),
 	DEF(audioctl_open_1),
 	DEF(audioctl_open_2),
 	DEF(audioctl_open_3),
