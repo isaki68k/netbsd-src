@@ -222,7 +222,7 @@ static int audio_setinfo_hw(struct audio_softc *, struct audio_info *);
 static int audio_set_params(struct audio_softc *, int);
 static int audiogetinfo(struct audio_softc *, struct audio_info *, int,
 	audio_file_t *);
-static int audio_getenc(struct audio_softc *, struct audio_encoding *);
+static int audio_getenc(struct audio_softc *, struct audio_encoding *) __unused;
 static int audio_get_props(struct audio_softc *);
 static bool audio_can_playback(struct audio_softc *);
 static bool audio_can_capture(struct audio_softc *);
@@ -351,6 +351,31 @@ static const char *encoding_names[] = {
 	AudioEmpeg_l2_packets,
 	AudioEmpeg_l2_system,
 	AudioEac3,
+};
+
+/*
+ * Supported encodings used by AUDIO_GETENC.
+ * index and flags are set by code.
+ * XXX is there any needs for SLINEAR_OE:>=16/ULINEAR_OE:>=16 ?
+ */
+static const audio_encoding_t audio_encodings[] = {
+	{ 0, AudioEmulaw,	AUDIO_ENCODING_ULAW,		8 },
+	{ 0, AudioEslinear,	AUDIO_ENCODING_SLINEAR,		8 },
+	{ 0, AudioEulinear,	AUDIO_ENCODING_ULINEAR,		8 },
+	{ 0, AudioEslinear_le,	AUDIO_ENCODING_SLINEAR_LE,	16 },
+	{ 0, AudioEulinear_le,	AUDIO_ENCODING_ULINEAR_LE,	16 },
+	{ 0, AudioEslinear_be,	AUDIO_ENCODING_SLINEAR_BE,	16 },
+	{ 0, AudioEulinear_be,	AUDIO_ENCODING_ULINEAR_BE,	16 },
+#if defined(AUDIO_SUPPORT_LINEAR24)
+	{ 0, AudioEslinear_le,	AUDIO_ENCODING_SLINEAR_LE,	24 },
+	{ 0, AudioEulinear_le,	AUDIO_ENCODING_ULINEAR_LE,	24 },
+	{ 0, AudioEslinear_be,	AUDIO_ENCODING_SLINEAR_BE,	24 },
+	{ 0, AudioEulinear_be,	AUDIO_ENCODING_ULINEAR_BE,	24 },
+#endif
+	{ 0, AudioEslinear_le,	AUDIO_ENCODING_SLINEAR_LE,	32 },
+	{ 0, AudioEulinear_le,	AUDIO_ENCODING_ULINEAR_LE,	32 },
+	{ 0, AudioEslinear_be,	AUDIO_ENCODING_SLINEAR_BE,	32 },
+	{ 0, AudioEulinear_be,	AUDIO_ENCODING_ULINEAR_BE,	32 },
 };
 
 static const struct portname itable[] = {
@@ -1757,9 +1782,12 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 {
 	struct audio_offset *ao;
 	audio_track_t *track;
+	audio_encoding_t *ae;
 	u_int stamp;
 	u_int offs;
-	int error, fd;
+	int fd;
+	int index;
+	int error;
 
 	KASSERT(mutex_owned(sc->sc_lock));
 
@@ -1939,7 +1967,21 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		break;
 
 	case AUDIO_GETENC:
-		error = audio_getenc(sc, addr);
+		ae = (audio_encoding_t *)addr;
+		index = ae->index;
+		if (index < 0 || index >= __arraycount(audio_encodings)) {
+			error = EINVAL;
+			break;
+		}
+		*ae = audio_encodings[index];
+		ae->index = index;
+		// 常に EMULATED とする。ここでいう非EMULATED とは無加工で
+		// HW に渡せるというような意味合いだと思うので、であれば
+		// 例えネイティブフォーマットであったとしてもトラック処理
+		// などの加工が入っているという考え方をしてみたが、どうか。
+		// 本当にネイティブフォーマットかどうかを判断するのは結構
+		// 面倒くさい。
+		ae->flags = AUDIO_ENCODINGFLAG_EMULATED;
 		break;
 
 	case AUDIO_GETFD:
@@ -3543,6 +3585,7 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 	return 0;
 }
 
+// 今は使っていない。AUDIO_GETHWENC とか作れば使い道はある?
 static int
 audio_getenc(struct audio_softc *sc, struct audio_encoding *ae)
 {
