@@ -27,7 +27,6 @@ struct testtable {
 int debug;
 char testname[100];
 char descname[100];
-int compat7;
 int testcount;
 int failcount;
 int skipcount;
@@ -38,7 +37,6 @@ usage()
 {
 	// test は複数列挙できる。
 	printf("usage: %s [<options>] {-a | <testname...>}\n", getprogname());
-	printf("  -7: test as compat with netbsd-7\n");
 	printf("  -d: debug\n");
 	printf(" testname:\n");
 	for (int i = 0; testtable[i].name != NULL; i++) {
@@ -58,11 +56,8 @@ int main(int ac, char *av[])
 
 	// global option
 	opt_all = 0;
-	while ((c = getopt(ac, av, "7ad")) != -1) {
+	while ((c = getopt(ac, av, "ad")) != -1) {
 		switch (c) {
-		 case '7':
-			compat7 = 1;
-			break;
 		 case 'a':
 			opt_all = 1;
 			break;
@@ -669,8 +664,18 @@ test_internal_to_mulaw()
 	aint_t *src;
 	uint8_t *dst;
 	uint8_t *exp;
+	int hqmode;
 
-	TEST("internal_to_mulaw");
+	// hqmode なら14ビット全部使って期待値を用意する。定義式通り。
+	// そうでなければ上位8ビットだけ使って期待値を用意する。こちらは
+	// NetBSD7 までの256バイトテーブル方式との互換性。
+#if defined(MULAW_HQ_ENC)
+	hqmode = 1;
+#else
+	hqmode = 0;
+#endif
+
+	TEST("internal_to_mulaw[%s]", hqmode ? "14bit" : "8bit");
 
 	src = malloc(count * sizeof(*src));
 	dst = malloc(count * sizeof(*dst));
@@ -686,7 +691,7 @@ test_internal_to_mulaw()
 		x = src[i] >> 2;
 
 		if(debug)printf("i=%d x=%d", i, x);
-		if (compat7) {
+		if (hqmode == 0) {
 			// NetBSD7 は入力を slinear8 とした256段階しか使ってない。
 			x >>= 6;
 			x <<= 6;
