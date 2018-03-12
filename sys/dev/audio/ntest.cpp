@@ -4107,22 +4107,50 @@ test_AUDIO_GETENC_1()
 		result[e->encoding][e->precision/ 8] = 1;
 
 		// compatibility
-		if (e->encoding == AUDIO_ENCODING_SLINEAR && e->precision == 8) {
-			result[AUDIO_ENCODING_SLINEAR_LE][1] = 2;
-			result[AUDIO_ENCODING_SLINEAR_BE][1] = 2;
-		}
-		if (e->encoding == AUDIO_ENCODING_ULINEAR && e->precision == 8) {
-			result[AUDIO_ENCODING_ULINEAR_LE][1] = 2;
-			result[AUDIO_ENCODING_ULINEAR_BE][1] = 2;
-			result[AUDIO_ENCODING_PCM8][1] = 2;		// うーんこの…
-			result[AUDIO_ENCODING_PCM16][1] = 2;	// うーんこの…
-		}
-		if (e->encoding == AUDIO_ENCODING_SLINEAR_NE && e->precision == 16) {
-			result[AUDIO_ENCODING_SLINEAR][2] = 2;
-			result[AUDIO_ENCODING_PCM16][2] = 2;	// うーんこの…
-		}
-		if (e->encoding == AUDIO_ENCODING_ULINEAR_NE && e->precision == 16) {
-			result[AUDIO_ENCODING_ULINEAR][2] = 2;
+		switch (e->precision) {
+		 case 8:
+			if (e->encoding == AUDIO_ENCODING_SLINEAR) {
+				result[AUDIO_ENCODING_SLINEAR_LE][1] = 2;
+				result[AUDIO_ENCODING_SLINEAR_BE][1] = 2;
+			}
+			if (e->encoding == AUDIO_ENCODING_ULINEAR) {
+				result[AUDIO_ENCODING_ULINEAR_LE][1] = 2;
+				result[AUDIO_ENCODING_ULINEAR_BE][1] = 2;
+				result[AUDIO_ENCODING_PCM8][1] = 2;		// うーんこの…
+				result[AUDIO_ENCODING_PCM16][1] = 2;	// うーんこの…
+			}
+			break;
+		 case 16:
+			if (e->encoding == AUDIO_ENCODING_SLINEAR_NE) {
+				result[AUDIO_ENCODING_SLINEAR][2] = 2;
+				result[AUDIO_ENCODING_PCM16][2] = 2;	// うーんこの…
+			}
+			if (e->encoding == AUDIO_ENCODING_ULINEAR_NE) {
+				result[AUDIO_ENCODING_ULINEAR][2] = 2;
+			}
+			break;
+#if defined(AUDIO_SUPPORT_LINEAR24)
+		 case 24:
+			if (e->encoding == AUDIO_ENCODING_SLINEAR_NE) {
+				result[AUDIO_ENCODING_SLINEAR][3] = 2;
+				result[AUDIO_ENCODING_PCM16][3] = 2;	// うーんこの…
+			}
+			if (e->encoding == AUDIO_ENCODING_ULINEAR_NE) {
+				result[AUDIO_ENCODING_ULINEAR][3] = 2;
+			}
+			break;
+#endif
+		 case 32:
+			if (e->encoding == AUDIO_ENCODING_SLINEAR_NE) {
+				result[AUDIO_ENCODING_SLINEAR][4] = 2;
+				result[AUDIO_ENCODING_PCM16][4] = 2;	// うーんこの…
+			}
+			if (e->encoding == AUDIO_ENCODING_ULINEAR_NE) {
+				result[AUDIO_ENCODING_ULINEAR][4] = 2;
+			}
+			break;
+		 default:
+			err(1, "e->precision=%d", e->precision);
 		}
 	}
 
