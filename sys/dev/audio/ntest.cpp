@@ -464,7 +464,7 @@ static const char *openmodetable[] = {
 	"O_WRONLY",
 	"O_RDWR",
 };
-static const char *aumodetable[] = {
+static const char *aumodetable[] __unused = {
 	"RECORD",
 	"PLAY",
 	"PLAY|REC",
@@ -1144,7 +1144,7 @@ test_open_3(void)
 void
 test_open_4(void)
 {
-	struct audio_info ai, ai0;
+	struct audio_info ai;
 	int fd;
 	int r;
 
@@ -1616,7 +1616,6 @@ test_playsync_1(void)
 	int wavsize;
 	int fd;
 	int r;
-	int n;
 
 	TEST("playsync_1");
 
@@ -1662,9 +1661,8 @@ test_readwrite_1(void)
 {
 	struct audio_info ai;
 	char buf[10];
-	int fd0, fd1;
+	int fd;
 	int r;
-	int n;
 	struct {
 		int openmode;
 		bool canwrite;
@@ -1710,18 +1708,18 @@ test_readwrite_1(void)
 		}
 		TEST("readwrite_1(%s)", openmodetable[openmode]);
 
-		fd0 = OPEN(devaudio, openmode);
-		if (fd0 == -1)
+		fd = OPEN(devaudio, openmode);
+		if (fd == -1)
 			err(1, "open");
 
 		// 書き込みを伴うので音がでないよう pause しとく
-		r = IOCTL(fd0, AUDIO_SETINFO, &ai, "pause");
+		r = IOCTL(fd, AUDIO_SETINFO, &ai, "pause");
 		if (r == -1)
 			err(1, "ioctl");
 
 		// write は mode2popen[] が期待値
 		memset(buf, 0, sizeof(buf));
-		r = WRITE(fd0, buf, sizeof(buf));
+		r = WRITE(fd, buf, sizeof(buf));
 		if (canwrite) {
 			XP_SYS_EQ(10, r);
 		} else {
@@ -1730,14 +1728,14 @@ test_readwrite_1(void)
 
 		// read は mode2ropen[] が期待値
 		// N7 は 1バイト以上 read しようとするとブロックする?
-		r = READ(fd0, buf, 0);
+		r = READ(fd, buf, 0);
 		if (canread) {
 			XP_SYS_EQ(0, r);
 		} else {
 			XP_SYS_NG(EBADF, r);
 		}
 
-		CLOSE(fd0);
+		CLOSE(fd);
 	}
 }
 
@@ -1753,7 +1751,6 @@ test_readwrite_2(void)
 	char buf[10];
 	int fd0, fd1;
 	int r;
-	int n;
 	struct {
 		bool canopen;
 		bool canwrite;
@@ -1924,7 +1921,6 @@ test_mmap_1()
 	int fd;
 	int r;
 	int len;
-	int prot;
 	void *ptr;
 	struct {
 		int mode;
@@ -1968,9 +1964,7 @@ test_mmap_1()
 		int mode = exptable[i].mode;
 		int prot = exptable[i].prot;
 		int expected = exptable[i].exp;
-		int half;
 
-		half = 0;
 		if (hwfull) {
 			// HWFull なら O_RDWR のほう
 			if (mode < 0)
@@ -1981,7 +1975,6 @@ test_mmap_1()
 				continue;
 			if (mode == -O_RDWR) {
 				mode = O_RDWR;
-				half = 1;
 			}
 		}
 
@@ -2070,7 +2063,6 @@ test_mmap_2()
 	struct audio_info ai;
 	int fd;
 	int r;
-	int prot;
 	size_t len;
 	off_t offset;
 	void *ptr;
@@ -2163,7 +2155,6 @@ test_mmap_3()
 	int fd;
 	int r;
 	int len;
-	int prot;
 	void *ptr;
 
 	// とりあえず再生側のことしか考えなくていいか。
@@ -2181,7 +2172,7 @@ test_mmap_3()
 		err(1, "AUDIO_GETINFO");
 	len = ai.play.buffer_size;
 
-	ptr = MMAP(NULL, len, prot, MAP_FILE, fd, 0);
+	ptr = MMAP(NULL, len, PROT_WRITE, MAP_FILE, fd, 0);
 	XP_SYS_OK(ptr);
 
 	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "get");
@@ -2209,7 +2200,6 @@ test_mmap_4()
 	int fd;
 	int r;
 	int len;
-	int prot;
 	void *ptr;
 	void *ptr2;
 
@@ -2227,12 +2217,12 @@ test_mmap_4()
 		err(1, "AUDIO_GETINFO");
 	len = ai.play.buffer_size;
 
-	ptr = MMAP(NULL, len, prot, MAP_FILE, fd, 0);
+	ptr = MMAP(NULL, len, PROT_WRITE, MAP_FILE, fd, 0);
 	XP_SYS_OK(ptr);
 
 	// N7 では成功するようだが意図してるのかどうか分からん。
 	// N8 も成功するようだが意図してるのかどうか分からん。
-	ptr2 = MMAP(NULL, len, prot, MAP_FILE, fd, 0);
+	ptr2 = MMAP(NULL, len, PROT_WRITE, MAP_FILE, fd, 0);
 	XP_SYS_OK(ptr2);
 	if (ptr2 != MAP_FAILED) {
 		r = MUNMAP(ptr2, len);
@@ -2264,7 +2254,6 @@ test_mmap_5()
 	int fd1;
 	int r;
 	int len;
-	int prot;
 	void *ptr0;
 	void *ptr1;
 
@@ -2289,10 +2278,10 @@ test_mmap_5()
 	if (fd1 == -1)
 		err(1, "open");
 
-	ptr0 = MMAP(NULL, len, prot, MAP_FILE, fd0, 0);
+	ptr0 = MMAP(NULL, len, PROT_WRITE, MAP_FILE, fd0, 0);
 	XP_SYS_OK(ptr0);
 
-	ptr1 = MMAP(NULL, len, prot, MAP_FILE, fd1, 0);
+	ptr1 = MMAP(NULL, len,  PROT_WRITE, MAP_FILE, fd1, 0);
 	XP_SYS_OK(ptr1);
 
 	r = MUNMAP(ptr1, len);
@@ -2548,7 +2537,6 @@ void
 test_poll_1()
 {
 	struct pollfd pfd;
-	char buf[1];
 	int fd;
 	int r;
 	struct {
@@ -3268,7 +3256,6 @@ test_AUDIO_GETINFO_eof(void)
 	struct audio_info ai;
 	int r;
 	int fd, fd1;
-	int n;
 
 	TEST("AUDIO_GETINFO_eof");
 
@@ -3367,8 +3354,6 @@ test_AUDIO_SETINFO_mode()
 	char buf[10];
 	int r;
 	int fd;
-	int n;
-	int mode;
 	struct {
 		int openmode;	// オープン時のモード (O_*)
 		int inimode;	// オープン直後の aumode 期待値
@@ -4293,7 +4278,6 @@ test_audioctl_open_3()
 	int ctl0;
 	int ctl1;
 	int r;
-	uid_t ouid;
 
 	TEST("audioctl_open_3");
 

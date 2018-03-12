@@ -3,7 +3,7 @@ CC.x68k=	/var/obj/7-1/x68k/tools/bin/m68k--netbsdelf-gcc \
 CXX.x68k=	/var/obj/7-1/x68k/tools/bin/m68k--netbsdelf-g++ \
 		--sysroot=/var/obj/7-1/x68k/dst
 CPPFLAGS+=	-g
-CPPFLAGS+=	-Wformat
+CPPFLAGS+=	-Wall -Wno-sign-compare -Wno-narrowing -Wformat
 LIBS+=	-lutil
 
 # 限りなくカーネル内と近いオブジェクトを生成するため。

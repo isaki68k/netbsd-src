@@ -46,7 +46,6 @@ usage()
 int
 main(int ac, char *av[])
 {
-	int i;
 	int c;
 	int unit;
 
@@ -258,7 +257,6 @@ cmd_playsync(int ac, char *av[])
 	int wavsize;
 	int fd;
 	int r;
-	int n;
 	double ratio;
 	int sinewave[] = {
 		0, 0xb0, 0x80, 0xb0, 0, 0x30, 0x00, 0x30
