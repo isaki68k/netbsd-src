@@ -1080,9 +1080,10 @@ test_open_3(void)
 		XP_EQ(0, ai.record.active);
 
 		// できるだけ変更
-		channels = (netbsd <= 7 && x68k) ? 1 : 2;
+		ai0 = ai;
 		AUDIO_INITINFO(&ai);
-		ai.blocksize = ai.blocksize * 2;
+		channels = (netbsd <= 7 && x68k) ? 1 : 2;
+		ai.blocksize = ai0.blocksize * 2;
 		ai.mode = aimode & ~AUMODE_PLAY_ALL;
 		ai.play.sample_rate = 11025;
 		ai.play.channels = channels;
@@ -1094,8 +1095,8 @@ test_open_3(void)
 		ai.record.precision = 16;
 		ai.record.encoding = AUDIO_ENCODING_SLINEAR_LE;
 		ai.record.pause = 1;
-		ai.hiwat--;
-		ai.lowat++;
+		ai.hiwat = ai0.hiwat - 1;
+		ai.lowat = ai0.lowat + 1;
 		r = IOCTL(fd, AUDIO_SETINFO, &ai, "ai");
 		if (r == -1)
 			err(1, "AUDIO_SETINFO");
