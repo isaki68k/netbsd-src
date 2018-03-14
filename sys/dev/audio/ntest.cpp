@@ -305,6 +305,9 @@ DESC(const char *name, ...)
 	va_start(ap, name);
 	vsnprintf(descname, sizeof(descname), name, ap);
 	va_end(ap);
+
+	if (debug)
+		printf("%s(%s)\n", testname, descname);
 }
 
 // 検査
