@@ -191,6 +191,48 @@ sc_lchan はもう使われていない。
 NetBSD 7 (以前) からある問題
 <ul>
 
+<li>AUDIO_SETINFO.blocksize が manpage と実装が異なる (2018/03)
+<p class="p">
+audio(4) には AUDIO_SETINFO では blocksize は実際に選ばれた値が書き戻される
+ように書いてあるが、実装は書き戻しを一切行なっていない。
+もう manpage のほうを書き換えてしまっては…
+</p>
+
+<li>AUDIO_SETINFO.blocksize の設定値 (と MD ドライバ) によっては panic する (2018/03)
+<p class="p">
+AUDIO_SETINFO で blocksize を設定するとき
+まず MI ドライバが入力値を必要なら調整し、
+さらに MD ドライバにおいても必要ならもう一度今度は MD ドライバで調整している。
+ただし audio(9) manpage にこの round_blocksize() の制約条件が一切書かれてない
+ため MD ドライバは round_blocksize() をそれぞれ好き勝手に実装しているにも関わらず、
+MI は round_blocksize() の戻り値が 0 以下なら panic するようになっている。
+</p>
+<p class="p">
+具体的にはまず MI は入力された blocksize (これの型は u_int なのだが) が
+signed int で 32 未満であれば 32 とする。
+そしてこの値を MD の round_blocksize() に渡して調整させるのだが、
+例えば auich(4) の round_blocksize() は入力値の下位6ビットを切り捨てる
+(だけの)実装になっており、つまり blocksize < 64 を指定すると 0 が返る。
+そして、MI 側では round_blocksize() の戻り値が 0 なら panic する。うーんこの。
+eap(4) の場合、round_blocksize() は下位5ビットを切り捨てるのだが
+前述の通り
+32未満の値は round_blocksize() には入力されないのでたまたま(なのか上位の動作を知っててなのか)セーフ。
+</p>
+<pre class="p">
+// auich(4) panics
+struct audio_info ai;
+fd = open("/dev/audio", O_WRONLY);
+AUDIO_INITINFO(&amp;ai);
+ai.blocksize = 31;
+ioctl(fd, AUDIO_SETINFO, &ai);
+</pre>
+</p>
+<p class="p">
+NetBSD 8 はこのあたりの実装ががっつり書き換わっているためこの問題は起きない
+(別の問題がないとは言っていない、今より小さい値に変更できないように読めるので
+それであれば確かにこの問題は起きない)。
+</p>
+
 <li>poll(2) で O_RDONLY に対して POLLOUT がセットされる (2018/02)
 <p class="p">
 O_RDONLY ディスクリプタに対して poll(POLLOUT) すると POLLOUT が返る。
@@ -206,6 +248,7 @@ O_RDONLY ディスクリプタに対して poll(POLLOUT) すると POLLOUT が�
 <p class="p">
 これだけでプロセスが不死身になる。shutdown も効かなくなる。
 <pre class="p">
+struct audio_info ai;
 fd = open("/dev/audio", O_WRONLY);
 AUDIO_INITINFO(&amp;ai);
 ai.play.sample_rate = 0;
