@@ -3223,9 +3223,9 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 		// write されるバイトバッファがフレーム境界に揃っている
 		// 保証はないので、usrbuf にコピーした後でなければならない
 		if ((track->mode & AUMODE_PLAY_ALL) == 0 &&
-		    track->playdrop != 0) {
+		    track->playdrop > 0) {
 			framesize = frametobyte(&track->inputfmt, 1);
-			count = min(usrbuf->used / framesize, track->playdrop);
+			count = MIN(usrbuf->used / framesize, track->playdrop);
 			audio_ring_take(usrbuf, count * framesize);
 			track->playdrop -= count;
 			TRACET(track, "drop %d -> usr=%d/%d/H%d",
