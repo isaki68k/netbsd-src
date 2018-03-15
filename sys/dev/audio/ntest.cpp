@@ -3851,6 +3851,119 @@ test_AUDIO_SETINFO_pause()
 	}
 }
 
+// SETINFO で blocksize をいろいろ設定してみる。
+void
+test_AUDIO_SETINFO_blocksize()
+{
+	struct audio_info ai, ai0;
+	int fd;
+	int r;
+	u_int initblksize;
+	int expect_inoutparam;
+
+	// SETINFO の blocksize の項目はセットできた値が返ってくる(つまり
+	// in-out parameter) とあるが、実装はそうなってない気がする。
+	expect_inoutparam = 0;
+
+	TEST("AUDIO_SETINFO_blocksize[inout=%d]", expect_inoutparam);
+
+	fd = OPEN(devaudio, O_WRONLY);
+	if (fd == -1)
+		err(1, "open");
+
+	// 最初の blocksize を取得しておく
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+	initblksize = ai.blocksize;
+	DPRINTF("initial blocksize=%d\n", initblksize);
+
+	// ゼロをセットしてみる
+	DESC("0");
+	AUDIO_INITINFO(&ai);
+	ai.blocksize = 0;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "ai.blocksize=0");
+	XP_SYS_EQ(0, r);
+	if (expect_inoutparam) {
+		// manpage 通りならセットされた値(たぶん初期値と同じはず)が帰る
+		XP_EQ(initblksize, ai.blocksize);
+	} else {
+		// 実際には in-out パラメータではないようだ
+		XP_EQ(0, ai.blocksize);
+	}
+
+	struct {
+		u_int blocksize;
+		u_int expected;
+	} table[] = {
+		{ 1,			1 },
+		{ 32,			32 },
+		{ 64,			64 },
+		{ 128,			128 },
+		{ 129,			129 },
+		{ 0x80000000,	initblksize },	// ほんまかいな
+	};
+	for (int i = 0; i < __arraycount(table); i++) {
+		u_int blocksize = table[i].blocksize;
+		u_int expected = table[i].expected;
+
+		DESC("%u", blocksize);
+
+		// ただし MI-MD 仕様が gdgd でテストできないケースが多い。
+		if (netbsd == 7) {
+			// 32 が最小
+			if (expected == 1)
+				expected = 32;
+
+			// hw->round_blocksize が keep good alignment とか言って
+			// 下位ビットを落としてるやつは、それより小さい blocksize を渡すと
+			// 0 が返る。そして呼び出し側は round_blocksize() の戻り値が
+			// 0 以下だと panic するようになっている。
+			if (strcmp(hwconfig, "auich0") == 0) {
+				if ((int)blocksize < 64) {
+					XP_FAIL("it causes panic on NetBSD7 + auich");
+					continue;
+				}
+				// 64バイト単位に落とされる
+				expected &= -64;
+			}
+			if (strcmp(hwconfig, "eap0") == 0) {
+				// 32バイト単位に落とされる
+				expected &= -32;
+			}
+		}
+
+		// セット
+		AUDIO_INITINFO(&ai);
+		ai.blocksize = blocksize;
+		r = IOCTL(fd, AUDIO_SETINFO, &ai, "ai.blocksize=%u", ai.blocksize);
+		XP_SYS_EQ(0, r);
+
+		if (expect_inoutparam) {
+			// SETINFO が blocksize を更新する場合
+
+			// もう一度取得してみる
+			memset(&ai0, 0, sizeof(ai0));
+			r = IOCTL(fd, AUDIO_GETBUFINFO, &ai0, "");
+			XP_SYS_EQ(0, r);
+			if (expected) {
+				XP_EQ(expected, ai.blocksize);
+			} else {
+				XP_EQ(initblksize, ai.blocksize);
+			}
+
+			// SETINFO 時の戻り blocksize は setinfo が設定したサイズに
+			// なっているはずなので、この2つは一致するはず。
+			XP_EQ(ai0.blocksize, ai.blocksize);
+		} else {
+			// SETINFO が blocksize を更新しない場合
+			XP_EQ(blocksize, ai.blocksize);
+		}
+	}
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+}
+
 // SETINFO で設定した hiwat, lowat が GETINFO でどう見えるか。
 void
 test_AUDIO_SETINFO_hiwat1()
@@ -4654,6 +4767,7 @@ struct testtable testtable[] = {
 	DEF(AUDIO_SETINFO_params2),
 	DEF(AUDIO_SETINFO_params3),
 	DEF(AUDIO_SETINFO_pause),
+	DEF(AUDIO_SETINFO_blocksize),
 	DEF(AUDIO_SETINFO_hiwat1),
 	DEF(AUDIO_SETINFO_hiwat2),
 	DEF(AUDIO_GETENC_1),
