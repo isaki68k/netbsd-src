@@ -3227,7 +3227,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 			framesize = frametobyte(&track->inputfmt, 1);
 			count = min(usrbuf->used / framesize, track->playdrop);
 			audio_ring_take(usrbuf, count * framesize);
-			track->playdrop -= count * framesize;
+			track->playdrop -= count;
 			TRACET(track, "drop %d -> usr=%d/%d/H%d",
 			    count * framesize,
 			    usrbuf->head, usrbuf->used, track->usrbuf_usedhigh);
