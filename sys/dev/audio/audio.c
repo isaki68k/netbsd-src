@@ -1630,10 +1630,9 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 	DPRINTF(1, "%s\n", __func__);
 #endif
 	KASSERT(mutex_owned(sc->sc_lock));
-
-	// いる?
-	//if (sc->sc_opens == 0 && sc->sc_recopens == 0)
-	//	return ENXIO;
+	KASSERTMSG(sc->sc_popens + sc->sc_ropens > 0,
+	    "sc->sc_popens=%d, sc->sc_ropens=%d",
+	    sc->sc_popens, sc->sc_ropens);
 
 	// 現在どちらのトラックが有効かは file->ptrack、file->rtrack が
 	// !NULL で判断すること。
