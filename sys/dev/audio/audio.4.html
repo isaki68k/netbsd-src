@@ -826,16 +826,6 @@ mark. <i>hiwat</i> and <i>lowat</i> set those high- and
 low-water marks (in audio blocks). The default for
 <i>hiwat</i> is the maximum value and for <i>lowat</i> 75 %
 of <i>hiwat</i>.</p>
-<p class=a2 style="margin-left:20%">バッファの構造が変わったため
-lowat を 50% かそれ以下にしたい。
-元々ユーザランドから見えるバッファがハードウェアバッファだったため、
-ハードウェアバッファを途切れさせないために lowat を高めにする必要があったが、
-AUDIO2 の構造ではユーザランドバッファとハードウェアバッファの間に
-ものすごくいろいろあって、同じ理屈にはならない。
-むしろ lowat を低くするほうが uiomove の回数を減らせて有利かもしれないくらい
-まである。
-</p>
-
 
 <p style="margin-left:20%; margin-top: 1em"><i>blocksize</i>
 sets the current audio blocksize. The generic audio driver
@@ -850,11 +840,16 @@ value becomes sticky, i.e., it remains even when the
 encoding is changed. The stickiness can be cleared by
 reopening the device or setting the <i>blocksize</i> to
 0.</p>
+<p class=bad7 style="margin-left:20%">
+AUDIO_SETINFO は実際にセットした blocksize を書き戻すと manpage
+には書いてあるが、N7もN8も書き戻しを行なっていない。
+</p>
 <p class=a2 style="margin-left:20%">
 AUDIO2 では hardware driver がブロックサイズを変更する機会は今の所たぶん持たない。
 </p>
 <p class=a2 style="margin-left:20%">
-従って AUDIO_SETINFO も書き戻しを行わない予定。
+AUDIO2 でも AUDIO_SETINFO による blocksize の書き戻しは行わない予定。
+manpage のほうを修正したほうがいい。
 </p>
 <p class=a2 style="margin-left:20%">
 AUDIO2 ではブロックサイズはデフォルトで 40msec 分のサイズになるようにしてある。
@@ -1007,10 +1002,6 @@ AUDIO2 では以下を受け付ける。<br>
 カーネルオプションにはしてもいいかも。
 これを足すと amd64 で 1300バイトだけ text segment が増える。
 32bit も要るのかなあという気はしないでもないが。
-</p>
-<p class=a2 style="margin-left:20%">
-AUDIO_GETENC のところでも触れたように、
-この情報を返す ioctl を新設したほうがいい気はしている。
 </p>
 
 <p style="margin-left:20%; margin-top: 1em">The
