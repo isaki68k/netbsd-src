@@ -3114,8 +3114,10 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 			audio_track_setinfo_water(play, ai);
 
 		/* Restart pmixer */
-		if (restartp)
+		if (restartp) {
+			audio_track_clear(sc, play);
 			audio_pmixer_start(sc, false);
+		}
 	}
 	if (rec) {
 		bool restartr = false;
@@ -3135,8 +3137,10 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 		}
 
 		/* Restart rmixer */
-		if (restartr)
+		if (restartr) {
+			audio_track_clear(sc, rec);
 			audio_rmixer_start(sc);
+		}
 	}
 
 	return 0;
