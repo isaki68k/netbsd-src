@@ -2816,6 +2816,88 @@ test_poll_4()
 	XP_SYS_EQ(0, r);
 }
 
+// pause を切り替えるとそこまでに書いてたバッファはクリアされる。
+// ただし POLLOUT は復活しなくて、これは N7 からあるバグっぽい気がする。
+void
+test_poll_5()
+{
+	struct audio_info ai;
+	struct pollfd pfd;
+	int fd;
+	int r;
+	char *buf;
+	int blocksize;
+	int buflen;
+
+	TEST("poll_5");
+
+	// ノンブロッキングオープン
+	fd = OPEN(devaudio, O_WRONLY | O_NONBLOCK);
+	if (fd == -1)
+		err(1, "open");
+
+	// pause を設定
+	// 再生時間を縮めるため blocksize を小さくする
+	AUDIO_INITINFO(&ai);
+	ai.play.pause = 1;
+	ai.blocksize = 320;
+	ai.hiwat = 4;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "pause=1");
+	XP_SYS_EQ(0, r);
+
+	// いろいろ再取得
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+	blocksize = ai.blocksize;
+
+	// 書き込み
+	buflen = blocksize * ai.hiwat;
+	buf = (char *)malloc(buflen);
+	if (buf == NULL)
+		err(1, "malloc");
+	memset(buf, 0, buflen);
+	r = WRITE(fd, buf, buflen);
+	XP_SYS_EQ(buflen, r);
+
+	// AUDIO2 ではさらに数ブロック書き込まないと POLLOUT は消灯しない。
+	if (netbsd == 9) {
+		r = WRITE(fd, buf, buflen);
+	}
+
+	// バッファフルなので POLLOUT が立たないこと
+	memset(&pfd, 0, sizeof(pfd));
+	pfd.fd = fd;
+	pfd.events = POLLOUT;
+	r = POLL(&pfd, 1, 0);
+	XP_SYS_EQ(0, r);
+	XP_EQ(0, pfd.revents);
+
+	// pause 解除するとバッファがクリアされる
+	AUDIO_INITINFO(&ai);
+	ai.play.pause = 0;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "pause=0");
+	XP_SYS_EQ(0, r);
+
+	// クリアされたので POLLOUT が有効になる
+	// はずだが N7 はならない。バグじゃねーかなあ
+	pfd.revents = 0;
+	r = POLL(&pfd, 1, 0);
+	if (netbsd <= 7) {
+		XP_SYS_EQ(0, r);
+		XP_EQ(0, pfd.revents);
+	} else {
+		XP_SYS_EQ(1, r);
+		XP_EQ(POLLOUT, pfd.revents);
+	}
+
+	// POLLOUT が立ってないがクリアされてるので書き込める
+	r = WRITE(fd, buf, blocksize);
+	XP_SYS_EQ(blocksize, r);
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+}
+
 // FIOASYNC が同時に2人設定できるか
 void
 test_FIOASYNC_1(void)
@@ -4752,6 +4834,7 @@ struct testtable testtable[] = {
 	DEF(poll_2),
 	DEF(poll_3),
 	DEF(poll_4),
+	DEF(poll_5),
 	DEF(FIOASYNC_1),
 	DEF(FIOASYNC_2),
 	DEF(FIOASYNC_3),
