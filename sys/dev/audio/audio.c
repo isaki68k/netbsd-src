@@ -3094,9 +3094,13 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	error = 0;
 	file->mode = mode;
 	if (play) {
+		bool restartp = false;
+
 		if (SPECIFIED_CH(pi->pause)) {
 			play->is_pause = pi->pause;
 			sc->sc_ppause = pi->pause;
+			if (play->is_pause == 0)
+				restartp = true;
 		}
 		if (pchanges) {
 			error = audio_file_setinfo_set(play, pi, pchanges,
@@ -3108,11 +3112,19 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 		/* Change water marks after initializing the buffers. */
 		if (SPECIFIED(ai->hiwat) || SPECIFIED(ai->lowat))
 			audio_track_setinfo_water(play, ai);
+
+		/* Restart pmixer */
+		if (restartp)
+			audio_pmixer_start(sc, false);
 	}
 	if (rec) {
+		bool restartr = false;
+
 		if (SPECIFIED_CH(ri->pause)) {
 			rec->is_pause = ri->pause;
 			sc->sc_rpause = ri->pause;
+			if (rec->is_pause == 0)
+				restartr = true;
 		}
 		if (rchanges) {
 			error = audio_file_setinfo_set(rec, ri, rchanges,
@@ -3121,6 +3133,10 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 				goto abort2;
 			sc->sc_rparams = rfmt;
 		}
+
+		/* Restart rmixer */
+		if (restartr)
+			audio_rmixer_start(sc);
 	}
 
 	return 0;
