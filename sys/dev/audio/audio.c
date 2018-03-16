@@ -1416,11 +1416,20 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 		error = audio_track_init(sc, &af->ptrack, AUMODE_PLAY);
 		if (error)
 			goto bad1;
+
+		/* On playback side, one softint is assigned to one track. */
+		af->ptrack->sih_wr = softint_establish(
+		    SOFTINT_SERIAL | SOFTINT_MPSAFE,
+		    audio_softintr_wr, af);
+		if (af->ptrack->sih_wr == NULL)
+			goto bad2;
 	}
 	if ((af->mode & AUMODE_RECORD) != 0) {
 		error = audio_track_init(sc, &af->rtrack, AUMODE_RECORD);
 		if (error)
 			goto bad2;
+
+		/* On record side, one softint is shared by all tracks. */
 	}
 
 	/*
@@ -1707,6 +1716,12 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 				}
 			}
 		}
+
+		if (file->ptrack->sih_wr) {
+			softint_disestablish(file->ptrack->sih_wr);
+			file->ptrack->sih_wr = NULL;
+		}
+
 		oldtrack = file->ptrack;
 		mutex_enter(sc->sc_intr_lock);
 		file->ptrack = NULL;
@@ -1838,19 +1853,10 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 	case FIOASYNC:
 		if (*(int *)addr) {
 			file->async_audio = curproc->p_pid;
-			if (file->ptrack && file->ptrack->sih_wr == NULL) {
-				file->ptrack->sih_wr = softint_establish(
-				    SOFTINT_SERIAL | SOFTINT_MPSAFE,
-				    audio_softintr_wr, file);
-			}
 			DPRINTF(2, "%s: FIOASYNC pid %d\n", __func__,
 			    file->async_audio);
 		} else {
 			file->async_audio = 0;
-			if (file->ptrack && file->ptrack->sih_wr) {
-				softint_disestablish(file->ptrack->sih_wr);
-				file->ptrack->sih_wr = NULL;
-			}
 			DPRINTF(2, "%s: FIOASYNC off\n", __func__);
 		}
 		break;
@@ -2407,10 +2413,6 @@ audio_softintr_rd(void *cookie)
 /*
  * SIGIO derivery for playback.
  *
- * o softintr cookie for playback is one per play track.  Initialize on
- *   FIOASYNC(on) and release FIOASYNC(off) or close.
-//   オープンで初期化/クローズで解放にしてもいいけど、再生オープンする人
-//   に比べて ASYNC 使う人は少ないと思うので。
 // o 再生ミキサで ASYNC トラックのバッファを消費した際に lowat を下回ったら、
 //   ソフトウェア割り込みを要求。
 // o ソフトウェア割り込みで、このトラックに対して SIGIO を投げる。

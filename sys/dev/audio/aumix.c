@@ -770,10 +770,6 @@ audio_track_destroy(audio_track_t *track)
 	audio_free(track->freq.srcbuf.mem);
 	audio_free(track->outputbuf.mem);
 	cv_destroy(&track->outchan);
-	if (track->sih_wr) {
-		softint_disestablish(track->sih_wr);
-		track->sih_wr = NULL;
-	}
 
 	kmem_free(track, sizeof(*track));
 }
