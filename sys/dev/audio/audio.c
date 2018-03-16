@@ -3094,13 +3094,13 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	error = 0;
 	file->mode = mode;
 	if (play) {
-		bool restartp = false;
+		bool start_mixer = false;
 
 		if (SPECIFIED_CH(pi->pause)) {
+			if (play->is_pause != 0 && pi->pause == 0)
+				start_mixer = true;
 			play->is_pause = pi->pause;
 			sc->sc_ppause = pi->pause;
-			if (play->is_pause == 0)
-				restartp = true;
 		}
 		if (pchanges) {
 			error = audio_file_setinfo_set(play, pi, pchanges,
@@ -3113,20 +3113,19 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 		if (SPECIFIED(ai->hiwat) || SPECIFIED(ai->lowat))
 			audio_track_setinfo_water(play, ai);
 
-		/* Restart pmixer */
-		if (restartp) {
+		if (start_mixer) {
 			audio_track_clear(sc, play);
 			audio_pmixer_start(sc, false);
 		}
 	}
 	if (rec) {
-		bool restartr = false;
+		bool start_mixer = false;
 
 		if (SPECIFIED_CH(ri->pause)) {
+			if (rec->is_pause != 0 && ri->pause == 0)
+				start_mixer = true;
 			rec->is_pause = ri->pause;
 			sc->sc_rpause = ri->pause;
-			if (rec->is_pause == 0)
-				restartr = true;
 		}
 		if (rchanges) {
 			error = audio_file_setinfo_set(rec, ri, rchanges,
@@ -3136,8 +3135,7 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 			sc->sc_rparams = rfmt;
 		}
 
-		/* Restart rmixer */
-		if (restartr) {
+		if (start_mixer) {
 			audio_track_clear(sc, rec);
 			audio_rmixer_start(sc);
 		}
