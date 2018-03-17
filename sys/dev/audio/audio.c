@@ -1393,7 +1393,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 		return ENXIO;
 
 #if AUDIO_DEBUG > 2
-	TRACE("start po=%d ro=%d", sc->sc_popens, sc->sc_ropens);
+	TRACE("start flags=0x%x po=%d ro=%d", flags, sc->sc_popens, sc->sc_ropens);
 #else
 	DPRINTF(1, "%s\n", __func__);
 #endif
@@ -2432,7 +2432,7 @@ audio_softintr_wr(void *cookie)
 
 	file = cookie;
 	sc = file->sc;
-	TRACEF(file, "start");
+	TRACEF(file, "called");
 
 	// 自分自身がまだ有効かどうか調べる
 	pid = 0;

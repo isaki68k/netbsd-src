@@ -3126,7 +3126,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 
 	track = file->ptrack;
 	KASSERT(track);
-	TRACET(track, "begin");
+	TRACET(track, "begin ioflag=0x%x", ioflag);
 
 	KASSERT(mutex_owned(sc->sc_lock));
 
