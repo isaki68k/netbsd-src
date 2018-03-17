@@ -2713,7 +2713,7 @@ test_poll_3()
 
 	TEST("poll_3");
 
-	fd = OPEN(devaudio, O_WRONLY);
+	fd = OPEN(devaudio, O_WRONLY | O_NONBLOCK);
 	if (fd == -1)
 		err(1, "open");
 
@@ -2735,11 +2735,10 @@ test_poll_3()
 	r = WRITE(fd, buf, buflen);
 	XP_SYS_EQ(buflen, r);
 
-	// AUDIO2 ではさらにもう1ブロック書き込まないと POLLOUT は消灯しない。
+	// AUDIO2 ではさらにもう数ブロック書き込まないと POLLOUT は消灯しない。
 	// これで何のテストになるのかちょっと分からんけど。
 	if (netbsd == 9) {
-		r = WRITE(fd, buf, ai.blocksize);
-		XP_SYS_EQ(ai.blocksize, r);
+		WRITE(fd, buf, buflen);
 	}
 
 	// poll
@@ -2768,7 +2767,7 @@ test_poll_4()
 
 	TEST("poll_4");
 
-	fd = OPEN(devaudio, O_WRONLY);
+	fd = OPEN(devaudio, O_WRONLY | O_NONBLOCK);
 	if (fd == -1)
 		err(1, "open");
 
@@ -2797,11 +2796,9 @@ test_poll_4()
 	r = WRITE(fd, buf, buflen);
 	XP_SYS_EQ(buflen, r);
 
-	// AUDIO2 ではさらにもう1ブロック書き込まないと POLLOUT は消灯しない。
-	// これで何のテストになるのかちょっと分からんけど。
+	// AUDIO2 ではさらにもう数ブロック書き込まないと POLLOUT は消灯しない。
 	if (netbsd == 9) {
-		r = WRITE(fd, buf, ai.blocksize);
-		XP_SYS_EQ(ai.blocksize, r);
+		WRITE(fd, buf, buflen);
 	}
 
 	// poll
@@ -2861,7 +2858,7 @@ test_poll_5()
 
 	// AUDIO2 ではさらに数ブロック書き込まないと POLLOUT は消灯しない。
 	if (netbsd == 9) {
-		r = WRITE(fd, buf, buflen);
+		WRITE(fd, buf, buflen);
 	}
 
 	// バッファフルなので POLLOUT が立たないこと
