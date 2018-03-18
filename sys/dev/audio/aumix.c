@@ -3147,25 +3147,8 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 		device_active(&sc->dev, DVA_SYSTEM);
 #endif
 
-	// out_thres は usrbuf から読み出す際の閾値。
-	// trkbuf.used が out_thres より大きければ変換処理を行う。
-	// o PLAY なら常に変換処理をしたいので 1[フレーム] に設定
-	// o PLAY_ALL なら1ブロック溜まってから処理なので block size を設定
-	//
-	// force は 1ブロックに満たない場合にミキサを開始するか否か。
-	// o PLAY なら1ブロック未満でも常に開始するため true
-	// o PLAY_ALL なら1ブロック貯まるまで開始しないので false
 	usrbuf = &track->usrbuf;
-	int out_thres;
-	if (1||(track->mode & AUMODE_PLAY_ALL) != 0) {
-		/* PLAY_ALL */
-		out_thres = frametobyte(&track->inputfmt,
-		    frame_per_block_roundup(track->mixer, &track->inputfmt));
-	} else {
-		/* PLAY */
-		out_thres = frametobyte(&track->inputfmt, 1);
-	}
-	TRACET(track, "resid=%zd out_thres=%d", uio->uio_resid, out_thres);
+	TRACET(track, "resid=%zd", uio->uio_resid);
 
 	track->pstate = AUDIO_STATE_RUNNING;
 	error = 0;
@@ -3230,7 +3213,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 		}
 
 		mutex_enter(sc->sc_intr_lock);
-		while (track->usrbuf.used >= out_thres &&
+		while (track->usrbuf.used >= track->usrbuf_blksize &&
 		    track->outputbuf.used < track->mixer->frames_per_block * 2) {
 			track->in_use = true;
 			mutex_exit(sc->sc_intr_lock);
