@@ -2434,10 +2434,13 @@ audio_softintr_wr(void *cookie)
 	sc = file->sc;
 	TRACEF(file, "called");
 
+	mutex_enter(sc->sc_lock);
+	/* Notify for select/poll.  It needs sc_lock (and not sc_intr_lock). */
+	selnotify(&sc->sc_wsel, 0, NOTE_SUBMIT);
+
+	mutex_enter(sc->sc_intr_lock);
 	// 自分自身がまだ有効かどうか調べる
 	pid = 0;
-	mutex_enter(sc->sc_lock);
-	mutex_enter(sc->sc_intr_lock);
 	SLIST_FOREACH(f, &sc->sc_files, entry) {
 		if (f == file) {
 			pid = file->async_audio;
@@ -2446,7 +2449,6 @@ audio_softintr_wr(void *cookie)
 	}
 	mutex_exit(sc->sc_intr_lock);
 	if (pid != 0) {
-		selnotify(&sc->sc_wsel, 0, NOTE_SUBMIT);
 		TRACEF(file, "sending SIGIO %d", pid);
 		mutex_enter(proc_lock);
 		if ((p = proc_find(pid)) != NULL)
