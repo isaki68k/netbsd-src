@@ -3157,7 +3157,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 	// o PLAY_ALL なら1ブロック貯まるまで開始しないので false
 	usrbuf = &track->usrbuf;
 	int out_thres;
-	if ((track->mode & AUMODE_PLAY_ALL) != 0) {
+	if (1||(track->mode & AUMODE_PLAY_ALL) != 0) {
 		/* PLAY_ALL */
 		out_thres = frametobyte(&track->inputfmt,
 		    frame_per_block_roundup(track->mixer, &track->inputfmt));
@@ -3230,8 +3230,8 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 		}
 
 		mutex_enter(sc->sc_intr_lock);
-		if (track->usrbuf.used >= out_thres &&
-		    track->outputbuf.used < track->mixer->frames_per_block) {
+		while (track->usrbuf.used >= out_thres &&
+		    track->outputbuf.used < track->mixer->frames_per_block * 2) {
 			track->in_use = true;
 			mutex_exit(sc->sc_intr_lock);
 			audio_track_play(track);
