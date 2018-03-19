@@ -2080,11 +2080,14 @@ audio_poll(struct audio_softc *sc, int events, struct lwp *l,
 	}
 
 	if (revents == 0) {
-		if (events & (POLLIN | POLLRDNORM))
+		if (events & (POLLIN | POLLRDNORM)) {
+			TRACEF(file, "selrecord rsel");
 			selrecord(l, &sc->sc_rsel);
-
-		if (events & (POLLOUT | POLLWRNORM))
+		}
+		if (events & (POLLOUT | POLLWRNORM)) {
+			TRACEF(file, "selrecord wsel");
 			selrecord(l, &sc->sc_wsel);
+		}
 	}
 
 #if AUDIO_DEBUG > 2
