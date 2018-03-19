@@ -2067,7 +2067,7 @@ audio_poll(struct audio_softc *sc, int events, struct lwp *l,
 	if (events & (POLLIN | POLLRDNORM)) {
 		if (file->rtrack) {
 			audio_ring_t *usrbuf = &file->rtrack->usrbuf;
-			if (usrbuf->used > 0)
+			if (usrbuf->used > file->rtrack->usrbuf_usedlow)
 				revents |= events & (POLLIN | POLLRDNORM);
 		}
 	}
