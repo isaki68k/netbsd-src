@@ -2174,7 +2174,7 @@ filt_audiowrite(struct knote *kn, long hint)
 		kn->kn_data = file->ptrack->usrbuf_usedhigh - usrbuf->used;
 	}
 
-	TRACE("kn=%p data=%d\n", kn, (int)kn->kn_data);
+	TRACE("kn=%p data=%d", kn, (int)kn->kn_data);
 	return kn->kn_data > 0;
 }
 
