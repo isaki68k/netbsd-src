@@ -2895,6 +2895,111 @@ test_poll_5()
 	XP_SYS_EQ(0, r);
 }
 
+// 隣のディスクリプタの影響を受けないこと
+void
+test_poll_6()
+{
+	struct audio_info ai;
+	struct pollfd pfd[2];
+	int fd[2];
+	int r;
+	char *buf;
+	int blocksize;
+	int buflen;
+	int time;
+
+	TEST("poll_6");
+
+	// 多重化は N7 では出来ない
+	if (netbsd < 8) {
+		XP_SKIP("NetBSD7 does not support multi-open");
+		return;
+	}
+
+	for (int i = 0; i < 2; i++) {
+		int a = i;
+		int b = 1 - i;
+		DESC("%d", i);
+
+		fd[0] = OPEN(devaudio, O_WRONLY | O_NONBLOCK);
+		if (fd[0] == -1)
+			err(1, "open");
+		fd[1] = OPEN(devaudio, O_WRONLY | O_NONBLOCK);
+		if (fd[1] == -1)
+			err(1, "open");
+
+		AUDIO_INITINFO(&ai);
+		// 再生時間を縮めるため blocksize を小さくしたいが N8 では効かないっぽい
+		ai.blocksize = 320;
+		ai.hiwat = 4;
+		ai.lowat = 1;
+		// fdA は pause を設定
+		ai.play.pause = 1;
+		r = IOCTL(fd[a], AUDIO_SETINFO, &ai, "pause=1");
+		XP_SYS_EQ(0, r);
+		// fdB は pause なし
+		ai.play.pause = 0;
+		r = IOCTL(fd[b], AUDIO_SETINFO, &ai, "pause=0");
+		XP_SYS_EQ(0, r);
+
+		// いろいろ再取得
+		// 手抜きして使い回す
+		r = IOCTL(fd[a], AUDIO_GETBUFINFO, &ai, "");
+		XP_SYS_EQ(0, r);
+		XP_EQ(4, ai.hiwat);
+		XP_EQ(1, ai.lowat);
+		blocksize = ai.blocksize;
+
+		// 8kHz での再生時間 msec に対して十分長くとる
+		time = ai.hiwat * blocksize / 8 * 2;
+
+		// fdA に書き込み
+		buflen = blocksize * ai.hiwat;
+		buf = (char *)malloc(buflen);
+		if (buf == NULL)
+			err(1, "malloc");
+		memset(buf, 0, buflen);
+		do {
+			r = WRITE(fd[a], buf, buflen);
+			XP_SYS_OK(r);
+		} while (r == buflen);
+
+		// fdA はバッファフルなので POLLOUT が立たないこと
+		memset(pfd, 0, sizeof(pfd));
+		pfd[0].fd = fd[a];
+		pfd[0].events = POLLOUT;
+		r = POLL(pfd, 1, 0);
+		XP_SYS_EQ(0, r);
+		XP_EQ(0, pfd[0].revents);
+
+		// fdB に(lowat以上)書き込む
+		r = WRITE(fd[b], buf, buflen);
+		XP_SYS_EQ(buflen, r);
+		do {
+			r = WRITE(fd[b], buf, buflen);
+			XP_SYS_OK(r);
+		} while (r == buflen);
+
+		memset(pfd, 0, sizeof(pfd));
+		pfd[0].fd = fd[0];
+		pfd[0].events = POLLOUT;
+		pfd[1].fd = fd[1];
+		pfd[1].events = POLLOUT;
+		// 待ってれば fdB だけ POLLOUT になるはず
+		r = POLL(pfd, 2, time);
+		XP_SYS_EQ(1, r);
+		if (r != -1) {
+			XP_EQ(0, pfd[a].revents);
+			XP_EQ(POLLOUT, pfd[b].revents);
+		}
+
+		r = CLOSE(fd[0]);
+		XP_SYS_EQ(0, r);
+		r = CLOSE(fd[1]);
+		XP_SYS_EQ(0, r);
+	}
+}
+
 // FIOASYNC が同時に2人設定できるか
 void
 test_FIOASYNC_1(void)
@@ -4839,6 +4944,7 @@ struct testtable testtable[] = {
 	DEF(poll_3),
 	DEF(poll_4),
 	DEF(poll_5),
+	DEF(poll_6),
 	DEF(FIOASYNC_1),
 	DEF(FIOASYNC_2),
 	DEF(FIOASYNC_3),
