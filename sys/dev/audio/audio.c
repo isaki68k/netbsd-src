@@ -3130,7 +3130,6 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 			audio_track_setinfo_water(play, ai);
 
 		if (start_mixer) {
-			audio_track_clear(sc, play);
 			audio_pmixer_start(sc, false);
 		}
 	}
@@ -3152,7 +3151,6 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 		}
 
 		if (start_mixer) {
-			audio_track_clear(sc, rec);
 			audio_rmixer_start(sc);
 		}
 	}
