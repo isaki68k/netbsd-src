@@ -620,7 +620,14 @@ int debug_munmap(int line, void *ptr, int len)
 #define POLL(pfd, nfd, timeout)	debug_poll(__LINE__, pfd, nfd, timeout)
 int debug_poll(int line, struct pollfd *pfd, int nfd, int timeout)
 {
-	DPRINTFF(line, "poll(%p, %d, %d)", pfd, nfd, timeout);
+	char buf[256];
+	int n = 0;
+	buf[n] = '\0';
+	for (int i = 0; i < nfd; i++) {
+		n += snprintf(buf + n, sizeof(buf) - n, "{fd=%d,events=%d}",
+			pfd[i].fd, pfd[i].events);
+	}
+	DPRINTFF(line, "poll(%s, %d, %d)", buf, nfd, timeout);
 	int r = poll(pfd, nfd, timeout);
 	DRESULT(r);
 }
@@ -646,7 +653,17 @@ int debug_kevent_set(int line, int kq, struct kevent *kev, size_t nev)
 int debug_kevent_poll(int line, int kq, struct kevent *kev, size_t nev,
 	const struct timespec *ts)
 {
-	DPRINTFF(line, "kevent_poll(%d, %p, %zd, %p)", kq, kev, nev, ts);
+	char tsbuf[32];
+
+	if (ts == NULL) {
+		snprintf(tsbuf, sizeof(tsbuf), "NULL");
+	} else if (ts->tv_sec == 0 && ts->tv_nsec == 0) {
+		snprintf(tsbuf, sizeof(tsbuf), "0.0");
+	} else {
+		snprintf(tsbuf, sizeof(tsbuf), "%d.%09d",
+			(int)ts->tv_sec, (int)ts->tv_nsec);
+	}
+	DPRINTFF(line, "kevent_poll(%d, %p, %zd, %s)", kq, kev, nev, tsbuf);
 	int r = kevent(kq, NULL, 0, kev, nev, ts);
 	DRESULT(r);
 }
