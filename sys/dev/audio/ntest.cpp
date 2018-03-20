@@ -380,6 +380,18 @@ void xp_sys_eq(int line, int exp, int act, const char *varname)
 		}
 	}
 }
+
+// システムコールの結果 exp 以外になることを期待
+// エラーもテスト成功に含む
+#define XP_SYS_NE(exp, act)	xp_sys_ne(__LINE__, exp, act, #act)
+void xp_sys_ne(int line, int exp, int act, const char *varname)
+{
+	testcount++;
+	if (act != -1) {
+		xp_ne(line, exp, act, varname);
+	}
+}
+
 // システムコールの結果成功することを期待
 // open(2) のように返ってくる成功値が分からない場合用
 #define XP_SYS_OK(act)	xp_sys_ok(__LINE__, act, #act)
@@ -2749,13 +2761,12 @@ test_poll_3()
 	buf = (char *)malloc(buflen);
 	if (buf == NULL)
 		err(1, "malloc");
-	r = WRITE(fd, buf, buflen);
-	XP_SYS_EQ(buflen, r);
-
-	// AUDIO2 ではさらにもう数ブロック書き込まないと POLLOUT は消灯しない。
-	// これで何のテストになるのかちょっと分からんけど。
-	if (netbsd == 9) {
-		WRITE(fd, buf, buflen);
+	memset(buf, 0, buflen);
+	do {
+		r = WRITE(fd, buf, buflen);
+	} while (r == buflen);
+	if (r == -1) {
+		XP_SYS_NG(EAGAIN, r);
 	}
 
 	// poll
@@ -2768,6 +2779,7 @@ test_poll_3()
 
 	r = CLOSE(fd);
 	XP_SYS_EQ(0, r);
+	free(buf);
 }
 
 // poll、hiwat 設定してバッファフルで POLLOUT のテスト
@@ -2810,12 +2822,12 @@ test_poll_4()
 	buf = (char *)malloc(buflen);
 	if (buf == NULL)
 		err(1, "malloc");
-	r = WRITE(fd, buf, buflen);
-	XP_SYS_EQ(buflen, r);
-
-	// AUDIO2 ではさらにもう数ブロック書き込まないと POLLOUT は消灯しない。
-	if (netbsd == 9) {
-		WRITE(fd, buf, buflen);
+	memset(buf, 0, buflen);
+	do {
+		r = WRITE(fd, buf, buflen);
+	} while (r == buflen);
+	if (r == -1) {
+		XP_SYS_NG(EAGAIN, r);
 	}
 
 	// poll
@@ -2828,10 +2840,12 @@ test_poll_4()
 
 	r = CLOSE(fd);
 	XP_SYS_EQ(0, r);
+	free(buf);
 }
 
-// pause を切り替えるとそこまでに書いてたバッファはクリアされる。
-// ただし POLLOUT は復活しなくて、これは N7 からあるバグっぽい気がする。
+// バッファフルから pause を解除した場合。
+// N7 ではネイティブフォーマットかどうかで挙動が変わるらしい。
+// そもそもマニュアルにも挙動は一切書いてないので、未定義動作としか。
 void
 test_poll_5()
 {
@@ -2840,76 +2854,105 @@ test_poll_5()
 	int fd;
 	int r;
 	char *buf;
-	int blocksize;
 	int buflen;
 
 	TEST("poll_5");
 
-	// ノンブロッキングオープン
-	fd = OPEN(devaudio, O_WRONLY | O_NONBLOCK);
-	if (fd == -1)
-		err(1, "open");
+	for (int emul = 0; emul < 2; emul++) {
+		DESC("emul=%d", emul);
 
-	// pause を設定
-	// 再生時間を縮めるため blocksize を小さくする
-	AUDIO_INITINFO(&ai);
-	ai.play.pause = 1;
-	ai.blocksize = 320;
-	ai.hiwat = 4;
-	r = IOCTL(fd, AUDIO_SETINFO, &ai, "pause=1");
-	XP_SYS_EQ(0, r);
+		// ノンブロッキングオープン
+		fd = OPEN(devaudio, O_WRONLY | O_NONBLOCK);
+		if (fd == -1)
+			err(1, "open");
 
-	// いろいろ再取得
-	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
-	XP_SYS_EQ(0, r);
-	blocksize = ai.blocksize;
+		// pause を設定
+		AUDIO_INITINFO(&ai);
+		ai.play.pause = 1;
+		// ついでにエンコーディングも設定
+		// XXX 本当は GETENC でチェックすべきだが手抜き
+		if (emul) {
+			ai.play.encoding = AUDIO_ENCODING_SLINEAR_NE;
+			ai.play.precision = 16;
+			ai.play.channels = 2;
+			ai.play.sample_rate = 22050;
+		}
+		r = IOCTL(fd, AUDIO_SETINFO, &ai, "pause=1");
+		XP_SYS_EQ(0, r);
 
-	// 書き込み
-	buflen = blocksize * ai.hiwat;
-	buf = (char *)malloc(buflen);
-	if (buf == NULL)
-		err(1, "malloc");
-	memset(buf, 0, buflen);
-	r = WRITE(fd, buf, buflen);
-	XP_SYS_EQ(buflen, r);
+		// いろいろ再取得
+		r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+		XP_SYS_EQ(0, r);
 
-	// AUDIO2 ではさらに数ブロック書き込まないと POLLOUT は消灯しない。
-	if (netbsd == 9) {
-		WRITE(fd, buf, buflen);
-	}
+		// 書き込み
+		buflen = ai.blocksize * ai.hiwat;
+		buf = (char *)malloc(buflen);
+		if (buf == NULL)
+			err(1, "malloc");
+		memset(buf, 0, buflen);
+		do {
+			r = WRITE(fd, buf, buflen);
+		} while (r == buflen);
+		if (r == -1) {
+			XP_SYS_NG(EAGAIN, r);
+		}
 
-	// バッファフルなので POLLOUT が立たないこと
-	memset(&pfd, 0, sizeof(pfd));
-	pfd.fd = fd;
-	pfd.events = POLLOUT;
-	r = POLL(&pfd, 1, 0);
-	XP_SYS_EQ(0, r);
-	XP_EQ(0, pfd.revents);
-
-	// pause 解除するとバッファがクリアされる
-	AUDIO_INITINFO(&ai);
-	ai.play.pause = 0;
-	r = IOCTL(fd, AUDIO_SETINFO, &ai, "pause=0");
-	XP_SYS_EQ(0, r);
-
-	// クリアされたので POLLOUT が有効になる
-	// はずだが N7 はならない。バグじゃねーかなあ
-	pfd.revents = 0;
-	r = POLL(&pfd, 1, 0);
-	if (netbsd <= 7) {
+		// バッファフルなので POLLOUT が立たないこと
+		memset(&pfd, 0, sizeof(pfd));
+		pfd.fd = fd;
+		pfd.events = POLLOUT;
+		r = POLL(&pfd, 1, 0);
 		XP_SYS_EQ(0, r);
 		XP_EQ(0, pfd.revents);
-	} else {
-		XP_SYS_EQ(1, r);
-		XP_EQ(POLLOUT, pfd.revents);
+
+		// pause 解除
+		AUDIO_INITINFO(&ai);
+		ai.play.pause = 0;
+		r = IOCTL(fd, AUDIO_SETINFO, &ai, "pause=0");
+		XP_SYS_EQ(0, r);
+
+		// pause を解除すると、
+		// N7(emul=0) バッファはそのまま
+		// N7(emul=1) バッファはクリアされる
+		// N8         バッファはそのまま
+		// AUDIO2     バッファはクリアされる
+		// ただしいずれのケースも kevent() に変化はないようだ。
+		// XXX たぶんクリアした時に selnotify() を呼べば変化しそうな気も
+		// XXX するけど未確認。
+
+		// pause 解除後再生ループが回るかもしれない猶予を与えてみる
+		usleep(100 * 1000);
+
+		// poll() の結果は状況による(?)
+		pfd.revents = 0;
+		r = POLL(&pfd, 1, 0);
+		if ((netbsd == 7 && emul == 0) || netbsd == 8) {
+			// バッファはそのままなので、(全部は)書き込めない
+			XP_SYS_OK(r);
+		} else {
+			// バッファはクリアされているので、書き込める
+			XP_SYS_EQ(1, r);
+			XP_EQ(POLLOUT, pfd.revents);
+		}
+
+		// 書き込めるかどうかは状況による(?)
+		r = WRITE(fd, buf, buflen);
+		if ((netbsd == 7 && emul == 0) || netbsd == 8) {
+			// バッファはそのままなので、(全部は)書き込めない
+			XP_SYS_NE(buflen, r);
+		} else {
+			// バッファはクリアされているので、書き込める
+			XP_SYS_EQ(buflen, r);
+		}
+
+		// ただし再生する必要はないのでフラッシュする
+		r = IOCTL(fd, AUDIO_FLUSH, NULL, "");
+		XP_SYS_EQ(0, r);
+
+		r = CLOSE(fd);
+		XP_SYS_EQ(0, r);
+		free(buf);
 	}
-
-	// POLLOUT が立ってないがクリアされてるので書き込める
-	r = WRITE(fd, buf, blocksize);
-	XP_SYS_EQ(blocksize, r);
-
-	r = CLOSE(fd);
-	XP_SYS_EQ(0, r);
 }
 
 // 隣のディスクリプタの影響を受けないこと
@@ -2978,8 +3021,10 @@ test_poll_6()
 		memset(buf, 0, buflen);
 		do {
 			r = WRITE(fd[a], buf, buflen);
-			XP_SYS_OK(r);
 		} while (r == buflen);
+		if (r == -1) {
+			XP_SYS_NG(EAGAIN, r);
+		}
 
 		// fdA はバッファフルなので POLLOUT が立たないこと
 		memset(pfd, 0, sizeof(pfd));
@@ -2994,7 +3039,6 @@ test_poll_6()
 		XP_SYS_EQ(buflen, r);
 		do {
 			r = WRITE(fd[b], buf, buflen);
-			XP_SYS_OK(r);
 		} while (r == buflen);
 
 		memset(pfd, 0, sizeof(pfd));
@@ -3014,6 +3058,310 @@ test_poll_6()
 		XP_SYS_EQ(0, r);
 		r = CLOSE(fd[1]);
 		XP_SYS_EQ(0, r);
+		free(buf);
+	}
+}
+
+// kqueue_1 は poll_1 と合わせるため空けておく?
+
+void
+test_kqueue_2()
+{
+	struct audio_info ai;
+	struct kevent kev;
+	struct timespec ts;
+	int kq;
+	int fd;
+	int r;
+
+	TEST("kqueue_2");
+
+	fd = OPEN(devaudio, O_WRONLY);
+	if (fd == -1)
+		err(1, "open");
+
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+
+	kq = kqueue();
+	XP_SYS_OK(kq);
+
+	memset(&ts, 0, sizeof(ts));
+
+	EV_SET(&kev, fd, EV_ADD, EVFILT_WRITE, 0, 0, 0);
+	r = KEVENT_SET(kq, &kev, 1);
+	XP_SYS_EQ(0, r);
+
+	// 空の状態でチェック。タイムアウト0でも成功するはず
+	r = KEVENT_POLL(kq, &kev, 1, &ts);
+	XP_SYS_EQ(1, r);
+	XP_EQ(fd, kev.ident);
+	// kev.data は kqueue(2) によると「書き込みバッファの空き容量」を返す
+	// らしく、N7 は buffer_size を返しているが、
+	// blocksize * hiwat じゃなくていいんだろうか。
+	XP_EQ(ai.play.buffer_size, kev.data);
+	//XP_EQ(ai.blocksize * ai.hiwat, kev.data);
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+	r = CLOSE(kq);
+	XP_SYS_EQ(0, r);
+}
+
+// kqueue、バッファフルでテスト
+void
+test_kqueue_3()
+{
+	struct audio_info ai;
+	struct kevent kev;
+	struct timespec ts;
+	int kq;
+	int fd;
+	int r;
+	char *buf;
+	int buflen;
+
+	TEST("kqueue_3");
+
+	fd = OPEN(devaudio, O_WRONLY | O_NONBLOCK);
+	if (fd == -1)
+		err(1, "open");
+
+	// pause セット
+	AUDIO_INITINFO(&ai);
+	ai.play.pause = 1;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+
+	// バッファサイズ取得
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+
+	// 書き込み
+	buflen = ai.play.buffer_size;
+	buf = (char *)malloc(buflen);
+	if (buf == NULL)
+		err(1, "malloc");
+	memset(buf, 0, buflen);
+	do {
+		r = WRITE(fd, buf, buflen);
+	} while (r == buflen);
+	if (r == -1) {
+		XP_SYS_NG(EAGAIN, r);
+	}
+
+	// kevent
+	kq = kqueue();
+	XP_SYS_OK(kq);
+
+	memset(&ts, 0, sizeof(ts));
+
+	EV_SET(&kev, fd, EV_ADD, EVFILT_WRITE, 0, 0, 0);
+	r = KEVENT_SET(kq, &kev, 1);
+	XP_SYS_EQ(0, r);
+
+	r = KEVENT_POLL(kq, &kev, 1, &ts);
+	XP_SYS_EQ(0, r);
+	if (r > 0) {
+		XP_EQ(fd, kev.ident);
+		XP_EQ(0, kev.data);
+	}
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+	r = CLOSE(kq);
+	XP_SYS_EQ(0, r);
+	free(buf);
+}
+
+// kqueue、hiwat 設定してバッファフルでテスト
+void
+test_kqueue_4()
+{
+	struct audio_info ai;
+	struct kevent kev;
+	struct timespec ts;
+	int kq;
+	int fd;
+	int r;
+	char *buf;
+	int buflen;
+	int newhiwat;
+
+	TEST("kqueue_4");
+
+	fd = OPEN(devaudio, O_WRONLY | O_NONBLOCK);
+	if (fd == -1)
+		err(1, "open");
+
+	// バッファサイズ、hiwat 取得
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+	// なんでもいいので変更する
+	newhiwat = ai.lowat;
+
+	// pause、hiwat 設定
+	AUDIO_INITINFO(&ai);
+	ai.play.pause = 1;
+	ai.hiwat = newhiwat;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+
+	// hiwat 再取得
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+
+	// 書き込み
+	buflen = ai.blocksize * ai.hiwat;
+	buf = (char *)malloc(buflen);
+	if (buf == NULL)
+		err(1, "malloc");
+	memset(buf, 0, buflen);
+	do {
+		r = WRITE(fd, buf, buflen);
+	} while (r == buflen);
+	if (r == -1) {
+		XP_SYS_NG(EAGAIN, r);
+	}
+
+	// kevent
+	kq = kqueue();
+	XP_SYS_OK(kq);
+
+	memset(&ts, 0, sizeof(ts));
+
+	EV_SET(&kev, fd, EV_ADD, EVFILT_WRITE, 0, 0, 0);
+	r = KEVENT_SET(kq, &kev, 1);
+	XP_SYS_EQ(0, r);
+
+	r = KEVENT_POLL(kq, &kev, 1, &ts);
+	XP_SYS_EQ(0, r);
+	if (r > 0) {
+		XP_EQ(fd, kev.ident);
+		XP_EQ(0, kev.data);
+	}
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+	r = CLOSE(kq);
+	XP_SYS_EQ(0, r);
+	free(buf);
+}
+
+// バッファフルから pause を解除した場合。
+// N7 ではネイティブフォーマットかどうかで挙動が変わるらしい。
+// そもそもマニュアルにも挙動は一切書いてないので、未定義動作としか。
+void
+test_kqueue_5()
+{
+	struct audio_info ai;
+	struct kevent kev;
+	struct timespec ts;
+	int fd;
+	int r;
+	int kq;
+	char *buf;
+	int buflen;
+
+	TEST("kqueue_5");
+	memset(&ts, 0, sizeof(ts));
+
+	for (int emul = 0; emul < 2; emul++) {
+		DESC("emul=%d", emul);
+
+		// ノンブロッキングオープン
+		fd = OPEN(devaudio, O_WRONLY | O_NONBLOCK);
+		if (fd == -1)
+			err(1, "open");
+
+		// pause を設定
+		AUDIO_INITINFO(&ai);
+		ai.play.pause = 1;
+		// ついでにエンコーディングも設定
+		// XXX 本当は GETENC でチェックすべきだが手抜き
+		if (emul) {
+			ai.play.encoding = AUDIO_ENCODING_SLINEAR_NE;
+			ai.play.precision = 16;
+			ai.play.channels = 2;
+			ai.play.sample_rate = 22050;
+		}
+		r = IOCTL(fd, AUDIO_SETINFO, &ai, "pause=1");
+		XP_SYS_EQ(0, r);
+
+		// いろいろ再取得
+		r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+		XP_SYS_EQ(0, r);
+
+		// 書き込み
+		buflen = ai.blocksize * ai.hiwat;
+		buf = (char *)malloc(buflen);
+		if (buf == NULL)
+			err(1, "malloc");
+		memset(buf, 0, buflen);
+		do {
+			r = WRITE(fd, buf, buflen);
+		} while (r == buflen);
+		if (r == -1) {
+			XP_SYS_NG(EAGAIN, r);
+		}
+
+		// kevent
+		kq = kqueue();
+		XP_SYS_OK(kq);
+
+		EV_SET(&kev, fd, EV_ADD, EVFILT_WRITE, 0, 0, 0);
+		r = KEVENT_SET(kq, &kev, 1);
+		XP_SYS_EQ(0, r);
+
+		// バッファフルなので kevent は ready でないこと
+		r = KEVENT_POLL(kq, &kev, 1, &ts);
+		XP_SYS_EQ(0, r);
+		if (r > 0) {
+			XP_EQ(fd, kev.ident);
+			XP_EQ(0, kev.data);
+		}
+
+		// pause 解除
+		AUDIO_INITINFO(&ai);
+		ai.play.pause = 0;
+		r = IOCTL(fd, AUDIO_SETINFO, &ai, "pause=0");
+		XP_SYS_EQ(0, r);
+
+		// pause を解除すると、
+		// N7(emul=0) バッファはそのまま
+		// N7(emul=1) バッファはクリアされる
+		// N8         バッファはそのまま
+		// AUDIO2     バッファはクリアされる
+		// ただしいずれのケースも kevent() に変化はないようだ。
+		// XXX たぶんクリアした時に selnotify() を呼べば変化しそうな気も
+		// XXX するけど未確認。
+
+		// pause 解除後再生ループが回るかもしれない猶予を与えてみる
+		usleep(100 * 1000);
+
+		// kevent() での状態取得に変化はない
+		r = KEVENT_POLL(kq, &kev, 1, &ts);
+		XP_SYS_EQ(0, r);
+
+		// 書き込めるかどうかは状況による(バグ?)
+		r = WRITE(fd, buf, buflen);
+		if ((netbsd == 7 && emul == 0) || netbsd == 8) {
+			// バッファはそのままなので、(全部は)書き込めない
+			XP_SYS_NE(buflen, r);
+		} else {
+			// バッファはクリアされているので、書き込める
+			XP_SYS_EQ(buflen, r);
+		}
+
+		// ただし再生する必要はないのでフラッシュする
+		r = IOCTL(fd, AUDIO_FLUSH, NULL, "");
+		XP_SYS_EQ(0, r);
+
+		r = CLOSE(fd);
+		XP_SYS_EQ(0, r);
+		r = CLOSE(kq);
+		XP_SYS_EQ(0, r);
+		free(buf);
 	}
 }
 
@@ -4962,6 +5310,10 @@ struct testtable testtable[] = {
 	DEF(poll_4),
 	DEF(poll_5),
 	DEF(poll_6),
+	DEF(kqueue_2),
+	DEF(kqueue_3),
+	DEF(kqueue_4),
+	DEF(kqueue_5),
 	DEF(FIOASYNC_1),
 	DEF(FIOASYNC_2),
 	DEF(FIOASYNC_3),
