@@ -696,12 +696,12 @@ int debug_seteuid(int line, uid_t id)
 	DRESULT(r);
 }
 
-#define SYSCTLBYNAME(name, oldp, oldlenp, newp, newlen, msg)	\
-	debug_sysctlbyname(__LINE__, name, oldp, oldlenp, newp, newlen, msg)
+#define SYSCTLBYNAME(name, oldp, oldlenp, newp, newlen)	\
+	debug_sysctlbyname(__LINE__, name, oldp, oldlenp, newp, newlen)
 int debug_sysctlbyname(int line, const char *name, void *oldp, size_t *oldlenp,
-	const void *newp, size_t newlen, const char *msg)
+	const void *newp, size_t newlen)
 {
-	DPRINTFF(line, "sysctlbyname(\"%s\", %s)", name, msg);
+	DPRINTFF(line, "sysctlbyname(\"%s\")", name);
 	int r = sysctlbyname(name, oldp, oldlenp, newp, newlen);
 	DRESULT(r);
 }
@@ -1388,7 +1388,7 @@ test_open_6()
 			// 確認
 			int newval = 0;
 			size_t len = sizeof(newval);
-			r = SYSCTLBYNAME(name, &newval, &len, NULL, 0, "get");
+			r = SYSCTLBYNAME(name, &newval, &len, NULL, 0);
 			if (r == -1)
 				err(1, "multiuser");
 			if (newval != multiuser)
@@ -2148,7 +2148,7 @@ test_mmap_2()
 	// とりあえず再生側のことしか考えなくていいか。
 
 	len = sizeof(pagesize);
-	r = SYSCTLBYNAME("hw.pagesize", &pagesize, &len, NULL, 0, "get");
+	r = SYSCTLBYNAME("hw.pagesize", &pagesize, &len, NULL, 0);
 	if (r == -1)
 		err(1, "sysctl");
 
@@ -5083,7 +5083,7 @@ test_audioctl_open_4()
 			// 確認
 			int newval = 0;
 			size_t len = sizeof(newval);
-			r = SYSCTLBYNAME(name, &newval, &len, NULL, 0, "get");
+			r = SYSCTLBYNAME(name, &newval, &len, NULL, 0);
 			if (r == -1)
 				err(1, "multiuser");
 			if (newval != multiuser)
@@ -5157,7 +5157,7 @@ test_audioctl_open_5()
 			// 確認
 			int newval = 0;
 			size_t len = sizeof(newval);
-			r = SYSCTLBYNAME(name, &newval, &len, NULL, 0, "get");
+			r = SYSCTLBYNAME(name, &newval, &len, NULL, 0);
 			if (r == -1)
 				err(1, "multiuser");
 			if (newval != multiuser)
