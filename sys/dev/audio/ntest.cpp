@@ -4607,23 +4607,44 @@ test_AUDIO_SETINFO_hiwat2()
 	struct audio_info ai;
 	int fd;
 	int r;
+	char name[32];
+	char val[256];
+	size_t len;
+	int blk_ms;
 	struct {
 		int encoding;
 		int precision;
 		int channels;
 		int sample_rate;
-		int expblk;
-		int expbuf;
 	} table[] = {
 #define AE_ULAW		AUDIO_ENCODING_ULAW
 #define AE_LINEAR	AUDIO_ENCODING_SLINEAR_LE
-		// enc	prec	ch	rate	blksize	bufsize
-		{ AE_ULAW,	  8, 1, 8000,	320,	65280 },
-		{ AE_LINEAR, 16, 1, 16000,	1280,	65280 },
-		{ AE_LINEAR, 16, 2, 44100,	7056,	63504 },
-		{ AE_LINEAR, 16, 2, 48000,	7680,	61440 },
-		{ AE_LINEAR, 16, 4, 48000,	15360,	61440 },
+		// enc	prec	ch	rate
+		{ AE_ULAW,	  8, 1, 8000 },
+		{ AE_LINEAR, 16, 1, 16000 },
+		{ AE_LINEAR, 16, 2, 44100 },
+		{ AE_LINEAR, 16, 2, 48000 },
+		{ AE_LINEAR, 16, 4, 48000 },
 	};
+
+	// blk_ms を取得
+	// N7,N8 の実際のブロックサイズは 50msec だが、ここでは N7,N8 は
+	// こちらから指定するブロックサイズという意味で使うので 40 でいい。
+	blk_ms = 40;
+	if (netbsd == 9) {
+		snprintf(name, sizeof(name), "hw.%s.buildinfo", hwconfigname());
+		len = sizeof(val);
+		r = SYSCTLBYNAME(name, val, &len, NULL, 0);
+		if (r == -1)
+		err(1, "sysctlbyname: %s", name);
+		char *p = strstr(val, "AUDIO_BLK_MS=");
+		if (p) {
+			blk_ms = atoi(p + strlen("AUDIO_BLK_MS="));
+		}
+	}
+	if (debug) {
+		printf(" blk_ms=%d\n", blk_ms);
+	}
 
 	fd = OPEN(devaudio, O_WRONLY);
 	if (fd == -1)
@@ -4635,12 +4656,21 @@ test_AUDIO_SETINFO_hiwat2()
 		int prec = table[i].precision;
 		int ch = table[i].channels;
 		int freq = table[i].sample_rate;
-		int expblk = table[i].expblk;
-		int expbuf = table[i].expbuf;
+		int expblk;
+		int expbuf;
 		int exphi;
 		int explo;
 
 		DESC("%d,%d,%d,%d", enc, prec, ch, freq);
+
+		// AUDIO2 では、最低3ブロック、それが 64KB 以下なら 64KB に近い
+		// 整数倍。
+		expblk = freq * ch * prec / NBBY * blk_ms / 1000;
+		if (expblk < 65536 / 3) {
+			expbuf = (65536 / expblk) * expblk;
+		} else {
+			expbuf = expblk * 3;
+		}
 
 		AUDIO_INITINFO(&ai);
 		ai.play.encoding = enc;
