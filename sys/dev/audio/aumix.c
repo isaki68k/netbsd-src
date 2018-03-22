@@ -3213,7 +3213,8 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 		}
 
 		mutex_enter(sc->sc_intr_lock);
-		while (track->usrbuf.used >= track->usrbuf_blksize &&
+		while (sc->sc_pbusy == 0 &&
+		    track->usrbuf.used >= track->usrbuf_blksize &&
 		    track->outputbuf.used < track->mixer->frames_per_block * 2) {
 			track->in_use = true;
 			mutex_exit(sc->sc_intr_lock);
@@ -3223,7 +3224,10 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 		}
 		mutex_exit(sc->sc_intr_lock);
 
-		if (!track->is_pause) {
+		// XXX うーんなんだこれ
+		if (sc->sc_pbusy == 0 &&
+		    !track->is_pause &&
+		    track->outputbuf.used >= track->mixer->frames_per_block * 2) {
 			bool force = ((track->mode & AUMODE_PLAY_ALL) == 0);
 			audio_pmixer_start(sc, force);
 		}
