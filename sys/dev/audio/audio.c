@@ -114,7 +114,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #ifdef AUDIO_DEBUG
 #define DPRINTF(n, fmt...)	do {	\
 	if (audiodebug >= (n))		\
-		printf(fmt);		\
+		printf_nolog(fmt);		\
 } while (0)
 int	audiodebug = AUDIO_DEBUG;
 #else
@@ -2942,7 +2942,7 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 		pchanges++;
 	}
 	if (pchanges) {
-		printf("%s play:%s\n", __func__, buf);
+		printf_nolog("%s play:%s\n", __func__, buf);
 		n = 0;
 		pchanges = 0;
 	}
@@ -2964,34 +2964,37 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 		rchanges++;
 	}
 	if (rchanges) {
-		printf("%s rec:%s\n", __func__, buf);
+		printf_nolog("%s rec:%s\n", __func__, buf);
 		rchanges = 0;
 	}
 
 	if (SPECIFIED(ai->mode))
-		printf("%s mode=%d\n", __func__, ai->mode);
+		printf_nolog("%s mode=%d\n", __func__, ai->mode);
 	if (SPECIFIED(ai->hiwat))
-		printf("%s hiwat=%d\n", __func__, ai->hiwat);
+		printf_nolog("%s hiwat=%d\n", __func__, ai->hiwat);
 	if (SPECIFIED(ai->lowat))
-		printf("%s lowat=%d\n", __func__, ai->lowat);
+		printf_nolog("%s lowat=%d\n", __func__, ai->lowat);
 	if (SPECIFIED(ai->play.gain))
-		printf("%s play.gain=%d\n", __func__, ai->play.gain);
+		printf_nolog("%s play.gain=%d\n", __func__, ai->play.gain);
 	if (SPECIFIED(ai->record.gain))
-		printf("%s record.gain=%d\n", __func__, ai->record.gain);
+		printf_nolog("%s record.gain=%d\n", __func__, ai->record.gain);
 	if (SPECIFIED_CH(ai->play.balance))
-		printf("%s play.balance=%d\n", __func__, ai->play.balance);
+		printf_nolog("%s play.balance=%d\n", __func__,
+		    ai->play.balance);
 	if (SPECIFIED_CH(ai->record.balance))
-		printf("%s record.balance=%d\n", __func__, ai->record.balance);
+		printf_nolog("%s record.balance=%d\n", __func__,
+		    ai->record.balance);
 	if (SPECIFIED(ai->play.port))
-		printf("%s play.port=%d\n", __func__, ai->play.port);
+		printf_nolog("%s play.port=%d\n", __func__, ai->play.port);
 	if (SPECIFIED(ai->record.port))
-		printf("%s record.port=%d\n", __func__, ai->record.port);
+		printf_nolog("%s record.port=%d\n", __func__, ai->record.port);
 	if (SPECIFIED(ai->monitor_gain))
-		printf("%s monitor_gain=%d\n", __func__, ai->monitor_gain);
+		printf_nolog("%s monitor_gain=%d\n", __func__,
+		    ai->monitor_gain);
 	if (SPECIFIED_CH(ai->play.pause))
-		printf("%s play.pause=%d\n", __func__, ai->play.pause);
+		printf_nolog("%s play.pause=%d\n", __func__, ai->play.pause);
 	if (SPECIFIED_CH(ai->record.pause))
-		printf("%s record.pause=%d\n", __func__, ai->record.pause);
+		printf_nolog("%s record.pause=%d\n", __func__, ai->record.pause);
 #endif
 
 	/* XXX shut up gcc */
@@ -3097,7 +3100,7 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 		snprintb(modebuf, sizeof(modebuf),
 		    "\177\020" "b\0PLAY\0" "b\2PLAY_ALL\0" "b\1RECORD\0",
 		    mode);
-		printf("setting mode to %s (pchanges=%d rchanges=%d)\n",
+		printf_nolog("setting mode to %s (pchanges=%d rchanges=%d)\n",
 		    modebuf, pchanges, rchanges);
 		if (pchanges)
 			audio_print_format2("setting play mode:", &pfmt);
@@ -3837,7 +3840,7 @@ audio_print_format2(const char *s, const audio_format2_t *fmt)
 	char fmtstr[64];
 
 	audio_format2_tostr(fmtstr, sizeof(fmtstr), fmt);
-	printf("%s %s\n", s, fmtstr);
+	printf_nolog("%s %s\n", s, fmtstr);
 }
 #endif
 
