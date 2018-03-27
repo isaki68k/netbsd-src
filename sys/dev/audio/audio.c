@@ -217,8 +217,7 @@ static int audio_file_setinfo(struct audio_softc *, audio_file_t *,
 	const struct audio_info *);
 static int audio_file_setinfo_check(audio_format2_t *,
 	const struct audio_prinfo *);
-static int audio_file_setinfo_set(audio_track_t *, const struct audio_prinfo *,
-	bool, audio_format2_t *, int);
+static int audio_file_setinfo_set(audio_track_t *, audio_format2_t *, int);
 static void audio_track_setinfo_water(audio_track_t *,
 	const struct audio_info *);
 static int audio_setinfo_hw(struct audio_softc *, struct audio_info *);
@@ -2936,11 +2935,8 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	int pchanges;
 	int rchanges;
 	int mode;
-	struct audio_info bk;
 	audio_format2_t saved_pfmt;
 	audio_format2_t saved_rfmt;
-	int saved_pvolume;
-	int saved_rvolume;
 	int saved_ppause;
 	int saved_rpause;
 	int saved_mode;
@@ -3034,23 +3030,19 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 
 	/* XXX shut up gcc */
 	memset(&saved_pfmt, 0, sizeof(saved_pfmt));
-	saved_pvolume = 0;
 	saved_ppause = 0;
 	memset(&saved_rfmt, 0, sizeof(saved_rfmt));
-	saved_rvolume = 0;
 	saved_rpause = 0;
 
 	/* Set default value and save current parameters */
 	if (play) {
 		pfmt = play->inputfmt;
 		saved_pfmt = play->inputfmt;
-		saved_pvolume = play->volume;
 		saved_ppause = play->is_pause;
 	}
 	if (rec) {
 		rfmt = rec->outputbuf.fmt;
 		saved_rfmt = rec->outputbuf.fmt;
-		saved_rvolume = rec->volume;
 		saved_rpause = rec->is_pause;
 	}
 	saved_mode = file->mode;
@@ -3157,8 +3149,8 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 			sc->sc_ppause = pi->pause;
 		}
 		if (pchanges) {
-			error = audio_file_setinfo_set(play, pi, pchanges,
-			    &pfmt, (mode & (AUMODE_PLAY | AUMODE_PLAY_ALL)));
+			error = audio_file_setinfo_set(play, &pfmt,
+			    (mode & (AUMODE_PLAY | AUMODE_PLAY_ALL)));
 			if (error)
 				goto abort1;
 			sc->sc_pparams = pfmt;
@@ -3181,8 +3173,8 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 			sc->sc_rpause = ri->pause;
 		}
 		if (rchanges) {
-			error = audio_file_setinfo_set(rec, ri, rchanges,
-			    &rfmt, (mode & AUMODE_RECORD));
+			error = audio_file_setinfo_set(rec, &rfmt,
+			    (mode & AUMODE_RECORD));
 			if (error)
 				goto abort2;
 			sc->sc_rparams = rfmt;
@@ -3199,17 +3191,13 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 abort2:
 	if (error != ENOMEM) {
 		rec->is_pause = saved_rpause;
-		AUDIO_INITINFO(&bk);
-		bk.record.gain = saved_rvolume;
-		audio_file_setinfo_set(rec, &bk.record, true, &saved_rfmt,
+		audio_file_setinfo_set(rec, &saved_rfmt,
 		    (saved_mode & AUMODE_RECORD));
 	}
 abort1:
 	if (play && error != ENOMEM) {
 		play->is_pause = saved_ppause;
-		AUDIO_INITINFO(&bk);
-		bk.play.gain = saved_pvolume;
-		audio_file_setinfo_set(play, &bk.play, true, &saved_pfmt,
+		audio_file_setinfo_set(play, &saved_pfmt,
 		    (saved_mode & (AUMODE_PLAY | AUMODE_PLAY_ALL)));
 		sc->sc_pparams = saved_pfmt;
 		sc->sc_ppause = saved_ppause;
@@ -3262,41 +3250,28 @@ audio_file_setinfo_check(audio_format2_t *fmt, const struct audio_prinfo *info)
 	return changes;
 }
 
-// modechange なら track に mode, fmt を設定する。
-// あと(modechangeに関わらず) info のソフトウェアパラメータも設定する。
+// track に mode, fmt を設定する。
 // mode は再生トラックなら AUMODE_PLAY{,_ALL}、録音トラックなら AUMODE_RECORD
 // のように該当するビットだけを渡すこと。
 // 成功すれば0、失敗なら errno
 // ここではロールバックしない。
 static int
-audio_file_setinfo_set(audio_track_t *track, const struct audio_prinfo *info,
-	bool modechange, audio_format2_t *fmt, int mode)
+audio_file_setinfo_set(audio_track_t *track, audio_format2_t *fmt, int mode)
 {
 	int error;
 
-	if (modechange) {
-		KASSERT(track);
+	KASSERT(track);
 
-		mutex_enter(track->mixer->sc->sc_intr_lock);
-		track->in_use = true;
-		mutex_exit(track->mixer->sc->sc_intr_lock);
-		track->mode = mode;
-		error = audio_track_set_format(track, fmt);
-		mutex_enter(track->mixer->sc->sc_intr_lock);
-		track->in_use = false;
-		mutex_exit(track->mixer->sc->sc_intr_lock);
-		if (error)
-			return error;
-	}
-
-	if (SPECIFIED(info->gain)) {
-		if (info->gain > AUDIO_MAX_GAIN) {
-			DPRINTF(1, "%s: info.gain(%d) out of range\n",
-			    __func__, info->gain);
-			return EINVAL;
-		}
-		track->volume = audio_volume_to_inner(info->gain);
-	}
+	mutex_enter(track->mixer->sc->sc_intr_lock);
+	track->in_use = true;
+	mutex_exit(track->mixer->sc->sc_intr_lock);
+	track->mode = mode;
+	error = audio_track_set_format(track, fmt);
+	mutex_enter(track->mixer->sc->sc_intr_lock);
+	track->in_use = false;
+	mutex_exit(track->mixer->sc->sc_intr_lock);
+	if (error)
+		return error;
 
 	return 0;
 }
@@ -3388,24 +3363,37 @@ audio_setinfo_hw(struct audio_softc *sc, struct audio_info *ai)
 			goto abort2;
 	}
 
+	if (SPECIFIED(pi->gain)) {
+		au_get_gain(sc, &sc->sc_outports, &pgain, &pbalance);
+		error = au_set_gain(sc, &sc->sc_outports, pi->gain, pbalance);
+		if (error)
+			goto abort3;
+	}
+	if (SPECIFIED(ri->gain)) {
+		au_get_gain(sc, &sc->sc_inports, &rgain, &rbalance);
+		error = au_set_gain(sc, &sc->sc_inports, ri->gain, rbalance);
+		if (error)
+			goto abort4;
+	}
+
 	if (SPECIFIED_CH(pi->balance)) {
 		au_get_gain(sc, &sc->sc_outports, &pgain, &pbalance);
 		error = au_set_gain(sc, &sc->sc_outports, pgain, pi->balance);
 		if (error)
-			goto abort3;
+			goto abort5;
 	}
 	if (SPECIFIED_CH(ri->balance)) {
 		au_get_gain(sc, &sc->sc_inports, &rgain, &rbalance);
 		error = au_set_gain(sc, &sc->sc_inports, rgain, ri->balance);
 		if (error)
-			goto abort4;
+			goto abort6;
 	}
 
 	if (SPECIFIED(ai->monitor_gain) && sc->sc_monitor_port != -1) {
 		monitor_gain = au_get_monitor_gain(sc);
 		error = au_set_monitor_gain(sc, ai->monitor_gain);
 		if (error)
-			goto abort5;
+			goto abort7;
 	}
 
 	/* Restart if necessary */
@@ -3421,16 +3409,22 @@ audio_setinfo_hw(struct audio_softc *sc, struct audio_info *ai)
 	return 0;
 
 	/* Rollback as possible as it can */
-abort5:
+abort7:
 	if (SPECIFIED(ai->monitor_gain)) {
 		if (monitor_gain != -1)
 			au_set_monitor_gain(sc, monitor_gain);
 	}
-abort4:
+abort6:
 	if (SPECIFIED_CH(ri->balance))
 		au_set_gain(sc, &sc->sc_inports, rgain, rbalance);
-abort3:
+abort5:
 	if (SPECIFIED_CH(pi->balance))
+		au_set_gain(sc, &sc->sc_outports, pgain, pbalance);
+abort4:
+	if (SPECIFIED(ri->gain))
+		au_set_gain(sc, &sc->sc_outports, rgain, rbalance);
+abort3:
+	if (SPECIFIED(pi->gain))
 		au_set_gain(sc, &sc->sc_outports, pgain, pbalance);
 abort2:
 	if (SPECIFIED(ri->port))
@@ -3635,14 +3629,8 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 		pi->avail_ports = sc->sc_outports.allports;
 		ri->avail_ports = sc->sc_inports.allports;
 
-		if (ptrack) {
-			au_get_gain(sc, &sc->sc_outports, &gain, &pi->balance);
-			pi->gain = audio_volume_to_outer(ptrack->volume);
-		}
-		if (rtrack) {
-			au_get_gain(sc, &sc->sc_inports, &gain, &ri->balance);
-			ri->gain = audio_volume_to_outer(rtrack->volume);
-		}
+		au_get_gain(sc, &sc->sc_outports, &pi->gain, &pi->balance);
+		au_get_gain(sc, &sc->sc_inports, &ri->gain, &ri->balance);
 
 		if (sc->sc_monitor_port != -1) {
 			gain = au_get_monitor_gain(sc);
