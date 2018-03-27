@@ -6,7 +6,8 @@
 // デバッグレベルは
 // 1: open/close/set_param等
 // 2: read/write/ioctlシステムコールくらいまでは含む
-// 3: TRACEも含む
+// 3: 割り込み以外のTRACEも含む
+// 4: 割り込み内のTRACEも含む (ただしデッドロックの可能性がある?)
 #define AUDIO_DEBUG	3
 
 #if defined(_KERNEL)

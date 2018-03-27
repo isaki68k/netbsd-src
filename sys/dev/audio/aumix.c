@@ -30,13 +30,19 @@ audio_vtrace(const char *funcname, const char *header, const char *fmt,
 	struct timeval tv;
 	int n;
 
+	// デバッグレベル4だけ割り込み中のトレースも出力する
+#if AUDIO_DEBUG < 4
+	if (cpu_intr_p())
+		return;
+#endif
+
 	n = 0;
 	buf[0] = '\0';
 	getmicrotime(&tv);
 	n += snprintf(buf + n, sizeof(buf) - n, "%02d.%06d %s %s",
 	    (int)tv.tv_sec % 60, (int)tv.tv_usec, funcname, header);
 	n += vsnprintf(buf + n, sizeof(buf) - n, fmt, ap);
-	printf_nolog("%s\n", buf);
+	printf("%s\n", buf);
 }
 
 void
@@ -560,7 +566,7 @@ audio_track_freq_up(audio_filter_arg_t *arg)
 	t = track->freq_current;
 //#define FREQ_DEBUG
 #if defined(FREQ_DEBUG)
-#define PRINTF(fmt...)	printf_nolog(fmt)
+#define PRINTF(fmt...)	printf(fmt)
 #else
 #define PRINTF(fmt...)	/**/
 #endif
@@ -598,7 +604,7 @@ audio_track_freq_up(audio_filter_arg_t *arg)
 			*d++ = prev[ch] + (aint2_t)grad[ch] * t / 65536;
 #if defined(FREQ_DEBUG)
 			if (ch == 0)
-				printf_nolog(" t=%5d *d=%d", t, d[-1]);
+				printf(" t=%5d *d=%d", t, d[-1]);
 #endif
 		}
 		t += step;
@@ -855,9 +861,9 @@ abort:
 	{
 		char buf[100];
 		audio_format2_tostr(buf, sizeof(buf), src);
-		printf_nolog("%s: src %s\n", __func__, buf);
+		printf("%s: src %s\n", __func__, buf);
 		audio_format2_tostr(buf, sizeof(buf), dst);
-		printf_nolog("%s: dst %s\n", __func__, buf);
+		printf("%s: dst %s\n", __func__, buf);
 	}
 #endif
 	return NULL;
