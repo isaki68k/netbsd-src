@@ -2388,7 +2388,7 @@ test_mmap_6()
 
 	TEST("mmap_6");
 	for (int mode = 0; mode <= 2; mode++) {
-		TEST("%s", openmodetable[mode]);
+		DESC("%s", openmodetable[mode]);
 
 		fd = OPEN(devaudio, mode);
 		if (fd == -1)
