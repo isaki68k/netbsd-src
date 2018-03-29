@@ -514,10 +514,17 @@ static const char *aumodetable[] __unused = {
 #define OPEN(name, mode)	debug_open(__LINE__, name, mode)
 int debug_open(int line, const char *name, int mode)
 {
-	if (0 <= mode && mode <= 2)
-		DPRINTFF(line, "open(\"%s\", %s)", name, openmodetable[mode]);
+	char modestr[32];
+	int n;
+
+	if ((mode & 3) != 3)
+		n = snprintf(modestr, sizeof(modestr), "%s", openmodetable[mode & 3]);
 	else
-		DPRINTFF(line, "open(\"%s\", %d)", name, mode);
+		n = snprintf(modestr, sizeof(modestr), "%d", mode & 3);
+	if (mode & O_NONBLOCK)
+		n += snprintf(modestr + n, sizeof(modestr) - n, "|O_NONBLOCK");
+
+	DPRINTFF(line, "open(\"%s\", %s)", name, modestr);
 	int r = open(name, mode);
 	DRESULT(r);
 }
