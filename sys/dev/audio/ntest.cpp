@@ -2960,7 +2960,7 @@ test_poll_5()
 	}
 }
 
-// 隣のディスクリプタの影響を受けないこと
+// 再生が隣のディスクリプタの影響を受けないこと
 void
 test_poll_6()
 {
@@ -3065,6 +3065,87 @@ test_poll_6()
 		XP_SYS_EQ(0, r);
 		free(buf);
 	}
+}
+
+// 再生ディスクリプタで POLLIN してても(これ自体が普通ではないが)
+// 隣の録音ディスクリプタの影響を受けないこと
+void
+test_poll_writeIN_1()
+{
+	struct audio_info ai;
+	struct pollfd pfd;
+	int fd[2];
+	int r;
+	char *buf;
+	int blocksize;
+
+	TEST("poll_writeIN_1");
+
+	// 多重化は N7 では出来ない
+	if (netbsd < 8) {
+		XP_SKIP("NetBSD7 does not support multi-open");
+		return;
+	}
+	// Full Duplex でないと R/W 一度にオープンできない
+	if (hwfull == 0) {
+		XP_SKIP("Half duplex HW cannot open R/W");
+		return;
+	}
+
+	int play = 0;
+	int rec = 1;
+
+	fd[play] = OPEN(devaudio, O_WRONLY | O_NONBLOCK);
+	if (fd[play] == -1)
+		err(1, "open");
+	fd[rec] = OPEN(devaudio, O_RDONLY);
+	if (fd[rec] == -1)
+		err(1, "open");
+
+	// ブロックサイズ取得
+	r = IOCTL(fd[rec], AUDIO_GETBUFINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+	blocksize = ai.blocksize;
+
+	buf = (char *)malloc(blocksize);
+	if (buf == NULL)
+		err(1, "malloc");
+
+	// まずは再生側で POLLIN が返ってこないことをチェック。
+	// この時点で返ってくるようだと、テストの意味がない。
+	memset(&pfd, 0, sizeof(pfd));
+	pfd.fd = fd[play];
+	pfd.events = POLLIN;
+	r = POLL(&pfd, 1, 0);
+	if (r == 0 && pfd.revents == 0) {
+		XP_SYS_EQ(0, r);
+		XP_EQ(0, pfd.revents);
+	} else {
+		XP_SKIP("playfd returns POLLIN");
+		goto abort;
+	}
+
+	// 録音開始
+	r = READ(fd[rec], buf, blocksize);
+	XP_SYS_EQ(blocksize, r);
+
+	// 再生側を POLLIN しても何も起きないべき
+	r = POLL(&pfd, 1, 1000);
+	XP_SYS_EQ(0, r);
+	XP_EQ(0, pfd.revents);
+
+	// 録音側を POLLIN すれば当然見える
+	pfd.fd = fd[rec];
+	r = POLL(&pfd, 1, 0);
+	XP_SYS_EQ(1, r);
+	XP_EQ(POLLIN, pfd.revents);
+
+ abort:
+	r = CLOSE(fd[play]);
+	XP_SYS_EQ(0, r);
+	r = CLOSE(fd[rec]);
+	XP_SYS_EQ(0, r);
+	free(buf);
 }
 
 // kqueue_1 は poll_1 と合わせるため空けておく?
@@ -5343,6 +5424,7 @@ struct testtable testtable[] = {
 	DEF(poll_4),
 	DEF(poll_5),
 	DEF(poll_6),
+	DEF(poll_writeIN_1),
 	DEF(kqueue_2),
 	DEF(kqueue_3),
 	DEF(kqueue_4),
