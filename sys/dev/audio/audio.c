@@ -2044,6 +2044,8 @@ audio_poll(struct audio_softc *sc, int events, struct lwp *l,
 {
 	audio_track_t *track;
 	int revents;
+	bool in_is_valid;
+	bool out_is_valid;
 
 	KASSERT(mutex_owned(sc->sc_lock));
 
@@ -2065,9 +2067,12 @@ audio_poll(struct audio_softc *sc, int events, struct lwp *l,
 	// でいいはず。
 
 	revents = 0;
+	in_is_valid = false;
+	out_is_valid = false;
 	if (events & (POLLIN | POLLRDNORM)) {
 		track = file->rtrack;
 		if (track) {
+			in_is_valid = true;
 			// 録音したデータは track->input バッファに滞留して
 			// いるため、単位変換してこれを考慮する必要がある。
 			// また usrbuf.used にも読み残しがある可能性がある
@@ -2082,17 +2087,18 @@ audio_poll(struct audio_softc *sc, int events, struct lwp *l,
 	if (events & (POLLOUT | POLLWRNORM)) {
 		track = file->ptrack;
 		if (track) {
+			out_is_valid = true;
 			if (track->usrbuf.used <= track->usrbuf_usedlow)
 				revents |= events & (POLLOUT | POLLWRNORM);
 		}
 	}
 
 	if (revents == 0) {
-		if (events & (POLLIN | POLLRDNORM)) {
+		if (in_is_valid) {
 			TRACEF(file, "selrecord rsel");
 			selrecord(l, &sc->sc_rsel);
 		}
-		if (events & (POLLOUT | POLLWRNORM)) {
+		if (out_is_valid) {
 			TRACEF(file, "selrecord wsel");
 			selrecord(l, &sc->sc_wsel);
 		}
