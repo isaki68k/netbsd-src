@@ -2068,7 +2068,14 @@ audio_poll(struct audio_softc *sc, int events, struct lwp *l,
 	if (events & (POLLIN | POLLRDNORM)) {
 		track = file->rtrack;
 		if (track) {
-			if (track->usrbuf.used > track->usrbuf_usedlow)
+			// 録音したデータは track->input バッファに滞留して
+			// いるため、単位変換してこれを考慮する必要がある。
+			// また usrbuf.used にも読み残しがある可能性がある
+			// ので両者を加算したものが現在のバッファ使用量。
+			int used = track->input->used
+			    * frametobyte(&track->usrbuf.fmt, 1)
+			    + track->usrbuf.used;
+			if (used > track->usrbuf_usedlow)
 				revents |= events & (POLLIN | POLLRDNORM);
 		}
 	}
