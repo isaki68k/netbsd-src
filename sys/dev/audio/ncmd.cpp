@@ -5,6 +5,7 @@
 #include <err.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -194,6 +195,20 @@ int debug_close(int line, int fd)
 	DRESULT(r);
 }
 
+#define POLL(pfd, nfd, timeout)	debug_poll(__LINE__, pfd, nfd, timeout)
+int debug_poll(int line, struct pollfd *pfd, int nfd, int timeout)
+{
+	char buf[256];
+	int n = 0;
+	buf[n] = '\0';
+	for (int i = 0; i < nfd; i++) {
+		n += snprintf(buf + n, sizeof(buf) - n, "{fd=%d,events=%d}",
+			pfd[i].fd, pfd[i].events);
+	}
+	DPRINTFF(line, "poll(%s, %d, %d)", buf, nfd, timeout);
+	int r = poll(pfd, nfd, timeout);
+	DRESULT(r);
+}
 
 // N7 では SETFD で full-duplex にしたことが close に反映されてないので、
 // O_RDONLY でオープンして、SETFD して再生している状態で
@@ -481,6 +496,26 @@ cmd_eap_input(int ac, char *av[])
 	return 0;
 }
 
+// STDOUT を POLLIN してみるテスト
+int
+cmd_poll_1(int ac, char *av[])
+{
+	struct pollfd pfd;
+	int r;
+
+	memset(&pfd, 0, sizeof(pfd));
+	pfd.fd = STDOUT_FILENO;
+	pfd.events = POLLIN;
+
+	r = POLL(&pfd, 1, 2000);
+	if (r == -1)
+		err(1, "poll");
+
+	printf("r = %d\n", r);
+	printf("pfd.revents = 0x%x\n", pfd.revents);
+	return 0;
+}
+
 // コマンド一覧
 #define DEF(x)	{ #x, cmd_ ## x }
 struct cmdtable cmdtable[] = {
@@ -489,6 +524,7 @@ struct cmdtable cmdtable[] = {
 	DEF(writetime),
 	DEF(drain),
 	DEF(eap_input),
+	DEF(poll_1),
 	{ NULL, NULL },
 };
 #undef DEF
