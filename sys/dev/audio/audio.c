@@ -2042,6 +2042,7 @@ int
 audio_poll(struct audio_softc *sc, int events, struct lwp *l,
 	audio_file_t *file)
 {
+	audio_track_t *track;
 	int revents;
 
 	KASSERT(mutex_owned(sc->sc_lock));
@@ -2065,16 +2066,16 @@ audio_poll(struct audio_softc *sc, int events, struct lwp *l,
 
 	revents = 0;
 	if (events & (POLLIN | POLLRDNORM)) {
-		if (file->rtrack) {
-			audio_ring_t *usrbuf = &file->rtrack->usrbuf;
-			if (usrbuf->used > file->rtrack->usrbuf_usedlow)
+		track = file->rtrack;
+		if (track) {
+			if (track->usrbuf.used > track->usrbuf_usedlow)
 				revents |= events & (POLLIN | POLLRDNORM);
 		}
 	}
 	if (events & (POLLOUT | POLLWRNORM)) {
-		if (file->ptrack) {
-			audio_ring_t *usrbuf = &file->ptrack->usrbuf;
-			if (usrbuf->used <= file->ptrack->usrbuf_usedlow)
+		track = file->ptrack;
+		if (track) {
+			if (track->usrbuf.used <= track->usrbuf_usedlow)
 				revents |= events & (POLLOUT | POLLWRNORM);
 		}
 	}
