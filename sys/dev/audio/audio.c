@@ -2074,7 +2074,7 @@ audio_poll(struct audio_softc *sc, int events, struct lwp *l,
 	if (events & (POLLOUT | POLLWRNORM)) {
 		if (file->ptrack) {
 			audio_ring_t *usrbuf = &file->ptrack->usrbuf;
-			if (usrbuf->used < file->ptrack->usrbuf_usedhigh)
+			if (usrbuf->used <= file->ptrack->usrbuf_usedlow)
 				revents |= events & (POLLOUT | POLLWRNORM);
 		}
 	}
