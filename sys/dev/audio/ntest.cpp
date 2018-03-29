@@ -56,6 +56,7 @@ int skipcount;
 char devaudio[16];
 char devsound[16];
 char devaudioctl[16];
+char devmixer[16];
 extern struct testtable testtable[];
 
 void __attribute__((__noreturn__))
@@ -205,6 +206,7 @@ init(int unit)
 	snprintf(devaudio, sizeof(devaudio), "/dev/audio%d", unit);
 	snprintf(devsound, sizeof(devsound), "/dev/sound%d", unit);
 	snprintf(devaudioctl, sizeof(devaudioctl), "/dev/audioctl%d", unit);
+	snprintf(devmixer, sizeof(devmixer), "/dev/mixer%d", unit);
 	snprintf(hwconfig9, sizeof(hwconfig9), "audio%d", unit);
 	if (debug)
 		printf("unit = %d\n", unit);
@@ -719,6 +721,40 @@ int debug_system(int line, const char *cmd)
 	DPRINTFF(line, "system(\"%s\")", cmd);
 	int r = system(cmd);
 	DRESULT(r);
+}
+
+// popen() して1行目を返す
+#define POPEN_GETS(buf, buflen, cmd...) \
+	debug_popen_gets(__LINE__, buf, buflen, cmd)
+int debug_popen_gets(int line, char *buf, size_t bufsize, const char *cmd, ...)
+{
+	char cmdbuf[256];
+	va_list ap;
+	FILE *fp;
+	char *p;
+
+	va_start(ap, cmd);
+	vsnprintf(cmdbuf, sizeof(cmdbuf), cmd, ap);
+	va_end(ap);
+
+	DPRINTFF(line, "popen(\"%s\", \"r\")", cmdbuf);
+	fp = popen(cmdbuf, "r");
+	if (fp == NULL) {
+		DPRINTF(" = NULL, popen failed\n");
+		return -1;
+	}
+	if (fgets(buf, bufsize, fp) == NULL) {
+		DPRINTF(" = NULL, fgets failed\n");
+		pclose(fp);
+		return -1;
+	}
+
+	p = strchr(buf, '\n');
+	if (p)
+		*p = '\0';
+
+	DPRINTF(" = \"%s\"\n", buf);
+	return 0;
 }
 
 // ---
@@ -4814,6 +4850,81 @@ test_AUDIO_SETINFO_hiwat2()
 	XP_SYS_EQ(0, r);
 }
 
+// gain が取得・設定できて外部ミキサーと連動するか。PR kern/52781
+void
+test_AUDIO_SETINFO_gain1()
+{
+	struct audio_info ai;
+	char buf[32];
+	int master;
+	int master_backup;
+	int gain;
+	int fd;
+	int r;
+
+	// 適当に outputs.master を取得
+	// XXX ioctl に分解できればしたほうがいいだろうけど
+	POPEN_GETS(buf, sizeof(buf), "mixerctl -d %s -n outputs.master",
+		devmixer);
+	if (buf[0] < '0' || buf[0] > '9')
+		err(1, "mixerctl");
+	master = atoi(buf);
+	DPRINTF("  > outputs.master = %d\n", master);
+	master_backup = master;
+
+	fd = OPEN(devaudio, O_WRONLY);
+	if (fd == -1)
+		err(1, "open");
+
+	// gain を取得、一致するか
+	r = IOCTL(fd, AUDIO_GETINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+	XP_EQ(master, ai.play.gain);
+
+	// 適当に変更
+	AUDIO_INITINFO(&ai);
+	if (master == 0) {
+		gain = 255;
+	} else if (master < 128) {
+		gain = master * 2;
+	} else {
+		gain = master / 2;
+	}
+	ai.play.gain = gain;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "play.gain=%d", ai.play.gain);
+	XP_SYS_EQ(0, r);
+
+	// 入力値がそのまま設定できるとは限らないので、
+	// 期待値はデバイスごとに補正しないといけない。
+	if (strcmp(hwconfig, "hdafg0") == 0) {
+		// (うちの) hdafg0 は32段階のようだ
+		gain = gain / 8 * 8;
+	}
+
+	// 変更できたか
+	r = IOCTL(fd, AUDIO_GETINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+	XP_EQ(gain, ai.play.gain);
+
+	// outputs.master も連動しているか
+	// XXX ioctl に分解できればしたほうがいいだろうけど
+	POPEN_GETS(buf, sizeof(buf), "mixerctl -d %s -n outputs.master",
+		devmixer);
+	if (buf[0] < '0' || buf[0] > '9')
+		err(1, "popen");
+	master = atoi(buf);
+	XP_EQ(gain, master);
+
+	// 戻す
+	AUDIO_INITINFO(&ai);
+	ai.play.gain = master_backup;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "play.gain=%d", ai.play.gain);
+	XP_SYS_EQ(0, r);
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+}
+
 /* from audio.c */
 static const char *encoding_names[] = {
 	"none",
@@ -5447,6 +5558,7 @@ struct testtable testtable[] = {
 	DEF(AUDIO_SETINFO_blocksize),
 	DEF(AUDIO_SETINFO_hiwat1),
 	DEF(AUDIO_SETINFO_hiwat2),
+	DEF(AUDIO_SETINFO_gain1),
 	DEF(AUDIO_GETENC_1),
 	DEF(AUDIO_GETENC_2),
 	DEF(audioctl_open_1),
