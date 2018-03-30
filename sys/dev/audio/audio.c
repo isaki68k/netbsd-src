@@ -113,8 +113,10 @@ __KERNEL_RCSID(0, "$NetBSD$");
 
 #ifdef AUDIO_DEBUG
 #define DPRINTF(n, fmt...)	do {	\
-	if (audiodebug >= (n))		\
+	if (audiodebug >= (n)) {	\
+		audio_mlog_flush();	\
 		printf(fmt);		\
+	}				\
 } while (0)
 int	audiodebug = AUDIO_DEBUG;
 #else
@@ -638,6 +640,10 @@ audioattach(device_t parent, device_t self, void *aux)
 	callout_schedule(&sc->sc_idle_counter, audio_idle_timeout * hz);
 #endif
 
+#if defined(AUDIO_DEBUG_MLOG)
+	audio_mlog_init();
+#endif
+
 	// audiorescan いらないはず
 	return;
 
@@ -893,6 +899,10 @@ audiodetach(device_t self, int flags)
 #endif
 	seldestroy(&sc->sc_rsel);
 	seldestroy(&sc->sc_wsel);
+
+#if defined(AUDIO_DEBUG_MLOG)
+	audio_mlog_free();
+#endif
 
 	return 0;
 }

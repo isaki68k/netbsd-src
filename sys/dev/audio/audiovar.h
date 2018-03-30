@@ -7,7 +7,7 @@
 // 1: open/close/set_param等
 // 2: read/write/ioctlシステムコールくらいまでは含む
 // 3: 割り込み以外のTRACEも含む
-// 4: 割り込み内のTRACEも含む (ただし syslogd がいるとデッドロックする)
+// 4: 割り込み内のTRACEも含む (要 AUDIO_DEBUG_MLOG)
 #define AUDIO_DEBUG	4
 
 #if defined(_KERNEL)
@@ -73,6 +73,9 @@
 
 // C の実装定義動作を使用する。
 #define AUDIO_USE_C_IMPLEMENTATION_DEFINED_BEHAVIOR
+
+// デバッグ用なんちゃってメモリログ。
+#define AUDIO_DEBUG_MLOG
 
 // サポートする最大/最小周波数。
 // 最小は、実用的に意味があるかはともかく 4kHz 未満をセットできる骨董品も
@@ -370,6 +373,14 @@ int  audio_rmixer_halt(struct audio_softc *sc);
 int audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *file); /* write の MI 側 */
 int audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 	audio_file_t *file);
+
+#if defined(AUDIO_DEBUG_MLOG)
+void audio_mlog_init(void);
+void audio_mlog_free(void);
+void audio_mlog_flush(void);
+#else
+#define audio_mlog_flush()	/**/
+#endif
 
 static inline struct audio_params
 format2_to_params(const audio_format2_t *f2)
