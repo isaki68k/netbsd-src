@@ -210,6 +210,7 @@ static int audiostartp(struct audio_softc *);
 
 static int audio_query_devinfo(struct audio_softc *, mixer_devinfo_t *);
 
+static inline int audio_track_readablebytes(const audio_track_t *);
 static int audio_file_setinfo(struct audio_softc *, audio_file_t *,
 	const struct audio_info *);
 static int audio_file_setinfo_check(audio_format2_t *,
@@ -2038,6 +2039,25 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 	return error;
 }
 
+// XXX 場所は後で考えなおしたほうがいい
+// 録音バッファの読み取り可能バイト数を返します。
+static inline int
+audio_track_readablebytes(const audio_track_t *track)
+{
+	int bytes;
+
+	KASSERT(track);
+	KASSERT(track->mode == AUMODE_RECORD);
+
+	// ユーザランドから読み取り可能なデータは本来なら usrbuf だが、
+	// 録音したデータは read が発行されるまでは track->input に滞留
+	// しているため、これを単位変換したものを加える必要がある。
+	// track->input はフレーム単位、usrbuf はバイト単位。
+	bytes = track->usrbuf.used +
+	    track->input->used * frametobyte(&track->usrbuf.fmt, 1);
+	return bytes;
+}
+
 int
 audio_poll(struct audio_softc *sc, int events, struct lwp *l,
 	audio_file_t *file)
@@ -2073,13 +2093,7 @@ audio_poll(struct audio_softc *sc, int events, struct lwp *l,
 		track = file->rtrack;
 		if (track) {
 			in_is_valid = true;
-			// 録音したデータは track->input バッファに滞留して
-			// いるため、単位変換してこれを考慮する必要がある。
-			// また usrbuf.used にも読み残しがある可能性がある
-			// ので両者を加算したものが現在のバッファ使用量。
-			int used = track->input->used
-			    * frametobyte(&track->usrbuf.fmt, 1)
-			    + track->usrbuf.used;
+			int used = audio_track_readablebytes(track);
 			if (used > track->usrbuf_usedlow)
 				revents |= events & (POLLIN | POLLRDNORM);
 		}
@@ -2128,21 +2142,18 @@ filt_audiordetach(struct knote *kn)
 static int
 filt_audioread(struct knote *kn, long hint)
 {
-	struct audio_softc *sc __unused;
 	audio_file_t *file;
-	audio_ring_t *usrbuf;
+	audio_track_t *track;
 
 	file = kn->kn_hook;
-	sc = file->sc;
+	track = file->rtrack;
 
 	// XXX READ 可能な時しかここ来ないのかな?
 
-	// XXX 仕様がよくわからんけど、
-	// 録音バッファのバイト数を調べるだけじゃいかんのか?
-
-	if (file->rtrack) {
-		usrbuf = &file->rtrack->usrbuf;
-		kn->kn_data = usrbuf->used;
+	// kn_data は read 可能なバイト数っぽい?
+	kn->kn_data = 0;
+	if (track) {
+		kn->kn_data = audio_track_readablebytes(track);
 	}
 
 	return kn->kn_data > 0;
