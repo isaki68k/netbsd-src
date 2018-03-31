@@ -3192,7 +3192,8 @@ audio_track_drain(audio_track_t *track)
 
 	for (;;) {
 		// 終了条件判定の前に表示したい
-		TRACET(track, "trkseq=%d hwseq=%d out=%d/%d/%d",
+		TRACET(track, "pid=%d.%d trkseq=%d hwseq=%d out=%d/%d/%d",
+		    (int)curproc->p_pid, (int)curlwp->l_lid,
 		    (int)track->seq, (int)mixer->hwseq,
 		    track->outputbuf.head, track->outputbuf.used,
 		    track->outputbuf.capacity);
@@ -3249,7 +3250,8 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 
 	track = file->ptrack;
 	KASSERT(track);
-	TRACET(track, "begin ioflag=0x%x", ioflag);
+	TRACET(track, "begin pid=%d.%d ioflag=0x%x",
+	    (int)curproc->p_pid, (int)curlwp->l_lid, ioflag);
 
 	KASSERT(mutex_owned(sc->sc_lock));
 

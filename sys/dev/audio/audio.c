@@ -1645,7 +1645,9 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 	int error;
 
 #if AUDIO_DEBUG > 2
-	TRACEF(file, "start po=%d ro=%d", sc->sc_popens, sc->sc_ropens);
+	TRACEF(file, "start pid=%d.%d po=%d ro=%d",
+	    (int)curproc->p_pid, (int)curlwp->l_lid,
+	    sc->sc_popens, sc->sc_ropens);
 #else
 	DPRINTF(1, "%s\n", __func__);
 #endif
@@ -1843,8 +1845,9 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 	const char *ioctlname = "";
 	if (21 <= nameidx && nameidx <=37)
 		ioctlname = ioctlnames[nameidx - 21];
-	DPRINTF(2, "audio_ioctl(%lu,'%c',%lu)%s\n",
-		 IOCPARM_LEN(cmd), (char)IOCGROUP(cmd), cmd&0xff, ioctlname);
+	DPRINTF(2, "audio_ioctl(%lu,'%c',%lu)%s pid=%d.%d\n",
+		 IOCPARM_LEN(cmd), (char)IOCGROUP(cmd), cmd&0xff, ioctlname,
+	    (int)curproc->p_pid, (int)l->l_lid);
 #endif
 	if (sc->hw_if == NULL)
 		return ENXIO;
@@ -2086,7 +2089,8 @@ audio_poll(struct audio_softc *sc, int events, struct lwp *l,
 	    "b\3ERR\0" "b\2OUT\0" "b\1PRI\0" "b\0IN\0"
 	char evbuf[64];
 	snprintb(evbuf, sizeof(evbuf), POLLEV_BITMAP, events);
-	TRACEF(file, "events=%s", evbuf);
+	TRACEF(file, "pid=%d.%d events=%s",
+	    (int)curproc->p_pid, (int)l->l_lid, evbuf);
 #else
 	DPRINTF(2, "%s: events=0x%x mode=%d\n", __func__, events, file->mode);
 #endif
