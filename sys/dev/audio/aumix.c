@@ -1824,7 +1824,7 @@ audio_track_play(audio_track_t *track)
 	// stamp はハードウェアで再生したバイト数に相当するので
 	// 無音挿入分も入れてここでカウントする。
 	// この時点で必ず1ブロック分になってる気がする。
-	track->usrbuf_stamp += count * framesize;
+	track->usrbuf_stamp += bytes;
 
 	if (usrbuf->head + bytes < usrbuf->capacity) {
 		memcpy((uint8_t *)input->mem +
