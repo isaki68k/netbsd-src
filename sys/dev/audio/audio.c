@@ -2181,21 +2181,20 @@ filt_audiowdetach(struct knote *kn)
 static int
 filt_audiowrite(struct knote *kn, long hint)
 {
-	struct audio_softc *sc __unused;
 	audio_file_t *file;
-	audio_ring_t *usrbuf;
+	audio_track_t *track;
 
 	file = kn->kn_hook;
-	sc = file->sc;
+	track = file->ptrack;
 
 	// XXX WRITE 可能な時しかここ来ないのかな?
 
 	// XXX 仕様がよくわからんけど、
 	// 再生バッファの空きバイト数を調べるだけじゃいかんのか?
 
-	if (file->ptrack) {
-		usrbuf = &file->ptrack->usrbuf;
-		kn->kn_data = file->ptrack->usrbuf_usedhigh - usrbuf->used;
+	kn->kn_data = 0;
+	if (track) {
+		kn->kn_data = track->usrbuf_usedhigh - track->usrbuf.used;
 	}
 
 	TRACE("kn=%p data=%d", kn, (int)kn->kn_data);
