@@ -194,7 +194,6 @@ static int audio_close(struct audio_softc *, int, audio_file_t *);
 //static int audio_read(struct audio_softc *, struct uio *, int, audio_file_t *);
 //static int audio_write(struct audio_softc *, struct uio *, int, audio_file_t *);
 static void audio_file_clear(struct audio_softc *, audio_file_t *);
-static void audio_hw_clear(struct audio_softc *);
 static int audio_ioctl(dev_t, struct audio_softc *, u_long, void *, int,
 		       struct lwp *, audio_file_t *);
 static int audio_poll(struct audio_softc *, int, struct lwp *, audio_file_t *);
@@ -205,8 +204,6 @@ static int audio_mmap(struct audio_softc *, off_t *, size_t, int, int *, int *,
 static int audioctl_open(dev_t, struct audio_softc *, int, int, struct lwp *,
 	struct file **);
 
-static int audiostartr(struct audio_softc *);
-static int audiostartp(struct audio_softc *);
 //static void audio_pintr(void *);
 //static void audio_rintr(void *);
 
@@ -220,7 +217,7 @@ static int audio_file_setinfo_check(audio_format2_t *,
 static int audio_file_setinfo_set(audio_track_t *, audio_format2_t *, int);
 static void audio_track_setinfo_water(audio_track_t *,
 	const struct audio_info *);
-static int audio_setinfo_hw(struct audio_softc *, struct audio_info *);
+static int audio_hw_setinfo(struct audio_softc *, const struct audio_info *);
 static int audio_set_params(struct audio_softc *, int);
 static int audiogetinfo(struct audio_softc *, struct audio_info *, int,
 	audio_file_t *);
@@ -1787,16 +1784,6 @@ audio_file_clear(struct audio_softc *sc, audio_file_t *file)
 		audio_track_clear(sc, file->rtrack);
 }
 
-// こっちは HW の再生/録音をクリアする??
-// 入出力port の切り替えのために必要らしいけど、ほんとか。
-void
-audio_hw_clear(struct audio_softc *sc)
-{
-	mutex_enter(sc->sc_intr_lock);
-	DPRINTF(1, "%s not implemented\n", __func__);
-	mutex_exit(sc->sc_intr_lock);
-}
-
 // ここに audio_write
 
 // たぶん audio_ioctl はハードウェアレイヤの変更は行わないはずなので
@@ -2374,41 +2361,7 @@ audioctl_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	return error;
 }
 
-// audiostart{p,r} の呼び出し元
-//  audio_resume
-//  audio_drain		.. 残ってるのを全部吐き出すためにいるかも
-//  audio_read
-//  audio_write
-//  audio_ioctl FLUSH
-//  audio_mmap		.. mmapした途端に動き出すやつ
-//  audio_setinfo_hw .. 一旦とめたやつの再開
-int
-audiostartr(struct audio_softc *sc)
-{
-	int error;
-
-	KASSERT(mutex_owned(sc->sc_lock));
-
-	DPRINTF(2, "audiostartr\n");
-
-	if (!audio_can_capture(sc))
-		return EINVAL;
-
-	// ここで録音ループ起動
-	sc->sc_rbusy = true;
-
-	return error;
-}
-
-// 再生ループを開始する。
-// 再生ループがとまっている時(!sc_pbusyの時)だけ呼び出せる。
-// mixer->busy とは独立。
-int
-audiostartp(struct audio_softc *sc)
-{
-	printf("%s not used\n", __func__);
-	return 0;
-}
+// ここに audiostart{pr} があった
 
 // audio_pint_silence いるかどうかは今後
 
@@ -3120,6 +3073,9 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 			rchanges = 1;
 	}
 
+	// 録音再生どちらかでもパラメータを変更する場合は一旦両方の?
+	// トラックを停止。
+	// XXX 該当するほうだけでいいのでは?
 	if (pchanges || rchanges) {
 		audio_file_clear(sc, file);
 #ifdef AUDIO_DEBUG
@@ -3136,7 +3092,13 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 #endif
 	}
 
+	/* Set mixer parameters */
+	error = audio_hw_setinfo(sc, ai);
+	if (error)
+		goto abort0;
+
 	/* Set to track and update sticky parameters */
+	// ポーズを解除してミキサーが停止してれば再開する
 	error = 0;
 	file->mode = mode;
 	if (play) {
@@ -3202,6 +3164,7 @@ abort1:
 		sc->sc_pparams = saved_pfmt;
 		sc->sc_ppause = saved_ppause;
 	}
+abort0:
 	return error;
 }
 
@@ -3319,10 +3282,10 @@ audio_track_setinfo_water(audio_track_t *track, const struct audio_info *ai)
  * Once error has occured, rollback all settings as possible as I can.
  */
 static int
-audio_setinfo_hw(struct audio_softc *sc, struct audio_info *ai)
+audio_hw_setinfo(struct audio_softc *sc, const struct audio_info *ai)
 {
-	struct audio_prinfo *pi;
-	struct audio_prinfo *ri;
+	const struct audio_prinfo *pi;
+	const struct audio_prinfo *ri;
 	int pbusy;
 	int rbusy;
 	u_int pport;
@@ -3332,23 +3295,27 @@ audio_setinfo_hw(struct audio_softc *sc, struct audio_info *ai)
 	u_char pbalance;
 	u_char rbalance;
 	int monitor_gain;
-	bool cleared;
 	int error;
 
 	pi = &ai->play;
 	ri = &ai->record;
 	pbusy = sc->sc_pbusy;
 	rbusy = sc->sc_rbusy;
-	cleared = false;
 	error = 0;
 
 	/* XXX shut up gcc */
 	pport = 0;
 	rport = 0;
 
+	// port を変更するにはミキサーをとめる必要があるようだ。
+	/* It's necessary to stop the mixer to change the port. */
 	if (SPECIFIED(pi->port) || SPECIFIED(ri->port)) {
-		audio_hw_clear(sc);
-		cleared = true;
+		mutex_enter(sc->sc_intr_lock);
+		if (sc->sc_pbusy)
+			audio_pmixer_halt(sc);
+		if (sc->sc_rbusy)
+			audio_rmixer_halt(sc);
+		mutex_exit(sc->sc_intr_lock);
 	}
 	if (SPECIFIED(pi->port)) {
 		pport = au_get_port(sc, &sc->sc_outports);
@@ -3363,6 +3330,10 @@ audio_setinfo_hw(struct audio_softc *sc, struct audio_info *ai)
 			goto abort2;
 	}
 
+	/*
+	 * On the other hand, it's not necessary to stop the mixer to change
+	 * gain, balance and monitor_gain.
+	 */
 	if (SPECIFIED(pi->gain)) {
 		au_get_gain(sc, &sc->sc_outports, &pgain, &pbalance);
 		error = au_set_gain(sc, &sc->sc_outports, pi->gain, pbalance);
@@ -3396,19 +3367,18 @@ audio_setinfo_hw(struct audio_softc *sc, struct audio_info *ai)
 			goto abort7;
 	}
 
-	/* Restart if necessary */
-	if (cleared) {
-		if (pbusy)
-			audiostartp(sc);
-		if (rbusy)
-			audiostartr(sc);
-	}
+	/* Restart the mixer if necessary */
+	// XXX pmixer_start は false でいいんだろうか
+	if (pbusy)
+		audio_pmixer_start(sc, false);
+	if (rbusy)
+		audio_rmixer_start(sc);
 
 	// XXX hw の変更はなくていいのでは
 	//sc->sc_ai = *ai;
 	return 0;
 
-	/* Rollback as possible as it can */
+	/* Rollback as much as possible. */
 abort7:
 	if (SPECIFIED(ai->monitor_gain)) {
 		if (monitor_gain != -1)
@@ -3432,12 +3402,11 @@ abort2:
 abort1:
 	if (SPECIFIED(pi->port))
 		au_set_port(sc, &sc->sc_outports, pport);
-	if (cleared) {
-		if (pbusy)
-			audiostartp(sc);
-		if (rbusy)
-			audiostartr(sc);
-	}
+
+	if (pbusy)
+		audio_pmixer_start(sc, false);
+	if (rbusy)
+		audio_rmixer_start(sc);
 
 	return error;
 }
@@ -3818,7 +3787,7 @@ audio_resume(device_t dv, const pmf_qual_t *qual)
 	audio_mixer_restore(sc);
 	/* XXX ? */
 	AUDIO_INITINFO(&ai);
-	audio_setinfo_hw(sc, &ai);
+	audio_hw_setinfo(sc, &ai);
 #if 0	// XXX
 	// 再生トラックがあれば再生再開
 	// 録音トラックがあれば録音再開
