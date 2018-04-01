@@ -2309,7 +2309,8 @@ audio_mixer_destroy(struct audio_softc *sc, audio_trackmixer_t *mixer)
 /*
  * audio_pmixer_start:
  *	Starts playback mixer.
- *	It must not be called from the interrupt context.
+ *	This function does nothing if the mixer has already started.
+ *	This function must not be called from the interrupt context.
  */
 void
 audio_pmixer_start(struct audio_softc *sc, bool force)
@@ -2828,7 +2829,8 @@ audio_pintr(void *arg)
 /*
  * audio_rmixer_start:
  *	Starts record mixer.
- *	It must not be called from the interrupt context.
+ *	This function does nothing if the mixer has already started.
+ *	This function must not be called from the interrupt context.
  */
 void
 audio_rmixer_start(struct audio_softc *sc)
@@ -3053,6 +3055,8 @@ audio_rintr(void *arg)
  *	Halt playback mixer.
  *	This function also clears related parameters, so call this function
  *	instead of calling halt_output directly.
+ *	This function should be called only when the mixer is running.
+ *	This funciton should be called with sc_intr_lock.
  */
 int
 audio_pmixer_halt(struct audio_softc *sc)
@@ -3082,6 +3086,8 @@ audio_pmixer_halt(struct audio_softc *sc)
  *	Halt recording mixer.
  *	This function also clears related parameters, so call this function
  *	instead of calling halt_input directly.
+ *	This function should be called only when the mixer is running.
+ *	This funciton should be called with sc_intr_lock.
  */
 int
 audio_rmixer_halt(struct audio_softc *sc)
