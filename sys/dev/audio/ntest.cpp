@@ -52,6 +52,7 @@ char testname[100];
 char descname[100];
 int testcount;
 int failcount;
+int expfcount;
 int skipcount;
 char devaudio[16];
 char devsound[16];
@@ -148,11 +149,13 @@ main(int ac, char *av[])
 	}
 	if (testcount > 0) {
 		printf("Result: %d tests, %d success",
-			testcount, testcount - failcount);
+			testcount, testcount - failcount - expfcount);
 		if (failcount > 0)
 			printf(", %d failed", failcount);
+		if (expfcount > 0)
+			printf(", %d expected failure", expfcount);
 		if (skipcount > 0)
-			printf(" (, %d skipped)", skipcount);
+			printf(", %d skipped", skipcount);
 		printf("\n");
 	}
 	return 0;
@@ -329,6 +332,24 @@ void xp_fail(int line, const char *fmt, ...)
 	fflush(stdout);
 	failcount++;
 }
+
+#define XP_EXPFAIL(fmt...) xp_expfail(__LINE__, fmt)
+void xp_expfail(int line, const char *fmt, ...)
+{
+	va_list ap;
+
+	printf(" Expected Failure %d: %s", line, testname);
+	if (descname[0])
+		printf("(%s)", descname);
+	printf(": ");
+	va_start(ap, fmt);
+	vprintf(fmt, ap);
+	va_end(ap);
+	printf("\n");
+	fflush(stdout);
+	expfcount++;
+}
+
 #define XP_SKIP(fmt...)	xp_skip(__LINE__, fmt)
 void xp_skip(int line, const char *fmt, ...)
 {
@@ -1052,7 +1073,7 @@ test_open_3(void)
 	// N8 eap だと panic する。
 	// ncmd.cpp の cmd_eap_input 参照。
 	if (netbsd == 8 && strncmp(hwconfig, "eap", 3) == 0) {
-		XP_FAIL("it causes panic on NetBSD8 + eap");
+		XP_EXPFAIL("it causes panic on NetBSD8 + eap");
 		return;
 	}
 
@@ -1631,7 +1652,7 @@ test_encoding_2()
 
 		// XXX freq=0 は NetBSD<=8 ではプロセスが無限ループに入ってしまう
 		if (freq == 0 && netbsd <= 8) {
-			XP_FAIL("not tested: it causes infinate loop");
+			XP_EXPFAIL("not tested: it causes infinate loop");
 			continue;
 		}
 		// N7 は周波数のチェックも MI レベルではしない (ただ freq 0 はアカン)
@@ -1978,7 +1999,7 @@ test_readwrite_3()
 	if (hwfull == 0) {
 		// N8 では read がブロックするバグ
 		if (netbsd <= 8) {
-			XP_FAIL("not tested; it will block");
+			XP_EXPFAIL("not tested; it will block");
 			return;
 		}
 		// AUDIO2 では HalfHW に対して R+W の多重オープンはできない
@@ -4596,7 +4617,7 @@ test_AUDIO_SETINFO_blocksize()
 			// 0 以下だと panic するようになっている。
 			if (strcmp(hwconfig, "auich0") == 0) {
 				if ((int)blocksize < 64) {
-					XP_FAIL("it causes panic on NetBSD7 + auich");
+					XP_EXPFAIL("it causes panic on NetBSD7 + auich");
 					continue;
 				}
 				// 64バイト単位に落とされる
