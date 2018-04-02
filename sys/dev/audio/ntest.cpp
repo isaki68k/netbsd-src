@@ -4862,6 +4862,8 @@ test_AUDIO_SETINFO_gain1()
 	int fd;
 	int r;
 
+	TEST("AUDIO_SETINFO_gain1");
+
 	// 適当に outputs.master を取得
 	// XXX ioctl に分解できればしたほうがいいだろうけど
 	POPEN_GETS(buf, sizeof(buf), "mixerctl -d %s -n outputs.master",
