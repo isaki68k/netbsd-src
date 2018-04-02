@@ -60,6 +60,29 @@ char devaudioctl[16];
 char devmixer[16];
 extern struct testtable testtable[];
 
+/* from audio.c */
+static const char *encoding_names[] = {
+	"none",
+	AudioEmulaw,
+	AudioEalaw,
+	"pcm16",
+	"pcm8",
+	AudioEadpcm,
+	AudioEslinear_le,
+	AudioEslinear_be,
+	AudioEulinear_le,
+	AudioEulinear_be,
+	AudioEslinear,
+	AudioEulinear,
+	AudioEmpeg_l1_stream,
+	AudioEmpeg_l1_packets,
+	AudioEmpeg_l1_system,
+	AudioEmpeg_l2_stream,
+	AudioEmpeg_l2_packets,
+	AudioEmpeg_l2_system,
+	AudioEac3,
+};
+
 void __attribute__((__noreturn__))
 usage()
 {
@@ -2742,24 +2765,36 @@ test_poll_1()
 		pfd.events = events;
 
 		r = POLL(&pfd, 1, 100);
-		XP_SYS_EQ(exp, r);
-#if 0
-		// ※2
-		// RDONLY に対して OUT は成立しないはずだが N7 は成立してしまう
-		// ようだ。実際には OUT が立ったところで write(2) はできないので
-		// (readwrite_1 参照)、成立するのはおかしく、たぶんチェックが甘い。
-		// まあこんなの調べる人いないから困らないけど。
-		if (netbsd <= 8 && openmode == O_RDONLY && (exp_revents!=pfd.revents)) {
-			if ((exp_revents & ~POLLOUT) == (pfd.revents & ~POLLOUT)) {
-				XP_SKIP("poll(2) bug: useless POLLOUT is set");
-			} else {
-				XP_EQ(exp_revents, pfd.revents);
-			}
+		// 複雑なのでちょっと特別扱い
+		if (r < 0 || r > 1) {
+			// システムコールがエラーになるケースと、pfd 1つのpoll が
+			// 2以上を返してくるのは、知らない異常なので先に判定しておく。
+			XP_SYS_EQ(exp, r);
 		} else {
-			XP_EQ(exp_revents, pfd.revents);
+			// ここは poll が 0 か 1 を返したはず。
+			// poll の戻り値と revents は連動しているはずなので、
+			// revents を先に調べることにする。
+			int checked = 0;
+			DPRINTF("  > pfd.revents=%x\n", pfd.revents);
+
+			// RDONLY/RDWR で録音を開始してないのに POLLIN が立つのは
+			// バグだと思う。
+			if (netbsd <= 8 && openmode != O_WRONLY && (events & POLLIN) != 0
+			 && (pfd.revents & POLLIN) != 0) {
+				XP_EXPFAIL(
+					"recording has not started but POLLIN set (bug?)");
+				checked = 1;
+			}
+			if (netbsd <= 8 && openmode == O_RDONLY && (events & POLLOUT) != 0
+			 && (pfd.revents & POLLOUT) != 0) {
+				XP_EXPFAIL("RDONLY but POLLOUT set (bug?)");
+				checked = 1;
+			}
+			if (checked == 0) {
+				XP_EQ(exp_revents, pfd.revents);
+				XP_EQ(exp, r);
+			}
 		}
-#endif
-			XP_EQ(exp_revents, pfd.revents);
 
 		r = CLOSE(fd);
 		XP_SYS_EQ(0, r);
@@ -3378,10 +3413,15 @@ test_kqueue_4()
 	XP_SYS_EQ(0, r);
 
 	r = KEVENT_POLL(kq, &kev, 1, &ts);
-	XP_SYS_EQ(0, r);
-	if (r > 0) {
-		XP_EQ(fd, kev.ident);
-		XP_EQ(0, kev.data);
+	// NetBSD7 の EVFILT_WRITE は hiwat を考慮していないようだ
+	if (netbsd == 7 && r == 1) {
+		XP_EXPFAIL("not considered about hiwat on NetBSD7?");
+	} else {
+		XP_SYS_EQ(0, r);
+		if (r > 0) {
+			XP_EQ(fd, kev.ident);
+			XP_EQ(0, kev.data);
+		}
 	}
 
 	r = CLOSE(fd);
@@ -3809,13 +3849,19 @@ test_AUDIO_WSEEK_1(void)
 	XP_EQ(0, n);
 
 	// 4バイト書き込むと 4になる
-	// N7 では 0 になる。要調査。
 	r = WRITE(fd, &r, 4);
 	if (r == -1)
 		err(1, "write(4)");
 	r = IOCTL(fd, AUDIO_WSEEK, &n, "");
 	XP_SYS_EQ(0, r);
-	XP_EQ(4, n);
+	if (netbsd == 7 && n == 0) {
+		// N7 では 0 になる。
+		// おそらく WSEEK が pustream のバイト数を返しているが、
+		// データはすでにこの先のバッファに送られたんじゃないかと。
+		XP_EQ(0, n);
+	} else {
+		XP_EQ(4, n);
+	}
 
 	CLOSE(fd);
 }
@@ -4019,14 +4065,19 @@ test_AUDIO_GETINFO_seek()
 	XP_EQ(0, ai.play.seek);
 	XP_EQ(0, ai.play.samples);
 	// ついでにここでバッファサイズを取得
-	bufsize = ai.play.buffer_size;
+	// N7(ここはemul=0) は blocksize * hiwat
+	// N8 は buffer_size
+	if (netbsd == 7)
+		bufsize = ai.blocksize * ai.hiwat;
+	else
+		bufsize = ai.play.buffer_size;
 
 	buf = (char *)malloc(bufsize);
 	if (buf == NULL)
 		err(1, "malloc");
 	memset(buf, 0, bufsize);
 
-	// 残り全部を書き込む (リングバッファのポインタが先頭に戻るはず)
+	// 全部を書き込む (リングバッファのポインタが先頭に戻るはず)
 	r = WRITE(fd, buf, bufsize);
 	XP_SYS_EQ(bufsize, r);
 	r = IOCTL(fd, AUDIO_DRAIN, NULL, "");
@@ -4037,10 +4088,14 @@ test_AUDIO_GETINFO_seek()
 	// N7 はカウントがぴったり合わないようだ
 	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
 	XP_SYS_EQ(0, r);
-	XP_EQ(0, ai.play.seek);
+	if (ai.play.seek != 0 && netbsd == 7) {
+		XP_EXPFAIL("seek expects zero but %d ?", ai.play.seek);
+	} else {
+		XP_EQ(0, ai.play.seek);
+	}
 	if (netbsd <= 8) {
 		if (bufsize != ai.play.samples && ai.play.samples > bufsize * 9 / 10) {
-			XP_SKIP("ai.play.samples expects %d but %d"
+			XP_EXPFAIL("ai.play.samples expects %d but %d"
 			        " (unknown few drops?)",
 				bufsize, ai.play.samples);
 		} else {
@@ -4851,9 +4906,7 @@ test_AUDIO_SETINFO_hiwat2()
 			blk_ms = atoi(p + strlen("AUDIO_BLK_MS="));
 		}
 	}
-	if (debug) {
-		printf(" blk_ms=%d\n", blk_ms);
-	}
+	DPRINTF("  > blk_ms=%d\n", blk_ms);
 
 	fd = OPEN(devaudio, O_WRONLY);
 	if (fd == -1)
@@ -4870,7 +4923,7 @@ test_AUDIO_SETINFO_hiwat2()
 		int exphi;
 		int explo;
 
-		DESC("%d,%d,%d,%d", enc, prec, ch, freq);
+		DESC("%s,%d,%d,%d", encoding_names[enc], prec, ch, freq);
 
 		// AUDIO2 では、最低3ブロック、それが 64KB 以下なら 64KB に近い
 		// 整数倍。
@@ -4913,18 +4966,17 @@ test_AUDIO_SETINFO_hiwat2()
 				int a = expblk;
 				for (expblk = 1; expblk < a; expblk *= 2)
 					;
-			} else if (strcmp(hwconfig, "eap0") == 0) {
-				// eap は下位5ビットを落とす
+			} else if (strcmp(hwconfig, "eap0") == 0 ||
+			           strcmp(hwconfig, "auich0") == 0) {
+				// eap, auich は下位5ビットを落とす
 				expblk &= -32;
 			}
 		}
 		// hiwat, lowat はそのブロックサイズから計算
 		exphi = expbuf / expblk;
 		explo = expbuf * 3 / 4 / expblk;
-		if (debug) {
-			printf("expbuf=%d expblk=%d exphi=%d explo=%d\n",
-				expbuf, expblk, exphi, explo);
-		}
+		DPRINTF("  > expbuf=%d expblk=%d exphi=%d explo=%d\n",
+			expbuf, expblk, exphi, explo);
 		XP_EQ(expbuf, ai.play.buffer_size);
 		XP_EQ(expblk, ai.blocksize);
 		XP_EQ(exphi, ai.hiwat);
@@ -4977,6 +5029,11 @@ test_AUDIO_SETINFO_gain1()
 	} else {
 		gain = master / 2;
 	}
+	if (strcmp(hwconfig, "auich0") == 0) {
+		// よく分からんけど 254、255 あたりの挙動が変なので、避ける
+		if (gain > 247)
+			gain = 247;
+	}
 	ai.play.gain = gain;
 	r = IOCTL(fd, AUDIO_SETINFO, &ai, "play.gain=%d", ai.play.gain);
 	XP_SYS_EQ(0, r);
@@ -4986,6 +5043,9 @@ test_AUDIO_SETINFO_gain1()
 	if (strcmp(hwconfig, "hdafg0") == 0) {
 		// (うちの) hdafg0 は32段階のようだ
 		gain = gain / 8 * 8;
+	}
+	if (strcmp(hwconfig, "auich0") == 0) {
+		gain = ((gain / 8) + 1) * 8 - 1;
 	}
 
 	// 変更できたか
@@ -5238,29 +5298,6 @@ test_AUDIO_SETINFO_rollback()
 	free(buf);
 }
 
-/* from audio.c */
-static const char *encoding_names[] = {
-	"none",
-	AudioEmulaw,
-	AudioEalaw,
-	"pcm16",
-	"pcm8",
-	AudioEadpcm,
-	AudioEslinear_le,
-	AudioEslinear_be,
-	AudioEulinear_le,
-	AudioEulinear_be,
-	AudioEslinear,
-	AudioEulinear,
-	AudioEmpeg_l1_stream,
-	AudioEmpeg_l1_packets,
-	AudioEmpeg_l1_system,
-	AudioEmpeg_l2_stream,
-	AudioEmpeg_l2_packets,
-	AudioEmpeg_l2_system,
-	AudioEac3,
-};
-
 void
 test_AUDIO_GETENC_1()
 {
@@ -5419,7 +5456,21 @@ test_AUDIO_GETENC_1()
 					XP_SYS_EQ(0, r);
 				} else {
 					// 失敗するはず
-					XP_SYS_NG(EINVAL, r);
+					if ((prec == 8 && i == AUDIO_ENCODING_PCM16) ||
+					    (prec == 8 && i == AUDIO_ENCODING_PCM8) ||
+					    (prec == 8 && i == AUDIO_ENCODING_SLINEAR_LE) ||
+					    (prec == 8 && i == AUDIO_ENCODING_SLINEAR_BE) ||
+					    (prec == 8 && i == AUDIO_ENCODING_ULINEAR_LE) ||
+					    (prec == 8 && i == AUDIO_ENCODING_ULINEAR_BE) ||
+					    (prec == 8 && i == AUDIO_ENCODING_SLINEAR) ||
+					    (prec == 8 && i == AUDIO_ENCODING_ULINEAR))
+					{
+						// これらは成功するけど、それでいいのかという気はする
+						if (r == 0)
+							XP_EXPFAIL("loose compatibility?");
+					} else {
+						XP_SYS_NG(EINVAL, r);
+					}
 				}
 			} else {
 				// Half Dup なら R/W いちいち別々にテスト
