@@ -3034,8 +3034,12 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 					}
 				}
 				mutex_exit(sc->sc_intr_lock);
-				if (found)
+				if (found) {
+					DPRINTF(1,
+					    "%s: record track already exists\n",
+					    __func__);
 					return ENODEV;
+				}
 				mode &= ~AUMODE_RECORD;
 			}
 			if ((mode & AUMODE_RECORD) != 0) {
@@ -3050,8 +3054,12 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 					}
 				}
 				mutex_exit(sc->sc_intr_lock);
-				if (found)
+				if (found) {
+					DPRINTF(1,
+					    "%s: play track already exists\n",
+					    __func__);
 					return ENODEV;
+				}
 			}
 		}
 	}
@@ -3059,15 +3067,21 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	// ここから mode は変更後の希望するモード。
 	if (play) {
 		pchanges = audio_file_setinfo_check(&pfmt, pi);
-		if (pchanges == -1)
+		if (pchanges == -1) {
+			DPRINTF(1, "%s: check play.params failed\n",
+			    __func__);
 			return EINVAL;
+		}
 		if (SPECIFIED(ai->mode))
 			pchanges = 1;
 	}
 	if (rec) {
 		rchanges = audio_file_setinfo_check(&rfmt, ri);
-		if (rchanges == -1)
+		if (rchanges == -1) {
+			DPRINTF(1, "%s: check record.params failed\n",
+			    __func__);
 			return EINVAL;
+		}
 		if (SPECIFIED(ai->mode))
 			rchanges = 1;
 	}
@@ -3112,8 +3126,11 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 		if (pchanges) {
 			error = audio_file_setinfo_set(play, &pfmt,
 			    (mode & (AUMODE_PLAY | AUMODE_PLAY_ALL)));
-			if (error)
+			if (error) {
+				DPRINTF(1, "%s: set play.params failed\n",
+				    __func__);
 				goto abort1;
+			}
 			sc->sc_pparams = pfmt;
 		}
 		/* Change water marks after initializing the buffers. */
@@ -3136,8 +3153,11 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 		if (rchanges) {
 			error = audio_file_setinfo_set(rec, &rfmt,
 			    (mode & AUMODE_RECORD));
-			if (error)
+			if (error) {
+				DPRINTF(1, "%s: set record.params failed\n",
+				    __func__);
 				goto abort2;
+			}
 			sc->sc_rparams = rfmt;
 		}
 
@@ -3319,14 +3339,20 @@ audio_hw_setinfo(struct audio_softc *sc, const struct audio_info *ai)
 	if (SPECIFIED(pi->port)) {
 		pport = au_get_port(sc, &sc->sc_outports);
 		error = au_set_port(sc, &sc->sc_outports, pi->port);
-		if (error)
+		if (error) {
+			DPRINTF(1, "%s: set play.port=%d failed: %d\n",
+			    __func__, pi->port, error);
 			goto abort1;
+		}
 	}
 	if (SPECIFIED(ri->port)) {
 		rport = au_get_port(sc, &sc->sc_inports);
 		error = au_set_port(sc, &sc->sc_inports, ri->port);
-		if (error)
+		if (error) {
+			DPRINTF(1, "%s: set record.port=%d failed: %d\n",
+			    __func__, ri->port, error);
 			goto abort2;
+		}
 	}
 
 	/*
@@ -3336,34 +3362,49 @@ audio_hw_setinfo(struct audio_softc *sc, const struct audio_info *ai)
 	if (SPECIFIED(pi->gain)) {
 		au_get_gain(sc, &sc->sc_outports, &pgain, &pbalance);
 		error = au_set_gain(sc, &sc->sc_outports, pi->gain, pbalance);
-		if (error)
+		if (error) {
+			DPRINTF(1, "%s: set play.gain=%d failed: %d\n",
+			    __func__, pi->gain, error);
 			goto abort3;
+		}
 	}
 	if (SPECIFIED(ri->gain)) {
 		au_get_gain(sc, &sc->sc_inports, &rgain, &rbalance);
 		error = au_set_gain(sc, &sc->sc_inports, ri->gain, rbalance);
-		if (error)
+		if (error) {
+			DPRINTF(1, "%s: set record.gain=%d failed: %d\n",
+			    __func__, ri->gain, error);
 			goto abort4;
+		}
 	}
 
 	if (SPECIFIED_CH(pi->balance)) {
 		au_get_gain(sc, &sc->sc_outports, &pgain, &pbalance);
 		error = au_set_gain(sc, &sc->sc_outports, pgain, pi->balance);
-		if (error)
+		if (error) {
+			DPRINTF(1, "%s: set play.balance=%d failed: %d\n",
+			    __func__, pi->balance, error);
 			goto abort5;
+		}
 	}
 	if (SPECIFIED_CH(ri->balance)) {
 		au_get_gain(sc, &sc->sc_inports, &rgain, &rbalance);
 		error = au_set_gain(sc, &sc->sc_inports, rgain, ri->balance);
-		if (error)
+		if (error) {
+			DPRINTF(1, "%s: set record.balance=%d failed: %d\n",
+			    __func__, ri->balance, error);
 			goto abort6;
+		}
 	}
 
 	if (SPECIFIED(ai->monitor_gain) && sc->sc_monitor_port != -1) {
 		monitor_gain = au_get_monitor_gain(sc);
 		error = au_set_monitor_gain(sc, ai->monitor_gain);
-		if (error)
+		if (error) {
+			DPRINTF(1, "%s: set monitor_gain=%d failed: %d\n",
+			    __func__, ai->monitor_gain, error);
 			goto abort7;
+		}
 	}
 
 	/* Restart the mixer if necessary */
