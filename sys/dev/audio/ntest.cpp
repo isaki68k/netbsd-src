@@ -4925,6 +4925,232 @@ test_AUDIO_SETINFO_gain1()
 	XP_SYS_EQ(0, r);
 }
 
+// ロールバックのテスト
+void
+test_AUDIO_SETINFO_rollback()
+{
+	struct audio_info ai;
+	struct audio_info ai0;
+	int fd;
+	int r;
+	char *buf;
+	int buflen;
+	bool avail_in_ports = true;
+	bool avail_out_ports = true;
+	int val;
+
+	// mode (HWFull / HWHalf)
+	// pparam, rparam
+	// port, gain, balance, monitor_gain
+	// ppause, rpause
+	// hiwat, lowat
+	const char *table[] = {
+		"pparam",
+		"rparam",
+		"pport",
+		"rport",
+		"pgain",
+		"rgain",
+		"pbalance",
+		"rbalance",
+	};
+
+	TEST("AUDIO_SETINFO_rollback");
+	if (netbsd <= 8) {
+		XP_SKIP("netbsd-7,8 not support rollback.");
+		return;
+	}
+
+	buflen  = 65536;
+	buf = (char *)malloc(buflen);
+	if (buf == NULL)
+		err(1, "malloc");
+	memset(buf, 0, buflen);
+
+	for (int i = 0; i < __arraycount(table); i++) {
+		DESC("%s", table[i]);
+
+		// pport, rport のテストは切り替え選択肢がなければ実施しない
+		if (strcmp(table[i], "pport") == 0 && avail_out_ports == false) {
+			XP_SKIP("play.avail_ports not selectable");
+			continue;
+		}
+		if (strcmp(table[i], "rport") == 0 && avail_in_ports == false) {
+			XP_SKIP("record.avail_ports not selectable");
+			continue;
+		}
+
+		// オープン
+		fd = OPEN(devaudio, O_RDWR | O_NONBLOCK);
+		if (fd == -1)
+			err(1, "open");
+
+		// まず pause を設定する
+		AUDIO_INITINFO(&ai);
+		ai.play.pause = 1;
+		ai.record.pause = 1;
+		r = IOCTL(fd, AUDIO_SETINFO, &ai, "pause");
+		XP_SYS_EQ(0, r);
+
+		// この時の状態を取得(ミキサーも含む)
+		r = IOCTL(fd, AUDIO_GETINFO, &ai0, "");
+		XP_SYS_EQ(0, r);
+
+		// バッファを適当に埋めておく。全部埋まらなくてもいい
+		r = WRITE(fd, buf, buflen);
+		if (r == -1) {
+			XP_SYS_NG(EAGAIN, r);
+		} else {
+			XP_SYS_OK(r);
+		}
+
+		AUDIO_INITINFO(&ai);
+
+		// mode
+		// PLAY_ALL を下げた不正な値にしておく。ただしエラーにはならないので
+		// 他のパラメータエラーでこれが反映されないことのテストだけ行う。
+		ai.mode = ~AUMODE_PLAY_ALL;
+
+		// pparam
+		if (strcmp(table[i], "pparam") == 0) {
+			// pparam でエラーが起きるケース
+			ai.play.encoding = AUDIO_ENCODING_AC3;
+		} else {
+			ai.play.encoding = AUDIO_ENCODING_SLINEAR_LE;
+			ai.play.precision = 16;
+			ai.play.sample_rate = 16000;
+			ai.play.channels = 1;
+		}
+		// rparam
+		if (strcmp(table[i], "rparam") == 0) {
+			// rparam でエラーが起きるケース
+			ai.record.encoding = AUDIO_ENCODING_AC3;
+		} else {
+			ai.record.encoding = AUDIO_ENCODING_SLINEAR_LE;
+			ai.record.precision = 16;
+			ai.record.sample_rate = 16000;
+			ai.record.channels = 1;
+		}
+
+		// port
+		if (ai0.play.avail_ports == 0) {
+			// この環境には出力 port 選択肢がない
+			avail_out_ports = false;
+		} else {
+			// 出力 port がある
+			ai.play.port = ai0.play.port + 1;	/* XXX ? */
+		}
+		if (ai0.record.avail_ports == 0) {
+			// この環境には入力 port 選択肢がない
+			avail_in_ports = false;
+		} else {
+			// 入力 port がある
+			ai.record.port = ai0.record.port + 1;	/* XXX ? */
+		}
+
+		// pgain
+		if (strcmp(table[i], "pgain") == 0) {
+			// pgain でエラーが起きるケース
+			val = 256;
+		} else {
+			val = ai0.play.gain;
+			val = (val > 127) ? val / 2 : val * 2;
+			if (strcmp(hwconfig, "hdafg0") == 0) {
+				// (うちの) hdafg は32段階のようだ
+				val = val / 8 * 8;
+			}
+		}
+		ai.play.gain = val;
+
+		// rgain
+		if (strcmp(table[i], "rgain") == 0) {
+			// rgain でエラーが起きるケース
+			val = 256;
+		} else {
+			val = ai0.record.gain;
+			val = (val > 127) ? val / 2 : val * 2;
+			if (strcmp(hwconfig, "hdafg0") == 0) {
+				// (うちの) hdafg は32段階のようだ
+				val = val / 8 * 8;
+			}
+		}
+		ai.record.gain = val;
+
+		// pbalance
+		if (strcmp(table[i], "pbalance") == 0) {
+			// pbalance でエラーが起きるケース
+			val = 255;
+		} else {
+			val = ai0.play.balance;
+			val = (val > 31) ? val / 2 : val * 2;
+		}
+		ai.play.balance = val;
+
+		// rbalance
+		if (strcmp(table[i], "rbalance") == 0) {
+			// rbalance でエラーが起きるケース
+			val = 255;
+		} else {
+			val = ai0.record.balance;
+			val = (val > 31) ? val / 2 : val * 2;
+		}
+		ai.record.balance = val;
+
+		// pause はエラーに出来ないので、
+		// pause 解除が効いてしまわないことの確認だけする。
+		ai.play.pause = 0;
+		ai.record.pause = 0;
+
+		// hiwat, lowat
+		ai.hiwat = ai0.hiwat - 1;
+		ai.lowat = ai0.lowat + 1;
+
+		// 実行
+		r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
+		XP_SYS_NG(EINVAL, r);
+
+		// 確認
+		r = IOCTL(fd, AUDIO_GETINFO, &ai, "");
+		XP_SYS_EQ(0, r);
+
+		// 最初と変わっていないこと
+		XP_EQ(ai0.mode, ai.mode);
+		XP_EQ(ai0.play.encoding, ai.play.encoding);
+		XP_EQ(ai0.play.precision, ai.play.precision);
+		XP_EQ(ai0.play.sample_rate, ai.play.sample_rate);
+		XP_EQ(ai0.play.channels, ai.play.channels);
+		XP_EQ(ai0.play.port, ai.play.port);
+		XP_EQ(ai0.play.gain, ai.play.gain);
+		XP_EQ(ai0.play.balance, ai.play.balance);
+		XP_EQ(ai0.play.pause, ai.play.pause);
+		XP_EQ(ai0.record.encoding, ai.record.encoding);
+		XP_EQ(ai0.record.precision, ai.record.precision);
+		XP_EQ(ai0.record.sample_rate, ai.record.sample_rate);
+		XP_EQ(ai0.record.channels, ai.record.channels);
+		XP_EQ(ai0.record.port, ai.record.port);
+		XP_EQ(ai0.record.gain, ai.record.gain);
+		XP_EQ(ai0.record.balance, ai.record.balance);
+		XP_EQ(ai0.record.pause, ai.record.pause);
+		XP_EQ(ai0.hiwat, ai.hiwat);
+		XP_EQ(ai0.lowat, ai.lowat);
+		// このテストでは params, port も必ず変更しようとするため、常に
+		// バッファはクリアされる。
+		// params と port をいじらなければ設定中にエラーが起きてもバッファは
+		// クリアされないケースもあるが、それはここではテストしない。
+		// 個別のパラメータテスト側でやるかなあ。
+		XP_EQ(0, ai.play.seek);
+
+		// 再生データは不要なのでクリア
+		r = IOCTL(fd, AUDIO_FLUSH, NULL, "");
+		XP_SYS_EQ(0, r);
+
+		r = CLOSE(fd);
+		XP_SYS_EQ(0, r);
+	}
+
+	free(buf);
+}
+
 /* from audio.c */
 static const char *encoding_names[] = {
 	"none",
@@ -5559,6 +5785,7 @@ struct testtable testtable[] = {
 	DEF(AUDIO_SETINFO_hiwat1),
 	DEF(AUDIO_SETINFO_hiwat2),
 	DEF(AUDIO_SETINFO_gain1),
+	DEF(AUDIO_SETINFO_rollback),
 	DEF(AUDIO_GETENC_1),
 	DEF(AUDIO_GETENC_2),
 	DEF(audioctl_open_1),
