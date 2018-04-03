@@ -217,7 +217,8 @@ static int audio_file_setinfo_check(audio_format2_t *,
 static int audio_file_setinfo_set(audio_track_t *, audio_format2_t *, int);
 static void audio_track_setinfo_water(audio_track_t *,
 	const struct audio_info *);
-static int audio_hw_setinfo(struct audio_softc *, const struct audio_info *);
+static int audio_hw_setinfo(struct audio_softc *, const struct audio_info *,
+	struct audio_info *);
 static int audio_set_params(struct audio_softc *, int);
 static int audiogetinfo(struct audio_softc *, struct audio_info *, int,
 	audio_file_t *);
@@ -2887,11 +2888,9 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	int pchanges;
 	int rchanges;
 	int mode;
+	struct audio_info saved_ai;
 	audio_format2_t saved_pfmt;
 	audio_format2_t saved_rfmt;
-	int saved_ppause;
-	int saved_rpause;
-	int saved_mode;
 	int error;
 
 	KASSERT(mutex_owned(sc->sc_lock));
@@ -2981,23 +2980,22 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 #endif
 
 	/* XXX shut up gcc */
+	memset(&saved_ai, 0xff, sizeof(saved_ai));
 	memset(&saved_pfmt, 0, sizeof(saved_pfmt));
-	saved_ppause = 0;
 	memset(&saved_rfmt, 0, sizeof(saved_rfmt));
-	saved_rpause = 0;
 
 	/* Set default value and save current parameters */
 	if (play) {
 		pfmt = play->inputfmt;
 		saved_pfmt = play->inputfmt;
-		saved_ppause = play->is_pause;
+		saved_ai.play.pause = play->is_pause;
 	}
 	if (rec) {
 		rfmt = rec->outputbuf.fmt;
 		saved_rfmt = rec->outputbuf.fmt;
-		saved_rpause = rec->is_pause;
+		saved_ai.record.pause = rec->is_pause;
 	}
-	saved_mode = file->mode;
+	saved_ai.mode = file->mode;
 
 	/* Overwrite if specified */
 	mode = file->mode;
@@ -3106,9 +3104,9 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	}
 
 	/* Set mixer parameters */
-	error = audio_hw_setinfo(sc, ai);
+	error = audio_hw_setinfo(sc, ai, &saved_ai);
 	if (error)
-		goto abort0;
+		goto abort1;
 
 	/* Set to track and update sticky parameters */
 	// ポーズを解除してミキサーが停止してれば再開する
@@ -3129,7 +3127,7 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 			if (error) {
 				DPRINTF(1, "%s: set play.params failed\n",
 				    __func__);
-				goto abort1;
+				goto abort2;
 			}
 			sc->sc_pparams = pfmt;
 		}
@@ -3156,7 +3154,7 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 			if (error) {
 				DPRINTF(1, "%s: set record.params failed\n",
 				    __func__);
-				goto abort2;
+				goto abort3;
 			}
 			sc->sc_rparams = rfmt;
 		}
@@ -3169,21 +3167,24 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	return 0;
 
 	/* Rollback */
-abort2:
+abort3:
 	if (error != ENOMEM) {
-		rec->is_pause = saved_rpause;
+		rec->is_pause = saved_ai.record.pause;
 		audio_file_setinfo_set(rec, &saved_rfmt,
-		    (saved_mode & AUMODE_RECORD));
+		    (saved_ai.mode & AUMODE_RECORD));
+	}
+abort2:
+	if (play && error != ENOMEM) {
+		play->is_pause = saved_ai.play.pause;
+		file->mode = saved_ai.mode;
+		audio_file_setinfo_set(play, &saved_pfmt,
+		    (file->mode & (AUMODE_PLAY | AUMODE_PLAY_ALL)));
+		sc->sc_pparams = saved_pfmt;
+		sc->sc_ppause = saved_ai.play.pause;
 	}
 abort1:
-	if (play && error != ENOMEM) {
-		play->is_pause = saved_ppause;
-		audio_file_setinfo_set(play, &saved_pfmt,
-		    (saved_mode & (AUMODE_PLAY | AUMODE_PLAY_ALL)));
-		sc->sc_pparams = saved_pfmt;
-		sc->sc_ppause = saved_ppause;
-	}
-abort0:
+	audio_hw_setinfo(sc, &saved_ai, NULL);
+
 	return error;
 }
 
@@ -3295,40 +3296,41 @@ audio_track_setinfo_water(audio_track_t *track, const struct audio_info *ai)
 }
 
 // ai のうちハードウェア設定部分を担当する。
-// 途中でエラーが起きると(できるかぎり)ロールバックする。
+// ここで設定するのは *.port, *.gain, *.balance, monitor_gain。
+// 途中でエラーが起きてもここではロールバックしない。
+// oldai が指定されると newai の各パラメータ設定前の値を保存する。
 /*
  * Set only hardware part from *ai.
- * Once error has occured, rollback all settings as possible as I can.
  */
 static int
-audio_hw_setinfo(struct audio_softc *sc, const struct audio_info *ai)
+audio_hw_setinfo(struct audio_softc *sc, const struct audio_info *newai,
+	struct audio_info *oldai)
 {
-	const struct audio_prinfo *pi;
-	const struct audio_prinfo *ri;
+	const struct audio_prinfo *newpi;
+	const struct audio_prinfo *newri;
+	struct audio_prinfo *oldpi;
+	struct audio_prinfo *oldri;
 	int pbusy;
 	int rbusy;
-	u_int pport;
-	u_int rport;
 	u_int pgain;
 	u_int rgain;
 	u_char pbalance;
 	u_char rbalance;
-	int monitor_gain;
 	int error;
 
-	pi = &ai->play;
-	ri = &ai->record;
+	newpi = &newai->play;
+	newri = &newai->record;
+	if (oldai) {
+		oldpi = &oldai->play;
+		oldri = &oldai->record;
+	}
 	pbusy = sc->sc_pbusy;
 	rbusy = sc->sc_rbusy;
 	error = 0;
 
-	/* XXX shut up gcc */
-	pport = 0;
-	rport = 0;
-
 	// port を変更するにはミキサーをとめる必要があるようだ。
 	/* It's necessary to stop the mixer to change the port. */
-	if (SPECIFIED(pi->port) || SPECIFIED(ri->port)) {
+	if (SPECIFIED(newpi->port) || SPECIFIED(newri->port)) {
 		mutex_enter(sc->sc_intr_lock);
 		if (sc->sc_pbusy)
 			audio_pmixer_halt(sc);
@@ -3336,22 +3338,24 @@ audio_hw_setinfo(struct audio_softc *sc, const struct audio_info *ai)
 			audio_rmixer_halt(sc);
 		mutex_exit(sc->sc_intr_lock);
 	}
-	if (SPECIFIED(pi->port)) {
-		pport = au_get_port(sc, &sc->sc_outports);
-		error = au_set_port(sc, &sc->sc_outports, pi->port);
+	if (SPECIFIED(newpi->port)) {
+		if (oldai)
+			oldpi->port = au_get_port(sc, &sc->sc_outports);
+		error = au_set_port(sc, &sc->sc_outports, newpi->port);
 		if (error) {
 			DPRINTF(1, "%s: set play.port=%d failed: %d\n",
-			    __func__, pi->port, error);
-			goto abort1;
+			    __func__, newpi->port, error);
+			goto abort;
 		}
 	}
-	if (SPECIFIED(ri->port)) {
-		rport = au_get_port(sc, &sc->sc_inports);
-		error = au_set_port(sc, &sc->sc_inports, ri->port);
+	if (SPECIFIED(newri->port)) {
+		if (oldai)
+			oldri->port = au_get_port(sc, &sc->sc_inports);
+		error = au_set_port(sc, &sc->sc_inports, newri->port);
 		if (error) {
 			DPRINTF(1, "%s: set record.port=%d failed: %d\n",
-			    __func__, ri->port, error);
-			goto abort2;
+			    __func__, newri->port, error);
+			goto abort;
 		}
 	}
 
@@ -3359,90 +3363,77 @@ audio_hw_setinfo(struct audio_softc *sc, const struct audio_info *ai)
 	 * On the other hand, it's not necessary to stop the mixer to change
 	 * gain, balance and monitor_gain.
 	 */
-	if (SPECIFIED(pi->gain)) {
+	/* Backup play.{gain,balance} */
+	if (SPECIFIED(newpi->gain) || SPECIFIED_CH(newpi->balance)) {
 		au_get_gain(sc, &sc->sc_outports, &pgain, &pbalance);
-		error = au_set_gain(sc, &sc->sc_outports, pi->gain, pbalance);
+		if (oldai) {
+			oldpi->gain = pgain;
+			oldpi->balance = pbalance;
+		}
+	}
+	/* Backup record.{gain,balance} */
+	if (SPECIFIED(newri->gain) || SPECIFIED_CH(newri->balance)) {
+		au_get_gain(sc, &sc->sc_inports, &rgain, &rbalance);
+		if (oldai) {
+			oldri->gain = rgain;
+			oldri->balance = rbalance;
+		}
+	}
+	if (SPECIFIED(newpi->gain)) {
+		error = au_set_gain(sc, &sc->sc_outports,
+		    newpi->gain, pbalance);
 		if (error) {
 			DPRINTF(1, "%s: set play.gain=%d failed: %d\n",
-			    __func__, pi->gain, error);
-			goto abort3;
+			    __func__, newpi->gain, error);
+			goto abort;
 		}
 	}
-	if (SPECIFIED(ri->gain)) {
-		au_get_gain(sc, &sc->sc_inports, &rgain, &rbalance);
-		error = au_set_gain(sc, &sc->sc_inports, ri->gain, rbalance);
+	if (SPECIFIED(newri->gain)) {
+		error = au_set_gain(sc, &sc->sc_inports,
+		    newri->gain, rbalance);
 		if (error) {
 			DPRINTF(1, "%s: set record.gain=%d failed: %d\n",
-			    __func__, ri->gain, error);
-			goto abort4;
+			    __func__, newri->gain, error);
+			goto abort;
 		}
 	}
-
-	if (SPECIFIED_CH(pi->balance)) {
-		au_get_gain(sc, &sc->sc_outports, &pgain, &pbalance);
-		error = au_set_gain(sc, &sc->sc_outports, pgain, pi->balance);
+	if (SPECIFIED_CH(newpi->balance)) {
+		error = au_set_gain(sc, &sc->sc_outports,
+		    pgain, newpi->balance);
 		if (error) {
 			DPRINTF(1, "%s: set play.balance=%d failed: %d\n",
-			    __func__, pi->balance, error);
-			goto abort5;
+			    __func__, newpi->balance, error);
+			goto abort;
 		}
 	}
-	if (SPECIFIED_CH(ri->balance)) {
-		au_get_gain(sc, &sc->sc_inports, &rgain, &rbalance);
-		error = au_set_gain(sc, &sc->sc_inports, rgain, ri->balance);
+	if (SPECIFIED_CH(newri->balance)) {
+		error = au_set_gain(sc, &sc->sc_inports,
+		    rgain, newri->balance);
 		if (error) {
 			DPRINTF(1, "%s: set record.balance=%d failed: %d\n",
-			    __func__, ri->balance, error);
-			goto abort6;
+			    __func__, newri->balance, error);
+			goto abort;
 		}
 	}
 
-	if (SPECIFIED(ai->monitor_gain) && sc->sc_monitor_port != -1) {
-		monitor_gain = au_get_monitor_gain(sc);
-		error = au_set_monitor_gain(sc, ai->monitor_gain);
+	if (SPECIFIED(newai->monitor_gain) && sc->sc_monitor_port != -1) {
+		if (oldai)
+			oldai->monitor_gain = au_get_monitor_gain(sc);
+		error = au_set_monitor_gain(sc, newai->monitor_gain);
 		if (error) {
 			DPRINTF(1, "%s: set monitor_gain=%d failed: %d\n",
-			    __func__, ai->monitor_gain, error);
-			goto abort7;
+			    __func__, newai->monitor_gain, error);
+			goto abort;
 		}
 	}
-
-	/* Restart the mixer if necessary */
-	// XXX pmixer_start は false でいいんだろうか
-	if (pbusy)
-		audio_pmixer_start(sc, false);
-	if (rbusy)
-		audio_rmixer_start(sc);
 
 	// XXX hw の変更はなくていいのでは
 	//sc->sc_ai = *ai;
-	return 0;
 
-	/* Rollback as much as possible. */
-abort7:
-	if (SPECIFIED(ai->monitor_gain)) {
-		if (monitor_gain != -1)
-			au_set_monitor_gain(sc, monitor_gain);
-	}
-abort6:
-	if (SPECIFIED_CH(ri->balance))
-		au_set_gain(sc, &sc->sc_inports, rgain, rbalance);
-abort5:
-	if (SPECIFIED_CH(pi->balance))
-		au_set_gain(sc, &sc->sc_outports, pgain, pbalance);
-abort4:
-	if (SPECIFIED(ri->gain))
-		au_set_gain(sc, &sc->sc_outports, rgain, rbalance);
-abort3:
-	if (SPECIFIED(pi->gain))
-		au_set_gain(sc, &sc->sc_outports, pgain, pbalance);
-abort2:
-	if (SPECIFIED(ri->port))
-		au_set_port(sc, &sc->sc_inports, rport);
-abort1:
-	if (SPECIFIED(pi->port))
-		au_set_port(sc, &sc->sc_outports, pport);
-
+	error = 0;
+abort:
+	/* Restart the mixer if necessary */
+	// XXX pmixer_start は false でいいんだろうか
 	if (pbusy)
 		audio_pmixer_start(sc, false);
 	if (rbusy)
@@ -3827,7 +3818,7 @@ audio_resume(device_t dv, const pmf_qual_t *qual)
 	audio_mixer_restore(sc);
 	/* XXX ? */
 	AUDIO_INITINFO(&ai);
-	audio_hw_setinfo(sc, &ai);
+	audio_hw_setinfo(sc, &ai, NULL);
 #if 0	// XXX
 	// 再生トラックがあれば再生再開
 	// 録音トラックがあれば録音再開
