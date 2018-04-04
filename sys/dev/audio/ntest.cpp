@@ -5084,6 +5084,7 @@ test_AUDIO_SETINFO_rollback()
 	int buflen;
 	bool avail_in_ports = true;
 	bool avail_out_ports = true;
+	int port;
 	int val;
 
 	// mode (HWFull / HWHalf)
@@ -5096,10 +5097,6 @@ test_AUDIO_SETINFO_rollback()
 		"rparam",
 		"pport",
 		"rport",
-		"pgain",
-		"rgain",
-		"pbalance",
-		"rbalance",
 	};
 
 	TEST("AUDIO_SETINFO_rollback");
@@ -5180,67 +5177,59 @@ test_AUDIO_SETINFO_rollback()
 		}
 
 		// port
-		if (ai0.play.avail_ports == 0) {
-			// この環境には出力 port 選択肢がない
+		port = ai0.play.avail_ports & ~ai0.play.port;
+		if (port == 0) {
+			// 出力 port がないか切り替え不能
 			avail_out_ports = false;
+		} else if (strcmp(table[i], "pport") == 0) {
+			// pport でエラーが起きるケース
+			ai.play.port = 255;
 		} else {
-			// 出力 port がある
-			ai.play.port = ai0.play.port + 1;	/* XXX ? */
+			// 現在の port 以外の選択肢のうち MostRightBit を採用
+			ai.play.port = port & -port;
 		}
-		if (ai0.record.avail_ports == 0) {
-			// この環境には入力 port 選択肢がない
+		port = ai0.record.avail_ports & ~ai0.record.port;
+		if (port == 0) {
+			// 入力 port がないか切り替え不能
 			avail_in_ports = false;
+		} else if (strcmp(table[i], "rport") == 0) {
+			// rport でエラーが起きるケース
+			ai.record.port = 255;
 		} else {
-			// 入力 port がある
-			ai.record.port = ai0.record.port + 1;	/* XXX ? */
+			// 現在の port 以外の選択肢のうち MostRightBit を採用
+			ai.record.port = port & -port;
 		}
 
 		// pgain
-		if (strcmp(table[i], "pgain") == 0) {
-			// pgain でエラーが起きるケース
-			val = 256;
-		} else {
-			val = ai0.play.gain;
-			val = (val > 127) ? val / 2 : val * 2;
-			if (strcmp(hwconfig, "hdafg0") == 0) {
-				// (うちの) hdafg は32段階のようだ
-				val = val / 8 * 8;
-			}
+		// エラーを起こす方法がちょっと分からない
+		val = ai0.play.gain;
+		val = (val > 127) ? val / 2 : val * 2;
+		if (strcmp(hwconfig, "hdafg0") == 0) {
+			// (うちの) hdafg は32段階のようだ
+			val = val / 8 * 8;
 		}
 		ai.play.gain = val;
 
 		// rgain
-		if (strcmp(table[i], "rgain") == 0) {
-			// rgain でエラーが起きるケース
-			val = 256;
-		} else {
-			val = ai0.record.gain;
-			val = (val > 127) ? val / 2 : val * 2;
-			if (strcmp(hwconfig, "hdafg0") == 0) {
-				// (うちの) hdafg は32段階のようだ
-				val = val / 8 * 8;
-			}
+		// エラーを起こす方法がちょっと分からない
+		val = ai0.record.gain;
+		val = (val > 127) ? val / 2 : val * 2;
+		if (strcmp(hwconfig, "hdafg0") == 0) {
+			// (うちの) hdafg は32段階のようだ
+			val = val / 8 * 8;
 		}
 		ai.record.gain = val;
 
 		// pbalance
-		if (strcmp(table[i], "pbalance") == 0) {
-			// pbalance でエラーが起きるケース
-			val = 255;
-		} else {
-			val = ai0.play.balance;
-			val = (val > 31) ? val / 2 : val * 2;
-		}
+		// エラーを起こす方法がちょっと分からない
+		val = ai0.play.balance;
+		val = (val > 31) ? val / 2 : val * 2;
 		ai.play.balance = val;
 
 		// rbalance
-		if (strcmp(table[i], "rbalance") == 0) {
-			// rbalance でエラーが起きるケース
-			val = 255;
-		} else {
-			val = ai0.record.balance;
-			val = (val > 31) ? val / 2 : val * 2;
-		}
+		// エラーを起こす方法がちょっと分からない
+		val = ai0.record.balance;
+		val = (val > 31) ? val / 2 : val * 2;
 		ai.record.balance = val;
 
 		// pause はエラーに出来ないので、
@@ -5248,7 +5237,7 @@ test_AUDIO_SETINFO_rollback()
 		ai.play.pause = 0;
 		ai.record.pause = 0;
 
-		// hiwat, lowat
+		// hiwat, lowat は不正値を勝手に丸めるのでエラーは起きない
 		ai.hiwat = ai0.hiwat - 1;
 		ai.lowat = ai0.lowat + 1;
 
@@ -5261,23 +5250,30 @@ test_AUDIO_SETINFO_rollback()
 		XP_SYS_EQ(0, r);
 
 		// 最初と変わっていないこと
+		// ただし balance は端数とかの関係でたぶん前後 1 ずれるのはやむなし?
 		XP_EQ(ai0.mode, ai.mode);
 		XP_EQ(ai0.play.encoding, ai.play.encoding);
 		XP_EQ(ai0.play.precision, ai.play.precision);
 		XP_EQ(ai0.play.sample_rate, ai.play.sample_rate);
 		XP_EQ(ai0.play.channels, ai.play.channels);
+		XP_EQ(ai0.play.pause, ai.play.pause);
 		XP_EQ(ai0.play.port, ai.play.port);
 		XP_EQ(ai0.play.gain, ai.play.gain);
-		XP_EQ(ai0.play.balance, ai.play.balance);
-		XP_EQ(ai0.play.pause, ai.play.pause);
+		if (ai.play.balance < ai0.play.balance - 1 ||
+		    ai.play.balance > ai0.play.balance + 1)
+			XP_FAIL("ai.play.balance expects (%d..%d) but %d",
+				ai0.play.balance - 1, ai0.play.balance + 1, ai.play.balance);
 		XP_EQ(ai0.record.encoding, ai.record.encoding);
 		XP_EQ(ai0.record.precision, ai.record.precision);
 		XP_EQ(ai0.record.sample_rate, ai.record.sample_rate);
 		XP_EQ(ai0.record.channels, ai.record.channels);
+		XP_EQ(ai0.record.pause, ai.record.pause);
 		XP_EQ(ai0.record.port, ai.record.port);
 		XP_EQ(ai0.record.gain, ai.record.gain);
-		XP_EQ(ai0.record.balance, ai.record.balance);
-		XP_EQ(ai0.record.pause, ai.record.pause);
+		if (ai.record.balance < ai0.record.balance - 1 ||
+		    ai.record.balance > ai0.record.balance + 1)
+			XP_FAIL("ai.record.balance expects (%d..%d) but %d",
+				ai0.record.balance-1, ai0.record.balance+1, ai.record.balance);
 		XP_EQ(ai0.hiwat, ai.hiwat);
 		XP_EQ(ai0.lowat, ai.lowat);
 		// このテストでは params, port も必ず変更しようとするため、常に
