@@ -297,7 +297,8 @@ hw.hdafg0.precision, hw.hdafg0.frequency.</p>
 hw.hdafg0.* のようなMD名ではなく hw.audio0.* を使うべき。
 実際 hdafg(4) は hw.hdafg に独自の ioctl を持っているし、
 そもそも今自分がアクセスしている audioN に対応する
-MD デバイス名をプログラムから知る術がない。
+MD デバイス名をプログラムから知る術が audio 側にない
+(drvctl 使わないといけない?)。
 </p>
 
 <p class=n8 style="margin-left:8%; margin-top: 1em">For best
@@ -756,8 +757,12 @@ encoded in the audio_info structure.</p>
 意識してあったように見えるが、
 その後すぐに複雑になりすぎてロールバックは一切お察しのような気がする。</p>
 <p class=a2 style="margin-left:20%">
-一応エラーの際には完全にロールバックを目指すようには作っているが、
+一応エラーの際には完全にロールバックを目指すようには作ってみたが、
 今まで10年以上ロールバックしない動作だったので逆に問題になるかも知れない。
+一度にあれこれ設定してもどれがエラーになったか判別できないため、
+その辺ちゃんと考えてるアプリなら必然的に一つずつ SETINFO しては
+エラーチェックするというコードになりがちなため、
+メジャー処では問題は起きなさそうだけど。
 </p>
 
 <p style="margin-left:20%; margin-top: 1em">
@@ -1017,6 +1022,9 @@ balance と gain は元々セットで HW ミキサーを指していたが、
 このうち gain の設定だけ VC のマスターボリュームの変更に書き換えられ、
 gain の取得と balance の設定・取得は HW ミキサーのままなので、いろいろ整合していない。
 PR が出ている → <a href="https://gnats.netbsd.org/52781">kern/52781</a>
+</p>
+<p class=a2 style="margin-left:20%">
+AUDIO2 では N7 同様 HW ミキサーを指すように修正。
 </p>
 
 <p style="margin-left:20%; margin-top: 1em">The input port

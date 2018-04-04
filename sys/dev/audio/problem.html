@@ -33,8 +33,19 @@ mmap をソフトウェア側だけでの実装の変更したため、
 
 <li>オープンしただけで録音が開始される(ケースがある?) (2018/02)
 <p class="p">
-ただ一部それを想定していないようで、eap(4) だと死ぬ。
+ただ一部それを想定していないようで、
+以下の手順で eap(4) が panic する。
 </p>
+<pre class="p">
+fd = open("/dev/sound", O_RDONLY);
+AUDIO_INITINFO(&ai);
+ai.record.pause = 1;
+ioctl(fd, AUDIO_SETINFO, &ai);
+close(fd);
+fd = open("/dev/sound", O_RDONLY);
+close(fd);
+fd = open("/dev/sound", O_RDONLY);
+</pre>
 
 <li>AUDIO_GETINFO の ai.play.eof が VC 分離できていない (2018/02)
 <p class="p">
