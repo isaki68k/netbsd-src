@@ -25,6 +25,10 @@ dd.p1 {
 	margin-left: 12%;
 }
 
+SPAN.plain {
+	color: black;
+}
+
 SPAN.n7 {
 	background-color: rgb(255,255,153);	/* クリーム */
 }
@@ -44,10 +48,20 @@ SPAN.a2 {
 	color: rgb(0,65,255);	/* 青 */
 	font-weight: bold;
 }
+DEL.a2 {
+	text-decoration: underline;
+	color: rgb(0,65,255);	/* 青 */
+}
 </style>
 <title></title>
 </head>
 <body>
+<p>
+凡例:<br>
+<span class=bad style="margin-left:8%;">赤太字は NetBSD 8 の問題についてのコメント</span><br>
+<span class=a2 style="margin-left:8%;">青太字は AUDIO2 での仕様(案)。</span><br>
+<del class=a2 style="margin-left:8%"><span class=plain>青下線は AUDIO2 で削除したいところ(案)。</span></del><br>
+<span class=comment style="margin-left:8%;">緑太字はその他のコメント</span>
 
 <hr>
 
@@ -126,13 +140,12 @@ typedef struct audio_params {
 The high level audio driver attaches to the low level driver when the
 latter calls audio_attach_mi.  This call should be</p>
 
-<pre class=p1><span class=n7>
+<pre class=p1 style="margin-bottom: 0">
 void
 audio_attach_mi(ahwp, hdl, dev)
     struct audio_hw_if *ahwp;
     void *hdl;
     struct device *dev;
-</span>
 </pre>
 <span class=comment style="margin-left: 12%; margin-top: 0">
 ↑いつの書式だよ。<Br>
@@ -201,30 +214,30 @@ open 時の flags を渡すことにする。
 	     optional, is called when the audio device is closed.
 </dd>
 
-<dt class=p1>int drain(void *hdl)
+<dt class=p1><del class=a2><span class=plain>int drain(void *hdl)</span></del>
 </dt>
-<dd class=p1>
+<dd class=p1><del class=a2><span class=plain>
 	     optional, is called before the device is closed or when
 	     <tt>AUDIO_DRAIN</tt> is called.  It should make sure that no samples
 	     remain in to be played that could be lost when close is called.
 	     Return 0 on success, otherwise an error code.
-</dd>
+</span></del></dd>
 <dd class=p1><span class=bad>
 NetBSD8 での呼び方は意味があるとは思えない。
 </span>
 </dd>
 <dd class=p1><span class=a2>
-AUDIO2 では drain は廃止する?。
+AUDIO2 では呼び出していない。廃止する?
 </span>
 </dd>
 
-<dt class=p1>int query_encoding(void *hdl, struct audio_encoding *ae)
+<dt class=p1><del class=a2><span class=plain>int query_encoding(void *hdl, struct audio_encoding *ae)</span></del>
 </dt>
-<dd class=p1>
+<dd class=p1><del class=a2><span class=plain>
 	     is used when <tt>AUDIO_GETENC</tt> is called.  It should fill the
 	     audio_encoding structure and return 0 or, if there is no encoding
 	     with the given number, return <tt>EINVAL</tt>.
-</dd>
+</span></del></dd>
 <dd class=p1><span class=bad>
 NetBSD8 では使われなくなっている。
 </span></dd>
@@ -232,11 +245,48 @@ NetBSD8 では使われなくなっている。
 AUDIO2 では廃止する。代わりに query_format を新設したい。
 </span></dd>
 
-<dt class=p1>int set_params(void *hdl, int setmode, int usemode,
+<dt class=p1><span class=a2>int query_format(void *hdl, const struct audio_format **fmt)
+<dd class=p1><span class=a2>
+	is used to select the hardware encoding mode.
+	It should return the array of the audio_format structure, and return
+	the number of elements.
+	Or return 0 on error.
+	<br><br>
+	audio_format の配列を fmt にセットして、
+	その要素数を戻り値に返します。
+	エラーが起きた場合は 0 を返します。
+	<br>
+	fmt 配列には、再生側と録音側(ハードウェアがサポートしていれば)に対し
+	少なくとも AUDIO_ENCODING_SLINEAR_NE, AUDIO_INTERNAL_BITS が含まれている
+	必要があります。
+	もしハードウェアが AUDIO_ENCODING_SLINEAR_NE, AUDIO_INTERNAL_BITS
+	(通常16) を
+	直接扱えないのなら lower driver がこれを変換する責任を持ちます。
+	<br><br>
+	今は query_format が定義されてなければ
+	query_encoding を使用して互換動作を行いますが、
+	たぶんこれは過渡期における一時的な救済措置です。
+</span>
+<span class=comment>
+	query_encoding は周波数情報を返さないため、N8 は
+	MI 側が用意している周波数リストを使って片っ端から set_params を
+	コールするという方法を取っている。
+	それ自体がいけてなさすぎるのと、この周波数リストに載っていない
+	ハードウェアが扱えないという問題がある。
+	<br>
+	query_format が扱う audio_format_t はハードウェアが対応できる
+	周波数が(離散値であっても帯域であっても)表現できる上、
+	kent-audio2 以降に実装されたあるいはそれに追従したデバイスであれば
+	すでに audio_format_t の配列を持っている可能性が高いので、
+	運がよければそのまま使える。
+</span>
+</dd>
+
+<dt class=p1><del class=a2><span class=plain>int set_params(void *hdl, int setmode, int usemode,
 	     audio_params_t *play, audio_params_t *rec,
 	     stream_filter_list_t *pfil, stream_filter_list_t *rfil)
-</dt>
-<dd class=p1>
+</span></del></dt>
+<dd class=p1><del class=a2><span class=plain>
 	     Called to set the audio encoding mode.  setmode is a combination
 	     of the <tt>AUMODE_RECORD</tt> and <tt>AUMODE_PLAY</tt> flags to indicate which
 	     mode(s) are to be set.  usemode is also a combination of these
@@ -304,15 +354,34 @@ AUDIO2 では廃止する。代わりに query_format を新設したい。
 		       |     rfil->filters[rfil->req_size-1].factory
 		     (rec)  == read(2) output
 </pre>
-<dd class=p1>
 	     If the device does not have the <tt>AUDIO_PROP_INDEPENDENT</tt> property
 	     the same value is passed in both play and rec and the encoding
 	     parameters from play is copied into rec after the call to
 	     set_params.  Return 0 on success, otherwise an error code.
-</dd>
+</span></del></dd>
 <dd class=p1><span class=a2>
 AUDIO2 ではこれを廃止する。代わりに set_params2(仮名)を新設。
 </span></dd>
+
+<dt class=p1><span class=a2>int (*set_params2)(void *hdl,
+	int setmode, int usemode,
+	audio_params_t *play, audio_params_t *rec,
+	audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
+<dd class=p1><span class=a2>
+	     Called to set the audio encoding mode.  setmode is a combination
+	     of the <tt>AUMODE_RECORD</tt> and <tt>AUMODE_PLAY</tt> flags to indicate which
+	     mode(s) are to be set.  usemode is also a combination of these
+	     flags, but indicates the current mode of the device (i.e., the
+	     value of mode in the audio_info struct).
+	ここまでは同じ。
+<br><br>
+	     The play and rec structures contain the encoding parameters that
+	     should be set.
+
+</span>
+<span class=comment>
+set_params と違って play, rec を MD 側で書き戻すことは行わない。
+</dd>
 
 <dt class=p1>
      int round_blocksize(void *hdl, int bs, int mode,
@@ -418,14 +487,14 @@ AUDIO2 ではこれを廃止する。代わりに set_params2(仮名)を新設�
 	     about the driver.	Return 0 on success, otherwise an error code.
 </dd>
 
-<dt class=p1>
+<dt class=p1><del class=a2><span class=plain>
      int setfd(void *hdl, int fd)
-</dt>
-<dd class=p1>
+</span></del></dt>
+<dd class=p1><del class=a2><span class=plain>
 	     optional, is called when <tt>AUDIO_SETFD</tt> is used, but only if the
 	     device has <tt>AUDIO_PROP_FULLDUPLEX</tt> set.  Return 0 on success,
 	     otherwise an error code.
-</dd>
+</span></del></dd>
 <dd class=p1><span class=a2>
 AUDIO2 ではこれを廃止する。現状これを実装している HW ドライバは皆無だし。
 </span></dd>
@@ -487,15 +556,15 @@ AUDIO2 ではこれを廃止する。現状これを実装している HW ドラ
 	     on the ISA bus cannot exceed 65536 bytes.
 </dd>
 
-<dt class=p1>
+<dt class=p1><del class=a2><span class=plain>
      paddr_t mappage(void *hdl, void *addr, off_t offs, int prot)
-</dt>
-<dd class=p1>
+</span></del></dt>
+<dd class=p1><del class=a2><span class=plain>
 	     optional, is called for mmap(2).  Should return the map value for
 	     the page at offset offs from address addr mapped with protection
 	     prot.  Returns -1 on failure, or a machine dependent opaque value
 	     on success.
-</dd>
+</span></del></dd>
 <dd class=p1><span class=bad>
 NetBSD8 では使われなくなっている。
 </span></dd>
