@@ -105,6 +105,10 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <dev/audiovar.h>
 #include <dev/auconv.h>
 
+#if defined(AUDIO_DEBUG_MLOG)
+#include <sys/atomic.h>
+#endif
+
 #include <machine/endian.h>
 
 #include <uvm/uvm.h>
