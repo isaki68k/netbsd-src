@@ -77,8 +77,8 @@ static int  vs_open(void *, int);
 static void vs_close(void *);
 static int  vs_query_encoding(void *, struct audio_encoding *);
 static int  vs_query_format(void *, const struct audio_format **);
-static int  vs_set_params2(void *, int, int, audio_params_t *,
-	audio_params_t *, audio_filter_reg_t *, audio_filter_reg_t *);
+static int  vs_set_params2(void *, int, int, const audio_params_t *,
+	const audio_params_t *, audio_filter_reg_t *, audio_filter_reg_t *);
 static int  vs_init_output(void *, void *, int);
 static int  vs_init_input(void *, void *, int);
 static int  vs_start_input(void *, void *, int, void (*)(void *), void *);
@@ -380,7 +380,7 @@ vs_round_sr(u_long rate)
 
 static int
 vs_set_params2(void *hdl, int setmode, int usemode,
-	audio_params_t *play, audio_params_t *rec,
+	const audio_params_t *play, const audio_params_t *rec,
 	audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
 {
 	struct vs_softc *sc;
@@ -403,16 +403,18 @@ vs_set_params2(void *hdl, int setmode, int usemode,
 
 	if (play->encoding == AUDIO_ENCODING_SLINEAR_BE) {
 		if ((setmode & AUMODE_PLAY) != 0) {
-			play->encoding = AUDIO_ENCODING_ADPCM;
-			play->validbits = 4;
-			play->precision = 4;
+			pfil->param = *play;
+			pfil->param.encoding = AUDIO_ENCODING_ADPCM;
+			pfil->param.validbits = 4;
+			pfil->param.precision = 4;
 			pfil->codec = internal_to_msm6258;
 			pfil->context = &sc->sc_codecvar;
 		}
 		if ((setmode & AUMODE_RECORD) != 0) {
-			rec->encoding = AUDIO_ENCODING_ADPCM;
-			rec->validbits = 4;
-			rec->precision = 4;
+			rfil->param = *rec;
+			rfil->param.encoding = AUDIO_ENCODING_ADPCM;
+			rfil->param.validbits = 4;
+			rfil->param.precision = 4;
 			rfil->codec = msm6258_to_internal;
 			rfil->context = &sc->sc_codecvar;
 		}

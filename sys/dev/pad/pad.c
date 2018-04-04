@@ -96,7 +96,7 @@ static void	pad_childdet(device_t, device_t);
 
 static int	pad_query_encoding(void *, struct audio_encoding *);
 static int	pad_set_params2(void *, int, int,
-				audio_params_t *, audio_params_t *,
+				const audio_params_t *, const audio_params_t *,
 			    audio_filter_reg_t *, audio_filter_reg_t *);
 static int	pad_start_output(void *, void *, int,
 				    void (*)(void *), void *);
@@ -413,7 +413,7 @@ pad_query_encoding(void *opaque, struct audio_encoding *ae)
 
 static int
 pad_set_params2(void *opaque, int setmode, int usemode,
-    audio_params_t *play, audio_params_t *rec,
+    const audio_params_t *play, const audio_params_t *rec,
 	audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
 {
 	pad_softc_t *sc __diagused;

@@ -40,7 +40,6 @@
 #include <sys/types.h>
 #include <sys/audioio.h>
 #include <sys/mutex.h>
-#include <dev/audio/aufilter.h>
 
 /* check we have an audio(4) configured into kernel */
 #if defined(_KERNEL_OPT)
@@ -252,6 +251,9 @@ typedef struct stream_filter_list {
 	} filters[AUDIO_MAX_FILTERS];
 } stream_filter_list_t;
 
+// XXX そのうちマージすること
+#include <dev/audio/aufilter.h>
+
 struct audio_hw_if {
 	int	(*open)(void *, int);	/* open hardware */
 	void	(*close)(void *);	/* close hardware */
@@ -328,21 +330,25 @@ struct audio_hw_if {
 	// set_params2 があればこちらが優先して使われる。
 	//
 	// 引数は (void *hdl, int setmode, int usemode,
-	//  audio_params_t *play, audio_params_t *rec,
+	//  const audio_params_t *play, const audio_params_t *rec,
 	//  audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
 	// で、1行目は set_params() と同じ。
 	// play, rec もほぼ同じ。MI 側が設定したいパラメータが入っているので
 	// HW をこのパラメータに設定すること。
-	// その際 HW フィルタを使用するなら *pfil、*rfil の codec (と必要なら
-	// context) を埋めて返すこと。pfil, rfil のメンバはデフォルト NULL で
-	// 埋められているので、codec、context を使わなければ触らなくていい。
-	// フィルタを使用してエンコーディングが変わる場合には *play, *rec の
+	// set_params と違って選択したパラメータを play, rec に書き戻すことは
+	// 出来ない。というか query_format が正しければそのような状況は起きない。
+	//
+	// HW フィルタを使用するなら *pfil、*rfil の codec (と必要なら
+	// context) を埋めて返すこと。pfil, rfil の codec、context はいずれも
+	// NULL に初期化してあるため、使わないところは触らなくていい。
+	// フィルタを使用してエンコーディングが変わる場合には (通常は変わるはず
+	// だが) pfil.param, rfil.param の
 	// encoding/precision/validbits を更新すること。channels/sample_rate は
 	// HW に適切なものが与えられているはずなので更新してはいけない
 	// (更新しないといけないとすれば query_format がおかしい)。
-	// 戻り値は errno を返すこと。
+	// 戻り値は成功なら 0、そうでなければ errno を返すこと。
 	int	(*set_params2)(void *, int, int,
-		    audio_params_t *, audio_params_t *,
+		    const audio_params_t *, const audio_params_t *,
 		    audio_filter_reg_t *, audio_filter_reg_t *);
 };
 
