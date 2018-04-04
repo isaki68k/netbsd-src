@@ -1121,132 +1121,34 @@ mixer state or set new mixer state for the specified device
 <i>dev</i>. <i>type</i> identifies which type of value is
 supplied in the <i>mixer_ctrl_t</i> argument.</p>
 
-<p style="margin-left:20%; margin-top: 1em">#define
-AUDIO_MIXER_CLASS 0 <br>
-#define AUDIO_MIXER_ENUM 1 <br>
-#define AUDIO_MIXER_SET 2 <br>
-#define AUDIO_MIXER_VALUE 3 <br>
-typedef struct mixer_ctrl {</p>
+<p style="margin-left:20%; margin-top: 1em">
+<pre style="margin-left:20%">
+#define AUDIO_MIXER_CLASS 0
+#define AUDIO_MIXER_ENUM 1
+#define AUDIO_MIXER_SET 2
+#define AUDIO_MIXER_VALUE 3
+typedef struct mixer_ctrl {
+	int dev;			/* input: nth device */
 
-<table width="100%" border=0 rules="none" frame="void"
-       cellspacing="0" cellpadding="0">
-<tr valign="top" align="left">
-<td width="32%"></td>
-<td width="13%">
+	int type;
+	union {
+		int ord;		/* enum */
+		int mask;		/* set */
+		mixer_level_t value;	/* value */</p></td>
+	} un;
+} mixer_ctrl_t;
 
-
-<p valign="top">int dev;</p></td>
-<td width="12%"></td>
-<td width="12%">
-</td>
-<td width="13%">
-</td>
-<td width="12%">
-
-
-<p valign="top">/* input: nth device */</p></td>
-<td width="6%">
-</td>
-<tr valign="top" align="left">
-<td width="32%"></td>
-<td width="13%">
-
-
-<p valign="top">int type;</p></td>
-<td width="12%"></td>
-<td width="12%"></td>
-<td width="13%"></td>
-<td width="12%"></td>
-<td width="6%">
-</td>
-<tr valign="top" align="left">
-<td width="32%"></td>
-<td width="13%">
-
-
-<p valign="top">union {</p></td>
-<td width="12%"></td>
-<td width="12%"></td>
-<td width="13%"></td>
-<td width="12%"></td>
-<td width="6%">
-</td>
-<tr valign="top" align="left">
-<td width="32%"></td>
-<td width="13%">
-</td>
-<td width="12%">
-
-
-<p valign="top">int ord;</p></td>
-<td width="12%"></td>
-<td width="13%">
-</td>
-<td width="12%">
-
-
-<p valign="top">/* enum */</p></td>
-<td width="6%">
-</td>
-<tr valign="top" align="left">
-<td width="32%"></td>
-<td width="13%">
-</td>
-<td width="12%">
-
-
-<p valign="top">int mask;</p></td>
-<td width="12%"></td>
-<td width="13%">
-</td>
-<td width="12%">
-
-
-<p valign="top">/* set */</p></td>
-<td width="6%">
-</td>
-<tr valign="top" align="left">
-<td width="32%"></td>
-<td width="13%">
-</td>
-<td width="12%">
-
-
-<p valign="top">mixer_level_t value;</p></td>
-<td width="12%"></td>
-<td width="13%"></td>
-<td width="12%">
-
-
-<p valign="top">/* value */</p></td>
-<td width="6%">
-</td>
-<tr valign="top" align="left">
-<td width="32%"></td>
-<td width="13%">
-
-
-<p valign="top">} un;</p></td>
-<td width="12%"></td>
-<td width="12%"></td>
-<td width="13%"></td>
-<td width="12%"></td>
-<td width="6%">
-</td>
-</table>
-
-<p style="margin-left:20%;">} mixer_ctrl_t;</p>
-
-<p style="margin-left:20%; margin-top: 1em">#define
-AUDIO_MIN_GAIN 0 <br>
-#define AUDIO_MAX_GAIN 255 <br>
-typedef struct mixer_level { <br>
-int num_channels; <br>
-u_char level[8]; /* [num_channels] */ <br>
-} mixer_level_t; <br>
-#define AUDIO_MIXER_LEVEL_MONO 0 <br>
-#define AUDIO_MIXER_LEVEL_LEFT 0 <br>
-#define AUDIO_MIXER_LEVEL_RIGHT 1</p>
+#define AUDIO_MIN_GAIN 0
+#define AUDIO_MAX_GAIN 255
+typedef struct mixer_level {
+	int num_channels;
+	u_char level[8];		/* [num_channels] */
+} mixer_level_t;
+#define AUDIO_MIXER_LEVEL_MONO 0
+#define AUDIO_MIXER_LEVEL_LEFT 0
+#define AUDIO_MIXER_LEVEL_RIGHT 1
+</pre>
+</p>
 
 <p style="margin-left:20%; margin-top: 1em">For a mixer
 value, the <i>value</i> field specifies both the number of
@@ -1271,401 +1173,40 @@ supported devices, start with an index field of 0 and
 continue with successive devices (1, 2, ...) until the
 command returns an error.</p>
 
-<p style="margin-left:20%; margin-top: 1em">typedef struct
-mixer_devinfo {</p>
+<p style="margin-left:20%; margin-top: 1em">
+<pre style="margin-left:20%">
+typedef struct mixer_devinfo {
+	int index;		/* input: nth mixer device */
 
-<table width="100%" border=0 rules="none" frame="void"
-       cellspacing="0" cellpadding="0">
-<tr valign="top" align="left">
-<td width="20%"></td>
-<td width="12%">
-</td>
-<td width="13%">
+	audio_mixer_name_t label;
+	int type;
+	int mixer_class;
+	int next, prev;
+#define AUDIO_MIXER_LAST -1
 
-
-<p valign="top">int index;</p></td>
-<td width="12%"></td>
-<td width="12%">
-</td>
-<td width="13%">
-
-
-<p valign="top">/* input: nth mixer device */</p></td>
-<td width="18%">
-</td>
-<tr valign="top" align="left">
-<td width="20%"></td>
-<td width="12%"></td>
-<td width="13%">
-
-
-<p valign="top">audio_mixer_name_t label;</p></td>
-<td width="12%"></td>
-<td width="12%"></td>
-<td width="13%"></td>
-<td width="18%">
-</td>
-<tr valign="top" align="left">
-<td width="20%"></td>
-<td width="12%"></td>
-<td width="13%">
-
-
-<p valign="top">int type;</p></td>
-<td width="12%"></td>
-<td width="12%"></td>
-<td width="13%"></td>
-<td width="18%">
-</td>
-<tr valign="top" align="left">
-<td width="20%"></td>
-<td width="12%"></td>
-<td width="13%">
-
-
-<p valign="top">int mixer_class;</p></td>
-<td width="12%"></td>
-<td width="12%"></td>
-<td width="13%"></td>
-<td width="18%">
-</td>
-<tr valign="top" align="left">
-<td width="20%"></td>
-<td width="12%"></td>
-<td width="13%">
-
-
-<p valign="top">int next, prev;</p></td>
-<td width="12%"></td>
-<td width="12%"></td>
-<td width="13%"></td>
-<td width="18%">
-</td>
-<tr valign="top" align="left">
-<td width="20%"></td>
-<td width="12%">
-
-
-<p valign="top">#define AUDIO_MIXER_LAST</p></td>
-<td width="13%"></td>
-<td width="12%"></td>
-<td width="12%"></td>
-<td width="13%">
-
-
-<p valign="top">-1</p></td>
-<td width="18%">
-</td>
-<tr valign="top" align="left">
-<td width="20%"></td>
-<td width="12%"></td>
-<td width="13%">
-
-
-<p valign="top">union {</p></td>
-<td width="12%"></td>
-<td width="12%"></td>
-<td width="13%"></td>
-<td width="18%">
-</td>
-<tr valign="top" align="left">
-<td width="20%"></td>
-<td width="12%">
-</td>
-<td width="13%">
-</td>
-<td width="12%">
-
-
-<p valign="top">struct audio_mixer_enum {</p></td>
-<td width="12%"></td>
-<td width="13%"></td>
-<td width="18%">
-</td>
-<tr valign="top" align="left">
-<td width="20%"></td>
-<td width="12%">
-</td>
-<td width="13%">
-</td>
-<td width="12%">
-</td>
-<td width="12%">
-
-
-<p valign="top">int num_mem;</p></td>
-<td width="13%"></td>
-<td width="18%">
-</td>
-<tr valign="top" align="left">
-<td width="20%"></td>
-<td width="12%">
-</td>
-<td width="13%">
-</td>
-<td width="12%">
-</td>
-<td width="12%">
-
-
-<p valign="top">struct {</p></td>
-<td width="13%"></td>
-<td width="18%">
-</td>
-<tr valign="top" align="left">
-<td width="20%"></td>
-<td width="12%">
-</td>
-<td width="13%">
-</td>
-<td width="12%">
-</td>
-<td width="12%">
-</td>
-<td width="13%">
-
-
-<p valign="top">audio_mixer_name_t label;</p></td>
-<td width="18%">
-</td>
-<tr valign="top" align="left">
-<td width="20%"></td>
-<td width="12%">
-</td>
-<td width="13%">
-</td>
-<td width="12%">
-</td>
-<td width="12%">
-</td>
-<td width="13%">
-
-
-<p valign="top">int ord;</p></td>
-<td width="18%">
-</td>
-<tr valign="top" align="left">
-<td width="20%"></td>
-<td width="12%">
-</td>
-<td width="13%">
-</td>
-<td width="12%">
-</td>
-<td width="12%">
-
-
-<p valign="top">} member[32];</p></td>
-<td width="13%"></td>
-<td width="18%">
-</td>
-<tr valign="top" align="left">
-<td width="20%"></td>
-<td width="12%">
-</td>
-<td width="13%">
-</td>
-<td width="12%">
-
-
-<p valign="top">} e;</p></td>
-<td width="12%"></td>
-<td width="13%"></td>
-<td width="18%">
-</td>
-<tr valign="top" align="left">
-<td width="20%"></td>
-<td width="12%">
-</td>
-<td width="13%">
-</td>
-<td width="12%">
-
-
-<p valign="top">struct audio_mixer_set {</p></td>
-<td width="12%"></td>
-<td width="13%"></td>
-<td width="18%">
-</td>
-<tr valign="top" align="left">
-<td width="20%"></td>
-<td width="12%">
-</td>
-<td width="13%">
-</td>
-<td width="12%">
-</td>
-<td width="12%">
-
-
-<p valign="top">int num_mem;</p></td>
-<td width="13%"></td>
-<td width="18%">
-</td>
-<tr valign="top" align="left">
-<td width="20%"></td>
-<td width="12%">
-</td>
-<td width="13%">
-</td>
-<td width="12%">
-</td>
-<td width="12%">
-
-
-<p valign="top">struct {</p></td>
-<td width="13%"></td>
-<td width="18%">
-</td>
-<tr valign="top" align="left">
-<td width="20%"></td>
-<td width="12%">
-</td>
-<td width="13%">
-</td>
-<td width="12%">
-</td>
-<td width="12%">
-</td>
-<td width="13%">
-
-
-<p valign="top">audio_mixer_name_t label;</p></td>
-<td width="18%">
-</td>
-<tr valign="top" align="left">
-<td width="20%"></td>
-<td width="12%">
-</td>
-<td width="13%">
-</td>
-<td width="12%">
-</td>
-<td width="12%">
-</td>
-<td width="13%">
-
-
-<p valign="top">int mask;</p></td>
-<td width="18%">
-</td>
-<tr valign="top" align="left">
-<td width="20%"></td>
-<td width="12%">
-</td>
-<td width="13%">
-</td>
-<td width="12%">
-</td>
-<td width="12%">
-
-
-<p valign="top">} member[32];</p></td>
-<td width="13%"></td>
-<td width="18%">
-</td>
-<tr valign="top" align="left">
-<td width="20%"></td>
-<td width="12%">
-</td>
-<td width="13%">
-</td>
-<td width="12%">
-
-
-<p valign="top">} s;</p></td>
-<td width="12%"></td>
-<td width="13%"></td>
-<td width="18%">
-</td>
-<tr valign="top" align="left">
-<td width="20%"></td>
-<td width="12%">
-</td>
-<td width="13%">
-</td>
-<td width="12%">
-
-
-<p valign="top">struct audio_mixer_value {</p></td>
-<td width="12%"></td>
-<td width="13%"></td>
-<td width="18%">
-</td>
-<tr valign="top" align="left">
-<td width="20%"></td>
-<td width="12%">
-</td>
-<td width="13%">
-</td>
-<td width="12%">
-</td>
-<td width="12%">
-
-
-<p valign="top">audio_mixer_name_t units;</p></td>
-<td width="13%"></td>
-<td width="18%">
-</td>
-<tr valign="top" align="left">
-<td width="20%"></td>
-<td width="12%">
-</td>
-<td width="13%">
-</td>
-<td width="12%">
-</td>
-<td width="12%">
-
-
-<p valign="top">int num_channels;</p></td>
-<td width="13%"></td>
-<td width="18%">
-</td>
-<tr valign="top" align="left">
-<td width="20%"></td>
-<td width="12%">
-</td>
-<td width="13%">
-</td>
-<td width="12%">
-</td>
-<td width="12%">
-
-
-<p valign="top">int delta;</p></td>
-<td width="13%"></td>
-<td width="18%">
-</td>
-<tr valign="top" align="left">
-<td width="20%"></td>
-<td width="12%">
-</td>
-<td width="13%">
-</td>
-<td width="12%">
-
-
-<p valign="top">} v;</p></td>
-<td width="12%"></td>
-<td width="13%"></td>
-<td width="18%">
-</td>
-<tr valign="top" align="left">
-<td width="20%"></td>
-<td width="12%"></td>
-<td width="13%">
-
-
-<p valign="top">} un;</p></td>
-<td width="12%"></td>
-<td width="12%"></td>
-<td width="13%"></td>
-<td width="18%">
-</td>
-</table>
-
-<p style="margin-left:20%;">} mixer_devinfo_t;</p>
+	union {
+		struct audio_mixer_enum {
+			int num_mem;
+			struct {
+				audio_mixer_name_t label;
+				int ord;
+			} member[32];
+		} e;
+		struct audio_mixer_set {
+			int num_mem;
+			struct {
+				audio_mixer_name_t label;
+				int mask;
+			} member[32];
+		} s;
+		struct audio_mixer_value {
+			audio_mixer_name_t units;
+			int num_channels;
+			int delta;
+		} v;
+	} un;
+} mixer_devinfo_t;</pre>
+</p>
 
 <p style="margin-left:20%; margin-top: 1em">The
 <i>label</i> field identifies the name of this particular
