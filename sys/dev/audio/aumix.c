@@ -2143,12 +2143,17 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 	mixer->sc = sc;
 	mixer->mode = mode;
 
+	/* draincv is used only for playback */
+	if (mode == AUMODE_PLAY)
+		cv_init(&mixer->draincv, "audiodr");
+
 	// XXX とりあえず
 	if (mode == AUMODE_PLAY)
 		mixer->hwbuf.fmt = sc->sc_phwfmt;
 	else
 		mixer->hwbuf.fmt = sc->sc_rhwfmt;
 
+	mixer->volume = 256;
 	mixer->blktime_d = 1000;
 	mixer->blktime_n = audio_mixer_calc_blktime(mixer);
 	mixer->hwblks = NBLKHW;
@@ -2194,14 +2199,15 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 	if (sc->hw_if->allocm) {
 		mixer->hwbuf.mem = sc->hw_if->allocm(sc->hw_hdl, mode, bufsize);
 		if (mixer->hwbuf.mem == NULL) {
-			aprint_error_dev(sc->dev, "%s: allocm(%zu) failed",
+			aprint_error_dev(sc->dev, "%s: allocm(%zu) failed\n",
 			    __func__, bufsize);
 			return ENOMEM;
 		}
 	} else {
 		mixer->hwbuf.mem = kern_malloc(bufsize, M_NOWAIT);
 		if (mixer->hwbuf.mem == NULL) {
-			aprint_error_dev(sc->dev, "%s: malloc(%zu) failed",
+			aprint_error_dev(sc->dev,
+			    "%s: malloc hwbuf(%zu) failed\n",
 			    __func__, bufsize);
 			return ENOMEM;
 		}
@@ -2222,7 +2228,8 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 		len = mixer->frames_per_block * mixer->mixfmt.channels * mixer->mixfmt.stride / NBBY;
 		mixer->mixsample = audio_realloc(mixer->mixsample, len);
 		if (mixer->mixsample == NULL) {
-			aprint_error_dev(sc->dev, "%s: malloc(%d) failed",
+			aprint_error_dev(sc->dev,
+			    "%s: malloc mixsample(%d) failed\n",
 			    __func__, len);
 			error = ENOMEM;
 			goto abort;
@@ -2253,18 +2260,13 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 		len = audio_ring_bytelen(&mixer->codecbuf);
 		mixer->codecbuf.mem = audio_realloc(mixer->codecbuf.mem, len);
 		if (mixer->codecbuf.mem == NULL) {
-			aprint_error_dev(sc->dev, "%s: malloc(%d) failed",
+			aprint_error_dev(sc->dev,
+			    "%s: malloc codecbuf(%d) failed\n",
 			    __func__, len);
 			error = ENOMEM;
 			goto abort;
 		}
 	}
-
-	mixer->volume = 256;
-
-	/* draincv is used only for playback */
-	if (mode == AUMODE_PLAY)
-		cv_init(&mixer->draincv, "audiodr");
 
 	return 0;
 
