@@ -83,12 +83,16 @@ structure.</p>
 struct audio_hw_if {
      int     (*open)(void *, int);
      void    (*close)(void *);
-     int     (*drain)(void *);
+     <del class=a2><span class=plain>int     (*drain)(void *);</span></del>
 
-     int     (*query_encoding)(void *, struct audio_encoding *);
-     int     (*set_params)(void *, int, int,
-		 audio_params_t *, audio_params_t *,
-		 stream_filter_list_t *, stream_filter_list_t *);
+     <del class=a2><span class=plain>int     (*query_encoding)(void *, struct audio_encoding *);</span></del>
+     <span class=a2>int     (*query_format)(void *, const struct audio_format **);</span>
+     <del class=a2><span class=plain>int     (*set_params)(void *, int, int,</span></del>
+		 <del class=a2><span class=plain>audio_params_t *, audio_params_t *,</span></del>
+		 <del class=a2><span class=plain>stream_filter_list_t *, stream_filter_list_t *);</span></del>
+     <span class=a2>int     (*set_params2)(void *, int, int,
+		 const audio_params_t *, const audio_params_t *,
+		 audio_filter_reg_t *, audio_filter_reg_t *);</span>
      int     (*round_blocksize)(void *, int, int, const audio_params_t *);
 
      int     (*commit_settings)(void *);
@@ -105,7 +109,7 @@ struct audio_hw_if {
 #define SPKR_OFF 0
 
      int     (*getdev)(void *, struct audio_device *);
-     int     (*setfd)(void *, int);
+     <del class=a2><span class=plain>int     (*setfd)(void *, int);</span></del>
 
      int     (*set_port)(void *, mixer_ctrl_t *);
      int     (*get_port)(void *, mixer_ctrl_t *);
@@ -115,7 +119,7 @@ struct audio_hw_if {
      void    *(*allocm)(void *, int, size_t, struct malloc_type *, int);
      void    (*freem)(void *, void *, struct malloc_type *);
      size_t  (*round_buffersize)(void *, int, size_t);
-     paddr_t (*mappage)(void *, void *, off_t, int);
+     <del class=a2><span class=plain>paddr_t (*mappage)(void *, void *, off_t, int);</span></del>
 
      int     (*get_props)(void *);
 
@@ -185,28 +189,36 @@ void audio_attach_mi(struct audio_hw_if *ahwp, void *hdl, device_t dev)
 	     initialize the hardware for I/O.  Every successful call to open
 	     is matched by a call to close.  Return 0 on success, otherwise an
 	     error code.
-</dd>
-<dd class=p1><span class=bad>
+<br>
+<span class=bad>
 これを呼ぶのは録音再生合わせて1つ目のオープン時。
 flags はその時上位から渡される flags (FREAD | FWRITE みたいなやつ)。
 なので、1本目が再生オープンなら open(hdl, FWRITE) を呼ぶが、
 1本目をオープンしたまま続けて2本目が録音オープンされても open() は呼ばない。
 このため、録音前には open(hdl, FREAD) が呼ばれることを期待していた
 HWドライバはまずいはず。
-<br>
-dev/isa/aria.c<br>
-dev/pci/emuxki.c
-</span></dd>
-<dd class=p1><span class=comment>
+該当するのは dev/isa/aria.c、dev/pci/emuxki.c。
+</span>
+<span class=comment>
 記録のため。
 Half HW で、open(hdl, FREAD | FWRITE) の呼び出しが失敗する例は
 arch/evbarm/mini2440/audio_mini2440.c。
-</span></dd>
-<dd class=p1><span class=a2>
+</span>
+<br>
+<span class=a2>
 これをふまえて AUDIO2 では、open の呼び出しは録音再生合わせて1つ目のオープン時のみとし、flags は HW Full なら必ず FREAD | FWRITE、HW Half なら
 open 時の flags を渡すことにする。
 綱渡りだけどたぶん大丈夫。
-</span></dd>
+</span>
+<span class=a2>
+For historical reason,
+If the hardware is full duplex,
+(FREAD | FWRITE) is specified for <i>flags</i>.
+If the hardware is half duplex,
+<i>flags</i> is specified as FWRITE for playback open and
+FREAD for recording open.
+</span>
+</dd>
 
 <dt class=p1>void close(void *hdl)
 </dt>
@@ -247,24 +259,24 @@ AUDIO2 では廃止する。代わりに query_format を新設したい。
 
 <dt class=p1><span class=a2>int query_format(void *hdl, const struct audio_format **fmt)
 <dd class=p1><span class=a2>
-	is used to select the hardware encoding mode.
+	is used to determine the hardware encoding mode by upper layer.
 	It should return the array of the audio_format structure, and return
 	the number of elements.
 	Or return 0 on error.
-	<br><br>
-	audio_format の配列を fmt にセットして、
+	【audio_format の配列を fmt にセットして、
 	その要素数を戻り値に返します。
-	エラーが起きた場合は 0 を返します。
-	<br>
-	fmt 配列には、再生側と録音側(ハードウェアがサポートしていれば)に対し
+	エラーが起きた場合は 0 を返します。】
+	<br><br>
+	fmt 配列には、再生側と録音側(のハードウェアによって有効な側)に対し、
+	ハードウェアがこれを直接扱えない場合であっても
 	少なくとも AUDIO_ENCODING_SLINEAR_NE, AUDIO_INTERNAL_BITS が含まれている
 	必要があります。
-	もしハードウェアが AUDIO_ENCODING_SLINEAR_NE, AUDIO_INTERNAL_BITS
-	(通常16) を
-	直接扱えないのなら lower driver がこれを変換する責任を持ちます。
+	もしハードウェアが AUDIO_ENCODING_SLINEAR_NE, AUDIO_INTERNAL_BITS を
+	直接扱えないのなら後述する lower driver がこれを変換する責任を持ちます
+	(see also set_params2)。
 	<br><br>
 	今は query_format が定義されてなければ
-	query_encoding を使用して互換動作を行いますが、
+	N8 同様 set_params をひたすら呼び出す互換動作を行いますが、
 	たぶんこれは過渡期における一時的な救済措置です。
 </span>
 <span class=comment>
@@ -363,12 +375,12 @@ AUDIO2 では廃止する。代わりに query_format を新設したい。
 AUDIO2 ではこれを廃止する。代わりに set_params2(仮名)を新設。
 </span></dd>
 
-<dt class=p1><span class=a2>int (*set_params2)(void *hdl,
+<dt class=p1><span class=a2>int set_params2(void *hdl,
 	int setmode, int usemode,
 	audio_params_t *play, audio_params_t *rec,
 	audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
 <dd class=p1><span class=a2>
-	Called once when attaching to set the audio encoding to the hardware.
+	is called once when attaching to set the audio encoding to the hardware.
 	【これはオーディオエンコーディングをハードウェアに設定するためアタッチ時に
 	一度だけ呼ばれます。】
          setmode is a combination
@@ -484,6 +496,22 @@ typedef struct {
 	     and param, encoding parameters for the hardware.  It should
 	     return a block size, possibly changed according to the needs of
 	     the hardware driver.
+<br>
+<span class=a2>
+いくつかのドライバでは必要もないのに与えられた blocksize の変更を指示するものが
+ある。これらは実際 N8 までは問題はなかったが、AUDIO2 では問題となる。
+特に多いのが以下の2つの誤解(と思われるもの)。
+1つ目は、指示された値を 2^n に切り上げるか切り捨てるなどしたほうが
+アラインメントの観点から幸せだろうというコード。
+呼び出し側(audio layer) には round_blocksize() の戻り値の下位何ビットが
+ゼロだったらどうこうという処理は
+最初から書いてないのでこれは(少なくとも現在ではたぶん)何の意味もない。
+2つ目は OSS Audio がブロックサイズは 2^n であることを要求しているという誤解。
+これそのものが誤解である上に、さらにそもそもここはレイヤーが違う。
+この2つの理由以外で、
+指定の blocksize が設定できないハードウェアがあれば、
+現在の AUDIO2 は対応していないので、その場合は要検討。
+</span>
 </dd>
 
 <dt class=p1>
@@ -586,8 +614,12 @@ typedef struct {
 	     device has <tt>AUDIO_PROP_FULLDUPLEX</tt> set.  Return 0 on success,
 	     otherwise an error code.
 </span></del></dd>
+<dd class=p1><span class=bad>
+N8 での呼び出し方はバグっている
+(現状これを実装しているドライバがないので影響が出ることはない)。
+</span></dd>
 <dd class=p1><span class=a2>
-AUDIO2 ではこれを廃止する。現状これを実装している HW ドライバは皆無だし。
+AUDIO2 ではこれを廃止したい。
 </span></dd>
 
 <dt class=p1>
@@ -645,6 +677,15 @@ AUDIO2 ではこれを廃止する。現状これを実装している HW ドラ
 	     size.  The upper layer supplies the suggested size in bufsize,
 	     which the hardware driver can then change if needed.  E.g., DMA
 	     on the ISA bus cannot exceed 65536 bytes.
+<br>
+<span class=a2>
+これも round_blocksize 同様、
+無意味に指定値を変更するドライバは AUDIO2 で問題となるかもしれない。
+round_blocksize() のコメント参照。
+ただしこちらは blocksize とは違って (DMA の制約のように)
+実際に設定できない場合があることが分かっているので、
+それに該当してしまったらどうすればいいかという考察はまだしていない。
+</span>
 </dd>
 
 <dt class=p1><del class=a2><span class=plain>
