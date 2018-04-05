@@ -78,7 +78,6 @@ __KERNEL_RCSID(0, "$NetBSD: hdafg.c,v 1.15 2018/02/14 18:28:43 maya Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_hdaudio.h"
-#include "opt_audio.h"
 #endif
 
 #include "hdaudiovar.h"

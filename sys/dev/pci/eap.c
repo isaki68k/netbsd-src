@@ -55,7 +55,6 @@ __KERNEL_RCSID(0, "$NetBSD: eap.c,v 1.97 2017/06/01 02:45:11 chs Exp $");
 
 #include "midi.h"
 #include "joy_eap.h"
-#include "opt_audio.h"
 
 #include <sys/param.h>
 #include <sys/systm.h>

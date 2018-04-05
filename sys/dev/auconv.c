@@ -37,10 +37,6 @@
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD: auconv.c,v 1.35 2017/12/16 16:09:36 nat Exp $");
 
-#ifdef _KERNEL_OPT
-#include "opt_audio.h"
-#endif
-
 #include <sys/types.h>
 #include <sys/audioio.h>
 #include <sys/device.h>
