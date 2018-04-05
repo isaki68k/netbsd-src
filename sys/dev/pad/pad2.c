@@ -29,10 +29,6 @@
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD: pad.c,v 1.38 2017/07/01 05:50:10 nat Exp $");
 
-#ifdef _KERNEL_OPT
-#include "opt_audio.h"
-#endif
-
 #include <sys/types.h>
 #include <sys/param.h>
 #include <sys/conf.h>
