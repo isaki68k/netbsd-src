@@ -1,4 +1,4 @@
-/* $NetBSD: simplefb.c,v 1.2 2017/09/04 18:01:28 jmcneill Exp $ */
+/* $NetBSD: simplefb.c,v 1.4 2018/04/01 04:35:05 ryo Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared McNeill <jmcneill@invisible.ca>
@@ -26,8 +26,10 @@
  * SUCH DAMAGE.
  */
 
+#include "opt_wsdisplay_compat.h"
+
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: simplefb.c,v 1.2 2017/09/04 18:01:28 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: simplefb.c,v 1.4 2018/04/01 04:35:05 ryo Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -144,7 +146,8 @@ simplefb_attach_genfb(struct simplefb_softc *sc)
 		return ENXIO;
 	}
 
-	if (bus_space_map(sc->sc_bst, addr, size, BUS_SPACE_MAP_LINEAR,
+	if (bus_space_map(sc->sc_bst, addr, size,
+	    BUS_SPACE_MAP_LINEAR | BUS_SPACE_MAP_PREFETCHABLE,
 	    &sc->sc_bsh) != 0) {
 		aprint_error(": failed to map fb\n");
 		return ENXIO;
@@ -157,7 +160,7 @@ simplefb_attach_genfb(struct simplefb_softc *sc)
 	prop_dictionary_set_uint8(dict, "depth", depth);
 	prop_dictionary_set_uint16(dict, "linebytes", stride);
 	prop_dictionary_set_uint32(dict, "address", addr);
-	prop_dictionary_set_uint32(dict, "virtual_address",
+	prop_dictionary_set_uint64(dict, "virtual_address",
 	    (uintptr_t)bus_space_vaddr(sc->sc_bst, sc->sc_bsh));
 
 	genfb_init(&sc->sc_gen);
@@ -177,13 +180,16 @@ simplefb_attach_genfb(struct simplefb_softc *sc)
 	ops.genfb_ioctl = simplefb_ioctl;
 	ops.genfb_mmap = simplefb_mmap;
 
+#ifdef WSDISPLAY_MULTICONS
+	const bool is_console = true;
+#else
 	const bool is_console = phandle == simplefb_console_phandle;
-
-	prop_dictionary_set_bool(dict, "is_console", is_console);
-
 	if (is_console)
 		aprint_normal_dev(sc->sc_gen.sc_dev,
 		    "switching to framebuffer console\n");
+#endif
+
+	prop_dictionary_set_bool(dict, "is_console", is_console);
 
 	genfb_attach(&sc->sc_gen, &ops);
 

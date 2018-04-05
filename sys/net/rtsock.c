@@ -1,4 +1,4 @@
-/*	$NetBSD: rtsock.c,v 1.231 2017/11/19 18:49:51 christos Exp $	*/
+/*	$NetBSD: rtsock.c,v 1.239 2018/03/19 16:34:48 roy Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -61,7 +61,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rtsock.c,v 1.231 2017/11/19 18:49:51 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rtsock.c,v 1.239 2018/03/19 16:34:48 roy Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -82,6 +82,7 @@ __KERNEL_RCSID(0, "$NetBSD: rtsock.c,v 1.231 2017/11/19 18:49:51 christos Exp $"
 #include <sys/kauth.h>
 #include <sys/kmem.h>
 #include <sys/intr.h>
+#include <sys/condvar.h>
 
 #include <net/if.h>
 #include <net/if_llatbl.h>
@@ -187,6 +188,9 @@ struct routecb {
 static struct rawcbhead rt_rawcb;
 #ifdef NET_MPSAFE
 static kmutex_t *rt_so_mtx;
+
+static bool rt_updating = false;
+static kcondvar_t rt_update_cv;
 #endif
 
 static void
@@ -608,7 +612,7 @@ route_output_report(struct rtentry *rt, struct rt_addrinfo *info,
 
 static struct ifaddr *
 route_output_get_ifa(const struct rt_addrinfo info, const struct rtentry *rt,
-    struct ifnet **ifp, struct psref *psref)
+    struct ifnet **ifp, struct psref *psref_ifp, struct psref *psref)
 {
 	struct ifaddr *ifa = NULL;
 
@@ -618,9 +622,11 @@ route_output_get_ifa(const struct rt_addrinfo info, const struct rtentry *rt,
 		if (ifa == NULL)
 			goto next;
 		*ifp = ifa->ifa_ifp;
+		if_acquire(*ifp, psref_ifp);
 		if (info.rti_info[RTAX_IFA] == NULL &&
 		    info.rti_info[RTAX_GATEWAY] == NULL)
 			goto next;
+		ifa_release(ifa, psref);
 		if (info.rti_info[RTAX_IFA] == NULL) {
 			/* route change <dst> <gw> -ifp <if> */
 			ifa = ifaof_ifpforaddr_psref(info.rti_info[RTAX_GATEWAY],
@@ -648,8 +654,14 @@ next:
 		    info.rti_info[RTAX_GATEWAY], psref);
 	}
 out:
-	if (ifa != NULL && *ifp == NULL)
+	if (ifa != NULL && *ifp == NULL) {
 		*ifp = ifa->ifa_ifp;
+		if_acquire(*ifp, psref_ifp);
+	}
+	if (ifa == NULL && *ifp != NULL) {
+		if_put(*ifp, psref_ifp);
+		*ifp = NULL;
+	}
 	return ifa;
 }
 
@@ -658,9 +670,9 @@ route_output_change(struct rtentry *rt, struct rt_addrinfo *info,
     struct rt_xmsghdr *rtm)
 {
 	int error = 0;
-	struct ifnet *ifp = NULL, *new_ifp;
+	struct ifnet *ifp = NULL, *new_ifp = NULL;
 	struct ifaddr *ifa = NULL, *new_ifa;
-	struct psref psref_ifa, psref_new_ifa, psref_ifp;
+	struct psref psref_ifa, psref_new_ifa, psref_ifp, psref_new_ifp;
 	bool newgw, ifp_changed = false;
 
 	/*
@@ -674,6 +686,7 @@ route_output_change(struct rtentry *rt, struct rt_addrinfo *info,
 	if (newgw || info->rti_info[RTAX_IFP] != NULL ||
 	    info->rti_info[RTAX_IFA] != NULL) {
 		ifp = rt_getifp(info, &psref_ifp);
+		/* info refers ifp so we need to keep a reference */
 		ifa = rt_getifa(info, &psref_ifa);
 		if (ifa == NULL) {
 			error = ENETUNREACH;
@@ -698,7 +711,8 @@ route_output_change(struct rtentry *rt, struct rt_addrinfo *info,
 	 * flags may also be different; ifp may be specified
 	 * by ll sockaddr when protocol address is ambiguous
 	 */
-	new_ifa = route_output_get_ifa(*info, rt, &new_ifp, &psref_new_ifa);
+	new_ifa = route_output_get_ifa(*info, rt, &new_ifp, &psref_new_ifp,
+	    &psref_new_ifa);
 	if (new_ifa != NULL) {
 		ifa_release(ifa, &psref_ifa);
 		ifa = new_ifa;
@@ -736,6 +750,7 @@ route_output_change(struct rtentry *rt, struct rt_addrinfo *info,
 	(void)ifp_changed; /* XXX gcc */
 #endif
 out:
+	if_put(new_ifp, &psref_new_ifp);
 	if_put(ifp, &psref_ifp);
 
 	return error;
@@ -996,11 +1011,37 @@ COMPATNAME(route_output)(struct mbuf *m, struct socket *so)
 
 		case RTM_CHANGE:
 #ifdef NET_MPSAFE
+			/*
+			 * Release rt_so_mtx to avoid a deadlock with route_intr
+			 * and also serialize updating routes to avoid another.
+			 */
+			if (rt_updating) {
+				/* Release to allow the updater to proceed */
+				rt_unref(rt);
+				rt = NULL;
+			}
+			while (rt_updating) {
+				error = cv_wait_sig(&rt_update_cv, rt_so_mtx);
+				if (error != 0)
+					goto flush;
+			}
+			if (rt == NULL) {
+				error = rtrequest1(RTM_GET, &info, &rt);
+				if (error != 0)
+					goto flush;
+			}
+			rt_updating = true;
+			mutex_exit(rt_so_mtx);
+
 			error = rt_update_prepare(rt);
 			if (error == 0) {
 				error = route_output_change(rt, &info, rtm);
 				rt_update_finish(rt);
 			}
+
+			mutex_enter(rt_so_mtx);
+			rt_updating = false;
+			cv_broadcast(&rt_update_cv);
 #else
 			error = route_output_change(rt, &info, rtm);
 #endif
@@ -2073,6 +2114,7 @@ COMPATNAME(route_enqueue)(struct mbuf *m, int family)
 
 	IFQ_LOCK(&ri->ri_intrq);
 	if (IF_QFULL(&ri->ri_intrq)) {
+		printf("%s: queue full, dropped message\n", __func__);
 		IF_DROP(&ri->ri_intrq);
 		IFQ_UNLOCK(&ri->ri_intrq);
 		m_freem(m);
@@ -2099,6 +2141,8 @@ COMPATNAME(route_init)(void)
 #endif
 #ifdef NET_MPSAFE
 	rt_so_mtx = mutex_obj_alloc(MUTEX_DEFAULT, IPL_NONE);
+
+	cv_init(&rt_update_cv, "rtsock_cv");
 #endif
 
 	sysctl_net_route_setup(NULL);

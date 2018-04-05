@@ -1,4 +1,4 @@
-/*	$NetBSD: if_spppsubr.c,v 1.175 2017/11/22 17:11:51 christos Exp $	 */
+/*	$NetBSD: if_spppsubr.c,v 1.180 2018/03/30 13:29:19 mlelstv Exp $	 */
 
 /*
  * Synchronous PPP/Cisco link level subroutines.
@@ -41,7 +41,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_spppsubr.c,v 1.175 2017/11/22 17:11:51 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_spppsubr.c,v 1.180 2018/03/30 13:29:19 mlelstv Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_inet.h"
@@ -1073,6 +1073,7 @@ sppp_detach(struct ifnet *ifp)
 
 	/* to avoid workqueue enqueued */
 	atomic_swap_uint(&sp->ipcp.update_addrs_enqueued, 1);
+	workqueue_wait(sp->ipcp.update_addrs_wq, &sp->ipcp.update_addrs_wk);
 	workqueue_destroy(sp->ipcp.update_addrs_wq);
 	pcq_destroy(sp->ipcp.update_addrs_q);
 
@@ -2273,6 +2274,7 @@ sppp_lcp_down(struct sppp *sp)
 			    "%s: Down event (carrier loss)\n",
 			    ifp->if_xname);
 	}
+	sp->fail_counter[IDX_LCP] = 0;
 	sp->pp_flags &= ~PP_CALLIN;
 	if (sp->state[IDX_LCP] != STATE_INITIAL)
 		lcp.Close(sp);
@@ -2968,7 +2970,7 @@ sppp_ipcp_init(struct sppp *sp)
 	sp->pp_rseq[IDX_IPCP] = 0;
 	callout_init(&sp->ch[IDX_IPCP], CALLOUT_MPSAFE);
 
-	error = workqueue_create(&sp->ipcp.update_addrs_wq, "ipcp_update_addrs",
+	error = workqueue_create(&sp->ipcp.update_addrs_wq, "ipcp_addr",
 	    sppp_update_ip_addrs_work, sp, PRI_SOFTNET, IPL_NET, 0);
 	if (error)
 		panic("%s: update_addrs workqueue_create failed (%d)\n",
@@ -5271,6 +5273,8 @@ sppp_set_ip_addrs_work(struct work *wk, struct sppp *sp)
 	uint32_t myaddr = 0, hisaddr = 0;
 	int s;
 
+	IFNET_LOCK(ifp);
+
 	/*
 	 * Pick the first AF_INET address from the list,
 	 * aliases don't make any sense on a p2p link anyway.
@@ -5334,6 +5338,8 @@ sppp_set_ip_addrs_work(struct work *wk, struct sppp *sp)
 			    ifp->if_xname, ifp->if_mtu);
 	}
 
+	IFNET_UNLOCK(ifp);
+
 	sppp_notify_con(sp);
 }
 
@@ -5364,6 +5370,8 @@ sppp_clear_ip_addrs_work(struct work *wk, struct sppp *sp)
 	struct ifaddr *ifa;
 	struct sockaddr_in *si, *dest;
 	int s;
+
+	IFNET_LOCK(ifp);
 
 	/*
 	 * Pick the first AF_INET address from the list,
@@ -5414,6 +5422,8 @@ sppp_clear_ip_addrs_work(struct work *wk, struct sppp *sp)
 			    "%s: resetting MTU to %" PRIu64 " bytes\n",
 			    ifp->if_xname, ifp->if_mtu);
 	}
+
+	IFNET_UNLOCK(ifp);
 }
 
 static void
@@ -5531,6 +5541,8 @@ sppp_set_ip6_addr(struct sppp *sp, const struct in6_addr *src)
 	int s;
 	struct psref psref;
 
+	IFNET_LOCK(ifp);
+
 	/*
 	 * Pick the first link-local AF_INET6 address from the list,
 	 * aliases don't make any sense on a p2p link anyway.
@@ -5568,6 +5580,8 @@ sppp_set_ip6_addr(struct sppp *sp, const struct in6_addr *src)
 		}
 		ifa_release(ifa, &psref);
 	}
+
+	IFNET_UNLOCK(ifp);
 }
 #endif
 

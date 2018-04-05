@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.361 2017/11/01 21:13:26 skrll Exp $	*/
+/*	$NetBSD: pmap.c,v 1.365 2018/04/01 04:35:03 ryo Exp $	*/
 
 /*
  * Copyright 2003 Wasabi Systems, Inc.
@@ -217,7 +217,7 @@
 
 #include <arm/locore.h>
 
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.361 2017/11/01 21:13:26 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.365 2018/04/01 04:35:03 ryo Exp $");
 
 //#define PMAP_DEBUG
 #ifdef PMAP_DEBUG
@@ -3704,12 +3704,24 @@ pmap_kenter_pa(vaddr_t va, paddr_t pa, vm_prot_t prot, u_int flags)
 		}
 	}
 	pmap_release_pmap_lock(kpm);
+	pt_entry_t npte = L2_S_PROTO | pa | L2_S_PROT(PTE_KERNEL, prot);
 
-	pt_entry_t npte = L2_S_PROTO | pa | L2_S_PROT(PTE_KERNEL, prot)
-	    | ((flags & PMAP_NOCACHE)
-		? 0
-		: ((flags & PMAP_PTE)
-		    ? pte_l2_s_cache_mode_pt : pte_l2_s_cache_mode));
+	if (flags & PMAP_PTE) {
+		KASSERT((flags & PMAP_CACHE_MASK) == 0);
+		if (!(flags & PMAP_NOCACHE))
+			npte |= pte_l2_s_cache_mode_pt;
+	} else {
+		switch (flags & PMAP_CACHE_MASK) {
+		case PMAP_NOCACHE:
+			break;
+		case PMAP_WRITE_COMBINE:
+			npte |= pte_l2_s_wc_mode;
+			break;
+		default:
+			npte |= pte_l2_s_cache_mode;
+			break;
+		}
+	}
 #ifdef ARM_MMU_EXTENDED
 	if (prot & VM_PROT_EXECUTE)
 		npte &= ~L2_XS_XN;
@@ -3869,11 +3881,19 @@ pmap_kremove(vaddr_t va, vsize_t len)
 bool
 pmap_extract(pmap_t pm, vaddr_t va, paddr_t *pap)
 {
+
+	return pmap_extract_coherency(pm, va, pap, NULL);
+}
+
+bool
+pmap_extract_coherency(pmap_t pm, vaddr_t va, paddr_t *pap, bool *coherentp)
+{
 	struct l2_dtable *l2;
 	pd_entry_t *pdep, pde;
 	pt_entry_t *ptep, pte;
 	paddr_t pa;
 	u_int l1slot;
+	bool coherent;
 
 	pmap_acquire_pmap_lock(pm);
 
@@ -3893,6 +3913,7 @@ pmap_extract(pmap_t pm, vaddr_t va, paddr_t *pap)
 		} else
 #endif
 			pa = (pde & L1_S_FRAME) | (va & L1_S_OFFSET);
+		coherent = (pde & L1_S_CACHE_MASK) == 0;
 	} else {
 		/*
 		 * Note that we can't rely on the validity of the L1
@@ -3916,16 +3937,21 @@ pmap_extract(pmap_t pm, vaddr_t va, paddr_t *pap)
 		switch (pte & L2_TYPE_MASK) {
 		case L2_TYPE_L:
 			pa = (pte & L2_L_FRAME) | (va & L2_L_OFFSET);
+			coherent = (pte & L2_L_CACHE_MASK) == 0;
 			break;
 
 		default:
 			pa = (pte & ~PAGE_MASK) | (va & PAGE_MASK);
+			coherent = (pte & L2_S_CACHE_MASK) == 0;
 			break;
 		}
 	}
 
 	if (pap != NULL)
 		*pap = pa;
+
+	if (coherentp != NULL)
+		*coherentp = (pm == pmap_kernel() && coherent);
 
 	return true;
 }
@@ -4304,7 +4330,7 @@ pmap_fault_fixup(pmap_t pm, vaddr_t va, vm_prot_t ftype, int user)
 	    (uintptr_t)pm, va, ftype, user);
 #ifdef ARM_MMU_EXTENDED
 	UVMHIST_LOG(maphist, " ti=%#jx pai=%#jx asid=%#jx",
-	    (uintptr_t)cpu_tlb_info(curcpu()), 
+	    (uintptr_t)cpu_tlb_info(curcpu()),
 	    (uintptr_t)PMAP_PAI(pm, cpu_tlb_info(curcpu())),
 	    (uintptr_t)PMAP_PAI(pm, cpu_tlb_info(curcpu()))->pai_asid, 0);
 #endif
@@ -6573,15 +6599,6 @@ pmap_postinit(void)
  * Note that the following routines are used by board-specific initialisation
  * code to configure the initial kernel page tables.
  *
- * If ARM32_NEW_VM_LAYOUT is *not* defined, they operate on the assumption that
- * L2 page-table pages are 4KB in size and use 4 L1 slots. This mimics the
- * behaviour of the old pmap, and provides an easy migration path for
- * initial bring-up of the new pmap on existing ports. Fortunately,
- * pmap_bootstrap() compensates for this hackery. This is only a stop-gap and
- * will be deprecated.
- *
- * If ARM32_NEW_VM_LAYOUT *is* defined, these functions deal with 1KB L2 page
- * tables.
  */
 
 /*

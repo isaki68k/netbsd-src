@@ -1,4 +1,4 @@
-/*	$NetBSD: usb_subr.c,v 1.221 2017/10/28 00:37:12 pgoyette Exp $	*/
+/*	$NetBSD: usb_subr.c,v 1.223 2017/12/26 18:44:52 khorben Exp $	*/
 /*	$FreeBSD: src/sys/dev/usb/usb_subr.c,v 1.18 1999/11/17 22:33:47 n_hibma Exp $	*/
 
 /*
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: usb_subr.c,v 1.221 2017/10/28 00:37:12 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: usb_subr.c,v 1.223 2017/12/26 18:44:52 khorben Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
@@ -609,6 +609,10 @@ usbd_set_config_index(struct usbd_device *dev, int index, int msg)
 		return err;
 	}
 	len = UGETW(cd.wTotalLength);
+	if (len == 0) {
+		DPRINTF("empty short descriptor", 0, 0, 0, 0);
+		return USBD_INVAL;
+	}
 	cdp = kmem_alloc(len, KM_SLEEP);
 
 	/* Get the full descriptor.  Try a few times for slow devices. */
@@ -635,6 +639,11 @@ usbd_set_config_index(struct usbd_device *dev, int index, int msg)
 		err = usbd_get_bos_desc(dev, index, &bd);
 		if (!err) {
 			int blen = UGETW(bd.wTotalLength);
+			if (blen == 0) {
+				DPRINTF("empty bos descriptor", 0, 0, 0, 0);
+				err = USBD_INVAL;
+				goto bad;
+			}
 			bdp = kmem_alloc(blen, KM_SLEEP);
 
 			/* Get the full desc */
@@ -724,6 +733,11 @@ usbd_set_config_index(struct usbd_device *dev, int index, int msg)
 
 	/* Allocate and fill interface data. */
 	nifc = cdp->bNumInterface;
+	if (nifc == 0) {
+		DPRINTF("no interfaces", 0, 0, 0, 0);
+		err = USBD_INVAL;
+		goto bad;
+	}
 	dev->ud_ifaces = kmem_alloc(nifc * sizeof(struct usbd_interface),
 	    KM_SLEEP);
 	DPRINTFN(5, "dev=%#jx cdesc=%#jx", (uintptr_t)dev, (uintptr_t)cdp,
@@ -1681,7 +1695,7 @@ usb_free_device(struct usbd_device *dev)
  * driver is dying and then wakes any sleepers.  It then sleeps on the
  * softc.  Each place that can sleep must maintain the reference
  * count.  When the reference count drops to -1 (0 is the normal value
- * of the reference count) the a wakeup on the softc is performed
+ * of the reference count) then a wakeup on the softc is performed
  * signaling to the detach waiter that all references are gone.
  */
 

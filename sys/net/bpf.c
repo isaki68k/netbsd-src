@@ -1,4 +1,4 @@
-/*	$NetBSD: bpf.c,v 1.220 2017/11/30 20:25:55 christos Exp $	*/
+/*	$NetBSD: bpf.c,v 1.223 2018/01/25 02:45:02 ozaki-r Exp $	*/
 
 /*
  * Copyright (c) 1990, 1991, 1993
@@ -39,7 +39,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bpf.c,v 1.220 2017/11/30 20:25:55 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bpf.c,v 1.223 2018/01/25 02:45:02 ozaki-r Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_bpf.h"
@@ -268,7 +268,6 @@ static int	bpf_poll(struct file *, int);
 static int	bpf_stat(struct file *, struct stat *);
 static int	bpf_close(struct file *);
 static int	bpf_kqfilter(struct file *, struct knote *);
-static void	bpf_softintr(void *);
 
 static const struct fileops bpf_fileops = {
 	.fo_name = "bpf",
@@ -561,9 +560,8 @@ bpfopen(dev_t dev, int flag, int mode, struct lwp *l)
 #endif
 	getnanotime(&d->bd_btime);
 	d->bd_atime = d->bd_mtime = d->bd_btime;
-	callout_init(&d->bd_callout, 0);
+	callout_init(&d->bd_callout, CALLOUT_MPSAFE);
 	selinit(&d->bd_sel);
-	d->bd_sih = softint_establish(SOFTINT_CLOCK, bpf_softintr, d);
 	d->bd_jitcode = NULL;
 	d->bd_filter = NULL;
 	BPF_DLIST_ENTRY_INIT(d);
@@ -620,7 +618,6 @@ bpf_close(struct file *fp)
 	bpf_freed(d);
 	callout_destroy(&d->bd_callout);
 	seldestroy(&d->bd_sel);
-	softint_disestablish(d->bd_sih);
 	mutex_obj_free(d->bd_mtx);
 	mutex_obj_free(d->bd_buf_mtx);
 	cv_destroy(&d->bd_cv);
@@ -662,7 +659,7 @@ bpf_read(struct file *fp, off_t *offp, struct uio *uio,
 
 	mutex_enter(d->bd_mtx);
 	if (d->bd_state == BPF_WAITING)
-		callout_halt(&d->bd_callout, d->bd_buf_mtx);
+		callout_halt(&d->bd_callout, d->bd_mtx);
 	timed_out = (d->bd_state == BPF_TIMED_OUT);
 	d->bd_state = BPF_IDLE;
 	mutex_exit(d->bd_mtx);
@@ -755,18 +752,8 @@ bpf_wakeup(struct bpf_d *d)
 	mutex_exit(d->bd_buf_mtx);
 
 	if (d->bd_async)
-		softint_schedule(d->bd_sih);
-	selnotify(&d->bd_sel, 0, 0);
-}
-
-static void
-bpf_softintr(void *cookie)
-{
-	struct bpf_d *d;
-
-	d = cookie;
-	if (d->bd_async)
 		fownsignal(d->bd_pgid, SIGIO, 0, 0, NULL);
+	selnotify(&d->bd_sel, 0, 0);
 }
 
 static void
@@ -1231,7 +1218,9 @@ bpf_ioctl(struct file *fp, u_long cmd, void *addr)
 		break;
 
 	case FIOASYNC:		/* Send signal on receive packets */
+		mutex_enter(d->bd_mtx);
 		d->bd_async = *(int *)addr;
+		mutex_exit(d->bd_mtx);
 		break;
 
 	case TIOCSPGRP:		/* Process or group to send signals to */

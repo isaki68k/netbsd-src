@@ -1,4 +1,4 @@
-/* $NetBSD: systrace_args.c,v 1.24 2017/05/10 06:19:47 riastradh Exp $ */
+/* $NetBSD: systrace_args.c,v 1.29 2018/01/06 16:41:23 kamil Exp $ */
 
 /*
  * System call argument to DTrace register array converstion.
@@ -520,20 +520,6 @@ systrace_args(register_t sysnum, const void *params, uintptr_t *uarg, size_t *n_
 	/* sys_vfork */
 	case 66: {
 		*n_args = 0;
-		break;
-	}
-	/* sys_sbrk */
-	case 69: {
-		const struct sys_sbrk_args *p = params;
-		iarg[0] = SCARG(p, incr); /* intptr_t */
-		*n_args = 1;
-		break;
-	}
-	/* sys_sstk */
-	case 70: {
-		const struct sys_sstk_args *p = params;
-		iarg[0] = SCARG(p, incr); /* int */
-		*n_args = 1;
 		break;
 	}
 	/* sys_mmap */
@@ -3637,7 +3623,7 @@ systrace_args(register_t sysnum, const void *params, uintptr_t *uarg, size_t *n_
 		const struct sys____lwp_park60_args *p = params;
 		iarg[0] = SCARG(p, clock_id); /* clockid_t */
 		iarg[1] = SCARG(p, flags); /* int */
-		uarg[2] = (intptr_t) SCARG(p, ts); /* const struct timespec * */
+		uarg[2] = (intptr_t) SCARG(p, ts); /* struct timespec * */
 		iarg[3] = SCARG(p, unpark); /* lwpid_t */
 		uarg[4] = (intptr_t) SCARG(p, hint); /* const void * */
 		uarg[5] = (intptr_t) SCARG(p, unparkhint); /* const void * */
@@ -4486,26 +4472,6 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 		break;
 	/* sys_vfork */
 	case 66:
-		break;
-	/* sys_sbrk */
-	case 69:
-		switch(ndx) {
-		case 0:
-			p = "intptr_t";
-			break;
-		default:
-			break;
-		};
-		break;
-	/* sys_sstk */
-	case 70:
-		switch(ndx) {
-		case 0:
-			p = "int";
-			break;
-		default:
-			break;
-		};
 		break;
 	/* sys_mmap */
 	case 71:
@@ -9832,7 +9798,7 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 			p = "int";
 			break;
 		case 2:
-			p = "const struct timespec *";
+			p = "struct timespec *";
 			break;
 		case 3:
 			p = "lwpid_t";
@@ -10231,16 +10197,6 @@ systrace_return_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 		break;
 	/* sys_vfork */
 	case 66:
-	/* sys_sbrk */
-	case 69:
-		if (ndx == 0 || ndx == 1)
-			p = "int";
-		break;
-	/* sys_sstk */
-	case 70:
-		if (ndx == 0 || ndx == 1)
-			p = "int";
-		break;
 	/* sys_mmap */
 	case 71:
 		if (ndx == 0 || ndx == 1)

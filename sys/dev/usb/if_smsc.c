@@ -1,7 +1,7 @@
-/*	$NetBSD: if_smsc.c,v 1.30 2016/12/15 09:28:06 ozaki-r Exp $	*/
+/*	$NetBSD: if_smsc.c,v 1.33 2018/01/21 13:57:12 skrll Exp $	*/
 
 /*	$OpenBSD: if_smsc.c,v 1.4 2012/09/27 12:38:11 jsg Exp $	*/
-/* $FreeBSD: src/sys/dev/usb/net/if_smsc.c,v 1.1 2012/08/15 04:03:55 gonzo Exp $ */
+/*	$FreeBSD: src/sys/dev/usb/net/if_smsc.c,v 1.1 2012/08/15 04:03:55 gonzo Exp $ */
 /*-
  * Copyright (c) 2012
  *	Ben Gray <bgray@freebsd.org>.
@@ -277,7 +277,7 @@ smsc_miibus_readreg(device_t dev, int phy, int reg)
 done:
 	smsc_unlock_mii(sc);
 
-	return val & 0xFFFF;
+	return val & 0xffff;
 }
 
 void
@@ -364,7 +364,6 @@ smsc_miibus_statchg(struct ifnet *ifp)
 			afc_cfg |= 0xf;
 		else
 			afc_cfg &= ~0xf;
-
 	} else {
 		smsc_dbg_printf(sc, "half duplex operation\n");
 		sc->sc_mac_csr &= ~SMSC_MAC_CSR_FDPX;
@@ -413,6 +412,7 @@ smsc_ifmedia_sts(struct ifnet *ifp, struct ifmediareq *ifmr)
 static inline uint32_t
 smsc_hash(uint8_t addr[ETHER_ADDR_LEN])
 {
+
 	return (ether_crc32_be(addr, ETHER_ADDR_LEN) >> 26) & 0x3f;
 }
 
@@ -1513,7 +1513,7 @@ smsc_rx_list_init(struct smsc_softc *sc)
 		c->sc_mbuf = NULL;
 		if (c->sc_xfer == NULL) {
 			int error = usbd_create_xfer(sc->sc_ep[SMSC_ENDPT_RX],
-			    sc->sc_bufsz, USBD_SHORT_XFER_OK, 0, &c->sc_xfer);
+			    sc->sc_bufsz, 0, 0, &c->sc_xfer);
 			if (error)
 				return error;
 			c->sc_buf = usbd_get_buffer(c->sc_xfer);

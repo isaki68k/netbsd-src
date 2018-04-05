@@ -1,4 +1,4 @@
-/*	$NetBSD: if_wm.c,v 1.546 2017/11/30 09:24:18 msaitoh Exp $	*/
+/*	$NetBSD: if_wm.c,v 1.566 2018/03/01 03:32:33 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2001, 2002, 2003, 2004 Wasabi Systems, Inc.
@@ -83,7 +83,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.546 2017/11/30 09:24:18 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.566 2018/03/01 03:32:33 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_net_mpsafe.h"
@@ -115,6 +115,8 @@ __KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.546 2017/11/30 09:24:18 msaitoh Exp $");
 #include <net/if_ether.h>
 
 #include <net/bpf.h>
+
+#include <net/rss_config.h>
 
 #include <netinet/in.h>			/* XXX for struct ip */
 #include <netinet/in_systm.h>		/* XXX for struct ip */
@@ -183,6 +185,11 @@ int	wm_debug = WM_DEBUG_TX | WM_DEBUG_RX | WM_DEBUG_LINK | WM_DEBUG_GMII
 int wm_disable_msi = WM_DISABLE_MSI;
 int wm_disable_msix = WM_DISABLE_MSIX;
 
+#ifndef WM_WATCHDOG_TIMEOUT
+#define WM_WATCHDOG_TIMEOUT 5
+#endif
+static int wm_watchdog_timeout = WM_WATCHDOG_TIMEOUT;
+
 /*
  * Transmit descriptor list size.  Due to errata, we can only have
  * 256 hardware descriptors in the ring on < 82544, but we use 4096
@@ -212,6 +219,13 @@ int wm_disable_msix = WM_DISABLE_MSIX;
 #define	WM_MAXTXDMA		 (2 * round_page(IP_MAXPACKET)) /* for TSO */
 
 #define	WM_TXINTERQSIZE		256
+
+#ifndef WM_TX_PROCESS_LIMIT_DEFAULT
+#define	WM_TX_PROCESS_LIMIT_DEFAULT		100U
+#endif
+#ifndef WM_TX_INTR_PROCESS_LIMIT_DEFAULT
+#define	WM_TX_INTR_PROCESS_LIMIT_DEFAULT	0U
+#endif
 
 /*
  * Receive descriptor list size.  We have one Rx buffer for normal
@@ -356,6 +370,9 @@ struct wm_txqueue {
 
 	bool txq_stopping;
 
+	bool txq_watchdog;
+	time_t txq_lastsent;
+
 	uint32_t txq_packets;		/* for AIM */
 	uint32_t txq_bytes;		/* for AIM */
 #ifdef WM_EVENT_COUNTERS
@@ -417,6 +434,7 @@ struct wm_rxqueue {
 	uint32_t rxq_bytes;		/* for AIM */
 #ifdef WM_EVENT_COUNTERS
 	WM_Q_EVCNT_DEFINE(rxq, rxintr);		/* Rx interrupts */
+	WM_Q_EVCNT_DEFINE(rxq, rxdefer);	/* Rx deferred processing */
 
 	WM_Q_EVCNT_DEFINE(rxq, rxipsum);	/* IP checksums checked in-bound */
 	WM_Q_EVCNT_DEFINE(rxq, rxtusum);	/* TCP/UDP cksums checked in-bound */
@@ -518,6 +536,8 @@ struct wm_softc {
 
 	int sc_nqueues;
 	struct wm_queue *sc_queue;
+	u_int sc_tx_process_limit;	/* Tx processing repeat limit in softint */
+	u_int sc_tx_intr_process_limit;	/* Tx processing repeat limit in H/W intr */
 	u_int sc_rx_process_limit;	/* Rx processing repeat limit in softint */
 	u_int sc_rx_intr_process_limit;	/* Rx processing repeat limit in H/W intr */
 
@@ -670,7 +690,8 @@ static int	wm_detach(device_t, int);
 static bool	wm_suspend(device_t, const pmf_qual_t *);
 static bool	wm_resume(device_t, const pmf_qual_t *);
 static void	wm_watchdog(struct ifnet *);
-static void	wm_watchdog_txq(struct ifnet *, struct wm_txqueue *);
+static void	wm_watchdog_txq(struct ifnet *, struct wm_txqueue *, uint16_t *);
+static void	wm_watchdog_txq_locked(struct ifnet *, struct wm_txqueue *, uint16_t *);
 static void	wm_tick(void *);
 static int	wm_ifflags_cb(struct ethercom *);
 static int	wm_ioctl(struct ifnet *, u_long, void *);
@@ -696,7 +717,6 @@ static void	wm_flush_desc_rings(struct wm_softc *);
 static void	wm_reset(struct wm_softc *);
 static int	wm_add_rxbuf(struct wm_rxqueue *, int);
 static void	wm_rxdrain(struct wm_rxqueue *);
-static void	wm_rss_getkey(uint8_t *);
 static void	wm_init_rss(struct wm_softc *);
 static void	wm_adjust_qnum(struct wm_softc *, int);
 static inline bool	wm_is_using_msix(struct wm_softc *);
@@ -756,8 +776,8 @@ static void	wm_nq_send_common_locked(struct ifnet *, struct wm_txqueue *, bool);
 static void	wm_deferred_start_locked(struct wm_txqueue *);
 static void	wm_handle_queue(void *);
 /* Interrupt */
-static int	wm_txeof(struct wm_softc *, struct wm_txqueue *);
-static void	wm_rxeof(struct wm_rxqueue *, u_int);
+static bool	wm_txeof(struct wm_txqueue *, u_int);
+static bool	wm_rxeof(struct wm_rxqueue *, u_int);
 static void	wm_linkintr_gmii(struct wm_softc *, uint32_t);
 static void	wm_linkintr_tbi(struct wm_softc *, uint32_t);
 static void	wm_linkintr_serdes(struct wm_softc *, uint32_t);
@@ -865,7 +885,7 @@ static int	wm_nvm_read_word_invm(struct wm_softc *, uint16_t, uint16_t *);
 static int	wm_nvm_read_invm(struct wm_softc *, int, int, uint16_t *);
 /* Lock, detecting NVM type, validate checksum and read */
 static int	wm_nvm_is_onboard_eeprom(struct wm_softc *);
-static int	wm_nvm_get_flash_presence_i210(struct wm_softc *);
+static int	wm_nvm_flash_presence_i210(struct wm_softc *);
 static int	wm_nvm_validate_checksum(struct wm_softc *);
 static void	wm_nvm_version_invm(struct wm_softc *);
 static void	wm_nvm_version(struct wm_softc *);
@@ -921,6 +941,7 @@ static void	wm_ulp_disable(struct wm_softc *);
 static void	wm_enable_phy_wakeup(struct wm_softc *);
 static void	wm_igp3_phy_powerdown_workaround_ich8lan(struct wm_softc *);
 static void	wm_enable_wakeup(struct wm_softc *);
+static void	wm_disable_aspm(struct wm_softc *);
 /* LPLU (Low Power Link Up) */
 static void	wm_lplu_d0_disable(struct wm_softc *);
 /* EEE */
@@ -1850,16 +1871,25 @@ wm_attach(device_t parent, device_t self, void *aux)
 	}
 
 	wm_adjust_qnum(sc, pci_msix_count(pa->pa_pc, pa->pa_tag));
+	/*
+	 *  Don't use MSI-X if we can use only one queue to save interrupt
+	 * resource.
+	 */
+	if (sc->sc_nqueues > 1) {
+		max_type = PCI_INTR_TYPE_MSIX;
+		/*
+		 *  82583 has a MSI-X capability in the PCI configuration space
+		 * but it doesn't support it. At least the document doesn't
+		 * say anything about MSI-X.
+		 */
+		counts[PCI_INTR_TYPE_MSIX]
+		    = (sc->sc_type == WM_T_82583) ? 0 : sc->sc_nqueues + 1;
+	} else {
+		max_type = PCI_INTR_TYPE_MSI;
+		counts[PCI_INTR_TYPE_MSIX] = 0;
+	}
 
 	/* Allocation settings */
-	max_type = PCI_INTR_TYPE_MSIX;
-	/*
-	 * 82583 has a MSI-X capability in the PCI configuration space but
-	 * it doesn't support it. At least the document doesn't say anything
-	 * about MSI-X.
-	 */
-	counts[PCI_INTR_TYPE_MSIX]
-	    = (sc->sc_type == WM_T_82583) ? 0 : sc->sc_nqueues + 1;
 	counts[PCI_INTR_TYPE_MSI] = 1;
 	counts[PCI_INTR_TYPE_INTX] = 1;
 	/* overridden by disable flags */
@@ -2038,6 +2068,9 @@ alloc_retry:
 		    (sc->sc_flags & WM_F_BUS64) ? 64 : 32, sc->sc_bus_speed,
 		    (sc->sc_flags & WM_F_PCIX) ? "PCIX" : "PCI");
 	}
+
+	/* Disable ASPM L0s and/or L1 for workaround */
+	wm_disable_aspm(sc);
 
 	/* clear interesting stat counters */
 	CSR_READ(sc, WMREG_COLC);
@@ -2223,7 +2256,7 @@ alloc_retry:
 	case WM_T_I211:
 		/* Allow a single clear of the SW semaphore on I210 and newer*/
 		sc->sc_flags |= WM_F_WA_I210_CLSEM;
-		if (wm_nvm_get_flash_presence_i210(sc)) {
+		if (wm_nvm_flash_presence_i210(sc)) {
 			sc->nvm.read = wm_nvm_read_eerd;
 			/* Don't use WM_F_LOCK_EECD because we use EERD */
 			sc->sc_flags |= WM_F_EEPROM_FLASH_HW;
@@ -2320,12 +2353,20 @@ alloc_retry:
 	/* Reset the chip to a known state. */
 	wm_reset(sc);
 
-	/* Check for I21[01] PLL workaround */
-	if (sc->sc_type == WM_T_I210)
+	/*
+	 * Check for I21[01] PLL workaround.
+	 *
+	 * Three cases:
+	 * a) Chip is I211.
+	 * b) Chip is I210 and it uses INVM (not FLASH).
+	 * c) Chip is I210 (and it uses FLASH) and the NVM image version < 3.25
+	 */
+	if (sc->sc_type == WM_T_I211)
 		sc->sc_flags |= WM_F_PLL_WA_I210;
-	if ((sc->sc_type == WM_T_I210) && wm_nvm_get_flash_presence_i210(sc)) {
-		/* NVM image release 3.25 has a workaround */
-		if ((sc->sc_nvm_ver_major < 3)
+	if (sc->sc_type == WM_T_I210) {
+		if (!wm_nvm_flash_presence_i210(sc))
+			sc->sc_flags |= WM_F_PLL_WA_I210;
+		else if ((sc->sc_nvm_ver_major < 3)
 		    || ((sc->sc_nvm_ver_major == 3)
 			&& (sc->sc_nvm_ver_minor < 25))) {
 			aprint_verbose_dev(sc->sc_dev,
@@ -2659,7 +2700,7 @@ alloc_retry:
 		if (wm_is_using_multiqueue(sc))
 			ifp->if_transmit = wm_transmit;
 	}
-	ifp->if_watchdog = wm_watchdog;
+	/* wm(4) doest not use ifp->if_watchdog, use wm_tick as watchdog. */
 	ifp->if_init = wm_init;
 	ifp->if_stop = wm_stop;
 	IFQ_SET_MAXLEN(&ifp->if_snd, max(WM_IFQUEUELEN, IFQ_MAXLEN));
@@ -2749,6 +2790,8 @@ alloc_retry:
 		ifp->if_capabilities |= IFCAP_TSOv6;
 	}
 
+	sc->sc_tx_process_limit = WM_TX_PROCESS_LIMIT_DEFAULT;
+	sc->sc_tx_intr_process_limit = WM_TX_INTR_PROCESS_LIMIT_DEFAULT;
 	sc->sc_rx_process_limit = WM_RX_PROCESS_LIMIT_DEFAULT;
 	sc->sc_rx_intr_process_limit = WM_RX_INTR_PROCESS_LIMIT_DEFAULT;
 
@@ -2902,6 +2945,8 @@ wm_resume(device_t self, const pmf_qual_t *qual)
 {
 	struct wm_softc *sc = device_private(self);
 
+	/* Disable ASPM L0s and/or L1 for workaround */
+	wm_disable_aspm(sc);
 	wm_init_manageability(sc);
 
 	return true;
@@ -2917,36 +2962,57 @@ wm_watchdog(struct ifnet *ifp)
 {
 	int qid;
 	struct wm_softc *sc = ifp->if_softc;
+	uint16_t hang_queue = 0; /* Max queue number of wm(4) is 82576's 16. */
 
 	for (qid = 0; qid < sc->sc_nqueues; qid++) {
 		struct wm_txqueue *txq = &sc->sc_queue[qid].wmq_txq;
 
-		wm_watchdog_txq(ifp, txq);
+		wm_watchdog_txq(ifp, txq, &hang_queue);
 	}
 
-	/* Reset the interface. */
-	(void) wm_init(ifp);
-
 	/*
-	 * There are still some upper layer processing which call
-	 * ifp->if_start(). e.g. ALTQ or one CPU system
+	 * IF any of queues hanged up, reset the interface.
 	 */
-	/* Try to get more packets going. */
-	ifp->if_start(ifp);
+	if (hang_queue != 0) {
+		(void) wm_init(ifp);
+
+		/*
+		 * There are still some upper layer processing which call
+		 * ifp->if_start(). e.g. ALTQ or one CPU system
+		 */
+		/* Try to get more packets going. */
+		ifp->if_start(ifp);
+	}
+}
+
+
+static void
+wm_watchdog_txq(struct ifnet *ifp, struct wm_txqueue *txq, uint16_t *hang)
+{
+
+	mutex_enter(txq->txq_lock);
+	if (txq->txq_watchdog &&
+	    time_uptime - txq->txq_lastsent > wm_watchdog_timeout) {
+		wm_watchdog_txq_locked(ifp, txq, hang);
+	}
+	mutex_exit(txq->txq_lock);
 }
 
 static void
-wm_watchdog_txq(struct ifnet *ifp, struct wm_txqueue *txq)
+wm_watchdog_txq_locked(struct ifnet *ifp, struct wm_txqueue *txq, uint16_t *hang)
 {
 	struct wm_softc *sc = ifp->if_softc;
+	struct wm_queue *wmq = container_of(txq, struct wm_queue, wmq_txq);
+
+	KASSERT(mutex_owned(txq->txq_lock));
 
 	/*
 	 * Since we're using delayed interrupts, sweep up
 	 * before we report an error.
 	 */
-	mutex_enter(txq->txq_lock);
-	wm_txeof(sc, txq);
-	mutex_exit(txq->txq_lock);
+	wm_txeof(txq, UINT_MAX);
+	if (txq->txq_watchdog)
+		*hang |= __BIT(wmq->wmq_id);
 
 	if (txq->txq_free != WM_NTXDESC(txq)) {
 #ifdef WM_DEBUG
@@ -2966,11 +3032,22 @@ wm_watchdog_txq(struct ifnet *ifp, struct wm_txqueue *txq)
 			i, txs->txs_firstdesc, txs->txs_lastdesc);
 		    for (j = txs->txs_firstdesc; ;
 			j = WM_NEXTTX(txq, j)) {
-			printf("\tdesc %d: 0x%" PRIx64 "\n", j,
-			    txq->txq_nq_descs[j].nqtx_data.nqtxd_addr);
-			printf("\t %#08x%08x\n",
-			    txq->txq_nq_descs[j].nqtx_data.nqtxd_fields,
-			    txq->txq_nq_descs[j].nqtx_data.nqtxd_cmdlen);
+			    if ((sc->sc_flags & WM_F_NEWQUEUE) != 0) {
+				    printf("\tdesc %d: 0x%" PRIx64 "\n", j,
+					txq->txq_nq_descs[j].nqtx_data.nqtxd_addr);
+				    printf("\t %#08x%08x\n",
+					txq->txq_nq_descs[j].nqtx_data.nqtxd_fields,
+					txq->txq_nq_descs[j].nqtx_data.nqtxd_cmdlen);
+			    } else {
+				    printf("\tdesc %d: 0x%" PRIx64 "\n", j,
+					(uint64_t)txq->txq_descs[j].wtx_addr.wa_high << 32 |
+					txq->txq_descs[j].wtx_addr.wa_low);
+				    printf("\t %#04x%02x%02x%08x\n",
+					txq->txq_descs[j].wtx_fields.wtxu_vlan,
+					txq->txq_descs[j].wtx_fields.wtxu_options,
+					txq->txq_descs[j].wtx_fields.wtxu_status,
+					txq->txq_descs[j].wtx_cmdlen);
+			    }
 			if (j == txs->txs_lastdesc)
 				break;
 			}
@@ -2996,8 +3073,13 @@ wm_tick(void *arg)
 
 	WM_CORE_LOCK(sc);
 
-	if (sc->sc_core_stopping)
-		goto out;
+	if (sc->sc_core_stopping) {
+		WM_CORE_UNLOCK(sc);
+#ifndef WM_MPSAFE
+		splx(s);
+#endif
+		return;
+	}
 
 	if (sc->sc_type >= WM_T_82542_2_1) {
 		WM_EVCNT_ADD(&sc->sc_ev_rx_xon, CSR_READ(sc, WMREG_XONRXC));
@@ -3035,12 +3117,11 @@ wm_tick(void *arg)
 	else
 		wm_tbi_tick(sc);
 
-	callout_reset(&sc->sc_tick_ch, hz, wm_tick, sc);
-out:
 	WM_CORE_UNLOCK(sc);
-#ifndef WM_MPSAFE
-	splx(s);
-#endif
+
+	wm_watchdog(ifp);
+
+	callout_reset(&sc->sc_tick_ch, hz, wm_tick, sc);
 }
 
 static int
@@ -4184,6 +4265,10 @@ wm_reset_phy(struct wm_softc *sc)
 	wm_phy_post_reset(sc);
 }
 
+/*
+ * Only used by WM_T_PCH_SPT which does not use multiqueue,
+ * so it is enough to check sc->sc_queue[0] only.
+ */
 static void
 wm_flush_desc_rings(struct wm_softc *sc)
 {
@@ -4762,43 +4847,6 @@ wm_rxdrain(struct wm_rxqueue *rxq)
 	}
 }
 
-
-/*
- * XXX copy from FreeBSD's sys/net/rss_config.c
- */
-/*
- * RSS secret key, intended to prevent attacks on load-balancing.  Its
- * effectiveness may be limited by algorithm choice and available entropy
- * during the boot.
- *
- * XXXRW: And that we don't randomize it yet!
- *
- * This is the default Microsoft RSS specification key which is also
- * the Chelsio T5 firmware default key.
- */
-#define RSS_KEYSIZE 40
-static uint8_t wm_rss_key[RSS_KEYSIZE] = {
-	0x6d, 0x5a, 0x56, 0xda, 0x25, 0x5b, 0x0e, 0xc2,
-	0x41, 0x67, 0x25, 0x3d, 0x43, 0xa3, 0x8f, 0xb0,
-	0xd0, 0xca, 0x2b, 0xcb, 0xae, 0x7b, 0x30, 0xb4,
-	0x77, 0xcb, 0x2d, 0xa3, 0x80, 0x30, 0xf2, 0x0c,
-	0x6a, 0x42, 0xb7, 0x3b, 0xbe, 0xac, 0x01, 0xfa,
-};
-
-/*
- * Caller must pass an array of size sizeof(rss_key).
- *
- * XXX
- * As if_ixgbe may use this function, this function should not be
- * if_wm specific function.
- */
-static void
-wm_rss_getkey(uint8_t *key)
-{
-
-	memcpy(key, wm_rss_key, sizeof(wm_rss_key));
-}
-
 /*
  * Setup registers for RSS.
  *
@@ -4810,7 +4858,7 @@ wm_init_rss(struct wm_softc *sc)
 	uint32_t mrqc, reta_reg, rss_key[RSSRK_NUM_REGS];
 	int i;
 
-	CTASSERT(sizeof(rss_key) == sizeof(wm_rss_key));
+	CTASSERT(sizeof(rss_key) == RSS_KEYSIZE);
 
 	for (i = 0; i < RETA_NUM_ENTRIES; i++) {
 		int qid, reta_ent;
@@ -4836,7 +4884,7 @@ wm_init_rss(struct wm_softc *sc)
 		CSR_WRITE(sc, WMREG_RETA_Q(i), reta_reg);
 	}
 
-	wm_rss_getkey((uint8_t *)rss_key);
+	rss_getkey((uint8_t *)rss_key);
 	for (i = 0; i < RSSRK_NUM_REGS; i++)
 		CSR_WRITE(sc, WMREG_RSSRK(i), rss_key[i]);
 
@@ -5814,6 +5862,14 @@ wm_init_locked(struct ifnet *ifp)
 		break;
 	}
 
+	/*
+	 * Set the receive filter.
+	 *
+	 * For 82575 and 82576, the RX descriptors must be initialized after
+	 * the setting of RCTL.EN in wm_set_filter()
+	 */
+	wm_set_filter(sc);
+
 	/* On 575 and later set RDT only if RX enabled */
 	if ((sc->sc_flags & WM_F_NEWQUEUE) != 0) {
 		int qidx;
@@ -5827,9 +5883,6 @@ wm_init_locked(struct ifnet *ifp)
 			}
 		}
 	}
-
-	/* Set the receive filter. */
-	wm_set_filter(sc);
 
 	wm_unset_stopping_flags(sc);
 
@@ -5919,6 +5972,7 @@ wm_stop_locked(struct ifnet *ifp, int disable)
 		struct wm_queue *wmq = &sc->sc_queue[qidx];
 		struct wm_txqueue *txq = &wmq->wmq_txq;
 		mutex_enter(txq->txq_lock);
+		txq->txq_watchdog = false; /* ensure watchdog disabled */
 		for (i = 0; i < WM_TXQUEUELEN(txq); i++) {
 			txs = &txq->txq_soft[i];
 			if (txs->txs_mbuf != NULL) {
@@ -5932,7 +5986,6 @@ wm_stop_locked(struct ifnet *ifp, int disable)
 
 	/* Mark the interface as down and cancel the watchdog timer. */
 	ifp->if_flags &= ~(IFF_RUNNING | IFF_OACTIVE);
-	ifp->if_timer = 0;
 
 	if (disable) {
 		for (i = 0; i < sc->sc_nqueues; i++) {
@@ -6411,6 +6464,7 @@ wm_alloc_txrx_queues(struct wm_softc *sc)
 		xname = device_xname(sc->sc_dev);
 
 		WM_Q_INTR_EVCNT_ATTACH(rxq, rxintr, rxq, i, xname);
+		WM_Q_INTR_EVCNT_ATTACH(rxq, rxdefer, rxq, i, xname);
 
 		WM_Q_INTR_EVCNT_ATTACH(rxq, rxipsum, rxq, i, xname);
 		WM_Q_INTR_EVCNT_ATTACH(rxq, rxtusum, rxq, i, xname);
@@ -6461,6 +6515,7 @@ wm_free_txrx_queues(struct wm_softc *sc)
 
 #ifdef WM_EVENT_COUNTERS
 		WM_Q_EVCNT_DETACH(rxq, rxintr, rxq, i);
+		WM_Q_EVCNT_DETACH(rxq, rxdefer, rxq, i);
 		WM_Q_EVCNT_DETACH(rxq, rxipsum, rxq, i);
 		WM_Q_EVCNT_DETACH(rxq, rxtusum, rxq, i);
 #endif /* WM_EVENT_COUNTERS */
@@ -6605,6 +6660,8 @@ wm_init_tx_queue(struct wm_softc *sc, struct wm_queue *wmq,
 	wm_init_tx_descs(sc, txq);
 	wm_init_tx_regs(sc, wmq, txq);
 	wm_init_tx_buffer(sc, txq);
+
+	txq->txq_watchdog = false;
 }
 
 static void
@@ -6688,13 +6745,13 @@ wm_init_rx_buffer(struct wm_softc *sc, struct wm_rxqueue *rxq)
 				return ENOMEM;
 			}
 		} else {
-			if ((sc->sc_flags & WM_F_NEWQUEUE) == 0)
-				wm_init_rxdesc(rxq, i);
 			/*
-			 * For 82575 and newer device, the RX descriptors
-			 * must be initialized after the setting of RCTL.EN in
+			 * For 82575 and 82576, the RX descriptors must be
+			 * initialized after the setting of RCTL.EN in
 			 * wm_set_filter()
 			 */
+			if ((sc->sc_flags & WM_F_NEWQUEUE) == 0)
+				wm_init_rxdesc(rxq, i);
 		}
 	}
 	rxq->rxq_ptr = 0;
@@ -7092,7 +7149,7 @@ wm_send_common_locked(struct ifnet *ifp, struct wm_txqueue *txq,
 
 		/* Get a work queue entry. */
 		if (txq->txq_sfree < WM_TXQUEUE_GC(txq)) {
-			wm_txeof(sc, txq);
+			wm_txeof(txq, UINT_MAX);
 			if (txq->txq_sfree == 0) {
 				DPRINTF(WM_DEBUG_TX,
 				    ("%s: TX: no free job descriptors\n",
@@ -7368,7 +7425,8 @@ wm_send_common_locked(struct ifnet *ifp, struct wm_txqueue *txq,
 
 	if (txq->txq_free != ofree) {
 		/* Set a watchdog timer in case the chip flakes out. */
-		ifp->if_timer = 5;
+		txq->txq_lastsent = time_uptime;
+		txq->txq_watchdog = true;
 	}
 }
 
@@ -7691,7 +7749,7 @@ wm_nq_send_common_locked(struct ifnet *ifp, struct wm_txqueue *txq,
 
 		/* Get a work queue entry. */
 		if (txq->txq_sfree < WM_TXQUEUE_GC(txq)) {
-			wm_txeof(sc, txq);
+			wm_txeof(txq, UINT_MAX);
 			if (txq->txq_sfree == 0) {
 				DPRINTF(WM_DEBUG_TX,
 				    ("%s: TX: no free job descriptors\n",
@@ -7856,7 +7914,7 @@ wm_nq_send_common_locked(struct ifnet *ifp, struct wm_txqueue *txq,
 		lasttx = nexttx;
 		nexttx = WM_NEXTTX(txq, nexttx);
 		/*
-		 * fill in the next descriptors. legacy or adcanced format
+		 * fill in the next descriptors. legacy or advanced format
 		 * is the same here
 		 */
 		for (seg = 1; seg < dmamap->dm_nsegs;
@@ -7940,7 +7998,8 @@ wm_nq_send_common_locked(struct ifnet *ifp, struct wm_txqueue *txq,
 
 	if (sent) {
 		/* Set a watchdog timer in case the chip flakes out. */
-		ifp->if_timer = 5;
+		txq->txq_lastsent = time_uptime;
+		txq->txq_watchdog = true;
 	}
 }
 
@@ -7979,21 +8038,22 @@ wm_deferred_start_locked(struct wm_txqueue *txq)
  *
  *	Helper; handle transmit interrupts.
  */
-static int
-wm_txeof(struct wm_softc *sc, struct wm_txqueue *txq)
+static bool
+wm_txeof(struct wm_txqueue *txq, u_int limit)
 {
+	struct wm_softc *sc = txq->txq_sc;
 	struct ifnet *ifp = &sc->sc_ethercom.ec_if;
 	struct wm_txsoft *txs;
-	bool processed = false;
 	int count = 0;
 	int i;
 	uint8_t status;
 	struct wm_queue *wmq = container_of(txq, struct wm_queue, wmq_txq);
+	bool more = false;
 
 	KASSERT(mutex_owned(txq->txq_lock));
 
 	if (txq->txq_stopping)
-		return 0;
+		return false;
 
 	txq->txq_flags &= ~WM_TXQ_NO_SPACE;
 	/* for ALTQ and legacy(not use multiqueue) ethernet controller */
@@ -8006,6 +8066,14 @@ wm_txeof(struct wm_softc *sc, struct wm_txqueue *txq)
 	 */
 	for (i = txq->txq_sdirty; txq->txq_sfree != WM_TXQUEUELEN(txq);
 	     i = WM_NEXTTXS(txq, i), txq->txq_sfree++) {
+		if (limit-- == 0) {
+			more = true;
+			DPRINTF(WM_DEBUG_TX,
+			    ("%s: TX: loop limited, job %d is not processed\n",
+				device_xname(sc->sc_dev), i));
+			break;
+		}
+
 		txs = &txq->txq_soft[i];
 
 		DPRINTF(WM_DEBUG_TX, ("%s: TX: checking job %d\n",
@@ -8022,7 +8090,6 @@ wm_txeof(struct wm_softc *sc, struct wm_txqueue *txq)
 			break;
 		}
 
-		processed = true;
 		count++;
 		DPRINTF(WM_DEBUG_TX,
 		    ("%s: TX: job %d done: descs %d..%d\n",
@@ -8077,9 +8144,9 @@ wm_txeof(struct wm_softc *sc, struct wm_txqueue *txq)
 	 * timer.
 	 */
 	if (txq->txq_sfree == WM_TXQUEUELEN(txq))
-		ifp->if_timer = 0;
+		txq->txq_watchdog = false;
 
-	return processed;
+	return more;
 }
 
 static inline uint32_t
@@ -8292,7 +8359,7 @@ wm_rxdesc_ensure_checksum(struct wm_rxqueue *rxq, uint32_t status,
  *
  *	Helper; handle receive interrupts.
  */
-static void
+static bool
 wm_rxeof(struct wm_rxqueue *rxq, u_int limit)
 {
 	struct wm_softc *sc = rxq->rxq_sc;
@@ -8303,12 +8370,17 @@ wm_rxeof(struct wm_rxqueue *rxq, u_int limit)
 	int count = 0;
 	uint32_t status, errors;
 	uint16_t vlantag;
+	bool more = false;
 
 	KASSERT(mutex_owned(rxq->rxq_lock));
 
 	for (i = rxq->rxq_ptr;; i = WM_NEXTRX(i)) {
 		if (limit-- == 0) {
 			rxq->rxq_ptr = i;
+			more = true;
+			DPRINTF(WM_DEBUG_RX,
+			    ("%s: RX: loop limited, descriptor %d is not processed\n",
+				device_xname(sc->sc_dev), i));
 			break;
 		}
 
@@ -8482,6 +8554,8 @@ wm_rxeof(struct wm_rxqueue *rxq, u_int limit)
 
 	DPRINTF(WM_DEBUG_RX,
 	    ("%s: RX: rxptr -> %d\n", device_xname(sc->sc_dev), i));
+
+	return more;
 }
 
 /*
@@ -8842,7 +8916,7 @@ wm_intr_legacy(void *arg)
 			WM_Q_EVCNT_INCR(txq, txdw);
 		}
 #endif
-		wm_txeof(sc, txq);
+		wm_txeof(txq, UINT_MAX);
 
 		mutex_exit(txq->txq_lock);
 		WM_CORE_LOCK(sc);
@@ -8897,8 +8971,14 @@ wm_txrxintr_enable(struct wm_queue *wmq)
 
 	wm_itrs_calculate(sc, wmq);
 
+	/*
+	 * ICR_OTHER which is disabled in wm_linkintr_msix() is enabled here.
+	 * There is no need to care about which of RXQ(0) and RXQ(1) enable
+	 * ICR_OTHER in first, because each RXQ/TXQ interrupt is disabled
+	 * while each wm_handle_queue(wmq) is runnig.
+	 */
 	if (sc->sc_type == WM_T_82574)
-		CSR_WRITE(sc, WMREG_IMS, ICR_TXQ(wmq->wmq_id) | ICR_RXQ(wmq->wmq_id));
+		CSR_WRITE(sc, WMREG_IMS, ICR_TXQ(wmq->wmq_id) | ICR_RXQ(wmq->wmq_id) | ICR_OTHER);
 	else if (sc->sc_type == WM_T_82575)
 		CSR_WRITE(sc, WMREG_EIMS, EITR_TX_QUEUE(wmq->wmq_id) | EITR_RX_QUEUE(wmq->wmq_id));
 	else
@@ -8912,7 +8992,10 @@ wm_txrxintr_msix(void *arg)
 	struct wm_txqueue *txq = &wmq->wmq_txq;
 	struct wm_rxqueue *rxq = &wmq->wmq_rxq;
 	struct wm_softc *sc = txq->txq_sc;
-	u_int limit = sc->sc_rx_intr_process_limit;
+	u_int txlimit = sc->sc_tx_intr_process_limit;
+	u_int rxlimit = sc->sc_rx_intr_process_limit;
+	bool txmore;
+	bool rxmore;
 
 	KASSERT(wmq->wmq_intr_idx == wmq->wmq_id);
 
@@ -8929,7 +9012,7 @@ wm_txrxintr_msix(void *arg)
 	}
 
 	WM_Q_EVCNT_INCR(txq, txdw);
-	wm_txeof(sc, txq);
+	txmore = wm_txeof(txq, txlimit);
 	/* wm_deferred start() is done in wm_handle_queue(). */
 	mutex_exit(txq->txq_lock);
 
@@ -8943,12 +9026,15 @@ wm_txrxintr_msix(void *arg)
 	}
 
 	WM_Q_EVCNT_INCR(rxq, rxintr);
-	wm_rxeof(rxq, limit);
+	rxmore = wm_rxeof(rxq, rxlimit);
 	mutex_exit(rxq->rxq_lock);
 
 	wm_itrs_writereg(sc, wmq);
 
-	softint_schedule(wmq->wmq_si);
+	if (txmore || rxmore)
+		softint_schedule(wmq->wmq_si);
+	else
+		wm_txrxintr_enable(wmq);
 
 	return 1;
 }
@@ -8960,14 +9046,17 @@ wm_handle_queue(void *arg)
 	struct wm_txqueue *txq = &wmq->wmq_txq;
 	struct wm_rxqueue *rxq = &wmq->wmq_rxq;
 	struct wm_softc *sc = txq->txq_sc;
-	u_int limit = sc->sc_rx_process_limit;
+	u_int txlimit = sc->sc_tx_process_limit;
+	u_int rxlimit = sc->sc_rx_process_limit;
+	bool txmore;
+	bool rxmore;
 
 	mutex_enter(txq->txq_lock);
 	if (txq->txq_stopping) {
 		mutex_exit(txq->txq_lock);
 		return;
 	}
-	wm_txeof(sc, txq);
+	txmore = wm_txeof(txq, txlimit);
 	wm_deferred_start_locked(txq);
 	mutex_exit(txq->txq_lock);
 
@@ -8976,11 +9065,14 @@ wm_handle_queue(void *arg)
 		mutex_exit(rxq->rxq_lock);
 		return;
 	}
-	WM_Q_EVCNT_INCR(rxq, rxintr);
-	wm_rxeof(rxq, limit);
+	WM_Q_EVCNT_INCR(rxq, rxdefer);
+	rxmore = wm_rxeof(rxq, rxlimit);
 	mutex_exit(rxq->rxq_lock);
 
-	wm_txrxintr_enable(wmq);
+	if (txmore || rxmore)
+		softint_schedule(wmq->wmq_si);
+	else
+		wm_txrxintr_enable(wmq);
 }
 
 /*
@@ -8993,24 +9085,59 @@ wm_linkintr_msix(void *arg)
 {
 	struct wm_softc *sc = arg;
 	uint32_t reg;
+	bool has_rxo;
 
 	DPRINTF(WM_DEBUG_LINK,
 	    ("%s: LINK: got link intr\n", device_xname(sc->sc_dev)));
 
 	reg = CSR_READ(sc, WMREG_ICR);
 	WM_CORE_LOCK(sc);
-	if ((sc->sc_core_stopping) || ((reg & ICR_LSC) == 0))
+	if (sc->sc_core_stopping)
 		goto out;
 
-	WM_EVCNT_INCR(&sc->sc_ev_linkintr);
-	wm_linkintr(sc, ICR_LSC);
+	if((reg & ICR_LSC) != 0) {
+		WM_EVCNT_INCR(&sc->sc_ev_linkintr);
+		wm_linkintr(sc, ICR_LSC);
+	}
+
+	/*
+	 * XXX 82574 MSI-X mode workaround
+	 *
+	 * 82574 MSI-X mode causes receive overrun(RXO) interrupt as ICR_OTHER
+	 * MSI-X vector, furthermore it does not cause neigher ICR_RXQ(0) nor
+	 * ICR_RXQ(1) vector. So, we generate ICR_RXQ(0) and ICR_RXQ(1)
+	 * interrupts by writing WMREG_ICS to process receive packets.
+	 */
+	if (sc->sc_type == WM_T_82574 && ((reg & ICR_RXO) != 0)) {
+#if defined(WM_DEBUG)
+		log(LOG_WARNING, "%s: Receive overrun\n",
+		    device_xname(sc->sc_dev));
+#endif /* defined(WM_DEBUG) */
+
+		has_rxo = true;
+		/*
+		 * The RXO interrupt is very high rate when receive traffic is
+		 * high rate. We use polling mode for ICR_OTHER like Tx/Rx
+		 * interrupts. ICR_OTHER will be enabled at the end of
+		 * wm_txrxintr_msix() which is kicked by both ICR_RXQ(0) and
+		 * ICR_RXQ(1) interrupts.
+		 */
+		CSR_WRITE(sc, WMREG_IMC, ICR_OTHER);
+
+		CSR_WRITE(sc, WMREG_ICS, ICR_RXQ(0) | ICR_RXQ(1));
+	}
+
+
 
 out:
 	WM_CORE_UNLOCK(sc);
 	
-	if (sc->sc_type == WM_T_82574)
-		CSR_WRITE(sc, WMREG_IMS, ICR_OTHER | ICR_LSC);
-	else if (sc->sc_type == WM_T_82575)
+	if (sc->sc_type == WM_T_82574) {
+		if (!has_rxo)
+			CSR_WRITE(sc, WMREG_IMS, ICR_OTHER | ICR_LSC);
+		else
+			CSR_WRITE(sc, WMREG_IMS, ICR_LSC);
+	} else if (sc->sc_type == WM_T_82575)
 		CSR_WRITE(sc, WMREG_EIMS, EITR_OTHER);
 	else
 		CSR_WRITE(sc, WMREG_EIMS, 1 << sc->sc_link_intr_idx);
@@ -12366,7 +12493,7 @@ wm_nvm_is_onboard_eeprom(struct wm_softc *sc)
 }
 
 static int
-wm_nvm_get_flash_presence_i210(struct wm_softc *sc)
+wm_nvm_flash_presence_i210(struct wm_softc *sc)
 {
 	uint32_t eec;
 
@@ -12522,7 +12649,7 @@ wm_nvm_version(struct wm_softc *sc)
 	case WM_T_82575:
 	case WM_T_82576:
 	case WM_T_82580:
-		if ((uid1 & NVM_MAJOR_MASK) != NVM_UID_VALID)
+		if (have_uid && (uid1 & NVM_MAJOR_MASK) != NVM_UID_VALID)
 			check_version = true;
 		break;
 	case WM_T_I211:
@@ -12530,7 +12657,7 @@ wm_nvm_version(struct wm_softc *sc)
 		have_uid = false;
 		goto printver;
 	case WM_T_I210:
-		if (!wm_nvm_get_flash_presence_i210(sc)) {
+		if (!wm_nvm_flash_presence_i210(sc)) {
 			wm_nvm_version_invm(sc);
 			have_uid = false;
 			goto printver;
@@ -13792,6 +13919,66 @@ wm_enable_wakeup(struct wm_softc *sc)
 	pci_conf_write(sc->sc_pc, sc->sc_pcitag, pmreg + PCI_PMCSR, pmode);
 }
 
+/* Disable ASPM L0s and/or L1 for workaround */
+static void
+wm_disable_aspm(struct wm_softc *sc)
+{
+	pcireg_t reg, mask = 0;
+	unsigned const char *str = "";
+
+	/*
+	 *  Only for PCIe device which has PCIe capability in the PCI config
+	 * space.
+	 */
+	if (((sc->sc_flags & WM_F_PCIE) == 0) || (sc->sc_pcixe_capoff == 0))
+		return;
+
+	switch (sc->sc_type) {
+	case WM_T_82571:
+	case WM_T_82572:
+		/*
+		 * 8257[12] Errata 13: Device Does Not Support PCIe Active
+		 * State Power management L1 State (ASPM L1).
+		 */
+		mask = PCIE_LCSR_ASPM_L1;
+		str = "L1 is";
+		break;
+	case WM_T_82573:
+	case WM_T_82574:
+	case WM_T_82583:
+		/*
+		 * The 82573 disappears when PCIe ASPM L0s is enabled.
+		 *
+		 * The 82574 and 82583 does not support PCIe ASPM L0s with
+		 * some chipset.  The document of 82574 and 82583 says that
+		 * disabling L0s with some specific chipset is sufficient,
+		 * but we follow as of the Intel em driver does.
+		 *
+		 * References:
+		 * Errata 8 of the Specification Update of i82573.
+		 * Errata 20 of the Specification Update of i82574.
+		 * Errata 9 of the Specification Update of i82583.
+		 */
+		mask = PCIE_LCSR_ASPM_L1 | PCIE_LCSR_ASPM_L0S;
+		str = "L0s and L1 are";
+		break;
+	default:
+		return;
+	}
+
+	reg = pci_conf_read(sc->sc_pc, sc->sc_pcitag,
+	    sc->sc_pcixe_capoff + PCIE_LCSR);
+	reg &= ~mask;
+	pci_conf_write(sc->sc_pc, sc->sc_pcitag,
+	    sc->sc_pcixe_capoff + PCIE_LCSR, reg);
+
+	/* Print only in wm_attach() */
+	if ((sc->sc_flags & WM_F_ATTACHED) == 0)
+		aprint_verbose_dev(sc->sc_dev,
+		    "ASPM %s disabled to workaround the errata.\n",
+			str);
+}
+
 /* LPLU */
 
 static void
@@ -14122,6 +14309,8 @@ wm_reset_mdicnfg_82580(struct wm_softc *sc)
 	uint16_t nvmword;
 	int rv;
 
+	if (sc->sc_type != WM_T_82580)
+		return;
 	if ((sc->sc_flags & WM_F_SGMII) == 0)
 		return;
 

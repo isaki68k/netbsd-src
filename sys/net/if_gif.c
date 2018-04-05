@@ -1,4 +1,4 @@
-/*	$NetBSD: if_gif.c,v 1.134 2017/11/27 05:05:50 knakahara Exp $	*/
+/*	$NetBSD: if_gif.c,v 1.139 2018/02/12 15:38:14 maxv Exp $	*/
 /*	$KAME: if_gif.c,v 1.76 2001/08/20 02:01:02 kjc Exp $	*/
 
 /*
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_gif.c,v 1.134 2017/11/27 05:05:50 knakahara Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_gif.c,v 1.139 2018/02/12 15:38:14 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -382,11 +382,8 @@ gif_encapcheck(struct mbuf *m, int off, int proto, void *arg)
 		return 0;
 
 	var = gif_getref_variant(sc, &psref);
-	if (var->gv_psrc == NULL || var->gv_pdst == NULL)
-		goto out;
-
 	/* no physical address */
-	if (!var->gv_psrc || !var->gv_pdst)
+	if (var->gv_psrc == NULL || var->gv_pdst == NULL)
 		goto out;
 
 	switch (proto) {
@@ -445,34 +442,8 @@ out:
 static int
 gif_check_nesting(struct ifnet *ifp, struct mbuf *m)
 {
-	struct m_tag *mtag;
-	int *count;
 
-	mtag = m_tag_find(m, PACKET_TAG_TUNNEL_INFO, NULL);
-	if (mtag != NULL) {
-		count = (int *)(mtag + 1);
-		if (++(*count) > max_gif_nesting) {
-			log(LOG_NOTICE,
-			    "%s: recursively called too many times(%d)\n",
-			    if_name(ifp),
-			    *count);
-			return EIO;
-		}
-	} else {
-		mtag = m_tag_get(PACKET_TAG_TUNNEL_INFO, sizeof(*count),
-		    M_NOWAIT);
-		if (mtag != NULL) {
-			m_tag_prepend(m, mtag);
-			count = (int *)(mtag + 1);
-			*count = 0;
-		} else {
-			log(LOG_DEBUG,
-			    "%s: m_tag_get() failed, recursion calls are not prevented.\n",
-			    if_name(ifp));
-		}
-	}
-
-	return 0;
+	return if_tunnel_check_nesting(ifp, m, max_gif_nesting);
 }
 
 static int
@@ -487,7 +458,7 @@ gif_output(struct ifnet *ifp, struct mbuf *m, const struct sockaddr *dst,
 	IFQ_CLASSIFY(&ifp->if_snd, m, dst->sa_family);
 
 	if ((error = gif_check_nesting(ifp, m)) != 0) {
-		m_free(m);
+		m_freem(m);
 		goto end;
 	}
 
@@ -1155,6 +1126,9 @@ gif_delete_tunnel(struct ifnet *ifp)
 		mutex_exit(&sc->gif_lock);
 		encap_lock_exit();
 		kmem_free(nvar, sizeof(*nvar));
+#ifndef GIF_MPSAFE
+		splx(s);
+#endif
 		return;
 	}
 
@@ -1213,4 +1187,4 @@ gif_update_variant(struct gif_softc *sc, struct gif_variant *nvar)
  */
 #include "if_module.h"
 
-IF_MODULE(MODULE_CLASS_DRIVER, gif, "")
+IF_MODULE(MODULE_CLASS_DRIVER, gif, "ip_ecn")

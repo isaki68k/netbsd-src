@@ -1,4 +1,4 @@
-/*	$NetBSD: xhci.c,v 1.77 2017/11/17 08:22:02 skrll Exp $	*/
+/*	$NetBSD: xhci.c,v 1.86 2018/02/07 15:55:58 prlw1 Exp $	*/
 
 /*
  * Copyright (c) 2013 Jonathan A. Kollasch
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xhci.c,v 1.77 2017/11/17 08:22:02 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xhci.c,v 1.86 2018/02/07 15:55:58 prlw1 Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -73,6 +73,11 @@ __KERNEL_RCSID(0, "$NetBSD: xhci.c,v 1.77 2017/11/17 08:22:02 skrll Exp $");
 #ifndef XHCI_DEBUG
 #define xhcidebug 0
 #else /* !XHCI_DEBUG */
+#define HEXDUMP(a, b, c) \
+    do { \
+	    if (xhcidebug > 0) \
+		    hexdump(printf, a, b, c); \
+    } while (/*CONSTCOND*/0)
 static int xhcidebug = 0;
 
 SYSCTL_SETUP(sysctl_hw_xhci_setup, "sysctl hw.xhci setup")
@@ -104,6 +109,10 @@ fail:
 
 #endif /* !XHCI_DEBUG */
 #endif /* USB_DEBUG */
+
+#ifndef HEXDUMP
+#define HEXDUMP(a, b, c)
+#endif
 
 #define DPRINTFN(N,FMT,A,B,C,D) USBHIST_LOGN(xhcidebug,N,FMT,A,B,C,D)
 #define XHCIHIST_FUNC() USBHIST_FUNC()
@@ -568,8 +577,10 @@ xhci_childdet(device_t self, device_t child)
 {
 	struct xhci_softc * const sc = device_private(self);
 
-	KASSERT(sc->sc_child == child);
-	if (child == sc->sc_child)
+	KASSERT((sc->sc_child == child) || (sc->sc_child2 == child));
+	if (child == sc->sc_child2)
+		sc->sc_child2 = NULL;
+	else if (child == sc->sc_child)
 		sc->sc_child = NULL;
 }
 
@@ -614,7 +625,7 @@ xhci_detach(struct xhci_softc *sc, int flags)
 
 	kmem_free(sc->sc_slots, sizeof(*sc->sc_slots) * sc->sc_maxslots);
 
-	kmem_free(sc->sc_ctlrportbus, 
+	kmem_free(sc->sc_ctlrportbus,
 	    howmany(sc->sc_maxports * sizeof(uint8_t), NBBY));
 	kmem_free(sc->sc_ctlrportmap, sc->sc_maxports * sizeof(int));
 
@@ -719,35 +730,6 @@ xhci_hc_reset(struct xhci_softc * const sc)
 	return 0;
 }
 
-
-static void
-hexdump(const char *msg, const void *base, size_t len)
-{
-#if 0
-	size_t cnt;
-	const uint32_t *p;
-	extern paddr_t vtophys(vaddr_t);
-
-	p = base;
-	cnt = 0;
-
-	printf("*** %s (%zu bytes @ %p %p)\n", msg, len, base,
-	    (void *)vtophys((vaddr_t)base));
-
-	while (cnt < len) {
-		if (cnt % 16 == 0)
-			printf("%p: ", p);
-		else if (cnt % 8 == 0)
-			printf(" |");
-		printf(" %08x", *p++);
-		cnt += 4;
-		if (cnt % 16 == 0)
-			printf("\n");
-	}
-	if (cnt % 16 != 0)
-		printf("\n");
-#endif
-}
 
 /* 7.2 xHCI Support Protocol Capability */
 static void
@@ -1184,10 +1166,8 @@ xhci_init(struct xhci_softc *sc)
 	xhci_op_write_8(sc, XHCI_CRCR, xhci_ring_trbp(&sc->sc_cr, 0) |
 	    sc->sc_cr.xr_cs);
 
-#if 0
-	hexdump("eventst", KERNADDR(&sc->sc_eventst_dma, 0),
+	HEXDUMP("eventst", KERNADDR(&sc->sc_eventst_dma, 0),
 	    XHCI_ERSTE_SIZE * XHCI_EVENT_RING_SEGMENTS);
-#endif
 
 	if ((sc->sc_quirks & XHCI_DEFERRED_START) == 0)
 		xhci_start(sc);
@@ -1363,7 +1343,9 @@ xhci_configure_endpoint(struct usbd_pipe *pipe)
 {
 	struct xhci_softc * const sc = XHCI_PIPE2SC(pipe);
 	struct xhci_slot * const xs = pipe->up_dev->ud_hcpriv;
+#ifdef USB_DEBUG
 	const u_int dci = xhci_ep_get_dci(pipe->up_endpoint->ue_edesc);
+#endif
 	struct xhci_trb trb;
 	usbd_status err;
 
@@ -1379,9 +1361,9 @@ xhci_configure_endpoint(struct usbd_pipe *pipe)
 	/* set up context */
 	xhci_setup_ctx(pipe);
 
-	hexdump("input control context", xhci_slot_get_icv(sc, xs, 0),
+	HEXDUMP("input control context", xhci_slot_get_icv(sc, xs, 0),
 	    sc->sc_ctxsz * 1);
-	hexdump("input endpoint context", xhci_slot_get_icv(sc, xs,
+	HEXDUMP("input endpoint context", xhci_slot_get_icv(sc, xs,
 	    xhci_dci_to_ici(dci)), sc->sc_ctxsz * 1);
 
 	trb.trb_0 = xhci_slot_get_icp(sc, xs, 0);
@@ -1392,7 +1374,7 @@ xhci_configure_endpoint(struct usbd_pipe *pipe)
 	err = xhci_do_command(sc, &trb, USBD_DEFAULT_TIMEOUT);
 
 	usb_syncmem(&xs->xs_dc_dma, 0, sc->sc_pgsz, BUS_DMASYNC_POSTREAD);
-	hexdump("output context", xhci_slot_get_dcv(sc, xs, dci),
+	HEXDUMP("output context", xhci_slot_get_dcv(sc, xs, dci),
 	    sc->sc_ctxsz * 1);
 
 	return err;
@@ -2363,7 +2345,7 @@ xhci_new_device(device_t parent, struct usbd_bus *bus, int depth,
 		usbd_delay_ms(dev, USB_SET_ADDRESS_SETTLE);
 
 		cp = xhci_slot_get_dcv(sc, xs, XHCI_DCI_SLOT);
-		//hexdump("slot context", cp, sc->sc_ctxsz);
+		HEXDUMP("slot context", cp, sc->sc_ctxsz);
 		uint8_t addr = XHCI_SCTX_3_DEV_ADDR_GET(le32toh(cp[3]));
 		DPRINTFN(4, "device address %ju", addr, 0, 0, 0);
 		/*
@@ -2821,7 +2803,7 @@ xhci_update_ep0_mps(struct xhci_softc * const sc,
 
 	/* sync input contexts before they are read from memory */
 	usb_syncmem(&xs->xs_ic_dma, 0, sc->sc_pgsz, BUS_DMASYNC_PREWRITE);
-	hexdump("input context", xhci_slot_get_icv(sc, xs, 0),
+	HEXDUMP("input context", xhci_slot_get_icv(sc, xs, 0),
 	    sc->sc_ctxsz * 4);
 
 	trb.trb_0 = xhci_slot_get_icp(sc, xs, 0);
@@ -2942,7 +2924,7 @@ xhci_set_address(struct usbd_device *dev, uint32_t slot, bool bsr)
 
 	xhci_setup_ctx(dev->ud_pipe0);
 
-	hexdump("input context", xhci_slot_get_icv(sc, xs, 0),
+	HEXDUMP("input context", xhci_slot_get_icv(sc, xs, 0),
 	    sc->sc_ctxsz * 3);
 
 	xhci_set_dcba(sc, DMAADDR(&xs->xs_dc_dma, 0), slot);
@@ -2950,7 +2932,7 @@ xhci_set_address(struct usbd_device *dev, uint32_t slot, bool bsr)
 	err = xhci_address_device(sc, xhci_slot_get_icp(sc, xs, 0), slot, bsr);
 
 	usb_syncmem(&xs->xs_dc_dma, 0, sc->sc_pgsz, BUS_DMASYNC_POSTREAD);
-	hexdump("output context", xhci_slot_get_dcv(sc, xs, 0),
+	HEXDUMP("output context", xhci_slot_get_dcv(sc, xs, 0),
 	    sc->sc_ctxsz * 2);
 
 	return err;
@@ -3154,8 +3136,10 @@ static void
 xhci_setup_tthub(struct usbd_pipe *pipe, uint32_t *cp)
 {
 	struct usbd_device *dev = pipe->up_dev;
+	struct usbd_port *myhsport = dev->ud_myhsport;
 	usb_device_descriptor_t * const dd = &dev->ud_ddesc;
 	uint32_t speed = dev->ud_speed;
+	uint8_t rhaddr = dev->ud_bus->ub_rhaddr;
 	uint8_t tthubslot, ttportnum;
 	bool ishub;
 	bool usemtt;
@@ -3177,19 +3161,17 @@ xhci_setup_tthub(struct usbd_pipe *pipe, uint32_t *cp)
 	 *   parent hub is not HS hub ||
 	 *   attached to root hub.
 	 */
-	if (dev->ud_myhsport != NULL &&
-	    dev->ud_myhub != NULL && dev->ud_myhub->ud_depth != 0 &&
-	    (dev->ud_myhub != NULL &&
-	     dev->ud_myhub->ud_speed == USB_SPEED_HIGH) &&
+	if (myhsport &&
+	    myhsport->up_parent->ud_addr != rhaddr &&
 	    (speed == USB_SPEED_LOW || speed == USB_SPEED_FULL)) {
-		ttportnum = dev->ud_myhsport->up_portno;
-		tthubslot = dev->ud_myhsport->up_parent->ud_addr;
+		ttportnum = myhsport->up_portno;
+		tthubslot = myhsport->up_parent->ud_addr;
 	} else {
 		ttportnum = 0;
 		tthubslot = 0;
 	}
 	DPRINTFN(4, "myhsport %#jx ttportnum=%jd tthubslot=%jd",
-	    (uintptr_t)dev->ud_myhsport, ttportnum, tthubslot, 0);
+	    (uintptr_t)myhsport, ttportnum, tthubslot, 0);
 
 	/* ishub is valid after reading UDESC_DEVICE */
 	ishub = (dd->bDeviceClass == UDCLASS_HUB);
@@ -3205,33 +3187,30 @@ xhci_setup_tthub(struct usbd_pipe *pipe, uint32_t *cp)
 		DPRINTFN(4, "nports=%jd ttt=%jd", hd->bNbrPorts, ttt, 0, 0);
 	}
 
-#define IS_TTHUB(dd) \
-    ((dd)->bDeviceProtocol == UDPROTO_HSHUBSTT || \
-     (dd)->bDeviceProtocol == UDPROTO_HSHUBMTT)
+#define IS_MTTHUB(dd) \
+     ((dd)->bDeviceProtocol == UDPROTO_HSHUBMTT)
 
 	/*
 	 * MTT flag is set if
-	 * 1. this is HS hub && MTT is enabled
-	 *  or
-	 * 2. this is not hub && this is LS or FS device &&
-	 *    MTT of parent HS hub (and its parent, too) is enabled
+	 * 1. this is HS hub && MTTs are supported and enabled;  or
+	 * 2. this is LS or FS device && there is a parent HS hub where MTTs
+	 *    are supported and enabled.
+	 *
+	 * XXX enabled is not tested yet
 	 */
-	if (ishub && speed == USB_SPEED_HIGH && IS_TTHUB(dd))
+	if (ishub && speed == USB_SPEED_HIGH && IS_MTTHUB(dd))
 		usemtt = true;
-	else if (!ishub &&
-	     (speed == USB_SPEED_LOW || speed == USB_SPEED_FULL) &&
-	     dev->ud_myhub != NULL && dev->ud_myhub->ud_depth != 0 &&
-	     (dev->ud_myhub != NULL &&
-	      dev->ud_myhub->ud_speed == USB_SPEED_HIGH) &&
-	     dev->ud_myhsport != NULL &&
-	     IS_TTHUB(&dev->ud_myhsport->up_parent->ud_ddesc))
+	else if ((speed == USB_SPEED_LOW || speed == USB_SPEED_FULL) &&
+	    myhsport &&
+	    myhsport->up_parent->ud_addr != rhaddr &&
+	    IS_MTTHUB(&myhsport->up_parent->ud_ddesc))
 		usemtt = true;
 	else
 		usemtt = false;
 	DPRINTFN(4, "class %ju proto %ju ishub %jd usemtt %jd",
 	    dd->bDeviceClass, dd->bDeviceProtocol, ishub, usemtt);
 
-#undef IS_TTHUB
+#undef IS_MTTHUB
 
 	cp[0] |=
 	    XHCI_SCTX_0_HUB_SET(ishub ? 1 : 0) |
@@ -3679,15 +3658,12 @@ xhci_root_intr_start(struct usbd_xfer *xfer)
 static void
 xhci_root_intr_abort(struct usbd_xfer *xfer)
 {
-	struct xhci_softc * const sc = XHCI_XFER2SC(xfer);
-	const size_t bn = XHCI_XFER2BUS(xfer) == &sc->sc_bus ? 0 : 1;
+	struct xhci_softc * const sc __diagused = XHCI_XFER2SC(xfer);
 
 	XHCIHIST_FUNC(); XHCIHIST_CALLED();
 
 	KASSERT(mutex_owned(&sc->sc_lock));
 	KASSERT(xfer->ux_pipe->up_intrxfer == xfer);
-
-	sc->sc_intrxfer[bn] = NULL;
 
 	xfer->ux_status = USBD_CANCELLED;
 	usb_transfer_complete(xfer);

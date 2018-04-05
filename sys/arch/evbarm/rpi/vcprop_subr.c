@@ -1,4 +1,4 @@
-/*	$NetBSD: vcprop_subr.c,v 1.3 2017/11/09 21:39:48 skrll Exp $	*/
+/*	$NetBSD: vcprop_subr.c,v 1.5 2018/01/01 17:03:25 skrll Exp $	*/
 
 /*
  * Copyright (c) 2014 Michael Lorenz
@@ -35,11 +35,8 @@
 
 #include <uvm/uvm_extern.h>
 
-#include <arm/arm32/machdep.h>
-
 #include <arm/broadcom/bcm2835reg.h>
 #include <arm/broadcom/bcm2835var.h>
-#include <arm/broadcom/bcm2835_pmvar.h>
 #include <arm/broadcom/bcm2835_mbox.h>
 
 #include <evbarm/rpi/vcio.h>

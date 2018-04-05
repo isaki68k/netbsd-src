@@ -1,4 +1,4 @@
-/*	$NetBSD: uipc_syscalls.c,v 1.187 2017/06/20 20:34:49 christos Exp $	*/
+/*	$NetBSD: uipc_syscalls.c,v 1.192 2018/03/16 17:25:04 christos Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2009 The NetBSD Foundation, Inc.
@@ -61,7 +61,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uipc_syscalls.c,v 1.187 2017/06/20 20:34:49 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uipc_syscalls.c,v 1.192 2018/03/16 17:25:04 christos Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_pipe.h"
@@ -593,7 +593,7 @@ do_sys_sendmsg_so(struct lwp *l, int s, struct socket *so, file_t *fp,
 
 	if (mp->msg_name && to == NULL) {
 		error = sockargs(&to, mp->msg_name, mp->msg_namelen,
-		    MT_SONAME);
+		    UIO_USERSPACE, MT_SONAME);
 		if (error)
 			goto bad;
 	}
@@ -605,7 +605,7 @@ do_sys_sendmsg_so(struct lwp *l, int s, struct socket *so, file_t *fp,
 		}
 		if (control == NULL) {
 			error = sockargs(&control, mp->msg_control,
-			    mp->msg_controllen, MT_CONTROL);
+			    mp->msg_controllen, UIO_USERSPACE, MT_CONTROL);
 			if (error)
 				goto bad;
 		}
@@ -989,6 +989,7 @@ do_sys_recvmsg_so(struct lwp *l, int s, struct socket *so, struct msghdr *mp,
 	mp->msg_flags &= MSG_USERFLAGS;
 	error = (*so->so_receive)(so, from, &auio, NULL, control,
 	    &mp->msg_flags);
+	KASSERT(*from == NULL || (*from)->m_next == NULL);
 	len -= auio.uio_resid;
 	*retsize = len;
 	if (error != 0 && len != 0
@@ -1235,7 +1236,10 @@ sys_getsockopt(struct lwp *l, const struct sys_getsockopt_args *uap,
 	if ((error = fd_getsock1(SCARG(uap, s), &so, &fp)) != 0)
 		return (error);
 
-	sockopt_init(&sopt, SCARG(uap, level), SCARG(uap, name), 0);
+	if (valsize > MCLBYTES)
+		return EINVAL;
+
+	sockopt_init(&sopt, SCARG(uap, level), SCARG(uap, name), valsize);
 
 	if (fp->f_flag & FNOSIGPIPE)
 		so->so_options |= SO_NOSIGPIPE;
@@ -1246,7 +1250,7 @@ sys_getsockopt(struct lwp *l, const struct sys_getsockopt_args *uap,
 		goto out;
 
 	if (valsize > 0) {
-		len = min(valsize, sopt.sopt_size);
+		len = min(valsize, sopt.sopt_retsize);
 		error = copyout(sopt.sopt_data, SCARG(uap, val), len);
 		if (error)
 			goto out;
@@ -1265,7 +1269,7 @@ sys_getsockopt(struct lwp *l, const struct sys_getsockopt_args *uap,
 #ifdef PIPE_SOCKETPAIR
 
 int
-pipe1(struct lwp *l, register_t *retval, int flags)
+pipe1(struct lwp *l, int *fildes, int flags)
 {
 	file_t		*rf, *wf;
 	struct socket	*rso, *wso;
@@ -1284,7 +1288,7 @@ pipe1(struct lwp *l, register_t *retval, int flags)
 	rso->so_state |= SS_ISAPIPE;
 	if ((error = fd_allocfile(&rf, &fd)) != 0)
 		goto free2;
-	retval[0] = fd;
+	fildes[0] = fd;
 	rf->f_flag = FREAD | flags;
 	rf->f_type = DTYPE_SOCKET;
 	rf->f_ops = &socketops;
@@ -1295,19 +1299,19 @@ pipe1(struct lwp *l, register_t *retval, int flags)
 	wf->f_type = DTYPE_SOCKET;
 	wf->f_ops = &socketops;
 	wf->f_socket = wso;
-	retval[1] = fd;
+	fildes[1] = fd;
 	solock(wso);
 	error = unp_connect2(wso, rso);
 	sounlock(wso);
 	if (error != 0)
 		goto free4;
-	fd_affix(p, wf, (int)retval[1]);
-	fd_affix(p, rf, (int)retval[0]);
+	fd_affix(p, wf, fildes[1]);
+	fd_affix(p, rf, fildes[0]);
 	return (0);
  free4:
-	fd_abort(p, wf, (int)retval[1]);
+	fd_abort(p, wf, fildes[1]);
  free3:
-	fd_abort(p, rf, (int)retval[0]);
+	fd_abort(p, rf, fildes[0]);
  free2:
 	(void)soclose(wso);
  free1:
@@ -1525,7 +1529,8 @@ sockargs_sb(struct sockaddr_big *sb, const void *name, socklen_t buflen)
  * XXX arguments in mbufs, and this could go away.
  */
 int
-sockargs(struct mbuf **mp, const void *bf, size_t buflen, int type)
+sockargs(struct mbuf **mp, const void *bf, size_t buflen, enum uio_seg seg,
+    int type)
 {
 	struct sockaddr	*sa;
 	struct mbuf	*m;
@@ -1556,12 +1561,16 @@ sockargs(struct mbuf **mp, const void *bf, size_t buflen, int type)
 		MEXTMALLOC(m, buflen, M_WAITOK);
 	}
 	m->m_len = buflen;
-	error = copyin(bf, mtod(m, void *), buflen);
-	if (error) {
-		(void)m_free(m);
-		return error;
+	if (seg == UIO_USERSPACE) {
+		error = copyin(bf, mtod(m, void *), buflen);
+		if (error) {
+			(void)m_free(m);
+			return error;
+		}
+		ktrkuser(mbuftypes[type], mtod(m, void *), buflen);
+	} else {
+		memcpy(mtod(m, void *), bf, buflen);
 	}
-	ktrkuser(mbuftypes[type], mtod(m, void *), buflen);
 	*mp = m;
 	if (type == MT_SONAME) {
 		sa = mtod(m, struct sockaddr *);

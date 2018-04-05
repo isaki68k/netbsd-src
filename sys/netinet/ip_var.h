@@ -1,4 +1,4 @@
-/*	$NetBSD: ip_var.h,v 1.120 2017/08/10 04:31:58 ryo Exp $	*/
+/*	$NetBSD: ip_var.h,v 1.123 2018/04/03 08:46:01 maxv Exp $	*/
 
 /*
  * Copyright (c) 1982, 1986, 1993
@@ -68,22 +68,10 @@ struct ipflow {
 
 /*
  * IP sequence queue structure.
- *
- * XXX -- The following explains why the ipqe_m field is here, for TCP's use:
- * We want to avoid doing m_pullup on incoming packets but that
- * means avoiding dtom on the tcp reassembly code.  That in turn means
- * keeping an mbuf pointer in the reassembly queue (since we might
- * have a cluster).  As a quick hack, the source & destination
- * port numbers (which are no longer needed once we've located the
- * tcpcb) are overlayed with an mbuf pointer.
  */
 TAILQ_HEAD(ipqehead, ipqent);
 struct ipqent {
 	TAILQ_ENTRY(ipqent) ipqe_q;
-	union {
-		struct ip	*_ip;
-		struct tcpiphdr *_tcp;
-	} _ipqe_u1;
 	struct mbuf	*ipqe_m;	/* point to first mbuf */
 	struct mbuf	*ipre_mlast;	/* point to last mbuf */
 	u_int8_t	ipqe_mff;	/* for IP fragmentation */
@@ -95,7 +83,6 @@ struct ipqent {
 	u_int32_t ipqe_len;
 	u_int32_t ipqe_flags;
 };
-#define	ipqe_tcp	_ipqe_u1._tcp
 
 /*
  * Structure stored in mbuf in inpcb.ip_options
@@ -164,8 +151,9 @@ struct ip_pktopts {
 #define	IP_STAT_NOGIF		28	/* no match gif found */
 #define	IP_STAT_BADADDR		29	/* invalid address on header */
 #define	IP_STAT_NOL2TP		30	/* no match l2tp found */
+#define	IP_STAT_NOIPSEC		31	/* no match ipsec(4) found */
 
-#define	IP_NSTATS		31
+#define	IP_NSTATS		32
 
 #ifdef _KERNEL
 
@@ -215,7 +203,7 @@ void	in_init(void);
 
 int	 ip_ctloutput(int, struct socket *, struct sockopt *);
 int	 ip_setpktopts(struct mbuf *, struct ip_pktopts *, int *,
-	    struct inpcb *, kauth_cred_t, int);
+	    struct inpcb *, kauth_cred_t);
 void	 ip_drain(void);
 void	 ip_drainstub(void);
 void	 ip_freemoptions(struct ip_moptions *);

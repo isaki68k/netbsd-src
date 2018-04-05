@@ -1,4 +1,4 @@
-/*	$NetBSD: devopen.c,v 1.1 2017/01/24 11:09:14 nonaka Exp $	 */
+/*	$NetBSD: devopen.c,v 1.4 2018/04/02 09:44:18 nonaka Exp $	 */
 
 /*-
  * Copyright (c) 2005 The NetBSD Foundation, Inc.
@@ -59,6 +59,7 @@
 #include <biosdisk.h>
 #include "devopen.h"
 #include <bootinfo.h>
+#include "efidisk.h"
 
 static int
 dev2bios(char *devname, int unit, int *biosdev)
@@ -66,8 +67,11 @@ dev2bios(char *devname, int unit, int *biosdev)
 
 	if (strcmp(devname, "hd") == 0)
 		*biosdev = 0x80 + unit;
+	else if (strcmp(devname, "cd") == 0)
+		*biosdev = 0x80 + get_harddrives() + unit;
 	else
 		return ENXIO;
+
 	return 0;
 }
 
@@ -76,7 +80,13 @@ bios2dev(int biosdev, daddr_t sector, char **devname, int *unit, int *partition)
 {
 
 	*unit = biosdev & 0x7f;
-	*devname = "hd";
+
+	if (biosdev >= 0x80 + get_harddrives()) {
+		*devname = "cd";
+		*unit -= get_harddrives();
+	} else
+		*devname = "hd";
+
 	*partition = biosdisk_findpartition(biosdev, sector);
 }
 
@@ -94,9 +104,20 @@ devopen(struct open_file *f, const char *fname, char **file)
 	int biosdev;
 	int error;
 
-	if ((error = parsebootfile(fname, &fsname, &devname,
-				   &unit, &partition, (const char **) file))
-	    || (error = dev2bios(devname, unit, &biosdev)))
+	error = parsebootfile(fname, &fsname, &devname, &unit, &partition,
+	    (const char **) file);
+	if (error)
+		return error;
+
+	if (strcmp(devname, "esp") == 0) {
+		bios2dev(boot_biosdev, boot_biossector, &devname, &unit,
+		    &partition);
+		if (efidisk_get_efi_system_partition(boot_biosdev, &partition))
+			return ENXIO;
+	}
+
+	error = dev2bios(devname, unit, &biosdev);
+	if (error)
 		return error;
 
 	f->f_dev = &devsw[0];		/* must be biosdisk */

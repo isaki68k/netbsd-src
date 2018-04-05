@@ -1,4 +1,4 @@
-# $NetBSD: ALL,v 1.431 2017/11/30 11:56:45 jmcneill Exp $
+# $NetBSD: ALL,v 1.436 2018/03/29 18:54:48 maxv Exp $
 # From NetBSD: GENERIC,v 1.787 2006/10/01 18:37:54 bouyer Exp
 #
 # ALL machine description file
@@ -17,7 +17,7 @@ include 	"arch/i386/conf/std.i386"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident		"ALL-$Revision: 1.431 $"
+#ident		"ALL-$Revision: 1.436 $"
 
 maxusers	64		# estimated number of users
 
@@ -116,8 +116,6 @@ options 	DDB_HISTORY_SIZE=512	# enable history editing in DDB
 options 	DDB_VERBOSE_HELP
 options 	KGDB		# remote debugger
 options 	KGDB_DEVNAME="\"com\"",KGDB_DEVADDR=0x3f8,KGDB_DEVRATE=9600
-options 	IPKDB		# IP Kernel Debugger
-options 	IPKDBKEY="\"Pass_phrase_to_debug_over_network\""
 makeoptions	DEBUG="-g"	# compile full symbol table
 options 	SYSCALL_STATS	# per syscall counts
 options 	SYSCALL_TIMES	# per syscall times
@@ -462,6 +460,11 @@ gpio*	at elansc?
 elanpar*	at elansc?
 elanpex*	at elansc?
 
+# Intel Integrated Memory Controller SMBus (experimental)
+imc* at pci? dev ? function ?		# Intel Integrated Memory Controller,
+imcsmb* at imc?				# the associated SMBus controller,
+iic* at imcsmb?				# and the SMBus itself
+
 # Temperatures
 amdnb_misc* at pci?			# AMD NB Misc Configuration
 amdtemp* at amdnb_misc?			# AMD CPU Temperature sensors
@@ -702,6 +705,10 @@ iic*	at nfsmb?
 piixpm* at pci? dev ? function ?	# PIIX4 compatible PM controller
 iic*	at piixpm?			# SMBus on PIIX4
 
+# I2C controller as found in some Intel PCH devices.
+dwiic*		at pci?			# I2C controller
+iic*		at dwiic?
+
 # dbCool Thermal monitor and fan controller
 dbcool* at iic? addr 0x2C		# Unknown other motherboard(s)
 dbcool* at iic? addr 0x2D		# Tyan S2881
@@ -765,6 +772,13 @@ sdtemp* at iic? addr 0x1c
 sdtemp* at iic? addr 0x1d
 sdtemp* at iic? addr 0x1e
 sdtemp* at iic? addr 0x1f
+
+# I2C HID devices
+ihidev* at iic?
+
+# I2C Mice
+ims*	at ihidev? reportid ?
+wsmouse* at ims? mux 0
 
 # I2O devices
 iop*	at pci? dev ? function ?	# I/O processor
@@ -2389,7 +2403,6 @@ options TC5165DEBUG
 options TCICDEBUG
 options TCICISADEBUG
 options TCPISS_DEBUG
-options TCPREASS_DEBUG
 options TCTRLDEBUG
 options TIMECOUNTER_DEBUG
 options TIMEKEEPER_DEBUG
@@ -2520,6 +2533,7 @@ options XENNET_DEBUG
 options XENNET_DEBUG_DUMP
 options XEN_CLOCK_DEBUG
 options XE_DEBUG
+options XHCI_DEBUG
 options XXXXENDEBUG_LOW
 options XYC_DEBUG
 options ZSKBD_DEBUG

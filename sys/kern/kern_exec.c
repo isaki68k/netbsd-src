@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_exec.c,v 1.453 2017/11/13 22:01:45 christos Exp $	*/
+/*	$NetBSD: kern_exec.c,v 1.456 2018/02/23 19:43:08 maxv Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -59,7 +59,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_exec.c,v 1.453 2017/11/13 22:01:45 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_exec.c,v 1.456 2018/02/23 19:43:08 maxv Exp $");
 
 #include "opt_exec.h"
 #include "opt_execfmt.h"
@@ -232,7 +232,6 @@ struct emul emul_netbsd = {
 	.e_syscall =		syscall,
 #endif
 	.e_sysctlovly =		NULL,
-	.e_fault =		NULL,
 	.e_vm_default_addr =	uvm_default_mapaddr,
 	.e_usertrap =		NULL,
 	.e_ucsize =		sizeof(ucontext_t),
@@ -431,10 +430,10 @@ check_exec(struct lwp *l, struct exec_package *epp, struct pathbuf *pb)
 
 		if (!newerror) {
 			/* Seems ok: check that entry point is not too high */
-			if (epp->ep_entry > epp->ep_vm_maxaddr) {
+			if (epp->ep_entry >= epp->ep_vm_maxaddr) {
 #ifdef DIAGNOSTIC
 				printf("%s: rejecting %p due to "
-				    "too high entry address (> %p)\n",
+				    "too high entry address (>= %p)\n",
 					 __func__, (void *)epp->ep_entry,
 					 (void *)epp->ep_vm_maxaddr);
 #endif
@@ -760,7 +759,7 @@ execve_loadvm(struct lwp *l, const char *path, char * const *args,
 
 	/* see if we can run it. */
 	if ((error = check_exec(l, epp, data->ed_pathbuf)) != 0) {
-		if (error != ENOENT && error != EACCES) {
+		if (error != ENOENT && error != EACCES && error != ENOEXEC) {
 			DPRINTF(("%s: check exec failed for %s, error %d\n",
 			    __func__, epp->ep_kname, error));
 		}

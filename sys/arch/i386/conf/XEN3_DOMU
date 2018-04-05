@@ -1,4 +1,4 @@
-# $NetBSD: XEN3_DOMU,v 1.87 2017/11/06 02:57:18 rin Exp $
+# $NetBSD: XEN3_DOMU,v 1.89 2018/02/17 01:34:45 sevan Exp $
 
 include 	"arch/xen/conf/std.xen"
 
@@ -45,6 +45,8 @@ options 	MODULAR		# new style module(7) framework
 options 	USERCONF	# userconf(4) support
 options 	SYSCTL_INCLUDE_DESCR	# Include sysctl descriptions in kernel
 
+# Alternate buffer queue strategies for better responsiveness under high
+# disk I/O load.
 #options 	BUFQ_READPRIO
 options 	BUFQ_PRIOCSCAN
 
@@ -57,7 +59,7 @@ options 	DDB_HISTORY_SIZE=512	# enable history editing in DDB
 #options 	KGDB		# remote debugger
 #options 	KGDB_DEVNAME="\"com\"",KGDB_DEVADDR=0x2f8,KGDB_DEVRATE=57600
 #makeoptions	DEBUG="-g"	# compile full symbol table
-options DDB_COMMANDONENTER="trace;show registers"
+options DDB_COMMANDONENTER="show registers"
 
 # Compatibility options
 include 	"conf/compat_netbsd09.config"

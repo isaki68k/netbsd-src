@@ -1,6 +1,6 @@
-/*	$NetBSD: cpu.h,v 1.83 2017/12/02 21:04:59 christos Exp $	*/
+/*	$NetBSD: cpu.h,v 1.91 2018/04/04 12:59:49 maxv Exp $	*/
 
-/*-
+/*
  * Copyright (c) 1990 The Regents of the University of California.
  * All rights reserved.
  *
@@ -47,6 +47,7 @@
 #if defined(_KERNEL) || defined(_KMEMUSER)
 #if defined(_KERNEL_OPT)
 #include "opt_xen.h"
+#include "opt_svs.h"
 #ifdef i386
 #include "opt_user_ldt.h"
 #endif
@@ -83,6 +84,15 @@ struct pmap;
 #define	NIOPORTS	1024		/* # of ports we allow to be mapped */
 #define	IOMAPSIZE	(NIOPORTS / 8)	/* I/O bitmap size in bytes */
 
+struct cpu_tss {
+#ifdef i386
+	struct i386tss dblflt_tss;
+	struct i386tss ddbipi_tss;
+#endif
+	struct i386tss tss;
+	uint8_t iomap[IOMAPSIZE];
+} __packed;
+
 /*
  * a bunch of this belongs in cpuvar.h; move it later..
  */
@@ -101,7 +111,7 @@ struct cpu_info {
 	struct lwp *ci_fpcurlwp;	/* current owner of the FPU */
 	cpuid_t ci_cpuid;		/* our CPU ID */
 	uint32_t ci_acpiid;		/* our ACPI/MADT ID */
-	uint32_t ci_initapicid;		/* our intitial APIC ID */
+	uint32_t ci_initapicid;		/* our initial APIC ID */
 
 	/*
 	 * Private members.
@@ -157,7 +167,7 @@ struct cpu_info {
 	uint32_t	ci_max_ext_cpuid; /* cpuid.80000000:%eax */
 	volatile uint32_t	ci_lapic_counter;
 
-	uint32_t	ci_feat_val[7]; /* X86 CPUID feature bits */
+	uint32_t	ci_feat_val[8]; /* X86 CPUID feature bits */
 			/* [0] basic features cpuid.1:%edx
 			 * [1] basic features cpuid.1:%ecx (CPUID2_xxx bits)
 			 * [2] extended features cpuid:80000001:%edx
@@ -165,6 +175,7 @@ struct cpu_info {
 			 * [4] VIA padlock features
 			 * [5] structured extended features cpuid.7:%ebx
 			 * [6] structured extended features cpuid.7:%ecx
+			 * [7] structured extended features cpuid.7:%edx
 			 */
 	
 	const struct cpu_functions *ci_func;  /* start/stop functions */
@@ -173,16 +184,21 @@ struct cpu_info {
 	u_int ci_cflush_lsize;	/* CLFLUSH insn line size */
 	struct x86_cache_info ci_cinfo[CAI_COUNT];
 
-	union descriptor *ci_gdt;
-
-#ifdef i386
-	struct i386tss	ci_doubleflt_tss;
-	struct i386tss	ci_ddbipi_tss;
-#endif
-
 #ifdef PAE
 	uint32_t	ci_pae_l3_pdirpa; /* PA of L3 PD */
 	pd_entry_t *	ci_pae_l3_pdir; /* VA pointer to L3 PD */
+#endif
+
+#ifdef SVS
+	pd_entry_t *	ci_svs_updir;
+	paddr_t		ci_svs_updirpa;
+	paddr_t		ci_svs_kpdirpa;
+	kmutex_t	ci_svs_mtx;
+	pd_entry_t *	ci_svs_rsp0_pte;
+	vaddr_t		ci_svs_rsp0;
+	vaddr_t		ci_svs_ursp0;
+	vaddr_t		ci_svs_krsp0;
+	vaddr_t		ci_svs_utls;
 #endif
 
 #if defined(XEN) && (defined(PAE) || defined(__x86_64__))
@@ -213,8 +229,11 @@ struct cpu_info {
 	device_t	ci_temperature;	/* Intel coretemp(4) or equivalent */
 	device_t	ci_vm;		/* Virtual machine guest driver */
 
-	struct i386tss	ci_tss;		/* Per-cpu TSS; shared among LWPs */
-	char		ci_iomap[IOMAPSIZE]; /* I/O Bitmap */
+	/*
+	 * Segmentation-related data.
+	 */
+	union descriptor *ci_gdt;
+	struct cpu_tss	*ci_tss;	/* Per-cpu TSSes; shared among LWPs */
 	int ci_tss_sel;			/* TSS selector of this cpu */
 
 	/*
@@ -264,7 +283,7 @@ struct cpu_info {
 /*
  * Processor flag notes: The "primary" CPU has certain MI-defined
  * roles (mostly relating to hardclock handling); we distinguish
- * betwen the processor which booted us, and the processor currently
+ * between the processor which booted us, and the processor currently
  * holding the "primary" role just to give us the flexibility later to
  * change primaries should we be sufficiently twisted.
  */
@@ -326,6 +345,10 @@ void cpu_init_msrs(struct cpu_info *, bool);
 void cpu_load_pmap(struct pmap *, struct pmap *);
 void cpu_broadcast_halt(void);
 void cpu_kick(struct cpu_info *);
+
+void cpu_pcpuarea_init(struct cpu_info *);
+void cpu_svs_init(struct cpu_info *);
+void cpu_speculation_init(struct cpu_info *);
 
 #define	curcpu()		x86_curcpu()
 #define	curlwp			x86_curlwp()
@@ -504,7 +527,7 @@ void x86_bus_space_mallocok(void);
 					 * 3: maximum frequency
 					 */
 #define	CPU_TMLR_FREQUENCY	12	/* int: current frequency */
-#define	CPU_TMLR_VOLTAGE	13	/* int: curret voltage */
+#define	CPU_TMLR_VOLTAGE	13	/* int: current voltage */
 #define	CPU_TMLR_PERCENTAGE	14	/* int: current clock percentage */
 #define	CPU_FPU_SAVE		15	/* int: FPU Instructions layout
 					 * to use this, CPU_OSFXSR must be true
