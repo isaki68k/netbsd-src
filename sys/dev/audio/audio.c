@@ -3474,6 +3474,8 @@ audio_set_params(struct audio_softc *sc, int setmode)
 	if (use_set_params2) {
 		memset(&pfilters2, 0, sizeof(pfilters2));
 		memset(&rfilters2, 0, sizeof(rfilters2));
+		pfilters2.param = pp;
+		rfilters2.param = rp;
 	} else {
 		memset(&pfilters, 0, sizeof(pfilters));
 		memset(&rfilters, 0, sizeof(rfilters));
@@ -3520,8 +3522,10 @@ audio_set_params(struct audio_softc *sc, int setmode)
 	if (use_set_params2) {
 		sc->sc_xxx_pfilreg = pfilters2;
 		sc->sc_xxx_rfilreg = rfilters2;
-		sc->sc_phwfmt = params_to_format2(&pfilters2.param);
-		sc->sc_rhwfmt = params_to_format2(&rfilters2.param);
+		if (pfilters2.codec)
+			sc->sc_phwfmt = params_to_format2(&pfilters2.param);
+		if (rfilters2.codec)
+			sc->sc_rhwfmt = params_to_format2(&rfilters2.param);
 	} else {
 		sc->sc_phwfmt = params_to_format2(&pp);
 		sc->sc_rhwfmt = params_to_format2(&rp);
