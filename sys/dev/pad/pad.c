@@ -26,6 +26,9 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#if defined(AUDIO2)
+#include "dev/pad/pad2.c"
+#else
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD: pad.c,v 1.52 2018/01/26 23:36:01 pgoyette Exp $");
 
@@ -998,3 +1001,4 @@ pad_modcmd(modcmd_t cmd, void *arg)
 
 	return error;
 }
+#endif /* AUDIO2 */
