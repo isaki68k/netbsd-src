@@ -368,19 +368,110 @@ AUDIO2 ではこれを廃止する。代わりに set_params2(仮名)を新設�
 	audio_params_t *play, audio_params_t *rec,
 	audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
 <dd class=p1><span class=a2>
-	     Called to set the audio encoding mode.  setmode is a combination
+	Called once when attaching to set the audio encoding to the hardware.
+	【これはオーディオエンコーディングをハードウェアに設定するためアタッチ時に
+	一度だけ呼ばれます。】
+         setmode is a combination
 	     of the <tt>AUMODE_RECORD</tt> and <tt>AUMODE_PLAY</tt> flags to indicate which
 	     mode(s) are to be set.  usemode is also a combination of these
 	     flags, but indicates the current mode of the device (i.e., the
 	     value of mode in the audio_info struct).
-	ここまでは同じ。
-<br><br>
-	     The play and rec structures contain the encoding parameters that
-	     should be set.
-
 </span>
 <span class=comment>
-set_params と違って play, rec を MD 側で書き戻すことは行わない。
+あれ、usemode っているかな?
+</span>
+<span class=a2>
+<br><br>
+	     The play and rec structures contain the encoding parameters that
+	     should be set to the hardware.
+	【play と rec 構造体がハードウェアにセットするべきパラメータです。】
+	play と rec のうち encoding は AUDIO_ENCODING_SLINEAR_NE (?)、
+	precision = validbits = AUDIO_INTERNAL_BITS は固定です。
+	channels と sample_rate は query_format の結果から upper layer が
+	採用した値が入っています。
+
+</span><span class=comment>
+	set_params と違って選択したパラメータを play, rec に書き戻すことは
+	出来ない。というか query_format が正しければそのような状況は起きない。
+</span><span class=a2>
+<br><br>
+	     If the hardware does not support slinear and
+		AUDIO_INTERNAL_BITS precision,
+	     it should fill the
+	     pfil for playing or rfil for recording with conversion
+	     information.
+</span><span class=comment>
+set_params と違ってフィルタを複数指定することは出来ないので、
+1つのフィルタで処理すること (tc/bba.c しか該当しないはず)。
+</span><span class=a2>
+	The definition of audio_filter_reg_t and related structure follows:
+<br><br>
+<pre style="margin-left: 8%">
+typedef struct {
+	const void *src;
+	const audio_format2_t *srcfmt;
+	void *dst;
+	const audio_format2_t *dstfmt;
+	int count;
+	void *context;
+} audio_filter_arg_t;
+
+typedef void(*audio_filter_t)(audio_filter_arg_t *arg);
+
+typedef struct {
+	audio_params_t param;
+	audio_filter_t codec;
+	void *context;
+} audio_filter_reg_t;
+</pre>
+	<i>codec</i> is conversion function and
+	<i>context</i> is optional opaque pointer passed to <i>codec</i>.
+	<i>param</i> contains encoding parameter same as <i>play</i> or <i>rec</i>.
+	you should update these <i>encoding</i>, <i>precision</i>,
+	<i>validbits</i> as you wish,
+	but
+	don't modify <i>channels</i> and <i>sample_rate</i> because
+	they are already determined appropriate value for the hardware.
+<br><br>
+	For example, <i>play</i> requests [slinear_ne, 16/16bit]
+	and if the hardware does not support 16bit slinear_ne, but
+	8bit mu-law, the driver should set:
+<pre style="margin-left: 8%">
+	pfil.codec = internal_to_mulaw;
+	pfil.param.encoding = AUDIO_ENCODING_ULAW;
+	pfil.param.precision = 8;
+	pfil.param.validbits = 8;
+</pre>
+	<i>arg</i> contains all parameters required by <i>codec</i>.
+	【codec がコールされる時必要なパラメータはすべて arg に入っています。】
+	<i>src</i> is input buffer, <i>srcfmt</i> contains input encoding parameter,
+	<i>dst</i> is output buffer and <i>dstfmt</i> contains output encoding
+	parameter.
+	【src が入力サンプルバッファ、srcfmt が入力エンコーディング、
+	dst が出力バッファ、dstfmt が出力エンコーディングです。】
+	<i>count</i> represents the number of frames to process on this call.
+	【count は今回の呼び出しで変換すべきフレーム数です。】
+	<i>src</i> and <i>dst</i> are guaranteed to be able to consecutively access
+	number of frames specified by <i>count</i>.
+	【src と dst は count フレームが連続アクセスできることが保証されています。】
+	codec should fill entire <i>dst</i>.
+	It is not able to abort the conversion halfway and there is no
+	error reporting mechanism.
+	【codec は必ずこのフレーム数分を出力してください。
+	途中終了やエラー報告はできません。】
+	(For example, let count = 5, srcfmt is { precision = 16, channels = 3 },
+	dstfmt is { precision = 8, channels = 3 } ,
+	in this case,
+	src buffer's length = 2(bytes) * 3(channels) * 5(frames) = 30 bytes,
+	The length to be written to dst is 1(byte) * 3(channels) * 5(frames)
+	= 15bytes).
+	<i>context</i> is a opaque pointer that can be used by codec if necessary.
+	【context は codec が必要なら使うことができるポインタです。】
+<br><br>
+	     If the device does not have the <tt>AUDIO_PROP_INDEPENDENT</tt> property
+	     the same value is passed in both play and rec.
+	     Return 0 on success, otherwise an error code.
+</span>
 </dd>
 
 <dt class=p1>
