@@ -1,4 +1,4 @@
-/*	$NetBSD: aarp.c,v 1.39 2016/08/01 03:15:30 ozaki-r Exp $	*/
+/*	$NetBSD: aarp.c,v 1.41 2018/02/17 19:10:18 rjs Exp $	*/
 
 /*
  * Copyright (c) 1990,1991 Regents of The University of Michigan.
@@ -27,9 +27,10 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: aarp.c,v 1.39 2016/08/01 03:15:30 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: aarp.c,v 1.41 2018/02/17 19:10:18 rjs Exp $");
 
 #include "opt_mbuftrace.h"
+#include "opt_atalk.h"
 
 #include <sys/param.h>
 #include <sys/socket.h>
@@ -350,6 +351,11 @@ at_aarpinput(struct ifnet *ifp, struct mbuf *m)
 	int		s;
 	struct psref	psref;
 	struct ifaddr *ifa;
+
+	/* We should also check ar_hln and ar_pln. */
+	if ((m = m_pullup(m, sizeof(struct ether_aarp))) == NULL) {
+		return;
+	}
 
 	ea = mtod(m, struct ether_aarp *);
 

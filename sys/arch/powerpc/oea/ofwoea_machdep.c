@@ -1,4 +1,4 @@
-/* $NetBSD: ofwoea_machdep.c,v 1.41 2017/09/22 04:45:56 macallan Exp $ */
+/* $NetBSD: ofwoea_machdep.c,v 1.44 2018/03/03 22:50:17 macallan Exp $ */
 
 /*-
  * Copyright (c) 2007 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ofwoea_machdep.c,v 1.41 2017/09/22 04:45:56 macallan Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ofwoea_machdep.c,v 1.44 2018/03/03 22:50:17 macallan Exp $");
 
 #include "opt_ppcarch.h"
 #include "opt_compat_netbsd.h"
@@ -180,8 +180,8 @@ ofwoea_initppc(u_int startkernel, u_int endkernel, char *args)
 		model_init();
 	}
 
-	if (strcmp(model_name, "PowerMac11,2") == 0 ||
-	    strcmp(model_name, "PowerMac11,1") == 0)
+	if (strncmp(model_name, "PowerMac11,", 11) == 0 ||
+	    strncmp(model_name, "PowerMac7,", 10) == 0) 
 		OF_quiesce();
 
 	/* Initialize bus_space */
@@ -230,6 +230,13 @@ ofwoea_initppc(u_int startkernel, u_int endkernel, char *args)
 			while (*args)
 				BOOT_FLAG(*args++, boothowto);
 		}
+	} else {
+		int chs = OF_finddevice("/chosen");
+		int len;
+
+		len = OF_getprop(chs, "bootpath", bootpath, sizeof(bootpath) - 1);
+		if (len > -1)
+			bootpath[len] = 0;
 	}
 
 	uvm_md_init();
@@ -293,6 +300,8 @@ ofwoea_initppc(u_int startkernel, u_int endkernel, char *args)
 
 	restore_ofmap(ofmap, ofmaplen);
 
+	rascons_finalize();
+
 #if NKSYMS || defined(DDB) || defined(MODULAR)
 	ksyms_addsyms_elf((int)((uintptr_t)endsym - (uintptr_t)startsym), startsym, endsym);
 #endif
@@ -318,8 +327,9 @@ set_timebase(void)
 	}
 
 	node = OF_finddevice("/cpus/@0");
-	if (OF_getprop(node, "timebase-frequency",
-			&ticks_per_sec, sizeof ticks_per_sec) > 0) {
+	if (node != -1 &&
+	    OF_getprop(node, "timebase-frequency", &ticks_per_sec,
+		       sizeof ticks_per_sec) > 0) {
 		goto found;
 	}
 

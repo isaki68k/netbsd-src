@@ -1,4 +1,4 @@
-/*	$NetBSD: if_urtwn.c,v 1.55 2017/11/17 13:27:09 skrll Exp $	*/
+/*	$NetBSD: if_urtwn.c,v 1.57 2018/02/08 09:05:20 dholland Exp $	*/
 /*	$OpenBSD: if_urtwn.c,v 1.42 2015/02/10 23:25:46 mpi Exp $	*/
 
 /*-
@@ -25,7 +25,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_urtwn.c,v 1.55 2017/11/17 13:27:09 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_urtwn.c,v 1.57 2018/02/08 09:05:20 dholland Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -711,7 +711,7 @@ urtwn_alloc_rx_list(struct urtwn_softc *sc)
 			data->sc = sc;	/* Backpointer for callbacks. */
 
 			error = usbd_create_xfer(sc->rx_pipe[j], URTWN_RXBUFSZ,
-			    USBD_SHORT_XFER_OK, 0, &data->xfer);
+			    0, 0, &data->xfer);
 			if (error) {
 				aprint_error_dev(sc->sc_dev,
 				    "could not allocate xfer\n");
@@ -2098,7 +2098,7 @@ urtwn_newstate_cb(struct urtwn_softc *sc, void *arg)
 		urtwn_write_1(sc, R92C_R2T_SIFS + 1, sifs_time);
 		urtwn_write_1(sc, R92C_T2T_SIFS + 1, sifs_time);
 
-		/* Intialize rate adaptation. */
+		/* Initialize rate adaptation. */
 		if (ISSET(sc->chip, URTWN_CHIP_88E) ||
 		    ISSET(sc->chip, URTWN_CHIP_92EU))
 			ni->ni_txrate = ni->ni_rates.rs_nrates - 1;

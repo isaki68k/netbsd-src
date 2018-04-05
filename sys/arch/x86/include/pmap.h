@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.h,v 1.71 2017/11/11 12:51:05 maxv Exp $	*/
+/*	$NetBSD: pmap.h,v 1.76 2018/03/04 10:13:08 jdolecek Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -152,6 +152,30 @@ struct bootspace {
 	/* End of the area dedicated to kernel modules (amd64 only). */
 	vaddr_t emodule;
 };
+
+#ifndef MAXGDTSIZ
+#define MAXGDTSIZ 65536 /* XXX */
+#endif
+
+struct pcpu_entry {
+	uint8_t gdt[MAXGDTSIZ];
+	uint8_t tss[PAGE_SIZE];
+	uint8_t ist0[PAGE_SIZE];
+	uint8_t ist1[PAGE_SIZE];
+	uint8_t ist2[PAGE_SIZE];
+	uint8_t rsp0[2 * PAGE_SIZE];
+} __packed;
+
+struct pcpu_area {
+#ifdef SVS
+	uint8_t utls[PAGE_SIZE];
+#endif
+	uint8_t idt[PAGE_SIZE];
+	uint8_t ldt[PAGE_SIZE];
+	struct pcpu_entry ent[MAXCPUS];
+} __packed;
+
+extern struct pcpu_area *pcpuarea;
 
 /*
  * pmap data structures: see pmap.c for details of locking.
@@ -374,17 +398,6 @@ pmap_update_pg(vaddr_t va)
 }
 
 /*
- * pmap_update_2pg: flush two pages from the TLB
- */
-
-__inline static void __unused
-pmap_update_2pg(vaddr_t va, vaddr_t vb)
-{
-	invlpg(va);
-	invlpg(vb);
-}
-
-/*
  * pmap_page_protect: change the protection of all recorded mappings
  *	of a managed page
  *
@@ -526,15 +539,26 @@ void	pmap_free_ptps(struct vm_page *);
  */
 #define	POOL_VTOPHYS(va)	vtophys((vaddr_t) (va))
 
+#ifdef __HAVE_PCPU_AREA
+extern struct pcpu_area *pcpuarea;
+#define PDIR_SLOT_PCPU		384
+#define PMAP_PCPU_BASE		(VA_SIGN_NEG((PDIR_SLOT_PCPU * NBPD_L4)))
+#endif
+
 #ifdef __HAVE_DIRECT_MAP
+
+extern vaddr_t pmap_direct_base;
+extern vaddr_t pmap_direct_end;
 
 #define L4_SLOT_DIRECT		456
 #define PDIR_SLOT_DIRECT	L4_SLOT_DIRECT
 
 #define NL4_SLOT_DIRECT		32
 
-#define PMAP_DIRECT_BASE	(VA_SIGN_NEG((L4_SLOT_DIRECT * NBPD_L4)))
-#define PMAP_DIRECT_END		(PMAP_DIRECT_BASE + NL4_SLOT_DIRECT * NBPD_L4)
+#define PMAP_DIRECT_DEFAULT_BASE (VA_SIGN_NEG((L4_SLOT_DIRECT * NBPD_L4)))
+
+#define PMAP_DIRECT_BASE	pmap_direct_base
+#define PMAP_DIRECT_END		pmap_direct_end
 
 #define PMAP_DIRECT_MAP(pa)	((vaddr_t)PMAP_DIRECT_BASE + (pa))
 #define PMAP_DIRECT_UNMAP(va)	((paddr_t)(va) - PMAP_DIRECT_BASE)

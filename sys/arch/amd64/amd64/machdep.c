@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.279 2017/12/01 21:22:45 maxv Exp $	*/
+/*	$NetBSD: machdep.c,v 1.303 2018/04/04 12:59:49 maxv Exp $	*/
 
 /*
  * Copyright (c) 1996, 1997, 1998, 2000, 2006, 2007, 2008, 2011
@@ -110,7 +110,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.279 2017/12/01 21:22:45 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.303 2018/04/04 12:59:49 maxv Exp $");
 
 /* #define XENDEBUG_LOW  */
 
@@ -122,6 +122,7 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.279 2017/12/01 21:22:45 maxv Exp $");
 #include "opt_mtrr.h"
 #include "opt_realmem.h"
 #include "opt_xen.h"
+#include "opt_svs.h"
 #include "opt_kaslr.h"
 #ifndef XEN
 #include "opt_physmem.h"
@@ -290,8 +291,6 @@ struct pool x86_dbregspl;
 phys_ram_seg_t mem_clusters[VM_PHYSSEG_MAX];
 int mem_cluster_cnt;
 
-char x86_64_doubleflt_stack[4096];
-
 int cpu_dump(void);
 int cpu_dumpsize(void);
 u_long cpu_dump_mempagecnt(void);
@@ -395,6 +394,9 @@ cpu_startup(void)
 	x86_bus_space_mallocok();
 #endif
 
+#ifdef __HAVE_PCPU_AREA
+	cpu_pcpuarea_init(&cpu_info_primary);
+#endif
 	gdt_init();
 	x86_64_proc0_pcb_ldt_init();
 
@@ -479,7 +481,7 @@ x86_64_proc0_pcb_ldt_init(void)
 	pcb->pcb_fs = 0;
 	pcb->pcb_gs = 0;
 	pcb->pcb_rsp0 = (uvm_lwp_getuarea(l) + USPACE - 16) & ~0xf;
-	pcb->pcb_iopl = SEL_KPL;
+	pcb->pcb_iopl = IOPL_KPL;
 	pcb->pcb_dbregs = NULL;
 	pcb->pcb_cr0 = rcr0() & ~CR0_TS;
 	l->l_md.md_regs = (struct trapframe *)pcb->pcb_rsp0 - 1;
@@ -504,19 +506,47 @@ x86_64_proc0_pcb_ldt_init(void)
 void
 cpu_init_tss(struct cpu_info *ci)
 {
-	struct x86_64_tss *tss = &ci->ci_tss;
+#ifdef __HAVE_PCPU_AREA
+	const cpuid_t cid = cpu_index(ci);
+#endif
+	struct cpu_tss *cputss;
 	uintptr_t p;
 
-	tss->tss_iobase = IOMAP_INVALOFF << 16;
-	/* tss->tss_ist[0] is filled by cpu_intr_init */
+#ifdef __HAVE_PCPU_AREA
+	cputss = (struct cpu_tss *)&pcpuarea->ent[cid].tss;
+#else
+	cputss = (struct cpu_tss *)uvm_km_alloc(kernel_map,
+	    sizeof(struct cpu_tss), 0, UVM_KMF_WIRED|UVM_KMF_ZERO);
+#endif
+
+	cputss->tss.tss_iobase = IOMAP_INVALOFF << 16;
+
+	/* DDB stack */
+#ifdef __HAVE_PCPU_AREA
+	p = (vaddr_t)&pcpuarea->ent[cid].ist0;
+#else
+	p = uvm_km_alloc(kernel_map, PAGE_SIZE, 0, UVM_KMF_WIRED|UVM_KMF_ZERO);
+#endif
+	cputss->tss.tss_ist[0] = p + PAGE_SIZE - 16;
 
 	/* double fault */
-	tss->tss_ist[1] = (uint64_t)x86_64_doubleflt_stack + PAGE_SIZE - 16;
+#ifdef __HAVE_PCPU_AREA
+	p = (vaddr_t)&pcpuarea->ent[cid].ist1;
+#else
+	p = uvm_km_alloc(kernel_map, PAGE_SIZE, 0, UVM_KMF_WIRED|UVM_KMF_ZERO);
+#endif
+	cputss->tss.tss_ist[1] = p + PAGE_SIZE - 16;
 
 	/* NMI */
-	p = uvm_km_alloc(kernel_map, PAGE_SIZE, 0, UVM_KMF_WIRED);
-	tss->tss_ist[2] = p + PAGE_SIZE - 16;
-	ci->ci_tss_sel = tss_alloc(tss);
+#ifdef __HAVE_PCPU_AREA
+	p = (vaddr_t)&pcpuarea->ent[cid].ist2;
+#else
+	p = uvm_km_alloc(kernel_map, PAGE_SIZE, 0, UVM_KMF_WIRED|UVM_KMF_ZERO);
+#endif
+	cputss->tss.tss_ist[2] = p + PAGE_SIZE - 16;
+
+	ci->ci_tss = cputss;
+	ci->ci_tss_sel = tss_alloc(&cputss->tss);
 }
 
 void
@@ -1458,7 +1488,7 @@ typedef void (vector)(void);
 extern vector IDTVEC(syscall);
 extern vector IDTVEC(syscall32);
 extern vector IDTVEC(osyscall);
-extern vector *IDTVEC(exceptions)[];
+extern vector *x86_exceptions[];
 
 static void
 init_x86_64_ksyms(void)
@@ -1569,7 +1599,13 @@ init_x86_64(paddr_t first_avail)
 	uvm_lwp_setuarea(&lwp0, lwp0uarea);
 
 	cpu_probe(&cpu_info_primary);
+#ifdef SVS
+	svs_init();
+#endif
 	cpu_init_msrs(&cpu_info_primary, true);
+#ifndef XEN
+	cpu_speculation_init(&cpu_info_primary);
+#endif
 
 	use_pae = 1; /* PAE always enabled in long mode */
 
@@ -1747,7 +1783,7 @@ init_x86_64(paddr_t first_avail)
 			ist = 0;
 			break;
 		}
-		setgate(&idt[x], IDTVEC(exceptions)[x], ist, SDT_SYS386IGT,
+		setgate(&idt[x], x86_exceptions[x], ist, SDT_SYS386IGT,
 		    (x == 3 || x == 4) ? SEL_UPL : SEL_KPL,
 		    GSEL(GCODE_SEL, SEL_KPL));
 #else /* XEN */
@@ -1771,7 +1807,7 @@ init_x86_64(paddr_t first_avail)
 
 		xen_idt[xen_idt_idx].cs = GSEL(GCODE_SEL, SEL_KPL);
 		xen_idt[xen_idt_idx].address =
-		    (unsigned long)IDTVEC(exceptions)[x];
+		    (unsigned long)x86_exceptions[x];
 		xen_idt_idx++;
 #endif /* XEN */
 	}

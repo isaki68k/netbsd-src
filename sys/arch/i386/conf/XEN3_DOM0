@@ -1,4 +1,4 @@
-#	$NetBSD: XEN3_DOM0,v 1.123 2017/11/06 02:57:18 rin Exp $
+#	$NetBSD: XEN3_DOM0,v 1.127 2018/02/17 01:34:45 sevan Exp $
 #
 #	XEN3_0: Xen 3.0 domain0 kernel
 
@@ -61,6 +61,8 @@ options 	MODULAR		# new style module(7) framework
 options 	USERCONF	# userconf(4) support
 options 	SYSCTL_INCLUDE_DESCR	# Include sysctl descriptions in kernel
 
+# Alternate buffer queue strategies for better responsiveness under high
+# disk I/O load.
 #options 	BUFQ_READPRIO
 options 	BUFQ_PRIOCSCAN
 
@@ -73,7 +75,7 @@ options 	DDB_HISTORY_SIZE=512	# enable history editing in DDB
 #options 	KGDB		# remote debugger
 #options 	KGDB_DEVNAME="\"com\"",KGDB_DEVADDR=0x2f8,KGDB_DEVRATE=57600
 #makeoptions	DEBUG="-g"	# compile full symbol table
-options DDB_COMMANDONENTER="trace;show registers"
+options DDB_COMMANDONENTER="show registers"
 
 # Compatibility options
 include 	"conf/compat_netbsd09.config"
@@ -267,6 +269,10 @@ amdpm*	at pci? dev ? function ?	# RNG and SMBus 1.0 interface
 ichsmb* at pci? dev ? function ?
 iic*	at ichsmb?
 
+# I2C controller as found in some Intel PCH devices.
+dwiic*		at pci?			# I2C controller
+iic*		at dwiic?
+
 # dbCool thermal monitor and fan controller
 #iic*	at amdpm?			# sensors below are on this bus
 #dbcool* at iic? addr 0x2C		# Unknown other motherboard(s)
@@ -391,6 +397,13 @@ tlphy*	at mii? phy ?			# ThunderLAN PHYs
 tqphy*	at mii? phy ?			# TDK Semiconductor PHYs
 ukphy*	at mii? phy ?			# generic unknown PHYs
 urlphy* at mii? phy ?			# Realtek RTL8150L internal PHYs
+
+# I2C HID devices
+ihidev* at iic?
+
+# I2C Mice
+ims*	at ihidev? reportid ?
+wsmouse* at ims? mux 0
 
 # I2O devices
 iop*	at pci? dev ? function ?	# I/O processor
@@ -533,14 +546,14 @@ wsmouse*	at pms? mux 0
 # USB Controller and Devices
 
 # PCI USB controllers
-# xhci*	at pci? dev ? function ?	# eXtensible Host Controller
+xhci*	at pci? dev ? function ?	# eXtensible Host Controller
 					# xhci is at best experimental
 ehci*	at pci? dev ? function ?	# Enhanced Host Controller
 ohci*	at pci? dev ? function ?	# Open Host Controller
 uhci*	at pci? dev ? function ?	# Universal Host Controller (Intel)
 
 # USB bus support
-# usb*	at xhci?
+usb*	at xhci?
 usb*	at ehci?
 usb*	at ohci?
 usb*	at uhci?

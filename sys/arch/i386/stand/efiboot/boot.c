@@ -1,4 +1,4 @@
-/*	$NetBSD: boot.c,v 1.5 2017/05/01 13:03:01 nonaka Exp $	*/
+/*	$NetBSD: boot.c,v 1.9 2018/04/02 09:44:18 nonaka Exp $	*/
 
 /*-
  * Copyright (c) 2016 Kimihiro Nonaka <nonaka@netbsd.org>
@@ -55,7 +55,9 @@ static const char * const names[][2] = {
 #define NUMNAMES	__arraycount(names)
 #define DEFFILENAME	names[0][0]
 
-#define	MAXDEVNAME	16
+#ifndef	EFIBOOTCFG_FILENAME
+#define	EFIBOOTCFG_FILENAME	"esp:/EFI/NetBSD/boot.cfg"
+#endif
 
 void	command_help(char *);
 void	command_quit(char *);
@@ -273,6 +275,10 @@ boot(void)
 	default_filename = DEFFILENAME;
 
 	if (!(boot_params.bp_flags & X86_BP_FLAGS_NOBOOTCONF)) {
+#ifdef EFIBOOTCFG_FILENAME
+		int rv = parsebootconf(EFIBOOTCFG_FILENAME);
+		if (rv)
+#endif
 		parsebootconf(BOOTCFG_FILENAME);
 	} else {
 		bootcfg_info.timeout = boot_params.bp_timeout;
@@ -419,7 +425,7 @@ command_dev(char *arg)
 	const char *file; /* dummy */
 
 	if (*arg == '\0') {
-		biosdisk_probe();
+		efi_disk_show();
 		printf("default %s%d%c\n", default_devname, default_unit,
 		       'a' + default_partition);
 		return;
@@ -463,11 +469,16 @@ command_consdev(char *arg)
 	char *sep, *sep2 = NULL;
 	int ioport, speed = 0;
 
+	if (*arg == '\0') {
+		efi_cons_show();
+		return;
+	}
+
 	sep = strchr(arg, ',');
 	if (sep != NULL) {
 		*sep++ = '\0';
 		sep2 = strchr(sep, ',');
-		if (sep != NULL)
+		if (sep2 != NULL)
 			*sep2++ = '\0';
 	}
 
@@ -554,6 +565,9 @@ command_multiboot(char *arg)
 void
 command_version(char *arg)
 {
+	CHAR16 *path;
+	char *upath, *ufirmware;
+	int rv;
 
 	if (strcmp(arg, "full") == 0) {
 		printf("ImageBase: 0x%" PRIxPTR "\n",
@@ -561,8 +575,24 @@ command_version(char *arg)
 		printf("Stack: 0x%" PRIxPTR "\n", efi_main_sp);
 		printf("EFI version: %d.%02d\n",
 		    ST->Hdr.Revision >> 16, ST->Hdr.Revision & 0xffff);
-		Print(L"EFI Firmware: %s (rev %d.%02d)\n", ST->FirmwareVendor,
-		    ST->FirmwareRevision >> 16, ST->FirmwareRevision & 0xffff);
+		ufirmware = NULL;
+		rv = ucs2_to_utf8(ST->FirmwareVendor, &ufirmware);
+		if (rv == 0) {
+			printf("EFI Firmware: %s (rev %d.%02d)\n", ufirmware,
+			    ST->FirmwareRevision >> 16,
+			    ST->FirmwareRevision & 0xffff);
+			FreePool(ufirmware);
+		}
+		path = DevicePathToStr(efi_bootdp);
+		upath = NULL;
+		rv = ucs2_to_utf8(path, &upath);
+		FreePool(path);
+		if (rv == 0) {
+			printf("Boot DevicePath: %d:%d:%s\n",
+			    DevicePathType(efi_bootdp),
+			    DevicePathSubType(efi_bootdp), upath);
+			FreePool(upath);
+		}
 	}
 
 	printf("\n"
@@ -598,7 +628,9 @@ command_devpath(char *arg)
 	EFI_HANDLE *handles;
 	EFI_DEVICE_PATH *dp0, *dp;
 	CHAR16 *path;
+	char *upath;
 	UINTN cols, rows, row = 0;
+	int rv;
 
 	status = uefi_call_wrapper(ST->ConOut->QueryMode, 4, ST->ConOut,
 	    ST->ConOut->Mode->Mode, &cols, &rows);
@@ -621,35 +653,54 @@ command_devpath(char *arg)
 		if (EFI_ERROR(status))
 			break;
 
-		Print(L"DevicePathType %d\n", DevicePathType(dp0));
+		printf("DevicePathType %d\n", DevicePathType(dp0));
+		if (++row >= rows) {
+			row = 0;
+			printf("Press Any Key to continue :");
+			(void) awaitkey(-1, 0);
+			printf("\n");
+		}
 		for (dp = dp0;
 		     !IsDevicePathEnd(dp);
 		     dp = NextDevicePathNode(dp)) {
+
 			path = DevicePathToStr(dp);
-			Print(L"%d:%d:%s\n", DevicePathType(dp), DevicePathSubType(dp), path);
+			upath = NULL;
+			rv = ucs2_to_utf8(path, &upath);
 			FreePool(path);
+			if (rv) {
+				printf("convert failed\n");
+				break;
+			}
+
+			printf("%d:%d:%s\n", DevicePathType(dp),
+			    DevicePathSubType(dp), upath);
+			FreePool(upath);
 
 			if (++row >= rows) {
 				row = 0;
-				Print(L"Press Any Key to continue :");
+				printf("Press Any Key to continue :");
 				(void) awaitkey(-1, 0);
-				Print(L"\n");
+				printf("\n");
 			}
 		}
 	}
 }
 
+
 void
 command_efivar(char *arg)
 {
-	static const CHAR16 header[] =
-	 L"GUID                                Variable Name        Value\n"
-	 L"=================================== ==================== ========\n";
+	static const char header[] =
+	 "GUID                                 Variable Name        Value\n"
+	 "==================================== ==================== ========\n";
 	EFI_STATUS status;
 	UINTN sz = 64, osz;
-	CHAR16 *name = NULL, *tmp, *val;
+	CHAR16 *name = NULL, *tmp, *val, guid[128];
+	char *uname, *uval, *uguid;
 	EFI_GUID vendor;
 	UINTN cols, rows, row = 0;
+	int rv;
 
 	status = uefi_call_wrapper(ST->ConOut->QueryMode, 4, ST->ConOut,
 	    ST->ConOut->Mode->Mode, &cols, &rows);
@@ -660,15 +711,15 @@ command_efivar(char *arg)
 
 	name = AllocatePool(sz);
 	if (name == NULL) {
-		Print(L"memory allocation failed: %ld bytes\n",
-		    (UINT64)sz);
+		printf("memory allocation failed: %" PRIuMAX" bytes\n",
+		    (uintmax_t)sz);
 		return;
 	}
 
 	SetMem(name, sz, 0);
 	vendor = NullGuid;
 
-	Print(L"%s", header);
+	printf("%s", header);
 	for (;;) {
 		osz = sz;
 		status = uefi_call_wrapper(RT->GetNextVariableName, 3,
@@ -677,15 +728,15 @@ command_efivar(char *arg)
 			if (status == EFI_NOT_FOUND)
 				break;
 			if (status != EFI_BUFFER_TOO_SMALL) {
-				Print(L"GetNextVariableName failed: %r\n",
-				    status);
+				printf("GetNextVariableName failed: %" PRIxMAX "\n",
+				    (uintmax_t)status);
 				break;
 			}
 
 			tmp = AllocatePool(sz);
 			if (tmp == NULL) {
-				Print(L"memory allocation failed: %ld bytes\n",
-				    (UINT64)sz);
+				printf("memory allocation failed: %" PRIuMAX
+				    "bytes\n", (uintmax_t)sz);
 				break;
 			}
 			SetMem(tmp, sz, 0);
@@ -696,15 +747,43 @@ command_efivar(char *arg)
 		}
 
 		val = LibGetVariable(name, &vendor);
-		Print(L"%.-35g %.-20s %s\n", &vendor, name,
-		    val ? val : L"(null)");
-		FreePool(val);
+		if (val != NULL) {
+			uval = NULL;
+			rv = ucs2_to_utf8(val, &uval);
+			FreePool(val);
+			if (rv) {
+				printf("value convert failed\n");
+				break;
+			}
+		} else
+			uval = NULL;
+		uname = NULL;
+		rv = ucs2_to_utf8(name, &uname);
+		if (rv) {
+			printf("name convert failed\n");
+			FreePool(uval);
+			break;
+		}
+		GuidToString(guid, &vendor);
+		uguid = NULL;
+		rv = ucs2_to_utf8(guid, &uguid);
+		if (rv) {
+			printf("GUID convert failed\n");
+			FreePool(uval);
+			FreePool(uname);
+			break;
+		}
+		printf("%-35s %-20s %s\n", uguid, uname, uval ? uval : "(null)");
+		FreePool(uguid);
+		FreePool(uname);
+		if (uval != NULL)
+			FreePool(uval);
 
 		if (++row >= rows) {
 			row = 0;
-			Print(L"Press Any Key to continue :");
+			printf("Press Any Key to continue :");
 			(void) awaitkey(-1, 0);
-			Print(L"\n");
+			printf("\n");
 		}
 	}
 

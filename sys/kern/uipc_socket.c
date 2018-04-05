@@ -1,4 +1,4 @@
-/*	$NetBSD: uipc_socket.c,v 1.257 2017/10/25 08:12:39 maya Exp $	*/
+/*	$NetBSD: uipc_socket.c,v 1.261 2018/03/19 16:32:30 roy Exp $	*/
 
 /*-
  * Copyright (c) 2002, 2007, 2008, 2009 The NetBSD Foundation, Inc.
@@ -71,7 +71,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uipc_socket.c,v 1.257 2017/10/25 08:12:39 maya Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uipc_socket.c,v 1.261 2018/03/19 16:32:30 roy Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
@@ -1244,8 +1244,7 @@ soreceive(struct socket *so, struct mbuf **paddr, struct uio *uio,
 			if (m != NULL)
 				goto dontblock;
 			error = so->so_error;
-			if ((flags & MSG_PEEK) == 0)
-				so->so_error = 0;
+			so->so_error = 0;
 			goto release;
 		}
 		if (so->so_state & SS_CANTRCVMORE) {
@@ -2109,8 +2108,12 @@ sockopt_set(struct sockopt *sopt, const void *buf, size_t len)
 			return error;
 	}
 
-	KASSERT(sopt->sopt_size == len);
+	if (sopt->sopt_size < len)
+		return EINVAL;
+	
 	memcpy(sopt->sopt_data, buf, len);
+	sopt->sopt_retsize = len;
+
 	return 0;
 }
 
@@ -2169,9 +2172,12 @@ sockopt_setmbuf(struct sockopt *sopt, struct mbuf *m)
 			return error;
 	}
 
-	KASSERT(sopt->sopt_size == len);
+	if (sopt->sopt_size < len)
+		return EINVAL;
+	
 	m_copydata(m, 0, len, sopt->sopt_data);
 	m_freem(m);
+	sopt->sopt_retsize = len;
 
 	return 0;
 }
@@ -2244,7 +2250,7 @@ filt_soread(struct knote *kn, long hint)
 		kn->kn_flags |= EV_EOF;
 		kn->kn_fflags = so->so_error;
 		rv = 1;
-	} else if (so->so_error)	/* temporary udp error */
+	} else if (so->so_error)
 		rv = 1;
 	else if (kn->kn_sfflags & NOTE_LOWAT)
 		rv = (kn->kn_data >= kn->kn_sdata);
@@ -2283,7 +2289,7 @@ filt_sowrite(struct knote *kn, long hint)
 		kn->kn_flags |= EV_EOF;
 		kn->kn_fflags = so->so_error;
 		rv = 1;
-	} else if (so->so_error)	/* temporary udp error */
+	} else if (so->so_error)
 		rv = 1;
 	else if (((so->so_state & SS_ISCONNECTED) == 0) &&
 	    (so->so_proto->pr_flags & PR_CONNREQUIRED))

@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.195 2017/08/11 12:58:14 maxv Exp $
+#	$NetBSD: Makefile,v 1.202 2018/02/26 07:29:24 pgoyette Exp $
 
 .include <bsd.own.mk>
 
@@ -9,6 +9,7 @@ SUBDIR+=	accf_httpready
 SUBDIR+=	adosfs
 SUBDIR+=	aio
 SUBDIR+=	audio
+SUBDIR+=	autofs
 SUBDIR+=	blowfish
 SUBDIR+=	bpf
 SUBDIR+=	bpf_filter
@@ -48,6 +49,8 @@ SUBDIR+=	gpioow
 SUBDIR+=	gpiosim
 SUBDIR+=	hfs
 SUBDIR+=	hythygtemp
+SUBDIR+=	si70xxtemp
+SUBDIR+=	am2315temp
 SUBDIR+=	i2cexec
 SUBDIR+=	i2c_bitbang
 SUBDIR+=	if_agr
@@ -70,6 +73,7 @@ SUBDIR+=	if_strip
 SUBDIR+=	if_tun tun
 SUBDIR+=	if_vlan
 SUBDIR+=	iic
+SUBDIR+=	ip_ecn
 SUBDIR+=	ipl
 SUBDIR+=	kernfs
 SUBDIR+=	layerfs
@@ -177,7 +181,9 @@ SUBDIR+=	exec_elf64
 
 .if ${MACHINE_ARCH} == "i386" || \
     ${MACHINE_ARCH} == "x86_64"
+SUBDIR+=	amdsmn
 SUBDIR+=	amdtemp
+SUBDIR+=	amdzentemp
 SUBDIR+=	coretemp
 SUBDIR+=	est
 SUBDIR+=	hdafg
@@ -185,6 +191,7 @@ SUBDIR+=	hdaudio
 SUBDIR+=	hdaudio_pci
 SUBDIR+=	hdaudioverbose
 SUBDIR+=	hpet
+SUBDIR+=	ichsmb
 SUBDIR+=	odcm
 SUBDIR+=	powernow
 SUBDIR+=	tco
@@ -370,6 +377,12 @@ SUBDIR+=	auvitek
 SUBDIR+=	coram
 SUBDIR+=	cxdtv
 SUBDIR+=	emdtv
+
+# Intel Integrated Memory Controller and associated SMBus
+# (Experimental)
+SUBDIR+=	imc
+SUBDIR+=	imcsmb
+
 .endif
 
 .if (${MKISCSI} != "no")

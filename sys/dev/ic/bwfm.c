@@ -1,4 +1,4 @@
-/* $NetBSD: bwfm.c,v 1.4 2017/10/23 15:21:10 jmcneill Exp $ */
+/* $NetBSD: bwfm.c,v 1.10 2018/01/16 18:42:43 maxv Exp $ */
 /* $OpenBSD: bwfm.c,v 1.5 2017/10/16 22:27:16 patrick Exp $ */
 /*
  * Copyright (c) 2010-2016 Broadcom Corporation
@@ -60,7 +60,6 @@ void	 bwfm_stop(struct ifnet *, int);
 void	 bwfm_watchdog(struct ifnet *);
 int	 bwfm_ioctl(struct ifnet *, u_long, void *);
 int	 bwfm_media_change(struct ifnet *);
-void	 bwfm_media_status(struct ifnet *, struct ifmediareq *);
 
 int	 bwfm_send_mgmt(struct ieee80211com *, struct ieee80211_node *,
 	     int, int);
@@ -148,6 +147,9 @@ bwfm_attach(struct bwfm_softc *sc)
 		t->t_sc = sc;
 		pcq_put(sc->sc_freetask, t);
 	}
+
+	/* Stop the device in case it was previously initialized */
+	bwfm_fwvar_cmd_set_int(sc, BWFM_C_DOWN, 1);
 
 	if (bwfm_fwvar_cmd_get_int(sc, BWFM_C_GET_VERSION, &tmp)) {
 		printf("%s: could not read io type\n", DEVNAME(sc));
@@ -254,7 +256,7 @@ bwfm_attach(struct bwfm_softc *sc)
 	ic->ic_recv_mgmt = bwfm_recv_mgmt;
 	ic->ic_crypto.cs_key_set = bwfm_key_set;
 	ic->ic_crypto.cs_key_delete = bwfm_key_delete;
-	ieee80211_media_init(ic, bwfm_media_change, bwfm_media_status);
+	ieee80211_media_init(ic, bwfm_media_change, ieee80211_media_status);
 
 	ieee80211_announce(ic);
 
@@ -420,6 +422,13 @@ bwfm_init(struct ifnet *ifp)
 	bwfm_fwvar_var_set_int(sc, "arpoe", 0);
 	bwfm_fwvar_var_set_int(sc, "ndoe", 0);
 	bwfm_fwvar_var_set_int(sc, "toe", 0);
+
+	/* Accept all multicast frames. */
+	bwfm_fwvar_var_set_int(sc, "allmulti", 1);
+
+	/* Setup promiscuous mode */
+	bwfm_fwvar_cmd_set_int(sc, BWFM_C_SET_PROMISC,
+	    (ifp->if_flags & IFF_PROMISC) ? 1 : 0);
 
 	/*
 	 * Tell the firmware supplicant that we are going to handle the
@@ -760,11 +769,6 @@ int
 bwfm_media_change(struct ifnet *ifp)
 {
 	return 0;
-}
-
-void
-bwfm_media_status(struct ifnet *ifp, struct ifmediareq *imr)
-{
 }
 
 /* Chip initialization (SDIO, PCIe) */
@@ -1497,12 +1501,6 @@ bwfm_connect(struct bwfm_softc *sc)
 		}
 		kmem_free(params, sizeof(*params));
 	}
-
-	/* XXX: added for testing only, remove */
-	bwfm_fwvar_var_set_int(sc, "allmulti", 1);
-#if 0
-	bwfm_fwvar_cmd_set_int(sc, BWFM_C_SET_PROMISC, 1);
-#endif
 }
 
 void
@@ -1674,52 +1672,65 @@ bwfm_scan_node(struct bwfm_softc *sc, struct bwfm_bss_info *bss, size_t len)
 
 	/* Build scan result */
 	memset(&scan, 0, sizeof(scan));
-	scan.tstamp  = (uint8_t *)&tsf;
-	scan.bintval = le16toh(bss->beacon_period);
-	scan.capinfo = le16toh(bss->capability);
-	scan.bchan   = ieee80211_chan2ieee(ic, ic->ic_curchan);
-	scan.chan    = scan.bchan;
-	scan.rates   = rates;
-	scan.ssid    = ssid;
+	scan.sp_tstamp  = (uint8_t *)&tsf;
+	scan.sp_bintval = le16toh(bss->beacon_period);
+	scan.sp_capinfo = le16toh(bss->capability);
+	scan.sp_bchan   = ieee80211_chan2ieee(ic, ic->ic_curchan);
+	scan.sp_chan    = scan.sp_bchan;
+	scan.sp_rates   = rates;
+	scan.sp_ssid    = ssid;
 
 	for (frm = sfrm; frm < efrm; frm += frm[1] + 2) {
 		switch (frm[0]) {
 		case IEEE80211_ELEMID_COUNTRY:
-			scan.country = frm;
+			scan.sp_country = frm;
 			break;
 		case IEEE80211_ELEMID_FHPARMS:
 			if (ic->ic_phytype == IEEE80211_T_FH) {
-				scan.fhdwell = le16dec(&frm[2]);
-				scan.chan = IEEE80211_FH_CHAN(frm[4], frm[5]);
-				scan.fhindex = frm[6];
+				if (frm + 6 >= efrm)
+					break;
+				scan.sp_fhdwell = le16dec(&frm[2]);
+				scan.sp_chan = IEEE80211_FH_CHAN(frm[4], frm[5]);
+				scan.sp_fhindex = frm[6];
 			}
 			break;
 		case IEEE80211_ELEMID_DSPARMS:
-			if (ic->ic_phytype != IEEE80211_T_FH)
-				scan.chan = frm[2];
+			if (ic->ic_phytype != IEEE80211_T_FH) {
+				if (frm + 2 >= efrm)
+					break;
+				scan.sp_chan = frm[2];
+			}
 			break;
 		case IEEE80211_ELEMID_TIM:
-			scan.tim = frm;
-			scan.timoff = frm - sfrm;
+			scan.sp_tim = frm;
+			scan.sp_timoff = frm - sfrm;
 			break;
 		case IEEE80211_ELEMID_XRATES:
-			scan.xrates = frm;
+			scan.sp_xrates = frm;
 			break;
 		case IEEE80211_ELEMID_ERP:
+			if (frm + 1 >= efrm)
+				break;
 			if (frm[1] != 1) {
 				ic->ic_stats.is_rx_elem_toobig++;
 				break;
 			}
-			scan.erp = frm[2];
+			scan.sp_erp = frm[2];
 			break;
 		case IEEE80211_ELEMID_RSN:
-			scan.wpa = frm;
+			scan.sp_wpa = frm;
 			break;
 		case IEEE80211_ELEMID_VENDOR:
+			if (frm + 1 >= efrm)
+				break;
+			if (frm + frm[1] + 2 >= efrm)
+				break;
 			if (bwfm_iswpaoui(frm))
-				scan.wpa = frm;
+				scan.sp_wpa = frm;
 			break;
 		}
+		if (frm + 1 >= efrm)
+			break;
 	}
 
 	if (ic->ic_flags & IEEE80211_F_SCAN)

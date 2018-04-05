@@ -1,4 +1,4 @@
-/* $NetBSD: fdt_subr.c,v 1.19 2017/09/19 22:55:49 jmcneill Exp $ */
+/* $NetBSD: fdt_subr.c,v 1.21 2018/03/06 17:40:04 bouyer Exp $ */
 
 /*-
  * Copyright (c) 2015 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fdt_subr.c,v 1.19 2017/09/19 22:55:49 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fdt_subr.c,v 1.21 2018/03/06 17:40:04 bouyer Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -80,6 +80,13 @@ fdtbus_phandle2offset(int phandle)
 	return phandle - dtoff;
 }
 
+static bool fdtbus_decoderegprop = true;
+
+void
+fdtbus_set_decoderegprop(bool decode)
+{
+	fdtbus_decoderegprop = decode;
+}
 
 static int
 fdtbus_get_addr_cells(int phandle)
@@ -160,6 +167,10 @@ fdtbus_decode_range(int phandle, uint64_t paddr)
 	const int parent = OF_parent(phandle);
 	if (parent == -1)
 		return paddr;
+
+	if (!fdtbus_decoderegprop)
+		return paddr;
+
 	const uint8_t *buf;
 	int len;
 
@@ -456,7 +467,7 @@ fdtbus_get_string_index(int phandle, const char *prop, u_int index)
 	names = fdtbus_get_string(phandle, prop);
 
 	for (name = names, cur = 0; len > 0;
-	     name += strlen(name) + 1, cur++) {
+	     len -= strlen(name) + 1, name += strlen(name) + 1, cur++) {
 		if (index == cur)
 			return name;
 	}

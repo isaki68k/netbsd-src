@@ -1,4 +1,4 @@
-#	$NetBSD: files.i2c,v 1.78 2017/10/07 18:22:06 jmcneill Exp $
+#	$NetBSD: files.i2c,v 1.87 2018/03/16 22:11:53 macallan Exp $
 
 obsolete defflag	opt_i2cbus.h		I2C_SCAN
 define	i2cbus { }
@@ -130,7 +130,6 @@ attach	xrtc at iic
 file	dev/i2c/x1226.c				xrtc
 
 # Analog Devices dBCool family of thermal monitors / fan controllers
-define dbcool {}
 device dbcool: sysmon_envsys
 attach dbcool at iic
 file dev/i2c/dbcool.c			dbcool
@@ -280,7 +279,56 @@ device	tcagpio
 attach	tcagpio at iic
 file	dev/i2c/tcagpio.c			tcagpio
 
+# Silicon Lab SI7013/SI7020/SI7021 Temperature and Humidity sensor
+device si70xxtemp
+attach si70xxtemp at iic
+file dev/i2c/si70xx.c				si70xxtemp
+
+# Aosong AM2315 Temperature and Humidity sensor
+device am2315temp
+attach am2315temp at iic
+file dev/i2c/am2315.c				am2315temp
+
 # Silergy SY8106A regulator
 device	sy8106a
 attach	sy8106a at iic
 file	dev/i2c/sy8106a.c			sy8106a
+
+# Maxim DS1631 High-Precision Digital Thermometer and Thermostat
+device	dstemp: sysmon_envsys
+attach	dstemp at iic
+file	dev/i2c/dstemp.c			dstemp
+
+# EM3027 Real Time Clock and Temperature Sensor
+device	em3027rtc: sysmon_envsys
+attach	em3027rtc at iic
+file	dev/i2c/em3027.c			em3027rtc
+
+# Apple Fan Control Unit found in some G5
+device	fcu: sysmon_envsys
+attach	fcu at iic
+file	dev/i2c/fcu.c				fcu	needs-flag
+
+# Analog Devices AD7417 thermometer and ADC
+device	adadc: sysmon_envsys
+attach	adadc at iic
+file	dev/i2c/adadc.c				adadc
+
+# HID over i2c
+# HID "bus"
+define  ihidbus {[ reportid = -1 ]}
+
+# HID root device for multiple report IDs
+device  ihidev: hid, ihidbus
+attach  ihidev at iic
+file    dev/i2c/ihidev.c			ihidev
+
+#HID mice
+device	ims: hid, hidms, wsmousedev
+attach	ims at ihidbus
+file	dev/i2c/ims.c				ims
+
+#HID multitouch
+device	imt: hid, hidmt, wsmousedev
+attach	imt at ihidbus
+file	dev/i2c/imt.c				imt

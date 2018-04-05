@@ -1,5 +1,5 @@
 #
-#	$NetBSD: SUNXI,v 1.55 2017/12/03 17:18:53 jmcneill Exp $
+#	$NetBSD: SUNXI,v 1.61 2018/04/03 12:56:21 bouyer Exp $
 #
 #	Allwinner sunxi family
 #
@@ -214,8 +214,7 @@ sunxigpio*	at fdt? pass 3		# GPIO
 gpio*		at gpiobus?
 
 # Ethernet
-sun4iemac*	at fdt?			# Allwinner Fast Ethernet (EMAC)
-sunxiemac*	at fdt?			# Allwinner Gigabit Ethernet (EMAC)
+emac*		at fdt?		# Allwinner Fast or Gigabit Ethernet (EMAC)
 awge*		at fdt?			# Allwinner Gigabit Ethernet (GMAC)
 rgephy*		at mii? phy ?
 rlphy*		at mii? phy ?
@@ -235,7 +234,16 @@ axp20xreg*	at axp20x?
 axp22x*		at iic?			# AXP221 Power Management IC
 sy8106a*	at iic?			# Silergy SY81061 regulator
 pcf8563rtc*	at iic?			# PCF8563 RTC
-#seeprom*	at iic?			# AT24Cxx Serial EEPROM
+seeprom*	at iic?			# AT24Cxx Serial EEPROM
+
+# SPI
+sun6ispi*	at fdt?
+spi*		at spibus?
+
+# CAN bus
+options         CAN             # Controller Area Network protocol
+pseudo-device   canloop         # CAN loopback interface
+sunxican*	at fdt?		# A10/A20 CAN controller
 
 # RTC
 sunxirtc*	at fdt?			# RTC
@@ -275,6 +283,14 @@ wd*		at atabus? drive ?
 # Display
 genfb*		at fdt?
 wsdisplay*	at genfb?
+
+#sunxidebe*	at fdt? pass 4	# Display Backend
+#genfb*		at sunxidebe?
+#sunxitcon*	at fdt? pass 4	# LCD LVDS/RGB controller
+#sunxihdmi*	at fdt? pass 4	# HDMI controller
+#connector*	at fdt? pass 4
+#panel*		at fdt? pass 4
+#sunxidep*	at fdt?		# Display Engine Pipeline
 options 	VCONS_DRAW_INTR
 options 	WSEMUL_VT100
 options 	WS_DEFAULT_FG=WSCOL_WHITE
@@ -286,10 +302,14 @@ options 	WSDISPLAY_COMPAT_SYSCONS
 options 	WSDISPLAY_COMPAT_USL
 options 	WSDISPLAY_COMPAT_RAWKBD
 options 	WSDISPLAY_DEFAULTSCREENS=4
+options 	WSDISPLAY_MULTICONS
 
 # Touch Screen controller
 sunxits*	at fdt?			# Touch Screen controller
 wsmouse*	at sunxits? mux 0
+
+# Low res ADC
+sunxilradc*	at fdt?
 
 # wscons pseudo-devices
 pseudo-device	wsfont

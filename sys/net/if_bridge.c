@@ -1,4 +1,4 @@
-/*	$NetBSD: if_bridge.c,v 1.143 2017/12/06 07:40:16 ozaki-r Exp $	*/
+/*	$NetBSD: if_bridge.c,v 1.148 2018/01/15 09:49:16 maxv Exp $	*/
 
 /*
  * Copyright 2001 Wasabi Systems, Inc.
@@ -80,7 +80,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_bridge.c,v 1.143 2017/12/06 07:40:16 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_bridge.c,v 1.148 2018/01/15 09:49:16 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_bridge_ipf.h"
@@ -424,7 +424,10 @@ bridge_clone_create(struct if_clone *ifc, int unit)
 
 	if_initname(ifp, ifc->ifc_name, unit);
 	ifp->if_softc = sc;
-	ifp->if_extflags = IFEF_MPSAFE | IFEF_NO_LINK_STATE_CHANGE;
+	ifp->if_extflags = IFEF_NO_LINK_STATE_CHANGE;
+#ifdef NET_MPSAFE
+	ifp->if_extflags |= IFEF_MPSAFE;
+#endif
 	ifp->if_mtu = ETHERMTU;
 	ifp->if_ioctl = bridge_ioctl;
 	ifp->if_output = bridge_output;
@@ -466,7 +469,8 @@ bridge_clone_destroy(struct ifnet *ifp)
 	struct bridge_softc *sc = ifp->if_softc;
 	struct bridge_iflist *bif;
 
-	bridge_stop(ifp, 1);
+	if ((ifp->if_flags & IFF_RUNNING) != 0)
+		bridge_stop(ifp, 1);
 
 	BRIDGE_LOCK(sc);
 	for (;;) {
@@ -772,7 +776,9 @@ bridge_ioctl_add(struct bridge_softc *sc, void *arg)
 		}
 		/* FALLTHROUGH */
 	case IFT_L2TP:
-		error = if_enable_vlan_mtu(ifs);
+		IFNET_LOCK(ifs);
+		error = ether_enable_vlan_mtu(ifs);
+		IFNET_UNLOCK(ifs);
 		if (error > 0)
 			goto out;
 		/*
@@ -854,7 +860,9 @@ bridge_ioctl_del(struct bridge_softc *sc, void *arg)
 		 * Don't call it with holding a spin lock.
 		 */
 		(void) ifpromisc(ifs, 0);
-		(void) if_disable_vlan_mtu(ifs);
+		IFNET_LOCK(ifs);
+		(void) ether_disable_vlan_mtu(ifs);
+		IFNET_UNLOCK(ifs);
 		break;
 	default:
 #ifdef DIAGNOSTIC
@@ -1351,7 +1359,8 @@ bridge_stop(struct ifnet *ifp, int disable)
 	KASSERT((ifp->if_flags & IFF_RUNNING) != 0);
 	ifp->if_flags &= ~IFF_RUNNING;
 
-	callout_stop(&sc->sc_brcallout);
+	callout_halt(&sc->sc_brcallout, NULL);
+	workqueue_wait(sc->sc_rtage_wq, &sc->sc_rtage_wk);
 	bstp_stop(sc);
 	bridge_rtflush(sc, IFBF_FLUSHDYN);
 }
