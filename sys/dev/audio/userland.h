@@ -67,6 +67,9 @@ struct audio_params {
 };
 typedef struct audio_params audio_params_t;
 
+// audio_params 定義後 audio_hw_if より前…
+#include "aufilter.h"
+
 struct audio_hw_if {
 	void *(*allocm)(void *, int, size_t);
 	void (*freem)(void *, void *, size_t);
