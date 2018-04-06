@@ -91,7 +91,8 @@ typedef struct audio_file audio_file_t;
 
 struct audio_softc;
 
-void audio_softc_init(struct audio_softc *sc);
+void audio_softc_init(struct audio_softc *sc,
+	const audio_format2_t *, const audio_format2_t *);
 
 enum uio_rw
 {

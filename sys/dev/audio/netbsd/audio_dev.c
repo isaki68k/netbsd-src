@@ -56,6 +56,8 @@ audio_attach(struct audio_softc **scp, bool hw)
 	struct audio_softc *sc;
 	struct userland_softc *usc;
 	struct audio_info ai;
+	audio_format2_t phwfmt;
+	audio_format2_t rhwfmt;
 	int r;
 
 	sc = calloc(1, sizeof(*sc));
@@ -66,19 +68,19 @@ audio_attach(struct audio_softc **scp, bool hw)
 	usc->asc = sc;
 	usc->fd = -1;
 
-	sc->sc_phwfmt.encoding = AUDIO_ENCODING_SLINEAR_LE;
-	sc->sc_phwfmt.channels = 2;
-	sc->sc_phwfmt.sample_rate = 48000;
-	sc->sc_phwfmt.precision = 16;
-	sc->sc_phwfmt.stride = 16;
-	sc->sc_rhwfmt = sc->sc_phwfmt;
-	usc->frame_bytes = sc->sc_phwfmt.precision / 8 * sc->sc_phwfmt.channels;
+	phwfmt.encoding = AUDIO_ENCODING_SLINEAR_LE;
+	phwfmt.channels = 2;
+	phwfmt.sample_rate = 48000;
+	phwfmt.precision = 16;
+	phwfmt.stride = 16;
+	rhwfmt = phwfmt;
+	usc->frame_bytes = phwfmt.precision / 8 * phwfmt.channels;
 
 	sc->hw_if = &userland_hw_if;
 	sc->sc_lock = &usc->sc_lock;
 	sc->sc_intr_lock = &usc->sc_intr_lock;
 
-	audio_softc_init(sc);
+	audio_softc_init(sc, &phwfmt, &rhwfmt);
 
 	if (hw) {
 		usc->fd = open(devicefile, O_RDWR);
@@ -89,10 +91,10 @@ audio_attach(struct audio_softc **scp, bool hw)
 
 		AUDIO_INITINFO(&ai);
 		ai.mode = AUMODE_PLAY;
-		ai.play.sample_rate = sc->sc_phwfmt.sample_rate;
-		ai.play.encoding    = sc->sc_phwfmt.encoding;
-		ai.play.precision   = sc->sc_phwfmt.precision;
-		ai.play.channels    = sc->sc_phwfmt.channels;
+		ai.play.sample_rate = phwfmt.sample_rate;
+		ai.play.encoding    = phwfmt.encoding;
+		ai.play.precision   = phwfmt.precision;
+		ai.play.channels    = phwfmt.channels;
 		r = ioctl(usc->fd, AUDIO_SETINFO, &ai);
 		if (r == -1) {
 			printf("AUDIO_SETINFO failed\n");

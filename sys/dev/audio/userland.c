@@ -26,15 +26,16 @@ static const audio_format2_t audio_default = {
 };
 
 void
-audio_softc_init(struct audio_softc *sc)
+audio_softc_init(struct audio_softc *sc, const audio_format2_t *phwfmt,
+	const audio_format2_t *rhwfmt)
 {
 	sc->sc_pmixer = malloc(sizeof(audio_trackmixer_t));
 	sc->sc_rmixer = malloc(sizeof(audio_trackmixer_t));
 	sc->sc_pparams = audio_default;
 	sc->sc_rparams = audio_default;
 
-	audio_mixer_init(sc, sc->sc_pmixer, AUMODE_PLAY);
-	audio_mixer_init(sc, sc->sc_rmixer, AUMODE_RECORD);
+	audio_mixer_init(sc, AUMODE_PLAY, phwfmt);
+	audio_mixer_init(sc, AUMODE_RECORD, rhwfmt);
 }
 
 /*
