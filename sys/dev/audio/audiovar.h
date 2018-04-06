@@ -406,6 +406,9 @@ params_to_format2(const struct audio_params *p)
 	return f2;
 }
 
+// not used anymore
+// どうするかね
+#if 0
 // ユーザランドで使用される 0..255 ボリュームを、トラック内の内部表現である
 // 0..256 ボリュームに変換します。
 static inline u_int
@@ -421,6 +424,7 @@ audio_volume_to_outer(u_int v)
 {
 	return v < 127 ? v : v - 1;
 }
+#endif // 0
 
 #if defined(_KERNEL)
 #include <dev/audio/auring.h>
