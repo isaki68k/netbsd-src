@@ -3,6 +3,11 @@
 #include "audiovar.h"
 #include <errno.h>
 
+struct proc curproc0;
+struct proc *curproc = &curproc0;;
+struct lwp curlwp0;
+struct lwp *curlwp = &curlwp0;
+
 // この track が再生トラックなら true を返します。
 bool
 audio_track_is_playback(const audio_track_t *track)

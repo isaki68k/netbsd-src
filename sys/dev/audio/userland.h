@@ -49,7 +49,11 @@ struct kmutex {
 
 struct file {
 };
+struct proc {
+	pid_t p_pid;
+};
 struct lwp {
+	int l_lid;
 };
 struct device {
 };
@@ -347,6 +351,19 @@ cpu_intr_p()
 {
 	return 0;
 }
+
+static inline uint32_t
+atomic_swap_32(volatile uint32_t *var, uint32_t newval)
+{
+	uint32_t oldval;
+	oldval = *var;
+	*var = newval;
+	return oldval;
+}
+
+extern struct proc *curproc;
+
+extern struct lwp *curlwp;
 
 extern bool audio_track_is_playback(const audio_track_t *track);
 extern bool audio_track_is_record(const audio_track_t *track);
