@@ -86,13 +86,9 @@ struct audio_hw_if {
      <del class=a2><span class=plain>int     (*drain)(void *);</span></del>
 
      <del class=a2><span class=plain>int     (*query_encoding)(void *, struct audio_encoding *);</span></del>
-     <span class=a2>int     (*query_format)(void *, const struct audio_format **);</span>
      <del class=a2><span class=plain>int     (*set_params)(void *, int, int,</span></del>
 		 <del class=a2><span class=plain>audio_params_t *, audio_params_t *,</span></del>
 		 <del class=a2><span class=plain>stream_filter_list_t *, stream_filter_list_t *);</span></del>
-     <span class=a2>int     (*set_params2)(void *, int, int,
-		 const audio_params_t *, const audio_params_t *,
-		 audio_filter_reg_t *, audio_filter_reg_t *);</span>
      int     (*round_blocksize)(void *, int, int, const audio_params_t *);
 
      int     (*commit_settings)(void *);
@@ -117,7 +113,9 @@ struct audio_hw_if {
      int     (*query_devinfo)(void *, mixer_devinfo_t *);
 
      void    *(*allocm)(void *, int, size_t, struct malloc_type *, int);
+     <span class=comment>void    *(*allocm)(void *, int, size_t); // 要修正</span>
      void    (*freem)(void *, void *, struct malloc_type *);
+     <span class=comment>void    (*freem)(void *, void *, size_t); // 要修正</span>
      size_t  (*round_buffersize)(void *, int, size_t);
      <del class=a2><span class=plain>paddr_t (*mappage)(void *, void *, off_t, int);</span></del>
 
@@ -129,6 +127,11 @@ struct audio_hw_if {
 		 void (*)(void *), void *, const audio_params_t *);
      int     (*dev_ioctl)(void *, u_long, void *, int, struct lwp *);
      void    (*get_locks)(void *, kmutex_t **, kmutex_t **);
+
+     <span class=a2>int     (*query_format)(void *, const struct audio_format **);</span>
+     <span class=a2>int     (*set_params2)(void *, int, int,
+		 const audio_params_t *, const audio_params_t *,
+		 audio_filter_reg_t *, audio_filter_reg_t *);</span>
 };
 
 typedef struct audio_params {
@@ -653,6 +656,9 @@ AUDIO2 ではこれを廃止したい。
      void *allocm(void *hdl, int direction, size_t size, struct malloc_type
 	     *type, int flags)
 </dt>
+<dt class=p1 style="margin-top: 0"><span class=comment>
+     void *allocm(void *hdl, int direction, size_t size); // 要修正
+</span></dt>
 <dd class=p1>
 	     optional, is called to allocate the device buffers.  If not
 	     present malloc(9) is used instead (with the same arguments but
@@ -664,6 +670,9 @@ AUDIO2 ではこれを廃止したい。
 <dt class=p1>
      void freem(void *hdl, void *addr, struct malloc_type *type)
 </dt>
+<dt class=p1 style="margin-top: 0"><span class=comment>
+     void freem(void *hdl, void *addr, size_t size); // 要修正
+</span></dt>
 <dd class=p1>
 	     optional, is called to free memory allocated by alloc.  If not
 	     supplied free(9) is used.
