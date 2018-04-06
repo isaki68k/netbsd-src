@@ -2131,9 +2131,9 @@ audio_mixer_calc_blktime(audio_trackmixer_t *mixer)
  *	record.  AUMODE_PLAY_ALL does not matter here.
  */
 int
-audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode,
-	const audio_format2_t *hwfmt)
+audio_mixer_init(struct audio_softc *sc, int mode, const audio_format2_t *hwfmt)
 {
+	audio_trackmixer_t *mixer;
 	int len;
 	int blksize;
 	int capacity;
@@ -2141,6 +2141,11 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode,
 	int error;
 
 	error = 0;
+	if (mode == AUMODE_PLAY)
+		mixer = sc->sc_pmixer;
+	else
+		mixer = sc->sc_rmixer;
+
 	mixer->sc = sc;
 	mixer->mode = mode;
 

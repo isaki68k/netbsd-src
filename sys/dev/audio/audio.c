@@ -525,7 +525,7 @@ audioattach(device_t parent, device_t self, void *aux)
 	if (sc->sc_can_playback) {
 		sc->sc_pmixer = kmem_zalloc(sizeof(*sc->sc_pmixer),
 		    KM_SLEEP);
-		error = audio_mixer_init(sc, sc->sc_pmixer, AUMODE_PLAY, &phwfmt);
+		error = audio_mixer_init(sc, AUMODE_PLAY, &phwfmt);
 		if (error == 0) {
 			audio_format2_tostr(fmtstr, sizeof(fmtstr),
 			    &sc->sc_pmixer->hwbuf.fmt);
@@ -545,7 +545,7 @@ audioattach(device_t parent, device_t self, void *aux)
 	if (sc->sc_can_capture) {
 		sc->sc_rmixer = kmem_zalloc(sizeof(*sc->sc_rmixer),
 		    KM_SLEEP);
-		error = audio_mixer_init(sc, sc->sc_rmixer, AUMODE_RECORD, &rhwfmt);
+		error = audio_mixer_init(sc, AUMODE_RECORD, &rhwfmt);
 		if (error == 0) {
 			audio_format2_tostr(fmtstr, sizeof(fmtstr),
 			    &sc->sc_rmixer->hwbuf.fmt);

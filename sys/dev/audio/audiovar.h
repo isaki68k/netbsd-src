@@ -354,7 +354,7 @@ int audio_track_drain(audio_track_t *track);
 void audio_track_record(audio_track_t *track);
 void audio_track_clear(struct audio_softc *sc, audio_track_t *track);
 
-int audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode, const audio_format2_t *);
+int audio_mixer_init(struct audio_softc *sc, int mode, const audio_format2_t *);
 void audio_mixer_destroy(struct audio_softc *sc, audio_trackmixer_t *mixer);
 void audio_pmixer_start(struct audio_softc *sc, bool force);
 void audio_pmixer_process(struct audio_softc *sc, bool isintr);
