@@ -223,7 +223,8 @@ static void audio_track_setinfo_water(audio_track_t *,
 	const struct audio_info *);
 static int audio_hw_setinfo(struct audio_softc *, const struct audio_info *,
 	struct audio_info *);
-static int audio_set_params(struct audio_softc *, int);
+static int audio_set_params(struct audio_softc *, int, audio_format2_t *,
+	audio_format2_t *);
 static int audiogetinfo(struct audio_softc *, struct audio_info *, int,
 	audio_file_t *);
 static int audio_getenc(struct audio_softc *, struct audio_encoding *) __unused;
@@ -238,7 +239,8 @@ static int audio_hw_config_by_format(struct audio_softc *, audio_format2_t *,
 	int);
 static int audio_hw_config_by_encoding(struct audio_softc *, audio_format2_t *,
 	int);
-static int audio_hw_config(struct audio_softc *, int);
+static int audio_hw_config(struct audio_softc *,
+	audio_format2_t *, audio_format2_t *, int);
 static int audio_sysctl_volume(SYSCTLFN_PROTO);
 static void audio_format2_tostr(char *, size_t, const audio_format2_t *);
 #ifdef AUDIO_DEBUG
@@ -442,6 +444,8 @@ audioattach(device_t parent, device_t self, void *aux)
 	struct audio_softc *sc;
 	struct audio_attach_args *sa;
 	const struct audio_hw_if *hw_if;
+	audio_format2_t phwfmt;
+	audio_format2_t rhwfmt;
 	const struct sysctlnode *node;
 	char fmtstr[64];
 	void *hdlp;
@@ -513,13 +517,15 @@ audioattach(device_t parent, device_t self, void *aux)
 	// play と capture が両方立ってない状況はたぶん起きない
 
 	/* probe hw params */
-	error = audio_hw_config(sc, is_indep);
+	memset(&phwfmt, 0, sizeof(phwfmt));
+	memset(&rhwfmt, 0, sizeof(rhwfmt));
+	error = audio_hw_config(sc, &phwfmt, &rhwfmt, is_indep);
 
 	/* init track mixer */
 	if (sc->sc_can_playback) {
 		sc->sc_pmixer = kmem_zalloc(sizeof(*sc->sc_pmixer),
 		    KM_SLEEP);
-		error = audio_mixer_init(sc, sc->sc_pmixer, AUMODE_PLAY);
+		error = audio_mixer_init(sc, sc->sc_pmixer, AUMODE_PLAY, &phwfmt);
 		if (error == 0) {
 			audio_format2_tostr(fmtstr, sizeof(fmtstr),
 			    &sc->sc_pmixer->hwbuf.fmt);
@@ -539,7 +545,7 @@ audioattach(device_t parent, device_t self, void *aux)
 	if (sc->sc_can_capture) {
 		sc->sc_rmixer = kmem_zalloc(sizeof(*sc->sc_rmixer),
 		    KM_SLEEP);
-		error = audio_mixer_init(sc, sc->sc_rmixer, AUMODE_RECORD);
+		error = audio_mixer_init(sc, sc->sc_rmixer, AUMODE_RECORD, &rhwfmt);
 		if (error == 0) {
 			audio_format2_tostr(fmtstr, sizeof(fmtstr),
 			    &sc->sc_rmixer->hwbuf.fmt);
@@ -2716,11 +2722,7 @@ audio_hw_config_by_encoding(struct audio_softc *sc, audio_format2_t *cand,
 
 			fmt.channels = ch;
 			fmt.sample_rate = freq;
-			if ((mode & AUMODE_PLAY) != 0)
-				sc->sc_phwfmt = fmt;
-			if ((mode & AUMODE_RECORD) != 0)
-				sc->sc_rhwfmt = fmt;
-			error = audio_set_params(sc, mode);
+			error = audio_set_params(sc, mode, &fmt, &fmt);
 			if (error == 0) {
 				// 設定できたのでこれを採用
 				*cand = fmt;
@@ -2753,7 +2755,8 @@ audio_hw_config_by_encoding(struct audio_softc *sc, audio_format2_t *cand,
 //   録音でフォーマットを選定。再生側にもコピー
 //  両方を設定
 static int
-audio_hw_config(struct audio_softc *sc, int is_indep)
+audio_hw_config(struct audio_softc *sc,
+	audio_format2_t *phwfmt, audio_format2_t *rhwfmt, int is_indep)
 {
 	audio_format2_t fmt;
 	int mode;
@@ -2762,14 +2765,12 @@ audio_hw_config(struct audio_softc *sc, int is_indep)
 	if (is_indep) {
 		/* independent devices */
 		if (sc->sc_can_playback) {
-			error = audio_hw_config_fmt(sc, &sc->sc_phwfmt,
-			    AUMODE_PLAY);
+			error = audio_hw_config_fmt(sc, phwfmt, AUMODE_PLAY);
 			if (error)
 				sc->sc_can_playback = false;
 		}
 		if (sc->sc_can_capture) {
-			error = audio_hw_config_fmt(sc, &sc->sc_rhwfmt,
-			    AUMODE_RECORD);
+			error = audio_hw_config_fmt(sc, rhwfmt, AUMODE_RECORD);
 			if (error)
 				sc->sc_can_capture = false;
 		}
@@ -2786,8 +2787,8 @@ audio_hw_config(struct audio_softc *sc, int is_indep)
 			sc->sc_can_capture = false;
 			return error;
 		}
-		sc->sc_phwfmt = fmt;
-		sc->sc_rhwfmt = fmt;
+		*phwfmt = fmt;
+		*rhwfmt = fmt;
 	}
 
 	mode = 0;
@@ -2796,7 +2797,7 @@ audio_hw_config(struct audio_softc *sc, int is_indep)
 	if (sc->sc_can_capture)
 		mode |= AUMODE_RECORD;
 
-	error = audio_set_params(sc, mode);
+	error = audio_set_params(sc, mode, phwfmt, rhwfmt);
 	if (error)
 		return error;
 
@@ -3453,7 +3454,8 @@ abort:
 // pp, rp は in/out parameter ではなくす。
 // hw->set_params は値を変更できない。(無視する)
 static int
-audio_set_params(struct audio_softc *sc, int setmode)
+audio_set_params(struct audio_softc *sc, int setmode,
+	audio_format2_t *phwfmt, audio_format2_t *rhwfmt)
 {
 	audio_params_t pp, rp;
 	stream_filter_list_t pfilters, rfilters;
@@ -3468,8 +3470,8 @@ audio_set_params(struct audio_softc *sc, int setmode)
 		DPRINTF(2, "%s use_set_params2\n", __func__);
 
 	usemode = setmode;
-	pp = format2_to_params(&sc->sc_phwfmt);
-	rp = format2_to_params(&sc->sc_rhwfmt);
+	pp = format2_to_params(phwfmt);
+	rp = format2_to_params(rhwfmt);
 
 	if (use_set_params2) {
 		memset(&pfilters2, 0, sizeof(pfilters2));
@@ -3523,12 +3525,12 @@ audio_set_params(struct audio_softc *sc, int setmode)
 		sc->sc_xxx_pfilreg = pfilters2;
 		sc->sc_xxx_rfilreg = rfilters2;
 		if (pfilters2.codec)
-			sc->sc_phwfmt = params_to_format2(&pfilters2.param);
+			*phwfmt = params_to_format2(&pfilters2.param);
 		if (rfilters2.codec)
-			sc->sc_rhwfmt = params_to_format2(&rfilters2.param);
+			*rhwfmt = params_to_format2(&rfilters2.param);
 	} else {
-		sc->sc_phwfmt = params_to_format2(&pp);
-		sc->sc_rhwfmt = params_to_format2(&rp);
+		*phwfmt = params_to_format2(&pp);
+		*rhwfmt = params_to_format2(&rp);
 	}
 
 	return 0;

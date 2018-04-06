@@ -2131,7 +2131,8 @@ audio_mixer_calc_blktime(audio_trackmixer_t *mixer)
  *	record.  AUMODE_PLAY_ALL does not matter here.
  */
 int
-audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
+audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode,
+	const audio_format2_t *hwfmt)
 {
 	int len;
 	int blksize;
@@ -2147,12 +2148,7 @@ audio_mixer_init(struct audio_softc *sc, audio_trackmixer_t *mixer, int mode)
 	if (mode == AUMODE_PLAY)
 		cv_init(&mixer->draincv, "audiodr");
 
-	// XXX とりあえず
-	if (mode == AUMODE_PLAY)
-		mixer->hwbuf.fmt = sc->sc_phwfmt;
-	else
-		mixer->hwbuf.fmt = sc->sc_rhwfmt;
-
+	mixer->hwbuf.fmt = *hwfmt;
 	mixer->volume = 256;
 	mixer->blktime_d = 1000;
 	mixer->blktime_n = audio_mixer_calc_blktime(mixer);
