@@ -31,14 +31,14 @@ static void audio_mlog_printf(const char *, ...);
 static void audio_mlog_vprintf(const char *, va_list);
 #endif
 static void audio_mlog_softintr(void *);
-static int mlog_refs;			// reference counter
+static int mlog_refs;		// reference counter
 static char *mlog_buf;
-static int mlog_buflen;			// バッファ長
-static int mlog_used;			// 使用中のバッファ文字列の長さ
-static int mlog_full;			// バッファが一杯になってドロップした行数
-static int mlog_drop;			// バッファ使用中につきドロップした行数
-static volatile uint32_t mlog_inuse;		// 使用中フラグ
-static void *mlog_sih;			// softint ハンドラ
+static int mlog_buflen;		// バッファ長
+static int mlog_used;		// 使用中のバッファ文字列の長さ
+static int mlog_full;		// バッファが一杯になってドロップした行数
+static int mlog_drop;		// バッファ使用中につきドロップした行数
+static volatile uint32_t mlog_inuse;	// 使用中フラグ
+static void *mlog_sih;		// softint ハンドラ
 
 void
 audio_mlog_init(void)
@@ -52,8 +52,7 @@ audio_mlog_init(void)
 	mlog_full = 0;
 	mlog_drop = 0;
 	mlog_inuse = 0;
-	mlog_sih = softint_establish(SOFTINT_SERIAL,
-	    audio_mlog_softintr, NULL);
+	mlog_sih = softint_establish(SOFTINT_SERIAL, audio_mlog_softintr, NULL);
 	if (mlog_sih == NULL)
 		printf("%s: softint_establish failed\n", __func__);
 }
@@ -1267,7 +1266,7 @@ audio_track_init_freq(audio_track_t *track, audio_ring_t **last_dstp)
 
 		if (track->freq_step < 65536) {
 			track->freq.filter = audio_track_freq_up;
-			// 初回に繰り上がりを起こすため 0 ではなく 65536 で初期化
+			// 初回に繰り上がりを起こすため0ではなく 65536 で初期化
 			track->freq_current = 65536;
 		} else {
 			track->freq.filter = audio_track_freq_down;
@@ -1700,8 +1699,7 @@ audio_apply_stage(audio_track_t *track, audio_stage_t *stage, bool isfreq)
 	int count;
 
 	if (isfreq) {
-		KASSERTMSG(srccount > 0,
-		    "freq but srccount == %d", srccount);
+		KASSERTMSG(srccount > 0, "freq but srccount == %d", srccount);
 		count = min(dstcount, track->mixer->frames_per_block);
 	} else {
 		count = min(srccount, dstcount);
@@ -2165,17 +2163,22 @@ audio_mixer_init(struct audio_softc *sc, int mode, const audio_format2_t *hwfmt)
 		int rounded;
 		audio_params_t p = format2_to_params(&mixer->hwbuf.fmt);
 		mutex_enter(sc->sc_lock);
-		rounded = sc->hw_if->round_blocksize(sc->hw_hdl, blksize, mode, &p);
+		rounded = sc->hw_if->round_blocksize(sc->hw_hdl, blksize,
+		    mode, &p);
 		mutex_exit(sc->sc_lock);
 		// 違っていても困る?
 		if (rounded != blksize) {
-			if ((rounded * NBBY) % (mixer->hwbuf.fmt.stride * mixer->hwbuf.fmt.channels) != 0) {
-				aprint_error_dev(sc->dev, "blksize not configured"
-					" %d -> %d\n", blksize, rounded);
+			if ((rounded * NBBY) % (mixer->hwbuf.fmt.stride *
+			    mixer->hwbuf.fmt.channels) != 0) {
+				aprint_error_dev(sc->dev,
+				    "blksize not configured %d -> %d\n",
+				    blksize, rounded);
 				return ENXIO;
 			}
 			// 再計算
-			mixer->frames_per_block = rounded * NBBY / (mixer->hwbuf.fmt.stride * mixer->hwbuf.fmt.channels);
+			mixer->frames_per_block = rounded * NBBY /
+			    (mixer->hwbuf.fmt.stride *
+			     mixer->hwbuf.fmt.channels);
 		}
 	}
 	mixer->blktime_n = mixer->frames_per_block;
@@ -2186,12 +2189,14 @@ audio_mixer_init(struct audio_softc *sc, int mode, const audio_format2_t *hwfmt)
 	if (sc->hw_if->round_buffersize) {
 		size_t rounded;
 		mutex_enter(sc->sc_lock);
-		rounded = sc->hw_if->round_buffersize(sc->hw_hdl, mode, bufsize);
+		rounded = sc->hw_if->round_buffersize(sc->hw_hdl, mode,
+		    bufsize);
 		mutex_exit(sc->sc_lock);
 		// 縮められても困る?
 		if (rounded != bufsize) {
-			aprint_error_dev(sc->dev, "buffer size not configured"
-			    " %zu -> %zu\n", bufsize, rounded);
+			aprint_error_dev(sc->dev,
+			    "buffer size not configured %zu -> %zu\n",
+			    bufsize, rounded);
 			return ENXIO;
 		}
 	}
@@ -2226,7 +2231,8 @@ audio_mixer_init(struct audio_softc *sc, int mode, const audio_format2_t *hwfmt)
 		mixer->mixfmt.precision *= 2;
 		mixer->mixfmt.stride *= 2;
 		// XXX マクロとか使えないんだっけ
-		len = mixer->frames_per_block * mixer->mixfmt.channels * mixer->mixfmt.stride / NBBY;
+		len = mixer->frames_per_block * mixer->mixfmt.channels *
+		    mixer->mixfmt.stride / NBBY;
 		mixer->mixsample = audio_realloc(mixer->mixsample, len);
 		if (mixer->mixsample == NULL) {
 			aprint_error_dev(sc->dev,
@@ -2334,9 +2340,9 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
 
 	mixer = sc->sc_pmixer;
 	TRACE("begin mixseq=%d hwseq=%d hwbuf=%d/%d/%d%s",
-		(int)mixer->mixseq, (int)mixer->hwseq,
-		mixer->hwbuf.head, mixer->hwbuf.used, mixer->hwbuf.capacity,
-		force ? " force" : "");
+	    (int)mixer->mixseq, (int)mixer->hwseq,
+	    mixer->hwbuf.head, mixer->hwbuf.used, mixer->hwbuf.capacity,
+	    force ? " force" : "");
 
 	// 通常は2ブロック貯めてから再生開始したい。
 	// force ならそういうわけにいかないので1ブロックで再生開始する。
@@ -2352,8 +2358,8 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
 	mutex_exit(sc->sc_intr_lock);
 
 	TRACE("end   mixseq=%d hwseq=%d hwbuf=%d/%d/%d",
-		(int)mixer->mixseq, (int)mixer->hwseq,
-		mixer->hwbuf.head, mixer->hwbuf.used, mixer->hwbuf.capacity);
+	    (int)mixer->mixseq, (int)mixer->hwseq,
+	    mixer->hwbuf.head, mixer->hwbuf.used, mixer->hwbuf.capacity);
 }
 
 /*
@@ -2729,7 +2735,8 @@ audio_pmixer_output(struct audio_softc *sc)
 		/* trigger (at once) */
 		if (!sc->sc_pbusy) {
 			start = mixer->hwbuf.mem;
-			end = (uint8_t *)start + audio_ring_bytelen(&mixer->hwbuf);
+			end = (uint8_t *)start +
+			    audio_ring_bytelen(&mixer->hwbuf);
 			// TODO: params 作る
 			params = format2_to_params(&mixer->hwbuf.fmt);
 
@@ -2779,9 +2786,8 @@ audio_pintr(void *arg)
 	audio_ring_take(&mixer->hwbuf, mixer->frames_per_block);
 
 	TRACE("HW_INT ++hwseq=%d cmplcnt=%d hwbuf=%d/%d/%d",
-		(int)mixer->hwseq,
-		(int)mixer->hw_complete_counter,
-		mixer->hwbuf.head, mixer->hwbuf.used, mixer->hwbuf.capacity);
+	    (int)mixer->hwseq, (int)mixer->hw_complete_counter,
+	    mixer->hwbuf.head, mixer->hwbuf.used, mixer->hwbuf.capacity);
 
 #if !defined(_KERNEL)
 	// ユーザランドエミュレーションは割り込み駆動ではないので
@@ -2989,7 +2995,8 @@ audio_rmixer_input(struct audio_softc *sc)
 		/* trigger (at once) */
 		if (!sc->sc_rbusy) {
 			start = mixer->hwbuf.mem;
-			end = (uint8_t *)start + audio_ring_bytelen(&mixer->hwbuf);
+			end = (uint8_t *)start +
+			    audio_ring_bytelen(&mixer->hwbuf);
 			// TODO: params 作る
 			params = format2_to_params(&mixer->hwbuf.fmt);
 
@@ -3039,9 +3046,8 @@ audio_rintr(void *arg)
 	audio_ring_push(&mixer->hwbuf, mixer->frames_per_block);
 
 	TRACE("HW_INT ++hwseq=%d cmplcnt=%d hwbuf=%d/%d/%d",
-		(int)mixer->hwseq,
-		(int)mixer->hw_complete_counter,
-		mixer->hwbuf.head, mixer->hwbuf.used, mixer->hwbuf.capacity);
+	    (int)mixer->hwseq, (int)mixer->hw_complete_counter,
+	    mixer->hwbuf.head, mixer->hwbuf.used, mixer->hwbuf.capacity);
 
 	// このバッファを分配する
 	audio_rmixer_process(sc);
