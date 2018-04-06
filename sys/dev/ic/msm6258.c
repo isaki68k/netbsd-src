@@ -130,15 +130,11 @@ internal_to_msm6258(audio_filter_arg_t *arg)
 		uint8_t f;
 
 		s = *sptr++;
-#if AUDIO_INTERNAL_BITS == 32
-		s >>= 16;
-#endif
+		s >>= AUDIO_INTERNAL_BITS - 16;
 		f = pcm2adpcm_step(mc, s);
 
 		s = *sptr++;
-#if AUDIO_INTERNAL_BITS == 32
-		s >>= 16;
-#endif
+		s >>= AUDIO_INTERNAL_BITS - 16;
 		f |= pcm2adpcm_step(mc, s) << 4;
 
 		*dptr++ = (uint8_t)f;
@@ -197,15 +193,11 @@ msm6258_to_internal(audio_filter_arg_t *arg)
 		aint_t s;
 
 		s = adpcm2pcm_step(mc, a & 0x0f);
-#if AUDIO_INTERNAL_BITS == 32
-		s <<= 16;
-#endif
+		s <<= AUDIO_INTERNAL_BITS - 16;
 		*dptr++ = s;
 
 		s = adpcm2pcm_step(mc, a >> 4);
-#if AUDIO_INTERNAL_BITS == 32
-		s <<= 16;
-#endif
+		s <<= AUDIO_INTERNAL_BITS - 16;
 		*dptr++ = s;
 	}
 }
