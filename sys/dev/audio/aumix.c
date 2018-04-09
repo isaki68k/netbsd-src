@@ -3172,16 +3172,14 @@ audio_track_clear(struct audio_softc *sc, audio_track_t *track)
  *	If successful, it returns 0.  Otherwise returns errno.
  */
 int
-audio_track_drain(audio_track_t *track)
+audio_track_drain(struct audio_softc *sc, audio_track_t *track)
 {
 	audio_trackmixer_t *mixer;
-	struct audio_softc *sc;
 	int error;
 
 	KASSERT(track);
 	TRACET(track, "start");
 	mixer = track->mixer;
-	sc = mixer->sc;
 	KASSERT(mutex_owned(sc->sc_lock));
 
 	// pause 中なら今溜まってるものは全部無視してこのまま終わってよし

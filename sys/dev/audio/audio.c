@@ -193,7 +193,6 @@ static int audiostat(struct file *, struct stat *);
 
 static int audio_open(dev_t, struct audio_softc *, int, int, struct lwp *,
 		      struct file **);
-static int audio_drain(struct audio_softc *, audio_track_t *);
 static int audio_close(struct audio_softc *, int, audio_file_t *);
 //static int audio_read(struct audio_softc *, struct uio *, int, audio_file_t *);
 //static int audio_write(struct audio_softc *, struct uio *, int, audio_file_t *);
@@ -1638,12 +1637,6 @@ bad1:
 }
 
 int
-audio_drain(struct audio_softc *sc, audio_track_t *track)
-{
-	return audio_track_drain(track);
-}
-
-int
 audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 {
 	audio_track_t *oldtrack;
@@ -1717,10 +1710,10 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 		sc->sc_ropens--;
 	}
 
-	// 再生トラックなら、audio_drain を呼ぶ
+	// 再生トラックなら、audio_track_drain を呼ぶ
 	// 最後の再生トラックなら、hw audio_drain、halt_output を呼ぶ
 	if (file->ptrack) {
-		audio_drain(sc, file->ptrack);
+		audio_track_drain(sc, file->ptrack);
 
 		if (sc->sc_popens == 1) {
 			if (sc->sc_pbusy) {
@@ -1976,9 +1969,9 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		break;
 
 	case AUDIO_DRAIN:
-		// audio_drain 呼んで
+		// audio_track_drain 呼んで
 		// 最後の再生トラックなら hw_if->drain をコールする
-		error = audio_drain(sc, file->ptrack);
+		error = audio_track_drain(sc, file->ptrack);
 		break;
 
 	case AUDIO_GETDEV:

@@ -350,7 +350,7 @@ int audio_track_init(struct audio_softc *sc, audio_track_t **track, int mode);
 void audio_track_destroy(audio_track_t *track);
 int audio_track_set_format(audio_track_t *track, audio_format2_t *track_fmt);
 void audio_track_play(audio_track_t *track);
-int audio_track_drain(audio_track_t *track);
+int audio_track_drain(struct audio_softc *, audio_track_t *track);
 void audio_track_record(audio_track_t *track);
 void audio_track_clear(struct audio_softc *sc, audio_track_t *track);
 

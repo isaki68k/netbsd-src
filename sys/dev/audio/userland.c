@@ -96,7 +96,7 @@ sys_ioctl_drain(audio_track_t *track)
 	struct audio_softc *sc = mixer->sc;
 
 	mutex_enter(sc->sc_lock);
-	audio_track_drain(track);
+	audio_track_drain(sc, track);
 	mutex_exit(sc->sc_lock);
 
 	return 0;
