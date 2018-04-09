@@ -1890,9 +1890,10 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		// 換算でバイト数にしたもの。厳密に正しいかは分からないが
 		// そもそもこのエラーカウント自体がどこで
 		// どのように落としたものかは問わないとあるのでこれでいい。
-		if (file->rtrack) {
-			*(int *)addr = frametobyte(&file->rtrack->usrbuf.fmt,
-			    file->rtrack->dropframes);
+		track = file->rtrack;
+		if (track) {
+			*(int *)addr = frametobyte(&track->usrbuf.fmt,
+			    track->dropframes);
 		}
 		break;
 
@@ -1900,9 +1901,10 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		// ここでカウントしてるのはユーザからの write が1ブロックに
 		// 満たずに落としたフレーム数なので、バイト数としては
 		// ユーザ指定フォーマット換算となる。
-		if (file->ptrack) {
-			*(int *)addr = frametobyte(&file->ptrack->usrbuf.fmt,
-			    file->ptrack->dropframes);
+		track = file->ptrack;
+		if (track) {
+			*(int *)addr = frametobyte(&track->usrbuf.fmt,
+			    track->dropframes);
 		}
 		break;
 
