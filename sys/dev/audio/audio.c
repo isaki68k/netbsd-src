@@ -1886,11 +1886,12 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 	// サンプル数と言ってるがバイト数のようだ
 	case AUDIO_RERROR:
 		// ここでカウントしてるのは録音ミキサからこのトラックに
-		// 渡すことができなかったフレーム数なので、バイト数としては
-		// 内部形式換算だが、そもそもこのエラーカウント自体がどこで
+		// 渡すことができなかったフレーム数をユーザランドフォーマット
+		// 換算でバイト数にしたもの。厳密に正しいかは分からないが
+		// そもそもこのエラーカウント自体がどこで
 		// どのように落としたものかは問わないとあるのでこれでいい。
 		if (file->rtrack) {
-			*(int *)addr = frametobyte(&file->rtrack->inputfmt,
+			*(int *)addr = frametobyte(&file->rtrack->usrbuf.fmt,
 			    file->rtrack->dropframes);
 		}
 		break;
