@@ -1969,8 +1969,6 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		break;
 
 	case AUDIO_DRAIN:
-		// audio_track_drain 呼んで
-		// 最後の再生トラックなら hw_if->drain をコールする
 		error = audio_track_drain(sc, file->ptrack);
 		break;
 
