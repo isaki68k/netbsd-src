@@ -64,14 +64,15 @@
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD$");
 
-#define OLD_FILTER
-
 #ifdef _KERNEL_OPT
 #include "audio.h"
 #include "midi.h"
 #endif
 
 #if NAUDIO > 0
+
+#ifdef _KERNEL
+#define OLD_FILTER
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -114,6 +115,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <uvm/uvm.h>
 
 #include "ioconf.h"
+#endif /* _KERNEL */
 
 #ifdef AUDIO_DEBUG
 #define DPRINTF(n, fmt...)	do {	\
@@ -3487,12 +3489,14 @@ audio_set_params(struct audio_softc *sc, int setmode,
 	} else {
 		memset(&pfilters, 0, sizeof(pfilters));
 		memset(&rfilters, 0, sizeof(rfilters));
+#if defined(OLD_FILTER)
 		pfilters.append = stream_filter_list_append;
 		pfilters.prepend = stream_filter_list_prepend;
 		pfilters.set = stream_filter_list_set;
 		rfilters.append = stream_filter_list_append;
 		rfilters.prepend = stream_filter_list_prepend;
 		rfilters.set = stream_filter_list_set;
+#endif
 	}
 
 	mutex_enter(sc->sc_lock);
@@ -4706,8 +4710,13 @@ audio_modcmd(modcmd_t cmd, void *arg)
 	return error;
 }
 
+#if defined(KERNEL)
 #include <dev/audio/aumix.c>
 #include <dev/audio/aucodec_linear.c>
+#else
+#include "aumix.c"
+#include "aucodec_linear.c"
+#endif
 
 
 // x audioctl play.gain と mixerctl outputs.master は N7 では連動していたし

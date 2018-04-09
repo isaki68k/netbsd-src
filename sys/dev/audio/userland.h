@@ -2,7 +2,17 @@
 
 #include <string.h>
 #include <errno.h>
+#include <util.h>
+#include <sys/audioio.h>
+#include <sys/event.h>
+#include <sys/fcntl.h>
+#include <sys/filio.h>
+#include <sys/mman.h>
 #include <sys/param.h>
+#include <sys/poll.h>
+#include <sys/queue.h>
+#include <sys/stat.h>
+#include <sys/sysctl.h>
 
 // アサートするとき定義
 #define AUDIO_ASSERT
@@ -10,8 +20,6 @@
 // ユーザランドはグローバル変数 audio_blk_ms を使う。
 // デフォルト 40msec で -m オプションで変更可能。
 #define AUDIO_BLK_MS audio_blk_ms
-
-#define DPRINTF(n, fmt, ...)	printf(fmt, ## __VA_ARGS__)
 
 #ifdef AUDIO_ASSERT
 #define KASSERT(expr)	do {\
@@ -34,7 +42,19 @@
 /* サポートする最大のチャンネル数 */
 #define AUDIO_MAX_CHANNELS	18
 
+#ifndef AudioCvirtchan
+#define AudioCvirtchan "vchan"
+#endif
+
 #define IO_NDELAY	0
+
+#define MODULE(a, b, c)
+
+// 前方参照
+typedef struct audio_encoding audio_encoding_t;
+struct audio_device;
+typedef struct mixer_ctrl mixer_ctrl_t;
+typedef struct mixer_devinfo mixer_devinfo_t;
 
 typedef struct kcondvar kcondvar_t;
 typedef struct kmutex kmutex_t;
@@ -48,18 +68,16 @@ struct kmutex {
 };
 
 struct file {
-};
-struct proc {
-	pid_t p_pid;
+	void *f_audioctx;
+	int f_flag;
+	kauth_cred_t f_cred;
 };
 struct lwp {
 	int l_lid;
 };
 struct device {
 };
-typedef struct device device_t;
-struct selinfo {
-};
+typedef struct device *device_t;
 
 
 struct audio_params {
@@ -74,22 +92,203 @@ typedef struct audio_params audio_params_t;
 // audio_params 定義後 audio_hw_if より前…
 #include "aufilter.h"
 
-struct audio_hw_if {
-	void *(*allocm)(void *, int, size_t);
-	void (*freem)(void *, void *, size_t);
+/* <dev/audio_if.h> */
+#define SOUND_DEVICE		0
+#define AUDIO_DEVICE		0x80
+#define AUDIOCTL_DEVICE		0xc0
+#define MIXER_DEVICE		0x10
+#define AUDIODEV(x)		(minor(x)&0xf0)
+#define ISDEVSOUND(x)		(AUDIODEV((x)) == SOUND_DEVICE)
+#define ISDEVAUDIO(x)		(AUDIODEV((x)) == AUDIO_DEVICE)
+typedef struct { } stream_fetcher_t;
+typedef struct { } stream_filter_list_t;
+typedef struct { } stream_filter_factory_t;
+struct audio_format {
+	/**
+	 * Device-dependent audio drivers may use this field freely.
+	 */
+	void *driver_data;
 
-	int (*start_output)(void *, void *, int, void(*)(void *), void *);
-	int (*trigger_output)(void *, void *, void *, int, void(*)(void *), void *, const audio_params_t *);
-	int (*halt_output)(void *);
+	/**
+	 * combination of AUMODE_PLAY and AUMODE_RECORD
+	 */
+	int32_t mode;
 
-	int (*start_input)(void *, void *, int, void(*)(void *), void *);
-	int (*trigger_input)(void *, void *, void *, int, void(*)(void *), void *, const audio_params_t *);
-	int (*halt_input)(void *);
+	/**
+	 * Encoding type.  AUDIO_ENCODING_*.
+	 * Don't use AUDIO_ENCODING_SLINEAR/ULINEAR/LINEAR/LINEAR8
+	 */
+	u_int encoding;
 
-	audio_filter_t (*get_swcode)(void *, int, audio_filter_arg_t *);
-	int (*round_blocksize)(void *, int, int, const audio_params_t *);
-	size_t (*round_buffersize)(void *, int, size_t);
+	/**
+	 * The size of valid bits in one sample.
+	 * It must be <= precision.
+	 */
+	u_int validbits;
+
+	/**
+	 * The bit size of one sample.
+	 * It must be >= validbits, and is usualy a multiple of 8.
+	 */
+	u_int precision;
+
+	/**
+	 * The number of channels.  >= 1
+	 */
+	u_int channels;
+
+	u_int channel_mask;
+#define	AUFMT_UNKNOWN_POSITION		0U
+#define	AUFMT_FRONT_LEFT		0x00001U /* USB audio compatible */
+#define	AUFMT_FRONT_RIGHT		0x00002U /* USB audio compatible */
+#define	AUFMT_FRONT_CENTER		0x00004U /* USB audio compatible */
+#define	AUFMT_LOW_FREQUENCY		0x00008U /* USB audio compatible */
+#define	AUFMT_BACK_LEFT			0x00010U /* USB audio compatible */
+#define	AUFMT_BACK_RIGHT		0x00020U /* USB audio compatible */
+#define	AUFMT_FRONT_LEFT_OF_CENTER	0x00040U /* USB audio compatible */
+#define	AUFMT_FRONT_RIGHT_OF_CENTER	0x00080U /* USB audio compatible */
+#define	AUFMT_BACK_CENTER		0x00100U /* USB audio compatible */
+#define	AUFMT_SIDE_LEFT			0x00200U /* USB audio compatible */
+#define	AUFMT_SIDE_RIGHT		0x00400U /* USB audio compatible */
+#define	AUFMT_TOP_CENTER		0x00800U /* USB audio compatible */
+#define	AUFMT_TOP_FRONT_LEFT		0x01000U
+#define	AUFMT_TOP_FRONT_CENTER		0x02000U
+#define	AUFMT_TOP_FRONT_RIGHT		0x04000U
+#define	AUFMT_TOP_BACK_LEFT		0x08000U
+#define	AUFMT_TOP_BACK_CENTER		0x10000U
+#define	AUFMT_TOP_BACK_RIGHT		0x20000U
+
+#define	AUFMT_MONAURAL		AUFMT_FRONT_CENTER
+#define	AUFMT_STEREO		(AUFMT_FRONT_LEFT | AUFMT_FRONT_RIGHT)
+#define	AUFMT_SURROUND4		(AUFMT_STEREO | AUFMT_BACK_LEFT \
+				| AUFMT_BACK_RIGHT)
+#define	AUFMT_DOLBY_5_1		(AUFMT_SURROUND4 | AUFMT_FRONT_CENTER \
+				| AUFMT_LOW_FREQUENCY)
+
+	/**
+	 * 0: frequency[0] is lower limit, and frequency[1] is higher limit.
+	 * 1-16: frequency[0] to frequency[frequency_type-1] are valid.
+	 */
+	u_int frequency_type;
+
+#define	AUFMT_MAX_FREQUENCIES	16
+	/**
+	 * sampling rates
+	 */
+	u_int frequency[AUFMT_MAX_FREQUENCIES];
 };
+
+#define	AUFMT_INVALIDATE(fmt)	(fmt)->mode |= 0x80000000
+#define	AUFMT_VALIDATE(fmt)	(fmt)->mode &= 0x7fffffff
+#define	AUFMT_IS_VALID(fmt)	(((fmt)->mode & 0x80000000) == 0)
+
+struct audio_hw_if {
+	int	(*open)(void *, int);	/* open hardware */
+	void	(*close)(void *);	/* close hardware */
+	int	(*drain)(void *);	/* Optional: drain buffers */
+
+	/* Encoding. */
+	/* XXX should we have separate in/out? */
+	int	(*query_encoding)(void *, audio_encoding_t *);
+
+	/* Set the audio encoding parameters (record and play).
+	 * Return 0 on success, or an error code if the
+	 * requested parameters are impossible.
+	 * The values in the params struct may be changed (e.g. rounding
+	 * to the nearest sample rate.)
+	 */
+	int	(*set_params)(void *, int, int, audio_params_t *,
+		    audio_params_t *, stream_filter_list_t *,
+		    stream_filter_list_t *);
+
+	/* Hardware may have some say in the blocksize to choose */
+	int	(*round_blocksize)(void *, int, int, const audio_params_t *);
+
+	/*
+	 * Changing settings may require taking device out of "data mode",
+	 * which can be quite expensive.  Also, audiosetinfo() may
+	 * change several settings in quick succession.  To avoid
+	 * having to take the device in/out of "data mode", we provide
+	 * this function which indicates completion of settings
+	 * adjustment.
+	 */
+	int	(*commit_settings)(void *);
+
+	/* Start input/output routines. These usually control DMA. */
+	int	(*init_output)(void *, void *, int);
+	int	(*init_input)(void *, void *, int);
+	int	(*start_output)(void *, void *, int,
+				    void (*)(void *), void *);
+	int	(*start_input)(void *, void *, int,
+				   void (*)(void *), void *);
+	int	(*halt_output)(void *);
+	int	(*halt_input)(void *);
+
+	int	(*speaker_ctl)(void *, int);
+#define SPKR_ON		1
+#define SPKR_OFF	0
+
+	int	(*getdev)(void *, struct audio_device *);
+	int	(*setfd)(void *, int);
+
+	/* Mixer (in/out ports) */
+	int	(*set_port)(void *, mixer_ctrl_t *);
+	int	(*get_port)(void *, mixer_ctrl_t *);
+
+	int	(*query_devinfo)(void *, mixer_devinfo_t *);
+
+	/* Allocate/free memory for the ring buffer. Usually malloc/free. */
+	void	*(*allocm)(void *, int, size_t);
+	void	(*freem)(void *, void *, size_t);
+	size_t	(*round_buffersize)(void *, int, size_t);
+	paddr_t	(*mappage)(void *, void *, off_t, int);
+
+	int	(*get_props)(void *); /* device properties */
+
+	int	(*trigger_output)(void *, void *, void *, int,
+		    void (*)(void *), void *, const audio_params_t *);
+	int	(*trigger_input)(void *, void *, void *, int,
+		    void (*)(void *), void *, const audio_params_t *);
+	int	(*dev_ioctl)(void *, u_long, void *, int, struct lwp *);
+	void	(*get_locks)(void *, kmutex_t **, kmutex_t **);
+
+	int (*query_format)(void *, const struct audio_format **);
+
+	// set_param かこっちのどちらか片方のみを有効にすること。
+	// set_params2 があればこちらが優先して使われる。
+	//
+	// 引数は (void *hdl, int setmode, int usemode,
+	//  const audio_params_t *play, const audio_params_t *rec,
+	//  audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
+	// で、1行目は set_params() と同じ。
+	// play, rec もほぼ同じ。MI 側が設定したいパラメータが入っているので
+	// HW をこのパラメータに設定すること。
+	// set_params と違って選択したパラメータを play, rec に書き戻すことは
+	// 出来ない。というか query_format が正しければそのような状況は起きない。
+	//
+	// HW フィルタを使用するなら *pfil、*rfil の codec (と必要なら
+	// context) を埋めて返すこと。pfil, rfil の codec、context はいずれも
+	// NULL に初期化してあるため、使わないところは触らなくていい。
+	// フィルタを使用してエンコーディングが変わる場合には (通常は変わるはず
+	// だが) pfil.param, rfil.param の
+	// encoding/precision/validbits を更新すること。channels/sample_rate は
+	// HW に適切なものが与えられているはずなので更新してはいけない
+	// (更新しないといけないとすれば query_format がおかしい)。
+	// 戻り値は成功なら 0、そうでなければ errno を返すこと。
+	int	(*set_params2)(void *, int, int,
+		    const audio_params_t *, const audio_params_t *,
+		    audio_filter_reg_t *, audio_filter_reg_t *);
+};
+struct audio_attach_args {
+	int type;
+	const struct audio_hw_if *hwif;
+	void *hdl;
+};
+#define	AUDIODEV_TYPE_AUDIO	0
+#define	AUDIODEV_TYPE_MIDI	1
+#define AUDIODEV_TYPE_OPL	2
+#define AUDIODEV_TYPE_MPU	3
+#define AUDIODEV_TYPE_AUX	4
 
 // audiovar.h の前方参照
 typedef struct audio_trackmixer audio_trackmixer_t;
@@ -229,6 +428,12 @@ kern_free(void *ptr)
 #define KM_SLEEP	(0)
 
 static inline void *
+kmem_alloc(size_t size, int flags)
+{
+	return kern_malloc(size, 0);
+}
+
+static inline void *
 kmem_zalloc(size_t size, int flags)
 {
 	void *p;
@@ -259,7 +464,9 @@ atomic_cas_32(volatile uint32_t *ptr, uint32_t expected, uint32_t newvalue)
 }
 
 
+/* <sys/intr.h> */
 #define SOFTINT_SERIAL 3
+#define SOFTINT_MPSAFE 0x100
 
 struct softintr_XXX
 {
@@ -302,7 +509,7 @@ kpreempt_disable(void)
 #define PAGE_SIZE	(4096)
 #define UVM_MAPFLAG(a,b,c,d,e)	(0)
 typedef off_t voff_t;
-typedef int uvm_flag_t;
+typedef unsigned int uvm_flag_t;
 struct vm_map {
 };
 struct uvm_object {
@@ -361,28 +568,171 @@ atomic_swap_32(volatile uint32_t *var, uint32_t newval)
 	return oldval;
 }
 
-extern struct proc *curproc;
-
 extern struct lwp *curlwp;
 
-extern bool audio_track_is_playback(const audio_track_t *track);
-extern bool audio_track_is_record(const audio_track_t *track);
-static inline int
-audio_check_params2(audio_format2_t *f2)
-{
-	// 後方互換性からの変換は起きないはずだし
-	// 入力に問題がなければ何もおきないので、とりあえずこれでいい。
-	return 0;
-}
+typedef struct { } cfdata_t;
+enum devact { DUMMY };
+typedef struct { } modcmd_t;
+struct tty { };
+#define CFATTACH_DECL3_NEW(a, b, c,d,e,f,g,h,i)
+#define aprint_normal(fmt...)	printf(fmt)
+#define aprint_naive(fmt...)	printf(fmt)
+#define vdevgone(a,b,c,d)
+
+/* sys/conf.h */
+struct knote;
+struct cdevsw {
+	int		(*d_open)(dev_t, int, int, struct lwp *);
+	int		(*d_close)(dev_t, int, int, struct lwp *);
+	int		(*d_read)(dev_t, struct uio *, int);
+	int		(*d_write)(dev_t, struct uio *, int);
+	int		(*d_ioctl)(dev_t, u_long, void *, int, struct lwp *);
+	void		(*d_stop)(struct tty *, int);
+	struct tty *	(*d_tty)(dev_t);
+	int		(*d_poll)(dev_t, int, struct lwp *);
+	paddr_t		(*d_mmap)(dev_t, off_t, int);
+	int		(*d_kqfilter)(dev_t, struct knote *);
+	int		(*d_discard)(dev_t, off_t, off_t);
+	int		d_flag;
+};
+#define device_unit(dev)	0
+#define device_xname(dev)	""
+#define cdevsw_lookup_major(a)	0
+#define	dev_type_open(n)	int n (dev_t, int, int, struct lwp *)
+#define	noclose		NULL
+#define	noread		NULL
+#define	nowrite		NULL
+#define	noioctl		NULL
+#define	nostop		NULL
+#define	notty		NULL
+#define	nopoll		NULL
+#define nommap		NULL
+#define	nodump		NULL
+#define	nosize		NULL
+#define	nokqfilter	NULL
+#define nodiscard	NULL
+
+#define D_OTHER		0x0000
+#define	D_MPSAFE	0x0100
+
+/* <sys/device.h> */
+#define UNCONF 1
+#define device_is_active(a)	true
+
+/* <sys/file.h> */
+struct fileops {
+	const char *fo_name;
+	int	(*fo_read)	(struct file *, off_t *, struct uio *,
+				    kauth_cred_t, int);
+	int	(*fo_write)	(struct file *, off_t *, struct uio *,
+				    kauth_cred_t, int);
+	int	(*fo_ioctl)	(struct file *, u_long, void *);
+	int	(*fo_fcntl)	(struct file *, u_int, void *);
+	int	(*fo_poll)	(struct file *, int);
+	int	(*fo_stat)	(struct file *, struct stat *);
+	int	(*fo_close)	(struct file *);
+	int	(*fo_kqfilter)	(struct file *, struct knote *);
+	void	(*fo_restart)	(struct file *);
+	int	(*fo_mmap)	(struct file *, off_t *, size_t, int, int *,
+				 int *, struct uvm_object **, int *);
+	void	(*fo_spare2)	(void);
+};
+int	fnullop_fcntl(struct file *, u_int, void *);
+void	fnullop_restart(struct file *);
+
+/* <sys/device.h> */
+#define DVACT_DEACTIVATE	0
+#define config_found(a,b,c)	(device_t)NULL
+#define device_private(x) NULL
+#define device_lookup_private(a,b) NULL
+#define DVA_SYSTEM	0
+#define device_active(a, b)
+
+/* <sys/error.h> */
+#define EMOVEFD	-6
+
+/* <sys/filedesc.h> */
+#define fd_allocfile(a,b)	0
+#define fd_clone(a,b,c,d,e)	0
+
+/* <sys/kauth.h> */
+#define kauth_cred_get()	(kauth_cred_t)NULL
+#define kauth_cred_geteuid(a)	0
+#define kauth_cred_getegid(a)	0
+#define kauth_cred_hold(a)
+#define kauth_cred_free(a)
+
+/* <sys/pmf.h> */
+typedef struct { } pmf_qual_t;
+#define pmf_device_register(a,b,c)	true
+#define pmf_device_deregister(a)
+#define pmf_event_register(a,b,c,d)	true
+#define pmf_event_deregister(a,b,c,d)
+
+/* <sys/proc.h> */
+extern struct proc *curproc;
+typedef struct proc {
+	pid_t p_pid;
+} proc_t;
+extern kmutex_t *proc_lock;
+#define proc_find(a)	NULL
+#define psignal(a, b)
+
+/* <sys/select.h> */
+#define selinit(a)
+#define seldestroy(a)
+#define selrecord(a, b)
+#define selnotify(a,b,c)
+
+/* <sys/event.h> (!_KERNEL 部分) */
+struct knote {
+	SLIST_ENTRY(knote)	kn_selnext;	/* o: for struct selinfo */
+	void *kn_hook;
+	const struct filterops *kn_fop;
+	int kn_filter;
+	int kn_data;
+};
+
+struct filterops {
+	int	f_isfd;			/* true if ident == filedescriptor */
+	int	(*f_attach)	(struct knote *);
+					/* called when knote is ADDed */
+	void	(*f_detach)	(struct knote *);
+					/* called when knote is DELETEd */
+	int	(*f_event)	(struct knote *, long);
+					/* called when event is triggered */
+};
+
+/* <sys/selinfo.h> */
+struct selinfo {
+	struct klist sel_klist;
+};
+
+/* <sys/sysctl.h> (!_KERNEL部分) */
+#define sysctl_createv(a,b,c,d,e,f,g,h,i,j,k,l...)
+#define	CTLTYPE_NODE	1	/* name is a node */
+#define SYSCTLFN_PROTO const int *, u_int, void *, \
+	size_t *, const void *, size_t, \
+	const int *, struct lwp *, const struct sysctlnode *
+#define SYSCTLFN_ARGS const int *name, u_int namelen, \
+	void *oldp, size_t *oldlenp, \
+	const void *newp, size_t newlen, \
+	const int *oname, struct lwp *l, \
+	const struct sysctlnode *rnode
+#define SYSCTLFN_CALL(node) name, namelen, oldp, \
+	oldlenp, newp, newlen, \
+	oname, l, node
+int	sysctl_lookup(SYSCTLFN_PROTO);
+
+
+/* <uvm*h> */
+#define UVM_ADV_RANDOM 0
+#define uao_reference(a)
 
 /* system call emulation */
 extern audio_file_t *sys_open(struct audio_softc *sc, int mode);
 extern int/*ssize_t*/ sys_write(audio_file_t *file, void* buf, size_t len);	/* write syscall の Userland 側エミュレート */
 extern int sys_ioctl_drain(audio_track_t *track);	/* ioctl(AUDIO_DRAIN) */
-
-extern void audio_print_format2(const char *, const audio_format2_t *);
-extern void audio_format2_tostr(char *buf, size_t bufsize,
-	const audio_format2_t *fmt);
 
 extern void audio_attach(struct audio_softc **softc, bool hw);
 extern void audio_detach(struct audio_softc *sc);

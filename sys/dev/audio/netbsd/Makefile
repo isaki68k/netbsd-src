@@ -3,7 +3,6 @@ SRCS+=	\
 	audio_dev.c
 
 SRCS+=	\
-	../aucodec_linear.c \
 	../aucodec_mulaw.c \
 	../main.c \
 	../userland.c \
@@ -12,12 +11,14 @@ SRCS+=	\
 OBJS=${SRCS:S,.c,.o,:S,../,,}
 
 CFLAGS=	-O2 -g -std=c99 -I. -I.. \
+	-DNAUDIO=1 \
 	-DAUDIO2 \
 	-fno-strict-aliasing \
 	-Wall \
 	-Werror \
 	-Wshadow \
 	-Wno-format-zero-length \
+	-Wno-unused-function \
 	-Wno-unused-variable \
 	-Wno-unused-but-set-variable \
 

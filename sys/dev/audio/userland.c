@@ -7,19 +7,15 @@ struct proc curproc0;
 struct proc *curproc = &curproc0;;
 struct lwp curlwp0;
 struct lwp *curlwp = &curlwp0;
+kmutex_t proc_lock0;
+kmutex_t *proc_lock = &proc_lock0;
 
-// この track が再生トラックなら true を返します。
-bool
-audio_track_is_playback(const audio_track_t *track)
+int	fnullop_fcntl(struct file *file, u_int name, void *val)
 {
-	return ((track->mode & AUMODE_PLAY) != 0);
+	return 0;
 }
-
-// この track が録音トラックなら true を返します。
-bool
-audio_track_is_record(const audio_track_t *track)
+void	fnullop_restart(struct file *file)
 {
-	return ((track->mode & AUMODE_RECORD) != 0);
 }
 
 static const audio_format2_t audio_default = {
@@ -100,32 +96,4 @@ sys_ioctl_drain(audio_track_t *track)
 	mutex_exit(sc->sc_lock);
 
 	return 0;
-}
-
-void
-audio_print_format2(const char *s, const audio_format2_t *fmt)
-{
-	char fmtstr[64];
-
-	audio_format2_tostr(fmtstr, sizeof(fmtstr), fmt);
-	printf("%s %s\n", s, fmtstr);
-}
-
-void
-audio_format2_tostr(char *buf, size_t bufsize, const audio_format2_t *fmt)
-{
-	int n;
-
-	n = 0;
-	n += snprintf(buf + n, bufsize - n, "enc=%d", fmt->encoding);
-
-	if (fmt->precision == fmt->stride) {
-		n += snprintf(buf + n, bufsize - n, " %dbit", fmt->precision);
-	} else {
-		n += snprintf(buf + n, bufsize - n, " %d/%dbit",
-			fmt->precision, fmt->stride);
-	}
-
-	snprintf(buf + n, bufsize - n, " %uch %uHz",
-	    fmt->channels, fmt->sample_rate);
 }

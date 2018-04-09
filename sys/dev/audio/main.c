@@ -1,11 +1,20 @@
 #include <ctype.h>
+#include <errno.h>
 #include <inttypes.h>
 #include <math.h>
 #include <signal.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 #include <sys/time.h>
-#include "aumix.c"
+
+#include "userland.h"		/* required by audioio.h */
+#include <sys/audioio.h>	/* required by audiovar.h */
+#include "audiovar.h"
+
+#define malloc(len, a, b)	malloc(len)
+#include "audio.c"
+#undef malloc
 
 struct test_file
 {
