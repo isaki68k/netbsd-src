@@ -2083,11 +2083,6 @@ audio_poll(struct audio_softc *sc, int events, struct lwp *l,
 	DPRINTF(2, "%s: events=0x%x mode=%d\n", __func__, events, file->mode);
 #endif
 
-	// XXX 動作未確認
-
-	// HW が Half Duplex でも、ソフトウェアレイヤは常に Full Duplex。
-	// でいいはず。
-
 	revents = 0;
 	in_is_valid = false;
 	out_is_valid = false;
