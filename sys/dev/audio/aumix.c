@@ -2329,14 +2329,9 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
 
 	KASSERT(mutex_owned(sc->sc_lock));
 
-#if defined(_KERNEL)
 	// すでに再生ミキサが起動していたら、true を返す
 	if (sc->sc_pbusy)
 		return;
-#else
-	// ユーザランドエミュレーション側では割り込みがないので
-	// 毎回スタートさせて start_output を呼んでいる。
-#endif
 
 	mixer = sc->sc_pmixer;
 	TRACE("begin mixseq=%d hwseq=%d hwbuf=%d/%d/%d%s",
@@ -2760,7 +2755,10 @@ audio_pmixer_output(struct audio_softc *sc)
 			return;
 		}
 	}
+#if defined(_KERNEL)
+	// ユーザランドテストでは pbusy を立てずに毎回 start を起こさせる
 	sc->sc_pbusy = true;
+#endif
 }
 
 // 割り込みハンドラです。
