@@ -3,6 +3,8 @@
 #include "audiovar.h"
 #include <errno.h>
 
+extern const struct fileops audio_fileops;
+
 struct proc curproc0;
 struct proc *curproc = &curproc0;;
 struct lwp curlwp0;
@@ -52,10 +54,14 @@ sys_write(audio_file_t *file, void* buf, size_t len)
 		return -1;
 	}
 
+	struct file fp;
+	memset(&fp, 0, sizeof(fp));
+	fp.f_audioctx = file;
+
 	struct uio uio = buf_to_uio(buf, len, UIO_READ);
 
 	mutex_enter(file->sc->sc_lock);
-	int error = audio_write(file->sc, &uio, 0, file);
+	int error = audio_fileops.fo_write(&fp, NULL, &uio, NULL, 0);
 	mutex_exit(file->sc->sc_lock);
 	if (error) {
 		errno = error;

@@ -315,17 +315,6 @@ struct audio_softc {
 	u_int	sc_lastgain;
 };
 
-extern void audio_vtrace(const char *funcname, const char *header,
-	const char *fmt, va_list ap);
-extern void audio_trace(const char *funcname, const char *fmt, ...)
-	__attribute__((__format__(printf, 2, 3)));
-extern void audio_tracet(const char *funcname, audio_track_t *track,
-	const char *fmt, ...)
-	__attribute__((__format__(printf, 3, 4)));
-extern void audio_tracef(const char *funcname, audio_file_t *file,
-	const char *fmt, ...)
-	__attribute__((__format__(printf, 3, 4)));
-
 int audio_track_init(struct audio_softc *sc, audio_track_t **track, int mode);
 void audio_track_destroy(audio_track_t *track);
 int audio_track_set_format(audio_track_t *track, audio_format2_t *track_fmt);
@@ -341,16 +330,9 @@ void audio_pmixer_process(struct audio_softc *sc, bool isintr);
 int  audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track, int req, int mixed);
 void audio_rmixer_start(struct audio_softc *sc);
 void audio_rmixer_process(struct audio_softc *sc);
-void audio_pintr(void *arg);
-void audio_rintr(void *arg);
 
 int  audio_pmixer_halt(struct audio_softc *sc);
 int  audio_rmixer_halt(struct audio_softc *sc);
-
-/* glue layer */
-int audio_write(struct audio_softc *sc, struct uio *uio, int ioflag, audio_file_t *file); /* write の MI 側 */
-int audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
-	audio_file_t *file);
 
 #if defined(AUDIO_DEBUG_MLOG)
 void audio_mlog_init(void);

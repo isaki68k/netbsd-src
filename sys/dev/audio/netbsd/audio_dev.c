@@ -10,6 +10,8 @@
 
 extern const char *devicefile;
 
+struct audio_softc local_sc;
+
 struct userland_softc
 {
 	struct audio_softc *asc;	/* back link */
@@ -60,7 +62,7 @@ audio_attach(struct audio_softc **scp, bool hw)
 	audio_format2_t rhwfmt;
 	int r;
 
-	sc = calloc(1, sizeof(*sc));
+	sc = &local_sc;
 	*scp = sc;
 	usc = calloc(1, sizeof(*usc));
 	sc->hw_hdl = usc;

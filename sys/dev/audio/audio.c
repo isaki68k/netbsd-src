@@ -168,6 +168,14 @@ typedef struct uio_fetcher {
 // ここに関数プロトタイプ
 // できれば static つけて統一したい
 
+static void audio_vtrace(const char *, const char *, const char *, va_list);
+static void audio_trace(const char *, const char *, ...)
+	__printflike(2, 3);
+static void audio_tracet(const char *, audio_track_t *, const char *, ...)
+	__printflike(3, 4);
+static void audio_tracef(const char *, audio_file_t *, const char *, ...)
+	__printflike(3, 4);
+
 static int	audiomatch(device_t, cfdata_t, void *);
 static void	audioattach(device_t, device_t, void *);
 static int	audiodetach(device_t, int);
@@ -213,8 +221,8 @@ static int audiostat(struct file *, struct stat *);
 static int audio_open(dev_t, struct audio_softc *, int, int, struct lwp *,
 		      struct file **);
 static int audio_close(struct audio_softc *, int, audio_file_t *);
-//static int audio_read(struct audio_softc *, struct uio *, int, audio_file_t *);
-//static int audio_write(struct audio_softc *, struct uio *, int, audio_file_t *);
+static int audio_read(struct audio_softc *, struct uio *, int, audio_file_t *);
+static int audio_write(struct audio_softc *, struct uio *, int, audio_file_t *);
 static void audio_file_clear(struct audio_softc *, audio_file_t *);
 static int audio_ioctl(dev_t, struct audio_softc *, u_long, void *, int,
 		       struct lwp *, audio_file_t *);
@@ -226,8 +234,8 @@ static int audio_mmap(struct audio_softc *, off_t *, size_t, int, int *, int *,
 static int audioctl_open(dev_t, struct audio_softc *, int, int, struct lwp *,
 	struct file **);
 
-//static void audio_pintr(void *);
-//static void audio_rintr(void *);
+static void audio_pintr(void *);
+static void audio_rintr(void *);
 
 static int audio_query_devinfo(struct audio_softc *, mixer_devinfo_t *);
 

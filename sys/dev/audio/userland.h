@@ -644,7 +644,8 @@ void	fnullop_restart(struct file *);
 #define DVACT_DEACTIVATE	0
 #define config_found(a,b,c)	(device_t)NULL
 #define device_private(x) NULL
-#define device_lookup_private(a,b) NULL
+extern struct audio_softc local_sc;	/* audio_dev.c */
+#define device_lookup_private(a,b) &local_sc
 #define DVA_SYSTEM	0
 #define device_active(a, b)
 

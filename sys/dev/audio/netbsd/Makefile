@@ -23,7 +23,7 @@ CFLAGS=	-O2 -g -std=c99 -I. -I.. \
 	-Wno-unused-but-set-variable \
 
 a.out.${MACHINE}:	${OBJS}
-	${CC} -g -o $@ $> -lm -pthread
+	${CC} -g -o $@ $> -lm -pthread -lutil
 
 .PHONY: clean
 clean:
