@@ -11,6 +11,7 @@
 #include "userland.h"		/* required by audioio.h */
 #include <sys/audioio.h>	/* required by audiovar.h */
 #include "audiovar.h"
+#include "mulaw.h"
 
 #define malloc(len, a, b)	malloc(len)
 #include "audio.c"

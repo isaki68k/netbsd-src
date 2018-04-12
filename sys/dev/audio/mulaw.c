@@ -6,13 +6,13 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <sys/systm.h>
 #include <sys/device.h>
 #include <dev/audio/audiovar.h>
-#include <dev/audio/aucodec.h>
+#include <dev/audio/mulaw.h>
 #else
 #include <stdint.h>
 #include <stdbool.h>
 #include "compat.h"
 #include "audiovar.h"
-#include "aucodec.h"
+#include "mulaw.h"
 #endif // !_KERNEL
 
 // audio_internal_to_mulaw

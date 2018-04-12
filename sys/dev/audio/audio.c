@@ -105,6 +105,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <dev/audio_if.h>
 #include <dev/audiovar.h>
 #include <dev/auconv.h>
+#include <dev/audio/mulaw.h>
 
 #if defined(AUDIO_DEBUG_MLOG)
 #include <sys/atomic.h>

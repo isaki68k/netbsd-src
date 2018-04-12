@@ -318,4 +318,6 @@ struct audio_softc {
 #include "auring.h"
 #endif
 
+extern bool is_valid_filter_arg(const audio_filter_arg_t *);
+
 #endif /* _SYS_DEV_AUDIOVAR2_H_ */
