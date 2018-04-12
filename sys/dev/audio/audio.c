@@ -4816,10 +4816,10 @@ audio_modcmd(modcmd_t cmd, void *arg)
 
 #if defined(KERNEL)
 #include <dev/audio/aumix.c>
-#include <dev/audio/aucodec_linear.c>
+#include <dev/audio/aucodec.c>
 #else
 #include "aumix.c"
-#include "aucodec_linear.c"
+#include "aucodec.c"
 #endif
 
 

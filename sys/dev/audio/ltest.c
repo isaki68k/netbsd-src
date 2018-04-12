@@ -14,7 +14,7 @@
 
 #include "audiovar.h"
 #include "aucodec.h"
-#include "aucodec_linear.c"
+#include "aucodec.c"
 #include "mulaw.c"
 #include "netbsd/compat.c"
 
