@@ -1,10 +1,19 @@
-#if !defined(_KERNEL)
+#if defined(_KERNEL)
+#include <sys/cdefs.h>
+__KERNEL_RCSID(0, "$NetBSD$");
+
+#include <sys/types.h>
+#include <sys/systm.h>
+#include <sys/device.h>
+#include <dev/audio/audiovar.h>
+#include <dev/audio/aucodec.h>
+#else
 #include <stdint.h>
 #include <stdbool.h>
 #include "compat.h"
 #include "audiovar.h"
 #include "aucodec.h"
-#endif // !_KERNEL
+#endif // _KERNEL
 
 /*
  * audio_linear8_to_internal:

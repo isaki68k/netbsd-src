@@ -20,6 +20,7 @@ attach	midi at midibus
 #
 define	audiobell
 
+file	dev/audio/aucodec.c		audio			needs-flag
 file	dev/auconv.c			auconv
 file	dev/audio.c			audio			needs-flag
 file	dev/midi.c			midi			needs-flag
