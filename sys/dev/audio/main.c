@@ -162,8 +162,8 @@ main(int ac, char *av[])
 	} else {
 		usage();
 	}
-	ac -= optind;
-	av += optind;
+	ac--;
+	av++;
 
 	// コマンドごとにその後の引数
 	int r = 0;
