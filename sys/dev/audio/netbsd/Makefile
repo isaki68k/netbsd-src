@@ -13,6 +13,7 @@ OBJS=${SRCS:S,.c,.o,:S,../,,}
 CFLAGS=	-O2 -g -std=c99 -I. -I.. \
 	-DNAUDIO=1 \
 	-DAUDIO2 \
+	-DSTATIC=extern \
 	-fno-strict-aliasing \
 	-Wall \
 	-Werror \

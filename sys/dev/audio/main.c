@@ -82,6 +82,10 @@ uint64_t filesize(FILE *);
 const char *audio_encoding_name(int);
 const char *tagname(uint32_t);
 
+audio_file_t *sys_open(int);
+int/*ssize_t*/ sys_write(audio_file_t *, void *, size_t);
+int sys_ioctl_drain(audio_track_t *);
+
 extern struct testdata testdata[];
 extern struct testdata perfdata[];
 
@@ -253,7 +257,7 @@ cmd_set_file(const char *filename)
 	f->mem.capacity = len * 8 / f->mem.fmt.stride / f->mem.fmt.channels;
 	f->mem.used = f->mem.capacity;
 
-	f->file = sys_open(sc, AUMODE_PLAY);
+	f->file = sys_open(AUMODE_PLAY);
 	/* この辺は ioctl になる */
 	f->file->ptrack->volume = opt_vol;
 	f->file->ptrack->mixer->volume = 256;
@@ -541,6 +545,74 @@ tagname(uint32_t tag)
 	return buf;
 }
 
+/*
+ * ***** audio_file *****
+ */
+
+void
+audio_softc_init(const audio_format2_t *phwfmt, const audio_format2_t *rhwfmt)
+{
+	sc->sc_pmixer = malloc(sizeof(audio_trackmixer_t));
+	sc->sc_rmixer = malloc(sizeof(audio_trackmixer_t));
+	sc->sc_pparams = params_to_format2(&audio_default);
+	sc->sc_rparams = params_to_format2(&audio_default);
+
+	audio_mixer_init(sc, AUMODE_PLAY, phwfmt);
+	audio_mixer_init(sc, AUMODE_RECORD, rhwfmt);
+}
+
+audio_file_t *
+sys_open(int mode)
+{
+	audio_file_t *file;
+
+	file = calloc(1, sizeof(audio_file_t));
+	file->sc = sc;
+
+	if (mode == AUMODE_PLAY) {
+		audio_track_init(sc, &file->ptrack, AUMODE_PLAY);
+	} else {
+		audio_track_init(sc, &file->rtrack, AUMODE_RECORD);
+	}
+
+	SLIST_INSERT_HEAD(&sc->sc_files, file, entry);
+
+	return file;
+}
+
+int//ssize_t
+sys_write(audio_file_t *file, void* buf, size_t len)
+{
+	KASSERT(buf);
+
+	if (len > INT_MAX) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	struct uio uio = buf_to_uio(buf, len, UIO_READ);
+
+	mutex_enter(file->sc->sc_lock);
+	int error = audio_write(file->sc, &uio, 0, file);
+	mutex_exit(file->sc->sc_lock);
+	if (error) {
+		errno = error;
+		return -1;
+	}
+	return (int)len;
+}
+
+// ioctl(AUDIO_DRAIN) 相当
+int
+sys_ioctl_drain(audio_track_t *track)
+{
+	mutex_enter(sc->sc_lock);
+	audio_track_drain(sc, track);
+	mutex_exit(sc->sc_lock);
+
+	return 0;
+}
+
 // テストパターン
 struct testdata testdata[] = {
 	{ "mixer_calc_blktime",		test_mixer_calc_blktime },
@@ -674,7 +746,7 @@ perf_codec_slinear_to_mulaw()
 	memset(&it, 0, sizeof(it));
 	it.it_value.tv_sec = 3;
 
-	f->file = sys_open(sc, AUMODE_RECORD);
+	f->file = sys_open(AUMODE_RECORD);
 	track = f->file->rtrack;
 	// src fmt
 	srcfmt = track->mixer->track_fmt;
@@ -750,7 +822,7 @@ perf_codec_linear16_to_internal()
 	memset(&it, 0, sizeof(it));
 	it.it_value.tv_sec = 3;
 
-	f->file = sys_open(sc, AUMODE_PLAY);
+	f->file = sys_open(AUMODE_PLAY);
 	track = f->file->ptrack;
 
 	for (int i = 0; i < __arraycount(enc); i++) {
@@ -809,7 +881,7 @@ perf_freq_main(struct freqdata *pattern)
 	memset(&it, 0, sizeof(it));
 	it.it_value.tv_sec = 3;
 
-	f->file = sys_open(sc, AUMODE_PLAY);
+	f->file = sys_open(AUMODE_PLAY);
 	track = f->file->ptrack;
 	for (int i = 0; pattern[i].name != NULL; i++) {
 		// dst fmt
@@ -867,7 +939,7 @@ perf_chmix_mixLR()
 	memset(&it, 0, sizeof(it));
 	it.it_value.tv_sec = 3;
 
-	f->file = sys_open(sc, AUMODE_PLAY);
+	f->file = sys_open(AUMODE_PLAY);
 	track = f->file->ptrack;
 	// dst fmt
 	track->mixer->track_fmt.channels = 1;

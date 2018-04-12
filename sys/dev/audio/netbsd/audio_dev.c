@@ -82,7 +82,7 @@ audio_attach(struct audio_softc **scp, bool hw)
 	sc->sc_lock = &usc->sc_lock;
 	sc->sc_intr_lock = &usc->sc_intr_lock;
 
-	audio_softc_init(sc, &phwfmt, &rhwfmt);
+	audio_softc_init(&phwfmt, &rhwfmt);
 
 	if (hw) {
 		usc->fd = open(devicefile, O_RDWR);

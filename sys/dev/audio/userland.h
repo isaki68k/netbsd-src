@@ -297,8 +297,7 @@ typedef struct audio_file audio_file_t;
 
 struct audio_softc;
 
-void audio_softc_init(struct audio_softc *sc,
-	const audio_format2_t *, const audio_format2_t *);
+void audio_softc_init(const audio_format2_t *, const audio_format2_t *);
 
 enum uio_rw
 {
@@ -729,11 +728,6 @@ int	sysctl_lookup(SYSCTLFN_PROTO);
 /* <uvm*h> */
 #define UVM_ADV_RANDOM 0
 #define uao_reference(a)
-
-/* system call emulation */
-extern audio_file_t *sys_open(struct audio_softc *sc, int mode);
-extern int/*ssize_t*/ sys_write(audio_file_t *file, void* buf, size_t len);	/* write syscall の Userland 側エミュレート */
-extern int sys_ioctl_drain(audio_track_t *track);	/* ioctl(AUDIO_DRAIN) */
 
 extern void audio_attach(struct audio_softc **softc, bool hw);
 extern void audio_detach(struct audio_softc *sc);

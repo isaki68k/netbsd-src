@@ -285,6 +285,72 @@ static void audio_format2_tostr(char *, size_t, const audio_format2_t *);
 static void audio_print_format2(const char *, const audio_format2_t *);
 #endif
 
+static int audio_track_init(struct audio_softc *, audio_track_t **, int);
+static void audio_track_destroy(audio_track_t *);
+static int audio_track_set_format(audio_track_t *, audio_format2_t *);
+static void audio_track_play(audio_track_t *);
+static int audio_track_drain(struct audio_softc *, audio_track_t *);
+static void audio_track_record(audio_track_t *);
+static void audio_track_clear(struct audio_softc *, audio_track_t *);
+
+static int audio_mixer_init(struct audio_softc *, int, const audio_format2_t *);
+static void audio_mixer_destroy(struct audio_softc *, audio_trackmixer_t *);
+static void audio_pmixer_start(struct audio_softc *, bool);
+static void audio_pmixer_process(struct audio_softc *, bool);
+static int  audio_pmixer_mix_track(audio_trackmixer_t *, audio_track_t *,
+	int, int);
+static void audio_rmixer_start(struct audio_softc *);
+static void audio_rmixer_process(struct audio_softc *);
+
+static int  audio_pmixer_halt(struct audio_softc *);
+static int  audio_rmixer_halt(struct audio_softc *);
+
+static inline struct audio_params
+format2_to_params(const audio_format2_t *f2)
+{
+	audio_params_t p;
+
+	p.sample_rate = f2->sample_rate;
+	p.channels = f2->channels;
+	p.encoding = f2->encoding;
+	p.validbits = f2->precision;
+	p.precision = f2->stride;
+	return p;
+}
+
+static inline audio_format2_t
+params_to_format2(const struct audio_params *p)
+{
+	audio_format2_t f2;
+
+	f2.sample_rate = p->sample_rate;
+	f2.channels    = p->channels;
+	f2.encoding    = p->encoding;
+	f2.precision   = p->validbits;
+	f2.stride      = p->precision;
+	return f2;
+}
+
+// not used anymore
+// どうするかね
+#if 0
+// ユーザランドで使用される 0..255 ボリュームを、トラック内の内部表現である
+// 0..256 ボリュームに変換します。
+static inline u_int
+audio_volume_to_inner(u_int v)
+{
+	return v < 127 ? v : v + 1;
+}
+
+// トラック内の内部表現である 0..256 ボリュームを、外部で使用される 0..255
+// ボリュームに変換します。
+static inline u_int
+audio_volume_to_outer(u_int v)
+{
+	return v < 127 ? v : v - 1;
+}
+#endif // 0
+
 #ifdef OLD_FILTER
 static void stream_filter_list_append(stream_filter_list_t *,
 		stream_filter_factory_t, const audio_params_t *);
