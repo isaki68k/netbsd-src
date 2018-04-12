@@ -660,7 +660,10 @@ bad:
 	return;
 }
 
-/* called from audioattach() */
+/*
+ * Initialize hardware mixer.
+ * This function is called from audioattach().
+ */
 static void
 mixer_init(struct audio_softc *sc)
 {
@@ -1408,7 +1411,8 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 		return ENXIO;
 
 #if AUDIO_DEBUG > 2
-	TRACE("start flags=0x%x po=%d ro=%d", flags, sc->sc_popens, sc->sc_ropens);
+	TRACE("start flags=0x%x po=%d ro=%d",
+	    flags, sc->sc_popens, sc->sc_ropens);
 #else
 	DPRINTF(1, "%s\n", __func__);
 #endif
@@ -1776,6 +1780,9 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 //
 // 元々 audio_clear() で、録音再生をその場で停止して hw halt_input/output も
 // 呼んでいた (呼ぶ必要があったのかどうかは分からない)。
+/*
+ * Clear file's playback and/or record track buffer immediately.
+ */
 static void
 audio_file_clear(struct audio_softc *sc, audio_file_t *file)
 {
@@ -1996,6 +2003,7 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 
 	case AUDIO_GETFD:
 		// 現在のディスクリプタが full duplex かどうかを返す。
+		/* Whether this descriptor (not the hardware) is full duplex. */
 		if ((file->mode & (AUMODE_PLAY | AUMODE_RECORD)) ==
 		    (AUMODE_PLAY | AUMODE_RECORD)) {
 			fd = 1;
@@ -2009,6 +2017,13 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		// HW が full duplex なら half duplex への変更は認めない。
 		// この操作に意味があるとは思えない。
 		// HW が half duplex なら full duplex へは変更できない(自明)。
+		/*
+		 * If the hardware is half duplex, it can not change this
+		 * descriptor to full duplex.  It's obvious.
+		 * If the hardware is full duplex, it's not permitted to
+		 * change this descriptor to half duplex.  It's nonsense
+		 * operation, I think.
+		 */
 		fd = *(int *)addr;
 		if ((file->mode & (AUMODE_PLAY | AUMODE_RECORD)) ==
 		    (AUMODE_PLAY | AUMODE_RECORD)) {
@@ -2042,6 +2057,10 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 
 // XXX 場所は後で考えなおしたほうがいい
 // 録音バッファの読み取り可能バイト数を返します。
+/*
+ * This function returns the number of bytes that can be read from recording
+ * buffer.
+ */
 static inline int
 audio_track_readablebytes(const audio_track_t *track)
 {
@@ -2318,7 +2337,7 @@ audio_mmap(struct audio_softc *sc, off_t *offp, size_t len, int prot,
 }
 
 /*
- * /dev/audioctl can be opend at any time without interference with
+ * /dev/audioctl has to be able to open at any time without interference with
  * any /dev/audio or /dev/sound.
  */
 static int
