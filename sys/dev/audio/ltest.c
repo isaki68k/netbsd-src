@@ -15,7 +15,7 @@
 #include "audiovar.h"
 #include "aucodec.h"
 #include "aucodec_linear.c"
-#include "aucodec_mulaw.c"
+#include "mulaw.c"
 #include "netbsd/compat.c"
 
 struct testtable {

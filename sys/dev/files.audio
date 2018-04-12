@@ -25,4 +25,4 @@ file	dev/audio.c			audio			needs-flag
 file	dev/midi.c			midi			needs-flag
 file	dev/midictl.c			midisyn
 file	dev/midisyn.c			midisyn
-file	dev/audio/aucodec_mulaw.c	mulaw			needs-flag
+file	dev/audio/mulaw.c		mulaw			needs-flag

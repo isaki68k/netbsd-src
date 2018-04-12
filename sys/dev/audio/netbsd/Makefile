@@ -3,8 +3,8 @@ SRCS+=	\
 	audio_dev.c
 
 SRCS+=	\
-	../aucodec_mulaw.c \
 	../main.c \
+	../mulaw.c \
 	../userland.c \
 	compat.c \
 
