@@ -124,6 +124,9 @@ __KERNEL_RCSID(0, "$NetBSD$");
 // 4: 割り込み内のTRACEも含む (要 AUDIO_DEBUG_MLOG)
 #define AUDIO_DEBUG	4
 
+// デバッグ用なんちゃってメモリログ。
+#define AUDIO_DEBUG_MLOG
+
 #ifdef AUDIO_DEBUG
 #define DPRINTF(n, fmt...)	do {	\
 	if (audiodebug >= (n)) {	\
@@ -175,6 +178,15 @@ static void audio_tracet(const char *, audio_track_t *, const char *, ...)
 	__printflike(3, 4);
 static void audio_tracef(const char *, audio_file_t *, const char *, ...)
 	__printflike(3, 4);
+
+#if defined(AUDIO_DEBUG_MLOG)
+static void audio_mlog_init(void);
+static void audio_mlog_free(void);
+static void audio_mlog_flush(void);
+#else
+#define audio_mlog_flush()	/**/
+#endif
+
 
 static int	audiomatch(device_t, cfdata_t, void *);
 static void	audioattach(device_t, device_t, void *);

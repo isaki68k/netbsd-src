@@ -57,9 +57,6 @@
 // C の実装定義動作を使用する。
 #define AUDIO_USE_C_IMPLEMENTATION_DEFINED_BEHAVIOR
 
-// デバッグ用なんちゃってメモリログ。
-#define AUDIO_DEBUG_MLOG
-
 // サポートする最大/最小周波数。
 // 最小は、実用的に意味があるかはともかく 4kHz 未満をセットできる骨董品も
 // 中にはあることを考慮してこのくらいまでは許してやろう。
@@ -333,14 +330,6 @@ void audio_rmixer_process(struct audio_softc *sc);
 
 int  audio_pmixer_halt(struct audio_softc *sc);
 int  audio_rmixer_halt(struct audio_softc *sc);
-
-#if defined(AUDIO_DEBUG_MLOG)
-void audio_mlog_init(void);
-void audio_mlog_free(void);
-void audio_mlog_flush(void);
-#else
-#define audio_mlog_flush()	/**/
-#endif
 
 static inline struct audio_params
 format2_to_params(const audio_format2_t *f2)
