@@ -313,9 +313,6 @@ struct audio_softc {
 	struct au_mixer_ports sc_outports;
 	int		sc_monitor_port;
 	u_int	sc_lastgain;
-
-	struct audio_encoding *sc_encodings;
-	int sc_encodings_count;
 };
 
 extern void audio_vtrace(const char *funcname, const char *header,
