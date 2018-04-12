@@ -1,5 +1,4 @@
 #if defined(_KERNEL)
-#include <dev/audio/auring.h>
 #include <dev/audio/aucodec.h>
 #include <sys/intr.h>
 #else
@@ -9,7 +8,6 @@
 #include <stdbool.h>
 #include "audiovar.h"
 #include "aucodec.h"
-#include "auformat.h"
 #endif
 
 void *audio_realloc(void *memblock, size_t bytes);

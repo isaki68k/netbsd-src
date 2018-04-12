@@ -2,8 +2,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "compat.h"
-#include "auring.h"
-#include "auformat.h"
+#include "audiovar.h"
 #include "aucodec.h"
 #endif // !_KERNEL
 
