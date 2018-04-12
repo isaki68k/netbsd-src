@@ -117,6 +117,13 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include "ioconf.h"
 #endif /* _KERNEL */
 
+// デバッグレベルは
+// 1: open/close/set_param等
+// 2: read/write/ioctlシステムコールくらいまでは含む
+// 3: 割り込み以外のTRACEも含む
+// 4: 割り込み内のTRACEも含む (要 AUDIO_DEBUG_MLOG)
+#define AUDIO_DEBUG	4
+
 #ifdef AUDIO_DEBUG
 #define DPRINTF(n, fmt...)	do {	\
 	if (audiodebug >= (n)) {	\
@@ -127,6 +134,16 @@ __KERNEL_RCSID(0, "$NetBSD$");
 int	audiodebug = AUDIO_DEBUG;
 #else
 #define DPRINTF(n, fmt...)	do { } while (0)
+#endif
+
+#if AUDIO_DEBUG > 2
+#define TRACE(fmt, ...)		audio_trace(__func__, fmt, ## __VA_ARGS__)
+#define TRACET(t, fmt, ...)	audio_tracet(__func__, t, fmt, ## __VA_ARGS__)
+#define TRACEF(f, fmt, ...)	audio_tracef(__func__, f, fmt, ## __VA_ARGS__)
+#else
+#define TRACE(fmt, ...)		/**/
+#define TRACET(t, fmt, ...)	/**/
+#define TRACEF(f, fmt, ...)	/**/
 #endif
 
 #define SPECIFIED(x)	((x) != ~0)

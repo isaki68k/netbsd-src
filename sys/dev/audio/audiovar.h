@@ -3,13 +3,6 @@
 #ifndef _SYS_DEV_AUDIOVAR2_H_
 #define _SYS_DEV_AUDIOVAR2_H_
 
-// デバッグレベルは
-// 1: open/close/set_param等
-// 2: read/write/ioctlシステムコールくらいまでは含む
-// 3: 割り込み以外のTRACEも含む
-// 4: 割り込み内のTRACEも含む (要 AUDIO_DEBUG_MLOG)
-#define AUDIO_DEBUG	4
-
 #if defined(_KERNEL)
 #include <sys/condvar.h>
 #include <sys/proc.h>
@@ -26,16 +19,6 @@
 #include "userland.h"
 #include "aufilter.h"
 #endif // _KERNEL
-
-#if AUDIO_DEBUG > 2
-#define TRACE(fmt, ...)		audio_trace(__func__, fmt, ## __VA_ARGS__)
-#define TRACET(t, fmt, ...)	audio_tracet(__func__, t, fmt, ## __VA_ARGS__)
-#define TRACEF(f, fmt, ...)	audio_tracef(__func__, f, fmt, ## __VA_ARGS__)
-#else
-#define TRACE(fmt, ...)		/**/
-#define TRACET(t, fmt, ...)	/**/
-#define TRACEF(f, fmt, ...)	/**/
-#endif
 
 // 出力バッファのブロック数
 /* Number of output buffer's blocks.  Must be != NBLKHW */
