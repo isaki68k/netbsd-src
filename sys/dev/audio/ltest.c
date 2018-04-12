@@ -256,7 +256,7 @@ encname(int enc)
 	}
 }
 
-// linear_to_internal のテスト本体
+// audio_linear_to_internal のテスト本体
 void
 test_linear_to(int enc, int prec, void (*func)(audio_filter_arg_t *))
 {
@@ -365,49 +365,49 @@ test_linear_to(int enc, int prec, void (*func)(audio_filter_arg_t *))
 
 
 void
-test_linear8_to_internal()
+test_audio_linear8_to_internal()
 {
 	// linear8 は _LE でも _BE でもないが、
 	// どっちにあわせるんだっけ
-	test_linear_to(AUDIO_ENCODING_SLINEAR_LE, 8, linear8_to_internal);
-	test_linear_to(AUDIO_ENCODING_SLINEAR_BE, 8, linear8_to_internal);
-	test_linear_to(AUDIO_ENCODING_ULINEAR_LE, 8, linear8_to_internal);
-	test_linear_to(AUDIO_ENCODING_ULINEAR_BE, 8, linear8_to_internal);
+	test_linear_to(AUDIO_ENCODING_SLINEAR_LE, 8, audio_linear8_to_internal);
+	test_linear_to(AUDIO_ENCODING_SLINEAR_BE, 8, audio_linear8_to_internal);
+	test_linear_to(AUDIO_ENCODING_ULINEAR_LE, 8, audio_linear8_to_internal);
+	test_linear_to(AUDIO_ENCODING_ULINEAR_BE, 8, audio_linear8_to_internal);
 }
 
 void
-test_linear16_to_internal()
+test_audio_linear16_to_internal()
 {
-	test_linear_to(AUDIO_ENCODING_SLINEAR_LE, 16, linear16_to_internal);
-	test_linear_to(AUDIO_ENCODING_SLINEAR_BE, 16, linear16_to_internal);
-	test_linear_to(AUDIO_ENCODING_ULINEAR_LE, 16, linear16_to_internal);
-	test_linear_to(AUDIO_ENCODING_ULINEAR_BE, 16, linear16_to_internal);
+	test_linear_to(AUDIO_ENCODING_SLINEAR_LE, 16, audio_linear16_to_internal);
+	test_linear_to(AUDIO_ENCODING_SLINEAR_BE, 16, audio_linear16_to_internal);
+	test_linear_to(AUDIO_ENCODING_ULINEAR_LE, 16, audio_linear16_to_internal);
+	test_linear_to(AUDIO_ENCODING_ULINEAR_BE, 16, audio_linear16_to_internal);
 }
 
 void
-test_linear24_to_internal()
+test_audio_linear24_to_internal()
 {
 #if defined(AUDIO_SUPPORT_LINEAR24)
-	test_linear_to(AUDIO_ENCODING_SLINEAR_LE, 24, linear24_to_internal);
-	test_linear_to(AUDIO_ENCODING_SLINEAR_BE, 24, linear24_to_internal);
-	test_linear_to(AUDIO_ENCODING_ULINEAR_LE, 24, linear24_to_internal);
-	test_linear_to(AUDIO_ENCODING_ULINEAR_BE, 24, linear24_to_internal);
+	test_linear_to(AUDIO_ENCODING_SLINEAR_LE, 24, audio_linear24_to_internal);
+	test_linear_to(AUDIO_ENCODING_SLINEAR_BE, 24, audio_linear24_to_internal);
+	test_linear_to(AUDIO_ENCODING_ULINEAR_LE, 24, audio_linear24_to_internal);
+	test_linear_to(AUDIO_ENCODING_ULINEAR_BE, 24, audio_linear24_to_internal);
 #else
-	TEST("linear24_to_internal");
+	TEST("audio_linear24_to_internal");
 	XP_SKIP("AUDIO_SUPPORT_LINEAR24 not defined");
 #endif
 }
 
 void
-test_linear32_to_internal()
+test_audio_linear32_to_internal()
 {
-	test_linear_to(AUDIO_ENCODING_SLINEAR_LE, 32, linear32_to_internal);
-	test_linear_to(AUDIO_ENCODING_SLINEAR_BE, 32, linear32_to_internal);
-	test_linear_to(AUDIO_ENCODING_ULINEAR_LE, 32, linear32_to_internal);
-	test_linear_to(AUDIO_ENCODING_ULINEAR_BE, 32, linear32_to_internal);
+	test_linear_to(AUDIO_ENCODING_SLINEAR_LE, 32, audio_linear32_to_internal);
+	test_linear_to(AUDIO_ENCODING_SLINEAR_BE, 32, audio_linear32_to_internal);
+	test_linear_to(AUDIO_ENCODING_ULINEAR_LE, 32, audio_linear32_to_internal);
+	test_linear_to(AUDIO_ENCODING_ULINEAR_BE, 32, audio_linear32_to_internal);
 }
 
-// internal_to_linear* のテスト本体
+// audio_internal_to_linear* のテスト本体
 void
 test_to_linear(int enc, int prec, void (*func)(audio_filter_arg_t *))
 {
@@ -421,7 +421,7 @@ test_to_linear(int enc, int prec, void (*func)(audio_filter_arg_t *))
 	int stride;
 	uint8_t *e;
 
-	TEST("internal_to_linear%d(%s)", prec, encname(enc));
+	TEST("audio_internal_to_linear%d(%s)", prec, encname(enc));
 
 	stride = prec;
 	memset(dst, 0, sizeof(dst));
@@ -499,44 +499,44 @@ test_to_linear(int enc, int prec, void (*func)(audio_filter_arg_t *))
 }
 
 void
-test_internal_to_linear8()
+test_audio_internal_to_linear8()
 {
-	test_to_linear(AUDIO_ENCODING_SLINEAR_LE, 8, internal_to_linear8);
-	test_to_linear(AUDIO_ENCODING_SLINEAR_BE, 8, internal_to_linear8);
-	test_to_linear(AUDIO_ENCODING_ULINEAR_LE, 8, internal_to_linear8);
-	test_to_linear(AUDIO_ENCODING_ULINEAR_BE, 8, internal_to_linear8);
+	test_to_linear(AUDIO_ENCODING_SLINEAR_LE, 8, audio_internal_to_linear8);
+	test_to_linear(AUDIO_ENCODING_SLINEAR_BE, 8, audio_internal_to_linear8);
+	test_to_linear(AUDIO_ENCODING_ULINEAR_LE, 8, audio_internal_to_linear8);
+	test_to_linear(AUDIO_ENCODING_ULINEAR_BE, 8, audio_internal_to_linear8);
 }
 
 void
-test_internal_to_linear16()
+test_audio_internal_to_linear16()
 {
-	test_to_linear(AUDIO_ENCODING_SLINEAR_LE, 16, internal_to_linear16);
-	test_to_linear(AUDIO_ENCODING_SLINEAR_BE, 16, internal_to_linear16);
-	test_to_linear(AUDIO_ENCODING_ULINEAR_LE, 16, internal_to_linear16);
-	test_to_linear(AUDIO_ENCODING_ULINEAR_BE, 16, internal_to_linear16);
+	test_to_linear(AUDIO_ENCODING_SLINEAR_LE, 16, audio_internal_to_linear16);
+	test_to_linear(AUDIO_ENCODING_SLINEAR_BE, 16, audio_internal_to_linear16);
+	test_to_linear(AUDIO_ENCODING_ULINEAR_LE, 16, audio_internal_to_linear16);
+	test_to_linear(AUDIO_ENCODING_ULINEAR_BE, 16, audio_internal_to_linear16);
 }
 
 void
-test_internal_to_linear24()
+test_audio_internal_to_linear24()
 {
 #if defined(AUDIO_SUPPORT_LINEAR24)
-	test_to_linear(AUDIO_ENCODING_SLINEAR_LE, 24, internal_to_linear24);
-	test_to_linear(AUDIO_ENCODING_SLINEAR_BE, 24, internal_to_linear24);
-	test_to_linear(AUDIO_ENCODING_ULINEAR_LE, 24, internal_to_linear24);
-	test_to_linear(AUDIO_ENCODING_ULINEAR_BE, 24, internal_to_linear24);
+	test_to_linear(AUDIO_ENCODING_SLINEAR_LE, 24, audio_internal_to_linear24);
+	test_to_linear(AUDIO_ENCODING_SLINEAR_BE, 24, audio_internal_to_linear24);
+	test_to_linear(AUDIO_ENCODING_ULINEAR_LE, 24, audio_internal_to_linear24);
+	test_to_linear(AUDIO_ENCODING_ULINEAR_BE, 24, audio_internal_to_linear24);
 #else
-	TEST("internal_to_linear24");
+	TEST("audio_internal_to_linear24");
 	XP_SKIP("AUDIO_SUPPORT_LINEAR24 not defined");
 #endif
 }
 
 void
-test_internal_to_linear32()
+test_audio_internal_to_linear32()
 {
-	test_to_linear(AUDIO_ENCODING_SLINEAR_LE, 32, internal_to_linear32);
-	test_to_linear(AUDIO_ENCODING_SLINEAR_BE, 32, internal_to_linear32);
-	test_to_linear(AUDIO_ENCODING_ULINEAR_LE, 32, internal_to_linear32);
-	test_to_linear(AUDIO_ENCODING_ULINEAR_BE, 32, internal_to_linear32);
+	test_to_linear(AUDIO_ENCODING_SLINEAR_LE, 32, audio_internal_to_linear32);
+	test_to_linear(AUDIO_ENCODING_SLINEAR_BE, 32, audio_internal_to_linear32);
+	test_to_linear(AUDIO_ENCODING_ULINEAR_LE, 32, audio_internal_to_linear32);
+	test_to_linear(AUDIO_ENCODING_ULINEAR_BE, 32, audio_internal_to_linear32);
 }
 
 // slinear14
@@ -566,7 +566,7 @@ test_internal_to_linear32()
 //  -128..  -65
 
 void
-test_mulaw_to_internal()
+test_audio_mulaw_to_internal()
 {
 	audio_filter_arg_t arg;
 	audio_format2_t srcfmt, intfmt;
@@ -575,7 +575,7 @@ test_mulaw_to_internal()
 	aint_t dst[count];
 	aint_t exp[count];
 
-	TEST("mulaw_to_internal");
+	TEST("audio_mulaw_to_internal");
 
 	memset(dst, 0, sizeof(dst));
 	for (int i = 0; i < __arraycount(src); i++) {
@@ -638,7 +638,7 @@ test_mulaw_to_internal()
 	arg.src = src;
 	arg.dst = dst;
 	arg.count = count / intfmt.channels;
-	mulaw_to_internal(&arg);
+	audio_mulaw_to_internal(&arg);
 
 	// 照合
 	for (int i = 0; i < count; i++) {
@@ -655,7 +655,7 @@ test_mulaw_to_internal()
 }
 
 void
-test_internal_to_mulaw()
+test_audio_internal_to_mulaw()
 {
 	audio_filter_arg_t arg;
 	audio_format2_t intfmt, dstfmt;
@@ -674,7 +674,7 @@ test_internal_to_mulaw()
 	hqmode = 0;
 #endif
 
-	TEST("internal_to_mulaw[%s]", hqmode ? "14bit" : "8bit");
+	TEST("audio_internal_to_mulaw[%s]", hqmode ? "14bit" : "8bit");
 
 	src = malloc(count * sizeof(*src));
 	dst = malloc(count * sizeof(*dst));
@@ -752,7 +752,7 @@ test_internal_to_mulaw()
 	arg.src = src;
 	arg.dst = dst;
 	arg.count = count / intfmt.channels;
-	internal_to_mulaw(&arg);
+	audio_internal_to_mulaw(&arg);
 
 	// 照合
 	for (int i = 0; i < count; i++) {
@@ -1287,16 +1287,16 @@ test_audio_ring_get_contig_free()
 // テスト一覧
 #define DEF(x)	{ #x, test_ ## x }
 struct testtable testtable[] = {
-	DEF(linear8_to_internal),
-	DEF(linear16_to_internal),
-	DEF(linear24_to_internal),
-	DEF(linear32_to_internal),
-	DEF(internal_to_linear8),
-	DEF(internal_to_linear16),
-	DEF(internal_to_linear24),
-	DEF(internal_to_linear32),
-	DEF(mulaw_to_internal),
-	DEF(internal_to_mulaw),
+	DEF(audio_linear8_to_internal),
+	DEF(audio_linear16_to_internal),
+	DEF(audio_linear24_to_internal),
+	DEF(audio_linear32_to_internal),
+	DEF(audio_internal_to_linear8),
+	DEF(audio_internal_to_linear16),
+	DEF(audio_internal_to_linear24),
+	DEF(audio_internal_to_linear32),
+	DEF(audio_mulaw_to_internal),
+	DEF(audio_internal_to_mulaw),
 	DEF(audio_ring_round),
 	DEF(audio_ring_tail),
 	DEF(audio_ring_headptr_aint),

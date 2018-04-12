@@ -16,7 +16,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include "aucodec.h"
 #endif // !_KERNEL
 
-// internal_to_mulaw
+// audio_internal_to_mulaw
 //
 // 1) 8bitテーブル方式 (従来版)
 //	本来14bitに対して精度がリニア8bit分しかない。がたぶん聞いても分からん。
@@ -148,11 +148,11 @@ static const uint16_t alaw_to_slinear16[256] = {
 #endif
 
 /*
- * mulaw_to_internal:
+ * audio_mulaw_to_internal:
  *	This filter performs conversion from mulaw to internal format.
  */
 void
-mulaw_to_internal(audio_filter_arg_t *arg)
+audio_mulaw_to_internal(audio_filter_arg_t *arg)
 {
 	const uint8_t *s;
 	aint_t *d;
@@ -179,11 +179,11 @@ mulaw_to_internal(audio_filter_arg_t *arg)
 }
 
 /*
- * internal_to_mulaw:
+ * audio_internal_to_mulaw:
  *	This filter performs conversion from internal format to mulaw.
  */
 void
-internal_to_mulaw(audio_filter_arg_t *arg)
+audio_internal_to_mulaw(audio_filter_arg_t *arg)
 {
 	const aint_t *s;
 	uint8_t *d;

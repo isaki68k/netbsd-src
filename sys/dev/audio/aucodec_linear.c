@@ -8,11 +8,11 @@
 #endif // !_KERNEL
 
 /*
- * linear8_to_internal:
+ * audio_linear8_to_internal:
  *	This filter performs conversion from [US]LINEAR8 to internal format.
  */
 void
-linear8_to_internal(audio_filter_arg_t *arg)
+audio_linear8_to_internal(audio_filter_arg_t *arg)
 {
 	const uint8_t *s;
 	aint_t *d;
@@ -41,11 +41,11 @@ linear8_to_internal(audio_filter_arg_t *arg)
 }
 
 /*
- * internal_to_linear8:
+ * audio_internal_to_linear8:
  *	This filter performs conversion from internal format to [US]LINEAR8.
  */
 void
-internal_to_linear8(audio_filter_arg_t *arg)
+audio_internal_to_linear8(audio_filter_arg_t *arg)
 {
 	const aint_t *s;
 	uint8_t *d;
@@ -74,12 +74,12 @@ internal_to_linear8(audio_filter_arg_t *arg)
 }
 
 /*
- * linear16_to_internal:
+ * audio_linear16_to_internal:
  *	This filter performs conversion from [US]LINEAR16{LE,BE} to internal
  *	format.
  */
 void
-linear16_to_internal(audio_filter_arg_t *arg)
+audio_linear16_to_internal(audio_filter_arg_t *arg)
 {
 	const uint16_t *s;
 	aint_t *d;
@@ -132,12 +132,12 @@ linear16_to_internal(audio_filter_arg_t *arg)
 }
 
 /*
- * internal_to_linear16:
+ * audio_internal_to_linear16:
  *	This filter performs conversion from internal format to
  *	[US]LINEAR16{LE,BE}.
  */
 void
-internal_to_linear16(audio_filter_arg_t *arg)
+audio_internal_to_linear16(audio_filter_arg_t *arg)
 {
 	const aint_t *s;
 	uint16_t *d;
@@ -191,12 +191,12 @@ internal_to_linear16(audio_filter_arg_t *arg)
 
 #if defined(AUDIO_SUPPORT_LINEAR24)
 /*
- * linear24_to_internal:
+ * audio_linear24_to_internal:
  *	This filter performs conversion from [US]LINEAR24/24{LE,BE} to
  *	internal format.  It's rerely used so it's size optimization.
  */
 void
-linear24_to_internal(audio_filter_arg_t *arg)
+audio_linear24_to_internal(audio_filter_arg_t *arg)
 {
 	const uint8_t *s;
 	aint_t *d;
@@ -239,12 +239,12 @@ linear24_to_internal(audio_filter_arg_t *arg)
 }
 
 /*
- * internal_to_linear24:
+ * audio_internal_to_linear24:
  *	This filter performs conversion from internal format to
  *	[US]LINEAR24/24{LE,BE}.  It's rarely used so it's size optimization.
  */
 void
-internal_to_linear24(audio_filter_arg_t *arg)
+audio_internal_to_linear24(audio_filter_arg_t *arg)
 {
 	const aint_t *s;
 	uint8_t *d;
@@ -291,12 +291,12 @@ internal_to_linear24(audio_filter_arg_t *arg)
 #endif /* AUDIO_SUPPORT_LINEAR24 */
 
 /*
- * linear32_to_internal:
+ * audio_linear32_to_internal:
  *	This filter performs conversion from [US]LINEAR32{LE,BE} to internal
  *	format.  It's rarely used so it's size optimization.
  */
 void
-linear32_to_internal(audio_filter_arg_t *arg)
+audio_linear32_to_internal(audio_filter_arg_t *arg)
 {
 	const uint32_t *s;
 	aint_t *d;
@@ -331,12 +331,12 @@ linear32_to_internal(audio_filter_arg_t *arg)
 }
 
 /*
- * internal_to_linear32:
+ * audio_internal_to_linear32:
  *	This filter performs conversion from internal format to
  *	[US]LINEAR32{LE,BE}.  It's rarely used so it's size optimization.
  */
 void
-internal_to_linear32(audio_filter_arg_t *arg)
+audio_internal_to_linear32(audio_filter_arg_t *arg)
 {
 	const aint_t *s;
 	uint32_t *d;

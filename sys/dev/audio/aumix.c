@@ -937,18 +937,18 @@ audio_track_get_codec(const audio_format2_t *src, const audio_format2_t *dst)
 
 	if (audio_format2_is_internal(src)) {
 		if (dst->encoding == AUDIO_ENCODING_ULAW) {
-			return internal_to_mulaw;
+			return audio_internal_to_mulaw;
 		} else if (audio_format2_is_linear(dst)) {
 			if (dst->stride == 8) {
-				return internal_to_linear8;
+				return audio_internal_to_linear8;
 			} else if (dst->stride == 16) {
-				return internal_to_linear16;
+				return audio_internal_to_linear16;
 #if defined(AUDIO_SUPPORT_LINEAR24)
 			} else if (dst->stride == 24) {
-				return internal_to_linear24;
+				return audio_internal_to_linear24;
 #endif
 			} else if (dst->stride == 32) {
-				return internal_to_linear32;
+				return audio_internal_to_linear32;
 			} else {
 				DPRINTF(1, "%s: unsupported %s stride %d\n",
 				    __func__, "dst", dst->stride);
@@ -957,18 +957,18 @@ audio_track_get_codec(const audio_format2_t *src, const audio_format2_t *dst)
 		}
 	} else if (audio_format2_is_internal(dst)) {
 		if (src->encoding == AUDIO_ENCODING_ULAW) {
-			return mulaw_to_internal;
+			return audio_mulaw_to_internal;
 		} else if (audio_format2_is_linear(src)) {
 			if (src->stride == 8) {
-				return linear8_to_internal;
+				return audio_linear8_to_internal;
 			} else if (src->stride == 16) {
-				return linear16_to_internal;
+				return audio_linear16_to_internal;
 #if defined(AUDIO_SUPPORT_LINEAR24)
 			} else if (src->stride == 24) {
-				return linear24_to_internal;
+				return audio_linear24_to_internal;
 #endif
 			} else if (src->stride == 32) {
-				return linear32_to_internal;
+				return audio_linear32_to_internal;
 			} else {
 				DPRINTF(1, "%s: unsupported %s stride %d\n",
 				    __func__, "src", src->stride);
