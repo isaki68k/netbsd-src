@@ -960,7 +960,7 @@ audio_track_get_codec(const audio_format2_t *src, const audio_format2_t *dst)
 		if (src->encoding == AUDIO_ENCODING_ULAW) {
 			return audio_mulaw_to_internal;
 		} else if (audio_format2_is_linear(src)) {
-			switch (dst->stride) {
+			switch (src->stride) {
 			case 8:
 				return audio_linear8_to_internal;
 			case 16:
