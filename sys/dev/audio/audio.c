@@ -168,6 +168,7 @@ typedef struct uio_fetcher {
 // ここに関数プロトタイプ
 // できれば static つけて統一したい
 
+#if AUDIO_DEBUG > 2
 static void audio_vtrace(const char *, const char *, const char *, va_list);
 static void audio_trace(const char *, const char *, ...)
 	__printflike(2, 3);
@@ -175,6 +176,7 @@ static void audio_tracet(const char *, audio_track_t *, const char *, ...)
 	__printflike(3, 4);
 static void audio_tracef(const char *, audio_file_t *, const char *, ...)
 	__printflike(3, 4);
+#endif
 
 #if defined(AUDIO_DEBUG_MLOG)
 static void audio_mlog_init(void);

@@ -140,6 +140,8 @@ audio_mlog_softintr(void *cookie)
 }
 #endif /* AUDIO_DEBUG_MLOG */
 
+#if AUDIO_DEBUG > 2
+
 void
 audio_vtrace(const char *funcname, const char *header, const char *fmt,
 	va_list ap)
@@ -208,7 +210,6 @@ audio_tracef(const char *funcname, audio_file_t *file, const char *fmt, ...)
 	va_end(ap);
 }
 
-#if AUDIO_DEBUG > 2
 struct audio_track_debugbuf {
 	char outbuf[32];
 	char freq[32];
