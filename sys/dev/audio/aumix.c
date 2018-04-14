@@ -21,6 +21,7 @@ static void audio_rmixer_input(struct audio_softc *sc);
 static int audio_waitio(struct audio_softc *sc, audio_track_t *track);
 
 #if defined(AUDIO_DEBUG_MLOG)
+#include <sys/atomic.h>
 // 本当はデバイスごとにすべきなのだが、そうすると今 sc を受け取っておらず
 // DPRINTF() を呼んでる関数全員に sc を渡すようにしないといけなくなるので、
 // それはちょっと面倒だし本題ではないので。
