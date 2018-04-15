@@ -10,7 +10,7 @@
 #include "aucodec.h"
 #endif
 
-void *audio_realloc(void *memblock, size_t bytes);
+static void *audio_realloc(void *memblock, size_t bytes);
 static int audio_realloc_usrbuf(audio_track_t *, int);
 static void audio_free_usrbuf(audio_track_t *);
 static audio_filter_t audio_track_get_codec(const audio_format2_t *,
@@ -1581,20 +1581,23 @@ error:
 static int
 audio_append_silence(audio_track_t *track, audio_ring_t *ring)
 {
+	int fpb;
+	int n;
+
 	KASSERT(track);
 	KASSERT(audio_format2_is_internal(&ring->fmt));
 
 	// XXX n の計算あれでいいんだろうか。最初から contig_free じゃなくて?
 	// XXX memset の長さ frametobyte じゃなくて?
 
-	if (ring->used == 0) return 0;
-
-	int fpb = frame_per_block(track->mixer, &ring->fmt);
-	if (ring->used >= fpb) {
+	if (ring->used == 0)
 		return 0;
-	}
 
-	int n = (ring->capacity - ring->used) % fpb;
+	fpb = frame_per_block(track->mixer, &ring->fmt);
+	if (ring->used >= fpb)
+		return 0;
+
+	n = (ring->capacity - ring->used) % fpb;
 
 	KASSERT(audio_ring_get_contig_free(ring) >= n);
 
