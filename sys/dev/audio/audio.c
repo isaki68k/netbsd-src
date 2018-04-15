@@ -3097,13 +3097,13 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 
 	/* Set default value and save current parameters */
 	if (play) {
-		pfmt = play->inputfmt;
-		saved_pfmt = play->inputfmt;
+		pfmt = play->usrbuf.fmt;
+		saved_pfmt = play->usrbuf.fmt;
 		saved_ai.play.pause = play->is_pause;
 	}
 	if (rec) {
-		rfmt = rec->outputbuf.fmt;
-		saved_rfmt = rec->outputbuf.fmt;
+		rfmt = rec->usrbuf.fmt;
+		saved_rfmt = rec->usrbuf.fmt;
 		saved_ai.record.pause = rec->is_pause;
 	}
 	saved_ai.mode = file->mode;

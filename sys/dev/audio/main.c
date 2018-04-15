@@ -772,8 +772,8 @@ perf_codec_slinear_to_mulaw()
 		track->codec.srcbuf.head = 0;
 		track->codec.srcbuf.used = frame_per_block(track->mixer,
 			&srcfmt);
-		track->outputbuf.head = 0;
-		track->outputbuf.used = 0;
+		track->outbuf.head = 0;
+		track->outbuf.used = 0;
 		audio_apply_stage(track, &track->codec, false);
 	}
 	gettimeofday(&end, NULL);
@@ -850,8 +850,8 @@ perf_codec_linear16_to_internal()
 			track->codec.srcbuf.head = 0;
 			track->codec.srcbuf.used = frame_per_block(track->mixer,
 				&srcfmt);
-			track->outputbuf.head = 0;
-			track->outputbuf.used = 0;
+			track->outbuf.head = 0;
+			track->outbuf.used = 0;
 			audio_apply_stage(track, &track->codec, false);
 		}
 		gettimeofday(&end, NULL);
@@ -908,8 +908,8 @@ perf_freq_main(struct freqdata *pattern)
 			track->freq.srcbuf.head = 0;
 			track->freq.srcbuf.used = frame_per_block(track->mixer,
 				&srcfmt);
-			track->outputbuf.head = 0;
-			track->outputbuf.used = 0;
+			track->outbuf.head = 0;
+			track->outbuf.used = 0;
 			audio_apply_stage(track, &track->freq, true);
 		}
 		gettimeofday(&end, NULL);
@@ -965,8 +965,8 @@ perf_chmix_mixLR()
 		track->chmix.srcbuf.head = 0;
 		track->chmix.srcbuf.used = frame_per_block(track->mixer,
 			&srcfmt);
-		track->outputbuf.head = 0;
-		track->outputbuf.used = 0;
+		track->outbuf.head = 0;
+		track->outbuf.used = 0;
 		audio_apply_stage(track, &track->chmix, false);
 	}
 	gettimeofday(&end, NULL);

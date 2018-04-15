@@ -137,7 +137,7 @@ struct audio_track {
 					/* userfmt for play, mixerfmt for rec */
 	audio_ring_t	*input;		/* ptr to input stage buffer */
 
-	audio_ring_t	outputbuf;	/* track output buffer */
+	audio_ring_t	outbuf;		/* track output buffer */
 	kcondvar_t	outchan;	// I/O ready になったことの通知用
 
 	audio_stage_t	codec;		/* encoding conversion stage */

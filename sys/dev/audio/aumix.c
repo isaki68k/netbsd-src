@@ -226,8 +226,7 @@ audio_track_bufstat(audio_track_t *track, struct audio_track_debugbuf *buf)
 	memset(buf, 0, sizeof(*buf));
 
 	snprintf(buf->outbuf, sizeof(buf->outbuf), " out=%d/%d/%d",
-	    track->outputbuf.head, track->outputbuf.used,
-	    track->outputbuf.capacity);
+	    track->outbuf.head, track->outbuf.used, track->outbuf.capacity);
 	if (track->freq.filter)
 		snprintf(buf->freq, sizeof(buf->freq), " f=%d/%d/%d",
 		    track->freq.srcbuf.head,
@@ -890,7 +889,7 @@ audio_track_destroy(audio_track_t *track)
 	audio_free(track->chvol.srcbuf.mem);
 	audio_free(track->chmix.srcbuf.mem);
 	audio_free(track->freq.srcbuf.mem);
-	audio_free(track->outputbuf.mem);
+	audio_free(track->outbuf.mem);
 	cv_destroy(&track->outchan);
 
 	kmem_free(track, sizeof(*track));
@@ -1321,7 +1320,7 @@ abort:
  *      .dst  ----+
  *                | convert
  *                v
- *  outputbuf   [...............]  NBLKOUT blocks ring buffer
+ *  outbuf      [...............]  NBLKOUT blocks ring buffer
  *
  *
  * When recording:
@@ -1334,7 +1333,7 @@ abort:
  *       .dst ----+
  *                | convert
  *                v
- *  outputbuf   [.....]            1 block (ring) buffer
+ *  outbuf      [.....]            1 block (ring) buffer
  *                | memcpy
  *                v
  *  usrbuf      [...............]  byte ring buffer (mmap-able *)
@@ -1351,7 +1350,7 @@ abort:
 // 成功すれば 0、失敗すれば errno を返します。
 // uvm 関連のルーチンが非 intr_lock 状態であることを要求するため、必ず
 // intr_lock でない状態で呼び出してください。
-// ただし outputbuf を解放・再取得する可能性があるため、track が sc_files
+// ただし outbuf を解放・再取得する可能性があるため、track が sc_files
 // 上にある場合 (audio_file_setinfo_set() から呼ばれる時) は、in_use を
 // セットしてから呼び出してください。
 /*
@@ -1440,11 +1439,11 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 	}
 
 	/* Stage buffer */
-	audio_ring_t *last_dst = &track->outputbuf;
+	audio_ring_t *last_dst = &track->outbuf;
 	if (audio_track_is_playback(track)) {
 		/* On playback, initialize from the mixer side in order. */
 		track->inputfmt = *usrfmt;
-		track->outputbuf.fmt =  track->mixer->track_fmt;
+		track->outbuf.fmt =  track->mixer->track_fmt;
 
 		if ((error = audio_track_init_freq(track, &last_dst)) != 0)
 			goto error;
@@ -1457,7 +1456,7 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 	} else {
 		/* On recording, initialize from userland side in order. */
 		track->inputfmt = track->mixer->track_fmt;
-		track->outputbuf.fmt = *usrfmt;
+		track->outbuf.fmt = *usrfmt;
 
 		if ((error = audio_track_init_codec(track, &last_dst)) != 0)
 			goto error;
@@ -1505,22 +1504,22 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 		}
 	}
 
-	// 出力フォーマットに従って outputbuf を作る
-	// 再生側 outputbuf は NBLKOUT 分。録音側は1ブロックでいい。
+	// 出力フォーマットに従って outbuf を作る
+	// 再生側 outbuf は NBLKOUT 分。録音側は1ブロックでいい。
 	/*
 	 * Output buffer.
 	 * On the playback track, its capacity is NBLKOUT blocks.
 	 * On the recording track, its capacity is 1 block.
 	 */
-	track->outputbuf.head = 0;
-	track->outputbuf.used = 0;
-	track->outputbuf.capacity = frame_per_block(track->mixer,
-	    &track->outputbuf.fmt);
+	track->outbuf.head = 0;
+	track->outbuf.used = 0;
+	track->outbuf.capacity = frame_per_block(track->mixer,
+	    &track->outbuf.fmt);
 	if (audio_track_is_playback(track))
-		track->outputbuf.capacity *= NBLKOUT;
-	len = audio_ring_bytelen(&track->outputbuf);
-	track->outputbuf.mem = audio_realloc(track->outputbuf.mem, len);
-	if (track->outputbuf.mem == NULL) {
+		track->outbuf.capacity *= NBLKOUT;
+	len = audio_ring_bytelen(&track->outbuf);
+	track->outbuf.mem = audio_realloc(track->outbuf.mem, len);
+	if (track->outbuf.mem == NULL) {
 		DPRINTF(1, "%s: malloc outbuf(%d) failed\n", __func__, len);
 		error = ENOMEM;
 		goto error;
@@ -1531,8 +1530,7 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 
 	memset(&m, 0, sizeof(m));
 	snprintf(m.outbuf, sizeof(m.outbuf), " out=%d",
-	    track->outputbuf.capacity *
-	    frametobyte(&track->outputbuf.fmt, 1));
+	    track->outbuf.capacity * frametobyte(&track->outbuf.fmt, 1));
 	if (track->freq.filter)
 		snprintf(m.freq, sizeof(m.freq), " freq=%d",
 		    track->freq.srcbuf.capacity *
@@ -1568,7 +1566,7 @@ error:
 	audio_free(track->chvol.srcbuf.mem);
 	audio_free(track->chmix.srcbuf.mem);
 	audio_free(track->freq.srcbuf.mem);
-	audio_free(track->outputbuf.mem);
+	audio_free(track->outbuf.mem);
 	return error;
 }
 
@@ -1725,7 +1723,7 @@ audio_apply_stage(audio_track_t *track, audio_stage_t *stage, bool isfreq)
 
 // 再生時の入力データを変換してトラックバッファに投入します。
 // usrbuf が空でないことは呼び出し側でチェックしてから呼んでください。
-// outputbuf に1ブロック以上の空きがあることは呼び出し側でチェックしてから
+// outbuf に1ブロック以上の空きがあることは呼び出し側でチェックしてから
 // 呼んでください。
 void
 audio_track_play(audio_track_t *track)
@@ -1743,14 +1741,14 @@ audio_track_play(audio_track_t *track)
 	// この時点で usrbuf は空ではない。
 	/* At this point usrbuf should not be empty. */
 	KASSERT(track->usrbuf.used > 0);
-	// また outputbuf に1ブロック以上の空きがある。
-	/* Also, outputbuf should be available at least one block. */
-	count = audio_ring_get_contig_free(&track->outputbuf);
-	KASSERTMSG(count >= frame_per_block(track->mixer, &track->outputbuf.fmt),
+	// また outbuf に1ブロック以上の空きがある。
+	/* Also, outbuf should be available at least one block. */
+	count = audio_ring_get_contig_free(&track->outbuf);
+	KASSERTMSG(count >= frame_per_block(track->mixer, &track->outbuf.fmt),
 	    "count=%d fpb=%d",
-	    count, frame_per_block(track->mixer, &track->outputbuf.fmt));
+	    count, frame_per_block(track->mixer, &track->outbuf.fmt));
 
-	int track_count_0 = track->outputbuf.used;
+	int track_count_0 = track->outbuf.used;
 
 	usrbuf = &track->usrbuf;
 	input = track->input;
@@ -1925,10 +1923,10 @@ audio_track_play(audio_track_t *track)
 		}
 	}
 
-	if (track->input == &track->outputbuf) {
+	if (track->input == &track->outbuf) {
 		track->outputcounter = track->inputcounter;
 	} else {
-		track->outputcounter += track->outputbuf.used - track_count_0;
+		track->outputcounter += track->outbuf.used - track_count_0;
 	}
 
 #if AUDIO_DEBUG > 2
@@ -1944,7 +1942,7 @@ audio_track_play(audio_track_t *track)
 void
 audio_track_record(audio_track_t *track)
 {
-	audio_ring_t *outputbuf;
+	audio_ring_t *outbuf;
 	audio_ring_t *usrbuf;
 	int count;
 	int bytes;
@@ -1985,16 +1983,16 @@ audio_track_record(audio_track_t *track)
 	if (track->codec.filter)
 		audio_apply_stage(track, &track->codec, false);
 
-	// outputbuf から usrbuf へ
-	/* Copy from outputbuf to usrbuf */
-	outputbuf = &track->outputbuf;
+	// outbuf から usrbuf へ
+	/* Copy from outbuf to usrbuf */
+	outbuf = &track->outbuf;
 	usrbuf = &track->usrbuf;
-	// 出力(outputbuf)に 4bit は来ないので1フレームは必ず1バイト以上ある
+	// 出力(outbuf)に 4bit は来ないので1フレームは必ず1バイト以上ある
 	/*
 	 * framesize is always 1 byte or more since all formats supported as
 	 * usrfmt(=output) have 8bit or more stride.
 	 */
-	framesize = frametobyte(&outputbuf->fmt, 1);
+	framesize = frametobyte(&outbuf->fmt, 1);
 	KASSERT(framesize >= 1);
 	// count は usrbuf にコピーするフレーム数。
 	// bytes は usrbuf にコピーするバイト数。
@@ -2002,33 +2000,33 @@ audio_track_record(audio_track_t *track)
 	 * count is the number of frames to copy to usrbuf.
 	 * bytes is the number of bytes to copy to usrbuf.
 	 */
-	count = outputbuf->used;
+	count = outbuf->used;
 	count = min(count,
 	    (track->usrbuf_usedhigh - usrbuf->used) / framesize);
 	bytes = count * framesize;
 	if (audio_ring_tail(usrbuf) + bytes < usrbuf->capacity) {
 		memcpy((uint8_t *)usrbuf->mem + audio_ring_tail(usrbuf),
-		    (uint8_t *)outputbuf->mem + outputbuf->head * framesize,
+		    (uint8_t *)outbuf->mem + outbuf->head * framesize,
 		    bytes);
 		audio_ring_push(usrbuf, bytes);
-		audio_ring_take(outputbuf, count);
+		audio_ring_take(outbuf, count);
 	} else {
 		int bytes1, bytes2;
 
 		bytes1 = audio_ring_get_contig_used(usrbuf);
 		KASSERT(bytes1 % framesize == 0);
 		memcpy((uint8_t *)usrbuf->mem + audio_ring_tail(usrbuf),
-		    (uint8_t *)outputbuf->mem + outputbuf->head * framesize,
+		    (uint8_t *)outbuf->mem + outbuf->head * framesize,
 		    bytes1);
 		audio_ring_push(usrbuf, bytes1);
-		audio_ring_take(outputbuf, bytes1 / framesize);
+		audio_ring_take(outbuf, bytes1 / framesize);
 
 		bytes2 = bytes - bytes1;
 		memcpy((uint8_t *)usrbuf->mem + audio_ring_tail(usrbuf),
-		    (uint8_t *)outputbuf->mem + outputbuf->head * framesize,
+		    (uint8_t *)outbuf->mem + outbuf->head * framesize,
 		    bytes2);
 		audio_ring_push(usrbuf, bytes2);
-		audio_ring_take(outputbuf, bytes2 / framesize);
+		audio_ring_take(outbuf, bytes2 / framesize);
 	}
 
 	// XXX カウンタ
@@ -2595,12 +2593,12 @@ audio_pmixer_mixall(struct audio_softc *sc, bool isintr)
 			    track->usrbuf.capacity);
 		}
 
-		if (track->outputbuf.used < req && track->usrbuf.used > 0) {
+		if (track->outbuf.used < req && track->usrbuf.used > 0) {
 			TRACET(track, "process");
 			audio_track_play(track);
 		}
 
-		if (track->outputbuf.used == 0) {
+		if (track->outbuf.used == 0) {
 			TRACET(track, "skip; empty");
 			continue;
 		}
@@ -2631,15 +2629,15 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track,
 	const aint_t *s;
 	aint2_t *d;
 
-	// 現時点で outputbuf に溜まってるやつを最大1ブロック分処理する。
+	// 現時点で outbuf に溜まってるやつを最大1ブロック分処理する。
 
 	// このトラックが処理済みならなにもしない
 	if (mixer->mixseq < track->seq) return mixed;
 
-	count = audio_ring_get_contig_used(&track->outputbuf);
+	count = audio_ring_get_contig_used(&track->outbuf);
 	count = min(count, mixer->frames_per_block);
 
-	s = audio_ring_headptr_aint(&track->outputbuf);
+	s = audio_ring_headptr_aint(&track->outbuf);
 	d = mixer->mixsample;
 
 	// 整数倍精度へ変換し、トラックボリュームを適用して加算合成
@@ -2676,9 +2674,9 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track,
 		}
 	}
 
-	// outputbuf が1ブロック未満であっても、カウンタはブロック境界に
+	// outbuf が1ブロック未満であっても、カウンタはブロック境界に
 	// いなければならないため、count ではなく frames_per_block を足す。
-	audio_ring_take(&track->outputbuf, mixer->frames_per_block);
+	audio_ring_take(&track->outbuf, mixer->frames_per_block);
 
 	// トラックバッファを取り込んだことを反映
 	// mixseq はこの時点ではまだ前回の値なのでトラック側へは +1
@@ -2688,7 +2686,7 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track,
 	cv_broadcast(&track->outchan);
 
 	TRACET(track, "broadcast; trseq=%d out=%d/%d/%d", (int)track->seq,
-	    track->outputbuf.head, track->outputbuf.used, track->outputbuf.capacity);
+	    track->outbuf.head, track->outbuf.used, track->outbuf.capacity);
 
 	// usrbuf が空いたら(lowat を下回ったら) シグナルを送る
 	// XXX ここで usrbuf が空いたかどうかを見るのもどうかと思うが
@@ -3157,7 +3155,7 @@ audio_track_clear(struct audio_softc *sc, audio_track_t *track)
 	}
 	// バッファをクリアすれば動作は自然と停止する
 	mutex_enter(sc->sc_intr_lock);
-	track->outputbuf.used = 0;
+	track->outbuf.used = 0;
 	mutex_exit(sc->sc_intr_lock);
 
 	// カウンタクリア
@@ -3208,10 +3206,10 @@ audio_track_drain(struct audio_softc *sc, audio_track_t *track)
 		TRACET(track, "pid=%d.%d trkseq=%d hwseq=%d out=%d/%d/%d",
 		    (int)curproc->p_pid, (int)curlwp->l_lid,
 		    (int)track->seq, (int)mixer->hwseq,
-		    track->outputbuf.head, track->outputbuf.used,
-		    track->outputbuf.capacity);
+		    track->outbuf.head, track->outbuf.used,
+		    track->outbuf.capacity);
 
-		if (track->outputbuf.used == 0 && track->seq <= mixer->hwseq)
+		if (track->outbuf.used == 0 && track->seq <= mixer->hwseq)
 			break;
 
 		error = cv_wait_sig(&mixer->draincv, sc->sc_lock);
@@ -3356,7 +3354,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 		mutex_enter(sc->sc_intr_lock);
 		while (sc->sc_pbusy == 0 &&
 		    track->usrbuf.used >= track->usrbuf_blksize &&
-		    track->outputbuf.used < track->mixer->frames_per_block * 2) {
+		    track->outbuf.used < track->mixer->frames_per_block * 2) {
 			track->in_use = true;
 			mutex_exit(sc->sc_intr_lock);
 			audio_track_play(track);
@@ -3367,7 +3365,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 
 		// XXX うーんなんだこれ
 		if (sc->sc_pbusy == 0 &&
-		    track->outputbuf.used >= track->mixer->frames_per_block * 2) {
+		    track->outbuf.used >= track->mixer->frames_per_block * 2) {
 			bool force = ((track->mode & AUMODE_PLAY_ALL) == 0);
 			audio_pmixer_start(sc, force);
 		}
