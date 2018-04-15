@@ -381,8 +381,8 @@ static int audio_hw_config_by_format(struct audio_softc *, audio_format2_t *,
 	int);
 static int audio_hw_config_by_encoding(struct audio_softc *, audio_format2_t *,
 	int);
-static int audio_hw_config(struct audio_softc *,
-	audio_format2_t *, audio_format2_t *, int);
+static int audio_hw_config(struct audio_softc *, int, int *,
+	audio_format2_t *, audio_format2_t *);
 static int audio_sysctl_volume(SYSCTLFN_PROTO);
 static void audio_format2_tostr(char *, size_t, const audio_format2_t *);
 #ifdef AUDIO_DEBUG
@@ -665,6 +665,7 @@ audioattach(device_t parent, device_t self, void *aux)
 	char fmtstr[64];
 	void *hdlp;
 	bool is_indep;
+	int mode;
 	int props;
 	int blkms;
 	int error;
@@ -714,13 +715,16 @@ audioattach(device_t parent, device_t self, void *aux)
 		aprint_normal(": half duplex");
 	}
 
-	sc->sc_can_playback = (props & AUDIO_PROP_PLAYBACK);
-	sc->sc_can_capture = (props & AUDIO_PROP_CAPTURE);
 	is_indep = (props & AUDIO_PROP_INDEPENDENT);
-	if (sc->sc_can_playback)
+	mode = 0;
+	if ((props & AUDIO_PROP_PLAYBACK)) {
+		mode |= AUMODE_PLAY;
 		aprint_normal(", playback");
-	if (sc->sc_can_capture)
+	}
+	if ((props & AUDIO_PROP_CAPTURE)) {
+		mode |= AUMODE_RECORD;
 		aprint_normal(", capture");
+	}
 	if ((props & AUDIO_PROP_MMAP) != 0)
 		aprint_normal(", mmap");
 	if (is_indep)
@@ -734,10 +738,10 @@ audioattach(device_t parent, device_t self, void *aux)
 	/* probe hw params */
 	memset(&phwfmt, 0, sizeof(phwfmt));
 	memset(&rhwfmt, 0, sizeof(rhwfmt));
-	error = audio_hw_config(sc, &phwfmt, &rhwfmt, is_indep);
+	error = audio_hw_config(sc, is_indep, &mode, &phwfmt, &rhwfmt);
 
 	/* init track mixer */
-	if (sc->sc_can_playback) {
+	if ((mode & AUMODE_PLAY)) {
 		sc->sc_pmixer = kmem_zalloc(sizeof(*sc->sc_pmixer), KM_SLEEP);
 		error = audio_mixer_init(sc, AUMODE_PLAY, &phwfmt);
 		if (error == 0) {
@@ -753,10 +757,10 @@ audioattach(device_t parent, device_t self, void *aux)
 			    "configuring playback mode failed\n");
 			kmem_free(sc->sc_pmixer, sizeof(*sc->sc_pmixer));
 			sc->sc_pmixer = NULL;
-			sc->sc_can_playback = false;
+			mode &= ~AUMODE_PLAY;
 		}
 	}
-	if (sc->sc_can_capture) {
+	if ((mode & AUMODE_RECORD)) {
 		sc->sc_rmixer = kmem_zalloc(sizeof(*sc->sc_rmixer), KM_SLEEP);
 		error = audio_mixer_init(sc, AUMODE_RECORD, &rhwfmt);
 		if (error == 0) {
@@ -772,11 +776,11 @@ audioattach(device_t parent, device_t self, void *aux)
 			    "configuring record mode failed\n");
 			kmem_free(sc->sc_rmixer, sizeof(*sc->sc_rmixer));
 			sc->sc_rmixer = NULL;
-			sc->sc_can_capture = false;
+			mode &= ~AUMODE_RECORD;
 		}
 	}
 
-	if (sc->sc_can_playback == false && sc->sc_can_capture == false)
+	if (mode == 0)
 		goto bad;
 
 	// setfd は誰一人実装してないし廃止したい方向
@@ -6235,8 +6239,8 @@ audio_hw_config_by_encoding(struct audio_softc *sc, audio_format2_t *cand,
 	return ENXIO;
 }
 
-// sc_playback/capture に応じて再生か録音のフォーマットを選択して設定する。
-// だめだった方は false にする。
+// *modep (AUMODE_PLAY|RECORD) に応じて再生か録音のフォーマットを選択して
+// 設定する。だめだった方のビットは落として、結果を書き戻す。
 //
 // independent デバイスなら
 //  あれば再生フォーマットを選定
@@ -6248,53 +6252,50 @@ audio_hw_config_by_encoding(struct audio_softc *sc, audio_format2_t *cand,
 //  else
 //   録音でフォーマットを選定。再生側にもコピー
 //  両方を設定
+/*
+ * Select playback and/or recording format (depending on *modep) and then
+ * set it to the hardware.
+ * If successful, configured format is written back to phwfmt/rhwfmt.
+ * Otherwise, return errno.
+ */
 static int
-audio_hw_config(struct audio_softc *sc,
-	audio_format2_t *phwfmt, audio_format2_t *rhwfmt, int is_indep)
+audio_hw_config(struct audio_softc *sc, int is_indep, int *modep,
+	audio_format2_t *phwfmt, audio_format2_t *rhwfmt)
 {
 	audio_format2_t fmt;
 	int mode;
 	int error;
 
+	mode = *modep;
+	KASSERTMSG((mode & (AUMODE_PLAY | AUMODE_RECORD)) != 0,
+	    "invalid mode = %x", mode);
+
 	if (is_indep) {
 		/* independent devices */
-		if (sc->sc_can_playback) {
+		if ((mode & AUMODE_PLAY) != 0) {
 			error = audio_hw_config_fmt(sc, phwfmt, AUMODE_PLAY);
 			if (error)
-				sc->sc_can_playback = false;
+				mode &= ~AUMODE_PLAY;
 		}
-		if (sc->sc_can_capture) {
+		if ((mode & AUMODE_RECORD) != 0) {
 			error = audio_hw_config_fmt(sc, rhwfmt, AUMODE_RECORD);
 			if (error)
-				sc->sc_can_capture = false;
+				mode &= ~AUMODE_RECORD;
 		}
 	} else {
 		/* not independent devices */
-		mode = 0;
-		if (sc->sc_can_playback)
-			mode |= AUMODE_PLAY;
-		if (sc->sc_can_capture)
-			mode |= AUMODE_RECORD;
 		error = audio_hw_config_fmt(sc, &fmt, mode);
 		if (error) {
-			sc->sc_can_playback = false;
-			sc->sc_can_capture = false;
-			return error;
+			mode = 0;
+		} else {
+			*phwfmt = fmt;
+			*rhwfmt = fmt;
 		}
-		*phwfmt = fmt;
-		*rhwfmt = fmt;
 	}
 
-	mode = 0;
-	if (sc->sc_can_playback)
-		mode |= AUMODE_PLAY;
-	if (sc->sc_can_capture)
-		mode |= AUMODE_RECORD;
-
-	error = audio_set_params(sc, mode, phwfmt, rhwfmt);
-	if (error)
-		return error;
-
+	if (mode != 0)
+		error = audio_set_params(sc, mode, phwfmt, rhwfmt);
+	*modep = mode;
 	return error;
 }
 
@@ -7206,16 +7207,24 @@ audio_get_props(struct audio_softc *sc)
 	return props;
 }
 
+/*
+ * Return true if playback is configured.
+ * This function can be used after audioattach.
+ */
 static bool
 audio_can_playback(struct audio_softc *sc)
 {
-	return sc->sc_can_playback;
+	return (sc->sc_pmixer != NULL);
 }
 
+/*
+ * Return true if recording is configured.
+ * This function can be used after audioattach.
+ */
 static bool
 audio_can_capture(struct audio_softc *sc)
 {
-	return sc->sc_can_capture;
+	return (sc->sc_rmixer != NULL);
 }
 
 // デバッグ目的なのでボリュームは内部表現(0..256)

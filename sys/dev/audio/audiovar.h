@@ -270,9 +270,6 @@ struct audio_softc {
 	audio_filter_reg_t sc_xxx_pfilreg;
 	audio_filter_reg_t sc_xxx_rfilreg;
 
-	bool		sc_can_playback;	/* device can playback */
-	bool		sc_can_capture;		/* device can capture */
-
 	int sc_popens;
 	int sc_ropens;
 	bool			sc_pbusy;	/* output DMA in progress */
