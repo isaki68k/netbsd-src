@@ -1592,7 +1592,6 @@ audiokqfilter(struct file *fp, struct knote *kn)
 	return error;
 }
 
-// これだけ audio_fop_mmap で命名規則おかしかったので変えた
 static int
 audiommap(struct file *fp, off_t *offp, size_t len, int prot, int *flagsp,
 	     int *advicep, struct uvm_object **uobjp, int *maxprotp)
@@ -1917,8 +1916,8 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 		mutex_exit(sc->sc_intr_lock);
 	}
 
-	// これが最後の録音トラックなら、halt_input を呼ぶ?
 	if (file->rtrack) {
+		/* Call hw halt_input if this is the last recording track. */
 		if (sc->sc_ropens == 1) {
 			if (sc->sc_rbusy) {
 				DPRINTF(2, "%s halt_input\n", __func__);
@@ -1932,6 +1931,8 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 				}
 			}
 		}
+
+		/* Destroy the track. */
 		oldtrack = file->rtrack;
 		mutex_enter(sc->sc_intr_lock);
 		file->rtrack = NULL;
@@ -1943,11 +1944,10 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 		sc->sc_ropens--;
 	}
 
-	// 再生トラックなら、audio_track_drain を呼ぶ
-	// 最後の再生トラックなら、hw audio_drain、halt_output を呼ぶ
 	if (file->ptrack) {
 		audio_track_drain(sc, file->ptrack);
 
+		/* Call hw halt_output if this is the last playback track. */
 		if (sc->sc_popens == 1) {
 			if (sc->sc_pbusy) {
 				mutex_enter(sc->sc_intr_lock);
@@ -1961,6 +1961,7 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 			}
 		}
 
+		/* Disestablish softint_wr. */
 		KASSERT(file->ptrack->sih_wr);
 		/* softint_disestablish needs unlock. */
 		mutex_exit(sc->sc_lock);
@@ -1968,6 +1969,7 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 		mutex_enter(sc->sc_lock);
 		file->ptrack->sih_wr = NULL;
 
+		/* Destroy the track. */
 		oldtrack = file->ptrack;
 		mutex_enter(sc->sc_intr_lock);
 		file->ptrack = NULL;
@@ -1979,7 +1981,7 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 		sc->sc_popens--;
 	}
 
-	// 最後なら close
+	/* Call hw close if this is the last track. */
 	if (sc->sc_popens + sc->sc_ropens == 0) {
 		if (sc->hw_if->close) {
 			DPRINTF(2, "%s hw_if close\n", __func__);
@@ -1991,7 +1993,6 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 		kauth_cred_free(sc->sc_cred);
 	}
 
-	// リストから削除
 	mutex_enter(sc->sc_intr_lock);
 	SLIST_REMOVE(&sc->sc_files, file, audio_file, entry);
 	mutex_exit(sc->sc_intr_lock);
@@ -6248,8 +6249,10 @@ audio_hw_config_by_encoding(struct audio_softc *sc, audio_format2_t *cand,
 /*
  * Select playback and/or recording format (depending on *modep) and then
  * set it to the hardware.
- * If successful, configured format is written back to phwfmt/rhwfmt.
- * Otherwise, return errno.
+ * *modep is an in-out parameter.  It indicates the direction to configure
+ * as an argument and the direction configured is written back as out
+ * parameter.
+ * Return 0 if successful,  otherwise errno.
  */
 static int
 audio_hw_config(struct audio_softc *sc, int is_indep, int *modep,
