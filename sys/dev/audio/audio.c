@@ -158,7 +158,7 @@ static void audio_tracet(const char *, audio_track_t *, const char *, ...)
 static void audio_tracef(const char *, audio_file_t *, const char *, ...)
 	__printflike(3, 4);
 
-void
+static void
 audio_vtrace(const char *funcname, const char *header, const char *fmt,
 	va_list ap)
 {
@@ -184,7 +184,7 @@ audio_vtrace(const char *funcname, const char *header, const char *fmt,
 	}
 }
 
-void
+static void
 audio_trace(const char *funcname, const char *fmt, ...)
 {
 	va_list ap;
@@ -194,7 +194,7 @@ audio_trace(const char *funcname, const char *fmt, ...)
 	va_end(ap);
 }
 
-void
+static void
 audio_tracet(const char *funcname, audio_track_t *track, const char *fmt, ...)
 {
 	char hdr[16];
@@ -206,7 +206,7 @@ audio_tracet(const char *funcname, audio_track_t *track, const char *fmt, ...)
 	va_end(ap);
 }
 
-void
+static void
 audio_tracef(const char *funcname, audio_file_t *file, const char *fmt, ...)
 {
 	char hdr[32];
@@ -391,15 +391,11 @@ static void audio_print_format2(const char *, const audio_format2_t *);
 static void *audio_realloc(void *memblock, size_t bytes);
 static int audio_realloc_usrbuf(audio_track_t *, int);
 static void audio_free_usrbuf(audio_track_t *);
-static audio_filter_t audio_track_get_codec(const audio_format2_t *,
-	const audio_format2_t *);
-static int audio_pmixer_mixall(struct audio_softc *sc, bool isintr);
-void audio_pmixer_output(struct audio_softc *sc);
-static void audio_rmixer_input(struct audio_softc *sc);
-static int audio_waitio(struct audio_softc *sc, audio_track_t *track);
 
 static int audio_track_init(struct audio_softc *, audio_track_t **, int);
 static void audio_track_destroy(audio_track_t *);
+static audio_filter_t audio_track_get_codec(const audio_format2_t *,
+	const audio_format2_t *);
 static int audio_track_set_format(audio_track_t *, audio_format2_t *);
 static void audio_track_play(audio_track_t *);
 static int audio_track_drain(struct audio_softc *, audio_track_t *);
@@ -410,12 +406,14 @@ static int audio_mixer_init(struct audio_softc *, int, const audio_format2_t *);
 static void audio_mixer_destroy(struct audio_softc *, audio_trackmixer_t *);
 static void audio_pmixer_start(struct audio_softc *, bool);
 static void audio_pmixer_process(struct audio_softc *, bool);
+static int  audio_pmixer_mixall(struct audio_softc *sc, bool isintr);
 static int  audio_pmixer_mix_track(audio_trackmixer_t *, audio_track_t *,
 	int, int);
+static void audio_pmixer_output(struct audio_softc *);
+static int  audio_pmixer_halt(struct audio_softc *);
 static void audio_rmixer_start(struct audio_softc *);
 static void audio_rmixer_process(struct audio_softc *);
-
-static int  audio_pmixer_halt(struct audio_softc *);
+static void audio_rmixer_input(struct audio_softc *);
 static int  audio_rmixer_halt(struct audio_softc *);
 
 #ifdef OLD_FILTER
@@ -2884,7 +2882,7 @@ audioctl_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
  *	Reallocate 'memblock' with specified 'bytes' if 'bytes' > 0.
  *	Or free 'memblock' and return NULL if 'byte' is zero.
  */
-void *
+static void *
 audio_realloc(void *memblock, size_t bytes)
 {
 	if (memblock != NULL) {
@@ -3509,7 +3507,7 @@ audio_track_init(struct audio_softc *sc, audio_track_t **trackp, int mode)
  *	track must not be NULL.  Don't specify the track within the file
  *	structure linked from sc->sc_files.
  */
-void
+static void
 audio_track_destroy(audio_track_t *track)
 {
 	// 関数仕様を track は NULL 許容にしてもいいけど、これを呼ぶところは
@@ -3998,7 +3996,7 @@ abort:
  *	the file structure linked from sc->sc_files (as called from
  *	audio_file_setinfo_set), since it may release and reallocate outpubuf.
  */
-int
+static int
 audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 {
 	int error;
@@ -4364,7 +4362,7 @@ audio_apply_stage(audio_track_t *track, audio_stage_t *stage, bool isfreq)
 // usrbuf が空でないことは呼び出し側でチェックしてから呼んでください。
 // outbuf に1ブロック以上の空きがあることは呼び出し側でチェックしてから
 // 呼んでください。
-void
+static void
 audio_track_play(audio_track_t *track)
 {
 	audio_ring_t *usrbuf;
@@ -4581,7 +4579,7 @@ audio_track_play(audio_track_t *track)
 
 // 録音時、ミキサーによってトラックの input に渡されたブロックを
 // usrbuf まで変換します。
-void
+static void
 audio_track_record(audio_track_t *track)
 {
 	audio_ring_t *outbuf;
@@ -4771,7 +4769,7 @@ audio_mixer_calc_blktime(audio_trackmixer_t *mixer)
  *	For 'mode', specify AUMODE_PLAY for playback, AUMODE_RECORD for
  *	record.  AUMODE_PLAY_ALL does not matter here.
  */
-int
+static int
 audio_mixer_init(struct audio_softc *sc, int mode, const audio_format2_t *hwfmt)
 {
 	audio_trackmixer_t *mixer;
@@ -4932,7 +4930,7 @@ abort:
  *	Release all resources of 'mixer'.
  *	Note that it does not release the memory area of 'mixer' itself.
  */
-void
+static void
 audio_mixer_destroy(struct audio_softc *sc, audio_trackmixer_t *mixer)
 {
 	int mode;
@@ -4964,7 +4962,7 @@ audio_mixer_destroy(struct audio_softc *sc, audio_trackmixer_t *mixer)
  *	This function does nothing if the mixer has already started.
  *	This function must not be called from the interrupt context.
  */
-void
+static void
 audio_pmixer_start(struct audio_softc *sc, bool force)
 {
 	audio_trackmixer_t *mixer;
@@ -5046,7 +5044,7 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
  *	If false, it indicates a call from process context.
  *	It can be called with or without sc_intr_lock.
  */
-void
+static void
 audio_pmixer_process(struct audio_softc *sc, bool isintr)
 {
 	audio_trackmixer_t *mixer;
@@ -5263,7 +5261,7 @@ audio_pmixer_mixall(struct audio_softc *sc, bool isintr)
  *	It returns the number of tracks mixed.  In other words,
  *	it returns mixed+1 if this track is mixed.
  */
-int
+static int
 audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track,
 	int req, int mixed)
 {
@@ -5352,7 +5350,7 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track,
  *	Output one block from hwbuf to HW.
  *	It must be called with sc_intr_lock.
  */
-void
+static void
 audio_pmixer_output(struct audio_softc *sc)
 {
 	audio_trackmixer_t *mixer;
@@ -5411,7 +5409,7 @@ audio_pmixer_output(struct audio_softc *sc)
  *	This is an interrupt handler for playback.
  *	It is called with sc_intr_lock.
  */
-void
+static void
 audio_pintr(void *arg)
 {
 	struct audio_softc *sc;
@@ -5482,7 +5480,7 @@ audio_pintr(void *arg)
  *	This function does nothing if the mixer has already started.
  *	This function must not be called from the interrupt context.
  */
-void
+static void
 audio_rmixer_start(struct audio_softc *sc)
 {
 	KASSERT(mutex_owned(sc->sc_lock));
@@ -5526,7 +5524,7 @@ audio_rmixer_start(struct audio_softc *sc)
  * audio_rmixer_process:
  *	Distribute a recorded block to all recoding tracks.
  */
-void
+static void
 audio_rmixer_process(struct audio_softc *sc)
 {
 	audio_trackmixer_t *mixer;
@@ -5671,7 +5669,7 @@ audio_rmixer_input(struct audio_softc *sc)
  *	This is an interrupt handler for recording.
  *	It is called with sc_intr_lock.
  */
-void
+static void
 audio_rintr(void *arg)
 {
 	struct audio_softc *sc;
@@ -5708,7 +5706,7 @@ audio_rintr(void *arg)
  *	This function should be called only when the mixer is running.
  *	This funciton should be called with sc_intr_lock.
  */
-int
+static int
 audio_pmixer_halt(struct audio_softc *sc)
 {
 	int error;
@@ -5739,7 +5737,7 @@ audio_pmixer_halt(struct audio_softc *sc)
  *	This function should be called only when the mixer is running.
  *	This funciton should be called with sc_intr_lock.
  */
-int
+static int
 audio_rmixer_halt(struct audio_softc *sc)
 {
 	int error;
@@ -5763,7 +5761,7 @@ audio_rmixer_halt(struct audio_softc *sc)
 // 現在の動作を停止し、すべてのキューとバッファをクリアし、
 // エラーカウンタをリセットします。
 // これでええんかなあ。
-void
+static void
 audio_track_clear(struct audio_softc *sc, audio_track_t *track)
 {
 
@@ -5812,7 +5810,7 @@ audio_track_clear(struct audio_softc *sc, audio_track_t *track)
  *	Drain the track.
  *	If successful, it returns 0.  Otherwise returns errno.
  */
-int
+static int
 audio_track_drain(struct audio_softc *sc, audio_track_t *track)
 {
 	audio_trackmixer_t *mixer;
