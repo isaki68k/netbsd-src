@@ -127,6 +127,16 @@ __KERNEL_RCSID(0, "$NetBSD$");
 // デバッグ用なんちゃってメモリログ。
 #define AUDIO_DEBUG_MLOG
 
+#if defined(AUDIO_DEBUG_MLOG)
+#if defined(_KERNEL)
+#include <dev/audio/mlog.h>
+#else
+#include "mlog.h"
+#endif
+#else
+#define audio_mlog_flush()	/**/
+#endif
+
 #ifdef AUDIO_DEBUG
 #define DPRINTF(n, fmt...)	do {	\
 	if (audiodebug >= (n)) {	\
@@ -140,38 +150,6 @@ int	audiodebug = AUDIO_DEBUG;
 #endif
 
 #if AUDIO_DEBUG > 2
-#define TRACE(fmt, ...)		audio_trace(__func__, fmt, ## __VA_ARGS__)
-#define TRACET(t, fmt, ...)	audio_tracet(__func__, t, fmt, ## __VA_ARGS__)
-#define TRACEF(f, fmt, ...)	audio_tracef(__func__, f, fmt, ## __VA_ARGS__)
-#else
-#define TRACE(fmt, ...)		/**/
-#define TRACET(t, fmt, ...)	/**/
-#define TRACEF(f, fmt, ...)	/**/
-#endif
-
-#define SPECIFIED(x)	((x) != ~0)
-#define SPECIFIED_CH(x)	((x) != (u_char)~0)
-
-/* #define AUDIO_PM_IDLE */
-#ifdef AUDIO_PM_IDLE
-int	audio_idle_timeout = 30;
-#endif
-
-struct portname {
-	const char *name;
-	int mask;
-};
-typedef struct uio_fetcher {
-	stream_fetcher_t base;
-	struct uio *uio;
-	int usedhigh;
-	int last_used;
-} uio_fetcher_t;
-
-// ここに関数プロトタイプ
-// できれば static つけて統一したい
-
-#if AUDIO_DEBUG > 2
 static void audio_vtrace(const char *, const char *, const char *, va_list);
 static void audio_trace(const char *, const char *, ...)
 	__printflike(2, 3);
@@ -179,19 +157,6 @@ static void audio_tracet(const char *, audio_track_t *, const char *, ...)
 	__printflike(3, 4);
 static void audio_tracef(const char *, audio_file_t *, const char *, ...)
 	__printflike(3, 4);
-#endif
-
-#if defined(AUDIO_DEBUG_MLOG)
-#if defined(_KERNEL)
-#include <dev/audio/mlog.h>
-#else
-#include "mlog.h"
-#endif
-#else
-#define audio_mlog_flush()	/**/
-#endif
-
-#if AUDIO_DEBUG > 2
 
 void
 audio_vtrace(const char *funcname, const char *header, const char *fmt,
@@ -295,8 +260,37 @@ audio_track_bufstat(audio_track_t *track, struct audio_track_debugbuf *buf)
 	snprintf(buf->usrbuf, sizeof(buf->usrbuf), " usr=%d/%d/H%d",
 	    track->usrbuf.head, track->usrbuf.used, track->usrbuf_usedhigh);
 }
+
+#define TRACE(fmt, ...)		audio_trace(__func__, fmt, ## __VA_ARGS__)
+#define TRACET(t, fmt, ...)	audio_tracet(__func__, t, fmt, ## __VA_ARGS__)
+#define TRACEF(f, fmt, ...)	audio_tracef(__func__, f, fmt, ## __VA_ARGS__)
+#else
+#define TRACE(fmt, ...)		/**/
+#define TRACET(t, fmt, ...)	/**/
+#define TRACEF(f, fmt, ...)	/**/
 #endif
 
+#define SPECIFIED(x)	((x) != ~0)
+#define SPECIFIED_CH(x)	((x) != (u_char)~0)
+
+/* #define AUDIO_PM_IDLE */
+#ifdef AUDIO_PM_IDLE
+int	audio_idle_timeout = 30;
+#endif
+
+struct portname {
+	const char *name;
+	int mask;
+};
+typedef struct uio_fetcher {
+	stream_fetcher_t base;
+	struct uio *uio;
+	int usedhigh;
+	int last_used;
+} uio_fetcher_t;
+
+// ここに関数プロトタイプ
+// できれば static つけて統一したい
 
 static int	audiomatch(device_t, cfdata_t, void *);
 static void	audioattach(device_t, device_t, void *);
@@ -424,32 +418,6 @@ static void audio_rmixer_process(struct audio_softc *);
 static int  audio_pmixer_halt(struct audio_softc *);
 static int  audio_rmixer_halt(struct audio_softc *);
 
-static inline struct audio_params
-format2_to_params(const audio_format2_t *f2)
-{
-	audio_params_t p;
-
-	p.sample_rate = f2->sample_rate;
-	p.channels = f2->channels;
-	p.encoding = f2->encoding;
-	p.validbits = f2->precision;
-	p.precision = f2->stride;
-	return p;
-}
-
-static inline audio_format2_t
-params_to_format2(const struct audio_params *p)
-{
-	audio_format2_t f2;
-
-	f2.sample_rate = p->sample_rate;
-	f2.channels    = p->channels;
-	f2.encoding    = p->encoding;
-	f2.precision   = p->validbits;
-	f2.stride      = p->precision;
-	return f2;
-}
-
 #ifdef OLD_FILTER
 static void stream_filter_list_append(stream_filter_list_t *,
 		stream_filter_factory_t, const audio_params_t *);
@@ -484,6 +452,32 @@ static int au_set_monitor_gain(struct audio_softc *sc, int);
 static int au_get_monitor_gain(struct audio_softc *sc);
 static int audio_get_port(struct audio_softc *, mixer_ctrl_t *);
 static int audio_set_port(struct audio_softc *, mixer_ctrl_t *);
+
+static inline struct audio_params
+format2_to_params(const audio_format2_t *f2)
+{
+	audio_params_t p;
+
+	p.sample_rate = f2->sample_rate;
+	p.channels = f2->channels;
+	p.encoding = f2->encoding;
+	p.validbits = f2->precision;
+	p.precision = f2->stride;
+	return p;
+}
+
+static inline audio_format2_t
+params_to_format2(const struct audio_params *p)
+{
+	audio_format2_t f2;
+
+	f2.sample_rate = p->sample_rate;
+	f2.channels    = p->channels;
+	f2.encoding    = p->encoding;
+	f2.precision   = p->validbits;
+	f2.stride      = p->precision;
+	return f2;
+}
 
 /* Return true if this track is a playback track. */
 static inline bool
