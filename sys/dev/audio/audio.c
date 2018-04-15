@@ -506,28 +506,27 @@ CFATTACH_DECL3_NEW(audio, sizeof(struct audio_softc),
     DVF_DETACH_SHUTDOWN);
 
 #if 1
-static char *audio_buildinfo;
+static char audio_buildinfo[256];
 
 // ビルドオプションを文字列にします。(開発用)
 // テスト用なので解放してません。
 static void
 make_buildinfo(void)
 {
-	char buf[100];
 	int n;
 
+	if (audio_buildinfo[0] != '\0')
+		return;
+
 	n = 0;
-	n += snprintf(buf, sizeof(buf), "AUDIO_BLK_MS=%d", AUDIO_BLK_MS);
-	n += snprintf(buf + n, sizeof(buf) - n, ", NBLKOUT=%d", NBLKOUT);
-
+	n += snprintf(audio_buildinfo, sizeof(audio_buildinfo),
+	    "AUDIO_BLK_MS=%d", AUDIO_BLK_MS);
+	n += snprintf(audio_buildinfo + n, sizeof(audio_buildinfo) - n,
+	    ", NBLKOUT=%d", NBLKOUT);
 #if defined(AUDIO_HW_DOUBLE_BUFFER)
-	n += snprintf(buf + n, sizeof(buf) - n, ", HW_DOUBLE_BUFFER");
+	n += snprintf(audio_buildinfo + n, sizeof(audio_buildinfo) - n,
+	    ", HW_DOUBLE_BUFFER");
 #endif
-
-	audio_buildinfo = malloc(strlen(buf) + 1, M_NOWAIT, 0);
-	if (audio_buildinfo) {
-		strcpy(audio_buildinfo, buf);
-	}
 }
 #endif
 
@@ -708,8 +707,7 @@ audioattach(device_t parent, device_t self, void *aux)
 
 #if 1
 		// デバッグ用のビルドオプション表示
-		if (audio_buildinfo == NULL)
-			make_buildinfo();
+		make_buildinfo();
 
 		sysctl_createv(&sc->sc_log, 0, NULL, NULL,
 			CTLFLAG_PERMANENT,
