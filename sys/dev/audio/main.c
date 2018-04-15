@@ -301,7 +301,7 @@ child_loop(struct test_file *f, int loop)
 	if (f->wait > loop) return 0;
 
 	// 1ブロック分のフレーム数
-	int frames_per_block = frame_per_block_roundup(f->file->ptrack->mixer, &f->mem.fmt);
+	int frames_per_block = frame_per_block(f->file->ptrack->mixer, &f->mem.fmt);
 	// 今回再生するフレーム数
 	int frames = min(f->mem.used, frames_per_block);
 	// フレーム数をバイト数に
@@ -770,7 +770,7 @@ perf_codec_slinear_to_mulaw()
 	gettimeofday(&start, NULL);
 	for (count = 0, signaled = 0; signaled == 0; count++) {
 		track->codec.srcbuf.head = 0;
-		track->codec.srcbuf.used = frame_per_block_roundup(track->mixer,
+		track->codec.srcbuf.used = frame_per_block(track->mixer,
 			&srcfmt);
 		track->outputbuf.head = 0;
 		track->outputbuf.used = 0;
@@ -848,7 +848,7 @@ perf_codec_linear16_to_internal()
 		uint64_t count;
 		for (count = 0, signaled = 0; signaled == 0; count++) {
 			track->codec.srcbuf.head = 0;
-			track->codec.srcbuf.used = frame_per_block_roundup(track->mixer,
+			track->codec.srcbuf.used = frame_per_block(track->mixer,
 				&srcfmt);
 			track->outputbuf.head = 0;
 			track->outputbuf.used = 0;
@@ -906,7 +906,7 @@ perf_freq_main(struct freqdata *pattern)
 		gettimeofday(&start, NULL);
 		for (count = 0, signaled = 0; signaled == 0; count++) {
 			track->freq.srcbuf.head = 0;
-			track->freq.srcbuf.used = frame_per_block_roundup(track->mixer,
+			track->freq.srcbuf.used = frame_per_block(track->mixer,
 				&srcfmt);
 			track->outputbuf.head = 0;
 			track->outputbuf.used = 0;
@@ -963,7 +963,7 @@ perf_chmix_mixLR()
 	gettimeofday(&start, NULL);
 	for (count = 0, signaled = 0; signaled == 0; count++) {
 		track->chmix.srcbuf.head = 0;
-		track->chmix.srcbuf.used = frame_per_block_roundup(track->mixer,
+		track->chmix.srcbuf.used = frame_per_block(track->mixer,
 			&srcfmt);
 		track->outputbuf.head = 0;
 		track->outputbuf.used = 0;

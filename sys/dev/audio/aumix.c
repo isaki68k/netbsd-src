@@ -1043,7 +1043,7 @@ audio_track_init_codec(audio_track_t *track, audio_ring_t **last_dstp)
 
 		srcbuf->head = 0;
 		srcbuf->used = 0;
-		srcbuf->capacity = frame_per_block_roundup(track->mixer, &srcbuf->fmt);
+		srcbuf->capacity = frame_per_block(track->mixer, &srcbuf->fmt);
 		len = audio_ring_bytelen(srcbuf);
 		srcbuf->mem = audio_realloc(srcbuf->mem, len);
 		if (srcbuf->mem == NULL) {
@@ -1115,7 +1115,7 @@ audio_track_init_chvol(audio_track_t *track, audio_ring_t **last_dstp)
 
 		srcbuf->head = 0;
 		srcbuf->used = 0;
-		srcbuf->capacity = frame_per_block_roundup(track->mixer, &srcbuf->fmt);
+		srcbuf->capacity = frame_per_block(track->mixer, &srcbuf->fmt);
 		len = audio_ring_bytelen(srcbuf);
 		srcbuf->mem = audio_realloc(srcbuf->mem, len);
 		if (srcbuf->mem == NULL) {
@@ -1192,7 +1192,7 @@ audio_track_init_chmix(audio_track_t *track, audio_ring_t **last_dstp)
 		srcbuf->head = 0;
 		srcbuf->used = 0;
 		// バッファサイズは計算で決められるはずだけど。とりあえず。
-		srcbuf->capacity = frame_per_block_roundup(track->mixer, &srcbuf->fmt);
+		srcbuf->capacity = frame_per_block(track->mixer, &srcbuf->fmt);
 		len = audio_ring_bytelen(srcbuf);
 		srcbuf->mem = audio_realloc(srcbuf->mem, len);
 		if (srcbuf->mem == NULL) {
@@ -1261,8 +1261,7 @@ audio_track_init_freq(audio_track_t *track, audio_ring_t **last_dstp)
 
 		// freq_leap は1ブロックごとの freq_step の補正値
 		// を四捨五入したもの。
-		int dst_capacity = frame_per_block_roundup(track->mixer,
-		    dstfmt);
+		int dst_capacity = frame_per_block(track->mixer, dstfmt);
 		int mod = (uint64_t)srcfreq * 65536 % dstfreq;
 		track->freq_leap = (mod * dst_capacity + dstfreq / 2) / dstfreq;
 
@@ -1281,7 +1280,7 @@ audio_track_init_freq(audio_track_t *track, audio_ring_t **last_dstp)
 
 		srcbuf->head = 0;
 		srcbuf->used = 0;
-		srcbuf->capacity = frame_per_block_roundup(track->mixer, &srcbuf->fmt);
+		srcbuf->capacity = frame_per_block(track->mixer, &srcbuf->fmt);
 		len = audio_ring_bytelen(srcbuf);
 		srcbuf->mem = audio_realloc(srcbuf->mem, len);
 		if (srcbuf->mem == NULL) {
@@ -1414,7 +1413,7 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 	//     どうなん…。
 	oldblksize = track->usrbuf_blksize;
 	track->usrbuf_blksize = frametobyte(&track->usrbuf.fmt,
-	    frame_per_block_roundup(track->mixer, &track->usrbuf.fmt));
+	    frame_per_block(track->mixer, &track->usrbuf.fmt));
 	track->usrbuf.head = 0;
 	track->usrbuf.used = 0;
 	newbufsize = MAX(track->usrbuf_blksize * AUMINNOBLK, 65536);
@@ -1495,7 +1494,7 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 	// XXX もっとましな方法でやったほうがいい
 	if (audio_track_is_record(track)) {
 		track->input->capacity = NBLKOUT *
-		    frame_per_block_roundup(track->mixer, &track->input->fmt);
+		    frame_per_block(track->mixer, &track->input->fmt);
 		len = audio_ring_bytelen(track->input);
 		track->input->mem = audio_realloc(track->input->mem, len);
 		if (track->input->mem == NULL) {
@@ -1515,7 +1514,8 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 	 */
 	track->outputbuf.head = 0;
 	track->outputbuf.used = 0;
-	track->outputbuf.capacity = frame_per_block_roundup(track->mixer, &track->outputbuf.fmt);
+	track->outputbuf.capacity = frame_per_block(track->mixer,
+	    &track->outputbuf.fmt);
 	if (audio_track_is_playback(track))
 		track->outputbuf.capacity *= NBLKOUT;
 	len = audio_ring_bytelen(&track->outputbuf);
@@ -1591,7 +1591,7 @@ audio_append_silence(audio_track_t *track, audio_ring_t *ring)
 
 	if (ring->used == 0) return 0;
 
-	int fpb = frame_per_block_roundup(track->mixer, &ring->fmt);
+	int fpb = frame_per_block(track->mixer, &ring->fmt);
 	if (ring->used >= fpb) {
 		return 0;
 	}
@@ -1746,9 +1746,9 @@ audio_track_play(audio_track_t *track)
 	// また outputbuf に1ブロック以上の空きがある。
 	/* Also, outputbuf should be available at least one block. */
 	count = audio_ring_get_contig_free(&track->outputbuf);
-	KASSERTMSG(count >= frame_per_block_roundup(track->mixer, &track->outputbuf.fmt),
+	KASSERTMSG(count >= frame_per_block(track->mixer, &track->outputbuf.fmt),
 	    "count=%d fpb=%d",
-	    count, frame_per_block_roundup(track->mixer, &track->outputbuf.fmt));
+	    count, frame_per_block(track->mixer, &track->outputbuf.fmt));
 
 	int track_count_0 = track->outputbuf.used;
 
@@ -2159,7 +2159,7 @@ audio_mixer_init(struct audio_softc *sc, int mode, const audio_format2_t *hwfmt)
 	mixer->blktime_n = audio_mixer_calc_blktime(mixer);
 	mixer->hwblks = NBLKHW;
 
-	mixer->frames_per_block = frame_per_block_roundup(mixer, &mixer->hwbuf.fmt);
+	mixer->frames_per_block = frame_per_block(mixer, &mixer->hwbuf.fmt);
 	blksize = frametobyte(&mixer->hwbuf.fmt, mixer->frames_per_block);
 	if (sc->hw_if->round_blocksize) {
 		int rounded;
