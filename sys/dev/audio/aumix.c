@@ -1694,12 +1694,16 @@ audio_append_silence(audio_track_t *track, audio_ring_t *ring)
 static void
 audio_apply_stage(audio_track_t *track, audio_stage_t *stage, bool isfreq)
 {
+	audio_filter_arg_t *arg;
+	int srccount;
+	int dstcount;
+	int count;
+
 	KASSERT(track);
 	KASSERT(stage->filter);
 
-	int srccount = audio_ring_get_contig_used(&stage->srcbuf);
-	int dstcount = audio_ring_get_contig_free(stage->dst);
-	int count;
+	srccount = audio_ring_get_contig_used(&stage->srcbuf);
+	dstcount = audio_ring_get_contig_free(stage->dst);
 
 	if (isfreq) {
 		KASSERTMSG(srccount > 0, "freq but srccount == %d", srccount);
@@ -1709,8 +1713,7 @@ audio_apply_stage(audio_track_t *track, audio_stage_t *stage, bool isfreq)
 	}
 
 	if (count > 0) {
-		audio_filter_arg_t *arg = &stage->arg;
-
+		arg = &stage->arg;
 		arg->src = audio_ring_headptr(&stage->srcbuf);
 		arg->dst = audio_ring_tailptr(stage->dst);
 		arg->count = count;
@@ -1835,7 +1838,10 @@ audio_track_play(audio_track_t *track)
 		audio_ring_push(input, count);
 		audio_ring_take(usrbuf, bytes);
 	} else {
-		int bytes1 = audio_ring_get_contig_used(usrbuf);
+		int bytes1;
+		int bytes2;
+
+		bytes1 = audio_ring_get_contig_used(usrbuf);
 		KASSERT(bytes1 % framesize == 0);
 		memcpy((uint8_t *)input->mem +
 		        audio_ring_tail(input) * framesize,
@@ -1844,7 +1850,7 @@ audio_track_play(audio_track_t *track)
 		audio_ring_push(input, bytes1 / framesize);
 		audio_ring_take(usrbuf, bytes1);
 
-		int bytes2 = bytes - bytes1;
+		bytes2 = bytes - bytes1;
 		memcpy((uint8_t *)input->mem +
 		        audio_ring_tail(input) * framesize,
 		    (uint8_t *)usrbuf->mem + usrbuf->head,
@@ -1876,7 +1882,7 @@ audio_track_play(audio_track_t *track)
 	 * it rounds up to 1 block.
 	 */
 	if (track->freq.filter) {
-		int n = 0;
+		int n;
 		n = audio_append_silence(track, &track->freq.srcbuf);
 		if (n > 0) {
 			TRACET(track,
@@ -2014,7 +2020,8 @@ audio_track_record(audio_track_t *track)
 		audio_ring_push(usrbuf, bytes);
 		audio_ring_take(outbuf, count);
 	} else {
-		int bytes1, bytes2;
+		int bytes1;
+		int bytes2;
 
 		bytes1 = audio_ring_get_contig_used(usrbuf);
 		KASSERT(bytes1 % framesize == 0);
@@ -2332,7 +2339,7 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
 
 	KASSERT(mutex_owned(sc->sc_lock));
 
-	// すでに再生ミキサが起動していたら、true を返す
+	/* Return if the mixer has already started. */
 	if (sc->sc_pbusy)
 		return;
 
@@ -2561,13 +2568,14 @@ audio_pmixer_mixall(struct audio_softc *sc, bool isintr)
 	audio_trackmixer_t *mixer;
 	audio_file_t *f;
 	int req;
-	int mixed = 0;
+	int mixed;
 
 	mixer = sc->sc_pmixer;
 
 	// XXX frames_per_block そのままのほうが分かりやすいような
 	req = mixer->frames_per_block;
 
+	mixed = 0;
 	SLIST_FOREACH(f, &sc->sc_files, entry) {
 		audio_track_t *track = f->ptrack;
 
@@ -2735,7 +2743,6 @@ audio_pmixer_output(struct audio_softc *sc)
 			start = mixer->hwbuf.mem;
 			end = (uint8_t *)start +
 			    audio_ring_bytelen(&mixer->hwbuf);
-			// TODO: params 作る
 			params = format2_to_params(&mixer->hwbuf.fmt);
 
 			error = sc->hw_if->trigger_output(sc->hw_hdl,
@@ -2969,6 +2976,7 @@ audio_rmixer_process(struct audio_softc *sc)
 	audio_ring_take(mixersrc, count);
 
 	// SIGIO を通知(する必要があるかどうかは向こうで判断する)
+	// XXX トラック別にしなくていいか
 	softint_schedule(sc->sc_sih_rd);
 }
 
@@ -2998,7 +3006,6 @@ audio_rmixer_input(struct audio_softc *sc)
 			start = mixer->hwbuf.mem;
 			end = (uint8_t *)start +
 			    audio_ring_bytelen(&mixer->hwbuf);
-			// TODO: params 作る
 			params = format2_to_params(&mixer->hwbuf.fmt);
 
 			error = sc->hw_if->trigger_input(sc->hw_hdl,
@@ -3258,6 +3265,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 {
 	audio_track_t *track;
 	audio_ring_t *usrbuf;
+	audio_ring_t *outbuf;
 	int error;
 	int framesize;
 	int count;
@@ -3287,6 +3295,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 #endif
 
 	usrbuf = &track->usrbuf;
+	outbuf = &track->outbuf;
 	TRACET(track, "resid=%zd", uio->uio_resid);
 
 	track->pstate = AUDIO_STATE_RUNNING;
@@ -3297,8 +3306,6 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 		TRACET(track, "while resid=%zd usrbuf=%d/%d/H%d",
 		    uio->uio_resid,
 		    usrbuf->head, usrbuf->used, track->usrbuf_usedhigh);
-
-		// XXX 実際には待つ前に drop を計算してしまったほうがいいはず
 
 		// usrbuf が一杯ならここで待つ
 		while (usrbuf->used >= track->usrbuf_usedhigh) {
@@ -3340,6 +3347,8 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 		// 前回落としたフレーム分を回復運転のため取り去る
 		// write されるバイトバッファがフレーム境界に揃っている
 		// 保証はないので、usrbuf にコピーした後でなければならない
+		// XXX 出来れば wait する前、あるいは uiomove する前に
+		//     drop を計算してしまったほうがいいはず。
 		if ((track->mode & AUMODE_PLAY_ALL) == 0 &&
 		    track->playdrop > 0) {
 			framesize = frametobyte(&track->inputfmt, 1);
@@ -3356,8 +3365,8 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 
 		mutex_enter(sc->sc_intr_lock);
 		while (sc->sc_pbusy == 0 &&
-		    track->usrbuf.used >= track->usrbuf_blksize &&
-		    track->outbuf.used < track->mixer->frames_per_block * 2) {
+		    usrbuf->used >= track->usrbuf_blksize &&
+		    outbuf->used < track->mixer->frames_per_block * 2) {
 			track->in_use = true;
 			mutex_exit(sc->sc_intr_lock);
 			audio_track_play(track);
@@ -3406,12 +3415,13 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 	audio_file_t *file)
 {
 	audio_track_t *track;
+	audio_ring_t *usrbuf;
+	audio_ring_t *input;
 	int error;
 
 	track = file->rtrack;
 	KASSERT(track);
 	TRACET(track, "resid=%u", (int)uio->uio_resid);
-
 	KASSERT(mutex_owned(sc->sc_lock));
 
 	if (sc->hw_if == NULL)
@@ -3435,20 +3445,20 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 
 	TRACET(track, "resid=%zd", uio->uio_resid);
 
+	usrbuf = &track->usrbuf;
+	input = track->input;
+
 	error = 0;
 	while (uio->uio_resid > 0 && error == 0) {
-		audio_ring_t *usrbuf;
 		int bytes;
-
-		usrbuf = &track->usrbuf;
 
 		TRACET(track, "while resid=%zd input=%d/%d/%d usrbuf=%d/%d/H%d",
 		    uio->uio_resid,
-		    track->input->head, track->input->used, track->input->capacity,
+		    input->head, input->used, input->capacity,
 		    usrbuf->head, usrbuf->used, track->usrbuf_usedhigh);
 
 		mutex_enter(sc->sc_intr_lock);
-		if (track->input->used == 0 && track->usrbuf.used == 0) {
+		if (input->used == 0 && usrbuf->used == 0) {
 			// バッファが空ならここで待機
 			mutex_exit(sc->sc_intr_lock);
 
