@@ -523,9 +523,9 @@ make_buildinfo(void)
 	    "AUDIO_BLK_MS=%d", AUDIO_BLK_MS);
 	n += snprintf(audio_buildinfo + n, sizeof(audio_buildinfo) - n,
 	    ", NBLKOUT=%d", NBLKOUT);
-#if defined(AUDIO_HW_DOUBLE_BUFFER)
+#if defined(AUDIO_HW_SINGLE_BUFFER)
 	n += snprintf(audio_buildinfo + n, sizeof(audio_buildinfo) - n,
-	    ", HW_DOUBLE_BUFFER");
+	    ", HW_SINGLE_BUFFER");
 #endif
 }
 #endif

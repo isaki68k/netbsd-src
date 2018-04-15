@@ -2795,7 +2795,16 @@ audio_pintr(void *arg)
 	return;
 #endif
 
-#if defined(AUDIO_HW_DOUBLE_BUFFER)
+#if defined(AUDIO_HW_SINGLE_BUFFER)
+	// その場で次のブロックを作成して再生
+	// レイテンシは下げられるが、マシンパワーがないと再生が途切れる。
+
+	// バッファを作成
+	audio_pmixer_process(sc, true);
+
+	// 出力
+	audio_pmixer_output(sc);
+#else
 	// ブロック0 の出力が終わったら用意されているはずのブロック1 を
 	// すぐに出力しておいて、その後ブロック2 の作成に取りかかる。
 	// これで遅マシンでも再生を途切れさせずに HW ブロックが作成できるが、
@@ -2818,15 +2827,6 @@ audio_pintr(void *arg)
 	if (later) {
 		audio_pmixer_output(sc);
 	}
-#else
-	// その場で次のブロックを作成して再生
-	// レイテンシは下げられるが、マシンパワーがないと再生が途切れる。
-
-	// バッファを作成
-	audio_pmixer_process(sc, true);
-
-	// 出力
-	audio_pmixer_output(sc);
 #endif
 
 	// drain 待ちしている人のために通知
