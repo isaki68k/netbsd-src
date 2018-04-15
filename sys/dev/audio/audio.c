@@ -7196,12 +7196,13 @@ audio_get_props(struct audio_softc *sc)
 	props = hw->get_props(sc->hw_hdl);
 
 	/*
-	 * if neither playback nor capture properties are reported,
-	 * assume both are supported by the device driver
+	 * If neither playback nor capture properties are reported,
+	 * assume both are supported.
 	 */
 	if ((props & (AUDIO_PROP_PLAYBACK|AUDIO_PROP_CAPTURE)) == 0)
 		props |= (AUDIO_PROP_PLAYBACK | AUDIO_PROP_CAPTURE);
 
+	/* MMAP is now supported by upper layer.  */
 	props |= AUDIO_PROP_MMAP;
 
 	return props;
