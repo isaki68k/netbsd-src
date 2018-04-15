@@ -3018,79 +3018,76 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	rec = file->rtrack;
 
 #if AUDIO_DEBUG > 1
-	char buf[80];
-	int n = 0;
-#define SNPRINTF(fmt...) do {	\
-	n += snprintf(buf + n, sizeof(buf) - n, fmt);	\
+	{
+		char buf[256];
+		char p[64];
+		int buflen;
+		int plen;
+#define SPRINTF(var, fmt...) do {	\
+	var##len += snprintf(var + var##len, sizeof(var) - var##len, fmt); \
 } while (0)
 
-	if (SPECIFIED(pi->encoding)) {
-		SNPRINTF(" enc=%d", pi->encoding);
-		pchanges++;
-	}
-	if (SPECIFIED(pi->precision)) {
-		SNPRINTF(" prec=%d", pi->precision);
-		pchanges++;
-	}
-	if (SPECIFIED(pi->channels)) {
-		SNPRINTF(" ch=%d", pi->channels);
-		pchanges++;
-	}
-	if (SPECIFIED(pi->sample_rate)) {
-		SNPRINTF(" freq=%d", pi->sample_rate);
-		pchanges++;
-	}
-	if (pchanges) {
-		printf("%s play:%s\n", __func__, buf);
-		n = 0;
-		pchanges = 0;
-	}
+		buflen = 0;
+		plen = 0;
+		if (SPECIFIED(pi->encoding)) {
+			if (pi->encoding < __arraycount(encoding_names))
+				SPRINTF(p, "/%s", encoding_names[pi->encoding]);
+			else
+				SPRINTF(p, "/enc%d", pi->encoding);
+		}
+		if (SPECIFIED(pi->precision))
+			SPRINTF(p, "/%dbit", pi->precision);
+		if (SPECIFIED(pi->channels))
+			SPRINTF(p, "/%dch", pi->channels);
+		if (SPECIFIED(pi->sample_rate))
+			SPRINTF(p, "/%dHz", pi->sample_rate);
+		if (plen > 0)
+			SPRINTF(buf, ",play.param=%s", p + 1);
 
-	if (SPECIFIED(ri->encoding)) {
-		SNPRINTF(" enc=%d", ri->encoding);
-		rchanges++;
-	}
-	if (SPECIFIED(ri->precision)) {
-		SNPRINTF(" prec=%d", ri->precision);
-		rchanges++;
-	}
-	if (SPECIFIED(ri->channels)) {
-		SNPRINTF(" ch=%d", ri->channels);
-		rchanges++;
-	}
-	if (SPECIFIED(ri->sample_rate)) {
-		SNPRINTF(" freq=%d", ri->sample_rate);
-		rchanges++;
-	}
-	if (rchanges) {
-		printf("%s rec:%s\n", __func__, buf);
-		rchanges = 0;
-	}
+		plen = 0;
+		if (SPECIFIED(ri->encoding)) {
+			if (ri->encoding < __arraycount(encoding_names))
+				SPRINTF(p, "/%s", encoding_names[ri->encoding]);
+			else
+				SPRINTF(p, "/enc%d", ri->encoding);
+		}
+		if (SPECIFIED(ri->precision))
+			SPRINTF(p, "/%dbit", ri->precision);
+		if (SPECIFIED(ri->channels))
+			SPRINTF(p, "/%dch", ri->channels);
+		if (SPECIFIED(ri->sample_rate))
+			SPRINTF(p, "/%dHz", ri->sample_rate);
+		if (plen > 0)
+			SPRINTF(buf, ",record.param=%s", p + 1);
 
-	if (SPECIFIED(ai->mode))
-		printf("%s mode=%d\n", __func__, ai->mode);
-	if (SPECIFIED(ai->hiwat))
-		printf("%s hiwat=%d\n", __func__, ai->hiwat);
-	if (SPECIFIED(ai->lowat))
-		printf("%s lowat=%d\n", __func__, ai->lowat);
-	if (SPECIFIED(ai->play.gain))
-		printf("%s play.gain=%d\n", __func__, ai->play.gain);
-	if (SPECIFIED(ai->record.gain))
-		printf("%s record.gain=%d\n", __func__, ai->record.gain);
-	if (SPECIFIED_CH(ai->play.balance))
-		printf("%s play.balance=%d\n", __func__, ai->play.balance);
-	if (SPECIFIED_CH(ai->record.balance))
-		printf("%s record.balance=%d\n", __func__, ai->record.balance);
-	if (SPECIFIED(ai->play.port))
-		printf("%s play.port=%d\n", __func__, ai->play.port);
-	if (SPECIFIED(ai->record.port))
-		printf("%s record.port=%d\n", __func__, ai->record.port);
-	if (SPECIFIED(ai->monitor_gain))
-		printf("%s monitor_gain=%d\n", __func__, ai->monitor_gain);
-	if (SPECIFIED_CH(ai->play.pause))
-		printf("%s play.pause=%d\n", __func__, ai->play.pause);
-	if (SPECIFIED_CH(ai->record.pause))
-		printf("%s record.pause=%d\n", __func__, ai->record.pause);
+		if (SPECIFIED(ai->mode))
+			SPRINTF(buf, ",mode=%d", ai->mode);
+		if (SPECIFIED(ai->hiwat))
+			SPRINTF(buf, ",hiwat=%d", ai->hiwat);
+		if (SPECIFIED(ai->lowat))
+			SPRINTF(buf, ",lowat=%d", ai->lowat);
+		if (SPECIFIED(ai->play.gain))
+			SPRINTF(buf, ",play.gain=%d", ai->play.gain);
+		if (SPECIFIED(ai->record.gain))
+			SPRINTF(buf, ",record.gain=%d", ai->record.gain);
+		if (SPECIFIED_CH(ai->play.balance))
+			SPRINTF(buf, ",play.balance=%d", ai->play.balance);
+		if (SPECIFIED_CH(ai->record.balance))
+			SPRINTF(buf, ",record.balance=%d", ai->record.balance);
+		if (SPECIFIED(ai->play.port))
+			SPRINTF(buf, ",play.port=%d", ai->play.port);
+		if (SPECIFIED(ai->record.port))
+			SPRINTF(buf, ",record.port=%d", ai->record.port);
+		if (SPECIFIED(ai->monitor_gain))
+			SPRINTF(buf, ",monitor_gain=%d", ai->monitor_gain);
+		if (SPECIFIED_CH(ai->play.pause))
+			SPRINTF(buf, ",play.pause=%d", ai->play.pause);
+		if (SPECIFIED_CH(ai->record.pause))
+			SPRINTF(buf, ",record.pause=%d", ai->record.pause);
+
+		if (buflen > 0)
+			printf("%s: specified %s\n", __func__, buf + 1);
+	}
 #endif
 
 	/* XXX shut up gcc */
