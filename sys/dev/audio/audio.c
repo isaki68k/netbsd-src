@@ -290,34 +290,33 @@ typedef struct uio_fetcher {
 } uio_fetcher_t;
 
 // ここに関数プロトタイプ
-// できれば static つけて統一したい
 
-static int	audiomatch(device_t, cfdata_t, void *);
-static void	audioattach(device_t, device_t, void *);
-static int	audiodetach(device_t, int);
-static int	audioactivate(device_t, enum devact);
+static int audiomatch(device_t, cfdata_t, void *);
+static void audioattach(device_t, device_t, void *);
+static int audiodetach(device_t, int);
+static int audioactivate(device_t, enum devact);
 // spkr* at audio? のため?
-//static void	audiochilddet(device_t, device_t);
-//static int	audiorescan(device_t, const char *, const int *);
+//static void audiochilddet(device_t, device_t);
+//static int audiorescan(device_t, const char *, const int *);
 
-static int	audio_modcmd(modcmd_t, void *);
+static int audio_modcmd(modcmd_t, void *);
 
 #ifdef AUDIO_PM_IDLE
-static void	audio_idle(void *);
-static void	audio_activity(device_t, devactive_t);
+static void audio_idle(void *);
+static void audio_activity(device_t, devactive_t);
 #endif
 
-static bool	audio_suspend(device_t dv, const pmf_qual_t *);
-static bool	audio_resume(device_t dv, const pmf_qual_t *);
-static void	audio_volume_down(device_t);
-static void	audio_volume_up(device_t);
-static void	audio_volume_toggle(device_t);
+static bool audio_suspend(device_t dv, const pmf_qual_t *);
+static bool audio_resume(device_t dv, const pmf_qual_t *);
+static void audio_volume_down(device_t);
+static void audio_volume_up(device_t);
+static void audio_volume_toggle(device_t);
 
-static void	audio_mixer_capture(struct audio_softc *);
-static void	audio_mixer_restore(struct audio_softc *);
+static void audio_mixer_capture(struct audio_softc *);
+static void audio_mixer_restore(struct audio_softc *);
 
-static void	audio_softintr_rd(void *);
-static void	audio_softintr_wr(void *);
+static void audio_softintr_rd(void *);
+static void audio_softintr_wr(void *);
 
 static int audio_enter(dev_t, struct audio_softc **);
 static void audio_exit(struct audio_softc *);
@@ -330,17 +329,17 @@ static int audioioctl(struct file *, u_long, void *);
 static int audiopoll(struct file *, int);
 static int audiokqfilter(struct file *, struct knote *);
 static int audiommap(struct file *, off_t *, size_t, int, int *, int *,
-			  struct uvm_object **, int *);
+	struct uvm_object **, int *);
 static int audiostat(struct file *, struct stat *);
 
 static int audio_open(dev_t, struct audio_softc *, int, int, struct lwp *,
-		      struct file **);
+	struct file **);
 static int audio_close(struct audio_softc *, int, audio_file_t *);
 static int audio_read(struct audio_softc *, struct uio *, int, audio_file_t *);
 static int audio_write(struct audio_softc *, struct uio *, int, audio_file_t *);
 static void audio_file_clear(struct audio_softc *, audio_file_t *);
 static int audio_ioctl(dev_t, struct audio_softc *, u_long, void *, int,
-		       struct lwp *, audio_file_t *);
+	struct lwp *, audio_file_t *);
 static int audio_poll(struct audio_softc *, int, struct lwp *, audio_file_t *);
 static int audio_kqfilter(struct audio_softc *, audio_file_t *, struct knote *);
 static int audio_mmap(struct audio_softc *, off_t *, size_t, int, int *, int *,
@@ -388,7 +387,7 @@ static void audio_format2_tostr(char *, size_t, const audio_format2_t *);
 static void audio_print_format2(const char *, const audio_format2_t *);
 #endif
 
-static void *audio_realloc(void *memblock, size_t bytes);
+static void *audio_realloc(void *, size_t);
 static int audio_realloc_usrbuf(audio_track_t *, int);
 static void audio_free_usrbuf(audio_track_t *);
 
@@ -406,7 +405,7 @@ static int audio_mixer_init(struct audio_softc *, int, const audio_format2_t *);
 static void audio_mixer_destroy(struct audio_softc *, audio_trackmixer_t *);
 static void audio_pmixer_start(struct audio_softc *, bool);
 static void audio_pmixer_process(struct audio_softc *, bool);
-static int  audio_pmixer_mixall(struct audio_softc *sc, bool isintr);
+static int  audio_pmixer_mixall(struct audio_softc *, bool);
 static int  audio_pmixer_mix_track(audio_trackmixer_t *, audio_track_t *,
 	int, int);
 static void audio_pmixer_output(struct audio_softc *);
@@ -418,36 +417,36 @@ static int  audio_rmixer_halt(struct audio_softc *);
 
 #ifdef OLD_FILTER
 static void stream_filter_list_append(stream_filter_list_t *,
-		stream_filter_factory_t, const audio_params_t *);
+	stream_filter_factory_t, const audio_params_t *);
 static void stream_filter_list_prepend(stream_filter_list_t *,
-		stream_filter_factory_t, const audio_params_t *);
+	stream_filter_factory_t, const audio_params_t *);
 static void stream_filter_list_set(stream_filter_list_t *, int,
-		stream_filter_factory_t, const audio_params_t *);
+	stream_filter_factory_t, const audio_params_t *);
 #endif
 
 static void mixer_init(struct audio_softc *);
 static int mixer_open(dev_t, struct audio_softc *, int, int, struct lwp *,
-		      struct file **);
+	struct file **);
 static int mixer_close(struct audio_softc *, int, audio_file_t *);
 static int mixer_ioctl(struct audio_softc *, u_long, void *, int, struct lwp *);
 static void mixer_remove(struct audio_softc *);
 static void mixer_signal(struct audio_softc *);
 
-static int au_portof(struct audio_softc *sc, char *, int);
+static int au_portof(struct audio_softc *, char *, int);
 
 static void au_setup_ports(struct audio_softc *, struct au_mixer_ports *,
-			   mixer_devinfo_t *, const struct portname *);
+	mixer_devinfo_t *, const struct portname *);
 static int au_set_lr_value(struct audio_softc *, mixer_ctrl_t *, int, int);
 static int au_get_lr_value(struct audio_softc *, mixer_ctrl_t *, int *, int *);
 static int au_set_gain(struct audio_softc *, struct au_mixer_ports *,
-		       int, int);
+	int, int);
 static void au_get_gain(struct audio_softc *, struct au_mixer_ports *,
-			u_int *, u_char *);
+	u_int *, u_char *);
 static int au_set_port(struct audio_softc *, struct au_mixer_ports *,
-		       u_int);
+	u_int);
 static int au_get_port(struct audio_softc *, struct au_mixer_ports *);
-static int au_set_monitor_gain(struct audio_softc *sc, int);
-static int au_get_monitor_gain(struct audio_softc *sc);
+static int au_set_monitor_gain(struct audio_softc *, int);
+static int au_get_monitor_gain(struct audio_softc *);
 static int audio_get_port(struct audio_softc *, mixer_ctrl_t *);
 static int audio_set_port(struct audio_softc *, mixer_ctrl_t *);
 
