@@ -2489,14 +2489,14 @@ audioctl_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
  *
  * o softintr cookie for record is one per device.  Initialize on attach()
  *   and release on detach().
-// o audio_rmixer_process で全録音トラックへの分配が終ったところで
-//   1回ソフトウエア割り込みを要求。
-// o ソフトウェア割り込みで、すべての async 録音トラックに対して SIGIO を
-//   投げる。
-// o このため
-//  - audio_rmixer_process -> open and set FAIOASYNC -> audoi_softintr_rd
-//    の順でオープンされたトラックについては、録音データがまだ到着していない
-//    にも関わらずシグナルが届くことになるがこれは許容する。
+ * // o audio_rmixer_process で全録音トラックへの分配が終ったところで
+ * //   1回ソフトウエア割り込みを要求。
+ * // o ソフトウェア割り込みで、すべての async 録音トラックに対して SIGIO を
+ * //   投げる。
+ * // o このため
+ * //  - audio_rmixer_process -> open and set FAIOASYNC -> audoi_softintr_rd
+ * //    の順でオープンされたトラックについては、録音データがまだ到着していない
+ * //    にも関わらずシグナルが届くことになるがこれは許容する。
  */
 
 // 録音時は rmixer_process から (リスナーが何人いても) 1回だけこれが呼ばれる
@@ -2528,9 +2528,9 @@ audio_softintr_rd(void *cookie)
 /*
  * SIGIO derivery for playback.
  *
-// o 再生ミキサで ASYNC トラックのバッファを消費した際に lowat を下回ったら、
-//   ソフトウェア割り込みを要求。
-// o ソフトウェア割り込みで、このトラックに対して SIGIO を投げる。
+ * // o 再生ミキサで ASYNC トラックのバッファを消費した際に lowat を下回ったら、
+ * //   ソフトウェア割り込みを要求。
+ * // o ソフトウェア割り込みで、このトラックに対して SIGIO を投げる。
  */
 
 // 再生側のソフトウェア割り込みハンドラ。
@@ -3220,7 +3220,8 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 		goto abort1;
 
 	/* Set to track and update sticky parameters */
-	// ポーズを解除してミキサーが停止してれば再開する
+	// ポーズを解除してミキサーが停止してれば再開する。
+	// open -> pause -> write -> unpause の時に起きうる。
 	error = 0;
 	file->mode = mode;
 	if (play) {
