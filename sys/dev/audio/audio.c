@@ -1894,13 +1894,6 @@ audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
 	    "sc->sc_popens=%d, sc->sc_ropens=%d",
 	    sc->sc_popens, sc->sc_ropens);
 
-	// 現在どちらのトラックが有効かは file->ptrack、file->rtrack が
-	// !NULL で判断すること。
-	// flags はユーザが open 時に指示したモードだが、実際には
-	// flags よりトラックが少ない場合もある (例えば O_RDWR でオープン
-	// しようとして片方のトラックがエラーだとか、HW が再生専用だとか)。
-	// そのためここで引数の flags を見てはいけない。
-
 	// SB とかいくつかのドライバは halt_input と halt_output に
 	// 同じルーチンを使用しているので、その場合は full duplex なら
 	// halt_input を呼ばなくする?。ドライバのほうを直すべき。
