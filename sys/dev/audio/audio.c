@@ -367,7 +367,9 @@ static int audio_set_params(struct audio_softc *, int, audio_format2_t *,
 	audio_format2_t *);
 static int audiogetinfo(struct audio_softc *, struct audio_info *, int,
 	audio_file_t *);
-static int audio_getenc(struct audio_softc *, struct audio_encoding *) __unused;
+#if 0 /* not used */
+static int audio_getenc(struct audio_softc *, struct audio_encoding *);
+#endif
 static int audio_get_props(struct audio_softc *);
 static bool audio_can_playback(struct audio_softc *);
 static bool audio_can_capture(struct audio_softc *);
@@ -7147,6 +7149,7 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 	return 0;
 }
 
+#if 0 /* XXX */
 // 今は使っていない。AUDIO_GETHWENC とか作れば使い道はある?
 static int
 audio_getenc(struct audio_softc *sc, struct audio_encoding *ae)
@@ -7178,6 +7181,7 @@ audio_getenc(struct audio_softc *sc, struct audio_encoding *ae)
 #endif
 	return error;
 }
+#endif /* 0 */
 
 static int
 audio_get_props(struct audio_softc *sc)
