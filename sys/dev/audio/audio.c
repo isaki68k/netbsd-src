@@ -1,4 +1,6 @@
-/* vi:set ts=8: */
+// vi:set ts=8:
+// C++ style comment is unformal comment (that is, comment for comment).
+
 /*
  * Locking: there are two locks.
  *
@@ -211,7 +213,6 @@ static void	audio_volume_toggle(device_t);
 static void	audio_mixer_capture(struct audio_softc *);
 static void	audio_mixer_restore(struct audio_softc *);
 
-
 static void	audio_softintr_rd(void *);
 static void	audio_softintr_wr(void *);
 
@@ -330,26 +331,6 @@ params_to_format2(const struct audio_params *p)
 	return f2;
 }
 
-// not used anymore
-// どうするかね
-#if 0
-// ユーザランドで使用される 0..255 ボリュームを、トラック内の内部表現である
-// 0..256 ボリュームに変換します。
-static inline u_int
-audio_volume_to_inner(u_int v)
-{
-	return v < 127 ? v : v + 1;
-}
-
-// トラック内の内部表現である 0..256 ボリュームを、外部で使用される 0..255
-// ボリュームに変換します。
-static inline u_int
-audio_volume_to_outer(u_int v)
-{
-	return v < 127 ? v : v - 1;
-}
-#endif // 0
-
 #ifdef OLD_FILTER
 static void stream_filter_list_append(stream_filter_list_t *,
 		stream_filter_factory_t, const audio_params_t *);
@@ -358,20 +339,6 @@ static void stream_filter_list_prepend(stream_filter_list_t *,
 static void stream_filter_list_set(stream_filter_list_t *, int,
 		stream_filter_factory_t, const audio_params_t *);
 #endif
-
-// この track が再生トラックなら true を返します。
-static inline bool
-audio_track_is_playback(const audio_track_t *track)
-{
-	return ((track->mode & AUMODE_PLAY) != 0);
-}
-
-// この track が録音トラックなら true を返します。
-static inline bool
-audio_track_is_record(const audio_track_t *track)
-{
-	return ((track->mode & AUMODE_RECORD) != 0);
-}
 
 static void mixer_init(struct audio_softc *);
 static int mixer_open(dev_t, struct audio_softc *, int, int, struct lwp *,
@@ -398,6 +365,40 @@ static int au_set_monitor_gain(struct audio_softc *sc, int);
 static int au_get_monitor_gain(struct audio_softc *sc);
 static int audio_get_port(struct audio_softc *, mixer_ctrl_t *);
 static int audio_set_port(struct audio_softc *, mixer_ctrl_t *);
+
+/* Return true if this track is a playback track. */
+static inline bool
+audio_track_is_playback(const audio_track_t *track)
+{
+	return ((track->mode & AUMODE_PLAY) != 0);
+}
+
+/* Return true if this track is a recording track. */
+static inline bool
+audio_track_is_record(const audio_track_t *track)
+{
+	return ((track->mode & AUMODE_RECORD) != 0);
+}
+
+// not used anymore
+// どうするかね
+#if 0
+// ユーザランドで使用される 0..255 ボリュームを、トラック内の内部表現である
+// 0..256 ボリュームに変換します。
+static inline u_int
+audio_volume_to_inner(u_int v)
+{
+	return v < 127 ? v : v + 1;
+}
+
+// トラック内の内部表現である 0..256 ボリュームを、外部で使用される 0..255
+// ボリュームに変換します。
+static inline u_int
+audio_volume_to_outer(u_int v)
+{
+	return v < 127 ? v : v - 1;
+}
+#endif // 0
 
 static dev_type_open(audioopen);
 /* XXXMRG use more dev_type_xxx */
