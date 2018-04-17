@@ -260,7 +260,9 @@ CFATTACH_DECL2_NEW(auich, sizeof(struct auich_softc),
 static int	auich_open(void *, int);
 static void	auich_close(void *);
 static int	auich_query_encoding(void *, struct audio_encoding *);
+#if defined(AUDIO2)
 static int	auich_query_format(void *, const struct audio_format **);
+#endif
 static int	auich_set_params(void *, int, int, audio_params_t *,
 		    audio_params_t *, stream_filter_list_t *,
 		    stream_filter_list_t *);
@@ -334,7 +336,9 @@ static const struct audio_hw_if auich_hw_if = {
 	auich_trigger_input,
 	NULL,			/* dev_ioctl */
 	auich_get_locks,
+#if defined(AUDIO2)
 	auich_query_format,
+#endif
 };
 
 #define AUICH_FORMATS_1CH	0
@@ -965,6 +969,7 @@ auich_query_encoding(void *v, struct audio_encoding *aep)
 	    sc->sc_spdif ? sc->sc_spdif_encodings : sc->sc_encodings, aep);
 }
 
+#if defined(AUDIO2)
 static int
 auich_query_format(void *v, const struct audio_format **afp)
 {
@@ -983,6 +988,7 @@ auich_query_format(void *v, const struct audio_format **afp)
 	*afp = format;
 	return nf;
 }
+#endif
 
 static int
 auich_set_rate(struct auich_softc *sc, int mode, u_long srate)
@@ -1032,6 +1038,25 @@ auich_set_params(void *v, int setmode, int usemode,
 		if (p == NULL)
 			continue;
 
+#if !defined(AUDIO2)
+		if (sc->sc_codectype == AC97_CODEC_TYPE_AUDIO) {
+			if (p->sample_rate <  8000 ||
+			    p->sample_rate > 48000)
+				return EINVAL;
+
+			if (!sc->sc_spdif)
+				index = auconv_set_converter(sc->sc_audio_formats,
+				    AUICH_AUDIO_NFORMATS, mode, p, TRUE, fil);
+			else
+				index = auconv_set_converter(auich_spdif_formats,
+				    AUICH_SPDIF_NFORMATS, mode, p, TRUE, fil);
+		} else {
+			if (p->sample_rate != 8000 && p->sample_rate != 16000)
+				return EINVAL;
+			index = auconv_set_converter(sc->sc_modem_formats,
+			    AUICH_MODEM_NFORMATS, mode, p, TRUE, fil);
+		}
+#else
 		if (sc->sc_codectype == AC97_CODEC_TYPE_AUDIO) {
 			if (!sc->sc_spdif)
 				index = auconv_set_converter(sc->sc_audio_formats,
@@ -1043,6 +1068,7 @@ auich_set_params(void *v, int setmode, int usemode,
 			index = auconv_set_converter(sc->sc_modem_formats,
 			    AUICH_MODEM_NFORMATS, mode, p, false, fil);
 		}
+#endif
 		if (index < 0)
 			return EINVAL;
 		if (fil->req_size > 0)

@@ -107,5 +107,7 @@ struct vs_softc {
 	void *sc_parg;
 	void *sc_rarg;
 
+#if defined(AUDIO2)
 	struct msm6258_codecvar sc_codecvar;
+#endif
 };

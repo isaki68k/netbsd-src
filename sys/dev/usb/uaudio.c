@@ -337,7 +337,9 @@ Static int	uaudio_open(void *, int);
 Static void	uaudio_close(void *);
 Static int	uaudio_drain(void *);
 Static int	uaudio_query_encoding(void *, struct audio_encoding *);
+#if defined(AUDIO2)
 Static int	uaudio_query_format(void *, const struct audio_format **);
+#endif
 Static int	uaudio_set_params
 	(void *, int, int, struct audio_params *, struct audio_params *,
 	 stream_filter_list_t *, stream_filter_list_t *);
@@ -386,7 +388,9 @@ Static const struct audio_hw_if uaudio_hw_if = {
 	uaudio_trigger_input,
 	NULL,
 	uaudio_get_locks,
+#if defined(AUDIO2)
 	uaudio_query_format,
+#endif
 };
 
 int uaudio_match(device_t, cfdata_t, void *);
@@ -579,6 +583,7 @@ uaudio_query_encoding(void *addr, struct audio_encoding *fp)
 	return auconv_query_encoding(sc->sc_encodings, fp);
 }
 
+#if defined(AUDIO2)
 Static int
 uaudio_query_format(void *addr, const struct audio_format **afp)
 {
@@ -588,6 +593,7 @@ uaudio_query_format(void *addr, const struct audio_format **afp)
 	*afp = sc->sc_formats;
 	return sc->sc_nformats;
 }
+#endif
 
 Static const usb_interface_descriptor_t *
 uaudio_find_iface(const char *tbuf, int size, int *offsp, int subtype)

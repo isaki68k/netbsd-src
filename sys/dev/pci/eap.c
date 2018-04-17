@@ -111,7 +111,9 @@ CFATTACH_DECL_NEW(eap, sizeof(struct eap_softc),
 
 static int	eap_open(void *, int);
 static int	eap_query_encoding(void *, struct audio_encoding *);
+#if defined(AUDIO2)
 static int	eap_query_format(void *, const struct audio_format **);
+#endif
 static int	eap_set_params(void *, int, int, audio_params_t *,
 			       audio_params_t *, stream_filter_list_t *,
 			       stream_filter_list_t *);
@@ -188,7 +190,9 @@ static const struct audio_hw_if eap1370_hw_if = {
 	eap_trigger_input,
 	NULL,
 	eap_get_locks,
+#if defined(AUDIO2)
 	eap_query_format,
+#endif
 };
 
 static const struct audio_hw_if eap1371_hw_if = {
@@ -220,7 +224,9 @@ static const struct audio_hw_if eap1371_hw_if = {
 	eap_trigger_input,
 	NULL,
 	eap_get_locks,
+#if defined(AUDIO2)
 	eap_query_format,
+#endif
 };
 
 #if NMIDI > 0
@@ -1017,12 +1023,14 @@ eap_query_encoding(void *addr, struct audio_encoding *fp)
 	}
 }
 
+#if defined(AUDIO2)
 static int
 eap_query_format(void *addr, const struct audio_format **afp)
 {
 	*afp = eap_formats;
 	return EAP_NFORMATS;
 }
+#endif
 
 static int
 eap_set_params(void *addr, int setmode, int usemode,

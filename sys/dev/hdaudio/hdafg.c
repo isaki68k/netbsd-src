@@ -358,7 +358,9 @@ CFATTACH_DECL2_NEW(
 );
 
 static int	hdafg_query_encoding(void *, struct audio_encoding *);
+#if defined(AUDIO2)
 static int	hdafg_query_format(void *, const struct audio_format **);
+#endif
 static int	hdafg_set_params(void *, int, int,
 				   audio_params_t *,
 				   audio_params_t *,
@@ -405,7 +407,9 @@ static const struct audio_hw_if hdafg_hw_if = {
 	.trigger_output		= hdafg_trigger_output,
 	.trigger_input		= hdafg_trigger_input,
 	.get_locks		= hdafg_get_locks,
+#if defined(AUDIO2)
 	.query_format	= hdafg_query_format,
+#endif
 };
 
 static int
@@ -3928,6 +3932,7 @@ hdafg_query_encoding(void *opaque, struct audio_encoding *ae)
 	return auconv_query_encoding(ad->ad_encodings, ae);
 }
 
+#if defined(AUDIO2)
 static int
 hdafg_query_format(void *opaque, const struct audio_format **afp)
 {
@@ -3936,6 +3941,7 @@ hdafg_query_format(void *opaque, const struct audio_format **afp)
 	*afp = ad->ad_formats;
 	return ad->ad_nformats;
 }
+#endif
 
 static int
 hdafg_set_params(void *opaque, int setmode, int usemode,

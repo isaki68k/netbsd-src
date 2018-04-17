@@ -76,9 +76,14 @@ static int  vs_dmaerrintr(void *);
 static int  vs_open(void *, int);
 static void vs_close(void *);
 static int  vs_query_encoding(void *, struct audio_encoding *);
+#if defined(AUDIO2)
 static int  vs_query_format(void *, const struct audio_format **);
 static int  vs_set_params2(void *, int, int, const audio_params_t *,
 	const audio_params_t *, audio_filter_reg_t *, audio_filter_reg_t *);
+#else
+static int  vs_set_params(void *, int, int, audio_params_t *,
+	audio_params_t *, stream_filter_list_t *, stream_filter_list_t *);
+#endif
 static int  vs_init_output(void *, void *, int);
 static int  vs_init_input(void *, void *, int);
 static int  vs_start_input(void *, void *, int, void (*)(void *), void *);
@@ -115,7 +120,11 @@ static const struct audio_hw_if vs_hw_if = {
 	vs_close,
 	NULL,			/* drain */
 	vs_query_encoding,
+#if defined(AUDIO2)
 	NULL,			/* set_params */
+#else
+	vs_set_params,
+#endif
 	NULL,			/* round_blocksize */
 	NULL,			/* commit_settings */
 	vs_init_output,
@@ -139,8 +148,10 @@ static const struct audio_hw_if vs_hw_if = {
 	NULL,			/* trigger_input */
 	NULL,
 	vs_get_locks,
+#if defined(AUDIO2)
 	vs_query_format,
 	vs_set_params2,
+#endif
 };
 
 static struct audio_device vs_device = {
@@ -149,6 +160,7 @@ static struct audio_device vs_device = {
 	"vs"
 };
 
+#if defined(AUDIO2)
 static const struct audio_format vs_formats[] = {
 	{ NULL, AUMODE_PLAY | AUMODE_RECORD, AUDIO_ENCODING_SLINEAR_BE, 16, 16,
 	  1, AUFMT_MONAURAL, 5,
@@ -158,7 +170,7 @@ static const struct audio_format vs_formats[] = {
 	  1, AUFMT_MONAURAL, 5,
 	  { VS_RATE_3K, VS_RATE_5K, VS_RATE_7K, VS_RATE_10K, VS_RATE_15K } },
 };
-
+#endif
 
 struct {
 	u_long rate;
@@ -343,12 +355,14 @@ vs_query_encoding(void *hdl, struct audio_encoding *fp)
 	return EINVAL;
 }
 
+#if defined(AUDIO2)
 static int
 vs_query_format(void *hdl, const struct audio_format **afp)
 {
 	*afp = vs_formats;
 	return __arraycount(vs_formats);
 }
+#endif
 
 static int
 vs_round_sr(u_long rate)
@@ -378,6 +392,7 @@ vs_round_sr(u_long rate)
 		return nearest;
 }
 
+#if defined(AUDIO2)
 static int
 vs_set_params2(void *hdl, int setmode, int usemode,
 	const audio_params_t *play, const audio_params_t *rec,
@@ -423,6 +438,72 @@ vs_set_params2(void *hdl, int setmode, int usemode,
 	DPRINTF(1, ("accepted\n"));
 	return 0;
 }
+#else
+static int
+vs_set_params(void *hdl, int setmode, int usemode,
+	audio_params_t *play, audio_params_t *rec,
+	stream_filter_list_t *pfil, stream_filter_list_t *rfil)
+{
+	struct vs_softc *sc;
+	audio_params_t hw;
+	stream_filter_factory_t *pconv;
+	stream_filter_factory_t *rconv;
+	int rate;
+
+	sc = hdl;
+
+	DPRINTF(1, ("vs_set_params: mode=%d enc=%d rate=%d prec=%d ch=%d: ",
+		setmode, play->encoding, play->sample_rate,
+		play->precision, play->channels));
+
+	/* *play and *rec are identical because !AUDIO_PROP_INDEPENDENT */
+
+	if (play->channels != 1) {
+		DPRINTF(1, ("channels not matched\n"));
+		return EINVAL;
+	}
+
+	rate = vs_round_sr(play->sample_rate);
+	if (rate < 0) {
+		DPRINTF(1, ("rate not matched\n"));
+		return EINVAL;
+	}
+
+	if (play->precision == 8 && play->encoding == AUDIO_ENCODING_SLINEAR) {
+		pconv = msm6258_linear8_to_adpcm;
+		rconv = msm6258_adpcm_to_linear8;
+	} else if (play->precision == 16 &&
+	           play->encoding == AUDIO_ENCODING_SLINEAR_BE) {
+		pconv = msm6258_slinear16_to_adpcm;
+		rconv = msm6258_adpcm_to_slinear16;
+	} else {
+		DPRINTF(1, ("prec/enc not matched\n"));
+		return EINVAL;
+	}
+
+	sc->sc_current.rate = rate;
+
+	/* pfil and rfil are independent even if !AUDIO_PROP_INDEPENDENT */
+
+	if ((setmode & AUMODE_PLAY) != 0) {
+		hw = *play;
+		hw.encoding = AUDIO_ENCODING_ADPCM;
+		hw.precision = 4;
+		hw.validbits = 4;
+		pfil->prepend(pfil, pconv, &hw);
+	}
+	if ((setmode & AUMODE_RECORD) != 0) {
+		hw = *rec;
+		hw.encoding = AUDIO_ENCODING_ADPCM;
+		hw.precision = 4;
+		hw.validbits = 4;
+		rfil->prepend(rfil, rconv, &hw);
+	}
+
+	DPRINTF(1, ("accepted\n"));
+	return 0;
+}
+#endif
 
 static void
 vs_set_sr(struct vs_softc *sc, int rate)
