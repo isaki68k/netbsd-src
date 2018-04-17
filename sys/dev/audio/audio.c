@@ -1,6 +1,21 @@
 // vi:set ts=8:
 // C++ style comment is unformal comment (that is, comment for comment).
 
+// TODO:
+// x PLAY(_SYNC) モードがいまいち?
+// x Restore mmap
+// x NetBSD8 like な mixer でのトラックボリューム?
+// x software master volume の設定インタフェース (mixerctl?)
+// x rsel/wsel はトラックごとに分けなくてよいか
+//   今のままでも動作はしているが
+// x sih_rd はトラックごとに分けなくてよいか
+//   今のままでも動作はしているが
+// x audio_file_t のもっといい名前
+// x audio_track_t の各 stage 実体をポインタにするか
+// x トラックミキサでオーバーフローする場合の処理はあれでいいか
+//   今は自動的にマスターボリュームを下げている。そして下げっぱなし。
+// x Restore spkr* at audio?
+
 /*
  * Locking: there are two locks.
  *
@@ -8202,28 +8217,10 @@ audio_modcmd(modcmd_t cmd, void *arg)
 	return error;
 }
 
-// x audioctl play.gain と mixerctl outputs.master は N7 では連動していたし
-//   ドキュメントにもそう書いてある
-// x 全般的に AUDIO_SETINFO どうすんだというのはある
-//  - pause と他の設定変更を同時にするのはやめたほうがいい
-//  - 全体的にロールバックできてなさそう
-// x audio(4) に AUDIO_PERROR がない (RERROR はある)
-// x audio(9) の allocm のプロトタイプがおかしい?
-// x AUDIO_RERROR はサンプル数と読めるが、実際に返すのはバイト数。
-// x lastinfo を全トラックが持っているが、ハードウェア部分は1つの lastinfo
-//   に分離しないと、suspend/resume の時におかしくなっている。
-// x SETINFO の gain はソフトゲインだが GETINFO はハードウェアのほうを
-//   取得しているっぽい
 // x gain の範囲チェックは誰がしてるんだ
 // x suspend 中に uaudio が消えるケースはまた後で
-// x audio_clear が最後の録音停止時には halt_input を呼んでいるが
-//   再生停止については halt_output を呼んでいないけど、なんで?
-// x audio_clear はたぶんハード/ソフトレイヤを分離する必要がある
 // o monitor_gain の get/set は commit してもいいかも
-// x SETFD (hw_if->setfd) はバグってるけど誰も使ってないので、
-//   消して、hw->open が full-duplex にセットする、でいいんじゃないかな。
 // x pad(4) がリソースリークしてる
-// x sample_rate 0 で write すると死ぬ
 // x audioplay(1) も sample_rate 0 のチェックを一切してないっぽい。
 // x 今の実装だと attach 時の setinfo で speaker_out が動いてしまう。
 //   どうせその後の open で正しい状態になるから構わないけど、
