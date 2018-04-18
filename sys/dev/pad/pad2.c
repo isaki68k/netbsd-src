@@ -48,11 +48,6 @@ __KERNEL_RCSID(0, "$NetBSD: pad.c,v 1.38 2017/07/01 05:50:10 nat Exp $");
 #include <dev/audio_if.h>
 #include <dev/audiovar.h>
 #include <dev/auconv.h>
-#if defined(AUDIO2)
-#include <dev/audio/aufilter.h>
-#else
-#include <dev/auvolconv.h>
-#endif
 
 #include <dev/pad/padvar.h>
 
