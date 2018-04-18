@@ -1,11 +1,5 @@
 #pragma once
 
-#if defined(_KERNEL)
-#include <dev/audio/auformat.h>
-#else
-#include "auformat.h"
-#endif
-
 /*
  * Return true if 'ring' is correct.
  */
