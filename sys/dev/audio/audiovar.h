@@ -274,7 +274,7 @@ struct audio_softc {
 	u_int	sc_lastgain;
 };
 
-extern bool is_valid_filter_arg(const audio_filter_arg_t *);
+extern bool audio_filter_arg_is_valid(const audio_filter_arg_t *);
 
 #if defined(_KERNEL)
 #include <dev/audio/auformat.h>

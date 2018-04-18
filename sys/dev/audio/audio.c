@@ -3050,7 +3050,7 @@ audio_track_chvol(audio_filter_arg_t *arg)
 	int i;
 	int ch;
 
-	KASSERT(is_valid_filter_arg(arg));
+	KASSERT(audio_filter_arg_is_valid(arg));
 	KASSERT(arg->srcfmt->channels == arg->dstfmt->channels);
 	KASSERT(arg->context != NULL);
 	KASSERT(arg->srcfmt->channels <= AUDIO_MAX_CHANNELS);
@@ -3116,7 +3116,7 @@ audio_track_chmix_mixLR(audio_filter_arg_t *arg)
 	aint_t *d;
 	int i;
 
-	KASSERT(is_valid_filter_arg(arg));
+	KASSERT(audio_filter_arg_is_valid(arg));
 
 	s = arg->src;
 	d = arg->dst;
@@ -3144,7 +3144,7 @@ audio_track_chmix_dupLR(audio_filter_arg_t *arg)
 	int ch;
 	int dstchannels;
 
-	KASSERT(is_valid_filter_arg(arg));
+	KASSERT(audio_filter_arg_is_valid(arg));
 
 	s = arg->src;
 	d = arg->dst;
@@ -3180,7 +3180,7 @@ audio_track_chmix_shrink(audio_filter_arg_t *arg)
 	int i;
 	int ch;
 
-	KASSERT(is_valid_filter_arg(arg));
+	KASSERT(audio_filter_arg_is_valid(arg));
 
 	s = arg->src;
 	d = arg->dst;
@@ -3208,7 +3208,7 @@ audio_track_chmix_expand(audio_filter_arg_t *arg)
 	int srcchannels;
 	int dstchannels;
 
-	KASSERT(is_valid_filter_arg(arg));
+	KASSERT(audio_filter_arg_is_valid(arg));
 
 	s = arg->src;
 	d = arg->dst;
@@ -3544,11 +3544,11 @@ audio_track_destroy(audio_track_t *track)
 }
 
 /*
- * is_valid_filter_arg:
+ * audio_filter_arg_is_valid:
  *	Return true if filter argument 'arg' is correct.
  */
 bool
-is_valid_filter_arg(const audio_filter_arg_t *arg)
+audio_filter_arg_is_valid(const audio_filter_arg_t *arg)
 {
 	KASSERT(arg != NULL);
 

@@ -196,7 +196,7 @@ void xp_ne(int line, int exp, int act, const char *varname)
 // これだけ aumix.c 内にあって、そのためだけにリンクするのもつらいので
 // コピーして持っておく。なんだかなあ。
 bool
-is_valid_filter_arg(const audio_filter_arg_t *arg)
+audio_filter_arg_is_valid(const audio_filter_arg_t *arg)
 {
 	KASSERT(arg != NULL);
 

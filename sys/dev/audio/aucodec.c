@@ -27,7 +27,7 @@ audio_linear8_to_internal(audio_filter_arg_t *arg)
 	u_int sample_count;
 	u_int i;
 
-	KASSERT(is_valid_filter_arg(arg));
+	KASSERT(audio_filter_arg_is_valid(arg));
 	KASSERT(audio_format2_is_linear(arg->srcfmt));
 	KASSERT(arg->srcfmt->precision == 8);
 	KASSERT(arg->srcfmt->stride == 8);
@@ -60,7 +60,7 @@ audio_internal_to_linear8(audio_filter_arg_t *arg)
 	u_int sample_count;
 	u_int i;
 
-	KASSERT(is_valid_filter_arg(arg));
+	KASSERT(audio_filter_arg_is_valid(arg));
 	KASSERT(audio_format2_is_linear(arg->dstfmt));
 	KASSERT(arg->dstfmt->precision == 8);
 	KASSERT(arg->dstfmt->stride == 8);
@@ -96,7 +96,7 @@ audio_linear16_to_internal(audio_filter_arg_t *arg)
 	u_int i;
 	bool is_src_NE;
 
-	KASSERT(is_valid_filter_arg(arg));
+	KASSERT(audio_filter_arg_is_valid(arg));
 	KASSERT(audio_format2_is_linear(arg->srcfmt));
 	KASSERT(arg->srcfmt->precision == 16);
 	KASSERT(arg->srcfmt->stride == 16);
@@ -154,7 +154,7 @@ audio_internal_to_linear16(audio_filter_arg_t *arg)
 	u_int i;
 	bool is_dst_NE;
 
-	KASSERT(is_valid_filter_arg(arg));
+	KASSERT(audio_filter_arg_is_valid(arg));
 	KASSERT(audio_format2_is_linear(arg->dstfmt));
 	KASSERT(arg->dstfmt->precision == 16);
 	KASSERT(arg->dstfmt->stride == 16);
@@ -212,7 +212,7 @@ audio_linear24_to_internal(audio_filter_arg_t *arg)
 	u_int i;
 	bool is_src_LE;
 
-	KASSERT(is_valid_filter_arg(arg));
+	KASSERT(audio_filter_arg_is_valid(arg));
 	KASSERT(audio_format2_is_linear(arg->srcfmt));
 	KASSERT(arg->srcfmt->precision == 24);
 	KASSERT(arg->srcfmt->stride == 24);
@@ -260,7 +260,7 @@ audio_internal_to_linear24(audio_filter_arg_t *arg)
 	u_int i;
 	bool is_dst_LE;
 
-	KASSERT(is_valid_filter_arg(arg));
+	KASSERT(audio_filter_arg_is_valid(arg));
 	KASSERT(audio_format2_is_linear(arg->dstfmt));
 	KASSERT(arg->dstfmt->precision == 24);
 	KASSERT(arg->dstfmt->stride == 24);
@@ -312,7 +312,7 @@ audio_linear32_to_internal(audio_filter_arg_t *arg)
 	u_int i;
 	bool is_src_NE;
 
-	KASSERT(is_valid_filter_arg(arg));
+	KASSERT(audio_filter_arg_is_valid(arg));
 	KASSERT(audio_format2_is_linear(arg->srcfmt));
 	KASSERT(arg->srcfmt->precision == 32);
 	KASSERT(arg->srcfmt->stride == 32);
@@ -352,7 +352,7 @@ audio_internal_to_linear32(audio_filter_arg_t *arg)
 	u_int i;
 	bool is_dst_NE;
 
-	KASSERT(is_valid_filter_arg(arg));
+	KASSERT(audio_filter_arg_is_valid(arg));
 	KASSERT(audio_format2_is_linear(arg->dstfmt));
 	KASSERT(arg->dstfmt->precision == 32);
 	KASSERT(arg->dstfmt->stride == 32);
