@@ -40,7 +40,7 @@
 #define AUDIO_ENCODING_RAWBYTE		32767	/* これは AUDIO2 独自 */
 
 /* サポートする最大のチャンネル数 */
-#define AUDIO_MAX_CHANNELS	18
+#define AUDIO_MAX_CHANNELS	12
 
 #ifndef AudioCvirtchan
 #define AudioCvirtchan "vchan"
