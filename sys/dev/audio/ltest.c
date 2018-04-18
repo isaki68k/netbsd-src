@@ -12,6 +12,8 @@
 #include <string.h>
 #include <unistd.h>
 
+#define DIAGNOSTIC 1
+
 #include "audiovar.h"
 #include "audiodef.h"
 #include "aucodec.c"

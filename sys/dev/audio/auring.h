@@ -1,59 +1,37 @@
 #pragma once
 
-/*
- * Return true if 'ring' is correct.
- */
-static inline bool
-audio_ring_is_valid(const audio_ring_t *ring)
-{
-	KASSERT(ring != NULL);
+#ifdef DIAGNOSTIC
+#define DIAGNOSTIC_ring(ring)	audio_diagnostic_ring(__func__, (ring))
+#else
+#define DIAGNOSTIC_ring(ring)
+#endif
 
-	if (!audio_format2_is_valid(&ring->fmt)) {
-		printf("%s: audio_format2_is_valid() failed\n", __func__);
-		return false;
-	}
-	if (ring->capacity < 0) {
-		printf("%s: capacity(%d) < 0\n", __func__, ring->capacity);
-		return false;
-	}
-	if (ring->capacity > INT_MAX / 2) {
-		printf("%s: capacity(%d) > INT_MAX/2\n", __func__,
-		    ring->capacity);
-		return false;
-	}
-	if (ring->used < 0) {
-		printf("%s: used(%d) < 0\n", __func__, ring->used);
-		return false;
-	}
-	if (ring->used > ring->capacity) {
-		printf("%s: used(%d) < capacity(%d)\n", __func__,
-		    ring->used, ring->capacity);
-		return false;
-	}
+#ifdef DIAGNOSTIC
+static void audio_diagnostic_ring(const char *, const audio_ring_t *);
+static void
+audio_diagnostic_ring(const char *func, const audio_ring_t *ring)
+{
+
+	KASSERTMSG(ring, "%s: ring == NULL", func);
+	KASSERTMSG(audio_format2_is_valid(&ring->fmt),
+	    "%s: audio_format2_is_valid(&ring->fmt) failed", func);
+	KASSERTMSG(0 <= ring->capacity && ring->capacity < INT_MAX / 2,
+	    "%s: capacity(%d) is out of range", func, ring->capacity);
+	KASSERTMSG(0 <= ring->used && ring->used <= ring->capacity,
+	    "%s: used(%d) is out of range (capacity:%d)",
+	    func, ring->used, ring->capacity);
 	if (ring->capacity == 0) {
-		if (ring->mem != NULL) {
-			printf("%s: capacity == 0 but mem != NULL\n",
-			    __func__);
-			return false;
-		}
+		KASSERTMSG(ring->mem == NULL,
+		    "%s: capacity == 0 but mem != NULL", func);
 	} else {
-		if (ring->mem == NULL) {
-			printf("%s: capacity != 0 but mem == NULL\n",
-			    __func__);
-			return false;
-		}
-		if (ring->head < 0) {
-			printf("%s: head(%d) < 0\n", __func__, ring->head);
-			return false;
-		}
-		if (ring->head >= ring->capacity) {
-			printf("%s: head(%d) >= capacity(%d)\n", __func__,
-			    ring->head, ring->capacity);
-			return false;
-		}
+		KASSERTMSG(ring->mem != NULL,
+		    "%s: capacity != 0 but mem == NULL", func);
+		KASSERTMSG(0 <= ring->head && ring->head < ring->capacity,
+		    "%s: head(%d) is out of range (capacity:%d)",
+		    func, ring->head, ring->capacity);
 	}
-	return true;
 }
+#endif
 
 // idx をラウンディングします。
 // 加算方向で、加算量が ring->capacity 以下のケースのみサポートします。
@@ -64,7 +42,7 @@ audio_ring_is_valid(const audio_ring_t *ring)
 static inline int
 audio_ring_round(const audio_ring_t *ring, int idx)
 {
-	KASSERT(audio_ring_is_valid(ring));
+	DIAGNOSTIC_ring(ring);
 	KASSERT(idx >= 0);
 	KASSERT(idx < ring->capacity * 2);
 
@@ -164,7 +142,7 @@ audio_ring_bytelen(const audio_ring_t *ring)
 static inline void
 audio_ring_take(audio_ring_t *ring, int n)
 {
-	KASSERT(audio_ring_is_valid(ring));
+	DIAGNOSTIC_ring(ring);
 	KASSERTMSG(n >= 0, "%s: n=%d", __func__, n);
 	KASSERTMSG(ring->used >= n, "%s: ring->used=%d n=%d",
 	    __func__, ring->used, n);
@@ -182,7 +160,7 @@ audio_ring_take(audio_ring_t *ring, int n)
 static inline void
 audio_ring_push(audio_ring_t *ring, int n)
 {
-	KASSERT(audio_ring_is_valid(ring));
+	DIAGNOSTIC_ring(ring);
 	KASSERT(n >= 0);
 	KASSERTMSG(ring->used + n <= ring->capacity,
 		"%s: ring->used=%d n=%d ring->capacity=%d",
@@ -199,7 +177,7 @@ audio_ring_push(audio_ring_t *ring, int n)
 static inline int
 audio_ring_get_contig_used(const audio_ring_t *ring)
 {
-	KASSERT(audio_ring_is_valid(ring));
+	DIAGNOSTIC_ring(ring);
 
 	if (ring->head + ring->used <= ring->capacity) {
 		return ring->used;
@@ -216,7 +194,7 @@ audio_ring_get_contig_used(const audio_ring_t *ring)
 static inline int
 audio_ring_get_contig_free(const audio_ring_t *ring)
 {
-	KASSERT(audio_ring_is_valid(ring));
+	DIAGNOSTIC_ring(ring);
 
 	// ring の折り返し終端まで使用されているときは、
 	// 開始位置はラウンディング後なので < が条件
