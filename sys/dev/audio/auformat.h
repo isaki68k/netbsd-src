@@ -34,7 +34,7 @@ audio_format2_is_valid(const audio_format2_t *fmt)
 
 /*
  * Return true if 'fmt' is the internal format.
- * However it does not check for frequency and number of channels.
+ * It does not check for frequency and number of channels.
  */
 static inline bool
 audio_format2_is_internal(const audio_format2_t *fmt)

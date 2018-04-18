@@ -95,7 +95,7 @@ audio_ring_tail(const audio_ring_t *ring)
 // ring の head フレームのポインタを求めます。
 /*
  * Return ring's head pointer.
- * This function can be used only if the stride of the 'ring' is equals to
+ * This function can be used only if the stride of the 'ring' is equal to
  * the internal stride.  Don't use this for hw buffer.
  */
 static inline aint_t *
@@ -111,7 +111,7 @@ audio_ring_headptr_aint(const audio_ring_t *ring)
 // hwbuf のポインタはこちらではなく RING_BOT_UINT8() で取得してください。
 /*
  * Return ring's tail (= head + used) pointer.
- * This function can be used only if the stride of the 'ring' is equals to
+ * This function can be used only if the stride of the 'ring' is equal to
  * the internal stride.  Don't use this for hw buffer.
  */
 static inline aint_t *
@@ -164,8 +164,8 @@ audio_ring_bytelen(const audio_ring_t *ring)
 // ring->head から n 個取り出したことにします。
 /*
  * Take out n frames from head of ring.
- * This function only manipurates counters.  It doesn't manipurates actual
- * buffer data.
+ * This function only manipurates counters.  It doesn't manipurate any
+ * actual buffer data.
  */
 static inline void
 audio_ring_take(audio_ring_t *ring, int n)
@@ -182,8 +182,8 @@ audio_ring_take(audio_ring_t *ring, int n)
 // ring tail に n 個付け足したことにします。
 /*
  * Append n frames into tail of ring.
- * This function only manipurates counters.  It doesn't manipurates actual
- * buffer data.
+ * This function only manipurates counters.  It doesn't manipurate any
+ * actual buffer data.
  */
 static inline void
 audio_ring_push(audio_ring_t *ring, int n)
