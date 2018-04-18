@@ -35,6 +35,21 @@
 // C の実装定義動作を使用する。
 #define AUDIO_USE_C_IMPLEMENTATION_DEFINED_BEHAVIOR
 
+static inline int
+frametobyte(const audio_format2_t *fmt, int frames)
+{
+	return frames * fmt->channels * fmt->stride / NBBY;
+}
+
+// 周波数が fmt(.sample_rate) で表されるエンコーディングの
+// 1ブロックのフレーム数を返します。
+static inline int
+frame_per_block(const audio_trackmixer_t *mixer, const audio_format2_t *fmt)
+{
+	return (fmt->sample_rate * mixer->blktime_n + mixer->blktime_d - 1) /
+	    mixer->blktime_d;
+}
+
 #if defined(_KERNEL)
 #include <dev/audio/auring.h>
 #else

@@ -93,18 +93,3 @@ audio_format2_endian(const audio_format2_t *fmt)
 	}
 	return BYTE_ORDER;
 }
-
-static inline int
-frametobyte(const audio_format2_t *fmt, int frames)
-{
-	return frames * fmt->channels * fmt->stride / NBBY;
-}
-
-// 周波数が fmt(.sample_rate) で表されるエンコーディングの
-// 1ブロックのフレーム数を返します。
-static inline int
-frame_per_block(const audio_trackmixer_t *mixer, const audio_format2_t *fmt)
-{
-	return (fmt->sample_rate * mixer->blktime_n + mixer->blktime_d - 1) /
-	    mixer->blktime_d;
-}
