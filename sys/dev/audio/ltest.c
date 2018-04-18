@@ -193,7 +193,7 @@ void xp_ne(int line, int exp, int act, const char *varname)
 		xp_fail(line, "%s expects != %d but %d", varname, exp, act);
 }
 
-// これだけ aumix.c 内にあって、そのためだけにリンクするのもつらいので
+// これだけ audio.c 内にあって、そのためだけにリンクするのもつらいので
 // コピーして持っておく。なんだかなあ。
 bool
 audio_filter_arg_is_valid(const audio_filter_arg_t *arg)
