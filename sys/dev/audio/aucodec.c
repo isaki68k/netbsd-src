@@ -12,7 +12,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <stdbool.h>
 #include "compat.h"
 #include "audiovar.h"
-#include "aucodec.h"
+#include "auformat.h"
 #endif // _KERNEL
 
 /*
