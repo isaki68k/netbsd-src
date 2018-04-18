@@ -113,9 +113,9 @@ audio_linear16_to_internal(audio_filter_arg_t *arg)
 	is_src_NE = (audio_format2_endian(arg->srcfmt) == BYTE_ORDER);
 
 	/*
-	 * slinear16_OppositeEndian to slinear16_NativeEndian is expanded
-	 * because it is used so much especially on big endian machines.
-	 * Other conversions are compressed because they are rarely used.
+	 * Since slinear16_OppositeEndian to slinear_NativeEndian is used
+	 * so much especially on big endian machines, so it's expanded.
+	 * Other conversions are rarely used, so they are compressed.
 	 */
 	if (__predict_true(xor == 0) && is_src_NE == false) {
 		/* slinear16_OE to slinear<AI>_NE */
@@ -171,9 +171,9 @@ audio_internal_to_linear16(audio_filter_arg_t *arg)
 	is_dst_NE = (audio_format2_endian(arg->dstfmt) == BYTE_ORDER);
 
 	/*
-	 * slinear16_NativeEndian to slinear16_OppositeEndian is expanded
-	 * because it is used so much especially on big endian machines.
-	 * Other conversions are compressed because they are rarely used.
+	 * Since slinear_NativeEndian to slinear16_OppositeEndian is used
+	 * so much especially on big endian machines, so it's expanded.
+	 * Other conversions are rarely used, so they are compressed.
 	 */
 	if (__predict_true(xor == 0) && is_dst_NE == false) {
 		/* slinear<AI>_NE -> slinear16_OE */
@@ -201,7 +201,7 @@ audio_internal_to_linear16(audio_filter_arg_t *arg)
 /*
  * audio_linear24_to_internal:
  *	This filter performs conversion from [US]LINEAR24/24{LE,BE} to
- *	internal format.  It's rerely used so it's size optimization.
+ *	internal format.  Since it's rerely used, it's size optimized.
  */
 void
 audio_linear24_to_internal(audio_filter_arg_t *arg)
@@ -249,7 +249,7 @@ audio_linear24_to_internal(audio_filter_arg_t *arg)
 /*
  * audio_internal_to_linear24:
  *	This filter performs conversion from internal format to
- *	[US]LINEAR24/24{LE,BE}.  It's rarely used so it's size optimization.
+ *	[US]LINEAR24/24{LE,BE}.  Since it's rarely used, it's size optimized.
  */
 void
 audio_internal_to_linear24(audio_filter_arg_t *arg)
@@ -301,7 +301,7 @@ audio_internal_to_linear24(audio_filter_arg_t *arg)
 /*
  * audio_linear32_to_internal:
  *	This filter performs conversion from [US]LINEAR32{LE,BE} to internal
- *	format.  It's rarely used so it's size optimization.
+ *	format.  Since it's rarely used, it's size optimized.
  */
 void
 audio_linear32_to_internal(audio_filter_arg_t *arg)
@@ -341,7 +341,7 @@ audio_linear32_to_internal(audio_filter_arg_t *arg)
 /*
  * audio_internal_to_linear32:
  *	This filter performs conversion from internal format to
- *	[US]LINEAR32{LE,BE}.  It's rarely used so it's size optimization.
+ *	[US]LINEAR32{LE,BE}.  Since it's rarely used, it's size optimized.
  */
 void
 audio_internal_to_linear32(audio_filter_arg_t *arg)
