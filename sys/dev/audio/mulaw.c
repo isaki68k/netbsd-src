@@ -201,11 +201,8 @@ audio_internal_to_mulaw(audio_filter_arg_t *arg)
 	sample_count = arg->count * arg->srcfmt->channels;
 
 	for (i = 0; i < sample_count; i++) {
-#if !defined(MULAW_HQ_ENC)
-		uint8_t val;
-		val = (*s++) >> (AUDIO_INTERNAL_BITS - 8);
-		*d++ = slinear8_to_mulaw[val];
-#else
+#if defined(MULAW_HQ_ENC)
+		/* 14bit (full spec) encoder */
 		int32_t val;
 		uint8_t m;
 		int clz;
@@ -231,6 +228,11 @@ audio_internal_to_mulaw(audio_filter_arg_t *arg)
 		m |= ~(val >> (AUDIO_INTERNAL_BITS - 16 + 10 - clz)) & 0x0f;
 		MPRINTF("m=0x%02x\n", m);
 		*d++ = m;
+#else
+		/* 8bit encoder */
+		uint8_t val;
+		val = (*s++) >> (AUDIO_INTERNAL_BITS - 8);
+		*d++ = slinear8_to_mulaw[val];
 #endif
 	}
 }
