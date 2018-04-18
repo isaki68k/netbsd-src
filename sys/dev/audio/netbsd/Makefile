@@ -5,7 +5,6 @@ SRCS+=	\
 SRCS+=	\
 	../aucodec.c \
 	../main.c \
-	../mulaw.c \
 	../userland.c \
 	compat.c \
 

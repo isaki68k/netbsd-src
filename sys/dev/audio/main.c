@@ -12,7 +12,7 @@
 #include <sys/audioio.h>	/* required by audiovar.h */
 #include "audiovar.h"
 #include "aucodec.h"
-#include "mulaw.h"
+#include "mulaw.c"
 
 #define malloc(len, a, b)	malloc(len)
 #include "audio.c"
