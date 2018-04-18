@@ -39,10 +39,14 @@ audio_format2_is_valid(const audio_format2_t *fmt)
 static inline bool
 audio_format2_is_internal(const audio_format2_t *fmt)
 {
-	if (!audio_format2_is_valid(fmt)) return false;
-	if (fmt->encoding != AUDIO_ENCODING_SLINEAR_NE) return false;
-	if (fmt->precision != AUDIO_INTERNAL_BITS) return false;
-	if (fmt->stride != AUDIO_INTERNAL_BITS) return false;
+	if (!audio_format2_is_valid(fmt))
+		return false;
+	if (fmt->encoding != AUDIO_ENCODING_SLINEAR_NE)
+		return false;
+	if (fmt->precision != AUDIO_INTERNAL_BITS)
+		return false;
+	if (fmt->stride != AUDIO_INTERNAL_BITS)
+		return false;
 	return true;
 }
 
