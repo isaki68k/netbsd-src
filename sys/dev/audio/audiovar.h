@@ -20,42 +20,8 @@
 #include "aufilter.h"
 #endif // _KERNEL
 
-// 出力バッファのブロック数
-/* Number of output buffer's blocks.  Must be != NBLKHW */
-#define NBLKOUT	(4)
-
-// ハードウェアバッファのブロック数
-/* Number of HW buffer's blocks. */
-#define NBLKHW (3)
-
-// ユーザバッファの最小ブロック数
-/* Minimum number of usrbuf's blocks. */
-#define AUMINNOBLK	(3)
-
 // ユーザランドフォーマットとして [US]Linear24/24 をサポートします。
 //#define AUDIO_SUPPORT_LINEAR24
-
-// 1 ブロックの時間 [msec]
-// 40ms の場合は (1/40ms) = 25 = 5^2 なので 100 の倍数の周波数のほか、
-// 15.625kHz でもフレーム数が整数になるので、40 を基本にする。
-#if !defined(AUDIO_BLK_MS)
-#if defined(x68k)
-// x68k では 40msec だと長い曲でアンダーランするので伸ばしておく
-#define AUDIO_BLK_MS 320
-#else
-#define AUDIO_BLK_MS 40
-#endif
-#endif
-
-// ミキサをシングルバッファにするかどうか。
-// オン(シングルバッファ)にすると、レイテンシは1ブロック減らせるがマシン
-// パワーがないと HW 再生が途切れる(かもしれない、速ければへーきへーき?)。
-// オフ(ダブるバッファ)にすると、レイテンシは1ブロック増えるが HW 再生が
-// 途切れることはなくなる。
-//#define AUDIO_HW_SINGLE_BUFFER
-
-// C の実装定義動作を使用する。
-#define AUDIO_USE_C_IMPLEMENTATION_DEFINED_BEHAVIOR
 
 // サポートする最大/最小周波数。
 // 最小は、実用的に意味があるかはともかく 4kHz 未満をセットできる骨董品も
