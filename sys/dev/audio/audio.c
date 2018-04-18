@@ -2,19 +2,21 @@
 // C++ style comment is unformal comment (that is, comment for comment).
 
 // TODO:
-// x PLAY(_SYNC) モードがいまいち?
+// x Tune up PLAY(_SYNC) mode?
 // x Restore mmap
-// x NetBSD8 like な mixer でのトラックボリューム?
-// x software master volume の設定インタフェース (mixerctl?)
+// x Restore NetBSD8-like track volume control on mixerctl?
+// x interface for software master volume? (mixerctl?)
+// x Restore spkr* at audio?
+// x Restore pad(4)
 // x rsel/wsel はトラックごとに分けなくてよいか
 //   今のままでも動作はしているが
 // x sih_rd はトラックごとに分けなくてよいか
 //   今のままでも動作はしているが
-// x audio_file_t のもっといい名前
+// x better name for audio_file_t ?
+// x better name for audio_filter_* ?
 // x audio_track_t の各 stage 実体をポインタにするか
 // x トラックミキサでオーバーフローする場合の処理はあれでいいか
 //   今は自動的にマスターボリュームを下げている。そして下げっぱなし。
-// x Restore spkr* at audio?
 
 /*
  * Locking: there are two locks.
