@@ -1,36 +1,37 @@
 #pragma once
 
-// フォーマットがおおむね有効かどうかを返します。
-static inline bool
-audio_format2_is_valid(const audio_format2_t *fmt)
+#ifdef DIAGNOSTIC
+#define DIAGNOSTIC_format2(fmt)	audio_diagnostic_format2(__func__, (fmt))
+#else
+#define DIAGNOSTIC_format2(fmt)
+#endif
+
+#ifdef DIAGNOSTIC
+static void audio_diagnostic_format2(const char *, const audio_format2_t *);
+static void
+audio_diagnostic_format2(const char *func, const audio_format2_t *fmt)
 {
-	KASSERT(fmt);
+
+	KASSERTMSG(fmt, "%s: fmt == NULL", func);
 
 	// XXX:この条件どうするか検討 (MSM6258)
 	if (fmt->encoding == AUDIO_ENCODING_ADPCM) {
-		if (fmt->stride != 4) {
-			printf("%s: fmt->stride=%d\n", __func__, fmt->stride);
-			return false;
-		}
+		KASSERTMSG(fmt->stride == 4,
+		    "%s: stride(%d) is invalid", func, fmt->stride);
 	} else {
-		if ((fmt->stride % NBBY) != 0) {
-			printf("%s: fmt->stride=%d\n", __func__, fmt->stride);
-			return false;
-		}
+		KASSERTMSG(fmt->stride % NBBY == 0,
+		    "%s: stride(%d) is invalid", func, fmt->stride);
 	}
-	if (fmt->precision > fmt->stride) {
-		printf("%s: fmt->precision(%d) <= fmt->stride(%d)\n",
-		    __func__, fmt->precision, fmt->stride);
-		return false;
-	}
-	if (fmt->channels < 1 || fmt->channels > AUDIO_MAX_CHANNELS) {
-		printf("%s: fmt->channels=%d\n", __func__, fmt->channels);
-		return false;
-	}
+	KASSERTMSG(fmt->precision <= fmt->stride,
+	    "%s: precision(%d) <= stride(%d)",
+	    func, fmt->precision, fmt->stride);
+	KASSERTMSG(1 <= fmt->channels && fmt->channels <= AUDIO_MAX_CHANNELS,
+	    "%s: channels(%d) is out of range",
+	    func, fmt->channels);
 
-	/* XXX: NO CHECK FOR ENCODING */
-	return true;
+	/* XXX: No check for encoding */
 }
+#endif
 
 /*
  * Return true if 'fmt' is the internal format.
@@ -39,8 +40,9 @@ audio_format2_is_valid(const audio_format2_t *fmt)
 static inline bool
 audio_format2_is_internal(const audio_format2_t *fmt)
 {
-	if (!audio_format2_is_valid(fmt))
-		return false;
+
+	DIAGNOSTIC_format2(fmt);
+
 	if (fmt->encoding != AUDIO_ENCODING_SLINEAR_NE)
 		return false;
 	if (fmt->precision != AUDIO_INTERNAL_BITS)

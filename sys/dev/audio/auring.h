@@ -13,8 +13,7 @@ audio_diagnostic_ring(const char *func, const audio_ring_t *ring)
 {
 
 	KASSERTMSG(ring, "%s: ring == NULL", func);
-	KASSERTMSG(audio_format2_is_valid(&ring->fmt),
-	    "%s: audio_format2_is_valid(&ring->fmt) failed", func);
+	DIAGNOSTIC_format2(&ring->fmt);
 	KASSERTMSG(0 <= ring->capacity && ring->capacity < INT_MAX / 2,
 	    "%s: capacity(%d) is out of range", func, ring->capacity);
 	KASSERTMSG(0 <= ring->used && ring->used <= ring->capacity,

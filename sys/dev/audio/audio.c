@@ -3554,15 +3554,8 @@ audio_filter_arg_is_valid(const audio_filter_arg_t *arg)
 	KASSERT(arg != NULL);
 	KASSERT(arg->src != NULL);
 	KASSERT(arg->dst != NULL);
-
-	if (!audio_format2_is_valid(arg->srcfmt)) {
-		printf("%s: invalid srcfmt\n", __func__);
-		return false;
-	}
-	if (!audio_format2_is_valid(arg->dstfmt)) {
-		printf("%s: invalid dstfmt\n", __func__);
-		return false;
-	}
+	DIAGNOSTIC_format2(arg->srcfmt);
+	DIAGNOSTIC_format2(arg->dstfmt);
 	if (arg->count <= 0) {
 		printf("%s: count(%d) < 0\n", __func__, arg->count);
 		return false;
