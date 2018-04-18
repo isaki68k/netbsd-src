@@ -10,7 +10,6 @@
 
 #include <dev/audio_if.h>
 #include <dev/auconv.h>
-
 #include <dev/audio/aufilter.h>
 #else
 #include <stdint.h>
@@ -276,5 +275,11 @@ struct audio_softc {
 };
 
 extern bool is_valid_filter_arg(const audio_filter_arg_t *);
+
+#if defined(_KERNEL)
+#include <dev/audio/auformat.h>
+#else
+#include "auformat.h"
+#endif
 
 #endif /* _SYS_DEV_AUDIOVAR2_H_ */

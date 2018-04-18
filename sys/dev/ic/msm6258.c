@@ -42,9 +42,6 @@ __KERNEL_RCSID(0, "$NetBSD: msm6258.c,v 1.24 2017/09/02 12:57:35 isaki Exp $");
 #include <dev/audiovar.h>
 #include <dev/ic/msm6258var.h>
 
-#include <dev/audio/auring.h>
-#include <dev/audio/auformat.h>
-
 static inline uint8_t	pcm2adpcm_step(struct msm6258_codecvar *, int16_t);
 static inline int16_t	adpcm2pcm_step(struct msm6258_codecvar *, uint8_t);
 
