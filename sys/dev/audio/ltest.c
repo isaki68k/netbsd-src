@@ -13,6 +13,7 @@
 #include <unistd.h>
 
 #include "audiovar.h"
+#include "audiodef.h"
 #include "aucodec.c"
 #include "mulaw.c"
 #include "netbsd/compat.c"

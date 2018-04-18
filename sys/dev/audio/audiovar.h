@@ -309,12 +309,6 @@ struct audio_softc {
 	u_int	sc_lastgain;
 };
 
-#if defined(_KERNEL)
-#include <dev/audio/auring.h>
-#else
-#include "auring.h"
-#endif
-
 extern bool is_valid_filter_arg(const audio_filter_arg_t *);
 
 #endif /* _SYS_DEV_AUDIOVAR2_H_ */

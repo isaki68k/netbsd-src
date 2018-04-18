@@ -11,6 +11,7 @@
 #include "userland.h"		/* required by audioio.h */
 #include <sys/audioio.h>	/* required by audiovar.h */
 #include "audiovar.h"
+#include "audiodef.h"
 #include "aucodec.c"
 #include "mulaw.c"
 

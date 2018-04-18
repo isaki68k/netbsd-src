@@ -6,6 +6,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <sys/systm.h>
 #include <sys/device.h>
 #include <dev/audio/audiovar.h>
+#include <dev/audio/audiodef.h>
 #include <dev/audio/mulaw.h>
 #else
 #include <stdint.h>
