@@ -3,15 +3,24 @@
 
 // TODO:
 // x Tune up PLAY(_SYNC) mode?
-// x Restore mmap
+// x Restore mmap.
 // x Restore NetBSD8-like track volume control on mixerctl?
 // x interface for software master volume? (mixerctl?)
-// x Restore NetBSD8-like multiuser mode
+// x Restore NetBSD8-like multiuser mode.
 // x Restore spkr* at audio?
-// x Restore pad(4)
-// x Restore alow
+// x Restore pad(4).
+// x Restore alow.
+// x Restore(?) suspend/resume.
+// x Support all MD drivers.
+//   Only auich/hdafg/eap/uaudio/vs are supported for now.
 // x Support linear_LE/BE conversion for MD codec.
 // x Support tc/bba.c (mulaw with 32bit stride)
+// x No idea about channel mapping.
+// x Documents (even in Japanese).
+// x Documents (in English).
+// x Purge all C++ style comments.
+// x Reconsideration about sc_lock?
+//   Many syscalls may no longer require a device lock?
 // x rsel/wsel はトラックごとに分けなくてよいか
 //   今のままでも動作はしているが
 // x sih_rd はトラックごとに分けなくてよいか
@@ -844,6 +853,7 @@ audioattach(device_t parent, device_t self, void *aux)
 			CTL_HW, node->sysctl_num, CTL_CREATE, CTL_EOL);
 
 #if 1
+		// XXX adhoc debug info (should be removed)
 		// デバッグ用のビルドオプション表示
 		make_buildinfo();
 
