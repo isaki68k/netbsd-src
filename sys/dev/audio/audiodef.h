@@ -293,8 +293,7 @@ audio_ring_tailptr(audio_ring_t *ring)
 static inline int
 audio_ring_bytelen(const audio_ring_t *ring)
 {
-	// return frametobyte(ring, ring->capacity)
-	return ring->capacity * ring->fmt.channels * ring->fmt.stride / NBBY;
+	return frametobyte(&ring->fmt, ring->capacity);
 }
 
 // ring->head から n 個取り出したことにします。
