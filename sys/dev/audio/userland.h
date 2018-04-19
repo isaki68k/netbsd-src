@@ -449,7 +449,6 @@ kmem_free(void *p, size_t size)
 }
 
 void aprint_error_dev(device_t, const char *fmt, ...);
-
 void aprint_normal_dev(device_t, const char *fmt, ...);
 
 static inline uint32_t
@@ -574,6 +573,7 @@ enum devact { DUMMY };
 typedef struct { } modcmd_t;
 struct tty { };
 #define CFATTACH_DECL3_NEW(a, b, c,d,e,f,g,h,i)
+#define aprint_error(fmt...)	printf(fmt)
 #define aprint_normal(fmt...)	printf(fmt)
 #define aprint_naive(fmt...)	printf(fmt)
 #define vdevgone(a,b,c,d)
@@ -646,7 +646,7 @@ void	fnullop_restart(struct file *);
 extern struct audio_softc local_sc;	/* audio_dev.c */
 #define device_lookup_private(a,b) &local_sc
 #define DVA_SYSTEM	0
-#define device_active(a, b)
+#define device_active(a, b)	do { } while (0)
 
 /* <sys/error.h> */
 #define EMOVEFD	-6
@@ -676,7 +676,7 @@ typedef struct proc {
 } proc_t;
 extern kmutex_t *proc_lock;
 #define proc_find(a)	NULL
-#define psignal(a, b)
+#define psignal(a, b)	do { } while (0)
 
 /* <sys/select.h> */
 #define selinit(a)

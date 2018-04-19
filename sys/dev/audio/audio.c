@@ -7412,7 +7412,7 @@ audio_diagnostic_filter_arg(const char *func, const audio_filter_arg_t *arg)
 	    "%s: count(%d) is out of range", func, arg->count);
 }
 
-static void
+void
 audio_diagnostic_ring(const char *func, const audio_ring_t *ring)
 {
 

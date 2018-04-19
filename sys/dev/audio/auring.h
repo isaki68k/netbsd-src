@@ -2,7 +2,7 @@
 
 #ifdef DIAGNOSTIC
 #define DIAGNOSTIC_ring(ring)	audio_diagnostic_ring(__func__, (ring))
-static void audio_diagnostic_ring(const char *, const audio_ring_t *);
+extern void audio_diagnostic_ring(const char *, const audio_ring_t *);
 #else
 #define DIAGNOSTIC_ring(ring)
 #endif

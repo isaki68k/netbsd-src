@@ -12,13 +12,17 @@
 #include <string.h>
 #include <unistd.h>
 
-#define DIAGNOSTIC 1
-
+#include "userland.h"		/* required by audioio.h */
+#include <sys/audioio.h>	/* required by audiovar.h */
 #include "audiovar.h"
 #include "audiodef.h"
 #include "aucodec.c"
 #include "mulaw.c"
+#include "audio.c"
+#include "userland.c"
 #include "netbsd/compat.c"
+/* XXX うーん */
+struct audio_softc local_sc;
 
 struct testtable {
 	const char *name;
@@ -194,70 +198,6 @@ void xp_ne(int line, int exp, int act, const char *varname)
 	if (exp == act)
 		xp_fail(line, "%s expects != %d but %d", varname, exp, act);
 }
-
-// こいつらは audio.c 内にあって、そのためだけにリンクするのもつらいので
-// コピーして持っておく。なんだかなあ。
-#ifdef DIAGNOSTIC
-void
-audio_diagnostic_format2(const char *func, const audio_format2_t *fmt)
-{
-
-	KASSERTMSG(fmt, "%s: fmt == NULL", func);
-
-	// XXX:この条件どうするか検討 (MSM6258)
-	if (fmt->encoding == AUDIO_ENCODING_ADPCM) {
-		KASSERTMSG(fmt->stride == 4,
-		    "%s: stride(%d) is invalid", func, fmt->stride);
-	} else {
-		KASSERTMSG(fmt->stride % NBBY == 0,
-		    "%s: stride(%d) is invalid", func, fmt->stride);
-	}
-	KASSERTMSG(fmt->precision <= fmt->stride,
-	    "%s: precision(%d) <= stride(%d)",
-	    func, fmt->precision, fmt->stride);
-	KASSERTMSG(1 <= fmt->channels && fmt->channels <= AUDIO_MAX_CHANNELS,
-	    "%s: channels(%d) is out of range",
-	    func, fmt->channels);
-
-	/* XXX: No check for encoding */
-}
-
-void
-audio_diagnostic_filter_arg(const char *func, const audio_filter_arg_t *arg)
-{
-
-	KASSERT(arg != NULL);
-	KASSERT(arg->src != NULL);
-	KASSERT(arg->dst != NULL);
-	DIAGNOSTIC_format2(arg->srcfmt);
-	DIAGNOSTIC_format2(arg->dstfmt);
-	KASSERTMSG(arg->count > 0,
-	    "%s: count(%d) is out of range", func, arg->count);
-}
-
-void
-audio_diagnostic_ring(const char *func, const audio_ring_t *ring)
-{
-
-	KASSERTMSG(ring, "%s: ring == NULL", func);
-	DIAGNOSTIC_format2(&ring->fmt);
-	KASSERTMSG(0 <= ring->capacity && ring->capacity < INT_MAX / 2,
-	    "%s: capacity(%d) is out of range", func, ring->capacity);
-	KASSERTMSG(0 <= ring->used && ring->used <= ring->capacity,
-	    "%s: used(%d) is out of range (capacity:%d)",
-	    func, ring->used, ring->capacity);
-	if (ring->capacity == 0) {
-		KASSERTMSG(ring->mem == NULL,
-		    "%s: capacity == 0 but mem != NULL", func);
-	} else {
-		KASSERTMSG(ring->mem != NULL,
-		    "%s: capacity != 0 but mem == NULL", func);
-		KASSERTMSG(0 <= ring->head && ring->head < ring->capacity,
-		    "%s: head(%d) is out of range (capacity:%d)",
-		    func, ring->head, ring->capacity);
-	}
-}
-#endif /* DIAGNOSTIC */
 
 bool
 enc_is_LE(int enc)

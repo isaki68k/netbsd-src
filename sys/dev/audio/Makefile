@@ -13,6 +13,8 @@ CPPFLAGS.amd64= \
 	-mno-mmx \
 	-mno-sse \
 	-mno-avx \
+	-fstack-protector \
+	-Wstack-protector \
 
 CPPFLAGS.x68k= \
 	-m68020-60 \
@@ -26,8 +28,6 @@ CPPFLAGS.ltest=	-I. -Inetbsd \
 	-fno-zero-initialized-in-bss \
 	-O2 \
 	-fno-omit-frame-pointer \
-	-fstack-protector \
-	-Wstack-protector \
 	--param ssp-buffer-size=1 \
 	-fno-strict-aliasing \
 	-fno-common \
@@ -46,7 +46,14 @@ CPPFLAGS.ltest=	-I. -Inetbsd \
 	-Wextra \
 	-Wno-unused-parameter \
 	-Wno-sign-compare \
+	-DNAUDIO=1 \
 	-DAUDIO2 \
+	-DDIAGNOSTIC=1 \
+	-Wno-format-zero-length \
+	-Wno-unused-function \
+	-Wno-unused-variable \
+	-Wno-unused-but-set-variable \
+	-Wno-missing-field-initializers \
 
 # テストコードにはきつすぎる
 #	-Wmissing-prototypes \
