@@ -1,6 +1,9 @@
 #ifndef _SYS_DEV_AUDIO_AUDIODEF_H_
 #define _SYS_DEV_AUDIO_AUDIODEF_H_
 
+// audiodef.h: audio.c からのみ include されるヘッダ
+// ヘッダである意味はないような気もするけど、とりあえず
+
 // 出力バッファのブロック数
 /* Number of output buffer's blocks.  Must be != NBLKHW */
 #define NBLKOUT	(4)
