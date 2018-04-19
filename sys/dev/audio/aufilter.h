@@ -26,14 +26,17 @@ typedef uint64_t auint2_t;
 #error Invalid AUDIO_INTERNAL_BITS
 #endif
 
-/* format */
+/*
+ * audio format.
+ *
+ * precision <= stride always holds.
+ */
 typedef struct {
-	int32_t  encoding;		/* AUDIO_ENCODING */
-	uint32_t sample_rate;		/* Hz */
-	uint8_t  channels;		/* 1.. */
-	uint8_t  precision;		/* ex.24 (valid bits of sample,
-					   must precision <= stride) */
-	uint8_t  stride;		/* ex.32 (packing bits of sample) */
+	u_int	sample_rate;	/* sample rate in Hz */
+	u_int	encoding;	/* AUDIO_ENCODING_* */
+	u_int	stride;		/* container bits of sample */
+	u_int	precision;	/* valid bits of sample */
+	u_int	channels;	/* 1..AUDIO_MAX_CHANNELS */
 } audio_format2_t;
 
 // フィルタに渡されるパラメータ一式です。

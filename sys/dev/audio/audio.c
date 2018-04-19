@@ -488,6 +488,7 @@ format2_to_params(const audio_format2_t *f2)
 {
 	audio_params_t p;
 
+	/* Although audio_format2 and audio_params are compatible. */
 	p.sample_rate = f2->sample_rate;
 	p.channels = f2->channels;
 	p.encoding = f2->encoding;
@@ -501,6 +502,7 @@ params_to_format2(const struct audio_params *p)
 {
 	audio_format2_t f2;
 
+	/* Although audio_format2 and audio_params are compatible. */
 	f2.sample_rate = p->sample_rate;
 	f2.channels    = p->channels;
 	f2.encoding    = p->encoding;
