@@ -270,6 +270,7 @@ struct audio_track_debugbuf {
 static void
 audio_track_bufstat(audio_track_t *track, struct audio_track_debugbuf *buf)
 {
+
 	memset(buf, 0, sizeof(*buf));
 
 	snprintf(buf->outbuf, sizeof(buf->outbuf), " out=%d/%d/%d",
@@ -515,6 +516,7 @@ params_to_format2(const struct audio_params *p)
 static inline bool
 audio_track_is_playback(const audio_track_t *track)
 {
+
 	return ((track->mode & AUMODE_PLAY) != 0);
 }
 
@@ -522,6 +524,7 @@ audio_track_is_playback(const audio_track_t *track)
 static inline bool
 audio_track_is_record(const audio_track_t *track)
 {
+
 	return ((track->mode & AUMODE_RECORD) != 0);
 }
 
@@ -533,6 +536,7 @@ audio_track_is_record(const audio_track_t *track)
 static inline u_int
 audio_volume_to_inner(u_int v)
 {
+
 	return v < 127 ? v : v + 1;
 }
 
@@ -541,6 +545,7 @@ audio_volume_to_inner(u_int v)
 static inline u_int
 audio_volume_to_outer(u_int v)
 {
+
 	return v < 127 ? v : v - 1;
 }
 #endif // 0
@@ -1285,6 +1290,7 @@ audio_enter(dev_t dev, struct audio_softc **scp)
 static void
 audio_exit(struct audio_softc *sc)
 {
+
 	mutex_exit(sc->sc_lock);
 }
 
@@ -2918,6 +2924,7 @@ audioctl_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 static void *
 audio_realloc(void *memblock, size_t bytes)
 {
+
 	if (memblock != NULL) {
 		if (bytes != 0) {
 			return kern_realloc(memblock, bytes, M_NOWAIT);
@@ -3543,6 +3550,7 @@ audio_track_init(struct audio_softc *sc, audio_track_t **trackp, int mode)
 static void
 audio_track_destroy(audio_track_t *track)
 {
+
 	// 関数仕様を track は NULL 許容にしてもいいけど、これを呼ぶところは
 	// たいてい track が NULL でないと分かっていて呼んでるはずなので
 	// ASSERT のほうがよかろう。
@@ -5490,6 +5498,7 @@ audio_pintr(void *arg)
 static void
 audio_rmixer_start(struct audio_softc *sc)
 {
+
 	KASSERT(mutex_owned(sc->sc_lock));
 
 	// すでに再生ミキサが起動していたら、true を返す
@@ -6115,6 +6124,7 @@ audio_select_freq(const struct audio_format *fmt)
 static int
 audio_hw_config_fmt(struct audio_softc *sc, audio_format2_t *cand, int mode)
 {
+
 	// 分かりやすさのため、しばらくどっち使ったか表示しとく
 	if (sc->hw_if->query_format) {
 		aprint_normal_dev(sc->dev, "use new query_format method\n");
@@ -7219,6 +7229,7 @@ audio_get_props(struct audio_softc *sc)
 static bool
 audio_can_playback(struct audio_softc *sc)
 {
+
 	return (sc->sc_pmixer != NULL);
 }
 
@@ -7229,6 +7240,7 @@ audio_can_playback(struct audio_softc *sc)
 static bool
 audio_can_capture(struct audio_softc *sc)
 {
+
 	return (sc->sc_rmixer != NULL);
 }
 
@@ -8141,6 +8153,7 @@ unitscopy(mixer_devinfo_t *di, const char *name)
 static int
 audio_query_devinfo(struct audio_softc *sc, mixer_devinfo_t *di)
 {
+
 	KASSERT(mutex_owned(sc->sc_lock));
 
 	if (sc->sc_static_nmixer_states == 0 || sc->sc_nmixer_states == 0)
