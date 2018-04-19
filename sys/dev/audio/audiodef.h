@@ -1,3 +1,4 @@
+// vi:set ts=8:
 #ifndef _SYS_DEV_AUDIO_AUDIODEF_H_
 #define _SYS_DEV_AUDIO_AUDIODEF_H_
 
