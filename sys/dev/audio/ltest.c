@@ -806,7 +806,7 @@ signal_abort(int signo)
 }
 
 void
-test_audio_ring_round()
+test_auring_round()
 {
 	struct {
 		int idx;
@@ -823,7 +823,7 @@ test_audio_ring_round()
 	};
 	audio_ring_t *ring = ring_init(3);
 
-	TEST("audio_ring_round");
+	TEST("auring_round");
 	signal(SIGABRT, signal_abort);
 
 	for (int i = 0; i < __arraycount(table); i++) {
@@ -832,14 +832,14 @@ test_audio_ring_round()
 
 		if (exp >= 0) {
 			// 正常なケース
-			int act = audio_ring_round(ring, idx);
+			int act = auring_round(ring, idx);
 			XP_EQ(exp, act);
 		} else {
 			// KASSERT になるケース
 			panic_msgout = 0;
 			int aborted = setjmp(jmp);
 			if (aborted == 0) {
-				audio_ring_round(ring, idx);
+				auring_round(ring, idx);
 			}
 			panic_msgout = 1;
 			XP_EQ(1, aborted);
@@ -851,7 +851,7 @@ test_audio_ring_round()
 }
 
 void
-test_audio_ring_tail()
+test_auring_tail()
 {
 	struct {
 		int head;
@@ -873,7 +873,7 @@ test_audio_ring_tail()
 	};
 	audio_ring_t *ring = ring_init(3);
 
-	TEST("audio_ring_tail");
+	TEST("auring_tail");
 	for (int i = 0; i < __arraycount(table); i++) {
 		int head = table[i].head;
 		int used = table[i].used;
@@ -881,7 +881,7 @@ test_audio_ring_tail()
 
 		ring->head = head;
 		ring->used = used;
-		int act = audio_ring_tail(ring);
+		int act = auring_tail(ring);
 		XP_EQ(exp, act);
 	}
 
@@ -889,18 +889,18 @@ test_audio_ring_tail()
 }
 
 void
-test_audio_ring_headptr_aint()
+test_auring_headptr_aint()
 {
 	int capacity = 3;
 	audio_ring_t *ring = ring_init_aint(capacity);
 
-	TEST("audio_ring_headptr_aint");
+	TEST("auring_headptr_aint");
 	for (int i = 0; i < capacity; i++) {
 		int head = i;
 		int exp = i * ring->fmt.channels * ring->fmt.stride / NBBY;
 
 		ring->head = head;
-		void *act = audio_ring_headptr_aint(ring);
+		void *act = auring_headptr_aint(ring);
 		XP_EQ(exp, (int)((uint8_t *)act - (uint8_t *)ring->mem));
 	}
 
@@ -908,18 +908,18 @@ test_audio_ring_headptr_aint()
 }
 
 void
-test_audio_ring_tailptr_aint()
+test_auring_tailptr_aint()
 {
 	int capacity = 3;
 	audio_ring_t *ring = ring_init_aint(capacity);
 
-	TEST("audio_ring_tailptr_aint");
+	TEST("auring_tailptr_aint");
 	for (int i = 0; i < capacity; i++) {
 		int used = i;
 		int exp = i * ring->fmt.channels * ring->fmt.stride / NBBY;
 
 		ring->used = used;
-		void *act = audio_ring_tailptr_aint(ring);
+		void *act = auring_tailptr_aint(ring);
 		XP_EQ(exp, (int)((uint8_t *)act - (uint8_t *)ring->mem));
 	}
 
@@ -927,18 +927,18 @@ test_audio_ring_tailptr_aint()
 }
 
 void
-test_audio_ring_headptr()
+test_auring_headptr()
 {
 	int capacity = 3;
 	audio_ring_t *ring = ring_init(capacity);
 
-	TEST("audio_ring_headptr");
+	TEST("auring_headptr");
 	for (int i = 0; i < capacity; i++) {
 		int head = i;
 		int exp = i * ring->fmt.channels * ring->fmt.stride / NBBY;
 
 		ring->head = head;
-		void *act = audio_ring_headptr(ring);
+		void *act = auring_headptr(ring);
 		XP_EQ(exp, (int)((uint8_t *)act - (uint8_t *)ring->mem));
 	}
 
@@ -946,18 +946,18 @@ test_audio_ring_headptr()
 }
 
 void
-test_audio_ring_tailptr()
+test_auring_tailptr()
 {
 	int capacity = 3;
 	audio_ring_t *ring = ring_init(capacity);
 
-	TEST("audio_ring_tailptr");
+	TEST("auring_tailptr");
 	for (int i = 0; i < capacity; i++) {
 		int used = i;
 		int exp = i * ring->fmt.channels * ring->fmt.stride / NBBY;
 
 		ring->used = used;
-		void *act = audio_ring_tailptr(ring);
+		void *act = auring_tailptr(ring);
 		XP_EQ(exp, (int)((uint8_t *)act - (uint8_t *)ring->mem));
 	}
 
@@ -965,27 +965,27 @@ test_audio_ring_tailptr()
 }
 
 void
-test_audio_ring_bytelen()
+test_auring_bytelen()
 {
-	TEST("audio_ring_bytelen");
+	TEST("auring_bytelen");
 
 	for (int i = 1; i < 3; i++) {
 		audio_ring_t *ring = ring_init(i);
 		int exp = ring->capacity * ring->fmt.channels * ring->fmt.stride / NBBY;
-		XP_EQ(exp, audio_ring_bytelen(ring));
+		XP_EQ(exp, auring_bytelen(ring));
 		ring_free(ring);
 	}
 
 	for (int i = 1; i < 3; i++) {
 		audio_ring_t *ring = ring_init_aint(i);
 		int exp = ring->capacity * ring->fmt.channels * ring->fmt.stride / NBBY;
-		XP_EQ(exp, audio_ring_bytelen(ring));
+		XP_EQ(exp, auring_bytelen(ring));
 		ring_free(ring);
 	}
 }
 
 void
-test_audio_ring_take()
+test_auring_take()
 {
 	struct {
 		int head;
@@ -1051,7 +1051,7 @@ test_audio_ring_take()
 	};
 	audio_ring_t *ring = ring_init(3);
 
-	TEST("audio_ring_take");
+	TEST("auring_take");
 	signal(SIGABRT, signal_abort);
 
 	for (int i = 0; i < __arraycount(table); i++) {
@@ -1061,14 +1061,14 @@ test_audio_ring_take()
 		bool result = table[i].result;
 		int exphead = table[i].exphead;
 		int expused = table[i].expused;
-		//TEST("audio_ring_take(%d,%d,%d)", head, used, take);
+		//TEST("auring_take(%d,%d,%d)", head, used, take);
 
 		ring->head = head;
 		ring->used = used;
 
 		if (result) {
 			// 正常なケース
-			audio_ring_take(ring, take);
+			auring_take(ring, take);
 			XP_EQ(exphead, ring->head);
 			XP_EQ(expused, ring->used);
 		} else {
@@ -1076,7 +1076,7 @@ test_audio_ring_take()
 			panic_msgout = 0;
 			int aborted = setjmp(jmp);
 			if (aborted == 0) {
-				audio_ring_take(ring, take);
+				auring_take(ring, take);
 			}
 			panic_msgout = 1;
 			XP_EQ(1, aborted);
@@ -1088,7 +1088,7 @@ test_audio_ring_take()
 }
 
 void
-test_audio_ring_push()
+test_auring_push()
 {
 	struct {
 		int head;
@@ -1154,7 +1154,7 @@ test_audio_ring_push()
 	};
 	audio_ring_t *ring = ring_init(3);
 
-	TEST("audio_ring_push");
+	TEST("auring_push");
 	signal(SIGABRT, signal_abort);
 
 	for (int i = 0; i < __arraycount(table); i++) {
@@ -1164,14 +1164,14 @@ test_audio_ring_push()
 		bool result = table[i].result;
 		int exphead = table[i].exphead;
 		int expused = table[i].expused;
-		//TEST("audio_ring_push(%d,%d,%d)", head, used, push);
+		//TEST("auring_push(%d,%d,%d)", head, used, push);
 
 		ring->head = head;
 		ring->used = used;
 
 		if (result) {
 			// 正常なケース
-			audio_ring_push(ring, push);
+			auring_push(ring, push);
 			XP_EQ(exphead, ring->head);
 			XP_EQ(expused, ring->used);
 		} else {
@@ -1179,7 +1179,7 @@ test_audio_ring_push()
 			panic_msgout = 0;
 			int aborted = setjmp(jmp);
 			if (aborted == 0) {
-				audio_ring_push(ring, push);
+				auring_push(ring, push);
 			}
 			panic_msgout = 1;
 			XP_EQ(1, aborted);
@@ -1191,7 +1191,7 @@ test_audio_ring_push()
 }
 
 void
-test_audio_ring_get_contig_used()
+test_auring_get_contig_used()
 {
 	struct {
 		int head;
@@ -1213,23 +1213,23 @@ test_audio_ring_get_contig_used()
 	};
 	audio_ring_t *ring = ring_init(3);
 
-	TEST("audio_ring_get_contig_used");
+	TEST("auring_get_contig_used");
 	for (int i = 0; i < __arraycount(table); i++) {
 		int head = table[i].head;
 		int used = table[i].used;
 		int exp = table[i].exp;
-		//TEST("audio_ring_get_contig_used(%d,%d)", head, used);
+		//TEST("auring_get_contig_used(%d,%d)", head, used);
 
 		ring->head = head;
 		ring->used = used;
-		XP_EQ(exp, audio_ring_get_contig_used(ring));
+		XP_EQ(exp, auring_get_contig_used(ring));
 	}
 
 	ring_free(ring);
 }
 
 void
-test_audio_ring_get_contig_free()
+test_auring_get_contig_free()
 {
 	struct {
 		int head;
@@ -1251,16 +1251,16 @@ test_audio_ring_get_contig_free()
 	};
 	audio_ring_t *ring = ring_init(3);
 
-	TEST("audio_ring_get_contig_free");
+	TEST("auring_get_contig_free");
 	for (int i = 0; i < __arraycount(table); i++) {
 		int head = table[i].head;
 		int used = table[i].used;
 		int exp = table[i].exp;
-		//TEST("audio_ring_get_contig_free(%d,%d)", head, used);
+		//TEST("auring_get_contig_free(%d,%d)", head, used);
 
 		ring->head = head;
 		ring->used = used;
-		XP_EQ(exp, audio_ring_get_contig_free(ring));
+		XP_EQ(exp, auring_get_contig_free(ring));
 	}
 
 	ring_free(ring);
@@ -1279,16 +1279,16 @@ struct testtable testtable[] = {
 	DEF(audio_internal_to_linear32),
 	DEF(audio_mulaw_to_internal),
 	DEF(audio_internal_to_mulaw),
-	DEF(audio_ring_round),
-	DEF(audio_ring_tail),
-	DEF(audio_ring_headptr_aint),
-	DEF(audio_ring_tailptr_aint),
-	DEF(audio_ring_headptr),
-	DEF(audio_ring_tailptr),
-	DEF(audio_ring_bytelen),
-	DEF(audio_ring_take),
-	DEF(audio_ring_push),
-	DEF(audio_ring_get_contig_used),
-	DEF(audio_ring_get_contig_free),
+	DEF(auring_round),
+	DEF(auring_tail),
+	DEF(auring_headptr_aint),
+	DEF(auring_tailptr_aint),
+	DEF(auring_headptr),
+	DEF(auring_tailptr),
+	DEF(auring_bytelen),
+	DEF(auring_take),
+	DEF(auring_push),
+	DEF(auring_get_contig_used),
+	DEF(auring_get_contig_free),
 	{ NULL, NULL },
 };

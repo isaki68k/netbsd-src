@@ -204,7 +204,7 @@ frame_per_block(const audio_trackmixer_t *mixer, const audio_format2_t *fmt)
  * This is a private function.
  */
 static inline int
-audio_ring_round(const audio_ring_t *ring, int idx)
+auring_round(const audio_ring_t *ring, int idx)
 {
 	DIAGNOSTIC_ring(ring);
 	KASSERT(idx >= 0);
@@ -223,9 +223,9 @@ audio_ring_round(const audio_ring_t *ring, int idx)
  * Return ring's tail (= head + used) position.
  */
 static inline int
-audio_ring_tail(const audio_ring_t *ring)
+auring_tail(const audio_ring_t *ring)
 {
-	return audio_ring_round(ring, ring->head + ring->used);
+	return auring_round(ring, ring->head + ring->used);
 }
 
 // ring の head フレームのポインタを求めます。
@@ -235,7 +235,7 @@ audio_ring_tail(const audio_ring_t *ring)
  * the internal stride.  Don't use this for hw buffer.
  */
 static inline aint_t *
-audio_ring_headptr_aint(const audio_ring_t *ring)
+auring_headptr_aint(const audio_ring_t *ring)
 {
 	KASSERT(ring->fmt.stride == sizeof(aint_t) * NBBY);
 
@@ -251,11 +251,11 @@ audio_ring_headptr_aint(const audio_ring_t *ring)
  * the internal stride.  Don't use this for hw buffer.
  */
 static inline aint_t *
-audio_ring_tailptr_aint(const audio_ring_t *ring)
+auring_tailptr_aint(const audio_ring_t *ring)
 {
 	KASSERT(ring->fmt.stride == sizeof(aint_t) * NBBY);
 
-	return (aint_t *)ring->mem + audio_ring_tail(ring) * ring->fmt.channels;
+	return (aint_t *)ring->mem + auring_tail(ring) * ring->fmt.channels;
 }
 
 // ring の head フレームのポインタを求めます。
@@ -265,7 +265,7 @@ audio_ring_tailptr_aint(const audio_ring_t *ring)
  * or not equal to the internal stride.
  */
 static inline uint8_t *
-audio_ring_headptr(const audio_ring_t *ring)
+auring_headptr(const audio_ring_t *ring)
 {
 	return (uint8_t *)ring->mem +
 	    ring->head * ring->fmt.channels * ring->fmt.stride / NBBY;
@@ -280,10 +280,10 @@ audio_ring_headptr(const audio_ring_t *ring)
  * or not equal to the internal stride.
  */
 static inline uint8_t *
-audio_ring_tailptr(audio_ring_t *ring)
+auring_tailptr(audio_ring_t *ring)
 {
 	return (uint8_t *)ring->mem +
-	    audio_ring_tail(ring) * ring->fmt.channels * ring->fmt.stride / NBBY;
+	    auring_tail(ring) * ring->fmt.channels * ring->fmt.stride / NBBY;
 }
 
 // キャパシティをバイト単位で求めます。
@@ -291,7 +291,7 @@ audio_ring_tailptr(audio_ring_t *ring)
  * Return ring's capacity in bytes.
  */
 static inline int
-audio_ring_bytelen(const audio_ring_t *ring)
+auring_bytelen(const audio_ring_t *ring)
 {
 	return frametobyte(&ring->fmt, ring->capacity);
 }
@@ -303,14 +303,14 @@ audio_ring_bytelen(const audio_ring_t *ring)
  * actual buffer data.
  */
 static inline void
-audio_ring_take(audio_ring_t *ring, int n)
+auring_take(audio_ring_t *ring, int n)
 {
 	DIAGNOSTIC_ring(ring);
 	KASSERTMSG(n >= 0, "%s: n=%d", __func__, n);
 	KASSERTMSG(ring->used >= n, "%s: ring->used=%d n=%d",
 	    __func__, ring->used, n);
 
-	ring->head = audio_ring_round(ring, ring->head + n);
+	ring->head = auring_round(ring, ring->head + n);
 	ring->used -= n;
 }
 
@@ -321,7 +321,7 @@ audio_ring_take(audio_ring_t *ring, int n)
  * actual buffer data.
  */
 static inline void
-audio_ring_push(audio_ring_t *ring, int n)
+auring_push(audio_ring_t *ring, int n)
 {
 	DIAGNOSTIC_ring(ring);
 	KASSERT(n >= 0);
@@ -338,7 +338,7 @@ audio_ring_push(audio_ring_t *ring, int n)
  * Return the number of contiguous frames in used.
  */
 static inline int
-audio_ring_get_contig_used(const audio_ring_t *ring)
+auring_get_contig_used(const audio_ring_t *ring)
 {
 	DIAGNOSTIC_ring(ring);
 
@@ -349,13 +349,13 @@ audio_ring_get_contig_used(const audio_ring_t *ring)
 	}
 }
 
-// audio_ring_tail の位置から空きフレームにアクセスしようとするとき、
+// auring_tail の位置から空きフレームにアクセスしようとするとき、
 // ラウンディングせずにアクセス出来る、空きフレームの個数を返します。
 /*
  * Return the number of contiguous free frames.
  */
 static inline int
-audio_ring_get_contig_free(const audio_ring_t *ring)
+auring_get_contig_free(const audio_ring_t *ring)
 {
 	DIAGNOSTIC_ring(ring);
 

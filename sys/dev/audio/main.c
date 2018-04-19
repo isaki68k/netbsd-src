@@ -309,8 +309,8 @@ child_loop(struct test_file *f, int loop)
 	// フレーム数をバイト数に
 	int bytes = frames * f->mem.fmt.channels * f->mem.fmt.stride / 8;
 
-	sys_write(f->file, audio_ring_headptr(&f->mem), bytes);
-	audio_ring_take(&f->mem, frames);
+	sys_write(f->file, auring_headptr(&f->mem), bytes);
+	auring_take(&f->mem, frames);
 
 	if (frames < frames_per_block) {
 		// 最後
