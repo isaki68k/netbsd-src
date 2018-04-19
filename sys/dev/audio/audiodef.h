@@ -38,6 +38,139 @@
 // C の実装定義動作を使用する。
 #define AUDIO_USE_C_IMPLEMENTATION_DEFINED_BEHAVIOR
 
+/* conversion stage */
+typedef struct {
+	audio_filter_t filter;
+	audio_filter_arg_t arg;
+	audio_ring_t *dst;
+	audio_ring_t srcbuf;
+} audio_stage_t;
+
+typedef enum {
+	AUDIO_STATE_CLEAR,	/* no data, no need to drain */
+	AUDIO_STATE_RUNNING,	/* need to drain */
+	AUDIO_STATE_DRAINING,	/* now draining */
+} audio_state_t;
+
+typedef struct audio_track {
+	// このトラックの再生/録音モード。AUMODE_*
+	// 録音トラックなら AUMODE_RECORD。
+	// 再生トラックなら AUMODE_PLAY は必ず立っている。
+	// 再生トラックで PLAY モードなら AUMODE_PLAY のみ。
+	// 再生トラックで PLAY_ALL モードなら AUMODE_PLAY | AUMODE_PLAY_ALL。
+	// file->mode は録再トラックの mode を OR したものと一致しているはず。
+	int mode;
+
+	audio_ring_t	usrbuf;		/* user i/o buffer */
+	u_int		usrbuf_blksize;	/* usrbuf block size in bytes */
+	struct uvm_object *uobj;
+	bool		mmapped;	/* device is mmap()-ed */
+	u_int		usrbuf_stamp;	/* transferred bytes from/to stage */
+	u_int		usrbuf_stamp_last; /* last stamp */
+	u_int		usrbuf_usedhigh;/* high water mark in bytes */
+	u_int		usrbuf_usedlow;	/* low water mark in bytes */
+
+	audio_format2_t	inputfmt;	/* track input format. */
+					/* userfmt for play, mixerfmt for rec */
+	audio_ring_t	*input;		/* ptr to input stage buffer */
+
+	audio_ring_t	outbuf;		/* track output buffer */
+	kcondvar_t	outchan;	// I/O ready になったことの通知用
+
+	audio_stage_t	codec;		/* encoding conversion stage */
+	audio_stage_t	chvol;		/* channel volume stage */
+	audio_stage_t	chmix;		/* channel mix stage */
+	audio_stage_t	freq;		/* frequency conversion stage */
+
+	u_int		freq_step;	// 周波数変換用、周期比
+	u_int		freq_current;	// 周波数変換用、現在のカウンタ
+	u_int		freq_leap;	// 周波数変換用、補正値
+	aint_t		freq_prev[AUDIO_MAX_CHANNELS];	// 前回値
+	aint_t		freq_curr[AUDIO_MAX_CHANNELS];	// 直近値
+
+	uint16_t ch_volume[AUDIO_MAX_CHANNELS];	/* channel volume(0..256) */
+	u_int		volume;		/* track volume (0..256) */
+
+	audio_trackmixer_t *mixer;	/* connected track mixer */
+
+	// トラックミキサが引き取ったシーケンス番号
+	uint64_t	seq;		/* seq# picked up by track mixer */
+
+	audio_state_t	pstate;		/* playback state */
+	int		playdrop;	/* current drop frames */
+	bool		is_pause;
+
+	void		*sih_wr;	/* softint cookie for write */
+
+	uint64_t	inputcounter;	/* トラックに入力されたフレーム数 */
+	uint64_t	outputcounter;	/* トラックから出力されたフレーム数 */
+	uint64_t	useriobytes;	// ユーザランド入出力されたバイト数
+	uint64_t	dropframes;	/* # of dropped frames */
+	int		eofcounter;	/* # of zero sized write */
+
+	// プロセスコンテキストが track を使用中なら true。
+	volatile bool	in_use;		/* track cooperative lock */
+
+	int		id;		/* track id for debug */
+} audio_track_t;
+
+typedef struct audio_file {
+	struct audio_softc *sc;
+
+	// ptrack, rtrack はトラックが無効なら NULL。
+	// mode に AUMODE_{PLAY,RECORD} が立っていても該当側の ptrack, rtrack
+	// が NULL という状態はありえる。例えば、上位から PLAY を指定されたが
+	// 何らかの理由で ptrack が有効に出来なかった、あるいはクローズに
+	// 向かっている最中ですでにこのトラックが解放された、とか。
+	audio_track_t	*ptrack;	/* play track (if available) */
+	audio_track_t	*rtrack;	/* record track (if available) */
+
+	// この file の再生/録音モード。AUMODE_* (PLAY_ALL も含む)
+	// ptrack.mode は (mode & (AUMODE_PLAY | AUMODE_PLAY_ALL)) と、
+	// rtrack.mode は (mode & AUMODE_RECORD) と等しいはず。
+	int		mode;
+	dev_t		dev;		// デバイスファイルへのバックリンク
+
+	pid_t		async_audio;	/* process who wants audio SIGIO */
+
+	SLIST_ENTRY(audio_file) entry;
+} audio_file_t;
+
+struct audio_trackmixer {
+	int		mode;		/* AUMODE_PLAY or AUMODE_RECORD */
+	audio_format2_t	track_fmt;	/* track <-> trackmixer format */
+
+	int		frames_per_block; /* number of frames in 1 block */
+
+	u_int		volume;		/* output SW master volume (0..256) */
+
+	audio_format2_t	mixfmt;
+	void		*mixsample;	/* wide-int-sized mixing buf */
+
+	audio_filter_t	codec;		/* MD codec */
+	audio_filter_arg_t codecarg;	/* and its argument */
+	audio_ring_t	codecbuf;	/* also used for wide->int conversion */
+
+	audio_ring_t	hwbuf;		/* HW I/O buf */
+	int		hwblks;		/* number of blocks in hwbuf */
+	kcondvar_t	draincv;	// drain 用に割り込みを通知する?
+
+	uint64_t	mixseq;		/* seq# currently being mixed */
+	uint64_t	hwseq;		/* seq# HW output completed */
+				// ハードウェア出力完了したシーケンス番号
+
+	struct audio_softc *sc;
+
+	/* initial blktime n/d = AUDIO_BLK_MS / 1000 */
+	int		blktime_n;	/* blk time numerator */
+	int		blktime_d;	/* blk time denominator */
+
+	// 以下未定
+
+	// ハードウェアが出力完了したフレーム数
+	uint64_t	hw_complete_counter;
+};
+
 /*
  * Audio Ring Buffer.
  */
