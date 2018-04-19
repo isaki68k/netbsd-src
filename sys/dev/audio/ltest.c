@@ -197,8 +197,8 @@ void xp_ne(int line, int exp, int act, const char *varname)
 
 // これだけ audio.c 内にあって、そのためだけにリンクするのもつらいので
 // コピーして持っておく。なんだかなあ。
-bool
-audio_filter_arg_is_valid(const audio_filter_arg_t *arg)
+void
+audio_diagnostic_filter_arg(const char *func, const audio_filter_arg_t *arg)
 {
 
 	KASSERT(arg != NULL);
@@ -206,11 +206,8 @@ audio_filter_arg_is_valid(const audio_filter_arg_t *arg)
 	KASSERT(arg->dst != NULL);
 	DIAGNOSTIC_format2(arg->srcfmt);
 	DIAGNOSTIC_format2(arg->dstfmt);
-	if (arg->count <= 0) {
-		printf("%s: count(%d) < 0\n", __func__, arg->count);
-		return false;
-	}
-	return true;
+	KASSERTMSG(arg->count > 0,
+	    "%s: count(%d) is out of range", func, arg->count);
 }
 
 bool

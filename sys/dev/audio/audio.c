@@ -3050,7 +3050,7 @@ audio_track_chvol(audio_filter_arg_t *arg)
 	int i;
 	int ch;
 
-	KASSERT(audio_filter_arg_is_valid(arg));
+	DIAGNOSTIC_filter_arg(arg);
 	KASSERT(arg->srcfmt->channels == arg->dstfmt->channels);
 	KASSERT(arg->context != NULL);
 	KASSERT(arg->srcfmt->channels <= AUDIO_MAX_CHANNELS);
@@ -3116,7 +3116,7 @@ audio_track_chmix_mixLR(audio_filter_arg_t *arg)
 	aint_t *d;
 	int i;
 
-	KASSERT(audio_filter_arg_is_valid(arg));
+	DIAGNOSTIC_filter_arg(arg);
 
 	s = arg->src;
 	d = arg->dst;
@@ -3144,7 +3144,7 @@ audio_track_chmix_dupLR(audio_filter_arg_t *arg)
 	int ch;
 	int dstchannels;
 
-	KASSERT(audio_filter_arg_is_valid(arg));
+	DIAGNOSTIC_filter_arg(arg);
 
 	s = arg->src;
 	d = arg->dst;
@@ -3180,7 +3180,7 @@ audio_track_chmix_shrink(audio_filter_arg_t *arg)
 	int i;
 	int ch;
 
-	KASSERT(audio_filter_arg_is_valid(arg));
+	DIAGNOSTIC_filter_arg(arg);
 
 	s = arg->src;
 	d = arg->dst;
@@ -3208,7 +3208,7 @@ audio_track_chmix_expand(audio_filter_arg_t *arg)
 	int srcchannels;
 	int dstchannels;
 
-	KASSERT(audio_filter_arg_is_valid(arg));
+	DIAGNOSTIC_filter_arg(arg);
 
 	s = arg->src;
 	d = arg->dst;
@@ -3541,26 +3541,6 @@ audio_track_destroy(audio_track_t *track)
 	cv_destroy(&track->outchan);
 
 	kmem_free(track, sizeof(*track));
-}
-
-/*
- * audio_filter_arg_is_valid:
- *	Return true if filter argument 'arg' is correct.
- */
-bool
-audio_filter_arg_is_valid(const audio_filter_arg_t *arg)
-{
-
-	KASSERT(arg != NULL);
-	KASSERT(arg->src != NULL);
-	KASSERT(arg->dst != NULL);
-	DIAGNOSTIC_format2(arg->srcfmt);
-	DIAGNOSTIC_format2(arg->dstfmt);
-	if (arg->count <= 0) {
-		printf("%s: count(%d) < 0\n", __func__, arg->count);
-		return false;
-	}
-	return true;
 }
 
 // src, dst のフォーマットに応じて変換フィルタを返します。
@@ -7393,6 +7373,22 @@ audio_print_format2(const char *s, const audio_format2_t *fmt)
 	printf("%s %s\n", s, fmtstr);
 }
 #endif
+
+#ifdef DIAGNOSTIC
+void
+audio_diagnostic_filter_arg(const char *func, const audio_filter_arg_t *arg)
+{
+
+	KASSERT(arg != NULL);
+	KASSERT(arg->src != NULL);
+	KASSERT(arg->dst != NULL);
+	DIAGNOSTIC_format2(arg->srcfmt);
+	DIAGNOSTIC_format2(arg->dstfmt);
+	KASSERTMSG(arg->count > 0,
+	    "%s: count(%d) is out of range", func, arg->count);
+}
+#endif /* DIAGNOSTIC */
+
 
 /*
  * Mixer driver

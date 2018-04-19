@@ -157,7 +157,7 @@ audio_mulaw_to_internal(audio_filter_arg_t *arg)
 	u_int sample_count;
 	u_int i;
 
-	KASSERT(audio_filter_arg_is_valid(arg));
+	DIAGNOSTIC_filter_arg(arg);
 	KASSERT(arg->srcfmt->encoding == AUDIO_ENCODING_ULAW);
 	KASSERT(arg->srcfmt->stride == 8);
 	KASSERT(arg->srcfmt->precision == 8);
@@ -188,7 +188,7 @@ audio_internal_to_mulaw(audio_filter_arg_t *arg)
 	u_int sample_count;
 	u_int i;
 
-	KASSERT(audio_filter_arg_is_valid(arg));
+	DIAGNOSTIC_filter_arg(arg);
 	KASSERT(arg->dstfmt->encoding == AUDIO_ENCODING_ULAW);
 	KASSERT(arg->dstfmt->stride == 8);
 	KASSERT(arg->dstfmt->precision == 8);
