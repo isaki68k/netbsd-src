@@ -1314,8 +1314,7 @@ audio_waitio(struct audio_softc *sc, audio_track_t *track)
 
 /* Exported interfaces for audiobell. */
 int
-audiobellopen(dev_t dev, int flags, int ifmt, struct lwp *l,
-	      struct file **fp)
+audiobellopen(dev_t dev, int flags, int ifmt, struct lwp *l, struct file **fp)
 {
 	struct audio_softc *sc;
 	int error;
@@ -1345,7 +1344,7 @@ audiobellclose(struct file *fp)
 
 int
 audiobellwrite(struct file *fp, off_t *offp, struct uio *uio, kauth_cred_t cred,
-	   int ioflag)
+	int ioflag)
 {
 
 	return audiowrite(fp, offp, uio, cred, ioflag);
@@ -1431,7 +1430,7 @@ audioclose(struct file *fp)
 
 static int
 audioread(struct file *fp, off_t *offp, struct uio *uio, kauth_cred_t cred,
-	  int ioflag)
+	int ioflag)
 {
 	struct audio_softc *sc;
 	audio_file_t *file;
@@ -1468,7 +1467,7 @@ audioread(struct file *fp, off_t *offp, struct uio *uio, kauth_cred_t cred,
 
 static int
 audiowrite(struct file *fp, off_t *offp, struct uio *uio, kauth_cred_t cred,
-	   int ioflag)
+	int ioflag)
 {
 	struct audio_softc *sc;
 	audio_file_t *file;
@@ -1628,7 +1627,7 @@ audiokqfilter(struct file *fp, struct knote *kn)
 
 static int
 audiommap(struct file *fp, off_t *offp, size_t len, int prot, int *flagsp,
-	     int *advicep, struct uvm_object **uobjp, int *maxprotp)
+	int *advicep, struct uvm_object **uobjp, int *maxprotp)
 {
 	struct audio_softc *sc;
 	audio_file_t *file;
@@ -1666,7 +1665,7 @@ audiommap(struct file *fp, off_t *offp, size_t len, int prot, int *flagsp,
  */
 int
 audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
-    struct lwp *l, struct file **nfp)
+	struct lwp *l, struct file **nfp)
 {
 	struct audio_info ai;
 	struct file *fp;
@@ -2331,7 +2330,7 @@ abort:
 // AUDIO_SETFD .. これもたぶんトラックだけで済ませたほうがいい。
 int
 audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
-	    struct lwp *l, audio_file_t *file)
+	struct lwp *l, audio_file_t *file)
 {
 	struct audio_offset *ao;
 	audio_track_t *track;
@@ -7458,8 +7457,8 @@ audio_diagnostic_ring(const char *func, const audio_ring_t *ring)
  * Mixer driver
  */
 int
-mixer_open(dev_t dev, struct audio_softc *sc, int flags,
-    int ifmt, struct lwp *l, struct file **nfp)
+mixer_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
+	struct lwp *l, struct file **nfp)
 {
 	struct file *fp;
 	audio_file_t *af;
@@ -7545,7 +7544,7 @@ mixer_close(struct audio_softc *sc, int flags, audio_file_t *file)
 
 int
 mixer_ioctl(struct audio_softc *sc, u_long cmd, void *addr, int flag,
-	    struct lwp *l)
+	struct lwp *l)
 {
 	const struct audio_hw_if *hw;
 	struct mixer_asyncs *ma;
@@ -7641,7 +7640,7 @@ au_portof(struct audio_softc *sc, char *name, int class)
 
 void
 au_setup_ports(struct audio_softc *sc, struct au_mixer_ports *ports,
-	       mixer_devinfo_t *mi, const struct portname *tbl)
+	mixer_devinfo_t *mi, const struct portname *tbl)
 {
 	int i, j;
 
@@ -7721,7 +7720,7 @@ au_get_lr_value(struct audio_softc *sc, mixer_ctrl_t *ct, int *l, int *r)
 
 int
 au_set_gain(struct audio_softc *sc, struct au_mixer_ports *ports,
-	    int gain, int balance)
+	int gain, int balance)
 {
 	mixer_ctrl_t ct;
 	int i, error;
@@ -7800,7 +7799,7 @@ au_set_gain(struct audio_softc *sc, struct au_mixer_ports *ports,
 
 void
 au_get_gain(struct audio_softc *sc, struct au_mixer_ports *ports,
-	    u_int *pgain, u_char *pbalance)
+	u_int *pgain, u_char *pbalance)
 {
 	mixer_ctrl_t ct;
 	int i, l, r, n;
