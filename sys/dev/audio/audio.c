@@ -6,8 +6,12 @@
 // x Restore mmap
 // x Restore NetBSD8-like track volume control on mixerctl?
 // x interface for software master volume? (mixerctl?)
+// x Restore NetBSD8-like multiuser mode
 // x Restore spkr* at audio?
 // x Restore pad(4)
+// x Restore alow
+// x Support linear_LE/BE conversion for MD codec.
+// x Support tc/bba.c (mulaw with 32bit stride)
 // x rsel/wsel はトラックごとに分けなくてよいか
 //   今のままでも動作はしているが
 // x sih_rd はトラックごとに分けなくてよいか
