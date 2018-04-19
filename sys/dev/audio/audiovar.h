@@ -52,7 +52,6 @@ int audiobellclose(struct file *);
 int audiobellwrite(struct file *, off_t *, struct uio *, kauth_cred_t, int);
 int audiobellioctl(struct file *, u_long, void *);
 
-// 前方参照
 typedef struct audio_trackmixer audio_trackmixer_t;
 
 /* ring buffer */
