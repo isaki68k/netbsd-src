@@ -2635,8 +2635,9 @@ audio_poll(struct audio_softc *sc, int events, struct lwp *l,
 	if (events & (POLLIN | POLLRDNORM)) {
 		track = file->rtrack;
 		if (track) {
+			int used;
 			in_is_valid = true;
-			int used = audio_track_readablebytes(track);
+			used = audio_track_readablebytes(track);
 			if (used > track->usrbuf_usedlow)
 				revents |= events & (POLLIN | POLLRDNORM);
 		}
