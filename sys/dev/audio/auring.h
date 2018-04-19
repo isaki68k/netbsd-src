@@ -2,34 +2,9 @@
 
 #ifdef DIAGNOSTIC
 #define DIAGNOSTIC_ring(ring)	audio_diagnostic_ring(__func__, (ring))
+static void audio_diagnostic_ring(const char *, const audio_ring_t *);
 #else
 #define DIAGNOSTIC_ring(ring)
-#endif
-
-#ifdef DIAGNOSTIC
-static void audio_diagnostic_ring(const char *, const audio_ring_t *);
-static void
-audio_diagnostic_ring(const char *func, const audio_ring_t *ring)
-{
-
-	KASSERTMSG(ring, "%s: ring == NULL", func);
-	DIAGNOSTIC_format2(&ring->fmt);
-	KASSERTMSG(0 <= ring->capacity && ring->capacity < INT_MAX / 2,
-	    "%s: capacity(%d) is out of range", func, ring->capacity);
-	KASSERTMSG(0 <= ring->used && ring->used <= ring->capacity,
-	    "%s: used(%d) is out of range (capacity:%d)",
-	    func, ring->used, ring->capacity);
-	if (ring->capacity == 0) {
-		KASSERTMSG(ring->mem == NULL,
-		    "%s: capacity == 0 but mem != NULL", func);
-	} else {
-		KASSERTMSG(ring->mem != NULL,
-		    "%s: capacity != 0 but mem == NULL", func);
-		KASSERTMSG(0 <= ring->head && ring->head < ring->capacity,
-		    "%s: head(%d) is out of range (capacity:%d)",
-		    func, ring->head, ring->capacity);
-	}
-}
 #endif
 
 // idx をラウンディングします。
