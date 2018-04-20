@@ -1,3 +1,7 @@
+/*
+ * userland emulation
+ */
+
 #pragma once
 
 #include <string.h>

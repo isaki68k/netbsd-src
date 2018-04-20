@@ -1,3 +1,7 @@
+/*
+ * userland emulation
+ */
+
 #include "compat.h"
 #include "userland.h"
 #include "audiovar.h"

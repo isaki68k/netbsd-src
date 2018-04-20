@@ -1,3 +1,7 @@
+/*
+ * Test program to execute main routine in userland.
+ */
+
 #include <ctype.h>
 #include <errno.h>
 #include <inttypes.h>
