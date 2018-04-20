@@ -3711,7 +3711,7 @@ audio_track_init_codec(audio_track_t *track, audio_ring_t **last_dstp)
 	audio_format2_t *srcfmt;
 	audio_format2_t *dstfmt;
 	audio_filter_arg_t *arg;
-	int len;
+	u_int len;
 	int error;
 
 	KASSERT(track);
@@ -3784,7 +3784,7 @@ audio_track_init_chvol(audio_track_t *track, audio_ring_t **last_dstp)
 	audio_format2_t *srcfmt;
 	audio_format2_t *dstfmt;
 	audio_filter_arg_t *arg;
-	int len;
+	u_int len;
 	int error;
 
 	KASSERT(track);
@@ -3857,7 +3857,7 @@ audio_track_init_chmix(audio_track_t *track, audio_ring_t **last_dstp)
 	audio_filter_arg_t *arg;
 	u_int srcch;
 	u_int dstch;
-	int len;
+	u_int len;
 	int error;
 
 	KASSERT(track);
@@ -3933,9 +3933,9 @@ audio_track_init_freq(audio_track_t *track, audio_ring_t **last_dstp)
 	audio_filter_arg_t *arg;
 	uint32_t srcfreq;
 	uint32_t dstfreq;
-	int len;
 	u_int dst_capacity;
 	u_int mod;
+	u_int len;
 	int error;
 
 	KASSERT(track);
@@ -4065,10 +4065,10 @@ abort:
 static int
 audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 {
-	int error;
-	int newbufsize;
+	u_int newbufsize;
 	u_int oldblksize;
-	int len;
+	u_int len;
+	int error;
 
 	KASSERT(track);
 
