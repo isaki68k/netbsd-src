@@ -838,26 +838,26 @@ audioattach(device_t parent, device_t self, void *aux)
 
 	mixer_init(sc);
 	DPRINTF(2, "audio_attach: inputs ports=0x%x, input master=%d, "
-		 "output ports=0x%x, output master=%d\n",
-		 sc->sc_inports.allports, sc->sc_inports.master,
-		 sc->sc_outports.allports, sc->sc_outports.master);
+	    "output ports=0x%x, output master=%d\n",
+	    sc->sc_inports.allports, sc->sc_inports.master,
+	    sc->sc_outports.allports, sc->sc_outports.master);
 
 	sysctl_createv(&sc->sc_log, 0, NULL, &node,
-		0,
-		CTLTYPE_NODE, device_xname(sc->dev),
-		SYSCTL_DESCR("audio test"),
-		NULL, 0,
-		NULL, 0,
-		CTL_HW,
-		CTL_CREATE, CTL_EOL);
+	    0,
+	    CTLTYPE_NODE, device_xname(sc->dev),
+	    SYSCTL_DESCR("audio test"),
+	    NULL, 0,
+	    NULL, 0,
+	    CTL_HW,
+	    CTL_CREATE, CTL_EOL);
 
 	if (node != NULL) {
 		sysctl_createv(&sc->sc_log, 0, NULL, NULL,
-			CTLFLAG_READWRITE,
-			CTLTYPE_INT, "volume",
-			SYSCTL_DESCR("software volume test"),
-			audio_sysctl_volume, 0, (void *)sc, 0,
-			CTL_HW, node->sysctl_num, CTL_CREATE, CTL_EOL);
+		    CTLFLAG_READWRITE,
+		    CTLTYPE_INT, "volume",
+		    SYSCTL_DESCR("software volume test"),
+		    audio_sysctl_volume, 0, (void *)sc, 0,
+		    CTL_HW, node->sysctl_num, CTL_CREATE, CTL_EOL);
 
 #if 1
 		// XXX adhoc debug info (should be removed)
@@ -865,11 +865,11 @@ audioattach(device_t parent, device_t self, void *aux)
 		make_buildinfo();
 
 		sysctl_createv(&sc->sc_log, 0, NULL, NULL,
-			CTLFLAG_PERMANENT,
-			CTLTYPE_STRING, "buildinfo",
-			SYSCTL_DESCR("audio build options"),
-			NULL, 0, audio_buildinfo, 0,
-			CTL_HW, node->sysctl_num, CTL_CREATE, CTL_EOL);
+		    CTLFLAG_PERMANENT,
+		    CTLTYPE_STRING, "buildinfo",
+		    SYSCTL_DESCR("audio build options"),
+		    NULL, 0, audio_buildinfo, 0,
+		    CTL_HW, node->sysctl_num, CTL_CREATE, CTL_EOL);
 #endif
 	}
 
