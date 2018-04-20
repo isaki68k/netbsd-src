@@ -5,31 +5,35 @@
 // x Tune up PLAY(_SYNC) mode?
 // x Restore mmap.
 // x Restore NetBSD8-like track volume control on mixerctl?
-// x interface for software master volume? (mixerctl?)
 // x Restore NetBSD8-like multiuser mode.
 // x Restore spkr* at audio?
 // x Restore pad(4).
 // x Restore alow.
 // x Restore(?) suspend/resume.
+// x Support software master volume? (mixerctl?)
 // x Support all MD drivers.
 //   Only auich/hdafg/eap/uaudio/vs are supported for now.
 // x Support linear_LE/BE conversion for MD codec.
 // x Support tc/bba.c (mulaw with 32bit stride)
+// x Catch up userland programs such as audioctl(1).
 // x No idea about channel mapping.
 // x Documents (even in Japanese).
 // x Documents (in English).
 // x Purge all C++ style comments.
 // x Reconsideration about sc_lock?
 //   Many syscalls may no longer require a device lock?
-// x rsel/wsel はトラックごとに分けなくてよいか
+// x Reconsideration about rsel/wel.
+//   rsel/wsel はトラックごとに分けなくてよいか
 //   今のままでも動作はしているが
-// x sih_rd はトラックごとに分けなくてよいか
+// x Reconsideration about sih_rd.
+//   sih_rd はトラックごとに分けなくてよいか
 //   今のままでも動作はしているが
+// x Reconsideration about overflow handling on track mixer.
+//   トラックミキサでオーバーフローする場合の処理はあれでいいか
+//   今は自動的にマスターボリュームを下げている。そして下げっぱなし。
 // x better name for audio_file_t ?
 // x better name for audio_filter_* ?
-// x audio_track_t の各 stage 実体をポインタにするか
-// x トラックミキサでオーバーフローする場合の処理はあれでいいか
-//   今は自動的にマスターボリュームを下げている。そして下げっぱなし。
+// x Improve sizeof(audio_track_t).
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
