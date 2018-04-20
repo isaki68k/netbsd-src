@@ -22,7 +22,8 @@
 // 15.625kHz でもフレーム数が整数になるので、40 を基本にする。
 #if !defined(AUDIO_BLK_MS)
 #if defined(x68k)
-// x68k では 40msec だと長い曲でアンダーランするので伸ばしておく
+// x68k では 40msec だと長い曲でアンダーランするので伸ばしておく。
+// 実際には config option にするけど、とりあえず。
 #define AUDIO_BLK_MS 320
 #else
 #define AUDIO_BLK_MS 40
@@ -30,10 +31,10 @@
 #endif
 
 // ミキサをシングルバッファにするかどうか。
-// オン(シングルバッファ)にすると、レイテンシは1ブロック減らせるがマシン
-// パワーがないと HW 再生が途切れる(かもしれない、速ければへーきへーき?)。
-// オフ(ダブるバッファ)にすると、レイテンシは1ブロック増えるが HW 再生が
-// 途切れることはなくなる。
+// シングルバッファにすると、レイテンシは1ブロック減らせるがマシンパワーが
+// ないと HW 再生が途切れる(かもしれない、速ければへーきへーき?)。
+// ダブルバッファ(デフォルト)にすると、レイテンシは1ブロック増えるが HW 再生
+// が途切れることはなくなる。
 //#define AUDIO_HW_SINGLE_BUFFER
 
 // C の実装定義動作を使用する。
@@ -202,7 +203,6 @@ frame_per_block(const audio_trackmixer_t *mixer, const audio_format2_t *fmt)
 // 加算方向で、加算量が ring->capacity 以下のケースのみサポートします。
 /*
  * Round idx.  idx must be non-negative and less than 2 * capacity.
- * This is a private function.
  */
 static inline int
 auring_round(const audio_ring_t *ring, int idx)
