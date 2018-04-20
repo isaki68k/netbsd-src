@@ -3129,9 +3129,9 @@ audio_track_chvol(audio_filter_arg_t *arg)
 	int16_t *ch_volume;
 	const aint_t *s;
 	aint_t *d;
-	int channels;
 	u_int i;
-	int ch;
+	u_int ch;
+	u_int channels;
 
 	DIAGNOSTIC_filter_arg(arg);
 	KASSERT(arg->srcfmt->channels == arg->dstfmt->channels);
@@ -3222,8 +3222,8 @@ audio_track_chmix_dupLR(audio_filter_arg_t *arg)
 	const aint_t *s;
 	aint_t *d;
 	u_int i;
-	int ch;
-	int dstchannels;
+	u_int ch;
+	u_int dstchannels;
 
 	DIAGNOSTIC_filter_arg(arg);
 
@@ -3258,7 +3258,7 @@ audio_track_chmix_shrink(audio_filter_arg_t *arg)
 	const aint_t *s;
 	aint_t *d;
 	u_int i;
-	int ch;
+	u_int ch;
 
 	DIAGNOSTIC_filter_arg(arg);
 
@@ -3283,9 +3283,9 @@ audio_track_chmix_expand(audio_filter_arg_t *arg)
 	const aint_t *s;
 	aint_t *d;
 	u_int i;
-	int ch;
-	int srcchannels;
-	int dstchannels;
+	u_int ch;
+	u_int srcchannels;
+	u_int dstchannels;
 
 	DIAGNOSTIC_filter_arg(arg);
 
@@ -3854,8 +3854,8 @@ audio_track_init_chmix(audio_track_t *track, audio_ring_t **last_dstp)
 	audio_format2_t *srcfmt;
 	audio_format2_t *dstfmt;
 	audio_filter_arg_t *arg;
-	int srcch;
-	int dstch;
+	u_int srcch;
+	u_int dstch;
 	int len;
 	int error;
 
@@ -6244,7 +6244,9 @@ audio_hw_config_by_encoding(struct audio_softc *sc, audio_format2_t *cand,
 {
 	static int freqlist[] = { 48000, 44100, 22050, 11025, 8000, 4000 };
 	audio_format2_t fmt;
-	int ch, i, freq;
+	u_int ch;
+	u_int i;
+	int freq;
 	int error;
 
 	fmt.encoding  = AUDIO_ENCODING_SLINEAR_LE;
