@@ -1,5 +1,5 @@
-/*	$NetBSD: ipsec_input.c,v 1.62 2018/02/26 09:04:29 maxv Exp $	*/
-/*	$FreeBSD: src/sys/netipsec/ipsec_input.c,v 1.2.4.2 2003/03/28 20:32:53 sam Exp $	*/
+/*	$NetBSD: ipsec_input.c,v 1.66 2018/04/19 08:27:38 maxv Exp $	*/
+/*	$FreeBSD: ipsec_input.c,v 1.2.4.2 2003/03/28 20:32:53 sam Exp $	*/
 /*	$OpenBSD: ipsec_input.c,v 1.63 2003/02/20 18:35:43 deraadt Exp $	*/
 
 /*
@@ -39,7 +39,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ipsec_input.c,v 1.62 2018/02/26 09:04:29 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ipsec_input.c,v 1.66 2018/04/19 08:27:38 maxv Exp $");
 
 /*
  * IPsec input processing.
@@ -51,7 +51,6 @@ __KERNEL_RCSID(0, "$NetBSD: ipsec_input.c,v 1.62 2018/02/26 09:04:29 maxv Exp $"
 
 #include <sys/param.h>
 #include <sys/systm.h>
-#include <sys/malloc.h>
 #include <sys/mbuf.h>
 #include <sys/domain.h>
 #include <sys/protosw.h>
@@ -175,8 +174,8 @@ ipsec4_fixup_checksum(struct mbuf *m)
 
 /*
  * ipsec_common_input gets called when an IPsec-protected packet
- * is received by IPv4 or IPv6.  It's job is to find the right SA
- # and call the appropriate transform.  The transform callback
+ * is received by IPv4 or IPv6.  Its job is to find the right SA
+ * and call the appropriate transform.  The transform callback
  * takes care of further processing (like ingress filtering).
  */
 static int
@@ -456,6 +455,8 @@ cantpull:
 #endif /* INET6 */
 #endif /* notyet */
 
+	M_VERIFY_PACKET(m);
+
 	key_sa_recordxfer(sav, m);		/* record data transfer */
 
 	if ((inetsw[ip_protox[prot]].pr_flags & PR_LASTHDR) != 0 &&
@@ -667,6 +668,8 @@ ipsec6_common_input_cb(struct mbuf *m, struct secasvar *sav, int skip,
 			goto bad;
 		}
 
+		M_VERIFY_PACKET(m);
+
 		/*
 		 * Protection against faulty packet - there should be
 		 * more sanity checks in header chain processing.
@@ -681,7 +684,7 @@ ipsec6_common_input_cb(struct mbuf *m, struct secasvar *sav, int skip,
 
 		/*
 		 * Enforce IPsec policy checking if we are seeing last header.
-		 * note that we do not visit this with protocols with pcb layer
+		 * Note that we do not visit this with protocols with pcb layer
 		 * code - like udp/tcp/raw ip.
 		 */
 		if ((inet6sw[ip6_protox[nxt]].pr_flags & PR_LASTHDR) != 0 &&
