@@ -1676,6 +1676,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	struct audio_info ai;
 	struct file *fp;
 	audio_file_t *af;
+	audio_ring_t *hwbuf;
 	int fd;
 	int error;
 
@@ -1841,7 +1842,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	// init_input/output
 	if (af->ptrack && sc->sc_popens == 0) {
 		if (sc->hw_if->init_output) {
-			audio_ring_t *hwbuf = &sc->sc_pmixer->hwbuf;
+			hwbuf = &sc->sc_pmixer->hwbuf;
 			mutex_enter(sc->sc_intr_lock);
 			error = sc->hw_if->init_output(sc->hw_hdl,
 			    hwbuf->mem,
@@ -1854,7 +1855,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	}
 	if (af->rtrack && sc->sc_ropens == 0) {
 		if (sc->hw_if->init_input) {
-			audio_ring_t *hwbuf = &sc->sc_rmixer->hwbuf;
+			hwbuf = &sc->sc_rmixer->hwbuf;
 			mutex_enter(sc->sc_intr_lock);
 			error = sc->hw_if->init_input(sc->hw_hdl,
 			    hwbuf->mem,
