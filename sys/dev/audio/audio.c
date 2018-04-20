@@ -2309,6 +2309,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 	error = 0;
 	while (uio->uio_resid > 0 && error == 0) {
 		int bytes;
+		int tail;
 
 		TRACET(track, "while resid=%zd usrbuf=%d/%d/H%d",
 		    uio->uio_resid,
@@ -2331,7 +2332,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 		// usrbuf にコピー
 		bytes = min(track->usrbuf_usedhigh - usrbuf->used,
 		    uio->uio_resid);
-		int tail = auring_tail(usrbuf);
+		tail = auring_tail(usrbuf);
 		if (tail + bytes <= usrbuf->capacity) {
 			error = audio_write_uiomove(track, tail, bytes, uio);
 			if (error)
@@ -3933,6 +3934,8 @@ audio_track_init_freq(audio_track_t *track, audio_ring_t **last_dstp)
 	uint32_t srcfreq;
 	uint32_t dstfreq;
 	int len;
+	u_int dst_capacity;
+	u_int mod;
 	int error;
 
 	KASSERT(track);
@@ -3956,8 +3959,8 @@ audio_track_init_freq(audio_track_t *track, audio_ring_t **last_dstp)
 
 		// freq_leap は1ブロックごとの freq_step の補正値
 		// を四捨五入したもの。
-		int dst_capacity = frame_per_block(track->mixer, dstfmt);
-		int mod = (uint64_t)srcfreq * 65536 % dstfreq;
+		dst_capacity = frame_per_block(track->mixer, dstfmt);
+		mod = (uint64_t)srcfreq * 65536 % dstfreq;
 		track->freq_leap = (mod * dst_capacity + dstfreq / 2) / dstfreq;
 
 		if (track->freq_step < 65536) {
