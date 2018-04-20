@@ -6242,11 +6242,10 @@ static int
 audio_hw_config_by_encoding(struct audio_softc *sc, audio_format2_t *cand,
 	int mode)
 {
-	static int freqlist[] = { 48000, 44100, 22050, 11025, 8000, 4000 };
+	static u_int freqlist[] = { 48000, 44100, 22050, 11025, 8000, 4000 };
 	audio_format2_t fmt;
 	u_int ch;
 	u_int i;
-	int freq;
 	int error;
 
 	fmt.encoding  = AUDIO_ENCODING_SLINEAR_LE;
@@ -6255,10 +6254,8 @@ audio_hw_config_by_encoding(struct audio_softc *sc, audio_format2_t *cand,
 
 	for (ch = 2; ch > 0; ch--) {
 		for (i = 0; i < __arraycount(freqlist); i++) {
-			freq = freqlist[i];
-
 			fmt.channels = ch;
-			fmt.sample_rate = freq;
+			fmt.sample_rate = freqlist[i];
 			error = audio_set_params(sc, mode, &fmt, &fmt);
 			if (error == 0) {
 				// 設定できたのでこれを採用
