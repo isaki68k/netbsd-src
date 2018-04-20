@@ -3130,7 +3130,7 @@ audio_track_chvol(audio_filter_arg_t *arg)
 	const aint_t *s;
 	aint_t *d;
 	int channels;
-	int i;
+	u_int i;
 	int ch;
 
 	DIAGNOSTIC_filter_arg(arg);
@@ -3196,7 +3196,7 @@ audio_track_chmix_mixLR(audio_filter_arg_t *arg)
 
 	const aint_t *s;
 	aint_t *d;
-	int i;
+	u_int i;
 
 	DIAGNOSTIC_filter_arg(arg);
 
@@ -3221,7 +3221,7 @@ audio_track_chmix_dupLR(audio_filter_arg_t *arg)
 {
 	const aint_t *s;
 	aint_t *d;
-	int i;
+	u_int i;
 	int ch;
 	int dstchannels;
 
@@ -3257,7 +3257,7 @@ audio_track_chmix_shrink(audio_filter_arg_t *arg)
 {
 	const aint_t *s;
 	aint_t *d;
-	int i;
+	u_int i;
 	int ch;
 
 	DIAGNOSTIC_filter_arg(arg);
@@ -3282,7 +3282,7 @@ audio_track_chmix_expand(audio_filter_arg_t *arg)
 {
 	const aint_t *s;
 	aint_t *d;
-	int i;
+	u_int i;
 	int ch;
 	int srcchannels;
 	int dstchannels;
@@ -3425,7 +3425,7 @@ audio_track_freq_up(audio_filter_arg_t *arg)
 #endif
 	srcused = src->used;
 	PRINTF("start step=%d leap=%d", step, track->freq_leap);
-	PRINTF(" srcused=%d arg->count=%d", src->used, arg->count);
+	PRINTF(" srcused=%d arg->count=%u", src->used, arg->count);
 	PRINTF(" prev=%d curr=%d grad=%d", prev[0], curr[0], grad[0]);
 	PRINTF(" t=%d\n", t);
 
