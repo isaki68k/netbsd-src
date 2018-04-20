@@ -1,3 +1,7 @@
+/*
+ * emulation
+ */
+
 #pragma once
 #include <limits.h>
 #include <stdarg.h>

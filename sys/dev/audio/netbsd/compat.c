@@ -1,3 +1,7 @@
+/*
+ * emulation
+ */
+
 #include "compat.h"
 #include "userland.h"
 
