@@ -3350,19 +3350,33 @@ audio_track_chmix_expand(audio_filter_arg_t *arg)
 static void
 audio_track_freq_up(audio_filter_arg_t *arg)
 {
-	audio_track_t *track = arg->context;
-	audio_ring_t *src = &track->freq.srcbuf;
-	audio_ring_t *dst = track->freq.dst;
+	audio_track_t *track;
+	audio_ring_t *src;
+	audio_ring_t *dst;
+	const aint_t *s;
+	aint_t *d;
+	aint_t prev[AUDIO_MAX_CHANNELS];
+	aint_t curr[AUDIO_MAX_CHANNELS];
+	aint_t grad[AUDIO_MAX_CHANNELS];
+	u_int i;
+	u_int t;
+	u_int step;
+	u_int channels;
+	u_int ch;
+	int srcused;
 
+	track = arg->context;
 	KASSERT(track);
+	src = &track->freq.srcbuf;
+	dst = track->freq.dst;
 	DIAGNOSTIC_ring(dst);
 	DIAGNOSTIC_ring(src);
 	KASSERT(src->used > 0);
 	KASSERT(src->fmt.channels == dst->fmt.channels);
 	KASSERT(src->head % track->mixer->frames_per_block == 0);
 
-	const aint_t *s = arg->src;
-	aint_t *d = arg->dst;
+	s = arg->src;
+	d = arg->dst;
 
 	// 補間はブロック単位での処理がしやすいように入力を1サンプルずらして(?)
 	// 補間を行なっている。このため厳密には位相が 1/dstfreq 分だけ遅れる
@@ -3393,23 +3407,15 @@ audio_track_freq_up(audio_filter_arg_t *arg)
 	 *  0 1 2 3 4 5
 	 */
 
-	aint_t prev[AUDIO_MAX_CHANNELS];
-	aint_t curr[AUDIO_MAX_CHANNELS];
-	aint_t grad[AUDIO_MAX_CHANNELS];
-	unsigned int t;
-	int step = track->freq_step;
-	u_int channels;
-	u_int ch;
-
-	channels = src->fmt.channels;
-
 	// 前回の最終サンプル
+	channels = src->fmt.channels;
 	for (ch = 0; ch < channels; ch++) {
 		prev[ch] = track->freq_prev[ch];
 		curr[ch] = track->freq_curr[ch];
 		grad[ch] = curr[ch] - prev[ch];
 	}
 
+	step = track->freq_step;
 	t = track->freq_current;
 //#define FREQ_DEBUG
 #if defined(FREQ_DEBUG)
@@ -3417,13 +3423,12 @@ audio_track_freq_up(audio_filter_arg_t *arg)
 #else
 #define PRINTF(fmt...)	/**/
 #endif
-	int srcused = src->used;
+	srcused = src->used;
 	PRINTF("start step=%d leap=%d", step, track->freq_leap);
 	PRINTF(" srcused=%d arg->count=%d", src->used, arg->count);
 	PRINTF(" prev=%d curr=%d grad=%d", prev[0], curr[0], grad[0]);
 	PRINTF(" t=%d\n", t);
 
-	int i;
 	for (i = 0; i < arg->count; i++) {
 		PRINTF("i=%d t=%5d", i, t);
 		if (t >= 65536) {
@@ -3489,14 +3494,14 @@ audio_track_freq_down(audio_filter_arg_t *arg)
 	u_int i;
 	u_int t;
 	u_int step;
-	int ch;
-	int nchannels;
+	u_int ch;
+	u_int channels;
 
 	track = arg->context;
+	KASSERT(track);
 	src = &track->freq.srcbuf;
 	dst = track->freq.dst;
 
-	KASSERT(track);
 	DIAGNOSTIC_ring(dst);
 	DIAGNOSTIC_ring(src);
 	KASSERT(src->used > 0);
@@ -3509,12 +3514,12 @@ audio_track_freq_down(audio_filter_arg_t *arg)
 	d = arg->dst;
 	t = track->freq_current;
 	step = track->freq_step;
-	nchannels = dst->fmt.channels;
+	channels = dst->fmt.channels;
 
 	for (i = 0; i < arg->count && t / 65536 < src->used; i++) {
 		const aint_t *s;
-		s = s0 + (t / 65536) * nchannels;
-		for (ch = 0; ch < nchannels; ch++) {
+		s = s0 + (t / 65536) * channels;
+		for (ch = 0; ch < channels; ch++) {
 			*d++ = s[ch];
 		}
 		t += step;
