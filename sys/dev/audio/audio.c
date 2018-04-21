@@ -260,14 +260,11 @@ audio_vtrace(const char *funcname, const char *header, const char *fmt,
 	va_list ap)
 {
 	char buf[256];
-	struct timeval tv;
 	int n;
 
 	n = 0;
 	buf[0] = '\0';
-	getmicrotime(&tv);
-	n += snprintf(buf + n, sizeof(buf) - n, "%02d.%06d %s %s",
-	    (int)tv.tv_sec % 60, (int)tv.tv_usec, funcname, header);
+	n += snprintf(buf + n, sizeof(buf) - n, "%s %s", funcname, header);
 	n += vsnprintf(buf + n, sizeof(buf) - n, fmt, ap);
 
 	if (cpu_intr_p()) {
