@@ -748,9 +748,9 @@ ld*	at nvme? nsid ?
 # Miscellaneous mass storage devices
 
 # ISA floppy
-#fdc0	at isa? port 0x3f0 irq 6 drq 2	# standard PC floppy controllers
+fdc0	at isa? port 0x3f0 irq 6 drq 2	# standard PC floppy controllers
 #fdc1	at isa? port 0x370 irq ? drq ?
-#fd*	at fdc? drive ?			# the drives themselves
+fd*	at fdc? drive ?			# the drives themselves
 # some machines need you to do this instead of fd*
 #fd0	at fdc0 drive 0
 
