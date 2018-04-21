@@ -212,7 +212,7 @@ extern void audio_diagnostic_ring(const char *, const audio_ring_t *);
 #define DIAGNOSTIC_ring(ring)
 #endif
 
-static inline int
+static __inline int
 frametobyte(const audio_format2_t *fmt, int frames)
 {
 	return frames * fmt->channels * fmt->stride / NBBY;
@@ -220,7 +220,7 @@ frametobyte(const audio_format2_t *fmt, int frames)
 
 // 周波数が fmt(.sample_rate) で表されるエンコーディングの
 // 1ブロックのフレーム数を返します。
-static inline int
+static __inline int
 frame_per_block(const audio_trackmixer_t *mixer, const audio_format2_t *fmt)
 {
 	return (fmt->sample_rate * mixer->blktime_n + mixer->blktime_d - 1) /
@@ -232,7 +232,7 @@ frame_per_block(const audio_trackmixer_t *mixer, const audio_format2_t *fmt)
 /*
  * Round idx.  idx must be non-negative and less than 2 * capacity.
  */
-static inline int
+static __inline int
 auring_round(const audio_ring_t *ring, int idx)
 {
 	DIAGNOSTIC_ring(ring);
@@ -251,7 +251,7 @@ auring_round(const audio_ring_t *ring, int idx)
 /*
  * Return ring's tail (= head + used) position.
  */
-static inline int
+static __inline int
 auring_tail(const audio_ring_t *ring)
 {
 	return auring_round(ring, ring->head + ring->used);
@@ -263,7 +263,7 @@ auring_tail(const audio_ring_t *ring)
  * This function can be used only if the stride of the 'ring' is equal to
  * the internal stride.  Don't use this for hw buffer.
  */
-static inline aint_t *
+static __inline aint_t *
 auring_headptr_aint(const audio_ring_t *ring)
 {
 	KASSERT(ring->fmt.stride == sizeof(aint_t) * NBBY);
@@ -279,7 +279,7 @@ auring_headptr_aint(const audio_ring_t *ring)
  * This function can be used only if the stride of the 'ring' is equal to
  * the internal stride.  Don't use this for hw buffer.
  */
-static inline aint_t *
+static __inline aint_t *
 auring_tailptr_aint(const audio_ring_t *ring)
 {
 	KASSERT(ring->fmt.stride == sizeof(aint_t) * NBBY);
@@ -293,7 +293,7 @@ auring_tailptr_aint(const audio_ring_t *ring)
  * This function can be used even if the stride of the 'ring' is equal to
  * or not equal to the internal stride.
  */
-static inline uint8_t *
+static __inline uint8_t *
 auring_headptr(const audio_ring_t *ring)
 {
 	return (uint8_t *)ring->mem +
@@ -308,7 +308,7 @@ auring_headptr(const audio_ring_t *ring)
  * This function can be used even if the stride of the 'ring' is equal to
  * or not equal to the internal stride.
  */
-static inline uint8_t *
+static __inline uint8_t *
 auring_tailptr(audio_ring_t *ring)
 {
 	return (uint8_t *)ring->mem +
@@ -319,7 +319,7 @@ auring_tailptr(audio_ring_t *ring)
 /*
  * Return ring's capacity in bytes.
  */
-static inline int
+static __inline int
 auring_bytelen(const audio_ring_t *ring)
 {
 	return frametobyte(&ring->fmt, ring->capacity);
@@ -331,7 +331,7 @@ auring_bytelen(const audio_ring_t *ring)
  * This function only manipurates counters.  It doesn't manipurate any
  * actual buffer data.
  */
-static inline void
+static __inline void
 auring_take(audio_ring_t *ring, int n)
 {
 	DIAGNOSTIC_ring(ring);
@@ -349,7 +349,7 @@ auring_take(audio_ring_t *ring, int n)
  * This function only manipurates counters.  It doesn't manipurate any
  * actual buffer data.
  */
-static inline void
+static __inline void
 auring_push(audio_ring_t *ring, int n)
 {
 	DIAGNOSTIC_ring(ring);
@@ -366,7 +366,7 @@ auring_push(audio_ring_t *ring, int n)
 /*
  * Return the number of contiguous frames in used.
  */
-static inline int
+static __inline int
 auring_get_contig_used(const audio_ring_t *ring)
 {
 	DIAGNOSTIC_ring(ring);
@@ -383,7 +383,7 @@ auring_get_contig_used(const audio_ring_t *ring)
 /*
  * Return the number of contiguous free frames.
  */
-static inline int
+static __inline int
 auring_get_contig_free(const audio_ring_t *ring)
 {
 	DIAGNOSTIC_ring(ring);

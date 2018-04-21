@@ -218,7 +218,7 @@ extern void audio_diagnostic_format2(const char *, const audio_format2_t *);
  * Return true if 'fmt' is the internal format.
  * It does not check for frequency and number of channels.
  */
-static inline bool
+static __inline bool
 audio_format2_is_internal(const audio_format2_t *fmt)
 {
 
@@ -236,7 +236,7 @@ audio_format2_is_internal(const audio_format2_t *fmt)
 /*
  * Return true if fmt's encoding is one of LINEAR.
  */
-static inline bool
+static __inline bool
 audio_format2_is_linear(const audio_format2_t *fmt)
 {
 	return (fmt->encoding == AUDIO_ENCODING_SLINEAR_LE)
@@ -248,7 +248,7 @@ audio_format2_is_linear(const audio_format2_t *fmt)
 /*
  * Return true if fmt's encoding is one of SLINEAR.
  */
-static inline bool
+static __inline bool
 audio_format2_is_signed(const audio_format2_t *fmt)
 {
 	return (fmt->encoding == AUDIO_ENCODING_SLINEAR_LE)
@@ -258,7 +258,7 @@ audio_format2_is_signed(const audio_format2_t *fmt)
 /*
  * Return fmt's endian as LITTLE_ENDIAN or BIG_ENDIAN.
  */
-static inline int
+static __inline int
 audio_format2_endian(const audio_format2_t *fmt)
 {
 	if (fmt->stride == 8) {
