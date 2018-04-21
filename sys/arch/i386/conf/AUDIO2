@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.1169 2017/10/23 08:08:53 skrll Exp $
+# $NetBSD: GENERIC,v 1.1177 2018/04/08 00:52:38 mrg Exp $
 #
 # GENERIC machine description file
 #
@@ -25,13 +25,15 @@ options 	AUDIO2
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident		"GENERIC-$Revision: 1.1169 $"
+#ident		"GENERIC-$Revision: 1.1177 $"
 
 maxusers	64		# estimated number of users
 
 # CPU-related options.
 options 	USER_LDT	# user-settable LDT; used by WINE
 #options 	PAE		# PAE mode (36 bits physical addressing)
+makeoptions	SPECTRE_V2_GCC_MITIGATION=1	# GCC Spectre variant 2
+						# migitation
 
 # CPU features
 acpicpu*	at cpu?		# ACPI CPU (including frequency scaling)
@@ -170,6 +172,7 @@ file-system	TMPFS		# Efficient memory file-system
 # File system options
 #options 	QUOTA		# legacy UFS quotas
 #options 	QUOTA2		# new, in-filesystem UFS quotas
+#options 	DISKLABEL_EI	# disklabel Endian Independent support
 options 	FFS_EI		# FFS Endian Independent support
 options 	WAPBL		# File system journaling support
 #options 	UFS_DIRHASH	# UFS Large Directory Hashing - Experimental
@@ -353,6 +356,7 @@ joy*		at acpi?		# Joystick/Game port
 mpu*		at acpi?		# Roland MPU-401 MIDI UART
 pckbc*		at acpi?		# PC keyboard controller
 pcppi*		at acpi?		# AT-style speaker sound
+qemufwcfg*	at acpi?		# QEMU Firmware Configuration device
 #sdhc*		at acpi?		# SD Host Controller
 #sony*		at acpi?		# Sony Miscellaneous Controller
 #thinkpad*	at acpi?		# IBM/Lenovo Thinkpad hotkeys
@@ -537,6 +541,7 @@ wsdisplay*	at wsemuldisplaydev?
 #wsdisplay*	at machfb? console ?
 wskbd*		at pckbd? console ?
 wsmouse*	at pms? mux 0
+wsmouse*	at wsmousedev?
 
 # VIA Unichrome framebuffer console
 #unichromefb*	at pci? dev ? function ?
@@ -653,6 +658,10 @@ com2	at isa? port 0x3e8 irq 5
 #piixpm* at pci? dev ? function ?	# PIIX4 compatible PM controller
 #iic*	at piixpm?			# SMBus on PIIX4
 
+# I2C controller as found in some Intel PCH devices.
+dwiic*		at pci?			# I2C controller
+iic*		at dwiic?
+
 # dbCool Thermal monitor and fan controller
 #dbcool* at iic? addr 0x2C		# Unknown other motherboard(s)
 #dbcool* at iic? addr 0x2D		# Tyan S2881
@@ -712,6 +721,13 @@ nsclpcsio*	at isa?
 #sdtemp* at iic? addr 0x1d
 #sdtemp* at iic? addr 0x1e
 #sdtemp* at iic? addr 0x1f
+
+# I2C HID devices
+ihidev* at iic?
+
+# I2C Mice
+ims*	at ihidev? reportid ?
+wsmouse* at ims? mux 0
 
 # I2O devices
 #iop*	at pci? dev ? function ?	# I/O processor
@@ -1597,10 +1613,12 @@ joy*	at pci?				# Game ports (usually on audio cards)
 #weasel* at pci?
 
 # Virtio devices
-virtio*	at pci? dev ? function ?	# Virtio PCI device
-viomb*	at virtio?			# Virtio memory balloon device
-ld*	at virtio?			# Virtio disk device
-vioif*	at virtio?			# Virtio network device
+virtio* at pci? dev ? function ?	# Virtio PCI device
+viomb* at virtio?			# Virtio memory balloon device
+ld* at virtio?				# Virtio disk device
+vioif* at virtio?			# Virtio network device
+viornd* at virtio?			# Virtio entropy device
+vioscsi* at virtio?			# Virtio SCSI device
 
 
 # Pull in optional local configuration
