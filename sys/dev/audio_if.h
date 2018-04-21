@@ -251,8 +251,10 @@ typedef struct stream_filter_list {
 	} filters[AUDIO_MAX_FILTERS];
 } stream_filter_list_t;
 
+#if defined(AUDIO2)
 // XXX そのうちマージすること
 #include <dev/audio/aufilter.h>
+#endif
 
 struct audio_hw_if {
 	int	(*open)(void *, int);	/* open hardware */
@@ -324,6 +326,7 @@ struct audio_hw_if {
 	int	(*dev_ioctl)(void *, u_long, void *, int, struct lwp *);
 	void	(*get_locks)(void *, kmutex_t **, kmutex_t **);
 
+#if defined(AUDIO2)
 	int (*query_format)(void *, const struct audio_format **);
 
 	// set_param かこっちのどちらか片方のみを有効にすること。
@@ -350,6 +353,7 @@ struct audio_hw_if {
 	int	(*set_params2)(void *, int, int,
 		    const audio_params_t *, const audio_params_t *,
 		    audio_filter_reg_t *, audio_filter_reg_t *);
+#endif /* AUDIO2 */
 };
 
 struct audio_attach_args {
@@ -366,6 +370,11 @@ struct audio_attach_args {
 /* Attach the MI driver(s) to the MD driver. */
 device_t audio_attach_mi(const struct audio_hw_if *, void *, device_t);
 int	audioprint(void *, const char *);
+
+#if !defined(AUDIO2)
+/* Get the hw device from an audio softc */
+device_t audio_get_device(struct audio_softc *);
+#endif
 
 /* Device identity flags */
 #define SOUND_DEVICE		0
