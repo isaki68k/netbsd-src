@@ -130,11 +130,10 @@
  *	----------------------- ------- -------	-------------------------
  *	open 			x	x
  *	close 			x	x
- *	drain 			x	x
- *	query_encoding		-	x
- *	query_format		-	x	たぶん
+ *	drain 			x	x	(Not used in AUDIO2)
+ *	query_encoding		-	x	(Not used in AUDIO2)
  *	set_params 		-	x
- *	round_blocksize		-	x
+ *	round_blocksize		-	x	(*1)
  *	commit_settings		-	x
  *	init_output 		x	x
  *	init_input 		x	x
@@ -144,19 +143,27 @@
  *	halt_input 		x	x
  *	speaker_ctl 		x	x
  *	getdev 			-	x
- *	setfd 			-	x
+ *	setfd 			-	x	(Not used in AUDIO2)
  *	set_port 		-	x
  *	get_port 		-	x
  *	query_devinfo 		-	x
  *	allocm 			-	-	Called at attach time
  *	freem 			-	-	Called at attach time
- *	round_buffersize 	-	x
- *	mappage 		-	-	Mem. unchanged after attach
+ *	round_buffersize 	-	x	(*1)
+ *	mappage 		-	-	(Not used in AUDIO2)
  *	get_props 		-	x
  *	trigger_output 		x	x
  *	trigger_input 		x	x
  *	dev_ioctl 		-	x
  *	get_locks 		-	-	Called at attach time
+ *	query_format		-	x	(Added in AUDIO2)
+ *	set_params		-	x	(Added in AUDIO2)
+ *
+ * *1: round_blocksize and round_buffersize become to be called only at
+ *  attach time.  That means it's unnecessary to hold thread lock.  However,
+ *  some hardware drivers already have verified that it is held on these
+ *  methods.  So I define that thread lock should be held as they did before.
+ *  This rule should be reviewed later.
  */
 
 #include <sys/cdefs.h>
