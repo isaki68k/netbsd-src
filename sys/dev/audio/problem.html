@@ -11,8 +11,9 @@ PRE.p {
 </style>
 </head>
 <body>
-<h3>Problems of NetBSD 8 audio</h3>
+<h3>NetBSD audio problems</h3>
 <hr>
+<h4>NetBSD8 problems</h4>
 <ul>
 
 <li>vchan.dacN/micN の表記が L のみに見える (2018/04)
@@ -215,7 +216,7 @@ sc_lchan はもう使われていない。
 
 
 <hr>
-NetBSD 7 (以前) からある問題
+<h4>NetBSD 7 (以前) からある問題</h4>
 <ul>
 
 <li>AUDIO_SETINFO.blocksize が manpage と実装が異なる (2018/03)
@@ -313,6 +314,153 @@ NetBSD8 はこの mmap フラグが VC ごとになって生存期間が open-cl
 USB audio とかで再生中にデタッチすると死ぬ。
 NetBSD 7 も同様。
 </p>
+
+</ul>
+
+<hr>
+<h4>Related PRs</h4>
+<dl>
+
+<dt><s><a href="http://gnats.netbsd.org/50613">kern/50613</a></s>
+unpausing audio(4) causes already written data to be dropped
+<dd>pause 解除するとそこまでに書き込んでたデータが消える。
+N8 修正済み、N7未修正。
+
+<dt><s><a href="http://gnats.netbsd.org/51760">kern/51760</a></s>
+audio playback sounds bad
+<dd>音がひどい。直したと言っている。
+
+<dt><font color=#555><a href="http://gnats.netbsd.org/51781">kern/51781</a>
+Audio volume is changing with "inputs.dac" instead of "outputs.master"
+</font>
+<dd>たぶんこっちには関係なさげ。
+
+<dt><s><a href="http://gnats.netbsd.org/51879">kern/51879</a></s>
+vs(4) audio attach failed
+<dd>一応解決した。正しい周波数でアタッチできない件は別途。
+
+<dt><font color=#555><a href="http://gnats.netbsd.org/51920">kern/51920</a>
+hdaudio isn't configured on TOSHIBA dynabook SS SX/15A</font>
+<dd>ハードウェアドライバ固有?
+
+<dt><s><a href="http://gnats.netbsd.org/51965">kern/51965</a></s>
+audio open panics LOCKDEBUG kernel
+
+<dt><s><a href="http://gnats.netbsd.org/51999">kern/51999</a></s>
+Recent change in OSS audio breaks audio playback via pkgsrc/audio/pulseaudio
+<dd>liboss 側の問題だったようだ。
+
+<dt><s><a href="http://gnats.netbsd.org/52075">kern/52075</a></s>
+/dev/audio mangles multi-track MIDI output
+<dd>timidity が /dev/audio の制御に /dev/audioctl を使っていたが、
+その方法はマルチトラック下では使えなくなったので timidity 側を直したという話。
+
+<dt><s><a href="http://gnats.netbsd.org/52098">kern/52098</a></s>
+audio replays buffers under load
+<dd>音飛び(繰り返し)が起きるようだ。直ったと言っている。
+
+<dt><s><a href="http://gnats.netbsd.org/52099">kern/52099</a></s>
+audio crashes the kernel
+<dd>ただのバグだったようだ?
+
+<dt><s><a href="http://gnats.netbsd.org/52175">kern/52175</a></s>
+audio sometimes stutters
+<dd>音飛びする?。直ったと言っている。
+
+<dt><s><a href="http://gnats.netbsd.org/52185">kern/52185</a></s>
+panic: audio_init_ringbuffer: blksize=0
+<dd>ブロックサイズの計算がぐちゃぐちゃな話。
+
+<dt><s><a href="http://gnats.netbsd.org/52195">kern/52195</a></s>
+segfault in audio_fill_silence()
+<dd>これもブロックサイズ。
+
+<dt><s><a href="http://gnats.netbsd.org/52196">kern/52196</a></s>
+ossaudio+portaudio2 fails on HEAD
+<dd>non blocking write に長いデータ書き込む話?
+
+<dt><s><a href="http://gnats.netbsd.org/52256">kern/52256</a></s>
+panic: audio_init_ringbuffer: blksize=0
+<dd>再生専用デバイスの考慮が足りてなかった話。
+
+<dt><a href="http://gnats.netbsd.org/52354">kern/52354</a>
+[oss @ 0x6ce04800] Soundcard does not support 16 bit sample format
+<dd>プローブ時のデフォルト precision が 32bit だったのがまずかったという話?
+
+<dt><s><a href="http://gnats.netbsd.org/52433">kern/52433</a></s>
+Dead code in audio_open()
+<dd>リファクタリング。
+
+<dt><s><a href="http://gnats.netbsd.org/52434">kern/52434</a></s>
+Dead code in audio_set_params()
+<dd>リファクタリング。
+
+<dt><s><a href="http://gnats.netbsd.org/52435">kern/52435</a></s>
+audio.c: mismatch of the maximum number of channels?
+<dd>最大チャンネル数の定義が複数あったという話。
+
+<dt><s><a href="http://gnats.netbsd.org/52437">kern/52437</a></s>
+Refactoring audio_set_vchan_defaults()
+<dd>リファクタリング。
+
+<dt><s><a href="http://gnats.netbsd.org/52459">kern/52459</a></s>
+audio_fill_silence() stops playback.
+<dd>再生処理が間に合わないケースが考慮されてなかったという話。
+
+<dt><font color=#555><a href="http://gnats.netbsd.org/52521">kern/52521</a>
+No sound from my Dell 2-in-1 machine</a></font>
+<dd>ハードウェアか HW ミキサーの設定の問題?
+
+<dt><font color=#555><a href="http://gnats.netbsd.org/52540">kern/52540</a></s>
+auich: The volume is maximum? on initial audio playback</font>
+<dd>ハードウェアドライバ側の問題。
+
+<dt><s><a href="http://gnats.netbsd.org/52580">kern/52580</a></s>
+audio: init_output/input called multiple times per open
+<dd> 上述
+
+<dt><s><a href="http://gnats.netbsd.org/52581">kern/52581</a></s>
+audio: open(O_RDONLY) calls init_output
+<dd>上述
+
+<dt><s><a href="http://gnats.netbsd.org/52582">kern/52582</a></s>
+audio: init_input is not called under certain situation
+<dd>上述
+
+<dt><a href="http://gnats.netbsd.org/52585">kern/52585</a>
+AUDIO_GETENC does not return actual encodings
+<dd>仕様を考えずに動作を変更している。
+
+<dt><a href="http://gnats.netbsd.org/52627">kern/52627</a>
+ioctl(AUDIO_SETCHAN) is able to affect privileged process
+<dd>上述
+
+<dt><a href="http://gnats.netbsd.org/52685">kern/52685</a>
+audio stutters
+<dd>音飛びする?
+
+<dt><a href="http://gnats.netbsd.org/52781">kern/52781</a>
+audioctl can't set output gain
+<dd>上述
+
+<dt><s><a href="http://gnats.netbsd.org/52889">kern/52889</a></s>
+amd64 panic during audio tests
+<dd>pad デタッチ中に死ぬ。
+そもそもスレッド駆動してるからなのと、オンデマンドアタッチしてるのも問題なのでは。
+
+<dt><font color=#555><a href="http://gnats.netbsd.org/52912">kern/52912</a>
+hdafg: no sound from jack port on a laptop</font>
+<dd>ハードウェアドライバ固有の問題?
+
+<dt><a href="http://gnats.netbsd.org/53028">kern/53028</a>
+hdaudio default latency too high, mpv spins at 100% CPU playing audio
+<dd>レイテンシが高すぎるという話と、s32 再生で CPU 100% になるという話。
+
+<dt><s><font color=#555><a href="http://gnats.netbsd.org/53029">kern/53029</a></font></s>
+src/sys/dev/hdaudio/hdafg.c:1267: dead code block ?
+<dd>リファクタリング。
+
+</dl>
 
 </body>
 </html>
