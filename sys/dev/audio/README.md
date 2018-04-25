@@ -11,7 +11,7 @@ NetBSD8 audio は in-kernel mixer をサポートしているが、
 一から書いてみた。
 書き起こしついでにパフォーマンスの改善もしてみた(はず)。
 
-~~<font color=gray>ところで、OpenBSD は同様のミキシングを
+~~<font color="#808080">ところで、OpenBSD は同様のミキシングを
 カーネルではなくユーザランドで行っていてそれはそれでとても合理てk…</font>~~
 
 
@@ -33,7 +33,7 @@ vs(4) などの珍しい周波数の hardware がサポートできない。
 つまりここは
 「速いマシンで 48k/2ch Full duplex device でオーディオ再生を多重化する
 (録音なんて滅多にしない)」という一本道だけ啓開された広大な地雷原なのだよ。
-<font color=gray>(CV:中田譲治)</font>
+<font color="#808080">(CV:中田譲治)</font>
 
 
 ## AUDIO2 Features
