@@ -92,7 +92,15 @@ vmstat -w 1 から 100 - average(idle) で CPU load を計算したもので、
 
 | |NetBSD7	|NetBSD8	| AUDIO2
 |---|---|---|---|
-|playing single mulaw/8000Hz/1ch	|測定する	| 67%	| 9%
-|playing single s16/22050Hz/1ch		|NotSupported| 50%	| 10%
+|playing single mulaw/8000Hz/1ch	|4% (*1)	| 67% (*2)	| 9% (*3)
+|playing single s16/22050Hz/1ch		|NotSupported (*4)| 50% (*5)	| 10% (*6)
+
+ *1: 8000Hz を 7813Hz モードで再生  
+ *2: 8000Hz を 16000Hz に変換して 15625Hz モードで再生  
+ *3: 8000Hz を 15625Hz に変換して 15625Hz モードで再生  
+ *4: HW の再生可能周波数を越えており、NetBSD7 の vs(4) は周波数変換を行わない
+ため、再生不可  
+ *5: 22050Hz を 16000Hz に変換して 15625Hz モードで再生  
+ *6: 22050Hz を 15625Hz に変換して 15625Hz モードで再生  
 
 メモリ使用量とかも改善してるつもりだけど、調べてない。
