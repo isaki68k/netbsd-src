@@ -79,13 +79,12 @@ Half Duplex HW に対する考察が色々足りない。
 特に O_RDWR オープンの挙動。
 </p>
 
-<li>sysctl のデバイス名を取得する方法がない (2018/02)
+<li>sysctl のデバイス名が MD デバイス名なのはどうなのか (2018/02)
 <p class="p">
 sysctl hw.&lt;dev&gt; の dev は hdafg0 とか vs0 みたいな名前だが、
-これをプログラムから取得できる方法がない。
-一部のデバイスは AUDIO_GETDEV の3つあるどれかにデバイス名を
-返すものもあるが、どれに返るかは任意だし unit number のありなしも任意なので、
-使えない。
+これと自分がオープンした /dev/audioN との対応を取るのが面倒。
+drvctl 使うと分かるけども。
+どうして audioN を使わないのか。
 そもそも frequency、precision、channels を sysctl で設定させようという発想がおかしい。
 </p>
 
