@@ -151,34 +151,26 @@ static void	bba_get_locks(void *opaque, kmutex_t **intr,
 			      kmutex_t **thread);
 
 static const struct audio_hw_if sa_hw_if = {
-	am7930_open,
-	am7930_close,
-	0,
-	am7930_query_encoding,
-	am7930_set_params,
-	bba_round_blocksize,		/* md */
-	am7930_commit_settings,
-	0,
-	0,
-	0,
-	0,
-	bba_halt_output,		/* md */
-	bba_halt_input,			/* md */
-	0,
-	bba_getdev,
-	0,
-	am7930_set_port,
-	am7930_get_port,
-	am7930_query_devinfo,
-	bba_allocm,			/* md */
-	bba_freem,			/* md */
-	bba_round_buffersize,		/* md */
-	bba_mappage,
-	bba_get_props,
-	bba_trigger_output,		/* md */
-	bba_trigger_input,		/* md */
-	0,
-	bba_get_locks,
+	.open			= am7930_open,
+	.close			= am7930_close,
+	.query_encoding		= am7930_query_encoding,
+	.set_params		= am7930_set_params,
+	.round_blocksize	= bba_round_blocksize,	/* md */
+	.commit_settings	= am7930_commit_settings,
+	.halt_output		= bba_halt_output,	/* md */
+	.halt_input		= bba_halt_input,	/* md */
+	.getdev			= bba_getdev,
+	.set_port		= am7930_set_port,
+	.get_port		= am7930_get_port,
+	.query_devinfo		= am7930_query_devinfo,
+	.allocm			= bba_allocm,		/* md */
+	.freem			= bba_freem,		/* md */
+	.round_buffersize	= bba_round_buffersize,	/* md */
+	.mappage		= bba_mappage,
+	.get_props		= bba_get_props,
+	.trigger_output		= bba_trigger_output,	/* md */
+	.trigger_input		= bba_trigger_input,	/* md */
+	.get_locks		= bba_get_locks,
 };
 
 static struct audio_device bba_device = {

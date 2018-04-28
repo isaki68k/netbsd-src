@@ -243,34 +243,23 @@ static const struct audio_format neo_formats[NEO_NFORMATS] = {
 /* -------------------------------------------------------------------- */
 
 static const struct audio_hw_if neo_hw_if = {
-	NULL,				/* open */
-	NULL,				/* close */
-	NULL,				/* drain */
-	neo_query_encoding,
-	neo_set_params,
-	neo_round_blocksize,
-	NULL,				/* commit_setting */
-	NULL,				/* init_output */
-	NULL,				/* init_input */
-	NULL,				/* start_output */
-	NULL,				/* start_input */
-	neo_halt_output,
-	neo_halt_input,
-	NULL,				/* speaker_ctl */
-	neo_getdev,
-	NULL,				/* getfd */
-	neo_mixer_set_port,
-	neo_mixer_get_port,
-	neo_query_devinfo,
-	neo_malloc,
-	neo_free,
-	neo_round_buffersize,
-	neo_mappage,
-	neo_get_props,
-	neo_trigger_output,
-	neo_trigger_input,
-	NULL,
-	neo_get_locks,
+	.query_encoding		= neo_query_encoding,
+	.set_params		= neo_set_params,
+	.round_blocksize	= neo_round_blocksize,
+	.halt_output		= neo_halt_output,
+	.halt_input		= neo_halt_input,
+	.getdev			= neo_getdev,
+	.set_port		= neo_mixer_set_port,
+	.get_port		= neo_mixer_get_port,
+	.query_devinfo		= neo_query_devinfo,
+	.allocm			= neo_malloc,
+	.freem			= neo_free,
+	.round_buffersize	= neo_round_buffersize,
+	.mappage		= neo_mappage,
+	.get_props		= neo_get_props,
+	.trigger_output		= neo_trigger_output,
+	.trigger_input		= neo_trigger_input,
+	.get_locks		= neo_get_locks,
 };
 
 /* -------------------------------------------------------------------- */
