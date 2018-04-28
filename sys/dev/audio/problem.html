@@ -102,7 +102,7 @@ FIOASYNC が VC 分離できていないため、
 
 <li>gain が設定できない (2017/12)
 <p class="p">
-<a href="http://gnats.netbsd.org/52781">kern/52781</a> (from martin@)。
+<a href="http://gnats.netbsd.org/52781">kern/52781</a> (from bouyer@)。
 gain の設定は VC のソフトウェアボリュームに変更されたが、
 gain の取得と balance の設定・取得が HW ミキサーのままなので不整合。
 </p>
@@ -403,6 +403,10 @@ audio.c: mismatch of the maximum number of channels?
 <dt><s><a href="http://gnats.netbsd.org/52437">kern/52437</a></s>
 Refactoring audio_set_vchan_defaults()
 <dd>リファクタリング。
+
+<dt><s><a href="http://gnats.netbsd.org/52442">kern/52442</a></s>
+x68k's vs(4) is broken after in-kernel mixing
+<dd>vs(4) がいろいろおかしい件。
 
 <dt><s><a href="http://gnats.netbsd.org/52459">kern/52459</a></s>
 audio_fill_silence() stops playback.
