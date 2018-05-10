@@ -251,9 +251,7 @@ tav_drain(void *hdl)
 int
 tav_query_encoding(void *hdl, struct audio_encoding *ae)
 {
-	struct tav_softc *sc;
 
-	sc = hdl;
 	if (ae->index >= sizeof(tav_encodings)/sizeof(*ae))
 		return EINVAL;
 
@@ -473,9 +471,7 @@ tav_set_params(void *hdl, int setmode, int usemode, audio_params_t *p,
 int
 tav_set_port(void *hdl, mixer_ctrl_t *mc)
 {
-	struct tav_softc *sc;
 
-	sc = hdl;
 	/* dummy */
 	return 0;
 }
@@ -483,9 +479,7 @@ tav_set_port(void *hdl, mixer_ctrl_t *mc)
 int
 tav_get_port(void *hdl, mixer_ctrl_t *mc)
 {
-	struct tav_softc *sc;
 
-	sc = hdl;
 	/* dummy */
 	return 0;
 }
