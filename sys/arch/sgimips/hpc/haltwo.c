@@ -79,34 +79,21 @@ static void haltwo_get_locks(void *, kmutex_t **, kmutex_t **);
 static bool haltwo_shutdown(device_t, int);
 
 static const struct audio_hw_if haltwo_hw_if = {
-	NULL, /* open */
-	NULL, /* close */
-	NULL, /* drain */
-	haltwo_query_encoding,
-	haltwo_set_params,
-	haltwo_round_blocksize,
-	NULL, /* commit_settings */
-	NULL, /* init_output */
-	NULL, /* init_input */
-	NULL, /* start_output */
-	NULL, /* start_input */
-	haltwo_halt_output,
-	haltwo_halt_input,
-	NULL, /* speaker_ctl */
-	haltwo_getdev,
-	NULL, /* setfd */
-	haltwo_set_port,
-	haltwo_get_port,
-	haltwo_query_devinfo,
-	haltwo_malloc,
-	haltwo_free,
-	NULL, /* round_buffersize */
-	NULL, /* mappage */
-	haltwo_get_props,
-	haltwo_trigger_output,
-	haltwo_trigger_input,
-	NULL, /* dev_ioctl */
-	haltwo_get_locks,
+	.query_encoding		= haltwo_query_encoding,
+	.set_params		= haltwo_set_params,
+	.round_blocksize	= haltwo_round_blocksize,
+	.halt_output		= haltwo_halt_output,
+	.halt_input		= haltwo_halt_input,
+	.getdev			= haltwo_getdev,
+	.set_port		= haltwo_set_port,
+	.get_port		= haltwo_get_port,
+	.query_devinfo		= haltwo_query_devinfo,
+	.allocm			= haltwo_malloc,
+	.freem			= haltwo_free,
+	.get_props		= haltwo_get_props,
+	.trigger_output		= haltwo_trigger_output,
+	.trigger_input		= haltwo_trigger_input,
+	.get_locks		= haltwo_get_locks,
 };
 
 static const struct audio_device haltwo_device = {

@@ -116,41 +116,30 @@ CFATTACH_DECL_NEW(vs, sizeof(struct vs_softc),
 static int vs_attached;
 
 static const struct audio_hw_if vs_hw_if = {
-	vs_open,
-	vs_close,
-	NULL,			/* drain */
-	vs_query_encoding,
-#if defined(AUDIO2)
-	NULL,			/* set_params */
-#else
-	vs_set_params,
+	.open			= vs_open,
+	.close			= vs_close,
+	.query_encoding		= vs_query_encoding,
+#if !defined(AUDIO2)
+	.set_params		= vs_set_params,
 #endif
-	NULL,			/* round_blocksize */
-	NULL,			/* commit_settings */
-	vs_init_output,
-	vs_init_input,
-	vs_start_output,
-	vs_start_input,
-	vs_halt_output,
-	vs_halt_input,
-	NULL,			/* speaker_ctl */
-	vs_getdev,
-	NULL,			/* setfd */
-	vs_set_port,
-	vs_get_port,
-	vs_query_devinfo,
-	vs_allocm,
-	vs_freem,
-	vs_round_buffersize,
-	NULL,			/* mappage */
-	vs_get_props,
-	NULL,			/* trigger_output */
-	NULL,			/* trigger_input */
-	NULL,
-	vs_get_locks,
+	.init_output		= vs_init_output,
+	.init_input		= vs_init_input,
+	.start_output		= vs_start_output,
+	.start_input		= vs_start_input,
+	.halt_output		= vs_halt_output,
+	.halt_input		= vs_halt_input,
+	.getdev			= vs_getdev,
+	.set_port		= vs_set_port,
+	.get_port		= vs_get_port,
+	.query_devinfo		= vs_query_devinfo,
+	.allocm			= vs_allocm,
+	.freem			= vs_freem,
+	.round_buffersize	= vs_round_buffersize,
+	.get_props		= vs_get_props,
+	.get_locks		= vs_get_locks,
 #if defined(AUDIO2)
-	vs_query_format,
-	vs_set_params2,
+	.query_format		= vs_query_format,
+	.set_params2		= vs_set_params2,
 #endif
 };
 
