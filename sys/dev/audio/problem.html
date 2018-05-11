@@ -220,6 +220,16 @@ sc_lchan はもう使われていない。
 <h4>NetBSD 7 (以前) からある問題</h4>
 <ul>
 
+<li>isa/aria の halt_input と halt_output が逆 (2018/04)
+<p class="p">
+audio(4) とは直接関係ないけど、aria(4) の halt_input と halt_output が
+誤って逆になってるので、正しく停止できないはず。
+ただし実際のところは hw-&gt;halt_* を呼んで停止に失敗しても、
+直後に hw-&gt;close を呼ぶため、そしてこいつがチップリセットをしてるっぽい
+ので、おそらく見た目に影響は分からなかったはず。
+N8 でどうなるかは追っかけてないのでシラン。
+</p>
+
 <li>AUDIO_SETINFO.blocksize が manpage と実装が異なる (2018/03)
 <p class="p">
 audio(4) には AUDIO_SETINFO では blocksize は実際に選ばれた値が書き戻される
