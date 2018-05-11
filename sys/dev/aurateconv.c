@@ -29,6 +29,8 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#if !defined(AUDIO2)
+
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD: aurateconv.c,v 1.22 2017/08/07 13:30:51 isaki Exp $");
 
@@ -471,3 +473,5 @@ AURATECONV_SLINEAR32(LE)
 AURATECONV_SLINEAR(16, BE)
 AURATECONV_SLINEAR(24, BE)
 AURATECONV_SLINEAR32(BE)
+
+#endif /* !AUDIO2 */

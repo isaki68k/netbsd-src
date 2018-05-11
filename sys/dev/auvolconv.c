@@ -26,6 +26,8 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#if !defined(AUDIO2)
+
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD: auvolconv.c,v 1.3 2016/02/26 13:08:28 nat Exp $");
 
@@ -96,3 +98,5 @@ auvolconv_slinear16_be_fetch_to(struct audio_softc *asc,
 
 	return 0;
 }
+
+#endif /* !AUDIO2 */

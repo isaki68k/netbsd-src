@@ -34,6 +34,9 @@
  *
  */
 
+#if defined(AUDIO2)
+#include "dev/audio/mulaw.c"
+#else
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD: mulaw.c,v 1.33 2017/12/27 00:12:06 nat Exp $");
 
@@ -700,3 +703,4 @@ DEFINE_FILTER(linearN_to_alaw)
 	}
 	return 0;
 }
+#endif /* AUDIO2 */
