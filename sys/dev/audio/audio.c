@@ -157,7 +157,7 @@
  *	dev_ioctl 		-	x
  *	get_locks 		-	-	Called at attach time
  *	query_format		-	x	(Added in AUDIO2)
- *	set_params		-	x	(Added in AUDIO2)
+ *	set_params2		-	x	(Added in AUDIO2)
  *
  * *1: round_blocksize and round_buffersize become to be called only at
  *  attach time.  That means it's unnecessary to hold thread lock.  However,
