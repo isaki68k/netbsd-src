@@ -70,8 +70,8 @@ auich, eap, hdafg, uaudio and vs(x68k) for now.
 
 ビルド方法はいつもどおり。
 ただし、カーネルは amd64/conf/AUDIO2、x68k/conf/AUDIO2 しかサポートしてない。
-現状、全 hardware driver に手をいれないといけないので、
-amd64 の GENERIC もビルドできない。
+現状、spkr* at audio? などを含むすべての機能を維持しているわけではないため、
+GENERIC はビルドできない。
 
 ```
 % git clone --branch audio2 git@github.com:isaki68k/netbsd-src.git
