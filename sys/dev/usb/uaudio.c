@@ -336,9 +336,10 @@ Static void	uaudio_chan_rintr
 Static int	uaudio_open(void *, int);
 Static void	uaudio_close(void *);
 Static int	uaudio_drain(void *);
-Static int	uaudio_query_encoding(void *, struct audio_encoding *);
 #if defined(AUDIO2)
 Static int	uaudio_query_format(void *, const struct audio_format **);
+#else
+Static int	uaudio_query_encoding(void *, struct audio_encoding *);
 #endif
 Static int	uaudio_set_params
 	(void *, int, int, struct audio_params *, struct audio_params *,
@@ -363,7 +364,11 @@ Static const struct audio_hw_if uaudio_hw_if = {
 	.open			= uaudio_open,
 	.close			= uaudio_close,
 	.drain			= uaudio_drain,
+#if defined(AUDIO2)
+	.query_format		= uaudio_query_format,
+#else
 	.query_encoding		= uaudio_query_encoding,
+#endif
 	.set_params		= uaudio_set_params,
 	.round_blocksize	= uaudio_round_blocksize,
 	.halt_output		= uaudio_halt_out_dma,
@@ -376,9 +381,6 @@ Static const struct audio_hw_if uaudio_hw_if = {
 	.trigger_output		= uaudio_trigger_output,
 	.trigger_input		= uaudio_trigger_input,
 	.get_locks		= uaudio_get_locks,
-#if defined(AUDIO2)
-	.query_format		= uaudio_query_format,
-#endif
 };
 
 int uaudio_match(device_t, cfdata_t, void *);
@@ -554,6 +556,17 @@ uaudio_detach(device_t self, int flags)
 	return rv;
 }
 
+#if defined(AUDIO2)
+Static int
+uaudio_query_format(void *addr, const struct audio_format **afp)
+{
+	struct uaudio_softc *sc;
+
+	sc = addr;
+	*afp = sc->sc_formats;
+	return sc->sc_nformats;
+}
+#else
 Static int
 uaudio_query_encoding(void *addr, struct audio_encoding *fp)
 {
@@ -569,17 +582,6 @@ uaudio_query_encoding(void *addr, struct audio_encoding *fp)
 		return ENXIO;
 
 	return auconv_query_encoding(sc->sc_encodings, fp);
-}
-
-#if defined(AUDIO2)
-Static int
-uaudio_query_format(void *addr, const struct audio_format **afp)
-{
-	struct uaudio_softc *sc;
-
-	sc = addr;
-	*afp = sc->sc_formats;
-	return sc->sc_nformats;
 }
 #endif
 

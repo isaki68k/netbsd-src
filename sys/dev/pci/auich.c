@@ -259,9 +259,10 @@ CFATTACH_DECL2_NEW(auich, sizeof(struct auich_softc),
 
 static int	auich_open(void *, int);
 static void	auich_close(void *);
-static int	auich_query_encoding(void *, struct audio_encoding *);
 #if defined(AUDIO2)
 static int	auich_query_format(void *, const struct audio_format **);
+#else
+static int	auich_query_encoding(void *, struct audio_encoding *);
 #endif
 static int	auich_set_params(void *, int, int, audio_params_t *,
 		    audio_params_t *, stream_filter_list_t *,
@@ -310,7 +311,11 @@ static void	auich_spdif_event(void *, bool);
 static const struct audio_hw_if auich_hw_if = {
 	.open			= auich_open,
 	.close			= auich_close,
+#if defined(AUDIO2)
+	.query_format		= auich_query_format,
+#else
 	.query_encoding		= auich_query_encoding,
+#endif
 	.set_params		= auich_set_params,
 	.round_blocksize	= auich_round_blocksize,
 	.halt_output		= auich_halt_output,
@@ -327,9 +332,6 @@ static const struct audio_hw_if auich_hw_if = {
 	.trigger_output		= auich_trigger_output,
 	.trigger_input		= auich_trigger_input,
 	.get_locks		= auich_get_locks,
-#if defined(AUDIO2)
-	.query_format		= auich_query_format,
-#endif
 };
 
 #define AUICH_FORMATS_1CH	0
@@ -950,16 +952,6 @@ auich_close(void *addr)
 	mutex_spin_enter(&sc->sc_intr_lock);
 }
 
-static int
-auich_query_encoding(void *v, struct audio_encoding *aep)
-{
-	struct auich_softc *sc;
-
-	sc = (struct auich_softc *)v;
-	return auconv_query_encoding(
-	    sc->sc_spdif ? sc->sc_spdif_encodings : sc->sc_encodings, aep);
-}
-
 #if defined(AUDIO2)
 static int
 auich_query_format(void *v, const struct audio_format **afp)
@@ -978,6 +970,16 @@ auich_query_format(void *v, const struct audio_format **afp)
 	}
 	*afp = format;
 	return nf;
+}
+#else
+static int
+auich_query_encoding(void *v, struct audio_encoding *aep)
+{
+	struct auich_softc *sc;
+
+	sc = (struct auich_softc *)v;
+	return auconv_query_encoding(
+	    sc->sc_spdif ? sc->sc_spdif_encodings : sc->sc_encodings, aep);
 }
 #endif
 

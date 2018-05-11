@@ -110,9 +110,10 @@ CFATTACH_DECL_NEW(eap, sizeof(struct eap_softc),
     eap_match, eap_attach, eap_detach, NULL);
 
 static int	eap_open(void *, int);
-static int	eap_query_encoding(void *, struct audio_encoding *);
 #if defined(AUDIO2)
 static int	eap_query_format(void *, const struct audio_format **);
+#else
+static int	eap_query_encoding(void *, struct audio_encoding *);
 #endif
 static int	eap_set_params(void *, int, int, audio_params_t *,
 			       audio_params_t *, stream_filter_list_t *,
@@ -163,7 +164,11 @@ static void	eap_uart_txrdy(struct eap_softc *);
 
 static const struct audio_hw_if eap1370_hw_if = {
 	.open			= eap_open,
+#if defined(AUDIO2)
+	.query_format		= eap_query_format,
+#else
 	.query_encoding		= eap_query_encoding,
+#endif
 	.set_params		= eap_set_params,
 	.round_blocksize	= eap_round_blocksize,
 	.halt_output		= eap_halt_output,
@@ -180,14 +185,15 @@ static const struct audio_hw_if eap1370_hw_if = {
 	.trigger_output		= eap_trigger_output,
 	.trigger_input		= eap_trigger_input,
 	.get_locks		= eap_get_locks,
-#if defined(AUDIO2)
-	.query_format		= eap_query_format,
-#endif
 };
 
 static const struct audio_hw_if eap1371_hw_if = {
 	.open			= eap_open,
+#if defined(AUDIO2)
+	.query_format		= eap_query_format,
+#else
 	.query_encoding		= eap_query_encoding,
+#endif
 	.set_params		= eap_set_params,
 	.round_blocksize	= eap_round_blocksize,
 	.halt_output		= eap_halt_output,
@@ -204,9 +210,6 @@ static const struct audio_hw_if eap1371_hw_if = {
 	.trigger_output		= eap_trigger_output,
 	.trigger_input		= eap_trigger_input,
 	.get_locks		= eap_get_locks,
-#if defined(AUDIO2)
-	.query_format		= eap_query_format,
-#endif
 };
 
 #if NMIDI > 0
@@ -945,6 +948,15 @@ eap_open(void *addr, int flags)
 	return 0;
 }
 
+#if defined(AUDIO2)
+static int
+eap_query_format(void *addr, const struct audio_format **afp)
+{
+
+	*afp = eap_formats;
+	return EAP_NFORMATS;
+}
+#else
 static int
 eap_query_encoding(void *addr, struct audio_encoding *fp)
 {
@@ -1001,14 +1013,6 @@ eap_query_encoding(void *addr, struct audio_encoding *fp)
 	default:
 		return EINVAL;
 	}
-}
-
-#if defined(AUDIO2)
-static int
-eap_query_format(void *addr, const struct audio_format **afp)
-{
-	*afp = eap_formats;
-	return EAP_NFORMATS;
 }
 #endif
 

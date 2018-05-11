@@ -75,12 +75,12 @@ static int  vs_dmaerrintr(void *);
 /* MI audio layer interface */
 static int  vs_open(void *, int);
 static void vs_close(void *);
-static int  vs_query_encoding(void *, struct audio_encoding *);
 #if defined(AUDIO2)
 static int  vs_query_format(void *, const struct audio_format **);
 static int  vs_set_params2(void *, int, int, const audio_params_t *,
 	const audio_params_t *, audio_filter_reg_t *, audio_filter_reg_t *);
 #else
+static int  vs_query_encoding(void *, struct audio_encoding *);
 static int  vs_set_params(void *, int, int, audio_params_t *,
 	audio_params_t *, stream_filter_list_t *, stream_filter_list_t *);
 #endif
@@ -118,8 +118,11 @@ static int vs_attached;
 static const struct audio_hw_if vs_hw_if = {
 	.open			= vs_open,
 	.close			= vs_close,
+#if defined(AUDIO2)
+	.query_format		= vs_query_format,
+	.set_params2		= vs_set_params2,
+#else
 	.query_encoding		= vs_query_encoding,
-#if !defined(AUDIO2)
 	.set_params		= vs_set_params,
 #endif
 	.init_output		= vs_init_output,
@@ -137,10 +140,6 @@ static const struct audio_hw_if vs_hw_if = {
 	.round_buffersize	= vs_round_buffersize,
 	.get_props		= vs_get_props,
 	.get_locks		= vs_get_locks,
-#if defined(AUDIO2)
-	.query_format		= vs_query_format,
-	.set_params2		= vs_set_params2,
-#endif
 };
 
 static struct audio_device vs_device = {
@@ -321,6 +320,15 @@ vs_close(void *hdl)
 	DPRINTF(1, ("vs_close\n"));
 }
 
+#if defined(AUDIO2)
+static int
+vs_query_format(void *hdl, const struct audio_format **afp)
+{
+
+	*afp = vs_formats;
+	return __arraycount(vs_formats);
+}
+#else
 static int
 vs_query_encoding(void *hdl, struct audio_encoding *fp)
 {
@@ -342,14 +350,6 @@ vs_query_encoding(void *hdl, struct audio_encoding *fp)
 		return 0;
 	}
 	return EINVAL;
-}
-
-#if defined(AUDIO2)
-static int
-vs_query_format(void *hdl, const struct audio_format **afp)
-{
-	*afp = vs_formats;
-	return __arraycount(vs_formats);
 }
 #endif
 
