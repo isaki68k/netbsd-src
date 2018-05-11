@@ -689,23 +689,23 @@ static const char *encoding_names[] = {
  * XXX is there any needs for SLINEAR_OE:>=16/ULINEAR_OE:>=16 ?
  */
 static const audio_encoding_t audio_encodings[] = {
-	{ 0, AudioEmulaw,	AUDIO_ENCODING_ULAW,		8 },
-	{ 0, AudioEslinear,	AUDIO_ENCODING_SLINEAR,		8 },
-	{ 0, AudioEulinear,	AUDIO_ENCODING_ULINEAR,		8 },
-	{ 0, AudioEslinear_le,	AUDIO_ENCODING_SLINEAR_LE,	16 },
-	{ 0, AudioEulinear_le,	AUDIO_ENCODING_ULINEAR_LE,	16 },
-	{ 0, AudioEslinear_be,	AUDIO_ENCODING_SLINEAR_BE,	16 },
-	{ 0, AudioEulinear_be,	AUDIO_ENCODING_ULINEAR_BE,	16 },
+	{ 0, AudioEmulaw,	AUDIO_ENCODING_ULAW,		8,  0 },
+	{ 0, AudioEslinear,	AUDIO_ENCODING_SLINEAR,		8,  0 },
+	{ 0, AudioEulinear,	AUDIO_ENCODING_ULINEAR,		8,  0 },
+	{ 0, AudioEslinear_le,	AUDIO_ENCODING_SLINEAR_LE,	16, 0 },
+	{ 0, AudioEulinear_le,	AUDIO_ENCODING_ULINEAR_LE,	16, 0 },
+	{ 0, AudioEslinear_be,	AUDIO_ENCODING_SLINEAR_BE,	16, 0 },
+	{ 0, AudioEulinear_be,	AUDIO_ENCODING_ULINEAR_BE,	16, 0 },
 #if defined(AUDIO_SUPPORT_LINEAR24)
-	{ 0, AudioEslinear_le,	AUDIO_ENCODING_SLINEAR_LE,	24 },
-	{ 0, AudioEulinear_le,	AUDIO_ENCODING_ULINEAR_LE,	24 },
-	{ 0, AudioEslinear_be,	AUDIO_ENCODING_SLINEAR_BE,	24 },
-	{ 0, AudioEulinear_be,	AUDIO_ENCODING_ULINEAR_BE,	24 },
+	{ 0, AudioEslinear_le,	AUDIO_ENCODING_SLINEAR_LE,	24, 0 },
+	{ 0, AudioEulinear_le,	AUDIO_ENCODING_ULINEAR_LE,	24, 0 },
+	{ 0, AudioEslinear_be,	AUDIO_ENCODING_SLINEAR_BE,	24, 0 },
+	{ 0, AudioEulinear_be,	AUDIO_ENCODING_ULINEAR_BE,	24, 0 },
 #endif
-	{ 0, AudioEslinear_le,	AUDIO_ENCODING_SLINEAR_LE,	32 },
-	{ 0, AudioEulinear_le,	AUDIO_ENCODING_ULINEAR_LE,	32 },
-	{ 0, AudioEslinear_be,	AUDIO_ENCODING_SLINEAR_BE,	32 },
-	{ 0, AudioEulinear_be,	AUDIO_ENCODING_ULINEAR_BE,	32 },
+	{ 0, AudioEslinear_le,	AUDIO_ENCODING_SLINEAR_LE,	32, 0 },
+	{ 0, AudioEulinear_le,	AUDIO_ENCODING_ULINEAR_LE,	32, 0 },
+	{ 0, AudioEslinear_be,	AUDIO_ENCODING_SLINEAR_BE,	32, 0 },
+	{ 0, AudioEulinear_be,	AUDIO_ENCODING_ULINEAR_BE,	32, 0 },
 };
 
 static const struct portname itable[] = {
