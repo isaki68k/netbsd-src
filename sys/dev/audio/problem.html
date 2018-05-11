@@ -350,6 +350,12 @@ Audio volume is changing with "inputs.dac" instead of "outputs.master"
 vs(4) audio attach failed
 <dd>一応解決した。正しい周波数でアタッチできない件は別途。
 
+<dt><s><a href="http://gnats.netbsd.org/51784">kern/51784</a></s>
+"synthesized" speaker hums
+<dd>/dev/speaker の音が悪いという話で、
+グダグダなやりとりの末にハイレゾ波形を用意して直ったような話になってるが、
+たぶん問題はそこじゃない。
+
 <dt><font color=#555><a href="http://gnats.netbsd.org/51920">kern/51920</a>
 hdaudio isn't configured on TOSHIBA dynabook SS SX/15A</font>
 <dd>ハードウェアドライバ固有?
