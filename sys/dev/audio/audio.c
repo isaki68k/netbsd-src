@@ -6135,11 +6135,13 @@ static int
 audio_select_freq(const struct audio_format *fmt)
 {
 	int freq;
+	int high;
+	int low;
 	int j;
 
 	if (fmt->frequency_type == 0) {
-		int low = fmt->frequency[0];
-		int high = fmt->frequency[1];
+		low = fmt->frequency[0];
+		high = fmt->frequency[1];
 		freq = 48000;
 		if (low <= freq && freq <= high) {
 			return freq;
@@ -6150,19 +6152,21 @@ audio_select_freq(const struct audio_format *fmt)
 		}
 		return high;
 	} else {
-		freq = 48000;
 		for (j = 0; j < fmt->frequency_type; j++) {
-			if (fmt->frequency[j] == freq) {
-				return freq;
+			if (fmt->frequency[j] == 48000) {
+				return fmt->frequency[j];
 			}
 		}
-		freq = 44100;
+		high = 0;
 		for (j = 0; j < fmt->frequency_type; j++) {
-			if (fmt->frequency[j] == freq) {
-				return freq;
+			if (fmt->frequency[j] == 44100) {
+				return fmt->frequency[j];
+			}
+			if (fmt->frequency[j] > high) {
+				high = fmt->frequency[j];
 			}
 		}
-		return fmt->frequency[fmt->frequency_type - 1];
+		return high;
 	}
 }
 
