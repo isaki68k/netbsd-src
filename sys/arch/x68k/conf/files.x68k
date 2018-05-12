@@ -134,6 +134,10 @@ device	vs: audiobus, auconv, mulaw, msm6258
 attach	vs at intio
 file	arch/x68k/dev/vs.c		vs needs-flag
 
+device	mercury: audiobus
+attach	mercury at intio
+file	arch/x68k/dev/mercury.c	mercury
+
 device	fdc { unit = -1 }
 attach	fdc at intio
 
