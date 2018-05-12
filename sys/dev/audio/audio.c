@@ -683,6 +683,20 @@ static const char *encoding_names[] = {
 	AudioEac3,
 };
 
+// エンコーディング名を返します。
+// ほぼデバッグ用なのでローカルバッファを返す場合があることに注意。
+static const char *audio_encoding_name(int encoding)
+{
+	static char buf[16];
+
+	if (0 <= encoding && encoding < __arraycount(encoding_names)) {
+		return encoding_names[encoding];
+	} else {
+		snprintf(buf, sizeof(buf), "enc=%d", encoding);
+		return buf;
+	}
+}
+
 /*
  * Supported encodings used by AUDIO_GETENC.
  * index and flags are set by code.
@@ -6460,12 +6474,8 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 
 		buflen = 0;
 		plen = 0;
-		if (SPECIFIED(pi->encoding)) {
-			if (pi->encoding < __arraycount(encoding_names))
-				SPRINTF(p, "/%s", encoding_names[pi->encoding]);
-			else
-				SPRINTF(p, "/enc%d", pi->encoding);
-		}
+		if (SPECIFIED(pi->encoding))
+			SPRINTF(p, "/%s", audio_encoding_name(pi->encoding));
 		if (SPECIFIED(pi->precision))
 			SPRINTF(p, "/%dbit", pi->precision);
 		if (SPECIFIED(pi->channels))
@@ -6476,12 +6486,8 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 			SPRINTF(buf, ",play.param=%s", p + 1);
 
 		plen = 0;
-		if (SPECIFIED(ri->encoding)) {
-			if (ri->encoding < __arraycount(encoding_names))
-				SPRINTF(p, "/%s", encoding_names[ri->encoding]);
-			else
-				SPRINTF(p, "/enc%d", ri->encoding);
-		}
+		if (SPECIFIED(ri->encoding))
+			SPRINTF(p, "/%s", audio_encoding_name(ri->encoding));
 		if (SPECIFIED(ri->precision))
 			SPRINTF(p, "/%dbit", ri->precision);
 		if (SPECIFIED(ri->channels))
@@ -7213,13 +7219,9 @@ audio_getenc(struct audio_softc *sc, struct audio_encoding *ae)
 	if (error) {
 		DPRINTF(2, "error=%d\n", error);
 	} else {
-		DPRINTF(2, "name=\"%s\" enc=", ae->name);
-		if (ae->encoding < __arraycount(encoding_names)) {
-			DPRINTF(2, "%s", encoding_names[ae->encoding]);
-		} else {
-			DPRINTF(2, "?(%d)", ae->encoding);
-		}
-		DPRINTF(2, " prec=%d flags=%d(%s)\n",
+		DPRINTF(2, "name=\"%s\" %s prec=%d flags=%d(%s)\n",
+		    ae->name,
+		    audio_encoding_name(ae->encoding),
 		    ae->precision,
 		    ae->flags,
 		    ae->flags == 0 ? "native" : "EMULATED");
@@ -7404,13 +7406,8 @@ audio_format2_tostr(char *buf, size_t bufsize, const audio_format2_t *fmt)
 	int n;
 
 	n = 0;
-	if (fmt->encoding < __arraycount(encoding_names)) {
-		n += snprintf(buf + n, bufsize - n, "%s",
-		    encoding_names[fmt->encoding]);
-	} else {
-		n += snprintf(buf + n, bufsize - n, "unknown_encoding=%d",
-		    fmt->encoding);
-	}
+	n += snprintf(buf + n, bufsize - n, "%s",
+	    audio_encoding_name(fmt->encoding));
 	if (fmt->precision == fmt->stride) {
 		n += snprintf(buf + n, bufsize - n, " %dbit", fmt->precision);
 	} else {
