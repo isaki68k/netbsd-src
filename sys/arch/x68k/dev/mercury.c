@@ -203,13 +203,11 @@ mercury_set_params(void *hdl, int setmode, int usemode,
 	audio_params_t *play, audio_params_t *rec,
 	stream_filter_list_t *pfil, stream_filter_list_t *rfil)
 {
-	struct mercury_softc *sc;
 	struct audio_params *p;
 	int mode;
 
 	printf("%s setmode=%x usemode=%x\n", __func__, setmode, usemode);
 
-	sc = hdl;
 	for (mode = AUMODE_RECORD; mode != -1;
 	     mode = (mode == AUMODE_RECORD) ? AUMODE_PLAY : -1) {
 		if ((setmode & mode) == 0)
