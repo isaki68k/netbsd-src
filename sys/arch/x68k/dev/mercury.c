@@ -1,3 +1,4 @@
+// vi:set ts=8:
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD$");
 
@@ -47,9 +48,15 @@ static void mercury_attach(device_t, device_t, void *);
 /* MI audio layer interface */
 static int  mercury_open(void *, int);
 static void mercury_close(void *);
+#if defined(AUDIO2)
+static int  mercury_query_format(void *, const struct audio_format **);
+#else
 static int  mercury_query_encoding(void *, struct audio_encoding *);
+#endif
 static int  mercury_set_params(void *, int, int, audio_params_t *,
 	audio_params_t *, stream_filter_list_t *, stream_filter_list_t *);
+static int  mercury_start_output(void *, void *, int, void (*)(void *), void *);
+static int  mercury_start_input(void *, void *, int, void (*)(void *), void *);
 static int  mercury_halt_output(void *);
 static int  mercury_halt_input(void *);
 static int  mercury_getdev(void *, struct audio_device *);
@@ -58,10 +65,12 @@ static int  mercury_get_port(void *, mixer_ctrl_t *);
 static int  mercury_query_devinfo(void *, mixer_devinfo_t *);
 static size_t mercury_round_buffersize(void *, int, size_t);
 static int  mercury_get_props(void *);
+#if 0
 static int  mercury_trigger_output(void *, void *, void *, int,
 	void (*)(void *), void *, const audio_params_t *);
 static int  mercury_trigger_input(void *, void *, void *, int,
 	void (*)(void *), void *, const audio_params_t *);
+#endif
 static void mercury_get_locks(void *, kmutex_t **, kmutex_t **);
 
 struct mercury_softc {
@@ -74,47 +83,45 @@ struct mercury_softc {
 };
 
 CFATTACH_DECL_NEW(mercury, sizeof(struct mercury_softc),
-	mercury_match,
-	mercury_attach,
- NULL, NULL);
+	mercury_match, mercury_attach, NULL, NULL);
 
 static int mercury_attached;
 
 static const struct audio_hw_if mercury_hw_if = {
-	.open = mercury_open,
-	.close = mercury_close,
-	/* drain */
-	.query_encoding = mercury_query_encoding,
-	.set_params = mercury_set_params,
-	/* round_blocksize */
-	/* commit_settings */
-	/* init_output */
-	/* init_input */
-	/* start_output */
-	/* start_input */
-	.halt_output = mercury_halt_output,
-	.halt_input = mercury_halt_input,
-	/* speaker_ctl */
-	.getdev = mercury_getdev,
-	/* setfd */
-	.set_port = mercury_set_port,
-	.get_port = mercury_get_port,
-	.query_devinfo = mercury_query_devinfo,
-	//.allocm = mercury_allocm,
-	//.freem = mercury_freem,
-	.round_buffersize = mercury_round_buffersize,
-	/* mappage */
-	.get_props = mercury_get_props,
-	.trigger_output = mercury_trigger_output,
-	.trigger_input = mercury_trigger_input,
-	/* dev_ioctl */
-	.get_locks = mercury_get_locks,
+	.open			= mercury_open,
+	.close			= mercury_close,
+#if defined(AUDIO2)
+	.query_format		= mercury_query_format,
+#else
+	.query_encoding		= mercury_query_encoding,
+#endif
+	.set_params		= mercury_set_params,
+	.start_output		= mercury_start_output,
+	.start_input		= mercury_start_input,
+	.halt_output		= mercury_halt_output,
+	.halt_input		= mercury_halt_input,
+	.getdev			= mercury_getdev,
+	.set_port		= mercury_set_port,
+	.get_port		= mercury_get_port,
+	.query_devinfo		= mercury_query_devinfo,
+	//.allocm		= mercury_allocm,
+	//.freem		= mercury_freem,
+	.round_buffersize	= mercury_round_buffersize,
+	.get_props		= mercury_get_props,
+	//.trigger_output		= mercury_trigger_output,
+	//.trigger_input		= mercury_trigger_input,
+	.get_locks		= mercury_get_locks,
 };
 
 static struct audio_device mercury_device = {
 	"Mercury Unit",
 	"",
 	"mercury",
+};
+
+static const struct audio_format mercury_formats[] = {
+	{ NULL, AUMODE_PLAY | AUMODE_RECORD, AUDIO_ENCODING_SLINEAR_BE, 16, 16,
+	  2, AUFMT_STEREO, 3, { 32000, 44100, 48000 } },
 };
 
 
@@ -146,12 +153,14 @@ mercury_attach(device_t parent, device_t self, void *aux)
 	struct mercury_softc *sc = device_private(self);
 	struct intio_attach_args *ia = aux;
 	bus_space_handle_t ioh;
+	int r;
 
 	printf("\n");
 	sc->sc_dev = self;
 
 	/* Re-map I/O space */
-	if (bus_space_map(ia->ia_bst, ia->ia_addr, MERCURY_SIZE, 0, &ioh) != 0) {
+	r = bus_space_map(ia->ia_bst, ia->ia_addr, MERCURY_SIZE, 0, &ioh);
+	if (r != 0) {
 		aprint_normal_dev(sc->sc_dev, "bus_space_map failed\n");
 		return;
 	}
@@ -180,6 +189,15 @@ mercury_close(void *hdl)
 	printf("%s\n", __func__);
 }
 
+#if defined(AUDIO2)
+static int
+mercury_query_format(void *hdl, const struct audio_format **afp)
+{
+
+	*afp = mercury_formats;
+	return __arraycount(mercury_formats);
+}
+#else
 static int
 mercury_query_encoding(void *hdl, struct audio_encoding *ae)
 {
@@ -189,7 +207,7 @@ mercury_query_encoding(void *hdl, struct audio_encoding *ae)
 	switch (ae->index) {
 	case 0:
 		strcpy(ae->name, AudioEslinear_le);
-		ae->encoding = AUDIO_ENCODING_SLINEAR_LE;
+		ae->encoding = AUDIO_ENCODING_SLINEAR_BE;
 		ae->precision = 16;
 		ae->flags = 0;
 		return 0;
@@ -197,6 +215,7 @@ mercury_query_encoding(void *hdl, struct audio_encoding *ae)
 
 	return EINVAL;
 }
+#endif
 
 static int
 mercury_set_params(void *hdl, int setmode, int usemode,
@@ -231,6 +250,22 @@ printf("%s EINVAL\n", __func__);
 			}
 		}
 	}
+	return 0;
+}
+
+static int
+mercury_start_output(void *hdl, void *block, int blksize,
+	void (*intr)(void *), void *intrarg)
+{
+	printf("%s\n", __func__);
+	return 0;
+}
+
+static int
+mercury_start_input(void *hdl, void *block, int blksize,
+	void (*intr)(void *), void *intrarg)
+{
+	printf("%s\n", __func__);
 	return 0;
 }
 
@@ -298,28 +333,11 @@ mercury_get_props(void *hdl)
 	return AUDIO_PROP_PLAYBACK | AUDIO_PROP_CAPTURE;
 }
 
-static int
-mercury_trigger_output(void *hdl, void *start, void *end, int blksize,
-	void (*intr)(void *), void *intrarg, const audio_params_t *param)
-{
-	printf("%s\n", __func__);
-	return 0;
-}
-
-static int
-mercury_trigger_input(void *hdl, void *start, void *end, int blksize,
-	void (*intr)(void *), void *intrarg, const audio_params_t *param)
-{
-	printf("%s\n", __func__);
-	return 0;
-}
-
 static void
 mercury_get_locks(void *hdl, kmutex_t **intr, kmutex_t **thread)
 {
 	struct mercury_softc *sc = hdl;
 
-	printf("%s\n", __func__);
 	*intr = &sc->sc_intr_lock;
 	*thread = &sc->sc_thread_lock;
 }
