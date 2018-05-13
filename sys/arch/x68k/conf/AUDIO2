@@ -280,7 +280,7 @@ com1	at intio0 addr 0xefff10 intr 241	# PSX16550, port2
 vs0 at intio0 addr 0xe92000 dma 3 dmaintr 106
 audio*	at vs?
 
-mercury0 at intio0 addr 0xecc080
+mercury0 at intio0 addr 0xecc080 dma 2 dmaintr 104
 audio* at mercury?
 
 #spkr*	at audio?				# PC speaker (synthesized)
