@@ -685,7 +685,8 @@ static const char *encoding_names[] = {
 
 // エンコーディング名を返します。
 // ほぼデバッグ用なのでローカルバッファを返す場合があることに注意。
-static const char *audio_encoding_name(int encoding)
+const char *
+audio_encoding_name(int encoding)
 {
 	static char buf[16];
 

@@ -304,6 +304,7 @@ device_t audio_get_device(struct audio_softc *);
 
 extern int audio_query_format(const struct audio_format *, int,
 	audio_format_get_t *);
+extern const char *audio_encoding_name(int);
 
 /* Device identity flags */
 #define SOUND_DEVICE		0

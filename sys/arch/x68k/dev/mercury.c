@@ -307,9 +307,9 @@ mercury_set_format(void *hdl, int setmode,
 	uint8_t cmd;
 
 	sc = hdl;
-	printf("%s: mode=%d enc=%d rate=%d prec=%d ch=%d\n", __func__,
-	    setmode, play->encoding, play->sample_rate,
-	    play->precision, play->channels);
+	printf("%s: mode=%d %s/%dbit/%dch/%dHz\n", __func__,
+	    setmode, audio_encoding_name(play->encoding),
+	    play->precision, play->channels, play->sample_rate);
 
 	/* *play and *rec are identical because !AUDIO_PROP_INDEPENDENT */
 
@@ -378,9 +378,9 @@ mercury_set_params(void *hdl, int setmode, int usemode,
 			p = rec;
 		}
 
-printf("%s mode=%s enc=%u rate=%u prec=%u/%u ch=%u\n", __func__,
-(p == play) ? "play" : "rec",
-p->encoding, p->sample_rate, p->validbits, p->precision, p->channels);
+printf("%s mode=%s %s %u/%ubit %uch %uHz\n", __func__,
+(p == play) ? "play" : "rec", audio_encoding_name(p->encoding),
+p->validbits, p->precision, p->channels, p->sample_rate);
 		if (p->channels == 2) {
 			cmd |= MERC_CMD_STEREO;
 		}

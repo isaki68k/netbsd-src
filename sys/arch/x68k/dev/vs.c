@@ -391,9 +391,9 @@ vs_set_format(void *hdl, int setmode,
 
 	sc = hdl;
 
-	DPRINTF(1, ("%s: mode=%d enc=%d rate=%d prec=%d ch=%d: ", __func__,
-		setmode, play->encoding, play->sample_rate,
-		play->precision, play->channels));
+	DPRINTF(1, ("%s: mode=%d %s/%dbit/%dch/%dHz: ", __func__,
+	    setmode, audio_encoding_name(play->encoding),
+		play->precision, play->channels, play->sample_rate));
 
 	/* *play and *rec are identical because !AUDIO_PROP_INDEPENDENT */
 
@@ -440,9 +440,9 @@ vs_set_params(void *hdl, int setmode, int usemode,
 
 	sc = hdl;
 
-	DPRINTF(1, ("vs_set_params: mode=%d enc=%d rate=%d prec=%d ch=%d: ",
-		setmode, play->encoding, play->sample_rate,
-		play->precision, play->channels));
+	DPRINTF(1, ("%s: mode=%d %s/%dbit/%dch/%dHz: ", __func__,
+		setmode, audio_encoding_name(play->encoding),
+		play->precision, play->channels, play->sample_rate));
 
 	/* *play and *rec are identical because !AUDIO_PROP_INDEPENDENT */
 
