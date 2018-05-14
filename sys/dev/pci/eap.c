@@ -111,7 +111,7 @@ CFATTACH_DECL_NEW(eap, sizeof(struct eap_softc),
 
 static int	eap_open(void *, int);
 #if defined(AUDIO2)
-static int	eap_query_format(void *, const struct audio_format **);
+static int	eap_query_format(void *, struct audio_format_get *);
 #else
 static int	eap_query_encoding(void *, struct audio_encoding *);
 #endif
@@ -950,11 +950,10 @@ eap_open(void *addr, int flags)
 
 #if defined(AUDIO2)
 static int
-eap_query_format(void *addr, const struct audio_format **afp)
+eap_query_format(void *addr, struct audio_format_get *afp)
 {
 
-	*afp = eap_formats;
-	return EAP_NFORMATS;
+	return audio_query_format(eap_formats, EAP_NFORMATS, afp);
 }
 #else
 static int

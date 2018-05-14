@@ -358,7 +358,7 @@ CFATTACH_DECL2_NEW(
 );
 
 #if defined(AUDIO2)
-static int	hdafg_query_format(void *, const struct audio_format **);
+static int	hdafg_query_format(void *, audio_format_get_t *);
 #else
 static int	hdafg_query_encoding(void *, struct audio_encoding *);
 #endif
@@ -3930,12 +3930,11 @@ hdafg_resume(device_t self, const pmf_qual_t *qual)
 
 #if defined(AUDIO2)
 static int
-hdafg_query_format(void *opaque, const struct audio_format **afp)
+hdafg_query_format(void *opaque, audio_format_get_t *afp)
 {
 	struct hdaudio_audiodev *ad = opaque;
 
-	*afp = ad->ad_formats;
-	return ad->ad_nformats;
+	return audio_query_format(ad->ad_formats, ad->ad_nformats, afp);
 }
 #else
 static int

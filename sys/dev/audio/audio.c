@@ -132,7 +132,7 @@
  *	close 			x	x
  *	drain 			x	x	(Not used in AUDIO2)
  *	query_encoding		-	x	(Not used in AUDIO2)
- *	set_params 		-	x
+ *	set_params 		-	x	(Obsoleted in AUDIO2)
  *	round_blocksize		-	x	(*1)
  *	commit_settings		-	x
  *	init_output 		x	x
@@ -157,7 +157,7 @@
  *	dev_ioctl 		-	x
  *	get_locks 		-	-	Called at attach time
  *	query_format		-	x	(Added in AUDIO2)
- *	set_params2		-	x	(Added in AUDIO2)
+ *	set_format		-	x	(Added in AUDIO2)
  *
  * *1: round_blocksize and round_buffersize become to be called only at
  *  attach time.  That means it's unnecessary to hold thread lock.  However,
@@ -806,7 +806,7 @@ audioattach(device_t parent, device_t self, void *aux)
 
 #ifdef DIAGNOSTIC
 	if ((hw_if->query_encoding == NULL && hw_if->query_format == NULL) ||
-	    (hw_if->set_params == NULL && hw_if->set_params2 == NULL) ||
+	    (hw_if->set_params == NULL && hw_if->set_format == NULL) ||
 	    (hw_if->start_output == NULL && hw_if->trigger_output == NULL) ||
 	    (hw_if->start_input == NULL && hw_if->trigger_input == NULL) ||
 	    hw_if->halt_output == NULL ||
@@ -6190,9 +6190,9 @@ static int
 audio_hw_config_by_format(struct audio_softc *sc, audio_format2_t *cand,
 	int mode)
 {
-	const struct audio_format *formats;
-	int nformats;
+	audio_format_get_t g;
 	int i;
+	int error;
 
 	// 初期値
 	// enc/prec/stride は固定。(XXX 逆エンディアン対応するか?)
@@ -6203,40 +6203,63 @@ audio_hw_config_by_format(struct audio_softc *sc, audio_format2_t *cand,
 	cand->channels    = 1;
 	cand->sample_rate = 0;	// 番兵
 
-	mutex_enter(sc->sc_lock);
-	nformats = sc->hw_if->query_format(sc->hw_hdl, &formats);
-	mutex_exit(sc->sc_lock);
-	if (nformats == 0)
-		return ENXIO;
+	for (i = 0; ; i++) {
+		memset(&g, 0, sizeof(g));
+		g.index = i;
 
-	for (i = 0; i < nformats; i++) {
-		const struct audio_format *fmt = &formats[i];
+		mutex_enter(sc->sc_lock);
+		error = sc->hw_if->query_format(sc->hw_hdl, &g);
+		mutex_exit(sc->sc_lock);
 
-		if (!AUFMT_IS_VALID(fmt)) {
-			DPRINTF(1, "fmt[%d] skip; INVALID\n", i);
+		if (error == ENOENT)
+			break;
+		if (error)
+			return error;
+
+#if AUDIO_DEBUG >= 1
+		DPRINTF(1, "fmt[%d] %c%c %s/%dbits/%dch/", i,
+		    (g.fmt.mode & AUMODE_PLAY)   ? 'P' : '-',
+		    (g.fmt.mode & AUMODE_RECORD) ? 'R' : '-',
+		    audio_encoding_name(g.fmt.encoding),
+		    g.fmt.precision,
+		    g.fmt.channels);
+		if (g.fmt.frequency_type == 0) {
+			DPRINTF(1, "{%d-%d",
+			    g.fmt.frequency[0], g.fmt.frequency[1]);
+		} else {
+			int j;
+			for (j = 0; j < g.fmt.frequency_type; j++) {
+				DPRINTF(1, "%c%d",
+				    (j == 0) ? '{' : ',',
+				    g.fmt.frequency[j]);
+			}
+		}
+		DPRINTF(1, "}\n");
+#endif
+
+		if ((g.fmt.mode & mode) == 0) {
+			DPRINTF(1, "fmt[%d] skip; mode not match %d\n", i,
+			    mode);
 			continue;
 		}
-		if ((fmt->mode & mode) == 0) {
-			DPRINTF(1, "fmt[%d] skip; mode not match %d\n", i, mode);
-			continue;
-		}
 
-		if (fmt->encoding != AUDIO_ENCODING_SLINEAR_NE) {
-			DPRINTF(1, "fmt[%d] skip; enc=%d\n", i, fmt->encoding);
+		if (g.fmt.encoding != AUDIO_ENCODING_SLINEAR_NE) {
+			DPRINTF(1, "fmt[%d] skip; %s\n", i,
+			    audio_encoding_name(g.fmt.encoding));
 			continue;
 		}
-		if ((fmt->precision != AUDIO_INTERNAL_BITS ||
-		     fmt->validbits != AUDIO_INTERNAL_BITS)) {
+		if (g.fmt.precision != AUDIO_INTERNAL_BITS ||
+		    g.fmt.validbits != AUDIO_INTERNAL_BITS) {
 			DPRINTF(1, "fmt[%d] skip; precision %d/%d\n", i,
-			    fmt->validbits, fmt->precision);
+			    g.fmt.validbits, g.fmt.precision);
 			continue;
 		}
-		if (fmt->channels < cand->channels) {
+		if (g.fmt.channels < cand->channels) {
 			DPRINTF(1, "fmt[%d] skip; channels %d < %d\n", i,
-			    fmt->channels, cand->channels);
+			    g.fmt.channels, cand->channels);
 			continue;
 		}
-		int freq = audio_select_freq(fmt);
+		int freq = audio_select_freq(&g.fmt);
 		// XXX うーん
 		if (freq < cand->sample_rate) {
 			DPRINTF(1, "fmt[%d] skip; frequency %d < %d\n", i,
@@ -6245,9 +6268,9 @@ audio_hw_config_by_format(struct audio_softc *sc, audio_format2_t *cand,
 		}
 
 		// cand 更新
-		cand->channels = fmt->channels;
+		cand->channels = g.fmt.channels;
 		cand->sample_rate = freq;
-		DPRINTF(1, "fmt[%d] cand ch=%d freq=%d\n", i,
+		DPRINTF(1, "fmt[%d] cand %dch/%dHz\n", i,
 		    cand->channels, cand->sample_rate);
 	}
 
@@ -6255,7 +6278,7 @@ audio_hw_config_by_format(struct audio_softc *sc, audio_format2_t *cand,
 		DPRINTF(1, "%s no fmt\n", __func__);
 		return ENXIO;
 	}
-	DPRINTF(1, "%s selected: ch=%d freq=%d\n", __func__,
+	DPRINTF(1, "%s selected: %dch/%dHz\n", __func__,
 	    cand->channels, cand->sample_rate);
 	return 0;
 }
@@ -7010,18 +7033,18 @@ audio_set_params(struct audio_softc *sc, int setmode,
 	audio_filter_reg_t pfilters2, rfilters2;
 	int error;
 	int usemode;
-	bool use_set_params2;
+	bool use_set_format;
 
-	// set_params2 が定義されてればそっちを使う
-	use_set_params2 = (sc->hw_if->set_params2 != NULL);
-	if (use_set_params2)
-		DPRINTF(2, "%s use_set_params2\n", __func__);
+	// set_format が定義されてればそっちを使う
+	use_set_format = (sc->hw_if->set_format != NULL);
+	if (use_set_format)
+		DPRINTF(2, "%s use_set_format\n", __func__);
 
 	usemode = setmode;
 	pp = format2_to_params(phwfmt);
 	rp = format2_to_params(rhwfmt);
 
-	if (use_set_params2) {
+	if (use_set_format) {
 		memset(&pfilters2, 0, sizeof(pfilters2));
 		memset(&rfilters2, 0, sizeof(rfilters2));
 		pfilters2.param = pp;
@@ -7040,12 +7063,12 @@ audio_set_params(struct audio_softc *sc, int setmode,
 	}
 
 	mutex_enter(sc->sc_lock);
-	if (use_set_params2) {
-		error = sc->hw_if->set_params2(sc->hw_hdl, setmode, usemode,
+	if (use_set_format) {
+		error = sc->hw_if->set_format(sc->hw_hdl, setmode,
 		    &pp, &rp, &pfilters2, &rfilters2);
 		if (error) {
 			mutex_exit(sc->sc_lock);
-			DPRINTF(1, "%s: set_params2 failed with %d\n",
+			DPRINTF(1, "%s: set_format failed with %d\n",
 			    __func__, error);
 			return error;
 		}
@@ -7071,7 +7094,7 @@ audio_set_params(struct audio_softc *sc, int setmode,
 	}
 	mutex_exit(sc->sc_lock);
 
-	if (use_set_params2) {
+	if (use_set_format) {
 		sc->sc_xxx_pfilreg = pfilters2;
 		sc->sc_xxx_rfilreg = rfilters2;
 		if (pfilters2.codec)
@@ -7279,6 +7302,32 @@ audio_can_capture(struct audio_softc *sc)
 {
 
 	return (sc->sc_rmixer != NULL);
+}
+
+/*
+ * Common routines for query_format.
+ */
+// format[] の有効なもののうち前から afp->index 番目のエントリを取得する。
+int
+audio_query_format(const struct audio_format *format, int nformats,
+	audio_format_get_t *afp)
+{
+	const struct audio_format *f;
+	int idx;
+	int i;
+
+	idx = 0;
+	for (i = 0; i < nformats; i++) {
+		f = &format[i];
+		if (!AUFMT_IS_VALID(f))
+			continue;
+		if (afp->index == idx) {
+			afp->fmt = *f;
+			return 0;
+		}
+		idx++;
+	}
+	return ENOENT;
 }
 
 // デバッグ目的なのでボリュームは内部表現(0..256)

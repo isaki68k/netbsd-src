@@ -260,7 +260,7 @@ CFATTACH_DECL2_NEW(auich, sizeof(struct auich_softc),
 static int	auich_open(void *, int);
 static void	auich_close(void *);
 #if defined(AUDIO2)
-static int	auich_query_format(void *, const struct audio_format **);
+static int	auich_query_format(void *, struct audio_format_get *);
 #else
 static int	auich_query_encoding(void *, struct audio_encoding *);
 #endif
@@ -954,7 +954,7 @@ auich_close(void *addr)
 
 #if defined(AUDIO2)
 static int
-auich_query_format(void *v, const struct audio_format **afp)
+auich_query_format(void *v, struct audio_format_get *afp)
 {
 	struct auich_softc *sc;
 	const struct audio_format *format;
@@ -968,8 +968,8 @@ auich_query_format(void *v, const struct audio_format **afp)
 		format = sc->sc_audio_formats;
 		nf = AUICH_AUDIO_NFORMATS;
 	}
-	*afp = format;
-	return nf;
+
+	return audio_query_format(format, nf, afp);
 }
 #else
 static int

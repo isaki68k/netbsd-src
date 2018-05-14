@@ -337,7 +337,7 @@ Static int	uaudio_open(void *, int);
 Static void	uaudio_close(void *);
 Static int	uaudio_drain(void *);
 #if defined(AUDIO2)
-Static int	uaudio_query_format(void *, const struct audio_format **);
+Static int	uaudio_query_format(void *, audio_format_get_t *);
 #else
 Static int	uaudio_query_encoding(void *, struct audio_encoding *);
 #endif
@@ -558,13 +558,12 @@ uaudio_detach(device_t self, int flags)
 
 #if defined(AUDIO2)
 Static int
-uaudio_query_format(void *addr, const struct audio_format **afp)
+uaudio_query_format(void *addr, audio_format_get_t *afp)
 {
 	struct uaudio_softc *sc;
 
 	sc = addr;
-	*afp = sc->sc_formats;
-	return sc->sc_nformats;
+	return audio_query_format(sc->sc_formats, sc->sc_nformats, afp);
 }
 #else
 Static int

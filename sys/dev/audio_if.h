@@ -71,81 +71,6 @@ typedef struct audio_params {
 /* The default audio mode: 8 kHz mono mu-law */
 extern const struct audio_params audio_default;
 
-struct audio_format {
-	/**
-	 * Device-dependent audio drivers may use this field freely.
-	 */
-	void *driver_data;
-
-	/**
-	 * combination of AUMODE_PLAY and AUMODE_RECORD
-	 */
-	int32_t mode;
-
-	/**
-	 * Encoding type.  AUDIO_ENCODING_*.
-	 * Don't use AUDIO_ENCODING_SLINEAR/ULINEAR/LINEAR/LINEAR8
-	 */
-	u_int encoding;
-
-	/**
-	 * The size of valid bits in one sample.
-	 * It must be <= precision.
-	 */
-	u_int validbits;
-
-	/**
-	 * The bit size of one sample.
-	 * It must be >= validbits, and is usualy a multiple of 8.
-	 */
-	u_int precision;
-
-	/**
-	 * The number of channels.  >= 1
-	 */
-	u_int channels;
-
-	u_int channel_mask;
-#define	AUFMT_UNKNOWN_POSITION		0U
-#define	AUFMT_FRONT_LEFT		0x00001U /* USB audio compatible */
-#define	AUFMT_FRONT_RIGHT		0x00002U /* USB audio compatible */
-#define	AUFMT_FRONT_CENTER		0x00004U /* USB audio compatible */
-#define	AUFMT_LOW_FREQUENCY		0x00008U /* USB audio compatible */
-#define	AUFMT_BACK_LEFT			0x00010U /* USB audio compatible */
-#define	AUFMT_BACK_RIGHT		0x00020U /* USB audio compatible */
-#define	AUFMT_FRONT_LEFT_OF_CENTER	0x00040U /* USB audio compatible */
-#define	AUFMT_FRONT_RIGHT_OF_CENTER	0x00080U /* USB audio compatible */
-#define	AUFMT_BACK_CENTER		0x00100U /* USB audio compatible */
-#define	AUFMT_SIDE_LEFT			0x00200U /* USB audio compatible */
-#define	AUFMT_SIDE_RIGHT		0x00400U /* USB audio compatible */
-#define	AUFMT_TOP_CENTER		0x00800U /* USB audio compatible */
-#define	AUFMT_TOP_FRONT_LEFT		0x01000U
-#define	AUFMT_TOP_FRONT_CENTER		0x02000U
-#define	AUFMT_TOP_FRONT_RIGHT		0x04000U
-#define	AUFMT_TOP_BACK_LEFT		0x08000U
-#define	AUFMT_TOP_BACK_CENTER		0x10000U
-#define	AUFMT_TOP_BACK_RIGHT		0x20000U
-
-#define	AUFMT_MONAURAL		AUFMT_FRONT_CENTER
-#define	AUFMT_STEREO		(AUFMT_FRONT_LEFT | AUFMT_FRONT_RIGHT)
-#define	AUFMT_SURROUND4		(AUFMT_STEREO | AUFMT_BACK_LEFT \
-				| AUFMT_BACK_RIGHT)
-#define	AUFMT_DOLBY_5_1		(AUFMT_SURROUND4 | AUFMT_FRONT_CENTER \
-				| AUFMT_LOW_FREQUENCY)
-
-	/**
-	 * 0: frequency[0] is lower limit, and frequency[1] is higher limit.
-	 * 1-16: frequency[0] to frequency[frequency_type-1] are valid.
-	 */
-	u_int frequency_type;
-
-#define	AUFMT_MAX_FREQUENCIES	16
-	/**
-	 * sampling rates
-	 */
-	u_int frequency[AUFMT_MAX_FREQUENCIES];
-};
-
 #define	AUFMT_INVALIDATE(fmt)	(fmt)->mode |= 0x80000000
 #define	AUFMT_VALIDATE(fmt)	(fmt)->mode &= 0x7fffffff
 #define	AUFMT_IS_VALID(fmt)	(((fmt)->mode & 0x80000000) == 0)
@@ -327,30 +252,31 @@ struct audio_hw_if {
 	void	(*get_locks)(void *, kmutex_t **, kmutex_t **);
 
 #if defined(AUDIO2)
-	int (*query_format)(void *, const struct audio_format **);
+	int (*query_format)(void *, audio_format_get_t *);
 
-	// set_param かこっちのどちらか片方のみを有効にすること。
-	// set_params2 があればこちらが優先して使われる。
+	// set_format と set_params は排他というか、
+	// set_format があればこちらを使う。なければ set_params を使う。
 	//
-	// 引数は (void *hdl, int setmode, int usemode,
+	// 引数は set_format(void *hdl, int setmode,
 	//  const audio_params_t *play, const audio_params_t *rec,
 	//  audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
-	// で、1行目は set_params() と同じ。
-	// play, rec もほぼ同じ。MI 側が設定したいパラメータが入っているので
-	// HW をこのパラメータに設定すること。
+	// で、setmode は set_params() と同じ。
+	// play, rec は型が違うが使い方はほぼ同じ。MI 側が設定したいパラメータ
+	// が入っているので HW をこのパラメータに設定すること。
 	// set_params と違って選択したパラメータを play, rec に書き戻すことは
-	// 出来ない。というか query_format が正しければそのような状況は起きない。
+	// 出来ない。というか get_format が正しければそのような状況は起きない。
 	//
 	// HW フィルタを使用するなら *pfil、*rfil の codec (と必要なら
-	// context) を埋めて返すこと。pfil, rfil の codec、context はいずれも
-	// NULL に初期化してあるため、使わないところは触らなくていい。
+	// params, context) を埋めて返すこと。
+	// pfil, rfil の codec、context はいずれも NULL に初期化してあるため、
+	// 使わないところは触らなくていい。
 	// フィルタを使用してエンコーディングが変わる場合には (通常は変わるはず
 	// だが) pfil.param, rfil.param の
 	// encoding/precision/validbits を更新すること。channels/sample_rate は
 	// HW に適切なものが与えられているはずなので更新してはいけない
-	// (更新しないといけないとすれば query_format がおかしい)。
+	// (更新しないといけないとすれば get_format がおかしい)。
 	// 戻り値は成功なら 0、そうでなければ errno を返すこと。
-	int	(*set_params2)(void *, int, int,
+	int	(*set_format)(void *, int,
 		    const audio_params_t *, const audio_params_t *,
 		    audio_filter_reg_t *, audio_filter_reg_t *);
 #endif /* AUDIO2 */
@@ -375,6 +301,9 @@ int	audioprint(void *, const char *);
 /* Get the hw device from an audio softc */
 device_t audio_get_device(struct audio_softc *);
 #endif
+
+extern int audio_query_format(const struct audio_format *, int,
+	audio_format_get_t *);
 
 /* Device identity flags */
 #define SOUND_DEVICE		0
