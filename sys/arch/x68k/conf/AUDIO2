@@ -514,6 +514,9 @@ pseudo-device	ksyms			# /dev/ksyms
 #pseudo-device	pflog			# PF log if
 #pseudo-device	fss			# file system snapshot device
 
+# userland interface to drivers, including autoconf and properties retrieval
+pseudo-device	drvctl
+
 # Veriexec
 #
 # a pseudo device needed for veriexec
