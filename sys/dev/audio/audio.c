@@ -676,7 +676,7 @@ static const char *encoding_names[] = {
 	AudioEulinear,
 	AudioEmpeg_l1_stream,
 	AudioEmpeg_l1_packets,
-	AudioEmpeg_l1_system
+	AudioEmpeg_l1_system,
 	AudioEmpeg_l2_stream,
 	AudioEmpeg_l2_packets,
 	AudioEmpeg_l2_system,
