@@ -90,7 +90,21 @@ print_audiodev(struct audiodev *adev, int i)
 #endif
 
 	TAILQ_FOREACH(f, &adev->formats, next) {
-		printf("      [ ] ");
+		printf("       ");
+#if BYTE_ORDER == LITTLE_ENDIAN
+		if (f->fmt.encoding != AUDIO_ENCODING_SLINEAR_LE)
+#else
+		if (f->fmt.encoding != AUDIO_ENCODING_SLINEAR_BE)
+#endif
+			printf("(  ) ");
+		else if ((f->fmt.mode & (AUMODE_PLAY | AUMODE_RECORD))
+		    == (AUMODE_PLAY | AUMODE_RECORD))
+			printf("(PR) ");
+		else if ((f->fmt.mode & AUMODE_PLAY))
+			printf("(P-) ");
+		else if ((f->fmt.mode & AUMODE_RECORD))
+			printf("(-R) ");
+
 		if (f->fmt.encoding < __arraycount(encoding_names))
 			printf("%s", encoding_names[f->fmt.encoding]);
 		else
@@ -100,7 +114,7 @@ print_audiodev(struct audiodev *adev, int i)
 		    f->fmt.precision,
 		    f->fmt.channels);
 		if (f->fmt.frequency_type == 0) {
-			printf("%d-%dHz\n",
+			printf("%d-%dHz",
 			    f->fmt.frequency[0],
 			    f->fmt.frequency[1]);
 		} else {
@@ -109,8 +123,9 @@ print_audiodev(struct audiodev *adev, int i)
 				    (j == 0) ? '{' : ',',
 				    f->fmt.frequency[j]);
 			}
-			printf("}\n");
+			printf("}");
 		}
+		printf("\n");
 	}
 }
 
