@@ -90,7 +90,7 @@ print_audiodev(struct audiodev *adev, int i)
 #endif
 
 	TAILQ_FOREACH(f, &adev->formats, next) {
-		printf(" [ ] ");
+		printf("      [ ] ");
 		if (f->fmt.encoding < __arraycount(encoding_names))
 			printf("%s", encoding_names[f->fmt.encoding]);
 		else
