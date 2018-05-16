@@ -223,6 +223,15 @@ typedef struct audio_format_query {
 	struct audio_format fmt;
 } audio_format_query_t;
 
+typedef struct audio_format_spec {
+	u_int mode;		/* AUMODE_PLAY or AUMODE_RECORD */
+	u_int sample_rate;	/* sample rate in Hz */
+	u_int encoding;		/* AUDIO_ENCODING_* */
+	u_int stride;		/* container bits of sample */
+	u_int precision;	/* valid bits of sample */
+	u_int channels;		/* 1..AUDIO_MAX_CHANNELS */
+} audio_format_spec_t;
+
 /*
  * Balance settings.
  */
@@ -274,8 +283,8 @@ typedef struct audio_format_query {
 #define AUDIO_SETCHAN	_IOW('A', 36, int)
 #define AUDIO_GETCHAN	_IOR('A', 37, int)
 #define AUDIO_QUERYFORMAT	_IOWR('A', 38, struct audio_format_query)
-#define AUDIO_GETFORMAT	_IOR('A', 39, struct audio_format2)
-#define AUDIO_SETFORMAT	_IOW('A', 40, struct audio_format2)
+#define AUDIO_GETFORMAT	_IOWR('A', 39, struct audio_format_spec)
+#define AUDIO_SETFORMAT	_IOW('A', 40, struct audio_format_spec)
 
 /*
  * Mixer device

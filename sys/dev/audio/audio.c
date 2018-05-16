@@ -2427,8 +2427,10 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 {
 	struct audio_offset *ao;
 	audio_track_t *track;
+	audio_trackmixer_t *mixer;
 	audio_encoding_t *ae;
 	audio_format_query_t *query;
+	audio_format_spec_t *spec;
 	u_int stamp;
 	u_int offs;
 	int fd;
@@ -2667,6 +2669,31 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 	case AUDIO_QUERYFORMAT:
 		query = (audio_format_query_t *)addr;
 		error = sc->hw_if->query_format(sc->hw_hdl, query);
+		break;
+
+	case AUDIO_GETFORMAT:
+		spec = (audio_format_spec_t *)addr;
+		if (spec->mode == AUMODE_PLAY) {
+			mixer = sc->sc_pmixer;
+		} else if (spec->mode == AUMODE_RECORD) {
+			mixer = sc->sc_rmixer;
+		} else {
+			error = EINVAL;
+			break;
+		}
+		if (mixer == NULL) {
+			error = ENOTTY;
+			break;
+		}
+
+		// XXX
+		// ここのターゲットはハードウェアフォーマットではなく、
+		// ミキサーフォーマット。この辺どうしたもんだか。
+		spec->encoding    = mixer->track_fmt.encoding;
+		spec->precision   = mixer->track_fmt.precision;
+		spec->stride      = mixer->track_fmt.stride;
+		spec->channels    = mixer->track_fmt.channels;
+		spec->sample_rate = mixer->track_fmt.sample_rate;
 		break;
 
 	default:
