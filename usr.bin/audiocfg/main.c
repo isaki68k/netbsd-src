@@ -46,9 +46,34 @@ usage(const char *p)
 	exit(EXIT_FAILURE);
 }
 
+static const char *encoding_names[] = {
+	"none",
+	AudioEmulaw,
+	AudioEalaw,
+	"pcm16",
+	"pcm8",
+	AudioEadpcm,
+	AudioEslinear_le,
+	AudioEslinear_be,
+	AudioEulinear_le,
+	AudioEulinear_be,
+	AudioEslinear,
+	AudioEulinear,
+	AudioEmpeg_l1_stream,
+	AudioEmpeg_l1_packets,
+	AudioEmpeg_l1_system,
+	AudioEmpeg_l2_stream,
+	AudioEmpeg_l2_packets,
+	AudioEmpeg_l2_system,
+	AudioEac3,
+};
+
 static void
 print_audiodev(struct audiodev *adev, int i)
 {
+	struct audiofmt *f;
+	int j;
+
 	assert(adev != NULL);
 
 	printf("%u: [%c] %s @ %s: ",
@@ -57,8 +82,36 @@ print_audiodev(struct audiodev *adev, int i)
 	printf("%s", adev->audio_device.name);
 	if (strlen(adev->audio_device.version) > 0)
 		printf(" %s", adev->audio_device.version);
+#if 1
+	printf("\n");
+#else
 	printf(", %u playback channel%s\n",
 	    adev->pchan, adev->pchan == 1 ? "" : "s");
+#endif
+
+	TAILQ_FOREACH(f, &adev->formats, next) {
+		printf(" [ ] ");
+		if (f->fmt.encoding < __arraycount(encoding_names))
+			printf("%s", encoding_names[f->fmt.encoding]);
+		else
+			printf("unknown_encoding_%d", f->fmt.encoding);
+		printf(" %d/%d, %dch, ",
+		    f->fmt.validbits,
+		    f->fmt.precision,
+		    f->fmt.channels);
+		if (f->fmt.frequency_type == 0) {
+			printf("%d-%dHz\n",
+			    f->fmt.frequency[0],
+			    f->fmt.frequency[1]);
+		} else {
+			for (j = 0; j < f->fmt.frequency_type; j++) {
+				printf("%c%d",
+				    (j == 0) ? '{' : ',',
+				    f->fmt.frequency[j]);
+			}
+			printf("}\n");
+		}
+	}
 }
 
 int

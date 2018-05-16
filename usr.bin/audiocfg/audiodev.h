@@ -29,11 +29,17 @@
 #ifndef _HAVE_AUDIODEV_H
 #define _HAVE_AUDIODEV_H
 
-#include <sys/audioio.h>
+//#include <sys/audioio.h>
+#include "../../sys/sys/audioio.h"
 #include <sys/queue.h>
 #include <sys/syslimits.h>
 
 #include <stdbool.h>
+
+struct audiofmt {
+	struct audio_format fmt;
+	TAILQ_ENTRY(audiofmt) next;
+};
 
 struct audiodev {
 	char pxname[16];	/* hw (parent) device */
@@ -46,9 +52,10 @@ struct audiodev {
 	dev_t dev;
 	bool defaultdev;
 
-	unsigned pchan;
+	unsigned int pchan;
 
 	audio_device_t audio_device;
+	TAILQ_HEAD(, audiofmt) formats;
 
 	TAILQ_ENTRY(audiodev) next;
 };

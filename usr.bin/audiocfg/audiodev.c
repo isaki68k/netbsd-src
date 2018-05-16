@@ -31,6 +31,7 @@
 #include <sys/stat.h>
 #include <sys/drvctlio.h>
 
+#include <errno.h>
 #include <fcntl.h>
 #include <paths.h>
 #include <stdio.h>
@@ -47,39 +48,13 @@ static TAILQ_HEAD(audiodevhead, audiodev) audiodevlist =
 
 #define AUDIODEV_SAMPLE_RATE	44100
 
-static unsigned int
-audiodev_probe_pchans(struct audiodev *adev)
-{
-	audio_info_t info;
-	unsigned int nchans = 0, n;
-	int error;
-
-	AUDIO_INITINFO(&info);
-	info.play.sample_rate = AUDIODEV_SAMPLE_RATE;
-	info.play.precision = 16;
-	info.play.encoding = AUDIO_ENCODING_SLINEAR_LE;
-	info.play.channels = 1;
-	info.mode = AUMODE_PLAY;
-	error = ioctl(adev->fd, AUDIO_SETINFO, &info);
-	if (error == -1)
-		return 0;
-	nchans = 1;
-
-	for (n = 2; n <= 16; n += 2) {
-		info.play.channels = n;
-		error = ioctl(adev->fd, AUDIO_SETINFO, &info);
-		if (error == -1)
-			break;
-		nchans = info.play.channels;
-	}
-
-	return nchans;
-}
-
 static int
 audiodev_getinfo(struct audiodev *adev)
 {
 	struct stat st;
+	struct audiofmt *f;
+	audio_format_get_t g;
+	int i;
 
 	if (stat(adev->ctlpath, &st) == -1)
 		return -1;
@@ -97,7 +72,20 @@ audiodev_getinfo(struct audiodev *adev)
 		return -1;
 	}
 
-	adev->pchan = audiodev_probe_pchans(adev);
+	for (i = 0; ;i++) {
+		memset(&g, 0, sizeof(g));
+		g.index = i;
+		if (ioctl(adev->fd, AUDIO_GETFORMAT, &g) == -1) {
+			if (errno == ENOENT)
+				break;
+			close(adev->fd);
+			return -1;
+		}
+
+		f = calloc(1, sizeof(*f));
+		f->fmt = g.fmt;
+		TAILQ_INSERT_TAIL(&adev->formats, f, next);
+	}
 
 	return 0;
 }
@@ -116,6 +104,7 @@ audiodev_add(const char *pdev, const char *dev, unsigned int unit)
 	snprintf(adev->path, sizeof(adev->path), "/dev/%s", dev);
 	snprintf(adev->ctlpath, sizeof(adev->ctlpath), "/dev/audioctl%d", unit);
 	adev->unit = unit;
+	TAILQ_INIT(&adev->formats);
 
 	if (audiodev_getinfo(adev) == -1) {
 		free(adev);
@@ -123,8 +112,16 @@ audiodev_add(const char *pdev, const char *dev, unsigned int unit)
 	}
 
 #ifdef DEBUG
-	printf("[%c] %s(%s): %s\n", adev->defaultdev ? '*' : ' ',
+	printf("DEBUG: [%c] %s(%s): %s\n", adev->defaultdev ? '*' : ' ',
 	    adev->path, adev->ctlpath, adev->audio_device.name);
+	struct audiofmt *f;
+	TAILQ_FOREACH(f, &adev->formats, next) {
+		printf("DEBUG: enc%d, %d/%d, %dch\n",
+		    f->fmt.encoding,
+		    f->fmt.validbits,
+		    f->fmt.precision,
+		    f->fmt.channels);
+	}
 #endif
 
 	TAILQ_INSERT_TAIL(&audiodevlist, adev, next);
