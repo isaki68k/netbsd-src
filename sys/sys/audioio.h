@@ -143,19 +143,6 @@ typedef struct audio_encoding {
 #define AUDIO_ENCODINGFLAG_EMULATED 1 /* software emulation mode */
 } audio_encoding_t;
 
-/*
- * audio format.
- *
- * precision <= stride always holds.
- */
-typedef struct audio_format2 {
-	u_int	sample_rate;	/* sample rate in Hz */
-	u_int	encoding;	/* AUDIO_ENCODING_* */
-	u_int	stride;		/* container bits of sample */
-	u_int	precision;	/* valid bits of sample */
-	u_int	channels;	/* 1..AUDIO_MAX_CHANNELS */
-} audio_format2_t;
-
 struct audio_format {
 	/**
 	 * Device-dependent audio drivers may use this field freely.
