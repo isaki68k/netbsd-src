@@ -85,7 +85,7 @@ static void	pad_attach(device_t, device_t, void *);
 static int	pad_detach(device_t, int);
 static void	pad_childdet(device_t, device_t);
 
-static int	pad_query_encoding(void *, struct audio_encoding *);
+static int	pad_query_format(void *, audio_format_query_t *);
 static int	pad_set_format(void *, int,
 				const audio_params_t *, const audio_params_t *,
 			    audio_filter_reg_t *, audio_filter_reg_t *);
@@ -108,7 +108,7 @@ static void	pad_swvol_codec(audio_filter_arg_t *);
 static bool	pad_is_attached;	/* Do we have an audio* child? */
 
 static const struct audio_hw_if pad_hw_if = {
-	.query_encoding = pad_query_encoding,
+	.query_format = pad_query_format,
 	.set_format = pad_set_format,
 	.start_output = pad_start_output,
 	.start_input = pad_start_input,
@@ -391,15 +391,10 @@ pad_dev_read(dev_t dev, struct uio *uio, int flags)
 }
 
 static int
-pad_query_encoding(void *opaque, struct audio_encoding *ae)
+pad_query_format(void *opaque, audio_format_query_t *afp)
 {
-	pad_softc_t *sc;
 
-	sc = (pad_softc_t *)opaque;
-
-	KASSERT(mutex_owned(&sc->sc_lock));
-
-	return auconv_query_encoding(sc->sc_encodings, ae);
+	return audio_query_format(pad_formats, PAD_NFORMATS, afp);
 }
 
 static int
