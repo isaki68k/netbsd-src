@@ -2428,6 +2428,7 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 	struct audio_offset *ao;
 	audio_track_t *track;
 	audio_encoding_t *ae;
+	audio_format_query_t *query;
 	u_int stamp;
 	u_int offs;
 	int fd;
@@ -2455,6 +2456,9 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		" AUDIO_GETBUFINFO",	// 35
 		" AUDIO_SETCHAN",	// 36
 		" AUDIO_GETCHAN",	// 37
+		" AUDIO_QUERYFORMAT",	// 38
+		" AUDIO_GETFORMAT",	// 39
+		" AUDIO_SETFORMAT",	// 40
 	};
 	int nameidx = (cmd & 0xff);
 	const char *ioctlname = "";
@@ -2658,6 +2662,11 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 
 	case AUDIO_GETPROPS:
 		*(int *)addr = audio_get_props(sc);
+		break;
+
+	case AUDIO_QUERYFORMAT:
+		query = (audio_format_query_t *)addr;
+		error = sc->hw_if->query_format(sc->hw_hdl, query);
 		break;
 
 	default:
@@ -6191,7 +6200,7 @@ static int
 audio_hw_config_by_format(struct audio_softc *sc, audio_format2_t *cand,
 	int mode)
 {
-	audio_format_get_t g;
+	audio_format_query_t query;
 	int i;
 	int error;
 
@@ -6205,11 +6214,11 @@ audio_hw_config_by_format(struct audio_softc *sc, audio_format2_t *cand,
 	cand->sample_rate = 0;	// 番兵
 
 	for (i = 0; ; i++) {
-		memset(&g, 0, sizeof(g));
-		g.index = i;
+		memset(&query, 0, sizeof(query));
+		query.index = i;
 
 		mutex_enter(sc->sc_lock);
-		error = sc->hw_if->query_format(sc->hw_hdl, &g);
+		error = sc->hw_if->query_format(sc->hw_hdl, &query);
 		mutex_exit(sc->sc_lock);
 
 		if (error == ENOENT)
@@ -6219,48 +6228,48 @@ audio_hw_config_by_format(struct audio_softc *sc, audio_format2_t *cand,
 
 #if AUDIO_DEBUG >= 1
 		DPRINTF(1, "fmt[%d] %c%c %s/%dbits/%dch/", i,
-		    (g.fmt.mode & AUMODE_PLAY)   ? 'P' : '-',
-		    (g.fmt.mode & AUMODE_RECORD) ? 'R' : '-',
-		    audio_encoding_name(g.fmt.encoding),
-		    g.fmt.precision,
-		    g.fmt.channels);
-		if (g.fmt.frequency_type == 0) {
+		    (query.fmt.mode & AUMODE_PLAY)   ? 'P' : '-',
+		    (query.fmt.mode & AUMODE_RECORD) ? 'R' : '-',
+		    audio_encoding_name(query.fmt.encoding),
+		    query.fmt.precision,
+		    query.fmt.channels);
+		if (query.fmt.frequency_type == 0) {
 			DPRINTF(1, "{%d-%d",
-			    g.fmt.frequency[0], g.fmt.frequency[1]);
+			    query.fmt.frequency[0], query.fmt.frequency[1]);
 		} else {
 			int j;
-			for (j = 0; j < g.fmt.frequency_type; j++) {
+			for (j = 0; j < query.fmt.frequency_type; j++) {
 				DPRINTF(1, "%c%d",
 				    (j == 0) ? '{' : ',',
-				    g.fmt.frequency[j]);
+				    query.fmt.frequency[j]);
 			}
 		}
 		DPRINTF(1, "}\n");
 #endif
 
-		if ((g.fmt.mode & mode) == 0) {
+		if ((query.fmt.mode & mode) == 0) {
 			DPRINTF(1, "fmt[%d] skip; mode not match %d\n", i,
 			    mode);
 			continue;
 		}
 
-		if (g.fmt.encoding != AUDIO_ENCODING_SLINEAR_NE) {
+		if (query.fmt.encoding != AUDIO_ENCODING_SLINEAR_NE) {
 			DPRINTF(1, "fmt[%d] skip; %s\n", i,
-			    audio_encoding_name(g.fmt.encoding));
+			    audio_encoding_name(query.fmt.encoding));
 			continue;
 		}
-		if (g.fmt.precision != AUDIO_INTERNAL_BITS ||
-		    g.fmt.validbits != AUDIO_INTERNAL_BITS) {
+		if (query.fmt.precision != AUDIO_INTERNAL_BITS ||
+		    query.fmt.validbits != AUDIO_INTERNAL_BITS) {
 			DPRINTF(1, "fmt[%d] skip; precision %d/%d\n", i,
-			    g.fmt.validbits, g.fmt.precision);
+			    query.fmt.validbits, query.fmt.precision);
 			continue;
 		}
-		if (g.fmt.channels < cand->channels) {
+		if (query.fmt.channels < cand->channels) {
 			DPRINTF(1, "fmt[%d] skip; channels %d < %d\n", i,
-			    g.fmt.channels, cand->channels);
+			    query.fmt.channels, cand->channels);
 			continue;
 		}
-		int freq = audio_select_freq(&g.fmt);
+		int freq = audio_select_freq(&query.fmt);
 		// XXX うーん
 		if (freq < cand->sample_rate) {
 			DPRINTF(1, "fmt[%d] skip; frequency %d < %d\n", i,
@@ -6269,7 +6278,7 @@ audio_hw_config_by_format(struct audio_softc *sc, audio_format2_t *cand,
 		}
 
 		// cand 更新
-		cand->channels = g.fmt.channels;
+		cand->channels = query.fmt.channels;
 		cand->sample_rate = freq;
 		DPRINTF(1, "fmt[%d] cand %dch/%dHz\n", i,
 		    cand->channels, cand->sample_rate);
@@ -7311,7 +7320,7 @@ audio_can_capture(struct audio_softc *sc)
 // format[] の有効なもののうち前から afp->index 番目のエントリを取得する。
 int
 audio_query_format(const struct audio_format *format, int nformats,
-	audio_format_get_t *afp)
+	audio_format_query_t *afp)
 {
 	const struct audio_format *f;
 	int idx;

@@ -252,7 +252,7 @@ struct audio_hw_if {
 	void	(*get_locks)(void *, kmutex_t **, kmutex_t **);
 
 #if defined(AUDIO2)
-	int (*query_format)(void *, audio_format_get_t *);
+	int (*query_format)(void *, audio_format_query_t *);
 
 	// set_format と set_params は排他というか、
 	// set_format があればこちらを使う。なければ set_params を使う。
@@ -303,7 +303,7 @@ device_t audio_get_device(struct audio_softc *);
 #endif
 
 extern int audio_query_format(const struct audio_format *, int,
-	audio_format_get_t *);
+	audio_format_query_t *);
 extern const char *audio_encoding_name(int);
 
 /* Device identity flags */

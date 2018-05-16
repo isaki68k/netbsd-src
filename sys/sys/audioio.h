@@ -148,7 +148,7 @@ typedef struct audio_encoding {
  *
  * precision <= stride always holds.
  */
-typedef struct {
+typedef struct audio_format2 {
 	u_int	sample_rate;	/* sample rate in Hz */
 	u_int	encoding;	/* AUDIO_ENCODING_* */
 	u_int	stride;		/* container bits of sample */
@@ -231,10 +231,10 @@ struct audio_format {
 	u_int frequency[AUFMT_MAX_FREQUENCIES];
 };
 
-typedef struct audio_format_get {
+typedef struct audio_format_query {
 	u_int	index;
 	struct audio_format fmt;
-} audio_format_get_t;
+} audio_format_query_t;
 
 /*
  * Balance settings.
@@ -286,6 +286,9 @@ typedef struct audio_format_get {
 #define AUDIO_GETBUFINFO	_IOR('A', 35, struct audio_info)
 #define AUDIO_SETCHAN	_IOW('A', 36, int)
 #define AUDIO_GETCHAN	_IOR('A', 37, int)
+#define AUDIO_QUERYFORMAT	_IOWR('A', 38, struct audio_format_query)
+#define AUDIO_GETFORMAT	_IOR('A', 39, struct audio_format2)
+#define AUDIO_SETFORMAT	_IOW('A', 40, struct audio_format2)
 
 /*
  * Mixer device

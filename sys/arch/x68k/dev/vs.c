@@ -76,7 +76,7 @@ static int  vs_dmaerrintr(void *);
 static int  vs_open(void *, int);
 static void vs_close(void *);
 #if defined(AUDIO2)
-static int  vs_query_format(void *, audio_format_get_t *);
+static int  vs_query_format(void *, audio_format_query_t *);
 static int  vs_set_format(void *, int, const audio_params_t *,
 	const audio_params_t *, audio_filter_reg_t *, audio_filter_reg_t *);
 #else
@@ -322,7 +322,7 @@ vs_close(void *hdl)
 
 #if defined(AUDIO2)
 static int
-vs_query_format(void *hdl, audio_format_get_t *afp)
+vs_query_format(void *hdl, audio_format_query_t *afp)
 {
 
 	return audio_query_format(vs_formats, __arraycount(vs_formats), afp);

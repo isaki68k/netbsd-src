@@ -53,7 +53,7 @@ audiodev_getinfo(struct audiodev *adev)
 {
 	struct stat st;
 	struct audiofmt *f;
-	audio_format_get_t g;
+	audio_format_query_t query;
 	int i;
 
 	if (stat(adev->ctlpath, &st) == -1)
@@ -73,9 +73,9 @@ audiodev_getinfo(struct audiodev *adev)
 	}
 
 	for (i = 0; ;i++) {
-		memset(&g, 0, sizeof(g));
-		g.index = i;
-		if (ioctl(adev->fd, AUDIO_GETFORMAT, &g) == -1) {
+		memset(&query, 0, sizeof(query));
+		query.index = i;
+		if (ioctl(adev->fd, AUDIO_QUERYFORMAT, &query) == -1) {
 			if (errno == ENOENT)
 				break;
 			close(adev->fd);
@@ -83,7 +83,7 @@ audiodev_getinfo(struct audiodev *adev)
 		}
 
 		f = calloc(1, sizeof(*f));
-		f->fmt = g.fmt;
+		f->fmt = query.fmt;
 		TAILQ_INSERT_TAIL(&adev->formats, f, next);
 	}
 

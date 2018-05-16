@@ -92,7 +92,7 @@ static void mercury_dmamem_free(struct vs_dma *);
 static int  mercury_open(void *, int);
 static void mercury_close(void *);
 #if defined(AUDIO2)
-static int  mercury_query_format(void *, audio_format_get_t *);
+static int  mercury_query_format(void *, audio_format_query_t *);
 static int  mercury_set_format(void *, int,
 	const audio_params_t *, const audio_params_t *,
 	audio_filter_reg_t *, audio_filter_reg_t *);
@@ -271,7 +271,7 @@ mercury_close(void *hdl)
 
 #if defined(AUDIO2)
 static int
-mercury_query_format(void *hdl, audio_format_get_t *afp)
+mercury_query_format(void *hdl, audio_format_query_t *afp)
 {
 
 	return audio_query_format(mercury_formats,
