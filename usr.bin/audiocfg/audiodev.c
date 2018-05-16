@@ -115,7 +115,7 @@ audiodev_add(const char *pdev, const char *dev, unsigned int unit)
 
 	strlcpy(adev->pxname, pdev, sizeof(adev->pxname));
 	strlcpy(adev->xname, dev, sizeof(adev->xname));
-	snprintf(adev->path, sizeof(adev->path) - 1, "/dev/%s", dev);
+	snprintf(adev->path, sizeof(adev->path), "/dev/%s", dev);
 	adev->unit = unit;
 
 	if (audiodev_getinfo(adev) == -1) {
@@ -207,13 +207,13 @@ audiodev_set_default(struct audiodev *adev)
 	char audioctlpath[PATH_MAX+1];
 	char mixerpath[PATH_MAX+1];
 
-	snprintf(audiopath, sizeof(audiopath) - 1,
+	snprintf(audiopath, sizeof(audiopath),
 	    _PATH_AUDIO "%u", adev->unit);
-	snprintf(soundpath, sizeof(soundpath) - 1,
+	snprintf(soundpath, sizeof(soundpath),
 	    _PATH_SOUND "%u", adev->unit);
-	snprintf(audioctlpath, sizeof(audioctlpath) - 1,
+	snprintf(audioctlpath, sizeof(audioctlpath),
 	    _PATH_AUDIOCTL "%u", adev->unit);
-	snprintf(mixerpath, sizeof(mixerpath) - 1,
+	snprintf(mixerpath, sizeof(mixerpath),
 	    _PATH_MIXER "%u", adev->unit);
 
 	unlink(_PATH_AUDIO);
