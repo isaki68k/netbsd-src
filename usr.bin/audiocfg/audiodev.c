@@ -54,6 +54,7 @@ audiodev_getinfo(struct audiodev *adev)
 	struct stat st;
 	struct audiofmt *f;
 	audio_format_query_t query;
+	int props;
 	int i;
 
 	if (stat(adev->ctlpath, &st) == -1)
@@ -85,6 +86,25 @@ audiodev_getinfo(struct audiodev *adev)
 		f = calloc(1, sizeof(*f));
 		f->fmt = query.fmt;
 		TAILQ_INSERT_TAIL(&adev->formats, f, next);
+	}
+
+	if (ioctl(adev->fd, AUDIO_GETPROPS, &props) == -1) {
+		close(adev->fd);
+		return -1;
+	}
+	if ((props & AUDIO_PROP_PLAYBACK)) {
+		adev->pspec.mode = AUMODE_PLAY;
+		if (ioctl(adev->fd, AUDIO_GETFORMAT, &adev->pspec) == -1) {
+			close(adev->fd);
+			return -1;
+		}
+	}
+	if ((props & AUDIO_PROP_CAPTURE)) {
+		adev->rspec.mode = AUMODE_RECORD;
+		if (ioctl(adev->fd, AUDIO_GETFORMAT, &adev->rspec) == -1) {
+			close(adev->fd);
+			return -1;
+		}
 	}
 
 	return 0;
@@ -255,7 +275,7 @@ audiodev_test(struct audiodev *adev, unsigned int chanmask)
 
 	AUDIO_INITINFO(&info);
 	info.play.sample_rate = AUDIODEV_SAMPLE_RATE;
-	info.play.channels = adev->pchan;
+	info.play.channels = adev->pspec.channels;
 	info.play.precision = 16;
 	info.play.encoding = AUDIO_ENCODING_SLINEAR_LE;
 	info.mode = AUMODE_PLAY;
@@ -269,7 +289,7 @@ audiodev_test(struct audiodev *adev, unsigned int chanmask)
 	}
 
 	dtmf_new(&buf, &buflen, info.play.sample_rate, 2,
-	    adev->pchan, chanmask, 350.0, 440.0);
+	    adev->pspec.channels, chanmask, 350.0, 440.0);
 	if (buf == NULL) {
 		goto abort;
 	}

@@ -52,10 +52,10 @@ struct audiodev {
 	dev_t dev;
 	bool defaultdev;
 
-	unsigned int pchan;
-
 	audio_device_t audio_device;
 	TAILQ_HEAD(, audiofmt) formats;
+	audio_format_spec_t pspec;
+	audio_format_spec_t rspec;
 
 	TAILQ_ENTRY(audiodev) next;
 };

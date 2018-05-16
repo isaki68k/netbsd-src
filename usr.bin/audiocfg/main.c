@@ -84,6 +84,12 @@ print_audiodev(struct audiodev *adev, int i)
 		printf(" %s", adev->audio_device.version);
 #if 1
 	printf("\n");
+	if (adev->pspec.mode)
+		printf("       playback: %uch/%uHz\n",
+		    adev->pspec.channels, adev->pspec.sample_rate);
+	if (adev->rspec.mode)
+		printf("       record:   %uch/%uHz\n",
+		    adev->rspec.channels, adev->rspec.sample_rate);
 #else
 	printf(", %u playback channel%s\n",
 	    adev->pchan, adev->pchan == 1 ? "" : "s");
@@ -180,7 +186,7 @@ main(int argc, char *argv[])
 			return EXIT_FAILURE;
 		}
 		print_audiodev(adev, i);
-		for (i = 0; i < adev->pchan; i++) {
+		for (i = 0; i < adev->pspec.channels; i++) {
 			printf("  testing channel %d...", i);
 			fflush(stdout);
 			if (audiodev_test(adev, 1 << i) == -1)
