@@ -806,7 +806,7 @@ audioattach(device_t parent, device_t self, void *aux)
 	hw_if->get_locks(hdlp, &sc->sc_intr_lock, &sc->sc_lock);
 
 #ifdef DIAGNOSTIC
-	if ((hw_if->query_encoding == NULL && hw_if->query_format == NULL) ||
+	if (hw_if->query_format == NULL ||
 	    (hw_if->set_params == NULL && hw_if->set_format == NULL) ||
 	    (hw_if->start_output == NULL && hw_if->trigger_output == NULL) ||
 	    (hw_if->start_input == NULL && hw_if->trigger_input == NULL) ||
