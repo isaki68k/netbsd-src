@@ -477,6 +477,8 @@ static bool audio_can_playback(struct audio_softc *);
 static bool audio_can_capture(struct audio_softc *);
 static int audio_check_params(struct audio_params *);
 static int audio_check_params2(audio_format2_t *);
+static int audio_xxx_mixer_init(struct audio_softc *sc, int,
+	audio_format2_t *, audio_format2_t *);
 static int audio_select_freq(const struct audio_format *);
 static int audio_hw_config_fmt(struct audio_softc *, audio_format2_t *, int);
 static int audio_hw_config_by_format(struct audio_softc *, audio_format2_t *,
@@ -485,6 +487,7 @@ static int audio_hw_config_by_encoding(struct audio_softc *, audio_format2_t *,
 	int);
 static int audio_hw_config(struct audio_softc *, int, int *,
 	audio_format2_t *, audio_format2_t *);
+static int audio_set_format(struct audio_softc *, audio_format_spec_t *);
 static int audio_sysctl_volume(SYSCTLFN_PROTO);
 static void audio_format2_tostr(char *, size_t, const audio_format2_t *);
 #ifdef AUDIO_DEBUG
@@ -785,13 +788,10 @@ audioattach(device_t parent, device_t self, void *aux)
 	audio_format2_t phwfmt;
 	audio_format2_t rhwfmt;
 	const struct sysctlnode *node;
-	char fmtstr[64];
 	void *hdlp;
 	bool is_indep;
 	int mode;
 	int props;
-	int blkms;
-	int error;
 
 	sc = device_private(self);
 	sc->dev = self;
@@ -861,48 +861,13 @@ audioattach(device_t parent, device_t self, void *aux)
 	/* probe hw params */
 	memset(&phwfmt, 0, sizeof(phwfmt));
 	memset(&rhwfmt, 0, sizeof(rhwfmt));
-	error = audio_hw_config(sc, is_indep, &mode, &phwfmt, &rhwfmt);
+	if (audio_hw_config(sc, is_indep, &mode, &phwfmt, &rhwfmt) != 0)
+		goto bad;
 
 	/* init track mixer */
-	if ((mode & AUMODE_PLAY)) {
-		sc->sc_pmixer = kmem_zalloc(sizeof(*sc->sc_pmixer), KM_SLEEP);
-		error = audio_mixer_init(sc, AUMODE_PLAY, &phwfmt);
-		if (error == 0) {
-			audio_format2_tostr(fmtstr, sizeof(fmtstr),
-			    &sc->sc_pmixer->hwbuf.fmt);
-			blkms = sc->sc_pmixer->blktime_n * 1000 /
-			    sc->sc_pmixer->blktime_d;
-			aprint_normal_dev(sc->dev,
-			    "%s, blk %dms for playback\n",
-			    fmtstr, blkms);
-		} else {
-			aprint_error_dev(sc->dev,
-			    "configuring playback mode failed\n");
-			kmem_free(sc->sc_pmixer, sizeof(*sc->sc_pmixer));
-			sc->sc_pmixer = NULL;
-			mode &= ~AUMODE_PLAY;
-		}
-	}
-	if ((mode & AUMODE_RECORD)) {
-		sc->sc_rmixer = kmem_zalloc(sizeof(*sc->sc_rmixer), KM_SLEEP);
-		error = audio_mixer_init(sc, AUMODE_RECORD, &rhwfmt);
-		if (error == 0) {
-			audio_format2_tostr(fmtstr, sizeof(fmtstr),
-			    &sc->sc_rmixer->hwbuf.fmt);
-			blkms = sc->sc_rmixer->blktime_n * 1000 /
-			    sc->sc_rmixer->blktime_d;
-			aprint_normal_dev(sc->dev,
-			    "%s, blk %dms for recording\n",
-			    fmtstr, blkms);
-		} else {
-			aprint_error_dev(sc->dev,
-			    "configuring record mode failed\n");
-			kmem_free(sc->sc_rmixer, sizeof(*sc->sc_rmixer));
-			sc->sc_rmixer = NULL;
-			mode &= ~AUMODE_RECORD;
-		}
-	}
-
+	mutex_enter(sc->sc_lock);
+	mode = audio_xxx_mixer_init(sc, mode, &phwfmt, &rhwfmt);
+	mutex_exit(sc->sc_lock);
 	if (mode == 0)
 		goto bad;
 
@@ -2694,6 +2659,10 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		spec->stride      = mixer->track_fmt.stride;
 		spec->channels    = mixer->track_fmt.channels;
 		spec->sample_rate = mixer->track_fmt.sample_rate;
+		break;
+
+	case AUDIO_SETFORMAT:
+		error = audio_set_format(sc, (audio_format_spec_t *)addr);
 		break;
 
 	default:
@@ -4876,12 +4845,14 @@ audio_mixer_calc_blktime(audio_trackmixer_t *mixer)
 // mixer はゼロフィルされているものとします。
 // mode は再生なら AUMODE_PLAY、録音なら AUMODE_RECORD を指定します。
 // 単に録音再生のどちら側かだけなので AUMODE_PLAY_ALL は関係ありません。
+// sc_lock でコールします。
 /*
  * Initialize the mixer.
  * This function returns 0 on sucessful.  Otherwise returns errno.
  * 'mixer' should be zero-filled.
  * For 'mode', specify AUMODE_PLAY for playback, AUMODE_RECORD for record
  * (AUMODE_PLAY_ALL does not matter here).
+ * This function should be called with sc_lock.
  */
 static int
 audio_mixer_init(struct audio_softc *sc, int mode, const audio_format2_t *hwfmt)
@@ -4893,6 +4864,7 @@ audio_mixer_init(struct audio_softc *sc, int mode, const audio_format2_t *hwfmt)
 	size_t bufsize;
 	int error;
 
+printf("%s\n", __func__);
 	error = 0;
 	if (mode == AUMODE_PLAY)
 		mixer = sc->sc_pmixer;
@@ -4917,10 +4889,8 @@ audio_mixer_init(struct audio_softc *sc, int mode, const audio_format2_t *hwfmt)
 	if (sc->hw_if->round_blocksize) {
 		int rounded;
 		audio_params_t p = format2_to_params(&mixer->hwbuf.fmt);
-		mutex_enter(sc->sc_lock);
 		rounded = sc->hw_if->round_blocksize(sc->hw_hdl, blksize,
 		    mode, &p);
-		mutex_exit(sc->sc_lock);
 		// 違っていても困る?
 		if (rounded != blksize) {
 			if ((rounded * NBBY) % (mixer->hwbuf.fmt.stride *
@@ -4943,10 +4913,8 @@ audio_mixer_init(struct audio_softc *sc, int mode, const audio_format2_t *hwfmt)
 	bufsize = frametobyte(&mixer->hwbuf.fmt, capacity);
 	if (sc->hw_if->round_buffersize) {
 		size_t rounded;
-		mutex_enter(sc->sc_lock);
 		rounded = sc->hw_if->round_buffersize(sc->hw_hdl, mode,
 		    bufsize);
-		mutex_exit(sc->sc_lock);
 		// 縮められても困る?
 		if (rounded != bufsize) {
 			aprint_error_dev(sc->dev,
@@ -6164,6 +6132,70 @@ audio_check_params2(audio_format2_t *f2)
 	return error;
 }
 
+// 再生・録音ミキサーを初期化します。
+// 引数 mode の AUMODE_{PLAY,RECORD} のうち立っている方を初期化します。
+// 戻り値は mode のうち初期化が成功したものの OR を返します。
+// この関数は再生か録音トラックがいずれかでも存在する時は呼び出しては
+// いけません。
+// sc_lock でコールします。
+static int
+audio_xxx_mixer_init(struct audio_softc *sc, int mode,
+	audio_format2_t *phwfmt, audio_format2_t *rhwfmt)
+{
+	char fmtstr[64];
+	int blkms;
+	int error;
+
+	if ((mode & AUMODE_PLAY)) {
+		if (sc->sc_pmixer) {
+			audio_mixer_destroy(sc, sc->sc_pmixer);
+			kmem_free(sc->sc_pmixer, sizeof(*sc->sc_pmixer));
+		}
+		sc->sc_pmixer = kmem_zalloc(sizeof(*sc->sc_pmixer), KM_SLEEP);
+		error = audio_mixer_init(sc, AUMODE_PLAY, phwfmt);
+		if (error == 0) {
+			audio_format2_tostr(fmtstr, sizeof(fmtstr),
+			    &sc->sc_pmixer->hwbuf.fmt);
+			blkms = sc->sc_pmixer->blktime_n * 1000 /
+			    sc->sc_pmixer->blktime_d;
+			aprint_normal_dev(sc->dev,
+			    "%s, blk %dms for playback\n",
+			    fmtstr, blkms);
+		} else {
+			aprint_error_dev(sc->dev,
+			    "configuring playback mode failed\n");
+			kmem_free(sc->sc_pmixer, sizeof(*sc->sc_pmixer));
+			sc->sc_pmixer = NULL;
+			mode &= ~AUMODE_PLAY;
+		}
+	}
+	if ((mode & AUMODE_RECORD)) {
+		if (sc->sc_rmixer) {
+			audio_mixer_destroy(sc, sc->sc_rmixer);
+			kmem_free(sc->sc_rmixer, sizeof(*sc->sc_rmixer));
+		}
+		sc->sc_rmixer = kmem_zalloc(sizeof(*sc->sc_rmixer), KM_SLEEP);
+		error = audio_mixer_init(sc, AUMODE_RECORD, rhwfmt);
+		if (error == 0) {
+			audio_format2_tostr(fmtstr, sizeof(fmtstr),
+			    &sc->sc_rmixer->hwbuf.fmt);
+			blkms = sc->sc_rmixer->blktime_n * 1000 /
+			    sc->sc_rmixer->blktime_d;
+			aprint_normal_dev(sc->dev,
+			    "%s, blk %dms for recording\n",
+			    fmtstr, blkms);
+		} else {
+			aprint_error_dev(sc->dev,
+			    "configuring record mode failed\n");
+			kmem_free(sc->sc_rmixer, sizeof(*sc->sc_rmixer));
+			sc->sc_rmixer = NULL;
+			mode &= ~AUMODE_RECORD;
+		}
+	}
+
+	return mode;
+}
+
 // 周波数を選択する。
 // XXX アルゴリズムどうすっかね
 // 48kHz、44.1kHz をサポートしてれば優先して使用。
@@ -6420,6 +6452,70 @@ audio_hw_config(struct audio_softc *sc, int is_indep, int *modep,
 		error = audio_set_params(sc, mode, phwfmt, rhwfmt);
 	*modep = mode;
 	return error;
+}
+
+// spec->mode で示されるどちらか一方のミキサフォーマットをセットします。
+// spec->mode は AUMODE_PLAY か AUMODE_RECORD かのいずれかのみ単独で
+// 指定します。
+static int
+audio_set_format(struct audio_softc *sc, audio_format_spec_t *spec)
+{
+	audio_trackmixer_t *mixer;
+	audio_format2_t phwfmt;
+	audio_format2_t rhwfmt;
+	int indep;
+
+	// XXX PLAY|RECORD 同時指定で同時に設定変えることも書式上は
+	// できそうに見えるけど、途中でこけたらどうすんだ問題が
+	// 面倒なので、とりあえず放置。
+	if (spec->mode == AUMODE_PLAY) {
+		mixer = sc->sc_pmixer;
+	} else if (spec->mode == AUMODE_RECORD) {
+		mixer = sc->sc_rmixer;
+	} else {
+		return EINVAL;
+	}
+	if (mixer == NULL) {
+		return ENOTTY;
+	}
+
+	if (spec->encoding != AUDIO_ENCODING_SLINEAR_NE) {
+		return EINVAL;
+	}
+	if (spec->precision != AUDIO_INTERNAL_BITS) {
+		return EINVAL;
+	}
+	if (spec->stride != AUDIO_INTERNAL_BITS) {
+		return EINVAL;
+	}
+
+	// 再生か録音の一方だけ設定する場合であっても、
+	// 再生も録音も誰もいない状態でなければいけない。
+	if (sc->sc_popens + sc->sc_ropens > 0) {
+		return EBUSY;
+	}
+
+	// まず両方の現在値
+	if (sc->sc_pmixer)
+		phwfmt = sc->sc_pmixer->track_fmt;
+	if (sc->sc_rmixer)
+		rhwfmt = sc->sc_rmixer->track_fmt;
+
+	// その上で指定値を上書き。
+	// channels/sample_rate のみでいい。
+	// spec->mode はこの時点で PLAY か RECORD のみになっている。
+	indep = (audio_get_props(sc) & AUDIO_PROP_INDEPENDENT);
+	if ((spec->mode == AUMODE_PLAY) || !indep) {
+		phwfmt.channels    = spec->channels;
+		phwfmt.sample_rate = spec->sample_rate;
+	}
+	if ((spec->mode == AUMODE_RECORD) || !indep) {
+		rhwfmt.channels    = spec->channels;
+		rhwfmt.sample_rate = spec->sample_rate;
+	}
+
+	audio_xxx_mixer_init(sc, spec->mode, &phwfmt, &rhwfmt);
+	return 0;
 }
 
 // audioinfo の各パラメータについて。
