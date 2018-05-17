@@ -331,13 +331,14 @@ auring_bytelen(const audio_ring_t *ring)
  * This function only manipurates counters.  It doesn't manipurate any
  * actual buffer data.
  */
+#define auring_take(ring, n)	auring_take_(__func__, __LINE__, ring, n)
 static __inline void
-auring_take(audio_ring_t *ring, int n)
+auring_take_(const char *func, int line, audio_ring_t *ring, int n)
 {
 	DIAGNOSTIC_ring(ring);
-	KASSERTMSG(n >= 0, "%s: n=%d", __func__, n);
-	KASSERTMSG(ring->used >= n, "%s: ring->used=%d n=%d",
-	    __func__, ring->used, n);
+	KASSERTMSG(n >= 0, "called from %s:%d: n=%d", func, line, n);
+	KASSERTMSG(ring->used >= n, "called from %s:%d: ring->used=%d n=%d",
+	    func, line, ring->used, n);
 
 	ring->head = auring_round(ring, ring->head + n);
 	ring->used -= n;
@@ -349,14 +350,15 @@ auring_take(audio_ring_t *ring, int n)
  * This function only manipurates counters.  It doesn't manipurate any
  * actual buffer data.
  */
+#define auring_push(ring, n)	auring_push_(__func__, __LINE__, ring, n)
 static __inline void
-auring_push(audio_ring_t *ring, int n)
+auring_push_(const char *func, int line, audio_ring_t *ring, int n)
 {
 	DIAGNOSTIC_ring(ring);
 	KASSERT(n >= 0);
 	KASSERTMSG(ring->used + n <= ring->capacity,
-		"%s: ring->used=%d n=%d ring->capacity=%d",
-		__func__, ring->used, n, ring->capacity);
+	    "called from %s:%d: ring->used=%d n=%d ring->capacity=%d",
+	    func, line, ring->used, n, ring->capacity);
 
 	ring->used += n;
 }
