@@ -258,6 +258,42 @@ audiodev_set_default(struct audiodev *adev)
 }
 
 int
+audiodev_get_default()
+{
+	char path[PATH_MAX + 1];
+	if (readlink(_PATH_AUDIO, path, sizeof(path)) < 0)
+		return -1;
+
+	return atoi(path + strlen(_PATH_AUDIO));
+}
+
+int
+audiodev_set_param(struct audiodev *adev, int mode,
+	unsigned int ch, unsigned int freq)
+{
+	audio_format_spec_t spec;
+	int m;
+
+	for (m = AUMODE_RECORD;
+	     m != 0;
+	     m = (m == AUMODE_RECORD) ? AUMODE_PLAY : 0) {
+		if ((m & mode) == 0)
+			continue;
+		spec.mode = m;
+
+		if (ioctl(adev->fd, AUDIO_GETFORMAT, &spec) == -1)
+			return -1;
+
+		spec.channels = ch;
+		spec.sample_rate = freq;
+
+		if (ioctl(adev->fd, AUDIO_SETFORMAT, &spec) == -1)
+			return -1;
+	}
+	return 0;
+}
+
+int
 audiodev_test(struct audiodev *adev, unsigned int chanmask)
 {
 	audio_info_t info;

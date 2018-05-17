@@ -42,6 +42,7 @@ usage(const char *p)
 {
 	fprintf(stderr, "usage: %s list\n", p);
 	fprintf(stderr, "       %s default <index>\n", p);
+	fprintf(stderr, "       %s default <index> [p|r] <ch> <freq>\n", p);
 	fprintf(stderr, "       %s test <index>\n", p);
 	exit(EXIT_FAILURE);
 }
@@ -135,6 +136,10 @@ main(int argc, char *argv[])
 {
 	struct audiodev *adev;
 	unsigned int n, i;
+	unsigned int j;
+	unsigned int ch;
+	unsigned int freq;
+	int mode;
 
 	if (audiodev_refresh() == -1)
 		return EXIT_FAILURE;
@@ -164,6 +169,55 @@ main(int argc, char *argv[])
 		printf("setting default audio device to %s\n", adev->xname);
 		if (audiodev_set_default(adev) == -1) {
 			perror("couldn't set default device");
+			return EXIT_FAILURE;
+		}
+	} else if (strcmp(argv[1], "default") == 0 && argc == 6) {
+		/* audiocfg default <index> [p|r] <ch> <freq> */
+		if (*argv[2] < '0' || *argv[2] > '9')
+			usage(argv[0]);
+			/* NOTREACHED */
+		errno = 0;
+		i = strtoul(argv[2], NULL, 10);
+		if (errno)
+			usage(argv[0]);
+			/* NOTREACHED */
+		adev = audiodev_get(i);
+		if (adev == NULL) {
+			fprintf(stderr, "no such device\n");
+			return EXIT_FAILURE;
+		}
+		if (i != audiodev_get_default()) {
+			printf("setting default audio device to %s\n",
+			    adev->xname);
+			if (audiodev_set_default(adev) == -1) {
+				perror("couldn't set default device");
+				return EXIT_FAILURE;
+			}
+		}
+
+		mode = 0;
+		for (j = 0; j < strlen(argv[3]); j++) {
+			if (argv[3][j] == 'p')
+				mode |= AUMODE_PLAY;
+			else if (argv[3][j] == 'r')
+				mode |= AUMODE_RECORD;
+			else
+				usage(argv[0]);
+		}
+		errno = 0;
+		ch = strtoul(argv[4], NULL, 10);
+		if (errno)
+			usage(argv[0]);
+			/* NOTREACHED */
+		errno = 0;
+		freq = strtoul(argv[5], NULL, 10);
+		if (errno)
+			usage(argv[0]);
+			/* NOTREACHED */
+
+		printf("setting %s to %uch/%uHz\n", adev->xname, ch, freq);
+		if (audiodev_set_param(adev, mode, ch, freq) == -1) {
+			perror("couldn't set parameter");
 			return EXIT_FAILURE;
 		}
 	} else if (strcmp(argv[1], "test") == 0 && argc == 3) {
