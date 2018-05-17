@@ -228,6 +228,12 @@ __KERNEL_RCSID(0, "$NetBSD$");
 // 4: 割り込み内のTRACEも含む (要 AUDIO_DEBUG_MLOG)
 #define AUDIO_DEBUG	4
 
+// XXX x68k はデバッグ込みだとまともに再生できないので別スイッチにしておくorz
+#if defined(x68k)
+#undef AUDIO_DEBUG
+#define AUDIO_DEBUG	1
+#endif
+
 // デバッグ用なんちゃってメモリログ。
 #define AUDIO_DEBUG_MLOG
 
