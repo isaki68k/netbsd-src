@@ -6419,7 +6419,7 @@ audio_hw_config(struct audio_softc *sc, int is_indep, int *modep,
 {
 	audio_format2_t fmt;
 	int mode;
-	int error;
+	int error = 0;
 
 	mode = *modep;
 	KASSERTMSG((mode & (AUMODE_PLAY | AUMODE_RECORD)) != 0,
