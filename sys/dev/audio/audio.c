@@ -489,6 +489,7 @@ static int audio_hw_probe_by_encoding(struct audio_softc *, audio_format2_t *,
 	int);
 static int audio_mixers_set_format(struct audio_softc *, struct audio_info *);
 static int audio_sysctl_volume(SYSCTLFN_PROTO);
+static int audio_sysctl_blk_ms(SYSCTLFN_PROTO);
 static void audio_format2_tostr(char *, size_t, const audio_format2_t *);
 #ifdef AUDIO_DEBUG
 static void audio_print_format2(const char *, const audio_format2_t *);
@@ -757,10 +758,8 @@ make_buildinfo(void)
 		return;
 
 	n = 0;
-	n += snprintf(audio_buildinfo, sizeof(audio_buildinfo),
-	    "AUDIO_BLK_MS=%d", AUDIO_BLK_MS);
 	n += snprintf(audio_buildinfo + n, sizeof(audio_buildinfo) - n,
-	    ", NBLKOUT=%d", NBLKOUT);
+	    "NBLKOUT=%d", NBLKOUT);
 #if defined(AUDIO_HW_SINGLE_BUFFER)
 	n += snprintf(audio_buildinfo + n, sizeof(audio_buildinfo) - n,
 	    ", HW_SINGLE_BUFFER");
@@ -827,6 +826,7 @@ audioattach(device_t parent, device_t self, void *aux)
 	sc->hw_hdl = hdlp;
 	sc->sc_dev = parent;
 
+	sc->sc_blk_ms = AUDIO_BLK_MS;
 	SLIST_INIT(&sc->sc_files);
 
 	mutex_enter(sc->sc_lock);
@@ -920,6 +920,13 @@ audioattach(device_t parent, device_t self, void *aux)
 		    CTLTYPE_INT, "volume",
 		    SYSCTL_DESCR("software volume test"),
 		    audio_sysctl_volume, 0, (void *)sc, 0,
+		    CTL_HW, node->sysctl_num, CTL_CREATE, CTL_EOL);
+
+		sysctl_createv(&sc->sc_log, 0, NULL, NULL,
+		    CTLFLAG_READWRITE,
+		    CTLTYPE_INT, "blk_ms",
+		    SYSCTL_DESCR("blocksize in msec"),
+		    audio_sysctl_blk_ms, 0, (void *)sc, 0,
 		    CTL_HW, node->sysctl_num, CTL_CREATE, CTL_EOL);
 
 #if 1
@@ -4830,7 +4837,7 @@ audio_track_record(audio_track_t *track)
  * Calcurate blktime [msec] from mixer(.hwbuf.fmt).
  */
 static u_int
-audio_mixer_calc_blktime(audio_trackmixer_t *mixer)
+audio_mixer_calc_blktime(struct audio_softc *sc, audio_trackmixer_t *mixer)
 {
 	audio_format2_t *fmt;
 	u_int blktime;
@@ -4840,7 +4847,7 @@ audio_mixer_calc_blktime(audio_trackmixer_t *mixer)
 
 	// XXX とりあえず手抜き実装。あとでかんがえる
 
-	blktime = AUDIO_BLK_MS;
+	blktime = sc->sc_blk_ms;
 
 	// 8 の倍数以外の stride は今のところ 4 しかない。
 	if (fmt->stride == 4) {
@@ -4896,7 +4903,7 @@ audio_mixer_init(struct audio_softc *sc, int mode, const audio_format2_t *hwfmt)
 	mixer->hwbuf.fmt = *hwfmt;
 	mixer->volume = 256;
 	mixer->blktime_d = 1000;
-	mixer->blktime_n = audio_mixer_calc_blktime(mixer);
+	mixer->blktime_n = audio_mixer_calc_blktime(sc, mixer);
 	mixer->hwblks = NBLKHW;
 
 	mixer->frames_per_block = frame_per_block(mixer, &mixer->hwbuf.fmt);
@@ -7524,6 +7531,51 @@ audio_sysctl_volume(SYSCTLFN_ARGS)
 		return EINVAL;
 
 	sc->sc_pmixer->volume = t;
+	return 0;
+}
+
+// XXX ほぼ vs(4) 用、どうすべ
+static int
+audio_sysctl_blk_ms(SYSCTLFN_ARGS)
+{
+	struct sysctlnode node;
+	struct audio_softc *sc;
+	audio_format2_t phwfmt;
+	audio_format2_t rhwfmt;
+	int t;
+	int mode;
+	int error;
+
+	node = *rnode;
+	sc = node.sysctl_data;
+
+	t = sc->sc_blk_ms;
+	node.sysctl_data = &t;
+	error = sysctl_lookup(SYSCTLFN_CALL(&node));
+	if (error || newp == NULL)
+		return error;
+
+	if (t < 0)
+		return EINVAL;
+
+	mutex_enter(sc->sc_lock);
+	if (sc->sc_popens + sc->sc_ropens > 0) {
+		mutex_exit(sc->sc_lock);
+		return EBUSY;
+	}
+	sc->sc_blk_ms = t;
+	mode = 0;
+	if (sc->sc_pmixer) {
+		mode |= AUMODE_PLAY;
+		phwfmt = sc->sc_pmixer->track_fmt;
+	}
+	if (sc->sc_rmixer) {
+		mode |= AUMODE_RECORD;
+		rhwfmt = sc->sc_rmixer->track_fmt;
+	}
+	// XXX 失敗したらシラネ
+	audio_mixers_init(sc, mode, &phwfmt, &rhwfmt);
+	mutex_exit(sc->sc_lock);
 	return 0;
 }
 

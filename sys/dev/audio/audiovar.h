@@ -158,6 +158,7 @@ struct audio_softc {
 
 	SLIST_HEAD(, audio_file) sc_files;	/* list of open descriptor */
 
+	int sc_blk_ms;			/* blocksize in msec */
 	audio_trackmixer_t *sc_pmixer;	/* null if play not supported by hw */
 	audio_trackmixer_t *sc_rmixer;	/* null if rec not supported by hw */
 

@@ -49,13 +49,7 @@
 // 40ms の場合は (1/40ms) = 25 = 5^2 なので 100 の倍数の周波数のほか、
 // 15.625kHz でもフレーム数が整数になるので、40 を基本にする。
 #if !defined(AUDIO_BLK_MS)
-#if defined(x68k)
-// x68k では 40msec だと長い曲でアンダーランするので伸ばしておく。
-// 実際には config option にするけど、とりあえず。
-#define AUDIO_BLK_MS 320
-#else
 #define AUDIO_BLK_MS 40
-#endif
 #endif
 
 // ミキサをシングルバッファにするかどうか。
