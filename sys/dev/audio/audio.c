@@ -480,13 +480,13 @@ static int audio_check_params2(audio_format2_t *);
 static int audio_xxx_mixer_init(struct audio_softc *sc, int,
 	audio_format2_t *, audio_format2_t *);
 static int audio_select_freq(const struct audio_format *);
+static int audio_hw_config(struct audio_softc *, int, int *,
+	audio_format2_t *, audio_format2_t *);
 static int audio_hw_config_fmt(struct audio_softc *, audio_format2_t *, int);
 static int audio_hw_config_by_format(struct audio_softc *, audio_format2_t *,
 	int);
 static int audio_hw_config_by_encoding(struct audio_softc *, audio_format2_t *,
 	int);
-static int audio_hw_config(struct audio_softc *, int, int *,
-	audio_format2_t *, audio_format2_t *);
 static int audio_set_format(struct audio_softc *, audio_format_spec_t *);
 static int audio_sysctl_volume(SYSCTLFN_PROTO);
 static void audio_format2_tostr(char *, size_t, const audio_format2_t *);
@@ -6247,6 +6247,71 @@ audio_select_freq(const struct audio_format *fmt)
 	}
 }
 
+// *modep (AUMODE_PLAY|RECORD) に応じて再生か録音のフォーマットを選択して
+// 設定する。だめだった方のビットは落として、結果を書き戻す。
+// sc_lock でコールすること。
+//
+// independent デバイスなら
+//  あれば再生フォーマットを選定
+//  あれば録音フォーマットを選定
+//  両方を設定
+// not independent デバイスなら
+//  再生があれば
+//   再生でフォーマットを選定。録音側にもコピー
+//  else
+//   録音でフォーマットを選定。再生側にもコピー
+//  両方を設定
+/*
+ * Select playback and/or recording format (depending on *modep) and then
+ * set it to the hardware.
+ * *modep is an in-out parameter.  It indicates the direction to configure
+ * as an argument and the direction configured is written back as out
+ * parameter.
+ * Return 0 if successful,  otherwise errno.
+ */
+static int
+audio_hw_config(struct audio_softc *sc, int is_indep, int *modep,
+	audio_format2_t *phwfmt, audio_format2_t *rhwfmt)
+{
+	audio_format2_t fmt;
+	int mode;
+	int error = 0;
+
+	KASSERT(mutex_owned(sc->sc_lock));
+
+	mode = *modep;
+	KASSERTMSG((mode & (AUMODE_PLAY | AUMODE_RECORD)) != 0,
+	    "invalid mode = %x", mode);
+
+	if (is_indep) {
+		/* independent devices */
+		if ((mode & AUMODE_PLAY) != 0) {
+			error = audio_hw_config_fmt(sc, phwfmt, AUMODE_PLAY);
+			if (error)
+				mode &= ~AUMODE_PLAY;
+		}
+		if ((mode & AUMODE_RECORD) != 0) {
+			error = audio_hw_config_fmt(sc, rhwfmt, AUMODE_RECORD);
+			if (error)
+				mode &= ~AUMODE_RECORD;
+		}
+	} else {
+		/* not independent devices */
+		error = audio_hw_config_fmt(sc, &fmt, mode);
+		if (error) {
+			mode = 0;
+		} else {
+			*phwfmt = fmt;
+			*rhwfmt = fmt;
+		}
+	}
+
+	if (mode != 0)
+		error = audio_set_params(sc, mode, phwfmt, rhwfmt);
+	*modep = mode;
+	return error;
+}
+
 // 再生か録音(mode) の HW フォーマットを決定する。
 // sc_lock でコールすること。
 static int
@@ -6404,71 +6469,6 @@ audio_hw_config_by_encoding(struct audio_softc *sc, audio_format2_t *cand,
 		}
 	}
 	return ENXIO;
-}
-
-// *modep (AUMODE_PLAY|RECORD) に応じて再生か録音のフォーマットを選択して
-// 設定する。だめだった方のビットは落として、結果を書き戻す。
-// sc_lock でコールすること。
-//
-// independent デバイスなら
-//  あれば再生フォーマットを選定
-//  あれば録音フォーマットを選定
-//  両方を設定
-// not independent デバイスなら
-//  再生があれば
-//   再生でフォーマットを選定。録音側にもコピー
-//  else
-//   録音でフォーマットを選定。再生側にもコピー
-//  両方を設定
-/*
- * Select playback and/or recording format (depending on *modep) and then
- * set it to the hardware.
- * *modep is an in-out parameter.  It indicates the direction to configure
- * as an argument and the direction configured is written back as out
- * parameter.
- * Return 0 if successful,  otherwise errno.
- */
-static int
-audio_hw_config(struct audio_softc *sc, int is_indep, int *modep,
-	audio_format2_t *phwfmt, audio_format2_t *rhwfmt)
-{
-	audio_format2_t fmt;
-	int mode;
-	int error = 0;
-
-	KASSERT(mutex_owned(sc->sc_lock));
-
-	mode = *modep;
-	KASSERTMSG((mode & (AUMODE_PLAY | AUMODE_RECORD)) != 0,
-	    "invalid mode = %x", mode);
-
-	if (is_indep) {
-		/* independent devices */
-		if ((mode & AUMODE_PLAY) != 0) {
-			error = audio_hw_config_fmt(sc, phwfmt, AUMODE_PLAY);
-			if (error)
-				mode &= ~AUMODE_PLAY;
-		}
-		if ((mode & AUMODE_RECORD) != 0) {
-			error = audio_hw_config_fmt(sc, rhwfmt, AUMODE_RECORD);
-			if (error)
-				mode &= ~AUMODE_RECORD;
-		}
-	} else {
-		/* not independent devices */
-		error = audio_hw_config_fmt(sc, &fmt, mode);
-		if (error) {
-			mode = 0;
-		} else {
-			*phwfmt = fmt;
-			*rhwfmt = fmt;
-		}
-	}
-
-	if (mode != 0)
-		error = audio_set_params(sc, mode, phwfmt, rhwfmt);
-	*modep = mode;
-	return error;
 }
 
 // spec->mode で示されるどちらか一方のミキサフォーマットをセットします。
