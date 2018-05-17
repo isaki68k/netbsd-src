@@ -465,7 +465,7 @@ static void audio_track_setinfo_water(audio_track_t *,
 	const struct audio_info *);
 static int audio_hw_setinfo(struct audio_softc *, const struct audio_info *,
 	struct audio_info *);
-static int audio_set_params(struct audio_softc *, int, audio_format2_t *,
+static int audio_hw_set_params(struct audio_softc *, int, audio_format2_t *,
 	audio_format2_t *);
 static int audiogetinfo(struct audio_softc *, struct audio_info *, int,
 	audio_file_t *);
@@ -872,7 +872,7 @@ audioattach(device_t parent, device_t self, void *aux)
 		goto bad;
 	}
 	/* init hardware */
-	error = audio_set_params(sc, mode, &phwfmt, &rhwfmt);
+	error = audio_hw_set_params(sc, mode, &phwfmt, &rhwfmt);
 	if (error) {
 		mutex_exit(sc->sc_lock);
 		goto bad;
@@ -6068,7 +6068,7 @@ audio_softintr_wr(void *cookie)
 // audio_setup_pfilters(to-param) 戻り値は見てない
 // audio_setup_rfilters(from-param) 戻り値は見てない
 // audiosetinfo: 設定値に対して、エラーならreturn
-// audiosetinfo: audio_set_params()コール後に対して、戻り値見てない
+// audiosetinfo: audio_hw_set_params()コール後に対して、戻り値見てない
 static int
 audio_check_params(struct audio_params *p)
 {
@@ -6459,7 +6459,7 @@ audio_hw_probe_by_encoding(struct audio_softc *sc, audio_format2_t *cand,
 		for (i = 0; i < __arraycount(freqlist); i++) {
 			fmt.channels = ch;
 			fmt.sample_rate = freqlist[i];
-			error = audio_set_params(sc, mode, &fmt, &fmt);
+			error = audio_hw_set_params(sc, mode, &fmt, &fmt);
 			if (error == 0) {
 				// 設定できたのでこれを採用
 				*cand = fmt;
@@ -6542,7 +6542,7 @@ audio_set_format(struct audio_softc *sc, audio_format_spec_t *spec)
 		rhwfmt.sample_rate = spec->sample_rate;
 	}
 
-	error = audio_set_params(sc, spec->mode, &phwfmt, &rhwfmt);
+	error = audio_hw_set_params(sc, spec->mode, &phwfmt, &rhwfmt);
 	if (error)
 		return error;
 
@@ -7191,7 +7191,7 @@ abort:
 // hw->set_params は値を変更できない。(無視する)
 // sc_lock でコールすること。
 static int
-audio_set_params(struct audio_softc *sc, int setmode,
+audio_hw_set_params(struct audio_softc *sc, int setmode,
 	audio_format2_t *phwfmt, audio_format2_t *rhwfmt)
 {
 	audio_params_t pp, rp;
