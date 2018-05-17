@@ -4877,7 +4877,6 @@ audio_mixer_init(struct audio_softc *sc, int mode, const audio_format2_t *hwfmt)
 	size_t bufsize;
 	int error;
 
-printf("%s\n", __func__);
 	error = 0;
 	if (mode == AUMODE_PLAY)
 		mixer = sc->sc_pmixer;
