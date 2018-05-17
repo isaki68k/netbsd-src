@@ -84,12 +84,12 @@ print_audiodev(struct audiodev *adev, int i)
 	if (strlen(adev->audio_device.version) > 0)
 		printf(" %s", adev->audio_device.version);
 	printf("\n");
-	if (adev->pspec.mode)
+	if ((adev->info.mode & AUMODE_PLAY))
 		printf("       playback: %uch/%uHz\n",
-		    adev->pspec.channels, adev->pspec.sample_rate);
-	if (adev->rspec.mode)
+		    adev->info.play.channels, adev->info.play.sample_rate);
+	if ((adev->info.mode & AUMODE_RECORD))
 		printf("       record:   %uch/%uHz\n",
-		    adev->rspec.channels, adev->rspec.sample_rate);
+		    adev->info.record.channels, adev->info.record.sample_rate);
 
 	TAILQ_FOREACH(f, &adev->formats, next) {
 		printf("       ");
@@ -242,7 +242,7 @@ main(int argc, char *argv[])
 			return EXIT_FAILURE;
 		}
 		print_audiodev(adev, i);
-		for (i = 0; i < adev->pspec.channels; i++) {
+		for (i = 0; i < adev->info.play.channels; i++) {
 			printf("  testing channel %d...", i);
 			fflush(stdout);
 			if (audiodev_test(adev, 1 << i) == -1)

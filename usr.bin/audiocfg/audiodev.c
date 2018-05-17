@@ -93,18 +93,14 @@ audiodev_getinfo(struct audiodev *adev)
 		return -1;
 	}
 	if ((props & AUDIO_PROP_PLAYBACK)) {
-		adev->pspec.mode = AUMODE_PLAY;
-		if (ioctl(adev->fd, AUDIO_GETFORMAT, &adev->pspec) == -1) {
-			close(adev->fd);
-			return -1;
-		}
+		adev->info.mode |= AUMODE_PLAY;
 	}
 	if ((props & AUDIO_PROP_CAPTURE)) {
-		adev->rspec.mode = AUMODE_RECORD;
-		if (ioctl(adev->fd, AUDIO_GETFORMAT, &adev->rspec) == -1) {
-			close(adev->fd);
-			return -1;
-		}
+		adev->info.mode |= AUMODE_RECORD;
+	}
+	if (ioctl(adev->fd, AUDIO_GETFORMAT, &adev->info) == -1) {
+		close(adev->fd);
+		return -1;
 	}
 
 	return 0;
@@ -271,24 +267,23 @@ int
 audiodev_set_param(struct audiodev *adev, int mode,
 	unsigned int ch, unsigned int freq)
 {
-	audio_format_spec_t spec;
+	struct audio_info ai;
 	int m;
 
-	for (m = AUMODE_RECORD;
-	     m != 0;
-	     m = (m == AUMODE_RECORD) ? AUMODE_PLAY : 0) {
-		if ((m & mode) == 0)
-			continue;
-		spec.mode = m;
+	ai = adev->info;
 
-		if (ioctl(adev->fd, AUDIO_GETFORMAT, &spec) == -1)
-			return -1;
+	ai.mode = mode;
+	if ((ai.mode & AUMODE_PLAY)) {
+		ai.play.channels = ch;
+		ai.play.sample_rate = freq;
+	}
+	if ((ai.mode & AUMODE_RECORD)) {
+		ai.record.channels = ch;
+		ai.record.sample_rate = freq;
+	}
 
-		spec.channels = ch;
-		spec.sample_rate = freq;
-
-		if (ioctl(adev->fd, AUDIO_SETFORMAT, &spec) == -1)
-			return -1;
+	if (ioctl(adev->fd, AUDIO_SETFORMAT, &ai) == -1) {
+		return -1;
 	}
 	return 0;
 }
@@ -311,7 +306,7 @@ audiodev_test(struct audiodev *adev, unsigned int chanmask)
 
 	AUDIO_INITINFO(&info);
 	info.play.sample_rate = AUDIODEV_SAMPLE_RATE;
-	info.play.channels = adev->pspec.channels;
+	info.play.channels = adev->info.play.channels;
 	info.play.precision = 16;
 	info.play.encoding = AUDIO_ENCODING_SLINEAR_LE;
 	info.mode = AUMODE_PLAY;
@@ -325,7 +320,7 @@ audiodev_test(struct audiodev *adev, unsigned int chanmask)
 	}
 
 	dtmf_new(&buf, &buflen, info.play.sample_rate, 2,
-	    adev->pspec.channels, chanmask, 350.0, 440.0);
+	    adev->info.play.channels, chanmask, 350.0, 440.0);
 	if (buf == NULL) {
 		goto abort;
 	}

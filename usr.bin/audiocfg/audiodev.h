@@ -54,8 +54,7 @@ struct audiodev {
 
 	audio_device_t audio_device;
 	TAILQ_HEAD(, audiofmt) formats;
-	audio_format_spec_t pspec;
-	audio_format_spec_t rspec;
+	struct audio_info info;
 
 	TAILQ_ENTRY(audiodev) next;
 };
