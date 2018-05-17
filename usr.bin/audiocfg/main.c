@@ -85,10 +85,10 @@ print_audiodev(struct audiodev *adev, int i)
 		printf(" %s", adev->audio_device.version);
 	printf("\n");
 	if ((adev->info.mode & AUMODE_PLAY))
-		printf("       playback: %uch/%uHz\n",
+		printf("       playback: %uch, %uHz\n",
 		    adev->info.play.channels, adev->info.play.sample_rate);
 	if ((adev->info.mode & AUMODE_RECORD))
-		printf("       record:   %uch/%uHz\n",
+		printf("       record:   %uch, %uHz\n",
 		    adev->info.record.channels, adev->info.record.sample_rate);
 
 	TAILQ_FOREACH(f, &adev->formats, next) {
@@ -121,11 +121,11 @@ print_audiodev(struct audiodev *adev, int i)
 			    f->fmt.frequency[1]);
 		} else {
 			for (j = 0; j < f->fmt.frequency_type; j++) {
-				printf("%c%d",
-				    (j == 0) ? '{' : ',',
+				printf("%s%d",
+				    (j == 0) ? "{ " : ", ",
 				    f->fmt.frequency[j]);
 			}
-			printf("}");
+			printf(" }");
 		}
 		printf("\n");
 	}
