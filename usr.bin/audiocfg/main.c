@@ -214,7 +214,6 @@ main(int argc, char *argv[])
 			usage(argv[0]);
 			/* NOTREACHED */
 
-		printf("setting %s to %uch/%uHz\n", adev->xname, ch, freq);
 		if (audiodev_set_param(adev, mode, ch, freq) == -1) {
 			perror("couldn't set parameter");
 			return EXIT_FAILURE;

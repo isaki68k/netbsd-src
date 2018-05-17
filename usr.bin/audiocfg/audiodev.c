@@ -258,21 +258,31 @@ audiodev_set_param(struct audiodev *adev, int mode,
 	unsigned int ch, unsigned int freq)
 {
 	struct audio_info ai;
-	int m;
+	int setmode;
 
+	setmode = 0;
 	ai = adev->info;
 
-	ai.mode = mode;
-	if ((ai.mode & AUMODE_PLAY)) {
+	if ((ai.mode & mode & AUMODE_PLAY)) {
+		setmode |= AUMODE_PLAY;
 		ai.play.channels = ch;
 		ai.play.sample_rate = freq;
 	}
-	if ((ai.mode & AUMODE_RECORD)) {
+	if ((ai.mode & mode & AUMODE_RECORD)) {
+		setmode |= AUMODE_RECORD;
 		ai.record.channels = ch;
 		ai.record.sample_rate = freq;
 	}
 
+	if (setmode == 0) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	ai.mode = setmode;
+	printf("setting %s to %uch, %uHz\n", adev->xname, ch, freq);
 	if (ioctl(adev->fd, AUDIO_SETFORMAT, &ai) == -1) {
+		perror("ioctl AUDIO_SETFORMAT");
 		return -1;
 	}
 	return 0;
