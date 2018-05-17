@@ -5344,6 +5344,7 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track,
 {
 	int count;
 	int sample_count;
+	int remain;
 	int i;
 	const aint_t *s;
 	aint2_t *d;
@@ -5393,9 +5394,14 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track,
 		}
 	}
 
+	auring_take(&track->outbuf, count);
 	// outbuf が1ブロック未満であっても、カウンタはブロック境界に
-	// いなければならないため、count ではなく frames_per_block を足す。
-	auring_take(&track->outbuf, mixer->frames_per_block);
+	// いなければならないため、不足が出れば調整する。
+	remain = mixer->frames_per_block - count;
+	if (__predict_false(remain != 0)) {
+		auring_push(&track->outbuf, remain);
+		auring_take(&track->outbuf, remain);
+	}
 
 	// トラックバッファを取り込んだことを反映
 	// mixseq はこの時点ではまだ前回の値なのでトラック側へは +1
