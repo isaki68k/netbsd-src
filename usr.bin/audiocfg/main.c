@@ -42,7 +42,7 @@ usage(const char *p)
 {
 	fprintf(stderr, "usage: %s list [<index>]\n", p);
 	fprintf(stderr, "       %s default <index>\n", p);
-	fprintf(stderr, "       %s default <index> [p|r] <ch> <freq>\n", p);
+	fprintf(stderr, "       %s set  <index> [p|r] <ch> <freq>\n", p);
 	fprintf(stderr, "       %s test <index>\n", p);
 	exit(EXIT_FAILURE);
 }
@@ -178,8 +178,8 @@ main(int argc, char *argv[])
 			perror("couldn't set default device");
 			return EXIT_FAILURE;
 		}
-	} else if (strcmp(argv[1], "default") == 0 && argc == 6) {
-		/* audiocfg default <index> [p|r] <ch> <freq> */
+	} else if (strcmp(argv[1], "set") == 0 && argc == 6) {
+		/* audiocfg set <index> [p|r] <ch> <freq> */
 		if (*argv[2] < '0' || *argv[2] > '9')
 			usage(argv[0]);
 			/* NOTREACHED */
@@ -192,14 +192,6 @@ main(int argc, char *argv[])
 		if (adev == NULL) {
 			fprintf(stderr, "no such device\n");
 			return EXIT_FAILURE;
-		}
-		if (i != audiodev_get_default()) {
-			printf("setting default audio device to %s\n",
-			    adev->xname);
-			if (audiodev_set_default(adev) == -1) {
-				perror("couldn't set default device");
-				return EXIT_FAILURE;
-			}
 		}
 
 		mode = 0;

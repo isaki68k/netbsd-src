@@ -254,16 +254,6 @@ audiodev_set_default(struct audiodev *adev)
 }
 
 int
-audiodev_get_default()
-{
-	char path[PATH_MAX + 1];
-	if (readlink(_PATH_AUDIO, path, sizeof(path)) < 0)
-		return -1;
-
-	return atoi(path + strlen(_PATH_AUDIO));
-}
-
-int
 audiodev_set_param(struct audiodev *adev, int mode,
 	unsigned int ch, unsigned int freq)
 {
