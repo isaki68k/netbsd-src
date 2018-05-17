@@ -355,6 +355,15 @@ vs_query_encoding(void *hdl, struct audio_encoding *fp)
 static int
 vs_round_sr(u_long rate)
 {
+#if defined(AUDIO2)
+	int i;
+
+	for (i = 0; i < NUM_RATE; i++) {
+		if (rate == vs_l2r[i].rate)
+			return i;
+	}
+	return -1;
+#else
 	int i;
 	int diff;
 	int nearest;
@@ -378,6 +387,7 @@ vs_round_sr(u_long rate)
 		return -1;
 	else
 		return nearest;
+#endif
 }
 
 #if defined(AUDIO2)
