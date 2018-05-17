@@ -40,7 +40,7 @@
 __dead static void
 usage(const char *p)
 {
-	fprintf(stderr, "usage: %s list\n", p);
+	fprintf(stderr, "usage: %s list [<index>]\n", p);
 	fprintf(stderr, "       %s default <index>\n", p);
 	fprintf(stderr, "       %s default <index> [p|r] <ch> <freq>\n", p);
 	fprintf(stderr, "       %s test <index>\n", p);
@@ -148,10 +148,17 @@ main(int argc, char *argv[])
 		usage(argv[0]);
 		/* NOTREACHED */
 
-	if (strcmp(argv[1], "list") == 0) {
+	if (strcmp(argv[1], "list") == 0 && argc == 2) {
 		n = audiodev_count();
 		for (i = 0; i < n; i++)
 			print_audiodev(audiodev_get(i), i);
+	} else if (strcmp(argv[1], "list") == 0 && argc == 3) {
+		errno = 0;
+		i = strtoul(argv[2], NULL, 10);
+		if (errno)
+			usage(argv[0]);
+			/* NOTREACHED */
+		print_audiodev(audiodev_get(i), i);
 	} else if (strcmp(argv[1], "default") == 0 && argc == 3) {
 		if (*argv[2] < '0' || *argv[2] > '9')
 			usage(argv[0]);
