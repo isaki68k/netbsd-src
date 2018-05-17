@@ -487,7 +487,7 @@ static int audio_hw_probe_by_format(struct audio_softc *, audio_format2_t *,
 	int);
 static int audio_hw_probe_by_encoding(struct audio_softc *, audio_format2_t *,
 	int);
-static int audio_set_format(struct audio_softc *, audio_format_spec_t *);
+static int audio_mixers_set_format(struct audio_softc *, audio_format_spec_t *);
 static int audio_sysctl_volume(SYSCTLFN_PROTO);
 static void audio_format2_tostr(char *, size_t, const audio_format2_t *);
 #ifdef AUDIO_DEBUG
@@ -2675,7 +2675,8 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		break;
 
 	case AUDIO_SETFORMAT:
-		error = audio_set_format(sc, (audio_format_spec_t *)addr);
+		error = audio_mixers_set_format(sc,
+		    (audio_format_spec_t *)addr);
 		break;
 
 	default:
@@ -6482,7 +6483,7 @@ audio_hw_probe_by_encoding(struct audio_softc *sc, audio_format2_t *cand,
 // 指定します。
 // sc_lock でコールすること。
 static int
-audio_set_format(struct audio_softc *sc, audio_format_spec_t *spec)
+audio_mixers_set_format(struct audio_softc *sc, audio_format_spec_t *spec)
 {
 	audio_trackmixer_t *mixer;
 	audio_format2_t phwfmt;
