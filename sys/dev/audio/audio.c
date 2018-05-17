@@ -861,11 +861,13 @@ audioattach(device_t parent, device_t self, void *aux)
 	/* probe hw params */
 	memset(&phwfmt, 0, sizeof(phwfmt));
 	memset(&rhwfmt, 0, sizeof(rhwfmt));
-	if (audio_hw_config(sc, is_indep, &mode, &phwfmt, &rhwfmt) != 0)
+	mutex_enter(sc->sc_lock);
+	if (audio_hw_config(sc, is_indep, &mode, &phwfmt, &rhwfmt) != 0) {
+		mutex_exit(sc->sc_lock);
 		goto bad;
+	}
 
 	/* init track mixer */
-	mutex_enter(sc->sc_lock);
 	mode = audio_xxx_mixer_init(sc, mode, &phwfmt, &rhwfmt);
 	mutex_exit(sc->sc_lock);
 	if (mode == 0)
@@ -6245,10 +6247,13 @@ audio_select_freq(const struct audio_format *fmt)
 	}
 }
 
-// 再生か録音(mode) の HW フォーマットを決定する
+// 再生か録音(mode) の HW フォーマットを決定する。
+// sc_lock でコールすること。
 static int
 audio_hw_config_fmt(struct audio_softc *sc, audio_format2_t *cand, int mode)
 {
+
+	KASSERT(mutex_owned(sc->sc_lock));
 
 	// 分かりやすさのため、しばらくどっち使ったか表示しとく
 	if (sc->hw_if->query_format) {
@@ -6260,7 +6265,8 @@ audio_hw_config_fmt(struct audio_softc *sc, audio_format2_t *cand, int mode)
 	}
 }
 
-// HW フォーマットを query_format を使って決定する
+// HW フォーマットを query_format を使って決定する。
+// sc_lock でコールすること。
 static int
 audio_hw_config_by_format(struct audio_softc *sc, audio_format2_t *cand,
 	int mode)
@@ -6268,6 +6274,8 @@ audio_hw_config_by_format(struct audio_softc *sc, audio_format2_t *cand,
 	audio_format_query_t query;
 	int i;
 	int error;
+
+	KASSERT(mutex_owned(sc->sc_lock));
 
 	// 初期値
 	// enc/prec/stride は固定。(XXX 逆エンディアン対応するか?)
@@ -6282,10 +6290,7 @@ audio_hw_config_by_format(struct audio_softc *sc, audio_format2_t *cand,
 		memset(&query, 0, sizeof(query));
 		query.index = i;
 
-		mutex_enter(sc->sc_lock);
 		error = sc->hw_if->query_format(sc->hw_hdl, &query);
-		mutex_exit(sc->sc_lock);
-
 		if (error == ENOENT)
 			break;
 		if (error)
@@ -6361,6 +6366,7 @@ audio_hw_config_by_format(struct audio_softc *sc, audio_format2_t *cand,
 // HW フォーマットを query_format を使わずに決定する
 // とても query_format を書き起こせないような古いドライバ向けなので、
 // 探索パラメータはこれでよい。
+// sc_lock でコールすること。
 static int
 audio_hw_config_by_encoding(struct audio_softc *sc, audio_format2_t *cand,
 	int mode)
@@ -6370,6 +6376,8 @@ audio_hw_config_by_encoding(struct audio_softc *sc, audio_format2_t *cand,
 	u_int ch;
 	u_int i;
 	int error;
+
+	KASSERT(mutex_owned(sc->sc_lock));
 
 	fmt.encoding  = AUDIO_ENCODING_SLINEAR_LE;
 	fmt.precision = AUDIO_INTERNAL_BITS;
@@ -6400,6 +6408,7 @@ audio_hw_config_by_encoding(struct audio_softc *sc, audio_format2_t *cand,
 
 // *modep (AUMODE_PLAY|RECORD) に応じて再生か録音のフォーマットを選択して
 // 設定する。だめだった方のビットは落として、結果を書き戻す。
+// sc_lock でコールすること。
 //
 // independent デバイスなら
 //  あれば再生フォーマットを選定
@@ -6426,6 +6435,8 @@ audio_hw_config(struct audio_softc *sc, int is_indep, int *modep,
 	audio_format2_t fmt;
 	int mode;
 	int error = 0;
+
+	KASSERT(mutex_owned(sc->sc_lock));
 
 	mode = *modep;
 	KASSERTMSG((mode & (AUMODE_PLAY | AUMODE_RECORD)) != 0,
@@ -6463,6 +6474,7 @@ audio_hw_config(struct audio_softc *sc, int is_indep, int *modep,
 // spec->mode で示されるどちらか一方のミキサフォーマットをセットします。
 // spec->mode は AUMODE_PLAY か AUMODE_RECORD かのいずれかのみ単独で
 // 指定します。
+// sc_lock でコールすること。
 static int
 audio_set_format(struct audio_softc *sc, audio_format_spec_t *spec)
 {
@@ -6470,6 +6482,9 @@ audio_set_format(struct audio_softc *sc, audio_format_spec_t *spec)
 	audio_format2_t phwfmt;
 	audio_format2_t rhwfmt;
 	int indep;
+	int error;
+
+	KASSERT(mutex_owned(sc->sc_lock));
 
 	// XXX PLAY|RECORD 同時指定で同時に設定変えることも書式上は
 	// できそうに見えるけど、途中でこけたらどうすんだ問題が
@@ -6519,6 +6534,10 @@ audio_set_format(struct audio_softc *sc, audio_format_spec_t *spec)
 		rhwfmt.channels    = spec->channels;
 		rhwfmt.sample_rate = spec->sample_rate;
 	}
+
+	error = audio_set_params(sc, spec->mode, &phwfmt, &rhwfmt);
+	if (error)
+		return error;
 
 	audio_xxx_mixer_init(sc, spec->mode, &phwfmt, &rhwfmt);
 	return 0;
@@ -7163,6 +7182,7 @@ abort:
 //  - pp, rp は同じ値がすでにセットされている。
 // pp, rp は in/out parameter ではなくす。
 // hw->set_params は値を変更できない。(無視する)
+// sc_lock でコールすること。
 static int
 audio_set_params(struct audio_softc *sc, int setmode,
 	audio_format2_t *phwfmt, audio_format2_t *rhwfmt)
@@ -7201,12 +7221,10 @@ audio_set_params(struct audio_softc *sc, int setmode,
 #endif
 	}
 
-	mutex_enter(sc->sc_lock);
 	if (use_set_format) {
 		error = sc->hw_if->set_format(sc->hw_hdl, setmode,
 		    &pp, &rp, &pfilters2, &rfilters2);
 		if (error) {
-			mutex_exit(sc->sc_lock);
 			DPRINTF(1, "%s: set_format failed with %d\n",
 			    __func__, error);
 			return error;
@@ -7215,7 +7233,6 @@ audio_set_params(struct audio_softc *sc, int setmode,
 		error = sc->hw_if->set_params(sc->hw_hdl, setmode, usemode,
 		    &pp, &rp, &pfilters, &rfilters);
 		if (error) {
-			mutex_exit(sc->sc_lock);
 			DPRINTF(1, "%s: set_params failed with %d\n",
 			    __func__, error);
 			return error;
@@ -7225,13 +7242,11 @@ audio_set_params(struct audio_softc *sc, int setmode,
 	if (sc->hw_if->commit_settings) {
 		error = sc->hw_if->commit_settings(sc->hw_hdl);
 		if (error) {
-			mutex_exit(sc->sc_lock);
 			DPRINTF(1, "%s: commit_settings failed with %d\n",
 			    __func__, error);
 			return error;
 		}
 	}
-	mutex_exit(sc->sc_lock);
 
 	if (use_set_format) {
 		sc->sc_xxx_pfilreg = pfilters2;
