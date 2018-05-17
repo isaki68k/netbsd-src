@@ -16,8 +16,6 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <arch/x68k/dev/dmacvar.h>
 #include <arch/x68k/dev/intiovar.h>
 
-#define MERCURY_MONO	1
-
 #define MERCURY_ADDR	(0xecc080)
 #define MERCURY_SIZE	(0x80)
 
@@ -153,15 +151,12 @@ static struct audio_device mercury_device = {
 
 static const struct audio_format mercury_formats[] = {
 	{ NULL, AUMODE_PLAY | AUMODE_RECORD, AUDIO_ENCODING_SLINEAR_BE, 16, 16,
-#if defined(MERCURY_MONO)
 	  1, AUFMT_MONAURAL,
-#else
+	  6, { 16000, 22050, 24000, 32000, 44100, 48000 } },
+	{ NULL, AUMODE_PLAY | AUMODE_RECORD, AUDIO_ENCODING_SLINEAR_BE, 16, 16,
 	  2, AUFMT_STEREO,
-#endif
-//	  6, { 16000, 22050, 24000, 32000, 44100, 48000 } },
-	  1, { 16000 } },
+	  6, { 16000, 22050, 24000, 32000, 44100, 48000 } },
 };
-
 
 static int
 mercury_match(device_t parent, cfdata_t cf, void *aux)
