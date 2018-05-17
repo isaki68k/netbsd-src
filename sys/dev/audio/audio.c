@@ -480,12 +480,12 @@ static int audio_check_params2(audio_format2_t *);
 static int audio_mixerpair_init(struct audio_softc *sc, int,
 	audio_format2_t *, audio_format2_t *);
 static int audio_select_freq(const struct audio_format *);
-static int audio_hw_config(struct audio_softc *, int, int *,
+static int audio_hw_probe(struct audio_softc *, int, int *,
 	audio_format2_t *, audio_format2_t *);
-static int audio_hw_config_fmt(struct audio_softc *, audio_format2_t *, int);
-static int audio_hw_config_by_format(struct audio_softc *, audio_format2_t *,
+static int audio_hw_probe_fmt(struct audio_softc *, audio_format2_t *, int);
+static int audio_hw_probe_by_format(struct audio_softc *, audio_format2_t *,
 	int);
-static int audio_hw_config_by_encoding(struct audio_softc *, audio_format2_t *,
+static int audio_hw_probe_by_encoding(struct audio_softc *, audio_format2_t *,
 	int);
 static int audio_set_format(struct audio_softc *, audio_format_spec_t *);
 static int audio_sysctl_volume(SYSCTLFN_PROTO);
@@ -863,7 +863,7 @@ audioattach(device_t parent, device_t self, void *aux)
 	memset(&phwfmt, 0, sizeof(phwfmt));
 	memset(&rhwfmt, 0, sizeof(rhwfmt));
 	mutex_enter(sc->sc_lock);
-	if (audio_hw_config(sc, is_indep, &mode, &phwfmt, &rhwfmt) != 0) {
+	if (audio_hw_probe(sc, is_indep, &mode, &phwfmt, &rhwfmt) != 0) {
 		mutex_exit(sc->sc_lock);
 		goto bad;
 	}
@@ -6279,7 +6279,7 @@ audio_select_freq(const struct audio_format *fmt)
  * Return 0 if successful,  otherwise errno.
  */
 static int
-audio_hw_config(struct audio_softc *sc, int is_indep, int *modep,
+audio_hw_probe(struct audio_softc *sc, int is_indep, int *modep,
 	audio_format2_t *phwfmt, audio_format2_t *rhwfmt)
 {
 	audio_format2_t fmt;
@@ -6295,18 +6295,18 @@ audio_hw_config(struct audio_softc *sc, int is_indep, int *modep,
 	if (is_indep) {
 		/* independent devices */
 		if ((mode & AUMODE_PLAY) != 0) {
-			error = audio_hw_config_fmt(sc, phwfmt, AUMODE_PLAY);
+			error = audio_hw_probe_fmt(sc, phwfmt, AUMODE_PLAY);
 			if (error)
 				mode &= ~AUMODE_PLAY;
 		}
 		if ((mode & AUMODE_RECORD) != 0) {
-			error = audio_hw_config_fmt(sc, rhwfmt, AUMODE_RECORD);
+			error = audio_hw_probe_fmt(sc, rhwfmt, AUMODE_RECORD);
 			if (error)
 				mode &= ~AUMODE_RECORD;
 		}
 	} else {
 		/* not independent devices */
-		error = audio_hw_config_fmt(sc, &fmt, mode);
+		error = audio_hw_probe_fmt(sc, &fmt, mode);
 		if (error) {
 			mode = 0;
 		} else {
@@ -6322,7 +6322,7 @@ audio_hw_config(struct audio_softc *sc, int is_indep, int *modep,
 // 再生か録音(mode) の HW フォーマットを決定する。
 // sc_lock でコールすること。
 static int
-audio_hw_config_fmt(struct audio_softc *sc, audio_format2_t *cand, int mode)
+audio_hw_probe_fmt(struct audio_softc *sc, audio_format2_t *cand, int mode)
 {
 
 	KASSERT(mutex_owned(sc->sc_lock));
@@ -6330,17 +6330,17 @@ audio_hw_config_fmt(struct audio_softc *sc, audio_format2_t *cand, int mode)
 	// 分かりやすさのため、しばらくどっち使ったか表示しとく
 	if (sc->hw_if->query_format) {
 		aprint_normal_dev(sc->dev, "use new query_format method\n");
-		return audio_hw_config_by_format(sc, cand, mode);
+		return audio_hw_probe_by_format(sc, cand, mode);
 	} else {
 		aprint_normal_dev(sc->dev, "use old set_param method\n");
-		return audio_hw_config_by_encoding(sc, cand, mode);
+		return audio_hw_probe_by_encoding(sc, cand, mode);
 	}
 }
 
 // HW フォーマットを query_format を使って決定する。
 // sc_lock でコールすること。
 static int
-audio_hw_config_by_format(struct audio_softc *sc, audio_format2_t *cand,
+audio_hw_probe_by_format(struct audio_softc *sc, audio_format2_t *cand,
 	int mode)
 {
 	audio_format_query_t query;
@@ -6440,7 +6440,7 @@ audio_hw_config_by_format(struct audio_softc *sc, audio_format2_t *cand,
 // 探索パラメータはこれでよい。
 // sc_lock でコールすること。
 static int
-audio_hw_config_by_encoding(struct audio_softc *sc, audio_format2_t *cand,
+audio_hw_probe_by_encoding(struct audio_softc *sc, audio_format2_t *cand,
 	int mode)
 {
 	static u_int freqlist[] = { 48000, 44100, 22050, 11025, 8000, 4000 };
