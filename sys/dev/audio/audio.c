@@ -6286,7 +6286,7 @@ audio_hw_config_by_format(struct audio_softc *sc, audio_format2_t *cand,
 			return error;
 
 #if AUDIO_DEBUG >= 1
-		DPRINTF(1, "fmt[%d] %c%c %s/%dbits/%dch/", i,
+		DPRINTF(1, "fmt[%d] %c%c %s/%dbit/%dch/", i,
 		    (query.fmt.mode & AUMODE_PLAY)   ? 'P' : '-',
 		    (query.fmt.mode & AUMODE_RECORD) ? 'R' : '-',
 		    audio_encoding_name(query.fmt.encoding),
