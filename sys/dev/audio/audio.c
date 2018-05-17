@@ -6503,6 +6503,7 @@ audio_mixers_set_format(struct audio_softc *sc, struct audio_info *ai)
 	audio_format2_t phwfmt;
 	audio_format2_t rhwfmt;
 	int mode;
+	int modemask;
 	int indep;
 	int error;
 
@@ -6511,21 +6512,36 @@ audio_mixers_set_format(struct audio_softc *sc, struct audio_info *ai)
 	// ai.mode は PLAY か RECORD のビットが立っているかどうかだけ。
 	// 上書きするのは channels/sample_rate だけでいい。
 	mode = 0;
+	modemask = 0;
 	if (sc->sc_pmixer) {
 		phwfmt = sc->sc_pmixer->track_fmt;
+		modemask |= AUMODE_PLAY;
 		if ((ai->mode & AUMODE_PLAY)) {
 			mode |= AUMODE_PLAY;
 			phwfmt.channels    = ai->play.channels;
 			phwfmt.sample_rate = ai->play.sample_rate;
 		}
+		DPRINTF(1, "%s: play=%s/%d/%d/%dch/%dHz\n", __func__,
+		    audio_encoding_name(phwfmt.encoding),
+		    phwfmt.precision,
+		    phwfmt.stride,
+		    phwfmt.channels,
+		    phwfmt.sample_rate);
 	}
 	if (sc->sc_rmixer) {
 		rhwfmt = sc->sc_rmixer->track_fmt;
+		modemask |= AUMODE_RECORD;
 		if ((ai->mode & AUMODE_RECORD) != 0) {
 			mode |= AUMODE_RECORD;
 			rhwfmt.channels    = ai->record.channels;
 			rhwfmt.sample_rate = ai->record.sample_rate;
 		}
+		DPRINTF(1, "%s: rec= %s/%d/%d/%dch/%dHz\n", __func__,
+		    audio_encoding_name(phwfmt.encoding),
+		    phwfmt.precision,
+		    phwfmt.stride,
+		    phwfmt.channels,
+		    phwfmt.sample_rate);
 	}
 	if (mode == 0)
 		return ENOTTY;
@@ -6539,22 +6555,31 @@ audio_mixers_set_format(struct audio_softc *sc, struct audio_info *ai)
 		} else {
 			rhwfmt = phwfmt;
 		}
+		// 両方向同じ情報をセットする
 		mode = AUMODE_PLAY | AUMODE_RECORD;
 	}
 
+	// その上で HW に存在しない方向は落としておかないといけない
+	mode &= modemask;
+	DPRINTF(1, "%s: mode=%d\n", __func__, mode);
+
 	/* Check */
-	if (phwfmt.encoding != AUDIO_ENCODING_SLINEAR_NE)
-		return EINVAL;
-	if (phwfmt.precision != AUDIO_INTERNAL_BITS)
-		return EINVAL;
-	if (phwfmt.stride != AUDIO_INTERNAL_BITS)
-		return EINVAL;
-	if (rhwfmt.encoding != AUDIO_ENCODING_SLINEAR_NE)
-		return EINVAL;
-	if (rhwfmt.precision != AUDIO_INTERNAL_BITS)
-		return EINVAL;
-	if (rhwfmt.stride != AUDIO_INTERNAL_BITS)
-		return EINVAL;
+	if ((mode & AUMODE_PLAY)) {
+		if (phwfmt.encoding != AUDIO_ENCODING_SLINEAR_NE)
+			return EINVAL;
+		if (phwfmt.precision != AUDIO_INTERNAL_BITS)
+			return EINVAL;
+		if (phwfmt.stride != AUDIO_INTERNAL_BITS)
+			return EINVAL;
+	}
+	if ((mode & AUMODE_RECORD)) {
+		if (rhwfmt.encoding != AUDIO_ENCODING_SLINEAR_NE)
+			return EINVAL;
+		if (rhwfmt.precision != AUDIO_INTERNAL_BITS)
+			return EINVAL;
+		if (rhwfmt.stride != AUDIO_INTERNAL_BITS)
+			return EINVAL;
+	}
 
 	// 再生か録音の一方だけ設定する場合であっても、
 	// 再生も録音も誰もいない状態でなければいけない。
