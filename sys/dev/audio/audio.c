@@ -477,7 +477,7 @@ static bool audio_can_playback(struct audio_softc *);
 static bool audio_can_capture(struct audio_softc *);
 static int audio_check_params(struct audio_params *);
 static int audio_check_params2(audio_format2_t *);
-static int audio_xxx_mixer_init(struct audio_softc *sc, int,
+static int audio_mixerpair_init(struct audio_softc *sc, int,
 	audio_format2_t *, audio_format2_t *);
 static int audio_select_freq(const struct audio_format *);
 static int audio_hw_config(struct audio_softc *, int, int *,
@@ -879,7 +879,7 @@ audioattach(device_t parent, device_t self, void *aux)
 	}
 
 	/* init track mixer */
-	mode = audio_xxx_mixer_init(sc, mode, &phwfmt, &rhwfmt);
+	mode = audio_mixerpair_init(sc, mode, &phwfmt, &rhwfmt);
 	mutex_exit(sc->sc_lock);
 	if (mode == 0)
 		goto bad;
@@ -6158,7 +6158,7 @@ audio_check_params2(audio_format2_t *f2)
 // いけません。
 // sc_lock でコールします。
 static int
-audio_xxx_mixer_init(struct audio_softc *sc, int mode,
+audio_mixerpair_init(struct audio_softc *sc, int mode,
 	audio_format2_t *phwfmt, audio_format2_t *rhwfmt)
 {
 	char fmtstr[64];
@@ -6546,7 +6546,7 @@ audio_set_format(struct audio_softc *sc, audio_format_spec_t *spec)
 	if (error)
 		return error;
 
-	audio_xxx_mixer_init(sc, spec->mode, &phwfmt, &rhwfmt);
+	audio_mixerpair_init(sc, spec->mode, &phwfmt, &rhwfmt);
 	return 0;
 }
 
