@@ -792,6 +792,7 @@ audioattach(device_t parent, device_t self, void *aux)
 	bool is_indep;
 	int mode;
 	int props;
+	int error;
 
 	sc = device_private(self);
 	sc->dev = self;
@@ -863,6 +864,16 @@ audioattach(device_t parent, device_t self, void *aux)
 	memset(&rhwfmt, 0, sizeof(rhwfmt));
 	mutex_enter(sc->sc_lock);
 	if (audio_hw_config(sc, is_indep, &mode, &phwfmt, &rhwfmt) != 0) {
+		mutex_exit(sc->sc_lock);
+		goto bad;
+	}
+	if (mode == 0) {
+		mutex_exit(sc->sc_lock);
+		goto bad;
+	}
+	/* init hardware */
+	error = audio_set_params(sc, mode, &phwfmt, &rhwfmt);
+	if (error) {
 		mutex_exit(sc->sc_lock);
 		goto bad;
 	}
@@ -6247,8 +6258,8 @@ audio_select_freq(const struct audio_format *fmt)
 	}
 }
 
-// *modep (AUMODE_PLAY|RECORD) に応じて再生か録音のフォーマットを選択して
-// 設定する。だめだった方のビットは落として、結果を書き戻す。
+// *modep (AUMODE_PLAY|RECORD) に応じて再生か録音のフォーマットを選択する。
+// 選択に失敗した方のビットは落として結果を *modep  に書き戻す。
 // sc_lock でコールすること。
 //
 // independent デバイスなら
@@ -6260,10 +6271,8 @@ audio_select_freq(const struct audio_format *fmt)
 //   再生でフォーマットを選定。録音側にもコピー
 //  else
 //   録音でフォーマットを選定。再生側にもコピー
-//  両方を設定
 /*
- * Select playback and/or recording format (depending on *modep) and then
- * set it to the hardware.
+ * Select playback and/or recording format (depending on *modep).
  * *modep is an in-out parameter.  It indicates the direction to configure
  * as an argument and the direction configured is written back as out
  * parameter.
@@ -6306,8 +6315,6 @@ audio_hw_config(struct audio_softc *sc, int is_indep, int *modep,
 		}
 	}
 
-	if (mode != 0)
-		error = audio_set_params(sc, mode, phwfmt, rhwfmt);
 	*modep = mode;
 	return error;
 }
