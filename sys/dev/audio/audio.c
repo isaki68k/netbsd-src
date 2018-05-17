@@ -6526,6 +6526,7 @@ audio_mixers_set_format(struct audio_softc *sc, struct audio_info *ai)
 		} else {
 			rhwfmt = phwfmt;
 		}
+		mode = AUMODE_PLAY | AUMODE_RECORD;
 	}
 
 	/* Check */
