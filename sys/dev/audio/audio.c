@@ -812,8 +812,7 @@ audioattach(device_t parent, device_t self, void *aux)
 	hw_if->get_locks(hdlp, &sc->sc_intr_lock, &sc->sc_lock);
 
 #ifdef DIAGNOSTIC
-	if (hw_if->query_format == NULL ||
-	    (hw_if->set_params == NULL && hw_if->set_format == NULL) ||
+	if ((hw_if->set_params == NULL && hw_if->set_format == NULL) ||
 	    (hw_if->start_output == NULL && hw_if->trigger_output == NULL) ||
 	    (hw_if->start_input == NULL && hw_if->trigger_input == NULL) ||
 	    hw_if->halt_output == NULL ||
@@ -2658,7 +2657,10 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 
 	case AUDIO_QUERYFORMAT:
 		query = (audio_format_query_t *)addr;
-		error = sc->hw_if->query_format(sc->hw_hdl, query);
+		if (sc->hw_if->query_format)
+			error = sc->hw_if->query_format(sc->hw_hdl, query);
+		else
+			error = ENODEV;
 		break;
 
 	case AUDIO_GETFORMAT:
