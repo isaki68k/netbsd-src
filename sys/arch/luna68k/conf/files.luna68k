@@ -51,6 +51,10 @@ device xp
 attach xp at mainbus
 file arch/luna68k/dev/xp.c		xp
 
+device psgpam: audiobus, auconv, mulaw
+attach psgpam at mainbus
+file arch/luna68k/dev/psgpam.c		psgpam
+
 device ws: wskbddev,wsmousedev
 attach ws at sio
 file arch/luna68k/dev/lunaws.c		ws
@@ -79,5 +83,8 @@ include "compat/aoutm68k/files.aoutm68k"
 # SunOS binary compatibility (COMPAT_SUNOS)
 include "compat/sunos/files.sunos"
 file	arch/m68k/m68k/sunos_machdep.c	compat_sunos
+
+# OSS audio driver compatibility
+include "compat/ossaudio/files.ossaudio"
 
 include "arch/luna68k/conf/majors.luna68k"

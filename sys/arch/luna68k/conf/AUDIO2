@@ -20,6 +20,8 @@
 
 include 	"arch/luna68k/conf/std.luna68k"
 
+options 	AUDIO2
+
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
 #ident 		"GENERIC-$Revision: 1.125 $"
@@ -155,7 +157,11 @@ spc1	at mainbus0		# 2nd SCSI on LUNA-II
 fb0	at mainbus0		# 16 or 256 pseudo color
 
 # HD647180X I/O processor
-xp0	at mainbus0
+#xp0	at mainbus0
+
+# HD647180X I/O processor as PSG PAM audio
+psgpam0	at mainbus0
+audio*	at psgpam?
 
 # Workstation Console attachments
 wsdisplay*	at fb?
