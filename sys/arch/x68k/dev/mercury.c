@@ -117,7 +117,7 @@ static void mercury_get_locks(void *, kmutex_t **, kmutex_t **);
 CFATTACH_DECL_NEW(mercury, sizeof(struct mercury_softc),
 	mercury_match, mercury_attach, NULL, NULL);
 
-static int mercury_attached;
+static int mercury_matched;
 
 static const struct audio_hw_if mercury_hw_if = {
 	.open			= mercury_open,
@@ -164,7 +164,7 @@ mercury_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct intio_attach_args *ia = aux;
 
-	if (mercury_attached)
+	if (mercury_matched)
 		return 0;
 
 	if (ia->ia_addr == INTIOCF_ADDR_DEFAULT)
@@ -174,6 +174,7 @@ mercury_match(device_t parent, cfdata_t cf, void *aux)
 	if (badaddr((void *)IIOV(ia->ia_addr)))
 		return 0;
 
+	mercury_matched = 1;
 	return 1;
 }
 
@@ -214,7 +215,6 @@ mercury_attach(device_t parent, device_t self, void *aux)
 	    (DMAC_DCR_XRM_CSWOH | DMAC_DCR_OTYP_EASYNC | DMAC_DCR_OPS_16BIT),
 	    (DMAC_OCR_SIZE_WORD | DMAC_OCR_REQG_EXTERNAL));
 
-	mercury_attached = 1;
 	aprint_normal_dev(sc->sc_dev, "Mercury Unit V2/V3\n");
 
 	audio_attach_mi(&mercury_hw_if, sc, sc->sc_dev);
