@@ -23,7 +23,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #define MERC_CMD	(0xecc091 - MERCURY_ADDR)
 #define MERC_STAT	(0xecc0a1 - MERCURY_ADDR)
 
-#define MERC_CMD_HALF		(0x80)	/* Half rate */
+#define MERC_CMD_NORMALRATE	(0x80)	/* Normal rate(1)/Half rate(0) */
 #define MERC_CMD_INPSEL		(0x40)	/* Input select */
 #define MERC_CMD_CLK_MASK	(0x30)	/* Clock bits */
 #define MERC_CMD_CLK_EXT	(0x00)
@@ -329,13 +329,13 @@ mercury_set_format(void *hdl, int setmode,
 		cmd |= MERC_CMD_CLK_48000;
 		break;
 	case 32000:
-		cmd |= MERC_CMD_CLK_32000 | MERC_CMD_HALF;
+		cmd |= MERC_CMD_CLK_32000 | MERC_CMD_NORMALRATE;
 		break;
 	case 44100:
-		cmd |= MERC_CMD_CLK_44100 | MERC_CMD_HALF;
+		cmd |= MERC_CMD_CLK_44100 | MERC_CMD_NORMALRATE;
 		break;
 	case 48000:
-		cmd |= MERC_CMD_CLK_48000 | MERC_CMD_HALF;
+		cmd |= MERC_CMD_CLK_48000 | MERC_CMD_NORMALRATE;
 		break;
 	default:
 printf("%s: invalid sample_rate %d\n", __func__, play->sample_rate);
@@ -383,13 +383,13 @@ p->validbits, p->precision, p->channels, p->sample_rate);
 		 && p->precision == 16) {
 			switch (p->sample_rate) {
 			case 32000:
-				cmd |= MERC_CMD_CLK_32000;
+				cmd |= MERC_CMD_CLK_32000 | MERC_CMD_NORMALRATE;
 				break;
 			case 44100:
-				cmd |= MERC_CMD_CLK_44100;
+				cmd |= MERC_CMD_CLK_44100 | MERC_CMD_NORMALRATE;
 				break;
 			case 48000:
-				cmd |= MERC_CMD_CLK_48000;
+				cmd |= MERC_CMD_CLK_48000 | MERC_CMD_NORMALRATE;
 				break;
 			default:
 printf("%s EINVAL\n", __func__);
