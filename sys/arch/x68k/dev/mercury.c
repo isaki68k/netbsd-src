@@ -411,6 +411,7 @@ mercury_start_output(void *hdl, void *block, int blksize,
 	struct mercury_softc *sc;
 	struct vs_dma *vd;
 	struct dmac_channel_stat *chan;
+	int count;
 	uint8_t cmd;
 
 	sc = hdl;
@@ -438,8 +439,9 @@ mercury_start_output(void *hdl, void *block, int blksize,
 		    sc->sc_addr + MERC_DATA);
 		sc->sc_last_vd = vd;
 	}
+	count = blksize / 2;
 	dmac_start_xfer_offset(chan->ch_softc, sc->sc_xfer,
-	    (int)block - (int)KVADDR(vd), blksize);
+	    (int)block - (int)KVADDR(vd), count);
 
 	if (sc->sc_active == 0) {
 		cmd = sc->sc_cmd
