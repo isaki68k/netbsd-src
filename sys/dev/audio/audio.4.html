@@ -600,7 +600,8 @@ N8 ではそれが一致しなくなったため、AUDIO_GETENC が何を(どち
 <p class=a2 style="margin-left:20%">
 AUDIO_GETENC は MI がサポートしているエンコーディングを返す。</p>
 <p class=a2 style="margin-left:20%">
-MD が対応しているエンコーディングは別の ioctl (GETHWENC?) を新設かなあ。
+MD が対応しているエンコーディングは別の ioctl (AUDIO_QUERYFORMAT)
+を実装してみたがどうだろう。
 </p>
 
 <p style="margin-left:20%; margin-top: 1em">
@@ -1100,6 +1101,81 @@ returns the current pause/unpause state for recording or
 playback. For AUDIO_SETINFO, if the pause value is specified
 it will either pause or unpause the particular
 direction.</p>
+
+<p style="margin-left:12%;margin-top: 1em" valign="top"
+><span class=a2>AUDIO_QUERYFORMAT (audio_format_query_t)</span></p>
+<p style="margin-left:20%;"><span class=a2>
+AUDIO2 新設 ioctl。
+ハードウェアがサポートしているフォーマットを取得する。
+<tt>AUDIO_GETENC</tt> と似ていて index を指定して audio_format を取得する。
+index を 0 から始めて ENOENT が返ってくるまで繰り返すと全フォーマットが取得
+できる。
+</p>
+<pre style="margin-left:20%"><span class=a2>typedef struct audio_format_query {
+	u_int	index;
+	struct audio_format fmt;
+} audio_format_query_t;
+</span></pre>
+<p class=a2 style="margin-left:20%;">AUDIO_GETENC で使う
+audio_encoding_t はチャンネル数および周波数情報が返せないため、
+新しい構造体と ioctl を用意した。
+</p>
+<p class=a2 style="margin-left:20%;">
+今の所ハードウェアがサポートしているフォーマットをすべて返すが、
+このうちトラックミキサーが対応しているのは SLINEAR_NE:16bit
+(ビット数は AUDIO_INTERNAL_BITS コンパイル時定数による)
+のフォーマットのみである。
+この辺どのレイヤでマスクするかという考察課題はある。
+フォーマットが全部見えると HW 特性を知るのに便利なような気もするし。
+</p>
+<p class=a2 style="margin-left:20%;">
+デバイスが query_format インタフェースをサポートしていない場合は、
+EXXX を返すとかにする?
+サポート必須はつらそうだが。
+</p>
+
+<p style="margin-left:12%;margin-top: 1em" valign="top"><span class=a2
+>AUDIO_GETFORMAT (audio_info_t)</span></p>
+<p style="margin-left:12%;margin-top: 1em" valign="top"><span class=a2>
+AUDIO_SETFORMAT (audio_info_t)</span></p>
+<p style="margin-left:20%;"><span class=a2>
+現在のトラックミキサのフォーマットを取得あるいは設定する。
+いずれの場合も audio_info_t のうち以下のメンバだけを使用する。
+play、record のうちサポートしていない側 (再生専用デバイスの録音側など)の
+メンバと、ここに記載のないメンバは
+GETFORMAT 時はゼロで埋められ、SETFORMAT 時は無視する。
+</span></p>
+<ul style="margin-left:20%; margin-top:0; margin-bottom:0;">
+<li><span class=a2>mode</span>
+<li><span class=a2>play.encoding</span>
+<li><span class=a2>play.precision</span>
+<li><span class=a2>play.channels</span>
+<li><span class=a2>play.sample_rate</span>
+<li><span class=a2>record.encoding</span>
+<li><span class=a2>record.precision</span>
+<li><span class=a2>record.channels</span>
+<li><span class=a2>record.sample_rate</span>
+</ul>
+<p style="margin-left:20%;margin-top:0;"><span class=a2>
+<tt>AUDIO_SETFORMAT</tt> は再生および録音ディスクリプタが一つもない状態で
+なければならない。
+</span></p>
+<p class=a2 style="margin-left:20%">
+independent デバイスであっても、例えば再生中に録音ミキサのフォーマットだけを
+変えることは出来ない。
+これは MI-MD インタフェース(set_params) が録再同時に設定を変更するため。
+</p>
+
+<p class=a2 style="margin-left:20%">
+stride 情報はないが、ここは内部フォーマットであり、
+precision != stride となるフォーマットはサポートしないので問題はない。
+</p>
+<p class=a2 style="margin-left:20%">
+トラックミキサの性質上、encoding は常に <tt>AUDIO_ENCODING_SLINEAR_NE</tt>、
+precision は <tt>AUDIO_INTERNAL_BITS</tt>(コンパイル時定数)である。
+
+
+
 
 <p style="margin-top: 1em" valign="top"><b>MIXER
 DEVICE</b></p>
