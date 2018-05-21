@@ -24,6 +24,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #define MERC_STAT	(0xecc0a1 - MERCURY_ADDR)
 
 #define MERC_CMD_NORMALRATE	(0x80)	/* Normal rate(1)/Half rate(0) */
+#define MERC_CMD_HALFRATE	(0x00)
 #define MERC_CMD_INPSEL		(0x40)	/* Input select */
 #define MERC_CMD_CLK_MASK	(0x30)	/* Clock bits */
 #define MERC_CMD_CLK_EXT	(0x00)
@@ -320,13 +321,13 @@ mercury_set_format(void *hdl, int setmode,
 
 	switch (play->sample_rate) {
 	case 16000:
-		cmd |= MERC_CMD_CLK_32000;
+		cmd |= MERC_CMD_CLK_32000 | MERC_CMD_HALFRATE;
 		break;
 	case 22050:
-		cmd |= MERC_CMD_CLK_44100;
+		cmd |= MERC_CMD_CLK_44100 | MERC_CMD_HALFRATE;
 		break;
 	case 24000:
-		cmd |= MERC_CMD_CLK_48000;
+		cmd |= MERC_CMD_CLK_48000 | MERC_CMD_HALFRATE;
 		break;
 	case 32000:
 		cmd |= MERC_CMD_CLK_32000 | MERC_CMD_NORMALRATE;
