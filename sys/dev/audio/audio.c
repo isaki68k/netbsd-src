@@ -2454,7 +2454,7 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 	};
 	int nameidx = (cmd & 0xff);
 	const char *ioctlname = "";
-	if (21 <= nameidx && nameidx <=37)
+	if (21 <= nameidx && nameidx <= 21 + __arraycount(ioctlnames))
 		ioctlname = ioctlnames[nameidx - 21];
 	DPRINTF(2, "audio_ioctl(%lu,'%c',%lu)%s pid=%d.%d\n",
 		 IOCPARM_LEN(cmd), (char)IOCGROUP(cmd), cmd&0xff, ioctlname,
