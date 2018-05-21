@@ -2425,7 +2425,6 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 	u_int offs;
 	int fd;
 	int index;
-	int mode;
 	int error;
 
 	KASSERT(mutex_owned(sc->sc_lock));
@@ -2664,29 +2663,24 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 
 	case AUDIO_GETFORMAT:
 		ai = (struct audio_info *)addr;
-		mode = ai->mode;
-		if ((mode & (AUMODE_PLAY | AUMODE_RECORD)) == 0) {
-			error = EINVAL;
-			break;
-		}
-
 		memset(ai, 0, sizeof(*ai));
-		ai->mode = mode;
 		// 書き込み先の audio_info には stride 情報がないが、
 		// trackmixer は常に precision == stride なので問題ない。
-		if ((mode & AUMODE_PLAY)) {
+		if (sc->sc_pmixer) {
 			audio_format2_t *fmt = &sc->sc_pmixer->track_fmt;
 			ai->play.encoding    = fmt->encoding;
 			ai->play.precision   = fmt->precision;
 			ai->play.channels    = fmt->channels;
 			ai->play.sample_rate = fmt->sample_rate;
+			ai->mode |= AUMODE_PLAY;
 		}
-		if ((mode & AUMODE_RECORD)) {
+		if (sc->sc_rmixer) {
 			audio_format2_t *fmt = &sc->sc_rmixer->track_fmt;
 			ai->record.encoding    = fmt->encoding;
 			ai->record.precision   = fmt->precision;
 			ai->record.channels    = fmt->channels;
 			ai->record.sample_rate = fmt->sample_rate;
+			ai->mode |= AUMODE_RECORD;
 		}
 		break;
 

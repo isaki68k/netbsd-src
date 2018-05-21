@@ -274,7 +274,7 @@ typedef struct audio_format_query {
 #define AUDIO_SETCHAN	_IOW('A', 36, int)
 #define AUDIO_GETCHAN	_IOR('A', 37, int)
 #define AUDIO_QUERYFORMAT	_IOWR('A', 38, struct audio_format_query)
-#define AUDIO_GETFORMAT	_IOWR('A', 39, struct audio_info)
+#define AUDIO_GETFORMAT	_IOR('A', 39, struct audio_info)
 #define AUDIO_SETFORMAT	_IOW('A', 40, struct audio_info)
 
 /*

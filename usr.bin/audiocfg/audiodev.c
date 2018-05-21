@@ -54,7 +54,6 @@ audiodev_getinfo(struct audiodev *adev)
 	struct stat st;
 	struct audiofmt *f;
 	audio_format_query_t query;
-	int props;
 	int i;
 
 	if (stat(adev->ctlpath, &st) == -1)
@@ -88,16 +87,6 @@ audiodev_getinfo(struct audiodev *adev)
 		TAILQ_INSERT_TAIL(&adev->formats, f, next);
 	}
 
-	if (ioctl(adev->fd, AUDIO_GETPROPS, &props) == -1) {
-		close(adev->fd);
-		return -1;
-	}
-	if ((props & AUDIO_PROP_PLAYBACK)) {
-		adev->info.mode |= AUMODE_PLAY;
-	}
-	if ((props & AUDIO_PROP_CAPTURE)) {
-		adev->info.mode |= AUMODE_RECORD;
-	}
 	if (ioctl(adev->fd, AUDIO_GETFORMAT, &adev->info) == -1) {
 		close(adev->fd);
 		return -1;
