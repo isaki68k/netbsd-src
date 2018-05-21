@@ -598,10 +598,11 @@ N8 ではそれが一致しなくなったため、AUDIO_GETENC が何を(どち
 → <a href="https://gnats.netbsd.org/52585">kern/52585</a>
 </p>
 <p class=a2 style="margin-left:20%">
-AUDIO_GETENC は MI がサポートしているエンコーディングを返す。</p>
-<p class=a2 style="margin-left:20%">
-MD が対応しているエンコーディングは別の ioctl (AUDIO_QUERYFORMAT)
-を実装してみたがどうだろう。
+AUDIO2 では、
+AUDIO_GETENC は MI がユーザランドから受け付けるエンコーディングを列挙する
+ものとし、
+ハードウェアが対応しているエンコーディングは新設の AUDIO_QUERYFORMAT
+で列挙できるようにしてみたが、どうだろう。
 </p>
 
 <p style="margin-left:20%; margin-top: 1em">
@@ -861,9 +862,7 @@ manpage のほうを修正したほうがいい。
 AUDIO2 ではブロックサイズはデフォルトで 40msec 分のサイズになるようにしてある。
 ただし HW の制約により 40msec で問題がある場合は
 問題のないところまで自動で拡張する。
-これがおきるのは今の所 x68k の vs(4) だけ。
-将来的にはカーネルコンフィグの
-AUDIO_BLK_MS でコンパイル時に変更できるようにしたい。
+これがおきるのは今の所 4bit precision である x68k の vs(4) だけ。
 </p>
 <p class=a2 style="margin-left:20%">
 エンコーディングを変更するとブロックサイズは常に追従する。
@@ -997,7 +996,8 @@ AC3</p>
 MI で一元的に扱うようになったが、どれを受け付けるのかはソース嫁状態。
 </p>
 <p class=a2 style="margin-left:20%">
-AUDIO2 では以下を受け付ける。<br>
+AUDIO2 では以下を受け付ける。
+また、この一覧は AUDIO_GETENC で取得できる。<br>
 　o AUDIO_ENCODING_SLINEAR_{LE,BE} 8, 16, 32 bit<br>
 　o AUDIO_ENCODING_ULINEAR_{LE,BE} 8, 16, 32 bit<br>
 　o AUDIO_ENCODING_ULAW 8bit<br>
@@ -1139,6 +1139,7 @@ EXXX を返すとかにする?
 <p style="margin-left:12%;margin-top: 1em" valign="top"><span class=a2>
 AUDIO_SETFORMAT (audio_info_t)</span></p>
 <p style="margin-left:20%;"><span class=a2>
+AUDIO2 新設 ioctl。
 現在のトラックミキサのフォーマットを取得あるいは設定する。
 いずれの場合も audio_info_t のうち以下のメンバだけを使用する。
 play、record のうちサポートしていない側 (再生専用デバイスの録音側など)の
@@ -1175,6 +1176,17 @@ precision != stride となるフォーマットはサポートしないので問
 precision は <tt>AUDIO_INTERNAL_BITS</tt>(コンパイル時定数)である。
 
 
+<p style="margin-left:8%; margin-top: 1em"><span class=a2>
+次の sysctl を用意している。
+</span></p>
+<p style="margin-left:12%;"><span class=a2>
+hw.audioN.blk_ms (int)
+</p>
+<p style="margin-left:20%;"><span class=a2>
+デバイスの1ブロックの時間(msec)を取得・設定する。
+デフォルトは 40msec だが、ハードウェア制約によって必要があれば変化する。
+どうしたもんだか。
+</span></p>
 
 
 <p style="margin-top: 1em" valign="top"><b>MIXER
