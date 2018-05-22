@@ -20,6 +20,13 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <arch/x68k/dev/dmacvar.h>
 #include <arch/x68k/dev/intiovar.h>
 
+/* #define MERCURY_DEBUG */
+#if defined(MERCURY_DEBUG)
+#define DPRINTF(fmt...)	printf(fmt)
+#else
+#define DPRINTF(fmt...)
+#endif
+
 #define MERCURY_ADDR	(0xecc080)
 #define MERCURY_SIZE	(0x80)
 
@@ -258,7 +265,7 @@ mercury_open(void *hdl, int flags)
 {
 	struct mercury_softc *sc;
 
-	printf("%s: flags=0x%x\n", __func__, flags);
+	DPRINTF("%s: flags=0x%x\n", __func__, flags);
 	sc = hdl;
 	sc->sc_active = 0;
 
@@ -268,7 +275,7 @@ mercury_open(void *hdl, int flags)
 static void
 mercury_close(void *hdl)
 {
-	printf("%s\n", __func__);
+	DPRINTF("%s\n", __func__);
 }
 
 #if defined(AUDIO2)
@@ -284,7 +291,7 @@ static int
 mercury_query_encoding(void *hdl, struct audio_encoding *ae)
 {
 
-	printf("%s\n", __func__);
+	DPRINTF("%s\n", __func__);
 
 	switch (ae->index) {
 	case 0:
@@ -309,7 +316,7 @@ mercury_set_format(void *hdl, int setmode,
 	uint8_t cmd;
 
 	sc = hdl;
-	printf("%s: mode=%d %s/%dbit/%dch/%dHz\n", __func__,
+	DPRINTF("%s: mode=%d %s/%dbit/%dch/%dHz\n", __func__,
 	    setmode, audio_encoding_name(play->encoding),
 	    play->precision, play->channels, play->sample_rate);
 
@@ -317,7 +324,7 @@ mercury_set_format(void *hdl, int setmode,
 
 	if (play->encoding != AUDIO_ENCODING_SLINEAR_BE ||
 	    play->precision != 16) {
-		printf("%s: encoding not matched\n", __func__);
+		DPRINTF("%s: encoding not matched\n", __func__);
 		return EINVAL;
 	}
 
@@ -437,7 +444,6 @@ mercury_start_output(void *hdl, void *block, int blksize,
 	if (sc->sc_active == 0) {
 		cmd = sc->sc_cmd
 		    | MERC_CMD_OUT | MERC_CMD_PAN_L | MERC_CMD_PAN_R;
-printf("start cmd=0x%x\n", cmd);
 		bus_space_write_1(sc->sc_iot, sc->sc_ioh, MERC_CMD, cmd);
 		sc->sc_active = 1;
 	}
@@ -497,7 +503,7 @@ mercury_halt_output(void *hdl)
 {
 	struct mercury_softc *sc;
 
-	printf("%s\n", __func__);
+	DPRINTF("%s\n", __func__);
 	sc = hdl;
 	if (sc->sc_active) {
 		bus_space_write_1(sc->sc_iot, sc->sc_ioh, MERC_CMD, sc->sc_cmd);
@@ -512,7 +518,7 @@ mercury_halt_input(void *hdl)
 {
 	struct mercury_softc *sc;
 
-	printf("%s\n", __func__);
+	DPRINTF("%s\n", __func__);
 	sc = hdl;
 	if (sc->sc_active) {
 		dmac_abort_xfer(sc->sc_dma_ch->ch_softc, sc->sc_xfer);
@@ -531,14 +537,14 @@ mercury_getdev(void *hdl, struct audio_device *ret)
 static int
 mercury_set_port(void *hdl, mixer_ctrl_t *mc)
 {
-	printf("%s\n", __func__);
+	DPRINTF("%s\n", __func__);
 	return 0;
 }
 
 static int
 mercury_get_port(void *hdl, mixer_ctrl_t *mc)
 {
-	printf("%s\n", __func__);
+	DPRINTF("%s\n", __func__);
 	return 0;
 }
 
@@ -546,7 +552,7 @@ static int
 mercury_query_devinfo(void *hdl, mixer_devinfo_t *di)
 {
 
-	printf("%s %d\n", __func__, di->index);
+	DPRINTF("%s %d\n", __func__, di->index);
 	switch (di->index) {
 	default:
 		return EINVAL;
@@ -656,7 +662,7 @@ static size_t
 mercury_round_buffersize(void *hdl, int direction, size_t bufsize)
 {
 
-	printf("%s\n", __func__);
+	DPRINTF("%s\n", __func__);
 
 	if (bufsize > DMAC_MAXSEGSZ)
 		bufsize = DMAC_MAXSEGSZ;
