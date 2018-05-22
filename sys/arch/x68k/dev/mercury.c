@@ -9,6 +9,10 @@ __KERNEL_RCSID(0, "$NetBSD$");
 
 #include <sys/audioio.h>
 #include <dev/audio_if.h>
+#if !defined(AUDIO2)
+#include <dev/auconv.h>
+#include <dev/mulaw.h>
+#endif
 
 #include <machine/bus.h>
 #include <machine/cpu.h>
@@ -150,6 +154,7 @@ static struct audio_device mercury_device = {
 	"mercury",
 };
 
+#if defined(AUDIO2)
 static const struct audio_format mercury_formats[] = {
 	{ NULL, AUMODE_PLAY | AUMODE_RECORD, AUDIO_ENCODING_SLINEAR_BE, 16, 16,
 	  1, AUFMT_MONAURAL,
@@ -158,6 +163,7 @@ static const struct audio_format mercury_formats[] = {
 	  2, AUFMT_STEREO,
 	  6, { 16000, 22050, 24000, 32000, 44100, 48000 } },
 };
+#endif
 
 static int
 mercury_match(device_t parent, cfdata_t cf, void *aux)
@@ -339,64 +345,50 @@ mercury_set_format(void *hdl, int setmode,
 		cmd |= MERC_CMD_CLK_48000 | MERC_CMD_NORMALRATE;
 		break;
 	default:
-printf("%s: invalid sample_rate %d\n", __func__, play->sample_rate);
 		return EINVAL;
 	}
 
 	sc->sc_cmd = cmd;
-printf("%s: sc_cmd=%x\n", __func__, sc->sc_cmd);
 	return 0;
 }
 #else
 static int
 mercury_set_params(void *hdl, int setmode, int usemode,
-	audio_params_t *play, audio_params_t *rec,
+	audio_params_t *p, audio_params_t *r,
 	stream_filter_list_t *pfil, stream_filter_list_t *rfil)
 {
 	struct mercury_softc *sc;
-	struct audio_params *p;
-	int mode;
 	uint8_t cmd;
 
 	sc = hdl;
-	printf("%s setmode=%x usemode=%x\n", __func__, setmode, usemode);
 	cmd = 0;
 
-	for (mode = AUMODE_RECORD; mode != -1;
-	     mode = (mode == AUMODE_RECORD) ? AUMODE_PLAY : -1) {
-		if ((setmode & mode) == 0)
-			continue;
+	if (p->channels == 2) {
+		cmd |= MERC_CMD_STEREO;
+	}
 
-		if (mode == AUMODE_PLAY) {
-			p = play;
-			cmd |= MERC_CMD_OUT;
-		} else {
-			p = rec;
-		}
-
-printf("%s mode=%s %s %u/%ubit %uch %uHz\n", __func__,
-(p == play) ? "play" : "rec", audio_encoding_name(p->encoding),
-p->validbits, p->precision, p->channels, p->sample_rate);
-		if (p->channels == 2) {
-			cmd |= MERC_CMD_STEREO;
-		}
-		if (p->encoding == AUDIO_ENCODING_SLINEAR_BE
-		 && p->precision == 16) {
-			switch (p->sample_rate) {
-			case 32000:
-				cmd |= MERC_CMD_CLK_32000 | MERC_CMD_NORMALRATE;
-				break;
-			case 44100:
-				cmd |= MERC_CMD_CLK_44100 | MERC_CMD_NORMALRATE;
-				break;
-			case 48000:
-				cmd |= MERC_CMD_CLK_48000 | MERC_CMD_NORMALRATE;
-				break;
-			default:
-printf("%s EINVAL\n", __func__);
-				return EINVAL;
-			}
-printf("%s ok %x\n", __func__, cmd);
+	if (p->encoding == AUDIO_ENCODING_SLINEAR_BE && p->precision == 16) {
+		switch (p->sample_rate) {
+		case 16000:
+			cmd |= MERC_CMD_CLK_32000 | MERC_CMD_HALFRATE;
+			break;
+		case 22050:
+			cmd |= MERC_CMD_CLK_44100 | MERC_CMD_HALFRATE;
+			break;
+		case 24000:
+			cmd |= MERC_CMD_CLK_48000 | MERC_CMD_HALFRATE;
+			break;
+		case 32000:
+			cmd |= MERC_CMD_CLK_32000 | MERC_CMD_NORMALRATE;
+			break;
+		case 44100:
+			cmd |= MERC_CMD_CLK_44100 | MERC_CMD_NORMALRATE;
+			break;
+		case 48000:
+			cmd |= MERC_CMD_CLK_48000 | MERC_CMD_NORMALRATE;
+			break;
+		default:
+			return EINVAL;
 		}
 	}
 	sc->sc_cmd = cmd;
