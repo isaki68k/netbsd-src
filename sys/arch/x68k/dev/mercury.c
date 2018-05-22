@@ -417,8 +417,7 @@ mercury_start_output(void *hdl, void *block, int blksize,
 			break;
 	}
 	if (vd == NULL) {
-		printf("%s: start_output: bad addr %p\n",
-		    device_xname(sc->sc_dev), block);
+		printf("%s: bad addr %p\n", __func__, block);
 		return EINVAL;
 	}
 
@@ -450,7 +449,46 @@ static int
 mercury_start_input(void *hdl, void *block, int blksize,
 	void (*intr)(void *), void *intrarg)
 {
-	printf("%s\n", __func__);
+	struct mercury_softc *sc;
+	struct vs_dma *vd;
+	struct dmac_channel_stat *chan;
+	int count;
+	uint8_t cmd;
+
+	sc = hdl;
+
+	sc->sc_intr = intr;
+	sc->sc_arg = intrarg;
+
+	/* Find DMA buffer. */
+	for (vd = sc->sc_dmas; vd != NULL; vd = vd->vd_next) {
+		if (KVADDR(vd) <= block && block < KVADDR_END(vd)
+			break;
+	}
+	if (vd == NULL) {
+		printf("%s: bad addr %p\n", __func__, block);
+		return EINVAL;
+	}
+
+	chan = sc->sc_dma_ch;
+
+	if (vd != sc->sc_last_vd) {
+		sc->sc_xfer = dmac_prepare_xfer(chan, sc->sc_dmat,
+		    vd->vd_map, DMAC_OCR_DIR_DTM,
+		    (DMAC_SCR_MAC_COUNT_UP | DMAC_SCR_DAC_NO_COUNT),
+		    sc->sc_addr + MERC_DATA);
+		sc->sc_last_vd = vd;
+	}
+	count = blksize / 2;
+	dmac_start_xfer_offset(chan->ch_softc, sc->sc_xfer,
+	    (int)block - (int)KVADDR(vd), count);
+
+	if (sc->sc_active == 0) {
+		cmd = sc->sc_cmd;
+		bus_space_write_1(sc->sc_iot, sc->sc_ioh, MERC_CMD, cmd);
+		sc->sc_active = 1;
+	}
+
 	return 0;
 }
 
@@ -472,7 +510,14 @@ mercury_halt_output(void *hdl)
 static int
 mercury_halt_input(void *hdl)
 {
+	struct mercury_softc *sc;
+
 	printf("%s\n", __func__);
+	sc = hdl;
+	if (sc->sc_active) {
+		dmac_abort_xfer(sc->sc_dma_ch->ch_softc, sc->sc_xfer);
+		sc->sc_active = 0;
+	}
 	return 0;
 }
 
