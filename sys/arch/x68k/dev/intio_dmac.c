@@ -342,6 +342,14 @@ dmac_start_xfer(struct dmac_softc *dmac, struct dmac_dma_xfer *xf)
 	return dmac_start_xfer_offset(dmac, xf, 0, 0);
 }
 
+/*
+ * Do the actual transfer.
+ * Note that the size argument is transfer count, not byte length.
+ *
+ * XXX Ideally the size argument should be a transfer count.  But it's
+ * complicated and has small merit because all channels of #0/#1/#3 use
+ * byte transfer mode.
+ */
 int
 dmac_start_xfer_offset(struct dmac_softc *dmac, struct dmac_dma_xfer *xf,
     u_int offset, u_int size)
