@@ -484,7 +484,7 @@ static bool audio_can_capture(struct audio_softc *);
 static int audio_check_params(struct audio_params *);
 static int audio_check_params2(audio_format2_t *);
 static int audio_mixers_init(struct audio_softc *sc, int,
-	audio_format2_t *, audio_format2_t *);
+	const audio_format2_t *, const audio_format2_t *);
 static int audio_select_freq(const struct audio_format *);
 static int audio_hw_probe(struct audio_softc *, int, int *,
 	audio_format2_t *, audio_format2_t *);
@@ -6170,7 +6170,7 @@ audio_check_params2(audio_format2_t *f2)
 // sc_lock でコールします。
 static int
 audio_mixers_init(struct audio_softc *sc, int mode,
-	audio_format2_t *phwfmt, audio_format2_t *rhwfmt)
+	const audio_format2_t *phwfmt, const audio_format2_t *rhwfmt)
 {
 	char fmtstr[64];
 	int blkms;
