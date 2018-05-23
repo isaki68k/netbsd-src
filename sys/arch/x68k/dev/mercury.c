@@ -322,7 +322,7 @@ mercury_query_encoding(void *hdl, struct audio_encoding *ae)
 
 	switch (ae->index) {
 	case 0:
-		strcpy(ae->name, AudioEslinear_le);
+		strcpy(ae->name, AudioEslinear_be);
 		ae->encoding = AUDIO_ENCODING_SLINEAR_BE;
 		ae->precision = 16;
 		ae->flags = 0;
