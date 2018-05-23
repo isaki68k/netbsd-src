@@ -6187,7 +6187,7 @@ audio_mixers_init(struct audio_softc *sc, int mode,
 		error = audio_mixer_init(sc, AUMODE_PLAY, phwfmt);
 		if (error == 0) {
 			audio_format2_tostr(fmtstr, sizeof(fmtstr),
-			    &sc->sc_pmixer->hwbuf.fmt);
+			    &sc->sc_pmixer->track_fmt);
 			blkms = sc->sc_pmixer->blktime_n * 1000 /
 			    sc->sc_pmixer->blktime_d;
 			aprint_normal_dev(sc->dev,
@@ -6210,7 +6210,7 @@ audio_mixers_init(struct audio_softc *sc, int mode,
 		error = audio_mixer_init(sc, AUMODE_RECORD, rhwfmt);
 		if (error == 0) {
 			audio_format2_tostr(fmtstr, sizeof(fmtstr),
-			    &sc->sc_rmixer->hwbuf.fmt);
+			    &sc->sc_rmixer->track_fmt);
 			blkms = sc->sc_rmixer->blktime_n * 1000 /
 			    sc->sc_rmixer->blktime_d;
 			aprint_normal_dev(sc->dev,
