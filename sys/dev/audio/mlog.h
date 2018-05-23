@@ -43,6 +43,9 @@ static void audio_mlog_softintr(void *);
 #if AUDIO_DEBUG >= 4
 static void audio_mlog_printf(const char *, ...);
 static void audio_mlog_vprintf(const char *, va_list);
+#else
+#define audio_mlog_printf(fmt...) (void)0
+#define audio_mlog_vprintf(fmt, va_list) (void)0
 #endif
 
 static int mlog_refs;		// reference counter
