@@ -6515,9 +6515,8 @@ audio_hw_probe_by_encoding(struct audio_softc *sc, audio_format2_t *cand,
 	return ENXIO;
 }
 
-// ai->mode で示されるどちらか一方のミキサフォーマットをセットします。
-// ai->mode は AUMODE_PLAY か AUMODE_RECORD かのいずれかのみ単独で
-// 指定します。
+// ai->mode で示されるミキサフォーマットをセットする。
+// 成功すれば 0、失敗すれば errno を返す。
 // sc_lock でコールすること。
 static int
 audio_mixers_set_format(struct audio_softc *sc, struct audio_info *ai)
