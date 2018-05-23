@@ -45,10 +45,7 @@ __KERNEL_RCSID(0, "$NetBSD: xp.c,v 1.4 2017/06/01 02:45:06 chs Exp $");
 #include <machine/xpio.h>
 
 #include "ioconf.h"
-
-#define XP_SHM_BASE	0x71000000
-#define XP_SHM_SIZE	0x00010000	/* 64KB for XP; rest 64KB for lance */
-#define XP_TAS_ADDR	0x61000000
+#include "xpcommon.h"
 
 struct xp_softc {
 	device_t	sc_dev;
@@ -99,40 +96,6 @@ uint32_t xp_debug = 0;
 #endif
 
 static bool xp_matched;
-
-/*
- * PIO 0 port C is connected to XP's reset line
- *
- * XXX: PIO port functions should be shared with machdep.c for DIP SWs
- */
-#define PIO_ADDR	0x49000000
-#define PORT_A		0
-#define PORT_B		1
-#define PORT_C		2
-#define CTRL		3
-
-/* PIO0 Port C bit definition */
-#define XP_INT1_REQ	0	/* INTR B */
-	/* unused */		/* IBF B */
-#define XP_INT1_ENA	2	/* INTE B */
-#define XP_INT5_REQ	3	/* INTR A */
-#define XP_INT5_ENA	4	/* INTE A */
-	/* unused */		/* IBF A */
-#define PARITY		6	/* PC6 output to enable parity error */
-#define XP_RESET	7	/* PC7 output to reset HD647180 XP */
-
-/* Port control for PC6 and PC7 */
-#define ON		1
-#define OFF		0
-
-static uint8_t put_pio0c(uint8_t bit, uint8_t set)
-{
-	volatile uint8_t * const pio0 = (uint8_t *)PIO_ADDR;
-
-	pio0[CTRL] = (bit << 1) | (set & 0x01);
-
-	return pio0[PORT_C];
-}
 
 static int
 xp_match(device_t parent, cfdata_t cf, void *aux)
@@ -227,11 +190,11 @@ xp_ioctl(dev_t dev, u_long cmd, void *addr, int flags, struct lwp *l)
 		loadbuf = kmem_alloc(loadsize, KM_SLEEP);
 		error = copyin(downld->data, loadbuf, loadsize);
 		if (error == 0) {
-			put_pio0c(XP_RESET, ON);
+			xp_cpu_reset_hold();
 			delay(100);
 			memcpy((void *)sc->sc_shm_base, loadbuf, loadsize);
 			delay(100);
-			put_pio0c(XP_RESET, OFF);
+			xp_cpu_reset_release();
 		} else {
 			DPRINTF(XP_DEBUG_ALL, ("%s: ioctl failed (err =  %d)\n",
 			    __func__, error));

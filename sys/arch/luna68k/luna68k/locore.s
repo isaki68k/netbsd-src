@@ -645,7 +645,7 @@ ENTRY_NOPROFILE(intrhand_vectored)
 ENTRY_NOPROFILE(lev5intr)
 	addql	#1,_C_LABEL(idepth)
 	btst	#7,0x63000000		| check whether system clock
-	beq	1f
+	beq	2f
 	movb	#1,0x63000000		| clear the interrupt
 	tstl	_C_LABEL(clock_enable)	| is hardclock() available?
 	jeq	1f
@@ -659,6 +659,11 @@ ENTRY_NOPROFILE(lev5intr)
 1:
 	subql	#1,_C_LABEL(idepth)
 	jra	_ASM_LABEL(rei)		| all done
+2:
+					| XP device has also lev5 intr,
+					| routing to autovec
+	subql	#1,_C_LABEL(idepth)
+	jbra	_ASM_LABEL(intrhand_autovec)
 #endif
 
 #undef INTERRUPT_SAVEREG
