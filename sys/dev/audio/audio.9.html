@@ -128,8 +128,8 @@ struct audio_hw_if {
      int     (*dev_ioctl)(void *, u_long, void *, int, struct lwp *);
      void    (*get_locks)(void *, kmutex_t **, kmutex_t **);
 
-     <span class=a2>int     (*query_format)(void *, const struct audio_format **);</span>
-     <span class=a2>int     (*set_params2)(void *, int, int,
+     <span class=a2>int     (*query_format)(void *, audio_format_query_t *);</span>
+     <span class=a2>int     (*set_format)(void *, int,
 		 const audio_params_t *, const audio_params_t *,
 		 audio_filter_reg_t *, audio_filter_reg_t *);</span>
 };
@@ -263,23 +263,26 @@ NetBSD8 では使われなくなっている。
 AUDIO2 では廃止する。代わりに query_format を新設したい。
 </span></dd>
 
-<dt class=p1><span class=a2>int query_format(void *hdl, const struct audio_format **fmt)
+<dt class=p1><span class=a2>int query_format(void *hdl, audio_format_query_t **afp)
 <dd class=p1><span class=a2>
-	is used to determine the hardware encoding mode by upper layer.
-	It should return the array of the audio_format structure, and return
-	the number of elements.
-	Or return 0 on error.
-	【audio_format の配列を fmt にセットして、
-	その要素数を戻り値に返します。
-	エラーが起きた場合は 0 を返します。】
+	ハードウェアがサポートしているフォーマットを列挙します。
+	afp->index に 0 以上の番号が指定されるので、
+	対応するフォーマットを afp->fmt に埋めて 0 を返します。
+	与えられた index に対応するフォーマットがない場合は EINVAL を返します。
+	通常 index 0 から EINVAL が返ってくるまで順に呼び出しを行います。
 	<br><br>
-	fmt 配列には、再生側と録音側(のハードウェアによって有効な側)に対し、
+	列挙されたフォーマットには、
+	再生側と録音側(のハードウェアによって有効な側)に対し、
 	ハードウェアがこれを直接扱えない場合であっても
-	少なくとも AUDIO_ENCODING_SLINEAR_NE, AUDIO_INTERNAL_BITS が含まれている
-	必要があります。
-	もしハードウェアが AUDIO_ENCODING_SLINEAR_NE, AUDIO_INTERNAL_BITS を
-	直接扱えないのなら後述する lower driver がこれを変換する責任を持ちます
-	(see also set_params2)。
+	少なくとも <tt>AUDIO_ENCODING_SLINEAR_NE, AUDIO_INTERNAL_BITS</tt>
+	を持つエントリが含まれている必要があります。
+	もしハードウェアが <tt>AUDIO_ENCODING_SLINEAR_NE, AUDIO_INTERNAL_BITS</tt>
+	を直接扱えないのなら後述する lower driver がこれを変換する責任を持ちます
+	(see also set_format)。
+	今の所、これ以外のフォーマットは任意です。
+	現在の実装では <tt>AUDIO_ENCODING_SLINEAR_NE, AUDIO_INTERNAL_BITS</tt>
+	以外のフォーマットが採用されることはありません。
+	audiocfg list の一覧には表示されます。
 	<br><br>
 	今は query_format が定義されてなければ
 	N8 同様 set_params をひたすら呼び出す互換動作を行いますが、
@@ -378,27 +381,20 @@ AUDIO2 では廃止する。代わりに query_format を新設したい。
 	     set_params.  Return 0 on success, otherwise an error code.
 </span></del></dd>
 <dd class=p1><span class=a2>
-AUDIO2 ではこれを廃止する。代わりに set_params2(仮名)を新設。
+AUDIO2 ではこれを廃止する。代わりに set_format(仮名)を新設。
 </span></dd>
 
-<dt class=p1><span class=a2>int set_params2(void *hdl,
-	int setmode, int usemode,
-	audio_params_t *play, audio_params_t *rec,
+<dt class=p1><span class=a2>int set_foramt(void *hdl,
+	int setmode,
+	const audio_params_t *play, const audio_params_t *rec,
 	audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
 <dd class=p1><span class=a2>
-	is called once when attaching to set the audio encoding to the hardware.
-	【これはオーディオエンコーディングをハードウェアに設定するためアタッチ時に
-	一度だけ呼ばれます。】
+	これはオーディオフォーマットをハードウェアに設定するため呼ばれます。
+	デバイスアタッチ時と
+	audiocfg(1) でミキサフォーマットを変更した場合に呼ばれます。
          setmode is a combination
 	     of the <tt>AUMODE_RECORD</tt> and <tt>AUMODE_PLAY</tt> flags to indicate which
-	     mode(s) are to be set.  usemode is also a combination of these
-	     flags, but indicates the current mode of the device (i.e., the
-	     value of mode in the audio_info struct).
-</span>
-<span class=comment>
-あれ、usemode っているかな?
-</span>
-<span class=a2>
+	     mode(s) are to be set.
 <br><br>
 	     The play and rec structures contain the encoding parameters that
 	     should be set to the hardware.
@@ -407,11 +403,8 @@ AUDIO2 ではこれを廃止する。代わりに set_params2(仮名)を新設�
 	precision = validbits = AUDIO_INTERNAL_BITS は固定です。
 	channels と sample_rate は query_format の結果から upper layer が
 	採用した値が入っています。
-
-</span><span class=comment>
 	set_params と違って選択したパラメータを play, rec に書き戻すことは
-	出来ない。というか query_format が正しければそのような状況は起きない。
-</span><span class=a2>
+	出来ません。というか query_format が正しければそのような状況は起きません。
 <br><br>
 	     If the hardware does not support slinear and
 		AUDIO_INTERNAL_BITS precision,
