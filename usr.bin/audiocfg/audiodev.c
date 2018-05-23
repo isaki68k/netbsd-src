@@ -76,7 +76,7 @@ audiodev_getinfo(struct audiodev *adev)
 		memset(&query, 0, sizeof(query));
 		query.index = i;
 		if (ioctl(adev->fd, AUDIO_QUERYFORMAT, &query) == -1) {
-			if (errno == ENOENT)
+			if (errno == EINVAL)
 				break;
 			close(adev->fd);
 			return -1;

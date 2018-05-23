@@ -6374,7 +6374,7 @@ audio_hw_probe_by_format(struct audio_softc *sc, audio_format2_t *cand,
 		query.index = i;
 
 		error = sc->hw_if->query_format(sc->hw_hdl, &query);
-		if (error == ENOENT)
+		if (error == EINVAL)
 			break;
 		if (error)
 			return error;
