@@ -91,10 +91,6 @@ struct audio_encoding_set;
 extern int auconv_set_converter(const struct audio_format *, int,
 				int, const audio_params_t *, int,
 				stream_filter_list_t *);
-#if defined(AUDIO2)
-extern int auconv_set_converter2(const struct audio_format *, int,
-				int, const audio_params_t *);
-#endif
 extern int auconv_create_encodings(const struct audio_format *, int,
 				   struct audio_encoding_set **);
 extern int auconv_delete_encodings(struct audio_encoding_set *);

@@ -353,12 +353,6 @@ mercury_set_format(void *hdl, int setmode,
 
 	/* *play and *rec are identical because !AUDIO_PROP_INDEPENDENT */
 
-	if (play->encoding != AUDIO_ENCODING_SLINEAR_BE ||
-	    play->precision != 16) {
-		DPRINTF("%s: encoding not matched\n", __func__);
-		return EINVAL;
-	}
-
 	cmd = 0;
 	if (play->channels == 2)
 		cmd |= MERC_CMD_STEREO;

@@ -1895,7 +1895,7 @@ DEFINE_FILTER(linear32_32_to_linear16)
  *	can not support the specified param.
  */
 // 旧 set_converter。全 MD を一度に書き換えるのは大変なので残してあるけど
-// ほぼ抜け殻。新しいコードは auconv_set_converter2() を使うこと。
+// ほぼ抜け殻。
 int
 auconv_set_converter(const struct audio_format *formats, int nformats,
     int mode, const audio_params_t *param, int rateconv,
@@ -2043,29 +2043,6 @@ auconv_set_converter(const struct audio_format *formats, int nformats,
 	DPRINTF(("%s: LEAVE with -1 (bottom)\n", __func__));
 	return -1;
 }
-
-#if defined(AUDIO2)
-// AUDIO2 用の set_converter。
-// rateconv を使用するかどうかフラグは不要。
-// filter もセットしないので不要。
-// formats[0..nformats-1] との完全一致のみ。
-int
-auconv_set_converter2(const struct audio_format *formats, int nformats,
-    int mode, const audio_params_t *param)
-{
-	int i;
-
-	/* check support by native format */
-	i = auconv_exact_match(formats, nformats, mode, param);
-	if (i >= 0) {
-		DPRINTF(("%s: LEAVE with %d (exact)\n", __func__, i));
-		return i;
-	}
-
-	DPRINTF(("%s: LEAVE with -1 (bottom)\n", __func__));
-	return -1;
-}
-#endif // AUDIO2
 
 #if NAURATECONV > 0 && !defined(AUDIO2)
 static int

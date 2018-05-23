@@ -408,12 +408,6 @@ pad_set_format(void *opaque, int setmode,
 
 	KASSERT(mutex_owned(&sc->sc_lock));
 
-	if ((setmode & AUMODE_PLAY) != 0) {
-		if (auconv_set_converter2(pad_formats, PAD_NFORMATS,
-		    AUMODE_PLAY, play) < 0)
-			return EINVAL;
-	}
-
 	// 元々再生側しかなかった
 	pfil->codec = pad_swvol_codec;
 	pfil->context = sc;

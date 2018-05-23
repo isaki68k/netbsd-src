@@ -401,13 +401,17 @@ AUDIO2 ではこれを廃止する。代わりに set_format(仮名)を新設。
 	【play と rec 構造体がハードウェアにセットするべきパラメータです。】
 	play と rec のうち encoding は <tt>AUDIO_ENCODING_SLINEAR_NE</tt>、
 	precision と validbits は <tt>AUDIO_INTERNAL_BITS</tt> で固定です。
-	channels と sample_rate は query_format の結果から upper layer が
-	採用した値が入っています。
-	set_params と違って選択したパラメータを play, rec に書き戻すことは
-	出来ません。というか query_format が正しければそのような状況は起きません。
+	query_format がある場合は channels と sample_rate は query_format の
+	返す集合と一致するものが選ばれており、
+	そのため、play, rec はそれぞれ必ず設定可能な値になっています。
+	query_format がない場合は channels と sample_rate がこのハードウェアで
+	設定できる保証はないため各自でチェックしてください。
 <br><br>
-	     If the hardware does not support slinear and
-		AUDIO_INTERNAL_BITS precision,
+	set_params と違って選択したパラメータを play, rec に書き戻すことは
+	出来ません。というか必要ないはずです。
+<br><br>
+	     If the hardware does not support
+		<tt>AUDIO_ENCODING_SLINEAR_NE:AUDIO_INTERNAL_BITS</tt>,
 	     it should fill the
 	     pfil for playing or rfil for recording with conversion
 	     information.

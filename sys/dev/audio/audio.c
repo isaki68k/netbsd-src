@@ -493,6 +493,8 @@ static int audio_hw_probe_by_format(struct audio_softc *, audio_format2_t *,
 	int);
 static int audio_hw_probe_by_encoding(struct audio_softc *, audio_format2_t *,
 	int);
+static int audio_hw_validate_format(struct audio_softc *, int,
+	const audio_format2_t *);
 static int audio_mixers_set_format(struct audio_softc *, struct audio_info *);
 static int audio_sysctl_volume(SYSCTLFN_PROTO);
 static int audio_sysctl_blk_ms(SYSCTLFN_PROTO);
@@ -876,7 +878,8 @@ audioattach(device_t parent, device_t self, void *aux)
 		mutex_exit(sc->sc_lock);
 		goto bad;
 	}
-	/* init hardware */
+	/* Init hardware. */
+	/* hw_probe() also validates [pr]hwfmt.  */
 	error = audio_hw_set_params(sc, mode, &phwfmt, &rhwfmt);
 	if (error) {
 		mutex_exit(sc->sc_lock);
@@ -6515,6 +6518,88 @@ audio_hw_probe_by_encoding(struct audio_softc *sc, audio_format2_t *cand,
 	return ENXIO;
 }
 
+// fmt を query_format の結果集合と照合する。
+// query_format が返すフォーマット集合に該当すれば 0、
+// 該当しなければ EINVAL を返す。
+// sc_lock でコールすること。
+// query_format がない時にはてきとー救済措置が走る。
+static int
+audio_hw_validate_format(struct audio_softc *sc, int mode,
+	const audio_format2_t *fmt)
+{
+	audio_format_query_t query;
+	struct audio_format *q;
+	int index;
+	int error;
+	int j;
+
+	KASSERT(mutex_owned(sc->sc_lock));
+
+	// query_format がない人向けのてきとー救済措置。
+	// encoding/precision/stride は固定なのでチェックできるが、
+	// HW の受け付ける channels/sample_rate は分からないので
+	// チェックできない。
+	// 理想的な将来ではこの分岐は不要。
+	if (sc->hw_if->query_format == NULL) {
+		if (fmt->encoding != AUDIO_ENCODING_SLINEAR_NE)
+			return EINVAL;
+		if (fmt->precision != AUDIO_INTERNAL_BITS)
+			return EINVAL;
+		if (fmt->stride != AUDIO_INTERNAL_BITS)
+			return EINVAL;
+		return 0;
+	}
+
+	for (index = 0; ; index++) {
+		query.index = index;
+		error = sc->hw_if->query_format(sc, &query);
+		if (error == EINVAL)
+			break;
+		if (error)
+			return error;
+
+		q = &query.fmt;
+		/*
+		 * Note that fmt is audio_format2_t (precision/stride) but
+		 * q is audio_format_t (validbits/precision).
+		 */
+		if ((q->mode & mode) == 0) {
+			continue;
+		}
+		if (fmt->encoding != q->encoding) {
+			continue;
+		}
+		if (fmt->precision != q->validbits) {
+			continue;
+		}
+		if (fmt->stride != q->precision) {
+			continue;
+		}
+		if (fmt->channels != q->channels) {
+			continue;
+		}
+		if (q->frequency_type == 0) {
+			if (fmt->sample_rate < q->frequency[0] ||
+			    fmt->sample_rate > q->frequency[1]) {
+				continue;
+			}
+		} else {
+			for (j = 0; j < q->frequency_type; j++) {
+				if (fmt->sample_rate == q->frequency[j])
+					break;
+			}
+			if (j == query.fmt.frequency_type) {
+				continue;
+			}
+		}
+
+		/* Matched. */
+		return 0;
+	}
+
+	return EINVAL;
+}
+
 // ai->mode で示されるミキサフォーマットをセットする。
 // 成功すれば 0、失敗すれば errno を返す。
 // sc_lock でコールすること。
@@ -6585,20 +6670,16 @@ audio_mixers_set_format(struct audio_softc *sc, struct audio_info *ai)
 	DPRINTF(1, "%s: mode=%d\n", __func__, mode);
 
 	/* Check */
+	// query_format があればそれを使って検証。
+	// なければ仕方ないので適当にそれっぽく調べるだけ。
+	// 前者の場合、次の hw_set_params の中の set_params では渡された
+	// フォーマットのチェックは不要。
 	if ((mode & AUMODE_PLAY)) {
-		if (phwfmt.encoding != AUDIO_ENCODING_SLINEAR_NE)
-			return EINVAL;
-		if (phwfmt.precision != AUDIO_INTERNAL_BITS)
-			return EINVAL;
-		if (phwfmt.stride != AUDIO_INTERNAL_BITS)
+		if (audio_hw_validate_format(sc, AUMODE_PLAY, &phwfmt))
 			return EINVAL;
 	}
 	if ((mode & AUMODE_RECORD)) {
-		if (rhwfmt.encoding != AUDIO_ENCODING_SLINEAR_NE)
-			return EINVAL;
-		if (rhwfmt.precision != AUDIO_INTERNAL_BITS)
-			return EINVAL;
-		if (rhwfmt.stride != AUDIO_INTERNAL_BITS)
+		if (audio_hw_validate_format(sc, AUMODE_RECORD, &rhwfmt))
 			return EINVAL;
 	}
 

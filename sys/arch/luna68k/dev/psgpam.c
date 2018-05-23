@@ -195,12 +195,6 @@ psgpam_set_format(void *hdl, int setmode,
 
 	/* *play and *rec are identical because !AUDIO_PROP_INDEPENDENT */
 
-	if (play->encoding != AUDIO_ENCODING_SLINEAR_BE ||
-	    play->precision != 16) {
-		printf("%s: encoding not matched\n", __func__);
-		return EINVAL;
-	}
-
 	return 0;
 }
 #else
