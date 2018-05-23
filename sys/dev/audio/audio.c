@@ -7224,13 +7224,17 @@ abort:
 	return error;
 }
 
-// HW に対する set_param あたり。
-// setmode に PLAY_ALL は立っていない。
-// indepでないデバイスなら
-//  - pp, rp は同じ値がすでにセットされている。
-// pp, rp は in/out parameter ではなくす。
-// hw->set_params は値を変更できない。(無視する)
+// HW にミキサフォーマット phwfmt, rhwfmt をセットする。
+// setmode には設定をしたい方向 AUMODE_PLAY | AUMODE_RECORD をセットする。
+// setmode の値の如何によらず phwfmt, rhwfmt は NULL であってはならない。
+// 非 independent デバイスなら phwfmt, rhwfmt には同じ値をセットしておくこと。
+// 成功すれば phwfmt, rhwfmt を HW フォーマットで上書きし 0 を返す。
+// 失敗すれば errno を返す。
 // sc_lock でコールすること。
+//
+// また旧式の set_params を使う方式の場合、set_params によって pp, rp が
+// 更新されようともこちらが呼び出し後にそれを参照することはしない。
+// pp, rp を更新しなければならない事態は起きないはずだからである。
 static int
 audio_hw_set_params(struct audio_softc *sc, int setmode,
 	audio_format2_t *phwfmt, audio_format2_t *rhwfmt)
