@@ -36,7 +36,9 @@ __KERNEL_RCSID(0, "$NetBSD$");
 
 #include <sys/audioio.h>
 #include <dev/audio_if.h>
-#if !defined(AUDIO2)
+#if defined(AUDIO2)
+#include <dev/audio/aucodec.h>
+#else
 #include <dev/auconv.h>
 #include <dev/mulaw.h>
 #endif
@@ -53,6 +55,8 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #else
 #define DPRINTF(fmt...)
 #endif
+
+#define MERCURY_LE
 
 #define MERCURY_ADDR	(0xecc080)
 #define MERCURY_SIZE	(0x80)
@@ -382,6 +386,13 @@ mercury_set_format(void *hdl, int setmode,
 		return EINVAL;
 	}
 
+#if defined(MERCURY_LE)
+	pfil->codec = audio_internal_to_linear16;
+	pfil->param.encoding = AUDIO_ENCODING_SLINEAR_LE;
+	rfil->codec = audio_linear16_to_internal;
+	rfil->param.encoding = AUDIO_ENCODING_SLINEAR_LE;
+#endif
+
 	sc->sc_cmd = cmd;
 	return 0;
 }
@@ -444,6 +455,16 @@ mercury_start_output(void *hdl, void *block, int blksize,
 
 	sc->sc_intr = intr;
 	sc->sc_arg = intrarg;
+
+#if defined(MERCURY_LE)
+	/* Emulates little endian device */
+	int j;
+	uint16_t *p = block;
+	for (j = 0; j < blksize / 2; j++) {
+		*p = bswap16(*p);
+		p++;
+	}
+#endif
 
 	/* Find DMA buffer. */
 	for (vd = sc->sc_dmas; vd != NULL; vd = vd->vd_next) {
