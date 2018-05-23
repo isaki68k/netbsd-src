@@ -213,6 +213,9 @@ pseudo-device	ksyms			# /dev/ksyms
 
 pseudo-device	wsmux			# mouse & keyboard multiplexsor
 
+# userland interface to drivers, including autoconf and properties retrieval
+pseudo-device	drvctl
+
 # Veriexec
 #
 # a pseudo device needed for veriexec
