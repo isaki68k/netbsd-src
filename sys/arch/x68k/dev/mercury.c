@@ -56,7 +56,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #define DPRINTF(fmt...)
 #endif
 
-#define MERCURY_LE
+//#define MERCURY_LE
 
 #define MERCURY_ADDR	(0xecc080)
 #define MERCURY_SIZE	(0x80)
