@@ -7529,7 +7529,7 @@ audio_query_format(const struct audio_format *format, int nformats,
 		}
 		idx++;
 	}
-	return ENOENT;
+	return EINVAL;
 }
 
 // デバッグ目的なのでボリュームは内部表現(0..256)
