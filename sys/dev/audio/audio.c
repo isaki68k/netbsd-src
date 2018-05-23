@@ -4871,6 +4871,7 @@ audio_mixer_calc_blktime(struct audio_softc *sc, audio_trackmixer_t *mixer)
 // mode は再生なら AUMODE_PLAY、録音なら AUMODE_RECORD を指定します。
 // 単に録音再生のどちら側かだけなので AUMODE_PLAY_ALL は関係ありません。
 // hwfmt は HW フォーマットです。
+// 成功すれば 0、失敗すれば errno を返します。
 // sc_lock でコールします。
 /*
  * Initialize the mixer.
@@ -4898,10 +4899,6 @@ audio_mixer_init(struct audio_softc *sc, int mode, const audio_format2_t *hwfmt)
 
 	mixer->sc = sc;
 	mixer->mode = mode;
-
-	/* draincv is used only for playback */
-	if (mode == AUMODE_PLAY)
-		cv_init(&mixer->draincv, "audiodr");
 
 	mixer->hwbuf.fmt = *hwfmt;
 	mixer->volume = 256;
@@ -4966,6 +4963,13 @@ audio_mixer_init(struct audio_softc *sc, int mode, const audio_format2_t *hwfmt)
 			return ENOMEM;
 		}
 	}
+
+	/*
+	 * draincv is used only for playback.
+	 * And from here, audio_mixer_destroy is necessary to exit.
+	 */
+	if (mode == AUMODE_PLAY)
+		cv_init(&mixer->draincv, "audiodr");
 
 	mixer->track_fmt.encoding = AUDIO_ENCODING_SLINEAR_NE;
 	mixer->track_fmt.precision = AUDIO_INTERNAL_BITS;
