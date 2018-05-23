@@ -46,12 +46,13 @@ static void audio_mlog_vprintf(const char *, va_list);
 #endif
 
 static int mlog_refs;		// reference counter
-static char *mlog_buf;
+static char *mlog_buf[2];	// ダブルバッファ
 static int mlog_buflen;		// バッファ長
 static int mlog_used;		// 使用中のバッファ文字列の長さ
 static int mlog_full;		// バッファが一杯になってドロップした行数
 static int mlog_drop;		// バッファ使用中につきドロップした行数
 static volatile uint32_t mlog_inuse;	// 使用中フラグ
+static int mlog_wpage;		// 書き込みページ
 static void *mlog_sih;		// softint ハンドラ
 
 static void
@@ -60,12 +61,14 @@ audio_mlog_init(void)
 	mlog_refs++;
 	if (mlog_refs > 1)
 		return;
-	mlog_buflen = 8192;
-	mlog_buf = kmem_zalloc(mlog_buflen, KM_SLEEP);
+	mlog_buflen = 4096;
+	mlog_buf[0] = kmem_zalloc(mlog_buflen, KM_SLEEP);
+	mlog_buf[1] = kmem_zalloc(mlog_buflen, KM_SLEEP);
 	mlog_used = 0;
 	mlog_full = 0;
 	mlog_drop = 0;
 	mlog_inuse = 0;
+	mlog_wpage = 0;
 	mlog_sih = softint_establish(SOFTINT_SERIAL, audio_mlog_softintr, NULL);
 	if (mlog_sih == NULL)
 		printf("%s: softint_establish failed\n", __func__);
@@ -81,7 +84,8 @@ audio_mlog_free(void)
 	audio_mlog_flush();
 	if (mlog_sih)
 		softint_disestablish(mlog_sih);
-	kmem_free(mlog_buf, mlog_buflen);
+	kmem_free(mlog_buf[0], mlog_buflen);
+	kmem_free(mlog_buf[1], mlog_buflen);
 }
 
 // 一時バッファの内容を出力します。
@@ -89,22 +93,30 @@ audio_mlog_free(void)
 static void
 audio_mlog_flush(void)
 {
+	if (mlog_refs == 0)
+		return;
+
 	// すでに使用中なら何もしない?
 	if (atomic_swap_32(&mlog_inuse, 1) == 1)
 		return;
 
-	if (mlog_used > 0) {
-		printf("%s", mlog_buf);
+	int rpage = mlog_wpage;
+	mlog_wpage ^= 1;
+	mlog_buf[mlog_wpage][0] = '\0';
+	mlog_used = 0;
+
+	// ロック解除
+	atomic_swap_32(&mlog_inuse, 0);
+
+	if (mlog_buf[rpage][0] != '\0') {
+		printf("%s", mlog_buf[rpage]);
 		if (mlog_drop > 0)
 			printf("mlog_drop %d\n", mlog_drop);
 		if (mlog_full > 0)
 			printf("mlog_full %d\n", mlog_full);
 	}
-	mlog_used = 0;
 	mlog_full = 0;
 	mlog_drop = 0;
-
-	atomic_swap_32(&mlog_inuse, 0);
 }
 
 static void
@@ -130,22 +142,24 @@ audio_mlog_printf(const char *fmt, ...)
 static void
 audio_mlog_vprintf(const char *fmt, va_list ap)
 {
-	char buf[512];
 	int len;
-
-	len = vsnprintf(buf, sizeof(buf), fmt, ap);
 
 	if (atomic_swap_32(&mlog_inuse, 1) == 1) {
 		/* already inuse */
 		mlog_drop++;
 		return;
 	}
-	if (mlog_full == 0 && mlog_used + len < mlog_buflen) {
-		strlcpy(mlog_buf + mlog_used, buf, mlog_buflen - mlog_used);
-		mlog_used += len;
-	} else {
+
+	len = vsnprintf(
+		mlog_buf[mlog_wpage] + mlog_used,
+		mlog_buflen - mlog_used,
+		fmt,
+		ap);
+	mlog_used += len;
+	if (mlog_buflen - mlog_used <= 1) {
 		mlog_full++;
 	}
+
 	atomic_swap_32(&mlog_inuse, 0);
 
 	if (mlog_sih)
