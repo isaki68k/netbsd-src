@@ -120,7 +120,7 @@ print_audiodev(struct audiodev *adev, int i)
 			    f->fmt.frequency[0],
 			    f->fmt.frequency[1]);
 		} else {
-			for (j = 0; j < f->fmt.frequency_type; j++) {
+			for (j = 0; j < (int)f->fmt.frequency_type; j++) {
 				printf("%s%d",
 				    (j == 0) ? "{ " : ", ",
 				    f->fmt.frequency[j]);
