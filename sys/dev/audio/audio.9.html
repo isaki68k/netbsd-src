@@ -399,8 +399,8 @@ AUDIO2 ではこれを廃止する。代わりに set_format(仮名)を新設。
 	     The play and rec structures contain the encoding parameters that
 	     should be set to the hardware.
 	【play と rec 構造体がハードウェアにセットするべきパラメータです。】
-	play と rec のうち encoding は AUDIO_ENCODING_SLINEAR_NE (?)、
-	precision = validbits = AUDIO_INTERNAL_BITS は固定です。
+	play と rec のうち encoding は <tt>AUDIO_ENCODING_SLINEAR_NE</tt>、
+	precision と validbits は <tt>AUDIO_INTERNAL_BITS</tt> で固定です。
 	channels と sample_rate は query_format の結果から upper layer が
 	採用した値が入っています。
 	set_params と違って選択したパラメータを play, rec に書き戻すことは
@@ -444,14 +444,18 @@ typedef struct {
 	don't modify <i>channels</i> and <i>sample_rate</i> because
 	they are already determined appropriate value for the hardware.
 <br><br>
-	For example, <i>play</i> requests [slinear_ne, 16/16bit]
+	For example, <i>play</i> and <i>rec</i> request [slinear_ne, 16/16bit]
 	and if the hardware does not support 16bit slinear_ne, but
 	8bit mu-law, the driver should set:
 <pre style="margin-left: 8%">
-	pfil.codec = internal_to_mulaw;
+	pfil.codec = audio_internal_to_mulaw;
 	pfil.param.encoding = AUDIO_ENCODING_ULAW;
 	pfil.param.precision = 8;
 	pfil.param.validbits = 8;
+	rfil.codec = audio_mulaw_to_internal;
+	rfil.param.encoding = AUDIO_ENCODING_ULAW;
+	rfil.param.precision = 8;
+	rfil.param.validbits = 8;
 </pre>
 	<i>arg</i> contains all parameters required by <i>codec</i>.
 	【codec がコールされる時必要なパラメータはすべて arg に入っています。】
