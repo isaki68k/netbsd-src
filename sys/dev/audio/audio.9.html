@@ -452,14 +452,14 @@ typedef struct {
 	and if the hardware does not support 16bit slinear_ne, but
 	8bit mu-law, the driver should set:
 <pre style="margin-left: 8%">
-	pfil.codec = audio_internal_to_mulaw;
-	pfil.param.encoding = AUDIO_ENCODING_ULAW;
-	pfil.param.precision = 8;
-	pfil.param.validbits = 8;
-	rfil.codec = audio_mulaw_to_internal;
-	rfil.param.encoding = AUDIO_ENCODING_ULAW;
-	rfil.param.precision = 8;
-	rfil.param.validbits = 8;
+	pfil-&gt;codec = audio_internal_to_mulaw;
+	pfil-&gt;param.encoding = AUDIO_ENCODING_ULAW;
+	pfil-&gt;param.precision = 8;
+	pfil-&gt;param.validbits = 8;
+	rfil-&gt;codec = audio_mulaw_to_internal;
+	rfil-&gt;param.encoding = AUDIO_ENCODING_ULAW;
+	rfil-&gt;param.precision = 8;
+	rfil-&gt;param.validbits = 8;
 </pre>
 	<i>arg</i> contains all parameters required by <i>codec</i>.
 	【codec がコールされる時必要なパラメータはすべて arg に入っています。】
