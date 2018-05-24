@@ -1124,6 +1124,8 @@ neo*	at pci? dev ? function ?	# NeoMagic 256 AC'97 Audio
 sv*	at pci? dev ? function ?	# S3 SonicVibes
 yds*	at pci? dev ? function ?	# Yamaha DS-1 PCI Audio
 
+sb0	at isa? port 0x220 irq 5 drq 1 drq2 5	# SoundBlaster
+
 # OPL[23] FM synthesizers
 #opl0	at isa? port 0x388	# use only if not attached to sound card
 opl*	at cmpci? flags 1

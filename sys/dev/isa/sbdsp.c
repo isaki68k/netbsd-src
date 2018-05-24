@@ -412,9 +412,16 @@ sbdsp_attach(struct sbdsp_softc *sc)
 	       SBVER_MAJOR(sc->sc_version), SBVER_MINOR(sc->sc_version),
 	       sc->sc_model == SB_JAZZ ? ": <Jazz16>" : "");
 
+#if defined(AUDIO2)
+	// full duplex と言っても DRQ が足りなければ、片方を 8bitモードにして
+	// ソフトウェアで16bit変換することで、双方を16bit だと言い張っている
+	// ように読めるので、それはここでは full duplex とは言わないんだすまない。
+	sc->sc_fullduplex = 0;
+#else
 	sc->sc_fullduplex = ISSB16CLASS(sc) &&
 	    sc->sc_drq8 != -1 && sc->sc_drq16 != -1 &&
 	    sc->sc_drq8 != sc->sc_drq16;
+#endif
 
 	if (sc->sc_drq8 != -1) {
 		sc->sc_drq8_maxsize = isa_dmamaxsize(sc->sc_ic,
@@ -634,17 +641,20 @@ sbdsp_set_params(
 		bmode = -1;
 		if (model == SB_16) {
 			switch (p->encoding) {
+#if !defined(AUDIO2)
 			case AUDIO_ENCODING_SLINEAR_BE:
 				if (p->precision == 16) {
 					hw.encoding = AUDIO_ENCODING_SLINEAR_LE;
 					swcode = swap_bytes;
 				}
 				/* fall into */
+#endif
 			case AUDIO_ENCODING_SLINEAR:
 			case AUDIO_ENCODING_SLINEAR_LE:
 				bmode = SB_BMODE_SIGNED;
 				break;
 
+#if !defined(AUDIO2)
 			case AUDIO_ENCODING_ULINEAR_BE:
 				if (p->precision == 16) {
 					hw.encoding = AUDIO_ENCODING_ULINEAR_LE;
@@ -676,6 +686,7 @@ sbdsp_set_params(
 					swcode = linear8_to_alaw;
 				bmode = SB_BMODE_UNSIGNED;
 				break;
+#endif /* !AUDIO2 */
 			default:
 				return EINVAL;
 			}
@@ -686,6 +697,7 @@ sbdsp_set_params(
 			case AUDIO_ENCODING_SLINEAR:
 			case AUDIO_ENCODING_SLINEAR_LE:
 				break;
+#if !defined(AUDIO2)
 			case AUDIO_ENCODING_ULINEAR_LE:
 				hw.encoding = AUDIO_ENCODING_SLINEAR_LE;
 				swcode = change_sign16;
@@ -708,6 +720,7 @@ sbdsp_set_params(
 				swcode = mode == AUMODE_PLAY ?
 					alaw_to_linear8 : linear8_to_alaw;
 				break;
+#endif
 			default:
 				return EINVAL;
 			}
@@ -715,6 +728,9 @@ sbdsp_set_params(
 			p->sample_rate = SB_TC_TO_RATE(tc) / p->channels;
 			hw.sample_rate = p->sample_rate;
 		} else {
+#if defined(AUDIO2)
+panic("ulinear8 not supported; use set_format.");
+#else
 			switch (p->encoding) {
 			case AUDIO_ENCODING_SLINEAR_BE:
 			case AUDIO_ENCODING_SLINEAR_LE:
@@ -741,6 +757,7 @@ sbdsp_set_params(
 			tc = SB_RATE_TO_TC(p->sample_rate * p->channels);
 			p->sample_rate = SB_TC_TO_RATE(tc) / p->channels;
 			hw.sample_rate = p->sample_rate;
+#endif
 		}
 
 		chan = m->precision == 16 ? sc->sc_drq16 : sc->sc_drq8;
