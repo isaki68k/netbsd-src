@@ -52,9 +52,19 @@ vs(4) などの珍しい周波数の hardware がサポートできない。
 万能 stream filter を廃止して、新しい変換機構を導入。
 * 自動テストを少しは頑張っている。
 
- 
-* It only supports 
-auich, eap, hdafg, uaudio and vs(x68k) for now.
+
+## Supported devices
+|Device	|(port)	|対応度
+|auich(4)	|	|complete
+|eap(4)		|	|complete
+|hdafg(4)	|	|complete
+|sb(4)		|	|work (*)
+|uaudio(4)	|	|complete
+|vs(4)		|x68k	|complete
+
+Note:
+* sb(4) は full duplex モデルもあるが、その実現方法がちょっとイレギュラー
+なので、今の所 AUDIO2 では half duplex デバイスとして実装してある。
 
 
 ## Files
