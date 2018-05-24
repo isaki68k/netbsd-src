@@ -16,6 +16,17 @@ PRE.p {
 <h4>NetBSD8 problems</h4>
 <ul>
 
+<li>hw_if-&gt;close の呼び出しが適切でない (2018/05)
+<p class="p">
+audio_open 中でエラーが起きた際に hw_if-&gt;close を呼んでいるが、
+その際規約に反して sc_lock, sc_intr_lock のロックを取っていない。
+呼ばれた close が KASSERT とかでロック持ってることを確認してると死ぬ。
+具体的に遭遇したのは sb(4)。
+MD メソッド側でロック状態を KASSERT すること自体は珍しくないと思うけど
+(調べてはない)、
+オープン中にエラーが出るほうが珍しいからかもしれない。
+</p>
+
 <li>vchan.dacN/micN の表記が L のみに見える (2018/04)
 <p class="p">
 mixerctl -a で表示されるトラックボリュームが L, R のうち R がミュートされてる
