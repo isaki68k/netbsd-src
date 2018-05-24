@@ -9,7 +9,7 @@ But not completed yet :-)
 NetBSD8 audio は in-kernel mixer をサポートしているが、
 いろいろ問題が多すぎてとてもじゃないレベルだったので
 一から書いてみた。
-書き起こしついでにパフォーマンスの改善もしてみた(はず)。
+書き起こしついでにパフォーマンスも改善。
 
 ~~<font color="#808080">ところで、OpenBSD は同様のミキシングを
 カーネルではなくユーザランドで行っていてそれはそれでとても合理てk…</font>~~
@@ -81,10 +81,10 @@ Note:
 
 ## Build
 
-ビルド方法はいつもどおり。
-ただし、カーネルは amd64/conf/AUDIO2、x68k/conf/AUDIO2 しかサポートしてない。
-現状、spkr* at audio? などを含むすべての機能を維持しているわけではないため、
-GENERIC はビルドできない。
+ビルド方法は基本いつもの準拠。
+カーネルは amd64/conf/AUDIO2、x68k/conf/AUDIO2。
+GENERIC など非 AUDIO2 カーネルもなるべくビルドできるとは思うけど、
+そっちは本腰入れて維持してないので知らん。
 
 ```
 % git clone --branch audio2 git@github.com:isaki68k/netbsd-src.git
@@ -96,6 +96,7 @@ GENERIC はビルドできない。
 
 ## Benchmark
 
+2018/04 現在。
 今時のマシンは十分速いのでパフォーマンスの差を体感するのは無理だと思うが、
 x68k くらいになると有意な差が出る。
 以下は
