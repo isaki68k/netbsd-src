@@ -59,11 +59,13 @@ vs(4) などの珍しい周波数の hardware がサポートできない。
 |auich(4)	|	|complete
 |eap(4)		|	|complete
 |hdafg(4)	|	|complete
+|mercury(4)	|x68k	|add and complete (*)
 |sb(4)		|	|work (*)
 |uaudio(4)	|	|complete
 |vs(4)		|x68k	|complete
 
 Note:
+* mercury(4) は AUDIO2 で初サポート。
 * sb(4) は full duplex モデルもあるが、その実現方法がちょっとイレギュラー
 なので、今の所 AUDIO2 では half duplex デバイスとして実装してある。
 
