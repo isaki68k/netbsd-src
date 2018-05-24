@@ -56,13 +56,13 @@ vs(4) などの珍しい周波数の hardware がサポートできない。
 ## Supported devices
 |Device	|(port)	|対応度
 |-------|-------|-------|
-|auich(4)	|	|complete
-|eap(4)		|	|complete
-|hdafg(4)	|	|complete
-|mercury(4)	|x68k	|add and complete (*)
+|auich(4)	|	|AUDIO2 completed
+|eap(4)		|	|AUDIO2 completed
+|hdafg(4)	|	|AUDIO2 completed
+|mercury(4)	|x68k	|add and AUDIO2 completed (*)
 |sb(4)		|	|work (*)
-|uaudio(4)	|	|complete
-|vs(4)		|x68k	|complete
+|uaudio(4)	|	|AUDIO2 completed
+|vs(4)		|x68k	|AUDIO2 completed
 
 Note:
 * mercury(4) は AUDIO2 で初サポート。
