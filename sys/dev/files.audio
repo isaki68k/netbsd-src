@@ -33,3 +33,4 @@ file	dev/midi.c			midi			needs-flag
 file	dev/midictl.c			midisyn
 file	dev/midisyn.c			midisyn
 file	dev/mulaw.c			mulaw			needs-flag
+file	dev/spkr_audio.c		spkr_audio		needs-flag
