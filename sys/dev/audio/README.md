@@ -67,7 +67,7 @@ vs(4) などの珍しい周波数の hardware がサポートできない。
 Note:
 * mercury(4) は AUDIO2 で初サポート。
 * sb(4) は full duplex モデルもあるが、その実現方法がちょっとイレギュラー
-なので、今の所 AUDIO2 では half duplex デバイスとして実装してある。
+なので、今の所 half duplex デバイスとして実装してある。
 
 
 ## Files
