@@ -55,6 +55,7 @@ vs(4) などの珍しい周波数の hardware がサポートできない。
 
 ## Supported devices
 |Device	|(port)	|対応度
+|-------|-------|-------|
 |auich(4)	|	|complete
 |eap(4)		|	|complete
 |hdafg(4)	|	|complete
