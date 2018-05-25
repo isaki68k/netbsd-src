@@ -59,15 +59,19 @@ vs(4) などの珍しい周波数の hardware がサポートできない。
 |auich(4)	|	|AUDIO2 completed
 |eap(4)		|	|AUDIO2 completed
 |hdafg(4)	|	|AUDIO2 completed
-|mercury(4)	|x68k	|add and AUDIO2 completed (*)
+|mercury(4)	|x68k	|新規追加 and AUDIO2 completed (*)
+|psgpam(4)	|luna68k|新規追加 and AUDIO2 completed (*)
 |sb(4)		|	|work (*)
 |uaudio(4)	|	|AUDIO2 completed
 |vs(4)		|x68k	|AUDIO2 completed
 
 Note:
 * mercury(4) は AUDIO2 で初サポート。
+* psgpam(4) は AUDIO2 で初サポート。
+周波数特性上 AUDIO2 でないと正しくサポートできない。
 * sb(4) は full duplex モデルもあるが、その実現方法がちょっとイレギュラー
 なので、今の所 half duplex デバイスとして実装してある。
+* vs(4) は周波数特性上 AUDIO2 でないと正しくサポートできない。
 
 
 ## Files
