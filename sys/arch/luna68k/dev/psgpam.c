@@ -396,8 +396,6 @@ psgpam_set_format(void *hdl, int setmode,
 	    setmode, audio_encoding_name(play->encoding),
 	    play->precision, play->channels, play->sample_rate);
 
-	/* *play and *rec are identical because !AUDIO_PROP_INDEPENDENT */
-
 	sc->sc_xp_enc = USE_XPENC;
 
 	sc->sc_xp_timer = (XP_CPU_FREQ / play->sample_rate - XP_TIMER_CON)
