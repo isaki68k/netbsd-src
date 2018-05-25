@@ -113,9 +113,9 @@ struct audio_hw_if {
      int     (*query_devinfo)(void *, mixer_devinfo_t *);
 
      void    *(*allocm)(void *, int, size_t, struct malloc_type *, int);
-     <span class=comment>void    *(*allocm)(void *, int, size_t); // 要修正</span>
+     <span class=comment>void    *(*allocm)(void *, int, size_t); // 正しいプロトタイプはこちら</span>
      void    (*freem)(void *, void *, struct malloc_type *);
-     <span class=comment>void    (*freem)(void *, void *, size_t); // 要修正</span>
+     <span class=comment>void    (*freem)(void *, void *, size_t); // 正しいプロトタイプはこちら</span>
      size_t  (*round_buffersize)(void *, int, size_t);
      <del class=a2><span class=plain>paddr_t (*mappage)(void *, void *, off_t, int);</span></del>
 
@@ -671,7 +671,7 @@ AUDIO2 ではこれを廃止したい。
 	     *type, int flags)
 </dt>
 <dt class=p1 style="margin-top: 0"><span class=comment>
-     void *allocm(void *hdl, int direction, size_t size); // 要修正
+     void *allocm(void *hdl, int direction, size_t size); // 正しいプロトタイプはこちら
 </span></dt>
 <dd class=p1>
 	     optional, is called to allocate the device buffers.  If not
@@ -685,7 +685,7 @@ AUDIO2 ではこれを廃止したい。
      void freem(void *hdl, void *addr, struct malloc_type *type)
 </dt>
 <dt class=p1 style="margin-top: 0"><span class=comment>
-     void freem(void *hdl, void *addr, size_t size); // 要修正
+     void freem(void *hdl, void *addr, size_t size); // 正しいプロトタイプはこちら
 </span></dt>
 <dd class=p1>
 	     optional, is called to free memory allocated by alloc.  If not
