@@ -21,7 +21,7 @@ PRE.p {
 <p class="p">
 元々、ユーザが /dev/audio をオープンすると hw_if-&gt;open が呼ばれ、
 ユーザからの ioctl(AUDIO_SETINFO) で hw_if-&gt;set_params、
-hw_if-&gt;commit_settins が呼ばれて
+hw_if-&gt;commit_settings が呼ばれて
 これがハードウェアを指定のフォーマットに設定し、
 それから再生なり録音を始めて最後に hw_if-&gt;close という順序だったが、
 N8 ではカーネル起動時に hw_if-&gt;set_params、hw_if-&gt;commit_settings
