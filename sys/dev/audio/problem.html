@@ -16,6 +16,27 @@ PRE.p {
 <h4>NetBSD8 problems</h4>
 <ul>
 
+<li>hw_if の各メソッドの呼び出し順序の依存関係が考慮されていない
+(2018/05)
+<p class="p">
+元々、ユーザが /dev/audio をオープンすると hw_if-&gt;open が呼ばれ、
+ユーザからの ioctl(AUDIO_SETINFO) で hw_if-&gt;set_params、
+hw_if-&gt;commit_settins が呼ばれて
+これがハードウェアを指定のフォーマットに設定し、
+それから再生なり録音を始めて最後に hw_if-&gt;close という順序だったが、
+N8 ではカーネル起動時に hw_if-&gt;set_params、hw_if-&gt;commit_settings
+でハードウェアを設定し、
+ユーザが /dev/audio をオープンすると hw_if-&gt;open が呼ばれるという
+順序に(黙って)変更になった。
+このため open と set_params/commit_settings
+の間に依存関係を持っていたり、
+open でチップの初期化を行なっているようなデバイスは正しく動かないはず。
+ぱっと見たところ、
+vraiu(4)、zaudio(4)、arm/xscale/pxa2x0_ac97.c
+くらいが該当しそう。
+dbri(4) は該当するかどうかぱっと見不明。
+</p>
+
 <li>hw_if-&gt;close の呼び出しが適切でない (2018/05)
 <p class="p">
 audio_open 中でエラーが起きた際に hw_if-&gt;close を呼んでいるが、
