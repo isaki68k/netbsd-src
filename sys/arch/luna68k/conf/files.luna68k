@@ -47,12 +47,16 @@ attach siotty at sio
 file arch/luna68k/dev/siotty.c		siotty needs-flag
 
 # HD647180X I/O processor
+device xpbus {}
+attach xpbus at mainbus
+file arch/luna68k/dev/xpbus.c		xpbus
+
 device xp
-attach xp at mainbus
+attach xp at xpbus
 file arch/luna68k/dev/xp.c		xp
 
 device psgpam: audiobus, auconv, mulaw
-attach psgpam at mainbus
+attach psgpam at xpbus
 file arch/luna68k/dev/psgpam.c		psgpam
 
 file arch/luna68k/dev/xpcommon.c	xp | psgpam

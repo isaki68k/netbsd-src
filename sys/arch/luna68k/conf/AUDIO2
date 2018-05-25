@@ -157,10 +157,11 @@ spc1	at mainbus0		# 2nd SCSI on LUNA-II
 fb0	at mainbus0		# 16 or 256 pseudo color
 
 # HD647180X I/O processor
-#xp0	at mainbus0
+xpbus0	at mainbus0
+xp0	at xpbus0
 
 # HD647180X I/O processor as PSG PAM audio
-psgpam0	at mainbus0
+psgpam0	at xpbus0
 audio*	at psgpam?
 
 # Workstation Console attachments

@@ -44,6 +44,7 @@ __KERNEL_RCSID(0, "$NetBSD: xp.c,v 1.4 2017/06/01 02:45:06 chs Exp $");
 #include <machine/autoconf.h>
 #include <machine/xpio.h>
 
+#include <luna68k/dev/xpbusvar.h>
 #include <luna68k/dev/xpcommon.h>
 
 #include "ioconf.h"
@@ -101,16 +102,13 @@ static bool xp_matched;
 static int
 xp_match(device_t parent, cfdata_t cf, void *aux)
 {
-	struct mainbus_attach_args *maa = aux;
+	struct xpbus_attach_args *xa = aux;
 
 	/* only one XP processor */
 	if (xp_matched)
 		return 0;
 
-	if (strcmp(maa->ma_name, xp_cd.cd_name))
-		return 0;
-
-	if (maa->ma_addr != XP_SHM_BASE)
+	if (strcmp(xa->xa_name, xp_cd.cd_name))
 		return 0;
 
 	xp_matched = true;

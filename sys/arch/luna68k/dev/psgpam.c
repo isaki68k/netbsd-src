@@ -15,8 +15,11 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <machine/autoconf.h>
 
 #include <luna68k/dev/psgpamvar.h>
+#include <luna68k/dev/xpbusvar.h>
 #include <luna68k/dev/xpcommon.h>
 #include <luna68k/luna68k/isr.h>
+
+#include "ioconf.h"
 
 #include "pam2tbl.c"
 #include "pam3tbl.c"
@@ -271,12 +274,12 @@ psgpam_xp_start(struct psgpam_softc *sc)
 static int
 psgpam_match(device_t parent, cfdata_t cf, void *aux)
 {
-	struct mainbus_attach_args *maa = aux;
+	struct xpbus_attach_args *xa = aux;
 
 	if (psgpam_matched)
 		return 0;
 
-	if (maa->ma_addr != XP_SHM_BASE)
+	if (strcmp(xa->xa_name, psgpam_cd.cd_name))
 		return 0;
 
 	psgpam_matched = 1;
@@ -287,7 +290,6 @@ static void
 psgpam_attach(device_t parent, device_t self, void *aux)
 {
 	struct psgpam_softc *sc;
-	struct mainbus_attach_args *maa = aux;
 
 #if defined(AUDIO_DEBUG_MLOG)
 	audio_mlog_init();
@@ -306,7 +308,7 @@ psgpam_attach(device_t parent, device_t self, void *aux)
 	mutex_init(&sc->sc_thread_lock, MUTEX_DEFAULT, IPL_NONE);
 	mutex_init(&sc->sc_intr_lock, MUTEX_DEFAULT, IPL_SCHED);
 
-	isrlink_autovec(psgpam_intr, sc, maa->ma_ilvl, ISRPRI_TTYNOBUF);
+	isrlink_autovec(psgpam_intr, sc, 5, ISRPRI_TTYNOBUF);
 
 	audio_attach_mi(&psgpam_hw_if, sc, sc->sc_dev);
 }
