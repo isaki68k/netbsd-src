@@ -729,7 +729,7 @@ sbdsp_set_params(
 			hw.sample_rate = p->sample_rate;
 		} else {
 #if defined(AUDIO2)
-panic("ulinear8 not supported; use set_format.");
+panic("ulinear8 not supported; use init_format.");
 #else
 			switch (p->encoding) {
 			case AUDIO_ENCODING_SLINEAR_BE:

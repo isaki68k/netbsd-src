@@ -86,7 +86,7 @@ static int	pad_detach(device_t, int);
 static void	pad_childdet(device_t, device_t);
 
 static int	pad_query_format(void *, audio_format_query_t *);
-static int	pad_set_format(void *, int,
+static int	pad_init_format(void *, int,
 				const audio_params_t *, const audio_params_t *,
 			    audio_filter_reg_t *, audio_filter_reg_t *);
 static int	pad_start_output(void *, void *, int,
@@ -109,7 +109,7 @@ static bool	pad_is_attached;	/* Do we have an audio* child? */
 
 static const struct audio_hw_if pad_hw_if = {
 	.query_format = pad_query_format,
-	.set_format = pad_set_format,
+	.init_format = pad_init_format,
 	.start_output = pad_start_output,
 	.start_input = pad_start_input,
 	.halt_output = pad_halt_output,
@@ -398,7 +398,7 @@ pad_query_format(void *opaque, audio_format_query_t *afp)
 }
 
 static int
-pad_set_format(void *opaque, int setmode,
+pad_init_format(void *opaque, int setmode,
     const audio_params_t *play, const audio_params_t *rec,
 	audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
 {

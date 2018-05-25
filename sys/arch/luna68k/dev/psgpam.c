@@ -177,7 +177,7 @@ static int  psgpam_open(void *, int);
 static void psgpam_close(void *);
 #if defined(AUDIO2)
 static int  psgpam_query_format(void *, audio_format_query_t *);
-static int  psgpam_set_format(void *, int,
+static int  psgpam_init_format(void *, int,
 	const audio_params_t *, const audio_params_t *,
 	audio_filter_reg_t *, audio_filter_reg_t *);
 #else
@@ -209,7 +209,7 @@ static const struct audio_hw_if psgpam_hw_if = {
 	.close			= psgpam_close,
 #if defined(AUDIO2)
 	.query_format		= psgpam_query_format,
-	.set_format		= psgpam_set_format,
+	.init_format		= psgpam_init_format,
 #else
 	.query_encoding		= psgpam_query_encoding,
 	.set_params		= psgpam_set_params,
@@ -385,7 +385,7 @@ psgpam_query_encoding(void *hdl, struct audio_encoding *ae)
 
 #if defined(AUDIO2)
 static int
-psgpam_set_format(void *hdl, int setmode,
+psgpam_init_format(void *hdl, int setmode,
 	const audio_params_t *play, const audio_params_t *rec,
 	audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
 {

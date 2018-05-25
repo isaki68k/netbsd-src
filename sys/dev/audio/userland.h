@@ -257,7 +257,7 @@ struct audio_hw_if {
 	void	(*get_locks)(void *, kmutex_t **, kmutex_t **);
 
 	int (*get_format)(void *, audio_format_t *);
-	int	(*set_format)(void *, int,
+	int	(*init_format)(void *, int,
 		    const audio_format_t *, const audio_format_t *,
 		    audio_filter_reg_t *, audio_filter_reg_t *);
 };

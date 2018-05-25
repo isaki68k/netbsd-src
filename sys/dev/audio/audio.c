@@ -157,7 +157,7 @@
  *	dev_ioctl 		-	x
  *	get_locks 		-	-	Called at attach time
  *	query_format		-	x	(Added in AUDIO2)
- *	set_format		-	x	(Added in AUDIO2)
+ *	init_format		-	x	(Added in AUDIO2)
  *
  * *1: round_blocksize and round_buffersize become to be called only at
  *  attach time.  That means it's unnecessary to hold thread lock.  However,
@@ -495,7 +495,7 @@ static int audio_hw_probe_by_encoding(struct audio_softc *, audio_format2_t *,
 	int);
 static int audio_hw_validate_format(struct audio_softc *, int,
 	const audio_format2_t *);
-static int audio_mixers_set_format(struct audio_softc *, struct audio_info *);
+static int audio_mixers_init_format(struct audio_softc *, struct audio_info *);
 static int audio_sysctl_volume(SYSCTLFN_PROTO);
 static int audio_sysctl_blk_ms(SYSCTLFN_PROTO);
 static void audio_format2_tostr(char *, size_t, const audio_format2_t *);
@@ -814,7 +814,7 @@ audioattach(device_t parent, device_t self, void *aux)
 	hw_if->get_locks(hdlp, &sc->sc_intr_lock, &sc->sc_lock);
 
 #ifdef DIAGNOSTIC
-	if ((hw_if->set_params == NULL && hw_if->set_format == NULL) ||
+	if ((hw_if->set_params == NULL && hw_if->init_format == NULL) ||
 	    (hw_if->start_output == NULL && hw_if->trigger_output == NULL) ||
 	    (hw_if->start_input == NULL && hw_if->trigger_input == NULL) ||
 	    hw_if->halt_output == NULL ||
@@ -2690,7 +2690,7 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		break;
 
 	case AUDIO_SETFORMAT:
-		error = audio_mixers_set_format(sc, (struct audio_info *)addr);
+		error = audio_mixers_init_format(sc, (struct audio_info *)addr);
 		break;
 
 	default:
@@ -6604,7 +6604,7 @@ audio_hw_validate_format(struct audio_softc *sc, int mode,
 // 成功すれば 0、失敗すれば errno を返す。
 // sc_lock でコールすること。
 static int
-audio_mixers_set_format(struct audio_softc *sc, struct audio_info *ai)
+audio_mixers_init_format(struct audio_softc *sc, struct audio_info *ai)
 {
 	audio_format2_t phwfmt;
 	audio_format2_t rhwfmt;
@@ -7350,18 +7350,18 @@ audio_hw_set_params(struct audio_softc *sc, int setmode,
 	audio_filter_reg_t pfilters2, rfilters2;
 	int error;
 	int usemode;
-	bool use_set_format;
+	bool use_init_format;
 
-	// set_format が定義されてればそっちを使う
-	use_set_format = (sc->hw_if->set_format != NULL);
-	if (use_set_format)
-		DPRINTF(2, "%s use_set_format\n", __func__);
+	// init_format が定義されてればそっちを使う
+	use_init_format = (sc->hw_if->init_format != NULL);
+	if (use_init_format)
+		DPRINTF(2, "%s use_init_format\n", __func__);
 
 	usemode = setmode;
 	pp = format2_to_params(phwfmt);
 	rp = format2_to_params(rhwfmt);
 
-	if (use_set_format) {
+	if (use_init_format) {
 		memset(&pfilters2, 0, sizeof(pfilters2));
 		memset(&rfilters2, 0, sizeof(rfilters2));
 		pfilters2.param = pp;
@@ -7379,11 +7379,11 @@ audio_hw_set_params(struct audio_softc *sc, int setmode,
 #endif
 	}
 
-	if (use_set_format) {
-		error = sc->hw_if->set_format(sc->hw_hdl, setmode,
+	if (use_init_format) {
+		error = sc->hw_if->init_format(sc->hw_hdl, setmode,
 		    &pp, &rp, &pfilters2, &rfilters2);
 		if (error) {
-			DPRINTF(1, "%s: set_format failed with %d\n",
+			DPRINTF(1, "%s: init_format failed with %d\n",
 			    __func__, error);
 			return error;
 		}
@@ -7406,7 +7406,7 @@ audio_hw_set_params(struct audio_softc *sc, int setmode,
 		}
 	}
 
-	if (use_set_format) {
+	if (use_init_format) {
 		sc->sc_xxx_pfilreg = pfilters2;
 		sc->sc_xxx_rfilreg = rfilters2;
 		if (pfilters2.codec)

@@ -129,7 +129,7 @@ struct audio_hw_if {
      void    (*get_locks)(void *, kmutex_t **, kmutex_t **);
 
      <span class=a2>int     (*query_format)(void *, audio_format_query_t *);</span>
-     <span class=a2>int     (*set_format)(void *, int,
+     <span class=a2>int     (*init_format)(void *, int,
 		 const audio_params_t *, const audio_params_t *,
 		 audio_filter_reg_t *, audio_filter_reg_t *);</span>
 };
@@ -213,7 +213,7 @@ arch/evbarm/mini2440/audio_mini2440.c。
 open 時の flags を渡すことにする。
 綱渡りだけどたぶん大丈夫。
 また、open という名前からの想像に反して
-set_format/commit_settings など open よりも先に呼び出されるインタフェースがある
+init_format/commit_settings など open よりも先に呼び出されるインタフェースがある
 ことに注意しなくてはならない。
 今の所 vraiu(4)、zaudio(4) あたりが引っかかりそう。
 </span>
@@ -288,7 +288,7 @@ AUDIO2 では廃止する。代わりに query_format を新設したい。
 	を持つエントリが含まれている必要があります。
 	もしハードウェアが <tt>AUDIO_ENCODING_SLINEAR_NE, AUDIO_INTERNAL_BITS</tt>
 	を直接扱えないのなら後述する lower driver がこれを変換する責任を持ちます
-	(see also set_format)。
+	(see also init_format)。
 	今の所、これ以外のフォーマットは任意です。
 	現在の実装では <tt>AUDIO_ENCODING_SLINEAR_NE, AUDIO_INTERNAL_BITS</tt>
 	以外のフォーマットが採用されることはありません。
@@ -391,10 +391,10 @@ AUDIO2 では廃止する。代わりに query_format を新設したい。
 	     set_params.  Return 0 on success, otherwise an error code.
 </span></del></dd>
 <dd class=p1><span class=a2>
-AUDIO2 ではこれを廃止する。代わりに set_format(仮名)を新設。
+AUDIO2 ではこれを廃止する。代わりに init_format を新設。
 </span></dd>
 
-<dt class=p1><span class=a2>int set_foramt(void *hdl,
+<dt class=p1><span class=a2>int init_foramt(void *hdl,
 	int setmode,
 	const audio_params_t *play, const audio_params_t *rec,
 	audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
