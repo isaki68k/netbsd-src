@@ -154,10 +154,10 @@ audio_mlog_vprintf(const char *fmt, va_list ap)
 	}
 
 	len = vsnprintf(
-		mlog_buf[mlog_wpage] + mlog_used,
-		mlog_buflen - mlog_used,
-		fmt,
-		ap);
+	    mlog_buf[mlog_wpage] + mlog_used,
+	    mlog_buflen - mlog_used,
+	    fmt,
+	    ap);
 	mlog_used += len;
 	if (mlog_buflen - mlog_used <= 1) {
 		mlog_full++;
