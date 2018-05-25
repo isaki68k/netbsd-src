@@ -15,9 +15,8 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <machine/autoconf.h>
 
 #include <luna68k/dev/psgpamvar.h>
+#include <luna68k/dev/xpcommon.h>
 #include <luna68k/luna68k/isr.h>
-
-#include "xpcommon.h"
 
 #include "pam2tbl.c"
 #include "pam3tbl.c"

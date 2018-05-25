@@ -44,8 +44,9 @@ __KERNEL_RCSID(0, "$NetBSD: xp.c,v 1.4 2017/06/01 02:45:06 chs Exp $");
 #include <machine/autoconf.h>
 #include <machine/xpio.h>
 
+#include <luna68k/dev/xpcommon.h>
+
 #include "ioconf.h"
-#include "xpcommon.h"
 
 struct xp_softc {
 	device_t	sc_dev;

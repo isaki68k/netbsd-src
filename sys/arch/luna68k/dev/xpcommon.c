@@ -38,7 +38,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <sys/systm.h>
 #include <sys/conf.h>
 
-#include "xpcommon.h"
+#include <luna68k/dev/xpcommon.h>
 
 /*
  * PIO 0 port C is connected to XP's reset line
