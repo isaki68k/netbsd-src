@@ -108,9 +108,6 @@
 #define AUDIO_ENCODING_ULINEAR_OE AUDIO_ENCODING_ULINEAR_LE
 #endif
 
-#define AUOPEN_READ	0x01
-#define AUOPEN_WRITE	0x02
-
 /* Interfaces for audiobell. */
 int audiobellopen(dev_t, int, int, struct lwp *, struct file **);
 int audiobellclose(struct file *);
