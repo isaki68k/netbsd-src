@@ -253,29 +253,6 @@ struct audio_hw_if {
 
 #if defined(AUDIO2)
 	int (*query_format)(void *, audio_format_query_t *);
-
-	// set_format と set_params は排他というか、
-	// set_format があればこちらを使う。なければ set_params を使う。
-	//
-	// 引数は set_format(void *hdl, int setmode,
-	//  const audio_params_t *play, const audio_params_t *rec,
-	//  audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
-	// で、setmode は set_params() と同じ。
-	// play, rec は型が違うが使い方はほぼ同じ。MI 側が設定したいパラメータ
-	// が入っているので HW をこのパラメータに設定すること。
-	// set_params と違って選択したパラメータを play, rec に書き戻すことは
-	// 出来ない。というか get_format が正しければそのような状況は起きない。
-	//
-	// HW フィルタを使用するなら *pfil、*rfil の codec (と必要なら
-	// params, context) を埋めて返すこと。
-	// pfil, rfil の codec、context はいずれも NULL に初期化してあるため、
-	// 使わないところは触らなくていい。
-	// フィルタを使用してエンコーディングが変わる場合には (通常は変わるはず
-	// だが) pfil.param, rfil.param の
-	// encoding/precision/validbits を更新すること。channels/sample_rate は
-	// HW に適切なものが与えられているはずなので更新してはいけない
-	// (更新しないといけないとすれば get_format がおかしい)。
-	// 戻り値は成功なら 0、そうでなければ errno を返すこと。
 	int	(*set_format)(void *, int,
 		    const audio_params_t *, const audio_params_t *,
 		    audio_filter_reg_t *, audio_filter_reg_t *);
