@@ -297,8 +297,8 @@ psgpam_attach(device_t parent, device_t self, void *aux)
 	sc->sc_dev = self;
 
 	aprint_normal(": HD647180X I/O processor as PSG PAM\n");
-	aprint_normal(": PSGPAM encoding = " XP_STR_ENC "\n");
-	aprint_normal(": PAM frequency = " XP_STR_PAMFREQ "\n");
+	aprint_normal_dev(self, "PSGPAM encoding = " XP_STR_ENC "\n");
+	aprint_normal_dev(self, "PAM frequency = " XP_STR_PAMFREQ "\n");
 
 	sc->sc_shm_base = XP_SHM_BASE;
 	sc->sc_shm_size = XP_SHM_SIZE;
