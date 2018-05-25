@@ -195,7 +195,7 @@ void audio_attach_mi(struct audio_hw_if *ahwp, void *hdl, device_t dev)
 <br>
 <span class=bad>
 これを呼ぶのは録音再生合わせて1つ目のオープン時。
-flags はその時上位から渡される flags (FREAD | FWRITE みたいなやつ)。
+flags はその時上位から渡される flags で FREAD | FWRITE みたいなやつ。
 なので、1本目が再生オープンなら open(hdl, FWRITE) を呼ぶが、
 1本目をオープンしたまま続けて2本目が録音オープンされても open() は呼ばない。
 このため、録音前には open(hdl, FREAD) が呼ばれることを期待していた
@@ -212,6 +212,10 @@ arch/evbarm/mini2440/audio_mini2440.c。
 これをふまえて AUDIO2 では、open の呼び出しは録音再生合わせて1つ目のオープン時のみとし、flags は HW Full なら必ず FREAD | FWRITE、HW Half なら
 open 時の flags を渡すことにする。
 綱渡りだけどたぶん大丈夫。
+また、open という名前からの想像に反して
+set_format/commit_settings など open よりも先に呼び出されるインタフェースがある
+ことに注意しなくてはならない。
+今の所 vraiu(4)、zaudio(4) あたりが引っかかりそう。
 </span>
 <span class=a2>
 For historical reason,
@@ -220,6 +224,12 @@ If the hardware is full duplex,
 If the hardware is half duplex,
 <i>flags</i> is specified as FWRITE for playback open and
 FREAD for recording open.
+</span>
+<br><br>
+<span class=bad>
+ついでに言うとこの flags が何なのかここに書いてないため
+emukxi(4) とかが <tt>AUOPEN_{READ,WRITE}</tt> と勘違いしている
+(意図してなのか偶然なのか値が同じため実害はない)。
 </span>
 </dd>
 
