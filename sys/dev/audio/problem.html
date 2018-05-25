@@ -238,15 +238,6 @@ sc_lchan はもう使われていない。
 ただし両者は値が同じなので実害はない。一応メモ。
 </p>
 
-<li>audiocfg(1) がモノラルデバイスに対応していない。
-チャンネル数を 2 から 2ずつ上げて設定できるかトライしてるからなので、
-たぶんただのバグ。(2018/05)
-<p class="p">
-<pre class="p">
-x68k# audiocfg list
-0: [*] audio0 @ vs0: OKI MSM6258 ADPCM, 12 playback channels
-</pre>
-
 <li>isa/aria の halt_input と halt_output が逆 (2018/04)
 <p class="p">
 audio(4) とは直接関係ないけど、aria(4) の halt_input と halt_output が
