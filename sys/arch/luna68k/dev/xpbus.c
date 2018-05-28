@@ -53,7 +53,6 @@ static const struct xpbus_attach_args xpdevs[] = {
 
 static int xpbus_match(device_t, cfdata_t, void *);
 static void xpbus_attach(device_t, device_t, void *);
-static int xpbus_print(void *, const char *);
 
 CFATTACH_DECL_NEW(xpbus, sizeof(struct xpbus_softc),
     xpbus_match, xpbus_attach, NULL, NULL);
@@ -88,19 +87,6 @@ xpbus_attach(device_t parent, device_t self, void *aux)
 
 	for (i = 0; i < __arraycount(xpdevs); i++) {
 		xa = &xpdevs[i];
-		config_found(self, __UNCONST(xa), xpbus_print);
+		config_found(self, __UNCONST(xa), NULL);
 	}
-}
-
-static int
-xpbus_print(void *aux, const char *pnp)
-{
-/*
-	struct xpbus_attach_args *xa = aux;
-
-	if (pnp)
-		aprint_normal("%s at %s", xa->xa_name, pnp);
-*/
-
-	return QUIET;
 }
