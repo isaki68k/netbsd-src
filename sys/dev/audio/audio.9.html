@@ -216,9 +216,11 @@ arch/evbarm/mini2440/audio_mini2440.c。
 open 時の flags を渡すことにする。
 綱渡りだけどたぶん大丈夫。
 また、open という名前からの想像に反して
-init_format/commit_settings など open よりも先に呼び出されるインタフェースがある
+set_params/commit_settings/init_{output,input} など
+open よりも先に呼び出されるインタフェースがある
 ことに注意しなくてはならない。
 今の所 vraiu(4)、zaudio(4) あたりが引っかかりそう。
+gus@isapnp も引っかかるかもしれない。
 </span>
 <span class=a2>
 For historical reason,
