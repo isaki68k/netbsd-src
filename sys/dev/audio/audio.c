@@ -145,8 +145,8 @@
  *	set_port 		-	x
  *	get_port 		-	x
  *	query_devinfo 		-	x
- *	allocm 			-	-	Called at attach time
- *	freem 			-	-	Called at attach time
+ *	allocm 			-	x	(*1)
+ *	freem 			-	x	(*1)
  *	round_buffersize 	-	x
  *	mappage 		-	-	(Not used in AUDIO2)
  *	get_props 		-	x
@@ -156,6 +156,12 @@
  *	get_locks 		-	-	Called at attach time
  *	query_format		-	x	(Added in AUDIO2)
  *	init_format		-	x	(Added in AUDIO2)
+ *
+ * *1: These have been called at attach time and neither lock were necessary.
+ *   On AUDIO2, these might be also called after attach.
+ *   //これらは以前は Called at attach time であったため、どちらのロックも
+ *   //不要だったが、AUDIO2 ではアタッチ以降にもミキサの再設定でコールできる
+ *   //ため、INTR -, THREAD x に変更する必要がある。
  */
 
 #include <sys/cdefs.h>
