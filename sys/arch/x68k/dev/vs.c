@@ -527,9 +527,8 @@ vs_init_output(void *hdl, void *buffer, int size)
 	DPRINTF(1, ("%s\n", __func__));
 	sc = hdl;
 
-	/* Set rate and pan */
+	/* Set rate */
 	vs_set_sr(sc, sc->sc_current.rate);
-	vs_set_po(sc, VS_PANOUT_LR);
 
 	return 0;
 }
@@ -586,6 +585,7 @@ vs_start_output(void *hdl, void *block, int blksize, void (*intr)(void *),
 	    (int)block - (int)KVADDR(vd), blksize);
 
 	if (sc->sc_active == 0) {
+		vs_set_po(sc, VS_PANOUT_LR);
 		bus_space_write_1(sc->sc_iot, sc->sc_ioh,
 			MSM6258_CMD, MSM6258_CMD_PLAY_START);
 		sc->sc_active = 1;
