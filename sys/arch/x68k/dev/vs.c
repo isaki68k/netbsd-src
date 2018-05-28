@@ -104,7 +104,7 @@ static void vs_get_locks(void *, kmutex_t **, kmutex_t **);
 
 /* lower functions */
 static int vs_round_sr(u_long);
-static inline void vs_set_po(struct vs_softc *, u_long);
+static inline void vs_set_panout(struct vs_softc *, u_long);
 
 extern struct cfdriver vs_cd;
 
@@ -516,7 +516,7 @@ vs_commit_settings(void *hdl)
 }
 
 static inline void
-vs_set_po(struct vs_softc *sc, u_long po)
+vs_set_panout(struct vs_softc *sc, u_long po)
 {
 	bus_space_write_1(sc->sc_iot, sc->sc_ppi, PPI_PORTC,
 			  (bus_space_read_1(sc->sc_iot, sc->sc_ppi, PPI_PORTC)
@@ -561,7 +561,7 @@ vs_start_output(void *hdl, void *block, int blksize, void (*intr)(void *),
 	    (int)block - (int)KVADDR(vd), blksize);
 
 	if (sc->sc_active == 0) {
-		vs_set_po(sc, VS_PANOUT_LR);
+		vs_set_panout(sc, VS_PANOUT_LR);
 		bus_space_write_1(sc->sc_iot, sc->sc_ioh,
 			MSM6258_CMD, MSM6258_CMD_PLAY_START);
 		sc->sc_active = 1;
