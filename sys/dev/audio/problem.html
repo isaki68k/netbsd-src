@@ -252,9 +252,9 @@ sc_lchan はもう使われていない。
 <h4>NetBSD 7 (以前) からある問題</h4>
 <ul>
 
-<li>emukxi(4) の open が flags の使い方を間違えている (2018/05)
+<li>emuxki(4) の open が flags の使い方を間違えている (2018/05)
 <p class="p">
-実害はないが emukxi(4) の open は引数 flags を AUOPEN_{READ,WRITE} と
+実害はないが emuxki(4) の open は引数 flags を AUOPEN_{READ,WRITE} と
 間違えている。ここの flags で渡されるのは FREAD | FWRITE である。
 ただし両者は値が同じなので実害はない。一応メモ。
 </p>
