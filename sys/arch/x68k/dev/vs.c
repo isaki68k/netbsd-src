@@ -84,8 +84,7 @@ static int  vs_query_encoding(void *, struct audio_encoding *);
 static int  vs_set_params(void *, int, int, audio_params_t *,
 	audio_params_t *, stream_filter_list_t *, stream_filter_list_t *);
 #endif
-static int  vs_init_output(void *, void *, int);
-static int  vs_init_input(void *, void *, int);
+static int  vs_commit_settings(void *);
 static int  vs_start_input(void *, void *, int, void (*)(void *), void *);
 static int  vs_start_output(void *, void *, int, void (*)(void *), void *);
 static int  vs_halt_output(void *);
@@ -105,7 +104,6 @@ static void vs_get_locks(void *, kmutex_t **, kmutex_t **);
 
 /* lower functions */
 static int vs_round_sr(u_long);
-static void vs_set_sr(struct vs_softc *, int);
 static inline void vs_set_po(struct vs_softc *, u_long);
 
 extern struct cfdriver vs_cd;
@@ -125,8 +123,7 @@ static const struct audio_hw_if vs_hw_if = {
 	.query_encoding		= vs_query_encoding,
 	.set_params		= vs_set_params,
 #endif
-	.init_output		= vs_init_output,
-	.init_input		= vs_init_input,
+	.commit_settings	= vs_commit_settings,
 	.start_output		= vs_start_output,
 	.start_input		= vs_start_input,
 	.halt_output		= vs_halt_output,
@@ -498,17 +495,24 @@ vs_set_params(void *hdl, int setmode, int usemode,
 }
 #endif
 
-static void
-vs_set_sr(struct vs_softc *sc, int rate)
+static int
+vs_commit_settings(void *hdl)
 {
+	struct vs_softc *sc;
+	int rate;
 
-	DPRINTF(1, ("setting sample rate to %d, %d\n",
+	sc = hdl;
+	rate = sc->sc_current.rate;
+
+	DPRINTF(1, ("commit_settings: sample rate to %d, %d\n",
 		 rate, (int)vs_l2r[rate].rate));
 	bus_space_write_1(sc->sc_iot, sc->sc_ppi, PPI_PORTC,
 			  (bus_space_read_1 (sc->sc_iot, sc->sc_ppi,
 					     PPI_PORTC) & 0xf0)
 			  | vs_l2r[rate].den);
 	adpcm_chgclk(vs_l2r[rate].clk);
+
+	return 0;
 }
 
 static inline void
@@ -517,34 +521,6 @@ vs_set_po(struct vs_softc *sc, u_long po)
 	bus_space_write_1(sc->sc_iot, sc->sc_ppi, PPI_PORTC,
 			  (bus_space_read_1(sc->sc_iot, sc->sc_ppi, PPI_PORTC)
 			   & 0xfc) | po);
-}
-
-static int
-vs_init_output(void *hdl, void *buffer, int size)
-{
-	struct vs_softc *sc;
-
-	DPRINTF(1, ("%s\n", __func__));
-	sc = hdl;
-
-	/* Set rate */
-	vs_set_sr(sc, sc->sc_current.rate);
-
-	return 0;
-}
-
-static int
-vs_init_input(void *hdl, void *buffer, int size)
-{
-	struct vs_softc *sc;
-
-	DPRINTF(1, ("%s\n", __func__));
-	sc = hdl;
-
-	/* Set rate */
-	vs_set_sr(sc, sc->sc_current.rate);
-
-	return 0;
 }
 
 static int
