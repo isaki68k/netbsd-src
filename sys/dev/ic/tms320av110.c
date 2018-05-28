@@ -60,7 +60,9 @@ int tav_query_encoding(void *, struct audio_encoding *);
 int tav_set_params(void *, int, int, audio_params_t *, audio_params_t *,
     stream_filter_list_t *, stream_filter_list_t *);
 int tav_round_blocksize(void *, int, int, const audio_params_t *);
+#if !defined(AUDIO2)
 int tav_init_output(void *, void *, int);
+#endif
 int tav_start_output(void *, void *, int, void (*)(void *), void *);
 int tav_start_input(void *, void *, int, void (*)(void *), void *);
 int tav_halt_output(void *);
@@ -80,7 +82,9 @@ const struct audio_hw_if tav_audio_if = {
 	.query_encoding		= tav_query_encoding,
 	.set_params		= tav_set_params,
 	.round_blocksize	= tav_round_blocksize,
+#if !defined(AUDIO2)
 	.init_output		= tav_init_output,	/* optional */
+#endif
 	.start_output		= tav_start_output,
 	.start_input		= tav_start_input,
 	.halt_output		= tav_halt_output,
@@ -175,8 +179,15 @@ struct audio_encoding tav_encodings[] = {
 int
 tav_open(void *hdl, int flags)
 {
+#if defined(AUDIO2)
+	struct tav_softc *sc;
+
+	sc = hdl;
+	sc->sc_active = 0;
+#else
 
 	/* dummy */
+#endif
 	return 0;
 }
 
@@ -283,12 +294,21 @@ tav_start_output(void *hdl, void *block, int bsize,
 	sc->sc_intr = intr;
 	sc->sc_intrarg = intrarg;
 
+#if defined(AUDIO2)
+	if (sc->sc_active == 0) {
+		tav_write_byte(iot, ioh, TAV_PLAY, 1);
+		tav_write_byte(iot, ioh, TAV_MUTE, 0);
+		sc->sc_active = 1;
+	}
+#endif
+
 	bus_space_write_multi_1(iot, ioh, TAV_DATAIN, ptr, count);
 	tav_write_short(iot, ioh, TAV_INTR_EN, TAV_INTR_LOWWATER);
 
 	return 0;
 }
 
+#if !defined(AUDIO2)
 int
 tav_init_output(void *hdl, void *buffer, int size)
 {
@@ -305,6 +325,7 @@ tav_init_output(void *hdl, void *buffer, int size)
 
 	return 0;
 }
+#endif
 
 int
 tav_halt_output(void *hdl)
@@ -318,6 +339,9 @@ tav_halt_output(void *hdl)
 	ioh = sc->sc_ioh;
 
 	tav_write_byte(iot, ioh, TAV_PLAY, 0);
+#if defined(AUDIO2)
+	sc->sc_active = 0;
+#endif
 
 	return 0;
 }
