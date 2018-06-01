@@ -65,6 +65,9 @@ __KERNEL_RCSID(0, "$NetBSD: aucc.c,v 1.43 2014/03/22 01:52:44 christos Exp $");
 
 #include <sys/audioio.h>
 #include <dev/audio_if.h>
+#if defined(AUDIO2)
+#include <dev/audiovar.h>	/* for AUDIO_MIN_FREQUENCY */
+#endif
 #include <amiga/amiga/cc.h>
 #include <amiga/amiga/custom.h>
 #include <amiga/amiga/device.h>
@@ -144,6 +147,7 @@ struct audio_device aucc_device = {
 struct aucc_softc *aucc = NULL;
 
 
+#if !defined(AUDIO2)
 unsigned char mulaw_to_lin[] = {
 	0x82, 0x86, 0x8a, 0x8e, 0x92, 0x96, 0x9a, 0x9e,
 	0xa2, 0xa6, 0xaa, 0xae, 0xb2, 0xb6, 0xba, 0xbe,
@@ -178,6 +182,7 @@ unsigned char mulaw_to_lin[] = {
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 };
+#endif
 
 /*
  * Define our interface to the higher level audio driver.
@@ -185,24 +190,37 @@ unsigned char mulaw_to_lin[] = {
 int	aucc_open(void *, int);
 void	aucc_close(void *);
 int	aucc_set_out_sr(void *, u_int);
+#if defined(AUDIO2)
+int	aucc_query_format(void *, audio_format_query_t *);
+#else
 int	aucc_query_encoding(void *, struct audio_encoding *);
+#endif
 int	aucc_round_blocksize(void *, int, int, const audio_params_t *);
 int	aucc_commit_settings(void *);
 int	aucc_start_output(void *, void *, int, void (*)(void *), void *);
-int	aucc_start_input(void *, void *, int, void (*)(void *), void *);
 int	aucc_halt_output(void *);
+#if !defined(AUDIO2)
+int	aucc_start_input(void *, void *, int, void (*)(void *), void *);
 int	aucc_halt_input(void *);
+#endif
 int	aucc_getdev(void *, struct audio_device *);
 int	aucc_set_port(void *, mixer_ctrl_t *);
 int	aucc_get_port(void *, mixer_ctrl_t *);
 int	aucc_query_devinfo(void *, mixer_devinfo_t *);
 void	aucc_encode(int, int, int, int, u_char *, u_short **);
+#if defined(AUDIO2)
+int	aucc_init_format(void *, int,
+			const audio_params_t *, const audio_params_t *,
+			audio_filter_reg_t *, audio_filter_reg_t *);
+#else
 int	aucc_set_params(void *, int, int, audio_params_t *, audio_params_t *,
 			stream_filter_list_t *, stream_filter_list_t *);
+#endif
 int	aucc_get_props(void *);
 void	aucc_get_locks(void *, kmutex_t **, kmutex_t **);
 
 
+#if !defined(AUDIO2)
 static void aucc_decode_slinear8_1ch(u_char **, u_char *, int);
 static void aucc_decode_slinear8_2ch(u_char **, u_char *, int);
 static void aucc_decode_slinear8_3ch(u_char **, u_char *, int);
@@ -217,30 +235,39 @@ static void aucc_decode_mulaw_1ch(u_char **, u_char *, int);
 static void aucc_decode_mulaw_2ch(u_char **, u_char *, int);
 static void aucc_decode_mulaw_3ch(u_char **, u_char *, int);
 static void aucc_decode_mulaw_4ch(u_char **, u_char *, int);
+#endif /* !AUDIO2 */
 
 static void aucc_decode_slinear16_1ch(u_char **, u_char *, int);
 static void aucc_decode_slinear16_2ch(u_char **, u_char *, int);
 static void aucc_decode_slinear16_3ch(u_char **, u_char *, int);
 static void aucc_decode_slinear16_4ch(u_char **, u_char *, int);
 
+#if !defined(AUDIO2)
 static void aucc_decode_slinear16sw_1ch(u_char **, u_char *, int);
 static void aucc_decode_slinear16sw_2ch(u_char **, u_char *, int);
 static void aucc_decode_slinear16sw_3ch(u_char **, u_char *, int);
 static void aucc_decode_slinear16sw_4ch(u_char **, u_char *, int);
-
+#endif /* !AUDIO2 */
 
 
 const struct audio_hw_if sa_hw_if = {
 	.open			= aucc_open,
 	.close			= aucc_close,
+#if defined(AUDIO2)
+	.query_format		= aucc_query_format,
+	.init_format		= aucc_init_format,
+#else
 	.query_encoding		= aucc_query_encoding,
 	.set_params		= aucc_set_params,
+#endif
 	.round_blocksize	= aucc_round_blocksize,
 	.commit_settings	= aucc_commit_settings,
 	.start_output		= aucc_start_output,
-	.start_input		= aucc_start_input,
 	.halt_output		= aucc_halt_output,
+#if !defined(AUDIO2)
+	.start_input		= aucc_start_input,
 	.halt_input		= aucc_halt_input,
+#endif
 	.getdev			= aucc_getdev,
 	.set_port		= aucc_set_port,
 	.get_port		= aucc_get_port,
@@ -319,10 +346,17 @@ init_aucc(struct aucc_softc *sc)
 
 	sc->sc_channels = 1;
 	sc->sc_channelmask = 0xf;
+#if defined(AUDIO2)
+	sc->sc_precision = 16;
+	sc->sc_14bit = 1;
+	sc->sc_encoding = AUDIO_ENCODING_SLINEAR_NE;
+	sc->sc_decodefunc = aucc_decode_slinear16_2ch;
+#else
 	sc->sc_precision = 8;
 	sc->sc_14bit = 0;
 	sc->sc_encoding = AUDIO_ENCODING_ULAW;
 	sc->sc_decodefunc = aucc_decode_mulaw_1ch;
+#endif
 
 	/* clear interrupts and DMA: */
 	custom.intena = AUCC_ALLINTF;
@@ -395,6 +429,36 @@ aucc_set_out_sr(void *addr, u_int sr)
 	return 0;
 }
 
+#if defined(AUDIO2)
+// XXX *1 周波数の下限は適当。audio(4) の下限と揃えておくか。
+// XXX *2 周波数上限もできれば定数か何かにしたほうがいい。
+// XXX *3 実際にはこの周波数帯の中で誤差が最小になる値があって、
+//        本当はそれが優先的に採用される仕組みがほしい。
+// XXX *4 3,4chモードは8bit*{3,4}ch、1,2chモードはチャンネルを2つ組み合わせて(?)
+//        14bit*{1,2}ch として動作するので、3,4chより1,2ch のプライオリティを
+//        上げたいが、今はその仕組みがない。
+static const struct audio_format aucc_formats[] = {
+	{ NULL, AUMODE_PLAY, AUDIO_ENCODING_SLINEAR_NE, 16, 16,
+	  1, AUFMT_MONAURAL, 0, { AUDIO_MIN_FREQUENCY, 28867 } },
+
+	{ NULL, AUMODE_PLAY, AUDIO_ENCODING_SLINEAR_NE, 16, 16,
+	  2, AUFMT_STEREO, 0, { AUDIO_MIN_FREQUENCY, 28867 } },
+
+	{ NULL, AUMODE_PLAY, AUDIO_ENCODING_SLINEAR_NE, 16, 16,
+	  3, AUFMT_UNKNOWN_POSITION, 0, { AUDIO_MIN_FREQUENCY, 28867 } },
+
+	{ NULL, AUMODE_PLAY, AUDIO_ENCODING_SLINEAR_NE, 16, 16,
+	  4, AUFMT_UNKNOWN_POSITION, 0, { AUDIO_MIN_FREQUENCY, 28867 } },
+};
+
+int
+aucc_query_format(void *addr, audio_format_query_t *afp)
+{
+
+	return audio_query_format(aucc_formats, __arraycount(aucc_formats),
+	    afp);
+}
+#else
 int
 aucc_query_encoding(void *addr, struct audio_encoding *fp)
 {
@@ -447,7 +511,50 @@ aucc_query_encoding(void *addr, struct audio_encoding *fp)
 	}
 	return 0;
 }
+#endif /* AUDIO2 */
 
+#if defined(AUDIO2)
+int
+aucc_init_format(void *addr, int setmode,
+	const audio_params_t *p, const audio_params_t *r,
+	audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
+{
+	struct aucc_softc *sc;
+
+	sc = addr;
+	KASSERT((setmode & AUMODE_RECORD) == 0);
+
+#ifdef AUCCDEBUG
+	printf("%s(setmode 0x%x,"
+	    "enc %u bits %u, chn %u, sr %u)\n", setmode,
+	    p->encoding, p->precision, p->channels, p->sample_rate);
+#endif
+
+	switch (p->channels) {
+	case 1:
+		sc->sc_decodefunc = aucc_decode_slinear16_1ch;
+		break;
+	case 2:
+		sc->sc_decodefunc = aucc_decode_slinear16_2ch;
+		break;
+	case 3:
+		sc->sc_decodefunc = aucc_decode_slinear16_3ch;
+		break;
+	case 4:
+		sc->sc_decodefunc = aucc_decode_slinear16_4ch;
+		break;
+	default:
+		return EINVAL;
+	}
+
+	sc->sc_encoding = p->encoding;
+	sc->sc_precision = p->precision;
+	sc->sc_14bit = ((p->precision == 16) && (p->channels <= 2));
+	sc->sc_channels = sc->sc_14bit ? (p->channels * 2) : p->channels;
+
+	return aucc_set_out_sr(addr, p->sample_rate);
+}
+#else
 int
 aucc_set_params(void *addr, int setmode, int usemode,
 		audio_params_t *p, audio_params_t *r,
@@ -597,6 +704,7 @@ aucc_set_params(void *addr, int setmode, int usemode,
 
 	return aucc_set_out_sr(addr, p->sample_rate);
 }
+#endif /* AUDIO2 */
 
 int
 aucc_round_blocksize(void *addr, int blk,
@@ -750,6 +858,7 @@ aucc_start_output(void *addr, void *p, int cc, void (*intr)(void *), void *arg)
 	return 0;
 }
 
+#if !defined(AUDIO2)
 /* ARGSUSED */
 int
 aucc_start_input(void *addr, void *p, int cc, void (*intr)(void *), void *arg)
@@ -757,6 +866,7 @@ aucc_start_input(void *addr, void *p, int cc, void (*intr)(void *), void *arg)
 
 	return ENXIO; /* no input */
 }
+#endif
 
 int
 aucc_halt_output(void *addr)
@@ -779,6 +889,7 @@ aucc_halt_output(void *addr)
 	return 0;
 }
 
+#if !defined(AUDIO2)
 int
 aucc_halt_input(void *addr)
 {
@@ -786,6 +897,7 @@ aucc_halt_input(void *addr)
 	/* no input */
 	return ENXIO;
 }
+#endif
 
 int
 aucc_getdev(void *addr, struct audio_device *retp)
@@ -1017,6 +1129,7 @@ pertofreq(u_int per)
 	return eclockfreq * 5 / per;
 }
 
+#if !defined(AUDIO2)
 static void
 aucc_decode_slinear8_1ch(u_char **dmap, u_char *p, int i)
 {
@@ -1196,6 +1309,7 @@ aucc_decode_mulaw_4ch(u_char **dmap, u_char *p, int i)
 		*ch3++ = mulaw_to_lin[*p++];
 	}
 }
+#endif /* !AUDIO2 */
 
 
 /* 14bit output */
@@ -1271,6 +1385,7 @@ aucc_decode_slinear16_4ch(u_char **dmap, u_char *p, int i)
 	}
 }
 
+#if !defined(AUDIO2)
 /* 14bit output, swap bytes */
 static void
 aucc_decode_slinear16sw_1ch(u_char **dmap, u_char *p, int i)
@@ -1342,6 +1457,6 @@ aucc_decode_slinear16sw_4ch(u_char **dmap, u_char *p, int i)
 		p++; *ch3++ = *p++;
 	}
 }
-
+#endif /* !AUDIO2 */
 
 #endif /* NAUCC > 0 */
