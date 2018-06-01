@@ -57,6 +57,7 @@ vs(4) などの珍しい周波数の hardware がサポートできない。
 |Device	|(port)	|対応度
 |-------|-------|-------|
 |auich(4)	|	|AUDIO2 completed
+|aucc(4)	|amiga|compiled but not tested
 |eap(4)		|	|AUDIO2 completed
 |hdafg(4)	|	|AUDIO2 completed
 |mercury(4)	|x68k	|新規追加 and AUDIO2 completed (*)
