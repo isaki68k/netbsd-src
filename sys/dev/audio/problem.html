@@ -148,6 +148,9 @@ drvctl 使うと分かるけども。
 <li>/dev/audioctl をオープンできない場合がある (2018/02)
 <p class="p">
 /dev/audio か /dev/sound を誰かがオープンしていると、 他の人が /dev/audioctl をオープンできないバグがある。 また、逆、つまり /dev/audioctl を誰かがオープンしていると 他の人が /dev/audio か /dev/sound をオープンできないというバグもある。
+<br>
+2018/06 追記。後述「gain が設定できない」件の修正パッチによって
+これが副作用的に直っている可能性がある。未確認。
 </p>
 
 <li>FIOASYNC が分離できていない (2018/01)
@@ -162,6 +165,8 @@ FIOASYNC が VC 分離できていないため、
 <a href="http://gnats.netbsd.org/52781">kern/52781</a> (from bouyer@)。
 gain の設定は VC のソフトウェアボリュームに変更されたが、
 gain の取得と balance の設定・取得が HW ミキサーのままなので不整合。
+<br>
+2018/06 追記。-current で修正されたようだ。詳細未確認。
 </p>
 
 <li>Speed up improvements… (2017/11)
