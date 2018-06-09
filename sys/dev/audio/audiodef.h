@@ -40,6 +40,7 @@
 // ハードウェアバッファのブロック数
 /* Number of HW buffer's blocks. */
 #define NBLKHW (3)
+#define NBLKHW_MIN (3)
 
 // ユーザバッファの最小ブロック数
 /* Minimum number of usrbuf's blocks. */
@@ -177,6 +178,9 @@ struct audio_trackmixer {
 
 	audio_ring_t	hwbuf;		/* HW I/O buf */
 	int		hwblks;		/* number of blocks in hwbuf */
+					// 最小値3
+	int		hwtrnsblks;	// HW へ一度に転送するブロック数。
+					// hwblks / 3 より小さいこと
 	kcondvar_t	draincv;	// drain 用に割り込みを通知する?
 
 	uint64_t	mixseq;		/* seq# currently being mixed */
