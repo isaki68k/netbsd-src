@@ -1,9 +1,6 @@
 // vi:set ts=8:
 // C++ style comment is unformal comment (that is, comment for comment).
 
-// XXX PSGPAM
-#define PSGPAM
-
 // TODO:
 // x Tune up PLAY(_SYNC) mode?
 // x Restore mmap.
@@ -4929,7 +4926,6 @@ audio_mixer_init(struct audio_softc *sc, int mode, const audio_format2_t *hwfmt)
 			mixer->frames_per_block = rounded * NBBY /
 			    (mixer->hwbuf.fmt.stride *
 			     mixer->hwbuf.fmt.channels);
-			blksize = rounded;
 		}
 	}
 	mixer->blktime_n = mixer->frames_per_block;
@@ -4941,25 +4937,15 @@ audio_mixer_init(struct audio_softc *sc, int mode, const audio_format2_t *hwfmt)
 		size_t rounded;
 		rounded = sc->hw_if->round_buffersize(sc->hw_hdl, mode,
 		    bufsize);
-		int nblk = rounded / blksize;
 		// 縮められても困る?
-		if (nblk < NBLKHW_MIN) {
+		if (rounded != bufsize) {
 			aprint_error_dev(sc->dev,
 			    "buffer size not configured %zu -> %zu\n",
 			    bufsize, rounded);
 			return ENXIO;
 		}
-		mixer->hwblks = nblk;
-		capacity = mixer->frames_per_block * mixer->hwblks;
 	}
 	mixer->hwbuf.capacity = capacity;
-
-	mixer->hwtrnsblks = 1;
-	// XXX PSGPAM TODO: 問い合わせ MD API
-#if defined(PSGPAM)
-	mixer->hwtrnsblks = mixer->hwblks / 3;
-	DPRINTF(1, "mixer->hwtrnsblks=%d\n", mixer->hwtrnsblks);
-#endif
 
 	if (sc->hw_if->allocm) {
 		mixer->hwbuf.mem = sc->hw_if->allocm(sc->hw_hdl, mode, bufsize);
@@ -5483,7 +5469,6 @@ audio_pmixer_output(struct audio_softc *sc)
 	void *start;
 	void *end;
 	int blksize;
-	int trnssize;
 	int error;
 
 	mixer = sc->sc_pmixer;
@@ -5492,12 +5477,7 @@ audio_pmixer_output(struct audio_softc *sc)
 	    mixer->hwbuf.head, mixer->hwbuf.used, mixer->hwbuf.capacity);
 	KASSERT(mixer->hwbuf.used >= mixer->frames_per_block);
 
-// XXX PSGPAM
-	if (mixer->hwbuf.used < mixer->hwtrnsblks * mixer->frames_per_block)
-		return;
-
 	blksize = frametobyte(&mixer->hwbuf.fmt, mixer->frames_per_block);
-	trnssize = blksize * mixer->hwtrnsblks;
 
 	if (sc->hw_if->trigger_output) {
 		/* trigger (at once) */
@@ -5507,7 +5487,7 @@ audio_pmixer_output(struct audio_softc *sc)
 			params = format2_to_params(&mixer->hwbuf.fmt);
 
 			error = sc->hw_if->trigger_output(sc->hw_hdl,
-			    start, end, trnssize, audio_pintr, sc, &params);
+			    start, end, blksize, audio_pintr, sc, &params);
 			if (error) {
 				DPRINTF(1, "%s trigger_output failed: %d\n",
 				    __func__, error);
@@ -5519,7 +5499,7 @@ audio_pmixer_output(struct audio_softc *sc)
 		start = auring_headptr(&mixer->hwbuf);
 
 		error = sc->hw_if->start_output(sc->hw_hdl,
-		    start, trnssize, audio_pintr, sc);
+		    start, blksize, audio_pintr, sc);
 		if (error) {
 			DPRINTF(1, "%s start_output failed: %d\n",
 			    __func__, error);
