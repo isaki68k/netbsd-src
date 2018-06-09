@@ -45,7 +45,6 @@ __KERNEL_RCSID(0, "$NetBSD: xp.c,v 1.4 2017/06/01 02:45:06 chs Exp $");
 #include <machine/xpio.h>
 
 #include <luna68k/dev/xpbusvar.h>
-#include <luna68k/dev/xpcommon.h>
 
 #include "ioconf.h"
 
@@ -144,6 +143,10 @@ xp_open(dev_t dev, int flags, int devtype, struct lwp *l)
 	if (sc->sc_isopen)
 		return EBUSY;
 
+	if (!xp_acquire()) {
+		return EBUSY;
+	}
+
 	sc->sc_isopen = true;
 
 	return 0;
@@ -159,6 +162,9 @@ xp_close(dev_t dev, int flags, int mode, struct lwp *l)
 
 	unit = minor(dev);
 	sc = device_lookup_private(&xp_cd, unit);
+
+	xp_release();
+
 	sc->sc_isopen = false;
 
 	return 0;

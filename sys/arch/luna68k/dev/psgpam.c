@@ -16,7 +16,6 @@ __KERNEL_RCSID(0, "$NetBSD$");
 
 #include <luna68k/dev/psgpamvar.h>
 #include <luna68k/dev/xpbusvar.h>
-#include <luna68k/dev/xpcommon.h>
 #include <luna68k/luna68k/isr.h>
 
 #include "ioconf.h"
@@ -333,6 +332,10 @@ psgpam_open(void *hdl, int flags)
 	DPRINTF(1, "%s: flags=0x%x\n", __func__, flags);
 	sc = hdl;
 
+	if (!xp_acquire()) {
+		return EBUSY;
+	}
+
 	// firmware transfer
 	xp_cpu_reset_hold();
 	delay(100);
@@ -357,6 +360,8 @@ psgpam_close(void *hdl)
 
 	// force stop
 	xp_cpu_reset();
+
+	xp_release();
 
 	DPRINTF(1, "%s\n", __func__);
 }
@@ -393,6 +398,9 @@ psgpam_init_format(void *hdl, int setmode,
 	const audio_params_t *play, const audio_params_t *rec,
 	audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
 {
+	// set_format は open 前に呼ばれる。
+	// init_format の意味。
+
 	struct psgpam_softc *sc;
 
 	sc = hdl;

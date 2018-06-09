@@ -1,5 +1,7 @@
 /*	$NetBSD$	*/
 
+/* TODO: ao-kenji 's copyright */
+/* TODO: my copyright */
 /*
  * Copyright (c) 2018 Tetsuya Isaki. All rights reserved.
  *
@@ -35,12 +37,40 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/conf.h>
+#include <sys/atomic.h>
 #include <sys/device.h>
 
 #include <machine/autoconf.h>
 
 #include <luna68k/dev/xpbusvar.h>
-#include <luna68k/dev/xpcommon.h>
+
+/*
+ * PIO 0 port C is connected to XP's reset line
+ *
+ * XXX: PIO port functions should be shared with machdep.c for DIP SWs
+ */
+#define PIO_ADDR	0x49000000
+#define PORT_A		0
+#define PORT_B		1
+#define PORT_C		2
+#define CTRL		3
+#define OBIO_PIO0A	(PIO_ADDR + PORT_A)
+#define OBIO_PIO0B	(PIO_ADDR + PORT_B)
+
+/* PIO0 Port C bit definition */
+#define XP_INT1_REQ	0	/* INTR B */
+	/* unused */		/* IBF B */
+#define XP_INT1_ENA	2	/* INTE B */
+#define XP_INT5_REQ	3	/* INTR A */
+#define XP_INT5_ENA	4	/* INTE A */
+	/* unused */		/* IBF A */
+#define PARITY		6	/* PC6 output to enable parity error */
+#define XP_RESET	7	/* PC7 output to reset HD647180 XP */
+
+/* Port control for PC6 and PC7 */
+#define ON		1
+#define OFF		0
+
 
 struct xpbus_softc {
 	device_t	sc_dev;
@@ -58,6 +88,11 @@ CFATTACH_DECL_NEW(xpbus, sizeof(struct xpbus_softc),
     xpbus_match, xpbus_attach, NULL, NULL);
 
 static bool xpbus_matched;
+
+/*
+ * XP acquired for shareing by /dev/xp, psgpam
+ */
+static volatile unsigned int xp_acquired;
 
 static int
 xpbus_match(device_t parent, cfdata_t cf, void *aux)
@@ -89,4 +124,138 @@ xpbus_attach(device_t parent, device_t self, void *aux)
 		xa = &xpdevs[i];
 		config_found(self, __UNCONST(xa), NULL);
 	}
+}
+
+/*
+ * acquire xpbus from child devices
+ * if success, return non-zero
+ * if fail, return 0
+ */
+int
+xp_acquire(void)
+{
+	return atomic_swap_uint(&xp_acquired, 1) == 0;
+}
+
+/* release xpbus by child devices */
+void
+xp_release(void)
+{
+	atomic_swap_uint(&xp_acquired, 0);
+}
+
+/* PIO PORTC write */
+uint8_t
+put_pio0c(uint8_t bit, uint8_t set)
+{
+	volatile uint8_t * const pio0 = (uint8_t *)PIO_ADDR;
+
+	pio0[CTRL] = (bit << 1) | (set & 0x01);
+
+	return pio0[PORT_C];
+}
+
+/* hold XP RESET signal */
+void
+xp_cpu_reset_hold(void)
+{
+	put_pio0c(XP_RESET, ON);
+}
+
+/* release XP RESET signal */
+void
+xp_cpu_reset_release(void)
+{
+	put_pio0c(XP_RESET, OFF);
+}
+
+/* one-shot XP RESET signal */
+void
+xp_cpu_reset(void)
+{
+	xp_cpu_reset_hold();
+	delay(100);
+	xp_cpu_reset_release();
+}
+
+/* enable XP to Host interrupt 1 */
+void
+xp_intr1_enable(void)
+{
+	put_pio0c(XP_INT1_ENA, ON);
+}
+
+/* disable XP to Host interrupt 1 */
+void
+xp_intr1_disable(void)
+{
+	put_pio0c(XP_INT1_ENA, OFF);
+}
+
+/* interrupt 1 ack */
+void
+xp_intr1_acknowledge(void)
+{
+	/* reset the interrupt request: read PIO0 port A */
+	// XXX: たぶん
+	*(volatile uint8_t *)OBIO_PIO0A;
+	// XXX: たちまち、勘で。
+	*(volatile uint8_t *)OBIO_PIO0B;
+}
+
+/* enable XP to Host interrupt 5 */
+void
+xp_intr5_enable(void)
+{
+	put_pio0c(XP_INT5_ENA, ON);
+}
+
+/* disable XP to Host interrupt 5 */
+void
+xp_intr5_disable(void)
+{
+	put_pio0c(XP_INT5_ENA, OFF);
+}
+
+/* interrupt 5 ack */
+void
+xp_intr5_acknowledge(void)
+{
+	/* reset the interrupt request: read PIO0 port A */
+	*(volatile uint8_t *)OBIO_PIO0A;
+}
+
+/* get XP shared memory pointer */
+uint8_t *
+xp_shmptr(int offset)
+{
+	return (uint8_t *)XP_SHM_BASE + offset;
+}
+
+/* read 1 byte */
+int
+xp_readmem8(int offset)
+{
+	return *((volatile uint8_t *)xp_shmptr(offset));
+}
+
+/* read 1 16bitLE */
+int
+xp_readmem16le(int offset)
+{
+	return le16toh(*(volatile uint16_t *)xp_shmptr(offset));
+}
+
+/* write 1 byte */
+void
+xp_writemem8(int offset, int v)
+{
+	*(volatile uint8_t *)(xp_shmptr(offset)) = v;
+}
+
+/* write 1 16bitLE */
+void
+xp_writemem16le(int offset, int v)
+{
+	*((volatile uint16_t *)xp_shmptr(offset)) = htole16((uint16_t)v);
 }

@@ -59,8 +59,6 @@ device psgpam: audiobus, auconv, mulaw
 attach psgpam at xpbus
 file arch/luna68k/dev/psgpam.c		psgpam
 
-file arch/luna68k/dev/xpcommon.c	xp | psgpam
-
 device ws: wskbddev,wsmousedev
 attach ws at sio
 file arch/luna68k/dev/lunaws.c		ws
