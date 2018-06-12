@@ -195,6 +195,8 @@ static int  psgpam_get_port(void *, mixer_ctrl_t *);
 static int  psgpam_query_devinfo(void *, mixer_devinfo_t *);
 static int  psgpam_get_props(void *);
 static void psgpam_get_locks(void *, kmutex_t **, kmutex_t **);
+static int  psgpam_round_blocksize(void *, int, int,
+  const audio_params_t *);
 static size_t psgpam_round_buffersize(void *, int, size_t);
 
 static int  psgpam_intr(void *);
@@ -225,6 +227,7 @@ static const struct audio_hw_if psgpam_hw_if = {
 	.query_devinfo		= psgpam_query_devinfo,
 	.get_props		= psgpam_get_props,
 	.get_locks		= psgpam_get_locks,
+	.round_blocksize        = psgpam_round_blocksize,
 	.round_buffersize	= psgpam_round_buffersize,
 };
 
@@ -568,10 +571,25 @@ psgpam_get_locks(void *hdl, kmutex_t **intr, kmutex_t **thread)
 	*thread = &sc->sc_thread_lock;
 }
 
+static int
+psgpam_round_blocksize(void *hdl, int bs, int mode,
+  const audio_params_t *param)
+{
+#if 0
+	if (bs < 16384) {
+		return (16384 / bs) * bs;
+	} else {
+		return 16384;
+	}
+#else
+	return bs;
+#endif
+}
+
 static size_t
 psgpam_round_buffersize(void *hdl, int direction, size_t bufsize)
 {
-	return 48 * 1024;
+	return bufsize;
 }
 
 static int
