@@ -450,8 +450,7 @@ static int audio_kqfilter(struct audio_softc *, audio_file_t *, struct knote *);
 static int audio_mmap(struct audio_softc *, off_t *, size_t, int, int *, int *,
 	struct uvm_object **, int *, audio_file_t *);
 
-static int audioctl_open(dev_t, struct audio_softc *, int, int, struct lwp *,
-	struct file **);
+static int audioctl_open(dev_t, struct audio_softc *, int, int, struct lwp *);
 
 static void audio_pintr(void *);
 static void audio_rintr(void *);
@@ -538,8 +537,7 @@ static void stream_filter_list_set(stream_filter_list_t *, int,
 #endif
 
 static void mixer_init(struct audio_softc *);
-static int mixer_open(dev_t, struct audio_softc *, int, int, struct lwp *,
-	struct file **);
+static int mixer_open(dev_t, struct audio_softc *, int, int, struct lwp *);
 static int mixer_close(struct audio_softc *, int, audio_file_t *);
 static int mixer_ioctl(struct audio_softc *, u_long, void *, int, struct lwp *);
 static void mixer_remove(struct audio_softc *);
@@ -1473,7 +1471,6 @@ static int
 audioopen(dev_t dev, int flags, int ifmt, struct lwp *l)
 {
 	struct audio_softc *sc;
-	struct file *fp;
 	int error;
 
 	if ((error = audio_enter(dev, &sc)) != 0)
@@ -1482,13 +1479,13 @@ audioopen(dev_t dev, int flags, int ifmt, struct lwp *l)
 	switch (AUDIODEV(dev)) {
 	case SOUND_DEVICE:
 	case AUDIO_DEVICE:
-		error = audio_open(dev, sc, flags, ifmt, l, &fp);
+		error = audio_open(dev, sc, flags, ifmt, l, NULL);
 		break;
 	case AUDIOCTL_DEVICE:
-		error = audioctl_open(dev, sc, flags, ifmt, l, &fp);
+		error = audioctl_open(dev, sc, flags, ifmt, l);
 		break;
 	case MIXER_DEVICE:
-		error = mixer_open(dev, sc, flags, ifmt, l, &fp);
+		error = mixer_open(dev, sc, flags, ifmt, l);
 		break;
 	default:
 		error = ENXIO;
@@ -1775,6 +1772,7 @@ audiommap(struct file *fp, off_t *offp, size_t len, int prot, int *flagsp,
 /*
  * Audio driver
  */
+// nfp が NULL でなければここで確保した fp を格納して返す。audiobell 用。
 int
 audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	struct lwp *l, struct file **nfp)
@@ -1992,7 +1990,9 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	error = fd_clone(fp, fd, flags, &audio_fileops, af);
 	KASSERT(error == EMOVEFD);
 
-	*nfp = fp;
+	if (nfp)
+		*nfp = fp;
+
 	TRACEF(af, "done");
 	return error;
 
@@ -3024,7 +3024,7 @@ audio_mmap(struct audio_softc *sc, off_t *offp, size_t len, int prot,
  */
 static int
 audioctl_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
-	struct lwp *l, struct file **nfp)
+	struct lwp *l)
 {
 	struct file *fp;
 	audio_file_t *af;
@@ -3055,7 +3055,6 @@ audioctl_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	error = fd_clone(fp, fd, flags, &audio_fileops, af);
 	KASSERT(error == EMOVEFD);
 
-	*nfp = fp;
 	return error;
 }
 
@@ -7951,7 +7950,7 @@ audio_diagnostic_ring(const char *func, const audio_ring_t *ring)
  */
 int
 mixer_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
-	struct lwp *l, struct file **nfp)
+	struct lwp *l)
 {
 	struct file *fp;
 	audio_file_t *af;
@@ -7974,7 +7973,6 @@ mixer_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	error = fd_clone(fp, fd, flags, &audio_fileops, af);
 	KASSERT(error == EMOVEFD);
 
-	*nfp = fp;
 	return error;
 }
 
