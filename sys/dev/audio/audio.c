@@ -401,9 +401,8 @@ static int audiomatch(device_t, cfdata_t, void *);
 static void audioattach(device_t, device_t, void *);
 static int audiodetach(device_t, int);
 static int audioactivate(device_t, enum devact);
-// spkr* at audio? のため?
-//static void audiochilddet(device_t, device_t);
-//static int audiorescan(device_t, const char *, const int *);
+static void audiochilddet(device_t, device_t);
+static int audiorescan(device_t, const char *, const int *);
 
 static int audio_modcmd(modcmd_t, void *);
 
@@ -747,8 +746,8 @@ static const struct portname otable[] = {
 };
 
 CFATTACH_DECL3_NEW(audio, sizeof(struct audio_softc),
-    audiomatch, audioattach, audiodetach, audioactivate, NULL, NULL,
-    DVF_DETACH_SHUTDOWN);
+    audiomatch, audioattach, audiodetach, audioactivate, audiorescan,
+    audiochilddet, DVF_DETACH_SHUTDOWN);
 
 #if 1
 static char audio_buildinfo[256];
@@ -982,7 +981,7 @@ audioattach(device_t parent, device_t self, void *aux)
 	audio_mlog_init();
 #endif
 
-	// audiorescan いらないはず
+	audiorescan(self, "audio", NULL);
 	return;
 
 bad:
@@ -1163,7 +1162,7 @@ audiodetach(device_t self, int flags)
 	struct audio_softc *sc;
 	audio_file_t *f;
 	int maj, mn;
-	//int rc;
+	int rc;
 
 	sc = device_private(self);
 	DPRINTF(1, "%s: sc=%p flags=%d\n", __func__, sc, flags);
@@ -1173,7 +1172,8 @@ audiodetach(device_t self, int flags)
 		return 0;
 
 	/* Start draining existing accessors of the device. */
-	// なぜここで config_detach_children() ?
+	if ((rc = config_detach_children(self, flags)) != 0)
+		return rc;
 
 	// 稼働中のトラックを終了させる
 	mutex_enter(sc->sc_lock);
@@ -1244,6 +1244,36 @@ audiodetach(device_t self, int flags)
 #if defined(AUDIO_DEBUG_MLOG)
 	audio_mlog_free();
 #endif
+
+	return 0;
+}
+
+static void
+audiochilddet(device_t self, device_t child)
+{
+
+	/* we hold no child references, so do nothing */
+}
+
+static int
+audiosearch(device_t parent, cfdata_t cf, const int *locs, void *aux)
+{
+
+	if (config_match(parent, cf, aux))
+		config_attach_loc(parent, cf, locs, aux, NULL);
+
+	return 0;
+}
+
+static int
+audiorescan(device_t self, const char *ifattr, const int *flags)
+{
+	struct audio_softc *sc = device_private(self);
+
+	if (!ifattr_match(ifattr, "audio"))
+		return 0;
+
+	config_search_loc(audiosearch, sc->dev, "audio", NULL, NULL);
 
 	return 0;
 }
