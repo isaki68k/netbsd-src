@@ -31,9 +31,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#if defined(AUDIO2)
-#include "dev/audio/audiobell.c"
-#else
 #include <sys/types.h>
 __KERNEL_RCSID(0, "$NetBSD: audiobell.c,v 1.25 2017/07/01 05:32:24 nat Exp $");
 
@@ -186,4 +183,3 @@ out:
 	}
 	audiobellclose(fp);
 }
-#endif /* AUDIO2 */
