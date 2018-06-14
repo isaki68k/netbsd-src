@@ -491,10 +491,10 @@ spkrclose(dev_t dev, int flags, int mode, struct lwp *l)
 static void
 playonetone(struct spkr_softc *sc, tone_t *tp)
 {
-    if (tp->frequency == 0)
-	    (*sc->sc_rest)(sc->sc_dev, tp->duration);
-    else
-	    (*sc->sc_tone)(sc->sc_dev, tp->frequency, tp->duration);
+	if (tp->frequency == 0)
+		(*sc->sc_rest)(sc->sc_dev, tp->duration);
+	else
+		(*sc->sc_tone)(sc->sc_dev, tp->frequency, tp->duration);
 }
 
 int
@@ -516,7 +516,7 @@ spkrioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 		return EINVAL;
 
 	switch (cmd) {
-    	case SPKRTONE:
+	case SPKRTONE:
 		playonetone(sc, data);
 		return 0;
 	case SPKRTUNE:
