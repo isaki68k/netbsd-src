@@ -1793,7 +1793,8 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	TRACE("start flags=0x%x po=%d ro=%d",
 	    flags, sc->sc_popens, sc->sc_ropens);
 #else
-	DPRINTF(1, "%s\n", __func__);
+	DPRINTF(1, "%s flags=0x%x po=%d ro=%d\n", __func__,
+	    flags, sc->sc_popens, sc->sc_ropens);
 #endif
 
 	af = kmem_zalloc(sizeof(audio_file_t), KM_SLEEP);
