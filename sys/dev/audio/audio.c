@@ -438,7 +438,7 @@ static int audiommap(struct file *, off_t *, size_t, int, int *, int *,
 static int audiostat(struct file *, struct stat *);
 
 static int audio_open(dev_t, struct audio_softc *, int, int, struct lwp *,
-	struct file **);
+	struct audiobell_arg *);
 static int audio_close(struct audio_softc *, audio_file_t *);
 static int audio_read(struct audio_softc *, struct uio *, int, audio_file_t *);
 static int audio_write(struct audio_softc *, struct uio *, int, audio_file_t *);
@@ -1424,7 +1424,7 @@ audio_waitio(struct audio_softc *sc, audio_track_t *track)
 
 /* Exported interfaces for audiobell. */
 int
-audiobellopen(dev_t dev, int flags, int ifmt, struct lwp *l, struct file **fp)
+audiobellopen(dev_t dev, struct audiobell_arg *arg)
 {
 	struct audio_softc *sc;
 	int error;
@@ -1432,39 +1432,46 @@ audiobellopen(dev_t dev, int flags, int ifmt, struct lwp *l, struct file **fp)
 	if ((error = audio_enter(dev, &sc)) != 0)
 		return error;
 	device_active(sc->dev, DVA_SYSTEM);
-	switch (AUDIODEV(dev)) {
-	case AUDIO_DEVICE:
-		error = audio_open(dev, sc, flags, ifmt, l, fp);
-		break;
-	default:
-		error = EINVAL;
-		break;
-	}
-	audio_exit(sc);
 
+	error = audio_open(dev, sc, FWRITE, 0, curlwp, arg);
+
+	audio_exit(sc);
 	return error;
 }
 
 int
-audiobellclose(struct file *fp)
+audiobellclose(audio_file_t *file)
 {
+	struct audio_softc *sc;
+	dev_t dev;
+	int error;
 
-	return audioclose(fp);
+	dev = file->dev;
+	if ((error = audio_enter(dev, &sc)) != 0)
+		return error;
+	device_active(sc->dev, DVA_SYSTEM);
+
+	error = audio_close(sc, file);
+
+	audio_exit(sc);
+	return error;
 }
 
 int
-audiobellwrite(struct file *fp, off_t *offp, struct uio *uio, kauth_cred_t cred,
-	int ioflag)
+audiobellwrite(audio_file_t *file, struct uio *uio)
 {
+	struct audio_softc *sc;
+	dev_t dev;
+	int error;
 
-	return audiowrite(fp, offp, uio, cred, ioflag);
-}
+	dev = file->dev;
+	if ((error = audio_enter(dev, &sc)) != 0)
+		return error;
 
-int
-audiobellioctl(struct file *fp, u_long cmd, void *addr)
-{
+	error = audio_write(sc, uio, 0, file);
 
-	return audioioctl(fp, cmd, addr);
+	audio_exit(sc);
+	return error;
 }
 
 static int
@@ -1772,10 +1779,9 @@ audiommap(struct file *fp, off_t *offp, size_t len, int prot, int *flagsp,
 /*
  * Audio driver
  */
-// nfp が NULL でなければここで確保した fp を格納して返す。audiobell 用。
 int
 audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
-	struct lwp *l, struct file **nfp)
+	struct lwp *l, struct audiobell_arg *bell)
 {
 	struct audio_info ai;
 	struct file *fp;
@@ -1837,7 +1843,13 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	 * For the other devices, you get what they were last set to.
 	 */
 	AUDIO_INITINFO(&ai);
-	if (ISDEVAUDIO(dev)) {
+	if (bell) {
+		ai.play.sample_rate   = bell->sample_rate;
+		ai.play.encoding      = bell->encoding;
+		ai.play.channels      = bell->channels;
+		ai.play.precision     = bell->precision;
+		ai.play.pause         = false;
+	} else if (ISDEVAUDIO(dev)) {
 		// /dev/audio は毎回初期化
 		ai.play.sample_rate   = audio_default.sample_rate;
 		ai.play.encoding      = audio_default.encoding;
@@ -1972,9 +1984,11 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 		}
 	}
 
-	error = fd_allocfile(&fp, &fd);
-	if (error)
-		goto bad4;
+	if (bell == NULL) {
+		error = fd_allocfile(&fp, &fd);
+		if (error)
+			goto bad4;
+	}
 
 	// このミキサーどうするか
 	//grow_mixer_states(sc, 2);
@@ -1988,11 +2002,12 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	SLIST_INSERT_HEAD(&sc->sc_files, af, entry);
 	mutex_exit(sc->sc_intr_lock);
 
-	error = fd_clone(fp, fd, flags, &audio_fileops, af);
-	KASSERT(error == EMOVEFD);
-
-	if (nfp)
-		*nfp = fp;
+	if (bell) {
+		bell->file = af;
+	} else {
+		error = fd_clone(fp, fd, flags, &audio_fileops, af);
+		KASSERT(error == EMOVEFD);
+	}
 
 	TRACEF(af, "done");
 	return error;

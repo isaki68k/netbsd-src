@@ -37,12 +37,7 @@ __KERNEL_RCSID(0, "$NetBSD: audiobell.c,v 1.25 2017/07/01 05:32:24 nat Exp $");
 #include <sys/audioio.h>
 #include <sys/conf.h>
 #include <sys/device.h>
-#include <sys/fcntl.h>
-#include <sys/file.h>
-#include <sys/filedesc.h>
-#include <sys/ioctl.h>
 #include <sys/malloc.h>
-#include <sys/null.h>
 #include <sys/systm.h>
 #include <sys/uio.h>
 #include <sys/unistd.h>
@@ -102,16 +97,14 @@ audiobell(void *v, u_int pitch, u_int period, u_int volume, int poll)
 	dev_t audio;
 	int16_t *buf;
 	uint16_t phase;
-	struct audio_info ai;
+	struct audiobell_arg bellarg;
+	audio_file_t *file;
 	struct uio auio;
 	struct iovec aiov;
-	struct file *fp;
-	int size, len, fd;
+	int size, len;
 
 	KASSERT(volume <= 100);
 
-	fd = -1;
-	fp = NULL;
 	buf = NULL;
 	audio = AUDIO_DEVICE | device_unit((device_t)v);
 
@@ -119,45 +112,33 @@ audiobell(void *v, u_int pitch, u_int period, u_int volume, int poll)
 	if (poll)
 		return;
 
+	memset(&bellarg, 0, sizeof(bellarg));
+	bellarg.sample_rate = BELL_SAMPLE_RATE;
+	bellarg.encoding = AUDIO_ENCODING_SLINEAR_NE;
+	bellarg.channels = 1;
+	bellarg.precision = 16;
+
 	/* If not configured, we can't beep. */
-	if (audiobellopen(audio, FWRITE, 0, NULL, &fp) != EMOVEFD || fp == NULL)
+	if (audiobellopen(audio, &bellarg) != 0)
 		return;
-	fd = curlwp->l_dupfd;	/* save the fd for closing when done */
 
-	if (audiobellioctl(fp, AUDIO_GETINFO, &ai) != 0)
-		goto out;
+	file = bellarg.file;
 
-	AUDIO_INITINFO(&ai);
-	ai.mode = AUMODE_PLAY;
-	ai.play.sample_rate = BELL_SAMPLE_RATE;
-	ai.play.precision = 16;
-	ai.play.channels = 1;
-	ai.play.gain = 255 * volume / 100;
-
-#if BYTE_ORDER == LITTLE_ENDIAN
-	ai.play.encoding = AUDIO_ENCODING_SLINEAR_LE;
-#else
-	ai.play.encoding = AUDIO_ENCODING_SLINEAR_BE;
-#endif
-
-	if (audiobellioctl(fp, AUDIO_SETINFO, &ai) != 0)
-		goto out;
-
-	if (ai.blocksize < BELL_SAMPLE_RATE)
-		ai.blocksize = BELL_SAMPLE_RATE;
+	if (bellarg.blocksize < BELL_SAMPLE_RATE)
+		bellarg.blocksize = BELL_SAMPLE_RATE;
 
 	len = period * BELL_SAMPLE_RATE / 1000 * 2;
-	size = min(len, ai.blocksize);
+	size = min(len, bellarg.blocksize);
 	if (size == 0)
 		goto out;
 
 	buf = malloc(size, M_TEMP, M_WAITOK);
 	if (buf == NULL)
 		goto out;
- 
+
 	phase = 0;
 	while (len > 0) {
-		size = min(len, ai.blocksize);
+		size = min(len, bellarg.blocksize);
 		if (audiobell_synthesize(buf, pitch, size *
 				1000 / BELL_SAMPLE_RATE, volume, &phase) != 0)
 			goto out;
@@ -170,16 +151,12 @@ audiobell(void *v, u_int pitch, u_int period, u_int volume, int poll)
 		auio.uio_rw = UIO_WRITE;
 		UIO_SETUP_SYSSPACE(&auio);
 
-		if (audiobellwrite(fp, NULL, &auio, NULL, 0) != 0)
+		if (audiobellwrite(file, &auio) != 0)
 			break;
 		len -= size;
 	}
 out:
 	if (buf != NULL)
 		free(buf, M_TEMP);
-	if (fd >= 0) {
-		fd_getfile(fd);
-		fd_close(fd);
-	}
-	audiobellclose(fp);
+	audiobellclose(file);
 }

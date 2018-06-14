@@ -138,7 +138,7 @@ typedef struct audio_track {
 	int		id;		/* track id for debug */
 } audio_track_t;
 
-typedef struct audio_file {
+struct audio_file {
 	struct audio_softc *sc;
 
 	// ptrack, rtrack はトラックが無効なら NULL。
@@ -158,7 +158,7 @@ typedef struct audio_file {
 	pid_t		async_audio;	/* process who wants audio SIGIO */
 
 	SLIST_ENTRY(audio_file) entry;
-} audio_file_t;
+};
 
 struct audio_trackmixer {
 	int		mode;		/* AUMODE_PLAY or AUMODE_RECORD */

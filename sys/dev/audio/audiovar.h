@@ -96,12 +96,7 @@
 #define AUDIO_MIN_FREQUENCY (1000)
 #define AUDIO_MAX_FREQUENCY (192000)
 
-/* Interfaces for audiobell. */
-int audiobellopen(dev_t, int, int, struct lwp *, struct file **);
-int audiobellclose(struct file *);
-int audiobellwrite(struct file *, off_t *, struct uio *, kauth_cred_t, int);
-int audiobellioctl(struct file *, u_long, void *);
-
+typedef struct audio_file audio_file_t;
 typedef struct audio_trackmixer audio_trackmixer_t;
 
 /* ring buffer */
@@ -262,5 +257,18 @@ audio_format2_endian(const audio_format2_t *fmt)
 	}
 	return BYTE_ORDER;
 }
+
+/* Interfaces for audiobell. */
+struct audiobell_arg {
+	u_int sample_rate;	/* IN */
+	u_int encoding;		/* IN */
+	u_int channels;		/* IN */
+	u_int precision;	/* IN */
+	u_int blocksize;	/* OUT */
+	audio_file_t *file;	/* OUT */
+};
+int audiobellopen(dev_t, struct audiobell_arg *);
+int audiobellclose(audio_file_t *);
+int audiobellwrite(audio_file_t *, struct uio *);
 
 #endif /* _SYS_DEV_AUDIOVAR2_H_ */
