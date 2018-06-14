@@ -439,7 +439,7 @@ static int audiostat(struct file *, struct stat *);
 
 static int audio_open(dev_t, struct audio_softc *, int, int, struct lwp *,
 	struct file **);
-static int audio_close(struct audio_softc *, int, audio_file_t *);
+static int audio_close(struct audio_softc *, audio_file_t *);
 static int audio_read(struct audio_softc *, struct uio *, int, audio_file_t *);
 static int audio_write(struct audio_softc *, struct uio *, int, audio_file_t *);
 static void audio_file_clear(struct audio_softc *, audio_file_t *);
@@ -538,7 +538,7 @@ static void stream_filter_list_set(stream_filter_list_t *, int,
 
 static void mixer_init(struct audio_softc *);
 static int mixer_open(dev_t, struct audio_softc *, int, int, struct lwp *);
-static int mixer_close(struct audio_softc *, int, audio_file_t *);
+static int mixer_close(struct audio_softc *, audio_file_t *);
 static int mixer_ioctl(struct audio_softc *, u_long, void *, int, struct lwp *);
 static void mixer_remove(struct audio_softc *);
 static void mixer_signal(struct audio_softc *);
@@ -1515,13 +1515,13 @@ audioclose(struct file *fp)
 	switch (AUDIODEV(dev)) {
 	case SOUND_DEVICE:
 	case AUDIO_DEVICE:
-		error = audio_close(sc, fp->f_flag, file);
+		error = audio_close(sc, file);
 		break;
 	case AUDIOCTL_DEVICE:
 		error = 0;
 		break;
 	case MIXER_DEVICE:
-		error = mixer_close(sc, fp->f_flag, file);
+		error = mixer_close(sc, file);
 		break;
 	default:
 		error = ENXIO;
@@ -2023,7 +2023,7 @@ bad1:
 }
 
 int
-audio_close(struct audio_softc *sc, int flags, audio_file_t *file)
+audio_close(struct audio_softc *sc, audio_file_t *file)
 {
 	audio_track_t *oldtrack;
 	int error;
@@ -8021,7 +8021,7 @@ mixer_signal(struct audio_softc *sc)
  */
 /* ARGSUSED */
 int
-mixer_close(struct audio_softc *sc, int flags, audio_file_t *file)
+mixer_close(struct audio_softc *sc, audio_file_t *file)
 {
 
 	KASSERT(mutex_owned(sc->sc_lock));
