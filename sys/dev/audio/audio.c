@@ -1423,6 +1423,11 @@ audio_waitio(struct audio_softc *sc, audio_track_t *track)
 // XXX audiobell はここなのか?
 
 /* Exported interfaces for audiobell. */
+// audiobell 用にトラック(ファイル)をオープンします。
+// arg のうち sample_rate, encoding, precision, channels は入力パラメータです。
+// arg->file には確保した file を格納します。
+// arg->blocksize にはブロックサイズを格納します。
+// 成功すれば 0、失敗すれば errno を返します。
 int
 audiobellopen(dev_t dev, struct audiobell_arg *arg)
 {
@@ -1439,6 +1444,7 @@ audiobellopen(dev_t dev, struct audiobell_arg *arg)
 	return error;
 }
 
+// audiobellopen でオープンした file をクローズします。
 int
 audiobellclose(audio_file_t *file)
 {
@@ -1457,6 +1463,7 @@ audiobellclose(audio_file_t *file)
 	return error;
 }
 
+// audiobell を再生します。
 int
 audiobellwrite(audio_file_t *file, struct uio *uio)
 {
