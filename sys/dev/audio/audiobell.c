@@ -1,6 +1,5 @@
 /*	$NetBSD: audiobell.c,v 1.25 2017/07/01 05:32:24 nat Exp $	*/
 
-
 /*
  * Copyright (c) 1999 Richard Earnshaw
  * Copyright (c) 2004 Ben Harris
@@ -40,7 +39,6 @@ __KERNEL_RCSID(0, "$NetBSD: audiobell.c,v 1.25 2017/07/01 05:32:24 nat Exp $");
 #include <sys/malloc.h>
 #include <sys/systm.h>
 #include <sys/uio.h>
-#include <sys/unistd.h>
 
 #include <dev/audio_if.h>
 #include <dev/audiovar.h>
