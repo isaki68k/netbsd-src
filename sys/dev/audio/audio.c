@@ -1803,10 +1803,12 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 		return ENXIO;
 
 #if AUDIO_DEBUG > 2
-	TRACE("start flags=0x%x po=%d ro=%d",
+	TRACE("@%d start flags=0x%x po=%d ro=%d",
+	    device_unit(sc->dev),
 	    flags, sc->sc_popens, sc->sc_ropens);
 #else
-	DPRINTF(1, "%s flags=0x%x po=%d ro=%d\n", __func__,
+	DPRINTF(1, "%s@%d flags=0x%x po=%d ro=%d\n", __func__,
+	    device_unit(sc->dev),
 	    flags, sc->sc_popens, sc->sc_ropens);
 #endif
 
@@ -2051,11 +2053,12 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
 	int error;
 
 #if AUDIO_DEBUG > 2
-	TRACEF(file, "start pid=%d.%d po=%d ro=%d",
+	TRACEF(file, "@%d start pid=%d.%d po=%d ro=%d",
+	    device_unit(sc->dev),
 	    (int)curproc->p_pid, (int)curlwp->l_lid,
 	    sc->sc_popens, sc->sc_ropens);
 #else
-	DPRINTF(1, "%s\n", __func__);
+	DPRINTF(1, "%s@%d\n", __func__, device_unit(sc->dev));
 #endif
 	KASSERT(mutex_owned(sc->sc_lock));
 	KASSERTMSG(sc->sc_popens + sc->sc_ropens > 0,
@@ -2509,7 +2512,8 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 	const char *ioctlname = "";
 	if (21 <= nameidx && nameidx <= 21 + __arraycount(ioctlnames))
 		ioctlname = ioctlnames[nameidx - 21];
-	DPRINTF(2, "audio_ioctl(%lu,'%c',%lu)%s pid=%d.%d\n",
+	DPRINTF(2, "audio_ioctl@%d(%lu,'%c',%lu)%s pid=%d.%d\n",
+	    device_unit(sc->dev),
 		 IOCPARM_LEN(cmd), (char)IOCGROUP(cmd), cmd&0xff, ioctlname,
 	    (int)curproc->p_pid, (int)l->l_lid);
 #endif
@@ -2754,7 +2758,8 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		}
 		break;
 	}
-	DPRINTF(2, "audio_ioctl(%lu,'%c',%lu)%s result %d\n",
+	DPRINTF(2, "audio_ioctl@%d(%lu,'%c',%lu)%s result %d\n",
+	    device_unit(sc->dev),
 		 IOCPARM_LEN(cmd), (char)IOCGROUP(cmd), cmd&0xff, ioctlname,
 		 error);
 	return error;
@@ -2800,10 +2805,12 @@ audio_poll(struct audio_softc *sc, int events, struct lwp *l,
 	    "b\3ERR\0" "b\2OUT\0" "b\1PRI\0" "b\0IN\0"
 	char evbuf[64];
 	snprintb(evbuf, sizeof(evbuf), POLLEV_BITMAP, events);
-	TRACEF(file, "pid=%d.%d events=%s",
+	TRACEF(file, "@%d pid=%d.%d events=%s",
+	    device_unit(sc->dev),
 	    (int)curproc->p_pid, (int)l->l_lid, evbuf);
 #else
-	DPRINTF(2, "%s: events=0x%x mode=%d\n", __func__, events, file->mode);
+	DPRINTF(2, "%s@%d: events=0x%x mode=%d\n", __func__,
+	    device_unit(sc->dev), events, file->mode);
 #endif
 
 	revents = 0;
@@ -2843,7 +2850,8 @@ audio_poll(struct audio_softc *sc, int events, struct lwp *l,
 	snprintb(evbuf, sizeof(evbuf), POLLEV_BITMAP, revents);
 	TRACEF(file, "revents=%s", evbuf);
 #else
-	DPRINTF(2, "%s: revents=0x%x\n", __func__, revents);
+	DPRINTF(2, "%s@%d: revents=0x%x\n", __func__,
+	    device_unit(sc->dev), revents);
 #endif
 	return revents;
 }
@@ -2973,8 +2981,8 @@ audio_mmap(struct audio_softc *sc, off_t *offp, size_t len, int prot,
 	if (sc->hw_if == NULL)
 		return ENXIO;
 
-	DPRINTF(2, "%s: off=%lld, prot=%d\n",
-	    __func__, (long long)(*offp), prot);
+	DPRINTF(2, "%s%d: off=%lld, prot=%d\n", __func__,
+	    device_unit(sc->dev), (long long)(*offp), prot);
 
 	if (*offp < 0)
 		return EINVAL;
@@ -3062,7 +3070,7 @@ audioctl_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 #if AUDIO_DEBUG > 2
 	TRACE("");
 #else
-	DPRINTF(1, "%s\n", __func__);
+	DPRINTF(1, "%s%d\n", __func__, device_unit(sc->dev));
 #endif
 
 	error = fd_allocfile(&fp, &fd);
