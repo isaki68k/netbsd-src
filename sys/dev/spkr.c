@@ -166,24 +166,31 @@ playinit(struct spkr_softc *sc)
 static void
 playtone(struct spkr_softc *sc, int pitch, int val, int sustain)
 {
-	int sound, silence, snum = 1, sdenom = 1;
+	int whole;
+	int total;
+	int sound;
+	int silence;
 
 	/* this weirdness avoids floating-point arithmetic */
+	whole = sc->sc_whole;
 	for (; sustain; sustain--) {
-		snum *= NUM_MULT;
-		sdenom *= DENOM_MULT;
+		whole *= NUM_MULT;
+		val *= DENOM_MULT;
 	}
 
+	// (元の)音の全長 [tick]
+	total = whole / val;
+
 	if (pitch == -1) {
-		(*sc->sc_rest)(sc->sc_dev, sc->sc_whole
-		    * snum / (val * sdenom));
+		(*sc->sc_rest)(sc->sc_dev, total);
 		return;
 	}
 
-	int fac = sc->sc_whole * (FILLTIME - sc->sc_fill);
-	int fval = FILLTIME * val;
-	sound = (sc->sc_whole * snum) / (val * sdenom) -  fac / fval;
-	silence = fac * snum / (fval * sdenom);
+	// そのうち 1/8(NORMAL) or 3/8(STACCATO) が休止時間 [tick]
+	// こっちを切り捨てで計算しておきたい
+	silence = total * (FILLTIME - sc->sc_fill) / FILLTIME;
+	// 発音時間を休止時間分減らす
+	sound = total - silence;
 
 #ifdef SPKRDEBUG
 	aprint_debug_dev(sc->sc_dev,
@@ -192,7 +199,7 @@ playtone(struct spkr_softc *sc, int pitch, int val, int sustain)
 #endif /* SPKRDEBUG */
 
 	(*sc->sc_tone)(sc->sc_dev, pitchtab[pitch], sound);
-	if (sc->sc_fill != LEGATO)
+	if (silence != 0)
 		(*sc->sc_rest)(sc->sc_dev, silence);
 }
 
