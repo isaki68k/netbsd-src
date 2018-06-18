@@ -123,7 +123,7 @@ static void playstring(struct spkr_softc *, const char *, size_t);
 #define NUM_MULT	3	/* numerator of dot multiplier */
 #define DENOM_MULT	2	/* denominator of dot multiplier */
 
-/* letter to half-tone:  A   B  C  D  E  F  G */
+/* letter to half-tone:        A   B  C  D  E  F  G */
 static const int notetab[8] = {9, 11, 0, 2, 4, 5, 7};
 
 /*
@@ -255,7 +255,7 @@ playstring(struct spkr_softc *sc, const char *cp, size_t slen)
 #endif /* SPKRDEBUG */
 
 		switch (c) {
-		case 'A':  case 'B': case 'C': case 'D':
+		case 'A': case 'B': case 'C': case 'D':
 		case 'E': case 'F': case 'G':
 			/* compute pitch */
 			pitch = notetab[c - 'A'] + sc->sc_octave * OCTAVE_NOTES;
