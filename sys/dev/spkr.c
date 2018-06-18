@@ -103,8 +103,6 @@ static void playstring(struct spkr_softc *, const char *, size_t);
  * except possibly at physical block boundaries.
  */
 
-#define dtoi(c)		((c) - '0')
-
 /*
  * Magic number avoidance...
  */
