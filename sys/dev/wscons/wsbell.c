@@ -214,7 +214,7 @@ wsbell_match(device_t parent, cfdata_t match, void *aux)
 void
 wsbell_attach(device_t parent, device_t self, void *aux)
 {
-        struct wsbell_softc *sc = device_private(self);
+	struct wsbell_softc *sc = device_private(self);
 	struct wsbelldev_attach_args *ap = aux;
 #if defined(AUDIO2)
 	const struct sysctlnode *node;
@@ -448,7 +448,7 @@ bell_thread(void *arg)
 	for (;;) {
 		mutex_enter(&sc->sc_bellock);
 		cv_wait_sig(&sc->sc_bellcv, &sc->sc_bellock);
-		
+
 		if (sc->sc_dying == true) {
 			mutex_exit(&sc->sc_bellock);
 			kthread_exit(0);
