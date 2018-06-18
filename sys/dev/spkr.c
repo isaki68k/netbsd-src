@@ -190,15 +190,15 @@ rest(struct spkr_softc *sc, int ticks)
 
 /* play tone of proper duration for current rhythm signature */
 // 指定の音を出力する。
-// pitch は音高。O0 の C を 0、C# を 1、... とする番号のこと
-// (正確には pitch(周波数) ではなく note とか言ったほうがいい)。
+// pitch/note は音高。O0 の C を 0、C# を 1、... とする番号のこと
+// (正確には pitch(周波数) ではなく note とか言ったほうがいいので変えた)。
 // -1 で休符。
 // val は音長。L で指定するあれ。
 // sustain は音を1/2伸ばす後続ドットの数。
-static void
-playtone(struct spkr_softc *sc, int pitch, int val, int sustain)
-{
 #if defined(AUDIO2)
+static void
+playtone(struct spkr_softc *sc, int note, int val, int sustain)
+{
 	int whole;
 	int total;
 	int sound;
@@ -214,7 +214,7 @@ playtone(struct spkr_softc *sc, int pitch, int val, int sustain)
 	// (元の)音の全長 [tick]
 	total = whole / val;
 
-	if (pitch == -1) {
+	if (note == -1) {
 		rest(sc, total);
 		return;
 	}
@@ -227,14 +227,18 @@ playtone(struct spkr_softc *sc, int pitch, int val, int sustain)
 
 #ifdef SPKRDEBUG
 	aprint_debug_dev(sc->sc_dev,
-	    "%s: pitch %d for %d ticks, rest for %d ticks\n", __func__,
-	    pitch, sound, silence);
+	    "%s: note %d for %d ticks, rest for %d ticks\n", __func__,
+	    note, sound, silence);
 #endif /* SPKRDEBUG */
 
-	(*sc->sc_tone)(sc->sc_dev, pitchtab[pitch], sound);
+	(*sc->sc_tone)(sc->sc_dev, pitchtab[note], sound);
 	if (silence != 0)
 		rest(sc, silence);
+}
 #else
+static void
+playtone(struct spkr_softc *sc, int pitch, int val, int sustain)
+{
 	int sound, silence, snum = 1, sdenom = 1;
 
 	/* this weirdness avoids floating-point arithmetic */
@@ -263,8 +267,8 @@ playtone(struct spkr_softc *sc, int pitch, int val, int sustain)
 	(*sc->sc_tone)(sc->sc_dev, pitchtab[pitch], sound);
 	if (sc->sc_fill != LEGATO)
 		(*sc->sc_rest)(sc->sc_dev, silence);
-#endif /* !AUDIO2 */
 }
+#endif /* !AUDIO2 */
 
 /* interpret and play an item from a notation string */
 static void
