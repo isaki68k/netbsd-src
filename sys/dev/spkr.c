@@ -157,6 +157,12 @@ playinit(struct spkr_softc *sc)
 }
 
 /* play tone of proper duration for current rhythm signature */
+// 指定の音を出力する。
+// pitch は音高。O0 の C を 0、C# を 1、... とする番号のこと
+// (正確には pitch(周波数) ではなく note とか言ったほうがいい)。
+// -1 で休符。
+// val は音長。L で指定するあれ。
+// sustain は音を1/2伸ばす後続ドットの数。
 static void
 playtone(struct spkr_softc *sc, int pitch, int val, int sustain)
 {
@@ -488,6 +494,8 @@ spkrclose(dev_t dev, int flags, int mode, struct lwp *l)
 	return 0;
 }
 
+// tp で指定された音を出力する。
+// tp->frequency が周波数 (0で休符)、tp->duration が長さ (単位は tick)。
 static void
 playonetone(struct spkr_softc *sc, tone_t *tp)
 {
