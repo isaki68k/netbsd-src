@@ -46,6 +46,10 @@ struct wsbell_softc {
 
 	int		sc_refcnt;
 	bool		sc_dying;	/* device is being detached */
+#if defined(AUDIO2)
+	struct sysctllog *sc_log;
+	int		sc_mute;
+#endif
 
 	lwp_t		*sc_bellthread;
 	kmutex_t	sc_bellock;
