@@ -75,6 +75,7 @@ spkr_audio_tone(device_t self, u_int xhz, u_int ticks)
 	    sc->sc_spkr.sc_vol, 0);
 }
 
+#if !defined(AUDIO2)
 static void
 spkr_audio_rest(device_t self, int ticks)
 {
@@ -87,6 +88,7 @@ spkr_audio_rest(device_t self, int ticks)
 		audiobell(sc->sc_audiodev, 0, ticks * (1000 / hz),
 		    sc->sc_spkr.sc_vol, 0);
 }
+#endif
 
 static int
 spkr_audio_probe(device_t parent, cfdata_t cf, void *aux)
@@ -109,7 +111,11 @@ spkr_audio_attach(device_t parent, device_t self, void *aux)
 	if (!pmf_device_register(self, NULL, NULL))
 		aprint_error_dev(self, "couldn't establish power handler\n"); 
 
+#if defined(AUDIO2)
+	spkr_attach(self, spkr_audio_tone);
+#else
 	spkr_attach(self, spkr_audio_tone, spkr_audio_rest);
+#endif
 }
 
 static int

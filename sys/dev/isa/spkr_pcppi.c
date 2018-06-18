@@ -92,6 +92,7 @@ spkr_pcppi_tone(device_t self, u_int xhz, u_int ticks)
 	(*sc->sc_bell_func)(sc->sc_pcppicookie, xhz, ticks, PCPPI_BELL_SLEEP);
 }
 
+#if !defined(AUDIO2)
 /* rest for given number of ticks */
 static void
 spkr_pcppi_rest(device_t self, int ticks)
@@ -107,6 +108,7 @@ spkr_pcppi_rest(device_t self, int ticks)
 	if (ticks > 0)
 		tsleep(self, SPKRPRI | PCATCH, device_xname(self), ticks);
 }
+#endif
 
 static int
 spkr_pcppi_probe(device_t parent, cfdata_t cf, void *aux)
@@ -125,7 +127,11 @@ spkr_pcppi_attach(device_t parent, device_t self, void *aux)
 
 	sc->sc_pcppicookie = pa->pa_cookie;
 	sc->sc_bell_func = pa->pa_bell_func;
+#if defined(AUDIO2)
+	spkr_attach(self, spkr_pcppi_tone);
+#else
 	spkr_attach(self, spkr_pcppi_tone, spkr_pcppi_rest);
+#endif
 	if (!pmf_device_register(self, NULL, NULL))
 		aprint_error_dev(self, "couldn't establish power handler\n");
 }

@@ -74,10 +74,9 @@ __KERNEL_RCSID(0, "$NetBSD: spkr.c,v 1.15 2017/10/28 03:47:24 riastradh Exp $");
 // spkr(9) 仕様。
 //
 // void
-// spkr_attach(device_t self, void (*tone)(device_t, u_int, u_int),
-//   void (*rest)(device_t, int))
-//	spkr をアタッチします。tone と rest を必ず指定します。
-//	tone、rest の仕様は次の通りです。
+// spkr_attach(device_t self, void (*tone)(device_t, u_int, u_int))
+//	spkr をアタッチします。tone を必ず指定します。
+//	tone の仕様は次の通りです。
 //
 // void
 // tone(device_t self, u_int pitch, u_int tick)
@@ -86,16 +85,7 @@ __KERNEL_RCSID(0, "$NetBSD: spkr.c,v 1.15 2017/10/28 03:47:24 riastradh Exp $");
 //	時間が経過するまで待ち、出力を停止して戻ります。
 //	pitch == 0 なら出力を停止して (tick に関わらず) すぐに戻ります。
 //	tick == 0 の場合も出力を停止してすぐに戻ります。
-//
-//	メモ:
-//	/dev/speaker をクローズする際は tone(self, 0, 0) がコールされます。
-//	たぶん停止を意図している。
-//
-// void
-// rest(device_t self, u_int tick)
-//	tick で指定された時間 [tick] 待ちます。
-//	tick == 0 ならすぐに戻ります。
-//	特に発音状態については操作しません。
+//	従って休符代わりに呼び出すことはできません。
 //
 
 dev_type_open(spkropen);
@@ -181,6 +171,23 @@ playinit(struct spkr_softc *sc)
 	sc->sc_octprefix = true;/* act as though there was an initial O(n) */
 }
 
+#if defined(AUDIO2)
+// XXX spkr_pcppi.c から持ってきたけど、PZERO は後方互換性用。
+#define SPKRPRI (PZERO - 1)
+static void
+rest(struct spkr_softc *sc, int ticks)
+{
+
+#ifdef SPKRDEBUG
+	aprint_debug_dev(sc->sc_dev, "%s: %d\n", __func__, ticks);
+#endif /* SPKRDEBUG */
+	if (ticks > 0) {
+		tsleep(sc->sc_dev, SPKRPRI | PCATCH, device_xname(sc->sc_dev),
+		    ticks);
+	}
+}
+#endif
+
 /* play tone of proper duration for current rhythm signature */
 // 指定の音を出力する。
 // pitch は音高。O0 の C を 0、C# を 1、... とする番号のこと
@@ -208,7 +215,7 @@ playtone(struct spkr_softc *sc, int pitch, int val, int sustain)
 	total = whole / val;
 
 	if (pitch == -1) {
-		(*sc->sc_rest)(sc->sc_dev, total);
+		rest(sc, total);
 		return;
 	}
 
@@ -226,7 +233,7 @@ playtone(struct spkr_softc *sc, int pitch, int val, int sustain)
 
 	(*sc->sc_tone)(sc->sc_dev, pitchtab[pitch], sound);
 	if (silence != 0)
-		(*sc->sc_rest)(sc->sc_dev, silence);
+		rest(sc, silence);
 #else
 	int sound, silence, snum = 1, sdenom = 1;
 
@@ -430,8 +437,12 @@ playstring(struct spkr_softc *sc, const char *cp, size_t slen)
 #define spkrenter(d)	device_lookup_private(&spkr_cd, d)
 
 void
+#if defined(AUDIO2)
+spkr_attach(device_t self, void (*tone)(device_t, u_int, u_int))
+#else
 spkr_attach(device_t self, void (*tone)(device_t, u_int, u_int),
     void (*rest)(device_t, int))
+#endif
 {
 	struct spkr_softc *sc = device_private(self);
 
@@ -440,7 +451,9 @@ spkr_attach(device_t self, void (*tone)(device_t, u_int, u_int),
 #endif /* SPKRDEBUG */
 	sc->sc_dev = self;
 	sc->sc_tone = tone;
+#if !defined(AUDIO2)
 	sc->sc_rest = rest;
+#endif
 	sc->sc_inbuf = NULL;
 	sc->sc_wsbelldev = NULL;
 
@@ -563,7 +576,11 @@ static void
 playonetone(struct spkr_softc *sc, tone_t *tp)
 {
 	if (tp->frequency == 0)
+#if defined(AUDIO2)
+		rest(sc, tp->duration);
+#else
 		(*sc->sc_rest)(sc->sc_dev, tp->duration);
+#endif
 	else
 		(*sc->sc_tone)(sc->sc_dev, tp->frequency, tp->duration);
 }
