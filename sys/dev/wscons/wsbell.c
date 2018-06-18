@@ -462,7 +462,11 @@ bell_thread(void *arg)
 #endif
 
 		tone.frequency = vb->pitch;
+#if defined(AUDIO2)
+		tone.duration = mstohz(vb->period);
+#else
 		tone.duration = vb->period;
+#endif
 		vol = vb->volume;
 		mutex_exit(&sc->sc_bellock);
 
@@ -480,7 +484,11 @@ spkr_audio_play(struct wsbell_softc *sc, u_int pitch, u_int period, u_int volume
 
 	mutex_enter(&sc->sc_bellock);
 	sc->sc_bell_args.pitch = pitch;
+#if defined(AUDIO2)
+	sc->sc_bell_args.period = period;
+#else
 	sc->sc_bell_args.period = period / 5;
+#endif
 	sc->sc_bell_args.volume = volume;
 
 	cv_broadcast(&sc->sc_bellcv);
