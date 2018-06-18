@@ -166,6 +166,7 @@ playinit(struct spkr_softc *sc)
 static void
 playtone(struct spkr_softc *sc, int pitch, int val, int sustain)
 {
+#if defined(AUDIO2)
 	int whole;
 	int total;
 	int sound;
@@ -201,6 +202,36 @@ playtone(struct spkr_softc *sc, int pitch, int val, int sustain)
 	(*sc->sc_tone)(sc->sc_dev, pitchtab[pitch], sound);
 	if (silence != 0)
 		(*sc->sc_rest)(sc->sc_dev, silence);
+#else
+	int sound, silence, snum = 1, sdenom = 1;
+
+	/* this weirdness avoids floating-point arithmetic */
+	for (; sustain; sustain--) {
+		snum *= NUM_MULT;
+		sdenom *= DENOM_MULT;
+	}
+
+	if (pitch == -1) {
+		(*sc->sc_rest)(sc->sc_dev, sc->sc_whole
+		    * snum / (val * sdenom));
+		return;
+	}
+
+	int fac = sc->sc_whole * (FILLTIME - sc->sc_fill);
+	int fval = FILLTIME * val;
+	sound = (sc->sc_whole * snum) / (val * sdenom) -  fac / fval;
+	silence = fac * snum / (fval * sdenom);
+
+#ifdef SPKRDEBUG
+	aprint_debug_dev(sc->sc_dev,
+	    "%s: pitch %d for %d ticks, rest for %d ticks\n", __func__,
+	    pitch, sound, silence);
+#endif /* SPKRDEBUG */
+
+	(*sc->sc_tone)(sc->sc_dev, pitchtab[pitch], sound);
+	if (sc->sc_fill != LEGATO)
+		(*sc->sc_rest)(sc->sc_dev, silence);
+#endif /* !AUDIO2 */
 }
 
 /* interpret and play an item from a notation string */
