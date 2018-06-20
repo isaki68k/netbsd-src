@@ -627,11 +627,13 @@ pad_swvol_codec(audio_filter_arg_t *arg)
 	struct pad_softc *sc = arg->context;
 	const aint_t *src;
 	aint_t *dst;
-	int i;
+	u_int sample_count;
+	u_int i;
 
 	src = arg->src;
 	dst = arg->dst;
-	for (i = 0; i < arg->count; i++) {
+	sample_count = arg->count * arg->srcfmt->channels;
+	for (i = 0; i < sample_count; i++) {
 		aint2_t v = (aint2_t)(*src++);
 		v = v * sc->sc_swvol / 255;
 		*dst++ = (aint_t)v;
