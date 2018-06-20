@@ -49,10 +49,10 @@ __KERNEL_RCSID(0, "$NetBSD: pad.c,v 1.38 2017/07/01 05:50:10 nat Exp $");
 #include <dev/audiovar.h>
 #include <dev/auconv.h>
 
-// PAD_SUPPORT_SWVOL .. pad(4) 出力段での software volume サポート。
+// PAD_NO_SWVOL .. pad(4) 出力段での software volume サポート廃止。
 // 本来原波形を取り出したいという意図のデバイスだと思うので、
 // ここでボリュームを変更できる必要はないと思うんだ。
-//#define PAD_SUPPORT_SWVOL
+#define PAD_NO_SWVOL 1
 
 #include <dev/pad/padvar.h>
 
@@ -108,7 +108,7 @@ static int	pad_get_props(void *);
 static void	pad_get_locks(void *, kmutex_t **, kmutex_t **);
 
 static void	pad_done_output(void *);
-#if defined(PAD_SUPPORT_SWVOL)
+#if !defined(PAD_NO_SWVOL)
 static void	pad_swvol_codec(audio_filter_arg_t *);
 #endif
 
@@ -279,7 +279,7 @@ pad_attach(device_t parent, device_t self, void *opaque)
 	mutex_init(&sc->sc_intr_lock, MUTEX_DEFAULT, IPL_NONE);
 	callout_init(&sc->sc_pcallout, 0/*XXX?*/);
 
-#if defined(PAD_SUPPORT_SWVOL)
+#if !defined(PAD_NO_SWVOL)
 	sc->sc_swvol = 255;
 #endif
 	sc->sc_buflen = 0;
@@ -414,7 +414,7 @@ pad_init_format(void *opaque, int setmode,
 	// SWVOL サポートしない時はこの関数は何もしないが、今の所、
 	// init_format があれば init_format を、なければ set_format を呼ぶ
 	// という構造になっているため、init_format を廃止することはできない。
-#if defined(PAD_SUPPORT_SWVOL)
+#if !defined(PAD_NO_SWVOL)
 	pad_softc_t *sc __diagused;
 
 	sc = (pad_softc_t *)opaque;
@@ -424,7 +424,7 @@ pad_init_format(void *opaque, int setmode,
 	// 元々再生側しかなかった
 	pfil->codec = pad_swvol_codec;
 	pfil->context = sc;
-#endif
+#endif /* !PAD_NO_SWVOL */
 
 	return 0;
 }
@@ -530,7 +530,7 @@ pad_getdev(void *opaque, struct audio_device *ret)
 static int
 pad_set_port(void *opaque, mixer_ctrl_t *mc)
 {
-#if defined(PAD_SUPPORT_SWVOL)
+#if !defined(PAD_NO_SWVOL)
 	pad_softc_t *sc;
 
 	sc = (pad_softc_t *)opaque;
@@ -543,7 +543,7 @@ pad_set_port(void *opaque, mixer_ctrl_t *mc)
 		sc->sc_swvol = mc->un.value.level[AUDIO_MIXER_LEVEL_MONO];
 		return 0;
 	}
-#endif /* PAD_SUPPORT_SWVOL */
+#endif /* !PAD_NO_SWVOL */
 
 	return ENXIO;
 }
@@ -551,7 +551,7 @@ pad_set_port(void *opaque, mixer_ctrl_t *mc)
 static int
 pad_get_port(void *opaque, mixer_ctrl_t *mc)
 {
-#if defined(PAD_SUPPORT_SWVOL)
+#if !defined(PAD_NO_SWVOL)
 	pad_softc_t *sc;
 
 	sc = (pad_softc_t *)opaque;
@@ -564,7 +564,7 @@ pad_get_port(void *opaque, mixer_ctrl_t *mc)
 		mc->un.value.level[AUDIO_MIXER_LEVEL_MONO] = sc->sc_swvol;
 		return 0;
 	}
-#endif /* PAD_SUPPORT_SWVOL */
+#endif /* !PAD_NO_SWVOL */
 
 	return ENXIO;
 }
@@ -639,7 +639,7 @@ pad_get_locks(void *opaque, kmutex_t **intr, kmutex_t **thread)
 	*thread = &sc->sc_lock;
 }
 
-#if defined(PAD_SUPPORT_SWVOL)
+#if !defined(PAD_NO_SWVOL)
 static void
 pad_swvol_codec(audio_filter_arg_t *arg)
 {
@@ -658,7 +658,7 @@ pad_swvol_codec(audio_filter_arg_t *arg)
 		*dst++ = (aint_t)v;
 	}
 }
-#endif /* PAD_SUPPORT_SWVOL */
+#endif /* !PAD_NO_SWVOL */
 
 #ifdef _MODULE
 

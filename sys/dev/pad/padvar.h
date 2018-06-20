@@ -57,7 +57,7 @@ typedef struct pad_softc {
 	uint32_t	sc_buflen;
 	uint32_t	sc_rpos, sc_wpos;
 
-#if defined(PAD_SUPPORT_SWVOL)
+#if !defined(PAD_NO_SWVOL)
 	uint8_t		sc_swvol;
 #endif
 #if !defined(AUDIO2)
