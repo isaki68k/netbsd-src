@@ -67,7 +67,6 @@ __KERNEL_RCSID(0, "$NetBSD: pad.c,v 1.38 2017/07/01 05:50:10 nat Exp $");
 #define PADFREQ		44100
 #define PADCHAN		2
 #define PADPREC		16
-#define PADENC		AUDIO_ENCODING_SLINEAR_LE
 
 extern struct cfdriver pad_cd;
 
@@ -135,7 +134,7 @@ static const struct audio_hw_if pad_hw_if = {
 #define PADMODE	AUMODE_PLAY
 #endif
 static const struct audio_format pad_formats[PAD_NFORMATS] = {
-	{ NULL, PADMODE, PADENC, PADPREC, PADPREC,
+	{ NULL, PADMODE, AUDIO_ENCODING_SLINEAR_NE, PADPREC, PADPREC,
 	  PADCHAN, AUFMT_STEREO, 1, { PADFREQ } },
 };
 
