@@ -1858,6 +1858,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 		ai.play.channels      = bell->channels;
 		ai.play.precision     = bell->precision;
 		ai.play.pause         = false;
+		af->mode &= ~AUMODE_PLAY_ALL;
 	} else if (ISDEVAUDIO(dev)) {
 		// /dev/audio は毎回初期化
 		ai.play.sample_rate   = audio_default.sample_rate;
