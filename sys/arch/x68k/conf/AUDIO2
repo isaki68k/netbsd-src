@@ -512,6 +512,9 @@ pseudo-device	ksyms			# /dev/ksyms
 #pseudo-device	pflog			# PF log if
 #pseudo-device	fss			# file system snapshot device
 
+# pseudo audio device driver
+pseudo-device	pad
+
 # userland interface to drivers, including autoconf and properties retrieval
 pseudo-device	drvctl
 
