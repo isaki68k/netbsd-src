@@ -207,7 +207,7 @@ pad_add_block(pad_softc_t *sc, uint8_t *blk, int blksize)
 	}
 
 	sc->sc_wpos += blksize;
-	if (sc->sc_wpos > PAD_BUFSIZE)
+	if (sc->sc_wpos >= PAD_BUFSIZE)
 		sc->sc_wpos -= PAD_BUFSIZE;
 
 	sc->sc_buflen += blksize;
