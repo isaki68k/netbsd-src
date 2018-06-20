@@ -33,7 +33,9 @@ typedef struct pad_softc {
 	device_t	sc_dev;
 
 	u_int		sc_open;
+#if !defined(AUDIO2)
 	struct audio_encoding_set *sc_encodings;
+#endif
 	void		(*sc_intr)(void *);
 	void		*sc_intrarg;
 

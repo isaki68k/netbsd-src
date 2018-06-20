@@ -47,7 +47,6 @@ __KERNEL_RCSID(0, "$NetBSD: pad.c,v 1.38 2017/07/01 05:50:10 nat Exp $");
 
 #include <dev/audio_if.h>
 #include <dev/audiovar.h>
-#include <dev/auconv.h>
 
 // PAD_NO_SWVOL .. pad(4) 出力段での software volume サポート廃止。
 // 本来原波形を取り出したいという意図のデバイスだと思うので、
@@ -267,11 +266,6 @@ pad_attach(device_t parent, device_t self, void *opaque)
 
 	sc->sc_dev = self;
 	sc->sc_open = 0;
-	if (auconv_create_encodings(pad_formats, PAD_NFORMATS,
-	    &sc->sc_encodings) != 0) {
-		aprint_error_dev(self, "couldn't create encodings\n");
-		return;
-	}
 
 	cv_init(&sc->sc_condvar, device_xname(self));
 	mutex_init(&sc->sc_cond_lock, MUTEX_DEFAULT, IPL_NONE);
@@ -315,8 +309,6 @@ pad_detach(device_t self, int flags)
 	mutex_destroy(&sc->sc_intr_lock);
 	cv_destroy(&sc->sc_condvar);
 	callout_destroy(&sc->sc_pcallout);
-
-	auconv_delete_encodings(sc->sc_encodings);
 
 	pad_is_attached = false;
 	return 0;
