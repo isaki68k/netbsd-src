@@ -6,10 +6,9 @@
 // x Restore mmap.
 // x Restore NetBSD8-like track volume control on mixerctl?
 // x Restore NetBSD8-like multiuser mode.
-// x Restore pad(4).
+// x Restore NetBSD8-like pad(4) behavior?
 // x Restore alow.
 // x Restore(?) suspend/resume.
-// x Rewrite spkr subsystem.
 // x Support software master volume? (mixerctl?)
 // x Support all MD drivers.
 // x Support tc/bba.c (mulaw with 32bit stride)
