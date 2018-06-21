@@ -203,8 +203,6 @@ static __inline bool
 audio_format2_is_internal(const audio_format2_t *fmt)
 {
 
-	DIAGNOSTIC_format2(fmt);
-
 	if (fmt->encoding != AUDIO_ENCODING_SLINEAR_NE)
 		return false;
 	if (fmt->precision != AUDIO_INTERNAL_BITS)
