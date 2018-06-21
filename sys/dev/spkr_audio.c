@@ -71,6 +71,10 @@ spkr_audio_tone(device_t self, u_int xhz, u_int ticks)
 #ifdef SPKRDEBUG
 	aprint_debug_dev(self, "%s: %u %d\n", __func__, xhz, ticks);
 #endif /* SPKRDEBUG */
+#if defined(AUDIO2)
+	// AUDIO2 では xhz(pitch)==0 の場合は音を出そうとしない仕様。
+	if (xhz > 0)
+#endif
 	audiobell(sc->sc_audiodev, xhz, ticks * (1000 / hz),
 	    sc->sc_spkr.sc_vol, 0);
 }
