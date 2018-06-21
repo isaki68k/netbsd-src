@@ -42,6 +42,23 @@
  *      use hz value from param.c
  */
 
+// spkr(9) 仕様。
+//
+// void
+// spkr_attach(device_t self, void (*tone)(device_t, u_int, u_int))
+//	spkr をアタッチします。tone を必ず指定します。
+//	tone の仕様は次の通りです。
+//
+// void
+// tone(device_t self, u_int pitch, u_int tick)
+//	指定のパラメータでビープ音を出力します。
+//	pitch は音高 [Hz]、tick は時間 [tick] です。
+//	時間が経過するまで待ち、出力を停止して戻ります。
+//	pitch == 0 なら出力を停止して (tick に関わらず) すぐに戻ります。
+//	tick == 0 の場合も出力を停止してすぐに戻ります。
+//	従って休符代わりに呼び出すことはできません。
+//
+
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD: spkr.c,v 1.15 2017/10/28 03:47:24 riastradh Exp $");
 
@@ -70,23 +87,6 @@ __KERNEL_RCSID(0, "$NetBSD: spkr.c,v 1.15 2017/10/28 03:47:24 riastradh Exp $");
 #include <dev/wscons/wsbellmuxvar.h>
 
 #include "ioconf.h"
-
-// spkr(9) 仕様。
-//
-// void
-// spkr_attach(device_t self, void (*tone)(device_t, u_int, u_int))
-//	spkr をアタッチします。tone を必ず指定します。
-//	tone の仕様は次の通りです。
-//
-// void
-// tone(device_t self, u_int pitch, u_int tick)
-//	指定のパラメータでビープ音を出力します。
-//	pitch は音高 [Hz]、tick は時間 [tick] です。
-//	時間が経過するまで待ち、出力を停止して戻ります。
-//	pitch == 0 なら出力を停止して (tick に関わらず) すぐに戻ります。
-//	tick == 0 の場合も出力を停止してすぐに戻ります。
-//	従って休符代わりに呼び出すことはできません。
-//
 
 dev_type_open(spkropen);
 dev_type_close(spkrclose);
