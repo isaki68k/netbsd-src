@@ -179,9 +179,9 @@ struct audio_hw_if {
 	int	(*dev_ioctl)(void *, u_long, void *, int, struct lwp *);
 	void	(*get_locks)(void *, kmutex_t **, kmutex_t **);
 
-	int (*get_format)(void *, audio_format_t *);
+	int (*query_format)(void *, audio_format_query_t *);
 	int	(*init_format)(void *, int,
-		    const audio_format_t *, const audio_format_t *,
+		    const audio_params_t *, const audio_params_t *,
 		    audio_filter_reg_t *, audio_filter_reg_t *);
 };
 struct audio_attach_args {
@@ -541,7 +541,12 @@ void	fnullop_restart(struct file *);
 
 /* <sys/device.h> */
 #define DVACT_DEACTIVATE	0
+#define config_attach_loc(a,b,c,d,e) do { } while(0)
+#define config_detach_children(a, b) 0
 #define config_found(a,b,c)	(device_t)NULL
+#define config_match(a,b,c) 0
+#define config_search_loc(a,b,c,d,e) do { } while(0)
+#define ifattr_match(a,b) true
 #define device_private(x) NULL
 extern struct audio_softc local_sc;	/* audio_dev.c */
 #define device_lookup_private(a,b) &local_sc
