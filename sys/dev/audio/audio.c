@@ -7235,9 +7235,10 @@ audio_track_setinfo_water(audio_track_t *track, const struct audio_info *ai)
 		track->usrbuf_usedlow = blks * blksize;
 	}
 	if (SPECIFIED(ai->hiwat) || SPECIFIED(ai->lowat)) {
-		if (track->usrbuf_usedlow > track->usrbuf_usedhigh - blksize)
+		if (track->usrbuf_usedlow > track->usrbuf_usedhigh - blksize) {
 			track->usrbuf_usedlow = track->usrbuf_usedhigh -
 			    blksize;
+		}
 	}
 }
 
