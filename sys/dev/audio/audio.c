@@ -859,6 +859,7 @@ audioattach(device_t parent, device_t self, void *aux)
 	aprint_normal("\n");
 
 	// play と capture が両方立ってない状況はたぶん起きない
+	KASSERT((mode & (AUMODE_PLAY | AUMODE_RECORD)) != 0);
 
 	/* probe hw params */
 	memset(&phwfmt, 0, sizeof(phwfmt));
