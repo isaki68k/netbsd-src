@@ -33,13 +33,13 @@
 // audiodef.h: audio.c からのみ include されるヘッダ
 // ヘッダである意味はないような気もするけど、とりあえず
 
-// 出力バッファのブロック数
-/* Number of output buffer's blocks.  Must be != NBLKHW */
-#define NBLKOUT	(4)
-
 // ハードウェアバッファのブロック数
 /* Number of HW buffer's blocks. */
 #define NBLKHW (3)
+
+// 出力バッファのブロック数
+/* Number of output buffer's blocks.  Must be > NBLKHW */
+#define NBLKOUT	(4)
 
 // ユーザバッファの最小ブロック数
 /* Minimum number of usrbuf's blocks. */
