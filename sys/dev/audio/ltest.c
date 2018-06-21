@@ -12,8 +12,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "userland.h"		/* required by audioio.h */
-#include <sys/audioio.h>	/* required by audiovar.h */
+#include "userland.h"
 #include "audiovar.h"
 #include "audiodef.h"
 #include "aucodec.c"
