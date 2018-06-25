@@ -30,6 +30,8 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#define AUDIOBELL_RECTANGLE
+
 #include <sys/types.h>
 __KERNEL_RCSID(0, "$NetBSD: audiobell.c,v 1.25 2017/07/01 05:32:24 nat Exp $");
 
@@ -43,11 +45,122 @@ __KERNEL_RCSID(0, "$NetBSD: audiobell.c,v 1.25 2017/07/01 05:32:24 nat Exp $");
 #include <dev/audio_if.h>
 #include <dev/audiovar.h>
 #include <dev/audiobellvar.h>
+
+#include <dev/audio/audiodef.h>
+
+#if defined(AUDIOBELL_RECTANGLE)
 #include <dev/audiobelldata.h>
+#endif
 
 /* 44.1 kHz should reduce hum at higher pitches. */
 #define BELL_SAMPLE_RATE	44100
 #define BELL_SHIFT		3
+
+#if defined(AUDIOBELL_RECTANGLE)
+
+/* Rectanglar wave */
+void
+audiobell(void *v, u_int pitch, u_int period, u_int volume, int poll)
+{
+	dev_t audio;
+	int16_t *buf;
+	struct audiobell_arg bellarg;
+	audio_file_t *file;
+	struct uio auio;
+	struct iovec aiov;
+	int i;
+	int remaincount;
+	int remainlen;
+	int wave1count;
+	int wave1len;
+	int16_t vol;
+
+	KASSERT(volume <= 100);
+
+	/* pitch limit 20 to Nyquist freq. */
+	if (pitch > BELL_SAMPLE_RATE / 2)
+		pitch = BELL_SAMPLE_RATE;
+	if (pitch < 20)
+		pitch = 20;
+
+	buf = NULL;
+	audio = AUDIO_DEVICE | device_unit((device_t)v);
+
+	/* The audio system isn't built for polling. */
+	if (poll)
+		return;
+
+	memset(&bellarg, 0, sizeof(bellarg));
+	bellarg.sample_rate = BELL_SAMPLE_RATE;
+	bellarg.encoding = AUDIO_ENCODING_SLINEAR_NE;
+	bellarg.channels = 1;
+	bellarg.precision = 16;
+
+	/* If not configured, we can't beep. */
+	if (audiobellopen(audio, &bellarg) != 0)
+		return;
+
+	file = bellarg.file;
+
+	/* msec to sample count */
+	remaincount = period * BELL_SAMPLE_RATE / 1000;
+	remainlen = remaincount * sizeof(int16_t);
+
+	/* generate single wave */
+	wave1count = BELL_SAMPLE_RATE / pitch;
+	wave1len = wave1count * sizeof(int16_t);
+
+	buf = malloc(wave1len, M_TEMP, M_WAITOK);
+	if (buf == NULL)
+		goto out;
+
+	vol = 32767 * volume / 100;
+	for (i = 0; i < wave1count / 2; i++) {
+		buf[i] = vol;
+	}
+	vol = -vol;
+	for (; i < wave1count; i++) {
+		buf[i] = vol;
+	}
+
+#define USE_PAUSE
+#if defined(USE_PAUSE)
+	/* pause */
+	/* TODO: API */
+	file->ptrack->is_pause = true;
+#endif
+
+	/* write to audio */
+	for (; remainlen > 0; remainlen -= wave1len) {
+		int len;
+		len = min(remainlen, wave1len);
+		aiov.iov_base = (void *)buf;
+		aiov.iov_len = len;
+		auio.uio_iov = &aiov;
+		auio.uio_iovcnt = 1;
+		auio.uio_offset = 0;
+		auio.uio_resid = len;
+		auio.uio_rw = UIO_WRITE;
+		UIO_SETUP_SYSSPACE(&auio);
+		if (audiobellwrite(file, &auio) != 0)
+			goto out;
+
+#if defined(USE_PAUSE)
+		if (file->ptrack->usrbuf.used >= file->ptrack->usrbuf_blksize * NBLKHW) {
+			file->ptrack->is_pause = false;
+		}
+#endif
+	}
+#if defined(USE_PAUSE)
+	file->ptrack->is_pause = false;
+#endif
+out:
+	if (buf != NULL)
+		free(buf, M_TEMP);
+	audiobellclose(file);
+}
+
+#else
 
 static inline void
 audiobell_expandwave(int16_t *buf)
@@ -158,3 +271,4 @@ out:
 		free(buf, M_TEMP);
 	audiobellclose(file);
 }
+#endif
