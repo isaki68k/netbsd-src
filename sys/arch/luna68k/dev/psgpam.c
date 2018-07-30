@@ -80,11 +80,14 @@ struct psgpam_softc {
 	uint16_t sc_xp_addr;	// XP buffer addr
 
 	int      sc_xp_enc;
+	int      sc_xp_rept;
+	int      sc_xp_cycle_clk;
+	int      sc_xp_rept_clk;
+	int      sc_xp_rept_max;
+
 	u_int    sc_sample_rate;
 	int      sc_stride;
 	int      sc_dynamic;
-
-	int      sc_xp_rept;
 
 	struct psgpam_codecvar sc_psgpam_codecvar;
 };
@@ -163,24 +166,53 @@ static struct audio_format psgpam_format = {
 };
 
 /* private functions */
+
+static
+void
+psgpam_xp_query(struct psgpam_softc *sc)
+{
+	u_int a;
+
+	if (!sc->sc_isopen) {
+		a = xp_acquire(DEVID_PAM, 0);
+		if (a == 0) {
+			sc->sc_xp_cycle_clk = 65535;
+			sc->sc_xp_rept_clk = 255;
+			sc->sc_xp_rept_max = 0;
+			return;
+		}
+		xp_ensure_firmware();
+	}
+
+	xp_writemem8(PAM_ENC, sc->sc_xp_enc);
+	xp_cmd(DEVID_PAM, PAM_CMD_QUERY);
+
+	sc->sc_xp_cycle_clk = xp_readmem16le(PAM_CYCLE_CLK);
+	sc->sc_xp_rept_clk = xp_readmem8(PAM_REPT_CLK);
+	sc->sc_xp_rept_max = xp_readmem8(PAM_REPT_MAX);
+
+	if (!sc->sc_isopen) {
+		xp_release(DEVID_PAM);
+	}
+}
+
 static
 void
 psgpam_xp_start(struct psgpam_softc *sc)
 {
-	uint16_t cycle_clk;
-	uint8_t rept_clk;
-
 	DPRINTF(3, "XP PAM starting..");
 	if (xp_readmem8(PAM_RUN) != 0) {
 		DPRINTF(1, "XP PAM already started???");
 	}
 
-	xp_writemem8(PAM_ENC, sc->sc_xp_enc);
-	xp_cmd(DEVID_PAM, PAM_CMD_QUERY);
-	cycle_clk = xp_readmem16le(PAM_CYCLE_CLK);
-	rept_clk = xp_readmem8(PAM_REPT_CLK);
+	psgpam_xp_query(sc);
+
 	sc->sc_xp_rept = (XP_CPU_FREQ / sc->sc_sample_rate
-		- cycle_clk) / rept_clk;
+		- sc->sc_xp_cycle_clk) / sc->sc_xp_rept_clk;
+	if (sc->sc_xp_rept < 0)
+		sc->sc_xp_rept = 0;
+	if (sc->sc_xp_rept > sc->sc_xp_rept_max)
+		sc->sc_xp_rept = sc->sc_xp_rept_max;
 	xp_writemem8(PAM_REPT, sc->sc_xp_rept);
 	DPRINTF(3, "ENC=%d REPT=%d\n", sc->sc_xp_enc, sc->sc_xp_rept);
 
@@ -319,43 +351,26 @@ static int
 psgpam_query_format(void *hdl, audio_format_query_t *afp)
 {
 	struct psgpam_softc *sc;
-	u_int a;
 	u_int freq;
-	uint16_t cycle_clk;
-	uint8_t rept_clk;
 	uint8_t rept_max;
 	int clk;
 	int i;
 
 	sc = hdl;
 
-	if (!sc->sc_isopen) {
-		a = xp_acquire(DEVID_PAM, 0);
-		if (a == 0)
-			return EINVAL;
-		xp_ensure_firmware();
-	}
+	psgpam_xp_query(sc);
+	rept_max = sc->sc_xp_rept_max;
 
-	xp_writemem8(PAM_ENC, sc->sc_xp_enc);
-	xp_cmd(DEVID_PAM, PAM_CMD_QUERY);
-
-	cycle_clk = xp_readmem16le(PAM_CYCLE_CLK);
-	rept_clk = xp_readmem8(PAM_REPT_CLK);
-	rept_max = xp_readmem8(PAM_REPT_MAX);
 	if (rept_max >= AUFMT_MAX_FREQUENCIES) {
 		rept_max = AUFMT_MAX_FREQUENCIES - 1;
 	}
 
 	for (i = 0; i <= rept_max; i++) {
-		clk = cycle_clk + i * rept_clk;
+		clk = sc->sc_xp_cycle_clk + i * sc->sc_xp_rept_clk;
 		freq = XP_CPU_FREQ / clk;
 		psgpam_format.frequency[i] = freq;
 	}
 	psgpam_format.frequency_type = rept_max + 1;
-
-	if (!sc->sc_isopen) {
-		xp_release(DEVID_PAM);
-	}
 
 	return audio_query_format(&psgpam_format, 1, afp);
 }
