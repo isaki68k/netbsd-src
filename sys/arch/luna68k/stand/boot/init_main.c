@@ -314,7 +314,15 @@ main(void)
 
 	do {
 		memset(buffer, 0, BUFFSIZE);
+#if 0
 		if (getline(prompt, buffer) > 0) {
+#else
+		printf("%s", prompt);
+		kgets(buffer, BUFFSIZE);
+		if (buffer[BUFFSIZE - 2]) {
+			printf("\ninput too long\n");
+		} else if (buffer[0]) {
+#endif
 			argc = getargs(buffer, argv,
 			    sizeof(argv) / sizeof(char *));
 
