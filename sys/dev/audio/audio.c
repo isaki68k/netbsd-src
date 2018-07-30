@@ -6610,7 +6610,7 @@ audio_hw_validate_format(struct audio_softc *sc, int mode,
 
 	for (index = 0; ; index++) {
 		query.index = index;
-		error = sc->hw_if->query_format(sc, &query);
+		error = sc->hw_if->query_format(sc->hw_hdl, &query);
 		if (error == EINVAL)
 			break;
 		if (error)
