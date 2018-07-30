@@ -61,8 +61,8 @@ static int	audiodebug = AUDIO_DEBUG;
 #endif
 
 #define XP_ATN_RELOAD	0x80808080
-#define XP_ATN_STAT	0xc0c0c0c0
-#define XP_ATN_RESET	0xe0e0e0e0
+#define XP_ATN_STAT	0x40404040
+#define XP_ATN_RESET	0x20202020
 
 struct psgpam_softc {
 	device_t sc_dev;
