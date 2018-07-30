@@ -26,7 +26,7 @@ void
 psgpam_init_context(struct psgpam_codecvar *ctx,
  u_int sample_rate)
 {
-	ctx->offset = 0;
+	ctx->offset = 65535;
 	ctx->sample_rate = sample_rate;
 	ctx->expire_initial = sample_rate / 10;
 	ctx->expire = ctx->expire_initial;
