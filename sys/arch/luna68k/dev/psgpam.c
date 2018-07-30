@@ -217,7 +217,7 @@ psgpam_xp_start(struct psgpam_softc *sc)
 {
 	DPRINTF(3, "XP PAM starting..");
 	if (xp_readmem8(PAM_RUN) != 0) {
-		DPRINTF(1, "XP PAM already started???");
+		DPRINTF(1, "XP PAM already started???\n");
 	}
 
 	psgpam_xp_query(sc);
