@@ -21,17 +21,23 @@ function h2d(s,   i,c,n,rv)
 }
 
 # Global label
-$2 ~ /::/ {
+/::/ {
 	print "// " $0
-	sub(/::/, "", $2)
+	for (i = 1; i <= NF; i++) {
+		f = $(i)
+		if (f ~ /::/) {
+			break;
+		}
+	}
+	sub(/::/, "", f)
 	sub(/:/, "", $1)
-	printf("#define %s 0x%s\n", $2, $1);
+	printf("#define %s 0x%s\n", f, $1);
 
 	k = "GLOBAL_"
 	keys[""] = k
 	v = h2d($1)
 	while (values["", v] != "") v++;
-	values["", v] = $2
+	values["", v] = f
 	counts[""]++
 }
 
