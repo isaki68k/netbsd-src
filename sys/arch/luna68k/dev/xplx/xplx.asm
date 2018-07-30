@@ -797,7 +797,9 @@ XPBUS:
 
 				; wait for PRT0
 	EI
+XPBUS_LOOP:
 	HALT
+	JR	XPBUS_LOOP
 
 INTR_PRT0:
 ; #### Periodic devices
