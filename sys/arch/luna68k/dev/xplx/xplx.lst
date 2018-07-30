@@ -1,7 +1,7 @@
                         ; --------------------------------------
                         ; zasm: assemble "xplx.asm"
                         ; opts: --z180
-                        ; date: 2018-07-30 15:19:03
+                        ; date: 2018-07-30 18:15:16
                         ; --------------------------------------
 
 
@@ -752,17 +752,23 @@ F000:                   PRIVATE_SP:	.EQU	0F000H
 1000:                   PCM_BUF::
                         	.DEPHASE
                         	.PHASE 08000H
+7000:                   PAM_BUF_LEN::	.EQU	$-PAM_BUF
+7000:                   PCM_BUF_LEN::	.EQU	$-PCM_BUF
 8000:                   PSG_BUF::
                         	.DEPHASE
                         	.PHASE 09000H
+1000:                   PSG_BUF_LEN::	.EQU	$-PSG_BUF
 9000:                   LPR_BUF::
                         	.DEPHASE
                         	.PHASE 0A000H
+1000:                   LPR_BUF_LEN::	.EQU	$-LPR_BUF
 A000:                   FDC_BUF::
                         	.DEPHASE
                         
                         ; ######## private memory program
                         	.PHASE 0E000H
+4000:                   FDC_BUF_LEN::	.EQU	$-FDC_BUF
+                        
 02B4:                   PROG_ORG:	.EQU	$$
 E000:                   PRIVATE_RAM:
                         
@@ -990,7 +996,7 @@ E107:                   PCM_INTR_NEXT:
 03BF: 07       [1112]   	RLCA
 03C0: 381C     [1119|112	JR	C,PCM_STAT
 03C2: 07       [1123]   	RLCA
-03C3: 381B     [1130|113	JR	C,PCM_NORMAL
+03C3: 301B     [1130|113	JR	NC,PCM_NORMAL
                         
                         ; PCM RESET attention
                         ; in: HL = EXIT address
@@ -2043,7 +2049,7 @@ FFF8:                   INTR_IGN:
 001B:                   VECTOR_ORG_LEN:	.EQU	$$-VECTOR_ORG
                         
                         	.DEPHASE
-                        
+0735:                   XPLX_FIRMWARE_LEN::	.EQU	$
 
 
 ; +++ segments +++
@@ -2056,7 +2062,7 @@ BBR                = $0039 =    57          xplx.asm:624
 CBAR               = $003A =    58          xplx.asm:625
 CBR                = $0038 =    56          xplx.asm:623
 DCNTL              = $0032 =    50          xplx.asm:614
-DEVICES_DISPATCH   = $E02F = 57391          xplx.asm:797 (unused)
+DEVICES_DISPATCH   = $E02F = 57391          xplx.asm:803 (unused)
 DEVID_FDC          = $0007 =     7          xplx.asm:217 (unused)
 DEVID_LPR          = $0006 =     6          xplx.asm:216 (unused)
 DEVID_PAM          = $0002 =     2          xplx.asm:212 (unused)
@@ -2068,10 +2074,11 @@ DEVID_SPK          = $0005 =     5          xplx.asm:215 (unused)
 DEVID_TIME         = $0001 =     1          xplx.asm:211 (unused)
 DEVID_XPBUS        = $0000 =     0          xplx.asm:210 (unused)
 ENTRY              = $0200 =   512          xplx.asm:582
-FDC_BUF            = $A000 = 40960          xplx.asm:745 (unused)
+FDC_BUF            = $A000 = 40960          xplx.asm:749
+FDC_BUF_LEN        = $4000 = 16384          xplx.asm:754 (unused)
 FDC_CMD            = $0171 =   369          xplx.asm:519
 FDC_CMD_START      = $0001 =     1          xplx.asm:527 (unused)
-FDC_DISPATCH       = $E207 = 57863          xplx.asm:1170
+FDC_DISPATCH       = $E207 = 57863          xplx.asm:1176
 FDC_READY          = $0170 =   368          xplx.asm:517
 FDC_RESULT         = $0172 =   370          xplx.asm:521
 FDC_RUN            = $0173 =   371          xplx.asm:523 (unused)
@@ -2082,165 +2089,169 @@ IL                 = $0033 =    51          xplx.asm:654
 INITIAL_SP         = $1000 =  4096          xplx.asm:279
 INIT_PSG           = $028F =   655          xplx.asm:701
 INT0               = $0038 =    56          xplx.asm:374 (unused)
-INTR_ASCI0         = $E225 = 57893          xplx.asm:1196
-INTR_ASCI1         = $E225 = 57893          xplx.asm:1197
-INTR_IGN           = $FFF8 = 65528          xplx.asm:1990
-INTR_INT0          = $E225 = 57893          xplx.asm:1195
-INTR_PRT0          = $E025 = 57381          xplx.asm:773
+INTR_ASCI0         = $E225 = 57893          xplx.asm:1202
+INTR_ASCI1         = $E225 = 57893          xplx.asm:1203
+INTR_IGN           = $FFF8 = 65528          xplx.asm:1996
+INTR_INT0          = $E225 = 57893          xplx.asm:1201
+INTR_PRT0          = $E025 = 57381          xplx.asm:779
 ITC                = $0034 =    52          xplx.asm:648
-LPR_BUF            = $9000 = 36864          xplx.asm:742 (unused)
+LPR_BUF            = $9000 = 36864          xplx.asm:745
+LPR_BUF_LEN        = $1000 =  4096          xplx.asm:748 (unused)
 LPR_CMD            = $0161 =   353          xplx.asm:505
 LPR_CMD_START      = $0001 =     1          xplx.asm:513 (unused)
-LPR_DISPATCH       = $E1FD = 57853          xplx.asm:1162
+LPR_DISPATCH       = $E1FD = 57853          xplx.asm:1168
 LPR_READY          = $0160 =   352          xplx.asm:503
 LPR_RESULT         = $0162 =   354          xplx.asm:507
 LPR_RUN            = $0163 =   355          xplx.asm:509 (unused)
 NMI                = $0066 =   102          xplx.asm:378 (unused)
-PAM1P              = $FE00 = 65024          xplx.asm:1868 (unused)
-PAM1P_HEAD         = $FE00 = 65024          xplx.asm:1867
-PAM1P_HEAD_LEN     = $0020 =    32          xplx.asm:1920 (unused)
-PAM1P_HEAD_ORG     = $06E9 =  1769          xplx.asm:1866 (unused)
-PAM1P_LOOP         = $FE1C = 65052          xplx.asm:1913
-PAM1P_NORMAL       = $FE16 = 65046          xplx.asm:1905
-PAM1P_RELOAD       = $FE11 = 65041          xplx.asm:1894
-PAM1P_REPT         = $FE20 = 65056          xplx.asm:1923
-PAM1P_REPT_LEN     = $0001 =     1          xplx.asm:1925 (unused)
-PAM1P_REPT_ORG     = $0709 =  1801          xplx.asm:1922 (unused)
-PAM1P_STAT         = $FE14 = 65044          xplx.asm:1897
-PAM1P_TAIL         = $FE21 = 65057          xplx.asm:1928
-PAM1P_TAIL_LEN     = $0010 =    16          xplx.asm:1950 (unused)
-PAM1P_TAIL_ORG     = $070A =  1802          xplx.asm:1927 (unused)
-PAM2A              = $FE00 = 65024          xplx.asm:1437 (unused)
-PAM2A_HEAD         = $FE00 = 65024          xplx.asm:1436
-PAM2A_HEAD_LEN     = $0021 =    33          xplx.asm:1493
-PAM2A_HEAD_ORG     = $05DA =  1498          xplx.asm:1435
-PAM2A_LOOP         = $FE1A = 65050          xplx.asm:1483
-PAM2A_NORMAL       = $FE11 = 65041          xplx.asm:1472
-PAM2A_RELOAD       = $FE03 = 65027          xplx.asm:1454
-PAM2A_REPT         = $FE21 = 65057          xplx.asm:1496
-PAM2A_REPT_LEN     = $0007 =     7          xplx.asm:1500
-PAM2A_REPT_ORG     = $05FB =  1531          xplx.asm:1495
-PAM2A_STAT         = $FE0B = 65035          xplx.asm:1460
-PAM2A_TAIL         = $FE28 = 65064          xplx.asm:1503
-PAM2A_TAIL_LEN     = $001D =    29          xplx.asm:1532
-PAM2A_TAIL_ORG     = $0602 =  1538          xplx.asm:1502
-PAM2B              = $FE00 = 65024          xplx.asm:1545 (unused)
-PAM2B_HEAD         = $FE00 = 65024          xplx.asm:1544
-PAM2B_HEAD_LEN     = $0018 =    24          xplx.asm:1594
-PAM2B_HEAD_ORG     = $061F =  1567          xplx.asm:1543
-PAM2B_LOOP         = $FE11 = 65041          xplx.asm:1584
-PAM2B_NORMAL       = $FE0C = 65036          xplx.asm:1579
-PAM2B_RELOAD       = $FE03 = 65027          xplx.asm:1565
-PAM2B_REPT         = $FE18 = 65048          xplx.asm:1597
-PAM2B_REPT_LEN     = $0004 =     4          xplx.asm:1600
-PAM2B_REPT_ORG     = $0637 =  1591          xplx.asm:1596
-PAM2B_STAT         = $FE08 = 65032          xplx.asm:1569
-PAM2B_TAIL         = $FE1C = 65052          xplx.asm:1603
-PAM2B_TAIL_LEN     = $0018 =    24          xplx.asm:1629
-PAM2B_TAIL_ORG     = $063B =  1595          xplx.asm:1602
-PAM3A              = $FE00 = 65024          xplx.asm:1641 (unused)
-PAM3A_HEAD         = $FE00 = 65024          xplx.asm:1640
-PAM3A_HEAD_LEN     = $0031 =    49          xplx.asm:1711
-PAM3A_HEAD_ORG     = $0653 =  1619          xplx.asm:1639
-PAM3A_LOOP         = $FE31 = 65073          xplx.asm:1708
-PAM3A_NORMAL       = $FE19 = 65049          xplx.asm:1685
-PAM3A_RELOAD       = $FE05 = 65029          xplx.asm:1661
-PAM3A_REPT         = $FE31 = 65073          xplx.asm:1714
-PAM3A_REPT_LEN     = $000A =    10          xplx.asm:1720
-PAM3A_REPT_ORG     = $0684 =  1668          xplx.asm:1713
-PAM3A_STAT         = $FE10 = 65040          xplx.asm:1669
-PAM3A_TAIL         = $FE3B = 65083          xplx.asm:1723
-PAM3A_TAIL_LEN     = $0026 =    38          xplx.asm:1758
-PAM3A_TAIL_ORG     = $068E =  1678          xplx.asm:1722
-PAM3B              = $FE00 = 65024          xplx.asm:1770 (unused)
-PAM3B_HEAD         = $FE00 = 65024          xplx.asm:1769
-PAM3B_HEAD_LEN     = $001A =    26          xplx.asm:1824
-PAM3B_HEAD_ORG     = $06B4 =  1716          xplx.asm:1768
-PAM3B_LOOP         = $FE1A = 65050          xplx.asm:1821
-PAM3B_NORMAL       = $FE0F = 65039          xplx.asm:1808
-PAM3B_RELOAD       = $FE06 = 65030          xplx.asm:1794
-PAM3B_REPT         = $FE1A = 65050          xplx.asm:1827
-PAM3B_REPT_LEN     = $0006 =     6          xplx.asm:1831
-PAM3B_REPT_ORG     = $06CE =  1742          xplx.asm:1826
-PAM3B_STAT         = $FE0B = 65035          xplx.asm:1798
-PAM3B_TAIL         = $FE20 = 65056          xplx.asm:1834
-PAM3B_TAIL_LEN     = $0015 =    21          xplx.asm:1858
-PAM3B_TAIL_ORG     = $06D4 =  1748          xplx.asm:1833
+PAM1P              = $FE00 = 65024          xplx.asm:1874 (unused)
+PAM1P_HEAD         = $FE00 = 65024          xplx.asm:1873
+PAM1P_HEAD_LEN     = $0020 =    32          xplx.asm:1926 (unused)
+PAM1P_HEAD_ORG     = $06E9 =  1769          xplx.asm:1872 (unused)
+PAM1P_LOOP         = $FE1C = 65052          xplx.asm:1919
+PAM1P_NORMAL       = $FE16 = 65046          xplx.asm:1911
+PAM1P_RELOAD       = $FE11 = 65041          xplx.asm:1900
+PAM1P_REPT         = $FE20 = 65056          xplx.asm:1929
+PAM1P_REPT_LEN     = $0001 =     1          xplx.asm:1931 (unused)
+PAM1P_REPT_ORG     = $0709 =  1801          xplx.asm:1928 (unused)
+PAM1P_STAT         = $FE14 = 65044          xplx.asm:1903
+PAM1P_TAIL         = $FE21 = 65057          xplx.asm:1934
+PAM1P_TAIL_LEN     = $0010 =    16          xplx.asm:1956 (unused)
+PAM1P_TAIL_ORG     = $070A =  1802          xplx.asm:1933 (unused)
+PAM2A              = $FE00 = 65024          xplx.asm:1443 (unused)
+PAM2A_HEAD         = $FE00 = 65024          xplx.asm:1442
+PAM2A_HEAD_LEN     = $0021 =    33          xplx.asm:1499
+PAM2A_HEAD_ORG     = $05DA =  1498          xplx.asm:1441
+PAM2A_LOOP         = $FE1A = 65050          xplx.asm:1489
+PAM2A_NORMAL       = $FE11 = 65041          xplx.asm:1478
+PAM2A_RELOAD       = $FE03 = 65027          xplx.asm:1460
+PAM2A_REPT         = $FE21 = 65057          xplx.asm:1502
+PAM2A_REPT_LEN     = $0007 =     7          xplx.asm:1506
+PAM2A_REPT_ORG     = $05FB =  1531          xplx.asm:1501
+PAM2A_STAT         = $FE0B = 65035          xplx.asm:1466
+PAM2A_TAIL         = $FE28 = 65064          xplx.asm:1509
+PAM2A_TAIL_LEN     = $001D =    29          xplx.asm:1538
+PAM2A_TAIL_ORG     = $0602 =  1538          xplx.asm:1508
+PAM2B              = $FE00 = 65024          xplx.asm:1551 (unused)
+PAM2B_HEAD         = $FE00 = 65024          xplx.asm:1550
+PAM2B_HEAD_LEN     = $0018 =    24          xplx.asm:1600
+PAM2B_HEAD_ORG     = $061F =  1567          xplx.asm:1549
+PAM2B_LOOP         = $FE11 = 65041          xplx.asm:1590
+PAM2B_NORMAL       = $FE0C = 65036          xplx.asm:1585
+PAM2B_RELOAD       = $FE03 = 65027          xplx.asm:1571
+PAM2B_REPT         = $FE18 = 65048          xplx.asm:1603
+PAM2B_REPT_LEN     = $0004 =     4          xplx.asm:1606
+PAM2B_REPT_ORG     = $0637 =  1591          xplx.asm:1602
+PAM2B_STAT         = $FE08 = 65032          xplx.asm:1575
+PAM2B_TAIL         = $FE1C = 65052          xplx.asm:1609
+PAM2B_TAIL_LEN     = $0018 =    24          xplx.asm:1635
+PAM2B_TAIL_ORG     = $063B =  1595          xplx.asm:1608
+PAM3A              = $FE00 = 65024          xplx.asm:1647 (unused)
+PAM3A_HEAD         = $FE00 = 65024          xplx.asm:1646
+PAM3A_HEAD_LEN     = $0031 =    49          xplx.asm:1717
+PAM3A_HEAD_ORG     = $0653 =  1619          xplx.asm:1645
+PAM3A_LOOP         = $FE31 = 65073          xplx.asm:1714
+PAM3A_NORMAL       = $FE19 = 65049          xplx.asm:1691
+PAM3A_RELOAD       = $FE05 = 65029          xplx.asm:1667
+PAM3A_REPT         = $FE31 = 65073          xplx.asm:1720
+PAM3A_REPT_LEN     = $000A =    10          xplx.asm:1726
+PAM3A_REPT_ORG     = $0684 =  1668          xplx.asm:1719
+PAM3A_STAT         = $FE10 = 65040          xplx.asm:1675
+PAM3A_TAIL         = $FE3B = 65083          xplx.asm:1729
+PAM3A_TAIL_LEN     = $0026 =    38          xplx.asm:1764
+PAM3A_TAIL_ORG     = $068E =  1678          xplx.asm:1728
+PAM3B              = $FE00 = 65024          xplx.asm:1776 (unused)
+PAM3B_HEAD         = $FE00 = 65024          xplx.asm:1775
+PAM3B_HEAD_LEN     = $001A =    26          xplx.asm:1830
+PAM3B_HEAD_ORG     = $06B4 =  1716          xplx.asm:1774
+PAM3B_LOOP         = $FE1A = 65050          xplx.asm:1827
+PAM3B_NORMAL       = $FE0F = 65039          xplx.asm:1814
+PAM3B_RELOAD       = $FE06 = 65030          xplx.asm:1800
+PAM3B_REPT         = $FE1A = 65050          xplx.asm:1833
+PAM3B_REPT_LEN     = $0006 =     6          xplx.asm:1837
+PAM3B_REPT_ORG     = $06CE =  1742          xplx.asm:1832
+PAM3B_STAT         = $FE0B = 65035          xplx.asm:1804
+PAM3B_TAIL         = $FE20 = 65056          xplx.asm:1840
+PAM3B_TAIL_LEN     = $0015 =    21          xplx.asm:1864
+PAM3B_TAIL_ORG     = $06D4 =  1748          xplx.asm:1839
 PAM_BUF            = $1000 =  4096          xplx.asm:735
+PAM_BUF_LEN        = $7000 = 28672          xplx.asm:739 (unused)
 PAM_CMD            = $0121 =   289          xplx.asm:426
 PAM_CMD_QUERY      = $0002 =     2          xplx.asm:223
 PAM_CMD_START      = $0001 =     1          xplx.asm:222
 PAM_CYCLE_CLK      = $0126 =   294          xplx.asm:437
-PAM_DISPATCH       = $E228 = 57896          xplx.asm:1204
-PAM_DRIVER         = $FE00 = 65024          xplx.asm:1429
-PAM_DRIVER_MAP     = $E2E6 = 58086          xplx.asm:1376
-PAM_DRIVER_MAP_LEN = $0040 =    64          xplx.asm:1420
+PAM_DISPATCH       = $E228 = 57896          xplx.asm:1210
+PAM_DRIVER         = $FE00 = 65024          xplx.asm:1435
+PAM_DRIVER_MAP     = $E2E6 = 58086          xplx.asm:1382
+PAM_DRIVER_MAP_LEN = $0040 =    64          xplx.asm:1426
 PAM_ENC            = $0124 =   292          xplx.asm:433
-PAM_ENC_MAP        = $E236 = 57910          xplx.asm:1217
+PAM_ENC_MAP        = $E236 = 57910          xplx.asm:1223
 PAM_ENC_PAM1P      = $0005 =     5          xplx.asm:229 (unused)
 PAM_ENC_PAM2A      = $0001 =     1          xplx.asm:225 (unused)
 PAM_ENC_PAM2B      = $0002 =     2          xplx.asm:226 (unused)
 PAM_ENC_PAM3A      = $0003 =     3          xplx.asm:227 (unused)
 PAM_ENC_PAM3B      = $0004 =     4          xplx.asm:228 (unused)
-PAM_ERROR_ENC      = $E24E = 57934          xplx.asm:1234
-PAM_ERROR_PARAM    = $E24F = 57935          xplx.asm:1236
+PAM_ERROR_ENC      = $E24E = 57934          xplx.asm:1240
+PAM_ERROR_PARAM    = $E24F = 57935          xplx.asm:1242
 PAM_HOSTINTR       = $00A0 =   160          xplx.asm:260
-PAM_QUERY          = $E255 = 57941          xplx.asm:1241
+PAM_QUERY          = $E255 = 57941          xplx.asm:1247
 PAM_READY          = $0120 =   288          xplx.asm:424
 PAM_REPT           = $0125 =   293          xplx.asm:435
 PAM_REPT_CLK       = $0128 =   296          xplx.asm:439 (unused)
-PAM_REPT_END       = $E2B6 = 58038          xplx.asm:1322
-PAM_REPT_LOOP      = $E2A9 = 58025          xplx.asm:1308
+PAM_REPT_END       = $E2B6 = 58038          xplx.asm:1328
+PAM_REPT_LOOP      = $E2A9 = 58025          xplx.asm:1314
 PAM_REPT_MAX       = $0129 =   297          xplx.asm:441 (unused)
-PAM_RESET          = $E2CC = 58060          xplx.asm:1357
+PAM_RESET          = $E2CC = 58060          xplx.asm:1363
 PAM_RESULT         = $0122 =   290          xplx.asm:428
 PAM_RUN            = $0123 =   291          xplx.asm:430
-PAM_START          = $E27A = 57978          xplx.asm:1271
-PAM_START_OK       = $E28E = 57998          xplx.asm:1283
+PAM_START          = $E27A = 57978          xplx.asm:1277
+PAM_START_OK       = $E28E = 57998          xplx.asm:1289
 PAM_STAT_PTR       = $012E =   302          xplx.asm:445 (unused)
-PCM1               = $E131 = 57649          xplx.asm:1015
-PCM2               = $E139 = 57657          xplx.asm:1023
-PCM3               = $E148 = 57672          xplx.asm:1034
+PCM1               = $E131 = 57649          xplx.asm:1021
+PCM2               = $E139 = 57657          xplx.asm:1029
+PCM3               = $E148 = 57672          xplx.asm:1040
 PCM_BUF            = $1000 =  4096          xplx.asm:736
+PCM_BUF_LEN        = $7000 = 28672          xplx.asm:740 (unused)
 PCM_CMD            = $0131 =   305          xplx.asm:452
 PCM_CMD_START      = $0001 =     1          xplx.asm:231
-PCM_DISPATCH       = $E086 = 57478          xplx.asm:866
+PCM_DISPATCH       = $E086 = 57478          xplx.asm:872
 PCM_ENC            = $0134 =   308          xplx.asm:459
 PCM_ENC_PCM1       = $0001 =     1          xplx.asm:233 (unused)
 PCM_ENC_PCM2       = $0002 =     2          xplx.asm:234 (unused)
 PCM_ENC_PCM3       = $0003 =     3          xplx.asm:235 (unused)
-PCM_ERROR          = $E08C = 57484          xplx.asm:871
-PCM_EXIT           = $E12C = 57644          xplx.asm:1007
+PCM_ERROR          = $E08C = 57484          xplx.asm:877
+PCM_EXIT           = $E12C = 57644          xplx.asm:1013
 PCM_HOSTINTR       = $00A0 =   160          xplx.asm:262
-PCM_INTR           = $E0FC = 57596          xplx.asm:956
-PCM_INTR_JMP       = $E105 = 57605          xplx.asm:966
-PCM_INTR_NEXT      = $E107 = 57607          xplx.asm:969
-PCM_NORMAL         = $E12C = 57644          xplx.asm:1006
+PCM_INTR           = $E0FC = 57596          xplx.asm:962
+PCM_INTR_JMP       = $E105 = 57605          xplx.asm:972
+PCM_INTR_NEXT      = $E107 = 57607          xplx.asm:975
+PCM_NORMAL         = $E12C = 57644          xplx.asm:1012
 PCM_PRT1_TIMER     = $0136 =   310          xplx.asm:462
 PCM_READY          = $0130 =   304          xplx.asm:450
-PCM_RELOAD         = $E127 = 57639          xplx.asm:998
-PCM_RESET          = $E111 = 57617          xplx.asm:981 (unused)
+PCM_RELOAD         = $E127 = 57639          xplx.asm:1004
+PCM_RESET          = $E111 = 57617          xplx.asm:987 (unused)
 PCM_RESULT         = $0132 =   306          xplx.asm:454
 PCM_RUN            = $0133 =   307          xplx.asm:456
-PCM_SET            = $E0CC = 57548          xplx.asm:922
-PCM_SET_PCM1       = $E0C9 = 57545          xplx.asm:920
-PCM_SET_PCM2       = $E0C4 = 57540          xplx.asm:917
-PCM_SET_PCM3       = $E0BF = 57535          xplx.asm:914 (unused)
-PCM_START          = $E090 = 57488          xplx.asm:875
-PCM_START_OK       = $E0A5 = 57509          xplx.asm:892
-PCM_STAT           = $E12A = 57642          xplx.asm:1000
+PCM_SET            = $E0CC = 57548          xplx.asm:928
+PCM_SET_PCM1       = $E0C9 = 57545          xplx.asm:926
+PCM_SET_PCM2       = $E0C4 = 57540          xplx.asm:923
+PCM_SET_PCM3       = $E0BF = 57535          xplx.asm:920 (unused)
+PCM_START          = $E090 = 57488          xplx.asm:881
+PCM_START_OK       = $E0A5 = 57509          xplx.asm:898
+PCM_STAT           = $E12A = 57642          xplx.asm:1006
 PCM_STAT_PTR       = $013E =   318          xplx.asm:466 (unused)
-PRIVATE_RAM        = $E000 = 57344          xplx.asm:751
+PRIVATE_RAM        = $E000 = 57344          xplx.asm:757
 PRIVATE_SP         = $F000 = 61440          xplx.asm:280
-PROG_ORG           = $02B4 =   692          xplx.asm:750
-PROG_ORG_LEN       = $0466 =  1126          xplx.asm:1957
+PROG_ORG           = $02B4 =   692          xplx.asm:756
+PROG_ORG_LEN       = $0466 =  1126          xplx.asm:1963
 PSG_ADR            = $0083 =   131          xplx.asm:275
-PSG_BUF            = $8000 = 32768          xplx.asm:739 (unused)
+PSG_BUF            = $8000 = 32768          xplx.asm:741
+PSG_BUF_LEN        = $1000 =  4096          xplx.asm:744 (unused)
 PSG_CLEAR_06       = $0297 =   663          xplx.asm:708
 PSG_CLEAR_8F       = $02AC =   684          xplx.asm:725
 PSG_CMD            = $0141 =   321          xplx.asm:473
 PSG_DAT            = $0082 =   130          xplx.asm:276
-PSG_DISPATCH       = $E1F3 = 57843          xplx.asm:1154
+PSG_DISPATCH       = $E1F3 = 57843          xplx.asm:1160
 PSG_IN             = $0083 =   131          xplx.asm:277
 PSG_READY          = $0140 =   320          xplx.asm:471
 PSG_RESULT         = $0142 =   322          xplx.asm:475
@@ -2253,7 +2264,7 @@ RLDR1H             = $0017 =    23          xplx.asm:273
 RLDR1L             = $0016 =    22          xplx.asm:272
 RMCR               = $0051 =    81          xplx.asm:643
 SIO0_CMD           = $0181 =   385          xplx.asm:533
-SIO0_DISPATCH      = $E211 = 57873          xplx.asm:1179
+SIO0_DISPATCH      = $E211 = 57873          xplx.asm:1185
 SIO0_READY         = $0180 =   384          xplx.asm:531
 SIO0_RESULT        = $0182 =   386          xplx.asm:535
 SIO0_RUN           = $0183 =   387          xplx.asm:537 (unused)
@@ -2264,7 +2275,7 @@ SIO0_TX            = $0186 =   390          xplx.asm:544 (unused)
 SIO0_TXCMD         = $0184 =   388          xplx.asm:540 (unused)
 SIO0_TXSTAT        = $0185 =   389          xplx.asm:542 (unused)
 SIO1_CMD           = $0191 =   401          xplx.asm:558
-SIO1_DISPATCH      = $E21B = 57883          xplx.asm:1187
+SIO1_DISPATCH      = $E21B = 57883          xplx.asm:1193
 SIO1_READY         = $0190 =   400          xplx.asm:556
 SIO1_RESULT        = $0192 =   402          xplx.asm:560
 SIO1_RUN           = $0193 =   403          xplx.asm:562 (unused)
@@ -2278,24 +2289,24 @@ SPK_CMD            = $0151 =   337          xplx.asm:484
 SPK_CMD_KEEP       = $0003 =     3          xplx.asm:239
 SPK_CMD_START      = $0001 =     1          xplx.asm:237
 SPK_CMD_STOP       = $0002 =     2          xplx.asm:238
-SPK_DISPATCH       = $E163 = 57699          xplx.asm:1053
-SPK_EXIT           = $E1E8 = 57832          xplx.asm:1143
+SPK_DISPATCH       = $E163 = 57699          xplx.asm:1059
+SPK_EXIT           = $E1E8 = 57832          xplx.asm:1149
 SPK_FREQ           = $0156 =   342          xplx.asm:494
-SPK_KEEP           = $E1DD = 57821          xplx.asm:1133
-SPK_PSGR7          = $E1F2 = 57842          xplx.asm:1150
+SPK_KEEP           = $E1DD = 57821          xplx.asm:1139
+SPK_PSGR7          = $E1F2 = 57842          xplx.asm:1156
 SPK_READY          = $0150 =   336          xplx.asm:482
 SPK_REMAIN         = $015A =   346          xplx.asm:498
 SPK_RESULT         = $0152 =   338          xplx.asm:486
 SPK_RUN            = $0153 =   339          xplx.asm:488
-SPK_START          = $E175 = 57717          xplx.asm:1065
-SPK_STOP           = $E1BB = 57787          xplx.asm:1107
-SPK_STOP_CORE      = $E1C0 = 57792          xplx.asm:1112
+SPK_START          = $E175 = 57717          xplx.asm:1071
+SPK_STOP           = $E1BB = 57787          xplx.asm:1113
+SPK_STOP_CORE      = $E1C0 = 57792          xplx.asm:1118
 SPK_TIME           = $0158 =   344          xplx.asm:496
 SPK_VOL            = $0154 =   340          xplx.asm:491
 TCR                = $0010 =    16          xplx.asm:269
-TIMECOUNTER_INCR   = $E028 = 57384          xplx.asm:789 (unused)
+TIMECOUNTER_INCR   = $E028 = 57384          xplx.asm:795 (unused)
 TIME_CMD           = $0111 =   273          xplx.asm:413
-TIME_DISPATCH      = $E07C = 57468          xplx.asm:850 (unused)
+TIME_DISPATCH      = $E07C = 57468          xplx.asm:856 (unused)
 TIME_READY         = $0110 =   272          xplx.asm:411
 TIME_RESULT        = $0112 =   274          xplx.asm:415
 TIME_RUN           = $0113 =   275          xplx.asm:417 (unused)
@@ -2305,24 +2316,24 @@ TMDR0L             = $000C =    12          xplx.asm:265
 TMDR1H             = $0015 =    21          xplx.asm:271
 TMDR1L             = $0014 =    20          xplx.asm:270
 USE_INTR           = $0001 =     1          xplx.asm:251
-VECTOR             = $FFE0 = 65504          xplx.asm:1962
-VECTOR_ORG         = $071A =  1818          xplx.asm:1961
-VECTOR_ORG_LEN     = $001B =    27          xplx.asm:1994
-VEC_ASCI0          = $FFEE = 65518          xplx.asm:1978 (unused)
-VEC_ASCI1          = $FFF0 = 65520          xplx.asm:1980 (unused)
-VEC_DMAC0          = $FFE8 = 65512          xplx.asm:1972 (unused)
-VEC_DMAC1          = $FFEA = 65514          xplx.asm:1974 (unused)
-VEC_INT1           = $FFE0 = 65504          xplx.asm:1964 (unused)
-VEC_INT2           = $FFE2 = 65506          xplx.asm:1966 (unused)
-VEC_PRT0           = $FFE4 = 65508          xplx.asm:1968 (unused)
-VEC_PRT1           = $FFE6 = 65510          xplx.asm:1970
-VEC_PT2IN          = $FFF2 = 65522          xplx.asm:1982 (unused)
-VEC_PT2OUT         = $FFF4 = 65524          xplx.asm:1984 (unused)
-VEC_PT2OVF         = $FFF6 = 65526          xplx.asm:1986 (unused)
-VEC_SIO            = $FFEC = 65516          xplx.asm:1976 (unused)
-XPBUS              = $E000 = 57344          xplx.asm:753
+VECTOR             = $FFE0 = 65504          xplx.asm:1968
+VECTOR_ORG         = $071A =  1818          xplx.asm:1967
+VECTOR_ORG_LEN     = $001B =    27          xplx.asm:2000
+VEC_ASCI0          = $FFEE = 65518          xplx.asm:1984 (unused)
+VEC_ASCI1          = $FFF0 = 65520          xplx.asm:1986 (unused)
+VEC_DMAC0          = $FFE8 = 65512          xplx.asm:1978 (unused)
+VEC_DMAC1          = $FFEA = 65514          xplx.asm:1980 (unused)
+VEC_INT1           = $FFE0 = 65504          xplx.asm:1970 (unused)
+VEC_INT2           = $FFE2 = 65506          xplx.asm:1972 (unused)
+VEC_PRT0           = $FFE4 = 65508          xplx.asm:1974 (unused)
+VEC_PRT1           = $FFE6 = 65510          xplx.asm:1976
+VEC_PT2IN          = $FFF2 = 65522          xplx.asm:1988 (unused)
+VEC_PT2OUT         = $FFF4 = 65524          xplx.asm:1990 (unused)
+VEC_PT2OVF         = $FFF6 = 65526          xplx.asm:1992 (unused)
+VEC_SIO            = $FFEC = 65516          xplx.asm:1982 (unused)
+XPBUS              = $E000 = 57344          xplx.asm:759
 XPBUS_CMD          = $0101 =   257          xplx.asm:391
-XPBUS_DISPATCH     = $E072 = 57458          xplx.asm:840
+XPBUS_DISPATCH     = $E072 = 57458          xplx.asm:846
 XPBUS_INTR1_DEV    = $010A =   266          xplx.asm:404 (unused)
 XPBUS_INTR5_DEV    = $010C =   268          xplx.asm:406 (unused)
 XPBUS_PRT0_TIMER   = $0108 =   264          xplx.asm:402
@@ -2330,6 +2341,7 @@ XPBUS_READY        = $0100 =   256          xplx.asm:389
 XPBUS_RESULT       = $0102 =   258          xplx.asm:393
 XPBUS_RUN          = $0103 =   259          xplx.asm:395 (unused)
 XPBUS_STAT_RESET   = $0104 =   260          xplx.asm:398
+XPLX_FIRMWARE_LEN  = $0735 =  1845          xplx.asm:2003 (unused)
 XPLX_MAGIC         = $00FC =   252          xplx.asm:382 (unused)
 XPLX_R_ERROR_PARAM = $00FE =   254          xplx.asm:244
 XPLX_R_OK          = $0001 =     1          xplx.asm:243
@@ -2340,5 +2352,5 @@ _size              = $0735 =  1845          xplx.asm:368 (unused)
 _z180_             = $0001 =     1          xplx.asm:206 (unused)
 
 
-total time: 0.0129 sec.
+total time: 0.0135 sec.
 no errors
