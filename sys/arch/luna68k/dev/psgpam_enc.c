@@ -86,7 +86,7 @@ psgpam_aint_to_##enc(audio_filter_arg_t *arg)	\
 	TT *d = arg->dst;	\
 	\
 	for (int i = 0; i < arg->count; i++) {	\
-		auint_t v = (*s) - AINT_T_MIN;	\
+		auint_t v = (*s++) ^ AINT_T_MIN;	\
 		v >>= (AUDIO_INTERNAL_BITS - table##_BITS);	\
 		writer(table);	\
 	}	\
@@ -100,7 +100,7 @@ psgpam_aint_to_##enc##_d(audio_filter_arg_t *arg)	\
 	TT *d = arg->dst;	\
 	\
 	for (int i = 0; i < arg->count; i++) {	\
-		auint_t v = (*s) - AINT_T_MIN;	\
+		auint_t v = (*s++) ^ AINT_T_MIN;	\
 		v >>= (AUDIO_INTERNAL_BITS - table##_BITS);	\
 		v = dynamic_offset(arg->context, v);	\
 		writer(table);	\
