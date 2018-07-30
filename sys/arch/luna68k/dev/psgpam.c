@@ -647,18 +647,3 @@ psgpam_internal_to_pam3(audio_filter_arg_t *arg)
 	}
 }
 
-void __unused
-psgpam_internal_to_pam4(audio_filter_arg_t *arg)
-{
-#if 0
-	const aint_t *s = arg->src;
-	uint32_t *d = arg->dst;
-
-	const uint32_t *table = PAM4_TABLE;
-
-	for (int i = 0; i < arg->count; i++) {
-		uint8_t x = ((*s++) >> (AUDIO_INTERNAL_BITS - 8)) ^ 0x80;
-		*d++ = htobe32(table[x]);
-	}
-#endif
-}
