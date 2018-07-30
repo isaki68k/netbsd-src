@@ -1,3 +1,8 @@
+#pragma once
+
+#define XP_ATN_RELOAD	0x80808080
+#define XP_ATN_STAT	0x40404040
+#define XP_ATN_RESET	0x20202020
 
 struct psgpam_codecvar {
 	int expire;		/* min expire counter */

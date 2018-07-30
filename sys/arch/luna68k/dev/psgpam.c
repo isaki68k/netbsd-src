@@ -60,10 +60,6 @@ static int	audiodebug = AUDIO_DEBUG;
 #define DPRINTF(n, fmt...)	do { } while (0)
 #endif
 
-#define XP_ATN_RELOAD	0x80808080
-#define XP_ATN_STAT	0x40404040
-#define XP_ATN_RESET	0x20202020
-
 struct psgpam_softc {
 	device_t sc_dev;
 	vaddr_t sc_shm_base;
