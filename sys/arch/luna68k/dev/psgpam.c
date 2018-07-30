@@ -176,6 +176,7 @@ void
 psgpam_xp_query(struct psgpam_softc *sc)
 {
 	u_int a;
+	int r;
 
 	if (!sc->sc_isopen) {
 		a = xp_acquire(DEVID_PAM, 0);
@@ -183,18 +184,28 @@ psgpam_xp_query(struct psgpam_softc *sc)
 			sc->sc_xp_cycle_clk = 65535;
 			sc->sc_xp_rept_clk = 255;
 			sc->sc_xp_rept_max = 0;
+			DPRINTF(1, "XPLX BUSY!\n");
 			return;
 		}
 		xp_ensure_firmware();
 	}
 
 	xp_writemem8(PAM_ENC, sc->sc_xp_enc);
-	xp_cmd(DEVID_PAM, PAM_CMD_QUERY);
-
-	sc->sc_xp_cycle_clk = xp_readmem16le(PAM_CYCLE_CLK);
-	sc->sc_xp_rept_clk = xp_readmem8(PAM_REPT_CLK);
-	sc->sc_xp_rept_max = xp_readmem8(PAM_REPT_MAX);
-
+	r = xp_cmd(DEVID_PAM, PAM_CMD_QUERY);
+	if (r != XPLX_R_OK) {
+		sc->sc_xp_cycle_clk = 65535;
+		sc->sc_xp_rept_clk = 255;
+		sc->sc_xp_rept_max = 0;
+		DPRINTF(1, "XPLX QUERY FAIL: %d\n", r);
+	} else {
+		sc->sc_xp_cycle_clk = xp_readmem16le(PAM_CYCLE_CLK);
+		sc->sc_xp_rept_clk = xp_readmem8(PAM_REPT_CLK);
+		sc->sc_xp_rept_max = xp_readmem8(PAM_REPT_MAX);
+		DPRINTF(1, "xp cycle_clk=%d rept_clk=%d rept_max=%d\n",
+			sc->sc_xp_cycle_clk,
+			sc->sc_xp_rept_clk,
+			sc->sc_xp_rept_max);
+	}
 	if (!sc->sc_isopen) {
 		xp_release(DEVID_PAM);
 	}
