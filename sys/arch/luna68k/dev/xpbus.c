@@ -81,6 +81,40 @@ static const struct xpbus_attach_args xpdevs[] = {
 	{ "psgpam" },
 };
 
+/* bus sharing descriptor */
+#define SH_DEVXP	(1 << XPBUS_XP)
+#define SH_PSGPAM2PH	(1 << XPBUS_PSGPAM2PH)
+#define SH_PSGPAM3PH	(1 << XPBUS_PSGPAM3PH)
+#define SH_PSGPCM1CH	(1 << XPBUS_PSGPCM1CH)
+#define SH_PSGPCM2CH	(1 << XPBUS_PSGPCM2CH)
+#define SH_PSGPCM3CH	(1 << XPBUS_PSGPCM3CH)
+#define SH_PSGSPK	(1 << XPBUS_PSGSPK)
+#define SH_PSGMIDI	(1 << XPBUS_PSGMIDI)
+#define SH_PSGLPR	(1 << XPBUS_PSGLPR)
+#define SH_FDC		(1 << XPBUS_FDC)
+#define SH_SIO		(1 << XPBUS_SIO)
+#define SH_PIALPR	(1 << XPBUS_PIALPR)
+
+/* bus sharing map */
+/* must be xpbus device descriptor order */
+static const int xpbus_sharing[] = {
+/* DEVXP */	0,
+/* PSGPAM2PH */	0,
+/* PSGPAM3PH */	0,
+/* PSGPCM1CH */	SH_PSGSPK | SH_PSGLPR | SH_FDC | SH_SIO,
+/* PSGPCM2CH */	SH_PSGSPK | SH_PSGLPR | SH_FDC | SH_SIO,
+/* PSGPCM3CH */ SH_PSGLPR | SH_FDC | SH_SIO,
+/* PSGSPK */	SH_PSGPCM1CH | SH_PSGPCM2CH | SH_PSGLPR | SH_FDC | SH_SIO,
+/* PSGMIDI */	SH_PSGLPR | SH_FDC | SH_SIO,
+/* PSGLPR */	SH_PSGPCM1CH | SH_PSGPCM2CH | SH_PSGPCM3CH | SH_PSGSPK |
+		SH_PSGMIDI | SH_FDC | SH_SIO,
+/* FDC */	SH_PSGPCM1CH | SH_PSGPCM2CH | SH_PSGPCM3CH | SH_PSGSPK |
+		SH_PSGMIDI | SH_FDC | SH_SIO,
+/* SIO */	SH_PSGPCM1CH | SH_PSGPCM2CH | SH_PSGPCM3CH | SH_PSGSPK |
+		SH_PSGMIDI | SH_FDC | SH_SIO,
+/* PIALPR */	0 /* XXX: unknown */,
+};
+
 static int xpbus_match(device_t, cfdata_t, void *);
 static void xpbus_attach(device_t, device_t, void *);
 
@@ -90,9 +124,12 @@ CFATTACH_DECL_NEW(xpbus, sizeof(struct xpbus_softc),
 static bool xpbus_matched;
 
 /*
- * XP acquired for shareing by /dev/xp, psgpam
+ * xpbus acquired device sharing bitmap
  */
 static volatile unsigned int xp_acquired;
+
+/* XP SHM dirty flag */
+static bool xp_shm_dirty = true;
 
 static int
 xpbus_match(device_t parent, cfdata_t cf, void *aux)
@@ -132,16 +169,56 @@ xpbus_attach(device_t parent, device_t self, void *aux)
  * if fail, return 0
  */
 int
-xp_acquire(void)
+xp_acquire(int descriptor)
 {
-	return atomic_swap_uint(&xp_acquired, 1) == 0;
+	for (;;) {
+		unsigned int before, after;
+		before = xp_acquired;
+		if (before & ~xpbus_sharing[descriptor]) {
+			return 0;
+		}
+		after = before | (1 << descriptor);
+		if (atomic_cas_uint(&xp_acquired, before, after) == before) {
+			return 1;
+		}
+	}
 }
 
 /* release xpbus by child devices */
 void
-xp_release(void)
+xp_release(int descriptor)
 {
-	atomic_swap_uint(&xp_acquired, 0);
+	for (;;) {
+		unsigned int before, after;
+		before = xp_acquired;
+		after = before & ~(1 << descriptor);
+		if (atomic_cas_uint(&xp_acquired, before, after) == before) {
+			return;
+		}
+	}
+}
+
+/* set the xp_shm_dirty flag */
+void
+xp_set_shm_dirty()
+{
+	xp_shm_dirty = true;
+}
+
+/* reload firmware if xp_shm_dirty */
+void
+xp_ensure_firmware(void)
+{
+	if (xp_shm_dirty) {
+		// firmware transfer
+		xp_cpu_reset_hold();
+		delay(100);
+		memcpy((void *)XP_SHM_BASE, xp_firmware, xp_firmware_len);
+		// XXX いるの?
+		delay(100);
+		xp_cpu_reset_release();
+		xp_shm_dirty = false;
+	}
 }
 
 /* PIO PORTC write */

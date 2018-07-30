@@ -143,7 +143,7 @@ xp_open(dev_t dev, int flags, int devtype, struct lwp *l)
 	if (sc->sc_isopen)
 		return EBUSY;
 
-	if (!xp_acquire()) {
+	if (!xp_acquire(XPBUS_XP)) {
 		return EBUSY;
 	}
 
@@ -163,7 +163,7 @@ xp_close(dev_t dev, int flags, int mode, struct lwp *l)
 	unit = minor(dev);
 	sc = device_lookup_private(&xp_cd, unit);
 
-	xp_release();
+	xp_release(XPBUS_XP);
 
 	sc->sc_isopen = false;
 
@@ -195,6 +195,7 @@ xp_ioctl(dev_t dev, u_long cmd, void *addr, int flags, struct lwp *l)
 		loadbuf = kmem_alloc(loadsize, KM_SLEEP);
 		error = copyin(downld->data, loadbuf, loadsize);
 		if (error == 0) {
+			xp_set_shm_dirty();
 			xp_cpu_reset_hold();
 			delay(100);
 			memcpy((void *)sc->sc_shm_base, loadbuf, loadsize);
@@ -231,6 +232,9 @@ xp_mmap(dev_t dev, off_t offset, int prot)
 	    offset < sc->sc_shm_size) {
 		pa = m68k_btop(m68k_trunc_page(sc->sc_shm_base) + offset);
 	}
+
+	if (prot & PROT_WRITE)
+		xp_set_shm_dirty();
 
 	return pa;
 }

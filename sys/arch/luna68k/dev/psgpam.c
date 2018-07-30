@@ -335,19 +335,13 @@ psgpam_open(void *hdl, int flags)
 	DPRINTF(1, "%s: flags=0x%x\n", __func__, flags);
 	sc = hdl;
 
-	if (!xp_acquire()) {
+	// XXX descriptor by phase
+	if (!xp_acquire(XPBUS_PSGPAM2PH)) {
 		return EBUSY;
 	}
 
 	// firmware transfer
-	xp_cpu_reset_hold();
-	delay(100);
-	memcpy((void *)sc->sc_shm_base, xp_builtin_firmware, xp_firmware_len);
-	// XXX いるの?
-	delay(100);
-	xp_cpu_reset_release();
-
-	// TODO: /dev/xp との排他制御とか関係性とか。
+	xp_ensure_firmware();
 
 	sc->sc_xp_state = 0;
 	sc->sc_started = 0;
@@ -364,7 +358,8 @@ psgpam_close(void *hdl)
 	// force stop
 	xp_cpu_reset();
 
-	xp_release();
+	// XXX descriptor by phase
+	xp_release(XPBUS_PSGPAM2PH);
 
 	DPRINTF(1, "%s\n", __func__);
 }
