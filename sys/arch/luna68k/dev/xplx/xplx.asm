@@ -378,6 +378,12 @@ INT0:
 NMI:
 	RETN
 
+	.ORG	0080H
+DEBUG0::	.DB	0
+DEBUG1::	.DB	0
+DEBUG2::	.DB	0
+DEBUG3::	.DB	0
+
 	.ORG	00FCH
 XPLX_MAGIC::			; MAGIC
 	.DB	"XPLX"
@@ -601,6 +607,9 @@ ENTRY:
 	LD	(SIO0_READY),A
 	LD	(SIO1_READY),A
 
+	LD	A,1
+	LD	(DEBUG0),A
+
 				; init XP internal devices
 				; internal I/O address = 00H - 3FH
 	LD	A,00H		; IOA7[7]=0 IOSTP[5]=0
@@ -618,6 +627,9 @@ DCNTL	.EQU	32H
 RCR	.EQU	36H
 	OUT0	(RCR),A
 
+	LD	A,2
+	LD	(DEBUG0),A
+
 				; prepare memory map
 				; MMU
 CBR	.EQU	38H
@@ -632,6 +644,9 @@ CBAR	.EQU	3AH
 	OUT0	(BBR),A
 	LD	A,0FEH
 	OUT0	(CBAR),A
+
+	LD	A,3
+	LD	(DEBUG0),A
 
 				; internal RAM addressing
 				; for no-wait access
@@ -657,6 +672,9 @@ IL	.EQU	33H
 	LD	I,A
 				; interrupt mode 1
 	IM	1
+
+	LD	A,4
+	LD	(DEBUG0),A
 
 	CALL	INIT_PSG
 
@@ -693,6 +711,8 @@ IL	.EQU	33H
 	LD	BC,VECTOR_ORG_LEN
 	LDIR
 
+	LD	A,5
+	LD	(DEBUG0),A
 				; jump to XPBUS
 	JP	XPBUS
 
@@ -757,6 +777,9 @@ PROG_ORG:	.EQU	$$
 PRIVATE_RAM:
 
 XPBUS:
+	LD	A,6
+	LD	(DEBUG0),A
+
 	LD	SP,PRIVATE_SP
 
 				; devices READY=1
@@ -789,6 +812,9 @@ INTR_PRT0:
 
 	PUSH	AF
 	PUSH	HL
+
+	LD	A,7
+	LD	(DEBUG0),A
 				; first EI, for PRT1
 	EI
 
@@ -836,6 +862,9 @@ DEVICES_DISPATCH:
 	LD	A,(SIO1_CMD)
 	OR	A
 	CALL	NZ,SIO1_DISPATCH
+
+	LD	A,8
+	LD	(DEBUG0),A
 
 	POP	HL
 	POP	AF
