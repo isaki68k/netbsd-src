@@ -1265,8 +1265,9 @@ PAM_DISPATCH:
 ; if error, direct return to main routine
 PAM_ENC_MAP:
 	LD	A,(PAM_ENC)
+	OR	A
+	JR	Z,PAM_ERROR_ENC
 	DEC	A
-	JR	C,PAM_ERROR_ENC
 
 	CP	PAM_DRIVER_MAP_LEN / 16		; 16 bytes / entry
 	JP	NC,PAM_ERROR_ENC
@@ -1355,13 +1356,15 @@ PAM_START_OK:
 	LDIR
 
 	LD	A,(PAM_REPT)
+	INC	A		; DEC is not change CY
+
 
 PAM_REPT_LOOP:
 	POP	HL		; REPT
 	POP	BC		; REPT_LEN
 
-	DEC	A
-	JR	C,PAM_REPT_END
+	DEC	A		; DEC is not change CY
+	JR	Z,PAM_REPT_END
 
 	LDIR
 
