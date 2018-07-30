@@ -20,6 +20,7 @@
 #endif
 
 #include "psgpam_enc.h"
+#include "psgpam_table.c"
 
 void
 psgpam_init_context(struct psgpam_codecvar *ctx,
@@ -105,21 +106,6 @@ psgpam_aint_to_##enc##_d(audio_filter_arg_t *arg)	\
 		writer(table);	\
 	}	\
 }
-
-extern const uint8_t PAM2A_TABLE[];
-extern int PAM2A_TABLE_BITS;
-extern const uint8_t PAM2B_TABLE[];
-extern int PAM2B_TABLE_BITS;
-extern const uint16_t PAM3A_TABLE[];
-extern int PAM3A_TABLE_BITS;
-extern const uint16_t PAM3B_TABLE[];
-extern int PAM3B_TABLE_BITS;
-extern const uint8_t PCM1_TABLE[];
-extern int PCM1_TABLE_BITS;
-extern const uint8_t PCM2_TABLE[];
-extern int PCM2_TABLE_BITS;
-extern const uint16_t PCM3_TABLE[];
-extern int PCM3_TABLE_BITS;
 
 ENCODER_DEFINE(pam2a, uint16_t, PAM2A_TABLE, W16)
 ENCODER_DEFINE(pam2b, uint16_t, PAM2B_TABLE, W16)

@@ -1,9 +1,3 @@
-#if defined(_KERNEL)
-#include <sys/stdint.h>
-#else
-#include <stdint.h>
-#endif
-
 /*
 All PT_count=16
 Limited 189812531 PT_count=15
@@ -11,7 +5,7 @@ Unique PT_count=15
 min=0 step=434334
 Used 13
 */
-int PCM1_TABLE_BITS = 8;
+#define PCM1_TABLE_BITS 8
 const uint8_t PCM1_TABLE[] = {
 	      /* u  v : out v */
 	0x00, /* [0]0 : [0]0 */
@@ -278,7 +272,7 @@ Unique PT_count=91
 min=0 step=434334
 Used 74
 */
-int PCM2_TABLE_BITS = 8;
+#define PCM2_TABLE_BITS 8
 const uint8_t PCM2_TABLE[] = {
 	        /* u  v : out v */
 	0x00, /* [0]0 : [0]0 */
@@ -545,7 +539,7 @@ Unique PT_count=348
 min=0 step=217167
 Used 235
 */
-int PCM3_TABLE_BITS = 9;
+#define PCM3_TABLE_BITS 9
 const uint16_t PCM3_TABLE[] = {
 	            /* u  v : out v */
 	0x0000, /* [0]0 : [0]0 */
@@ -1068,7 +1062,7 @@ Unique PT_count=135
 min=0 step=434334
 Used 105
 */
-int PAM2A_TABLE_BITS = 8;
+#define PAM2A_TABLE_BITS 8
 const uint8_t PAM2A_TABLE[] = {
 	        /* u  v : out v */
 	0x00, /* [0]0 : [0]0 */
@@ -1335,7 +1329,7 @@ Unique PT_count=108
 min=0 step=434334
 Used 95
 */
-int PAM2B_TABLE_BITS = 8;
+#define PAM2B_TABLE_BITS 8
 const uint8_t PAM2B_TABLE[] = {
 	        /* u  v : out v */
 	0x00, /* [0]0 : [0]0 */
@@ -1602,7 +1596,7 @@ Unique PT_count=2623
 min=0 step=27145
 Used 2159
 */
-int PAM3A_TABLE_BITS = 12;
+#define PAM3A_TABLE_BITS 12
 const uint16_t PAM3A_TABLE[] = {
 	            /* u  v : out v */
 	0x0000, /* [0]0 : [0]0 */
@@ -5709,7 +5703,7 @@ Unique PT_count=500
 min=0 step=108583
 Used 457
 */
-int PAM3B_TABLE_BITS = 10;
+#define PAM3B_TABLE_BITS 10
 const uint16_t PAM3B_TABLE[] = {
 	            /* u  v : out v */
 	0x0000, /* [0]0 : [0]0 */
