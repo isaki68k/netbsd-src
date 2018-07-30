@@ -398,8 +398,7 @@ psgpam_init_format(void *hdl, int setmode,
 	const audio_params_t *play, const audio_params_t *rec,
 	audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
 {
-	// set_format は open 前に呼ばれる。
-	// init_format の意味。
+	// open 前に呼ばれる。
 
 	struct psgpam_softc *sc;
 
@@ -423,6 +422,7 @@ psgpam_init_format(void *hdl, int setmode,
 			pfil->codec = psgpam_aint_to_pam2a;
 		}
 		pfil->param.precision = pfil->param.validbits = 16;
+		sc->sc_stride = 2;
 		break;
 	 case PAM_ENC_PAM2B:
 		if (sc->sc_dynamic) {
@@ -431,6 +431,7 @@ psgpam_init_format(void *hdl, int setmode,
 			pfil->codec = psgpam_aint_to_pam2b;
 		}
 		pfil->param.precision = pfil->param.validbits = 16;
+		sc->sc_stride = 2;
 		break;
 	 case PAM_ENC_PAM3A:
 		if (sc->sc_dynamic) {
@@ -439,6 +440,7 @@ psgpam_init_format(void *hdl, int setmode,
 			pfil->codec = psgpam_aint_to_pam3a;
 		}
 		pfil->param.precision = pfil->param.validbits = 32;
+		sc->sc_stride = 4;
 		break;
 	 case PAM_ENC_PAM3B:
 		if (sc->sc_dynamic) {
@@ -447,6 +449,7 @@ psgpam_init_format(void *hdl, int setmode,
 			pfil->codec = psgpam_aint_to_pam3b;
 		}
 		pfil->param.precision = pfil->param.validbits = 32;
+		sc->sc_stride = 4;
 		break;
 	}
 	psgpam_init_context(&sc->sc_psgpam_codecvar, sc->sc_sample_rate);
