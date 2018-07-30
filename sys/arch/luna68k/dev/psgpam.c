@@ -331,6 +331,8 @@ psgpam_open(void *hdl, int flags)
 	sc->sc_outcount = 0;
 	sc->sc_isopen = 1;
 
+	memset(xp_shmptr(PAM_BUF), XP_ATN_RESET, PAM_BUF_LEN);
+
 	return 0;
 }
 
@@ -534,21 +536,12 @@ static int
 psgpam_halt_output(void *hdl)
 {
 	struct psgpam_softc *sc = hdl;
-	uint32_t marker;
 
 	DPRINTF(2, "%s\n", __func__);
 
 	xp_intr5_disable();
 
-	marker = XP_ATN_RESET;
-	if (sc->sc_stride == 2) {
-		uint16_t *markptr = xp_shmptr(PAM_BUF);
-		*markptr |= marker;
-	} else {
-		// stride == 4
-		uint32_t *markptr = xp_shmptr(PAM_BUF);
-		*markptr |= marker;
-	}
+	memset(xp_shmptr(PAM_BUF), XP_ATN_RESET, PAM_BUF_LEN);
 
 	sc->sc_started = 0;
 	sc->sc_xp_state = 0;
