@@ -150,6 +150,10 @@ static const struct audio_hw_if psgpam_hw_if = {
 	.get_locks		= psgpam_get_locks,
 	.round_blocksize        = psgpam_round_blocksize,
 	.round_buffersize	= psgpam_round_buffersize,
+#if 0
+	.allocm			= psgpam_allocm,
+	.freem			= psgpam_freem,
+#endif
 };
 
 static struct audio_device psgpam_device = {
@@ -466,6 +470,7 @@ psgpam_start_output(void *hdl, void *block, int blksize,
 {
 	int markoffset;
 	uint32_t marker;
+	void *dp;
 
 	struct psgpam_softc *sc;
 
@@ -503,10 +508,8 @@ psgpam_start_output(void *hdl, void *block, int blksize,
 	}
 
 	// transfer
-	memcpy(
-		xp_shmptr(sc->sc_xp_addr),
-		block,
-		blksize);
+	dp = xp_shmptr(sc->sc_xp_addr);
+	memcpy(dp, block, blksize);
 
 	DPRINTF(2, "check: %04X %02X\n",
 		sc->sc_xp_addr + markoffset,
