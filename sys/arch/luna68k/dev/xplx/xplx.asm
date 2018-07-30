@@ -1770,8 +1770,8 @@ PAM3A_HEAD_LEN:	.EQU	$-PAM3A_HEAD
 
 PAM3A_REPT_ORG:	.EQU	$$
 PAM3A_REPT:
-	OUT	(C),D
 	OUT	(C),E
+	OUT	(C),D
 	WAIT3
 	OUT	(C),B
 	WAIT12
@@ -1782,8 +1782,8 @@ PAM3A_TAIL:
 				; このブロックは動的再配置されるので
 				; このブロック"への"ジャンプは困難
 				; "からの"ジャンプは可能。
-	OUT	(C),D
 	OUT	(C),E
+	OUT	(C),D
 	EX	DE,HL			;3
 	OUT	(C),B
 	RLCA
@@ -1850,7 +1850,7 @@ PAM3B:
 	JP	PAM3B_LOOP
 
 PAM3B_RELOAD:
-	OUT	(C),E
+	OUT	(C),D
 	LD	SP,PAM_BUF		;9
 
 PAM3B_STAT:
@@ -1864,11 +1864,11 @@ PAM3B_STAT:
 #endif
 
 PAM3B_NORMAL:
-	OUT	(C),D
+	OUT	(C),E
 				; prefetch
 	POP	HL			;9+3
 
-	OUT	(C),E
+	OUT	(C),D
 				; prefetch
 	POP	AF			;9+3
 
@@ -1883,8 +1883,8 @@ PAM3B_HEAD_LEN:	.EQU	$-PAM3B_HEAD
 
 PAM3B_REPT_ORG:	.EQU	$$
 PAM3B_REPT:
-	OUT	(C),D
 	OUT	(C),E
+	OUT	(C),D
 	OUT	(C),B
 PAM3B_REPT_LEN:	.EQU	$-PAM3B_REPT
 
@@ -1893,14 +1893,14 @@ PAM3B_TAIL:
 				; このブロックは動的再配置されるので
 				; このブロック"への"ジャンプは困難
 				; "からの"ジャンプは可能。
-	OUT	(C),D
+	OUT	(C),E
 				; attention bit
 				; bit7=1, reload
 				; must be JP
 	JP	C,PAM3B_RELOAD		; jump=9 no=6
 
 	RLCA				; 3
-	OUT	(C),E
+	OUT	(C),D
 				; bit6=1, stat
 				; must be JP
 	JP	C,PAM3B_STAT		; jump=9 no=6
