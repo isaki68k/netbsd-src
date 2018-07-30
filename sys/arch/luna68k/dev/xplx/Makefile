@@ -1,7 +1,8 @@
 
 #### xplx
 
-xplx: xplxfirm.o
+.PHONY: all
+all: xplxfirm.o xplxdefs.h
 
 xplx.rom xplx.lst: xplx.asm
 	zasm -uwy xplx.asm
@@ -12,6 +13,8 @@ xplx.inc: xplx.rom
 xplxfirm.o: ../xplxfirm.c xplx.inc
 	${CC} ${CFLAGS} -c ../xplxfirm.c -o ${.TARGET}
 
+xplxdefs.h: mkdefs.awk xplx.lst
+	awk -f mkdefs.awk < xplx.lst > xplxdefs.h
 
 .PHONY:	clean
 clean:
