@@ -817,6 +817,9 @@ INTR_PRT0:
 
 	LD	A,7
 	LD	(DEBUG0),A
+				; reset PRT0 interrupt
+	IN0	F,(TCR)
+	IN0	F,(TMDR0L)
 				; first EI, for PRT1
 	EI
 
