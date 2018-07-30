@@ -149,7 +149,7 @@ xp_acquire(int xplx_devid, u_int excl)
 			return 0;
 		after = before | (1 << xplx_devid) | excl;
 		if (atomic_cas_uint(&xp_acquired, before, after) == before) {
-			return after;
+			return after & ~(excl);
 		}
 	}
 }
@@ -161,9 +161,6 @@ xp_release(int xplx_devid)
 	for (;;) {
 		unsigned int before, after;
 		before = xp_acquired;
-		if (!(before & (1 << xplx_devid))) {
-			return;
-		}
 		after = before & ~(1 << xplx_devid) & ~XP_ACQ_EXCL;
 		if (atomic_cas_uint(&xp_acquired, before, after) == before) {
 			return;
