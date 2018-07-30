@@ -373,6 +373,9 @@ psgpam_query_format(void *hdl, audio_format_query_t *afp)
 	int clk;
 	int i;
 
+	if (afp->index != 0)
+		return EINVAL;
+
 	sc = hdl;
 
 	psgpam_xp_query(sc);
@@ -389,7 +392,8 @@ psgpam_query_format(void *hdl, audio_format_query_t *afp)
 	}
 	psgpam_format.frequency_type = rept_max + 1;
 
-	return audio_query_format(&psgpam_format, 1, afp);
+	afp->fmt = psgpam_format;
+	return 0;
 }
 #else
 static int
