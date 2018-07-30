@@ -7,6 +7,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <sys/device.h>
 #include <sys/endian.h>
 #include <sys/kmem.h>
+#include <sys/sysctl.h>
 
 #include <sys/cpu.h>
 #include <sys/audioio.h>
@@ -118,6 +119,9 @@ static size_t psgpam_round_buffersize(void *, int, size_t);
 
 static int  psgpam_intr(void *);
 
+static int  psgpam_sysctl_enc(SYSCTLFN_PROTO);
+static int  psgpam_sysctl_dynamic(SYSCTLFN_PROTO);
+
 CFATTACH_DECL_NEW(psgpam, sizeof(struct psgpam_softc),
 	psgpam_match, psgpam_attach, NULL, NULL);
 
@@ -207,6 +211,7 @@ static void
 psgpam_attach(device_t parent, device_t self, void *aux)
 {
 	struct psgpam_softc *sc;
+	const struct sysctlnode *node;
 
 #if defined(AUDIO_DEBUG_MLOG)
 	audio_mlog_init();
@@ -229,6 +234,32 @@ psgpam_attach(device_t parent, device_t self, void *aux)
 	mutex_init(&sc->sc_intr_lock, MUTEX_DEFAULT, IPL_SCHED);
 
 	isrlink_autovec(psgpam_intr, sc, 5, ISRPRI_TTYNOBUF);
+
+	sysctl_createv(NULL, 0, NULL, &node,
+		0,
+		CTLTYPE_NODE, device_xname(sc->sc_dev),
+		SYSCTL_DESCR("psgpam"),
+		NULL, 0,
+		NULL, 0,
+		CTL_HW,
+		CTL_CREATE, CTL_EOL);
+	if (node != NULL) {
+		sysctl_createv(NULL, 0, NULL, NULL,
+			CTLFLAG_READWRITE,
+			CTLTYPE_INT, "enc",
+			SYSCTL_DESCR("PSGPAM encoding"),
+			psgpam_sysctl_enc, 0, (void *)sc, 0,
+			CTL_HW, node->sysctl_num,
+			CTL_CREATE, CTL_EOL);
+		sysctl_createv(NULL, 0, NULL, NULL,
+			CTLFLAG_READWRITE,
+			CTLTYPE_INT, "dynamic",
+			SYSCTL_DESCR("PSGPAM dynamic offset"),
+			psgpam_sysctl_dynamic, 0, (void *)sc, 0,
+			CTL_HW, node->sysctl_num,
+			CTL_CREATE, CTL_EOL);
+	}
+
 
 	audio_attach_mi(&psgpam_hw_if, sc, sc->sc_dev);
 }
@@ -603,4 +634,53 @@ psgpam_intr(void *hdl)
 
 	/* handled */
 	return 1;
+}
+
+/* sysctl */
+static int
+psgpam_sysctl_enc(SYSCTLFN_ARGS)
+{
+	struct sysctlnode node;
+	struct psgpam_softc *sc;
+	int t, error;
+
+	node = *rnode;
+	sc = node.sysctl_data;
+
+	t = sc->sc_xp_enc;
+	node.sysctl_data = &t;
+
+	error = sysctl_lookup(SYSCTLFN_CALL(&node));
+	if (error || newp == NULL) {
+		return error;
+	}
+
+	if (t < PAM_ENC_PAM2A)
+		return EINVAL;
+	if (t > PAM_ENC_PAM3B)
+		return EINVAL;
+	sc->sc_xp_enc = t;
+	return 0;
+}
+
+static int
+psgpam_sysctl_dynamic(SYSCTLFN_ARGS)
+{
+	struct sysctlnode node;
+	struct psgpam_softc *sc;
+	int t, error;
+
+	node = *rnode;
+	sc = node.sysctl_data;
+
+	t = sc->sc_dynamic;
+	node.sysctl_data = &t;
+
+	error = sysctl_lookup(SYSCTLFN_CALL(&node));
+	if (error || newp == NULL) {
+		return error;
+	}
+
+	sc->sc_dynamic = t;
+	return 0;
 }
