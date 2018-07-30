@@ -44,6 +44,9 @@ __KERNEL_RCSID(0, "$NetBSD$");
 
 #include <luna68k/dev/xpbusvar.h>
 
+// load default xplx firmware
+#include "xplxfirm.c"
+
 /*
  * PIO 0 port C is connected to XP's reset line
  *
@@ -79,40 +82,6 @@ struct xpbus_softc {
 static const struct xpbus_attach_args xpdevs[] = {
 	{ "xp" },
 	{ "psgpam" },
-};
-
-/* bus sharing descriptor */
-#define SH_DEVXP	(1 << XPBUS_XP)
-#define SH_PSGPAM2PH	(1 << XPBUS_PSGPAM2PH)
-#define SH_PSGPAM3PH	(1 << XPBUS_PSGPAM3PH)
-#define SH_PSGPCM1CH	(1 << XPBUS_PSGPCM1CH)
-#define SH_PSGPCM2CH	(1 << XPBUS_PSGPCM2CH)
-#define SH_PSGPCM3CH	(1 << XPBUS_PSGPCM3CH)
-#define SH_PSGSPK	(1 << XPBUS_PSGSPK)
-#define SH_PSGMIDI	(1 << XPBUS_PSGMIDI)
-#define SH_PSGLPR	(1 << XPBUS_PSGLPR)
-#define SH_FDC		(1 << XPBUS_FDC)
-#define SH_SIO		(1 << XPBUS_SIO)
-#define SH_PIALPR	(1 << XPBUS_PIALPR)
-
-/* bus sharing map */
-/* must be xpbus device descriptor order */
-static const int xpbus_sharing[] = {
-/* DEVXP */	0,
-/* PSGPAM2PH */	0,
-/* PSGPAM3PH */	0,
-/* PSGPCM1CH */	SH_PSGSPK | SH_PSGLPR | SH_FDC | SH_SIO,
-/* PSGPCM2CH */	SH_PSGSPK | SH_PSGLPR | SH_FDC | SH_SIO,
-/* PSGPCM3CH */ SH_PSGLPR | SH_FDC | SH_SIO,
-/* PSGSPK */	SH_PSGPCM1CH | SH_PSGPCM2CH | SH_PSGLPR | SH_FDC | SH_SIO,
-/* PSGMIDI */	SH_PSGLPR | SH_FDC | SH_SIO,
-/* PSGLPR */	SH_PSGPCM1CH | SH_PSGPCM2CH | SH_PSGPCM3CH | SH_PSGSPK |
-		SH_PSGMIDI | SH_FDC | SH_SIO,
-/* FDC */	SH_PSGPCM1CH | SH_PSGPCM2CH | SH_PSGPCM3CH | SH_PSGSPK |
-		SH_PSGMIDI | SH_FDC | SH_SIO,
-/* SIO */	SH_PSGPCM1CH | SH_PSGPCM2CH | SH_PSGPCM3CH | SH_PSGSPK |
-		SH_PSGMIDI | SH_FDC | SH_SIO,
-/* PIALPR */	0 /* XXX: unknown */,
 };
 
 static int xpbus_match(device_t, cfdata_t, void *);
@@ -165,33 +134,37 @@ xpbus_attach(device_t parent, device_t self, void *aux)
 
 /*
  * acquire xpbus from child devices
- * if success, return non-zero
+ * if success, return non-zero acquired map
  * if fail, return 0
  */
-int
-xp_acquire(int descriptor)
+u_int
+xp_acquire(int xplx_devid, u_int excl)
 {
 	for (;;) {
 		unsigned int before, after;
 		before = xp_acquired;
-		if (before & ~xpbus_sharing[descriptor]) {
+		if (before & XP_ACQ_EXCL)
 			return 0;
-		}
-		after = before | (1 << descriptor);
+		if (before & (1 << xplx_devid))
+			return 0;
+		after = before | (1 << xplx_devid) | excl;
 		if (atomic_cas_uint(&xp_acquired, before, after) == before) {
-			return 1;
+			return after;
 		}
 	}
 }
 
 /* release xpbus by child devices */
 void
-xp_release(int descriptor)
+xp_release(int xplx_devid)
 {
 	for (;;) {
 		unsigned int before, after;
 		before = xp_acquired;
-		after = before & ~(1 << descriptor);
+		if (!(before & (1 << xplx_devid))) {
+			return;
+		}
+		after = before & ~(1 << xplx_devid) & ~XP_ACQ_EXCL;
 		if (atomic_cas_uint(&xp_acquired, before, after) == before) {
 			return;
 		}
@@ -200,7 +173,7 @@ xp_release(int descriptor)
 
 /* set the xp_shm_dirty flag */
 void
-xp_set_shm_dirty()
+xp_set_shm_dirty(void)
 {
 	xp_shm_dirty = true;
 }
@@ -213,7 +186,7 @@ xp_ensure_firmware(void)
 		// firmware transfer
 		xp_cpu_reset_hold();
 		delay(100);
-		memcpy((void *)XP_SHM_BASE, xp_firmware, xp_firmware_len);
+		memcpy((void *)XP_SHM_BASE, xplx, xplx_size);
 		// XXX いるの?
 		delay(100);
 		xp_cpu_reset_release();
@@ -303,7 +276,7 @@ xp_intr5_acknowledge(void)
 }
 
 /* get XP shared memory pointer */
-uint8_t *
+void *
 xp_shmptr(int offset)
 {
 	return (uint8_t *)XP_SHM_BASE + offset;

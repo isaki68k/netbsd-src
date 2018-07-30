@@ -7,6 +7,9 @@ struct psgpam_codecvar {
 	u_int sample_rate;
 };
 
+void psgpam_init_context(struct psgpam_codecvar *ctx,
+ u_int sample_rate);
+
 void psgpam_aint_to_pam2a(audio_filter_arg_t *arg);
 void psgpam_aint_to_pam2b(audio_filter_arg_t *arg);
 void psgpam_aint_to_pam3a(audio_filter_arg_t *arg);

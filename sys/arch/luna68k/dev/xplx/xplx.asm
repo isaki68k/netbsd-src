@@ -385,6 +385,7 @@ XPLX_MAGIC::			; MAGIC
 ; ######## shared variables
 ; XPBUS
 	.ORG	0100H
+XPLX_VAR_BASE::
 XPBUS_READY::
 	.DB	0
 XPBUS_CMD::

@@ -50,6 +50,7 @@ file arch/luna68k/dev/siotty.c		siotty needs-flag
 device xpbus {}
 attach xpbus at mainbus
 file arch/luna68k/dev/xpbus.c		xpbus
+file arch/luna68k/dev/xpcmd.c		xpbus
 
 device xp
 attach xp at xpbus
@@ -58,6 +59,8 @@ file arch/luna68k/dev/xp.c		xp
 device psgpam: audiobus, auconv, mulaw
 attach psgpam at xpbus
 file arch/luna68k/dev/psgpam.c		psgpam
+file arch/luna68k/dev/psgpam_enc.c	psgpam
+file arch/luna68k/dev/psgpam_table.c	psgpam
 
 device ws: wskbddev,wsmousedev
 attach ws at sio

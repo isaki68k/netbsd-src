@@ -7,12 +7,14 @@
  * unsigned な auint_t で行う。
  */
 
-#include <stdbool.h>
-#include <stdint.h>
 #include <sys/types.h>
 
 #if defined(_KERNEL)
+#include <sys/device.h>
+#include <sys/audioio.h>
+#include <dev/audio_if.h>
 #else
+#include <stdint.h>
 #include <stdlib.h>
 #include "audio/userland.h"
 #endif

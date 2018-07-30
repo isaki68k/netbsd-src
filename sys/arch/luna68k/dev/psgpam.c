@@ -18,12 +18,11 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <luna68k/dev/xpbusvar.h>
 #include <luna68k/luna68k/isr.h>
 
-#include "ioconf.h"
+#include <ioconf.h>
 
-#include "pam2tbl.c"
-#include "pam3tbl.c"
-
-#include "firmware.c"
+#include "psgpam_enc.h"
+#include "xpcmd.h"
+#include "xplx/xplxdefs.h"
 
 // デバッグレベルは
 // 1: open/close/set_param等
@@ -60,96 +59,9 @@ static int	audiodebug = AUDIO_DEBUG;
 #else
 #define DPRINTF(n, fmt...)	do { } while (0)
 #endif
-// select XPENC
-#define USE_XPENC	XPENC_PAM2_19
 
-#if USE_XPENC == XPENC_PAM2_0
-	// XPCPUFREQ / (156 + 26 * T)
-#define XP_STR_ENC	"2-phase 0 wait"
-#define XP_STR_PAMFREQ	"139.636kHz-236.308kHz"
-#define XP_TIMER_CON	156
-#define XP_TIMER_MUL	26
-#define XP_SAMPLE_RATE_COUNT	2
-#define XP_SAMPLE_RATE	39384, 8149
-#define XP_STRIDE	2
-#define XP_FILTER	psgpam_internal_to_pam2
-
-#elif USE_XPENC == XPENC_PAM2_9
-	// XPCPUFREQ / (132 + 44 * T)
-#define XP_STR_ENC	"2-phase 9 wait"
-#define XP_STR_PAMFREQ	"139.636kHz"
-#define XP_TIMER_CON	132
-#define XP_TIMER_MUL	44
-#define XP_SAMPLE_RATE_COUNT	2
-#define XP_SAMPLE_RATE	46545, 8214
-#define XP_STRIDE	2
-#define XP_FILTER	psgpam_internal_to_pam2
-
-#elif USE_XPENC == XPENC_PAM2_12
-	// XPCPUFREQ / (100 + 50 * T)
-	// skip: 61440
-#define XP_STR_ENC	"2-phase 12 wait"
-#define XP_STR_PAMFREQ	"122.88kHz"
-#define XP_TIMER_CON	100
-#define XP_TIMER_MUL	50
-#define XP_SAMPLE_RATE_COUNT	1
-#define XP_SAMPLE_RATE	40960
-#define XP_STRIDE	2
-#define XP_FILTER	psgpam_internal_to_pam2
-
-#elif USE_XPENC == XPENC_PAM2_19
-	// XPCPUFREQ / (64 + 64 * T)
-	// skip: 96000
-#define XP_STR_ENC	"2-phase 19 wait"
-#define XP_STR_PAMFREQ	"96kHz"
-#define XP_TIMER_CON	64
-#define XP_TIMER_MUL	64
-#define XP_SAMPLE_RATE_COUNT	2
-#define XP_SAMPLE_RATE	48000, 8000
-#define XP_STRIDE	2
-#define XP_FILTER	psgpam_internal_to_pam2
-
-#elif USE_XPENC == XPENC_PAM3_0
-	// XPCPUFREQ / (114 + 39 * T)
-	// skip: 53895
-#define XP_STR_ENC	"3-phase 0 wait"
-#define XP_STR_PAMFREQ	"97.524kHz-157.538kHz"
-#define XP_TIMER_CON	114
-#define XP_TIMER_MUL	39
-#define XP_SAMPLE_RATE_COUNT	1
-#define XP_SAMPLE_RATE	40157
-#define XP_STRIDE	4
-#define XP_FILTER	psgpam_internal_to_pam3
-
-#elif USE_XPENC == XPENC_PAM3_12
-	// XPCPUFREQ / (150 + 75 * T)
-#define XP_STR_ENC	"3-phase 12 wait"
-#define XP_STR_PAMFREQ	"81.92kHz"
-#define XP_TIMER_CON	150
-#define XP_TIMER_MUL	75
-#define XP_SAMPLE_RATE_COUNT	1
-#define XP_SAMPLE_RATE	40960
-#define XP_STRIDE	4
-#define XP_FILTER	psgpam_internal_to_pam3
-
-#elif USE_XPENC == XPENC_PAM4_12
-	// XPCPUFREQ / (200 + 100 * T)
-#define XP_STR_ENC	"4-phase 12 wait"
-#define XP_STR_PAMFREQ	"61.44kHz"
-#define XP_TIMER_CON	200
-#define XP_TIMER_MUL	100
-#define XP_SAMPLE_RATE_COUNT	1
-#define XP_SAMPLE_RATE	30720
-#define XP_STRIDE	4
-#define XP_FILTER	psgpam_internal_to_pam4
-
-#else
-#error Error: PAM encoding not selected
-#endif
-
-#define XP_BUFTOP_INITIAL	0x4000
-#define XP_ATN_STAT	0x80808080
-#define XP_ATN_RELOAD	0xc0c0c0c0
+#define XP_ATN_RELOAD	0x80808080
+#define XP_ATN_STAT	0xc0c0c0c0
 #define XP_ATN_RESET	0xe0e0e0e0
 
 struct psgpam_softc {
@@ -163,12 +75,21 @@ struct psgpam_softc {
 	kmutex_t sc_intr_lock;
 	kmutex_t sc_thread_lock;
 
+	int      sc_isopen;
+
 	int      sc_started;
 	int      sc_outcount;
 	int      sc_xp_state;	//
 	uint16_t sc_xp_addr;	// XP buffer addr
+
 	int      sc_xp_enc;
-	int      sc_xp_timer;
+	u_int    sc_sample_rate;
+	int      sc_stride;
+	int      sc_dynamic;
+
+	int      sc_xp_rept;
+
+	struct psgpam_codecvar sc_psgpam_codecvar;
 };
 
 static int  psgpam_match(device_t, cfdata_t, void *);
@@ -200,9 +121,6 @@ static int  psgpam_round_blocksize(void *, int, int,
 static size_t psgpam_round_buffersize(void *, int, size_t);
 
 static int  psgpam_intr(void *);
-static void psgpam_internal_to_pam2(audio_filter_arg_t *);
-static void psgpam_internal_to_pam3(audio_filter_arg_t *);
-static void psgpam_internal_to_pam4(audio_filter_arg_t *);
 
 CFATTACH_DECL_NEW(psgpam, sizeof(struct psgpam_softc),
 	psgpam_match, psgpam_attach, NULL, NULL);
@@ -233,15 +151,15 @@ static const struct audio_hw_if psgpam_hw_if = {
 
 static struct audio_device psgpam_device = {
 	"PSG PAM",
-	"0.1",
+	"0.2",
 	"",
 };
 
-static const struct audio_format psgpam_formats[] = {
-	{ NULL, AUMODE_PLAY, AUDIO_ENCODING_SLINEAR_BE, 16, 16,
-	  1, AUFMT_MONAURAL,
-	  XP_SAMPLE_RATE_COUNT, { XP_SAMPLE_RATE },
-	},
+// fill by query_format
+static struct audio_format psgpam_format = {
+	NULL, AUMODE_PLAY, AUDIO_ENCODING_SLINEAR_BE, 16, 16,
+	1, AUFMT_MONAURAL,
+	1, {0},
 };
 
 /* private functions */
@@ -249,28 +167,27 @@ static
 void
 psgpam_xp_start(struct psgpam_softc *sc)
 {
-	DPRINTF(3, "XP starting..");
-	if (xp_readmem8(XP_STAT_PLAY) == 1) {
-		DPRINTF(1, "XP already started???");
+	uint16_t cycle_clk;
+	uint8_t rept_clk;
+
+	DPRINTF(3, "XP PAM starting..");
+	if (xp_readmem8(PAM_RUN) != 0) {
+		DPRINTF(1, "XP PAM already started???");
 	}
 
-	xp_writemem8(XP_TIMER, sc->sc_xp_timer);
-	xp_writemem8(XP_ENC, sc->sc_xp_enc);
-	xp_writemem16le(XP_BUFTOP, XP_BUFTOP_INITIAL);
-	DPRINTF(3, "XPENC=%d XPTIMER=%d\n", sc->sc_xp_enc, sc->sc_xp_timer);
-	DPRINTF(3, " BUFTOP=%04X ", xp_readmem16le(XP_BUFTOP));
-
-	while (xp_readmem8(XP_STAT_READY) != 1) {
-	}
+	xp_writemem8(PAM_ENC, sc->sc_xp_enc);
+	xp_cmd(DEVID_PAM, PAM_CMD_QUERY);
+	cycle_clk = xp_readmem16le(PAM_CYCLE_CLK);
+	rept_clk = xp_readmem8(PAM_REPT_CLK);
+	sc->sc_xp_rept = (XP_CPU_FREQ / sc->sc_sample_rate
+		- cycle_clk) / rept_clk;
+	xp_writemem8(PAM_REPT, sc->sc_xp_rept);
+	DPRINTF(3, "ENC=%d REPT=%d\n", sc->sc_xp_enc, sc->sc_xp_rept);
 
 	xp_intr5_enable();
+	xp_cmd_nowait(DEVID_PAM, PAM_CMD_START);
 
-	xp_writemem8(XP_CMD_START, 1);
-
-	while (xp_readmem8(XP_STAT_PLAY) != 1) {
-	}
-
-	DPRINTF(3, "XP started\n");
+	DPRINTF(3, "XP PAM started\n");
 }
 
 /* MI MD API */
@@ -303,11 +220,14 @@ psgpam_attach(device_t parent, device_t self, void *aux)
 	sc->sc_dev = self;
 
 	aprint_normal(": HD647180X I/O processor as PSG PAM\n");
-	aprint_normal_dev(self, "PSGPAM encoding = " XP_STR_ENC "\n");
-	aprint_normal_dev(self, "PAM frequency = " XP_STR_PAMFREQ "\n");
 
 	sc->sc_shm_base = XP_SHM_BASE;
 	sc->sc_shm_size = XP_SHM_SIZE;
+
+	sc->sc_xp_enc = PAM_ENC_PAM2A;
+	sc->sc_sample_rate = 8000;
+	sc->sc_stride = 2;
+	sc->sc_dynamic = 1;
 
 	mutex_init(&sc->sc_thread_lock, MUTEX_DEFAULT, IPL_NONE);
 	mutex_init(&sc->sc_intr_lock, MUTEX_DEFAULT, IPL_SCHED);
@@ -335,10 +255,10 @@ psgpam_open(void *hdl, int flags)
 	DPRINTF(1, "%s: flags=0x%x\n", __func__, flags);
 	sc = hdl;
 
-	// XXX descriptor by phase
-	if (!xp_acquire(XPBUS_PSGPAM2PH)) {
+	u_int a;
+	a = xp_acquire(DEVID_PAM, 0);
+	if (a == 0)
 		return EBUSY;
-	}
 
 	// firmware transfer
 	xp_ensure_firmware();
@@ -346,6 +266,7 @@ psgpam_open(void *hdl, int flags)
 	sc->sc_xp_state = 0;
 	sc->sc_started = 0;
 	sc->sc_outcount = 0;
+	sc->sc_isopen = 1;
 
 	return 0;
 }
@@ -353,13 +274,15 @@ psgpam_open(void *hdl, int flags)
 static void
 psgpam_close(void *hdl)
 {
+	struct psgpam_softc *sc;
+
+	sc = hdl;
+
 	xp_intr5_disable();
 
-	// force stop
-	xp_cpu_reset();
+	xp_release(DEVID_PAM);
 
-	// XXX descriptor by phase
-	xp_release(XPBUS_PSGPAM2PH);
+	sc->sc_isopen = 0;
 
 	DPRINTF(1, "%s\n", __func__);
 }
@@ -368,9 +291,46 @@ psgpam_close(void *hdl)
 static int
 psgpam_query_format(void *hdl, audio_format_query_t *afp)
 {
+	struct psgpam_softc *sc;
+	u_int a;
+	u_int freq;
+	uint16_t cycle_clk;
+	uint8_t rept_clk;
+	uint8_t rept_max;
+	int clk;
+	int i;
 
-	return audio_query_format(psgpam_formats,
-	    __arraycount(psgpam_formats), afp);
+	sc = hdl;
+
+	if (!sc->sc_isopen) {
+		a = xp_acquire(DEVID_PAM, 0);
+		if (a == 0)
+			return EINVAL;
+		xp_ensure_firmware();
+	}
+
+	xp_writemem8(PAM_ENC, sc->sc_xp_enc);
+	xp_cmd(DEVID_PAM, PAM_CMD_QUERY);
+
+	cycle_clk = xp_readmem16le(PAM_CYCLE_CLK);
+	rept_clk = xp_readmem8(PAM_REPT_CLK);
+	rept_max = xp_readmem8(PAM_REPT_MAX);
+	if (rept_max >= AUFMT_MAX_FREQUENCIES) {
+		rept_max = AUFMT_MAX_FREQUENCIES - 1;
+	}
+
+	for (i = 0; i <= rept_max; i++) {
+		clk = cycle_clk + i * rept_clk;
+		freq = XP_CPU_FREQ / clk;
+		psgpam_format.frequency[i] = freq;
+	}
+	psgpam_format.frequency_type = rept_max + 1;
+
+	if (!sc->sc_isopen) {
+		xp_release(DEVID_PAM);
+	}
+
+	return audio_query_format(&psgpam_format, 1, afp);
 }
 #else
 static int
@@ -379,14 +339,8 @@ psgpam_query_encoding(void *hdl, struct audio_encoding *ae)
 
 	DPRINTF(1, "%s\n", __func__);
 
-	if (ae->index < 0 || ae->index >= __arraycount(psgpam_formats))
-		return EINVAL;
-
-	ae->encoding = psgpam_formats[ae->index].encoding;
-	strcpy(ae->name, audio_encoding_name(ae->encoding));
-	ae->precision = psgpam_formats[ae->index].precision;
-	ae->flags = 0;
-	return 0;
+	// unsupported
+	return EINVAL;
 }
 #endif
 
@@ -406,20 +360,49 @@ psgpam_init_format(void *hdl, int setmode,
 	    setmode, audio_encoding_name(play->encoding),
 	    play->precision, play->channels, play->sample_rate);
 
-	sc->sc_xp_enc = USE_XPENC;
-
-	sc->sc_xp_timer = (XP_CPU_FREQ / play->sample_rate - XP_TIMER_CON)
-		/ XP_TIMER_MUL;
-	if (sc->sc_xp_timer < 0) sc->sc_xp_timer = 0;
-
-	DPRINTF(1, "XPENC=%d XPTIMER=%d\n", sc->sc_xp_enc, sc->sc_xp_timer);
+	sc->sc_sample_rate = play->sample_rate;
 
 	// set filter
-	pfil->codec = XP_FILTER;
-	// XXX AUDIO_ENCODING_PSGPAM2,3,4
+	pfil->param.sample_rate = sc->sc_sample_rate;
 	pfil->param.encoding = AUDIO_ENCODING_NONE;
-	pfil->param.precision = XP_STRIDE * 8;
-	pfil->param.validbits = XP_STRIDE * 8;
+	pfil->param.channels = 1;
+
+	switch (sc->sc_xp_enc) {
+	 case PAM_ENC_PAM2A:
+		if (sc->sc_dynamic) {
+			pfil->codec = psgpam_aint_to_pam2a_d;
+		} else {
+			pfil->codec = psgpam_aint_to_pam2a;
+		}
+		pfil->param.precision = pfil->param.validbits = 16;
+		break;
+	 case PAM_ENC_PAM2B:
+		if (sc->sc_dynamic) {
+			pfil->codec = psgpam_aint_to_pam2b_d;
+		} else {
+			pfil->codec = psgpam_aint_to_pam2b;
+		}
+		pfil->param.precision = pfil->param.validbits = 16;
+		break;
+	 case PAM_ENC_PAM3A:
+		if (sc->sc_dynamic) {
+			pfil->codec = psgpam_aint_to_pam3a_d;
+		} else {
+			pfil->codec = psgpam_aint_to_pam3a;
+		}
+		pfil->param.precision = pfil->param.validbits = 32;
+		break;
+	 case PAM_ENC_PAM3B:
+		if (sc->sc_dynamic) {
+			pfil->codec = psgpam_aint_to_pam3b_d;
+		} else {
+			pfil->codec = psgpam_aint_to_pam3b;
+		}
+		pfil->param.precision = pfil->param.validbits = 32;
+		break;
+	}
+	psgpam_init_context(&sc->sc_psgpam_codecvar, sc->sc_sample_rate);
+	pfil->context = &sc->sc_psgpam_codecvar;
 
 	return 0;
 }
@@ -453,11 +436,11 @@ psgpam_start_output(void *hdl, void *block, int blksize,
 	sc->sc_intr = intr;
 	sc->sc_arg = intrarg;
 
-	markoffset = blksize - XP_STRIDE;
+	markoffset = blksize - sc->sc_stride;
 
 	if (sc->sc_xp_state == 0) {
 		marker = XP_ATN_STAT;
-		sc->sc_xp_addr = XP_BUFTOP_INITIAL;
+		sc->sc_xp_addr = PAM_BUF;
 
 		if (sc->sc_started == 0) {
 			// if first transfer, interrupt at top of buffer.
@@ -468,12 +451,14 @@ psgpam_start_output(void *hdl, void *block, int blksize,
 	}
 
 	// marking
-#if XP_STRIDE == 2
-	uint16_t *markptr = (uint16_t*)((uint8_t*)block + markoffset);
-#else // STRIDE == 4
-	uint32_t *markptr = (uint32_t*)((uint8_t*)block + markoffset);
-#endif
-	*markptr |= marker;
+	if (sc->sc_stride == 2) {
+		uint16_t *markptr = (uint16_t*)((uint8_t*)block + markoffset);
+		*markptr |= marker;
+	} else {
+		// stride == 4
+		uint32_t *markptr = (uint32_t*)((uint8_t*)block + markoffset);
+		*markptr |= marker;
+	}
 
 	// transfer
 	memcpy(
@@ -504,13 +489,21 @@ static int
 psgpam_halt_output(void *hdl)
 {
 	struct psgpam_softc *sc = hdl;
+	uint32_t marker;
 
 	DPRINTF(2, "%s\n", __func__);
 
 	xp_intr5_disable();
 
-	// XP reset
-	xp_cpu_reset();
+	marker = XP_ATN_RESET;
+	if (sc->sc_stride == 2) {
+		uint16_t *markptr = xp_shmptr(PAM_BUF);
+		*markptr |= marker;
+	} else {
+		// stride == 4
+		uint32_t *markptr = xp_shmptr(PAM_BUF);
+		*markptr |= marker;
+	}
 
 	sc->sc_started = 0;
 	sc->sc_xp_state = 0;
@@ -615,35 +608,3 @@ psgpam_intr(void *hdl)
 	/* handled */
 	return 1;
 }
-
-void __unused
-psgpam_internal_to_pam2(audio_filter_arg_t *arg)
-{
-	const aint_t *s = arg->src;
-	uint16_t *d = arg->dst;
-
-	const uint16_t *table = PAM2_TABLE;
-
-	DPRINTF(4, "internal_to_pam2: arg->src=%p arg->dst=%p",
-		arg->src, arg->dst);
-
-	for (int i = 0; i < arg->count; i++) {
-		uint8_t x = ((*s++) >> (AUDIO_INTERNAL_BITS - 8)) ^ 0x80;
-		*d++ = htobe16(table[x]);
-	}
-}
-
-void __unused
-psgpam_internal_to_pam3(audio_filter_arg_t *arg)
-{
-	const aint_t *s = arg->src;
-	uint32_t *d = arg->dst;
-
-	const uint32_t *table = PAM3_TABLE;
-
-	for (int i = 0; i < arg->count; i++) {
-		uint8_t x = ((*s++) >> (AUDIO_INTERNAL_BITS - 8)) ^ 0x80;
-		*d++ = htobe32(table[x]);
-	}
-}
-

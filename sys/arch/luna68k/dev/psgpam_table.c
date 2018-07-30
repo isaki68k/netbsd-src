@@ -1,4 +1,9 @@
+#if defined(_KERNEL)
+#include <sys/stdint.h>
+#else
 #include <stdint.h>
+#endif
+
 /*
 All PT_count=16
 Limited 189812531 PT_count=15

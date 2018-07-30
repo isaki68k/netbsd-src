@@ -32,26 +32,13 @@
 #define XP_SHM_SIZE	0x00010000	/* 64KB for XP; rest 64KB for lance */
 #define XP_TAS_ADDR	0x61000000
 
-/* xpbus device descriptor */
-#define XPBUS_XP	0
-#define XPBUS_PSGPAM2PH	1
-#define XPBUS_PSGPAM3PH	2
-#define XPBUS_PSGPCM1CH	3
-#define XPBUS_PSGPCM2CH	4
-#define XPBUS_PSGPCM3CH	5
-#define XPBUS_PSGSPK	6
-#define XPBUS_PSGMIDI	7
-#define XPBUS_PSGLPR	8
-#define XPBUS_FDC	9
-#define XPBUS_SIO	10
-#define XPBUS_PIALPR	11
-
 struct xpbus_attach_args {
 	const char *xa_name;
 };
 
 /* xpbus sharing control */
-int  xp_acquire(int);
+#define XP_ACQ_EXCL	(1 << 31)
+u_int xp_acquire(int, u_int);
 void xp_release(int);
 void xp_set_shm_dirty(void);
 void xp_ensure_firmware(void);
@@ -74,7 +61,7 @@ void xp_intr5_disable(void);
 void xp_intr5_acknowledge(void);
 
 /* XP SHM control */
-uint8_t *xp_shmptr(int);
+void *xp_shmptr(int);
 int  xp_readmem8(int);
 int  xp_readmem16le(int);
 void xp_writemem8(int, int);

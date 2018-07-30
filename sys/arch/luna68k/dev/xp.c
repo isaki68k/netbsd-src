@@ -35,8 +35,10 @@ __KERNEL_RCSID(0, "$NetBSD: xp.c,v 1.4 2017/06/01 02:45:06 chs Exp $");
 #include <sys/systm.h>
 #include <sys/conf.h>
 #include <sys/device.h>
+#include <sys/fcntl.h>
 #include <sys/ioctl.h>
 #include <sys/kmem.h>
+#include <sys/mman.h>
 #include <sys/errno.h>
 
 #include <uvm/uvm_extern.h>
@@ -47,6 +49,7 @@ __KERNEL_RCSID(0, "$NetBSD: xp.c,v 1.4 2017/06/01 02:45:06 chs Exp $");
 #include <luna68k/dev/xpbusvar.h>
 
 #include "ioconf.h"
+#include "xplx/xplxdefs.h"
 
 struct xp_softc {
 	device_t	sc_dev;
@@ -56,6 +59,7 @@ struct xp_softc {
 	vaddr_t		sc_tas;
 
 	bool		sc_isopen;
+	int		sc_flags;
 };
 
 static int xp_match(device_t, cfdata_t, void *);
@@ -133,6 +137,7 @@ xp_open(dev_t dev, int flags, int devtype, struct lwp *l)
 {
 	struct xp_softc *sc;
 	int unit;
+	u_int a;
 	
 	DPRINTF(XP_DEBUG_ALL, ("%s\n", __func__));
 
@@ -143,11 +148,23 @@ xp_open(dev_t dev, int flags, int devtype, struct lwp *l)
 	if (sc->sc_isopen)
 		return EBUSY;
 
-	if (!xp_acquire(XPBUS_XP)) {
-		return EBUSY;
+	if (flags & FWRITE) {
+		// exclusive if write
+		a = xp_acquire(DEVID_XPBUS, XP_ACQ_EXCL);
+		if (a == 0)
+			return EBUSY;
+		if (a != (1 << DEVID_XPBUS)) {
+			xp_release(DEVID_XPBUS);
+			return EBUSY;
+		}
+	} else {
+		a = xp_acquire(DEVID_XPBUS, 0);
+		if (a == 0)
+			return EBUSY;
 	}
 
 	sc->sc_isopen = true;
+	sc->sc_flags = flags;
 
 	return 0;
 }
@@ -163,7 +180,7 @@ xp_close(dev_t dev, int flags, int mode, struct lwp *l)
 	unit = minor(dev);
 	sc = device_lookup_private(&xp_cd, unit);
 
-	xp_release(XPBUS_XP);
+	xp_release(DEVID_XPBUS);
 
 	sc->sc_isopen = false;
 
@@ -186,6 +203,9 @@ xp_ioctl(dev_t dev, u_long cmd, void *addr, int flags, struct lwp *l)
 
 	switch (cmd) {
 	case XPIOCDOWNLD:
+		if (!(sc->sc_flags & FWRITE)) {
+			return EACCES;
+		}
 		downld = addr;
 		loadsize = downld->size;
 		if (loadsize == 0 || loadsize > sc->sc_shm_size) {
