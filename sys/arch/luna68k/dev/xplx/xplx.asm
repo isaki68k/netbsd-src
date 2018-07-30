@@ -406,7 +406,7 @@ XPBUS_STAT_RESET::		; reset count
 	.DB	0,0,0		; reserved
 
 XPBUS_PRT0_TIMER::		; PRT0 TIMER TLDR (devices dispatch)
-	.DW	0
+	.DW	256
 XPBUS_INTR1_DEV::		; HOSTINTR1 device
 	.DW	0
 XPBUS_INTR5_DEV::		; HOSTINTR5 device
