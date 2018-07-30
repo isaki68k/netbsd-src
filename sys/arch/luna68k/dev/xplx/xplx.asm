@@ -974,7 +974,7 @@ PCM_INTR_NEXT:
 	RLCA
 	JR	C,PCM_STAT
 	RLCA
-	JR	C,PCM_NORMAL
+	JR	NC,PCM_NORMAL
 
 ; PCM RESET attention
 ; in: HL = EXIT address
