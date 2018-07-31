@@ -1698,7 +1698,7 @@ PAM3A_HEAD_ORG:	.EQU	$$
 PAM3A_HEAD:
 PAM3A:
 				; PAM3A
-				; 12+0:12+3:12+12 = 4:5:6 PAM
+				; 12+0:12+3:12+12 = 4:5:8 PAM
 				; PAM 51clk 120.471kHz
 				; output PAM wave = normal 5 + antinoise 1
 
