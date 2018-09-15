@@ -278,7 +278,7 @@ NetBSD8 では使われなくなっている。
 AUDIO2 では廃止する。代わりに query_format を新設したい。
 </span></dd>
 
-<dt class=p1><span class=a2>int query_format(void *hdl, audio_format_query_t **afp)
+<dt class=p1><span class=a2>int query_format(void *hdl, audio_format_query_t *afp)
 <dd class=p1><span class=a2>
 	ハードウェアがサポートしているフォーマットを列挙します。
 	afp->index に 0 以上の番号が指定されるので、
