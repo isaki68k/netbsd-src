@@ -201,10 +201,17 @@ static uint	arcofi_portmask_to_cr3(int);
 static int	arcofi_open(void *, int);
 static void	arcofi_close(void *);
 static int	arcofi_drain(void *);
+#if defined(AUDIO2)
+static int	arcofi_query_format(void *, audio_format_query_t *);
+static int	arcofi_init_format(void *, int,
+		    const audio_params_t *, const audio_params_t *,
+		    audio_filter_reg_t *, audio_filter_reg_t *);
+#else
 static int	arcofi_query_encoding(void *, struct audio_encoding *);
 static int	arcofi_set_params(void *, int, int,
 		    struct audio_params *, struct audio_params *,
 		    stream_filter_list_t *, stream_filter_list_t *);
+#endif
 static int	arcofi_round_blocksize(void *, int, int,
 		    const audio_params_t *);
 static int	arcofi_commit_settings(void *);
@@ -225,8 +232,13 @@ static const struct audio_hw_if arcofi_hw_if = {
 	.open		  = arcofi_open,
 	.close		  = arcofi_close,
 	.drain		  = arcofi_drain,
+#if defined(AUDIO2)
+	.query_format	  = arcofi_query_format,
+	.init_format	  = arcofi_init_format,
+#else
 	.query_encoding	  = arcofi_query_encoding,
 	.set_params	  = arcofi_set_params,
+#endif
 	.round_blocksize  = arcofi_round_blocksize,
 	.commit_settings  = arcofi_commit_settings,
 	.start_output	  = arcofi_start_output,
@@ -363,6 +375,41 @@ arcofi_drain(void *v)
 	return 0;
 }
 
+#if defined(AUDIO2)
+static int
+arcofi_query_format(void *v, audio_format_query_t *afp)
+{
+
+	return audio_query_format(arcofi_formats, ARCOFI_NFORMATS, afp);
+}
+
+static int
+arcofi_init_format(void *handle, int setmode,
+    const audio_params_t *play, const audio_params_t *rec,
+    audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
+{
+	struct arcofi_softc *sc;
+
+	/* XXX For now, AUDIO2 only supports SLINEAR_NE(BE) */
+	if (play->encoding != AUDIO_ENCODING_SLINEAR_BE) {
+		panic("play encoding %s not supported",
+		    audio_encoding_name(play->encoding));
+	}
+	if (rec->encoding != AUDIO_ENCODING_SLINEAR_BE) {
+		panic("rec encoding %s not supported",
+		    audio_encoding_name(rec->encoding));
+	}
+
+	sc = handle;
+	sc->sc_shadow.cr3 =
+	    (sc->sc_shadow.cr3 & ~CR3_OPMODE_MASK) |
+	    CR3_OPMODE_LINEAR;
+
+	return 0;
+}
+
+#else
+
 static int
 arcofi_query_encoding(void *v, struct audio_encoding *aep)
 {
@@ -436,6 +483,7 @@ arcofi_set_params(void *handle, int setmode, int usemode,
 
 	return 0;
 }
+#endif /* AUDIO2 */
 
 static int
 arcofi_round_blocksize(void *handle, int block, int mode,
@@ -1201,6 +1249,10 @@ arcofi_attach(struct arcofi_softc *sc, const char *versionstr)
 	mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_NONE);
 	mutex_init(&sc->sc_intr_lock, MUTEX_DEFAULT, IPL_AUDIO);
 	cv_init(&sc->sc_cv, device_xname(self));
+#if defined(AUDIO2)
+	// AUDIO2 ではこの create_encodings() と sc_encodings、この goto out
+	// の先のラベルが不要になるけど、そこまで ifdef するのは面倒なので。
+#endif
 	rc = auconv_create_encodings(arcofi_formats, ARCOFI_NFORMATS,
 	    &sc->sc_encodings);
 	if (rc != 0)
