@@ -26,7 +26,7 @@ NetBSD7 以前の実装では(オープン後)再生(録音)開始前に一度�
 行なっている誤ったドライバがいくつかある
 (再生(録音)開始は start_output(start_input) 内で再生(録音)が始まってなければ
 開始する、というようにするべきと思われる)。
-具体的には tav(4)、vraiu(4)、interwave.c、vs(4) あたり。
+具体的には melody(4)、vraiu(4)、interwave.c、vs(4) あたり。
 </p>
 <p class="p">
 それを踏まえて、
