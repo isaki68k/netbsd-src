@@ -60,6 +60,7 @@ vs(4) などの珍しい周波数の hardware がサポートできない。
 |aucc(4)	|amiga|compiled but not tested
 |eap(4)		|	|AUDIO2 completed
 |hdafg(4)	|	|AUDIO2 completed
+|melody(4)	|amiga|compiled but not tested
 |mercury(4)	|x68k	|新規追加 and AUDIO2 completed (*)
 |pad(4)		|	|AUDIO2 completed
 |psgpam(4)	|luna68k|新規追加 and AUDIO2 completed (*)
