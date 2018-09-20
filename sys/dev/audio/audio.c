@@ -712,6 +712,7 @@ audio_encoding_name(int encoding)
  */
 static const audio_encoding_t audio_encodings[] = {
 	{ 0, AudioEmulaw,	AUDIO_ENCODING_ULAW,		8,  0 },
+	{ 0, AudioEalaw,	AUDIO_ENCODING_ALAW,		8,  0 },
 	{ 0, AudioEslinear,	AUDIO_ENCODING_SLINEAR,		8,  0 },
 	{ 0, AudioEulinear,	AUDIO_ENCODING_ULINEAR,		8,  0 },
 	{ 0, AudioEslinear_le,	AUDIO_ENCODING_SLINEAR_LE,	16, 0 },
@@ -3750,6 +3751,8 @@ audio_track_get_codec(const audio_format2_t *src, const audio_format2_t *dst)
 	if (audio_format2_is_internal(src)) {
 		if (dst->encoding == AUDIO_ENCODING_ULAW) {
 			return audio_internal_to_mulaw;
+		} else if (dst->encoding == AUDIO_ENCODING_ALAW) {
+			return audio_internal_to_alaw;
 		} else if (audio_format2_is_linear(dst)) {
 			switch (dst->stride) {
 			case 8:
@@ -3771,6 +3774,8 @@ audio_track_get_codec(const audio_format2_t *src, const audio_format2_t *dst)
 	} else if (audio_format2_is_internal(dst)) {
 		if (src->encoding == AUDIO_ENCODING_ULAW) {
 			return audio_mulaw_to_internal;
+		} else if (src->encoding == AUDIO_ENCODING_ALAW) {
+			return audio_alaw_to_internal;
 		} else if (audio_format2_is_linear(src)) {
 			switch (src->stride) {
 			case 8:

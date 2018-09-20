@@ -33,5 +33,7 @@
 
 extern void audio_mulaw_to_internal(audio_filter_arg_t *);
 extern void audio_internal_to_mulaw(audio_filter_arg_t *);
+extern void audio_alaw_to_internal(audio_filter_arg_t *);
+extern void audio_internal_to_alaw(audio_filter_arg_t *);
 
 #endif /* !_SYS_DEV_AUDIO_MULAW_H_ */
