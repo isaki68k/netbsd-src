@@ -797,10 +797,30 @@ mappage 廃止に伴い、<tt>AUDIO_PROP_MMAP</tt> も返さなくてよいこ�
 </dl>
 
 <p class=p1><span class=comment>
-各メソッドの呼ばれるタイミングは次のとおり。
-ここでいうタイミングはまず全体を「attach中」と「attach以降」に分け、
-「attach以降」をさらに「open中」と「非open中」に分けたものの3種類とする。
-それ以上の細かい条件についてはここでは触れていない。
+これらのメソッドが呼び出されるタイミング(フェーズ)を以下に規程する。
+NetBSD7 のそれとは違っていることに注意。
+フェーズは以下の3つとする。
+XXX Opened と Running を区別する必要があるかどうか
+</span></p>
+<dl>
+<dt class=p1><span class=comment>Attach</span>
+<dd class=p1><span class=comment>デバイスのアタッチ中。
+カーネルの起動時、あるいは USB などのリムーバブルデバイスを挿した時。
+audioattach 成功で Closed 状態に遷移。
+</span>
+
+<dt class=p1><span class=comment>Closed
+<dd class=p1><span class=comment>/dev/audio が1つもオープンされていない時。
+hw_if-&gt;open 成功で Opened 状態に遷移。
+</span>
+
+<dt class=p1><span class=comment>Opened
+<dd class=p1><span class=comment>/dev/audio が1つ以上オープンされている時。
+hw_if-&gt;close 成功で Closed 状態に遷移。
+</span>
+</dl>
+
+<p class=p1><span class=comment>
 N7、N8 については仕様というより確認できた限りというだけ。
 AUDIO2 は仕様。
 表中 AUDIO2 列の青字は NetBSD7 と異なる箇所。
@@ -808,124 +828,123 @@ AUDIO2 は仕様。
 <table border=1 rules=all class=p1 style="margin-left: 12%">
 <tr><th>hw_if<th>NetBSD&lt;=7<th>NetBSD&gt;=8<th>AUDIO2
 <tr><td>open
- <td>attach以降
- <td>たぶんattach以降
- <td>attach以降
+ <td>Closed
+ <td>たぶんClosed
+ <td>Closed
 
 <tr><td>close
- <td>open中
- <td>たぶんopen中
- <td>open中
+ <td>Opened
+ <td>たぶんOpened
+ <td>Opened
 
 <tr><td>drain
- <td>open中
- <td>open中
+ <td>Opened
+ <td>Opened
  <td><span class=a2>(削除)</span>
 
 <tr><td>query_encoding
- <td>open中
- <td><span class=bad>呼ばれることはない</span>
+ <td>Opened
+ <td><span class=bad>Never called</span>
  <td><span class=a2>(削除)</span>
 
 <tr><td>set_params
- <td>open中
- <td>attach中とたぶん非open中
+ <td>Opened
+ <td>AttachとたぶんClosed
  <td><span class=a2>(将来廃止予定)<br>
-	attach中と非open中
+	Attach, Closed
 	</span>
 
 <tr><td>round_blocksize
- <td>open中
- <td>attach中。他は不明。
- <td><span class=a2>attach中と非open中</span>
+ <td>Opened
+ <td>Attach。他は不明。
+ <td><span class=a2>Attach, Closed</span>
 
 <tr><td>commit_settings
- <td>open中
- <td>attach中。他は不明。
- <td><span class=a2>attach中と非open中</span>
+ <td>Opened
+ <td>Attach。他は不明。
+ <td><span class=a2>Attach, Closed</span>
 
 <tr><td>init_output<br>init_input
- <td>open中
- <td><span class=bad>attach中とたぶん非open中</span>
- <td><span class=a2>attach中と非open中</span>
+ <td>Opened
+ <td><span class=bad>AttachとたぶんClosed</span>
+ <td><span class=a2>Attach, Closed</span>
 
 <tr><td>start_output<br>start_input
- <td>open中
- <td>たぶんopen中
- <td>open中
+ <td>Opened
+ <td>たぶんOpened
+ <td>Opened
 
 <tr><td>halt_output<br>halt_input
- <td>open中
- <td>たぶんopen中
- <td>open中
+ <td>Opened
+ <td>たぶんOpened
+ <td>Opened
 
 <tr><td>speaker_ctl
- <td>open中
- <td>たぶんopen中
- <td>open中
+ <td>Opened
+ <td>たぶんOpened
+ <td>Opened
 
 <tr><td>getdev
- <td>open中
- <td>open中
- <td>open中
+ <td>Opened
+ <td>Opened
+ <td>Opened
 
 <tr><td>setfd
- <td>open中
- <td><span class=bad>open中</span>
+ <td>Opened
+ <td><span class=bad>Opened</span>
  <td><span class=a2>(削除)</span>
 
 <tr><td>set_port<br>get_port
  <td colspan=3>未調査
 
 <tr><td>query_devinfo
- <td colspan=3>attach中とattach以降? (未調査)
+ <td colspan=3>at all time ? (未調査)
 
 <tr><td>allocm<br>freem
- <td>attach中
- <td>attach中とたぶん非open中
- <td><span class=a2>attach中と非open中</span>
+ <td>Attach
+ <td>AttachとたぶんClosed
+ <td><span class=a2>Attach, Closed</span>
 
 <tr><td>round_buffersize
- <td>attach中
- <td>attach中とたぶん非open中
- <td><span class=a2>attach中と非open中</span>
+ <td>Attach
+ <td>AttachとたぶんClosed
+ <td><span class=a2>Attach, Closed</span>
 
 <tr><td>mappage
- <td>open中
- <td><span class=bad>呼ばれることはない</span>
+ <td>Opened
+ <td><span class=bad>Never called</span>
  <td><span class=a2>(削除)</span>
 
 <tr><td>get_props
- <td>attach中とopen中
- <td>attach中とたぶんattach以降
- <td><span class=a2>attach中とattach以降</span>
+ <td>AttachとOpened
+ <td>Attachとたぶんattach以降
+ <td><span class=a2>at all time</span>
 
 <tr><td>trigger_output<br>trigger_input
- <td>open中
- <td>たぶんopen中
- <td>open中
+ <td>Opened
+ <td>たぶんOpened
+ <td>Opened
 
 <tr><td>dev_ioctl
- <td>open中
- <td>open中
- <td>open中
+ <td>Opened
+ <td>Opened
+ <td>Opened
 
 <tr><td>get_locks
- <td>attach中
- <td>attach中
- <td>attach中
+ <td>Attach
+ <td>Attach
+ <td>Attach
 
 <tr><td>query_format
  <td>&mdash;
  <td>&mdash;
- <td><span class=a2>(新設)<br>
-	attach中とattach以降</span>
+ <td><span class=a2>(新設)<br>at all time</span>
 
 <tr><td>init_format
  <td>&mdash;
  <td>&mdash;
  <td><span class=a2>(新設)<br>
-	attach中と非open中</span>
+	Attach, Closed</span>
 
 </table>
 
