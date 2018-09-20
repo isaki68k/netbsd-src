@@ -56,6 +56,7 @@ vs(4) などの珍しい周波数の hardware がサポートできない。
 ## Supported devices
 |Device	|(port)	|対応度
 |-------|-------|-------|
+|arcofi(4)	|	|AUDIO2 completed
 |auich(4)	|	|AUDIO2 completed
 |aucc(4)	|amiga|compiled but not tested
 |eap(4)		|	|AUDIO2 completed
