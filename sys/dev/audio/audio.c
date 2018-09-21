@@ -219,10 +219,18 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #endif /* _KERNEL */
 
 // デバッグレベルは
+// 0: ログ出力なし
 // 1: open/close/set_param等
 // 2: read/write/ioctlシステムコールくらいまでは含む
 // 3: 割り込み以外のTRACEも含む
 // 4: 割り込み内のTRACEも含む (要 AUDIO_DEBUG_MLOG)
+//
+// ここの値は初期値で sysctl hw.audioN.debug で変更出来る
+// (グローバル変数なのでデバイス個別ではないが、ツリーを別に用意するのが面倒
+// なので audio0 とかになっている)。
+// ただし AUDIO_DEBUG 0..2 までと 3..4 には隔絶があり、
+// AUDIO_DEBUG 2 以下では TRACE がコンパイルされないため 3 以上は設定不可。
+// AUDIO_DEBUG 3 以上でコンパイルすれば 0..4 まで設定可能。
 #define AUDIO_DEBUG	4
 
 // XXX m68k はデバッグ込みだとまともに再生できないので別スイッチにしておくorz
@@ -233,7 +241,9 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #endif
 
 // デバッグ用なんちゃってメモリログ。
+#if AUDIO_DEBUG >= 3
 #define AUDIO_DEBUG_MLOG
+#endif
 
 #if defined(AUDIO_DEBUG_MLOG)
 #if defined(_KERNEL)
@@ -279,10 +289,9 @@ audio_vtrace(const char *funcname, const char *header, const char *fmt,
 	n += vsnprintf(buf + n, sizeof(buf) - n, fmt, ap);
 
 	if (cpu_intr_p()) {
-#if AUDIO_DEBUG >= 4 && defined(AUDIO_DEBUG_MLOG)
 		// 割り込み中なら覚えておくだけ
-		audio_mlog_printf("%s\n", buf);
-#endif
+		if (audiodebug >= 4)
+			audio_mlog_printf("%s\n", buf);
 	} else {
 		audio_mlog_flush();
 		printf("%s\n", buf);
@@ -367,9 +376,15 @@ audio_track_bufstat(audio_track_t *track, struct audio_track_debugbuf *buf)
 	    track->usrbuf.head, track->usrbuf.used, track->usrbuf_usedhigh);
 }
 
-#define TRACE(fmt, ...)		audio_trace(__func__, fmt, ## __VA_ARGS__)
-#define TRACET(t, fmt, ...)	audio_tracet(__func__, t, fmt, ## __VA_ARGS__)
-#define TRACEF(f, fmt, ...)	audio_tracef(__func__, f, fmt, ## __VA_ARGS__)
+#define TRACE(fmt, ...)		do { \
+	if (audiodebug >= 3) audio_trace(__func__, fmt, ## __VA_ARGS__); \
+} while (0)
+#define TRACET(t, fmt, ...)	do { \
+	if (audiodebug >= 3) audio_tracet(__func__, t, fmt, ## __VA_ARGS__); \
+} while (0)
+#define TRACEF(f, fmt, ...)	do { \
+	if (audiodebug >= 3) audio_tracef(__func__, f, fmt, ## __VA_ARGS__); \
+} while (0)
 #else
 #define TRACE(fmt, ...)		/**/
 #define TRACET(t, fmt, ...)	/**/
@@ -494,6 +509,7 @@ static int audio_hw_validate_format(struct audio_softc *, int,
 static int audio_mixers_init_format(struct audio_softc *, struct audio_info *);
 static int audio_sysctl_volume(SYSCTLFN_PROTO);
 static int audio_sysctl_blk_ms(SYSCTLFN_PROTO);
+static int audio_sysctl_debug(SYSCTLFN_PROTO);
 static void audio_format2_tostr(char *, size_t, const audio_format2_t *);
 #ifdef AUDIO_DEBUG
 static void audio_print_format2(const char *, const audio_format2_t *);
@@ -932,6 +948,13 @@ audioattach(device_t parent, device_t self, void *aux)
 		    CTLTYPE_INT, "blk_ms",
 		    SYSCTL_DESCR("blocksize in msec"),
 		    audio_sysctl_blk_ms, 0, (void *)sc, 0,
+		    CTL_HW, node->sysctl_num, CTL_CREATE, CTL_EOL);
+
+		sysctl_createv(&sc->sc_log, 0, NULL, NULL,
+		    CTLFLAG_READWRITE,
+		    CTLTYPE_INT, "debug",
+		    SYSCTL_DESCR("debug level (0..4)"),
+		    audio_sysctl_debug, 0, (void *)sc, 0,
 		    CTL_HW, node->sysctl_num, CTL_CREATE, CTL_EOL);
 
 #if 1
@@ -6865,8 +6888,8 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	play = file->ptrack;
 	rec = file->rtrack;
 
-#if AUDIO_DEBUG >= 2
-	{
+#if defined(AUDIO_DEBUG)
+	if (audiodebug >= 2) {
 		char buf[256];
 		char p[64];
 		int buflen;
@@ -7041,16 +7064,18 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	if (pchanges || rchanges) {
 		audio_file_clear(sc, file);
 #ifdef AUDIO_DEBUG
-		char modebuf[64];
-		snprintb(modebuf, sizeof(modebuf),
-		    "\177\020" "b\0PLAY\0" "b\2PLAY_ALL\0" "b\1RECORD\0",
-		    mode);
-		printf("setting mode to %s (pchanges=%d rchanges=%d)\n",
-		    modebuf, pchanges, rchanges);
-		if (pchanges)
-			audio_print_format2("setting play mode:", &pfmt);
-		if (rchanges)
-			audio_print_format2("setting rec  mode:", &rfmt);
+		if (audiodebug >= 1) {
+			char modebuf[64];
+			snprintb(modebuf, sizeof(modebuf), "\177\020"
+			    "b\0PLAY\0" "b\2PLAY_ALL\0" "b\1RECORD\0",
+			    mode);
+			printf("setting mode to %s (pchanges=%d rchanges=%d)\n",
+			    modebuf, pchanges, rchanges);
+			if (pchanges)
+				audio_print_format2("setting play mode:",&pfmt);
+			if (rchanges)
+				audio_print_format2("setting rec  mode:",&rfmt);
+		}
 #endif
 	}
 
@@ -7794,6 +7819,38 @@ audio_sysctl_blk_ms(SYSCTLFN_ARGS)
 	/* re-init track mixer */
 	audio_mixers_init(sc, mode, &phwfmt, &rhwfmt);
 	mutex_exit(sc->sc_lock);
+	return 0;
+}
+
+// デバッグレベルの変更
+// グローバルフラグだけど、とりあえず
+static int
+audio_sysctl_debug(SYSCTLFN_ARGS)
+{
+	struct sysctlnode node;
+	int t;
+	int error;
+
+	node = *rnode;
+	t = audiodebug;
+	node.sysctl_data = &t;
+	error = sysctl_lookup(SYSCTLFN_CALL(&node));
+	if (error || newp == NULL)
+		return error;
+
+	if (t < 0)
+		return EINVAL;
+#if AUDIO_DEBUG >= 3
+	if (t > 4)
+		return EINVAL;
+#else
+	if (t > 2) {
+		printf("audio: AUDIO_DEBUG >= 3 is not compiled.\n");
+		return EINVAL;
+	}
+#endif
+	audiodebug = t;
+	printf("audio: audiodebug = %d\n", audiodebug);
 	return 0;
 }
 
