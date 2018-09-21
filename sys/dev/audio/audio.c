@@ -5004,6 +5004,8 @@ audio_mixer_init(struct audio_softc *sc, int mode, const audio_format2_t *hwfmt)
 		audio_params_t p = format2_to_params(&mixer->hwbuf.fmt);
 		rounded = sc->hw_if->round_blocksize(sc->hw_hdl, blksize,
 		    mode, &p);
+		DPRINTF(2, "%s round_blocksize %d -> %d\n", __func__,
+		    blksize, rounded);
 		if (rounded != blksize) {
 			if ((rounded * NBBY) % (mixer->hwbuf.fmt.stride *
 			    mixer->hwbuf.fmt.channels) != 0) {
@@ -5027,6 +5029,8 @@ audio_mixer_init(struct audio_softc *sc, int mode, const audio_format2_t *hwfmt)
 		size_t rounded;
 		rounded = sc->hw_if->round_buffersize(sc->hw_hdl, mode,
 		    bufsize);
+		DPRINTF(2, "%s round_buffersize %zd -> %zd\n", __func__,
+		    bufsize, rounded);
 		// 縮められても困る?
 		if (rounded != bufsize) {
 			aprint_error_dev(sc->dev,
