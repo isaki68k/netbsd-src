@@ -257,7 +257,7 @@ int	audiodebug = AUDIO_DEBUG;
 #define DPRINTF(n, fmt...)	do { } while (0)
 #endif
 
-#if AUDIO_DEBUG > 2
+#if AUDIO_DEBUG >= 3
 static void audio_vtrace(const char *, const char *, const char *, va_list);
 static void audio_trace(const char *, const char *, ...)
 	__printflike(2, 3);
@@ -1804,7 +1804,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	if (sc->hw_if == NULL)
 		return ENXIO;
 
-#if AUDIO_DEBUG > 2
+#if AUDIO_DEBUG >= 3
 	TRACE("@%d start flags=0x%x po=%d ro=%d",
 	    device_unit(sc->dev),
 	    flags, sc->sc_popens, sc->sc_ropens);
@@ -2055,7 +2055,7 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
 	audio_track_t *oldtrack;
 	int error;
 
-#if AUDIO_DEBUG > 2
+#if AUDIO_DEBUG >= 3
 	TRACEF(file, "@%d start pid=%d.%d po=%d ro=%d",
 	    device_unit(sc->dev),
 	    (int)curproc->p_pid, (int)curlwp->l_lid,
@@ -2801,7 +2801,7 @@ audio_poll(struct audio_softc *sc, int events, struct lwp *l,
 
 	KASSERT(mutex_owned(sc->sc_lock));
 
-#if AUDIO_DEBUG > 2
+#if AUDIO_DEBUG >= 3
 #define POLLEV_BITMAP "\177\020" \
 	    "b\10WRBAND\0" \
 	    "b\7RDBAND\0" "b\6RDNORM\0" "b\5NVAL\0" "b\4HUP\0" \
@@ -2849,7 +2849,7 @@ audio_poll(struct audio_softc *sc, int events, struct lwp *l,
 		}
 	}
 
-#if AUDIO_DEBUG > 2
+#if AUDIO_DEBUG >= 3
 	snprintb(evbuf, sizeof(evbuf), POLLEV_BITMAP, revents);
 	TRACEF(file, "revents=%s", evbuf);
 #else
@@ -3070,7 +3070,7 @@ audioctl_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	if (sc->hw_if == NULL)
 		return ENXIO;
 
-#if AUDIO_DEBUG > 2
+#if AUDIO_DEBUG >= 3
 	TRACE("");
 #else
 	DPRINTF(1, "%s%d\n", __func__, device_unit(sc->dev));
@@ -4339,7 +4339,7 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 		goto error;
 	}
 
-#if AUDIO_DEBUG > 2
+#if AUDIO_DEBUG >= 3
 	struct audio_track_debugbuf m;
 
 	memset(&m, 0, sizeof(m));
@@ -4747,7 +4747,7 @@ audio_track_play(audio_track_t *track)
 		track->outputcounter += track->outbuf.used - track_count_0;
 	}
 
-#if AUDIO_DEBUG > 2
+#if AUDIO_DEBUG >= 3
 	struct audio_track_debugbuf m;
 	audio_track_bufstat(track, &m);
 	TRACET(track, "end%s%s%s%s%s%s",
@@ -4850,7 +4850,7 @@ audio_track_record(audio_track_t *track)
 
 	// XXX カウンタ
 
-#if AUDIO_DEBUG > 2
+#if AUDIO_DEBUG >= 3
 	struct audio_track_debugbuf m;
 	audio_track_bufstat(track, &m);
 	TRACET(track, "end%s%s%s%s%s%s",
@@ -6865,7 +6865,7 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	play = file->ptrack;
 	rec = file->rtrack;
 
-#if AUDIO_DEBUG > 1
+#if AUDIO_DEBUG >= 2
 	{
 		char buf[256];
 		char p[64];
@@ -7173,7 +7173,7 @@ audio_file_setinfo_check(audio_format2_t *fmt, const struct audio_prinfo *info)
 
 	if (changes) {
 		if (audio_check_params2(fmt) != 0) {
-#if AUDIO_DEBUG > 1
+#if AUDIO_DEBUG >= 2
 			char fmtbuf[64];
 			audio_format2_tostr(fmtbuf, sizeof(fmtbuf), fmt);
 			DPRINTF(0, "%s failed: %s\n", __func__, fmtbuf);
@@ -7619,7 +7619,7 @@ audio_getenc(struct audio_softc *sc, struct audio_encoding *ae)
 		error = EINVAL;
 	}
 
-#if AUDIO_DEBUG > 1
+#if AUDIO_DEBUG >= 2
 	if (error) {
 		DPRINTF(2, "error=%d\n", error);
 	} else {
