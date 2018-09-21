@@ -6287,8 +6287,8 @@ audio_mixers_init(struct audio_softc *sc, int mode,
 			aprint_normal_dev(sc->dev,
 			    "%s, blk %dms for playback\n",
 			    fmtstr, blkms);
-#if AUDIO_DEBUG >= 1
-			if (sc->sc_pmixer->codec) {
+#ifdef AUDIO_DEBUG
+			if (sc->sc_pmixer->codec && audiodebug >= 1) {
 				DPRINTF(1, "%s: codec %p -> %s %dbit\n",
 				    device_xname(sc->dev),
 				    sc->sc_pmixer->codec,
@@ -6320,8 +6320,8 @@ audio_mixers_init(struct audio_softc *sc, int mode,
 			aprint_normal_dev(sc->dev,
 			    "%s, blk %dms for recording\n",
 			    fmtstr, blkms);
-#if AUDIO_DEBUG >= 1
-			if (sc->sc_rmixer->codec) {
+#ifdef AUDIO_DEBUG
+			if (sc->sc_rmixer->codec && audiodebug >= 1) {
 				DPRINTF(1, "%s: codec %p <- %s %dbit\n",
 				    device_xname(sc->dev),
 				    sc->sc_rmixer->codec,
