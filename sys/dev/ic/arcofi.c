@@ -348,6 +348,9 @@ arcofi_close(void *v)
 	sc->sc_open = 0;
 }
 
+#if defined(AUDIO2)
+// drain 削除で sc_cv も不要になる
+#endif
 static int
 arcofi_drain(void *v)
 {
@@ -1062,7 +1065,10 @@ arcofi_hwintr(void *v)
 {
 	struct arcofi_softc *sc = (struct arcofi_softc *)v;
 	uint8_t *cur, *past;
-	uint8_t csr, fir, data;
+	uint8_t csr, fir;
+#if !defined(AUDIO2)
+	uint8_t data;
+#endif
 	int rc = 0;
 
 	csr = arcofi_read(sc, ARCOFI_CSR);
@@ -1071,6 +1077,57 @@ arcofi_hwintr(void *v)
 
 	fir = arcofi_read(sc, ARCOFI_FIFO_IR);
 
+#if defined(AUDIO2)
+	/* receive */
+	if ((sc->sc_mode & AUMODE_RECORD) &&
+	    (fir & FIFO_IR_EVENT(FIFO_IR_IN_HALF_EMPTY))) {
+		rc = 1;
+		cur = sc->sc_recv.buf;
+		past = sc->sc_recv.past;
+
+		while (cur != past &&
+		    (arcofi_read(sc, ARCOFI_FIFO_SR) &
+		     FIFO_SR_IN_EMPTY) == 0) {
+			*cur++ = arcofi_read(sc, ARCOFI_FIFO_DATA);
+		}
+		sc->sc_recv.buf = cur;
+
+		if (cur == past) {
+			/* disable further interrupts */
+			arcofi_write(sc, ARCOFI_FIFO_IR,
+			    arcofi_read(sc, ARCOFI_FIFO_IR) &
+			    ~FIFO_IR_ENABLE(FIFO_IR_IN_HALF_EMPTY));
+
+			/* callback */
+			sc->sc_recv.cb(sc->sc_recv.cbarg);
+		}
+	}
+
+	/* xmit */
+	if ((sc->sc_mode & AUMODE_PLAY) &&
+	    (fir & FIFO_IR_EVENT(FIFO_IR_OUT_HALF_EMPTY))) {
+		rc = 1;
+		cur = sc->sc_xmit.buf;
+		past = sc->sc_xmit.past;
+
+		while (cur != past &&
+		    (arcofi_read(sc, ARCOFI_FIFO_SR) &
+		     FIFO_SR_OUT_FULL) == 0) {
+			arcofi_write(sc, ARCOFI_FIFO_DATA, *cur++);
+		}
+		sc->sc_xmit.buf = cur;
+
+		if (cur == past) {
+			/* disable further interrupts */
+			arcofi_write(sc, ARCOFI_FIFO_IR,
+			    arcofi_read(sc, ARCOFI_FIFO_IR) &
+			    ~FIFO_IR_ENABLE(FIFO_IR_OUT_HALF_EMPTY));
+
+			/* callback */
+			sc->sc_xmit.cb(sc->sc_xmit.cbarg);
+		}
+	}
+#else
 	/* receive */
 	if (fir & FIFO_IR_EVENT(FIFO_IR_IN_HALF_EMPTY)) {
 		rc = 1;
@@ -1134,6 +1191,7 @@ arcofi_hwintr(void *v)
 		cv_signal(&sc->sc_cv);
 		mutex_spin_exit(&sc->sc_intr_lock);
 	}
+#endif /* AUDIO2 */
 
 #ifdef ARCOFI_DEBUG
 	if (rc == 0)
@@ -1148,6 +1206,9 @@ arcofi_hwintr(void *v)
 void
 arcofi_swintr(void *v)
 {
+#if !defined(AUDIO2)
+// swintr を消すと arch/hp300/dev/arcofi_dio.c の softint_establish() にも
+// 影響が波及する
 	struct arcofi_softc *sc = (struct arcofi_softc *)v;
 	int action;
 
@@ -1167,6 +1228,7 @@ arcofi_swintr(void *v)
 			sc->sc_xmit.cb(sc->sc_xmit.cbarg);
 	}
 	mutex_spin_exit(&sc->sc_intr_lock);
+#endif
 }
 
 static int
