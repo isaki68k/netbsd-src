@@ -24,10 +24,6 @@
 // アサートするとき定義
 #define AUDIO_ASSERT
 
-// ユーザランドはグローバル変数 audio_blk_ms を使う。
-// デフォルト 40msec で -m オプションで変更可能。
-#define AUDIO_BLK_MS audio_blk_ms
-
 #ifdef AUDIO_ASSERT
 #define KASSERT(expr)	do {\
 	if (!(expr)) panic(#expr);\

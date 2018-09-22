@@ -131,7 +131,7 @@ main(int ac, char *av[])
 	int cmd;
 
 	opt_vol = 256;
-	audio_blk_ms = 40;
+	audio_blk_ms = AUDIO_BLK_MS;
 	devicefile = "/dev/sound";
 
 	while ((c = getopt(ac, av, "D:dm:w:v:")) != -1) {
@@ -539,7 +539,8 @@ audio_softc_init(const audio_format2_t *phwfmt, const audio_format2_t *rhwfmt)
 {
 	sc->sc_pparams = params_to_format2(&audio_default);
 	sc->sc_rparams = params_to_format2(&audio_default);
-	sc->sc_blk_ms = AUDIO_BLK_MS;
+	sc->sc_blk_ms = audio_blk_ms;
+	printf("blk_ms = %d\n", sc->sc_blk_ms);
 
 	audio_mixers_init(sc, AUMODE_PLAY | AUMODE_RECORD, phwfmt, rhwfmt);
 }
