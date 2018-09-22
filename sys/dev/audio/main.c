@@ -516,28 +516,6 @@ fmt_tostring(const audio_format2_t *fmt)
 	return buf;
 }
 
-// AUDIO_ENCODING_* に対応する表示名を返す
-const char *
-audio_encoding_name(int enc)
-{
-	static char buf[16];
-
-	if (enc == AUDIO_ENCODING_ULAW)
-		return "ULAW";
-	if (enc == AUDIO_ENCODING_SLINEAR_LE)
-		return "SLINEAR_LE";
-	if (enc == AUDIO_ENCODING_SLINEAR_BE)
-		return "SLINEAR_BE";
-	if (enc == AUDIO_ENCODING_ULINEAR_LE)
-		return "ULINEAR_LE";
-	if (enc == AUDIO_ENCODING_ULINEAR_BE)
-		return "ULINEAR_BE";
-	if (enc == AUDIO_ENCODING_ADPCM)
-		return "MSM6258";
-	sprintf(buf, "enc=%d", enc);
-	return buf;
-}
-
 const char *
 tagname(uint32_t tag)
 {
@@ -559,27 +537,35 @@ tagname(uint32_t tag)
 void
 audio_softc_init(const audio_format2_t *phwfmt, const audio_format2_t *rhwfmt)
 {
-	sc->sc_pmixer = malloc(sizeof(audio_trackmixer_t));
-	sc->sc_rmixer = malloc(sizeof(audio_trackmixer_t));
 	sc->sc_pparams = params_to_format2(&audio_default);
 	sc->sc_rparams = params_to_format2(&audio_default);
+	sc->sc_blk_ms = AUDIO_BLK_MS;
 
-	audio_mixer_init(sc, AUMODE_PLAY, phwfmt);
-	audio_mixer_init(sc, AUMODE_RECORD, rhwfmt);
+	audio_mixers_init(sc, AUMODE_PLAY | AUMODE_RECORD, phwfmt, rhwfmt);
 }
 
 audio_file_t *
 sys_open(int mode)
 {
 	audio_file_t *file;
+	int error;
 
 	file = calloc(1, sizeof(audio_file_t));
 	file->sc = sc;
+	file->mode = mode;
 
 	if (mode == AUMODE_PLAY) {
-		audio_track_init(sc, &file->ptrack, AUMODE_PLAY);
+		error = audio_track_init(sc, &file->ptrack, AUMODE_PLAY);
+		if (error) {
+			printf("audio_track_init(PLAY) failed: %s\n", strerror(error));
+			exit(1);
+		}
 	} else {
-		audio_track_init(sc, &file->rtrack, AUMODE_RECORD);
+		error = audio_track_init(sc, &file->rtrack, AUMODE_RECORD);
+		if (error) {
+			printf("audio_track_init(RECORD) failed: %s\n", strerror(error));
+			exit(1);
+		}
 	}
 
 	SLIST_INSERT_HEAD(&sc->sc_files, file, entry);
@@ -695,7 +681,7 @@ test_mixer_calc_blktime()
 		mixer.hwbuf.fmt.stride = table[i].stride;
 		mixer.hwbuf.fmt.sample_rate = table[i].sample_rate;
 
-		u_int actual = audio_mixer_calc_blktime(&mixer);
+		u_int actual = audio_mixer_calc_blktime(sc, &mixer);
 		if (actual != table[i].expected) {
 			printf("test %d expects %d but %d\n",
 				i, table[i].expected, actual);

@@ -10,6 +10,10 @@
 #include <sys/ioctl.h>
 #include <sys/time.h>
 #include <pthread.h>
+// audioio.h 中の SLINEAR_NE とかを define させるため一時的に _KERNEL をつける
+#define _KERNEL
+#include "../../sys/audioio.h"
+#undef _KERNEL
 #include "audiovar.h"
 
 extern const char *devicefile;
