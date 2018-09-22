@@ -105,6 +105,8 @@ int opt_wait;	// 1ファイルごとの開始ディレイ
 int opt_vol;
 int audio_blk_ms;
 const char *devicefile;
+int hw_chan;
+int hw_freq;
 
 void
 usage()
@@ -113,6 +115,8 @@ usage()
 	printf("options:\n");
 	printf(" -D <dev>  device name (default: /dev/sound)\n");
 	printf(" -d        debug\n");
+	printf(" -C <ch>   hw channels (default: 2)\n");
+	printf(" -F <freq> hw frequency (default: 48000)\n");
 	printf(" -m <msec> AUDIO_BLK_MS (default: 40)\n");
 	printf(" -w <cnt>  delay block count for each files\n");
 	printf(" -v <vol>  track volume (0..256)\n");
@@ -133,14 +137,22 @@ main(int ac, char *av[])
 	opt_vol = 256;
 	audio_blk_ms = AUDIO_BLK_MS;
 	devicefile = "/dev/sound";
+	hw_chan = 2;
+	hw_freq = 48000;
 
-	while ((c = getopt(ac, av, "D:dm:w:v:")) != -1) {
+	while ((c = getopt(ac, av, "C:D:F:dm:w:v:")) != -1) {
 		switch (c) {
+		 case 'C':
+			hw_chan = atoi(optarg);
+			break;
 		 case 'D':
 			devicefile = optarg;
 			break;
 		 case 'd':
 			debug++;
+			break;
+		 case 'F':
+			hw_freq = atoi(optarg);
 			break;
 		 case 'm':
 			audio_blk_ms = atoi(optarg);

@@ -17,6 +17,8 @@
 #include "audiovar.h"
 
 extern const char *devicefile;
+extern int hw_chan;
+extern int hw_freq;
 
 struct audio_softc local_sc;
 
@@ -79,8 +81,8 @@ audio_attach(struct audio_softc **scp, bool hw)
 	usc->fd = -1;
 
 	phwfmt.encoding = AUDIO_ENCODING_SLINEAR_LE;
-	phwfmt.channels = 2;
-	phwfmt.sample_rate = 48000;
+	phwfmt.channels = hw_chan;
+	phwfmt.sample_rate = hw_freq;
 	phwfmt.precision = 16;
 	phwfmt.stride = 16;
 	rhwfmt = phwfmt;
