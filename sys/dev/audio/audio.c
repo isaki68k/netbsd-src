@@ -3652,16 +3652,22 @@ audio_track_freq_down(audio_filter_arg_t *arg)
 	t = track->freq_current;
 	step = track->freq_step;
 	channels = dst->fmt.channels;
+	PRINTF("start step=%d leap=%d", step, track->freq_leap);
+	PRINTF(" srcused=%d arg->count=%u", src->used, arg->count);
+	PRINTF(" t=%d\n", t);
 
 	for (i = 0; i < arg->count && t / 65536 < src->used; i++) {
 		const aint_t *s;
+		PRINTF("i=%d t=%5d", i, t);
 		s = s0 + (t / 65536) * channels;
+		PRINTF(" s=%ld\n", (s - s0) / channels);
 		for (ch = 0; ch < channels; ch++) {
 			*d++ = s[ch];
 		}
 		t += step;
 	}
 	t += track->freq_leap;
+	PRINTF("end t=%d\n", t);
 	auring_take(src, src->used);
 	auring_push(dst, i);
 	track->freq_current = t % 65536;
