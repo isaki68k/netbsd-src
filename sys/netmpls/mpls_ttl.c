@@ -1,4 +1,4 @@
-/*	$NetBSD: mpls_ttl.c,v 1.12 2018/04/11 06:37:32 maxv Exp $ */
+/*	$NetBSD: mpls_ttl.c,v 1.14 2018/09/03 16:29:36 riastradh Exp $ */
 
 /*
  * Copyright (c) 2010 The NetBSD Foundation, Inc.
@@ -97,7 +97,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mpls_ttl.c,v 1.12 2018/04/11 06:37:32 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mpls_ttl.c,v 1.14 2018/09/03 16:29:36 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -177,11 +177,6 @@ mpls_icmp_error(struct mbuf *n, int type, int code, n_long dest,
 
 	mpls_icmp_ext.ms.s_addr = shim->s_addr;
 
-#ifdef ICMPPRINTFS
-	if (icmpprintfs)
-		printf("mpls_icmp_error(%p, type:%d, code:%d)\n", oip, type,
-			code);
-#endif
 	if (type != ICMP_REDIRECT)
 		ICMP_STATINC(ICMP_STAT_ERROR);
 
@@ -217,7 +212,7 @@ mpls_icmp_error(struct mbuf *n, int type, int code, n_long dest,
 	/*
 	 * Now, formulate icmp message
 	 */
-	icmplen = min(ICMP_EXT_OFFSET, ntohs(oip->ip_len));
+	icmplen = uimin(ICMP_EXT_OFFSET, ntohs(oip->ip_len));
 
 	/*
 	 * Defend against mbuf chains shorter than oip->ip_len - oiplen:
@@ -225,7 +220,7 @@ mpls_icmp_error(struct mbuf *n, int type, int code, n_long dest,
 	mblen = 0;
 	for (m = n; m && (mblen < icmplen); m = m->m_next)
 		mblen += m->m_len;
-	icmplen = min(mblen, icmplen);
+	icmplen = uimin(mblen, icmplen);
 
 	packetlen = sizeof(struct ip) + offsetof(struct icmp, icmp_ip) +
 	    ICMP_EXT_OFFSET + sizeof(mpls_icmp_ext);

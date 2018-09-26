@@ -1,4 +1,4 @@
-/*	$NetBSD: if_axen.c,v 1.12 2018/01/21 13:57:11 skrll Exp $	*/
+/*	$NetBSD: if_axen.c,v 1.17 2018/09/12 21:57:18 christos Exp $	*/
 /*	$OpenBSD: if_axen.c,v 1.3 2013/10/21 10:10:22 yuo Exp $	*/
 
 /*
@@ -23,7 +23,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_axen.c,v 1.12 2018/01/21 13:57:11 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_axen.c,v 1.17 2018/09/12 21:57:18 christos Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -79,7 +79,8 @@ static const struct axen_type axen_devs[] = {
 #if 0 /* not tested */
 	{ { USB_VENDOR_ASIX, USB_PRODUCT_ASIX_AX88178A}, AX178A },
 #endif
-	{ { USB_VENDOR_ASIX, USB_PRODUCT_ASIX_AX88179}, AX179 }
+	{ { USB_VENDOR_ASIX, USB_PRODUCT_ASIX_AX88179}, AX179 },
+	{ { USB_VENDOR_DLINK, USB_PRODUCT_DLINK_DUB1312}, AX179 }
 };
 
 #define axen_lookup(v, p) ((const struct axen_type *)usb_lookup(axen_devs, v, p))
@@ -826,11 +827,9 @@ axen_detach(device_t self, int flags)
 
 	sc->axen_dying = true;
 
-	/*
-	 * Remove any pending tasks.  They cannot be executing because they run
-	 * in the same thread as detach.
-	 */
-	usb_rem_task(sc->axen_udev, &sc->axen_tick_task);
+	callout_halt(&sc->axen_stat_ch, NULL);
+	usb_rem_task_wait(sc->axen_udev, &sc->axen_tick_task,
+	    USB_TASKQ_DRIVER, NULL);
 
 	s = splusb();
 
@@ -1300,7 +1299,7 @@ axen_start(struct ifnet *ifp)
 	 * If there's a BPF listener, bounce a copy of this frame
 	 * to him.
 	 */
-	bpf_mtap(ifp, m);
+	bpf_mtap(ifp, m, BPF_D_OUT);
 	m_freem(m);
 
 	ifp->if_flags |= IFF_OACTIVE;
@@ -1561,7 +1560,7 @@ axen_stop(struct ifnet *ifp, int disable)
 	sc->axen_link = 0;
 }
 
-MODULE(MODULE_CLASS_DRIVER, if_axen, "bpf");
+MODULE(MODULE_CLASS_DRIVER, if_axen, NULL);
 
 #ifdef _MODULE
 #include "ioconf.c"

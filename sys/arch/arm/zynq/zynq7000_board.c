@@ -1,4 +1,4 @@
-/*	$NetBSD: zynq7000_board.c,v 1.2 2016/10/20 09:53:07 skrll Exp $	*/
+/*	$NetBSD: zynq7000_board.c,v 1.4 2018/09/16 09:25:46 skrll Exp $	*/
 /*-
  * Copyright (c) 2015  Genetec Corporation.  All rights reserved.
  * Written by Hashimoto Kenichi for Genetec Corporation.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(1, "$NetBSD: zynq7000_board.c,v 1.2 2016/10/20 09:53:07 skrll Exp $");
+__KERNEL_RCSID(1, "$NetBSD: zynq7000_board.c,v 1.4 2018/09/16 09:25:46 skrll Exp $");
 
 #include "opt_zynq.h"
 #include "arml2cc.h"
@@ -45,7 +45,7 @@ __KERNEL_RCSID(1, "$NetBSD: zynq7000_board.c,v 1.2 2016/10/20 09:53:07 skrll Exp
 #include <arm/zynq/zynq7000_reg.h>
 
 /*
- * PERIPHCLK_N is an arm root clock divider for MPcore interupt controller.
+ * PERIPHCLK_N is an arm root clock divider for MPcore interrupt controller.
  * PERIPHCLK_N is equal to, or greater than two.
  * see "Cortex-A9 MPCore Technical Reference Manual" -
  *     Chapter 5: Clocks, Resets, and Power Management, 5.1: Clocks.
@@ -124,7 +124,7 @@ zynq7000_device_register(device_t self, void *aux)
 	 * We need to tell the A9 Global/Watchdog Timer
 	 * what frequency it runs at.
 	 */
-	if (device_is_a(self, "a9tmr") || device_is_a(self, "a9wdt")) {
+	if (device_is_a(self, "arma9tmr") || device_is_a(self, "a9wdt")) {
 		prop_dictionary_set_uint32(dict, "frequency",
 		    666666666 / PERIPHCLK_N);
 		return;

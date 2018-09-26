@@ -1,4 +1,4 @@
-/*	$NetBSD: in6.c,v 1.265 2018/04/06 16:03:16 ozaki-r Exp $	*/
+/*	$NetBSD: in6.c,v 1.269 2018/07/04 00:35:33 kamil Exp $	*/
 /*	$KAME: in6.c,v 1.198 2001/07/18 09:12:38 itojun Exp $	*/
 
 /*
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: in6.c,v 1.265 2018/04/06 16:03:16 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: in6.c,v 1.269 2018/07/04 00:35:33 kamil Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -104,8 +104,6 @@ __KERNEL_RCSID(0, "$NetBSD: in6.c,v 1.265 2018/04/06 16:03:16 ozaki-r Exp $");
 #include <netinet6/ip6_mroute.h>
 #include <netinet6/in6_ifattach.h>
 #include <netinet6/scope6_var.h>
-
-#include <net/net_osdep.h>
 
 #ifdef COMPAT_50
 #include <compat/netinet6/in6_var.h>
@@ -634,7 +632,7 @@ in6_control1(struct socket *so, u_long cmd, void *data, struct ifnet *ifp)
 			 * signed.
 			 */
 			maxexpire = ((time_t)~0) &
-			    ~((time_t)1 << ((sizeof(maxexpire) * NBBY) - 1));
+			    (time_t)~(1ULL << ((sizeof(maxexpire) * NBBY) - 1));
 			if (ia->ia6_lifetime.ia6t_vltime <
 			    maxexpire - ia->ia6_updatetime) {
 				retlt->ia6t_expire = ia->ia6_updatetime +
@@ -655,7 +653,7 @@ in6_control1(struct socket *so, u_long cmd, void *data, struct ifnet *ifp)
 			 * signed.
 			 */
 			maxexpire = ((time_t)~0) &
-			    ~((time_t)1 << ((sizeof(maxexpire) * NBBY) - 1));
+			    (time_t)~(1ULL << ((sizeof(maxexpire) * NBBY) - 1));
 			if (ia->ia6_lifetime.ia6t_pltime <
 			    maxexpire - ia->ia6_updatetime) {
 				retlt->ia6t_preferred = ia->ia6_updatetime +
@@ -1407,9 +1405,11 @@ in6_purgeaddr(struct ifaddr *ifa)
     again:
 	mutex_enter(&in6_ifaddr_lock);
 	while ((imm = LIST_FIRST(&ia->ia6_memberships)) != NULL) {
+		struct in6_multi *in6m __diagused = imm->i6mm_maddr;
+		KASSERT(in6m == NULL || in6m->in6m_ifp == ifp);
 		LIST_REMOVE(imm, i6mm_chain);
 		mutex_exit(&in6_ifaddr_lock);
-		KASSERT(imm->i6mm_maddr->in6m_ifp == ifp);
+
 		in6_leavegroup(imm);
 		goto again;
 	}

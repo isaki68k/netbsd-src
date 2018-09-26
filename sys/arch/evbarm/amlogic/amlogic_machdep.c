@@ -1,4 +1,4 @@
-/*	$NetBSD: amlogic_machdep.c,v 1.21 2015/08/08 13:54:05 jmcneill Exp $ */
+/*	$NetBSD: amlogic_machdep.c,v 1.24 2018/09/21 12:04:07 skrll Exp $ */
 
 /*
  * Machine dependent functions for kernel setup for TI OSK5912 board.
@@ -125,8 +125,9 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: amlogic_machdep.c,v 1.21 2015/08/08 13:54:05 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: amlogic_machdep.c,v 1.24 2018/09/21 12:04:07 skrll Exp $");
 
+#include "opt_console.h"
 #include "opt_machdep.h"
 #include "opt_ddb.h"
 #include "opt_md.h"
@@ -200,7 +201,9 @@ BootConfig bootconfig;		/* Boot config storage */
 static char bootargs[AMLOGIC_MAX_BOOT_STRING];
 char *boot_args = NULL;
 char *boot_file = NULL;
-u_int uboot_args[4] = { 0 };	/* filled in by amlogic_start.S (not in bss) */
+
+/* filled in before cleaning bss. keep in .data */
+u_int uboot_args[4] __attribute__((__section__(".data")));
 
 /* Same things, but for the free (unused by the kernel) memory. */
 
@@ -525,7 +528,7 @@ amlogic_device_register(device_t self, void *aux)
 	 * We need to tell the A9 Global/Watchdog Timer
 	 * what frequency it runs at.
 	 */
-	if (device_is_a(self, "a9tmr") || device_is_a(self, "a9wdt")) {
+	if (device_is_a(self, "arma9tmr") || device_is_a(self, "a9wdt")) {
                 prop_dictionary_set_uint32(dict, "frequency",
 		    amlogic_get_rate_a9periph());
 

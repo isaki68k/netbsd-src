@@ -1,4 +1,4 @@
-/*	$NetBSD: if_el.c,v 1.94 2016/12/15 09:28:05 ozaki-r Exp $	*/
+/*	$NetBSD: if_el.c,v 1.97 2018/09/03 16:29:31 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1994, Matthew E. Kimmel.  Permission is hereby granted
@@ -19,7 +19,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_el.c,v 1.94 2016/12/15 09:28:05 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_el.c,v 1.97 2018/09/03 16:29:31 riastradh Exp $");
 
 #include "opt_inet.h"
 
@@ -36,6 +36,7 @@ __KERNEL_RCSID(0, "$NetBSD: if_el.c,v 1.94 2016/12/15 09:28:05 ozaki-r Exp $");
 #include <net/if.h>
 #include <net/if_dl.h>
 #include <net/if_types.h>
+#include <net/bpf.h>
 
 #include <net/if_ether.h>
 
@@ -46,10 +47,6 @@ __KERNEL_RCSID(0, "$NetBSD: if_el.c,v 1.94 2016/12/15 09:28:05 ozaki-r Exp $");
 #include <netinet/ip.h>
 #include <netinet/if_inarp.h>
 #endif
-
-
-#include <net/bpf.h>
-#include <net/bpfdesc.h>
 
 #include <sys/cpu.h>
 #include <sys/intr.h>
@@ -384,7 +381,7 @@ elstart(struct ifnet *ifp)
 			break;
 
 		/* Give the packet to the bpf, if any. */
-		bpf_mtap(ifp, m0);
+		bpf_mtap(ifp, m0, BPF_D_OUT);
 
 		/* Disable the receiver. */
 		bus_space_write_1(iot, ioh, EL_AC, EL_AC_HOST);
@@ -392,7 +389,7 @@ elstart(struct ifnet *ifp)
 
 		/* Transfer datagram to board. */
 		DPRINTF(("el: xfr pkt length=%d...\n", m0->m_pkthdr.len));
-		off = EL_BUFSIZ - max(m0->m_pkthdr.len,
+		off = EL_BUFSIZ - uimax(m0->m_pkthdr.len,
 		    ETHER_MIN_LEN - ETHER_CRC_LEN);
 #ifdef DIAGNOSTIC
 		if ((off & 0xffff) != off)
@@ -619,7 +616,7 @@ elget(struct el_softc *sc, int totlen)
 			len = MCLBYTES;
 		}
 
-		m->m_len = len = min(totlen, len);
+		m->m_len = len = uimin(totlen, len);
 		bus_space_read_multi_1(iot, ioh, EL_BUF, mtod(m, u_int8_t *), len);
 
 		totlen -= len;

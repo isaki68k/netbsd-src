@@ -1,4 +1,4 @@
-/* $NetBSD: dksubr.c,v 1.101 2017/12/04 22:15:52 jdolecek Exp $ */
+/* $NetBSD: dksubr.c,v 1.103 2018/09/03 16:29:30 riastradh Exp $ */
 
 /*-
  * Copyright (c) 1996, 1997, 1998, 1999, 2002, 2008 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: dksubr.c,v 1.101 2017/12/04 22:15:52 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: dksubr.c,v 1.103 2018/09/03 16:29:30 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -521,7 +521,7 @@ dk_discard(struct dk_softc *dksc, dev_t dev, off_t pos, off_t len)
 		/* enough data to please the bounds checking code */
 		bp->b_dev = dev;
 		bp->b_blkno = (daddr_t)(pos / secsize);
-		bp->b_bcount = min(len, maxsz);
+		bp->b_bcount = uimin(len, maxsz);
 		bp->b_flags = B_WRITE;
 
 		error = dk_translate(dksc, bp);
@@ -762,10 +762,11 @@ dk_dump(struct dk_softc *dksc, dev_t dev,
     daddr_t blkno, void *vav, size_t size)
 {
 	const struct dkdriver *dkd = dksc->sc_dkdev.dk_driver;
+	struct disk_geom *dg = &dksc->sc_dkdev.dk_geom;
 	char *va = vav;
 	struct disklabel *lp;
 	struct partition *p;
-	int part, towrt, nsects, sectoff, maxblkcnt, nblk;
+	int part, towrt, maxblkcnt, nblk;
 	int maxxfer, rv = 0;
 
 	/*
@@ -804,28 +805,49 @@ dk_dump(struct dk_softc *dksc, dev_t dev,
 	blkno = dbtob(blkno) / lp->d_secsize;   /* blkno in secsize units */
 
 	p = &lp->d_partitions[part];
-	if (p->p_fstype != FS_SWAP) {
-		DPRINTF(DKDB_DUMP, ("%s: bad fstype %d\n", __func__,
-		    p->p_fstype));
-		return ENXIO;
-	}
-	nsects = p->p_size;
-	sectoff = p->p_offset;
+	if (part == RAW_PART) {
+		if (p->p_fstype != FS_UNUSED) {
+			DPRINTF(DKDB_DUMP, ("%s: bad fstype %d\n", __func__,
+			    p->p_fstype));
+			return ENXIO;
+		}
+		/* Check wether dump goes to a wedge */
+		if (dksc->sc_dkdev.dk_nwedges == 0) {
+			DPRINTF(DKDB_DUMP, ("%s: dump to raw\n", __func__));
+			return ENXIO;
+		}
+		/* Check transfer bounds against media size */
+		if (blkno < 0 || (blkno + towrt) > dg->dg_secperunit) {
+			DPRINTF(DKDB_DUMP, ("%s: out of bounds blkno=%jd, towrt=%d, "
+			    "nsects=%jd\n", __func__, (intmax_t)blkno, towrt, dg->dg_secperunit));
+			return EINVAL;
+		}
+	} else {
+		int nsects, sectoff;
 
-	/* Check transfer bounds against partition size. */
-	if ((blkno < 0) || ((blkno + towrt) > nsects)) {
-		DPRINTF(DKDB_DUMP, ("%s: out of bounds blkno=%jd, towrt=%d, "
-		    "nsects=%d\n", __func__, (intmax_t)blkno, towrt, nsects));
-		return EINVAL;
-	}
+		if (p->p_fstype != FS_SWAP) {
+			DPRINTF(DKDB_DUMP, ("%s: bad fstype %d\n", __func__,
+			    p->p_fstype));
+			return ENXIO;
+		}
+		nsects = p->p_size;
+		sectoff = p->p_offset;
 
-	/* Offset block number to start of partition. */
-	blkno += sectoff;
+		/* Check transfer bounds against partition size. */
+		if ((blkno < 0) || ((blkno + towrt) > nsects)) {
+			DPRINTF(DKDB_DUMP, ("%s: out of bounds blkno=%jd, towrt=%d, "
+			    "nsects=%d\n", __func__, (intmax_t)blkno, towrt, nsects));
+			return EINVAL;
+		}
+
+		/* Offset block number to start of partition. */
+		blkno += sectoff;
+	}
 
 	/* Start dumping and return when done. */
 	maxblkcnt = howmany(maxxfer, lp->d_secsize);
 	while (towrt > 0) {
-		nblk = min(maxblkcnt, towrt);
+		nblk = uimin(maxblkcnt, towrt);
 
 		if ((rv = (*dkd->d_dumpblocks)(dksc->sc_dev, va, blkno, nblk))
 		    != 0) {

@@ -1,4 +1,4 @@
-/*	$NetBSD: raw_cb.h,v 1.28 2017/09/25 01:56:22 ozaki-r Exp $	*/
+/*	$NetBSD: raw_cb.h,v 1.30 2018/09/07 06:13:14 maxv Exp $	*/
 
 /*
  * Copyright (c) 1980, 1986, 1993
@@ -57,7 +57,7 @@ struct rawcb {
  * Nominal space allocated to a raw socket.
  */
 #define	RAWSNDQ		8192
-#define	RAWRCVQ		8192
+#define	RAWRCVQ		16384
 
 LIST_HEAD(rawcbhead, rawcb);
 
@@ -65,7 +65,8 @@ int	raw_attach(struct socket *, int, struct rawcbhead *);
 void	*raw_ctlinput(int, const struct sockaddr *, void *);
 void	raw_detach(struct socket *);
 void	raw_disconnect(struct rawcb *);
-void	raw_input(struct mbuf *, ...);
+void	raw_input(struct mbuf *, struct sockproto *, struct sockaddr *,
+	    struct sockaddr *, struct rawcbhead *);
 int	raw_usrreq(struct socket *,
 	    int, struct mbuf *, struct mbuf *, struct mbuf *, struct lwp *);
 void	raw_setsockaddr(struct rawcb *, struct sockaddr *);

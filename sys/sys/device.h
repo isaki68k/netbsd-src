@@ -1,4 +1,4 @@
-/* $NetBSD: device.h,v 1.151 2018/03/04 07:13:11 mlelstv Exp $ */
+/* $NetBSD: device.h,v 1.156 2018/09/18 01:25:09 mrg Exp $ */
 
 /*
  * Copyright (c) 1996, 2000 Christopher G. Demetriou
@@ -123,6 +123,11 @@ typedef struct cfdriver *cfdriver_t;
 typedef struct cfattach *cfattach_t;
 
 #if defined(_KERNEL) || defined(_KMEMUSER)
+struct device_compatible_entry {
+	const char	*compat;
+	uintptr_t	data;
+};
+
 struct device_lock {
 	int		dvl_nwait;
 	int		dvl_nlock;
@@ -422,6 +427,7 @@ extern int booted_partition;		/* the partition on that device */
 extern daddr_t booted_startblk;		/* or the start of a wedge */
 extern uint64_t booted_nblks;		/* and the size of that wedge */
 extern char *bootspec;			/* and the device/wedge name */
+extern bool root_is_mounted;		/* true if root is mounted */
 
 struct vnode *opendisk(device_t);
 int getdisksize(struct vnode *, uint64_t *, unsigned int *);
@@ -436,6 +442,7 @@ int	config_fini_component(struct cfdriver *const*,
 void	config_init_mi(void);
 void	drvctl_init(void);
 void	drvctl_fini(void);
+extern	int (*devmon_insert_vec)(const char *, prop_dictionary_t);
 
 int	config_cfdriver_attach(struct cfdriver *);
 int	config_cfdriver_detach(struct cfdriver *);
@@ -528,6 +535,10 @@ bool		device_is_a(device_t, const char *);
 
 device_t	device_find_by_xname(const char *);
 device_t	device_find_by_driver_unit(const char *, int);
+
+int		device_compatible_match(const char **, int,
+				const struct device_compatible_entry *,
+				const struct device_compatible_entry **);
 
 bool		device_pmf_is_registered(device_t);
 

@@ -1,4 +1,4 @@
-/* $NetBSD: vmparam.h,v 1.3 2018/04/01 04:35:03 ryo Exp $ */
+/* $NetBSD: vmparam.h,v 1.6 2018/09/14 05:37:42 ryo Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -35,6 +35,11 @@
 #ifdef __aarch64__
 
 #define	__USE_TOPDOWN_VM
+
+/*
+ * Default pager_map of 16MB is small and we have plenty of VA to burn.
+ */
+#define	PAGER_MAP_DEFAULT_SIZE	(512 * 1024 * 1024)
 
 /*
  * AARCH64 supports 3 page sizes: 4KB, 16KB, 64KB.  Each page table can
@@ -126,6 +131,7 @@
  * see also aarch64/pmap.c:pmap_devmap_*
  */
 #define VM_KERNEL_IO_ADDRESS	0xfffffffff0000000L
+#define VM_KERNEL_IO_SIZE	(VM_MAX_KERNEL_ADDRESS - VM_KERNEL_IO_ADDRESS)
 
 /* virtual sizes (bytes) for various kernel submaps */
 #define USRIOSIZE		(PAGE_SIZE / 8)
@@ -145,7 +151,7 @@
 #define AARCH64_KVA_TO_PA(va)	((paddr_t) ((va) & ~AARCH64_KSEG_MASK))
 
 /* */
-#define VM_PHYSSEG_MAX		16              /* XXX */
+#define VM_PHYSSEG_MAX		64              /* XXX */
 #define VM_PHYSSEG_STRAT	VM_PSTRAT_BSEARCH
 
 #define VM_NFREELIST		3

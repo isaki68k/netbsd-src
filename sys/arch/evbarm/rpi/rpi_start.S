@@ -1,4 +1,4 @@
-/*	$NetBSD: rpi_start.S,v 1.17 2018/03/03 13:46:32 skrll Exp $	*/
+/*	$NetBSD: rpi_start.S,v 1.20 2018/08/03 15:46:41 skrll Exp $	*/
 
 /*
  * Copyright (c) 2002, 2003  Genetec Corporation.  All rights reserved.
@@ -96,11 +96,11 @@
 #include <arm/armreg.h>
 #include "assym.h"
 
-RCSID("$NetBSD: rpi_start.S,v 1.17 2018/03/03 13:46:32 skrll Exp $")
+RCSID("$NetBSD: rpi_start.S,v 1.20 2018/08/03 15:46:41 skrll Exp $")
 
 
 #if defined(VERBOSE_INIT_ARM)
-#define	XPUTC(n)	mov r0, n; bl bcm283x_platform_early_putchar
+#define	XPUTC(n)	push {r1-r12, lr}; mov r0, n; bl bcm2835_platform_early_putchar; pop {r1-r12, lr}
 #else
 #define	XPUTC(n)
 #endif
@@ -137,13 +137,28 @@ RCSID("$NetBSD: rpi_start.S,v 1.17 2018/03/03 13:46:32 skrll Exp $")
 
 	.global	_C_LABEL(rpi_start)
 _C_LABEL(rpi_start):
+
+#if defined(VERBOSE_INIT_ARM)
+	/* stack for calling bcm2835_platform_early_putchar() */
+	ldr	sp, Lbootstk
+	sub	sp, sp, #KERNEL_BASE_VOFFSET
+#endif /* VERBOSE_INIT_ARM */
+
 	ldr	r8, Luboot_args
+	sub	r8, r8, #KERNEL_BASE_VOFFSET
 	stmia	r8!, {r0-r3}
 
 #ifdef FDT
 	ldr	r8, Lfdt_addr_r
+	sub	r8, r8, #KERNEL_BASE_VOFFSET
 	str	r2, [r8]
 #endif
+
+	ldr	r8, =kern_vtopdiff
+	sub	r8, r8, #KERNEL_BASE_VOFFSET
+	mov	r2, #KERNEL_BASE_VOFFSET
+	str	r2, [r8]
+
 	mrs	r0, cpsr
 	bic	r0, r0, #PSR_MODE
 	orr	r0, r0, #(I32_bit | F32_bit | PSR_SVC32_MODE)
@@ -344,6 +359,17 @@ Lcontrol_wax:
 	/* bits to disable the caches */
 Lctl_ID_dis:
 	.word	~(CPU_CONTROL_IC_ENABLE|CPU_CONTROL_DC_ENABLE)
+
+#if defined(VERBOSE_INIT_ARM)
+Lbootstk:
+	.word	bootstk
+
+	.pushsection .bss
+	.align	3
+	.space	256
+bootstk:
+	.popsection
+#endif
 
 /* We'll modify va and pa at run time so we can use relocatable addresses. */
 #define MMU_INIT(va,pa,n_sec,attr) \

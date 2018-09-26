@@ -1,4 +1,4 @@
-/* $NetBSD: ixgbe.h,v 1.45 2018/04/19 21:50:09 christos Exp $ */
+/* $NetBSD: ixgbe.h,v 1.51 2018/07/31 09:19:34 msaitoh Exp $ */
 
 /******************************************************************************
   SPDX-License-Identifier: BSD-3-Clause
@@ -89,7 +89,6 @@
 #include <net/if_dl.h>
 #include <net/if_media.h>
 
-#include <net/bpf.h>
 #include <net/if_types.h>
 #include <net/if_vlanvar.h>
 
@@ -368,6 +367,7 @@ struct tx_ring {
 	pcq_t			*txr_interq;
 	struct work		wq_cookie;
 	void			*txr_si;
+	bool			txr_no_space; /* Like IFF_OACTIVE */
 
 	/* Flow Director */
 	u16			atr_sample;
@@ -417,6 +417,9 @@ struct rx_ring {
 #endif
 	struct ixgbe_rx_buf	*rx_buffers;
 	ixgbe_dma_tag_t		*ptag;
+	u16	                last_rx_mbuf_sz;
+	u32                	last_num_rx_desc;
+	ixgbe_extmem_head_t	jcl_head;
 
 	u64			bytes; /* Used for AIM calc */
 	u64			packets;
@@ -602,7 +605,6 @@ struct adapter {
 
 	struct sysctllog	*sysctllog;
 	const struct sysctlnode *sysctltop;
-	ixgbe_extmem_head_t jcl_head;
 };
 
 /* Precision Time Sync (IEEE 1588) defines */
@@ -750,6 +752,10 @@ bool ixgbe_txeof(struct tx_ring *);
 bool ixgbe_rxeof(struct ix_queue *);
 
 const struct sysctlnode *ixgbe_sysctl_instance(struct adapter *);
+
+/* For NetBSD */
+void ixgbe_jcl_reinit(struct adapter *, bus_dma_tag_t, struct rx_ring *,
+    int, size_t);
 
 #include "ixgbe_bypass.h"
 #include "ixgbe_fdir.h"

@@ -1,4 +1,4 @@
-/*	$NetBSD: bcm53xx_machdep.c,v 1.9 2015/07/17 20:29:29 matt Exp $	*/
+/*	$NetBSD: bcm53xx_machdep.c,v 1.16 2018/09/21 12:04:08 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2012 The NetBSD Foundation, Inc.
@@ -33,8 +33,10 @@
 #define IDM_PRIVATE
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bcm53xx_machdep.c,v 1.9 2015/07/17 20:29:29 matt Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bcm53xx_machdep.c,v 1.16 2018/09/21 12:04:08 skrll Exp $");
 
+#include "opt_arm_debug.h"
+#include "opt_console.h"
 #include "opt_evbarm_boardtype.h"
 #include "opt_broadcom.h"
 #include "opt_kgdb.h"
@@ -83,7 +85,8 @@ BootConfig bootconfig;
 static char bootargs[MAX_BOOT_STRING];
 char *boot_args = NULL;     
 
-u_int uboot_args[4] = { 0 };
+/* filled in before cleaning bss. keep in .data */
+u_int uboot_args[4] __attribute__((__section__(".data")));
 
 static void bcm53xx_system_reset(void);
 
@@ -92,8 +95,6 @@ static void bcm53xx_system_reset(void);
  * kernel address space.  *Not* for general use.
  */
 #define	KERN_VTOPDIFF	((vaddr_t)KERNEL_BASE_phys - (vaddr_t)KERNEL_BASE_virt)
-#define KERN_VTOPHYS(va) ((paddr_t)((vaddr_t)va + KERN_VTOPDIFF))
-#define KERN_PHYSTOV(pa) ((vaddr_t)((paddr_t)pa - KERN_VTOPDIFF))
 
 #ifndef CONADDR
 #define CONADDR		(BCM53XX_IOREG_PBASE + CCA_UART0_BASE)
@@ -194,6 +195,8 @@ static const struct boot_physmem bp_first256 = {
 u_int
 initarm(void *arg)
 {
+	kern_vtopdiff = KERN_VTOPDIFF;
+
 	pmap_devmap_register(devmap);
 	bcm53xx_bootstrap(KERNEL_IO_IOREG_VBASE);
 

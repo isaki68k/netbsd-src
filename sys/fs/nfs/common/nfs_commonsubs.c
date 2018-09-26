@@ -1,4 +1,4 @@
-/*	$NetBSD: nfs_commonsubs.c,v 1.2 2016/12/13 22:31:51 pgoyette Exp $	*/
+/*	$NetBSD: nfs_commonsubs.c,v 1.4 2018/09/03 16:29:34 riastradh Exp $	*/
 /*-
  * Copyright (c) 1989, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -34,7 +34,7 @@
 
 #include <sys/cdefs.h>
 /* __FBSDID("FreeBSD: head/sys/fs/nfs/nfs_commonsubs.c 308708 2016-11-16 01:11:49Z cperciva "); */
-__RCSID("$NetBSD: nfs_commonsubs.c,v 1.2 2016/12/13 22:31:51 pgoyette Exp $");
+__RCSID("$NetBSD: nfs_commonsubs.c,v 1.4 2018/09/03 16:29:34 riastradh Exp $");
 
 /*
  * These functions support the macros and help fiddle mbuf chains for
@@ -309,7 +309,7 @@ nfsm_dissct(struct nfsrv_descript *nd, int siz, int how)
 	} else if (siz > ncl_mbuf_mhlen) {
 		panic("nfs S too big");
 	} else {
-		MGET(mp2, MT_DATA, how);
+		MGET(mp2, how, MT_DATA);
 		if (mp2 == NULL)
 			return (NULL);
 		mbuf_setnext(mp2, mbuf_next(nd->nd_md));
@@ -1517,7 +1517,7 @@ nfsv4_loadattr(struct nfsrv_descript *nd, vnode_t vp,
 			    p->p_cred->p_ruid = cred->cr_uid;
 			    if (!VFS_QUOTACTL(vnode_mount(vp),QCMD(Q_GETQUOTA,
 				USRQUOTA), cred->cr_uid, (caddr_t)&dqb))
-				freenum = min(dqb.dqb_bhardlimit, freenum);
+				freenum = uimin(dqb.dqb_bhardlimit, freenum);
 			    p->p_cred->p_ruid = savuid;
 #endif	/* QUOTA */
 			    uquad = (u_int64_t)freenum;
@@ -1546,7 +1546,7 @@ nfsv4_loadattr(struct nfsrv_descript *nd, vnode_t vp,
 			    p->p_cred->p_ruid = cred->cr_uid;
 			    if (!VFS_QUOTACTL(vnode_mount(vp),QCMD(Q_GETQUOTA,
 				USRQUOTA), cred->cr_uid, (caddr_t)&dqb))
-				freenum = min(dqb.dqb_bsoftlimit, freenum);
+				freenum = uimin(dqb.dqb_bsoftlimit, freenum);
 			    p->p_cred->p_ruid = savuid;
 #endif	/* QUOTA */
 			    uquad = (u_int64_t)freenum;
@@ -2272,7 +2272,7 @@ nfsv4_fillattr(struct nfsrv_descript *nd, struct mount *mp, vnode_t vp,
 			p->p_cred->p_ruid = cred->cr_uid;
 			if (!VFS_QUOTACTL(mp, QCMD(Q_GETQUOTA,USRQUOTA),
 			    cred->cr_uid, (caddr_t)&dqb))
-			    freenum = min(dqb.dqb_isoftlimit-dqb.dqb_curinodes,
+			    freenum = uimin(dqb.dqb_isoftlimit-dqb.dqb_curinodes,
 				freenum);
 			p->p_cred->p_ruid = savuid;
 #endif	/* QUOTA */
@@ -2379,7 +2379,7 @@ nfsv4_fillattr(struct nfsrv_descript *nd, struct mount *mp, vnode_t vp,
 			p->p_cred->p_ruid = cred->cr_uid;
 			if (!VFS_QUOTACTL(mp, QCMD(Q_GETQUOTA,USRQUOTA),
 			    cred->cr_uid, (caddr_t)&dqb))
-			    freenum = min(dqb.dqb_bhardlimit, freenum);
+			    freenum = uimin(dqb.dqb_bhardlimit, freenum);
 			p->p_cred->p_ruid = savuid;
 #endif	/* QUOTA */
 			NFSM_BUILD(tl, u_int32_t *, NFSX_HYPER);
@@ -2403,7 +2403,7 @@ nfsv4_fillattr(struct nfsrv_descript *nd, struct mount *mp, vnode_t vp,
 			p->p_cred->p_ruid = cred->cr_uid;
 			if (!VFS_QUOTACTL(mp, QCMD(Q_GETQUOTA,USRQUOTA),
 			    cred->cr_uid, (caddr_t)&dqb))
-			    freenum = min(dqb.dqb_bsoftlimit, freenum);
+			    freenum = uimin(dqb.dqb_bsoftlimit, freenum);
 			p->p_cred->p_ruid = savuid;
 #endif	/* QUOTA */
 			NFSM_BUILD(tl, u_int32_t *, NFSX_HYPER);

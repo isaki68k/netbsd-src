@@ -1,4 +1,4 @@
-/*	$NetBSD: if.c,v 1.420 2018/04/12 18:44:59 christos Exp $	*/
+/*	$NetBSD: if.c,v 1.436 2018/09/07 13:24:14 christos Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001, 2008 The NetBSD Foundation, Inc.
@@ -90,13 +90,12 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if.c,v 1.420 2018/04/12 18:44:59 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if.c,v 1.436 2018/09/07 13:24:14 christos Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_inet.h"
 #include "opt_ipsec.h"
 #include "opt_atalk.h"
-#include "opt_natm.h"
 #include "opt_wlan.h"
 #include "opt_net_mpsafe.h"
 #include "opt_mrouting.h"
@@ -202,7 +201,7 @@ static void if_detach_queues(struct ifnet *, struct ifqueue *);
 static void sysctl_sndq_setup(struct sysctllog **, const char *,
     struct ifaltq *);
 static void if_slowtimo(void *);
-static void if_free_sadl(struct ifnet *);
+static void if_free_sadl(struct ifnet *, int);
 static void if_attachdomain1(struct ifnet *);
 static int ifconf(u_long, void *);
 static int if_transmit(struct ifnet *, struct mbuf *);
@@ -279,8 +278,6 @@ void
 ifinit(void)
 {
 
-	if_sysctl_setup(NULL);
-
 #if (defined(INET) || defined(INET6))
 	encapinit();
 #endif
@@ -299,6 +296,11 @@ ifinit(void)
 void
 ifinit1(void)
 {
+
+#ifdef NET_MPSAFE
+	printf("NET_MPSAFE enabled\n");
+#endif
+
 	mutex_init(&if_clone_mtx, MUTEX_DEFAULT, IPL_NONE);
 
 	TAILQ_INIT(&ifnet_list);
@@ -316,6 +318,14 @@ ifinit1(void)
 #if NETHER > 0 || NFDDI > 0 || defined(NETATALK) || NTOKEN > 0 || defined(WLAN)
 	etherinit();
 #endif
+}
+
+/* XXX must be after domaininit() */
+void
+ifinit_post(void)
+{
+
+	if_sysctl_setup(NULL);
 }
 
 ifnet_t *
@@ -420,6 +430,7 @@ if_set_sadl(struct ifnet *ifp, const void *lla, u_char addrlen, bool factory)
 
 	(void)sockaddr_dl_setaddr(sdl, sdl->sdl_len, lla, ifp->if_addrlen);
 	if (factory) {
+		KASSERT(ifp->if_hwdl == NULL);
 		ifp->if_hwdl = ifp->if_dl;
 		ifaref(ifp->if_hwdl);
 	}
@@ -487,7 +498,7 @@ if_alloc_sadl(struct ifnet *ifp)
 	 * link types, and thus switch link names often.
 	 */
 	if (ifp->if_sadl != NULL)
-		if_free_sadl(ifp);
+		if_free_sadl(ifp, 0);
 
 	ifa = if_dl_create(ifp, &sdl);
 
@@ -563,10 +574,16 @@ if_activate_sadl(struct ifnet *ifp, struct ifaddr *ifa0,
  * a detach helper.  This is called from if_detach().
  */
 static void
-if_free_sadl(struct ifnet *ifp)
+if_free_sadl(struct ifnet *ifp, int factory)
 {
 	struct ifaddr *ifa;
 	int s;
+
+	if (factory && ifp->if_hwdl != NULL) {
+		ifa = ifp->if_hwdl;
+		ifp->if_hwdl = NULL;
+		ifafree(ifa);
+	}
 
 	ifa = ifp->if_dl;
 	if (ifa == NULL) {
@@ -577,13 +594,9 @@ if_free_sadl(struct ifnet *ifp)
 	KASSERT(ifp->if_sadl != NULL);
 
 	s = splsoftnet();
-	rtinit(ifa, RTM_DELETE, 0);
+	KASSERT(ifa->ifa_addr->sa_family == AF_LINK);
 	ifa_remove(ifp, ifa);
 	if_deactivate_sadl(ifp);
-	if (ifp->if_hwdl == ifa) {
-		ifafree(ifa);
-		ifp->if_hwdl = NULL;
-	}
 	splx(s);
 }
 
@@ -704,8 +717,7 @@ if_initialize(ifnet_t *ifp)
 
 	if (if_is_link_state_changeable(ifp)) {
 		u_int flags = SOFTINT_NET;
-		flags |= ISSET(ifp->if_extflags, IFEF_MPSAFE) ?
-		    SOFTINT_MPSAFE : 0;
+		flags |= if_is_mpsafe(ifp) ? SOFTINT_MPSAFE : 0;
 		ifp->if_link_si = softint_establish(flags,
 		    if_link_state_change_si, ifp);
 		if (ifp->if_link_si == NULL) {
@@ -803,7 +815,7 @@ if_percpuq_softint(void *arg)
 
 	while ((m = if_percpuq_dequeue(ipq)) != NULL) {
 		ifp->if_ipackets++;
-		bpf_mtap(ifp, m);
+		bpf_mtap(ifp, m, BPF_D_IN);
 
 		ifp->_if_input(ifp, m);
 	}
@@ -822,11 +834,13 @@ struct if_percpuq *
 if_percpuq_create(struct ifnet *ifp)
 {
 	struct if_percpuq *ipq;
+	u_int flags = SOFTINT_NET;
+
+	flags |= if_is_mpsafe(ifp) ? SOFTINT_MPSAFE : 0;
 
 	ipq = kmem_zalloc(sizeof(*ipq), KM_SLEEP);
 	ipq->ipq_ifp = ifp;
-	ipq->ipq_si = softint_establish(SOFTINT_NET|SOFTINT_MPSAFE,
-	    if_percpuq_softint, ipq);
+	ipq->ipq_si = softint_establish(flags, if_percpuq_softint, ipq);
 	ipq->ipq_ifqs = percpu_alloc(sizeof(struct ifqueue));
 	percpu_foreach(ipq->ipq_ifqs, &if_percpuq_init_ifq, NULL);
 
@@ -1027,6 +1041,7 @@ if_snd_is_used(struct ifnet *ifp)
 {
 
 	return ifp->if_transmit == NULL || ifp->if_transmit == if_nulltransmit ||
+	    ifp->if_transmit == if_transmit ||
 	    ALTQ_IS_ENABLED(&ifp->if_snd);
 }
 
@@ -1054,11 +1069,13 @@ void
 if_deferred_start_init(struct ifnet *ifp, void (*func)(struct ifnet *))
 {
 	struct if_deferred_start *ids;
+	u_int flags = SOFTINT_NET;
+
+	flags |= if_is_mpsafe(ifp) ? SOFTINT_MPSAFE : 0;
 
 	ids = kmem_zalloc(sizeof(*ids), KM_SLEEP);
 	ids->ids_ifp = ifp;
-	ids->ids_si = softint_establish(SOFTINT_NET|SOFTINT_MPSAFE,
-	    if_deferred_start_softint, ids);
+	ids->ids_si = softint_establish(flags, if_deferred_start_softint, ids);
 	if (func != NULL)
 		ids->ids_if_start = func;
 	else
@@ -1092,7 +1109,7 @@ if_input(struct ifnet *ifp, struct mbuf *m)
 	KASSERT(!cpu_intr_p());
 
 	ifp->if_ipackets++;
-	bpf_mtap(ifp, m);
+	bpf_mtap(ifp, m, BPF_D_IN);
 
 	ifp->_if_input(ifp, m);
 }
@@ -1305,6 +1322,18 @@ if_detach(struct ifnet *ifp)
 	if_deactivate(ifp);
 	IFNET_UNLOCK(ifp);
 
+	/*
+	 * Unlink from the list and wait for all readers to leave
+	 * from pserialize read sections.  Note that we can't do
+	 * psref_target_destroy here.  See below.
+	 */
+	IFNET_GLOBAL_LOCK();
+	ifindex2ifnet[ifp->if_index] = NULL;
+	TAILQ_REMOVE(&ifnet_list, ifp, if_list);
+	IFNET_WRITER_REMOVE(ifp);
+	pserialize_perform(ifnet_psz);
+	IFNET_GLOBAL_UNLOCK();
+
 	if (ifp->if_slowtimo != NULL && ifp->if_slowtimo_ch != NULL) {
 		ifp->if_slowtimo = NULL;
 		callout_halt(ifp->if_slowtimo_ch, NULL);
@@ -1392,7 +1421,15 @@ again:
 		goto again;
 	}
 
-	if_free_sadl(ifp);
+	if_free_sadl(ifp, 1);
+
+restart:
+	IFADDR_WRITER_FOREACH(ifa, ifp) {
+		family = ifa->ifa_addr->sa_family;
+		KASSERT(family == AF_LINK);
+		ifa_remove(ifp, ifa);
+		goto restart;
+	}
 
 	/* Delete stray routes from the routing table. */
 	for (i = 0; i <= AF_MAX; i++)
@@ -1428,14 +1465,10 @@ again:
 		}
 	}
 
-	/* Wait for all readers to drain before freeing.  */
-	IFNET_GLOBAL_LOCK();
-	ifindex2ifnet[ifp->if_index] = NULL;
-	TAILQ_REMOVE(&ifnet_list, ifp, if_list);
-	IFNET_WRITER_REMOVE(ifp);
-	pserialize_perform(ifnet_psz);
-	IFNET_GLOBAL_UNLOCK();
-
+	/*
+	 * Must be done after the above pr_purgeif because if_psref may be
+	 * still used in pr_purgeif.
+	 */
 	psref_target_destroy(&ifp->if_psref, ifnet_psref_class);
 	PSLIST_ENTRY_DESTROY(ifp, if_pslist_entry);
 
@@ -2300,6 +2333,7 @@ if_link_state_change_softint(struct ifnet *ifp, int link_state)
 	/* Ensure the change is still valid. */
 	if (ifp->if_link_state == link_state) {
 		IF_LINK_STATE_CHANGE_UNLOCK(ifp);
+		splx(s);
 		return;
 	}
 
@@ -3587,9 +3621,12 @@ if_mcast_op(ifnet_t *ifp, const unsigned long cmd, const struct sockaddr *sa)
 	int rc;
 	struct ifreq ifr;
 
+	/* There remain some paths that don't hold IFNET_LOCK yet */
+#ifdef NET_MPSAFE
 	/* CARP and MROUTING still don't deal with the lock yet */
 #if (!defined(NCARP) || (NCARP == 0)) && !defined(MROUTING)
 	KASSERT(IFNET_LOCKED(ifp));
+#endif
 #endif
 	if (ifp->if_mcastop != NULL)
 		rc = (*ifp->if_mcastop)(ifp, cmd, sa);
@@ -3739,7 +3776,7 @@ sysctl_net_pktq_setup(struct sysctllog **clog, int pf)
 
 	sysctl_createv(clog, 0, NULL, NULL,
 		       CTLFLAG_PERMANENT,
-		       CTLTYPE_INT, "len",
+		       CTLTYPE_QUAD, "len",
 		       SYSCTL_DESCR("Current input queue length"),
 		       len_func, 0, NULL, 0,
 		       CTL_NET, pf, ipn, qid, IFQCTL_LEN, CTL_EOL);
@@ -3751,7 +3788,7 @@ sysctl_net_pktq_setup(struct sysctllog **clog, int pf)
 		       CTL_NET, pf, ipn, qid, IFQCTL_MAXLEN, CTL_EOL);
 	sysctl_createv(clog, 0, NULL, NULL,
 		       CTLFLAG_PERMANENT,
-		       CTLTYPE_INT, "drops",
+		       CTLTYPE_QUAD, "drops",
 		       SYSCTL_DESCR("Packets dropped due to full input queue"),
 		       drops_func, 0, NULL, 0,
 		       CTL_NET, pf, ipn, qid, IFQCTL_DROPS, CTL_EOL);

@@ -1,4 +1,4 @@
-/*	$NetBSD: uipc_syscalls_50.c,v 1.4 2018/04/12 18:50:13 christos Exp $	*/
+/*	$NetBSD: uipc_syscalls_50.c,v 1.6 2018/09/12 02:24:25 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -37,7 +37,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uipc_syscalls_50.c,v 1.4 2018/04/12 18:50:13 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uipc_syscalls_50.c,v 1.6 2018/09/12 02:24:25 msaitoh Exp $");
 
 #include <sys/param.h>
 #include <sys/kernel.h>
@@ -63,16 +63,26 @@ compat_ifdatareq(struct lwp *l, u_long cmd, void *data)
 	struct ifnet *ifp;
 	int error;
 
+	/* Validate arguments. */
+	switch (cmd) {
+	case OSIOCGIFDATA:
+	case OSIOCZIFDATA:
+		break;
+	default:
+		return ENOSYS;
+	}
+
 	ifp = ifunit(ifdr->ifdr_name);
 	if (ifp == NULL)
 		return ENXIO;
 
+	/* Do work. */
 	switch (cmd) {
-	case SIOCGIFDATA:
+	case OSIOCGIFDATA:
 		ifdatan2o(&ifdr->ifdr_data, &ifp->if_data);
 		return 0;
 
-	case SIOCZIFDATA:
+	case OSIOCZIFDATA:
 		if (l != NULL) {
 			error = kauth_authorize_network(l->l_cred,
 			    KAUTH_NETWORK_INTERFACE,
@@ -91,6 +101,7 @@ compat_ifdatareq(struct lwp *l, u_long cmd, void *data)
 		return 0;
 
 	default:
+		/* Impossible due to above validation, but makes gcc happy. */
 		return ENOSYS;
 	}
 }

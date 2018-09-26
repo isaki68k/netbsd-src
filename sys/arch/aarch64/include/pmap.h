@@ -1,4 +1,4 @@
-/* $NetBSD: pmap.h,v 1.3 2018/04/09 22:26:16 jmcneill Exp $ */
+/* $NetBSD: pmap.h,v 1.10 2018/09/15 19:47:48 jakllsch Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -34,6 +34,7 @@
 
 #ifdef __aarch64__
 
+#ifdef _KERNEL
 #include <sys/types.h>
 #include <sys/pool.h>
 #include <sys/queue.h>
@@ -68,9 +69,6 @@ struct vm_page_md {
 
 	/* VM_PROT_READ means referenced, VM_PROT_WRITE means modified */
 	uint32_t mdpg_flags;
-
-	u_int mdpg_kenter;		/* num of pmap_kenter_pa()'ed */
-	u_int mdpg_wiredcount;		/* num of pmap_enter with PMAP_WIRED */
 };
 
 /* each mdpg_pvlock will be initialized in pmap_init() */
@@ -78,8 +76,6 @@ struct vm_page_md {
 	do {						\
 		TAILQ_INIT(&(pg)->mdpage.mdpg_pvhead);	\
 		(pg)->mdpage.mdpg_flags = 0;		\
-		(pg)->mdpage.mdpg_kenter = 0;		\
-		(pg)->mdpage.mdpg_wiredcount = 0;	\
 	} while (/*CONSTCOND*/ 0)
 
 #define l0pde_pa(pde)		((paddr_t)((pde) & LX_TBL_PA))
@@ -100,8 +96,11 @@ struct vm_page_md {
 #define l2pde_is_table(pde)	(((pde) & LX_TYPE) == LX_TYPE_TBL)
 
 #define l3pte_pa(pde)		((paddr_t)((pde) & LX_TBL_PA))
-#define l3pte_executable(pde)	\
-    (((pde) & (LX_BLKPAG_UXN|LX_BLKPAG_PXN)) != (LX_BLKPAG_UXN|LX_BLKPAG_PXN))
+#define l3pte_executable(pde,user)	\
+    (((pde) & ((user) ? LX_BLKPAG_UXN : LX_BLKPAG_PXN)) == 0)
+#define l3pte_readable(pde)	((pde) & LX_BLKPAG_AF)
+#define l3pte_writable(pde)	\
+    (((pde) & (LX_BLKPAG_AF|LX_BLKPAG_AP)) == (LX_BLKPAG_AF|LX_BLKPAG_AP_RW))
 #define l3pte_index(v)		(((vaddr_t)(v) & L3_ADDR_BITS) >> L3_SHIFT)
 #define l3pte_valid(pde)	(((pde) & LX_VALID) == LX_VALID)
 #define l3pte_is_page(pde)	(((pde) & LX_TYPE) == L3_TYPE_PAG)
@@ -109,7 +108,11 @@ struct vm_page_md {
 
 void pmap_bootstrap(vaddr_t, vaddr_t);
 bool pmap_fault_fixup(struct pmap *, vaddr_t, vm_prot_t, bool user);
+
+/* for ddb */
 void pmap_db_pteinfo(vaddr_t, void (*)(const char *, ...));
+pt_entry_t *kvtopte(vaddr_t);
+pt_entry_t pmap_kvattr(vaddr_t, vm_prot_t);
 
 /* Hooks for the pool allocator */
 paddr_t vtophys(vaddr_t);
@@ -133,6 +136,8 @@ const struct pmap_devmap *pmap_devmap_find_va(vaddr_t, vsize_t);
 vaddr_t pmap_devmap_phystov(paddr_t);
 paddr_t pmap_devmap_vtophys(paddr_t);
 
+pd_entry_t *pmap_alloc_pdp(struct pmap *, paddr_t *);
+
 /* devmap use L2 blocks. (2Mbyte) */
 #define DEVMAP_TRUNC_ADDR(x)	((x) & ~L2_OFFSET)
 #define DEVMAP_ROUND_SIZE(x)	(((x) + L2_SIZE - 1) & ~(L2_SIZE - 1))
@@ -155,10 +160,11 @@ paddr_t pmap_devmap_vtophys(paddr_t);
 #define AARCH64_MMAP_WRITECOMBINE	2UL
 #define AARCH64_MMAP_DEVICE		3UL
 
-#define ARM_MMAP_WRITECOMBINE		AARCH64_MMAP_WRITECOMBINE
-#define ARM_MMAP_WRITEBACK		AARCH64_MMAP_WRITEBACK
-#define ARM_MMAP_NOCACHE		AARCH64_MMAP_NOCACHE
-#define ARM_MMAP_DEVICE			AARCH64_MMAP_DEVICE
+#define ARM_MMAP_MASK			__BITS(63, AARCH64_MMAP_FLAG_SHIFT)
+#define ARM_MMAP_WRITECOMBINE		__SHIFTIN(AARCH64_MMAP_WRITECOMBINE, ARM_MMAP_MASK)
+#define ARM_MMAP_WRITEBACK		__SHIFTIN(AARCH64_MMAP_WRITEBACK, ARM_MMAP_MASK)
+#define ARM_MMAP_NOCACHE		__SHIFTIN(AARCH64_MMAP_NOCACHE, ARM_MMAP_MASK)
+#define ARM_MMAP_DEVICE			__SHIFTIN(AARCH64_MMAP_DEVICE, ARM_MMAP_MASK)
 
 #define	PMAP_PTE			0x10000000 /* kenter_pa */
 #define	PMAP_DEV			0x20000000 /* kenter_pa */
@@ -210,6 +216,8 @@ aarch64_mmap_flags(paddr_t mdpgno)
 bool	pmap_extract_coherency(pmap_t, vaddr_t, paddr_t *, bool *);
 
 #define	PMAP_MAPSIZE1	L2_SIZE
+
+#endif /* _KERNEL */
 
 #elif defined(__arm__)
 

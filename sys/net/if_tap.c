@@ -1,4 +1,4 @@
-/*	$NetBSD: if_tap.c,v 1.105 2017/12/19 03:32:35 ozaki-r Exp $	*/
+/*	$NetBSD: if_tap.c,v 1.107 2018/09/03 16:29:35 riastradh Exp $	*/
 
 /*
  *  Copyright (c) 2003, 2004, 2008, 2009 The NetBSD Foundation.
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_tap.c,v 1.105 2017/12/19 03:32:35 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_tap.c,v 1.107 2018/09/03 16:29:35 riastradh Exp $");
 
 #if defined(_KERNEL_OPT)
 
@@ -513,7 +513,7 @@ tap_start(struct ifnet *ifp)
 				goto done;
 
 			ifp->if_opackets++;
-			bpf_mtap(ifp, m0);
+			bpf_mtap(ifp, m0, BPF_D_OUT);
 
 			m_freem(m0);
 		}
@@ -885,7 +885,7 @@ tap_dev_close(struct tap_softc *sc)
 				break;
 
 			ifp->if_opackets++;
-			bpf_mtap(ifp, m);
+			bpf_mtap(ifp, m, BPF_D_OUT);
 			m_freem(m);
 		}
 	}
@@ -973,14 +973,14 @@ tap_dev_read(int unit, struct uio *uio, int flags)
 	}
 
 	ifp->if_opackets++;
-	bpf_mtap(ifp, m);
+	bpf_mtap(ifp, m, BPF_D_OUT);
 
 	/*
 	 * One read is one packet.
 	 */
 	do {
 		error = uiomove(mtod(m, void *),
-		    min(m->m_len, uio->uio_resid), uio);
+		    uimin(m->m_len, uio->uio_resid), uio);
 		m = n = m_free(m);
 	} while (m != NULL && uio->uio_resid > 0 && error == 0);
 
@@ -1068,7 +1068,7 @@ tap_dev_write(int unit, struct uio *uio, int flags)
 				break;
 			}
 		}
-		(*mp)->m_len = min(MHLEN, uio->uio_resid);
+		(*mp)->m_len = uimin(MHLEN, uio->uio_resid);
 		error = uiomove(mtod(*mp, void *), (*mp)->m_len, uio);
 		mp = &(*mp)->m_next;
 	}

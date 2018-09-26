@@ -1,4 +1,4 @@
-/*	$NetBSD: icmp6.h,v 1.50 2018/03/06 10:57:00 roy Exp $	*/
+/*	$NetBSD: icmp6.h,v 1.52 2018/08/22 01:05:24 msaitoh Exp $	*/
 /*	$KAME: icmp6.h,v 1.84 2003/04/23 10:26:51 itojun Exp $	*/
 
 
@@ -156,6 +156,7 @@ struct icmp6_hdr {
 #define ICMP6_PARAMPROB_HEADER 	 	0	/* erroneous header field */
 #define ICMP6_PARAMPROB_NEXTHEADER	1	/* unrecognized next header */
 #define ICMP6_PARAMPROB_OPTION		2	/* unrecognized option */
+#define ICMP6_PARAMPROB_FRAGMENT	3	/* incomplete chain in frag */
 
 #define ICMP6_INFOMSG_MASK		0x80	/* all informational messages */
 
@@ -635,35 +636,6 @@ struct icmp6_filter {
 #define ICMPV6CTL_ND6_DRLIST	19
 #define ICMPV6CTL_ND6_PRLIST	20
 #define	ICMPV6CTL_ND6_MAXQLEN	24
-#define ICMPV6CTL_MAXID		25
-
-#define ICMPV6CTL_NAMES { \
-	{ 0, 0 }, \
-	{ 0, 0 }, \
-	{ "rediraccept", CTLTYPE_INT }, \
-	{ "redirtimeout", CTLTYPE_INT }, \
-	{ 0, 0 }, \
-	{ 0, 0 }, \
-	{ "nd6_prune", CTLTYPE_INT }, \
-	{ 0, 0 }, \
-	{ "nd6_delay", CTLTYPE_INT }, \
-	{ "nd6_umaxtries", CTLTYPE_INT }, \
-	{ "nd6_mmaxtries", CTLTYPE_INT }, \
-	{ "nd6_useloopback", CTLTYPE_INT }, \
-	{ 0, 0 }, \
-	{ "nodeinfo", CTLTYPE_INT }, \
-	{ "errppslimit", CTLTYPE_INT }, \
-	{ "nd6_maxnudhint", CTLTYPE_INT }, \
-	{ "mtudisc_hiwat", CTLTYPE_INT }, \
-	{ "mtudisc_lowat", CTLTYPE_INT }, \
-	{ "nd6_debug", CTLTYPE_INT }, \
-	{ 0, 0 }, \
-	{ 0, 0 }, \
-	{ 0, 0 }, \
-	{ 0, 0 }, \
-	{ 0, 0 }, \
-	{ "nd6_maxqueuelen", CTLTYPE_INT }, \
-}
 
 #ifdef _KERNEL
 struct	rtentry;

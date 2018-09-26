@@ -1,4 +1,4 @@
-/*	$NetBSD: if_vlan.c,v 1.125 2018/03/16 17:00:35 tih Exp $	*/
+/*	$NetBSD: if_vlan.c,v 1.131 2018/08/03 11:24:19 jmcneill Exp $	*/
 
 /*
  * Copyright (c) 2000, 2001 The NetBSD Foundation, Inc.
@@ -78,7 +78,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_vlan.c,v 1.125 2018/03/16 17:00:35 tih Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_vlan.c,v 1.131 2018/08/03 11:24:19 jmcneill Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -161,6 +161,7 @@ struct ifvlan {
 					 * instead of direct dereference
 					 */
 	kmutex_t ifv_lock;		/* writer lock for ifv_mib */
+	pserialize_t ifv_psz;
 
 	LIST_HEAD(__vlan_mchead, vlan_mc_entry) ifv_mc_listhead;
 	LIST_ENTRY(ifvlan) ifv_list;
@@ -355,6 +356,7 @@ vlan_clone_create(struct if_clone *ifc, int unit)
 	psref_target_init(&mib->ifvm_psref, ifvm_psref_class);
 
 	mutex_init(&ifv->ifv_lock, MUTEX_DEFAULT, IPL_NONE);
+	ifv->ifv_psz = pserialize_create();
 	ifv->ifv_mib = mib;
 
 	mutex_enter(&ifv_list.lock);
@@ -625,7 +627,13 @@ vlan_unconfig_locked(struct ifvlan *ifv, struct ifvlan_linkmib *nmib)
 			IFNET_UNLOCK(p);
 		}
 
+		/* XXX ether_ifdetach must not be called with IFNET_LOCK */
+		mutex_exit(&ifv->ifv_lock);
+		IFNET_UNLOCK(ifp);
 		ether_ifdetach(ifp);
+		IFNET_LOCK(ifp);
+		mutex_enter(&ifv->ifv_lock);
+
 		/* Restore vlan_ioctl overwritten by ether_ifdetach */
 		ifp->if_ioctl = vlan_ioctl;
 		vlan_reset_linkname(ifp);
@@ -786,7 +794,7 @@ vlan_linkmib_update(struct ifvlan *ifv, struct ifvlan_linkmib *nmib)
 	membar_producer();
 	ifv->ifv_mib = nmib;
 
-	pserialize_perform(vlan_psz);
+	pserialize_perform(ifv->ifv_psz);
 	psref_target_destroy(&omib->ifvm_psref, ifvm_psref_class);
 }
 
@@ -1170,7 +1178,11 @@ vlan_ether_addmulti(struct ifvlan *ifv, struct ifreq *ifr)
 	 */
 	error = ether_multiaddr(sa, addrlo, addrhi);
 	KASSERT(error == 0);
-	ETHER_LOOKUP_MULTI(addrlo, addrhi, &ifv->ifv_ec, mc->mc_enm);
+
+	ETHER_LOCK(&ifv->ifv_ec);
+	mc->mc_enm = ether_lookup_multi(addrlo, addrhi, &ifv->ifv_ec);
+	ETHER_UNLOCK(&ifv->ifv_ec);
+
 	KASSERT(mc->mc_enm != NULL);
 
 	memcpy(&mc->mc_addr, sa, sa->sa_len);
@@ -1215,7 +1227,21 @@ vlan_ether_delmulti(struct ifvlan *ifv, struct ifreq *ifr)
 	 */
 	if ((error = ether_multiaddr(sa, addrlo, addrhi)) != 0)
 		return error;
-	ETHER_LOOKUP_MULTI(addrlo, addrhi, &ifv->ifv_ec, enm);
+
+	ETHER_LOCK(&ifv->ifv_ec);
+	enm = ether_lookup_multi(addrlo, addrhi, &ifv->ifv_ec);
+	ETHER_UNLOCK(&ifv->ifv_ec);
+	if (enm == NULL)
+		return EINVAL;
+
+	LIST_FOREACH(mc, &ifv->ifv_mc_listhead, mc_entries) {
+		if (mc->mc_enm == enm)
+			break;
+	}
+
+	/* We woun't delete entries we didn't add */
+	if (mc == NULL)
+		return EINVAL;
 
 	error = ether_delmulti(sa, &ifv->ifv_ec);
 	if (error != ENETRESET)
@@ -1229,17 +1255,11 @@ vlan_ether_delmulti(struct ifvlan *ifv, struct ifreq *ifr)
 
 	if (error == 0) {
 		/* And forget about this address. */
-		for (mc = LIST_FIRST(&ifv->ifv_mc_listhead); mc != NULL;
-		    mc = LIST_NEXT(mc, mc_entries)) {
-			if (mc->mc_enm == enm) {
-				LIST_REMOVE(mc, mc_entries);
-				free(mc, M_DEVBUF);
-				break;
-			}
-		}
-		KASSERT(mc != NULL);
-	} else
+		LIST_REMOVE(mc, mc_entries);
+		free(mc, M_DEVBUF);
+	} else {
 		(void)ether_addmulti(sa, &ifv->ifv_ec);
+	}
 
 	return error;
 }
@@ -1263,7 +1283,7 @@ vlan_ether_purgemulti(struct ifvlan *ifv)
 	while ((mc = LIST_FIRST(&ifv->ifv_mc_listhead)) != NULL) {
 		IFNET_LOCK(mib->ifvm_p);
 		(void)if_mcast_op(mib->ifvm_p, SIOCDELMULTI,
-		    (const struct sockaddr *)&mc->mc_addr);
+		    sstocsa(&mc->mc_addr));
 		IFNET_UNLOCK(mib->ifvm_p);
 		LIST_REMOVE(mc, mc_entries);
 		free(mc, M_DEVBUF);
@@ -1318,7 +1338,7 @@ vlan_start(struct ifnet *ifp)
 		KERNEL_UNLOCK_ONE(NULL);
 #endif /* ALTQ */
 
-		bpf_mtap(ifp, m);
+		bpf_mtap(ifp, m, BPF_D_OUT);
 		/*
 		 * If the parent can insert the tag itself, just mark
 		 * the tag in the mbuf header.
@@ -1430,7 +1450,7 @@ vlan_transmit(struct ifnet *ifp, struct mbuf *m)
 	p = mib->ifvm_p;
 	ec = (void *)mib->ifvm_p;
 
-	bpf_mtap(ifp, m);
+	bpf_mtap(ifp, m, BPF_D_OUT);
 
 	if ((error = pfil_run_hooks(ifp->if_pfil, &m, ifp, PFIL_OUT)) != 0)
 		goto out;

@@ -1,4 +1,4 @@
-/* $NetBSD: cpu.c,v 1.1 2018/04/01 04:35:03 ryo Exp $ */
+/* $NetBSD: cpu.c,v 1.7 2018/09/10 11:05:12 ryo Exp $ */
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -27,13 +27,16 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(1, "$NetBSD: cpu.c,v 1.1 2018/04/01 04:35:03 ryo Exp $");
+__KERNEL_RCSID(1, "$NetBSD: cpu.c,v 1.7 2018/09/10 11:05:12 ryo Exp $");
 
 #include "locators.h"
+#include "opt_arm_debug.h"
+#include "opt_fdt.h"
 #include "opt_multiprocessor.h"
 
 #include <sys/param.h>
 #include <sys/systm.h>
+#include <sys/atomic.h>
 #include <sys/device.h>
 #include <sys/cpu.h>
 #include <sys/kmem.h>
@@ -43,71 +46,118 @@ __KERNEL_RCSID(1, "$NetBSD: cpu.c,v 1.1 2018/04/01 04:35:03 ryo Exp $");
 #include <aarch64/cpufunc.h>
 #include <aarch64/machdep.h>
 
+#ifdef FDT
+#include <arm/fdt/arm_fdtvar.h>
+#endif
+
+#ifdef VERBOSE_INIT_ARM
+#define VPRINTF(...)	printf(__VA_ARGS__)
+#else
+#define VPRINTF(...)	do { } while (/* CONSTCOND */ 0)
+#endif
+
 void cpu_attach(device_t, cpuid_t);
+static void identify_aarch64_model(uint32_t, char *, size_t);
 static void cpu_identify(device_t self, struct cpu_info *);
+static void cpu_identify1(device_t self, struct cpu_info *);
 static void cpu_identify2(device_t self, struct cpu_info *);
+
+#ifdef MULTIPROCESSOR
+uint64_t cpu_mpidr[MAXCPUS];
+
+volatile u_int arm_cpu_hatched __cacheline_aligned = 0;
+volatile uint32_t arm_cpu_mbox __cacheline_aligned = 0;
+u_int arm_cpu_max = 1;
+
+static kmutex_t cpu_hatch_lock;
+#endif /* MULTIPROCESSOR */
+
+#ifdef MULTIPROCESSOR
+#define NCPUINFO	MAXCPUS
+#else
+#define NCPUINFO	1
+#endif /* MULTIPROCESSOR */
+
+/*
+ * Our exported CPU info;
+ * these will be refered from secondary cpus in the middle of hatching.
+ */
+struct cpu_info cpu_info_store[NCPUINFO] = {
+	[0] = {
+		.ci_cpl = IPL_HIGH,
+		.ci_curlwp = &lwp0
+	}
+};
+
+struct cpu_info *cpu_info[NCPUINFO] __read_mostly = {
+	[0] = &cpu_info_store[0]
+};
 
 void
 cpu_attach(device_t dv, cpuid_t id)
 {
 	struct cpu_info *ci;
+	const int unit = device_unit(dv);
+	uint64_t mpidr;
 
-	if (id == 0) {
+	if (unit == 0) {
 		ci = curcpu();
-
+		ci->ci_cpuid = id;
+		cpu_info_store[unit].ci_midr = reg_midr_el1_read();
+		cpu_info_store[unit].ci_mpidr = reg_mpidr_el1_read();
 	} else {
 #ifdef MULTIPROCESSOR
-		//XXXAARCH64: notyet?
+		KASSERT(unit < MAXCPUS);
+		ci = &cpu_info_store[unit];
 
-		uint64_t mpidr = reg_mpidr_el1_read();
-
-		KASSERT(cpu_info[id] == NULL);
-		ci = kmem_zalloc(sizeof(*ci), KM_SLEEP);
 		ci->ci_cpl = IPL_HIGH;
 		ci->ci_cpuid = id;
-		if (mpidr & MPIDR_MT) {
-			ci->ci_data.cpu_smt_id = mpidr & MPIDR_AFF0;
-			ci->ci_data.cpu_core_id = mpidr & MPIDR_AFF1;
-			ci->ci_data.cpu_package_id = mpidr & MPIDR_AFF2;
-		} else {
-			ci->ci_data.cpu_core_id = mpidr & MPIDR_AFF0;
-			ci->ci_data.cpu_package_id = mpidr & MPIDR_AFF1;
-		}
-		ci->ci_data.cpu_cc_freq = cpu_info_store.ci_data.cpu_cc_freq;
-		cpu_info[ci->ci_cpuid] = ci;
-		if ((arm_cpu_hatched & (1 << id)) == 0) {
+		ci->ci_data.cpu_cc_freq = cpu_info_store[0].ci_data.cpu_cc_freq;
+		/* ci_{midr,mpidr} are stored by own cpus when hatching */
+
+		cpu_info[ncpu] = ci;
+		if ((arm_cpu_hatched & __BIT(unit)) == 0) {
 			ci->ci_dev = dv;
 			dv->dv_private = ci;
+			ci->ci_index = -1;
 
 			aprint_naive(": disabled\n");
-			aprint_normal(": disabled (uniprocessor kernel)\n");
+			aprint_normal(": disabled (unresponsive)\n");
 			return;
 		}
-#else
+#else /* MULTIPROCESSOR */
 		aprint_naive(": disabled\n");
 		aprint_normal(": disabled (uniprocessor kernel)\n");
 		return;
-#endif
+#endif /* MULTIPROCESSOR */
+	}
+
+	mpidr = ci->ci_mpidr;
+	if (mpidr & MPIDR_MT) {
+		ci->ci_data.cpu_smt_id = __SHIFTOUT(mpidr, MPIDR_AFF0);
+		ci->ci_data.cpu_core_id = __SHIFTOUT(mpidr, MPIDR_AFF1);
+		ci->ci_data.cpu_package_id = __SHIFTOUT(mpidr, MPIDR_AFF2);
+	} else {
+		ci->ci_data.cpu_core_id = __SHIFTOUT(mpidr, MPIDR_AFF0);
+		ci->ci_data.cpu_package_id = __SHIFTOUT(mpidr, MPIDR_AFF1);
 	}
 
 	ci->ci_dev = dv;
 	dv->dv_private = ci;
 
+	cpu_identify(ci->ci_dev, ci);
 #ifdef MULTIPROCESSOR
-	if (caa->caa_cpucore != 0) {
-		aprint_naive("\n");
-		aprint_normal(": %s\n", cpu_getmodel());
+	if (unit != 0) {
 		mi_cpu_attach(ci);
-
-		// XXXAARCH64
-		//pmap_tlb_info_attach();
-		panic("notyet");
+		return;
 	}
-#endif
+#endif /* MULTIPROCESSOR */
 
 	fpu_attach(ci);
 
-	cpu_identify(dv, ci);
+	cpu_identify1(dv, ci);
+	aarch64_getcacheinfo();
+	aarch64_printcacheinfo(dv);
 	cpu_identify2(dv, ci);
 }
 
@@ -152,102 +202,25 @@ identify_aarch64_model(uint32_t cpuid, char *buf, size_t len)
 	snprintf(buf, len, "unknown CPU (ID = 0x%08x)", cpuid);
 }
 
-static int
-prt_cache(device_t self, int level)
-{
-	struct aarch64_cache_info *cinfo;
-	struct aarch64_cache_unit *cunit;
-	u_int purging;
-	int i;
-	const char *cacheable, *cachetype;
-
-	cinfo = &aarch64_cache_info[level];
-
-	if (cinfo->cacheable == CACHE_CACHEABLE_NONE)
-		return -1;
-
-	for (i = 0; i < 2; i++) {
-		switch (cinfo->cacheable) {
-		case CACHE_CACHEABLE_ICACHE:
-			cunit = &cinfo->icache;
-			cacheable = "Instruction";
-			break;
-		case CACHE_CACHEABLE_DCACHE:
-			cunit = &cinfo->dcache;
-			cacheable = "Data";
-			break;
-		case CACHE_CACHEABLE_IDCACHE:
-			if (i == 0) {
-				cunit = &cinfo->icache;
-				cacheable = "Instruction";
-			} else {
-				cunit = &cinfo->dcache;
-				cacheable = "Data";
-			}
-			break;
-		case CACHE_CACHEABLE_UNIFIED:
-			cunit = &cinfo->dcache;
-			cacheable = "Unified";
-			break;
-		}
-
-		switch (cunit->cache_type) {
-		case CACHE_TYPE_VIVT:
-			cachetype = "VIVT";
-			break;
-		case CACHE_TYPE_VIPT:
-			cachetype = "VIPT";
-			break;
-		case CACHE_TYPE_PIPT:
-			cachetype = "PIPT";
-			break;
-		}
-
-		purging = cunit->cache_purging;
-		aprint_normal_dev(self,
-		    "L%d %dKB/%dB %d-way%s%s%s%s %s %s cache\n",
-		    level + 1,
-		    cunit->cache_size / 1024,
-		    cunit->cache_line_size,
-		    cunit->cache_ways,
-		    (purging & CACHE_PURGING_WT) ? " write-through" : "",
-		    (purging & CACHE_PURGING_WB) ? " write-back" : "",
-		    (purging & CACHE_PURGING_RA) ? " read-allocate" : "",
-		    (purging & CACHE_PURGING_WA) ? " write-allocate" : "",
-		    cachetype, cacheable);
-
-		if (cinfo->cacheable != CACHE_CACHEABLE_IDCACHE)
-			break;
-	}
-
-	return 0;
-}
-
 static void
 cpu_identify(device_t self, struct cpu_info *ci)
 {
-	uint64_t mpidr;
-	int level;
-	uint32_t cpuid;
-	uint32_t ctr, sctlr;	/* for cache */
 	char model[128];
 
-	cpuid = reg_midr_el1_read();
-	identify_aarch64_model(cpuid, model, sizeof(model));
-	if (ci->ci_cpuid == 0)
+	identify_aarch64_model(ci->ci_midr, model, sizeof(model));
+	if (ci->ci_index == 0)
 		cpu_setmodel("%s", model);
 
 	aprint_naive("\n");
 	aprint_normal(": %s\n", model);
+	aprint_normal_dev(ci->ci_dev, "package %lu, core %lu, smt %lu\n",
+	    ci->ci_package_id, ci->ci_core_id, ci->ci_smt_id);
+}
 
-
-	mpidr = reg_mpidr_el1_read();
-	aprint_normal_dev(self, "CPU Affinity %llu-%llu-%llu-%llu\n",
-	    __SHIFTOUT(mpidr, MPIDR_AFF3),
-	    __SHIFTOUT(mpidr, MPIDR_AFF2),
-	    __SHIFTOUT(mpidr, MPIDR_AFF1),
-	    __SHIFTOUT(mpidr, MPIDR_AFF0));
-
+static void
+cpu_identify1(device_t self, struct cpu_info *ci)
+{
+	uint32_t ctr, sctlr;	/* for cache */
 
 	/* SCTLR - System Control Register */
 	sctlr = reg_sctlr_el1_read();
@@ -285,19 +258,14 @@ cpu_identify(device_t self, struct cpu_info *ci)
 	 * CTR - Cache Type Register
 	 */
 	ctr = reg_ctr_el0_read();
-	aprint_normal_dev(self, "Cache Writeback Granule %lluB,"
-	    " Exclusives Reservation Granule %lluB\n",
+	aprint_normal_dev(self, "Cache Writeback Granule %" PRIu64 "B,"
+	    " Exclusives Reservation Granule %" PRIu64 "B\n",
 	    __SHIFTOUT(ctr, CTR_EL0_CWG_LINE) * 4,
 	    __SHIFTOUT(ctr, CTR_EL0_ERG_LINE) * 4);
 
 	aprint_normal_dev(self, "Dcache line %ld, Icache line %ld\n",
 	    sizeof(int) << __SHIFTOUT(ctr, CTR_EL0_DMIN_LINE),
 	    sizeof(int) << __SHIFTOUT(ctr, CTR_EL0_IMIN_LINE));
-
-	for (level = 0; level < MAX_CACHE_LEVEL; level++) {
-		if (prt_cache(self, level) < 0)
-			break;
-	}
 }
 
 
@@ -323,7 +291,7 @@ cpu_identify2(device_t self, struct cpu_info *ci)
 	mvfr1 = reg_mvfr1_el1_read();
 
 
-	aprint_normal_dev(self, "revID=0x%llx", revidr);
+	aprint_normal_dev(self, "revID=0x%" PRIx64, revidr);
 
 	/* ID_AA64DFR0_EL1 */
 	switch (__SHIFTOUT(dfr0, ID_AA64DFR0_EL1_PMUVER)) {
@@ -364,7 +332,7 @@ cpu_identify2(device_t self, struct cpu_info *ci)
 
 
 
-	aprint_normal_dev(self, "auxID=0x%llx", aidr);
+	aprint_normal_dev(self, "auxID=0x%" PRIx64, aidr);
 
 	/* PFR0 */
 	switch (__SHIFTOUT(pfr0, ID_AA64PFR0_EL1_GIC)) {
@@ -448,3 +416,65 @@ cpu_identify2(device_t self, struct cpu_info *ci)
 
 	aprint_normal("\n");
 }
+
+#ifdef MULTIPROCESSOR
+void
+cpu_boot_secondary_processors(void)
+{
+	mutex_init(&cpu_hatch_lock, MUTEX_DEFAULT, IPL_NONE);
+
+	VPRINTF("%s: writing mbox with %#x\n", __func__, arm_cpu_hatched);
+
+	/* send mbox to have secondary processors do cpu_hatch() */
+	atomic_or_32(&arm_cpu_mbox, arm_cpu_hatched);
+	__asm __volatile ("sev; sev; sev");
+
+	/* wait all cpus have done cpu_hatch() */
+	while (membar_consumer(), arm_cpu_mbox & arm_cpu_hatched) {
+		__asm __volatile ("wfe");
+	}
+
+	VPRINTF("%s: secondary processors hatched\n", __func__);
+
+	/* add available processors to kcpuset */
+	uint32_t mbox = arm_cpu_hatched;
+	kcpuset_export_u32(kcpuset_attached, &mbox, sizeof(mbox));
+}
+
+void
+cpu_hatch(struct cpu_info *ci)
+{
+	KASSERT(curcpu() == ci);
+
+	delay(1000 * ci->ci_index);	/* XXX: to attach cpu* in order */
+
+	mutex_enter(&cpu_hatch_lock);
+
+	fpu_attach(ci);
+
+	cpu_identify1(ci->ci_dev, ci);
+	aarch64_getcacheinfo();
+	aarch64_printcacheinfo(ci->ci_dev);
+	cpu_identify2(ci->ci_dev, ci);
+
+	mutex_exit(&cpu_hatch_lock);
+
+	intr_cpu_init(ci);
+
+#ifdef FDT
+	arm_fdt_cpu_hatch(ci);
+#endif
+#ifdef MD_CPU_HATCH
+	MD_CPU_HATCH(ci);	/* for non-fdt arch? */
+#endif
+
+	/*
+	 * clear my bit of arm_cpu_mbox to tell cpu_boot_secondary_processors().
+	 * there are cpu0,1,2,3, and if cpu2 is unresponsive,
+	 * ci_index are each cpu0=0, cpu1=1, cpu2=undef, cpu3=2.
+	 * therefore we have to use device_unit instead of ci_index for mbox.
+	 */
+	atomic_and_32(&arm_cpu_mbox, ~__BIT(device_unit(ci->ci_dev)));
+	__asm __volatile ("sev; sev; sev");
+}
+#endif /* MULTIPROCESSOR */

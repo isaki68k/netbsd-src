@@ -1,4 +1,4 @@
-/*	$NetBSD: icmp6.c,v 1.230 2018/04/14 17:55:47 maxv Exp $	*/
+/*	$NetBSD: icmp6.c,v 1.239 2018/09/03 16:29:36 riastradh Exp $	*/
 /*	$KAME: icmp6.c,v 1.217 2001/06/20 15:03:29 jinmei Exp $	*/
 
 /*
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: icmp6.c,v 1.230 2018/04/14 17:55:47 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: icmp6.c,v 1.239 2018/09/03 16:29:36 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -104,7 +104,6 @@ __KERNEL_RCSID(0, "$NetBSD: icmp6.c,v 1.230 2018/04/14 17:55:47 maxv Exp $");
 
 #ifdef IPSEC
 #include <netipsec/ipsec.h>
-#include <netipsec/ipsec_var.h>
 #include <netipsec/ipsec6.h>
 #include <netipsec/key.h>
 #endif
@@ -113,8 +112,6 @@ __KERNEL_RCSID(0, "$NetBSD: icmp6.c,v 1.230 2018/04/14 17:55:47 maxv Exp $");
 #if defined(NFAITH) && 0 < NFAITH
 #include <net/if_faith.h>
 #endif
-
-#include <net/net_osdep.h>
 
 extern struct domain inet6domain;
 
@@ -638,12 +635,11 @@ _icmp6_input(struct mbuf *m, int off, int proto)
 		 * copy the first part of the data into a fresh mbuf.
 		 * Otherwise, we will wrongly overwrite both copies.
 		 */
-		if ((n = m_copym(m, 0, M_COPYALL, M_DONTWAIT)) == NULL) {
+		if ((n = m_copypacket(m, M_DONTWAIT)) == NULL) {
 			/* Give up local */
 			n = m;
 			m = NULL;
-		} else if (M_READONLY(n) ||
-		    n->m_len < off + sizeof(struct icmp6_hdr)) {
+		} else if (M_UNWRITABLE(n, off + sizeof(struct icmp6_hdr))) {
 			struct mbuf *n0 = n;
 
 			/*
@@ -688,7 +684,7 @@ _icmp6_input(struct mbuf *m, int off, int proto)
 			icmp6_ifstat_inc(rcvif, ifs6_in_mldquery);
 		else
 			icmp6_ifstat_inc(rcvif, ifs6_in_mldreport);
-		if ((n = m_copym(m, 0, M_COPYALL, M_DONTWAIT)) == NULL) {
+		if ((n = m_copypacket(m, M_DONTWAIT)) == NULL) {
 			/* give up local */
 			mld_input(m, off);
 			m = NULL;
@@ -725,7 +721,7 @@ _icmp6_input(struct mbuf *m, int off, int proto)
 			goto badlen;
 
 		if (mode == FQDN) {
-			n = m_copym(m, 0, M_COPYALL, M_DONTWAIT);
+			n = m_copypacket(m, M_DONTWAIT);
 			if (n)
 				n = ni6_input(n, off);
 		} else {
@@ -770,7 +766,7 @@ _icmp6_input(struct mbuf *m, int off, int proto)
 			memset(p, 0, 4);
 			memcpy(p + 4, hostname, maxhlen); /* meaningless TTL */
 
-			M_COPY_PKTHDR(n, m); /* just for rcvif */
+			M_COPY_PKTHDR(n, m);
 			n->m_pkthdr.len = n->m_len = sizeof(struct ip6_hdr) +
 				sizeof(struct icmp6_hdr) + 4 + maxhlen;
 			nicmp6->icmp6_type = ICMP6_WRUREPLY;
@@ -797,7 +793,7 @@ _icmp6_input(struct mbuf *m, int off, int proto)
 			goto badcode;
 		if (icmp6len < sizeof(struct nd_router_solicit))
 			goto badlen;
-		if ((n = m_copym(m, 0, M_COPYALL, M_DONTWAIT)) == NULL) {
+		if ((n = m_copypacket(m, M_DONTWAIT)) == NULL) {
 			/* give up local */
 			nd6_rs_input(m, off, icmp6len);
 			m = NULL;
@@ -813,7 +809,7 @@ _icmp6_input(struct mbuf *m, int off, int proto)
 			goto badcode;
 		if (icmp6len < sizeof(struct nd_router_advert))
 			goto badlen;
-		if ((n = m_copym(m, 0, M_COPYALL, M_DONTWAIT)) == NULL) {
+		if ((n = m_copypacket(m, M_DONTWAIT)) == NULL) {
 			/* give up local */
 			nd6_ra_input(m, off, icmp6len);
 			m = NULL;
@@ -829,7 +825,7 @@ _icmp6_input(struct mbuf *m, int off, int proto)
 			goto badcode;
 		if (icmp6len < sizeof(struct nd_neighbor_solicit))
 			goto badlen;
-		if ((n = m_copym(m, 0, M_COPYALL, M_DONTWAIT)) == NULL) {
+		if ((n = m_copypacket(m, M_DONTWAIT)) == NULL) {
 			/* give up local */
 			nd6_ns_input(m, off, icmp6len);
 			m = NULL;
@@ -845,7 +841,7 @@ _icmp6_input(struct mbuf *m, int off, int proto)
 			goto badcode;
 		if (icmp6len < sizeof(struct nd_neighbor_advert))
 			goto badlen;
-		if ((n = m_copym(m, 0, M_COPYALL, M_DONTWAIT)) == NULL) {
+		if ((n = m_copypacket(m, M_DONTWAIT)) == NULL) {
 			/* give up local */
 			nd6_na_input(m, off, icmp6len);
 			m = NULL;
@@ -861,7 +857,7 @@ _icmp6_input(struct mbuf *m, int off, int proto)
 			goto badcode;
 		if (icmp6len < sizeof(struct nd_redirect))
 			goto badlen;
-		if ((n = m_copym(m, 0, M_COPYALL, M_DONTWAIT)) == NULL) {
+		if ((n = m_copypacket(m, M_DONTWAIT)) == NULL) {
 			/* give up local */
 			icmp6_redirect_input(m, off);
 			m = NULL;
@@ -1411,7 +1407,7 @@ ni6_input(struct mbuf *m, int off)
 	if (n == NULL) {
 		goto bad;
 	}
-	M_MOVE_PKTHDR(n, m); /* just for rcvif */
+	M_MOVE_PKTHDR(n, m);
 	if (replylen > MHLEN) {
 		if (replylen > MCLBYTES) {
 			/*
@@ -1968,7 +1964,7 @@ icmp6_rip6_input(struct mbuf **mp, int off)
 			/* do not inject data into pcb */
 		}
 #endif
-		else if ((n = m_copy(m, 0, (int)M_COPYALL)) != NULL) {
+		else if ((n = m_copypacket(m, M_DONTWAIT)) != NULL) {
 			if (last->in6p_flags & IN6P_CONTROLOPTS)
 				ip6_savecontrol(last, &opts, ip6, n);
 			/* strip intermediate headers */
@@ -2496,7 +2492,7 @@ icmp6_redirect_output(struct mbuf *m0, struct rtentry *rt)
 	MGETHDR(m, M_DONTWAIT, MT_HEADER);
 	if (m && IPV6_MMTU >= MHLEN) {
 #if IPV6_MMTU >= MCLBYTES
-		_MCLGET(m, mcl_cache, IPV6_MMTU, M_DONTWAIT);
+		MEXTMALLOC(m, IPV6_MMTU, M_NOWAIT);
 #else
 		MCLGET(m, M_DONTWAIT);
 #endif
@@ -2507,7 +2503,7 @@ icmp6_redirect_output(struct mbuf *m0, struct rtentry *rt)
 	m_reset_rcvif(m);
 	m->m_len = 0;
 	maxlen = M_TRAILINGSPACE(m);
-	maxlen = min(IPV6_MMTU, maxlen);
+	maxlen = uimin(IPV6_MMTU, maxlen);
 
 	/* just for safety */
 	if (maxlen < sizeof(struct ip6_hdr) + sizeof(struct nd_redirect) +
@@ -2838,6 +2834,7 @@ icmp6_mtudisc_clone(struct sockaddr *dst)
 static void
 icmp6_mtudisc_timeout(struct rtentry *rt, struct rttimer *r)
 {
+	struct rtentry *retrt;
 
 	KASSERT(rt != NULL);
 	rt_assert_referenced(rt);
@@ -2845,7 +2842,9 @@ icmp6_mtudisc_timeout(struct rtentry *rt, struct rttimer *r)
 	if ((rt->rt_flags & (RTF_DYNAMIC | RTF_HOST)) ==
 	    (RTF_DYNAMIC | RTF_HOST)) {
 		rtrequest(RTM_DELETE, rt_getkey(rt),
-		    rt->rt_gateway, rt_mask(rt), rt->rt_flags, NULL);
+		    rt->rt_gateway, rt_mask(rt), rt->rt_flags, &retrt);
+		rt_unref(rt);
+		rt_free(retrt);
 	} else {
 		if (!(rt->rt_rmx.rmx_locks & RTV_MTU))
 			rt->rt_rmx.rmx_mtu = 0;
@@ -2855,14 +2854,18 @@ icmp6_mtudisc_timeout(struct rtentry *rt, struct rttimer *r)
 static void
 icmp6_redirect_timeout(struct rtentry *rt, struct rttimer *r)
 {
+	struct rtentry *retrt;
 
 	KASSERT(rt != NULL);
 	rt_assert_referenced(rt);
 
 	if ((rt->rt_flags & (RTF_GATEWAY | RTF_DYNAMIC | RTF_HOST)) ==
 	    (RTF_GATEWAY | RTF_DYNAMIC | RTF_HOST)) {
+		printf("%s: RTM_DELETE\n", __func__);
 		rtrequest(RTM_DELETE, rt_getkey(rt),
-		    rt->rt_gateway, rt_mask(rt), rt->rt_flags, NULL);
+		    rt->rt_gateway, rt_mask(rt), rt->rt_flags, &retrt);
+		rt_unref(rt);
+		rt_free(retrt);
 	}
 }
 

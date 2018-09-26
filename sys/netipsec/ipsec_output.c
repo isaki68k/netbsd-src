@@ -1,4 +1,4 @@
-/*	$NetBSD: ipsec_output.c,v 1.73 2018/04/19 08:27:38 maxv Exp $	*/
+/*	$NetBSD: ipsec_output.c,v 1.80 2018/05/31 15:06:45 maxv Exp $	*/
 
 /*
  * Copyright (c) 2002, 2003 Sam Leffler, Errno Consulting
@@ -29,7 +29,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ipsec_output.c,v 1.73 2018/04/19 08:27:38 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ipsec_output.c,v 1.80 2018/05/31 15:06:45 maxv Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_inet.h"
@@ -151,10 +151,7 @@ ipsec_process_done(struct mbuf *m, const struct ipsecrequest *isr,
 #endif
 	struct mbuf *mo;
 	struct udphdr *udp = NULL;
-	uint64_t *data = NULL;
 	int hlen, roff;
-
-	IPSEC_SPLASSERT_SOFTNET("ipsec_process_done");
 
 	KASSERT(m != NULL);
 	KASSERT(isr != NULL);
@@ -166,8 +163,6 @@ ipsec_process_done(struct mbuf *m, const struct ipsecrequest *isr,
 		ip = mtod(m, struct ip *);
 
 		hlen = sizeof(struct udphdr);
-		if (sav->natt_type == UDP_ENCAP_ESPINUDP_NON_IKE)
-			hlen += sizeof(uint64_t);
 
 		mo = m_makespace(m, sizeof(struct ip), hlen, &roff);
 		if (mo == NULL) {
@@ -181,16 +176,7 @@ ipsec_process_done(struct mbuf *m, const struct ipsecrequest *isr,
 		}
 
 		udp = (struct udphdr *)(mtod(mo, char *) + roff);
-		data = (uint64_t *)(udp + 1);
-
-		if (sav->natt_type == UDP_ENCAP_ESPINUDP_NON_IKE)
-			*data = 0; /* NON-IKE Marker */
-
-		if (sav->natt_type == UDP_ENCAP_ESPINUDP_NON_IKE)
-			udp->uh_sport = htons(UDP_ENCAP_ESPINUDP_PORT);
-		else
-			udp->uh_sport = key_portfromsaddr(&saidx->src);
-
+		udp->uh_sport = key_portfromsaddr(&saidx->src);
 		udp->uh_dport = key_portfromsaddr(&saidx->dst);
 		udp->uh_sum = 0;
 		udp->uh_ulen = htons(m->m_pkthdr.len - (ip->ip_hl << 2));
@@ -376,7 +362,6 @@ do {									\
 	struct secasvar *sav = NULL;
 	struct secasindex saidx;
 
-	IPSEC_SPLASSERT_SOFTNET("ipsec_nextisr");
 	KASSERTMSG(af == AF_INET || af == AF_INET6,
 	    "invalid address family %u", af);
 again:
@@ -498,8 +483,7 @@ ipsec4_process_packet(struct mbuf *m, const struct ipsecrequest *isr,
 	if (isr == isr->sp->req) { /* Check only if called from ipsec4_output */
 		KASSERT(mtu != NULL);
 		ip = mtod(m, struct ip *);
-		if (!(sav->natt_type &
-		    (UDP_ENCAP_ESPINUDP|UDP_ENCAP_ESPINUDP_NON_IKE))) {
+		if (!(sav->natt_type & UDP_ENCAP_ESPINUDP)) {
 			goto noneed;
 		}
 		if (ntohs(ip->ip_len) <= sav->esp_frag)
@@ -537,10 +521,6 @@ noneed:
 	/* Do the appropriate encapsulation, if necessary */
 	if (isr->saidx.mode == IPSEC_MODE_TUNNEL || /* Tunnel requ'd */
 	    dst->sa.sa_family != AF_INET ||	    /* PF mismatch */
-#if 0
-	    (sav->flags & SADB_X_SAFLAGS_TUNNEL) || /* Tunnel requ'd */
-	    sav->tdb_xform->xf_type == XF_IP4 ||    /* ditto */
-#endif
 	    (dst->sa.sa_family == AF_INET &&	    /* Proxy */
 	     dst->sin.sin_addr.s_addr != INADDR_ANY &&
 	     dst->sin.sin_addr.s_addr != ip->ip_dst.s_addr)) {
@@ -553,7 +533,7 @@ noneed:
 		ip->ip_sum = in_cksum(m, ip->ip_hl << 2);
 
 		/* Encapsulate the packet */
-		error = ipip_output(m, isr, sav, &mp, 0, 0);
+		error = ipip_output(m, sav, &mp);
 		if (mp == NULL && !error) {
 			/* Should never happen. */
 			IPSECLOG(LOG_DEBUG,
@@ -607,7 +587,7 @@ noneed:
 			i = sizeof(struct ip6_hdr);
 			off = offsetof(struct ip6_hdr, ip6_nxt);
 		}
-		error = (*sav->tdb_xform->xf_output)(m, isr, sav, NULL, i, off);
+		error = (*sav->tdb_xform->xf_output)(m, isr, sav, i, off);
 	} else {
 		error = ipsec_process_done(m, isr, sav);
 	}
@@ -626,7 +606,7 @@ bad:
 #endif
 
 #ifdef INET6
-static void
+static int
 compute_ipsec_pos(struct mbuf *m, int *i, int *off)
 {
 	struct ip6_hdr *ip6 = mtod(m, struct ip6_hdr *);
@@ -643,36 +623,40 @@ compute_ipsec_pos(struct mbuf *m, int *i, int *off)
 	 * put AH/ESP/IPcomp header.
 	 *     IPv6 hbh dest1 rthdr ah* [esp* dest2 payload]
 	 */
-	do {
+	while (1) {
 		switch (nxt) {
 		case IPPROTO_AH:
 		case IPPROTO_ESP:
 		case IPPROTO_IPCOMP:
-		/*
-		 * we should not skip security header added
-		 * beforehand.
-		 */
-			return;
+			/*
+			 * We should not skip security header added
+			 * beforehand.
+			 */
+			return 0;
 
 		case IPPROTO_HOPOPTS:
 		case IPPROTO_DSTOPTS:
 		case IPPROTO_ROUTING:
-		/*
-		 * if we see 2nd destination option header,
-		 * we should stop there.
-		 */
+			if (*i + sizeof(ip6e) > m->m_pkthdr.len) {
+				return EINVAL;
+			}
+
+			/*
+			 * If we see 2nd destination option header,
+			 * we should stop there.
+			 */
 			if (nxt == IPPROTO_DSTOPTS && dstopt)
-				return;
+				return 0;
 
 			if (nxt == IPPROTO_DSTOPTS) {
 				/*
-				 * seen 1st or 2nd destination option.
+				 * Seen 1st or 2nd destination option.
 				 * next time we see one, it must be 2nd.
 				 */
 				dstopt = 1;
 			} else if (nxt == IPPROTO_ROUTING) {
 				/*
-				 * if we see destination option next
+				 * If we see destination option next
 				 * time, it must be dest2.
 				 */
 				dstopt = 2;
@@ -682,16 +666,17 @@ compute_ipsec_pos(struct mbuf *m, int *i, int *off)
 			m_copydata(m, *i, sizeof(ip6e), &ip6e);
 			nxt = ip6e.ip6e_nxt;
 			*off = *i + offsetof(struct ip6_ext, ip6e_nxt);
-			/*
-			 * we will never see nxt == IPPROTO_AH
-			 * so it is safe to omit AH case.
-			 */
 			*i += (ip6e.ip6e_len + 1) << 3;
+			if (*i > m->m_pkthdr.len) {
+				return EINVAL;
+			}
 			break;
 		default:
-			return;
+			return 0;
 		}
-	} while (*i + sizeof(ip6e) < m->m_pkthdr.len);
+	}
+
+	return 0;
 }
 
 static int
@@ -764,7 +749,7 @@ ipsec6_process_packet(struct mbuf *m, const struct ipsecrequest *isr)
 		ip6->ip6_plen = htons(m->m_pkthdr.len - sizeof(*ip6));
 
 		/* Encapsulate the packet */
-		error = ipip_output(m, isr, sav, &mp, 0, 0);
+		error = ipip_output(m, sav, &mp);
 		if (mp == NULL && !error) {
 			/* Should never happen. */
 			IPSECLOG(LOG_DEBUG,
@@ -791,9 +776,11 @@ ipsec6_process_packet(struct mbuf *m, const struct ipsecrequest *isr)
 		i = ip->ip_hl << 2;
 		off = offsetof(struct ip, ip_p);
 	} else {
-		compute_ipsec_pos(m, &i, &off);
+		error = compute_ipsec_pos(m, &i, &off);
+		if (error)
+			goto unrefsav;
 	}
-	error = (*sav->tdb_xform->xf_output)(m, isr, sav, NULL, i, off);
+	error = (*sav->tdb_xform->xf_output)(m, isr, sav, i, off);
 	KEY_SA_UNREF(&sav);
 	splx(s);
 	return error;

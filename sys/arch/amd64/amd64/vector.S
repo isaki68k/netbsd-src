@@ -1,4 +1,4 @@
-/*	$NetBSD: vector.S,v 1.62 2018/04/03 07:20:52 christos Exp $	*/
+/*	$NetBSD: vector.S,v 1.64 2018/07/14 14:29:40 maxv Exp $	*/
 
 /*
  * Copyright (c) 1998, 2007, 2008 The NetBSD Foundation, Inc.
@@ -631,6 +631,8 @@ LABEL(name ## _stubs)				; \
 	INTRSTUB_ENTRY(name ## 31)		; \
 END(name ## _stubs)
 
+	.section .rodata
+
 INTRSTUB_ARRAY_16(legacy)
 
 #if NIOAPIC > 0
@@ -753,7 +755,7 @@ END(xenev_stubs)
  */
 
 /* Hypervisor callback */
-NENTRY(hypervisor_callback)
+ENTRY(hypervisor_callback)
 	movq	(%rsp),%rcx
 	movq	8(%rsp),%r11
 	addq	$16,%rsp
@@ -771,7 +773,7 @@ NENTRY(hypervisor_callback)
 END(hypervisor_callback)
 
 /* Panic? */
-NENTRY(failsafe_callback)
+ENTRY(failsafe_callback)
 	movq	(%rsp),%rcx
 	movq	8(%rsp),%r11
 	addq	$16,%rsp

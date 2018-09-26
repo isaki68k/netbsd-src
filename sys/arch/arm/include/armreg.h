@@ -1,4 +1,4 @@
-/*	$NetBSD: armreg.h,v 1.120 2018/04/01 04:35:04 ryo Exp $	*/
+/*	$NetBSD: armreg.h,v 1.124 2018/08/15 06:13:56 skrll Exp $	*/
 
 /*
  * Copyright (c) 1998, 2001 Ben Harris
@@ -282,6 +282,20 @@
 #define PJ4B_AUXFMC0_DCSLFD	__BIT(2)  /* Disable DC Speculative linefill */
 #define PJ4B_AUXFMC0_FW		__BIT(8)  /* alias of PJ4B_AUXCTL_FW*/
 
+/* Cortex-A5 Auxiliary Control Register (CP15 register 1, opcode 1) */
+#define	CORTEXA5_ACTLR_FW	__BIT(0)
+#define	CORTEXA5_ACTLR_SMP	__BIT(6)  /* Inner Cache Shared is cacheable */
+#define	CORTEXA5_ACTLR_EXCL	__BIT(7)  /* Exclusive L1/L2 cache control */
+
+/* Cortex-A7 Auxiliary Control Register (CP15 register 1, opcode 1) */
+#define	CORTEXA7_ACTLR_L1ALIAS	__BIT(0)  /* Enables L1 cache alias checks */
+#define	CORTEXA7_ACTLR_L2EN	__BIT(1)  /* Enables L2 cache */
+#define	CORTEXA7_ACTLR_SMP	__BIT(6)  /* SMP */
+
+/* Cortex-A8 Auxiliary Control Register (CP15 register 1, opcode 1) */
+#define	CORTEXA8_ACTLR_L1ALIAS	__BIT(0)  /* Enables L1 cache alias checks */
+#define	CORTEXA8_ACTLR_L2EN	__BIT(1)  /* Enables L2 cache */
+
 /* Cortex-A9 Auxiliary Control Register (CP15 register 1, opcode 1) */
 #define	CORTEXA9_AUXCTL_FW	0x00000001 /* Cache and TLB updates broadcast */
 #define	CORTEXA9_AUXCTL_L2PE	0x00000002 /* Prefetch hint enable */
@@ -296,6 +310,7 @@
 #define	CORTEXA15_ACTLR_BTB	__BIT(0)  /* Cache and TLB updates broadcast */
 #define	CORTEXA15_ACTLR_SMP	__BIT(6)  /* SMP */
 #define	CORTEXA15_ACTLR_IOBEU	__BIT(15) /* In order issue in Branch Exec Unit */
+#define	CORTEXA15_ACTLR_SDEH	__BIT(31) /* snoop-delayed exclusive handling */
 
 /* Marvell Feroceon Extra Features Register (CP15 register 1, opcode2 0) */
 #define FC_DCACHE_REPL_LOCK	0x80000000 /* Replace DCache Lock */
@@ -835,8 +850,16 @@ ARMREG_READ_INLINE(pmcntenclr, "p15,0,%0,c9,c12,2") /* PMC Count Enable Clear */
 ARMREG_WRITE_INLINE(pmcntenclr, "p15,0,%0,c9,c12,2") /* PMC Count Enable Clear */
 ARMREG_READ_INLINE(pmovsr, "p15,0,%0,c9,c12,3") /* PMC Overflow Flag Status */
 ARMREG_WRITE_INLINE(pmovsr, "p15,0,%0,c9,c12,3") /* PMC Overflow Flag Status */
+ARMREG_READ_INLINE(pmselr, "p15,0,%0,c9,c12,5") /* PMC Event Counter Selection */
+ARMREG_WRITE_INLINE(pmselr, "p15,0,%0,c9,c12,5") /* PMC Event Counter Selection */
+ARMREG_READ_INLINE(pmceid0, "p15,0,%0,c9,c12,6") /* PMC Event ID 0 */
+ARMREG_READ_INLINE(pmceid1, "p15,0,%0,c9,c12,7") /* PMC Event ID 1 */
 ARMREG_READ_INLINE(pmccntr, "p15,0,%0,c9,c13,0") /* PMC Cycle Counter */
 ARMREG_WRITE_INLINE(pmccntr, "p15,0,%0,c9,c13,0") /* PMC Cycle Counter */
+ARMREG_READ_INLINE(pmxevtyper, "p15,0,%0,c9,c13,1") /* PMC Event Type Select */
+ARMREG_WRITE_INLINE(pmxevtyper, "p15,0,%0,c9,c13,1") /* PMC Event Type Select */
+ARMREG_READ_INLINE(pmxevcntr, "p15,0,%0,c9,c13,2") /* PMC Event Count */
+ARMREG_WRITE_INLINE(pmxevcntr, "p15,0,%0,c9,c13,2") /* PMC Event Count */
 ARMREG_READ_INLINE(pmuserenr, "p15,0,%0,c9,c14,0") /* PMC User Enable */
 ARMREG_WRITE_INLINE(pmuserenr, "p15,0,%0,c9,c14,0") /* PMC User Enable */
 ARMREG_READ_INLINE(pmintenset, "p15,0,%0,c9,c14,1") /* PMC Interrupt Enable Set */
@@ -899,6 +922,15 @@ ARMREG_WRITE_INLINE(tlbdataop, "p15,3,%0,c15,c4,2") /* TLB Data Read Operation (
 
 ARMREG_READ_INLINE(sheeva_xctrl, "p15,1,%0,c15,c1,0") /* Sheeva eXtra Control register */
 ARMREG_WRITE_INLINE(sheeva_xctrl, "p15,1,%0,c15,c1,0") /* Sheeva eXtra Control register */
+
+#if defined(_KERNEL)
+
+static inline uint64_t
+cpu_mpidr_aff_read(void)
+{
+
+	return armreg_mpidr_read() & (MPIDR_AFF2|MPIDR_AFF1|MPIDR_AFF0);
+}
 
 /*
  * GENERIC TIMER register access
@@ -969,6 +1001,13 @@ gtmr_cntp_ctl_write(uint32_t val)
 /*
  * Counter-timer Virtual Timer TimerValue register
  */
+static inline uint32_t
+gtmr_cntv_tval_read(void)
+{
+
+	return armreg_cntv_tval_read();
+}
+
 static inline void
 gtmr_cntv_tval_write(uint32_t val)
 {
@@ -987,7 +1026,8 @@ gtmr_cntv_cval_read(void)
 	return armreg_cntv_cval_read();
 }
 
-#endif /* !__ASSEMBLER__ */
+#endif /* _KERNEL */
+#endif /* !__ASSEMBLER && !_RUMPKERNEL */
 
 #elif defined(__aarch64__)
 

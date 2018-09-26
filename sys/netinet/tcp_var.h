@@ -1,4 +1,4 @@
-/*	$NetBSD: tcp_var.h,v 1.185 2018/03/28 14:22:16 maxv Exp $	*/
+/*	$NetBSD: tcp_var.h,v 1.189 2018/09/14 05:09:51 maxv Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -142,7 +142,7 @@
 #endif
 
 /*
- * Kernel variables for tcp.
+ * TCP kernel structures and variables.
  */
 
 #include <sys/callout.h>
@@ -161,6 +161,29 @@
  */
 #define	TCP_SIG_SPI	0x1000
 #endif /* TCP_SIGNATURE */
+
+/*
+ * Tcp+ip header, after ip options removed.
+ */
+struct tcpiphdr {
+	struct ipovly ti_i;		/* overlaid ip structure */
+	struct tcphdr ti_t;		/* tcp header */
+} __packed;
+#define	ti_x1		ti_i.ih_x1
+#define	ti_pr		ti_i.ih_pr
+#define	ti_len		ti_i.ih_len
+#define	ti_src		ti_i.ih_src
+#define	ti_dst		ti_i.ih_dst
+#define	ti_sport	ti_t.th_sport
+#define	ti_dport	ti_t.th_dport
+#define	ti_seq		ti_t.th_seq
+#define	ti_ack		ti_t.th_ack
+#define	ti_x2		ti_t.th_x2
+#define	ti_off		ti_t.th_off
+#define	ti_flags	ti_t.th_flags
+#define	ti_win		ti_t.th_win
+#define	ti_sum		ti_t.th_sum
+#define	ti_urp		ti_t.th_urp
 
 /*
  * SACK option block.
@@ -623,7 +646,7 @@ struct syn_cache_head {
  * Compute the initial window for slow start.
  */
 #define	TCP_INITIAL_WINDOW(iw, segsz) \
-	min((iw) * (segsz), max(2 * (segsz), tcp_init_win_max[(iw)]))
+	uimin((iw) * (segsz), uimax(2 * (segsz), tcp_init_win_max[(iw)]))
 
 /*
  * TCP statistics.
@@ -756,45 +779,6 @@ struct syn_cache_head {
 #define	TCPCTL_DEBX		32	/* # of tcp debug sockets */
 #define	TCPCTL_DROP		33	/* drop tcp connection */
 #define	TCPCTL_MSL		34	/* Max Segment Life */
-#define	TCPCTL_MAXID		35
-
-#define	TCPCTL_NAMES { \
-	{ 0, 0 }, \
-	{ "rfc1323",	CTLTYPE_INT }, \
-	{ "sendspace",	CTLTYPE_INT }, \
-	{ "recvspace",	CTLTYPE_INT }, \
-	{ "mssdflt",	CTLTYPE_INT }, \
-	{ "syn_cache_limit", CTLTYPE_INT }, \
-	{ "syn_bucket_limit", CTLTYPE_INT }, \
-	{ 0, 0 },\
-	{ "init_win", CTLTYPE_INT }, \
-	{ "mss_ifmtu", CTLTYPE_INT }, \
-	{ "sack", CTLTYPE_INT }, \
-	{ "win_scale", CTLTYPE_INT }, \
-	{ "timestamps", CTLTYPE_INT }, \
-	{ 0, 0 }, \
-	{ "cwm", CTLTYPE_INT }, \
-	{ "cwm_burstsize", CTLTYPE_INT }, \
-	{ "ack_on_push", CTLTYPE_INT }, \
-	{ "keepidle",	CTLTYPE_INT }, \
-	{ "keepintvl",	CTLTYPE_INT }, \
-	{ "keepcnt",	CTLTYPE_INT }, \
-	{ "slowhz",	CTLTYPE_INT }, \
-	{ 0, 0 }, \
-	{ "log_refused",CTLTYPE_INT }, \
-	{ 0, 0 }, \
-	{ "rstppslimit", CTLTYPE_INT }, \
-	{ "delack_ticks", CTLTYPE_INT }, \
-	{ "init_win_local", CTLTYPE_INT }, \
-	{ "ident", CTLTYPE_STRUCT }, \
-	{ "ackdropppslimit", CTLTYPE_INT }, \
-	{ "do_loopback_cksum", CTLTYPE_INT }, \
-	{ "stats", CTLTYPE_STRUCT }, \
-	{ "debug", CTLTYPE_STRUCT }, \
-	{ "debx", CTLTYPE_INT }, \
-	{ "drop", CTLTYPE_STRUCT }, \
-	{ "msl", CTLTYPE_INT }, \
-}
 
 #ifdef _KERNEL
 
@@ -892,7 +876,7 @@ void	 tcp_init_common(unsigned);
 #ifdef INET6
 int	 tcp6_input(struct mbuf **, int *, int);
 #endif
-void	 tcp_input(struct mbuf *, ...);
+void	 tcp_input(struct mbuf *, int, int);
 u_int	 tcp_hdrsz(struct tcpcb *);
 u_long	 tcp_mss_to_advertise(const struct ifnet *, int);
 void	 tcp_mss_from_peer(struct tcpcb *, int);

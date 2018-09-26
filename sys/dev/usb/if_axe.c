@@ -1,4 +1,4 @@
-/*	$NetBSD: if_axe.c,v 1.86 2018/04/20 21:03:00 christos Exp $	*/
+/*	$NetBSD: if_axe.c,v 1.93 2018/09/12 21:57:18 christos Exp $	*/
 /*	$OpenBSD: if_axe.c,v 1.137 2016/04/13 11:03:37 mpi Exp $ */
 
 /*
@@ -87,7 +87,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_axe.c,v 1.86 2018/04/20 21:03:00 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_axe.c,v 1.93 2018/09/12 21:57:18 christos Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -523,6 +523,30 @@ axe_setmulti(struct axe_softc *sc)
 	axe_unlock_mii(sc);
 }
 
+static void
+axe_ax_init(struct axe_softc *sc)
+{
+	int cmd = AXE_178_CMD_READ_NODEID;
+
+	if (sc->axe_flags & AX178) {
+		axe_ax88178_init(sc);
+	} else if (sc->axe_flags & AX772) {
+		axe_ax88772_init(sc);
+	} else if (sc->axe_flags & AX772A) {
+		axe_ax88772a_init(sc);
+	} else if (sc->axe_flags & AX772B) {
+		axe_ax88772b_init(sc);
+		return;
+	} else {
+		cmd = AXE_172_CMD_READ_NODEID;
+	}
+
+	if (axe_cmd(sc, cmd, 0, 0, sc->axe_enaddr)) {
+		aprint_error_dev(sc->axe_dev,
+		    "failed to read ethernet address\n");
+	}
+}
+
 
 static void
 axe_reset(struct axe_softc *sc)
@@ -546,15 +570,8 @@ axe_reset(struct axe_softc *sc)
 #else
 	axe_lock_mii(sc);
 
-	if (sc->axe_flags & AX178) {
-		axe_ax88178_init(sc);
-	} else if (sc->axe_flags & AX772) {
-		axe_ax88772_init(sc);
-	} else if (sc->axe_flags & AX772A) {
-		axe_ax88772a_init(sc);
-	} else if (sc->axe_flags & AX772B) {
-		axe_ax88772b_init(sc);
-	}
+	axe_ax_init(sc);
+
 	axe_unlock_mii(sc);
 #endif
 }
@@ -971,24 +988,7 @@ axe_attach(device_t parent, device_t self, void *aux)
 
 	/* Initialize controller and get station address. */
 
-	if (sc->axe_flags & AX178) {
-		axe_ax88178_init(sc);
-	} else if (sc->axe_flags & AX772) {
-		axe_ax88772_init(sc);
-	} else if (sc->axe_flags & AX772A) {
-		axe_ax88772a_init(sc);
-	} else if (sc->axe_flags & AX772B) {
-		axe_ax88772b_init(sc);
-	}
-
-	if (!(sc->axe_flags & AX772B)) {
-		if (axe_cmd(sc, AXE_172_CMD_READ_NODEID, 0, 0, sc->axe_enaddr))
-		{
-			aprint_error_dev(self,
-			    "failed to read ethernet address\n");
-			return;
-		}
-	}
+	axe_ax_init(sc);
 
 	/*
 	 * Fetch IPG values.
@@ -1111,11 +1111,9 @@ axe_detach(device_t self, int flags)
 	if (sc->axe_ep[AXE_ENDPT_INTR] != NULL)
 		usbd_abort_pipe(sc->axe_ep[AXE_ENDPT_INTR]);
 
-	/*
-	 * Remove any pending tasks.  They cannot be executing because they run
-	 * in the same thread as detach.
-	 */
-	usb_rem_task(sc->axe_udev, &sc->axe_tick_task);
+	callout_halt(&sc->axe_stat_ch, NULL);
+	usb_rem_task_wait(sc->axe_udev, &sc->axe_tick_task, USB_TASKQ_DRIVER,
+	    NULL);
 
 	s = splusb();
 
@@ -1636,7 +1634,7 @@ axe_start(struct ifnet *ifp)
 	 * If there's a BPF listener, bounce a copy of this frame
 	 * to him.
 	 */
-	bpf_mtap(ifp, m);
+	bpf_mtap(ifp, m, BPF_D_OUT);
 	m_freem(m);
 
 	ifp->if_flags |= IFF_OACTIVE;
@@ -1964,7 +1962,7 @@ axe_stop(struct ifnet *ifp, int disable)
 	sc->axe_link = 0;
 }
 
-MODULE(MODULE_CLASS_DRIVER, if_axe, "bpf");
+MODULE(MODULE_CLASS_DRIVER, if_axe, NULL);
 
 #ifdef _MODULE
 #include "ioconf.c"

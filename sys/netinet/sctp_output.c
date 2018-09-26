@@ -1,4 +1,4 @@
-/*	$NetBSD: sctp_output.c,v 1.13 2018/03/30 22:54:37 maya Exp $ */
+/*	$NetBSD: sctp_output.c,v 1.17 2018/09/16 09:25:47 skrll Exp $ */
 /*	$KAME: sctp_output.c,v 1.48 2005/06/16 18:29:24 jinmei Exp $	*/
 
 /*
@@ -30,7 +30,7 @@
  * SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sctp_output.c,v 1.13 2018/03/30 22:54:37 maya Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sctp_output.c,v 1.17 2018/09/16 09:25:47 skrll Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ipsec.h"
@@ -81,8 +81,6 @@ __KERNEL_RCSID(0, "$NetBSD: sctp_output.c,v 1.13 2018/03/30 22:54:37 maya Exp $"
 #include <netinet/icmp6.h>
 
 #endif /* INET6 */
-
-#include <net/net_osdep.h>
 
 #if defined(HAVE_NRL_INPCB) || defined(__FreeBSD__)
 #ifndef in6pcb
@@ -1717,7 +1715,7 @@ sctp_choose_v6_boundall(struct sctp_inpcb *inp,
 	num_eligible_addr = 0;
  bound_all_v6_plan_b:
 	/* ok, if we reach here we either fell through
-	 * due to something changing during an interupt (unlikely)
+	 * due to something changing during an interrupt (unlikely)
 	 * or we have NO eligible source addresses for the ifn
 	 * of the route (most likely). We must look at all the other
 	 * interfaces EXCEPT rt->rt_ifp and do the same game.
@@ -2646,7 +2644,7 @@ sctp_send_initiate(struct sctp_inpcb *inp, struct sctp_tcb *stcb)
 	/* place in my tag */
 	initm->msg.init.initiate_tag = htonl(stcb->asoc.my_vtag);
 	/* set up some of the credits. */
-	initm->msg.init.a_rwnd = htonl(max(inp->sctp_socket->so_rcv.sb_hiwat,
+	initm->msg.init.a_rwnd = htonl(uimax(inp->sctp_socket->so_rcv.sb_hiwat,
 	    SCTP_MINIMAL_RWND));
 
 	initm->msg.init.num_outbound_streams = htons(stcb->asoc.pre_open_streams);
@@ -3587,7 +3585,7 @@ sctp_send_initiate_ack(struct sctp_inpcb *inp, struct sctp_tcb *stcb,
 	initackm_out->sh.checksum = 0;	/* calculate later */
 	/* who are we */
 	strncpy(stc.identification, SCTP_VERSION_STRING,
-	   min(strlen(SCTP_VERSION_STRING), sizeof(stc.identification)));
+	   uimin(strlen(SCTP_VERSION_STRING), sizeof(stc.identification)));
 	/* now the chunk header */
 	initackm_out->msg.ch.chunk_type = SCTP_INITIATION_ACK;
 	initackm_out->msg.ch.chunk_flags = 0;
@@ -3609,7 +3607,7 @@ sctp_send_initiate_ack(struct sctp_inpcb *inp, struct sctp_tcb *stcb,
 	stc.my_vtag = initackm_out->msg.init.initiate_tag;
 
 	/* set up some of the credits. */
-	initackm_out->msg.init.a_rwnd = htonl(max(inp->sctp_socket->so_rcv.sb_hiwat, SCTP_MINIMAL_RWND));
+	initackm_out->msg.init.a_rwnd = htonl(uimax(inp->sctp_socket->so_rcv.sb_hiwat, SCTP_MINIMAL_RWND));
 	/* set what I want */
 	his_limit = ntohs(init_chk->init.num_inbound_streams);
 	/* choose what I want */
@@ -4613,7 +4611,7 @@ sctp_copy_mbufchain(struct mbuf *clonechain,
 		appendchain = m_copypacket(clonechain, M_DONTWAIT);
 		sctp_pegs[SCTP_CACHED_SRC]++;
 	} else
-		appendchain = m_copy(clonechain, 0, M_COPYALL);
+		appendchain = m_copym(clonechain, 0, M_COPYALL, M_DONTWAIT);
 #elif defined(__APPLE__)
 	appendchain = sctp_m_copym(clonechain, 0, M_COPYALL, M_DONTWAIT);
 #else
@@ -4743,7 +4741,7 @@ sctp_copy_out_all(struct uio *uio, int len)
 		return (NULL);
 	}
 	cancpy = M_TRAILINGSPACE(ret);
-	willcpy = min(cancpy, left);
+	willcpy = uimin(cancpy, left);
 	at = ret;
 	while (left > 0) {
 		/* Align data to the end */
@@ -4772,7 +4770,7 @@ sctp_copy_out_all(struct uio *uio, int len)
 				goto err_out_now;
 			}
 			cancpy = M_TRAILINGSPACE(at);
-			willcpy = min(cancpy, left);
+			willcpy = uimin(cancpy, left);
 		}
 	}
 	return (ret);
@@ -6402,7 +6400,7 @@ sctp_send_asconf_ack(struct sctp_tcb *stcb, uint32_t retrans)
 		m_ack = m_copypacket(stcb->asoc.last_asconf_ack_sent, M_DONTWAIT);
 		sctp_pegs[SCTP_CACHED_SRC]++;
 	} else
-		m_ack = m_copy(stcb->asoc.last_asconf_ack_sent, 0, M_COPYALL);
+		m_ack = m_copym(stcb->asoc.last_asconf_ack_sent, 0, M_COPYALL, M_DONTWAIT);
 #else
 		m_ack = m_copy(stcb->asoc.last_asconf_ack_sent, 0, M_COPYALL);
 #endif
@@ -9243,7 +9241,7 @@ sctp_copy_one(struct mbuf *m, struct uio *uio, int cpsz, int resv_upfront, int *
 	}
 	*mbcnt += MSIZE;
 	cancpy = M_TRAILINGSPACE(m);
-	willcpy = min(cancpy, left);
+	willcpy = uimin(cancpy, left);
 	if ((willcpy + resv_upfront) > cancpy) {
 		willcpy -= resv_upfront;
 	}
@@ -9287,7 +9285,7 @@ sctp_copy_one(struct mbuf *m, struct uio *uio, int cpsz, int resv_upfront, int *
 				*mbcnt += m->m_ext.ext_size;
 			}
 			cancpy = M_TRAILINGSPACE(m);
-			willcpy = min(cancpy, left);
+			willcpy = uimin(cancpy, left);
 		}
 	}
 	return (0);
@@ -9657,7 +9655,7 @@ clean_up:
 				error = ENOMEM;
 				goto temp_clean_up;
 			}
-			tot_demand = min(tot_out, frag_size);
+			tot_demand = uimin(tot_out, frag_size);
 			error = sctp_copy_one(chk->data, uio, tot_demand , resv_in_first, &mbcnt_e);
 			if (error)
 				goto temp_clean_up;

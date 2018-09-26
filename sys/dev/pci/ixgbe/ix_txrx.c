@@ -1,4 +1,4 @@
-/* $NetBSD: ix_txrx.c,v 1.40 2018/04/17 08:38:05 msaitoh Exp $ */
+/* $NetBSD: ix_txrx.c,v 1.50 2018/09/06 08:20:12 msaitoh Exp $ */
 
 /******************************************************************************
 
@@ -146,7 +146,9 @@ ixgbe_legacy_start_locked(struct ifnet *ifp, struct tx_ring *txr)
 	}
 	if ((ifp->if_flags & IFF_RUNNING) == 0)
 		return (ENETDOWN);
-
+	if (txr->txr_no_space)
+		return (ENETDOWN);
+	
 	while (!IFQ_IS_EMPTY(&ifp->if_snd)) {
 		if (txr->tx_avail <= IXGBE_QUEUE_MIN_FREE)
 			break;
@@ -165,7 +167,7 @@ ixgbe_legacy_start_locked(struct ifnet *ifp, struct tx_ring *txr)
 		}
 
 		/* Send a copy of the frame to the BPF listener */
-		bpf_mtap(ifp, m_head);
+		bpf_mtap(ifp, m_head, BPF_D_OUT);
 	}
 
 	return IXGBE_SUCCESS;
@@ -200,7 +202,7 @@ ixgbe_mq_start(struct ifnet *ifp, struct mbuf *m)
 {
 	struct adapter	*adapter = ifp->if_softc;
 	struct tx_ring	*txr;
-	int 		i, err = 0;
+	int 		i;
 #ifdef RSS
 	uint32_t bucket_id;
 #endif
@@ -236,17 +238,18 @@ ixgbe_mq_start(struct ifnet *ifp, struct mbuf *m)
 
 	txr = &adapter->tx_rings[i];
 
-	err = pcq_put(txr->txr_interq, m);
-	if (err == false) {
+	if (__predict_false(!pcq_put(txr->txr_interq, m))) {
 		m_freem(m);
 		txr->pcq_drops.ev_count++;
-		return (err);
+		return ENOBUFS;
 	}
 	if (IXGBE_TX_TRYLOCK(txr)) {
 		ixgbe_mq_start_locked(ifp, txr);
 		IXGBE_TX_UNLOCK(txr);
 	} else {
 		if (adapter->txrx_use_workqueue) {
+			u_int *enqueued;
+
 			/*
 			 * This function itself is not called in interrupt
 			 * context, however it can be called in fast softint
@@ -255,11 +258,12 @@ ixgbe_mq_start(struct ifnet *ifp, struct mbuf *m)
 			 * enqueuing when the machine uses both spontaneous
 			 * packets and forwarding packets.
 			 */
-			u_int *enqueued = percpu_getref(adapter->txr_wq_enqueued);
+			enqueued = percpu_getref(adapter->txr_wq_enqueued);
 			if (*enqueued == 0) {
 				*enqueued = 1;
 				percpu_putref(adapter->txr_wq_enqueued);
-				workqueue_enqueue(adapter->txr_wq, &txr->wq_cookie, curcpu());
+				workqueue_enqueue(adapter->txr_wq,
+				    &txr->wq_cookie, curcpu());
 			} else
 				percpu_putref(adapter->txr_wq_enqueued);
 		} else
@@ -288,6 +292,8 @@ ixgbe_mq_start_locked(struct ifnet *ifp, struct tx_ring *txr)
 	}
 	if ((ifp->if_flags & IFF_RUNNING) == 0)
 		return (ENETDOWN);
+	if (txr->txr_no_space)
+		return (ENETDOWN);
 
 	/* Process the queue */
 	while ((next = pcq_get(txr->txr_interq)) != NULL) {
@@ -308,7 +314,7 @@ ixgbe_mq_start_locked(struct ifnet *ifp, struct tx_ring *txr)
 			if_inc_counter(ifp, IFCOUNTER_OMCASTS, 1);
 #endif
 		/* Send a copy of the frame to the BPF listener */
-		bpf_mtap(ifp, next);
+		bpf_mtap(ifp, next, BPF_D_OUT);
 		if ((ifp->if_flags & IFF_RUNNING) == 0)
 			break;
 	}
@@ -458,6 +464,7 @@ retry:
 
 	/* Make certain there are enough descriptors */
 	if (txr->tx_avail < (map->dm_nsegs + 2)) {
+		txr->txr_no_space = true;
 		txr->no_desc_avail.ev_count++;
 		ixgbe_dmamap_unload(txr->txtag, txbuf->map);
 		return EAGAIN;
@@ -1156,6 +1163,7 @@ ixgbe_txeof(struct tx_ring *txr)
 			buf->m_head = NULL;
 		}
 		buf->eop = NULL;
+		txr->txr_no_space = false;
 		++txr->tx_avail;
 
 		/* We clean the range if multi segment */
@@ -1334,7 +1342,7 @@ ixgbe_refresh_mbufs(struct rx_ring *rxr, int limit)
 	while (j != limit) {
 		rxbuf = &rxr->rx_buffers[i];
 		if (rxbuf->buf == NULL) {
-			mp = ixgbe_getjcl(&adapter->jcl_head, M_NOWAIT,
+			mp = ixgbe_getjcl(&rxr->jcl_head, M_NOWAIT,
 			    MT_DATA, M_PKTHDR, rxr->mbuf_sz);
 			if (mp == NULL) {
 				rxr->no_jmbuf.ev_count++;
@@ -1496,6 +1504,17 @@ ixgbe_setup_receive_ring(struct rx_ring *rxr)
 	/* Free current RX buffer structs and their mbufs */
 	ixgbe_free_receive_ring(rxr);
 
+	IXGBE_RX_UNLOCK(rxr);
+	/*
+	 * Now reinitialize our supply of jumbo mbufs.  The number
+	 * or size of jumbo mbufs may have changed.
+	 * Assume all of rxr->ptag are the same.
+	 */
+	ixgbe_jcl_reinit(adapter, rxr->ptag->dt_dmat, rxr,
+	    (2 * adapter->num_rx_desc), adapter->rx_mbuf_sz);
+
+	IXGBE_RX_LOCK(rxr);
+
 	/* Now replenish the mbufs */
 	for (int j = 0; j != rxr->num_desc; ++j) {
 		struct mbuf *mp;
@@ -1525,7 +1544,7 @@ ixgbe_setup_receive_ring(struct rx_ring *rxr)
 #endif /* DEV_NETMAP */
 
 		rxbuf->flags = 0;
-		rxbuf->buf = ixgbe_getjcl(&adapter->jcl_head, M_NOWAIT,
+		rxbuf->buf = ixgbe_getjcl(&rxr->jcl_head, M_NOWAIT,
 		    MT_DATA, M_PKTHDR, adapter->rx_mbuf_sz);
 		if (rxbuf->buf == NULL) {
 			error = ENOBUFS;
@@ -1601,15 +1620,6 @@ ixgbe_setup_receive_structures(struct adapter *adapter)
 {
 	struct rx_ring *rxr = adapter->rx_rings;
 	int            j;
-
-	/*
-	 * Now reinitialize our supply of jumbo mbufs.  The number
-	 * or size of jumbo mbufs may have changed.
-	 * Assume all of rxr->ptag are the same.
-	 */
-	ixgbe_jcl_reinit(&adapter->jcl_head, rxr->ptag->dt_dmat,
-	    (2 * adapter->num_rx_desc) * adapter->num_queues,
-	    adapter->rx_mbuf_sz);
 
 	for (j = 0; j < adapter->num_queues; j++, rxr++)
 		if (ixgbe_setup_receive_ring(rxr))
@@ -1830,8 +1840,6 @@ ixgbe_rxeof(struct ix_queue *que)
 
 		if ((staterr & IXGBE_RXD_STAT_DD) == 0)
 			break;
-		if ((ifp->if_flags & IFF_RUNNING) == 0)
-			break;
 
 		count--;
 		sendmp = NULL;
@@ -1969,46 +1977,46 @@ ixgbe_rxeof(struct ix_queue *que)
 			if (adapter->num_queues > 1) {
 				sendmp->m_pkthdr.flowid =
 				    le32toh(cur->wb.lower.hi_dword.rss);
-				switch (pkt_info & IXGBE_RXDADV_RSSTYPE_MASK) {	 
-				    case IXGBE_RXDADV_RSSTYPE_IPV4:
+				switch (pkt_info & IXGBE_RXDADV_RSSTYPE_MASK) {
+				case IXGBE_RXDADV_RSSTYPE_IPV4:
 					M_HASHTYPE_SET(sendmp,
 					    M_HASHTYPE_RSS_IPV4);
 					break;
-				    case IXGBE_RXDADV_RSSTYPE_IPV4_TCP:
+				case IXGBE_RXDADV_RSSTYPE_IPV4_TCP:
 					M_HASHTYPE_SET(sendmp,
 					    M_HASHTYPE_RSS_TCP_IPV4);
 					break;
-				    case IXGBE_RXDADV_RSSTYPE_IPV6:
+				case IXGBE_RXDADV_RSSTYPE_IPV6:
 					M_HASHTYPE_SET(sendmp,
 					    M_HASHTYPE_RSS_IPV6);
 					break;
-				    case IXGBE_RXDADV_RSSTYPE_IPV6_TCP:
+				case IXGBE_RXDADV_RSSTYPE_IPV6_TCP:
 					M_HASHTYPE_SET(sendmp,
 					    M_HASHTYPE_RSS_TCP_IPV6);
 					break;
-				    case IXGBE_RXDADV_RSSTYPE_IPV6_EX:
+				case IXGBE_RXDADV_RSSTYPE_IPV6_EX:
 					M_HASHTYPE_SET(sendmp,
 					    M_HASHTYPE_RSS_IPV6_EX);
 					break;
-				    case IXGBE_RXDADV_RSSTYPE_IPV6_TCP_EX:
+				case IXGBE_RXDADV_RSSTYPE_IPV6_TCP_EX:
 					M_HASHTYPE_SET(sendmp,
 					    M_HASHTYPE_RSS_TCP_IPV6_EX);
 					break;
 #if __FreeBSD_version > 1100000
-				    case IXGBE_RXDADV_RSSTYPE_IPV4_UDP:
+				case IXGBE_RXDADV_RSSTYPE_IPV4_UDP:
 					M_HASHTYPE_SET(sendmp,
 					    M_HASHTYPE_RSS_UDP_IPV4);
 					break;
-				    case IXGBE_RXDADV_RSSTYPE_IPV6_UDP:
+				case IXGBE_RXDADV_RSSTYPE_IPV6_UDP:
 					M_HASHTYPE_SET(sendmp,
 					    M_HASHTYPE_RSS_UDP_IPV6);
 					break;
-				    case IXGBE_RXDADV_RSSTYPE_IPV6_UDP_EX:
+				case IXGBE_RXDADV_RSSTYPE_IPV6_UDP_EX:
 					M_HASHTYPE_SET(sendmp,
 					    M_HASHTYPE_RSS_UDP_IPV6_EX);
 					break;
 #endif
-				    default:
+				default:
 					M_HASHTYPE_SET(sendmp,
 					    M_HASHTYPE_OPAQUE_HASH);
 				}
@@ -2133,7 +2141,8 @@ ixgbe_dma_malloc(struct adapter *adapter, const bus_size_t size,
 			       &dma->dma_tag);
 	if (r != 0) {
 		aprint_error_dev(dev,
-		    "%s: ixgbe_dma_tag_create failed; error %d\n", __func__, r);
+		    "%s: ixgbe_dma_tag_create failed; error %d\n", __func__,
+		    r);
 		goto fail_0;
 	}
 

@@ -1,4 +1,4 @@
-/* $NetBSD: if_admsw.c,v 1.16 2016/12/15 09:28:03 ozaki-r Exp $ */
+/* $NetBSD: if_admsw.c,v 1.18 2018/09/03 16:29:25 riastradh Exp $ */
 
 /*-
  * Copyright (c) 2007 Ruslan Ermilov and Vsevolod Lobko.
@@ -76,7 +76,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_admsw.c,v 1.16 2016/12/15 09:28:03 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_admsw.c,v 1.18 2018/09/03 16:29:25 riastradh Exp $");
 
 
 #include <sys/param.h>
@@ -475,7 +475,7 @@ admsw_attach(device_t parent, device_t self, void *aux)
 		ifp->if_init = admsw_init;
 		ifp->if_stop = admsw_stop;
 		ifp->if_capabilities |= IFCAP_CSUM_IPv4_Tx | IFCAP_CSUM_IPv4_Rx;
-		IFQ_SET_MAXLEN(&ifp->if_snd, max(ADMSW_NTXLDESC, IFQ_MAXLEN));
+		IFQ_SET_MAXLEN(&ifp->if_snd, uimax(ADMSW_NTXLDESC, IFQ_MAXLEN));
 		IFQ_SET_READY(&ifp->if_snd);
 
 		/* Attach the interface. */
@@ -677,7 +677,7 @@ admsw_start(struct ifnet *ifp)
 		sc->sc_txnext = ADMSW_NEXTTXL(nexttx);
 
 		/* Pass the packet to any BPF listeners. */
-		bpf_mtap(ifp, m0);
+		bpf_mtap(ifp, m0, BPF_D_OUT);
 
 		/* Set a watchdog timer in case the chip flakes out. */
 		sc->sc_ethercom[0].ec_if.if_timer = 5;

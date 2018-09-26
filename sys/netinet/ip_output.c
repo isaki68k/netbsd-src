@@ -1,4 +1,4 @@
-/*	$NetBSD: ip_output.c,v 1.302 2018/04/13 09:00:29 maxv Exp $	*/
+/*	$NetBSD: ip_output.c,v 1.307 2018/07/11 05:25:45 maxv Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -91,7 +91,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ip_output.c,v 1.302 2018/04/13 09:00:29 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ip_output.c,v 1.307 2018/07/11 05:25:45 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -707,7 +707,7 @@ sendit:
 			if (sw_csum & (M_CSUM_TCPv4|M_CSUM_UDPv4)) {
 				if (IN_NEED_CHECKSUM(ifp,
 				    sw_csum & (M_CSUM_TCPv4|M_CSUM_UDPv4))) {
-					in_delayed_cksum(m);
+					in_undefer_cksum_tcpudp(m);
 				}
 				m->m_pkthdr.csum_flags &=
 				    ~(M_CSUM_TCPv4|M_CSUM_UDPv4);
@@ -733,7 +733,7 @@ sendit:
 	if (m->m_pkthdr.csum_flags & (M_CSUM_TCPv4|M_CSUM_UDPv4)) {
 		if (IN_NEED_CHECKSUM(ifp,
 		    m->m_pkthdr.csum_flags & (M_CSUM_TCPv4|M_CSUM_UDPv4))) {
-			in_delayed_cksum(m);
+			in_undefer_cksum_tcpudp(m);
 		}
 		m->m_pkthdr.csum_flags &= ~(M_CSUM_TCPv4|M_CSUM_UDPv4);
 	}
@@ -820,16 +820,14 @@ ip_fragment(struct mbuf *m, struct ifnet *ifp, u_long mtu)
 	int sw_csum = m->m_pkthdr.csum_flags;
 	int fragments = 0;
 	int error = 0;
-	int ipoff;
-	bool mff;
+	int ipoff, ipflg;
 
 	ip = mtod(m, struct ip *);
 	hlen = ip->ip_hl << 2;
 
-	/* XXX: Why don't we remove IP_RF? */
-	ipoff = ntohs(ip->ip_off) & ~IP_MF;
-
-	mff = (ip->ip_off & htons(IP_MF)) != 0;
+	/* Preserve the offset and flags. */
+	ipoff = ntohs(ip->ip_off) & IP_OFFMASK;
+	ipflg = ntohs(ip->ip_off) & (IP_RF|IP_DF|IP_MF);
 
 	if (ifp != NULL)
 		sw_csum &= ~ifp->if_csum_flags_tx;
@@ -865,8 +863,8 @@ ip_fragment(struct mbuf *m, struct ifnet *ifp, u_long mtu)
 		mhip = mtod(m, struct ip *);
 		*mhip = *ip;
 
-		/* we must inherit MCAST and BCAST flags */
-		m->m_flags |= m0->m_flags & (M_MCAST|M_BCAST);
+		/* we must inherit the flags */
+		m->m_flags |= m0->m_flags & M_COPYFLAGS;
 
 		if (hlen > sizeof(struct ip)) {
 			mhlen = ip_optcopy(ip, mhip) + sizeof(struct ip);
@@ -875,8 +873,7 @@ ip_fragment(struct mbuf *m, struct ifnet *ifp, u_long mtu)
 		m->m_len = mhlen;
 
 		mhip->ip_off = ((off - hlen) >> 3) + ipoff;
-		if (mff)
-			mhip->ip_off |= IP_MF;
+		mhip->ip_off |= ipflg;
 		if (off + len >= ntohs(ip->ip_len))
 			len = ntohs(ip->ip_len) - off;
 		else
@@ -963,31 +960,6 @@ sendorfree:
 }
 
 /*
- * Process a delayed payload checksum calculation.
- */
-void
-in_delayed_cksum(struct mbuf *m)
-{
-	struct ip *ip;
-	u_int16_t csum, offset;
-
-	ip = mtod(m, struct ip *);
-	offset = ip->ip_hl << 2;
-	csum = in4_cksum(m, 0, offset, ntohs(ip->ip_len) - offset);
-	if (csum == 0 && (m->m_pkthdr.csum_flags & M_CSUM_UDPv4) != 0)
-		csum = 0xffff;
-
-	offset += M_CSUM_DATA_IPv4_OFFSET(m->m_pkthdr.csum_data);
-
-	if ((offset + sizeof(u_int16_t)) > m->m_len) {
-		/* This happens when ip options were inserted */
-		m_copyback(m, offset, sizeof(csum), (void *)&csum);
-	} else {
-		*(u_int16_t *)(mtod(m, char *) + offset) = csum;
-	}
-}
-
-/*
  * Determine the maximum length of the options to be inserted;
  * we would far rather allocate too much space rather than too little.
  */
@@ -1016,6 +988,7 @@ ip_insertoptions(struct mbuf *m, struct mbuf *opt, int *phlen)
 	unsigned optlen;
 
 	optlen = opt->m_len - sizeof(p->ipopt_dst);
+	KASSERT(optlen % 4 == 0);
 	if (optlen + ntohs(ip->ip_len) > IP_MAXPACKET)
 		return m;		/* XXX should fail */
 	if (!in_nullhost(p->ipopt_dst))
@@ -1261,7 +1234,7 @@ ip_ctloutput(int op, struct socket *so, struct sockopt *sopt)
 #if defined(IPSEC)
 		case IP_IPSEC_POLICY:
 			if (ipsec_enabled) {
-				error = ipsec_set_policy(inp, sopt->sopt_name,
+				error = ipsec_set_policy(inp,
 				    sopt->sopt_data, sopt->sopt_size,
 				    curlwp->l_cred);
 				break;
@@ -1577,10 +1550,10 @@ ip_pcbopts(struct inpcb *inp, const struct sockopt *sopt)
 	}
 	cp = sopt->sopt_data;
 
-#ifndef	__vax__
-	if (cnt % sizeof(int32_t))
+	if (cnt % 4) {
+		/* Must be 4-byte aligned, because there's no padding. */
 		return EINVAL;
-#endif
+	}
 
 	m = m_get(M_DONTWAIT, MT_SOOPTS);
 	if (m == NULL)
@@ -2159,7 +2132,7 @@ ip_mloopback(struct ifnet *ifp, struct mbuf *m, const struct sockaddr_in *dst)
 	ip = mtod(copym, struct ip *);
 
 	if (copym->m_pkthdr.csum_flags & (M_CSUM_TCPv4|M_CSUM_UDPv4)) {
-		in_delayed_cksum(copym);
+		in_undefer_cksum_tcpudp(copym);
 		copym->m_pkthdr.csum_flags &=
 		    ~(M_CSUM_TCPv4|M_CSUM_UDPv4);
 	}

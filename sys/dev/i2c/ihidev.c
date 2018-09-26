@@ -1,4 +1,4 @@
-/* $NetBSD: ihidev.c,v 1.2 2018/03/20 12:14:52 bouyer Exp $ */
+/* $NetBSD: ihidev.c,v 1.5 2018/06/26 06:03:57 thorpej Exp $ */
 /* $OpenBSD ihidev.c,v 1.13 2017/04/08 02:57:23 deraadt Exp $ */
 
 /*-
@@ -54,7 +54,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ihidev.c,v 1.2 2018/03/20 12:14:52 bouyer Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ihidev.c,v 1.5 2018/06/26 06:03:57 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -120,20 +120,20 @@ static int	ihidev_maxrepid(void *, int);
 static int	ihidev_print(void *, const char *);
 static int	ihidev_submatch(device_t, cfdata_t, const int *, void *);
 
-static const char *ihidev_compats[] = {
-	"hid-over-i2c",
-	NULL
+static const struct device_compatible_entry compat_data[] = {
+	{ "hid-over-i2c",		0 },
+	{ NULL,				0 }
 };
 
 static int
 ihidev_match(device_t parent, cfdata_t match, void *aux)
 {
 	struct i2c_attach_args * const ia = aux;
+	int match_result;
 
-	if (ia->ia_ncompat > 0) {
-		if (iic_compat_match(ia, ihidev_compats))
-			return 1;
-	}
+	if (iic_use_direct_match(ia, match, compat_data, &match_result))
+		return I2C_MATCH_DIRECT_COMPATIBLE;
+
 	return 0;
 }
 

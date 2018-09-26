@@ -1,4 +1,4 @@
-/* $NetBSD: ipsec.c,v 1.157 2018/04/19 08:27:38 maxv Exp $ */
+/* $NetBSD: ipsec.c,v 1.165 2018/07/11 05:25:45 maxv Exp $ */
 /* $FreeBSD: ipsec.c,v 1.2.2.2 2003/07/01 01:38:13 sam Exp $ */
 /* $KAME: ipsec.c,v 1.103 2001/05/24 07:14:18 sakane Exp $ */
 
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ipsec.c,v 1.157 2018/04/19 08:27:38 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ipsec.c,v 1.165 2018/07/11 05:25:45 maxv Exp $");
 
 /*
  * IPsec controller part.
@@ -81,6 +81,7 @@ __KERNEL_RCSID(0, "$NetBSD: ipsec.c,v 1.157 2018/04/19 08:27:38 maxv Exp $");
 #include <netinet6/ip6_var.h>
 #endif
 #include <netinet/in_pcb.h>
+#include <netinet/in_offload.h>
 #ifdef INET6
 #include <netinet6/in6_pcb.h>
 #include <netinet/icmp6.h>
@@ -664,7 +665,7 @@ ipsec4_output(struct mbuf *m, struct inpcb *inp, int flags,
 	 * this is done in the normal processing path.
 	 */
 	if (m->m_pkthdr.csum_flags & (M_CSUM_TCPv4|M_CSUM_UDPv4)) {
-		in_delayed_cksum(m);
+		in_undefer_cksum_tcpudp(m);
 		m->m_pkthdr.csum_flags &= ~(M_CSUM_TCPv4|M_CSUM_UDPv4);
 	}
 
@@ -697,7 +698,7 @@ ipsec4_output(struct mbuf *m, struct inpcb *inp, int flags,
 }
 
 int
-ipsec4_input(struct mbuf *m, int flags)
+ipsec_ip_input(struct mbuf *m, bool forward)
 {
 	struct secpolicy *sp;
 	int error, s;
@@ -709,8 +710,7 @@ ipsec4_input(struct mbuf *m, int flags)
 		return EINVAL;
 	}
 
-	if (flags == 0) {
-		/* We are done. */
+	if (!forward || !(m->m_flags & M_CANFASTFWD)) {
 		return 0;
 	}
 
@@ -719,12 +719,14 @@ ipsec4_input(struct mbuf *m, int flags)
 	 * it is a Fast Forward candidate.
 	 */
 	s = splsoftnet();
-	sp = ipsec_checkpolicy(m, IPSEC_DIR_OUTBOUND, flags, &error, NULL);
+	sp = ipsec_checkpolicy(m, IPSEC_DIR_OUTBOUND, IP_FORWARDING,
+	    &error, NULL);
 	if (sp != NULL) {
 		m->m_flags &= ~M_CANFASTFWD;
 		KEY_SP_UNREF(&sp);
 	}
 	splx(s);
+
 	return 0;
 }
 
@@ -737,8 +739,8 @@ ipsec4_input(struct mbuf *m, int flags)
  *
  * XXX: And what if the MTU goes negative?
  */
-int
-ipsec4_forward(struct mbuf *m, int *destmtu)
+void
+ipsec_mtu(struct mbuf *m, int *destmtu)
 {
 	struct secpolicy *sp;
 	size_t ipsechdr;
@@ -747,14 +749,14 @@ ipsec4_forward(struct mbuf *m, int *destmtu)
 	sp = ipsec_getpolicybyaddr(m, IPSEC_DIR_OUTBOUND, IP_FORWARDING,
 	    &error);
 	if (sp == NULL) {
-		return EINVAL;
+		return;
 	}
 
 	/* Count IPsec header size. */
 	ipsechdr = ipsec_sp_hdrsiz(sp, m);
 
 	/*
-	 * Find the correct route for outer IPv4 header, compute tunnel MTU.
+	 * Find the correct route for outer IP header, compute tunnel MTU.
 	 */
 	if (sp->req) {
 		struct secasvar *sav;
@@ -776,7 +778,6 @@ ipsec4_forward(struct mbuf *m, int *destmtu)
 		}
 	}
 	KEY_SP_UNREF(&sp);
-	return 0;
 }
 
 static int
@@ -815,29 +816,10 @@ ipsec_setspidx(struct mbuf *m, struct secpolicyindex *spidx, int needport)
 	struct ip *ip = NULL;
 	struct ip ipbuf;
 	u_int v;
-	struct mbuf *n;
-	int len;
 	int error;
 
 	KASSERT(m != NULL);
-
-	/*
-	 * validate m->m_pkthdr.len.  we see incorrect length if we
-	 * mistakenly call this function with inconsistent mbuf chain
-	 * (like 4.4BSD tcp/udp processing).
-	 *
-	 * XXX XXX XXX: We should remove this.
-	 */
-	len = 0;
-	for (n = m; n; n = n->m_next)
-		len += n->m_len;
-	if (m->m_pkthdr.len != len) {
-		KEYDEBUG_PRINTF(KEYDEBUG_IPSEC_DUMP,
-		    "total of m_len(%d) != pkthdr.len(%d), ignored.\n",
-		    len, m->m_pkthdr.len);
-		KASSERTMSG(0, "impossible");
-		return EINVAL;
-	}
+	M_VERIFY_PACKET(m);
 
 	if (m->m_pkthdr.len < sizeof(struct ip)) {
 		KEYDEBUG_PRINTF(KEYDEBUG_IPSEC_DUMP,
@@ -1104,9 +1086,8 @@ ipsec_delpcbpolicy(struct inpcbpolicy *p)
 	kmem_intr_free(p, sizeof(*p));
 }
 
-/* initialize policy in PCB */
 int
-ipsec_init_policy(struct socket *so, struct inpcbpolicy **policy)
+ipsec_init_pcbpolicy(struct socket *so, struct inpcbpolicy **policy)
 {
 	struct inpcbpolicy *new;
 
@@ -1152,7 +1133,7 @@ ipsec_destroy_policy(struct secpolicy *sp)
 }
 
 int
-ipsec_set_policy(void *inp, int optname, const void *request, size_t len,
+ipsec_set_policy(void *inp, const void *request, size_t len,
     kauth_cred_t cred)
 {
 	struct inpcb_hdr *inph = (struct inpcb_hdr *)inp;
@@ -1611,8 +1592,6 @@ ipsec_chkreplay(u_int32_t seq, const struct secasvar *sav)
 	u_int32_t wsizeb;	/* constant: bits of window size */
 	int frlast;		/* constant: last frame */
 
-	IPSEC_SPLASSERT_SOFTNET(__func__);
-
 	KASSERT(sav != NULL);
 	KASSERT(sav->replay != NULL);
 
@@ -1668,8 +1647,6 @@ ipsec_updatereplay(u_int32_t seq, const struct secasvar *sav)
 	int fr;
 	u_int32_t wsizeb;	/* constant: bits of window size */
 	int frlast;		/* constant: last frame */
-
-	IPSEC_SPLASSERT_SOFTNET(__func__);
 
 	KASSERT(sav != NULL);
 	KASSERT(sav->replay != NULL);
@@ -1814,30 +1791,6 @@ ipsec_logsastr(const struct secasvar *sav, char *buf, size_t size)
 	return buf;
 }
 
-void
-ipsec_dumpmbuf(struct mbuf *m)
-{
-	int totlen;
-	int i;
-	u_char *p;
-
-	totlen = 0;
-	printf("---\n");
-	while (m) {
-		p = mtod(m, u_char *);
-		for (i = 0; i < m->m_len; i++) {
-			printf("%02x ", p[i]);
-			totlen++;
-			if (totlen % 16 == 0)
-				printf("\n");
-		}
-		m = m->m_next;
-	}
-	if (totlen % 16 != 0)
-		printf("\n");
-	printf("---\n");
-}
-
 #ifdef INET6
 struct secpolicy *
 ipsec6_check_policy(struct mbuf *m, struct in6pcb *in6p, int flags,
@@ -1876,21 +1829,6 @@ skippolicycheck:
 	*errorp = error;
 	*needipsecp = needipsec;
 	return sp;
-}
-
-int
-ipsec6_input(struct mbuf *m)
-{
-	int s, error;
-
-	s = splsoftnet();
-	error = ipsec_in_reject(m, NULL);
-	splx(s);
-	if (error) {
-		return EINVAL;
-	}
-
-	return 0;
 }
 #endif /* INET6 */
 

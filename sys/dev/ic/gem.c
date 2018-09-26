@@ -1,4 +1,4 @@
-/*	$NetBSD: gem.c,v 1.109 2018/02/28 23:08:30 macallan Exp $ */
+/*	$NetBSD: gem.c,v 1.111 2018/09/03 16:29:31 riastradh Exp $ */
 
 /*
  *
@@ -37,7 +37,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gem.c,v 1.109 2018/02/28 23:08:30 macallan Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gem.c,v 1.111 2018/09/03 16:29:31 riastradh Exp $");
 
 #include "opt_inet.h"
 
@@ -1158,7 +1158,7 @@ gem_init(struct ifnet *ifp)
 
 	/* step 4. TX MAC registers & counters */
 	gem_init_regs(sc);
-	max_frame_size = max(sc->sc_ethercom.ec_if.if_mtu, ETHERMTU);
+	max_frame_size = uimax(sc->sc_ethercom.ec_if.if_mtu, ETHERMTU);
 	max_frame_size += ETHER_HDR_LEN + ETHER_CRC_LEN;
 	if (sc->sc_ethercom.ec_capenable & ETHERCAP_VLAN_MTU)
 		max_frame_size += ETHER_VLAN_ENCAP_LEN;
@@ -1599,7 +1599,7 @@ gem_start(struct ifnet *ifp)
 		/*
 		 * Pass the packet to any BPF listeners.
 		 */
-		bpf_mtap(ifp, m0);
+		bpf_mtap(ifp, m0, BPF_D_OUT);
 	}
 
 	if (txs == NULL || sc->sc_txfree == 0) {

@@ -1,4 +1,4 @@
-/*	$NetBSD: if.h,v 1.260 2018/04/19 21:20:43 christos Exp $	*/
+/*	$NetBSD: if.h,v 1.265 2018/08/22 01:05:24 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001 The NetBSD Foundation, Inc.
@@ -405,6 +405,7 @@ typedef struct ifnet {
 #define	if_iqdrops	if_data.ifi_iqdrops
 #define	if_noproto	if_data.ifi_noproto
 #define	if_lastchange	if_data.ifi_lastchange
+#define	if_name(ifp)	((ifp)->if_xname)
 
 #define	IFF_UP		0x0001		/* interface is up */
 #define	IFF_BROADCAST	0x0002		/* broadcast address valid */
@@ -534,6 +535,11 @@ if_is_link_state_changeable(struct ifnet *ifp)
 #define SOFTNET_LOCK_UNLESS_NET_MPSAFE()	do { } while (0)
 #define SOFTNET_UNLOCK_UNLESS_NET_MPSAFE()	do { } while (0)
 
+#define SOFTNET_LOCK_IF_NET_MPSAFE()					\
+	do { mutex_enter(softnet_lock); } while (0)
+#define SOFTNET_UNLOCK_IF_NET_MPSAFE()					\
+	do { mutex_exit(softnet_lock); } while (0)
+
 #else /* NET_MPSAFE */
 
 #define KERNEL_LOCK_UNLESS_NET_MPSAFE()					\
@@ -545,6 +551,9 @@ if_is_link_state_changeable(struct ifnet *ifp)
 	do { mutex_enter(softnet_lock); } while (0)
 #define SOFTNET_UNLOCK_UNLESS_NET_MPSAFE()				\
 	do { mutex_exit(softnet_lock); } while (0)
+
+#define SOFTNET_LOCK_IF_NET_MPSAFE()		do { } while (0)
+#define SOFTNET_UNLOCK_IF_NET_MPSAFE()		do { } while (0)
 
 #endif /* NET_MPSAFE */
 
@@ -1081,6 +1090,7 @@ void	if_link_state_change_softint(struct ifnet *, int);
 void	if_up(struct ifnet *);
 void	ifinit(void);
 void	ifinit1(void);
+void	ifinit_post(void);
 int	ifaddrpref_ioctl(struct socket *, u_long, void *, struct ifnet *);
 extern int (*ifioctl)(struct socket *, u_long, void *, struct lwp *);
 int	ifioctl_common(struct ifnet *, u_long, void *);
@@ -1299,6 +1309,9 @@ __END_DECLS
 #define IFNET_UNLOCK(ifp)	mutex_exit((ifp)->if_ioctl_lock)
 #define IFNET_LOCKED(ifp)	mutex_owned((ifp)->if_ioctl_lock)
 
+#define IFNET_ASSERT_UNLOCKED(ifp)	\
+	KDASSERT(mutex_ownable((ifp)->if_ioctl_lock))
+
 extern struct pslist_head ifnet_pslist;
 extern kmutex_t ifnet_mtx;
 
@@ -1311,24 +1324,11 @@ int	sysctl_ifq(int *name, u_int namelen, void *oldp,
 		       size_t *oldlenp, void *newp, size_t newlen,
 		       struct ifqueue *ifq);
 /* symbolic names for terminal (per-protocol) CTL_IFQ_ nodes */
-#define IFQCTL_LEN 1
-#define IFQCTL_MAXLEN 2
-#define IFQCTL_PEAK 3
-#define IFQCTL_DROPS 4
-#define IFQCTL_MAXID 5
+#define IFQCTL_LEN	1
+#define IFQCTL_MAXLEN	2
+#define IFQCTL_PEAK	3
+#define IFQCTL_DROPS	4
 
 #endif /* _KERNEL */
 
-#ifdef _NETBSD_SOURCE
-/*
- * sysctl for ifq (per-protocol packet input queue variant of ifqueue)
- */
-#define CTL_IFQ_NAMES  { \
-	{ 0, 0 }, \
-	{ "len", CTLTYPE_INT }, \
-	{ "maxlen", CTLTYPE_INT }, \
-	{ "peak", CTLTYPE_INT }, \
-	{ "drops", CTLTYPE_INT }, \
-}
-#endif /* _NETBSD_SOURCE */
 #endif /* !_NET_IF_H_ */

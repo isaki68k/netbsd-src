@@ -1,4 +1,4 @@
-/*	$NetBSD: nfs_serv.c,v 1.173 2017/04/26 03:02:49 riastradh Exp $	*/
+/*	$NetBSD: nfs_serv.c,v 1.175 2018/09/03 16:29:36 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1989, 1993
@@ -55,7 +55,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nfs_serv.c,v 1.173 2017/04/26 03:02:49 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nfs_serv.c,v 1.175 2018/09/03 16:29:36 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -600,7 +600,10 @@ out:
 	}
 	len -= uiop->uio_resid;
 	padlen = nfsm_padlen(len);
-	if (uiop->uio_resid || padlen)
+	if (len == 0) {
+		m_freem(mp3);
+		mp3 = NULL;
+	} else if (uiop->uio_resid || padlen)
 		nfs_zeropad(mp3, uiop->uio_resid, padlen);
 	nfsm_build(tl, u_int32_t *, NFSX_UNSIGNED);
 	*tl = txdr_unsigned(len);
@@ -758,7 +761,7 @@ loan_fail:
 			i = 0;
 			m = m2 = mb;
 			while (left > 0) {
-				siz = min(M_TRAILINGSPACE(m), left);
+				siz = uimin(M_TRAILINGSPACE(m), left);
 				if (siz > 0) {
 					left -= siz;
 					i++;
@@ -780,7 +783,7 @@ loan_fail:
 			while (left > 0) {
 				if (m == NULL)
 					panic("nfsrv_read iov");
-				siz = min(M_TRAILINGSPACE(m), left);
+				siz = uimin(M_TRAILINGSPACE(m), left);
 				if (siz > 0) {
 					iv->iov_base = mtod(m, char *) +
 					    m->m_len;

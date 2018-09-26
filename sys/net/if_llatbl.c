@@ -1,4 +1,4 @@
-/*	$NetBSD: if_llatbl.c,v 1.26 2018/03/06 07:27:55 ozaki-r Exp $	*/
+/*	$NetBSD: if_llatbl.c,v 1.30 2018/07/10 19:30:37 kre Exp $	*/
 /*
  * Copyright (c) 2004 Luigi Rizzo, Alessandro Cerri. All rights reserved.
  * Copyright (c) 2004-2008 Qing Li. All rights reserved.
@@ -112,8 +112,8 @@ lltable_dump_entry(struct lltable *llt, struct llentry *lle,
 		/* Need to copy by myself */
 		rtm->rtm_index = ifp->if_index;
 		rtm->rtm_rmx.rmx_mtu = 0;
-		rtm->rtm_rmx.rmx_expire =
-		    (lle->la_flags & LLE_STATIC) ? 0 : lle->la_expire;
+		rtm->rtm_rmx.rmx_expire = (lle->la_flags & LLE_STATIC) ? 0 :
+		    time_mono_to_wall(lle->la_expire);
 		rtm->rtm_flags = RTF_UP;
 		rtm->rtm_flags |= RTF_HOST; /* For ndp */
 		/* For backward compatibility */
@@ -672,7 +672,7 @@ lla_rt_output(const u_char rtm_type, const int rtm_flags, const time_t rtm_expir
 
 		/* Add static LLE */
 		IF_AFDATA_WLOCK(ifp);
-		lle = lla_lookup(llt, 0, dst);
+		lle = lla_lookup(llt, LLE_EXCLUSIVE, dst);
 
 		/* Cannot overwrite an existing static entry */
 		if (lle != NULL &&
@@ -684,8 +684,22 @@ lla_rt_output(const u_char rtm_type, const int rtm_flags, const time_t rtm_expir
 			error = EEXIST;
 			goto out;
 		}
-		if (lle != NULL)
-			LLE_RUNLOCK(lle);
+
+		/*
+		 * We can't overwrite an existing entry to avoid race
+		 * conditions so remove it first.
+		 */
+		if (lle != NULL) {
+#if defined(INET) && NARP > 0
+			size_t pkts_dropped = llentry_free(lle);
+			if (dst->sa_family == AF_INET) {
+				arp_stat_add(ARP_STAT_DFRDROPPED,
+				    (uint64_t)pkts_dropped);
+			}
+#else
+			(void) llentry_free(lle);
+#endif
+		}
 
 		lle = lla_create(llt, 0, dst, rt);
 		if (lle == NULL) {

@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.S,v 1.5 2018/04/01 04:35:03 ryo Exp $	*/
+/*	$NetBSD: locore.S,v 1.25 2018/09/10 11:05:12 ryo Exp $	*/
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -33,25 +33,24 @@
 
 #include <aarch64/asm.h>
 #include <aarch64/hypervisor.h>
-#include <aarch64/pte.h>
 #include "assym.h"
 
-RCSID("$NetBSD: locore.S,v 1.5 2018/04/01 04:35:03 ryo Exp $")
+RCSID("$NetBSD: locore.S,v 1.25 2018/09/10 11:05:12 ryo Exp $")
 
 /* #define DEBUG_LOCORE */
 /* #define DEBUG_MMU */
 
-#if defined(VERBOSE_INIT_ARM) && defined(EARLYCONS)
+#if (defined(VERBOSE_INIT_ARM) || defined(DEBUG_LOCORE)) && defined(EARLYCONS)
 #define VERBOSE_LOCORE
 #endif
 
 #define LOCORE_EL2
 
 /* attributes are defined in MAIR_EL1 */
-#define L2_BLKPAG_ATTR_NORMAL_WB	__SHIFTIN(0, LX_BLKPAG_ATTR_INDX)
-#define L2_BLKPAG_ATTR_NORMAL_NC	__SHIFTIN(1, LX_BLKPAG_ATTR_INDX)
-#define L2_BLKPAG_ATTR_NORMAL_WT	__SHIFTIN(2, LX_BLKPAG_ATTR_INDX)
-#define L2_BLKPAG_ATTR_DEVICE_MEM	__SHIFTIN(3, LX_BLKPAG_ATTR_INDX)
+#define L2_BLKPAG_ATTR_NORMAL_WB	LX_BLKPAG_ATTR_INDX_0
+#define L2_BLKPAG_ATTR_NORMAL_NC	LX_BLKPAG_ATTR_INDX_1
+#define L2_BLKPAG_ATTR_NORMAL_WT	LX_BLKPAG_ATTR_INDX_2
+#define L2_BLKPAG_ATTR_DEVICE_MEM	LX_BLKPAG_ATTR_INDX_3
 
 #define PRINT(string)	bl xprint;.asciz string;.align 2
 
@@ -61,21 +60,38 @@ RCSID("$NetBSD: locore.S,v 1.5 2018/04/01 04:35:03 ryo Exp $")
 #define VERBOSE(string)
 #endif
 
-ENTRY_NP(aarch64_start)
+/* load far effective address (pc relative) */
+.macro	ADDR, reg, addr
+	adrp	\reg, \addr
+	add	\reg, \reg, #:lo12:\addr
+.endm
 
-	adr	x0, lwp0uspace
-	add	x0, x0, #(UPAGES * PAGE_SIZE)
-	sub	x0, x0, #TF_SIZE	/* lwp0space + USPACE - TF_SIZE */
-	mov	sp, x0			/* define lwp0 ksp bottom */
+ENTRY_NP(aarch64_start)
+	/* Zero the BSS. The size must be aligned 16, usually it should be. */
+	ADDR	x0, __bss_start__
+	ADDR	x1, __bss_end__
+	b	2f
+1:	stp	xzr, xzr, [x0], #16
+2:	cmp	x0, x1
+	b.lo	1b
+
+	/* set stack pointer for boot */
+	ADDR	x0, bootstk
+	mov	sp, x0
+
+#ifdef VERBOSE_INIT_ARM
+	PRINT("boot NetBSD/evbarm (aarch64)\r\n")
+#endif
 
 #ifdef DEBUG_LOCORE
-	PRINT("SP               = ")
-	mov	x0, sp
-	bl	print_x0
-
 	PRINT("PC               = ")
 	bl	1f
 1:	mov	x0, lr
+	bl	print_x0
+
+	PRINT("SP               = ")
+	bl	1f
+1:	mov	x0, sp
 	bl	print_x0
 
 	PRINT("CurrentEL        = ")
@@ -168,33 +184,31 @@ ENTRY_NP(aarch64_start)
 	VERBOSE("OK\r\n")
 
 	/* set exception vector */
-	ldr	x2, =el1_vectors	# el1_vectors is in kva
+	ldr	x2, =el1_vectors	/* el1_vectors is in kva */
 	msr	vbar_el1, x2
 
 #ifdef DEBUG_LOCORE
 	PRINT("SPSR_EL1        = ")
 	mrs	x0, spsr_el1
 	bl	print_x0
-#endif
 
-#ifdef DEBUG_LOCORE
 	PRINT("DAIF            = ")
 	mrs	x0, daif
 	bl	print_x0
-#endif
 
 	PRINT("VSTART          = ")
-	ldr	x0, =vstart	# virtual address of vstart
+	ldr	x0, =vstart	/* virtual address of vstart */
 	bl	print_x0
+#endif
 
-	ldr	x0, =vstart	# virtual address of vstart
-	br	x0		# jump to the kernel virtual address
+	ldr	x0, =vstart	/* virtual address of vstart */
+	br	x0		/* jump to the kernel virtual address */
 
 /*
  * vstart is in kernel virtual address
  */
 vstart:
-	adr	x0, lwp0uspace
+	ADDR	x0, lwp0uspace
 	add	x0, x0, #(UPAGES * PAGE_SIZE)
 	sub	x0, x0, #TF_SIZE	/* lwp0space + USPACE - TF_SIZE */
 	mov	sp, x0			/* define lwp0 ksp bottom */
@@ -205,20 +219,15 @@ vstart:
 	bl	print_x0
 #endif
 
-	/* Zero the BSS */
-	ldr	x0, =__bss_start__
-	ldr	x1, =__bss_end__
-	b	2f
-1:	stp	xzr, xzr, [x0], #16
-2:	cmp	x0, x1
-	b.lo	1b
-
 	msr	tpidr_el0, xzr		/* tpidr_el0 (for TLS) = NULL */
-	bl	set_cpuinfo
+	ADDR	x0, cpu_info_store	/* cpu_info_store is cpu_info[0] */
+	msr	tpidr_el1, x0		/* curcpu is cpu_info[0] */
 
 	mov	fp, #0			/* trace back starts here */
+	PRINT("initarm\r\n")
 	bl	_C_LABEL(initarm)	/* Off we go */
 
+	PRINT("main\r\n")
 	bl	_C_LABEL(main)		/* call main() */
 
 	adr	x0, .Lmainreturned
@@ -231,6 +240,270 @@ END(aarch64_start)
 
 	.align 3
 	.text
+
+#ifdef MULTIPROCESSOR
+
+#if defined(VERBOSE_LOCORE) || defined(DEBUG_LOCORE)
+/*
+ * print "[CPU$x27] " (x27 as cpuindex)
+ * XXX: max 4 digit
+ */
+ENTRY_NP(printcpu)
+	stp	x0, lr, [sp, #-16]!
+	stp	x25, x26, [sp, #-16]!
+	PRINT("[CPU")
+	mov	x26, x27		/* n = cpuindex */
+	mov	x25, xzr		/* zeropad = 0 */
+	mov	x1, #1000
+	udiv	x0, x26, x1		/* x0 = n / 1000 */
+	msub	x26, x0, x1, x26	/* n %= 1000 */
+	cbz	x0, 1f			/* if (x0 == 0) goto 1f */
+	add	x0, x0, #'0'
+	bl	uartputc
+	mov	x25, #1			/* zeropad = 1 */
+1:
+	mov	x1, #100
+	udiv	x0, x26, x1		/* x0 = n / 100 */
+	msub	x26, x0, x1, x26	/* n %= 100 */
+	adds	x25, x25, x0		/* if ((zeropad + x0) == 0) */
+	beq	1f			/*   goto 1f */
+	add	x0, x0, #'0'
+	bl	uartputc
+	mov	x25, #1			/* zeropad = 1 */
+1:
+	mov	x1, #10
+	udiv	x0, x26, x1		/* x0 = n / 10 */
+	msub	x26, x0, x1, x26	/* n %= 10 */
+	adds	x25, x25, x0		/* if ((zeropad + x0) == 0) */
+	beq	1f			/*   goto 1f */
+	add	x0, x0, #'0'
+	bl	uartputc
+1:
+	add	x0, x26, #'0'
+	bl	uartputc
+	PRINT("] ")
+	ldp	x25, x26, [sp], #16
+	ldp	x0, lr, [sp], #16
+	ret
+END(printcpu)
+#define PRINTCPU()	bl	printcpu
+#else
+#define PRINTCPU()
+#endif /* VERBOSE_LOCORE || DEBUG_LOCORE */
+
+#ifdef VERBOSE_LOCORE
+#define VERBOSE_PRINTCPU()	PRINTCPU()
+#else
+#define VERBOSE_PRINTCPU()
+#endif
+
+ENTRY_NP(aarch64_mpstart)
+ENTRY_NP(cortex_mpstart)	/* compat arm */
+	mrs	x3, mpidr_el1
+	ldr	x0, =(MPIDR_AFF0|MPIDR_AFF1|MPIDR_AFF2|MPIDR_AFF3)
+	and	x3, x3, x0
+
+	ADDR	x0, cpu_mpidr
+	mov	x1, xzr
+1:
+	add	x1, x1, #1
+	cmp	x1, MAXCPUS		/* cpuindex >= MAXCPUS ? */
+	bge	toomanycpus
+	ldr	x2, [x0, x1, lsl #3]	/* cpu_mpidr[cpunidex] */
+	cmp	x2, x3			/* == mpidr_el1 & MPIDR_AFF ? */
+	bne	1b
+
+	mov	x27, x1			/* x27 = cpuindex */
+
+	mov	x0, #1
+	lsl	x28, x0, x27		/* x28 = 1 << cpuindex */
+
+	/* x27 = cpuindex, x28 = (1 << cpuindex) */
+
+	/* set stack pointer for boot */
+#define BOOT_STACKSIZE	256
+	mov	x1, #BOOT_STACKSIZE
+	mul	x1, x1, x27
+	ADDR	x0, bootstk_cpus
+	sub	sp, x0, x1	/* sp= bootstk_cpus-(BOOT_STACKSIZE*cpuindex) */
+
+#ifdef DEBUG_LOCORE
+	PRINTCPU()
+	PRINT("PC               = ")
+	bl	1f
+1:	mov	x0, lr
+	bl	print_x0
+
+	PRINTCPU()
+	PRINT("SP               = ")
+	bl	1f
+1:	mov	x0, sp
+	bl	print_x0
+
+	PRINTCPU()
+	PRINT("CurrentEL        = ")
+	mrs	x0, CurrentEL
+	lsr	x0, x0, #2
+	bl	print_x0
+#endif
+
+#ifdef LOCORE_EL2
+#ifdef DEBUG_LOCORE
+	VERBOSE_PRINTCPU()
+	VERBOSE("Drop to EL1...")
+#endif
+	bl	drop_to_el1
+#ifdef DEBUG_LOCORE
+	VERBOSE("OK\r\n")
+#endif
+#ifdef DEBUG_LOCORE
+	PRINTCPU()
+	PRINT("CurrentEL        = ")
+	mrs	x0, CurrentEL
+	lsr	x0, x0, #2
+	bl	print_x0
+#endif /* DEBUG_LOCORE */
+#endif /* LOCORE_EL2 */
+
+	bl	mmu_disable
+
+	bl	init_sysregs
+
+#ifdef DEBUG_LOCORE
+	VERBOSE_PRINTCPU()
+	VERBOSE("MMU Enable...")
+#endif
+	bl	mmu_enable
+#ifdef DEBUG_LOCORE
+	VERBOSE("OK\r\n")
+#endif
+
+	/* jump to virtual address */
+	ldr	x0, =mp_vstart
+	br	x0
+
+mp_vstart:
+	/* set exception vector */
+	ADDR	x0, el1_vectors
+	msr	vbar_el1, x0
+
+#ifdef DEBUG_LOCORE
+	PRINTCPU()
+	PRINT("PC               = ")
+	bl	1f
+1:	mov	x0, lr
+	bl	print_x0
+
+	PRINTCPU()
+	PRINT("arm_cpu_hatched  = ")
+	ADDR	x0, _C_LABEL(arm_cpu_hatched)
+	ldr	w0, [x0]
+	bl	print_x0
+
+	PRINTCPU()
+	PRINT("my cpubit        = ")
+	mov	x0, x28
+	bl	print_x0
+#endif
+
+	msr	tpidr_el0, xzr		/* tpidr_el0 (for TLS) = NULL */
+
+	/* set curcpu(), and fill curcpu()->ci_{midr,mpidr} */
+	mov	x0, #CPU_INFO_SIZE
+	mul	x0, x27, x0
+	ADDR	x1, _C_LABEL(cpu_info_store)
+	add	x0, x0, x1		/* x0 = &cpu_info_store[cpuindex] */
+	msr	tpidr_el1, x0		/* tpidr_el1 = curcpu() = x0 */
+
+	mrs	x1, midr_el1
+	str	x1, [x0, #CI_MIDR]	/* curcpu()->ci_cpuid = midr_el1 */
+	mrs	x1, mpidr_el1
+	str	x1, [x0, #CI_MPIDR]	/* curcpu()->ci_mpidr = mpidr_el1 */
+
+	/*
+	 * atomic_or_32(&arm_cpu_hatched, (1 << cpuindex))
+	 * to tell my activity to primary processor.
+	 */
+	ADDR	x0, _C_LABEL(arm_cpu_hatched)
+	mov	x1, x28
+	bl	_C_LABEL(atomic_or_32)	/* hatched! */
+	sev
+
+#ifdef DEBUG_LOCORE
+	PRINTCPU()
+	PRINT("arm_cpu_hatched -> ")
+	ADDR	x0, _C_LABEL(arm_cpu_hatched)
+	ldr	w0, [x0]
+	bl	print_x0
+#endif
+
+#ifdef DEBUG_LOCORE
+	PRINTCPU()
+	PRINT("Hatched.\r\n")
+#endif
+
+	/* wait for my bit of arm_cpu_mbox become true */
+	ADDR	x1, _C_LABEL(arm_cpu_mbox)
+1:
+	dmb	sy
+	ldr	x0, [x1]
+	tst	x0, x28
+	bne	9f
+	wfe
+	b	1b
+9:
+
+#ifdef DEBUG_LOCORE
+	/* XXX: delay to prevent the mixing of console output */
+	mov	x0, #0x4000000
+	mul	x0, x0, x27	/* delay (cpuindex * 0x4000000) */
+1:	subs	x0, x0, #1
+	bne	1b
+
+	PRINTCPU()
+	PRINT("MBOX received\r\n")
+
+	PRINTCPU()
+	PRINT("arm_cpu_mbox  = ")
+	ADDR	x0, _C_LABEL(arm_cpu_mbox)
+	ldr	x0, [x0]
+	bl	print_x0
+#endif
+
+	/* fill my cpu_info */
+	mrs	x0, tpidr_el1		/* curcpu() */
+
+	ldr	x1, [x0, #CI_IDLELWP]	/* x1 = curcpu()->ci_data.cpu_idlelwp */
+	str	x1, [x0, #CI_CURLWP]	/* curlwp is idlelwp */
+
+	ldr	x2, [x1, #L_PCB]	/* x2 = lwp_getpcb(idlelwp) */
+	add	x2, x2, #(UPAGES * PAGE_SIZE)
+	sub	sp, x2, #TF_SIZE	/* sp = pcb + USPACE - TF_SIZE */
+
+
+	mov	fp, xzr			/* trace back starts here */
+	bl	_C_LABEL(cpu_hatch)
+	mov	x0, xzr
+	b	_C_LABEL(idle_loop)	/* never to return */
+END(aarch64_mpstart)
+
+toomanycpus:
+	PRINTCPU()
+	PRINT("too many cpus, or MPIDR not exists in cpu_mpidr[]\r\n")
+1:	wfi
+	b	1b
+
+
+#else /* MULTIPROCESSOR */
+
+ENTRY_NP(aarch64_mpstart)
+ENTRY_NP(cortex_mpstart)	/* compat arm */
+1:	wfi
+	b	1b
+END(aarch64_mpstart)
+
+#endif /* MULTIPROCESSOR */
+
 /*
  * xprint - print strings pointed by $PC(LR)
  *          and return to the end of string.
@@ -239,28 +512,29 @@ END(aarch64_start)
  *    .ascii    "Hello\r\n\0" <- wouldn't return here
  *    .align    2
  *    nop                     <- return to here
+ *
+ * x0 is preserved despite being caller saved.
  */
-	.global xprint
-xprint:
-	mov	x11, lr
-	mov	x12, x0
-	ldrb	w0, [x11], #1
+ENTRY_NP(xprint)
+	stp	x0, x19, [sp, #-16]!
+
+	mov	x19, lr
+	ldrb	w0, [x19], #1
 	cbz	w0, 2f
 
 1:
 	bl	uartputc
-	ldrb	w0, [x11], #1
+	ldrb	w0, [x19], #1
 	cbnz	w0, 1b
 
 2:
-	add	x11, x11, #3
-	bic	lr, x11, #3
-	mov	x0, x12
+	add	x19, x19, #3
+	bic	lr, x19, #3
+	ldp	x0, x19, [sp], #16
 	ret
 END(xprint)
 
-	.global _C_LABEL(uartputs)
-_C_LABEL(uartputs):
+ENTRY_NP(uartputs)
 	mov	x11, x0
 	ldrb	w0, [x11], #1
 	cbz	w0, 9f
@@ -268,91 +542,71 @@ _C_LABEL(uartputs):
 	ldrb	w0, [x11], #1
 	cbnz	w0, 1b
 9:
-	mov 	x0, x11
+	mov	x0, x11
 	ret
-END(_C_LABEL(uartputs))
+END(uartputs)
 
-	.global _print_x0
-_print_x0:
+/* x0 is preserved despite being caller saved. */
+ENTRY_NP(_print_x0)
 	stp	x0, lr, [sp, #-16]!
-	stp	x4, x5, [sp, #-16]!
-	stp	x6, x7, [sp, #-16]!
+	stp	x20, x21, [sp, #-16]!
 
-	mov	x7, x0		/* number to display */
-	mov	x4, #60		/* num of shift */
-	mov	x5, #0xf	/* mask */
+	mov	x21, x0		/* number to display */
+	mov	x20, #60	/* num of shift */
 1:
-	ror	x0, x7, x4
-	and	x0, x0, x5
+	ror	x0, x21, x20
+	and	x0, x0, #0xf
 	cmp	x0, #10
 	blt	2f
 	add	x0, x0, #('a' - 10 - '0')
 2:	add	x0, x0, #'0'
 	bl	uartputc
-	subs	x4, x4, #4
+	subs	x20, x20, #4
 	bge	1b
 
-	ldp	x6, x7, [sp], #16
-	ldp	x4, x5, [sp], #16
+	ldp	x20, x21, [sp], #16
 	ldp	x0, lr, [sp], #16
 	ret
 END(_print_x0)
 
-	.global _C_LABEL(print_x0)
-_C_LABEL(print_x0):
+/* Preserve x{0,1,2} despite them being caller saved */
+ENTRY_NP(print_x0)
 	stp	x0, lr, [sp, #-16]!
+	stp	x1, x2, [sp, #-16]!
 	bl	_print_x0
 	PRINT("\r\n")
+	ldp	x1, x2, [sp], #16
 	ldp	x0, lr, [sp], #16
 	ret
-END(_C_LABEL(print_x0))
+END(print_x0)
 
-printn_x1:
+/* Preserve x{0,1,2} despite them being caller saved */
+ENTRY_NP(printn_x1)
 	stp	x0, lr, [sp, #-16]!
+	stp	x1, x2, [sp, #-16]!
 	mov	x0, x1
 	bl	_print_x0
+	ldp	x1, x2, [sp], #16
 	ldp	x0, lr, [sp], #16
 	ret
+END(printn_x1)
 
-print_x2:
+/* Preserve x{0,1,2} despite them being caller saved */
+ENTRY_NP(print_x2)
 	stp	x0, lr, [sp, #-16]!
 	mov	x0, x2
 	bl	_print_x0
 	PRINT("\r\n")
 	ldp	x0, lr, [sp], #16
 	ret
+END(print_x2)
 
-
-set_cpuinfo:
-	mrs	x1, mpidr_el1
-	and	x1, x1, #0xff	/* Aff0 = cpu id */
-	cmp	x1, #MAXCPUS
-	bcs	arm_cpuinit_too_many_cpu
-
-	ldr	x0, =cpu_info
-	ldr	x0, [x0, x1, lsl #3]	/* x0 = cpu_info[cpuid] */
-	msr	tpidr_el1, x0		/* tpidr_el1 = my cpu info */
-	str	x1, [x0, #CI_CPUID]	/* ci->ci_cpuid = CPUID */
-
-	ret
-
-arm_cpuinit_too_many_cpu:
-	PRINT("Too many CPUs: MPIDR_EL1=")
-	mrs	x0, mpidr_el1
-	bl	print_x0
-1:	wfi
-	b	1b
-	ret
-
-	.align 3
-
-
-arm_boot_l0pt_init:
+ENTRY_NP(arm_boot_l0pt_init)
 	stp	x0, lr, [sp, #-16]!
 
 	/* Clean the page table */
-	adr	x0, mmutables_start
-	adr	x1, mmutables_end
+	ADDR	x0, mmutables_start
+	ADDR	x1, mmutables_end
 1:
 	stp	xzr, xzr, [x0], #16
 	stp	xzr, xzr, [x0], #16
@@ -362,29 +616,31 @@ arm_boot_l0pt_init:
 	b.lo	1b
 
 	VERBOSE("Creating VA=PA tables\r\n")
-	/* VA=PA table for L0 */
-	adr	x0, ttbr0_l0table
+
+	/* VA=PA table, link L0->L1 */
+	ADDR	x0, ttbr0_l0table
 	mov	x1, #0
-	adr	x2, ttbr0_l1table
+	ADDR	x2, ttbr0_l1table
 	bl	l0_settable
 
-	/* VA=PA blocks */
-	adr	x0, ttbr0_l1table
-	mov	x1, #0			/* PA */
-	mov	x2, #0			/* VA */
+	/* VA=PA L1 blocks */
+	ADDR	x0, ttbr0_l1table
+	mov	x1, #0			/* VA */
+	mov	x2, #0			/* PA */
 	mov	x3, #L2_BLKPAG_ATTR_DEVICE_MEM
 	mov	x4, #4			/* 4GB = whole 32bit */
 	bl	l1_setblocks
 
 	VERBOSE("Creating KSEG tables\r\n")
-	/* KSEG table for L0 */
-	adr	x0, ttbr1_l0table
+
+	/* KSEG table, link L0->L1 */
+	ADDR	x0, ttbr1_l0table
 	mov	x1, #AARCH64_KSEG_START
-	adr	x2, ttbr1_l1table_kseg
+	ADDR	x2, ttbr1_l1table_kseg
 	bl	l0_settable
 
-	/* KSEG blocks */
-	adr	x0, ttbr1_l1table_kseg
+	/* KSEG L1 blocks */
+	ADDR	x0, ttbr1_l1table_kseg
 	mov	x1, #AARCH64_KSEG_START
 	mov	x2, #0
 	mov	x3, #L2_BLKPAG_ATTR_NORMAL_WB
@@ -393,26 +649,27 @@ arm_boot_l0pt_init:
 	bl	l1_setblocks
 
 	VERBOSE("Creating KVA=PA tables\r\n")
-	/* KVA=PA table for L0 */
-	adr	x0, ttbr1_l0table
+
+	/* KVA=PA table, link L0->L1 */
+	ADDR	x0, ttbr1_l0table
 	mov	x1, #VM_MIN_KERNEL_ADDRESS
-	adr	x2, ttbr1_l1table_kva
+	ADDR	x2, ttbr1_l1table_kva
 	bl	l0_settable
 
-	/* KVA=PA table for L1 */
-	adr	x0, ttbr1_l1table_kva
+	/* KVA=PA table, link L1->L2 */
+	ADDR	x0, ttbr1_l1table_kva
 	mov	x1, #VM_MIN_KERNEL_ADDRESS
-	adr	x2, ttbr1_l2table_kva
+	ADDR	x2, ttbr1_l2table_kva
 	bl	l1_settable
 
-	/* KVA=PA blocks */
-	adr	x0, ttbr1_l2table_kva
+	/* KVA=PA L2 blocks */
+	ADDR	x0, ttbr1_l2table_kva
 	adr	x2, start		/* physical addr. before MMU */
 	and	x2, x2, #L2_BLK_OA	/* L2 block size aligned (2MB) */
 	mov	x1, #VM_MIN_KERNEL_ADDRESS
-	mov	x3, #L2_BLKPAG_ATTR_NORMAL_WB
+	mov	x3, #(L2_BLKPAG_ATTR_NORMAL_WB|LX_BLKPAG_UXN)
 
-	/* kernelsize = _end - _start */
+	/* kernelsize = _end - start */
 	ldr	x1, =start
 	ldr	x4, =_end
 	sub	x4, x4, x1
@@ -423,15 +680,82 @@ arm_boot_l0pt_init:
 	lsr	x4, x4, #L2_SHIFT
 	bl	l2_setblocks
 
+	/* map READONLY from VM_MIN_KERNEL_ADDRESS to __data_start */
+	VERBOSE("Set kernel text/rodata READONLY\r\n")
+	ldr	x3, =__data_start
+	ands	x0, x3, #(L2_SIZE - 1)
+	beq	1f
+	ldr	x1, =_erodata
+	and	x1, x1, #L2_ADDR_BITS	/* _erodata & L2_ADDR_BIT */
+	and	x0, x3, #L2_ADDR_BITS	/* __data_start & L2_ADDR_BIT */
+	cmp	x0, x1
+	bne	1f
+	/* __data_start and _erodata are in same L2 block */
+	PRINT("Warning: data section not aligned on size of L2 block\r\n")
+1:
+	/* x3 = l2pde_index(__data_start) */
+	and	x3, x3, #L2_ADDR_BITS
+	lsr	x3, x3, #L2_SHIFT
+
+	/* x2 = l2pde_inex(VM_MIN_KERNEL_ADDRESS) */
+	mov	x2, #VM_MIN_KERNEL_ADDRESS
+	and	x2, x2, #L2_ADDR_BITS
+	lsr	x2, x2, #L2_SHIFT
+
+	ADDR	x1, ttbr1_l2table_kva
+	b	9f
+1:
+	ldr	x0, [x1, x2, lsl #3]	/* x0 = l2table[x2] */
+	and	x0, x0, #~LX_BLKPAG_AP
+	orr	x0, x0, #LX_BLKPAG_AP_RO
+	str	x0, [x1, x2, lsl #3]	/* l2table[x2] = x0 */
+	add	x2, x2, #1
+9:
+	cmp	x2, x3
+	blo	1b
+
+
+	/* add eXecute Never bit from _rodata to _end */
+	VERBOSE("Set kernel rodata/data non-Executable\r\n")
+	ldr	x0, =__rodata_start
+	ands	x0, x0, #(L2_SIZE - 1)
+	beq	1f
+	PRINT("Warning: rodata section not aligned on size of L2 block\r\n")
+1:
+	/* x2 = l2pde_index(__rodata_start) */
+	ldr	x2, =__rodata_start
+	mov	x0, #(L2_SIZE - 1)
+	add	x2, x2, x0		/* round block */
+	and	x2, x2, #L2_ADDR_BITS
+	lsr	x2, x2, #L2_SHIFT
+
+	/* x3 = l2pde_inex(_end) */
+	ldr	x3, =_end
+	and	x3, x3, #L2_ADDR_BITS
+	lsr	x3, x3, #L2_SHIFT
+
+	ADDR	x1, ttbr1_l2table_kva
+	b	9f
+1:
+	ldr	x0, [x1, x2, lsl #3]	/* x0 = l2table[x2] */
+	orr	x0, x0, #(LX_BLKPAG_UXN|LX_BLKPAG_PXN)
+	str	x0, [x1, x2, lsl #3]	/* l2table[x2] = x0 */
+	add	x2, x2, #1
+9:
+	cmp	x2, x3			/* including the L2 block of _end[] */
+	bls	1b
+
+
 	VERBOSE("Creating devmap tables\r\n")
-	/* devmap=PA table for L1 */
-	adr	x0, ttbr1_l1table_kva
+	/* devmap=PA table, link L1->L2 */
+	ADDR	x0, ttbr1_l1table_kva
 	ldr	x1, .L_devmap_addr
-	adr	x2, ttbr1_l2table_devmap
+	ADDR	x2, ttbr1_l2table_devmap
 	bl	l1_settable
 
 	ldp	x0, lr, [sp], #16
 	ret
+END(arm_boot_l0pt_init)
 
 	.align 3
 .L_devmap_addr:
@@ -442,7 +766,7 @@ arm_boot_l0pt_init:
  *	x1 = vaddr
  *	x2 = l1table
  */
-l0_settable:
+ENTRY_NP(l0_settable)
 	stp	x0, lr, [sp, #-16]!
 
 	and	x2, x2, #~PAGE_MASK
@@ -461,6 +785,7 @@ l0_settable:
 
 	ldp	x0, lr, [sp], #16
 	ret
+END(l0_settable)
 
 /*
  *	x0 = l1table
@@ -469,43 +794,54 @@ l0_settable:
  *	x3 = attr
  *	x4 = N entries
  */
-l1_setblocks:
+ENTRY_NP(l1_setblocks)
 	stp	x0, lr, [sp, #-16]!
+	stp	x19, x20, [sp, #-16]!
+	stp	x21, x22, [sp, #-16]!
 
-	and	x2, x2, #L1_ADDR_BITS
-	mov	x8, #L1_BLOCK
-	orr	x2, x2, x8
-	orr	x2, x2, x3
-	mov	x8, #(LX_BLKPAG_AF|LX_BLKPAG_AP_RW)
-	orr	x2, x2, x8
+	mov	x19, x0			/* l1table */
+	mov	x22, x4			/* N entries */
+
+	and	x21, x2, #L1_ADDR_BITS	/* PA[38:30] */
+	mov	x9, #L1_BLOCK
+	orr	x21, x21, x9
+	orr	x21, x21, x3		/* add in attr */
+	mov	x9, #(LX_BLKPAG_AF|LX_BLKPAG_AP_RW)
+	orr	x21, x21, x9
 #ifdef MULTIPROCESSOR
-	orr	x2, x2, #LX_BLKPAG_SH_IS
+	orr	x21, x21, #LX_BLKPAG_SH_IS
 #endif
-	and	x1, x1, #L1_ADDR_BITS
-	lsr	x1, x1, #L1_SHIFT
+	and	x20, x1, #L1_ADDR_BITS	/* VA[38:30] */
+	lsr	x20, x20, #L1_SHIFT
 1:
-	str	x2, [x0, x1, lsl #3]	/* l1table[x1] = x2 */
+	str	x21, [x19, x20, lsl #3]	/* l1table[x20] = x21 */
+
 #ifdef DEBUG_MMU
 	PRINT("L1 entry[")
-	bl printn_x1
+	mov	x1, x20
+	bl	printn_x1
 	PRINT("]=")
-	bl print_x2
+	mov	x2, x21
+	bl	print_x2
 #endif
-	mov	x3, #L1_SIZE
-	add	x2, x2, x3
-	add	x1, x1, #1
-	subs	x4, x4, #1
+	mov	x9, #L1_SIZE
+	add	x21, x21, x9
+	add	x20, x20, #1
+	subs	x22, x22, #1
 	bne	1b
 
+	ldp	x21, x22, [sp], #16
+	ldp	x19, x20, [sp], #16
 	ldp	x0, lr, [sp], #16
 	ret
+END(l1_setblocks)
 
 /*
  *	x0 = l1table
  *	x1 = vaddr
  *	x2 = l2table
  */
-l1_settable:
+ENTRY_NP(l1_settable)
 	stp	x0, lr, [sp, #-16]!
 
 	and	x2, x2, #~PAGE_MASK
@@ -524,6 +860,7 @@ l1_settable:
 
 	ldp	x0, lr, [sp], #16
 	ret
+END(l1_settable)
 
 /*
  *	x0 = l2table
@@ -532,38 +869,49 @@ l1_settable:
  *	x3 = attr
  *	x4 = N entries
  */
-l2_setblocks:
+ENTRY_NP(l2_setblocks)
 	stp	x0, lr, [sp, #-16]!
+	stp	x19, x20, [sp, #-16]!
+	stp	x21, x22, [sp, #-16]!
 
-	and	x2, x2, #L2_BLOCK_MASK
-	mov	x8, #L2_BLOCK
-	orr	x2, x2, x8
-	orr	x2, x2, x3
-	mov	x8, #(LX_BLKPAG_AF|LX_BLKPAG_AP_RW)
-	orr	x2, x2, x8
+	mov	x19, x0			/* l1table */
+	mov	x22, x4			/* N entries */
+
+	and	x21, x2, #L2_BLOCK_MASK
+	mov	x9, #L2_BLOCK
+	orr	x21, x21, x9
+	orr	x21, x21, x3		/* Add attr bits */
+	mov	x9, #(LX_BLKPAG_AF|LX_BLKPAG_AP_RW)
+	orr	x21, x21, x9
 #ifdef MULTIPROCESSOR
-	orr	x2, x2, #LX_BLKPAG_SH_IS
+	orr	x21, x21, #LX_BLKPAG_SH_IS
 #endif
-	and	x1, x1, #L2_ADDR_BITS
-	lsr	x1, x1, #L2_SHIFT
+	and	x20, x1, #L2_ADDR_BITS
+	lsr	x20, x20, #L2_SHIFT
 1:
-	str	x2, [x0, x1, lsl #3]	/* l2table[x1] = x2 */
+	str	x21, [x19, x20, lsl #3]	/* l2table[x20] = x21 */
+
 #ifdef DEBUG_MMU
 	PRINT("L2 entry[")
-	bl printn_x1
+	mov	x1, x20
+	bl	printn_x1
 	PRINT("]=")
-	bl print_x2
+	mov	x2, x21
+	bl	print_x2
 #endif
-	mov	x3, #L2_SIZE
-	add	x2, x2, x3
-	add	x1, x1, #1
-	subs	x4, x4, #1
+	mov	x9, #L2_SIZE
+	add	x21, x21, x9
+	add	x20, x20, #1
+	subs	x22, x22, #1
 	bne	1b
 
+	ldp	x21, x22, [sp], #16
+	ldp	x19, x20, [sp], #16
 	ldp	x0, lr, [sp], #16
 	ret
+END(l2_setblocks)
 
-init_sysregs:
+ENTRY_NP(init_sysregs)
 	stp	x0, lr, [sp, #-16]!
 
 	/* Disable debug event */
@@ -575,26 +923,33 @@ init_sysregs:
 	/* No trap system register access, and Trap FP/SIMD access */
 	msr	cpacr_el1, xzr
 
+	/* allow to read CNTVCT_EL0 and CNTFRQ_EL0 from EL0 */
+	mrs	x0, cntkctl_el1
+	orr	x0, x0, #CNTKCTL_EL0VCTEN
+	msr	cntkctl_el1, x0
+
 	/* any exception not masked */
 	msr	daif, xzr
 
 	ldp	x0, lr, [sp], #16
 	ret
+END(init_sysregs)
 
-mmu_disable:
+ENTRY_NP(mmu_disable)
 	dsb	sy
 	mrs	x0, sctlr_el1
 	bic	x0, x0, SCTLR_M		/* clear MMU enable bit */
 	msr	sctlr_el1, x0
 	isb
 	ret
+END(mmu_disable)
 
-mmu_enable:
+ENTRY_NP(mmu_enable)
 	dsb	sy
 
-	adr	x0, ttbr0_l0table
+	ADDR	x0, ttbr0_l0table
 	msr	ttbr0_el1, x0
-	adr	x0, ttbr1_l0table
+	ADDR	x0, ttbr1_l0table
 	msr	ttbr1_el1, x0
 	isb
 
@@ -616,6 +971,10 @@ mmu_enable:
 	ldr	x0, tcr_setting
 	mrs	x1, id_aa64mmfr0_el1
 	bfi	x0, x1, #32, #3
+#ifdef MULTIPROCESSOR
+	ldr	x1, tcr_setting_inner_shareable
+	orr	x0, x0, x1
+#endif
 	msr	tcr_el1, x0
 
 	/*
@@ -633,14 +992,11 @@ mmu_enable:
 #else
 	bic	x0, x0, x1	/* clear: LittleEndian */
 #endif
-#ifdef MULTIPROCESSOR
-	ldr	x1, tcr_setting_inner_shareable
-	orr	x0, x0, x1
-#endif
 	msr	sctlr_el1, x0	/* enabling MMU! */
 	isb
 
 	ret
+END(mmu_enable)
 
 	.align 3
 mair_setting:
@@ -692,8 +1048,11 @@ sctlr_set:
 	.quad ( \
 	    SCTLR_LSMAOE |  /* Load/Store Multiple Atomicity and Ordering */ \
 	    SCTLR_nTLSMD |  /* no Trap Load/Store Multiple to Device */ \
+	    SCTLR_UCI |     /* Enables EL0 DC {CVAU,CIVAC,CVAC}, IC IVAU */ \
 	    SCTLR_SPAN |    /* This field resets to 1 */ \
 	    SCTLR_UCT |     /* Enables EL0 access to the CTR_EL0 */ \
+	    SCTLR_nTWE |    /* EL0 WFE non-trapping */ \
+	    SCTLR_nTWI |    /* EL0 WFI non-trapping */ \
 	    SCTLR_DZE |     /* Enables access to the DC ZVA instruction */ \
 	    SCTLR_I |       /* Instruction cache enable */ \
 	    SCTLR_SED |     /* SETEND instruction disable */ \
@@ -705,11 +1064,8 @@ sctlr_set:
 	    0)
 sctlr_clear:
 	.quad ( \
-	    SCTLR_UCI |     /* Enable EL0  DC {CVAU,CIVAC,CVAC}, IC IVAU */ \
 	    SCTLR_IESB |    /* Enable Implicit ErrorSynchronizationBarrier */ \
 	    SCTLR_WXN |     /* Write permission implies Execute Never (W^X) */ \
-	    SCTLR_nTWE |    /* EL0 WFE non-trapping */ \
-	    SCTLR_nTWI |    /* EL0 WFI non-trapping */ \
 	    SCTLR_UMA |     /* EL0 Controls access to interrupt masks */ \
 	    SCTLR_ITD |     /* IT instruction disable */ \
 	    SCTLR_THEE |    /* T32EE is not implemented */ \
@@ -720,16 +1076,21 @@ sctlr_clear:
 	    0)
 
 
-	/*
-	 * XXXAARCH64: kernel segment is writable
-	 */
+	.bss
+
 	.align PGSHIFT
 	.global _C_LABEL(lwp0uspace)
 _C_LABEL(lwp0uspace):
 	.space	UPAGES * PAGE_SIZE
+bootstk:
+
+#ifdef MULTIPROCESSOR
+	.space	BOOT_STACKSIZE * (MAXCPUS - 1)
+bootstk_cpus:
+#endif
+
 
 	.align PGSHIFT
-
 mmutables_start:
 /*
  * PA == VA mapping using L1 1G block (whole 32bit)

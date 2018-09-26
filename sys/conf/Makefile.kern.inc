@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile.kern.inc,v 1.264 2018/02/17 22:47:14 joerg Exp $
+#	$NetBSD: Makefile.kern.inc,v 1.266 2018/09/22 12:24:04 rin Exp $
 #
 # This file contains common `MI' targets and definitions and it is included
 # at the bottom of each `MD' ${MACHINE}/conf/Makefile.${MACHINE}.
@@ -157,8 +157,8 @@ LINK_O?=	@${_MKSHMSG} "   link  ${.CURDIR:T}/${.TARGET}" && \
 ##
 ## (3) libkern and compat
 ##
-## Set KERN_AS in the port Makefile to "obj" or "library".  The
-## default is "library", as documented in $S/lib/libkern/Makefile.inc.
+## Set OPT_MODULAR in the port Makefile if module(7) is enabled,
+## as documented in $S/lib/libkern/Makefile.inc.
 ##
 
 ### find out what to use for libkern
@@ -438,6 +438,12 @@ AFLAGS+=	${AOPTS.${.IMPSRC:T}}
 CFLAGS+=	${COPTS.${.IMPSRC:T}} ${CPUFLAGS.${.IMPSRC:T}}
 CPPFLAGS+=	${CPPFLAGS.${.IMPSRC:T}}
 CWARNFLAGS+=	${CWARNFLAGS.${.IMPSRC:T}}
+
+.for _v in CFLAGS CPPFLAGS CWARNFLAGS
+.for _c in ${CSRCS}
+${_v}.${_c:T}+=${OPT.${_c:T}:@.o.@${${_v}.${.o.}}@}
+.endfor
+.endfor
 
 .MAIN: all
 all: .gdbinit

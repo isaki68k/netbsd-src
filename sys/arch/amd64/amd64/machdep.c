@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.303 2018/04/04 12:59:49 maxv Exp $	*/
+/*	$NetBSD: machdep.c,v 1.319 2018/09/23 00:59:59 cherry Exp $	*/
 
 /*
  * Copyright (c) 1996, 1997, 1998, 2000, 2006, 2007, 2008, 2011
@@ -110,9 +110,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.303 2018/04/04 12:59:49 maxv Exp $");
-
-/* #define XENDEBUG_LOW  */
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.319 2018/09/23 00:59:59 cherry Exp $");
 
 #include "opt_modular.h"
 #include "opt_user_ldt.h"
@@ -124,6 +122,7 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.303 2018/04/04 12:59:49 maxv Exp $");
 #include "opt_xen.h"
 #include "opt_svs.h"
 #include "opt_kaslr.h"
+#include "opt_kasan.h"
 #ifndef XEN
 #include "opt_physmem.h"
 #endif
@@ -261,11 +260,14 @@ paddr_t gdt_paddr;
 vaddr_t ldt_vaddr;
 paddr_t ldt_paddr;
 
-vaddr_t module_start, module_end;
 static struct vm_map module_map_store;
 extern struct vm_map *module_map;
 extern struct bootspace bootspace;
-vaddr_t kern_end;
+extern struct slotspace slotspace;
+
+vaddr_t vm_min_kernel_address __read_mostly = VM_MIN_KERNEL_ADDRESS_DEFAULT;
+vaddr_t vm_max_kernel_address __read_mostly = VM_MAX_KERNEL_ADDRESS_DEFAULT;
+pd_entry_t *pte_base __read_mostly;
 
 struct vm_map *phys_map = NULL;
 
@@ -283,7 +285,10 @@ void (*delay_func)(unsigned int) = xen_delay;
 void (*initclock_func)(void) = xen_initclocks;
 #endif
 
-struct pool x86_dbregspl;
+struct nmistore {
+	uint64_t cr3;
+	uint64_t scratch;
+} __packed;
 
 /*
  * Size of memory segments, before any memory is stolen.
@@ -321,6 +326,7 @@ int dump_seg_count_range(paddr_t, paddr_t);
 int dumpsys_seg(paddr_t, paddr_t);
 
 void init_bootspace(void);
+void init_slotspace(void);
 void init_x86_64(paddr_t);
 
 /*
@@ -374,15 +380,15 @@ cpu_startup(void)
 	 * Create the module map.
 	 *
 	 * The kernel uses RIP-relative addressing with a maximum offset of
-	 * 2GB. The problem is, kernel_map is too far away in memory from
-	 * the kernel .text. So we cannot use it, and have to create a
-	 * special module_map.
+	 * 2GB. Because of that, we can't put the kernel modules in kernel_map
+	 * (like i386 does), since kernel_map is too far away in memory from
+	 * the kernel sections. So we have to create a special module_map.
 	 *
 	 * The module map is taken as what is left of the bootstrap memory
-	 * created in locore.S. This memory is right above the kernel
-	 * image, so this is the best place to put our modules.
+	 * created in locore/prekern.
 	 */
-	uvm_map_setup(&module_map_store, module_start, module_end, 0);
+	uvm_map_setup(&module_map_store, bootspace.smodule,
+	    bootspace.emodule, 0);
 	module_map_store.pmap = pmap_kernel();
 	module_map = &module_map_store;
 
@@ -510,6 +516,7 @@ cpu_init_tss(struct cpu_info *ci)
 	const cpuid_t cid = cpu_index(ci);
 #endif
 	struct cpu_tss *cputss;
+	struct nmistore *store;
 	uintptr_t p;
 
 #ifdef __HAVE_PCPU_AREA
@@ -537,13 +544,23 @@ cpu_init_tss(struct cpu_info *ci)
 #endif
 	cputss->tss.tss_ist[1] = p + PAGE_SIZE - 16;
 
-	/* NMI */
+	/* NMI - store a structure at the top of the stack */
 #ifdef __HAVE_PCPU_AREA
 	p = (vaddr_t)&pcpuarea->ent[cid].ist2;
 #else
 	p = uvm_km_alloc(kernel_map, PAGE_SIZE, 0, UVM_KMF_WIRED|UVM_KMF_ZERO);
 #endif
-	cputss->tss.tss_ist[2] = p + PAGE_SIZE - 16;
+	cputss->tss.tss_ist[2] = p + PAGE_SIZE - sizeof(struct nmistore);
+	store = (struct nmistore *)(p + PAGE_SIZE - sizeof(struct nmistore));
+	store->cr3 = pmap_pdirpa(pmap_kernel(), 0);
+
+	/* DB */
+#ifdef __HAVE_PCPU_AREA
+	p = (vaddr_t)&pcpuarea->ent[cid].ist3;
+#else
+	p = uvm_km_alloc(kernel_map, PAGE_SIZE, 0, UVM_KMF_WIRED|UVM_KMF_ZERO);
+#endif
+	cputss->tss.tss_ist[3] = p + PAGE_SIZE - 16;
 
 	ci->ci_tss = cputss;
 	ci->ci_tss_sel = tss_alloc(&cputss->tss);
@@ -1353,10 +1370,7 @@ setregs(struct lwp *l, struct exec_package *pack, vaddr_t stack)
 	fpu_save_area_clear(l, pack->ep_osversion >= 699002600
 	    ? __NetBSD_NPXCW__ : __NetBSD_COMPAT_NPXCW__);
 	pcb->pcb_flags = 0;
-	if (pcb->pcb_dbregs != NULL) {
-		pool_put(&x86_dbregspl, pcb->pcb_dbregs);
-		pcb->pcb_dbregs = NULL;
-	}
+	x86_dbregs_clear(l);
 
 	l->l_proc->p_flag &= ~PK_32;
 
@@ -1383,11 +1397,6 @@ setregs(struct lwp *l, struct exec_package *pack, vaddr_t stack)
 /*
  * Initialize segments and descriptor tables
  */
-
-#ifdef XEN
-struct trap_info *xen_idt;
-int xen_idt_idx;
-#endif
 char *ldtstore;
 char *gdtstore;
 
@@ -1472,15 +1481,10 @@ set_sys_segment(struct sys_segment_descriptor *sd, void *base, size_t limit,
 void
 cpu_init_idt(void)
 {
-#ifndef XEN
 	struct region_descriptor region;
 
 	setregion(&region, idt, NIDT * sizeof(idt[0]) - 1);
 	lidt(&region);
-#else
-	if (HYPERVISOR_set_trap_table(xen_idt))
-		panic("HYPERVISOR_set_trap_table() failed");
-#endif
 }
 
 #define	IDTVEC(name)	__CONCAT(X, name)
@@ -1529,7 +1533,7 @@ init_x86_64_ksyms(void)
 #endif
 }
 
-void
+void __noasan
 init_bootspace(void)
 {
 	extern char __rodata_start;
@@ -1569,13 +1573,94 @@ init_bootspace(void)
 	/* In locore.S, we allocated a tmp va. We will use it now. */
 	bootspace.spareva = KERNBASE + NKL2_KIMG_ENTRIES * NBPD_L2;
 
-	/* Virtual address of the L4 page */
+	/* Virtual address of the L4 page. */
 	bootspace.pdir = (vaddr_t)(PDPpaddr + KERNBASE);
 
+	/* Kernel module map. */
+	bootspace.smodule = (vaddr_t)atdevbase + IOM_SIZE;
 	bootspace.emodule = KERNBASE + NKL2_KIMG_ENTRIES * NBPD_L2;
 }
 
-void
+static void __noasan
+init_pte(void)
+{
+#ifndef XEN
+	extern uint32_t nox_flag;
+	pd_entry_t *pdir = (pd_entry_t *)bootspace.pdir;
+	pdir[L4_SLOT_PTE] = PDPpaddr | PG_KW | ((uint64_t)nox_flag << 32) |
+	    PG_V;
+#endif
+
+	extern pd_entry_t *normal_pdes[3];
+	normal_pdes[0] = L2_BASE;
+	normal_pdes[1] = L3_BASE;
+	normal_pdes[2] = L4_BASE;
+}
+
+void __noasan
+init_slotspace(void)
+{
+	vaddr_t va;
+
+	memset(&slotspace, 0, sizeof(slotspace));
+
+	/* User. [256, because we want to land in >= 256] */
+	slotspace.area[SLAREA_USER].sslot = 0;
+	slotspace.area[SLAREA_USER].nslot = PDIR_SLOT_USERLIM+1;
+	slotspace.area[SLAREA_USER].active = true;
+
+#ifdef XEN
+	/* PTE. */
+	slotspace.area[SLAREA_PTE].sslot = PDIR_SLOT_PTE;
+	slotspace.area[SLAREA_PTE].nslot = 1;
+	slotspace.area[SLAREA_PTE].active = true;
+#endif
+
+#ifdef __HAVE_PCPU_AREA
+	/* Per-CPU. */
+	slotspace.area[SLAREA_PCPU].sslot = PDIR_SLOT_PCPU;
+	slotspace.area[SLAREA_PCPU].nslot = 1;
+	slotspace.area[SLAREA_PCPU].active = true;
+#endif
+
+#ifdef __HAVE_DIRECT_MAP
+	/* Direct Map. [Randomized later] */
+	slotspace.area[SLAREA_DMAP].active = false;
+#endif
+
+#ifdef XEN
+	/* Hypervisor. */
+	slotspace.area[SLAREA_HYPV].sslot = 256;
+	slotspace.area[SLAREA_HYPV].nslot = 17;
+	slotspace.area[SLAREA_HYPV].active = true;
+#endif
+
+#ifdef KASAN
+	/* ASAN. */
+	slotspace.area[SLAREA_ASAN].sslot = L4_SLOT_KASAN;
+	slotspace.area[SLAREA_ASAN].nslot = NL4_SLOT_KASAN;
+	slotspace.area[SLAREA_ASAN].active = true;
+#endif
+
+	/* Kernel. */
+	slotspace.area[SLAREA_KERN].sslot = L4_SLOT_KERNBASE;
+	slotspace.area[SLAREA_KERN].nslot = 1;
+	slotspace.area[SLAREA_KERN].active = true;
+
+	/* Main. */
+	va = slotspace_rand(SLAREA_MAIN, NKL4_MAX_ENTRIES * NBPD_L4,
+	    NBPD_L4); /* TODO: NBPD_L1 */
+	vm_min_kernel_address = va;
+	vm_max_kernel_address = va + NKL4_MAX_ENTRIES * NBPD_L4;
+
+#ifndef XEN
+	/* PTE. */
+	va = slotspace_rand(SLAREA_PTE, NBPD_L4, NBPD_L4);
+	pte_base = (pd_entry_t *)va;
+#endif
+}
+
+void __noasan
 init_x86_64(paddr_t first_avail)
 {
 	extern void consinit(void);
@@ -1586,7 +1671,6 @@ init_x86_64(paddr_t first_avail)
 	extern vaddr_t lwp0uarea;
 #ifndef XEN
 	extern paddr_t local_apic_pa;
-	int ist;
 #endif
 
 	KASSERT(first_avail % PAGE_SIZE == 0);
@@ -1594,6 +1678,13 @@ init_x86_64(paddr_t first_avail)
 #ifdef XEN
 	KASSERT(HYPERVISOR_shared_info != NULL);
 	cpu_info_primary.ci_vcpu = &HYPERVISOR_shared_info->vcpu_info[0];
+#endif
+
+	init_pte();
+
+#ifdef KASAN
+	void kasan_early_init(void);
+	kasan_early_init();
 #endif
 
 	uvm_lwp_setuarea(&lwp0, lwp0uarea);
@@ -1657,13 +1748,6 @@ init_x86_64(paddr_t first_avail)
 	pmap_pa_end = avail_end;
 #endif
 
-	/* End of the virtual space we have created so far. */
-	kern_end = (vaddr_t)atdevbase + IOM_SIZE;
-
-	/* The area for the module map. */
-	module_start = kern_end;
-	module_end = bootspace.emodule;
-
 	/*
 	 * Call pmap initialization to make new kernel address space.
 	 * We must do this before loading pages into the VM system.
@@ -1680,6 +1764,11 @@ init_x86_64(paddr_t first_avail)
 #endif
 
 	init_x86_msgbuf();
+
+#ifdef KASAN
+	void kasan_init(void);
+	kasan_init();
+#endif
 
 	pmap_growkernel(VM_MIN_KERNEL_ADDRESS + 32 * 1024 * 1024);
 
@@ -1706,12 +1795,7 @@ init_x86_64(paddr_t first_avail)
 
 	pmap_update(pmap_kernel());
 
-#ifndef XEN
-	idt = (struct gate_descriptor *)idt_vaddr;
-#else
-	xen_idt = (struct trap_info *)idt_vaddr;
-	xen_idt_idx = 0;
-#endif
+	idt = (idt_descriptor_t *)idt_vaddr;
 	gdtstore = (char *)gdt_vaddr;
 	ldtstore = (char *)ldt_vaddr;
 
@@ -1770,62 +1854,46 @@ init_x86_64(paddr_t first_avail)
 
 	/* CPU-specific IDT exceptions. */
 	for (x = 0; x < NCPUIDT; x++) {
-#ifndef XEN
+		int sel, ist;
+
+		/* Reset to default. Special cases below */
+		sel = SEL_KPL;
+		ist = 0;
+
 		idt_vec_reserve(x);
+
 		switch (x) {
+		case 1:	/* DB */
+			ist = 4;
+			break;
 		case 2:	/* NMI */
 			ist = 3;
+			break;
+		case 3:
+		case 4:			
+			sel = SEL_UPL;
 			break;
 		case 8:	/* double fault */
 			ist = 2;
 			break;
-		default:
-			ist = 0;
-			break;
-		}
-		setgate(&idt[x], x86_exceptions[x], ist, SDT_SYS386IGT,
-		    (x == 3 || x == 4) ? SEL_UPL : SEL_KPL,
-		    GSEL(GCODE_SEL, SEL_KPL));
-#else /* XEN */
-		pmap_changeprot_local(idt_vaddr, VM_PROT_READ|VM_PROT_WRITE);
-		idt_vec_reserve(x);
-		xen_idt[xen_idt_idx].vector = x;
-
-		switch (x) {
-		case 2:  /* NMI */
+#ifdef XEN			
 		case 18: /* MCA */
-			TI_SET_IF(&(xen_idt[xen_idt_idx]), 2);
+			sel |= 0x4; /* Auto EOI/mask */
 			break;
-		case 3:
-		case 4:
-			xen_idt[xen_idt_idx].flags = SEL_UPL;
-			break;
+#endif /* XEN */			
 		default:
-			xen_idt[xen_idt_idx].flags = SEL_KPL;
 			break;
 		}
 
-		xen_idt[xen_idt_idx].cs = GSEL(GCODE_SEL, SEL_KPL);
-		xen_idt[xen_idt_idx].address =
-		    (unsigned long)x86_exceptions[x];
-		xen_idt_idx++;
-#endif /* XEN */
+		set_idtgate(&idt[x], x86_exceptions[x], ist, SDT_SYS386IGT,
+		    sel, GSEL(GCODE_SEL, SEL_KPL));
 	}
 
 	/* new-style interrupt gate for syscalls */
-#ifndef XEN
 	idt_vec_reserve(128);
-	setgate(&idt[128], &IDTVEC(osyscall), 0, SDT_SYS386IGT, SEL_UPL,
+	set_idtgate(&idt[128], &IDTVEC(osyscall), 0, SDT_SYS386IGT, SEL_UPL,
 	    GSEL(GCODE_SEL, SEL_KPL));
-#else
-	idt_vec_reserve(128);
-	xen_idt[xen_idt_idx].vector = 128;
-	xen_idt[xen_idt_idx].flags = SEL_KPL;
-	xen_idt[xen_idt_idx].cs = GSEL(GCODE_SEL, SEL_KPL);
-	xen_idt[xen_idt_idx].address =  (unsigned long) &IDTVEC(osyscall);
-	xen_idt_idx++;
-	pmap_changeprot_local(idt_vaddr, VM_PROT_READ);
-#endif /* XEN */
+
 	kpreempt_enable();
 
 	setregion(&region, gdtstore, DYNSEL_START - 1);
@@ -1865,11 +1933,7 @@ init_x86_64(paddr_t first_avail)
 #endif
 
 	pcb->pcb_dbregs = NULL;
-
-	x86_dbregs_setup_initdbstate();
-
-	pool_init(&x86_dbregspl, sizeof(struct dbreg), 16, 0, 0, "dbregs",
-	    NULL, IPL_NONE);
+	x86_dbregs_init();
 }
 
 void
@@ -2112,7 +2176,7 @@ mm_md_kernacc(void *ptr, vm_prot_t prot, bool *handled)
 		return 0;
 	}
 
-	if (v >= module_start && v < module_end) {
+	if (v >= bootspace.smodule && v < bootspace.emodule) {
 		*handled = true;
 		if (!uvm_map_checkprot(module_map, v, v + 1, prot))
 			return EFAULT;

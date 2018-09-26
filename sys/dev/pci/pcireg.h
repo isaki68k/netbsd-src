@@ -1,4 +1,4 @@
-/*	$NetBSD: pcireg.h,v 1.137 2018/02/01 09:09:14 msaitoh Exp $	*/
+/*	$NetBSD: pcireg.h,v 1.140 2018/09/12 07:42:21 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 1995, 1996, 1999, 2000
@@ -1327,7 +1327,7 @@ typedef u_int8_t pci_intr_line_t;
 #define   PCI_BRIDGE_CONTROL_SERR		(1 <<  1)
 #define   PCI_BRIDGE_CONTROL_ISA		(1 <<  2)
 #define   PCI_BRIDGE_CONTROL_VGA		(1 <<  3)
-#define   PCI_BRIDGE_CONTROL_VGA16		(1 <<  3)
+#define   PCI_BRIDGE_CONTROL_VGA16		(1 <<  4)
 #define   PCI_BRIDGE_CONTROL_MABRT		(1 <<  5)
 #define   PCI_BRIDGE_CONTROL_SECBR		(1 <<  6)
 #define   PCI_BRIDGE_CONTROL_SECFASTB2B		(1 <<  7)
@@ -1770,6 +1770,7 @@ struct pci_rom {
 #define	PCI_ATS_CAP_INVQDEPTH	__BITS(4, 0)	/* Invalidate Queue Depth */
 #define	PCI_ATS_CAP_PALIGNREQ	__BIT(5)	/* Page Aligned Request */
 #define	PCI_ATS_CAP_GLOBALINVL	__BIT(6)	/* Global Invalidate Support */
+#define	PCI_ATS_CAP_RELAXORD	__BIT(7)	/* Relaxed Ordering */
 #define	PCI_ATS_CTL	0x04	/* Control Register */
 #define	PCI_ATS_CTL_STU		__BITS(20, 16)	/* Smallest Translation Unit */
 #define	PCI_ATS_CTL_EN		__BIT(31)	/* Enable */
@@ -2029,7 +2030,7 @@ struct pci_rom {
   /* Same */
 #define	PCI_DPC_RPPIO_HLOG 0x20	/* RP PIO Header Log Register */
 #define	PCI_DPC_RPPIO_IMPSLOG 0x30 /* RP PIO ImpSpec Log Register */
-#define	PCI_DPC_RPPIO_TLPPLOG 0x34 /* RP PIO TPL Prefix Log Register */
+#define	PCI_DPC_RPPIO_TLPPLOG 0x34 /* RP PIO TLP Prefix Log Register */
 
 /*
  * Extended capability ID: 0x001e

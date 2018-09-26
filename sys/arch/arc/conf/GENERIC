@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.189 2018/01/23 14:47:54 sevan Exp $
+# $NetBSD: GENERIC,v 1.191 2018/09/06 05:36:49 maxv Exp $
 #
 # GENERIC machine description file
 #
@@ -22,7 +22,7 @@ include 	"arch/arc/conf/std.arc"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident		"GENERIC-$Revision: 1.189 $"
+#ident		"GENERIC-$Revision: 1.191 $"
 
 maxusers	32		# estimated number of users
 
@@ -127,10 +127,6 @@ options 	NETATALK	# AppleTalk networking protocols
 options 	PPP_BSDCOMP	# BSD-Compress compression support for PPP
 options 	PPP_DEFLATE	# Deflate compression support for PPP
 options 	PPP_FILTER	# Active filter support for PPP (requires bpf)
-options 	IPFILTER_LOG	# ipmon(8) log support
-options 	IPFILTER_LOOKUP	# ippool(8) support
-options 	IPFILTER_COMPAT # Compat for IP-Filter
-#options 	IPFILTER_DEFAULT_BLOCK	# block all packets by default
 #options 	TCP_DEBUG	# Record last TCP_NDEBUG packets with SO_DEBUG
 
 #options 	ALTQ		# Manipulate network interfaces' output queues
@@ -321,7 +317,6 @@ viaide* 	at pci? dev ? function ?	# VIA/AMD/Nvidia IDE controllers
 # PCI network devices
 #an*		at pci? dev ? function ?	# Aironet PC4500/PC4800 (802.11)
 bge*		at pci? dev ? function ?	# Broadcom 570x gigabit Ethernet
-#en*		at pci? dev ? function ?	# ENI/Adaptec ATM
 ep*		at pci? dev ? function ?	# 3Com 3c59x
 epic*		at pci? dev ? function ?	# SMC EPIC/100 Ethernet
 #esh*		at pci? dev ? function ?	# Essential HIPPI card
@@ -452,7 +447,7 @@ pseudo-device	putter			# for puffs and pud
 # network pseudo-devices
 pseudo-device	bpfilter		# Berkeley packet filter
 #pseudo-device	carp			# Common Address Redundancy Protocol
-pseudo-device	ipfilter		# IP filter (firewall) and NAT
+pseudo-device	npf			# NPF packet filter
 pseudo-device	loop			# network loopback
 pseudo-device	ppp			# Point-to-Point Protocol
 pseudo-device	pppoe			# PPP over Ethernet (RFC 2516)
@@ -487,8 +482,6 @@ pseudo-device	clockctl		# user control of clock subsystem
 # mouse & keyboard multiplexor pseudo-devices
 #pseudo-device	wsmux
 pseudo-device	ksyms			# /dev/ksyms
-#pseudo-device	pf			# PF packet filter
-#pseudo-device	pflog			# PF log if
 
 # Veriexec
 #

@@ -1,4 +1,4 @@
-/*	$NetBSD: netbsd32.h,v 1.117 2018/04/14 04:04:39 mrg Exp $	*/
+/*	$NetBSD: netbsd32.h,v 1.119 2018/08/11 03:41:06 mrg Exp $	*/
 
 /*
  * Copyright (c) 1998, 2001, 2008, 2015 Matthew R. Green
@@ -715,6 +715,12 @@ struct netbsd32_omsghdr {
 	int		 msg_accrightslen;
 };
 
+typedef netbsd32_pointer_t netbsd32_mmsghdrp_t;
+struct netbsd32_mmsghdr {
+	struct netbsd32_msghdr msg_hdr;
+	unsigned int msg_len;
+};
+
 /* from <sys/stat.h> */
 typedef netbsd32_pointer_t netbsd32_stat12p_t;
 struct netbsd32_stat12 {		/* NetBSD-1.2 stat struct */
@@ -959,7 +965,7 @@ struct netbsd32_tmpfs_args {
 /* from <fs/cd9660/cd9660_mount.h> */
 struct netbsd32_iso_args {
 	netbsd32_charp fspec;
-	struct export_args30 _pad1;
+	struct netbsd32_export_args30 _pad1;
 	int	flags;
 };
 
@@ -1015,8 +1021,6 @@ struct netbsd32_mountd_exports_list {
 	netbsd32_export_argsp	mel_exports;
 };
 
-/* no struct export_args30 yet */
-
 /* from <nfs/nfsmount,h> */
 struct netbsd32_nfs_args {
 	int32_t		version;	/* args structure version number */
@@ -1052,6 +1056,17 @@ struct netbsd32_msdosfs_args {
 	int	version;	/* version of the struct */
 	mode_t  dirmask;	/* v2: mask to be applied for msdosfs perms */
 	int	gmtoff;		/* v3: offset from UTC in seconds */
+};
+
+/* from <miscfs/genfs/layer.h> */
+struct netbsd32_layer_args {
+	netbsd32_charp target;		/* Target of loopback  */
+	struct netbsd32_export_args30 _pad1; /* compat with old userland tools */
+};
+
+/* from <miscfs/nullfs/null.h> */
+struct netbsd32_null_args {
+	struct	netbsd32_layer_args	la;	/* generic layerfs args */
 };
 
 struct netbsd32_posix_spawn_file_actions_entry {

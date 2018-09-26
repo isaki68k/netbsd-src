@@ -1,5 +1,5 @@
 #
-#	$NetBSD: RPI64,v 1.1 2018/04/01 04:35:04 ryo Exp $
+#	$NetBSD: RPI64,v 1.7 2018/08/01 20:04:11 maxv Exp $
 #
 #	RPI64 - Raspberry Pi 3 and Pi 2 v1.2 in AARCH64 mode
 #
@@ -13,11 +13,13 @@ makeoptions DTSSUBDIR="broadcom"
 
 makeoptions	DTS="
 	bcm2837-rpi-3-b.dts
+	bcm2837-rpi-3-b-plus.dts
 "
 
 # CPU options
 options 	CPU_CORTEXA53
 options 	SOC_BCM2836
+options 	MULTIPROCESSOR
 
 # verbose bootstraping messages
 options 	EARLYCONS=bcm2837
@@ -61,11 +63,11 @@ config		netbsd		root on ? type ?
 
 # Device tree support
 armfdt0 	at root
-fdt*		at fdtbus?
+simplebus*	at fdt? pass 0
 
 # The CPU(s)
 cpus*		at fdt? pass 0
-cpu*		at cpus?
+cpu*		at fdt? pass 0
 
 gtmr*		at fdt? pass 1		# ARM Generic Timer
 armgtmr0	at gtmr?
@@ -223,7 +225,7 @@ options 	WSDISPLAY_DEFAULTSCREENS=4
 
 # network pseudo-devices
 #pseudo-device	carp			# Common Address Redundancy Protocol
-#pseudo-device	ipfilter		# IP filter (firewall) and NAT
+#pseudo-device	npf			# NPF packet filter
 #pseudo-device	kttcp			# network loopback
 #pseudo-device	ppp			# Point-to-Point Protocol
 #pseudo-device	pppoe			# PPP over Ethernet (RFC 2516)
@@ -241,8 +243,6 @@ options 	WSDISPLAY_DEFAULTSCREENS=4
 #pseudo-device	bridge			# simple inter-network bridging
 #options 	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
 #pseudo-device	agr			# IEEE 802.3ad link aggregation
-#pseudo-device	pf			# PF packet filter
-#pseudo-device	pflog			# PF log if
 
 # miscellaneous pseudo-devices
 pseudo-device	openfirm

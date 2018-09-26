@@ -1,4 +1,4 @@
-/*	$NetBSD: exynos_start.S,v 1.5 2018/03/03 13:46:32 skrll Exp $	*/
+/*	$NetBSD: exynos_start.S,v 1.9 2018/09/21 12:04:08 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -30,13 +30,14 @@
  */
 
 #include "opt_exynos.h"
-#include "opt_sscom.h"
+#include "opt_console.h"
 #include "opt_cpuoptions.h"
 #include "opt_cputypes.h"
 #include "opt_multiprocessor.h"
 #include "opt_arm_debug.h"
 #include "opt_fdt.h"
 
+#include <sys/cdefs.h>
 #include <arm/asm.h>
 #include <arm/armreg.h>
 #include "assym.h"
@@ -46,20 +47,23 @@
 
 #include <evbarm/exynos/platform.h>
 
-RCSID("$NetBSD: exynos_start.S,v 1.5 2018/03/03 13:46:32 skrll Exp $")
+RCSID("$NetBSD: exynos_start.S,v 1.9 2018/09/21 12:04:08 skrll Exp $")
 
-
-#if defined(VERBOSE_INIT_ARM)
-
-#define	XPUTC(n)	mov r0, n; bl exynos_putc
-#if KERNEL_BASE_VOFFSET == 0
-#define	XPUTC2(n)	mov r0, n; bl exynos_putc
+#if defined(KERNEL_BASES_EQUAL)
+#define CALL(f)		bl	_C_LABEL(f)
 #else
-#define	XPUTC2(n)	mov r0, n; blx r11
+#define	CALL(f)	\
+	movw	fp, #:lower16:_C_LABEL(f); \
+	movt	fp, #:upper16:_C_LABEL(f); \
+	sub	fp, fp, #KERNEL_BASE_VOFFSET; \
+	blx	fp
 #endif
-#ifdef __ARMEB__
-#define COM_BSWAP
-#endif
+
+#define	PLATFORM_EARLY_PUTCHAR	___CONCAT(EARLYCONS, _platform_early_putchar)
+
+#if defined(VERBOSE_INIT_ARM) && defined(EARLYCONS)
+#define	XPUTC(n)	mov r0, n; CALL(PLATFORM_EARLY_PUTCHAR)
+#define	XPUTC2(n)	mov r0, n; bl _C_LABEL(PLATFORM_EARLY_PUTCHAR);
 #else
 #define	XPUTC(n)
 #define	XPUTC2(n)
@@ -70,6 +74,7 @@ RCSID("$NetBSD: exynos_start.S,v 1.5 2018/03/03 13:46:32 skrll Exp $")
 #define	TEMP_L1_TABLE	(KERNEL_BASE - KERNEL_BASE_VOFFSET + INIT_MEMSIZE * L1_S_SIZE - L1_TABLE_SIZE)
 
 #define	MD_CPU_HATCH	_C_LABEL(arm_fdt_cpu_hatch)
+#define TMPSTKSIZE	8192
 
 /*
  * Kernel start routine for Exynos 5422 boards running on uboot firmware
@@ -88,6 +93,11 @@ _C_LABEL(exynos_start):
 	setend	be			/* force big endian */
 #endif
 
+	ldr	r10, =KERNEL_BASE_VOFFSET
+	ldr	r9, =tmpstk
+	add	r9, #TMPSTKSIZE
+	sub	sp, r9, r10
+
 	/*
 	 * Save any arguments passed to us.  If .start is not at
 	 * 0x80000000 but .text is, we can't directly use the address that
@@ -99,22 +109,41 @@ _C_LABEL(exynos_start):
 	sub	r4, r4, #KERNEL_BASE_VOFFSET
 	stmia	r4, {r0-r3}			// Save the arguments
 
+	mov	r4, r0
+	mov	r5, r1
+	mov	r6, r2
+	mov	r7, r3
+
+	XPUTC(#'e')
+	XPUTC(#'x')
+	XPUTC(#'y')
+	XPUTC(#'n')
+	XPUTC(#'o')
+	XPUTC(#'s')
+
 #ifdef FDT
 	/*
 	 * ARM boot protocol has FDT address in r2
 	 */
+	XPUTC(#',')
+	XPUTC(#'f')
+	XPUTC(#'d')
+	XPUTC(#'t')
+
 	movw	r4, #:lower16:fdt_addr_r
 	movt	r4, #:upper16:fdt_addr_r
 	sub	r4, r4, #KERNEL_BASE_VOFFSET
-	str	r2, [r4]
+	str	r6, [r4]
 #endif
+
+	XPUTC(#':')
 
 	/* Add DTB PA (1MB) from r2 to MMU init table */
 	movw	r3, #:lower16:(L1_S_SIZE - 1)		/* align DTB PA to 1M */
 	movt	r3, #:upper16:(L1_S_SIZE - 1)
-	bic	r0, r2, r3
+	bic	r0, r6, r3
 	orr	r0, r0, #1				/* 1MB mapping */
-	bic	r1, r2, r3
+	bic	r1, r6, r3
 	movw	r3, #:lower16:(L1_S_PROTO_armv7|L1_S_APv7_KRW|L1_S_CACHEABLE)
 	movt	r3, #:upper16:(L1_S_PROTO_armv7|L1_S_APv7_KRW|L1_S_CACHEABLE)
 	orr	r1, r1, r3
@@ -134,23 +163,6 @@ _C_LABEL(exynos_start):
 	sub	r4, r4, #KERNEL_BASE_VOFFSET
 	str	r0, [r4]				// save soc_id
 	mov	r5, r0					// save soc_id
-
-	/* Pick uart address for the SoC */
-	adr	r1, .Lsscom_exynos5_table
-#ifdef SSCOM0CONSOLE
-	ldr	r2, [r1, #0*8+4]
-#endif
-#ifdef SSCOM1CONSOLE
-	ldr	r2, [r1, #1*8+4]
-#endif
-#ifdef SSCOM2CONSOLE
-	ldr	r2, [r1, #2*8+4]
-#endif
-#ifdef SSCOM3CONSOLE
-	ldr	r2, [r1, #3*8+4]
-#endif
-	add	r2, r2, #EXYNOS_CORE_PBASE
-	mcr	p15, 0, r2, c13, c0, 3		// TPIDRURO set (uart address)
 
 	/*
 	 * Turn on the SMP bit
@@ -183,15 +195,14 @@ _C_LABEL(exynos_start):
 	 * so setup the lr to be in .text.  Cache the address for exynos_putc
 	 * before we go.
 	 */
-#if defined(VERBOSE_INIT_ARM)
-	adr	r11, exynos_putc		@ for XPUTC2
-#endif
 	movw	lr, #:lower16:1f
 	movt	lr, #:upper16:1f
 	b	arm_cpuinit
 	.pushsection .text, "ax", %progbits
 1:
 #endif
+
+exynos_startva:
 	XPUTC2(#'Z')
 
 	XPUTC2(#13)
@@ -205,63 +216,6 @@ _C_LABEL(exynos_start):
 	/* NOTREACHED */
 #ifndef KERNEL_BASES_EQUAL
 	.popsection
-#endif
-
-	.align 0
-	.global _C_LABEL(num_exynos_uarts_entries)
-_C_LABEL(num_exynos_uarts_entries):
-	.word	8				// update number of entries!!!
-	.global _C_LABEL(exynos_uarts)
-_C_LABEL(exynos_uarts):
-.Lsscom_exynos5_table:
-	.word	0
-	.word	EXYNOS5_UART0_OFFSET
-	.word	1
-	.word	EXYNOS5_UART1_OFFSET
-	.word	2
-	.word	EXYNOS5_UART2_OFFSET
-	.word	3
-	.word	EXYNOS5_UART3_OFFSET
-
-
-#if defined(VERBOSE_INIT_ARM)
-	.align 0
-	.global exynos_putc
-	.global _C_LABEL(exynos_putchar)
-	.type	exynos_putc,%function
-
-#define TIMO		0x25000
-_C_LABEL(exynos_putchar):
-exynos_putc:
-	mov	r2, #TIMO
-	mrc	p15, 0, r3, c13, c0, 3		// TPIDRURO get (uart address)
-1:
-	ldr	r1, [r3, #SSCOM_UTRSTAT]
-#ifdef __ARMEB__
-	rev	r1, r1
-#endif
-	tst	r1, #UTRSTAT_TXEMPTY
-	bne	2f
-	subs	r2, r2, #1
-	bne	1b
-2:
-#ifdef __ARMEB__
-	rev	r0, r0
-#endif
-	str	r0, [r3, #SSCOM_UTXH]
-
-	mov	r2, #TIMO
-3:
-	ldr	r1, [r3, #SSCOM_UTRSTAT]
-#ifdef __ARMEB__
-	rev	r1, r1
-#endif
-	tst	r1, #UTRSTAT_TXSHIFTER_EMPTY
-	bne	4f
-	subs	r2, r2, #1
-	bne	3b
-4:
-	bx	lr
 #endif
 
 #include <arm/cortex/a9_mpsubr.S>
@@ -289,6 +243,26 @@ mmu_init_table:
 		EXYNOS_CORE_SIZE / L1_S_SIZE,
 		L1_S_PROTO_armv7 | L1_S_APv7_KRW | L1_S_V6_XN)
 
+	/* Map EXYNOS AUDIOBASE */
+	MMU_INIT(EXYNOS5_AUDIOCORE_VBASE, EXYNOS5_AUDIOCORE_VBASE,
+	        EXYNOS5_AUDIOCORE_SIZE / L1_S_SIZE,
+		L1_S_PROTO_armv7 | L1_S_APv7_KRW | L1_S_V6_XN)
+
+	/* Map EXYNOS AUDIOBASE */
+	MMU_INIT(EXYNOS5_AUDIOCORE_PBASE, EXYNOS5_AUDIOCORE_VBASE,
+	        EXYNOS5_AUDIOCORE_SIZE / L1_S_SIZE,
+		L1_S_PROTO_armv7 | L1_S_APv7_KRW | L1_S_V6_XN)
+
+	/* Map sysram for MP startup */
+	MMU_INIT(EXYNOS5_SYSRAM_VBASE, EXYNOS5_SYSRAM_PBASE,
+	        EXYNOS5_SYSRAM_SIZE / L1_S_SIZE,
+		L1_S_PROTO_armv7 | L1_S_APv7_KRW | L1_S_V6_XN)
+
+	/* Map sysram for MP startup */
+	MMU_INIT(EXYNOS5_SYSRAM_PBASE, EXYNOS5_SYSRAM_PBASE,
+	        EXYNOS5_SYSRAM_SIZE / L1_S_SIZE,
+		L1_S_PROTO_armv7 | L1_S_APv7_KRW | L1_S_V6_XN)
+
 	/* Map DTB location in SDRAM, patched in later */
 .Lmmu_init_table_dtb:
 	MMU_INIT(0, 0, 0, 0)
@@ -298,3 +272,12 @@ mmu_init_table:
 	MMU_INIT(0, 0, 0, 0)
 
 END(exynos_start)
+
+	.bss
+#ifdef __ARM_EABI__
+	.align	3
+#endif
+
+tmpstk:
+	.space	TMPSTKSIZE
+

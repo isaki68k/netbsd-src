@@ -1,5 +1,5 @@
 /*-
- * $NetBSD: if_lmc.h,v 1.24 2017/01/24 09:05:28 ozaki-r Exp $
+ * $NetBSD: if_lmc.h,v 1.26 2018/09/16 09:25:47 skrll Exp $
  *
  * Copyright (c) 2002-2006 David Boggs. (boggs@boggs.palo-alto.ca.us)
  * All rights reserved.
@@ -238,14 +238,14 @@
 
 /* T3   GPIO bits */
 #define GPIO_T3_DAC		0x04	/* DAC chip select                 */
-#define GPIO_T3_INTEN		0x08	/* Framer Interupt enable          */
+#define GPIO_T3_INTEN		0x08	/* Framer Interrupt enable         */
 
 /* SSI  GPIO bits */
 #define GPIO_SSI_SYNTH		0x04	/* Synth osc chip select           */
 #define GPIO_SSI_DCE		0x08	/* provide clock on TXCLOCK output */
 
 /* T1E1 GPIO bits */
-#define GPIO_T1_INTEN		0x08	/* Framer Interupt enable          */
+#define GPIO_T1_INTEN		0x08	/* Framer Interrupt enable         */
 
 /* MII register 16 bits common to all cards */
 /* NB: LEDs  for HSSI & SSI are in DIFFERENT bits than for T1E1 & T3; oops */
@@ -984,7 +984,6 @@ typedef int intr_return_t;
 # define SLEEP(usecs)		tsleep(sc, PZERO, DEVICE_NAME, 1+(usecs/tick))
 # define DMA_SYNC(map, size, flags) bus_dmamap_sync(ring->tag, map, 0, size, flags)
 # define DMA_LOAD(map, addr, size)  bus_dmamap_load(ring->tag, map, addr, size, 0, BUS_DMA_NOWAIT)
-#  define LMC_BPF_MTAP(sc, mbuf)	bpf_mtap_softint((sc)->ifp, mbuf)
 #  define LMC_BPF_ATTACH(sc, dlt, len)			\
 	do {						\
 		bpf_attach((sc)->ifp, dlt, len);	\

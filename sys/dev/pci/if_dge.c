@@ -1,4 +1,4 @@
-/*	$NetBSD: if_dge.c,v 1.47 2016/12/15 09:28:05 ozaki-r Exp $ */
+/*	$NetBSD: if_dge.c,v 1.49 2018/09/03 16:29:32 riastradh Exp $ */
 
 /*
  * Copyright (c) 2004, SUNET, Swedish University Computer Network.
@@ -80,7 +80,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_dge.c,v 1.47 2016/12/15 09:28:05 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_dge.c,v 1.49 2018/09/03 16:29:32 riastradh Exp $");
 
 
 
@@ -925,7 +925,7 @@ dge_attach(device_t parent, device_t self, void *aux)
 	ifp->if_watchdog = dge_watchdog;
 	ifp->if_init = dge_init;
 	ifp->if_stop = dge_stop;
-	IFQ_SET_MAXLEN(&ifp->if_snd, max(DGE_IFQUEUELEN, IFQ_MAXLEN));
+	IFQ_SET_MAXLEN(&ifp->if_snd, uimax(DGE_IFQUEUELEN, IFQ_MAXLEN));
 	IFQ_SET_READY(&ifp->if_snd);
 
 	sc->sc_ethercom.ec_capabilities |=
@@ -1392,7 +1392,7 @@ dge_start(struct ifnet *ifp)
 		sc->sc_txsnext = DGE_NEXTTXS(sc->sc_txsnext);
 
 		/* Pass the packet to any BPF listeners. */
-		bpf_mtap(ifp, m0);
+		bpf_mtap(ifp, m0, BPF_D_OUT);
 	}
 
 	if (sc->sc_txsfree == 0 || sc->sc_txfree <= 2) {

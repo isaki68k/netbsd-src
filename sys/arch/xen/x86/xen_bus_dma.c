@@ -1,4 +1,4 @@
-/*	$NetBSD: xen_bus_dma.c,v 1.26 2012/06/30 23:36:20 jym Exp $	*/
+/*	$NetBSD: xen_bus_dma.c,v 1.28 2018/09/03 16:29:29 riastradh Exp $	*/
 /*	NetBSD bus_dma.c,v 1.21 2005/04/16 07:53:35 yamt Exp */
 
 /*-
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xen_bus_dma.c,v 1.26 2012/06/30 23:36:20 jym Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xen_bus_dma.c,v 1.28 2018/09/03 16:29:29 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -76,7 +76,7 @@ _xen_alloc_contig(bus_size_t size, bus_size_t alignment,
 	 * The only way to enforce alignment is to request a memory region
 	 * of size max(alignment, size).
 	 */
-	order = max(get_order(size), get_order(alignment));
+	order = uimax(get_order(size), get_order(alignment));
 	npages = (1 << order);
 	npagesreq = (size >> PAGE_SHIFT);
 	KASSERT(npages >= npagesreq);
@@ -126,7 +126,7 @@ _xen_alloc_contig(bus_size_t size, bus_size_t alignment,
 		pg = NULL;
 		goto failed;
 	}
-	s = splvm();
+	s = splvm(); /* XXXSMP */
 	/* Map the new extent in place of the old pages */
 	for (pg = mlistp->tqh_first, i = 0; pg != NULL; pg = pgnext, i++) {
 		pgnext = pg->pageq.queue.tqe_next;
@@ -160,7 +160,7 @@ failed:
 		uvm_pagefree(pg);
 	}
 	/* remplace the pages that we already gave to Xen */
-	s = splvm();
+	s = splvm(); /* XXXSMP */
 	for (pg = mlistp->tqh_first; pg != NULL; pg = pgnext) {
 		pgnext = pg->pageq.queue.tqe_next;
 		set_xen_guest_handle(res.extent_start, &mfn);

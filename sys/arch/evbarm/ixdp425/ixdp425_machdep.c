@@ -1,4 +1,4 @@
-/*	$NetBSD: ixdp425_machdep.c,v 1.38 2018/03/13 06:18:36 ryo Exp $ */
+/*	$NetBSD: ixdp425_machdep.c,v 1.40 2018/09/21 12:04:09 skrll Exp $ */
 /*
  * Copyright (c) 2003
  *	Ichiro FUKUHARA <ichiro@ichiro.org>.
@@ -64,8 +64,10 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ixdp425_machdep.c,v 1.38 2018/03/13 06:18:36 ryo Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ixdp425_machdep.c,v 1.40 2018/09/21 12:04:09 skrll Exp $");
 
+#include "opt_arm_debug.h"
+#include "opt_console.h"
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
 #include "opt_pmap_debug.h"

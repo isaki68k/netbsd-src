@@ -1,4 +1,4 @@
-/* $NetBSD: aarch64_machdep.c,v 1.2 2018/04/01 04:35:03 ryo Exp $ */
+/* $NetBSD: aarch64_machdep.c,v 1.11 2018/08/26 18:15:49 ryo Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -30,17 +30,20 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(1, "$NetBSD: aarch64_machdep.c,v 1.2 2018/04/01 04:35:03 ryo Exp $");
+__KERNEL_RCSID(1, "$NetBSD: aarch64_machdep.c,v 1.11 2018/08/26 18:15:49 ryo Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_ddb.h"
 #include "opt_kernhist.h"
+#include "opt_modular.h"
 
 #include <sys/param.h>
 #include <sys/types.h>
 #include <sys/bus.h>
 #include <sys/kauth.h>
+#include <sys/module.h>
 #include <sys/msgbuf.h>
+#include <sys/sysctl.h>
 
 #include <dev/mm.h>
 
@@ -59,9 +62,26 @@ __KERNEL_RCSID(1, "$NetBSD: aarch64_machdep.c,v 1.2 2018/04/01 04:35:03 ryo Exp 
 #include <aarch64/pte.h>
 #include <aarch64/vmparam.h>
 
+#include <arch/evbarm/fdt/platform.h>
+
+#ifdef VERBOSE_INIT_ARM
+#define VPRINTF(...)	printf(__VA_ARGS__)
+#else
+#define VPRINTF(...)	do { } while (/* CONSTCOND */ 0)
+#endif
+
 char cpu_model[32];
 char machine[] = MACHINE;
 char machine_arch[] = MACHINE_ARCH;
+
+/* sysctl node num */
+static int sysctlnode_machdep_cpu_id;
+static int sysctlnode_machdep_id_revidr;
+static int sysctlnode_machdep_id_mvfr;
+static int sysctlnode_machdep_id_mpidr;
+static int sysctlnode_machdep_id_aa64isar;
+static int sysctlnode_machdep_id_aa64mmfr;
+static int sysctlnode_machdep_id_aa64pfr;
 
 const pcu_ops_t * const pcu_ops_md_defs[PCU_UNIT_COUNT] = {
 	[PCU_FPU] = &pcu_fpu_ops
@@ -69,10 +89,41 @@ const pcu_ops_t * const pcu_ops_md_defs[PCU_UNIT_COUNT] = {
 
 struct vm_map *phys_map;
 
+#ifdef MODULAR
+vaddr_t module_start, module_end;
+static struct vm_map module_map_store;
+#endif
+
 /* XXX */
 vaddr_t physical_start;
 vaddr_t physical_end;
-u_long kern_vtopdiff;
+/* filled in before cleaning bss. keep in .data */
+u_long kern_vtopdiff __attribute__((__section__(".data")));
+
+void
+cpu_kernel_vm_init(uint64_t memory_start, uint64_t memory_size)
+{
+
+	extern char __kernel_text[];
+	extern char _end[];
+
+	vaddr_t kernstart = trunc_page((vaddr_t)__kernel_text);
+	vaddr_t kernend = round_page((vaddr_t)_end);
+
+	paddr_t	kernstart_phys = KERN_VTOPHYS(kernstart);
+	paddr_t kernend_phys = KERN_VTOPHYS(kernend);
+
+	VPRINTF("%s: kernel phys start %lx end %lx\n", __func__,
+	    kernstart_phys, kernend_phys);
+
+        fdt_add_reserved_memory_range(kernstart_phys,
+	     kernend_phys - kernstart_phys);
+
+	/*
+	 * XXX whole bunch of stuff to map kernel correctly
+	 */
+}
+
 
 
 /*
@@ -113,11 +164,9 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 	struct trapframe *tf;
 	psize_t memsize_total;
 	vaddr_t kernstart, kernend;
-	vaddr_t kernstart_l2, kernend_l2;	/* L2 table 2MB aligned */
-	paddr_t kstartp, kendp;			/* physical page of kernel */
+	vaddr_t kernstart_l2 __unused, kernend_l2;	/* L2 table 2MB aligned */
+	vaddr_t kernelvmstart;
 	int i;
-
-	aarch64_getcacheinfo();
 
 	cputype = cpu_idnum();	/* for compatible arm */
 
@@ -125,16 +174,34 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 	kernend = round_page((vaddr_t)_end);
 	kernstart_l2 = kernstart & -L2_SIZE;		/* trunk L2_SIZE(2M) */
 	kernend_l2 = (kernend + L2_SIZE - 1) & -L2_SIZE;/* round L2_SIZE(2M) */
+	kernelvmstart = kernend_l2;
 
-	paddr_t kernstart_phys = KERN_VTOPHYS(kernstart);
-	paddr_t kernend_phys = KERN_VTOPHYS(kernend);
+#ifdef MODULAR
+	/*
+	 * aarch64 compiler (gcc & llvm) uses R_AARCH_CALL26/R_AARCH_JUMP26
+	 * for function calling/jumping.
+	 * (at this time, both compilers doesn't support -mlong-calls)
+	 * therefore kernel modules should be loaded within maximum 26bit word,
+	 * or +-128MB from kernel.
+	 */
+#define MODULE_RESERVED_MAX	(1024 * 1024 * 128)
+#define MODULE_RESERVED_SIZE	(1024 * 1024 * 32)	/* good enough? */
+	module_start = kernelvmstart;
+	module_end = kernend_l2 + MODULE_RESERVED_SIZE;
+	if (module_end >= kernstart_l2 + MODULE_RESERVED_MAX)
+		module_end = kernstart_l2 + MODULE_RESERVED_MAX;
+	KASSERT(module_end > kernend_l2);
+	kernelvmstart = module_end;
+#endif /* MODULAR */
+
+	paddr_t kernstart_phys __unused = KERN_VTOPHYS(kernstart);
+	paddr_t kernend_phys __unused = KERN_VTOPHYS(kernend);
 
 	/* XXX */
 	physical_start = bootconfig.dram[0].address;
 	physical_end = physical_start + ptoa(bootconfig.dram[0].pages);
 
-#ifdef VERBOSE_INIT_ARM
-	printf(
+	VPRINTF(
 	    "------------------------------------------\n"
 	    "kern_vtopdiff         = 0x%016lx\n"
 	    "physical_start        = 0x%016lx\n"
@@ -146,6 +213,10 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 	    "kernel_start          = 0x%016lx\n"
 	    "kernel_end            = 0x%016lx\n"
 	    "kernel_end_l2         = 0x%016lx\n"
+#ifdef MODULAR
+	    "module_start          = 0x%016lx\n"
+	    "module_end            = 0x%016lx\n"
+#endif
 	    "(kernel va area)\n"
 	    "(devmap va area)\n"
 	    "VM_MAX_KERNEL_ADDRESS = 0x%016lx\n"
@@ -160,8 +231,11 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 	    kernstart,
 	    kernend,
 	    kernend_l2,
-	    VM_MAX_KERNEL_ADDRESS);
+#ifdef MODULAR
+	    module_start,
+	    module_end,
 #endif
+	    VM_MAX_KERNEL_ADDRESS);
 
 	/*
 	 * msgbuf is always allocated from bottom of 1st memory block.
@@ -169,7 +243,7 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 	 */
 	physical_end -= round_page(MSGBUFSIZE);
 	bootconfig.dram[0].pages -= atop(round_page(MSGBUFSIZE));
-	initmsgbuf(AARCH64_PA_TO_KVA(physical_end), MSGBUFSIZE);
+	initmsgbuf((void *)AARCH64_PA_TO_KVA(physical_end), MSGBUFSIZE);
 
 #ifdef DDB
 	db_machdep_init();
@@ -179,8 +253,6 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 
 	/* register free physical memory blocks */
 	memsize_total = 0;
-	kstartp = atop(kernstart_phys);
-	kendp = atop(kernend_phys);
 
 	KASSERT(bp != NULL || nbp == 0);
 	KASSERT(bp == NULL || nbp != 0);
@@ -234,12 +306,12 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 	 * kernel image is mapped on L2 table (2MB*n) by locore.S
 	 * virtual space start from 2MB aligned kernend
 	 */
-	pmap_bootstrap(kernend_l2, VM_MAX_KERNEL_ADDRESS);
+	pmap_bootstrap(kernelvmstart, VM_MAX_KERNEL_ADDRESS);
 
 	/*
 	 * setup lwp0
 	 */
-	uvm_lwp_setuarea(&lwp0, lwp0uspace);
+	uvm_lwp_setuarea(&lwp0, (vaddr_t)lwp0uspace);
 	memset(&lwp0.l_md, 0, sizeof(lwp0.l_md));
 	memset(lwp_getpcb(&lwp0), 0, sizeof(struct pcb));
 
@@ -248,9 +320,134 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 	tf->tf_spsr = SPSR_M_EL0T;
 	lwp0.l_md.md_utf = lwp0.l_md.md_ktf = tf;
 
-	return tf;
+	return (vaddr_t)tf;
 }
 
+/*
+ * machine dependent system variables.
+ */
+static int
+aarch64_sysctl_machdep_sysreg_helper(SYSCTLFN_ARGS)
+{
+	struct sysctlnode node;
+#define MAX_SYSCTLREGS	8
+	uint64_t databuf[MAX_SYSCTLREGS];
+	void *data;
+
+	node = *rnode;
+	node.sysctl_data = data = (void *)databuf;
+
+	/*
+	 * Don't keep values in advance due to system registers may have
+	 * different values on each CPU cores. (e.g. big.LITTLE)
+	 */
+	if (rnode->sysctl_num == sysctlnode_machdep_cpu_id) {
+		((uint32_t *)data)[0] = reg_midr_el1_read();
+		node.sysctl_size = sizeof(uint32_t);
+
+	} else if (rnode->sysctl_num == sysctlnode_machdep_id_revidr) {
+		((uint32_t *)data)[0] = reg_revidr_el1_read();
+		node.sysctl_size = sizeof(uint32_t);
+
+	} else if (rnode->sysctl_num == sysctlnode_machdep_id_mvfr) {
+		((uint32_t *)data)[0] = reg_mvfr0_el1_read();
+		((uint32_t *)data)[1] = reg_mvfr1_el1_read();
+		((uint32_t *)data)[2] = reg_mvfr2_el1_read();
+		node.sysctl_size = sizeof(uint32_t) * 3;
+
+	} else if (rnode->sysctl_num == sysctlnode_machdep_id_mpidr) {
+		((uint64_t *)data)[0] = reg_mpidr_el1_read();
+		node.sysctl_size = sizeof(uint64_t);
+
+	} else if (rnode->sysctl_num == sysctlnode_machdep_id_aa64isar) {
+		((uint64_t *)data)[0] = reg_id_aa64isar0_el1_read();
+		((uint64_t *)data)[1] = reg_id_aa64isar1_el1_read();
+		node.sysctl_size = sizeof(uint64_t) * 2;
+
+	} else if (rnode->sysctl_num == sysctlnode_machdep_id_aa64mmfr) {
+		((uint64_t *)data)[0] = reg_id_aa64mmfr0_el1_read();
+		((uint64_t *)data)[1] = reg_id_aa64mmfr1_el1_read();
+		node.sysctl_size = sizeof(uint64_t) * 2;
+
+	} else if (rnode->sysctl_num == sysctlnode_machdep_id_aa64pfr) {
+		((uint64_t *)data)[0] = reg_id_aa64pfr0_el1_read();
+		((uint64_t *)data)[1] = reg_id_aa64pfr1_el1_read();
+		node.sysctl_size = sizeof(uint64_t) * 2;
+
+	} else {
+		return EOPNOTSUPP;
+	}
+
+	return sysctl_lookup(SYSCTLFN_CALL(&node));
+}
+
+SYSCTL_SETUP(sysctl_machdep_setup, "sysctl machdep subtree setup")
+{
+	const struct sysctlnode *node;
+
+	sysctl_createv(clog, 0, NULL, NULL,
+	    CTLFLAG_PERMANENT, CTLTYPE_NODE, "machdep", NULL,
+	    NULL, 0, NULL, 0, CTL_MACHDEP, CTL_EOL);
+
+	sysctl_createv(clog, 0, NULL, &node,
+	    CTLFLAG_PERMANENT|CTLFLAG_READONLY, CTLTYPE_INT,
+	    "cpu_id",
+	    SYSCTL_DESCR("MIDR_EL1, Main ID Register"),
+	    aarch64_sysctl_machdep_sysreg_helper, 0, NULL, 0,
+	    CTL_MACHDEP, CTL_CREATE, CTL_EOL);
+	sysctlnode_machdep_cpu_id = node->sysctl_num;
+
+	sysctl_createv(clog, 0, NULL, &node,
+	    CTLFLAG_PERMANENT|CTLFLAG_READONLY, CTLTYPE_INT,
+	    "id_revidr",
+	    SYSCTL_DESCR("REVIDR_EL1, Revision ID Register"),
+	    aarch64_sysctl_machdep_sysreg_helper, 0, NULL, 0,
+	    CTL_MACHDEP, CTL_CREATE, CTL_EOL);
+	sysctlnode_machdep_id_revidr = node->sysctl_num;
+
+	sysctl_createv(clog, 0, NULL, &node,
+	    CTLFLAG_PERMANENT|CTLFLAG_READONLY, CTLTYPE_STRUCT,
+	    "id_mvfr",
+	    SYSCTL_DESCR("MVFRn_EL1, Media and VFP Feature Registers"),
+	    aarch64_sysctl_machdep_sysreg_helper, 0, NULL, 0,
+	    CTL_MACHDEP, CTL_CREATE, CTL_EOL);
+	sysctlnode_machdep_id_mvfr = node->sysctl_num;
+
+	sysctl_createv(clog, 0, NULL, &node,
+	    CTLFLAG_PERMANENT|CTLFLAG_READONLY, CTLTYPE_STRUCT,
+	    "id_mpidr",
+	    SYSCTL_DESCR("MPIDR_EL1, Multiprocessor Affinity Register"),
+	    aarch64_sysctl_machdep_sysreg_helper, 0, NULL, 0,
+	    CTL_MACHDEP, CTL_CREATE, CTL_EOL);
+	sysctlnode_machdep_id_mpidr = node->sysctl_num;
+
+	sysctl_createv(clog, 0, NULL, &node,
+	    CTLFLAG_PERMANENT|CTLFLAG_READONLY, CTLTYPE_STRUCT,
+	    "id_aa64isar",
+	    SYSCTL_DESCR("ID_AA64ISARn_EL1, "
+	    "AArch64 Instruction Set Attribute Registers"),
+	    aarch64_sysctl_machdep_sysreg_helper, 0, NULL, 0,
+	    CTL_MACHDEP, CTL_CREATE, CTL_EOL);
+	sysctlnode_machdep_id_aa64isar = node->sysctl_num;
+
+	sysctl_createv(clog, 0, NULL, &node,
+	    CTLFLAG_PERMANENT|CTLFLAG_READONLY, CTLTYPE_STRUCT,
+	    "id_aa64mmfr",
+	    SYSCTL_DESCR("ID_AA64MMFRn_EL1, "
+	    "AArch64 Memory Model Feature Registers"),
+	    aarch64_sysctl_machdep_sysreg_helper, 0, NULL, 0,
+	    CTL_MACHDEP, CTL_CREATE, CTL_EOL);
+	sysctlnode_machdep_id_aa64mmfr = node->sysctl_num;
+
+	sysctl_createv(clog, 0, NULL, &node,
+	    CTLFLAG_PERMANENT|CTLFLAG_READONLY, CTLTYPE_STRUCT,
+	    "id_aa64pfr",
+	    SYSCTL_DESCR("ID_AA64PFRn_EL1, "
+	    "AArch64 Processor Feature Registers"),
+	    aarch64_sysctl_machdep_sysreg_helper, 0, NULL, 0,
+	    CTL_MACHDEP, CTL_CREATE, CTL_EOL);
+	sysctlnode_machdep_id_aa64pfr = node->sysctl_num;
+}
 
 void
 parse_mi_bootargs(char *args)
@@ -263,6 +460,14 @@ machdep_init(void)
 	/* clear cpu reset hook for early boot */
 	cpu_reset_address0 = NULL;
 }
+
+#ifdef MODULAR
+/* Push any modules loaded by the boot loader */
+void
+module_init_md(void)
+{
+}
+#endif /* MODULAR */
 
 bool
 mm_md_direct_mapped_phys(paddr_t pa, vaddr_t *vap)
@@ -300,6 +505,12 @@ cpu_startup(void)
 	minaddr = 0;
 	phys_map = uvm_km_suballoc(kernel_map, &minaddr, &maxaddr,
 	   VM_PHYS_SIZE, 0, FALSE, NULL);
+
+#ifdef MODULAR
+	uvm_map_setup(&module_map_store, module_start, module_end, 0);
+	module_map_store.pmap = pmap_kernel();
+	module_map = &module_map_store;
+#endif
 
 	/* Hello! */
 	banner();

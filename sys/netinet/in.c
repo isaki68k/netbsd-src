@@ -1,4 +1,4 @@
-/*	$NetBSD: in.c,v 1.229 2018/04/20 09:56:22 knakahara Exp $	*/
+/*	$NetBSD: in.c,v 1.231 2018/05/13 22:42:51 khorben Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -91,7 +91,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: in.c,v 1.229 2018/04/20 09:56:22 knakahara Exp $");
+__KERNEL_RCSID(0, "$NetBSD: in.c,v 1.231 2018/05/13 22:42:51 khorben Exp $");
 
 #include "arp.h"
 
@@ -479,9 +479,14 @@ in_control0(struct socket *so, u_long cmd, void *data, struct ifnet *ifp)
 		} else if (in_hosteq(ia->ia_addr.sin_addr,
 		           ifra->ifra_addr.sin_addr))
 			hostIsNew = 0;
+		if (ifra->ifra_addr.sin_family != AF_INET) {
+			error = EAFNOSUPPORT;
+			goto out;
+		}
 		/* FALLTHROUGH */
 	case SIOCSIFDSTADDR:
-		if (ifreq_getaddr(cmd, ifr)->sa_family != AF_INET) {
+		if (cmd == SIOCSIFDSTADDR &&
+		    ifreq_getaddr(cmd, ifr)->sa_family != AF_INET) {
 			error = EAFNOSUPPORT;
 			goto out;
 		}
@@ -1140,7 +1145,7 @@ in_ifinit(struct ifnet *ifp, struct in_ifaddr *ia,
 
 	/*
 	 * Configure address flags.
-	 * We need to do this early because they maybe adjusted
+	 * We need to do this early because they may be adjusted
 	 * by if_addr_init depending on the address.
 	 */
 	if (ia->ia4_flags & IN_IFF_DUPLICATED) {

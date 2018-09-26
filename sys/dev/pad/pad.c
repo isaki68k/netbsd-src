@@ -1,4 +1,4 @@
-/* $NetBSD: pad.c,v 1.52 2018/01/26 23:36:01 pgoyette Exp $ */
+/* $NetBSD: pad.c,v 1.58 2018/09/25 06:55:23 nakayama Exp $ */
 
 /*-
  * Copyright (c) 2007 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pad.c,v 1.52 2018/01/26 23:36:01 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pad.c,v 1.58 2018/09/25 06:55:23 nakayama Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -589,7 +589,7 @@ pad_read(struct pad_softc *sc, off_t *offp, struct uio *uio, kauth_cred_t cred,
 		if (sc->sc_bytes_count >= BYTESTOSLEEP)
 			sc->sc_bytes_count -= BYTESTOSLEEP;
 
-		err = pad_get_block(sc, &pb, min(uio->uio_resid, PAD_BLKSIZE));
+		err = pad_get_block(sc, &pb, uimin(uio->uio_resid, PAD_BLKSIZE));
 		if (!err) {
 			getmicrotime(&sc->sc_last);
 			sc->sc_bytes_count += pb.pb_len;
@@ -781,6 +781,8 @@ pad_set_port(void *opaque, mixer_ctrl_t *mc)
 	switch (mc->dev) {
 	case PAD_OUTPUT_MASTER_VOLUME:
 	case PAD_INPUT_DAC_VOLUME:
+		if (mc->un.value.num_channels != 1)
+			return EINVAL;
 		sc->sc_swvol = mc->un.value.level[AUDIO_MIXER_LEVEL_MONO];
 		return 0;
 	}
@@ -800,6 +802,8 @@ pad_get_port(void *opaque, mixer_ctrl_t *mc)
 	switch (mc->dev) {
 	case PAD_OUTPUT_MASTER_VOLUME:
 	case PAD_INPUT_DAC_VOLUME:
+		if (mc->un.value.num_channels != 1)
+			return EINVAL;
 		mc->un.value.level[AUDIO_MIXER_LEVEL_MONO] = sc->sc_swvol;
 		return 0;
 	}

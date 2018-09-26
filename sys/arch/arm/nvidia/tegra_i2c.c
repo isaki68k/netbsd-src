@@ -1,4 +1,4 @@
-/* $NetBSD: tegra_i2c.c,v 1.16 2017/05/25 23:43:49 jmcneill Exp $ */
+/* $NetBSD: tegra_i2c.c,v 1.21 2018/09/03 16:29:23 riastradh Exp $ */
 
 /*-
  * Copyright (c) 2015 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tegra_i2c.c,v 1.16 2017/05/25 23:43:49 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tegra_i2c.c,v 1.21 2018/09/03 16:29:23 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -65,7 +65,6 @@ struct tegra_i2c_softc {
 	struct i2c_controller	sc_ic;
 	kmutex_t		sc_lock;
 	kcondvar_t		sc_cv;
-	device_t		sc_i2cdev;
 };
 
 static void	tegra_i2c_init(struct tegra_i2c_softc *);
@@ -112,12 +111,9 @@ tegra_i2c_attach(device_t parent, device_t self, void *aux)
 	struct tegra_i2c_softc * const sc = device_private(self);
 	struct fdt_attach_args * const faa = aux;
 	const int phandle = faa->faa_phandle;
-	struct i2cbus_attach_args iba;
-	prop_dictionary_t devs;
 	char intrstr[128];
 	bus_addr_t addr;
 	bus_size_t size;
-	u_int address_cells;
 	int error;
 
 	if (fdtbus_get_reg(phandle, 0, &addr, &size) != 0) {
@@ -140,7 +136,8 @@ tegra_i2c_attach(device_t parent, device_t self, void *aux)
 	sc->sc_cid = device_unit(self);
 	error = bus_space_map(sc->sc_bst, addr, size, 0, &sc->sc_bsh);
 	if (error) {
-		aprint_error(": couldn't map %#llx: %d", (uint64_t)addr, error);
+		aprint_error(": couldn't map %#" PRIxBUSADDR ": %d",
+		    addr, error);
 		return;
 	}
 	mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_VM);
@@ -189,24 +186,7 @@ tegra_i2c_attach(device_t parent, device_t self, void *aux)
 
 	fdtbus_register_i2c_controller(self, phandle, &tegra_i2c_funcs);
 
-	devs = prop_dictionary_create();
-
-	if (of_getprop_uint32(phandle, "#address-cells", &address_cells))
-		address_cells = 1;
-
-	of_enter_i2c_devs(devs, faa->faa_phandle, address_cells * 4, 0);
-
-	memset(&iba, 0, sizeof(iba));
-	iba.iba_tag = &sc->sc_ic;
-	iba.iba_child_devices = prop_dictionary_get(devs, "i2c-child-devices");
-	if (iba.iba_child_devices != NULL) {
-		prop_object_retain(iba.iba_child_devices);
-	} else {
-		iba.iba_child_devices = prop_array_create();
-	}
-	prop_object_release(devs);
-
-	sc->sc_i2cdev = config_found_ia(self, "i2cbus", &iba, iicbus_print);
+	fdtbus_attach_i2cbus(self, phandle, &sc->sc_ic, iicbus_print);
 }
 
 static i2c_tag_t
@@ -354,7 +334,7 @@ tegra_i2c_wait(struct tegra_i2c_softc *sc, int flags)
 	while (--retry > 0) {
 		if ((flags & I2C_F_POLL) == 0) {
 			error = cv_timedwait_sig(&sc->sc_cv, &sc->sc_lock,
-			    max(mstohz(10), 1));
+			    uimax(mstohz(10), 1));
 			if (error) {
 				return error;
 			}
@@ -433,12 +413,12 @@ tegra_i2c_write(struct tegra_i2c_softc *sc, i2c_addr_t addr, const uint8_t *buf,
 			return ETIMEDOUT;
 		}
 
-		for (n = 0, data = 0; n < min(resid, 4); n++) {
+		for (n = 0, data = 0; n < uimin(resid, 4); n++) {
 			data |= (uint32_t)p[n] << (n * 8);
 		}
 		I2C_WRITE(sc, I2C_TX_PACKET_FIFO_REG, data);
-		p += min(resid, 4);
-		resid -= min(resid, 4);
+		p += uimin(resid, 4);
+		resid -= uimin(resid, 4);
 	}
 
 	return tegra_i2c_wait(sc, flags);
@@ -490,11 +470,11 @@ tegra_i2c_read(struct tegra_i2c_softc *sc, i2c_addr_t addr, uint8_t *buf,
 		}
 
 		data = I2C_READ(sc, I2C_RX_FIFO_REG);
-		for (n = 0; n < min(resid, 4); n++) {
+		for (n = 0; n < uimin(resid, 4); n++) {
 			p[n] = (data >> (n * 8)) & 0xff;
 		}
-		p += min(resid, 4);
-		resid -= min(resid, 4);
+		p += uimin(resid, 4);
+		resid -= uimin(resid, 4);
 	}
 
 	return tegra_i2c_wait(sc, flags);

@@ -1,4 +1,4 @@
-/*	$NetBSD: ip_icmp.c,v 1.168 2018/02/08 09:32:02 maxv Exp $	*/
+/*	$NetBSD: ip_icmp.c,v 1.174 2018/09/14 05:09:51 maxv Exp $	*/
 
 /*
  * Copyright (c) 1998, 2000 The NetBSD Foundation, Inc.
@@ -94,7 +94,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ip_icmp.c,v 1.168 2018/02/08 09:32:02 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ip_icmp.c,v 1.174 2018/09/14 05:09:51 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ipsec.h"
@@ -140,9 +140,6 @@ __KERNEL_RCSID(0, "$NetBSD: ip_icmp.c,v 1.168 2018/02/08 09:32:02 maxv Exp $");
 
 int icmpmaskrepl = 0;
 int icmpbmcastecho = 0;
-#ifdef ICMPPRINTFS
-int icmpprintfs = 0;
-#endif
 int icmpreturndatabytes = 8;
 
 percpu_t *icmpstat_percpu;
@@ -261,11 +258,6 @@ icmp_error(struct mbuf *n, int type, int code, n_long dest, int destmtu)
 	unsigned datalen, mblen;
 	int totlen;
 
-#ifdef ICMPPRINTFS
-	if (icmpprintfs)
-		printf("icmp_error(%p, type:%d, code:%d)\n", oip, type, code);
-#endif
-
 	if (type != ICMP_REDIRECT)
 		ICMP_STATINC(ICMP_STAT_ERROR);
 
@@ -303,12 +295,12 @@ icmp_error(struct mbuf *n, int type, int code, n_long dest, int destmtu)
 	 * Compute the number of bytes we will put in 'icmp_ip'. Truncate
 	 * it to the size of the mbuf, if it's too big.
 	 */
-	datalen = oiphlen + min(icmpreturndatabytes,
+	datalen = oiphlen + uimin(icmpreturndatabytes,
 	    ntohs(oip->ip_len) - oiphlen);
 	mblen = 0;
 	for (m = n; m && (mblen < datalen); m = m->m_next)
 		mblen += m->m_len;
-	datalen = min(mblen, datalen);
+	datalen = uimin(mblen, datalen);
 
 	/*
 	 * Compute the total length of the new packet. Truncate it if it's
@@ -435,20 +427,12 @@ _icmp_input(struct mbuf *m, int hlen, int proto)
 	 * that not corrupted and of at least minimum length.
 	 */
 	icmplen = ntohs(ip->ip_len) - hlen;
-#ifdef ICMPPRINTFS
-	if (icmpprintfs) {
-		char sbuf[INET_ADDRSTRLEN], dbuf[INET_ADDRSTRLEN];
-		printf("icmp_input from `%s' to `%s', len %d\n",
-		    IN_PRINT(sbuf, &ip->ip_src), IN_PRINT(dbuf, &ip->ip_dst),
-		    icmplen);
-	}
-#endif
 	if (icmplen < ICMP_MINLEN) {
 		ICMP_STATINC(ICMP_STAT_TOOSHORT);
 		goto freeit;
 	}
-	i = hlen + min(icmplen, ICMP_ADVLENMIN);
-	if ((m->m_len < i || M_READONLY(m)) && (m = m_pullup(m, i)) == NULL) {
+	i = hlen + uimin(icmplen, ICMP_ADVLENMIN);
+	if (M_UNWRITABLE(m, i) && (m = m_pullup(m, i)) == NULL) {
 		ICMP_STATINC(ICMP_STAT_TOOSHORT);
 		return;
 	}
@@ -464,14 +448,6 @@ _icmp_input(struct mbuf *m, int hlen, int proto)
 	m->m_len += hlen;
 	m->m_data -= hlen;
 
-#ifdef ICMPPRINTFS
-	/*
-	 * Message type specific processing.
-	 */
-	if (icmpprintfs)
-		printf("icmp_input(type:%d, code:%d)\n", icp->icmp_type,
-		    icp->icmp_code);
-#endif
 	if (icp->icmp_type > ICMP_MAXTYPE)
 		goto raw;
 	ICMP_STATINC(ICMP_STAT_INHIST + icp->icmp_type);
@@ -556,10 +532,7 @@ _icmp_input(struct mbuf *m, int hlen, int proto)
 
 		if (IN_MULTICAST(icp->icmp_ip.ip_dst.s_addr))
 			goto badcode;
-#ifdef ICMPPRINTFS
-		if (icmpprintfs)
-			printf("deliver to protocol %d\n", icp->icmp_ip.ip_p);
-#endif
+
 		icmpsrc.sin_addr = icp->icmp_ip.ip_dst;
 		ctlfunc = inetsw[ip_protox[icp->icmp_ip.ip_p]].pr_ctlinput;
 		if (ctlfunc)
@@ -664,14 +637,6 @@ reflect:
 		 */
 		icmpgw.sin_addr = ip->ip_src;
 		icmpdst.sin_addr = icp->icmp_gwaddr;
-#ifdef	ICMPPRINTFS
-		if (icmpprintfs) {
-			char gbuf[INET_ADDRSTRLEN], dbuf[INET_ADDRSTRLEN];
-			printf("redirect dst `%s' to `%s'\n",
-			    IN_PRINT(dbuf, &icp->icmp_ip.ip_dst),
-			    IN_PRINT(gbuf, &icp->icmp_gwaddr));
-		}
-#endif
 		icmpsrc.sin_addr = icp->icmp_ip.ip_dst;
 		rt = NULL;
 		rtredirect(sintosa(&icmpsrc), sintosa(&icmpdst),
@@ -714,6 +679,11 @@ reflect:
 	}
 
 raw:
+	/*
+	 * Currently, pim_input() is always called holding softnet_lock
+	 * by ipintr()(!NET_MPSAFE) or PR_INPUT_WRAP()(NET_MPSAFE).
+	 */
+	KASSERT(mutex_owned(softnet_lock));
 	rip_input(m, hlen, proto);
 	return;
 
@@ -723,17 +693,9 @@ freeit:
 }
 
 void
-icmp_input(struct mbuf *m, ...)
+icmp_input(struct mbuf *m, int off, int proto)
 {
-	int hlen, proto;
-	va_list ap;
-
-	va_start(ap, m);
-	hlen = va_arg(ap, int);
-	proto = va_arg(ap, int);
-	va_end(ap);
-
-	wqinput_input(icmp_wqinput, m, hlen, proto);
+	wqinput_input(icmp_wqinput, m, off, proto);
 }
 
 /*
@@ -908,11 +870,6 @@ icmp_reflect(struct mbuf *m)
 		}
 
 		if (opts) {
-#ifdef ICMPPRINTFS
-			if (icmpprintfs)
-				printf("icmp_reflect optlen %d rt %d => ",
-				    optlen, opts->m_len);
-#endif
 			for (cnt = optlen; cnt > 0; cnt -= len, cp += len) {
 				opt = cp[IPOPT_OPTVAL];
 				if (opt == IPOPT_EOL)
@@ -947,10 +904,6 @@ icmp_reflect(struct mbuf *m)
 					opts->m_len++;
 				}
 			}
-#ifdef ICMPPRINTFS
-			if (icmpprintfs)
-				printf("%d\n", opts->m_len);
-#endif
 		}
 
 		/*
@@ -1001,13 +954,7 @@ icmp_send(struct mbuf *m, struct mbuf *opts)
 	icp->icmp_cksum = in_cksum(m, ntohs(ip->ip_len) - hlen);
 	m->m_data -= hlen;
 	m->m_len += hlen;
-#ifdef ICMPPRINTFS
-	if (icmpprintfs) {
-		char sbuf[INET_ADDRSTRLEN], dbuf[INET_ADDRSTRLEN];
-		printf("icmp_send to destination `%s' from `%s'\n",
-		    IN_PRINT(dbuf, &ip->ip_dst), IN_PRINT(sbuf, &ip->ip_src));
-	}
-#endif
+
 	(void)ip_output(m, opts, NULL, 0, NULL, NULL);
 }
 
@@ -1315,6 +1262,7 @@ ip_next_mtu(u_int mtu, int dir)	/* XXX unused */
 static void
 icmp_mtudisc_timeout(struct rtentry *rt, struct rttimer *r)
 {
+	struct rtentry *retrt;
 
 	KASSERT(rt != NULL);
 	rt_assert_referenced(rt);
@@ -1322,7 +1270,9 @@ icmp_mtudisc_timeout(struct rtentry *rt, struct rttimer *r)
 	if ((rt->rt_flags & (RTF_DYNAMIC | RTF_HOST)) ==
 	    (RTF_DYNAMIC | RTF_HOST)) {
 		rtrequest(RTM_DELETE, rt_getkey(rt),
-		    rt->rt_gateway, rt_mask(rt), rt->rt_flags, NULL);
+		    rt->rt_gateway, rt_mask(rt), rt->rt_flags, &retrt);
+		rt_unref(rt);
+		rt_free(retrt);
 	} else {
 		if ((rt->rt_rmx.rmx_locks & RTV_MTU) == 0) {
 			rt->rt_rmx.rmx_mtu = 0;
@@ -1333,6 +1283,7 @@ icmp_mtudisc_timeout(struct rtentry *rt, struct rttimer *r)
 static void
 icmp_redirect_timeout(struct rtentry *rt, struct rttimer *r)
 {
+	struct rtentry *retrt;
 
 	KASSERT(rt != NULL);
 	rt_assert_referenced(rt);
@@ -1340,7 +1291,9 @@ icmp_redirect_timeout(struct rtentry *rt, struct rttimer *r)
 	if ((rt->rt_flags & (RTF_DYNAMIC | RTF_HOST)) ==
 	    (RTF_DYNAMIC | RTF_HOST)) {
 		rtrequest(RTM_DELETE, rt_getkey(rt),
-		    rt->rt_gateway, rt_mask(rt), rt->rt_flags, NULL);
+		    rt->rt_gateway, rt_mask(rt), rt->rt_flags, &retrt);
+		rt_unref(rt);
+		rt_free(retrt);
 	}
 }
 

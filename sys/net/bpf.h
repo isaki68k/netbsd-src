@@ -1,4 +1,4 @@
-/*	$NetBSD: bpf.h,v 1.70 2018/04/19 21:20:43 christos Exp $	*/
+/*	$NetBSD: bpf.h,v 1.73 2018/09/03 15:16:11 christos Exp $	*/
 
 /*
  * Copyright (c) 1990, 1991, 1993
@@ -144,13 +144,25 @@ struct bpf_version {
 #define BIOCSHDRCMPLT	 _IOW('B',117, u_int)
 #define BIOCSDLT	 _IOW('B',118, u_int)
 #define BIOCGDLTLIST	_IOWR('B',119, struct bpf_dltlist)
-#define BIOCGSEESENT	 _IOR('B',120, u_int)
-#define BIOCSSEESENT	 _IOW('B',121, u_int)
+#define BIOCGDIRECTION	 _IOR('B',120, u_int)
+#define BIOCSDIRECTION	 _IOW('B',121, u_int)
 #define BIOCSRTIMEOUT	 _IOW('B',122, struct timeval)
 #define BIOCGRTIMEOUT	 _IOR('B',123, struct timeval)
 #define BIOCGFEEDBACK	 _IOR('B',124, u_int)
 #define BIOCSFEEDBACK	 _IOW('B',125, u_int)
 #define BIOCFEEDBACK     BIOCSFEEDBACK		/* FreeBSD name */
+
+/* Obsolete */
+#define	BIOCGSEESENT	BIOCGDIRECTION
+#define	BIOCSSEESENT	BIOCSDIRECTION
+
+/*
+ * Packet directions.
+ * BPF_D_IN = 0, BPF_D_INOUT =1 for backward compatibility of BIOC[GS]SEESENT.
+ */
+#define	BPF_D_IN	0	/* See incoming packets */
+#define	BPF_D_INOUT	1	/* See incoming and outgoing packets */
+#define	BPF_D_OUT	2	/* See outgoing packets */
 
 /*
  * Structure prepended to each packet. This is "wire" format, so we
@@ -322,6 +334,16 @@ struct bpf_insn {
 };
 
 /*
+ * Auxiliary data, for use when interpreting a filter intended for the
+ * Linux kernel when the kernel rejects the filter (requiring us to
+ * run it in userland).  It contains VLAN tag information.
+ */
+struct bpf_aux_data {
+	u_short vlan_tag_present;
+	u_short vlan_tag;
+};
+
+/*
  * Macros for insn array initializers.
  */
 #define BPF_STMT(code, k) { (uint16_t)(code), 0, 0, k }
@@ -417,10 +439,10 @@ struct bpf_ops {
 	void (*bpf_detach)(struct ifnet *);
 	void (*bpf_change_type)(struct ifnet *, u_int, u_int);
 
-	void (*bpf_tap)(struct bpf_if *, u_char *, u_int);
-	void (*bpf_mtap)(struct bpf_if *, struct mbuf *);
-	void (*bpf_mtap2)(struct bpf_if *, void *, u_int, struct mbuf *);
-	void (*bpf_mtap_af)(struct bpf_if *, uint32_t, struct mbuf *);
+	void (*bpf_mtap)(struct bpf_if *, struct mbuf *, u_int);
+	void (*bpf_mtap2)(struct bpf_if *, void *, u_int, struct mbuf *,
+	    u_int);
+	void (*bpf_mtap_af)(struct bpf_if *, uint32_t, struct mbuf *, u_int);
 	void (*bpf_mtap_sl_in)(struct bpf_if *, u_char *, struct mbuf **);
 	void (*bpf_mtap_sl_out)(struct bpf_if *, u_char *, struct mbuf *);
 
@@ -443,37 +465,32 @@ bpf_attach2(struct ifnet *_ifp, u_int _dlt, u_int _hdrlen, struct bpf_if **_dp)
 }
 
 static __inline void
-bpf_tap(struct ifnet *_ifp, u_char *_pkt, u_int _len)
+bpf_mtap(struct ifnet *_ifp, struct mbuf *_m, u_int _direction)
 {
 	if (_ifp->if_bpf)
-		bpf_ops->bpf_tap(_ifp->if_bpf, _pkt, _len);
+		bpf_ops->bpf_mtap(_ifp->if_bpf, _m, _direction);
 }
 
 static __inline void
-bpf_mtap(struct ifnet *_ifp, struct mbuf *_m)
+bpf_mtap2(struct bpf_if *_bpf, void *_data, u_int _dlen, struct mbuf *_m,
+	u_int _direction)
 {
-	if (_ifp->if_bpf)
-		bpf_ops->bpf_mtap(_ifp->if_bpf, _m);
+	bpf_ops->bpf_mtap2(_bpf, _data, _dlen, _m, _direction);
 }
 
 static __inline void
-bpf_mtap2(struct bpf_if *_bpf, void *_data, u_int _dlen, struct mbuf *_m)
-{
-	bpf_ops->bpf_mtap2(_bpf, _data, _dlen, _m);
-}
-
-static __inline void
-bpf_mtap3(struct bpf_if *_bpf, struct mbuf *_m)
+bpf_mtap3(struct bpf_if *_bpf, struct mbuf *_m, u_int _direction)
 {
 	if (_bpf)
-		bpf_ops->bpf_mtap(_bpf, _m);
+		bpf_ops->bpf_mtap(_bpf, _m, _direction);
 }
 
 static __inline void
-bpf_mtap_af(struct ifnet *_ifp, uint32_t _af, struct mbuf *_m)
+bpf_mtap_af(struct ifnet *_ifp, uint32_t _af, struct mbuf *_m,
+    u_int _direction)
 {
 	if (_ifp->if_bpf)
-		bpf_ops->bpf_mtap_af(_ifp->if_bpf, _af, _m);
+		bpf_ops->bpf_mtap_af(_ifp->if_bpf, _af, _m, _direction);
 }
 
 static __inline void
@@ -538,6 +555,9 @@ void	bpf_jit_freecode(bpfjit_func_t);
 
 int	bpf_validate(const struct bpf_insn *, int);
 u_int	bpf_filter(const struct bpf_insn *, const u_char *, u_int, u_int);
+
+u_int	bpf_filter_with_aux_data(const struct bpf_insn *, const u_char *, u_int, u_int, const struct bpf_aux_data *);
+
 
 __END_DECLS
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: freebsd_exec.c,v 1.40 2018/01/09 20:55:42 maya Exp $	*/
+/*	$NetBSD: freebsd_exec.c,v 1.42 2018/08/10 21:44:58 pgoyette Exp $	*/
 
 /*
  * Copyright (c) 1993, 1994 Christopher G. Demetriou
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: freebsd_exec.c,v 1.40 2018/01/09 20:55:42 maya Exp $");
+__KERNEL_RCSID(0, "$NetBSD: freebsd_exec.c,v 1.42 2018/08/10 21:44:58 pgoyette Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_syscall_debug.h"
@@ -54,6 +54,7 @@ __KERNEL_RCSID(0, "$NetBSD: freebsd_exec.c,v 1.40 2018/01/09 20:55:42 maya Exp $
 #include <compat/freebsd/freebsd_machdep.h>
 
 extern struct sysent freebsd_sysent[];
+extern const uint32_t freebsd_sysent_nomodbits[];
 extern const char * const freebsd_syscallnames[];
 
 struct uvm_object *emul_freebsd_object;
@@ -72,6 +73,7 @@ struct emul emul_freebsd = {
 	.e_nsysent =		FREEBSD_SYS_NSYSENT,
 #endif
 	.e_sysent =		freebsd_sysent,
+	.e_nomodbits =		freebsd_sysent_nomodbits,
 #ifdef SYSCALL_DEBUG
 	.e_syscallnames =	freebsd_syscallnames,
 #else
@@ -79,7 +81,6 @@ struct emul emul_freebsd = {
 #endif
 	.e_sendsig =		freebsd_sendsig,
 	.e_trapsignal =		trapsignal,
-	.e_tracesig =		NULL,
 	.e_sigcode =		freebsd_sigcode,
 	.e_esigcode =		freebsd_esigcode,
 	.e_sigobject =		&emul_freebsd_object,

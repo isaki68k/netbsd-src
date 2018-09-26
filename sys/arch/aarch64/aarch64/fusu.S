@@ -1,4 +1,4 @@
-/*	$NetBSD: fusu.S,v 1.3 2018/04/01 04:35:03 ryo Exp $	*/
+/*	$NetBSD: fusu.S,v 1.5 2018/07/17 18:08:36 christos Exp $	*/
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -32,7 +32,7 @@
 #include <aarch64/asm.h>
 #include "assym.h"
 
-RCSID("$NetBSD: fusu.S,v 1.3 2018/04/01 04:35:03 ryo Exp $");
+RCSID("$NetBSD: fusu.S,v 1.5 2018/07/17 18:08:36 christos Exp $");
 
 	.macro enter_cpu_onfault
 	stp	fp, lr, [sp, #-16]!	/* save fp, lr */

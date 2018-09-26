@@ -1,4 +1,4 @@
-/*	$NetBSD: rrunner.c,v 1.85 2017/10/28 04:53:55 riastradh Exp $	*/
+/*	$NetBSD: rrunner.c,v 1.88 2018/09/03 16:29:31 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1997, 1998 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rrunner.c,v 1.85 2017/10/28 04:53:55 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rrunner.c,v 1.88 2018/09/03 16:29:31 riastradh Exp $");
 
 #include "opt_inet.h"
 
@@ -62,6 +62,7 @@ __KERNEL_RCSID(0, "$NetBSD: rrunner.c,v 1.85 2017/10/28 04:53:55 riastradh Exp $
 #include <net/if.h>
 #include <net/if_dl.h>
 #include <net/route.h>
+#include <net/bpf.h>
 
 #include <net/if_hippi.h>
 #include <net/if_media.h>
@@ -73,10 +74,6 @@ __KERNEL_RCSID(0, "$NetBSD: rrunner.c,v 1.85 2017/10/28 04:53:55 riastradh Exp $
 #include <netinet/ip.h>
 #include <netinet/if_inarp.h>
 #endif
-
-
-#include <net/bpf.h>
-#include <net/bpfdesc.h>
 
 #include <sys/cpu.h>
 #include <sys/bus.h>
@@ -1930,7 +1927,7 @@ eshstart(struct ifnet *ifp)
 			m->m_len -= 8;
 			m->m_data += 8;
 			m->m_pkthdr.len -= 8;
-			bpf_mtap(ifp, m);
+			bpf_mtap(ifp, m, BPF_D_OUT);
 			m->m_len += 8;
 			m->m_data -= 8;
 			m->m_pkthdr.len += 8;
@@ -2253,7 +2250,7 @@ esh_adjust_mbufs(struct esh_softc *sc, struct mbuf *m)
 			 *      to do this kind of funky copy.
 			 */
 
-			len = min(MCLBYTES, write_len);
+			len = uimin(MCLBYTES, write_len);
 #ifdef DIAGNOSTIC
 			assert(n->m_len <= len);
 			assert(len <= MCLBYTES);

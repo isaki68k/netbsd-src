@@ -1,4 +1,4 @@
-/*	$NetBSD: if_enet.c,v 1.12 2018/02/16 08:42:45 ryo Exp $	*/
+/*	$NetBSD: if_enet.c,v 1.15 2018/09/03 16:29:23 riastradh Exp $	*/
 
 /*
  * Copyright (c) 2014 Ryo Shimizu <ryo@nerv.org>
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_enet.c,v 1.12 2018/02/16 08:42:45 ryo Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_enet.c,v 1.15 2018/09/03 16:29:23 riastradh Exp $");
 
 #include "vlan.h"
 
@@ -279,7 +279,7 @@ enet_attach_common(device_t self, bus_space_tag_t iot,
 	    IFCAP_CSUM_TCPv6_Tx | IFCAP_CSUM_UDPv6_Tx |
 	    IFCAP_CSUM_TCPv6_Rx | IFCAP_CSUM_UDPv6_Rx;
 
-	IFQ_SET_MAXLEN(&ifp->if_snd, max(ENET_TX_RING_CNT, IFQ_MAXLEN));
+	IFQ_SET_MAXLEN(&ifp->if_snd, uimax(ENET_TX_RING_CNT, IFQ_MAXLEN));
 	IFQ_SET_READY(&ifp->if_snd);
 
 	/* setup MII */
@@ -607,7 +607,8 @@ enet_rx_intr(void *arg)
 
 			m->m_len = len;
 			amount += len;
-			m->m_flags &= ~M_PKTHDR;
+			if (m->m_flags & M_PKTHDR)
+				m_remove_pkthdr(m);
 			mprev->m_next = m;
 		}
 		mprev = m;
@@ -915,7 +916,7 @@ enet_start(struct ifnet *ifp)
 		}
 
 		/* Pass the packet to any BPF listeners */
-		bpf_mtap(ifp, m);
+		bpf_mtap(ifp, m, BPF_D_OUT);
 	}
 
 	if (npkt) {
