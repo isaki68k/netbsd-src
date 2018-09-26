@@ -1,4 +1,4 @@
-/*	$NetBSD: auconv.c,v 1.35 2017/12/16 16:09:36 nat Exp $	*/
+/*	$NetBSD: auconv.c,v 1.37 2018/09/03 16:29:30 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1996 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: auconv.c,v 1.35 2017/12/16 16:09:36 nat Exp $");
+__KERNEL_RCSID(0, "$NetBSD: auconv.c,v 1.37 2018/09/03 16:29:30 riastradh Exp $");
 
 #include <sys/types.h>
 #include <sys/audioio.h>
@@ -394,7 +394,7 @@ DEFINE_FILTER(change_sign8)
 	if ((err = this->prev->fetch_to(sc, this->prev, this->src, max_used)))
 		return err;
 	m = dst->end - dst->start;
-	m = min(m, max_used);
+	m = uimin(m, max_used);
 	FILTER_LOOP_PROLOGUE(this->src, 1, dst, 1, m) {
 		*d = *s ^ 0x80;
 	} FILTER_LOOP_EPILOGUE(this->src, dst);
@@ -411,7 +411,7 @@ DEFINE_FILTER(change_sign16)
 	if ((err = this->prev->fetch_to(sc, this->prev, this->src, max_used)))
 		return err;
 	m = (dst->end - dst->start) & ~1;
-	m = min(m, max_used);
+	m = uimin(m, max_used);
 	enc = dst->param.encoding;
 	if (enc == AUDIO_ENCODING_SLINEAR_LE
 	    || enc == AUDIO_ENCODING_ULINEAR_LE) {
@@ -438,7 +438,7 @@ DEFINE_FILTER(swap_bytes)
 	if ((err = this->prev->fetch_to(sc, this->prev, this->src, max_used)))
 		return err;
 	m = (dst->end - dst->start) & ~1;
-	m = min(m, max_used);
+	m = uimin(m, max_used);
 	FILTER_LOOP_PROLOGUE(this->src, 2, dst, 2, m) {
 		d[0] = s[1];
 		d[1] = s[0];
@@ -456,7 +456,7 @@ DEFINE_FILTER(null_filter)
 	if ((err = this->prev->fetch_to(sc, this->prev, this->src, max_used)))
 		return err;
 	m = (dst->end - dst->start) & ~1;
-	m = min(m, max_used);
+	m = uimin(m, max_used);
 	FILTER_LOOP_PROLOGUE(this->src, 1, dst, 1, m) {
 		*d = *s;
 	} FILTER_LOOP_EPILOGUE(this->src, dst);
@@ -474,7 +474,7 @@ DEFINE_FILTER(swap_bytes_change_sign16)
 	if ((err = this->prev->fetch_to(sc, this->prev, this->src, max_used)))
 		return err;
 	m = (dst->end - dst->start) & ~1;
-	m = min(m, max_used);
+	m = uimin(m, max_used);
 	enc = dst->param.encoding;
 	if (enc == AUDIO_ENCODING_SLINEAR_LE
 	    || enc == AUDIO_ENCODING_ULINEAR_LE) {
@@ -501,7 +501,7 @@ DEFINE_FILTER(linear8_8_to_linear32)
 	if ((err = this->prev->fetch_to(sc, this->prev, this->src, max_used)))
 		return err;
 	m = (dst->end - dst->start) & ~3;
-	m = min(m, max_used / 4);
+	m = uimin(m, max_used / 4);
 	enc_dst = dst->param.encoding;
 	enc_src = this->src->param.encoding;
 	if ((enc_src == AUDIO_ENCODING_SLINEAR_LE
@@ -595,7 +595,7 @@ DEFINE_FILTER(linear8_8_to_linear24)
 	if ((err = this->prev->fetch_to(sc, this->prev, this->src, max_used)))
 		return err;
 	m = (((dst->end - dst->start) / 3) * 3) & ~1;
-	m = min(m, max_used / 3);
+	m = uimin(m, max_used / 3);
 	enc_dst = dst->param.encoding;
 	enc_src = this->src->param.encoding;
 	if ((enc_src == AUDIO_ENCODING_SLINEAR_LE
@@ -685,7 +685,7 @@ DEFINE_FILTER(linear8_8_to_linear16)
 	if ((err = this->prev->fetch_to(sc, this->prev, this->src, max_used)))
 		return err;
 	m = (dst->end - dst->start) & ~1;
-	m = min(m, max_used / 2);
+	m = uimin(m, max_used / 2);
 	enc_dst = dst->param.encoding;
 	enc_src = this->src->param.encoding;
 	if ((enc_src == AUDIO_ENCODING_SLINEAR_LE
@@ -774,7 +774,7 @@ DEFINE_FILTER(linearN_to_linear8)
 	if ((err = this->prev->fetch_to(sc, this->prev, this->src, max_used)))
 		return err;
 	m = (dst->end - dst->start);
-	m = min(m, max_used * hw);
+	m = uimin(m, max_used * hw);
 	enc_dst = dst->param.encoding;
 	enc_src = this->src->param.encoding;
 	if ((enc_src == AUDIO_ENCODING_SLINEAR_LE
@@ -857,7 +857,7 @@ DEFINE_FILTER(linear16_16_to_linear32)
 	if ((err = this->prev->fetch_to(sc, this->prev, this->src, max_used)))
 		return err;
 	m = (dst->end - dst->start) & ~3;
-	m = min(m, max_used / 2);
+	m = uimin(m, max_used / 2);
 	enc_dst = dst->param.encoding;
 	enc_src = this->src->param.encoding;
 	if ((enc_src == AUDIO_ENCODING_SLINEAR_LE
@@ -984,7 +984,7 @@ DEFINE_FILTER(linear16_16_to_linear24)
 	if ((err = this->prev->fetch_to(sc, this->prev, this->src, max_used)))
 		return err;
 	m = ((dst->end - dst->start) / 3) * 3;
-	m = min(m, max_used * 2 / 3);
+	m = uimin(m, max_used * 2 / 3);
 	enc_dst = dst->param.encoding;
 	enc_src = this->src->param.encoding;
 	if ((enc_src == AUDIO_ENCODING_SLINEAR_LE
@@ -1103,7 +1103,7 @@ DEFINE_FILTER(linear16_16_to_linear16)
 	if ((err = this->prev->fetch_to(sc, this->prev, this->src, max_used)))
 		return err;
 	m = (dst->end - dst->start) & ~1;
-	m = min(m, max_used);
+	m = uimin(m, max_used);
 	enc_dst = dst->param.encoding;
 	enc_src = this->src->param.encoding;
 	if ((enc_src == AUDIO_ENCODING_SLINEAR_LE
@@ -1204,7 +1204,7 @@ DEFINE_FILTER(linear24_24_to_linear32)
 	if ((err = this->prev->fetch_to(sc, this->prev, this->src, max_used)))
 		return err;
 	m = (dst->end - dst->start) & ~3;
-	m = min(m, max_used * 3 / 4);
+	m = uimin(m, max_used * 3 / 4);
 	enc_dst = dst->param.encoding;
 	enc_src = this->src->param.encoding;
 	if ((enc_src == AUDIO_ENCODING_SLINEAR_LE
@@ -1331,7 +1331,7 @@ DEFINE_FILTER(linear24_24_to_linear24)
 	if ((err = this->prev->fetch_to(sc, this->prev, this->src, max_used)))
 		return err;
 	m = (dst->end - dst->start) / 3 * 3;
-	m = min(m, max_used);
+	m = uimin(m, max_used);
 	enc_dst = dst->param.encoding;
 	enc_src = this->src->param.encoding;
 	if ((enc_src == AUDIO_ENCODING_SLINEAR_LE
@@ -1438,7 +1438,7 @@ DEFINE_FILTER(linear24_24_to_linear16)
 	if ((err = this->prev->fetch_to(sc, this->prev, this->src, max_used)))
 		return err;
 	m = (dst->end - dst->start) & ~1;
-	m = min(m, max_used * 3 / 2);
+	m = uimin(m, max_used * 3 / 2);
 	enc_dst = dst->param.encoding;
 	enc_src = this->src->param.encoding;
 	if ((enc_src == AUDIO_ENCODING_SLINEAR_LE
@@ -1549,7 +1549,7 @@ DEFINE_FILTER(linear32_32_to_linear32)
 	if ((err = this->prev->fetch_to(sc, this->prev, this->src, max_used)))
 		return err;
 	m = (dst->end - dst->start) & ~3;
-	m = min(m, max_used);
+	m = uimin(m, max_used);
 	enc_dst = dst->param.encoding;
 	enc_src = this->src->param.encoding;
 	if ((enc_src == AUDIO_ENCODING_SLINEAR_LE
@@ -1662,7 +1662,7 @@ DEFINE_FILTER(linear32_32_to_linear24)
 	if ((err = this->prev->fetch_to(sc, this->prev, this->src, max_used)))
 		return err;
 	m = ((dst->end - dst->start) / 3) * 3;
-	m = min(m, max_used * 4 / 3);
+	m = uimin(m, max_used * 4 / 3);
 	enc_dst = dst->param.encoding;
 	enc_src = this->src->param.encoding;
 	if ((enc_src == AUDIO_ENCODING_SLINEAR_LE
@@ -1781,7 +1781,7 @@ DEFINE_FILTER(linear32_32_to_linear16)
 	if ((err = this->prev->fetch_to(sc, this->prev, this->src, max_used)))
 		return err;
 	m = (dst->end - dst->start) & ~1;
-	m = min(m, max_used * 2);
+	m = uimin(m, max_used * 2);
 	enc_dst = dst->param.encoding;
 	enc_src = this->src->param.encoding;
 	if ((enc_src == AUDIO_ENCODING_SLINEAR_LE
@@ -2355,21 +2355,22 @@ int
 auconv_create_encodings(const struct audio_format *formats, int nformats,
 			struct audio_encoding_set **encodings)
 {
+#if defined(AUDIO2)
+	printf("NOTICE: %s is obsoleted in AUDIO2\n", __func__);
+	return 0;
+#else
 	struct audio_encoding_set *buf;
 	int capacity;
-	int i;
+	int i, j;
 	int err;
+	static int enc_precision[] = { 16, 32 };
 
 #define	ADD_ENCODING(enc, prec, flags)	do { \
 	err = auconv_add_encoding(enc, prec, flags, &buf, &capacity); \
 	if (err != 0) goto err_exit; \
 } while (/*CONSTCOND*/0)
 
-#if defined(AUDIO2)
-	capacity = nformats;
-#else
 	capacity = 10;
-#endif
 	buf = AUCONV_MALLOC(ENCODING_SET_SIZE(capacity));
 	if (buf == NULL) {
 		err = ENOMEM;
@@ -2379,128 +2380,33 @@ auconv_create_encodings(const struct audio_format *formats, int nformats,
 	for (i = 0; i < nformats; i++) {
 		if (!AUFMT_IS_VALID(&formats[i]))
 			continue;
-		switch (formats[i].encoding) {
-#if !defined(AUDIO2)
-		// よしなに変換する処理は不要。
-		case AUDIO_ENCODING_SLINEAR_LE:
-			ADD_ENCODING(formats[i].encoding,
-				     formats[i].precision, 0);
-			ADD_ENCODING(AUDIO_ENCODING_SLINEAR_BE,
-				     formats[i].precision,
-				     AUDIO_ENCODINGFLAG_EMULATED);
-			ADD_ENCODING(AUDIO_ENCODING_ULINEAR_LE,
-				     formats[i].precision,
-				     AUDIO_ENCODINGFLAG_EMULATED);
-			ADD_ENCODING(AUDIO_ENCODING_ULINEAR_BE,
-				     formats[i].precision,
-				     AUDIO_ENCODINGFLAG_EMULATED);
-#if NMULAW > 0
-			if (formats[i].precision == 8
-			    || formats[i].precision == 16) {
-				ADD_ENCODING(AUDIO_ENCODING_ULAW, 8,
-					     AUDIO_ENCODINGFLAG_EMULATED);
-				ADD_ENCODING(AUDIO_ENCODING_ALAW, 8,
-					     AUDIO_ENCODINGFLAG_EMULATED);
-			}
-#endif
-			break;
-		case AUDIO_ENCODING_SLINEAR_BE:
-			ADD_ENCODING(formats[i].encoding,
-				     formats[i].precision, 0);
-			ADD_ENCODING(AUDIO_ENCODING_SLINEAR_LE,
-				     formats[i].precision,
-				     AUDIO_ENCODINGFLAG_EMULATED);
-			ADD_ENCODING(AUDIO_ENCODING_ULINEAR_LE,
-				     formats[i].precision,
-				     AUDIO_ENCODINGFLAG_EMULATED);
-			ADD_ENCODING(AUDIO_ENCODING_ULINEAR_BE,
-				     formats[i].precision,
-				     AUDIO_ENCODINGFLAG_EMULATED);
-#if NMULAW > 0
-			if (formats[i].precision == 8
-			    || formats[i].precision == 16) {
-				ADD_ENCODING(AUDIO_ENCODING_ULAW, 8,
-					     AUDIO_ENCODINGFLAG_EMULATED);
-				ADD_ENCODING(AUDIO_ENCODING_ALAW, 8,
-					     AUDIO_ENCODINGFLAG_EMULATED);
-			}
-#endif
-			break;
-		case AUDIO_ENCODING_ULINEAR_LE:
-			ADD_ENCODING(formats[i].encoding,
-				     formats[i].precision, 0);
-			ADD_ENCODING(AUDIO_ENCODING_SLINEAR_BE,
-				     formats[i].precision,
-				     AUDIO_ENCODINGFLAG_EMULATED);
-			ADD_ENCODING(AUDIO_ENCODING_SLINEAR_LE,
-				     formats[i].precision,
-				     AUDIO_ENCODINGFLAG_EMULATED);
-			ADD_ENCODING(AUDIO_ENCODING_ULINEAR_BE,
-				     formats[i].precision,
-				     AUDIO_ENCODINGFLAG_EMULATED);
-#if NMULAW > 0
-			if (formats[i].precision == 8
-			    || formats[i].precision == 16) {
-				ADD_ENCODING(AUDIO_ENCODING_ULAW, 8,
-					     AUDIO_ENCODINGFLAG_EMULATED);
-				ADD_ENCODING(AUDIO_ENCODING_ALAW, 8,
-					     AUDIO_ENCODINGFLAG_EMULATED);
-			}
-#endif
-			break;
-		case AUDIO_ENCODING_ULINEAR_BE:
-			ADD_ENCODING(formats[i].encoding,
-				     formats[i].precision, 0);
-			ADD_ENCODING(AUDIO_ENCODING_SLINEAR_BE,
-				     formats[i].precision,
-				     AUDIO_ENCODINGFLAG_EMULATED);
-			ADD_ENCODING(AUDIO_ENCODING_ULINEAR_LE,
-				     formats[i].precision,
-				     AUDIO_ENCODINGFLAG_EMULATED);
-			ADD_ENCODING(AUDIO_ENCODING_SLINEAR_LE,
-				     formats[i].precision,
-				     AUDIO_ENCODINGFLAG_EMULATED);
-#if NMULAW > 0
-			if (formats[i].precision == 8
-			    || formats[i].precision == 16) {
-				ADD_ENCODING(AUDIO_ENCODING_ULAW, 8,
-					     AUDIO_ENCODINGFLAG_EMULATED);
-				ADD_ENCODING(AUDIO_ENCODING_ALAW, 8,
-					     AUDIO_ENCODINGFLAG_EMULATED);
-			}
-#endif
-			break;
 
-#else
-		case AUDIO_ENCODING_SLINEAR_LE:
-		case AUDIO_ENCODING_SLINEAR_BE:
-		case AUDIO_ENCODING_ULINEAR_LE:
-		case AUDIO_ENCODING_ULINEAR_BE:
-#endif // !AUDIO2
-		case AUDIO_ENCODING_ULAW:
-		case AUDIO_ENCODING_ALAW:
-		case AUDIO_ENCODING_ADPCM:
-		case AUDIO_ENCODING_MPEG_L1_STREAM:
-		case AUDIO_ENCODING_MPEG_L1_PACKETS:
-		case AUDIO_ENCODING_MPEG_L1_SYSTEM:
-		case AUDIO_ENCODING_MPEG_L2_STREAM:
-		case AUDIO_ENCODING_MPEG_L2_PACKETS:
-		case AUDIO_ENCODING_MPEG_L2_SYSTEM:
-		case AUDIO_ENCODING_AC3:
-			ADD_ENCODING(formats[i].encoding,
-				     formats[i].precision, 0);
-			break;
-
-		case AUDIO_ENCODING_SLINEAR:
-		case AUDIO_ENCODING_ULINEAR:
-		case AUDIO_ENCODING_LINEAR:
-		case AUDIO_ENCODING_LINEAR8:
-		default:
-			printf("%s: invalid encoding value "
-			       "for audio_format: %d\n",
-			       __func__, formats[i].encoding);
-			break;
+		for (j = 0; j < __arraycount(enc_precision); j++) {
+			ADD_ENCODING(AUDIO_ENCODING_SLINEAR_BE,
+				     enc_precision[j],
+				     AUDIO_ENCODINGFLAG_EMULATED);
+			ADD_ENCODING(AUDIO_ENCODING_SLINEAR_LE,
+				     enc_precision[j],
+				     AUDIO_ENCODINGFLAG_EMULATED);
+			ADD_ENCODING(AUDIO_ENCODING_ULINEAR_BE,
+				     enc_precision[j],
+				     AUDIO_ENCODINGFLAG_EMULATED);
+			ADD_ENCODING(AUDIO_ENCODING_ULINEAR_LE,
+				     enc_precision[j],
+				     AUDIO_ENCODINGFLAG_EMULATED);
 		}
+		ADD_ENCODING(AUDIO_ENCODING_SLINEAR, 8,
+			     AUDIO_ENCODINGFLAG_EMULATED);
+		ADD_ENCODING(AUDIO_ENCODING_ULINEAR, 8,
+			     AUDIO_ENCODINGFLAG_EMULATED);
+#if NMULAW > 0
+		ADD_ENCODING(AUDIO_ENCODING_ULAW, 8,
+			     AUDIO_ENCODINGFLAG_EMULATED);
+		ADD_ENCODING(AUDIO_ENCODING_ALAW, 8,
+			     AUDIO_ENCODINGFLAG_EMULATED);
+#endif
+		ADD_ENCODING(formats[i].encoding,
+			     formats[i].precision, 0);
 	}
 	*encodings = buf;
 	return 0;
@@ -2510,6 +2416,7 @@ auconv_create_encodings(const struct audio_format *formats, int nformats,
 		AUCONV_FREE(buf);
 	*encodings = NULL;
 	return err;
+#endif
 }
 
 /**

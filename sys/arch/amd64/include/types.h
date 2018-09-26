@@ -1,4 +1,4 @@
-/*	$NetBSD: types.h,v 1.55 2018/03/16 12:19:35 maxv Exp $	*/
+/*	$NetBSD: types.h,v 1.57 2018/08/20 15:04:51 maxv Exp $	*/
 
 /*-
  * Copyright (c) 1990 The Regents of the University of California.
@@ -58,8 +58,6 @@ typedef unsigned long	vsize_t;
 #define	PRIxVSIZE	"lx"
 #define	PRIuVSIZE	"lu"
 
-typedef int             pmc_evid_t; 
-typedef __uint64_t      pmc_ctr_t;
 typedef long int	register_t;
 typedef int		register32_t;
 #define	PRIxREGISTER	"lx"
@@ -101,11 +99,14 @@ typedef	unsigned char		__cpu_simple_lock_nv_t;
 #define	__HAVE_RAS
 
 #include "opt_xen.h"
+#include "opt_kasan.h"
 #if defined(__x86_64__) && !defined(XEN)
+#if !defined(KASAN)
 #define	__HAVE_PCPU_AREA 1
 #define	__HAVE_DIRECT_MAP 1
 #define	__HAVE_MM_MD_DIRECT_MAPPED_IO
 #define	__HAVE_MM_MD_DIRECT_MAPPED_PHYS
+#endif
 #if !defined(NO_PCI_MSI_MSIX)
 #define	__HAVE_PCI_MSI_MSIX
 #endif

@@ -1,4 +1,4 @@
-/*	$NetBSD: x86_machdep.c,v 1.111 2018/04/04 16:23:27 maxv Exp $	*/
+/*	$NetBSD: x86_machdep.c,v 1.120 2018/09/19 16:23:05 maxv Exp $	*/
 
 /*-
  * Copyright (c) 2002, 2006, 2007 YAMAMOTO Takashi,
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: x86_machdep.c,v 1.111 2018/04/04 16:23:27 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: x86_machdep.c,v 1.120 2018/09/19 16:23:05 maxv Exp $");
 
 #include "opt_modular.h"
 #include "opt_physmem.h"
@@ -68,7 +68,6 @@ __KERNEL_RCSID(0, "$NetBSD: x86_machdep.c,v 1.111 2018/04/04 16:23:27 maxv Exp $
 
 #include <machine/bootinfo.h>
 #include <machine/vmparam.h>
-#include <machine/pmc.h>
 
 #include <uvm/uvm_extern.h>
 
@@ -90,7 +89,6 @@ static char x86_cpu_idle_text[16];
 
 #ifdef XEN
 char module_machine_amd64_xen[] = "amd64-xen";
-char module_machine_i386_xen[] = "i386-xen";
 char module_machine_i386pae_xen[] = "i386pae-xen";
 #endif
 
@@ -207,14 +205,10 @@ module_init_md(void)
 
 	/* setup module path for XEN kernels */
 #ifdef XEN
-#if defined(amd64)
+#ifdef __x86_64__
 	module_machine = module_machine_amd64_xen;
-#elif defined(i386)
-#ifdef PAE
-	module_machine = module_machine_i386pae_xen;
 #else
-	module_machine = module_machine_i386_xen;
-#endif
+	module_machine = module_machine_i386pae_xen;
 #endif
 #endif
 
@@ -1093,7 +1087,6 @@ x86_startup(void)
 {
 #if !defined(XEN)
 	nmi_init();
-	pmc_init();
 #endif
 }
 
@@ -1272,46 +1265,13 @@ SYSCTL_SETUP(sysctl_machdep_setup, "sysctl machdep subtree setup")
 #endif
 
 #ifndef XEN
-	int sysctl_machdep_spectreV2_mitigated(SYSCTLFN_ARGS);
-	extern bool spec_mitigation_enabled;
-	extern char spec_mitigation_name[];
-	const struct sysctlnode *spec_rnode;
+	void sysctl_speculation_init(struct sysctllog **);
+	sysctl_speculation_init(clog);
+#endif
 
-	/* SpectreV1 */
-	spec_rnode = NULL;
-	sysctl_createv(clog, 0, NULL, &spec_rnode,
-		       CTLFLAG_PERMANENT,
-		       CTLTYPE_NODE, "spectre_v1", NULL,
-		       NULL, 0, NULL, 0,
-		       CTL_MACHDEP, CTL_CREATE);
-	sysctl_createv(clog, 0, &spec_rnode, &spec_rnode,
-		       CTLFLAG_PERMANENT | CTLFLAG_IMMEDIATE,
-		       CTLTYPE_BOOL, "mitigated",
-		       SYSCTL_DESCR("Whether Spectre Variant 1 is mitigated"),
-		       NULL, 0 /* mitigated=0 */, NULL, 0,
-		       CTL_CREATE, CTL_EOL);
-
-	/* SpectreV2 */
-	spec_rnode = NULL;
-	sysctl_createv(clog, 0, NULL, &spec_rnode,
-		       CTLFLAG_PERMANENT,
-		       CTLTYPE_NODE, "spectre_v2", NULL,
-		       NULL, 0, NULL, 0,
-		       CTL_MACHDEP, CTL_CREATE);
-	sysctl_createv(clog, 0, &spec_rnode, NULL,
-		       CTLFLAG_READWRITE,
-		       CTLTYPE_BOOL, "mitigated",
-		       SYSCTL_DESCR("Whether Spectre Variant 2 is mitigated"),
-		       sysctl_machdep_spectreV2_mitigated, 0,
-		       &spec_mitigation_enabled, 0,
-		       CTL_CREATE, CTL_EOL);
-	sysctl_createv(clog, 0, &spec_rnode, NULL,
-		       CTLFLAG_PERMANENT,
-		       CTLTYPE_STRING, "method",
-		       SYSCTL_DESCR("Mitigation method in use"),
-		       NULL, 0,
-		       spec_mitigation_name, 0,
-		       CTL_CREATE, CTL_EOL);
+#ifndef XEN
+	void sysctl_eagerfpu_init(struct sysctllog **);
+	sysctl_eagerfpu_init(clog);
 #endif
 
 	/* None of these can ever change once the system has booted */

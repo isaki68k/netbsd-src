@@ -1,4 +1,4 @@
-#	$NetBSD: files,v 1.1198 2018/04/08 13:38:31 jmcneill Exp $
+#	$NetBSD: files,v 1.1213 2018/09/23 09:21:03 maxv Exp $
 #	@(#)files.newconf	7.5 (Berkeley) 5/10/93
 
 version 	20171118
@@ -29,6 +29,7 @@ defflag				KEYLOCK
 defparam opt_syslimits.h	CHILD_MAX OPEN_MAX
 defflag opt_diagnostic.h	_DIAGNOSTIC
 defflag				GPROF
+defflag				KASAN
 
 defparam opt_copy_symtab.h	makeoptions_COPY_SYMTAB
 
@@ -236,7 +237,6 @@ include "netinet/files.netinet"
 include "netinet6/files.netinet6"
 include "netipsec/files.netipsec"
 include "netmpls/files.netmpls"
-include "netnatm/files.netnatm"
 include "netsmb/files.netsmb"
 
 include "net/npf/files.npf"
@@ -314,10 +314,6 @@ defparam opt_memory_disk_image.h	makeoptions_MEMORY_DISK_IMAGE
 
 defflag opt_tftproot.h		TFTPROOT TFTPROOT_DEBUG
 
-# Support for hardware performance monitoring counters
-#
-defflag	opt_perfctrs.h		PERFCTRS
-
 defflag	opt_wlan.h		WLAN
 
 # Machine-independent device majors assignements
@@ -387,6 +383,9 @@ include "dev/hid/files.hid"
 # I2C device support
 include "dev/i2c/files.i2c"
 
+# PWM device support
+include "dev/pwm/files.pwm"
+
 # SPI device support
 include "dev/spi/files.spi"
 
@@ -418,10 +417,9 @@ include "dev/splash/files.splash"
 include "dev/videomode/files.videomode"
 
 # net device attributes - we have generic code for arc(net), ether(net),
-# fddi, token ring, and atm.
+# fddi, and token ring.
 #
 define	arcnet
-define	atm
 define	ether
 define	fddi
 define	hippi
@@ -443,11 +441,6 @@ define	arp
 # ALTQ network traffic shaping subsystem
 #
 include "altq/files.altq"
-
-#
-# IPKDB kernel debugger
-#
-include "ipkdb/files.ipkdb"
 
 # Logical disk
 #
@@ -743,9 +736,8 @@ file	dev/ic/dwc_gmac.c		awge
 
 # 8390-family Ethernet controllers
 #
-defflag	opt_ipkdb.h		IPKDB_DP8390
 define	dp8390nic
-file	dev/ic/dp8390.c			dp8390nic | ipkdb_dp8390
+file	dev/ic/dp8390.c			dp8390nic
 
 # National Semiconductor DP83905 AT/LANTIC Ethernet media support
 #
@@ -785,11 +777,6 @@ file	dev/ic/pdq_ifsubr.c		pdq
 #
 device	cy: tty
 file	dev/ic/cy.c			cy			needs-flag
-
-# Efficient Networks, Inc. ATM interface
-#
-device	en: atm, ifnet
-file	dev/ic/midway.c			en
 
 # NCR 53x9x or Emulex ESP SCSI Controller
 #
@@ -885,9 +872,8 @@ file	dev/ic/tms320av110.c		tms320av110
 # Novell NE2000-compatible Ethernet cards, based on the
 # National Semiconductor DS8390.
 #
-defflag	opt_ipkdb.h		IPKDB_NE			: IPKDB_DP8390
 device	ne: ether, ifnet, arp, dp8390nic, mii
-file	dev/ic/ne2000.c			ne | ipkdb_ne
+file	dev/ic/ne2000.c			ne
 
 # 8250/16[45]50-based "com" ports
 #
@@ -996,6 +982,10 @@ file	dev/ic/rtl81x9.c		rtk | re
 #
 device	re: ether, ifnet, arp, mii
 file	dev/ic/rtl8169.c		re
+
+# Virtual I/O Device (VIRTIO) bus controller and devices
+#
+include "dev/virtio/files.virtio"
 
 # Common code for ESDI/IDE/etc. controllers
 #
@@ -1367,41 +1357,6 @@ attach	cpciic at cpcbus with iic_cpcbus
 file	dev/ic/iic_cpcbus.c		iic_cpcbus
 
 
-# Attributes used by the ISDN subsystem
-#
-define	isdndev		# the ISDN subsystem
-define	passive_isdn	# files needed by passive cards (XXX - protocol
-			# specific)
-define	isdncapi	# ISDN CAPI (http://www.capi.org/)
-
-# The isac found on the Fritz V2.0 Card.
-define	nisacsx
-file	dev/ic/isacsx.c			nisacsx	needs-flag
-
-# The 'standard' isac
-define	nisac
-file	dev/ic/isac.c			nisac	needs-flag
-
-# ISDN cards based on the Siemens ISAC/HSCX chipset (or lookalikes)
-#
-device	isic: isdndev, passive_isdn, nisac
-
-file	dev/ic/isic.c			isic
-file	dev/ic/isic_l1.c		isic|ifpci|ifritz
-file	dev/ic/isic_l1fsm.c		isic|ifpci|ifritz
-file	dev/ic/hscx.c			isic
-file	dev/ic/isic_bchan.c		isic
-
-# (old) Diehl active ISDN cards
-#
-#device	daic: isdndev
-#file	dev/ic/daic.c			daic
-
-# AWM B1/T1
-# XXX: passive_isdn
-device	iavc: isdndev, isdncapi, passive_isdn
-file	dev/ic/iavc.c			iavc
-
 # Broadcom AirForce / Apple Airport Extreme
 device	bwi: arp, ifnet, firmload, wlan
 file	dev/ic/bwi.c			bwi
@@ -1460,7 +1415,6 @@ defpseudo srt:		ifnet
 defpseudo stf:		ifnet
 defpseudodev tap:	ifnet, ether, arp
 defpseudo carp:		ifnet, ether, arp
-defpseudodev etherip:	ifnet, ether, arp
 defpseudodev l2tp:	ifnet, ether, arp
 defpseudo canloop:	ifnet
 defpseudo ipsecif:	ifnet		# avoid to confuse ipsec itself option
@@ -1473,19 +1427,6 @@ defpseudo clockctl
 #
 defpseudo accf_data
 defpseudo accf_http
-
-# ISDN userland pseudo devices
-#
-defpseudo isdntrc:	isdndev, tty
-defpseudo isdnbchan:	isdndev, tty
-defpseudo isdntel:	isdndev, tty
-defpseudo isdnctl:	isdndev, tty
-defpseudo isdn:		isdndev, tty
-
-# ISDN network interfaces
-defpseudo irip:		isdndev, ifnet
-defflag opt_irip.h	IRIP_VJ
-defpseudo ippp:		isdndev, sppp, ifnet
 
 # KTTCP network throughput testing pseudo-device
 defpseudo kttcp
@@ -1639,3 +1580,8 @@ include "dev/clk/files.clk"
 #
 include "dev/ofw/files.ofw"
 include "dev/fdt/files.fdt"
+
+#
+# Name value library
+#
+include "external/bsd/libnv/conf/files.libnv"

@@ -1,4 +1,4 @@
-/*	$NetBSD: subr_pool.c,v 1.221 2018/01/12 18:54:37 para Exp $	*/
+/*	$NetBSD: subr_pool.c,v 1.227 2018/09/10 13:11:05 maxv Exp $	*/
 
 /*-
  * Copyright (c) 1997, 1999, 2000, 2002, 2007, 2008, 2010, 2014, 2015
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_pool.c,v 1.221 2018/01/12 18:54:37 para Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_pool.c,v 1.227 2018/09/10 13:11:05 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddb.h"
@@ -55,6 +55,7 @@ __KERNEL_RCSID(0, "$NetBSD: subr_pool.c,v 1.221 2018/01/12 18:54:37 para Exp $")
 #include <sys/xcall.h>
 #include <sys/cpu.h>
 #include <sys/atomic.h>
+#include <sys/asan.h>
 
 #include <uvm/uvm_extern.h>
 
@@ -85,8 +86,16 @@ static struct pool phpool[PHPOOL_MAX];
 static struct pool psppool;
 #endif
 
+#if defined(KASAN)
+#define POOL_REDZONE
+#endif
+
 #ifdef POOL_REDZONE
-# define POOL_REDZONE_SIZE 2
+# ifdef KASAN
+#  define POOL_REDZONE_SIZE 8
+# else
+#  define POOL_REDZONE_SIZE 2
+# endif
 static void pool_redzone_init(struct pool *, size_t);
 static void pool_redzone_fill(struct pool *, void *);
 static void pool_redzone_check(struct pool *, void *);
@@ -248,7 +257,7 @@ pr_item_notouch_put(const struct pool *pp, struct pool_item_header *ph,
 {
 	unsigned int idx = pr_item_notouch_index(pp, ph, obj);
 	pool_item_bitmap_t *bitmap = ph->ph_bitmap + (idx / BITMAP_SIZE);
-	pool_item_bitmap_t mask = 1 << (idx & BITMAP_MASK);
+	pool_item_bitmap_t mask = 1U << (idx & BITMAP_MASK);
 
 	KASSERT((*bitmap & mask) == 0);
 	*bitmap |= mask;
@@ -271,7 +280,7 @@ pr_item_notouch_get(const struct pool *pp, struct pool_item_header *ph)
 
 			bit--;
 			idx = (i * BITMAP_SIZE) + bit;
-			mask = 1 << bit;
+			mask = 1U << bit;
 			KASSERT((bitmap[i] & mask) != 0);
 			bitmap[i] &= ~mask;
 			break;
@@ -2728,17 +2737,28 @@ pool_page_free_meta(struct pool *pp, void *v)
 #define STATIC_BYTE	0xFE
 CTASSERT(POOL_REDZONE_SIZE > 1);
 
+#ifndef KASAN
 static inline uint8_t
 pool_pattern_generate(const void *p)
 {
 	return (uint8_t)(((uintptr_t)p) * PRIME
 	   >> ((sizeof(uintptr_t) - sizeof(uint8_t))) * CHAR_BIT);
 }
+#endif
 
 static void
 pool_redzone_init(struct pool *pp, size_t requested_size)
 {
+	size_t redzsz;
 	size_t nsz;
+
+#ifdef KASAN
+	redzsz = requested_size;
+	kasan_add_redzone(&redzsz);
+	redzsz -= requested_size;
+#else
+	redzsz = POOL_REDZONE_SIZE;
+#endif
 
 	if (pp->pr_roflags & PR_NOTOUCH) {
 		pp->pr_reqsize = 0;
@@ -2750,7 +2770,7 @@ pool_redzone_init(struct pool *pp, size_t requested_size)
 	 * We may have extended the requested size earlier; check if
 	 * there's naturally space in the padding for a red zone.
 	 */
-	if (pp->pr_size - requested_size >= POOL_REDZONE_SIZE) {
+	if (pp->pr_size - requested_size >= redzsz) {
 		pp->pr_reqsize = requested_size;
 		pp->pr_redzone = true;
 		return;
@@ -2760,7 +2780,7 @@ pool_redzone_init(struct pool *pp, size_t requested_size)
 	 * No space in the natural padding; check if we can extend a
 	 * bit the size of the pool.
 	 */
-	nsz = roundup(pp->pr_size + POOL_REDZONE_SIZE, pp->pr_align);
+	nsz = roundup(pp->pr_size + redzsz, pp->pr_align);
 	if (nsz <= pp->pr_alloc->pa_pagesz) {
 		/* Ok, we can */
 		pp->pr_size = nsz;
@@ -2777,11 +2797,15 @@ pool_redzone_init(struct pool *pp, size_t requested_size)
 static void
 pool_redzone_fill(struct pool *pp, void *p)
 {
-	uint8_t *cp, pat;
-	const uint8_t *ep;
-
 	if (!pp->pr_redzone)
 		return;
+#ifdef KASAN
+	size_t size_with_redzone = pp->pr_reqsize;
+	kasan_add_redzone(&size_with_redzone);
+	kasan_alloc(p, pp->pr_reqsize, size_with_redzone);
+#else
+	uint8_t *cp, pat;
+	const uint8_t *ep;
 
 	cp = (uint8_t *)p + pp->pr_reqsize;
 	ep = cp + POOL_REDZONE_SIZE;
@@ -2798,36 +2822,42 @@ pool_redzone_fill(struct pool *pp, void *p)
 		*cp = pool_pattern_generate(cp);
 		cp++;
 	}
+#endif
 }
 
 static void
 pool_redzone_check(struct pool *pp, void *p)
 {
-	uint8_t *cp, pat, expected;
-	const uint8_t *ep;
-
 	if (!pp->pr_redzone)
 		return;
+#ifdef KASAN
+	size_t size_with_redzone = pp->pr_reqsize;
+	kasan_add_redzone(&size_with_redzone);
+	kasan_free(p, size_with_redzone);
+#else
+	uint8_t *cp, pat, expected;
+	const uint8_t *ep;
 
 	cp = (uint8_t *)p + pp->pr_reqsize;
 	ep = cp + POOL_REDZONE_SIZE;
 
 	pat = pool_pattern_generate(cp);
 	expected = (pat == '\0') ? STATIC_BYTE: pat;
-	if (expected != *cp) {
-		panic("%s: %p: 0x%02x != 0x%02x\n",
+	if (__predict_false(expected != *cp)) {
+		printf("%s: %p: 0x%02x != 0x%02x\n",
 		   __func__, cp, *cp, expected);
 	}
 	cp++;
 
 	while (cp < ep) {
 		expected = pool_pattern_generate(cp);
-		if (*cp != expected) {
-			panic("%s: %p: 0x%02x != 0x%02x\n",
+		if (__predict_false(*cp != expected)) {
+			printf("%s: %p: 0x%02x != 0x%02x\n",
 			   __func__, cp, *cp, expected);
 		}
 		cp++;
 	}
+#endif
 }
 
 #endif /* POOL_REDZONE */

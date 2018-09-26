@@ -1,4 +1,4 @@
-/*	$NetBSD: ip_carp.c,v 1.95 2018/03/21 15:33:25 maxv Exp $	*/
+/*	$NetBSD: ip_carp.c,v 1.100 2018/09/14 05:09:51 maxv Exp $	*/
 /*	$OpenBSD: ip_carp.c,v 1.113 2005/11/04 08:11:54 mcbride Exp $	*/
 
 /*
@@ -33,7 +33,7 @@
 #endif
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ip_carp.c,v 1.95 2018/03/21 15:33:25 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ip_carp.c,v 1.100 2018/09/14 05:09:51 maxv Exp $");
 
 /*
  * TODO:
@@ -569,7 +569,7 @@ _carp_proto_input(struct mbuf *m, int hlen, int proto)
 }
 
 void
-carp_proto_input(struct mbuf *m, ...)
+carp_proto_input(struct mbuf *m, int off, int proto)
 {
 
 	wqinput_input(carp_wqinput, m, 0, 0);
@@ -615,7 +615,7 @@ _carp6_proto_input(struct mbuf *m, int off, int proto)
 
 	/* verify that we have a complete carp packet */
 	len = m->m_len;
-	IP6_EXTHDR_GET(ch, struct carp_header *, m, off, sizeof(*ch));
+	M_REGION_GET(ch, struct carp_header *, m, off, sizeof(*ch));
 	if (ch == NULL) {
 		CARP_STATINC(CARP_STAT_BADLEN);
 		CARP_LOG(sc, ("packet size %u too small", len));
@@ -1504,7 +1504,7 @@ carp_input(struct mbuf *m, u_int8_t *shost, u_int8_t *dhost, u_int16_t etype)
 
 	m_set_rcvif(m, ifp);
 
-	bpf_mtap(ifp, m);
+	bpf_mtap(ifp, m, BPF_D_IN);
 	ifp->if_ipackets++;
 	ether_input(ifp, m);
 	return (0);
@@ -2312,7 +2312,11 @@ carp_ether_addmulti(struct carp_softc *sc, struct ifreq *ifr)
 	 * statement shouldn't fail.
 	 */
 	(void)ether_multiaddr(sa, addrlo, addrhi);
-	ETHER_LOOKUP_MULTI(addrlo, addrhi, &sc->sc_ac, mc->mc_enm);
+
+	ETHER_LOCK(&sc->sc_ac);
+	mc->mc_enm = ether_lookup_multi(addrlo, addrhi, &sc->sc_ac);
+	ETHER_UNLOCK(&sc->sc_ac);
+
 	memcpy(&mc->mc_addr, sa, sa->sa_len);
 	LIST_INSERT_HEAD(&sc->carp_mc_listhead, mc, mc_entries);
 
@@ -2351,7 +2355,10 @@ carp_ether_delmulti(struct carp_softc *sc, struct ifreq *ifr)
 	 */
 	if ((error = ether_multiaddr(sa, addrlo, addrhi)) != 0)
 		return (error);
-	ETHER_LOOKUP_MULTI(addrlo, addrhi, &sc->sc_ac, enm);
+
+	ETHER_LOCK(&sc->sc_ac);
+	enm = ether_lookup_multi(addrlo, addrhi, &sc->sc_ac);
+	ETHER_UNLOCK(&sc->sc_ac);
 	if (enm == NULL)
 		return (EINVAL);
 

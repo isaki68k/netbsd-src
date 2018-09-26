@@ -1,4 +1,4 @@
-/*	$NetBSD: usbdi.c,v 1.175 2017/10/28 00:37:12 pgoyette Exp $	*/
+/*	$NetBSD: usbdi.c,v 1.178 2018/09/16 20:21:56 mrg Exp $	*/
 
 /*
  * Copyright (c) 1998, 2012, 2015 The NetBSD Foundation, Inc.
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: usbdi.c,v 1.175 2017/10/28 00:37:12 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: usbdi.c,v 1.178 2018/09/16 20:21:56 mrg Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -70,6 +70,7 @@ static void *usbd_alloc_buffer(struct usbd_xfer *, uint32_t);
 static void usbd_free_buffer(struct usbd_xfer *);
 static struct usbd_xfer *usbd_alloc_xfer(struct usbd_device *, unsigned int);
 static usbd_status usbd_free_xfer(struct usbd_xfer *);
+static void usbd_request_async_cb(struct usbd_xfer *, void *, usbd_status);
 
 #if defined(USB_DEBUG)
 void
@@ -282,6 +283,7 @@ usbd_transfer(struct usbd_xfer *xfer)
 	USBHIST_LOG(usbdebug,
 	    "xfer = %#jx, flags = %#jx, pipe = %#jx, running = %jd",
 	    (uintptr_t)xfer, xfer->ux_flags, (uintptr_t)pipe, pipe->up_running);
+	KASSERT(xfer->ux_status == USBD_NOT_STARTED);
 
 #ifdef USB_DEBUG
 	if (usbdebug > 5)
@@ -347,7 +349,7 @@ usbd_transfer(struct usbd_xfer *xfer)
 	}
 
 	if (err != USBD_IN_PROGRESS) {
-		USBHIST_LOG(usbdebug, "<- done xfer %#jx, err %jd "
+		USBHIST_LOG(usbdebug, "<- done xfer %#jx, sync (err %jd)"
 		    "(complete/error)", (uintptr_t)xfer, err, 0, 0);
 		return err;
 	}
@@ -476,7 +478,6 @@ usbd_alloc_xfer(struct usbd_device *dev, unsigned int nframes)
 	xfer->ux_bus = dev->ud_bus;
 	callout_init(&xfer->ux_callout, CALLOUT_MPSAFE);
 	cv_init(&xfer->ux_cv, "usbxfer");
-	cv_init(&xfer->ux_hccv, "usbhcxfer");
 
 	USBHIST_LOG(usbdebug, "returns %#jx", (uintptr_t)xfer, 0, 0, 0);
 
@@ -499,7 +500,6 @@ usbd_free_xfer(struct usbd_xfer *xfer)
 	}
 #endif
 	cv_destroy(&xfer->ux_cv);
-	cv_destroy(&xfer->ux_hccv);
 	xfer->ux_bus->ub_methods->ubm_freex(xfer->ux_bus, xfer);
 	return USBD_NORMAL_COMPLETION;
 }
@@ -911,7 +911,8 @@ usb_transfer_complete(struct usbd_xfer *xfer)
 	    xfer->ux_actlen);
 
 	KASSERT(polling || mutex_owned(pipe->up_dev->ud_bus->ub_lock));
-	KASSERT(xfer->ux_state == XFER_ONQU);
+	KASSERTMSG(xfer->ux_state == XFER_ONQU, "xfer %p state is %x", xfer,
+	    xfer->ux_state);
 	KASSERT(pipe != NULL);
 
 	if (!repeat) {
@@ -963,19 +964,19 @@ usb_transfer_complete(struct usbd_xfer *xfer)
 	    (uintptr_t)xfer, (uintptr_t)xfer->ux_callback, xfer->ux_status, 0);
 
 	if (xfer->ux_callback) {
-		if (!polling)
+		if (!polling) {
 			mutex_exit(pipe->up_dev->ud_bus->ub_lock);
-
-		if (!(pipe->up_flags & USBD_MPSAFE))
-			KERNEL_LOCK(1, curlwp);
+			if (!(pipe->up_flags & USBD_MPSAFE))
+				KERNEL_LOCK(1, curlwp);
+		}
 
 		xfer->ux_callback(xfer, xfer->ux_priv, xfer->ux_status);
 
-		if (!(pipe->up_flags & USBD_MPSAFE))
-			KERNEL_UNLOCK_ONE(curlwp);
-
-		if (!polling)
+		if (!polling) {
+			if (!(pipe->up_flags & USBD_MPSAFE))
+				KERNEL_UNLOCK_ONE(curlwp);
 			mutex_enter(pipe->up_dev->ud_bus->ub_lock);
+		}
 	}
 
 	if (sync && !polling) {
@@ -1120,6 +1121,36 @@ usbd_do_request_flags(struct usbd_device *dev, usb_device_request_t *req,
 	return err;
 }
 
+static void
+usbd_request_async_cb(struct usbd_xfer *xfer, void *priv, usbd_status status)
+{
+	usbd_free_xfer(xfer);
+}
+
+/*
+ * Execute a request without waiting for completion.
+ * Can be used from interrupt context.
+ */
+usbd_status
+usbd_request_async(struct usbd_device *dev, struct usbd_xfer *xfer,
+    usb_device_request_t *req, void *priv, usbd_callback callback)
+{
+	usbd_status err;
+
+	if (callback == NULL)
+		callback = usbd_request_async_cb;
+
+	usbd_setup_default_xfer(xfer, dev, priv,
+	    USBD_DEFAULT_TIMEOUT, req, NULL, UGETW(req->wLength), 0,
+	    callback);
+	err = usbd_transfer(xfer);
+	if (err != USBD_IN_PROGRESS) {
+		usbd_free_xfer(xfer);
+		return (err);
+	}
+	return (USBD_NORMAL_COMPLETION);
+}
+
 const struct usbd_quirks *
 usbd_get_quirks(struct usbd_device *dev)
 {
@@ -1144,7 +1175,8 @@ usbd_dopoll(struct usbd_interface *iface)
 }
 
 /*
- * XXX use this more???  ub_usepolling it touched manually all over
+ * This is for keyboard driver as well, which only operates in polling
+ * mode from the ask root, etc., prompt and from DDB.
  */
 void
 usbd_set_polling(struct usbd_device *dev, int on)

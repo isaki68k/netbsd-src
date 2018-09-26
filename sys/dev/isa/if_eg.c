@@ -1,4 +1,4 @@
-/*	$NetBSD: if_eg.c,v 1.92 2016/12/15 09:28:05 ozaki-r Exp $	*/
+/*	$NetBSD: if_eg.c,v 1.95 2018/09/03 16:29:31 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1993 Dean Huxley <dean@fsa.ca>
@@ -40,7 +40,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_eg.c,v 1.92 2016/12/15 09:28:05 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_eg.c,v 1.95 2018/09/03 16:29:31 riastradh Exp $");
 
 #include "opt_inet.h"
 
@@ -58,6 +58,7 @@ __KERNEL_RCSID(0, "$NetBSD: if_eg.c,v 1.92 2016/12/15 09:28:05 ozaki-r Exp $");
 #include <net/if.h>
 #include <net/if_dl.h>
 #include <net/if_types.h>
+#include <net/bpf.h>
 
 #include <net/if_ether.h>
 
@@ -68,10 +69,6 @@ __KERNEL_RCSID(0, "$NetBSD: if_eg.c,v 1.92 2016/12/15 09:28:05 ozaki-r Exp $");
 #include <netinet/ip.h>
 #include <netinet/if_inarp.h>
 #endif
-
-
-#include <net/bpf.h>
-#include <net/bpfdesc.h>
 
 #include <sys/cpu.h>
 #include <sys/intr.h>
@@ -577,9 +574,9 @@ loop:
 		aprint_error_dev(sc->sc_dev, "no header mbuf\n");
 		panic("egstart");
 	}
-	len = max(m0->m_pkthdr.len, ETHER_MIN_LEN - ETHER_CRC_LEN);
+	len = uimax(m0->m_pkthdr.len, ETHER_MIN_LEN - ETHER_CRC_LEN);
 
-	bpf_mtap(ifp, m0);
+	bpf_mtap(ifp, m0, BPF_D_OUT);
 
 	sc->eg_pcb[0] = EG_CMD_SENDPACKET;
 	sc->eg_pcb[1] = 0x06;
@@ -755,7 +752,7 @@ egget(struct eg_softc *sc, void *buf, int totlen)
 			len = MCLBYTES;
 		}
 
-		m->m_len = len = min(totlen, len);
+		m->m_len = len = uimin(totlen, len);
 		memcpy(mtod(m, void *), buf, len);
 		buf = (char *)buf + len;
 

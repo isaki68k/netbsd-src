@@ -1,4 +1,4 @@
-/* $NetBSD: mtd803.c,v 1.33 2016/12/15 09:28:05 ozaki-r Exp $ */
+/* $NetBSD: mtd803.c,v 1.36 2018/09/03 16:29:31 riastradh Exp $ */
 
 /*-
  *
@@ -44,7 +44,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mtd803.c,v 1.33 2016/12/15 09:28:05 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mtd803.c,v 1.36 2018/09/03 16:29:31 riastradh Exp $");
 
 
 #include <sys/param.h>
@@ -58,6 +58,7 @@ __KERNEL_RCSID(0, "$NetBSD: mtd803.c,v 1.33 2016/12/15 09:28:05 ozaki-r Exp $");
 #include <net/if.h>
 #include <net/if_ether.h>
 #include <net/if_media.h>
+#include <net/bpf.h>
 
 #ifdef INET
 #include <netinet/in.h>
@@ -66,9 +67,6 @@ __KERNEL_RCSID(0, "$NetBSD: mtd803.c,v 1.33 2016/12/15 09:28:05 ozaki-r Exp $");
 #include <netinet/in_var.h>
 #include <netinet/ip.h>
 #endif
-
-#include <net/bpf.h>
-#include <net/bpfdesc.h>
 
 #include <sys/bus.h>
 
@@ -472,7 +470,7 @@ mtd_start(struct ifnet *ifp)
 		if (m == NULL)
 			break;
 
-		bpf_mtap(ifp, m);
+		bpf_mtap(ifp, m, BPF_D_OUT);
 
 		/* Copy mbuf chain into tx buffer */
 		(void)mtd_put(sc, sc->cur_tx, m);
@@ -604,7 +602,7 @@ mtd_get(struct mtd_softc *sc, int index, int totlen)
 			m->m_data = newdata;
 		}
 
-		m->m_len = len = min(totlen, len);
+		m->m_len = len = uimin(totlen, len);
 		memcpy(mtod(m, void *), buf, len);
 		buf += len;
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: sys_machdep.c,v 1.46 2018/01/04 14:02:23 maxv Exp $	*/
+/*	$NetBSD: sys_machdep.c,v 1.49 2018/09/03 16:29:29 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1998, 2007, 2009, 2017 The NetBSD Foundation, Inc.
@@ -30,10 +30,9 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sys_machdep.c,v 1.46 2018/01/04 14:02:23 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sys_machdep.c,v 1.49 2018/09/03 16:29:29 riastradh Exp $");
 
 #include "opt_mtrr.h"
-#include "opt_pmc.h"
 #include "opt_user_ldt.h"
 #include "opt_compat_netbsd.h"
 #include "opt_xen.h"
@@ -76,11 +75,6 @@ __KERNEL_RCSID(0, "$NetBSD: sys_machdep.c,v 1.46 2018/01/04 14:02:23 maxv Exp $"
 
 #ifdef XEN
 #undef	USER_LDT
-#undef	PMC
-#endif
-
-#ifdef PMC
-#include <machine/pmc.h>
 #endif
 
 extern struct vm_map *kernel_map;
@@ -174,7 +168,7 @@ x86_get_ldt1(struct lwp *l, struct x86_get_ldt_args *ua, union descriptor *cp)
 	}
 
 	lp += ua->start;
-	num = min(ua->num, nldt - ua->start);
+	num = uimin(ua->num, nldt - ua->start);
 	ua->num = num;
 
 	memcpy(cp, lp, num * sizeof(union descriptor));
@@ -298,8 +292,8 @@ x86_set_ldt1(struct lwp *l, struct x86_set_ldt_args *ua,
 	/* Allocate a new LDT. */
 	for (;;) {
 		new_len = (ua->start + ua->num) * sizeof(union descriptor);
-		new_len = max(new_len, pmap->pm_ldt_len);
-		new_len = max(new_len, min_ldt_size);
+		new_len = uimax(new_len, pmap->pm_ldt_len);
+		new_len = uimax(new_len, min_ldt_size);
 		new_len = round_page(new_len);
 		new_ldt = (union descriptor *)uvm_km_alloc(kernel_map,
 		    new_len, 0, UVM_KMF_WIRED | UVM_KMF_ZERO | UVM_KMF_WAITVA);
@@ -764,20 +758,6 @@ sys_sysarch(struct lwp *l, const struct sys_sysarch_args *uap, register_t *retva
 	case X86_SET_MTRR:
 		error = x86_set_mtrr(l, SCARG(uap, parms), retval);
 		break;
-
-#ifdef PMC
-	case X86_PMC_INFO:
-		error = sys_pmc_info(l, SCARG(uap, parms), retval);
-		break;
-
-	case X86_PMC_STARTSTOP:
-		error = sys_pmc_startstop(l, SCARG(uap, parms), retval);
-		break;
-
-	case X86_PMC_READ:
-		error = sys_pmc_read(l, SCARG(uap, parms), retval);
-		break;
-#endif
 
 	case X86_SET_FSBASE:
 		error = x86_set_sdbase(SCARG(uap, parms), 'f', curlwp, false);

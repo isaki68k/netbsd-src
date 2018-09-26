@@ -1,4 +1,4 @@
-/*	$NetBSD: ipsecif.c,v 1.7 2018/04/06 10:38:53 knakahara Exp $  */
+/*	$NetBSD: ipsecif.c,v 1.10 2018/05/31 07:03:57 maxv Exp $  */
 
 /*
  * Copyright (c) 2017 Internet Initiative Japan Inc.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ipsecif.c,v 1.7 2018/04/06 10:38:53 knakahara Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ipsecif.c,v 1.10 2018/05/31 07:03:57 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -91,7 +91,7 @@ static int ip6_ipsec_pmtu = 0; /* XXX: per interface configuration?? */
 static int ip6_ipsec_copy_tos = 0;
 #endif
 
-struct encapsw ipsecif4_encapsw = {
+static const struct encapsw ipsecif4_encapsw = {
 	.encapsw4 = {
 		.pr_input = ipsecif4_input,
 		.pr_ctlinput = NULL,
@@ -173,8 +173,7 @@ ipsecif4_needfrag(struct mbuf *m, struct ipsecrequest *isr)
 	if (sav == NULL)
 		return 0;
 
-	if (!(sav->natt_type & UDP_ENCAP_ESPINUDP) &&
-	    !(sav->natt_type & UDP_ENCAP_ESPINUDP_NON_IKE)) {
+	if (!(sav->natt_type & UDP_ENCAP_ESPINUDP)) {
 		mtu = 0;
 		goto out;
 	}
@@ -570,9 +569,9 @@ ipsecif6_output(struct ipsec_variant *var, int family, struct mbuf *m)
 	sockaddr_in6_init(&u.dst6, &sin6_dst->sin6_addr, 0, 0, 0);
 
 	iro = percpu_getref(sc->ipsec_ro_percpu);
-	mutex_enter(&iro->ir_lock);
+	mutex_enter(iro->ir_lock);
 	if ((rt = rtcache_lookup(&iro->ir_ro, &u.dst)) == NULL) {
-		mutex_exit(&iro->ir_lock);
+		mutex_exit(iro->ir_lock);
 		percpu_putref(sc->ipsec_ro_percpu);
 		m_freem(m);
 		return ENETUNREACH;
@@ -581,7 +580,7 @@ ipsecif6_output(struct ipsec_variant *var, int family, struct mbuf *m)
 	if (rt->rt_ifp == ifp) {
 		rtcache_unref(rt, &iro->ir_ro);
 		rtcache_free(&iro->ir_ro);
-		mutex_exit(&iro->ir_lock);
+		mutex_exit(iro->ir_lock);
 		percpu_putref(sc->ipsec_ro_percpu);
 		m_freem(m);
 		return ENETUNREACH;
@@ -598,7 +597,7 @@ ipsecif6_output(struct ipsec_variant *var, int family, struct mbuf *m)
 	if (error)
 		rtcache_free(&iro->ir_ro);
 
-	mutex_exit(&iro->ir_lock);
+	mutex_exit(iro->ir_lock);
 	percpu_putref(sc->ipsec_ro_percpu);
 
 	return error;
@@ -906,9 +905,9 @@ ipsecif6_rtcache_free_pc(void *p, void *arg __unused, struct cpu_info *ci __unus
 {
 	struct ipsec_ro *iro = p;
 
-	mutex_enter(&iro->ir_lock);
+	mutex_enter(iro->ir_lock);
 	rtcache_free(&iro->ir_ro);
-	mutex_exit(&iro->ir_lock);
+	mutex_exit(iro->ir_lock);
 }
 
 int
@@ -960,7 +959,7 @@ ipsecif6_ctlinput(int cmd, const struct sockaddr *sa, void *d, void *eparg)
 		return NULL;
 
 	iro = percpu_getref(sc->ipsec_ro_percpu);
-	mutex_enter(&iro->ir_lock);
+	mutex_enter(iro->ir_lock);
 	dst6 = satocsin6(rtcache_getdst(&iro->ir_ro));
 	/* XXX scope */
 	if (dst6 == NULL)
@@ -969,7 +968,7 @@ ipsecif6_ctlinput(int cmd, const struct sockaddr *sa, void *d, void *eparg)
 		/* flush route cache */
 		rtcache_free(&iro->ir_ro);
 
-	mutex_exit(&iro->ir_lock);
+	mutex_exit(iro->ir_lock);
 	percpu_putref(sc->ipsec_ro_percpu);
 
 	return NULL;

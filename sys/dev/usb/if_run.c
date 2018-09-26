@@ -1,4 +1,4 @@
-/*	$NetBSD: if_run.c,v 1.26 2018/02/01 16:49:34 maxv Exp $	*/
+/*	$NetBSD: if_run.c,v 1.30 2018/09/12 21:57:18 christos Exp $	*/
 /*	$OpenBSD: if_run.c,v 1.90 2012/03/24 15:11:04 jsg Exp $	*/
 
 /*-
@@ -23,7 +23,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_run.c,v 1.26 2018/02/01 16:49:34 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_run.c,v 1.30 2018/09/12 21:57:18 christos Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -759,8 +759,11 @@ run_detach(device_t self, int flags)
 	sc->sc_flags |= RUN_DETACHING;
 
 	if (ifp->if_flags & IFF_RUNNING) {
-		usb_rem_task(sc->sc_udev, &sc->sc_task);
 		run_stop(ifp, 0);
+		callout_halt(&sc->scan_to, NULL);
+		callout_halt(&sc->calib_to, NULL);
+		usb_rem_task_wait(sc->sc_udev, &sc->sc_task, USB_TASKQ_DRIVER,
+		    NULL);
 	}
 
 	ifp->if_flags &= ~(IFF_RUNNING | IFF_OACTIVE);
@@ -2302,7 +2305,7 @@ run_rx_frame(struct run_softc *sc, uint8_t *buf, int dmalen)
 			}
 			break;
 		}
-		bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_rxtap_len, m);
+		bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_rxtap_len, m, BPF_D_IN);
 	}
 
 	s = splnet();
@@ -2543,7 +2546,7 @@ run_tx(struct run_softc *sc, struct mbuf *m, struct ieee80211_node *ni)
 		if (mcs & RT2860_PHY_SHPRE)
 			tap->wt_flags |= IEEE80211_RADIOTAP_F_SHORTPRE;
 
-		bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_txtap_len, m);
+		bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_txtap_len, m, BPF_D_OUT);
 	}
 
 	m_copydata(m, 0, m->m_pkthdr.len, ((uint8_t *)txwi) + txwisize);
@@ -2612,7 +2615,7 @@ run_start(struct ifnet *ifp)
 			continue;
 		}
 
-		bpf_mtap(ifp, m);
+		bpf_mtap(ifp, m, BPF_D_OUT);
 
 		if ((m = ieee80211_encap(ic, m, ni)) == NULL) {
 			ieee80211_free_node(ni);
@@ -2620,7 +2623,7 @@ run_start(struct ifnet *ifp)
 			continue;
 		}
 sendit:
-		bpf_mtap3(ic->ic_rawbpf, m);
+		bpf_mtap3(ic->ic_rawbpf, m, BPF_D_OUT);
 
 		if (run_tx(sc, m, ni) != 0) {
 			ieee80211_free_node(ni);
@@ -4839,7 +4842,7 @@ run_setup_beacon(struct run_softc *sc)
 }
 #endif
 
-MODULE(MODULE_CLASS_DRIVER, if_run, "bpf");
+MODULE(MODULE_CLASS_DRIVER, if_run, NULL);
 
 #ifdef _MODULE
 #include "ioconf.c"

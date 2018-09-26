@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.h,v 1.104 2018/03/22 15:18:05 macallan Exp $	*/
+/*	$NetBSD: cpu.h,v 1.108 2018/08/22 01:05:23 msaitoh Exp $	*/
 
 /*
  * Copyright (C) 1999 Wolfgang Solfrank.
@@ -95,7 +95,7 @@ struct cpu_info {
 #endif
 #define	CI_SAVETEMP	(0*CPUSAVE_LEN)
 #define	CI_SAVEDDB	(1*CPUSAVE_LEN)
-#define	CI_SAVEIPKDB	(2*CPUSAVE_LEN)
+#define	CI_SAVEIPKDB	(2*CPUSAVE_LEN)	/* obsolete */
 #define	CI_SAVEMMU	(3*CPUSAVE_LEN)
 #define	CI_SAVEMAX	(4*CPUSAVE_LEN)
 #define	CPUSAVE_LEN	8
@@ -164,6 +164,9 @@ struct cpu_hatch_data {
 	uint32_t hatch_tbl;
 #if defined(PPC_OEA64_BRIDGE) || defined (_ARCH_PPC64)
 	uint64_t hatch_hid0;
+	uint64_t hatch_hid1;
+	uint64_t hatch_hid4;
+	uint64_t hatch_hid5;
 #else
 	uint32_t hatch_hid0;
 #endif
@@ -486,6 +489,5 @@ void	__syncicache(void *, size_t);
 #define	CPU_BOOTED_DEVICE	9	/* string: device we booted from */
 #define	CPU_BOOTED_KERNEL	10	/* string: kernel we booted */
 #define	CPU_EXECPROT		11	/* bool: PROT_EXEC works */
-#define	CPU_MAXID		12	/* number of valid machdep ids */
 
 #endif	/* _POWERPC_CPU_H_ */

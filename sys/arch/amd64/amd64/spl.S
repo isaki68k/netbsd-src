@@ -1,4 +1,4 @@
-/*	$NetBSD: spl.S,v 1.34 2018/04/04 22:52:58 christos Exp $	*/
+/*	$NetBSD: spl.S,v 1.36 2018/08/22 17:04:36 maxv Exp $	*/
 
 /*
  * Copyright (c) 2003 Wasabi Systems, Inc.
@@ -65,6 +65,7 @@
  */
 
 #include "opt_ddb.h"
+#include "opt_kasan.h"
 
 #define ALIGN_TEXT	.align 16,0x90
 
@@ -105,6 +106,17 @@ IDTVEC(softintr)
 	movq	L_PCB(%r15),%rcx
 	movq	%rdi,CPUVAR(CURLWP)
 
+#ifdef KASAN
+	/* clear the new stack */
+	pushq	%rax
+	pushq	%rdx
+	pushq	%rcx
+	callq	_C_LABEL(kasan_softint)
+	popq	%rcx
+	popq	%rdx
+	popq	%rax
+#endif
+
 	/* save old context */
 	movq	%rsp,PCB_RSP(%rcx)
 	movq	%rbp,PCB_RBP(%rcx)
@@ -137,7 +149,7 @@ IDTVEC_END(softintr)
  *
  *	%rax		prevlwp from cpu_switchto()
  */
-NENTRY(softintr_ret)
+ENTRY(softintr_ret)
 	incl	CPUVAR(MTX_COUNT)	/* re-adjust after mi_switch */
 	movl	$0,L_CTXSWTCH(%rax)	/* %rax from cpu_switchto */
 	cli
@@ -149,7 +161,7 @@ END(softintr_ret)
  *
  * Software interrupt registration.
  */
-NENTRY(softint_trigger)
+ENTRY(softint_trigger)
 	orl	%edi,CPUVAR(IPENDING)	/* atomic on local cpu */
 	ret
 END(softint_trigger)

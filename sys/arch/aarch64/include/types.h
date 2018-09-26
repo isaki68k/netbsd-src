@@ -1,4 +1,4 @@
-/* $NetBSD: types.h,v 1.6 2018/04/01 04:35:03 ryo Exp $ */
+/* $NetBSD: types.h,v 1.11 2018/07/17 11:55:55 joerg Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -54,14 +54,11 @@ typedef unsigned long	vsize_t;
 #define PRIxVSIZE	"lx"
 #define PRIuVSIZE	"lu"
 
-typedef unsigned long long int register_t;
-typedef unsigned int register32_t;
-#define PRIxREGISTER	"llx"
-#define PRIxREGISTER32	"lx"
+typedef __uint64_t register_t;
+typedef __uint32_t register32_t;
+#define PRIxREGISTER	PRIx64
+#define PRIxREGISTER32	PRIx32
 
-typedef unsigned long	pmc_evid_t;
-#define PMC_INVALID_EVID	(-1)
-typedef unsigned long	pmc_ctr_t;
 typedef unsigned short	tlb_asid_t;
 
 #if defined(_KERNEL)
@@ -90,7 +87,7 @@ typedef struct label_t {	/* Used by setjmp & longjmp */
  * This should have always been an 8-bit type.
  */
 typedef	unsigned char	__cpu_simple_lock_nv_t;
-typedef unsigned long long int __register_t;
+typedef __uint64_t __register_t;
 
 #define __SIMPLELOCK_LOCKED	1
 #define __SIMPLELOCK_UNLOCKED	0
@@ -106,6 +103,8 @@ typedef unsigned long long int __register_t;
 #define __HAVE___LWP_GETPRIVATE_FAST
 #define __HAVE_COMMON___TLS_GET_ADDR
 #define __HAVE_TLS_VARIANT_I
+#define __HAVE_OLD_DISKLABEL	/* compatibility */
+#define __HAVE_ATOMIC64_OPS
 
 #if defined(_KERNEL) || defined(_KMEMUSER)
 #define PCU_FPU			0

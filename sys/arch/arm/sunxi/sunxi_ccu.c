@@ -1,4 +1,4 @@
-/* $NetBSD: sunxi_ccu.c,v 1.9 2018/04/01 21:19:17 bouyer Exp $ */
+/* $NetBSD: sunxi_ccu.c,v 1.12 2018/09/21 12:04:07 skrll Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared McNeill <jmcneill@invisible.ca>
@@ -28,10 +28,10 @@
 
 #include "opt_soc.h"
 #include "opt_multiprocessor.h"
-#include "opt_fdt_arm.h"
+#include "opt_console.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sunxi_ccu.c,v 1.9 2018/04/01 21:19:17 bouyer Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sunxi_ccu.c,v 1.12 2018/09/21 12:04:07 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -102,7 +102,8 @@ static const struct fdtbus_reset_controller_func sunxi_ccu_fdtreset_funcs = {
 };
 
 static struct clk *
-sunxi_ccu_clock_decode(device_t dev, const void *data, size_t len)
+sunxi_ccu_clock_decode(device_t dev, int cc_phandle, const void *data,
+		       size_t len)
 {
 	struct sunxi_ccu_softc * const sc = device_private(dev);
 	struct sunxi_ccu_clk *clk;
@@ -317,10 +318,13 @@ sunxi_ccu_attach(struct sunxi_ccu_softc *sc)
 		return ENXIO;
 	}
 
+	sc->sc_clkdom.name = device_xname(sc->sc_dev);
 	sc->sc_clkdom.funcs = &sunxi_ccu_clock_funcs;
 	sc->sc_clkdom.priv = sc;
-	for (i = 0; i < sc->sc_nclks; i++)
+	for (i = 0; i < sc->sc_nclks; i++) {
 		sc->sc_clks[i].base.domain = &sc->sc_clkdom;
+		clk_attach(&sc->sc_clks[i].base);
+	}
 
 	fdtbus_register_clock_controller(sc->sc_dev, sc->sc_phandle,
 	    &sunxi_ccu_fdtclock_funcs);

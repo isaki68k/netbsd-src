@@ -1,4 +1,4 @@
-/*	$NetBSD: tcp_subr.c,v 1.278 2018/04/18 07:17:49 maxv Exp $	*/
+/*	$NetBSD: tcp_subr.c,v 1.281 2018/09/03 16:29:36 riastradh Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -91,7 +91,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tcp_subr.c,v 1.278 2018/04/18 07:17:49 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tcp_subr.c,v 1.281 2018/09/03 16:29:36 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -143,7 +143,6 @@ __KERNEL_RCSID(0, "$NetBSD: tcp_subr.c,v 1.278 2018/04/18 07:17:49 maxv Exp $");
 #include <netinet/tcp_vtw.h>
 #include <netinet/tcp_private.h>
 #include <netinet/tcp_congctl.h>
-#include <netinet/tcpip.h>
 
 #ifdef IPSEC
 #include <netipsec/ipsec.h>
@@ -1832,11 +1831,11 @@ tcp_mss_to_advertise(const struct ifnet *ifp, int af)
 	if (tcp_mss_ifmtu == 0)
 		switch (af) {
 		case AF_INET:
-			mss = max(in_maxmtu, mss);
+			mss = uimax(in_maxmtu, mss);
 			break;
 #ifdef INET6
 		case AF_INET6:
-			mss = max(in6_maxmtu, mss);
+			mss = uimax(in6_maxmtu, mss);
 			break;
 #endif
 		}
@@ -1858,7 +1857,7 @@ tcp_mss_to_advertise(const struct ifnet *ifp, int af)
 	if (mss > hdrsiz)
 		mss -= hdrsiz;
 
-	mss = max(tcp_mssdflt, mss);
+	mss = uimax(tcp_mssdflt, mss);
 	return (mss);
 }
 
@@ -1910,7 +1909,7 @@ tcp_mss_from_peer(struct tcpcb *tp, int offer)
 	mss = tcp_mssdflt;
 	if (offer)
 		mss = offer;
-	mss = max(mss, 256);		/* sanity */
+	mss = uimax(mss, 256);		/* sanity */
 	tp->t_peermss = mss;
 	mss -= tcp_optlen(tp);
 	if (tp->t_inpcb)
@@ -1919,6 +1918,10 @@ tcp_mss_from_peer(struct tcpcb *tp, int offer)
 	if (tp->t_in6pcb)
 		mss -= ip6_optlen(tp->t_in6pcb);
 #endif
+	/*
+	 * XXX XXX What if mss goes negative or zero? This can happen if a
+	 * socket has large IPv6 options. We crash below.
+	 */
 
 	/*
 	 * If there's a pipesize, change the socket buffer to that size.
@@ -1953,7 +1956,7 @@ tcp_mss_from_peer(struct tcpcb *tp, int offer)
 		 * start threshold, but set the threshold to no less
 		 * than 2 * MSS.
 		 */
-		tp->snd_ssthresh = max(2 * mss, rt->rt_rmx.rmx_ssthresh);
+		tp->snd_ssthresh = uimax(2 * mss, rt->rt_rmx.rmx_ssthresh);
 	}
 #endif
 #if defined(RTV_SPIPE) || defined(RTV_SSTHRESH)

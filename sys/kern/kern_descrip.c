@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_descrip.c,v 1.231 2017/06/01 02:45:13 chs Exp $	*/
+/*	$NetBSD: kern_descrip.c,v 1.237 2018/09/13 14:44:09 maxv Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2009 The NetBSD Foundation, Inc.
@@ -70,7 +70,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_descrip.c,v 1.231 2017/06/01 02:45:13 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_descrip.c,v 1.237 2018/09/13 14:44:09 maxv Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -185,7 +185,7 @@ fd_isused(filedesc_t *fdp, unsigned fd)
 
 	KASSERT(fd < fdp->fd_dt->dt_nfiles);
 
-	return (fdp->fd_lomap[off] & (1 << (fd & NDENTRYMASK))) != 0;
+	return (fdp->fd_lomap[off] & (1U << (fd & NDENTRYMASK))) != 0;
 }
 
 /*
@@ -293,17 +293,17 @@ fd_used(filedesc_t *fdp, unsigned fd)
 	ff = fdp->fd_dt->dt_ff[fd];
 
 	KASSERT(mutex_owned(&fdp->fd_lock));
-	KASSERT((fdp->fd_lomap[off] & (1 << (fd & NDENTRYMASK))) == 0);
+	KASSERT((fdp->fd_lomap[off] & (1U << (fd & NDENTRYMASK))) == 0);
 	KASSERT(ff != NULL);
 	KASSERT(ff->ff_file == NULL);
 	KASSERT(!ff->ff_allocated);
 
 	ff->ff_allocated = true;
-	fdp->fd_lomap[off] |= 1 << (fd & NDENTRYMASK);
+	fdp->fd_lomap[off] |= 1U << (fd & NDENTRYMASK);
 	if (__predict_false(fdp->fd_lomap[off] == ~0)) {
 		KASSERT((fdp->fd_himap[off >> NDENTRYSHIFT] &
-		    (1 << (off & NDENTRYMASK))) == 0);
-		fdp->fd_himap[off >> NDENTRYSHIFT] |= 1 << (off & NDENTRYMASK);
+		    (1U << (off & NDENTRYMASK))) == 0);
+		fdp->fd_himap[off >> NDENTRYSHIFT] |= 1U << (off & NDENTRYMASK);
 	}
 
 	if ((int)fd > fdp->fd_lastfile) {
@@ -338,12 +338,12 @@ fd_unused(filedesc_t *fdp, unsigned fd)
 
 	if (fdp->fd_lomap[off] == ~0) {
 		KASSERT((fdp->fd_himap[off >> NDENTRYSHIFT] &
-		    (1 << (off & NDENTRYMASK))) != 0);
+		    (1U << (off & NDENTRYMASK))) != 0);
 		fdp->fd_himap[off >> NDENTRYSHIFT] &=
-		    ~(1 << (off & NDENTRYMASK));
+		    ~(1U << (off & NDENTRYMASK));
 	}
-	KASSERT((fdp->fd_lomap[off] & (1 << (fd & NDENTRYMASK))) != 0);
-	fdp->fd_lomap[off] &= ~(1 << (fd & NDENTRYMASK));
+	KASSERT((fdp->fd_lomap[off] & (1U << (fd & NDENTRYMASK))) != 0);
+	fdp->fd_lomap[off] &= ~(1U << (fd & NDENTRYMASK));
 	ff->ff_allocated = false;
 
 	KASSERT(fd <= fdp->fd_lastfile);
@@ -860,8 +860,8 @@ fd_alloc(proc_t *p, int want, int *result)
 	fd_checkmaps(fdp);
 	dt = fdp->fd_dt;
 	KASSERT(dt->dt_ff[0] == (fdfile_t *)fdp->fd_dfdfile[0]);
-	lim = min((int)p->p_rlimit[RLIMIT_NOFILE].rlim_cur, maxfiles);
-	last = min(dt->dt_nfiles, lim);
+	lim = uimin((int)p->p_rlimit[RLIMIT_NOFILE].rlim_cur, maxfiles);
+	last = uimin(dt->dt_nfiles, lim);
 	for (;;) {
 		if ((i = want) < fdp->fd_freefile)
 			i = fdp->fd_freefile;
@@ -1489,13 +1489,13 @@ fd_copy(void)
 
 		/* Fix up bitmaps. */
 		j = i >> NDENTRYSHIFT;
-		KASSERT((newfdp->fd_lomap[j] & (1 << (i & NDENTRYMASK))) == 0);
-		newfdp->fd_lomap[j] |= 1 << (i & NDENTRYMASK);
+		KASSERT((newfdp->fd_lomap[j] & (1U << (i & NDENTRYMASK))) == 0);
+		newfdp->fd_lomap[j] |= 1U << (i & NDENTRYMASK);
 		if (__predict_false(newfdp->fd_lomap[j] == ~0)) {
 			KASSERT((newfdp->fd_himap[j >> NDENTRYSHIFT] &
-			    (1 << (j & NDENTRYMASK))) == 0);
+			    (1U << (j & NDENTRYMASK))) == 0);
 			newfdp->fd_himap[j >> NDENTRYSHIFT] |=
-			    1 << (j & NDENTRYMASK);
+			    1U << (j & NDENTRYMASK);
 		}
 		newlast = i;
 	}
@@ -2283,35 +2283,50 @@ sysctl_kern_file2(SYSCTLFN_ARGS)
 	return error;
 }
 
+#define SET_KERN_ADDR(dst, src, allow)	\
+	do {				\
+		if (allow)		\
+			dst = src;	\
+	} while (0);
+
 static void
 fill_file(struct kinfo_file *kp, const file_t *fp, const fdfile_t *ff,
 	  int i, pid_t pid)
 {
+	bool allowaddr;
+	int error;
+
+	/* If not privileged, don't expose kernel addresses. */
+	error = kauth_authorize_process(kauth_cred_get(), KAUTH_PROCESS_CANSEE,
+	    curproc, KAUTH_ARG(KAUTH_REQ_PROCESS_CANSEE_KPTR), NULL, NULL);
+	allowaddr = (error == 0);
 
 	memset(kp, 0, sizeof(*kp));
 
-	kp->ki_fileaddr =	PTRTOUINT64(fp);
+	SET_KERN_ADDR(kp->ki_fileaddr, PTRTOUINT64(fp), allowaddr);
 	kp->ki_flag =		fp->f_flag;
 	kp->ki_iflags =		0;
 	kp->ki_ftype =		fp->f_type;
 	kp->ki_count =		fp->f_count;
 	kp->ki_msgcount =	fp->f_msgcount;
-	kp->ki_fucred =		PTRTOUINT64(fp->f_cred);
+	SET_KERN_ADDR(kp->ki_fucred, PTRTOUINT64(fp->f_cred), allowaddr);
 	kp->ki_fuid =		kauth_cred_geteuid(fp->f_cred);
 	kp->ki_fgid =		kauth_cred_getegid(fp->f_cred);
-	kp->ki_fops =		PTRTOUINT64(fp->f_ops);
+	SET_KERN_ADDR(kp->ki_fops, PTRTOUINT64(fp->f_ops), allowaddr);
 	kp->ki_foffset =	fp->f_offset;
-	kp->ki_fdata =		PTRTOUINT64(fp->f_data);
+	SET_KERN_ADDR(kp->ki_fdata, PTRTOUINT64(fp->f_data), allowaddr);
 
 	/* vnode information to glue this file to something */
 	if (fp->f_type == DTYPE_VNODE) {
 		struct vnode *vp = fp->f_vnode;
 
-		kp->ki_vun =	PTRTOUINT64(vp->v_un.vu_socket);
+		SET_KERN_ADDR(kp->ki_vun, PTRTOUINT64(vp->v_un.vu_socket),
+		    allowaddr);
 		kp->ki_vsize =	vp->v_size;
 		kp->ki_vtype =	vp->v_type;
 		kp->ki_vtag =	vp->v_tag;
-		kp->ki_vdata =	PTRTOUINT64(vp->v_data);
+		SET_KERN_ADDR(kp->ki_vdata, PTRTOUINT64(vp->v_data),
+		    allowaddr);
 	}
 
 	/* process information when retrieved via KERN_FILE_BYPID */

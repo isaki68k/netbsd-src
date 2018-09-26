@@ -1,4 +1,4 @@
-/*	$NetBSD: raw_usrreq.c,v 1.59 2018/03/19 16:26:25 roy Exp $	*/
+/*	$NetBSD: raw_usrreq.c,v 1.62 2018/09/07 06:13:14 maxv Exp $	*/
 
 /*
  * Copyright (c) 1980, 1986, 1993
@@ -36,7 +36,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: raw_usrreq.c,v 1.59 2018/03/19 16:26:25 roy Exp $");
+__KERNEL_RCSID(0, "$NetBSD: raw_usrreq.c,v 1.62 2018/09/07 06:13:14 maxv Exp $");
 
 #include <sys/param.h>
 #include <sys/mbuf.h>
@@ -65,22 +65,12 @@ equal(const struct sockaddr *a1, const struct sockaddr *a2)
  * If nothing exists for this packet, drop it.
  */
 void
-raw_input(struct mbuf *m0, ...)
+raw_input(struct mbuf *m0, struct sockproto *proto, struct sockaddr *src,
+    struct sockaddr *dst, struct rawcbhead *rawcbhead)
 {
 	struct rawcb *rp;
 	struct mbuf *m = m0;
 	struct socket *last;
-	va_list ap;
-	struct sockproto *proto;
-	struct sockaddr *src, *dst;
-	struct rawcbhead *rawcbhead;
-
-	va_start(ap, m0);
-	proto = va_arg(ap, struct sockproto *);
-	src = va_arg(ap, struct sockaddr *);
-	dst = va_arg(ap, struct sockaddr *);
-	rawcbhead = va_arg(ap, struct rawcbhead *);
-	va_end(ap);
 
 	last = NULL;
 	LIST_FOREACH(rp, rawcbhead, rcb_list) {
@@ -107,7 +97,7 @@ raw_input(struct mbuf *m0, ...)
 		if (last != NULL) {
 			struct mbuf *n;
 
-			if ((n = m_copy(m, 0, M_COPYALL)) == NULL ||
+			if ((n = m_copypacket(m, M_DONTWAIT)) == NULL ||
 			    sbappendaddr(&last->so_rcv, src, n, NULL) == 0)
 			{
 				if (n != NULL)

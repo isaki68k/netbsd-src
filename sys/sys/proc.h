@@ -1,4 +1,4 @@
-/*	$NetBSD: proc.h,v 1.346 2018/04/19 21:19:07 christos Exp $	*/
+/*	$NetBSD: proc.h,v 1.349 2018/08/10 21:44:59 pgoyette Exp $	*/
 
 /*-
  * Copyright (c) 2006, 2007, 2008 The NetBSD Foundation, Inc.
@@ -150,13 +150,14 @@ struct emul {
 	int		e_nsysent;	/* Number of system call entries */
 #endif
 	struct sysent	*e_sysent;	/* System call array */
+	const uint32_t	*e_nomodbits;	/* sys_nosys/sys_nomodule flags
+					 * for syscall_disestablish() */
 	const char * const *e_syscallnames; /* System call name array */
 					/* Signal sending function */
 	struct sc_autoload *e_sc_autoload;	/* List of autoloadable syscalls */
 	void		(*e_sendsig)(const struct ksiginfo *,
 					  const sigset_t *);
 	void		(*e_trapsignal)(struct lwp *, struct ksiginfo *);
-	int		(*e_tracesig)(struct proc *, int);
 	char		*e_sigcode;	/* Start of sigcode */
 	char		*e_esigcode;	/* End of sigcode */
 					/* Set registers before execution */
@@ -294,6 +295,8 @@ struct proc {
 	u_quad_t 	p_uticks;	/* t: Statclock hits in user mode */
 	u_quad_t 	p_sticks;	/* t: Statclock hits in system mode */
 	u_quad_t 	p_iticks;	/* t: Statclock hits processing intr */
+	uint64_t	p_xutime;	/* p: utime exposed to userspace */
+	uint64_t	p_xstime;	/* p: stime exposed to userspace */
 
 	int		p_traceflag;	/* k: Kernel trace points */
 	void		*p_tracep;	/* k: Trace private data */

@@ -1,4 +1,4 @@
-/* $NetBSD: fdt_subr.c,v 1.21 2018/03/06 17:40:04 bouyer Exp $ */
+/* $NetBSD: fdt_subr.c,v 1.23 2018/07/17 00:42:06 christos Exp $ */
 
 /*-
  * Copyright (c) 2015 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fdt_subr.c,v 1.21 2018/03/06 17:40:04 bouyer Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fdt_subr.c,v 1.23 2018/07/17 00:42:06 christos Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -156,7 +156,7 @@ fdtbus_get_cells(const uint8_t *buf, int cells)
 	switch (cells) {
 	case 0:		return 0;
 	case 1: 	return be32dec(buf);
-	case 2: 	return be64dec(buf);
+	case 2:		return ((uint64_t)be32dec(buf)<<32)|be32dec(buf+4);
 	default:	panic("fdtbus_get_cells: bad cells val %d\n", cells);
 	}
 }
@@ -289,8 +289,8 @@ fdtbus_get_reg64(int phandle, u_int index, uint64_t *paddr, uint64_t *psize)
 		*paddr = fdtbus_decode_range(OF_parent(phandle), addr);
 		const char *name = fdt_get_name(fdtbus_get_data(),
 		    fdtbus_phandle2offset(phandle), NULL);
-		aprint_debug("fdt: [%s] decoded addr #%u: %llx -> %llx\n",
-		    name, index, addr, *paddr);
+		aprint_debug("fdt: [%s] decoded addr #%u: %" PRIx64
+		    " -> %" PRIx64 "\n", name, index, addr, *paddr);
 	}
 	if (psize)
 		*psize = size;

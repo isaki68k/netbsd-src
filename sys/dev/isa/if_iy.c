@@ -1,4 +1,4 @@
-/*	$NetBSD: if_iy.c,v 1.100 2017/03/31 08:38:13 msaitoh Exp $	*/
+/*	$NetBSD: if_iy.c,v 1.103 2018/09/03 16:29:31 riastradh Exp $	*/
 /* #define IYDEBUG */
 /* #define IYMEMDEBUG */
 
@@ -39,7 +39,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_iy.c,v 1.100 2017/03/31 08:38:13 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_iy.c,v 1.103 2018/09/03 16:29:31 riastradh Exp $");
 
 #include "opt_inet.h"
 
@@ -59,11 +59,9 @@ __KERNEL_RCSID(0, "$NetBSD: if_iy.c,v 1.100 2017/03/31 08:38:13 msaitoh Exp $");
 #include <net/if.h>
 #include <net/if_types.h>
 #include <net/if_dl.h>
+#include <net/bpf.h>
 
 #include <net/if_ether.h>
-
-#include <net/bpf.h>
-#include <net/bpfdesc.h>
 
 #ifdef INET
 #include <netinet/in.h>
@@ -681,7 +679,7 @@ iystart(struct ifnet *ifp)
 			continue;
         	}
 
-		bpf_mtap(ifp, m0);
+		bpf_mtap(ifp, m0, BPF_D_OUT);
 
 		avail = sc->tx_start - sc->tx_end;
 		if (avail <= 0)
@@ -1020,7 +1018,7 @@ iyget(struct iy_softc *sc, bus_space_tag_t iot, bus_space_handle_t ioh,
 			}
 			len = MCLBYTES;
 		}
-		len = min(rxlen, len);
+		len = uimin(rxlen, len);
 		/*
 		 * XXX ALIGNMENT LOSSAGE HERE.
 		 */

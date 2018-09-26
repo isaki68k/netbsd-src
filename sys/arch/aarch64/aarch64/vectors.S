@@ -1,7 +1,8 @@
-/*	$NetBSD: vectors.S,v 1.5 2018/04/01 04:35:03 ryo Exp $	*/
+/*	$NetBSD: vectors.S,v 1.8 2018/09/14 05:33:50 ryo Exp $	*/
 
 #include <aarch64/asm.h>
 #include "assym.h"
+#include "opt_ddb.h"
 
 	/*
 	 * vector_entry macro must be small enough to fit 0x80 bytes!
@@ -67,14 +68,17 @@
 	str	x0, [x1, #L_PRIVATE]	/* curlwp->l_private = tpidr_el0 */
 	.endif
 
-	adr	lr, el\el\()_trap_exit	/* el[01]_trap_exit */
+	adr	x30, el\el\()_trap_exit	/* el[01]_trap_exit */
 	mov	x0, sp
+#ifdef DDB
+	mov	x29, sp			/* for backtrace */
+#endif
 	b	\label
 	.endm
 
 
 	.align 11	/* vector table must be aligned 2048 */
-ENTRY(el1_vectors)
+ENTRY_NP(el1_vectors)
 /*
  * Exception taken from current Exception Level with SP_EL0.
  * (These shouldn't happen)

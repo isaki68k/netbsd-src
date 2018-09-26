@@ -1,4 +1,4 @@
-/* $NetBSD: if_veth.c,v 1.9 2017/10/23 09:31:17 msaitoh Exp $ */
+/* $NetBSD: if_veth.c,v 1.11 2018/09/03 16:29:28 riastradh Exp $ */
 
 /*-
  * Copyright (c) 2011 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_veth.c,v 1.9 2017/10/23 09:31:17 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_veth.c,v 1.11 2018/09/03 16:29:28 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/proc.h>
@@ -216,7 +216,7 @@ veth_softrx(void *priv)
 			break;
 
 		len = thunk_read(sc->sc_tapfd, sc->sc_rx_buf,
-		    min(avail, sizeof(sc->sc_rx_buf)));
+		    uimin(avail, sizeof(sc->sc_rx_buf)));
 		vethprintf("%s: read returned %d\n", __func__, len);
 		if (len == -1)
 			panic("read() from tap failed");
@@ -287,7 +287,7 @@ veth_start(struct ifnet *ifp)
 		}
 
 		IFQ_DEQUEUE(&ifp->if_snd, m0);
-		bpf_mtap(ifp, m0);
+		bpf_mtap(ifp, m0, BPF_D_OUT);
 
 		m_copydata(m0, 0, m0->m_pkthdr.len, sc->sc_tx_buf);
 

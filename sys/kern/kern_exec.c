@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_exec.c,v 1.456 2018/02/23 19:43:08 maxv Exp $	*/
+/*	$NetBSD: kern_exec.c,v 1.461 2018/09/03 16:29:35 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -59,7 +59,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_exec.c,v 1.456 2018/02/23 19:43:08 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_exec.c,v 1.461 2018/09/03 16:29:35 riastradh Exp $");
 
 #include "opt_exec.h"
 #include "opt_execfmt.h"
@@ -209,6 +209,7 @@ struct emul emul_netbsd = {
 	.e_sc_autoload =	netbsd_syscalls_autoload,
 #endif
 	.e_sysent =		sysent,
+	.e_nomodbits =		sysent_nomodbits,
 #ifdef SYSCALL_DEBUG
 	.e_syscallnames =	syscallnames,
 #else
@@ -216,7 +217,6 @@ struct emul emul_netbsd = {
 #endif
 	.e_sendsig =		sendsig,
 	.e_trapsignal =		trapsignal,
-	.e_tracesig =		NULL,
 	.e_sigcode =		NULL,
 	.e_esigcode =		NULL,
 	.e_sigobject =		NULL,
@@ -607,9 +607,9 @@ exec_autoload(void)
 #endif
 }
 
-static int
-makepathbuf(struct lwp *l, const char *upath, struct pathbuf **pbp,
-    size_t *offs)
+int
+exec_makepathbuf(struct lwp *l, const char *upath, enum uio_seg seg,
+    struct pathbuf **pbp, size_t *offs)
 {
 	char *path, *bp;
 	size_t len, tlen;
@@ -617,7 +617,11 @@ makepathbuf(struct lwp *l, const char *upath, struct pathbuf **pbp,
 	struct cwdinfo *cwdi;
 
 	path = PNBUF_GET();
-	error = copyinstr(upath, path, MAXPATHLEN, &len);
+	if (seg == UIO_SYSSPACE) {
+		error = copystr(upath, path, MAXPATHLEN, &len);
+	} else {
+		error = copyinstr(upath, path, MAXPATHLEN, &len);
+	}
 	if (error) {
 		PNBUF_PUT(path);
 		DPRINTF(("%s: copyin path @%p %d\n", __func__, upath, error));
@@ -625,7 +629,8 @@ makepathbuf(struct lwp *l, const char *upath, struct pathbuf **pbp,
 	}
 
 	if (path[0] == '/') {
-		*offs = 0;
+		if (offs)
+			*offs = 0;
 		goto out;
 	}
 
@@ -651,7 +656,8 @@ makepathbuf(struct lwp *l, const char *upath, struct pathbuf **pbp,
 
 	memmove(path, bp, tlen);
 	path[tlen] = '\0';
-	*offs = tlen - len;
+	if (offs)
+		*offs = tlen - len;
 out:
 	*pbp = pathbuf_assimilate(path);
 	return 0;
@@ -730,7 +736,8 @@ execve_loadvm(struct lwp *l, const char *path, char * const *args,
 	 * functions call check_exec() recursively - for example,
 	 * see exec_script_makecmds().
 	 */
-	if ((error = makepathbuf(l, path, &data->ed_pathbuf, &offs)) != 0)
+	if ((error = exec_makepathbuf(l, path, UIO_USERSPACE,
+	    &data->ed_pathbuf, &offs)) != 0)
 		goto clrflg;
 	data->ed_pathstring = pathbuf_stringcopy_get(data->ed_pathbuf);
 	data->ed_resolvedpathbuf = PNBUF_GET();
@@ -1263,13 +1270,15 @@ execve_runproc(struct lwp *l, struct execve_data * restrict data,
 	mutex_enter(proc_lock);
 
 	if ((p->p_slflag & (PSL_TRACED|PSL_SYSCALL)) == PSL_TRACED) {
-		ksiginfo_t ksi;
-
-		KSI_INIT_EMPTY(&ksi);
-		ksi.ksi_signo = SIGTRAP;
-		ksi.ksi_code = TRAP_EXEC;
-		ksi.ksi_lid = l->l_lid;
-		kpsignal(p, &ksi, NULL);
+		mutex_enter(p->p_lock);
+		p->p_xsig = SIGTRAP;
+		p->p_sigctx.ps_faked = true; // XXX
+		p->p_sigctx.ps_info._signo = p->p_xsig;
+		p->p_sigctx.ps_info._code = TRAP_EXEC;
+		sigswitch(0, SIGTRAP, false);
+		// XXX ktrpoint(KTR_PSIG)
+		mutex_exit(p->p_lock);
+		mutex_enter(proc_lock);
 	}
 
 	if (p->p_sflag & PS_STOPEXEC) {
@@ -2620,7 +2629,7 @@ sys_posix_spawn(struct lwp *l1, const struct sys_posix_spawn_args *uap,
 
 	/* copy in file_actions struct */
 	if (SCARG(uap, file_actions) != NULL) {
-		max_fileactions = 2 * min(p->p_rlimit[RLIMIT_NOFILE].rlim_cur,
+		max_fileactions = 2 * uimin(p->p_rlimit[RLIMIT_NOFILE].rlim_cur,
 		    maxfiles);
 		error = posix_spawn_fa_alloc(&fa, SCARG(uap, file_actions),
 		    max_fileactions);

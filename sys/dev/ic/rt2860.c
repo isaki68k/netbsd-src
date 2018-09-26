@@ -1,4 +1,4 @@
-/*	$NetBSD: rt2860.c,v 1.30 2018/01/14 18:23:03 maxv Exp $	*/
+/*	$NetBSD: rt2860.c,v 1.33 2018/09/03 16:29:31 riastradh Exp $	*/
 /*	$OpenBSD: rt2860.c,v 1.90 2016/04/13 10:49:26 mpi Exp $	*/
 /*	$FreeBSD: head/sys/dev/ral/rt2860.c 306591 2016-10-02 20:35:55Z avos $ */
 
@@ -25,7 +25,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rt2860.c,v 1.30 2018/01/14 18:23:03 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rt2860.c,v 1.33 2018/09/03 16:29:31 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/sockio.h>
@@ -196,7 +196,7 @@ static const struct rfprog {
 	RT2860_RF2850
 };
 
-struct {
+static const struct {
 	uint8_t	n, r, k;
 } rt3090_freqs[] = {
 	RT3070_RF3052
@@ -389,7 +389,7 @@ rt2860_attachhook(device_t self)
 	}
 
 	/* HW supports up to 255 STAs (0-254) in HostAP and IBSS modes */
-	ic->ic_max_aid = min(IEEE80211_AID_MAX, RT2860_WCID_MAX);
+	ic->ic_max_aid = uimin(IEEE80211_AID_MAX, RT2860_WCID_MAX);
 
 	ifp->if_softc = sc;
 	ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
@@ -1491,7 +1491,7 @@ rt2860_rx_intr(struct rt2860_softc *sc)
 			}
 			break;
 		}
-		bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_rxtap_len, m);
+		bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_rxtap_len, m, BPF_D_IN);
 skipbpf:
 		/* grab a reference to the source node */
 		ni = ieee80211_find_rxnode(ic,
@@ -1772,7 +1772,7 @@ rt2860_tx(struct rt2860_softc *sc, struct mbuf **m0, struct ieee80211_node *ni)
 		if (mcs & RT2860_PHY_SHPRE)
 			tap->wt_flags |= IEEE80211_RADIOTAP_F_SHORTPRE;
 
-		bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_txtap_len, m);
+		bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_txtap_len, m, BPF_D_OUT);
 	}
 
 	/* copy and trim 802.11 header */
@@ -1920,7 +1920,7 @@ rt2860_start(struct ifnet *ifp)
 			continue;
 		}
 
-		bpf_mtap(ifp, m);
+		bpf_mtap(ifp, m, BPF_D_OUT);
 
 		if ((m = ieee80211_encap(ic, m, ni)) == NULL) {
 			DPRINTF(("%s: can't encap\n", __func__));
@@ -1929,7 +1929,7 @@ rt2860_start(struct ifnet *ifp)
 			continue;
 		}
 sendit:
-		bpf_mtap3(ic->ic_rawbpf, m);
+		bpf_mtap3(ic->ic_rawbpf, m, BPF_D_OUT);
 
 		if (rt2860_tx(sc, &m, ni) != 0) {
 			DPRINTF(("%s: can't tx\n", __func__));

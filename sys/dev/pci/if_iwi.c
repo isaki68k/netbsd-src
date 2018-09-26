@@ -1,4 +1,4 @@
-/*	$NetBSD: if_iwi.c,v 1.105 2018/01/16 07:05:24 maxv Exp $  */
+/*	$NetBSD: if_iwi.c,v 1.108 2018/09/03 16:29:32 riastradh Exp $  */
 /*	$OpenBSD: if_iwi.c,v 1.111 2010/11/15 19:11:57 damien Exp $	*/
 
 /*-
@@ -19,7 +19,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_iwi.c,v 1.105 2018/01/16 07:05:24 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_iwi.c,v 1.108 2018/09/03 16:29:32 riastradh Exp $");
 
 /*-
  * Intel(R) PRO/Wireless 2200BG/2225BG/2915ABG driver
@@ -146,18 +146,6 @@ static void	iwi_stop(struct ifnet *, int);
 static int	iwi_getrfkill(struct iwi_softc *);
 static void	iwi_led_set(struct iwi_softc *, uint32_t, int);
 static void	iwi_sysctlattach(struct iwi_softc *);
-
-/*
- * Supported rates for 802.11a/b/g modes (in 500Kbps unit).
- */
-static const struct ieee80211_rateset iwi_rateset_11a =
-	{ 8, { 12, 18, 24, 36, 48, 72, 96, 108 } };
-
-static const struct ieee80211_rateset iwi_rateset_11b =
-	{ 4, { 2, 4, 11, 22 } };
-
-static const struct ieee80211_rateset iwi_rateset_11g =
-	{ 12, { 2, 4, 11, 22, 12, 18, 24, 36, 48, 72, 96, 108 } };
 
 static inline uint8_t
 MEM_READ_1(struct iwi_softc *sc, uint32_t addr)
@@ -329,7 +317,7 @@ iwi_attach(device_t parent, device_t self, void *aux)
 	if (PCI_PRODUCT(pa->pa_id) == PCI_PRODUCT_INTEL_PRO_WL_2915ABG_1 ||
 	    PCI_PRODUCT(pa->pa_id) == PCI_PRODUCT_INTEL_PRO_WL_2915ABG_2) {
 		/* set supported .11a rates (2915ABG only) */
-		ic->ic_sup_rates[IEEE80211_MODE_11A] = iwi_rateset_11a;
+		ic->ic_sup_rates[IEEE80211_MODE_11A] = ieee80211_std_rateset_11a;
 
 		/* set supported .11a channels */
 		for (i = 36; i <= 64; i += 4) {
@@ -345,8 +333,8 @@ iwi_attach(device_t parent, device_t self, void *aux)
 	}
 
 	/* set supported .11b and .11g rates */
-	ic->ic_sup_rates[IEEE80211_MODE_11B] = iwi_rateset_11b;
-	ic->ic_sup_rates[IEEE80211_MODE_11G] = iwi_rateset_11g;
+	ic->ic_sup_rates[IEEE80211_MODE_11B] = ieee80211_std_rateset_11b;
+	ic->ic_sup_rates[IEEE80211_MODE_11G] = ieee80211_std_rateset_11g;
 
 	/* set supported .11b and .11g channels (1 through 14) */
 	for (i = 1; i <= 14; i++) {
@@ -1246,7 +1234,7 @@ iwi_frame_intr(struct iwi_softc *sc, struct iwi_rx_data *data, int i,
 		tap->wr_antsignal = frame->signal;
 		tap->wr_antenna = frame->antenna;
 
-		bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_rxtap_len, m);
+		bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_rxtap_len, m, BPF_D_IN);
 	}
 	wh = mtod(m, struct ieee80211_frame *);
 	ni = ieee80211_find_rxnode(ic, (struct ieee80211_frame_min *)wh);
@@ -1675,7 +1663,7 @@ iwi_tx_start(struct ifnet *ifp, struct mbuf *m0, struct ieee80211_node *ni,
 		tap->wt_chan_freq = htole16(ic->ic_ibss_chan->ic_freq);
 		tap->wt_chan_flags = htole16(ic->ic_ibss_chan->ic_flags);
 
-		bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_txtap_len, m0);
+		bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_txtap_len, m0, BPF_D_OUT);
 	}
 
 	data = &txq->data[txq->cur];
@@ -1837,7 +1825,7 @@ iwi_start(struct ifnet *ifp)
 			break;
 		}
 
-		bpf_mtap(ifp, m0);
+		bpf_mtap(ifp, m0, BPF_D_OUT);
 
 		m0 = ieee80211_encap(ic, m0, ni);
 		if (m0 == NULL) {
@@ -1846,7 +1834,7 @@ iwi_start(struct ifnet *ifp)
 			continue;
 		}
 
-		bpf_mtap3(ic->ic_rawbpf, m0);
+		bpf_mtap3(ic->ic_rawbpf, m0, BPF_D_OUT);
 
 		if (iwi_tx_start(ifp, m0, ni, ac) != 0) {
 			ieee80211_free_node(ni);
@@ -1891,7 +1879,7 @@ iwi_get_table0(struct iwi_softc *sc, uint32_t *tbl)
 		return copyout(buf, tbl, sizeof buf);
 	}
 
-	size = min(CSR_READ_4(sc, IWI_CSR_TABLE0_SIZE), 128 - 1);
+	size = uimin(CSR_READ_4(sc, IWI_CSR_TABLE0_SIZE), 128 - 1);
 	CSR_READ_REGION_4(sc, IWI_CSR_TABLE0_BASE, &buf[1], size);
 
 	return copyout(buf, tbl, sizeof buf);
@@ -2158,14 +2146,14 @@ iwi_load_firmware(struct iwi_softc *sc, void *fw, int size)
 			cl = GETLE32(p); p += 4; cs += 4; sl -= 4;
 		}
 		while (sl > 0 && cl > 0) {
-			int len = min(cl, sl);
+			int len = uimin(cl, sl);
 
 			sl -= len;
 			cl -= len;
 			p += len;
 
 			while (len > 0) {
-				int mlen = min(len, IWI_CB_MAXDATALEN);
+				int mlen = uimin(len, IWI_CB_MAXDATALEN);
 
 				ctl = IWI_CB_DEFAULT_CTL | mlen;
 				sum = ctl ^ cs ^ cd;

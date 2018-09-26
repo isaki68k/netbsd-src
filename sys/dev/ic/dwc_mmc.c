@@ -1,4 +1,4 @@
-/* $NetBSD: dwc_mmc.c,v 1.11 2017/06/19 22:03:02 jmcneill Exp $ */
+/* $NetBSD: dwc_mmc.c,v 1.15 2018/09/03 16:29:31 riastradh Exp $ */
 
 /*-
  * Copyright (c) 2014-2017 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: dwc_mmc.c,v 1.11 2017/06/19 22:03:02 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: dwc_mmc.c,v 1.15 2018/09/03 16:29:31 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -316,7 +316,7 @@ dwc_mmc_update_clock(struct dwc_mmc_softc *sc)
 		cmd |= DWC_MMC_CMD_USE_HOLD_REG;
 	MMC_WRITE(sc, DWC_MMC_ARG, 0);
 	MMC_WRITE(sc, DWC_MMC_CMD, cmd);
-	retry = 0xfffff;
+	retry = 200000;
 	while (--retry > 0) {
 		if (!(MMC_READ(sc, DWC_MMC_CMD) & DWC_MMC_CMD_START))
 			break;
@@ -355,7 +355,12 @@ static int
 dwc_mmc_set_clock(struct dwc_mmc_softc *sc, u_int freq)
 {
 	const u_int pll_freq = sc->sc_clock_freq / 1000;
-	const u_int clk_div = howmany(pll_freq, freq * 2);
+	u_int clk_div;
+
+	if (freq != pll_freq)
+		clk_div = howmany(pll_freq, freq);
+	else
+		clk_div = 0;
 
 	MMC_WRITE(sc, DWC_MMC_CLKDIV, clk_div);
 
@@ -374,6 +379,9 @@ dwc_mmc_bus_clock(sdmmc_chipset_handle_t sch, int freq)
 		return 1;
 
 	if (freq) {
+		if (sc->sc_bus_clock && sc->sc_bus_clock(sc, freq) != 0)
+			return 1;
+
 		if (dwc_mmc_set_clock(sc, freq) != 0)
 			return 1;
 
@@ -472,12 +480,12 @@ dwc_mmc_dma_prepare(struct dwc_mmc_softc *sc, struct sdmmc_command *cmd)
 	for (seg = 0; seg < cmd->c_dmamap->dm_nsegs; seg++) {
 		bus_addr_t paddr = cmd->c_dmamap->dm_segs[seg].ds_addr;
 		bus_size_t len = cmd->c_dmamap->dm_segs[seg].ds_len;
-		resid = min(len, cmd->c_resid);
+		resid = uimin(len, cmd->c_resid);
 		off = 0;
 		while (resid > 0) {
 			if (desc == sc->sc_idma_ndesc)
 				break;
-			len = min(sc->sc_idma_xferlen, resid);
+			len = uimin(sc->sc_idma_xferlen, resid);
 			dma[desc].dma_buf_size = htole32(len);
 			dma[desc].dma_buf_addr = htole32(paddr + off);
 			dma[desc].dma_config = htole32(
@@ -548,7 +556,7 @@ dwc_mmc_exec_command(sdmmc_chipset_handle_t sch, struct sdmmc_command *cmd)
 {
 	struct dwc_mmc_softc *sc = sch;
 	uint32_t cmdval = DWC_MMC_CMD_START;
-	int retry = 0xfffff;
+	int retry = 200000;
 
 #ifdef DWC_MMC_DEBUG
 	aprint_normal_dev(sc->sc_dev,
@@ -755,6 +763,23 @@ dwc_mmc_card_intr_ack(sdmmc_chipset_handle_t sch)
 int
 dwc_mmc_init(struct dwc_mmc_softc *sc)
 {
+	uint32_t val;
+
+	if (sc->sc_fifo_reg == 0) {
+		val = MMC_READ(sc, DWC_MMC_VERID);
+		const u_int id = __SHIFTOUT(val, DWC_MMC_VERID_ID);
+
+		if (id < DWC_MMC_VERID_240A)
+			sc->sc_fifo_reg = 0x100;
+		else
+			sc->sc_fifo_reg = 0x200;
+	}
+
+	if (sc->sc_fifo_depth == 0) {
+		val = MMC_READ(sc, DWC_MMC_FIFOTH);
+		sc->sc_fifo_depth = __SHIFTOUT(val, DWC_MMC_FIFOTH_RX_WMARK) + 1;
+	}
+
 	mutex_init(&sc->sc_intr_lock, MUTEX_DEFAULT, IPL_BIO);
 	cv_init(&sc->sc_intr_cv, "dwcmmcirq");
 	cv_init(&sc->sc_idst_cv, "dwcmmcdma");

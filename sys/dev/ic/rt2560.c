@@ -1,4 +1,4 @@
-/*	$NetBSD: rt2560.c,v 1.32 2018/02/08 09:05:19 dholland Exp $	*/
+/*	$NetBSD: rt2560.c,v 1.35 2018/09/03 16:29:31 riastradh Exp $	*/
 /*	$OpenBSD: rt2560.c,v 1.15 2006/04/20 20:31:12 miod Exp $  */
 /*	$FreeBSD: rt2560.c,v 1.3 2006/03/21 21:15:43 damien Exp $*/
 
@@ -24,7 +24,7 @@
  * http://www.ralinktech.com/
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rt2560.c,v 1.32 2018/02/08 09:05:19 dholland Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rt2560.c,v 1.35 2018/09/03 16:29:31 riastradh Exp $");
 
 
 #include <sys/param.h>
@@ -141,18 +141,6 @@ static int	rt2560_bbp_init(struct rt2560_softc *);
 static int	rt2560_init(struct ifnet *);
 static void	rt2560_stop(struct ifnet *, int);
 static void	rt2560_softintr(void *);
-
-/*
- * Supported rates for 802.11a/b/g modes (in 500Kbps unit).
- */
-static const struct ieee80211_rateset rt2560_rateset_11a =
-	{ 8, { 12, 18, 24, 36, 48, 72, 96, 108 } };
-
-static const struct ieee80211_rateset rt2560_rateset_11b =
-	{ 4, { 2, 4, 11, 22 } };
-
-static const struct ieee80211_rateset rt2560_rateset_11g =
-	{ 12, { 2, 4, 11, 22, 12, 18, 24, 36, 48, 72, 96, 108 } };
 
 /*
  * Default values for MAC registers; values taken from the reference driver.
@@ -420,7 +408,7 @@ rt2560_attach(void *xsc, int id)
 
 	if (sc->rf_rev == RT2560_RF_5222) {
 		/* set supported .11a rates */
-		ic->ic_sup_rates[IEEE80211_MODE_11A] = rt2560_rateset_11a;
+		ic->ic_sup_rates[IEEE80211_MODE_11A] = ieee80211_std_rateset_11a;
 
 		/* set supported .11a channels */
 		for (i = 36; i <= 64; i += 4) {
@@ -441,8 +429,8 @@ rt2560_attach(void *xsc, int id)
 	}
 
 	/* set supported .11b and .11g rates */
-	ic->ic_sup_rates[IEEE80211_MODE_11B] = rt2560_rateset_11b;
-	ic->ic_sup_rates[IEEE80211_MODE_11G] = rt2560_rateset_11g;
+	ic->ic_sup_rates[IEEE80211_MODE_11B] = ieee80211_std_rateset_11b;
+	ic->ic_sup_rates[IEEE80211_MODE_11G] = ieee80211_std_rateset_11g;
 
 	/* set supported .11b and .11g channels (1 through 14) */
 	for (i = 1; i <= 14; i++) {
@@ -1372,7 +1360,8 @@ rt2560_decryption_intr(struct rt2560_softc *sc)
 			tap->wr_antenna = sc->rx_ant;
 			tap->wr_antsignal = desc->rssi;
 
-			bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_txtap_len, m);
+			bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_txtap_len, m,
+			    BPF_D_IN);
 		}
 
 		wh = mtod(m, struct ieee80211_frame *);
@@ -1491,7 +1480,7 @@ rt2560_beacon_expire(struct rt2560_softc *sc)
 
 	ieee80211_beacon_update(ic, data->ni, &sc->sc_bo, data->m, 1);
 
-	bpf_mtap3(ic->ic_rawbpf, data->m);
+	bpf_mtap3(ic->ic_rawbpf, data->m, BPF_D_OUT);
 	rt2560_tx_bcn(sc, data->m, data->ni);
 
 	DPRINTFN(15, ("beacon expired\n"));
@@ -1829,7 +1818,7 @@ rt2560_tx_mgt(struct rt2560_softc *sc, struct mbuf *m0,
 		tap->wt_chan_flags = htole16(ic->ic_ibss_chan->ic_flags);
 		tap->wt_antenna = sc->tx_ant;
 
-		bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_txtap_len, m0);
+		bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_txtap_len, m0, BPF_D_OUT);
 	}
 
 	data->m = m0;
@@ -2064,7 +2053,7 @@ rt2560_tx_data(struct rt2560_softc *sc, struct mbuf *m0,
 		tap->wt_chan_flags = htole16(ic->ic_ibss_chan->ic_flags);
 		tap->wt_antenna = sc->tx_ant;
 
-		bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_txtap_len, m0);
+		bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_txtap_len, m0, BPF_D_OUT);
 	}
 
 	data->m = m0;
@@ -2136,7 +2125,7 @@ rt2560_start(struct ifnet *ifp)
 
 			ni = M_GETCTX(m0, struct ieee80211_node *);
 			M_CLEARCTX(m0);
-			bpf_mtap3(ic->ic_rawbpf, m0);
+			bpf_mtap3(ic->ic_rawbpf, m0, BPF_D_OUT);
 			if (rt2560_tx_mgt(sc, m0, ni) != 0)
 				break;
 
@@ -2161,7 +2150,7 @@ rt2560_start(struct ifnet *ifp)
 				m_freem(m0);
 				continue;
 			}
-			bpf_mtap(ifp, m0);
+			bpf_mtap(ifp, m0, BPF_D_OUT);
 
 			m0 = ieee80211_encap(ic, m0, ni);
 			if (m0 == NULL) {
@@ -2169,7 +2158,7 @@ rt2560_start(struct ifnet *ifp)
 				continue;
                         }
 
-			bpf_mtap3(ic->ic_rawbpf, m0);
+			bpf_mtap3(ic->ic_rawbpf, m0, BPF_D_OUT);
 
 			if (rt2560_tx_data(sc, m0, ni) != 0) {
 				ieee80211_free_node(ni);
@@ -2363,7 +2352,7 @@ rt2560_set_chan(struct rt2560_softc *sc, struct ieee80211_channel *c)
 		return;
 
 	if (IEEE80211_IS_CHAN_2GHZ(c))
-		power = min(sc->txpow[chan - 1], 31);
+		power = uimin(sc->txpow[chan - 1], 31);
 	else
 		power = 31;
 

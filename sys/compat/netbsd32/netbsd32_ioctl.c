@@ -1,4 +1,4 @@
-/*	$NetBSD: netbsd32_ioctl.c,v 1.92 2018/03/06 07:59:59 mlelstv Exp $	*/
+/*	$NetBSD: netbsd32_ioctl.c,v 1.95 2018/09/24 21:15:39 jdolecek Exp $	*/
 
 /*
  * Copyright (c) 1998, 2001 Matthew R. Green
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: netbsd32_ioctl.c,v 1.92 2018/03/06 07:59:59 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: netbsd32_ioctl.c,v 1.95 2018/09/24 21:15:39 jdolecek Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_ntp.h"
@@ -148,7 +148,7 @@ netbsd32_to_if_addrprefreq(const struct netbsd32_if_addrprefreq *ifap32,
 	strlcpy(ifap->ifap_name, ifap32->ifap_name, sizeof(ifap->ifap_name));
 	ifap->ifap_preference = ifap32->ifap_preference;
 	memcpy(&ifap->ifap_addr, &ifap32->ifap_addr,
-	    min(ifap32->ifap_addr.ss_len, _SS_MAXSIZE));
+	    uimin(ifap32->ifap_addr.ss_len, _SS_MAXSIZE));
 }
 
 static inline void
@@ -536,12 +536,23 @@ netbsd32_to_devrescanargs(
 }
 
 static inline void
+netbsd32_to_disk_strategy(
+    const struct netbsd32_disk_strategy *s32p,
+    struct disk_strategy *p,
+    u_long cmd)
+{
+	memcpy(p->dks_name, s32p->dks_name, sizeof(p->dks_name));
+	p->dks_param = NETBSD32PTR64(s32p->dks_param);
+	p->dks_paramlen = s32p->dks_paramlen;
+}
+
+static inline void
 netbsd32_to_dkwedge_list(
     const struct netbsd32_dkwedge_list *s32p,
     struct dkwedge_list *p,
     u_long cmd)
 {
-	p->dkwl_buf = s32p->dkwl_buf;
+	p->dkwl_buf = NETBSD32PTR64(s32p->dkwl_buf);
 	p->dkwl_bufsize = s32p->dkwl_bufsize;
 	p->dkwl_nwedges = s32p->dkwl_nwedges;
 	p->dkwl_ncopied = s32p->dkwl_ncopied;
@@ -609,7 +620,7 @@ netbsd32_from_if_addrprefreq(const struct if_addrprefreq *ifap,
 	strlcpy(ifap32->ifap_name, ifap->ifap_name, sizeof(ifap32->ifap_name));
 	ifap32->ifap_preference = ifap->ifap_preference;
 	memcpy(&ifap32->ifap_addr, &ifap->ifap_addr,
-	    min(ifap->ifap_addr.ss_len, _SS_MAXSIZE));
+	    uimin(ifap->ifap_addr.ss_len, _SS_MAXSIZE));
 }
 
 static inline void
@@ -990,12 +1001,23 @@ netbsd32_from_devrescanargs(
 }
 
 static inline void
+netbsd32_from_disk_strategy(
+    const struct disk_strategy *p,
+    struct netbsd32_disk_strategy *s32p,
+    u_long cmd)
+{
+	memcpy(s32p->dks_name, p->dks_name, sizeof(p->dks_name));
+	NETBSD32PTR32(s32p->dks_param, p->dks_param);
+	s32p->dks_paramlen = p->dks_paramlen;
+}
+
+static inline void
 netbsd32_from_dkwedge_list(
     const struct dkwedge_list *p,
     struct netbsd32_dkwedge_list *s32p,
     u_long cmd)
 {
-	s32p->dkwl_buf = p->dkwl_buf;
+	NETBSD32PTR32(s32p->dkwl_buf, p->dkwl_buf);
 	s32p->dkwl_bufsize = p->dkwl_bufsize;
 	s32p->dkwl_nwedges = p->dkwl_nwedges;
 	s32p->dkwl_ncopied = p->dkwl_ncopied;
@@ -1457,6 +1479,10 @@ netbsd32_ioctl(struct lwp *l, const struct netbsd32_ioctl_args *uap, register_t 
 	case DRVGETEVENT32:
 		IOCTL_STRUCT_CONV_TO(DRVGETEVENT, plistref);
 
+	case DIOCGSTRATEGY32:
+		IOCTL_STRUCT_CONV_TO(DIOCGSTRATEGY, disk_strategy);
+	case DIOCSSTRATEGY32:
+		IOCTL_STRUCT_CONV_TO(DIOCSSTRATEGY, disk_strategy);
 	case DIOCLWEDGES32:
 		IOCTL_STRUCT_CONV_TO(DIOCLWEDGES, dkwedge_list);
 

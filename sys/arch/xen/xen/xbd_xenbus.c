@@ -1,4 +1,4 @@
-/*      $NetBSD: xbd_xenbus.c,v 1.78 2017/11/11 21:03:01 riastradh Exp $      */
+/*      $NetBSD: xbd_xenbus.c,v 1.88 2018/08/26 21:04:16 jdolecek Exp $      */
 
 /*
  * Copyright (c) 2006 Manuel Bouyer.
@@ -50,7 +50,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xbd_xenbus.c,v 1.78 2017/11/11 21:03:01 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xbd_xenbus.c,v 1.88 2018/08/26 21:04:16 jdolecek Exp $");
 
 #include "opt_xen.h"
 
@@ -151,6 +151,7 @@ struct xbd_xenbus_softc {
 	u_long sc_info; /* VDISK_* */
 	u_long sc_handle; /* from backend */
 	int sc_cache_flush; /* backend supports BLKIF_OP_FLUSH_DISKCACHE */
+	struct evcnt sc_cnt_map_unalign;
 };
 
 #if 0
@@ -301,6 +302,9 @@ xbd_xenbus_attach(device_t parent, device_t self, void *aux)
 		panic("%s: can't alloc ring", device_xname(self));
 	sc->sc_ring.sring = ring;
 
+	evcnt_attach_dynamic(&sc->sc_cnt_map_unalign, EVCNT_TYPE_MISC,
+	    NULL, device_xname(self), "map unaligned");
+
 	/* resume shared structures and tell backend that we are ready */
 	if (xbd_xenbus_resume(self, PMF_Q_NONE) == false) {
 		uvm_km_free(kernel_map, (vaddr_t)ring, PAGE_SIZE,
@@ -323,26 +327,30 @@ xbd_xenbus_detach(device_t dev, int flags)
 	if (rc != 0)
 		return rc;
 
-	s = splbio();
+	s = splbio(); /* XXXSMP */
 	DPRINTF(("%s: xbd_detach\n", device_xname(dev)));
 	if (sc->sc_shutdown == BLKIF_SHUTDOWN_RUN) {
 		sc->sc_shutdown = BLKIF_SHUTDOWN_LOCAL;
 		/* wait for requests to complete */
 		while (sc->sc_backend_status == BLKIF_STATE_CONNECTED &&
-		    disk_isbusy(&sc->sc_dksc.sc_dkdev))
+		    disk_isbusy(&sc->sc_dksc.sc_dkdev)) {
+			/* XXXSMP */
 			tsleep(xbd_xenbus_detach, PRIBIO, "xbddetach", hz/2);
+		}
 
 		xenbus_switch_state(sc->sc_xbusd, NULL, XenbusStateClosing);
 	}
 	if ((flags & DETACH_FORCE) == 0) {
 		/* xbd_xenbus_detach already in progress */
-		wakeup(xbd_xenbus_detach);
+		wakeup(xbd_xenbus_detach); /* XXXSMP */
 		splx(s);
 		return EALREADY;
 	}
 	while (xenbus_read_driver_state(sc->sc_xbusd->xbusd_otherend)
-	    != XenbusStateClosed)
+	    != XenbusStateClosed) {
+		/* XXXSMP */
 		tsleep(xbd_xenbus_detach, PRIBIO, "xbddetach2", hz/2);
+	}
 	splx(s);
 
 	/* locate the major number */
@@ -373,11 +381,14 @@ xbd_xenbus_detach(device_t dev, int flags)
 	intr_disestablish(sc->sc_ih);
 
 	while (xengnt_status(sc->sc_ring_gntref)) {
+		/* XXXSMP */
 		tsleep(xbd_xenbus_detach, PRIBIO, "xbd_ref", hz/2);
 	}
 	xengnt_revoke_access(sc->sc_ring_gntref);
 	uvm_km_free(kernel_map, (vaddr_t)sc->sc_ring.sring,
 	    PAGE_SIZE, UVM_KMF_WIRED);
+
+	evcnt_detach(&sc->sc_cnt_map_unalign);
 
 	pmf_device_deregister(dev);
 
@@ -392,11 +403,13 @@ xbd_xenbus_suspend(device_t dev, const pmf_qual_t *qual) {
 
 	sc = device_private(dev);
 
-	s = splbio();
+	s = splbio(); /* XXXSMP */
 	/* wait for requests to complete, then suspend device */
 	while (sc->sc_backend_status == BLKIF_STATE_CONNECTED &&
-	    disk_isbusy(&sc->sc_dksc.sc_dkdev))
+	    disk_isbusy(&sc->sc_dksc.sc_dkdev)) {
+		/* XXXSMP */
 		tsleep(xbd_xenbus_suspend, PRIBIO, "xbdsuspend", hz/2);
+	}
 
 	hypervisor_mask_event(sc->sc_evtchn);
 	sc->sc_backend_status = BLKIF_STATE_SUSPENDED;
@@ -512,7 +525,8 @@ abort_transaction:
 	return false;
 }
 
-static void xbd_backend_changed(void *arg, XenbusState new_state)
+static void
+xbd_backend_changed(void *arg, XenbusState new_state)
 {
 	struct xbd_xenbus_softc *sc = device_private((device_t)arg);
 	struct disk_geom *dg;
@@ -529,13 +543,15 @@ static void xbd_backend_changed(void *arg, XenbusState new_state)
 	case XenbusStateInitialised:
 		break;
 	case XenbusStateClosing:
-		s = splbio();
+		s = splbio(); /* XXXSMP */
 		if (sc->sc_shutdown == BLKIF_SHUTDOWN_RUN)
 			sc->sc_shutdown = BLKIF_SHUTDOWN_REMOTE;
 		/* wait for requests to complete */
 		while (sc->sc_backend_status == BLKIF_STATE_CONNECTED &&
-		    disk_isbusy(&sc->sc_dksc.sc_dkdev))
+		    disk_isbusy(&sc->sc_dksc.sc_dkdev)) {
+			/* XXXSMP */
 			tsleep(xbd_xenbus_detach, PRIBIO, "xbddetach", hz/2);
+		}
 		splx(s);
 		xenbus_switch_state(sc->sc_xbusd, NULL, XenbusStateClosed);
 		break;
@@ -656,16 +672,23 @@ again:
 	for (i = sc->sc_ring.rsp_cons; i != resp_prod; i++) {
 		blkif_response_t *rep = RING_GET_RESPONSE(&sc->sc_ring, i);
 		struct xbd_req *xbdreq = &sc->sc_reqs[rep->id];
-		bp = xbdreq->req_bp;
-		DPRINTF(("xbd_handler(%p): b_bcount = %ld\n",
-		    xbdreq->req_bp, (long)bp->b_bcount));
+
 		if (rep->operation == BLKIF_OP_FLUSH_DISKCACHE) {
+			KASSERT(xbdreq->req_bp == NULL);
 			xbdreq->req_sync.s_error = rep->status;
 			xbdreq->req_sync.s_done = 1;
-			wakeup(xbdreq);
+			wakeup(xbdreq); /* XXXSMP */
 			/* caller will free the req */
 			continue;
 		}
+
+		if (rep->operation != BLKIF_OP_READ &&
+		    rep->operation != BLKIF_OP_WRITE) {
+			aprint_error_dev(sc->sc_dksc.sc_dev,
+			    "bad operation %d from backend\n", rep->operation);
+			continue;
+		}
+
 		for (seg = xbdreq->req_nr_segments - 1; seg >= 0; seg--) {
 			if (__predict_false(
 			    xengnt_status(xbdreq->req_gntref[seg]))) {
@@ -678,24 +701,24 @@ again:
 			xengnt_revoke_access(xbdreq->req_gntref[seg]);
 			xbdreq->req_nr_segments--;
 		}
-		if (rep->operation != BLKIF_OP_READ &&
-		    rep->operation != BLKIF_OP_WRITE) {
-			aprint_error_dev(sc->sc_dksc.sc_dev,
-			    "bad operation %d from backend\n", rep->operation);
-			bp->b_error = EIO;
-			bp->b_resid = bp->b_bcount;
-			goto next;
-		}
+		KASSERT(xbdreq->req_nr_segments == 0);
+
+		bp = xbdreq->req_bp;
+		KASSERT(bp != NULL);
+		DPRINTF(("%s(%p): b_bcount = %ld\n", __func__,
+		    bp, (long)bp->b_bcount));
+
 		if (rep->status != BLKIF_RSP_OKAY) {
 			bp->b_error = EIO;
 			bp->b_resid = bp->b_bcount;
 			goto next;
 		}
 		/* b_resid was set in dk_start */
-next:
-		if (bp->b_data != xbdreq->req_data)
+		if (__predict_false(
+		    xbdreq->req_data != NULL && bp->b_data != xbdreq->req_data))
 			xbd_unmap_align(xbdreq);
-
+next:
+		xbdreq->req_bp = NULL;
 		dk_done(&sc->sc_dksc, bp);
 
 		SLIST_INSERT_HEAD(&sc->sc_xbdreq_head, xbdreq, req_next);
@@ -709,7 +732,7 @@ done:
 		goto again;
 
 	if (sc->sc_xbdreq_wait)
-		wakeup(&sc->sc_xbdreq_wait);
+		wakeup(&sc->sc_xbdreq_wait); /* XXXSMP */
 	else
 		dk_start(&sc->sc_dksc, NULL);
 	return 1;
@@ -846,10 +869,11 @@ xbdioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 			return EOPNOTSUPP;
 		}
 
-		s = splbio();
+		s = splbio(); /* XXXSMP */
 
 		while (RING_FULL(&sc->sc_ring)) {
 			sc->sc_xbdreq_wait = 1;
+			/* XXXSMP */
 			tsleep(&sc->sc_xbdreq_wait, PRIBIO, "xbdreq", 0);
 		}
 		sc->sc_xbdreq_wait = 0;
@@ -871,8 +895,9 @@ xbdioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 			    notify);
 			if (notify)
 				hypervisor_notify_via_evtchn(sc->sc_evtchn);
-			/* request sent, no wait for completion */
+			/* request sent, now wait for completion */
 			while (xbdreq->req_sync.s_done == 0) {
+				/* XXXSMP */
 				tsleep(xbdreq, PRIBIO, "xbdsync", 0);
 			}
 			if (xbdreq->req_sync.s_error == BLKIF_RSP_EOPNOTSUPP)
@@ -920,6 +945,7 @@ xbd_diskstart(device_t self, struct buf *bp)
 	vaddr_t va;
 	int nsects, nbytes, seg;
 	int notify, error = 0;
+	int s;
 
 	DPRINTF(("xbd_diskstart(%p): b_bcount = %ld\n",
 	    bp, (long)bp->b_bcount));
@@ -934,6 +960,8 @@ xbd_diskstart(device_t self, struct buf *bp)
 		error = EINVAL;
 		goto err;
 	}
+
+	s = splbio();	/* XXX SMP */
 
 	if (__predict_false(
 	    sc->sc_backend_status == BLKIF_STATE_SUSPENDED)) {
@@ -959,7 +987,9 @@ xbd_diskstart(device_t self, struct buf *bp)
 
 	xbdreq->req_bp = bp;
 	xbdreq->req_data = bp->b_data;
-	if ((vaddr_t)bp->b_data & (XEN_BSIZE - 1)) {
+	if (__predict_false((vaddr_t)bp->b_data & (XEN_BSIZE - 1))) {
+		sc->sc_cnt_map_unalign.ev_count++;
+
 		if (__predict_false(xbd_map_align(xbdreq) != 0)) {
 			DPRINTF(("xbd_diskstart: no align\n"));
 			error = EAGAIN;
@@ -1012,6 +1042,7 @@ out:
 	RING_PUSH_REQUESTS_AND_CHECK_NOTIFY(&sc->sc_ring, notify);
 	if (notify)
 		hypervisor_notify_via_evtchn(sc->sc_evtchn);
+	splx(s);	/* XXXSMP */
 err:
 	return error;
 }
@@ -1019,7 +1050,7 @@ err:
 static int
 xbd_map_align(struct xbd_req *req)
 {
-	int s = splvm();
+	int s = splvm(); /* XXXSMP - bogus? */
 	int rc;
 
 	rc = uvm_km_kmem_alloc(kmem_va_arena,
@@ -1041,7 +1072,7 @@ xbd_unmap_align(struct xbd_req *req)
 	if (req->req_bp->b_flags & B_READ)
 		memcpy(req->req_bp->b_data, req->req_data,
 		    req->req_bp->b_bcount);
-	s = splvm();
+	s = splvm(); /* XXXSMP - bogus? */
 	uvm_km_kmem_free(kmem_va_arena, (vaddr_t)req->req_data, req->req_bp->b_bcount);
 	splx(s);
 }

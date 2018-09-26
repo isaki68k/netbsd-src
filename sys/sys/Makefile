@@ -1,10 +1,11 @@
-#	$NetBSD: Makefile,v 1.165 2018/04/18 08:58:41 mlelstv Exp $
+#	$NetBSD: Makefile,v 1.168 2018/08/21 06:49:21 kre Exp $
 
 .include <bsd.own.mk>
 
 INCSDIR= /usr/include/sys
 
-INCS=	acct.h agpio.h aio.h ansi.h aout_mids.h ataio.h atomic.h audioio.h \
+INCS=	acct.h agpio.h aio.h ansi.h aout_mids.h ataio.h atomic.h \
+	audioio.h \
 	bitops.h bootblock.h bswap.h buf.h \
 	callback.h callout.h cdbr.h cdefs.h cdefs_aout.h \
 	cdefs_elf.h cdio.h chio.h clock.h clockctl.h \
@@ -29,7 +30,7 @@ INCS=	acct.h agpio.h aio.h ansi.h aout_mids.h ataio.h atomic.h audioio.h \
 	malloc.h mallocvar.h mbuf.h md4.h md5.h midiio.h \
 	mman.h module.h mount.h mqueue.h msg.h msgbuf.h mtio.h mutex.h \
 	namei.h null.h \
-	param.h pcu.h pipe.h pmc.h pmf.h poll.h pool.h power.h proc.h \
+	param.h pcu.h pipe.h pmf.h poll.h pool.h power.h proc.h \
 	protosw.h pset.h psref.h ptrace.h ptree.h \
 	queue.h quota.h quotactl.h \
 	ras.h rbtree.h reboot.h radioio.h resource.h resourcevar.h rmd160.h \

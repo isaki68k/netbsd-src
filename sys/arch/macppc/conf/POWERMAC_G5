@@ -115,7 +115,7 @@ options         NFS_BOOT_DHCP
 
 mainbus* at root
 
-cpu* 		at mainbus?
+cpu0 	at mainbus?
 uni_n*	at mainbus?
 memory* at mainbus?
 spdmem* at memory? addr ?
@@ -126,7 +126,8 @@ uninorth* 	at mainbus?
 smu* 		at mainbus?
 #options 	SMU_DEBUG
 smuiic* 	at smu?
-smusat* 	at smuiic?
+iic* 		at smuiic?
+
 
 pci*	at ibmcpc? bus ?
 pci*	at uninorth? bus ?
@@ -147,6 +148,7 @@ lmtemp* 	at iic?
 dstemp* 	at iic?
 adadc* 		at iic?
 fcu* 		at iic?
+smusat* 	at iic?
 deq* 		at iic?
 
 pmu* 		at obio?	# Apple PMU
@@ -227,8 +229,7 @@ pseudo-device	wsmux			# mouse and keyboard multiplexor
 pseudo-device	clockctl		# user control of clock subsystem
 pseudo-device	ksyms			# /dev/ksyms
 #pseudo-device	nsmb			# SMB requester
-#pseudo-device	pf			# PF packet filter
-#pseudo-device	pflog			# PF log if
+#pseudo-device	npf			# NPF packet filter
 
 # Enable the hooks used for initializing the ram-disk.
 #options 	MEMORY_DISK_HOOKS

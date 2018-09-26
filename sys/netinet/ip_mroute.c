@@ -1,4 +1,4 @@
-/*	$NetBSD: ip_mroute.c,v 1.157 2018/04/11 06:26:00 maxv Exp $	*/
+/*	$NetBSD: ip_mroute.c,v 1.163 2018/09/14 05:09:51 maxv Exp $	*/
 
 /*
  * Copyright (c) 1992, 1993
@@ -93,7 +93,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ip_mroute.c,v 1.157 2018/04/11 06:26:00 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ip_mroute.c,v 1.163 2018/09/14 05:09:51 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -124,6 +124,7 @@ __KERNEL_RCSID(0, "$NetBSD: ip_mroute.c,v 1.157 2018/04/11 06:26:00 maxv Exp $")
 #include <netinet/in.h>
 #include <netinet/in_var.h>
 #include <netinet/in_systm.h>
+#include <netinet/in_offload.h>
 #include <netinet/ip.h>
 #include <netinet/ip_var.h>
 #include <netinet/in_pcb.h>
@@ -1723,7 +1724,7 @@ encap_send(struct ip *ip, struct vif *vifp, struct mbuf *m)
 
 	/* Take care of delayed checksums */
 	if (m->m_pkthdr.csum_flags & (M_CSUM_TCPv4|M_CSUM_UDPv4)) {
-		in_delayed_cksum(m);
+		in_undefer_cksum_tcpudp(m);
 		m->m_pkthdr.csum_flags &= ~(M_CSUM_TCPv4|M_CSUM_UDPv4);
 	}
 
@@ -1828,7 +1829,7 @@ vif_encapcheck(struct mbuf *m, int off, int proto, void *arg)
 	 */
 
 	/* Obtain the outer IP header and the vif pointer. */
-	m_copydata((struct mbuf *)m, 0, sizeof(ip), (void *)&ip);
+	m_copydata(m, 0, sizeof(ip), (void *)&ip);
 	vifp = (struct vif *)arg;
 
 	/*
@@ -1849,7 +1850,9 @@ vif_encapcheck(struct mbuf *m, int off, int proto, void *arg)
 		return 0;
 
 	/* Check that the inner destination is multicast. */
-	m_copydata((struct mbuf *)m, off, sizeof(ip), (void *)&ip);
+	if (off + sizeof(ip) > m->m_pkthdr.len)
+		return 0;
+	m_copydata(m, off, sizeof(ip), (void *)&ip);
 	if (!IN_MULTICAST(ip.ip_dst.s_addr))
 		return 0;
 
@@ -2741,7 +2744,7 @@ pim_register_prepare(struct ip *ip, struct mbuf *m)
 
 	/* Take care of delayed checksums */
 	if (m->m_pkthdr.csum_flags & (M_CSUM_TCPv4|M_CSUM_UDPv4)) {
-		in_delayed_cksum(m);
+		in_undefer_cksum_tcpudp(m);
 		m->m_pkthdr.csum_flags &= ~(M_CSUM_TCPv4|M_CSUM_UDPv4);
 	}
 
@@ -2916,22 +2919,16 @@ pim_register_send_rp(struct ip *ip, struct vif *vifp,
  * is passed to if_simloop().
  */
 void
-pim_input(struct mbuf *m, ...)
+pim_input(struct mbuf *m, int off, int proto)
 {
 	struct ip *ip = mtod(m, struct ip *);
 	struct pim *pim;
 	int minlen;
 	int datalen;
 	int ip_tos;
-	int proto;
 	int iphlen;
-	va_list ap;
 
-	va_start(ap, m);
-	iphlen = va_arg(ap, int);
-	proto = va_arg(ap, int);
-	va_end(ap);
-
+	iphlen = off;
 	datalen = ntohs(ip->ip_len) - iphlen;
 
 	/* Keep statistics */
@@ -3070,6 +3067,13 @@ pim_input(struct mbuf *m, ...)
 			return;
 		}
 
+		/* verify the inner packet doesn't have options */
+		if (encap_ip->ip_hl != (sizeof(struct ip) >> 2)) {
+			pimstat.pims_rcv_badregisters++;
+			m_freem(m);
+			return;
+		}
+
 		/* verify the inner packet is destined to a mcast group */
 		if (!IN_MULTICAST(encap_ip->ip_dst.s_addr)) {
 			pimstat.pims_rcv_badregisters++;
@@ -3156,6 +3160,11 @@ pim_input_to_daemon:
 	 * XXX: the outer IP header pkt size of a Register is not adjust to
 	 * reflect the fact that the inner multicast data is truncated.
 	 */
+	/*
+	 * Currently, pim_input() is always called holding softnet_lock
+	 * by ipintr()(!NET_MPSAFE) or PR_INPUT_WRAP()(NET_MPSAFE).
+	 */
+	KASSERT(mutex_owned(softnet_lock));
 	rip_input(m, iphlen, proto);
 
 	return;

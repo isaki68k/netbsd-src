@@ -1,4 +1,4 @@
-/*	$NetBSD: be.c,v 1.86 2017/06/25 12:02:59 maxv Exp $	*/
+/*	$NetBSD: be.c,v 1.89 2018/09/03 16:29:33 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 1999 The NetBSD Foundation, Inc.
@@ -57,7 +57,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: be.c,v 1.86 2017/06/25 12:02:59 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: be.c,v 1.89 2018/09/03 16:29:33 riastradh Exp $");
 
 #include "opt_ddb.h"
 #include "opt_inet.h"
@@ -80,6 +80,7 @@ __KERNEL_RCSID(0, "$NetBSD: be.c,v 1.86 2017/06/25 12:02:59 maxv Exp $");
 #include <net/netisr.h>
 #include <net/if_media.h>
 #include <net/if_ether.h>
+#include <net/bpf.h>
 
 #ifdef INET
 #include <netinet/in.h>
@@ -88,10 +89,6 @@ __KERNEL_RCSID(0, "$NetBSD: be.c,v 1.86 2017/06/25 12:02:59 maxv Exp $");
 #include <netinet/in_var.h>
 #include <netinet/ip.h>
 #endif
-
-
-#include <net/bpf.h>
-#include <net/bpfdesc.h>
 
 #include <sys/bus.h>
 #include <sys/intr.h>
@@ -527,7 +524,7 @@ be_get(struct be_softc *sc, int idx, int totlen)
 			if (m->m_flags & M_EXT)
 				len = MCLBYTES;
 		}
-		m->m_len = len = min(totlen, len);
+		m->m_len = len = uimin(totlen, len);
 		memcpy(mtod(m, void *), bp + boff, len);
 		boff += len;
 		totlen -= len;
@@ -603,7 +600,7 @@ bestart(struct ifnet *ifp)
 		 * If BPF is listening on this interface, let it see the
 		 * packet before we commit it to the wire.
 		 */
-		bpf_mtap(ifp, m);
+		bpf_mtap(ifp, m, BPF_D_OUT);
 
 		/*
 		 * Copy the mbuf chain into the transmit buffer.

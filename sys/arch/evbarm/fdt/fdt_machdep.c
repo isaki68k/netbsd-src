@@ -1,4 +1,4 @@
-/* $NetBSD: fdt_machdep.c,v 1.21 2018/04/01 04:35:04 ryo Exp $ */
+/* $NetBSD: fdt_machdep.c,v 1.38 2018/09/22 11:58:19 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2015-2017 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fdt_machdep.c,v 1.21 2018/04/01 04:35:04 ryo Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fdt_machdep.c,v 1.38 2018/09/22 11:58:19 jmcneill Exp $");
 
 #include "opt_machdep.h"
 #include "opt_bootconfig.h"
@@ -54,7 +54,14 @@ __KERNEL_RCSID(0, "$NetBSD: fdt_machdep.c,v 1.21 2018/04/01 04:35:04 ryo Exp $")
 #include <sys/reboot.h>
 #include <sys/termios.h>
 #include <sys/extent.h>
+#include <sys/bootblock.h>
+#include <sys/disklabel.h>
+#include <sys/vnode.h>
+#include <sys/kauth.h>
+#include <sys/fcntl.h>
+#include <sys/md5.h>
 
+#include <dev/cons.h>
 #include <uvm/uvm_extern.h>
 
 #include <sys/conf.h>
@@ -67,14 +74,9 @@ __KERNEL_RCSID(0, "$NetBSD: fdt_machdep.c,v 1.21 2018/04/01 04:35:04 ryo Exp $")
 #include <arm/armreg.h>
 
 #include <arm/cpufunc.h>
-#ifdef __aarch64__
-#include <aarch64/machdep.h>
-#else
-#include <arm/arm32/machdep.h>
-#endif
-
 
 #include <evbarm/include/autoconf.h>
+#include <evbarm/fdt/machdep.h>
 #include <evbarm/fdt/platform.h>
 
 #include <arm/fdt/arm_fdtvar.h>
@@ -94,11 +96,10 @@ __KERNEL_RCSID(0, "$NetBSD: fdt_machdep.c,v 1.21 2018/04/01 04:35:04 ryo Exp $")
 BootConfig bootconfig;
 char bootargs[FDT_MAX_BOOT_STRING] = "";
 char *boot_args = NULL;
-/*
- * filled in by xxx_start.S (must not be in bss)
- */
-unsigned long  uboot_args[4] = { 0 };
-const uint8_t *fdt_addr_r = (const uint8_t *)0xdeadc0de;
+
+/* filled in before cleaning bss. keep in .data */
+u_long uboot_args[4] __attribute__((__section__(".data")));
+const uint8_t *fdt_addr_r __attribute__((__section__(".data")));
 
 static char fdt_memory_ext_storage[EXTENT_FIXED_STORAGE_SIZE(DRAM_BLOCKS)];
 static struct extent *fdt_memory_ext;
@@ -107,7 +108,7 @@ static uint64_t initrd_start, initrd_end;
 
 #include <libfdt.h>
 #include <dev/fdt/fdtvar.h>
-#define FDT_BUF_SIZE	(128*1024)
+#define FDT_BUF_SIZE	(256*1024)
 static uint8_t fdt_data[FDT_BUF_SIZE];
 
 extern char KERNEL_BASE_phys[];
@@ -115,46 +116,51 @@ extern char KERNEL_BASE_phys[];
 
 static void fdt_update_stdout_path(void);
 static void fdt_device_register(device_t, void *);
+static void fdt_cpu_rootconf(void);
 static void fdt_reset(void);
 static void fdt_powerdown(void);
 
-#ifdef VERBOSE_INIT_ARM
+static dev_type_cnputc(earlyconsputc);
+static dev_type_cngetc(earlyconsgetc);
+
+static struct consdev earlycons = {
+	.cn_putc = earlyconsputc,
+	.cn_getc = earlyconsgetc,
+	.cn_pollc = nullcnpollc,
+};
+
 static void
 fdt_putchar(char c)
 {
 	const struct arm_platform *plat = arm_fdt_platform();
-	if (plat && plat->early_putchar)
-		plat->early_putchar(c);
+	if (plat && plat->ap_early_putchar) {
+		plat->ap_early_putchar(c);
+	}
+#ifdef EARLYCONS
+	else {
+#define PLATFORM_EARLY_PUTCHAR ___CONCAT(EARLYCONS, _platform_early_putchar)
+		void PLATFORM_EARLY_PUTCHAR(char);
+		PLATFORM_EARLY_PUTCHAR(c);
+	}
+#endif
 }
 
 static void
-fdt_putstr(const char *s)
+earlyconsputc(dev_t dev, int c)
 {
-	for (const char *p = s; *p; p++)
-		fdt_putchar(*p);
+	fdt_putchar(c);
 }
 
-static void
-fdt_printn(unsigned long n, int base)
+static int
+earlyconsgetc(dev_t dev)
 {
-	char *p, buf[(sizeof(unsigned long) * NBBY / 3) + 1 + 2 /* ALT + SIGN */];
-
-	p = buf;
-	do {
-		*p++ = hexdigits[n % base];
-	} while (n /= base);
-
-	do {
-		fdt_putchar(*--p);
-	} while (p > buf);
+	return 0;	/* XXX */
 }
-#define DPRINTF(...)		printf(__VA_ARGS__)
-#define DPRINT(x)		fdt_putstr(x)
-#define DPRINTN(x,b)		fdt_printn((x), (b))
+
+#ifdef VERBOSE_INIT_ARM
+#define VPRINTF(...)	printf(__VA_ARGS__)
 #else
-#define DPRINTF(...)
-#define DPRINT(x)
-#define DPRINTN(x,b)
+#define VPRINTF(...)	do { } while (/* CONSTCOND */ 0)
 #endif
 
 /*
@@ -175,13 +181,13 @@ fdt_get_memory(uint64_t *pstart, uint64_t *pend)
 	*pstart = cur_addr;
 	*pend = cur_addr + cur_size;
 
-	DPRINTF("FDT /memory [%d] @ 0x%" PRIx64 " size 0x%" PRIx64 "\n",
+	VPRINTF("FDT /memory [%d] @ 0x%" PRIx64 " size 0x%" PRIx64 "\n",
 	    0, *pstart, *pend - *pstart);
 
 	for (index = 1;
 	     fdtbus_get_reg64(memory, index, &cur_addr, &cur_size) == 0;
 	     index++) {
-		DPRINTF("FDT /memory [%d] @ 0x%" PRIx64 " size 0x%" PRIx64 "\n",
+		VPRINTF("FDT /memory [%d] @ 0x%" PRIx64 " size 0x%" PRIx64 "\n",
 		    index, cur_addr, cur_size);
 
 #ifdef __aarch64__
@@ -204,17 +210,17 @@ fdt_add_reserved_memory_range(uint64_t addr, uint64_t size)
 	int error = extent_free(fdt_memory_ext, start,
 	     end - start, EX_NOWAIT);
 	if (error != 0)
-		printf("MEM ERROR: res %llx-%llx failed: %d\n",
+		printf("MEM ERROR: res %" PRIx64 "-%" PRIx64 " failed: %d\n",
 		    start, end, error);
 	else
-		DPRINTF("MEM: res %llx-%llx\n", start, end);
+		VPRINTF("MEM: res %" PRIx64 "-%" PRIx64 "\n", start, end);
 }
 
 /*
  * Exclude memory ranges from memory config from the device tree
  */
 static void
-fdt_add_reserved_memory(uint64_t max_addr)
+fdt_add_reserved_memory(uint64_t min_addr, uint64_t max_addr)
 {
 	uint64_t addr, size;
 	int index, error;
@@ -225,8 +231,14 @@ fdt_add_reserved_memory(uint64_t max_addr)
 		    &addr, &size);
 		if (error != 0 || size == 0)
 			continue;
+		if (addr + size <= min_addr)
+			continue;
 		if (addr >= max_addr)
 			continue;
+		if (addr < min_addr) {
+			size -= (min_addr - addr);
+			addr = min_addr;
+		}
 		if (addr + size > max_addr)
 			size = max_addr - addr;
 		fdt_add_reserved_memory_range(addr, size);
@@ -259,21 +271,21 @@ fdt_build_bootconfig(uint64_t mem_start, uint64_t mem_end)
 		error = extent_alloc_region(fdt_memory_ext, addr, size,
 		    EX_NOWAIT);
 		if (error != 0)
-			printf("MEM ERROR: add %llx-%llx failed: %d\n",
+			printf("MEM ERROR: add %" PRIx64 "-%" PRIx64 " failed: %d\n",
 			    addr, addr + size, error);
-		DPRINTF("MEM: add %llx-%llx\n", addr, addr + size);
+		VPRINTF("MEM: add %" PRIx64 "-%" PRIx64 "\n", addr, addr + size);
 	}
 
-	fdt_add_reserved_memory(mem_end);
+	fdt_add_reserved_memory(mem_start, mem_end);
 
 	const uint64_t initrd_size = initrd_end - initrd_start;
 	if (initrd_size > 0)
 		fdt_add_reserved_memory_range(initrd_start, initrd_size);
 
-	DPRINTF("Usable memory:\n");
+	VPRINTF("Usable memory:\n");
 	bc->dramblocks = 0;
 	LIST_FOREACH(er, &fdt_memory_ext->ex_regions, er_link) {
-		DPRINTF("  %lx - %lx\n", er->er_start, er->er_end);
+		VPRINTF("  %lx - %lx\n", er->er_start, er->er_end);
 		bc->dram[bc->dramblocks].address = er->er_start;
 		bc->dram[bc->dramblocks].pages =
 		    (er->er_end - er->er_start) / PAGE_SIZE;
@@ -354,10 +366,13 @@ initarm(void *arg)
 	const struct arm_platform *plat;
 	uint64_t memory_start, memory_end;
 
+	/* set temporally to work printf()/panic() even before consinit() */
+	cn_tab = &earlycons;
+
 	/* Load FDT */
 	int error = fdt_check_header(fdt_addr_r);
 	if (error == 0) {
-		error = fdt_move(fdt_addr_r, fdt_data, sizeof(fdt_data));
+		error = fdt_open_into(fdt_addr_r, fdt_data, sizeof(fdt_data));
 		if (error != 0)
 			panic("fdt_move failed: %s", fdt_strerror(error));
 		fdtbus_set_data(fdt_data);
@@ -371,28 +386,26 @@ initarm(void *arg)
 		panic("Kernel does not support this device");
 
 	/* Early console may be available, announce ourselves. */
-	DPRINT("FDT<");
-	DPRINTN((uintptr_t)fdt_addr_r, 16);
-	DPRINT(">");
+	VPRINTF("FDT<%p>\n", fdt_addr_r);
 
 	const int chosen = OF_finddevice("/chosen");
 	if (chosen >= 0)
 		OF_getprop(chosen, "bootargs", bootargs, sizeof(bootargs));
 	boot_args = bootargs;
 
-	DPRINT(" devmap");
-	pmap_devmap_register(plat->devmap());
+	VPRINTF("devmap\n");
+	pmap_devmap_register(plat->ap_devmap());
 #ifdef __aarch64__
-	pmap_devmap_bootstrap(plat->devmap());
+	pmap_devmap_bootstrap(plat->ap_devmap());
 #endif
 
 	/* Heads up ... Setup the CPU / MMU / TLB functions. */
-	DPRINT(" cpufunc");
+	VPRINTF("cpufunc\n");
 	if (set_cpufuncs())
 		panic("cpu not recognized!");
 
-	DPRINT(" bootstrap");
-	plat->bootstrap();
+	VPRINTF("bootstrap\n");
+	plat->ap_bootstrap();
 
 	/*
 	 * If stdout-path is specified on the command line, override the
@@ -400,35 +413,29 @@ initarm(void *arg)
 	 */
 	fdt_update_stdout_path();
 
-	DPRINT(" consinit");
+	/*
+	 * Done making changes to the FDT.
+	 */
+	fdt_pack(fdt_data);
+
+	VPRINTF("consinit ");
 	consinit();
+	VPRINTF("ok\n");
 
-	DPRINTF(" ok\n");
-
-	DPRINTF("uboot: args %#lx, %#lx, %#lx, %#lx\n",
+	VPRINTF("uboot: args %#lx, %#lx, %#lx, %#lx\n",
 	    uboot_args[0], uboot_args[1], uboot_args[2], uboot_args[3]);
 
 	cpu_reset_address = fdt_reset;
 	cpu_powerdown_address = fdt_powerdown;
 	evbarm_device_register = fdt_device_register;
+	evbarm_cpu_rootconf = fdt_cpu_rootconf;
 
 	/* Talk to the user */
-	DPRINTF("\nNetBSD/evbarm (fdt) booting ...\n");
+	VPRINTF("\nNetBSD/evbarm (fdt) booting ...\n");
 
 #ifdef BOOT_ARGS
 	char mi_bootargs[] = BOOT_ARGS;
 	parse_mi_bootargs(mi_bootargs);
-#endif
-
-#ifndef __aarch64__
-	DPRINTF("KERNEL_BASE=0x%x, "
-		"KERNEL_VM_BASE=0x%x, "
-		"KERNEL_VM_BASE - KERNEL_BASE=0x%x, "
-		"KERNEL_BASE_VOFFSET=0x%x\n",
-		KERNEL_BASE,
-		KERNEL_VM_BASE,
-		KERNEL_VM_BASE - KERNEL_BASE,
-		KERNEL_BASE_VOFFSET);
 #endif
 
 	fdt_get_memory(&memory_start, &memory_end);
@@ -438,24 +445,8 @@ initarm(void *arg)
 	if (memory_end >= 0x100000000ULL)
 		memory_end = 0x100000000ULL - PAGE_SIZE;
 
+#endif
 	uint64_t memory_size = memory_end - memory_start;
-#endif
-
-#ifndef __aarch64__
-#ifdef __HAVE_MM_MD_DIRECT_MAPPED_PHYS
-	const bool mapallmem_p = true;
-#ifndef PMAP_NEED_ALLOC_POOLPAGE
-	if (memory_size > KERNEL_VM_BASE - KERNEL_BASE) {
-		DPRINTF("%s: dropping RAM size from %luMB to %uMB\n",
-		    __func__, (unsigned long) (memory_size >> 20),
-		    (KERNEL_VM_BASE - KERNEL_BASE) >> 20);
-		memory_size = KERNEL_VM_BASE - KERNEL_BASE;
-	}
-#endif
-#else
-	const bool mapallmem_p = false;
-#endif
-#endif
 
 	/* Parse ramdisk info */
 	fdt_probe_initrd(&initrd_start, &initrd_end);
@@ -466,37 +457,20 @@ initarm(void *arg)
 	 */
 	fdt_build_bootconfig(memory_start, memory_end);
 
-#ifdef __aarch64__
-	extern char __kernel_text[];
-	extern char _end[];
+	/* Perform PT build and VM init */
+	cpu_kernel_vm_init(memory_start, memory_size);
 
-	vaddr_t kernstart = trunc_page((vaddr_t)__kernel_text);
-	vaddr_t kernend = round_page((vaddr_t)_end);
-
-	paddr_t	kernstart_phys = KERN_VTOPHYS(kernstart);
-	paddr_t kernend_phys = KERN_VTOPHYS(kernend);
-
-	DPRINTF("%s: kernel phys start %lx end %lx\n", __func__, kernstart_phys, kernend_phys);
-
-        fdt_add_reserved_memory_range(kernstart_phys,
-	     kernend_phys - kernstart_phys);
-#else
-	arm32_bootmem_init(memory_start, memory_size, KERNEL_BASE_PHYS);
-	arm32_kernel_vm_init(KERNEL_VM_BASE, ARM_VECTORS_HIGH, 0,
-	    plat->devmap(), mapallmem_p);
-#endif
-
-	DPRINTF("bootargs: %s\n", bootargs);
+	VPRINTF("bootargs: %s\n", bootargs);
 
 	parse_mi_bootargs(boot_args);
 
-	#define MAX_PHYSMEM 16
+	#define MAX_PHYSMEM 64
 	static struct boot_physmem fdt_physmem[MAX_PHYSMEM];
 	int nfdt_physmem = 0;
 	struct extent_region *er;
 
 	LIST_FOREACH(er, &fdt_memory_ext->ex_regions, er_link) {
-		DPRINTF("  %lx - %lx\n", er->er_start, er->er_end);
+		VPRINTF("  %lx - %lx\n", er->er_start, er->er_end);
 		struct boot_physmem *bp = &fdt_physmem[nfdt_physmem++];
 
 		KASSERT(nfdt_physmem <= MAX_PHYSMEM);
@@ -559,11 +533,11 @@ consinit(void)
 	if (initialized || cons == NULL)
 		return;
 
-	plat->init_attach_args(&faa);
+	plat->ap_init_attach_args(&faa);
 	faa.faa_phandle = fdtbus_get_stdout_phandle();
 
-	if (plat->uart_freq != NULL)
-		uart_freq = plat->uart_freq();
+	if (plat->ap_uart_freq != NULL)
+		uart_freq = plat->ap_uart_freq();
 
 	cons->consinit(&faa, uart_freq);
 
@@ -579,7 +553,64 @@ delay(u_int us)
 {
 	const struct arm_platform *plat = arm_fdt_platform();
 
-	plat->delay(us);
+	plat->ap_delay(us);
+}
+
+static void
+fdt_detect_root_device(device_t dev)
+{
+	struct mbr_sector mbr;
+	uint8_t buf[DEV_BSIZE];
+	uint8_t hash[16];
+	const uint8_t *rhash;
+	char rootarg[32];
+	struct vnode *vp;
+	MD5_CTX md5ctx;
+	int error, len;
+	size_t resid;
+	u_int part;
+
+	const int chosen = OF_finddevice("/chosen");
+	if (chosen < 0)
+		return;
+
+	if (of_hasprop(chosen, "netbsd,mbr") &&
+	    of_hasprop(chosen, "netbsd,partition")) {
+
+		/*
+		 * The bootloader has passed in a partition index and MD5 hash
+		 * of the MBR sector. Read the MBR of this device, calculate the
+		 * hash, and compare it with the value passed in.
+		 */
+		rhash = fdtbus_get_prop(chosen, "netbsd,mbr", &len);
+		if (rhash == NULL || len != 16)
+			return;
+		of_getprop_uint32(chosen, "netbsd,partition", &part);
+		if (part >= MAXPARTITIONS)
+			return;
+
+		vp = opendisk(dev);
+		if (!vp)
+			return;
+		error = vn_rdwr(UIO_READ, vp, buf, sizeof(buf), 0, UIO_SYSSPACE,
+		    0, NOCRED, &resid, NULL);
+		VOP_CLOSE(vp, FREAD, NOCRED);
+		vput(vp);
+
+		if (error != 0)
+			return;
+
+		memcpy(&mbr, buf, sizeof(mbr));
+		MD5Init(&md5ctx);
+		MD5Update(&md5ctx, (void *)&mbr, sizeof(mbr));
+		MD5Final(hash, &md5ctx);
+
+		if (memcmp(rhash, hash, 16) != 0)
+			return;
+
+		snprintf(rootarg, sizeof(rootarg), " root=%s%c", device_xname(dev), part + 'a');
+		strcat(boot_args, rootarg);
+	}
 }
 
 static void
@@ -590,8 +621,28 @@ fdt_device_register(device_t self, void *aux)
 	if (device_is_a(self, "armfdt"))
 		fdt_setup_initrd();
 
-	if (plat && plat->device_register)
-		plat->device_register(self, aux);
+	if (plat && plat->ap_device_register)
+		plat->ap_device_register(self, aux);
+}
+
+static void
+fdt_cpu_rootconf(void)
+{
+	device_t dev;
+	deviter_t di;
+	char *ptr;
+
+	for (dev = deviter_first(&di, 0); dev; dev = deviter_next(&di)) {
+		if (device_class(dev) != DV_DISK)
+			continue;
+
+		if (get_bootconf_option(boot_args, "root", BOOTOPT_TYPE_STRING, &ptr) != 0)
+			break;
+
+		if (device_is_a(dev, "ld") || device_is_a(dev, "sd") || device_is_a(dev, "wd"))
+			fdt_detect_root_device(dev);
+	}
+	deviter_release(&di);
 }
 
 static void
@@ -601,8 +652,8 @@ fdt_reset(void)
 
 	fdtbus_power_reset();
 
-	if (plat && plat->reset)
-		plat->reset();
+	if (plat && plat->ap_reset)
+		plat->ap_reset();
 }
 
 static void

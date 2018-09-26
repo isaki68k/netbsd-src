@@ -1,4 +1,4 @@
-/*	$NetBSD: socket.h,v 1.124 2018/04/19 21:19:07 christos Exp $	*/
+/*	$NetBSD: socket.h,v 1.128 2018/09/16 20:40:20 mrg Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -222,7 +222,8 @@ struct	accept_filter_arg {
 #define	AF_MPLS		33		/* MultiProtocol Label Switching */
 #define	AF_ROUTE	34		/* Internal Routing Protocol */
 #define	AF_CAN		35
-#define	AF_MAX		36
+#define	AF_ETHER	36
+#define	AF_MAX		37
 
 /*
  * Structure used by kernel to store most
@@ -332,6 +333,7 @@ struct sockaddr_storage {
 #define	PF_MPLS		AF_MPLS
 #define	PF_ROUTE	AF_ROUTE
 #define	PF_CAN		AF_CAN
+#define	PF_ETHER	AF_ETHER
 
 #define	PF_MAX		AF_MAX
 
@@ -375,52 +377,7 @@ struct sockcred {
 
 
 #if defined(_NETBSD_SOURCE)
-/*
- * Definitions for network related sysctl, CTL_NET.
- *
- * Second level is protocol family.
- * Third level is protocol number.
- *
- * Further levels are defined by the individual families below.
- */
-#define NET_MAXID	AF_MAX
-
-#define CTL_NET_NAMES { \
-	{ 0, 0 }, \
-	{ "local", CTLTYPE_NODE }, \
-	{ "inet", CTLTYPE_NODE }, \
-	{ "implink", CTLTYPE_NODE }, \
-	{ "pup", CTLTYPE_NODE }, \
-	{ "chaos", CTLTYPE_NODE }, \
-	{ "xerox_ns", CTLTYPE_NODE }, \
-	{ "iso", CTLTYPE_NODE }, \
-	{ "emca", CTLTYPE_NODE }, \
-	{ "datakit", CTLTYPE_NODE }, \
-	{ "ccitt", CTLTYPE_NODE }, \
-	{ "ibm_sna", CTLTYPE_NODE }, \
-	{ "decnet", CTLTYPE_NODE }, \
-	{ "dec_dli", CTLTYPE_NODE }, \
-	{ "lat", CTLTYPE_NODE }, \
-	{ "hylink", CTLTYPE_NODE }, \
-	{ "appletalk", CTLTYPE_NODE }, \
-	{ "oroute", CTLTYPE_NODE }, \
-	{ "link_layer", CTLTYPE_NODE }, \
-	{ "xtp", CTLTYPE_NODE }, \
-	{ "coip", CTLTYPE_NODE }, \
-	{ "cnt", CTLTYPE_NODE }, \
-	{ "rtip", CTLTYPE_NODE }, \
-	{ "ipx", CTLTYPE_NODE }, \
-	{ "inet6", CTLTYPE_NODE }, \
-	{ "pip", CTLTYPE_NODE }, \
-	{ "isdn", CTLTYPE_NODE }, \
-	{ "natm", CTLTYPE_NODE }, \
-	{ "arp", CTLTYPE_NODE }, \
-	{ "key", CTLTYPE_NODE }, \
-	{ "ieee80211", CTLTYPE_NODE }, \
-	{ "mlps", CTLTYPE_NODE }, \
-	{ "route", CTLTYPE_NODE }, \
-}
-
+/* Definition for CTL_NET PCB fetching sysctls */
 struct kinfo_pcb {
 	__uint64_t	ki_pcbaddr;	/* PTR: pcb addr */
 	__uint64_t	ki_ppcbaddr;	/* PTR: ppcb addr */
@@ -480,16 +437,7 @@ struct kinfo_pcb {
 #define	NET_RT_OOIFLIST		4	/* old NET_RT_IFLIST (pre-64bit time) */
 #define	NET_RT_OIFLIST		5	/* old NET_RT_IFLIST (pre 8.0) */
 #define	NET_RT_IFLIST		6	/* survey interface list */
-#define	NET_RT_MAXID		7
 
-#define CTL_NET_RT_NAMES { \
-	{ 0, 0 }, \
-	{ "dump", CTLTYPE_STRUCT }, \
-	{ "flags", CTLTYPE_STRUCT }, \
-	{ 0, 0 }, \
-	{ 0, 0 }, \
-	{ "iflist", CTLTYPE_STRUCT }, \
-}
 #endif /* _NETBSD_SOURCE */
 
 /*
@@ -653,6 +601,7 @@ int	connect(int, const struct sockaddr *, socklen_t);
 int	getpeername(int, struct sockaddr * __restrict, socklen_t * __restrict);
 int	getsockname(int, struct sockaddr * __restrict, socklen_t * __restrict);
 int	getsockopt(int, int, int, void *__restrict, socklen_t * __restrict);
+int	getsockopt2(int, int, int, void *__restrict, socklen_t * __restrict);
 int	listen(int, int);
 int	paccept(int, struct sockaddr * __restrict, socklen_t * __restrict,
 	const sigset_t * __restrict, int);

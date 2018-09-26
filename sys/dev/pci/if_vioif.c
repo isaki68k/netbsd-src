@@ -1,4 +1,4 @@
-/*	$NetBSD: if_vioif.c,v 1.39 2018/02/08 09:05:19 dholland Exp $	*/
+/*	$NetBSD: if_vioif.c,v 1.41 2018/06/26 06:48:01 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2010 Minoura Makoto.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_vioif.c,v 1.39 2018/02/08 09:05:19 dholland Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_vioif.c,v 1.41 2018/06/26 06:48:01 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_net_mpsafe.h"
@@ -46,9 +46,6 @@ __KERNEL_RCSID(0, "$NetBSD: if_vioif.c,v 1.39 2018/02/08 09:05:19 dholland Exp $
 #include <sys/cpu.h>
 #include <sys/module.h>
 
-#include <dev/pci/pcidevs.h>
-#include <dev/pci/pcireg.h>
-#include <dev/pci/pcivar.h>
 #include <dev/pci/virtioreg.h>
 #include <dev/pci/virtiovar.h>
 
@@ -875,7 +872,7 @@ skip:
 		virtio_enqueue_commit(vsc, vq, slot, false);
 
 		queued++;
-		bpf_mtap(ifp, m);
+		bpf_mtap(ifp, m, BPF_D_OUT);
 	}
 
 	if (queued > 0) {

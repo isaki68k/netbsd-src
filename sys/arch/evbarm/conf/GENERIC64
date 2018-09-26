@@ -1,5 +1,5 @@
 #
-#	$NetBSD: GENERIC64,v 1.1 2018/04/01 04:35:04 ryo Exp $
+#	$NetBSD: GENERIC64,v 1.37 2018/09/15 16:22:20 jmcneill Exp $
 #
 #	GENERIC ARM (aarch64) kernel
 #
@@ -14,9 +14,22 @@ include	"arch/evbarm/conf/GENERIC.common"
 #
 makeoptions 	DTSARCH="arm aarch64"
 makeoptions	DTSGNUARCH="arm arm64"
-makeoptions	DTSSUBDIR="allwinner broadcom nvidia"
+makeoptions	DTSSUBDIR="allwinner broadcom nvidia rockchip"
 makeoptions	DTS="
 	bcm2837-rpi-3-b.dts
+	bcm2837-rpi-3-b-plus.dts
+
+	rk3328-evb.dts
+	rk3328-roc-cc.dts
+	rk3328-rock64.dts
+
+	rk3399-evb.dts
+	rk3399-firefly.dts
+	rk3399-gru-kevin.dts
+	rk3399-puma-haikou.dts
+	rk3399-rockpro64.dts
+	rk3399-sapphire-excavator.dts
+	rk3399-sapphire.dts
 
 	sun50i-a64-bananapi-m64.dts
 	sun50i-a64-nanopi-a64.dts
@@ -26,12 +39,17 @@ makeoptions	DTS="
 	sun50i-a64-pine64.dts
 	sun50i-a64-pinebook.dts
 	sun50i-a64-sopine-baseboard.dts
+	sun50i-a64-teres-i.dts
 
+	sun50i-h5-libretech-all-h3-cc.dts
 	sun50i-h5-nanopi-neo-plus2.dts
 	sun50i-h5-nanopi-neo2.dts
 	sun50i-h5-orangepi-pc2.dts
 	sun50i-h5-orangepi-prime.dts
+	sun50i-h5-orangepi-zero-plus.dts
 	sun50i-h5-orangepi-zero-plus2.dts
+
+	sun50i-h6-pine-h64.dts
 
 	tegra210-p2371-0000.dts
 	tegra210-p2371-2180.dts
@@ -41,10 +59,14 @@ makeoptions	DTS="
 options 	CPU_CORTEXA53
 options 	CPU_CORTEXA57
 options 	SOC_BCM2837
+options 	SOC_RK3328
+options 	SOC_RK3399
 options 	SOC_TEGRA210
 options 	SOC_SUN50I_A64
 options 	SOC_SUN50I_H5
-#options 	MULTIPROCESSOR
+options 	SOC_SUN50I_H6
+options 	SOC_VIRT
+options 	MULTIPROCESSOR
 
 pseudo-device 	openfirm	# /dev/openfirm
 
@@ -52,12 +74,14 @@ options 	DIAGNOSTIC	# internal consistency checks
 options 	DEBUG
 #options 	LOCKDEBUG
 #options 	PMAP_DEBUG	# Enable pmap_debug_level code
-#options 	IPKDB		# remote kernel debugging
 options 	VERBOSE_INIT_ARM # verbose bootstrapping messages
 # EARLYCONS is required for early init messages from VERBOSE_INIT_ARM.
 #options 	EARLYCONS=bcm2837
+#options 	EARLYCONS=rk3328, CONSADDR=0xff130000
+#options 	EARLYCONS=rk3399, CONSADDR=0xff1a0000
 #options 	EARLYCONS=sunxi, CONSADDR=0x01c28000
 #options 	EARLYCONS=tegra, CONSADDR=0x70006000
+#options 	EARLYCONS=virt
 
 makeoptions	DEBUG="-g"	# compile full symbol table
 makeoptions	COPY_SYMTAB=1
@@ -66,11 +90,15 @@ config		netbsd		root on ? type ?
 
 # Device tree support
 armfdt0		at root
-fdt*		at fdtbus?
+simplebus*	at fdt? pass 0
 
 # CPUs
 cpus*		at fdt? pass 0
-cpu*		at cpus?
+cpu*		at fdt? pass 0
+
+# Performance monitors
+armpmu*		at fdt?
+pseudo-device	tprof
 
 # CPU frequency scaling
 cpufreqdt*	at cpu?
@@ -86,6 +114,9 @@ gpiokeys*	at fdt?
 wskbd*		at gpiokeys? console ? mux 1
 gpioleds*	at fdt?
 
+# System Controller
+syscon*		at fdt? pass 1		# Generic System Controller
+
 # Timer
 gtmr*		at fdt? pass 1		# ARM Generic Timer
 armgtmr0	at gtmr?
@@ -98,8 +129,10 @@ watchdog*	at fdt?			# Broadcom BCM283x watchdog
 # Interrupt controller
 bcmicu*		at fdt? pass 1		# Broadcom BCM283x ICU
 tegralic*	at fdt? pass 1		# NVIDIA Tegra LIC
-gic*		at fdt? pass 1		# ARM GIC
+gic*		at fdt? pass 1		# ARM GICv2
 armgic0		at gic?
+gicvthree*	at fdt? pass 1		# ARM GICv3
+sunxinmi*	at fdt? pass 2		# Allwinner NMI / R_INTC
 
 # Memory controller
 tegramc*	at fdt?	pass 4		# NVIDIA Tegra MC
@@ -114,6 +147,7 @@ sun6idma*	at fdt?			# Allwinner DMA controller (sun6i)
 tegraapbdma*	at fdt? pass 4		# NVIDIA Tegra APB DMA
 
 # FUSE controller
+sunxisid*	at fdt? pass 4		# Allwinner SID
 tegrafuse*	at fdt? pass 4		# NVIDIA Tegra FUSE
 
 # Power management controller
@@ -122,9 +156,13 @@ tegrapmc*	at fdt? pass 4		# NVIDIA Tegra PMC
 # Clock and Reset controller
 bcmcprman*	at fdt? pass 1		# Broadcom BCM283x Clock Manager
 bcmaux*		at fdt? pass 1		# Broadcom BCM283x Aux Periph Clocks
+rkcru*		at fdt? pass 2		# Rockchip RK3328 CRU
 sun8ih3ccu*	at fdt? pass 2		# Allwinner H3/H5 CCU
 sun8ih3rccu*	at fdt? pass 2		# Allwinner H3/H5 CCU (PRCM)
 sun50ia64ccu*	at fdt? pass 2		# Allwinner A64 CCU
+sun50ia64rccu*	at fdt? pass 2		# Allwinner A64 CCU (PRCM)
+sun50ih6ccu*	at fdt? pass 2		# Allwinner H6 CCU
+sun50ih6rccu*	at fdt? pass 2		# Allwinner H6 CCU (PRCM)
 sunxiresets*	at fdt? pass 1		# Allwinner misc. resets
 sunxigates*	at fdt? pass 1		# Allwinner misc. gates
 sunxigmacclk*	at fdt? pass 2		# Allwinner GMAC MII/RGMII clock mux
@@ -132,11 +170,17 @@ tegra210car*	at fdt? pass 3		# NVIDIA Tegra CAR (T210)
 
 # GPIO controller
 bcmgpio*	at fdt?			# Broadcom BCM283x GPIO
+pl061gpio*	at fdt?			# ARM PrimeCell PL061 GPIO
 sunxigpio*	at fdt? pass 3		# Allwinner GPIO
 tegragpio*	at fdt? pass 2		# NVIDIA Tegra GPIO
+rkgpio*		at rkiomux?		# Rockchip GPIO
 gpio*		at gpiobus?
 
+# PWM controller
+sunxipwm*	at fdt? pass 3		# Allwinner PWM
+
 # MPIO / Pinmux
+rkiomux*	at fdt?	pass 3		# Rockchip IOMUX
 tegrapinmux*	at fdt?			# NVIDIA Tegra MPIO
 
 # XUSB PADCTL
@@ -144,13 +188,17 @@ tegra210xpad*	at fdt?			# NVIDIA Tegra XUSB PADCTL (T210)
 tegra210xphy*	at tegra210xpad?
 
 # PCIE
+pcihost*	at fdt?			# Generic PCI host controller
 tegrapcie0	at fdt?			# NVIDIA Tegra PCIE
-pci*		at tegrapcie0
+pci*		at pcibus? 
 ppb*		at pci? dev ? function ?
 pci*		at ppb?
 
 # Ethernet
+awge*		at fdt?				# DesignWare Gigabit Ethernet
 emac*		at fdt?				# Allwinner Gigabit Ethernet (EMAC)
+mskc*		at pci? dev ? function ?	# Marvell Yukon 2 Gigabit Ethernet
+msk*		at mskc?
 re*		at pci? dev ? function ?	# Realtek RTL8111GS
 
 # MII/PHY support
@@ -185,11 +233,12 @@ ukphy*		at mii? phy ?		# generic unknown PHYs
 #athn*		at pci? dev ? function ?	# Atheros IEEE 802.11
 
 # UART
-com*		at fdt?			# UART
-plcom*		at fdt?			# ARM PL011 UART
+com*		at fdt?	pass 4		# UART
+plcom*		at fdt?	pass 4		# ARM PL011 UART
 
 # I2C controllers
 bsciic*		at fdt?			# Broadcom BCM283x Serial Control
+rkiic*		at fdt?			# Rockchip I2C
 sunxirsb*	at fdt?			# Allwinner RSB
 sunxitwi*	at fdt?			# Allwinner TWI
 tegrai2c*	at fdt? pass 4		# NVIDIA Tegra I2C
@@ -200,7 +249,13 @@ titemp*		at iic?
 seeprom*	at iic?
 as3722pmic*	at iic?
 as3722reg*	at as3722pmic?
+axppmic*	at iic?			# X-Powers AXP Power Management IC
+axpreg*		at axppmic?
+fan53555reg*	at iic?			# FAN53555 / SY82x regulator
 max77620pmic*	at iic?
+pcf8563rtc*	at iic?			# PCF8563 RTC
+rkpmic*		at iic?			# Rockchip Power Management IC
+rkreg*		at rkpmic?
 tcagpio*	at iic?
 
 # Random number generators
@@ -211,6 +266,7 @@ sunxirtc*	at fdt?			# Allwinner RTC
 tegrartc*	at fdt?			# NVIDIA Tegra RTC
 
 # SDMMC
+dwcmmc*		at fdt?			# Designware SD/MMC
 mmcpwrseq*	at fdt?			# Simple MMC power sequence provider
 sdhc*		at fdt?			# SD Host Controller Interface
 sdhost*		at fdt?			# Broadcom BCM283x SD Host Interface
@@ -240,8 +296,12 @@ options 	HDAUDIOVERBOSE
 options 	HDAUDIO_32BIT_ACCESS
 options 	HDAUDIO_ENABLE_HDMI
 options 	HDAUDIO_ENABLE_DISPLAYPORT
+ausoc*		at fdt?			# Simple SoC audio card
 sunxicodec*	at fdt?			# Allwinner audio codec
+sun8icodec*	at fdt?			# Allwinner audio codec (sun8i/sun50i)
 h3codec*	at fdt?			# Allwinner H3 audio codec (analog part)
+a64acodec*	at fdt?			# Allwinner A64 audio codec (analog part)
+sunxii2s*	at fdt?			# Allwinner I2S/PCM
 audio*		at audiobus?
 
 spkr*		at audio?		# PC speaker (synthesized)
@@ -266,23 +326,34 @@ options 	WSDISPLAY_COMPAT_SYSCONS
 options 	WSDISPLAY_COMPAT_USL
 options 	WSDISPLAY_COMPAT_RAWKBD
 options 	WSDISPLAY_DEFAULTSCREENS=4
+options 	WSDISPLAY_MULTICONS
 pseudo-device	wsmux
 pseudo-device	wsfont
 
 # GPU
 #nouveau*	at fdt?			# NVIDIA GPU
 
+# Backlight
+pwmbacklight*	at fdt?			# PWM Backlight controls
+
 # Thermal throttling controller
+sunxithermal*	at fdt?			# Allwinner thermal sensor controller
 tegrasoctherm*	at fdt?			# NVIDIA Tegra SOC_THERM
 
 # USB
+rkusb*		at fdt? pass 9		# Rockchip USB PHY
+rkusbphy*	at rkusb?
 sunxiusbphy*	at fdt? pass 9		# Allwinner USB PHY
+sunxiusb3phy*	at fdt? pass 9		# Allwinner USB3 PHY
 tegrausbphy*	at fdt?			# NVIDIA Tegra USB PHY
 dwctwo*		at fdt?			# Designware USB DRD
 ehci*		at fdt?			# EHCI
-#motg*		at fdt?			# Mentor Graphics USB OTG
+ehci*		at pci?			# EHCI
+motg*		at fdt?			# Mentor Graphics USB OTG
 ohci*		at fdt?			# OHCI
+ohci*		at pci?			# OHCI
 xhci*		at fdt?			# XHCI
+xhci*		at pci?			# XHCI
 usb*		at usbus?
 
 include "dev/usb/usbdevices.config"

@@ -1,10 +1,11 @@
-#	$NetBSD: files.kern,v 1.16 2017/12/16 10:15:12 maxv Exp $
+#	$NetBSD: files.kern,v 1.23 2018/09/14 01:55:19 mrg Exp $
 
 #
 # kernel sources
 #
 define	kern:	machdep, uvm
 defflag	opt_kern.h			KERN
+defflag	opt_script.h			SETUIDSCRIPTS FDSCRIPTS
 file	compat/common/compat_util.c	kern
 file	compat/common/compat_mod.c	compat_netbsd | compat_netbsd32
 file	conf/debugsyms.c		kern
@@ -65,6 +66,7 @@ file	kern/kern_proc.c		kern
 file	kern/kern_prot.c		kern
 file	kern/kern_ras.c			kern
 file	kern/kern_rate.c		kern
+file	kern/kern_reboot.c		kern
 file	kern/kern_resource.c		kern
 file	kern/kern_rndpool.c		kern
 file	kern/kern_rndq.c		kern
@@ -72,6 +74,7 @@ file	kern/kern_rndsink.c		kern
 file	kern/kern_runq.c		kern
 file	kern/kern_rwlock.c		kern
 file	kern/kern_rwlock_obj.c		kern
+file	kern/kern_scdebug.c		kern
 file	kern/kern_sdt.c			kdtrace_hooks
 file	kern/kern_sig.c			kern
 file	kern/kern_sleepq.c		kern
@@ -89,7 +92,6 @@ file	kern/kern_turnstile.c		kern
 file	kern/kern_todr.c		kern
 file	kern/kern_uidinfo.c		kern
 file	kern/kern_uuid.c		kern
-file	kern/kern_xxx.c			kern
 file	kern/kgdb_stub.c		kgdb
 file	kern/sched_4bsd.c		sched_4bsd
 file	kern/sched_m2.c			sched_m2
@@ -115,8 +117,6 @@ file	kern/subr_iostat.c		kern
 file	kern/subr_ipi.c			kern
 file	kern/subr_kcpuset.c		kern
 defflag	opt_kmem.h			KMEM_GUARD
-					KMEM_POISON
-					KMEM_REDZONE
 					KMEM_SIZE
 defparam opt_kmem.h			KMEM_GUARD_DEPTH
 file	kern/subr_kmem.c		kern
@@ -150,7 +150,6 @@ file	kern/sys_module.c		kern
 file	kern/sys_mqueue.c		mqueue
 file	kern/sys_lwp.c			kern
 file	kern/sys_pipe.c			!pipe_socketpair
-file	kern/sys_pmc.c			kern
 file	kern/sys_process.c		ptrace_hooks | ktrace
 file	kern/sys_ptrace.c		ptrace
 file	kern/sys_ptrace_common.c	ptrace
@@ -175,6 +174,7 @@ file	kern/uipc_accf.c		kern
 file	kern/uipc_domain.c		kern
 file	kern/uipc_mbuf.c		kern
 file	kern/uipc_mbuf2.c		kern
+file	kern/uipc_mbufdebug.c		kern & ether
 file	net/link_proto.c		kern	# XXX
 file	kern/uipc_proto.c		kern
 file	kern/uipc_sem.c			kern
@@ -217,3 +217,9 @@ file	miscfs/genfs/layer_vfsops.c	layerfs
 file	miscfs/genfs/layer_vnops.c	layerfs
 
 file	miscfs/specfs/spec_vnops.c	vfs
+
+defflag	KUBSAN
+prefix	../common/lib/libc/misc
+file	ubsan.c				kubsan
+prefix
+makeoptions	kubsan	CFLAGS+="-fsanitize=undefined"

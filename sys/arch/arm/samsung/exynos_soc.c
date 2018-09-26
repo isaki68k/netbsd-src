@@ -1,4 +1,4 @@
-/*	$NetBSD: exynos_soc.c,v 1.32 2017/06/10 15:13:18 jmcneill Exp $	*/
+/*	$NetBSD: exynos_soc.c,v 1.36 2018/09/14 11:58:38 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -29,10 +29,11 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include "opt_arm_debug.h"
 #include "opt_exynos.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(1, "$NetBSD: exynos_soc.c,v 1.32 2017/06/10 15:13:18 jmcneill Exp $");
+__KERNEL_RCSID(1, "$NetBSD: exynos_soc.c,v 1.36 2018/09/14 11:58:38 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -75,6 +76,8 @@ struct cpu_freq {
 
 
 #ifdef SOC_EXYNOS4
+int exynos4_l2cc_init(void);
+
 const struct cpu_freq cpu_freq_settings_exynos4[] = {
 	{ 200, 3, 100, 2},
 	{ 300, 4, 200, 2},
@@ -136,47 +139,6 @@ bus_space_handle_t exynos_sysreg_bsh;
 
 static int sysctl_cpufreq_target(SYSCTLFN_ARGS);
 static int sysctl_cpufreq_current(SYSCTLFN_ARGS);
-
-/*
- * the early serial console
- */
-#ifdef EXYNOS_CONSOLE_EARLY
-
-#include "opt_sscom.h"
-#include <arm/samsung/sscom_reg.h>
-#include <arm/samsung/sscom_var.h>
-#include <dev/cons.h>
-
-static volatile uint8_t *uart_base;
-
-#define CON_REG(a) (*((volatile uint32_t *)(uart_base + (a))))
-
-static int
-exynos_cngetc(dev_t dv)
-{
-        if ((CON_REG(SSCOM_UTRSTAT) & UTRSTAT_RXREADY) == 0)
-		return -1;
-
-	return CON_REG(SSCOM_URXH);
-}
-
-static void
-exynos_cnputc(dev_t dv, int c)
-{
-	int timo = 150000;
-
-	while ((CON_REG(SSCOM_UFSTAT) & UFSTAT_TXFULL) && --timo > 0);
-
-	CON_REG(SSCOM_UTXH) = c & 0xff;
-}
-
-static struct consdev exynos_earlycons = {
-	.cn_putc = exynos_cnputc,
-	.cn_getc = exynos_cngetc,
-	.cn_pollc = nullcnpollc,
-};
-#endif /* EXYNOS_CONSOLE_EARLY */
-
 
 #ifdef ARM_TRUSTZONE_FIRMWARE
 int
@@ -513,7 +475,7 @@ exynos_clocks_bootstrap(void)
 
 
 void
-exynos_bootstrap(vaddr_t iobase, vaddr_t uartbase)
+exynos_bootstrap(void)
 {
 	int error;
 	size_t core_size, audiocore_size;
@@ -523,13 +485,7 @@ exynos_bootstrap(vaddr_t iobase, vaddr_t uartbase)
 	bus_addr_t exynos_pmu_offset;
 	bus_addr_t exynos_sysreg_offset;
 	bus_addr_t exynos_cmu_apll_offset;
-
-	/* set up early console so we can use printf() and friends */
-#ifdef EXYNOS_CONSOLE_EARLY
-	uart_base = (volatile uint8_t *) uartbase;
-	cn_tab = &exynos_earlycons;
-	printf("Exynos early console operational\n\n");
-#endif
+	const vaddr_t iobase = EXYNOS_CORE_VBASE;
 
 #ifdef SOC_EXYNOS4
 	core_size = EXYNOS4_CORE_SIZE;

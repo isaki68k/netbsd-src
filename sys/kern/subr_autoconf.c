@@ -1,4 +1,4 @@
-/* $NetBSD: subr_autoconf.c,v 1.257 2018/03/04 07:12:18 mlelstv Exp $ */
+/* $NetBSD: subr_autoconf.c,v 1.263 2018/09/18 01:25:09 mrg Exp $ */
 
 /*
  * Copyright (c) 1996, 2000 Christopher G. Demetriou
@@ -77,7 +77,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_autoconf.c,v 1.257 2018/03/04 07:12:18 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_autoconf.c,v 1.263 2018/09/18 01:25:09 mrg Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddb.h"
@@ -192,17 +192,17 @@ struct deferred_config {
 
 TAILQ_HEAD(deferred_config_head, deferred_config);
 
-struct deferred_config_head deferred_config_queue =
+static struct deferred_config_head deferred_config_queue =
 	TAILQ_HEAD_INITIALIZER(deferred_config_queue);
-struct deferred_config_head interrupt_config_queue =
+static struct deferred_config_head interrupt_config_queue =
 	TAILQ_HEAD_INITIALIZER(interrupt_config_queue);
-int interrupt_config_threads = 8;
-struct deferred_config_head mountroot_config_queue =
+static int interrupt_config_threads = 8;
+static struct deferred_config_head mountroot_config_queue =
 	TAILQ_HEAD_INITIALIZER(mountroot_config_queue);
-int mountroot_config_threads = 2;
+static int mountroot_config_threads = 2;
 static lwp_t **mountroot_config_lwpids;
 static size_t mountroot_config_lwpids_size;
-static bool root_is_mounted = false;
+bool root_is_mounted = false;
 
 static void config_process_deferred(struct deferred_config_head *, device_t);
 
@@ -2272,6 +2272,45 @@ device_find_by_driver_unit(const char *name, int unit)
 	if ((cd = config_cfdriver_lookup(name)) == NULL)
 		return NULL;
 	return device_lookup(cd, unit);
+}
+
+/*
+ * device_compatible_match:
+ *
+ *	Match a driver's "compatible" data against a device's
+ *	"compatible" strings.  If a match is found, we return
+ *	a weighted match result, and optionally the matching
+ *	entry.
+ */
+int
+device_compatible_match(const char **device_compats, int ndevice_compats,
+			const struct device_compatible_entry *driver_compats,
+			const struct device_compatible_entry **matching_entryp)
+{
+	const struct device_compatible_entry *dce = NULL;
+	int i, match_weight;
+
+	if (ndevice_compats == 0 || device_compats == NULL ||
+	    driver_compats == NULL)
+		return 0;
+	
+	/*
+	 * We take the first match because we start with the most-specific
+	 * device compatible string.
+	 */
+	for (i = 0, match_weight = ndevice_compats - 1;
+	     i < ndevice_compats;
+	     i++, match_weight--) {
+		for (dce = driver_compats; dce->compat != NULL; dce++) {
+			if (strcmp(dce->compat, device_compats[i]) == 0) {
+				KASSERT(match_weight >= 0);
+				if (matching_entryp)
+					*matching_entryp = dce;
+				return 1 + match_weight;
+			}
+		}
+	}
+	return 0;
 }
 
 /*

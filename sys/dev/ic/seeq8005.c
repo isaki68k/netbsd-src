@@ -1,4 +1,4 @@
-/* $NetBSD: seeq8005.c,v 1.57 2016/12/15 09:28:05 ozaki-r Exp $ */
+/* $NetBSD: seeq8005.c,v 1.60 2018/09/03 16:29:31 riastradh Exp $ */
 
 /*
  * Copyright (c) 2000, 2001 Ben Harris
@@ -61,7 +61,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: seeq8005.c,v 1.57 2016/12/15 09:28:05 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: seeq8005.c,v 1.60 2018/09/03 16:29:31 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -78,9 +78,7 @@ __KERNEL_RCSID(0, "$NetBSD: seeq8005.c,v 1.57 2016/12/15 09:28:05 ozaki-r Exp $"
 #include <net/if_types.h>
 #include <net/if_ether.h>
 #include <net/if_media.h>
-
 #include <net/bpf.h>
-#include <net/bpfdesc.h>
 
 #include <sys/rndsource.h>
 
@@ -920,7 +918,7 @@ ea_txpacket(struct seeq8005_softc *sc)
 	}
 
 	/* Give the packet to the bpf, if any. */
-	bpf_mtap(ifp, m0);
+	bpf_mtap(ifp, m0, BPF_D_OUT);
 
 	DPRINTF(SEEQ_DEBUG_TX, ("Tx new packet\n"));
 
@@ -1282,11 +1280,11 @@ ea_get(struct seeq8005_softc *sc, int addr, int totlen, struct ifnet *ifp)
                         }
                         m->m_len = MLEN;
                 }
-                len = min(totlen, epkt - cp);
+                len = uimin(totlen, epkt - cp);
                 if (len >= MINCLSIZE) {
                         MCLGET(m, M_DONTWAIT);
                         if (m->m_flags & M_EXT)
-                                m->m_len = len = min(len, MCLBYTES);
+                                m->m_len = len = uimin(len, MCLBYTES);
                         else
                                 len = m->m_len;
                 } else {

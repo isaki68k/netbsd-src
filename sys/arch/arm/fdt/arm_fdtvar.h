@@ -1,4 +1,4 @@
-/* $NetBSD: arm_fdtvar.h,v 1.7 2017/08/24 13:06:23 jmcneill Exp $ */
+/* $NetBSD: arm_fdtvar.h,v 1.9 2018/09/10 11:05:12 ryo Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared D. McNeill <jmcneill@invisible.ca>
@@ -36,19 +36,19 @@
 struct fdt_attach_args;
 
 struct arm_platform {
-	const struct pmap_devmap * (*devmap)(void);
-	void			(*bootstrap)(void);
-	void			(*init_attach_args)(struct fdt_attach_args *);
-	void			(*early_putchar)(char);
-	void			(*device_register)(device_t, void *);
-	void			(*reset)(void);
-	void			(*delay)(u_int);
-	u_int			(*uart_freq)(void);
+	const struct pmap_devmap * (*ap_devmap)(void);
+	void			(*ap_bootstrap)(void);
+	void			(*ap_init_attach_args)(struct fdt_attach_args *);
+	void			(*ap_early_putchar)(char);
+	void			(*ap_device_register)(device_t, void *);
+	void			(*ap_reset)(void);
+	void			(*ap_delay)(u_int);
+	u_int			(*ap_uart_freq)(void);
 };
 
 struct arm_platform_info {
-	const char *			compat;
-	const struct arm_platform *	ops;
+	const char *			api_compat;
+	const struct arm_platform *	api_ops;
 };
 
 #define _ARM_PLATFORM_REGISTER(name)	\
@@ -56,8 +56,8 @@ struct arm_platform_info {
 
 #define ARM_PLATFORM(_name, _compat, _ops)				\
 static const struct arm_platform_info __CONCAT(_name,_platinfo) = {	\
-	.compat = (_compat),						\
-	.ops = (_ops)							\
+	.api_compat = (_compat),					\
+	.api_ops = (_ops)						\
 };									\
 _ARM_PLATFORM_REGISTER(_name)
 
@@ -65,6 +65,7 @@ TAILQ_HEAD(arm_platlist, arm_platform_info);
 
 const struct arm_platform *	arm_fdt_platform(void);
 
+void	arm_fdt_cpu_bootstrap(void);
 void    arm_fdt_cpu_hatch_register(void *, void (*)(void *, struct cpu_info *));
 void    arm_fdt_cpu_hatch(struct cpu_info *);
 

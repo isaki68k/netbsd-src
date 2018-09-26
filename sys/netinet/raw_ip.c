@@ -1,4 +1,4 @@
-/*	$NetBSD: raw_ip.c,v 1.175 2018/04/12 07:45:29 maxv Exp $	*/
+/*	$NetBSD: raw_ip.c,v 1.178 2018/09/14 05:09:51 maxv Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -65,7 +65,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: raw_ip.c,v 1.175 2018/04/12 07:45:29 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: raw_ip.c,v 1.178 2018/09/14 05:09:51 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -100,7 +100,6 @@ __KERNEL_RCSID(0, "$NetBSD: raw_ip.c,v 1.175 2018/04/12 07:45:29 maxv Exp $");
 
 #ifdef IPSEC
 #include <netipsec/ipsec.h>
-#include <netipsec/ipsec_var.h>
 #endif
 
 struct inpcbtable rawcbtable;
@@ -163,21 +162,15 @@ rip_sbappendaddr(struct inpcb *last, struct ip *ip, const struct sockaddr *sa,
  * mbuf chain.
  */
 void
-rip_input(struct mbuf *m, ...)
+rip_input(struct mbuf *m, int off, int proto)
 {
-	int hlen, proto;
 	struct ip *ip = mtod(m, struct ip *);
 	struct inpcb_hdr *inph;
 	struct inpcb *inp;
 	struct inpcb *last = NULL;
 	struct mbuf *n;
 	struct sockaddr_in ripsrc;
-	va_list ap;
-
-	va_start(ap, m);
-	(void)va_arg(ap, int);		/* ignore value, advance ap */
-	proto = va_arg(ap, int);
-	va_end(ap);
+	int hlen;
 
 	sockaddr_in_init(&ripsrc, &ip->ip_src, 0);
 
@@ -356,6 +349,10 @@ rip_output(struct mbuf *m, struct inpcb *inp, struct mbuf *control,
 			error = EMSGSIZE;
 			goto release;
 		}
+		if (m->m_pkthdr.len < sizeof(struct ip)) {
+			error = EINVAL;
+			goto release;
+		}
 		ip = mtod(m, struct ip *);
 
 		/*
@@ -368,7 +365,7 @@ rip_output(struct mbuf *m, struct inpcb *inp, struct mbuf *control,
 
 			m = m_copyup(m, hlen, (max_linkhdr + 3) & ~3);
 			if (m == NULL) {
-				error = ENOMEM;	/* XXX */
+				error = ENOMEM;
 				goto release;
 			}
 			ip = mtod(m, struct ip *);
@@ -381,11 +378,14 @@ rip_output(struct mbuf *m, struct inpcb *inp, struct mbuf *control,
 		}
 		HTONS(ip->ip_len);
 		HTONS(ip->ip_off);
+
 		if (ip->ip_id != 0 || m->m_pkthdr.len < IP_MINFRAGSIZE)
 			flags |= IP_NOIPNEWID;
 		opts = NULL;
-		/* XXX prevent ip_output from overwriting header fields */
+
+		/* Prevent ip_output from overwriting header fields. */
 		flags |= IP_RAWOUTPUT;
+
 		IP_STATINC(IP_STAT_RAWOUT);
 	}
 

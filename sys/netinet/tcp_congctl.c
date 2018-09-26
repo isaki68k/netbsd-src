@@ -1,4 +1,4 @@
-/*	$NetBSD: tcp_congctl.c,v 1.24 2018/03/29 07:46:43 maxv Exp $	*/
+/*	$NetBSD: tcp_congctl.c,v 1.26 2018/09/03 16:29:36 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 1997, 1998, 1999, 2001, 2005, 2006 The NetBSD Foundation, Inc.
@@ -135,7 +135,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tcp_congctl.c,v 1.24 2018/03/29 07:46:43 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tcp_congctl.c,v 1.26 2018/09/03 16:29:36 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -180,7 +180,6 @@ __KERNEL_RCSID(0, "$NetBSD: tcp_congctl.c,v 1.24 2018/03/29 07:46:43 maxv Exp $"
 #include <netinet/tcp_seq.h>
 #include <netinet/tcp_timer.h>
 #include <netinet/tcp_var.h>
-#include <netinet/tcpip.h>
 #include <netinet/tcp_congctl.h>
 #ifdef TCP_DEBUG
 #include <netinet/tcp_debug.h>
@@ -433,7 +432,7 @@ tcp_common_congestion_exp(struct tcpcb *tp, int betaa, int betab)
 	/* 
 	 * Reduce the congestion window and the slow start threshold.
 	 */
-	win = min(tp->snd_wnd, tp->snd_cwnd) * betaa / betab / tp->t_segsz;
+	win = uimin(tp->snd_wnd, tp->snd_cwnd) * betaa / betab / tp->t_segsz;
 	if (win < 2)
 		win = 2;
 
@@ -547,7 +546,7 @@ tcp_reno_slow_retransmit(struct tcpcb *tp)
 	 * to go below this.)
 	 */
 
-	win = min(tp->snd_wnd, tp->snd_cwnd) / 2 / tp->t_segsz;
+	win = uimin(tp->snd_wnd, tp->snd_cwnd) / 2 / tp->t_segsz;
 	if (win < 2)
 		win = 2;
 	/* Loss Window MUST be one segment. */
@@ -624,7 +623,7 @@ tcp_reno_newack(struct tcpcb *tp, const struct tcphdr *th)
 
 			abc_lim = (tcp_abc_aggressive == 0 ||
 			    tp->snd_nxt != tp->snd_max) ? incr : incr * 2;
-			incr = min(acked, abc_lim);
+			incr = uimin(acked, abc_lim);
 		}
 	} else {
 
@@ -640,7 +639,7 @@ tcp_reno_newack(struct tcpcb *tp, const struct tcphdr *th)
 		}
 	}
 
-	tp->snd_cwnd = min(cw + incr, TCP_MAXWIN << tp->snd_scale);
+	tp->snd_cwnd = uimin(cw + incr, TCP_MAXWIN << tp->snd_scale);
 }
 
 const struct tcp_congctl tcp_reno_ctl = {
@@ -897,7 +896,7 @@ tcp_cubic_congestion_exp(struct tcpcb *tp)
 		tp->snd_cubic_wmax = tp->snd_cwnd;
 	}
 
-	tp->snd_cubic_wmax = max(tp->t_segsz, tp->snd_cubic_wmax);
+	tp->snd_cubic_wmax = uimax(tp->t_segsz, tp->snd_cubic_wmax);
 
 	/* Shrink CWND */
 	tcp_common_congestion_exp(tp, CUBIC_BETAA, CUBIC_BETAB);
@@ -952,8 +951,8 @@ tcp_cubic_newack(struct tcpcb *tp, const struct tcphdr *th)
 		}
 
 		/* Make sure we are within limits */
-		tp->snd_cwnd = max(tp->snd_cwnd, tp->t_segsz);
-		tp->snd_cwnd = min(tp->snd_cwnd, TCP_MAXWIN << tp->snd_scale);
+		tp->snd_cwnd = uimax(tp->snd_cwnd, tp->t_segsz);
+		tp->snd_cwnd = uimin(tp->snd_cwnd, TCP_MAXWIN << tp->snd_scale);
 	} else {
 		/* Use New Reno */
 		tcp_newreno_newack(tp, th);

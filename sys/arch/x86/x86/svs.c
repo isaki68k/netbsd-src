@@ -1,4 +1,4 @@
-/*	$NetBSD: svs.c,v 1.17 2018/03/30 19:58:05 maxv Exp $	*/
+/*	$NetBSD: svs.c,v 1.20 2018/08/12 12:23:33 maxv Exp $	*/
 
 /*
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: svs.c,v 1.17 2018/03/30 19:58:05 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: svs.c,v 1.20 2018/08/12 12:23:33 maxv Exp $");
 
 #include "opt_svs.h"
 
@@ -38,6 +38,7 @@ __KERNEL_RCSID(0, "$NetBSD: svs.c,v 1.17 2018/03/30 19:58:05 maxv Exp $");
 #include <sys/systm.h>
 #include <sys/proc.h>
 #include <sys/cpu.h>
+#include <sys/kauth.h>
 #include <sys/sysctl.h>
 #include <sys/xcall.h>
 
@@ -459,7 +460,7 @@ svs_pmap_sync(struct pmap *pmap, int index)
 	KASSERT(pmap != pmap_kernel());
 	KASSERT(mutex_owned(pmap->pm_lock));
 	KASSERT(kpreempt_disabled());
-	KASSERT(index < 255);
+	KASSERT(index < PDIR_SLOT_USERLIM);
 
 	for (CPU_INFO_FOREACH(cii, ci)) {
 		cid = cpu_index(ci);
@@ -557,7 +558,7 @@ svs_pdir_switch(struct pmap *pmap)
 	mutex_enter(&ci->ci_svs_mtx);
 
 	/* User slots. */
-	for (i = 0; i < 255; i++) {
+	for (i = 0; i < PDIR_SLOT_USERLIM; i++) {
 		pte = svs_pte_atomic_read(pmap, i);
 		ci->ci_svs_updir[i] = pte;
 	}
@@ -570,8 +571,10 @@ svs_enable(void)
 {
 	extern uint8_t svs_enter, svs_enter_end;
 	extern uint8_t svs_enter_altstack, svs_enter_altstack_end;
+	extern uint8_t svs_enter_nmi, svs_enter_nmi_end;
 	extern uint8_t svs_leave, svs_leave_end;
 	extern uint8_t svs_leave_altstack, svs_leave_altstack_end;
+	extern uint8_t svs_leave_nmi, svs_leave_nmi_end;
 	u_long psl, cr0;
 	uint8_t *bytes;
 	size_t size;
@@ -589,6 +592,11 @@ svs_enable(void)
 	    (size_t)&svs_enter_altstack;
 	x86_hotpatch(HP_NAME_SVS_ENTER_ALT, bytes, size);
 
+	bytes = &svs_enter_nmi;
+	size = (size_t)&svs_enter_nmi_end -
+	    (size_t)&svs_enter_nmi;
+	x86_hotpatch(HP_NAME_SVS_ENTER_NMI, bytes, size);
+
 	bytes = &svs_leave;
 	size = (size_t)&svs_leave_end - (size_t)&svs_leave;
 	x86_hotpatch(HP_NAME_SVS_LEAVE, bytes, size);
@@ -598,6 +606,11 @@ svs_enable(void)
 	    (size_t)&svs_leave_altstack;
 	x86_hotpatch(HP_NAME_SVS_LEAVE_ALT, bytes, size);
 
+	bytes = &svs_leave_nmi;
+	size = (size_t)&svs_leave_nmi_end -
+	    (size_t)&svs_leave_nmi;
+	x86_hotpatch(HP_NAME_SVS_LEAVE_NMI, bytes, size);
+
 	x86_patch_window_close(psl, cr0);
 }
 
@@ -606,8 +619,10 @@ svs_disable_hotpatch(void)
 {
 	extern uint8_t nosvs_enter, nosvs_enter_end;
 	extern uint8_t nosvs_enter_altstack, nosvs_enter_altstack_end;
+	extern uint8_t nosvs_enter_nmi, nosvs_enter_nmi_end;
 	extern uint8_t nosvs_leave, nosvs_leave_end;
 	extern uint8_t nosvs_leave_altstack, nosvs_leave_altstack_end;
+	extern uint8_t nosvs_leave_nmi, nosvs_leave_nmi_end;
 	u_long psl, cr0;
 	uint8_t *bytes;
 	size_t size;
@@ -623,6 +638,11 @@ svs_disable_hotpatch(void)
 	    (size_t)&nosvs_enter_altstack;
 	x86_hotpatch(HP_NAME_SVS_ENTER_ALT, bytes, size);
 
+	bytes = &nosvs_enter_nmi;
+	size = (size_t)&nosvs_enter_nmi_end -
+	    (size_t)&nosvs_enter_nmi;
+	x86_hotpatch(HP_NAME_SVS_ENTER_NMI, bytes, size);
+
 	bytes = &nosvs_leave;
 	size = (size_t)&nosvs_leave_end - (size_t)&nosvs_leave;
 	x86_hotpatch(HP_NAME_SVS_LEAVE, bytes, size);
@@ -631,6 +651,11 @@ svs_disable_hotpatch(void)
 	size = (size_t)&nosvs_leave_altstack_end -
 	    (size_t)&nosvs_leave_altstack;
 	x86_hotpatch(HP_NAME_SVS_LEAVE_ALT, bytes, size);
+
+	bytes = &nosvs_leave_nmi;
+	size = (size_t)&nosvs_leave_nmi_end -
+	    (size_t)&nosvs_leave_nmi;
+	x86_hotpatch(HP_NAME_SVS_LEAVE_NMI, bytes, size);
 
 	x86_patch_window_close(psl, cr0);
 }
@@ -737,11 +762,13 @@ sysctl_machdep_svs_enabled(SYSCTLFN_ARGS)
 			error = 0;
 		else
 			error = EOPNOTSUPP;
-	} else {
-		if (svs_enabled)
+	} else if (svs_enabled) {
+		error = kauth_authorize_machdep(kauth_cred_get(),
+		    KAUTH_MACHDEP_SVS_DISABLE, NULL, NULL, NULL, NULL);
+		if (!error)
 			error = svs_disable();
-		else
-			error = 0;
+	} else {
+		error = 0;
 	}
 
 	return error;

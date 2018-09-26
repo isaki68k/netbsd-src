@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile.i386,v 1.191 2018/04/18 10:40:22 martin Exp $
+#	$NetBSD: Makefile.i386,v 1.194 2018/09/22 12:24:02 rin Exp $
 
 # Makefile for NetBSD
 #
@@ -17,6 +17,7 @@
 #
 #	makeoptions DEBUGLIST="uvm* trap if_*"
 
+NOSANITIZER=	# defined
 MACHINE_ARCH=	i386
 USETOOLS?=	no
 NEED_OWN_INSTALL_TARGET?=no
@@ -48,11 +49,6 @@ CFLAGS+=	-mindirect-branch-register
 ## (3) libkern and compat
 ##
 OPT_MODULAR=	%MODULAR%
-.if !empty(OPT_MODULAR)
-KERN_AS=	obj
-.else
-KERN_AS=	library
-.endif
 
 ##
 ## (4) local objects, compile rules, and dependencies

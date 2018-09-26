@@ -1,4 +1,4 @@
-#	$NetBSD: files.generic64,v 1.1 2018/04/01 04:35:04 ryo Exp $
+#	$NetBSD: files.generic64,v 1.5 2018/09/08 00:51:57 jmcneill Exp $
 #
 
 defparam opt_arm_debug.h	EARLYCONS
@@ -10,6 +10,15 @@ include "arch/evbarm/conf/files.fdt"
 
 # Add other board files here
 #
+include "arch/arm/amd/files.seattle"
 include "arch/arm/broadcom/files.bcm2835"
 include "arch/arm/nvidia/files.tegra"
+include "arch/arm/rockchip/files.rockchip"
 include "arch/arm/sunxi/files.sunxi"
+include "arch/arm/virt/files.virt"
+
+#
+# Stack-less Just-In-Time compiler
+#
+
+include	"external/bsd/sljit/conf/files.sljit"

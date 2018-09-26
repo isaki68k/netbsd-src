@@ -1,4 +1,4 @@
-/*	$NetBSD: ip_input.c,v 1.380 2018/04/15 07:35:49 maxv Exp $	*/
+/*	$NetBSD: ip_input.c,v 1.386 2018/09/02 16:05:33 maxv Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -91,7 +91,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ip_input.c,v 1.380 2018/04/15 07:35:49 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ip_input.c,v 1.386 2018/09/02 16:05:33 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -176,7 +176,7 @@ int ip_do_randomid = 0;
  * and transmit implementation do not implement the Strong ES model,
  * setting this to 1 results in an odd hybrid.
  *
- * XXX - ip_checkinterface currently must be disabled if you use ipnat
+ * XXX - ip_checkinterface currently must be disabled if you use NAT
  * to translate the destination address to another local interface.
  *
  * XXX - ip_checkinterface must be disabled if you add IP aliases
@@ -323,13 +323,6 @@ ip_match_our_address(struct ifnet *ifp, struct ip *ip, int *downmatch)
 	 * and the arrival interface for a unicast packet (the RFC 1122
 	 * strong ES model) if IP forwarding is disabled and the packet
 	 * is not locally generated.
-	 *
-	 * XXX - Checking also should be disabled if the destination
-	 * address is ipnat'ed to a different interface.
-	 *
-	 * XXX - Checking is incompatible with IP aliases added
-	 * to the loopback interface instead of the interface where
-	 * the packets are received.
 	 *
 	 * XXX - We need to add a per ifaddr flag for this so that
 	 * we get finer grain control.
@@ -587,8 +580,10 @@ ip_input(struct mbuf *m)
 			m = NULL;
 			goto out;
 		}
+		KASSERT(m->m_len >= sizeof(struct ip));
 		ip = mtod(m, struct ip *);
 		hlen = ip->ip_hl << 2;
+		KASSERT(m->m_len >= hlen);
 
 		/*
 		 * XXX The setting of "srcrt" here is to prevent ip_forward()
@@ -729,7 +724,7 @@ ip_input(struct mbuf *m)
 #ifdef IPSEC
 		/* Check the security policy (SP) for the packet */
 		if (ipsec_used) {
-			if (ipsec4_input(m, IP_FORWARDING) != 0) {
+			if (ipsec_ip_input(m, true) != 0) {
 				goto out;
 			}
 		}
@@ -750,7 +745,7 @@ ours:
 		/*
 		 * Pass to IP reassembly mechanism.
 		 */
-		if (ip_reass_packet(&m, ip) != 0) {
+		if (ip_reass_packet(&m) != 0) {
 			/* Failed; invalid fragment(s) or packet. */
 			goto out;
 		}
@@ -776,7 +771,7 @@ ours:
 	 */
 	if (ipsec_used &&
 	    (inetsw[ip_protox[ip->ip_p]].pr_flags & PR_LASTHDR) != 0) {
-		if (ipsec4_input(m, 0) != 0) {
+		if (ipsec_ip_input(m, false) != 0) {
 			goto out;
 		}
 	}
@@ -1468,7 +1463,7 @@ error:
 		}
 #ifdef IPSEC
 		if (ipsec_used)
-			(void)ipsec4_forward(mcopy, &destmtu);
+			ipsec_mtu(mcopy, &destmtu);
 #endif
 		IP_STATINC(IP_STAT_CANTFRAG);
 		break;
@@ -1497,7 +1492,7 @@ ip_savecontrol(struct inpcb *inp, struct mbuf **mp, struct ip *ip,
 	int inpflags = inp->inp_flags;
 
 	if (SOOPT_TIMESTAMP(so->so_options))
-		mp = sbsavetimestamp(so->so_options, m, mp);
+		mp = sbsavetimestamp(so->so_options, mp);
 
 	if (inpflags & INP_RECVDSTADDR) {
 		*mp = sbcreatecontrol(&ip->ip_dst,

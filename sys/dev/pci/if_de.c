@@ -1,4 +1,4 @@
-/*	$NetBSD: if_de.c,v 1.151 2018/03/19 03:12:09 msaitoh Exp $	*/
+/*	$NetBSD: if_de.c,v 1.155 2018/09/03 16:29:32 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 1994-1997 Matt Thomas (matt@3am-software.com)
@@ -37,7 +37,7 @@
  *   board which support 21040, 21041, or 21140 (mostly).
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_de.c,v 1.151 2018/03/19 03:12:09 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_de.c,v 1.155 2018/09/03 16:29:32 riastradh Exp $");
 
 #define	TULIP_HDR_DATA
 
@@ -74,14 +74,12 @@ __KERNEL_RCSID(0, "$NetBSD: if_de.c,v 1.151 2018/03/19 03:12:09 msaitoh Exp $");
 #include <net/if_dl.h>
 #include <net/route.h>
 #include <net/netisr.h>
+#include <net/bpf.h>
 
 #if defined(__bsdi__) && _BSDI_VERSION >= 199701
 #include <dev/mii/mii.h>
 #include <dev/mii/miivar.h>
 #endif
-
-#include <net/bpf.h>
-#include <net/bpfdesc.h>
 
 #ifdef INET
 #include <netinet/in.h>
@@ -3641,10 +3639,6 @@ tulip_rx_intr(
 #endif /* TULIP_BUS_DMA */
 
 	    eh = *mtod(ms, struct ether_header *);
-	    if (sc->tulip_bpf != NULL) {
-		if (me == ms)
-		    bpf_tap(ifp, mtod(ms, void *), total_len);
-	    }
 	    sc->tulip_flags |= TULIP_RXACT;
 	    if ((sc->tulip_flags & (TULIP_PROMISC|TULIP_HASHONLY))
 		    && (eh.ether_dhost[0] & 1) == 0
@@ -4482,7 +4476,7 @@ tulip_txput(
 	unsigned clsize = PAGE_SIZE - (((u_long) addr) & PAGE_MASK);
 
 	while (len > 0) {
-	    unsigned slen = min(len, clsize);
+	    unsigned slen = uimin(len, clsize);
 #ifdef BIG_PACKET
 	    int partial = 0;
 	    if (slen >= 2048)
@@ -4547,7 +4541,7 @@ tulip_txput(
 #endif /* TULIP_BUS_DMA */
 
     if (sc->tulip_bpf != NULL)
-	bpf_mtap(&sc->tulip_if, m);
+	bpf_mtap(&sc->tulip_if, m, BPF_D_OUT);
     /*
      * The descriptors have been filled in.  Now get ready
      * to transmit.

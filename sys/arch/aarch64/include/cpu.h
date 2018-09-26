@@ -1,4 +1,4 @@
-/* $NetBSD: cpu.h,v 1.2 2018/04/01 04:35:03 ryo Exp $ */
+/* $NetBSD: cpu.h,v 1.8 2018/09/10 11:05:12 ryo Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -37,6 +37,8 @@
 #ifdef _KERNEL_OPT
 #include "opt_multiprocessor.h"
 #endif
+
+#include <sys/param.h>
 
 #if defined(_KERNEL) || defined(_KMEMUSER)
 #include <sys/evcnt.h>
@@ -78,7 +80,17 @@ struct cpu_info {
 	struct evcnt ci_vfp_reuse;
 	struct evcnt ci_vfp_save;
 	struct evcnt ci_vfp_release;
-};
+
+	/* interrupt controller */
+	u_int ci_gic_redist;	/* GICv3 redistributor index */
+	uint64_t ci_gic_sgir;	/* GICv3 SGIR target */
+
+	uint64_t ci_midr;	/* MIDR_EL1 */
+	uint64_t ci_mpidr;	/* MPIDR_EL1 */
+
+	struct aarch64_cache_info *ci_cacheinfo;
+
+} __aligned(COHERENCY_UNIT);
 
 static inline struct cpu_info *
 curcpu(void)
@@ -95,23 +107,24 @@ void cpu_set_curpri(int);
 void cpu_proc_fork(struct proc *, struct proc *);
 void cpu_need_proftick(struct lwp *l);
 void cpu_boot_secondary_processors(void);
+void cpu_hatch(struct cpu_info *);
 
 extern struct cpu_info *cpu_info[];
-extern struct cpu_info cpu_info_store;	/* MULTIPROCESSOR */
 extern volatile u_int arm_cpu_hatched;	/* MULTIPROCESSOR */
+extern uint64_t cpu_mpidr[];		/* MULTIPROCESSOR */
 
 #define CPU_INFO_ITERATOR	cpuid_t
 #ifdef MULTIPROCESSOR
 #define cpu_number()		(curcpu()->ci_index)
 #define CPU_IS_PRIMARY(ci)	((ci)->ci_index == 0)
-#define CPU_INFO_FOREACH(cii, ci)				\
-	cii = 0, ci = cpu_info[0];				\
-	cii < ncpu && (ci = cpu_info[cii]) != NULL;		\
+#define CPU_INFO_FOREACH(cii, ci)					\
+	cii = 0, ci = cpu_info[0];					\
+	cii < (ncpu ? ncpu : 1) && (ci = cpu_info[cii]) != NULL;	\
 	cii++
 #else /* MULTIPROCESSOR */
 #define cpu_number()		0
 #define CPU_IS_PRIMARY(ci)	true
-#define CPU_INFO_FOREACH(cii, ci)				\
+#define CPU_INFO_FOREACH(cii, ci)					\
 	cii = 0, __USE(cii), ci = curcpu(); ci != NULL; ci = NULL
 #endif /* MULTIPROCESSOR */
 

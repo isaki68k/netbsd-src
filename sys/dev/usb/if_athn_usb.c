@@ -1,4 +1,4 @@
-/*	$NetBSD: if_athn_usb.c,v 1.26 2018/02/01 16:49:34 maxv Exp $	*/
+/*	$NetBSD: if_athn_usb.c,v 1.30 2018/09/12 21:57:18 christos Exp $	*/
 /*	$OpenBSD: if_athn_usb.c,v 1.12 2013/01/14 09:50:31 jsing Exp $	*/
 
 /*-
@@ -22,7 +22,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_athn_usb.c,v 1.26 2018/02/01 16:49:34 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_athn_usb.c,v 1.30 2018/09/12 21:57:18 christos Exp $");
 
 #ifdef	_KERNEL_OPT
 #include "opt_inet.h"
@@ -335,7 +335,8 @@ athn_usb_attach(device_t parent, device_t self, void *aux)
 	athn_usb_free_tx_cmd(usc);
 	athn_usb_free_tx_msg(usc);
 	athn_usb_close_pipes(usc);
-	usb_rem_task(usc->usc_udev, &usc->usc_task);
+	usb_rem_task_wait(usc->usc_udev, &usc->usc_task, USB_TASKQ_DRIVER,
+	    NULL);
 
 	cv_destroy(&usc->usc_cmd_cv);
 	cv_destroy(&usc->usc_msg_cv);
@@ -501,7 +502,8 @@ athn_usb_detach(device_t self, int flags)
 
 	athn_usb_wait_async(usc);
 
-	usb_rem_task(usc->usc_udev, &usc->usc_task);
+	usb_rem_task_wait(usc->usc_udev, &usc->usc_task, USB_TASKQ_DRIVER,
+	    NULL);
 
 	/* Abort Tx/Rx pipes. */
 	athn_usb_abort_pipes(usc);
@@ -2200,7 +2202,7 @@ athn_usb_rx_radiotap(struct athn_softc *sc, struct mbuf *m,
 		default:  tap->wr_rate =   0; break;
 		}
 	}
-	bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_rxtap_len, m);
+	bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_rxtap_len, m, BPF_D_IN);
 }
 
 Static void
@@ -2485,7 +2487,7 @@ athn_usb_tx(struct athn_softc *sc, struct mbuf *m, struct ieee80211_node *ni,
 		if (wh->i_fc[1] & IEEE80211_FC1_PROTECTED)
 			tap->wt_flags |= IEEE80211_RADIOTAP_F_WEP;
 
-		bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_txtap_len, m);
+		bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_txtap_len, m, BPF_D_OUT);
 	}
 	sta_index = an->sta_index;
 
@@ -2607,7 +2609,7 @@ athn_usb_start(struct ifnet *ifp)
 			continue;
 		}
 
-		bpf_mtap(ifp, m);
+		bpf_mtap(ifp, m, BPF_D_OUT);
 
 		if ((m = ieee80211_encap(ic, m, ni)) == NULL) {
 			ieee80211_free_node(ni);
@@ -2615,7 +2617,7 @@ athn_usb_start(struct ifnet *ifp)
 			continue;
 		}
  sendit:
-		bpf_mtap3(ic->ic_rawbpf, m);
+		bpf_mtap3(ic->ic_rawbpf, m, BPF_D_OUT);
 
 		if (athn_usb_tx(sc, m, ni, data) != 0) {
 			m_freem(m);
@@ -2972,7 +2974,7 @@ athn_usb_stop_locked(struct ifnet *ifp)
 	athn_set_power_sleep(sc);
 }
 
-MODULE(MODULE_CLASS_DRIVER, if_athn_usb, "bpf");
+MODULE(MODULE_CLASS_DRIVER, if_athn_usb, NULL);
 
 #ifdef _MODULE
 #include "ioconf.c"

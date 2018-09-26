@@ -1,4 +1,4 @@
-/*	$NetBSD: uipc_domain.c,v 1.102 2018/02/28 09:44:25 mrg Exp $	*/
+/*	$NetBSD: uipc_domain.c,v 1.104 2018/09/03 16:29:35 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1982, 1986, 1993
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uipc_domain.c,v 1.102 2018/02/28 09:44:25 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uipc_domain.c,v 1.104 2018/09/03 16:29:35 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/socket.h>
@@ -504,7 +504,7 @@ sysctl_dounpcb(struct kinfo_pcb *pcb, const struct socket *so)
 		 * makeun().
 		 */
 		memcpy(un, unp->unp_addr,
-		    min(sizeof(pcb->ki_spad), unp->unp_addr->sun_len + 1));
+		    uimin(sizeof(pcb->ki_spad), unp->unp_addr->sun_len + 1));
 	}
 	else {
 		un->sun_len = offsetof(struct sockaddr_un, sun_path);
@@ -514,7 +514,7 @@ sysctl_dounpcb(struct kinfo_pcb *pcb, const struct socket *so)
 		un = (struct sockaddr_un *)pcb->ki_dpad;
 		if (unp->unp_conn->unp_addr != NULL) {
 			memcpy(un, unp->unp_conn->unp_addr,
-			    min(sizeof(pcb->ki_dpad), unp->unp_conn->unp_addr->sun_len + 1));
+			    uimin(sizeof(pcb->ki_dpad), unp->unp_conn->unp_addr->sun_len + 1));
 		}
 		else {
 			un->sun_len = offsetof(struct sockaddr_un, sun_path);
@@ -682,6 +682,7 @@ sysctl_net_setup(void)
 		       SYSCTL_DESCR("SOCK_DGRAM protocol control block list"),
 		       sysctl_unpcblist, 0, NULL, 0,
 		       CTL_NET, PF_LOCAL, SOCK_DGRAM, CTL_CREATE, CTL_EOL);
+	unp_sysctl_create(&domain_sysctllog);
 }
 
 void

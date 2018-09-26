@@ -1,4 +1,4 @@
-/*	$NetBSD: route.c,v 1.209 2018/04/12 04:38:13 ozaki-r Exp $	*/
+/*	$NetBSD: route.c,v 1.213 2018/09/05 02:49:40 ozaki-r Exp $	*/
 
 /*-
  * Copyright (c) 1998, 2008 The NetBSD Foundation, Inc.
@@ -97,7 +97,7 @@
 #endif
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: route.c,v 1.209 2018/04/12 04:38:13 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: route.c,v 1.213 2018/09/05 02:49:40 ozaki-r Exp $");
 
 #include <sys/param.h>
 #ifdef RTFLUSH_DEBUG
@@ -509,27 +509,27 @@ dump_rt(const struct rtentry *rt)
 {
 	char buf[512];
 
-	aprint_normal("rt: ");
-	aprint_normal("p=%p ", rt);
+	log(LOG_DEBUG, "rt: ");
+	log(LOG_DEBUG, "p=%p ", rt);
 	if (rt->_rt_key == NULL) {
-		aprint_normal("dst=(NULL) ");
+		log(LOG_DEBUG, "dst=(NULL) ");
 	} else {
 		sockaddr_format(rt->_rt_key, buf, sizeof(buf));
-		aprint_normal("dst=%s ", buf);
+		log(LOG_DEBUG, "dst=%s ", buf);
 	}
 	if (rt->rt_gateway == NULL) {
-		aprint_normal("gw=(NULL) ");
+		log(LOG_DEBUG, "gw=(NULL) ");
 	} else {
 		sockaddr_format(rt->_rt_key, buf, sizeof(buf));
-		aprint_normal("gw=%s ", buf);
+		log(LOG_DEBUG, "gw=%s ", buf);
 	}
-	aprint_normal("flags=%x ", rt->rt_flags);
+	log(LOG_DEBUG, "flags=%x ", rt->rt_flags);
 	if (rt->rt_ifp == NULL) {
-		aprint_normal("if=(NULL) ");
+		log(LOG_DEBUG, "if=(NULL) ");
 	} else {
-		aprint_normal("if=%s ", rt->rt_ifp->if_xname);
+		log(LOG_DEBUG, "if=%s ", rt->rt_ifp->if_xname);
 	}
-	aprint_normal("\n");
+	log(LOG_DEBUG, "\n");
 }
 #endif /* RT_DEBUG */
 
@@ -702,8 +702,8 @@ rt_free_work(struct work *wk, void *arg)
 		struct rtentry *rt;
 
 		mutex_enter(&rt_free_global.lock);
-		rt_free_global.enqueued = false;
 		if ((rt = SLIST_FIRST(&rt_free_global.queue)) == NULL) {
+			rt_free_global.enqueued = false;
 			mutex_exit(&rt_free_global.lock);
 			return;
 		}
@@ -726,7 +726,7 @@ rt_free(struct rtentry *rt)
 	}
 
 	mutex_enter(&rt_free_global.lock);
-	rt_ref(rt);
+	/* No need to add a reference here. */
 	SLIST_INSERT_HEAD(&rt_free_global.queue, rt, rt_free);
 	if (!rt_free_global.enqueued) {
 		workqueue_enqueue(rt_free_global.wq, &rt_free_global.wk, NULL);
@@ -1959,7 +1959,12 @@ rt_timer_work(struct work *wk, void *arg)
 		    (r->rtt_time + rtq->rtq_timeout) < time_uptime) {
 			LIST_REMOVE(r, rtt_link);
 			TAILQ_REMOVE(&rtq->rtq_head, r, rtt_next);
-			rt_ref(r->rtt_rt); /* XXX */
+			/*
+			 * Take a reference to avoid the rtentry is freed
+			 * accidentally after RT_UNLOCK.  The callback
+			 * (rtt_func) must rt_unref it by itself.
+			 */
+			rt_ref(r->rtt_rt);
 			RT_REFCNT_TRACE(r->rtt_rt);
 			RT_UNLOCK();
 			(*r->rtt_func)(r->rtt_rt, r);

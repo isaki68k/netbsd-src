@@ -1,4 +1,4 @@
-/*	$NetBSD: elink3.c,v 1.140 2016/12/15 09:28:05 ozaki-r Exp $	*/
+/*	$NetBSD: elink3.c,v 1.143 2018/09/03 16:29:31 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 1998, 2001 The NetBSD Foundation, Inc.
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: elink3.c,v 1.140 2016/12/15 09:28:05 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: elink3.c,v 1.143 2018/09/03 16:29:31 riastradh Exp $");
 
 #include "opt_inet.h"
 
@@ -83,9 +83,7 @@ __KERNEL_RCSID(0, "$NetBSD: elink3.c,v 1.140 2016/12/15 09:28:05 ozaki-r Exp $")
 #include <net/if_dl.h>
 #include <net/if_ether.h>
 #include <net/if_media.h>
-
 #include <net/bpf.h>
-#include <net/bpfdesc.h>
 
 #include <sys/cpu.h>
 #include <sys/bus.h>
@@ -1150,7 +1148,7 @@ startagain:
 	bus_space_write_2(iot, ioh, ELINK_COMMAND, SET_TX_START_THRESH |
 	    ((len / 4 + sc->tx_start_thresh) /* >> sc->ep_pktlenshift*/));
 
-	bpf_mtap(ifp, m0);
+	bpf_mtap(ifp, m0, BPF_D_OUT);
 
 	/*
 	 * Do the output at a high interrupt priority level so that an
@@ -1343,7 +1341,7 @@ eptxstat(struct ep_softc *sc)
 				       device_xname(sc->sc_dev), i,
 				       sc->tx_start_thresh);
 			if (sc->tx_succ_ok < 100)
-				    sc->tx_start_thresh = min(ETHER_MAX_LEN,
+				    sc->tx_start_thresh = uimin(ETHER_MAX_LEN,
 					    sc->tx_start_thresh + 20);
 			sc->tx_succ_ok = 0;
 			epreset(sc);

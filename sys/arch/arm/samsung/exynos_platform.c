@@ -1,4 +1,4 @@
-/* $NetBSD: exynos_platform.c,v 1.9 2018/03/17 18:34:09 ryo Exp $ */
+/* $NetBSD: exynos_platform.c,v 1.17 2018/09/21 12:04:07 skrll Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared D. McNeill <jmcneill@invisible.ca>
@@ -26,14 +26,16 @@
  * SUCH DAMAGE.
  */
 
+#include "opt_arm_debug.h"
+#include "opt_console.h"
 #include "opt_exynos.h"
 #include "opt_multiprocessor.h"
-#include "opt_fdt_arm.h"
+#include "opt_console.h"
 
 #include "ukbd.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: exynos_platform.c,v 1.9 2018/03/17 18:34:09 ryo Exp $");
+__KERNEL_RCSID(0, "$NetBSD: exynos_platform.c,v 1.17 2018/09/21 12:04:07 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -50,39 +52,87 @@ __KERNEL_RCSID(0, "$NetBSD: exynos_platform.c,v 1.9 2018/03/17 18:34:09 ryo Exp 
 
 #include <arm/samsung/exynos_reg.h>
 #include <arm/samsung/exynos_var.h>
+#include <arm/samsung/mct_var.h>
+#include <arm/samsung/sscom_reg.h>
 
 #include <evbarm/exynos/platform.h>
 
-#include <arm/cortex/gtmr_var.h>
-
 #include <arm/fdt/arm_fdtvar.h>
 
+void exynos_platform_early_putchar(char);
+
 #define	EXYNOS5_SWRESET_REG	0x10040400
-
-static const struct pmap_devmap *
-exynos_platform_devmap(void)
-{
-	static const struct pmap_devmap devmap[] = {
-		DEVMAP_ENTRY(EXYNOS_CORE_VBASE,
-			     EXYNOS_CORE_PBASE,
-			     EXYNOS5_CORE_SIZE),
-		DEVMAP_ENTRY(EXYNOS5_AUDIOCORE_VBASE,
-			     EXYNOS5_AUDIOCORE_PBASE,
-			     EXYNOS5_AUDIOCORE_SIZE),
-		DEVMAP_ENTRY_END
-	};
-
-	return devmap;
-}
 
 #define EXYNOS_IOPHYSTOVIRT(a) \
     ((vaddr_t)(((a) - EXYNOS_CORE_PBASE) + EXYNOS_CORE_VBASE))
 
+#define	EXYNOS5800_PMU_BASE		0x10040000
+#define	EXYNOS5800_PMU_SIZE		0x20000
+#define	 EXYNOS5800_PMU_CORE_CONFIG(n)	(0x2000 + 0x80 * (n))
+#define	 EXYNOS5800_PMU_CORE_STATUS(n)	(0x2004 + 0x80 * (n))
+#define	 EXYNOS5800_PMU_CORE_POWER_EN	0x3
+#define	EXYNOS5800_SYSRAM_BASE		0x0207301c
+#define	EXYNOS5800_SYSRAM_SIZE		0x4
+
+static void
+exynos5800_mp_bootstrap(void)
+{
+#if defined(MULTIPROCESSOR)
+	extern void cortex_mpstart(void);
+	bus_space_tag_t bst = &armv7_generic_bs_tag;
+	bus_space_handle_t pmu_bsh, sysram_bsh;
+	uint32_t val, started = 0;
+	int n;
+
+	arm_cpu_max = 1 + __SHIFTOUT(armreg_l2ctrl_read(), L2CTRL_NUMCPU);
+
+	bus_space_map(bst, EXYNOS5800_PMU_BASE, EXYNOS5800_PMU_SIZE, 0, &pmu_bsh);
+	bus_space_map(bst, EXYNOS5800_SYSRAM_BASE, EXYNOS5800_SYSRAM_SIZE, 0, &sysram_bsh);
+
+	bus_space_write_4(bst, sysram_bsh, 0, (uint32_t)cortex_mpstart);
+	bus_space_barrier(bst, sysram_bsh, 0, 4, BUS_SPACE_BARRIER_READ | BUS_SPACE_BARRIER_WRITE);
+
+	for (n = 1; n < arm_cpu_max; n++) {
+		bus_space_write_4(bst, pmu_bsh, EXYNOS5800_PMU_CORE_CONFIG(n),
+		    EXYNOS5800_PMU_CORE_POWER_EN);
+		for (u_int i = 0x01000000; i > 0; i--) {
+			val = bus_space_read_4(bst, pmu_bsh, EXYNOS5800_PMU_CORE_STATUS(n));
+			if ((val & EXYNOS5800_PMU_CORE_POWER_EN) == EXYNOS5800_PMU_CORE_POWER_EN) {
+				started |= __BIT(n);
+				break;
+			}
+		}
+	}
+
+	for (u_int i = 0x10000000; i > 0; i--) {
+		arm_dmb();
+		if (arm_cpu_hatched == started)
+			break;
+	}
+
+	bus_space_unmap(bst, sysram_bsh, EXYNOS5800_SYSRAM_SIZE);
+	bus_space_unmap(bst, pmu_bsh, EXYNOS5800_PMU_SIZE);
+#endif
+}
+
+static struct of_compat_data mp_compat_data[] = {
+	{ "samsung,exynos5800",		(uintptr_t)exynos5800_mp_bootstrap },
+	{ NULL }
+};
+
 static void
 exynos_platform_bootstrap(void)
 {
-	paddr_t uart_address = armreg_tpidruro_read();	/* XXX */
-	exynos_bootstrap(EXYNOS_CORE_VBASE, EXYNOS_IOPHYSTOVIRT(uart_address));
+
+	exynos_bootstrap();
+
+	void (*mp_bootstrap)(void) = NULL;
+	const struct of_compat_data *cd = of_search_compatible(OF_finddevice("/"), mp_compat_data);
+	if (cd)
+		mp_bootstrap = (void (*)(void))cd->data;
+
+	if (mp_bootstrap)
+		mp_bootstrap();
 }
 
 static void
@@ -97,13 +147,21 @@ exynos_platform_init_attach_args(struct fdt_attach_args *faa)
 	faa->faa_dmat = &arm_generic_dma_tag;
 }
 
-static void
+
+void
 exynos_platform_early_putchar(char c)
 {
-#if defined(VERBOSE_INIT_ARM)
-	extern void exynos_putchar(int);	/* XXX from exynos_start.S */
+#ifdef CONSADDR
+#define CONSADDR_VA	(CONSADDR - EXYNOS_CORE_PBASE + EXYNOS_CORE_VBASE)
 
-	exynos_putchar(c);
+	volatile uint32_t *uartaddr = cpu_earlydevice_va_p() ?
+	    (volatile uint32_t *)CONSADDR_VA :
+	    (volatile uint32_t *)CONSADDR;
+
+	while ((uartaddr[SSCOM_UFSTAT / 4] & UFSTAT_TXFULL) != 0)
+		;
+
+	uartaddr[SSCOM_UTXH / 4] = c;
 #endif
 }
 
@@ -123,27 +181,75 @@ exynos5_platform_reset(void)
 	bus_space_write_4(bst, bsh, 0, 1);
 }
 
-static void
-exynos_platform_delay(u_int us)
-{
-	gtmr_delay(us);
-}
-
 static u_int
 exynos_platform_uart_freq(void)
 {
 	return EXYNOS_UART_FREQ;
 }
 
+
+#if defined(SOC_EXYNOS4)
+static const struct pmap_devmap *
+exynos4_platform_devmap(void)
+{
+	static const struct pmap_devmap devmap[] = {
+		DEVMAP_ENTRY(EXYNOS_CORE_VBASE,
+			     EXYNOS_CORE_PBASE,
+			     EXYNOS4_CORE_SIZE),
+		DEVMAP_ENTRY(EXYNOS4_AUDIOCORE_VBASE,
+			     EXYNOS4_AUDIOCORE_PBASE,
+			     EXYNOS4_AUDIOCORE_SIZE),
+		DEVMAP_ENTRY_END
+	};
+
+	return devmap;
+}
+
+static const struct arm_platform exynos4_platform = {
+	.ap_devmap = exynos4_platform_devmap,
+	.ap_bootstrap = exynos_platform_bootstrap,
+	.ap_init_attach_args = exynos_platform_init_attach_args,
+	.ap_early_putchar = exynos_platform_early_putchar,
+	.ap_device_register = exynos_platform_device_register,
+	.ap_reset = exynos5_platform_reset,
+	.ap_delay = mct_delay,
+	.ap_uart_freq = exynos_platform_uart_freq,
+};
+
+ARM_PLATFORM(exynos4, "samsung,exynos4", &exynos4_platform);
+#endif
+
+
+#if defined(SOC_EXYNOS5)
+static const struct pmap_devmap *
+exynos5_platform_devmap(void)
+{
+	static const struct pmap_devmap devmap[] = {
+		DEVMAP_ENTRY(EXYNOS_CORE_VBASE,
+			     EXYNOS_CORE_PBASE,
+			     EXYNOS5_CORE_SIZE),
+		DEVMAP_ENTRY(EXYNOS5_AUDIOCORE_VBASE,
+			     EXYNOS5_AUDIOCORE_PBASE,
+			     EXYNOS5_AUDIOCORE_SIZE),
+		DEVMAP_ENTRY(EXYNOS5_SYSRAM_VBASE,
+			     EXYNOS5_SYSRAM_PBASE,
+			     EXYNOS5_SYSRAM_SIZE),
+		DEVMAP_ENTRY_END
+	};
+
+	return devmap;
+}
+
 static const struct arm_platform exynos5_platform = {
-	.devmap = exynos_platform_devmap,
-	.bootstrap = exynos_platform_bootstrap,
-	.init_attach_args = exynos_platform_init_attach_args,
-	.early_putchar = exynos_platform_early_putchar,
-	.device_register = exynos_platform_device_register,
-	.reset = exynos5_platform_reset,
-	.delay = exynos_platform_delay,
-	.uart_freq = exynos_platform_uart_freq,
+	.ap_devmap = exynos5_platform_devmap,
+	.ap_bootstrap = exynos_platform_bootstrap,
+	.ap_init_attach_args = exynos_platform_init_attach_args,
+	.ap_early_putchar = exynos_platform_early_putchar,
+	.ap_device_register = exynos_platform_device_register,
+	.ap_reset = exynos5_platform_reset,
+	.ap_delay = mct_delay,
+	.ap_uart_freq = exynos_platform_uart_freq,
 };
 
 ARM_PLATFORM(exynos5, "samsung,exynos5", &exynos5_platform);
+#endif

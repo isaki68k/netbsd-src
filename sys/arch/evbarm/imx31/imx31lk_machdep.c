@@ -1,4 +1,4 @@
-/* $NetBSD: imx31lk_machdep.c,v 1.20 2018/03/13 06:18:17 ryo Exp $ */
+/* $NetBSD: imx31lk_machdep.c,v 1.23 2018/09/21 12:04:08 skrll Exp $ */
 
 /*
  * Startup routines for the ZOOM iMX31 LITEKIT.
@@ -110,11 +110,12 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: imx31lk_machdep.c,v 1.20 2018/03/13 06:18:17 ryo Exp $");
+__KERNEL_RCSID(0, "$NetBSD: imx31lk_machdep.c,v 1.23 2018/09/21 12:04:08 skrll Exp $");
 
+#include "opt_arm_debug.h"
+#include "opt_console.h"
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
-#include "opt_ipkdb.h"
 #include "opt_pmap_debug.h"
 #include "opt_md.h"
 #include "opt_com.h"
@@ -703,13 +704,6 @@ printf("%s: textsize %#lx, totalsize %#lx\n",
 
 #ifdef __HAVE_MEMORY_DISK__
 	md_root_setconf(memory_disk, sizeof memory_disk);
-#endif
-
-#ifdef IPKDB
-	/* Initialise ipkdb */
-	ipkdb_init();
-	if (boothowto & RB_KDB)
-		ipkdb_connect(0);
 #endif
 
 #ifdef KGDB

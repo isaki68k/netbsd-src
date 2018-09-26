@@ -1,4 +1,4 @@
-/*	$NetBSD: if_iwn.c,v 1.88 2018/01/28 16:12:41 christos Exp $	*/
+/*	$NetBSD: if_iwn.c,v 1.90 2018/06/26 06:48:01 msaitoh Exp $	*/
 /*	$OpenBSD: if_iwn.c,v 1.135 2014/09/10 07:22:09 dcoppa Exp $	*/
 
 /*-
@@ -22,7 +22,7 @@
  * adapters.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_iwn.c,v 1.88 2018/01/28 16:12:41 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_iwn.c,v 1.90 2018/06/26 06:48:01 msaitoh Exp $");
 
 #define IWN_USE_RBUF	/* Use local storage for RX */
 #undef IWN_HWCRYPTO	/* XXX does not even compile yet */
@@ -117,18 +117,6 @@ static const pci_product_id_t iwn_devices[] = {
 	PCI_PRODUCT_INTEL_WIFI_LINK_105_1,
 	PCI_PRODUCT_INTEL_WIFI_LINK_105_2,
 };
-
-/*
- * Supported rates for 802.11a/b/g modes (in 500Kbps unit).
- */
-static const struct ieee80211_rateset iwn_rateset_11a =
-	{ 8, { 12, 18, 24, 36, 48, 72, 96, 108 } };
-
-static const struct ieee80211_rateset iwn_rateset_11b =
-	{ 4, { 2, 4, 11, 22 } };
-
-static const struct ieee80211_rateset iwn_rateset_11g =
-	{ 12, { 2, 4, 11, 22, 12, 18, 24, 36, 48, 72, 96, 108 } };
 
 static int	iwn_match(device_t , struct cfdata *, void *);
 static void	iwn_attach(device_t , device_t , void *);
@@ -567,10 +555,10 @@ iwn_attach(device_t parent __unused, device_t self, void *aux)
 #endif	/* !IEEE80211_NO_HT */
 
 	/* Set supported legacy rates. */
-	ic->ic_sup_rates[IEEE80211_MODE_11B] = iwn_rateset_11b;
-	ic->ic_sup_rates[IEEE80211_MODE_11G] = iwn_rateset_11g;
+	ic->ic_sup_rates[IEEE80211_MODE_11B] = ieee80211_std_rateset_11b;
+	ic->ic_sup_rates[IEEE80211_MODE_11G] = ieee80211_std_rateset_11g;
 	if (sc->sc_flags & IWN_FLAG_HAS_5GHZ) {
-		ic->ic_sup_rates[IEEE80211_MODE_11A] = iwn_rateset_11a;
+		ic->ic_sup_rates[IEEE80211_MODE_11A] = ieee80211_std_rateset_11a;
 	}
 #ifndef IEEE80211_NO_HT
 	if (sc->sc_flags & IWN_FLAG_HAS_11N) {
@@ -2182,7 +2170,7 @@ iwn_rx_done(struct iwn_softc *sc, struct iwn_rx_desc *desc,
 		default:  tap->wr_rate =   0;
 		}
 
-		bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_rxtap_len, m);
+		bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_rxtap_len, m, BPF_D_IN);
 	}
 
 	/*
@@ -2977,7 +2965,7 @@ iwn_tx(struct iwn_softc *sc, struct mbuf *m, struct ieee80211_node *ni, int ac)
 		if (wh->i_fc[1] & IEEE80211_FC1_WEP)
 			tap->wt_flags |= IEEE80211_RADIOTAP_F_WEP;
 
-		bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_txtap_len, m);
+		bpf_mtap2(sc->sc_drvbpf, tap, sc->sc_txtap_len, m, BPF_D_OUT);
 	}
 
 	/* Prepare TX firmware command. */
@@ -3240,7 +3228,7 @@ iwn_start(struct ifnet *ifp)
 		    M_WME_GETAC(m) : WME_AC_BE;
 
 		if (sc->sc_beacon_wait == 0)
-			bpf_mtap(ifp, m);
+			bpf_mtap(ifp, m, BPF_D_OUT);
 
 		if ((m = ieee80211_encap(ic, m, ni)) == NULL) {
 			ieee80211_free_node(ni);
@@ -3251,7 +3239,7 @@ sendit:
 		if (sc->sc_beacon_wait)
 			continue;
 
-		bpf_mtap3(ic->ic_rawbpf, m);
+		bpf_mtap3(ic->ic_rawbpf, m, BPF_D_OUT);
 
 		if (iwn_tx(sc, m, ni, ac) != 0) {
 			ieee80211_free_node(ni);
