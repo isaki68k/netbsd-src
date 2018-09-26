@@ -2290,7 +2290,7 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 		track->in_use = false;
 		mutex_exit(sc->sc_intr_lock);
 
-		bytes = min(usrbuf->used, uio->uio_resid);
+		bytes = uimin(usrbuf->used, uio->uio_resid);
 		int head = usrbuf->head;
 		if (head + bytes <= usrbuf->capacity) {
 			error = audio_read_uiomove(track, head, bytes, uio);
@@ -2422,7 +2422,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 
 		/* Write to the conversion stage as much as possible. */
 		// usrbuf にコピー
-		bytes = min(track->usrbuf_usedhigh - usrbuf->used,
+		bytes = uimin(track->usrbuf_usedhigh - usrbuf->used,
 		    uio->uio_resid);
 		tail = auring_tail(usrbuf);
 		if (tail + bytes <= usrbuf->capacity) {
@@ -4548,9 +4548,9 @@ audio_apply_stage(audio_track_t *track, audio_stage_t *stage, bool isfreq)
 
 	if (isfreq) {
 		KASSERTMSG(srccount > 0, "freq but srccount == %d", srccount);
-		count = min(dstcount, track->mixer->frames_per_block);
+		count = uimin(dstcount, track->mixer->frames_per_block);
 	} else {
-		count = min(srccount, dstcount);
+		count = uimin(srccount, dstcount);
 	}
 
 	if (count > 0) {
@@ -4623,7 +4623,7 @@ audio_track_play(audio_track_t *track)
 	 * bytes is the number of bytes to copy from usrbuf.  However it is
 	 * not copied less than 1 frame.
 	 */
-	count = min(usrbuf->used, track->usrbuf_blksize) / framesize;
+	count = uimin(usrbuf->used, track->usrbuf_blksize) / framesize;
 	bytes = count * framesize;
 
 	// 今回処理するバイト数(bytes) が1ブロックに満たない場合、
@@ -4800,7 +4800,7 @@ audio_track_record(audio_track_t *track)
 	// 処理するフレーム数
 	/* number of frames to process */
 	count = auring_get_contig_used(track->input);
-	count = min(count, track->mixer->frames_per_block);
+	count = uimin(count, track->mixer->frames_per_block);
 	if (count == 0) {
 		TRACET(track, "count == 0");
 		return;
@@ -4848,7 +4848,7 @@ audio_track_record(audio_track_t *track)
 	 * bytes is the number of bytes to copy to usrbuf.
 	 */
 	count = outbuf->used;
-	count = min(count,
+	count = uimin(count,
 	    (track->usrbuf_usedhigh - usrbuf->used) / framesize);
 	bytes = count * framesize;
 	if (auring_tail(usrbuf) + bytes < usrbuf->capacity) {
@@ -5271,7 +5271,7 @@ audio_pmixer_process(struct audio_softc *sc, bool isintr)
 	// 実際には hwbuf はブロック単位で変動するはずなので
 	// count は1ブロック分になるはず
 	hw_free_count = auring_get_contig_free(&mixer->hwbuf);
-	frame_count = min(hw_free_count, mixer->frames_per_block);
+	frame_count = uimin(hw_free_count, mixer->frames_per_block);
 	if (frame_count <= 0) {
 		TRACE("count too short: hw_free=%d frames_per_block=%d",
 		    hw_free_count, mixer->frames_per_block);
@@ -5484,7 +5484,7 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track,
 	if (mixer->mixseq < track->seq) return mixed;
 
 	count = auring_get_contig_used(&track->outbuf);
-	count = min(count, mixer->frames_per_block);
+	count = uimin(count, mixer->frames_per_block);
 
 	s = auring_headptr_aint(&track->outbuf);
 	d = mixer->mixsample;
@@ -5747,7 +5747,7 @@ audio_rmixer_process(struct audio_softc *sc)
 	// 実際には hwbuf はブロック単位で変動するはずなので
 	// count は1ブロック分になるはず
 	count = auring_get_contig_used(&mixer->hwbuf);
-	count = min(count, mixer->frames_per_block);
+	count = uimin(count, mixer->frames_per_block);
 	if (count <= 0) {
 		TRACE("count %d: too short", count);
 		return;

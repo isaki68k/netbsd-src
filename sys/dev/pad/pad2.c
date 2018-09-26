@@ -378,7 +378,7 @@ pad_dev_read(dev_t dev, struct uio *uio, int flags)
 			continue;
 		}
 
-		len = min(uio->uio_resid, sc->sc_buflen);
+		len = uimin(uio->uio_resid, sc->sc_buflen);
 		err = pad_get_block(sc, &pb, len);
 		mutex_exit(&sc->sc_cond_lock);
 		if (err)

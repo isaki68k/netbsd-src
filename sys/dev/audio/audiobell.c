@@ -133,7 +133,7 @@ audiobell(void *v, u_int pitch, u_int period, u_int volume, int poll)
 	/* write to audio */
 	for (; remainlen > 0; remainlen -= wave1len) {
 		int len;
-		len = min(remainlen, wave1len);
+		len = uimin(remainlen, wave1len);
 		aiov.iov_base = (void *)buf;
 		aiov.iov_len = len;
 		auio.uio_iov = &aiov;
@@ -239,7 +239,7 @@ audiobell(void *v, u_int pitch, u_int period, u_int volume, int poll)
 		bellarg.blocksize = BELL_SAMPLE_RATE;
 
 	len = period * BELL_SAMPLE_RATE / 1000 * 2;
-	size = min(len, bellarg.blocksize);
+	size = uimin(len, bellarg.blocksize);
 	if (size == 0)
 		goto out;
 
@@ -249,7 +249,7 @@ audiobell(void *v, u_int pitch, u_int period, u_int volume, int poll)
 
 	phase = 0;
 	while (len > 0) {
-		size = min(len, bellarg.blocksize);
+		size = uimin(len, bellarg.blocksize);
 		if (audiobell_synthesize(buf, pitch, size *
 				1000 / BELL_SAMPLE_RATE, volume, &phase) != 0)
 			goto out;
