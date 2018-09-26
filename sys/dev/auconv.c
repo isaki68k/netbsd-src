@@ -2355,22 +2355,25 @@ int
 auconv_create_encodings(const struct audio_format *formats, int nformats,
 			struct audio_encoding_set **encodings)
 {
-#if defined(AUDIO2)
-	printf("NOTICE: %s is obsoleted in AUDIO2\n", __func__);
-	return 0;
-#else
 	struct audio_encoding_set *buf;
 	int capacity;
-	int i, j;
+	int i;
 	int err;
+#if !defined(AUDIO2)
+	int j;
 	static int enc_precision[] = { 16, 32 };
+#endif
 
 #define	ADD_ENCODING(enc, prec, flags)	do { \
 	err = auconv_add_encoding(enc, prec, flags, &buf, &capacity); \
 	if (err != 0) goto err_exit; \
 } while (/*CONSTCOND*/0)
 
+#if defined(AUDIO2)
+	capacity = nformats;
+#else
 	capacity = 10;
+#endif
 	buf = AUCONV_MALLOC(ENCODING_SET_SIZE(capacity));
 	if (buf == NULL) {
 		err = ENOMEM;
@@ -2381,6 +2384,7 @@ auconv_create_encodings(const struct audio_format *formats, int nformats,
 		if (!AUFMT_IS_VALID(&formats[i]))
 			continue;
 
+#if !defined(AUDIO2)
 		for (j = 0; j < __arraycount(enc_precision); j++) {
 			ADD_ENCODING(AUDIO_ENCODING_SLINEAR_BE,
 				     enc_precision[j],
@@ -2405,6 +2409,7 @@ auconv_create_encodings(const struct audio_format *formats, int nformats,
 		ADD_ENCODING(AUDIO_ENCODING_ALAW, 8,
 			     AUDIO_ENCODINGFLAG_EMULATED);
 #endif
+#endif /* !AUDIO2 */
 		ADD_ENCODING(formats[i].encoding,
 			     formats[i].precision, 0);
 	}
@@ -2416,7 +2421,6 @@ auconv_create_encodings(const struct audio_format *formats, int nformats,
 		AUCONV_FREE(buf);
 	*encodings = NULL;
 	return err;
-#endif
 }
 
 /**
