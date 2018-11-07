@@ -510,8 +510,8 @@ psgpam_start_output(void *hdl, void *block, int blksize,
 		sc->sc_xp_addr = PAM_BUF;
 
 		if (sc->sc_started == 0) {
-			// if first transfer, interrupt at top of buffer.
-			markoffset = 0;
+			// if first transfer, interrupt at middle of buffer.
+			markoffset = blksize >> 1;
 		}
 	} else {
 		marker = XP_ATN_RELOAD;
