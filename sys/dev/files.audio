@@ -23,6 +23,7 @@ attach	spkr at audio with spkr_audio
 #
 define	audiobell
 
+file	dev/audio/alaw.c		mulaw
 file	dev/audio/aucodec.c		audio			needs-flag
 file	dev/auconv.c			auconv
 file	dev/audio.c			audio			needs-flag
