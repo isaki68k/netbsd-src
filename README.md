@@ -54,24 +54,24 @@ vs(4) などの珍しい周波数の hardware がサポートできない。
 
 
 ## Supported devices
-|Device	|(port)	|対応度
-|-------|-------|-------|
-|arcofi(4)	|	|AUDIO2 completed
-|audioamd(4)	|sparc	|compiled but not tested
-|auich(4)	|	|AUDIO2 completed
-|aucc(4)	|amiga|compiled but not tested
-|bba(4)		|alpha	|compiled but not tested
-|eap(4)		|	|AUDIO2 completed
-|hdafg(4)	|	|AUDIO2 completed
-|melody(4)	|amiga|compiled but not tested
-|mercury(4)	|x68k	|新規追加 and AUDIO2 completed (*)
-|pad(4)		|	|AUDIO2 completed
-|psgpam(4)	|luna68k|新規追加 and AUDIO2 completed (*)
-|repulse(4)	|amiga|compiled but not tested
-|sb(4)		|	|work (*)
-|uaudio(4)	|	|AUDIO2 completed
-|vs(4)		|x68k	|AUDIO2 completed
-|vsaudio(4)	|vax	|compiled but not tested
+|Device	|Backend|(port)	|対応度
+|-------|-------|-------|-------|
+|arcofi(4)	|	|	|AUDIO2 completed
+|audioamd(4)	|am7930	|sparc	|compiled but not tested
+|auich(4)	|	|	|AUDIO2 completed
+|aucc(4)	|	|amiga	|compiled but not tested
+|bba(4)		|am7930	|alpha	|compiled but not tested
+|eap(4)		|	|	|AUDIO2 completed
+|hdafg(4)	|	|	|AUDIO2 completed
+|melody(4)	|	|amiga	|compiled but not tested
+|mercury(4)	|	|x68k	|新規追加 and AUDIO2 completed (*)
+|pad(4)		|	|	|AUDIO2 completed
+|psgpam(4)	|	|luna68k|新規追加 and AUDIO2 completed (*)
+|repulse(4)	|	|amiga	|compiled but not tested
+|sb(4)		|	|	|work (*)
+|uaudio(4)	|	|	|AUDIO2 completed
+|vs(4)		|	|x68k	|AUDIO2 completed
+|vsaudio(4)	|am7930	|vax	|compiled but not tested
 
 Note:
 * mercury(4) は AUDIO2 で初サポート。
