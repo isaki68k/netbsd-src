@@ -25,6 +25,8 @@
  * SUCH DAMAGE.
  */
 
+#if defined(AUDIO2)
+
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD$");
 
@@ -164,3 +166,5 @@ audio_internal_to_alaw(audio_filter_arg_t *arg)
 		*d++ = slinear8_to_alaw[val];
 	}
 }
+
+#endif /* AUDIO2 */
