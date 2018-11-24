@@ -151,7 +151,7 @@ audio_linear16_to_internal(audio_filter_arg_t *arg)
 		for (i = 0; i < sample_count; i++) {
 			uint16_t val;
 			val = *s++;
-			val = __builtin_bswap16(val);
+			val = bswap16(val);
 			*d++ = (auint_t)val << shift;
 		}
 	} else {
@@ -161,7 +161,7 @@ audio_linear16_to_internal(audio_filter_arg_t *arg)
 			uint16_t val;
 			val = *s++;
 			if (!is_src_NE)
-				val = __builtin_bswap16(val);
+				val = bswap16(val);
 			val ^= xor;
 			*d++ = (auint_t)val << shift;
 		}
@@ -209,7 +209,7 @@ audio_internal_to_linear16(audio_filter_arg_t *arg)
 		for (i = 0; i < sample_count; i++) {
 			uint16_t val;
 			val = (*s++) >> shift;
-			val = __builtin_bswap16(val);
+			val = bswap16(val);
 			*d++ = val;
 		}
 	} else {
@@ -220,7 +220,7 @@ audio_internal_to_linear16(audio_filter_arg_t *arg)
 			val = (*s++) >> shift;
 			val ^= xor;
 			if (!is_dst_NE)
-				val = __builtin_bswap16(val);
+				val = bswap16(val);
 			*d++ = val;
 		}
 	}
@@ -360,7 +360,7 @@ audio_linear32_to_internal(audio_filter_arg_t *arg)
 		uint32_t val;
 		val = *s++;
 		if (!is_src_NE)
-			val = __builtin_bswap32(val);
+			val = bswap32(val);
 		val >>= 32 - AUDIO_INTERNAL_BITS;
 		val ^= xor;
 		*d++ = val;
@@ -402,7 +402,7 @@ audio_internal_to_linear32(audio_filter_arg_t *arg)
 		val ^= xor;
 		val <<= 32 - AUDIO_INTERNAL_BITS;
 		if (!is_dst_NE)
-			val = __builtin_bswap32(val);
+			val = bswap32(val);
 		*d++ = val;
 	}
 }
