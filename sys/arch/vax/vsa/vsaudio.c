@@ -169,9 +169,11 @@ struct am7930_glue vsaudio_glue = {
         vsaudio_codec_iwrite16,
         vsaudio_onopen,
         vsaudio_onclose,
+#if !defined(AUDIO2)
         0,
         /*vsaudio_input_conv*/0,
         /*vsaudio_output_conv*/0,
+#endif
 };
 
 /*
@@ -185,8 +187,13 @@ void    vsaudio_get_locks(void *opaque, kmutex_t **intr, kmutex_t **thread);
 struct audio_hw_if vsaudio_hw_if = {
 	.open			= am7930_open,
 	.close			= am7930_close,
+#if defined(AUDIO2)
+	.query_format		= am7930_query_format,
+	.init_format		= am7930_init_format,
+#else
 	.query_encoding		= am7930_query_encoding,
 	.set_params		= am7930_set_params,
+#endif
 	.round_blocksize	= am7930_round_blocksize,
 	.commit_settings	= am7930_commit_settings,
 	.start_output		= vsaudio_start_output,

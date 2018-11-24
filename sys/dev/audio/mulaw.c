@@ -44,6 +44,28 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include "audiovar.h"
 #endif // !_KERNEL
 
+// mulaw32
+//
+// mulaw32 は tc/bba.c でのみ使われる、8ビットの mulaw を 32ビットコンテナ
+// 中の 16ビット左シフトした位置に置くエンコーディングのことをここではそう
+// 呼ぶことにする。mulaw を 32ビット演算に拡張したとかではない。
+// MULAW32 が定義されていれば、このファイルは
+// audio_internal_to_mulaw() の代わりに audio_internal_to_mulaw32() を、
+// audio_mulaw_to_internal() の代わりに audio_mulaw32_to_internal() を
+// 出力するようになる。
+//
+// tc/bba.c 以外のオーディオドライバはユーザランド入出力としての mulaw に
+// 対応するために audio_internal_to_mulaw() と audio_mulaw_to_internal() が
+// 必要で、これは files.audio によって mulaw.c がリンクされることによって
+// 解決している。
+// 一方、tc/bba.c でも、ユーザランド入出力としての mulaw を内部形式に変換
+// するための audio_internal_to_mulaw()、audio_mulaw_to_internal() が必要な
+// ところまでは同じだが、内部形式をハードウェアフォーマットに変換するために
+// audio_internal_to_mulaw32()、audio_mulaw32_to_internal() も必要となる。
+// これらは出力オフセットが多少異なる以外はまったく同じものなので、
+// ここで #ifdef でソースを切り替えるようにしておき、tc/bba.c は MULAW32 版
+// *も* リンクすることにしてみる。
+
 // audio_internal_to_mulaw
 //
 // 1) 8bitテーブル方式 (従来版)
@@ -141,19 +163,33 @@ static const uint8_t slinear8_to_mulaw[256] = {
 /*
  * audio_mulaw_to_internal:
  *	This filter performs conversion from mulaw to internal format.
+ *
+ * audio_mulaw32_to_internal:
+ *	This filter performs conversion from mulaw32 used only in tc/bba.c
+ *	to internal format.
  */
 void
+#if !defined(MULAW32)
 audio_mulaw_to_internal(audio_filter_arg_t *arg)
+#else
+audio_mulaw32_to_internal(audio_filter_arg_t *arg)
+#endif
 {
+#if defined(MULAW32)
+	const uint32_t *s;
+#else
 	const uint8_t *s;
+#endif
 	aint_t *d;
 	u_int sample_count;
 	u_int i;
 
 	DIAGNOSTIC_filter_arg(arg);
+#if !defined(MULAW32)
 	KASSERT(arg->srcfmt->encoding == AUDIO_ENCODING_ULAW);
 	KASSERT(arg->srcfmt->stride == 8);
 	KASSERT(arg->srcfmt->precision == 8);
+#endif
 	KASSERT(audio_format2_is_internal(arg->dstfmt));
 	KASSERT(arg->srcfmt->channels == arg->dstfmt->channels);
 
@@ -163,7 +199,13 @@ audio_mulaw_to_internal(audio_filter_arg_t *arg)
 
 	for (i = 0; i < sample_count; i++) {
 		aint_t val;
-		val = mulaw_to_slinear16[*s++];
+		uint m;
+		m = *s++;
+#if defined(MULAW32)
+		/* 32bit container used only in tc/bba.c */
+		m = (m >> 16) & 0xff;
+#endif
+		val = mulaw_to_slinear16[m];
 		val <<= AUDIO_INTERNAL_BITS - 16;
 		*d++ = val;
 	}
@@ -172,19 +214,33 @@ audio_mulaw_to_internal(audio_filter_arg_t *arg)
 /*
  * audio_internal_to_mulaw:
  *	This filter performs conversion from internal format to mulaw.
+ *
+ * audio_internal_to_mulaw32:
+ *	This filter performs conversion from internal format to mulaw32
+ *	used only in tc/bba.c.
  */
 void
+#if !defined(MULAW32)
 audio_internal_to_mulaw(audio_filter_arg_t *arg)
+#else
+audio_internal_to_mulaw32(audio_filter_arg_t *arg)
+#endif
 {
 	const aint_t *s;
+#if defined(MULAW32)
+	uint32_t *d;
+#else
 	uint8_t *d;
+#endif
 	u_int sample_count;
 	u_int i;
 
 	DIAGNOSTIC_filter_arg(arg);
+#if !defined(MULAW32)
 	KASSERT(arg->dstfmt->encoding == AUDIO_ENCODING_ULAW);
 	KASSERT(arg->dstfmt->stride == 8);
 	KASSERT(arg->dstfmt->precision == 8);
+#endif
 	KASSERT(audio_format2_is_internal(arg->srcfmt));
 	KASSERT(arg->srcfmt->channels == arg->dstfmt->channels);
 
@@ -193,10 +249,10 @@ audio_internal_to_mulaw(audio_filter_arg_t *arg)
 	sample_count = arg->count * arg->srcfmt->channels;
 
 	for (i = 0; i < sample_count; i++) {
+		uint8_t m;
 #if defined(MULAW_HQ_ENC)
 		/* 14bit (full spec) encoder */
 		int32_t val;
-		uint8_t m;
 		int clz;
 
 		val = (int)(*s++);
@@ -219,12 +275,18 @@ audio_internal_to_mulaw(audio_filter_arg_t *arg)
 		m |= clz << 4;
 		m |= ~(val >> (AUDIO_INTERNAL_BITS - 16 + 10 - clz)) & 0x0f;
 		MPRINTF("m=0x%02x\n", m);
-		*d++ = m;
 #else
 		/* 8bit encoder */
 		uint8_t val;
 		val = (*s++) >> (AUDIO_INTERNAL_BITS - 8);
-		*d++ = slinear8_to_mulaw[val];
+		m = slinear8_to_mulaw[val];
+#endif
+
+#if defined(MULAW32)
+		/* 32bit container used only in tc/bba.c */
+		*d++ = m << 16;
+#else
+		*d++ = m;
 #endif
 	}
 }

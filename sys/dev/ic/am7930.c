@@ -58,6 +58,10 @@ __KERNEL_RCSID(0, "$NetBSD: am7930.c,v 1.57 2017/08/29 06:38:49 isaki Exp $");
 #include <dev/ic/am7930reg.h>
 #include <dev/ic/am7930var.h>
 
+/* include mulaw.c (not .h file) here to expand mulaw32 */
+#define MULAW32
+#include <dev/audio/mulaw.c>
+
 #ifdef AUDIO_DEBUG
 int     am7930debug = 0;
 #define DPRINTF(x)      if (am7930debug) printf x
@@ -137,7 +141,18 @@ static const uint16_t ger_coeff[] = {
 #define NGER (sizeof(ger_coeff) / sizeof(ger_coeff[0]))
 };
 
+#if !defined(AUDIO2)
 extern stream_filter_factory_t null_filter;
+#endif
+
+#if defined(AUDIO2)
+static const struct audio_format am7930_formats[] = {
+	{ NULL, AUMODE_PLAY | AUMODE_RECORD, AUDIO_ENCODING_SLINEAR_NE, 16, 16,
+	  1, AUFMT_MONAURAL, 1, { 8000 } },
+	{ NULL, AUMODE_PLAY | AUMODE_RECORD, AUDIO_ENCODING_ULAW, 8, 8,
+	  1, AUFMT_MONAURAL, 1, { 8000 } },
+};
+#endif
 
 /*
  * Reset chip and set boot-time softc defaults.
@@ -217,6 +232,43 @@ am7930_close(void *addr)
 	sc->sc_glue->onclose(sc);
 	DPRINTF(("sa_close: closed.\n"));
 }
+
+#if defined(AUDIO2)
+int
+am7930_query_format(void *addr, audio_format_query_t *afp)
+{
+
+	return audio_query_format(am7930_formats, __arraycount(am7930_formats),
+	    afp);
+}
+
+// tc/bba.c はこれではないフィルタを必要とするため、
+// この am7930 共通 init_format ではなく自前のほうを使うこと。
+int
+am7930_init_format(void *addr, int setmode,
+	const audio_params_t *play, const audio_params_t *rec,
+	audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
+{
+
+	if ((setmode & AUMODE_PLAY) != 0) {
+		pfil->param = *play;
+		pfil->param.encoding = AUDIO_ENCODING_ULAW;
+		pfil->param.validbits = 8;
+		pfil->param.precision = 8;
+		pfil->codec = audio_internal_to_mulaw;
+	}
+	if ((setmode & AUMODE_RECORD) != 0) {
+		rfil->param = *rec;
+		rfil->param.encoding = AUDIO_ENCODING_ULAW;
+		rfil->param.validbits = 8;
+		rfil->param.precision = 8;
+		rfil->codec = audio_mulaw_to_internal;
+	}
+
+	return 0;
+}
+
+#else
 
 /*
  * XXX should be extended to handle a few of the more common formats.
@@ -302,6 +354,7 @@ am7930_query_encoding(void *addr, struct audio_encoding *fp)
 	}
 	return 0;
 }
+#endif /* AUDIO2 */
 
 int
 am7930_round_blocksize(void *addr, int blk,

@@ -109,12 +109,14 @@ static void	bba_codec_iwrite16(struct am7930_softc *, int, uint16_t);
 static void	bba_onopen(struct am7930_softc *);
 static void	bba_onclose(struct am7930_softc *);
 
+#if !defined(AUDIO2)
 static stream_filter_factory_t bba_output_conv;
 static stream_filter_factory_t bba_input_conv;
 static int	bba_output_conv_fetch_to(struct audio_softc *, stream_fetcher_t *,
 					 audio_stream_t *, int);
 static int	bba_input_conv_fetch_to(struct audio_softc *, stream_fetcher_t *,
 					audio_stream_t *, int);
+#endif
 
 struct am7930_glue bba_glue = {
 	bba_codec_iread,
@@ -123,15 +125,22 @@ struct am7930_glue bba_glue = {
 	bba_codec_iwrite16,
 	bba_onopen,
 	bba_onclose,
+#if !defined(AUDIO2)
 	4,
 	bba_input_conv,
 	bba_output_conv,
+#endif
 };
 
 /*
  * Define our interface to the higher level audio driver.
  */
 
+#if defined(AUDIO2)
+static int	bba_init_format(void *, int,
+				const audio_params_t *, const audio_params_t *,
+				audio_filter_reg_t *, audio_filter_reg_t *);
+#endif
 static int	bba_round_blocksize(void *, int, int, const audio_params_t *);
 static int	bba_halt_output(void *);
 static int	bba_halt_input(void *);
@@ -153,8 +162,13 @@ static void	bba_get_locks(void *opaque, kmutex_t **intr,
 static const struct audio_hw_if sa_hw_if = {
 	.open			= am7930_open,
 	.close			= am7930_close,
+#if defined(AUDIO2)
+	.query_format		= am7930_query_format,
+	.init_format		= bba_init_format,
+#else
 	.query_encoding		= am7930_query_encoding,
 	.set_params		= am7930_set_params,
+#endif
 	.round_blocksize	= bba_round_blocksize,	/* md */
 	.commit_settings	= am7930_commit_settings,
 	.halt_output		= bba_halt_output,	/* md */
@@ -641,6 +655,31 @@ bba_mappage(void *addr, void *mem, off_t offset, int prot)
 	    prot, BUS_DMA_WAITOK);
 }
 
+#if defined(AUDIO2)
+static int
+bba_init_format(void *addr, int setmode,
+		const audio_params_t *play, const audio_params_t *rec,
+		audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
+{
+
+	if ((setmode & AUMODE_PLAY) != 0) {
+		pfil->param = *play;
+		pfil->param.encoding = AUDIO_ENCODING_ULAW;
+		pfil->param.validbits = 32;
+		pfil->param.precision = 32;
+		pfil->codec = audio_internal_to_mulaw32;
+	}
+	if ((setmode & AUMODE_RECORD) != 0) {
+		rfil->param = *rec;
+		rfil->param.encoding = AUDIO_ENCODING_ULAW;
+		rfil->param.validbits = 32;
+		rfil->param.precision = 32;
+		rfil->codec = audio_mulaw32_to_internal;
+	}
+
+	return 0;
+}
+#else
 static stream_filter_t *
 bba_input_conv(struct audio_softc *sc, const audio_params_t *from,
 	       const audio_params_t *to)
@@ -691,6 +730,7 @@ bba_output_conv_fetch_to(struct audio_softc *sc, stream_fetcher_t *self,
 	} FILTER_LOOP_EPILOGUE(this->src, dst);
 	return 0;
 }
+#endif
 
 static int
 bba_round_blocksize(void *addr, int blk, int mode, const audio_params_t *param)

@@ -1,3 +1,6 @@
+#if defined(AUDIO2)
+#include "dev/audio/mulaw.h"
+#else
 /*	$NetBSD: mulaw.h,v 1.25 2017/12/27 00:12:06 nat Exp $	*/
 
 /*-
@@ -67,3 +70,4 @@ extern stream_filter_factory_t alaw_to_linear8;
 extern stream_filter_factory_t linearN_to_alaw;
 
 #endif /* _SYS_DEV_MULAW_H_ */
+#endif /* AUDIO2 */

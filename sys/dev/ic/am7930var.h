@@ -9,9 +9,11 @@ struct am7930_glue {
 	void	(*codec_iwrite16)(struct am7930_softc *sc, int, uint16_t);
 	void	(*onopen)(struct am7930_softc *sc);
 	void	(*onclose)(struct am7930_softc *sc);
+#if !defined(AUDIO2)
 	int	factor;
 	stream_filter_factory_t *input_conv;
 	stream_filter_factory_t *output_conv;
+#endif
 };
 
 struct am7930_softc {
@@ -70,9 +72,16 @@ struct audio_params;
 
 int	am7930_open(void *, int);
 void	am7930_close(void *);
+#if defined(AUDIO2)
+int	am7930_query_format(void *, audio_format_query_t *);
+int	am7930_init_format(void *, int,
+	    const audio_params_t *, const audio_params_t *,
+	    audio_filter_reg_t *, audio_filter_reg_t *);
+#else
 int	am7930_query_encoding(void *, struct audio_encoding *);
 int	am7930_set_params(void *, int, int, audio_params_t *,
 	    audio_params_t *, stream_filter_list_t *, stream_filter_list_t *);
+#endif
 int	am7930_commit_settings(void *);
 int	am7930_round_blocksize(void *, int, int, const audio_params_t *);
 int	am7930_halt_output(void *);
@@ -82,3 +91,8 @@ int	am7930_get_props(void *);
 int	am7930_set_port(void *, mixer_ctrl_t *);
 int	am7930_get_port(void *, mixer_ctrl_t *);
 int	am7930_query_devinfo(void *, mixer_devinfo_t *);
+
+#if defined(AUDIO2)
+void	audio_mulaw32_to_internal(audio_filter_arg_t *);
+void	audio_internal_to_mulaw32(audio_filter_arg_t *);
+#endif
