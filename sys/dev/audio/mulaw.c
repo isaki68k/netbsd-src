@@ -253,6 +253,7 @@ audio_internal_to_mulaw32(audio_filter_arg_t *arg)
 #if defined(MULAW_HQ_ENC)
 		/* 14bit (full spec) encoder */
 		int32_t val;
+		aint_t v;
 		int clz;
 
 		val = (int)(*s++);
@@ -268,10 +269,14 @@ audio_internal_to_mulaw32(audio_filter_arg_t *arg)
 		val += 33 << (AUDIO_INTERNAL_BITS - 16 + 2);	/* bias */
 		MPRINTF("val32=%0*x ", AUDIO_INTERNAL_BITS / 4, val);
 
-		clz = __builtin_clz(val) - (32 - AUDIO_INTERNAL_BITS) - 1;
+		/* Count leading zero up to seven, excluding MSB which always zero. */
+		v = val << 1;
+		for (clz = 0; clz < 7; v <<= 1, clz++) {
+			if (v < 0)
+				break;
+		}
 		MPRINTF("clz=%d ", clz);
-		if (clz > 7)
-			clz = 7;
+
 		m |= clz << 4;
 		m |= ~(val >> (AUDIO_INTERNAL_BITS - 16 + 10 - clz)) & 0x0f;
 		MPRINTF("m=0x%02x\n", m);
