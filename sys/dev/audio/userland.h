@@ -639,4 +639,7 @@ extern bool audio_softc_play_busy(struct audio_softc *sc);
 extern void lock(struct audio_softc *sc);
 extern void unlock(struct audio_softc *sc);
 
+/* <libkern/libkern.h> */
+#define uimin(a, b)	min((unsigned)a, (unsigned)b)
+
 extern int audio_blk_ms;

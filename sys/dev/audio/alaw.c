@@ -30,11 +30,13 @@
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD$");
 
+#if defined(_KERNEL)
 #include <sys/types.h>
 #include <sys/systm.h>
 #include <sys/device.h>
 #include <dev/audio/audiovar.h>
 #include <dev/audio/mulaw.h>
+#endif
 
 static const uint16_t alaw_to_slinear16[256] = {
 	0xea80, 0xeb80, 0xe880, 0xe980, 0xee80, 0xef80, 0xec80, 0xed80,

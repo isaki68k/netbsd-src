@@ -18,6 +18,7 @@
 #include "audiodef.h"
 #include "aucodec.c"
 #include "mulaw.c"
+#include "alaw.c"
 
 #define malloc(len, a, b)	malloc(len)
 #include "audio.c"

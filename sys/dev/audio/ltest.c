@@ -17,6 +17,7 @@
 #include "audiodef.h"
 #include "aucodec.c"
 #include "mulaw.c"
+#include "alaw.c"
 #include "audio.c"
 #include "userland.c"
 #include "netbsd/compat.c"
