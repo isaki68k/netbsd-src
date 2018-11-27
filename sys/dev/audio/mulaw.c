@@ -160,18 +160,6 @@ static const uint8_t slinear8_to_mulaw[256] = {
 };
 #endif
 
-/* Count Leading Zero.  val should not be 0. */
-static inline int
-clz32(uint32_t val)
-{
-	val = (val & 0x55555555) + ((val >>  1) & 0x55555555);
-	val = (val & 0x33333333) + ((val >>  2) & 0x33333333);
-	val = (val & 0x0f0f0f0f) + ((val >>  4) & 0x0f0f0f0f);
-	val = (val & 0x00ff00ff) + ((val >>  8) & 0x00ff00ff);
-	val = (val & 0x0000ffff) + ((val >> 16) & 0x0000ffff);
-	return val;
-}
-
 /*
  * audio_mulaw_to_internal:
  *	This filter performs conversion from mulaw to internal format.
@@ -280,7 +268,7 @@ audio_internal_to_mulaw32(audio_filter_arg_t *arg)
 		val += 33 << (AUDIO_INTERNAL_BITS - 16 + 2);	/* bias */
 		MPRINTF("val32=%0*x ", AUDIO_INTERNAL_BITS / 4, val);
 
-		clz = clz32(val) - (32 - AUDIO_INTERNAL_BITS) - 1;
+		clz = __builtin_clz(val) - (32 - AUDIO_INTERNAL_BITS) - 1;
 		MPRINTF("clz=%d ", clz);
 		if (clz > 7)
 			clz = 7;
