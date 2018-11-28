@@ -778,6 +778,16 @@ perf_codec_slinear_to_mulaw()
 	printf("slinear_to_mulaw: ");
 	fflush(stdout);
 
+	{
+		int16_t v = 0;
+		int16_t *p = (int16_t *)track->codec.srcbuf.mem;
+		for (count = 0; count < track->codec.srcbuf.capacity; count++) {
+			for (int ch = 0; ch < track->codec.srcbuf.fmt.channels; ch++) {
+				*p++ = v++;
+			}
+		}
+	}
+
 	setitimer(ITIMER_REAL, &it, NULL);
 	gettimeofday(&start, NULL);
 	for (count = 0, signaled = 0; signaled == 0; count++) {
