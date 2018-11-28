@@ -71,14 +71,14 @@ __KERNEL_RCSID(0, "$NetBSD$");
 // 1) 8bitテーブル方式 (従来版)
 //	本来14bitに対して精度がリニア8bit分しかない。がたぶん聞いても分からん。
 //	テーブル一発なので速い。
-//	amd64: 55+256(=311) byte, 313.2 times/sec
+//	amd64: 58+256(=314) byte, 346 times/msec
 //	x68k:  64+256(=320) byte
 //
 // 2) 14ビット計算方式 (MULAW_HQ_ENC)
 //	精度はフルスペック。
-//	サイズは8bit テーブルと比べて半分だが4-5倍遅い。
-//	amd64: 150 byte,           68.4 times/sec
-//	x68k:  138 byte,
+//	サイズは8bit テーブルと比べて半分だが10倍遅い。
+//	amd64: 195 byte,           32.7 times/msec
+//	x68k:  156 byte,
 //
 //#define MULAW_HQ_ENC
 
