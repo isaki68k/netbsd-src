@@ -1,9 +1,6 @@
-
 SRCS+=	\
-	audio_dev.c
-
-SRCS+=	\
-	../main.c \
+	main.c \
+	audio_dev.c \
 	../userland.c \
 	compat.c \
 
@@ -22,12 +19,12 @@ CFLAGS=	-O2 -g -std=c99 -I. -I.. \
 	-Wno-unused-variable \
 	-Wno-unused-but-set-variable \
 
-a.out.${MACHINE}:	${OBJS}
+testplay.${MACHINE}:	${OBJS}
 	${CC} -g -o $@ $> -lm -pthread -lutil
 
 .PHONY: clean
 clean:
-	rm -rf a.out.* *.o
+	rm -rf testplay.* *.o
 
 .PHONY: depend
 depend:
