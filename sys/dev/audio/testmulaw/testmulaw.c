@@ -37,6 +37,8 @@ struct test_file {
 	int len;
 };
 
+int parse_file(struct test_file *, FILE *, const char *);
+
 int audio_mulaw_hq_enc = 1;
 int panic_msgout;
 
