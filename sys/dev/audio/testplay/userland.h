@@ -21,6 +21,21 @@
 #include <sys/stat.h>
 #include <sys/sysctl.h>
 
+// NetBSD8 ではユーザランドから見えなくなったため。
+// 定義自体は machine/types.h にある
+#if !defined(PRIxPADDR)
+typedef unsigned long	paddr_t;
+typedef unsigned long	psize_t;
+typedef unsigned long	vaddr_t;
+typedef unsigned long	vsize_t;
+#define	PRIxPADDR	"lx"
+#define	PRIxPSIZE	"lx"
+#define	PRIuPSIZE	"lu"
+#define	PRIxVADDR	"lx"
+#define	PRIxVSIZE	"lx"
+#define	PRIuVSIZE	"lu"
+#endif
+
 // アサートするとき定義
 #define AUDIO_ASSERT
 

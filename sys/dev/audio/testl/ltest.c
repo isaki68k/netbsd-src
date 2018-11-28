@@ -553,7 +553,7 @@ test_audio_mulaw_to_internal()
 {
 	audio_filter_arg_t arg;
 	audio_format2_t srcfmt, intfmt;
-	int count = 256;
+	enum { count = 256 };
 	uint8_t src[count];
 	aint_t dst[count];
 	aint_t exp[count];
