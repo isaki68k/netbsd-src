@@ -286,6 +286,8 @@ audio_internal_to_mulaw32(audio_filter_arg_t *arg)
 		// 負側を基準にして計算する方法
 		/* 14bit (full spec) encoder */
 		int16_t val;
+		int c;
+
 		val = (int16_t)(*s++ >> (AUDIO_INTERNAL_BITS - 16));
 		if (val < 0) {
 			m = 0;
@@ -302,7 +304,7 @@ audio_internal_to_mulaw32(audio_filter_arg_t *arg)
 		// シフトした回数だけ exponent を加算する。
 		// このブロックが終わったとき、val の上位4ビットがmantissa になっている。
 		val <<= 1;
-		for (int c = 0; c < 7; c++) {
+		for (c = 0; c < 7; c++) {
 			if (val >= 0) {
 				break;
 			}
