@@ -193,8 +193,8 @@ struct audio_hw_if vsaudio_hw_if = {
 #else
 	.query_encoding		= am7930_query_encoding,
 	.set_params		= am7930_set_params,
-#endif
 	.round_blocksize	= am7930_round_blocksize,
+#endif
 	.commit_settings	= am7930_commit_settings,
 	.start_output		= vsaudio_start_output,
 	.start_input		= vsaudio_start_input,

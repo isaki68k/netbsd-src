@@ -81,9 +81,9 @@ int	am7930_init_format(void *, int,
 int	am7930_query_encoding(void *, struct audio_encoding *);
 int	am7930_set_params(void *, int, int, audio_params_t *,
 	    audio_params_t *, stream_filter_list_t *, stream_filter_list_t *);
+int	am7930_round_blocksize(void *, int, int, const audio_params_t *);
 #endif
 int	am7930_commit_settings(void *);
-int	am7930_round_blocksize(void *, int, int, const audio_params_t *);
 int	am7930_halt_output(void *);
 int	am7930_halt_input(void *);
 int	am7930_getdev(void *, struct audio_device *);

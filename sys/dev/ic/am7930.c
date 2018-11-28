@@ -354,7 +354,6 @@ am7930_query_encoding(void *addr, struct audio_encoding *fp)
 	}
 	return 0;
 }
-#endif /* AUDIO2 */
 
 int
 am7930_round_blocksize(void *addr, int blk,
@@ -362,6 +361,7 @@ am7930_round_blocksize(void *addr, int blk,
 {
 	return blk;
 }
+#endif /* AUDIO2 */
 
 int
 am7930_commit_settings(void *addr)

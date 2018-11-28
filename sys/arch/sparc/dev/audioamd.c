@@ -161,8 +161,8 @@ const struct audio_hw_if sa_hw_if = {
 #else
 	.query_encoding		= am7930_query_encoding,
 	.set_params		= am7930_set_params,
-#endif
 	.round_blocksize	= am7930_round_blocksize,
+#endif
 	.commit_settings	= am7930_commit_settings,
 	.start_output		= audioamd_start_output,	/* md */
 	.start_input		= audioamd_start_input,		/* md */
