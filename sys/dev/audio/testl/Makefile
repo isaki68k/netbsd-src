@@ -7,7 +7,6 @@ CPPFLAGS+=	\
 	--param ssp-buffer-size=1 \
 	-fno-strict-aliasing \
 	-fno-common \
-	-std=gnu99 \
 	-Werror \
 	-Wall \
 	-Wno-format-zero-length \
