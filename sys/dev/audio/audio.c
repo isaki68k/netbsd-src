@@ -231,13 +231,15 @@ __KERNEL_RCSID(0, "$NetBSD$");
 // ただし AUDIO_DEBUG 0..2 までと 3..4 には隔絶があり、
 // AUDIO_DEBUG 2 以下では TRACE がコンパイルされないため 3 以上は設定不可。
 // AUDIO_DEBUG 3 以上でコンパイルすれば 0..4 まで設定可能。
-#define AUDIO_DEBUG	4
-
-// XXX m68k はデバッグ込みだとまともに再生できないので別スイッチにしておくorz
-// XXX どうしたもんか
-#if defined(__m68k__)
-#undef AUDIO_DEBUG
-#define AUDIO_DEBUG	1
+//
+// XXX 遅マシンで初期値 4 のままだと大抵一回目にはまるので、初期値を2種類
+//     用意しておく。どうしたもんか。
+#ifndef AUDIO_DEBUG
+# if defined(__m68k__) || defined(__vax__)
+#  define AUDIO_DEBUG	1
+# else
+#  define AUDIO_DEBUG	4
+# endif
 #endif
 
 // デバッグ用なんちゃってメモリログ。

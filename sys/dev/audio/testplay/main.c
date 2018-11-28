@@ -21,6 +21,7 @@
 #include "alaw.c"
 
 #define malloc(len, a, b)	malloc(len)
+#define AUDIO_DEBUG 0
 #include "audio.c"
 #undef malloc
 

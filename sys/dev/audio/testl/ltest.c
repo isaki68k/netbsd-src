@@ -18,6 +18,7 @@
 #include "aucodec.c"
 #include "mulaw.c"
 #include "alaw.c"
+#define AUDIO_DEBUG 0
 #include "audio.c"
 #include "userland.c"
 #include "compat.c"
