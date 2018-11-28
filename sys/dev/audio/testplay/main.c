@@ -212,6 +212,11 @@ main(int ac, char *av[])
 		break;
 
 	 case CMD_PERF:
+#if defined(AUDIO_ASSERT)
+		printf("warn: perf but AUDIO_ASSERT defined\n");
+#endif
+		/* FALLTHROUGH */
+
 	 case CMD_TEST:
 		audio_attach(&sc, false);
 		if (cmd == CMD_PERF)
