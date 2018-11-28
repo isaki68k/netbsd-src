@@ -1,0 +1,22 @@
+<body>
+<h4>MD ドライバの AUDIO2 対応方法</h4>
+
+当面は AUDIO2 なしでもビルド可能なように完全に #ifdef にしておく。
+
+<ul>
+<li>query_encoding, set_params を query_format, init_format に変更。
+
+<li>drain, setfd, mappage は削除 (ifndef)。
+
+<li>round_blocksize, round_buffersize を見直す。
+同値を返すだけの場合は削除。
+値を変更して返す場合は AUDIO2 側の要求と一致するか確認する必要がある。
+ただし一致しなかったケースのことは考察できていない。
+
+<li>open あたりの呼び出し順序関係を考察。
+
+<li>open のフラグは常に R/W で呼ばれるように変わったことについて考察。
+Read の時と Write の時で初期化動作を変えてある構造だったりしないか注意。
+
+</ul>
+</body>
