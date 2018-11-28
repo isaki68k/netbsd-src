@@ -56,22 +56,22 @@ vs(4) などの珍しい周波数の hardware がサポートできない。
 ## Supported devices
 |Device	|Backend|(port)	|対応度
 |-------|-------|-------|-------|
-|arcofi(4)	|	|	|AUDIO2 completed
-|audioamd(4)	|am7930	|sparc	|compiled but not tested
-|auich(4)	|	|	|AUDIO2 completed
-|aucc(4)	|	|amiga	|compiled but not tested
-|bba(4)		|am7930	|alpha	|compiled but not tested
-|eap(4)		|	|	|AUDIO2 completed
-|hdafg(4)	|	|	|AUDIO2 completed
-|melody(4)	|	|amiga	|compiled but not tested
-|mercury(4)	|	|x68k	|新規追加 and AUDIO2 completed (*)
-|pad(4)		|	|	|AUDIO2 completed
-|psgpam(4)	|	|luna68k|新規追加 and AUDIO2 completed (*)
-|repulse(4)	|	|amiga	|compiled but not tested
-|sb(4)		|	|	|work (*)
-|uaudio(4)	|	|	|AUDIO2 completed
-|vs(4)		|	|x68k	|AUDIO2 completed
-|vsaudio(4)	|am7930	|vax	|compiled but not tested
+|arcofi(4)	|	|hp300	|Done
+|audioamd(4)	|am7930	|sparc	|Compiled but not tested
+|auich(4)	|	|	|Done
+|aucc(4)	|	|amiga	|Compiled but not tested
+|bba(4)		|am7930	|alpha	|Done
+|eap(4)		|	|	|Done
+|hdafg(4)	|	|	|Done
+|melody(4)	|	|amiga	|Compiled but not tested
+|mercury(4)	|	|x68k	|Added, Done (*)
+|pad(4)		|	|	|Done
+|psgpam(4)	|	|luna68k|Added, Done (*)
+|repulse(4)	|	|amiga	|Compiled but not tested
+|sb(4)		|	|	|Work (*)
+|uaudio(4)	|	|	|Done
+|vs(4)		|	|x68k	|Done (*)
+|vsaudio(4)	|am7930	|vax	|Compiled but not tested
 
 Note:
 * mercury(4) は AUDIO2 で初サポート。
@@ -88,6 +88,7 @@ Note:
 * sys/dev/audio/audiodef.h … header file for audio.c (いるかなこれ?)
 * sys/dev/audio/audiovar.h … alternative to sys/dev/audiovar.h
 * sys/dev/audio/aucodec.[ch] … linear-to-linear conversion
+* sys/dev/audio/alaw.[ch] … alaw conversion (alternative to sys/dev/mulaw.[ch])
 * sys/dev/audio/mulaw.[ch] … mulaw conversion (alternative to sys/dev/mulaw.[ch])
 
 
