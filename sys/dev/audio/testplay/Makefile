@@ -19,12 +19,14 @@ CFLAGS=	-O2 -g -std=c99 -I. -I.. \
 	-Wno-unused-variable \
 	-Wno-unused-but-set-variable \
 
+all:	testplay.${MACHINE}
+
 testplay.${MACHINE}:	${OBJS}
 	${CC} -g -o $@ $> -lm -pthread -lutil
 
 .PHONY: clean
 clean:
-	rm -rf testplay.* *.o
+	rm -f testplay.* *.o *.core
 
 .PHONY: depend
 depend:
