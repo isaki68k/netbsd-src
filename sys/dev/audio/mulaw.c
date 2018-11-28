@@ -76,11 +76,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 //
 // 2) 14ビット計算方式 (MULAW_HQ_ENC)
 //	精度はフルスペック。
-//	サイズは8bit テーブルと比べて半分だが10倍遅い。
-//	amd64: 195 byte,           17.8 (P/E5400)  39.8 (Ryzen X2950) times/msec
-//	x68k:  156 byte,
-//
-//  (negative version)
+//	サイズは8bit テーブルと比べて半分以下だが10倍以上遅い。
 //	amd64: 136 byte,           14.8 (P/E5400)  43.8 (Ryzen X2950) times/msec
 //	x68k:  120 byte,
 //
@@ -255,38 +251,6 @@ audio_internal_to_mulaw32(audio_filter_arg_t *arg)
 	for (i = 0; i < sample_count; i++) {
 		uint8_t m;
 #if defined(MULAW_HQ_ENC)
-#if 0
-		/* 14bit (full spec) encoder */
-		int32_t val;
-		aint_t v;
-		int clz;
-
-		val = (int)(*s++);
-		MPRINTF("val32=%0*x ", AUDIO_INTERNAL_BITS / 4, val);
-		if (val < 0) {
-			val = ~val;
-			m = 0;
-		} else {
-			m = 0x80;
-		}
-		if (val > (8158 << (AUDIO_INTERNAL_BITS - 16 + 2)))
-			val = (8158 << (AUDIO_INTERNAL_BITS - 16 + 2));
-		val += 33 << (AUDIO_INTERNAL_BITS - 16 + 2);	/* bias */
-		MPRINTF("val32=%0*x ", AUDIO_INTERNAL_BITS / 4, val);
-
-		/* Count leading zero up to seven, excluding MSB which always zero. */
-		v = val << 1;
-		for (clz = 0; clz < 7; v <<= 1, clz++) {
-			if (v < 0)
-				break;
-		}
-		MPRINTF("clz=%d ", clz);
-
-		m |= clz << 4;
-		m |= ~(val >> (AUDIO_INTERNAL_BITS - 16 + 10 - clz)) & 0x0f;
-		MPRINTF("m=0x%02x\n", m);
-#else
-		// 負側を基準にして計算する方法
 		/* 14bit (full spec) encoder */
 		int16_t val;
 		int c;
@@ -318,8 +282,6 @@ audio_internal_to_mulaw32(audio_filter_arg_t *arg)
 		val <<= 1;
 
 		m += (val >> 12) & 0x0f; /* mantissa */
-#endif
-
 #else
 		/* 8bit encoder */
 		uint8_t val;
