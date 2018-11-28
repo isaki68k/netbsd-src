@@ -77,11 +77,11 @@ __KERNEL_RCSID(0, "$NetBSD$");
 // 2) 14ビット計算方式 (MULAW_HQ_ENC)
 //	精度はフルスペック。
 //	サイズは8bit テーブルと比べて半分だが10倍遅い。
-//	amd64: 195 byte,           32.7 (P/E5400)  79 (Ryzen X2950) times/msec
+//	amd64: 195 byte,           32.7 (P/E5400)  98.8 (Ryzen X2950) times/msec
 //	x68k:  156 byte,
 //
 //  (negative version)
-//	amd64: 136 byte,           25.0 (P/E5400)  79 (Ryzen X2950) times/msec
+//	amd64: 136 byte,           25.0 (P/E5400)  101.4 (Ryzen X2950) times/msec
 //	x68k:  120 byte,
 //
 //#define MULAW_HQ_ENC
