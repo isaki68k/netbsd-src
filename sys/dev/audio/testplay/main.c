@@ -774,19 +774,22 @@ perf_codec_slinear_to_mulaw()
 		exit(1);
 	}
 
+	{
+		int16_t v;
+		int16_t *p = (int16_t *)track->codec.srcbuf.mem;
+		printf("buffer capacity: %d\n", track->codec.srcbuf.capacity);
+		for (int i = 0; i < track->codec.srcbuf.capacity; i++) {
+			for (int ch = 0; ch < track->codec.srcbuf.fmt.channels; ch++) {
+				v = (int16_t)((uint16_t)(random() >> 3));
+				*p++ = v;
+			}
+		}
+	}
+
 	uint64_t count;
 	printf("slinear_to_mulaw: ");
 	fflush(stdout);
 
-	{
-		int16_t v = 0;
-		int16_t *p = (int16_t *)track->codec.srcbuf.mem;
-		for (count = 0; count < track->codec.srcbuf.capacity; count++) {
-			for (int ch = 0; ch < track->codec.srcbuf.fmt.channels; ch++) {
-				*p++ = v++;
-			}
-		}
-	}
 
 	setitimer(ITIMER_REAL, &it, NULL);
 	gettimeofday(&start, NULL);
