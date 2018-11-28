@@ -78,6 +78,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 //	精度はフルスペック。
 //	サイズは8bit テーブルと比べて半分だが10倍遅い。
 //	amd64: 195 byte,           32.7 times/msec
+//	amd64: 136 byte, (negative version)
 //	x68k:  156 byte,
 //
 //#define MULAW_HQ_ENC
@@ -251,6 +252,7 @@ audio_internal_to_mulaw32(audio_filter_arg_t *arg)
 	for (i = 0; i < sample_count; i++) {
 		uint8_t m;
 #if defined(MULAW_HQ_ENC)
+#if 0
 		/* 14bit (full spec) encoder */
 		int32_t val;
 		aint_t v;
@@ -280,6 +282,39 @@ audio_internal_to_mulaw32(audio_filter_arg_t *arg)
 		m |= clz << 4;
 		m |= ~(val >> (AUDIO_INTERNAL_BITS - 16 + 10 - clz)) & 0x0f;
 		MPRINTF("m=0x%02x\n", m);
+#else
+		// 負側を基準にして計算する方法
+		/* 14bit (full spec) encoder */
+		int16_t val;
+		val = (int16_t)(*s++ >> (AUDIO_INTERNAL_BITS - 16));
+		if (val < 0) {
+			m = 0;
+		} else {
+			val = ~val;
+			m = 0x80;
+		}
+		/* limit */
+		if (val < -8158 * 4)
+			val = -8158 * 4;
+		val -= 33 * 4;	/* bias */
+
+		// val の bit 14 から 0 になっているビットまでシフトしていく。
+		// シフトした回数だけ exponent を加算する。
+		// このブロックが終わったとき、val の上位4ビットがmantissa になっている。
+		val <<= 1;
+		for (int c = 0; c < 7; c++) {
+			if (val >= 0) {
+				break;
+			}
+
+			m += (1 << 4);	/* exponent */
+			val <<= 1;
+		}
+		val <<= 1;
+
+		m += (val >> 12) & 0x0f; /* mantissa */
+#endif
+
 #else
 		/* 8bit encoder */
 		uint8_t val;
