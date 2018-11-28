@@ -149,7 +149,9 @@ static void	*bba_allocm(void *, int, size_t);
 static void	bba_freem(void *, void *, size_t);
 static size_t	bba_round_buffersize(void *, int, size_t);
 static int	bba_get_props(void *);
+#if !defined(AUDIO2)
 static paddr_t	bba_mappage(void *, void *, off_t, int);
+#endif
 static int	bba_trigger_output(void *, void *, void *, int,
 				   void (*)(void *), void *,
 				   const audio_params_t *);
@@ -180,7 +182,9 @@ static const struct audio_hw_if sa_hw_if = {
 	.allocm			= bba_allocm,		/* md */
 	.freem			= bba_freem,		/* md */
 	.round_buffersize	= bba_round_buffersize,	/* md */
+#if !defined(AUDIO2)
 	.mappage		= bba_mappage,
+#endif
 	.get_props		= bba_get_props,
 	.trigger_output		= bba_trigger_output,	/* md */
 	.trigger_input		= bba_trigger_input,	/* md */
@@ -631,30 +635,6 @@ bba_get_props(void *addr)
 	return AUDIO_PROP_MMAP | am7930_get_props(addr);
 }
 
-static paddr_t
-bba_mappage(void *addr, void *mem, off_t offset, int prot)
-{
-	struct bba_softc *sc;
-	struct bba_mem **mp;
-	bus_dma_segment_t seg;
-	void *kva;
-
-	sc = addr;
-	kva = (void *)mem;
-	for (mp = &sc->sc_mem_head; *mp && (*mp)->kva != kva;
-	    mp = &(*mp)->next)
-		continue;
-	if (*mp == NULL || offset < 0) {
-		return -1;
-	}
-
-	seg.ds_addr = (*mp)->addr;
-	seg.ds_len = (*mp)->size;
-
-	return bus_dmamem_mmap(sc->sc_dmat, &seg, 1, offset,
-	    prot, BUS_DMA_WAITOK);
-}
-
 #if defined(AUDIO2)
 static int
 bba_init_format(void *addr, int setmode,
@@ -680,6 +660,30 @@ bba_init_format(void *addr, int setmode,
 	return 0;
 }
 #else
+static paddr_t
+bba_mappage(void *addr, void *mem, off_t offset, int prot)
+{
+	struct bba_softc *sc;
+	struct bba_mem **mp;
+	bus_dma_segment_t seg;
+	void *kva;
+
+	sc = addr;
+	kva = (void *)mem;
+	for (mp = &sc->sc_mem_head; *mp && (*mp)->kva != kva;
+	    mp = &(*mp)->next)
+		continue;
+	if (*mp == NULL || offset < 0) {
+		return -1;
+	}
+
+	seg.ds_addr = (*mp)->addr;
+	seg.ds_len = (*mp)->size;
+
+	return bus_dmamem_mmap(sc->sc_dmat, &seg, 1, offset,
+	    prot, BUS_DMA_WAITOK);
+}
+
 static stream_filter_t *
 bba_input_conv(struct audio_softc *sc, const audio_params_t *from,
 	       const audio_params_t *to)
