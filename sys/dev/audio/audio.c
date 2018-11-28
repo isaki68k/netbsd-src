@@ -3117,8 +3117,6 @@ audioctl_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 
 // ここに audiostart{pr} があった
 
-// audio_pint_silence いるかどうかは今後
-
 /*
  * Reallocate 'memblock' with specified 'bytes' if 'bytes' > 0.
  * Or free 'memblock' and return NULL if 'byte' is zero.
