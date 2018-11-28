@@ -1,10 +1,10 @@
 SRCS+=	\
 	main.c \
 	audio_dev.c \
-	../userland.c \
+	userland.c \
 	compat.c \
 
-OBJS=${SRCS:S,.c,.o,:S,../,,}
+OBJS=${SRCS:S/.c/.o/}
 
 CFLAGS=	-O2 -g -std=c99 -I. -I.. \
 	-DNAUDIO=1 \
