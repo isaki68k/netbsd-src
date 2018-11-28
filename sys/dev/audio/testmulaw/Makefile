@@ -1,5 +1,5 @@
 all:	testmulaw.c
-	gcc -I.. -I../netbsd testmulaw.c -o testmulaw
+	gcc -I.. -I../testplay testmulaw.c -o testmulaw
 
 clean:
 	rm -f testmulaw *.o *.core

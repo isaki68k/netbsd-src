@@ -20,7 +20,7 @@
 #include "alaw.c"
 #include "audio.c"
 #include "userland.c"
-#include "netbsd/compat.c"
+#include "compat.c"
 /* XXX うーん */
 struct audio_softc local_sc;
 

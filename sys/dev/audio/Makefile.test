@@ -1,0 +1,29 @@
+CC.x68k=	/var/obj/7-1/x68k/tools/bin/m68k--netbsdelf-gcc \
+		--sysroot=/var/obj/7-1/x68k/dst
+CXX.x68k=	/var/obj/7-1/x68k/tools/bin/m68k--netbsdelf-g++ \
+		--sysroot=/var/obj/7-1/x68k/dst
+CPPFLAGS+=	-g
+CPPFLAGS+=	-Wall -Wno-sign-compare -Wno-narrowing -Wformat
+LIBS+=	-lutil
+
+# 限りなくカーネル内と近いオブジェクトを生成するため。
+# 出来上がりオブジェクトをリンクするのとどっちがいいんだか。
+CPPFLAGS.amd64= \
+	-mno-red-zone \
+	-mno-mmx \
+	-mno-sse \
+	-mno-avx \
+	-fstack-protector \
+	-Wstack-protector \
+
+CPPFLAGS.x68k= \
+	-m68020-60 \
+	-Wa,-m68030 \
+	-Wa,-m68851 \
+	-ffreestanding \
+	-fno-reorder-blocks \
+
+# テストコードにはきつすぎる
+#	-Wmissing-prototypes \
+#	-Wstrict-prototypes \
+#	-Wold-style-definition \
