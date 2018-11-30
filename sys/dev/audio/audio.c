@@ -3193,7 +3193,7 @@ audio_realloc_usrbuf(audio_track_t *track, int newbufsize)
 
 	track->usrbuf.mem = (void *)vstart;
 	track->usrbuf.capacity = newbufsize;
-	memset(track->usrbuf.mem, 0x88, newvsize);
+	memset(track->usrbuf.mem, 0, newvsize);
 	return 0;
 
 	/* failure */
