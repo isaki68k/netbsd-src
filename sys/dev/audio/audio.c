@@ -533,8 +533,7 @@ static void audio_mixer_destroy(struct audio_softc *, audio_trackmixer_t *);
 static void audio_pmixer_start(struct audio_softc *, bool);
 static void audio_pmixer_process(struct audio_softc *, bool);
 static int  audio_pmixer_mixall(struct audio_softc *, bool);
-static int  audio_pmixer_mix_track(audio_trackmixer_t *, audio_track_t *,
-	int, int);
+static int  audio_pmixer_mix_track(audio_trackmixer_t *, audio_track_t *, int);
 static void audio_pmixer_output(struct audio_softc *);
 static int  audio_pmixer_halt(struct audio_softc *);
 static void audio_rmixer_start(struct audio_softc *);
@@ -5398,7 +5397,7 @@ audio_pmixer_mixall(struct audio_softc *sc, bool isintr)
 			continue;
 		}
 		// 合成
-		mixed = audio_pmixer_mix_track(mixer, track, req, mixed);
+		mixed = audio_pmixer_mix_track(mixer, track, mixed);
 	}
 	return mixed;
 }
@@ -5415,7 +5414,7 @@ audio_pmixer_mixall(struct audio_softc *sc, bool isintr)
  */
 static int
 audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track,
-	int req, int mixed)
+	int mixed)
 {
 	int count;
 	int sample_count;
