@@ -5481,7 +5481,8 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track,
 	// 現時点で outbuf に溜まってるやつを最大1ブロック分処理する。
 
 	// このトラックが処理済みならなにもしない
-	if (mixer->mixseq < track->seq) return mixed;
+	if (mixer->mixseq < track->seq)
+		return mixed;
 
 	count = auring_get_contig_used(&track->outbuf);
 	count = uimin(count, mixer->frames_per_block);
