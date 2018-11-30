@@ -5350,13 +5350,9 @@ audio_pmixer_mixall(struct audio_softc *sc, bool isintr)
 {
 	audio_trackmixer_t *mixer;
 	audio_file_t *f;
-	int req;
 	int mixed;
 
 	mixer = sc->sc_pmixer;
-
-	// XXX frames_per_block そのままのほうが分かりやすいような
-	req = mixer->frames_per_block;
 
 	mixed = 0;
 	SLIST_FOREACH(f, &sc->sc_files, entry) {
@@ -5387,7 +5383,8 @@ audio_pmixer_mixall(struct audio_softc *sc, bool isintr)
 			    track->usrbuf.capacity);
 		}
 
-		if (track->outbuf.used < req && track->usrbuf.used > 0) {
+		if (track->outbuf.used < mixer->frames_per_block &&
+		    track->usrbuf.used > 0) {
 			TRACET(track, "process");
 			audio_track_play(track);
 		}
