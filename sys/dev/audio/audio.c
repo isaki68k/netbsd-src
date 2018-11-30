@@ -5225,7 +5225,7 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
  *                v
  *    hwbuf     [............]          NBLKHW blocks ring buffer
  *
- * When playingback without MD filter:
+ * When playing back without MD filter:
  *
  *    mixsample [::::]                  wide-int 1 block (ring) buffer
  *                |
