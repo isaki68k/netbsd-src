@@ -2682,7 +2682,7 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 	case AUDIO_GETFD:
 		// 現在のディスクリプタが full duplex かどうかを返す。
 		/* Whether this descriptor (not the hardware) is full duplex. */
-		if (file->mode == (AUMODE_PLAY | AUMODE_RECORD)) {
+		if (file->ptrack && file->rtrack) {
 			fd = 1;
 		} else {
 			fd = 0;
@@ -2702,7 +2702,7 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		 * operation, I think.
 		 */
 		fd = *(int *)addr;
-		if (file->mode == (AUMODE_PLAY | AUMODE_RECORD)) {
+		if (file->ptrack && file->rtrack) {
 			if (fd == 0)
 				error = ENOTTY;
 		} else {
