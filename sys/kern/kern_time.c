@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_time.c,v 1.189 2016/11/11 15:29:36 njoly Exp $	*/
+/*	$NetBSD: kern_time.c,v 1.193 2018/11/29 17:40:12 maxv Exp $	*/
 
 /*-
  * Copyright (c) 2000, 2004, 2005, 2007, 2008, 2009 The NetBSD Foundation, Inc.
@@ -61,7 +61,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_time.c,v 1.189 2016/11/11 15:29:36 njoly Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_time.c,v 1.193 2018/11/29 17:40:12 maxv Exp $");
 
 #include <sys/param.h>
 #include <sys/resourcevar.h>
@@ -424,6 +424,7 @@ sys___gettimeofday50(struct lwp *l, const struct sys___gettimeofday50_args *uap,
 	struct timezone tzfake;
 
 	if (SCARG(uap, tp)) {
+		memset(&atv, 0, sizeof(atv));
 		microtime(&atv);
 		error = copyout(&atv, SCARG(uap, tp), sizeof(atv));
 		if (error)
@@ -602,6 +603,7 @@ timer_create1(timer_t *tid, clockid_t id, struct sigevent *evp,
 		pts = timers_alloc(p);
 
 	pt = pool_get(&ptimer_pool, PR_WAITOK);
+	memset(pt, 0, sizeof(*pt));
 	if (evp != NULL) {
 		if (((error =
 		    (*fetch_event)(evp, &pt->pt_ev, sizeof(pt->pt_ev))) != 0) ||
@@ -1067,6 +1069,7 @@ sys___getitimer50(struct lwp *l, const struct sys___getitimer50_args *uap,
 	struct itimerval aitv;
 	int error;
 
+	memset(&aitv, 0, sizeof(aitv));
 	error = dogetitimer(p, SCARG(uap, which), &aitv);
 	if (error)
 		return error;
@@ -1163,6 +1166,7 @@ dosetitimer(struct proc *p, int which, struct itimerval *itvp)
 		if (spare == NULL) {
 			mutex_spin_exit(&timer_lock);
 			spare = pool_get(&ptimer_pool, PR_WAITOK);
+			memset(spare, 0, sizeof(*spare));
 			goto retry;
 		}
 		pt = spare;

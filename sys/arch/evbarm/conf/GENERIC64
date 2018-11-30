@@ -1,5 +1,5 @@
 #
-#	$NetBSD: GENERIC64,v 1.37 2018/09/15 16:22:20 jmcneill Exp $
+#	$NetBSD: GENERIC64,v 1.67 2018/11/29 11:23:49 jmcneill Exp $
 #
 #	GENERIC ARM (aarch64) kernel
 #
@@ -58,13 +58,15 @@ makeoptions	DTS="
 "
 options 	CPU_CORTEXA53
 options 	CPU_CORTEXA57
+options 	CPU_THUNDERX
 options 	SOC_BCM2837
 options 	SOC_RK3328
 options 	SOC_RK3399
-options 	SOC_TEGRA210
 options 	SOC_SUN50I_A64
 options 	SOC_SUN50I_H5
 options 	SOC_SUN50I_H6
+options 	SOC_TEGRA210
+#options 	SOC_THUNDERX
 options 	SOC_VIRT
 options 	MULTIPROCESSOR
 
@@ -81,20 +83,39 @@ options 	VERBOSE_INIT_ARM # verbose bootstrapping messages
 #options 	EARLYCONS=rk3399, CONSADDR=0xff1a0000
 #options 	EARLYCONS=sunxi, CONSADDR=0x01c28000
 #options 	EARLYCONS=tegra, CONSADDR=0x70006000
+#options 	EARLYCONS=thunderx, CONSADDR=0x87e024000000
 #options 	EARLYCONS=virt
+
+# Kernel Address Sanitizer (kASan).
+#makeoptions 	KASAN=1		# Kernel Address Sanitizer
+#options 	KASAN
 
 makeoptions	DEBUG="-g"	# compile full symbol table
 makeoptions	COPY_SYMTAB=1
 
 config		netbsd		root on ? type ?
 
+options 	COMPAT_NETBSD32
+options 	EXEC_ELF32
+
+# EFI runtime support
+options 	EFI_RUNTIME
+
 # Device tree support
 armfdt0		at root
 simplebus*	at fdt? pass 0
 
+# ACPI support
+acpifdt*	at fdt? pass 1
+acpi*		at acpifdt?
+acpibut*	at acpi?
+acpiged*	at acpi?
+acpilid*	at acpi?
+
 # CPUs
 cpus*		at fdt? pass 0
 cpu*		at fdt? pass 0
+cpu*		at acpi?
 
 # Performance monitors
 armpmu*		at fdt?
@@ -119,10 +140,12 @@ syscon*		at fdt? pass 1		# Generic System Controller
 
 # Timer
 gtmr*		at fdt? pass 1		# ARM Generic Timer
+gtmr*		at acpi?
 armgtmr0	at gtmr?
 tegratimer*	at fdt?			# Timers
 
 # Watchdog
+sbsawdt*	at acpi?		# ARM SBSA-compliant watchdog
 sunxiwdt*	at fdt?			# Allwinner watchdog
 watchdog*	at fdt?			# Broadcom BCM283x watchdog
 
@@ -130,8 +153,10 @@ watchdog*	at fdt?			# Broadcom BCM283x watchdog
 bcmicu*		at fdt? pass 1		# Broadcom BCM283x ICU
 tegralic*	at fdt? pass 1		# NVIDIA Tegra LIC
 gic*		at fdt? pass 1		# ARM GICv2
+gic*		at acpi?
 armgic0		at gic?
 gicvthree*	at fdt? pass 1		# ARM GICv3
+gicvthree*	at acpi?
 sunxinmi*	at fdt? pass 2		# Allwinner NMI / R_INTC
 
 # Memory controller
@@ -140,6 +165,8 @@ tegramc*	at fdt?	pass 4		# NVIDIA Tegra MC
 # Firmware devices
 bcmmbox*	at fdt?			# Broadcom VideoCore IV mailbox
 vcmbox*		at bcmmbox?
+qemufwcfg*	at fdt?			# QEMU Firmware Configuration device
+qemufwcfg*	at acpi?
 
 # DMA controller
 bcmdmac*	at fdt?			# Broadcom BCM283x DMA controller
@@ -170,7 +197,8 @@ tegra210car*	at fdt? pass 3		# NVIDIA Tegra CAR (T210)
 
 # GPIO controller
 bcmgpio*	at fdt?			# Broadcom BCM283x GPIO
-pl061gpio*	at fdt?			# ARM PrimeCell PL061 GPIO
+plgpio*		at fdt?			# ARM PrimeCell PL061 GPIO
+plgpio*		at acpi?
 sunxigpio*	at fdt? pass 3		# Allwinner GPIO
 tegragpio*	at fdt? pass 2		# NVIDIA Tegra GPIO
 rkgpio*		at rkiomux?		# Rockchip GPIO
@@ -189,8 +217,9 @@ tegra210xphy*	at tegra210xpad?
 
 # PCIE
 pcihost*	at fdt?			# Generic PCI host controller
+acpipchb*	at acpi?		# ACPI PCIe host bridge
 tegrapcie0	at fdt?			# NVIDIA Tegra PCIE
-pci*		at pcibus? 
+pci*		at pcibus?
 ppb*		at pci? dev ? function ?
 pci*		at ppb?
 
@@ -235,9 +264,12 @@ ukphy*		at mii? phy ?		# generic unknown PHYs
 # UART
 com*		at fdt?	pass 4		# UART
 plcom*		at fdt?	pass 4		# ARM PL011 UART
+plcom*		at acpi?
 
 # I2C controllers
 bsciic*		at fdt?			# Broadcom BCM283x Serial Control
+dwiic*		at fdt?			# Designware I2C
+dwiic*		at acpi?
 rkiic*		at fdt?			# Rockchip I2C
 sunxirsb*	at fdt?			# Allwinner RSB
 sunxitwi*	at fdt?			# Allwinner TWI
@@ -247,6 +279,7 @@ iic*		at i2cbus?
 # I2C devices
 titemp*		at iic?
 seeprom*	at iic?
+spdmem*		at iic?			# memory module SPD EEPROM decoder
 as3722pmic*	at iic?
 as3722reg*	at as3722pmic?
 axppmic*	at iic?			# X-Powers AXP Power Management IC
@@ -260,8 +293,11 @@ tcagpio*	at iic?
 
 # Random number generators
 bcmrng*		at fdt?			# Broadcom BCM283x RNG
+amdccp*		at fdt?			# AMD Cryptograhic Coprocessor RNG
+amdccp*		at acpi?
 
 # RTC
+plrtc*		at fdt?			# ARM PrimeCell RTC
 sunxirtc*	at fdt?			# Allwinner RTC
 tegrartc*	at fdt?			# NVIDIA Tegra RTC
 
@@ -280,10 +316,15 @@ ld*		at sdmmc?
 
 # SATA
 ahcisata*	at fdt?			# AHCI SATA
+ahcisata*	at acpi?
 atabus*		at ata?
 atapibus*	at atapi?
 wd*		at atabus? drive ?
 cd*		at atapibus? drive ?
+
+# NVMe
+nvme*		at pci? dev ? function ?
+ld*		at nvme? nsid ?
 
 # SPI controllers
 bcmspi*		at fdt?			# Broadcom BCM283x SPI
@@ -349,14 +390,30 @@ tegrausbphy*	at fdt?			# NVIDIA Tegra USB PHY
 dwctwo*		at fdt?			# Designware USB DRD
 ehci*		at fdt?			# EHCI
 ehci*		at pci?			# EHCI
+ehci*		at acpi?		# EHCI
 motg*		at fdt?			# Mentor Graphics USB OTG
 ohci*		at fdt?			# OHCI
 ohci*		at pci?			# OHCI
 xhci*		at fdt?			# XHCI
 xhci*		at pci?			# XHCI
+xhci*		at acpi?		# XHCI
 usb*		at usbus?
 
 include "dev/usb/usbdevices.config"
 midi*		at midibus?
+
+# Virtio devices
+virtio*		at fdt?			# Virtio MMIO device
+virtio*		at acpi?
+virtio*		at pci? dev ? function ?
+#viomb*		at virtio?		# Virtio memory balloon device
+ld*		at virtio?		# Virtio disk device
+vioif*		at virtio?		# Virtio network device
+viornd*		at virtio?		# Virtio entropy device
+vioscsi*	at virtio?		# Virtio SCSI device
+
+# SCSI bus support
+scsibus*	at scsi?
+sd*		at scsibus? target ? lun ?	# SCSI disk drives
 
 cinclude "arch/evbarm/conf/GENERIC64.local"

@@ -1,4 +1,4 @@
-/* $NetBSD: cpu.h,v 1.8 2018/09/10 11:05:12 ryo Exp $ */
+/* $NetBSD: cpu.h,v 1.12 2018/11/24 22:49:35 skrll Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -42,7 +42,9 @@
 
 #if defined(_KERNEL) || defined(_KMEMUSER)
 #include <sys/evcnt.h>
+
 #include <aarch64/frame.h>
+#include <aarch64/armreg.h>
 
 struct clockframe {
 	struct trapframe cf_tf;
@@ -52,6 +54,11 @@ struct clockframe {
 #define CLKF_USERMODE(cf)	((((cf)->cf_tf.tf_spsr) & 0x0f) == 0)
 #define CLKF_PC(cf)		((cf)->cf_tf.tf_pc)
 #define CLKF_INTR(cf)		((void)(cf), curcpu()->ci_intr_depth > 1)
+
+/*
+ * LWP_PC: Find out the program counter for the given lwp.
+ */
+#define LWP_PC(l)		((l)->l_md.md_utf->tf_pc)
 
 #include <sys/cpu_data.h>
 #include <sys/device_if.h>
@@ -85,8 +92,10 @@ struct cpu_info {
 	u_int ci_gic_redist;	/* GICv3 redistributor index */
 	uint64_t ci_gic_sgir;	/* GICv3 SGIR target */
 
-	uint64_t ci_midr;	/* MIDR_EL1 */
-	uint64_t ci_mpidr;	/* MPIDR_EL1 */
+	/* ACPI */
+	uint64_t ci_acpiid;	/* ACPI Processor Unique ID */
+
+	struct aarch64_sysctl_cpu_id ci_id;
 
 	struct aarch64_cache_info *ci_cacheinfo;
 
@@ -103,10 +112,12 @@ curcpu(void)
 
 #define setsoftast(ci)		atomic_or_uint(&(ci)->ci_astpending, __BIT(0))
 #define cpu_signotify(l)	setsoftast((l)->l_cpu)
+
 void cpu_set_curpri(int);
 void cpu_proc_fork(struct proc *, struct proc *);
 void cpu_need_proftick(struct lwp *l);
 void cpu_boot_secondary_processors(void);
+void cpu_mpstart(void);
 void cpu_hatch(struct cpu_info *);
 
 extern struct cpu_info *cpu_info[];

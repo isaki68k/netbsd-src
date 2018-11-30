@@ -1,4 +1,4 @@
-/* $NetBSD: wsdisplay.c,v 1.146 2018/09/18 06:19:28 mrg Exp $ */
+/* $NetBSD: wsdisplay.c,v 1.148 2018/11/15 13:50:51 jmcneill Exp $ */
 
 /*
  * Copyright (c) 1996, 1997 Christopher G. Demetriou.  All rights reserved.
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: wsdisplay.c,v 1.146 2018/09/18 06:19:28 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: wsdisplay.c,v 1.148 2018/11/15 13:50:51 jmcneill Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_wsdisplay_compat.h"
@@ -1389,11 +1389,6 @@ wsdisplay_internal_ioctl(struct wsdisplay_softc *sc, struct wsscreen *scr,
 		if (!error && WSSCREEN_HAS_EMULATOR(scr)) {
 			(*scr->scr_dconf->wsemul->reset)
 				(scr->scr_dconf->wsemulcookie, WSEMUL_SYNCFONT);
-#ifdef DEBUG
-			printf("resize: %d %d\n",
-			    scr->scr_dconf->scrdata->nrows,
-			    scr->scr_dconf->scrdata->ncols); 
-#endif
 			if (scr->scr_dconf->wsemul->resize) {
 				(*scr->scr_dconf->wsemul->resize)
 					(scr->scr_dconf->wsemulcookie,
@@ -2125,6 +2120,13 @@ wsdisplay_reset(device_t dv, enum wsdisplay_resetops op)
 		wsdisplay_closescreen(sc, scr);
 		break;
 	}
+}
+
+
+bool
+wsdisplay_isconsole(struct wsdisplay_softc *sc)
+{
+	return sc->sc_isconsole;
 }
 
 /*

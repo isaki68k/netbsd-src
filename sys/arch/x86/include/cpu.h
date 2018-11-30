@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.h,v 1.97 2018/08/22 01:05:23 msaitoh Exp $	*/
+/*	$NetBSD: cpu.h,v 1.100 2018/11/18 23:50:48 cherry Exp $	*/
 
 /*
  * Copyright (c) 1990 The Regents of the University of California.
@@ -92,6 +92,15 @@ struct cpu_tss {
 	struct i386tss tss;
 	uint8_t iomap[IOMAPSIZE];
 } __packed;
+
+/*
+ * Arguments to hardclock, softclock and statclock
+ * encapsulate the previous machine state in an opaque
+ * clockframe; for now, use generic intrframe.
+ */
+struct clockframe {
+	struct intrframe cf_if;
+};
 
 /*
  * a bunch of this belongs in cpuvar.h; move it later..
@@ -273,6 +282,13 @@ struct cpu_info {
 	/* Xen periodic timer interrupt handle.  */
 	struct intrhand	*ci_xen_timer_intrhand;
 
+	/*
+	 * Clockframe for timer interrupt handler.
+	 * Saved at entry via event callback.
+	 */
+	vaddr_t ci_xen_clockf_pc; /* RIP at last event interrupt */
+	bool ci_xen_clockf_usermode; /* Was the guest in usermode ? */
+
 	/* Event counters for various pathologies that might happen.  */
 	struct evcnt	ci_xen_cpu_tsc_backwards_evcnt;
 	struct evcnt	ci_xen_tsc_delta_negative_evcnt;
@@ -378,15 +394,6 @@ void cpu_speculation_init(struct cpu_info *);
 #define	curpcb			((struct pcb *)lwp_getpcb(curlwp))
 
 /*
- * Arguments to hardclock, softclock and statclock
- * encapsulate the previous machine state in an opaque
- * clockframe; for now, use generic intrframe.
- */
-struct clockframe {
-	struct intrframe cf_if;
-};
-
-/*
  * Give a profiling tick to the current process when the user profiling
  * buffer pages are invalid.  On the i386, request an ast to send us
  * through trap(), marking the proc as needing a profiling tick.
@@ -440,6 +447,7 @@ extern int x86_fpu_save;
 #define	FPU_SAVE_XSAVEOPT	3
 extern unsigned int x86_fpu_save_size;
 extern uint64_t x86_xsave_features;
+extern uint32_t x86_fpu_mxcsr_mask;
 extern bool x86_fpu_eager;
 
 extern void (*x86_cpu_idle)(void);

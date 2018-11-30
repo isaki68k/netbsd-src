@@ -31,7 +31,7 @@
 #if 0
 __FBSDID("$FreeBSD: head/sys/dev/ena/ena.c 333456 2018-05-10 09:37:54Z mw $");
 #endif
-__KERNEL_RCSID(0, "$NetBSD: if_ena.c,v 1.5 2018/06/26 06:48:01 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_ena.c,v 1.9 2018/11/28 21:31:32 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -1593,26 +1593,41 @@ ena_rx_checksum(struct ena_ring *rx_ring, struct ena_com_rx_ctx *ena_rx_ctx,
     struct mbuf *mbuf)
 {
 
-	/* if IP and error */
-	if (unlikely((ena_rx_ctx->l3_proto == ENA_ETH_IO_L3_PROTO_IPV4) &&
-	    ena_rx_ctx->l3_csum_err)) {
-		/* ipv4 checksum error */
-		mbuf->m_pkthdr.csum_flags = 0;
-		counter_u64_add(rx_ring->rx_stats.bad_csum, 1);
-		ena_trace(ENA_DBG, "RX IPv4 header checksum error");
-		return;
-	}
-
-	/* if TCP/UDP */
-	if ((ena_rx_ctx->l4_proto == ENA_ETH_IO_L4_PROTO_TCP) ||
-	    (ena_rx_ctx->l4_proto == ENA_ETH_IO_L4_PROTO_UDP)) {
-		if (ena_rx_ctx->l4_csum_err) {
-			/* TCP/UDP checksum error */
-			mbuf->m_pkthdr.csum_flags = M_CSUM_IPv4_BAD;
+	/* IPv4 */
+	if ((ena_rx_ctx->l3_proto == ENA_ETH_IO_L3_PROTO_IPV4)) {
+		mbuf->m_pkthdr.csum_flags |= M_CSUM_IPv4;
+		if (ena_rx_ctx->l3_csum_err) {
+			/* ipv4 checksum error */
+			mbuf->m_pkthdr.csum_flags |= M_CSUM_IPv4_BAD;
 			counter_u64_add(rx_ring->rx_stats.bad_csum, 1);
-			ena_trace(ENA_DBG, "RX L4 checksum error");
-		} else {
-			mbuf->m_pkthdr.csum_flags = M_CSUM_IPv4;
+			ena_trace(ENA_DBG, "RX IPv4 header checksum error");
+			return;
+		}
+
+		/*  TCP/UDP */
+		if ((ena_rx_ctx->l4_proto == ENA_ETH_IO_L4_PROTO_TCP) ||
+		    (ena_rx_ctx->l4_proto == ENA_ETH_IO_L4_PROTO_UDP)) {
+			mbuf->m_pkthdr.csum_flags |= (ena_rx_ctx->l4_proto == ENA_ETH_IO_L4_PROTO_TCP) ? M_CSUM_TCPv4 : M_CSUM_UDPv4;
+			if (ena_rx_ctx->l4_csum_err) {
+				/* TCP/UDP checksum error */
+				mbuf->m_pkthdr.csum_flags |= M_CSUM_TCP_UDP_BAD;
+				counter_u64_add(rx_ring->rx_stats.bad_csum, 1);
+				ena_trace(ENA_DBG, "RX L4 checksum error");
+			}
+		}
+	}
+	/* IPv6 */
+	else if ((ena_rx_ctx->l3_proto == ENA_ETH_IO_L3_PROTO_IPV6)) {
+		/*  TCP/UDP */
+		if ((ena_rx_ctx->l4_proto == ENA_ETH_IO_L4_PROTO_TCP) ||
+		    (ena_rx_ctx->l4_proto == ENA_ETH_IO_L4_PROTO_UDP)) {
+			mbuf->m_pkthdr.csum_flags |= (ena_rx_ctx->l4_proto == ENA_ETH_IO_L4_PROTO_TCP) ? M_CSUM_TCPv6 : M_CSUM_UDPv6;
+			if (ena_rx_ctx->l4_csum_err) {
+				/* TCP/UDP checksum error */
+				mbuf->m_pkthdr.csum_flags |= M_CSUM_TCP_UDP_BAD;
+				counter_u64_add(rx_ring->rx_stats.bad_csum, 1);
+				ena_trace(ENA_DBG, "RX L4 checksum error");
+			}
 		}
 	}
 }
@@ -1874,8 +1889,8 @@ ena_enable_msix(struct ena_adapter *adapter)
 	    max_type) != 0) {
 		aprint_error_dev(adapter->pdev,
 		    "failed to allocate interrupt\n");
-                return ENOSPC;
-        }
+		return ENOSPC;
+	}
 
 	adapter->sc_nintrs = counts[PCI_INTR_TYPE_MSIX];
 
@@ -2530,6 +2545,9 @@ ena_setup_ifnet(device_t pdev, struct ena_adapter *adapter,
 	    ena_media_change, ena_media_status);
 	ifmedia_add(&adapter->media, IFM_ETHER | IFM_AUTO, 0, NULL);
 	ifmedia_set(&adapter->media, IFM_ETHER | IFM_AUTO);
+
+	if_attach(ifp);
+	if_deferred_start_init(ifp, NULL);
 
 	ether_ifattach(ifp, adapter->mac_addr);
 
@@ -3611,7 +3629,7 @@ ena_attach(device_t parent, device_t self, void *aux)
 	struct pci_attach_args *pa = aux;
 	struct ena_com_dev_get_features_ctx get_feat_ctx;
 	static int version_printed;
-	struct ena_adapter *adapter = device_private(parent);
+	struct ena_adapter *adapter = device_private(self);
 	struct ena_com_dev *ena_dev = NULL;
 	uint16_t tx_sgl_size = 0;
 	uint16_t rx_sgl_size = 0;

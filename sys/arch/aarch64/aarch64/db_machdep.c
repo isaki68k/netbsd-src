@@ -1,4 +1,4 @@
-/* $NetBSD: db_machdep.c,v 1.8 2018/09/15 19:47:48 jakllsch Exp $ */
+/* $NetBSD: db_machdep.c,v 1.11 2018/11/28 19:13:15 ryo Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -30,7 +30,11 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: db_machdep.c,v 1.8 2018/09/15 19:47:48 jakllsch Exp $");
+__KERNEL_RCSID(0, "$NetBSD: db_machdep.c,v 1.11 2018/11/28 19:13:15 ryo Exp $");
+
+#ifdef _KERNEL_OPT
+#include "opt_compat_netbsd32.h"
+#endif
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -180,6 +184,31 @@ db_regs_t ddb_regs;
 void
 dump_trapframe(struct trapframe *tf, void (*pr)(const char *, ...))
 {
+#ifdef COMPAT_NETBSD32
+	if (tf->tf_spsr & SPSR_A32) {
+		(*pr)("    pc=%016"PRIxREGISTER",   spsr=%016"PRIxREGISTER
+		    " (AArch32)\n", tf->tf_pc, tf->tf_spsr);
+		(*pr)("   esr=%016"PRIxREGISTER",    far=%016"PRIxREGISTER"\n",
+		    tf->tf_esr, tf->tf_far);
+		(*pr)("    r0=%016"PRIxREGISTER",     r1=%016"PRIxREGISTER"\n",
+		    tf->tf_reg[0], tf->tf_reg[1]);
+		(*pr)("    r2=%016"PRIxREGISTER",     r3=%016"PRIxREGISTER"\n",
+		    tf->tf_reg[2], tf->tf_reg[3]);
+		(*pr)("    r4=%016"PRIxREGISTER",     r5=%016"PRIxREGISTER"\n",
+		    tf->tf_reg[4], tf->tf_reg[5]);
+		(*pr)("    r6=%016"PRIxREGISTER",     r7=%016"PRIxREGISTER"\n",
+		    tf->tf_reg[6], tf->tf_reg[7]);
+		(*pr)("    r8=%016"PRIxREGISTER",     r9=%016"PRIxREGISTER"\n",
+		    tf->tf_reg[8], tf->tf_reg[9]);
+		(*pr)("   r10=%016"PRIxREGISTER",    r11=%016"PRIxREGISTER"\n",
+		    tf->tf_reg[10], tf->tf_reg[11]);
+		(*pr)("   r12=%016"PRIxREGISTER", sp=r13=%016"PRIxREGISTER"\n",
+		    tf->tf_reg[12], tf->tf_reg[13]);
+		(*pr)("lr=r14=%016"PRIxREGISTER", pc=r15=%016"PRIxREGISTER"\n",
+		    tf->tf_reg[14], tf->tf_pc);
+		return;
+	}
+#endif
 	(*pr)("    pc=%016"PRIxREGISTER",   spsr=%016"PRIxREGISTER"\n",
 	    tf->tf_pc, tf->tf_spsr);
 	(*pr)("   esr=%016"PRIxREGISTER",    far=%016"PRIxREGISTER"\n",
@@ -328,7 +357,7 @@ db_md_sysreg_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
 #define SHOW_ARMREG(x)	\
 	db_printf("%-16s = %016" PRIx64 "\n", #x, reg_ ## x ## _read())
 
-	SHOW_ARMREG(cbar_el1);
+//	SHOW_ARMREG(cbar_el1);	/* Cortex */
 	SHOW_ARMREG(ccsidr_el1);
 	SHOW_ARMREG(clidr_el1);
 	SHOW_ARMREG(cntfrq_el0);
@@ -368,7 +397,7 @@ db_md_sysreg_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
 	SHOW_ARMREG(id_aa64pfr0_el1);
 	SHOW_ARMREG(id_aa64pfr1_el1);
 	SHOW_ARMREG(isr_el1);
-	SHOW_ARMREG(l2ctlr_el1);
+//	SHOW_ARMREG(l2ctlr_el1);	/* Cortex */
 	SHOW_ARMREG(mair_el1);
 	SHOW_ARMREG(mdscr_el1);
 	SHOW_ARMREG(midr_el1);
@@ -388,6 +417,7 @@ db_md_sysreg_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
 	SHOW_ARMREG(spsr_el1);
 	SHOW_ARMREG(tcr_el1);
 	SHOW_ARMREG(tpidr_el0);
+	SHOW_ARMREG(tpidrro_el0);
 	SHOW_ARMREG(tpidr_el1);
 	SHOW_ARMREG(ttbr0_el1);
 	SHOW_ARMREG(ttbr1_el1);
@@ -731,14 +761,16 @@ void
 db_md_switch_cpu_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
     const char *modif)
 {
-	if (addr >= ncpu) {
-		db_printf("cpu %"DDB_EXPR_FMT"d out of range", addr);
+	u_int cpuno = (u_int)addr;
+
+	if (!have_addr || (cpuno >= ncpu)) {
+		db_printf("cpu: 0..%d\n", ncpu - 1);
 		return;
 	}
 
-	struct cpu_info *new_ci = cpu_lookup(addr);
+	struct cpu_info *new_ci = cpu_lookup(cpuno);
 	if (new_ci == NULL) {
-		db_printf("cpu %"DDB_EXPR_FMT"d does not exist", addr);
+		db_printf("cpu %u does not exist", cpuno);
 		return;
 	}
 

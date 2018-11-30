@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.209 2018/08/28 03:41:38 riastradh Exp $
+#	$NetBSD: Makefile,v 1.213 2018/11/27 06:31:15 pgoyette Exp $
 
 .include <bsd.own.mk>
 
@@ -202,6 +202,10 @@ SUBDIR+=	tprof_x86
 SUBDIR+=	vmt
 .endif
 
+.if ${MACHINE_ARCH} == "x86_64"
+SUBDIR+=	nvmm
+.endif
+
 .if ${MACHINE_ARCH} == "i386" || \
     ${MACHINE_ARCH} == "x86_64"
 SUBDIR+=	ubsec		# Builds on architectures with PCI bus
@@ -254,6 +258,7 @@ SUBDIR+=	wmimsi
 .endif
 
 .if ${MACHINE_CPU} == "arm" \
+    || ${MACHINE_ARCH} == "sparc64" \
     || (!empty(MACHINE_ARCH:Mmips64*) && !defined(BSD_MK_COMPAT_FILE))
 SUBDIR+=	compat_netbsd32
 SUBDIR+=	compat_netbsd32_mqueue
