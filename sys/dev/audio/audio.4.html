@@ -412,6 +412,15 @@ to &lsquo;&lsquo;catch up&rsquo;&rsquo; in time to the
 current audio block before any more process-provided samples
 will be played. If a reading process does not call read(2)
 frequently enough, it will simply miss samples.</p>
+<p class=a2 style="margin-left:8%">
+この段落は
+If a writing
+process does not call write(2) frequently enough to provide
+samples at the pace the hardware consumes them silence is
+inserted.
+If a reading process does not call read(2)
+frequently enough, it will simply miss samples.
+としたい (AUMODE_PLAY_ALL に関する文を削除)。</p>
 
 <p style="margin-left:8%; margin-top: 1em">The audio device
 is normally accessed with read(2) or write(2) calls, but it
@@ -782,6 +791,7 @@ encoded in the audio_info structure.</p>
 #define AUMODE_PLAY	0x01
 #define AUMODE_RECORD	0x02
 #define AUMODE_PLAY_ALL	0x04		/* do not do real-time correction */
+<span class=a2>#define AUMODE_PLAY_ALL	0x04		/* Not used anymore in AUDIO2 */</span>
 } audio_info_t;</pre>
 </p>
 
@@ -810,18 +820,14 @@ mode には何がセットされていてもこの ioctl がエラーにはな�
 ところだが、従来との互換性を考えて ioctl はエラーにはしない。
 </p>
 <p class=a2 style="margin-left:20%">
-AUDIO2 ではオープン後の録音再生方向の変更を認めていないので、
-AUDIO_SETINFO の mode は、
-再生モードが有効な場合に AUMODE_PLAY_ALL ビットの状態を適用することだけ、
-とする。
-AUMODE_PLAY_ALL ビット以外のビットは無視する。
-また再生が有効でない場合にもこの指定値は無視する。
+AUDIO2 ではオープン後の録音再生方向の変更を認めておらず、
+また AUMODE_PLAY_ALL ビットも意味を持たなくなったため、
+AUDIO_SETINFO の mode 設定は単に無視される。
 </p>
 <p class=a2 style="margin-left:20%">
 AUDIO_GETINFO で取得できるのは、
 オープン時に確定した AUMODE_PLAY, AUMODE_RECORD,
-(AUMODE_PLAY | AUMODE_RECORD) のいずれかによる録音再生モードと、
-AUMODE_PLAY が立っている時に AUMODE_PLAY_ALL ビットが立っているかどうかである。
+(AUMODE_PLAY | AUMODE_RECORD) のいずれかによる録音再生モードのみ。
 </p>
 
 <p style="margin-left:20%; margin-top: 1em"><i>hiwat</i>

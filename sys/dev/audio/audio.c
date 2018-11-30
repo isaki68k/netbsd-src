@@ -2,7 +2,6 @@
 // C++ style comment is unformal comment (that is, comment for comment).
 
 // TODO:
-// x Tune up PLAY(_SYNC) mode?
 // x Restore mmap.
 // x Restore NetBSD8-like track volume control on mixerctl?
 // x Restore NetBSD8-like multiuser mode.
@@ -1841,7 +1840,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	af->sc = sc;
 	af->dev = dev;
 	if ((flags & FWRITE) != 0 && audio_can_playback(sc))
-		af->mode |= AUMODE_PLAY | AUMODE_PLAY_ALL;
+		af->mode |= AUMODE_PLAY;
 	if ((flags & FREAD) != 0 && audio_can_capture(sc))
 		af->mode |= AUMODE_RECORD;
 	if (af->mode == 0) {
@@ -1883,7 +1882,6 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 		ai.play.channels      = bell->channels;
 		ai.play.precision     = bell->precision;
 		ai.play.pause         = false;
-		af->mode &= ~AUMODE_PLAY_ALL;
 	} else if (ISDEVAUDIO(dev)) {
 		// /dev/audio は毎回初期化
 		ai.play.sample_rate   = audio_default.sample_rate;
@@ -2366,8 +2364,6 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 	audio_ring_t *usrbuf;
 	audio_ring_t *outbuf;
 	int error;
-	int framesize;
-	int count;
 
 	track = file->ptrack;
 	KASSERT(track);
@@ -2444,22 +2440,6 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 				break;
 		}
 
-		// 前回落としたフレーム分を回復運転のため取り去る
-		// write されるバイトバッファがフレーム境界に揃っている
-		// 保証はないので、usrbuf にコピーした後でなければならない
-		// XXX 出来れば wait する前、あるいは uiomove する前に
-		//     drop を計算してしまったほうがいいはず。
-		if ((track->mode & AUMODE_PLAY_ALL) == 0 &&
-		    track->playdrop > 0) {
-			framesize = frametobyte(&track->inputfmt, 1);
-			count = MIN(usrbuf->used / framesize, track->playdrop);
-			auring_take(usrbuf, count * framesize);
-			track->playdrop -= count;
-			TRACET(track, "drop %d -> usr=%d/%d/H%d",
-			    count * framesize,
-			    usrbuf->head, usrbuf->used, track->usrbuf_usedhigh);
-		}
-
 		if (track->is_pause)
 			continue;
 
@@ -2478,8 +2458,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 		// XXX うーんなんだこれ
 		if (sc->sc_pbusy == 0 &&
 		    track->outbuf.used >= track->mixer->frames_per_block * 2) {
-			bool force = ((track->mode & AUMODE_PLAY_ALL) == 0);
-			audio_pmixer_start(sc, force);
+			audio_pmixer_start(sc, false);
 		}
 	}
 
@@ -2704,8 +2683,7 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 	case AUDIO_GETFD:
 		// 現在のディスクリプタが full duplex かどうかを返す。
 		/* Whether this descriptor (not the hardware) is full duplex. */
-		if ((file->mode & (AUMODE_PLAY | AUMODE_RECORD)) ==
-		    (AUMODE_PLAY | AUMODE_RECORD)) {
+		if (file->mode == (AUMODE_PLAY | AUMODE_RECORD)) {
 			fd = 1;
 		} else {
 			fd = 0;
@@ -2725,8 +2703,7 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		 * operation, I think.
 		 */
 		fd = *(int *)addr;
-		if ((file->mode & (AUMODE_PLAY | AUMODE_RECORD)) ==
-		    (AUMODE_PLAY | AUMODE_RECORD)) {
+		if (file->mode == (AUMODE_PLAY | AUMODE_RECORD)) {
 			if (fd == 0)
 				error = ENOTTY;
 		} else {
@@ -3217,7 +3194,7 @@ audio_realloc_usrbuf(audio_track_t *track, int newbufsize)
 
 	track->usrbuf.mem = (void *)vstart;
 	track->usrbuf.capacity = newbufsize;
-	memset(track->usrbuf.mem, 0, newvsize);
+	memset(track->usrbuf.mem, 0x88, newvsize);
 	return 0;
 
 	/* failure */
@@ -3677,7 +3654,6 @@ audio_track_freq_down(audio_filter_arg_t *arg)
 // 初期化できれば 0 を返して *trackp に初期化済みのトラックを格納します。
 // 初期化できなければ errno を返し、*trackp は変更しません。
 // mode は再生なら AUMODE_PLAY、録音なら AUMODE_RECORD を指定します。
-// 単に録音再生のどちら側かだけなので AUMODE_PLAY_ALL は関係ありません。
 // trackp には sc_files に繋がっている file 構造体内のポインタを直接
 // 指定してはいけません。呼び出し側で一旦受け取って sc_intr_lock を
 // とってから繋ぎ変えてください。
@@ -3686,7 +3662,6 @@ audio_track_freq_down(audio_filter_arg_t *arg)
  * If successful, it stores the allocated and initialized track in *trackp
  * and return 0.  Otherwise, it returns errno without modifying *trackp.
  * For mode, specify AUMODE_PLAY for playback, AUMODE_RECORD for record.
- * AUMODE_PLAY_ALL does not matter here.
  * Don't specify the track within the file structure linked from sc->sc_files.
  */
 int
@@ -4627,42 +4602,16 @@ audio_track_play(audio_track_t *track)
 	bytes = count * framesize;
 
 	// 今回処理するバイト数(bytes) が1ブロックに満たない場合、
-	//  drain AUMODE
-	//  ----- ------
-	//  no    PLAY  : 溜まっていないのでここで帰る
-	//  no    SYNC  : dropframes加算する。  リングバッファリセット。
-	//  yes   PLAY  : dropframes加算しない。リングバッファリセット。
-	//  yes   SYNC  : dropframes加算しない。リングバッファリセット。
+	//  drain = no  : 溜まっていないのでここで帰る
+	//  drain = yes : リングバッファリセット(?)
 	if (count < track->usrbuf_blksize / framesize) {
 		dropcount = track->usrbuf_blksize / framesize - count;
 
 		if (track->pstate != AUDIO_STATE_DRAINING) {
-			if ((track->mode & AUMODE_PLAY_ALL)) {
-				// PLAY_ALL なら溜まるまで待つ
-				/* For PLAY_ALL, wait until filled. */
-				TRACET(track, "not enough; return");
-				return;
-			} else {
-				// ここで1ブロックに満たなければ
-				// 落ちる(落ちた)ということ
-				/* Drop occurred. */
-
-				// playdrop は今落とし中のフレーム数
-				// 回復運転のために数えておく必要がある
-				/*
-				 * playdrop is the number of frames currently
-				 * being dropped.  It is necessary to remember
-				 * due to recover sync.
-				 */
-				track->playdrop += dropcount;
-				// dropframes は数え上げるだけ。
-				// 1回でも落ちれば play.error を立てるため
-				/*
-				 * dropframes only counts up due to set
-				 * play.error if drops even once.
-				 */
-				track->dropframes += dropcount;
-			}
+			// 溜まるまで待つ
+			/* wait until filled. */
+			TRACET(track, "not enough; return");
+			return;
 		}
 	}
 
@@ -4741,15 +4690,14 @@ audio_track_play(audio_track_t *track)
 		// ここの変換バッファは、前後のリングバッファとの対称性で
 		// リングバッファの形にしてあるが運用上はただのバッファなので、
 		// ポインタが途中を指されていると困る。
-		// これが起きるのは PLAY_SYNC か drain 中の時。
+		// これが起きるのは drain 時。
 		/*
 		 * Clear all conversion buffer pointer if the conversion was
 		 * not exactly one block.  These conversion stage buffers are
 		 * certainly circular buffers because of symmetry with the
 		 * previous and next stage buffer.  However, since they are
 		 * treated as simple contiguous buffers in operation, so head
-		 * always should point 0.  This may happen during PLAY(_SYNC)
-		 * or drain-age.
+		 * always should point 0.  This may happen during drain-age.
 		 */
 		TRACET(track, "reset stage");
 		if (track->codec.filter) {
@@ -4966,7 +4914,6 @@ audio_mixer_calc_blktime(struct audio_softc *sc, audio_trackmixer_t *mixer)
 // ミキサを初期化します。
 // mixer はゼロフィルされているものとします。
 // mode は再生なら AUMODE_PLAY、録音なら AUMODE_RECORD を指定します。
-// 単に録音再生のどちら側かだけなので AUMODE_PLAY_ALL は関係ありません。
 // hwfmt は HW フォーマットです。
 // 成功すれば 0、失敗すれば errno を返します。
 // sc_lock でコールします。
@@ -4974,8 +4921,7 @@ audio_mixer_calc_blktime(struct audio_softc *sc, audio_trackmixer_t *mixer)
  * Initialize the mixer.
  * This function returns 0 on sucessful.  Otherwise returns errno.
  * 'mixer' should be zero-filled.
- * For 'mode', specify AUMODE_PLAY for playback, AUMODE_RECORD for record
- * (AUMODE_PLAY_ALL does not matter here).
+ * For 'mode', specify AUMODE_PLAY for playback, AUMODE_RECORD for record.
  * This function should be called with sc_lock.
  */
 static int
@@ -6005,7 +5951,6 @@ audio_track_clear(struct audio_softc *sc, audio_track_t *track)
 
 	// カウンタクリア
 	track->dropframes = 0;
-	track->playdrop = 0;
 }
 
 // errno を返します。
@@ -6806,8 +6751,9 @@ audio_mixers_init_format(struct audio_softc *sc, struct audio_info *ai)
 //
 // ai.mode				(R/W)
 //	再生/録音モード。AUMODE_*
-//	XXX ai.mode = PLAY だったところに ai.mode = RECORD とか指定すると
-//	    何が起きるか。何が起きるべきか。
+//	N8 以前では ai.mode = PLAY だったところに ai.mode = RECORD とか
+//	指定するとおそらく不定。
+//	AUDIO2 では ai.mode でのオープン後のモード変更は不可とした。
 //
 // ai.{hiwat,lowat}			(R/W)
 //	再生トラックの hiwat/lowat。単位はブロック。
@@ -6985,15 +6931,9 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	/* Overwrite if specified */
 	mode = file->mode;
 	if (SPECIFIED(ai->mode)) {
-		// ai->mode で PLAY/REC モードを変更することはできないので
-		// 出来ることは実質 PLAY モード時の PLAY_ALL ビットの上げ
-		// 下ろしだけになる。
-		if ((file->mode & AUMODE_PLAY) != 0) {
-			mode = (file->mode & (AUMODE_PLAY | AUMODE_RECORD))
-			    | (ai->mode & AUMODE_PLAY_ALL);
-		} else {
-			mode = file->mode;
-		}
+		// ai->mode で PLAY/REC モードを変更することはできず、
+		// PLAY_ALL は意味を持たなくなったので、出来ることは何もない。
+		// ここでは(初回)呼び出し時のチェックだけを行う。
 
 		// Half duplex なら
 		// 1.PLAY | REC なら PLAY として
@@ -7078,7 +7018,7 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 		if (audiodebug >= 1) {
 			char modebuf[64];
 			snprintb(modebuf, sizeof(modebuf), "\177\020"
-			    "b\0PLAY\0" "b\2PLAY_ALL\0" "b\1RECORD\0",
+			    "b\0PLAY\0" "b\1RECORD\0",
 			    mode);
 			printf("setting mode to %s (pchanges=%d rchanges=%d)\n",
 			    modebuf, pchanges, rchanges);
@@ -7111,7 +7051,7 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 		}
 		if (pchanges) {
 			error = audio_file_setinfo_set(play, &pfmt,
-			    (mode & (AUMODE_PLAY | AUMODE_PLAY_ALL)));
+			    (mode & AUMODE_PLAY));
 			if (error) {
 				DPRINTF(1, "%s: set play.params failed\n",
 				    __func__);
@@ -7166,7 +7106,7 @@ abort2:
 		play->is_pause = saved_ai.play.pause;
 		file->mode = saved_ai.mode;
 		audio_file_setinfo_set(play, &saved_pfmt,
-		    (file->mode & (AUMODE_PLAY | AUMODE_PLAY_ALL)));
+		    (file->mode & AUMODE_PLAY));
 		sc->sc_pparams = saved_pfmt;
 		sc->sc_ppause = saved_ai.play.pause;
 	}
@@ -7222,7 +7162,7 @@ audio_file_setinfo_check(audio_format2_t *fmt, const struct audio_prinfo *info)
 }
 
 // track に mode, fmt を設定する。
-// mode は再生トラックなら AUMODE_PLAY{,_ALL}、録音トラックなら AUMODE_RECORD
+// mode は再生トラックなら AUMODE_PLAY、録音トラックなら AUMODE_RECORD
 // のように該当するビットだけを渡すこと。
 // 成功すれば0、失敗なら errno
 // ここではロールバックしない。
