@@ -1,4 +1,4 @@
-/* $NetBSD: dwc_gmac.c,v 1.53 2018/09/17 20:25:49 aymeric Exp $ */
+/* $NetBSD: dwc_gmac.c,v 1.55 2018/10/08 17:09:31 martin Exp $ */
 
 /*-
  * Copyright (c) 2013, 2014 The NetBSD Foundation, Inc.
@@ -41,7 +41,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(1, "$NetBSD: dwc_gmac.c,v 1.53 2018/09/17 20:25:49 aymeric Exp $");
+__KERNEL_RCSID(1, "$NetBSD: dwc_gmac.c,v 1.55 2018/10/08 17:09:31 martin Exp $");
 
 /* #define	DWC_GMAC_DEBUG	1 */
 
@@ -103,14 +103,14 @@ static uint32_t	bitrev32(uint32_t x);
 static void dwc_gmac_desc_set_owned_by_dev(struct dwc_gmac_dev_dmadesc *);
 static int  dwc_gmac_desc_is_owned_by_dev(struct dwc_gmac_dev_dmadesc *);
 static void dwc_gmac_desc_std_set_len(struct dwc_gmac_dev_dmadesc *, int);
-static int  dwc_gmac_desc_std_get_len(struct dwc_gmac_dev_dmadesc *);
+static uint32_t dwc_gmac_desc_std_get_len(struct dwc_gmac_dev_dmadesc *);
 static void dwc_gmac_desc_std_tx_init_flags(struct dwc_gmac_dev_dmadesc *);
 static void dwc_gmac_desc_std_tx_set_first_frag(struct dwc_gmac_dev_dmadesc *);
 static void dwc_gmac_desc_std_tx_set_last_frag(struct dwc_gmac_dev_dmadesc *);
 static void dwc_gmac_desc_std_rx_init_flags(struct dwc_gmac_dev_dmadesc *);
 static int  dwc_gmac_desc_std_rx_has_error(struct dwc_gmac_dev_dmadesc *);
 static void dwc_gmac_desc_enh_set_len(struct dwc_gmac_dev_dmadesc *, int);
-static int  dwc_gmac_desc_enh_get_len(struct dwc_gmac_dev_dmadesc *);
+static uint32_t dwc_gmac_desc_enh_get_len(struct dwc_gmac_dev_dmadesc *);
 static void dwc_gmac_desc_enh_tx_init_flags(struct dwc_gmac_dev_dmadesc *);
 static void dwc_gmac_desc_enh_tx_set_first_frag(struct dwc_gmac_dev_dmadesc *);
 static void dwc_gmac_desc_enh_tx_set_last_frag(struct dwc_gmac_dev_dmadesc *);
@@ -188,7 +188,7 @@ int
 dwc_gmac_attach(struct dwc_gmac_softc *sc, uint32_t mii_clk)
 {
 	uint8_t enaddr[ETHER_ADDR_LEN];
-	uint32_t maclo, machi;
+	uint32_t maclo, machi, ver, hwft;
 	struct mii_data * const mii = &sc->sc_mii;
 	struct ifnet * const ifp = &sc->sc_ec.ec_if;
 	prop_dictionary_t dict;
@@ -232,6 +232,9 @@ dwc_gmac_attach(struct dwc_gmac_softc *sc, uint32_t mii_clk)
 		enaddr[5] = (machi >> 8) & 0x0ff;
 	}
 
+	ver = bus_space_read_4(sc->sc_bst, sc->sc_bsh, AWIN_GMAC_MAC_VERSION);
+	aprint_normal_dev(sc->sc_dev, "Core version: %08x\n", ver);
+
 	/*
 	 * Init chip and do initial setup
 	 */
@@ -241,11 +244,20 @@ dwc_gmac_attach(struct dwc_gmac_softc *sc, uint32_t mii_clk)
 	aprint_normal_dev(sc->sc_dev, "Ethernet address %s\n",
 	    ether_sprintf(enaddr));
 
-	if (bus_space_read_4(sc->sc_bst, sc->sc_bsh, AWIN_GMAC_DMA_HWFEATURES) &
-	    GMAC_DMA_FEAT_ENHANCED_DESC)
+	hwft = 0;
+	if (ver >= 0x35) {
+		hwft = bus_space_read_4(sc->sc_bst, sc->sc_bsh,
+		    AWIN_GMAC_DMA_HWFEATURES);
+		aprint_normal_dev(sc->sc_dev,
+		    "HW feature mask: %x\n", hwft);
+	}
+	if (hwft & GMAC_DMA_FEAT_ENHANCED_DESC) {
+		aprint_normal_dev(sc->sc_dev,
+		    "Using enhanced descriptor format\n");
 		sc->sc_descm = &desc_methods_enhanced;
-	else
+	} else {
 		sc->sc_descm = &desc_methods_standard;
+	}
 
 	/*
 	 * Allocate Tx and Rx rings
@@ -1447,43 +1459,54 @@ dwc_gmac_intr(struct dwc_gmac_softc *sc)
 }
 
 static void
-dwc_gmac_desc_set_owned_by_dev(struct dwc_gmac_dev_dmadesc *desc) {
-	desc->ddesc_status0 |= DDESC_STATUS_OWNEDBYDEV;
+dwc_gmac_desc_set_owned_by_dev(struct dwc_gmac_dev_dmadesc *desc)
+{
+
+	desc->ddesc_status0 |= htole32(DDESC_STATUS_OWNEDBYDEV);
 }
 
 static int
-dwc_gmac_desc_is_owned_by_dev(struct dwc_gmac_dev_dmadesc *desc) {
-	return !!(desc->ddesc_status0 & DDESC_STATUS_OWNEDBYDEV);
+dwc_gmac_desc_is_owned_by_dev(struct dwc_gmac_dev_dmadesc *desc)
+{
+
+	return !!(le32toh(desc->ddesc_status0) & DDESC_STATUS_OWNEDBYDEV);
 }
 
 static void
-dwc_gmac_desc_std_set_len(struct dwc_gmac_dev_dmadesc *desc, int len) {
+dwc_gmac_desc_std_set_len(struct dwc_gmac_dev_dmadesc *desc, int len)
+{
 	uint32_t cntl = le32toh(desc->ddesc_cntl1);
 
 	desc->ddesc_cntl1 = htole32((cntl & ~DDESC_CNTL_SIZE1MASK) |
 		__SHIFTIN(len, DDESC_CNTL_SIZE1MASK));
 }
 
-static int
-dwc_gmac_desc_std_get_len(struct dwc_gmac_dev_dmadesc *desc) {
+static uint32_t
+dwc_gmac_desc_std_get_len(struct dwc_gmac_dev_dmadesc *desc)
+{
+
 	return __SHIFTOUT(le32toh(desc->ddesc_status0), DDESC_STATUS_FRMLENMSK);
 }
 
 static void
-dwc_gmac_desc_std_tx_init_flags(struct dwc_gmac_dev_dmadesc *desc) {
+dwc_gmac_desc_std_tx_init_flags(struct dwc_gmac_dev_dmadesc *desc)
+{
+
 	desc->ddesc_status0 = 0;
-	desc->ddesc_cntl1 = DDESC_CNTL_TXCHAIN;
+	desc->ddesc_cntl1 = htole32(DDESC_CNTL_TXCHAIN);
 }
 
 static void
-dwc_gmac_desc_std_tx_set_first_frag(struct dwc_gmac_dev_dmadesc *desc) {
+dwc_gmac_desc_std_tx_set_first_frag(struct dwc_gmac_dev_dmadesc *desc)
+{
 	uint32_t cntl = le32toh(desc->ddesc_cntl1);
 
 	desc->ddesc_cntl1 = htole32(cntl | DDESC_CNTL_TXFIRST);
 }
 
 static void
-dwc_gmac_desc_std_tx_set_last_frag(struct dwc_gmac_dev_dmadesc *desc) {
+dwc_gmac_desc_std_tx_set_last_frag(struct dwc_gmac_dev_dmadesc *desc)
+{
 	uint32_t cntl = le32toh(desc->ddesc_cntl1);
 
 	desc->ddesc_cntl1 = htole32(cntl |
@@ -1491,9 +1514,11 @@ dwc_gmac_desc_std_tx_set_last_frag(struct dwc_gmac_dev_dmadesc *desc) {
 }
 
 static void
-dwc_gmac_desc_std_rx_init_flags(struct dwc_gmac_dev_dmadesc *desc) {
+dwc_gmac_desc_std_rx_init_flags(struct dwc_gmac_dev_dmadesc *desc)
+{
+
 	desc->ddesc_status0 = 0;
-	desc->ddesc_cntl1 = DDESC_CNTL_TXCHAIN;
+	desc->ddesc_cntl1 = htole32(DDESC_CNTL_TXCHAIN);
 }
 
 static int
@@ -1503,46 +1528,57 @@ dwc_gmac_desc_std_rx_has_error(struct dwc_gmac_dev_dmadesc *desc) {
 }
 
 static void
-dwc_gmac_desc_enh_set_len(struct dwc_gmac_dev_dmadesc *desc, int len) {
+dwc_gmac_desc_enh_set_len(struct dwc_gmac_dev_dmadesc *desc, int len)
+{
 	uint32_t tdes1 = le32toh(desc->ddesc_cntl1);
 
 	desc->ddesc_cntl1 = htole32((tdes1 & ~DDESC_DES1_SIZE1MASK) |
 		__SHIFTIN(len, DDESC_DES1_SIZE1MASK));
 }
 
-static int
-dwc_gmac_desc_enh_get_len(struct dwc_gmac_dev_dmadesc *desc) {
+static uint32_t
+dwc_gmac_desc_enh_get_len(struct dwc_gmac_dev_dmadesc *desc)
+{
+
 	return __SHIFTOUT(le32toh(desc->ddesc_status0), DDESC_RDES0_FL);
 }
 
 static void
-dwc_gmac_desc_enh_tx_init_flags(struct dwc_gmac_dev_dmadesc *desc) {
-	desc->ddesc_status0 = DDESC_TDES0_TCH;
+dwc_gmac_desc_enh_tx_init_flags(struct dwc_gmac_dev_dmadesc *desc)
+{
+
+	desc->ddesc_status0 = htole32(DDESC_TDES0_TCH);
 	desc->ddesc_cntl1 = 0;
 }
 
 static void
-dwc_gmac_desc_enh_tx_set_first_frag(struct dwc_gmac_dev_dmadesc *desc) {
+dwc_gmac_desc_enh_tx_set_first_frag(struct dwc_gmac_dev_dmadesc *desc)
+{
 	uint32_t tdes0 = le32toh(desc->ddesc_status0);
 
 	desc->ddesc_status0 = htole32(tdes0 | DDESC_TDES0_FS);
 }
 
 static void
-dwc_gmac_desc_enh_tx_set_last_frag(struct dwc_gmac_dev_dmadesc *desc) {
+dwc_gmac_desc_enh_tx_set_last_frag(struct dwc_gmac_dev_dmadesc *desc)
+{
 	uint32_t tdes0 = le32toh(desc->ddesc_status0);
 
 	desc->ddesc_status0 = htole32(tdes0 | DDESC_TDES0_LS | DDESC_TDES0_IC);
 }
 
 static void
-dwc_gmac_desc_enh_rx_init_flags(struct dwc_gmac_dev_dmadesc *desc) {
+dwc_gmac_desc_enh_rx_init_flags(struct dwc_gmac_dev_dmadesc *desc)
+{
+
 	desc->ddesc_status0 = 0;
-	desc->ddesc_cntl1 = DDESC_RDES1_RCH;
+	desc->ddesc_cntl1 = htole32(DDESC_RDES1_RCH);
 }
 
 static int
-dwc_gmac_desc_enh_rx_has_error(struct dwc_gmac_dev_dmadesc *desc) {
+dwc_gmac_desc_enh_rx_has_error(struct dwc_gmac_dev_dmadesc *desc)
+{
+
 	return !!(le32toh(desc->ddesc_status0) &
 		(DDESC_RDES0_ES | DDESC_RDES0_LE));
 }

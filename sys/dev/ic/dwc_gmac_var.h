@@ -1,4 +1,4 @@
-/* $NetBSD: dwc_gmac_var.h,v 1.10 2018/09/17 20:25:49 aymeric Exp $ */
+/* $NetBSD: dwc_gmac_var.h,v 1.12 2018/10/08 17:09:31 martin Exp $ */
 
 /*-
  * Copyright (c) 2013, 2014 The NetBSD Foundation, Inc.
@@ -60,7 +60,7 @@ struct dwc_gmac_desc_methods {
 	void (*rx_set_owned_by_dev)(struct dwc_gmac_dev_dmadesc *);
 	int  (*rx_is_owned_by_dev)(struct dwc_gmac_dev_dmadesc *);
 	void (*rx_set_len)(struct dwc_gmac_dev_dmadesc *, int);
-	int  (*rx_get_len)(struct dwc_gmac_dev_dmadesc *);
+	uint32_t  (*rx_get_len)(struct dwc_gmac_dev_dmadesc *);
 	int  (*rx_has_error)(struct dwc_gmac_dev_dmadesc *);
 };
 

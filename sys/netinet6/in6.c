@@ -1,4 +1,4 @@
-/*	$NetBSD: in6.c,v 1.269 2018/07/04 00:35:33 kamil Exp $	*/
+/*	$NetBSD: in6.c,v 1.272 2018/11/29 09:54:23 ozaki-r Exp $	*/
 /*	$KAME: in6.c,v 1.198 2001/07/18 09:12:38 itojun Exp $	*/
 
 /*
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: in6.c,v 1.269 2018/07/04 00:35:33 kamil Exp $");
+__KERNEL_RCSID(0, "$NetBSD: in6.c,v 1.272 2018/11/29 09:54:23 ozaki-r Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -867,8 +867,23 @@ in6_join_mcastgroups(struct in6_aliasreq *ifra, struct in6_ifaddr *ia,
 			    ntohs(mltaddr.sin6_addr.s6_addr16[1]),
 			    satocsin6(rt_getkey(rt))->sin6_addr.s6_addr16[0],
 			    satocsin6(rt_getkey(rt))->sin6_addr.s6_addr16[1]);
+#ifdef NET_MPSAFE
+			error = rt_update_prepare(rt);
+			if (error == 0) {
+				rt_replace_ifa(rt, &ia->ia_ifa);
+				rt->rt_ifp = ifp;
+				rt_update_finish(rt);
+			} else {
+				/*
+				 * If error != 0, the rtentry is being
+				 * destroyed, so doing nothing doesn't
+				 * matter.
+				 */
+			}
+#else
 			rt_replace_ifa(rt, &ia->ia_ifa);
 			rt->rt_ifp = ifp;
+#endif
 		}
 	}
 	if (!rt) {
@@ -951,8 +966,23 @@ in6_join_mcastgroups(struct in6_aliasreq *ifra, struct in6_ifaddr *ia,
 			    ntohs(mltaddr.sin6_addr.s6_addr16[1]),
 			    satocsin6(rt_getkey(rt))->sin6_addr.s6_addr16[0],
 			    satocsin6(rt_getkey(rt))->sin6_addr.s6_addr16[1]);
+#ifdef NET_MPSAFE
+			error = rt_update_prepare(rt);
+			if (error == 0) {
+				rt_replace_ifa(rt, &ia->ia_ifa);
+				rt->rt_ifp = ifp;
+				rt_update_finish(rt);
+			} else {
+				/*
+				 * If error != 0, the rtentry is being
+				 * destroyed, so doing nothing doesn't
+				 * matter.
+				 */
+			}
+#else
 			rt_replace_ifa(rt, &ia->ia_ifa);
 			rt->rt_ifp = ifp;
+#endif
 		}
 	}
 	if (!rt) {
@@ -1239,7 +1269,7 @@ in6_update_ifa1(struct ifnet *ifp, struct in6_aliasreq *ifra,
 		ia->ia6_flags |= IN6_IFF_DETACHED;
 		ia->ia6_flags &= ~IN6_IFF_TENTATIVE;
 	} else if ((hostIsNew || was_tentative) && if_do_dad(ifp) &&
-	           ip6_dad_count > 0) {
+	           ip6_dad_enabled()) {
 		ia->ia6_flags |= IN6_IFF_TENTATIVE;
 	}
 
@@ -2174,7 +2204,7 @@ in6_if_link_up(struct ifnet *ifp)
 		/* If detached then mark as tentative */
 		if (ia->ia6_flags & IN6_IFF_DETACHED) {
 			ia->ia6_flags &= ~IN6_IFF_DETACHED;
-			if (if_do_dad(ifp)) {
+			if (ip6_dad_enabled() && if_do_dad(ifp)) {
 				ia->ia6_flags |= IN6_IFF_TENTATIVE;
 				nd6log(LOG_ERR, "%s marked tentative\n",
 				    IN6_PRINT(ip6buf,

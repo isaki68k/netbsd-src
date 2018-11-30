@@ -1,4 +1,4 @@
-/*	$NetBSD: gtmr.c,v 1.35 2018/09/16 13:21:36 jmcneill Exp $	*/
+/*	$NetBSD: gtmr.c,v 1.38 2018/11/15 17:15:52 jmcneill Exp $	*/
 
 /*-
  * Copyright (c) 2012 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gtmr.c,v 1.35 2018/09/16 13:21:36 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gtmr.c,v 1.38 2018/11/15 17:15:52 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -120,12 +120,6 @@ gtmr_attach(device_t parent, device_t self, void *aux)
 		aprint_debug_dev(self, "enabling Allwinner A64 timer workaround\n");
 	}
 
-	/*
-	 * Enable the virtual counter to be accessed from usermode.
-	 */
-	gtmr_cntk_ctl_write(gtmr_cntk_ctl_read() |
-	    CNTKCTL_PL0VCTEN | CNTKCTL_PL0PCTEN);
-
 	self->dv_private = sc;
 	sc->sc_dev = self;
 
@@ -193,6 +187,13 @@ gtmr_init_cpu_clock(struct cpu_info *ci)
 	KASSERT(ci == curcpu());
 
 	int s = splsched();
+
+	/*
+	 * Allow the virtual and physical counters to be accessed from
+	 * usermode. (PL0)
+	 */
+	gtmr_cntk_ctl_write(gtmr_cntk_ctl_read() |
+	    CNTKCTL_PL0VCTEN | CNTKCTL_PL0PCTEN);
 
 	/*
 	 * enable timer and stop masking the timer.
@@ -271,16 +272,21 @@ gtmr_intr(void *arg)
 	uint64_t delta = now - ci->ci_lastintr;
 
 #ifdef DIAGNOSTIC
-	const uint64_t then = gtmr_cntv_cval_read();
-	struct gtmr_percpu * const pc = percpu_getref(sc->sc_percpu);
-	KASSERTMSG(then <= now, "%"PRId64, now - then);
-	KASSERTMSG(then + pc->pc_delta >= ci->ci_lastintr + sc->sc_autoinc,
-	    "%"PRId64, then + pc->pc_delta - ci->ci_lastintr - sc->sc_autoinc);
+	struct gtmr_percpu *pc = NULL;
+	if (!ISSET(sc->sc_flags, GTMR_FLAG_SUN50I_A64_UNSTABLE_TIMER)) {
+		const uint64_t then = gtmr_cntv_cval_read();
+		pc = percpu_getref(sc->sc_percpu);
+		KASSERTMSG(then <= now, "%"PRId64, now - then);
+		KASSERTMSG(then + pc->pc_delta >= ci->ci_lastintr + sc->sc_autoinc,
+		    "%"PRId64, then + pc->pc_delta - ci->ci_lastintr - sc->sc_autoinc);
+	}
 #endif
 
-	KASSERTMSG(delta > sc->sc_autoinc / 100,
-	    "%s: interrupting too quickly (delta=%"PRIu64") autoinc=%lu",
-	    ci->ci_data.cpu_name, delta, sc->sc_autoinc);
+	if (!ISSET(sc->sc_flags, GTMR_FLAG_SUN50I_A64_UNSTABLE_TIMER)) {
+		KASSERTMSG(delta > sc->sc_autoinc / 100,
+		    "%s: interrupting too quickly (delta=%"PRIu64") autoinc=%lu",
+		    ci->ci_data.cpu_name, delta, sc->sc_autoinc);
+	}
 
 	/*
 	 * If we got interrupted too soon (delta < sc->sc_autoinc)
@@ -297,9 +303,11 @@ gtmr_intr(void *arg)
 	ci->ci_lastintr = now;
 
 #ifdef DIAGNOSTIC
-	KASSERT(delta == (uint32_t) delta);
-	pc->pc_delta = delta;
-	percpu_putref(sc->sc_percpu);
+	if (!ISSET(sc->sc_flags, GTMR_FLAG_SUN50I_A64_UNSTABLE_TIMER)) {
+		KASSERT(delta == (uint32_t) delta);
+		pc->pc_delta = delta;
+		percpu_putref(sc->sc_percpu);
+	}
 #endif
 
 	hardclock(cf);

@@ -1,4 +1,4 @@
-/*	$NetBSD: pci_intr_machdep.c,v 1.45 2018/09/23 02:51:06 cherry Exp $	*/
+/*	$NetBSD: pci_intr_machdep.c,v 1.47 2018/11/27 21:03:50 jdolecek Exp $	*/
 
 /*-
  * Copyright (c) 1997, 1998, 2009 The NetBSD Foundation, Inc.
@@ -73,7 +73,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pci_intr_machdep.c,v 1.45 2018/09/23 02:51:06 cherry Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pci_intr_machdep.c,v 1.47 2018/11/27 21:03:50 jdolecek Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -514,6 +514,7 @@ pci_intr_alloc(const struct pci_attach_args *pa, pci_intr_handle_t **ihps,
 
 	intx_count = msi_count = msix_count = 0;
 	if (counts == NULL) { /* simple pattern */
+		msix_count = 1;
 		msi_count = 1;
 		intx_count = 1;
 	} else {
@@ -542,9 +543,8 @@ pci_intr_alloc(const struct pci_attach_args *pa, pci_intr_handle_t **ihps,
 	if (msix_count > 0) {
 		error = pci_msix_alloc_exact(pa, ihps, msix_count);
 		if (error == 0) {
-			KASSERTMSG(counts != NULL,
-			    "If MSI-X is used, counts must not be NULL.");
-			counts[PCI_INTR_TYPE_MSIX] = msix_count;
+			if (counts != NULL)
+				counts[PCI_INTR_TYPE_MSIX] = msix_count;
 			goto out;
 		}
 	}
