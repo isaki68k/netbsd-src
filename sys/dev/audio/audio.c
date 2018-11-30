@@ -3556,10 +3556,10 @@ audio_track_freq_up(audio_filter_arg_t *arg)
 #if defined(FREQ_DEBUG)
 #define PRINTF(fmt...)	printf(fmt)
 #else
-#define PRINTF(fmt...)	/**/
+#define PRINTF(fmt...)	do { } while (0)
 #endif
 	srcused = src->used;
-	PRINTF("start step=%d leap=%d", step, track->freq_leap);
+	PRINTF("upstart step=%d leap=%d", step, track->freq_leap);
 	PRINTF(" srcused=%d arg->count=%u", src->used, arg->count);
 	PRINTF(" prev=%d curr=%d grad=%d", prev[0], curr[0], grad[0]);
 	PRINTF(" t=%d\n", t);
@@ -3650,18 +3650,20 @@ audio_track_freq_down(audio_filter_arg_t *arg)
 	t = track->freq_current;
 	step = track->freq_step;
 	channels = dst->fmt.channels;
-	PRINTF("start step=%d leap=%d", step, track->freq_leap);
+	PRINTF("downstart step=%d leap=%d", step, track->freq_leap);
 	PRINTF(" srcused=%d arg->count=%u", src->used, arg->count);
 	PRINTF(" t=%d\n", t);
 
 	for (i = 0; i < arg->count && t / 65536 < src->used; i++) {
 		const aint_t *s;
-		PRINTF("i=%d t=%5d", i, t);
+		PRINTF("i=%4d t=%10d", i, t);
 		s = s0 + (t / 65536) * channels;
-		PRINTF(" s=%ld\n", (s - s0) / channels);
+		PRINTF(" s=%5ld", (s - s0) / channels);
 		for (ch = 0; ch < channels; ch++) {
+			if (ch == 0) PRINTF(" *s=%d", s[ch]);
 			*d++ = s[ch];
 		}
+		PRINTF("\n");
 		t += step;
 	}
 	t += track->freq_leap;
