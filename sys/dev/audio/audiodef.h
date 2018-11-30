@@ -79,7 +79,8 @@ typedef enum {
 typedef struct audio_track {
 	// このトラックの再生/録音モード。AUMODE_*
 	// 再生トラックなら AUMODE_PLAY、録音トラックなら AUMODE_RECORD。
-	// file->mode は録再トラックの mode を OR したものと一致しているはず。
+	// track->mode には AUMODE_PLAY_ALL は立てないため、録再トラックの
+	// mode を OR したものと file->mode とは必ずしも一致しない。
 	int mode;
 
 	audio_ring_t	usrbuf;		/* user i/o buffer */
@@ -145,9 +146,14 @@ struct audio_file {
 	audio_track_t	*ptrack;	/* play track (if available) */
 	audio_track_t	*rtrack;	/* record track (if available) */
 
-	// この file の再生/録音モード。AUMODE_*
+	// この file の再生/録音モード。AUMODE_* (PLAY_ALL も含む)
 	// ptrack.mode は (mode & AUMODE_PLAY) と、
 	// rtrack.mode は (mode & AUMODE_RECORD) と等しいはず。
+	// AUMODE_PLAY_ALL は現状意味がなくこれによって動作が変わることは
+	// ないが後方互換性のため、状態だけは保持しておく。そのため
+	// file->mode が AUMODE_PLAY | AUMODE_PLAY_ALL で
+	// ptrack.mode が AUMODE_PLAY のように、この2つの変数は必ずしも
+	// 同じ値を保持するわけではないことに注意。
 	int		mode;
 	dev_t		dev;		// デバイスファイルへのバックリンク
 

@@ -1839,7 +1839,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	af->sc = sc;
 	af->dev = dev;
 	if ((flags & FWRITE) != 0 && audio_can_playback(sc))
-		af->mode |= AUMODE_PLAY;
+		af->mode |= AUMODE_PLAY | AUMODE_PLAY_ALL;
 	if ((flags & FREAD) != 0 && audio_can_capture(sc))
 		af->mode |= AUMODE_RECORD;
 	if (af->mode == 0) {
@@ -6927,9 +6927,15 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	/* Overwrite if specified */
 	mode = file->mode;
 	if (SPECIFIED(ai->mode)) {
-		// ai->mode で PLAY/REC モードを変更することはできず、
+		// ai->mode で PLAY/REC モードを変更することは出来ず、
 		// PLAY_ALL は意味を持たなくなったので、出来ることは何もない。
-		// ここでは(初回)呼び出し時のチェックだけを行う。
+		// ただし互換性のため PLAY_ALL フラグの状態だけは維持する。
+		// PLAY_ALL フラグは file->mode でのみ保持し track->mode は
+		// PLAY_ALL フラグの状態を持たない。
+		if ((file->mode & AUMODE_PLAY)) {
+			mode = (file->mode & (AUMODE_PLAY | AUMODE_RECORD))
+			    | (ai->mode & AUMODE_PLAY_ALL);
+		}
 
 		// Half duplex なら
 		// 1.PLAY | REC なら PLAY として
