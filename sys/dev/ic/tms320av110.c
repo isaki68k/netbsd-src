@@ -69,7 +69,9 @@ int tav_halt_output(void *);
 int tav_halt_input(void *);
 int tav_speaker_ctl(void *, int);
 int tav_getdev(void *, struct audio_device *);
+#if !defined(AUDIO2)
 int tav_setfd(void *, int);
+#endif
 int tav_set_port(void *, mixer_ctrl_t *);
 int tav_get_port(void *, mixer_ctrl_t *);
 int tav_query_devinfo(void *, mixer_devinfo_t *);
