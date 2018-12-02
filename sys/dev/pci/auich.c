@@ -278,7 +278,9 @@ static int	auich_query_devinfo(void *, mixer_devinfo_t *);
 static void	*auich_allocm(void *, int, size_t);
 static void	auich_freem(void *, void *, size_t);
 static size_t	auich_round_buffersize(void *, int, size_t);
+#if !defined(AUDIO2)
 static paddr_t	auich_mappage(void *, void *, off_t, int);
+#endif
 static int	auich_get_props(void *);
 static void	auich_trigger_pipe(struct auich_softc *, int, struct auich_ring *);
 static void	auich_intr_pipe(struct auich_softc *, int, struct auich_ring *);
@@ -327,7 +329,9 @@ static const struct audio_hw_if auich_hw_if = {
 	.allocm			= auich_allocm,
 	.freem			= auich_freem,
 	.round_buffersize	= auich_round_buffersize,
+#if !defined(AUDIO2)
 	.mappage		= auich_mappage,
+#endif
 	.get_props		= auich_get_props,
 	.trigger_output		= auich_trigger_output,
 	.trigger_input		= auich_trigger_input,
@@ -1247,6 +1251,7 @@ auich_round_buffersize(void *v, int direction, size_t size)
 	return size;
 }
 
+#if !defined(AUDIO2)
 static paddr_t
 auich_mappage(void *v, void *mem, off_t off, int prot)
 {
@@ -1263,6 +1268,7 @@ auich_mappage(void *v, void *mem, off_t off, int prot)
 	return bus_dmamem_mmap(sc->dmat, p->segs, p->nsegs,
 	    off, prot, BUS_DMA_WAITOK);
 }
+#endif
 
 static int
 auich_get_props(void *v)

@@ -137,7 +137,9 @@ static int	eap1370_query_devinfo(void *, mixer_devinfo_t *);
 static void	*eap_malloc(void *, int, size_t);
 static void	eap_free(void *, void *, size_t);
 static size_t	eap_round_buffersize(void *, int, size_t);
+#if !defined(AUDIO2)
 static paddr_t	eap_mappage(void *, void *, off_t, int);
+#endif
 static int	eap_get_props(void *);
 static void	eap1370_set_mixer(struct eap_softc *, int, int);
 static uint32_t eap1371_src_wait(struct eap_softc *);
@@ -180,7 +182,9 @@ static const struct audio_hw_if eap1370_hw_if = {
 	.allocm			= eap_malloc,
 	.freem			= eap_free,
 	.round_buffersize	= eap_round_buffersize,
+#if !defined(AUDIO2)
 	.mappage		= eap_mappage,
+#endif
 	.get_props		= eap_get_props,
 	.trigger_output		= eap_trigger_output,
 	.trigger_input		= eap_trigger_input,
@@ -205,7 +209,9 @@ static const struct audio_hw_if eap1371_hw_if = {
 	.allocm			= eap_malloc,
 	.freem			= eap_free,
 	.round_buffersize	= eap_round_buffersize,
+#if !defined(AUDIO2)
 	.mappage		= eap_mappage,
+#endif
 	.get_props		= eap_get_props,
 	.trigger_output		= eap_trigger_output,
 	.trigger_input		= eap_trigger_input,
@@ -1778,6 +1784,7 @@ eap_round_buffersize(void *addr, int direction, size_t size)
 	return size;
 }
 
+#if !defined(AUDIO2)
 static paddr_t
 eap_mappage(void *addr, void *mem, off_t off, int prot)
 {
@@ -1797,6 +1804,7 @@ eap_mappage(void *addr, void *mem, off_t off, int prot)
 	return bus_dmamem_mmap(sc->sc_dmatag, p->segs, p->nsegs,
 			       off, prot, BUS_DMA_WAITOK);
 }
+#endif
 
 static int
 eap_get_props(void *addr)

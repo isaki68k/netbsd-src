@@ -379,7 +379,9 @@ static void *	hdafg_allocm(void *, int, size_t);
 static void	hdafg_freem(void *, void *, size_t);
 static int	hdafg_getdev(void *, struct audio_device *);
 static size_t	hdafg_round_buffersize(void *, int, size_t);
+#if !defined(AUDIO2)
 static paddr_t	hdafg_mappage(void *, void *, off_t, int);
+#endif
 static int	hdafg_get_props(void *);
 static int	hdafg_trigger_output(void *, void *, void *, int,
 				       void (*)(void *), void *,
@@ -407,7 +409,9 @@ static const struct audio_hw_if hdafg_hw_if = {
 	.allocm			= hdafg_allocm,
 	.freem			= hdafg_freem,
 	.round_buffersize	= hdafg_round_buffersize,
+#if !defined(AUDIO2)
 	.mappage		= hdafg_mappage,
+#endif
 	.get_props		= hdafg_get_props,
 	.trigger_output		= hdafg_trigger_output,
 	.trigger_input		= hdafg_trigger_input,
@@ -4273,6 +4277,7 @@ hdafg_round_buffersize(void *opaque, int direction, size_t bufsize)
 	return bufsize;
 }
 
+#if !defined(AUDIO2)
 static paddr_t
 hdafg_mappage(void *opaque, void *addr, off_t off, int prot)
 {
@@ -4292,6 +4297,7 @@ hdafg_mappage(void *opaque, void *addr, off_t off, int prot)
 	return bus_dmamem_mmap(st->st_host->sc_dmat, st->st_data.dma_segs,
 	    st->st_data.dma_nsegs, off, prot, BUS_DMA_WAITOK);
 }
+#endif
 
 static int
 hdafg_get_props(void *opaque)
