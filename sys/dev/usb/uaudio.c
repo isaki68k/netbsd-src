@@ -2737,7 +2737,9 @@ uaudio_chan_abort(struct uaudio_softc *sc, struct chan *ch)
 
 	as = &sc->sc_alts[ch->altidx];
 	as->sc_busy = 0;
+#if !defined(AUDIO2)
 	AUFMT_VALIDATE(as->aformat);
+#endif
 	if (sc->sc_nullalt >= 0) {
 		DPRINTF("set null alt=%d\n", sc->sc_nullalt);
 		usbd_set_interface(as->ifaceh, sc->sc_nullalt);
@@ -3062,11 +3064,15 @@ uaudio_set_params(void *addr, int setmode, int usemode,
 
 	if ((usemode & AUMODE_PLAY) && sc->sc_playchan.altidx != -1) {
 		sc->sc_alts[sc->sc_playchan.altidx].sc_busy = 0;
+#if !defined(AUDIO2)
 		AUFMT_VALIDATE(sc->sc_alts[sc->sc_playchan.altidx].aformat);
+#endif
 	}
 	if ((usemode & AUMODE_RECORD) && sc->sc_recchan.altidx != -1) {
 		sc->sc_alts[sc->sc_recchan.altidx].sc_busy = 0;
+#if !defined(AUDIO2)
 		AUFMT_VALIDATE(sc->sc_alts[sc->sc_recchan.altidx].aformat);
+#endif
 	}
 
 	/* Some uaudio devices are unidirectional.  Don't try to find a
@@ -3110,11 +3116,15 @@ uaudio_set_params(void *addr, int setmode, int usemode,
 
 	if ((usemode & AUMODE_PLAY) && sc->sc_playchan.altidx != -1) {
 		sc->sc_alts[sc->sc_playchan.altidx].sc_busy = 1;
+#if !defined(AUDIO2)
 		AUFMT_INVALIDATE(sc->sc_alts[sc->sc_playchan.altidx].aformat);
+#endif
 	}
 	if ((usemode & AUMODE_RECORD) && sc->sc_recchan.altidx != -1) {
 		sc->sc_alts[sc->sc_recchan.altidx].sc_busy = 1;
+#if !defined(AUDIO2)
 		AUFMT_INVALIDATE(sc->sc_alts[sc->sc_recchan.altidx].aformat);
+#endif
 	}
 
 	DPRINTF("use altidx=p%d/r%d, altno=p%d/r%d\n",
