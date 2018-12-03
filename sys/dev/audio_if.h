@@ -253,7 +253,7 @@ struct audio_hw_if {
 
 #if defined(AUDIO2)
 	int	(*query_format)(void *, audio_format_query_t *);
-	int	(*init_format)(void *, int,
+	int	(*set_format)(void *, int,
 		    const audio_params_t *, const audio_params_t *,
 		    audio_filter_reg_t *, audio_filter_reg_t *);
 #endif /* AUDIO2 */

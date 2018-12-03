@@ -74,7 +74,7 @@ int	am7930_open(void *, int);
 void	am7930_close(void *);
 #if defined(AUDIO2)
 int	am7930_query_format(void *, audio_format_query_t *);
-int	am7930_init_format(void *, int,
+int	am7930_set_format(void *, int,
 	    const audio_params_t *, const audio_params_t *,
 	    audio_filter_reg_t *, audio_filter_reg_t *);
 #else

@@ -134,7 +134,7 @@ static int  mercury_open(void *, int);
 static void mercury_close(void *);
 #if defined(AUDIO2)
 static int  mercury_query_format(void *, audio_format_query_t *);
-static int  mercury_init_format(void *, int,
+static int  mercury_set_format(void *, int,
 	const audio_params_t *, const audio_params_t *,
 	audio_filter_reg_t *, audio_filter_reg_t *);
 #else
@@ -166,7 +166,7 @@ static const struct audio_hw_if mercury_hw_if = {
 	.close			= mercury_close,
 #if defined(AUDIO2)
 	.query_format		= mercury_query_format,
-	.init_format		= mercury_init_format,
+	.set_format		= mercury_set_format,
 #else
 	.query_encoding		= mercury_query_encoding,
 	.set_params		= mercury_set_params,
@@ -339,7 +339,7 @@ mercury_query_encoding(void *hdl, struct audio_encoding *ae)
 
 #if defined(AUDIO2)
 static int
-mercury_init_format(void *hdl, int setmode,
+mercury_set_format(void *hdl, int setmode,
 	const audio_params_t *play, const audio_params_t *rec,
 	audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
 {

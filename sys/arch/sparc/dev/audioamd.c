@@ -157,7 +157,7 @@ const struct audio_hw_if sa_hw_if = {
 	.close			= am7930_close,
 #if defined(AUDIO2)
 	.query_format		= am7930_query_format,
-	.init_format		= am7930_init_format,
+	.set_format		= am7930_set_format,
 #else
 	.query_encoding		= am7930_query_encoding,
 	.set_params		= am7930_set_params,

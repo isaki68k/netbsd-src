@@ -203,7 +203,7 @@ static void	arcofi_close(void *);
 static int	arcofi_drain(void *);
 #if defined(AUDIO2)
 static int	arcofi_query_format(void *, audio_format_query_t *);
-static int	arcofi_init_format(void *, int,
+static int	arcofi_set_format(void *, int,
 		    const audio_params_t *, const audio_params_t *,
 		    audio_filter_reg_t *, audio_filter_reg_t *);
 #else
@@ -234,7 +234,7 @@ static const struct audio_hw_if arcofi_hw_if = {
 	.drain		  = arcofi_drain,
 #if defined(AUDIO2)
 	.query_format	  = arcofi_query_format,
-	.init_format	  = arcofi_init_format,
+	.set_format	  = arcofi_set_format,
 #else
 	.query_encoding	  = arcofi_query_encoding,
 	.set_params	  = arcofi_set_params,
@@ -387,7 +387,7 @@ arcofi_query_format(void *v, audio_format_query_t *afp)
 }
 
 static int
-arcofi_init_format(void *handle, int setmode,
+arcofi_set_format(void *handle, int setmode,
     const audio_params_t *play, const audio_params_t *rec,
     audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
 {

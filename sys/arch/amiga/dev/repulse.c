@@ -81,7 +81,7 @@ int rep_halt_output(void *);
 int rep_halt_input(void *);
 #if defined(AUDIO2)
 int rep_query_format(void *, audio_format_query_t *);
-int rep_init_format(void *, int, const audio_params_t *, const audio_params_t *,
+int rep_set_format(void *, int, const audio_params_t *, const audio_params_t *,
 	audio_filter_reg_t *, audio_filter_reg_t *);
 #else
 int rep_query_encoding(void *, struct audio_encoding *);
@@ -107,7 +107,7 @@ const struct audio_hw_if rep_hw_if = {
 	.close			= rep_close,
 #if defined(AUDIO2)
 	.query_format		= rep_query_format,
-	.init_format		= rep_init_format,
+	.set_format		= rep_set_format,
 #else
 	.query_encoding		= rep_query_encoding,
 	.set_params		= rep_set_params,
@@ -629,7 +629,7 @@ rep_get_locks(void *opaque, kmutex_t **intr, kmutex_t **thread)
 
 #if defined(AUDIO2)
 int
-rep_init_format(void *addr, int setmode,
+rep_set_format(void *addr, int setmode,
 	const audio_params_t *play, const audio_params_t *rec,
 	audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
 {

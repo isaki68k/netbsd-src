@@ -209,7 +209,7 @@ int	aucc_get_port(void *, mixer_ctrl_t *);
 int	aucc_query_devinfo(void *, mixer_devinfo_t *);
 void	aucc_encode(int, int, int, int, u_char *, u_short **);
 #if defined(AUDIO2)
-int	aucc_init_format(void *, int,
+int	aucc_set_format(void *, int,
 			const audio_params_t *, const audio_params_t *,
 			audio_filter_reg_t *, audio_filter_reg_t *);
 #else
@@ -255,7 +255,7 @@ const struct audio_hw_if sa_hw_if = {
 	.close			= aucc_close,
 #if defined(AUDIO2)
 	.query_format		= aucc_query_format,
-	.init_format		= aucc_init_format,
+	.set_format		= aucc_set_format,
 #else
 	.query_encoding		= aucc_query_encoding,
 	.set_params		= aucc_set_params,
@@ -515,7 +515,7 @@ aucc_query_encoding(void *addr, struct audio_encoding *fp)
 
 #if defined(AUDIO2)
 int
-aucc_init_format(void *addr, int setmode,
+aucc_set_format(void *addr, int setmode,
 	const audio_params_t *p, const audio_params_t *r,
 	audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
 {

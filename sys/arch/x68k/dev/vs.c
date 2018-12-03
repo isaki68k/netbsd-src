@@ -77,7 +77,7 @@ static int  vs_open(void *, int);
 static void vs_close(void *);
 #if defined(AUDIO2)
 static int  vs_query_format(void *, audio_format_query_t *);
-static int  vs_init_format(void *, int, const audio_params_t *,
+static int  vs_set_format(void *, int, const audio_params_t *,
 	const audio_params_t *, audio_filter_reg_t *, audio_filter_reg_t *);
 #else
 static int  vs_query_encoding(void *, struct audio_encoding *);
@@ -118,7 +118,7 @@ static const struct audio_hw_if vs_hw_if = {
 	.close			= vs_close,
 #if defined(AUDIO2)
 	.query_format		= vs_query_format,
-	.init_format		= vs_init_format,
+	.set_format		= vs_set_format,
 #else
 	.query_encoding		= vs_query_encoding,
 	.set_params		= vs_set_params,
@@ -389,7 +389,7 @@ vs_round_sr(u_long rate)
 
 #if defined(AUDIO2)
 static int
-vs_init_format(void *hdl, int setmode,
+vs_set_format(void *hdl, int setmode,
 	const audio_params_t *play, const audio_params_t *rec,
 	audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
 {

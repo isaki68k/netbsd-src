@@ -137,7 +137,7 @@ struct am7930_glue bba_glue = {
  */
 
 #if defined(AUDIO2)
-static int	bba_init_format(void *, int,
+static int	bba_set_format(void *, int,
 				const audio_params_t *, const audio_params_t *,
 				audio_filter_reg_t *, audio_filter_reg_t *);
 #endif
@@ -166,7 +166,7 @@ static const struct audio_hw_if sa_hw_if = {
 	.close			= am7930_close,
 #if defined(AUDIO2)
 	.query_format		= am7930_query_format,
-	.init_format		= bba_init_format,
+	.set_format		= bba_set_format,
 #else
 	.query_encoding		= am7930_query_encoding,
 	.set_params		= am7930_set_params,
@@ -637,7 +637,7 @@ bba_get_props(void *addr)
 
 #if defined(AUDIO2)
 static int
-bba_init_format(void *addr, int setmode,
+bba_set_format(void *addr, int setmode,
 		const audio_params_t *play, const audio_params_t *rec,
 		audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
 {

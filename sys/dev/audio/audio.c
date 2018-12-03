@@ -151,7 +151,7 @@
  *	dev_ioctl 		-	x
  *	get_locks 		-	-	Called at attach time
  *	query_format		-	x	(Added in AUDIO2)
- *	init_format		-	x	(Added in AUDIO2)
+ *	set_format		-	x	(Added in AUDIO2)
  *
  * *1: These have been called at attach time and neither lock were necessary.
  *   On AUDIO2, these might be also called after attach.
@@ -824,7 +824,7 @@ audioattach(device_t parent, device_t self, void *aux)
 	hw_if->get_locks(hdlp, &sc->sc_intr_lock, &sc->sc_lock);
 
 #ifdef DIAGNOSTIC
-	if ((hw_if->set_params == NULL && hw_if->init_format == NULL) ||
+	if ((hw_if->set_params == NULL && hw_if->set_format == NULL) ||
 	    (hw_if->start_output == NULL && hw_if->trigger_output == NULL) ||
 	    (hw_if->start_input == NULL && hw_if->trigger_input == NULL) ||
 	    hw_if->halt_output == NULL ||
@@ -7393,18 +7393,18 @@ audio_hw_set_params(struct audio_softc *sc, int setmode,
 	audio_filter_reg_t pfilters2, rfilters2;
 	int error;
 	int usemode;
-	bool use_init_format;
+	bool use_set_format;
 
-	// init_format が定義されてればそっちを使う
-	use_init_format = (sc->hw_if->init_format != NULL);
-	if (use_init_format)
-		DPRINTF(2, "%s use_init_format\n", __func__);
+	// set_format が定義されてればそっちを使う
+	use_set_format = (sc->hw_if->set_format != NULL);
+	if (use_set_format)
+		DPRINTF(2, "%s use_set_format\n", __func__);
 
 	usemode = setmode;
 	pp = format2_to_params(phwfmt);
 	rp = format2_to_params(rhwfmt);
 
-	if (use_init_format) {
+	if (use_set_format) {
 		memset(&pfilters2, 0, sizeof(pfilters2));
 		memset(&rfilters2, 0, sizeof(rfilters2));
 		pfilters2.param = pp;
@@ -7422,11 +7422,11 @@ audio_hw_set_params(struct audio_softc *sc, int setmode,
 #endif
 	}
 
-	if (use_init_format) {
-		error = sc->hw_if->init_format(sc->hw_hdl, setmode,
+	if (use_set_format) {
+		error = sc->hw_if->set_format(sc->hw_hdl, setmode,
 		    &pp, &rp, &pfilters2, &rfilters2);
 		if (error) {
-			DPRINTF(1, "%s: init_format failed with %d\n",
+			DPRINTF(1, "%s: set_format failed with %d\n",
 			    __func__, error);
 			return error;
 		}
@@ -7449,7 +7449,7 @@ audio_hw_set_params(struct audio_softc *sc, int setmode,
 		}
 	}
 
-	if (use_init_format) {
+	if (use_set_format) {
 		sc->sc_xxx_pfilreg = pfilters2;
 		sc->sc_xxx_rfilreg = rfilters2;
 		if (pfilters2.codec)

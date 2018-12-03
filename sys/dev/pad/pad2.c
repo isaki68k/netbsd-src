@@ -89,7 +89,7 @@ static int	pad_detach(device_t, int);
 static void	pad_childdet(device_t, device_t);
 
 static int	pad_query_format(void *, audio_format_query_t *);
-static int	pad_init_format(void *, int,
+static int	pad_set_format(void *, int,
 				const audio_params_t *, const audio_params_t *,
 			    audio_filter_reg_t *, audio_filter_reg_t *);
 static int	pad_start_output(void *, void *, int,
@@ -114,7 +114,7 @@ static bool	pad_is_attached;	/* Do we have an audio* child? */
 
 static const struct audio_hw_if pad_hw_if = {
 	.query_format = pad_query_format,
-	.init_format = pad_init_format,
+	.set_format = pad_set_format,
 	.start_output = pad_start_output,
 	.start_input = pad_start_input,
 	.halt_output = pad_halt_output,
@@ -398,13 +398,13 @@ pad_query_format(void *opaque, audio_format_query_t *afp)
 }
 
 static int
-pad_init_format(void *opaque, int setmode,
+pad_set_format(void *opaque, int setmode,
     const audio_params_t *play, const audio_params_t *rec,
 	audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
 {
 	// SWVOL サポートしない時はこの関数は何もしないが、今の所、
-	// init_format があれば init_format を、なければ set_format を呼ぶ
-	// という構造になっているため、init_format を廃止することはできない。
+	// set_format があれば set_format を、なければ set_params を呼ぶ
+	// という構造になっているため、set_format を廃止することはできない。
 #if !defined(PAD_NO_SWVOL)
 	pad_softc_t *sc __diagused;
 

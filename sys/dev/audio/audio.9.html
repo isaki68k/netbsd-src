@@ -132,7 +132,7 @@ struct audio_hw_if {
      void    (*get_locks)(void *, kmutex_t **, kmutex_t **);
 
      <span class=a2>int     (*query_format)(void *, audio_format_query_t *);</span>
-     <span class=a2>int     (*init_format)(void *, int,
+     <span class=a2>int     (*set_format)(void *, int,
 		 const audio_params_t *, const audio_params_t *,
 		 audio_filter_reg_t *, audio_filter_reg_t *);</span>
 };
@@ -293,7 +293,7 @@ AUDIO2 では廃止する。代わりに query_format を新設したい。
 	を持つエントリが含まれている必要があります。
 	もしハードウェアが <tt>AUDIO_ENCODING_SLINEAR_NE, AUDIO_INTERNAL_BITS</tt>
 	を直接扱えないのなら後述する lower driver がこれを変換する責任を持ちます
-	(see also init_format)。
+	(see also set_format)。
 	今の所、これ以外のフォーマットは任意です。
 	現在の実装では <tt>AUDIO_ENCODING_SLINEAR_NE, AUDIO_INTERNAL_BITS</tt>
 	以外のフォーマットが採用されることはありません。
@@ -396,10 +396,10 @@ AUDIO2 では廃止する。代わりに query_format を新設したい。
 	     set_params.  Return 0 on success, otherwise an error code.
 </span></del></dd>
 <dd class=p1><span class=a2>
-AUDIO2 ではこれを廃止する。代わりに init_format を新設。
+AUDIO2 ではこれを廃止する。代わりに set_format を新設。
 </span></dd>
 
-<dt class=p1><span class=a2>int init_foramt(void *hdl,
+<dt class=p1><span class=a2>int set_foramt(void *hdl,
 	int setmode,
 	const audio_params_t *play, const audio_params_t *rec,
 	audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
@@ -940,7 +940,7 @@ AUDIO2 は仕様。
  <td>&mdash;
  <td><span class=a2>(新設)<br>at all time</span>
 
-<tr><td>init_format
+<tr><td>set_format
  <td>&mdash;
  <td>&mdash;
  <td><span class=a2>(新設)<br>
