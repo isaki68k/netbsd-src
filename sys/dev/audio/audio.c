@@ -505,7 +505,7 @@ static int audio_hw_probe_by_encoding(struct audio_softc *, audio_format2_t *,
 	int);
 static int audio_hw_validate_format(struct audio_softc *, int,
 	const audio_format2_t *);
-static int audio_mixers_init_format(struct audio_softc *, struct audio_info *);
+static int audio_mixers_set_format(struct audio_softc *, struct audio_info *);
 static int audio_sysctl_volume(SYSCTLFN_PROTO);
 static int audio_sysctl_blk_ms(SYSCTLFN_PROTO);
 static int audio_sysctl_debug(SYSCTLFN_PROTO);
@@ -2747,7 +2747,7 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		break;
 
 	case AUDIO_SETFORMAT:
-		error = audio_mixers_init_format(sc, (struct audio_info *)addr);
+		error = audio_mixers_set_format(sc, (struct audio_info *)addr);
 		break;
 
 	default:
@@ -6643,7 +6643,7 @@ audio_hw_validate_format(struct audio_softc *sc, int mode,
 // 成功すれば 0、失敗すれば errno を返す。
 // sc_lock でコールすること。
 static int
-audio_mixers_init_format(struct audio_softc *sc, struct audio_info *ai)
+audio_mixers_set_format(struct audio_softc *sc, struct audio_info *ai)
 {
 	audio_format2_t phwfmt;
 	audio_format2_t rhwfmt;
