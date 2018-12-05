@@ -903,8 +903,6 @@ audioattach(device_t parent, device_t self, void *aux)
 	if (mode == 0)
 		goto bad;
 
-	// setfd は誰一人実装してないし廃止したい方向
-
 	sc->sc_sih_rd = softint_establish(SOFTINT_SERIAL | SOFTINT_MPSAFE,
 	    audio_softintr_rd, sc);
 
