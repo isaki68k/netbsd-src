@@ -481,8 +481,9 @@ static void audio_track_setinfo_water(audio_track_t *,
 	const struct audio_info *);
 static int audio_hw_setinfo(struct audio_softc *, const struct audio_info *,
 	struct audio_info *);
-static int audio_hw_set_params(struct audio_softc *, int, audio_format2_t *,
-	audio_format2_t *);
+static int audio_hw_set_params(struct audio_softc *, int,
+	audio_format2_t *, audio_format2_t *,
+	audio_filter_reg_t *, audio_filter_reg_t *);
 static int audiogetinfo(struct audio_softc *, struct audio_info *, int,
 	audio_file_t *);
 #if 0 /* not used */
@@ -494,7 +495,8 @@ static bool audio_can_capture(struct audio_softc *);
 static int audio_check_params(struct audio_params *);
 static int audio_check_params2(audio_format2_t *);
 static int audio_mixers_init(struct audio_softc *sc, int,
-	const audio_format2_t *, const audio_format2_t *);
+	const audio_format2_t *, const audio_format2_t *,
+	const audio_filter_reg_t *, const audio_filter_reg_t *);
 static int audio_select_freq(const struct audio_format *);
 static int audio_hw_probe(struct audio_softc *, int, int *,
 	audio_format2_t *, audio_format2_t *);
@@ -528,7 +530,8 @@ static int audio_track_drain(struct audio_softc *, audio_track_t *);
 static void audio_track_record(audio_track_t *);
 static void audio_track_clear(struct audio_softc *, audio_track_t *);
 
-static int audio_mixer_init(struct audio_softc *, int, const audio_format2_t *);
+static int audio_mixer_init(struct audio_softc *, int,
+	const audio_format2_t *, const audio_filter_reg_t *);
 static void audio_mixer_destroy(struct audio_softc *, audio_trackmixer_t *);
 static void audio_pmixer_start(struct audio_softc *, bool);
 static void audio_pmixer_process(struct audio_softc *, bool);
@@ -804,6 +807,8 @@ audioattach(device_t parent, device_t self, void *aux)
 	const struct audio_hw_if *hw_if;
 	audio_format2_t phwfmt;
 	audio_format2_t rhwfmt;
+	audio_filter_reg_t pfil;
+	audio_filter_reg_t rfil;
 	const struct sysctlnode *node;
 	void *hdlp;
 	bool is_indep;
@@ -880,6 +885,8 @@ audioattach(device_t parent, device_t self, void *aux)
 	/* probe hw params */
 	memset(&phwfmt, 0, sizeof(phwfmt));
 	memset(&rhwfmt, 0, sizeof(rhwfmt));
+	memset(&pfil, 0, sizeof(pfil));
+	memset(&rfil, 0, sizeof(rfil));
 	mutex_enter(sc->sc_lock);
 	if (audio_hw_probe(sc, is_indep, &mode, &phwfmt, &rhwfmt) != 0) {
 		mutex_exit(sc->sc_lock);
@@ -891,14 +898,14 @@ audioattach(device_t parent, device_t self, void *aux)
 	}
 	/* Init hardware. */
 	/* hw_probe() also validates [pr]hwfmt.  */
-	error = audio_hw_set_params(sc, mode, &phwfmt, &rhwfmt);
+	error = audio_hw_set_params(sc, mode, &phwfmt, &rhwfmt, &pfil, &rfil);
 	if (error) {
 		mutex_exit(sc->sc_lock);
 		goto bad;
 	}
 
 	/* init track mixer */
-	mode = audio_mixers_init(sc, mode, &phwfmt, &rhwfmt);
+	mode = audio_mixers_init(sc, mode, &phwfmt, &rhwfmt, &pfil, &rfil);
 	mutex_exit(sc->sc_lock);
 	if (mode == 0)
 		goto bad;
@@ -4911,7 +4918,7 @@ audio_mixer_calc_blktime(struct audio_softc *sc, audio_trackmixer_t *mixer)
 // ミキサを初期化します。
 // mixer はゼロフィルされているものとします。
 // mode は再生なら AUMODE_PLAY、録音なら AUMODE_RECORD を指定します。
-// hwfmt は HW フォーマットです。
+// hwfmt は HW フォーマット、reg はフィルタ登録情報です。
 // 成功すれば 0、失敗すれば errno を返します。
 // sc_lock でコールします。
 /*
@@ -4922,7 +4929,8 @@ audio_mixer_calc_blktime(struct audio_softc *sc, audio_trackmixer_t *mixer)
  * This function should be called with sc_lock.
  */
 static int
-audio_mixer_init(struct audio_softc *sc, int mode, const audio_format2_t *hwfmt)
+audio_mixer_init(struct audio_softc *sc, int mode,
+	const audio_format2_t *hwfmt, const audio_filter_reg_t *reg)
 {
 	audio_trackmixer_t *mixer;
 	int len;
@@ -5040,15 +5048,8 @@ audio_mixer_init(struct audio_softc *sc, int mode, const audio_format2_t *hwfmt)
 		// 合成バッファは使用しない
 	}
 
-	// XXX どうするか
-	audio_filter_reg_t *reg;
-	if (mode == AUMODE_PLAY) {
-		reg = &sc->sc_xxx_pfilreg;
-	} else {
-		reg = &sc->sc_xxx_rfilreg;
-	}
-	mixer->codec = reg->codec;
-	if (mixer->codec) {
+	if (reg->codec) {
+		mixer->codec = reg->codec;
 		mixer->codecarg.context = reg->context;
 		if (mode == AUMODE_PLAY) {
 			mixer->codecarg.srcfmt = &mixer->track_fmt;
@@ -6216,7 +6217,8 @@ audio_check_params2(audio_format2_t *f2)
 // sc_lock でコールします。
 static int
 audio_mixers_init(struct audio_softc *sc, int mode,
-	const audio_format2_t *phwfmt, const audio_format2_t *rhwfmt)
+	const audio_format2_t *phwfmt, const audio_format2_t *rhwfmt,
+	const audio_filter_reg_t *pfil, const audio_filter_reg_t *rfil)
 {
 	char fmtstr[64];
 	int blkms;
@@ -6228,7 +6230,7 @@ audio_mixers_init(struct audio_softc *sc, int mode,
 			kmem_free(sc->sc_pmixer, sizeof(*sc->sc_pmixer));
 		}
 		sc->sc_pmixer = kmem_zalloc(sizeof(*sc->sc_pmixer), KM_SLEEP);
-		error = audio_mixer_init(sc, AUMODE_PLAY, phwfmt);
+		error = audio_mixer_init(sc, AUMODE_PLAY, phwfmt, pfil);
 		if (error == 0) {
 			audio_format2_tostr(fmtstr, sizeof(fmtstr),
 			    &sc->sc_pmixer->track_fmt);
@@ -6261,7 +6263,7 @@ audio_mixers_init(struct audio_softc *sc, int mode,
 			kmem_free(sc->sc_rmixer, sizeof(*sc->sc_rmixer));
 		}
 		sc->sc_rmixer = kmem_zalloc(sizeof(*sc->sc_rmixer), KM_SLEEP);
-		error = audio_mixer_init(sc, AUMODE_RECORD, rhwfmt);
+		error = audio_mixer_init(sc, AUMODE_RECORD, rhwfmt, rfil);
 		if (error == 0) {
 			audio_format2_tostr(fmtstr, sizeof(fmtstr),
 			    &sc->sc_rmixer->track_fmt);
@@ -6536,7 +6538,8 @@ audio_hw_probe_by_encoding(struct audio_softc *sc, audio_format2_t *cand,
 		for (i = 0; i < __arraycount(freqlist); i++) {
 			fmt.channels = ch;
 			fmt.sample_rate = freqlist[i];
-			error = audio_hw_set_params(sc, mode, &fmt, &fmt);
+			error = audio_hw_set_params(sc, mode, &fmt, &fmt,
+			    NULL, NULL);
 			if (error == 0) {
 				// 設定できたのでこれを採用
 				*cand = fmt;
@@ -6645,6 +6648,8 @@ audio_mixers_set_format(struct audio_softc *sc, struct audio_info *ai)
 {
 	audio_format2_t phwfmt;
 	audio_format2_t rhwfmt;
+	audio_filter_reg_t pfil;
+	audio_filter_reg_t rfil;
 	int mode;
 	int modemask;
 	int indep;
@@ -6726,11 +6731,13 @@ audio_mixers_set_format(struct audio_softc *sc, struct audio_info *ai)
 		return EBUSY;
 	}
 
-	error = audio_hw_set_params(sc, mode, &phwfmt, &rhwfmt);
+	memset(&pfil, 0, sizeof(pfil));
+	memset(&rfil, 0, sizeof(rfil));
+	error = audio_hw_set_params(sc, mode, &phwfmt, &rhwfmt, &pfil, &rfil);
 	if (error)
 		return error;
 
-	audio_mixers_init(sc, mode, &phwfmt, &rhwfmt);
+	audio_mixers_init(sc, mode, &phwfmt, &rhwfmt, &pfil, &rfil);
 	return 0;
 }
 
@@ -7375,7 +7382,13 @@ abort:
 // setmode には設定をしたい方向 AUMODE_PLAY | AUMODE_RECORD をセットする。
 // setmode の値の如何によらず phwfmt, rhwfmt は NULL であってはならない。
 // 非 independent デバイスなら phwfmt, rhwfmt には同じ値をセットしておくこと。
-// 成功すれば phwfmt, rhwfmt を HW フォーマットで上書きし 0 を返す。
+// pfil, rfil は set_format を使う場合ならゼロクリアした領域を指定すること。
+// set_params を使う場合なら NULL でよい(こちらでは触らない)。
+// 成功すれば
+// o phwfmt, rhwfmt を HW フォーマットで上書きする。
+// o set_format (新形式) でかつ指定の hwfmt に変換が必要なら pfil, rfil に
+//   MD ドライバから指定されたフィルタ情報を書き込む。
+// 戻り値に 0 を返す。
 // 失敗すれば errno を返す。
 // sc_lock でコールすること。
 //
@@ -7384,11 +7397,11 @@ abort:
 // pp, rp を更新しなければならない事態は起きないはずだからである。
 static int
 audio_hw_set_params(struct audio_softc *sc, int setmode,
-	audio_format2_t *phwfmt, audio_format2_t *rhwfmt)
+	audio_format2_t *phwfmt, audio_format2_t *rhwfmt,
+	audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
 {
 	audio_params_t pp, rp;
 	stream_filter_list_t pfilters, rfilters;
-	audio_filter_reg_t pfilters2, rfilters2;
 	int error;
 	int usemode;
 	bool use_set_format;
@@ -7403,10 +7416,8 @@ audio_hw_set_params(struct audio_softc *sc, int setmode,
 	rp = format2_to_params(rhwfmt);
 
 	if (use_set_format) {
-		memset(&pfilters2, 0, sizeof(pfilters2));
-		memset(&rfilters2, 0, sizeof(rfilters2));
-		pfilters2.param = pp;
-		rfilters2.param = rp;
+		pfil->param = pp;
+		rfil->param = rp;
 	} else {
 		memset(&pfilters, 0, sizeof(pfilters));
 		memset(&rfilters, 0, sizeof(rfilters));
@@ -7422,7 +7433,7 @@ audio_hw_set_params(struct audio_softc *sc, int setmode,
 
 	if (use_set_format) {
 		error = sc->hw_if->set_format(sc->hw_hdl, setmode,
-		    &pp, &rp, &pfilters2, &rfilters2);
+		    &pp, &rp, pfil, rfil);
 		if (error) {
 			DPRINTF(1, "%s: set_format failed with %d\n",
 			    __func__, error);
@@ -7448,12 +7459,10 @@ audio_hw_set_params(struct audio_softc *sc, int setmode,
 	}
 
 	if (use_set_format) {
-		sc->sc_xxx_pfilreg = pfilters2;
-		sc->sc_xxx_rfilreg = rfilters2;
-		if (pfilters2.codec)
-			*phwfmt = params_to_format2(&pfilters2.param);
-		if (rfilters2.codec)
-			*rhwfmt = params_to_format2(&rfilters2.param);
+		if (pfil->codec)
+			*phwfmt = params_to_format2(&pfil->param);
+		if (rfil->codec)
+			*rhwfmt = params_to_format2(&rfil->param);
 	} else {
 		*phwfmt = params_to_format2(&pp);
 		*rhwfmt = params_to_format2(&rp);
@@ -7720,6 +7729,8 @@ audio_sysctl_blk_ms(SYSCTLFN_ARGS)
 	struct audio_softc *sc;
 	audio_format2_t phwfmt;
 	audio_format2_t rhwfmt;
+	audio_filter_reg_t pfil;
+	audio_filter_reg_t rfil;
 	int t;
 	int mode;
 	int error;
@@ -7761,14 +7772,16 @@ audio_sysctl_blk_ms(SYSCTLFN_ARGS)
 	}
 
 	/* re-init hardware */
-	error = audio_hw_set_params(sc, mode, &phwfmt, &rhwfmt);
+	memset(&pfil, 0, sizeof(pfil));
+	memset(&rfil, 0, sizeof(rfil));
+	error = audio_hw_set_params(sc, mode, &phwfmt, &rhwfmt, &pfil, &rfil);
 	if (error) {
 		mutex_exit(sc->sc_lock);
 		return error;
 	}
 
 	/* re-init track mixer */
-	audio_mixers_init(sc, mode, &phwfmt, &rhwfmt);
+	audio_mixers_init(sc, mode, &phwfmt, &rhwfmt, &pfil, &rfil);
 	mutex_exit(sc->sc_lock);
 	return 0;
 }

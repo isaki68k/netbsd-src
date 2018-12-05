@@ -142,9 +142,6 @@ struct audio_softc {
 	audio_trackmixer_t *sc_pmixer;	/* null if play not supported by hw */
 	audio_trackmixer_t *sc_rmixer;	/* null if rec not supported by hw */
 
-	audio_filter_reg_t sc_xxx_pfilreg;
-	audio_filter_reg_t sc_xxx_rfilreg;
-
 	int sc_popens;
 	int sc_ropens;
 	bool			sc_pbusy;	/* output DMA in progress */
