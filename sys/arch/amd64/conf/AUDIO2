@@ -426,11 +426,11 @@ sysbeep0	at pcppi?
 #tdfxdrm*	at drm?		# 3dfx (voodoo) DRM driver
 
 # DRMKMS drivers
-i915drmkms*	at pci? dev ? function ?
-intelfb*	at intelfbbus?
+#i915drmkms*	at pci? dev ? function ?
+#intelfb*	at intelfbbus?
 
-radeon* 	at pci? dev ? function ?
-radeondrmkmsfb* at radeonfbbus?
+#radeon* 	at pci? dev ? function ?
+#radeondrmkmsfb* at radeonfbbus?
 
 #nouveau*	at pci? dev ? function ?
 #nouveaufb*	at nouveaufbbus?
@@ -805,7 +805,7 @@ ale*	at pci? dev ? function ?	# Attansic/Atheros L1E Ethernet
 #ntwoc*	at pci? dev ? function ?	# Riscom/N2 PCI Sync Serial
 #pcn*	at pci? dev ? function ?	# AMD PCnet-PCI Ethernet
 #ral*	at pci? dev ? function ?	# Ralink Technology RT25x0 802.11a/b/g
-#re*	at pci? dev ? function ?	# Realtek 8139C+/8169/8169S/8110S
+re*	at pci? dev ? function ?	# Realtek 8139C+/8169/8169S/8110S
 #rtk*	at pci? dev ? function ?	# Realtek 8129/8139
 #rtw*	at pci? dev ? function ?	# Realtek 8180L (802.11)
 #rtwn*	at pci? dev ? function ?	# Realtek 8188CE/8192CE 802.11b/g/n
@@ -886,7 +886,7 @@ makphy* at mii? phy ?			# Marvell Semiconductor 88E1000 PHYs
 #nsphyter* at mii? phy ? 		# NS83843 PHYs
 #pnaphy* at mii? phy ?			# generic HomePNA PHYs
 #qsphy*	at mii? phy ?			# Quality Semiconductor QS6612 PHYs
-#rgephy* at mii? phy ?			# Realtek 8169S/8110 internal PHYs
+rgephy* at mii? phy ?			# Realtek 8169S/8110 internal PHYs
 #rlphy*	at mii? phy ?			# Realtek 8139/8201L PHYs
 #sqphy*	at mii? phy ?			# Seeq 80220/80221/80223 PHYs
 #tlphy*	at mii? phy ?			# ThunderLAN PHYs
@@ -898,7 +898,7 @@ ukphy*	at mii? phy ?			# generic unknown PHYs
 # USB Controller and Devices
 
 # PCI USB controllers
-#xhci*	at pci?	dev ? function ?	# eXtensible Host Controller
+xhci*	at pci?	dev ? function ?	# eXtensible Host Controller
 					# xhci is at best experimental
 ehci*	at pci?	dev ? function ?	# Enhanced Host Controller
 ohci*	at pci?	dev ? function ?	# Open Host Controller
@@ -916,7 +916,7 @@ uhci*	at pci?	dev ? function ?	# Universal Host Controller (Intel)
 #slhci*	at pcmcia? function ?		# ScanLogic SL811HS
 
 # USB bus support
-#usb*	at xhci?
+usb*	at xhci?
 usb*	at ehci?
 usb*	at ohci?
 usb*	at uhci?
