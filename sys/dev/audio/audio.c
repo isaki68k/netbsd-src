@@ -215,6 +215,14 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include "ioconf.h"
 #endif /* _KERNEL */
 
+// 再生終了後にログを出す。
+// ただしデバイス間の分離はしていないので一時的な確認用。
+#define LAZYLOG 1
+#if defined(LAZYLOG)
+#include "lzlog.c"
+#define printf(fmt...)	lzlog_printf(fmt)
+#endif
+
 // デバッグレベルは
 // 0: ログ出力なし
 // 1: open/close/set_param等
@@ -1926,6 +1934,11 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	if (sc->sc_popens + sc->sc_ropens == 0) {
 		/* First open */
 
+#if defined(LAZYLOG)
+		// 全ドライバ共通なので同時に audio0、audio1 を扱うと死ぬ
+		lzlog_open(65536);
+#endif
+
 		sc->sc_cred = kauth_cred_get();
 		kauth_cred_hold(sc->sc_cred);
 
@@ -2191,6 +2204,10 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
 		}
 
 		kauth_cred_free(sc->sc_cred);
+#if defined(LAZYLOG)
+		lzlog_flush();
+		lzlog_close();
+#endif
 	}
 
 	mutex_enter(sc->sc_intr_lock);
