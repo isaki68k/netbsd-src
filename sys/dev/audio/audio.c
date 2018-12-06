@@ -4936,6 +4936,7 @@ audio_mixer_calc_blktime(struct audio_softc *sc, audio_trackmixer_t *mixer)
 // mixer はゼロフィルされているものとします。
 // mode は再生なら AUMODE_PLAY、録音なら AUMODE_RECORD を指定します。
 // hwfmt は HW フォーマット、reg はフィルタ登録情報です。
+// hwfmt、reg は NULL であってはいけません。
 // 成功すれば 0、失敗すれば errno を返します。
 // sc_lock でコールします。
 /*
@@ -4955,6 +4956,9 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 	int capacity;
 	size_t bufsize;
 	int error;
+
+	KASSERT(hwfmt != NULL);
+	KASSERT(reg != NULL);
 
 	error = 0;
 	if (mode == AUMODE_PLAY)
@@ -6227,7 +6231,8 @@ audio_check_params2(audio_format2_t *f2)
 
 // 再生・録音ミキサーを初期化します。
 // 引数 mode の AUMODE_{PLAY,RECORD} のうち立っている方を初期化します。
-// phwfmt, rhwfmt は HW フォーマットです。
+// phwfmt, rhwfmt は HW フォーマット、pfil, rfil はフィルタ登録情報です。
+// phwfmt, rhwfmt, pfil, rfil は NULL であってはいけません。
 // 戻り値は mode のうち初期化が成功したものの OR を返します。
 // この関数は再生か録音トラックがいずれかでも存在する時は呼び出しては
 // いけません。
@@ -6240,6 +6245,11 @@ audio_mixers_init(struct audio_softc *sc, int mode,
 	char fmtstr[64];
 	int blkms;
 	int error;
+
+	KASSERT(phwfmt != NULL);
+	KASSERT(rhwfmt != NULL);
+	KASSERT(pfil != NULL);
+	KASSERT(rfil != NULL);
 
 	if ((mode & AUMODE_PLAY)) {
 		if (sc->sc_pmixer) {
@@ -7422,6 +7432,9 @@ audio_hw_set_params(struct audio_softc *sc, int setmode,
 	int error;
 	int usemode;
 	bool use_set_format;
+
+	KASSERT(phwfmt != NULL);
+	KASSERT(rhwfmt != NULL);
 
 	// set_format が定義されてればそっちを使う
 	use_set_format = (sc->hw_if->set_format != NULL);
