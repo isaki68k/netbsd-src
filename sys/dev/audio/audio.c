@@ -19,9 +19,6 @@
 // x Reconsideration about rsel/wel.
 //   rsel/wsel はトラックごとに分けなくてよいか
 //   今のままでも動作はしているが
-// x Reconsideration about sih_rd.
-//   sih_rd はトラックごとに分けなくてよいか
-//   今のままでも動作はしているが
 // x Reconsideration about overflow handling on track mixer.
 //   トラックミキサでオーバーフローする場合の処理はあれでいいか
 //   今は自動的にマスターボリュームを下げている。そして下げっぱなし。
