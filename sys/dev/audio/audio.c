@@ -1207,6 +1207,7 @@ audiodetach(device_t self, int flags)
 		return rc;
 
 	// 稼働中のトラックを終了させる
+	// XXX ここで file を解放しないといけないのでは?
 	mutex_enter(sc->sc_lock);
 	sc->sc_dying = true;
 	SLIST_FOREACH(f, &sc->sc_files, entry) {
