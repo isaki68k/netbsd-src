@@ -90,6 +90,8 @@ print_audiodev(struct audiodev *adev, int i)
 	if ((adev->info.mode & AUMODE_RECORD))
 		printf("       record:   %uch, %uHz\n",
 		    adev->info.record.channels, adev->info.record.sample_rate);
+	if ((adev->info.mode & (AUMODE_PLAY | AUMODE_RECORD)) == 0) {
+		printf("       Both playback and recording are unavailable!\n");
 
 	TAILQ_FOREACH(f, &adev->formats, next) {
 		printf("       ");
