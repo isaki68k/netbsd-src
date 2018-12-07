@@ -217,7 +217,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 
 // 再生終了後にログを出す。
 // ただしデバイス間の分離はしていないので一時的な確認用。
-#define LAZYLOG 1
+//#define LAZYLOG 1
 #if defined(LAZYLOG)
 #include "lzlog.c"
 #define printf(fmt...)	lzlog_printf(fmt)
