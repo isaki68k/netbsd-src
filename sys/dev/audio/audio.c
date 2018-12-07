@@ -6092,7 +6092,6 @@ audio_softintr_wr(void *cookie)
 {
 	struct audio_softc *sc;
 	audio_file_t *file;
-	audio_file_t *f;
 	proc_t *p;
 	pid_t pid;
 
@@ -6104,16 +6103,7 @@ audio_softintr_wr(void *cookie)
 	/* Notify for select/poll.  It needs sc_lock (and not sc_intr_lock). */
 	selnotify(&sc->sc_wsel, 0, NOTE_SUBMIT);
 
-	mutex_enter(sc->sc_intr_lock);
-	// 自分自身がまだ有効かどうか調べる
-	pid = 0;
-	SLIST_FOREACH(f, &sc->sc_files, entry) {
-		if (f == file) {
-			pid = file->async_audio;
-			break;
-		}
-	}
-	mutex_exit(sc->sc_intr_lock);
+	pid = file->async_audio;
 	if (pid != 0) {
 		TRACEF(file, "sending SIGIO %d", pid);
 		mutex_enter(proc_lock);
