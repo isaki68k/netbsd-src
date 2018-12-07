@@ -2174,9 +2174,12 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
 			}
 		}
 
-		/* Disestablish softint_wr. */
+		/*
+		 * Disestablish softint_wr.
+		 * softint_disestablish needs unlock sc_lock.
+		 * see comment on kern/kern_softint.c::softint_disestablish().
+		 */
 		KASSERT(file->ptrack->sih_wr);
-		/* softint_disestablish needs unlock. */
 		mutex_exit(sc->sc_lock);
 		softint_disestablish(file->ptrack->sih_wr);
 		mutex_enter(sc->sc_lock);
