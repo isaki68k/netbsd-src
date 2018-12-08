@@ -166,7 +166,7 @@ struct audio_softc {
 	/* Locks and sleep channels for reading, writing and draining. */
 	kmutex_t	*sc_intr_lock;
 	kmutex_t	*sc_lock;
-	kmutex_t	sc_xxlock;
+	kmutex_t	sc_exlock;
 	bool		sc_dying;
 
 	kauth_cred_t sc_cred;
