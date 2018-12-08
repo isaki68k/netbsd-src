@@ -442,8 +442,8 @@ static void audio_mixer_restore(struct audio_softc *);
 static void audio_softintr_rd(void *);
 static void audio_softintr_wr(void *);
 
-static int audio_enter(dev_t, struct audio_softc **);
-static void audio_exit(struct audio_softc *);
+static int audio_enter(dev_t, struct audio_softc **, int);
+static void audio_exit(struct audio_softc *, int);
 static int audio_waitio(struct audio_softc *, audio_track_t *);
 
 static int audioclose(struct file *);
@@ -1386,27 +1386,13 @@ stream_filter_list_prepend(stream_filter_list_t *list,
 }
 #endif // OLD_FILTER
 
-// audio_enter() を呼んでるのは
-// audiobellopen(WR)
-// audioopen(WR)
-// audioclose(WR)
-// audioread(RD)
-// audiowrite(RD)
-// audioioctl(WR) FLUSH		.. audio_clear/initbufs/start
-// audioioctl(WR) SETINFO	.. audiosetinfo
-// audioioctl(WR) DRAIN		.. audio_drain
-// audioioctl(WR) SETFD		.. get_props/hw->setfd
-// audioioctl(RD) それ以外
-// audioioctl(RD) GETDEV	.. hw->getdev
-// audiommap(RD)
-// audiostat は確かにいらなさそうだけど
-// poll/kqueue にも元からないようだ
-// HW の状態を変えるのを HW への読み書きから保護するのが当初の目的ぽい。
 /*
  * Look up audio device and acquire locks for device access.
  */
+// dev から sc を取り出して(*scp に格納して)、ついでに sc_lock を取る。
+// exclusive が立っていれば exlock も取る。
 static int
-audio_enter(dev_t dev, struct audio_softc **scp)
+audio_enter(dev_t dev, struct audio_softc **scp, int exclusive)
 {
 	struct audio_softc *sc;
 
@@ -1414,6 +1400,9 @@ audio_enter(dev_t dev, struct audio_softc **scp)
 	sc = device_lookup_private(&audio_cd, AUDIOUNIT(dev));
 	if (sc == NULL || sc->hw_if == NULL)
 		return ENXIO;
+
+	if (exclusive)
+		mutex_enter(&sc->sc_exlock);
 	mutex_enter(sc->sc_lock);
 	if (sc->sc_dying) {
 		mutex_exit(sc->sc_lock);
@@ -1428,10 +1417,12 @@ audio_enter(dev_t dev, struct audio_softc **scp)
  * Release reference to device acquired with audio_enter().
  */
 static void
-audio_exit(struct audio_softc *sc)
+audio_exit(struct audio_softc *sc, int exclusive)
 {
 
 	mutex_exit(sc->sc_lock);
+	if (exclusive)
+		mutex_exit(&sc->sc_exlock);
 }
 
 /*
@@ -1470,13 +1461,13 @@ audiobellopen(dev_t dev, struct audiobell_arg *arg)
 	struct audio_softc *sc;
 	int error;
 
-	if ((error = audio_enter(dev, &sc)) != 0)
+	if ((error = audio_enter(dev, &sc, AUDIO_LK_EXCLUSIVE)) != 0)
 		return error;
 	device_active(sc->dev, DVA_SYSTEM);
 
 	error = audio_open(dev, sc, FWRITE, 0, curlwp, arg);
 
-	audio_exit(sc);
+	audio_exit(sc, AUDIO_LK_EXCLUSIVE);
 	return error;
 }
 
@@ -1489,13 +1480,13 @@ audiobellclose(audio_file_t *file)
 	int error;
 
 	dev = file->dev;
-	if ((error = audio_enter(dev, &sc)) != 0)
+	if ((error = audio_enter(dev, &sc, AUDIO_LK_EXCLUSIVE)) != 0)
 		return error;
 	device_active(sc->dev, DVA_SYSTEM);
 
 	error = audio_close(sc, file);
 
-	audio_exit(sc);
+	audio_exit(sc, AUDIO_LK_EXCLUSIVE);
 	return error;
 }
 
@@ -1508,12 +1499,12 @@ audiobellwrite(audio_file_t *file, struct uio *uio)
 	int error;
 
 	dev = file->dev;
-	if ((error = audio_enter(dev, &sc)) != 0)
+	if ((error = audio_enter(dev, &sc, 0)) != 0)
 		return error;
 
 	error = audio_write(sc, uio, 0, file);
 
-	audio_exit(sc);
+	audio_exit(sc, 0);
 	return error;
 }
 
@@ -1523,16 +1514,8 @@ audioopen(dev_t dev, int flags, int ifmt, struct lwp *l)
 	struct audio_softc *sc;
 	int error;
 
-	// XXX とりあえず
-	sc = device_lookup_private(&audio_cd, AUDIOUNIT(dev));
-	mutex_enter(&sc->sc_exlock);
-
-	if ((error = audio_enter(dev, &sc)) != 0)
-	{
-		// XXX とりあえず
-		mutex_exit(&sc->sc_exlock);
+	if ((error = audio_enter(dev, &sc, AUDIO_LK_EXCLUSIVE)) != 0)
 		return error;
-	}
 
 	device_active(sc->dev, DVA_SYSTEM);
 	switch (AUDIODEV(dev)) {
@@ -1550,9 +1533,7 @@ audioopen(dev_t dev, int flags, int ifmt, struct lwp *l)
 		error = ENXIO;
 		break;
 	}
-	audio_exit(sc);
-	// XXX とりあえず
-	mutex_exit(&sc->sc_exlock);
+	audio_exit(sc, AUDIO_LK_EXCLUSIVE);
 
 	return error;
 }
@@ -1569,16 +1550,8 @@ audioclose(struct file *fp)
 	file = (audio_file_t *)fp->f_audioctx;
 	dev = file->dev;
 
-	// XXX とりあえず
-	sc = device_lookup_private(&audio_cd, AUDIOUNIT(dev));
-	mutex_enter(&sc->sc_exlock);
-
-	if ((error = audio_enter(dev, &sc)) != 0)
-	{
-		// XXX とりあえず
-		mutex_exit(&sc->sc_exlock);
+	if ((error = audio_enter(dev, &sc, AUDIO_LK_EXCLUSIVE)) != 0)
 		return error;
-	}
 
 	device_active(sc->dev, DVA_SYSTEM);
 	switch (AUDIODEV(dev)) {
@@ -1601,9 +1574,7 @@ audioclose(struct file *fp)
 		fp->f_audioctx = NULL;
 	}
 
-	audio_exit(sc);
-	// XXX とりあえず
-	mutex_exit(&sc->sc_exlock);
+	audio_exit(sc, AUDIO_LK_EXCLUSIVE);
 
 	return error;
 }
@@ -1621,7 +1592,7 @@ audioread(struct file *fp, off_t *offp, struct uio *uio, kauth_cred_t cred,
 	file = (audio_file_t *)fp->f_audioctx;
 	dev = file->dev;
 
-	if ((error = audio_enter(dev, &sc)) != 0)
+	if ((error = audio_enter(dev, &sc, 0)) != 0)
 		return error;
 
 	if (fp->f_flag & O_NONBLOCK)
@@ -1640,7 +1611,7 @@ audioread(struct file *fp, off_t *offp, struct uio *uio, kauth_cred_t cred,
 		error = ENXIO;
 		break;
 	}
-	audio_exit(sc);
+	audio_exit(sc, 0);
 
 	return error;
 }
@@ -1658,7 +1629,7 @@ audiowrite(struct file *fp, off_t *offp, struct uio *uio, kauth_cred_t cred,
 	file = (audio_file_t *)fp->f_audioctx;
 	dev = file->dev;
 
-	if ((error = audio_enter(dev, &sc)) != 0)
+	if ((error = audio_enter(dev, &sc, 0)) != 0)
 		return error;
 
 	if (fp->f_flag & O_NONBLOCK)
@@ -1677,7 +1648,7 @@ audiowrite(struct file *fp, off_t *offp, struct uio *uio, kauth_cred_t cred,
 		error = ENXIO;
 		break;
 	}
-	audio_exit(sc);
+	audio_exit(sc, 0);
 
 	return error;
 }
@@ -1688,6 +1659,7 @@ audioioctl(struct file *fp, u_long cmd, void *addr)
 	struct audio_softc *sc;
 	audio_file_t *file;
 	struct lwp *l = curlwp;
+	int locktype;
 	int error;
 	dev_t dev;
 
@@ -1695,19 +1667,19 @@ audioioctl(struct file *fp, u_long cmd, void *addr)
 	file = (audio_file_t *)fp->f_audioctx;
 	dev = file->dev;
 
-	// XXX とりあえず
-	sc = device_lookup_private(&audio_cd, AUDIOUNIT(dev));
+	// SETINFO, SETFORMAT はハードウェアの状態を変更するので
+	// EXLOCK が必要。
 	switch (cmd) {
-	 case AUDIO_SETINFO:
-	 case AUDIO_SETFORMAT:
-		mutex_enter(&sc->sc_exlock);
+	case AUDIO_SETINFO:
+	case AUDIO_SETFORMAT:
+		locktype = AUDIO_LK_EXCLUSIVE;
+		break;
+	default:
+		locktype = 0;
 		break;
 	}
-
-	if ((error = audio_enter(dev, &sc)) != 0)
-		// XXX とりあえず
-		//return error;
-		goto abort;
+	if ((error = audio_enter(dev, &sc, locktype)) != 0)
+		return error;
 
 	switch (AUDIODEV(dev)) {
 	case SOUND_DEVICE:
@@ -1727,16 +1699,7 @@ audioioctl(struct file *fp, u_long cmd, void *addr)
 		error = ENXIO;
 		break;
 	}
-	audio_exit(sc);
-
- abort:
-	// XXX とりあえず
-	switch (cmd) {
-	 case AUDIO_SETINFO:
-	 case AUDIO_SETFORMAT:
-		mutex_exit(&sc->sc_exlock);
-		break;
-	}
+	audio_exit(sc, locktype);
 
 	return error;
 }
@@ -1771,7 +1734,7 @@ audiopoll(struct file *fp, int events)
 	file = (audio_file_t *)fp->f_audioctx;
 	dev = file->dev;
 
-	if (audio_enter(dev, &sc) != 0)
+	if (audio_enter(dev, &sc, 0) != 0)
 		return POLLERR;
 
 	switch (AUDIODEV(dev)) {
@@ -1787,7 +1750,7 @@ audiopoll(struct file *fp, int events)
 		revents = POLLERR;
 		break;
 	}
-	audio_exit(sc);
+	audio_exit(sc, 0);
 
 	return revents;
 }
@@ -1804,7 +1767,7 @@ audiokqfilter(struct file *fp, struct knote *kn)
 	file = (audio_file_t *)fp->f_audioctx;
 	dev = file->dev;
 
-	if ((error = audio_enter(dev, &sc)) != 0)
+	if ((error = audio_enter(dev, &sc, 0)) != 0)
 		return error;
 
 	switch (AUDIODEV(file->dev)) {
@@ -1820,7 +1783,7 @@ audiokqfilter(struct file *fp, struct knote *kn)
 		error = ENXIO;
 		break;
 	}
-	audio_exit(sc);
+	audio_exit(sc, 0);
 
 	return error;
 }
@@ -1838,7 +1801,7 @@ audiommap(struct file *fp, off_t *offp, size_t len, int prot, int *flagsp,
 	file = (audio_file_t *)fp->f_audioctx;
 	dev = file->dev;
 
-	if ((error = audio_enter(dev, &sc)) != 0)
+	if ((error = audio_enter(dev, &sc, 0)) != 0)
 		return error;
 
 	device_active(sc->dev, DVA_SYSTEM); /* XXXJDM */
@@ -1854,7 +1817,7 @@ audiommap(struct file *fp, off_t *offp, size_t len, int prot, int *flagsp,
 		error = ENOTSUP;
 		break;
 	}
-	audio_exit(sc);
+	audio_exit(sc, 0);
 
 	return error;
 }
@@ -1875,6 +1838,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	int error;
 
 	KASSERT(mutex_owned(sc->sc_lock));
+	KASSERT(mutex_owned(sc->sc_exlock));
 
 	if (sc->hw_if == NULL)
 		return ENXIO;
@@ -2135,6 +2099,7 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
 	int error;
 
 	KASSERT(mutex_owned(sc->sc_lock));
+	KASSERT(mutex_owned(sc->sc_exlock));
 
 #if AUDIO_DEBUG >= 3
 	TRACEF(file, "@%d start pid=%d.%d po=%d ro=%d",
@@ -7815,9 +7780,11 @@ audio_sysctl_blk_ms(SYSCTLFN_ARGS)
 	if (t < 0)
 		return EINVAL;
 
+	mutex_enter(&sc->sc_exlock);
 	mutex_enter(sc->sc_lock);
 	if (sc->sc_popens + sc->sc_ropens > 0) {
 		mutex_exit(sc->sc_lock);
+		mutex_exit(&sc->sc_exlock);
 		return EBUSY;
 	}
 	sc->sc_blk_ms = t;
@@ -7845,12 +7812,14 @@ audio_sysctl_blk_ms(SYSCTLFN_ARGS)
 	error = audio_hw_set_params(sc, mode, &phwfmt, &rhwfmt, &pfil, &rfil);
 	if (error) {
 		mutex_exit(sc->sc_lock);
+		mutex_exit(&sc->sc_exlock);
 		return error;
 	}
 
 	/* re-init track mixer */
 	audio_mixers_init(sc, mode, &phwfmt, &rhwfmt, &pfil, &rfil);
 	mutex_exit(sc->sc_lock);
+	mutex_exit(&sc->sc_exlock);
 	return 0;
 }
 
