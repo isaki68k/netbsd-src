@@ -855,6 +855,7 @@ audioattach(device_t parent, device_t self, void *aux)
 
 	sc->sc_blk_ms = AUDIO_BLK_MS;
 	SLIST_INIT(&sc->sc_files);
+	mutex_init(&sc->sc_xxlock, MUTEX_DEFAULT, IPL_NONE);
 
 	mutex_enter(sc->sc_lock);
 	props = audio_get_props(sc);
@@ -1218,6 +1219,7 @@ audiodetach(device_t self, int flags)
 	}
 	cv_broadcast(&sc->sc_pmixer->draincv);
 	mutex_exit(sc->sc_lock);
+	mutex_destroy(&sc->sc_xxlock);
 
 	/* locate the major number */
 	maj = cdevsw_lookup_major(&audio_cdevsw);
@@ -1521,8 +1523,17 @@ audioopen(dev_t dev, int flags, int ifmt, struct lwp *l)
 	struct audio_softc *sc;
 	int error;
 
+	// XXX とりあえず
+	sc = device_lookup_private(&audio_cd, AUDIOUNIT(dev));
+	mutex_enter(&sc->sc_xxlock);
+
 	if ((error = audio_enter(dev, &sc)) != 0)
+	{
+		// XXX とりあえず
+		mutex_exit(&sc->sc_xxlock);
 		return error;
+	}
+
 	device_active(sc->dev, DVA_SYSTEM);
 	switch (AUDIODEV(dev)) {
 	case SOUND_DEVICE:
@@ -1540,6 +1551,8 @@ audioopen(dev_t dev, int flags, int ifmt, struct lwp *l)
 		break;
 	}
 	audio_exit(sc);
+	// XXX とりあえず
+	mutex_exit(&sc->sc_xxlock);
 
 	return error;
 }
@@ -1556,8 +1569,16 @@ audioclose(struct file *fp)
 	file = (audio_file_t *)fp->f_audioctx;
 	dev = file->dev;
 
+	// XXX とりあえず
+	sc = device_lookup_private(&audio_cd, AUDIOUNIT(dev));
+	mutex_enter(&sc->sc_xxlock);
+
 	if ((error = audio_enter(dev, &sc)) != 0)
+	{
+		// XXX とりあえず
+		mutex_exit(&sc->sc_xxlock);
 		return error;
+	}
 
 	device_active(sc->dev, DVA_SYSTEM);
 	switch (AUDIODEV(dev)) {
@@ -1581,6 +1602,8 @@ audioclose(struct file *fp)
 	}
 
 	audio_exit(sc);
+	// XXX とりあえず
+	mutex_exit(&sc->sc_xxlock);
 
 	return error;
 }
@@ -1672,8 +1695,19 @@ audioioctl(struct file *fp, u_long cmd, void *addr)
 	file = (audio_file_t *)fp->f_audioctx;
 	dev = file->dev;
 
+	// XXX とりあえず
+	sc = device_lookup_private(&audio_cd, AUDIOUNIT(dev));
+	switch (cmd) {
+	 case AUDIO_SETINFO:
+	 case AUDIO_SETFORMAT:
+		mutex_enter(&sc->sc_xxlock);
+		break;
+	}
+
 	if ((error = audio_enter(dev, &sc)) != 0)
-		return error;
+		// XXX とりあえず
+		//return error;
+		goto abort;
 
 	switch (AUDIODEV(dev)) {
 	case SOUND_DEVICE:
@@ -1694,6 +1728,15 @@ audioioctl(struct file *fp, u_long cmd, void *addr)
 		break;
 	}
 	audio_exit(sc);
+
+ abort:
+	// XXX とりあえず
+	switch (cmd) {
+	 case AUDIO_SETINFO:
+	 case AUDIO_SETFORMAT:
+		mutex_exit(&sc->sc_xxlock);
+		break;
+	}
 
 	return error;
 }
@@ -2091,6 +2134,8 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
 	audio_track_t *oldtrack;
 	int error;
 
+	KASSERT(mutex_owned(sc->sc_lock));
+
 #if AUDIO_DEBUG >= 3
 	TRACEF(file, "@%d start pid=%d.%d po=%d ro=%d",
 	    device_unit(sc->dev),
@@ -2099,7 +2144,6 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
 #else
 	DPRINTF(1, "%s@%d\n", __func__, device_unit(sc->dev));
 #endif
-	KASSERT(mutex_owned(sc->sc_lock));
 	KASSERTMSG(sc->sc_popens + sc->sc_ropens > 0,
 	    "sc->sc_popens=%d, sc->sc_ropens=%d",
 	    sc->sc_popens, sc->sc_ropens);
@@ -6660,7 +6704,7 @@ audio_hw_validate_format(struct audio_softc *sc, int mode,
 
 // ai->mode で示されるミキサフォーマットをセットする。
 // 成功すれば 0、失敗すれば errno を返す。
-// sc_lock でコールすること。
+// sc_lock && sc_xxlock でコールすること。
 static int
 audio_mixers_set_format(struct audio_softc *sc, struct audio_info *ai)
 {
@@ -6674,6 +6718,7 @@ audio_mixers_set_format(struct audio_softc *sc, struct audio_info *ai)
 	int error;
 
 	KASSERT(mutex_owned(sc->sc_lock));
+	KASSERT(mutex_owned(&sc->sc_xxlock));
 
 	// ai.mode は PLAY か RECORD のビットが立っているかどうかだけ。
 	// 上書きするのは channels/sample_rate だけでいい。
@@ -6836,6 +6881,7 @@ audio_mixers_set_format(struct audio_softc *sc, struct audio_info *ai)
 // ai のうち初期値のままのところは sc_[pr]params, sc_[pr]pause が使われる。
 // セットできれば sc_[pr]params, sc_[pr]pause も更新する。
 // オープン時に呼ばれる時は file はまだ sc_files には繋がっていない。
+// sc_xxlock で呼ぶこと。
 static int
 audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	const struct audio_info *ai)
@@ -6855,6 +6901,7 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	int error;
 
 	KASSERT(mutex_owned(sc->sc_lock));
+	KASSERT(mutex_owned(&sc->sc_xxlock));
 
 	pi = &ai->play;
 	ri = &ai->record;
