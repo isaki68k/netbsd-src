@@ -2167,17 +2167,17 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
 	if (file->rtrack) {
 		/* Call hw halt_input if this is the last recording track. */
 		if (sc->sc_ropens == 1) {
+			mutex_enter(sc->sc_intr_lock);
 			if (sc->sc_rbusy) {
 				DPRINTF(2, "%s halt_input\n", __func__);
-				mutex_enter(sc->sc_intr_lock);
 				error = audio_rmixer_halt(sc);
-				mutex_exit(sc->sc_intr_lock);
 				if (error) {
 					aprint_error_dev(sc->dev,
 					    "halt_input failed with %d\n",
 					    error);
 				}
 			}
+			mutex_exit(sc->sc_intr_lock);
 		}
 
 		/* Destroy the track. */
@@ -2197,16 +2197,16 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
 
 		/* Call hw halt_output if this is the last playback track. */
 		if (sc->sc_popens == 1) {
+			mutex_enter(sc->sc_intr_lock);
 			if (sc->sc_pbusy) {
-				mutex_enter(sc->sc_intr_lock);
 				error = audio_pmixer_halt(sc);
-				mutex_exit(sc->sc_intr_lock);
 				if (error) {
 					aprint_error_dev(sc->dev,
 					    "halt_output failed with %d\n",
 					    error);
 				}
 			}
+			mutex_exit(sc->sc_intr_lock);
 		}
 
 		/*
@@ -5183,8 +5183,11 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
 	KASSERT(mutex_owned(sc->sc_lock));
 
 	/* Return if the mixer has already started. */
-	if (sc->sc_pbusy)
+	mutex_enter(sc->sc_intr_lock);
+	if (sc->sc_pbusy) {
+		mutex_exit(sc->sc_intr_lock);
 		return;
+	}
 
 	mixer = sc->sc_pmixer;
 	TRACE("begin mixseq=%d hwseq=%d hwbuf=%d/%d/%d%s",
@@ -5201,13 +5204,12 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
 
 	// トラックミキサ出力開始
 	/* Start output */
-	mutex_enter(sc->sc_intr_lock);
 	audio_pmixer_output(sc);
-	mutex_exit(sc->sc_intr_lock);
 
 	TRACE("end   mixseq=%d hwseq=%d hwbuf=%d/%d/%d",
 	    (int)mixer->mixseq, (int)mixer->hwseq,
 	    mixer->hwbuf.head, mixer->hwbuf.used, mixer->hwbuf.capacity);
+	mutex_exit(sc->sc_intr_lock);
 }
 
 /*
@@ -5243,17 +5245,16 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
 
 // 全トラックを倍精度ミキシングバッファで合成し、
 // 倍精度ミキシングバッファから hwbuf への変換を行います。
-// (hwbuf からハードウェアへの転送はここでは行いません)
-// 呼び出し時の sc_intr_lock の状態はどちらでもよく、hwbuf へのアクセスを
-// sc_intr_lock でこの関数が保護します。
-// intr が true なら割り込みコンテキストからの呼び出し、
+// hwbuf からハードウェアへの転送はここでは行いません。
+// isintr が true なら割り込みコンテキストからの呼び出し、
 // false ならプロセスコンテキストからの呼び出しを示す。
+// sc_intr_lock で呼び出します。
 /*
  * Perform mixing and convert it to hwbuf.
  * Note that this function doesn't transfer from hwbuf to HW.
  * If 'isintr' is true, it indicates a call from the interrupt context.
  * If false, it indicates a call from process context.
- * It can be called with or without sc_intr_lock.
+ * It must be called with sc_intr_lock.
  */
 static void
 audio_pmixer_process(struct audio_softc *sc, bool isintr)
@@ -5263,7 +5264,6 @@ audio_pmixer_process(struct audio_softc *sc, bool isintr)
 	int frame_count;
 	int sample_count;
 	int mixed;
-	int lock_owned;
 	int i;
 	aint2_t *m;
 	aint_t *h;
@@ -5360,9 +5360,6 @@ audio_pmixer_process(struct audio_softc *sc, bool isintr)
 
 	// ここから ハードウェアチャンネル
 
-	// ハードウェアバッファへ転送
-	lock_owned = mutex_tryenter(sc->sc_intr_lock);
-
 	m = mixer->mixsample;
 	// MD 側フィルタがあれば aint2_t -> aint_t を codecbuf へ
 	if (mixer->codec) {
@@ -5391,10 +5388,6 @@ audio_pmixer_process(struct audio_softc *sc, bool isintr)
 	    (int)mixer->mixseq,
 	    mixer->hwbuf.head, mixer->hwbuf.used, mixer->hwbuf.capacity,
 	    (mixed == 0) ? " silent" : "");
-
-	if (lock_owned) {
-		mutex_exit(sc->sc_intr_lock);
-	}
 }
 
 // 全トラックを 1ブロック分合成します。
@@ -6037,12 +6030,12 @@ audio_track_drain(struct audio_softc *sc, audio_track_t *track)
 	}
 	track->pstate = AUDIO_STATE_DRAINING;
 
-	if (sc->sc_pbusy == false) {
-		// トラックバッファが空になっても、ミキサ側で処理中のデータが
-		// あるかもしれない。
-		// トラックミキサが動作していないときは、動作させる。
-		audio_pmixer_start(sc, true);
-	}
+	// トラックバッファが空になっても、ミキサ側で処理中のデータが
+	// あるかもしれない。
+	// トラックミキサが動作していないときは、動作させる。
+	// audio_pmixer_start は動いてなければ動かす、なので呼ぶだけでよい。
+	// XXX ただこれ必要なのかな?
+	audio_pmixer_start(sc, true);
 
 	for (;;) {
 		// 終了条件判定の前に表示したい
@@ -7318,20 +7311,21 @@ audio_hw_setinfo(struct audio_softc *sc, const struct audio_info *newai,
 		oldpi = &oldai->play;
 		oldri = &oldai->record;
 	}
-	pbusy = sc->sc_pbusy;
-	rbusy = sc->sc_rbusy;
 	error = 0;
 
 	// port を変更するにはミキサーをとめる必要があるようだ。
 	/* It's necessary to stop the mixer to change the port. */
+	mutex_enter(sc->sc_intr_lock);
+	pbusy = sc->sc_pbusy;
+	rbusy = sc->sc_rbusy;
 	if (SPECIFIED(newpi->port) || SPECIFIED(newri->port)) {
-		mutex_enter(sc->sc_intr_lock);
-		if (sc->sc_pbusy)
+		if (pbusy)
 			audio_pmixer_halt(sc);
-		if (sc->sc_rbusy)
+		if (rbusy)
 			audio_rmixer_halt(sc);
-		mutex_exit(sc->sc_intr_lock);
 	}
+	mutex_exit(sc->sc_intr_lock);
+
 	if (SPECIFIED(newpi->port)) {
 		if (oldai)
 			oldpi->port = au_get_port(sc, &sc->sc_outports);
@@ -7423,6 +7417,8 @@ audio_hw_setinfo(struct audio_softc *sc, const struct audio_info *newai,
 
 	// XXX hw の変更はなくていいのでは
 	//sc->sc_ai = *ai;
+
+	// XXX pbusy, rbusy 立ってた時の再開は?
 
 	error = 0;
 abort:
