@@ -2515,8 +2515,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 		mutex_exit(sc->sc_intr_lock);
 
 		// XXX うーんなんだこれ
-		if (sc->sc_pbusy == 0 &&
-		    track->outbuf.used >= track->mixer->frames_per_block * 2) {
+		if (track->outbuf.used >= track->mixer->frames_per_block * 2) {
 			audio_pmixer_start(sc, false);
 		}
 	}
