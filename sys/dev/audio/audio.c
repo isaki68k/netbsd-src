@@ -7477,11 +7477,9 @@ audio_hw_setinfo(struct audio_softc *sc, const struct audio_info *newai,
 	// XXX hw の変更はなくていいのでは
 	//sc->sc_ai = *ai;
 
-	// XXX pbusy, rbusy 立ってた時の再開は?
-
+	/* Restart the mixer if necessary */
 	error = 0;
 abort:
-	/* Restart the mixer if necessary */
 	// XXX pmixer_start は false でいいんだろうか
 	if (pbusy) {
 		error = audio_pmixer_start(sc, false);
