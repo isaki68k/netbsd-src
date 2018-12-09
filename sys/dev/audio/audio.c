@@ -545,13 +545,13 @@ static void audio_track_clear(struct audio_softc *, audio_track_t *);
 static int audio_mixer_init(struct audio_softc *, int,
 	const audio_format2_t *, const audio_filter_reg_t *);
 static void audio_mixer_destroy(struct audio_softc *, audio_trackmixer_t *);
-static void audio_pmixer_start(struct audio_softc *, bool);
+static int  audio_pmixer_start(struct audio_softc *, bool);
 static void audio_pmixer_process(struct audio_softc *, bool);
 static int  audio_pmixer_mixall(struct audio_softc *, bool);
 static int  audio_pmixer_mix_track(audio_trackmixer_t *, audio_track_t *, int);
 static void audio_pmixer_output(struct audio_softc *);
 static int  audio_pmixer_halt(struct audio_softc *);
-static void audio_rmixer_start(struct audio_softc *);
+static int  audio_rmixer_start(struct audio_softc *);
 static void audio_rmixer_process(struct audio_softc *);
 static void audio_rmixer_input(struct audio_softc *);
 static int  audio_rmixer_halt(struct audio_softc *);
@@ -2330,7 +2330,9 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 			// バッファが空ならここで待機
 			mutex_exit(sc->sc_intr_lock);
 
-			audio_rmixer_start(sc);
+			error = audio_rmixer_start(sc);
+			if (error)
+				return error;
 			if (ioflag & IO_NDELAY)
 				return EWOULDBLOCK;
 
@@ -2516,7 +2518,9 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 
 		// XXX うーんなんだこれ
 		if (track->outbuf.used >= track->mixer->frames_per_block * 2) {
-			audio_pmixer_start(sc, false);
+			error = audio_pmixer_start(sc, false);
+			if (error)
+				goto abort;
 		}
 	}
 
@@ -3036,6 +3040,7 @@ audio_mmap(struct audio_softc *sc, off_t *offp, size_t len, int prot,
 {
 	audio_track_t *track;
 	vsize_t vsize;
+	int error;
 
 	KASSERT(mutex_owned(sc->sc_lock));
 
@@ -3094,8 +3099,11 @@ audio_mmap(struct audio_softc *sc, off_t *offp, size_t len, int prot,
 		track->mmapped = true;
 
 		// XXX ここで元は audio_fill_silence
-		if (!track->is_pause)
-			audio_pmixer_start(sc, true);
+		if (!track->is_pause) {
+			error = audio_pmixer_start(sc, true);
+			if (error)
+				return error;
+		}
 		/* XXX mmapping record buffer is not supported */
 	}
 
@@ -5173,7 +5181,7 @@ audio_mixer_destroy(struct audio_softc *sc, audio_trackmixer_t *mixer)
  * This function does nothing if the mixer has already started.
  * This function must not be called from the interrupt context.
  */
-static void
+static int
 audio_pmixer_start(struct audio_softc *sc, bool force)
 {
 	audio_trackmixer_t *mixer;
@@ -5181,11 +5189,29 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
 
 	KASSERT(mutex_owned(sc->sc_lock));
 
+	// uaudio(4) など、再生を開始した時の trigger_output が
+	// sc_lock, sc_intr_lock を全部外す奴がいるようだ。それをされると
+	// ここで pbusy == 0 をチェックしてから pbusy を立てるまでの間に
+	// この pmixer_start が複数同時に走ってしまう。
+	// (pmixer_start を起こさない2度目以降の) write はシリアライズ
+	// しなくてもいいが、ミキサーの開始だけはシリアライズする必要がある。
+	// cv_wait() が sc_lock を解放するため sc_intr_lock をとる前にする
+	// 必要がある。
+	while (__predict_false(sc->sc_exlock != 0)) {
+		cv_wait(&sc->sc_exlockcv, sc->sc_lock);
+		if (sc->sc_dying) {
+			mutex_exit(sc->sc_lock);
+			return EIO;
+		}
+	}
+	/* Enter critical section */
+	sc->sc_exlock = 1;
+
 	/* Return if the mixer has already started. */
 	mutex_enter(sc->sc_intr_lock);
 	if (sc->sc_pbusy) {
 		mutex_exit(sc->sc_intr_lock);
-		return;
+		return 0;
 	}
 
 	mixer = sc->sc_pmixer;
@@ -5208,7 +5234,11 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
 	TRACE("end   mixseq=%d hwseq=%d hwbuf=%d/%d/%d",
 	    (int)mixer->mixseq, (int)mixer->hwseq,
 	    mixer->hwbuf.head, mixer->hwbuf.used, mixer->hwbuf.capacity);
+
 	mutex_exit(sc->sc_intr_lock);
+	sc->sc_exlock = 0;
+	cv_broadcast(&sc->sc_exlockcv);
+	return 0;
 }
 
 /*
@@ -5681,21 +5711,39 @@ audio_pintr(void *arg)
  * This function does nothing if the mixer has already started.
  * This function must not be called from the interrupt context.
  */
-static void
+static int
 audio_rmixer_start(struct audio_softc *sc)
 {
 
 	KASSERT(mutex_owned(sc->sc_lock));
 
+	// trigger_input が sc_lock, sc_intr_lock を全解放する可能性が
+	// あるので、ミキサー開始をシリアライズする必要がある。
+	while (__predict_false(sc->sc_exlock != 0)) {
+		cv_wait(&sc->sc_exlockcv, sc->sc_lock);
+		if (sc->sc_dying) {
+			mutex_exit(sc->sc_lock);
+			return EIO;
+		}
+	}
+	/* Enter critical section */
+	sc->sc_exlock = 1;
+
 	// すでに再生ミキサが起動していたら、true を返す
-	if (sc->sc_rbusy)
-		return;
+	mutex_enter(sc->sc_intr_lock);
+	if (sc->sc_rbusy) {
+		mutex_exit(sc->sc_intr_lock);
+		return 0;
+	}
 
 	TRACE("begin");
-
-	mutex_enter(sc->sc_intr_lock);
 	audio_rmixer_input(sc);
+	TRACE("end");
+
 	mutex_exit(sc->sc_intr_lock);
+	sc->sc_exlock = 0;
+	cv_broadcast(&sc->sc_exlockcv);
+	return 0;
 }
 
 /*
@@ -6034,7 +6082,9 @@ audio_track_drain(struct audio_softc *sc, audio_track_t *track)
 	// トラックミキサが動作していないときは、動作させる。
 	// audio_pmixer_start は動いてなければ動かす、なので呼ぶだけでよい。
 	// XXX ただこれ必要なのかな?
-	audio_pmixer_start(sc, true);
+	error = audio_pmixer_start(sc, true);
+	if (error)
+		return error;
 
 	for (;;) {
 		// 終了条件判定の前に表示したい
@@ -7121,7 +7171,12 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 			audio_track_setinfo_water(play, ai);
 
 		if (start_mixer) {
-			audio_pmixer_start(sc, false);
+			error = audio_pmixer_start(sc, false);
+			if (error) {
+				if (error == EIO)
+					return error;
+				goto abort2;
+			}
 		}
 	}
 	if (rec) {
@@ -7145,7 +7200,12 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 		}
 
 		if (start_mixer) {
-			audio_rmixer_start(sc);
+			error = audio_rmixer_start(sc);
+			if (error) {
+				if (error == EIO)
+					return error;
+				goto abort3;
+			}
 		}
 	}
 
@@ -7423,10 +7483,16 @@ audio_hw_setinfo(struct audio_softc *sc, const struct audio_info *newai,
 abort:
 	/* Restart the mixer if necessary */
 	// XXX pmixer_start は false でいいんだろうか
-	if (pbusy)
-		audio_pmixer_start(sc, false);
-	if (rbusy)
-		audio_rmixer_start(sc);
+	if (pbusy) {
+		error = audio_pmixer_start(sc, false);
+		if (error == EIO)
+			return error;
+	}
+	if (rbusy) {
+		error = audio_rmixer_start(sc);
+		if (error == EIO)
+			return error;
+	}
 
 	return error;
 }
