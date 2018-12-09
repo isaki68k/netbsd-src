@@ -163,10 +163,10 @@ struct audio_softc {
 		pid_t	pid;
 	} *sc_async_mixer;  /* processes who want mixer SIGIO */
 
-	/* Locks and sleep channels for reading, writing and draining. */
 	kmutex_t	*sc_intr_lock;
 	kmutex_t	*sc_lock;
-	kmutex_t	sc_exlock;
+	int		sc_exlock;	/* critical section */
+	kcondvar_t	sc_exlockcv;	/* notify that exlock was released */
 	bool		sc_dying;
 
 	kauth_cred_t sc_cred;
