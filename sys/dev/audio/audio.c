@@ -6098,9 +6098,11 @@ audio_track_drain(struct audio_softc *sc, audio_track_t *track)
 	// トラックミキサが動作していないときは、動作させる。
 	// audio_pmixer_start は動いてなければ動かす、なので呼ぶだけでよい。
 	// XXX ただこれ必要なのかな?
+#if 0
 	error = audio_pmixer_start(sc, true);
 	if (error)
 		return error;
+#endif
 
 	for (;;) {
 		// 終了条件判定の前に表示したい
