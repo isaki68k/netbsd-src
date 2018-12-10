@@ -5195,11 +5195,10 @@ audio_mixer_destroy(struct audio_softc *sc, audio_trackmixer_t *mixer)
 		cv_destroy(&mixer->draincv);
 }
 
-// 再生ミキサを起動します。
+// 再生ミキサを(起動してなければ)起動します。
 // 割り込みコンテキストから呼び出してはいけません。
 /*
- * Starts playback mixer.
- * This function does nothing if the mixer has already started.
+ * Starts playback mixer if not running.
  * This function must not be called from the interrupt context.
  */
 static int
@@ -5718,11 +5717,10 @@ audio_pintr(void *arg)
 	cv_broadcast(&mixer->draincv);
 }
 
-// 録音ミキサを起動します。
+// 録音ミキサを(起動してなければ)起動します。
 // 割り込みコンテキストから呼び出してはいけません。
 /*
- * Starts record mixer.
- * This function does nothing if the mixer has already started.
+ * Starts record mixer if not running.
  * This function must not be called from the interrupt context.
  */
 static int
