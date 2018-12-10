@@ -5227,6 +5227,8 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
 	if (sc->sc_pbusy)
 		return;
 
+	mutex_enter(sc->sc_intr_lock);
+
 	mixer = sc->sc_pmixer;
 	TRACE("begin mixseq=%d hwseq=%d hwbuf=%d/%d/%d%s",
 	    (int)mixer->mixseq, (int)mixer->hwseq,
@@ -5247,6 +5249,8 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
 	TRACE("end   mixseq=%d hwseq=%d hwbuf=%d/%d/%d",
 	    (int)mixer->mixseq, (int)mixer->hwseq,
 	    mixer->hwbuf.head, mixer->hwbuf.used, mixer->hwbuf.capacity);
+
+	mutex_exit(sc->sc_intr_lock);
 }
 
 /*
@@ -5732,9 +5736,13 @@ audio_rmixer_start(struct audio_softc *sc)
 	if (sc->sc_rbusy)
 		return;
 
+	mutex_enter(sc->sc_intr_lock);
+
 	TRACE("begin");
 	audio_rmixer_input(sc);
 	TRACE("end");
+
+	mutex_exit(sc->sc_intr_lock);
 }
 
 /*
