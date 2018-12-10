@@ -159,7 +159,8 @@ struct audio_softc {
 
 	struct	selinfo sc_wsel; /* write selector */
 	struct	selinfo sc_rsel; /* read selector */
-	void		*sc_sih_rd;
+	void		*sc_sih_wr;	/* softint cookie for write */
+	void		*sc_sih_rd;	/* softint cookie for read */
 	struct	mixer_asyncs {
 		struct mixer_asyncs *next;
 		pid_t	pid;

@@ -124,7 +124,7 @@ typedef struct audio_track {
 	audio_state_t	pstate;		/* playback state */
 	bool		is_pause;
 
-	void		*sih_wr;	/* softint cookie for write */
+	bool		sigio_pending;	/* async */
 
 	uint64_t	inputcounter;	/* トラックに入力されたフレーム数 */
 	uint64_t	outputcounter;	/* トラックから出力されたフレーム数 */

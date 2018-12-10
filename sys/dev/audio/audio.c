@@ -925,6 +925,8 @@ audioattach(device_t parent, device_t self, void *aux)
 	if (mode == 0)
 		goto bad;
 
+	sc->sc_sih_wr = softint_establish(SOFTINT_SERIAL | SOFTINT_MPSAFE,
+	    audio_softintr_wr, sc);
 	sc->sc_sih_rd = softint_establish(SOFTINT_SERIAL | SOFTINT_MPSAFE,
 	    audio_softintr_rd, sc);
 
@@ -1273,6 +1275,10 @@ audiodetach(device_t self, int flags)
 		kmem_free(sc->sc_rmixer, sizeof(*sc->sc_rmixer));
 	}
 
+	if (sc->sc_sih_wr) {
+		softint_disestablish(sc->sc_sih_wr);
+		sc->sc_sih_wr = NULL;
+	}
 	if (sc->sc_sih_rd) {
 		softint_disestablish(sc->sc_sih_rd);
 		sc->sc_sih_rd = NULL;
@@ -1937,20 +1943,11 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 		error = audio_track_init(sc, &af->ptrack, AUMODE_PLAY);
 		if (error)
 			goto bad1;
-
-		/* On playback side, one softint is assigned to one track. */
-		af->ptrack->sih_wr = softint_establish(
-		    SOFTINT_SERIAL | SOFTINT_MPSAFE,
-		    audio_softintr_wr, af);
-		if (af->ptrack->sih_wr == NULL)
-			goto bad2;
 	}
 	if ((af->mode & AUMODE_RECORD) != 0) {
 		error = audio_track_init(sc, &af->rtrack, AUMODE_RECORD);
 		if (error)
 			goto bad2;
-
-		/* On record side, one softint is shared by all tracks. */
 	}
 
 	/*
@@ -2243,17 +2240,6 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
 				    error);
 			}
 		}
-
-		/*
-		 * Disestablish softint_wr.
-		 * softint_disestablish needs unlock sc_lock.
-		 * see comment on kern/kern_softint.c::softint_disestablish().
-		 */
-		KASSERT(file->ptrack->sih_wr);
-		mutex_exit(sc->sc_lock);
-		softint_disestablish(file->ptrack->sih_wr);
-		mutex_enter(sc->sc_lock);
-		file->ptrack->sih_wr = NULL;
 
 		/* Destroy the track. */
 		oldtrack = file->ptrack;
@@ -5444,6 +5430,11 @@ audio_pmixer_process(struct audio_softc *sc, bool isintr)
 	    (int)mixer->mixseq,
 	    mixer->hwbuf.head, mixer->hwbuf.used, mixer->hwbuf.capacity,
 	    (mixed == 0) ? " silent" : "");
+
+	// SIGIO の通知など
+	kpreempt_disable();
+	softint_schedule(sc->sc_sih_wr);
+	kpreempt_enable();
 }
 
 // 全トラックを 1ブロック分合成します。
@@ -5592,14 +5583,10 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track,
 	TRACET(track, "broadcast; trseq=%d out=%d/%d/%d", (int)track->seq,
 	    track->outbuf.head, track->outbuf.used, track->outbuf.capacity);
 
-	// usrbuf が空いたら(lowat を下回ったら) シグナルを送る
+	// usrbuf が空いたら(lowat を下回ったら) シグナルを送る(予約する)
 	// XXX ここで usrbuf が空いたかどうかを見るのもどうかと思うが
 	if (track->usrbuf.used <= track->usrbuf_usedlow && !track->is_pause) {
-		if (track->sih_wr) {
-			kpreempt_disable();
-			softint_schedule(track->sih_wr);
-			kpreempt_enable();
-		}
+		track->sigio_pending = true;
 	}
 
 	return mixed + 1;
@@ -5875,7 +5862,6 @@ audio_rmixer_process(struct audio_softc *sc)
 	auring_take(mixersrc, count);
 
 	// SIGIO を通知(する必要があるかどうかは向こうで判断する)
-	// XXX トラック別にしなくていいか
 	kpreempt_disable();
 	softint_schedule(sc->sc_sih_rd);
 	kpreempt_enable();
@@ -6143,23 +6129,14 @@ audio_track_drain(struct audio_softc *sc, audio_track_t *track)
 	return 0;
 }
 
-/*
- * SIGIO derivery for record.
- *
- * o softintr cookie for record is one per device.  Initialize on attach()
- *   and release on detach().
- * // o audio_rmixer_process で全録音トラックへの分配が終ったところで
- * //   1回ソフトウエア割り込みを要求。
- * // o ソフトウェア割り込みで、すべての async 録音トラックに対して SIGIO を
- * //   投げる。
- * // o このため
- * //  - audio_rmixer_process -> open and set FAIOASYNC -> audoi_softintr_rd
- * //    の順でオープンされたトラックについては、録音データがまだ到着していない
- * //    にも関わらずシグナルが届くことになるがこれは許容する。
- */
-
-// 録音時は rmixer_process から (リスナーが何人いても) 1回だけこれが呼ばれる
-// ので、async 設定しているプロセス全員にここで SIGIO を配送すればよい。
+// 録音側のソフトウェア割り込みハンドラ。
+// 録音ループのハードウェア割り込みから毎回呼ばれるので、
+// ASYNC 設定しているプロセス全員にここで SIGIO を配送すればよい。
+//
+// XXX
+// ハードウェア割り込みからソフトウェア割り込みまでの間に新規に FAIOASYNC
+// したトラックがあれば、そのトラックには録音データがまだ到着していないにも
+// 関わらず SIGIO を送ることになるが(suspicious)、とりあえず許容するか。
 static void
 audio_softintr_rd(void *cookie)
 {
@@ -6184,44 +6161,46 @@ audio_softintr_rd(void *cookie)
 	mutex_exit(sc->sc_lock);
 }
 
-/*
- * SIGIO derivery for playback.
- *
- * // o 再生ミキサで ASYNC トラックのバッファを消費した際に lowat を下回ったら、
- * //   ソフトウェア割り込みを要求。
- * // o ソフトウェア割り込みで、このトラックに対して SIGIO を投げる。
- */
-
 // 再生側のソフトウェア割り込みハンドラ。
-// 再生ループのハードウェア割り込みハンドラで usrbuf が lowat を下回ったら
-// (今は立ち下がりではなく下回っていたらだけど)、呼ばれる。
-// このディスクリプタが書き込み可能になるのを待っている selinfo に対して
-// notify を実行。さらにこのディスクリプタが非同期 I/O モードならシグナルを
-// 発行する。
+// 再生ループのハードウェア割り込みから毎回呼ばれるので、
+// ASYNC 設定しているプロセスのうち used が lowat を下回っている人について
+// (今は立ち下がりではなく下回っていたらだけど)、SIGIO を配送する。
+// used が lowat を下回っていれば割り込み側で sigio_pending が立ててある。
+// XXX ハードウェア割り込み側で ASYNC まで見てもいいけど今の所 track から
+//     file が引けない。
+//
+// また、それとは別に(常に) selnotify を実施。詳細不明。
 static void
 audio_softintr_wr(void *cookie)
 {
-	struct audio_softc *sc;
-	audio_file_t *file;
+	struct audio_softc *sc = cookie;
+	audio_file_t *f;
 	proc_t *p;
 	pid_t pid;
 
-	file = cookie;
-	sc = file->sc;
-	TRACEF(file, "called");
+	TRACE("called");
 
 	mutex_enter(sc->sc_lock);
 	/* Notify for select/poll.  It needs sc_lock (and not sc_intr_lock). */
 	selnotify(&sc->sc_wsel, 0, NOTE_SUBMIT);
 
-	pid = file->async_audio;
-	if (pid != 0) {
-		TRACEF(file, "sending SIGIO %d", pid);
-		mutex_enter(proc_lock);
-		if ((p = proc_find(pid)) != NULL)
-			psignal(p, SIGIO);
-		mutex_exit(proc_lock);
+	mutex_enter(sc->sc_intr_lock);
+	SLIST_FOREACH(f, &sc->sc_files, entry) {
+		audio_track_t *track = f->ptrack;
+
+		if (track && track->sigio_pending) {
+			track->sigio_pending = false;
+			pid = f->async_audio;
+			if (pid != 0) {
+				TRACEF(f, "sending SIGIO %d", pid);
+				mutex_enter(proc_lock);
+				if ((p = proc_find(pid)) != NULL)
+				psignal(p, SIGIO);
+				mutex_exit(proc_lock);
+			}
+		}
 	}
+	mutex_exit(sc->sc_intr_lock);
 	mutex_exit(sc->sc_lock);
 }
 
