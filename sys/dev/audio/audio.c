@@ -2207,16 +2207,14 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
 	if (file->rtrack) {
 		/* Call hw halt_input if this is the last recording track. */
 		if (sc->sc_ropens == 1) {
-			if (sc->sc_rbusy) {
-				DPRINTF(2, "%s halt_input\n", __func__);
-				mutex_enter(sc->sc_intr_lock);
-				error = audio_rmixer_halt(sc);
-				mutex_exit(sc->sc_intr_lock);
-				if (error) {
-					aprint_error_dev(sc->dev,
-					    "halt_input failed with %d\n",
-					    error);
-				}
+			DPRINTF(2, "%s halt_input\n", __func__);
+			mutex_enter(sc->sc_intr_lock);
+			error = audio_rmixer_halt(sc);
+			mutex_exit(sc->sc_intr_lock);
+			if (error) {
+				aprint_error_dev(sc->dev,
+				    "halt_input failed with %d\n",
+				    error);
 			}
 		}
 
@@ -2237,15 +2235,13 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
 
 		/* Call hw halt_output if this is the last playback track. */
 		if (sc->sc_popens == 1) {
-			if (sc->sc_pbusy) {
-				mutex_enter(sc->sc_intr_lock);
-				error = audio_pmixer_halt(sc);
-				mutex_exit(sc->sc_intr_lock);
-				if (error) {
-					aprint_error_dev(sc->dev,
-					    "halt_output failed with %d\n",
-					    error);
-				}
+			mutex_enter(sc->sc_intr_lock);
+			error = audio_pmixer_halt(sc);
+			mutex_exit(sc->sc_intr_lock);
+			if (error) {
+				aprint_error_dev(sc->dev,
+				    "halt_output failed with %d\n",
+				    error);
 			}
 		}
 
@@ -5965,11 +5961,11 @@ audio_rintr(void *arg)
 	audio_rmixer_input(sc);
 }
 
-// 再生ミキサを停止します。
+// 再生ミキサを(動いていれば)停止します。
 // 関連するパラメータもクリアするため、基本的には halt_output を
 // 直接呼び出すのではなく、こちらを呼んでください。
 /*
- * Halt playback mixer.
+ * Halt playback mixer if running.
  * This function also clears related parameters, so call this function
  * instead of calling halt_output directly.
  * This function should be called only when the mixer is running.
@@ -5983,23 +5979,27 @@ audio_pmixer_halt(struct audio_softc *sc)
 	TRACE("");
 	KASSERT(mutex_owned(sc->sc_lock));
 	KASSERT(mutex_owned(sc->sc_intr_lock));
+	KASSERT(sc->sc_exlock);
 
-	error = sc->hw_if->halt_output(sc->hw_hdl);
-	// エラーが起きても停止は停止する
-	sc->sc_pbusy = false;
-	sc->sc_pmixer->hwbuf.head = 0;
-	sc->sc_pmixer->hwbuf.used = 0;
-	sc->sc_pmixer->mixseq = 0;
-	sc->sc_pmixer->hwseq = 0;
+	error = 0;
+	if (sc->sc_pbusy) {
+		error = sc->hw_if->halt_output(sc->hw_hdl);
+		// エラーが起きても停止は停止する
+		sc->sc_pbusy = false;
+		sc->sc_pmixer->hwbuf.head = 0;
+		sc->sc_pmixer->hwbuf.used = 0;
+		sc->sc_pmixer->mixseq = 0;
+		sc->sc_pmixer->hwseq = 0;
+	}
 
 	return error;
 }
 
-// 録音ミキサを停止します。
+// 録音ミキサを(動いていれば)停止します。
 // 関連するパラメータもクリアするため、基本的には halt_input を
 // 直接呼び出すのではなく、こちらを呼んでください。
 /*
- * Halt recording mixer.
+ * Halt recording mixer if running.
  * This function also clears related parameters, so call this function
  * instead of calling halt_input directly.
  * This function should be called only when the mixer is running.
@@ -6013,14 +6013,18 @@ audio_rmixer_halt(struct audio_softc *sc)
 	TRACE("");
 	KASSERT(mutex_owned(sc->sc_lock));
 	KASSERT(mutex_owned(sc->sc_intr_lock));
+	KASSERT(sc->sc_exlock);
 
-	error = sc->hw_if->halt_input(sc->hw_hdl);
-	// エラーが起きても停止は停止する
-	sc->sc_rbusy = false;
-	sc->sc_rmixer->hwbuf.head = 0;
-	sc->sc_rmixer->hwbuf.used = 0;
-	sc->sc_rmixer->mixseq = 0;
-	sc->sc_rmixer->hwseq = 0;
+	error = 0;
+	if (sc->sc_rbusy) {
+		error = sc->hw_if->halt_input(sc->hw_hdl);
+		// エラーが起きても停止は停止する
+		sc->sc_rbusy = false;
+		sc->sc_rmixer->hwbuf.head = 0;
+		sc->sc_rmixer->hwbuf.used = 0;
+		sc->sc_rmixer->mixseq = 0;
+		sc->sc_rmixer->hwseq = 0;
+	}
 
 	return error;
 }
@@ -7382,8 +7386,8 @@ audio_hw_setinfo(struct audio_softc *sc, const struct audio_info *newai,
 	const struct audio_prinfo *newri;
 	struct audio_prinfo *oldpi;
 	struct audio_prinfo *oldri;
-	int pbusy;
-	int rbusy;
+	bool restart_pmixer;
+	bool restart_rmixer;
 	u_int pgain;
 	u_int rgain;
 	u_char pbalance;
@@ -7398,18 +7402,22 @@ audio_hw_setinfo(struct audio_softc *sc, const struct audio_info *newai,
 	}
 	error = 0;
 
+	restart_pmixer = false;
+	restart_rmixer = false;
 	// port を変更するにはミキサーをとめる必要があるようだ。
 	/* It's necessary to stop the mixer to change the port. */
-	mutex_enter(sc->sc_intr_lock);
-	pbusy = sc->sc_pbusy;
-	rbusy = sc->sc_rbusy;
 	if (SPECIFIED(newpi->port) || SPECIFIED(newri->port)) {
-		if (pbusy)
-			audio_pmixer_halt(sc);
-		if (rbusy)
-			audio_rmixer_halt(sc);
+		audio_enter_exclusive(sc);
+		restart_pmixer = sc->sc_pmixer;
+		restart_rmixer = sc->sc_rmixer;
+
+		mutex_enter(sc->sc_intr_lock);
+		audio_pmixer_halt(sc);
+		audio_rmixer_halt(sc);
+		mutex_exit(sc->sc_intr_lock);
+
+		audio_exit_exclusive(sc);
 	}
-	mutex_exit(sc->sc_intr_lock);
 
 	if (SPECIFIED(newpi->port)) {
 		if (oldai)
@@ -7507,12 +7515,12 @@ audio_hw_setinfo(struct audio_softc *sc, const struct audio_info *newai,
 	error = 0;
 abort:
 	// XXX pmixer_start は false でいいんだろうか
-	if (pbusy) {
+	if (restart_pmixer) {
 		error = audio_pmixer_start(sc, false);
 		if (error == EIO)
 			return error;
 	}
-	if (rbusy) {
+	if (restart_rmixer) {
 		error = audio_rmixer_start(sc);
 		if (error == EIO)
 			return error;
@@ -8016,15 +8024,15 @@ audio_suspend(device_t dv, const pmf_qual_t *qual)
 
 	mutex_enter(sc->sc_lock);
 	audio_mixer_capture(sc);
+
 	// XXX mixer をとめる?
 	audio_enter_exclusive(sc);
 	mutex_enter(sc->sc_intr_lock);
-	if (sc->sc_pbusy)
-		audio_pmixer_halt(sc);
-	if (sc->sc_rbusy)
-		audio_rmixer_halt(sc);
+	audio_pmixer_halt(sc);
+	audio_rmixer_halt(sc);
 	mutex_exit(sc->sc_intr_lock);
 	audio_exit_exclusive(sc);
+
 #ifdef AUDIO_PM_IDLE
 	callout_halt(&sc->sc_idle_counter, sc->sc_lock);
 #endif
