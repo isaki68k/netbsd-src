@@ -1449,7 +1449,7 @@ audio_exit(struct audio_softc *sc, int exclusive)
 	if (exclusive) {
 		/* Leave critical section */
 		sc->sc_exlock = 0;
-		cv_broadcast(&sc->sc_exlockcv);
+		cv_signal(&sc->sc_exlockcv);
 	}
 	mutex_exit(sc->sc_lock);
 }
@@ -5211,6 +5211,8 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
 	mutex_enter(sc->sc_intr_lock);
 	if (sc->sc_pbusy) {
 		mutex_exit(sc->sc_intr_lock);
+		sc->sc_exlock = 0;
+		cv_signal(&sc->sc_exlockcv);
 		return 0;
 	}
 
@@ -5237,7 +5239,7 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
 
 	mutex_exit(sc->sc_intr_lock);
 	sc->sc_exlock = 0;
-	cv_broadcast(&sc->sc_exlockcv);
+	cv_signal(&sc->sc_exlockcv);
 	return 0;
 }
 
@@ -5733,6 +5735,8 @@ audio_rmixer_start(struct audio_softc *sc)
 	mutex_enter(sc->sc_intr_lock);
 	if (sc->sc_rbusy) {
 		mutex_exit(sc->sc_intr_lock);
+		sc->sc_exlock = 0;
+		cv_signal(&sc->sc_exlockcv);
 		return 0;
 	}
 
@@ -5742,7 +5746,7 @@ audio_rmixer_start(struct audio_softc *sc)
 
 	mutex_exit(sc->sc_intr_lock);
 	sc->sc_exlock = 0;
-	cv_broadcast(&sc->sc_exlockcv);
+	cv_signal(&sc->sc_exlockcv);
 	return 0;
 }
 
