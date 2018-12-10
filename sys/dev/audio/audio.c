@@ -7375,8 +7375,10 @@ audio_track_setinfo_water(audio_track_t *track, const struct audio_info *ai)
 // ここで設定するのは *.port, *.gain, *.balance, monitor_gain。
 // 途中でエラーが起きてもここではロールバックしない。
 // oldai が指定されると newai の各パラメータ設定前の値を保存する。
+// exlock でコールすること。
 /*
  * Set only hardware part from *ai.
+ * It must be called with sc_exlock.
  */
 static int
 audio_hw_setinfo(struct audio_softc *sc, const struct audio_info *newai,
@@ -7394,6 +7396,9 @@ audio_hw_setinfo(struct audio_softc *sc, const struct audio_info *newai,
 	u_char rbalance;
 	int error;
 
+	KASSERT(mutex_owned(sc->sc_lock));
+	KASSERT(sc->sc_exlock);
+
 	newpi = &newai->play;
 	newri = &newai->record;
 	if (oldai) {
@@ -7407,7 +7412,6 @@ audio_hw_setinfo(struct audio_softc *sc, const struct audio_info *newai,
 	// port を変更するにはミキサーをとめる必要があるようだ。
 	/* It's necessary to stop the mixer to change the port. */
 	if (SPECIFIED(newpi->port) || SPECIFIED(newri->port)) {
-		audio_enter_exclusive(sc);
 		restart_pmixer = sc->sc_pmixer;
 		restart_rmixer = sc->sc_rmixer;
 
@@ -7415,8 +7419,6 @@ audio_hw_setinfo(struct audio_softc *sc, const struct audio_info *newai,
 		audio_pmixer_halt(sc);
 		audio_rmixer_halt(sc);
 		mutex_exit(sc->sc_intr_lock);
-
-		audio_exit_exclusive(sc);
 	}
 
 	if (SPECIFIED(newpi->port)) {
