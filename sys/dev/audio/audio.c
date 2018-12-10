@@ -448,6 +448,8 @@ static void audio_mixer_restore(struct audio_softc *);
 static void audio_softintr_rd(void *);
 static void audio_softintr_wr(void *);
 
+static int  audio_enter_exclusive(struct audio_softc *);
+static void audio_exit_exclusive(struct audio_softc *);
 static int audio_enter_dev(dev_t, struct audio_softc **, int);
 static int audio_enter(struct audio_softc *, int);
 static void audio_exit(struct audio_softc *, int);
@@ -1395,6 +1397,48 @@ stream_filter_list_prepend(stream_filter_list_t *list,
 #endif // OLD_FILTER
 
 /*
+ * Enter critical section.
+ * If successful, it returns 0.  Otherwise returns errno.
+ * It must be called with sc_lock.
+ */
+static int
+audio_enter_exclusive(struct audio_softc *sc)
+{
+	int error;
+
+	KASSERT(mutex_owned(sc->sc_lock));
+
+	while (__predict_false(sc->sc_exlock != 0)) {
+		error = cv_wait_sig(&sc->sc_exlockcv, sc->sc_lock);
+		if (sc->sc_dying) {
+			error = EIO;
+		}
+		if (error) {
+			return error;
+		}
+	}
+	/* Enter critical section */
+	sc->sc_exlock = 1;
+	return 0;
+}
+
+/*
+ * Leave critical section.
+ * It must be called with sc_lock.
+ */
+static void
+audio_exit_exclusive(struct audio_softc *sc)
+{
+
+	KASSERT(mutex_owned(sc->sc_lock));
+
+	/* Leave critical section */
+	sc->sc_exlock = 0;
+	// 次に exlockcv をとっていいのは一人だけ
+	cv_signal(&sc->sc_exlockcv);
+}
+
+/*
  * Look up audio device and acquire locks for device access.
  */
 static int
@@ -1426,18 +1470,11 @@ audio_enter(struct audio_softc *sc, int exclusive)
 		return EIO;
 	}
 	if (exclusive) {
-		while (__predict_false(sc->sc_exlock != 0)) {
-			error = cv_wait_sig(&sc->sc_exlockcv, sc->sc_lock);
-			if (sc->sc_dying) {
-				error = EIO;
-			}
-			if (error) {
-				mutex_exit(sc->sc_lock);
-				return error;
-			}
+		error = audio_enter_exclusive(sc);
+		if (error) {
+			mutex_exit(sc->sc_lock);
+			return error;
 		}
-		/* Enter critical section */
-		sc->sc_exlock = 1;
 	}
 
 	return 0;
@@ -1451,9 +1488,7 @@ audio_exit(struct audio_softc *sc, int exclusive)
 {
 
 	if (exclusive) {
-		/* Leave critical section */
-		sc->sc_exlock = 0;
-		cv_signal(&sc->sc_exlockcv);
+		audio_exit_exclusive(sc);
 	}
 	mutex_exit(sc->sc_lock);
 }
@@ -5202,25 +5237,15 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
 	// しなくてもいいが、ミキサーの開始だけはシリアライズする必要がある。
 	// cv_wait_sig() が sc_lock を解放するため sc_intr_lock をとる前に
 	// する必要がある。
-	while (__predict_false(sc->sc_exlock != 0)) {
-		error = cv_wait_sig(&sc->sc_exlockcv, sc->sc_lock);
-		if (sc->sc_dying) {
-			error = EIO;
-		}
-		if (error) {
-			mutex_exit(sc->sc_lock);
-			return error;
-		}
-	}
-	/* Enter critical section */
-	sc->sc_exlock = 1;
+	error = audio_enter_exclusive(sc);
+	if (error)
+		return error;
 
 	/* Return if the mixer has already started. */
 	mutex_enter(sc->sc_intr_lock);
 	if (sc->sc_pbusy) {
 		mutex_exit(sc->sc_intr_lock);
-		sc->sc_exlock = 0;
-		cv_signal(&sc->sc_exlockcv);
+		audio_exit_exclusive(sc);
 		return 0;
 	}
 
@@ -5246,8 +5271,7 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
 	    mixer->hwbuf.head, mixer->hwbuf.used, mixer->hwbuf.capacity);
 
 	mutex_exit(sc->sc_intr_lock);
-	sc->sc_exlock = 0;
-	cv_signal(&sc->sc_exlockcv);
+	audio_exit_exclusive(sc);
 	return 0;
 }
 
@@ -5730,25 +5754,15 @@ audio_rmixer_start(struct audio_softc *sc)
 
 	// trigger_input が sc_lock, sc_intr_lock を全解放する可能性が
 	// あるので、ミキサー開始をシリアライズする必要がある。
-	while (__predict_false(sc->sc_exlock != 0)) {
-		error = cv_wait_sig(&sc->sc_exlockcv, sc->sc_lock);
-		if (sc->sc_dying) {
-			error = EIO;
-		}
-		if (error) {
-			mutex_exit(sc->sc_lock);
-			return error;
-		}
-	}
-	/* Enter critical section */
-	sc->sc_exlock = 1;
+	error = audio_enter_exclusive(sc);
+	if (error)
+		return error;
 
 	// すでに再生ミキサが起動していたら、true を返す
 	mutex_enter(sc->sc_intr_lock);
 	if (sc->sc_rbusy) {
 		mutex_exit(sc->sc_intr_lock);
-		sc->sc_exlock = 0;
-		cv_signal(&sc->sc_exlockcv);
+		audio_exit_exclusive(sc);
 		return 0;
 	}
 
@@ -5757,8 +5771,7 @@ audio_rmixer_start(struct audio_softc *sc)
 	TRACE("end");
 
 	mutex_exit(sc->sc_intr_lock);
-	sc->sc_exlock = 0;
-	cv_signal(&sc->sc_exlockcv);
+	audio_exit_exclusive(sc);
 	return 0;
 }
 
