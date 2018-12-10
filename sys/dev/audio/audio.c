@@ -2197,8 +2197,9 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
 		    "%s has halt_input == halt_output. Please fix it\n",
 		    device_xname(sc->sc_dev));
 		// そうは言いつつもとりあえず回避はしておく
-		mutex_enter(sc->sc_intr_lock);
 		sc->sc_rbusy = false;
+		// XXX これいるのかな?
+		mutex_enter(sc->sc_intr_lock);
 		sc->sc_rmixer->hwbuf.head = 0;
 		mutex_exit(sc->sc_intr_lock);
 	}
@@ -2206,17 +2207,17 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
 	if (file->rtrack) {
 		/* Call hw halt_input if this is the last recording track. */
 		if (sc->sc_ropens == 1) {
-			mutex_enter(sc->sc_intr_lock);
 			if (sc->sc_rbusy) {
 				DPRINTF(2, "%s halt_input\n", __func__);
+				mutex_enter(sc->sc_intr_lock);
 				error = audio_rmixer_halt(sc);
+				mutex_exit(sc->sc_intr_lock);
 				if (error) {
 					aprint_error_dev(sc->dev,
 					    "halt_input failed with %d\n",
 					    error);
 				}
 			}
-			mutex_exit(sc->sc_intr_lock);
 		}
 
 		/* Destroy the track. */
@@ -2236,16 +2237,16 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
 
 		/* Call hw halt_output if this is the last playback track. */
 		if (sc->sc_popens == 1) {
-			mutex_enter(sc->sc_intr_lock);
 			if (sc->sc_pbusy) {
+				mutex_enter(sc->sc_intr_lock);
 				error = audio_pmixer_halt(sc);
+				mutex_exit(sc->sc_intr_lock);
 				if (error) {
 					aprint_error_dev(sc->dev,
 					    "halt_output failed with %d\n",
 					    error);
 				}
 			}
-			mutex_exit(sc->sc_intr_lock);
 		}
 
 		/*
@@ -5242,9 +5243,7 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
 		return error;
 
 	/* Return if the mixer has already started. */
-	mutex_enter(sc->sc_intr_lock);
 	if (sc->sc_pbusy) {
-		mutex_exit(sc->sc_intr_lock);
 		audio_exit_exclusive(sc);
 		return 0;
 	}
@@ -5270,7 +5269,6 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
 	    (int)mixer->mixseq, (int)mixer->hwseq,
 	    mixer->hwbuf.head, mixer->hwbuf.used, mixer->hwbuf.capacity);
 
-	mutex_exit(sc->sc_intr_lock);
 	audio_exit_exclusive(sc);
 	return 0;
 }
@@ -5759,9 +5757,7 @@ audio_rmixer_start(struct audio_softc *sc)
 		return error;
 
 	// すでに再生ミキサが起動していたら、true を返す
-	mutex_enter(sc->sc_intr_lock);
 	if (sc->sc_rbusy) {
-		mutex_exit(sc->sc_intr_lock);
 		audio_exit_exclusive(sc);
 		return 0;
 	}
@@ -5770,7 +5766,6 @@ audio_rmixer_start(struct audio_softc *sc)
 	audio_rmixer_input(sc);
 	TRACE("end");
 
-	mutex_exit(sc->sc_intr_lock);
 	audio_exit_exclusive(sc);
 	return 0;
 }
@@ -7685,6 +7680,9 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 	// samples は録音再生されたトータルバイト数を示します。
 	// ...
 
+	// XXX pbusy, rbusy は厳密には exlock とるべきだけど、ここは
+	//     ユーザランドに現状の値を返すだけであまり意味はないので
+	//     まあいいか?
 	if (ptrack) {
 		pi->seek = ptrack->usrbuf.used;
 		pi->samples = ptrack->usrbuf_stamp;
@@ -8019,12 +8017,14 @@ audio_suspend(device_t dv, const pmf_qual_t *qual)
 	mutex_enter(sc->sc_lock);
 	audio_mixer_capture(sc);
 	// XXX mixer をとめる?
+	audio_enter_exclusive(sc);
 	mutex_enter(sc->sc_intr_lock);
 	if (sc->sc_pbusy)
 		audio_pmixer_halt(sc);
 	if (sc->sc_rbusy)
 		audio_rmixer_halt(sc);
 	mutex_exit(sc->sc_intr_lock);
+	audio_exit_exclusive(sc);
 #ifdef AUDIO_PM_IDLE
 	callout_halt(&sc->sc_idle_counter, sc->sc_lock);
 #endif

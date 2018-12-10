@@ -145,7 +145,7 @@ struct audio_softc {
 	// この2つは sc_exlock で保護すること
 	int sc_popens;
 	int sc_ropens;
-	// この2つは sc_intr_lock で保護すること
+	// この2つは sc_exlock で保護すること
 	bool			sc_pbusy;	/* output DMA in progress */
 	bool			sc_rbusy;	/* input DMA in progress */
 
