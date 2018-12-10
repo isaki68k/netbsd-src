@@ -1418,6 +1418,7 @@ audio_enter_dev(dev_t dev, struct audio_softc **scp, int exclusive)
 static int
 audio_enter(struct audio_softc *sc, int exclusive)
 {
+	int error;
 
 	mutex_enter(sc->sc_lock);
 	if (sc->sc_dying) {
@@ -1426,10 +1427,13 @@ audio_enter(struct audio_softc *sc, int exclusive)
 	}
 	if (exclusive) {
 		while (__predict_false(sc->sc_exlock != 0)) {
-			cv_wait(&sc->sc_exlockcv, sc->sc_lock);
+			error = cv_wait_sig(&sc->sc_exlockcv, sc->sc_lock);
 			if (sc->sc_dying) {
+				error = EIO;
+			}
+			if (error) {
 				mutex_exit(sc->sc_lock);
-				return EIO;
+				return error;
 			}
 		}
 		/* Enter critical section */
@@ -5186,6 +5190,7 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
 {
 	audio_trackmixer_t *mixer;
 	int minimum;
+	int error;
 
 	KASSERT(mutex_owned(sc->sc_lock));
 
@@ -5195,13 +5200,16 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
 	// この pmixer_start が複数同時に走ってしまう。
 	// (pmixer_start を起こさない2度目以降の) write はシリアライズ
 	// しなくてもいいが、ミキサーの開始だけはシリアライズする必要がある。
-	// cv_wait() が sc_lock を解放するため sc_intr_lock をとる前にする
-	// 必要がある。
+	// cv_wait_sig() が sc_lock を解放するため sc_intr_lock をとる前に
+	// する必要がある。
 	while (__predict_false(sc->sc_exlock != 0)) {
-		cv_wait(&sc->sc_exlockcv, sc->sc_lock);
+		error = cv_wait_sig(&sc->sc_exlockcv, sc->sc_lock);
 		if (sc->sc_dying) {
+			error = EIO;
+		}
+		if (error) {
 			mutex_exit(sc->sc_lock);
-			return EIO;
+			return error;
 		}
 	}
 	/* Enter critical section */
@@ -5716,16 +5724,20 @@ audio_pintr(void *arg)
 static int
 audio_rmixer_start(struct audio_softc *sc)
 {
+	int error;
 
 	KASSERT(mutex_owned(sc->sc_lock));
 
 	// trigger_input が sc_lock, sc_intr_lock を全解放する可能性が
 	// あるので、ミキサー開始をシリアライズする必要がある。
 	while (__predict_false(sc->sc_exlock != 0)) {
-		cv_wait(&sc->sc_exlockcv, sc->sc_lock);
+		error = cv_wait_sig(&sc->sc_exlockcv, sc->sc_lock);
 		if (sc->sc_dying) {
+			error = EIO;
+		}
+		if (error) {
 			mutex_exit(sc->sc_lock);
-			return EIO;
+			return error;
 		}
 	}
 	/* Enter critical section */
@@ -6102,12 +6114,12 @@ audio_track_drain(struct audio_softc *sc, audio_track_t *track)
 			break;
 
 		error = cv_wait_sig(&mixer->draincv, sc->sc_lock);
+		if (sc->sc_dying)
+			return EIO;
 		if (error) {
 			TRACET(track, "cv_wait_sig failed %d", error);
 			return error;
 		}
-		if (sc->sc_dying)
-			return EIO;
 	}
 
 	track->pstate = AUDIO_STATE_CLEAR;
