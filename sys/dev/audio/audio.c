@@ -5876,7 +5876,9 @@ audio_rmixer_process(struct audio_softc *sc)
 
 	// SIGIO を通知(する必要があるかどうかは向こうで判断する)
 	// XXX トラック別にしなくていいか
+	kpreempt_disable();
 	softint_schedule(sc->sc_sih_rd);
+	kpreempt_enable();
 }
 
 // ハードウェアバッファに1ブロック入力を開始します。
