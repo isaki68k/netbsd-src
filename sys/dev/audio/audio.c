@@ -1412,12 +1412,10 @@ audio_enter_exclusive(struct audio_softc *sc)
 
 	while (__predict_false(sc->sc_exlock != 0)) {
 		error = cv_wait_sig(&sc->sc_exlockcv, sc->sc_lock);
-		if (sc->sc_dying) {
-			error = EIO;
-		}
-		if (error) {
+		if (sc->sc_dying)
+			return EIO;
+		if (error)
 			return error;
-		}
 	}
 	/* Enter critical section */
 	sc->sc_exlock = 1;
