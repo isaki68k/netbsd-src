@@ -547,13 +547,13 @@ static void audio_track_clear(struct audio_softc *, audio_track_t *);
 static int audio_mixer_init(struct audio_softc *, int,
 	const audio_format2_t *, const audio_filter_reg_t *);
 static void audio_mixer_destroy(struct audio_softc *, audio_trackmixer_t *);
-static int  audio_pmixer_start(struct audio_softc *, bool);
+static void audio_pmixer_start(struct audio_softc *, bool);
 static void audio_pmixer_process(struct audio_softc *, bool);
 static int  audio_pmixer_mixall(struct audio_softc *, bool);
 static int  audio_pmixer_mix_track(audio_trackmixer_t *, audio_track_t *, int);
 static void audio_pmixer_output(struct audio_softc *);
 static int  audio_pmixer_halt(struct audio_softc *);
-static int  audio_rmixer_start(struct audio_softc *);
+static void audio_rmixer_start(struct audio_softc *);
 static void audio_rmixer_process(struct audio_softc *);
 static void audio_rmixer_input(struct audio_softc *);
 static int  audio_rmixer_halt(struct audio_softc *);
@@ -1403,6 +1403,10 @@ stream_filter_list_prepend(stream_filter_list_t *list,
 }
 #endif // OLD_FILTER
 
+// uaudio(4) など一部のデバイスは trigger_output が sc_lock, sc_intr_lock を
+// 全部外したりするようで、それはそれでどうかと思うのだが、そっちに手を入れる
+// のも闇なので、ここでは sc_exlock という sc_lock を使った
+// クリティカルセクションを用意することにする。
 /*
  * Enter critical section.
  * If successful, it returns 0.  Otherwise returns errno.
@@ -2351,9 +2355,12 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 			// バッファが空ならここで待機
 			mutex_exit(sc->sc_intr_lock);
 
-			error = audio_rmixer_start(sc);
+			error = audio_enter_exclusive(sc);
 			if (error)
 				return error;
+			audio_rmixer_start(sc);
+			audio_exit_exclusive(sc);
+
 			if (ioflag & IO_NDELAY)
 				return EWOULDBLOCK;
 
@@ -2539,9 +2546,11 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 
 		// XXX うーんなんだこれ
 		if (track->outbuf.used >= track->mixer->frames_per_block * 2) {
-			error = audio_pmixer_start(sc, false);
+			error = audio_enter_exclusive(sc);
 			if (error)
 				goto abort;
+			audio_pmixer_start(sc, false);
+			audio_exit_exclusive(sc);
 		}
 	}
 
@@ -3121,9 +3130,11 @@ audio_mmap(struct audio_softc *sc, off_t *offp, size_t len, int prot,
 
 		// XXX ここで元は audio_fill_silence
 		if (!track->is_pause) {
-			error = audio_pmixer_start(sc, true);
+			error = audio_enter_exclusive(sc);
 			if (error)
 				return error;
+			audio_pmixer_start(sc, true);
+			audio_exit_exclusive(sc);
 		}
 		/* XXX mmapping record buffer is not supported */
 	}
@@ -5196,37 +5207,25 @@ audio_mixer_destroy(struct audio_softc *sc, audio_trackmixer_t *mixer)
 }
 
 // 再生ミキサを(起動してなければ)起動します。
+// sc_exlock で呼ぶこと。
 // 割り込みコンテキストから呼び出してはいけません。
 /*
  * Starts playback mixer if not running.
- * This function must not be called from the interrupt context.
+ * It must be called with sc_exlock.
+ * It must not be called from the interrupt context.
  */
-static int
+static void
 audio_pmixer_start(struct audio_softc *sc, bool force)
 {
 	audio_trackmixer_t *mixer;
 	int minimum;
-	int error;
 
 	KASSERT(mutex_owned(sc->sc_lock));
-
-	// uaudio(4) など、再生を開始した時の trigger_output が
-	// sc_lock, sc_intr_lock を全部外す奴がいるようだ。それをされると
-	// ここで pbusy == 0 をチェックしてから pbusy を立てるまでの間に
-	// この pmixer_start が複数同時に走ってしまう。
-	// (pmixer_start を起こさない2度目以降の) write はシリアライズ
-	// しなくてもいいが、ミキサーの開始だけはシリアライズする必要がある。
-	// cv_wait_sig() が sc_lock を解放するため sc_intr_lock をとる前に
-	// する必要がある。
-	error = audio_enter_exclusive(sc);
-	if (error)
-		return error;
+	KASSERT(sc->sc_exlock);
 
 	/* Return if the mixer has already started. */
-	if (sc->sc_pbusy) {
-		audio_exit_exclusive(sc);
-		return 0;
-	}
+	if (sc->sc_pbusy)
+		return;
 
 	mixer = sc->sc_pmixer;
 	TRACE("begin mixseq=%d hwseq=%d hwbuf=%d/%d/%d%s",
@@ -5248,9 +5247,6 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
 	TRACE("end   mixseq=%d hwseq=%d hwbuf=%d/%d/%d",
 	    (int)mixer->mixseq, (int)mixer->hwseq,
 	    mixer->hwbuf.head, mixer->hwbuf.used, mixer->hwbuf.capacity);
-
-	audio_exit_exclusive(sc);
-	return 0;
 }
 
 /*
@@ -5718,36 +5714,27 @@ audio_pintr(void *arg)
 }
 
 // 録音ミキサを(起動してなければ)起動します。
+// sc_exlock で呼ぶこと。
 // 割り込みコンテキストから呼び出してはいけません。
 /*
  * Starts record mixer if not running.
- * This function must not be called from the interrupt context.
+ * It must be called with sc_exlock.
+ * It must not be called from the interrupt context.
  */
-static int
+static void
 audio_rmixer_start(struct audio_softc *sc)
 {
-	int error;
 
 	KASSERT(mutex_owned(sc->sc_lock));
+	KASSERT(sc->sc_exlock);
 
-	// trigger_input が sc_lock, sc_intr_lock を全解放する可能性が
-	// あるので、ミキサー開始をシリアライズする必要がある。
-	error = audio_enter_exclusive(sc);
-	if (error)
-		return error;
-
-	// すでに再生ミキサが起動していたら、true を返す
-	if (sc->sc_rbusy) {
-		audio_exit_exclusive(sc);
-		return 0;
-	}
+	/* Return if the mixer has already started. */
+	if (sc->sc_rbusy)
+		return;
 
 	TRACE("begin");
 	audio_rmixer_input(sc);
 	TRACE("end");
-
-	audio_exit_exclusive(sc);
-	return 0;
 }
 
 /*
@@ -7179,12 +7166,7 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 			audio_track_setinfo_water(play, ai);
 
 		if (start_mixer) {
-			error = audio_pmixer_start(sc, false);
-			if (error) {
-				if (error == EIO)
-					return error;
-				goto abort2;
-			}
+			audio_pmixer_start(sc, false);
 		}
 	}
 	if (rec) {
@@ -7208,12 +7190,7 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 		}
 
 		if (start_mixer) {
-			error = audio_rmixer_start(sc);
-			if (error) {
-				if (error == EIO)
-					return error;
-				goto abort3;
-			}
+			audio_rmixer_start(sc);
 		}
 	}
 
@@ -7496,14 +7473,10 @@ audio_hw_setinfo(struct audio_softc *sc, const struct audio_info *newai,
 abort:
 	// XXX pmixer_start は false でいいんだろうか
 	if (restart_pmixer) {
-		error = audio_pmixer_start(sc, false);
-		if (error == EIO)
-			return error;
+		audio_pmixer_start(sc, false);
 	}
 	if (restart_rmixer) {
-		error = audio_rmixer_start(sc);
-		if (error == EIO)
-			return error;
+		audio_rmixer_start(sc);
 	}
 
 	return error;
