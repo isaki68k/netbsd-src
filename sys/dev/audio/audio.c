@@ -6188,7 +6188,7 @@ audio_softintr_wr(void *cookie)
 				TRACEF(f, "sending SIGIO %d", pid);
 				mutex_enter(proc_lock);
 				if ((p = proc_find(pid)) != NULL)
-				psignal(p, SIGIO);
+					psignal(p, SIGIO);
 				mutex_exit(proc_lock);
 			}
 		}
