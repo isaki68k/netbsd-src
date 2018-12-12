@@ -465,10 +465,10 @@ static int audiommap(struct file *, off_t *, size_t, int, int *, int *,
 	struct uvm_object **, int *);
 static int audiostat(struct file *, struct stat *);
 
-static void filt_audiowdetach(struct knote *);
-static int  filt_audiowrite(struct knote *, long);
-static void filt_audiordetach(struct knote *);
-static int  filt_audioread(struct knote *, long);
+static void filt_audiowrite_detach(struct knote *);
+static int  filt_audiowrite_event(struct knote *, long);
+static void filt_audioread_detach(struct knote *);
+static int  filt_audioread_event(struct knote *, long);
 
 static int audio_open(dev_t, struct audio_softc *, int, int, struct lwp *,
 	struct audiobell_arg *);
@@ -2959,12 +2959,12 @@ audio_poll(struct audio_softc *sc, int events, struct lwp *l,
 static const struct filterops audioread_filtops = {
 	.f_isfd = 1,
 	.f_attach = NULL,
-	.f_detach = filt_audiordetach,
-	.f_event = filt_audioread,
+	.f_detach = filt_audioread_detach,
+	.f_event = filt_audioread_event,
 };
 
 static void
-filt_audiordetach(struct knote *kn)
+filt_audioread_detach(struct knote *kn)
 {
 	struct audio_softc *sc;
 	audio_file_t *file;
@@ -2976,7 +2976,7 @@ filt_audiordetach(struct knote *kn)
 }
 
 static int
-filt_audioread(struct knote *kn, long hint)
+filt_audioread_event(struct knote *kn, long hint)
 {
 	audio_file_t *file;
 	audio_track_t *track;
@@ -2998,12 +2998,12 @@ filt_audioread(struct knote *kn, long hint)
 static const struct filterops audiowrite_filtops = {
 	.f_isfd = 1,
 	.f_attach = NULL,
-	.f_detach = filt_audiowdetach,
-	.f_event = filt_audiowrite,
+	.f_detach = filt_audiowrite_detach,
+	.f_event = filt_audiowrite_event,
 };
 
 static void
-filt_audiowdetach(struct knote *kn)
+filt_audiowrite_detach(struct knote *kn)
 {
 	struct audio_softc *sc;
 	audio_file_t *file;
@@ -3016,7 +3016,7 @@ filt_audiowdetach(struct knote *kn)
 }
 
 static int
-filt_audiowrite(struct knote *kn, long hint)
+filt_audiowrite_event(struct knote *kn, long hint)
 {
 	audio_file_t *file;
 	audio_track_t *track;
