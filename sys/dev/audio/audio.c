@@ -7374,8 +7374,8 @@ audio_hw_setinfo(struct audio_softc *sc, const struct audio_info *newai,
 	// port を変更するにはミキサーをとめる必要があるようだ。
 	/* It's necessary to stop the mixer to change the port. */
 	if (SPECIFIED(newpi->port) || SPECIFIED(newri->port)) {
-		restart_pmixer = sc->sc_pmixer;
-		restart_rmixer = sc->sc_rmixer;
+		restart_pmixer = sc->sc_pbusy;
+		restart_rmixer = sc->sc_rbusy;
 
 		mutex_enter(sc->sc_intr_lock);
 		audio_pmixer_halt(sc);
