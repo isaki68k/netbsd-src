@@ -3435,23 +3435,25 @@ test_kqueue_4()
 		err(1, "open");
 
 	// バッファサイズ、hiwat 取得
-	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "hiwat");
 	XP_SYS_EQ(0, r);
 	// なんでもいいので変更する
-	newhiwat = ai.lowat;
+	newhiwat = ai.hiwat - 1;
 
 	// pause、hiwat 設定
 	AUDIO_INITINFO(&ai);
 	ai.play.pause = 1;
 	ai.hiwat = newhiwat;
-	r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "pause=1;hiwat");
 	XP_SYS_EQ(0, r);
 
 	// hiwat 再取得
-	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "hiwat");
 	XP_SYS_EQ(0, r);
+	XP_EQ(1, ai.play.pause);
+	XP_EQ(newhiwat, ai.hiwat);
 
-	// 書き込み
+	// hiwatまでではなく目一杯書き込む
 	buflen = ai.blocksize * ai.hiwat;
 	buf = (char *)malloc(buflen);
 	if (buf == NULL)
@@ -3470,20 +3472,23 @@ test_kqueue_4()
 
 	memset(&ts, 0, sizeof(ts));
 
-	EV_SET(&kev, fd, EV_ADD, EVFILT_WRITE, 0, 0, 0);
+	EV_SET(&kev, fd, EV_ADD, EVFILT_WRITE, 0, 0, fd);
 	r = KEVENT_SET(kq, &kev, 1);
 	XP_SYS_EQ(0, r);
 
 	r = KEVENT_POLL(kq, &kev, 1, &ts);
-	// NetBSD7 の EVFILT_WRITE は hiwat を考慮していないようだ
-	if (netbsd == 7 && r == 1) {
-		XP_EXPFAIL("not considered about hiwat on NetBSD7?");
+	if (r > 0)
+		DEBUG_KEV("kev", &kev);
+	if (netbsd < 9) {
+		// N7、N8 は空きが1バイト以上あれば成立する、となっている。
+		// lowat を導入しといてその動作はどうなんだろうという気はする。
+		// だがフィルタチェインの構造上、空いているかどうかの判断が
+		// 難しいのか分からないが、pause して目一杯書き込んだはずなのに
+		// 空きがあると判定されてしまうようだ。
+		XP_EXPFAIL("r expects 0 but %d (filt_audiowrite is broken)", r);
 	} else {
+		// AUDIO2 では lowat 以上あるので WRITE は成立しない
 		XP_SYS_EQ(0, r);
-		if (r > 0) {
-			XP_EQ(fd, kev.ident);
-			XP_EQ(0, kev.data);
-		}
 	}
 
 	r = CLOSE(fd);
@@ -3536,7 +3541,7 @@ test_kqueue_5()
 			ai.play.channels = 2;
 			ai.play.sample_rate = 8000;
 		}
-		r = IOCTL(fd, AUDIO_SETINFO, &ai, "pause=1");
+		r = IOCTL(fd, AUDIO_SETINFO, &ai, "enc;pause=1");
 		XP_SYS_EQ(0, r);
 
 		// いろいろ再取得
@@ -3546,11 +3551,11 @@ test_kqueue_5()
 		// lowat を約半分に再設定
 		AUDIO_INITINFO(&ai2);
 		ai2.lowat = ai.hiwat / 2;
-		r = IOCTL(fd, AUDIO_SETINFO, &ai2, "");
+		r = IOCTL(fd, AUDIO_SETINFO, &ai2, "lowat");
 		XP_SYS_EQ(0, r);
 
 		// でまた再取得
-		r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+		r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "lowat");
 		XP_SYS_EQ(0, r);
 		DPRINTF("  > blocksize=%d hiwat=%d lowat=%d\n",
 			ai.blocksize, ai.hiwat, ai.lowat);
@@ -3572,7 +3577,7 @@ test_kqueue_5()
 		kq = KQUEUE();
 		XP_SYS_OK(kq);
 
-		EV_SET(&kev, fd, EV_ADD, EVFILT_WRITE, 0, 0, 0);
+		EV_SET(&kev, fd, EV_ADD, EVFILT_WRITE, 0, 0, fd);
 		r = KEVENT_SET(kq, &kev, 1);
 		XP_SYS_EQ(0, r);
 
@@ -3582,7 +3587,7 @@ test_kqueue_5()
 		// N7(emul=0) は blocksize * hiwat、
 		// N7(emul=1) は buffer_size
 		// N8 は buffer_size
-		r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+		r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "seek");
 		XP_SYS_EQ(0, r);
 		DPRINTF("  > seek=%d\n", ai.play.seek);
 		if (netbsd == 7 && emul == 0) {
@@ -3593,11 +3598,9 @@ test_kqueue_5()
 
 		// バッファフルなので kevent は ready でないこと
 		r = KEVENT_POLL(kq, &kev, 1, &ts);
+		if (r >= 1)
+			DEBUG_KEV("kev", &kev);
 		XP_SYS_EQ(0, r);
-		if (r > 0) {
-			XP_EQ(fd, kev.ident);
-			XP_EQ(0, kev.data);
-		}
 
 		// pause 解除
 		AUDIO_INITINFO(&ai2);
@@ -3606,8 +3609,6 @@ test_kqueue_5()
 		XP_SYS_EQ(0, r);
 
 		while (ai.play.seek > 0) {
-			int kr;
-
 			// XXX N7(emul=1) は pause 解除できてないっぽい感じ。バグ?
 			if (netbsd == 7 && emul == 1) {
 				XP_EXPFAIL("unpause not work on NetBSD7 ??");
@@ -3617,45 +3618,40 @@ test_kqueue_5()
 			usleep(250 * 1000);
 
 			// あまり意味はないが極力間を空けずに行いたい
-			r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
-			kr = KEVENT_POLL(kq, &kev, 1, &ts);
+			r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "seek");
+			XP_SYS_EQ(0, r);
+			r = KEVENT_POLL(kq, &kev, 1, &ts);
+			if (r >= 1)
+				DEBUG_KEV("kev", &kev);
 
 			DPRINTF("  > seek=%d\n", ai.play.seek);
-			XP_SYS_EQ(0, r);
+
 			if (netbsd == 7) {
 				// N7(emul=0) はバッファをクリアしてしまうようだ
 				// ただし EVFILT_WRITE は連動しないようだ。
 				// バグというかなんだこれ...
-				XP_EQ(0, ai.play.seek);
-				if (kr == 0) {
+				XP_EXPFAIL("ai.play.seek expects !0 but %d", ai.play.seek);
+				if (r == 0) {
 					XP_EXPFAIL("seek=0 but EVFILT_WRITE not set");
 				} else {
-					XP_SYS_EQ(0, kr);
+					XP_SYS_EQ(0, r);
 				}
 				break;
-
-			} else if (netbsd == 8) {
-				// N8 は 1バイトでも空けばすぐに EVFILT_WRITE が立つ
-				if (ai.play.seek == ai.play.buffer_size) {
-					XP_SYS_EQ(0, kr);
-				} else {
-					XP_SYS_EQ(1, kr);
-					// 一度でも下回ればもうテスト繰り返す必要はない
-					break;
-				}
 
 			} else {
 				// AUDIO2 では lowat を下回ったら EVFILT_WRITE が立つ
 				// といっても GETINFO と kqueue の間にはどうしても時間差が
 				// あるので lowat 近くだったら検査しない、とかはどうか。
+				//
+				// N8 は1バイトでも空けばすぐに EVFILT_WRITE が立つように
+				// 見えるのだがここのテストはこの検査をパスする。
+				// 何故だか分からん。
 				if (ai.play.seek >= ai.blocksize * ai.lowat * 12 / 10) {
 					// lowat より(おそらくまだ)高いので EVFILT_WRITE は立たない
-					XP_SYS_EQ(0, kr);
+					XP_SYS_EQ(0, r);
 				} else if (ai.play.seek < ai.blocksize * ai.lowat) {
 					// lowat より低いので EVFILT_WRITE は立つはず
-					XP_SYS_EQ(1, kr);
-					// 一度でも下回ればもうテスト繰り返す必要はない
-					break;
+					XP_SYS_EQ(1, r);
 				}
 			}
 		}
@@ -3794,8 +3790,6 @@ test_kqueue_6()
 		XP_SYS_EQ(0, r);
 
 		while (ai.play.seek > 0) {
-			int kr;
-
 			usleep(250 * 1000);
 
 			// あまり意味はないが極力間を空けずに行いたい
@@ -3803,10 +3797,10 @@ test_kqueue_6()
 			XP_SYS_EQ(0, r);
 			r = IOCTL(fd[b], AUDIO_GETBUFINFO, &ai2, "seekB");
 			XP_SYS_EQ(0, r);
-			kr = KEVENT_POLL(kq, kev, 2, &ts);
-			if (kr >= 1)
+			r = KEVENT_POLL(kq, kev, 2, &ts);
+			if (r >= 1)
 				DEBUG_KEV("kev[0]", &kev[0]);
-			if (kr >= 2)
+			if (r >= 2)
 				DEBUG_KEV("kev[1]", &kev[1]);
 
 			DPRINTF("  > seek A=%d B=%d\n", ai.play.seek, ai2.play.seek);
@@ -3814,18 +3808,20 @@ test_kqueue_6()
 			// 念のため fdB の残量は変わらないこと
 			XP_EQ(ai2_initial.play.seek, ai2.play.seek);
 
-			if (netbsd == 9) {
+			if (1) {
 				// AUDIO2 では lowat を下回ったら EVFILT_WRITE が立つ
 				// といっても GETINFO と kqueue の間にはどうしても時間差が
 				// あるので lowat 近くだったら検査しない、とかはどうか。
+				//
+				// N8 は1バイトでも空けばすぐに EVFILT_WRITE が立つように
+				// 見えるのだがここのテストはこの検査をパスする。
+				// 何故だか分からん。
 				if (ai.play.seek >= ai.blocksize * ai.lowat * 12 / 10) {
 					// lowat より(おそらくまだ)高いので EVFILT_WRITE は立たない
-					XP_SYS_EQ(0, kr);
+					XP_SYS_EQ(0, r);
 				} else if (ai.play.seek < ai.blocksize * ai.lowat) {
 					// lowat より低いので EVFILT_WRITE は立つはず
-					XP_SYS_EQ(1, kr);
-					// 一度でも下回ればもうテスト繰り返す必要はない
-					break;
+					XP_SYS_EQ(1, r);
 				}
 			}
 		}
