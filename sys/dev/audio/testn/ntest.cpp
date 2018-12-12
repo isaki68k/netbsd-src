@@ -3150,8 +3150,8 @@ test_poll_6()
 		AUDIO_INITINFO(&ai);
 		// 再生時間を縮めるため blocksize を小さくしたいが N8 では効かないっぽい
 		ai.blocksize = 320;
-		ai.hiwat = 4;
-		ai.lowat = 1;
+		ai.hiwat = 6;
+		ai.lowat = 3;
 		// fdA は pause を設定
 		ai.play.pause = 1;
 		r = IOCTL(fd[a], AUDIO_SETINFO, &ai, "pause=1");
@@ -3165,8 +3165,8 @@ test_poll_6()
 		// 手抜きして使い回す
 		r = IOCTL(fd[a], AUDIO_GETBUFINFO, &ai, "");
 		XP_SYS_EQ(0, r);
-		XP_EQ(4, ai.hiwat);
-		XP_EQ(1, ai.lowat);
+		XP_EQ(6, ai.hiwat);
+		XP_EQ(3, ai.lowat);
 		blocksize = ai.blocksize;
 
 		// 8kHz での再生時間 msec に対して十分長くとる
