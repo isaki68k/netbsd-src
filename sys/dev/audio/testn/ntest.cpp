@@ -174,7 +174,8 @@ main(int ac, char *av[])
 	}
 	if (testcount > 0) {
 		printf("Result: %d tests, %d success",
-			testcount, testcount - failcount - expfcount);
+			testcount,
+			testcount - failcount - expfcount - skipcount);
 		if (failcount > 0)
 			printf(", %d failed", failcount);
 		if (expfcount > 0)
@@ -341,7 +342,13 @@ DESC(const char *name, ...)
 }
 
 // 検査
-#define XP_FAIL(fmt...)	xp_fail(__LINE__, fmt)
+
+// XP_FAIL は呼び出し元でテストした上で失敗した時に呼ぶ。
+// xp_fail はすでに testcount を追加した後で呼ぶ。
+#define XP_FAIL(fmt...)	do {	\
+	testcount++;	\
+	xp_fail(__LINE__, fmt);	\
+} while (0)
 void xp_fail(int line, const char *fmt, ...)
 {
 	va_list ap;
@@ -358,7 +365,10 @@ void xp_fail(int line, const char *fmt, ...)
 	failcount++;
 }
 
-#define XP_EXPFAIL(fmt...) xp_expfail(__LINE__, fmt)
+#define XP_EXPFAIL(fmt...)	do { \
+	testcount++;	\
+	xp_expfail(__LINE__, fmt);	\
+} while (0)
 void xp_expfail(int line, const char *fmt, ...)
 {
 	va_list ap;
@@ -375,7 +385,10 @@ void xp_expfail(int line, const char *fmt, ...)
 	expfcount++;
 }
 
-#define XP_SKIP(fmt...)	xp_skip(__LINE__, fmt)
+#define XP_SKIP(fmt...)	do { \
+	testcount++;	\
+	xp_skip(__LINE__, fmt);	\
+} while (0)
 void xp_skip(int line, const char *fmt, ...)
 {
 	va_list ap;
