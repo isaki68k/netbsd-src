@@ -3621,6 +3621,176 @@ test_kqueue_5()
 	}
 }
 
+// 隣のディスクリプタの影響を受けないこと
+void
+test_kqueue_6()
+{
+	struct audio_info ai;
+	struct audio_info ai2;
+	struct audio_info ai2_initial;
+	struct kevent kev[2];
+	struct timespec ts;
+	int fd[2];
+	int r;
+	int kq;
+	char *buf;
+	int buflen;
+
+	TEST("kqueue_6");
+
+	// 多重化は N7 では出来ない
+	if (netbsd < 8) {
+		XP_SKIP("NetBSD7 does not support multi-open");
+		return;
+	}
+
+	memset(&ts, 0, sizeof(ts));
+
+	// 順序に影響されないか、前後両方試す
+	for (int i = 0; i < 2; i++) {
+		int a = i;
+		int b = 1 - i;
+		DESC("%d", i);
+
+		fd[0] = OPEN(devaudio, O_WRONLY | O_NONBLOCK);
+		if (fd[0] == -1)
+			err(1, "open");
+		fd[1] = OPEN(devaudio, O_WRONLY | O_NONBLOCK);
+		if (fd[1] == -1)
+			err(1, "open");
+
+		// エンコーディングを設定
+		AUDIO_INITINFO(&ai);
+		ai.play.encoding = AUDIO_ENCODING_ULAW;
+		ai.play.precision = 8;
+		ai.play.channels = 2;
+		ai.play.sample_rate = 8000;
+		r = IOCTL(fd[0], AUDIO_SETINFO, &ai, "mulaw/8/2ch/8000");
+		XP_SYS_EQ(0, r);
+		r = IOCTL(fd[1], AUDIO_SETINFO, &ai, "mulaw/8/2ch/8000");
+		XP_SYS_EQ(0, r);
+
+		// ブロックサイズ、ブロック数のために取得 (手抜きで片方だけ)
+		r = IOCTL(fd[0], AUDIO_GETBUFINFO, &ai, "");
+		XP_SYS_EQ(0, r);
+
+		// lowat を約半分に再設定。ついでに pause も設定
+		AUDIO_INITINFO(&ai2);
+		ai2.lowat = ai.hiwat / 2;
+		ai2.play.pause = 1;
+		r = IOCTL(fd[a], AUDIO_SETINFO, &ai2, "lowat,pause=1");
+		XP_SYS_EQ(0, r);
+		r = IOCTL(fd[b], AUDIO_SETINFO, &ai2, "lowat,pause=1");
+		XP_SYS_EQ(0, r);
+
+		// でまた再取得
+		r = IOCTL(fd[a], AUDIO_GETBUFINFO, &ai, "");
+		XP_SYS_EQ(0, r);
+		DPRINTF("  > blocksize=%d hiwat=%d lowat=%d\n",
+			ai.blocksize, ai.hiwat, ai.lowat);
+		if (ai.lowat > ai.hiwat * 6 / 10) {
+			// lowat が hiwat の半分(くらい)に設定できてない?
+			XP_FAIL("cannot set lowat=%d hiwat=%d ?\n", ai.lowat, ai.hiwat);
+			CLOSE(fd[0]);
+			CLOSE(fd[1]);
+			continue;
+		}
+
+		// 書き込み
+		buflen = ai.blocksize * ai.hiwat;
+		buf = (char *)malloc(buflen);
+		if (buf == NULL)
+			err(1, "malloc");
+		memset(buf, 0, buflen);
+		// fdA に書き込み
+		do {
+			r = WRITE(fd[a], buf, buflen);
+		} while (r == buflen);
+		if (r == -1) {
+			XP_SYS_NG(EAGAIN, r);
+		}
+		// fdB に書き込み
+		do {
+			r = WRITE(fd[b], buf, buflen);
+		} while (r == buflen);
+		if (r == -1) {
+			XP_SYS_NG(EAGAIN, r);
+		}
+
+		// kevent
+		kq = KQUEUE();
+		XP_SYS_OK(kq);
+
+		EV_SET(&kev[0], fd[a], EV_ADD, EVFILT_WRITE, 0, 0, fd[a]);
+		EV_SET(&kev[1], fd[b], EV_ADD, EVFILT_WRITE, 0, 0, fd[b]);
+		r = KEVENT_SET(kq, kev, 2);
+		XP_SYS_EQ(0, r);
+
+		// バッファが埋まっていて一時停止なので EVFILT_WRITE は立たないこと
+		r = KEVENT_POLL(kq, kev, 1, &ts);
+		XP_SYS_EQ(0, r);
+
+		// seek のために再取得
+		r = IOCTL(fd[a], AUDIO_GETBUFINFO, &ai, "seekA");
+		XP_SYS_EQ(0, r);
+		r = IOCTL(fd[b], AUDIO_GETBUFINFO, &ai2_initial, "seekB");
+		XP_SYS_EQ(0, r);
+
+		// fdA だけ pause 解除
+		AUDIO_INITINFO(&ai2);
+		ai2.play.pause = 0;
+		r = IOCTL(fd[a], AUDIO_SETINFO, &ai2, "pause=0");
+		XP_SYS_EQ(0, r);
+
+		while (ai.play.seek > 0) {
+			int kr;
+
+			usleep(250 * 1000);
+
+			// あまり意味はないが極力間を空けずに行いたい
+			r = IOCTL(fd[a], AUDIO_GETBUFINFO, &ai, "seekA");
+			XP_SYS_EQ(0, r);
+			r = IOCTL(fd[b], AUDIO_GETBUFINFO, &ai2, "seekB");
+			XP_SYS_EQ(0, r);
+			kr = KEVENT_POLL(kq, kev, 2, &ts);
+
+			DPRINTF("  > seek A=%d B=%d\n", ai.play.seek, ai2.play.seek);
+
+			// 念のため fdB の残量は変わらないこと
+			XP_EQ(ai2_initial.play.seek, ai2.play.seek);
+
+			if (netbsd == 9) {
+				// AUDIO2 では lowat を下回ったら EVFILT_WRITE が立つ
+				// といっても GETINFO と kqueue の間にはどうしても時間差が
+				// あるので lowat 近くだったら検査しない、とかはどうか。
+				if (ai.play.seek >= ai.blocksize * ai.lowat * 12 / 10) {
+					// lowat より(おそらくまだ)高いので EVFILT_WRITE は立たない
+					XP_SYS_EQ(0, kr);
+				} else if (ai.play.seek < ai.blocksize * ai.lowat) {
+					// lowat より低いので EVFILT_WRITE は立つはず
+					XP_SYS_EQ(1, kr);
+					// 一度でも下回ればもうテスト繰り返す必要はない
+					break;
+				}
+			}
+		}
+
+		// ただし再生する必要はないのでフラッシュする
+		r = IOCTL(fd[0], AUDIO_FLUSH, NULL, "");
+		XP_SYS_EQ(0, r);
+		r = IOCTL(fd[1], AUDIO_FLUSH, NULL, "");
+		XP_SYS_EQ(0, r);
+
+		r = CLOSE(fd[0]);
+		XP_SYS_EQ(0, r);
+		r = CLOSE(fd[1]);
+		XP_SYS_EQ(0, r);
+		r = CLOSE(kq);
+		XP_SYS_EQ(0, r);
+		free(buf);
+	}
+}
+
 // FIOASYNC が同時に2人設定できるか
 void
 test_FIOASYNC_1(void)
@@ -5911,6 +6081,7 @@ struct testtable testtable[] = {
 	DEF(kqueue_3),
 	DEF(kqueue_4),
 	DEF(kqueue_5),
+	DEF(kqueue_6),
 	DEF(FIOASYNC_1),
 	DEF(FIOASYNC_2),
 	DEF(FIOASYNC_3),
