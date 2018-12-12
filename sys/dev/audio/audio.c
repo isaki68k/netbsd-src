@@ -3014,8 +3014,8 @@ filt_audiowrite(struct knote *kn, long hint)
 
 	// XXX WRITE 可能な時しかここ来ないのかな?
 
-	// XXX 仕様がよくわからんけど、
-	// 再生バッファの空きバイト数を調べるだけじゃいかんのか?
+	// kn_data には再生バッファの空きバイト数を返す。
+	// 戻り値は非ゼロならイベント達成。
 
 	kn->kn_data = 0;
 	if (track) {
@@ -3023,7 +3023,7 @@ filt_audiowrite(struct knote *kn, long hint)
 	}
 
 	TRACE("kn=%p data=%d", kn, (int)kn->kn_data);
-	return kn->kn_data > 0;
+	return (track->usrbuf.used < track->usrbuf_usedlow);
 }
 
 static const struct filterops audiowrite_filtops = {
