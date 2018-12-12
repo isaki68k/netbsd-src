@@ -465,6 +465,11 @@ static int audiommap(struct file *, off_t *, size_t, int, int *, int *,
 	struct uvm_object **, int *);
 static int audiostat(struct file *, struct stat *);
 
+static void filt_audiowdetach(struct knote *);
+static int  filt_audiowrite(struct knote *, long);
+static void filt_audiordetach(struct knote *);
+static int  filt_audioread(struct knote *, long);
+
 static int audio_open(dev_t, struct audio_softc *, int, int, struct lwp *,
 	struct audiobell_arg *);
 static int audio_close(struct audio_softc *, audio_file_t *);
@@ -2951,6 +2956,13 @@ audio_poll(struct audio_softc *sc, int events, struct lwp *l,
 	return revents;
 }
 
+static const struct filterops audioread_filtops = {
+	.f_isfd = 1,
+	.f_attach = NULL,
+	.f_detach = filt_audiordetach,
+	.f_event = filt_audioread,
+};
+
 static void
 filt_audiordetach(struct knote *kn)
 {
@@ -2983,11 +2995,11 @@ filt_audioread(struct knote *kn, long hint)
 	return kn->kn_data > 0;
 }
 
-static const struct filterops audioread_filtops = {
+static const struct filterops audiowrite_filtops = {
 	.f_isfd = 1,
 	.f_attach = NULL,
-	.f_detach = filt_audiordetach,
-	.f_event = filt_audioread,
+	.f_detach = filt_audiowdetach,
+	.f_event = filt_audiowrite,
 };
 
 static void
@@ -3025,13 +3037,6 @@ filt_audiowrite(struct knote *kn, long hint)
 	TRACE("kn=%p data=%d", kn, (int)kn->kn_data);
 	return (track->usrbuf.used < track->usrbuf_usedlow);
 }
-
-static const struct filterops audiowrite_filtops = {
-	.f_isfd = 1,
-	.f_attach = NULL,
-	.f_detach = filt_audiowdetach,
-	.f_event = filt_audiowrite,
-};
 
 int
 audio_kqfilter(struct audio_softc *sc, audio_file_t *file, struct knote *kn)
