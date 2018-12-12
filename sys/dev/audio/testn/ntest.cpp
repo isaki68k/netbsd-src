@@ -3272,7 +3272,7 @@ test_kqueue_2()
 	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
 	XP_SYS_EQ(0, r);
 
-	kq = kqueue();
+	kq = KQUEUE();
 	XP_SYS_OK(kq);
 
 	memset(&ts, 0, sizeof(ts));
@@ -3340,7 +3340,7 @@ test_kqueue_3()
 	}
 
 	// kevent
-	kq = kqueue();
+	kq = KQUEUE();
 	XP_SYS_OK(kq);
 
 	memset(&ts, 0, sizeof(ts));
@@ -3414,7 +3414,7 @@ test_kqueue_4()
 	}
 
 	// kevent
-	kq = kqueue();
+	kq = KQUEUE();
 	XP_SYS_OK(kq);
 
 	memset(&ts, 0, sizeof(ts));
@@ -3518,7 +3518,7 @@ test_kqueue_5()
 		}
 
 		// kevent
-		kq = kqueue();
+		kq = KQUEUE();
 		XP_SYS_OK(kq);
 
 		EV_SET(&kev, fd, EV_ADD, EVFILT_WRITE, 0, 0, 0);
