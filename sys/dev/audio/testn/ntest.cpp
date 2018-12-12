@@ -4,6 +4,8 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#define __STDC_FORMAT_MACROS
+#include <inttypes.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -731,6 +733,42 @@ int debug_kevent_poll(int line, int kq, struct kevent *kev, size_t nev,
 	DPRINTFF(line, "kevent_poll(%d, %p, %zd, %s)", kq, kev, nev, tsbuf);
 	int r = kevent(kq, NULL, 0, kev, nev, ts);
 	DRESULT(r);
+}
+
+#define DEBUG_KEV(name, kev)	debug_kev(__LINE__, name, kev)
+void debug_kev(int line, const char *name, const struct kevent *kev)
+{
+	char flagbuf[256];
+	const char *filterbuf;
+	uint32_t v;
+	int n;
+
+	n = 0;
+	flagbuf[n] = '\0';
+	if (kev->flags == 0) {
+		strcpy(flagbuf, "|0?");
+	} else {
+		v = kev->flags;
+		ADDFLAG(flagbuf, v, EV_ADD);
+		if (v != 0)
+			snprintf(flagbuf + n, sizeof(flagbuf)-n, "|0x%x", v);
+	}
+
+	switch (kev->filter) {
+	 case EVFILT_READ:	filterbuf = "EVFILT_READ";	break;
+	 case EVFILT_WRITE:	filterbuf = "EVFILT_WRITE";	break;
+	 default:			filterbuf = "EVFILT_?";		break;
+	}
+
+	DPRINTFF(line,
+		"%s={id:%d,%s,%s,fflags:0x%x,data:0x%" PRIx64 ",udata:0x%x}\n",
+		name,
+		(int)kev->ident,
+		flagbuf + 1,
+		filterbuf,
+		kev->fflags,
+		kev->data,
+		(int)kev->udata);
 }
 
 #define GETUID()	debug_getuid(__LINE__)
@@ -3753,6 +3791,10 @@ test_kqueue_6()
 			r = IOCTL(fd[b], AUDIO_GETBUFINFO, &ai2, "seekB");
 			XP_SYS_EQ(0, r);
 			kr = KEVENT_POLL(kq, kev, 2, &ts);
+			if (kr >= 1)
+				DEBUG_KEV("kev[0]", &kev[0]);
+			if (kr >= 2)
+				DEBUG_KEV("kev[1]", &kev[1]);
 
 			DPRINTF("  > seek A=%d B=%d\n", ai.play.seek, ai2.play.seek);
 
