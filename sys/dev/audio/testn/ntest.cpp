@@ -625,6 +625,21 @@ int debug_ioctl(int line, int fd, u_long name, const char *namestr,
 	DRESULT(r);
 }
 
+#define FCNTL(fd, name...)	\
+	debug_fcntl(__LINE__, fd, name, #name)
+int debug_fcntl(int line, int fd, int name, const char *namestr, ...)
+{
+	int r;
+
+	switch (name) {
+	 case F_GETFL:	// 引数なし
+		DPRINTFF(line, "fcntl(%d, %s)", fd, namestr);
+		r = fcntl(fd, name);
+		break;
+	}
+	DRESULT(r);
+}
+
 #define CLOSE(fd)	debug_close(__LINE__, fd)
 int debug_close(int line, int fd)
 {
