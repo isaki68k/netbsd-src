@@ -1037,10 +1037,20 @@ test_open_2(void)
 		XP_EQ(AUDIO_ENCODING_ULAW, ai.record.encoding);
 		// gain
 		// port
-		XP_EQ(0, ai.record.seek);
+		if (netbsd == 8 && ai.record.seek != 0) {
+			// N8 では録音オープンしただけで録音が始まる(場合がある?)
+			XP_EXPFAIL("recording was started on open");
+		} else {
+			XP_EQ(0, ai.record.seek);
+		}
 		// avail_ports
 		XP_BUFFSIZE(rbuff, ai.record.buffer_size);
-		XP_EQ(0, ai.record.samples);
+		if (netbsd == 8 && ai.record.samples != 0) {
+			// N8 では録音オープンしただけで録音が始まる(場合がある?)
+			XP_EXPFAIL("recording was started on open");
+		} else {
+			XP_EQ(0, ai.record.samples);
+		}
 		XP_EQ(0, ai.record.eof);
 		XP_EQ(0, ai.record.pause);
 		XP_EQ(0, ai.record.error);
@@ -1050,8 +1060,11 @@ test_open_2(void)
 		if (netbsd <= 7) {
 			// N7 は録音が有効ならオープン直後から active になるらしい。
 			XP_EQ(mode2ropen(mode), ai.record.active);
+		} else if (netbsd == 8 && ai.record.active) {
+			// N8 は録音オープンしただけで録音が始まる(場合がある?)
+			XP_EXPFAIL("recording was started on open");
 		} else {
-			// オープンしただけではまだアクティブにならない。
+			// AUDIO2 はオープンしただけではまだアクティブにならない。
 			XP_EQ(0, ai.record.active);
 		}
 		// これを保存しておく
@@ -1119,10 +1132,20 @@ test_open_2(void)
 		XP_EQ(AUDIO_ENCODING_ULAW, ai.record.encoding);
 		// gain
 		// port
-		XP_EQ(0, ai.record.seek);
+		if (netbsd == 8 && ai.record.seek != 0) {
+			// N8 では録音オープンしただけで録音が始まる(場合がある?)
+			XP_EXPFAIL("recording was started on open");
+		} else {
+			XP_EQ(0, ai.record.seek);
+		}
 		// avail_ports
 		XP_EQ(ai0.record.buffer_size, ai.record.buffer_size);
-		XP_EQ(0, ai.record.samples);
+		if (netbsd == 8 && ai.record.samples != 0) {
+			// N8 では録音オープンしただけで録音が始まる(場合がある?)
+			XP_EXPFAIL("recording was started on open");
+		} else {
+			XP_EQ(0, ai.record.samples);
+		}
 		XP_EQ(0, ai.record.eof);
 		XP_EQ(0, ai.record.pause);
 		XP_EQ(0, ai.record.error);
@@ -1132,6 +1155,9 @@ test_open_2(void)
 		if (netbsd <= 7) {
 			// N7 は録音が有効ならオープン直後から active になるらしい。
 			XP_EQ(mode2ropen(mode), ai.record.active);
+		} else if (netbsd == 8 && ai.record.active) {
+			// N8 は録音オープンしただけで録音が始まる(場合がある?)
+			XP_EXPFAIL("recording was started on open");
 		} else {
 			// オープンしただけではまだアクティブにならない。
 			XP_EQ(0, ai.record.active);
@@ -1252,17 +1278,33 @@ test_open_3(void)
 		XP_EQ(AUDIO_ENCODING_ULAW, ai.record.encoding);
 		// gain
 		// port
-		XP_EQ(0, ai.record.seek);
+		if (netbsd == 8 && ai.record.seek != 0) {
+			// N8 では録音オープンしただけで録音が始まる(場合がある?)
+			XP_EXPFAIL("recording was started on open");
+		} else {
+			XP_EQ(0, ai.record.seek);
+		}
 		// avail_ports
 		XP_BUFFSIZE(rbuff, ai.record.buffer_size);
-		XP_EQ(0, ai.record.samples);
+		if (netbsd == 8 && ai.record.samples != 0) {
+			// N8 では録音オープンしただけで録音が始まる(場合がある?)
+			XP_EXPFAIL("recording was started on open");
+		} else {
+			XP_EQ(0, ai.record.samples);
+		}
 		XP_EQ(0, ai.record.eof);
 		XP_EQ(0, ai.record.pause);
 		XP_EQ(0, ai.record.error);
 		XP_EQ(0, ai.record.waiting);
 		// balance
 		XP_EQ(mode2ropen_full[mode], ai.record.open);
-		XP_EQ(0, ai.record.active);
+		if (netbsd == 8 && ai.record.active) {
+			// N8 では再生モードによらずオープンしただけで録音アクティブが
+			// 立つ(場合がある?)
+			XP_EXPFAIL("recording was started on open");
+		} else {
+			XP_EQ(0, ai.record.active);
+		}
 
 		// できるだけ変更
 		ai0 = ai;
@@ -1299,7 +1341,11 @@ test_open_3(void)
 		r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
 		XP_SYS_EQ(0, r);
 
-		XP_EQ(ai0.blocksize, ai.blocksize);
+		if (netbsd == 8) {
+			// 期待値未検証。
+		} else {
+			XP_EQ(ai0.blocksize, ai.blocksize);
+		}
 		// hiwat, lowat は引き継がない
 		if (netbsd == 9 && mode == O_RDONLY) {
 			// AUDIO2 では RDONLY なら play track がなく rec track が見える
@@ -1398,7 +1444,13 @@ test_open_4(void)
 	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
 	if (r == -1)
 		err(1, "AUDIO_GETBUFINFO");
-	XP_EQ(AUDIO_ENCODING_ULAW, ai.play.encoding);
+	if (netbsd == 8 && ai.play.encoding == AUDIO_ENCODING_SLINEAR_LE) {
+		// N8 は /dev/sound の引き継ぎは /dev/sound 同士に変えたようだ
+		XP_EXPFAIL("/dev/sound inherits only from /dev/sound on N8");
+	} else {
+		// N7, AUDIO2 は直前の設定を引き継ぐ
+		XP_EQ(AUDIO_ENCODING_ULAW, ai.play.encoding);
+	}
 	CLOSE(fd);
 }
 
@@ -1658,15 +1710,21 @@ test_encoding_1(void)
 					ai.play.sample_rate = freq;
 					ai.mode = AUMODE_PLAY_ALL;
 					r = IOCTL(fd, AUDIO_SETINFO, &ai, "play");
-					if (netbsd >= 8) {
-						XP_SYS_EQ(0, r);
-					} else {
+					if (netbsd <= 7) {
 						// N7 は失敗しても気にしないことにする
 						if (r == 0) {
 							XP_SYS_EQ(0, r);
 						} else {
 							XP_SKIP("XXX not checked");
 						}
+					} else if (netbsd == 8 && r != 0) {
+						// N8 はこける理由がわからん
+						if (ch > 2) {
+							XP_EXPFAIL("ch > 2 not supported?");
+						}
+					} else {
+						// AUDIO2 は全部パスする
+						XP_SYS_EQ(0, r);
 					}
 
 					CLOSE(fd);
@@ -1869,7 +1927,12 @@ test_playsync_1(void)
 	// ブロックサイズ未満のテストは保留。
 	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
 	XP_SYS_EQ(0, r);
-	XP_EQ(0, ai.play.error);
+	if (netbsd == 8) {
+		// XXX 詳細不明。1 になるようだ
+		XP_EXPFAIL("ai.play.error expects 0 but %d", ai.play.error);
+	} else {
+		XP_EQ(0, ai.play.error);
+	}
 
 	r = CLOSE(fd);
 	XP_SYS_EQ(0, r);
@@ -2741,9 +2804,27 @@ test_mmap_9()
 
 	r = IOCTL(fd, AUDIO_GETOOFFS, &ao, "");
 	XP_SYS_EQ(0, r);
-	XP_EQ(0, ao.samples);			// まだ書き込みはない
-	XP_EQ(0, ao.deltablks);			// 前回チェック時の転送ブロック数
-	XP_EQ(ai.blocksize, ao.offset);	//
+	if (netbsd == 8) {
+		// N8 ではこの時点でなんか進んでるようだ?
+		XP_EXPFAIL("ao.samples expects 0 but %d", ao.samples);
+	} else {
+		// N7, AUDIO2 ではまだ進んでいないはず
+		XP_EQ(0, ao.samples);
+	}
+	// XXX というか先に一回 GETOOFFS しとかないと delta はわからないのでは?
+	if (netbsd == 8) {
+		// N8 ではこの時点でなんか進んでるようだ?
+		XP_EXPFAIL("ao.deltablks expects 0 but %d", ao.deltablks);
+	} else {
+		XP_EQ(0, ao.deltablks);
+	}
+	if (netbsd == 8) {
+		// N8 では詳細不明
+		XP_EXPFAIL("ao.offset expects %d but %d", ai.blocksize, ao.offset);
+	} else {
+		// N7, AUDIO2 では次の書き込み位置はブロックサイズ分先の位置のはず
+		XP_EQ(ai.blocksize, ao.offset);
+	}
 
 	usleep(50 * 1000);
 	// 50msec 後には理想的には samples は 1ブロック分、offset ももう
@@ -2751,9 +2832,27 @@ test_mmap_9()
 
 	r = IOCTL(fd, AUDIO_GETOOFFS, &ao, "");
 	XP_SYS_EQ(0, r);
-	XP_EQ(ai.blocksize, ao.samples);// 1ブロック書き込み済み
-	XP_EQ(1, ao.deltablks);			// 前回チェック時の転送ブロック数
-	XP_EQ(ai.blocksize * 2, ao.offset);	//
+	if (netbsd == 8) {
+		// N8 では詳細不明
+		XP_EXPFAIL("ao.samples expects %d but %d", ai.blocksize, ao.samples);
+	} else {
+		// 1ブロック書き込み済み
+		XP_EQ(ai.blocksize, ao.samples);
+	}
+	if (netbsd == 8) {
+		// N8 では詳細不明
+		XP_EXPFAIL("ao.deltablks expects 1 but %d", ao.deltablks);
+	} else {
+		// 前回チェック時の転送ブロック数
+		XP_EQ(1, ao.deltablks);
+	}
+	if (netbsd == 8) {
+		// N8 では詳細不明
+		XP_EXPFAIL("ao.offset expects %d but %d", ai.blocksize * 2, ao.offset);
+	} else {
+		// その次のブロックを指しているはず
+		XP_EQ(ai.blocksize * 2, ao.offset);
+	}
 
 	r = CLOSE(fd);
 	XP_SYS_EQ(0, r);
@@ -3885,7 +3984,12 @@ test_FIOASYNC_1(void)
 		err(1, "open");
 	val = 1;
 	r = IOCTL(fd1, FIOASYNC, &val, "on");
-	XP_SYS_EQ(0, r);
+	if (netbsd == 8) {
+		// FIOASYNC が分離されていないので失敗する
+		XP_EXPFAIL("r expects 0 but %d", r);
+	} else {
+		XP_SYS_EQ(0, r);
+	}
 
 	CLOSE(fd0);
 	CLOSE(fd1);
@@ -3920,6 +4024,10 @@ test_FIOASYNC_2(void)
 	val = 0;
 	r = IOCTL(fd1, FIOASYNC, &val, "off");
 	XP_EQ(0, r);
+
+	// XXX 中で何が起きてるかはカーネルにログを表示させるしかない。
+	// fcntl(F_GETFL) で見えるフラグは audio レイヤーより上で処理された
+	// もののようで、一見正しい値が返ってきているように見える。
 
 	CLOSE(fd0);
 	CLOSE(fd1);
@@ -3959,7 +4067,12 @@ test_FIOASYNC_3(void)
 		err(1, "open");
 	val = 1;
 	r = IOCTL(fd1, FIOASYNC, &val, "on");
-	XP_SYS_EQ(0, r);
+	if (netbsd == 8) {
+		// FIOASYNC が分離されていないので失敗する
+		XP_EXPFAIL("r expects 0 but %d", r);
+	} else {
+		XP_SYS_EQ(0, r);
+	}
 	CLOSE(fd1);
 	CLOSE(fd0);
 }
@@ -4020,7 +4133,12 @@ test_FIOASYNC_4(void)
 	for (int i = 0; i < 10 && sigio_caught == 0; i++) {
 		usleep(10000);
 	}
-	XP_EQ(1, sigio_caught);
+	if (netbsd == 8) {
+		// N8 ではシグナル飛んでこない。詳細不明。
+		XP_EXPFAIL("sigio_caught expects 1 but %d", sigio_caught);
+	} else {
+		XP_EQ(1, sigio_caught);
+	}
 
 	CLOSE(fd);
 	free(data);
@@ -4055,7 +4173,12 @@ test_FIOASYNC_5(void)
 	for (int i = 0; i < 10 && sigio_caught == 0; i++) {
 		usleep(10000);
 	}
-	XP_EQ(1, sigio_caught);
+	if (netbsd == 8) {
+		// N8 ではシグナル飛んでこない。詳細不明。
+		XP_EXPFAIL("sigio_caught expects 1 but %d", sigio_caught);
+	} else {
+		XP_EQ(1, sigio_caught);
+	}
 
 	CLOSE(fd);
 
@@ -4101,7 +4224,7 @@ test_AUDIO_WSEEK_1(void)
 		err(1, "write(4)");
 	r = IOCTL(fd, AUDIO_WSEEK, &n, "");
 	XP_SYS_EQ(0, r);
-	if (netbsd == 7 && n == 0) {
+	if (netbsd < 9) {
 		// N7 では 0 になる。
 		// おそらく WSEEK が pustream のバイト数を返しているが、
 		// データはすでにこの先のバッファに送られたんじゃないかと。
@@ -4153,6 +4276,8 @@ test_AUDIO_SETFD_ONLY(void)
 			} else {
 				XP_SYS_NG(ENOTTY, r);
 			}
+		} else if (netbsd == 8) {
+			XP_EXPFAIL("not well considered?");
 		} else {
 			XP_SYS_NG(ENOTTY, r);
 		}
@@ -4165,6 +4290,8 @@ test_AUDIO_SETFD_ONLY(void)
 		XP_SYS_EQ(0, r);
 		if (netbsd <= 7) {
 			XP_EQ(hwfull, n);
+		} else if (netbsd == 8) {
+			XP_EXPFAIL("not well considered?");
 		} else {
 			XP_EQ(0, n);
 		}
@@ -4252,6 +4379,8 @@ test_AUDIO_SETFD_RDWR(void)
 	r = IOCTL(fd, AUDIO_SETFD, &n, "off");
 	if (netbsd <= 7) {
 		XP_SYS_EQ(0, r);
+	} else if (netbsd == 8) {
+		XP_EXPFAIL("not well considered?");
 	} else {
 		if (hwfull) {
 			XP_SYS_NG(ENOTTY, r);
@@ -4268,6 +4397,8 @@ test_AUDIO_SETFD_RDWR(void)
 	XP_SYS_EQ(0, r);
 	if (netbsd <= 7) {
 		XP_EQ(0, n);
+	} else if (netbsd == 8) {
+		XP_EXPFAIL("not well considered?");
 	} else {
 		XP_EQ(hwfull, n);
 	}
@@ -4340,7 +4471,7 @@ test_AUDIO_GETINFO_seek()
 	} else {
 		XP_EQ(0, ai.play.seek);
 	}
-	if (netbsd <= 8) {
+	if (netbsd <= 7) {
 		if (bufsize != ai.play.samples && ai.play.samples > bufsize * 9 / 10) {
 			XP_EXPFAIL("ai.play.samples expects %d but %d"
 			        " (unknown few drops?)",
@@ -4348,6 +4479,8 @@ test_AUDIO_GETINFO_seek()
 		} else {
 			XP_EQ(bufsize, ai.play.samples);
 		}
+	} else if (netbsd == 8) {
+		XP_EXPFAIL("ai.play.samples behavior is unknown");
 	} else {
 		XP_EQ(bufsize, ai.play.samples);
 	}
@@ -4433,7 +4566,12 @@ test_AUDIO_GETINFO_eof(void)
 		memset(&ai, 0, sizeof(ai));
 		r = IOCTL(fd1, AUDIO_GETBUFINFO, &ai, "");
 		XP_SYS_EQ(0, r);
-		XP_EQ(0, ai.play.eof);
+		if (netbsd == 8) {
+			// N8 は別ディスクリプタと干渉する
+			XP_EXPFAIL("ai.play.eof expects 0 but %d", ai.play.eof);
+		} else {
+			XP_EQ(0, ai.play.eof);
+		}
 		XP_EQ(0, ai.record.eof);
 		CLOSE(fd1);
 	}
@@ -5084,6 +5222,19 @@ test_AUDIO_SETINFO_hiwat1()
 		u_int exphi = table[i].exphi;
 		u_int explo = table[i].explo;
 
+		// N8 では
+		// lowat が 3 未満なら 3 にする。
+		// hiwat が lowat + 1 未満なら lowat + 1 にする。
+		// なのかな?
+		if (netbsd == 8) {
+			if (explo < 3) {
+				explo = 3;
+			}
+			if (exphi < explo + 1) {
+				exphi = explo + 1;
+			}
+		}
+
 		DESC("%d,%d", hiwat, lowat);
 
 		AUDIO_INITINFO(&ai);
@@ -5225,9 +5376,13 @@ test_AUDIO_SETINFO_hiwat2()
 		DPRINTF("  > expbuf=%d expblk=%d exphi=%d explo=%d\n",
 			expbuf, expblk, exphi, explo);
 		XP_EQ(expbuf, ai.play.buffer_size);
-		XP_EQ(expblk, ai.blocksize);
-		XP_EQ(exphi, ai.hiwat);
-		XP_EQ(explo, ai.lowat);
+		if (netbsd == 8) {
+			// 期待値未検証。
+		} else {
+			XP_EQ(expblk, ai.blocksize);
+			XP_EQ(exphi, ai.hiwat);
+			XP_EQ(explo, ai.lowat);
+		}
 	}
 
 	r = CLOSE(fd);
@@ -5699,6 +5854,13 @@ test_AUDIO_GETENC_1()
 					XP_SYS_EQ(0, r);
 				} else {
 					// 失敗するはず
+					if (netbsd == 8) {
+						// もうよく分からん
+						if (prec == 32 && i == AUDIO_ENCODING_PCM16) {
+							XP_EXPFAIL("r expects -1,EINVAL but %d", r);
+						}
+
+					} else
 					if ((prec == 8 && i == AUDIO_ENCODING_PCM16) ||
 					    (prec == 8 && i == AUDIO_ENCODING_PCM8) ||
 					    (prec == 8 && i == AUDIO_ENCODING_SLINEAR_LE) ||
@@ -5936,7 +6098,12 @@ test_audioctl_open_4()
 			err(1, "setuid");
 
 		fc = OPEN(devaudioctl, O_RDWR);
-		XP_SYS_OK(fc);
+		if (netbsd == 8) {
+			// N8 は audioctl のオープン条件を間違えている
+			XP_EXPFAIL("fc expects success but %d,err#%d", r, errno);
+		} else {
+			XP_SYS_OK(fc);
+		}
 		if (fc != -1) {
 			r = CLOSE(fc);
 			XP_SYS_EQ(0, r);
@@ -6010,7 +6177,12 @@ test_audioctl_open_5()
 			err(1, "setuid");
 
 		fd = OPEN(devaudio, O_RDWR);
-		XP_SYS_OK(fd);
+		if (netbsd == 8) {
+			// N8 は audioctl のオープン条件を間違えている
+			XP_EXPFAIL("fd expects success but %d,#%d", r, errno);
+		} else {
+			XP_SYS_OK(fd);
+		}
 		if (fd != -1) {
 			r = CLOSE(fd);
 			XP_SYS_EQ(0, r);
