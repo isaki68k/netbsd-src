@@ -5937,7 +5937,12 @@ test_AUDIO_GETENC_2()
 	memset(&enc, 0, sizeof(enc));
 	enc.index = -1;
 	r = IOCTL(fd, AUDIO_GETENC, &enc, "index=-1");
-	XP_SYS_NG(EINVAL, r);
+	if (netbsd == 7 && r == 0) {
+		// N7 では(HW driver によって?)失敗しない場合があるようだ?
+		XP_EXPFAIL("r expects -1,EINVAL but %d", r);
+	} else {
+		XP_SYS_NG(EINVAL, r);
+	}
 
 	r = CLOSE(fd);
 	XP_SYS_EQ(0, r);
