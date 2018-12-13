@@ -17,6 +17,7 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/param.h>
+#include <sys/time.h>
 #include <poll.h>
 #include <sys/event.h>
 #include <sys/sysctl.h>
