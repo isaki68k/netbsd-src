@@ -2346,6 +2346,13 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 	usrbuf = &track->usrbuf;
 	input = track->input;
 
+	// ミキサは一人目の最初の read で必ず動かす
+	error = audio_enter_exclusive(sc);
+	if (error)
+		return error;
+	audio_rmixer_start(sc);
+	audio_exit_exclusive(sc);
+
 	error = 0;
 	while (uio->uio_resid > 0 && error == 0) {
 		int bytes;
@@ -2359,12 +2366,6 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 		if (input->used == 0 && usrbuf->used == 0) {
 			// バッファが空ならここで待機
 			mutex_exit(sc->sc_intr_lock);
-
-			error = audio_enter_exclusive(sc);
-			if (error)
-				return error;
-			audio_rmixer_start(sc);
-			audio_exit_exclusive(sc);
 
 			if (ioflag & IO_NDELAY)
 				return EWOULDBLOCK;
@@ -2487,6 +2488,13 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 	outbuf = &track->outbuf;
 	TRACET(track, "resid=%zd", uio->uio_resid);
 
+	// ミキサは一人目の最初の write で必ず動かす
+	error = audio_enter_exclusive(sc);
+	if (error)
+		goto abort;
+	audio_pmixer_start(sc, false);
+	audio_exit_exclusive(sc);
+
 	track->pstate = AUDIO_STATE_RUNNING;
 	error = 0;
 	while (uio->uio_resid > 0 && error == 0) {
@@ -2534,13 +2542,10 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 				break;
 		}
 
-		if (track->is_pause)
-			continue;
-
+		// outbuf が空いてる限りこちらで変換する
 		mutex_enter(sc->sc_intr_lock);
-		while (sc->sc_pbusy == 0 &&
-		    usrbuf->used >= track->usrbuf_blksize &&
-		    outbuf->used < track->mixer->frames_per_block * 2) {
+		while (usrbuf->used >= track->usrbuf_blksize &&
+		    outbuf->used < track->mixer->frames_per_block * NBLKOUT) {
 			track->in_use = true;
 			mutex_exit(sc->sc_intr_lock);
 			audio_track_play(track);
@@ -2548,15 +2553,6 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 			track->in_use = false;
 		}
 		mutex_exit(sc->sc_intr_lock);
-
-		// XXX うーんなんだこれ
-		if (track->outbuf.used >= track->mixer->frames_per_block * 2) {
-			error = audio_enter_exclusive(sc);
-			if (error)
-				goto abort;
-			audio_pmixer_start(sc, false);
-			audio_exit_exclusive(sc);
-		}
 	}
 
 abort:
@@ -6914,6 +6910,25 @@ audio_mixers_set_format(struct audio_softc *sc, struct audio_info *ai)
 //	今は usrbuf の1ブロックサイズ[byte]にしたほうがよさげ。
 //
 
+//	+----------------------------- HW 停止を必要とするか(set_port等)
+//	|	+--------------------- 現在の mixer の状態(stop/run)
+//	|	|	+------------- 現在のこの track の状態
+//	|	|	|	+----- SETINFO で指定した pause
+//	hw	mixer	track	pause
+//	false	stop	open	0->1	何もしない
+//	false	stop	open	1->0	何もしない
+//	false	stop	run	0->1	何もしない
+//	false	stop	run	1->0	何もしない (*1)
+//	false	run	open	0->1	何もしない
+//	false	run	open	1->0	何もしない
+//	false	run	run	0->1	何もしない (*2)
+//	false	run	run	1->0	何もしない
+//	true	stop	*	*->*	何もしない
+//	true	run	*	*->*	一旦停止 -> 再開
+//
+// *1: 最初のトラックの最初のread/write でミキサーは走る。
+// *2: 最終トラックが pause してもミキサーは停止しない。
+
 // ai に基づいて file の両トラックを諸々セットする。
 // ai のうち初期値のままのところは sc_[pr]params, sc_[pr]pause が使われる。
 // セットできれば sc_[pr]params, sc_[pr]pause も更新する。
@@ -7145,16 +7160,10 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 		goto abort1;
 
 	/* Set to track and update sticky parameters */
-	// ポーズを解除してミキサーが停止してれば再開する。
-	// open -> pause -> write -> unpause の時に起きうる。
 	error = 0;
 	file->mode = mode;
 	if (play) {
-		bool start_mixer = false;
-
 		if (SPECIFIED_CH(pi->pause)) {
-			if (play->is_pause != 0 && pi->pause == 0)
-				start_mixer = true;
 			play->is_pause = pi->pause;
 			sc->sc_ppause = pi->pause;
 		}
@@ -7171,17 +7180,9 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 		/* Change water marks after initializing the buffers. */
 		if (SPECIFIED(ai->hiwat) || SPECIFIED(ai->lowat))
 			audio_track_setinfo_water(play, ai);
-
-		if (start_mixer) {
-			audio_pmixer_start(sc, false);
-		}
 	}
 	if (rec) {
-		bool start_mixer = false;
-
 		if (SPECIFIED_CH(ri->pause)) {
-			if (rec->is_pause != 0 && ri->pause == 0)
-				start_mixer = true;
 			rec->is_pause = ri->pause;
 			sc->sc_rpause = ri->pause;
 		}
@@ -7194,10 +7195,6 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 				goto abort3;
 			}
 			sc->sc_rparams = rfmt;
-		}
-
-		if (start_mixer) {
-			audio_rmixer_start(sc);
 		}
 	}
 
@@ -7373,13 +7370,21 @@ audio_hw_setinfo(struct audio_softc *sc, const struct audio_info *newai,
 	restart_rmixer = false;
 	// port を変更するにはミキサーをとめる必要があるようだ。
 	/* It's necessary to stop the mixer to change the port. */
+	// XXX 再生portと録音portを同時に止めないといけないか
+	//     別個に設定できるかどうかは MD Hardware に依存するので
+	//     PROP_INDEPENDENT がそれと同じか違うのか、
+	//     違えばそれ用の property が必要なのでは?
 	if (SPECIFIED(newpi->port) || SPECIFIED(newri->port)) {
-		restart_pmixer = sc->sc_pbusy;
-		restart_rmixer = sc->sc_rbusy;
-
+		// とりあえず、どちらかにでも変更があれば両方とめる
 		mutex_enter(sc->sc_intr_lock);
-		audio_pmixer_halt(sc);
-		audio_rmixer_halt(sc);
+		if (sc->sc_pbusy) {
+			audio_pmixer_halt(sc);
+			restart_pmixer = true;
+		}
+		if (sc->sc_rbusy) {
+			audio_rmixer_halt(sc);
+			restart_rmixer = true;
+		}
 		mutex_exit(sc->sc_intr_lock);
 	}
 
