@@ -6080,17 +6080,6 @@ audio_track_drain(struct audio_softc *sc, audio_track_t *track)
 	}
 	track->pstate = AUDIO_STATE_DRAINING;
 
-	// トラックバッファが空になっても、ミキサ側で処理中のデータが
-	// あるかもしれない。
-	// トラックミキサが動作していないときは、動作させる。
-	// audio_pmixer_start は動いてなければ動かす、なので呼ぶだけでよい。
-	// XXX ただこれ必要なのかな?
-#if 0
-	error = audio_pmixer_start(sc, true);
-	if (error)
-		return error;
-#endif
-
 	for (;;) {
 		// 終了条件判定の前に表示したい
 		TRACET(track, "pid=%d.%d trkseq=%d hwseq=%d out=%d/%d/%d",
