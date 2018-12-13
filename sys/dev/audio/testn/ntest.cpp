@@ -5423,38 +5423,21 @@ test_AUDIO_SETINFO_gain1()
 	XP_SYS_EQ(0, r);
 	XP_EQ(master, ai.play.gain);
 
-	// 適当に変更
+	// 何でもいいので違う値に変更
 	AUDIO_INITINFO(&ai);
 	if (master == 0) {
 		gain = 255;
-	} else if (master < 128) {
-		gain = master * 2;
 	} else {
-		gain = master / 2;
-	}
-	if (strcmp(hwconfig, "auich0") == 0) {
-		// よく分からんけど 254、255 あたりの挙動が変なので、避ける
-		if (gain > 247)
-			gain = 247;
+		gain = 0;
 	}
 	ai.play.gain = gain;
 	r = IOCTL(fd, AUDIO_SETINFO, &ai, "play.gain=%d", ai.play.gain);
 	XP_SYS_EQ(0, r);
 
-	// 入力値がそのまま設定できるとは限らないので、
-	// 期待値はデバイスごとに補正しないといけない。
-	if (strcmp(hwconfig, "hdafg0") == 0) {
-		// (うちの) hdafg0 は32段階のようだ
-		gain = gain / 8 * 8;
-	}
-	if (strcmp(hwconfig, "auich0") == 0) {
-		gain = ((gain / 8) + 1) * 8 - 1;
-	}
-
-	// 変更できたか
-	r = IOCTL(fd, AUDIO_GETINFO, &ai, "");
+	// 変わったかどうかだけ確認
+	r = IOCTL(fd, AUDIO_GETINFO, &ai, "play.gain");
 	XP_SYS_EQ(0, r);
-	XP_EQ(gain, ai.play.gain);
+	XP_NE(master, ai.play.gain);
 
 	// outputs.master も連動しているか
 	// XXX ioctl に分解できればしたほうがいいだろうけど
@@ -5463,7 +5446,7 @@ test_AUDIO_SETINFO_gain1()
 	if (buf[0] < '0' || buf[0] > '9')
 		err(1, "popen");
 	master = atoi(buf);
-	XP_EQ(gain, master);
+	XP_EQ(ai.play.gain, master);
 
 	// 戻す
 	AUDIO_INITINFO(&ai);
