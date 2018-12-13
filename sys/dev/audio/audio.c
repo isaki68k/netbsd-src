@@ -6940,8 +6940,8 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 {
 	const struct audio_prinfo *pi;
 	const struct audio_prinfo *ri;
-	audio_track_t *play;
-	audio_track_t *rec;
+	audio_track_t *ptrack;
+	audio_track_t *rtrack;
 	audio_format2_t pfmt;
 	audio_format2_t rfmt;
 	int pchanges;
@@ -6960,8 +6960,8 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	pchanges = 0;
 	rchanges = 0;
 
-	play = file->ptrack;
-	rec = file->rtrack;
+	ptrack = file->ptrack;
+	rtrack = file->rtrack;
 
 #if defined(AUDIO_DEBUG)
 	if (audiodebug >= 2) {
@@ -7034,15 +7034,15 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	memset(&saved_rfmt, 0, sizeof(saved_rfmt));
 
 	/* Set default value and save current parameters */
-	if (play) {
-		pfmt = play->usrbuf.fmt;
-		saved_pfmt = play->usrbuf.fmt;
-		saved_ai.play.pause = play->is_pause;
+	if (ptrack) {
+		pfmt = ptrack->usrbuf.fmt;
+		saved_pfmt = ptrack->usrbuf.fmt;
+		saved_ai.play.pause = ptrack->is_pause;
 	}
-	if (rec) {
-		rfmt = rec->usrbuf.fmt;
-		saved_rfmt = rec->usrbuf.fmt;
-		saved_ai.record.pause = rec->is_pause;
+	if (rtrack) {
+		rfmt = rtrack->usrbuf.fmt;
+		saved_rfmt = rtrack->usrbuf.fmt;
+		saved_ai.record.pause = rtrack->is_pause;
 	}
 	saved_ai.mode = file->mode;
 
@@ -7112,7 +7112,7 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	}
 
 	// ここから mode は変更後の希望するモード。
-	if (play) {
+	if (ptrack) {
 		pchanges = audio_file_setinfo_check(&pfmt, pi);
 		if (pchanges == -1) {
 			DPRINTF(1, "%s: check play.params failed\n",
@@ -7122,7 +7122,7 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 		if (SPECIFIED(ai->mode))
 			pchanges = 1;
 	}
-	if (rec) {
+	if (rtrack) {
 		rchanges = audio_file_setinfo_check(&rfmt, ri);
 		if (rchanges == -1) {
 			DPRINTF(1, "%s: check record.params failed\n",
@@ -7162,13 +7162,13 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	/* Set to track and update sticky parameters */
 	error = 0;
 	file->mode = mode;
-	if (play) {
+	if (ptrack) {
 		if (SPECIFIED_CH(pi->pause)) {
-			play->is_pause = pi->pause;
+			ptrack->is_pause = pi->pause;
 			sc->sc_ppause = pi->pause;
 		}
 		if (pchanges) {
-			error = audio_file_setinfo_set(play, &pfmt,
+			error = audio_file_setinfo_set(ptrack, &pfmt,
 			    (mode & AUMODE_PLAY));
 			if (error) {
 				DPRINTF(1, "%s: set play.params failed\n",
@@ -7179,15 +7179,15 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 		}
 		/* Change water marks after initializing the buffers. */
 		if (SPECIFIED(ai->hiwat) || SPECIFIED(ai->lowat))
-			audio_track_setinfo_water(play, ai);
+			audio_track_setinfo_water(ptrack, ai);
 	}
-	if (rec) {
+	if (rtrack) {
 		if (SPECIFIED_CH(ri->pause)) {
-			rec->is_pause = ri->pause;
+			rtrack->is_pause = ri->pause;
 			sc->sc_rpause = ri->pause;
 		}
 		if (rchanges) {
-			error = audio_file_setinfo_set(rec, &rfmt,
+			error = audio_file_setinfo_set(rtrack, &rfmt,
 			    (mode & AUMODE_RECORD));
 			if (error) {
 				DPRINTF(1, "%s: set record.params failed\n",
@@ -7203,15 +7203,15 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	/* Rollback */
 abort3:
 	if (error != ENOMEM) {
-		rec->is_pause = saved_ai.record.pause;
-		audio_file_setinfo_set(rec, &saved_rfmt,
+		rtrack->is_pause = saved_ai.record.pause;
+		audio_file_setinfo_set(rtrack, &saved_rfmt,
 		    (saved_ai.mode & AUMODE_RECORD));
 	}
 abort2:
-	if (play && error != ENOMEM) {
-		play->is_pause = saved_ai.play.pause;
+	if (ptrack && error != ENOMEM) {
+		ptrack->is_pause = saved_ai.play.pause;
 		file->mode = saved_ai.mode;
-		audio_file_setinfo_set(play, &saved_pfmt,
+		audio_file_setinfo_set(ptrack, &saved_pfmt,
 		    (file->mode & AUMODE_PLAY));
 		sc->sc_pparams = saved_pfmt;
 		sc->sc_ppause = saved_ai.play.pause;
