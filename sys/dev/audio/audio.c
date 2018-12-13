@@ -3900,7 +3900,7 @@ audio_track_get_codec(const audio_format2_t *src, const audio_format2_t *dst)
 	DPRINTF(1, "unsupported encoding\n");
 abort:
 #if defined(AUDIO_DEBUG)
-	{
+	if (audiodebug >= 2) {
 		char buf[100];
 		audio_format2_tostr(buf, sizeof(buf), src);
 		printf("%s: src %s\n", __func__, buf);
