@@ -176,10 +176,10 @@ struct audio_softc {
 	/*
 	 * These four are the parameters sustained with /dev/sound.
 	 */
-	audio_format2_t sc_pparams;
-	audio_format2_t sc_rparams;
-	bool 		sc_ppause;
-	bool		sc_rpause;
+	audio_format2_t sc_sound_pparams;
+	audio_format2_t sc_sound_rparams;
+	bool 		sc_sound_ppause;
+	bool		sc_sound_rpause;
 
 	struct audio_info sc_ai;	/* recent info for /dev/sound */
 
