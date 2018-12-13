@@ -126,50 +126,97 @@ struct au_mixer_ports {
 };
 
 struct audio_softc {
-	device_t	dev;
+	/* Myself */
+	device_t dev;
 
-	// NULL なら sc はあるが autoconfig に失敗したので無効になってる
-	// audio1 at ... attached
-	// audio1: ... config failed
-	// みたいな状態
-	const struct audio_hw_if *hw_if; /* Hardware interface */
+	/*
+	 * Hardware interface.
+	 * If hw_if == NULL, the device is (attached but) disabled.
+	 */
+	const struct audio_hw_if *hw_if;
+	/*
+	 * Hardware driver handle.
+	 */
 	void		*hw_hdl;	/* Hardware driver handle */
 	device_t	sc_dev;		/* Hardware device struct */
 
-	SLIST_HEAD(, audio_file) sc_files;	/* list of open descriptor */
+	/*
+	 * List of opened descriptors.
+	 * must be protected by sc_intr_lock.
+	 */
+	SLIST_HEAD(, audio_file) sc_files;
 
-	int sc_blk_ms;			/* blocksize in msec */
-	audio_trackmixer_t *sc_pmixer;	/* null if play not supported by hw */
-	audio_trackmixer_t *sc_rmixer;	/* null if rec not supported by hw */
+	/*
+	 * Blocksize in msec.
+	 * must be protected by sc_intr_lock (?).
+	 */
+	int sc_blk_ms;
 
-	// この2つは sc_exlock で保護すること
+	/*
+	 * Playback and recording mixer.
+	 * If null, the mixer is disabled.
+	 */
+	audio_trackmixer_t *sc_pmixer;
+	audio_trackmixer_t *sc_rmixer;
+
+	/*
+	 * Open track counter.
+	 * must be protected by sc_exlock.
+	 */
 	int sc_popens;
 	int sc_ropens;
-	// この2つは sc_exlock で保護すること
-	bool			sc_pbusy;	/* output DMA in progress */
-	bool			sc_rbusy;	/* input DMA in progress */
 
-	// この4つが /dev/sound で引き継がれる non-volatile パラメータ
-	audio_format2_t sc_pparams;	/* play encoding parameters */
-	audio_format2_t sc_rparams;	/* record encoding parameters */
+	/*
+	 * Playback or recording mixer is running if true.
+	 * must be protected by sc_exlock.
+	 */
+	bool sc_pbusy;
+	bool sc_rbusy;
+
+	/*
+	 * These four are the parameters sustained with /dev/sound.
+	 */
+	audio_format2_t sc_pparams;
+	audio_format2_t sc_rparams;
 	bool 		sc_ppause;
 	bool		sc_rpause;
 
 	struct audio_info sc_ai;	/* recent info for /dev/sound */
 
-	struct	selinfo sc_wsel; /* write selector */
-	struct	selinfo sc_rsel; /* read selector */
-	void		*sc_sih_wr;	/* softint cookie for write */
-	void		*sc_sih_rd;	/* softint cookie for read */
+	/*
+	 * Playback(write)/Recording(read) selector.
+	 * must be protected by sc_lock.
+	 */
+	struct selinfo sc_wsel;
+	struct selinfo sc_rsel;
+
+	/*
+	 * softint cookie for Playback(write)/Recoding(read).
+	 */
+	void *sc_sih_wr;
+	void *sc_sih_rd;
+
 	struct	mixer_asyncs {
 		struct mixer_asyncs *next;
 		pid_t	pid;
 	} *sc_async_mixer;  /* processes who want mixer SIGIO */
 
-	kmutex_t	*sc_intr_lock;
-	kmutex_t	*sc_lock;
-	int		sc_exlock;	/* critical section */
-	kcondvar_t	sc_exlockcv;	/* notify that exlock was released */
+	/*
+	 * Thread lock and interrupt lock obtained by get_locks().
+	 */
+	kmutex_t *sc_lock;
+	kmutex_t *sc_intr_lock;
+
+	/*
+	 * Critical section.
+	 * must be protected by sc_lock.
+	 */
+	int sc_exlock;
+	kcondvar_t sc_exlockcv;
+
+	/*
+	 * must be protected by sc_lock (?)
+	 */
 	bool		sc_dying;
 
 	kauth_cred_t sc_cred;
