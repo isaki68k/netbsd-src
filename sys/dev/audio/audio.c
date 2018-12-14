@@ -1230,9 +1230,9 @@ audiodetach(device_t self, int flags)
 	cv_broadcast(&sc->sc_exlockcv);
 	SLIST_FOREACH(f, &sc->sc_files, entry) {
 		if (f->ptrack)
-			cv_broadcast(&f->ptrack->outchan);
+			cv_broadcast(&f->ptrack->outcv);
 		if (f->rtrack)
-			cv_broadcast(&f->rtrack->outchan);
+			cv_broadcast(&f->rtrack->outcv);
 	}
 	cv_broadcast(&sc->sc_pmixer->draincv);
 	mutex_exit(sc->sc_lock);
@@ -1520,7 +1520,7 @@ audio_waitio(struct audio_softc *sc, audio_track_t *track)
 
 	TRACET(track, "wait");
 	/* Wait for pending I/O to complete. */
-	error = cv_wait_sig(&track->outchan, sc->sc_lock);
+	error = cv_wait_sig(&track->outcv, sc->sc_lock);
 	if (sc->sc_dying)
 		error = EIO;
 	TRACET(track, "error=%d", error);
@@ -3771,7 +3771,7 @@ audio_track_init(struct audio_softc *sc, audio_track_t **trackp, int mode)
 
 	track->mixer = mixer;
 	track->mode = mode;
-	cv_init(&track->outchan, cvname);
+	cv_init(&track->outcv, cvname);
 
 	// 固定初期値
 	track->volume = 256;
@@ -3814,7 +3814,7 @@ audio_track_destroy(audio_track_t *track)
 	audio_free(track->chmix.srcbuf.mem);
 	audio_free(track->freq.srcbuf.mem);
 	audio_free(track->outbuf.mem);
-	cv_destroy(&track->outchan);
+	cv_destroy(&track->outcv);
 
 	kmem_free(track, sizeof(*track));
 }
@@ -5559,7 +5559,7 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track,
 	track->seq = mixer->mixseq + 1;
 
 	// audio_write() に空きが出来たことを通知
-	cv_broadcast(&track->outchan);
+	cv_broadcast(&track->outcv);
 
 	TRACET(track, "broadcast; trseq=%d out=%d/%d/%d", (int)track->seq,
 	    track->outbuf.head, track->outbuf.used, track->outbuf.capacity);
@@ -5828,7 +5828,7 @@ audio_rmixer_process(struct audio_softc *sc)
 		// XXX シーケンスいるんだっけ
 
 		// audio_read() にブロックが来たことを通知
-		cv_broadcast(&track->outchan);
+		cv_broadcast(&track->outcv);
 
 		TRACET(track, "broadcast; inp=%d/%d/%d",
 		    input->head, input->used, input->capacity);

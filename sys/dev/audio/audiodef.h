@@ -100,7 +100,7 @@ typedef struct audio_track {
 	audio_ring_t	*input;		/* ptr to input stage buffer */
 
 	audio_ring_t	outbuf;		/* track output buffer */
-	kcondvar_t	outchan;	// I/O ready になったことの通知用
+	kcondvar_t	outcv;		// I/O ready になったことの通知用
 
 	audio_stage_t	codec;		/* encoding conversion stage */
 	audio_stage_t	chvol;		/* channel volume stage */
