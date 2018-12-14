@@ -84,7 +84,7 @@
 #include "aufilter.h"
 #endif // _KERNEL
 
-// ユーザランドフォーマットとして [US]Linear24/24 をサポートします。
+// ユーザランドフォーマットとして [US]Linear24/24 をサポートする。
 //#define AUDIO_SUPPORT_LINEAR24
 
 // サポートする最大/最小周波数。

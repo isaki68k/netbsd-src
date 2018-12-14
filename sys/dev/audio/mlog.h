@@ -91,8 +91,8 @@ audio_mlog_free(void)
 	kmem_free(mlog_buf[1], mlog_buflen);
 }
 
-// 一時バッファの内容を出力します。
-// ハードウェア割り込みコンテキスト以外で使用します。
+// 一時バッファの内容を出力する。
+// ハードウェア割り込みコンテキスト以外で使用する。
 static void
 audio_mlog_flush(void)
 {
@@ -130,7 +130,7 @@ audio_mlog_softintr(void *cookie)
 
 #if AUDIO_DEBUG >= 4
 
-// 一時バッファに書き込みます。
+// 一時バッファに書き込む。
 static void
 audio_mlog_printf(const char *fmt, ...)
 {
@@ -141,7 +141,7 @@ audio_mlog_printf(const char *fmt, ...)
 	va_end(ap);
 }
 
-// 一時バッファに書き込みます。
+// 一時バッファに書き込む。
 static void
 audio_mlog_vprintf(const char *fmt, va_list ap)
 {

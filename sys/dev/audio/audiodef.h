@@ -218,7 +218,7 @@ frametobyte(const audio_format2_t *fmt, int frames)
 }
 
 // 周波数が fmt(.sample_rate) で表されるエンコーディングの
-// 1ブロックのフレーム数を返します。
+// 1ブロックのフレーム数を返す。
 static __inline int
 frame_per_block(const audio_trackmixer_t *mixer, const audio_format2_t *fmt)
 {
@@ -226,8 +226,8 @@ frame_per_block(const audio_trackmixer_t *mixer, const audio_format2_t *fmt)
 	    mixer->blktime_d;
 }
 
-// idx をラウンディングします。
-// 加算方向で、加算量が ring->capacity 以下のケースのみサポートします。
+// idx をラウンディングする。
+// 加算方向で、加算量が ring->capacity 以下のケースのみサポートする。
 /*
  * Round idx.  idx must be non-negative and less than 2 * capacity.
  */
@@ -245,8 +245,8 @@ auring_round(const audio_ring_t *ring, int idx)
 	}
 }
 
-// ring の tail 位置(head+used位置) を返します。
-// この位置は、最終有効フレームの次のフレーム位置に相当します。
+// ring の tail 位置(head+used位置) を返す。
+// この位置は、最終有効フレームの次のフレーム位置に相当する。
 /*
  * Return ring's tail (= head + used) position.
  */
@@ -256,7 +256,7 @@ auring_tail(const audio_ring_t *ring)
 	return auring_round(ring, ring->head + ring->used);
 }
 
-// ring の head フレームのポインタを求めます。
+// ring の head フレームのポインタを求める。
 /*
  * Return ring's head pointer.
  * This function can be used only if the stride of the 'ring' is equal to
@@ -271,8 +271,8 @@ auring_headptr_aint(const audio_ring_t *ring)
 }
 
 // ring の tail (= head + used、すなわち、最終有効フレームの次) フレームの
-// ポインタを求めます。
-// hwbuf のポインタはこちらではなく RING_BOT_UINT8() で取得してください。
+// ポインタを求める。
+// hwbuf のポインタはこちらではなく RING_BOT_UINT8() で取得すること。
 /*
  * Return ring's tail (= head + used) pointer.
  * This function can be used only if the stride of the 'ring' is equal to
@@ -286,7 +286,7 @@ auring_tailptr_aint(const audio_ring_t *ring)
 	return (aint_t *)ring->mem + auring_tail(ring) * ring->fmt.channels;
 }
 
-// ring の head フレームのポインタを求めます。
+// ring の head フレームのポインタを求める。
 /*
  * Return ring's head pointer.
  * This function can be used even if the stride of the 'ring' is equal to
@@ -300,8 +300,8 @@ auring_headptr(const audio_ring_t *ring)
 }
 
 // ring の tail (= head + used、すなわち、最終有効フレームの次) フレームの
-// ポインタを求めます。HWbuf は 4bit/sample の可能性があるため RING_BOT() では
-// なく必ずこちらを使用してください。
+// ポインタを求め。HWbuf は 4bit/sample の可能性があるため RING_BOT() では
+// なく必ずこちらを使用すること。
 /*
  * Return ring's tail pointer.
  * This function can be used even if the stride of the 'ring' is equal to
@@ -314,7 +314,7 @@ auring_tailptr(audio_ring_t *ring)
 	    auring_tail(ring) * ring->fmt.channels * ring->fmt.stride / NBBY;
 }
 
-// キャパシティをバイト単位で求めます。
+// キャパシティをバイト単位で求める。
 /*
  * Return ring's capacity in bytes.
  */
@@ -324,7 +324,7 @@ auring_bytelen(const audio_ring_t *ring)
 	return frametobyte(&ring->fmt, ring->capacity);
 }
 
-// ring->head から n 個取り出したことにします。
+// ring->head から n 個取り出したことにする。
 /*
  * Take out n frames from head of ring.
  * This function only manipurates counters.  It doesn't manipurate any
@@ -343,7 +343,7 @@ auring_take_(const char *func, int line, audio_ring_t *ring, int n)
 	ring->used -= n;
 }
 
-// ring tail に n 個付け足したことにします。
+// ring tail に n 個付け足したことにする。
 /*
  * Append n frames into tail of ring.
  * This function only manipurates counters.  It doesn't manipurate any
@@ -363,7 +363,7 @@ auring_push_(const char *func, int line, audio_ring_t *ring, int n)
 }
 
 // ring->head の位置からの有効フレームにアクセスしようとするとき、
-// ラウンディングせずにアクセス出来る個数を返します。
+// ラウンディングせずにアクセス出来る個数を返す。
 /*
  * Return the number of contiguous frames in used.
  */
@@ -380,7 +380,7 @@ auring_get_contig_used(const audio_ring_t *ring)
 }
 
 // auring_tail の位置から空きフレームにアクセスしようとするとき、
-// ラウンディングせずにアクセス出来る、空きフレームの個数を返します。
+// ラウンディングせずにアクセス出来る、空きフレームの個数を返す。
 /*
  * Return the number of contiguous free frames.
  */

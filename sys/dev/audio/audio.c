@@ -359,7 +359,7 @@ struct audio_track_debugbuf {
 	char usrbuf[32];
 };
 
-// track の各バッファの状態を buf に出力します。
+// track の各バッファの状態を buf に出力する。
 static void
 audio_track_bufstat(audio_track_t *track, struct audio_track_debugbuf *buf)
 {
@@ -645,7 +645,7 @@ audio_track_is_record(const audio_track_t *track)
 // どうするかね
 #if 0
 // ユーザランドで使用される 0..255 ボリュームを、トラック内の内部表現である
-// 0..256 ボリュームに変換します。
+// 0..256 ボリュームに変換する。
 static inline u_int
 audio_volume_to_inner(u_int v)
 {
@@ -654,7 +654,7 @@ audio_volume_to_inner(u_int v)
 }
 
 // トラック内の内部表現である 0..256 ボリュームを、外部で使用される 0..255
-// ボリュームに変換します。
+// ボリュームに変換する。
 static inline u_int
 audio_volume_to_outer(u_int v)
 {
@@ -726,7 +726,7 @@ static const char *encoding_names[] = {
 	AudioEac3,
 };
 
-// エンコーディング名を返します。
+// エンコーディング名を返す。
 // ほぼデバッグ用なのでローカルバッファを返す場合があることに注意。
 const char *
 audio_encoding_name(int encoding)
@@ -787,8 +787,8 @@ CFATTACH_DECL3_NEW(audio, sizeof(struct audio_softc),
 #if 1
 static char audio_buildinfo[256];
 
-// ビルドオプションを文字列にします。(開発用)
-// テスト用なので解放してません。
+// ビルドオプションを文字列にする。(開発用)
+// テスト用なので解放していない。
 static void
 make_buildinfo(void)
 {
@@ -1531,11 +1531,11 @@ audio_waitio(struct audio_softc *sc, audio_track_t *track)
 // XXX audiobell はここなのか?
 
 /* Exported interfaces for audiobell. */
-// audiobell 用にトラック(ファイル)をオープンします。
-// arg のうち sample_rate, encoding, precision, channels は入力パラメータです。
-// arg->file には確保した file を格納します。
-// arg->blocksize にはブロックサイズを格納します。
-// 成功すれば 0、失敗すれば errno を返します。
+// audiobell 用にトラック(ファイル)をオープンする。
+// arg のうち sample_rate, encoding, precision, channels は入力パラメータ。
+// arg->file には確保した file を格納する。
+// arg->blocksize にはブロックサイズを格納する。
+// 成功すれば 0、失敗すれば errno を返す。
 int
 audiobellopen(dev_t dev, struct audiobell_arg *arg)
 {
@@ -1552,7 +1552,7 @@ audiobellopen(dev_t dev, struct audiobell_arg *arg)
 	return error;
 }
 
-// audiobellopen でオープンした file をクローズします。
+// audiobellopen でオープンした file をクローズする。
 int
 audiobellclose(audio_file_t *file)
 {
@@ -1571,7 +1571,7 @@ audiobellclose(audio_file_t *file)
 	return error;
 }
 
-// audiobell を再生します。
+// audiobell を再生する。
 int
 audiobellwrite(audio_file_t *file, struct uio *uio)
 {
@@ -2286,8 +2286,8 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
 	return 0;
 }
 
-// track の usrbuf の head から len バイトを uiomove します。
-// リングバッファの折り返しはしません。
+// track の usrbuf の head から len バイトを uiomove する。
+// リングバッファの折り返しは行わない。
 static inline int
 audio_read_uiomove(audio_track_t *track, int head, int len, struct uio *uio)
 {
@@ -2409,8 +2409,8 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 }
 
 
-// この file の再生 track と録音 track を即座に空にします。
-// ミキサーおよび HW には関与しません。呼ばれるのは以下の2か所から:
+// この file の再生 track と録音 track を即座に空にする。
+// ミキサーおよび HW には関与しない。呼ばれるのは以下の2か所から:
 // o audio_ioctl AUDIO_FLUSH で一切合切クリアする時
 // o audiosetinfo でパラメータを変更する必要がある時
 //
@@ -2429,8 +2429,8 @@ audio_file_clear(struct audio_softc *sc, audio_file_t *file)
 		audio_track_clear(sc, file->rtrack);
 }
 
-// track の usrbuf に tail から len バイトを uiomove します。
-// リングバッファの折り返しはしません。
+// track の usrbuf に tail から len バイトを uiomove する。
+// リングバッファの折り返しは行わない。
 static inline int
 audio_write_uiomove(audio_track_t *track, int tail, int len, struct uio *uio)
 {
@@ -2641,7 +2641,7 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 	case AUDIO_FLUSH:
 		// このコマンドはすべての再生と録音を停止し、すべてのキューの
 		// バッファをクリアし、エラーカウンタをリセットし、そして
-		// 現在のサンプリングモードで再生と録音を再開します。
+		// 現在のサンプリングモードで再生と録音を再開する。
 		audio_file_clear(sc, file);
 		break;
 
@@ -2842,7 +2842,7 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 }
 
 // XXX 場所は後で考えなおしたほうがいい
-// 録音バッファの読み取り可能バイト数を返します。
+// 録音バッファの読み取り可能バイト数を返す。
 /*
  * Returns the number of bytes that can be read from recording buffer.
  */
@@ -2948,7 +2948,9 @@ filt_audioread_detach(struct knote *kn)
 	file = kn->kn_hook;
 	sc = file->sc;
 
+	mutex_enter(sc->sc_lock);
 	SLIST_REMOVE(&sc->sc_rsel.sel_klist, kn, knote, kn_selnext);
+	mutex_exit(sc->sc_lock);
 }
 
 static int
@@ -2988,7 +2990,9 @@ filt_audiowrite_detach(struct knote *kn)
 	file = kn->kn_hook;
 	sc = file->sc;
 
+	mutex_enter(sc->sc_lock);
 	SLIST_REMOVE(&sc->sc_wsel.sel_klist, kn, knote, kn_selnext);
+	mutex_exit(sc->sc_lock);
 }
 
 static int
@@ -3208,11 +3212,11 @@ audio_realloc(void *memblock, size_t bytes)
 	}	\
 } while (0)
 
-// usrbuf を newbufsize で確保し直します。
-// usrbuf は mmap されるためこちらを使用してください。
-// usrbuf.capacity を更新する前に呼び出してください。
-// メモリが確保できれば track->mem、track->capacity をセットし 0 を返します。
-// 確保できなければ track->mem、track->capacity をクリアし errno を返します。
+// usrbuf を newbufsize で確保し直す。
+// usrbuf は mmap されるためこちらを使用すること。
+// usrbuf.capacity を更新する前に呼び出すこと。
+// メモリが確保できれば track->mem、track->capacity をセットし 0 を返す。
+// 確保できなければ track->mem、track->capacity をクリアし errno を返す。
 /*
  * (Re)allocate usrbuf with 'newbufsize' bytes.
  * Use this function for usrbuf because only usrbuf may be mmapped.
@@ -3533,7 +3537,7 @@ audio_track_chmix_expand(audio_filter_arg_t *arg)
 // amd64    70.9    113.4    177.8    984.8	Pentium DC E5400/2.7GHz
 // x68k    0.048    0.065    0.129    0.688	68030/30MHz
 
-// 周波数変換(アップサンプリング)をします。線形補間です。
+// 周波数変換(アップサンプリング)を行う。線形補間。
 /*
  * This filter performs frequency conversion (up sampling).
  * It uses linear interpolation.
@@ -3669,7 +3673,7 @@ audio_track_freq_up(audio_filter_arg_t *arg)
 	}
 }
 
-// 周波数変換(ダウンサンプリング)をします。単純間引きです。
+// 周波数変換(ダウンサンプリング)を行う。単純間引き。
 /*
  * This filter performs frequency conversion (down sampling).
  * It uses simple thinning.
@@ -3729,13 +3733,13 @@ audio_track_freq_down(audio_filter_arg_t *arg)
 	track->freq_current = t % 65536;
 }
 
-// トラックを初期化します。
-// 初期化できれば 0 を返して *trackp に初期化済みのトラックを格納します。
-// 初期化できなければ errno を返し、*trackp は変更しません。
-// mode は再生なら AUMODE_PLAY、録音なら AUMODE_RECORD を指定します。
+// トラックを初期化する。
+// 初期化できれば 0 を返して *trackp に初期化済みのトラックを格納する。
+// 初期化できなければ errno を返し、*trackp は変更しない。
+// mode は再生なら AUMODE_PLAY、録音なら AUMODE_RECORD を指定する。
 // trackp には sc_files に繋がっている file 構造体内のポインタを直接
-// 指定してはいけません。呼び出し側で一旦受け取って sc_intr_lock を
-// とってから繋ぎ変えてください。
+// 指定してはいけない。呼び出し側で一旦受け取って sc_intr_lock を
+// とってから繋ぎ変えること。
 /*
  * Initialize the track.
  * If successful, it stores the allocated and initialized track in *trackp
@@ -3790,10 +3794,10 @@ audio_track_init(struct audio_softc *sc, audio_track_t **trackp, int mode)
 	return 0;
 }
 
-// track のすべてのリソースと track 自身を解放します。
+// track のすべてのリソースと track 自身を解放する。
 // sc_files に繋がっている file 構造体内の [pr]track ポインタを直接
-// 指定してはいけません。呼び出し側で sc_intr_lock をとった上でリストから
-// 外したものを指定してください。
+// 指定してはいけない。呼び出し側で sc_intr_lock をとった上でリストから
+// 外したものを指定すること。
 /*
  * Release all resources of track and track itself.
  * track must not be NULL.  Don't specify the track within the file structure
@@ -3819,9 +3823,9 @@ audio_track_destroy(audio_track_t *track)
 	kmem_free(track, sizeof(*track));
 }
 
-// src, dst のフォーマットに応じて変換フィルタを返します。
-// src か dst のどちらか一方が internal 形式でなければなりません。
-// 変換できない組み合わせの場合は NULL を返します。
+// src, dst のフォーマットに応じて変換フィルタを返す。
+// src か dst のどちらか一方が internal 形式であること。
+// 変換できない組み合わせの場合は NULL を返す。
 /*
  * It returns encoding conversion filter according to src and dst format.
  * If it is not a convertible pair, it returns NULL.  Either src or dst
@@ -3893,10 +3897,10 @@ abort:
 	return NULL;
 }
 
-// track の codec ステージを必要に応じて初期化します。
+// track の codec ステージを必要に応じて初期化する。
 // 成功すれば、codec ステージが必要なら初期化した上で、いずれにしても
-// 更新された last_dst を last_dstp に格納して、0 を返します。
-// 失敗すれば last_dstp は更新せずに errno を返します。
+// 更新された last_dst を last_dstp に格納して、0 を返す。
+// 失敗すれば last_dstp は更新せずに errno を返す。
 /*
  * Initialize the codec stage of this track as necessary.
  * If successful, it initializes the codec stage as necessary, stores updated
@@ -3966,10 +3970,10 @@ abort:
 	return error;
 }
 
-// track の chvol ステージを必要に応じて初期化します。
+// track の chvol ステージを必要に応じて初期化する。
 // 成功すれば、chvol ステージが必要なら初期化した上で、いずれにしても
-// 更新された last_dst を last_dstp に格納して、0 を返します。
-// 失敗すれば last_dstp は更新せずに errno を返します。
+// 更新された last_dst を last_dstp に格納して、0 を返す。
+// 失敗すれば last_dstp は更新せずに errno を返す。
 /*
  * Initialize the chvol stage of this track as necessary.
  * If successful, it initializes the chvol stage as necessary, stores updated
@@ -4037,10 +4041,10 @@ abort:
 	return error;
 }
 
-// track の chmix ステージを必要に応じて初期化します。
+// track の chmix ステージを必要に応じて初期化する。
 // 成功すれば、chmix ステージが必要なら初期化した上で、いずれにしても
-// 更新された last_dst を last_dstp に格納して、0 を返します。
-// 失敗すれば last_dstp は更新せずに errno を返します。
+// 更新された last_dst を last_dstp に格納して、0 を返す。
+// 失敗すれば last_dstp は更新せずに errno を返す。
 /*
  * Initialize the chmix stage of this track as necessary.
  * If successful, it initializes the chmix stage as necessary, stores updated
@@ -4113,10 +4117,10 @@ abort:
 	return error;
 }
 
-// track の freq ステージを必要に応じて初期化します。
+// track の freq ステージを必要に応じて初期化する。
 // 成功すれば、freq ステージが必要なら初期化した上で、いずれにしても
-// 更新された last_dst を last_dstp に格納して、0 を返します。
-// 失敗すれば last_dstp は更新せずに errno を返します。
+// 更新された last_dst を last_dstp に格納して、0 を返す。
+// 失敗すれば last_dstp は更新せずに errno を返す。
 /*
  * Initialize the freq stage of this track as necessary.
  * If successful, it initializes the freq stage as necessary, stores updated
@@ -4244,14 +4248,14 @@ abort:
  *       but for now it will not be mmapped.
  */
 
-// トラックのユーザランド側フォーマットを設定します。
-// 変換用内部バッファは一度破棄されます。
-// 成功すれば 0、失敗すれば errno を返します。
+// トラックのユーザランド側フォーマットを設定する。
+// 変換用内部バッファは一度破棄される。
+// 成功すれば 0、失敗すれば errno を返す。
 // uvm 関連のルーチンが非 intr_lock 状態であることを要求するため、必ず
-// intr_lock でない状態で呼び出してください。
+// intr_lock でない状態で呼び出すこと。
 // ただし outbuf を解放・再取得する可能性があるため、track が sc_files
 // 上にある場合 (audio_file_setinfo_set() から呼ばれる時) は、in_use を
-// セットしてから呼び出してください。
+// セットしてから呼び出すこと。
 /*
  * Set the userland format of this track.
  * It will release and reallocate all internal conversion buffers.
@@ -4467,8 +4471,8 @@ error:
 	return error;
 }
 
-// ring が空でなく 1 ブロックに満たない時、1ブロックまで無音を追加します。
-// 追加したフレーム数を返します。
+// ring が空でなく 1 ブロックに満たない時、1ブロックまで無音を追加する。
+// 追加したフレーム数を返す。
 /*
  * Fill the silence frames (in the internal format) up to 1 block if the
  * ring is less than 1 block and not empty.
@@ -4506,25 +4510,26 @@ audio_append_silence(audio_track_t *track, audio_ring_t *ring)
 // どこに書くのがいいか分からんけど、フィルタの仕様みたいなもの。
 //
 // 概要
-//	変換フィルタは以下に分類できます。
+//	変換フィルタは以下に分類できる。
 //	  1. ユーザランド側フィルタ
 //	   1a. 周波数変換フィルタ
 //	   1b. それ以外のフィルタ
 //	  2. HW フィルタ
 //
-//	1 のユーザランド側フィルタはすべて audio layer が責任を持っています
-//	ので MD ドライバは通常使用することはありません。ただし HW フォーマット
+//	1 のユーザランド側フィルタはすべて audio layer が責任を持っている
+//	ので MD ドライバは通常使用することはない。ただし HW フォーマット
 //	が mulaw なデバイスのように、audio layer が持っている
 //	mulaw <-> aint_t 変換関数をそのまま利用できる場合にはこれを使用
-//	することが可能です。
+//	することが可能。
 //
 //	audio layer が MD ドライバに受け渡すフォーマットは内部形式と呼ぶもので、
-//	slinear_NE、16 bit、HW channels、HW frequency です。HW がこれをそのまま
-//	扱えるのなら MD フィルタは不要、encoding/precision を変換する必要が
-//	あれば MD フィルタが必要です。MD フィルタは通常 slinear_NE、16bit と
-//	HW エンコーディングの変換だけを受け持ちます。
+//	slinear_NE、16 bit、HW channels、HW frequency である。
+//	HW がこれをそのまま扱えるのなら MD フィルタは不要、
+//	encoding/precision を変換する必要があれば MD フィルタが必要。
+//	MD フィルタは通常 slinear_NE、16bit と HW エンコーディングの変換だけを
+//	受け持つ。
 //
-//	変換関数(フィルタ)は以下のプロトタイプを持ちます。
+//	変換関数(フィルタ)は以下のプロトタイプを持つ。
 //
 //	  typedef struct {
 //		const void *src;
@@ -4537,45 +4542,45 @@ audio_append_silence(audio_track_t *track, audio_ring_t *ring)
 //
 //	  void filter(audio_filter_arg_t *arg);
 //
-//	変換に必要なパラメータは arg として渡されます。filter() は arg->src
+//	変換に必要なパラメータは arg として渡される。filter() は arg->src
 //	から arg->count 個のフレームを読み込んで変換し arg->dst から
-//	arg->count 個のフレームに出力します。arg->src および arg->dst は
-//	arg->count フレームの読み書きが連続して行えることを保証しています。
+//	arg->count 個のフレームに出力する。arg->src および arg->dst は
+//	arg->count フレームの読み書きが連続して行えることを保証している。
 //
 //	arg->count 個を全部処理する前の早期終了や途中でのエラー終了は今の所
-//	認められていません。また arg->src、arg->dst ポインタの進み具合によって
-//	呼び出し元に実際の読み込み数や書き込み数を通知することは出来ませんので
-//	arg->src、arg->dst は filter() 側で破壊(変更)しても構いません。
+//	認めていない。また arg->src、arg->dst ポインタの進み具合によって
+//	呼び出し元に実際の読み込み数や書き込み数を通知することは出来ないので
+//	arg->src、arg->dst は filter() 側で破壊(変更)しても構わない。
 //
-//	同様に arg->count も filter() 側で破壊(変更)可能です。
+//	同様に arg->count も filter() 側で破壊(変更)可能。
 //
-//	arg->srcfmt, arg->dstfmt には入出力のフォーマットが記述されています。
-//	通常フィルタは自分自身が何から何への変換なのかを知っているので入出力
-//	フォーマットをチェックする必要はないでしょう (例えば mulaw から
+//	arg->srcfmt, arg->dstfmt には入出力のフォーマットが記述されている。
+//	通常、フィルタは自分自身が何から何への変換なのかを知っているので入出力
+//	フォーマットをチェックする必要はないはずである (例えば mulaw から
 //	aint_t への変換、など)。一方リニア PCM から aint_t への変換を
-//	すべて受け持つフィルタの場合は srcfmt をチェックする必要があるでしょう。
+//	すべて受け持つフィルタの場合は srcfmt をチェックする必要があるだろう。
 //
-//	context はフィルタ自身が自由に使用可能なポインタです。audio layer は
-//	この値について一切関与しません。
+//	context はフィルタ自身が自由に使用可能なポインタである。
+//	audio layer はこの値について一切関与しない。
 //
 // 周波数変換フィルタ
 //	周波数変換フィルタだけ入出力のフレーム数が変化するため、いろいろと
-//	特別対応が必要です。まず入出力リングバッファは再生/録音の両方向とも
-//	freq.srcbuf、freq.dst なのでそれはもう直接使ってしまうことにします。
+//	特別対応が必要。まず入出力リングバッファは再生/録音の両方向とも
+//	freq.srcbuf、freq.dst なのでそれはもう直接使ってしまうことにする。
 //
 //	つまり filter() 呼び出し時点で要求出力フレーム数は arg->count フレーム、
-//	入力可能なフレーム数は freq.srcbuf.used フレームです。
+//	入力可能なフレーム数は freq.srcbuf.used フレームである。
 //
 //	変換処理によって消費した入力フレーム数は freq.srcbuf を、出力した
-//	フレーム数は freq.dst を filter() 側が更新してください。
-//	arg->count は破壊(変更)して構いません。
+//	フレーム数は freq.dst を filter() 側が更新すること。
+//	arg->count は破壊(変更)して構わない。
 //
 
-// 変換ステージを実行します。
-// stage->filter != NULL の時だけ呼び出してください。
-// stage から arg を用意して stage->filter を処理します。
-// 周波数変換なら src, dst のカウンタはフィルタ側で進めてください。
-// 周波数変換以外なら src, dst のカウンタはここで進めます。
+// 変換ステージを実行する。
+// stage->filter != NULL の時だけ呼び出すこと。
+// stage から arg を用意して stage->filter を処理する。
+// 周波数変換なら src, dst のカウンタはフィルタ側で進めること。
+// 周波数変換以外なら src, dst のカウンタはここで進める。
 /*
  * Execute the conversion stage.
  * It prepares arg from this stage and executes stage->filter.
@@ -4622,10 +4627,10 @@ audio_apply_stage(audio_track_t *track, audio_stage_t *stage, bool isfreq)
 	}
 }
 
-// 再生時の入力データを変換してトラックバッファに投入します。
-// usrbuf が空でないことは呼び出し側でチェックしてから呼んでください。
+// 再生時の入力データを変換してトラックバッファに投入する。
+// usrbuf が空でないことは呼び出し側でチェックしてから呼ぶこと。
 // outbuf に1ブロック以上の空きがあることは呼び出し側でチェックしてから
-// 呼んでください。
+// 呼ぶこと。
 static void
 audio_track_play(audio_track_t *track)
 {
@@ -4812,7 +4817,7 @@ audio_track_play(audio_track_t *track)
 }
 
 // 録音時、ミキサーによってトラックの input に渡されたブロックを
-// usrbuf まで変換します。
+// usrbuf まで変換する。
 static void
 audio_track_record(audio_track_t *track)
 {
@@ -4958,7 +4963,7 @@ audio_track_record(audio_track_t *track)
 // 2) aucc(4) amiga
 //  周波数が変態だが詳細未調査。
 
-// mixer(.hwbuf.fmt) から blktime [msec] を計算します。
+// mixer(.hwbuf.fmt) から blktime [msec] を計算する。
 /*
  * Calcurate blktime [msec] from mixer(.hwbuf.fmt).
  */
@@ -4990,13 +4995,13 @@ audio_mixer_calc_blktime(struct audio_softc *sc, audio_trackmixer_t *mixer)
 	return blktime;
 }
 
-// ミキサを初期化します。
-// mixer はゼロフィルされているものとします。
-// mode は再生なら AUMODE_PLAY、録音なら AUMODE_RECORD を指定します。
-// hwfmt は HW フォーマット、reg はフィルタ登録情報です。
-// hwfmt、reg は NULL であってはいけません。
-// 成功すれば 0、失敗すれば errno を返します。
-// sc_lock でコールします。
+// ミキサを初期化する。
+// mixer はゼロフィルされているものとする。
+// mode は再生なら AUMODE_PLAY、録音なら AUMODE_RECORD を指定する。
+// hwfmt は HW フォーマット、reg はフィルタ登録情報である。
+// hwfmt、reg は NULL であってはならない。
+// 成功すれば 0、失敗すれば errno を返す。
+// sc_lock でコールすること。
 /*
  * Initialize the mixer.
  * This function returns 0 on sucessful.  Otherwise returns errno.
@@ -5158,8 +5163,8 @@ abort:
 	return error;
 }
 
-// ミキサを終了しリソースを解放します。
-// mixer 自身のメモリは解放しません。
+// ミキサを終了しリソースを解放する。
+// mixer 自身のメモリは解放しない。
 /*
  * Release all resources of 'mixer'.
  * Note that it does not release the memory area of 'mixer' itself.
@@ -5188,9 +5193,9 @@ audio_mixer_destroy(struct audio_softc *sc, audio_trackmixer_t *mixer)
 		cv_destroy(&mixer->draincv);
 }
 
-// 再生ミキサを(起動してなければ)起動します。
+// 再生ミキサを(起動してなければ)起動する。
 // sc_exlock で呼ぶこと。
-// 割り込みコンテキストから呼び出してはいけません。
+// 割り込みコンテキストから呼び出してはならない。
 /*
  * Starts playback mixer if not running.
  * It must be called with sc_exlock.
@@ -5267,11 +5272,11 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
  */
 
 // 全トラックを倍精度ミキシングバッファで合成し、
-// 倍精度ミキシングバッファから hwbuf への変換を行います。
-// hwbuf からハードウェアへの転送はここでは行いません。
+// 倍精度ミキシングバッファから hwbuf への変換を行う。
+// hwbuf からハードウェアへの転送はここでは行わない。
 // isintr が true なら割り込みコンテキストからの呼び出し、
 // false ならプロセスコンテキストからの呼び出しを示す。
-// sc_intr_lock で呼び出します。
+// sc_intr_lock で呼び出すこと。
 /*
  * Perform mixing and convert it to hwbuf.
  * Note that this function doesn't transfer from hwbuf to HW.
@@ -5418,8 +5423,8 @@ audio_pmixer_process(struct audio_softc *sc, bool isintr)
 	kpreempt_enable();
 }
 
-// 全トラックを 1ブロック分合成します。
-// 合成されたトラック数を返します。
+// 全トラックを 1ブロック分合成する。
+// 合成されたトラック数を返す。
 /*
  * Mix all tracks one block.
  * It returns the number of mixed tracks.
@@ -5478,10 +5483,10 @@ audio_pmixer_mixall(struct audio_softc *sc, bool isintr)
 	return mixed;
 }
 
-// トラックバッファから取り出し、ミキシングします。
-// mixed には呼び出し時点までの合成済みトラック数を渡します。
-// 戻り値はこの関数終了時での合成済みトラック数)です。
-// つまりこのトラックを合成すれば mixed + 1 を返します。
+// トラックバッファから取り出し、ミキシングする。
+// mixed には呼び出し時点までの合成済みトラック数を渡す。
+// 戻り値はこの関数終了時での合成済みトラック数)である。
+// つまりこのトラックを合成すれば mixed + 1 を返す。
 /*
  * Mix one track.
  * 'mixed' specifies the number of tracks mixed so far.
@@ -5575,8 +5580,8 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track,
 	return mixed + 1;
 }
 
-// ハードウェアバッファから 1 ブロック出力します。
-// sc_intr_lock で呼び出してください。
+// ハードウェアバッファから 1 ブロック出力する。
+// sc_intr_lock で呼び出すこと。
 /*
  * Output one block from hwbuf to HW.
  * It must be called with sc_intr_lock.
@@ -5632,8 +5637,8 @@ audio_pmixer_output(struct audio_softc *sc)
 #endif
 }
 
-// 割り込みハンドラです。
-// sc_intr_lock で呼び出されます。
+// 割り込みハンドラ。
+// sc_intr_lock で呼び出される。
 /*
  * This is an interrupt handler for playback.
  * It is called with sc_intr_lock.
@@ -5701,9 +5706,9 @@ audio_pintr(void *arg)
 	cv_broadcast(&mixer->draincv);
 }
 
-// 録音ミキサを(起動してなければ)起動します。
+// 録音ミキサを(起動してなければ)起動する。
 // sc_exlock で呼ぶこと。
-// 割り込みコンテキストから呼び出してはいけません。
+// 割り込みコンテキストから呼び出してはならない。
 /*
  * Starts record mixer if not running.
  * It must be called with sc_exlock.
@@ -5752,7 +5757,7 @@ audio_rmixer_start(struct audio_softc *sc)
  * codecbuf:  slinear_NE, internal precision, HW ch, HW freq.
  */
 
-// 録音できた hwbuf のブロックを全録音トラックへ分配します。
+// 録音できた hwbuf のブロックを全録音トラックへ分配する。
 /*
  * Distribute a recorded block to all recoding tracks.
  */
@@ -5844,8 +5849,8 @@ audio_rmixer_process(struct audio_softc *sc)
 	kpreempt_enable();
 }
 
-// ハードウェアバッファに1ブロック入力を開始します。
-// sc_intr_lock で呼び出してください。
+// ハードウェアバッファに1ブロック入力を開始する。
+// sc_intr_lock で呼び出すこと。
 /*
  * Input one block from HW to hwbuf.
  * It must be called with sc_intr_lock.
@@ -5893,8 +5898,8 @@ audio_rmixer_input(struct audio_softc *sc)
 	sc->sc_rbusy = true;
 }
 
-// 割り込みハンドラです。
-// sc_intr_lock で呼び出されます。
+// 割り込みハンドラ。
+// sc_intr_lock で呼び出される。
 /*
  * This is an interrupt handler for recording.
  * It is called with sc_intr_lock.
@@ -5925,9 +5930,9 @@ audio_rintr(void *arg)
 	audio_rmixer_input(sc);
 }
 
-// 再生ミキサを(動いていれば)停止します。
+// 再生ミキサを(動いていれば)停止する。
 // 関連するパラメータもクリアするため、基本的には halt_output を
-// 直接呼び出すのではなく、こちらを呼んでください。
+// 直接呼び出すのではなく、こちらを呼ぶこと。
 /*
  * Halt playback mixer if running.
  * This function also clears related parameters, so call this function
@@ -5959,9 +5964,9 @@ audio_pmixer_halt(struct audio_softc *sc)
 	return error;
 }
 
-// 録音ミキサを(動いていれば)停止します。
+// 録音ミキサを(動いていれば)停止する。
 // 関連するパラメータもクリアするため、基本的には halt_input を
-// 直接呼び出すのではなく、こちらを呼んでください。
+// 直接呼び出すのではなく、こちらを呼ぶこと。
 /*
  * Halt recording mixer if running.
  * This function also clears related parameters, so call this function
@@ -5993,9 +5998,9 @@ audio_rmixer_halt(struct audio_softc *sc)
 	return error;
 }
 
-// トラックをフラッシュします。
+// トラックをフラッシュする。
 // 現在の動作を停止し、すべてのキューとバッファをクリアし、
-// エラーカウンタをリセットします。
+// エラーカウンタをリセットする。
 // これでええんかなあ。
 static void
 audio_track_clear(struct audio_softc *sc, audio_track_t *track)
@@ -6039,7 +6044,6 @@ audio_track_clear(struct audio_softc *sc, audio_track_t *track)
 	track->dropframes = 0;
 }
 
-// errno を返します。
 /*
  * Drain the track.
  * If successful, it returns 0.  Otherwise returns errno.
@@ -6291,14 +6295,14 @@ audio_check_params2(audio_format2_t *f2)
 	return error;
 }
 
-// 再生・録音ミキサーを初期化します。
-// 引数 mode の AUMODE_{PLAY,RECORD} のうち立っている方を初期化します。
-// phwfmt, rhwfmt は HW フォーマット、pfil, rfil はフィルタ登録情報です。
-// phwfmt, rhwfmt, pfil, rfil は NULL であってはいけません。
-// 戻り値は mode のうち初期化が成功したものの OR を返します。
+// 再生・録音ミキサーを初期化する。
+// 引数 mode の AUMODE_{PLAY,RECORD} のうち立っている方を初期化する。
+// phwfmt, rhwfmt は HW フォーマット、pfil, rfil はフィルタ登録情報である。
+// phwfmt, rhwfmt, pfil, rfil は NULL であってはならない。
+// 戻り値は mode のうち初期化が成功したものの OR を返す。
 // この関数は再生か録音トラックがいずれかでも存在する時は呼び出しては
-// いけません。
-// sc_lock でコールします。
+// ならない。
+// sc_lock でコールすること。
 static int
 audio_mixers_init(struct audio_softc *sc, int mode,
 	const audio_format2_t *phwfmt, const audio_format2_t *rhwfmt,
@@ -7642,9 +7646,9 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 	// less those that were dropped due to inadequate
 	// consumption/production rates.
 	// seek と samples のフィールドは AUDIO_GETINFO と AUDIO_GETBUFINFO
-	// で使われます(セットは出来ないということ)。
-	// seek はペンディングになっているサンプル数を示します。
-	// samples は録音再生されたトータルバイト数を示します。
+	// で使われる(セットは出来ないということ)。
+	// seek はペンディングになっているサンプル数を示す。
+	// samples は録音再生されたトータルバイト数を示す。
 	// ...
 
 	// XXX pbusy, rbusy は厳密には exlock とるべきだけど、ここは
