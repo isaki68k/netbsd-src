@@ -3678,8 +3678,8 @@ test_kqueue_5()
 		ai.play.pause = 1;
 		// ついでにエンコーディングも設定
 		// XXX 本当は GETENC でチェックすべきだが手抜き
-		// emul==0: mulaw/1ch/8kHz は 8000 byte/sec
-		// emul==1: s16/2ch/8kHz は  32000 byte/sec
+		// emul==0: s16/2ch/8kHz は 32000 byte/sec
+		// emul==1: mulaw/1ch/32kHz は 32000 byte/sec
 		if (emul == 0) {
 			// native
 			ai.play.encoding = AUDIO_ENCODING_SLINEAR_NE;
