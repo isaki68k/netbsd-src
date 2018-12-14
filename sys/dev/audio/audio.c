@@ -5565,7 +5565,9 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track,
 	    track->outbuf.head, track->outbuf.used, track->outbuf.capacity);
 
 	// usrbuf が空いたら(lowat を下回ったら) シグナルを送る(予約する)
-	// XXX ここで usrbuf が空いたかどうかを見るのもどうかと思うが
+	// XXX 本当は全トラックが lowat 以上あれば(=書き込み可能でなければ)
+	//     シグナルもselnotifyも送る必要がないので softintr 自体呼ぶ
+	//     必要ない気がするけど。
 	if (track->usrbuf.used <= track->usrbuf_usedlow && !track->is_pause) {
 		track->sigio_pending = true;
 	}
