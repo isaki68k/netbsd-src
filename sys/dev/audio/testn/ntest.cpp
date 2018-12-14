@@ -5281,7 +5281,7 @@ test_AUDIO_SETINFO_hiwat2()
 	int fd;
 	int r;
 	char name[32];
-	char val[256];
+	int val;
 	size_t len;
 	int blk_ms;
 	struct {
@@ -5305,15 +5305,12 @@ test_AUDIO_SETINFO_hiwat2()
 	// こちらから指定するブロックサイズという意味で使うので 40 でいい。
 	blk_ms = 40;
 	if (netbsd == 9) {
-		snprintf(name, sizeof(name), "hw.%s.buildinfo", hwconfigname());
+		snprintf(name, sizeof(name), "hw.%s.blk_ms", hwconfigname());
 		len = sizeof(val);
-		r = SYSCTLBYNAME(name, val, &len, NULL, 0);
+		r = SYSCTLBYNAME(name, &val, &len, NULL, 0);
 		if (r == -1)
-		err(1, "sysctlbyname: %s", name);
-		char *p = strstr(val, "AUDIO_BLK_MS=");
-		if (p) {
-			blk_ms = atoi(p + strlen("AUDIO_BLK_MS="));
-		}
+			err(1, "sysctlbyname: %s", name);
+		blk_ms = val;
 	}
 	DPRINTF("  > blk_ms=%d\n", blk_ms);
 
