@@ -43,6 +43,7 @@ struct testtable {
 };
 
 void init(int);
+void do_test(int);
 
 int debug;
 int netbsd;
@@ -89,11 +90,15 @@ static const char *encoding_names[] = {
 void __attribute__((__noreturn__))
 usage()
 {
-	// test は複数列挙できる。
-	printf("usage: %s [<options>] {-a | <testname...>}\n", getprogname());
-	printf("  -d: debug\n");
-	printf("  -u <unit>: audio/sound device unit number (defualt:0)\n");
-	printf(" testname:\n");
+	printf("usage:\t%s [<options>] -a\t\t.. test all\n", getprogname());
+	printf("\t%s [<options>] -l <testname>\t.. test <testname> or later\n",
+		getprogname());
+	printf("\t%s [<options>] <testname...>\t.. test <testname...>\n",
+		getprogname());
+	printf("options:\n");
+	printf("\t-d: debug\n");
+	printf("\t-u <unit>: audio/sound device unit number (defualt:0)\n");
+	printf("testname:\n");
 	for (int i = 0; testtable[i].name != NULL; i++) {
 		printf("\t%s\n", testtable[i].name);
 	}
@@ -106,10 +111,9 @@ main(int ac, char *av[])
 	int i;
 	int c;
 	int opt_all;
+	int opt_later;
 	int unit;
 
-	testname[0] = '\0';
-	descname[0] = '\0';
 	props = -1;
 	hwfull = 0;
 	x68k = 0;
@@ -117,13 +121,16 @@ main(int ac, char *av[])
 
 	// global option
 	opt_all = 0;
-	while ((c = getopt(ac, av, "adu:")) != -1) {
+	while ((c = getopt(ac, av, "adlu:")) != -1) {
 		switch (c) {
 		 case 'a':
 			opt_all = 1;
 			break;
 		 case 'd':
 			debug++;
+			break;
+		 case 'l':
+			opt_later = 1;
 			break;
 		 case 'u':
 			unit = atoi(optarg);
@@ -147,30 +154,44 @@ main(int ac, char *av[])
 			usage();
 
 		for (int j = 0; testtable[j].name != NULL; j++) {
-			testtable[j].func();
-			testname[0] = '\0';
-			descname[0] = '\0';
+			do_test(j);
 		}
 	} else {
 		// -a なしなら test
 		if (ac == 0)
 			usage();
 
-		// そうでなければ指定されたやつ(前方一致)を順にテスト
-		for (i = 0; i < ac; i++) {
-			bool found = false;
-			for (int j = 0; testtable[j].name != NULL; j++) {
-				if (strncmp(av[i], testtable[j].name, strlen(av[i])) == 0) {
-					found = true;
-					testtable[j].func();
-					testname[0] = '\0';
-					descname[0] = '\0';
+		bool found = false;
+		if (opt_later) {
+			// -l なら指定された1つ(前方一致)とそれ以降を順にテスト
+			// さっきこけたやつ以降を試したいということ。
+			if (ac > 1)
+				usage();
+			int j;
+			// 一致しない間スキップ
+			for (j = 0; testtable[j].name != NULL; j++) {
+				if (strncmp(av[0], testtable[j].name, strlen(av[0])) == 0)
+					break;
+			}
+			// 以降を全部テスト
+			for (; testtable[j].name != NULL; j++) {
+				do_test(j);
+				found = true;
+			}
+		} else {
+			// そうでなければ指定されたやつ(前方一致)を順にテスト
+			for (i = 0; i < ac; i++) {
+				for (int j = 0; testtable[j].name != NULL; j++) {
+					if (strncmp(av[i], testtable[j].name, strlen(av[i])) == 0) {
+						do_test(j);
+						found = true;
+					}
 				}
 			}
-			if (found == false) {
-				printf("test not found: %s\n", av[i]);
-				exit(1);
-			}
+		}
+		if (found == false) {
+			printf("test not found: %s\n", av[i]);
+			exit(1);
 		}
 	}
 	if (testcount > 0) {
@@ -186,6 +207,14 @@ main(int ac, char *av[])
 		printf("\n");
 	}
 	return 0;
+}
+
+void
+do_test(int n)
+{
+	testname[0] = '\0';
+	descname[0] = '\0';
+	testtable[n].func();
 }
 
 // err(3) ぽい自前関数
