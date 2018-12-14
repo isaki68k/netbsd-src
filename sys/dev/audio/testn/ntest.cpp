@@ -3686,6 +3686,8 @@ test_kqueue_5()
 			ai.play.precision = 16;
 			ai.play.channels = 2;
 			ai.play.sample_rate = 8000;
+		} else {
+			ai.play.sample_rate = 32000;
 		}
 		r = IOCTL(fd, AUDIO_SETINFO, &ai, "enc;pause=1");
 		XP_SYS_EQ(0, r);
@@ -3856,11 +3858,11 @@ test_kqueue_6()
 		AUDIO_INITINFO(&ai);
 		ai.play.encoding = AUDIO_ENCODING_ULAW;
 		ai.play.precision = 8;
-		ai.play.channels = 2;
-		ai.play.sample_rate = 8000;
-		r = IOCTL(fd[0], AUDIO_SETINFO, &ai, "mulaw/8/2ch/8000");
+		ai.play.channels = 1;
+		ai.play.sample_rate = 32000;
+		r = IOCTL(fd[0], AUDIO_SETINFO, &ai, "mulaw/8/1ch/32k");
 		XP_SYS_EQ(0, r);
-		r = IOCTL(fd[1], AUDIO_SETINFO, &ai, "mulaw/8/2ch/8000");
+		r = IOCTL(fd[1], AUDIO_SETINFO, &ai, "mulaw/8/1ch/32k");
 		XP_SYS_EQ(0, r);
 
 		// ブロックサイズ、ブロック数のために取得 (手抜きで片方だけ)
