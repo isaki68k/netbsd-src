@@ -4157,13 +4157,6 @@ test_FIOASYNC_4(void)
 	r = WRITE(fd, data, ai.blocksize);
 	XP_SYS_EQ(ai.blocksize, r);
 
-	// AUDIO2 では1ブロック書き込んだだけではまだミキサーが開始しないので
-	// 待っててもシグナル上がってこない。
-	if (netbsd == 9) {
-		r = WRITE(fd, data, ai.blocksize);
-		XP_SYS_EQ(ai.blocksize, r);
-	}
-
 	for (int i = 0; i < 10 && sigio_caught == 0; i++) {
 		usleep(10000);
 	}
