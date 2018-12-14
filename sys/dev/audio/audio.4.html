@@ -641,9 +641,11 @@ setting of the full duplex mode.</p>
 読みにくいので、AUDIO_GETFD を AUDIO_SETFD の近くに移動した。
 </p>
 <p class=a2 style="margin-left:20%">
-このコマンドはディスクリプタが full duplex かどうかを返す。
-HW の状態ではない。
-HW が Full duplex でかつディスクリプタが O_RDWR でオープンされていれば
+このコマンドは HW (とミキサー)が full duplex かどうかを返す。
+このディスクリプタが full duplex かどうかではない。
+すなわち、
+HW が Full duplex をサポートしていて
+(両方向のミキサーがエラーなく configure されていれば)
 full duplex、それ以外は half duplex とする。
 </p>
 
@@ -669,18 +671,11 @@ MD ドライバは1つも存在しないので影響は顕在化しないが
 実装のほうは open 直後から(可能なら) Full duplex になるようになっている。
 </p>
 <p class=a2 style="margin-left:20%">
-AUDIO2 ではオープン時に確定した Full/Half 状態を
-オープン後に変更することは禁止したいので、
-実質この ioctl は obsolete とする。
-ただし後方互換性のため、
-現在 Full duplex の時の引数非ゼロ(Full duplex への変更)と、
-現在 Half duplex の時の引数ゼロ(Half duplex への変更)は
-影響がないので成功し、
-それ以外はエラー ENOTTY になる、とする。
-</p>
-<p class=a2 style="margin-left:20%">
-Full duplex を Half duplex に変更することが出来なくなるが、
-意図や使い道が分からないし、たぶん困らないだろう。
+AUDIO2 では obsolete とする。
+この ioctl は何もせず常に成功する。
+AUDIO2 では、HW の状態を変更することは出来ないし、
+ソフトウェアトラックの Full/Half を切り替えられることに意味があるとは
+思えないため。
 </p>
 
 

@@ -2768,35 +2768,21 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		break;
 
 	case AUDIO_GETFD:
-		// 現在のディスクリプタが full duplex かどうかを返す。
-		/* Whether this descriptor (not the hardware) is full duplex. */
-		if (file->ptrack && file->rtrack) {
-			fd = 1;
-		} else {
-			fd = 0;
-		}
+		/*
+		 * Returns the current setting of full duplex mode.
+		 * If HW has full duplex mode and there are two mixers,
+		 * it is full duplex.  Otherwise half duplex.
+		 */
+		fd = (audio_get_props(sc) & AUDIO_PROP_FULLDUPLEX)
+		    && (sc->sc_pmixer && sc->sc_rmixer);
 		*(int *)addr = fd;
 		break;
 
 	case AUDIO_SETFD:
-		// HW が full duplex なら half duplex への変更は認めない。
-		// この操作に意味があるとは思えない。
-		// HW が half duplex なら full duplex へは変更できない(自明)。
 		/*
-		 * If the hardware is half duplex, it can not change this
-		 * descriptor to full duplex.  It's obvious.
-		 * If the hardware is full duplex, it's not permitted to
-		 * change this descriptor to half duplex.  It's nonsense
-		 * operation, I think.
+		 * Obsoleted.  HW duplex mode cannot be changed
+		 * and it's meaningless.
 		 */
-		fd = *(int *)addr;
-		if (file->ptrack && file->rtrack) {
-			if (fd == 0)
-				error = ENOTTY;
-		} else {
-			if (fd)
-				error = ENOTTY;
-		}
 		break;
 
 	case AUDIO_GETPROPS:

@@ -4242,8 +4242,7 @@ test_AUDIO_WSEEK_1(void)
 // を取得するだけ。
 // N8 はソースコード上踏襲しているので見た目の動作は同じだが、検討した上での
 // それかどうかが謎。
-// AUDIO2 では GETFD は実質 HW の duplex を取得するのと等価。SETFD は
-// 今とは違う方には変更できない。
+// AUDIO2 では GETFD は実質 HW の duplex を取得するのと等価。SETFD は無効。
 void
 test_AUDIO_SETFD_ONLY(void)
 {
@@ -4260,15 +4259,21 @@ test_AUDIO_SETFD_ONLY(void)
 		if (fd == -1)
 			err(1, "open: %s", devaudio);
 
-		// オープン直後は常に Half
+		// オープン直後は
+		// N7: 常に Half
+		// AUDIO2: オープンモードによらず HW full/half
 		n = 0;
 		r = IOCTL(fd, AUDIO_GETFD, &n, "");
 		XP_SYS_EQ(0, r);
-		XP_EQ(0, n);
+		if (netbsd < 9) {
+			XP_EQ(0, n);
+		} else {
+			XP_EQ(hwfull, n);
+		}
 
 		// Full duplex に設定しようとすると、
 		// N7: HW Full なら設定できる、HW Half ならエラー。
-		// AUDIO2: 変更は出来ない
+		// AUDIO2: 黙って成功するが変更は出来ない
 		n = 1;
 		r = IOCTL(fd, AUDIO_SETFD, &n, "on");
 		if (netbsd <= 7) {
@@ -4280,12 +4285,12 @@ test_AUDIO_SETFD_ONLY(void)
 		} else if (netbsd == 8) {
 			XP_EXPFAIL("not well considered?");
 		} else {
-			XP_SYS_NG(ENOTTY, r);
+			XP_SYS_EQ(0, r);
 		}
 
 		// 取得してみると、
 		// N7: HW Full なら 1、HW Half なら 0 のまま。
-		// AUDIO2: 変わっていないこと。
+		// AUDIO2: HW 状態なので変わっていないこと。
 		n = 0;
 		r = IOCTL(fd, AUDIO_GETFD, &n, "");
 		XP_SYS_EQ(0, r);
@@ -4294,7 +4299,7 @@ test_AUDIO_SETFD_ONLY(void)
 		} else if (netbsd == 8) {
 			XP_EXPFAIL("not well considered?");
 		} else {
-			XP_EQ(0, n);
+			XP_EQ(hwfull, n);
 		}
 
 		// GETINFO の ai.*.open などトラック状態は変化しない。
@@ -4316,7 +4321,11 @@ test_AUDIO_SETFD_ONLY(void)
 		n = 0;
 		r = IOCTL(fd, AUDIO_GETFD, &n, "");
 		XP_SYS_EQ(0, r);
-		XP_EQ(0, n);
+		if (netbsd < 9) {
+			XP_EQ(0, n);
+		} else {
+			XP_EQ(hwfull, n);
+		}
 
 		// GETINFO の ai.*.open などトラック状態は変化しない。
 		r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
@@ -4351,13 +4360,18 @@ test_AUDIO_SETFD_RDWR(void)
 	XP_EQ(hwfull, n);
 
 	// Full duplex に設定しようとすると
-	// HW Full なら設定できる(何も起きない)、HW Half ならエラー
+	// N7: HW Full なら設定できる(何も起きない)、HW Half ならエラー
+	// A2: 何も起きないが常に成功する。
 	n = 1;
 	r = IOCTL(fd, AUDIO_SETFD, &n, "on");
-	if (hwfull) {
-		XP_SYS_EQ(0, r);
+	if (netbsd < 9) {
+		if (hwfull) {
+			XP_SYS_EQ(0, r);
+		} else {
+			XP_SYS_NG(ENOTTY, r);
+		}
 	} else {
-		XP_SYS_NG(ENOTTY, r);
+		XP_SYS_EQ(0, r);
 	}
 
 	// 取得してみると、
@@ -4375,7 +4389,7 @@ test_AUDIO_SETFD_RDWR(void)
 
 	// Half duplex に設定しようとすると、
 	// N7: HW Full なら設定できる、HW Half なら何も起きず成功。
-	// AUDIO2: HW Full ならエラー、HW Half なら何も起きず成功。
+	// AUDIO2: 何も起きないが常に成功する。
 	n = 0;
 	r = IOCTL(fd, AUDIO_SETFD, &n, "off");
 	if (netbsd <= 7) {
@@ -4383,11 +4397,7 @@ test_AUDIO_SETFD_RDWR(void)
 	} else if (netbsd == 8) {
 		XP_EXPFAIL("not well considered?");
 	} else {
-		if (hwfull) {
-			XP_SYS_NG(ENOTTY, r);
-		} else {
-			XP_SYS_EQ(0, r);
-		}
+		XP_SYS_EQ(0, r);
 	}
 
 	// 取得してみると、
