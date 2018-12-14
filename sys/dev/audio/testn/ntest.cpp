@@ -121,6 +121,7 @@ main(int ac, char *av[])
 
 	// global option
 	opt_all = 0;
+	opt_later = 0;
 	while ((c = getopt(ac, av, "adlu:")) != -1) {
 		switch (c) {
 		 case 'a':
