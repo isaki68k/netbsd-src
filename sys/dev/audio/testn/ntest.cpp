@@ -863,7 +863,8 @@ int debug_system(int line, const char *cmd)
 	DRESULT(r);
 }
 
-// popen() して1行目を返す
+// popen() して1行目を buf に返す。
+// 成功すれば戻り値 0、失敗すれば戻り値 -1 を返す。
 #define POPEN_GETS(buf, buflen, cmd...) \
 	debug_popen_gets(__LINE__, buf, buflen, cmd)
 int debug_popen_gets(int line, char *buf, size_t bufsize, const char *cmd, ...)
@@ -5442,8 +5443,12 @@ test_AUDIO_SETINFO_gain1()
 
 	// 適当に outputs.master を取得
 	// XXX ioctl に分解できればしたほうがいいだろうけど
-	POPEN_GETS(buf, sizeof(buf), "mixerctl -d %s -n outputs.master",
-		devmixer);
+	r = POPEN_GETS(buf, sizeof(buf),
+		"mixerctl -d %s -n outputs.master 2> /dev/null", devmixer);
+	if (r == -1) {
+		XP_SKIP("outputs.master not exist");
+		return;
+	}
 	if (buf[0] < '0' || buf[0] > '9')
 		err(1, "mixerctl");
 	master = atoi(buf);
