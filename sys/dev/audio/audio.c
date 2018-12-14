@@ -6111,7 +6111,6 @@ audio_softintr_rd(void *cookie)
 
 	mutex_enter(sc->sc_lock);
 	// XXX 元々ここで rchan を broadcast してた
-	selnotify(&sc->sc_rsel, 0, NOTE_SUBMIT);
 	SLIST_FOREACH(f, &sc->sc_files, entry) {
 		pid = f->async_audio;
 		if (pid != 0) {
@@ -6122,37 +6121,44 @@ audio_softintr_rd(void *cookie)
 			mutex_exit(proc_lock);
 		}
 	}
+	selnotify(&sc->sc_rsel, 0, NOTE_SUBMIT);
 	mutex_exit(sc->sc_lock);
 }
 
 // 再生側のソフトウェア割り込みハンドラ。
-// 再生ループのハードウェア割り込みから毎回呼ばれるので、
-// ASYNC 設定しているプロセスのうち used が lowat を下回っている人について
-// (今は立ち下がりではなく下回っていたらだけど)、SIGIO を配送する。
-// used が lowat を下回っていれば割り込み側で sigio_pending が立ててある。
-// XXX ハードウェア割り込み側で ASYNC まで見てもいいけど今の所 track から
-//     file が引けない。
 //
-// また、それとは別に(常に) selnotify を実施。詳細不明。
+// ハードウェア割り込みが、used が lowat を下回っているトラックに対して
+// sigio_pending フラグを立ててから、ソフトウェア割り込みを毎回呼ぶ。
+// ソフトウェア割り込みは、
+// - used が lowat を下回っているトラックそれぞれについて、
+//   ASYNC 設定していればプロセスに SIGIO を配送する。
+// - used が lowat を下回っているトラックが一つでもあれば
+//   selnotify する (その後上位から、ディスクリプタごとに
+//   filt_audiowrite_event() が呼ばれてそこで各々チェックするので、
+//   ここは全体としてありなしの二択でいいはず)
+//
+// SIGIO についてはレベルトリガではなくエッジトリガのような気もするけど不明。
+// selnotify はレベルトリガでいいはず。
 static void
 audio_softintr_wr(void *cookie)
 {
 	struct audio_softc *sc = cookie;
 	audio_file_t *f;
+	bool found;
 	proc_t *p;
 	pid_t pid;
 
 	TRACE("called");
+	found = false;
 
 	mutex_enter(sc->sc_lock);
-	/* Notify for select/poll.  It needs sc_lock (and not sc_intr_lock). */
-	selnotify(&sc->sc_wsel, 0, NOTE_SUBMIT);
-
 	mutex_enter(sc->sc_intr_lock);
+
 	SLIST_FOREACH(f, &sc->sc_files, entry) {
 		audio_track_t *track = f->ptrack;
 
 		if (track && track->sigio_pending) {
+			found = true;
 			track->sigio_pending = false;
 			pid = f->async_audio;
 			if (pid != 0) {
@@ -6165,6 +6171,16 @@ audio_softintr_wr(void *cookie)
 		}
 	}
 	mutex_exit(sc->sc_intr_lock);
+
+	/*
+	 * Notify for select/poll when someone become writable.
+	 * It needs sc_lock (and not sc_intr_lock).
+	 */
+	if (found) {
+		TRACE("selnotify");
+		selnotify(&sc->sc_wsel, 0, NOTE_SUBMIT);
+	}
+
 	mutex_exit(sc->sc_lock);
 }
 
