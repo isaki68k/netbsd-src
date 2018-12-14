@@ -726,8 +726,10 @@ static const char *encoding_names[] = {
 	AudioEac3,
 };
 
-// エンコーディング名を返す。
-// ほぼデバッグ用なのでローカルバッファを返す場合があることに注意。
+/*
+ * Returns encoding name corresponding to AUDIO_ENCODING_*.
+ * Note that it may return a local buffer because it is mainly for debugging.
+ */
 const char *
 audio_encoding_name(int encoding)
 {
@@ -935,7 +937,7 @@ audioattach(device_t parent, device_t self, void *aux)
 	sc->sc_sih_rd = softint_establish(SOFTINT_SERIAL | SOFTINT_MPSAFE,
 	    audio_softintr_rd, sc);
 
-	// /dev/sound のデフォルト値
+	/* Initial parameter of /dev/sound */
 	sc->sc_sound_pparams = params_to_format2(&audio_default);
 	sc->sc_sound_rparams = params_to_format2(&audio_default);
 	sc->sc_sound_ppause = false;
@@ -1972,7 +1974,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 		ai.play.precision     = bell->precision;
 		ai.play.pause         = false;
 	} else if (ISDEVAUDIO(dev)) {
-		// /dev/audio は毎回初期化
+		/* If /dev/audio, initialize everytime. */
 		ai.play.sample_rate   = audio_default.sample_rate;
 		ai.play.encoding      = audio_default.encoding;
 		ai.play.channels      = audio_default.channels;
@@ -1984,7 +1986,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 		ai.record.precision   = audio_default.precision;
 		ai.record.pause       = false;
 	} else {
-		// sc_[pr]params, sc_[pr]pause が現在の /dev/sound の設定値
+		/* If /dev/sound, take over the previous parameters. */
 		ai.play.sample_rate   = sc->sc_sound_pparams.sample_rate;
 		ai.play.encoding      = sc->sc_sound_pparams.encoding;
 		ai.play.channels      = sc->sc_sound_pparams.channels;
@@ -2083,7 +2085,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 		}
 	}
 
-	// init_input/output
+	/* Call init_output if this is the first playback open. */
 	if (af->ptrack && sc->sc_popens == 0) {
 		if (sc->hw_if->init_output) {
 			hwbuf = &sc->sc_pmixer->hwbuf;
@@ -2097,6 +2099,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 				goto bad4;
 		}
 	}
+	/* Call init_input if this is the first recording open. */
 	if (af->rtrack && sc->sc_ropens == 0) {
 		if (sc->hw_if->init_input) {
 			hwbuf = &sc->sc_rmixer->hwbuf;
