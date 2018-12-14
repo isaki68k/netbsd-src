@@ -4113,8 +4113,10 @@ volatile int sigio_caught;
 void
 signal_FIOASYNC_4(int signo)
 {
-	if (signo == SIGIO)
+	if (signo == SIGIO) {
 		sigio_caught = 1;
+		DPRINTF("  > %d: SIGIO caught\n", __LINE__);
+	}
 }
 
 // 書き込みで SIGIO が飛んでくるか
