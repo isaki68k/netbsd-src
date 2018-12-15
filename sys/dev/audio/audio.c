@@ -2548,7 +2548,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 		// outbuf が空いてる限りこちらで変換する
 		mutex_enter(sc->sc_intr_lock);
 		while (usrbuf->used >= track->usrbuf_blksize &&
-		    outbuf->used < track->mixer->frames_per_block * NBLKOUT) {
+		    outbuf->used < outbuf->capacity) {
 			track->in_use = true;
 			mutex_exit(sc->sc_intr_lock);
 			audio_track_play(track);
