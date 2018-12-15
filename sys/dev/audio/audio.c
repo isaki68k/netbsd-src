@@ -1525,67 +1525,6 @@ audio_waitio(struct audio_softc *sc, audio_track_t *track)
 }
 
 
-// XXX audiobell はここなのか?
-
-/* Exported interfaces for audiobell. */
-// audiobell 用にトラック(ファイル)をオープンする。
-// arg のうち sample_rate, encoding, precision, channels は入力パラメータ。
-// arg->file には確保した file を格納する。
-// arg->blocksize にはブロックサイズを格納する。
-// 成功すれば 0、失敗すれば errno を返す。
-int
-audiobellopen(dev_t dev, struct audiobell_arg *arg)
-{
-	struct audio_softc *sc;
-	int error;
-
-	if ((error = audio_enter_dev(dev, &sc, AUDIO_LK_EXCLUSIVE)) != 0)
-		return error;
-	device_active(sc->dev, DVA_SYSTEM);
-
-	error = audio_open(dev, sc, FWRITE, 0, curlwp, arg);
-
-	audio_exit(sc, AUDIO_LK_EXCLUSIVE);
-	return error;
-}
-
-// audiobellopen でオープンした file をクローズする。
-int
-audiobellclose(audio_file_t *file)
-{
-	struct audio_softc *sc;
-	dev_t dev;
-	int error;
-
-	dev = file->dev;
-	if ((error = audio_enter_dev(dev, &sc, AUDIO_LK_EXCLUSIVE)) != 0)
-		return error;
-	device_active(sc->dev, DVA_SYSTEM);
-
-	error = audio_close(sc, file);
-
-	audio_exit(sc, AUDIO_LK_EXCLUSIVE);
-	return error;
-}
-
-// audiobell を再生する。
-int
-audiobellwrite(audio_file_t *file, struct uio *uio)
-{
-	struct audio_softc *sc;
-	dev_t dev;
-	int error;
-
-	dev = file->dev;
-	if ((error = audio_enter_dev(dev, &sc, 0)) != 0)
-		return error;
-
-	error = audio_write(sc, uio, 0, file);
-
-	audio_exit(sc, 0);
-	return error;
-}
-
 static int
 audioopen(dev_t dev, int flags, int ifmt, struct lwp *l)
 {
@@ -1897,6 +1836,67 @@ audiommap(struct file *fp, off_t *offp, size_t len, int prot, int *flagsp,
 	}
 	audio_exit(sc, 0);
 
+	return error;
+}
+
+
+/* Exported interfaces for audiobell. */
+
+// audiobell 用にトラック(ファイル)をオープンする。
+// arg のうち sample_rate, encoding, precision, channels は入力パラメータ。
+// arg->file には確保した file を格納する。
+// arg->blocksize にはブロックサイズを格納する。
+// 成功すれば 0、失敗すれば errno を返す。
+int
+audiobellopen(dev_t dev, struct audiobell_arg *arg)
+{
+	struct audio_softc *sc;
+	int error;
+
+	if ((error = audio_enter_dev(dev, &sc, AUDIO_LK_EXCLUSIVE)) != 0)
+		return error;
+	device_active(sc->dev, DVA_SYSTEM);
+
+	error = audio_open(dev, sc, FWRITE, 0, curlwp, arg);
+
+	audio_exit(sc, AUDIO_LK_EXCLUSIVE);
+	return error;
+}
+
+// audiobellopen でオープンした file をクローズする。
+int
+audiobellclose(audio_file_t *file)
+{
+	struct audio_softc *sc;
+	dev_t dev;
+	int error;
+
+	dev = file->dev;
+	if ((error = audio_enter_dev(dev, &sc, AUDIO_LK_EXCLUSIVE)) != 0)
+		return error;
+	device_active(sc->dev, DVA_SYSTEM);
+
+	error = audio_close(sc, file);
+
+	audio_exit(sc, AUDIO_LK_EXCLUSIVE);
+	return error;
+}
+
+// audiobell を再生する。
+int
+audiobellwrite(audio_file_t *file, struct uio *uio)
+{
+	struct audio_softc *sc;
+	dev_t dev;
+	int error;
+
+	dev = file->dev;
+	if ((error = audio_enter_dev(dev, &sc, 0)) != 0)
+		return error;
+
+	error = audio_write(sc, uio, 0, file);
+
+	audio_exit(sc, 0);
 	return error;
 }
 
