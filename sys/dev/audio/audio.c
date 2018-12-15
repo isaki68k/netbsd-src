@@ -1211,7 +1211,6 @@ static int
 audiodetach(device_t self, int flags)
 {
 	struct audio_softc *sc;
-	audio_file_t *f;
 	int maj, mn;
 	int rc;
 
@@ -1230,13 +1229,9 @@ audiodetach(device_t self, int flags)
 	mutex_enter(sc->sc_lock);
 	sc->sc_dying = true;
 	cv_broadcast(&sc->sc_exlockcv);
-	SLIST_FOREACH(f, &sc->sc_files, entry) {
-		if (f->ptrack)
-			cv_broadcast(&f->ptrack->outcv);
-		if (f->rtrack)
-			cv_broadcast(&f->rtrack->outcv);
-	}
 	cv_broadcast(&sc->sc_pmixer->draincv);
+	cv_broadcast(&sc->sc_pmixer->outcv);
+	cv_broadcast(&sc->sc_rmixer->outcv);
 	mutex_exit(sc->sc_lock);
 
 	/* locate the major number */
@@ -1522,7 +1517,7 @@ audio_waitio(struct audio_softc *sc, audio_track_t *track)
 
 	TRACET(track, "wait");
 	/* Wait for pending I/O to complete. */
-	error = cv_wait_sig(&track->outcv, sc->sc_lock);
+	error = cv_wait_sig(&track->mixer->outcv, sc->sc_lock);
 	if (sc->sc_dying)
 		error = EIO;
 	TRACET(track, "error=%d", error);
@@ -2508,8 +2503,9 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 		    uio->uio_resid,
 		    usrbuf->head, usrbuf->used, track->usrbuf_usedhigh);
 
-		// usrbuf が一杯ならここで待つ
-		while (usrbuf->used >= track->usrbuf_usedhigh) {
+		// usrbuf も outbuf も一杯ならここで待つ
+		while (usrbuf->used >= track->usrbuf_usedhigh &&
+		    outbuf->used >= outbuf->capacity) {
 			if ((ioflag & IO_NDELAY)) {
 				error = EWOULDBLOCK;
 				goto abort;
@@ -2526,7 +2522,9 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 		bytes = uimin(track->usrbuf_usedhigh - usrbuf->used,
 		    uio->uio_resid);
 		tail = auring_tail(usrbuf);
-		if (tail + bytes <= usrbuf->capacity) {
+		if (bytes == 0) {
+			/* No space on usrbuf */
+		} else if (tail + bytes <= usrbuf->capacity) {
 			error = audio_write_uiomove(track, tail, bytes, uio);
 			if (error)
 				break;
@@ -3756,7 +3754,6 @@ audio_track_init(struct audio_softc *sc, audio_track_t **trackp, int mode)
 	audio_track_t *track;
 	audio_format2_t *default_format;
 	audio_trackmixer_t *mixer;
-	const char *cvname;
 	int error;
 	static int newid = 0;
 
@@ -3767,18 +3764,15 @@ audio_track_init(struct audio_softc *sc, audio_track_t **trackp, int mode)
 	TRACET(track, "for %s", mode == AUMODE_PLAY ? "playback" : "recording");
 
 	if (mode == AUMODE_PLAY) {
-		cvname = "audiowr";
 		default_format = &sc->sc_sound_pparams;
 		mixer = sc->sc_pmixer;
 	} else {
-		cvname = "audiord";
 		default_format = &sc->sc_sound_rparams;
 		mixer = sc->sc_rmixer;
 	}
 
 	track->mixer = mixer;
 	track->mode = mode;
-	cv_init(&track->outcv, cvname);
 
 	// 固定初期値
 	track->volume = 256;
@@ -3821,7 +3815,6 @@ audio_track_destroy(audio_track_t *track)
 	audio_free(track->chmix.srcbuf.mem);
 	audio_free(track->freq.srcbuf.mem);
 	audio_free(track->outbuf.mem);
-	cv_destroy(&track->outcv);
 
 	kmem_free(track, sizeof(*track));
 }
@@ -5107,8 +5100,12 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 	 * draincv is used only for playback.
 	 * And from here, audio_mixer_destroy is necessary to exit.
 	 */
-	if (mode == AUMODE_PLAY)
+	if (mode == AUMODE_PLAY) {
+		cv_init(&mixer->outcv, "audiowr");
 		cv_init(&mixer->draincv, "audiodr");
+	} else {
+		cv_init(&mixer->outcv, "audiord");
+	}
 
 	mixer->track_fmt.encoding = AUDIO_ENCODING_SLINEAR_NE;
 	mixer->track_fmt.precision = AUDIO_INTERNAL_BITS;
@@ -5192,6 +5189,7 @@ audio_mixer_destroy(struct audio_softc *sc, audio_trackmixer_t *mixer)
 	audio_free(mixer->codecbuf.mem);
 	audio_free(mixer->mixsample);
 
+	cv_destroy(&mixer->outcv);
 	if (mode == AUMODE_PLAY)
 		cv_destroy(&mixer->draincv);
 }
@@ -5483,6 +5481,15 @@ audio_pmixer_mixall(struct audio_softc *sc, bool isintr)
 		// 合成
 		mixed = audio_pmixer_mix_track(mixer, track, mixed);
 	}
+
+	// 割り込み中で1トラックでも消化していれば
+	// 各種通知のためにソフトウェア割り込みを起動。
+	if (isintr && mixed != 0) {
+		kpreempt_disable();
+		softint_schedule(sc->sc_sih_wr);
+		kpreempt_enable();
+	}
+
 	return mixed;
 }
 
@@ -5565,20 +5572,6 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track,
 	// トラックバッファを取り込んだことを反映
 	// mixseq はこの時点ではまだ前回の値なのでトラック側へは +1
 	track->seq = mixer->mixseq + 1;
-
-	// audio_write() に空きが出来たことを通知
-	cv_broadcast(&track->outcv);
-
-	TRACET(track, "broadcast; trseq=%d out=%d/%d/%d", (int)track->seq,
-	    track->outbuf.head, track->outbuf.used, track->outbuf.capacity);
-
-	// usrbuf が空いたら(lowat を下回ったら) シグナルを送る(予約する)
-	// XXX 本当は全トラックが lowat 以上あれば(=書き込み可能でなければ)
-	//     シグナルもselnotifyも送る必要がないので softintr 自体呼ぶ
-	//     必要ない気がするけど。
-	if (track->usrbuf.used <= track->usrbuf_usedlow && !track->is_pause) {
-		track->sigio_pending = true;
-	}
 
 	return mixed + 1;
 }
@@ -5704,9 +5697,6 @@ audio_pintr(void *arg)
 		audio_pmixer_output(sc);
 	}
 #endif
-
-	// drain 待ちしている人のために通知
-	cv_broadcast(&mixer->draincv);
 }
 
 // 録音ミキサを(起動してなければ)起動する。
@@ -5836,17 +5826,10 @@ audio_rmixer_process(struct audio_softc *sc)
 		auring_push(input, count);
 
 		// XXX シーケンスいるんだっけ
-
-		// audio_read() にブロックが来たことを通知
-		cv_broadcast(&track->outcv);
-
-		TRACET(track, "broadcast; inp=%d/%d/%d",
-		    input->head, input->used, input->capacity);
 	}
 
 	auring_take(mixersrc, count);
 
-	// SIGIO を通知(する必要があるかどうかは向こうで判断する)
 	kpreempt_disable();
 	softint_schedule(sc->sc_sih_rd);
 	kpreempt_enable();
@@ -6084,7 +6067,10 @@ audio_track_drain(struct audio_softc *sc, audio_track_t *track)
 		    track->outbuf.head, track->outbuf.used,
 		    track->outbuf.capacity);
 
-		if (track->outbuf.used == 0 && track->seq <= mixer->hwseq)
+		// 終了条件
+		if (track->usrbuf.used < frametobyte(&track->inputfmt, 1) &&
+		    track->outbuf.used == 0 &&
+		    track->seq <= mixer->hwseq)
 			break;
 
 		error = cv_wait_sig(&mixer->draincv, sc->sc_lock);
@@ -6094,6 +6080,9 @@ audio_track_drain(struct audio_softc *sc, audio_track_t *track)
 			TRACET(track, "cv_wait_sig failed %d", error);
 			return error;
 		}
+
+		// XXX ここで outbuf に変換しておけばいいか。
+		//     audio_write とよく似たコードになるけど。
 	}
 
 	track->pstate = AUDIO_STATE_CLEAR;
@@ -6103,8 +6092,12 @@ audio_track_drain(struct audio_softc *sc, audio_track_t *track)
 }
 
 // 録音側のソフトウェア割り込みハンドラ。
-// 録音ループのハードウェア割り込みから毎回呼ばれるので、
-// ASYNC 設定しているプロセス全員にここで SIGIO を配送すればよい。
+//
+// 録音ループのハードウェア割り込みから毎回呼ばれる。
+// ソフトウェア割り込みは、
+// - ASYNC 設定しているプロセス全員にここで SIGIO を配送。
+// - (HW 割り込みによって) データが到着したことを audio_read() に通知と
+//   selnotify()。
 //
 // XXX
 // ハードウェア割り込みからソフトウェア割り込みまでの間に新規に FAIOASYNC
@@ -6119,8 +6112,17 @@ audio_softintr_rd(void *cookie)
 	pid_t pid;
 
 	mutex_enter(sc->sc_lock);
-	// XXX 元々ここで rchan を broadcast してた
 	SLIST_FOREACH(f, &sc->sc_files, entry) {
+		audio_track_t *track = f->rtrack;
+
+		if (track == NULL)
+			continue;
+
+		TRACET(track, "broadcast; inp=%d/%d/%d",
+		    track->input->head,
+		    track->input->used,
+		    track->input->capacity);
+
 		pid = f->async_audio;
 		if (pid != 0) {
 			TRACEF(f, "sending SIGIO %d", pid);
@@ -6130,14 +6132,17 @@ audio_softintr_rd(void *cookie)
 			mutex_exit(proc_lock);
 		}
 	}
+
+	// データが来たことを通知
 	selnotify(&sc->sc_rsel, 0, NOTE_SUBMIT);
+	cv_broadcast(&sc->sc_rmixer->outcv);
+
 	mutex_exit(sc->sc_lock);
 }
 
 // 再生側のソフトウェア割り込みハンドラ。
 //
-// ハードウェア割り込みが、used が lowat を下回っているトラックに対して
-// sigio_pending フラグを立ててから、ソフトウェア割り込みを毎回呼ぶ。
+// ハードウェア割り込みで 1トラックでも処理した場合に呼ばれる。
 // ソフトウェア割り込みは、
 // - used が lowat を下回っているトラックそれぞれについて、
 //   ASYNC 設定していればプロセスに SIGIO を配送する。
@@ -6145,6 +6150,7 @@ audio_softintr_rd(void *cookie)
 //   selnotify する (その後上位から、ディスクリプタごとに
 //   filt_audiowrite_event() が呼ばれてそこで各々チェックするので、
 //   ここは全体としてありなしの二択でいいはず)
+// - (HW 割り込みによって) outbuf に空きが出来たことを audio_write() に通知。
 //
 // SIGIO についてはレベルトリガではなくエッジトリガのような気もするけど不明。
 // selnotify はレベルトリガでいいはず。
@@ -6166,9 +6172,19 @@ audio_softintr_wr(void *cookie)
 	SLIST_FOREACH(f, &sc->sc_files, entry) {
 		audio_track_t *track = f->ptrack;
 
-		if (track && track->sigio_pending) {
+		if (track == NULL)
+			continue;
+
+		TRACET(track, "broadcast; trseq=%d out=%d/%d/%d",
+		    (int)track->seq,
+		    track->outbuf.head,
+		    track->outbuf.used,
+		    track->outbuf.capacity);
+
+		// used が lowat 下回って ASYNC ならシグナル送る
+		if (track->usrbuf.used <= track->usrbuf_usedlow &&
+		    !track->is_pause) {
 			found = true;
-			track->sigio_pending = false;
 			pid = f->async_audio;
 			if (pid != 0) {
 				TRACEF(f, "sending SIGIO %d", pid);
@@ -6189,6 +6205,11 @@ audio_softintr_wr(void *cookie)
 		TRACE("selnotify");
 		selnotify(&sc->sc_wsel, 0, NOTE_SUBMIT);
 	}
+
+	// 空きが出来たことを audio_write に通知
+	cv_broadcast(&sc->sc_pmixer->outcv);
+	// drain 待ちしている人のために通知
+	cv_broadcast(&sc->sc_pmixer->draincv);
 
 	mutex_exit(sc->sc_lock);
 }

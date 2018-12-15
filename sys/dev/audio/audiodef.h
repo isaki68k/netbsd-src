@@ -100,7 +100,6 @@ typedef struct audio_track {
 	audio_ring_t	*input;		/* ptr to input stage buffer */
 
 	audio_ring_t	outbuf;		/* track output buffer */
-	kcondvar_t	outcv;		// I/O ready になったことの通知用
 
 	audio_stage_t	codec;		/* encoding conversion stage */
 	audio_stage_t	chvol;		/* channel volume stage */
@@ -123,8 +122,6 @@ typedef struct audio_track {
 
 	audio_state_t	pstate;		/* playback state */
 	bool		is_pause;
-
-	bool		sigio_pending;	/* async */
 
 	uint64_t	inputcounter;	/* トラックに入力されたフレーム数 */
 	uint64_t	outputcounter;	/* トラックから出力されたフレーム数 */
@@ -182,6 +179,9 @@ struct audio_trackmixer {
 
 	audio_ring_t	hwbuf;		/* HW I/O buf */
 	int		hwblks;		/* number of blocks in hwbuf */
+
+	/* These must be protected by sc_lock. */
+	kcondvar_t	outcv;		// I/O ready になったことの通知用
 	kcondvar_t	draincv;	// drain 用に割り込みを通知する?
 
 	uint64_t	mixseq;		/* seq# currently being mixed */
