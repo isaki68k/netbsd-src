@@ -1229,7 +1229,6 @@ audiodetach(device_t self, int flags)
 	mutex_enter(sc->sc_lock);
 	sc->sc_dying = true;
 	cv_broadcast(&sc->sc_exlockcv);
-	cv_broadcast(&sc->sc_pmixer->draincv);
 	cv_broadcast(&sc->sc_pmixer->outcv);
 	cv_broadcast(&sc->sc_rmixer->outcv);
 	mutex_exit(sc->sc_lock);
@@ -1515,12 +1514,16 @@ audio_waitio(struct audio_softc *sc, audio_track_t *track)
 	KASSERT(track);
 	KASSERT(mutex_owned(sc->sc_lock));
 
-	TRACET(track, "wait");
 	/* Wait for pending I/O to complete. */
 	error = cv_wait_sig(&track->mixer->outcv, sc->sc_lock);
-	if (sc->sc_dying)
+	if (sc->sc_dying) {
 		error = EIO;
-	TRACET(track, "error=%d", error);
+	}
+	if (error) {
+		TRACET(track, "cv_wait_sig failed %d", error);
+	} else {
+		TRACET(track, "wakeup");
+	}
 	return error;
 }
 
@@ -2368,6 +2371,7 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 			if (ioflag & IO_NDELAY)
 				return EWOULDBLOCK;
 
+			TRACET(track, "sleep");
 			error = audio_waitio(sc, track);
 			if (error)
 				return error;
@@ -5096,13 +5100,9 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 		}
 	}
 
-	/*
-	 * draincv is used only for playback.
-	 * And from here, audio_mixer_destroy is necessary to exit.
-	 */
+	/* From here, audio_mixer_destroy is necessary to exit. */
 	if (mode == AUMODE_PLAY) {
 		cv_init(&mixer->outcv, "audiowr");
-		cv_init(&mixer->draincv, "audiodr");
 	} else {
 		cv_init(&mixer->outcv, "audiord");
 	}
@@ -5190,8 +5190,6 @@ audio_mixer_destroy(struct audio_softc *sc, audio_trackmixer_t *mixer)
 	audio_free(mixer->mixsample);
 
 	cv_destroy(&mixer->outcv);
-	if (mode == AUMODE_PLAY)
-		cv_destroy(&mixer->draincv);
 }
 
 // 再生ミキサを(起動してなければ)起動する。
@@ -6073,13 +6071,10 @@ audio_track_drain(struct audio_softc *sc, audio_track_t *track)
 		    track->seq <= mixer->hwseq)
 			break;
 
-		error = cv_wait_sig(&mixer->draincv, sc->sc_lock);
-		if (sc->sc_dying)
-			return EIO;
-		if (error) {
-			TRACET(track, "cv_wait_sig failed %d", error);
+		TRACET(track, "sleep");
+		error = audio_waitio(sc, track);
+		if (error)
 			return error;
-		}
 
 		// XXX ここで outbuf に変換しておけばいいか。
 		//     audio_write とよく似たコードになるけど。
@@ -6208,8 +6203,6 @@ audio_softintr_wr(void *cookie)
 
 	// 空きが出来たことを audio_write に通知
 	cv_broadcast(&sc->sc_pmixer->outcv);
-	// drain 待ちしている人のために通知
-	cv_broadcast(&sc->sc_pmixer->draincv);
 
 	mutex_exit(sc->sc_lock);
 }

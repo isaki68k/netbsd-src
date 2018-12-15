@@ -180,9 +180,8 @@ struct audio_trackmixer {
 	audio_ring_t	hwbuf;		/* HW I/O buf */
 	int		hwblks;		/* number of blocks in hwbuf */
 
-	/* These must be protected by sc_lock. */
+	/* It must be protected by sc_lock. */
 	kcondvar_t	outcv;		// I/O ready になったことの通知用
-	kcondvar_t	draincv;	// drain 用に割り込みを通知する?
 
 	uint64_t	mixseq;		/* seq# currently being mixed */
 	uint64_t	hwseq;		/* seq# HW output completed */
