@@ -16,9 +16,6 @@
 // x Purge all C++ style comments.
 // x Reconsideration about sc_lock?
 //   Many syscalls may no longer require a device lock?
-// x Reconsideration about rsel/wel.
-//   rsel/wsel はトラックごとに分けなくてよいか
-//   今のままでも動作はしているが
 // x Reconsideration about overflow handling on track mixer.
 //   トラックミキサでオーバーフローする場合の処理はあれでいいか
 //   今は自動的にマスターボリュームを下げている。そして下げっぱなし。
