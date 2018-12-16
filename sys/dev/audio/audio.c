@@ -5413,7 +5413,6 @@ audio_pmixer_process(struct audio_softc *sc, bool isintr)
 	    mixer->hwbuf.head, mixer->hwbuf.used, mixer->hwbuf.capacity,
 	    (mixed == 0) ? " silent" : "");
 
-	// SIGIO の通知など
 	kpreempt_disable();
 	softint_schedule(sc->sc_sih_wr);
 	kpreempt_enable();
@@ -5475,14 +5474,6 @@ audio_pmixer_mixall(struct audio_softc *sc, bool isintr)
 		}
 		// 合成
 		mixed = audio_pmixer_mix_track(mixer, track, mixed);
-	}
-
-	// 割り込み中で1トラックでも消化していれば
-	// 各種通知のためにソフトウェア割り込みを起動。
-	if (isintr && mixed != 0) {
-		kpreempt_disable();
-		softint_schedule(sc->sc_sih_wr);
-		kpreempt_enable();
 	}
 
 	return mixed;
@@ -6085,7 +6076,7 @@ audio_track_drain(struct audio_softc *sc, audio_track_t *track)
 
 // 録音側のソフトウェア割り込みハンドラ。
 //
-// 録音ループのハードウェア割り込みから毎回呼ばれる。
+// 録音のハードウェア割り込みから毎回呼ばれる。
 // ソフトウェア割り込みは、
 // - ASYNC 設定しているプロセス全員にここで SIGIO を配送。
 // - (HW 割り込みによって) データが到着したことを audio_read() に通知と
@@ -6134,7 +6125,7 @@ audio_softintr_rd(void *cookie)
 
 // 再生側のソフトウェア割り込みハンドラ。
 //
-// ハードウェア割り込みで 1トラックでも処理した場合に呼ばれる。
+// 再生のハードウェア割り込みから毎回呼ばれる。
 // ソフトウェア割り込みは、
 // - used が lowat を下回っているトラックそれぞれについて、
 //   ASYNC 設定していればプロセスに SIGIO を配送する。
