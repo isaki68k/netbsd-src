@@ -4947,6 +4947,7 @@ audio_track_record(audio_track_t *track)
 // mixer(.hwbuf.fmt) から blktime [msec] を計算する。
 /*
  * Calcurate blktime [msec] from mixer(.hwbuf.fmt).
+ * Must be called with sc_lock held.
  */
 static u_int
 audio_mixer_calc_blktime(struct audio_softc *sc, audio_trackmixer_t *mixer)
@@ -5003,6 +5004,7 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 
 	KASSERT(hwfmt != NULL);
 	KASSERT(reg != NULL);
+	KASSERT(mutex_owned(sc->sc_lock));
 
 	error = 0;
 	if (mode == AUMODE_PLAY)
@@ -7859,19 +7861,22 @@ audio_sysctl_blk_ms(SYSCTLFN_ARGS)
 	node = *rnode;
 	sc = node.sysctl_data;
 
+	audio_enter(sc, AUDIO_LK_EXCLUSIVE);
+
 	t = sc->sc_blk_ms;
 	node.sysctl_data = &t;
 	error = sysctl_lookup(SYSCTLFN_CALL(&node));
 	if (error || newp == NULL)
-		return error;
+		goto abort;
 
-	if (t < 0)
-		return EINVAL;
+	if (t < 0) {
+		error = EINVAL;
+		goto abort;
+	}
 
-	audio_enter(sc, AUDIO_LK_EXCLUSIVE);
 	if (sc->sc_popens + sc->sc_ropens > 0) {
-		audio_exit(sc, AUDIO_LK_EXCLUSIVE);
-		return EBUSY;
+		error = EBUSY;
+		goto abort;
 	}
 	sc->sc_blk_ms = t;
 	mode = 0;
@@ -7897,14 +7902,15 @@ audio_sysctl_blk_ms(SYSCTLFN_ARGS)
 	memset(&rfil, 0, sizeof(rfil));
 	error = audio_hw_set_params(sc, mode, &phwfmt, &rhwfmt, &pfil, &rfil);
 	if (error) {
-		audio_exit(sc, AUDIO_LK_EXCLUSIVE);
-		return error;
+		goto abort;
 	}
 
 	/* re-init track mixer */
 	audio_mixers_init(sc, mode, &phwfmt, &rhwfmt, &pfil, &rfil);
+	error = 0;
+abort:
 	audio_exit(sc, AUDIO_LK_EXCLUSIVE);
-	return 0;
+	return error;
 }
 
 // デバッグレベルの変更

@@ -148,7 +148,7 @@ struct audio_softc {
 
 	/*
 	 * Blocksize in msec.
-	 * Must be protected by sc_intr_lock (?).
+	 * Must be protected by sc_lock.
 	 */
 	int sc_blk_ms;
 
