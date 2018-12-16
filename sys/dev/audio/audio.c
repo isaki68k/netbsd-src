@@ -934,8 +934,17 @@ audioattach(device_t parent, device_t self, void *aux)
 	// そうでなければミキサーと連動させる必要がある。
 	sc->sc_sih_wr = softint_establish(SOFTINT_SERIAL | SOFTINT_MPSAFE,
 	    audio_softintr_wr, sc);
+	if (sc->sc_sih_wr == NULL) {
+		aprint_error_dev(self, "softint_establish(wr) failed\n");
+		goto bad;
+	}
 	sc->sc_sih_rd = softint_establish(SOFTINT_SERIAL | SOFTINT_MPSAFE,
 	    audio_softintr_rd, sc);
+	if (sc->sc_sih_rd == NULL) {
+		aprint_error_dev(self, "softint_establish(rd) failed\n");
+		softint_disestablish(sc->sc_sih_wr);
+		goto bad;
+	}
 	selinit(&sc->sc_wsel);
 	selinit(&sc->sc_rsel);
 
