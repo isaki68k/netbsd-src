@@ -5411,10 +5411,6 @@ audio_pmixer_process(struct audio_softc *sc, bool isintr)
 	    (int)mixer->mixseq,
 	    mixer->hwbuf.head, mixer->hwbuf.used, mixer->hwbuf.capacity,
 	    (mixed == 0) ? " silent" : "");
-
-	kpreempt_disable();
-	softint_schedule(sc->sc_sih_wr);
-	kpreempt_enable();
 }
 
 // 全トラックを 1ブロック分合成する。
@@ -5666,28 +5662,18 @@ audio_pintr(void *arg)
 	// 出力
 	audio_pmixer_output(sc);
 #else
-	// ブロック0 の出力が終わったら用意されているはずのブロック1 を
-	// すぐに出力しておいて、その後ブロック2 の作成に取りかかる。
-	// これで遅マシンでも再生を途切れさせずに HW ブロックが作成できるが、
-	// その代わりレイテンシは1ブロック分上がる。
-
-	// まず出力待ちのシーケンスを出力
+	// (この割り込みはブロック N の出力が終わったところで呼ばれるので)
+	// 用意されているはずのブロック N+1 を出力
 	if (mixer->hwbuf.used >= mixer->frames_per_block) {
-		audio_pmixer_output(sc);
+	} else {
+		DPRINTF(1, "%s: empty\n", __func__);
 	}
+	audio_pmixer_output(sc);
 
-	bool later = false;
-
-	if (mixer->hwbuf.used < mixer->frames_per_block) {
-		later = true;
-	}
-
-	// 次のバッファを用意する
-	audio_pmixer_process(sc, true);
-
-	if (later) {
-		audio_pmixer_output(sc);
-	}
+	// ソフトウェア割り込みでブロック N+2 を作成。
+	kpreempt_disable();
+	softint_schedule(sc->sc_sih_wr);
+	kpreempt_enable();
 #endif
 }
 
@@ -6164,6 +6150,11 @@ audio_softintr_wr(void *cookie)
 
 	mutex_enter(sc->sc_lock);
 	mutex_enter(sc->sc_intr_lock);
+
+#if !defined(AUDIO_HW_SINGLE_BUFFER)
+	// 次のブロックを作成
+	audio_pmixer_process(sc, true);
+#endif
 
 	SLIST_FOREACH(f, &sc->sc_files, entry) {
 		audio_track_t *track = f->ptrack;
