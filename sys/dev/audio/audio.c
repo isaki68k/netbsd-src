@@ -2210,7 +2210,6 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
 	if (file->rtrack) {
 		/* Call hw halt_input if this is the last recording track. */
 		if (sc->sc_ropens == 1) {
-			DPRINTF(2, "%s halt_input\n", __func__);
 			mutex_enter(sc->sc_intr_lock);
 			error = audio_rmixer_halt(sc);
 			mutex_exit(sc->sc_intr_lock);
