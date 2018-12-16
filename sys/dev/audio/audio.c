@@ -929,10 +929,15 @@ audioattach(device_t parent, device_t self, void *aux)
 	if (mode == 0)
 		goto bad;
 
+	// 途中でミキサーがクローズされてしまうケースを考えると
+	// これらは常にあるとしておくほうが楽か。
+	// そうでなければミキサーと連動させる必要がある。
 	sc->sc_sih_wr = softint_establish(SOFTINT_SERIAL | SOFTINT_MPSAFE,
 	    audio_softintr_wr, sc);
 	sc->sc_sih_rd = softint_establish(SOFTINT_SERIAL | SOFTINT_MPSAFE,
 	    audio_softintr_rd, sc);
+	selinit(&sc->sc_wsel);
+	selinit(&sc->sc_rsel);
 
 	/* Initial parameter of /dev/sound */
 	sc->sc_sound_pparams = params_to_format2(&audio_default);
@@ -994,9 +999,6 @@ audioattach(device_t parent, device_t self, void *aux)
 		    CTL_HW, node->sysctl_num, CTL_CREATE, CTL_EOL);
 #endif
 	}
-
-	selinit(&sc->sc_rsel);
-	selinit(&sc->sc_wsel);
 
 #ifdef AUDIO_PM_IDLE
 	callout_init(&sc->sc_idle_counter, 0);
@@ -1262,8 +1264,7 @@ audiodetach(device_t self, int flags)
 
 	pmf_device_deregister(self);
 
-	/* free resources */
-	// ここでリソース解放
+	/* Free resources */
 	if (sc->sc_pmixer) {
 		audio_mixer_destroy(sc, sc->sc_pmixer);
 		kmem_free(sc->sc_pmixer, sizeof(*sc->sc_pmixer));
@@ -1273,20 +1274,17 @@ audiodetach(device_t self, int flags)
 		kmem_free(sc->sc_rmixer, sizeof(*sc->sc_rmixer));
 	}
 
-	if (sc->sc_sih_wr) {
-		softint_disestablish(sc->sc_sih_wr);
-		sc->sc_sih_wr = NULL;
-	}
-	if (sc->sc_sih_rd) {
-		softint_disestablish(sc->sc_sih_rd);
-		sc->sc_sih_rd = NULL;
-	}
+	softint_disestablish(sc->sc_sih_wr);
+	sc->sc_sih_wr = NULL;
+	softint_disestablish(sc->sc_sih_rd);
+	sc->sc_sih_rd = NULL;
+
+	seldestroy(&sc->sc_wsel);
+	seldestroy(&sc->sc_rsel);
 
 #ifdef AUDIO_PM_IDLE
 	callout_destroy(&sc->sc_idle_counter);
 #endif
-	seldestroy(&sc->sc_rsel);
-	seldestroy(&sc->sc_wsel);
 
 	cv_destroy(&sc->sc_exlockcv);
 
