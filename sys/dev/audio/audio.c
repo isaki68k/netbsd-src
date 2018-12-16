@@ -5398,10 +5398,6 @@ audio_pmixer_process(struct audio_softc *sc, bool isintr)
 	    (int)mixer->mixseq,
 	    mixer->hwbuf.head, mixer->hwbuf.used, mixer->hwbuf.capacity,
 	    (mixed == 0) ? " silent" : "");
-
-	kpreempt_disable();
-	softint_schedule(sc->sc_sih_wr);
-	kpreempt_enable();
 }
 
 // 全トラックを 1ブロック分合成する。
@@ -5676,6 +5672,10 @@ audio_pintr(void *arg)
 		audio_pmixer_output(sc);
 	}
 #endif
+
+	kpreempt_disable();
+	softint_schedule(sc->sc_sih_wr);
+	kpreempt_enable();
 }
 
 // 録音ミキサを(起動してなければ)起動する。
@@ -5808,10 +5808,6 @@ audio_rmixer_process(struct audio_softc *sc)
 	}
 
 	auring_take(mixersrc, count);
-
-	kpreempt_disable();
-	softint_schedule(sc->sc_sih_rd);
-	kpreempt_enable();
 }
 
 // ハードウェアバッファに1ブロック入力を開始する。
@@ -5900,6 +5896,10 @@ audio_rintr(void *arg)
 
 	// 次のバッファを要求
 	audio_rmixer_input(sc);
+
+	kpreempt_disable();
+	softint_schedule(sc->sc_sih_rd);
+	kpreempt_enable();
 }
 
 // 再生ミキサを(動いていれば)停止する。
