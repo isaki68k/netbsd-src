@@ -1408,7 +1408,7 @@ stream_filter_list_prepend(stream_filter_list_t *list,
 /*
  * Enter critical section.
  * If successful, it returns 0.  Otherwise returns errno.
- * It must be called with sc_lock.
+ * Must be called with sc_lock held.
  */
 static int
 audio_enter_exclusive(struct audio_softc *sc)
@@ -1431,7 +1431,7 @@ audio_enter_exclusive(struct audio_softc *sc)
 
 /*
  * Leave critical section.
- * It must be called with sc_lock.
+ * Must be called with sc_lock held.
  */
 static void
 audio_exit_exclusive(struct audio_softc *sc)
@@ -5001,9 +5001,9 @@ audio_mixer_calc_blktime(struct audio_softc *sc, audio_trackmixer_t *mixer)
 /*
  * Initialize the mixer.
  * This function returns 0 on sucessful.  Otherwise returns errno.
- * 'mixer' should be zero-filled.
+ * 'mixer' must be zero-filled.
  * For 'mode', specify AUMODE_PLAY for playback, AUMODE_RECORD for record.
- * This function should be called with sc_lock.
+ * Must be called with sc_lock held.
  */
 static int
 audio_mixer_init(struct audio_softc *sc, int mode,
@@ -5193,8 +5193,8 @@ audio_mixer_destroy(struct audio_softc *sc, audio_trackmixer_t *mixer)
 // 割り込みコンテキストから呼び出してはならない。
 /*
  * Starts playback mixer if not running.
- * It must be called with sc_exlock.
- * It must not be called from the interrupt context.
+ * Must be called with sc_exlock held.
+ * Must not be called from the interrupt context.
  */
 static void
 audio_pmixer_start(struct audio_softc *sc, bool force)
@@ -5277,7 +5277,7 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
  * Note that this function doesn't transfer from hwbuf to HW.
  * If 'isintr' is true, it indicates a call from the interrupt context.
  * If false, it indicates a call from process context.
- * It must be called with sc_intr_lock.
+ * Must be called with sc_intr_lock held.
  */
 static void
 audio_pmixer_process(struct audio_softc *sc, bool isintr)
@@ -5565,7 +5565,7 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track,
 // sc_intr_lock で呼び出すこと。
 /*
  * Output one block from hwbuf to HW.
- * It must be called with sc_intr_lock.
+ * Must be called with sc_intr_lock held.
  */
 static void
 audio_pmixer_output(struct audio_softc *sc)
@@ -5696,8 +5696,8 @@ audio_pintr(void *arg)
 // 割り込みコンテキストから呼び出してはならない。
 /*
  * Starts record mixer if not running.
- * It must be called with sc_exlock.
- * It must not be called from the interrupt context.
+ * Must be called with sc_exlock held.
+ * Must not be called from the interrupt context.
  */
 static void
 audio_rmixer_start(struct audio_softc *sc)
@@ -5831,7 +5831,7 @@ audio_rmixer_process(struct audio_softc *sc)
 // sc_intr_lock で呼び出すこと。
 /*
  * Input one block from HW to hwbuf.
- * It must be called with sc_intr_lock.
+ * Must be called with sc_intr_lock held.
  */
 static void
 audio_rmixer_input(struct audio_softc *sc)
@@ -5922,8 +5922,7 @@ audio_rintr(void *arg)
  * Halt playback mixer if running.
  * This function also clears related parameters, so call this function
  * instead of calling halt_output directly.
- * This function should be called only when the mixer is running.
- * This funciton should be called with sc_intr_lock.
+ * Must be called with sc_intr_lock held.
  */
 static int
 audio_pmixer_halt(struct audio_softc *sc)
@@ -5956,8 +5955,7 @@ audio_pmixer_halt(struct audio_softc *sc)
  * Halt recording mixer if running.
  * This function also clears related parameters, so call this function
  * instead of calling halt_input directly.
- * This function should be called only when the mixer is running.
- * This funciton should be called with sc_intr_lock.
+ * Must be called with sc_intr_lock held.
  */
 static int
 audio_rmixer_halt(struct audio_softc *sc)
@@ -7353,7 +7351,7 @@ audio_track_setinfo_water(audio_track_t *track, const struct audio_info *ai)
 // exlock でコールすること。
 /*
  * Set only hardware part from *ai.
- * It must be called with sc_exlock.
+ * Must be called with sc_exlock held.
  */
 static int
 audio_hw_setinfo(struct audio_softc *sc, const struct audio_info *newai,
@@ -8666,8 +8664,8 @@ au_get_port(struct audio_softc *sc, struct au_mixer_ports *ports)
 }
 
 /*
- * must be called only if sc->sc_monitor_port != -1.
- * return 0 if success, otherwise errno.
+ * It must be called only if sc->sc_monitor_port != -1.
+ * It returns 0 if success, otherwise errno.
  */
 static int
 au_set_monitor_gain(struct audio_softc *sc, int monitor_gain)
@@ -8682,8 +8680,8 @@ au_set_monitor_gain(struct audio_softc *sc, int monitor_gain)
 }
 
 /*
- * must be called only if sc->sc_monitor_port != -1.
- * return monitor gain if success, otherwise -1.
+ * It must be called only if sc->sc_monitor_port != -1.
+ * It returns monitor gain if success, otherwise -1.
  */
 static int
 au_get_monitor_gain(struct audio_softc *sc)

@@ -142,13 +142,13 @@ struct audio_softc {
 
 	/*
 	 * List of opened descriptors.
-	 * must be protected by sc_intr_lock.
+	 * Must be protected by sc_intr_lock.
 	 */
 	SLIST_HEAD(, audio_file) sc_files;
 
 	/*
 	 * Blocksize in msec.
-	 * must be protected by sc_intr_lock (?).
+	 * Must be protected by sc_intr_lock (?).
 	 */
 	int sc_blk_ms;
 
@@ -161,14 +161,14 @@ struct audio_softc {
 
 	/*
 	 * Open track counter.
-	 * must be protected by sc_exlock.
+	 * Must be protected by sc_exlock.
 	 */
 	int sc_popens;
 	int sc_ropens;
 
 	/*
 	 * Playback or recording mixer is running if true.
-	 * must be protected by sc_exlock.
+	 * Must be protected by sc_exlock.
 	 */
 	bool sc_pbusy;
 	bool sc_rbusy;
@@ -185,7 +185,7 @@ struct audio_softc {
 
 	/*
 	 * Playback(write)/Recording(read) selector.
-	 * must be protected by sc_lock.
+	 * Must be protected by sc_lock.
 	 */
 	struct selinfo sc_wsel;
 	struct selinfo sc_rsel;
@@ -209,13 +209,13 @@ struct audio_softc {
 
 	/*
 	 * Critical section.
-	 * must be protected by sc_lock.
+	 * Must be protected by sc_lock.
 	 */
 	int sc_exlock;
 	kcondvar_t sc_exlockcv;
 
 	/*
-	 * must be protected by sc_lock (?)
+	 * Must be protected by sc_lock (?)
 	 */
 	bool		sc_dying;
 
