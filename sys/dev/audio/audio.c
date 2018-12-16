@@ -1919,9 +1919,6 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	KASSERT(mutex_owned(sc->sc_lock));
 	KASSERT(sc->sc_exlock);
 
-	if (sc->hw_if == NULL)
-		return ENXIO;
-
 #if AUDIO_DEBUG >= 3
 	TRACE("@%d start flags=0x%x po=%d ro=%d",
 	    device_unit(sc->dev),
@@ -2320,9 +2317,6 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 	TRACET(track, "resid=%u", (int)uio->uio_resid);
 	KASSERT(mutex_owned(sc->sc_lock));
 
-	if (sc->hw_if == NULL)
-		return ENXIO;
-
 	// N8 までは EINVAL だったがこっちのほうがよかろう
 	if (track->mmapped)
 		return EPERM;
@@ -2466,9 +2460,6 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 
 	KASSERT(mutex_owned(sc->sc_lock));
 
-	if (sc->hw_if == NULL)
-		return ENXIO;
-
 	// N8 までは EINVAL だったがこっちのほうがよかろう
 	if (track->mmapped)
 		return EPERM;
@@ -2611,8 +2602,7 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		 IOCPARM_LEN(cmd), (char)IOCGROUP(cmd), cmd&0xff, ioctlname,
 	    (int)curproc->p_pid, (int)l->l_lid);
 #endif
-	if (sc->hw_if == NULL)
-		return ENXIO;
+
 	error = 0;
 	switch (cmd) {
 	case FIONBIO:
@@ -3061,9 +3051,6 @@ audio_mmap(struct audio_softc *sc, off_t *offp, size_t len, int prot,
 
 	KASSERT(mutex_owned(sc->sc_lock));
 
-	if (sc->hw_if == NULL)
-		return ENXIO;
-
 	DPRINTF(2, "%s%d: off=%lld, prot=%d\n", __func__,
 	    device_unit(sc->dev), (long long)(*offp), prot);
 
@@ -3151,9 +3138,6 @@ audioctl_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	int error;
 
 	KASSERT(mutex_owned(sc->sc_lock));
-
-	if (sc->hw_if == NULL)
-		return ENXIO;
 
 #if AUDIO_DEBUG >= 3
 	TRACE("");
@@ -8157,9 +8141,6 @@ mixer_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 
 	KASSERT(mutex_owned(sc->sc_lock));
 
-	if (sc->hw_if == NULL)
-		return  ENXIO;
-
 	DPRINTF(1, "mixer_open: flags=0x%x sc=%p\n", flags, sc);
 
 	error = fd_allocfile(&fp, &fd);
@@ -8223,8 +8204,6 @@ mixer_close(struct audio_softc *sc, audio_file_t *file)
 {
 
 	KASSERT(mutex_owned(sc->sc_lock));
-	if (sc->hw_if == NULL)
-		return ENXIO;
 
 	DPRINTF(1, "mixer_close: sc %p\n", sc);
 	mixer_remove(sc);
