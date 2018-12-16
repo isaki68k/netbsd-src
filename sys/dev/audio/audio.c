@@ -1502,6 +1502,7 @@ audio_exit(struct audio_softc *sc, int exclusive)
 
 /*
  * Wait for I/O to complete, releasing device lock.
+ * Must be called with sc_lock held.
  */
 static int
 audio_waitio(struct audio_softc *sc, audio_track_t *track)
