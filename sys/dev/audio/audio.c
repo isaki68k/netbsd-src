@@ -7855,7 +7855,9 @@ audio_sysctl_blk_ms(SYSCTLFN_ARGS)
 	audio_filter_reg_t pfil;
 	audio_filter_reg_t rfil;
 	int t;
+	int old_blk_ms;
 	int mode;
+	int r;
 	int error;
 
 	node = *rnode;
@@ -7863,7 +7865,8 @@ audio_sysctl_blk_ms(SYSCTLFN_ARGS)
 
 	audio_enter(sc, AUDIO_LK_EXCLUSIVE);
 
-	t = sc->sc_blk_ms;
+	old_blk_ms = sc->sc_blk_ms;
+	t = old_blk_ms;
 	node.sysctl_data = &t;
 	error = sysctl_lookup(SYSCTLFN_CALL(&node));
 	if (error || newp == NULL)
@@ -7906,7 +7909,15 @@ audio_sysctl_blk_ms(SYSCTLFN_ARGS)
 	}
 
 	/* re-init track mixer */
-	audio_mixers_init(sc, mode, &phwfmt, &rhwfmt, &pfil, &rfil);
+	r = audio_mixers_init(sc, mode, &phwfmt, &rhwfmt, &pfil, &rfil);
+	if (r != mode) {
+		error = EINVAL;
+
+		/* Rollback */
+		sc->sc_blk_ms = old_blk_ms;
+		audio_mixers_init(sc, mode, &phwfmt, &rhwfmt, &pfil, &rfil);
+		goto abort;
+	}
 	error = 0;
 abort:
 	audio_exit(sc, AUDIO_LK_EXCLUSIVE);
