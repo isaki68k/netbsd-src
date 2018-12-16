@@ -269,7 +269,8 @@ audio_internal_to_mulaw32(audio_filter_arg_t *arg)
 
 		// val の bit 14 から 0 になっているビットまでシフトしていく。
 		// シフトした回数だけ exponent を加算する。
-		// このブロックが終わったとき、val の上位4ビットがmantissa になっている。
+		// このブロックが終わったとき、val の上位4ビットが
+		// mantissa になっている。
 		val <<= 1;
 		for (c = 0; c < 7; c++) {
 			if (val >= 0) {
