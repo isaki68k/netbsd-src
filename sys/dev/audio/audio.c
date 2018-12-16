@@ -5633,6 +5633,13 @@ audio_pintr(void *arg)
 	sc = arg;
 	KASSERT(mutex_owned(sc->sc_intr_lock));
 
+	if (sc->sc_dying)
+		return;
+	if (sc->sc_pbusy == false) {
+		DPRINTF(1, "%s: stray interrupt\n", __func__);
+		return;
+	}
+
 	mixer = sc->sc_pmixer;
 	mixer->hw_complete_counter += mixer->frames_per_block;
 	mixer->hwseq++;
@@ -5883,6 +5890,13 @@ audio_rintr(void *arg)
 
 	sc = arg;
 	KASSERT(mutex_owned(sc->sc_intr_lock));
+
+	if (sc->sc_dying)
+		return;
+	if (sc->sc_rbusy == false) {
+		DPRINTF(1, "%s: stray interrupt\n", __func__);
+		return;
+	}
 
 	mixer = sc->sc_rmixer;
 	mixer->hw_complete_counter += mixer->frames_per_block;
