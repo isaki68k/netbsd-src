@@ -282,6 +282,14 @@ sc_lchan はもう使われていない。
 <h4>NetBSD 7 (以前) からある問題</h4>
 <ul>
 
+<li>audiodetach が sc_lock, sc_intr_lock を解放していない (2018/12)
+<p class="p">
+リソースリーク。uaudio(4) とかだと蓄積していく。
+それに加えて N8 は pad(4) も毎回 attach/detach するのでもりもり増えると思う。
+目に見えるレベルになることはないだろうけど。
+AUDIO2 では対応済み。
+</p>
+
 <li>emuxki(4) の open が flags の使い方を間違えている (2018/05)
 <p class="p">
 実害はないが emuxki(4) の open は引数 flags を AUOPEN_{READ,WRITE} と
