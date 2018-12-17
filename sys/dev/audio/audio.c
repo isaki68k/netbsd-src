@@ -5035,7 +5035,7 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 				aprint_error_dev(sc->dev,
 				    "blksize not configured %d -> %d\n",
 				    blksize, rounded);
-				return ENXIO;
+				return EINVAL;
 			}
 			// 再計算
 			mixer->frames_per_block = rounded * NBBY /
@@ -5059,7 +5059,7 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 			aprint_error_dev(sc->dev,
 			    "buffer size not configured %zu -> %zu\n",
 			    bufsize, rounded);
-			return ENXIO;
+			return EINVAL;
 		}
 	}
 	mixer->hwbuf.capacity = capacity;
