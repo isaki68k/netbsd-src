@@ -7918,22 +7918,15 @@ audio_sysctl_blk_ms(SYSCTLFN_ARGS)
 		goto abort;
 	}
 	sc->sc_blk_ms = t;
+	// format は変更なしなので現在の設定を使う
 	mode = 0;
 	if (sc->sc_pmixer) {
 		mode |= AUMODE_PLAY;
-		// SLINEAR_NE:AINT と現在の ch/freq の組み合わせ
 		phwfmt = sc->sc_pmixer->track_fmt;
-		phwfmt.encoding = AUDIO_ENCODING_SLINEAR_NE;
-		phwfmt.precision = AUDIO_INTERNAL_BITS;
-		phwfmt.stride = AUDIO_INTERNAL_BITS;
 	}
 	if (sc->sc_rmixer) {
 		mode |= AUMODE_RECORD;
-		// SLINEAR_NE:AINT と現在の ch/freq の組み合わせ
 		rhwfmt = sc->sc_rmixer->track_fmt;
-		rhwfmt.encoding = AUDIO_ENCODING_SLINEAR_NE;
-		rhwfmt.precision = AUDIO_INTERNAL_BITS;
-		rhwfmt.stride = AUDIO_INTERNAL_BITS;
 	}
 
 	/* re-init hardware */
