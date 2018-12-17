@@ -1138,9 +1138,9 @@ AUDIO_SETFORMAT (audio_info_t)</span></p>
 AUDIO2 新設 ioctl。
 現在のトラックミキサのフォーマットを取得あるいは設定する。
 いずれの場合も audio_info_t のうち以下のメンバだけを使用する。
-play、record のうちサポートしていない側 (再生専用デバイスの録音側など)の
+play、record のうち無効な側 (再生専用デバイスの録音側など)の
 メンバと、ここに記載のないメンバは
-GETFORMAT 時はゼロで埋められ、SETFORMAT 時は無視する。
+GETFORMAT 時は -1 で埋められ、SETFORMAT 時は無視する。
 </span></p>
 <ul style="margin-left:20%; margin-top:0; margin-bottom:0;">
 <li><span class=a2>mode</span>
