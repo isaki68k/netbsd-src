@@ -523,7 +523,9 @@ static int audio_hw_probe_by_encoding(struct audio_softc *, audio_format2_t *,
 	int);
 static int audio_hw_validate_format(struct audio_softc *, int,
 	const audio_format2_t *);
-static int audio_mixers_set_format(struct audio_softc *, struct audio_info *);
+static int audio_mixers_set_format(struct audio_softc *,
+	const struct audio_info *);
+static void audio_mixers_get_format(struct audio_softc *, struct audio_info *);
 static int audio_sysctl_volume(SYSCTLFN_PROTO);
 static int audio_sysctl_blk_ms(SYSCTLFN_PROTO);
 static int audio_sysctl_debug(SYSCTLFN_PROTO);
@@ -2568,7 +2570,7 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 	struct lwp *l, audio_file_t *file)
 {
 	struct audio_offset *ao;
-	struct audio_info *ai;
+	struct audio_info ai;
 	audio_track_t *track;
 	audio_encoding_t *ae;
 	audio_format_query_t *query;
@@ -2800,30 +2802,16 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		break;
 
 	case AUDIO_GETFORMAT:
-		ai = (struct audio_info *)addr;
-		memset(ai, 0, sizeof(*ai));
-		// 書き込み先の audio_info には stride 情報がないが、
-		// trackmixer は常に precision == stride なので問題ない。
-		if (sc->sc_pmixer) {
-			audio_format2_t *fmt = &sc->sc_pmixer->track_fmt;
-			ai->play.encoding    = fmt->encoding;
-			ai->play.precision   = fmt->precision;
-			ai->play.channels    = fmt->channels;
-			ai->play.sample_rate = fmt->sample_rate;
-			ai->mode |= AUMODE_PLAY;
-		}
-		if (sc->sc_rmixer) {
-			audio_format2_t *fmt = &sc->sc_rmixer->track_fmt;
-			ai->record.encoding    = fmt->encoding;
-			ai->record.precision   = fmt->precision;
-			ai->record.channels    = fmt->channels;
-			ai->record.sample_rate = fmt->sample_rate;
-			ai->mode |= AUMODE_RECORD;
-		}
+		audio_mixers_get_format(sc, (struct audio_info *)addr);
 		break;
 
 	case AUDIO_SETFORMAT:
+		audio_mixers_get_format(sc, &ai);
 		error = audio_mixers_set_format(sc, (struct audio_info *)addr);
+		if (error) {
+			/* Rollback */
+			audio_mixers_set_format(sc, &ai);
+		}
 		break;
 
 	default:
@@ -6746,65 +6734,55 @@ audio_hw_validate_format(struct audio_softc *sc, int mode,
 	return EINVAL;
 }
 
-// ai->mode で示されるミキサフォーマットをセットする。
-// 成功すれば 0、失敗すれば errno を返す。
+// ai->mode で示される側のミキサのフォーマットをセットする。
+// 使用するのは ai->{play,record}.{channels,sample_rate} のみ。
+// 設定を変更しない側の値は -1 のままにしておくこと。
+// 成功すれば 0、失敗すれば errno を返す。失敗してもロールバックはしない。
 // sc_lock && sc_exlock でコールすること。
 static int
-audio_mixers_set_format(struct audio_softc *sc, struct audio_info *ai)
+audio_mixers_set_format(struct audio_softc *sc, const struct audio_info *ai)
 {
 	audio_format2_t phwfmt;
 	audio_format2_t rhwfmt;
 	audio_filter_reg_t pfil;
 	audio_filter_reg_t rfil;
 	int mode;
-	int modemask;
-	int indep;
+	int props;
 	int error;
 
 	KASSERT(mutex_owned(sc->sc_lock));
 	KASSERT(sc->sc_exlock);
 
+	// 再生か録音の一方だけ設定する場合であっても、
+	// 再生も録音も誰もいない状態でなければいけない。
+	if (sc->sc_popens + sc->sc_ropens > 0)
+		return EBUSY;
+
+	if (!SPECIFIED(ai->mode) || ai->mode == 0)
+		return ENOTTY;
+
 	// ai.mode は PLAY か RECORD のビットが立っているかどうかだけ。
 	// 上書きするのは channels/sample_rate だけでいい。
-	mode = 0;
-	modemask = 0;
-	if (sc->sc_pmixer) {
+	mode = ai->mode;
+	if ((mode & AUMODE_PLAY)) {
 		phwfmt = sc->sc_pmixer->track_fmt;
-		modemask |= AUMODE_PLAY;
-		if ((ai->mode & AUMODE_PLAY)) {
-			mode |= AUMODE_PLAY;
-			phwfmt.channels    = ai->play.channels;
+		if (SPECIFIED(ai->play.channels))
+			phwfmt.channels = ai->play.channels;
+		if (SPECIFIED(ai->play.sample_rate))
 			phwfmt.sample_rate = ai->play.sample_rate;
-		}
-		DPRINTF(1, "%s: play=%s/%d/%d/%dch/%dHz\n", __func__,
-		    audio_encoding_name(phwfmt.encoding),
-		    phwfmt.precision,
-		    phwfmt.stride,
-		    phwfmt.channels,
-		    phwfmt.sample_rate);
 	}
-	if (sc->sc_rmixer) {
+	if ((mode & AUMODE_RECORD)) {
 		rhwfmt = sc->sc_rmixer->track_fmt;
-		modemask |= AUMODE_RECORD;
-		if ((ai->mode & AUMODE_RECORD) != 0) {
-			mode |= AUMODE_RECORD;
-			rhwfmt.channels    = ai->record.channels;
+		if (SPECIFIED(ai->record.channels))
+			rhwfmt.channels = ai->record.channels;
+		if (SPECIFIED(ai->record.sample_rate))
 			rhwfmt.sample_rate = ai->record.sample_rate;
-		}
-		DPRINTF(1, "%s: rec= %s/%d/%d/%dch/%dHz\n", __func__,
-		    audio_encoding_name(phwfmt.encoding),
-		    phwfmt.precision,
-		    phwfmt.stride,
-		    phwfmt.channels,
-		    phwfmt.sample_rate);
 	}
-	if (mode == 0)
-		return ENOTTY;
 
 	// 非independent デバイスなら、両方を常に同じにする。
 	// なんとなく再生側の情報を優先してみる。
-	indep = (audio_get_props(sc) & AUDIO_PROP_INDEPENDENT);
-	if (!indep) {
+	props = audio_get_props(sc);
+	if ((props & AUDIO_PROP_INDEPENDENT) == 0) {
 		if (mode == AUMODE_RECORD) {
 			phwfmt = rhwfmt;
 		} else {
@@ -6815,8 +6793,28 @@ audio_mixers_set_format(struct audio_softc *sc, struct audio_info *ai)
 	}
 
 	// その上で HW に存在しない方向は落としておかないといけない
-	mode &= modemask;
-	DPRINTF(1, "%s: mode=%d\n", __func__, mode);
+	if ((props & AUDIO_PROP_PLAYBACK) == 0)
+		mode &= ~AUMODE_PLAY;
+	if ((props & AUDIO_PROP_CAPTURE) == 0)
+		mode &= ~AUMODE_RECORD;
+
+	/* debug */
+	if ((mode & AUMODE_PLAY)) {
+		DPRINTF(1, "%s: play=%s/%d/%d/%dch/%dHz\n", __func__,
+		    audio_encoding_name(phwfmt.encoding),
+		    phwfmt.precision,
+		    phwfmt.stride,
+		    phwfmt.channels,
+		    phwfmt.sample_rate);
+	}
+	if ((mode & AUMODE_RECORD)) {
+		DPRINTF(1, "%s: rec =%s/%d/%d/%dch/%dHz\n", __func__,
+		    audio_encoding_name(rhwfmt.encoding),
+		    rhwfmt.precision,
+		    rhwfmt.stride,
+		    rhwfmt.channels,
+		    rhwfmt.sample_rate);
+	}
 
 	/* Check */
 	// query_format があればそれを使って検証。
@@ -6824,18 +6822,16 @@ audio_mixers_set_format(struct audio_softc *sc, struct audio_info *ai)
 	// 前者の場合、次の hw_set_params の中の set_params では渡された
 	// フォーマットのチェックは不要。
 	if ((mode & AUMODE_PLAY)) {
-		if (audio_hw_validate_format(sc, AUMODE_PLAY, &phwfmt))
+		if (audio_hw_validate_format(sc, AUMODE_PLAY, &phwfmt)) {
+			DPRINTF(1, "%s: invalid format\n", __func__);
 			return EINVAL;
+		}
 	}
 	if ((mode & AUMODE_RECORD)) {
-		if (audio_hw_validate_format(sc, AUMODE_RECORD, &rhwfmt))
+		if (audio_hw_validate_format(sc, AUMODE_RECORD, &rhwfmt)) {
+			DPRINTF(1, "%s: invalid format\n", __func__);
 			return EINVAL;
-	}
-
-	// 再生か録音の一方だけ設定する場合であっても、
-	// 再生も録音も誰もいない状態でなければいけない。
-	if (sc->sc_popens + sc->sc_ropens > 0) {
-		return EBUSY;
+		}
 	}
 
 	memset(&pfil, 0, sizeof(pfil));
@@ -6846,6 +6842,36 @@ audio_mixers_set_format(struct audio_softc *sc, struct audio_info *ai)
 
 	audio_mixers_init(sc, mode, &phwfmt, &rhwfmt, &pfil, &rfil);
 	return 0;
+}
+
+/*
+ * Store current mixers format into *ai.
+ */
+static void
+audio_mixers_get_format(struct audio_softc *sc, struct audio_info *ai)
+{
+	/*
+	 * There is no stride information in audio_info but it doesn't matter.
+	 * trackmixer always treats stride and precision as the same.
+	 */
+	AUDIO_INITINFO(ai);
+	ai->mode = 0;
+	if (sc->sc_pmixer) {
+		audio_format2_t *fmt = &sc->sc_pmixer->track_fmt;
+		ai->play.encoding    = fmt->encoding;
+		ai->play.precision   = fmt->precision;
+		ai->play.channels    = fmt->channels;
+		ai->play.sample_rate = fmt->sample_rate;
+		ai->mode |= AUMODE_PLAY;
+	}
+	if (sc->sc_rmixer) {
+		audio_format2_t *fmt = &sc->sc_rmixer->track_fmt;
+		ai->record.encoding    = fmt->encoding;
+		ai->record.precision   = fmt->precision;
+		ai->record.channels    = fmt->channels;
+		ai->record.sample_rate = fmt->sample_rate;
+		ai->mode |= AUMODE_RECORD;
+	}
 }
 
 // audioinfo の各パラメータについて。
