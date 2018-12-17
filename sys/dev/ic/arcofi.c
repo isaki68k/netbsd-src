@@ -263,6 +263,14 @@ static const struct audio_hw_if arcofi_hw_if = {
 };
 
 static const struct audio_format arcofi_formats[] = {
+#if defined(AUDIO2)
+	/*
+	 * HW supports 8bit u-Law, 8bit A-Law and 16bit slinear_be.
+	 * AUDIO2 prefers 8bit u-Law.
+	 */
+	{ NULL, AUMODE_PLAY | AUMODE_RECORD, AUDIO_ENCODING_ULAW, 8, 8,
+	  1, AUFMT_MONAURAL, 1, { 8000 } },
+#else
 	/*
 	 * 8-bit encodings:
 	 *  - u-Law and A-Law are native
@@ -279,6 +287,7 @@ static const struct audio_format arcofi_formats[] = {
 	 */
 	{NULL, AUMODE_PLAY | AUMODE_RECORD, AUDIO_ENCODING_SLINEAR_BE, 16, 16,
 	 1, AUFMT_MONAURAL, 1, {8000}},
+#endif
 };
 #define ARCOFI_NFORMATS  __arraycount(arcofi_formats)
 
@@ -403,10 +412,26 @@ arcofi_set_format(void *handle, int setmode,
 		    audio_encoding_name(rec->encoding));
 	}
 
+	if ((setmode & AUMODE_PLAY)) {
+		pfil->param = *play;
+		pfil->param.encoding = AUDIO_ENCODING_ULAW;
+		pfil->param.validbits = 8;
+		pfil->param.precision = 8;
+		pfil->codec = audio_internal_to_mulaw;
+	}
+	if ((setmode & AUMODE_RECORD)) {
+		rfil->param = *rec;
+		rfil->param.encoding = AUDIO_ENCODING_ULAW;
+		rfil->param.validbits = 8;
+		rfil->param.precision = 8;
+		rfil->codec = audio_mulaw_to_internal;
+	}
+
 	sc = handle;
 	sc->sc_shadow.cr3 =
 	    (sc->sc_shadow.cr3 & ~CR3_OPMODE_MASK) |
-	    CR3_OPMODE_LINEAR;
+	    CR3_OPMODE_NORMAL;
+	sc->sc_shadow.cr4 |= CR4_ULAW;
 
 	return 0;
 }
