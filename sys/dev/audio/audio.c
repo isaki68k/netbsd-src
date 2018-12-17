@@ -925,10 +925,11 @@ audioattach(device_t parent, device_t self, void *aux)
 		goto bad;
 	}
 
-	/* init track mixer */
-	mode = audio_mixers_init(sc, mode, &phwfmt, &rhwfmt, &pfil, &rfil);
+	// アタッチ時点では少なくとも片方生きていれば成功とする。
+	/* Init track mixer. */
+	error = audio_mixers_init(sc, mode, &phwfmt, &rhwfmt, &pfil, &rfil);
 	mutex_exit(sc->sc_lock);
-	if (mode == 0)
+	if (sc->sc_pmixer == NULL && sc->sc_rmixer == NULL)
 		goto bad;
 
 	// 途中でミキサーがクローズされてしまうケースを考えると
@@ -6300,10 +6301,12 @@ audio_check_params2(audio_format2_t *f2)
 // 引数 mode の AUMODE_{PLAY,RECORD} のうち立っている方を初期化する。
 // phwfmt, rhwfmt は HW フォーマット、pfil, rfil はフィルタ登録情報である。
 // phwfmt, rhwfmt, pfil, rfil は NULL であってはならない。
-// 戻り値は mode のうち初期化が成功したものの OR を返す。
+// 成功すれば 0、失敗すれば errno を返す。
+// どちらのミキサーの初期化に成功したかは sc_[pr]mixer != NULL で判断すること。
 // この関数は再生か録音トラックがいずれかでも存在する時は呼び出しては
 // ならない。
 // sc_lock でコールすること。
+// XXX sc_exlock もあったほうがいいような。
 static int
 audio_mixers_init(struct audio_softc *sc, int mode,
 	const audio_format2_t *phwfmt, const audio_format2_t *rhwfmt,
@@ -6317,6 +6320,7 @@ audio_mixers_init(struct audio_softc *sc, int mode,
 	KASSERT(rhwfmt != NULL);
 	KASSERT(pfil != NULL);
 	KASSERT(rfil != NULL);
+	KASSERT(mutex_owned(sc->sc_lock));
 
 	if ((mode & AUMODE_PLAY)) {
 		if (sc->sc_pmixer) {
@@ -6348,7 +6352,7 @@ audio_mixers_init(struct audio_softc *sc, int mode,
 			    "configuring playback mode failed\n");
 			kmem_free(sc->sc_pmixer, sizeof(*sc->sc_pmixer));
 			sc->sc_pmixer = NULL;
-			mode &= ~AUMODE_PLAY;
+			return error;
 		}
 	}
 	if ((mode & AUMODE_RECORD)) {
@@ -6381,11 +6385,11 @@ audio_mixers_init(struct audio_softc *sc, int mode,
 			    "configuring record mode failed\n");
 			kmem_free(sc->sc_rmixer, sizeof(*sc->sc_rmixer));
 			sc->sc_rmixer = NULL;
-			mode &= ~AUMODE_RECORD;
+			return error;
 		}
 	}
 
-	return mode;
+	return 0;
 }
 
 // 周波数を選択する。
@@ -6735,9 +6739,13 @@ audio_hw_validate_format(struct audio_softc *sc, int mode,
 }
 
 // ai->mode で示される側のミキサのフォーマットをセットする。
-// 使用するのは ai->{play,record}.{channels,sample_rate} のみ。
-// 設定を変更しない側の値は -1 のままにしておくこと。
-// 成功すれば 0、失敗すれば errno を返す。失敗してもロールバックはしない。
+// ai->mode に AUMODE_PLAY が立っていれば
+// 再生ミキサーを ai->play->{channels, sample_rate} で設定する。
+// ai->mode に AUMODE_RECORD が立っていれば
+// 録音ミキサーを ai->record->{channels, sample_rate} で設定する。
+// ai のそれ以外のパラメータは無視する。
+// 成功すれば 0、一つでも失敗すれば errno を返す。
+// 失敗してもロールバックはしない。
 // sc_lock && sc_exlock でコールすること。
 static int
 audio_mixers_set_format(struct audio_softc *sc, const struct audio_info *ai)
@@ -6765,18 +6773,18 @@ audio_mixers_set_format(struct audio_softc *sc, const struct audio_info *ai)
 	// 上書きするのは channels/sample_rate だけでいい。
 	mode = ai->mode;
 	if ((mode & AUMODE_PLAY)) {
-		phwfmt = sc->sc_pmixer->track_fmt;
-		if (SPECIFIED(ai->play.channels))
-			phwfmt.channels = ai->play.channels;
-		if (SPECIFIED(ai->play.sample_rate))
-			phwfmt.sample_rate = ai->play.sample_rate;
+		phwfmt.encoding    = AUDIO_ENCODING_SLINEAR_NE;
+		phwfmt.precision   = AUDIO_INTERNAL_BITS;
+		phwfmt.stride      = AUDIO_INTERNAL_BITS;
+		phwfmt.channels    = ai->play.channels;
+		phwfmt.sample_rate = ai->play.sample_rate;
 	}
 	if ((mode & AUMODE_RECORD)) {
-		rhwfmt = sc->sc_rmixer->track_fmt;
-		if (SPECIFIED(ai->record.channels))
-			rhwfmt.channels = ai->record.channels;
-		if (SPECIFIED(ai->record.sample_rate))
-			rhwfmt.sample_rate = ai->record.sample_rate;
+		rhwfmt.encoding    = AUDIO_ENCODING_SLINEAR_NE;
+		rhwfmt.precision   = AUDIO_INTERNAL_BITS;
+		rhwfmt.stride      = AUDIO_INTERNAL_BITS;
+		rhwfmt.channels    = ai->record.channels;
+		rhwfmt.sample_rate = ai->record.sample_rate;
 	}
 
 	// 非independent デバイスなら、両方を常に同じにする。
@@ -6840,7 +6848,10 @@ audio_mixers_set_format(struct audio_softc *sc, const struct audio_info *ai)
 	if (error)
 		return error;
 
-	audio_mixers_init(sc, mode, &phwfmt, &rhwfmt, &pfil, &rfil);
+	error = audio_mixers_init(sc, mode, &phwfmt, &rhwfmt, &pfil, &rfil);
+	if (error)
+		return error;
+
 	return 0;
 }
 
@@ -7893,7 +7904,6 @@ audio_sysctl_blk_ms(SYSCTLFN_ARGS)
 	int t;
 	int old_blk_ms;
 	int mode;
-	int r;
 	int error;
 
 	node = *rnode;
@@ -7938,10 +7948,8 @@ audio_sysctl_blk_ms(SYSCTLFN_ARGS)
 	}
 
 	/* re-init track mixer */
-	r = audio_mixers_init(sc, mode, &phwfmt, &rhwfmt, &pfil, &rfil);
-	if (r != mode) {
-		error = EINVAL;
-
+	error = audio_mixers_init(sc, mode, &phwfmt, &rhwfmt, &pfil, &rfil);
+	if (error) {
 		/* Rollback */
 		sc->sc_blk_ms = old_blk_ms;
 		audio_mixers_init(sc, mode, &phwfmt, &rhwfmt, &pfil, &rfil);
