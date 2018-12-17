@@ -6337,8 +6337,7 @@ audio_mixers_init(struct audio_softc *sc, int mode,
 			aprint_normal_dev(sc->dev,
 			    "%s, blk %dms for playback\n",
 			    fmtstr, blkms);
-#ifdef AUDIO_DEBUG
-			if (sc->sc_pmixer->codec && audiodebug >= 1) {
+			if (sc->sc_pmixer->codec) {
 				DPRINTF(1, "%s: codec %p -> %s %dbit\n",
 				    device_xname(sc->dev),
 				    sc->sc_pmixer->codec,
@@ -6346,7 +6345,6 @@ audio_mixers_init(struct audio_softc *sc, int mode,
 				        sc->sc_pmixer->hwbuf.fmt.encoding),
 				    sc->sc_pmixer->hwbuf.fmt.precision);
 			}
-#endif
 		} else {
 			aprint_error_dev(sc->dev,
 			    "configuring playback mode failed\n");
@@ -6370,8 +6368,7 @@ audio_mixers_init(struct audio_softc *sc, int mode,
 			aprint_normal_dev(sc->dev,
 			    "%s, blk %dms for recording\n",
 			    fmtstr, blkms);
-#ifdef AUDIO_DEBUG
-			if (sc->sc_rmixer->codec && audiodebug >= 1) {
+			if (sc->sc_rmixer->codec) {
 				DPRINTF(1, "%s: codec %p <- %s %dbit\n",
 				    device_xname(sc->dev),
 				    sc->sc_rmixer->codec,
@@ -6379,7 +6376,6 @@ audio_mixers_init(struct audio_softc *sc, int mode,
 				        sc->sc_rmixer->hwbuf.fmt.encoding),
 				    sc->sc_rmixer->hwbuf.fmt.precision);
 			}
-#endif
 		} else {
 			aprint_error_dev(sc->dev,
 			    "configuring record mode failed\n");
