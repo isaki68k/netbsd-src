@@ -8209,6 +8209,7 @@ mixer_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 
 /*
  * Remove a process from those to be signalled on mixer activity.
+ * Must be called with sc_lock held.
  */
 static void
 mixer_remove(struct audio_softc *sc)
@@ -8231,6 +8232,7 @@ mixer_remove(struct audio_softc *sc)
 
 /*
  * Signal all processes waiting for the mixer.
+ * Must be called with sc_lock held.
  */
 static void
 mixer_signal(struct audio_softc *sc)

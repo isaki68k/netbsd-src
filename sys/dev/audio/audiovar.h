@@ -196,10 +196,14 @@ struct audio_softc {
 	void *sc_sih_wr;
 	void *sc_sih_rd;
 
+	/*
+	 * processes who want mixer SIGIO.
+	 * Must be protected by sc_lock.
+	 */
 	struct	mixer_asyncs {
 		struct mixer_asyncs *next;
 		pid_t	pid;
-	} *sc_async_mixer;  /* processes who want mixer SIGIO */
+	} *sc_async_mixer;
 
 	/*
 	 * Thread lock and interrupt lock obtained by get_locks().
