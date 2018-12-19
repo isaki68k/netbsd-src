@@ -2607,7 +2607,7 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 	case FIONREAD:
 		/* Get the number of bytes that can be read. */
 		if (file->rtrack) {
-			*(int *)addr = file->rtrack->usrbuf.used;
+			*(int *)addr = audio_track_readablebytes(file->rtrack);
 		} else {
 			*(int *)addr = 0;
 		}
