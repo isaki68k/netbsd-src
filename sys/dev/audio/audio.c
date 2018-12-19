@@ -8295,8 +8295,6 @@ mixer_ioctl(struct audio_softc *sc, u_long cmd, void *addr, int flag,
 	DPRINTF(2, "mixer_ioctl(%lu,'%c',%lu)\n",
 		 IOCPARM_LEN(cmd), (char)IOCGROUP(cmd), cmd&0xff);
 	hw = sc->hw_if;
-	if (hw == NULL)
-		return ENXIO;
 	error = EINVAL;
 
 	/* we can return cached values if we are sleeping */
