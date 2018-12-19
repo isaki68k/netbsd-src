@@ -215,6 +215,9 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include "ioconf.h"
 #endif /* _KERNEL */
 
+// softint でミキシングする版。
+//#define AUDIO_SOFTINT
+
 // 再生終了後にログを出す。
 // ただしデバイス間の分離はしていないので一時的な確認用。
 //#define LAZYLOG 1
@@ -5620,7 +5623,17 @@ audio_pintr(void *arg)
 	return;
 #endif
 
-#if defined(AUDIO_HW_SINGLE_BUFFER)
+#if defined(AUDIO_SOFTINT)
+	// ミキシングはソフトウェア割り込みに任せる。
+	// ただしソフトウェア割り込みがハードウェア割り込みまでに
+	// 駆動されなかったら仕方ないのでここで作る。
+	if (mixer->hwbuf.used < mixer->frames_per_block) {
+		audio_pmixer_process(sc, true);
+		sc->pmixed = false;
+	}
+	audio_pmixer_output(sc);
+
+#elif defined(AUDIO_HW_SINGLE_BUFFER)
 	// その場で次のブロックを作成して再生
 	// レイテンシは下げられるが、マシンパワーがないと再生が途切れる。
 
@@ -5629,6 +5642,7 @@ audio_pintr(void *arg)
 
 	// 出力
 	audio_pmixer_output(sc);
+
 #else
 	// ブロック0 の出力が終わったら用意されているはずのブロック1 を
 	// すぐに出力しておいて、その後ブロック2 の作成に取りかかる。
@@ -6130,6 +6144,11 @@ audio_softintr_wr(void *cookie)
 
 	mutex_enter(sc->sc_lock);
 	mutex_enter(sc->sc_intr_lock);
+
+#if defined(AUDIO_SOFTINT)
+	audio_pmixer_process(sc, sc->pmixed);
+	sc->pmixed = true;
+#endif
 
 	SLIST_FOREACH(f, &sc->sc_files, entry) {
 		audio_track_t *track = f->ptrack;
