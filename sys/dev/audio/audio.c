@@ -348,12 +348,12 @@ audio_tracef(const char *funcname, audio_file_t *file, const char *fmt, ...)
 }
 
 struct audio_track_debugbuf {
-	char outbuf[32];
-	char freq[32];
+	char usrbuf[32];
+	char codec[32];
 	char chvol[32];
 	char chmix[32];
-	char codec[32];
-	char usrbuf[32];
+	char freq[32];
+	char outbuf[32];
 };
 
 // track の各バッファの状態を buf に出力する。
