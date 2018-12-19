@@ -2194,30 +2194,6 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
 	    "sc->sc_popens=%d, sc->sc_ropens=%d",
 	    sc->sc_popens, sc->sc_ropens);
 
-	// SB とかいくつかのドライバは halt_input と halt_output に
-	// 同じルーチンを使用しているので、その場合は full duplex なら
-	// halt_input を呼ばなくする?。ドライバのほうを直すべき。
-	/*
-	 * XXX Some drivers (e.g. SB) use the same routine
-	 * to halt input and output so don't halt input if
-	 * in full duplex mode.  These drivers should be fixed.
-	 */
-	// XXX これはドライバのほうを先に直せば済む話
-	if ((file->ptrack != NULL && file->rtrack != NULL) &&
-	    (audio_get_props(sc) & AUDIO_PROP_FULLDUPLEX) == 0 &&
-	    sc->hw_if->halt_input == sc->hw_if->halt_output &&
-	    sc->sc_ropens == 1) {
-		aprint_error_dev(sc->dev,
-		    "%s has halt_input == halt_output. Please fix it\n",
-		    device_xname(sc->sc_dev));
-		// そうは言いつつもとりあえず回避はしておく
-		sc->sc_rbusy = false;
-		// XXX これいるのかな?
-		mutex_enter(sc->sc_intr_lock);
-		sc->sc_rmixer->hwbuf.head = 0;
-		mutex_exit(sc->sc_intr_lock);
-	}
-
 	if (file->rtrack) {
 		/* Call hw halt_input if this is the last recording track. */
 		if (sc->sc_ropens == 1) {
