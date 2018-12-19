@@ -8287,14 +8287,12 @@ int
 mixer_ioctl(struct audio_softc *sc, u_long cmd, void *addr, int flag,
 	struct lwp *l)
 {
-	const struct audio_hw_if *hw;
 	struct mixer_asyncs *ma;
 	mixer_ctrl_t *mc;
 	int error;
 
 	DPRINTF(2, "mixer_ioctl(%lu,'%c',%lu)\n",
 		 IOCPARM_LEN(cmd), (char)IOCGROUP(cmd), cmd&0xff);
-	hw = sc->hw_if;
 	error = EINVAL;
 
 	/* we can return cached values if we are sleeping */
@@ -8319,7 +8317,7 @@ mixer_ioctl(struct audio_softc *sc, u_long cmd, void *addr, int flag,
 
 	case AUDIO_GETDEV:
 		DPRINTF(2, "AUDIO_GETDEV\n");
-		error = hw->getdev(sc->hw_hdl, (audio_device_t *)addr);
+		error = sc->hw_if->getdev(sc->hw_hdl, (audio_device_t *)addr);
 		break;
 
 	case AUDIO_MIXER_DEVINFO:
@@ -8347,15 +8345,16 @@ mixer_ioctl(struct audio_softc *sc, u_long cmd, void *addr, int flag,
 	case AUDIO_MIXER_WRITE:
 		DPRINTF(2, "AUDIO_MIXER_WRITE\n");
 		error = audio_set_port(sc, (mixer_ctrl_t *)addr);
-		if (!error && hw->commit_settings)
-			error = hw->commit_settings(sc->hw_hdl);
+		if (!error && sc->hw_if->commit_settings)
+			error = sc->hw_if->commit_settings(sc->hw_hdl);
 		if (!error)
 			mixer_signal(sc);
 		break;
 
 	default:
-		if (hw->dev_ioctl) {
-			error = hw->dev_ioctl(sc->hw_hdl, cmd, addr, flag, l);
+		if (sc->hw_if->dev_ioctl) {
+			error = sc->hw_if->dev_ioctl(sc->hw_hdl,
+			    cmd, addr, flag, l);
 		} else
 			error = EINVAL;
 		break;
