@@ -2148,8 +2148,10 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	TRACEF(af, "done");
 	return error;
 
-	// ここの track は sc_files につながっていないので、
-	// intr_lock とらずに track_destroy() を呼んでいいはず。
+	/*
+	 * Since track here is not yet linked from sc_files,
+	 * you can call track_destroy() without sc_intr_lock.
+	 */
 bad4:
 	if (sc->sc_popens + sc->sc_ropens == 0) {
 		if (sc->hw_if->close) {
@@ -2327,7 +2329,9 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 	usrbuf = &track->usrbuf;
 	input = track->input;
 
-	// ミキサは一人目の最初の read で必ず動かす
+	/*
+	 * The first read starts rmixer.
+	 */
 	error = audio_enter_exclusive(sc);
 	if (error)
 		return error;
@@ -2467,7 +2471,9 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 	outbuf = &track->outbuf;
 	TRACET(track, "resid=%zd", uio->uio_resid);
 
-	// ミキサは一人目の最初の write で必ず動かす
+	/*
+	 * The first write starts pmixer.
+	 */
 	error = audio_enter_exclusive(sc);
 	if (error)
 		goto abort;
@@ -2599,8 +2605,7 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		break;
 
 	case FIONREAD:
-		// 入力バッファにあるバイト数
-		// XXX 動作未確認
+		/* Get the number of bytes that can be read. */
 		if (file->rtrack) {
 			*(int *)addr = file->rtrack->usrbuf.used;
 		} else {
@@ -2609,6 +2614,7 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		break;
 
 	case FIOASYNC:
+		/* Set/Clear ASYNC I/O. */
 		if (*(int *)addr) {
 			file->async_audio = curproc->p_pid;
 			DPRINTF(2, "%s: FIOASYNC pid %d\n", __func__,
@@ -4952,18 +4958,18 @@ audio_mixer_calc_blktime(struct audio_softc *sc, audio_trackmixer_t *mixer)
 	return blktime;
 }
 
-// ミキサを初期化する。
-// mixer はゼロフィルされているものとする。
+// mode に対応するミキサを初期化する。
+// mode に対応した sc->sc_[pr]mixer はゼロフィルされているものとする。
 // mode は再生なら AUMODE_PLAY、録音なら AUMODE_RECORD を指定する。
 // hwfmt は HW フォーマット、reg はフィルタ登録情報である。
 // hwfmt、reg は NULL であってはならない。
 // 成功すれば 0、失敗すれば errno を返す。
 // sc_lock でコールすること。
 /*
- * Initialize the mixer.
+ * Initialize the mixer corresponding to the mode.
+ * Set AUMODE_PLAY to the 'mode' for playback or AUMODE_RECORD for recording.
+ * sc->sc_[pr]mixer (corresponding to the 'mode') must be zero-filled.
  * This function returns 0 on sucessful.  Otherwise returns errno.
- * 'mixer' must be zero-filled.
- * For 'mode', specify AUMODE_PLAY for playback, AUMODE_RECORD for record.
  * Must be called with sc_lock held.
  */
 static int
@@ -5124,7 +5130,7 @@ abort:
 // ミキサを終了しリソースを解放する。
 // mixer 自身のメモリは解放しない。
 /*
- * Release all resources of 'mixer'.
+ * Releases all resources of 'mixer'.
  * Note that it does not release the memory area of 'mixer' itself.
  */
 static void
@@ -5235,7 +5241,7 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
 // false ならプロセスコンテキストからの呼び出しを示す。
 // sc_intr_lock で呼び出すこと。
 /*
- * Perform mixing and convert it to hwbuf.
+ * Performs mixing and converts it to hwbuf.
  * Note that this function doesn't transfer from hwbuf to HW.
  * If 'isintr' is true, it indicates a call from the interrupt context.
  * If false, it indicates a call from process context.
@@ -5881,7 +5887,7 @@ audio_rintr(void *arg)
 // 関連するパラメータもクリアするため、基本的には halt_output を
 // 直接呼び出すのではなく、こちらを呼ぶこと。
 /*
- * Halt playback mixer if running.
+ * Halts playback mixer if running.
  * This function also clears related parameters, so call this function
  * instead of calling halt_output directly.
  * Must be called with sc_intr_lock held.
@@ -5899,7 +5905,7 @@ audio_pmixer_halt(struct audio_softc *sc)
 	error = 0;
 	if (sc->sc_pbusy) {
 		error = sc->hw_if->halt_output(sc->hw_hdl);
-		// エラーが起きても停止は停止する
+		/* Halts anyway even if some error has occurred. */
 		sc->sc_pbusy = false;
 		sc->sc_pmixer->hwbuf.head = 0;
 		sc->sc_pmixer->hwbuf.used = 0;
@@ -5914,7 +5920,7 @@ audio_pmixer_halt(struct audio_softc *sc)
 // 関連するパラメータもクリアするため、基本的には halt_input を
 // 直接呼び出すのではなく、こちらを呼ぶこと。
 /*
- * Halt recording mixer if running.
+ * Halts recording mixer if running.
  * This function also clears related parameters, so call this function
  * instead of calling halt_input directly.
  * Must be called with sc_intr_lock held.
@@ -5932,7 +5938,7 @@ audio_rmixer_halt(struct audio_softc *sc)
 	error = 0;
 	if (sc->sc_rbusy) {
 		error = sc->hw_if->halt_input(sc->hw_hdl);
-		// エラーが起きても停止は停止する
+		/* Halts anyway even if some error has occurred. */
 		sc->sc_rbusy = false;
 		sc->sc_rmixer->hwbuf.head = 0;
 		sc->sc_rmixer->hwbuf.used = 0;
@@ -6857,78 +6863,97 @@ audio_mixers_get_format(struct audio_softc *sc, struct audio_info *ai)
 	}
 }
 
-// audioinfo の各パラメータについて。
-//
-// ai.{play,record}.sample_rate		(R/W)
-// ai.{play,record}.encoding		(R/W)
-// ai.{play,record}.precision		(R/W)
-// ai.{play,record}.channels		(R/W)
+/*
+ * About audio_info's parameters:
+ *
+ * ai.{play,record}.sample_rate		(R/W)
+ * ai.{play,record}.encoding		(R/W)
+ * ai.{play,record}.precision		(R/W)
+ * ai.{play,record}.channels		(R/W)
+ *	These specify the playback or recording format.
+ *	Ignore members of an inactive track.
 //	再生/録音フォーマット。
 //	現在有効でないトラック側は無視する。
-//
-// ai.mode				(R/W)
+ *
+ * ai.mode				(R/W)
+ *	It specifies the playback or recording mode, AUMODE_*.
+ *	In AUDIO2, mode change by by ai.mode after opening is prohibited.
+ *	In AUDIO2, AUMODE_PLAY_ALL no longer makes sense.  However, it's
+ *	possible to get or to set for backward compatibility.
 //	再生/録音モード。AUMODE_*
-//	N8 以前では ai.mode = PLAY だったところに ai.mode = RECORD とか
-//	指定するとおそらく不定。
 //	AUDIO2 では ai.mode でのオープン後のモード変更は不可とした。
-//
-// ai.{hiwat,lowat}			(R/W)
+//	AUDIO2 では AUMODE_PLAY_ALL はもはや意味を持たないが、後方互換のため
+//	指定・取得は行える。
+ *
+ * ai.{hiwat,lowat}			(R/W)
+ *	These specify the high water mark and low water mark for playback
+ *	track.  The unit is block.
 //	再生トラックの hiwat/lowat。単位はブロック。
-//
-// ai.{play,record}.gain		(R/W)
+ *
+ * ai.{play,record}.gain		(R/W)
+ *	It specifies the HW mixer volume in 0-255.
+ *	It is historical reason that the gain is connected to HW mixer.
 //	ボリューム。0-255。
 //	N7 以前は HW ミキサのボリュームと連動していた。
 //	N8 はこれをソフトウェアボリュームにしようとしてバグっている。
 //	理想的にはソフトウェアボリュームでもいいような気がするが。
-//
-// ai.{play,record}.balance		(R/W)
+ *
+ * ai.{play,record}.balance		(R/W)
+ *	It specifies the left-right balance of HW mixer in 0-64.
+ *	32 means the center.
+ *	It is historical reason that the balance is connected to HW mixer.
 //	左右バランス。0-64。32 が中心。
 //	N7 以前は gain と balance をセットで扱うようなインタフェースだったが
 //	N8 ではバランスは HW ミキサーに任せたまま。
 //	理想的にはソフトウェアバランスでもいいような気がするが。
-//
-// ai.{play,record}.port		(R/W)
+ *
+ * ai.{play,record}.port		(R/W)
+ *	It specifies the input/output port of HW mixer.
 //	入出力ポート。これは HW ミキサー情報。
-//
-// ai.monitor_gain			(R/W)
+ *
+ * ai.monitor_gain			(R/W)
+ *	It specifies the recording monitor gain(?) of HW mixer.
 //	録音モニターゲイン(?)。これは HW ミキサー情報。
-//
-// ai.{play,record}.pause		(R/W)
+ *
+ * ai.{play,record}.pause		(R/W)
+ *	Non-zero means the track is paused.
 //	トラックの一時停止なら non-zero。
-//
-// ai.{play,record}.seek		(R/-)
+ *
+ * ai.{play,record}.seek		(R/-)
 //	バッファ上のポインタ位置。usrbuf にすべか。
-//
-// ai.{play,record}.avail_ports		(R/-)
+ *
+ * ai.{play,record}.avail_ports		(R/-)
 //	これは HW ミキサー情報。
-//
-// ai.{play,record}.buffer_size		(R/-)
+ *
+ * ai.{play,record}.buffer_size		(R/-)
+ *	The buffer size in bytes.  Internally it means usrbuf.
 //	バッファサイズ[byte]。usrbuf をさすのでいいか。
-//
-// ai.{play,record}.samples		(R/-)
+ *
+ * ai.{play,record}.samples		(R/-)
 //	usrbuf に受け取った / usrbuf から引き渡したサンプル数。
 //	サンプル数と言っているがこれはバイト数のこと。
-//
-// ai.{play,record}.eof			(R/-)
+ *
+ * ai.{play,record}.eof			(R/-)
+ *	Number of times reached EOF(?).
 //	EOF に到達した回数?
-//
-// ai.{play,record}.error		(R/-)
+ *
+ * ai.{play,record}.error		(R/-)
 //	アンダーフロー/オーバーフローの起きたら non-zero。
-//
-// ai.{play,record}.waiting		(R/-)
+ *
+ * ai.{play,record}.waiting		(R/-)
 //	他のプロセスが open 待ちしていれば non-zero。
 //	今は起きないので常にゼロ。
-//
-// ai.{play,record}.open		(R/-)
+ *
+ * ai.{play,record}.open		(R/-)
 //	オープンされていれば non-zero。
-//
-// ai.{play,record}.active		(R/-)
+ *
+ * ai.{play,record}.active		(R/-)
 //	IO がアクティブなら non-zero。
-//
-// ai.blocksize				(R/-)
+ *
+ * ai.blocksize				(R/-)
 //	audioio.h には HW ブロックサイズとコメントがあるが、
 //	今は usrbuf の1ブロックサイズ[byte]にしたほうがよさげ。
-//
+ */
 
 //	+----------------------------- HW 停止を必要とするか(set_port等)
 //	|	+--------------------- 現在の mixer の状態(stop/run)
