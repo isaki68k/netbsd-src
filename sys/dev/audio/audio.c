@@ -4206,7 +4206,7 @@ abort:
  *                v
  *               read
  *
- *    *: recoding usrbuf is also mmap-able due to symmetry with playback
+ *    *: recording usrbuf is also mmap-able due to symmetry with playback
  *       but for now it will not be mmapped.
  */
 
@@ -5712,7 +5712,7 @@ audio_rmixer_start(struct audio_softc *sc)
 
 // 録音できた hwbuf のブロックを全録音トラックへ分配する。
 /*
- * Distribute a recorded block to all recoding tracks.
+ * Distribute a recorded block to all recording tracks.
  */
 static void
 audio_rmixer_process(struct audio_softc *sc)
