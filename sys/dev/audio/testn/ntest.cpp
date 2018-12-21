@@ -3448,8 +3448,112 @@ test_poll_writeIN_1()
 	free(buf);
 }
 
-// kqueue_1 は poll_1 と合わせるため空けておく?
+// openmode と kevent との関係
+void
+test_kqueue_1()
+{
+	struct kevent kev;
+	struct timespec ts;
+	int fd;
+	int kq;
+	int r;
+	struct {
+		int openmode;
+		int filt;
+		// kevent_set は常に成功するので期待値省略
+		int exppoll7;	// kevent_poll の N7/N8 での期待値
+		int exppoll9;	// kevent_poll の AUDIO2 での期待値
+	} table[] = {
+		// open		filt			exp7 9
+		{ O_RDONLY,	EVFILT_READ,	1,	0 },	// まだ起きないはず
+		{ O_RDONLY,	EVFILT_WRITE,	1,	0 },	// 絶対成立しないはず
 
+		{ O_WRONLY,	EVFILT_READ,	0,	0 },	// 絶対成立しない
+		{ O_WRONLY,	EVFILT_WRITE,	1,	1 },	// 書き込み可能
+
+		{ O_RDWR,	EVFILT_READ,	1,	0 },	// まだ起きないはず
+		{ O_RDWR,	EVFILT_WRITE,	1,	1 },	// 書き込み可能
+
+		// Half HW の場合、O_RDWR は O_WRONLY 相当になる
+		{ -O_RDWR,	EVFILT_READ,	0,	0 },	// 絶対成立しない
+		{ -O_RDWR,	EVFILT_WRITE,	1,	1 },	// 書き込み可能
+	};
+
+	ts.tv_sec = 0;
+	ts.tv_nsec = 100 * 1000 * 1000;	// 100msec
+
+	TEST("kqueue_1");
+
+	kq = KQUEUE();
+	XP_SYS_OK(kq);
+	for (int i = 0; i < __arraycount(table); i++) {
+		int openmode = table[i].openmode;
+		int filt = table[i].filt;
+		int exp7 = table[i].exppoll7;
+		int exp9 = table[i].exppoll9;
+
+		if (hwfull) {
+			// HWFull なら O_RDWR のほう
+			if (openmode < 0)
+				continue;
+		} else {
+			// HWHalf なら O_RDWR は負数のほう
+			if (openmode == O_RDWR)
+				continue;
+			if (openmode < 0)
+				openmode = -openmode;
+		}
+
+		DESC("%s,%s", openmodetable[openmode],
+			(filt == EVFILT_READ) ? "EVFILT_READ" : "EVFILT_WRITE");
+
+		fd = OPEN(devaudio, openmode);
+		if (fd == -1)
+			err(1, "open");
+
+		// 指定のフィルタがセットできるか。
+		// フィルタ自体は必ずセットできる。O_WRONLY ディスクリプタに対して
+		// EVFILT_READ を指定しても、セットは出来る (絶対に成立しないはず)。
+		// それでいいのかという話はあるが、とりあえず。
+		EV_SET(&kev, fd, filt, EV_ADD, 0, 0, fd);
+		r = KEVENT_SET(kq, &kev, 1);
+		XP_SYS_EQ(0, r);
+
+		if (r == 0) {
+			// フィルタがセットできたら、ついでなので _poll も試してみる。
+
+			r = KEVENT_POLL(kq, &kev, 1, &ts);
+			if (netbsd <= 8 && exp7 != exp9) {
+				// 実装がめちゃくちゃで常識的に想像される期待値と、
+				// 現物の期待値がまるで違う場所が多い。
+				// 複数のバグにより、成立しないはずなのに成立したことに
+				// なってしまっている。
+				if (r == exp7) {
+					XP_EXPFAIL("kqueue/poll has many bugs");
+				} else {
+					// 既知の状態から変化した?
+					XP_SYS_EQ(exp7, r);
+				}
+			} else {
+				// AUDIO2 では、期待値(というかイメージ)通り。
+				XP_SYS_EQ(exp9, r);
+			}
+
+			// 消しておく
+			EV_SET(&kev, fd, filt, EV_DELETE, 0, 0, fd);
+			r = KEVENT_SET(kq, &kev, 1);
+			XP_SYS_EQ(0, r);
+		}
+
+		r = CLOSE(fd);
+		XP_SYS_EQ(0, r);
+	}
+
+	r = CLOSE(kq);
+	XP_SYS_EQ(0, r);
+}
+
+// kqueue、空でテスト
 void
 test_kqueue_2()
 {
@@ -6343,6 +6447,7 @@ struct testtable testtable[] = {
 	DEF(poll_5),
 	DEF(poll_6),
 	DEF(poll_writeIN_1),
+	DEF(kqueue_1),
 	DEF(kqueue_2),
 	DEF(kqueue_3),
 	DEF(kqueue_4),
