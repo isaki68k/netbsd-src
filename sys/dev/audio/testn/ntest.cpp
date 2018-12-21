@@ -2956,7 +2956,7 @@ test_poll_1()
 		int exp = (exp_revents != 0) ? 1 : 0;
 
 		char evbuf[64];
-		snprintb(evbuf, sizeof(evbuf), 
+		snprintb(evbuf, sizeof(evbuf),
 			"\177\020" \
 		    "b\10WRBAND\0" \
 		    "b\7RDBAND\0" "b\6RDNORM\0" "b\5NVAL\0" "b\4HUP\0" \
