@@ -280,6 +280,12 @@ cv_destroy(kcondvar_t *cv)
 }
 
 static inline void
+cv_signal(kcondvar_t *cv)
+{
+	cv->v = 1;
+}
+
+static inline void
 cv_broadcast(kcondvar_t *cv)
 {
 	cv->v = 1;
@@ -314,6 +320,11 @@ mutex_tryenter(kmutex_t *mutex)
 		mutex_enter(mutex);
 		return 1;
 	}
+}
+
+static inline void
+mutex_destroy(kmutex_t *mutex)
+{
 }
 
 #define M_NOWAIT	(0)

@@ -556,12 +556,15 @@ tagname(uint32_t tag)
 void
 audio_softc_init(const audio_format2_t *phwfmt, const audio_format2_t *rhwfmt)
 {
-	sc->sc_pparams = params_to_format2(&audio_default);
-	sc->sc_rparams = params_to_format2(&audio_default);
+	audio_filter_reg_t pfil, rfil;
+
+	sc->sc_sound_pparams = params_to_format2(&audio_default);
+	sc->sc_sound_rparams = params_to_format2(&audio_default);
 	sc->sc_blk_ms = audio_blk_ms;
 	printf("blk_ms = %d\n", sc->sc_blk_ms);
 
-	audio_mixers_init(sc, AUMODE_PLAY | AUMODE_RECORD, phwfmt, rhwfmt);
+	audio_mixers_init(sc, AUMODE_PLAY | AUMODE_RECORD,
+		phwfmt, rhwfmt, &pfil, &rfil);
 }
 
 audio_file_t *
