@@ -2916,9 +2916,13 @@ filt_audioread_event(struct knote *kn, long hint)
 	file = kn->kn_hook;
 	track = file->rtrack;
 
-	// kn_data は read 可能なバイト数っぽい?
+	/*
+	 * kn_data must contain the number of bytes can be read.
+	 * The return value indicates whether the event occurs or not.
+	 */
 
 	if (track == NULL) {
+		/* can not read with this descriptor. */
 		kn->kn_data = 0;
 		return 0;
 	}
@@ -2958,10 +2962,13 @@ filt_audiowrite_event(struct knote *kn, long hint)
 	file = kn->kn_hook;
 	track = file->ptrack;
 
-	// kn_data には再生バッファの空きバイト数を返す。
-	// 戻り値は非ゼロならイベント達成。
+	/*
+	 * kn_data must contain the number of bytes can be write.
+	 * The return value indicates whether the event occurs or not.
+	 */
 
 	if (track == NULL) {
+		/* can not write with this descriptor. */
 		kn->kn_data = 0;
 		return 0;
 	}
