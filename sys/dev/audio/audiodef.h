@@ -182,6 +182,9 @@ struct audio_trackmixer {
 
 	void		*sih;		/* softint cookie */
 
+	/* Must be protected by sc_lock.  */
+	struct selinfo	selinfo;
+
 	/* Must be protected by sc_lock. */
 	kcondvar_t	outcv;		// I/O ready になったことの通知用
 

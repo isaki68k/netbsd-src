@@ -934,9 +934,6 @@ audioattach(device_t parent, device_t self, void *aux)
 	if (sc->sc_pmixer == NULL && sc->sc_rmixer == NULL)
 		goto bad;
 
-	selinit(&sc->sc_wsel);
-	selinit(&sc->sc_rsel);
-
 	/* Initial parameter of /dev/sound */
 	sc->sc_sound_pparams = params_to_format2(&audio_default);
 	sc->sc_sound_rparams = params_to_format2(&audio_default);
@@ -1271,9 +1268,6 @@ audiodetach(device_t self, int flags)
 		audio_mixer_destroy(sc, sc->sc_rmixer);
 		kmem_free(sc->sc_rmixer, sizeof(*sc->sc_rmixer));
 	}
-
-	seldestroy(&sc->sc_wsel);
-	seldestroy(&sc->sc_rsel);
 
 #ifdef AUDIO_PM_IDLE
 	callout_destroy(&sc->sc_idle_counter);
@@ -2868,11 +2862,13 @@ audio_poll(struct audio_softc *sc, int events, struct lwp *l,
 	if (revents == 0) {
 		if (in_is_valid) {
 			TRACEF(file, "selrecord rsel");
-			selrecord(l, &sc->sc_rsel);
+			KASSERT(sc->sc_rmixer);
+			selrecord(l, &sc->sc_rmixer->selinfo);
 		}
 		if (out_is_valid) {
 			TRACEF(file, "selrecord wsel");
-			selrecord(l, &sc->sc_wsel);
+			KASSERT(sc->sc_pmixer);
+			selrecord(l, &sc->sc_pmixer->selinfo);
 		}
 	}
 
@@ -2897,13 +2893,16 @@ static void
 filt_audioread_detach(struct knote *kn)
 {
 	struct audio_softc *sc;
+	audio_trackmixer_t *mixer;
 	audio_file_t *file;
 
 	file = kn->kn_hook;
 	sc = file->sc;
+	mixer = sc->sc_rmixer;
+	KASSERT(mixer);
 
 	mutex_enter(sc->sc_lock);
-	SLIST_REMOVE(&sc->sc_rsel.sel_klist, kn, knote, kn_selnext);
+	SLIST_REMOVE(&mixer->selinfo.sel_klist, kn, knote, kn_selnext);
 	mutex_exit(sc->sc_lock);
 }
 
@@ -2942,14 +2941,17 @@ static void
 filt_audiowrite_detach(struct knote *kn)
 {
 	struct audio_softc *sc;
+	audio_trackmixer_t *mixer;
 	audio_file_t *file;
 
 	TRACE("kn=%p", kn);
 	file = kn->kn_hook;
 	sc = file->sc;
+	mixer = sc->sc_pmixer;
+	KASSERT(mixer);
 
 	mutex_enter(sc->sc_lock);
-	SLIST_REMOVE(&sc->sc_wsel.sel_klist, kn, knote, kn_selnext);
+	SLIST_REMOVE(&mixer->selinfo.sel_klist, kn, knote, kn_selnext);
 	mutex_exit(sc->sc_lock);
 }
 
@@ -2986,14 +2988,23 @@ audio_kqfilter(struct audio_softc *sc, audio_file_t *file, struct knote *kn)
 	KASSERT(mutex_owned(sc->sc_lock));
 	TRACEF(file, "kn=%p kn_filter=%x", kn, (int)kn->kn_filter);
 
+	klist = NULL;
 	switch (kn->kn_filter) {
 	case EVFILT_READ:
-		klist = &sc->sc_rsel.sel_klist;
+		/* If rtrack is available, sc_rmixer is also available. */
+		if (file->rtrack) {
+			KASSERT(sc->sc_rmixer);
+			klist = &sc->sc_rmixer->selinfo.sel_klist;
+		}
 		kn->kn_fop = &audioread_filtops;
 		break;
 
 	case EVFILT_WRITE:
-		klist = &sc->sc_wsel.sel_klist;
+		/* If ptrack is available, sc_pmixer is also available. */
+		if (file->ptrack) {
+			KASSERT(sc->sc_pmixer);
+			klist = &sc->sc_pmixer->selinfo.sel_klist;
+		}
 		kn->kn_fop = &audiowrite_filtops;
 		break;
 
@@ -3003,7 +3014,8 @@ audio_kqfilter(struct audio_softc *sc, audio_file_t *file, struct knote *kn)
 
 	kn->kn_hook = file;
 
-	SLIST_INSERT_HEAD(klist, kn, kn_selnext);
+	if (klist)
+		SLIST_INSERT_HEAD(klist, kn, kn_selnext);
 
 	return 0;
 }
@@ -5052,7 +5064,10 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 		}
 	}
 
+	selinit(&mixer->selinfo);
+
 	/* From here, audio_mixer_destroy is necessary to exit. */
+
 	if (mode == AUMODE_PLAY) {
 		cv_init(&mixer->outcv, "audiowr");
 	} else {
@@ -5153,6 +5168,7 @@ audio_mixer_destroy(struct audio_softc *sc, audio_trackmixer_t *mixer)
 	audio_free(mixer->codecbuf.mem);
 	audio_free(mixer->mixsample);
 
+	seldestroy(&mixer->selinfo);
 	cv_destroy(&mixer->outcv);
 
 	if (mixer->sih) {
@@ -6090,7 +6106,7 @@ audio_softintr_rd(void *cookie)
 	}
 
 	// データが来たことを通知
-	selnotify(&sc->sc_rsel, 0, NOTE_SUBMIT);
+	selnotify(&sc->sc_rmixer->selinfo, 0, NOTE_SUBMIT);
 	cv_broadcast(&sc->sc_rmixer->outcv);
 
 	mutex_exit(sc->sc_lock);
@@ -6164,7 +6180,7 @@ audio_softintr_wr(void *cookie)
 	 */
 	if (found) {
 		TRACE("selnotify");
-		selnotify(&sc->sc_wsel, 0, NOTE_SUBMIT);
+		selnotify(&sc->sc_pmixer->selinfo, 0, NOTE_SUBMIT);
 	}
 
 	// 空きが出来たことを audio_write に通知
