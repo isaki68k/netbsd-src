@@ -2916,14 +2916,14 @@ filt_audioread_event(struct knote *kn, long hint)
 	file = kn->kn_hook;
 	track = file->rtrack;
 
-	// XXX READ 可能な時しかここ来ないのかな?
-
 	// kn_data は read 可能なバイト数っぽい?
-	kn->kn_data = 0;
-	if (track) {
-		kn->kn_data = audio_track_readablebytes(track);
+
+	if (track == NULL) {
+		kn->kn_data = 0;
+		return 0;
 	}
 
+	kn->kn_data = audio_track_readablebytes(track);
 	return kn->kn_data > 0;
 }
 
@@ -2958,16 +2958,15 @@ filt_audiowrite_event(struct knote *kn, long hint)
 	file = kn->kn_hook;
 	track = file->ptrack;
 
-	// XXX WRITE 可能な時しかここ来ないのかな?
-
 	// kn_data には再生バッファの空きバイト数を返す。
 	// 戻り値は非ゼロならイベント達成。
 
-	kn->kn_data = 0;
-	if (track) {
-		kn->kn_data = track->usrbuf_usedhigh - track->usrbuf.used;
+	if (track == NULL) {
+		kn->kn_data = 0;
+		return 0;
 	}
 
+	kn->kn_data = track->usrbuf_usedhigh - track->usrbuf.used;
 	TRACE("kn=%p data=%d", kn, (int)kn->kn_data);
 	return (track->usrbuf.used < track->usrbuf_usedlow);
 }
