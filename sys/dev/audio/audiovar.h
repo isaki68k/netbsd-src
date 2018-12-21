@@ -184,6 +184,13 @@ struct audio_softc {
 	struct audio_info sc_ai;	/* recent info for /dev/sound */
 
 	/*
+	 * Playback(write)/Recording(read) selector.
+	 * Must be protected by sc_lock.
+	 */
+	struct selinfo sc_wsel;
+	struct selinfo sc_rsel;
+
+	/*
 	 * processes who want mixer SIGIO.
 	 * Must be protected by sc_lock.
 	 */
