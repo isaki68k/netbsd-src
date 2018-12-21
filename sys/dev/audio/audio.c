@@ -556,7 +556,6 @@ static int audio_mixer_init(struct audio_softc *, int,
 static void audio_mixer_destroy(struct audio_softc *, audio_trackmixer_t *);
 static void audio_pmixer_start(struct audio_softc *, bool);
 static void audio_pmixer_process(struct audio_softc *);
-static int  audio_pmixer_mixall(struct audio_softc *);
 static int  audio_pmixer_mix_track(audio_trackmixer_t *, audio_track_t *, int);
 static void audio_pmixer_output(struct audio_softc *);
 static int  audio_pmixer_halt(struct audio_softc *);
@@ -5250,6 +5249,7 @@ static void
 audio_pmixer_process(struct audio_softc *sc)
 {
 	audio_trackmixer_t *mixer;
+	audio_file_t *f;
 	int hw_free_count;
 	int frame_count;
 	int sample_count;
@@ -5275,7 +5275,49 @@ audio_pmixer_process(struct audio_softc *sc)
 	mixer->mixseq++;
 
 	// 全トラックを合成
-	mixed = audio_pmixer_mixall(sc);
+	mixed = 0;
+	SLIST_FOREACH(f, &sc->sc_files, entry) {
+		audio_track_t *track = f->ptrack;
+
+		if (track == NULL)
+			continue;
+
+		// 協調的ロックされているトラックは、今回ミキシングしない。
+		if (track->in_use) {
+			TRACET(track, "skip; in use");
+			continue;
+		}
+
+		if (track->is_pause) {
+			TRACET(track, "skip; paused");
+			continue;
+		}
+
+		// mmap トラックならここで入力があったことにみせかける
+		if (track->mmapped) {
+			// XXX push じゃなく直接操作してウィンドウを移動みたいに
+			// したほうがいいんじゃないか。
+			auring_push(&track->usrbuf, track->usrbuf_blksize);
+			TRACET(track, "mmap; usr=%d/%d/C%d",
+			    track->usrbuf.head,
+			    track->usrbuf.used,
+			    track->usrbuf.capacity);
+		}
+
+		if (track->outbuf.used < mixer->frames_per_block &&
+		    track->usrbuf.used > 0) {
+			TRACET(track, "process");
+			audio_track_play(track);
+		}
+
+		if (track->outbuf.used == 0) {
+			TRACET(track, "skip; empty");
+			continue;
+		}
+		// 合成
+		mixed = audio_pmixer_mix_track(mixer, track, mixed);
+	}
+
 	if (mixed == 0) {
 		// 無音
 		memset(mixer->mixsample, 0,
@@ -5378,67 +5420,6 @@ audio_pmixer_process(struct audio_softc *sc)
 	    (int)mixer->mixseq,
 	    mixer->hwbuf.head, mixer->hwbuf.used, mixer->hwbuf.capacity,
 	    (mixed == 0) ? " silent" : "");
-}
-
-// 全トラックを 1ブロック分合成する。
-// 合成されたトラック数を返す。
-/*
- * Mix all tracks one block.
- * It returns the number of mixed tracks.
- */
-static int
-audio_pmixer_mixall(struct audio_softc *sc)
-{
-	audio_trackmixer_t *mixer;
-	audio_file_t *f;
-	int mixed;
-
-	mixer = sc->sc_pmixer;
-
-	mixed = 0;
-	SLIST_FOREACH(f, &sc->sc_files, entry) {
-		audio_track_t *track = f->ptrack;
-
-		if (track == NULL)
-			continue;
-
-		// 協調的ロックされているトラックは、今回ミキシングしない。
-		if (track->in_use) {
-			TRACET(track, "skip; in use");
-			continue;
-		}
-
-		if (track->is_pause) {
-			TRACET(track, "skip; paused");
-			continue;
-		}
-
-		// mmap トラックならここで入力があったことにみせかける
-		if (track->mmapped) {
-			// XXX push じゃなく直接操作してウィンドウを移動みたいに
-			// したほうがいいんじゃないか。
-			auring_push(&track->usrbuf, track->usrbuf_blksize);
-			TRACET(track, "mmap; usr=%d/%d/C%d",
-			    track->usrbuf.head,
-			    track->usrbuf.used,
-			    track->usrbuf.capacity);
-		}
-
-		if (track->outbuf.used < mixer->frames_per_block &&
-		    track->usrbuf.used > 0) {
-			TRACET(track, "process");
-			audio_track_play(track);
-		}
-
-		if (track->outbuf.used == 0) {
-			TRACET(track, "skip; empty");
-			continue;
-		}
-		// 合成
-		mixed = audio_pmixer_mix_track(mixer, track, mixed);
-	}
-
-	return mixed;
 }
 
 // トラックバッファから取り出し、ミキシングする。
