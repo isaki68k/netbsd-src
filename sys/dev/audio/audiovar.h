@@ -191,12 +191,6 @@ struct audio_softc {
 	struct selinfo sc_rsel;
 
 	/*
-	 * softint cookie for Playback(write)/Recoding(read).
-	 */
-	void *sc_sih_wr;
-	void *sc_sih_rd;
-
-	/*
 	 * processes who want mixer SIGIO.
 	 * Must be protected by sc_lock.
 	 */

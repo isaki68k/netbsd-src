@@ -934,22 +934,6 @@ audioattach(device_t parent, device_t self, void *aux)
 	if (sc->sc_pmixer == NULL && sc->sc_rmixer == NULL)
 		goto bad;
 
-	// 途中でミキサーがクローズされてしまうケースを考えると
-	// これらは常にあるとしておくほうが楽か。
-	// そうでなければミキサーと連動させる必要がある。
-	sc->sc_sih_wr = softint_establish(SOFTINT_SERIAL | SOFTINT_MPSAFE,
-	    audio_softintr_wr, sc);
-	if (sc->sc_sih_wr == NULL) {
-		aprint_error_dev(self, "softint_establish(wr) failed\n");
-		goto bad;
-	}
-	sc->sc_sih_rd = softint_establish(SOFTINT_SERIAL | SOFTINT_MPSAFE,
-	    audio_softintr_rd, sc);
-	if (sc->sc_sih_rd == NULL) {
-		aprint_error_dev(self, "softint_establish(rd) failed\n");
-		softint_disestablish(sc->sc_sih_wr);
-		goto bad;
-	}
 	selinit(&sc->sc_wsel);
 	selinit(&sc->sc_rsel);
 
@@ -1287,11 +1271,6 @@ audiodetach(device_t self, int flags)
 		audio_mixer_destroy(sc, sc->sc_rmixer);
 		kmem_free(sc->sc_rmixer, sizeof(*sc->sc_rmixer));
 	}
-
-	softint_disestablish(sc->sc_sih_wr);
-	sc->sc_sih_wr = NULL;
-	softint_disestablish(sc->sc_sih_rd);
-	sc->sc_sih_rd = NULL;
 
 	seldestroy(&sc->sc_wsel);
 	seldestroy(&sc->sc_rsel);
@@ -4979,6 +4958,7 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 	const audio_format2_t *hwfmt, const audio_filter_reg_t *reg)
 {
 	audio_trackmixer_t *mixer;
+	void (*softint_handler)(void *);
 	int len;
 	int blksize;
 	int capacity;
@@ -5073,6 +5053,18 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 		cv_init(&mixer->outcv, "audiord");
 	}
 
+	if (mode == AUMODE_PLAY) {
+		softint_handler = audio_softintr_wr;
+	} else {
+		softint_handler = audio_softintr_rd;
+	}
+	mixer->sih = softint_establish(SOFTINT_SERIAL | SOFTINT_MPSAFE,
+	    softint_handler, sc);
+	if (mixer->sih == NULL) {
+		aprint_error_dev(sc->dev, "softint_establish failed\n");
+		goto abort;
+	}
+
 	mixer->track_fmt.encoding = AUDIO_ENCODING_SLINEAR_NE;
 	mixer->track_fmt.precision = AUDIO_INTERNAL_BITS;
 	mixer->track_fmt.stride = AUDIO_INTERNAL_BITS;
@@ -5156,6 +5148,11 @@ audio_mixer_destroy(struct audio_softc *sc, audio_trackmixer_t *mixer)
 	audio_free(mixer->mixsample);
 
 	cv_destroy(&mixer->outcv);
+
+	if (mixer->sih) {
+		softint_disestablish(mixer->sih);
+		mixer->sih = NULL;
+	}
 }
 
 // 再生ミキサを(起動してなければ)起動する。
@@ -5646,7 +5643,7 @@ audio_pintr(void *arg)
 #endif
 
 	kpreempt_disable();
-	softint_schedule(sc->sc_sih_wr);
+	softint_schedule(mixer->sih);
 	kpreempt_enable();
 }
 
@@ -5870,7 +5867,7 @@ audio_rintr(void *arg)
 	audio_rmixer_input(sc);
 
 	kpreempt_disable();
-	softint_schedule(sc->sc_sih_rd);
+	softint_schedule(mixer->sih);
 	kpreempt_enable();
 }
 
