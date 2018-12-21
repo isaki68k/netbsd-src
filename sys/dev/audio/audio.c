@@ -555,8 +555,8 @@ static int audio_mixer_init(struct audio_softc *, int,
 	const audio_format2_t *, const audio_filter_reg_t *);
 static void audio_mixer_destroy(struct audio_softc *, audio_trackmixer_t *);
 static void audio_pmixer_start(struct audio_softc *, bool);
-static void audio_pmixer_process(struct audio_softc *, bool);
-static int  audio_pmixer_mixall(struct audio_softc *, bool);
+static void audio_pmixer_process(struct audio_softc *);
+static int  audio_pmixer_mixall(struct audio_softc *);
 static int  audio_pmixer_mix_track(audio_trackmixer_t *, audio_track_t *, int);
 static void audio_pmixer_output(struct audio_softc *);
 static int  audio_pmixer_halt(struct audio_softc *);
@@ -5192,7 +5192,7 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
 	// force ならそういうわけにいかないので1ブロックで再生開始する。
 	minimum = (force) ? 1 : 2;
 	while (mixer->hwbuf.used < mixer->frames_per_block * minimum) {
-		audio_pmixer_process(sc, false);
+		audio_pmixer_process(sc);
 	}
 
 	// トラックミキサ出力開始
@@ -5240,18 +5240,14 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
 // 全トラックを倍精度ミキシングバッファで合成し、
 // 倍精度ミキシングバッファから hwbuf への変換を行う。
 // hwbuf からハードウェアへの転送はここでは行わない。
-// isintr が true なら割り込みコンテキストからの呼び出し、
-// false ならプロセスコンテキストからの呼び出しを示す。
 // sc_intr_lock で呼び出すこと。
 /*
  * Performs mixing and converts it to hwbuf.
  * Note that this function doesn't transfer from hwbuf to HW.
- * If 'isintr' is true, it indicates a call from the interrupt context.
- * If false, it indicates a call from process context.
  * Must be called with sc_intr_lock held.
  */
 static void
-audio_pmixer_process(struct audio_softc *sc, bool isintr)
+audio_pmixer_process(struct audio_softc *sc)
 {
 	audio_trackmixer_t *mixer;
 	int hw_free_count;
@@ -5279,7 +5275,7 @@ audio_pmixer_process(struct audio_softc *sc, bool isintr)
 	mixer->mixseq++;
 
 	// 全トラックを合成
-	mixed = audio_pmixer_mixall(sc, isintr);
+	mixed = audio_pmixer_mixall(sc);
 	if (mixed == 0) {
 		// 無音
 		memset(mixer->mixsample, 0,
@@ -5391,7 +5387,7 @@ audio_pmixer_process(struct audio_softc *sc, bool isintr)
  * It returns the number of mixed tracks.
  */
 static int
-audio_pmixer_mixall(struct audio_softc *sc, bool isintr)
+audio_pmixer_mixall(struct audio_softc *sc)
 {
 	audio_trackmixer_t *mixer;
 	audio_file_t *f;
@@ -5407,7 +5403,7 @@ audio_pmixer_mixall(struct audio_softc *sc, bool isintr)
 			continue;
 
 		// 協調的ロックされているトラックは、今回ミキシングしない。
-		if (isintr && track->in_use) {
+		if (track->in_use) {
 			TRACET(track, "skip; in use");
 			continue;
 		}
@@ -5628,7 +5624,7 @@ audio_pintr(void *arg)
 	// ただしソフトウェア割り込みがハードウェア割り込みまでに
 	// 駆動されなかったら仕方ないのでここで作る。
 	if (mixer->hwbuf.used < mixer->frames_per_block) {
-		audio_pmixer_process(sc, true);
+		audio_pmixer_process(sc);
 		sc->pmixed = false;
 	}
 	audio_pmixer_output(sc);
@@ -5638,7 +5634,7 @@ audio_pintr(void *arg)
 	// レイテンシは下げられるが、マシンパワーがないと再生が途切れる。
 
 	// バッファを作成
-	audio_pmixer_process(sc, true);
+	audio_pmixer_process(sc);
 
 	// 出力
 	audio_pmixer_output(sc);
@@ -5661,7 +5657,7 @@ audio_pintr(void *arg)
 	}
 
 	// 次のバッファを用意する
-	audio_pmixer_process(sc, true);
+	audio_pmixer_process(sc);
 
 	if (later) {
 		audio_pmixer_output(sc);
@@ -6146,7 +6142,7 @@ audio_softintr_wr(void *cookie)
 	mutex_enter(sc->sc_intr_lock);
 
 #if defined(AUDIO_SOFTINT)
-	audio_pmixer_process(sc, sc->pmixed);
+	audio_pmixer_process(sc);
 	sc->pmixed = true;
 #endif
 
