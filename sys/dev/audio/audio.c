@@ -531,7 +531,9 @@ static int audio_mixers_set_format(struct audio_softc *,
 static void audio_mixers_get_format(struct audio_softc *, struct audio_info *);
 static int audio_sysctl_volume(SYSCTLFN_PROTO);
 static int audio_sysctl_blk_ms(SYSCTLFN_PROTO);
+#ifdef AUDIO_DEBUG
 static int audio_sysctl_debug(SYSCTLFN_PROTO);
+#endif
 static void audio_format2_tostr(char *, size_t, const audio_format2_t *);
 #ifdef AUDIO_DEBUG
 static void audio_print_format2(const char *, const audio_format2_t *);
@@ -985,12 +987,14 @@ audioattach(device_t parent, device_t self, void *aux)
 		    audio_sysctl_blk_ms, 0, (void *)sc, 0,
 		    CTL_HW, node->sysctl_num, CTL_CREATE, CTL_EOL);
 
+#if defined(AUDIO_DEBUG)
 		sysctl_createv(&sc->sc_log, 0, NULL, NULL,
 		    CTLFLAG_READWRITE,
 		    CTLTYPE_INT, "debug",
 		    SYSCTL_DESCR("debug level (0..4)"),
 		    audio_sysctl_debug, 0, (void *)sc, 0,
 		    CTL_HW, node->sysctl_num, CTL_CREATE, CTL_EOL);
+#endif
 
 #if 1
 		// XXX adhoc debug info (should be removed)
@@ -7999,6 +8003,7 @@ abort:
 	return error;
 }
 
+#if defined(AUDIO_DEBUG)
 // デバッグレベルの変更
 // グローバルフラグだけど、とりあえず
 static int
@@ -8030,6 +8035,7 @@ audio_sysctl_debug(SYSCTLFN_ARGS)
 	printf("audio: audiodebug = %d\n", audiodebug);
 	return 0;
 }
+#endif /* AUDIO_DEBUG */
 
 #ifdef AUDIO_PM_IDLE
 static void
