@@ -558,6 +558,14 @@ hdaudio default latency too high, mpv spins at 100% CPU playing audio
 src/sys/dev/hdaudio/hdafg.c:1267: dead code block ?
 <dd>リファクタリング。
 
+<dt>:
+<dd>
+
+<dt><s><font color=#555><a href="http://gnats.netbsd.org/53802">kern/53802</a></font></s>
+audioctl not working for usb audio dev
+<dd>outputs.master を持たないデバイスに対しては audioctl play.gain が効かないという話。
+play.gain は outputs.master につながっているのでどうしたもんか。
+
 </dl>
 
 </body>
