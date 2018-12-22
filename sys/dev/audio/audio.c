@@ -1209,7 +1209,7 @@ audiodetach(device_t self, int flags)
 {
 	struct audio_softc *sc;
 	int maj, mn;
-	int rc;
+	int error;
 
 	sc = device_private(self);
 	DPRINTF(1, "%s: sc=%p flags=%d\n", __func__, sc, flags);
@@ -1219,8 +1219,9 @@ audiodetach(device_t self, int flags)
 		return 0;
 
 	/* Start draining existing accessors of the device. */
-	if ((rc = config_detach_children(self, flags)) != 0)
-		return rc;
+	error = config_detach_children(self, flags);
+	if (error)
+		return error;
 
 	// 稼働中のトラックを終了させる
 	mutex_enter(sc->sc_lock);
@@ -1526,7 +1527,8 @@ audioopen(dev_t dev, int flags, int ifmt, struct lwp *l)
 	struct audio_softc *sc;
 	int error;
 
-	if ((error = audio_enter_dev(dev, &sc, AUDIO_LK_EXCLUSIVE)) != 0)
+	error = audio_enter_dev(dev, &sc, AUDIO_LK_EXCLUSIVE);
+	if (error)
 		return error;
 
 	device_active(sc->dev, DVA_SYSTEM);
@@ -1562,7 +1564,8 @@ audioclose(struct file *fp)
 	file = (audio_file_t *)fp->f_audioctx;
 	dev = file->dev;
 
-	if ((error = audio_enter_dev(dev, &sc, AUDIO_LK_EXCLUSIVE)) != 0)
+	error = audio_enter_dev(dev, &sc, AUDIO_LK_EXCLUSIVE);
+	if (error)
 		return error;
 
 	device_active(sc->dev, DVA_SYSTEM);
@@ -1604,7 +1607,8 @@ audioread(struct file *fp, off_t *offp, struct uio *uio, kauth_cred_t cred,
 	file = (audio_file_t *)fp->f_audioctx;
 	dev = file->dev;
 
-	if ((error = audio_enter_dev(dev, &sc, 0)) != 0)
+	error = audio_enter_dev(dev, &sc, 0);
+	if (error)
 		return error;
 
 	if (fp->f_flag & O_NONBLOCK)
@@ -1641,7 +1645,8 @@ audiowrite(struct file *fp, off_t *offp, struct uio *uio, kauth_cred_t cred,
 	file = (audio_file_t *)fp->f_audioctx;
 	dev = file->dev;
 
-	if ((error = audio_enter_dev(dev, &sc, 0)) != 0)
+	error = audio_enter_dev(dev, &sc, 0);
+	if (error)
 		return error;
 
 	if (fp->f_flag & O_NONBLOCK)
@@ -1690,7 +1695,8 @@ audioioctl(struct file *fp, u_long cmd, void *addr)
 		locktype = 0;
 		break;
 	}
-	if ((error = audio_enter_dev(dev, &sc, locktype)) != 0)
+	error = audio_enter_dev(dev, &sc, locktype);
+	if (error)
 		return error;
 
 	switch (AUDIODEV(dev)) {
@@ -1779,7 +1785,8 @@ audiokqfilter(struct file *fp, struct knote *kn)
 	file = (audio_file_t *)fp->f_audioctx;
 	dev = file->dev;
 
-	if ((error = audio_enter_dev(dev, &sc, 0)) != 0)
+	error = audio_enter_dev(dev, &sc, 0);
+	if (error)
 		return error;
 
 	switch (AUDIODEV(file->dev)) {
@@ -1813,7 +1820,8 @@ audiommap(struct file *fp, off_t *offp, size_t len, int prot, int *flagsp,
 	file = (audio_file_t *)fp->f_audioctx;
 	dev = file->dev;
 
-	if ((error = audio_enter_dev(dev, &sc, 0)) != 0)
+	error = audio_enter_dev(dev, &sc, 0);
+	if (error)
 		return error;
 
 	device_active(sc->dev, DVA_SYSTEM); /* XXXJDM */
@@ -1848,7 +1856,8 @@ audiobellopen(dev_t dev, struct audiobell_arg *arg)
 	struct audio_softc *sc;
 	int error;
 
-	if ((error = audio_enter_dev(dev, &sc, AUDIO_LK_EXCLUSIVE)) != 0)
+	error = audio_enter_dev(dev, &sc, AUDIO_LK_EXCLUSIVE);
+	if (error)
 		return error;
 	device_active(sc->dev, DVA_SYSTEM);
 
@@ -1867,7 +1876,8 @@ audiobellclose(audio_file_t *file)
 	int error;
 
 	dev = file->dev;
-	if ((error = audio_enter_dev(dev, &sc, AUDIO_LK_EXCLUSIVE)) != 0)
+	error = audio_enter_dev(dev, &sc, AUDIO_LK_EXCLUSIVE);
+	if (error)
 		return error;
 	device_active(sc->dev, DVA_SYSTEM);
 
@@ -1886,7 +1896,8 @@ audiobellwrite(audio_file_t *file, struct uio *uio)
 	int error;
 
 	dev = file->dev;
-	if ((error = audio_enter_dev(dev, &sc, 0)) != 0)
+	error = audio_enter_dev(dev, &sc, 0);
+	if (error)
 		return error;
 
 	error = audio_write(sc, uio, 0, file);
