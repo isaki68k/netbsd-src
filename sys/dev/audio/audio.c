@@ -1296,9 +1296,6 @@ audiodetach(device_t self, int flags)
 
 	cv_destroy(&sc->sc_exlockcv);
 
-	mutex_destroy(sc->sc_intr_lock);
-	mutex_destroy(sc->sc_lock);
-
 #if defined(AUDIO_DEBUG_MLOG)
 	audio_mlog_free();
 #endif
