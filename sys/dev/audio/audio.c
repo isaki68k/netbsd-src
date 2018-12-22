@@ -555,7 +555,7 @@ static int audio_mixer_init(struct audio_softc *, int,
 	const audio_format2_t *, const audio_filter_reg_t *);
 static void audio_mixer_destroy(struct audio_softc *, audio_trackmixer_t *);
 static void audio_pmixer_start(struct audio_softc *, bool);
-static void audio_pmixer_process(struct audio_softc *);
+static void audio_pmixer_process(struct audio_softc *, bool);
 static int  audio_pmixer_mix_track(audio_trackmixer_t *, audio_track_t *, int);
 static void audio_pmixer_output(struct audio_softc *);
 static int  audio_pmixer_halt(struct audio_softc *);
@@ -5207,7 +5207,7 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
 	// force ならそういうわけにいかないので1ブロックで再生開始する。
 	minimum = (force) ? 1 : 2;
 	while (mixer->hwbuf.used < mixer->frames_per_block * minimum) {
-		audio_pmixer_process(sc);
+		audio_pmixer_process(sc, true);
 	}
 
 	// トラックミキサ出力開始
@@ -5262,7 +5262,7 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
  * Must be called with sc_intr_lock held.
  */
 static void
-audio_pmixer_process(struct audio_softc *sc)
+audio_pmixer_process(struct audio_softc *sc, bool force_mix)
 {
 	audio_trackmixer_t *mixer;
 	audio_file_t *f;
@@ -5335,6 +5335,19 @@ audio_pmixer_process(struct audio_softc *sc)
 	}
 
 	if (mixed == 0) {
+		/* Silence */
+
+		// force_mix なら、無音ブロックを作成。
+		// そうでなければ、今回は合成をしない。
+		// ソフトウェア割り込みからは !force_mix で呼び、再生トラック
+		// がなくても無音ブロックを極力作らないようにする。
+		// ハードウェア割り込みからは force_mix で呼び、無音でも
+		// いいので必ずブロックを用意しなければならない。
+		if (!force_mix) {
+			TRACE("return; no tracks and !force");
+			return;
+		}
+
 		// 無音
 		memset(mixer->mixsample, 0,
 		    frametobyte(&mixer->mixfmt, frame_count));
@@ -5631,8 +5644,7 @@ audio_pintr(void *arg)
 	// ただしソフトウェア割り込みがハードウェア割り込みまでに
 	// 駆動されなかったら仕方ないのでここで作る。
 	if (mixer->hwbuf.used < mixer->frames_per_block) {
-		audio_pmixer_process(sc);
-		sc->pmixed = false;
+		audio_pmixer_process(sc, true);
 	}
 	audio_pmixer_output(sc);
 
@@ -5641,7 +5653,7 @@ audio_pintr(void *arg)
 	// レイテンシは下げられるが、マシンパワーがないと再生が途切れる。
 
 	// バッファを作成
-	audio_pmixer_process(sc);
+	audio_pmixer_process(sc, true);
 
 	// 出力
 	audio_pmixer_output(sc);
@@ -5664,7 +5676,7 @@ audio_pintr(void *arg)
 	}
 
 	// 次のバッファを用意する
-	audio_pmixer_process(sc);
+	audio_pmixer_process(sc, true);
 
 	if (later) {
 		audio_pmixer_output(sc);
@@ -6149,8 +6161,7 @@ audio_softintr_wr(void *cookie)
 	mutex_enter(sc->sc_intr_lock);
 
 #if defined(AUDIO_SOFTINT)
-	audio_pmixer_process(sc);
-	sc->pmixed = true;
+	audio_pmixer_process(sc, false);
 #endif
 
 	SLIST_FOREACH(f, &sc->sc_files, entry) {

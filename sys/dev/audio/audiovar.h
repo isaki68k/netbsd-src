@@ -228,8 +228,6 @@ struct audio_softc {
 	struct au_mixer_ports sc_outports;
 	int		sc_monitor_port;
 	u_int	sc_lastgain;
-
-	bool pmixed;
 };
 
 #ifdef DIAGNOSTIC
