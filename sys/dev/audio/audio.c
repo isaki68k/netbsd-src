@@ -807,6 +807,14 @@ make_buildinfo(void)
 	n += snprintf(audio_buildinfo + n, sizeof(audio_buildinfo) - n,
 	    ", HW_SINGLE_BUFFER");
 #endif
+#if defined(AUDIO_SOFTINT)
+	n += snprintf(audio_buildinfo + n, sizeof(audio_buildinfo) - n,
+	    ", SOFTINT");
+#endif
+#if defined(LAZYLOG)
+	n += snprintf(audio_buildinfo + n, sizeof(audio_buildinfo) - n,
+	    ", LAZYLOG");
+#endif
 }
 #endif
 
