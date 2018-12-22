@@ -3728,7 +3728,9 @@ audio_track_init(struct audio_softc *sc, audio_track_t **trackp, int mode)
 	track->mode = mode;
 
 	// 固定初期値
+#if defined(AUDIO_SUPPORT_TRACK_VOLUME)
 	track->volume = 256;
+#endif
 	for (int i = 0; i < AUDIO_MAX_CHANNELS; i++) {
 		track->ch_volume[i] = 256;
 	}
@@ -5459,14 +5461,15 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track,
 	d = mixer->mixsample;
 
 	// 整数倍精度へ変換し、トラックボリュームを適用して加算合成
+	// XXX トラックボリュームは 1倍以下(256以下)に限定するなら
+	//     ここよりトラック側の変換ステージでやったほうがいいけど、
+	//     1 倍以上 (257 以上) も指定可能にするなら倍精度演算する
+	//     ここで処理する必要がある。
 	sample_count = count * mixer->mixfmt.channels;
 	if (mixed == 0) {
 		// 最初のトラック合成は代入
-		if (track->volume == 256) {
-			for (i = 0; i < sample_count; i++) {
-				*d++ = ((aint2_t)*s++);
-			}
-		} else {
+#if defined(AUDIO_SUPPORT_TRACK_VOLUME)
+		if (track->volume != 256) {
 			for (i = 0; i < sample_count; i++) {
 #if defined(AUDIO_USE_C_IMPLEMENTATION_DEFINED_BEHAVIOR) && defined(__GNUC__)
 				*d++ = ((aint2_t)*s++) * track->volume >> 8;
@@ -5474,20 +5477,29 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track,
 				*d++ = ((aint2_t)*s++) * track->volume / 256;
 #endif
 			}
+		} else
+#endif
+		{
+			for (i = 0; i < sample_count; i++) {
+				*d++ = ((aint2_t)*s++);
+			}
 		}
 	} else {
 		// 2本め以降なら加算合成
-		if (track->volume == 256) {
-			for (i = 0; i < sample_count; i++) {
-				*d++ += ((aint2_t)*s++);
-			}
-		} else {
+#if defined(AUDIO_SUPPORT_TRACK_VOLUME)
+		if (track->volume != 256) {
 			for (i = 0; i < sample_count; i++) {
 #if defined(AUDIO_USE_C_IMPLEMENTATION_DEFINED_BEHAVIOR) && defined(__GNUC__)
 				*d++ += ((aint2_t)*s++) * track->volume >> 8;
 #else
 				*d++ += ((aint2_t)*s++) * track->volume / 256;
 #endif
+			}
+		} else
+#endif
+		{
+			for (i = 0; i < sample_count; i++) {
+				*d++ += ((aint2_t)*s++);
 			}
 		}
 	}

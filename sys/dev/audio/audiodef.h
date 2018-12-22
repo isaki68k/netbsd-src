@@ -59,6 +59,10 @@
 // が途切れることはなくなる。
 //#define AUDIO_HW_SINGLE_BUFFER
 
+// トラックボリュームをサポートする。
+// 今のところこれを指定する UI がない。
+//#define AUDIO_SUPPORT_TRACK_VOLUME
+
 // C の実装定義動作を使用する。
 #define AUDIO_USE_C_IMPLEMENTATION_DEFINED_BEHAVIOR
 
@@ -113,7 +117,9 @@ typedef struct audio_track {
 	aint_t		freq_curr[AUDIO_MAX_CHANNELS];	// 直近値
 
 	uint16_t ch_volume[AUDIO_MAX_CHANNELS];	/* channel volume(0..256) */
+#if defined(AUDIO_SUPPORT_TRACK_VOLUME)
 	u_int		volume;		/* track volume (0..256) */
+#endif
 
 	audio_trackmixer_t *mixer;	/* connected track mixer */
 
