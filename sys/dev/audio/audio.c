@@ -2586,7 +2586,7 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		ioctlname = ioctlnames[nameidx - 21];
 	DPRINTF(2, "audio_ioctl@%d(%lu,'%c',%lu)%s pid=%d.%d\n",
 	    device_unit(sc->dev),
-		 IOCPARM_LEN(cmd), (char)IOCGROUP(cmd), cmd&0xff, ioctlname,
+	    IOCPARM_LEN(cmd), (char)IOCGROUP(cmd), cmd&0xff, ioctlname,
 	    (int)curproc->p_pid, (int)l->l_lid);
 #endif
 
@@ -2801,8 +2801,8 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 	}
 	DPRINTF(2, "audio_ioctl@%d(%lu,'%c',%lu)%s result %d\n",
 	    device_unit(sc->dev),
-		 IOCPARM_LEN(cmd), (char)IOCGROUP(cmd), cmd&0xff, ioctlname,
-		 error);
+	    IOCPARM_LEN(cmd), (char)IOCGROUP(cmd), cmd&0xff, ioctlname,
+	    error);
 	return error;
 }
 
