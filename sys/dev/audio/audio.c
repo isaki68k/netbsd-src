@@ -1239,8 +1239,10 @@ audiodetach(device_t self, int flags)
 	mutex_enter(sc->sc_lock);
 	sc->sc_dying = true;
 	cv_broadcast(&sc->sc_exlockcv);
-	cv_broadcast(&sc->sc_pmixer->outcv);
-	cv_broadcast(&sc->sc_rmixer->outcv);
+	if (sc->sc_pmixer)
+		cv_broadcast(&sc->sc_pmixer->outcv);
+	if (sc->sc_rmixer)
+		cv_broadcast(&sc->sc_rmixer->outcv);
 	mutex_exit(sc->sc_lock);
 
 	/* locate the major number */
