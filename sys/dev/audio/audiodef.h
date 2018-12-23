@@ -71,10 +71,10 @@
 
 /* conversion stage */
 typedef struct {
+	audio_ring_t srcbuf;
+	audio_ring_t *dst;
 	audio_filter_t filter;
 	audio_filter_arg_t arg;
-	audio_ring_t *dst;
-	audio_ring_t srcbuf;
 } audio_stage_t;
 
 typedef enum {
