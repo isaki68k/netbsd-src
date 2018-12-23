@@ -413,12 +413,15 @@ struct portname {
 	const char *name;
 	int mask;
 };
+
+#if defined(OLD_FILTER)
 typedef struct uio_fetcher {
 	stream_fetcher_t base;
 	struct uio *uio;
 	int usedhigh;
 	int last_used;
 } uio_fetcher_t;
+#endif
 
 // ここに関数プロトタイプ
 
@@ -566,7 +569,7 @@ static void audio_rmixer_process(struct audio_softc *);
 static void audio_rmixer_input(struct audio_softc *);
 static int  audio_rmixer_halt(struct audio_softc *);
 
-#ifdef OLD_FILTER
+#if defined(OLD_FILTER)
 static void stream_filter_list_append(stream_filter_list_t *,
 	stream_filter_factory_t, const audio_params_t *);
 static void stream_filter_list_prepend(stream_filter_list_t *,
@@ -1354,7 +1357,7 @@ audio_attach_mi(const struct audio_hw_if *ahwp, void *hdlp, device_t dev)
 	return config_found(dev, &arg, audioprint);
 }
 
-#ifdef OLD_FILTER
+#if defined(OLD_FILTER)
 static void
 stream_filter_list_append(stream_filter_list_t *list,
 			  stream_filter_factory_t factory,
@@ -1405,7 +1408,7 @@ stream_filter_list_prepend(stream_filter_list_t *list,
 	list->filters[0].param = *param;
 	list->req_size++;
 }
-#endif // OLD_FILTER
+#endif /* OLD_FILTER */
 
 // uaudio(4) など一部のデバイスは trigger_output が sc_lock, sc_intr_lock を
 // 全部外したりするようで、それはそれでどうかと思うのだが、そっちに手を入れる
