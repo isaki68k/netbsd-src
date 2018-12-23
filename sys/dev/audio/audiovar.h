@@ -223,7 +223,6 @@ struct audio_softc {
 
 	mixer_ctrl_t	*sc_mixer_state;
 	int		sc_nmixer_states;
-	int		sc_static_nmixer_states;
 	struct au_mixer_ports sc_inports;
 	struct au_mixer_ports sc_outports;
 	int		sc_monitor_port;

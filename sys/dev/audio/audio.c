@@ -1111,9 +1111,7 @@ mixer_init(struct audio_softc *sc)
 	mutex_exit(sc->sc_lock);
 
 	/* Allocate save area.  Ensure non-zero allocation. */
-	sc->sc_static_nmixer_states = mi.index;
-	sc->sc_static_nmixer_states++;
-	sc->sc_nmixer_states = sc->sc_static_nmixer_states;
+	sc->sc_nmixer_states = mi.index;
 	sc->sc_mixer_state = kmem_zalloc(sizeof(mixer_ctrl_t) *
 	    (sc->sc_nmixer_states + 1), KM_SLEEP);
 
@@ -2131,9 +2129,6 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 		if (error)
 			goto bad4;
 	}
-
-	// このミキサーどうするか
-	//grow_mixer_states(sc, 2);
 
 	// オープンカウント++
 	if (af->ptrack)
@@ -8318,6 +8313,7 @@ mixer_ioctl(struct audio_softc *sc, u_long cmd, void *addr, int flag,
 	struct lwp *l)
 {
 	struct mixer_asyncs *ma;
+	mixer_devinfo_t *mi;
 	mixer_ctrl_t *mc;
 	int error;
 
@@ -8352,8 +8348,10 @@ mixer_ioctl(struct audio_softc *sc, u_long cmd, void *addr, int flag,
 
 	case AUDIO_MIXER_DEVINFO:
 		DPRINTF(2, "AUDIO_MIXER_DEVINFO\n");
-		((mixer_devinfo_t *)addr)->un.v.delta = 0; /* default */
-		error = audio_query_devinfo(sc, (mixer_devinfo_t *)addr);
+		mi = (mixer_devinfo_t *)addr;
+
+		mi->un.v.delta = 0; /* default */
+		error = audio_query_devinfo(sc, mi);
 		break;
 
 	case AUDIO_MIXER_READ:
@@ -8900,59 +8898,14 @@ audio_volume_toggle(device_t dv)
 	mutex_exit(sc->sc_lock);
 }
 
-static void
-unitscopy(mixer_devinfo_t *di, const char *name)
-{
-	strlcpy(di->un.v.units.name, name, sizeof(di->un.v.units.name));
-}
-
 static int
 audio_query_devinfo(struct audio_softc *sc, mixer_devinfo_t *di)
 {
 
 	KASSERT(mutex_owned(sc->sc_lock));
 
-	if (sc->sc_static_nmixer_states == 0 || sc->sc_nmixer_states == 0)
-		goto hardware;
-
-	if (di->index >= sc->sc_static_nmixer_states - 1 &&
-	    di->index < sc->sc_nmixer_states) {
-		if (di->index == sc->sc_static_nmixer_states - 1) {
-			di->mixer_class = sc->sc_static_nmixer_states -1;
-			di->next = di->prev = AUDIO_MIXER_LAST;
-			strlcpy(di->label.name, AudioCvirtchan,
-			    sizeof(di->label.name));
-			di->type = AUDIO_MIXER_CLASS;
-		} else if ((di->index - sc->sc_static_nmixer_states) % 2 == 0) {
-			di->mixer_class = sc->sc_static_nmixer_states -1;
-			snprintf(di->label.name, sizeof(di->label.name),
-			    AudioNdac"%d",
-			    (di->index - sc->sc_static_nmixer_states) / 2);
-			di->type = AUDIO_MIXER_VALUE;
-			di->next = di->prev = AUDIO_MIXER_LAST;
-			di->un.v.num_channels = 1;
-			unitscopy(di, AudioNvolume);
-		} else {
-			di->mixer_class = sc->sc_static_nmixer_states -1;
-			snprintf(di->label.name, sizeof(di->label.name),
-			    AudioNmicrophone "%d",
-			    (di->index - sc->sc_static_nmixer_states) / 2);
-			di->type = AUDIO_MIXER_VALUE;
-			di->next = di->prev = AUDIO_MIXER_LAST;
-			di->un.v.num_channels = 1;
-			unitscopy(di, AudioNvolume);
-		}
-
-		return 0;
-	}
-
-hardware:
 	return sc->hw_if->query_devinfo(sc->hw_hdl, di);
 }
-
-// さすがに見直したほうがよさそう
-// grow_mixer_states()
-// shrink_mixer_states()
 
 #endif /* NAUDIO > 0 */
 
