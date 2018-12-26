@@ -402,16 +402,6 @@ arcofi_set_format(void *handle, int setmode,
 {
 	struct arcofi_softc *sc;
 
-	/* XXX For now, AUDIO2 only supports SLINEAR_NE(BE) */
-	if (play->encoding != AUDIO_ENCODING_SLINEAR_BE) {
-		panic("play encoding %s not supported",
-		    audio_encoding_name(play->encoding));
-	}
-	if (rec->encoding != AUDIO_ENCODING_SLINEAR_BE) {
-		panic("rec encoding %s not supported",
-		    audio_encoding_name(rec->encoding));
-	}
-
 	if ((setmode & AUMODE_PLAY)) {
 		pfil->param = *play;
 		pfil->param.encoding = AUDIO_ENCODING_ULAW;
