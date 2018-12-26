@@ -264,11 +264,18 @@ static const struct audio_hw_if arcofi_hw_if = {
 
 static const struct audio_format arcofi_formats[] = {
 #if defined(AUDIO2)
-	/*
-	 * HW supports 8bit u-Law, 8bit A-Law and 16bit slinear_be.
-	 * AUDIO2 prefers 8bit u-Law.
-	 */
-	{ NULL, AUMODE_PLAY | AUMODE_RECORD, AUDIO_ENCODING_ULAW, 8, 8,
+	// HW がサポートしているのは 8bit u-Law/A-Law と 16bit slinear_be である。
+	// ただし HW のキューは 128バイト固定なので、16bit エンコードを使うと
+	// キューが空になるまでのタイムリミットが半分になることを意味する。
+	// そのため時間制約に余裕のある 8bit u-Law を使いたい。
+	// また、16bit 値の1バイト目だけ送りこんだところでキューが空になると
+	// 何がおきるか分からないというかそれが爆音の原因かも知れないのも
+	// あるのでその点でも 8bit エンコーディングのほうが望ましいと思われる。
+	//
+	// なお、HW エンコードに u-Law を使う場合でもここが u-Law になるわけでは
+	// ないことに注意。ここで指定するフォーマットは MI 層との取り決めにより
+	// 必ず slinear_ne/16 であり、u-Law への変換は set_format で指定する。
+	{ NULL, AUMODE_PLAY | AUMODE_RECORD, AUDIO_ENCODING_SLINEAR_BE, 16, 16,
 	  1, AUFMT_MONAURAL, 1, { 8000 } },
 #else
 	/*
