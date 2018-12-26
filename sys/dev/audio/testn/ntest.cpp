@@ -6,19 +6,21 @@
 #include <fcntl.h>
 #define __STDC_FORMAT_MACROS
 #include <inttypes.h>
+#include <poll.h>
+#include <pthread.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <util.h>
+#include <sys/atomic.h>
 #include <sys/audioio.h>
 #include <sys/cdefs.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/param.h>
 #include <sys/time.h>
-#include <poll.h>
 #include <sys/event.h>
 #include <sys/sysctl.h>
 #include <sys/wait.h>
@@ -63,6 +65,7 @@ char devsound[16];
 char devaudioctl[16];
 char devmixer[16];
 extern struct testtable testtable[];
+int maxthreads;	// 同時実行系テストでのスレッド数
 
 /* from audio.c */
 static const char *encoding_names[] = {
@@ -122,7 +125,8 @@ main(int ac, char *av[])
 	// global option
 	opt_all = 0;
 	opt_later = 0;
-	while ((c = getopt(ac, av, "adlu:")) != -1) {
+	maxthreads = 50;
+	while ((c = getopt(ac, av, "adlt:u:")) != -1) {
 		switch (c) {
 		 case 'a':
 			opt_all = 1;
@@ -132,6 +136,13 @@ main(int ac, char *av[])
 			break;
 		 case 'l':
 			opt_later = 1;
+			break;
+		 case 't':
+			maxthreads = atoi(optarg);
+			if (maxthreads < 1) {
+				printf("invalid maxthreads: %d\n", maxthreads);
+				exit(1);
+			}
 			break;
 		 case 'u':
 			unit = atoi(optarg);
@@ -6414,6 +6425,174 @@ test_audioctl_kqueue()
 	XP_SYS_EQ(0, r);
 }
 
+// 同時にオープン、用
+struct concurrent_open {
+	int id;
+	int fd;
+	int rv;		// 必要なら戻り値
+	pthread_mutex_t *mutex;
+	pthread_cond_t *cond;
+	volatile uint32_t *cnt;
+	int mode;	// open mode
+};
+
+// 同時にオープン、のワーカースレッド
+void *
+thread_concurrent_open(void *arg)
+{
+	struct concurrent_open *m = (struct concurrent_open *)arg;
+
+	// 起き上がったら点呼
+	atomic_inc_32(m->cnt);
+
+	// 開始の合図(cnt==0)を受け取るまで待機
+	pthread_mutex_lock(m->mutex);
+	if (m->cnt != 0)
+		pthread_cond_wait(m->cond, m->mutex);
+	pthread_mutex_unlock(m->mutex);
+
+	// 一斉にオープン (検査とクローズは逐次)
+	m->fd = OPEN(devaudio, m->mode);
+
+	return NULL;
+}
+
+// 一斉にオープンする
+void
+test_concurrent_open()
+{
+	pthread_t threads[maxthreads];
+	struct concurrent_open m[maxthreads];
+	pthread_mutex_t mutex;
+	pthread_cond_t cond;
+	volatile uint32_t cnt;
+	int r;
+
+	TEST("concurrent_open");
+	if (netbsd <= 7) {
+		XP_SKIP("N7 does not support multi-open");
+		return;
+	}
+
+	pthread_mutex_init(&mutex, NULL);
+	pthread_cond_init(&cond, NULL);
+
+	for (int mode = 0; mode <= 2; mode++) {
+		DESC("%s", openmodetable[mode]);
+
+		// スレッドを作成
+		cnt = 0;
+		for (int i = 0; i < maxthreads; i++) {
+			m[i].id = i;
+			m[i].fd = -1;
+			m[i].mutex = &mutex;
+			m[i].cond = &cond;
+			m[i].cnt = &cnt;
+			m[i].mode = mode;
+			pthread_create(&threads[i], NULL, thread_concurrent_open, &m[i]);
+		}
+
+		// 全員が上がるのを待つ
+		while (cnt != maxthreads) {
+			usleep(1000);
+		}
+
+		// cnt==0 がテスト開始の合図
+		pthread_mutex_lock(&mutex);
+		cnt = 0;
+		pthread_cond_broadcast(&cond);
+		pthread_mutex_unlock(&mutex);
+
+		// 逐次終了
+		for (int i = 0; i < maxthreads; i++) {
+			pthread_join(threads[i], NULL);
+			XP_SYS_OK(m[i].fd);
+			if (m[i].fd >= 0) {
+				r = CLOSE(m[i].fd);
+				XP_SYS_EQ(0, r);
+			}
+		}
+	}
+}
+
+// 同時にクローズ、のワーカースレッド
+void *
+thread_concurrent_close(void *arg)
+{
+	struct concurrent_open *m = (struct concurrent_open *)arg;
+
+	// 起き上がったら点呼
+	atomic_inc_32(m->cnt);
+
+	// 開始の合図(cnt==0)を受け取るまで待機
+	pthread_mutex_lock(m->mutex);
+	if (m->cnt != 0)
+		pthread_cond_wait(m->cond, m->mutex);
+	pthread_mutex_unlock(m->mutex);
+
+	// 一斉にクローズ (検査は逐次)
+	m->rv = CLOSE(m->fd);
+
+	return NULL;
+}
+
+// 一斉にクローズする
+void
+test_concurrent_close()
+{
+	pthread_t threads[maxthreads];
+	struct concurrent_open m[maxthreads];
+	pthread_mutex_t mutex;
+	pthread_cond_t cond;
+	volatile uint32_t cnt;
+
+	TEST("concurrent_close");
+	if (netbsd <= 7) {
+		XP_SKIP("N7 does not support multi-open");
+		return;
+	}
+
+	pthread_mutex_init(&mutex, NULL);
+	pthread_cond_init(&cond, NULL);
+
+	for (int mode = 0; mode <= 2; mode++) {
+		DESC("%s", openmodetable[mode]);
+
+		// スレッドを作成
+		cnt = 0;
+		for (int i = 0; i < maxthreads; i++) {
+			m[i].id = i;
+			m[i].rv = -1;
+			m[i].mutex = &mutex;
+			m[i].cond = &cond;
+			m[i].cnt = &cnt;
+			// 逐次オープン
+			m[i].fd = OPEN(devaudio, mode);
+			XP_SYS_OK(m[i].fd);
+			pthread_create(&threads[i], NULL, thread_concurrent_close, &m[i]);
+		}
+
+		// 全員が上がるのを待つ
+		while (cnt != maxthreads) {
+			usleep(1000);
+		}
+
+		// cnt==0 がテスト開始の合図
+		pthread_mutex_lock(&mutex);
+		cnt = 0;
+		pthread_cond_broadcast(&cond);
+		pthread_mutex_unlock(&mutex);
+
+		// 逐次終了と検査
+		for (int i = 0; i < maxthreads; i++) {
+			pthread_join(threads[i], NULL);
+			XP_SYS_EQ(0, m[i].rv);
+		}
+	}
+}
+
+
+
 // テスト一覧
 #define DEF(x)	{ #x, test_ ## x }
 struct testtable testtable[] = {
@@ -6483,6 +6662,8 @@ struct testtable testtable[] = {
 	DEF(audioctl_rw),
 	DEF(audioctl_poll),
 	DEF(audioctl_kqueue),
+	DEF(concurrent_open),
+	DEF(concurrent_close),
 	{ NULL, NULL },
 };
 
