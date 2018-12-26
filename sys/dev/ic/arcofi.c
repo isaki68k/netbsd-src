@@ -197,6 +197,10 @@ static int	arcofi_cr3_to_portmask(uint, int);
 static int	arcofi_gain_to_mi(uint);
 static uint	arcofi_mi_to_gain(int);
 static uint	arcofi_portmask_to_cr3(int);
+#if defined(AUDIO2)
+static int	arcofi_recv_data(struct arcofi_softc *);
+static int	arcofi_xmit_data(struct arcofi_softc *);
+#endif
 
 static int	arcofi_open(void *, int);
 static void	arcofi_close(void *);
@@ -593,6 +597,50 @@ arcofi_commit_settings(void *v)
 	return rc;
 }
 
+#if defined(AUDIO2)
+/*
+ * Take it out of the queue as much as possible.
+ */
+static int
+arcofi_recv_data(struct arcofi_softc *sc)
+{
+	uint8_t *cur;
+	uint8_t *past;
+
+	cur = sc->sc_recv.buf;
+	past = sc->sc_recv.past;
+
+	while (cur != past &&
+	    (arcofi_read(sc, ARCOFI_FIFO_SR) & FIFO_SR_IN_EMPTY) == 0) {
+		*cur++ = arcofi_read(sc, ARCOFI_FIFO_DATA);
+	}
+	sc->sc_recv.buf = cur;
+
+	return past - cur;
+}
+
+/*
+ * Fill the queue as much as possible.
+ */
+static int
+arcofi_xmit_data(struct arcofi_softc *sc)
+{
+	uint8_t *cur;
+	uint8_t *past;
+
+	cur = sc->sc_xmit.buf;
+	past = sc->sc_xmit.past;
+
+	while (cur != past &&
+	    (arcofi_read(sc, ARCOFI_FIFO_SR) & FIFO_SR_OUT_FULL) == 0) {
+		arcofi_write(sc, ARCOFI_FIFO_DATA, *cur++);
+	}
+	sc->sc_xmit.buf = cur;
+
+	return past - cur;
+}
+#endif /* AUDIO2 */
+
 static int
 arcofi_start_input(void *v, void *rbuf, int rsz, void (*cb)(void *),
     void *cbarg)
@@ -643,6 +691,11 @@ arcofi_start_output(void *v, void *wbuf, int wsz, void (*cb)(void *),
 	sc->sc_xmit.past = (uint8_t *)wbuf + wsz;
 	sc->sc_xmit.cb = cb;
 	sc->sc_xmit.cbarg = cbarg;
+
+#if defined(AUDIO2)
+	/* Fill FIFO */
+	arcofi_xmit_data(sc);
+#endif
 
 	/* enable output FIFO interrupts */
 	arcofi_write(sc, ARCOFI_FIFO_IR, arcofi_read(sc, ARCOFI_FIFO_IR) |
@@ -1086,11 +1139,11 @@ int
 arcofi_hwintr(void *v)
 {
 	struct arcofi_softc *sc = (struct arcofi_softc *)v;
-	uint8_t *cur, *past;
-	uint8_t csr, fir;
 #if !defined(AUDIO2)
+	uint8_t *cur, *past;
 	uint8_t data;
 #endif
+	uint8_t csr, fir;
 	int rc = 0;
 
 	csr = arcofi_read(sc, ARCOFI_CSR);
@@ -1104,17 +1157,8 @@ arcofi_hwintr(void *v)
 	if ((sc->sc_mode & AUMODE_RECORD) &&
 	    (fir & FIFO_IR_EVENT(FIFO_IR_IN_HALF_EMPTY))) {
 		rc = 1;
-		cur = sc->sc_recv.buf;
-		past = sc->sc_recv.past;
 
-		while (cur != past &&
-		    (arcofi_read(sc, ARCOFI_FIFO_SR) &
-		     FIFO_SR_IN_EMPTY) == 0) {
-			*cur++ = arcofi_read(sc, ARCOFI_FIFO_DATA);
-		}
-		sc->sc_recv.buf = cur;
-
-		if (cur == past) {
+		if (arcofi_recv_data(sc) == 0) {
 			/* disable further interrupts */
 			arcofi_write(sc, ARCOFI_FIFO_IR,
 			    arcofi_read(sc, ARCOFI_FIFO_IR) &
@@ -1129,17 +1173,8 @@ arcofi_hwintr(void *v)
 	if ((sc->sc_mode & AUMODE_PLAY) &&
 	    (fir & FIFO_IR_EVENT(FIFO_IR_OUT_HALF_EMPTY))) {
 		rc = 1;
-		cur = sc->sc_xmit.buf;
-		past = sc->sc_xmit.past;
 
-		while (cur != past &&
-		    (arcofi_read(sc, ARCOFI_FIFO_SR) &
-		     FIFO_SR_OUT_FULL) == 0) {
-			arcofi_write(sc, ARCOFI_FIFO_DATA, *cur++);
-		}
-		sc->sc_xmit.buf = cur;
-
-		if (cur == past) {
+		if (arcofi_xmit_data(sc) == 0) {
 			/* disable further interrupts */
 			arcofi_write(sc, ARCOFI_FIFO_IR,
 			    arcofi_read(sc, ARCOFI_FIFO_IR) &
