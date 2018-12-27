@@ -5275,7 +5275,6 @@ audio_pmixer_process(struct audio_softc *sc, bool force_mix)
 {
 	audio_trackmixer_t *mixer;
 	audio_file_t *f;
-	int hw_free_count;
 	int frame_count;
 	int sample_count;
 	int mixed;
@@ -5285,16 +5284,8 @@ audio_pmixer_process(struct audio_softc *sc, bool force_mix)
 
 	mixer = sc->sc_pmixer;
 
-	// 今回取り出すフレーム数を決定
-	// 実際には hwbuf はブロック単位で変動するはずなので
-	// count は1ブロック分になるはず
-	hw_free_count = auring_get_contig_free(&mixer->hwbuf);
-	frame_count = uimin(hw_free_count, mixer->frames_per_block);
-	if (frame_count <= 0) {
-		TRACE("count too short: hw_free=%d frames_per_block=%d",
-		    hw_free_count, mixer->frames_per_block);
-		return;
-	}
+	frame_count = mixer->frames_per_block;
+	KASSERT(auring_get_contig_free(&mixer->hwbuf) >= frame_count);
 	sample_count = frame_count * mixer->mixfmt.channels;
 
 	mixer->mixseq++;
