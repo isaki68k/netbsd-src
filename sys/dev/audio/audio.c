@@ -2730,7 +2730,8 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		break;
 
 	case AUDIO_DRAIN:
-		error = audio_track_drain(sc, file->ptrack);
+		if (file->ptrack)
+			error = audio_track_drain(sc, file->ptrack);
 		break;
 
 	case AUDIO_GETDEV:
@@ -6026,6 +6027,7 @@ audio_track_clear(struct audio_softc *sc, audio_track_t *track)
 
 /*
  * Drain the track.
+ * track must be present and playback track.
  * If successful, it returns 0.  Otherwise returns errno.
  */
 static int

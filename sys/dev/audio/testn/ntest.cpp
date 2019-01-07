@@ -1929,6 +1929,26 @@ test_drain_2(void)
 	XP_SYS_EQ(0, r);
 }
 
+// 録音専用ディスクリプタに drain してみる
+void
+test_drain_3(void)
+{
+	int r;
+	int fd;
+
+	TEST("drain_3");
+
+	fd = OPEN(devaudio, O_RDONLY);
+	if (fd == -1)
+		err(1, "open");
+
+	r = IOCTL(fd, AUDIO_DRAIN, NULL, "");
+	XP_SYS_EQ(0, r);
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+}
+
 // PLAY_SYNC でブロックサイズずつ書き込む
 // 期待通りの音が出るかは分からないので、play.error が0なことだけ確認
 void
@@ -6606,6 +6626,7 @@ struct testtable testtable[] = {
 	DEF(encoding_2),
 	DEF(drain_1),
 	DEF(drain_2),
+	DEF(drain_3),
 	DEF(playsync_1),
 	DEF(readwrite_1),
 	DEF(readwrite_2),
