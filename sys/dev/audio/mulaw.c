@@ -68,19 +68,21 @@ __KERNEL_RCSID(0, "$NetBSD$");
 
 // audio_internal_to_mulaw
 //
-// 1) 8bitテーブル方式 (従来版)
-//	本来14bitに対して精度がリニア8bit分しかない。がたぶん聞いても分からん。
-//	テーブル一発なので速い。
+// 1) 8bitテーブル方式 (MULAW_LQ_ENC)
+//	従来版。
+//	精度が本来の14bitに対して8bit分しかないため、
+//	無音や音が小さい部分をヘッドホンで聴き比べるとノイズが目立つ。
+//	テーブル一発なので速いが、テーブルの分コードサイズは大きい。
 //	amd64: 58+256(=314) byte, 327 times/msec
 //	x68k:  64+256(=320) byte
 //
-// 2) 14ビット計算方式 (MULAW_HQ_ENC)
+// 2) 14ビット計算方式
 //	精度はフルスペック。
-//	サイズは8bit テーブルと比べて半分以下だが10倍以上遅い。
+//	8bit テーブル版と比べて10倍以上遅いが、サイズは半分以下と小さい。
 //	amd64: 136 byte,           14.8 (P/E5400)  43.8 (Ryzen X2950) times/msec
 //	x68k:  120 byte,
 //
-//#define MULAW_HQ_ENC
+//#define MULAW_LQ_ENC
 
 #if 0
 #define MPRINTF(fmt, ...)	printf(fmt, ## __VA_ARGS__)
@@ -123,7 +125,7 @@ static const int16_t mulaw_to_slinear16[256] = {
 	0x0038, 0x0030, 0x0028, 0x0020, 0x0018, 0x0010, 0x0008, 0x0000,
 };
 
-#if !defined(MULAW_HQ_ENC)
+#if defined(MULAW_LQ_ENC)
 static const uint8_t slinear8_to_mulaw[256] = {
 	0xff, 0xe7, 0xdb, 0xd3, 0xcd, 0xc9, 0xc5, 0xc1,
 	0xbe, 0xbc, 0xba, 0xb8, 0xb6, 0xb4, 0xb2, 0xb0,
@@ -250,8 +252,13 @@ audio_internal_to_mulaw32(audio_filter_arg_t *arg)
 
 	for (i = 0; i < sample_count; i++) {
 		uint8_t m;
-#if defined(MULAW_HQ_ENC)
-		/* 14bit (full spec) encoder */
+#if defined(MULAW_LQ_ENC)
+		/* 8bit (low quality, fast but fat) encoder */
+		uint8_t val;
+		val = (*s++) >> (AUDIO_INTERNAL_BITS - 8);
+		m = slinear8_to_mulaw[val];
+#else
+		/* 14bit (fullspec, slow but small) encoder */
 		int16_t val;
 		int c;
 
@@ -283,11 +290,6 @@ audio_internal_to_mulaw32(audio_filter_arg_t *arg)
 		val <<= 1;
 
 		m += (val >> 12) & 0x0f; /* mantissa */
-#else
-		/* 8bit encoder */
-		uint8_t val;
-		val = (*s++) >> (AUDIO_INTERNAL_BITS - 8);
-		m = slinear8_to_mulaw[val];
 #endif
 
 #if defined(MULAW32)
