@@ -1876,7 +1876,7 @@ test_drain_1(void)
 
 	TEST("drain_1");
 
-	fd = open(devaudio, O_WRONLY);
+	fd = OPEN(devaudio, O_WRONLY);
 	if (fd == -1)
 		err(1, "open");
 
@@ -1907,7 +1907,7 @@ test_drain_2(void)
 
 	TEST("drain_2");
 
-	fd = open(devaudio, O_WRONLY);
+	fd = OPEN(devaudio, O_WRONLY);
 	if (fd == -1)
 		err(1, "open");
 
