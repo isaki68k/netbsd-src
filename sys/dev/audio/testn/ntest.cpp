@@ -66,6 +66,7 @@ char devaudioctl[16];
 char devmixer[16];
 extern struct testtable testtable[];
 int maxthreads;	// 同時実行系テストでのスレッド数
+#define MAXTHREADS	(50)	// 初期値
 
 /* from audio.c */
 static const char *encoding_names[] = {
@@ -100,6 +101,7 @@ usage()
 		getprogname());
 	printf("options:\n");
 	printf("\t-d: debug\n");
+	printf("\t-t <threads>: for concurrent tests (default:%d)\n", MAXTHREADS);
 	printf("\t-u <unit>: audio/sound device unit number (defualt:0)\n");
 	printf("testname:\n");
 	for (int i = 0; testtable[i].name != NULL; i++) {
@@ -125,7 +127,7 @@ main(int ac, char *av[])
 	// global option
 	opt_all = 0;
 	opt_later = 0;
-	maxthreads = 50;
+	maxthreads = MAXTHREADS;
 	while ((c = getopt(ac, av, "adlt:u:")) != -1) {
 		switch (c) {
 		 case 'a':
