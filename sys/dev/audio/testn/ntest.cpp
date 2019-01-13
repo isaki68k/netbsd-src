@@ -6447,7 +6447,7 @@ test_audioctl_kqueue()
 	XP_SYS_EQ(0, r);
 }
 
-// 同時にオープン、用
+// 並列テスト用
 struct concurrent_open {
 	int id;
 	int fd;
@@ -6456,16 +6456,16 @@ struct concurrent_open {
 	pthread_cond_t *cond;
 	volatile uint32_t *cnt;
 	int mode;	// open mode
-	struct timeval *start;		// 開始時刻
-	volatile uint32_t *time;	// 所用時間(usec)の書き戻し先
+	struct audio_info *ai;
+	char *buf;
+	int buflen;
 };
 
-// 同時にオープン、のワーカースレッド
+// ワーカースレッド
 void *
 thread_concurrent_open(void *arg)
 {
 	struct concurrent_open *m = (struct concurrent_open *)arg;
-	struct timeval end, result;
 
 	// 起き上がったら点呼
 	atomic_inc_32(m->cnt);
@@ -6479,16 +6479,10 @@ thread_concurrent_open(void *arg)
 	// 一斉にオープン (検査とクローズは逐次)
 	m->fd = OPEN(devaudio, m->mode);
 
-	// オープンできるまでの時間を記録
-	// みんなで上書きするので最後の記録だけが残る
-	gettimeofday(&end, NULL);
-	timersub(&end, m->start, &result);
-	*m->time = (uint32_t)result.tv_usec;
-
 	return NULL;
 }
 
-// 一斉にオープンする
+// 複数のスレッドから一斉にオープンする。
 void
 test_concurrent_open()
 {
@@ -6497,8 +6491,7 @@ test_concurrent_open()
 	pthread_mutex_t mutex;
 	pthread_cond_t cond;
 	volatile uint32_t cnt;
-	struct timeval start;
-	volatile uint32_t usec;
+	struct timeval start, end, result;
 	uint32_t total_usec;
 	int r;
 
@@ -6524,8 +6517,6 @@ test_concurrent_open()
 			m[i].cond = &cond;
 			m[i].cnt = &cnt;
 			m[i].mode = mode;
-			m[i].start = &start;
-			m[i].time = &usec;
 			pthread_create(&threads[i], NULL, thread_concurrent_open, &m[i]);
 		}
 
@@ -6551,17 +6542,21 @@ test_concurrent_open()
 			}
 		}
 
-		total_usec += usec;
+		// 所用時間
+		gettimeofday(&end, NULL);
+		timersub(&end, &start, &result);
+
+		total_usec += (uint32_t)result.tv_sec * 1000000 + result.tv_usec;
 	}
+	total_usec /= 3;
 	printf("%s: %d threads, %d usec\n", testname, maxthreads, total_usec);
 }
 
-// 同時にクローズ、のワーカースレッド
+// ワーカースレッド
 void *
 thread_concurrent_close(void *arg)
 {
 	struct concurrent_open *m = (struct concurrent_open *)arg;
-	struct timeval end, result;
 
 	// 起き上がったら点呼
 	atomic_inc_32(m->cnt);
@@ -6575,16 +6570,10 @@ thread_concurrent_close(void *arg)
 	// 一斉にクローズ (検査は逐次)
 	m->rv = CLOSE(m->fd);
 
-	// クローズできるまでの時間を記録
-	// みんなで上書きするので最後の記録だけが残る
-	gettimeofday(&end, NULL);
-	timersub(&end, m->start, &result);
-	*m->time = (uint32_t)result.tv_usec;
-
 	return NULL;
 }
 
-// 一斉にクローズする
+// 複数のスレッドから一斉にクローズする。
 void
 test_concurrent_close()
 {
@@ -6593,8 +6582,7 @@ test_concurrent_close()
 	pthread_mutex_t mutex;
 	pthread_cond_t cond;
 	volatile uint32_t cnt;
-	struct timeval start;
-	volatile uint32_t usec;
+	struct timeval start, end, result;
 	uint32_t total_usec;
 
 	TEST("concurrent_close");
@@ -6618,8 +6606,6 @@ test_concurrent_close()
 			m[i].mutex = &mutex;
 			m[i].cond = &cond;
 			m[i].cnt = &cnt;
-			m[i].start = &start;
-			m[i].time = &usec;
 			// 逐次オープン
 			m[i].fd = OPEN(devaudio, mode);
 			XP_SYS_OK(m[i].fd);
@@ -6644,11 +6630,442 @@ test_concurrent_close()
 			XP_SYS_EQ(0, m[i].rv);
 		}
 
-		total_usec += usec;
+		// 所用時間
+		gettimeofday(&end, NULL);
+		timersub(&end, &start, &result);
+
+		total_usec += (uint32_t)result.tv_sec * 1000000 + result.tv_usec;
 	}
+	total_usec /= 3;
 	printf("%s: %d threads, %d usec\n", testname, maxthreads, total_usec);
 }
 
+// ワーカースレッド
+void *
+thread_concurrent_write(void *arg)
+{
+	struct concurrent_open *m = (struct concurrent_open *)arg;
+	int i;
+	int r;
+
+	// 起き上がったら点呼
+	atomic_inc_32(m->cnt);
+
+	// 開始の合図(cnt==0)を受け取るまで待機
+	pthread_mutex_lock(m->mutex);
+	if (m->cnt != 0)
+		pthread_cond_wait(m->cond, m->mutex);
+	pthread_mutex_unlock(m->mutex);
+
+	// 一斉に書き込む
+	// バッファは 64KB くらいはあるはずなので 2KB x 16回で書き込めば
+	// write(2) がブロックすることはまずないはず。
+	for (i = 0; i < 16; i++) {
+		r = WRITE(m->fd, m->buf, m->buflen);
+		XP_SYS_EQ(m->buflen, r);
+	}
+
+	return NULL;
+}
+
+// 複数のスレッドから (それぞれ自分の fd に対して) 一斉に書き込む。
+void
+test_concurrent_write()
+{
+	pthread_t threads[maxthreads];
+	struct concurrent_open m[maxthreads];
+	pthread_mutex_t mutex;
+	pthread_cond_t cond;
+	volatile uint32_t cnt;
+	struct timeval start, end, result;
+	uint32_t total_usec;
+	char *buf;
+	int buflen;
+	struct audio_info ai;
+	int r;
+
+	TEST("concurrent_write");
+	if (netbsd <= 7) {
+		XP_SKIP("N7 does not support multi-open");
+		return;
+	}
+
+	pthread_mutex_init(&mutex, NULL);
+	pthread_cond_init(&cond, NULL);
+
+	buflen = 2048;
+	buf = (char *)malloc(buflen);
+	memset(buf, 0, buflen);
+
+	AUDIO_INITINFO(&ai);
+	ai.play.encoding = AUDIO_ENCODING_SLINEAR_NE;
+	ai.play.precision = 16;
+	ai.play.channels = 2;
+	ai.play.sample_rate = 48000;
+
+	// スレッドを作成
+	cnt = 0;
+	for (int i = 0; i < maxthreads; i++) {
+		m[i].id = i;
+		m[i].rv = -1;
+		m[i].mutex = &mutex;
+		m[i].cond = &cond;
+		m[i].cnt = &cnt;
+		m[i].buf = buf;
+		m[i].buflen = buflen;
+
+		// 逐次オープン
+		m[i].fd = OPEN(devaudio, O_WRONLY);
+		XP_SYS_OK(m[i].fd);
+		r = IOCTL(m[i].fd, AUDIO_SETINFO, &ai, "encoding");
+		XP_SYS_EQ(0, r);
+
+		pthread_create(&threads[i], NULL, thread_concurrent_write, &m[i]);
+	}
+
+	// 全員が上がるのを待つ
+	while (cnt != maxthreads) {
+		usleep(1000);
+	}
+
+	// cnt==0 がテスト開始の合図
+	pthread_mutex_lock(&mutex);
+	gettimeofday(&start, NULL);
+	cnt = 0;
+	pthread_cond_broadcast(&cond);
+	pthread_mutex_unlock(&mutex);
+
+	// 逐次終了
+	for (int i = 0; i < maxthreads; i++) {
+		pthread_join(threads[i], NULL);
+		if (m[i].fd >= 0) {
+			r = CLOSE(m[i].fd);
+			XP_SYS_EQ(0, r);
+		}
+	}
+
+	// 所用時間
+	gettimeofday(&end, NULL);
+	timersub(&end, &start, &result);
+	total_usec = (uint32_t)result.tv_sec * 1000000 + result.tv_usec;
+
+	free(buf);
+
+	printf("%s: %d threads, %d usec\n", testname, maxthreads, total_usec);
+}
+
+// ワーカースレッド
+void *
+thread_concurrent_1(void *arg)
+{
+	struct concurrent_open *m = (struct concurrent_open *)arg;
+	int r;
+
+	// 起き上がったら点呼
+	atomic_inc_32(m->cnt);
+
+	// 開始の合図(cnt==0)を受け取るまで待機
+	pthread_mutex_lock(m->mutex);
+	if (m->cnt != 0)
+		pthread_cond_wait(m->cond, m->mutex);
+	pthread_mutex_unlock(m->mutex);
+
+	// 一斉にオープンして…
+	m->fd = OPEN(devaudio, O_WRONLY);
+	XP_SYS_OK(m->fd);
+
+	usleep(1);
+
+	// クローズする。
+	r = CLOSE(m->fd);
+	XP_SYS_EQ(0, r);
+
+	return NULL;
+}
+
+// それぞれの fd に対してオープン・クローズという直列動作を
+// 複数のスレッドから一斉に行う。
+void
+test_concurrent_1()
+{
+	pthread_t threads[maxthreads];
+	struct concurrent_open m[maxthreads];
+	pthread_mutex_t mutex;
+	pthread_cond_t cond;
+	volatile uint32_t cnt;
+	struct timeval start, end, result;
+	uint32_t total_usec;
+
+	TEST("concurrent_1");
+	if (netbsd <= 7) {
+		XP_SKIP("N7 does not support multi-open");
+		return;
+	}
+
+	pthread_mutex_init(&mutex, NULL);
+	pthread_cond_init(&cond, NULL);
+
+	// スレッドを作成
+	cnt = 0;
+	for (int i = 0; i < maxthreads; i++) {
+		m[i].id = i;
+		m[i].rv = -1;
+		m[i].mutex = &mutex;
+		m[i].cond = &cond;
+		m[i].cnt = &cnt;
+
+		pthread_create(&threads[i], NULL, thread_concurrent_1, &m[i]);
+	}
+
+	// 全員が上がるのを待つ
+	while (cnt != maxthreads) {
+		usleep(1000);
+	}
+
+	// cnt==0 がテスト開始の合図
+	pthread_mutex_lock(&mutex);
+	gettimeofday(&start, NULL);
+	cnt = 0;
+	pthread_cond_broadcast(&cond);
+	pthread_mutex_unlock(&mutex);
+
+	// 合流
+	for (int i = 0; i < maxthreads; i++) {
+		pthread_join(threads[i], NULL);
+	}
+
+	// 所用時間
+	gettimeofday(&end, NULL);
+	timersub(&end, &start, &result);
+	total_usec = (uint32_t)result.tv_sec * 1000000 + result.tv_usec;
+
+	printf("%s: %d threads, %d usec\n", testname, maxthreads, total_usec);
+}
+
+// ワーカースレッド
+void *
+thread_concurrent_2(void *arg)
+{
+	struct concurrent_open *m = (struct concurrent_open *)arg;
+
+	// 起き上がったら点呼
+	atomic_inc_32(m->cnt);
+
+	// 開始の合図(cnt==0)を受け取るまで待機
+	pthread_mutex_lock(m->mutex);
+	if (m->cnt != 0)
+		pthread_cond_wait(m->cond, m->mutex);
+	pthread_mutex_unlock(m->mutex);
+
+	// 書き込む (検査は逐次)
+	m->rv = WRITE(m->fd, m->buf, m->buflen);
+
+	return NULL;
+}
+
+// 1本の fd に対して複数のスレッドから一斉に書き込みを行う。
+void
+test_concurrent_2()
+{
+	pthread_t threads[maxthreads];
+	struct concurrent_open m[maxthreads];
+	pthread_mutex_t mutex;
+	pthread_cond_t cond;
+	volatile uint32_t cnt;
+	struct timeval start, end, result;
+	uint32_t total_usec;
+	char *buf;
+	int buflen;
+	struct audio_info ai;
+	int fd;
+	int r;
+
+	TEST("concurrent_2");
+	if (netbsd <= 7) {
+		XP_SKIP("N7 does not support multi-open");
+		return;
+	}
+
+	pthread_mutex_init(&mutex, NULL);
+	pthread_cond_init(&cond, NULL);
+
+	// 全員書き込んでもバッファ (たぶん 64KB くらい) を越えないようにする
+	buflen = 50000 / maxthreads;
+	buflen &= ~3;
+	buf = (char *)malloc(buflen);
+	memset(buf, 0, buflen);
+
+	fd = OPEN(devaudio, O_WRONLY);
+	XP_SYS_OK(fd);
+
+	AUDIO_INITINFO(&ai);
+	ai.play.encoding = AUDIO_ENCODING_SLINEAR_NE;
+	ai.play.precision = 16;
+	ai.play.channels = 2;
+	ai.play.sample_rate = 48000;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "encoding");
+	XP_SYS_EQ(0, r);
+
+	// スレッドを作成
+	cnt = 0;
+	for (int i = 0; i < maxthreads; i++) {
+		m[i].id = i;
+		m[i].rv = -1;
+		m[i].fd = fd;
+		m[i].mutex = &mutex;
+		m[i].cond = &cond;
+		m[i].cnt = &cnt;
+		m[i].buf = buf;
+		m[i].buflen = buflen;
+
+		pthread_create(&threads[i], NULL, thread_concurrent_2, &m[i]);
+	}
+
+	// 全員が上がるのを待つ
+	while (cnt != maxthreads) {
+		usleep(1000);
+	}
+
+	// cnt==0 がテスト開始の合図
+	pthread_mutex_lock(&mutex);
+	gettimeofday(&start, NULL);
+	cnt = 0;
+	pthread_cond_broadcast(&cond);
+	pthread_mutex_unlock(&mutex);
+
+	// 検査
+	for (int i = 0; i < maxthreads; i++) {
+		pthread_join(threads[i], NULL);
+		XP_SYS_EQ(buflen, m[i].rv);
+	}
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+
+	// 所用時間
+	gettimeofday(&end, NULL);
+	timersub(&end, &start, &result);
+	total_usec = (uint32_t)result.tv_sec * 1000000 + result.tv_usec;
+
+	free(buf);
+
+	printf("%s: %d threads, %d usec\n", testname, maxthreads, total_usec);
+}
+
+// ワーカースレッド
+void *
+thread_concurrent_3(void *arg)
+{
+	struct concurrent_open *m = (struct concurrent_open *)arg;
+	int i;
+	int r;
+
+	// 起き上がったら点呼
+	atomic_inc_32(m->cnt);
+
+	// 開始の合図(cnt==0)を受け取るまで待機
+	pthread_mutex_lock(m->mutex);
+	if (m->cnt != 0)
+		pthread_cond_wait(m->cond, m->mutex);
+	pthread_mutex_unlock(m->mutex);
+
+	// 一斉にオープンして…
+	m->fd = OPEN(devaudio, O_WRONLY);
+	XP_SYS_OK(m->fd);
+
+	// 設定変えて…
+	r = IOCTL(m->fd, AUDIO_SETINFO, m->ai, "encoding");
+	XP_SYS_EQ(0, r);
+
+	// 書き込んで…
+	for (i = 0; i < 16; i++) {
+		r = WRITE(m->fd, m->buf, m->buflen);
+		XP_SYS_EQ(m->buflen, r);
+	}
+
+	// クローズする。
+	r = CLOSE(m->fd);
+	XP_SYS_EQ(0, r);
+
+	return NULL;
+}
+
+// それぞれの fd に対してオープン・書き込み・クローズという直列動作を
+// 複数のスレッドから一斉に行う。
+void
+test_concurrent_3()
+{
+	pthread_t threads[maxthreads];
+	struct concurrent_open m[maxthreads];
+	pthread_mutex_t mutex;
+	pthread_cond_t cond;
+	volatile uint32_t cnt;
+	struct timeval start, end, result;
+	uint32_t total_usec;
+	char *buf;
+	int buflen;
+	struct audio_info ai;
+
+	TEST("concurrent_3");
+	if (netbsd <= 7) {
+		XP_SKIP("N7 does not support multi-open");
+		return;
+	}
+
+	pthread_mutex_init(&mutex, NULL);
+	pthread_cond_init(&cond, NULL);
+
+	buflen = 2048;
+	buf = (char *)malloc(buflen);
+	memset(buf, 0, buflen);
+
+	AUDIO_INITINFO(&ai);
+	ai.play.encoding = AUDIO_ENCODING_SLINEAR_NE;
+	ai.play.precision = 16;
+	ai.play.channels = 2;
+	ai.play.sample_rate = 48000;
+
+	// スレッドを作成
+	cnt = 0;
+	for (int i = 0; i < maxthreads; i++) {
+		m[i].id = i;
+		m[i].rv = -1;
+		m[i].mutex = &mutex;
+		m[i].cond = &cond;
+		m[i].cnt = &cnt;
+		m[i].ai = &ai;
+		m[i].buf = buf;
+		m[i].buflen = buflen;
+
+		pthread_create(&threads[i], NULL, thread_concurrent_3, &m[i]);
+	}
+
+	// 全員が上がるのを待つ
+	while (cnt != maxthreads) {
+		usleep(1000);
+	}
+
+	// cnt==0 がテスト開始の合図
+	pthread_mutex_lock(&mutex);
+	gettimeofday(&start, NULL);
+	cnt = 0;
+	pthread_cond_broadcast(&cond);
+	pthread_mutex_unlock(&mutex);
+
+	// 合流
+	for (int i = 0; i < maxthreads; i++) {
+		pthread_join(threads[i], NULL);
+	}
+
+	// 所用時間
+	gettimeofday(&end, NULL);
+	timersub(&end, &start, &result);
+	total_usec = (uint32_t)result.tv_sec * 1000000 + result.tv_usec;
+
+	free(buf);
+
+	printf("%s: %d threads, %d usec\n", testname, maxthreads, total_usec);
+}
 
 
 // テスト一覧
@@ -6723,6 +7140,10 @@ struct testtable testtable[] = {
 	DEF(audioctl_kqueue),
 	DEF(concurrent_open),
 	DEF(concurrent_close),
+	DEF(concurrent_write),
+	DEF(concurrent_1),
+	DEF(concurrent_2),
+	DEF(concurrent_3),
 	{ NULL, NULL },
 };
 
