@@ -112,7 +112,7 @@
  *   made atomically.  SLEEPS CANNOT OCCUR WITH THIS LOCK HELD.
  *
  * - sc_exlock, private to this module.  This is a variable protected by
- *   sc_lock.   It is known as the "critical section".
+ *   sc_lock.  It is known as the "critical section".
  *   Some operations release sc_lock in order to allocate memory, to wait
  *   for in-flight I/O to complete, to copy to/from user context, etc.
  *   sc_exlock provides a critical section even under the circumstance.
