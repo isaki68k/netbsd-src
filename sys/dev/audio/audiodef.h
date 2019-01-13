@@ -66,9 +66,6 @@
 // C の実装定義動作を使用する。
 #define AUDIO_USE_C_IMPLEMENTATION_DEFINED_BEHAVIOR
 
-/* for audio_enter()/audio_exit() */
-#define AUDIO_LK_EXCLUSIVE	(1)	/* exclusive lock */
-
 /* conversion stage */
 typedef struct {
 	audio_ring_t srcbuf;
