@@ -6456,6 +6456,8 @@ struct concurrent_open {
 	pthread_cond_t *cond;
 	volatile uint32_t *cnt;
 	int mode;	// open mode
+	struct timeval *start;		// 開始時刻
+	volatile uint32_t *time;	// 所用時間(usec)の書き戻し先
 };
 
 // 同時にオープン、のワーカースレッド
@@ -6463,6 +6465,7 @@ void *
 thread_concurrent_open(void *arg)
 {
 	struct concurrent_open *m = (struct concurrent_open *)arg;
+	struct timeval end, result;
 
 	// 起き上がったら点呼
 	atomic_inc_32(m->cnt);
@@ -6476,6 +6479,12 @@ thread_concurrent_open(void *arg)
 	// 一斉にオープン (検査とクローズは逐次)
 	m->fd = OPEN(devaudio, m->mode);
 
+	// オープンできるまでの時間を記録
+	// みんなで上書きするので最後の記録だけが残る
+	gettimeofday(&end, NULL);
+	timersub(&end, m->start, &result);
+	*m->time = (uint32_t)result.tv_usec;
+
 	return NULL;
 }
 
@@ -6488,6 +6497,9 @@ test_concurrent_open()
 	pthread_mutex_t mutex;
 	pthread_cond_t cond;
 	volatile uint32_t cnt;
+	struct timeval start;
+	volatile uint32_t usec;
+	uint32_t total_usec;
 	int r;
 
 	TEST("concurrent_open");
@@ -6499,6 +6511,7 @@ test_concurrent_open()
 	pthread_mutex_init(&mutex, NULL);
 	pthread_cond_init(&cond, NULL);
 
+	total_usec = 0;
 	for (int mode = 0; mode <= 2; mode++) {
 		DESC("%s", openmodetable[mode]);
 
@@ -6511,6 +6524,8 @@ test_concurrent_open()
 			m[i].cond = &cond;
 			m[i].cnt = &cnt;
 			m[i].mode = mode;
+			m[i].start = &start;
+			m[i].time = &usec;
 			pthread_create(&threads[i], NULL, thread_concurrent_open, &m[i]);
 		}
 
@@ -6521,6 +6536,7 @@ test_concurrent_open()
 
 		// cnt==0 がテスト開始の合図
 		pthread_mutex_lock(&mutex);
+		gettimeofday(&start, NULL);
 		cnt = 0;
 		pthread_cond_broadcast(&cond);
 		pthread_mutex_unlock(&mutex);
@@ -6534,7 +6550,10 @@ test_concurrent_open()
 				XP_SYS_EQ(0, r);
 			}
 		}
+
+		total_usec += usec;
 	}
+	printf("%s: %d threads, %d usec\n", testname, maxthreads, total_usec);
 }
 
 // 同時にクローズ、のワーカースレッド
@@ -6542,6 +6561,7 @@ void *
 thread_concurrent_close(void *arg)
 {
 	struct concurrent_open *m = (struct concurrent_open *)arg;
+	struct timeval end, result;
 
 	// 起き上がったら点呼
 	atomic_inc_32(m->cnt);
@@ -6555,6 +6575,12 @@ thread_concurrent_close(void *arg)
 	// 一斉にクローズ (検査は逐次)
 	m->rv = CLOSE(m->fd);
 
+	// クローズできるまでの時間を記録
+	// みんなで上書きするので最後の記録だけが残る
+	gettimeofday(&end, NULL);
+	timersub(&end, m->start, &result);
+	*m->time = (uint32_t)result.tv_usec;
+
 	return NULL;
 }
 
@@ -6567,6 +6593,9 @@ test_concurrent_close()
 	pthread_mutex_t mutex;
 	pthread_cond_t cond;
 	volatile uint32_t cnt;
+	struct timeval start;
+	volatile uint32_t usec;
+	uint32_t total_usec;
 
 	TEST("concurrent_close");
 	if (netbsd <= 7) {
@@ -6577,6 +6606,7 @@ test_concurrent_close()
 	pthread_mutex_init(&mutex, NULL);
 	pthread_cond_init(&cond, NULL);
 
+	total_usec = 0;
 	for (int mode = 0; mode <= 2; mode++) {
 		DESC("%s", openmodetable[mode]);
 
@@ -6588,6 +6618,8 @@ test_concurrent_close()
 			m[i].mutex = &mutex;
 			m[i].cond = &cond;
 			m[i].cnt = &cnt;
+			m[i].start = &start;
+			m[i].time = &usec;
 			// 逐次オープン
 			m[i].fd = OPEN(devaudio, mode);
 			XP_SYS_OK(m[i].fd);
@@ -6601,6 +6633,7 @@ test_concurrent_close()
 
 		// cnt==0 がテスト開始の合図
 		pthread_mutex_lock(&mutex);
+		gettimeofday(&start, NULL);
 		cnt = 0;
 		pthread_cond_broadcast(&cond);
 		pthread_mutex_unlock(&mutex);
@@ -6610,7 +6643,10 @@ test_concurrent_close()
 			pthread_join(threads[i], NULL);
 			XP_SYS_EQ(0, m[i].rv);
 		}
+
+		total_usec += usec;
 	}
+	printf("%s: %d threads, %d usec\n", testname, maxthreads, total_usec);
 }
 
 
