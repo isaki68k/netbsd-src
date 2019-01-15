@@ -5589,10 +5589,12 @@ audio_pintr(void *arg)
 
 	if (sc->sc_dying)
 		return;
+#if defined(DIAGNOSTIC)
 	if (sc->sc_pbusy == false) {
 		DPRINTF(1, "%s: stray interrupt\n", __func__);
 		return;
 	}
+#endif
 
 	mixer = sc->sc_pmixer;
 	mixer->hw_complete_counter += mixer->frames_per_block;
@@ -5847,10 +5849,12 @@ audio_rintr(void *arg)
 
 	if (sc->sc_dying)
 		return;
+#if defined(DIAGNOSTIC)
 	if (sc->sc_rbusy == false) {
 		DPRINTF(1, "%s: stray interrupt\n", __func__);
 		return;
 	}
+#endif
 
 	mixer = sc->sc_rmixer;
 	mixer->hw_complete_counter += mixer->frames_per_block;
