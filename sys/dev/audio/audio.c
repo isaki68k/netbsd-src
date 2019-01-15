@@ -6069,6 +6069,8 @@ audio_softintr_rd(void *cookie)
 	pid_t pid;
 
 	mutex_enter(sc->sc_lock);
+	mutex_enter(sc->sc_intr_lock);
+
 	SLIST_FOREACH(f, &sc->sc_files, entry) {
 		audio_track_t *track = f->rtrack;
 
@@ -6089,6 +6091,7 @@ audio_softintr_rd(void *cookie)
 			mutex_exit(proc_lock);
 		}
 	}
+	mutex_exit(sc->sc_intr_lock);
 
 	// データが来たことを通知
 	selnotify(&sc->sc_rsel, 0, NOTE_SUBMIT);
