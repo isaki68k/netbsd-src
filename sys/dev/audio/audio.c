@@ -178,6 +178,7 @@ __KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.458 2018/09/03 16:29:30 riastradh Exp $"
 
 #include <sys/types.h>
 #include <sys/param.h>
+#include <sys/atomic.h>
 #include <sys/audioio.h>
 #include <sys/conf.h>
 #include <sys/cpu.h>
@@ -599,6 +600,12 @@ static int au_set_monitor_gain(struct audio_softc *, int);
 static int au_get_monitor_gain(struct audio_softc *);
 static int audio_get_port(struct audio_softc *, mixer_ctrl_t *);
 static int audio_set_port(struct audio_softc *, mixer_ctrl_t *);
+
+static inline uint
+atomic_load_uint(volatile uint *ptr)
+{
+	return atomic_or_uint_nv(ptr, 0);
+}
 
 static inline struct audio_params
 format2_to_params(const audio_format2_t *f2)
@@ -2385,13 +2392,13 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 			continue;
 		}
 
-		track->in_use = true;
 		mutex_exit(sc->sc_intr_lock);
 		mutex_exit(sc->sc_lock);
+
+		while (atomic_cas_uint(&track->in_use, 0, 1) != 0)
+			;
 		audio_track_record(track);
-		mutex_enter(sc->sc_intr_lock);
-		track->in_use = false;
-		mutex_exit(sc->sc_intr_lock);
+		atomic_swap_uint(&track->in_use, 0);
 
 		bytes = uimin(usrbuf->used, uio->uio_resid);
 		int head = usrbuf->head;
@@ -2566,11 +2573,12 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 		mutex_enter(sc->sc_intr_lock);
 		while (usrbuf->used >= track->usrbuf_blksize &&
 		    outbuf->used < outbuf->capacity) {
-			track->in_use = true;
 			mutex_exit(sc->sc_intr_lock);
+			while (atomic_cas_uint(&track->in_use, 0, 1) != 0)
+				;
 			audio_track_play(track);
+			atomic_swap_uint(&track->in_use, 0);
 			mutex_enter(sc->sc_intr_lock);
-			track->in_use = false;
 		}
 		mutex_exit(sc->sc_intr_lock);
 	}
@@ -5370,7 +5378,7 @@ audio_pmixer_process(struct audio_softc *sc, bool force_mix)
 			continue;
 
 		// 協調的ロックされているトラックは、今回ミキシングしない。
-		if (track->in_use) {
+		if (atomic_load_uint(&track->in_use) != 0) {
 			TRACET(track, "skip; in use");
 			continue;
 		}
@@ -5845,7 +5853,7 @@ audio_rmixer_process(struct audio_softc *sc)
 		if (track == NULL)
 			continue;
 
-		if (track->in_use) {
+		if (atomic_load_uint(&track->in_use) != 0) {
 			TRACET(track, "skip; in use");
 			continue;
 		}
@@ -7410,20 +7418,15 @@ audio_file_setinfo_check(audio_format2_t *fmt, const struct audio_prinfo *info)
 static int
 audio_file_setinfo_set(audio_track_t *track, audio_format2_t *fmt, int mode)
 {
-	struct audio_softc *sc;
 	int error;
 
 	KASSERT(track);
-	sc = track->mixer->sc;
 
-	mutex_enter(sc->sc_intr_lock);
-	track->in_use = true;
-	mutex_exit(sc->sc_intr_lock);
+	while (atomic_cas_uint(&track->in_use, 0, 1) != 0)
+		;
 	track->mode = mode;
 	error = audio_track_set_format(track, fmt);
-	mutex_enter(sc->sc_intr_lock);
-	track->in_use = false;
-	mutex_exit(sc->sc_intr_lock);
+	atomic_swap_uint(&track->in_use, 0);
 	if (error)
 		return error;
 

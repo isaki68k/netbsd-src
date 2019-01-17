@@ -133,7 +133,8 @@ typedef struct audio_track {
 	int		eofcounter;	/* # of zero sized write */
 
 	// プロセスコンテキストが track を使用中なら true。
-	volatile bool	in_use;		/* track cooperative lock */
+	/* Must access atomically. */
+	volatile uint	in_use;
 
 	int		id;		/* track id for debug */
 } audio_track_t;
