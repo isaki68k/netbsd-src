@@ -1484,6 +1484,8 @@ audio_waitio(struct audio_softc *sc, audio_track_t *track)
 
 /*
  * Acquire the file lock.
+ * If file is acquired successfully, returns 0.  Otherwise returns errno.
+ * In both case, sc_lock is released.
  */
 static int
 audio_file_acquire(struct audio_softc *sc, audio_file_t *file)
@@ -1579,7 +1581,10 @@ audioclose(struct file *fp)
 	dev = file->dev;
 
 	/* Acquire file lock and exlock */
-	audio_file_acquire(sc, file);
+	/* XXX what should I do when an error occurs? */
+	error = audio_file_acquire(sc, file);
+	if (error)
+		return error;
 	audio_enter_exclusive(sc);
 
 	device_active(sc->dev, DVA_SYSTEM);
@@ -1626,7 +1631,9 @@ audioread(struct file *fp, off_t *offp, struct uio *uio, kauth_cred_t cred,
 	sc = file->sc;
 	dev = file->dev;
 
-	audio_file_acquire(sc, file);
+	error = audio_file_acquire(sc, file);
+	if (error)
+		return error;
 
 	if (fp->f_flag & O_NONBLOCK)
 		ioflag |= IO_NDELAY;
@@ -1663,7 +1670,9 @@ audiowrite(struct file *fp, off_t *offp, struct uio *uio, kauth_cred_t cred,
 	sc = file->sc;
 	dev = file->dev;
 
-	audio_file_acquire(sc, file);
+	error = audio_file_acquire(sc, file);
+	if (error)
+		return error;
 
 	if (fp->f_flag & O_NONBLOCK)
 		ioflag |= IO_NDELAY;
@@ -1700,7 +1709,9 @@ audioioctl(struct file *fp, u_long cmd, void *addr)
 	sc = file->sc;
 	dev = file->dev;
 
-	audio_file_acquire(sc, file);
+	error = audio_file_acquire(sc, file);
+	if (error)
+		return error;
 
 	switch (AUDIODEV(dev)) {
 	case SOUND_DEVICE:
@@ -1758,7 +1769,8 @@ audiopoll(struct file *fp, int events)
 	sc = file->sc;
 	dev = file->dev;
 
-	audio_file_acquire(sc, file);
+	if (audio_file_acquire(sc, file) != 0)
+		return 0;
 
 	switch (AUDIODEV(dev)) {
 	case SOUND_DEVICE:
@@ -1791,7 +1803,9 @@ audiokqfilter(struct file *fp, struct knote *kn)
 	sc = file->sc;
 	dev = file->dev;
 
-	audio_file_acquire(sc, file);
+	error = audio_file_acquire(sc, file);
+	if (error)
+		return error;
 
 	switch (AUDIODEV(dev)) {
 	case SOUND_DEVICE:
@@ -1825,7 +1839,9 @@ audiommap(struct file *fp, off_t *offp, size_t len, int prot, int *flagsp,
 	sc = file->sc;
 	dev = file->dev;
 
-	audio_file_acquire(sc, file);
+	error = audio_file_acquire(sc, file);
+	if (error)
+		return error;
 
 	mutex_enter(sc->sc_lock);
 	device_active(sc->dev, DVA_SYSTEM); /* XXXJDM */
@@ -1885,7 +1901,9 @@ audiobellclose(audio_file_t *file)
 
 	sc = file->sc;
 
-	audio_file_acquire(sc, file);
+	error = audio_file_acquire(sc, file);
+	if (error)
+		return error;
 	audio_enter_exclusive(sc);
 
 	device_active(sc->dev, DVA_SYSTEM);
@@ -1908,7 +1926,9 @@ audiobellwrite(audio_file_t *file, struct uio *uio)
 	int error;
 
 	sc = file->sc;
-	audio_file_acquire(sc, file);
+	error = audio_file_acquire(sc, file);
+	if (error)
+		return error;
 
 	error = audio_write(sc, uio, 0, file);
 
