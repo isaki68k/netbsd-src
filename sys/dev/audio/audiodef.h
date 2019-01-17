@@ -100,7 +100,11 @@ typedef struct audio_track {
 					/* userfmt for play, mixerfmt for rec */
 	audio_ring_t	*input;		/* ptr to input stage buffer */
 
-	audio_ring_t	outbuf;		/* track output buffer */
+	/*
+	 * Track output buffer.
+	 * Must be protected by sc_intr_lock.
+	 */
+	audio_ring_t	outbuf;
 
 	audio_stage_t	codec;		/* encoding conversion stage */
 	audio_stage_t	chvol;		/* channel volume stage */

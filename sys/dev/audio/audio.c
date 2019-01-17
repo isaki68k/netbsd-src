@@ -2524,10 +2524,11 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 		    usrbuf->head, usrbuf->used, track->usrbuf_usedhigh);
 
 		// usrbuf も outbuf も一杯ならここで待つ
-		// XXX これら参照するのに intr_lock とかいらないんだっけ?
 		mutex_enter(sc->sc_lock);
+		mutex_enter(sc->sc_intr_lock);
 		while (usrbuf->used >= track->usrbuf_usedhigh &&
 		    outbuf->used >= outbuf->capacity) {
+			mutex_exit(sc->sc_intr_lock);
 			if ((ioflag & IO_NDELAY)) {
 				error = EWOULDBLOCK;
 				mutex_exit(sc->sc_lock);
@@ -2540,7 +2541,9 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 				mutex_exit(sc->sc_lock);
 				goto abort;
 			}
+			mutex_enter(sc->sc_intr_lock);
 		}
+		mutex_exit(sc->sc_intr_lock);
 		mutex_exit(sc->sc_lock);
 
 		/* Write to the conversion stage as much as possible. */
@@ -6100,6 +6103,7 @@ static int
 audio_track_drain(struct audio_softc *sc, audio_track_t *track)
 {
 	audio_trackmixer_t *mixer;
+	int done;
 	int error;
 
 	KASSERT(track);
@@ -6130,9 +6134,12 @@ audio_track_drain(struct audio_softc *sc, audio_track_t *track)
 		    track->outbuf.capacity);
 
 		// 終了条件
-		if (track->usrbuf.used < frametobyte(&track->inputfmt, 1) &&
+		mutex_enter(sc->sc_intr_lock);
+		done = (track->usrbuf.used < frametobyte(&track->inputfmt, 1) &&
 		    track->outbuf.used == 0 &&
-		    track->seq <= mixer->hwseq)
+		    track->seq <= mixer->hwseq);
+		mutex_exit(sc->sc_intr_lock);
+		if (done)
 			break;
 
 		TRACET(track, "sleep");
