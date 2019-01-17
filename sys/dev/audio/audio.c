@@ -454,7 +454,7 @@ static void audio_softintr_wr(void *);
 
 static int  audio_enter_exclusive(struct audio_softc *);
 static void audio_exit_exclusive(struct audio_softc *);
-static int audio_waitio(struct audio_softc *, audio_track_t *);
+static int audio_track_waitio(struct audio_softc *, audio_track_t *);
 
 static int audioclose(struct file *);
 static int audioread(struct file *, off_t *, struct uio *, kauth_cred_t, int);
@@ -1469,7 +1469,7 @@ audio_exit_exclusive(struct audio_softc *sc)
  * Must be called with sc_lock held.
  */
 static int
-audio_waitio(struct audio_softc *sc, audio_track_t *track)
+audio_track_waitio(struct audio_softc *sc, audio_track_t *track)
 {
 	int error;
 
@@ -2385,7 +2385,7 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 			}
 
 			TRACET(track, "sleep");
-			error = audio_waitio(sc, track);
+			error = audio_track_waitio(sc, track);
 			mutex_exit(sc->sc_lock);
 			if (error)
 				return error;
@@ -2536,7 +2536,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 			}
 			TRACET(track, "sleep usrbuf=%d/H%d",
 			    usrbuf->used, track->usrbuf_usedhigh);
-			error = audio_waitio(sc, track);
+			error = audio_track_waitio(sc, track);
 			if (error) {
 				mutex_exit(sc->sc_lock);
 				goto abort;
@@ -6143,7 +6143,7 @@ audio_track_drain(struct audio_softc *sc, audio_track_t *track)
 			break;
 
 		TRACET(track, "sleep");
-		error = audio_waitio(sc, track);
+		error = audio_track_waitio(sc, track);
 		if (error)
 			return error;
 
