@@ -7318,18 +7318,20 @@ audio_file_setinfo_check(audio_format2_t *fmt, const struct audio_prinfo *info)
 static int
 audio_file_setinfo_set(audio_track_t *track, audio_format2_t *fmt, int mode)
 {
+	struct audio_softc *sc;
 	int error;
 
 	KASSERT(track);
+	sc = track->mixer->sc;
 
-	mutex_enter(track->mixer->sc->sc_intr_lock);
+	mutex_enter(sc->sc_intr_lock);
 	track->in_use = true;
-	mutex_exit(track->mixer->sc->sc_intr_lock);
+	mutex_exit(sc->sc_intr_lock);
 	track->mode = mode;
 	error = audio_track_set_format(track, fmt);
-	mutex_enter(track->mixer->sc->sc_intr_lock);
+	mutex_enter(sc->sc_intr_lock);
 	track->in_use = false;
-	mutex_exit(track->mixer->sc->sc_intr_lock);
+	mutex_exit(sc->sc_intr_lock);
 	if (error)
 		return error;
 
