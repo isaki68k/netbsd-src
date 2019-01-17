@@ -162,6 +162,10 @@ struct audio_file {
 
 	pid_t		async_audio;	/* process who wants audio SIGIO */
 
+	// この file をプロセスコンテキストが使用中なら 1。
+	/* Must be protected by sc_lock. */
+	volatile uint32_t lock;
+
 	SLIST_ENTRY(audio_file) entry;
 };
 

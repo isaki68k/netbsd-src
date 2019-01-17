@@ -161,14 +161,14 @@ struct audio_softc {
 
 	/*
 	 * Open track counter.
-	 * Must be protected by sc_exlock.
+	 * Must be protected by sc_lock.
 	 */
 	int sc_popens;
 	int sc_ropens;
 
 	/*
 	 * Playback or recording mixer is running if true.
-	 * Must be protected by sc_exlock.
+	 * Must be protected by sc_lock.
 	 */
 	bool sc_pbusy;
 	bool sc_rbusy;
