@@ -3802,9 +3802,7 @@ int
 audio_track_init(struct audio_softc *sc, audio_track_t **trackp, int mode)
 {
 	audio_track_t *track;
-	audio_format2_t *default_format;
 	audio_trackmixer_t *mixer;
-	int error;
 	static int newid = 0;
 
 	track = kmem_zalloc(sizeof(*track), KM_SLEEP);
@@ -3814,10 +3812,8 @@ audio_track_init(struct audio_softc *sc, audio_track_t **trackp, int mode)
 	TRACET(track, "for %s", mode == AUMODE_PLAY ? "playback" : "recording");
 
 	if (mode == AUMODE_PLAY) {
-		default_format = &sc->sc_sound_pparams;
 		mixer = sc->sc_pmixer;
 	} else {
-		default_format = &sc->sc_sound_rparams;
 		mixer = sc->sc_rmixer;
 	}
 
@@ -3830,13 +3826,6 @@ audio_track_init(struct audio_softc *sc, audio_track_t **trackp, int mode)
 #endif
 	for (int i = 0; i < AUDIO_MAX_CHANNELS; i++) {
 		track->ch_volume[i] = 256;
-	}
-
-	// デフォルトフォーマットでセット
-	error = audio_track_set_format(track, default_format);
-	if (error) {
-		audio_track_destroy(track);
-		return error;
 	}
 
 	*trackp = track;
