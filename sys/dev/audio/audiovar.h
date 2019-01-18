@@ -175,7 +175,7 @@ struct audio_softc {
 
 	/*
 	 * These four are the parameters sustained with /dev/sound.
-	 * Must be protected by sc_exlock.
+	 * Must be protected by sc_lock.
 	 */
 	audio_format2_t sc_sound_pparams;
 	audio_format2_t sc_sound_rparams;
