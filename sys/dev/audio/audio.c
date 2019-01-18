@@ -544,7 +544,8 @@ static void *audio_realloc(void *, size_t);
 static int audio_realloc_usrbuf(audio_track_t *, int);
 static void audio_free_usrbuf(audio_track_t *);
 
-static int audio_track_init(struct audio_softc *, audio_track_t **, int);
+static audio_track_t *audio_track_create(struct audio_softc *,
+	audio_trackmixer_t *);
 static void audio_track_destroy(audio_track_t *);
 static audio_filter_t audio_track_get_codec(const audio_format2_t *,
 	const audio_format2_t *);
@@ -1983,18 +1984,11 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 		goto bad1;
 	}
 
-	// トラックの初期化
-	// トラックバッファの初期化
-	if ((af->mode & AUMODE_PLAY) != 0) {
-		error = audio_track_init(sc, &af->ptrack, AUMODE_PLAY);
-		if (error)
-			goto bad1;
-	}
-	if ((af->mode & AUMODE_RECORD) != 0) {
-		error = audio_track_init(sc, &af->rtrack, AUMODE_RECORD);
-		if (error)
-			goto bad2;
-	}
+	/* Create tracks */
+	if ((af->mode & AUMODE_PLAY))
+		af->ptrack = audio_track_create(sc, sc->sc_pmixer);
+	if ((af->mode & AUMODE_RECORD))
+		af->rtrack = audio_track_create(sc, sc->sc_rmixer);
 
 	/*
 	 * Multiplex device: /dev/audio (MU-Law) and /dev/sound (linear)
@@ -2036,7 +2030,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	ai.mode = af->mode;
 	error = audio_file_setinfo(sc, af, &ai);
 	if (error)
-		goto bad3;
+		goto bad2;
 
 	// 録再合わせて1本目のオープンなら {
 	//	kauth の処理?
@@ -2090,7 +2084,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 			error = sc->hw_if->open(sc->hw_hdl, hwflags);
 			mutex_exit(sc->sc_intr_lock);
 			if (error)
-				goto bad3;
+				goto bad2;
 		}
 
 		/* Set speaker mode if half duplex */
@@ -2109,14 +2103,14 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 				error = sc->hw_if->speaker_ctl(sc->hw_hdl, on);
 				mutex_exit(sc->sc_intr_lock);
 				if (error)
-					goto bad4;
+					goto bad3;
 			}
 		}
 	} else /* if (sc->sc_multiuser == false) */ {
 		uid_t euid = kauth_cred_geteuid(kauth_cred_get());
 		if (euid != 0 && kauth_cred_geteuid(sc->sc_cred) != euid) {
 			error = EPERM;
-			goto bad3;
+			goto bad2;
 		}
 	}
 
@@ -2131,7 +2125,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 			    hwbuf->fmt.channels * hwbuf->fmt.stride / NBBY);
 			mutex_exit(sc->sc_intr_lock);
 			if (error)
-				goto bad4;
+				goto bad3;
 		}
 	}
 	/* Call init_input if this is the first recording open. */
@@ -2145,14 +2139,14 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 			    hwbuf->fmt.channels * hwbuf->fmt.stride / NBBY);
 			mutex_exit(sc->sc_intr_lock);
 			if (error)
-				goto bad4;
+				goto bad3;
 		}
 	}
 
 	if (bell == NULL) {
 		error = fd_allocfile(&fp, &fd);
 		if (error)
-			goto bad4;
+			goto bad3;
 	}
 
 	// オープンカウント++
@@ -2178,7 +2172,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	 * Since track here is not yet linked from sc_files,
 	 * you can call track_destroy() without sc_intr_lock.
 	 */
-bad4:
+bad3:
 	if (sc->sc_popens + sc->sc_ropens == 0) {
 		if (sc->hw_if->close) {
 			mutex_enter(sc->sc_intr_lock);
@@ -2186,12 +2180,11 @@ bad4:
 			mutex_exit(sc->sc_intr_lock);
 		}
 	}
-bad3:
+bad2:
 	if (af->rtrack) {
 		audio_track_destroy(af->rtrack);
 		af->rtrack = NULL;
 	}
-bad2:
 	if (af->ptrack) {
 		audio_track_destroy(af->ptrack);
 		af->ptrack = NULL;
@@ -3784,41 +3777,24 @@ audio_track_freq_down(audio_filter_arg_t *arg)
 	track->freq_current = t % 65536;
 }
 
-// トラックを初期化する。
-// 初期化できれば 0 を返して *trackp に初期化済みのトラックを格納する。
-// 初期化できなければ errno を返し、*trackp は変更しない。
-// mode は再生なら AUMODE_PLAY、録音なら AUMODE_RECORD を指定する。
-// trackp には sc_files に繋がっている file 構造体内のポインタを直接
-// 指定してはいけない。呼び出し側で一旦受け取って sc_intr_lock を
-// とってから繋ぎ変えること。
 /*
- * Initialize the track.
- * If successful, it stores the allocated and initialized track in *trackp
- * and return 0.  Otherwise, it returns errno without modifying *trackp.
- * For mode, specify AUMODE_PLAY for playback, AUMODE_RECORD for record.
- * Don't specify the track within the file structure linked from sc->sc_files.
+ * Creates track and returns it.
  */
-int
-audio_track_init(struct audio_softc *sc, audio_track_t **trackp, int mode)
+audio_track_t *
+audio_track_create(struct audio_softc *sc, audio_trackmixer_t *mixer)
 {
 	audio_track_t *track;
-	audio_trackmixer_t *mixer;
 	static int newid = 0;
 
 	track = kmem_zalloc(sizeof(*track), KM_SLEEP);
 
 	track->id = newid++;
 	// ここだけ id が決まってから表示
-	TRACET(track, "for %s", mode == AUMODE_PLAY ? "playback" : "recording");
-
-	if (mode == AUMODE_PLAY) {
-		mixer = sc->sc_pmixer;
-	} else {
-		mixer = sc->sc_rmixer;
-	}
+	TRACET(track, "for %s",
+	    mixer->mode == AUMODE_PLAY ? "playback" : "recording");
 
 	track->mixer = mixer;
-	track->mode = mode;
+	track->mode = mixer->mode;
 
 	// 固定初期値
 #if defined(AUDIO_SUPPORT_TRACK_VOLUME)
@@ -3828,8 +3804,7 @@ audio_track_init(struct audio_softc *sc, audio_track_t **trackp, int mode)
 		track->ch_volume[i] = 256;
 	}
 
-	*trackp = track;
-	return 0;
+	return track;
 }
 
 // track のすべてのリソースと track 自身を解放する。
