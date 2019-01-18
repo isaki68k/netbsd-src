@@ -126,19 +126,18 @@ struct au_mixer_ports {
 };
 
 struct audio_softc {
-	/* Myself */
+	/* Myself (audioN) */
 	device_t	sc_dev;
 
+	/* Hardware device struct (e.g.; sb0, hdafg0, ...) */
+	device_t	hw_dev;
+
 	/*
-	 * Hardware interface.
-	 * If hw_if == NULL, the device is (attached but) disabled.
+	 * Hardware interface and driver handle.
+	 * hw_if == NULL means that the device is (attached but) disabled.
 	 */
 	const struct audio_hw_if *hw_if;
-	/*
-	 * Hardware driver handle.
-	 */
-	void		*hw_hdl;	/* Hardware driver handle */
-	device_t	hw_dev;		/* Hardware device struct */
+	void		*hw_hdl;
 
 	/*
 	 * List of opened descriptors.
