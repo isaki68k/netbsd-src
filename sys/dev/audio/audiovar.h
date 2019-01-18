@@ -127,7 +127,7 @@ struct au_mixer_ports {
 
 struct audio_softc {
 	/* Myself */
-	device_t dev;
+	device_t	sc_dev;
 
 	/*
 	 * Hardware interface.
@@ -138,7 +138,7 @@ struct audio_softc {
 	 * Hardware driver handle.
 	 */
 	void		*hw_hdl;	/* Hardware driver handle */
-	device_t	sc_dev;		/* Hardware device struct */
+	device_t	hw_dev;		/* Hardware device struct */
 
 	/*
 	 * List of opened descriptors.

@@ -851,7 +851,7 @@ audioattach(device_t parent, device_t self, void *aux)
 	int error;
 
 	sc = device_private(self);
-	sc->dev = self;
+	sc->sc_dev = self;
 	sa = (struct audio_attach_args *)aux;
 	hw_if = sa->hwif;
 	hdlp = sa->hdl;
@@ -880,7 +880,7 @@ audioattach(device_t parent, device_t self, void *aux)
 
 	sc->hw_if = hw_if;
 	sc->hw_hdl = hdlp;
-	sc->sc_dev = parent;
+	sc->hw_dev = parent;
 
 	sc->sc_blk_ms = AUDIO_BLK_MS;
 	SLIST_INIT(&sc->sc_files);
@@ -967,7 +967,7 @@ audioattach(device_t parent, device_t self, void *aux)
 
 	sysctl_createv(&sc->sc_log, 0, NULL, &node,
 	    0,
-	    CTLTYPE_NODE, device_xname(sc->dev),
+	    CTLTYPE_NODE, device_xname(sc->sc_dev),
 	    SYSCTL_DESCR("audio test"),
 	    NULL, 0,
 	    NULL, 0,
@@ -1050,7 +1050,7 @@ bad:
 	// デバイス自体は出来てしまう。そこで hw_if == NULL なら
 	// configure されてないものとする。という運用。コメント書けよ。
 	sc->hw_if = NULL;
-	aprint_error_dev(sc->dev, "disabled\n");
+	aprint_error_dev(sc->sc_dev, "disabled\n");
 	return;
 }
 
@@ -1330,7 +1330,7 @@ audiorescan(device_t self, const char *ifattr, const int *flags)
 	if (!ifattr_match(ifattr, "audio"))
 		return 0;
 
-	config_search_loc(audiosearch, sc->dev, "audio", NULL, NULL);
+	config_search_loc(audiosearch, sc->sc_dev, "audio", NULL, NULL);
 
 	return 0;
 }
@@ -1552,7 +1552,7 @@ audioopen(dev_t dev, int flags, int ifmt, struct lwp *l)
 
 	audio_enter_exclusive(sc);
 
-	device_active(sc->dev, DVA_SYSTEM);
+	device_active(sc->sc_dev, DVA_SYSTEM);
 	switch (AUDIODEV(dev)) {
 	case SOUND_DEVICE:
 	case AUDIO_DEVICE:
@@ -1593,7 +1593,7 @@ audioclose(struct file *fp)
 		return error;
 	audio_enter_exclusive(sc);
 
-	device_active(sc->dev, DVA_SYSTEM);
+	device_active(sc->sc_dev, DVA_SYSTEM);
 	switch (AUDIODEV(dev)) {
 	case SOUND_DEVICE:
 	case AUDIO_DEVICE:
@@ -1724,7 +1724,7 @@ audioioctl(struct file *fp, u_long cmd, void *addr)
 	case AUDIO_DEVICE:
 	case AUDIOCTL_DEVICE:
 		mutex_enter(sc->sc_lock);
-		device_active(sc->dev, DVA_SYSTEM);
+		device_active(sc->sc_dev, DVA_SYSTEM);
 		mutex_exit(sc->sc_lock);
 		if (IOCGROUP(cmd) == IOCGROUP(AUDIO_MIXER_READ))
 			error = mixer_ioctl(sc, cmd, addr, fp->f_flag, l);
@@ -1850,7 +1850,7 @@ audiommap(struct file *fp, off_t *offp, size_t len, int prot, int *flagsp,
 		return error;
 
 	mutex_enter(sc->sc_lock);
-	device_active(sc->dev, DVA_SYSTEM); /* XXXJDM */
+	device_active(sc->sc_dev, DVA_SYSTEM); /* XXXJDM */
 	mutex_exit(sc->sc_lock);
 
 	switch (AUDIODEV(dev)) {
@@ -1891,7 +1891,7 @@ audiobellopen(dev_t dev, struct audiobell_arg *arg)
 
 	audio_enter_exclusive(sc);
 
-	device_active(sc->dev, DVA_SYSTEM);
+	device_active(sc->sc_dev, DVA_SYSTEM);
 	error = audio_open(dev, sc, FWRITE, 0, curlwp, arg);
 
 	audio_exit_exclusive(sc);
@@ -1912,7 +1912,7 @@ audiobellclose(audio_file_t *file)
 		return error;
 	audio_enter_exclusive(sc);
 
-	device_active(sc->dev, DVA_SYSTEM);
+	device_active(sc->sc_dev, DVA_SYSTEM);
 	error = audio_close(sc, file);
 
 	audio_exit_exclusive(sc);
@@ -1962,11 +1962,11 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 
 #if AUDIO_DEBUG >= 3
 	TRACE("@%d start flags=0x%x po=%d ro=%d",
-	    device_unit(sc->dev),
+	    device_unit(sc->sc_dev),
 	    flags, sc->sc_popens, sc->sc_ropens);
 #else
 	DPRINTF(1, "%s@%d flags=0x%x po=%d ro=%d\n", __func__,
-	    device_unit(sc->dev),
+	    device_unit(sc->sc_dev),
 	    flags, sc->sc_popens, sc->sc_ropens);
 #endif
 
@@ -2204,11 +2204,11 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
 
 #if AUDIO_DEBUG >= 3
 	TRACEF(file, "@%d start pid=%d.%d po=%d ro=%d",
-	    device_unit(sc->dev),
+	    device_unit(sc->sc_dev),
 	    (int)curproc->p_pid, (int)curlwp->l_lid,
 	    sc->sc_popens, sc->sc_ropens);
 #else
-	DPRINTF(1, "%s@%d\n", __func__, device_unit(sc->dev));
+	DPRINTF(1, "%s@%d\n", __func__, device_unit(sc->sc_dev));
 #endif
 	KASSERTMSG(sc->sc_popens + sc->sc_ropens > 0,
 	    "sc->sc_popens=%d, sc->sc_ropens=%d",
@@ -2219,7 +2219,7 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
 		if (sc->sc_ropens == 1 && sc->sc_rbusy) {
 			error = audio_rmixer_halt(sc);
 			if (error) {
-				aprint_error_dev(sc->dev,
+				aprint_error_dev(sc->sc_dev,
 				    "halt_input failed with %d\n",
 				    error);
 			}
@@ -2244,7 +2244,7 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
 		if (sc->sc_popens == 1 && sc->sc_pbusy) {
 			error = audio_pmixer_halt(sc);
 			if (error) {
-				aprint_error_dev(sc->dev,
+				aprint_error_dev(sc->sc_dev,
 				    "halt_output failed with %d\n",
 				    error);
 			}
@@ -2330,8 +2330,8 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 
 #ifdef AUDIO_PM_IDLE
 	mutex_enter(sc->sc_lock);
-	if (device_is_active(&sc->dev) || sc->sc_idle)
-		device_active(&sc->dev, DVA_SYSTEM);
+	if (device_is_active(&sc->sc_dev) || sc->sc_idle)
+		device_active(&sc->sc_dev, DVA_SYSTEM);
 	mutex_exit(sc->sc_lock);
 #endif
 
@@ -2487,8 +2487,8 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 
 #ifdef AUDIO_PM_IDLE
 	mutex_enter(sc->sc_lock);
-	if (device_is_active(&sc->dev) || sc->sc_idle)
-		device_active(&sc->dev, DVA_SYSTEM);
+	if (device_is_active(&sc->sc_dev) || sc->sc_idle)
+		device_active(&sc->sc_dev, DVA_SYSTEM);
 	mutex_exit(sc->sc_lock);
 #endif
 
@@ -2628,7 +2628,7 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 	if (21 <= nameidx && nameidx <= 21 + __arraycount(ioctlnames))
 		ioctlname = ioctlnames[nameidx - 21];
 	DPRINTF(2, "audio_ioctl@%d(%lu,'%c',%lu)%s pid=%d.%d\n",
-	    device_unit(sc->dev),
+	    device_unit(sc->sc_dev),
 	    IOCPARM_LEN(cmd), (char)IOCGROUP(cmd), cmd&0xff, ioctlname,
 	    (int)curproc->p_pid, (int)l->l_lid);
 #endif
@@ -2870,7 +2870,7 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		break;
 	}
 	DPRINTF(2, "audio_ioctl@%d(%lu,'%c',%lu)%s result %d\n",
-	    device_unit(sc->dev),
+	    device_unit(sc->sc_dev),
 	    IOCPARM_LEN(cmd), (char)IOCGROUP(cmd), cmd&0xff, ioctlname,
 	    error);
 	return error;
@@ -2918,11 +2918,11 @@ audio_poll(struct audio_softc *sc, int events, struct lwp *l,
 	char evbuf[64];
 	snprintb(evbuf, sizeof(evbuf), POLLEV_BITMAP, events);
 	TRACEF(file, "@%d pid=%d.%d events=%s",
-	    device_unit(sc->dev),
+	    device_unit(sc->sc_dev),
 	    (int)curproc->p_pid, (int)l->l_lid, evbuf);
 #else
 	DPRINTF(2, "%s@%d: events=0x%x mode=%d\n", __func__,
-	    device_unit(sc->dev), events, file->mode);
+	    device_unit(sc->sc_dev), events, file->mode);
 #endif
 
 	revents = 0;
@@ -2965,7 +2965,7 @@ audio_poll(struct audio_softc *sc, int events, struct lwp *l,
 	TRACEF(file, "revents=%s", evbuf);
 #else
 	DPRINTF(2, "%s@%d: revents=0x%x\n", __func__,
-	    device_unit(sc->dev), revents);
+	    device_unit(sc->sc_dev), revents);
 #endif
 	return revents;
 }
@@ -3108,7 +3108,7 @@ audio_mmap(struct audio_softc *sc, off_t *offp, size_t len, int prot,
 	KASSERT(file->lock);
 
 	DPRINTF(2, "%s%d: off=%lld, prot=%d\n", __func__,
-	    device_unit(sc->dev), (long long)(*offp), prot);
+	    device_unit(sc->sc_dev), (long long)(*offp), prot);
 
 	if (*offp < 0)
 		return EINVAL;
@@ -3198,7 +3198,7 @@ audioctl_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 #if AUDIO_DEBUG >= 3
 	TRACE("");
 #else
-	DPRINTF(1, "%s%d\n", __func__, device_unit(sc->dev));
+	DPRINTF(1, "%s%d\n", __func__, device_unit(sc->sc_dev));
 #endif
 
 	error = fd_allocfile(&fp, &fd);
@@ -5066,7 +5066,7 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 		if (rounded != blksize) {
 			if ((rounded * NBBY) % (mixer->hwbuf.fmt.stride *
 			    mixer->hwbuf.fmt.channels) != 0) {
-				aprint_error_dev(sc->dev,
+				aprint_error_dev(sc->sc_dev,
 				    "blksize not configured %d -> %d\n",
 				    blksize, rounded);
 				return EINVAL;
@@ -5090,7 +5090,7 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 		    bufsize, rounded);
 		// 縮められても困る?
 		if (rounded != bufsize) {
-			aprint_error_dev(sc->dev,
+			aprint_error_dev(sc->sc_dev,
 			    "buffer size not configured %zu -> %zu\n",
 			    bufsize, rounded);
 			return EINVAL;
@@ -5101,14 +5101,14 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 	if (sc->hw_if->allocm) {
 		mixer->hwbuf.mem = sc->hw_if->allocm(sc->hw_hdl, mode, bufsize);
 		if (mixer->hwbuf.mem == NULL) {
-			aprint_error_dev(sc->dev, "%s: allocm(%zu) failed\n",
+			aprint_error_dev(sc->sc_dev, "%s: allocm(%zu) failed\n",
 			    __func__, bufsize);
 			return ENOMEM;
 		}
 	} else {
 		mixer->hwbuf.mem = kern_malloc(bufsize, M_NOWAIT);
 		if (mixer->hwbuf.mem == NULL) {
-			aprint_error_dev(sc->dev,
+			aprint_error_dev(sc->sc_dev,
 			    "%s: malloc hwbuf(%zu) failed\n",
 			    __func__, bufsize);
 			return ENOMEM;
@@ -5130,7 +5130,7 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 	mixer->sih = softint_establish(SOFTINT_SERIAL | SOFTINT_MPSAFE,
 	    softint_handler, sc);
 	if (mixer->sih == NULL) {
-		aprint_error_dev(sc->dev, "softint_establish failed\n");
+		aprint_error_dev(sc->sc_dev, "softint_establish failed\n");
 		goto abort;
 	}
 
@@ -5150,7 +5150,7 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 		    mixer->mixfmt.stride / NBBY;
 		mixer->mixsample = audio_realloc(mixer->mixsample, len);
 		if (mixer->mixsample == NULL) {
-			aprint_error_dev(sc->dev,
+			aprint_error_dev(sc->sc_dev,
 			    "%s: malloc mixsample(%d) failed\n",
 			    __func__, len);
 			error = ENOMEM;
@@ -5175,7 +5175,7 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 		len = auring_bytelen(&mixer->codecbuf);
 		mixer->codecbuf.mem = audio_realloc(mixer->codecbuf.mem, len);
 		if (mixer->codecbuf.mem == NULL) {
-			aprint_error_dev(sc->dev,
+			aprint_error_dev(sc->sc_dev,
 			    "%s: malloc codecbuf(%d) failed\n",
 			    __func__, len);
 			error = ENOMEM;
@@ -5441,7 +5441,7 @@ audio_pmixer_process(struct audio_softc *sc, bool force_mix)
 				/* Turn down gradually to 128. */
 				if (mixer->volume > 128) {
 					mixer->volume = mixer->volume * 95 / 100;
-					aprint_normal_dev(sc->dev,
+					aprint_normal_dev(sc->sc_dev,
 					    "auto volume adjust: volume %d\n",
 					    mixer->volume);
 				}
@@ -6384,19 +6384,19 @@ audio_mixers_init(struct audio_softc *sc, int mode,
 			    &sc->sc_pmixer->track_fmt);
 			blkms = sc->sc_pmixer->blktime_n * 1000 /
 			    sc->sc_pmixer->blktime_d;
-			aprint_normal_dev(sc->dev,
+			aprint_normal_dev(sc->sc_dev,
 			    "%s, blk %dms for playback\n",
 			    fmtstr, blkms);
 			if (sc->sc_pmixer->codec) {
 				DPRINTF(1, "%s: codec %p -> %s %dbit\n",
-				    device_xname(sc->dev),
+				    device_xname(sc->sc_dev),
 				    sc->sc_pmixer->codec,
 				    audio_encoding_name(
 				        sc->sc_pmixer->hwbuf.fmt.encoding),
 				    sc->sc_pmixer->hwbuf.fmt.precision);
 			}
 		} else {
-			aprint_error_dev(sc->dev,
+			aprint_error_dev(sc->sc_dev,
 			    "configuring playback mode failed\n");
 			kmem_free(sc->sc_pmixer, sizeof(*sc->sc_pmixer));
 			sc->sc_pmixer = NULL;
@@ -6415,19 +6415,19 @@ audio_mixers_init(struct audio_softc *sc, int mode,
 			    &sc->sc_rmixer->track_fmt);
 			blkms = sc->sc_rmixer->blktime_n * 1000 /
 			    sc->sc_rmixer->blktime_d;
-			aprint_normal_dev(sc->dev,
+			aprint_normal_dev(sc->sc_dev,
 			    "%s, blk %dms for recording\n",
 			    fmtstr, blkms);
 			if (sc->sc_rmixer->codec) {
 				DPRINTF(1, "%s: codec %p <- %s %dbit\n",
-				    device_xname(sc->dev),
+				    device_xname(sc->sc_dev),
 				    sc->sc_rmixer->codec,
 				    audio_encoding_name(
 				        sc->sc_rmixer->hwbuf.fmt.encoding),
 				    sc->sc_rmixer->hwbuf.fmt.precision);
 			}
 		} else {
-			aprint_error_dev(sc->dev,
+			aprint_error_dev(sc->sc_dev,
 			    "configuring record mode failed\n");
 			kmem_free(sc->sc_rmixer, sizeof(*sc->sc_rmixer));
 			sc->sc_rmixer = NULL;
@@ -6552,10 +6552,10 @@ audio_hw_probe_fmt(struct audio_softc *sc, audio_format2_t *cand, int mode)
 
 	// 分かりやすさのため、しばらくどっち使ったか表示しとく
 	if (sc->hw_if->query_format) {
-		aprint_normal_dev(sc->dev, "use new query_format method\n");
+		aprint_normal_dev(sc->sc_dev, "use new query_format method\n");
 		return audio_hw_probe_by_format(sc, cand, mode);
 	} else {
-		aprint_normal_dev(sc->dev, "use old set_param method\n");
+		aprint_normal_dev(sc->sc_dev, "use old set_param method\n");
 		return audio_hw_probe_by_encoding(sc, cand, mode);
 	}
 }
@@ -8079,7 +8079,7 @@ audio_idle(void *arg)
 	if (!pmf_device_suspend(dv, PMF_Q_SELF))
 		return;
 
-	if (!pmf_device_suspend(sc->sc_dev, PMF_Q_SELF))
+	if (!pmf_device_suspend(sc->hw_dev, PMF_Q_SELF))
 		pmf_device_resume(dv, PMF_Q_SELF);
 }
 
@@ -8096,7 +8096,7 @@ audio_activity(device_t dv, devactive_t type)
 	sc->sc_idle = false;
 	if (!device_is_active(dv)) {
 		/* XXX joerg How to deal with a failing resume... */
-		pmf_device_resume(sc->sc_dev, PMF_Q_SELF);
+		pmf_device_resume(sc->hw_dev, PMF_Q_SELF);
 		pmf_device_resume(dv, PMF_Q_SELF);
 	}
 }
@@ -8352,7 +8352,7 @@ mixer_ioctl(struct audio_softc *sc, u_long cmd, void *addr, int flag,
 	/* we can return cached values if we are sleeping */
 	if (cmd != AUDIO_MIXER_READ) {
 		mutex_enter(sc->sc_lock);
-		device_active(sc->dev, DVA_SYSTEM);
+		device_active(sc->sc_dev, DVA_SYSTEM);
 		mutex_exit(sc->sc_lock);
 	}
 
@@ -8394,7 +8394,7 @@ mixer_ioctl(struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		mc = (mixer_ctrl_t *)addr;
 
 		audio_enter_exclusive(sc);
-		if (device_is_active(sc->sc_dev))
+		if (device_is_active(sc->hw_dev))
 			error = audio_get_port(sc, mc);
 		else if (mc->dev < 0 || mc->dev >= sc->sc_nmixer_states)
 			error = ENXIO;
