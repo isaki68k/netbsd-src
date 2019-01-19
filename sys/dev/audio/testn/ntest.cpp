@@ -6698,6 +6698,7 @@ test_concurrent_write()
 	memset(buf, 0, buflen);
 
 	AUDIO_INITINFO(&ai);
+	ai.mode = AUMODE_PLAY_ALL;
 	ai.play.encoding = AUDIO_ENCODING_SLINEAR_NE;
 	ai.play.precision = 16;
 	ai.play.channels = 2;
@@ -6899,6 +6900,7 @@ test_concurrent_2()
 	XP_SYS_OK(fd);
 
 	AUDIO_INITINFO(&ai);
+	ai.mode = AUMODE_PLAY_ALL;
 	ai.play.encoding = AUDIO_ENCODING_SLINEAR_NE;
 	ai.play.precision = 16;
 	ai.play.channels = 2;
@@ -7020,6 +7022,7 @@ test_concurrent_3()
 	memset(buf, 0, buflen);
 
 	AUDIO_INITINFO(&ai);
+	ai.mode = AUMODE_PLAY_ALL;
 	ai.play.encoding = AUDIO_ENCODING_SLINEAR_NE;
 	ai.play.precision = 16;
 	ai.play.channels = 2;
