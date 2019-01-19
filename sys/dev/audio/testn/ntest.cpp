@@ -1951,6 +1951,51 @@ test_drain_3(void)
 	XP_SYS_EQ(0, r);
 }
 
+// close で drain が発生すること
+void
+test_close_1(void)
+{
+	char *buf;
+	int buflen;
+	int r;
+	int fd;
+	struct timeval start, end, result;
+	int msec;
+
+	TEST("close_1");
+
+	fd = OPEN(devaudio, O_WRONLY);
+	if (fd == -1)
+		err(1, "open");
+
+	// デフォルト mulaw/8kHz のままなので1秒分
+	buflen = 8000;
+	buf = (char *)malloc(buflen);
+	if (buf == NULL)
+		err(1, "malloc");
+	memset(buf, 0, buflen);
+
+	// 全部書いて
+	gettimeofday(&start, NULL);
+	r = WRITE(fd, buf, buflen);
+	XP_SYS_EQ(buflen, r);
+
+	// クローズが終わるまでの時間
+	r = CLOSE(fd);
+	gettimeofday(&end, NULL);
+	XP_SYS_EQ(0, r);
+
+	timersub(&end, &start, &result);
+	msec = (result.tv_sec * 1000000 + result.tv_usec) / 1000;
+	if (debug)
+		printf("%s: %d.%03d msec\n", testname, msec / 1000, msec % 1000);
+	// しきい値は適当
+	if (msec < 900)
+		XP_FAIL("%d.%03d: too early?", msec / 1000, msec % 1000);
+	if (msec > 1500)
+		XP_FAIL("%d.%03d: too late?", msec / 1000, msec % 1000);
+}
+
 // PLAY_SYNC でブロックサイズずつ書き込む
 // 期待通りの音が出るかは分からないので、play.error が0なことだけ確認
 void
@@ -7085,6 +7130,7 @@ struct testtable testtable[] = {
 	DEF(drain_1),
 	DEF(drain_2),
 	DEF(drain_3),
+	DEF(close_1),
 	DEF(playsync_1),
 	DEF(readwrite_1),
 	DEF(readwrite_2),
