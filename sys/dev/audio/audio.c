@@ -2227,29 +2227,6 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
 	    "sc->sc_popens=%d, sc->sc_ropens=%d",
 	    sc->sc_popens, sc->sc_ropens);
 
-	if (file->rtrack) {
-		/* Call hw halt_input if this is the last recording track. */
-		if (sc->sc_ropens == 1 && sc->sc_rbusy) {
-			error = audio_rmixer_halt(sc);
-			if (error) {
-				aprint_error_dev(sc->sc_dev,
-				    "halt_input failed with %d\n",
-				    error);
-			}
-		}
-
-		/* Destroy the track. */
-		oldtrack = file->rtrack;
-		mutex_enter(sc->sc_intr_lock);
-		file->rtrack = NULL;
-		mutex_exit(sc->sc_intr_lock);
-		TRACET(oldtrack, "dropframes=%" PRIu64, oldtrack->dropframes);
-		audio_track_destroy(oldtrack);
-
-		KASSERT(sc->sc_ropens > 0);
-		sc->sc_ropens--;
-	}
-
 	if (file->ptrack) {
 		audio_track_drain(sc, file->ptrack);
 
@@ -2273,6 +2250,28 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
 
 		KASSERT(sc->sc_popens > 0);
 		sc->sc_popens--;
+	}
+	if (file->rtrack) {
+		/* Call hw halt_input if this is the last recording track. */
+		if (sc->sc_ropens == 1 && sc->sc_rbusy) {
+			error = audio_rmixer_halt(sc);
+			if (error) {
+				aprint_error_dev(sc->sc_dev,
+				    "halt_input failed with %d\n",
+				    error);
+			}
+		}
+
+		/* Destroy the track. */
+		oldtrack = file->rtrack;
+		mutex_enter(sc->sc_intr_lock);
+		file->rtrack = NULL;
+		mutex_exit(sc->sc_intr_lock);
+		TRACET(oldtrack, "dropframes=%" PRIu64, oldtrack->dropframes);
+		audio_track_destroy(oldtrack);
+
+		KASSERT(sc->sc_ropens > 0);
+		sc->sc_ropens--;
 	}
 
 	/* Call hw close if this is the last track. */
