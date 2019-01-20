@@ -6593,7 +6593,8 @@ test_concurrent_open()
 		total_usec += (uint32_t)result.tv_sec * 1000000 + result.tv_usec;
 	}
 	total_usec /= 3;
-	printf("%s: %d threads, %d usec\n", testname, maxthreads, total_usec);
+	printf("%s: %d threads, %5.3f sec\n", testname, maxthreads,
+		(double)total_usec / 1000000);
 }
 
 // ワーカースレッド
@@ -6681,7 +6682,8 @@ test_concurrent_close()
 		total_usec += (uint32_t)result.tv_sec * 1000000 + result.tv_usec;
 	}
 	total_usec /= 3;
-	printf("%s: %d threads, %d usec\n", testname, maxthreads, total_usec);
+	printf("%s: %d threads, %5.3f sec\n", testname, maxthreads,
+		(double)total_usec / 1000000);
 }
 
 // ワーカースレッド
@@ -6786,7 +6788,8 @@ test_concurrent_write()
 
 	free(buf);
 
-	printf("%s: %d threads, %d usec\n", testname, maxthreads, total_usec);
+	printf("%s: %d threads, %5.3f sec\n", testname, maxthreads,
+		(double)total_usec / 1000000);
 }
 
 // ワーカースレッド
@@ -6874,7 +6877,8 @@ test_concurrent_1()
 	timersub(&end, &start, &result);
 	total_usec = (uint32_t)result.tv_sec * 1000000 + result.tv_usec;
 
-	printf("%s: %d threads, %d usec\n", testname, maxthreads, total_usec);
+	printf("%s: %d threads, %5.3f sec\n", testname, maxthreads,
+		(double)total_usec / 1000000);
 }
 
 // ワーカースレッド
@@ -6974,7 +6978,8 @@ test_concurrent_2()
 
 	free(buf);
 
-	printf("%s: %d threads, %d usec\n", testname, maxthreads, total_usec);
+	printf("%s: %d threads, %5.3f sec\n", testname, maxthreads,
+		(double)total_usec / 1000000);
 }
 
 // ワーカースレッド
@@ -7077,7 +7082,8 @@ test_concurrent_3()
 
 	free(buf);
 
-	printf("%s: %d threads, %d usec\n", testname, maxthreads, total_usec);
+	printf("%s: %d threads, %5.3f sec\n", testname, maxthreads,
+		(double)total_usec / 1000000);
 }
 
 
