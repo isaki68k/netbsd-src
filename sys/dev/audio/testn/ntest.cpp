@@ -6501,7 +6501,6 @@ struct concurrent_open {
 	pthread_cond_t *cond;
 	volatile uint32_t *cnt;
 	int mode;	// open mode
-	struct audio_info *ai;
 	char *buf;
 	int buflen;
 };
@@ -6703,9 +6702,9 @@ thread_concurrent_write(void *arg)
 	pthread_mutex_unlock(m->mutex);
 
 	// 一斉に書き込む
-	// バッファは 64KB くらいはあるはずなので 2KB x 16回で書き込めば
-	// write(2) がブロックすることはまずないはず。
-	for (i = 0; i < 16; i++) {
+	// mulaw/8kHz で 400 byte * 20 = 8000 = 1秒。
+	// バッファは 64KB 程度あるはずなのでブロックすることはないはず。
+	for (i = 0; i < 20; i++) {
 		r = WRITE(m->fd, m->buf, m->buflen);
 		XP_SYS_EQ(m->buflen, r);
 	}
@@ -6726,7 +6725,6 @@ test_concurrent_write()
 	uint32_t total_usec;
 	char *buf;
 	int buflen;
-	struct audio_info ai;
 	int r;
 
 	TEST("concurrent_write");
@@ -6738,16 +6736,9 @@ test_concurrent_write()
 	pthread_mutex_init(&mutex, NULL);
 	pthread_cond_init(&cond, NULL);
 
-	buflen = 2048;
+	buflen = 400;
 	buf = (char *)malloc(buflen);
 	memset(buf, 0, buflen);
-
-	AUDIO_INITINFO(&ai);
-	ai.mode = AUMODE_PLAY_ALL;
-	ai.play.encoding = AUDIO_ENCODING_SLINEAR_NE;
-	ai.play.precision = 16;
-	ai.play.channels = 2;
-	ai.play.sample_rate = 48000;
 
 	// スレッドを作成
 	cnt = 0;
@@ -6763,8 +6754,6 @@ test_concurrent_write()
 		// 逐次オープン
 		m[i].fd = OPEN(devaudio, O_WRONLY);
 		XP_SYS_OK(m[i].fd);
-		r = IOCTL(m[i].fd, AUDIO_SETINFO, &ai, "encoding");
-		XP_SYS_EQ(0, r);
 
 		pthread_create(&threads[i], NULL, thread_concurrent_write, &m[i]);
 	}
@@ -6922,7 +6911,6 @@ test_concurrent_2()
 	uint32_t total_usec;
 	char *buf;
 	int buflen;
-	struct audio_info ai;
 	int fd;
 	int r;
 
@@ -6935,23 +6923,13 @@ test_concurrent_2()
 	pthread_mutex_init(&mutex, NULL);
 	pthread_cond_init(&cond, NULL);
 
-	// 全員書き込んでもバッファ (たぶん 64KB くらい) を越えないようにする
-	buflen = 50000 / maxthreads;
-	buflen &= ~3;
+	// 全員書き込んでも mulaw/8kHz で約1秒分になるようにする
+	buflen = 8000 / maxthreads;
 	buf = (char *)malloc(buflen);
 	memset(buf, 0, buflen);
 
 	fd = OPEN(devaudio, O_WRONLY);
 	XP_SYS_OK(fd);
-
-	AUDIO_INITINFO(&ai);
-	ai.mode = AUMODE_PLAY_ALL;
-	ai.play.encoding = AUDIO_ENCODING_SLINEAR_NE;
-	ai.play.precision = 16;
-	ai.play.channels = 2;
-	ai.play.sample_rate = 48000;
-	r = IOCTL(fd, AUDIO_SETINFO, &ai, "encoding");
-	XP_SYS_EQ(0, r);
 
 	// スレッドを作成
 	cnt = 0;
@@ -7020,12 +6998,8 @@ thread_concurrent_3(void *arg)
 	m->fd = OPEN(devaudio, O_WRONLY);
 	XP_SYS_OK(m->fd);
 
-	// 設定変えて…
-	r = IOCTL(m->fd, AUDIO_SETINFO, m->ai, "encoding");
-	XP_SYS_EQ(0, r);
-
 	// 書き込んで…
-	for (i = 0; i < 16; i++) {
+	for (i = 0; i < 20; i++) {
 		r = WRITE(m->fd, m->buf, m->buflen);
 		XP_SYS_EQ(m->buflen, r);
 	}
@@ -7051,7 +7025,6 @@ test_concurrent_3()
 	uint32_t total_usec;
 	char *buf;
 	int buflen;
-	struct audio_info ai;
 
 	TEST("concurrent_3");
 	if (netbsd <= 7) {
@@ -7062,16 +7035,9 @@ test_concurrent_3()
 	pthread_mutex_init(&mutex, NULL);
 	pthread_cond_init(&cond, NULL);
 
-	buflen = 2048;
+	buflen = 400;
 	buf = (char *)malloc(buflen);
 	memset(buf, 0, buflen);
-
-	AUDIO_INITINFO(&ai);
-	ai.mode = AUMODE_PLAY_ALL;
-	ai.play.encoding = AUDIO_ENCODING_SLINEAR_NE;
-	ai.play.precision = 16;
-	ai.play.channels = 2;
-	ai.play.sample_rate = 48000;
 
 	// スレッドを作成
 	cnt = 0;
@@ -7081,7 +7047,6 @@ test_concurrent_3()
 		m[i].mutex = &mutex;
 		m[i].cond = &cond;
 		m[i].cnt = &cnt;
-		m[i].ai = &ai;
 		m[i].buf = buf;
 		m[i].buflen = buflen;
 
