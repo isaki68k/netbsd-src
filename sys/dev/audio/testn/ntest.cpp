@@ -2117,7 +2117,7 @@ test_readwrite_1(void)
 		memset(buf, 0, sizeof(buf));
 		r = WRITE(fd, buf, sizeof(buf));
 		if (canwrite) {
-			XP_SYS_EQ(10, r);
+			XP_SYS_EQ(sizeof(buf), r);
 		} else {
 			XP_SYS_NG(EBADF, r);
 		}
@@ -2222,7 +2222,7 @@ test_readwrite_2(void)
 			memset(buf, 0, sizeof(buf));
 			r = WRITE(fd1, buf, sizeof(buf));
 			if (canwrite) {
-				XP_SYS_EQ(10, r);
+				XP_SYS_EQ(sizeof(buf), r);
 			} else {
 				XP_SYS_NG(EBADF, r);
 			}
