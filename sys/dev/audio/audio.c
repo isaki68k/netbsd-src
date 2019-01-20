@@ -1550,7 +1550,9 @@ audioopen(dev_t dev, int flags, int ifmt, struct lwp *l)
 	if (sc == NULL || sc->hw_if == NULL)
 		return ENXIO;
 
-	audio_enter_exclusive(sc);
+	error = audio_enter_exclusive(sc);
+	if (error)
+		return error;
 
 	device_active(sc->sc_dev, DVA_SYSTEM);
 	switch (AUDIODEV(dev)) {
@@ -1591,7 +1593,11 @@ audioclose(struct file *fp)
 	error = audio_file_acquire(sc, file);
 	if (error)
 		return error;
-	audio_enter_exclusive(sc);
+	error = audio_enter_exclusive(sc);
+	if (error) {
+		audio_file_release(sc, file);
+		return error;
+	}
 
 	device_active(sc->sc_dev, DVA_SYSTEM);
 	switch (AUDIODEV(dev)) {
@@ -1889,7 +1895,9 @@ audiobellopen(dev_t dev, struct audiobell_arg *arg)
 	if (sc == NULL || sc->hw_if == NULL)
 		return ENXIO;
 
-	audio_enter_exclusive(sc);
+	error = audio_enter_exclusive(sc);
+	if (error)
+		return error;
 
 	device_active(sc->sc_dev, DVA_SYSTEM);
 	error = audio_open(dev, sc, FWRITE, 0, curlwp, arg);
@@ -1911,6 +1919,11 @@ audiobellclose(audio_file_t *file)
 	if (error)
 		return error;
 	audio_enter_exclusive(sc);
+	error = audio_enter_exclusive(sc);
+	if (error) {
+		audio_file_release(sc, file);
+		return error;
+	}
 
 	device_active(sc->sc_dev, DVA_SYSTEM);
 	error = audio_close(sc, file);
@@ -2350,7 +2363,9 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 	/*
 	 * The first read starts rmixer.
 	 */
-	audio_enter_exclusive(sc);
+	error = audio_enter_exclusive(sc);
+	if (error)
+		return error;
 	if (sc->sc_rbusy == false)
 		audio_rmixer_start(sc);
 	audio_exit_exclusive(sc);
@@ -2499,7 +2514,9 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 	/*
 	 * The first write starts pmixer.
 	 */
-	audio_enter_exclusive(sc);
+	error = audio_enter_exclusive(sc);
+	if (error)
+		return error;
 	if (sc->sc_pbusy == false)
 		audio_pmixer_start(sc, false);
 	audio_exit_exclusive(sc);
@@ -2748,7 +2765,9 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		break;
 
 	case AUDIO_SETINFO:
-		audio_enter_exclusive(sc);
+		error = audio_enter_exclusive(sc);
+		if (error)
+			break;
 		error = audio_file_setinfo(sc, file, (struct audio_info *)addr);
 		if (error) {
 			audio_exit_exclusive(sc);
@@ -2762,7 +2781,9 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		break;
 
 	case AUDIO_GETINFO:
-		audio_enter_exclusive(sc);
+		error = audio_enter_exclusive(sc);
+		if (error)
+			break;
 		error = audiogetinfo(sc, (struct audio_info *)addr, 1, file);
 		audio_exit_exclusive(sc);
 		break;
@@ -2859,7 +2880,9 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 
 	default:
 		if (sc->hw_if->dev_ioctl) {
-			audio_enter_exclusive(sc);
+			error = audio_enter_exclusive(sc);
+			if (error)
+				break;
 			error = sc->hw_if->dev_ioctl(sc->hw_hdl,
 			    cmd, addr, flag, l);
 			audio_exit_exclusive(sc);
@@ -3103,6 +3126,7 @@ audio_mmap(struct audio_softc *sc, off_t *offp, size_t len, int prot,
 {
 	audio_track_t *track;
 	vsize_t vsize;
+	int error;
 
 	KASSERT(!mutex_owned(sc->sc_lock));
 	KASSERT(file->lock);
@@ -3160,7 +3184,9 @@ audio_mmap(struct audio_softc *sc, off_t *offp, size_t len, int prot,
 
 		// XXX ここで元は audio_fill_silence
 		if (!track->is_pause) {
-			audio_enter_exclusive(sc);
+			error = audio_enter_exclusive(sc);
+			if (error)
+				return error;
 			if (sc->sc_pbusy == false)
 				audio_pmixer_start(sc, true);
 			audio_exit_exclusive(sc);
@@ -8106,8 +8132,11 @@ static bool
 audio_suspend(device_t dv, const pmf_qual_t *qual)
 {
 	struct audio_softc *sc = device_private(dv);
+	int error;
 
-	audio_enter_exclusive(sc);
+	error = audio_enter_exclusive(sc);
+	if (error)
+		return error;
 	audio_mixer_capture(sc);
 
 	// XXX mixer をとめる?
@@ -8130,8 +8159,11 @@ audio_resume(device_t dv, const pmf_qual_t *qual)
 {
 	struct audio_softc *sc = device_private(dv);
 	struct audio_info ai;
+	int error;
 
-	audio_enter_exclusive(sc);
+	error = audio_enter_exclusive(sc);
+	if (error)
+		return error;
 #if 0 // XXX ?
 	sc->sc_trigger_started = false;
 	sc->sc_rec_started = false;
@@ -8374,7 +8406,9 @@ mixer_ioctl(struct audio_softc *sc, u_long cmd, void *addr, int flag,
 
 	case AUDIO_GETDEV:
 		DPRINTF(2, "AUDIO_GETDEV\n");
-		audio_enter_exclusive(sc);
+		error = audio_enter_exclusive(sc);
+		if (error)
+			break;
 		error = sc->hw_if->getdev(sc->hw_hdl, (audio_device_t *)addr);
 		audio_exit_exclusive(sc);
 		break;
@@ -8393,7 +8427,9 @@ mixer_ioctl(struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		DPRINTF(2, "AUDIO_MIXER_READ\n");
 		mc = (mixer_ctrl_t *)addr;
 
-		audio_enter_exclusive(sc);
+		error = audio_enter_exclusive(sc);
+		if (error)
+			break;
 		if (device_is_active(sc->hw_dev))
 			error = audio_get_port(sc, mc);
 		else if (mc->dev < 0 || mc->dev >= sc->sc_nmixer_states)
@@ -8409,7 +8445,9 @@ mixer_ioctl(struct audio_softc *sc, u_long cmd, void *addr, int flag,
 
 	case AUDIO_MIXER_WRITE:
 		DPRINTF(2, "AUDIO_MIXER_WRITE\n");
-		audio_enter_exclusive(sc);
+		error = audio_enter_exclusive(sc);
+		if (error)
+			break;
 		error = audio_set_port(sc, (mixer_ctrl_t *)addr);
 		if (error) {
 			audio_exit_exclusive(sc);
@@ -8428,13 +8466,15 @@ mixer_ioctl(struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		break;
 
 	default:
-		audio_enter_exclusive(sc);
 		if (sc->hw_if->dev_ioctl) {
+			error = audio_enter_exclusive(sc);
+			if (error)
+				break;
 			error = sc->hw_if->dev_ioctl(sc->hw_hdl,
 			    cmd, addr, flag, l);
+			audio_exit_exclusive(sc);
 		} else
 			error = EINVAL;
-		audio_exit_exclusive(sc);
 		break;
 	}
 	DPRINTF(2, "mixer_ioctl(%lu,'%c',%lu) result %d\n",
@@ -8954,7 +8994,8 @@ audio_volume_down(device_t dv)
 	u_int gain;
 	u_char balance;
 
-	audio_enter_exclusive(sc);
+	if (audio_enter_exclusive(sc) != 0)
+		return;
 	if (sc->sc_outports.index == -1 && sc->sc_outports.master != -1) {
 		mi.index = sc->sc_outports.master;
 		mi.un.v.delta = 0;
@@ -8977,7 +9018,8 @@ audio_volume_up(device_t dv)
 	u_int gain, newgain;
 	u_char balance;
 
-	audio_enter_exclusive(sc);
+	if (audio_enter_exclusive(sc) != 0)
+		return;
 	if (sc->sc_outports.index == -1 && sc->sc_outports.master != -1) {
 		mi.index = sc->sc_outports.master;
 		mi.un.v.delta = 0;
@@ -8999,7 +9041,8 @@ audio_volume_toggle(device_t dv)
 	u_int gain, newgain;
 	u_char balance;
 
-	audio_enter_exclusive(sc);
+	if (audio_enter_exclusive(sc) != 0)
+		return;
 	au_get_gain(sc, &sc->sc_outports, &gain, &balance);
 	if (gain != 0) {
 		sc->sc_lastgain = gain;
