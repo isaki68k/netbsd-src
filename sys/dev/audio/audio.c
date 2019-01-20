@@ -1593,11 +1593,6 @@ audioclose(struct file *fp)
 	error = audio_file_acquire(sc, file);
 	if (error)
 		return error;
-	error = audio_enter_exclusive(sc);
-	if (error) {
-		audio_file_release(sc, file);
-		return error;
-	}
 
 	device_active(sc->sc_dev, DVA_SYSTEM);
 	switch (AUDIODEV(dev)) {
@@ -1620,7 +1615,6 @@ audioclose(struct file *fp)
 		fp->f_audioctx = NULL;
 	}
 
-	audio_exit_exclusive(sc);
 	/*
 	 * Since file has already been destructed,
 	 * audio_file_release() is not necessary.
@@ -1919,16 +1913,10 @@ audiobellclose(audio_file_t *file)
 	if (error)
 		return error;
 	audio_enter_exclusive(sc);
-	error = audio_enter_exclusive(sc);
-	if (error) {
-		audio_file_release(sc, file);
-		return error;
-	}
 
 	device_active(sc->sc_dev, DVA_SYSTEM);
 	error = audio_close(sc, file);
 
-	audio_exit_exclusive(sc);
 	/*
 	 * Since file has already been destructed,
 	 * audio_file_release() is not necessary.
@@ -2211,8 +2199,7 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
 	audio_track_t *oldtrack;
 	int error;
 
-	KASSERT(mutex_owned(sc->sc_lock));
-	KASSERT(sc->sc_exlock);
+	KASSERT(!mutex_owned(sc->sc_lock));
 	KASSERT(file->lock);
 
 #if AUDIO_DEBUG >= 3
@@ -2227,9 +2214,24 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
 	    "sc->sc_popens=%d, sc->sc_ropens=%d",
 	    sc->sc_popens, sc->sc_ropens);
 
+	// まず drain を実施。
+	// drain 中の waitio で律速しないよう exclusive ロックより前。
+	/* Drain without exclusive lock. */
 	if (file->ptrack) {
+		mutex_enter(sc->sc_lock);
 		audio_track_drain(sc, file->ptrack);
+		mutex_exit(sc->sc_lock);
+	}
 
+	/* Then, acquire exclusive lock to protect counters. */
+	/* XXX what should I do when an error occurs? */
+	error = audio_enter_exclusive(sc);
+	if (error) {
+		audio_file_release(sc, file);
+		return error;
+	}
+
+	if (file->ptrack) {
 		/* Call hw halt_output if this is the last playback track. */
 		if (sc->sc_popens == 1 && sc->sc_pbusy) {
 			error = audio_pmixer_halt(sc);
@@ -2295,6 +2297,7 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
 	mutex_exit(sc->sc_intr_lock);
 
 	TRACE("done");
+	audio_exit_exclusive(sc);
 	return 0;
 }
 
@@ -8357,10 +8360,10 @@ int
 mixer_close(struct audio_softc *sc, audio_file_t *file)
 {
 
-	KASSERT(mutex_owned(sc->sc_lock));
-
+	mutex_enter(sc->sc_lock);
 	DPRINTF(1, "mixer_close: sc %p\n", sc);
 	mixer_remove(sc);
+	mutex_exit(sc->sc_lock);
 
 	return 0;
 }
