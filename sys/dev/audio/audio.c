@@ -151,14 +151,12 @@
  *	query_format		-	x	(Added in AUDIO2)
  *	set_format		-	x	(Added in AUDIO2)
  *
- * + は hw driver がロックを外す可能性があるため、exlock で保護する必要
- * のあるインタフェース。
+ * "+" indicates the interface which necessary to protect with exlock.
+ *   Some hardware drivers may release sc_lock on these interfaces.
  *
- * *1: These have been called at attach time and neither lock were necessary.
- *   On AUDIO2, these might be also called after attach.
- *   //これらは以前は Called at attach time であったため、どちらのロックも
- *   //不要だったが、AUDIO2 ではアタッチ以降にもミキサの再設定でコールできる
- *   //ため、INTR -, THREAD x に変更する必要がある。
+ * *1 Note: Before 8.0, these have been called only at attach time and
+ *   neither lock were necessary.  In AUDIO2, on the other hand, these
+ *   might be also called after attach.
  */
 
 #include <sys/cdefs.h>
@@ -914,7 +912,6 @@ audioattach(device_t parent, device_t self, void *aux)
 	aprint_naive("\n");
 	aprint_normal("\n");
 
-	// play と capture が両方立ってない状況はたぶん起きない
 	KASSERT((mode & (AUMODE_PLAY | AUMODE_RECORD)) != 0);
 
 	/* probe hw params */
@@ -940,7 +937,7 @@ audioattach(device_t parent, device_t self, void *aux)
 	}
 
 	// アタッチ時点では少なくとも片方生きていれば成功とする。
-	/* Init track mixer. */
+	/* Init track mixers */
 	error = audio_mixers_init(sc, mode, &phwfmt, &rhwfmt, &pfil, &rfil);
 	mutex_exit(sc->sc_lock);
 	if (sc->sc_pmixer == NULL && sc->sc_rmixer == NULL)
@@ -1046,9 +1043,7 @@ audioattach(device_t parent, device_t self, void *aux)
 	return;
 
 bad:
-	// アタッチがエラーを返せない構造なので、ここでエラーになっても
-	// デバイス自体は出来てしまう。そこで hw_if == NULL なら
-	// configure されてないものとする。という運用。コメント書けよ。
+	/* Clearing hw_if means that device is attached but disabled. */
 	sc->hw_if = NULL;
 	aprint_error_dev(sc->sc_dev, "disabled\n");
 	return;
@@ -1235,7 +1230,6 @@ audiodetach(device_t self, int flags)
 	if (error)
 		return error;
 
-	// 稼働中のトラックを終了させる
 	mutex_enter(sc->sc_lock);
 	sc->sc_dying = true;
 	cv_broadcast(&sc->sc_exlockcv);
@@ -1409,15 +1403,10 @@ stream_filter_list_prepend(stream_filter_list_t *list,
 }
 #endif /* OLD_FILTER */
 
-// uaudio(4) など一部のデバイスは trigger_output が sc_lock, sc_intr_lock を
-// 全部外したりするようで、それはそれでどうかと思うのだが、そっちに手を入れる
-// のも闇なので、ここでは sc_exlock という sc_lock を使った
-// クリティカルセクションを用意することにする。
 /*
- * Acquire sc_lock and enter critical section.
+ * Acquire sc_lock and enter exlock critical section.
  * If successful, it returns 0.  Otherwise returns errno.
  */
-// エラーが起きたらロックは解放して帰る。
 static int
 audio_enter_exclusive(struct audio_softc *sc)
 {
@@ -1447,7 +1436,7 @@ audio_enter_exclusive(struct audio_softc *sc)
 }
 
 /*
- * Leave critical section and sc_lock.
+ * Leave exlock critical section and release sc_lock.
  * Must be called with sc_lock held.
  */
 static void
@@ -1464,7 +1453,7 @@ audio_exit_exclusive(struct audio_softc *sc)
 }
 
 /*
- * Wait for I/O to complete, releasing device lock.
+ * Wait for I/O to complete, releasing sc_lock.
  * Must be called with sc_lock held.
  */
 static int
@@ -1878,6 +1867,14 @@ audiommap(struct file *fp, off_t *offp, size_t len, int prot, int *flagsp,
 // arg->file には確保した file を格納する。
 // arg->blocksize にはブロックサイズを格納する。
 // 成功すれば 0、失敗すれば errno を返す。
+/*
+ * Open for audiobell.
+ * sample_rate, encoding, precision and channels in arg are in-parameter
+ * and indicates input encoding.
+ * Stores allocated file to arg->file.
+ * Stores blocksize to arg->blocksize.
+ * If successful returns 0, otherwise errno.
+ */
 int
 audiobellopen(dev_t dev, struct audiobell_arg *arg)
 {
@@ -1900,7 +1897,7 @@ audiobellopen(dev_t dev, struct audiobell_arg *arg)
 	return error;
 }
 
-// audiobellopen でオープンした file をクローズする。
+/* Close for audiobell */
 int
 audiobellclose(audio_file_t *file)
 {
@@ -1925,7 +1922,7 @@ audiobellclose(audio_file_t *file)
 	return error;
 }
 
-// audiobell を再生する。
+/* Playback for audiobell */
 int
 audiobellwrite(audio_file_t *file, struct uio *uio)
 {
@@ -2064,7 +2061,17 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 			// 同時に立つことはあり得ないので、必ず有効な片方だけ
 			// にしなければならない。
 			// see also: arch/evbarm/mini2440/audio_mini2440.c
-
+			/*
+			 * Call hw_if->open() only at first open of
+			 * combination of playback and recording.
+			 * On full duplex hardware, the flags passed to
+			 * hw_if->open() is always (FREAD | FWRITE)
+			 * regardless of this open()'s flags.
+			 * see also dev/isa/aria.c
+			 * On half duplex hardware, the flags passed to
+			 * hw_if->open() is one of FREAD or FWRITE.
+			 * see also arch/evbarm/mini2440/audio_mini2440.c
+			 */
 			if ((audio_get_props(sc) & AUDIO_PROP_FULLDUPLEX)) {
 				hwflags = FREAD | FWRITE;
 			} else {
@@ -2072,6 +2079,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 				// flags はユーザ指定値、それを他ディスクリプタ
 				// のオープン状況と擦り合わせた結果が af->mode
 				// に入っている (see audio_file_setinfo())。
+				/* Construct hwflags from af->mode. */
 				hwflags = 0;
 				if ((af->mode & AUMODE_PLAY) != 0)
 					hwflags |= FWRITE;
@@ -2086,10 +2094,13 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 				goto bad2;
 		}
 
-		/* Set speaker mode if half duplex */
 		// XXX audio(9) にはハーフで録再を切り替える際に使うと
 		// 書いてある気がするんだけど、あと
 		// Full dup で録再同時に起きてたらどうするのかとか。
+		/*
+		 * Set speaker mode when a half duplex.
+		 * XXX I'm not sure this is correct.
+		 */
 		if (1/*XXX*/) {
 			if (sc->hw_if->speaker_ctl) {
 				int on;
@@ -2148,7 +2159,10 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 			goto bad3;
 	}
 
-	// オープンカウント++
+	/*
+	 * Count up finally.
+	 * Don't fail from here.
+	 */
 	if (af->ptrack)
 		sc->sc_popens++;
 	if (af->rtrack)
@@ -2168,7 +2182,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	return error;
 
 	/*
-	 * Since track here is not yet linked from sc_files,
+	 * Since track here is not yet linked to sc_files,
 	 * you can call track_destroy() without sc_intr_lock.
 	 */
 bad3:
