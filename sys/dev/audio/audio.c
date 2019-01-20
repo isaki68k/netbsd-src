@@ -2387,7 +2387,7 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 		mutex_exit(sc->sc_lock);
 
 		while (atomic_cas_uint(&track->in_use, 0, 1) != 0)
-			;
+			kpause("audiorr", true, 1, NULL);
 		audio_track_record(track);
 		atomic_swap_uint(&track->in_use, 0);
 
@@ -2569,7 +2569,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 		    outbuf->used < outbuf->capacity) {
 			mutex_exit(sc->sc_intr_lock);
 			while (atomic_cas_uint(&track->in_use, 0, 1) != 0)
-				;
+				kpause("audioww", true, 1, NULL);
 			audio_track_play(track);
 			atomic_swap_uint(&track->in_use, 0);
 			mutex_enter(sc->sc_intr_lock);
@@ -7392,7 +7392,7 @@ audio_file_setinfo_set(audio_track_t *track, audio_format2_t *fmt, int mode)
 	KASSERT(track);
 
 	while (atomic_cas_uint(&track->in_use, 0, 1) != 0)
-		;
+		kpause("audiost", true, 1, NULL);
 	track->mode = mode;
 	error = audio_track_set_format(track, fmt);
 	atomic_swap_uint(&track->in_use, 0);
