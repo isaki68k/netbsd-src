@@ -6704,9 +6704,9 @@ thread_concurrent_write(void *arg)
 	pthread_mutex_unlock(m->mutex);
 
 	// 一斉に書き込む
-	// mulaw/8kHz で 400 byte * 20 = 8000 = 1秒。
+	// mulaw/8kHz で 400 byte * 100 = 8000 * 5 = 5秒。
 	// バッファは 64KB 程度あるはずなのでブロックすることはないはず。
-	for (i = 0; i < 20; i++) {
+	for (i = 0; i < 100; i++) {
 		r = WRITE(m->fd, m->buf, m->buflen);
 		XP_SYS_EQ(m->buflen, r);
 	}
@@ -6927,8 +6927,8 @@ test_concurrent_2()
 	pthread_mutex_init(&mutex, NULL);
 	pthread_cond_init(&cond, NULL);
 
-	// 全員書き込んでも mulaw/8kHz で約1秒分になるようにする
-	buflen = 8000 / maxthreads;
+	// 全員書き込んでも mulaw/8kHz で約5秒分になるようにする
+	buflen = 8000 * 5 / maxthreads;
 	buf = (char *)malloc(buflen);
 	memset(buf, 0, buflen);
 
@@ -7004,7 +7004,8 @@ thread_concurrent_3(void *arg)
 	XP_SYS_OK(m->fd);
 
 	// 書き込んで…
-	for (i = 0; i < 20; i++) {
+	// 400[byte] * 100 = 8000[Hz] * 5[sec]
+	for (i = 0; i < 100; i++) {
 		r = WRITE(m->fd, m->buf, m->buflen);
 		XP_SYS_EQ(m->buflen, r);
 	}
