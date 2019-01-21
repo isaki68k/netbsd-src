@@ -1973,7 +1973,7 @@ test_close_1(void)
 	buf = (char *)malloc(buflen);
 	if (buf == NULL)
 		err(1, "malloc");
-	memset(buf, 0, buflen);
+	memset(buf, 0xff, buflen);
 
 	// 全部書いて
 	gettimeofday(&start, NULL);
@@ -2025,7 +2025,7 @@ test_playsync_1(void)
 	wav = (char *)malloc(wavsize);
 	if (wav == NULL)
 		err(1, "malloc");
-	memset(wav, 0, wavsize);
+	memset(wav, 0xff, wavsize);
 
 	for (int i = 0; i < 5; i++) {
 		r = WRITE(fd, wav, wavsize);
@@ -2114,7 +2114,7 @@ test_readwrite_1(void)
 			err(1, "ioctl");
 
 		// write は mode2popen[] が期待値
-		memset(buf, 0, sizeof(buf));
+		memset(buf, 0xff, sizeof(buf));
 		r = WRITE(fd, buf, sizeof(buf));
 		if (canwrite) {
 			XP_SYS_EQ(sizeof(buf), r);
@@ -2219,7 +2219,7 @@ test_readwrite_2(void)
 				err(1, "ioctl");
 
 			// write は mode2popen[] が期待値
-			memset(buf, 0, sizeof(buf));
+			memset(buf, 0xff, sizeof(buf));
 			r = WRITE(fd1, buf, sizeof(buf));
 			if (canwrite) {
 				XP_SYS_EQ(sizeof(buf), r);
@@ -2269,7 +2269,7 @@ test_readwrite_3()
 		return;
 	}
 
-	memset(buf, 0, sizeof(buf));
+	memset(buf, 0xff, sizeof(buf));
 
 	fd0 = OPEN(devaudio, O_WRONLY);
 	if (fd0 == -1)
@@ -2796,7 +2796,7 @@ test_mmap_7_8_common(int type)
 	buf = (char *)malloc(blocksize);
 	if (buf == NULL)
 		err(1, "malloc");
-	memset(buf, 0, blocksize);
+	memset(buf, 0xff, blocksize);
 
 	// オープン直後の GETOOFFS
 	r = IOCTL(fd, AUDIO_GETOOFFS, &ao, "");
@@ -3146,7 +3146,7 @@ test_poll_3()
 	buf = (char *)malloc(buflen);
 	if (buf == NULL)
 		err(1, "malloc");
-	memset(buf, 0, buflen);
+	memset(buf, 0xff, buflen);
 	do {
 		r = WRITE(fd, buf, buflen);
 	} while (r == buflen);
@@ -3207,7 +3207,7 @@ test_poll_4()
 	buf = (char *)malloc(buflen);
 	if (buf == NULL)
 		err(1, "malloc");
-	memset(buf, 0, buflen);
+	memset(buf, 0xff, buflen);
 	do {
 		r = WRITE(fd, buf, buflen);
 	} while (r == buflen);
@@ -3238,6 +3238,7 @@ test_poll_5()
 	int r;
 	char *buf;
 	int buflen;
+	int zero;
 
 	TEST("poll_5");
 
@@ -3259,6 +3260,10 @@ test_poll_5()
 			ai.play.precision = 16;
 			ai.play.channels = 2;
 			ai.play.sample_rate = 22050;
+			zero = 0;
+		} else {
+			// mulaw
+			zero = 0xff;
 		}
 		r = IOCTL(fd, AUDIO_SETINFO, &ai, "pause=1");
 		XP_SYS_EQ(0, r);
@@ -3272,7 +3277,7 @@ test_poll_5()
 		buf = (char *)malloc(buflen);
 		if (buf == NULL)
 			err(1, "malloc");
-		memset(buf, 0, buflen);
+		memset(buf, zero, buflen);
 		do {
 			r = WRITE(fd, buf, buflen);
 		} while (r == buflen);
@@ -3401,7 +3406,7 @@ test_poll_6()
 		buf = (char *)malloc(buflen);
 		if (buf == NULL)
 			err(1, "malloc");
-		memset(buf, 0, buflen);
+		memset(buf, 0xff, buflen);
 		do {
 			r = WRITE(fd[a], buf, buflen);
 		} while (r == buflen);
@@ -3710,7 +3715,7 @@ test_kqueue_3()
 	buf = (char *)malloc(buflen);
 	if (buf == NULL)
 		err(1, "malloc");
-	memset(buf, 0, buflen);
+	memset(buf, 0xff, buflen);
 	do {
 		r = WRITE(fd, buf, buflen);
 	} while (r == buflen);
@@ -3786,7 +3791,7 @@ test_kqueue_4()
 	buf = (char *)malloc(buflen);
 	if (buf == NULL)
 		err(1, "malloc");
-	memset(buf, 0, buflen);
+	memset(buf, 0xff, buflen);
 	do {
 		r = WRITE(fd, buf, buflen);
 	} while (r == buflen);
@@ -3838,6 +3843,7 @@ test_kqueue_5()
 	int kq;
 	char *buf;
 	int buflen;
+	int zero;
 
 	TEST("kqueue_5");
 	memset(&ts, 0, sizeof(ts));
@@ -3868,8 +3874,10 @@ test_kqueue_5()
 			ai.play.precision = 16;
 			ai.play.channels = 2;
 			ai.play.sample_rate = 8000;
+			zero = 0;
 		} else {
 			ai.play.sample_rate = 32000;
+			zero = 0xff;
 		}
 		r = IOCTL(fd, AUDIO_SETINFO, &ai, "enc;pause=1");
 		XP_SYS_EQ(0, r);
@@ -3895,7 +3903,7 @@ test_kqueue_5()
 		buf = (char *)malloc(buflen);
 		if (buf == NULL)
 			err(1, "malloc");
-		memset(buf, 0, buflen);
+		memset(buf, zero, buflen);
 		do {
 			r = WRITE(fd, buf, buflen);
 		} while (r == buflen);
@@ -4078,7 +4086,7 @@ test_kqueue_6()
 		buf = (char *)malloc(buflen);
 		if (buf == NULL)
 			err(1, "malloc");
-		memset(buf, 0, buflen);
+		memset(buf, 0xff, buflen);
 		// fdA に書き込み
 		do {
 			r = WRITE(fd[a], buf, buflen);
@@ -4332,7 +4340,7 @@ test_FIOASYNC_4(void)
 	data = (char *)malloc(ai.blocksize);
 	if (data == NULL)
 		err(1, "malloc");
-	memset(data, 0, ai.blocksize);
+	memset(data, 0xff, ai.blocksize);
 
 	val = 1;
 	r = IOCTL(fd, FIOASYNC, &val, "on");
@@ -5716,7 +5724,7 @@ test_AUDIO_SETINFO_rollback()
 	buf = (char *)malloc(buflen);
 	if (buf == NULL)
 		err(1, "malloc");
-	memset(buf, 0, buflen);
+	memset(buf, 0xff, buflen);
 
 	for (int i = 0; i < __arraycount(table); i++) {
 		DESC("%s", table[i]);
@@ -6740,7 +6748,7 @@ test_concurrent_write()
 
 	buflen = 400;
 	buf = (char *)malloc(buflen);
-	memset(buf, 0, buflen);
+	memset(buf, 0xff, buflen);
 
 	// スレッドを作成
 	cnt = 0;
@@ -6930,7 +6938,7 @@ test_concurrent_2()
 	// 全員書き込んでも mulaw/8kHz で約5秒分になるようにする
 	buflen = 8000 * 5 / maxthreads;
 	buf = (char *)malloc(buflen);
-	memset(buf, 0, buflen);
+	memset(buf, 0xff, buflen);
 
 	fd = OPEN(devaudio, O_WRONLY);
 	XP_SYS_OK(fd);
@@ -7043,7 +7051,7 @@ test_concurrent_3()
 
 	buflen = 400;
 	buf = (char *)malloc(buflen);
-	memset(buf, 0, buflen);
+	memset(buf, 0xff, buflen);
 
 	// スレッドを作成
 	cnt = 0;
