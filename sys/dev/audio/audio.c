@@ -2250,7 +2250,7 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
 		if (sc->sc_popens == 1 && sc->sc_pbusy) {
 			error = audio_pmixer_halt(sc);
 			if (error) {
-				aprint_error_dev(sc->sc_dev,
+				device_printf(sc->sc_dev,
 				    "halt_output failed with %d\n",
 				    error);
 			}
@@ -2272,7 +2272,7 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
 		if (sc->sc_ropens == 1 && sc->sc_rbusy) {
 			error = audio_rmixer_halt(sc);
 			if (error) {
-				aprint_error_dev(sc->sc_dev,
+				device_printf(sc->sc_dev,
 				    "halt_input failed with %d\n",
 				    error);
 			}
@@ -5483,7 +5483,7 @@ audio_pmixer_process(struct audio_softc *sc, bool force_mix)
 				/* Turn down gradually to 128. */
 				if (mixer->volume > 128) {
 					mixer->volume = mixer->volume * 95 / 100;
-					aprint_normal_dev(sc->sc_dev,
+					device_printf(sc->sc_dev,
 					    "auto volume adjust: volume %d\n",
 					    mixer->volume);
 				}
