@@ -5108,7 +5108,7 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 		if (rounded != blksize) {
 			if ((rounded * NBBY) % (mixer->hwbuf.fmt.stride *
 			    mixer->hwbuf.fmt.channels) != 0) {
-				aprint_error_dev(sc->sc_dev,
+				device_printf(sc->sc_dev,
 				    "blksize not configured %d -> %d\n",
 				    blksize, rounded);
 				return EINVAL;
@@ -5132,7 +5132,7 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 		    bufsize, rounded);
 		// 縮められても困る?
 		if (rounded != bufsize) {
-			aprint_error_dev(sc->sc_dev,
+			device_printf(sc->sc_dev,
 			    "buffer size not configured %zu -> %zu\n",
 			    bufsize, rounded);
 			return EINVAL;
@@ -5143,14 +5143,14 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 	if (sc->hw_if->allocm) {
 		mixer->hwbuf.mem = sc->hw_if->allocm(sc->hw_hdl, mode, bufsize);
 		if (mixer->hwbuf.mem == NULL) {
-			aprint_error_dev(sc->sc_dev, "%s: allocm(%zu) failed\n",
+			device_printf(sc->sc_dev, "%s: allocm(%zu) failed\n",
 			    __func__, bufsize);
 			return ENOMEM;
 		}
 	} else {
 		mixer->hwbuf.mem = kern_malloc(bufsize, M_NOWAIT);
 		if (mixer->hwbuf.mem == NULL) {
-			aprint_error_dev(sc->sc_dev,
+			device_printf(sc->sc_dev,
 			    "%s: malloc hwbuf(%zu) failed\n",
 			    __func__, bufsize);
 			return ENOMEM;
@@ -5172,7 +5172,7 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 	mixer->sih = softint_establish(SOFTINT_SERIAL | SOFTINT_MPSAFE,
 	    softint_handler, sc);
 	if (mixer->sih == NULL) {
-		aprint_error_dev(sc->sc_dev, "softint_establish failed\n");
+		device_printf(sc->sc_dev, "softint_establish failed\n");
 		goto abort;
 	}
 
@@ -5192,7 +5192,7 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 		    mixer->mixfmt.stride / NBBY;
 		mixer->mixsample = audio_realloc(mixer->mixsample, len);
 		if (mixer->mixsample == NULL) {
-			aprint_error_dev(sc->sc_dev,
+			device_printf(sc->sc_dev,
 			    "%s: malloc mixsample(%d) failed\n",
 			    __func__, len);
 			error = ENOMEM;
@@ -5217,7 +5217,7 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 		len = auring_bytelen(&mixer->codecbuf);
 		mixer->codecbuf.mem = audio_realloc(mixer->codecbuf.mem, len);
 		if (mixer->codecbuf.mem == NULL) {
-			aprint_error_dev(sc->sc_dev,
+			device_printf(sc->sc_dev,
 			    "%s: malloc codecbuf(%d) failed\n",
 			    __func__, len);
 			error = ENOMEM;
