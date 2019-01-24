@@ -16,6 +16,19 @@ PRE.p {
 <h4>NetBSD8 problems</h4>
 <ul>
 
+<li>uaudio(4) の trigger_{input,output} がロックを外している (2019/01)
+<p class="p">
+uaudio(4) の trigger_{input,output} が sc_lock, sc_intr_lock を
+外してから自身の処理を行って戻る前にもう一度ロックを取り直しているが、
+これは不要。というか外してはいけない。
+元々 sc_lock が IPL_SCHED だった時代にはやむなくそうしていた
+(しその頃の audio はシングルプレーヤーだったので問題は顕在化しなかった)が
+IPL_USBSOFT に変えてからはロックを外す必要はなくなっている。
+のだが、audio.c 側にバグがあるのに uaudio.c 側に適当な変更を入れている
+ように見える。
+当然 (1再生しかしなければ滅多に発現しないが) これでも発現する。
+</p>
+
 <li>hw_if の各メソッドの呼び出し順序の依存関係が考慮されていない、その2
 (2018/05)
 <p class="p">
