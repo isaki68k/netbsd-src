@@ -694,8 +694,8 @@ int debug_close(int line, int fd)
 
 #define MMAP(ptr, len, prot, flags, fd, offset)	\
 	debug_mmap(__LINE__, ptr, len, prot, flags, fd, offset)
-void *debug_mmap(int line, void *ptr, int len, int prot, int flags, int fd,
-	int offset)
+void *debug_mmap(int line, void *ptr, size_t len, int prot, int flags, int fd,
+	off_t offset)
 {
 	char protbuf[256];
 	char flagbuf[256];
@@ -742,7 +742,7 @@ void *debug_mmap(int line, void *ptr, int len, int prot, int flags, int fd,
 				flags);
 	}
 
-	DPRINTFF(line, "mmap(%p, %d, %s, %s, %d, %d)",
+	DPRINTFF(line, "mmap(%p, %zd, %s, %s, %d, %jd)",
 		ptr, len, protbuf + 1, flagbuf + 1, fd, offset);
 	void *r = mmap(ptr, len, prot, flags, fd, offset);
 	DRESULT_PTR(r);
@@ -2507,13 +2507,16 @@ test_mmap_2()
 		{ 0,	lsize,		0 },		// これは意味ないはずだが計算上 OK...
 		{ 0,	lsize + 1,	EOVERFLOW },// 足して超えるので NG
 		{ 1,	lsize,		EOVERFLOW },// 足して超えるので NG
+
+		// offset をどこかで32bitにしてないか
+		{ lsize,	1ULL<<32,	EOVERFLOW },
 	};
 
 	for (int i = 0; i < __arraycount(table); i++) {
 		len = table[i].len;
 		offset = table[i].offset;
 		int exp = table[i].exp;
-		DESC("len=%d,offset=%d", (int)len, (int)offset);
+		DESC("len=%zd,offset=%jd", len, offset);
 
 		ptr = MMAP(NULL, len, PROT_WRITE, MAP_FILE, fd, offset);
 		if (exp == 0) {
