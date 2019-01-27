@@ -2600,20 +2600,26 @@ uaudio_trigger_input(void *addr, void *start, void *end, int blksize,
 		    "fraction=0.%03d\n", ch->sample_size, ch->bytes_per_frame,
 		    ch->fraction);
 
+#if !defined(AUDIO2)
 	mutex_exit(&sc->sc_intr_lock);
 	mutex_exit(&sc->sc_lock);
+#endif
 	err = uaudio_chan_open(sc, ch);
 	if (err) {
+#if !defined(AUDIO2)
 		mutex_enter(&sc->sc_lock);
 		mutex_enter(&sc->sc_intr_lock);
+#endif
 		return EIO;
 	}
 
 	err = uaudio_chan_alloc_buffers(sc, ch);
 	if (err) {
 		uaudio_chan_close(sc, ch);
+#if !defined(AUDIO2)
 		mutex_enter(&sc->sc_lock);
 		mutex_enter(&sc->sc_intr_lock);
+#endif
 		return EIO;
 	}
 
@@ -2629,8 +2635,10 @@ uaudio_trigger_input(void *addr, void *start, void *end, int blksize,
 		uaudio_chan_rtransfer(ch);
 	}
 
+#if !defined(AUDIO2)
 	mutex_enter(&sc->sc_lock);
 	mutex_enter(&sc->sc_intr_lock);
+#endif
 
 	return 0;
 }
@@ -2657,20 +2665,26 @@ uaudio_trigger_output(void *addr, void *start, void *end, int blksize,
 		    "fraction=0.%03d\n", ch->sample_size, ch->bytes_per_frame,
 		    ch->fraction);
 
+#if !defined(AUDIO2)
 	mutex_exit(&sc->sc_intr_lock);
 	mutex_exit(&sc->sc_lock);
+#endif
 	err = uaudio_chan_open(sc, ch);
 	if (err) {
+#if !defined(AUDIO2)
 		mutex_enter(&sc->sc_lock);
 		mutex_enter(&sc->sc_intr_lock);
+#endif
 		return EIO;
 	}
 
 	err = uaudio_chan_alloc_buffers(sc, ch);
 	if (err) {
 		uaudio_chan_close(sc, ch);
+#if !defined(AUDIO2)
 		mutex_enter(&sc->sc_lock);
 		mutex_enter(&sc->sc_intr_lock);
+#endif
 		return EIO;
 	}
 
@@ -2679,8 +2693,10 @@ uaudio_trigger_output(void *addr, void *start, void *end, int blksize,
 
 	for (i = 0; i < UAUDIO_NCHANBUFS; i++)
 		uaudio_chan_ptransfer(ch);
+#if !defined(AUDIO2)
 	mutex_enter(&sc->sc_lock);
 	mutex_enter(&sc->sc_intr_lock);
+#endif
 
 	return 0;
 }
