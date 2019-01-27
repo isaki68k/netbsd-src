@@ -516,6 +516,79 @@ cmd_poll_1(int ac, char *av[])
 	return 0;
 }
 
+// mmap で再生してみるテスト。
+// XXX まだ作りかけで動かない。
+int
+cmd_playmmap(int ac, char *av[])
+{
+	struct audio_info ai;
+	const char *filename;
+	int filefd;
+	int audiofd;
+	int r;
+	char *ptr;
+	int blksize;
+
+	if (ac != 2)
+		errx(1, "%s playmmap filename\n", getprogname());
+	filename = av[1];
+
+	filefd = OPEN(filename, O_RDONLY);
+	if (filefd == -1)
+		err(1, "open: %s", filename);
+
+	audiofd = OPEN(devaudio, O_WRONLY);
+	if (audiofd == -1)
+		err(1, "open: %s", devaudio);
+
+	AUDIO_INITINFO(&ai);
+	ai.play.encoding = AUDIO_ENCODING_SLINEAR_LE;
+	ai.play.precision = 16;
+	ai.play.sample_rate = 44100;
+	ai.play.channels = 2;
+	r = IOCTL(audiofd, AUDIO_SETINFO, &ai, "set");
+	if (r == -1)
+		err(1, "AUDIO_SETINFO");
+
+	memset(&ai, 0, sizeof(ai));
+	r = IOCTL(audiofd, AUDIO_GETBUFINFO, &ai, "get");
+	if (r == -1)
+		err(1, "AUDIO_GETBUFINFO");
+
+	blksize = ai.blocksize;
+	printf("bufsize=%u blksize=%d\n", ai.play.buffer_size, blksize);
+
+	ptr = (char *)mmap(NULL, ai.play.buffer_size, PROT_WRITE, 0,
+		audiofd, 0);
+	if (ptr == MAP_FAILED)
+		err(1, "mmap");
+
+	for (;; usleep(100)) {
+		struct audio_offset ao;
+		r = IOCTL(audiofd, AUDIO_GETOOFFS, &ao, "GETOOFFS");
+		if (r == -1)
+			err(1, "AUDIO_GETOFFS");
+
+		printf("GETOOFFS: s=%u d=%u o=%u\n",
+			ao.samples, ao.deltablks, ao.offset);
+
+		if (ao.deltablks == 0)
+			continue;
+
+		r = READ(filefd, ptr + ao.offset, blksize);
+		if (r == -1)
+			err(1, "read");
+		if (r != blksize)
+			break;
+	}
+
+	munmap(ptr, ai.play.buffer_size);
+	close(audiofd);
+	close(filefd);
+	return 0;
+}
+
+
 // コマンド一覧
 #define DEF(x)	{ #x, cmd_ ## x }
 struct cmdtable cmdtable[] = {
@@ -525,6 +598,7 @@ struct cmdtable cmdtable[] = {
 	DEF(drain),
 	DEF(eap_input),
 	DEF(poll_1),
+	DEF(playmmap),
 	{ NULL, NULL },
 };
 #undef DEF
