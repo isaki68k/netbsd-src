@@ -862,6 +862,9 @@ eso_halt_output(void *hdl)
 	    ESO_IO_A2DMAM_DMAENB);
 
 	sc->sc_pintr = NULL;
+#if defined(AUDIO2)
+	error = cv_timedwait_sig(&sc->sc_pcv, &sc->sc_intr_lock, sc->sc_pdrain);
+#else
 	mutex_exit(&sc->sc_lock);
 	error = cv_timedwait_sig(&sc->sc_pcv, &sc->sc_intr_lock, sc->sc_pdrain);
 	if (!mutex_tryenter(&sc->sc_lock)) {
@@ -869,6 +872,7 @@ eso_halt_output(void *hdl)
 		mutex_enter(&sc->sc_lock);
 		mutex_spin_enter(&sc->sc_intr_lock);
 	}
+#endif
 
 	/* Shut down DMA completely. */
 	eso_write_mixreg(sc, ESO_MIXREG_A2C1, 0);
@@ -894,6 +898,9 @@ eso_halt_input(void *hdl)
 	    DMA37MD_WRITE | DMA37MD_DEMAND);
 
 	sc->sc_rintr = NULL;
+#if defined(AUDIO2)
+	error = cv_timedwait_sig(&sc->sc_rcv, &sc->sc_intr_lock, sc->sc_rdrain);
+#else
 	mutex_exit(&sc->sc_lock);
 	error = cv_timedwait_sig(&sc->sc_rcv, &sc->sc_intr_lock, sc->sc_rdrain);
 	if (!mutex_tryenter(&sc->sc_lock)) {
@@ -901,6 +908,7 @@ eso_halt_input(void *hdl)
 		mutex_enter(&sc->sc_lock);
 		mutex_spin_enter(&sc->sc_intr_lock);
 	}
+#endif
 
 	/* Shut down DMA completely. */
 	eso_write_ctlreg(sc, ESO_CTLREG_A1C2,
