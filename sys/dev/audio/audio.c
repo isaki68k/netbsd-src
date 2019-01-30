@@ -9165,22 +9165,3 @@ audio_modcmd(modcmd_t cmd, void *arg)
 
 	return error;
 }
-
-// x gain の範囲チェックは誰がしてるんだ
-// x suspend 中に uaudio が消えるケースはまた後で
-// o monitor_gain の get/set は commit してもいいかも
-// x pad(4) がリソースリークしてる
-// x audioplay(1) も sample_rate 0 のチェックを一切してないっぽい。
-// x 今の実装だと attach 時の setinfo で speaker_out が動いてしまう。
-//   どうせその後の open で正しい状態になるから構わないけど、
-//   attach 時点で呼び出す必要はなさげ。
-// x sysctl で channels を設定できない値にした後、設定可能な値にすると
-//   前の値が見える。
-//   sysctl -w hw.uaudio0.channels=9
-//   invalid argument
-//   sysctl -w hw.uaudio0.channels=2
-//   9->2
-// x PLAY モードで少なくともフィルタが設定されてない時はフレーム境界を
-//   意識していないので、途切れる直前のフレームが不完全なものになりそう。
-//   ただし認識できるような問題にはならなさそう。次フレームの開始が
-//   ずれることはなさげ。

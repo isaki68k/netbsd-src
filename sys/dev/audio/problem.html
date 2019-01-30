@@ -16,6 +16,19 @@ PRE.p {
 <h4>NetBSD8 problems</h4>
 <ul>
 
+<li>sysctl channels の挙動が変? (2019/01)
+<p class="p">
+sysctl -w hw.*.channels で設定できない値にセットした後、
+設定可能な値にセットすると前の値が見えることがある気がするが、詳細不明。
+一応記録のため。
+</p>
+<blockquote class="p"><pre>
+# sysctl -w hw.uaudio0.channels=9
+invalid argument
+# sysctl -w hw.uaudio0.channels=2
+9->2
+</pre></blockquote>
+
 <li>uaudio(4) の trigger_{input,output} がロックを外している (2019/01)
 <p class="p">
 uaudio(4) の trigger_{input,output} が sc_lock, sc_intr_lock を
@@ -294,6 +307,16 @@ sc_lchan はもう使われていない。
 <hr>
 <h4>NetBSD 7 (以前) からある問題</h4>
 <ul>
+
+<li>フレーム境界の考慮が不足してる気がする? (2019/01)
+<p class="p">
+PLAY モード (!PLAY_ALL モード)
+で少なくともフィルタが設定されてない時はフレーム境界を
+意識していないので、途切れる直前のフレームが不完全なものになりそう。
+ただし認識できるような問題にはならなさそう。
+次フレームの開始がずれることはなさげ。
+記録のため。
+</p>
 
 <li>emuxki(4) の open が flags の使い方を間違えている (2018/05)
 <p class="p">
