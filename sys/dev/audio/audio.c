@@ -2228,9 +2228,10 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
 	    "sc->sc_popens=%d, sc->sc_ropens=%d",
 	    sc->sc_popens, sc->sc_ropens);
 
-	// まず drain を実施。
-	// drain 中の waitio で律速しないよう exclusive ロックより前。
-	/* Drain without exclusive lock. */
+	/*
+	 * Drain first.
+	 * It must be done before acquiring exclusive lock.
+	 */
 	if (file->ptrack) {
 		mutex_enter(sc->sc_lock);
 		audio_track_drain(sc, file->ptrack);
@@ -2570,8 +2571,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 		mutex_exit(sc->sc_intr_lock);
 		mutex_exit(sc->sc_lock);
 
-		/* Write to the conversion stage as much as possible. */
-		// usrbuf にコピー
+		/* Write to usrbuf as much as possible. */
 		bytes = uimin(track->usrbuf_usedhigh - usrbuf->used,
 		    uio->uio_resid);
 		tail = auring_tail(usrbuf);
@@ -2596,7 +2596,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 				break;
 		}
 
-		// outbuf が空いてる限りこちらで変換する
+		/* Convert them as much as possible. */
 		mutex_enter(sc->sc_intr_lock);
 		while (usrbuf->used >= track->usrbuf_blksize &&
 		    outbuf->used < outbuf->capacity) {
@@ -2700,17 +2700,13 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		audio_file_clear(sc, file);
 		break;
 
-	/*
-	 * Number of read (write) samples dropped.  We don't know where or
-	 * when they were dropped.
-	 */
-	// サンプル数と言ってるがバイト数のようだ
 	case AUDIO_RERROR:
-		// ここでカウントしてるのは録音ミキサからこのトラックに
-		// 渡すことができなかったフレーム数をユーザランドフォーマット
-		// 換算でバイト数にしたもの。厳密に正しいかは分からないが
-		// そもそもこのエラーカウント自体がどこで
-		// どのように落としたものかは問わないとあるのでこれでいい。
+		/*
+		 * Number of read bytes dropped.  We don't know where
+		 * or when they were dropped (including conversion stage).
+		 * Therefore, the number of accurate bytes or samples is
+		 * also unknown.
+		 */
 		track = file->rtrack;
 		if (track) {
 			*(int *)addr = frametobyte(&track->usrbuf.fmt,
@@ -2719,9 +2715,12 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		break;
 
 	case AUDIO_PERROR:
-		// ここでカウントしてるのはユーザからの write が1ブロックに
-		// 満たずに落としたフレーム数なので、バイト数としては
-		// ユーザ指定フォーマット換算となる。
+		/*
+		 * Number of write bytes dropped.  We don't know where
+		 * or when they were dropped (including conversion stage).
+		 * Therefore, the number of accurate bytes or samples is
+		 * also unknown.
+		 */
 		track = file->ptrack;
 		if (track) {
 			*(int *)addr = frametobyte(&track->usrbuf.fmt,
@@ -2729,9 +2728,6 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		}
 		break;
 
-	/*
-	 * Offsets into buffer.
-	 */
 	case AUDIO_GETIOFFS:
 		ao = (struct audio_offset *)addr;
 		ao->samples = 0;
