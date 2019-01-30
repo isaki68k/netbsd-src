@@ -1250,7 +1250,7 @@ eap*	at pci? dev ? function ?	# Ensoniq AudioPCI
 #ess0	at isa? port 0x220 irq 5 drq 1 drq2 5	# ESS 18XX
 #gus0	at isa? port 0x220 irq 7 drq 1 drq2 6	# Gravis Ultra Sound
 #pas0	at isa? port 0x220 irq 7 drq 1		# ProAudio Spectrum
-#sb0	at isa? port 0x220 irq 5 drq 1 drq2 5	# SoundBlaster
+sb0	at isa? port 0x220 irq 5 drq 1 drq2 5	# SoundBlaster
 #wss0	at isa? port 0x530 irq 10 drq 0	drq2 1	# Windows Sound System
 #cms0	at isa? port 0x220			# Creative Music System
 
@@ -1435,7 +1435,7 @@ cinclude "arch/i386/conf/GENERIC.local"
 #pseudo-device	swcrypto		# software crypto implementation
 
 # disk/mass storage pseudo-devices
-#pseudo-device	bio			# RAID control device driver
+pseudo-device	bio			# RAID control device driver
 #pseudo-device	ccd			# concatenated/striped disk devices
 #pseudo-device	cgd			# cryptographic disk devices
 #pseudo-device	raid			# RAIDframe disk driver
