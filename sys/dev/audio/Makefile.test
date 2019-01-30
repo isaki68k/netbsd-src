@@ -1,12 +1,12 @@
-CC.amd64=	/var/obj/7-1/amd64/tools/bin/x86_64--netbsd-gcc \
-		--sysroot=/var/obj/7-1/amd64/dst -std=gnu99
-CXX.amd64=	/var/obj/7-1/amd64/tools/bin/x86_64--netbsd-g++ \
-		--sysroot=/var/obj/7-1/amd64/dst
+CC.amd64=	/var/obj/7/amd64/tools/bin/x86_64--netbsd-gcc \
+		--sysroot=/var/obj/7/amd64/dst -std=gnu99
+CXX.amd64=	/var/obj/7/amd64/tools/bin/x86_64--netbsd-g++ \
+		--sysroot=/var/obj/7/amd64/dst
 
-CC.x68k=	/var/obj/7-1/x68k/tools/bin/m68k--netbsdelf-gcc \
-		--sysroot=/var/obj/7-1/x68k/dst -std=gnu99
-CXX.x68k=	/var/obj/7-1/x68k/tools/bin/m68k--netbsdelf-g++ \
-		--sysroot=/var/obj/7-1/x68k/dst
+CC.x68k=	/var/obj/7/x68k/tools/bin/m68k--netbsdelf-gcc \
+		--sysroot=/var/obj/7/x68k/dst -std=gnu99
+CXX.x68k=	/var/obj/7/x68k/tools/bin/m68k--netbsdelf-g++ \
+		--sysroot=/var/obj/7/x68k/dst
 CPPFLAGS+=	-g
 CPPFLAGS+=	-Wall -Wno-sign-compare -Wno-narrowing -Wformat
 LIBS+=	-lutil
