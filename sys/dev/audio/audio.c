@@ -2848,13 +2848,6 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		*(int *)addr = fd;
 		break;
 
-	case AUDIO_SETFD:
-		/*
-		 * Obsoleted.  HW duplex mode cannot be changed
-		 * and it's meaningless.
-		 */
-		break;
-
 	case AUDIO_GETPROPS:
 		mutex_enter(sc->sc_lock);
 		*(int *)addr = audio_get_props(sc);
@@ -2885,6 +2878,12 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 			audio_mixers_set_format(sc, &ai);
 		}
 		mutex_exit(sc->sc_lock);
+		break;
+
+	case AUDIO_SETFD:
+	case AUDIO_SETCHAN:
+	case AUDIO_GETCHAN:
+		/* Obsoleted */
 		break;
 
 	default:
