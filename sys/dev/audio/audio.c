@@ -1906,10 +1906,10 @@ audiobellclose(audio_file_t *file)
 
 	sc = file->sc;
 
+	/* XXX what should I do when an error occurs? */
 	error = audio_file_acquire(sc, file);
 	if (error)
 		return error;
-	audio_enter_exclusive(sc);
 
 	device_active(sc->sc_dev, DVA_SYSTEM);
 	error = audio_close(sc, file);
