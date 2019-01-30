@@ -2767,11 +2767,8 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		    ao->samples, ao->deltablks, ao->offset);
 		break;
 
-	/*
-	 * How many bytes will elapse until mike hears the first
-	 * sample of what we write next?
-	 */
 	case AUDIO_WSEEK:
+		/* XXX return value does not include outbuf one. */
 		if (file->ptrack)
 			*(u_long *)addr = file->ptrack->usrbuf.used;
 		break;
@@ -2786,7 +2783,7 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 			break;
 		}
 		/* update last_ai if /dev/sound */
-		/* XXX これたぶん違うんじゃないかなあ */
+		// XXX これたぶん違うんじゃないかなあ
 		if (ISDEVSOUND(dev))
 			error = audiogetinfo(sc, &sc->sc_ai, 0, file);
 		audio_exit_exclusive(sc);
