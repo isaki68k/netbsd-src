@@ -2365,9 +2365,11 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 	mutex_exit(sc->sc_lock);
 #endif
 
-	// 自分が O_RDWR でオープンしてあれば read() を発行することは出来るが、
-	// HW が half-duplex で自分か他の誰かによって play が選択されていると
-	// この read() はエラー。
+	/*
+	 * On half-duplex hardware, O_RDWR is treated as O_WRONLY.
+	 * However read() system call itself can be called because it's
+	 * opened with O_RDWR.  So in this case, deny this read().
+	 */
 	if ((file->mode & AUMODE_RECORD) == 0) {
 		return EBADF;
 	}
