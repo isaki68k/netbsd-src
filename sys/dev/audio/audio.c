@@ -2398,10 +2398,10 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 		    input->head, input->used, input->capacity,
 		    usrbuf->head, usrbuf->used, track->usrbuf_usedhigh);
 
+		/* Wait when buffers are empty. */
 		mutex_enter(sc->sc_lock);
 		mutex_enter(sc->sc_intr_lock);
 		if (input->used == 0 && usrbuf->used == 0) {
-			// バッファが空ならここで待機
 			mutex_exit(sc->sc_intr_lock);
 
 			if (ioflag & IO_NDELAY) {
@@ -2416,7 +2416,6 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 				return error;
 			continue;
 		}
-
 		mutex_exit(sc->sc_intr_lock);
 		mutex_exit(sc->sc_lock);
 
@@ -2550,7 +2549,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 		    uio->uio_resid,
 		    usrbuf->head, usrbuf->used, track->usrbuf_usedhigh);
 
-		// usrbuf も outbuf も一杯ならここで待つ
+		/* Wait when buffers are full. */
 		mutex_enter(sc->sc_lock);
 		mutex_enter(sc->sc_intr_lock);
 		while (usrbuf->used >= track->usrbuf_usedhigh &&
