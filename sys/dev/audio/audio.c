@@ -5353,7 +5353,8 @@ audio_pmixer_process(struct audio_softc *sc)
 			if (vol < mixer->volume) {
 				/* Turn down gradually to 128. */
 				if (mixer->volume > 128) {
-					mixer->volume = mixer->volume * 95 / 100;
+					mixer->volume =
+					    (mixer->volume * 95) / 100;
 					device_printf(sc->sc_dev,
 					    "auto volume adjust: volume %d\n",
 					    mixer->volume);
@@ -5377,13 +5378,13 @@ audio_pmixer_process(struct audio_softc *sc)
 
 	// ここから ハードウェアチャンネル
 
-	m = mixer->mixsample;
 	if (mixer->codec) {
 		h = auring_tailptr_aint(&mixer->codecbuf);
 	} else {
 		h = auring_tailptr_aint(&mixer->hwbuf);
 	}
 
+	m = mixer->mixsample;
 	for (i = 0; i < sample_count; i++) {
 		*h++ = *m++;
 	}
