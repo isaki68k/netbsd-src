@@ -4641,6 +4641,7 @@ audio_track_play(audio_track_t *track)
 	    "count=%d fpb=%d",
 	    count, frame_per_block(track->mixer, &track->outbuf.fmt));
 
+	/* XXX TODO: is this necessary for now? */
 	int track_count_0 = track->outbuf.used;
 
 	usrbuf = &track->usrbuf;
