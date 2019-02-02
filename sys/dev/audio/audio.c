@@ -4715,23 +4715,18 @@ audio_track_play(audio_track_t *track)
 		auring_take(usrbuf, bytes2);
 	}
 
-	// エンコーディング変換
 	/* Encoding conversion */
 	if (track->codec.filter)
 		audio_apply_stage(track, &track->codec, false);
 
-	// チャンネルボリューム
 	/* Channel volume */
 	if (track->chvol.filter)
 		audio_apply_stage(track, &track->chvol, false);
 
-	// チャンネルミキサ
 	/* Channel mix */
 	if (track->chmix.filter)
 		audio_apply_stage(track, &track->chmix, false);
 
-	// 周波数変換
-	// 1ブロックごとに誤差補正があるので必ず1ブロックにする
 	/* Frequency conversion */
 	/*
 	 * Since the frequency conversion needs correction for each block,
@@ -4754,12 +4749,6 @@ audio_track_play(audio_track_t *track)
 	}
 
 	if (dropcount != 0) {
-		// 変換が1ブロックぴったりでない場合、変換バッファのポインタが
-		// バッファ途中を指すことになるのでこれをクリアする。
-		// ここの変換バッファは、前後のリングバッファとの対称性で
-		// リングバッファの形にしてあるが運用上はただのバッファなので、
-		// ポインタが途中を指されていると困る。
-		// これが起きるのは drain 時。
 		/*
 		 * Clear all conversion buffer pointer if the conversion was
 		 * not exactly one block.  These conversion stage buffers are
@@ -4814,8 +4803,7 @@ audio_track_record(audio_track_t *track)
 
 	KASSERT(track);
 
-	// 処理するフレーム数
-	/* number of frames to process */
+	/* Number of frames to process */
 	count = auring_get_contig_used(track->input);
 	count = uimin(count, track->mixer->frames_per_block);
 	if (count == 0) {
@@ -4823,7 +4811,6 @@ audio_track_record(audio_track_t *track)
 		return;
 	}
 
-	// 周波数変換
 	/* Frequency conversion */
 	if (track->freq.filter) {
 		if (track->freq.srcbuf.used > 0) {
@@ -4832,34 +4819,27 @@ audio_track_record(audio_track_t *track)
 		}
 	}
 
-	// チャンネルミキサ
-	/* Channel Mix */
+	/* Channel mix */
 	if (track->chmix.filter)
 		audio_apply_stage(track, &track->chmix, false);
 
-	// チャンネルボリューム
-	/* Channel Volume */
+	/* Channel volume */
 	if (track->chvol.filter)
 		audio_apply_stage(track, &track->chvol, false);
 
-	// エンコーディング変換
-	/* Encoding Conversion */
+	/* Encoding conversion */
 	if (track->codec.filter)
 		audio_apply_stage(track, &track->codec, false);
 
-	// outbuf から usrbuf へ
-	/* Copy from outbuf to usrbuf */
+	/* Copy outbuf to usrbuf */
 	outbuf = &track->outbuf;
 	usrbuf = &track->usrbuf;
-	// 出力(outbuf)に 4bit は来ないので1フレームは必ず1バイト以上ある
 	/*
-	 * framesize is always 1 byte or more since all formats supported as
-	 * usrfmt(=output) have 8bit or more stride.
+	 * framesize is always 1 byte or more since all formats supported
+	 * as usrfmt(=output) have 8bit or more stride.
 	 */
 	framesize = frametobyte(&outbuf->fmt, 1);
 	KASSERT(framesize >= 1);
-	// count は usrbuf にコピーするフレーム数。
-	// bytes は usrbuf にコピーするバイト数。
 	/*
 	 * count is the number of frames to copy to usrbuf.
 	 * bytes is the number of bytes to copy to usrbuf.
@@ -4894,7 +4874,7 @@ audio_track_record(audio_track_t *track)
 		auring_take(outbuf, bytes2 / framesize);
 	}
 
-	// XXX カウンタ
+	// XXX TODO: any counters here?
 
 #if AUDIO_DEBUG >= 3
 	struct audio_track_debugbuf m;
@@ -4948,7 +4928,6 @@ audio_track_record(audio_track_t *track)
 // 2) aucc(4) amiga
 //  周波数が変態だが詳細未調査。
 
-// mixer(.hwbuf.fmt) から blktime [msec] を計算する。
 /*
  * Calcurate blktime [msec] from mixer(.hwbuf.fmt).
  * Must be called with sc_lock held.
@@ -4963,12 +4942,12 @@ audio_mixer_calc_blktime(struct audio_softc *sc, audio_trackmixer_t *mixer)
 	KASSERT(mutex_owned(sc->sc_lock));
 
 	fmt = &mixer->hwbuf.fmt;
-
-	// XXX とりあえず手抜き実装。あとでかんがえる
-
 	blktime = sc->sc_blk_ms;
 
-	// 8 の倍数以外の stride は今のところ 4 しかない。
+	/*
+	 * If stride is not multiples of 8, special treatment is necessary.
+	 * For now, it is only x68k's vs(4), 4 bit/sample ADPCM.
+	 */
 	if (fmt->stride == 4) {
 		frames_per_block = fmt->sample_rate * blktime / 1000;
 		if ((frames_per_block & 1) != 0)
@@ -4983,13 +4962,6 @@ audio_mixer_calc_blktime(struct audio_softc *sc, audio_trackmixer_t *mixer)
 	return blktime;
 }
 
-// mode に対応するミキサを初期化する。
-// mode に対応した sc->sc_[pr]mixer はゼロフィルされているものとする。
-// mode は再生なら AUMODE_PLAY、録音なら AUMODE_RECORD を指定する。
-// hwfmt は HW フォーマット、reg はフィルタ登録情報である。
-// hwfmt、reg は NULL であってはならない。
-// 成功すれば 0、失敗すれば errno を返す。
-// sc_lock でコールすること。
 /*
  * Initialize the mixer corresponding to the mode.
  * Set AUMODE_PLAY to the 'mode' for playback or AUMODE_RECORD for recording.
@@ -5046,7 +5018,7 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 				    blksize, rounded);
 				return EINVAL;
 			}
-			// 再計算
+			/* Recalculation */
 			mixer->frames_per_block = rounded * NBBY /
 			    (mixer->hwbuf.fmt.stride *
 			     mixer->hwbuf.fmt.channels);
@@ -5063,8 +5035,8 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 		    bufsize);
 		DPRINTF(2, "%s round_buffersize %zd -> %zd\n", __func__,
 		    bufsize, rounded);
-		// 縮められても困る?
 		if (rounded != bufsize) {
+			/* XXX what should I do? */
 			device_printf(sc->sc_dev,
 			    "buffer size not configured %zu -> %zu\n",
 			    bufsize, rounded);
@@ -5116,11 +5088,11 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 	mixer->track_fmt.sample_rate = mixer->hwbuf.fmt.sample_rate;
 
 	if (mode == AUMODE_PLAY) {
-		// 合成バッファ
+		/* Mixing buffer */
 		mixer->mixfmt = mixer->track_fmt;
 		mixer->mixfmt.precision *= 2;
 		mixer->mixfmt.stride *= 2;
-		// XXX マクロとか使えないんだっけ
+		/* XXX TODO: use some macros? */
 		len = mixer->frames_per_block * mixer->mixfmt.channels *
 		    mixer->mixfmt.stride / NBBY;
 		mixer->mixsample = audio_realloc(mixer->mixsample, len);
@@ -5132,7 +5104,7 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 			goto abort;
 		}
 	} else {
-		// 合成バッファは使用しない
+		/* No mixing buffer for recording */
 	}
 
 	if (reg->codec) {
@@ -5165,9 +5137,6 @@ abort:
 	return error;
 }
 
-// ミキサを終了しリソースを解放する。
-// mixer 自身のメモリは解放しない。
-// sc_lock で呼ぶこと。
 /*
  * Releases all resources of 'mixer'.
  * Note that it does not release the memory area of 'mixer' itself.
@@ -5203,10 +5172,6 @@ audio_mixer_destroy(struct audio_softc *sc, audio_trackmixer_t *mixer)
 	}
 }
 
-// 再生ミキサを起動する。
-// sc_pbusy が false であることを確認してから呼び出すこと。
-// sc_lock で呼ぶこと。
-// 割り込みコンテキストから呼び出してはならない。
 /*
  * Starts playback mixer.
  * Must be called only if sc_pbusy is false.
@@ -5230,14 +5195,12 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
 	    mixer->hwbuf.head, mixer->hwbuf.used, mixer->hwbuf.capacity,
 	    force ? " force" : "");
 
-	// 通常は2ブロック貯めてから再生開始したい。
-	// force ならそういうわけにいかないので1ブロックで再生開始する。
+	/* Need two blocks to start normally. */
 	minimum = (force) ? 1 : 2;
 	while (mixer->hwbuf.used < mixer->frames_per_block * minimum) {
 		audio_pmixer_process(sc, true);
 	}
 
-	// トラックミキサ出力開始
 	/* Start output */
 	audio_pmixer_output(sc);
 	sc->sc_pbusy = true;
@@ -5280,13 +5243,9 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
  * hwbuf:     HW encoding, HW precision,           HW ch, HW freq.
  */
 
-// 全トラックを倍精度ミキシングバッファで合成し、
-// 倍精度ミキシングバッファから hwbuf への変換を行う。
-// hwbuf からハードウェアへの転送はここでは行わない。
-// sc_intr_lock で呼び出すこと。
 /*
- * Performs mixing and converts it to hwbuf.
- * Note that this function doesn't transfer from hwbuf to HW.
+ * Performs track mixing and converts it to hwbuf.
+ * Note that this function doesn't transfer hwbuf to hardware.
  * Must be called with sc_intr_lock held.
  */
 static void
@@ -5309,7 +5268,7 @@ audio_pmixer_process(struct audio_softc *sc, bool force_mix)
 
 	mixer->mixseq++;
 
-	// 全トラックを合成
+	/* Mix all tracks */
 	mixed = 0;
 	SLIST_FOREACH(f, &sc->sc_files, entry) {
 		audio_track_t *track = f->ptrack;
@@ -5317,7 +5276,7 @@ audio_pmixer_process(struct audio_softc *sc, bool force_mix)
 		if (track == NULL)
 			continue;
 
-		// 協調的ロックされているトラックは、今回ミキシングしない。
+		/* Skip if the track is used by process context. */
 		if (atomic_load_uint(&track->in_use) != 0) {
 			TRACET(track, "skip; in use");
 			continue;
@@ -5328,10 +5287,8 @@ audio_pmixer_process(struct audio_softc *sc, bool force_mix)
 			continue;
 		}
 
-		// mmap トラックならここで入力があったことにみせかける
+		/* Emulate mmap'ped track */
 		if (track->mmapped) {
-			// XXX push じゃなく直接操作してウィンドウを移動みたいに
-			// したほうがいいんじゃないか。
 			auring_push(&track->usrbuf, track->usrbuf_blksize);
 			TRACET(track, "mmap; usr=%d/%d/C%d",
 			    track->usrbuf.head,
@@ -5349,7 +5306,7 @@ audio_pmixer_process(struct audio_softc *sc, bool force_mix)
 			TRACET(track, "skip; empty");
 			continue;
 		}
-		// 合成
+
 		mixed = audio_pmixer_mix_track(mixer, track, mixed);
 	}
 
