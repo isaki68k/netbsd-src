@@ -5319,7 +5319,6 @@ audio_pmixer_process(struct audio_softc *sc)
 		aint2_t ovf_minus;
 		int vol;
 
-		// オーバーフロー検出
 		/* Overflow detection */
 		ovf_plus = AINT_T_MAX;
 		ovf_minus = AINT_T_MIN;
@@ -5334,7 +5333,6 @@ audio_pmixer_process(struct audio_softc *sc)
 				ovf_minus = val;
 		}
 
-		// マスタボリュームの自動制御
 		/* Master Volume Auto Adjust */
 		vol = mixer->volume;
 		if (ovf_plus > (aint2_t)AINT_T_MAX
@@ -5342,21 +5340,17 @@ audio_pmixer_process(struct audio_softc *sc)
 			aint2_t ovf;
 			int vol2;
 
-			// TODO: AINT2_T_MIN チェック?
+			/* XXX TODO: Check AINT2_T_MIN ? */
 			ovf = ovf_plus;
 			if (ovf < -ovf_minus)
 				ovf = -ovf_minus;
 
-			// オーバーフローしてたら少なくとも今回はボリュームを
-			// 下げる
 			/* Turn down the volume if overflow occured. */
 			vol2 = (int)((aint2_t)AINT_T_MAX * 256 / ovf);
 			if (vol2 < vol)
 				vol = vol2;
 
 			if (vol < mixer->volume) {
-				// 128 までは自動でマスタボリュームを下げる
-				// 今の値の 95% ずつに下げていってみる
 				/* Turn down gradually to 128. */
 				if (mixer->volume > 128) {
 					mixer->volume = mixer->volume * 95 / 100;
@@ -5367,7 +5361,6 @@ audio_pmixer_process(struct audio_softc *sc)
 			}
 		}
 
-		// マスタボリューム適用
 		/* Apply Master Volume. */
 		if (vol != 256) {
 			m = mixer->mixsample;
@@ -5385,7 +5378,6 @@ audio_pmixer_process(struct audio_softc *sc)
 	// ここから ハードウェアチャンネル
 
 	m = mixer->mixsample;
-	// MD 側フィルタがあれば aint2_t -> aint_t を codecbuf へ
 	if (mixer->codec) {
 		h = auring_tailptr_aint(&mixer->codecbuf);
 	} else {
@@ -5396,7 +5388,7 @@ audio_pmixer_process(struct audio_softc *sc)
 		*h++ = *m++;
 	}
 
-	// MD 側フィルタ
+	/* Hardware driver's codec */
 	if (mixer->codec) {
 		auring_push(&mixer->codecbuf, frame_count);
 		mixer->codecarg.src = auring_headptr(&mixer->codecbuf);
@@ -5414,15 +5406,11 @@ audio_pmixer_process(struct audio_softc *sc)
 	    (mixed == 0) ? " silent" : "");
 }
 
-// トラックバッファから取り出し、ミキシングする。
-// mixed には呼び出し時点までの合成済みトラック数を渡す。
-// 戻り値はこの関数終了時での合成済みトラック数)である。
-// つまりこのトラックを合成すれば mixed + 1 を返す。
 /*
  * Mix one track.
  * 'mixed' specifies the number of tracks mixed so far.
  * It returns the number of tracks mixed.  In other words, it returns
- * mixed+1 if this track is mixed.
+ * mixed + 1 if this track is mixed.
  */
 static int
 audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track,
@@ -5435,9 +5423,7 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track,
 	const aint_t *s;
 	aint2_t *d;
 
-	// 現時点で outbuf に溜まってるやつを最大1ブロック分処理する。
-
-	// このトラックが処理済みならなにもしない
+	/* XXX TODO: Is this necessary for now? */
 	if (mixer->mixseq < track->seq)
 		return mixed;
 
@@ -5448,13 +5434,16 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track,
 	d = mixer->mixsample;
 
 	// 整数倍精度へ変換し、トラックボリュームを適用して加算合成
-	// XXX トラックボリュームは 1倍以下(256以下)に限定するなら
-	//     ここよりトラック側の変換ステージでやったほうがいいけど、
-	//     1 倍以上 (257 以上) も指定可能にするなら倍精度演算する
-	//     ここで処理する必要がある。
+	/*
+	 * XXX If track volume is limited to 1.0 or less (<= 256),
+	 *     it would be better to do this in the track conversion stage
+	 *     rather than here.  However, if you accepts the volume to
+	 *     be greater than 1.0 (> 256), it's better to do it here.
+	 *     Because the operation here is done by double-sized integer.
+	 */
 	sample_count = count * mixer->mixfmt.channels;
 	if (mixed == 0) {
-		// 最初のトラック合成は代入
+		/* If this is the first track, assignment can be used. */
 #if defined(AUDIO_SUPPORT_TRACK_VOLUME)
 		if (track->volume != 256) {
 			for (i = 0; i < sample_count; i++) {
@@ -5472,7 +5461,7 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track,
 			}
 		}
 	} else {
-		// 2本め以降なら加算合成
+		/* If this is the second or later, add it. */
 #if defined(AUDIO_SUPPORT_TRACK_VOLUME)
 		if (track->volume != 256) {
 			for (i = 0; i < sample_count; i++) {
@@ -5507,8 +5496,6 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track,
 	return mixed + 1;
 }
 
-// ハードウェアバッファから 1 ブロック出力する。
-// sc_intr_lock で呼び出すこと。
 /*
  * Output one block from hwbuf to HW.
  * Must be called with sc_intr_lock held.
