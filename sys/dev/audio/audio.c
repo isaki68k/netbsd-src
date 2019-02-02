@@ -2730,6 +2730,7 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		break;
 
 	case AUDIO_GETIOFFS:
+		/* XXX TODO */
 		ao = (struct audio_offset *)addr;
 		ao->samples = 0;
 		ao->deltablks = 0;
@@ -2827,12 +2828,14 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		}
 		*ae = audio_encodings[index];
 		ae->index = index;
-		// 常に EMULATED とする。ここでいう非EMULATED とは無加工で
-		// HW に渡せるというような意味合いだと思うので、であれば
-		// 例えネイティブフォーマットであったとしてもトラック処理
-		// などの加工が入っているという考え方をしてみたが、どうか。
-		// 本当にネイティブフォーマットかどうかを判断するのは結構
-		// 面倒くさい。
+		/*
+		 * EMULATED always.
+		 * EMULATED flag at that time used to mean that it could
+		 * not be passed directly to the hardware as-is.  But
+		 * currently, all formats including hardware native is not
+		 * passed directly to the hardware.  So I set EMULATED
+		 * flag for all formats.
+		 */
 		ae->flags = AUDIO_ENCODINGFLAG_EMULATED;
 		break;
 
@@ -2908,10 +2911,8 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 	return error;
 }
 
-// XXX 場所は後で考えなおしたほうがいい
-// 録音バッファの読み取り可能バイト数を返す。
 /*
- * Returns the number of bytes that can be read from recording buffer.
+ * Returns the number of bytes that can be read on recording buffer.
  */
 static inline int
 audio_track_readablebytes(const audio_track_t *track)
@@ -2921,10 +2922,11 @@ audio_track_readablebytes(const audio_track_t *track)
 	KASSERT(track);
 	KASSERT(track->mode == AUMODE_RECORD);
 
-	// ユーザランドから読み取り可能なデータは本来なら usrbuf だが、
-	// 録音したデータは read が発行されるまでは track->input に滞留
-	// しているため、これを単位変換したものを加える必要がある。
-	// track->input はフレーム単位、usrbuf はバイト単位。
+	/*
+	 * Although usrbuf is primarily readable data, recorded data
+	 * also stays in track->input until reading.  So it is necessary
+	 * to add it.  track->input is in frame, usrbuf is in byte.
+	 */
 	bytes = track->usrbuf.used +
 	    track->input->used * frametobyte(&track->usrbuf.fmt, 1);
 	return bytes;
@@ -3159,15 +3161,6 @@ audio_mmap(struct audio_softc *sc, off_t *offp, size_t len, int prot,
 	 *    only.
 	 * So, alas, we always map the play buffer for now.
 	 */
-	// read/write どちらのバッファをマップするか決めるのに prot を使う
-	// この案はうまくいかない。
-	// VM システムは(少なくとも)以下の2つの点で壊れている。
-	// 1) メモリを VM_PROT_WRITE でマップして書き込むと SIGSEGV になる。
-	//    なので再生バッファには VM_PROT_READ|VM_PROT_WRITE を使わないと
-	//    いけない。
-	// 2) mmap を VM_PROT_READ|VM_PROT_WRITE でコールしたとしても
-	//    VM_PROT_READ のみで audio_mmap が呼び出される場合がある?
-	// なので再生バッファだけをマップすることにする。
 	if (prot == (VM_PROT_READ|VM_PROT_WRITE) ||
 	    prot == VM_PROT_WRITE)
 		track = file->ptrack;
@@ -3187,11 +3180,10 @@ audio_mmap(struct audio_softc *sc, off_t *offp, size_t len, int prot,
 	if (*offp > (uint)(vsize - len))
 		return EOVERFLOW;
 
-	// 二重 mmap したらどうなるか
+	/* XXX TODO: what happens when mmap twice. */
 	if (!track->mmapped) {
 		track->mmapped = true;
 
-		// XXX ここで元は audio_fill_silence
 		if (!track->is_pause) {
 			error = audio_enter_exclusive(sc);
 			if (error)
@@ -3206,7 +3198,7 @@ audio_mmap(struct audio_softc *sc, off_t *offp, size_t len, int prot,
 	/* get ringbuffer */
 	*uobjp = track->uobj;
 
-	/* Acquire a reference for the mmap.  munmap will release.*/
+	/* Acquire a reference for the mmap.  munmap will release. */
 	uao_reference(*uobjp);
 	*maxprotp = prot;
 	*advicep = UVM_ADV_RANDOM;
@@ -3215,8 +3207,8 @@ audio_mmap(struct audio_softc *sc, off_t *offp, size_t len, int prot,
 }
 
 /*
- * /dev/audioctl has to be able to open at any time without interference with
- * any /dev/audio or /dev/sound.
+ * /dev/audioctl has to be able to open at any time without interference
+ * with any /dev/audio or /dev/sound.
  */
 static int
 audioctl_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
@@ -3244,15 +3236,13 @@ audioctl_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	af->sc = sc;
 	af->dev = dev;
 
-	// sc_files にはつながなくていいはず
+	/* Not necessary to insert sc_files. */
 
 	error = fd_clone(fp, fd, flags, &audio_fileops, af);
 	KASSERT(error == EMOVEFD);
 
 	return error;
 }
-
-// ここに audiostart{pr} があった
 
 /*
  * Reallocate 'memblock' with specified 'bytes' if 'bytes' > 0.
@@ -3289,14 +3279,9 @@ audio_realloc(void *memblock, size_t bytes)
 	}	\
 } while (0)
 
-// usrbuf を newbufsize で確保し直す。
-// usrbuf は mmap されるためこちらを使用すること。
-// usrbuf.capacity を更新する前に呼び出すこと。
-// メモリが確保できれば track->mem、track->capacity をセットし 0 を返す。
-// 確保できなければ track->mem、track->capacity をクリアし errno を返す。
 /*
  * (Re)allocate usrbuf with 'newbufsize' bytes.
- * Use this function for usrbuf because only usrbuf may be mmapped.
+ * Use this function for usrbuf because only usrbuf can be mmapped.
  * If successful, it updates track->usrbuf.mem, track->usrbuf.capacity and
  * returns 0.  Otherwise, it clears track->usrbuf.mem, track->usrbuf.capacity
  * and returns errno.
@@ -3614,7 +3599,6 @@ audio_track_chmix_expand(audio_filter_arg_t *arg)
 // amd64    70.9    113.4    177.8    984.8	Pentium DC E5400/2.7GHz
 // x68k    0.048    0.065    0.129    0.688	68030/30MHz
 
-// 周波数変換(アップサンプリング)を行う。線形補間。
 /*
  * This filter performs frequency conversion (up sampling).
  * It uses linear interpolation.
@@ -3650,9 +3634,6 @@ audio_track_freq_up(audio_filter_arg_t *arg)
 	s = arg->src;
 	d = arg->dst;
 
-	// 補間はブロック単位での処理がしやすいように入力を1サンプルずらして(?)
-	// 補間を行なっている。このため厳密には位相が 1/dstfreq 分だけ遅れる
-	// ことになるが、これによる観測可能な影響があるとは思えない。
 	/*
 	 * In order to faciliate interpolation for each block, slide (delay)
 	 * input by one sample.  As a result, strictly speaking, the output
@@ -3679,7 +3660,7 @@ audio_track_freq_up(audio_filter_arg_t *arg)
 	 *  0 1 2 3 4 5
 	 */
 
-	// 前回の最終サンプル
+	/* Last samples in previous block */
 	channels = src->fmt.channels;
 	for (ch = 0; ch < channels; ch++) {
 		prev[ch] = track->freq_prev[ch];
@@ -3705,17 +3686,14 @@ audio_track_freq_up(audio_filter_arg_t *arg)
 		PRINTF("i=%d t=%5d", i, t);
 		if (t >= 65536) {
 			for (ch = 0; ch < channels; ch++) {
-				// 前回値
 				prev[ch] = curr[ch];
-				// 今回値
 				curr[ch] = *s++;
-				// 傾き
 				grad[ch] = curr[ch] - prev[ch];
 			}
 			PRINTF(" prev=%d s[%d]=%d",
 			    prev[0], src->used - srcused, curr[0]);
 
-			// 更新
+			/* Update */
 			t -= 65536;
 			srcused--;
 			if (srcused < 0) {
@@ -3740,7 +3718,7 @@ audio_track_freq_up(audio_filter_arg_t *arg)
 	auring_take(src, src->used);
 	auring_push(dst, i);
 
-	// 補正
+	/* Adjust */
 	t += track->freq_leap;
 
 	track->freq_current = t;
@@ -3750,7 +3728,6 @@ audio_track_freq_up(audio_filter_arg_t *arg)
 	}
 }
 
-// 周波数変換(ダウンサンプリング)を行う。単純間引き。
 /*
  * This filter performs frequency conversion (down sampling).
  * It uses simple thinning.
@@ -3822,14 +3799,13 @@ audio_track_create(struct audio_softc *sc, audio_trackmixer_t *mixer)
 	track = kmem_zalloc(sizeof(*track), KM_SLEEP);
 
 	track->id = newid++;
-	// ここだけ id が決まってから表示
+	/* Do TRACE after id is assigned. */
 	TRACET(track, "for %s",
 	    mixer->mode == AUMODE_PLAY ? "playback" : "recording");
 
 	track->mixer = mixer;
 	track->mode = mixer->mode;
 
-	// 固定初期値
 #if defined(AUDIO_SUPPORT_TRACK_VOLUME)
 	track->volume = 256;
 #endif
@@ -3840,22 +3816,15 @@ audio_track_create(struct audio_softc *sc, audio_trackmixer_t *mixer)
 	return track;
 }
 
-// track のすべてのリソースと track 自身を解放する。
-// sc_files に繋がっている file 構造体内の [pr]track ポインタを直接
-// 指定してはいけない。呼び出し側で sc_intr_lock をとった上でリストから
-// 外したものを指定すること。
 /*
- * Release all resources of track and track itself.
- * track must not be NULL.  Don't specify the track within the file structure
- * linked from sc->sc_files.
+ * Release all resources of the track and track itself.
+ * track must not be NULL.  Don't specify the track within the file
+ * structure linked from sc->sc_files.
  */
 static void
 audio_track_destroy(audio_track_t *track)
 {
 
-	// 関数仕様を track は NULL 許容にしてもいいけど、これを呼ぶところは
-	// たいてい track が NULL でないと分かっていて呼んでるはずなので
-	// ASSERT のほうがよかろう。
 	KASSERT(track);
 
 	audio_free_usrbuf(track);
@@ -3942,10 +3911,6 @@ abort:
 	return NULL;
 }
 
-// track の codec ステージを必要に応じて初期化する。
-// 成功すれば、codec ステージが必要なら初期化した上で、いずれにしても
-// 更新された last_dst を last_dstp に格納して、0 を返す。
-// 失敗すれば last_dstp は更新せずに errno を返す。
 /*
  * Initialize the codec stage of this track as necessary.
  * If successful, it initializes the codec stage as necessary, stores updated
@@ -4015,10 +3980,6 @@ abort:
 	return error;
 }
 
-// track の chvol ステージを必要に応じて初期化する。
-// 成功すれば、chvol ステージが必要なら初期化した上で、いずれにしても
-// 更新された last_dst を last_dstp に格納して、0 を返す。
-// 失敗すれば last_dstp は更新せずに errno を返す。
 /*
  * Initialize the chvol stage of this track as necessary.
  * If successful, it initializes the chvol stage as necessary, stores updated
@@ -4086,10 +4047,6 @@ abort:
 	return error;
 }
 
-// track の chmix ステージを必要に応じて初期化する。
-// 成功すれば、chmix ステージが必要なら初期化した上で、いずれにしても
-// 更新された last_dst を last_dstp に格納して、0 を返す。
-// 失敗すれば last_dstp は更新せずに errno を返す。
 /*
  * Initialize the chmix stage of this track as necessary.
  * If successful, it initializes the chmix stage as necessary, stores updated
@@ -4137,7 +4094,7 @@ audio_track_init_chmix(audio_track_t *track, audio_ring_t **last_dstp)
 
 		srcbuf->head = 0;
 		srcbuf->used = 0;
-		// バッファサイズは計算で決められるはずだけど。とりあえず。
+		/* XXX The buffer size should be able to calculate. */
 		srcbuf->capacity = frame_per_block(track->mixer, &srcbuf->fmt);
 		len = auring_bytelen(srcbuf);
 		srcbuf->mem = audio_realloc(srcbuf->mem, len);
@@ -4162,10 +4119,6 @@ abort:
 	return error;
 }
 
-// track の freq ステージを必要に応じて初期化する。
-// 成功すれば、freq ステージが必要なら初期化した上で、いずれにしても
-// 更新された last_dst を last_dstp に格納して、0 を返す。
-// 失敗すれば last_dstp は更新せずに errno を返す。
 /*
  * Initialize the freq stage of this track as necessary.
  * If successful, it initializes the freq stage as necessary, stores updated
@@ -4203,7 +4156,7 @@ audio_track_init_freq(audio_track_t *track, audio_ring_t **last_dstp)
 		memset(track->freq_prev, 0, sizeof(track->freq_prev));
 		memset(track->freq_curr, 0, sizeof(track->freq_curr));
 
-		// freq_step は dstfreq を 65536 とした時の src/dst 比
+		/* freq_step is the ratio of src/dst when let dst 65536. */
 		track->freq_step = (uint64_t)srcfreq * 65536 / dstfreq;
 
 		// freq_leap は1ブロックごとの freq_step の補正値
@@ -4289,27 +4242,20 @@ abort:
  *                v
  *               read
  *
- *    *: recording usrbuf is also mmap-able due to symmetry with playback
- *       but for now it will not be mmapped.
+ *    *: usrbuf for recording is also mmap-able due to symmetry with
+ *       playback buffer, but for now mmap will never happen for recording.
  */
 
-// トラックのユーザランド側フォーマットを設定する。
-// 変換用内部バッファは一度破棄される。
-// 成功すれば 0、失敗すれば errno を返す。
-// uvm 関連のルーチンが非 intr_lock 状態であることを要求するため、必ず
-// intr_lock でない状態で呼び出すこと。
-// ただし outbuf を解放・再取得する可能性があるため、track が sc_files
-// 上にある場合 (audio_file_setinfo_set() から呼ばれる時) は、in_use を
-// セットしてから呼び出すこと。
 /*
  * Set the userland format of this track.
  * It will release and reallocate all internal conversion buffers.
  * It returns 0 if successful.  Otherwise it returns errno with clearing all
  * internal buffers.
- * It must be called without intr_lock since uvm_* routines require non
- * intr_lock state.  It must be called with setting track->in_use if the
- * track is within the file structure linked from sc->sc_files (as called
- * from audio_file_setinfo_set), since it may release and reallocate outpubuf.
+ * It must be called without sc_intr_lock since uvm_* routines require non
+ * intr_lock state.
+ * It must be called with track->in_use acquired when the track is within
+ * the file structure linked from sc->sc_files (as called from
+ * audio_file_setinfo_set), since it may release and reallocate outbuf.
  */
 static int
 audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
@@ -4321,16 +4267,15 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 
 	KASSERT(track);
 
-	// 入力値チェック
 	error = audio_check_params2(usrfmt);
 	if (error)
 		return error;
 
-	// ユーザランド側バッファ
-	// 大きさは (ブロックサイズ * AUMINNOBLK) か 64KB の大きいほうにする。
-	// ただし usrbuf は基本この fmt を参照せずに、バイトバッファとして扱う。
+	/* usrbuf is the closest buffer to the userland. */
 	track->usrbuf.fmt = *usrfmt;
 
+	// 大きさは (ブロックサイズ * AUMINNOBLK) か 64KB の大きいほうにする。
+	// ただし usrbuf は基本この fmt を参照せずに、バイトバッファとして扱う。
 	// 参考: 1ブロック(40msec)は
 	// mulaw/8kHz/1ch で 320 byte    = 204 blocks/64KB
 	// s16/48kHz/2ch  で 7680 byte   = 8 blocks/64KB
@@ -4435,8 +4380,11 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 
 	/* Stage input buffer */
 	track->input = last_dst;
-	// 録音時は先頭のステージをリングバッファにする
-	// XXX もっとましな方法でやったほうがいい
+
+	/*
+	 * On the recording track, make the first stage a ring buffer.
+	 * XXX is there a better way?
+	 */
 	if (audio_track_is_record(track)) {
 		track->input->capacity = NBLKOUT *
 		    frame_per_block(track->mixer, &track->input->fmt);
@@ -4450,8 +4398,6 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 		}
 	}
 
-	// 出力フォーマットに従って outbuf を作る
-	// 再生側 outbuf は NBLKOUT 分。録音側は1ブロックでいい。
 	/*
 	 * Output buffer.
 	 * On the playback track, its capacity is NBLKOUT blocks.
@@ -4516,11 +4462,9 @@ error:
 	return error;
 }
 
-// ring が空でなく 1 ブロックに満たない時、1ブロックまで無音を追加する。
-// 追加したフレーム数を返す。
 /*
- * Fill the silence frames (in the internal format) up to 1 block if the
- * ring is less than 1 block and not empty.
+ * Fill silence frames (as the internal format) up to 1 block
+ * if the ring is not empty and less than 1 block.
  * It returns the number of appended frames.
  */
 static int
@@ -4532,8 +4476,8 @@ audio_append_silence(audio_track_t *track, audio_ring_t *ring)
 	KASSERT(track);
 	KASSERT(audio_format2_is_internal(&ring->fmt));
 
-	// XXX n の計算あれでいいんだろうか。最初から contig_free じゃなくて?
-	// XXX memset の長さ frametobyte じゃなくて?
+	/* XXX is n correct? */
+	/* XXX memset uses frametobyte()? */
 
 	if (ring->used == 0)
 		return 0;
@@ -4621,20 +4565,15 @@ audio_append_silence(audio_track_t *track, audio_ring_t *ring)
 //	arg->count は破壊(変更)して構わない。
 //
 
-// 変換ステージを実行する。
-// stage->filter != NULL の時だけ呼び出すこと。
-// stage から arg を用意して stage->filter を処理する。
-// 周波数変換なら src, dst のカウンタはフィルタ側で進めること。
-// 周波数変換以外なら src, dst のカウンタはここで進める。
 /*
  * Execute the conversion stage.
  * It prepares arg from this stage and executes stage->filter.
  * It must be called only if stage->filter is not NULL.
  *
- * For stages other than frequency conversion, the src and dst counters
- * are incremented here.  On the other hand, for frequency conversion stage,
- * it's the responsibility of the filter side to increment src and dst
- * counters.
+ * For stages other than frequency conversion, the function increments
+ * src and dst counters here.  For frequency conversion stage, on the
+ * other hand, the function does not touch src and dst counters and
+ * filter side has to increment them.
  */
 static void
 audio_apply_stage(audio_track_t *track, audio_stage_t *stage, bool isfreq)
@@ -4676,24 +4615,27 @@ audio_apply_stage(audio_track_t *track, audio_stage_t *stage, bool isfreq)
 // usrbuf が空でないことは呼び出し側でチェックしてから呼ぶこと。
 // outbuf に1ブロック以上の空きがあることは呼び出し側でチェックしてから
 // 呼ぶこと。
+/*
+ * Produce output buffer for playback from user input buffer.
+ * It must be called only if usrbuf is not empty and outbuf is
+ * available at least one free block.
+ */
 static void
 audio_track_play(audio_track_t *track)
 {
 	audio_ring_t *usrbuf;
 	audio_ring_t *input;
 	int count;
-	int framesize;	// input の1フレームのバイト数
-	int bytes;		// usrbuf から input に転送するバイト数
+	int framesize;
+	int bytes;
 	u_int dropcount;
 
 	KASSERT(track);
 	TRACET(track, "start pstate=%d", track->pstate);
 
-	// この時点で usrbuf は空ではない。
-	/* At this point usrbuf should not be empty. */
+	/* At this point usrbuf must not be empty. */
 	KASSERT(track->usrbuf.used > 0);
-	// また outbuf に1ブロック以上の空きがある。
-	/* Also, outbuf should be available at least one block. */
+	/* Also, outbuf must be available at least one block. */
 	count = auring_get_contig_free(&track->outbuf);
 	KASSERTMSG(count >= frame_per_block(track->mixer, &track->outbuf.fmt),
 	    "count=%d fpb=%d",
@@ -4705,7 +4647,6 @@ audio_track_play(audio_track_t *track)
 	input = track->input;
 	dropcount = 0;
 
-	// 入力(usrfmt) に 4bit は来ないので1フレームは必ず1バイト以上ある
 	/*
 	 * framesize is always 1 byte or more since all formats supported as
 	 * usrfmt(=input) have 8bit or more stride.
@@ -4713,19 +4654,14 @@ audio_track_play(audio_track_t *track)
 	framesize = frametobyte(&input->fmt, 1);
 	KASSERT(framesize >= 1);
 
-	// usrbuf の次段(input) も空いてるはず
-	/* The next stage of usrbuf (=input) should be available. */
+	/* The next stage of usrbuf (=input) must be available. */
 	KASSERT(auring_get_contig_free(input) > 0);
 
-	// usrbuf の最大1ブロックを input へコピー
-	// count は usrbuf からコピーするフレーム数。
-	// bytes は usrbuf からコピーするバイト数。
-	// ただし1フレーム未満のバイトはコピーしない。
 	/*
 	 * Copy usrbuf up to 1block to input buffer.
 	 * count is the number of frames to copy from usrbuf.
 	 * bytes is the number of bytes to copy from usrbuf.  However it is
-	 * not copied less than 1 frame.
+	 * not copied less than one frame.
 	 */
 	count = uimin(usrbuf->used, track->usrbuf_blksize) / framesize;
 	bytes = count * framesize;
@@ -4733,12 +4669,16 @@ audio_track_play(audio_track_t *track)
 	// 今回処理するバイト数(bytes) が1ブロックに満たない場合、
 	//  drain = no  : 溜まっていないのでここで帰る
 	//  drain = yes : リングバッファリセット(?)
+	/*
+	 * If bytes is less than one block,
+	 *  if not draining, buffer is not filled so return.
+	 *  if draining, fall through.
+	 */
 	if (count < track->usrbuf_blksize / framesize) {
 		dropcount = track->usrbuf_blksize / framesize - count;
 
 		if (track->pstate != AUDIO_STATE_DRAINING) {
-			// 溜まるまで待つ
-			/* wait until filled. */
+			/* Wait until filled. */
 			TRACET(track, "not enough; return");
 			return;
 		}
