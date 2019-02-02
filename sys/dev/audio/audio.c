@@ -555,7 +555,7 @@ static int audio_mixer_init(struct audio_softc *, int,
 	const audio_format2_t *, const audio_filter_reg_t *);
 static void audio_mixer_destroy(struct audio_softc *, audio_trackmixer_t *);
 static void audio_pmixer_start(struct audio_softc *, bool);
-static void audio_pmixer_process(struct audio_softc *, bool);
+static void audio_pmixer_process(struct audio_softc *);
 static int  audio_pmixer_mix_track(audio_trackmixer_t *, audio_track_t *, int);
 static void audio_pmixer_output(struct audio_softc *);
 static int  audio_pmixer_halt(struct audio_softc *);
@@ -5198,7 +5198,7 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
 	/* Need two blocks to start normally. */
 	minimum = (force) ? 1 : 2;
 	while (mixer->hwbuf.used < mixer->frames_per_block * minimum) {
-		audio_pmixer_process(sc, true);
+		audio_pmixer_process(sc);
 	}
 
 	/* Start output */
@@ -5249,7 +5249,7 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
  * Must be called with sc_intr_lock held.
  */
 static void
-audio_pmixer_process(struct audio_softc *sc, bool force_mix)
+audio_pmixer_process(struct audio_softc *sc)
 {
 	audio_trackmixer_t *mixer;
 	audio_file_t *f;
@@ -5312,19 +5312,6 @@ audio_pmixer_process(struct audio_softc *sc, bool force_mix)
 
 	if (mixed == 0) {
 		/* Silence */
-
-		// force_mix なら、無音ブロックを作成。
-		// そうでなければ、今回は合成をしない。
-		// ソフトウェア割り込みからは !force_mix で呼び、再生トラック
-		// がなくても無音ブロックを極力作らないようにする。
-		// ハードウェア割り込みからは force_mix で呼び、無音でも
-		// いいので必ずブロックを用意しなければならない。
-		if (!force_mix) {
-			TRACE("return; no tracks and !force");
-			return;
-		}
-
-		// 無音
 		memset(mixer->mixsample, 0,
 		    frametobyte(&mixer->mixfmt, frame_count));
 	} else {
@@ -5618,7 +5605,7 @@ audio_pintr(void *arg)
 	// レイテンシは下げられるが、マシンパワーがないと再生が途切れる。
 
 	// バッファを作成
-	audio_pmixer_process(sc, true);
+	audio_pmixer_process(sc);
 
 	// 出力
 	audio_pmixer_output(sc);
@@ -5641,7 +5628,7 @@ audio_pintr(void *arg)
 	}
 
 	// 次のバッファを用意する
-	audio_pmixer_process(sc, true);
+	audio_pmixer_process(sc);
 
 	if (later) {
 		audio_pmixer_output(sc);
