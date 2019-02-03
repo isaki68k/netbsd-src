@@ -6185,12 +6185,15 @@ audio_check_params(struct audio_params *p)
 		if (p->precision !=  8 && p->precision != 16 &&
 		    p->precision != 24 && p->precision != 32)
 			return EINVAL;
-		if (p->precision == 8 && p->encoding ==
-		    AUDIO_ENCODING_SLINEAR_BE)
-			p->encoding = AUDIO_ENCODING_SLINEAR_LE;
-		if (p->precision == 8 && p->encoding ==
-		    AUDIO_ENCODING_ULINEAR_BE)
-			p->encoding = AUDIO_ENCODING_ULINEAR_LE;
+
+		/* 8bit format does not have endianness. */
+		if (p->precision == 8) {
+			if (p->encoding == AUDIO_ENCODING_SLINEAR_OE)
+				p->encoding = AUDIO_ENCODING_SLINEAR_NE;
+			if (p->encoding == AUDIO_ENCODING_ULINEAR_OE)
+				p->encoding = AUDIO_ENCODING_ULINEAR_NE;
+		}
+
 		if (p->validbits > p->precision)
 			return EINVAL;
 		break;
