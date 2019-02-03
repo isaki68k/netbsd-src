@@ -508,8 +508,7 @@ static int audio_getenc(struct audio_softc *, struct audio_encoding *);
 static int audio_get_props(struct audio_softc *);
 static bool audio_can_playback(struct audio_softc *);
 static bool audio_can_capture(struct audio_softc *);
-static int audio_check_params(struct audio_params *);
-static int audio_check_params2(audio_format2_t *);
+static int audio_check_params(audio_format2_t *);
 static int audio_mixers_init(struct audio_softc *sc, int,
 	const audio_format2_t *, const audio_format2_t *,
 	const audio_filter_reg_t *, const audio_filter_reg_t *);
@@ -4248,6 +4247,7 @@ abort:
 
 /*
  * Set the userland format of this track.
+ * usrfmt argument should be parameter verified with audio_check_params().
  * It will release and reallocate all internal conversion buffers.
  * It returns 0 if successful.  Otherwise it returns errno with clearing all
  * internal buffers.
@@ -4266,10 +4266,6 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 	int error;
 
 	KASSERT(track);
-
-	error = audio_check_params2(usrfmt);
-	if (error)
-		return error;
 
 	/* usrbuf is the closest buffer to the userland. */
 	track->usrbuf.fmt = *usrfmt;
@@ -6138,18 +6134,16 @@ audio_softintr_wr(void *cookie)
 	mutex_exit(sc->sc_lock);
 }
 
-// SLINEAR -> SLINEAR_NE
-// {U,S}LINEAR8_* は {U,S}LINEAR8_LE を代表値として使う
-//
-// 以下から呼ばれる:
-// audio_setup_pfilters(to-param) 戻り値は見てない
-// audio_setup_rfilters(from-param) 戻り値は見てない
-// audiosetinfo: 設定値に対して、エラーならreturn
-// audiosetinfo: audio_hw_set_params()コール後に対して、戻り値見てない
+/*
+ * Check (and convert) the format *p came from userland.
+ * If successful, it writes back the converted format to *p if necessary
+ * and returns 0.  Otherwise returns errno (*p may change even this case).
+ */
 static int
-audio_check_params(struct audio_params *p)
+audio_check_params(audio_format2_t *p)
 {
 
+	/* Convert obsoleted AUDIO_ENCODING_PCM* */
 	if (p->encoding == AUDIO_ENCODING_PCM16) {
 		if (p->precision == 8)
 			p->encoding = AUDIO_ENCODING_ULINEAR;
@@ -6162,6 +6156,10 @@ audio_check_params(struct audio_params *p)
 			return EINVAL;
 	}
 
+	/*
+	 * Convert obsoleted AUDIO_ENCODING_[SU]LINEAR which does not
+	 * have endianness suffix.
+	 */
 	if (p->encoding == AUDIO_ENCODING_SLINEAR)
 		p->encoding = AUDIO_ENCODING_SLINEAR_NE;
 	if (p->encoding == AUDIO_ENCODING_ULINEAR)
@@ -6181,7 +6179,6 @@ audio_check_params(struct audio_params *p)
 	case AUDIO_ENCODING_SLINEAR_BE:
 	case AUDIO_ENCODING_ULINEAR_LE:
 	case AUDIO_ENCODING_ULINEAR_BE:
-		/* XXX is: our zero-fill can handle any multiple of 8 */
 		if (p->precision !=  8 && p->precision != 16 &&
 		    p->precision != 24 && p->precision != 32)
 			return EINVAL;
@@ -6194,7 +6191,7 @@ audio_check_params(struct audio_params *p)
 				p->encoding = AUDIO_ENCODING_ULINEAR_NE;
 		}
 
-		if (p->validbits > p->precision)
+		if (p->precision > p->stride)
 			return EINVAL;
 		break;
 	case AUDIO_ENCODING_MPEG_L1_STREAM:
@@ -6214,21 +6211,6 @@ audio_check_params(struct audio_params *p)
 		return EINVAL;
 
 	return 0;
-}
-
-// XXX 実際にはチェックといいつつ、古いエンコーディングの翻訳も兼ねていて
-// なんかもう何がなにやらである。
-static int
-audio_check_params2(audio_format2_t *f2)
-{
-	struct audio_params p;
-	int error;
-
-	p = format2_to_params(f2);
-	error = audio_check_params(&p);
-	*f2 = params_to_format2(&p);
-
-	return error;
 }
 
 // 再生・録音ミキサーを初期化する。
@@ -7249,7 +7231,7 @@ audio_file_setinfo_check(audio_format2_t *fmt, const struct audio_prinfo *info)
 	}
 
 	if (changes) {
-		if (audio_check_params2(fmt) != 0) {
+		if (audio_check_params(fmt) != 0) {
 #if AUDIO_DEBUG >= 2
 			char fmtbuf[64];
 			audio_format2_tostr(fmtbuf, sizeof(fmtbuf), fmt);
