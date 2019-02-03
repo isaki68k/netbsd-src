@@ -1979,6 +1979,31 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 		goto bad1;
 	}
 
+	// Half duplex なら
+	// 1.PLAY | REC なら PLAY として
+	// 2.PLAY なら、他に REC  がいればエラー、いなければ PLAY
+	// 3.REC  なら、他に PLAY がいればエラー、いなければ REC
+	if ((audio_get_props(sc) & AUDIO_PROP_FULLDUPLEX) == 0) {
+		if ((af->mode & AUMODE_PLAY)) {
+			if (sc->sc_ropens != 0) {
+				DPRINTF(1, "%s: record track already exists\n",
+				    __func__);
+				error = ENODEV;
+				goto bad1;
+			}
+			/* Play takes precedence */
+			af->mode &= ~AUMODE_RECORD;
+		}
+		if ((af->mode & AUMODE_RECORD)) {
+			if (sc->sc_popens != 0) {
+				DPRINTF(1, "%s: play track already exists\n",
+				    __func__);
+				error = ENODEV;
+				goto bad1;
+			}
+		}
+	}
+
 	/* Create tracks */
 	if ((af->mode & AUMODE_PLAY))
 		af->ptrack = audio_track_create(sc, sc->sc_pmixer);
@@ -7023,57 +7048,6 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 		if ((file->mode & AUMODE_PLAY)) {
 			mode = (file->mode & (AUMODE_PLAY | AUMODE_RECORD))
 			    | (ai->mode & AUMODE_PLAY_ALL);
-		}
-
-		// Half duplex なら
-		// 1.PLAY | REC なら PLAY として
-		// 2.PLAY なら、他に REC  がいればエラー、いなければ PLAY
-		// 3.REC  なら、他に PLAY がいればエラー、いなければ REC
-		if ((audio_get_props(sc) & AUDIO_PROP_FULLDUPLEX) == 0) {
-			// sc_files には自身が含まれる場合(ioctl)と
-			// 含まれない場合(open)の両方がある。
-			bool found;
-			audio_file_t *f;
-			/* Play takes precedence */
-			if ((mode & AUMODE_PLAY) != 0) {
-				found = false;
-				mutex_enter(sc->sc_intr_lock);
-				SLIST_FOREACH(f, &sc->sc_files, entry) {
-					if (f == file)
-						continue;
-					if ((f->mode & AUMODE_RECORD) != 0) {
-						found = true;
-						break;
-					}
-				}
-				mutex_exit(sc->sc_intr_lock);
-				if (found) {
-					DPRINTF(1,
-					    "%s: record track already exists\n",
-					    __func__);
-					return ENODEV;
-				}
-				mode &= ~AUMODE_RECORD;
-			}
-			if ((mode & AUMODE_RECORD) != 0) {
-				found = false;
-				mutex_enter(sc->sc_intr_lock);
-				SLIST_FOREACH(f, &sc->sc_files, entry) {
-					if (f == file)
-						continue;
-					if ((f->mode & AUMODE_PLAY) != 0) {
-						found = true;
-						break;
-					}
-				}
-				mutex_exit(sc->sc_intr_lock);
-				if (found) {
-					DPRINTF(1,
-					    "%s: play track already exists\n",
-					    __func__);
-					return ENODEV;
-				}
-			}
 		}
 	}
 
