@@ -1951,6 +1951,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	struct file *fp;
 	audio_file_t *af;
 	audio_ring_t *hwbuf;
+	bool fullduplex;
 	int fd;
 	int error;
 
@@ -1979,11 +1980,15 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 		goto bad1;
 	}
 
-	// Half duplex なら
-	// 1.PLAY | REC なら PLAY として
-	// 2.PLAY なら、他に REC  がいればエラー、いなければ PLAY
-	// 3.REC  なら、他に PLAY がいればエラー、いなければ REC
-	if ((audio_get_props(sc) & AUDIO_PROP_FULLDUPLEX) == 0) {
+	fullduplex = (audio_get_props(sc) & AUDIO_PROP_FULLDUPLEX);
+
+	/*
+	 * On half duplex hardware,
+	 * 1. if mode is (PLAY | REC), let mode PLAY.
+	 * 2. if mode is PLAY, let mode PLAY if no rec tracks, otherwise error.
+	 * 3. if mode is REC, let mode REC if no play tracks, otherwise error.
+	 */
+	if (fullduplex == false) {
 		if ((af->mode & AUMODE_PLAY)) {
 			if (sc->sc_ropens != 0) {
 				DPRINTF(1, "%s: record track already exists\n",
@@ -2096,7 +2101,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 			 * hw_if->open() is one of FREAD or FWRITE.
 			 * see also arch/evbarm/mini2440/audio_mini2440.c
 			 */
-			if ((audio_get_props(sc) & AUDIO_PROP_FULLDUPLEX)) {
+			if (fullduplex) {
 				hwflags = FREAD | FWRITE;
 			} else {
 				// af->mode から flags を再構成。
