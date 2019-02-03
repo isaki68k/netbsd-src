@@ -6144,6 +6144,7 @@ audio_check_params(audio_format2_t *p)
 {
 
 	/* Convert obsoleted AUDIO_ENCODING_PCM* */
+	/* XXX Is this conversion right? */
 	if (p->encoding == AUDIO_ENCODING_PCM16) {
 		if (p->precision == 8)
 			p->encoding = AUDIO_ENCODING_ULINEAR;
@@ -6157,8 +6158,8 @@ audio_check_params(audio_format2_t *p)
 	}
 
 	/*
-	 * Convert obsoleted AUDIO_ENCODING_[SU]LINEAR which does not
-	 * have endianness suffix.
+	 * Convert obsoleted AUDIO_ENCODING_[SU]LINEAR without endianness
+	 * suffix.
 	 */
 	if (p->encoding == AUDIO_ENCODING_SLINEAR)
 		p->encoding = AUDIO_ENCODING_SLINEAR_NE;
