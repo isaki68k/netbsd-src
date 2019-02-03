@@ -5437,7 +5437,7 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track,
 
 	// 整数倍精度へ変換し、トラックボリュームを適用して加算合成
 	/*
-	 * XXX If track volume is limited to 1.0 or less (<= 256),
+	 * XXX If you limit the track volume to 1.0 or less (<= 256),
 	 *     it would be better to do this in the track conversion stage
 	 *     rather than here.  However, if you accepts the volume to
 	 *     be greater than 1.0 (> 256), it's better to do it here.
@@ -5483,16 +5483,20 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track,
 	}
 
 	auring_take(&track->outbuf, count);
-	// outbuf が1ブロック未満であっても、カウンタはブロック境界に
-	// いなければならないため、不足が出れば調整する。
+	/*
+	 * The counters have to align block even if outbuf is less than
+	 * one block. XXX Is this still necessary?
+	 */
 	remain = mixer->frames_per_block - count;
 	if (__predict_false(remain != 0)) {
 		auring_push(&track->outbuf, remain);
 		auring_take(&track->outbuf, remain);
 	}
 
-	// トラックバッファを取り込んだことを反映
-	// mixseq はこの時点ではまだ前回の値なのでトラック側へは +1
+	/*
+	 * Update track sequence.
+	 * mixseq has previous value yet at this point.
+	 */
 	track->seq = mixer->mixseq + 1;
 
 	return mixed + 1;
@@ -5549,11 +5553,9 @@ audio_pmixer_output(struct audio_softc *sc)
 	}
 }
 
-// 割り込みハンドラ。
-// sc_intr_lock で呼び出される。
 /*
  * This is an interrupt handler for playback.
- * It is called with sc_intr_lock.
+ * It is called with sc_intr_lock held.
  */
 static void
 audio_pintr(void *arg)
@@ -5584,26 +5586,25 @@ audio_pintr(void *arg)
 	    mixer->hwbuf.head, mixer->hwbuf.used, mixer->hwbuf.capacity);
 
 #if !defined(_KERNEL)
-	// ユーザランドエミュレーションは割り込み駆動ではないので
-	// 処理はここまで。
+	/* This is a debug code for userland test. */
 	return;
 #endif
 
 #if defined(AUDIO_HW_SINGLE_BUFFER)
-	// その場で次のブロックを作成して再生
-	// レイテンシは下げられるが、マシンパワーがないと再生が途切れる。
-
-	// バッファを作成
+	/*
+	 * Create a new block here and output it immediately.
+	 * It makes a latency lower but needs machine power.
+	 */
 	audio_pmixer_process(sc);
-
-	// 出力
 	audio_pmixer_output(sc);
-
 #else
-	// ブロック0 の出力が終わったら用意されているはずのブロック1 を
-	// すぐに出力しておいて、その後ブロック2 の作成に取りかかる。
-	// これで遅マシンでも再生を途切れさせずに HW ブロックが作成できるが、
-	// その代わりレイテンシは1ブロック分上がる。
+	/*
+	 * It is called when block N output is done.
+	 * Output immediately block N+1 created by the last interrupt.
+	 * And then create block N+2 for the next interrupt.
+	 * This method is robust for playback even on slower machines.
+	 * Instead the latency is increased by one block.
+	 */
 
 	// まず出力待ちのシーケンスを出力
 	if (mixer->hwbuf.used >= mixer->frames_per_block) {
@@ -5629,10 +5630,6 @@ audio_pintr(void *arg)
 	kpreempt_enable();
 }
 
-// 録音ミキサを起動する。
-// sc_rbusy が false であることを確認してから呼び出すこと。
-// sc_lock で呼ぶこと。
-// 割り込みコンテキストから呼び出してはならない。
 /*
  * Starts record mixer.
  * Must be called only if sc_rbusy is false.
@@ -5679,7 +5676,6 @@ audio_rmixer_start(struct audio_softc *sc)
  * codecbuf:  slinear_NE, internal precision, HW ch, HW freq.
  */
 
-// 録音できた hwbuf のブロックを全録音トラックへ分配する。
 /*
  * Distribute a recorded block to all recording tracks.
  */
@@ -5694,9 +5690,10 @@ audio_rmixer_process(struct audio_softc *sc)
 
 	mixer = sc->sc_rmixer;
 
-	// 今回取り出すフレーム数を決定
-	// 実際には hwbuf はブロック単位で変動するはずなので
-	// count は1ブロック分になるはず
+	/*
+	 * count is the number of frames to be retrieved this time.
+	 * count should be one block.
+	 */
 	count = auring_get_contig_used(&mixer->hwbuf);
 	count = uimin(count, mixer->frames_per_block);
 	if (count <= 0) {
@@ -5705,7 +5702,7 @@ audio_rmixer_process(struct audio_softc *sc)
 	}
 	bytes = frametobyte(&mixer->track_fmt, count);
 
-	// MD 側フィルタ
+	/* Hardware driver's codec */
 	if (mixer->codec) {
 		mixer->codecarg.src = auring_headptr(&mixer->hwbuf);
 		mixer->codecarg.dst = auring_tailptr(&mixer->codecbuf);
@@ -5718,7 +5715,7 @@ audio_rmixer_process(struct audio_softc *sc)
 		mixersrc = &mixer->hwbuf;
 	}
 
-	// 全トラックへ分配
+	/* Distribute to all tracks. */
 	SLIST_FOREACH(f, &sc->sc_files, entry) {
 		audio_track_t *track = f->rtrack;
 		audio_ring_t *input;
@@ -5736,7 +5733,7 @@ audio_rmixer_process(struct audio_softc *sc)
 			continue;
 		}
 
-		// 空いてなければ古い方から捨てる?
+		/* If the track buffer is full, discard the oldest one? */
 		input = track->input;
 		if (input->capacity - input->used < mixer->frames_per_block) {
 			int drops = mixer->frames_per_block -
@@ -5754,14 +5751,12 @@ audio_rmixer_process(struct audio_softc *sc)
 		    bytes);
 		auring_push(input, count);
 
-		// XXX シーケンスいるんだっけ
+		/* XXX sequence counter? */
 	}
 
 	auring_take(mixersrc, count);
 }
 
-// ハードウェアバッファに1ブロック入力を開始する。
-// sc_intr_lock で呼び出すこと。
 /*
  * Input one block from HW to hwbuf.
  * Must be called with sc_intr_lock held.
@@ -5808,8 +5803,6 @@ audio_rmixer_input(struct audio_softc *sc)
 	}
 }
 
-// 割り込みハンドラ。
-// sc_intr_lock で呼び出される。
 /*
  * This is an interrupt handler for recording.
  * It is called with sc_intr_lock.
@@ -5842,10 +5835,10 @@ audio_rintr(void *arg)
 	    (int)mixer->hwseq, (int)mixer->hw_complete_counter,
 	    mixer->hwbuf.head, mixer->hwbuf.used, mixer->hwbuf.capacity);
 
-	// このバッファを分配する
+	/* Distrubute recorded block */
 	audio_rmixer_process(sc);
 
-	// 次のバッファを要求
+	/* Request next block */
 	audio_rmixer_input(sc);
 
 	kpreempt_disable();
@@ -5853,9 +5846,6 @@ audio_rintr(void *arg)
 	kpreempt_enable();
 }
 
-// 再生ミキサを停止する。
-// 関連するパラメータもクリアするため、基本的には halt_output を
-// 直接呼び出すのではなく、こちらを呼ぶこと。
 /*
  * Halts playback mixer.
  * This function also clears related parameters, so call this function
@@ -5886,9 +5876,6 @@ audio_pmixer_halt(struct audio_softc *sc)
 	return error;
 }
 
-// 録音ミキサを停止する。
-// 関連するパラメータもクリアするため、基本的には halt_input を
-// 直接呼び出すのではなく、こちらを呼ぶこと。
 /*
  * Halts recording mixer.
  * This function also clears related parameters, so call this function
@@ -5919,10 +5906,11 @@ audio_rmixer_halt(struct audio_softc *sc)
 	return error;
 }
 
-// トラックをフラッシュする。
-// 現在の動作を停止し、すべてのキューとバッファをクリアし、
-// エラーカウンタをリセットする。
-// これでええんかなあ。
+/*
+ * Flush this track.
+ * Halts all operations, clears all buffers, reset error counters.
+ * XXX I'm not sure...
+ */
 static void
 audio_track_clear(struct audio_softc *sc, audio_track_t *track)
 {
@@ -5931,7 +5919,7 @@ audio_track_clear(struct audio_softc *sc, audio_track_t *track)
 	TRACET(track, "clear");
 
 	track->usrbuf.used = 0;
-	// 内部情報も全部クリア
+	/* Clear all internal parameters. */
 	if (track->codec.filter) {
 		track->codec.srcbuf.used = 0;
 		track->codec.srcbuf.head = 0;
@@ -5954,18 +5942,18 @@ audio_track_clear(struct audio_softc *sc, audio_track_t *track)
 		memset(track->freq_prev, 0, sizeof(track->freq_prev));
 		memset(track->freq_curr, 0, sizeof(track->freq_curr));
 	}
-	// バッファをクリアすれば動作は自然と停止する
+	/* Clear buffer, then operation halts naturally. */
 	mutex_enter(sc->sc_intr_lock);
 	track->outbuf.used = 0;
 	mutex_exit(sc->sc_intr_lock);
 
-	// カウンタクリア
+	/* Clear counters. */
 	track->dropframes = 0;
 }
 
 /*
  * Drain the track.
- * track must be present and playback track.
+ * track must be present and for playback.
  * If successful, it returns 0.  Otherwise returns errno.
  * Must be called with sc_lock held.
  */
@@ -5981,14 +5969,12 @@ audio_track_drain(struct audio_softc *sc, audio_track_t *track)
 	mixer = track->mixer;
 	KASSERT(mutex_owned(sc->sc_lock));
 
-	// pause 中なら今溜まってるものは全部無視してこのまま終わってよし
+	/* Ignore them if pause. */
 	if (track->is_pause) {
 		TRACET(track, "pause -> clear");
 		track->pstate = AUDIO_STATE_CLEAR;
 	}
-	// トラックにデータがなくても drain は ミキサのループが数回回って
-	// 問題なく終わるが、クリーンならさすがに早期終了しても
-	// いいんじゃなかろうか。
+	/* Terminate early here if there is no data in the track. */
 	if (track->pstate == AUDIO_STATE_CLEAR) {
 		TRACET(track, "no need to drain");
 		return 0;
@@ -5996,14 +5982,14 @@ audio_track_drain(struct audio_softc *sc, audio_track_t *track)
 	track->pstate = AUDIO_STATE_DRAINING;
 
 	for (;;) {
-		// 終了条件判定の前に表示したい
+		/* I want to display it bofore condition evaluation. */
 		TRACET(track, "pid=%d.%d trkseq=%d hwseq=%d out=%d/%d/%d",
 		    (int)curproc->p_pid, (int)curlwp->l_lid,
 		    (int)track->seq, (int)mixer->hwseq,
 		    track->outbuf.head, track->outbuf.used,
 		    track->outbuf.capacity);
 
-		// 終了条件
+		/* Condition to terminate */
 		mutex_enter(sc->sc_intr_lock);
 		done = (track->usrbuf.used < frametobyte(&track->inputfmt, 1) &&
 		    track->outbuf.used == 0 &&
@@ -6017,8 +6003,7 @@ audio_track_drain(struct audio_softc *sc, audio_track_t *track)
 		if (error)
 			return error;
 
-		// XXX ここで outbuf に変換しておけばいいか。
-		//     audio_write とよく似たコードになるけど。
+		/* XXX call audio_track_play here ? */
 	}
 
 	track->pstate = AUDIO_STATE_CLEAR;
@@ -6027,18 +6012,19 @@ audio_track_drain(struct audio_softc *sc, audio_track_t *track)
 	return 0;
 }
 
-// 録音側のソフトウェア割り込みハンドラ。
-//
-// 録音のハードウェア割り込みから毎回呼ばれる。
-// ソフトウェア割り込みは、
-// - ASYNC 設定しているプロセス全員にここで SIGIO を配送。
-// - (HW 割り込みによって) データが到着したことを audio_read() に通知と
-//   selnotify()。
-//
-// XXX
-// ハードウェア割り込みからソフトウェア割り込みまでの間に新規に FAIOASYNC
-// したトラックがあれば、そのトラックには録音データがまだ到着していないにも
-// 関わらず SIGIO を送ることになるが(suspicious)、とりあえず許容するか。
+/*
+ * This is software interrupt handler for record.
+ * It is called from recording hardware interrupt everytime.
+ * It does:
+ * - Deliver SIGIO for all async processes.
+ * - Notify to audio_record() that data has arrived.
+ * - selnotify() for select/poll-ing processes.
+ */
+/*
+ * XXX If a process issues FIOASYNC between hardware interrupt and
+ *     software interrupt, (stray) SIGIO will be sent to the process
+ *     despite the fact that it has not receive recorded data yet.
+ */
 static void
 audio_softintr_rd(void *cookie)
 {
@@ -6072,25 +6058,23 @@ audio_softintr_rd(void *cookie)
 	}
 	mutex_exit(sc->sc_intr_lock);
 
-	// データが来たことを通知
+	/* Notify that data has arrived. */
 	selnotify(&sc->sc_rsel, 0, NOTE_SUBMIT);
 	cv_broadcast(&sc->sc_rmixer->outcv);
 
 	mutex_exit(sc->sc_lock);
 }
 
-// 再生側のソフトウェア割り込みハンドラ。
-//
-// 再生のハードウェア割り込みから毎回呼ばれる。
-// ソフトウェア割り込みは、
-// - used が lowat を下回っているトラックそれぞれについて、
-//   ASYNC 設定していればプロセスに SIGIO を配送する。
-// - used が lowat を下回っているトラックが一つでもあれば
-//   selnotify する (その後上位から、ディスクリプタごとに
-//   filt_audiowrite_event() が呼ばれてそこで各々チェックするので、
-//   ここは全体としてありなしの二択でいいはず)
-// - (HW 割り込みによって) outbuf に空きが出来たことを audio_write() に通知。
-//
+/*
+ * This is software interrupt handler for playback.
+ * It is called from playback hardware interrupt everytime.
+ * It does:
+ * - Deliver SIGIO for all async and writable (used < lowat) processes.
+ * - Notify to audio_write() that outbuf block available.
+ * - selnotify() for select/poll-ing processes if there are any writable
+ *   (used < lowat) processes.  Checking each descriptor will be done by
+ *   filt_audiowrite_event().
+ */
 // SIGIO についてはレベルトリガではなくエッジトリガのような気もするけど不明。
 // selnotify はレベルトリガでいいはず。
 static void
@@ -6120,7 +6104,10 @@ audio_softintr_wr(void *cookie)
 		    track->outbuf.used,
 		    track->outbuf.capacity);
 
-		// used が lowat 下回って ASYNC ならシグナル送る
+		/*
+		 * Send a signal if the process is async mode and
+		 * used is lower than lowat.
+		 */
 		if (track->usrbuf.used <= track->usrbuf_usedlow &&
 		    !track->is_pause) {
 			found = true;
@@ -6145,26 +6132,11 @@ audio_softintr_wr(void *cookie)
 		selnotify(&sc->sc_wsel, 0, NOTE_SUBMIT);
 	}
 
-	// 空きが出来たことを audio_write に通知
+	/* Notify to audio_write() that outbuf available. */
 	cv_broadcast(&sc->sc_pmixer->outcv);
 
 	mutex_exit(sc->sc_lock);
 }
-
-/*
- * Called from HW driver module on completion of DMA output.
- * Start output of new block, wrap in ring buffer if needed.
- * If no more buffers to play, output zero instead.
- * Do a wakeup if necessary.
- */
-// ここに audio_pintr
-
-/*
- * Called from HW driver module on completion of DMA input.
- * Mark it as input in the ring buffer (fiddle pointers).
- * Do a wakeup if necessary.
- */
-// ここに audio_rintr
 
 // SLINEAR -> SLINEAR_NE
 // {U,S}LINEAR8_* は {U,S}LINEAR8_LE を代表値として使う
