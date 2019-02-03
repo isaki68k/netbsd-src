@@ -6901,24 +6901,32 @@ audio_mixers_get_format(struct audio_softc *sc, struct audio_info *ai)
  *	different.
  */
 
-//	+----------------------------- HW 停止を必要とするか(set_port等)
-//	|	+--------------------- 現在の mixer の状態(stop/run)
-//	|	|	+------------- 現在のこの track の状態
-//	|	|	|	+----- SETINFO で指定した pause
-//	hw	mixer	track	pause
-//	false	stop	open	0->1	何もしない
-//	false	stop	open	1->0	何もしない
-//	false	stop	run	0->1	何もしない
-//	false	stop	run	1->0	何もしない (*1)
-//	false	run	open	0->1	何もしない
-//	false	run	open	1->0	何もしない
-//	false	run	run	0->1	何もしない (*2)
-//	false	run	run	1->0	何もしない
-//	true	stop	*	*->*	何もしない
-//	true	run	*	*->*	一旦停止 -> 再開
-//
-// *1: 最初のトラックの最初のread/write でミキサーは走る。
-// *2: 最終トラックが pause してもミキサーは停止しない。
+/*
+ * Pause consideration:
+ *
+ * The introduction of these two behavior makes pause/unpause operation
+ * simple.
+ * 1. The first read/write access of the first track makes mixer start.
+ * 2. A pause of the last track doesn't make mixer stop.
+ *
+ * +-------------------------- necessary to stop hw (like set_port())
+ * |	+--------------------- Is current mixer running?
+ * |	|	+------------- Is current track running? 'run' means yes.
+ * |	|	|	       'open' means opened but not running.
+ * |	|	|	+----- pause value specified in SETINFO
+ * hw	mixer	track	pause
+ * ---------------------------
+ * no	stop	open	0->1	nothing to do
+ * no	stop	open	1->0	nothing to do
+ * no	stop	run	0->1	nothing to do
+ * no	stop	run	1->0	nothing to do (*1)
+ * no	run	open	0->1	nothing to do
+ * no	run	open	1->0	nothing to do
+ * no	run	run	0->1	nothing to do (*2)
+ * no	run	run	1->0	nothing to do
+ * yes	stop	*	*->*	nothing to do
+ * yes	run	*	*->*	stop and restart
+ */
 
 // ai に基づいて file の両トラックを諸々セットする。
 // ai のうち初期値のままのところは sc_[pr]params, sc_[pr]pause が使われる。
