@@ -7010,11 +7010,16 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	/* Overwrite if specified */
 	mode = file->mode;
 	if (SPECIFIED(ai->mode)) {
-		// ai->mode で PLAY/REC モードを変更することは出来ず、
-		// PLAY_ALL は意味を持たなくなったので、出来ることは何もない。
-		// ただし互換性のため PLAY_ALL フラグの状態だけは維持する。
-		// PLAY_ALL フラグは file->mode でのみ保持し track->mode は
-		// PLAY_ALL フラグの状態を持たない。
+		/*
+		 * Setting ai->mode no longer does anything because it's
+		 * prohibited to change playback/recording mode after open
+		 * and AUMODE_PLAY_ALL is obsoleted.  However, it still
+		 * keeps the state of AUMODE_PLAY_ALL itself for backward
+		 * compatibility.
+		 * In the internal, only file->mode has the state of
+		 * AUMODE_PLAY_ALL flag and track->mode in both track does
+		 * not have.
+		 */
 		if ((file->mode & AUMODE_PLAY)) {
 			mode = (file->mode & (AUMODE_PLAY | AUMODE_RECORD))
 			    | (ai->mode & AUMODE_PLAY_ALL);
@@ -7072,7 +7077,6 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 		}
 	}
 
-	// ここから mode は変更後の希望するモード。
 	if (ptrack) {
 		pchanges = audio_file_setinfo_check(&pfmt, pi);
 		if (pchanges == -1) {
@@ -7094,9 +7098,10 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 			rchanges = 1;
 	}
 
-	// 録音再生どちらかでもパラメータを変更する場合は一旦両方の?
-	// トラックを停止。
-	// XXX 該当するほうだけでいいのでは?
+	/*
+	 * Even when setting either one of playback and recording,
+	 * both track must be halted.
+	 */
 	if (pchanges || rchanges) {
 		audio_file_clear(sc, file);
 #ifdef AUDIO_DEBUG
