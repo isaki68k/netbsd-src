@@ -1696,8 +1696,6 @@ test_encoding_1(void)
 		AUDIO_ENCODING_SLINEAR_BE,
 		AUDIO_ENCODING_ULINEAR_LE,
 		AUDIO_ENCODING_ULINEAR_BE,
-		AUDIO_ENCODING_SLINEAR,		// for backward compatibility
-		AUDIO_ENCODING_ULINEAR,		// for backward compatibility
 	};
 	int prectable[] = {
 		8, 16, 32,
@@ -1867,6 +1865,72 @@ test_encoding_2()
 		XP_SYS_NG(EINVAL, r);
 
 		CLOSE(fd);
+	}
+}
+
+// 古いフォーマットの変換
+void
+test_encoding_3()
+{
+	struct audio_info ai;
+	int fd;
+	int r;
+	struct {
+		int encoding;
+		int precision;
+		int exp_enc;	// 失敗を期待するなら -1
+		int exp_prec;
+	} table[] = {
+		/* PCM8:prec8   -> ULINEAR_NE:8 */
+		/* PCM16:prec16 -> SLINEAR_NE:16 */
+		{ AUDIO_ENCODING_PCM8,	8,		AUDIO_ENCODING_ULINEAR_NE,	8 },
+		{ AUDIO_ENCODING_PCM8,	8,		AUDIO_ENCODING_ULINEAR_NE,	8 },
+		/*
+		 * なぜか分からんけど今の NetBSD7 はこうなっている。
+		 */
+		{ AUDIO_ENCODING_PCM8,	16,		-1 },
+		{ AUDIO_ENCODING_PCM16,	 8,		AUDIO_ENCODING_ULINEAR_NE,  8 },
+
+		/* [US]LINEAR without endianness suffix -> [US]LINEAR_NE */
+		{ AUDIO_ENCODING_SLINEAR,	 8,	AUDIO_ENCODING_SLINEAR_NE,	8 },
+		{ AUDIO_ENCODING_ULINEAR,	 8,	AUDIO_ENCODING_ULINEAR_NE,	8 },
+		{ AUDIO_ENCODING_SLINEAR,	16,	AUDIO_ENCODING_SLINEAR_NE,	16 },
+		{ AUDIO_ENCODING_ULINEAR,	16,	AUDIO_ENCODING_ULINEAR_NE,	16 },
+	};
+
+	TEST("encoding_3");
+	for (int i = 0; i < __arraycount(table); i++) {
+		int encoding = table[i].encoding;
+		int precision = table[i].precision;
+		int exp_enc = table[i].exp_enc;
+		int exp_prec = table[i].exp_prec;
+		DESC("%s:%d", encoding_names[encoding], precision);
+
+		fd = OPEN(devaudio, O_RDWR);
+		XP_SYS_OK(fd);
+
+		AUDIO_INITINFO(&ai);
+		ai.play.encoding = encoding;
+		ai.play.precision = precision;
+		ai.record.encoding = encoding;
+		ai.record.precision = precision;
+		r = ioctl(fd, AUDIO_SETINFO, &ai, "set");
+		if (exp_enc != -1) {
+			// 成功を期待する場合
+			XP_SYS_EQ(0, r);
+			r = ioctl(fd, AUDIO_GETBUFINFO, &ai, "get");
+			XP_SYS_EQ(0, r);
+			XP_EQ(exp_enc, ai.play.encoding);
+			XP_EQ(exp_prec, ai.play.precision);
+			XP_EQ(exp_enc, ai.record.encoding);
+			XP_EQ(exp_prec, ai.record.precision);
+		} else {
+			// 失敗を期待する場合
+			XP_SYS_NG(EINVAL, r);
+		}
+
+		r = CLOSE(fd);
+		XP_SYS_EQ(0, r);
 	}
 }
 
@@ -7168,6 +7232,7 @@ struct testtable testtable[] = {
 	DEF(open_6),
 	DEF(encoding_1),
 	DEF(encoding_2),
+	DEF(encoding_3),
 	DEF(drain_1),
 	DEF(drain_2),
 	DEF(drain_3),
