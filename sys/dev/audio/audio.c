@@ -6071,8 +6071,6 @@ audio_softintr_rd(void *cookie)
  *   (used < lowat) processes.  Checking each descriptor will be done by
  *   filt_audiowrite_event().
  */
-// SIGIO についてはレベルトリガではなくエッジトリガのような気もするけど不明。
-// selnotify はレベルトリガでいいはず。
 static void
 audio_softintr_wr(void *cookie)
 {
@@ -6214,15 +6212,17 @@ audio_check_params(audio_format2_t *p)
 	return 0;
 }
 
-// 再生・録音ミキサーを初期化する。
-// 引数 mode の AUMODE_{PLAY,RECORD} のうち立っている方を初期化する。
-// phwfmt, rhwfmt は HW フォーマット、pfil, rfil はフィルタ登録情報である。
-// phwfmt, rhwfmt, pfil, rfil は NULL であってはならない。
-// 成功すれば 0、失敗すれば errno を返す。
-// どちらのミキサーの初期化に成功したかは sc_[pr]mixer != NULL で判断すること。
-// この関数は再生か録音トラックがいずれかでも存在する時は呼び出しては
-// ならない。
-// sc_lock でコールすること。
+/*
+ * Initialize playback and record mixers.
+ * mode (AUMODE_{PLAY,RECORD}) indicates the mixer to be initalized.
+ * phwfmt and rhwfmt indicate the hardware format.  pfil and rfil indicate
+ * the filter registration information.  These four must not be NULL.
+ * If successful returns 0.  Otherwise returns errno.
+ * Must be called with sc_lock held.
+ * Must not be called if there are any tracks.
+ * Caller should check that the initialization succeed by whether
+ * sc_[pr]mixer is not NULL.
+ */
 static int
 audio_mixers_init(struct audio_softc *sc, int mode,
 	const audio_format2_t *phwfmt, const audio_format2_t *rhwfmt,
@@ -6304,10 +6304,11 @@ audio_mixers_init(struct audio_softc *sc, int mode,
 	return 0;
 }
 
-// 周波数を選択する。
-// XXX アルゴリズムどうすっかね
-// 48kHz、44.1kHz をサポートしてれば優先して使用。
-// そうでなければとりあえず最高周波数にしとくか。
+/*
+ * Select a frequency.
+ * Prioritize 48kHz and 44.1kHz.  Otherwise choose the highest one.
+ * XXX Better algorithm?
+ */
 static int
 audio_select_freq(const struct audio_format *fmt)
 {
@@ -6347,25 +6348,13 @@ audio_select_freq(const struct audio_format *fmt)
 	}
 }
 
-// *modep (AUMODE_PLAY|RECORD) に応じて再生か録音のフォーマットを選択する。
-// 選択に失敗した方のビットは落として結果を *modep  に書き戻す。
-// sc_lock でコールすること。
-//
-// independent デバイスなら
-//  あれば再生フォーマットを選定
-//  あれば録音フォーマットを選定
-//  両方を設定
-// not independent デバイスなら
-//  再生があれば
-//   再生でフォーマットを選定。録音側にもコピー
-//  else
-//   録音でフォーマットを選定。再生側にもコピー
 /*
- * Select playback and/or recording format (depending on *modep).
+ * Probe playback and/or recording format (depending on *modep).
  * *modep is an in-out parameter.  It indicates the direction to configure
- * as an argument and the direction configured is written back as out
+ * as an argument, and the direction configured is written back as out
  * parameter.
  * Return 0 if successful,  otherwise errno.
+ * Must be called with sc_lock held.
  */
 static int
 audio_hw_probe(struct audio_softc *sc, int is_indep, int *modep,
@@ -6382,7 +6371,7 @@ audio_hw_probe(struct audio_softc *sc, int is_indep, int *modep,
 	    "invalid mode = %x", mode);
 
 	if (is_indep) {
-		/* independent devices */
+		/* On independent devices, probe separately. */
 		if ((mode & AUMODE_PLAY) != 0) {
 			error = audio_hw_probe_fmt(sc, phwfmt, AUMODE_PLAY);
 			if (error)
@@ -6394,7 +6383,7 @@ audio_hw_probe(struct audio_softc *sc, int is_indep, int *modep,
 				mode &= ~AUMODE_RECORD;
 		}
 	} else {
-		/* not independent devices */
+		/* On non independent devices, probe simultaneously. */
 		error = audio_hw_probe_fmt(sc, &fmt, mode);
 		if (error) {
 			mode = 0;
@@ -6408,15 +6397,18 @@ audio_hw_probe(struct audio_softc *sc, int is_indep, int *modep,
 	return error;
 }
 
-// 再生か録音(mode) の HW フォーマットを決定する。
-// sc_lock でコールすること。
+/*
+ * Probe the hardware format depending on mode.
+ * Must be called with sc_lock held.
+ * XXX Once all hw drivers go to use query_format, the function will be gone.
+ */
 static int
 audio_hw_probe_fmt(struct audio_softc *sc, audio_format2_t *cand, int mode)
 {
 
 	KASSERT(mutex_owned(sc->sc_lock));
 
-	// 分かりやすさのため、しばらくどっち使ったか表示しとく
+	/* XXX Display the message only during the transition period. */
 	if (sc->hw_if->query_format) {
 		aprint_normal_dev(sc->sc_dev, "use new query_format method\n");
 		return audio_hw_probe_by_format(sc, cand, mode);
@@ -6426,8 +6418,10 @@ audio_hw_probe_fmt(struct audio_softc *sc, audio_format2_t *cand, int mode)
 	}
 }
 
-// HW フォーマットを query_format を使って決定する。
-// sc_lock でコールすること。
+/*
+ * Probe the hardware format using query_format.
+ * Must be called with sc_lock held.
+ */
 static int
 audio_hw_probe_by_format(struct audio_softc *sc, audio_format2_t *cand,
 	int mode)
@@ -6438,14 +6432,17 @@ audio_hw_probe_by_format(struct audio_softc *sc, audio_format2_t *cand,
 
 	KASSERT(mutex_owned(sc->sc_lock));
 
-	// 初期値
-	// enc/prec/stride は固定。(XXX 逆エンディアン対応するか?)
-	// channels/frequency はいいやつを選びたい
+	/*
+	 * Initial candidate.
+	 * We want to choose a good frequency/channels.
+	 * On the other hand, encoding/precision/stride is fixed.
+	 * XXX Do we support opposite endian?
+	 */
 	cand->encoding    = AUDIO_ENCODING_SLINEAR_NE;
 	cand->precision   = AUDIO_INTERNAL_BITS;
 	cand->stride      = AUDIO_INTERNAL_BITS;
 	cand->channels    = 1;
-	cand->sample_rate = 0;	// 番兵
+	cand->sample_rate = 0;	/* sentinel */
 
 	for (i = 0; ; i++) {
 		memset(&query, 0, sizeof(query));
@@ -6501,14 +6498,14 @@ audio_hw_probe_by_format(struct audio_softc *sc, audio_format2_t *cand,
 			continue;
 		}
 		int freq = audio_select_freq(&query.fmt);
-		// XXX うーん
+		/* XXX better algorithm ? */
 		if (freq < cand->sample_rate) {
 			DPRINTF(1, "fmt[%d] skip; frequency %d < %d\n", i,
 			    freq, cand->sample_rate);
 			continue;
 		}
 
-		// cand 更新
+		/* Update candidate */
 		cand->channels = query.fmt.channels;
 		cand->sample_rate = freq;
 		DPRINTF(1, "fmt[%d] cand %dch/%dHz\n", i,
@@ -6524,10 +6521,12 @@ audio_hw_probe_by_format(struct audio_softc *sc, audio_format2_t *cand,
 	return 0;
 }
 
-// HW フォーマットを query_format を使わずに決定する
-// とても query_format を書き起こせないような古いドライバ向けなので、
-// 探索パラメータはこれでよい。
-// sc_lock でコールすること。
+/*
+ * Probe the hardware format using old set_params.
+ * It is only provided for backward compatibility.  Please don't try to
+ * improve.
+ * Must be called with sc_lock held.
+ */
 static int
 audio_hw_probe_by_encoding(struct audio_softc *sc, audio_format2_t *cand,
 	int mode)
@@ -6551,7 +6550,7 @@ audio_hw_probe_by_encoding(struct audio_softc *sc, audio_format2_t *cand,
 			error = audio_hw_set_params(sc, mode, &fmt, &fmt,
 			    NULL, NULL);
 			if (error == 0) {
-				// 設定できたのでこれを採用
+				/* Accept it because we were able to set. */
 				*cand = fmt;
 				DPRINTF(1, "%s selected: ch=%d freq=%d\n",
 				    __func__,
@@ -6568,11 +6567,12 @@ audio_hw_probe_by_encoding(struct audio_softc *sc, audio_format2_t *cand,
 	return ENXIO;
 }
 
-// fmt を query_format の結果集合と照合する。
-// query_format が返すフォーマット集合に該当すれば 0、
-// 該当しなければ EINVAL を返す。
-// sc_lock でコールすること。
-// query_format がない時にはてきとー救済措置が走る。
+/*
+ * Validate fmt with query_format.
+ * If fmt is included in the result of query_format, returns 0.
+ * Otherwise returns EINVAL.
+ * Must be called with sc_lock held.
+ */ 
 static int
 audio_hw_validate_format(struct audio_softc *sc, int mode,
 	const audio_format2_t *fmt)
@@ -6585,11 +6585,11 @@ audio_hw_validate_format(struct audio_softc *sc, int mode,
 
 	KASSERT(mutex_owned(sc->sc_lock));
 
-	// query_format がない人向けのてきとー救済措置。
-	// encoding/precision/stride は固定なのでチェックできるが、
-	// HW の受け付ける channels/sample_rate は分からないので
-	// チェックできない。
-	// 理想的な将来ではこの分岐は不要。
+	/*
+	 * If query_format is not supported by hardware driver,
+	 * a rough check instead will be performed.
+	 * XXX This will gone in the future.
+	 */
 	if (sc->hw_if->query_format == NULL) {
 		if (fmt->encoding != AUDIO_ENCODING_SLINEAR_NE)
 			return EINVAL;
@@ -6650,15 +6650,17 @@ audio_hw_validate_format(struct audio_softc *sc, int mode,
 	return EINVAL;
 }
 
-// ai->mode で示される側のミキサのフォーマットをセットする。
-// ai->mode に AUMODE_PLAY が立っていれば
-// 再生ミキサーを ai->play->{channels, sample_rate} で設定する。
-// ai->mode に AUMODE_RECORD が立っていれば
-// 録音ミキサーを ai->record->{channels, sample_rate} で設定する。
-// ai のそれ以外のパラメータは無視する。
-// 成功すれば 0、一つでも失敗すれば errno を返す。
-// 失敗してもロールバックはしない。
-// sc_lock でコールすること。
+/*
+ * Set track mixer's format depending on ai->mode.
+ * If AUMODE_PLAY is set in ai->mode, it set up the playback mixer
+ * with ai.play.{channels, sample_rate}.
+ * If AUMODE_RECORD is set in ai->mode, it set up the recording mixer
+ * with ai.record.{channels, sample_rate}.
+ * All other fields in ai are ignored.
+ * If successful returns 0.  Otherwise returns errno.
+ * This function does not roll back even if it fails.
+ * Must be called with sc_lock held.
+ */
 static int
 audio_mixers_set_format(struct audio_softc *sc, const struct audio_info *ai)
 {
@@ -6672,16 +6674,17 @@ audio_mixers_set_format(struct audio_softc *sc, const struct audio_info *ai)
 
 	KASSERT(mutex_owned(sc->sc_lock));
 
-	// 再生か録音の一方だけ設定する場合であっても、
-	// 再生も録音も誰もいない状態でなければいけない。
+	/*
+	 * Even when setting either one of playback and recording,
+	 * both must be halted.
+	 */
 	if (sc->sc_popens + sc->sc_ropens > 0)
 		return EBUSY;
 
 	if (!SPECIFIED(ai->mode) || ai->mode == 0)
 		return ENOTTY;
 
-	// ai.mode は PLAY か RECORD のビットが立っているかどうかだけ。
-	// 上書きするのは channels/sample_rate だけでいい。
+	/* Only channels and sample_rate are changeable. */
 	mode = ai->mode;
 	if ((mode & AUMODE_PLAY)) {
 		phwfmt.encoding    = AUDIO_ENCODING_SLINEAR_NE;
@@ -6698,8 +6701,7 @@ audio_mixers_set_format(struct audio_softc *sc, const struct audio_info *ai)
 		rhwfmt.sample_rate = ai->record.sample_rate;
 	}
 
-	// 非independent デバイスなら、両方を常に同じにする。
-	// なんとなく再生側の情報を優先してみる。
+	/* On non-independent devices, use the same format for both. */
 	props = audio_get_props(sc);
 	if ((props & AUDIO_PROP_INDEPENDENT) == 0) {
 		if (mode == AUMODE_RECORD) {
@@ -6707,11 +6709,10 @@ audio_mixers_set_format(struct audio_softc *sc, const struct audio_info *ai)
 		} else {
 			rhwfmt = phwfmt;
 		}
-		// 両方向同じ情報をセットする
 		mode = AUMODE_PLAY | AUMODE_RECORD;
 	}
 
-	// その上で HW に存在しない方向は落としておかないといけない
+	/* Then, unset the direction not exist on the hardware. */
 	if ((props & AUDIO_PROP_PLAYBACK) == 0)
 		mode &= ~AUMODE_PLAY;
 	if ((props & AUDIO_PROP_CAPTURE) == 0)
@@ -6735,11 +6736,7 @@ audio_mixers_set_format(struct audio_softc *sc, const struct audio_info *ai)
 		    rhwfmt.sample_rate);
 	}
 
-	/* Check */
-	// query_format があればそれを使って検証。
-	// なければ仕方ないので適当にそれっぽく調べるだけ。
-	// 前者の場合、次の hw_set_params の中の set_params では渡された
-	// フォーマットのチェックは不要。
+	/* Check the format */
 	if ((mode & AUMODE_PLAY)) {
 		if (audio_hw_validate_format(sc, AUMODE_PLAY, &phwfmt)) {
 			DPRINTF(1, "%s: invalid format\n", __func__);
@@ -6753,6 +6750,7 @@ audio_mixers_set_format(struct audio_softc *sc, const struct audio_info *ai)
 		}
 	}
 
+	/* Configure the mixers. */
 	memset(&pfil, 0, sizeof(pfil));
 	memset(&rfil, 0, sizeof(rfil));
 	error = audio_hw_set_params(sc, mode, &phwfmt, &rhwfmt, &pfil, &rfil);
@@ -6797,7 +6795,7 @@ audio_mixers_get_format(struct audio_softc *sc, struct audio_info *ai)
 }
 
 /*
- * About audio_info's parameters:
+ * audio_info details:
  *
  * ai.{play,record}.sample_rate		(R/W)
  * ai.{play,record}.encoding		(R/W)
@@ -6805,87 +6803,72 @@ audio_mixers_get_format(struct audio_softc *sc, struct audio_info *ai)
  * ai.{play,record}.channels		(R/W)
  *	These specify the playback or recording format.
  *	Ignore members of an inactive track.
-//	再生/録音フォーマット。
-//	現在有効でないトラック側は無視する。
  *
  * ai.mode				(R/W)
  *	It specifies the playback or recording mode, AUMODE_*.
- *	In AUDIO2, mode change by by ai.mode after opening is prohibited.
+ *	In AUDIO2, A mode change operation by ai.mode after opening is
+ *	prohibited.
  *	In AUDIO2, AUMODE_PLAY_ALL no longer makes sense.  However, it's
  *	possible to get or to set for backward compatibility.
-//	再生/録音モード。AUMODE_*
-//	AUDIO2 では ai.mode でのオープン後のモード変更は不可とした。
-//	AUDIO2 では AUMODE_PLAY_ALL はもはや意味を持たないが、後方互換のため
-//	指定・取得は行える。
  *
  * ai.{hiwat,lowat}			(R/W)
  *	These specify the high water mark and low water mark for playback
  *	track.  The unit is block.
-//	再生トラックの hiwat/lowat。単位はブロック。
  *
  * ai.{play,record}.gain		(R/W)
  *	It specifies the HW mixer volume in 0-255.
  *	It is historical reason that the gain is connected to HW mixer.
-//	ボリューム。0-255。
-//	N7 以前は HW ミキサのボリュームと連動していた。
-//	N8 はこれをソフトウェアボリュームにしようとしてバグっている。
-//	理想的にはソフトウェアボリュームでもいいような気がするが。
  *
  * ai.{play,record}.balance		(R/W)
  *	It specifies the left-right balance of HW mixer in 0-64.
  *	32 means the center.
  *	It is historical reason that the balance is connected to HW mixer.
-//	左右バランス。0-64。32 が中心。
-//	N7 以前は gain と balance をセットで扱うようなインタフェースだったが
-//	N8 ではバランスは HW ミキサーに任せたまま。
-//	理想的にはソフトウェアバランスでもいいような気がするが。
  *
  * ai.{play,record}.port		(R/W)
  *	It specifies the input/output port of HW mixer.
-//	入出力ポート。これは HW ミキサー情報。
  *
  * ai.monitor_gain			(R/W)
  *	It specifies the recording monitor gain(?) of HW mixer.
-//	録音モニターゲイン(?)。これは HW ミキサー情報。
  *
  * ai.{play,record}.pause		(R/W)
  *	Non-zero means the track is paused.
-//	トラックの一時停止なら non-zero。
  *
- * ai.{play,record}.seek		(R/-)
-//	バッファ上のポインタ位置。usrbuf にすべか。
+ * ai.play.seek				(R/-)
+ *	It indicates the number of bytes written but not processed.
+ * ai.record.seek			(R/-)
+ *	It indicates the number of bytes to be able to read.
  *
  * ai.{play,record}.avail_ports		(R/-)
-//	これは HW ミキサー情報。
+ *	Mixer info.
  *
  * ai.{play,record}.buffer_size		(R/-)
- *	The buffer size in bytes.  Internally it means usrbuf.
-//	バッファサイズ[byte]。usrbuf をさすのでいいか。
+ *	It indicates the buffer size in bytes.  Internally it means usrbuf.
  *
  * ai.{play,record}.samples		(R/-)
-//	usrbuf に受け取った / usrbuf から引き渡したサンプル数。
-//	サンプル数と言っているがこれはバイト数のこと。
+ *	It indicates the total number of bytes played or recorded.
  *
  * ai.{play,record}.eof			(R/-)
- *	Number of times reached EOF(?).
-//	EOF に到達した回数?
+ *	It indicates the number of times reached EOF(?).
  *
  * ai.{play,record}.error		(R/-)
-//	アンダーフロー/オーバーフローの起きたら non-zero。
+ *	Non-zero indicates overflow/underflow has occured.
  *
  * ai.{play,record}.waiting		(R/-)
-//	他のプロセスが open 待ちしていれば non-zero。
-//	今は起きないので常にゼロ。
+ *	Non-zero indicates that other process waits to open.
+ *	It will never happen anymore.
  *
  * ai.{play,record}.open		(R/-)
-//	オープンされていれば non-zero。
+ *	Non-zero indicates the direction is opened by this process(?).
+ *	XXX Is this better to indicate that "the device is opened by
+ *	at least one process"?
  *
  * ai.{play,record}.active		(R/-)
-//	IO がアクティブなら non-zero。
+ *	Non-zero indicates that I/O is currently active.
  *
  * ai.blocksize				(R/-)
-//	audioio.h には HW ブロックサイズとコメントがあるが、
-//	今は usrbuf の1ブロックサイズ[byte]にしたほうがよさげ。
+ *	It indicates the block size in bytes.
+ *	XXX In AUDIO2, the blocksize of playback and recording may be
+ *	different.
  */
 
 //	+----------------------------- HW 停止を必要とするか(set_port等)
