@@ -2627,17 +2627,13 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 		}
 
 		/* Convert them as much as possible. */
-		mutex_enter(sc->sc_intr_lock);
+		while (atomic_cas_uint(&track->in_use, 0, 1) != 0)
+			kpause("audiopl", true, 1, NULL);
 		while (usrbuf->used >= track->usrbuf_blksize &&
 		    outbuf->used < outbuf->capacity) {
-			mutex_exit(sc->sc_intr_lock);
-			while (atomic_cas_uint(&track->in_use, 0, 1) != 0)
-				kpause("audiopl", true, 1, NULL);
 			audio_track_play(track);
-			atomic_swap_uint(&track->in_use, 0);
-			mutex_enter(sc->sc_intr_lock);
 		}
-		mutex_exit(sc->sc_intr_lock);
+		atomic_swap_uint(&track->in_use, 0);
 	}
 
 abort:
@@ -4657,6 +4653,7 @@ audio_track_play(audio_track_t *track)
 	u_int dropcount;
 
 	KASSERT(track);
+	KASSERT(track->in_use);
 	TRACET(track, "start pstate=%d", track->pstate);
 
 	/* At this point usrbuf must not be empty. */

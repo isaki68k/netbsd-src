@@ -102,7 +102,7 @@ typedef struct audio_track {
 
 	/*
 	 * Track output buffer.
-	 * Must be protected by sc_intr_lock.
+	 * Must be protected by in_use.
 	 */
 	audio_ring_t	outbuf;
 
