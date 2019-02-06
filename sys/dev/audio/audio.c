@@ -451,6 +451,8 @@ static void audio_softintr_wr(void *);
 static int  audio_enter_exclusive(struct audio_softc *);
 static void audio_exit_exclusive(struct audio_softc *);
 static int audio_track_waitio(struct audio_softc *, audio_track_t *);
+static int audio_file_acquire(struct audio_softc *, audio_file_t *);
+static void audio_file_release(struct audio_softc *, audio_file_t *);
 
 static int audioclose(struct file *);
 static int audioread(struct file *, off_t *, struct uio *, kauth_cred_t, int);
