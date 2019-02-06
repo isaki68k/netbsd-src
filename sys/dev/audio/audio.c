@@ -599,12 +599,6 @@ static int au_get_monitor_gain(struct audio_softc *);
 static int audio_get_port(struct audio_softc *, mixer_ctrl_t *);
 static int audio_set_port(struct audio_softc *, mixer_ctrl_t *);
 
-static inline uint
-atomic_load_uint(volatile uint *ptr)
-{
-	return atomic_or_uint_nv(ptr, 0);
-}
-
 static inline struct audio_params
 format2_to_params(const audio_format2_t *f2)
 {
