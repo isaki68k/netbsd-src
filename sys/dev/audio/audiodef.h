@@ -136,7 +136,7 @@ typedef struct audio_track {
 	uint64_t	dropframes;	/* # of dropped frames */
 	int		eofcounter;	/* # of zero sized write */
 
-	// プロセスコンテキストが track を使用中なら true。
+	// track を使用中なら true。
 	/* Must access atomically. */
 	volatile uint	in_use;
 

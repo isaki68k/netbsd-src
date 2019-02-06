@@ -5303,14 +5303,14 @@ audio_pmixer_process(struct audio_softc *sc)
 		if (track == NULL)
 			continue;
 
-		/* Skip if the track is used by process context. */
-		if (atomic_load_uint(&track->in_use) != 0) {
-			TRACET(track, "skip; in use");
+		if (track->is_pause) {
+			TRACET(track, "skip; paused");
 			continue;
 		}
 
-		if (track->is_pause) {
-			TRACET(track, "skip; paused");
+		/* Skip if the track is used by process context. */
+		if (atomic_cas_uint(&track->in_use, 0, 1) == 1) {
+			TRACET(track, "skip; in use");
 			continue;
 		}
 
@@ -5329,12 +5329,13 @@ audio_pmixer_process(struct audio_softc *sc)
 			audio_track_play(track);
 		}
 
-		if (track->outbuf.used == 0) {
+		if (track->outbuf.used > 0) {
+			mixed = audio_pmixer_mix_track(mixer, track, mixed);
+		} else {
 			TRACET(track, "skip; empty");
-			continue;
 		}
 
-		mixed = audio_pmixer_mix_track(mixer, track, mixed);
+		atomic_swap_uint(&track->in_use, 0);
 	}
 
 	if (mixed == 0) {
@@ -5749,13 +5750,13 @@ audio_rmixer_process(struct audio_softc *sc)
 		if (track == NULL)
 			continue;
 
-		if (atomic_load_uint(&track->in_use) != 0) {
-			TRACET(track, "skip; in use");
+		if (track->is_pause) {
+			TRACET(track, "skip; paused");
 			continue;
 		}
 
-		if (track->is_pause) {
-			TRACET(track, "skip; paused");
+		if (atomic_cas_uint(&track->in_use, 0, 1) == 1) {
+			TRACET(track, "skip; in use");
 			continue;
 		}
 
@@ -5778,6 +5779,8 @@ audio_rmixer_process(struct audio_softc *sc)
 		auring_push(input, count);
 
 		/* XXX sequence counter? */
+
+		atomic_swap_uint(&track->in_use, 0);
 	}
 
 	auring_take(mixersrc, count);
