@@ -6116,6 +6116,7 @@ audio_softintr_rd(void *cookie)
 
 	/* Notify that data has arrived. */
 	selnotify(&sc->sc_rsel, 0, NOTE_SUBMIT);
+	KNOTE(&sc->sc_rsel.sel_klist, 0);
 	cv_broadcast(&sc->sc_rmixer->outcv);
 
 	mutex_exit(sc->sc_lock);
@@ -6184,6 +6185,7 @@ audio_softintr_wr(void *cookie)
 	if (found) {
 		TRACE("selnotify");
 		selnotify(&sc->sc_wsel, 0, NOTE_SUBMIT);
+		KNOTE(&sc->sc_wsel.sel_klist, 0);
 	}
 
 	/* Notify to audio_write() that outbuf available. */
