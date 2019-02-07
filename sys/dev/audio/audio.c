@@ -6039,7 +6039,7 @@ audio_track_drain(struct audio_softc *sc, audio_track_t *track)
  * It is called from recording hardware interrupt everytime.
  * It does:
  * - Deliver SIGIO for all async processes.
- * - Notify to audio_record() that data has arrived.
+ * - Notify to audio_read() that data has arrived.
  * - selnotify() for select/poll-ing processes.
  */
 /*
