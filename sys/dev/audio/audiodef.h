@@ -98,11 +98,15 @@ typedef struct audio_track {
 
 	audio_format2_t	inputfmt;	/* track input format. */
 					/* userfmt for play, mixerfmt for rec */
-	audio_ring_t	*input;		/* ptr to input stage buffer */
 
 	/*
-	 * Track output buffer.
-	 * Must be protected by in_use.
+	 * Pointer to track (conversion stage's) input buffer.
+	 * Must be protected by in_use (for recording track).
+	 */
+	audio_ring_t	*input;
+	/*
+	 * Track (conversion stage's) output buffer.
+	 * Must be protected by in_use (for playback track).
 	 */
 	audio_ring_t	outbuf;
 

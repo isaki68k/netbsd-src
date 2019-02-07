@@ -1523,6 +1523,32 @@ audio_file_release(struct audio_softc *sc, audio_file_t *file)
 	mutex_exit(sc->sc_lock);
 }
 
+/*
+ */
+static inline bool
+audio_track_xxx_tryenter(audio_track_t *track)
+{
+	return (atomic_cas_uint(&track->in_use, 0, 1) == 0);
+}
+
+/*
+ */
+static inline void
+audio_track_xxx_enter(audio_track_t *track)
+{
+	while (audio_track_xxx_tryenter(track) == false)
+		;
+}
+
+/*
+ */
+static inline void
+audio_track_xxx_exit(audio_track_t *track)
+{
+	atomic_swap_uint(&track->in_use, 0);
+}
+
+
 static int
 audioopen(dev_t dev, int flags, int ifmt, struct lwp *l)
 {
@@ -2425,9 +2451,13 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 
 		/* Wait when buffers are empty. */
 		mutex_enter(sc->sc_lock);
-		mutex_enter(sc->sc_intr_lock);
-		if (input->used == 0 && usrbuf->used == 0) {
-			mutex_exit(sc->sc_intr_lock);
+		for (;;) {
+			bool empty;
+			audio_track_xxx_enter(track);
+			empty = (input->used == 0 && usrbuf->used == 0);
+			audio_track_xxx_exit(track);
+			if (!empty)
+				break;
 
 			if ((ioflag & IO_NDELAY)) {
 				mutex_exit(sc->sc_lock);
@@ -2436,18 +2466,16 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 
 			TRACET(track, "sleep");
 			error = audio_track_waitio(sc, track);
-			mutex_exit(sc->sc_lock);
-			if (error)
+			if (error) {
+				mutex_exit(sc->sc_lock);
 				return error;
-			continue;
+			}
 		}
-		mutex_exit(sc->sc_intr_lock);
 		mutex_exit(sc->sc_lock);
 
-		while (atomic_cas_uint(&track->in_use, 0, 1) != 0)
-			kpause("audioca", true, 1, NULL);
+		audio_track_xxx_enter(track);
 		audio_track_record(track);
-		atomic_swap_uint(&track->in_use, 0);
+		audio_track_xxx_exit(track);
 
 		bytes = uimin(usrbuf->used, uio->uio_resid);
 		int head = usrbuf->head;
@@ -2576,15 +2604,21 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 
 		/* Wait when buffers are full. */
 		mutex_enter(sc->sc_lock);
-		mutex_enter(sc->sc_intr_lock);
-		while (usrbuf->used >= track->usrbuf_usedhigh &&
-		    outbuf->used >= outbuf->capacity) {
-			mutex_exit(sc->sc_intr_lock);
+		for (;;) {
+			bool full;
+			audio_track_xxx_enter(track);
+			full = (usrbuf->used >= track->usrbuf_usedhigh &&
+			    outbuf->used >= outbuf->capacity);
+			audio_track_xxx_exit(track);
+			if (!full)
+				break;
+
 			if ((ioflag & IO_NDELAY)) {
 				error = EWOULDBLOCK;
 				mutex_exit(sc->sc_lock);
 				goto abort;
 			}
+
 			TRACET(track, "sleep usrbuf=%d/H%d",
 			    usrbuf->used, track->usrbuf_usedhigh);
 			error = audio_track_waitio(sc, track);
@@ -2592,9 +2626,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 				mutex_exit(sc->sc_lock);
 				goto abort;
 			}
-			mutex_enter(sc->sc_intr_lock);
 		}
-		mutex_exit(sc->sc_intr_lock);
 		mutex_exit(sc->sc_lock);
 
 		/* Write to usrbuf as much as possible. */
@@ -2623,13 +2655,12 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 		}
 
 		/* Convert them as much as possible. */
-		while (atomic_cas_uint(&track->in_use, 0, 1) != 0)
-			kpause("audiopl", true, 1, NULL);
+		audio_track_xxx_enter(track);
 		while (usrbuf->used >= track->usrbuf_blksize &&
 		    outbuf->used < outbuf->capacity) {
 			audio_track_play(track);
 		}
-		atomic_swap_uint(&track->in_use, 0);
+		audio_track_xxx_exit(track);
 	}
 
 abort:
@@ -4822,6 +4853,7 @@ audio_track_record(audio_track_t *track)
 	int framesize;
 
 	KASSERT(track);
+	KASSERT(track->in_use);
 
 	/* Number of frames to process */
 	count = auring_get_contig_used(track->input);
@@ -5302,7 +5334,7 @@ audio_pmixer_process(struct audio_softc *sc)
 		}
 
 		/* Skip if the track is used by process context. */
-		if (atomic_cas_uint(&track->in_use, 0, 1) == 1) {
+		if (audio_track_xxx_tryenter(track) == false) {
 			TRACET(track, "skip; in use");
 			continue;
 		}
@@ -5328,7 +5360,7 @@ audio_pmixer_process(struct audio_softc *sc)
 			TRACET(track, "skip; empty");
 		}
 
-		atomic_swap_uint(&track->in_use, 0);
+		audio_track_xxx_exit(track);
 	}
 
 	if (mixed == 0) {
@@ -5748,7 +5780,7 @@ audio_rmixer_process(struct audio_softc *sc)
 			continue;
 		}
 
-		if (atomic_cas_uint(&track->in_use, 0, 1) == 1) {
+		if (audio_track_xxx_tryenter(track) == false) {
 			TRACET(track, "skip; in use");
 			continue;
 		}
@@ -5773,7 +5805,7 @@ audio_rmixer_process(struct audio_softc *sc)
 
 		/* XXX sequence counter? */
 
-		atomic_swap_uint(&track->in_use, 0);
+		audio_track_xxx_exit(track);
 	}
 
 	auring_take(mixersrc, count);
@@ -5940,6 +5972,8 @@ audio_track_clear(struct audio_softc *sc, audio_track_t *track)
 	KASSERT(track);
 	TRACET(track, "clear");
 
+	audio_track_xxx_enter(track);
+
 	track->usrbuf.used = 0;
 	/* Clear all internal parameters. */
 	if (track->codec.filter) {
@@ -5965,12 +5999,12 @@ audio_track_clear(struct audio_softc *sc, audio_track_t *track)
 		memset(track->freq_curr, 0, sizeof(track->freq_curr));
 	}
 	/* Clear buffer, then operation halts naturally. */
-	mutex_enter(sc->sc_intr_lock);
 	track->outbuf.used = 0;
-	mutex_exit(sc->sc_intr_lock);
 
 	/* Clear counters. */
 	track->dropframes = 0;
+
+	audio_track_xxx_exit(track);
 }
 
 /*
@@ -6012,11 +6046,11 @@ audio_track_drain(struct audio_softc *sc, audio_track_t *track)
 		    track->outbuf.capacity);
 
 		/* Condition to terminate */
-		mutex_enter(sc->sc_intr_lock);
+		audio_track_xxx_enter(track);
 		done = (track->usrbuf.used < frametobyte(&track->inputfmt, 1) &&
 		    track->outbuf.used == 0 &&
 		    track->seq <= mixer->hwseq);
-		mutex_exit(sc->sc_intr_lock);
+		audio_track_xxx_exit(track);
 		if (done)
 			break;
 
@@ -7228,15 +7262,12 @@ audio_file_setinfo_set(audio_track_t *track, audio_format2_t *fmt, int mode)
 
 	KASSERT(track);
 
-	while (atomic_cas_uint(&track->in_use, 0, 1) != 0)
-		kpause("audiost", true, 1, NULL);
+	audio_track_xxx_enter(track);
 	track->mode = mode;
 	error = audio_track_set_format(track, fmt);
-	atomic_swap_uint(&track->in_use, 0);
-	if (error)
-		return error;
+	audio_track_xxx_exit(track);
 
-	return 0;
+	return error;
 }
 
 /*
