@@ -1526,26 +1526,26 @@ audio_file_release(struct audio_softc *sc, audio_file_t *file)
 /*
  */
 static inline bool
-audio_track_xxx_tryenter(audio_track_t *track)
+audio_track_lock_tryenter(audio_track_t *track)
 {
-	return (atomic_cas_uint(&track->in_use, 0, 1) == 0);
+	return (atomic_cas_uint(&track->lock, 0, 1) == 0);
 }
 
 /*
  */
 static inline void
-audio_track_xxx_enter(audio_track_t *track)
+audio_track_lock_enter(audio_track_t *track)
 {
-	while (audio_track_xxx_tryenter(track) == false)
+	while (audio_track_lock_tryenter(track) == false)
 		;
 }
 
 /*
  */
 static inline void
-audio_track_xxx_exit(audio_track_t *track)
+audio_track_lock_exit(audio_track_t *track)
 {
-	atomic_swap_uint(&track->in_use, 0);
+	atomic_swap_uint(&track->lock, 0);
 }
 
 
@@ -2453,9 +2453,9 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 		mutex_enter(sc->sc_lock);
 		for (;;) {
 			bool empty;
-			audio_track_xxx_enter(track);
+			audio_track_lock_enter(track);
 			empty = (input->used == 0 && usrbuf->used == 0);
-			audio_track_xxx_exit(track);
+			audio_track_lock_exit(track);
 			if (!empty)
 				break;
 
@@ -2473,9 +2473,9 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 		}
 		mutex_exit(sc->sc_lock);
 
-		audio_track_xxx_enter(track);
+		audio_track_lock_enter(track);
 		audio_track_record(track);
-		audio_track_xxx_exit(track);
+		audio_track_lock_exit(track);
 
 		bytes = uimin(usrbuf->used, uio->uio_resid);
 		int head = usrbuf->head;
@@ -2606,10 +2606,10 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 		mutex_enter(sc->sc_lock);
 		for (;;) {
 			bool full;
-			audio_track_xxx_enter(track);
+			audio_track_lock_enter(track);
 			full = (usrbuf->used >= track->usrbuf_usedhigh &&
 			    outbuf->used >= outbuf->capacity);
-			audio_track_xxx_exit(track);
+			audio_track_lock_exit(track);
 			if (!full)
 				break;
 
@@ -2655,12 +2655,12 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 		}
 
 		/* Convert them as much as possible. */
-		audio_track_xxx_enter(track);
+		audio_track_lock_enter(track);
 		while (usrbuf->used >= track->usrbuf_blksize &&
 		    outbuf->used < outbuf->capacity) {
 			audio_track_play(track);
 		}
-		audio_track_xxx_exit(track);
+		audio_track_lock_exit(track);
 	}
 
 abort:
@@ -4306,7 +4306,7 @@ abort:
  * internal buffers.
  * It must be called without sc_intr_lock since uvm_* routines require non
  * intr_lock state.
- * It must be called with track->in_use acquired when the track is within
+ * It must be called with track lock held when the track is within
  * the file structure linked from sc->sc_files (as called from
  * audio_file_setinfo_set), since it may release and reallocate outbuf.
  */
@@ -4680,7 +4680,7 @@ audio_track_play(audio_track_t *track)
 	u_int dropcount;
 
 	KASSERT(track);
-	KASSERT(track->in_use);
+	KASSERT(track->lock);
 	TRACET(track, "start pstate=%d", track->pstate);
 
 	/* At this point usrbuf must not be empty. */
@@ -4853,7 +4853,7 @@ audio_track_record(audio_track_t *track)
 	int framesize;
 
 	KASSERT(track);
-	KASSERT(track->in_use);
+	KASSERT(track->lock);
 
 	/* Number of frames to process */
 	count = auring_get_contig_used(track->input);
@@ -5334,7 +5334,7 @@ audio_pmixer_process(struct audio_softc *sc)
 		}
 
 		/* Skip if the track is used by process context. */
-		if (audio_track_xxx_tryenter(track) == false) {
+		if (audio_track_lock_tryenter(track) == false) {
 			TRACET(track, "skip; in use");
 			continue;
 		}
@@ -5360,7 +5360,7 @@ audio_pmixer_process(struct audio_softc *sc)
 			TRACET(track, "skip; empty");
 		}
 
-		audio_track_xxx_exit(track);
+		audio_track_lock_exit(track);
 	}
 
 	if (mixed == 0) {
@@ -5780,7 +5780,7 @@ audio_rmixer_process(struct audio_softc *sc)
 			continue;
 		}
 
-		if (audio_track_xxx_tryenter(track) == false) {
+		if (audio_track_lock_tryenter(track) == false) {
 			TRACET(track, "skip; in use");
 			continue;
 		}
@@ -5805,7 +5805,7 @@ audio_rmixer_process(struct audio_softc *sc)
 
 		/* XXX sequence counter? */
 
-		audio_track_xxx_exit(track);
+		audio_track_lock_exit(track);
 	}
 
 	auring_take(mixersrc, count);
@@ -5972,7 +5972,7 @@ audio_track_clear(struct audio_softc *sc, audio_track_t *track)
 	KASSERT(track);
 	TRACET(track, "clear");
 
-	audio_track_xxx_enter(track);
+	audio_track_lock_enter(track);
 
 	track->usrbuf.used = 0;
 	/* Clear all internal parameters. */
@@ -6004,7 +6004,7 @@ audio_track_clear(struct audio_softc *sc, audio_track_t *track)
 	/* Clear counters. */
 	track->dropframes = 0;
 
-	audio_track_xxx_exit(track);
+	audio_track_lock_exit(track);
 }
 
 /*
@@ -6046,11 +6046,11 @@ audio_track_drain(struct audio_softc *sc, audio_track_t *track)
 		    track->outbuf.capacity);
 
 		/* Condition to terminate */
-		audio_track_xxx_enter(track);
+		audio_track_lock_enter(track);
 		done = (track->usrbuf.used < frametobyte(&track->inputfmt, 1) &&
 		    track->outbuf.used == 0 &&
 		    track->seq <= mixer->hwseq);
-		audio_track_xxx_exit(track);
+		audio_track_lock_exit(track);
 		if (done)
 			break;
 
@@ -7262,10 +7262,10 @@ audio_file_setinfo_set(audio_track_t *track, audio_format2_t *fmt, int mode)
 
 	KASSERT(track);
 
-	audio_track_xxx_enter(track);
+	audio_track_lock_enter(track);
 	track->mode = mode;
 	error = audio_track_set_format(track, fmt);
-	audio_track_xxx_exit(track);
+	audio_track_lock_exit(track);
 
 	return error;
 }

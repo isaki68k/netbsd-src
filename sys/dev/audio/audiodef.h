@@ -101,12 +101,12 @@ typedef struct audio_track {
 
 	/*
 	 * Pointer to track (conversion stage's) input buffer.
-	 * Must be protected by in_use (for recording track).
+	 * Must be protected by track lock (for recording track).
 	 */
 	audio_ring_t	*input;
 	/*
 	 * Track (conversion stage's) output buffer.
-	 * Must be protected by in_use (for playback track).
+	 * Must be protected by track lock (for playback track).
 	 */
 	audio_ring_t	outbuf;
 
@@ -142,7 +142,7 @@ typedef struct audio_track {
 
 	// track を使用中なら true。
 	/* Must access atomically. */
-	volatile uint	in_use;
+	volatile uint	lock;
 
 	int		id;		/* track id for debug */
 } audio_track_t;
