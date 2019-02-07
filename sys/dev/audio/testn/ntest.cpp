@@ -94,12 +94,14 @@ static const char *encoding_names[] = {
 void __attribute__((__noreturn__))
 usage()
 {
-	printf("usage:\t%s [<options>] -a\t\t.. test all\n", getprogname());
+	printf("usage:\t%s [<options>] -a|-c\t\t.. test all\n", getprogname());
 	printf("\t%s [<options>] -l <testname>\t.. test <testname> or later\n",
 		getprogname());
 	printf("\t%s [<options>] <testname...>\t.. test <testname...>\n",
 		getprogname());
 	printf("options:\n");
+	printf("\t-a: test all (exclude concurrent tests)\n");
+	printf("\t-c: test concurrent\n");
 	printf("\t-d: debug\n");
 	printf("\t-t <threads>: for concurrent tests (default:%d)\n", MAXTHREADS);
 	printf("\t-u <unit>: audio/sound device unit number (defualt:0)\n");
@@ -116,6 +118,7 @@ main(int ac, char *av[])
 	int i;
 	int c;
 	int opt_all;
+	int opt_concurrent;
 	int opt_later;
 	int unit;
 
@@ -126,12 +129,16 @@ main(int ac, char *av[])
 
 	// global option
 	opt_all = 0;
+	opt_concurrent = 0;
 	opt_later = 0;
 	maxthreads = MAXTHREADS;
-	while ((c = getopt(ac, av, "adlt:u:")) != -1) {
+	while ((c = getopt(ac, av, "acdlt:u:")) != -1) {
 		switch (c) {
 		 case 'a':
 			opt_all = 1;
+			break;
+		 case 'c':
+			opt_concurrent = 1;
 			break;
 		 case 'd':
 			debug++;
@@ -162,13 +169,24 @@ main(int ac, char *av[])
 
 	init(unit);
 
-	if (opt_all) {
-		// -a なら引数なしで、全項目テスト
+	if (opt_all || opt_concurrent) {
+		// -a か -c なら引数なしで、全項目テスト
 		if (ac > 0)
 			usage();
 
-		for (int j = 0; testtable[j].name != NULL; j++) {
-			do_test(j);
+		// -a なら concurrent 以外を全部
+		if (opt_all) {
+			for (int j = 0; testtable[j].name != NULL; j++) {
+				if (strncmp(testtable[j].name, "concurrent", 10) != 0)
+					do_test(j);
+			}
+		}
+		// -c なら concurrent を全部
+		if (opt_concurrent) {
+			for (int j = 0; testtable[j].name != NULL; j++) {
+				if (strncmp(testtable[j].name, "concurrent", 10) == 0)
+					do_test(j);
+			}
 		}
 	} else {
 		// -a なしなら test
