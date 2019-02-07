@@ -1524,6 +1524,10 @@ audio_file_release(struct audio_softc *sc, audio_file_t *file)
 }
 
 /*
+ * Try to acquire track lock.
+ * It doesn't block if the track lock is already aquired.
+ * Returns true if the track lock was acquired, or false if the track
+ * lock was already acquired.
  */
 static inline bool
 audio_track_lock_tryenter(audio_track_t *track)
@@ -1532,15 +1536,18 @@ audio_track_lock_tryenter(audio_track_t *track)
 }
 
 /*
+ * Acquire track lock.
  */
 static inline void
 audio_track_lock_enter(audio_track_t *track)
 {
+	/* Don't sleep here because it is also used on softintr. */
 	while (audio_track_lock_tryenter(track) == false)
 		;
 }
 
 /*
+ * Release track lock.
  */
 static inline void
 audio_track_lock_exit(audio_track_t *track)
