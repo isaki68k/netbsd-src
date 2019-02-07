@@ -2429,7 +2429,7 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 		if (input->used == 0 && usrbuf->used == 0) {
 			mutex_exit(sc->sc_intr_lock);
 
-			if (ioflag & IO_NDELAY) {
+			if ((ioflag & IO_NDELAY)) {
 				mutex_exit(sc->sc_lock);
 				return EWOULDBLOCK;
 			}
