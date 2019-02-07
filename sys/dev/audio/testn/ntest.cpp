@@ -817,8 +817,8 @@ int debug_kevent_poll(int line, int kq, struct kevent *kev, size_t nev,
 	} else if (ts->tv_sec == 0 && ts->tv_nsec == 0) {
 		snprintf(tsbuf, sizeof(tsbuf), "0.0");
 	} else {
-		snprintf(tsbuf, sizeof(tsbuf), "%d.%09d",
-			(int)ts->tv_sec, (int)ts->tv_nsec);
+		snprintf(tsbuf, sizeof(tsbuf), "%d.%09ld",
+			(int)ts->tv_sec, ts->tv_nsec);
 	}
 	DPRINTFF(line, "kevent_poll(%d, %p, %zd, %s)", kq, kev, nev, tsbuf);
 	int r = kevent(kq, NULL, 0, kev, nev, ts);
@@ -3812,12 +3812,12 @@ test_kqueue_3()
 	kq = KQUEUE();
 	XP_SYS_OK(kq);
 
-	memset(&ts, 0, sizeof(ts));
-
 	EV_SET(&kev, fd, EV_ADD, EVFILT_WRITE, 0, 0, 0);
 	r = KEVENT_SET(kq, &kev, 1);
 	XP_SYS_EQ(0, r);
 
+	ts.tv_sec = 0;
+	ts.tv_nsec = 100L * 1000 * 1000;
 	r = KEVENT_POLL(kq, &kev, 1, &ts);
 	XP_SYS_EQ(0, r);
 	if (r > 0) {
@@ -3888,12 +3888,12 @@ test_kqueue_4()
 	kq = KQUEUE();
 	XP_SYS_OK(kq);
 
-	memset(&ts, 0, sizeof(ts));
-
 	EV_SET(&kev, fd, EV_ADD, EVFILT_WRITE, 0, 0, fd);
 	r = KEVENT_SET(kq, &kev, 1);
 	XP_SYS_EQ(0, r);
 
+	ts.tv_sec = 0;
+	ts.tv_nsec = 100L * 1000 * 1000;
 	r = KEVENT_POLL(kq, &kev, 1, &ts);
 	if (r > 0)
 		DEBUG_KEV("kev", &kev);
@@ -3923,6 +3923,7 @@ test_kqueue_5()
 	struct audio_info ai, ai2;
 	struct kevent kev;
 	struct timespec ts;
+	struct timeval start, end, result;
 	int fd;
 	int r;
 	int kq;
@@ -3931,7 +3932,6 @@ test_kqueue_5()
 	int zero;
 
 	TEST("kqueue_5");
-	memset(&ts, 0, sizeof(ts));
 
 	for (int emul = 0; emul < 2; emul++) {
 		DESC("emul=%d", emul);
@@ -3980,8 +3980,24 @@ test_kqueue_5()
 		// でまた再取得
 		r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "lowat");
 		XP_SYS_EQ(0, r);
-		DPRINTF("  > blocksize=%d hiwat=%d lowat=%d\n",
-			ai.blocksize, ai.hiwat, ai.lowat);
+		DPRINTF("  > blocksize=%d hiwat=%d lowat=%d buffer_size=%d\n",
+			ai.blocksize, ai.hiwat, ai.lowat, ai.play.buffer_size);
+
+		// lowat に到達するまでの見込み時間
+		int extsize = 0;
+		if (netbsd == 8) {
+			// 開始に3ブロックかかるらしいが詳細不明。
+			extsize = 3 * ai.blocksize;
+		} else if (netbsd >= 9) {
+			// AUDIO2 なら
+			// 再生開始時に2ブロックの無音挿入がある。
+			// 充填してから再生開始するので、割り込みは必要になるまで usrbuf
+			// からブロックを取り出さないため、NBLKOUT 分も余計に必要。
+			extsize = (2/*start latency*/ + 4/*NBLKOUT*/) * ai.blocksize;
+		}
+		double sec = ((double)ai.play.buffer_size - extsize -
+				(ai.lowat * ai.blocksize))
+			/ (ai.play.channels * ai.play.sample_rate * ai.play.precision / 8);
 
 		// 書き込み
 		buflen = ai.blocksize * ai.hiwat;
@@ -4019,11 +4035,7 @@ test_kqueue_5()
 			XP_EQ(ai.play.buffer_size, ai.play.seek);
 		}
 
-		// バッファフルなので kevent は ready でないこと
-		r = KEVENT_POLL(kq, &kev, 1, &ts);
-		if (r >= 1)
-			DEBUG_KEV("kev", &kev);
-		XP_SYS_EQ(0, r);
+		// バッファフルでイベント起きないはずのことはもう調べない。
 
 		// pause 解除
 		AUDIO_INITINFO(&ai2);
@@ -4031,50 +4043,56 @@ test_kqueue_5()
 		r = IOCTL(fd, AUDIO_SETINFO, &ai2, "pause=0");
 		XP_SYS_EQ(0, r);
 
-		while (ai.play.seek > 0) {
-			// XXX N7(emul=1) は pause 解除できてないっぽい感じ。バグ?
-			if (netbsd == 7 && emul == 1) {
-				XP_EXPFAIL("unpause not work on NetBSD7 ??");
-				break;
-			}
-
-			usleep(250 * 1000);
-
-			// あまり意味はないが極力間を空けずに行いたい
-			r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "seek");
-			XP_SYS_EQ(0, r);
-			r = KEVENT_POLL(kq, &kev, 1, &ts);
-			if (r >= 1)
-				DEBUG_KEV("kev", &kev);
-
-			DPRINTF("  > seek=%d\n", ai.play.seek);
-
-			if (netbsd == 7) {
-				// N7(emul=0) はバッファをクリアしてしまうようだ
-				// ただし EVFILT_WRITE は連動しないようだ。
-				// バグというかなんだこれ...
-				XP_EXPFAIL("ai.play.seek expects !0 but %d", ai.play.seek);
-				if (r == 0) {
-					XP_EXPFAIL("seek=0 but EVFILT_WRITE not set");
-				} else {
-					XP_SYS_EQ(0, r);
-				}
-				break;
-
+		// タイムアウトは2倍にしとく
+		double tvsec = sec * 2;
+		ts.tv_sec = (int)tvsec;
+		ts.tv_nsec = (long)((tvsec - (int)tvsec) * 1e9);
+		// 成立するまで待つ
+		gettimeofday(&start, NULL);
+		r = KEVENT_POLL(kq, &kev, 1, &ts);
+		gettimeofday(&end, NULL);
+		if (r >= 1)
+			DEBUG_KEV("kev", &kev);
+		if (netbsd == 7) {
+			// N7(emul==0) は pause 解除でバッファをクリアしてしまう
+			// バグがあってバッファが空になるが、それと EVFILT_WRITE が
+			// 連動しないバグもあって、結果待っても何もおきない。
+			// N7(emul==1) は pause 解除できないっぽいので、こっちも
+			// 何も起きない。
+			if (r == 0) {
+				XP_EXPFAIL("kqueue/poll has many bugs");
 			} else {
-				// AUDIO2 では lowat を下回ったら EVFILT_WRITE が立つ
-				// といっても GETINFO と kqueue の間にはどうしても時間差が
-				// あるので lowat 近くだったら検査しない、とかはどうか。
-				//
-				// N8 は1バイトでも空けばすぐに EVFILT_WRITE が立つように
-				// 見えるのだがここのテストはこの検査をパスする。
-				// 何故だか分からん。
-				if (ai.play.seek >= ai.blocksize * ai.lowat * 12 / 10) {
-					// lowat より(おそらくまだ)高いので EVFILT_WRITE は立たない
-					XP_SYS_EQ(0, r);
-				} else if (ai.play.seek < ai.blocksize * ai.lowat) {
-					// lowat より低いので EVFILT_WRITE は立つはず
-					XP_SYS_EQ(1, r);
+				// 既知の状態から変化した?
+				XP_SYS_EQ(0, r);
+			}
+		} else {
+			// AUDIO2 では期待時間前後で成功すること。
+			XP_SYS_EQ(1, r);
+			if (r == 1) {
+				// その時 seek は lowat を下回っていたらもういいことにする
+				r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "seek");
+				XP_SYS_EQ(0, r);
+				DPRINTF("  > seek=%d\n", ai.play.seek);
+				if (ai.play.seek > ai.blocksize * ai.lowat) {
+					XP_FAIL("seek=%d blksize=%d lowat=%d",
+						ai.play.seek, ai.blocksize, ai.lowat);
+				}
+
+				// イベントが起きるまでの時間がだいたい正しそうか
+				// AUDIO2 ならとりあえずプラマイ 10% でどうか。
+				// N8 はプラマイ 20% なら入るようだがそれでいいのかどうかは
+				// しらん。ソースコード上は 1バイトでも空けばすぐに
+				// EVFILT_WRITE が立ちそうに見えるのだが、そこそこ動作する
+				// ようだ。詳細は知らん。
+				timersub(&end, &start, &result);
+				double res = (double)result.tv_sec +
+					(double)result.tv_usec / 1000000;
+				DPRINTF("  > result=%f sec\n", res);
+				double margin = 0.1;
+				if (netbsd == 8)
+					margin = 0.2;
+				if (res < sec * (1.0 - margin) || res > sec * (1.0 + margin)) {
+					XP_FAIL("result time expects %f sec but %f sec", sec, res);
 				}
 			}
 		}
@@ -4166,6 +4184,22 @@ test_kqueue_6()
 			continue;
 		}
 
+		// lowat に到達するまでの見込み時間
+		int extsize = 0;
+		if (netbsd == 8) {
+			// 開始に3ブロックかかるらしいが詳細不明。
+			extsize = 3 * ai.blocksize;
+		} else {
+			// AUDIO2 なら
+			// 再生開始時に2ブロックの無音挿入がある。
+			// 充填してから再生開始するので、割り込みは必要になるまで usrbuf
+			// からブロックを取り出さないため、NBLKOUT 分も余計に必要。
+			extsize = (2/*start latency*/ + 4/*NBLKOUT*/) * ai.blocksize;
+		}
+		double sec = ((double)ai.play.buffer_size - extsize -
+				(ai.lowat * ai.blocksize))
+			/ (ai.play.channels * ai.play.sample_rate * ai.play.precision / 8);
+
 		// 書き込み
 		buflen = ai.blocksize * ai.hiwat;
 		buf = (char *)malloc(buflen);
@@ -4196,10 +4230,6 @@ test_kqueue_6()
 		r = KEVENT_SET(kq, kev, 2);
 		XP_SYS_EQ(0, r);
 
-		// バッファが埋まっていて一時停止なので EVFILT_WRITE は立たないこと
-		r = KEVENT_POLL(kq, kev, 1, &ts);
-		XP_SYS_EQ(0, r);
-
 		// seek のために再取得
 		r = IOCTL(fd[a], AUDIO_GETBUFINFO, &ai, "seekA");
 		XP_SYS_EQ(0, r);
@@ -4212,42 +4242,26 @@ test_kqueue_6()
 		r = IOCTL(fd[a], AUDIO_SETINFO, &ai2, "pause=0");
 		XP_SYS_EQ(0, r);
 
-		while (ai.play.seek > 0) {
-			usleep(250 * 1000);
+		// タイムアウト
+		double tvsec = sec * 2;
+		ts.tv_sec = (int)tvsec;
+		ts.tv_nsec = (long)((tvsec - (int)tvsec) * 1e9);
 
-			// あまり意味はないが極力間を空けずに行いたい
-			r = IOCTL(fd[a], AUDIO_GETBUFINFO, &ai, "seekA");
-			XP_SYS_EQ(0, r);
-			r = IOCTL(fd[b], AUDIO_GETBUFINFO, &ai2, "seekB");
-			XP_SYS_EQ(0, r);
-			r = KEVENT_POLL(kq, kev, 2, &ts);
-			if (r >= 1)
-				DEBUG_KEV("kev[0]", &kev[0]);
-			if (r >= 2)
-				DEBUG_KEV("kev[1]", &kev[1]);
+		// 成立するまで待つ
+		r = KEVENT_POLL(kq, &kev[0], 1, &ts);
+		if (r >= 1)
+			DEBUG_KEV("kev", &kev[0]);
+		XP_SYS_EQ(1, r);
 
-			DPRINTF("  > seek A=%d B=%d\n", ai.play.seek, ai2.play.seek);
+		// その時の seek は A だけ lowat を下回っているはず
+		r = IOCTL(fd[a], AUDIO_GETBUFINFO, &ai, "seekA");
+		XP_SYS_EQ(0, r);
+		r = IOCTL(fd[b], AUDIO_GETBUFINFO, &ai2, "seekB");
+		XP_SYS_EQ(0, r);
+		DPRINTF("  > seek A=%d B=%d\n", ai.play.seek, ai2.play.seek);
 
-			// 念のため fdB の残量は変わらないこと
-			XP_EQ(ai2_initial.play.seek, ai2.play.seek);
-
-			if (1) {
-				// AUDIO2 では lowat を下回ったら EVFILT_WRITE が立つ
-				// といっても GETINFO と kqueue の間にはどうしても時間差が
-				// あるので lowat 近くだったら検査しない、とかはどうか。
-				//
-				// N8 は1バイトでも空けばすぐに EVFILT_WRITE が立つように
-				// 見えるのだがここのテストはこの検査をパスする。
-				// 何故だか分からん。
-				if (ai.play.seek >= ai.blocksize * ai.lowat * 12 / 10) {
-					// lowat より(おそらくまだ)高いので EVFILT_WRITE は立たない
-					XP_SYS_EQ(0, r);
-				} else if (ai.play.seek < ai.blocksize * ai.lowat) {
-					// lowat より低いので EVFILT_WRITE は立つはず
-					XP_SYS_EQ(1, r);
-				}
-			}
-		}
+		// 念のため fdB の残量は変わらないこと
+		XP_EQ(ai2_initial.play.seek, ai2.play.seek);
 
 		// ただし再生する必要はないのでフラッシュする
 		r = IOCTL(fd[0], AUDIO_FLUSH, NULL, "");
