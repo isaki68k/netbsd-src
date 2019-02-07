@@ -173,7 +173,7 @@ struct audio_file {
 
 	// この file をプロセスコンテキストが使用中なら 1。
 	/* Must be protected by sc_lock. */
-	volatile uint32_t lock;
+	volatile int lock;
 
 	SLIST_ENTRY(audio_file) entry;
 };
