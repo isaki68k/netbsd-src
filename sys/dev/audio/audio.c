@@ -7259,11 +7259,12 @@ audio_file_setinfo_check(audio_format2_t *fmt, const struct audio_prinfo *info)
 	return changes;
 }
 
-// track に mode, fmt を設定する。
-// mode は再生トラックなら AUMODE_PLAY、録音トラックなら AUMODE_RECORD
-// のように該当するビットだけを渡すこと。
-// 成功すれば0、失敗なら errno
-// ここではロールバックしない。
+/*
+ * Set mode and fmt to the track.
+ * mode must be either AUMODE_PLAY or AUMODE_RECORD.
+ * If successful returns 0, otherwise errno.
+ * This function itself does not roll back.
+ */
 static int
 audio_file_setinfo_set(audio_track_t *track, audio_format2_t *fmt, int mode)
 {
@@ -7316,13 +7317,11 @@ audio_track_setinfo_water(audio_track_t *track, const struct audio_info *ai)
 	}
 }
 
-// ai のうちハードウェア設定部分を担当する。
-// ここで設定するのは *.port, *.gain, *.balance, monitor_gain。
-// 途中でエラーが起きてもここではロールバックしない。
-// oldai が指定されると newai の各パラメータ設定前の値を保存する。
-// sc_lock && sc_exlock でコールすること。
 /*
- * Set only hardware part from *ai.
+ * Set hardware part of *ai.
+ * The parameters handled here are *.port, *.gain, *.balance and monitor_gain.
+ * If oldai is specified, previous parameters are stored.
+ * This function itself does not roll back if error occurred.
  * Must be called with sc_lock and sc_exlock held.
  */
 static int
@@ -7354,14 +7353,16 @@ audio_hw_setinfo(struct audio_softc *sc, const struct audio_info *newai,
 
 	restart_pmixer = false;
 	restart_rmixer = false;
-	// port を変更するにはミキサーをとめる必要があるようだ。
-	/* It's necessary to stop the mixer to change the port. */
+	/*
+	 * It's necessary to halt mixers to change the port.
+	 * Even setting either one of playback and recording, both
+	 * mixers must be halted.
+	 */
 	// XXX 再生portと録音portを同時に止めないといけないか
 	//     別個に設定できるかどうかは MD Hardware に依存するので
 	//     PROP_INDEPENDENT がそれと同じか違うのか、
 	//     違えばそれ用の property が必要なのでは?
 	if (SPECIFIED(newpi->port) || SPECIFIED(newri->port)) {
-		// とりあえず、どちらかにでも変更があれば両方とめる
 		if (sc->sc_pbusy) {
 			audio_pmixer_halt(sc);
 			restart_pmixer = true;
@@ -7394,8 +7395,8 @@ audio_hw_setinfo(struct audio_softc *sc, const struct audio_info *newai,
 	}
 
 	/*
-	 * On the other hand, it's not necessary to stop the mixer to change
-	 * gain, balance and monitor_gain.
+	 * On the other hand, it's not necessary to halt the mixer to
+	 * change gain, balance and monitor_gain.
 	 */
 	/* Backup play.{gain,balance} */
 	if (SPECIFIED(newpi->gain) || SPECIFIED_CH(newpi->balance)) {
