@@ -140,8 +140,10 @@ typedef struct audio_track {
 	uint64_t	dropframes;	/* # of dropped frames */
 	int		eofcounter;	/* # of zero sized write */
 
-	// track を使用中なら true。
-	/* Must access atomically. */
+	/*
+	 * Non-zero if the track is in use.
+	 * Must access atomically.
+	 */
 	volatile uint	lock;
 
 	int		id;		/* track id for debug */
@@ -171,8 +173,11 @@ struct audio_file {
 
 	pid_t		async_audio;	/* process who wants audio SIGIO */
 
-	// この file をプロセスコンテキストが使用中なら 1。
-	/* Must be protected by sc_lock. */
+	/*
+	 * Non-zero if some thread context is using this file structure
+	 * (including ptrack and rtrack) now.
+	 * Must be protected by sc_lock.
+	 */
 	volatile int lock;
 
 	SLIST_ENTRY(audio_file) entry;
