@@ -7603,32 +7603,38 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 		pi->channels    = ptrack->usrbuf.fmt.channels;
 		pi->precision   = ptrack->usrbuf.fmt.precision;
 		pi->encoding    = ptrack->usrbuf.fmt.encoding;
-	} else if (ISDEVAUDIO(file->dev)) {
-		pi->sample_rate = audio_default.sample_rate;
-		pi->channels    = audio_default.channels;
-		pi->precision   = audio_default.precision;
-		pi->encoding    = audio_default.encoding;
 	} else {
-		pi->sample_rate = sc->sc_sound_pparams.sample_rate;
-		pi->channels    = sc->sc_sound_pparams.channels;
-		pi->precision   = sc->sc_sound_pparams.precision;
-		pi->encoding    = sc->sc_sound_pparams.encoding;
+		/* Set default parameters if the track is not available. */
+		if (ISDEVAUDIO(file->dev)) {
+			pi->sample_rate = audio_default.sample_rate;
+			pi->channels    = audio_default.channels;
+			pi->precision   = audio_default.precision;
+			pi->encoding    = audio_default.encoding;
+		} else {
+			pi->sample_rate = sc->sc_sound_pparams.sample_rate;
+			pi->channels    = sc->sc_sound_pparams.channels;
+			pi->precision   = sc->sc_sound_pparams.precision;
+			pi->encoding    = sc->sc_sound_pparams.encoding;
+		}
 	}
 	if (rtrack) {
 		ri->sample_rate = rtrack->usrbuf.fmt.sample_rate;
 		ri->channels    = rtrack->usrbuf.fmt.channels;
 		ri->precision   = rtrack->usrbuf.fmt.precision;
 		ri->encoding    = rtrack->usrbuf.fmt.encoding;
-	} else if (ISDEVAUDIO(file->dev)) {
-		ri->sample_rate = audio_default.sample_rate;
-		ri->channels    = audio_default.channels;
-		ri->precision   = audio_default.precision;
-		ri->encoding    = audio_default.encoding;
 	} else {
-		ri->sample_rate = sc->sc_sound_rparams.sample_rate;
-		ri->channels    = sc->sc_sound_rparams.channels;
-		ri->precision   = sc->sc_sound_rparams.precision;
-		ri->encoding    = sc->sc_sound_rparams.encoding;
+		/* Set default parameters if the track is not available. */
+		if (ISDEVAUDIO(file->dev)) {
+			ri->sample_rate = audio_default.sample_rate;
+			ri->channels    = audio_default.channels;
+			ri->precision   = audio_default.precision;
+			ri->encoding    = audio_default.encoding;
+		} else {
+			ri->sample_rate = sc->sc_sound_rparams.sample_rate;
+			ri->channels    = sc->sc_sound_rparams.channels;
+			ri->precision   = sc->sc_sound_rparams.precision;
+			ri->encoding    = sc->sc_sound_rparams.encoding;
+		}
 	}
 
 	// audio(4) より
