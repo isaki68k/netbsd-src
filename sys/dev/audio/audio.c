@@ -7462,7 +7462,7 @@ audio_hw_setinfo(struct audio_softc *sc, const struct audio_info *newai,
 		}
 	}
 
-	// XXX hw の変更はなくていいのでは
+	/* XXX TODO */
 	//sc->sc_ai = *ai;
 
 	/* Restart the mixer if necessary */
@@ -7479,23 +7479,29 @@ abort:
 	return error;
 }
 
-// HW にミキサフォーマット phwfmt, rhwfmt をセットする。
-// setmode には設定をしたい方向 AUMODE_PLAY | AUMODE_RECORD をセットする。
-// setmode の値の如何によらず phwfmt, rhwfmt は NULL であってはならない。
-// 非 independent デバイスなら phwfmt, rhwfmt には同じ値をセットしておくこと。
-// pfil, rfil は set_format を使う場合ならゼロクリアした領域を指定すること。
-// set_params を使う場合なら NULL でよい(こちらでは触らない)。
-// 成功すれば
-// o phwfmt, rhwfmt を HW フォーマットで上書きする。
-// o set_format (新形式) でかつ指定の hwfmt に変換が必要なら pfil, rfil に
-//   MD ドライバから指定されたフィルタ情報を書き込む。
-// 戻り値に 0 を返す。
-// 失敗すれば errno を返す。
-// sc_lock でコールすること。
-//
-// また旧式の set_params を使う方式の場合、set_params によって pp, rp が
-// 更新されようともこちらが呼び出し後にそれを参照することはしない。
-// pp, rp を更新しなければならない事態は起きないはずだからである。
+/*
+ * Setup the hardware with mixer format phwfmt, rhwfmt.
+ * The arguments have following restrictions:
+ * - setmode is the direction you want to set, AUMODE_PLAY or AUMODE_RECORD,
+ *   or both.
+ * - phwfmt and rhwfmt must not be NULL regardless of setmode.
+ * - On non-independent devices, phwfmt and rhwfmt must have the same
+ *   parameters.
+ * - pfil and rfil must be zero-filled when using set_format, or can be
+ *   NULL when using set_params.
+ * If successful,
+ * - phwfmt, rhwfmt will be overwritten by hardware format.
+ * - pfil, rfil will be filled with filter information specified by the
+ *   hardware driver (when using set_format).
+ * and then returns 0.  Otherwise returns errno.
+ * Must be called with sc_lock held.
+ *
+ * Note about old set_params:
+ * set_params used to update pp and/or rp when it used filter chain.
+ * However this function does not reference pp and rp after calling
+ * set_params, because it will never happen that the situation that
+ * set_params must update pp and/or rp nowadays.
+ */
 static int
 audio_hw_set_params(struct audio_softc *sc, int setmode,
 	audio_format2_t *phwfmt, audio_format2_t *rhwfmt,
@@ -7511,7 +7517,7 @@ audio_hw_set_params(struct audio_softc *sc, int setmode,
 	KASSERT(phwfmt != NULL);
 	KASSERT(rhwfmt != NULL);
 
-	// set_format が定義されてればそっちを使う
+	/* Use set_format if defined. */
 	use_set_format = (sc->hw_if->set_format != NULL);
 	if (use_set_format)
 		DPRINTF(2, "%s use_set_format\n", __func__);
@@ -7577,8 +7583,11 @@ audio_hw_set_params(struct audio_softc *sc, int setmode,
 }
 
 /*
+ * Fill audio_info structure.  If need_mixerinfo is true, it will also
+ * fill the hardware mixer information.
  * Must be called with sc_lock held.
- * In addition, must be called with sc_exlock held if need_mixerinfo is true.
+ * Must be called with sc_exlock held, in addition, if need_mixerinfo is
+ * true.
  */
 static int
 audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
@@ -7637,17 +7646,6 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 		}
 	}
 
-	// audio(4) より
-	// The seek and samples fields are only used by AUDIO_GETINFO and
-	// AUDIO_GETBUFINFO.  seek represents the count of samples pending;
-	// samples represents the total number of bytes recorded or played,
-	// less those that were dropped due to inadequate
-	// consumption/production rates.
-	// seek と samples のフィールドは AUDIO_GETINFO と AUDIO_GETBUFINFO
-	// で使われる(セットは出来ないということ)。
-	// seek はペンディングになっているサンプル数を示す。
-	// samples は録音再生されたトータルバイト数を示す。
-	// ...
 	if (ptrack) {
 		pi->seek = ptrack->usrbuf.used;
 		pi->samples = ptrack->usrbuf_stamp;
@@ -7671,11 +7669,13 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 		ri->buffer_size = rtrack->usrbuf.capacity;
 	}
 
-	// XXX 再生と録音でチャンネル数が違う場合があるので
-	// ブロックサイズは同じにはならないのだが、
-	// もう仕方ないので異なる場合は再生側で代表するか?
+	/*
+	 * XXX There may be different number of channels between playback
+	 *     and recording, so that blocksize also may be different.
+	 *     But struct audio_info has an united blocksize...
+	 *     Here, I use ptrack if available, otherwise rtrack.
+	 */
 	audio_track_t *track;
-	// ptrack があれば ptrack、なければ rtrack、それもなければ何もしない
 	track = ptrack ?: rtrack;
 	if (track) {
 		ai->blocksize = track->usrbuf_blksize;
