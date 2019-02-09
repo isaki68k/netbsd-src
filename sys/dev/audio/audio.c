@@ -435,8 +435,6 @@ typedef struct uio_fetcher {
 } uio_fetcher_t;
 #endif
 
-// ここに関数プロトタイプ
-
 static int audiomatch(device_t, cfdata_t, void *);
 static void audioattach(device_t, device_t, void *);
 static int audiodetach(device_t, int);
@@ -655,11 +653,10 @@ audio_track_is_record(const audio_track_t *track)
 	return ((track->mode & AUMODE_RECORD) != 0);
 }
 
-// not used anymore
-// どうするかね
-#if 0
-// ユーザランドで使用される 0..255 ボリュームを、トラック内の内部表現である
-// 0..256 ボリュームに変換する。
+#if 0 /* XXX Not used yet */
+/*
+ * Convert 0..255 volume used in userland to internal presentation 0..256.
+ */
 static inline u_int
 audio_volume_to_inner(u_int v)
 {
@@ -667,15 +664,16 @@ audio_volume_to_inner(u_int v)
 	return v < 127 ? v : v + 1;
 }
 
-// トラック内の内部表現である 0..256 ボリュームを、外部で使用される 0..255
-// ボリュームに変換する。
+/*
+ * Convert 0..256 internal presentation to 0..255 volume used in userland.
+ */
 static inline u_int
 audio_volume_to_outer(u_int v)
 {
 
 	return v < 127 ? v : v - 1;
 }
-#endif // 0
+#endif /* 0 */
 
 static dev_type_open(audioopen);
 /* XXXMRG use more dev_type_xxx */
@@ -1902,11 +1900,6 @@ audiommap(struct file *fp, off_t *offp, size_t len, int prot, int *flagsp,
 
 /* Exported interfaces for audiobell. */
 
-// audiobell 用にトラック(ファイル)をオープンする。
-// arg のうち sample_rate, encoding, precision, channels は入力パラメータ。
-// arg->file には確保した file を格納する。
-// arg->blocksize にはブロックサイズを格納する。
-// 成功すれば 0、失敗すれば errno を返す。
 /*
  * Open for audiobell.
  * sample_rate, encoding, precision and channels in arg are in-parameter
@@ -2119,18 +2112,6 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 		if (sc->hw_if->open) {
 			int hwflags;
 
-			// hw_if->open() は録音再生合わせて1本目のオープン時
-			// のみ呼び出すので、Full Duplex HW の場合
-			// hw_if->open() に渡す flags はこの open の flags に
-			// 関係なく常に FREAD | FWRITE でなければならない。
-			// 1本目が再生のみだろうと録音のみだろうと、2本目が
-			// 同じ方向のオープンとは限らないため。
-			// see also: dev/isa/aria.c
-			//
-			// 一方、Half Duplex HW では当然 FREAD と FWRITE が
-			// 同時に立つことはあり得ないので、必ず有効な片方だけ
-			// にしなければならない。
-			// see also: arch/evbarm/mini2440/audio_mini2440.c
 			/*
 			 * Call hw_if->open() only at first open of
 			 * combination of playback and recording.
@@ -2139,16 +2120,12 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 			 * regardless of this open()'s flags.
 			 * see also dev/isa/aria.c
 			 * On half duplex hardware, the flags passed to
-			 * hw_if->open() is one of FREAD or FWRITE.
+			 * hw_if->open() is either FREAD or FWRITE.
 			 * see also arch/evbarm/mini2440/audio_mini2440.c
 			 */
 			if (fullduplex) {
 				hwflags = FREAD | FWRITE;
 			} else {
-				// af->mode から flags を再構成。
-				// flags はユーザ指定値、それを他ディスクリプタ
-				// のオープン状況と擦り合わせた結果が af->mode
-				// に入っている (see audio_file_setinfo())。
 				/* Construct hwflags from af->mode. */
 				hwflags = 0;
 				if ((af->mode & AUMODE_PLAY) != 0)
@@ -2164,9 +2141,6 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 				goto bad2;
 		}
 
-		// XXX audio(9) にはハーフで録再を切り替える際に使うと
-		// 書いてある気がするんだけど、あと
-		// Full dup で録再同時に起きてたらどうするのかとか。
 		/*
 		 * Set speaker mode when a half duplex.
 		 * XXX I'm not sure this is correct.
@@ -2186,7 +2160,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 					goto bad3;
 			}
 		}
-	} else /* if (sc->sc_multiuser == false) */ {
+	} else /* if (sc->sc_multiuser == false) XXX not yet */ {
 		uid_t euid = kauth_cred_geteuid(kauth_cred_get());
 		if (euid != 0 && kauth_cred_geteuid(sc->sc_cred) != euid) {
 			error = EPERM;
@@ -2386,8 +2360,10 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
 	return 0;
 }
 
-// track の usrbuf の head から len バイトを uiomove する。
-// リングバッファの折り返しは行わない。
+/*
+ * Do uiomove 'len' bytes from the position 'head' of 'usrbuf' in this
+ * 'track'.  It does not wrap around circular buffer (so call it twice).
+ */
 static inline int
 audio_read_uiomove(audio_track_t *track, int head, int len, struct uio *uio)
 {
@@ -2542,8 +2518,10 @@ audio_file_clear(struct audio_softc *sc, audio_file_t *file)
 		audio_track_clear(sc, file->rtrack);
 }
 
-// track の usrbuf に tail から len バイトを uiomove する。
-// リングバッファの折り返しは行わない。
+/*
+ * Do uiomove 'len' bytes to the position 'tail' of 'usrbuf' in this
+ * 'track'.  It does not wrap around circular buffer (so call it twice).
+ */
 static inline int
 audio_write_uiomove(audio_track_t *track, int tail, int len, struct uio *uio)
 {
@@ -2812,7 +2790,6 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		ao = (struct audio_offset *)addr;
 		track = file->ptrack;
 		if (track == NULL) {
-			// track がなければダミーデータで埋めるしかない
 			ao->samples = 0;
 			ao->deltablks = 0;
 			ao->offset = 0;
@@ -2855,8 +2832,7 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 			audio_exit_exclusive(sc);
 			break;
 		}
-		/* update last_ai if /dev/sound */
-		// XXX これたぶん違うんじゃないかなあ
+		/* XXX TODO: update last_ai if /dev/sound ? */
 		if (ISDEVSOUND(dev))
 			error = audiogetinfo(sc, &sc->sc_ai, 0, file);
 		audio_exit_exclusive(sc);
