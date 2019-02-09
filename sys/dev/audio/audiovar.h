@@ -84,15 +84,19 @@
 #include "aufilter.h"
 #endif // _KERNEL
 
-// ユーザランドフォーマットとして [US]Linear24/24 をサポートする。
-//#define AUDIO_SUPPORT_LINEAR24
+/*
+ * Whether supports [US]LINEAR24/24 as userland format.
+ */
+/* #define AUDIO_SUPPORT_LINEAR24 */
 
-// サポートする最大/最小周波数。
-// 最小は、実用的に意味があるかはともかく 4kHz 未満をセットできる骨董品も
-// 中にはあることを考慮してこのくらいまでは許してやろう。
-// ちなみに OpenBSD は下限 4000Hz で現状妥当な数字だと思う。
-// 最大は 384000 (hdaudio規格?) でもいいけど確認できないので、とりあえず
-// このくらいでたちまち勘弁してもらえないか。
+/*
+ * Frequency range.
+ * For lower limit, there are some antique machines who supports under
+ * 4000Hz, so that we accept 1000Hz as lower limit, regardless of
+ * practicality(?).
+ * For upper limit, there are some devices who supports 384000Hz, but
+ * I don't have them. :-)
+ */
 #define AUDIO_MIN_FREQUENCY (1000)
 #define AUDIO_MAX_FREQUENCY (192000)
 
@@ -126,7 +130,7 @@ struct au_mixer_ports {
 };
 
 struct audio_softc {
-	/* Myself (audioN) */
+	/* Myself (e.g.; audio0, audio1, ...) */
 	device_t	sc_dev;
 
 	/* Hardware device struct (e.g.; sb0, hdafg0, ...) */
@@ -152,21 +156,21 @@ struct audio_softc {
 	int sc_blk_ms;
 
 	/*
-	 * Playback and recording mixer.
+	 * Track mixer for playback and recording.
 	 * If null, the mixer is disabled.
 	 */
 	audio_trackmixer_t *sc_pmixer;
 	audio_trackmixer_t *sc_rmixer;
 
 	/*
-	 * Open track counter.
+	 * Opening track counter.
 	 * Must be protected by sc_lock.
 	 */
 	int sc_popens;
 	int sc_ropens;
 
 	/*
-	 * Playback or recording mixer is running if true.
+	 * true if the track mixer is running.
 	 * Must be protected by sc_lock.
 	 */
 	bool sc_pbusy;
@@ -181,7 +185,9 @@ struct audio_softc {
 	bool 		sc_sound_ppause;
 	bool		sc_sound_rpause;
 
-	struct audio_info sc_ai;	/* recent info for /dev/sound */
+	/* recent info for /dev/sound */
+	/* XXX TODO */
+	struct audio_info sc_ai;
 
 	/*
 	 * Playback(write)/Recording(read) selector.
