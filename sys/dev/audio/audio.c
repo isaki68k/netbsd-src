@@ -8070,7 +8070,7 @@ audio_diagnostic_format2(const char *func, const audio_format2_t *fmt)
 
 	KASSERTMSG(fmt, "%s: fmt == NULL", func);
 
-	// XXX:この条件どうするか検討 (MSM6258)
+	/* XXX MSM6258 vs(4) only has 4bit stride format. */
 	if (fmt->encoding == AUDIO_ENCODING_ADPCM) {
 		KASSERTMSG(fmt->stride == 4,
 		    "%s: stride(%d) is invalid", func, fmt->stride);
@@ -8085,7 +8085,7 @@ audio_diagnostic_format2(const char *func, const audio_format2_t *fmt)
 	    "%s: channels(%d) is out of range",
 	    func, fmt->channels);
 
-	/* XXX: No check for encoding */
+	/* XXX No check for encodings? */
 }
 
 void
@@ -8199,7 +8199,6 @@ mixer_signal(struct audio_softc *sc)
 /*
  * Close a mixer device
  */
-/* ARGSUSED */
 int
 mixer_close(struct audio_softc *sc, audio_file_t *file)
 {
