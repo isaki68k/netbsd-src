@@ -1,5 +1,3 @@
-/*	$NetBSD$	*/
-
 /*
  * Copyright (C) 2018 Tetsuya Isaki. All rights reserved.
  *
@@ -28,9 +26,7 @@
 #ifndef _SYS_DEV_AUDIO_MLOG_H_
 #define _SYS_DEV_AUDIO_MLOG_H_
 
-// XXX とりあえずね
-
-#include <sys/atomic.h>
+/* XXX This is too sloppy in-memory logger. */
 
 // 本当はデバイスごとにすべきなのだが、そうすると今 sc を受け取っておらず
 // DPRINTF() を呼んでる関数全員に sc を渡すようにしないといけなくなるので、
