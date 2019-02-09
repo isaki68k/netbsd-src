@@ -7591,6 +7591,7 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 	audio_file_t *file)
 {
 	struct audio_prinfo *ri, *pi;
+	audio_track_t *track;
 	audio_track_t *ptrack;
 	audio_track_t *rtrack;
 	int gain;
@@ -7671,8 +7672,10 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 	 *     and recording, so that blocksize also may be different.
 	 *     But struct audio_info has an united blocksize...
 	 *     Here, I use ptrack if available, otherwise rtrack.
+	 *
+	 * XXX I think that hiwat/lowat is playback-only parameter.  What
+	 *     should I return on recording only descriptor?
 	 */
-	audio_track_t *track;
 	track = ptrack ?: rtrack;
 	if (track) {
 		ai->blocksize = track->usrbuf_blksize;
