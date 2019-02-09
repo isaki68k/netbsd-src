@@ -7721,8 +7721,9 @@ audio_get_props(struct audio_softc *sc)
 	props = hw->get_props(sc->hw_hdl);
 
 	/*
-	 * If neither playback nor capture properties are reported,
-	 * assume both are supported.
+	 * For historical reasons, if neither playback nor capture
+	 * properties are reported, assume both are supported.
+	 * XXX Ideally (all) hardware driver should be updated...
 	 */
 	if ((props & (AUDIO_PROP_PLAYBACK|AUDIO_PROP_CAPTURE)) == 0)
 		props |= (AUDIO_PROP_PLAYBACK | AUDIO_PROP_CAPTURE);
@@ -7756,9 +7757,21 @@ audio_can_capture(struct audio_softc *sc)
 }
 
 /*
- * Common routines for query_format.
+ * Get the afp->index'th item from the valid one of format[].
+ * If found, stores it to afp->fmt and returns 0.  Otherwise return EINVAL.
+ *
+ * This is common routines for query_format.
+ * If your hardware driver has struct audio_format[], the simplest case
+ * you can write your query_format interface as follows:
+ *
+ * struct audio_format foo_format[] = { ... };
+ *
+ * int
+ * foo_query_format(void *hdl, audio_format_query_t *afp)
+ * {
+ *   return audio_query_format(foo_format, __arraycount(foo_format), afp);
+ * }
  */
-// format[] の有効なもののうち前から afp->index 番目のエントリを取得する。
 int
 audio_query_format(const struct audio_format *format, int nformats,
 	audio_format_query_t *afp)
@@ -7781,7 +7794,10 @@ audio_query_format(const struct audio_format *format, int nformats,
 	return EINVAL;
 }
 
-// デバッグ目的なのでボリュームは内部表現(0..256)
+/*
+ * Get or set software master volume: 0..256
+ * XXX It's for debug.
+ */
 static int
 audio_sysctl_volume(SYSCTLFN_ARGS)
 {
@@ -7810,7 +7826,10 @@ audio_sysctl_volume(SYSCTLFN_ARGS)
 	return 0;
 }
 
-// XXX ほぼ vs(4) 用、どうすべ
+/*
+ * Get or set hardware blocksize in msec.
+ * XXX It's for debug.
+ */
 static int
 audio_sysctl_blk_ms(SYSCTLFN_ARGS)
 {
@@ -7881,8 +7900,11 @@ abort:
 }
 
 #if defined(AUDIO_DEBUG)
-// デバッグレベルの変更
-// グローバルフラグだけど、とりあえず
+/*
+ * Get or set debug verbose level. (0..4)
+ * XXX It's for debug.
+ * XXX It is not separated per device.
+ */
 static int
 audio_sysctl_debug(SYSCTLFN_ARGS)
 {
