@@ -84,7 +84,7 @@
  */
 
 /*
- * Locking: there are three locks.
+ * Locking: there are three locks per device.
  *
  * - sc_lock, provided by the underlying driver.  This is an adaptive lock,
  *   returned in the second parameter to hw_if->get_locks().  It is known
@@ -157,6 +157,21 @@
  * *1 Note: Before 8.0, these have been called only at attach time and
  *   neither lock were necessary.  In AUDIO2, on the other hand, these
  *   might be also called after attach.
+ *
+ * In addition, there are two additional locks.
+ *
+ * - file->lock.  This is a variable protected by sc_lock.  This is one
+ *   for each file.  If any thread context and software interrupt context
+ *   who want to access the file structure, they must acquire this lock.
+ *   It protects descriptor's consistency among multithreaded access.
+ *   Since this lock uses sc_lock, don't acquire from hardware interrupt
+ *   context.
+ *
+ * - track->lock.  This is an atomic variable.  This is one for each track.
+ *   If any thread context (and software interrupt context) and hardware
+ *   interrupt context who want to access some variables on this track,
+ *   they must acquire this lock before.  It protects track's consistency
+ *   between hardware interrupt context and others.
  */
 
 #include <sys/cdefs.h>
