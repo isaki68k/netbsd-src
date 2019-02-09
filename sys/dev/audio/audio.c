@@ -504,9 +504,6 @@ static int audio_hw_set_params(struct audio_softc *, int,
 	audio_filter_reg_t *, audio_filter_reg_t *);
 static int audiogetinfo(struct audio_softc *, struct audio_info *, int,
 	audio_file_t *);
-#if 0 /* not used */
-static int audio_getenc(struct audio_softc *, struct audio_encoding *);
-#endif
 static int audio_get_props(struct audio_softc *);
 static bool audio_can_playback(struct audio_softc *);
 static bool audio_can_capture(struct audio_softc *);
@@ -7705,36 +7702,6 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 
 	return 0;
 }
-
-#if 0 /* XXX */
-// 今は使っていない。AUDIO_GETHWENC とか作れば使い道はある?
-static int
-audio_getenc(struct audio_softc *sc, struct audio_encoding *ae)
-{
-	int error;
-
-	DPRINTF(2, "query_encoding[%d] ", ae->index);
-	if (ae->index >= 0) {
-		error = sc->hw_if->query_encoding(sc->hw_hdl, ae);
-	} else {
-		error = EINVAL;
-	}
-
-#if AUDIO_DEBUG >= 2
-	if (error) {
-		DPRINTF(2, "error=%d\n", error);
-	} else {
-		DPRINTF(2, "name=\"%s\" %s prec=%d flags=%d(%s)\n",
-		    ae->name,
-		    audio_encoding_name(ae->encoding),
-		    ae->precision,
-		    ae->flags,
-		    ae->flags == 0 ? "native" : "EMULATED");
-	}
-#endif
-	return error;
-}
-#endif /* 0 */
 
 /*
  * Must be called with sc_lock held.
