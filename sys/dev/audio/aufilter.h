@@ -26,6 +26,7 @@
  * SUCH DAMAGE.
  */
 
+// XXX This should be merged some other headers?
 #pragma once
 
 /*
