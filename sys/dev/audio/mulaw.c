@@ -44,45 +44,41 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include "audiovar.h"
 #endif // !_KERNEL
 
-// mulaw32
-//
-// mulaw32 は tc/bba.c でのみ使われる、8ビットの mulaw を 32ビットコンテナ
-// 中の 16ビット左シフトした位置に置くエンコーディングのことをここではそう
-// 呼ぶことにする。mulaw を 32ビット演算に拡張したとかではない。
-// MULAW32 が定義されていれば、このファイルは
-// audio_internal_to_mulaw() の代わりに audio_internal_to_mulaw32() を、
-// audio_mulaw_to_internal() の代わりに audio_mulaw32_to_internal() を
-// 出力するようになる。
-//
-// tc/bba.c 以外のオーディオドライバはユーザランド入出力としての mulaw に
-// 対応するために audio_internal_to_mulaw() と audio_mulaw_to_internal() が
-// 必要で、これは files.audio によって mulaw.c がリンクされることによって
-// 解決している。
-// 一方、tc/bba.c でも、ユーザランド入出力としての mulaw を内部形式に変換
-// するための audio_internal_to_mulaw()、audio_mulaw_to_internal() が必要な
-// ところまでは同じだが、内部形式をハードウェアフォーマットに変換するために
-// audio_internal_to_mulaw32()、audio_mulaw32_to_internal() も必要となる。
-// これらは出力オフセットが多少異なる以外はまったく同じものなので、
-// ここで #ifdef でソースを切り替えるようにしておき、tc/bba.c は MULAW32 版
-// *も* リンクすることにしてみる。
+/*
+ * About mulaw32 format.
+ *
+ * The format which I call ``mulaw32'' is only used in dev/tc/bba.c .
+ * It is 8bit mulaw but 16bit left-shifted and its containter is 32bit.
+ * Not mu-law calculated in 32bit.
+ *
+ * When MULAW32 is not defined (it's default), this file outputs
+ * audio_internal_to_mulaw() and audio_mulaw_to_internal().  When
+ * MULAW32 is defined, this file outputs audio_internal_to_mulaw32()
+ * and audio_mulaw32_to_internal() instead.
+ *
+ * Since mu-law is used as userland format and is mandatory, all audio
+ * drivers (including tc/bba) link this mulaw.c in ordinary procedure.
+ * On the other hand, only tc/bba also needs audio_internal_to_mulaw32()
+ * and audio_mulaw32_to_internal() as its hardware drivers codec, so
+ * define MULAW32 and include this file.  It's a bit tricky but I think
+ * this is the simplest way.
+ */
 
-// audio_internal_to_mulaw
-//
-// 1) 8bitテーブル方式 (MULAW_LQ_ENC)
-//	従来版。
-//	精度が本来の14bitに対して8bit分しかないため、
-//	無音や音が小さい部分をヘッドホンで聴き比べるとノイズが目立つ。
-//	テーブル一発なので速いが、テーブルの分コードサイズは大きい。
-//	amd64: 58+256(=314) byte, 327 times/msec
-//	x68k:  64+256(=320) byte
-//
-// 2) 14ビット計算方式
-//	精度はフルスペック。
-//	8bit テーブル版と比べて10倍以上遅いが、サイズは半分以下と小さい。
-//	amd64: 136 byte,           14.8 (P/E5400)  43.8 (Ryzen X2950) times/msec
-//	x68k:  120 byte,
-//
-//#define MULAW_LQ_ENC
+/*
+ * audio_internal_to_mulaw has two implementations.
+ *
+ * 1. Use 8bit table (MULAW_LQ_ENC)
+ *  It's traditional implementation and its precision is 8bit.
+ *  It's faster but the size is larger.  And you can hear a little noise
+ *  in silent part.
+ *
+ * 2. Calculation (default)
+ *  It calculates mu-law with full spec and its precision is 14bit.
+ *  It's about 10 times slower but the size is less than a half (on m68k).
+ *
+ * mulaw is no longer a popular format.  I think size-optimized is better.
+ */
+/* #define MULAW_LQ_ENC */
 
 #if 0
 #define MPRINTF(fmt, ...)	printf(fmt, ## __VA_ARGS__)
@@ -274,10 +270,6 @@ audio_internal_to_mulaw32(audio_filter_arg_t *arg)
 			val = -8158 * 4;
 		val -= 33 * 4;	/* bias */
 
-		// val の bit 14 から 0 になっているビットまでシフトしていく。
-		// シフトした回数だけ exponent を加算する。
-		// このブロックが終わったとき、val の上位4ビットが
-		// mantissa になっている。
 		val <<= 1;
 		for (c = 0; c < 7; c++) {
 			if (val >= 0) {
@@ -293,7 +285,7 @@ audio_internal_to_mulaw32(audio_filter_arg_t *arg)
 #endif
 
 #if defined(MULAW32)
-		/* 32bit container used only in tc/bba.c */
+		/* 8bit mulaw in 32bit container used only in tc/bba.c */
 		*d++ = m << 16;
 #else
 		*d++ = m;
