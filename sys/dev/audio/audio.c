@@ -7989,12 +7989,15 @@ audio_suspend(device_t dv, const pmf_qual_t *qual)
 		return error;
 	audio_mixer_capture(sc);
 
-	// XXX mixer をとめる?
-	if (sc->sc_pbusy)
+	/* Halts mixers but don't clear busy flag for resume */
+	if (sc->sc_pbusy) {
 		audio_pmixer_halt(sc);
-	if (sc->sc_rbusy)
+		sc->sc_pbusy = true;
+	}
+	if (sc->sc_rbusy) {
 		audio_rmixer_halt(sc);
-	/* Don't change sc_[pr]busy for resume */
+		sc->sc_rbusy = true;
+	}
 
 #ifdef AUDIO_PM_IDLE
 	callout_halt(&sc->sc_idle_counter, sc->sc_lock);
@@ -8014,24 +8017,17 @@ audio_resume(device_t dv, const pmf_qual_t *qual)
 	error = audio_enter_exclusive(sc);
 	if (error)
 		return error;
-#if 0 // XXX ?
-	sc->sc_trigger_started = false;
-	sc->sc_rec_started = false;
-
-#endif
 
 	audio_mixer_restore(sc);
 	/* XXX ? */
 	AUDIO_INITINFO(&ai);
 	audio_hw_setinfo(sc, &ai, NULL);
-#if 0	// XXX
-	// 再生トラックがあれば再生再開
-	// 録音トラックがあれば録音再開
+
 	if (sc->sc_pbusy)
 		audio_pmixer_start(sc, true);
 	if (sc->sc_rbusy)
 		audio_rmixer_start(sc);
-#endif
+
 	audio_exit_exclusive(sc);
 
 	return true;
