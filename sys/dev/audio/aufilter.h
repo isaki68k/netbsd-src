@@ -28,9 +28,13 @@
 
 #pragma once
 
-// 内部フォーマットのビット数
+/*
+ * Number of bits for internal format.
+ * XXX 32bit mode is not well tested.
+ * XXX Is this necessary?
+ */
 #define AUDIO_INTERNAL_BITS		16
-//#define AUDIO_INTERNAL_BITS		32
+/*#define AUDIO_INTERNAL_BITS		32 */
 
 #if AUDIO_INTERNAL_BITS == 16
 
@@ -62,39 +66,42 @@ typedef uint64_t auint2_t;
 typedef struct {
 	u_int	sample_rate;	/* sample rate in Hz */
 	u_int	encoding;	/* AUDIO_ENCODING_* */
-	u_int	stride;		/* container bits of sample */
-	u_int	precision;	/* valid bits of sample */
+	u_int	stride;		/* container bits of a sample */
+	u_int	precision;	/* valid bits of a sample */
 	u_int	channels;	/* 1..AUDIO_MAX_CHANNELS */
 } audio_format2_t;
 
-// フィルタに渡されるパラメータ一式。
+/* Parameters for conversion filters */
 typedef struct {
-	// 入力サンプルの開始位置。
+	/* Pointer to source samples. */
 	const void *src;
-	// 入力形式。
+	/* Input format */
 	const audio_format2_t *srcfmt;
 
-	// 出力サンプル用のバッファ。
+	/* Pointer to destination buffer. */
 	void *dst;
-	// 出力形式。
+	/* Output format */
 	const audio_format2_t *dstfmt;
 
-	// 今回のフィルタ呼び出しで出力すべきフレーム数。
-	// フィルタはこのフレーム数を必ず出力すること。
-	// 周波数変換フィルタ以外では入力フレーム数も同じになる。
-	// フィルタはこの変数 arg->count の値を破壊しても構わない。
+	/*
+	 * Number of frames to be converted.
+	 * The conversion filter must output 'count' frames.  src and dst
+	 * are guaranteed that at least 'count' frames are contiguous.
+	 * The caller does not reference this count after calling, so
+	 * that the conversion filter can use passed this variable.
+	 * For example, decrementing it directly.
+	 */
 	u_int count;
 
-	// フィルタ固有のデータ用に使用してもよい。
+	/* The conversion filters can use this pointer. */
 	void *context;
 } audio_filter_arg_t;
 
 typedef void(*audio_filter_t)(audio_filter_arg_t *arg);
 
-// フィルタ登録用
-// hw_if->set_params2() からフィルタを登録するときに使う構造体
+/* Filter registration structure */
 typedef struct {
 	audio_params_t param;	/* HW encoding parameter */
 	audio_filter_t codec;	/* conversion function */
-	void *context;			/* optional codec's argument */
+	void *context;		/* optional codec's argument */
 } audio_filter_reg_t;
