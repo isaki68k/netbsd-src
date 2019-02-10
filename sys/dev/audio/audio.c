@@ -3066,6 +3066,7 @@ filt_audioread_detach(struct knote *kn)
 
 	file = kn->kn_hook;
 	sc = file->sc;
+	TRACEF(file, "");
 
 	mutex_enter(sc->sc_lock);
 	SLIST_REMOVE(&sc->sc_rsel.sel_klist, kn, knote, kn_selnext);
@@ -3093,6 +3094,7 @@ filt_audioread_event(struct knote *kn, long hint)
 	}
 
 	kn->kn_data = audio_track_readablebytes(track);
+	TRACEF(file, "data=%" PRId64, kn->kn_data);
 	return kn->kn_data > 0;
 }
 
@@ -3109,9 +3111,9 @@ filt_audiowrite_detach(struct knote *kn)
 	struct audio_softc *sc;
 	audio_file_t *file;
 
-	TRACE("kn=%p", kn);
 	file = kn->kn_hook;
 	sc = file->sc;
+	TRACEF(file, "");
 
 	mutex_enter(sc->sc_lock);
 	SLIST_REMOVE(&sc->sc_wsel.sel_klist, kn, knote, kn_selnext);
@@ -3139,7 +3141,7 @@ filt_audiowrite_event(struct knote *kn, long hint)
 	}
 
 	kn->kn_data = track->usrbuf_usedhigh - track->usrbuf.used;
-	TRACE("kn=%p data=%d", kn, (int)kn->kn_data);
+	TRACEF(file, "data=%" PRId64, kn->kn_data);
 	return (track->usrbuf.used < track->usrbuf_usedlow);
 }
 
