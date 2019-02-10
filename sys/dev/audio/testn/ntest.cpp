@@ -1006,8 +1006,8 @@ test_open_1(void)
 		XP_SYS_EQ(0, r);
 		XP_EQ(0, ai.play.pause);
 		XP_EQ(0, ai.record.pause);
-		XP_EQ(mode2popen_full[mode], ai.play.open);
-		XP_EQ(mode2ropen_full[mode], ai.record.open);
+		XP_EQ(mode2popen(mode), ai.play.open);
+		XP_EQ(mode2ropen(mode), ai.record.open);
 		// ai.mode は open_5 で調べている
 
 		if (netbsd <= 8) {
@@ -1016,8 +1016,8 @@ test_open_1(void)
 			XP_NE(0, ai.record.buffer_size);
 		} else {
 			// AUDIO2 では使わないほうのバッファは確保してない
-			XP_BUFFSIZE(mode2popen_full[mode], ai.play.buffer_size);
-			XP_BUFFSIZE(mode2ropen_full[mode], ai.record.buffer_size);
+			XP_BUFFSIZE(mode2popen(mode), ai.play.buffer_size);
+			XP_BUFFSIZE(mode2ropen(mode), ai.record.buffer_size);
 		}
 
 		r = CLOSE(fd);
@@ -1047,8 +1047,8 @@ test_open_2(void)
 			pbuff = true;
 			rbuff = true;
 		} else {
-			pbuff = mode2popen_full[mode];
-			rbuff = mode2ropen_full[mode];
+			pbuff = mode2popen(mode);
+			rbuff = mode2ropen(mode);
 		}
 
 		// オープンして初期値をチェック
@@ -1119,7 +1119,7 @@ test_open_2(void)
 		XP_EQ(0, ai.record.error);
 		XP_EQ(0, ai.record.waiting);
 		// balance
-		XP_EQ(mode2ropen_full[mode], ai.record.open);
+		XP_EQ(mode2ropen(mode), ai.record.open);
 		if (netbsd <= 7) {
 			// N7 は録音が有効ならオープン直後から active になるらしい。
 			XP_EQ(mode2ropen(mode), ai.record.active);
@@ -1214,7 +1214,7 @@ test_open_2(void)
 		XP_EQ(0, ai.record.error);
 		XP_EQ(0, ai.record.waiting);
 		// balance
-		XP_EQ(mode2ropen_full[mode], ai.record.open);
+		XP_EQ(mode2ropen(mode), ai.record.open);
 		if (netbsd <= 7) {
 			// N7 は録音が有効ならオープン直後から active になるらしい。
 			XP_EQ(mode2ropen(mode), ai.record.active);
@@ -1264,8 +1264,8 @@ test_open_3(void)
 			pbuff = true;
 			rbuff = true;
 		} else {
-			pbuff = mode2popen_full[mode];
-			rbuff = mode2ropen_full[mode];
+			pbuff = mode2popen(mode);
+			rbuff = mode2ropen(mode);
 		}
 
 		// まず /dev/audio を RDWR で開いて両方初期化させておく。
@@ -1287,6 +1287,15 @@ test_open_3(void)
 			fd = OPEN(devaudio, O_RDWR);
 			if (fd == -1)
 				err(1, "open");
+			// HWHalf なら O_RDWR だけではだめで、
+			// 録音側も別途開いておく必要がある。
+			if (hwfull == 0) {
+				r = CLOSE(fd);
+				XP_SYS_EQ(0, r);
+				fd = OPEN(devaudio, O_RDONLY);
+				if (fd == -1)
+					err(1, "open");
+			}
 		}
 		r = CLOSE(fd);
 		XP_SYS_EQ(0, r);
@@ -1332,7 +1341,7 @@ test_open_3(void)
 		XP_EQ(0, ai.play.error);
 		XP_EQ(0, ai.play.waiting);
 		// balance
-		XP_EQ(mode2popen_full[mode], ai.play.open);
+		XP_EQ(mode2popen(mode), ai.play.open);
 		XP_EQ(0, ai.play.active);
 		// record
 		XP_EQ(8000, ai.record.sample_rate);
@@ -1360,7 +1369,7 @@ test_open_3(void)
 		XP_EQ(0, ai.record.error);
 		XP_EQ(0, ai.record.waiting);
 		// balance
-		XP_EQ(mode2ropen_full[mode], ai.record.open);
+		XP_EQ(mode2ropen(mode), ai.record.open);
 		if (netbsd == 8 && ai.record.active) {
 			// N8 では再生モードによらずオープンしただけで録音アクティブが
 			// 立つ(場合がある?)
@@ -1438,7 +1447,7 @@ test_open_3(void)
 		XP_EQ(0, ai.play.error);
 		XP_EQ(0, ai.play.waiting);
 		// balance
-		XP_EQ(mode2popen_full[mode], ai.play.open);
+		XP_EQ(mode2popen(mode), ai.play.open);
 		XP_EQ(0, ai.play.active);
 		// record
 		XP_EQ(ai0.record.sample_rate, ai.record.sample_rate);
@@ -1456,7 +1465,7 @@ test_open_3(void)
 		XP_EQ(0, ai.record.error);
 		XP_EQ(0, ai.record.waiting);
 		// balance
-		XP_EQ(mode2ropen_full[mode], ai.record.open);
+		XP_EQ(mode2ropen(mode), ai.record.open);
 		XP_EQ(0, ai.record.active);
 
 		r = CLOSE(fd);
@@ -1940,8 +1949,11 @@ test_encoding_3()
 			XP_SYS_EQ(0, r);
 			XP_EQ(exp_enc, ai.play.encoding);
 			XP_EQ(exp_prec, ai.play.precision);
-			XP_EQ(exp_enc, ai.record.encoding);
-			XP_EQ(exp_prec, ai.record.precision);
+			// HWHalf なら再生側しか変わらないので録音側はテストしない
+			if (hwfull) {
+				XP_EQ(exp_enc, ai.record.encoding);
+				XP_EQ(exp_prec, ai.record.precision);
+			}
 		} else {
 			// 失敗を期待する場合
 			XP_SYS_NG(EINVAL, r);
@@ -4702,7 +4714,7 @@ test_AUDIO_SETFD_RDWR(void)
 	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
 	XP_SYS_EQ(0, r);
 	XP_EQ(1, ai.play.open);
-	XP_EQ(1, ai.record.open);
+	XP_EQ(hwfull, ai.record.open);
 
 	// Half duplex に設定しようとすると、
 	// N7: HW Full なら設定できる、HW Half なら何も起きず成功。
@@ -4735,7 +4747,7 @@ test_AUDIO_SETFD_RDWR(void)
 	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
 	XP_SYS_EQ(0, r);
 	XP_EQ(1, ai.play.open);
-	XP_EQ(1, ai.record.open);
+	XP_EQ(hwfull, ai.record.open);
 
 	CLOSE(fd);
 }
@@ -5032,15 +5044,15 @@ test_AUDIO_SETINFO_mode()
 		if (r == -1)
 			err(1, "ioctl");
 		XP_EQ(inimode, ai.mode);
-		XP_EQ(mode2popen_full[openmode], ai.play.open);
-		XP_EQ(mode2ropen_full[openmode], ai.record.open);
+		XP_EQ(mode2popen(openmode), ai.play.open);
+		XP_EQ(mode2ropen(openmode), ai.record.open);
 		// N7、N8 では buffer_size は常に非ゼロなので調べない
 		// A2: バッファは O_RDWR なら HWHalf でも両方確保される。
 		// Half なのを判定するほうが後なのでやむをえないか。
 		// 確保されてたらいけないわけでもないだろうし(無駄ではあるけど)。
 		if (netbsd >= 9) {
-			XP_BUFFSIZE(mode2popen_full[openmode], ai.play.buffer_size);
-			XP_BUFFSIZE(mode2ropen_full[openmode], ai.record.buffer_size);
+			XP_BUFFSIZE(mode2popen(openmode), ai.play.buffer_size);
+			XP_BUFFSIZE(mode2ropen(openmode), ai.record.buffer_size);
 		}
 
 		// mode を変える
@@ -5055,12 +5067,12 @@ test_AUDIO_SETINFO_mode()
 			XP_SYS_EQ(0, r);
 			XP_EQ(expmode, ai.mode);
 			// mode に関係なく当初のオープンモードを維持するようだ
-			XP_EQ(mode2popen_full[openmode], ai.play.open);
-			XP_EQ(mode2ropen_full[openmode], ai.record.open);
+			XP_EQ(mode2popen(openmode), ai.play.open);
+			XP_EQ(mode2ropen(openmode), ai.record.open);
 			// N7、N8 では buffer_size は常に非ゼロなので調べない
 			if (netbsd >= 9) {
-				XP_BUFFSIZE(mode2popen_full[openmode], ai.play.buffer_size);
-				XP_BUFFSIZE(mode2ropen_full[openmode], ai.record.buffer_size);
+				XP_BUFFSIZE(mode2popen(openmode), ai.play.buffer_size);
+				XP_BUFFSIZE(mode2ropen(openmode), ai.record.buffer_size);
 			}
 		}
 
