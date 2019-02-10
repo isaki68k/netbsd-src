@@ -7,6 +7,7 @@
 // x Restore NetBSD8-like multiuser mode.
 // x Restore NetBSD8-like pad(4) behavior?
 // x Restore(?) suspend/resume.
+// x Restore(?) audiobell/spkr.
 // x Support software master volume? (mixerctl?)
 // x Support all MD drivers.
 // x Catch up userland programs such as audioctl(1).
@@ -15,8 +16,6 @@
 // x Documents (in English).
 // x Purge all C++ style comments.
 // x Reconsideration about overflow handling on track mixer.
-//   トラックミキサでオーバーフローする場合の処理はあれでいいか
-//   今は自動的にマスターボリュームを下げている。そして下げっぱなし。
 // x better name for audio_file_t ?
 // x better name for audio_filter_* ?
 // x Improve sizeof(audio_track_t).
