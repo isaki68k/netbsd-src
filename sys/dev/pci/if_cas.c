@@ -1,4 +1,4 @@
-/*	$NetBSD: if_cas.c,v 1.28 2018/11/15 10:56:29 maxv Exp $	*/
+/*	$NetBSD: if_cas.c,v 1.32 2019/02/06 04:14:03 msaitoh Exp $	*/
 /*	$OpenBSD: if_cas.c,v 1.29 2009/11/29 16:19:38 kettenis Exp $	*/
 
 /*
@@ -44,7 +44,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_cas.c,v 1.28 2018/11/15 10:56:29 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_cas.c,v 1.32 2019/02/06 04:14:03 msaitoh Exp $");
 
 #ifndef _MODULE
 #include "opt_inet.h"
@@ -141,11 +141,11 @@ void		cas_iff(struct cas_softc *);
 int		cas_encap(struct cas_softc *, struct mbuf *, u_int32_t *);
 
 /* MII methods & callbacks */
-int		cas_mii_readreg(device_t, int, int);
-void		cas_mii_writereg(device_t, int, int, int);
+int		cas_mii_readreg(device_t, int, int, uint16_t*);
+int		cas_mii_writereg(device_t, int, int, uint16_t);
 void		cas_mii_statchg(struct ifnet *);
-int		cas_pcs_readreg(device_t, int, int);
-void		cas_pcs_writereg(device_t, int, int, int);
+int		cas_pcs_readreg(device_t, int, int, uint16_t *);
+int		cas_pcs_writereg(device_t, int, int, uint16_t);
 
 int		cas_mediachange(struct ifnet *);
 void		cas_mediastatus(struct ifnet *, struct ifmediareq *);
@@ -203,6 +203,7 @@ static const u_int8_t cas_promdat2[] = {
 	PCI_CLASS_NETWORK		/* class code */
 };
 
+#define CAS_LMA_MAXNUM	4
 int
 cas_pci_enaddr(struct cas_softc *sc, struct pci_attach_args *pa,
     uint8_t *enaddr)
@@ -212,10 +213,11 @@ cas_pci_enaddr(struct cas_softc *sc, struct pci_attach_args *pa,
 	bus_space_handle_t romh;
 	bus_space_tag_t romt;
 	bus_size_t romsize = 0;
+	uint8_t enaddrs[CAS_LMA_MAXNUM][ETHER_ADDR_LEN];
 	u_int8_t buf[32], *desc;
 	pcireg_t address;
-	int dataoff, vpdoff, len;
-	int rv = -1;
+	int dataoff, vpdoff, len, lma = 0;
+	int i, rv = -1;
 
 	if (pci_mapreg_map(pa, PCI_MAPREG_ROM, PCI_MAPREG_TYPE_MEM, 0,
 	    &romt, &romh, NULL, &romsize))
@@ -297,8 +299,11 @@ next:
 				continue;
 			desc += strlen("local-mac-address") + 1;
 				
-			memcpy(enaddr, desc, ETHER_ADDR_LEN);
+			memcpy(enaddrs[lma], desc, ETHER_ADDR_LEN);
+			lma++;
 			rv = 0;
+			if (lma == CAS_LMA_MAXNUM)
+				break;
 		}
 		break;
 
@@ -306,6 +311,19 @@ next:
 		goto fail;
 	}
 
+	i = 0;
+	/*
+	 * Multi port card has bridge chip. The device number is fixed:
+	 * e.g.
+	 * p0: 005:00:0
+	 * p1: 005:01:0
+	 * p2: 006:02:0
+	 * p3: 006:03:0
+	 */
+	if ((lma > 1) && (pa->pa_device < CAS_LMA_MAXNUM)
+	    && (pa->pa_device < lma))
+		i = pa->pa_device;
+	memcpy(enaddr, enaddrs[i], ETHER_ADDR_LEN);
  fail:
 	if (romsize != 0)
 		bus_space_unmap(romt, romh, romsize);
@@ -514,8 +532,7 @@ cas_config(struct cas_softc *sc, const uint8_t *enaddr)
 	/* Initialize ifnet structure. */
 	strlcpy(ifp->if_xname, device_xname(sc->sc_dev), IFNAMSIZ);
 	ifp->if_softc = sc;
-	ifp->if_flags =
-	    IFF_BROADCAST | IFF_SIMPLEX | IFF_NOTRAILERS | IFF_MULTICAST;
+	ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
 	ifp->if_start = cas_start;
 	ifp->if_ioctl = cas_ioctl;
 	ifp->if_watchdog = cas_watchdog;
@@ -1535,7 +1552,7 @@ cas_mifinit(struct cas_softc *sc)
  *
  */
 int
-cas_mii_readreg(device_t self, int phy, int reg)
+cas_mii_readreg(device_t self, int phy, int reg, uint16_t *val)
 {
 	struct cas_softc *sc = device_private(self);
 	bus_space_tag_t t = sc->sc_memt;
@@ -1556,16 +1573,18 @@ cas_mii_readreg(device_t self, int phy, int reg)
 	for (n = 0; n < 100; n++) {
 		DELAY(1);
 		v = bus_space_read_4(t, mif, CAS_MIF_FRAME);
-		if (v & CAS_MIF_FRAME_TA0)
-			return (v & CAS_MIF_FRAME_DATA);
+		if (v & CAS_MIF_FRAME_TA0) {
+			*val = v & CAS_MIF_FRAME_DATA;
+			return 0;
+		}
 	}
 
 	printf("%s: mii_read timeout\n", device_xname(sc->sc_dev));
-	return (0);
+	return ETIMEDOUT;
 }
 
-void
-cas_mii_writereg(device_t self, int phy, int reg, int val)
+int
+cas_mii_writereg(device_t self, int phy, int reg, uint16_t val)
 {
 	struct cas_softc *sc = device_private(self);
 	bus_space_tag_t t = sc->sc_memt;
@@ -1590,10 +1609,11 @@ cas_mii_writereg(device_t self, int phy, int reg, int val)
 		DELAY(1);
 		v = bus_space_read_4(t, mif, CAS_MIF_FRAME);
 		if (v & CAS_MIF_FRAME_TA0)
-			return;
+			return 0;
 	}
 
 	printf("%s: mii_write timeout\n", device_xname(sc->sc_dev));
+	return ETIMEDOUT;
 }
 
 void
@@ -1647,7 +1667,7 @@ cas_mii_statchg(struct ifnet *ifp)
 }
 
 int
-cas_pcs_readreg(device_t self, int phy, int reg)
+cas_pcs_readreg(device_t self, int phy, int reg, uint16_t *val)
 {
 	struct cas_softc *sc = device_private(self);
 	bus_space_tag_t t = sc->sc_memt;
@@ -1659,7 +1679,7 @@ cas_pcs_readreg(device_t self, int phy, int reg)
 #endif
 
 	if (phy != CAS_PHYAD_EXTERNAL)
-		return (0);
+		return -1;
 
 	switch (reg) {
 	case MII_BMCR:
@@ -1675,16 +1695,18 @@ cas_pcs_readreg(device_t self, int phy, int reg)
 		reg = CAS_MII_ANLPAR;
 		break;
 	case MII_EXTSR:
-		return (EXTSR_1000XFDX|EXTSR_1000XHDX);
+		*val = EXTSR_1000XFDX | EXTSR_1000XHDX;
+		return 0;
 	default:
 		return (0);
 	}
 
-	return bus_space_read_4(t, pcs, reg);
+	*val = bus_space_read_4(t, pcs, reg) & 0xffff;
+	return 0;
 }
 
-void
-cas_pcs_writereg(device_t self, int phy, int reg, int val)
+int
+cas_pcs_writereg(device_t self, int phy, int reg, uint16_t val)
 {
 	struct cas_softc *sc = device_private(self);
 	bus_space_tag_t t = sc->sc_memt;
@@ -1698,7 +1720,7 @@ cas_pcs_writereg(device_t self, int phy, int reg, int val)
 #endif
 
 	if (phy != CAS_PHYAD_EXTERNAL)
-		return;
+		return -1;
 
 	if (reg == MII_ANAR)
 		bus_space_write_4(t, pcs, CAS_MII_CONFIG, 0);
@@ -1718,7 +1740,7 @@ cas_pcs_writereg(device_t self, int phy, int reg, int val)
 		reg = CAS_MII_ANLPAR;
 		break;
 	default:
-		return;
+		return 0;
 	}
 
 	bus_space_write_4(t, pcs, reg, val);
@@ -1729,6 +1751,8 @@ cas_pcs_writereg(device_t self, int phy, int reg, int val)
 	if (reg == CAS_MII_ANAR || reset)
 		bus_space_write_4(t, pcs, CAS_MII_CONFIG,
 		    CAS_MII_CONFIG_ENABLE);
+
+	return 0;
 }
 
 int
@@ -1819,8 +1843,8 @@ cas_estintr(struct cas_softc *sc, int what)
 	/* PCI interrupts */
 	if (what & CAS_INTR_PCI) {
 		intrstr = pci_intr_string(sc->sc_pc, sc->sc_handle, intrbuf, sizeof(intrbuf));
-		sc->sc_ih = pci_intr_establish(sc->sc_pc, sc->sc_handle,
-		    IPL_NET, cas_intr, sc);
+		sc->sc_ih = pci_intr_establish_xname(sc->sc_pc, sc->sc_handle,
+		    IPL_NET, cas_intr, sc, device_xname(sc->sc_dev));
 		if (sc->sc_ih == NULL) {
 			aprint_error_dev(sc->sc_dev,
 			    "unable to establish interrupt");

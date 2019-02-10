@@ -1,4 +1,8 @@
-#	$NetBSD: Makefile,v 1.18 2018/03/02 23:15:25 sevan Exp $
+#	$NetBSD: Makefile,v 1.21 2019/01/27 04:59:12 dholland Exp $
+
+NOLIBCSANITIZER=
+NOSANITIZER=
+NOPIE=
 
 S!=	cd ${.CURDIR}/../../../..; pwd
 

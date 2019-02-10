@@ -1,4 +1,4 @@
-/*	$NetBSD: if_dge.c,v 1.49 2018/09/03 16:29:32 riastradh Exp $ */
+/*	$NetBSD: if_dge.c,v 1.51 2019/02/03 03:19:27 mrg Exp $ */
 
 /*
  * Copyright (c) 2004, SUNET, Swedish University Computer Network.
@@ -80,7 +80,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_dge.c,v 1.49 2018/09/03 16:29:32 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_dge.c,v 1.51 2019/02/03 03:19:27 mrg Exp $");
 
 
 
@@ -535,10 +535,13 @@ out:
 		switch (state) {
 		case 4:
 			bus_dmamap_unload(sc->sc_dmat, sc->sc_bugmap);
+			/* FALLTHROUGH */
 		case 3:
 			bus_dmamap_destroy(sc->sc_dmat, sc->sc_bugmap);
+			/* FALLTHROUGH */
 		case 2:
 			bus_dmamem_unmap(sc->sc_dmat, kva, DGE_RXMEM);
+			/* FALLTHROUGH */
 		case 1:
 			bus_dmamem_free(sc->sc_dmat, &seg, rseg);
 			break;
@@ -744,7 +747,8 @@ dge_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 	intrstr = pci_intr_string(pc, ih, intrbuf, sizeof(intrbuf));
-	sc->sc_ih = pci_intr_establish(pc, ih, IPL_NET, dge_intr, sc);
+	sc->sc_ih = pci_intr_establish_xname(pc, ih, IPL_NET, dge_intr, sc,
+	    device_xname(self));
 	if (sc->sc_ih == NULL) {
 		aprint_error_dev(sc->sc_dev, "unable to establish interrupt");
 		if (intrstr != NULL)

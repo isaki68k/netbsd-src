@@ -1,4 +1,4 @@
-/*	$NetBSD: umass_scsipi.c,v 1.56 2018/11/13 10:30:57 mlelstv Exp $	*/
+/*	$NetBSD: umass_scsipi.c,v 1.59 2019/02/07 13:48:27 skrll Exp $	*/
 
 /*
  * Copyright (c) 2001, 2003, 2012 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: umass_scsipi.c,v 1.56 2018/11/13 10:30:57 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: umass_scsipi.c,v 1.59 2019/02/07 13:48:27 skrll Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -41,15 +41,17 @@ __KERNEL_RCSID(0, "$NetBSD: umass_scsipi.c,v 1.56 2018/11/13 10:30:57 mlelstv Ex
 #include "scsibus.h"
 
 #include <sys/param.h>
-#include <sys/systm.h>
-#include <sys/kernel.h>
-#include <sys/conf.h>
 #include <sys/buf.h>
 #include <sys/bufq.h>
+#include <sys/conf.h>
 #include <sys/device.h>
+#include <sys/disk.h>		/* XXX */
 #include <sys/ioctl.h>
+#include <sys/kernel.h>
+#include <sys/kmem.h>
 #include <sys/lwp.h>
 #include <sys/malloc.h>
+#include <sys/systm.h>
 
 /* SCSI & ATAPI */
 #include <sys/scsiio.h>
@@ -64,7 +66,6 @@ __KERNEL_RCSID(0, "$NetBSD: umass_scsipi.c,v 1.56 2018/11/13 10:30:57 mlelstv Ex
 #include <dev/scsipi/scsi_disk.h>
 #include <dev/scsipi/scsi_changer.h>
 
-#include <sys/disk.h>		/* XXX */
 #include <dev/scsipi/sdvar.h>	/* XXX */
 
 /* USB */
@@ -144,7 +145,7 @@ umass_scsi_attach(struct umass_softc *sc)
 		scsiprint);
 	mutex_enter(&sc->sc_lock);
 	if (--sc->sc_refcnt < 0)
-		usb_detach_broadcast(sc->sc_dev, &sc->sc_detach_cv);
+		cv_broadcast(&sc->sc_detach_cv);
 	mutex_exit(&sc->sc_lock);
 
 
@@ -177,7 +178,7 @@ umass_atapi_attach(struct umass_softc *sc)
 		atapiprint);
 	mutex_enter(&sc->sc_lock);
 	if (--sc->sc_refcnt < 0)
-		usb_detach_broadcast(sc->sc_dev, &sc->sc_detach_cv);
+		cv_broadcast(&sc->sc_detach_cv);
 	mutex_exit(&sc->sc_lock);
 
 	return 0;
@@ -189,7 +190,7 @@ umass_scsipi_setup(struct umass_softc *sc)
 {
 	struct umass_scsipi_softc *scbus;
 
-	scbus = malloc(sizeof(*scbus), M_DEVBUF, M_WAITOK | M_ZERO);
+	scbus = kmem_zalloc(sizeof(*scbus), KM_SLEEP);
 	sc->bus = &scbus->base;
 
 	/* Only use big commands for USB SCSI devices. */

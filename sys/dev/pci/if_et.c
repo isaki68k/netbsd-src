@@ -1,4 +1,4 @@
-/*	$NetBSD: if_et.c,v 1.17 2018/06/26 06:48:01 msaitoh Exp $	*/
+/*	$NetBSD: if_et.c,v 1.20 2019/01/22 03:42:27 msaitoh Exp $	*/
 /*	$OpenBSD: if_et.c,v 1.11 2008/06/08 06:18:07 jsg Exp $	*/
 /*
  * Copyright (c) 2007 The DragonFly Project.  All rights reserved.
@@ -37,7 +37,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_et.c,v 1.17 2018/06/26 06:48:01 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_et.c,v 1.20 2019/01/22 03:42:27 msaitoh Exp $");
 
 #include "opt_inet.h"
 #include "vlan.h"
@@ -86,8 +86,8 @@ void	et_attach(device_t, device_t, void *);
 int	et_detach(device_t, int flags);
 int	et_shutdown(device_t);
 
-int	et_miibus_readreg(device_t, int, int);
-void	et_miibus_writereg(device_t, int, int, int);
+int	et_miibus_readreg(device_t, int, int, uint16_t *);
+int	et_miibus_writereg(device_t, int, int, uint16_t);
 void	et_miibus_statchg(struct ifnet *);
 
 int	et_init(struct ifnet *ifp);
@@ -218,7 +218,8 @@ et_attach(device_t parent, device_t self, void *aux)
 	}
 
 	intrstr = pci_intr_string(pc, ih, intrbuf, sizeof(intrbuf));
-	sc->sc_irq_handle = pci_intr_establish(pc, ih, IPL_NET, et_intr, sc);
+	sc->sc_irq_handle = pci_intr_establish_xname(pc, ih, IPL_NET, et_intr,
+	    sc, device_xname(self));
 	if (sc->sc_irq_handle == NULL) {
 		aprint_error_dev(self, "could not establish interrupt");
 		if (intrstr != NULL)
@@ -359,18 +360,18 @@ et_shutdown(device_t self)
 }
 
 int
-et_miibus_readreg(device_t dev, int phy, int reg)
+et_miibus_readreg(device_t dev, int phy, int reg, uint16_t *val)
 {
 	struct et_softc *sc = device_private(dev);
-	uint32_t val;
+	uint32_t data;
 	int i, ret;
 
 	/* Stop any pending operations */
 	CSR_WRITE_4(sc, ET_MII_CMD, 0);
 
-	val = __SHIFTIN(phy, ET_MII_ADDR_PHY) |
+	data = __SHIFTIN(phy, ET_MII_ADDR_PHY) |
 	      __SHIFTIN(reg, ET_MII_ADDR_REG);
-	CSR_WRITE_4(sc, ET_MII_ADDR, val);
+	CSR_WRITE_4(sc, ET_MII_ADDR, data);
 
 	/* Start reading */
 	CSR_WRITE_4(sc, ET_MII_CMD, ET_MII_CMD_READ);
@@ -378,22 +379,23 @@ et_miibus_readreg(device_t dev, int phy, int reg)
 #define NRETRY	50
 
 	for (i = 0; i < NRETRY; ++i) {
-		val = CSR_READ_4(sc, ET_MII_IND);
-		if ((val & (ET_MII_IND_BUSY | ET_MII_IND_INVALID)) == 0)
+		data = CSR_READ_4(sc, ET_MII_IND);
+		if ((data & (ET_MII_IND_BUSY | ET_MII_IND_INVALID)) == 0)
 			break;
 		DELAY(50);
 	}
 	if (i == NRETRY) {
 		aprint_error_dev(sc->sc_dev, "read phy %d, reg %d timed out\n",
 		    phy, reg);
-		ret = 0;
+		ret = ETIMEDOUT;
 		goto back;
 	}
 
 #undef NRETRY
 
-	val = CSR_READ_4(sc, ET_MII_STAT);
-	ret = __SHIFTOUT(val, ET_MII_STAT_VALUE);
+	data = CSR_READ_4(sc, ET_MII_STAT);
+	*val = __SHIFTOUT(data, ET_MII_STAT_VALUE);
+	ret = 0;
 
 back:
 	/* Make sure that the current operation is stopped */
@@ -401,41 +403,46 @@ back:
 	return ret;
 }
 
-void
-et_miibus_writereg(device_t dev, int phy, int reg, int val0)
+int
+et_miibus_writereg(device_t dev, int phy, int reg, uint16_t val)
 {
 	struct et_softc *sc = device_private(dev);
-	uint32_t val;
+	uint32_t data;
+	uint16_t tmp;
+	int rv = 0;
 	int i;
 
 	/* Stop any pending operations */
 	CSR_WRITE_4(sc, ET_MII_CMD, 0);
 
-	val = __SHIFTIN(phy, ET_MII_ADDR_PHY) |
+	data = __SHIFTIN(phy, ET_MII_ADDR_PHY) |
 	      __SHIFTIN(reg, ET_MII_ADDR_REG);
-	CSR_WRITE_4(sc, ET_MII_ADDR, val);
+	CSR_WRITE_4(sc, ET_MII_ADDR, data);
 
 	/* Start writing */
-	CSR_WRITE_4(sc, ET_MII_CTRL, __SHIFTIN(val0, ET_MII_CTRL_VALUE));
+	CSR_WRITE_4(sc, ET_MII_CTRL, __SHIFTIN(val, ET_MII_CTRL_VALUE));
 
 #define NRETRY 100
 
 	for (i = 0; i < NRETRY; ++i) {
-		val = CSR_READ_4(sc, ET_MII_IND);
-		if ((val & ET_MII_IND_BUSY) == 0)
+		data = CSR_READ_4(sc, ET_MII_IND);
+		if ((data & ET_MII_IND_BUSY) == 0)
 			break;
 		DELAY(50);
 	}
 	if (i == NRETRY) {
 		aprint_error_dev(sc->sc_dev, "write phy %d, reg %d timed out\n",
 		    phy, reg);
-		et_miibus_readreg(dev, phy, reg);
+		et_miibus_readreg(dev, phy, reg, &tmp);
+		rv = ETIMEDOUT;
 	}
 
 #undef NRETRY
 
 	/* Make sure that the current operation is stopped */
 	CSR_WRITE_4(sc, ET_MII_CMD, 0);
+
+	return rv;
 }
 
 void
@@ -1825,7 +1832,7 @@ et_encap(struct et_softc *sc, struct mbuf **m0)
 			goto back;
 		}
 
-		M_COPY_PKTHDR(m_new, m);
+		m_copy_pkthdr(m_new, m);
 		if (m->m_pkthdr.len > MHLEN) {
 			MCLGET(m_new, M_DONTWAIT);
 			if (!(m_new->m_flags & M_EXT)) {

@@ -1,4 +1,4 @@
-/*	$NetBSD: hypercalls.h,v 1.16 2018/07/26 17:20:08 maxv Exp $	*/
+/*	$NetBSD: hypercalls.h,v 1.18 2019/02/02 12:32:55 cherry Exp $	*/
 
 /*
  * Copyright (c) 2006 Manuel Bouyer.
@@ -163,7 +163,7 @@ HYPERVISOR_get_debugreg(int reg)
     return ret;
 }
 
-#include <xen/xen-public/arch-x86/xen-mca.h>
+#include <xen/include/public/arch-x86/xen-mca.h>
 
 static __inline int
 HYPERVISOR_machine_check(struct xen_mc *mc)
@@ -457,14 +457,20 @@ HYPERVISOR_multicall(void *call_list, int nr_calls)
 
 
 static __inline int
-HYPERVISOR_event_channel_op(void *op)
+HYPERVISOR_event_channel_op(evtchn_op_t *op)
 {
     int ret;
     unsigned long ign1;
 
+#if __XEN_INTERFACE_VERSION__ < 0x00030202
     _hypercall(__HYPERVISOR_event_channel_op, _harg("1" (op)),
 	_harg("=a" (ret), "=b" (ign1)));
+#else
+    unsigned long ign2;
 
+    _hypercall(__HYPERVISOR_event_channel_op, _harg("1" (op->cmd), "2" (&op->u)),
+	_harg("=a" (ret), "=b" (ign1), "=c" (ign2)));
+#endif
     return ret;
 }
 

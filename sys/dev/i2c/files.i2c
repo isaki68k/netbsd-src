@@ -1,4 +1,4 @@
-#	$NetBSD: files.i2c,v 1.96 2018/09/02 01:16:58 jmcneill Exp $
+#	$NetBSD: files.i2c,v 1.98 2019/02/03 13:17:12 jmcneill Exp $
 
 obsolete defflag	opt_i2cbus.h		I2C_SCAN
 define	i2cbus { }
@@ -123,6 +123,7 @@ file	dev/i2c/lm87.c				lmenv
 device	dsrtc: sysmon_envsys
 attach	dsrtc at iic
 file	dev/i2c/ds1307.c			dsrtc
+defflag opt_dsrtc.h				DSRTC_YEAR_START_2K
 
 # Xicor X1226 Real Time Clock
 device	xrtc
@@ -356,3 +357,8 @@ device	rkreg: rkpmic
 attach	rkpmic at iic
 attach	rkreg at rkpmic
 file	dev/i2c/rkpmic.c			rkpmic
+
+# Analogix ANX6345 eDP transmitter
+device	anxedp: edid, videomode, drmkms, drmkms_i2c
+attach	anxedp at iic
+file	dev/i2c/anxedp.c			anxedp

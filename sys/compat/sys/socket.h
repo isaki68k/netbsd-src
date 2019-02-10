@@ -1,4 +1,4 @@
-/*	$NetBSD: socket.h,v 1.15 2017/07/29 06:12:50 maxv Exp $	*/
+/*	$NetBSD: socket.h,v 1.17 2019/01/27 02:08:41 pgoyette Exp $	*/
 
 /*
  * Copyright (c) 1982, 1985, 1986, 1988, 1993, 1994
@@ -38,7 +38,6 @@
 
 #include "opt_compat_netbsd.h"
 #include "opt_compat_linux.h"
-#include "opt_compat_svr4.h"
 #include "opt_compat_ultrix.h"
 #include "opt_compat_43.h"
 #include "opt_modular.h"
@@ -106,6 +105,9 @@ int compat_ifioctl(struct socket *, u_long, u_long, void *, struct lwp *);
 int compat43_set_accrights(struct msghdr *, void *, int);
 
 struct mbuf * compat_70_unp_addsockcred(struct lwp *, struct mbuf *);
+
+void uipc_usrreq_70_init(void);
+void uipc_usrreq_70_fini(void);
 __END_DECLS
 #else
 int	__socket30(int, int, int);

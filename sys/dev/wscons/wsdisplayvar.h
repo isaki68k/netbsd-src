@@ -1,4 +1,4 @@
-/* $NetBSD: wsdisplayvar.h,v 1.53 2018/09/26 09:04:12 bouyer Exp $ */
+/* $NetBSD: wsdisplayvar.h,v 1.55 2019/01/30 11:24:48 jmcneill Exp $ */
 
 /*
  * Copyright (c) 1996, 1997 Christopher G. Demetriou.  All rights reserved.
@@ -83,6 +83,12 @@ struct wsdisplay_emulops {
 #define WSATTR_BLINK	4
 #define WSATTR_UNDERLINE 8
 #define WSATTR_WSCOLORS 16
+#define WSATTR_USERMASK 0x0fff
+/* private flags used by the driver */
+#define WSATTR_PRIVATE1  4096
+#define WSATTR_PRIVATE2  8192
+#define WSATTR_PRIVATE3 16384
+#define WSATTR_PRIVATE4 32768
 	/* XXX need a free_attr() ??? */
 	void	(*replaceattr)(void *, long, long);
 };
@@ -167,6 +173,7 @@ void	wsdisplay_cnattach(const struct wsscreen_descr *, void *, int, int,
 void	wsdisplay_preattach(const struct wsscreen_descr *, void *, int, int,
             long);
 void	wsdisplay_cndetach(void);
+void	wsdisplay_multicons_suspend(bool);
 
 int	wsdisplaydevprint(void *, const char *);
 int	wsemuldisplaydevprint(void *, const char *);

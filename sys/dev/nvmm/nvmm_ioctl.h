@@ -1,4 +1,4 @@
-/*	$NetBSD: nvmm_ioctl.h,v 1.1 2018/11/07 07:43:08 maxv Exp $	*/
+/*	$NetBSD: nvmm_ioctl.h,v 1.3 2019/01/08 07:29:46 maxv Exp $	*/
 
 /*
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -90,6 +90,20 @@ struct nvmm_ioc_vcpu_run {
 	struct nvmm_exit exit;
 };
 
+struct nvmm_ioc_hva_map {
+	nvmm_machid_t machid;
+	uintptr_t hva;
+	size_t size;
+	int flags;
+};
+
+struct nvmm_ioc_hva_unmap {
+	nvmm_machid_t machid;
+	uintptr_t hva;
+	size_t size;
+	int flags;
+};
+
 struct nvmm_ioc_gpa_map {
 	nvmm_machid_t machid;
 	uintptr_t hva;
@@ -112,9 +126,11 @@ struct nvmm_ioc_gpa_unmap {
 #define NVMM_IOC_VCPU_DESTROY		_IOW ('N',  5, struct nvmm_ioc_vcpu_destroy)
 #define NVMM_IOC_VCPU_SETSTATE		_IOW ('N',  6, struct nvmm_ioc_vcpu_setstate)
 #define NVMM_IOC_VCPU_GETSTATE		_IOW ('N',  7, struct nvmm_ioc_vcpu_getstate)
-#define NVMM_IOC_VCPU_INJECT		_IOWR('N',  8, struct nvmm_ioc_vcpu_inject)
+#define NVMM_IOC_VCPU_INJECT		_IOW ('N',  8, struct nvmm_ioc_vcpu_inject)
 #define NVMM_IOC_VCPU_RUN		_IOWR('N',  9, struct nvmm_ioc_vcpu_run)
 #define NVMM_IOC_GPA_MAP		_IOW ('N', 10, struct nvmm_ioc_gpa_map)
 #define NVMM_IOC_GPA_UNMAP		_IOW ('N', 11, struct nvmm_ioc_gpa_unmap)
+#define NVMM_IOC_HVA_MAP		_IOW ('N', 12, struct nvmm_ioc_hva_map)
+#define NVMM_IOC_HVA_UNMAP		_IOW ('N', 13, struct nvmm_ioc_hva_unmap)
 
 #endif /* _NVMM_IOCTL_H_ */

@@ -1,4 +1,4 @@
-/*	$NetBSD: if_jme.c,v 1.35 2018/06/26 06:48:01 msaitoh Exp $	*/
+/*	$NetBSD: if_jme.c,v 1.38 2019/02/05 06:17:03 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2008 Manuel Bouyer.  All rights reserved.
@@ -58,7 +58,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_jme.c,v 1.35 2018/06/26 06:48:01 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_jme.c,v 1.38 2019/02/05 06:17:03 msaitoh Exp $");
 
 
 #include <sys/param.h>
@@ -202,8 +202,8 @@ static void jme_ticks(void *);
 static void jme_mac_config(jme_softc_t *);
 static void jme_set_filter(jme_softc_t *);
 
-int jme_mii_read(device_t, int, int);
-void jme_mii_write(device_t, int, int, int);
+int jme_mii_read(device_t, int, int, uint16_t *);
+int jme_mii_write(device_t, int, int, uint16_t);
 void jme_statchg(struct ifnet *);
 
 static int jme_eeprom_read_byte(struct jme_softc *, uint8_t, uint8_t *);
@@ -393,8 +393,8 @@ jme_pci_attach(device_t parent, device_t self, void *aux)
 	}
 	intrstr = pci_intr_string(pa->pa_pc, intrhandle, intrbuf, sizeof(intrbuf));
 	sc->jme_if.if_softc = sc;
-	sc->jme_ih = pci_intr_establish(pa->pa_pc, intrhandle, IPL_NET,
-	    jme_intr, sc);
+	sc->jme_ih = pci_intr_establish_xname(pa->pa_pc, intrhandle, IPL_NET,
+	    jme_intr, sc, device_xname(self));
 	if (sc->jme_ih == NULL) {
 		aprint_error_dev(self, "couldn't establish interrupt");
 		if (intrstr != NULL)
@@ -481,7 +481,7 @@ jme_pci_attach(device_t parent, device_t self, void *aux)
 
 
 	strlcpy(ifp->if_xname, device_xname(self), IFNAMSIZ);
-	ifp->if_flags = IFF_BROADCAST|IFF_SIMPLEX|IFF_NOTRAILERS|IFF_MULTICAST;
+	ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
 	ifp->if_ioctl = jme_ifioctl;
 	ifp->if_start = jme_ifstart;
 	ifp->if_watchdog = jme_ifwatchdog;
@@ -972,18 +972,18 @@ jme_init(struct ifnet *ifp, int do_ifinit)
 
 
 int
-jme_mii_read(device_t self, int phy, int reg)
+jme_mii_read(device_t self, int phy, int reg, uint16_t *val)
 {
 	struct jme_softc *sc = device_private(self);
-	int val, i;
+	int data, i;
 
 	/* For FPGA version, PHY address 0 should be ignored. */
 	if ((sc->jme_flags & JME_FLAG_FPGA) != 0) {
 		if (phy == 0)
-			return (0);
+			return -1;
 	} else {
 		if (sc->jme_phyaddr != phy)
-			return (0);
+			return -1;
 	}
 
 	bus_space_write_4(sc->jme_bt_mac, sc->jme_bh_mac, JME_SMI,
@@ -991,21 +991,22 @@ jme_mii_read(device_t self, int phy, int reg)
 	    SMI_PHY_ADDR(phy) | SMI_REG_ADDR(reg));
 	for (i = JME_PHY_TIMEOUT / 10; i > 0; i--) {
 		delay(10);
-		if (((val = bus_space_read_4(sc->jme_bt_mac, sc->jme_bh_mac,
+		if (((data = bus_space_read_4(sc->jme_bt_mac, sc->jme_bh_mac,
 		    JME_SMI)) & SMI_OP_EXECUTE) == 0)
 			break;
 	}
 
 	if (i == 0) {
 		aprint_error_dev(sc->jme_dev, "phy read timeout : %d\n", reg);
-		return (0);
+		return ETIMEDOUT;
 	}
 
-	return ((val & SMI_DATA_MASK) >> SMI_DATA_SHIFT);
+	*val = (data & SMI_DATA_MASK) >> SMI_DATA_SHIFT;
+	return 0;
 }
 
-void
-jme_mii_write(device_t self, int phy, int reg, int val)
+int
+jme_mii_write(device_t self, int phy, int reg, uint16_t val)
 {
 	struct jme_softc *sc = device_private(self);
 	int i;
@@ -1013,10 +1014,10 @@ jme_mii_write(device_t self, int phy, int reg, int val)
 	/* For FPGA version, PHY address 0 should be ignored. */
 	if ((sc->jme_flags & JME_FLAG_FPGA) != 0) {
 		if (phy == 0)
-			return;
+			return -1;
 	} else {
 		if (sc->jme_phyaddr != phy)
-			return;
+			return -1;
 	}
 
 	bus_space_write_4(sc->jme_bt_mac, sc->jme_bh_mac, JME_SMI,
@@ -1030,10 +1031,12 @@ jme_mii_write(device_t self, int phy, int reg, int val)
 			break;
 	}
 
-	if (i == 0)
+	if (i == 0) {
 		aprint_error_dev(sc->jme_dev, "phy write timeout : %d\n", reg);
+		return ETIMEDOUT;
+	}
 
-	return;
+	return 0;
 }
 
 void

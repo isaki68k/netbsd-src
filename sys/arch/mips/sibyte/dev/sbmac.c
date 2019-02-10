@@ -1,4 +1,4 @@
-/* $NetBSD: sbmac.c,v 1.51 2018/07/18 23:10:27 sevan Exp $ */
+/* $NetBSD: sbmac.c,v 1.54 2019/02/05 06:17:01 msaitoh Exp $ */
 
 /*
  * Copyright 2000, 2001, 2004
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sbmac.c,v 1.51 2018/07/18 23:10:27 sevan Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sbmac.c,v 1.54 2019/02/05 06:17:01 msaitoh Exp $");
 
 #include "opt_inet.h"
 #include "opt_ns.h"
@@ -304,20 +304,22 @@ sbmac_mii_bitbang_write(device_t self, uint32_t val)
  * Read an PHY register through the MII.
  */
 static int
-sbmac_mii_readreg(device_t self, int phy, int reg)
+sbmac_mii_readreg(device_t self, int phy, int reg, uint16_t *val)
 {
 
-	return (mii_bitbang_readreg(self, &sbmac_mii_bitbang_ops, phy, reg));
+	return mii_bitbang_readreg(self, &sbmac_mii_bitbang_ops, phy, reg,
+	    val);
 }
 
 /*
  * Write to a PHY register through the MII.
  */
-static void
-sbmac_mii_writereg(device_t self, int phy, int reg, int val)
+static int
+sbmac_mii_writereg(device_t self, int phy, int reg, uint16_t val)
 {
 
-	mii_bitbang_writereg(self, &sbmac_mii_bitbang_ops, phy, reg, val);
+	return mii_bitbang_writereg(self, &sbmac_mii_bitbang_ops, phy, reg,
+	    val);
 }
 
 static void
@@ -2312,8 +2314,7 @@ sbmac_attach(device_t parent, device_t self, void *aux)
 
 	ifp->if_softc = sc;
 	memcpy(ifp->if_xname, device_xname(sc->sc_dev), IFNAMSIZ);
-	ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST |
-	    IFF_NOTRAILERS;
+	ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
 	ifp->if_ioctl = sbmac_ioctl;
 	ifp->if_start = sbmac_start;
 	ifp->if_watchdog = sbmac_watchdog;

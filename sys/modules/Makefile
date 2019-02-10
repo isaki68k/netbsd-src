@@ -1,10 +1,25 @@
-#	$NetBSD: Makefile,v 1.213 2018/11/27 06:31:15 pgoyette Exp $
+#	$NetBSD: Makefile,v 1.219 2019/02/06 11:55:06 rin Exp $
 
 .include <bsd.own.mk>
 
 # For all platforms
 
-SUBDIR=		accf_dataready
+# Modules for compatability with earlier versions of NetBSD
+
+SUBDIR+=	compat_util
+SUBDIR+=	compat_43   compat_sysctl_09_43
+SUBDIR+=	compat_09   compat_10   compat_12   compat_13   compat_14
+SUBDIR+=	compat_16   compat_20   compat_30   compat_40   compat_50
+SUBDIR+=	compat_60   compat_70   compat_80 
+
+SUBDIR+=	compat_sysv_10 compat_sysv_14 compat_sysv_50
+
+SUBDIR+=	compat_raid_50
+SUBDIR+=	compat_raid_80
+
+SUBDIR+=	compat_crypto_50
+
+SUBDIR+=	accf_dataready
 SUBDIR+=	accf_httpready
 SUBDIR+=	adosfs
 SUBDIR+=	aio
@@ -24,11 +39,10 @@ SUBDIR+=	cd9660
 SUBDIR+=	cgd
 SUBDIR+=	chfs
 SUBDIR+=	clockctl
+SUBDIR+=	compat_ossaudio
 SUBDIR+=	crypto
 SUBDIR+=	coda
 SUBDIR+=	coda5
-SUBDIR+=	compat
-SUBDIR+=	compat_ossaudio
 SUBDIR+=	coredump
 SUBDIR+=	dbcool
 SUBDIR+=	des
@@ -74,6 +88,7 @@ SUBDIR+=	if_srt
 SUBDIR+=	if_stf
 SUBDIR+=	if_strip
 SUBDIR+=	if_tun tun
+SUBDIR+=	if_ure
 SUBDIR+=	if_vlan
 SUBDIR+=	iic
 SUBDIR+=	ip_ecn
@@ -212,10 +227,11 @@ SUBDIR+=	ubsec		# Builds on architectures with PCI bus
 .endif
 
 .if ${MKSLJIT} != "no"
-# No modules for arm, mips and powerpc yet.
-.if ${MACHINE_ARCH} == "i386" || \
-    ${MACHINE_ARCH} == "x86_64" || \
-    ${MACHINE_ARCH} == "sparc"
+# No modules for 32-bit arm, mips and powerpc yet.
+.if ${MACHINE_ARCH} == "aarch64" || \
+    ${MACHINE_ARCH} == "i386"    || \
+    ${MACHINE_ARCH} == "sparc"   || \
+    ${MACHINE_ARCH} == "x86_64"
 SUBDIR+=	bpfjit
 SUBDIR+=	sljit
 .endif
@@ -257,23 +273,29 @@ SUBDIR+=	wmihp
 SUBDIR+=	wmimsi
 .endif
 
-.if ${MACHINE_CPU} == "arm" \
-    || ${MACHINE_ARCH} == "sparc64" \
-    || (!empty(MACHINE_ARCH:Mmips64*) && !defined(BSD_MK_COMPAT_FILE))
+.include "${.CURDIR}/../compat/netbsd32/netbsd32.mk"
+.if ${COMPAT_USE_NETBSD32} != "no"
+
 SUBDIR+=	compat_netbsd32
+SUBDIR+=	compat_netbsd32_09	compat_netbsd32_12
+SUBDIR+=	compat_netbsd32_13	compat_netbsd32_16
+SUBDIR+=	compat_netbsd32_20	compat_netbsd32_30
+SUBDIR+=	compat_netbsd32_40	compat_netbsd32_50
+SUBDIR+=	compat_netbsd32_60	compat_netbsd32_80
+SUBDIR+=	compat_netbsd32_43
 SUBDIR+=	compat_netbsd32_mqueue
 SUBDIR+=	compat_netbsd32_nfssrv
 SUBDIR+=	compat_netbsd32_ptrace
 SUBDIR+=	compat_netbsd32_sysvipc
-.endif
+SUBDIR+=	compat_netbsd32_sysvipc_10
+SUBDIR+=	compat_netbsd32_sysvipc_14
+SUBDIR+=	compat_netbsd32_sysvipc_50
+SUBDIR+=	compat_netbsd32_raid
 
 .if ${MACHINE_ARCH} == "x86_64"
 SUBDIR+=	compat_linux32
-SUBDIR+=	compat_netbsd32
-SUBDIR+=	compat_netbsd32_mqueue
-SUBDIR+=	compat_netbsd32_nfssrv
-SUBDIR+=	compat_netbsd32_ptrace
-SUBDIR+=	compat_netbsd32_sysvipc
+.endif
+
 .endif
 
 .if ${MACHINE_ARCH} == "i386"
@@ -321,7 +343,6 @@ SUBDIR+=	wbsio
 SUBDIR+=	compat_aoutm68k
 #SUBDIR+=	compat_linux
 #SUBDIR+=	compat_sunos
-#SUBDIR+=	compat_svr4
 .endif
 
 .if ${MACHINE_ARCH} == "i386" || \

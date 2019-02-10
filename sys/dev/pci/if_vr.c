@@ -1,4 +1,4 @@
-/*	$NetBSD: if_vr.c,v 1.125 2018/07/18 23:10:28 sevan Exp $	*/
+/*	$NetBSD: if_vr.c,v 1.127 2019/01/22 03:42:27 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 1998, 1999 The NetBSD Foundation, Inc.
@@ -97,7 +97,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_vr.c,v 1.125 2018/07/18 23:10:28 sevan Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_vr.c,v 1.127 2019/01/22 03:42:27 msaitoh Exp $");
 
 
 
@@ -306,8 +306,8 @@ static void	vr_rxdrain(struct vr_softc *);
 static void	vr_watchdog(struct ifnet *);
 static void	vr_tick(void *);
 
-static int	vr_mii_readreg(device_t, int, int);
-static void	vr_mii_writereg(device_t, int, int, int);
+static int	vr_mii_readreg(device_t, int, int, uint16_t *);
+static int	vr_mii_writereg(device_t, int, int, uint16_t);
 static void	vr_mii_statchg(struct ifnet *);
 
 static void	vr_setmulti(struct vr_softc *);
@@ -380,24 +380,24 @@ vr_mii_bitbang_write(device_t self, uint32_t val)
  * Read an PHY register through the MII.
  */
 static int
-vr_mii_readreg(device_t self, int phy, int reg)
+vr_mii_readreg(device_t self, int phy, int reg, uint16_t *val)
 {
 	struct vr_softc *sc = device_private(self);
 
 	CSR_WRITE_1(sc, VR_MIICMD, VR_MIICMD_DIRECTPGM);
-	return (mii_bitbang_readreg(self, &vr_mii_bitbang_ops, phy, reg));
+	return (mii_bitbang_readreg(self, &vr_mii_bitbang_ops, phy, reg, val));
 }
 
 /*
  * Write to a PHY register through the MII.
  */
-static void
-vr_mii_writereg(device_t self, int phy, int reg, int val)
+static int
+vr_mii_writereg(device_t self, int phy, int reg, uint16_t val)
 {
 	struct vr_softc *sc = device_private(self);
 
 	CSR_WRITE_1(sc, VR_MIICMD, VR_MIICMD_DIRECTPGM);
-	mii_bitbang_writereg(self, &vr_mii_bitbang_ops, phy, reg, val);
+	return mii_bitbang_writereg(self, &vr_mii_bitbang_ops, phy, reg, val);
 }
 
 static void
@@ -1562,8 +1562,8 @@ vr_attach(device_t parent, device_t self, void *aux)
 		}
 		intrstr = pci_intr_string(pa->pa_pc, intrhandle, intrbuf,
 		    sizeof(intrbuf));
-		sc->vr_ih = pci_intr_establish(pa->pa_pc, intrhandle, IPL_NET,
-						vr_intr, sc);
+		sc->vr_ih = pci_intr_establish_xname(pa->pa_pc, intrhandle,
+		    IPL_NET, vr_intr, sc, device_xname(self));
 		if (sc->vr_ih == NULL) {
 			aprint_error_dev(self, "couldn't establish interrupt");
 			if (intrstr != NULL)

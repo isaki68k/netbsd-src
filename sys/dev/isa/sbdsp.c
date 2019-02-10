@@ -1,4 +1,4 @@
-/*	$NetBSD: sbdsp.c,v 1.138 2018/09/03 16:29:31 riastradh Exp $	*/
+/*	$NetBSD: sbdsp.c,v 1.139 2019/02/03 03:19:27 mrg Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2008 The NetBSD Foundation, Inc.
@@ -74,7 +74,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sbdsp.c,v 1.138 2018/09/03 16:29:31 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sbdsp.c,v 1.139 2019/02/03 03:19:27 mrg Exp $");
 
 #include "midi.h"
 #include "mpu.h"
@@ -647,7 +647,7 @@ sbdsp_set_params(
 					hw.encoding = AUDIO_ENCODING_SLINEAR_LE;
 					swcode = swap_bytes;
 				}
-				/* fall into */
+				/* FALLTHROUGH */
 #endif
 			case AUDIO_ENCODING_SLINEAR:
 			case AUDIO_ENCODING_SLINEAR_LE:
@@ -660,7 +660,7 @@ sbdsp_set_params(
 					hw.encoding = AUDIO_ENCODING_ULINEAR_LE;
 					swcode = swap_bytes;
 				}
-				/* fall into */
+				/* FALLTHROUGH */
 			case AUDIO_ENCODING_ULINEAR_LE:
 				bmode = SB_BMODE_UNSIGNED;
 				break;
@@ -1779,6 +1779,7 @@ sbdsp_mixer_set_port(void *addr, mixer_ctrl_t *cp)
 				return 0;
 			}
 		}
+		/* FALLTHROUGH */
 	case SB_PCSPEAKER:
 	case SB_INPUT_GAIN:
 	case SB_OUTPUT_GAIN:
@@ -1786,12 +1787,14 @@ sbdsp_mixer_set_port(void *addr, mixer_ctrl_t *cp)
 			error = EINVAL;
 			break;
 		}
+		/* FALLTHROUGH */
 	case SB_MIC_VOL:
 	case SB_LINE_IN_VOL:
 		if (sc->sc_mixer_model == SBM_CT1335) {
 			error = EINVAL;
 			break;
 		}
+		/* FALLTHROUGH */
 	case SB_VOICE_VOL:
 	case SB_MIDI_VOL:
 	case SB_CD_VOL:
@@ -1822,7 +1825,7 @@ sbdsp_mixer_set_port(void *addr, mixer_ctrl_t *cp)
 				error = EINVAL;
 				break;
 			}
-			/* fall into */
+			/* FALLTHROUGH */
 		case SB_INPUT_GAIN:
 		case SB_OUTPUT_GAIN:
 			lgain = rgain = SB_ADJUST_2_GAIN(sc,
@@ -1993,6 +1996,7 @@ sbdsp_mixer_get_port(void *addr, mixer_ctrl_t *cp)
 				return 0;
 			}
 		}
+		/* FALLTHROUGH */
 	case SB_PCSPEAKER:
 	case SB_INPUT_GAIN:
 	case SB_OUTPUT_GAIN:
@@ -2000,12 +2004,14 @@ sbdsp_mixer_get_port(void *addr, mixer_ctrl_t *cp)
 			mutex_spin_exit(&sc->sc_intr_lock);
 			return EINVAL;
 		}
+		/* FALLTHROUGH */
 	case SB_MIC_VOL:
 	case SB_LINE_IN_VOL:
 		if (sc->sc_mixer_model == SBM_CT1335) {
 			mutex_spin_exit(&sc->sc_intr_lock);
 			return EINVAL;
 		}
+		/* FALLTHROUGH */
 	case SB_VOICE_VOL:
 	case SB_MIDI_VOL:
 	case SB_CD_VOL:
@@ -2017,7 +2023,7 @@ sbdsp_mixer_get_port(void *addr, mixer_ctrl_t *cp)
 				mutex_spin_exit(&sc->sc_intr_lock);
 				return EINVAL;
 			}
-			/* fall into */
+			/* FALLTHROUGH */
 		default:
 			switch (cp->un.value.num_channels) {
 			case 1:

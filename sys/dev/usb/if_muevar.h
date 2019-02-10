@@ -1,4 +1,4 @@
-/*	$NetBSD: if_muevar.h,v 1.2 2018/08/30 09:00:08 rin Exp $	*/
+/*	$NetBSD: if_muevar.h,v 1.7 2019/02/06 08:28:11 rin Exp $	*/
 /*	$OpenBSD: if_muereg.h,v 1.1 2018/08/03 01:50:15 kevlo Exp $	*/
 
 /*
@@ -26,26 +26,34 @@ struct mue_chain {
 	struct mue_softc	*mue_sc;
 	struct usbd_xfer	*mue_xfer;
 	char			*mue_buf;
-	int			mue_accum;
-	int			mue_idx;
 };
 
 struct mue_cdata {
-#define MUE_TX_LIST_CNT	1
+#ifndef MUE_TX_LIST_CNT
+#define MUE_TX_LIST_CNT	4
+#endif
 	struct mue_chain	mue_tx_chain[MUE_TX_LIST_CNT];
-#define MUE_RX_LIST_CNT	1
+#ifndef MUE_RX_LIST_CNT
+#define MUE_RX_LIST_CNT	4
+#endif
 	struct mue_chain	mue_rx_chain[MUE_RX_LIST_CNT];
 	int			mue_tx_prod;
-	int			mue_tx_cons;
 	int			mue_tx_cnt;
-	int			mue_rx_prod;
 };
 
 struct mue_rxbuf_hdr {
 	uint32_t		rx_cmd_a;
 #define MUE_RX_CMD_A_LEN_MASK	0x00003fff
 #define MUE_RX_CMD_A_ICSM	0x00004000
+#define MUE_RX_CMD_A_ERRORS	__BITS(16, 21)	/* non-checksum errors */
 #define MUE_RX_CMD_A_RED	0x00400000
+#define MUE_RX_CMD_A_PID	__BITS(28, 27)
+#define MUE_RX_CMD_A_PID_TCP	__SHIFTIN(1, MUE_RX_CMD_A_PID)
+#define MUE_RX_CMD_A_PID_UDP	__SHIFTIN(2, MUE_RX_CMD_A_PID)
+#define MUE_RX_CMD_A_PID_IP	__SHIFTIN(3, MUE_RX_CMD_A_PID)
+#define MUE_RX_CMD_A_IPV	__BIT(29)
+#define MUE_RX_CMD_A_TCE	__BIT(30)
+#define MUE_RX_CMD_A_ICE	__BIT(31)
 
 	uint32_t		rx_cmd_b;
 	uint16_t		rx_cmd_c;
@@ -91,14 +99,15 @@ struct mue_softc {
 	struct usbd_interface	*mue_iface;
 
 	struct usb_task		mue_tick_task;
-	struct usb_task		mue_stop_task;
 
 	kmutex_t		mue_mii_lock;
 
 	struct timeval		mue_rx_notice;
+	struct timeval		mue_tx_notice;
 
 	uint16_t		mue_product;
 	uint16_t		mue_flags;
+	uint32_t		mue_id_rev;
 
 	int			mue_if_flags;
 	int			mue_refcnt;
@@ -109,6 +118,9 @@ struct mue_softc {
 	uint32_t		mue_rxbufsz;
 	uint32_t		mue_txbufsz;
 	int			mue_link;
+
+	unsigned		mue_rx_list_cnt;
+	unsigned		mue_tx_list_cnt;
 };
 
 #endif /* _IF_MUEVAR_H_ */

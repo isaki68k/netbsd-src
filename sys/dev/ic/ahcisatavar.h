@@ -1,4 +1,4 @@
-/*	$NetBSD: ahcisatavar.h,v 1.20 2018/10/24 19:38:00 jdolecek Exp $	*/
+/*	$NetBSD: ahcisatavar.h,v 1.22 2019/01/14 21:29:56 jdolecek Exp $	*/
 
 /*
  * Copyright (c) 2006 Manuel Bouyer.
@@ -58,7 +58,6 @@ struct ahci_softc {
 #define AHCI_PCI_QUIRK_FORCE	__BIT(0)  /* force attach */
 #define AHCI_PCI_QUIRK_BAD64	__BIT(1)  /* broken 64-bit DMA */
 #define AHCI_QUIRK_BADPMP	__BIT(2)  /* broken PMP support, ignore */
-#define AHCI_QUIRK_BADPMPRESET	__BIT(3)  /* broken PMP support for reset */
 #define AHCI_QUIRK_SKIP_RESET	__BIT(4)  /* skip drive reset sequence */
 
 	uint32_t sc_ahci_cap;	/* copy of AHCI_CAP */
@@ -86,7 +85,9 @@ struct ahci_softc {
 
 	void	(*sc_channel_start)(struct ahci_softc *, struct ata_channel *);
 	void	(*sc_channel_stop)(struct ahci_softc *, struct ata_channel *);
+	int	(*sc_intr_establish)(struct ahci_softc *, int);
 
+	bool sc_ghc_mrsm;
 	bool sc_save_init_data;
 	struct {
 		uint32_t cap;
@@ -121,4 +122,5 @@ void ahci_childdetached(struct ahci_softc *, device_t);
 void ahci_resume(struct ahci_softc *);
 
 int  ahci_intr(void *);
+int  ahci_intr_port(void *);
 

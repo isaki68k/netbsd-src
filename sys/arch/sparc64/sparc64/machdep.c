@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.289 2018/11/27 14:09:54 maxv Exp $ */
+/*	$NetBSD: machdep.c,v 1.291 2019/01/07 13:10:44 martin Exp $ */
 
 /*-
  * Copyright (c) 1996, 1997, 1998 The NetBSD Foundation, Inc.
@@ -71,13 +71,12 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.289 2018/11/27 14:09:54 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.291 2019/01/07 13:10:44 martin Exp $");
 
 #include "opt_ddb.h"
 #include "opt_multiprocessor.h"
 #include "opt_modular.h"
 #include "opt_compat_netbsd.h"
-#include "opt_compat_svr4.h"
 #include "opt_compat_sunos.h"
 
 #include <sys/param.h>
@@ -123,6 +122,7 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.289 2018/11/27 14:09:54 maxv Exp $");
 #define _SPARC_BUS_DMA_PRIVATE
 #include <machine/autoconf.h>
 #include <sys/bus.h>
+#include <sys/kprintf.h>
 #include <machine/frame.h>
 #include <machine/cpu.h>
 #include <machine/pcb.h>
@@ -142,7 +142,7 @@ int bus_space_debug = 0; /* This may be used by macros elsewhere. */
 #define DPRINTF(l, s)
 #endif
 
-#if defined(COMPAT_16) || defined(COMPAT_SVR4) || defined(COMPAT_SVR4_32) || defined(COMPAT_SUNOS)
+#if defined(COMPAT_16) || defined(COMPAT_SUNOS)
 #ifdef DEBUG
 /* See <sparc64/sparc64/sigdebug.h> */
 int sigdebug = 0x0;
@@ -756,7 +756,8 @@ dumpsys(void)
 
 			/* print out how many MBs we still have to dump */
 			if ((todo % (1024*1024)) == 0)
-				printf_nolog("\r%6" PRIu64 " M ",
+				printf_flags(TOCONS|NOTSTAMP, 
+				    "\r%6" PRIu64 " M ",
 				    todo / (1024*1024));
 			for (off = 0; off < n; off += PAGE_SIZE)
 				pmap_kenter_pa(dumpspace+off, maddr+off,
@@ -791,7 +792,8 @@ dumpsys(void)
 		break;
 
 	case 0:
-		printf("\rdump succeeded\n");
+		printf_flags(TOCONS|NOTSTAMP, "\r           ");
+		printf("\ndump succeeded\n");
 		break;
 
 	default:

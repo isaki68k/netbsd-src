@@ -1,4 +1,4 @@
-/*	$NetBSD: nvmm.c,v 1.3 2018/11/25 14:11:24 maxv Exp $	*/
+/*	$NetBSD: nvmm.c,v 1.6 2019/01/26 15:25:51 maxv Exp $	*/
 
 /*
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nvmm.c,v 1.3 2018/11/25 14:11:24 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nvmm.c,v 1.6 2019/01/26 15:25:51 maxv Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -142,6 +142,7 @@ nvmm_vcpu_alloc(struct nvmm_machine *mach, struct nvmm_cpu **ret)
 
 		vcpu->present = true;
 		vcpu->cpuid = i;
+		vcpu->state = kmem_zalloc(nvmm_impl->state_size, KM_SLEEP);
 		*ret = vcpu;
 		return 0;
 	}
@@ -154,6 +155,7 @@ nvmm_vcpu_free(struct nvmm_machine *mach, struct nvmm_cpu *vcpu)
 {
 	KASSERT(mutex_owned(&vcpu->lock));
 	vcpu->present = false;
+	kmem_free(vcpu->state, nvmm_impl->state_size);
 	vcpu->hcpu_last = -1;
 }
 
@@ -213,7 +215,14 @@ nvmm_kill_machines(pid_t pid)
 			nvmm_vcpu_put(vcpu);
 		}
 		uvmspace_free(mach->vm);
-		uao_detach(mach->uobj);
+
+		/* Drop the kernel UOBJ refs. */
+		for (j = 0; j < NVMM_MAX_SEGS; j++) {
+			if (!mach->segs[j].present)
+				continue;
+			uao_detach(mach->segs[j].uobj);
+		}
+
 		nvmm_machine_free(mach);
 
 		rw_exit(&mach->lock);
@@ -249,14 +258,13 @@ nvmm_machine_create(struct nvmm_ioc_machine_create *args)
 	/* Curproc owns the machine. */
 	mach->procid = curproc->p_pid;
 
+	/* Zero out the segments. */
+	memset(&mach->segs, 0, sizeof(mach->segs));
+
 	/* Create the machine vmspace. */
 	mach->gpa_begin = 0;
 	mach->gpa_end = NVMM_MAX_RAM;
 	mach->vm = uvmspace_alloc(0, mach->gpa_end - mach->gpa_begin, false);
-	mach->uobj = uao_create(mach->gpa_end - mach->gpa_begin, 0);
-
-	/* Grab a reference for the machine. */
-	uao_reference(mach->uobj);
 
 	(*nvmm_impl->machine_create)(mach);
 
@@ -292,7 +300,13 @@ nvmm_machine_destroy(struct nvmm_ioc_machine_destroy *args)
 
 	/* Free the machine vmspace. */
 	uvmspace_free(mach->vm);
-	uao_detach(mach->uobj);
+
+	/* Drop the kernel UOBJ refs. */
+	for (i = 0; i < NVMM_MAX_SEGS; i++) {
+		if (!mach->segs[i].present)
+			continue;
+		uao_detach(mach->segs[i].uobj);
+	}
 
 	nvmm_machine_free(mach);
 	nvmm_machine_put(mach);
@@ -392,33 +406,27 @@ nvmm_vcpu_setstate(struct nvmm_ioc_vcpu_setstate *args)
 {
 	struct nvmm_machine *mach;
 	struct nvmm_cpu *vcpu;
-	void *data;
 	int error;
 
-	data = kmem_alloc(nvmm_impl->state_size, KM_SLEEP);
-
 	error = nvmm_machine_get(args->machid, &mach, false);
-	if (error) {
-		kmem_free(data, nvmm_impl->state_size);
+	if (error)
 		return error;
-	}
 
 	error = nvmm_vcpu_get(mach, args->cpuid, &vcpu);
 	if (error)
 		goto out;
 
-	error = copyin(args->state, data, nvmm_impl->state_size);
+	error = copyin(args->state, vcpu->state, nvmm_impl->state_size);
 	if (error) {
 		nvmm_vcpu_put(vcpu);
 		goto out;
 	}
 
-	(*nvmm_impl->vcpu_setstate)(vcpu, data, args->flags);
+	(*nvmm_impl->vcpu_setstate)(vcpu, vcpu->state, args->flags);
 	nvmm_vcpu_put(vcpu);
 
 out:
 	nvmm_machine_put(mach);
-	kmem_free(data, nvmm_impl->state_size);
 	return error;
 }
 
@@ -427,28 +435,22 @@ nvmm_vcpu_getstate(struct nvmm_ioc_vcpu_getstate *args)
 {
 	struct nvmm_machine *mach;
 	struct nvmm_cpu *vcpu;
-	void *data;
 	int error;
 
-	data = kmem_alloc(nvmm_impl->state_size, KM_SLEEP);
-
 	error = nvmm_machine_get(args->machid, &mach, false);
-	if (error) {
-		kmem_free(data, nvmm_impl->state_size);
+	if (error)
 		return error;
-	}
 
 	error = nvmm_vcpu_get(mach, args->cpuid, &vcpu);
 	if (error)
 		goto out;
 
-	(*nvmm_impl->vcpu_getstate)(vcpu, data, args->flags);
+	(*nvmm_impl->vcpu_getstate)(vcpu, vcpu->state, args->flags);
 	nvmm_vcpu_put(vcpu);
-	error = copyout(data, args->state, nvmm_impl->state_size);
+	error = copyout(vcpu->state, args->state, nvmm_impl->state_size);
 
 out:
 	nvmm_machine_put(mach);
-	kmem_free(data, nvmm_impl->state_size);
 	return error;
 }
 
@@ -500,21 +502,189 @@ out:
 
 /* -------------------------------------------------------------------------- */
 
+static struct uvm_object *
+nvmm_seg_getuobj(struct nvmm_machine *mach, uintptr_t hva, size_t size,
+   size_t *off)
+{
+	struct nvmm_seg *seg;
+	size_t i;
+
+	for (i = 0; i < NVMM_MAX_SEGS; i++) {
+		seg = &mach->segs[i];
+		if (!seg->present) {
+			continue;
+		}
+		if (hva >= seg->hva && hva + size <= seg->hva + seg->size) {
+			*off = hva - seg->hva;
+			return seg->uobj;
+		}
+	}
+
+	return NULL;
+}
+
+static struct nvmm_seg *
+nvmm_seg_find(struct nvmm_machine *mach, uintptr_t hva, size_t size)
+{
+	struct nvmm_seg *seg;
+	size_t i;
+
+	for (i = 0; i < NVMM_MAX_SEGS; i++) {
+		seg = &mach->segs[i];
+		if (seg->present && seg->hva == hva && seg->size == size) {
+			return seg;
+		}
+	}
+
+	return NULL;
+}
+
+static int
+nvmm_seg_validate(struct nvmm_machine *mach, uintptr_t hva, size_t size)
+{
+	struct nvmm_seg *seg;
+	size_t i;
+
+	if ((hva % PAGE_SIZE) != 0 || (size % PAGE_SIZE) != 0) {
+		return EINVAL;
+	}
+	if (hva == 0) {
+		return EINVAL;
+	}
+
+	for (i = 0; i < NVMM_MAX_SEGS; i++) {
+		seg = &mach->segs[i];
+		if (!seg->present) {
+			continue;
+		}
+
+		if (hva >= seg->hva && hva + size <= seg->hva + seg->size) {
+			break;
+		}
+
+		if (hva >= seg->hva && hva < seg->hva + seg->size) {
+			return EEXIST;
+		}
+		if (hva + size > seg->hva &&
+		    hva + size <= seg->hva + seg->size) {
+			return EEXIST;
+		}
+		if (hva <= seg->hva && hva + size >= seg->hva + seg->size) {
+			return EEXIST;
+		}
+	}
+
+	return 0;
+}
+
+static struct nvmm_seg *
+nvmm_seg_alloc(struct nvmm_machine *mach)
+{
+	struct nvmm_seg *seg;
+	size_t i;
+
+	for (i = 0; i < NVMM_MAX_SEGS; i++) {
+		seg = &mach->segs[i];
+		if (!seg->present) {
+			seg->present = true;
+			return seg;
+		}
+	}
+
+	return NULL;
+}
+
+static void
+nvmm_seg_free(struct nvmm_seg *seg)
+{
+	struct vmspace *vmspace = curproc->p_vmspace;
+
+	uvm_unmap(&vmspace->vm_map, seg->hva, seg->hva + seg->size);
+	uao_detach(seg->uobj);
+
+	seg->uobj = NULL;
+	seg->present = false;
+}
+
+static int
+nvmm_hva_map(struct nvmm_ioc_hva_map *args)
+{
+	struct vmspace *vmspace = curproc->p_vmspace;
+	struct nvmm_machine *mach;
+	struct nvmm_seg *seg;
+	vaddr_t uva;
+	int error;
+
+	error = nvmm_machine_get(args->machid, &mach, true);
+	if (error)
+		return error;
+
+	error = nvmm_seg_validate(mach, args->hva, args->size);
+	if (error)
+		goto out;
+
+	seg = nvmm_seg_alloc(mach);
+	if (seg == NULL) {
+		error = ENOBUFS;
+		goto out;
+	}
+
+	seg->hva = args->hva;
+	seg->size = args->size;
+	seg->uobj = uao_create(seg->size, 0);
+	uva = seg->hva;
+
+	/* Take a reference for the user. */
+	uao_reference(seg->uobj);
+
+	/* Map the uobj into the user address space, as pageable. */
+	error = uvm_map(&vmspace->vm_map, &uva, seg->size, seg->uobj, 0, 0,
+	    UVM_MAPFLAG(UVM_PROT_RW, UVM_PROT_RW, UVM_INH_SHARE,
+	    UVM_ADV_RANDOM, UVM_FLAG_FIXED|UVM_FLAG_UNMAP));
+	if (error) {
+		uao_detach(seg->uobj);
+	}
+
+out:
+	nvmm_machine_put(mach);
+	return error;
+}
+
+static int
+nvmm_hva_unmap(struct nvmm_ioc_hva_unmap *args)
+{
+	struct nvmm_machine *mach;
+	struct nvmm_seg *seg;
+	int error;
+
+	error = nvmm_machine_get(args->machid, &mach, true);
+	if (error)
+		return error;
+
+	seg = nvmm_seg_find(mach, args->hva, args->size);
+	if (seg == NULL)
+		return ENOENT;
+
+	nvmm_seg_free(seg);
+
+	nvmm_machine_put(mach);
+	return 0;
+}
+
+/* -------------------------------------------------------------------------- */
+
 static int
 nvmm_gpa_map(struct nvmm_ioc_gpa_map *args)
 {
-	struct proc *p = curproc;
 	struct nvmm_machine *mach;
-	struct vmspace *vmspace;
+	struct uvm_object *uobj;
 	gpaddr_t gpa;
-	vaddr_t uva;
+	size_t off;
 	int error;
 
 	error = nvmm_machine_get(args->machid, &mach, false);
 	if (error)
 		return error;
-
-	vmspace = p->p_vmspace;
 
 	if ((args->gpa % PAGE_SIZE) != 0 || (args->size % PAGE_SIZE) != 0 ||
 	    (args->hva % PAGE_SIZE) != 0) {
@@ -539,35 +709,27 @@ nvmm_gpa_map(struct nvmm_ioc_gpa_map *args)
 	}
 	gpa = args->gpa;
 
-	/* Take a reference for the kernel. */
-	uao_reference(mach->uobj);
-
-	/* Map the uobj into the machine address space, as pageable. */
-	error = uvm_map(&mach->vm->vm_map, &gpa, args->size, mach->uobj,
-	    args->gpa, 0, UVM_MAPFLAG(UVM_PROT_RWX, UVM_PROT_RWX,
-	    UVM_INH_NONE, UVM_ADV_RANDOM, UVM_FLAG_FIXED));
-	if (error) {
-		uao_detach(mach->uobj);
-		goto out;
-	}
-	if (gpa != args->gpa) {
-		uao_detach(mach->uobj);
-		printf("[!] uvm_map problem\n");
+	uobj = nvmm_seg_getuobj(mach, args->hva, args->size, &off);
+	if (uobj == NULL) {
 		error = EINVAL;
 		goto out;
 	}
 
-	uva = (vaddr_t)args->hva;
+	/* Take a reference for the machine. */
+	uao_reference(uobj);
 
-	/* Take a reference for the user. */
-	uao_reference(mach->uobj);
-
-	/* Map the uobj into the user address space, as pageable. */
-	error = uvm_map(&vmspace->vm_map, &uva, args->size, mach->uobj,
-	    args->gpa, 0, UVM_MAPFLAG(UVM_PROT_RW, UVM_PROT_RW,
-	    UVM_INH_SHARE, UVM_ADV_RANDOM, UVM_FLAG_FIXED|UVM_FLAG_UNMAP));
+	/* Map the uobj into the machine address space, as pageable. */
+	error = uvm_map(&mach->vm->vm_map, &gpa, args->size, uobj, off, 0,
+	    UVM_MAPFLAG(UVM_PROT_RWX, UVM_PROT_RWX, UVM_INH_NONE,
+	    UVM_ADV_RANDOM, UVM_FLAG_FIXED|UVM_FLAG_UNMAP));
 	if (error) {
-		uao_detach(mach->uobj);
+		uao_detach(uobj);
+		goto out;
+	}
+	if (gpa != args->gpa) {
+		uao_detach(uobj);
+		printf("[!] uvm_map problem\n");
+		error = EINVAL;
 		goto out;
 	}
 
@@ -715,6 +877,10 @@ nvmm_ioctl(dev_t dev, u_long cmd, void *data, int flags, struct lwp *l)
 		return nvmm_gpa_map(data);
 	case NVMM_IOC_GPA_UNMAP:
 		return nvmm_gpa_unmap(data);
+	case NVMM_IOC_HVA_MAP:
+		return nvmm_hva_map(data);
+	case NVMM_IOC_HVA_UNMAP:
+		return nvmm_hva_unmap(data);
 	default:
 		return EINVAL;
 	}

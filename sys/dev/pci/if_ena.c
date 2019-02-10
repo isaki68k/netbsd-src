@@ -31,7 +31,7 @@
 #if 0
 __FBSDID("$FreeBSD: head/sys/dev/ena/ena.c 333456 2018-05-10 09:37:54Z mw $");
 #endif
-__KERNEL_RCSID(0, "$NetBSD: if_ena.c,v 1.9 2018/11/28 21:31:32 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_ena.c,v 1.13 2019/01/23 11:15:11 ryoon Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -641,9 +641,9 @@ ena_setup_tx_resources(struct ena_adapter *adapter, int qid)
 	}
 
 	/* Allocate workqueues */
-	int rc = workqueue_create(&tx_ring->enqueue_tq, "ena_tx_enque",
-	    ena_deferred_mq_start, tx_ring, 0, IPL_NET, 0);
-	if (unlikely(rc == 0)) {
+	int rc = workqueue_create(&tx_ring->enqueue_tq, "ena_tx_enq",
+	    ena_deferred_mq_start, tx_ring, 0, IPL_NET, WQ_PERCPU | WQ_MPSAFE);
+	if (unlikely(rc != 0)) {
 		ena_trace(ENA_ALERT,
 		    "Unable to create workqueue for enqueue task\n");
 		i = tx_ring->ring_size;
@@ -848,8 +848,8 @@ ena_setup_rx_resources(struct ena_adapter *adapter, unsigned int qid)
 #endif
 
 	/* Allocate workqueues */
-	int rc = workqueue_create(&rx_ring->cmpl_tq, "ena RX completion",
-	    ena_deferred_rx_cleanup, rx_ring, 0, IPL_NET, 0);
+	int rc = workqueue_create(&rx_ring->cmpl_tq, "ena_rx_comp",
+	    ena_deferred_rx_cleanup, rx_ring, 0, IPL_NET, WQ_PERCPU | WQ_MPSAFE);
 	if (unlikely(rc != 0)) {
 		ena_trace(ENA_ALERT,
 		    "Unable to create workqueue for RX completion task\n");
@@ -1422,7 +1422,8 @@ ena_tx_cleanup(struct ena_ring *tx_ring)
 		ena_com_update_dev_comp_head(io_cq);
 	}
 
-	workqueue_enqueue(tx_ring->enqueue_tq, &tx_ring->enqueue_task, NULL);
+	if (atomic_cas_uint(&tx_ring->task_pending, 0, 1) == 0)
+		workqueue_enqueue(tx_ring->enqueue_tq, &tx_ring->enqueue_task, NULL);
 
 	return (work_done);
 }
@@ -1594,7 +1595,7 @@ ena_rx_checksum(struct ena_ring *rx_ring, struct ena_com_rx_ctx *ena_rx_ctx,
 {
 
 	/* IPv4 */
-	if ((ena_rx_ctx->l3_proto == ENA_ETH_IO_L3_PROTO_IPV4)) {
+	if (ena_rx_ctx->l3_proto == ENA_ETH_IO_L3_PROTO_IPV4) {
 		mbuf->m_pkthdr.csum_flags |= M_CSUM_IPv4;
 		if (ena_rx_ctx->l3_csum_err) {
 			/* ipv4 checksum error */
@@ -1617,7 +1618,7 @@ ena_rx_checksum(struct ena_ring *rx_ring, struct ena_com_rx_ctx *ena_rx_ctx,
 		}
 	}
 	/* IPv6 */
-	else if ((ena_rx_ctx->l3_proto == ENA_ETH_IO_L3_PROTO_IPV6)) {
+	else if (ena_rx_ctx->l3_proto == ENA_ETH_IO_L3_PROTO_IPV6) {
 		/*  TCP/UDP */
 		if ((ena_rx_ctx->l4_proto == ENA_ETH_IO_L4_PROTO_TCP) ||
 		    (ena_rx_ctx->l4_proto == ENA_ETH_IO_L4_PROTO_UDP)) {
@@ -1637,6 +1638,8 @@ ena_deferred_rx_cleanup(struct work *wk, void *arg)
 {
 	struct ena_ring *rx_ring = arg;
 	int budget = CLEAN_BUDGET;
+
+	atomic_swap_uint(&rx_ring->task_pending, 0);
 
 	ENA_RING_MTX_LOCK(rx_ring);
 	/*
@@ -1667,9 +1670,7 @@ ena_rx_cleanup(struct ena_ring *rx_ring)
 	uint16_t next_to_clean;
 	uint32_t refill_required;
 	uint32_t refill_threshold;
-#ifdef LRO
 	uint32_t do_if_input = 0;
-#endif
 	unsigned int qid;
 	int rc, i;
 	int budget = RX_BUDGET;
@@ -1732,12 +1733,12 @@ ena_rx_cleanup(struct ena_ring *rx_ring)
 		counter_u64_add_protected(adapter->hw_stats.rx_bytes,
 		    mbuf->m_pkthdr.len);
 		counter_exit();
-#ifdef LRO
 		/*
 		 * LRO is only for IP/TCP packets and TCP checksum of the packet
 		 * should be computed by hardware.
 		 */
 		do_if_input = 1;
+#ifdef LRO
 		if (((ifp->if_capenable & IFCAP_LRO) != 0)  &&
 		    ((mbuf->m_pkthdr.csum_flags & CSUM_IP_VALID) != 0) &&
 		    (ena_rx_ctx.l4_proto == ENA_ETH_IO_L4_PROTO_TCP)) {
@@ -1751,12 +1752,12 @@ ena_rx_cleanup(struct ena_ring *rx_ring)
 			    (tcp_lro_rx(&rx_ring->lro, mbuf, 0) == 0))
 					do_if_input = 0;
 		}
+#endif
 		if (do_if_input != 0) {
 			ena_trace(ENA_DBG | ENA_RXPTH,
 			    "calling if_input() with mbuf %p", mbuf);
-			(*ifp->if_input)(ifp, mbuf);
+			if_percpuq_enqueue(ifp->if_percpuq, mbuf);
 		}
-#endif
 
 		counter_enter();
 		counter_u64_add_protected(rx_ring->rx_stats.cnt, 1);
@@ -2044,7 +2045,9 @@ err:
 	kcpuset_destroy(affinity);
 
 	for (i--; i >= 0; i--) {
+#if defined(DEBUG) || defined(DIAGNOSTIC)
 		int irq_slot = i + irq_off;
+#endif
 		KASSERT(adapter->sc_ihs[irq_slot] != NULL);
 		pci_intr_disestablish(adapter->sc_pa.pa_pc, adapter->sc_ihs[i]);
 		adapter->sc_ihs[i] = NULL;
@@ -2497,7 +2500,7 @@ ena_setup_ifnet(device_t pdev, struct ena_adapter *adapter,
 		ena_trace(ENA_ALERT, "can not allocate ifnet structure\n");
 		return (ENXIO);
 	}
-	if_initname(ifp, device_xname(pdev), device_unit(pdev));
+	if_initname(ifp, "ena", device_unit(pdev));
 	if_setdev(ifp, pdev);
 	if_setsoftc(ifp, adapter);
 
@@ -2913,6 +2916,8 @@ ena_deferred_mq_start(struct work *wk, void *arg)
 	struct ena_ring *tx_ring = (struct ena_ring *)arg;
 	struct ifnet *ifp = tx_ring->adapter->ifp;
 
+	atomic_swap_uint(&tx_ring->task_pending, 0);
+
 	while (!drbr_empty(ifp, tx_ring->br) &&
 	    (if_getdrvflags(ifp) & IFF_RUNNING) != 0) {
 		ENA_RING_MTX_LOCK(tx_ring);
@@ -2962,8 +2967,9 @@ ena_mq_start(struct ifnet *ifp, struct mbuf *m)
 	is_drbr_empty = drbr_empty(ifp, tx_ring->br);
 	ret = drbr_enqueue(ifp, tx_ring->br, m);
 	if (unlikely(ret != 0)) {
-		workqueue_enqueue(tx_ring->enqueue_tq, &tx_ring->enqueue_task,
-		    curcpu());
+		if (atomic_cas_uint(&tx_ring->task_pending, 0, 1) == 0)
+			workqueue_enqueue(tx_ring->enqueue_tq, &tx_ring->enqueue_task,
+			    curcpu());
 		return (ret);
 	}
 
@@ -2971,8 +2977,9 @@ ena_mq_start(struct ifnet *ifp, struct mbuf *m)
 		ena_start_xmit(tx_ring);
 		ENA_RING_MTX_UNLOCK(tx_ring);
 	} else {
-		workqueue_enqueue(tx_ring->enqueue_tq, &tx_ring->enqueue_task,
-		    curcpu());
+		if (atomic_cas_uint(&tx_ring->task_pending, 0, 1) == 0)
+			workqueue_enqueue(tx_ring->enqueue_tq, &tx_ring->enqueue_task,
+			    curcpu());
 	}
 
 	return (0);
@@ -3494,8 +3501,9 @@ check_for_empty_rx_ring(struct ena_adapter *adapter)
 				device_printf(adapter->pdev,
 				    "trigger refill for ring %d\n", i);
 
-				workqueue_enqueue(rx_ring->cmpl_tq,
-				    &rx_ring->cmpl_task, curcpu());
+				if (atomic_cas_uint(&rx_ring->task_pending, 0, 1) == 0)
+					workqueue_enqueue(rx_ring->cmpl_tq,
+					    &rx_ring->cmpl_task, curcpu());
 				rx_ring->empty_rx_queue = 0;
 			}
 		} else {
@@ -3765,9 +3773,11 @@ ena_attach(device_t parent, device_t self, void *aux)
 		goto err_ifp_free;
 	}
 
+	callout_init(&adapter->timer_service, CALLOUT_MPSAFE);
+
 	/* Initialize reset task queue */
-	rc = workqueue_create(&adapter->reset_tq, "ena_reset_enqueue",
-	    ena_reset_task, adapter, 0, IPL_NET, 0);
+	rc = workqueue_create(&adapter->reset_tq, "ena_reset_enq",
+	    ena_reset_task, adapter, 0, IPL_NET, WQ_PERCPU | WQ_MPSAFE);
 	if (unlikely(rc != 0)) {
 		ena_trace(ENA_ALERT,
 		    "Unable to create workqueue for reset task\n");
@@ -3831,6 +3841,7 @@ ena_detach(device_t pdev, int flags)
 
 	/* Free reset task and callout */
 	callout_halt(&adapter->timer_service, &adapter->global_mtx);
+	callout_destroy(&adapter->timer_service);
 	workqueue_wait(adapter->reset_tq, &adapter->reset_task);
 	workqueue_destroy(adapter->reset_tq);
 	adapter->reset_tq = NULL;

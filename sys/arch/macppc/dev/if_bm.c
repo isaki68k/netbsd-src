@@ -1,4 +1,4 @@
-/*	$NetBSD: if_bm.c,v 1.55 2018/09/03 16:29:25 riastradh Exp $	*/
+/*	$NetBSD: if_bm.c,v 1.57 2019/02/05 06:17:01 msaitoh Exp $	*/
 
 /*-
  * Copyright (C) 1998, 1999, 2000 Tsubai Masanari.  All rights reserved.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_bm.c,v 1.55 2018/09/03 16:29:25 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_bm.c,v 1.57 2019/02/05 06:17:01 msaitoh Exp $");
 
 #include "opt_inet.h"
 
@@ -114,8 +114,8 @@ void bmac_watchdog(struct ifnet *);
 int bmac_ioctl(struct ifnet *, u_long, void *);
 void bmac_setladrf(struct bmac_softc *);
 
-int bmac_mii_readreg(device_t, int, int);
-void bmac_mii_writereg(device_t, int, int, int);
+int bmac_mii_readreg(device_t, int, int, uint16_t *);
+int bmac_mii_writereg(device_t, int, int, uint16_t);
 void bmac_mii_statchg(struct ifnet *);
 void bmac_mii_tick(void *);
 u_int32_t bmac_mbo_read(device_t);
@@ -236,8 +236,7 @@ bmac_attach(device_t parent, device_t self, void *aux)
 	ifp->if_softc = sc;
 	ifp->if_ioctl = bmac_ioctl;
 	ifp->if_start = bmac_start;
-	ifp->if_flags =
-		IFF_BROADCAST | IFF_SIMPLEX | IFF_NOTRAILERS | IFF_MULTICAST;
+	ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
 	ifp->if_watchdog = bmac_watchdog;
 	IFQ_SET_READY(&ifp->if_snd);
 
@@ -298,13 +297,14 @@ bmac_init(struct bmac_softc *sc)
 	struct ifnet *ifp = &sc->sc_if;
 	struct ether_header *eh;
 	void *data;
-	int i, tb, bmcr;
+	int i, tb;
+	uint16_t bmcr;
 	u_short *p;
 
 	bmac_reset_chip(sc);
 
 	/* XXX */
-	bmcr = bmac_mii_readreg(sc->sc_dev, 0, MII_BMCR);
+	bmac_mii_readreg(sc->sc_dev, 0, MII_BMCR, &bmcr);
 	bmcr &= ~BMCR_ISO;
 	bmac_mii_writereg(sc->sc_dev, 0, MII_BMCR, bmcr);
 
@@ -848,15 +848,15 @@ chipit:
 }
 
 int
-bmac_mii_readreg(device_t self, int phy, int reg)
+bmac_mii_readreg(device_t self, int phy, int reg, uint16_t *val)
 {
-	return mii_bitbang_readreg(self, &bmac_mbo, phy, reg);
+	return mii_bitbang_readreg(self, &bmac_mbo, phy, reg, val);
 }
 
-void
-bmac_mii_writereg(device_t self, int phy, int reg, int val)
+int
+bmac_mii_writereg(device_t self, int phy, int reg, uint16_t val)
 {
-	mii_bitbang_writereg(self, &bmac_mbo, phy, reg, val);
+	return mii_bitbang_writereg(self, &bmac_mbo, phy, reg, val);
 }
 
 u_int32_t

@@ -1,4 +1,4 @@
-/*	$NetBSD: if_pcn.c,v 1.65 2018/06/26 06:48:01 msaitoh Exp $	*/
+/*	$NetBSD: if_pcn.c,v 1.67 2019/01/22 03:42:27 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2001 Wasabi Systems, Inc.
@@ -65,7 +65,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_pcn.c,v 1.65 2018/06/26 06:48:01 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_pcn.c,v 1.67 2019/01/22 03:42:27 msaitoh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -401,8 +401,8 @@ static int	pcn_intr(void *);
 static void	pcn_txintr(struct pcn_softc *);
 static int	pcn_rxintr(struct pcn_softc *);
 
-static int	pcn_mii_readreg(device_t, int, int);
-static void	pcn_mii_writereg(device_t, int, int, int);
+static int	pcn_mii_readreg(device_t, int, int, uint16_t *);
+static int	pcn_mii_writereg(device_t, int, int, uint16_t);
 static void	pcn_mii_statchg(struct ifnet *);
 
 static void	pcn_79c970_mediainit(struct pcn_softc *);
@@ -684,7 +684,8 @@ pcn_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 	intrstr = pci_intr_string(pc, ih, intrbuf, sizeof(intrbuf));
-	sc->sc_ih = pci_intr_establish(pc, ih, IPL_NET, pcn_intr, sc);
+	sc->sc_ih = pci_intr_establish_xname(pc, ih, IPL_NET, pcn_intr, sc,
+	    device_xname(self));
 	if (sc->sc_ih == NULL) {
 		aprint_error_dev(self, "unable to establish interrupt");
 		if (intrstr != NULL)
@@ -2149,17 +2150,16 @@ pcn_79c971_mediainit(struct pcn_softc *sc)
  *	Read a PHY register on the MII.
  */
 static int
-pcn_mii_readreg(device_t self, int phy, int reg)
+pcn_mii_readreg(device_t self, int phy, int reg, uint16_t *val)
 {
 	struct pcn_softc *sc = device_private(self);
-	uint32_t rv;
 
 	pcn_bcr_write(sc, LE_BCR33, reg | (phy << PHYAD_SHIFT));
-	rv = pcn_bcr_read(sc, LE_BCR34) & LE_B34_MIIMD;
-	if (rv == 0xffff)
-		return (0);
+	*val = pcn_bcr_read(sc, LE_BCR34) & LE_B34_MIIMD;
+	if (*val == 0xffff)
+		return -1;
 
-	return (rv);
+	return 0;
 }
 
 /*
@@ -2167,13 +2167,15 @@ pcn_mii_readreg(device_t self, int phy, int reg)
  *
  *	Write a PHY register on the MII.
  */
-static void
-pcn_mii_writereg(device_t self, int phy, int reg, int val)
+static int
+pcn_mii_writereg(device_t self, int phy, int reg, uint16_t val)
 {
 	struct pcn_softc *sc = device_private(self);
 
 	pcn_bcr_write(sc, LE_BCR33, reg | (phy << PHYAD_SHIFT));
 	pcn_bcr_write(sc, LE_BCR34, val);
+
+	return 0;
 }
 
 /*

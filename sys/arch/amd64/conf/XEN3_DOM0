@@ -1,4 +1,4 @@
-# $NetBSD: XEN3_DOM0,v 1.159 2018/11/24 18:23:29 bouyer Exp $
+# $NetBSD: XEN3_DOM0,v 1.165 2019/02/06 11:58:30 rin Exp $
 
 include 	"arch/amd64/conf/std.xen"
 
@@ -10,7 +10,7 @@ options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 #options 	UVMHIST_PRINT
 #options 	SYSCALL_DEBUG
 
-#ident		"XEN3_DOM0-$Revision: 1.159 $"
+#ident		"XEN3_DOM0-$Revision: 1.165 $"
 
 maxusers	32		# estimated number of users
 
@@ -192,6 +192,8 @@ cpu* at mainbus?
 
 # IPMI support
 ipmi0		at mainbus?
+ipmi_acpi*	at acpi?
+ipmi0		at ipmi_acpi? 
 
 hypervisor*	at mainbus?		# Xen hypervisor
 
@@ -202,7 +204,9 @@ xenbus* 	at hypervisor?		# Xen virtual bus
 xencons*	at hypervisor?		# Xen virtual console
 balloon*	at xenbus?		# Xen balloon device
 
-acpi0		at hypervisor?
+acpi0		at hypervisor?		# ACPI access in PV mode
+acpi0		at mainbus?		# ACPI access in PVH(VM) mode
+
 #options 	ACPI_ACTIVATE_DEV	# If set, activate inactive devices
 options 	ACPI_SCANPCI		# find PCI roots using ACPI
 #options 	ACPICA_PEDANTIC		# force strict conformance to the Spec.
@@ -371,7 +375,6 @@ ixg*	at pci? dev ? function ?	# Intel 8259x 10 gigabit
 jme*	at pci? dev ? function ?	# JMicron JMC2[56]0 ethernet
 le*	at pci? dev ? function ?	# PCnet-PCI Ethernet
 lii*	at pci? dev ? function ?	# Atheros L2 Fast-Ethernet
-lmc*	at pci? dev ? function ?	# Lan Media Corp SSI/HSSI/DS3
 mskc*	at pci? dev ? function ?	# Marvell Yukon 2 Gigabit Ethernet
 msk*	at mskc?			# Marvell Yukon 2 Gigabit Ethernet
 mtd*	at pci? dev ? function ?	# Myson MTD803 3-in-1 Ethernet
@@ -658,6 +661,7 @@ cue*	at uhub? port ?		# CATC USB-EL1201A based adapters
 kue*	at uhub? port ?		# Kawasaki LSI KL5KUSB101B based adapters
 mue*	at uhub? port ?		# Microchip LAN75xx/LAN78xx based adapters
 udav*	at uhub? port ?		# Davicom DM9601 based adapters
+ure*	at uhub? port ?		# Realtek RTL8152/RTL8153 based adapters
 url*	at uhub? port ?		# Realtek RTL8150L based adapters
 urndis* at uhub? port ? 	# Microsoft RNDIS specification
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: vnd.c,v 1.269 2018/10/07 12:00:07 mlelstv Exp $	*/
+/*	$NetBSD: vnd.c,v 1.271 2019/01/27 02:08:41 pgoyette Exp $	*/
 
 /*-
  * Copyright (c) 1996, 1997, 1998, 2008 The NetBSD Foundation, Inc.
@@ -91,7 +91,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vnd.c,v 1.269 2018/10/07 12:00:07 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vnd.c,v 1.271 2019/01/27 02:08:41 pgoyette Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_vnd.h"
@@ -120,6 +120,7 @@ __KERNEL_RCSID(0, "$NetBSD: vnd.c,v 1.269 2018/10/07 12:00:07 mlelstv Exp $");
 #include <sys/conf.h>
 #include <sys/kauth.h>
 #include <sys/module.h>
+#include <sys/compat_stub.h>
 
 #include <net/zlib.h>
 
@@ -733,11 +734,16 @@ vndthread(void *arg)
 		bp->b_bcount = obp->b_bcount;
 		BIO_COPYPRIO(bp, obp);
 
+		/* Make sure the request succeeds while suspending this fs. */
+		fstrans_start_lazy(vnd->sc_vp->v_mount);
+
 		/* Handle the request using the appropriate operations. */
 		if ((vnd->sc_flags & VNF_USE_VN_RDWR) == 0)
 			handle_with_strategy(vnd, obp, bp);
 		else
 			handle_with_rdwr(vnd, obp, bp);
+
+		fstrans_done(vnd->sc_vp->v_mount);
 
 		s = splbio();
 		continue;
@@ -804,9 +810,6 @@ handle_with_rdwr(struct vnd_softc *vnd, const struct buf *obp, struct buf *bp)
 		    bp->b_bcount);
 #endif
 
-	/* Make sure the request succeeds while suspending this fs. */
-	fstrans_start_lazy(vp->v_mount);
-
 	/* Issue the read or write operation. */
 	bp->b_error =
 	    vn_rdwr(doread ? UIO_READ : UIO_WRITE,
@@ -827,8 +830,6 @@ handle_with_rdwr(struct vnd_softc *vnd, const struct buf *obp, struct buf *bp)
 		    PGO_ALLPAGES | PGO_CLEANIT | PGO_FREE);
 	else
 		mutex_exit(vp->v_interlock);
-
-	fstrans_done(vp->v_mount);
 
 	/* We need to increase the number of outputs on the vnode if
 	 * there was any write to it. */
@@ -1150,30 +1151,7 @@ vndioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 #endif
 	/* Do the get's first; they don't need initialization or verification */
 	switch (cmd) {
-#ifdef COMPAT_30
-	case VNDIOCGET30: {
-		if ((error = vndioctl_get(l, data, unit, &vattr)) != 0)
-			return error;
-
-		struct vnd_user30 *vnu = data;
-		vnu->vnu_dev = vattr.va_fsid;
-		vnu->vnu_ino = vattr.va_fileid;
-		return 0;
-	}
-#endif
-#ifdef COMPAT_50
-	case VNDIOCGET50: {
-		if ((error = vndioctl_get(l, data, unit, &vattr)) != 0)
-			return error;
-
-		struct vnd_user50 *vnu = data;
-		vnu->vnu_dev = vattr.va_fsid;
-		vnu->vnu_ino = vattr.va_fileid;
-		return 0;
-	}
-#endif
-
-	case VNDIOCGET: {
+	case VNDIOCGET:
 		if ((error = vndioctl_get(l, data, unit, &vattr)) != 0)
 			return error;
 
@@ -1181,9 +1159,35 @@ vndioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 		vnu->vnu_dev = vattr.va_fsid;
 		vnu->vnu_ino = vattr.va_fileid;
 		return 0;
-	}
+
 	default:
-		break;
+		/* First check for COMPAT_50 hook */
+		MODULE_CALL_HOOK(compat_vndioctl_50_hook,
+		    (cmd, l, data, unit, &vattr, vndioctl_get),
+		    enosys(), error);
+
+		/*
+		 * If not present, then COMPAT_30 hook also not
+		 * present, so just continue with checks for the
+		 * "write" commands
+		 */
+		if (error == ENOSYS) {
+			error = 0;
+			break;
+		}
+
+		/* If not already handled, try the COMPAT_30 hook */
+		if (error == EPASSTHROUGH)
+			MODULE_CALL_HOOK(compat_vndioctl_30_hook,
+			    (cmd, l, data, unit, &vattr, vndioctl_get),
+			    enosys(), error);
+
+		/* If no COMPAT_30 module, or not handled, check writes */
+		if (error == ENOSYS || error == EPASSTHROUGH) {
+			error = 0;
+			break;
+		}
+		return error;
 	}
 
 	vnd = device_lookup_private(&vnd_cd, unit);
@@ -1193,12 +1197,13 @@ vndioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 
 	/* Must be open for writes for these commands... */
 	switch (cmd) {
-	case VNDIOCSET:
-	case VNDIOCCLR:
-#ifdef COMPAT_50
 	case VNDIOCSET50:
 	case VNDIOCCLR50:
-#endif
+		if (!compat_vndioctl_50_hook.hooked)
+			return EINVAL;
+		/* FALLTHROUGH */
+	case VNDIOCSET:
+	case VNDIOCCLR:
 	case DIOCSDINFO:
 	case DIOCWDINFO:
 #ifdef __HAVE_OLD_DISKLABEL
@@ -1214,9 +1219,7 @@ vndioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 	/* Must be initialized for these... */
 	switch (cmd) {
 	case VNDIOCCLR:
-#ifdef VNDIOCCLR50
 	case VNDIOCCLR50:
-#endif
 	case DIOCGDINFO:
 	case DIOCSDINFO:
 	case DIOCWDINFO:
@@ -1241,9 +1244,7 @@ vndioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 
 
 	switch (cmd) {
-#ifdef VNDIOCSET50
 	case VNDIOCSET50:
-#endif
 	case VNDIOCSET:
 		if (vnd->sc_flags & VNF_INITED)
 			return EBUSY;
@@ -1496,9 +1497,7 @@ vndioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 
 		vndthrottle(vnd, vnd->sc_vp);
 		vio->vnd_osize = dbtob(vnd->sc_size);
-#ifdef VNDIOCSET50
 		if (cmd != VNDIOCSET50)
-#endif
 			vio->vnd_size = dbtob(vnd->sc_size);
 		vnd->sc_flags |= VNF_INITED;
 
@@ -1558,9 +1557,7 @@ unlock_and_exit:
 		vndunlock(vnd);
 		return error;
 
-#ifdef VNDIOCCLR50
 	case VNDIOCCLR50:
-#endif
 	case VNDIOCCLR:
 		part = DISKPART(dev);
 		pmask = (1 << part);
