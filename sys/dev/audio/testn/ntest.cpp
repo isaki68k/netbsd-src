@@ -5209,33 +5209,29 @@ test_AUDIO_SETINFO_params2()
 	if (fd0 == -1)
 		err(1, "open");
 
-	// 1本目のパラメータを変える
-	AUDIO_INITINFO(&ai);
-	ai.play.sample_rate = 11025;
-	r = IOCTL(fd0, AUDIO_SETINFO, &ai, "");
-	XP_SYS_EQ(0, r);
-
 	fd1 = OPEN(devaudio, O_WRONLY);
 	if (fd1 == -1)
 		err(1, "open");
 
+	// 1本目のパラメータを変える
+	AUDIO_INITINFO(&ai);
+	ai.play.encoding = AUDIO_ENCODING_SLINEAR_NE;
+	ai.play.precision = 16;
+	r = IOCTL(fd0, AUDIO_SETINFO, &ai, "SLINEAR_NE:16");
+	XP_SYS_EQ(0, r);
+
 	// 2本目で同じパラメータを変える
 	AUDIO_INITINFO(&ai);
-	ai.play.sample_rate = 16000;
-	r = IOCTL(fd1, AUDIO_SETINFO, &ai, "");
+	ai.play.encoding = AUDIO_ENCODING_ULINEAR_NE;
+	ai.play.precision = 16;
+	r = IOCTL(fd1, AUDIO_SETINFO, &ai, "ULINEAR_NE:16");
 	XP_SYS_EQ(0, r);
 
-	// 1本目のパラメータ変更の続き
-	AUDIO_INITINFO(&ai);
-	ai.play.encoding = AUDIO_ENCODING_SLINEAR_LE;
-	r = IOCTL(fd0, AUDIO_SETINFO, &ai, "");
-	XP_SYS_EQ(0, r);
-
-	// sample_rate は 11k のままであること
+	// 2本目の変更が1本目に及んでいないこと
 	r = IOCTL(fd0, AUDIO_GETBUFINFO, &ai, "");
 	XP_SYS_EQ(0, r);
-	XP_EQ(AUDIO_ENCODING_SLINEAR_LE, ai.play.encoding);
-	XP_EQ(11025, ai.play.sample_rate);
+	XP_EQ(AUDIO_ENCODING_SLINEAR_NE, ai.play.encoding);
+	XP_EQ(16, ai.play.precision);
 
 	r = CLOSE(fd0);
 	XP_SYS_EQ(0, r);
