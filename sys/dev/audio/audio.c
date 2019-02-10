@@ -415,6 +415,9 @@ audio_track_bufstat(audio_track_t *track, struct audio_track_debugbuf *buf)
 #define SPECIFIED(x)	((x) != ~0)
 #define SPECIFIED_CH(x)	((x) != (u_char)~0)
 
+/* Device timeout in msec */
+#define AUDIO_TIMEOUT	(10000)
+
 /* #define AUDIO_PM_IDLE */
 #ifdef AUDIO_PM_IDLE
 int	audio_idle_timeout = 30;
@@ -1469,12 +1472,15 @@ audio_track_waitio(struct audio_softc *sc, audio_track_t *track)
 	KASSERT(mutex_owned(sc->sc_lock));
 
 	/* Wait for pending I/O to complete. */
-	error = cv_wait_sig(&track->mixer->outcv, sc->sc_lock);
+	error = cv_timedwait_sig(&track->mixer->outcv, sc->sc_lock,
+	    mstohz(AUDIO_TIMEOUT));
 	if (sc->sc_dying) {
 		error = EIO;
 	}
 	if (error) {
-		TRACET(track, "cv_wait_sig failed %d", error);
+		TRACET(track, "cv_timedwait_sig failed %d", error);
+		if (error == EWOULDBLOCK)
+			device_printf(sc->sc_dev, "device timeout\n");
 	} else {
 		TRACET(track, "wakeup");
 	}
