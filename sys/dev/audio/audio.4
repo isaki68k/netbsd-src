@@ -81,17 +81,15 @@ while it is in use.
 .Sh SAMPLING DEVICES
 When
 .Pa /dev/audio
-is opened, it automatically directs the underlying driver to manipulate
-monaural 8-bit mu-law samples.
+is opened, it automatically sets
+monaural 8-bit mu-law 8000Hz.
 In addition, if it is opened read-only
 (write-only) the device is set to half-duplex record (play) mode with
 recording (playing) unpaused and playing (recording) paused.
 When
 .Pa /dev/sound
 is opened, it maintains the previous audio sample mode and
-record/playback mode most recently set on
-.Pa /dev/sound
-by any open channel.
+record/playback mode most recently set by any track.
 In all other respects
 .Pa /dev/audio
 and
