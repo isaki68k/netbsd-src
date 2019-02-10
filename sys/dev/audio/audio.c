@@ -8131,7 +8131,7 @@ mixer_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 
 	KASSERT(mutex_owned(sc->sc_lock));
 
-	DPRINTF(1, "mixer_open: flags=0x%x sc=%p\n", flags, sc);
+	DPRINTF(1, "mixer_open: flags=0x%x\n", flags);
 
 	error = fd_allocfile(&fp, &fd);
 	if (error)
@@ -8196,7 +8196,7 @@ mixer_close(struct audio_softc *sc, audio_file_t *file)
 {
 
 	mutex_enter(sc->sc_lock);
-	DPRINTF(1, "mixer_close: sc %p\n", sc);
+	DPRINTF(1, "mixer_close\n");
 	mixer_remove(sc);
 	mutex_exit(sc->sc_lock);
 
@@ -8215,7 +8215,7 @@ mixer_ioctl(struct audio_softc *sc, u_long cmd, void *addr, int flag,
 	KASSERT(!mutex_owned(sc->sc_lock));
 
 	DPRINTF(2, "mixer_ioctl(%lu,'%c',%lu)\n",
-		 IOCPARM_LEN(cmd), (char)IOCGROUP(cmd), cmd&0xff);
+	    IOCPARM_LEN(cmd), (char)IOCGROUP(cmd), cmd & 0xff);
 	error = EINVAL;
 
 	/* we can return cached values if we are sleeping */
@@ -8315,7 +8315,7 @@ mixer_ioctl(struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		break;
 	}
 	DPRINTF(2, "mixer_ioctl(%lu,'%c',%lu) result %d\n",
-		 IOCPARM_LEN(cmd), (char)IOCGROUP(cmd), cmd&0xff, error);
+	    IOCPARM_LEN(cmd), (char)IOCGROUP(cmd), cmd & 0xff, error);
 	return error;
 }
 
@@ -8456,7 +8456,7 @@ au_set_gain(struct audio_softc *sc, struct au_mixer_ports *ports,
 		    / AUDIO_MID_BALANCE;
 	}
 	DPRINTF(2, "au_set_gain: gain=%d balance=%d, l=%d r=%d\n",
-		 gain, balance, l, r);
+	    gain, balance, l, r);
 
 	if (ports->index == -1) {
 	usemaster:
