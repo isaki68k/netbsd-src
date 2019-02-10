@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.508 2018/11/24 18:23:29 bouyer Exp $
+# $NetBSD: GENERIC,v 1.515 2019/01/01 08:09:30 maya Exp $
 #
 # GENERIC machine description file
 #
@@ -24,7 +24,7 @@ options 	AUDIO2
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident		"GENERIC-$Revision: 1.508 $"
+#ident		"GENERIC-$Revision: 1.515 $"
 
 maxusers	64		# estimated number of users
 
@@ -126,6 +126,10 @@ options 	KDTRACE_HOOKS	# kernel DTrace hooks
 #makeoptions 	KASAN=1		# Kernel Address Sanitizer
 #options 	KASAN
 #no options	SVS
+
+# Kernel Info Leak Detector.
+#makeoptions 	KLEAK=1
+#options 	KLEAK
 
 # Compatibility options
 # x86_64 never shipped with a.out binaries; the two options below are
@@ -286,6 +290,8 @@ config		netbsd	root on ? type ?
 
 #IPMI support
 ipmi0		at mainbus?
+ipmi_acpi*	at acpi?
+ipmi0		at ipmi_acpi?
 
 # ACPI will be used if present. If not it will fall back to MPBIOS
 acpi0		at mainbus0
@@ -363,8 +369,8 @@ ppb*	at pci? dev ? function ?	# PCI-PCI bridges
 # XXX 'puc's aren't really bridges, but there's no better place for them here
 #puc*	at pci? dev ? function ?	# PCI "universal" comm. cards
 
-#amdpcib* at pci? dev ? function ?	# AMD 8111 PCI-ISA w/ HPET
-#hpet*	at amdpcib?
+amdpcib* at pci? dev ? function ?	# AMD 8111 PCI-ISA w/ HPET
+hpet*	at amdpcib?
 
 pwdog*	at pci? dev ? function ?	# QUANCOM PWDOG1
 
@@ -431,6 +437,9 @@ intelfb*	at intelfbbus?
 
 #radeon* 	at pci? dev ? function ?
 #radeondrmkmsfb* at radeonfbbus?
+
+#amdgpu*	at pci? dev ? function ?
+#amdgpufb*	at amdgpufbbus?
 
 #nouveau*	at pci? dev ? function ?
 #nouveaufb*	at nouveaufbbus?
@@ -795,7 +804,6 @@ ale*	at pci? dev ? function ?	# Attansic/Atheros L1E Ethernet
 #hme*	at pci? dev ? function ?	# Sun Microelectronics STP2002-STQ
 #le*	at pci? dev ? function ?	# PCnet-PCI Ethernet
 #lii*	at pci? dev ? function ?	# Atheros L2 Fast-Ethernet
-#lmc*	at pci? dev ? function ?	# Lan Media Corp SSI/HSSI/DS3
 #malo*	at pci? dev ? function ?	# Marvell Libertas Wireless
 #mskc*	at pci? dev ? function ?	# Marvell Yukon 2 Gigabit Ethernet
 #msk*	at mskc?			# Marvell Yukon 2 Gigabit Ethernet
@@ -855,6 +863,7 @@ wm*	at pci? dev ? function ?	# Intel 82543/82544 gigabit
 #atw*	at cardbus? function ?	# ADMtek ADM8211 (802.11)
 #ex*	at cardbus? function ?	# 3Com 3C575TX
 #fxp*	at cardbus? function ?	# Intel i8255x
+#malo*	at cardbus? function ?	# Marvell Libertas Wireless
 #ral*	at cardbus? function ?	# Ralink Technology RT25x0 802.11a/b/g
 #re*	at cardbus? function ?	# Realtek 8139C+/8169/8169S/8110S
 #rtk*	at cardbus? function ?	# Realtek 8129/8139
