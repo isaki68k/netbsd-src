@@ -416,7 +416,7 @@ audio_track_bufstat(audio_track_t *track, struct audio_track_debugbuf *buf)
 #define SPECIFIED_CH(x)	((x) != (u_char)~0)
 
 /* Device timeout in msec */
-#define AUDIO_TIMEOUT	(10000)
+#define AUDIO_TIMEOUT	(3000)
 
 /* #define AUDIO_PM_IDLE */
 #ifdef AUDIO_PM_IDLE
