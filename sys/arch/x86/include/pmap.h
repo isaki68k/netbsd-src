@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.h,v 1.91 2018/11/19 20:44:51 maxv Exp $	*/
+/*	$NetBSD: pmap.h,v 1.95 2019/02/01 11:35:13 maxv Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -111,6 +111,7 @@
 
 #if defined(_KERNEL)
 #include <sys/kcpuset.h>
+#include <x86/pmap_pv.h>
 #include <uvm/pmap/pmap_pvt.h>
 
 #define BTSEG_NONE	0
@@ -156,16 +157,15 @@ struct bootspace {
 	vaddr_t emodule;
 };
 
-#define SLSPACE_NONE	0
-#define SLAREA_USER	1
-#define SLAREA_PTE	2
-#define SLAREA_MAIN	3
-#define SLAREA_PCPU	4
-#define SLAREA_DMAP	5
-#define SLAREA_HYPV	6
-#define SLAREA_ASAN	7
-#define SLAREA_KERN	8
-#define SLSPACE_NAREAS	9
+#define SLAREA_USER	0
+#define SLAREA_PTE	1
+#define SLAREA_MAIN	2
+#define SLAREA_PCPU	3
+#define SLAREA_DMAP	4
+#define SLAREA_HYPV	5
+#define SLAREA_ASAN	6
+#define SLAREA_KERN	7
+#define SLSPACE_NAREAS	8
 
 struct slotspace {
 	struct {
@@ -262,6 +262,16 @@ struct pmap {
 	struct vm_page *pm_gc_ptp;	/* pages from pmap g/c */
 
 	/* Used by NVMM. */
+	int (*pm_enter)(struct pmap *, vaddr_t, paddr_t, vm_prot_t, u_int);
+	bool (*pm_extract)(struct pmap *, vaddr_t, paddr_t *);
+	void (*pm_remove)(struct pmap *, vaddr_t, vaddr_t);
+	int (*pm_sync_pv)(struct vm_page *, vaddr_t, paddr_t, int, uint8_t *,
+	    pt_entry_t *);
+	void (*pm_pp_remove_ent)(struct pmap *, struct vm_page *, pt_entry_t,
+	    vaddr_t);
+	void (*pm_write_protect)(struct pmap *, vaddr_t, vaddr_t, vm_prot_t);
+	void (*pm_unwire)(struct pmap *, vaddr_t);
+
 	void (*pm_tlb_flush)(struct pmap *);
 	void *pm_data;
 };
@@ -305,11 +315,11 @@ extern long nkptp[PTP_LEVELS];
 #define	pmap_resident_count(pmap)	((pmap)->pm_stats.resident_count)
 #define	pmap_wired_count(pmap)		((pmap)->pm_stats.wired_count)
 
-#define pmap_clear_modify(pg)		pmap_clear_attrs(pg, PG_M)
-#define pmap_clear_reference(pg)	pmap_clear_attrs(pg, PG_U)
+#define pmap_clear_modify(pg)		pmap_clear_attrs(pg, PP_ATTRS_M)
+#define pmap_clear_reference(pg)	pmap_clear_attrs(pg, PP_ATTRS_U)
 #define pmap_copy(DP,SP,D,L,S)		__USE(L)
-#define pmap_is_modified(pg)		pmap_test_attrs(pg, PG_M)
-#define pmap_is_referenced(pg)		pmap_test_attrs(pg, PG_U)
+#define pmap_is_modified(pg)		pmap_test_attrs(pg, PP_ATTRS_M)
+#define pmap_is_referenced(pg)		pmap_test_attrs(pg, PP_ATTRS_U)
 #define pmap_move(DP,SP,D,L,S)
 #define pmap_phys_address(ppn)		(x86_ptob(ppn) & ~X86_MMAP_FLAG_MASK)
 #define pmap_mmap_flags(ppn)		x86_mmap_flags(ppn)
@@ -435,7 +445,7 @@ pmap_page_protect(struct vm_page *pg, vm_prot_t prot)
 {
 	if ((prot & VM_PROT_WRITE) == 0) {
 		if (prot & (VM_PROT_READ|VM_PROT_EXECUTE)) {
-			(void) pmap_clear_attrs(pg, PG_RW);
+			(void)pmap_clear_attrs(pg, PP_ATTRS_W);
 		} else {
 			pmap_page_remove(pg);
 		}
@@ -452,7 +462,7 @@ pmap_pv_protect(paddr_t pa, vm_prot_t prot)
 {
 	if ((prot & VM_PROT_WRITE) == 0) {
 		if (prot & (VM_PROT_READ|VM_PROT_EXECUTE)) {
-			(void) pmap_pv_clear_attrs(pa, PG_RW);
+			(void)pmap_pv_clear_attrs(pa, PP_ATTRS_W);
 		} else {
 			pmap_pv_remove(pa);
 		}

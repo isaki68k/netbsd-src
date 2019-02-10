@@ -1,4 +1,4 @@
-/* $NetBSD: fdt_machdep.c,v 1.56 2018/11/28 09:16:19 ryo Exp $ */
+/* $NetBSD: fdt_machdep.c,v 1.58 2019/01/31 13:26:21 skrll Exp $ */
 
 /*-
  * Copyright (c) 2015-2017 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fdt_machdep.c,v 1.56 2018/11/28 09:16:19 ryo Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fdt_machdep.c,v 1.58 2019/01/31 13:26:21 skrll Exp $");
 
 #include "opt_machdep.h"
 #include "opt_bootconfig.h"
@@ -545,17 +545,22 @@ initarm(void *arg)
 	u_int sp = initarm_common(KERNEL_VM_BASE, KERNEL_VM_SIZE, fdt_physmem,
 	     nfdt_physmem);
 
+	error = 0;
 	if ((boothowto & RB_MD1) == 0) {
 		VPRINTF("mpstart\n");
 		if (plat->ap_mpstart)
-			plat->ap_mpstart();
+			error = plat->ap_mpstart();
 	}
 
+	if (error)
+		return sp;
 	/*
 	 * Now we have APs started the pages used for stacks and L1PT can
 	 * be given to uvm
 	 */
-	extern char __start__init_memory[], __stop__init_memory[];
+	extern char const __start__init_memory[];
+	extern char const __stop__init_memory[] __weak;
+
 	if (__start__init_memory != __stop__init_memory) {
 		const paddr_t spa = KERN_VTOPHYS((vaddr_t)__start__init_memory);
 		const paddr_t epa = KERN_VTOPHYS((vaddr_t)__stop__init_memory);

@@ -1,4 +1,4 @@
-/*	$NetBSD: if_muereg.h,v 1.3 2018/09/16 01:23:09 rin Exp $	*/
+/*	$NetBSD: if_muereg.h,v 1.5 2019/02/03 13:11:07 mlelstv Exp $	*/
 /*	$OpenBSD: if_muereg.h,v 1.1 2018/08/03 01:50:15 kevlo Exp $	*/
 
 /*
@@ -34,6 +34,7 @@
 #define MUE_UR_READREG		0xa1
 
 /* registers */
+#define MUE_ID_REV			0x000
 #define MUE_INT_STATUS			0x00c
 #define MUE_HW_CFG			0x010
 #define MUE_PMT_CTL			0x014
@@ -81,6 +82,10 @@
 #define MUE_7800_ADDR_FILTX(i)		(MUE_7800_ADDR_FILTX_BASE + 8 * (i))
 #define MUE_NUM_ADDR_FILTX		33
 
+/* device ID and revision register */
+#define MUE_ID_REV_ID		__BITS(16,31)
+#define MUE_ID_REV_REV		__BITS(0,15)
+
 /* hardware configuration register */
 #define MUE_HW_CFG_SRST		0x00000001
 #define MUE_HW_CFG_LRST		0x00000002
@@ -122,11 +127,11 @@
 #define MUE_7800_RX_BUFSIZE		(12 * 1024)
 #define MUE_7800_MAX_RX_FIFO_SIZE	MUE_7800_RX_BUFSIZE
 #define MUE_7800_MAX_TX_FIFO_SIZE	MUE_7800_RX_BUFSIZE
-#define MUE_MAX_TX_LEN			(ETHER_MAX_LEN + ETHER_VLAN_ENCAP_LEN)
-#define MUE_MAX_TSO_LEN			\
-	(ETHER_HDR_LEN + ETHER_VLAN_ENCAP_LEN + IP_MAXPACKET)
+#define MUE_FRAME_LEN(mtu)		\
+	(mtu + ETHER_HDR_LEN + ETHER_CRC_LEN + ETHER_VLAN_ENCAP_LEN)
+#define MUE_TSO_FRAME_LEN		MUE_FRAME_LEN(IP_MAXPACKET)
 #define MUE_TX_BUFSIZE			\
-	(sizeof(struct mue_txbuf_hdr) + MUE_MAX_TSO_LEN)
+	(sizeof(struct mue_txbuf_hdr) + MUE_TSO_FRAME_LEN)
 
 /* interrupt endpoint control register */
 #define MUE_INT_EP_CTL_PHY_INT		0x20000

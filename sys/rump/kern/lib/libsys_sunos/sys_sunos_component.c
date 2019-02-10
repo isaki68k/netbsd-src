@@ -1,4 +1,7 @@
-/*	$NetBSD: sys_sunos_component.c,v 1.3 2018/08/10 21:44:59 pgoyette Exp $	*/
+/*	$NetBSD: sys_sunos_component.c,v 1.6 2019/01/27 09:19:37 rin Exp $	*/
+
+#include <sys/cdefs.h>
+__KERNEL_RCSID(0, "$NetBSD: sys_sunos_component.c,v 1.6 2019/01/27 09:19:37 rin Exp $");
 
 #include <sys/param.h>
 #include <sys/proc.h>

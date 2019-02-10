@@ -1,4 +1,4 @@
-/*	$NetBSD: if_bnx.c,v 1.65 2018/06/26 06:48:01 msaitoh Exp $	*/
+/*	$NetBSD: if_bnx.c,v 1.68 2019/01/22 03:42:27 msaitoh Exp $	*/
 /*	$OpenBSD: if_bnx.c,v 1.85 2009/11/09 14:32:41 dlg Exp $ */
 
 /*-
@@ -35,7 +35,7 @@
 #if 0
 __FBSDID("$FreeBSD: src/sys/dev/bce/if_bce.c,v 1.3 2006/04/13 14:12:26 ru Exp $");
 #endif
-__KERNEL_RCSID(0, "$NetBSD: if_bnx.c,v 1.65 2018/06/26 06:48:01 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_bnx.c,v 1.68 2019/01/22 03:42:27 msaitoh Exp $");
 
 /*
  * The following controllers are supported by this driver:
@@ -316,8 +316,8 @@ void	bnx_breakpoint(struct bnx_softc *);
 uint32_t	bnx_reg_rd_ind(struct bnx_softc *, uint32_t);
 void	bnx_reg_wr_ind(struct bnx_softc *, uint32_t, uint32_t);
 void	bnx_ctx_wr(struct bnx_softc *, uint32_t, uint32_t, uint32_t);
-int	bnx_miibus_read_reg(device_t, int, int);
-void	bnx_miibus_write_reg(device_t, int, int, int);
+int	bnx_miibus_read_reg(device_t, int, int, uint16_t *);
+int	bnx_miibus_write_reg(device_t, int, int, uint16_t);
 void	bnx_miibus_statchg(struct ifnet *);
 
 /****************************************************************************/
@@ -354,8 +354,7 @@ void	bnx_release_resources(struct bnx_softc *);
 /* BNX Firmware Synchronization and Load                                    */
 /****************************************************************************/
 int	bnx_fw_sync(struct bnx_softc *, uint32_t);
-void	bnx_load_rv2p_fw(struct bnx_softc *, uint32_t *, uint32_t,
-	    uint32_t);
+void	bnx_load_rv2p_fw(struct bnx_softc *, uint32_t *, uint32_t, uint32_t);
 void	bnx_load_cpu_fw(struct bnx_softc *, struct cpu_reg *,
 	    struct fw_info *);
 void	bnx_init_cpus(struct bnx_softc *);
@@ -463,7 +462,7 @@ bnx_print_adapter_info(struct bnx_softc *sc)
 	    BNXNUM(sc), 'A' + BNXREV(sc), BNXMETAL(sc),
 	    (BNX_CHIP_BOND_ID(sc) == BNX_CHIP_BOND_ID_SERDES_BIT)
 	    ? "Serdes " : "", sc->bnx_chipid);
-	    
+
 	/* Bus info. */
 	if (sc->bnx_flags & BNX_PCIE_FLAG) {
 		aprint_normal_dev(sc->bnx_dev, "PCIe x%d ",
@@ -1017,17 +1016,17 @@ bnx_ctx_wr(struct bnx_softc *sc, uint32_t cid_addr, uint32_t ctx_offset,
 /*   The value of the register.                                             */
 /****************************************************************************/
 int
-bnx_miibus_read_reg(device_t dev, int phy, int reg)
+bnx_miibus_read_reg(device_t dev, int phy, int reg, uint16_t *val)
 {
 	struct bnx_softc	*sc = device_private(dev);
-	uint32_t		val;
-	int			i;
+	uint32_t		data;
+	int			i, rv = 0;
 
 	/* Make sure we are accessing the correct PHY address. */
 	if (phy != sc->bnx_phy_addr) {
 		DBPRINT(sc, BNX_VERBOSE,
 		    "Invalid PHY address %d for PHY read!\n", phy);
-		return 0;
+		return -1;
 	}
 
 	/*
@@ -1041,56 +1040,58 @@ bnx_miibus_read_reg(device_t dev, int phy, int reg)
 	}
 
 	if (sc->bnx_phy_flags & BNX_PHY_INT_MODE_AUTO_POLLING_FLAG) {
-		val = REG_RD(sc, BNX_EMAC_MDIO_MODE);
-		val &= ~BNX_EMAC_MDIO_MODE_AUTO_POLL;
+		data = REG_RD(sc, BNX_EMAC_MDIO_MODE);
+		data &= ~BNX_EMAC_MDIO_MODE_AUTO_POLL;
 
-		REG_WR(sc, BNX_EMAC_MDIO_MODE, val);
+		REG_WR(sc, BNX_EMAC_MDIO_MODE, data);
 		REG_RD(sc, BNX_EMAC_MDIO_MODE);
 
 		DELAY(40);
 	}
 
-	val = BNX_MIPHY(phy) | BNX_MIREG(reg) |
+	data = BNX_MIPHY(phy) | BNX_MIREG(reg) |
 	    BNX_EMAC_MDIO_COMM_COMMAND_READ | BNX_EMAC_MDIO_COMM_DISEXT |
 	    BNX_EMAC_MDIO_COMM_START_BUSY;
-	REG_WR(sc, BNX_EMAC_MDIO_COMM, val);
+	REG_WR(sc, BNX_EMAC_MDIO_COMM, data);
 
 	for (i = 0; i < BNX_PHY_TIMEOUT; i++) {
 		DELAY(10);
 
-		val = REG_RD(sc, BNX_EMAC_MDIO_COMM);
-		if (!(val & BNX_EMAC_MDIO_COMM_START_BUSY)) {
+		data = REG_RD(sc, BNX_EMAC_MDIO_COMM);
+		if (!(data & BNX_EMAC_MDIO_COMM_START_BUSY)) {
 			DELAY(5);
 
-			val = REG_RD(sc, BNX_EMAC_MDIO_COMM);
-			val &= BNX_EMAC_MDIO_COMM_DATA;
+			data = REG_RD(sc, BNX_EMAC_MDIO_COMM);
+			data &= BNX_EMAC_MDIO_COMM_DATA;
 
 			break;
 		}
 	}
 
-	if (val & BNX_EMAC_MDIO_COMM_START_BUSY) {
+	if (data & BNX_EMAC_MDIO_COMM_START_BUSY) {
 		BNX_PRINTF(sc, "%s(%d): Error: PHY read timeout! phy = %d, "
 		    "reg = 0x%04X\n", __FILE__, __LINE__, phy, reg);
-		val = 0x0;
-	} else
-		val = REG_RD(sc, BNX_EMAC_MDIO_COMM);
+		rv = ETIMEDOUT;
+	} else {
+		data = REG_RD(sc, BNX_EMAC_MDIO_COMM);
+		*val = data & 0xffff;
 
-	DBPRINT(sc, BNX_EXCESSIVE,
-	    "%s(): phy = %d, reg = 0x%04X, val = 0x%04X\n", __func__, phy,
-	    (uint16_t) reg & 0xffff, (uint16_t) val & 0xffff);
+		DBPRINT(sc, BNX_EXCESSIVE,
+		    "%s(): phy = %d, reg = 0x%04X, val = 0x%04hX\n", __func__,
+		    phy, (uint16_t) reg & 0xffff, *val);
+	}
 
 	if (sc->bnx_phy_flags & BNX_PHY_INT_MODE_AUTO_POLLING_FLAG) {
-		val = REG_RD(sc, BNX_EMAC_MDIO_MODE);
-		val |= BNX_EMAC_MDIO_MODE_AUTO_POLL;
+		data = REG_RD(sc, BNX_EMAC_MDIO_MODE);
+		data |= BNX_EMAC_MDIO_MODE_AUTO_POLL;
 
-		REG_WR(sc, BNX_EMAC_MDIO_MODE, val);
+		REG_WR(sc, BNX_EMAC_MDIO_MODE, data);
 		REG_RD(sc, BNX_EMAC_MDIO_MODE);
 
 		DELAY(40);
 	}
 
-	return (val & 0xffff);
+	return rv;
 }
 
 /****************************************************************************/
@@ -1101,23 +1102,23 @@ bnx_miibus_read_reg(device_t dev, int phy, int reg)
 /* Returns:                                                                 */
 /*   The value of the register.                                             */
 /****************************************************************************/
-void
-bnx_miibus_write_reg(device_t dev, int phy, int reg, int val)
+int
+bnx_miibus_write_reg(device_t dev, int phy, int reg, uint16_t val)
 {
 	struct bnx_softc	*sc = device_private(dev);
 	uint32_t		val1;
-	int			i;
+	int			i, rv = 0;
 
 	/* Make sure we are accessing the correct PHY address. */
 	if (phy != sc->bnx_phy_addr) {
-		DBPRINT(sc, BNX_WARN, "Invalid PHY address %d for PHY write!\n",
-		    phy);
-		return;
+		DBPRINT(sc, BNX_WARN,
+		    "Invalid PHY address %d for PHY write!\n", phy);
+		return -1;
 	}
 
 	DBPRINT(sc, BNX_EXCESSIVE, "%s(): phy = %d, reg = 0x%04X, "
-	    "val = 0x%04X\n", __func__,
-	    phy, (uint16_t) reg & 0xffff, (uint16_t) val & 0xffff);
+	    "val = 0x%04hX\n", __func__,
+	    phy, (uint16_t) reg & 0xffff, val);
 
 	/*
 	 * The BCM5709S PHY is an IEEE Clause 45 PHY
@@ -1157,6 +1158,7 @@ bnx_miibus_write_reg(device_t dev, int phy, int reg, int val)
 	if (val1 & BNX_EMAC_MDIO_COMM_START_BUSY) {
 		BNX_PRINTF(sc, "%s(%d): PHY write timeout!\n", __FILE__,
 		    __LINE__);
+		rv = ETIMEDOUT;
 	}
 
 	if (sc->bnx_phy_flags & BNX_PHY_INT_MODE_AUTO_POLLING_FLAG) {
@@ -1168,6 +1170,8 @@ bnx_miibus_write_reg(device_t dev, int phy, int reg, int val)
 
 		DELAY(40);
 	}
+
+	return rv;
 }
 
 /****************************************************************************/
@@ -3262,9 +3266,8 @@ bnx_init_context(struct bnx_softc *sc)
 		uint32_t vcid_addr, offset;
 
 		/*
-		 * For the 5706/5708, context memory is local to
-		 * the controller, so initialize the controller
-		 * context memory.
+		 * For the 5706/5708, context memory is local to the
+		 * controller, so initialize the controller context memory.
 		 */
 
 		vcid_addr = GET_CID_ADDR(96);
@@ -3275,9 +3278,9 @@ bnx_init_context(struct bnx_softc *sc)
 			REG_WR(sc, BNX_CTX_VIRT_ADDR, 0);
 			REG_WR(sc, BNX_CTX_PAGE_TBL, vcid_addr);
 
-			for(offset = 0; offset < BNX_PHY_CTX_SIZE; offset += 4) {
+			for (offset = 0; offset < BNX_PHY_CTX_SIZE;
+			     offset += 4)
 				CTX_WR(sc, 0x00, offset, 0);
-			}
 
 			REG_WR(sc, BNX_CTX_VIRT_ADDR, vcid_addr);
 			REG_WR(sc, BNX_CTX_PAGE_TBL, vcid_addr);
@@ -4450,10 +4453,10 @@ bnx_rx_intr(struct bnx_softc *sc)
 			}
 #endif
 
-			/* DRC - ToDo: If the received packet is small, say less
-			 *             than 128 bytes, allocate a new mbuf here,
-			 *             copy the data to that mbuf, and recycle
-			 *             the mapped jumbo frame.
+			/* DRC - ToDo: If the received packet is small, say
+			 *             less than 128 bytes, allocate a new mbuf
+			 *             here, copy the data to that mbuf, and
+			 *             recycle the mapped jumbo frame.
 			 */
 
 			/* Unmap the mbuf from DMA space. */
@@ -4585,10 +4588,8 @@ bnx_rx_intr(struct bnx_softc *sc)
 			/* Check for an IP datagram. */
 			if (status & L2_FHDR_STATUS_IP_DATAGRAM) {
 				/* Check if the IP checksum is valid. */
-				if ((l2fhdr->l2_fhdr_ip_xsum ^ 0xffff)
-				    == 0)
-					m->m_pkthdr.csum_flags |=
-					    M_CSUM_IPv4;
+				if ((l2fhdr->l2_fhdr_ip_xsum ^ 0xffff) == 0)
+					m->m_pkthdr.csum_flags |= M_CSUM_IPv4;
 #ifdef BNX_DEBUG
 				else
 					DBPRINT(sc, BNX_WARN_SEND,
@@ -4872,8 +4873,7 @@ bnx_init(struct ifnet *ifp)
 	}
 
 
-	DBPRINT(sc, BNX_INFO, "%s(): setting MRU = %d\n",
-	    __func__, ether_mtu);
+	DBPRINT(sc, BNX_INFO, "%s(): setting MRU = %d\n", __func__, ether_mtu);
 
 	/*
 	 * Program the MRU and enable Jumbo frame
@@ -4989,9 +4989,9 @@ bnx_tx_encap(struct bnx_softc *sc, struct mbuf *m)
 	}
 	bus_dmamap_sync(sc->bnx_dmatag, map, 0, map->dm_mapsize,
 	    BUS_DMASYNC_PREWRITE);
-        /* Make sure there's room in the chain */
+	/* Make sure there's room in the chain */
 	if (map->dm_nsegs > (sc->max_tx_bd - sc->used_tx_bd))
-                goto nospace;
+		goto nospace;
 
 	/* prod points to an empty tx_bd at this point. */
 	prod_bseq = sc->tx_prod_bseq;
@@ -5147,9 +5147,9 @@ bnx_start(struct ifnet *ifp)
 	tx_chain_prod = TX_CHAIN_IDX(sc->tx_prod);
 #endif
 
-	DBPRINT(sc, BNX_INFO_SEND, "%s(): End: tx_prod = 0x%04X, tx_chain_prod "
-	    "= 0x%04X, tx_prod_bseq = 0x%08X\n", __func__, sc->tx_prod,
-	    tx_chain_prod, sc->tx_prod_bseq);
+	DBPRINT(sc, BNX_INFO_SEND, "%s(): End: tx_prod = 0x%04X, "
+	    "tx_chain_prod = 0x%04X, tx_prod_bseq = 0x%08X\n",
+	    __func__, sc->tx_prod, tx_chain_prod, sc->tx_prod_bseq);
 
 	/* Start the transmit. */
 	REG_WR16(sc, MB_TX_CID_ADDR + BNX_L2CTX_TX_HOST_BIDX, sc->tx_prod);
@@ -5315,8 +5315,7 @@ bnx_intr(void *xsc)
 		    ~STATUS_ATTN_BITS_LINK_STATE))) {
 			DBRUN(1, sc->unexpected_attentions++);
 
-			BNX_PRINTF(sc,
-			    "Fatal attention detected: 0x%08X\n",
+			BNX_PRINTF(sc, "Fatal attention detected: 0x%08X\n",
 			    sblk->status_attn_bits);
 
 			DBRUN(BNX_FATAL,
@@ -5328,13 +5327,11 @@ bnx_intr(void *xsc)
 		}
 
 		/* Check for any completed RX frames. */
-		if (sblk->status_rx_quick_consumer_index0 !=
-		    sc->hw_rx_cons)
+		if (sblk->status_rx_quick_consumer_index0 != sc->hw_rx_cons)
 			bnx_rx_intr(sc);
 
 		/* Check for any completed TX frames. */
-		if (sblk->status_tx_quick_consumer_index0 !=
-		    sc->hw_tx_cons)
+		if (sblk->status_tx_quick_consumer_index0 != sc->hw_tx_cons)
 			bnx_tx_intr(sc);
 
 		/*
@@ -5738,8 +5735,8 @@ bnx_dump_mbuf(struct bnx_softc *sc, struct mbuf *m)
 		aprint_debug("\n");
 
 		if (mp->m_flags & M_EXT)
-			aprint_debug("- m_ext: vaddr = %p, ext_size = 0x%04zX\n",
-			    mp, mp->m_ext.ext_size);
+			aprint_debug("- m_ext: vaddr = %p, "
+			    "ext_size = 0x%04zX\n", mp, mp->m_ext.ext_size);
 
 		mp = mp->m_next;
 	}
@@ -5953,8 +5950,8 @@ bnx_dump_status_block(struct bnx_softc *sc)
 
 	sblk = sc->status_block;
 
-   	aprint_debug_dev(sc->bnx_dev, "----------------------------- Status Block "
-	    "-----------------------------\n");
+   	aprint_debug_dev(sc->bnx_dev, "----------------------------- "
+	    "Status Block -----------------------------\n");
 
 	BNX_PRINTF(sc,
 	    "attn_bits  = 0x%08X, attn_bits_ack = 0x%08X, index = 0x%04X\n",

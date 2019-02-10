@@ -1,4 +1,4 @@
-/*	$NetBSD: elink3.c,v 1.143 2018/09/03 16:29:31 riastradh Exp $	*/
+/*	$NetBSD: elink3.c,v 1.146 2019/02/05 06:17:02 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 1998, 2001 The NetBSD Foundation, Inc.
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: elink3.c,v 1.143 2018/09/03 16:29:31 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: elink3.c,v 1.146 2019/02/05 06:17:02 msaitoh Exp $");
 
 #include "opt_inet.h"
 
@@ -198,8 +198,8 @@ int	ep_media_change(struct ifnet *ifp);
 void	ep_media_status(struct ifnet *ifp, struct ifmediareq *req);
 
 /* MII callbacks */
-int	ep_mii_readreg(device_t, int, int);
-void	ep_mii_writereg(device_t, int, int, int);
+int	ep_mii_readreg(device_t, int, int, uint16_t *);
+int	ep_mii_writereg(device_t, int, int, uint16_t);
 void	ep_statchg(struct ifnet *);
 
 void	ep_tick(void *);
@@ -396,8 +396,7 @@ epconfig(struct ep_softc *sc, u_short chipset, u_int8_t *enaddr)
 	ifp->if_watchdog = epwatchdog;
 	ifp->if_init = epinit;
 	ifp->if_stop = epstop;
-	ifp->if_flags =
-	    IFF_BROADCAST | IFF_SIMPLEX | IFF_NOTRAILERS | IFF_MULTICAST;
+	ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
 	IFQ_SET_READY(&ifp->if_snd);
 
 	if_attach(ifp);
@@ -1683,6 +1682,7 @@ epioctl(struct ifnet *ifp, u_long cmd, void *data)
 			break;
 		}
 
+		/* FALLTHROUGH */
 	default:
 		error = ether_ioctl(ifp, cmd, data);
 
@@ -2042,30 +2042,33 @@ ep_mii_bitbang_write(device_t self, u_int32_t val)
 }
 
 int
-ep_mii_readreg(device_t self, int phy, int reg)
+ep_mii_readreg(device_t self, int phy, int reg, uint16_t *val)
 {
 	struct ep_softc *sc = device_private(self);
-	int val;
+	int rv;
 
 	GO_WINDOW(4);
 
-	val = mii_bitbang_readreg(self, &ep_mii_bitbang_ops, phy, reg);
+	rv = mii_bitbang_readreg(self, &ep_mii_bitbang_ops, phy, reg, val);
 
 	GO_WINDOW(1);
 
-	return (val);
+	return rv;
 }
 
-void
-ep_mii_writereg(device_t self, int phy, int reg, int val)
+int
+ep_mii_writereg(device_t self, int phy, int reg, uint16_t val)
 {
 	struct ep_softc *sc = device_private(self);
+	int rv;
 
 	GO_WINDOW(4);
 
-	mii_bitbang_writereg(self, &ep_mii_bitbang_ops, phy, reg, val);
+	rv = mii_bitbang_writereg(self, &ep_mii_bitbang_ops, phy, reg, val);
 
 	GO_WINDOW(1);
+
+	return rv;
 }
 
 void

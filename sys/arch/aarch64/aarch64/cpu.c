@@ -1,4 +1,4 @@
-/* $NetBSD: cpu.c,v 1.14 2018/11/28 09:16:19 ryo Exp $ */
+/* $NetBSD: cpu.c,v 1.16 2019/01/21 08:04:26 skrll Exp $ */
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(1, "$NetBSD: cpu.c,v 1.14 2018/11/28 09:16:19 ryo Exp $");
+__KERNEL_RCSID(1, "$NetBSD: cpu.c,v 1.16 2019/01/21 08:04:26 skrll Exp $");
 
 #include "locators.h"
 #include "opt_arm_debug.h"
@@ -144,12 +144,12 @@ cpu_attach(device_t dv, cpuid_t id)
 
 	mpidr = ci->ci_id.ac_mpidr;
 	if (mpidr & MPIDR_MT) {
-		ci->ci_data.cpu_smt_id = __SHIFTOUT(mpidr, MPIDR_AFF0);
-		ci->ci_data.cpu_core_id = __SHIFTOUT(mpidr, MPIDR_AFF1);
-		ci->ci_data.cpu_package_id = __SHIFTOUT(mpidr, MPIDR_AFF2);
+		ci->ci_smt_id = __SHIFTOUT(mpidr, MPIDR_AFF0);
+		ci->ci_core_id = __SHIFTOUT(mpidr, MPIDR_AFF1);
+		ci->ci_package_id = __SHIFTOUT(mpidr, MPIDR_AFF2);
 	} else {
-		ci->ci_data.cpu_core_id = __SHIFTOUT(mpidr, MPIDR_AFF0);
-		ci->ci_data.cpu_package_id = __SHIFTOUT(mpidr, MPIDR_AFF1);
+		ci->ci_core_id = __SHIFTOUT(mpidr, MPIDR_AFF0);
+		ci->ci_package_id = __SHIFTOUT(mpidr, MPIDR_AFF1);
 	}
 
 	ci->ci_dev = dv;
@@ -163,6 +163,7 @@ cpu_attach(device_t dv, cpuid_t id)
 	}
 #endif /* MULTIPROCESSOR */
 
+	set_cpufuncs();
 	fpu_attach(ci);
 
 	cpu_identify1(dv, ci);
@@ -522,6 +523,7 @@ cpu_hatch(struct cpu_info *ci)
 
 	mutex_enter(&cpu_hatch_lock);
 
+	set_cpufuncs();
 	fpu_attach(ci);
 
 	cpu_identify1(ci->ci_dev, ci);

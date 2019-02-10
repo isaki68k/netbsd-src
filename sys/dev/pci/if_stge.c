@@ -1,4 +1,4 @@
-/*	$NetBSD: if_stge.c,v 1.65 2018/06/26 06:48:01 msaitoh Exp $	*/
+/*	$NetBSD: if_stge.c,v 1.67 2019/01/22 03:42:27 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 2001 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_stge.c,v 1.65 2018/06/26 06:48:01 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_stge.c,v 1.67 2019/01/22 03:42:27 msaitoh Exp $");
 
 
 #include <sys/param.h>
@@ -278,8 +278,8 @@ static int	stge_intr(void *);
 static void	stge_txintr(struct stge_softc *);
 static void	stge_rxintr(struct stge_softc *);
 
-static int	stge_mii_readreg(device_t, int, int);
-static void	stge_mii_writereg(device_t, int, int, int);
+static int	stge_mii_readreg(device_t, int, int, uint16_t *);
+static int	stge_mii_writereg(device_t, int, int, uint16_t);
 static void	stge_mii_statchg(struct ifnet *);
 
 static int	stge_match(device_t, cfdata_t, void *);
@@ -442,7 +442,8 @@ stge_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 	intrstr = pci_intr_string(pc, ih, intrbuf, sizeof(intrbuf));
-	sc->sc_ih = pci_intr_establish(pc, ih, IPL_NET, stge_intr, sc);
+	sc->sc_ih = pci_intr_establish_xname(pc, ih, IPL_NET, stge_intr, sc,
+	    device_xname(self));
 	if (sc->sc_ih == NULL) {
 		aprint_error_dev(self, "unable to establish interrupt");
 		if (intrstr != NULL)
@@ -1938,10 +1939,10 @@ stge_set_filter(struct stge_softc *sc)
  *	Read a PHY register on the MII of the TC9021.
  */
 static int
-stge_mii_readreg(device_t self, int phy, int reg)
+stge_mii_readreg(device_t self, int phy, int reg, uint16_t *val)
 {
 
-	return (mii_bitbang_readreg(self, &stge_mii_bitbang_ops, phy, reg));
+	return mii_bitbang_readreg(self, &stge_mii_bitbang_ops, phy, reg, val);
 }
 
 /*
@@ -1949,11 +1950,12 @@ stge_mii_readreg(device_t self, int phy, int reg)
  *
  *	Write a PHY register on the MII of the TC9021.
  */
-static void
-stge_mii_writereg(device_t self, int phy, int reg, int val)
+static int
+stge_mii_writereg(device_t self, int phy, int reg, uint16_t val)
 {
 
-	mii_bitbang_writereg(self, &stge_mii_bitbang_ops, phy, reg, val);
+	return mii_bitbang_writereg(self, &stge_mii_bitbang_ops, phy, reg,
+	    val);
 }
 
 /*

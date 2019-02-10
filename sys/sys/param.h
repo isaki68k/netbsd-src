@@ -1,4 +1,4 @@
-/*	$NetBSD: param.h,v 1.571 2018/11/16 17:18:29 kre Exp $	*/
+/*	$NetBSD: param.h,v 1.582 2019/02/03 08:02:25 pgoyette Exp $	*/
 
 /*-
  * Copyright (c) 1982, 1986, 1989, 1993
@@ -67,7 +67,7 @@
  *	2.99.9		(299000900)
  */
 
-#define	__NetBSD_Version__	899002600	/* NetBSD 8.99.26 */
+#define	__NetBSD_Version__	899003400	/* NetBSD 8.99.34 */
 
 #define __NetBSD_Prereq__(M,m,p) (((((M) * 100000000) + \
     (m) * 1000000) + (p) * 100) <= __NetBSD_Version__)
@@ -87,7 +87,7 @@
 #define	NetBSD	199905		/* NetBSD version (year & month). */
 
 /*
- * There macros determine if we are running in protected mode or not.
+ * These macros determine if we are running in protected mode or not.
  *   _HARDKERNEL: code uses kernel namespace and runs in hw priviledged mode
  *   _SOFTKERNEL: code uses kernel namespace but runs without hw priviledges
  */
@@ -172,6 +172,17 @@
 /* Machine type dependent parameters. */
 #include <machine/param.h>
 #include <machine/limits.h>
+
+#define	DEV_BSHIFT	9			/* log2(DEV_BSIZE) */
+#define	DEV_BSIZE	(1 << DEV_BSHIFT)	/* 512 */
+
+#ifndef BLKDEV_IOSIZE
+#define	BLKDEV_IOSIZE	2048
+#endif
+
+#ifndef MAXPHYS
+#define	MAXPHYS		(64 * 1024)		/* max raw I/O transfer size */
+#endif
 
 /* pages ("clicks") to disk blocks */
 #define	ctod(x)		((x) << (PGSHIFT - DEV_BSHIFT))

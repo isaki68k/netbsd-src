@@ -1,4 +1,4 @@
-/*      $NetBSD: if_xennet_xenbus.c,v 1.81 2018/10/26 05:33:21 cherry Exp $      */
+/*      $NetBSD: if_xennet_xenbus.c,v 1.84 2019/02/05 06:17:02 msaitoh Exp $      */
 
 /*
  * Copyright (c) 2006 Manuel Bouyer.
@@ -84,7 +84,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_xennet_xenbus.c,v 1.81 2018/10/26 05:33:21 cherry Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_xennet_xenbus.c,v 1.84 2019/02/05 06:17:02 msaitoh Exp $");
 
 #include "opt_xen.h"
 #include "opt_nfs_boot.h"
@@ -123,7 +123,7 @@ __KERNEL_RCSID(0, "$NetBSD: if_xennet_xenbus.c,v 1.81 2018/10/26 05:33:21 cherry
 #include <xen/hypervisor.h>
 #include <xen/evtchn.h>
 #include <xen/granttables.h>
-#include <xen/xen-public/io/netif.h>
+#include <xen/include/public/io/netif.h>
 #include <xen/xenpmap.h>
 
 #include <xen/xenbus.h>
@@ -370,7 +370,7 @@ xennet_xenbus_attach(device_t parent, device_t self, void *aux)
 	ifp->if_watchdog = xennet_watchdog;
 	ifp->if_init = xennet_init;
 	ifp->if_stop = xennet_stop;
-	ifp->if_flags = IFF_BROADCAST|IFF_SIMPLEX|IFF_NOTRAILERS|IFF_MULTICAST;
+	ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
 	ifp->if_timer = 0;
 	ifp->if_snd.ifq_maxlen = uimax(ifqmaxlen, NET_TX_RING_SIZE * 2);
 	ifp->if_capabilities = IFCAP_CSUM_TCPv4_Tx | IFCAP_CSUM_UDPv4_Tx;
@@ -423,7 +423,7 @@ xennet_xenbus_detach(device_t self, int flags)
 	DPRINTF(("%s: xennet_xenbus_detach\n", device_xname(self)));
 	s0 = splnet();
 	xennet_stop(ifp, 1);
-	intr_disestablish(sc->sc_ih);
+	xen_intr_disestablish(sc->sc_ih);
 	/* wait for pending TX to complete, and collect pending RX packets */
 	xennet_handler(sc);
 	while (sc->sc_tx_ring.sring->rsp_prod != sc->sc_tx_ring.rsp_cons) {
@@ -517,7 +517,7 @@ xennet_xenbus_resume(device_t dev, const pmf_qual_t *qual)
 		goto abort_resume;
 	aprint_verbose_dev(dev, "using event channel %d\n",
 	    sc->sc_evtchn);
-	sc->sc_ih = intr_establish_xname(-1, &xen_pic, sc->sc_evtchn, IST_LEVEL,
+	sc->sc_ih = xen_intr_establish_xname(-1, &xen_pic, sc->sc_evtchn, IST_LEVEL,
 	    IPL_NET, &xennet_handler, sc, false, device_xname(dev));
 	KASSERT(sc->sc_ih != NULL);
 	return true;
@@ -641,7 +641,7 @@ xennet_xenbus_suspend(device_t dev, const pmf_qual_t *qual)
 	 */
 
 	sc->sc_backend_status = BEST_SUSPENDED;
-	intr_disestablish(sc->sc_ih);
+	xen_intr_disestablish(sc->sc_ih);
 
 	splx(s);
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: if_mue.c,v 1.18 2018/09/16 02:00:36 rin Exp $	*/
+/*	$NetBSD: if_mue.c,v 1.41 2019/02/06 22:54:41 rin Exp $	*/
 /*	$OpenBSD: if_mue.c,v 1.3 2018/08/04 16:42:46 jsg Exp $	*/
 
 /*
@@ -20,7 +20,7 @@
 /* Driver for Microchip LAN7500/LAN7800 chipsets. */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_mue.c,v 1.18 2018/09/16 02:00:36 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_mue.c,v 1.41 2019/02/06 22:54:41 rin Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -28,7 +28,6 @@ __KERNEL_RCSID(0, "$NetBSD: if_mue.c,v 1.18 2018/09/16 02:00:36 rin Exp $");
 #endif
 
 #include <sys/param.h>
-#include <sys/cprng.h>
 #include <sys/bus.h>
 #include <sys/systm.h>
 #include <sys/sockio.h>
@@ -77,7 +76,7 @@ int muedebug = 0;
 			MUE_PRINTF(sc, fmt, ##args);			\
 	} while (0 /* CONSTCOND */)
 #else
-#define DPRINTF(sc, fmt, args...)	/* nothing */
+#define DPRINTF(sc, fmt, args...)	__nothing
 #endif
 
 /*
@@ -118,8 +117,8 @@ static int	mue_wait_for_bits(struct mue_softc *sc, uint32_t, uint32_t,
 static void	mue_lock_mii(struct mue_softc *);
 static void	mue_unlock_mii(struct mue_softc *);
 
-static int	mue_miibus_readreg(device_t, int, int);
-static void	mue_miibus_writereg(device_t, int, int, int);
+static int	mue_miibus_readreg(device_t, int, int, uint16_t *);
+static int	mue_miibus_writereg(device_t, int, int, uint16_t);
 static void	mue_miibus_statchg(struct ifnet *);
 static int	mue_ifmedia_upd(struct ifnet *);
 static void	mue_ifmedia_sts(struct ifnet *, struct ifmediareq *);
@@ -147,10 +146,11 @@ static int	mue_open_pipes(struct mue_softc *);
 static void	mue_startup_rx_pipes(struct mue_softc *);
 
 static int	mue_encap(struct mue_softc *, struct mbuf *, int);
-static void	mue_tx_offload(struct mue_softc *, struct mbuf *);
+static int	mue_prepare_tso(struct mue_softc *, struct mbuf *);
 
 static void	mue_setmulti(struct mue_softc *);
 static void	mue_sethwcsum(struct mue_softc *);
+static void	mue_setmtu(struct mue_softc *);
 
 static void	mue_rxeof(struct usbd_xfer *, void *, usbd_status);
 static void	mue_txeof(struct usbd_xfer *, void *, usbd_status);
@@ -279,18 +279,19 @@ mue_unlock_mii(struct mue_softc *sc)
 }
 
 static int
-mue_miibus_readreg(device_t dev, int phy, int reg)
+mue_miibus_readreg(device_t dev, int phy, int reg, uint16_t *val)
 {
 	struct mue_softc *sc = device_private(dev);
-	uint32_t val;
+	uint32_t data;
+	int rv = 0;
 
 	if (sc->mue_dying) {
 		DPRINTF(sc, "dying\n");
-		return 0;
+		return -1;
 	}
 
 	if (sc->mue_phyno != phy)
-		return 0;
+		return -1;
 
 	mue_lock_mii(sc);
 	if (MUE_WAIT_CLR(sc, MUE_MII_ACCESS, MUE_MII_ACCESS_BUSY, 0)) {
@@ -304,59 +305,79 @@ mue_miibus_readreg(device_t dev, int phy, int reg)
 	    MUE_MII_ACCESS_PHYADDR(phy));
 
 	if (MUE_WAIT_CLR(sc, MUE_MII_ACCESS, MUE_MII_ACCESS_BUSY, 0)) {
-		mue_unlock_mii(sc);
 		MUE_PRINTF(sc, "timed out\n");
-		return -1;
+		rv = ETIMEDOUT;
+		goto out;
 	}
 
-	val = mue_csr_read(sc, MUE_MII_DATA);
+	data = mue_csr_read(sc, MUE_MII_DATA);
+	*val = data & 0xffff;
+
+out:
 	mue_unlock_mii(sc);
-	return val & 0xffff;
+	return rv;
 }
 
-static void
-mue_miibus_writereg(device_t dev, int phy, int reg, int data)
+static int
+mue_miibus_writereg(device_t dev, int phy, int reg, uint16_t val)
 {
 	struct mue_softc *sc = device_private(dev);
+	int rv = 0;
 
 	if (sc->mue_dying) {
 		DPRINTF(sc, "dying\n");
-		return;
+		return -1;
 	}
 
 	if (sc->mue_phyno != phy) {
 		DPRINTF(sc, "sc->mue_phyno (%d) != phy (%d)\n",
 		    sc->mue_phyno, phy);
-		return;
+		return -1;
 	}
 
 	mue_lock_mii(sc);
 	if (MUE_WAIT_CLR(sc, MUE_MII_ACCESS, MUE_MII_ACCESS_BUSY, 0)) {
-		mue_unlock_mii(sc);
 		MUE_PRINTF(sc, "not ready\n");
-		return;
+		rv = EBUSY;
+		goto out;
 	}
 
-	mue_csr_write(sc, MUE_MII_DATA, data);
+	mue_csr_write(sc, MUE_MII_DATA, val);
 	mue_csr_write(sc, MUE_MII_ACCESS, MUE_MII_ACCESS_WRITE |
 	    MUE_MII_ACCESS_BUSY | MUE_MII_ACCESS_REGADDR(reg) |
 	    MUE_MII_ACCESS_PHYADDR(phy));
 
-	if (MUE_WAIT_CLR(sc, MUE_MII_ACCESS, MUE_MII_ACCESS_BUSY, 0))
+	if (MUE_WAIT_CLR(sc, MUE_MII_ACCESS, MUE_MII_ACCESS_BUSY, 0)) {
 		MUE_PRINTF(sc, "timed out\n");
-
+		rv = ETIMEDOUT;
+	}
+out:
 	mue_unlock_mii(sc);
+	return rv;
 }
 
 static void
 mue_miibus_statchg(struct ifnet *ifp)
 {
-	struct mue_softc *sc = ifp->if_softc;
-	struct mii_data *mii = GET_MII(sc);
+	struct mue_softc *sc;
+	struct mii_data *mii;
 	uint32_t flow, threshold;
 
-	if (mii == NULL || ifp == NULL || (ifp->if_flags & IFF_RUNNING) == 0) {
-		DPRINTF(sc, "not ready\n");
+	if (ifp == NULL) {
+		printf("%s: ifp not ready\n", __func__);
+		return;
+	}
+
+	sc = ifp->if_softc;
+	mii = GET_MII(sc);
+
+	if ((ifp->if_flags & IFF_RUNNING) == 0) {
+		DPRINTF(sc, "not running\n");
+		return;
+	}
+
+	if (mii == NULL) {
+		DPRINTF(sc, "mii not ready\n");
 		return;
 	}
 
@@ -657,12 +678,10 @@ mue_init_ltm(struct mue_softc *sc)
 				goto done;
 			}
 			DPRINTF(sc, "success\n");
-		} else {
+		} else
 			DPRINTF(sc, "nothing to do\n");
-		}
-	} else {
+	} else
 		DPRINTF(sc, "nothing to do\n");
-	}
 done:
 	for (i = 0; i < __arraycount(idx); i++)
 		mue_csr_write(sc, MUE_LTM_INDEX(i), idx[i]);
@@ -773,14 +792,6 @@ mue_chip_init(struct mue_softc *sc)
 	MUE_SETBIT(sc, (sc->mue_flags & LAN7500) ?
 	    MUE_7500_FCT_TX_CTL : MUE_7800_FCT_TX_CTL, MUE_FCT_TX_CTL_EN);
 
-	/* Set the maximum frame size. */
-	MUE_CLRBIT(sc, MUE_MAC_RX, MUE_MAC_RX_RXEN);
-	val = mue_csr_read(sc, MUE_MAC_RX);
-	val &= ~MUE_MAC_RX_MAX_SIZE_MASK;
-	val |= MUE_MAC_RX_MAX_LEN(ETHER_MAX_LEN + ETHER_VLAN_ENCAP_LEN);
-	mue_csr_write(sc, MUE_MAC_RX, val);
-	MUE_SETBIT(sc, MUE_MAC_RX, MUE_MAC_RX_RXEN);
-
 	MUE_SETBIT(sc, (sc->mue_flags & LAN7500) ?
 	    MUE_7500_FCT_RX_CTL : MUE_7800_FCT_RX_CTL, MUE_FCT_RX_CTL_EN);
 
@@ -831,30 +842,27 @@ mue_get_macaddr(struct mue_softc *sc, prop_dictionary_t dict)
 		sc->mue_enaddr[0] = (uint8_t)((low) & 0xff);
 		if (ETHER_IS_VALID(sc->mue_enaddr))
 			return 0;
-		else {
+		else
 			DPRINTF(sc, "registers: %s\n",
 			    ether_sprintf(sc->mue_enaddr));
-		}
 	}
 
 	if (mue_eeprom_present(sc) && !mue_read_eeprom(sc, sc->mue_enaddr,
 	    MUE_E2P_MAC_OFFSET, ETHER_ADDR_LEN)) {
 		if (ETHER_IS_VALID(sc->mue_enaddr))
 			return 0;
-		else {
+		else
 			DPRINTF(sc, "EEPROM: %s\n",
 			    ether_sprintf(sc->mue_enaddr));
-		}
 	}
 
 	if (mue_read_otp(sc, sc->mue_enaddr, MUE_OTP_MAC_OFFSET,
 	    ETHER_ADDR_LEN) == 0) {
 		if (ETHER_IS_VALID(sc->mue_enaddr))
 			return 0;
-		else {
+		else
 			DPRINTF(sc, "OTP: %s\n",
 			    ether_sprintf(sc->mue_enaddr));
-		}
 	}
 
 	/*
@@ -870,10 +878,9 @@ mue_get_macaddr(struct mue_softc *sc, prop_dictionary_t dict)
 		    ETHER_ADDR_LEN);
 		if (ETHER_IS_VALID(sc->mue_enaddr))
 			return 0;
-		else {
+		else
 			DPRINTF(sc, "prop_dictionary_get: %s\n",
 			    ether_sprintf(sc->mue_enaddr));
-		}
 	}
 
 	return 1;
@@ -903,6 +910,7 @@ mue_attach(device_t parent, device_t self, void *aux)
 	struct mii_data	*mii;
 	struct ifnet *ifp;
 	usbd_status err;
+	const char *descr;
 	uint8_t i;
 	int s;
 
@@ -924,9 +932,7 @@ mue_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	mutex_init(&sc->mue_mii_lock, MUTEX_DEFAULT, IPL_NONE);
 	usb_init_task(&sc->mue_tick_task, mue_tick_task, sc, 0);
-	usb_init_task(&sc->mue_stop_task, (void (*)(void *))mue_stop, sc, 0);
 
 #define MUE_IFACE_IDX	0
 	err = usbd_device2interface_handle(dev, MUE_IFACE_IDX, &sc->mue_iface);
@@ -939,12 +945,19 @@ mue_attach(device_t parent, device_t self, void *aux)
 	sc->mue_product = uaa->uaa_product;
 	sc->mue_flags = MUE_LOOKUP(uaa)->mue_flags;
 
+	sc->mue_id_rev = mue_csr_read(sc, MUE_ID_REV);
+
 	/* Decide on what our bufsize will be. */
-	if (sc->mue_flags & LAN7500)
+	if (sc->mue_flags & LAN7500) {
 		sc->mue_rxbufsz = (sc->mue_udev->ud_speed == USB_SPEED_HIGH) ?
 		    MUE_7500_HS_RX_BUFSIZE : MUE_7500_FS_RX_BUFSIZE;
-	else
+		sc->mue_rx_list_cnt = 1;
+		sc->mue_tx_list_cnt = 1;
+	} else {
 		sc->mue_rxbufsz = MUE_7800_RX_BUFSIZE;
+		sc->mue_rx_list_cnt = MUE_RX_LIST_CNT;
+		sc->mue_tx_list_cnt = MUE_TX_LIST_CNT;
+	}
 	sc->mue_txbufsz = MUE_TX_BUFSIZE;
 
 	/* Find endpoints. */
@@ -981,16 +994,15 @@ mue_attach(device_t parent, device_t self, void *aux)
 	}
 
 	/* A Microchip chip was detected.  Inform the world. */
-	if (sc->mue_flags & LAN7500)
-		aprint_normal_dev(self, "LAN7500\n");
-	else
-		aprint_normal_dev(self, "LAN7800\n");
+	descr = (sc->mue_flags & LAN7500) ? "LAN7500" : "LAN7800";
+	aprint_normal_dev(self, "%s id 0x%x rev 0x%x\n", descr,
+		(unsigned)__SHIFTOUT(sc->mue_id_rev, MUE_ID_REV_ID),
+		(unsigned)__SHIFTOUT(sc->mue_id_rev, MUE_ID_REV_REV));
 
 	if (mue_get_macaddr(sc, dict)) {
-		aprint_error_dev(self, "Ethernet address assigned randomly\n");
-		cprng_fast(sc->mue_enaddr, ETHER_ADDR_LEN);
-		sc->mue_enaddr[0] &= ~0x01;	/* unicast */
-		sc->mue_enaddr[0] |= 0x02;	/* locally administered */
+		aprint_error_dev(self, "failed to read MAC address\n");
+		splx(s);
+		return;
 	}
 
 	aprint_normal_dev(self, "Ethernet address %s\n",
@@ -1009,9 +1021,17 @@ mue_attach(device_t parent, device_t self, void *aux)
 
 	IFQ_SET_READY(&ifp->if_snd);
 
-	ifp->if_capabilities = IFCAP_TSOv4 | IFCAP_TSOv6;
+	ifp->if_capabilities = IFCAP_TSOv4 | IFCAP_TSOv6 |
+	    IFCAP_CSUM_IPv4_Tx | IFCAP_CSUM_IPv4_Rx |  
+	    IFCAP_CSUM_TCPv4_Tx | IFCAP_CSUM_TCPv4_Rx |
+	    IFCAP_CSUM_UDPv4_Tx | IFCAP_CSUM_UDPv4_Rx |
+	    IFCAP_CSUM_TCPv6_Tx | IFCAP_CSUM_TCPv6_Rx |
+	    IFCAP_CSUM_UDPv6_Tx | IFCAP_CSUM_UDPv6_Rx;
 
 	sc->mue_ec.ec_capabilities = ETHERCAP_VLAN_MTU;
+#if 0 /* XXX not yet */
+	sc->mue_ec.ec_capabilities = ETHERCAP_VLAN_MTU | ETHERCAP_JUMBO_MTU;
+#endif
 
 	/* Initialize MII/media info. */
 	mii = GET_MII(sc);
@@ -1042,6 +1062,8 @@ mue_attach(device_t parent, device_t self, void *aux)
 
 	splx(s);
 
+	mutex_init(&sc->mue_mii_lock, MUTEX_DEFAULT, IPL_NONE);
+
 	usbd_add_drv_event(USB_EVENT_DRIVER_ATTACH, sc->mue_udev, sc->mue_dev);
 }
 
@@ -1067,14 +1089,13 @@ mue_detach(device_t self, int flags)
 	 */
 	usb_rem_task_wait(sc->mue_udev, &sc->mue_tick_task, USB_TASKQ_DRIVER,
 	    NULL);
-	usb_rem_task_wait(sc->mue_udev, &sc->mue_stop_task, USB_TASKQ_DRIVER,
-	    NULL);
 
 	s = splusb();
 
 	if (ifp->if_flags & IFF_RUNNING)
 		mue_stop(ifp, 1);
 
+	callout_destroy(&sc->mue_stat_ch);
 	rnd_detach_source(&sc->mue_rnd_source);
 	mii_detach(&sc->mue_mii, MII_PHY_ANY, MII_OFFSET_ANY);
 	ifmedia_delete_instance(&sc->mue_mii.mii_media, IFM_INST_ANY);
@@ -1122,10 +1143,9 @@ mue_rx_list_init(struct mue_softc *sc)
 	int err;
 
 	cd = &sc->mue_cdata;
-	for (i = 0; i < __arraycount(cd->mue_rx_chain); i++) {
+	for (i = 0; i < sc->mue_rx_list_cnt; i++) {
 		c = &cd->mue_rx_chain[i];
 		c->mue_sc = sc;
-		c->mue_idx = i;
 		if (c->mue_xfer == NULL) {
 			err = usbd_create_xfer(sc->mue_ep[MUE_ENDPT_RX],
 			    sc->mue_rxbufsz, 0, 0, &c->mue_xfer);
@@ -1147,10 +1167,9 @@ mue_tx_list_init(struct mue_softc *sc)
 	int err;
 
 	cd = &sc->mue_cdata;
-	for (i = 0; i < __arraycount(cd->mue_tx_chain); i++) {
+	for (i = 0; i < sc->mue_tx_list_cnt; i++) {
 		c = &cd->mue_tx_chain[i];
 		c->mue_sc = sc;
-		c->mue_idx = i;
 		if (c->mue_xfer == NULL) {
 			err = usbd_create_xfer(sc->mue_ep[MUE_ENDPT_TX],
 			    sc->mue_txbufsz, USBD_FORCE_SHORT_XFER, 0,
@@ -1160,6 +1179,9 @@ mue_tx_list_init(struct mue_softc *sc)
 			c->mue_buf = usbd_get_buffer(c->mue_xfer);
 		}
 	}
+
+	cd->mue_tx_prod = 0;
+	cd->mue_tx_cnt = 0;
 
 	return 0;
 }
@@ -1192,7 +1214,7 @@ mue_startup_rx_pipes(struct mue_softc *sc)
 	size_t i;
 
 	/* Start up the receive pipe. */
-	for (i = 0; i < __arraycount(sc->mue_cdata.mue_rx_chain); i++) {
+	for (i = 0; i < sc->mue_rx_list_cnt; i++) {
 		c = &sc->mue_cdata.mue_rx_chain[i];
 		usbd_setup_xfer(c->mue_xfer, c, c->mue_buf, sc->mue_rxbufsz,
 		    USBD_SHORT_XFER_OK, USBD_NO_TIMEOUT, mue_rxeof);
@@ -1208,14 +1230,18 @@ mue_encap(struct mue_softc *sc, struct mbuf *m, int idx)
 	usbd_status err;
 	struct mue_txbuf_hdr hdr;
 	uint32_t tx_cmd_a, tx_cmd_b;
-	int len;
-	bool tso;
+	int csum, len, rv;
+	bool tso, ipe, tpe;
 
-	tso = m->m_pkthdr.csum_flags & (M_CSUM_TSOv4 | M_CSUM_TSOv6);
+	csum = m->m_pkthdr.csum_flags;
+	tso = csum & (M_CSUM_TSOv4 | M_CSUM_TSOv6);
+	ipe = csum & M_CSUM_IPv4;
+	tpe = csum & (M_CSUM_TCPv4 | M_CSUM_UDPv4 |
+		      M_CSUM_TCPv6 | M_CSUM_UDPv6);
 
 	len = m->m_pkthdr.len;
-	if (__predict_false((!tso && len > MUE_MAX_TX_LEN) ||
-			    ( tso && len > MUE_MAX_TSO_LEN))) {
+	if (__predict_false((!tso && len > (int)MUE_FRAME_LEN(ifp->if_mtu)) ||
+			    ( tso && len > MUE_TSO_FRAME_LEN))) {
 		MUE_PRINTF(sc, "packet length %d\n too long", len);
 		return EINVAL;
 	}
@@ -1233,15 +1259,25 @@ mue_encap(struct mue_softc *sc, struct mbuf *m, int idx)
 			tx_cmd_b = MUE_TX_MSS_MIN;
 		tx_cmd_b <<= MUE_TX_CMD_B_MSS_SHIFT;
 		KASSERT((tx_cmd_b & ~MUE_TX_CMD_B_MSS_MASK) == 0);
-		mue_tx_offload(sc, m);
-	} else
+		rv = mue_prepare_tso(sc, m);
+		if (__predict_false(rv))
+			return rv;
+	} else {
+		if (ipe)
+			tx_cmd_a |= MUE_TX_CMD_A_IPE;
+		if (tpe)
+			tx_cmd_a |= MUE_TX_CMD_A_TPE;
 		tx_cmd_b = 0;
+	}
 
 	hdr.tx_cmd_a = htole32(tx_cmd_a);
 	hdr.tx_cmd_b = htole32(tx_cmd_b);
 
 	memcpy(c->mue_buf, &hdr, sizeof(hdr)); 
 	m_copydata(m, 0, len, c->mue_buf + sizeof(hdr));
+
+	if (__predict_false(c->mue_xfer == NULL))
+		return EIO;	/* XXX plugged out or down */
 
 	usbd_setup_xfer(c->mue_xfer, c, c->mue_buf, len + sizeof(hdr),
 	    USBD_FORCE_SHORT_XFER, 10000, mue_txeof);
@@ -1254,43 +1290,59 @@ mue_encap(struct mue_softc *sc, struct mbuf *m, int idx)
 		return EIO;
 	}
 
-	sc->mue_cdata.mue_tx_cnt++;
-
 	return 0;
 }
 
-static void
-mue_tx_offload(struct mue_softc *sc, struct mbuf *m)
+/*
+ * L3 length field should be cleared.
+ */
+static int
+mue_prepare_tso(struct mue_softc *sc, struct mbuf *m)
 {
 	struct ether_header *eh;
 	struct ip *ip;
 	struct ip6_hdr *ip6;
+	uint16_t type, len = 0;
 	int off;
 
-	eh = mtod(m, struct ether_header *);
-	switch (htons(eh->ether_type)) {
+	if (__predict_true(m->m_len >= (int)sizeof(*eh))) {
+		eh = mtod(m, struct ether_header *);
+		type = eh->ether_type;
+	} else
+		m_copydata(m, offsetof(struct ether_header, ether_type),
+		    sizeof(type), &type);
+	switch (type = htons(type)) {
 	case ETHERTYPE_IP:
 	case ETHERTYPE_IPV6:
 		off = ETHER_HDR_LEN;
 		break;
 	case ETHERTYPE_VLAN:
-		/* XXX not yet supported */
 		off = ETHER_HDR_LEN + ETHER_VLAN_ENCAP_LEN;
 		break;
 	default:
-		/* XXX */
-		panic("%s: unsupported ethertype\n", __func__);
-		/* NOTREACHED */
+		if (usbd_ratecheck(&sc->mue_tx_notice))
+			MUE_PRINTF(sc, "dropping invalid frame "
+			    "type 0x%04hx csum_flags 0x%08x\n", 
+			    type, m->m_pkthdr.csum_flags);
+		return EINVAL;
 	}
 
-	/* Packet length should be cleared. */
 	if (m->m_pkthdr.csum_flags & M_CSUM_TSOv4) {
-		ip = (void *)(mtod(m, char *) + off);
-		ip->ip_len = 0;
+		if (__predict_true(m->m_len >= off + (int)sizeof(*ip))) {
+			ip = (void *)(mtod(m, char *) + off);
+			ip->ip_len = 0;
+		} else
+			m_copyback(m, off + offsetof(struct ip, ip_len),
+			    sizeof(len), &len);
 	} else {
-		ip6 = (void *)(mtod(m, char *) + off);
-		ip6->ip6_plen = 0;
+		if (__predict_true(m->m_len >= off + (int)sizeof(*ip6))) {
+			ip6 = (void *)(mtod(m, char *) + off);
+			ip6->ip6_plen = 0;
+		} else
+			m_copyback(m, off + offsetof(struct ip6_hdr, ip6_plen),
+			    sizeof(len), &len);
 	}
+	return 0;
 }
 
 static void
@@ -1320,14 +1372,14 @@ mue_setmulti(struct mue_softc *sc)
 	/* Always accept broadcast frames. */
 	rxfilt |= MUE_RFE_CTL_BROADCAST;
 
-	if (ifp->if_flags & (IFF_ALLMULTI | IFF_PROMISC)) {
+	if (ifp->if_flags & IFF_PROMISC) {
+		rxfilt |= MUE_RFE_CTL_UNICAST;
 allmulti:	rxfilt |= MUE_RFE_CTL_MULTICAST;
-		if (ifp->if_flags & IFF_PROMISC) {
-			rxfilt |= MUE_RFE_CTL_UNICAST;
+		ifp->if_flags |= IFF_ALLMULTI;
+		if (ifp->if_flags & IFF_PROMISC)
 			DPRINTF(sc, "promisc\n");
-		} else {
+		else
 			DPRINTF(sc, "allmulti\n");
-		}
 	} else {
 		/* Now program new ones. */
 		pfiltbl[0][0] = MUE_ENADDR_HI(enaddr) | MUE_ADDR_FILTX_VALID;
@@ -1358,11 +1410,11 @@ allmulti:	rxfilt |= MUE_RFE_CTL_MULTICAST;
 			ETHER_NEXT_MULTI(step, enm);
 		}
 		rxfilt |= MUE_RFE_CTL_PERFECT;
-		if (rxfilt & MUE_RFE_CTL_MULTICAST_HASH) {
+		ifp->if_flags &= ~IFF_ALLMULTI;
+		if (rxfilt & MUE_RFE_CTL_MULTICAST_HASH)
 			DPRINTF(sc, "perfect filter and hash tables\n");
-		} else {
+		else
 			DPRINTF(sc, "perfect filter\n");
-		}
 	}
 
 	for (i = 0; i < MUE_NUM_ADDR_FILTX; i++) {
@@ -1389,23 +1441,43 @@ mue_sethwcsum(struct mue_softc *sc)
 	reg = (sc->mue_flags & LAN7500) ? MUE_7500_RFE_CTL : MUE_7800_RFE_CTL;
 	val = mue_csr_read(sc, reg);
 
-	if (ifp->if_capenable & (IFCAP_CSUM_TCPv4_Rx|IFCAP_CSUM_UDPv4_Rx)) {
-		DPRINTF(sc, "enabled\n");;
-		val |= MUE_RFE_CTL_IGMP_COE | MUE_RFE_CTL_ICMP_COE;
-		val |= MUE_RFE_CTL_TCPUDP_COE | MUE_RFE_CTL_IP_COE;
+	if (ifp->if_capenable & IFCAP_CSUM_IPv4_Rx) {
+		DPRINTF(sc, "RX IPv4 hwcsum enabled\n");
+		val |= MUE_RFE_CTL_IP_COE;
 	} else {
-		DPRINTF(sc, "disabled\n");;
-		val &=
-		    ~(MUE_RFE_CTL_IGMP_COE | MUE_RFE_CTL_ICMP_COE);
-		val &=
-		    ~(MUE_RFE_CTL_TCPUDP_COE | MUE_RFE_CTL_IP_COE);
-        }
+		DPRINTF(sc, "RX IPv4 hwcsum disabled\n");
+		val &= ~MUE_RFE_CTL_IP_COE;
+	}
+
+	if (ifp->if_capenable &
+	    (IFCAP_CSUM_TCPv4_Rx | IFCAP_CSUM_UDPv4_Rx |
+	     IFCAP_CSUM_TCPv6_Rx | IFCAP_CSUM_UDPv6_Rx)) {
+		DPRINTF(sc, "RX L4 hwcsum enabled\n");
+		val |= MUE_RFE_CTL_TCPUDP_COE;
+	} else {
+		DPRINTF(sc, "RX L4 hwcsum disabled\n");
+		val &= ~MUE_RFE_CTL_TCPUDP_COE;
+	}
 
 	val &= ~MUE_RFE_CTL_VLAN_FILTER;
 
 	mue_csr_write(sc, reg, val);
 }
 
+static void
+mue_setmtu(struct mue_softc *sc)
+{
+	struct ifnet *ifp = GET_IFP(sc);
+	uint32_t val;
+
+	/* Set the maximum frame size. */
+	MUE_CLRBIT(sc, MUE_MAC_RX, MUE_MAC_RX_RXEN);
+	val = mue_csr_read(sc, MUE_MAC_RX);
+	val &= ~MUE_MAC_RX_MAX_SIZE_MASK;
+	val |= MUE_MAC_RX_MAX_LEN(MUE_FRAME_LEN(ifp->if_mtu));
+	mue_csr_write(sc, MUE_MAC_RX, val);
+	MUE_SETBIT(sc, MUE_MAC_RX, MUE_MAC_RX_RXEN);
+}
 
 static void
 mue_rxeof(struct usbd_xfer *xfer, void *priv, usbd_status status)
@@ -1418,20 +1490,19 @@ mue_rxeof(struct usbd_xfer *xfer, void *priv, usbd_status status)
 	uint32_t rx_cmd_a, totlen;
 	uint16_t pktlen;
 	int s;
+	int csum;
 	char *buf = c->mue_buf;
+	bool v6;
 
 	if (__predict_false(sc->mue_dying)) {
 		DPRINTF(sc, "dying\n");
 		return;
 	}
 
-	if (__predict_false(!(ifp->if_flags & IFF_RUNNING))) {
-		DPRINTF(sc, "not running\n");
-		return;
-	}
-
 	if (__predict_false(status != USBD_NORMAL_COMPLETION)) {
 		DPRINTF(sc, "%s\n", usbd_errstr(status));
+		if (status == USBD_INVAL)
+			return;	/* XXX plugged out or down */
 		if (status == USBD_NOT_STARTED || status == USBD_CANCELLED)
 			return;
 		if (usbd_ratecheck(&sc->mue_rx_notice))
@@ -1457,21 +1528,23 @@ mue_rxeof(struct usbd_xfer *xfer, void *priv, usbd_status status)
 		hdrp = (struct mue_rxbuf_hdr *)buf;
 		rx_cmd_a = le32toh(hdrp->rx_cmd_a);
 
-		if (__predict_false(rx_cmd_a & MUE_RX_CMD_A_RED)) {
+		if (__predict_false(rx_cmd_a & MUE_RX_CMD_A_ERRORS)) {
+			/*
+			 * We cannot use MUE_RX_CMD_A_RED bit here;
+			 * it is turned on in the cases of L3/L4
+			 * checksum errors which we handle below.
+			 */
 			MUE_PRINTF(sc, "rx_cmd_a: 0x%x\n", rx_cmd_a);
 			ifp->if_ierrors++;
 			goto done;
 		}
-
-		/* XXX not yet */
-		KASSERT((rx_cmd_a & MUE_RX_CMD_A_ICSM) == 0);
 
 		pktlen = (uint16_t)(rx_cmd_a & MUE_RX_CMD_A_LEN_MASK);
 		if (sc->mue_flags & LAN7500)
 			pktlen -= 2;
 
 		if (__predict_false(pktlen < ETHER_HDR_LEN + ETHER_CRC_LEN ||
-		    pktlen > MCLBYTES - ETHER_ALIGN ||
+		    pktlen > MCLBYTES - ETHER_ALIGN || /* XXX */
 		    pktlen + sizeof(*hdrp) > totlen)) {
 			MUE_PRINTF(sc, "invalid packet length %d\n", pktlen);
 			ifp->if_ierrors++;
@@ -1488,6 +1561,36 @@ mue_rxeof(struct usbd_xfer *xfer, void *priv, usbd_status status)
 		m_set_rcvif(m, ifp);
 		m->m_pkthdr.len = m->m_len = pktlen;
 		m->m_flags |= M_HASFCS;
+
+		if (__predict_false(rx_cmd_a & MUE_RX_CMD_A_ICSM)) {
+			csum = 0;
+		} else {
+			v6 = rx_cmd_a & MUE_RX_CMD_A_IPV;
+			switch (rx_cmd_a & MUE_RX_CMD_A_PID) {
+			case MUE_RX_CMD_A_PID_TCP:
+				csum = v6 ?
+				    M_CSUM_TCPv6 : M_CSUM_IPv4 | M_CSUM_TCPv4;
+				break;
+			case MUE_RX_CMD_A_PID_UDP:
+				csum = v6 ?
+				    M_CSUM_UDPv6 : M_CSUM_IPv4 | M_CSUM_UDPv4;
+				break;
+			case MUE_RX_CMD_A_PID_IP:
+				csum = v6 ? 0 : M_CSUM_IPv4;
+				break;
+			default:
+				csum = 0;
+				break;
+			}
+			csum &= ifp->if_csum_flags_rx;
+			if (__predict_false((csum & M_CSUM_IPv4) &&
+			    (rx_cmd_a & MUE_RX_CMD_A_ICE)))
+				csum |= M_CSUM_IPv4_BAD;
+			if (__predict_false((csum & ~M_CSUM_IPv4) &&
+			    (rx_cmd_a & MUE_RX_CMD_A_TCE)))
+				csum |= M_CSUM_TCP_UDP_BAD;
+		}
+		m->m_pkthdr.csum_flags = csum;
 		memcpy(mtod(m, char *), buf + sizeof(*hdrp), pktlen);
 
 		/* Attention: sizeof(hdr) = 10 */
@@ -1514,6 +1617,7 @@ mue_txeof(struct usbd_xfer *xfer, void *priv, usbd_status status)
 {
 	struct mue_chain *c = priv;
 	struct mue_softc *sc = c->mue_sc;
+	struct mue_cdata *cd = &sc->mue_cdata;
 	struct ifnet *ifp = GET_IFP(sc);
 	int s;
 
@@ -1521,14 +1625,16 @@ mue_txeof(struct usbd_xfer *xfer, void *priv, usbd_status status)
 		return;
 
 	s = splnet();
-
+	KASSERT(cd->mue_tx_cnt > 0);
+	cd->mue_tx_cnt--;
 	if (__predict_false(status != USBD_NORMAL_COMPLETION)) {
 		if (status == USBD_NOT_STARTED || status == USBD_CANCELLED) {
 			splx(s);
 			return;
 		}
 		ifp->if_oerrors++;
-		MUE_PRINTF(sc, "%s\n", usbd_errstr(status));
+		if (usbd_ratecheck(&sc->mue_tx_notice))
+			MUE_PRINTF(sc, "%s\n", usbd_errstr(status));
 		if (status == USBD_STALLED)
 			usbd_clear_endpoint_stall_async(
 			    sc->mue_ep[MUE_ENDPT_TX]);
@@ -1574,6 +1680,9 @@ mue_init(struct ifnet *ifp)
 	/* TCP/UDP checksum offload engines. */
 	mue_sethwcsum(sc);
 
+	/* Set MTU. */
+	mue_setmtu(sc);
+
 	if (mue_open_pipes(sc)) {
 		splx(s);
 		return EIO;
@@ -1609,12 +1718,11 @@ static int
 mue_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 {
 	struct mue_softc *sc = ifp->if_softc;
-	struct ifreq /*const*/ *ifr = data;
 	int s, error = 0;
 
 	s = splnet();
 
-	switch(cmd) {
+	switch (cmd) {
 	case SIOCSIFFLAGS:
 		if ((error = ifioctl_common(ifp, cmd, data)) != 0)
 			break;
@@ -1635,16 +1743,24 @@ mue_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 		}
 		sc->mue_if_flags = ifp->if_flags;
 		break;
-	case SIOCGIFMEDIA:
-	case SIOCSIFMEDIA:
-		error = ifmedia_ioctl(ifp, ifr, &sc->mue_mii.mii_media, cmd);
-		break;
 	default:
 		if ((error = ether_ioctl(ifp, cmd, data)) != ENETRESET)
 			break;
 		error = 0;
-		if (cmd == SIOCADDMULTI || cmd == SIOCDELMULTI)
+		switch (cmd) {
+		case SIOCADDMULTI:
+		case SIOCDELMULTI:
 			mue_setmulti(sc);
+			break;
+		case SIOCSIFCAP:
+			mue_sethwcsum(sc);
+			break;
+		case SIOCSIFMTU:
+			mue_setmtu(sc);
+			break;
+		default:
+			break;
+		}
 		break;
 	}
 	splx(s);
@@ -1690,6 +1806,8 @@ mue_start(struct ifnet *ifp)
 {
 	struct mue_softc *sc = ifp->if_softc;
 	struct mbuf *m;
+	struct mue_cdata *cd = &sc->mue_cdata;
+	int idx;
 
 	if (__predict_false(!sc->mue_link)) {
 		DPRINTF(sc, "no link\n");
@@ -1702,20 +1820,29 @@ mue_start(struct ifnet *ifp)
 		return;
 	}
 
-	IFQ_POLL(&ifp->if_snd, m);
-	if (m == NULL)
-		return;
+	idx = cd->mue_tx_prod;
+	while (cd->mue_tx_cnt < (int)sc->mue_tx_list_cnt) {
+		IFQ_POLL(&ifp->if_snd, m);
+		if (m == NULL)
+			break;
 
-	if (__predict_false(mue_encap(sc, m, 0))) {
-		ifp->if_oerrors++;
-		return;
+		if (__predict_false(mue_encap(sc, m, idx))) {
+			ifp->if_oerrors++;
+			break;
+		}
+		IFQ_DEQUEUE(&ifp->if_snd, m);
+
+		bpf_mtap(ifp, m, BPF_D_OUT);
+		m_freem(m);
+
+		idx = (idx + 1) % sc->mue_tx_list_cnt;
+		cd->mue_tx_cnt++;
+
 	}
-	IFQ_DEQUEUE(&ifp->if_snd, m);
+	cd->mue_tx_prod = idx;
 
-	bpf_mtap(ifp, m, BPF_D_OUT);
-	m_freem(m);
-
-	ifp->if_flags |= IFF_OACTIVE;
+	if (cd->mue_tx_cnt >= (int)sc->mue_tx_list_cnt)
+		ifp->if_flags |= IFF_OACTIVE;
 
 	/* Set a timeout in case the chip goes out to lunch. */
 	ifp->if_timer = 5;
@@ -1725,6 +1852,7 @@ static void
 mue_stop(struct ifnet *ifp, int disable __unused)
 {
 	struct mue_softc *sc = ifp->if_softc;
+	struct mue_chain *c;
 	usbd_status err;
 	size_t i;
 
@@ -1734,6 +1862,7 @@ mue_stop(struct ifnet *ifp, int disable __unused)
 	ifp->if_flags &= ~(IFF_RUNNING | IFF_OACTIVE);
 
 	callout_stop(&sc->mue_stat_ch);
+	sc->mue_link = 0;
 
         /* Stop transfers. */
 	for (i = 0; i < __arraycount(sc->mue_ep); i++)
@@ -1745,20 +1874,22 @@ mue_stop(struct ifnet *ifp, int disable __unused)
 		}
 
 	/* Free RX resources. */
-	for (i = 0; i < __arraycount(sc->mue_cdata.mue_rx_chain); i++)
-		if (sc->mue_cdata.mue_rx_chain[i].mue_xfer != NULL) {
-			usbd_destroy_xfer(
-			    sc->mue_cdata.mue_rx_chain[i].mue_xfer);
-			sc->mue_cdata.mue_rx_chain[i].mue_xfer = NULL;
+	for (i = 0; i < sc->mue_rx_list_cnt; i++) {
+		c = &sc->mue_cdata.mue_rx_chain[i];
+		if (c->mue_xfer != NULL) {
+			usbd_destroy_xfer(c->mue_xfer);
+			c->mue_xfer = NULL;
 		}
+	}
 
 	/* Free TX resources. */
-	for (i = 0; i < __arraycount(sc->mue_cdata.mue_tx_chain); i++)
-		if (sc->mue_cdata.mue_tx_chain[i].mue_xfer != NULL) {
-			usbd_destroy_xfer(
-			    sc->mue_cdata.mue_tx_chain[i].mue_xfer);
-			sc->mue_cdata.mue_tx_chain[i].mue_xfer = NULL;
+	for (i = 0; i < sc->mue_tx_list_cnt; i++) {
+		c = &sc->mue_cdata.mue_tx_chain[i];
+		if (c->mue_xfer != NULL) {
+			usbd_destroy_xfer(c->mue_xfer);
+			c->mue_xfer = NULL;
 		}
+	}
 
 	/* Close pipes */
 	for (i = 0; i < __arraycount(sc->mue_ep); i++)
@@ -1769,8 +1900,6 @@ mue_stop(struct ifnet *ifp, int disable __unused)
 				    i, usbd_errstr(err));
 			sc->mue_ep[i] = NULL;
 		}
-
-	sc->mue_link = 0; /* XXX */
 
 	DPRINTF(sc, "done\n");
 }
@@ -1794,8 +1923,8 @@ static void
 mue_tick_task(void *xsc)
 {
 	struct mue_softc *sc = xsc;
-	struct ifnet *ifp = GET_IFP(sc);
-	struct mii_data *mii = GET_MII(sc);
+	struct ifnet *ifp;
+	struct mii_data *mii;
 	int s;
 
 	if (sc == NULL)
@@ -1803,6 +1932,9 @@ mue_tick_task(void *xsc)
 
 	if (sc->mue_dying)
 		return;
+
+	ifp = GET_IFP(sc);
+	mii = GET_MII(sc);
 
 	s = splnet();
 	mii_tick(mii);

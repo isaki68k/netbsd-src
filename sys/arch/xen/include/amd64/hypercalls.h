@@ -1,4 +1,4 @@
-/* $NetBSD: hypercalls.h,v 1.8 2011/12/07 16:01:39 cegger Exp $ */
+/* $NetBSD: hypercalls.h,v 1.11 2019/02/02 12:32:55 cherry Exp $ */
 /******************************************************************************
  * hypercall.h
  * 
@@ -242,9 +242,14 @@ HYPERVISOR_update_va_mapping(
 }
 
 static inline int
-HYPERVISOR_event_channel_op(void *op)
+HYPERVISOR_event_channel_op(evtchn_op_t *op)
 {
+	KASSERT(op != NULL);
+#if __XEN_INTERFACE_VERSION__ < 0x00030202
 	return _hypercall1(int, event_channel_op, op);
+#else
+	return _hypercall2(int, event_channel_op, op->cmd, &op->u);
+#endif
 }
 
 static inline int
@@ -361,11 +366,11 @@ HYPERVISOR_nmi_op(
 	return _hypercall2(int, nmi_op, op, arg);
 }
 
-static inline unsigned long
+static inline long
 HYPERVISOR_hvm_op(
     int op, void *arg)
 {
-    return _hypercall2(unsigned long, hvm_op, op, arg);
+    return _hypercall2(long, hvm_op, op, arg);
 }
 
 static inline int
@@ -399,7 +404,7 @@ HYPERVISOR_dom0_op(
 }
 #endif	/* __XEN_INTERFACE_VERSION__ */
 
-#include <xen/xen-public/arch-x86/xen-mca.h>
+#include <xen/include/public/arch-x86/xen-mca.h>
 
 static inline int
 HYPERVISOR_machine_check(struct xen_mc *mc)

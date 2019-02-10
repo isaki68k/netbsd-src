@@ -1,4 +1,4 @@
-/*	$NetBSD: if_vte.c,v 1.20 2018/06/26 06:48:01 msaitoh Exp $	*/
+/*	$NetBSD: if_vte.c,v 1.23 2019/02/05 06:17:03 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2011 Manuel Bouyer.  All rights reserved.
@@ -55,7 +55,7 @@
 /* Driver for DM&P Electronics, Inc, Vortex86 RDC R6040 FastEthernet. */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_vte.c,v 1.20 2018/06/26 06:48:01 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_vte.c,v 1.23 2019/02/05 06:17:03 msaitoh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -116,9 +116,9 @@ static int	vte_init_tx_ring(struct vte_softc *);
 static int	vte_intr(void *);
 static int	vte_ifioctl(struct ifnet *, u_long, void *);
 static void	vte_mac_config(struct vte_softc *);
-static int	vte_miibus_readreg(device_t, int, int);
+static int	vte_miibus_readreg(device_t, int, int, uint16_t *);
 static void	vte_miibus_statchg(struct ifnet *);
-static void	vte_miibus_writereg(device_t, int, int, int);
+static int	vte_miibus_writereg(device_t, int, int, uint16_t);
 static int	vte_mediachange(struct ifnet *);
 static int	vte_newbuf(struct vte_softc *, struct vte_rxdesc *);
 static void	vte_reset(struct vte_softc *);
@@ -225,8 +225,8 @@ vte_attach(device_t parent, device_t self, void *aux)
 	}
 	intrstr = pci_intr_string(pa->pa_pc, intrhandle, intrbuf,
 	    sizeof(intrbuf));
-	sc->vte_ih = pci_intr_establish(pa->pa_pc, intrhandle, IPL_NET,
-	    vte_intr, sc);
+	sc->vte_ih = pci_intr_establish_xname(pa->pa_pc, intrhandle, IPL_NET,
+	    vte_intr, sc, device_xname(self));
 	if (sc->vte_ih == NULL) {
 		aprint_error_dev(self, "couldn't establish interrupt");
 		if (intrstr != NULL)
@@ -258,7 +258,7 @@ vte_attach(device_t parent, device_t self, void *aux)
 	sc->vte_ec.ec_capabilities |= ETHERCAP_VLAN_MTU;
 
         strlcpy(ifp->if_xname, device_xname(self), IFNAMSIZ);
-        ifp->if_flags = IFF_BROADCAST|IFF_SIMPLEX|IFF_NOTRAILERS|IFF_MULTICAST;
+        ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
         ifp->if_ioctl = vte_ifioctl;
         ifp->if_start = vte_ifstart;
         ifp->if_watchdog = vte_ifwatchdog;
@@ -335,7 +335,7 @@ vte_detach(device_t dev, int flags __unused)
 }
 
 static int
-vte_miibus_readreg(device_t dev, int phy, int reg)
+vte_miibus_readreg(device_t dev, int phy, int reg, uint16_t *val)
 {
 	struct vte_softc *sc = device_private(dev);
 	int i;
@@ -350,14 +350,15 @@ vte_miibus_readreg(device_t dev, int phy, int reg)
 
 	if (i == 0) {
 		aprint_error_dev(sc->vte_dev, "phy read timeout : %d\n", reg);
-		return (0);
+		return ETIMEDOUT;
 	}
 
-	return (CSR_READ_2(sc, VTE_MMRD));
+	*val = CSR_READ_2(sc, VTE_MMRD);
+	return 0;
 }
 
-static void
-vte_miibus_writereg(device_t dev, int phy, int reg, int val)
+static int
+vte_miibus_writereg(device_t dev, int phy, int reg, uint16_t val)
 {
 	struct vte_softc *sc = device_private(dev);
 	int i;
@@ -371,9 +372,12 @@ vte_miibus_writereg(device_t dev, int phy, int reg, int val)
 			break;
 	}
 
-	if (i == 0)
+	if (i == 0) {
 		aprint_error_dev(sc->vte_dev, "phy write timeout : %d\n", reg);
+		return ETIMEDOUT;
+	}
 
+	return 0;
 }
 
 static void

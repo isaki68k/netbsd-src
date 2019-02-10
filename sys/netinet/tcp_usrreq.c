@@ -1,4 +1,4 @@
-/*	$NetBSD: tcp_usrreq.c,v 1.221 2018/11/24 17:05:54 maxv Exp $	*/
+/*	$NetBSD: tcp_usrreq.c,v 1.224 2019/02/05 04:48:47 mrg Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -99,7 +99,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tcp_usrreq.c,v 1.221 2018/11/24 17:05:54 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tcp_usrreq.c,v 1.224 2019/02/05 04:48:47 mrg Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -1148,14 +1148,18 @@ tcp_sendoob(struct socket *so, struct mbuf *m, struct mbuf *control)
 	int error = 0;
 	int s;
 
-	if ((error = tcp_getpcb(so, &inp, &in6p, &tp)) != 0)
+	if ((error = tcp_getpcb(so, &inp, &in6p, &tp)) != 0) {
+		m_freem(m);
+		m_freem(control);
 		return error;
+	}
 
 	ostate = tcp_debug_capture(tp, PRU_SENDOOB);
 
 	s = splsoftnet();
-	if (sbspace(&so->so_snd) < -512) {
+	if (sbspace_oob(&so->so_snd) == 0) {
 		m_freem(m);
+		m_freem(control);
 		splx(s);
 		return ENOBUFS;
 	}
@@ -1174,6 +1178,7 @@ tcp_sendoob(struct socket *so, struct mbuf *m, struct mbuf *control)
 	tp->t_force = 0;
 	tcp_debug_trace(so, tp, ostate, PRU_SENDOOB);
 	splx(s);
+	m_freem(control);
 
 	return error;
 }
@@ -1684,8 +1689,8 @@ sysctl_net_inet_tcp_ident(SYSCTLFN_ARGS)
 
 		in6_sin6_2_sin_in_sock((struct sockaddr *)&sa[0]);
 		in6_sin6_2_sin_in_sock((struct sockaddr *)&sa[1]);
-		/*FALLTHROUGH*/
 #endif /* INET6 */
+		/*FALLTHROUGH*/
 	case PF_INET:
 		si4[0] = (struct sockaddr_in*)&sa[0];
 		si4[1] = (struct sockaddr_in*)&sa[1];

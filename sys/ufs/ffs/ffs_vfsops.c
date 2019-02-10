@@ -1,4 +1,4 @@
-/*	$NetBSD: ffs_vfsops.c,v 1.358 2018/07/18 22:40:56 uwe Exp $	*/
+/*	$NetBSD: ffs_vfsops.c,v 1.361 2019/01/01 10:06:55 hannken Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2009 The NetBSD Foundation, Inc.
@@ -61,7 +61,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ffs_vfsops.c,v 1.358 2018/07/18 22:40:56 uwe Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ffs_vfsops.c,v 1.361 2019/01/01 10:06:55 hannken Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_ffs.h"
@@ -80,7 +80,6 @@ __KERNEL_RCSID(0, "$NetBSD: ffs_vfsops.c,v 1.358 2018/07/18 22:40:56 uwe Exp $")
 #include <sys/buf.h>
 #include <sys/device.h>
 #include <sys/disk.h>
-#include <sys/mbuf.h>
 #include <sys/file.h>
 #include <sys/disklabel.h>
 #include <sys/ioctl.h>
@@ -2092,7 +2091,7 @@ ffs_loadvnode(struct mount *mp, struct vnode *vp,
  */
 int
 ffs_newvnode(struct mount *mp, struct vnode *dvp, struct vnode *vp,
-    struct vattr *vap, kauth_cred_t cred,
+    struct vattr *vap, kauth_cred_t cred, void *extra,
     size_t *key_len, const void **new_key)
 {
 	ino_t ino;
@@ -2335,7 +2334,7 @@ ffs_cgupdate(struct ufsmount *mp, int waitfor)
 	void *space;
 	int i, size, error = 0, allerror = 0;
 
-	UFS_WAPBL_JLOCK_ASSERT(mp);
+	UFS_WAPBL_JLOCK_ASSERT(mp->um_mountp);
 
 	allerror = ffs_sbupdate(mp, waitfor);
 	blks = howmany(fs->fs_cssize, fs->fs_fsize);

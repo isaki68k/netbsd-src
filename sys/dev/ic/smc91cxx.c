@@ -1,4 +1,4 @@
-/*	$NetBSD: smc91cxx.c,v 1.97 2018/06/26 06:48:00 msaitoh Exp $	*/
+/*	$NetBSD: smc91cxx.c,v 1.99 2019/02/05 06:17:02 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 1997 The NetBSD Foundation, Inc.
@@ -71,7 +71,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: smc91cxx.c,v 1.97 2018/06/26 06:48:00 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: smc91cxx.c,v 1.99 2019/02/05 06:17:02 msaitoh Exp $");
 
 #include "opt_inet.h"
 
@@ -169,8 +169,8 @@ static const struct mii_bitbang_ops smc91cxx_mii_bitbang_ops = {
 };
 
 /* MII callbacks */
-int	smc91cxx_mii_readreg(device_t, int, int);
-void	smc91cxx_mii_writereg(device_t, int, int, int);
+int	smc91cxx_mii_readreg(device_t, int, int, uint16_t *);
+int	smc91cxx_mii_writereg(device_t, int, int, uint16_t);
 void	smc91cxx_statchg(struct ifnet *);
 void	smc91cxx_tick(void *);
 
@@ -300,8 +300,7 @@ smc91cxx_attach(struct smc91cxx_softc *sc, u_int8_t *myea)
 	ifp->if_start = smc91cxx_start;
 	ifp->if_ioctl = smc91cxx_ioctl;
 	ifp->if_watchdog = smc91cxx_watchdog;
-	ifp->if_flags =
-	    IFF_BROADCAST | IFF_SIMPLEX | IFF_NOTRAILERS | IFF_MULTICAST;
+	ifp->if_flags = IFF_BROADCAST | IFF_SIMPLEX | IFF_MULTICAST;
 	IFQ_SET_READY(&ifp->if_snd);
 
 	/* Attach the interface. */
@@ -1495,30 +1494,35 @@ smc91cxx_mii_bitbang_write(device_t self, u_int32_t val)
 }
 
 int
-smc91cxx_mii_readreg(device_t self, int phy, int reg)
+smc91cxx_mii_readreg(device_t self, int phy, int reg, uint16_t *val)
 {
 	struct smc91cxx_softc *sc = device_private(self);
-	int val;
+	int rv;
 
 	SMC_SELECT_BANK(sc, 3);
 
-	val = mii_bitbang_readreg(self, &smc91cxx_mii_bitbang_ops, phy, reg);
+	rv = mii_bitbang_readreg(self, &smc91cxx_mii_bitbang_ops, phy, reg,
+	    val);
 
 	SMC_SELECT_BANK(sc, 2);
 
-	return (val);
+	return rv;
 }
 
-void
-smc91cxx_mii_writereg(device_t self, int phy, int reg, int val)
+int
+smc91cxx_mii_writereg(device_t self, int phy, int reg, uint16_t val)
 {
 	struct smc91cxx_softc *sc = device_private(self);
+	int rv;
 
 	SMC_SELECT_BANK(sc, 3);
 
-	mii_bitbang_writereg(self, &smc91cxx_mii_bitbang_ops, phy, reg, val);
+	rv = mii_bitbang_writereg(self, &smc91cxx_mii_bitbang_ops, phy, reg,
+	    val);
 
 	SMC_SELECT_BANK(sc, 2);
+
+	return rv;
 }
 
 void

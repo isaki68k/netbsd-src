@@ -1,4 +1,4 @@
-/*      $NetBSD: xpci_xenbus.c,v 1.20 2018/10/24 03:59:33 cherry Exp $      */
+/*      $NetBSD: xpci_xenbus.c,v 1.22 2019/02/02 12:32:55 cherry Exp $      */
 
 /*
  * Copyright (c) 2009 Manuel Bouyer.
@@ -25,7 +25,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xpci_xenbus.c,v 1.20 2018/10/24 03:59:33 cherry Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xpci_xenbus.c,v 1.22 2019/02/02 12:32:55 cherry Exp $");
 
 #include "opt_xen.h"
 
@@ -46,7 +46,7 @@ __KERNEL_RCSID(0, "$NetBSD: xpci_xenbus.c,v 1.20 2018/10/24 03:59:33 cherry Exp 
 #include <xen/hypervisor.h>
 #include <xen/evtchn.h>
 #include <xen/granttables.h>
-#include <xen/xen-public/io/pciif.h>
+#include <xen/include/public/io/pciif.h>
 #include <xen/xenbus.h>
 
 #include "locators.h"
@@ -188,7 +188,7 @@ xpci_xenbus_resume(void *p)
 	aprint_verbose_dev(sc->sc_dev, "using event channel %d\n",
 	    sc->sc_evtchn);
 #if 0
-	intr_establish_xname(-1, &xen_pic, pbxi->pbx_evtchn, IST_LEVEL,
+	xen_intr_establish_xname(-1, &xen_pic, pbxi->pbx_evtchn, IST_LEVEL,
 	    IPL_BIO, &xpci_handler, sc, true,
 	    device_xname(sc->sc_dev));
 #endif

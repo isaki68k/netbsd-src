@@ -1,4 +1,4 @@
-/*	$NetBSD: init_main.c,v 1.500 2018/10/30 19:40:35 kre Exp $	*/
+/*	$NetBSD: init_main.c,v 1.502 2019/01/23 13:38:30 kamil Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2009 The NetBSD Foundation, Inc.
@@ -97,7 +97,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: init_main.c,v 1.500 2018/10/30 19:40:35 kre Exp $");
+__KERNEL_RCSID(0, "$NetBSD: init_main.c,v 1.502 2019/01/23 13:38:30 kamil Exp $");
 
 #include "opt_ddb.h"
 #include "opt_inet.h"
@@ -178,6 +178,7 @@ extern void *_binary_splash_image_end;
 #include <sys/uidinfo.h>
 #include <sys/kprintf.h>
 #include <sys/bufq.h>
+#include <sys/threadpool.h>
 #ifdef IPSEC
 #include <netipsec/ipsec.h>
 #endif
@@ -405,6 +406,9 @@ main(void)
 	/* Disable preemption during boot. */
 	kpreempt_disable();
 
+	/* Initialize the threadpool system. */
+	threadpools_init();
+
 	/* Initialize the UID hash table. */
 	uid_init();
 
@@ -611,6 +615,14 @@ main(void)
 	 */
 	if (fork1(l, 0, SIGCHLD, NULL, 0, start_init, NULL, NULL))
 		panic("fork init");
+
+	/*
+	 * The initproc variable cannot be initialized in start_init as there
+	 * is a race between vfs_mountroot and start_init.
+	 */
+	mutex_enter(proc_lock);
+	initproc = proc_find_raw(1);
+	mutex_exit(proc_lock);
 
 	/*
 	 * Load any remaining builtin modules, and hand back temporary
@@ -941,8 +953,6 @@ start_init(void *arg)
 	char *ucp, **uap, *arg0, *arg1, *argv[3];
 	char ipath[129];
 	int ipx, len;
-
-	initproc = p;
 
 	/*
 	 * Now in process 1.

@@ -1,4 +1,4 @@
-#	$NetBSD: files.amd64,v 1.107 2018/10/31 06:26:25 maxv Exp $
+#	$NetBSD: files.amd64,v 1.111 2019/01/27 02:08:37 pgoyette Exp $
 #
 # new style config file for amd64 architecture
 #
@@ -28,8 +28,7 @@ defflag opt_spectre.h	SPECTRE_V2_GCC_MITIGATION
 #
 
 defflag			USER_LDT
-defflag			KASLR
-defflag eisa.h EISA
+defflag eisa.h		EISA
 
 # Start code
 file	arch/amd64/amd64/locore.S		machdep
@@ -95,7 +94,8 @@ include	"dev/i2o/files.i2o"
 # XXX BIOS32 only if something that uses it is configured!
 device	mainbus: isabus, pcibus, bios32, acpibus, cpubus, ioapicbus, ipmibus
 attach	mainbus at root
-file	arch/amd64/amd64/mainbus.c		mainbus
+file	arch/amd64/amd64/amd64_mainbus.c	mainbus
+file	arch/x86/x86/mainbus.c			mainbus
 
 #
 # PCI-only drivers
@@ -145,6 +145,8 @@ file	arch/amd64/amd64/compat_16_machdep.c	compat_16
 # NetBSD/i386 32-bit binary compatibility (COMPAT_NETBSD32)
 include "compat/netbsd32/files.netbsd32"
 file	arch/amd64/amd64/netbsd32_machdep.c	compat_netbsd32
+file	arch/amd64/amd64/netbsd32_machdep_13.c	compat_netbsd32 & compat_13
+file	arch/amd64/amd64/netbsd32_machdep_16.c	compat_netbsd32 & compat_16
 file	arch/amd64/amd64/netbsd32_sigcode.S	compat_netbsd32 & compat_16
 file	arch/amd64/amd64/netbsd32_syscall.c	compat_netbsd32
 

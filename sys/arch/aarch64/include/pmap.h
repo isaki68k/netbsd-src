@@ -1,4 +1,4 @@
-/* $NetBSD: pmap.h,v 1.19 2018/11/21 12:34:21 jdolecek Exp $ */
+/* $NetBSD: pmap.h,v 1.21 2019/02/06 05:33:41 ryo Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -54,6 +54,16 @@
 #ifndef KASAN
 #define PMAP_MAP_POOLPAGE(pa)		AARCH64_PA_TO_KVA(pa)
 #define PMAP_UNMAP_POOLPAGE(va)		AARCH64_KVA_TO_PA(va)
+
+#define PMAP_DIRECT
+static __inline int
+pmap_direct_process(paddr_t pa, voff_t pgoff, size_t len,
+    int (*process)(void *, size_t, void *), void *arg)
+{
+	vaddr_t va = AARCH64_PA_TO_KVA(pa);
+
+	return process((void *)(va + pgoff), len, arg);
+}
 #endif
 
 struct pmap {
@@ -103,20 +113,21 @@ struct vm_page_md {
 #define LX_BLKPAG_ATTR_MASK		LX_BLKPAG_ATTR_INDX
 
 #define lxpde_pa(pde)		((paddr_t)((pde) & LX_TBL_PA))
+#define lxpde_valid(pde)	(((pde) & LX_VALID) == LX_VALID)
 #define l0pde_pa(pde)		lxpde_pa(pde)
 #define l0pde_index(v)		(((vaddr_t)(v) & L0_ADDR_BITS) >> L0_SHIFT)
-#define l0pde_valid(pde)	(((pde) & LX_VALID) == LX_VALID)
+#define l0pde_valid(pde)	lxpde_valid(pde)
 /* l0pte always contains table entries */
 
 #define l1pde_pa(pde)		lxpde_pa(pde)
 #define l1pde_index(v)		(((vaddr_t)(v) & L1_ADDR_BITS) >> L1_SHIFT)
-#define l1pde_valid(pde)	(((pde) & LX_VALID) == LX_VALID)
+#define l1pde_valid(pde)	lxpde_valid(pde)
 #define l1pde_is_block(pde)	(((pde) & LX_TYPE) == LX_TYPE_BLK)
 #define l1pde_is_table(pde)	(((pde) & LX_TYPE) == LX_TYPE_TBL)
 
 #define l2pde_pa(pde)		lxpde_pa(pde)
 #define l2pde_index(v)		(((vaddr_t)(v) & L2_ADDR_BITS) >> L2_SHIFT)
-#define l2pde_valid(pde)	(((pde) & LX_VALID) == LX_VALID)
+#define l2pde_valid(pde)	lxpde_valid(pde)
 #define l2pde_is_block(pde)	(((pde) & LX_TYPE) == LX_TYPE_BLK)
 #define l2pde_is_table(pde)	(((pde) & LX_TYPE) == LX_TYPE_TBL)
 
@@ -127,7 +138,7 @@ struct vm_page_md {
 #define l3pte_writable(pde)	\
     (((pde) & (LX_BLKPAG_AF|LX_BLKPAG_AP)) == (LX_BLKPAG_AF|LX_BLKPAG_AP_RW))
 #define l3pte_index(v)		(((vaddr_t)(v) & L3_ADDR_BITS) >> L3_SHIFT)
-#define l3pte_valid(pde)	(((pde) & LX_VALID) == LX_VALID)
+#define l3pte_valid(pde)	lxpde_valid(pde)
 #define l3pte_is_page(pde)	(((pde) & LX_TYPE) == L3_TYPE_PAG)
 /* l3pte contains always page entries */
 

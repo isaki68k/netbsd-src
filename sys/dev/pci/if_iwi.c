@@ -1,4 +1,4 @@
-/*	$NetBSD: if_iwi.c,v 1.108 2018/09/03 16:29:32 riastradh Exp $  */
+/*	$NetBSD: if_iwi.c,v 1.111 2019/02/03 03:19:27 mrg Exp $  */
 /*	$OpenBSD: if_iwi.c,v 1.111 2010/11/15 19:11:57 damien Exp $	*/
 
 /*-
@@ -19,7 +19,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_iwi.c,v 1.108 2018/09/03 16:29:32 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_iwi.c,v 1.111 2019/02/03 03:19:27 mrg Exp $");
 
 /*-
  * Intel(R) PRO/Wireless 2200BG/2225BG/2915ABG driver
@@ -256,7 +256,8 @@ iwi_attach(device_t parent, device_t self, void *aux)
 	}
 
 	intrstr = pci_intr_string(sc->sc_pct, ih, intrbuf, sizeof(intrbuf));
-	sc->sc_ih = pci_intr_establish(sc->sc_pct, ih, IPL_NET, iwi_intr, sc);
+	sc->sc_ih = pci_intr_establish_xname(sc->sc_pct, ih, IPL_NET, iwi_intr,
+	    sc, device_xname(self));
 	if (sc->sc_ih == NULL) {
 		softint_disestablish(sc->sc_soft_ih);
 		sc->sc_soft_ih = NULL;
@@ -1690,7 +1691,7 @@ iwi_tx_start(struct ifnet *ifp, struct mbuf *m0, struct ieee80211_node *ni,
 			return ENOMEM;
 		}
 
-		M_COPY_PKTHDR(mnew, m0);
+		m_copy_pkthdr(mnew, m0);
 
 		/* If the data won't fit in the header, get a cluster */
 		if (m0->m_pkthdr.len > MHLEN) {
@@ -1941,8 +1942,8 @@ iwi_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 		error = iwi_cache_firmware(sc);
 		if (error)
  			break;
- 		/* FALLTRHOUGH */
 
+		/* FALLTHROUGH */
 	default:
 		error = ieee80211_ioctl(&sc->sc_ic, cmd, data);
 
