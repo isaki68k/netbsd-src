@@ -1611,7 +1611,7 @@ audioclose(struct file *fp)
 	dev_t dev;
 
 	KASSERT(fp->f_audioctx);
-	file = (audio_file_t *)fp->f_audioctx;
+	file = fp->f_audioctx;
 	sc = file->sc;
 	dev = file->dev;
 
@@ -1660,7 +1660,7 @@ audioread(struct file *fp, off_t *offp, struct uio *uio, kauth_cred_t cred,
 	dev_t dev;
 
 	KASSERT(fp->f_audioctx);
-	file = (audio_file_t *)fp->f_audioctx;
+	file = fp->f_audioctx;
 	sc = file->sc;
 	dev = file->dev;
 
@@ -1699,7 +1699,7 @@ audiowrite(struct file *fp, off_t *offp, struct uio *uio, kauth_cred_t cred,
 	dev_t dev;
 
 	KASSERT(fp->f_audioctx);
-	file = (audio_file_t *)fp->f_audioctx;
+	file = fp->f_audioctx;
 	sc = file->sc;
 	dev = file->dev;
 
@@ -1738,7 +1738,7 @@ audioioctl(struct file *fp, u_long cmd, void *addr)
 	dev_t dev;
 
 	KASSERT(fp->f_audioctx);
-	file = (audio_file_t *)fp->f_audioctx;
+	file = fp->f_audioctx;
 	sc = file->sc;
 	dev = file->dev;
 
@@ -1777,7 +1777,7 @@ audiostat(struct file *fp, struct stat *st)
 	audio_file_t *file;
 
 	KASSERT(fp->f_audioctx);
-	file = (audio_file_t *)fp->f_audioctx;
+	file = fp->f_audioctx;
 
 	memset(st, 0, sizeof(*st));
 
@@ -1798,7 +1798,7 @@ audiopoll(struct file *fp, int events)
 	dev_t dev;
 
 	KASSERT(fp->f_audioctx);
-	file = (audio_file_t *)fp->f_audioctx;
+	file = fp->f_audioctx;
 	sc = file->sc;
 	dev = file->dev;
 
@@ -1832,7 +1832,7 @@ audiokqfilter(struct file *fp, struct knote *kn)
 	int error;
 
 	KASSERT(fp->f_audioctx);
-	file = (audio_file_t *)fp->f_audioctx;
+	file = fp->f_audioctx;
 	sc = file->sc;
 	dev = file->dev;
 
@@ -1868,7 +1868,7 @@ audiommap(struct file *fp, off_t *offp, size_t len, int prot, int *flagsp,
 	int error;
 
 	KASSERT(fp->f_audioctx);
-	file = (audio_file_t *)fp->f_audioctx;
+	file = fp->f_audioctx;
 	sc = file->sc;
 	dev = file->dev;
 
