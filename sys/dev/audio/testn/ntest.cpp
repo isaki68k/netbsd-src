@@ -5847,7 +5847,15 @@ test_AUDIO_SETINFO_rollback()
 		}
 
 		// オープン
-		fd = OPEN(devaudio, O_RDWR | O_NONBLOCK);
+		if (hwfull) {
+			fd = OPEN(devaudio, O_RDWR | O_NONBLOCK);
+		} else {
+			if (table[i][0] == 'p') {
+				fd = OPEN(devaudio, O_WRONLY | O_NONBLOCK);
+			} else {
+				fd = OPEN(devaudio, O_RDONLY);
+			}
+		}
 		if (fd == -1)
 			err(1, "open");
 
@@ -5863,11 +5871,13 @@ test_AUDIO_SETINFO_rollback()
 		XP_SYS_EQ(0, r);
 
 		// バッファを適当に埋めておく。全部埋まらなくてもいい
-		r = WRITE(fd, buf, buflen);
-		if (r == -1) {
-			XP_SYS_NG(EAGAIN, r);
-		} else {
-			XP_SYS_OK(r);
+		if (hwfull || table[i][0] == 'p') {
+			r = WRITE(fd, buf, buflen);
+			if (r == -1) {
+				XP_SYS_NG(EAGAIN, r);
+			} else {
+				XP_SYS_OK(r);
+			}
 		}
 
 		AUDIO_INITINFO(&ai);
