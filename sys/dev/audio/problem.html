@@ -164,6 +164,13 @@ fd = open("/dev/sound", O_RDONLY);
 eof カウンタが分離されておらず全ディスクリプタで共用されている。
 </p>
 
+<li>Half Duplex で read(2) がブロックする? (2018/02)
+<p class="p">
+Half-Duplex HW に対して open(O_WRONLY) してwrite()と、
+open(O_RDONLY) して read を同時に行うと read がブロックするようだ。
+詳細未確認。
+</p>
+
 <li>Half Duplex 対応が甘い (2018/02)
 <p class="p">
 Half Duplex HW に対する考察が色々足りない。
@@ -344,6 +351,14 @@ audio(4) とは直接関係ないけど、aria(4) の halt_input と halt_output
 直後に hw-&gt;close を呼ぶため、そしてこいつがチップリセットをしてるっぽい
 ので、おそらく見た目に影響は分からなかったはず。
 N8 でどうなるかは追っかけてないのでシラン。
+</p>
+
+<li>AUDIO_SETINFO.mode の挙動が分かりづらい (2018/03)
+<p class="p">
+mode には何がセットされていてもこの ioctl がエラーにはならない。
+ただし次に AUDIO_GETINFO してみて何が取得できるかとはまったく別。
+そしてここで取得できる mode はセット後の何の動作にはまったく影響しないようだ。
+分かりにくすぎというかバグでは。
 </p>
 
 <li>AUDIO_SETINFO.blocksize が manpage と実装が異なる (2018/03)
