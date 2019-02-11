@@ -39,6 +39,9 @@ SPAN.n7 {
 P.n7 {
 	background-color: rgb(255,255,153);	/* クリーム */
 }
+SPAN.del {
+	background-color: rgb(255,209,209);	/* ピンク */
+}
 SPAN.bad {
 	color: rgb(255,40,0);	/* 赤 */
 	font-weight: bold;
@@ -61,9 +64,8 @@ DEL.a2 {
 <body>
 <p>
 凡例:<br>
-<span class=bad style="margin-left:8%;">赤太字は NetBSD 8 の問題についてのコメント</span><br>
 <span class=a2 style="margin-left:8%;">青太字は AUDIO2 での仕様(案)。</span><br>
-<del class=a2 style="margin-left:8%"><span class=plain>青下線は AUDIO2 で削除したいところ(案)。</span></del><br>
+<span class=del style="margin-left:8%">赤背景は AUDIO2 で削除したいところ(案)。</span><br>
 <span class=comment style="margin-left:8%;">緑太字はその他のコメント</span>
 
 <hr>
@@ -86,12 +88,16 @@ structure.</p>
 struct audio_hw_if {
      int     (*open)(void *, int);
      void    (*close)(void *);
-     <del class=a2><span class=plain>int     (*drain)(void *);</span></del>
+     <span class=del>int     (*drain)(void *);</span>
 
-     <del class=a2><span class=plain>int     (*query_encoding)(void *, struct audio_encoding *);</span></del>
-     <del class=a2><span class=plain>int     (*set_params)(void *, int, int,</span></del>
-		 <del class=a2><span class=plain>audio_params_t *, audio_params_t *,</span></del>
-		 <del class=a2><span class=plain>stream_filter_list_t *, stream_filter_list_t *);</span></del>
+     <span class=del>int     (*query_encoding)(void *, struct audio_encoding *);</span>
+     <span class=del>int     (*set_params)(void *, int, int,</span>
+		 <span class=del>audio_params_t *, audio_params_t *,</span>
+		 <span class=del>stream_filter_list_t *, stream_filter_list_t *);</span>
+     <span class=a2>int     (*query_format)(void *, audio_format_query_t *);</span>
+     <span class=a2>int     (*set_format)(void *, int,
+		 const audio_params_t *, const audio_params_t *,
+		 audio_filter_reg_t *, audio_filter_reg_t *);</span>
      int     (*round_blocksize)(void *, int, int, const audio_params_t *);
 
      int     (*commit_settings)(void *);
@@ -108,7 +114,7 @@ struct audio_hw_if {
 #define SPKR_OFF 0
 
      int     (*getdev)(void *, struct audio_device *);
-     <del class=a2><span class=plain>int     (*setfd)(void *, int);</span></del>
+     <span class=del>int     (*setfd)(void *, int);</span>
 
      int     (*set_port)(void *, mixer_ctrl_t *);
      int     (*get_port)(void *, mixer_ctrl_t *);
@@ -118,7 +124,7 @@ struct audio_hw_if {
      void    *(*allocm)(void *, int, size_t);
      void    (*freem)(void *, void *, size_t);
      size_t  (*round_buffersize)(void *, int, size_t);
-     <del class=a2><span class=plain>paddr_t (*mappage)(void *, void *, off_t, int);</span></del>
+     <span class=del>paddr_t (*mappage)(void *, void *, off_t, int);</span>
 
      int     (*get_props)(void *);
 
@@ -128,11 +134,6 @@ struct audio_hw_if {
 		 void (*)(void *), void *, const audio_params_t *);
      int     (*dev_ioctl)(void *, u_long, void *, int, struct lwp *);
      void    (*get_locks)(void *, kmutex_t **, kmutex_t **);
-
-     <span class=a2>int     (*query_format)(void *, audio_format_query_t *);</span>
-     <span class=a2>int     (*set_format)(void *, int,
-		 const audio_params_t *, const audio_params_t *,
-		 audio_filter_reg_t *, audio_filter_reg_t *);</span>
 };
 
 typedef struct audio_params {
@@ -180,6 +181,17 @@ void audio_attach_mi(struct audio_hw_if *ahwp, void *hdl, device_t dev)
      read data quickly enough during recording data will be thrown away.
 </p>
 
+<p class=p1><span class=a2>
+	The phase they are called is classified into three:
+	Attach, Closed, Opened.
+	Attach はデバイスアタッチ中です。
+	audioattach 成功で Closed 状態に遷移します。
+	Closed は /dev/audio も /dev/sound も1つもオープンされていない時で、
+	hw_if-&gt;open 成功で Opened 状態に遷移します。
+	Opened は /dev/audio か /dev/sound が1つ以上オープンされている時で、
+	hw_if-&gt;close 成功で Closed 状態に遷移します。
+</p>
+
 <p class=p1>
      The fields of <tt>audio_hw_if</tt> are described in some more detail below.	 Some
      fields are optional and can be set to <span class=n7>0</span>
@@ -189,68 +201,61 @@ void audio_attach_mi(struct audio_hw_if *ahwp, void *hdl, device_t dev)
 <dl>
 <dt class=p1>int open(void *hdl, int flags)
 <dd class=p1>
-	     optional, is called when the audio device is opened.  It should
-	     initialize the hardware for I/O.  Every successful call to open
+	     optional,
+		<span class=del>is called when the audio device is opened.</span>
+		<span class=a2>is called when the first device combining playback
+		and recording is opened.</span>
+		It should initialize the hardware for I/O.
+		<span class=a2>
+		On a full duplex hardware,
+		(FREAD | FWRITE) is passed to <i>flags</i>.
+		On a half duplex hardware,
+		FWRITE is passed for playback, or FREAD for recording.
+		</span>
+		Every successful call to open
 	     is matched by a call to close.  Return 0 on success, otherwise an
 	     error code.
-<br>
-<span class=comment>
-AUDIO2 では、open の呼び出しは録音再生合わせて1つ目のオープン時のみとし、flags は HW Full なら必ず FREAD | FWRITE、HW Half なら
-open 時の flags を渡すことにする。
-綱渡りだけどたぶん大丈夫。
-また、open という名前からの想像に反して
-set_params/commit_settings/init_{output,input} など
-open よりも先に呼び出されるインタフェースがある
-ことに注意しなくてはならないことは後ろのセクションで書くか。
-</span>
-<span class=comment>
-For historical reason,
-If the hardware is full duplex,
-(FREAD | FWRITE) is specified for <i>flags</i>.
-If the hardware is half duplex,
-<i>flags</i> is specified as FWRITE for playback open and
-FREAD for recording open.
-</span>
-<br><br>
+		<span class=a2>It is called at Closed phase.</span>
 </dd>
 
 <dt class=p1>void close(void *hdl)
 </dt>
 <dd class=p1>
-	     optional, is called when the audio device is closed.
+	     optional,
+		<span class=del>is called when the audio device is closed.</span>
+		<span class=a2>is called when the last audio device combining
+		playback and recording is closed.</span>
+		<span class=a2>It is called at Opened phase.</span>
 </dd>
-<dd class=p1><span class=comment>
-	AUDIO2 では最終クローズ時に呼ばれる。
-</span></dd>
 
-<dt class=p1><del class=a2><span class=plain>int drain(void *hdl)</span></del>
+<dt class=p1><span class=del>int drain(void *hdl)</span>
 </dt>
-<dd class=p1><del class=a2><span class=plain>
+<dd class=p1><span class=del>
 	     optional, is called before the device is closed or when
 	     <tt>AUDIO_DRAIN</tt> is called.  It should make sure that no samples
 	     remain in to be played that could be lost when close is called.
 	     Return 0 on success, otherwise an error code.
-</span></del></dd>
+</span></dd>
 <dd class=p1><span class=comment>
 NetBSD8 での呼び出し方には意味がない。
 AUDIO2 では廃止する。
 </span>
 </dd>
 
-<dt class=p1><del class=a2><span class=plain>int query_encoding(void *hdl, struct audio_encoding *ae)</span></del>
+<dt class=p1><span class=del>int query_encoding(void *hdl, struct audio_encoding *ae)</span>
 </dt>
-<dd class=p1><del class=a2><span class=plain>
+<dd class=p1><span class=del>
 	     is used when <tt>AUDIO_GETENC</tt> is called.  It should fill the
 	     audio_encoding structure and return 0 or, if there is no encoding
 	     with the given number, return <tt>EINVAL</tt>.
-</span></del></dd>
+</span></dd>
 <dd class=p1><span class=comment>
 NetBSD8 では呼び出されていない。
 AUDIO2 では廃止する。
 </span></dd>
 
 <dt class=p1><span class=a2>int query_format(void *hdl, audio_format_query_t *afp)
-<dd class=p1><span class=comment>
+<dd class=p1><span class=a2>
 	ハードウェアがサポートしているフォーマットを列挙します。
 	afp->index に 0 以上の番号が指定されるので、
 	対応するフォーマットを afp->fmt に埋めて 0 を返します。
@@ -263,8 +268,11 @@ AUDIO2 では廃止する。
 	少なくとも <tt>AUDIO_ENCODING_SLINEAR_NE, AUDIO_INTERNAL_BITS</tt>
 	を持つエントリが含まれている必要があります。
 	もしハードウェアが <tt>AUDIO_ENCODING_SLINEAR_NE, AUDIO_INTERNAL_BITS</tt>
-	を直接扱えないのなら後述する lower driver がこれを変換する責任を持ちます
+	を直接扱えないのなら後述するように 
+	hardware driver がこれを変換する責任を持ちます
 	(see also set_format)。
+	</span>
+	<span class=comment>
 	今の所、これ以外のフォーマットは任意です。
 	現在の実装では <tt>AUDIO_ENCODING_SLINEAR_NE, AUDIO_INTERNAL_BITS</tt>
 	以外のフォーマットが採用されることはありません。
@@ -273,28 +281,24 @@ AUDIO2 では廃止する。
 	今は query_format が定義されてなければ
 	N8 同様 set_params をひたすら呼び出す互換動作を行いますが、
 	たぶんこれは過渡期における一時的な救済措置です。
-</span>
-<p></p>
-<span class=comment>
-	query_encoding は周波数情報を返さないため、N8 は
-	MI 側が用意している周波数リストを使って片っ端から set_params を
-	コールするという方法を取っている。
-	それ自体がいけてなさすぎるのと、この周波数リストに載っていない
-	ハードウェアが扱えないという問題がある。
-	<br>
+	</span>
+	<p></p>
+	<span class=comment>
 	query_format が扱う audio_format_t はハードウェアが対応できる
 	周波数が(離散値であっても帯域であっても)表現できる上、
 	kent-audio2 以降に実装されたあるいはそれに追従したデバイスであれば
 	すでに audio_format_t の配列を持っている可能性が高いので、
 	運がよければそのまま使える。
-</span>
+	</span>
+	<br>
+	<span class=a2>It is called at any time.</span>
 </dd>
 
-<dt class=p1><del class=a2><span class=plain>int set_params(void *hdl, int setmode, int usemode,
+<dt class=p1><span class=del>int set_params(void *hdl, int setmode, int usemode,
 	     audio_params_t *play, audio_params_t *rec,
 	     stream_filter_list_t *pfil, stream_filter_list_t *rfil)
-</span></del></dt>
-<dd class=p1><del class=a2><span class=plain>
+</span></dt>
+<dd class=p1><span class=del>
 	     Called to set the audio encoding mode.  setmode is a combination
 	     of the <tt>AUMODE_RECORD</tt> and <tt>AUMODE_PLAY</tt> flags to indicate which
 	     mode(s) are to be set.  usemode is also a combination of these
@@ -319,7 +323,7 @@ AUDIO2 では廃止する。
 	     to the head of pfil or rfil.  The definition of
 	     stream_filter_list_t follows:
 
-<pre style="margin-left: -8%">
+<pre style="margin-left: -8%; background-color: rgb(255,209,209);">
 	     typedef struct stream_filter_list {
 		     void (*append)(struct stream_filter_list *,
 				    stream_filter_factory_t,
@@ -339,7 +343,7 @@ AUDIO2 では廃止する。
 	     } stream_filter_list_t;
 </pre>
 	     For playing, pfil constructs conversions as follows:
-<pre style="margin-left: -8%">
+<pre style="margin-left: -8%; background-color: rgb(255,209,209);">
 		     (play) == write(2) input
 		       |     pfil->filters[pfil->req_size-1].factory
 		     (pfil->filters[pfil->req_size-1].param)
@@ -351,7 +355,7 @@ AUDIO2 では廃止する。
 		     (pfil->filters[0].param)  == hardware input
 </pre>
 	     For recording, rfil constructs conversions as follows:
-<pre style="margin-left: -8%">
+<pre style="margin-left: -8%; background-color: rgb(255,209,209);">
 		     (rfil->filters[0].param) == hardware output
 		       |     rfil->filters[0].factory
 		     (rfil->filters[1].param)
@@ -366,7 +370,7 @@ AUDIO2 では廃止する。
 	     the same value is passed in both play and rec and the encoding
 	     parameters from play is copied into rec after the call to
 	     set_params.  Return 0 on success, otherwise an error code.
-</span></del></dd>
+</span></dd>
 <dd class=p1><span class=comment>
 AUDIO2 ではこれを廃止する。代わりに set_format を新設。
 </span></dd>
@@ -375,10 +379,10 @@ AUDIO2 ではこれを廃止する。代わりに set_format を新設。
 	int setmode,
 	const audio_params_t *play, const audio_params_t *rec,
 	audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
-<dd class=p1><span class=comment>
+<dd class=p1><span class=a2>
 	これはオーディオフォーマットをハードウェアに設定するため呼ばれます。
 	デバイスアタッチ時と
-	audiocfg(1) でミキサフォーマットを変更した場合に呼ばれます。
+	(audiocfg(1) などで) ミキシングフォーマットを変更した場合に呼ばれます。
          setmode is a combination
 	     of the <tt>AUMODE_RECORD</tt> and <tt>AUMODE_PLAY</tt> flags to indicate which
 	     mode(s) are to be set.
@@ -386,22 +390,25 @@ AUDIO2 ではこれを廃止する。代わりに set_format を新設。
 	     The play and rec structures contain the encoding parameters that
 	     should be set to the hardware.
 	【play と rec 構造体がハードウェアにセットするべきパラメータです。】
-	play と rec のうち encoding は <tt>AUDIO_ENCODING_SLINEAR_NE</tt>、
+	このうち encoding は <tt>AUDIO_ENCODING_SLINEAR_NE</tt>、
 	precision と validbits は <tt>AUDIO_INTERNAL_BITS</tt> で固定です。
 	query_format がある場合は channels と sample_rate は query_format の
-	返す集合と一致するものが選ばれており、
-	そのため、play, rec はそれぞれ必ず設定可能な値になっています。
+	返す集合と一致するものから選ばれており、
+	そのため、play, rec は必ず設定可能な値になっています。
 	query_format がない場合は channels と sample_rate がこのハードウェアで
-	設定できる保証はないため各自でチェックしてください。
+	設定できる保証はないため hardware driver が各自でチェックしてください。
+</span>
 <br><br>
+<span class=comment>
 	set_params と違って選択したパラメータを play, rec に書き戻すことは
 	出来ません。というか必要ないはずです。
+</span>
 <br><br>
+<span class=a2>
 	     If the hardware does not support
 		<tt>AUDIO_ENCODING_SLINEAR_NE:AUDIO_INTERNAL_BITS</tt>,
-	     it should fill the
-	     pfil for playing or rfil for recording with conversion
-	     information.
+	     conversion information should be filled the
+	     pfil for playing or rfil for recording.
 </span><span class=comment>
 set_params と違ってフィルタを複数指定することは出来ないので、
 1つのフィルタで処理すること (tc/bba.c しか該当しないはず)。
@@ -448,36 +455,30 @@ typedef struct {
 	rfil-&gt;param.precision = 8;
 	rfil-&gt;param.validbits = 8;
 </pre>
-	<i>arg</i> contains all parameters required by <i>codec</i>.
-	【codec がコールされる時必要なパラメータはすべて arg に入っています。】
+	When <i>codec</i> is called,
+	all parameters required by <i>codec</i> is contained <i>arg</i>.
 	<i>src</i> is input buffer, <i>srcfmt</i> contains input encoding parameter,
 	<i>dst</i> is output buffer and <i>dstfmt</i> contains output encoding
 	parameter.
-	【src が入力サンプルバッファ、srcfmt が入力エンコーディング、
-	dst が出力バッファ、dstfmt が出力エンコーディングです。】
 	<i>count</i> represents the number of frames to process on this call.
-	【count は今回の呼び出しで変換すべきフレーム数です。】
 	<i>src</i> and <i>dst</i> are guaranteed to be able to consecutively access
 	number of frames specified by <i>count</i>.
-	【src と dst は count フレームが連続アクセスできることが保証されています。】
-	codec should fill entire <i>dst</i>.
+	codec must fill entire <i>dst</i>.
 	It is not able to abort the conversion halfway and there is no
 	error reporting mechanism.
-	【codec は必ずこのフレーム数分を出力してください。
-	途中終了やエラー報告はできません。】
-	(For example, let count = 5, srcfmt is { precision = 16, channels = 3 },
+	For example, let count = 5, srcfmt is { precision = 16, channels = 3 },
 	dstfmt is { precision = 8, channels = 3 } ,
 	in this case,
 	src buffer's length = 2(bytes) * 3(channels) * 5(frames) = 30 bytes,
 	The length to be written to dst is 1(byte) * 3(channels) * 5(frames)
 	= 15bytes).
 	<i>context</i> is a opaque pointer that can be used by codec if necessary.
-	【context は codec が必要なら使うことができるポインタです。】
 <br><br>
 	     If the device does not have the <tt>AUDIO_PROP_INDEPENDENT</tt> property
 	     the same value is passed in both play and rec.
 	     Return 0 on success, otherwise an error code.
 </span>
+	<span class=a2>It is called at Attach or Closed phase.</span>
 </dd>
 
 <dt class=p1>
@@ -490,6 +491,7 @@ typedef struct {
 	     and param, encoding parameters for the hardware.  It should
 	     return a block size, possibly changed according to the needs of
 	     the hardware driver.
+		<span class=a2>It is called at Attach or Closed phase.</span>
 <br>
 <span class=comment>
 いくつかのドライバでは必要もないのに与えられた blocksize の変更を指示するものが
@@ -517,6 +519,7 @@ typedef struct {
 	     and out of command mode for each change can save all the changes
 	     during previous calls and do them all here.  Return 0 on success,
 	     otherwise an error code.
+		<span class=a2>It is called at Attach or Closed phase.</span>
 </dd>
 
 <dt class=p1>
@@ -527,6 +530,7 @@ typedef struct {
 	     size of the output buffer has been determined.  It can be used to
 	     initialize looping DMA for hardware that needs that.  Return 0 on
 	     success, otherwise an error code.
+		<span class=a2>It is called at Attach or Closed phase.</span>
 </dd>
 
 <dt class=p1>
@@ -537,6 +541,7 @@ typedef struct {
 	     size of the input buffer has been determined.  It can be used to
 	     initialize looping DMA for hardware that needs that.  Return 0 on
 	     success, otherwise an error code.
+		<span class=a2>It is called at Attach or Closed phase.</span>
 </dd>
 
 <dt class=p1>
@@ -551,6 +556,7 @@ typedef struct {
 	     be called with the argument intrarg.  Calling intr will normally
 	     initiate another call to start_output.  Return 0 on success,
 	     otherwise an error code.
+		<span class=a2>It is called at Opened phase.</span>
 </dd>
 
 <dt class=p1>
@@ -565,6 +571,7 @@ typedef struct {
 	     should be called with the argument intrarg.  Calling intr will
 	     normally initiate another call to start_input.  Return 0 on
 	     success, otherwise an error code.
+		<span class=a2>It is called at Opened phase.</span>
 </dd>
 
 <dt class=p1>
@@ -573,6 +580,7 @@ typedef struct {
 <dd class=p1>
 	     is called to abort the output transfer (started by start_output)
 	     in progress.  Return 0 on success, otherwise an error code.
+		<span class=a2>It is called at Opened phase.</span>
 </dd>
 
 <dt class=p1>
@@ -581,6 +589,7 @@ typedef struct {
 <dd class=p1>
 	     is called to abort the input transfer (started by start_input) in
 	     progress.	Return 0 on success, otherwise an error code.
+		<span class=a2>It is called at Opened phase.</span>
 </dd>
 
 <dt class=p1>
@@ -590,6 +599,7 @@ typedef struct {
 	     optional, is called when a half duplex device changes between
 	     playing and recording.  It can, e.g., be used to turn on and off
 	     the speaker.  Return 0 on success, otherwise an error code.
+		<span class=a2>It is called at Opened phase.</span>
 </dd>
 
 <dt class=p1>
@@ -598,16 +608,17 @@ typedef struct {
 <dd class=p1>
 	     Should fill the audio_device struct with relevant information
 	     about the driver.	Return 0 on success, otherwise an error code.
+		<span class=a2>It is called at Opened phase.</span>
 </dd>
 
-<dt class=p1><del class=a2><span class=plain>
+<dt class=p1><span class=del>
      int setfd(void *hdl, int fd)
-</span></del></dt>
-<dd class=p1><del class=a2><span class=plain>
+</span></dt>
+<dd class=p1><span class=del>
 	     optional, is called when <tt>AUDIO_SETFD</tt> is used, but only if the
 	     device has <tt>AUDIO_PROP_FULLDUPLEX</tt> set.  Return 0 on success,
 	     otherwise an error code.
-</span></del></dd>
+</span></dd>
 <dd class=p1><span class=comment>
 AUDIO2 ではこれを廃止する。
 </span></dd>
@@ -619,6 +630,7 @@ AUDIO2 ではこれを廃止する。
 	     is called in when <tt>AUDIO_MIXER_WRITE</tt> is used.  It should take data
 	     from the mixer_ctrl_t struct at set the corresponding mixer
 	     values.  Return 0 on success, otherwise an error code.
+		<span class=a2>It is called at Opened or Closed phase.</span>
 </dd>
 
 <dt class=p1>
@@ -628,6 +640,7 @@ AUDIO2 ではこれを廃止する。
 	     is called in when <tt>AUDIO_MIXER_READ</tt> is used.  It should fill the
 	     mixer_ctrl_t struct.  Return 0 on success, otherwise an error
 	     code.
+		<span class=a2>It is called at Opened or Closed phase.</span>
 </dd>
 
 <dt class=p1>
@@ -637,6 +650,7 @@ AUDIO2 ではこれを廃止する。
 	     is called in when <tt>AUDIO_MIXER_DEVINFO</tt> is used.  It should fill
 	     the mixer_devinfo_t struct.  Return 0 on success, otherwise an
 	     error code.
+		<span class=a2>It is called at any time.</span>
 </dd>
 
 <dt class=p1>
@@ -648,6 +662,7 @@ AUDIO2 ではこれを廃止する。
 	     the first two).  The reason for using a device dependent routine
 	     instead of malloc(9) is that some buses need special allocation
 	     to do DMA.	 Returns the address of the buffer, or 0 on failure.
+		<span class=a2>It is called at Attached or Closed phase.</span>
 </dd>
 
 <dt class=p1>
@@ -656,6 +671,7 @@ AUDIO2 ではこれを廃止する。
 <dd class=p1>
 	     optional, is called to free memory allocated by alloc.  If not
 	     supplied free(9) is used.
+		<span class=a2>It is called at Attached or Closed phase.</span>
 </dd>
 
 <dt class=p1>
@@ -666,6 +682,7 @@ AUDIO2 ではこれを廃止する。
 	     size.  The upper layer supplies the suggested size in bufsize,
 	     which the hardware driver can then change if needed.  E.g., DMA
 	     on the ISA bus cannot exceed 65536 bytes.
+		<span class=a2>It is called at Attached or Closed phase.</span>
 <br>
 <span class=comment>
 これも round_blocksize 同様、
@@ -677,15 +694,15 @@ round_blocksize() のコメント参照。
 </span>
 </dd>
 
-<dt class=p1><del class=a2><span class=plain>
+<dt class=p1><span class=del>
      paddr_t mappage(void *hdl, void *addr, off_t offs, int prot)
-</span></del></dt>
-<dd class=p1><del class=a2><span class=plain>
+</span></dt>
+<dd class=p1><span class=del>
 	     optional, is called for mmap(2).  Should return the map value for
 	     the page at offset offs from address addr mapped with protection
 	     prot.  Returns -1 on failure, or a machine dependent opaque value
 	     on success.
-</span></del></dd>
+</span></dd>
 <dd class=p1><span class=comment>
 AUDIO2 ではこれを廃止する?
 </span></dd>
@@ -696,6 +713,7 @@ AUDIO2 ではこれを廃止する?
 <dd class=p1>
 	     Should return the device properties; i.e., a combination of
 	     <tt>AUDIO_PROP_xxx</tt>.
+		<span class=a2>It is called at any time.</span>
 </dd>
 <dd class=p1><span class=comment>
 mmap はすでに underlying driver には依存していない。
@@ -717,6 +735,7 @@ mappage 廃止に伴い、<tt>AUDIO_PROP_MMAP</tt> も返さなくてよいこ�
 	     (typically from the audio hardware interrupt service routine).
 	     Once started the transfer may be stopped using halt_output.
 	     Return 0 on success, otherwise an error code.
+		<span class=a2>It is called at Opened phase.</span>
 </dd>
 
 <dt class=p1>
@@ -734,6 +753,7 @@ mappage 廃止に伴い、<tt>AUDIO_PROP_MMAP</tt> も返さなくてよいこ�
 	     (typically from the audio hardware interrupt service routine).
 	     Once started the transfer may be stopped using halt_input.
 	     Return 0 on success, otherwise an error code.
+		<span class=a2>It is called at Opened phase.</span>
 </dd>
 
 <dt class=p1>
@@ -744,6 +764,7 @@ mappage 廃止に伴い、<tt>AUDIO_PROP_MMAP</tt> も返さなくてよいこ�
 	     optional, is called when an ioctl(2) is not recognized by the
 	     generic audio driver.  Return 0 on success, otherwise an error
 	     code.
+		<span class=a2>It is called at Opened phase.</span>
 </dd>
 
 <dt class=p1>
@@ -751,38 +772,17 @@ mappage 廃止に伴い、<tt>AUDIO_PROP_MMAP</tt> も返さなくてよいこ�
 </dt>
 <dd class=p1>
 	     Returns the interrupt and thread locks to the common audio layer.
+		<span class=a2>It is called at Attach phase.</span>
 </dd>
 
-</dl>
-
-<p class=p1><span class=comment>
-これらのメソッドが呼び出されるタイミング(フェーズ)を以下に規程する。
-NetBSD7 のそれとは違っていることに注意。
-フェーズは以下の3つとする。
-XXX Opened と Running を区別する必要があるかどうか
-</span></p>
-<dl>
-<dt class=p1><span class=comment>Attach</span>
-<dd class=p1><span class=comment>デバイスのアタッチ中。
-カーネルの起動時、あるいは USB などのリムーバブルデバイスを挿した時。
-audioattach 成功で Closed 状態に遷移。
-</span>
-
-<dt class=p1><span class=comment>Closed
-<dd class=p1><span class=comment>/dev/audio が1つもオープンされていない時。
-hw_if-&gt;open 成功で Opened 状態に遷移。
-</span>
-
-<dt class=p1><span class=comment>Opened
-<dd class=p1><span class=comment>/dev/audio が1つ以上オープンされている時。
-hw_if-&gt;close 成功で Closed 状態に遷移。
-</span>
 </dl>
 
 <p class=p1><span class=comment>
 N7、N8 については仕様というより確認できた限りというだけ。
 AUDIO2 は仕様。
 表中 AUDIO2 列の青字は NetBSD7 と異なる箇所。
+仕様は本文中に書いたので
+この表はメンテしやすさのために残してあるだけ。
 </span></p>
 <table border=1 rules=all class=p1 style="margin-left: 12%">
 <tr><th>hw_if<th>NetBSD&lt;=7<th>NetBSD&gt;=8<th>AUDIO2
