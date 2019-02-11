@@ -19,33 +19,6 @@
 /*	color: rgb(255,209,209); */	/* ピンク */
 /*	color: rgb(255,255,153); */	/* クリーム */
 
-SPAN.n7 {
-	background-color: rgb(255,255,153);	/* クリーム */
-}
-
-P.n7 {
-	background-color: rgb(255,255,153);	/* クリーム */
-}
-P.n7:before {
-	content: "(N7)";
-	background-color: rgb(255,255,153);	/* クリーム */
-	position: absolute;
-	left: 5%;
-}
-
-SPAN.n8 {
-	background-color: rgb(255,209,209);	/* ピンク */
-}
-P.n8 {
-	background-color: rgb(255,209,209);	/* ピンク */
-}
-P.n8:before {
-	content: "(N8)";
-	background-color: rgb(255,209,209);	/* ピンク */
-	position: absolute;
-	left: 5%;
-}
-
 SPAN.n9 {
 	background-color: rgb(180,235,250);	/* 明るい空色 */
 }
@@ -57,26 +30,6 @@ P.n9:before {
 	background-color: rgb(180,235,250);	/* 明るい空色 */
 	position: absolute;
 	left: 5%;
-}
-
-P.bad7 {
-	color: rgb(255,153,0);	/* 橙色 */
-	font-weight: bold;
-}
-P.bad7:before {
-	content: "・";
-}
-
-SPAN.bad {
-	color: rgb(255,40,0);	/* 赤 */
-	font-weight: bold;
-}
-P.bad {
-	color: rgb(255,40,0);	/* 赤 */
-	font-weight: bold;
-}
-P.bad:before {
-	content: "・";
 }
 
 SPAN.a2 {
@@ -99,6 +52,13 @@ P.comment:before {
 	content: "・";
 }
 
+SPAN.del {
+	background-color: rgb(255,209,209);	/* ピンク */
+}
+P.del {
+	background-color: rgb(255,209,209);	/* ピンク */
+}
+
 </style>
 <title></title>
 </head>
@@ -107,11 +67,8 @@ P.comment:before {
 NetBSD 8 部分は audio.4,v 1.79。<br>
 <p>
 凡例:<br>
-<p class=n7 style="margin-left:8%;">背景黄色の文章は NetBSD 7 から 8 になって削除されたところ。</p>
-<p class=n8 style="margin-left:8%;">背景赤の文章は NetBSD 8 で追加されたところ。</p>
-<p class=bad7 style="margin-left:8%;">橙太字は NetBSD 7 からある問題についてのコメント</p>
-<p class=bad style="margin-left:8%;">赤太字は NetBSD 8 の問題についてのコメント</p>
-<p class=a2 style="margin-left:8%;">青太字は AUDIO2 での仕様(案)。</p>
+<p style="margin-left:8%;"><span class=a2>青太字は AUDIO2 で追加したいところ(案)。</span></p>
+<p class=del style="margin-left:8%;">赤背景は AUDIO2 で削除したいところ(案)。</p>
 <p class=comment style="margin-left:8%;">緑太字はその他のコメント</p>
 
 <hr>
@@ -159,52 +116,61 @@ audio mixer functions.</p>
 
 <p style="margin-left:8%; margin-top: 1em"><i>/dev/audioctl</i>
 accepts the same ioctl(2) operations as <i>/dev/sound</i>,
-but no other operations.</p>
+but no other operations.
+<span class=a2>It can be opened at any time and can be
+used to manipulate the audio device while it is in use.</span>
+</p>
 
-<p class=n7 style="margin-left:8%; margin-top: 1em">In contrast to
-<i>/dev/sound</i> which has the exclusive open property
-<i>/dev/audioctl</i> can be opened at any time and can be
-used to manipulate the audio device while it is in use.</p>
-<p class=n8 style="margin-left:8%;"><i>/dev/sound</i>
+<p style="margin-left:8%; margin-top: 1em"><span class=del><i>/dev/sound</i>
 and <i>/dev/audio</i> can be opened at <i>any</i> time and
 audio sources of different precision and playback parameters
 i.e frequency will be mixed and played back
-simultaneously.</p>
+simultaneously.</span></p>
 
-<p class=n8 style="margin-left:8%; margin-top: 1em"><i>/dev/audioctl</i>
+<p style="margin-left:8%; margin-top: 1em"><span class=del><i>/dev/audioctl</i>
 can be used to manipulate the audio device while it is in
-use.</p>
-<p class=bad style="margin-left:8%">
-hw.*.multiuser == 0 下において、
-/dev/audio か /dev/sound を誰かがオープンしていると、
-他の人が /dev/audioctl をオープンできないバグがある。
-また、逆、つまり /dev/audioctl を誰かがオープンしていると
-他の人が /dev/audio か /dev/sound をオープンできないというバグもある。
-hw.*.multiuser == 0 であっても /dev/audioctl は
-/dev/audio、/dev/sound の状況に関わらず常にオープンできるのが仕様。
-</p>
+use.</span></p>
+<p class=comment style="margin-left:8%">
+ちなみに上2段落は NetBSD7 ではこの1段落だった。<br>
+In contrast to
+<i>/dev/sound</i> which has the exclusive open property
+<i>/dev/audioctl</i> can be opened at any time and can be
+used to manipulate the audio device while it is in use.</p>
 
 
 <p style="margin-top: 1em" valign="top"><b>SAMPLING
 DEVICES</b></p>
 
-<p style="margin-left:8%;">When <i>/dev/audio</i> is
+<p style="margin-left:8%;"><span class=del>When <i>/dev/audio</i> is
 opened, it automatically directs the underlying driver to
 manipulate monaural 8-bit mu-law samples. In addition, if it
 is opened read-only (write-only) the device is set to
 half-duplex record (play) mode with recording (playing)
-unpaused and playing (recording) paused.</p>
+unpaused and playing (recording) paused.</span></p>
+<p style="margin-left:8%"><span class=a2>
+When <i>/dev/audio</i> is opened, it automatically sets the track to
+manipulate monaural 8-bit mu-law 8000Hz.
+</span></p>
 <p class=comment style="margin-left:8%">
 Read-only でオープンしたら録音モードになって再生は pause に、
 Write-only でオープンしたら再生モードになって録音は pause に、と
 書いてあるが、この pause は AUDIO_GETINFO で取得できる pause ではなく、
-意味的なもののようだ。紛らわしい。</p>
-<p style="margin-left:8%">When
+意味的なもののようだ。紛らわしい。
+というか当たり前すぎてないほうがよくない?
+</p>
+
+<p style="margin-left:8%"><span class=del>When
 <i>/dev/sound</i> is opened, it maintains the previous audio
-sample mode and record/playback mode <span class=n8>most recently set on
-<i>/dev/sound</i> by any open channel</span>. In all other respects
-<i>/dev/audio</i> and <i>/dev/sound</i> are identical.</p>
-<p class=a2 style="margin-left:8%">
+sample mode and record/playback mode most recently set on
+<i>/dev/sound</i> by any open channel. In all other respects
+<i>/dev/audio</i> and <i>/dev/sound</i> are identical.</span></p>
+<p style="margin-left:8%"><span class=a2>
+When <i>/dev/sound</i> is opened, it maintains the audio format and
+pause/unpause state of the most recently opened track.
+In all other respects <i>/dev/audio</i> and <i>/dev/sound</i>
+are identical.</p>
+</span></p>
+<p class=comment style="margin-left:8%">
 /dev/sound は直近の設定値を引き継ぐが、
 N7 では /dev/audio に対する設定も /dev/sound の引き継ぎ対象に含まれる
 (/dev/sound → /dev/audio → /dev/sound すると2回目の /dev/sound は
@@ -213,7 +179,7 @@ N8 では /dev/audio に対する設定は引き継ぎ対象にならない
 (先の例でいうと2回目の /dev/sound は1回目の /dev/sound の設定値になる)。
 AUDIO2 では N7 の動作に準拠している。
 </p>
-<p class=a2 style="margin-left:8%">
+<p class=comment style="margin-left:8%">
 ここでいう引き継ぎは AUDIO_SETINFO の以下のパラメータ。<br>
 　o play.encoding<br>
 　o play.precision<br>
@@ -227,146 +193,107 @@ AUDIO2 では N7 の動作に準拠している。
 　o record.pause<br>
 </p>
 
-<p class=n7 style="margin-left:8%; margin-top: 1em">Only one process
-may hold open a sampling device at a given time (although
-file descriptors may be shared between processes once the
-first open completes).</p>
-
 <p style="background-color: rgb(255,209,209); margin-top: 1em" valign="top"><b>VIRTUAL
 CHANNELS</b></p>
-<p class=bad style="margin-left:0%">
-名前がおかしい。
-virtual でない channel はモノラルとか L とか R で、
-virtual channel がオーディオストリームのことを指しているのは違和感がある。
-</p>
-<p class=a2 style="margin-left:0%">
-AUDIO2 では、1つの再生または録音単位をトラックと呼ぶ。
-1つ以内の再生と1つ以内の録音の組からなる1つのファイルディスクリプタに
-対応するところの名前が未定。
-</p>
-<p class=a2 style="margin-left:0%">
-あとセクションもここではない気がする。
-</p>
 
-<p class=n8 style="margin-left:8%;">Any process may open a sampling
-device at a given time. Any number of devices per process
-and file descriptors may be shared between processes.</p>
-<p class=n9 style="margin-left:8%;">Any process may open a sampling
+<p class=del style="margin-left:8%;">Any process may open a sampling
 device at a given time. Any number of devices per process
 and file descriptors may be shared between processes.</p>
 
-<p class=n8 style="margin-left:8%; margin-top: 1em">Virtual channels
+<p class=del style="margin-left:8%; margin-top: 1em">Virtual channels
 are converted to a common format, signed linear encoding,
 frequency channels and precision. These can be modified to
 taste by the following sysctl(8) variables.</p>
-<p class=bad style="margin-left:8%">
-プローブ方法がだめだめすぎる。
-</p>
-<p class=bad style="margin-left:8%">
-起動後に sysctl で変更できるが、HW で有効な選択肢は提示されない。</p>
-<p class=bad style="margin-left:8%">
-sysctl で HW で有効でない値をセットしてもエラーにならない。</p>
+
+<p class=del style="margin-left:12%; margin-top: 1em" valign="top">hw.driverN.precision</p>
 
 
-<p class=n8 style="margin-left:12%; margin-top: 1em" valign="top">hw.driverN.precision</p>
+<p class=del style="margin-left:12%; margin-top: 1em" valign="top">hw.driverN.frequency</p>
 
 
-<p class=n8 style="margin-left:12%; margin-top: 1em" valign="top">hw.driverN.frequency</p>
+<p class=del style="margin-left:12%; margin-top: 1em" valign="top">hw.driverN.channels</p>
 
+<p class=del style="margin-left:12%; margin-top: 1em" valign="top">hw.driverN.multiuser</p>
 
-<p class=n8 style="margin-left:12%; margin-top: 1em" valign="top">hw.driverN.channels</p>
-
-<p class=bad style="margin-left:12%; margin-top:1em">
-そもそもこれらを sysctl で設定させるのがおかしい。</p>
-<p class=a2 style="margin-left:12%">
-AUDIO2 ではこの sysctl は採用しない。</p>
-
-
-<p class=n8 style="margin-left:12%; margin-top: 1em" valign="top">hw.driverN.multiuser</p>
-<p class=a2 style="margin-left:12%">
-これは今の所引き継ぎ予定。
-ただし名前は hw.audioN.multiuser にする。
-</p>
-
-<p class=n8 style="margin-left:8%; margin-top: 1em">Where
+<p class=del style="margin-left:8%; margin-top: 1em">Where
 <i>driverN</i> corresponds to the underlying audio device
 driver and device number. e.g In the case of an hdafg
 supported device the variables would be: hw.hdafg0.channels,
 hw.hdafg0.precision, hw.hdafg0.frequency.</p>
-<p class=bad style="margin-left:8%">
-hw.hdafg0.* のようなMD名ではなく hw.audio0.* を使うべき。
-実際 hdafg(4) は hw.hdafg に独自の ioctl を持っているし、
-そもそも今自分がアクセスしている audioN に対応する
-MD デバイス名をプログラムから知る術が audio 側にない
-(drvctl 使わないといけない?)。
-</p>
 
-<p class=n8 style="margin-left:8%; margin-top: 1em">For best
+<p class=del style="margin-left:8%; margin-top: 1em">For best
 results, values close to the underlying hardware should be
 chosen. These variables may only be changed when the
 sampling device is not in use.</p>
-<p class=bad style="margin-left:8%">
-ユーザにそれを選択させるとかおかしい。
-</p>
-<p class=a2 style="margin-left:8%">
-この行は削除。
-AUDIO2 では自動で選択する。
-</p>
 
-<p class=n8 style="margin-left:8%; margin-top: 1em">An additional
+<p class=del style="margin-left:8%; margin-top: 1em">An additional
 sysctl(8) variable determines if multiple users are allowed
 to access the sampling device, hw.driverN.multiuser.</p>
 
-<p class=n8 style="margin-left:8%; margin-top: 1em">By default it is
+<p class=del style="margin-left:8%; margin-top: 1em">By default it is
 set to false. This means that the sampling device may be
 only used by <i>one</i> user at a time. Other users (except
 root) attempting to open the sampling device will be
 denied.</p>
 
-<p class=n8 style="margin-left:8%; margin-top: 1em">If set to true,
+<p class=del style="margin-left:8%; margin-top: 1em">If set to true,
 all users may access the sampling device at any time.</p>
 <p class=comment style="margin-left:8%">
 厳密に言えば、あるユーザがオープンしていても、
 別のユーザもいつでもオープンできるということ。
 </p>
 
-<p class=n8 style="margin-left:8%; margin-top: 1em">Each virtual
+<p class=del style="margin-left:8%; margin-top: 1em">Each virtual
 channel has a corresponding mixer:</p>
 
-<p class=n8 style="margin-left:12%; margin-top: 1em" valign="top">vchan.dacN Output
+<p class=del style="margin-left:12%; margin-top: 1em" valign="top">vchan.dacN Output
 volume</p>
 
-<p class=n8 style="margin-left:12%; margin-top: 1em" valign="top">vchan.micN
+<p class=del style="margin-left:12%; margin-top: 1em" valign="top">vchan.micN
 Recording volume</p>
 
-<p class=n8 style="margin-left:8%; margin-top: 1em">Where N is the
+<p class=del style="margin-left:8%; margin-top: 1em">Where N is the
 virtual channel number. e.g vchan.dac0 controlling playback
 volume and vchan.mic0 controlling recording volume for the
 first virtual channel.</p>
-<p class=a2 style="margin-left:8%">
-AUDIO2 ではこのミキサパラメータはない。
+
+<p class=comment style="margin-left:8%">
+VIRTUAL CHANNEL セクションからここまでが N8 で追加されたところなので削除。
 </p>
 
-<p style="margin-left:8%; margin-top: 1em">On a half-duplex
+<p style="margin-left:8%; margin-top: 1em"><span class=del>On a half-duplex
 device, writes while recording is in progress will be
 immediately discarded. Similarly, reads while playback is in
 progress will be filled with silence but delayed to return
 at the current sampling rate. If both playback and recording
 are requested on a half-duplex device, playback mode takes
-precedence and recordings will get silence.</p>
-<p class=bad style="margin-left:8%">
-N8 では Half-Duplex HW に対して open(O_WRONLY) してwrite()と、
-open(O_RDONLY) して read を同時に行うと read がブロックするようだ。
-</p>
+precedence and recordings will get silence.</span></p>
 
-<p style="margin-left:8%; margin-top: 1em">On a full-duplex
+<p style="margin-left:8%; margin-top: 1em"><span class=del>On a full-duplex
 device, reads and writes may operate concurrently without
 interference. If a full-duplex capable audio device is
 opened for both reading and writing it will start in
 half-duplex play mode; full-duplex mode has to be set
-explicitly.</p>
-<p class=bad7 style="margin-left:8%">
-2文目
+explicitly.</span></p>
+
+<p style="margin-left:8%; margin-top:1em"><span class=a2>
+On a full-duplex device,
+reads and writes may operate concurrently without interference.
+If a full-duplex capable audio device is
+opened for both reading and writing it will start in
+play mode but not start in record mode.</span></p>
+
+<p style="margin-left:8%; margin-top:1em"><span class=a2>
+On a half-duplex device,
+if there are any recording descriptors already,
+opening with write mode will fail.
+Similarly, if there are any playback descriptors already,
+opening with read mode will fail.
+If both playback and recording are requested on a half-duplex device,
+it will be treated as playback mode.</span></p>
+
+<p class=comment style="margin-left:8%">
+元の2文目
 「Full-duplex 対応オーディオデバイスは reading または writing の
 どちらでオープンされても、half-duplex 再生モードになる。
 full-duplex モードには明示的にセットする必要がある」
@@ -378,7 +305,8 @@ open(O_RDWR) は Half-Duplex HW では half-duplex 再生モード、
 Full-Duplex HW では full-duplex 再生録音モード(?)になる。<br>
 これはこれで manpage を修正したほうがいい。
 </p>
-<p class=a2 style="margin-left:8%">
+<br>
+<p class=comment style="margin-left:8%">
 AUDIO2 では<br>
 Full-Duplex HW については<br>
 o open(O_RDONLY) なら half-duplex 録音モード(従来通り)、<br>
@@ -395,10 +323,15 @@ half-duplex 再生モード、<br>
 Half HW の「O_RDWR を再生側に倒す」という考え方は従来仕様にならったもの。
 </p>
 
+<p style="margin-left:8%; margin-top: 1em"><span class=a2>
+On either type of device,
+opening with write mode will start in playback mode,
+opening with read mode will start in recording mode.
+</span></p>
 
-
-<p style="margin-left:8%; margin-top: 1em">On either type
-of device, if the playback mode is paused then silence is
+<p style="margin-left:8%; margin-top: 1em"><span class=del>On either type
+of device, if</span>
+<span class=a2>If</span> the playback mode is paused then silence is
 played instead of the provided samples, and if recording is
 paused then the process blocks in read(2) until recording is
 unpaused.</p>
@@ -406,41 +339,40 @@ unpaused.</p>
 <p style="margin-left:8%; margin-top: 1em">If a writing
 process does not call write(2) frequently enough to provide
 samples at the pace the hardware consumes them silence is
-inserted. If the AUMODE_PLAY_ALL mode is not set the writing
+inserted. <span class=del>If the AUMODE_PLAY_ALL mode is not set the writing
 process must provide enough data via subsequent write calls
 to &lsquo;&lsquo;catch up&rsquo;&rsquo; in time to the
 current audio block before any more process-provided samples
-will be played. If a reading process does not call read(2)
+will be played.</span> If a reading process does not call read(2)
 frequently enough, it will simply miss samples.</p>
-<p class=a2 style="margin-left:8%">
-この段落は
-If a writing
-process does not call write(2) frequently enough to provide
-samples at the pace the hardware consumes them silence is
-inserted.
-If a reading process does not call read(2)
-frequently enough, it will simply miss samples.
-としたい (AUMODE_PLAY_ALL に関する文を削除)。</p>
+<p style="margin-left:8%" class=comment>
+AUDIO2 では <tt>AUMODE_PLAY_ALL</tt> は機能しなくなった
+(常にセットされている状態)。
+</p>
+
+<p style="margin-left:8%; margin-top:1em" class=comment>
+この辺に多重化の話?
+</p>
 
 <p style="margin-left:8%; margin-top: 1em">The audio device
 is normally accessed with read(2) or write(2) calls, but it
-can also be mapped into user memory with mmap(2) <span class=n7>(when
-supported by the device)</span>. Once the device has been mapped it
+can also be mapped into user memory with mmap(2).
+Once the device has been mapped it
 can no longer be accessed by read or write; all access is by
 reading and writing to the mapped memory.
 </p>
-<p class=bad7 style="margin-left:8%">
+<p class=comment style="margin-left:8%">
 「mmap されると read や write によるアクセスはすべて出来なくなる」
-ように読めるが、
+ように読めるが、N7 以前から
 実際には mmap されるのは再生バッファだけで、
 この制限が録音バッファのほうには及んでいない。
 そのため (O_RDWR なら) mmap した後も read は発行できる。
 バグなのか仕様なのか。
 </p>
-<p class=a2 style="margin-left:8%">
+<p class=comment style="margin-left:8%">
 AUDIO2 でも今のところ同じ動作 (read は行える) になる。
 </p>
-<p class=a2 style="margin-left:8%">
+<p class=comment style="margin-left:8%">
 その時の write の
 エラーコードが従来 EINVAL (Invalid Argument) だったが、
 EPERM (Operation not permitted) のほうがいいんじゃないかと思うので変えてみる。
@@ -453,27 +385,33 @@ will continuously move data from this buffer from/to the
 audio hardware, wrapping around at the end of the buffer. To
 find out where the hardware is currently accessing data in
 the buffer the AUDIO_GETIOFFS and AUDIO_GETOOFFS calls can
-be used. The playing and recording buffers are distinct and
-must be mapped separately if both are to be used.
+be used.
+<span class=del>The playing and recording buffers are distinct and
+must be mapped separately if both are to be used.</span>
 </p>
-<p class=bad7 style="margin-left:8%">
+<p class=comment style="margin-left:8%">
 本来は再生バッファを PROT_WRITE、録音バッファを PROT_READ で別々に
-mmap させるつもりだったようだが、
+mmap させるつもりだったようだが、遥か昔から
 VM あたりの制約によりこれが実現できず、今はこのフラグに関係なく
 常に再生バッファの mmap のみ可能。
-もう manpage の記載を修正したほうがいいのでは。
+manpage の記載のほうを修正する。
 </p>
 <p style="margin-left:8%">
 Only
 encodings that are not emulated (i.e. where
 AUDIO_ENCODINGFLAG_EMULATED is not set) work properly for a
 mapped device.</p>
-<p class=bad style="margin-left:8%">
-N8 では AUDIO_ENCODINGFLAG_EMULRATED の有無に関わらず mmap は動作するので
-この一文は正しくない。
-</p>
-<p class=a2 style="margin-left:8%">
-AUDIO2 でも同様なので、この一文は削除していいのでは。
+<p class=comment style="margin-left:8%">
+本来の EMULATED フラグの意味とはもうかけ離れてしまっていて悩ましい。
+本来は、ハードウェアバッファを直接 mmap していたので
+ハードウェアネイティブフォーマットでなければうまく動かないという文は正しかった。
+<br>
+N8 では各 VC のフィルタ通過後 (ミキシングされるフォーマット) の
+バッファを mmap しているように見える。
+なので本来の意味のハードウェアネイティブフラグを充てるのはおかしいが、
+mmap 出来るフォーマットをネイティブという扱いをしているため、
+両方おかしくて外から見た動作は成立している。
+もうなんだこれ。
 </p>
 
 <p style="margin-left:8%; margin-top: 1em">The audio
@@ -482,55 +420,36 @@ be set in non-blocking mode and can be set (with a FIOASYNC
 ioctl) to send a SIGIO when I/O is possible. The mixer
 device can be set to generate a SIGIO whenever a mixer value
 is changed.</p>
-<p class=bad style="margin-left:8%">
-FIOASYNC が VC 分離されていない。
-プロセスAが FIOASYNC を on にしても、
-別のプロセスBが(ユーザにも特権にも関係なく) FIOASYNC を off にできる。
-また FIOASYNC がリセットされるのは再生+録音の最終クローズ時であるため、
-プロセスAがデバイスをオープンしたまま
-別のプロセスBが FIOASYNC をセットしてクローズしても
-まだ FIOASYNC がリセットされず、次にオープンしても FIOASYNC をセットできない。
-</p>
-<p class=a2 style="margin-left:8%">
-AUDIO2 では修正済み。
-FIOASYNC はファイルディスクリプタごとに独立している。
-</p>
 
 <p style="margin-left:8%; margin-top: 1em">The following
 ioctl(2) commands are supported on the sample devices:</p>
 
-<p class=n8 style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_GETCHAN
+<p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_GETCHAN
 (int)</p>
 
-<p class=n8 style="margin-left:20%;">This command will return the
+<p class=del style="margin-left:20%;">This command will return the
 audio channel in use.</p>
 
-<p class=n8 style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_SETCHAN
+<p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_SETCHAN
 (int)</p>
 
-<p class=n8 style="margin-left:20%;">This command will select the
+<p class=del style="margin-left:20%;">This command will select the
 audio channel for subsequent ioctl calls.</p>
-<p class=bad style="margin-left:20%">
-(ユーザにも特権にも関係なく) 他のVCを指定することができて
-(その後の ioctl でその VC の状態を変更できて) しまうのでセキュリティ上アウト
-→ <a href="http://gnats.netbsd.org/52627">kern/52627</a></p>
-<p class=a2 style="margin-left:20%">
-AUDIO2 ではこの2つの ioctl は廃止。必要ない。
+<p style="margin-left:20%"><span class=a2>
+These two are obsoleted.</span></p>
+<p class=comment style="margin-left:20%">
+AUDIO2 ではこの2つの ioctl は廃止。必要ないしセキュリティ上問題。
 </p>
 
 <p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_FLUSH</p>
 
 <p style="margin-left:20%;">This command stops all playback
 and recording, clears all queued buffers, resets error
-counters, and restarts recording and playback as appropriate
+counters <span class=a2>on this track</span>,
+and restarts recording and playback as appropriate
 for the current sampling mode.</p>
-<p class=bad style="margin-left:20%">
-stops all playback and recoring は他のVCにも影響を与えるように読めないだろうか。
-</p>
-<p class=a2 style="margin-left:20%">
-「stops all playback and recoring」→
-「このディスクリプタ(?)の再生と録音をすべて停止」とか、
-影響がこれだけであることは明確にしておきたい。</p>
+<p class=comment style="margin-left:20%">
+録音再生をリスタートが本当に動いてるか未確認。</p>
 <p class=comment style="margin-left:20%">
 ここでいうエラーカウンタはドロップ数 AUDIO_[PR]ERROR の値を指す。</p>
 
@@ -541,7 +460,7 @@ stops all playback and recoring は他のVCにも影響を与えるように読�
 of dropped output bytes into its integer argument. There is
 no information regarding when in the sample stream they were
 dropped.</span></p>
-<p class=bad7 style="margin-left:20%">
+<p class=comment style="margin-left:20%">
 この ioctl は以前から実装されているが、
 manpage には AUDIO_RERROR だけあって AUDIO_PERROR が抜けている。</p>
 
@@ -549,18 +468,17 @@ manpage には AUDIO_RERROR だけあって AUDIO_PERROR が抜けている。</
 (int)</p>
 
 <p style="margin-left:20%;">This command fetches the count
-of dropped input samples into its integer argument. There is
+of dropped input <span class=del>samples</span> <span class=a2>bytes</span>
+into its integer argument. There is
 no information regarding when in the sample stream they were
 dropped.</p>
-<p class=a2 style="margin-left:20%">サンプル数と書いてあるが、
-バイト数を返すことにしたい。</p>
-<p class=comment style="margin-left:20%">たしかそんな PR が出てた気がする。</p>
 
 <p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_WSEEK
 (u_long)</p>
 
 <p style="margin-left:20%;">This command fetches the count
-of samples that are queued ahead of the first sample in the
+of <span class=del>samples</span> <span class=a2>bytes</span>
+that are queued ahead of the first sample in the
 most recent sample block written into its integer
 argument.</p>
 
@@ -568,13 +486,7 @@ argument.</p>
 
 <p style="margin-left:20%;">This command suspends the
 calling process until all queued playback samples have been
-played by the hardware.</p>
-<p class=bad style="margin-left:20%">
-x68k くらいの遅マシンでは drain の挙動がなんか変。</p>
-<p class=a2 style="margin-left:20%">
-AUDIO2 では問題ない。
-ただし VirtualBox はエミュレーション精度が甘いので実機通りにはならない可能性があることは分かっている(がこっちの問題ではない)。
-</p>
+played <span class=del>by the hardware</span>.</p>
 
 <p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_GETDEV
 (audio_device_t)</p>
@@ -597,22 +509,6 @@ argument.</p>
 <p style="margin-left:20%;">This command is used
 iteratively to fetch sample encoding names and format_ids
 into the input/output audio_encoding_t argument.</p>
-<p class=bad style="margin-left:20%">
-N7 までは MD がサポートしているエンコーディングと
-ユーザランドから入出力できるエンコーディングとが一致していたからよかったが、
-N8 ではそれが一致しなくなったため、AUDIO_GETENC が何を(どちらを)
-返すべきものなのかを再定義するなり何なりの対応をしなければいけないが、
-そうはなっていない。
-というか、今はそのどちらでもないよくわからん集合が返ってくる。
-→ <a href="https://gnats.netbsd.org/52585">kern/52585</a>
-</p>
-<p class=a2 style="margin-left:20%">
-AUDIO2 では、
-AUDIO_GETENC は MI がユーザランドから受け付けるエンコーディングを列挙する
-ものとし、
-ハードウェアが対応しているエンコーディングは新設の AUDIO_QUERYFORMAT
-で列挙できるようにしてみたが、どうだろう。
-</p>
 
 <p style="margin-left:20%; margin-top: 1em">
 <pre style="margin-left:20%">typedef struct audio_encoding {
@@ -630,17 +526,23 @@ the supported encodings, start with an index field of 0 and
 continue with successive encodings (1, 2, ...) until the
 command returns an error.</p>
 
+<p style="margin-left:20%; margin-top: 1em" class=comment>
+こっち(GETENC)はユーザランドから見えるサポートフォーマットであることを
+書きたい。</p>
+
 
 <p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_GETFD
 (int)</p>
 
-<p style="margin-left:20%;">The command returns the current
-setting of the full duplex mode.</p>
-<p class=a2 style="margin-left:20%">
+<p style="margin-left:20%;"><span class=del>The command returns the current
+setting of the full duplex mode.</span></p>
+<p style="margin-left:20%;"><span class=a2>The command is obsoleted.</span></p>
+
+<p class=comment style="margin-left:20%">
 元の manpage はなぜか AUDIO_GETFD、AUDIO_GETENC、AUDIO_SETFD の順に並んでいて
 読みにくいので、AUDIO_GETFD を AUDIO_SETFD の近くに移動した。
 </p>
-<p class=a2 style="margin-left:20%">
+<p class=comment style="margin-left:20%">
 このコマンドは HW (とミキサー)が full duplex かどうかを返す。
 このディスクリプタが full duplex かどうかではない。
 すなわち、
@@ -652,25 +554,20 @@ full duplex、それ以外は half duplex とする。
 <p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_SETFD
 (int)</p>
 
-<p style="margin-left:20%;">This command sets the device
+<p style="margin-left:20%;"><span class=del>This command sets the device
 into full-duplex operation if its integer argument has a
 non-zero value, or into half-duplex operation if it contains
 a zero value. If the device does not support full-duplex
 operation, attempting to set full-duplex mode returns an
-error.</p>
-<p class=bad style="margin-left:20%;">
-自VC の Full/Half 状態だけでなく
-hw_if-&gt;setfd で HWの状態を直接変更している。
-hw_if-&gt;setfd でデバッグ printf 以上のことをしている
-MD ドライバは1つも存在しないので影響は顕在化しないが
-本来はおかしい。</p>
+error.</span></p>
+<p style="margin-left:20%;"><span class=a2>This command is obsoleted.</span></p>
 <p class=comment style="margin-left:20%">
 本来 open 直後は必ず Half duplex 状態になっており
 その後必要ならこの ioctl で Full duplex に変える
 という運用を想定していたようだが(少なくともこの manpage の最初のほうにそう書いてある)、
 実装のほうは open 直後から(可能なら) Full duplex になるようになっている。
 </p>
-<p class=a2 style="margin-left:20%">
+<p class=comment style="margin-left:20%">
 AUDIO2 では obsolete とする。
 この ioctl は何もせず常に成功する。
 AUDIO2 では、HW の状態を変更することは出来ないし、
@@ -697,12 +594,9 @@ admits full duplex operation.</p>
 
 <p style="margin-left:27%">the device can
 be used with mmap(2).</p>
-<p class=bad style="margin-left:27%">
+<p class=comment style="margin-left:27%">
 N8 ではこのフラグはハードウェアプロパティではなくなっているが
 (ソフトウェアエミュレーションに近い)、どうしたものか。
-</p>
-<p class=a2 style="margin-left:27%">
-AUDIO2 でも同様。
 </p>
 
 <p style="margin-left:22%">AUDIO_PROP_INDEPENDENT</p>
@@ -728,10 +622,11 @@ capable of audio capture.</p>
 (audio_offset_t)</p>
 
 <p style="margin-left:20%;">This command fetches the
-current offset in the input(output) buffer where the audio
-hardware&rsquo;s DMA engine will be putting(getting) data.
+current offset in the input(output) buffer <span class=del>where the audio
+hardware&rsquo;s DMA engine will be putting(getting) data</span>
+<span class=a2>where the track mixer will be putting(getting) data</span>.
 </p>
-<p class=bad style="margin-left:20%">
+<p class=comment style="margin-left:20%">
 少なくとも N8 以降はハードウェアとか DMA 関係なくなってきてる気がする。
 </p>
 <p style="margin-left:20%">
@@ -757,12 +652,12 @@ the audio_offset structure.</p>
 
 <p style="margin-left:20%;">Get or set audio information as
 encoded in the audio_info structure.</p>
-<p class=bad7 style="margin-left:20%">
+<p class=comment style="margin-left:20%">
 設定項目が多いので設定中にエラーが起きると本来は全部ロールバックしないと
 いけないような気がするのと最初期の頃(20年前)のソースは一応その辺も
 意識してあったように見えるが、
 その後すぐに複雑になりすぎてロールバックは一切お察しのような気がする。</p>
-<p class=a2 style="margin-left:20%">
+<p class=comment style="margin-left:20%">
 一応エラーの際には完全にロールバックを目指すようには作ってみたが、
 今まで10年以上ロールバックしない動作だったので逆に問題になるかも知れない。
 一度にあれこれ設定してもどれがエラーになったか判別できないため、
@@ -782,11 +677,12 @@ encoded in the audio_info structure.</p>
 	u_int	hiwat;			/* output high water mark */
 	u_int	lowat;			/* output low water mark */
 	u_int	_ispare1;
-	u_int	mode;			/* current device mode */
+<span class=del>	u_int	mode;			/* current device mode */</span>
+<span class=a2>	u_int	mode;			/* current operation mode */</span>
 #define AUMODE_PLAY	0x01
 #define AUMODE_RECORD	0x02
-#define AUMODE_PLAY_ALL	0x04		/* do not do real-time correction */
-<span class=a2>#define AUMODE_PLAY_ALL	0x04		/* Not used anymore in AUDIO2 */</span>
+<span class=del>#define AUMODE_PLAY_ALL	0x04		/* do not do real-time correction */</span>
+<span class=a2>#define AUMODE_PLAY_ALL	0x04		/* Not used anymore */</span>
 } audio_info_t;</pre>
 </p>
 
@@ -799,22 +695,19 @@ only set those things that you wish to change and eliminates
 the need to query the device with AUDIO_GETINFO or
 AUDIO_GETBUFINFO first.</p>
 
-<p style="margin-left:20%; margin-top: 1em">The <i>mode</i>
+<p style="margin-left:20%; margin-top: 1em"><span class=del>
+The <i>mode</i>
 field should be set to AUMODE_PLAY, AUMODE_RECORD,
 AUMODE_PLAY_ALL, or a bitwise OR combination of the three.
 Only full-duplex audio devices support simultaneous record
-and playback.</p>
-<p class=bad7 style="margin-left:20%">
-mode には何がセットされていてもこの ioctl がエラーにはならない。
-ただし次に AUDIO_GETINFO してみて何が取得できるかとはまったく別。
-そしてここで取得できる mode はセット後の何の動作にはまったく影響しないようだ。
-分かりにくすぎというかバグでは。
-</p>
-<p class=a2 style="margin-left:20%">
-指定された mode に設定変更できなければ EINVAL なり何なりのエラーにしたい
-ところだが、従来との互換性を考えて ioctl はエラーにはしない。
-</p>
-<p class=a2 style="margin-left:20%">
+and playback.</span></p>
+<p style="margin-left:20%"><span class=a2>
+The <i>mode</i> field indicates current operation mode,
+either one of AUMODE_PLAY or AUMODE_RECORD.
+These two flags can not be changed once this descriptor is opened.
+On playback mode, obsoleted AUMODE_PLAY_ALL can be set but has no effect.
+</span></p>
+<p class=comment style="margin-left:20%">
 AUDIO2 ではオープン後の録音再生方向の変更を認めていない。
 また AUMODE_PLAY_ALL ビットも実質意味を持たなくなったため、
 AUDIO_SETINFO の mode 設定は単に無視される。
@@ -835,37 +728,40 @@ of <i>hiwat</i>.</p>
 sets the current audio blocksize. The generic audio driver
 layer and the hardware driver have the opportunity to adjust
 this block size to get it within implementation-required
-limits. Upon return from an AUDIO_SETINFO call, the actual
-blocksize set is returned in this field. Normally the
-<i>blocksize</i> is calculated to correspond to 50ms of
+limits.
+<span class=del>Upon return from an AUDIO_SETINFO call, the actual
+blocksize set is returned in this field.</span>
+ Normally the
+<i>blocksize</i> is calculated to correspond to <span class=del>50ms</span>
+<span class=a2>40ms (if acceptable for the hardware) </span> of
 sound and it is recalculated when the encoding parameter
-changes, but if the <i>blocksize</i> is set explicitly this
+changes<span class=del>, but if the <i>blocksize</i> is set explicitly this
 value becomes sticky, i.e., it remains even when the
 encoding is changed. The stickiness can be cleared by
 reopening the device or setting the <i>blocksize</i> to
-0.</p>
-<p class=bad7 style="margin-left:20%">
+0</span>.</p>
+<p style="margin-left:20%"><span class=a2>
+If the descriptor is opened for read only,
+<i>blocksize</i> indicates the blocksize on recording track.
+Otherwise,
+<i>blocksize</i> indicates the blocksize on playback track.
+</span></p>
+<p class=comment style="margin-left:20%">
 AUDIO_SETINFO は実際にセットした blocksize を書き戻すと manpage
-には書いてあるが、N7もN8も書き戻しを行なっていない。
+には書いてあるが、N7もN8も書き戻しを行なっていないし、
+AUDIO2 も行わないので、マニュアルのほうを修正。
 </p>
-<p class=a2 style="margin-left:20%">
-AUDIO2 では hardware driver がブロックサイズを変更する機会は今の所たぶん持たない。
-</p>
-<p class=a2 style="margin-left:20%">
-AUDIO2 でも AUDIO_SETINFO による blocksize の書き戻しは行わない予定。
-manpage のほうを修正したほうがいい。
-</p>
-<p class=a2 style="margin-left:20%">
+<p class=comment style="margin-left:20%">
 AUDIO2 ではブロックサイズはデフォルトで 40msec 分のサイズになるようにしてある。
 ただし HW の制約により 40msec で問題がある場合は
 問題のないところまで自動で拡張する。
 これがおきるのは今の所 4bit precision である x68k の vs(4) だけ。
 </p>
-<p class=a2 style="margin-left:20%">
+<p class=comment style="margin-left:20%">
 エンコーディングを変更するとブロックサイズは常に追従する。
 スティッキーモードは実装しない予定。
 </p>
-<p class=a2 style="margin-left:20%">
+<p class=comment style="margin-left:20%">
 元々この構造体の blocksize は録音再生の区別がないが、
 AUDIO2 では録音トラックと再生トラックの blocksize は同じとは限らない。
 現在のディスクリプタが再生のみなら再生 blocksize を、
@@ -896,31 +792,6 @@ AUDIO2 では録音トラックと再生トラックの blocksize は同じと�
 	u_char	open;		/* non-zero if currently open */
 	u_char	active;		/* non-zero if I/O is currently active */
 };</pre>
-</p>
-
-<p class=bad7 style="margin-left:20%">
-sample_rate = 0 を設定すると、システムコールが無限ループになって(?)
-帰ってこない。
-shutdown も出来なくなる。
-ここまでは N7 以前でも起きる。
-<span class=bad>
-N7 以前ならオーディオデバイスを開けるのは高々1人なので
-それ以上影響は広がらないが、N8 だといくらでもオープンできるので以下略。
-</span>
-</p>
-<p class=a2 style="margin-left:20%">
-AUDIO2 ではカーネルが受け付ける sample_rate を
-1000Hz から 192000Hz までと定義した。
-hdaudio(4) が規格上 384kHz とか扱えるらしいけど、誰か検証よろしく。
-</p>
-<p class=bad style="margin-left:20%">
-eof カウンタが VC 分離できていない。
-あるディスクリプタで eof カウンタが上がると別ディスクリプタでも同じ値が読める。
-全 VC が閉じられるとリセットされる。
-この変数になんの意味があるかはともかく、おそらく元の仕様の意図はそうではない。
-</p>
-<p class=a2 style="margin-left:20%">
-eof カウンタはファイルディスクリプタごとにした。
 </p>
 
 <p style="margin-left:20%; margin-top: 1em">Note: many
@@ -988,24 +859,21 @@ encoding with big endian byte order</p>
 <p style="margin-left:27%">Dolby Digital
 AC3</p>
 
-<p class=bad style="margin-left:20%">
-ユーザランドから受け付けるエンコーディングは N7 までと異なり
-MI で一元的に扱うようになったが、どれを受け付けるのかはソース嫁状態。
-</p>
-<p class=a2 style="margin-left:20%">
-AUDIO2 では以下を受け付ける。
-また、この一覧は AUDIO_GETENC で取得できる。<br>
-　o AUDIO_ENCODING_SLINEAR_{LE,BE} 8, 16, 32 bit<br>
-　o AUDIO_ENCODING_ULINEAR_{LE,BE} 8, 16, 32 bit<br>
-　o AUDIO_ENCODING_ULAW 8bit<br>
-</p>
-<p class=a2 style="margin-left:20%">
-24/24 はデフォルト受け付けなくても誰も困らないだろう。
-(今の所) audiovar.h の AUDIO_SUPPORT_LINEAR24 を on にすれば受け付ける。
-カーネルオプションにはしてもいいかも。
-これを足すと amd64 で 1300バイトだけ text segment が増える。
-32bit も要るのかなあという気はしないでもないが。
-</p>
+<p style="margin-left:20%; margin-top: 1em"><span class=a2>
+underlying hardware のサポートフォーマットによらず、audio layer は
+以下のフォーマットでの再生と録音をサポートしている。
+エンコーディングは:
+</span></p>
+<ul style="margin-left:20%">
+<li><span class=a2>AUDIO_ENCODING_ULAW, 8bit</span>
+<li><span class=a2>AUDIO_ENCODING_SLINEAR_{LE,BE}, 8/16/32bit</span>
+<li><span class=a2>AUDIO_ENCODING_ULINEAR_{LE,BE}, 8/16/32bit</span>
+</ul>
+<p style="margin-left:20%"><span class=a2>
+チャンネル数は 1..12、
+周波数は 1000Hz .. 192000Hz である。
+</span></p>
+
 
 <p style="margin-left:20%; margin-top: 1em">The
 <i>gain</i>, <i>port</i> and <i>balance</i> settings provide
@@ -1015,15 +883,6 @@ should be in the range [AUDIO_MIN_GAIN, AUDIO_MAX_GAIN] and
 the balance in the range [AUDIO_LEFT_BALANCE,
 AUDIO_RIGHT_BALANCE] with the normal setting at
 AUDIO_MID_BALANCE.</p>
-<p class=bad style="margin-left:20%">
-balance と gain は元々セットで HW ミキサーを指していたが、
-このうち gain の設定だけ VC のマスターボリュームの変更に書き換えられ、
-gain の取得と balance の設定・取得は HW ミキサーのままなので、いろいろ整合していない。
-PR が出ている → <a href="https://gnats.netbsd.org/52781">kern/52781</a>
-</p>
-<p class=a2 style="margin-left:20%">
-AUDIO2 では N7 同様 HW ミキサーを指すように修正。
-</p>
 
 <p style="margin-left:20%; margin-top: 1em">The input port
 should be a combination of:</p>
@@ -1072,7 +931,7 @@ is the total size of the audio buffer. The buffer size
 divided by the <i>blocksize</i> gives the maximum value for
 <i>hiwat</i>. Currently the <i>buffer_size</i> can only be
 read and not set.</p>
-<p class=a2 style="margin-left:20%">
+<p class=comment style="margin-left:20%">
 AUDIO2 ではオープンしていない方のトラック
 (例えば O_WRONLY でオープンした場合の録音側) の buffer_size は 0 になる。
 N7 および N8 では常にどちらも 0 でないバッファサイズが返されると思う。
@@ -1086,12 +945,10 @@ N7 および N8 では常にどちらも 0 でないバッファサイズが返�
 <p style="margin-left:20%; margin-top: 1em">The <i>seek</i>
 and <i>samples</i> fields are only used by AUDIO_GETINFO and
 AUDIO_GETBUFINFO. <i>seek</i> represents the count of
-samples pending; <i>samples</i> represents the total number
+<span class=del>samples</span> <span class=a2>bytes</span> pending;
+<i>samples</i> represents the total number
 of bytes recorded or played, less those that were dropped
 due to inadequate consumption/production rates.</p>
-<p class=a2 style="margin-left:20%">
-seek はサンプル数とあるがバイト数にしたい。
-</p>
 
 <p style="margin-left:20%; margin-top: 1em"><i>pause</i>
 returns the current pause/unpause state for recording or
@@ -1172,24 +1029,9 @@ precision != stride となるフォーマットはサポートしないので問
 precision は <tt>AUDIO_INTERNAL_BITS</tt>(コンパイル時定数)である。
 
 
-<p style="margin-left:8%; margin-top: 1em"><span class=a2>
-次の sysctl を用意している。
-</span></p>
-<p style="margin-left:12%;"><span class=a2>
-hw.audioN.blk_ms (int)
-</p>
-<p style="margin-left:20%;"><span class=a2>
-デバイスの1ブロックの時間(msec)を取得・設定する。
-デフォルトは 40msec だが、ハードウェア制約によって必要があれば変化する。
-どうしたもんだか。
-</span></p>
-
 
 <p style="margin-top: 1em" valign="top"><b>MIXER
 DEVICE</b></p>
-
-<p class=comment style="margin-left:8%">ミキサーデバイスについてはほぼ未考察。
-</p>
 
 <p style="margin-left:8%;">The mixer device,
 <i>/dev/mixer</i>, may be manipulated with ioctl(2) but does
@@ -1366,8 +1208,9 @@ string values.</p>
 
 <p style="margin-top: 1em" valign="top"><b>SEE ALSO</b> <br>
 
-<p style="margin-left:8%;">audioctl(1), mixerctl(1),
-ioctl(2), ossaudio(3), midi(4), radio(4)<span class=n8>, sysctl(8)</span></p>
+<p style="margin-left:8%;">
+<span class=a2>audiocfg(1), </span>audioctl(1), mixerctl(1),
+ioctl(2), ossaudio(3), midi(4), radio(4)<span class=del>, sysctl(8)</span></p>
 
 <p style="margin-left:8%; margin-top: 1em"><b>ISA bus</b>
 <br>
@@ -1388,17 +1231,17 @@ bba(4)</p>
 <p style="margin-left:8%; margin-top: 1em"><b>USB</b> <br>
 uaudio(4)</p>
 
-<p style="margin-top: 1em" valign="top"><span class=n7><b>BUGS</b></span></p>
+<p style="margin-top: 1em" valign="top"><b>BUGS</b></p>
 
-<p class=n7 style="margin-left:8%;">If the device is used in mmap(2)
+<p style="margin-left:8%;"><span class=a2>If the device is used in mmap(2)
 it is currently always mapped for writing (playing) due to
 VM system weirdness.</p>
-<p class=bad style="margin-left:8%">
-この問題は解決してないので削除しちゃだめ。
+<p class=comment style="margin-left:8%">
+N8 で文言が削除されたが、この問題は解決してないので削除しちゃだめ。
 </p>
 
-<p style="margin-top: 1em" valign="top"><span class=n8><b>HISTORY</b></span></p>
-<p class=n8 style="margin-left:8%;">Support for virtual channels and
+<p style="margin-top: 1em" valign="top"><b>HISTORY</b></p>
+<p style="margin-left:8%;">Support for virtual channels and
 mixing first appeared in NetBSD&nbsp;8.0.</p>
 
 <p style="margin-left:8%; margin-top: 1em">NetBSD&nbsp;7.1.1
