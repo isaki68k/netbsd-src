@@ -194,33 +194,16 @@ void audio_attach_mi(struct audio_hw_if *ahwp, void *hdl, device_t dev)
 	     is matched by a call to close.  Return 0 on success, otherwise an
 	     error code.
 <br>
-<span class=bad>
-これを呼ぶのは録音再生合わせて1つ目のオープン時。
-flags はその時上位から渡される flags で FREAD | FWRITE みたいなやつ。
-なので、1本目が再生オープンなら open(hdl, FWRITE) を呼ぶが、
-1本目をオープンしたまま続けて2本目が録音オープンされても open() は呼ばない。
-このため、録音前には open(hdl, FREAD) が呼ばれることを期待していた
-HWドライバはまずいはず。
-該当するのは dev/isa/aria.c、dev/pci/emuxki.c。
-</span>
 <span class=comment>
-記録のため。
-Half HW で、open(hdl, FREAD | FWRITE) の呼び出しが失敗する例は
-arch/evbarm/mini2440/audio_mini2440.c。
-</span>
-<br>
-<span class=a2>
-これをふまえて AUDIO2 では、open の呼び出しは録音再生合わせて1つ目のオープン時のみとし、flags は HW Full なら必ず FREAD | FWRITE、HW Half なら
+AUDIO2 では、open の呼び出しは録音再生合わせて1つ目のオープン時のみとし、flags は HW Full なら必ず FREAD | FWRITE、HW Half なら
 open 時の flags を渡すことにする。
 綱渡りだけどたぶん大丈夫。
 また、open という名前からの想像に反して
 set_params/commit_settings/init_{output,input} など
 open よりも先に呼び出されるインタフェースがある
-ことに注意しなくてはならない。
-今の所 vraiu(4)、zaudio(4) あたりが引っかかりそう。
-gus@isapnp も引っかかるかもしれない。
+ことに注意しなくてはならないことは後ろのセクションで書くか。
 </span>
-<span class=a2>
+<span class=comment>
 For historical reason,
 If the hardware is full duplex,
 (FREAD | FWRITE) is specified for <i>flags</i>.
@@ -229,11 +212,6 @@ If the hardware is half duplex,
 FREAD for recording open.
 </span>
 <br><br>
-<span class=bad>
-ついでに言うとこの flags が何なのかここに書いてないため
-emuxki(4) とかが <tt>AUOPEN_{READ,WRITE}</tt> と勘違いしている
-(意図してなのか偶然なのか値が同じため実害はない)。
-</span>
 </dd>
 
 <dt class=p1>void close(void *hdl)
@@ -241,7 +219,7 @@ emuxki(4) とかが <tt>AUOPEN_{READ,WRITE}</tt> と勘違いしている
 <dd class=p1>
 	     optional, is called when the audio device is closed.
 </dd>
-<dd class=p1><span class=a2>
+<dd class=p1><span class=comment>
 	AUDIO2 では最終クローズ時に呼ばれる。
 </span></dd>
 
@@ -253,12 +231,9 @@ emuxki(4) とかが <tt>AUOPEN_{READ,WRITE}</tt> と勘違いしている
 	     remain in to be played that could be lost when close is called.
 	     Return 0 on success, otherwise an error code.
 </span></del></dd>
-<dd class=p1><span class=bad>
-NetBSD8 での呼び方は意味があるとは思えない。
-</span>
-</dd>
-<dd class=p1><span class=a2>
-AUDIO2 では呼び出していない。廃止する?
+<dd class=p1><span class=comment>
+NetBSD8 での呼び出し方には意味がない。
+AUDIO2 では廃止する。
 </span>
 </dd>
 
@@ -269,15 +244,13 @@ AUDIO2 では呼び出していない。廃止する?
 	     audio_encoding structure and return 0 or, if there is no encoding
 	     with the given number, return <tt>EINVAL</tt>.
 </span></del></dd>
-<dd class=p1><span class=bad>
-NetBSD8 では使われなくなっている。
-</span></dd>
-<dd class=p1><span class=a2>
-AUDIO2 では廃止する。代わりに query_format を新設したい。
+<dd class=p1><span class=comment>
+NetBSD8 では呼び出されていない。
+AUDIO2 では廃止する。
 </span></dd>
 
 <dt class=p1><span class=a2>int query_format(void *hdl, audio_format_query_t *afp)
-<dd class=p1><span class=a2>
+<dd class=p1><span class=comment>
 	ハードウェアがサポートしているフォーマットを列挙します。
 	afp->index に 0 以上の番号が指定されるので、
 	対応するフォーマットを afp->fmt に埋めて 0 を返します。
@@ -301,6 +274,7 @@ AUDIO2 では廃止する。代わりに query_format を新設したい。
 	N8 同様 set_params をひたすら呼び出す互換動作を行いますが、
 	たぶんこれは過渡期における一時的な救済措置です。
 </span>
+<p></p>
 <span class=comment>
 	query_encoding は周波数情報を返さないため、N8 は
 	MI 側が用意している周波数リストを使って片っ端から set_params を
@@ -393,7 +367,7 @@ AUDIO2 では廃止する。代わりに query_format を新設したい。
 	     parameters from play is copied into rec after the call to
 	     set_params.  Return 0 on success, otherwise an error code.
 </span></del></dd>
-<dd class=p1><span class=a2>
+<dd class=p1><span class=comment>
 AUDIO2 ではこれを廃止する。代わりに set_format を新設。
 </span></dd>
 
@@ -401,7 +375,7 @@ AUDIO2 ではこれを廃止する。代わりに set_format を新設。
 	int setmode,
 	const audio_params_t *play, const audio_params_t *rec,
 	audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
-<dd class=p1><span class=a2>
+<dd class=p1><span class=comment>
 	これはオーディオフォーマットをハードウェアに設定するため呼ばれます。
 	デバイスアタッチ時と
 	audiocfg(1) でミキサフォーマットを変更した場合に呼ばれます。
@@ -517,7 +491,7 @@ typedef struct {
 	     return a block size, possibly changed according to the needs of
 	     the hardware driver.
 <br>
-<span class=a2>
+<span class=comment>
 いくつかのドライバでは必要もないのに与えられた blocksize の変更を指示するものが
 ある。これらは実際 N8 までは問題はなかったが、AUDIO2 では問題となる。
 特に多いのが以下の2つの誤解(と思われるもの)。
@@ -634,12 +608,8 @@ typedef struct {
 	     device has <tt>AUDIO_PROP_FULLDUPLEX</tt> set.  Return 0 on success,
 	     otherwise an error code.
 </span></del></dd>
-<dd class=p1><span class=bad>
-N8 での呼び出し方はバグっている
-(現状これを実装しているドライバがないので影響が出ることはない)。
-</span></dd>
-<dd class=p1><span class=a2>
-AUDIO2 ではこれを廃止したい。
+<dd class=p1><span class=comment>
+AUDIO2 ではこれを廃止する。
 </span></dd>
 
 <dt class=p1>
@@ -697,7 +667,7 @@ AUDIO2 ではこれを廃止したい。
 	     which the hardware driver can then change if needed.  E.g., DMA
 	     on the ISA bus cannot exceed 65536 bytes.
 <br>
-<span class=a2>
+<span class=comment>
 これも round_blocksize 同様、
 無意味に指定値を変更するドライバは AUDIO2 で問題となるかもしれない。
 round_blocksize() のコメント参照。
@@ -716,10 +686,7 @@ round_blocksize() のコメント参照。
 	     prot.  Returns -1 on failure, or a machine dependent opaque value
 	     on success.
 </span></del></dd>
-<dd class=p1><span class=bad>
-NetBSD8 では使われなくなっている。
-</span></dd>
-<dd class=p1><span class=a2>
+<dd class=p1><span class=comment>
 AUDIO2 ではこれを廃止する?
 </span></dd>
 
@@ -730,7 +697,8 @@ AUDIO2 ではこれを廃止する?
 	     Should return the device properties; i.e., a combination of
 	     <tt>AUDIO_PROP_xxx</tt>.
 </dd>
-<dd class=p1><span class=a2>
+<dd class=p1><span class=comment>
+mmap はすでに underlying driver には依存していない。
 mappage 廃止に伴い、<tt>AUDIO_PROP_MMAP</tt> も返さなくてよいことにする?
 </dd>
 

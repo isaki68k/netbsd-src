@@ -124,11 +124,22 @@ hw_if-&gt;open は録音と再生を足して1本目のオープンでだけコ�
 ソース読む限り aria(4)と emuxki(4) が該当しそう。
 <br>2018/06 追記。dev/ic/ad1848.c family も該当しそう。
 </p>
+<p class="p">
+また逆に Half HW に対して open(hdl, FREAD | FWRITE) の呼び出しが失敗する
+ケースは少なくとも arch/evbarm/mini2440/audio_mini2440.c がある。
+Half HW に対しては必ず FREAD か FWRITE 一方ずつで呼び出さなければならない。
+</p>
 
 <li>hw_if-&gt;mappage がデッドコード (2018/03)
 <p class="p">
 mmap をソフトウェア側だけでの実装の変更したため、
 各 MD ドライバの mappage は呼び出されなくなっている。
+</p>
+
+<li>hw_if-&gt;drain はたぶん無意味 (2018/03)
+<p class="p">
+hw_if-&gt;drain の呼び出しはもはや意味がなく、
+ソフトウェアで判定することしか出来ないので、AUDIO2 では廃止する。
 </p>
 
 <li>オープンしただけで録音が開始される(ケースがある?) (2018/02)
