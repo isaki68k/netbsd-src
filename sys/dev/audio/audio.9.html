@@ -115,10 +115,8 @@ struct audio_hw_if {
 
      int     (*query_devinfo)(void *, mixer_devinfo_t *);
 
-     void    *(*allocm)(void *, int, size_t, struct malloc_type *, int);
-     <span class=comment>void    *(*allocm)(void *, int, size_t); // 正しいプロトタイプはこちら</span>
-     void    (*freem)(void *, void *, struct malloc_type *);
-     <span class=comment>void    (*freem)(void *, void *, size_t); // 正しいプロトタイプはこちら</span>
+     void    *(*allocm)(void *, int, size_t);
+     void    (*freem)(void *, void *, size_t);
      size_t  (*round_buffersize)(void *, int, size_t);
      <del class=a2><span class=plain>paddr_t (*mappage)(void *, void *, off_t, int);</span></del>
 
@@ -672,12 +670,8 @@ AUDIO2 ではこれを廃止したい。
 </dd>
 
 <dt class=p1>
-     void *allocm(void *hdl, int direction, size_t size, struct malloc_type
-	     *type, int flags)
+     void *allocm(void *hdl, int direction, size_t size);
 </dt>
-<dt class=p1 style="margin-top: 0"><span class=comment>
-     void *allocm(void *hdl, int direction, size_t size); // 正しいプロトタイプはこちら
-</span></dt>
 <dd class=p1>
 	     optional, is called to allocate the device buffers.  If not
 	     present malloc(9) is used instead (with the same arguments but
@@ -687,11 +681,8 @@ AUDIO2 ではこれを廃止したい。
 </dd>
 
 <dt class=p1>
-     void freem(void *hdl, void *addr, struct malloc_type *type)
+     void freem(void *hdl, void *addr, size_t size);
 </dt>
-<dt class=p1 style="margin-top: 0"><span class=comment>
-     void freem(void *hdl, void *addr, size_t size); // 正しいプロトタイプはこちら
-</span></dt>
 <dd class=p1>
 	     optional, is called to free memory allocated by alloc.  If not
 	     supplied free(9) is used.
