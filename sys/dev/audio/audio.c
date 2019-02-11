@@ -113,6 +113,8 @@
  *   Some operations release sc_lock in order to allocate memory, to wait
  *   for in-flight I/O to complete, to copy to/from user context, etc.
  *   sc_exlock provides a critical section even under the circumstance.
+ *   "+" in following list indicates the interfaces which necessary to be
+ *   protected by sc_exlock.
  *
  * List of hardware interface methods, and which locks are held when each
  * is called by this module:
@@ -150,12 +152,9 @@
  *	query_format		-	x	(Added in AUDIO2)
  *	set_format		-	x	(Added in AUDIO2)
  *
- * "+" indicates the interface which necessary to protect with exlock.
- *   Some hardware drivers may release sc_lock on these interfaces.
- *
- * *1 Note: Before 8.0, these have been called only at attach time and
- *   neither lock were necessary.  In AUDIO2, on the other hand, these
- *   might be also called after attach.
+ * *1 Note: Before 8.0, since these have been called only at attach time,
+ *   neither lock were necessary.  In AUDIO2, on the other hand, since
+ *   these may be also called after attach, the thread lock is required.
  *
  * In addition, there are two additional locks.
  *
