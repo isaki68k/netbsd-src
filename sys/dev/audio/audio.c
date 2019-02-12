@@ -5634,8 +5634,8 @@ audio_pintr(void *arg)
 
 	auring_take(&mixer->hwbuf, mixer->frames_per_block);
 
-	TRACE("HW_INT ++hwseq=%d cmplcnt=%d hwbuf=%d/%d/%d",
-	    (int)mixer->hwseq, (int)mixer->hw_complete_counter,
+	TRACE("HW_INT ++hwseq=%" PRIu64 " cmplcnt=%" PRIu64 " hwbuf=%d/%d/%d",
+	    mixer->hwseq, mixer->hw_complete_counter,
 	    mixer->hwbuf.head, mixer->hwbuf.used, mixer->hwbuf.capacity);
 
 #if !defined(_KERNEL)
@@ -5886,8 +5886,8 @@ audio_rintr(void *arg)
 
 	auring_push(&mixer->hwbuf, mixer->frames_per_block);
 
-	TRACE("HW_INT ++hwseq=%d cmplcnt=%d hwbuf=%d/%d/%d",
-	    (int)mixer->hwseq, (int)mixer->hw_complete_counter,
+	TRACE("HW_INT ++hwseq=%" PRIu64 " cmplcnt=%" PRIu64 " hwbuf=%d/%d/%d",
+	    mixer->hwseq, mixer->hw_complete_counter,
 	    mixer->hwbuf.head, mixer->hwbuf.used, mixer->hwbuf.capacity);
 
 	/* Distrubute recorded block */
