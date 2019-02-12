@@ -275,6 +275,18 @@ interference. If a full-duplex capable audio device is
 opened for both reading and writing it will start in
 half-duplex play mode; full-duplex mode has to be set
 explicitly.</span></p>
+<p class=comment style="margin-left:8%">
+「Full-duplex 対応オーディオデバイスは reading または writing の
+どちらでオープンされても、half-duplex 再生モードになる。
+full-duplex モードには明示的にセットする必要がある」
+のようだが、
+N7、N8 いずれも現在の実装での挙動は以下の通り。<br>
+open(O_RDONLY) は Full/Half-Duplex どちらの HW でも half-duplex 録音モード、<br>
+open(O_WRONLY) は Full/Half-Duplex どちらの HW でも half-duplex 再生モード、<br>
+open(O_RDWR) は Half-Duplex HW では half-duplex 再生モード、
+Full-Duplex HW では full-duplex 再生録音モード(?)になる。<br>
+これはこれで manpage を修正したほうがいい。
+</p>
 
 <p style="margin-left:8%; margin-top:1em"><span class=a2>
 On a full-duplex device,
@@ -292,20 +304,6 @@ opening with read mode will fail.
 If both playback and recording are requested on a half-duplex device,
 it will be treated as playback mode.</span></p>
 
-<p class=comment style="margin-left:8%">
-元の2文目
-「Full-duplex 対応オーディオデバイスは reading または writing の
-どちらでオープンされても、half-duplex 再生モードになる。
-full-duplex モードには明示的にセットする必要がある」
-とあるが、
-N7、N8 いずれも現在の実装での挙動は以下の通り。<br>
-open(O_RDONLY) は Full/Half-Duplex どちらの HW でも half-duplex 録音モード、<br>
-open(O_WRONLY) は Full/Half-Duplex どちらの HW でも half-duplex 再生モード、<br>
-open(O_RDWR) は Half-Duplex HW では half-duplex 再生モード、
-Full-Duplex HW では full-duplex 再生録音モード(?)になる。<br>
-これはこれで manpage を修正したほうがいい。
-</p>
-<br>
 <p class=comment style="margin-left:8%">
 AUDIO2 では<br>
 Full-Duplex HW については<br>
@@ -860,9 +858,9 @@ encoding with big endian byte order</p>
 AC3</p>
 
 <p style="margin-left:20%; margin-top: 1em"><span class=a2>
-underlying hardware のサポートフォーマットによらず、audio layer は
-以下のフォーマットでの再生と録音をサポートしている。
-エンコーディングは:
+Regardless of format supported by underlying driver,
+audio driver accepts following formats.
+Encoding/precision is one of:
 </span></p>
 <ul style="margin-left:20%">
 <li><span class=a2>AUDIO_ENCODING_ULAW, 8bit</span>
@@ -870,8 +868,7 @@ underlying hardware のサポートフォーマットによらず、audio layer 
 <li><span class=a2>AUDIO_ENCODING_ULINEAR_{LE,BE}, 8/16/32bit</span>
 </ul>
 <p style="margin-left:20%"><span class=a2>
-チャンネル数は 1..12、
-周波数は 1000Hz .. 192000Hz である。
+channels is 1..12 and frequency is 1000Hz..192000Hz.
 </span></p>
 
 
@@ -959,22 +956,28 @@ direction.</p>
 <p style="margin-left:12%;margin-top: 1em" valign="top"
 ><span class=a2>AUDIO_QUERYFORMAT (audio_format_query_t)</span></p>
 <p style="margin-left:20%;"><span class=a2>
-AUDIO2 新設 ioctl。
-ハードウェアがサポートしているフォーマットを取得する。
-<tt>AUDIO_GETENC</tt> と似ていて index を指定して audio_format を取得する。
-index を 0 から始めて ENOENT が返ってくるまで繰り返すと全フォーマットが取得
-できる。
-</p>
-<pre style="margin-left:20%"><span class=a2>typedef struct audio_format_query {
+This command enumerates formats supported by the hardware
+(or underlying driver).
+Similarly to <tt>AUDIO_GETENC</tt>,
+to query all the supported formats,
+start with an index field of 0 and
+continue with successive formats (1, 2, ...) until
+the command returns an error.</p>
+
+<pre style="margin-left:20%; margin-top: 1em">
+<span class=a2>typedef struct audio_format_query {
 	u_int	index;
 	struct audio_format fmt;
 } audio_format_query_t;
 </span></pre>
-<p class=a2 style="margin-left:20%;">AUDIO_GETENC で使う
+<p class=comment style="margin-left:20%">
+AUDIO2 新設 ioctl。
+</p>
+<p class=comment style="margin-left:20%;">AUDIO_GETENC で使う
 audio_encoding_t はチャンネル数および周波数情報が返せないため、
 新しい構造体と ioctl を用意した。
 </p>
-<p class=a2 style="margin-left:20%;">
+<p class=comment style="margin-left:20%;">
 今の所ハードウェアがサポートしているフォーマットをすべて返すが、
 このうちトラックミキサーが対応しているのは SLINEAR_NE:16bit
 (ビット数は AUDIO_INTERNAL_BITS コンパイル時定数による)
@@ -982,22 +985,18 @@ audio_encoding_t はチャンネル数および周波数情報が返せないた
 この辺どのレイヤでマスクするかという考察課題はある。
 フォーマットが全部見えると HW 特性を知るのに便利なような気もするし。
 </p>
-<p class=a2 style="margin-left:20%;">
+<p class=comment style="margin-left:20%;">
 デバイスが query_format インタフェースをサポートしていない場合は、
 ENODEV を返すにしてみたがどうか。
 </p>
 
 <p style="margin-left:12%;margin-top: 1em" valign="top"><span class=a2
 >AUDIO_GETFORMAT (audio_info_t)</span></p>
-<p style="margin-left:12%;margin-top: 1em" valign="top"><span class=a2>
-AUDIO_SETFORMAT (audio_info_t)</span></p>
 <p style="margin-left:20%;"><span class=a2>
-AUDIO2 新設 ioctl。
-現在のトラックミキサのフォーマットを取得あるいは設定する。
-いずれの場合も audio_info_t のうち以下のメンバだけを使用する。
-play、record のうち無効な側 (再生専用デバイスの録音側など)の
-メンバと、ここに記載のないメンバは
-GETFORMAT 時は -1 で埋められ、SETFORMAT 時は無視する。
+This command fetches the current track mixer's format.
+Only following members in audio_info_t are used.
+Members which is not listed here or belong in invalid direction
+are filled by -1.
 </span></p>
 <ul style="margin-left:20%; margin-top:0; margin-bottom:0;">
 <li><span class=a2>mode</span>
@@ -1011,22 +1010,41 @@ GETFORMAT 時は -1 で埋められ、SETFORMAT 時は無視する。
 <li><span class=a2>record.sample_rate</span>
 </ul>
 <p style="margin-left:20%;margin-top:0;"><span class=a2>
-<tt>AUDIO_SETFORMAT</tt> は再生および録音ディスクリプタが一つもない状態で
-なければならない。
+<i>mode</i> indicates which direction is valid.
 </span></p>
-<p class=a2 style="margin-left:20%">
+
+<p style="margin-left:12%;margin-top: 1em" valign="top"><span class=a2>
+AUDIO_SETFORMAT (audio_info_t)</span></p>
+<p style="margin-left:20%;"><span class=a2>
+This command sets the current track mixer's format.
+It will fail if there are any opened descriptors.
+So obviously, it must be issued on <tt>/dev/audioctl</tt>.
+Similarly to <tt>AUDIO_GETFORMAT</tt>,
+only above members in audio_info_t are used.
+Members which is not listed or belong in invalid direction
+are ignored.
+<i>encoding</i> always should be <tt>AUDIO_ENCODING_SLINEAR_NE</tt> and
+<i>precision</i> always should be <tt>AUDIO_INTERNAL_BITS</tt>
+(16 as default).
+<i>channels</i> and <i>frequency</i> can be choosen from
+the choices obtained by <tt>AUDIO_QUERYFORMAT</tt>.
+</span></p>
+
+<p class=comment style="margin-left:20%;">
+AUDIO2 新設 ioctl。
+</p>
+<p class=comment style="margin-left:20%">
 independent デバイスであっても、例えば再生中に録音ミキサのフォーマットだけを
 変えることは出来ない。
 これは MI-MD インタフェース(set_params) が録再同時に設定を変更するため。
 </p>
-
-<p class=a2 style="margin-left:20%">
+<p class=comment style="margin-left:20%">
 stride 情報はないが、ここは内部フォーマットであり、
 precision != stride となるフォーマットはサポートしないので問題はない。
 </p>
-<p class=a2 style="margin-left:20%">
-トラックミキサの性質上、encoding は常に <tt>AUDIO_ENCODING_SLINEAR_NE</tt>、
-precision は <tt>AUDIO_INTERNAL_BITS</tt>(コンパイル時定数)である。
+<p class=comment style="margin-left:20%">
+もしかして、これ発行できるの root だけ?
+</p>
 
 
 
