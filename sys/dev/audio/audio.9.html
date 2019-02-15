@@ -182,14 +182,14 @@ void audio_attach_mi(struct audio_hw_if *ahwp, void *hdl, device_t dev)
 </p>
 
 <p class=p1><span class=a2>
-	The phase they are called is classified into three:
-	Attach, Closed, Opened.
-	Attach はデバイスアタッチ中です。
-	audioattach 成功で Closed 状態に遷移します。
-	Closed は /dev/audio も /dev/sound も1つもオープンされていない時で、
-	hw_if-&gt;open 成功で Opened 状態に遷移します。
-	Opened は /dev/audio か /dev/sound が1つ以上オープンされている時で、
-	hw_if-&gt;close 成功で Closed 状態に遷移します。
+	The phase these functions are called is classified into three.
+	Attach phase, Closed phase and Opened phase.
+	Attach phase is during device attach and
+	it transits to the Closed phase when the attach succeeded.
+	Closed phase is when no sampling device is opened and
+	it transits to the Opened phase when open succeeded.
+	Opened phase is when any sampling device is opened and
+	it transits to the Closed phase when close succeeded.
 </p>
 
 <p class=p1>
@@ -237,8 +237,7 @@ void audio_attach_mi(struct audio_hw_if *ahwp, void *hdl, device_t dev)
 	     Return 0 on success, otherwise an error code.
 </span></dd>
 <dd class=p1><span class=comment>
-NetBSD8 での呼び出し方には意味がない。
-AUDIO2 では廃止する。
+The call on NetBSD8 makes no sense.
 </span>
 </dd>
 
@@ -250,37 +249,35 @@ AUDIO2 では廃止する。
 	     with the given number, return <tt>EINVAL</tt>.
 </span></dd>
 <dd class=p1><span class=comment>
-NetBSD8 では呼び出されていない。
-AUDIO2 では廃止する。
+It never called on NetBSD8.
 </span></dd>
 
 <dt class=p1><span class=a2>int query_format(void *hdl, audio_format_query_t *afp)
 <dd class=p1><span class=a2>
-	ハードウェアがサポートしているフォーマットを列挙します。
-	afp->index に 0 以上の番号が指定されるので、
-	対応するフォーマットを afp->fmt に埋めて 0 を返します。
-	与えられた index に対応するフォーマットがない場合は EINVAL を返します。
-	通常 index 0 から EINVAL が返ってくるまで順に呼び出しを行います。
-	<br><br>
-	列挙されたフォーマットには、
-	再生側と録音側(のハードウェアによって有効な側)に対し、
-	ハードウェアがこれを直接扱えない場合であっても
-	少なくとも <tt>AUDIO_ENCODING_SLINEAR_NE, AUDIO_INTERNAL_BITS</tt>
-	を持つエントリが含まれている必要があります。
-	もしハードウェアが <tt>AUDIO_ENCODING_SLINEAR_NE, AUDIO_INTERNAL_BITS</tt>
-	を直接扱えないのなら後述するように 
-	hardware driver がこれを変換する責任を持ちます
-	(see also set_format)。
+	is called to enumerate formats supported by the hardware
+	(or underlying driver).
+	It should fill the audio_format_t structure according to
+	given number afp->index.
+	If there is no format with given number, return <tt>EINVAL</tt>.
+	It is called at any time.
+<pre style="margin-left: -8%">
+		typedef struct audio_format_query {
+			u_int	index;
+			struct audio_format fmt;
+		} audio_format_query_t;
+</pre>
+	Enumerated formats must have at least one format which
+	encoding is <tt>AUDIO_ENCODING_SLINEAR_NE</tt> and precision is 16,
+	even if the hardware cannot handle the format directly.
+	If the hardware cannot handle such format,
+	the hardware driver itself must convert it to the hardware format.
+	See also set_format.
+	XXX For now, any other formats are optional but never used.
 	</span>
+	<p></p>
 	<span class=comment>
-	今の所、これ以外のフォーマットは任意です。
-	現在の実装では <tt>AUDIO_ENCODING_SLINEAR_NE, AUDIO_INTERNAL_BITS</tt>
-	以外のフォーマットが採用されることはありません。
-	audiocfg list の一覧には表示されます。
-	<br><br>
-	今は query_format が定義されてなければ
-	N8 同様 set_params をひたすら呼び出す互換動作を行いますが、
-	たぶんこれは過渡期における一時的な救済措置です。
+	SLINEAR_NE:16 以外のフォーマットは audiocfg list の一覧で見ること
+	だけはできます。
 	</span>
 	<p></p>
 	<span class=comment>
@@ -290,9 +287,14 @@ AUDIO2 では廃止する。
 	すでに audio_format_t の配列を持っている可能性が高いので、
 	運がよければそのまま使える。
 	</span>
+	<p></p>
+	<span class=comment>
+	今は query_format が定義されてなければ
+	N8 同様 set_params をひたすら呼び出す互換動作を行いますが、
+	たぶんこれは過渡期における一時的な救済措置です。
 	<br>
-	<span class=a2>It is called at any time.</span>
 </dd>
+</span></dd>
 
 <dt class=p1><span class=del>int set_params(void *hdl, int setmode, int usemode,
 	     audio_params_t *play, audio_params_t *rec,
@@ -620,7 +622,7 @@ typedef struct {
 	     otherwise an error code.
 </span></dd>
 <dd class=p1><span class=comment>
-AUDIO2 ではこれを廃止する。
+No drivers implement this function.
 </span></dd>
 
 <dt class=p1>
@@ -704,7 +706,7 @@ round_blocksize() のコメント参照。
 	     on success.
 </span></dd>
 <dd class=p1><span class=comment>
-AUDIO2 ではこれを廃止する?
+Now mmap is done by audio layer.
 </span></dd>
 
 <dt class=p1>
@@ -713,11 +715,12 @@ AUDIO2 ではこれを廃止する?
 <dd class=p1>
 	     Should return the device properties; i.e., a combination of
 	     <tt>AUDIO_PROP_xxx</tt>.
-		<span class=a2>It is called at any time.</span>
-</dd>
-<dd class=p1><span class=comment>
-mmap はすでに underlying driver には依存していない。
-mappage 廃止に伴い、<tt>AUDIO_PROP_MMAP</tt> も返さなくてよいことにする?
+		<span class=a2>
+		It is called at any time.
+		<br><br>
+		<tt>AUDIO_PROP_MMAP</tt> is obsoleted, so
+		new drivers should not return this property.
+		</span>
 </dd>
 
 <dt class=p1>
