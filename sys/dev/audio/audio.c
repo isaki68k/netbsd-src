@@ -5655,7 +5655,7 @@ audio_pintr(void *arg)
 	 * It is called when block N output is done.
 	 * Output immediately block N+1 created by the last interrupt.
 	 * And then create block N+2 for the next interrupt.
-	 * This method is robust for playback even on slower machines.
+	 * This method makes playback robust even on slower machines.
 	 * Instead the latency is increased by one block.
 	 */
 
