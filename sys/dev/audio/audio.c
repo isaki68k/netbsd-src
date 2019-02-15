@@ -5609,6 +5609,9 @@ audio_pmixer_output(struct audio_softc *sc)
 /*
  * This is an interrupt handler for playback.
  * It is called with sc_intr_lock held.
+ *
+ * It is usually called from hardware interrupt.  However, note that
+ * for some drivers (e.g. uaudio) it is called from software interrupt.
  */
 static void
 audio_pintr(void *arg)
@@ -5678,6 +5681,11 @@ audio_pintr(void *arg)
 	}
 #endif
 
+	/*
+	 * When this interrupt is the real hardware interrupt, disabling
+	 * preemption here is not necessary.  But some drivers (e.g. uaudio)
+	 * emulate it by software interrupt, so kpreempt_disable is necessary.
+	 */
 	kpreempt_disable();
 	softint_schedule(mixer->sih);
 	kpreempt_enable();
@@ -5861,6 +5869,9 @@ audio_rmixer_input(struct audio_softc *sc)
 /*
  * This is an interrupt handler for recording.
  * It is called with sc_intr_lock.
+ *
+ * It is usually called from hardware interrupt.  However, note that
+ * for some drivers (e.g. uaudio) it is called from software interrupt.
  */
 static void
 audio_rintr(void *arg)
@@ -5896,6 +5907,11 @@ audio_rintr(void *arg)
 	/* Request next block */
 	audio_rmixer_input(sc);
 
+	/*
+	 * When this interrupt is the real hardware interrupt, disabling
+	 * preemption here is not necessary.  But some drivers (e.g. uaudio)
+	 * emulate it by software interrupt, so kpreempt_disable is necessary.
+	 */
 	kpreempt_disable();
 	softint_schedule(mixer->sih);
 	kpreempt_enable();
