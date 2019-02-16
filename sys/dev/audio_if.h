@@ -184,10 +184,12 @@ typedef struct stream_filter_list {
 struct audio_hw_if {
 	int	(*open)(void *, int);	/* open hardware */
 	void	(*close)(void *);	/* close hardware */
+
+	/* Obsoleted in AUDIO2. */
 	int	(*drain)(void *);	/* Optional: drain buffers */
 
 	/* Encoding. */
-	/* XXX should we have separate in/out? */
+	/* Obsoleted in AUDIO2. */
 	int	(*query_encoding)(void *, audio_encoding_t *);
 
 	/* Set the audio encoding parameters (record and play).
@@ -196,6 +198,7 @@ struct audio_hw_if {
 	 * The values in the params struct may be changed (e.g. rounding
 	 * to the nearest sample rate.)
 	 */
+	/* Obsoleted in AUDIO2. */
 	int	(*set_params)(void *, int, int, audio_params_t *,
 		    audio_params_t *, stream_filter_list_t *,
 		    stream_filter_list_t *);
@@ -228,6 +231,8 @@ struct audio_hw_if {
 #define SPKR_OFF	0
 
 	int	(*getdev)(void *, struct audio_device *);
+
+	/* Obsoleted in AUDIO2. */
 	int	(*setfd)(void *, int);
 
 	/* Mixer (in/out ports) */
@@ -240,6 +245,8 @@ struct audio_hw_if {
 	void	*(*allocm)(void *, int, size_t);
 	void	(*freem)(void *, void *, size_t);
 	size_t	(*round_buffersize)(void *, int, size_t);
+
+	/* Obsoleted in AUDIO2. */
 	paddr_t	(*mappage)(void *, void *, off_t, int);
 
 	int	(*get_props)(void *); /* device properties */
