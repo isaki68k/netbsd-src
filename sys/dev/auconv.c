@@ -139,7 +139,6 @@ struct conv_table {
 	 alaw_to_linear##target},
 #endif
 #if !defined(AUDIO2)
-// 謎のフルクロス変換テーブルは不要
 /*
  * SLINEAR-16 or SLINEAR-24 should precede in a table because
  * aurateconv supports only SLINEAR.
@@ -320,7 +319,6 @@ static const struct conv_table alaw_table[] = {
 	 alaw_to_linear8, linear8_to_alaw},
 	{0, 0, 0, NULL, NULL}};
 #endif
-#endif // !AUDIO2
 #ifdef AUCONV_DEBUG
 static const char *encoding_dbg_names[] = {
 	"none", AudioEmulaw, AudioEalaw, "pcm16",
@@ -333,6 +331,7 @@ static const char *encoding_dbg_names[] = {
 	AudioEac3
 };
 #endif
+#endif /* !AUDIO2 */
 
 void
 stream_filter_set_fetcher(stream_filter_t *this, stream_fetcher_t *p)
@@ -1894,8 +1893,10 @@ DEFINE_FILTER(linear32_32_to_linear16)
  * @return The index of selected audio_format entry.  -1 if the device
  *	can not support the specified param.
  */
-// 旧 set_converter。全 MD を一度に書き換えるのは大変なので残してあるけど
-// ほぼ抜け殻。
+/*
+ * XXX AUDIO2
+ * It is only for backward compatibility and should be removed.
+ */
 int
 auconv_set_converter(const struct audio_format *formats, int nformats,
     int mode, const audio_params_t *param, int rateconv,
@@ -2039,7 +2040,7 @@ auconv_set_converter(const struct audio_format *formats, int nformats,
 	}
 
 #endif
-#endif // !AUDIO2
+#endif /* !AUDIO2 */
 	DPRINTF(("%s: LEAVE with -1 (bottom)\n", __func__));
 	return -1;
 }
@@ -2463,7 +2464,6 @@ auconv_add_encoding(int enc, int prec, int flags,
 	/* We don't have the specified one. */
 
 #if defined(AUDIO2)
-	// こっちでエントリを増やさなくなったので realloc 不要のはず
 	if (set->size >= *capacity) {
 		panic("set->size(%d) >= *capacity(%d)",
 		    set->size, *capacity);

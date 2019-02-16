@@ -177,7 +177,7 @@ typedef struct stream_filter_list {
 } stream_filter_list_t;
 
 #if defined(AUDIO2)
-// XXX そのうちマージすること
+/* XXX should be merged. */
 #include <dev/audio/aufilter.h>
 #endif
 
