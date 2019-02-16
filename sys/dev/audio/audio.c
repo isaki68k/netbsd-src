@@ -158,18 +158,19 @@
  *
  * In addition, there are two additional locks.
  *
- * - file->lock.  This is a variable protected by sc_lock.  This is one
- *   for each file.  If any thread context and software interrupt context
- *   who want to access the file structure, they must acquire this lock.
- *   It protects descriptor's consistency among multithreaded access.
- *   Since this lock uses sc_lock, don't acquire from hardware interrupt
- *   context.
+ * - file->lock.  This is a variable protected by sc_lock and is similar
+ *   to the "thread lock".  This is one for each file.  If any thread
+ *   context and software interrupt context who want to access the file
+ *   structure, they must acquire this lock before.  It protects
+ *   descriptor's consistency among multithreaded accesses.  Since this
+ *   lock uses sc_lock, don't acquire from hardware interrupt context.
  *
- * - track->lock.  This is an atomic variable.  This is one for each track.
- *   If any thread context (and software interrupt context) and hardware
- *   interrupt context who want to access some variables on this track,
- *   they must acquire this lock before.  It protects track's consistency
- *   between hardware interrupt context and others.
+ * - track->lock.  This is an atomic variable and is similar to the
+ *   "interrupt lock".  This is one for each track.  If any thread context
+ *   (and software interrupt context) and hardware interrupt context who
+ *   want to access some variables on this track, they must acquire this
+ *   lock before.  It protects track's consistency between hardware
+ *   interrupt context and others.
  */
 
 #include <sys/cdefs.h>
@@ -1555,7 +1556,7 @@ audio_track_lock_tryenter(audio_track_t *track)
 static inline void
 audio_track_lock_enter(audio_track_t *track)
 {
-	/* Don't sleep here because it is also used on softintr. */
+	/* Don't sleep here. */
 	while (audio_track_lock_tryenter(track) == false)
 		;
 }
