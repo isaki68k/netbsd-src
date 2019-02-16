@@ -479,22 +479,14 @@ for the current sampling mode.</p>
 <p class=comment style="margin-left:20%">
 ここでいうエラーカウンタはドロップ数 AUDIO_[PR]ERROR の値を指す。</p>
 
-<p style="margin-left:12%;margin-top: 1em" valign="top"><span class=a2
->AUDIO_PERROR (int)</span></p>
-
-<p style="margin-left:20%"><span class=a2>This command fetches the count
-of dropped output bytes into its integer argument. There is
-no information regarding when in the sample stream they were
-dropped.</span></p>
-<p class=comment style="margin-left:20%">
-この ioctl は以前から実装されているが、
-manpage には AUDIO_RERROR だけあって AUDIO_PERROR が抜けている。</p>
-
+<p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_PERROR
+(int)</p>
 <p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_RERROR
 (int)</p>
 
 <p style="margin-left:20%;">This command fetches the count
-of dropped input <span class=del>samples</span> <span class=a2>bytes</span>
+of dropped output (input)
+<span class=del>samples</span> <span class=a2>bytes</span>
 into its integer argument. There is
 no information regarding when in the sample stream they were
 dropped.</p>
@@ -563,10 +555,6 @@ command returns an error.</p>
 setting of the full duplex mode.</span></p>
 <p style="margin-left:20%;"><span class=a2>The command is obsoleted.</span></p>
 
-<p class=comment style="margin-left:20%">
-元の manpage はなぜか AUDIO_GETFD、AUDIO_GETENC、AUDIO_SETFD の順に並んでいて
-読みにくいので、AUDIO_GETFD を AUDIO_SETFD の近くに移動した。
-</p>
 <p class=comment style="margin-left:20%">
 このコマンドは HW (とミキサー)が full duplex かどうかを返す。
 このディスクリプタが full duplex かどうかではない。
