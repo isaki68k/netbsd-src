@@ -140,8 +140,8 @@
  *	set_port 		-	x +
  *	get_port 		-	x +
  *	query_devinfo 		-	x
- *	allocm 			-	x	(*1)
- *	freem 			-	x	(*1)
+ *	allocm 			-	- +	(*1)
+ *	freem 			-	- +	(*1)
  *	round_buffersize 	-	x
  *	mappage 		-	-	(Not used in AUDIO2)
  *	get_props 		-	x
@@ -5099,6 +5099,9 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 	}
 	mixer->hwbuf.capacity = capacity;
 
+	/*
+	 * XXX need to release sc_lock for compatibility?
+	 */
 	if (sc->hw_if->allocm) {
 		mixer->hwbuf.mem = sc->hw_if->allocm(sc->hw_hdl, mode, bufsize);
 		if (mixer->hwbuf.mem == NULL) {
