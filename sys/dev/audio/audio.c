@@ -2055,8 +2055,8 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 		af->rtrack = audio_track_create(sc, sc->sc_rmixer);
 
 	/*
-	 * Multiplex device: /dev/audio (MU-Law) and /dev/sound (linear)
-	 * The /dev/audio is always (re)set to 8-bit MU-Law mono
+	 * Multiplex device: /dev/audio (mu-law) and /dev/sound (linear)
+	 * The /dev/audio is always (re)set to 8-bit mu-law mono
 	 * For the other devices, you get what they were last set to.
 	 */
 	AUDIO_INITINFO(&ai);

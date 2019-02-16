@@ -110,7 +110,7 @@ static const uint8_t slinear8_to_alaw[256] = {
 
 /*
  * audio_alaw_to_internal:
- *	This filter performs conversion from alaw to internal format.
+ *	This filter performs conversion from A-law to internal format.
  */
 void
 audio_alaw_to_internal(audio_filter_arg_t *arg)
@@ -141,7 +141,7 @@ audio_alaw_to_internal(audio_filter_arg_t *arg)
 
 /*
  * audio_internal_to_alaw:
- *	This filter performs conversion from internal format to alaw.
+ *	This filter performs conversion from internal format to A-law.
  */
 void
 audio_internal_to_alaw(audio_filter_arg_t *arg)
