@@ -42,22 +42,24 @@
  *      use hz value from param.c
  */
 
-// spkr(9) 仕様。
-//
-// void
-// spkr_attach(device_t self, void (*tone)(device_t, u_int, u_int))
-//	spkr をアタッチします。tone を必ず指定します。
-//	tone の仕様は次の通りです。
-//
-// void
-// tone(device_t self, u_int pitch, u_int tick)
-//	指定のパラメータでビープ音を出力します。
-//	pitch は音高 [Hz]、tick は時間 [tick] です。
-//	時間が経過するまで待ち、出力を停止して戻ります。
-//	pitch == 0 なら出力を停止して (tick に関わらず) すぐに戻ります。
-//	tick == 0 の場合も出力を停止してすぐに戻ります。
-//	従って休符代わりに呼び出すことはできません。
-//
+/*
+ * New spkr(9).
+ *
+ * void
+ * spkr_attach(device_t self, void (*tone)(device_t, u_int, u_int))
+ *	attaches spkr.  tone must be specified.  tone's specification is
+ *	as follows.
+ *
+ * void
+ * tone(device_t self, u_int pitch, u_int tick)
+ *	plays a beep with specified parameters.
+ *	'pitch' specifies a pitch of beep in Hz.  'tick' specifies a period
+ *	of beep in tick(9).  The function waits to finish to output beep and
+ *	stop it.
+ *	If pitch == 0, it stops any sound and returns immediately.
+ *	If tick == 0, it also returns immediately.  Therefore you cannot
+ *	use this as a rest.
+ */
 
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD: spkr.c,v 1.16 2018/09/03 16:29:30 riastradh Exp $");
@@ -172,7 +174,7 @@ playinit(struct spkr_softc *sc)
 }
 
 #if defined(AUDIO2)
-// XXX spkr_pcppi.c から持ってきたけど、PZERO は後方互換性用。
+/* XXX It is taken from spkr_pcppi.c.  PZERO is for backward compatibility. */
 #define SPKRPRI (PZERO - 1)
 static void
 rest(struct spkr_softc *sc, int ticks)
@@ -188,14 +190,14 @@ rest(struct spkr_softc *sc, int ticks)
 }
 #endif
 
-/* play tone of proper duration for current rhythm signature */
-// 指定の音を出力する。
-// pitch/note は音高。O0 の C を 0、C# を 1、... とする番号のこと
-// (正確には pitch(周波数) ではなく note とか言ったほうがいいので変えた)。
-// -1 で休符。
-// val は音長。L で指定するあれ。
-// sustain は音を1/2伸ばす後続ドットの数。
 #if defined(AUDIO2)
+/*
+ * Play tone of proper duration for current rhythm signature.
+ * note indicates "O0C" = 0, "O0C#" = 1, "O0D" = 2, ... , and
+ * -1 indiacates a rest.
+ * val indicates a length, "L4" = 4, "L8" = 8.
+ * sustain indicates a subsequent dot that lengthen the sound a half.
+ */
 static void
 playtone(struct spkr_softc *sc, int note, int val, int sustain)
 {
@@ -211,7 +213,7 @@ playtone(struct spkr_softc *sc, int note, int val, int sustain)
 		val *= DENOM_MULT;
 	}
 
-	// (元の)音の全長 [tick]
+	/* Original total length [tick] */
 	total = whole / val;
 
 	if (note == -1) {
@@ -219,10 +221,11 @@ playtone(struct spkr_softc *sc, int note, int val, int sustain)
 		return;
 	}
 
-	// そのうち 1/8(NORMAL) or 3/8(STACCATO) が休止時間 [tick]
-	// こっちを切り捨てで計算しておきたい
+	/*
+	 * Rest 1/8 (if NORMAL) or 3/8 (if STACCATO) in tick.
+	 * silence should be rounded down.
+	 */
 	silence = total * (FILLTIME - sc->sc_fill) / FILLTIME;
-	// 発音時間を休止時間分減らす
 	sound = total - silence;
 
 #ifdef SPKRDEBUG
@@ -574,8 +577,11 @@ spkrclose(dev_t dev, int flags, int mode, struct lwp *l)
 	return 0;
 }
 
-// tp で指定された音を出力する。
-// tp->frequency が周波数 (0で休符)、tp->duration が長さ (単位は tick)。
+/*
+ * Play tone specified by tp.
+ * tp->frequency is a frequency (0 means a rest).  tp->duration is a
+ * length in tick(9).
+ */
 static void
 playonetone(struct spkr_softc *sc, tone_t *tp)
 {
