@@ -150,18 +150,9 @@ The high level audio driver attaches to the low level driver when the
 latter calls audio_attach_mi.  This call should be</p>
 
 <pre class=p1 style="margin-bottom: 0">
-void
-audio_attach_mi(ahwp, hdl, dev)
-    struct audio_hw_if *ahwp;
-    void *hdl;
-    struct device *dev;
+device_t
+audio_attach_mi(const struct audio_hw_if *ahwp, void *hdl, device_t dev);
 </pre>
-<span class=comment style="margin-left: 12%; margin-top: 0">
-↑いつの書式だよ。<Br>
-<tt style="margin-left: 12%">
-void audio_attach_mi(struct audio_hw_if *ahwp, void *hdl, device_t dev)
-</tt>
-</span>
 
 <p class=p1>
      The <tt>audio_hw_if</tt> struct is as shown above.
@@ -194,8 +185,7 @@ void audio_attach_mi(struct audio_hw_if *ahwp, void *hdl, device_t dev)
 
 <p class=p1>
      The fields of <tt>audio_hw_if</tt> are described in some more detail below.	 Some
-     fields are optional and can be set to <span class=n7>0</span>
-	<span class=comment>NULL</span> if not needed.
+     fields are optional and can be set to NULL if not needed.
 </p>
 
 <dl>
@@ -663,7 +653,7 @@ No drivers implement this function.
 	     present malloc(9) is used instead (with the same arguments but
 	     the first two).  The reason for using a device dependent routine
 	     instead of malloc(9) is that some buses need special allocation
-	     to do DMA.	 Returns the address of the buffer, or 0 on failure.
+	     to do DMA.	 Returns the address of the buffer, or NULL on failure.
 		<span class=a2>It is called at Attached or Closed phase.</span>
 </dd>
 
@@ -671,7 +661,7 @@ No drivers implement this function.
      void freem(void *hdl, void *addr, size_t size);
 </dt>
 <dd class=p1>
-	     optional, is called to free memory allocated by alloc.  If not
+	     optional, is called to free memory allocated by allocm.  If not
 	     supplied free(9) is used.
 		<span class=a2>It is called at Attached or Closed phase.</span>
 </dd>
