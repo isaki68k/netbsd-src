@@ -48,7 +48,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
  * About mulaw32 format.
  *
  * The format which I call ``mulaw32'' is only used in dev/tc/bba.c .
- * It is 8bit mulaw but 16bit left-shifted and its containter is 32bit.
+ * It is 8bit mu-law but 16bit left-shifted and its containter is 32bit.
  * Not mu-law calculated in 32bit.
  *
  * When MULAW32 is not defined (it's default), this file outputs
@@ -160,7 +160,7 @@ static const uint8_t slinear8_to_mulaw[256] = {
 
 /*
  * audio_mulaw_to_internal:
- *	This filter performs conversion from mulaw to internal format.
+ *	This filter performs conversion from mu-law to internal format.
  *
  * audio_mulaw32_to_internal:
  *	This filter performs conversion from mulaw32 used only in tc/bba.c
@@ -211,7 +211,7 @@ audio_mulaw32_to_internal(audio_filter_arg_t *arg)
 
 /*
  * audio_internal_to_mulaw:
- *	This filter performs conversion from internal format to mulaw.
+ *	This filter performs conversion from internal format to mu-law.
  *
  * audio_internal_to_mulaw32:
  *	This filter performs conversion from internal format to mulaw32
@@ -285,7 +285,7 @@ audio_internal_to_mulaw32(audio_filter_arg_t *arg)
 #endif
 
 #if defined(MULAW32)
-		/* 8bit mulaw in 32bit container used only in tc/bba.c */
+		/* 8bit mu-law in 32bit container used only in tc/bba.c */
 		*d++ = m << 16;
 #else
 		*d++ = m;
