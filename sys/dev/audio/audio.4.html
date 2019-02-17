@@ -664,7 +664,12 @@ the audio_offset structure.</p>
 (audio_info_t)</p>
 
 <p style="margin-left:20%;">Get or set audio information as
-encoded in the audio_info structure.</p>
+encoded in the audio_info structure.
+<span class=a2>
+For historical reasons, the audio_info structure has three
+different layer's parameters: track, track mixer and hardware rich mixer.
+</span>
+</p>
 <p class=comment style="margin-left:20%">
 設定項目が多いので設定中にエラーが起きると本来は全部ロールバックしないと
 いけないような気がするのと最初期の頃(20年前)のソースは一応その辺も
@@ -683,15 +688,14 @@ encoded in the audio_info structure.</p>
 <pre style="margin-left:20%">typedef struct audio_info {
 	struct audio_prinfo play;	/* info for play (output) side */
 	struct audio_prinfo record;	/* info for record (input) side */
-	u_int	monitor_gain;		/* input to output mix */
+	u_int	monitor_gain;		/* input to output mix <span class=a2>[HWmixer]</span> */
 
 	/* BSD extensions */
-	u_int	blocksize;		/* H/W read/write block size */
-	u_int	hiwat;			/* output high water mark */
-	u_int	lowat;			/* output low water mark */
+	u_int	blocksize;		/* <span class=del>H/W</span> read/write block size <span class=a2>[track]</span> */
+	u_int	hiwat;			/* output high water mark <span class=a2>[track]</span> */
+	u_int	lowat;			/* output low water mark <span class=a2>[track]</span> */
 	u_int	_ispare1;
-<span class=del>	u_int	mode;			/* current device mode */</span>
-<span class=a2>	u_int	mode;			/* current operation mode */</span>
+	u_int	mode;			/* current <span class=del>device</span> <span class=a2>operation</span> mode <span class=a2>[track]</span> */
 #define AUMODE_PLAY	0x01
 #define AUMODE_RECORD	0x02
 <span class=del>#define AUMODE_PLAY_ALL	0x04		/* do not do real-time correction */</span>
@@ -786,25 +790,25 @@ AUDIO2 では録音トラックと再生トラックの blocksize は同じと�
 
 <p style="margin-left:20%; margin-top: 1em">
 <pre style="margin-left:20%">struct audio_prinfo {
-	u_int	sample_rate;	/* sample rate in samples/s */
-	u_int	channels;	/* number of channels, usually 1 or 2 */
-	u_int	precision;	/* number of bits/sample */
-	u_int	encoding;	/* data encoding (AUDIO_ENCODING_* below) */
-	u_int	gain;		/* volume level */
-	u_int	port;		/* selected I/O port */
-	u_long	seek;		/* BSD extension */
-	u_int	avail_ports;	/* available I/O ports */
-	u_int	buffer_size;	/* total size audio buffer */
+	u_int	sample_rate;	/* sample rate in samples/s <span class=a2>[track]</span> */
+	u_int	channels;	/* number of channels, usually 1 or 2 <span class=a2>[track]</span> */
+	u_int	precision;	/* number of bits/sample <span class=a2>[track]</span> */
+	u_int	encoding;	/* data encoding (AUDIO_ENCODING_* below) <span class=a2>[track]</span> */
+	u_int	gain;		/* volume level <span class=a2>[HWmixer]</span> */
+	u_int	port;		/* selected I/O port <span class=a2>[HWmixer]</span> */
+	u_long	seek;		/* BSD extension <span class=a2>[track]</span> */
+	u_int	avail_ports;	/* available I/O ports <span class=a2>[HWmixer]</span> */
+	u_int	buffer_size;	/* total size audio buffer <span class=a2>[track]</span> */
 	u_int	_ispare[1];	/* Current state of device: */
-	u_int	samples;	/* number of samples */
-	u_int	eof;		/* End Of File (zero-size writes) counter */
-	u_char	pause;		/* non-zero if paused, zero to resume */
-	u_char	error;		/* non-zero if underflow/overflow occurred */
-	u_char	waiting;	/* non-zero if another process hangs in open */
-	u_char	balance;	/* stereo channel balance */
+	u_int	samples;	/* number of samples <span class=a2>[track]</span> */
+	u_int	eof;		/* End Of File (zero-size writes) counter <span class=a2>[track]</span> */
+	u_char	pause;		/* non-zero if paused, zero to resume <span class=a2>[track]</span> */
+	u_char	error;		/* non-zero if underflow/overflow occurred <span class=a2>[track]</span> */
+	u_char	waiting;	/* non-zero if another process hangs in open <span class=a2>[track]</span> */
+	u_char	balance;	/* stereo channel balance <span class=a2>[HWmixer]</span> */
 	u_char	cspare[2];
-	u_char	open;		/* non-zero if currently open */
-	u_char	active;		/* non-zero if I/O is currently active */
+	u_char	open;		/* non-zero if currently open <span class=a2>[trackmixer]</span> */
+	u_char	active;		/* non-zero if I/O is currently active <span class=a2>[trackmixer]</span> */
 };</pre>
 </p>
 
