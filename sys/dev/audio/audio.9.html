@@ -455,15 +455,15 @@ typedef struct {
 	<i>count</i> represents the number of frames to process on this call.
 	<i>src</i> and <i>dst</i> are guaranteed to be able to consecutively access
 	number of frames specified by <i>count</i>.
-	codec must fill entire <i>dst</i>.
-	It is not able to abort the conversion halfway and there is no
-	error reporting mechanism.
-	For example, let count = 5, srcfmt is { precision = 16, channels = 3 },
+	<i>codec</i> must fill entire <i>dst</i>.
+	For example, let count = 100, srcfmt is { precision = 16, channels = 3 },
 	dstfmt is { precision = 8, channels = 3 } ,
 	in this case,
-	src buffer's length = 2(bytes) * 3(channels) * 5(frames) = 30 bytes,
-	The length to be written to dst is 1(byte) * 3(channels) * 5(frames)
-	= 15bytes).
+	src buffer's length = 2(bytes) * 3(channels) * 100(frames) = 600 bytes,
+	The length to be written to dst is 1(byte) * 3(channels) * 100(frames)
+	= 300 bytes.
+	<i>codec</i> cannot abort the conversion halfway and there is no
+	error reporting mechanism.
 	<i>context</i> is a opaque pointer that can be used by codec if necessary.
 <br><br>
 	     If the device does not have the <tt>AUDIO_PROP_INDEPENDENT</tt> property
