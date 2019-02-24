@@ -1,4 +1,4 @@
-/*	$NetBSD: nvmm_x86.h,v 1.3 2019/01/06 16:10:51 maxv Exp $	*/
+/*	$NetBSD: nvmm_x86.h,v 1.6 2019/02/23 12:27:00 maxv Exp $	*/
 
 /*
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -47,21 +47,21 @@
 
 /* General Purpose Registers. */
 #define NVMM_X64_GPR_RAX		0
-#define NVMM_X64_GPR_RBX		1
-#define NVMM_X64_GPR_RCX		2
-#define NVMM_X64_GPR_RDX		3
-#define NVMM_X64_GPR_R8			4
-#define NVMM_X64_GPR_R9			5
-#define NVMM_X64_GPR_R10		6
-#define NVMM_X64_GPR_R11		7
-#define NVMM_X64_GPR_R12		8
-#define NVMM_X64_GPR_R13		9
-#define NVMM_X64_GPR_R14		10
-#define NVMM_X64_GPR_R15		11
-#define NVMM_X64_GPR_RDI		12
-#define NVMM_X64_GPR_RSI		13
-#define NVMM_X64_GPR_RBP		14
-#define NVMM_X64_GPR_RSP		15
+#define NVMM_X64_GPR_RCX		1
+#define NVMM_X64_GPR_RDX		2
+#define NVMM_X64_GPR_RBX		3
+#define NVMM_X64_GPR_RSP		4
+#define NVMM_X64_GPR_RBP		5
+#define NVMM_X64_GPR_RSI		6
+#define NVMM_X64_GPR_RDI		7
+#define NVMM_X64_GPR_R8			8
+#define NVMM_X64_GPR_R9			9
+#define NVMM_X64_GPR_R10		10
+#define NVMM_X64_GPR_R11		11
+#define NVMM_X64_GPR_R12		12
+#define NVMM_X64_GPR_R13		13
+#define NVMM_X64_GPR_R14		14
+#define NVMM_X64_GPR_R15		15
 #define NVMM_X64_GPR_RIP		16
 #define NVMM_X64_GPR_RFLAGS		17
 #define NVMM_X64_NGPR			18
@@ -98,11 +98,10 @@
 #define NVMM_X64_NMSR			10
 
 /* Misc. */
-#define NVMM_X64_MISC_CPL		0
-#define NVMM_X64_MISC_INT_SHADOW	1
-#define NVMM_X64_MISC_INT_WINDOW_EXIT	2
-#define NVMM_X64_MISC_NMI_WINDOW_EXIT	3
-#define NVMM_X64_NMISC			4
+#define NVMM_X64_MISC_INT_SHADOW	0
+#define NVMM_X64_MISC_INT_WINDOW_EXIT	1
+#define NVMM_X64_MISC_NMI_WINDOW_EXIT	2
+#define NVMM_X64_NMISC			3
 
 #ifndef ASM_NVMM
 
@@ -173,6 +172,10 @@ struct nvmm_x86_conf_cpuid {
 		uint32_t edx;
 	} del;
 };
+
+#ifdef _KERNEL
+extern const struct nvmm_x64_state nvmm_x86_reset_state;
+#endif
 
 #endif /* ASM_NVMM */
 

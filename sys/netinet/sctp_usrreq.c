@@ -1,5 +1,5 @@
 /*	$KAME: sctp_usrreq.c,v 1.50 2005/06/16 20:45:29 jinmei Exp $	*/
-/*	$NetBSD: sctp_usrreq.c,v 1.14 2019/01/28 12:53:01 martin Exp $	*/
+/*	$NetBSD: sctp_usrreq.c,v 1.16 2019/02/15 14:13:32 rjs Exp $	*/
 
 /*
  * Copyright (c) 2001, 2002, 2003, 2004 Cisco Systems, Inc.
@@ -33,7 +33,7 @@
  * SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sctp_usrreq.c,v 1.14 2019/01/28 12:53:01 martin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sctp_usrreq.c,v 1.16 2019/02/15 14:13:32 rjs Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -2290,6 +2290,7 @@ sctp_optsget(struct socket *so, struct sockopt *sopt)
 		SCTP_TCB_UNLOCK(stcb);
 		sopt->sopt_size = sizeof(*s_info);
 	}
+	break;
 	case SCTP_INITMSG:
 	{
 		struct sctp_initmsg *sinit;
