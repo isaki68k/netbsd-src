@@ -774,8 +774,8 @@ fd*	at fdc? drive ?			# the drives themselves
 
 # PCI network interfaces
 #age*	at pci? dev ? function ?	# Attansic/Atheros L1 Gigabit Ethernet
-#alc*	at pci? dev ? function ?	# Attansic/Atheros L1C/L2C Ethernet
-ale*	at pci? dev ? function ?	# Attansic/Atheros L1E Ethernet
+alc*	at pci? dev ? function ?	# Attansic/Atheros L1C/L2C Ethernet
+#ale*	at pci? dev ? function ?	# Attansic/Atheros L1E Ethernet
 #an*	at pci? dev ? function ?	# Aironet PC4500/PC4800 (802.11)
 #ath*	at pci? dev ? function ?	# Atheros 5210/5211/5212 802.11
 #athn*	at pci? dev ? function ?	# Atheros AR9k (802.11a/g/n)
@@ -873,7 +873,7 @@ wm*	at pci? dev ? function ?	# Intel 82543/82544 gigabit
 # MII/PHY support
 #acphy*	at mii? phy ?			# DAltima AC101 and AMD Am79c874 PHYs
 #amhphy* at mii? phy ?			# AMD 79c901 Ethernet PHYs
-#atphy*	at mii?	phy ?			# Attansic/Atheros PHYs
+atphy*	at mii?	phy ?			# Attansic/Atheros PHYs
 #bmtphy* at mii? phy ?			# Broadcom BCM5201 and BCM5202 PHYs
 #brgphy* at mii? phy ?			# Broadcom BCM5400-family PHYs
 #ciphy*	at mii? phy ?			# Cicada CS8201 Gig-E PHYs
