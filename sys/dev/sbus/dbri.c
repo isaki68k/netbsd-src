@@ -202,8 +202,7 @@ struct audio_hw_if dbri_hw_if = {
 CFATTACH_DECL_NEW(dbri, sizeof(struct dbri_softc),
     dbri_match_sbus, dbri_attach_sbus, NULL, NULL);
 
-#define DBRI_NFORMATS		4
-static const struct audio_format dbri_formats[DBRI_NFORMATS] = {
+static const struct audio_format dbri_formats[] = {
 	{NULL, AUMODE_PLAY | AUMODE_RECORD, AUDIO_ENCODING_SLINEAR_BE, 16, 16,
 	 2, AUFMT_STEREO, 8, {8000, 9600, 11025, 16000, 22050, 32000, 44100, 
 	 48000}},
@@ -226,6 +225,7 @@ static const struct audio_format dbri_formats[DBRI_NFORMATS] = {
 	 1, AUFMT_MONAURAL, 8, {8000, 9600, 11025, 16000, 22050, 32000, 44100, 
 	 48000}},
 };
+#define DBRI_NFORMATS	__arraycount(dbri_formats)
 
 enum {
 	DBRI_OUTPUT_CLASS,
