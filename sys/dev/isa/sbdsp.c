@@ -647,8 +647,8 @@ sbdsp_set_params(
 					hw.encoding = AUDIO_ENCODING_SLINEAR_LE;
 					swcode = swap_bytes;
 				}
-				/* FALLTHROUGH */
 #endif
+				/* FALLTHROUGH */
 			case AUDIO_ENCODING_SLINEAR:
 			case AUDIO_ENCODING_SLINEAR_LE:
 				bmode = SB_BMODE_SIGNED;
