@@ -2916,6 +2916,7 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 			mutex_enter(sc->sc_lock);
 			error = sc->hw_if->query_format(sc->hw_hdl, query);
 			mutex_exit(sc->sc_lock);
+			query->fmt.driver_data = NULL;
 		} else {
 			error = ENODEV;
 		}
