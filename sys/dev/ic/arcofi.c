@@ -266,9 +266,10 @@ static const struct audio_hw_if arcofi_hw_if = {
 	.get_locks	  = arcofi_get_locks,
 };
 
-#define ARCOFI_FORMAT(enc, prec) \
+#define ARCOFI_FORMAT(prio, enc, prec) \
 	{ \
 		.mode		= AUMODE_PLAY | AUMODE_RECORD, \
+		.priority	= (prio), \
 		.encoding	= (enc), \
 		.validbits	= (prec), \
 		.precision	= (prec), \
@@ -278,34 +279,26 @@ static const struct audio_hw_if arcofi_hw_if = {
 		.frequency	= { 8000 }, \
 	}
 static const struct audio_format arcofi_formats[] = {
-#if defined(AUDIO2)
-	// HW がサポートしているのは 8bit u-Law/A-Law と 16bit slinear_be である。
+	// HW がサポートしているのは 8bit u-Law/A-Law と slinear_be:16 である。
 	// ただし HW のキューは 128バイト固定なので、16bit エンコードを使うと
 	// キューが空になるまでのタイムリミットが半分になることを意味する。
 	// そのため時間制約に余裕のある 8bit u-Law を使いたい。
 	// また、16bit 値の1バイト目だけ送りこんだところでキューが空になると
 	// 何がおきるか分からないというかそれが爆音の原因かも知れないのも
 	// あるのでその点でも 8bit エンコーディングのほうが望ましいと思われる。
-	//
-	// なお、HW エンコードに u-Law を使う場合でもここが u-Law になるわけでは
-	// ないことに注意。ここで指定するフォーマットは MI 層との取り決めにより
-	// 必ず slinear_ne/16 であり、u-Law への変換は set_format で指定する。
-	ARCOFI_FORMAT(AUDIO_ENCODING_SLINEAR_BE, 16),
-#else
 	/*
 	 * 8-bit encodings:
 	 *  - u-Law and A-Law are native
 	 *  - linear are converted to 16-bit by auconv
 	 */
-	ARCOFI_FORMAT(AUDIO_ENCODING_ULAW,        8),
-	ARCOFI_FORMAT(AUDIO_ENCODING_ALAW,        8),
+	ARCOFI_FORMAT(1, AUDIO_ENCODING_ULAW,        8),
+	ARCOFI_FORMAT(0, AUDIO_ENCODING_ALAW,        8),
 	/*
 	 * 16-bit encodings:
 	 *  - slinear big-endian is native
 	 *  - unsigned or little-endian are converted by auconv
 	 */
-	ARCOFI_FORMAT(AUDIO_ENCODING_SLINEAR_BE, 16),
-#endif
+	ARCOFI_FORMAT(0, AUDIO_ENCODING_SLINEAR_BE, 16),
 };
 #define ARCOFI_NFORMATS  __arraycount(arcofi_formats)
 
