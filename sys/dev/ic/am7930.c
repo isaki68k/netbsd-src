@@ -146,20 +146,15 @@ extern stream_filter_factory_t null_filter;
 #endif
 
 #if defined(AUDIO2)
-#define AM7930_FORMAT(enc, prec) \
-	{ \
-		.mode		= AUMODE_PLAY | AUMODE_RECORD, \
-		.encoding	= (enc), \
-		.validbits	= (prec), \
-		.precision	= (prec), \
-		.channels	= 1, \
-		.channel_mask	= AUFMT_MONAURAL, \
-		.frequency_type	= 1, \
-		.frequency	= { 8000 }, \
-	}
-static const struct audio_format am7930_formats[] = {
-	AM7390_FORMAT(AUDIO_ENCODING_SLINEAR_NE, 16),
-	AM7390_FORMAT(AUDIO_ENCODING_ULAW,        8),
+static const struct audio_format am7930_format = {
+	.mode		= AUMODE_PLAY | AUMODE_RECORD,
+	.encoding	= AUDIO_ENCODING_ULAW,
+	.validbits	= 8,
+	.precision	= 8,
+	.channels	= 1,
+	.channel_mask	= AUFMT_MONAURAL,
+	.frequency_type	= 1,
+	.frequency	= { 8000 },
 };
 #endif
 
@@ -247,8 +242,7 @@ int
 am7930_query_format(void *addr, audio_format_query_t *afp)
 {
 
-	return audio_query_format(am7930_formats, __arraycount(am7930_formats),
-	    afp);
+	return audio_query_format(&am7930_format, 1, afp);
 }
 
 // tc/bba.c はこれではないフィルタを必要とするため、
