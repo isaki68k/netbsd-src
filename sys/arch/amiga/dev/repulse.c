@@ -351,6 +351,12 @@ repulse_attach(device_t parent, device_t self, void *aux)
 	}
 #endif
 
+#if defined(AUDIO2)
+	/* AUDIO2 uses hardware format so these can be fixed. */
+	sc->sc_playscale = 4;
+	sc->sc_captscale = 4;
+#endif
+
 	sc->sc_isr.isr_ipl = 2;
 	sc->sc_isr.isr_arg = sc;
 	sc->sc_isr.isr_intr = rep_intr;
@@ -506,25 +512,22 @@ rep_halt_input(void *arg)
 }
 
 #if defined(AUDIO2)
-const struct audio_format repulse_formats[] = {
-	{
-		.mode		= AUMODE_PLAY | AUMODE_RECORD,
-		.encoding	= AUDIO_ENCODING_SLINEAR_NE,
-		.validbits	= 16,
-		.precision	= 16,
-		.channels	= 2,
-		.channel_mask	= AUFMT_STEREO,
-		.frequency_type	= 0,
-		.frequency	= { 4000, 48000 },
-	}
+const struct audio_format repulse_format = {
+	.mode		= AUMODE_PLAY | AUMODE_RECORD,
+	.encoding	= AUDIO_ENCODING_SLINEAR_BE,
+	.validbits	= 16,
+	.precision	= 16,
+	.channels	= 2,
+	.channel_mask	= AUFMT_STEREO,
+	.frequency_type	= 6,
+	.frequency	= { 8000, 16000, 22050, 32000, 44100, 48000 },
 };
 
 int
 rep_query_format(void *arg, audio_format_query_t *afp)
 {
 
-	return audio_query_format(repulse_formats,
-	    __arraycount(repulse_formats), afp);
+	return audio_query_format(&repulse_format, 1, afp);
 }
 #else
 /*
@@ -642,23 +645,16 @@ rep_set_format(void *addr, int setmode,
 	audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
 {
 	struct repulse_softc *sc;
-	const audio_params_t *p;
-	int mode, reg;
 
 	sc = addr;
-	/* for mode in (RECORD, PLAY) */
-	for (mode = AUMODE_RECORD; mode != -1;
-	    mode = mode == AUMODE_RECORD ? AUMODE_PLAY : -1) {
-
-		if ((setmode & mode) == 0)
-		     continue;
-
-		p = mode == AUMODE_PLAY ? play : rec;
-		reg = mode == AUMODE_PLAY ?
-			AC97_REG_PCM_FRONT_DAC_RATE : AC97_REG_PCM_LR_ADC_RATE;
-
-		repac_write(sc, reg, (uint16_t) p->sample_rate);
+	/* XXX 96kHz */
+	if ((setmode & AUMODE_PLAY)) {
+		repac_write(sc, AC97_REG_PCM_FRONT_DAC_RATE, play->sample_rate);
 	}
+	if ((setmode & AUMODE_RECORD)) {
+		repac_write(sc, AC97_REG_PCM_LR_ADC_RATE, rec->sample_rate);
+	}
+
 	return 0;
 }
 #else
@@ -713,7 +709,6 @@ rep_set_params(void *addr, int setmode, int usemode,
 		    p->encoding == AUDIO_ENCODING_ULINEAR)
 			flags |= 1;
 
-		// XXX SLINEAR_LE||SLINEAR_BE の間違いだねここ
 		if (p->encoding == AUDIO_ENCODING_SLINEAR_LE ||
 		    p->encoding == AUDIO_ENCODING_ULINEAR_LE)
 			flags |= 2;
