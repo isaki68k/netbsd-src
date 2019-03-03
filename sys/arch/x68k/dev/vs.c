@@ -146,29 +146,16 @@ static struct audio_device vs_device = {
 };
 
 #if defined(AUDIO2)
-static const struct audio_format vs_formats[] = {
-	{
-		.mode		= AUMODE_PLAY | AUMODE_RECORD,
-		.encoding	= AUDIO_ENCODING_SLINEAR_BE,
-		.validbits	= 16,
-		.precision	= 16,
-		.channels	= 1,
-		.channel_mask	= AUFMT_MONAURAL,
-		.frequency_type	= 5,
-		.frequency	= { VS_RATE_3K, VS_RATE_5K, VS_RATE_7K,
-		                    VS_RATE_10K, VS_RATE_15K },
-	},
-	{
-		.mode		= AUMODE_PLAY | AUMODE_RECORD,
-		.encoding	= AUDIO_ENCODING_ADPCM,
-		.validbits	= 4,
-		.precision	= 4,
-		.channels	= 1,
-		.channel_mask	= AUFMT_MONAURAL,
-		.frequency_type	= 5,
-		.frequency	= { VS_RATE_3K, VS_RATE_5K, VS_RATE_7K,
-		                    VS_RATE_10K, VS_RATE_15K },
-	},
+static const struct audio_format vs_formats = {
+	.mode		= AUMODE_PLAY | AUMODE_RECORD,
+	.encoding	= AUDIO_ENCODING_ADPCM,
+	.validbits	= 4,
+	.precision	= 4,
+	.channels	= 1,
+	.channel_mask	= AUFMT_MONAURAL,
+	.frequency_type	= 5,
+	.frequency	= { VS_RATE_3K, VS_RATE_5K, VS_RATE_7K,
+	                    VS_RATE_10K, VS_RATE_15K },
 };
 #endif
 
@@ -337,7 +324,7 @@ static int
 vs_query_format(void *hdl, audio_format_query_t *afp)
 {
 
-	return audio_query_format(vs_formats, __arraycount(vs_formats), afp);
+	return audio_query_format(&vs_formats, 1, afp);
 }
 #else
 static int
