@@ -126,7 +126,7 @@ static int  psgpam_sysctl_enc(SYSCTLFN_PROTO);
 static int  psgpam_sysctl_dynamic(SYSCTLFN_PROTO);
 
 CFATTACH_DECL_NEW(psgpam, sizeof(struct psgpam_softc),
-	psgpam_match, psgpam_attach, NULL, NULL);
+    psgpam_match, psgpam_attach, NULL, NULL);
 
 static int psgpam_matched;
 
@@ -177,8 +177,7 @@ static struct audio_format psgpam_format = {
 
 /* private functions */
 
-static
-void
+static void
 psgpam_xp_query(struct psgpam_softc *sc)
 {
 	u_int a;
@@ -217,8 +216,7 @@ psgpam_xp_query(struct psgpam_softc *sc)
 	}
 }
 
-static
-void
+static void
 psgpam_xp_start(struct psgpam_softc *sc)
 {
 	DPRINTF(3, "XP PAM starting..");
