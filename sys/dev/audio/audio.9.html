@@ -244,8 +244,7 @@ It never called on NetBSD8.
 
 <dt class=p1><span class=a2>int query_format(void *hdl, audio_format_query_t *afp)
 <dd class=p1><span class=a2>
-	is called to enumerate formats supported by the hardware
-	(or underlying driver).
+	is called to enumerate formats supported by the hardware.
 	It should fill the audio_format_t structure according to
 	given number afp->index.
 	If there is no format with given number, return <tt>EINVAL</tt>.
@@ -256,18 +255,22 @@ It never called on NetBSD8.
 			struct audio_format fmt;
 		} audio_format_query_t;
 </pre>
-	Enumerated formats must have at least one format which
-	encoding is <tt>AUDIO_ENCODING_SLINEAR_NE</tt> and precision is 16,
-	even if the hardware cannot handle the format directly.
-	If the hardware cannot handle such format,
-	the hardware driver itself must convert it to the hardware format.
+	It is also used to determine the default format.
+	The upper layer chooses the most preferred one as default format
+	by following:<br>
+	1. Higher priority is preferred (the highest is 3, the lowest is 0).<br>
+	2. AUDIO_ENCODING_SLINEAR_NE:16 is preferred if exists.<br>
+	3. More channels is preferred.<br>
+</span>
+<br>
+<span class=a2>
+	The driver has to provide conversion between AUDIO_ENCODING_SLINEAR_NE:16
+	and your encoding:precision if the format is not
+	AUDIO_ENCODING_SLINEAR_NE:16.
 	See also set_format.
-	XXX For now, any other formats are optional but never used.
-	</span>
-	<p></p>
-	<span class=comment>
-	SLINEAR_NE:16 以外のフォーマットは audiocfg list の一覧で見ること
-	だけはできます。
+	If the driver can not provide the conversion, set priority to -1.
+	It means that the hardware supports this format but
+	the driver does not (e.g. AC3), and it will never be choosen.
 	</span>
 	<p></p>
 	<span class=comment>

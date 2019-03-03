@@ -2916,7 +2916,9 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 			mutex_enter(sc->sc_lock);
 			error = sc->hw_if->query_format(sc->hw_hdl, query);
 			mutex_exit(sc->sc_lock);
+			/* Hide internal infomations */
 			query->fmt.driver_data = NULL;
+			query->fmt.priority = 0;
 		} else {
 			error = ENODEV;
 		}
@@ -6503,7 +6505,9 @@ audio_hw_probe_fmt(struct audio_softc *sc, audio_format2_t *cand, int mode)
 }
 
 /*
- * Probe the hardware format using query_format.
+ * Choose the most preferred hardware format using query_format.
+ * If successful, it will store the choosen format into *cand and return 0.
+ * Otherwise, return errno.
  * Must be called with sc_lock held.
  */
 static int
@@ -6511,23 +6515,23 @@ audio_hw_probe_by_format(struct audio_softc *sc, audio_format2_t *cand,
 	int mode)
 {
 	audio_format_query_t query;
+	int cand_score;
+	int score;
 	int i;
 	int error;
 
 	KASSERT(mutex_owned(sc->sc_lock));
 
 	/*
-	 * Initial candidate.
-	 * We want to choose a good frequency/channels.
-	 * On the other hand, encoding/precision/stride is fixed.
-	 * XXX Do we support opposite endian?
+	 * Score each formats and choose the highest one.
+	 *
+	 *                +----- priority(0-3)
+	 *                |++--- encoding/precision
+	 *                |||+-- channels
+	 * score = 0x00000PEEC
 	 */
-	cand->encoding    = AUDIO_ENCODING_SLINEAR_NE;
-	cand->precision   = AUDIO_INTERNAL_BITS;
-	cand->stride      = AUDIO_INTERNAL_BITS;
-	cand->channels    = 1;
-	cand->sample_rate = 0;	/* sentinel */
 
+	cand_score = 0;
 	for (i = 0; ; i++) {
 		memset(&query, 0, sizeof(query));
 		query.index = i;
@@ -6539,9 +6543,10 @@ audio_hw_probe_by_format(struct audio_softc *sc, audio_format2_t *cand,
 			return error;
 
 #if AUDIO_DEBUG >= 1
-		DPRINTF(1, "fmt[%d] %c%c %s/%dbit/%dch/", i,
+		DPRINTF(1, "fmt[%d] %c%c pri=%d %s/%dbit/%dch/", i,
 		    (query.fmt.mode & AUMODE_PLAY)   ? 'P' : '-',
 		    (query.fmt.mode & AUMODE_RECORD) ? 'R' : '-',
+		    query.fmt.priority,
 		    audio_encoding_name(query.fmt.encoding),
 		    query.fmt.precision,
 		    query.fmt.channels);
@@ -6565,43 +6570,51 @@ audio_hw_probe_by_format(struct audio_softc *sc, audio_format2_t *cand,
 			continue;
 		}
 
-		if (query.fmt.encoding != AUDIO_ENCODING_SLINEAR_NE) {
-			DPRINTF(1, "fmt[%d] skip; %s\n", i,
-			    audio_encoding_name(query.fmt.encoding));
+		if (query.fmt.priority < 0) {
+			DPRINTF(1, "fmt[%d] skip; unsupported encoding\n", i);
 			continue;
 		}
-		if (query.fmt.precision != AUDIO_INTERNAL_BITS ||
-		    query.fmt.validbits != AUDIO_INTERNAL_BITS) {
-			DPRINTF(1, "fmt[%d] skip; precision %d/%d\n", i,
-			    query.fmt.validbits, query.fmt.precision);
-			continue;
+
+		/* Score */
+		score = (query.fmt.priority & 3) * 0x100;
+		if (query.fmt.encoding == AUDIO_ENCODING_SLINEAR_NE &&
+		    query.fmt.validbits == AUDIO_INTERNAL_BITS &&
+		    query.fmt.precision == AUDIO_INTERNAL_BITS) {
+			score += 0x20;
+		} else if (query.fmt.encoding == AUDIO_ENCODING_SLINEAR_OE &&
+		    query.fmt.validbits == AUDIO_INTERNAL_BITS &&
+		    query.fmt.precision == AUDIO_INTERNAL_BITS) {
+			score += 0x10;
 		}
-		if (query.fmt.channels < cand->channels) {
-			DPRINTF(1, "fmt[%d] skip; channels %d < %d\n", i,
-			    query.fmt.channels, cand->channels);
-			continue;
-		}
-		int freq = audio_select_freq(&query.fmt);
-		/* XXX better algorithm ? */
-		if (freq < cand->sample_rate) {
-			DPRINTF(1, "fmt[%d] skip; frequency %d < %d\n", i,
-			    freq, cand->sample_rate);
+		score += query.fmt.channels;
+
+		if (score < cand_score) {
+			DPRINTF(1, "fmt[%d] skip; score 0x%x < 0x%x\n", i,
+			    score, cand_score);
 			continue;
 		}
 
 		/* Update candidate */
-		cand->channels = query.fmt.channels;
-		cand->sample_rate = freq;
-		DPRINTF(1, "fmt[%d] cand %dch/%dHz\n", i,
-		    cand->channels, cand->sample_rate);
+		cand_score = score;
+		cand->encoding    = query.fmt.encoding;
+		cand->precision   = query.fmt.validbits;
+		cand->stride      = query.fmt.precision;
+		cand->channels    = query.fmt.channels;
+		cand->sample_rate = audio_select_freq(&query.fmt);
+		DPRINTF(1, "fmt[%d] candidate (score=0x%x)"
+		    " pri=%d %s/%d/%dch/%dHz\n", i,
+		    cand_score, query.fmt.priority,
+		    audio_encoding_name(query.fmt.encoding),
+		    cand->precision, cand->channels, cand->sample_rate);
 	}
 
-	if (cand->sample_rate == 0) {
+	if (cand_score == 0) {
 		DPRINTF(1, "%s no fmt\n", __func__);
 		return ENXIO;
 	}
-	DPRINTF(1, "%s selected: %dch/%dHz\n", __func__,
-	    cand->channels, cand->sample_rate);
+	DPRINTF(1, "%s selected: %s/%d/%dch/%dHz\n", __func__,
+	    audio_encoding_name(cand->encoding),
+	    cand->precision, cand->channels, cand->sample_rate);
 	return 0;
 }
 

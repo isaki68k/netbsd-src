@@ -231,6 +231,14 @@ struct audio_format {
 	 * sampling rates
 	 */
 	u_int frequency[AUFMT_MAX_FREQUENCIES];
+
+#if defined(AUDIO2)
+	/**
+	 * 0-3: priority.  0 is the lowest.
+	 * -1: hardware supports this format but driver doesn't (e.g. AC3).
+	 */
+	int priority;
+#endif
 };
 
 typedef struct audio_format_query {
