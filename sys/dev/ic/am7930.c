@@ -146,11 +146,20 @@ extern stream_filter_factory_t null_filter;
 #endif
 
 #if defined(AUDIO2)
+#define AM7930_FORMAT(enc, prec) \
+	{ \
+		.mode		= AUMODE_PLAY | AUMODE_RECORD, \
+		.encoding	= (enc), \
+		.validbits	= (prec), \
+		.precision	= (prec), \
+		.channels	= 1, \
+		.channel_mask	= AUFMT_MONAURAL, \
+		.frequency_type	= 1, \
+		.frequency	= { 8000 }, \
+	}
 static const struct audio_format am7930_formats[] = {
-	{ NULL, AUMODE_PLAY | AUMODE_RECORD, AUDIO_ENCODING_SLINEAR_NE, 16, 16,
-	  1, AUFMT_MONAURAL, 1, { 8000 } },
-	{ NULL, AUMODE_PLAY | AUMODE_RECORD, AUDIO_ENCODING_ULAW, 8, 8,
-	  1, AUFMT_MONAURAL, 1, { 8000 } },
+	AM7390_FORMAT(AUDIO_ENCODING_SLINEAR_NE, 16),
+	AM7390_FORMAT(AUDIO_ENCODING_ULAW,        8),
 };
 #endif
 

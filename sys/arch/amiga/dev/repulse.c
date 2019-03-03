@@ -507,8 +507,16 @@ rep_halt_input(void *arg)
 
 #if defined(AUDIO2)
 const struct audio_format repulse_formats[] = {
-	{ NULL, AUMODE_PLAY | AUMODE_RECORD, AUDIO_ENCODING_SLINEAR_NE, 16, 16,
-	  2, AUFMT_STEREO, 0, { 4000, 48000 } },
+	{
+		.mode		= AUMODE_PLAY | AUMODE_RECORD,
+		.encoding	= AUDIO_ENCODING_SLINEAR_NE,
+		.validbits	= 16,
+		.precision	= 16,
+		.channels	= 2,
+		.channel_mask	= AUFMT_STEREO,
+		.frequency_type	= 0,
+		.frequency	= { 4000, 48000 },
+	}
 };
 
 int

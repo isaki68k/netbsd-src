@@ -215,15 +215,33 @@ static const int emuxki_recbuf_sz[] = {
 };
 
 #define EMUXKI_NFORMATS	4
+#define EMUXKI_FORMAT_S16(aumode, ch, chmask) \
+	{ \
+		.mode		= (aumode), \
+		.encoding	= AUDIO_ENCODING_SLINEAR_LE, \
+		.validbits	= 16, \
+		.precision	= 16, \
+		.channels	= (ch), \
+		.channel_mask	= (chmask), \
+		.frequency_type	= 0, \
+		.frequency	= { 4000, 48000 }, \
+	}
+#define EMUXKI_FORMAT_U8(aumode, ch, chmask) \
+	{ \
+		.mode		= (aumode), \
+		.encoding	= AUDIO_ENCODING_ULINEAR_LE, \
+		.validbits	= 8, \
+		.precision	= 8, \
+		.channels	= (ch), \
+		.channel_mask	= (chmask), \
+		.frequency_type	= 0, \
+		.frequency	= { 4000, 48000 }, \
+	}
 static const struct audio_format emuxki_formats[EMUXKI_NFORMATS] = {
-	{NULL, AUMODE_PLAY | AUMODE_RECORD, AUDIO_ENCODING_SLINEAR_LE, 16, 16,
-	 2, AUFMT_STEREO, 0, {4000, 48000}},
-	{NULL, AUMODE_PLAY | AUMODE_RECORD, AUDIO_ENCODING_SLINEAR_LE, 16, 16,
-	 1, AUFMT_MONAURAL, 0, {4000, 48000}},
-	{NULL, AUMODE_PLAY, AUDIO_ENCODING_ULINEAR_LE, 8, 8,
-	 2, AUFMT_STEREO, 0, {4000, 48000}},
-	{NULL, AUMODE_PLAY, AUDIO_ENCODING_ULINEAR_LE, 8, 8,
-	 1, AUFMT_MONAURAL, 0, {4000, 48000}},
+	EMUXKI_FORMAT_S16(AUMODE_PLAY | AUMODE_RECORD, 2, AUFMT_STEREO),
+	EMUXKI_FORMAT_S16(AUMODE_PLAY | AUMODE_RECORD, 1, AUFMT_MONAURAL),
+	EMUXKI_FORMAT_U8 (AUMODE_PLAY                , 2, AUFMT_STEREO),
+	EMUXKI_FORMAT_U8 (AUMODE_PLAY                , 1, AUFMT_MONAURAL),
 };
 
 /*

@@ -198,15 +198,14 @@ static const struct audio_device btsco_device = {
 
 /* Voice_Setting == 0x0060: 8000Hz, mono, 16-bit, slinear_le */
 static const struct audio_format btsco_format = {
-	NULL,				/* driver_data */
-	(AUMODE_PLAY | AUMODE_RECORD),	/* mode */
-	AUDIO_ENCODING_SLINEAR_LE,	/* encoding */
-	16,				/* validbits */
-	16,				/* precision */
-	1,				/* channels */
-	AUFMT_MONAURAL,			/* channel_mask */
-	1,				/* frequency_type */
-	{ 8000 }			/* frequency */
+	.mode		= AUMODE_PLAY | AUMODE_RECORD,
+	.encoding	= AUDIO_ENCODING_SLINEAR_LE,
+	.validbits	= 16,
+	.precision	= 16,
+	.channels	= 1,
+	.channel_mask	= AUFMT_MONAURAL,
+	.frequency_type	= 1,
+	.frequency	= { 8000 },
 };
 
 /* bluetooth(9) glue for SCO */

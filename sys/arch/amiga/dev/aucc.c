@@ -437,18 +437,22 @@ aucc_set_out_sr(void *addr, u_int sr)
 // XXX *4 3,4chモードは8bit*{3,4}ch、1,2chモードはチャンネルを2つ組み合わせて(?)
 //        14bit*{1,2}ch として動作するので、3,4chより1,2ch のプライオリティを
 //        上げたいが、今はその仕組みがない。
+#define AUCC_FORMAT(ch, chmask) \
+	{ \
+		.mode		= AUMODE_PLAY, \
+		.encoding	= AUDIO_ENCODING_SLINEAR_NE, \
+		.validbits	= 16, \
+		.precision	= 16, \
+		.channels	= (ch), \
+		.channel_mask	= (chmask), \
+		.frequency_type	= 0, \
+		.frequency	= { AUDIO_MIN_FREQUENCY, 28867 }, \
+	}
 static const struct audio_format aucc_formats[] = {
-	{ NULL, AUMODE_PLAY, AUDIO_ENCODING_SLINEAR_NE, 16, 16,
-	  1, AUFMT_MONAURAL, 0, { AUDIO_MIN_FREQUENCY, 28867 } },
-
-	{ NULL, AUMODE_PLAY, AUDIO_ENCODING_SLINEAR_NE, 16, 16,
-	  2, AUFMT_STEREO, 0, { AUDIO_MIN_FREQUENCY, 28867 } },
-
-	{ NULL, AUMODE_PLAY, AUDIO_ENCODING_SLINEAR_NE, 16, 16,
-	  3, AUFMT_UNKNOWN_POSITION, 0, { AUDIO_MIN_FREQUENCY, 28867 } },
-
-	{ NULL, AUMODE_PLAY, AUDIO_ENCODING_SLINEAR_NE, 16, 16,
-	  4, AUFMT_UNKNOWN_POSITION, 0, { AUDIO_MIN_FREQUENCY, 28867 } },
+	AUCC_FORMAT(1, AUFMT_MONAURAL),
+	AUCC_FORMAT(2, AUFMT_STEREO),
+	AUCC_FORMAT(3, AUFMT_UNKNOWN_POSITION),
+	AUCC_FORMAT(4, AUFMT_UNKNOWN_POSITION),
 };
 
 int

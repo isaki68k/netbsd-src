@@ -266,6 +266,17 @@ static const struct audio_hw_if arcofi_hw_if = {
 	.get_locks	  = arcofi_get_locks,
 };
 
+#define ARCOFI_FORMAT(enc, prec) \
+	{ \
+		.mode		= AUMODE_PLAY | AUMODE_RECORD, \
+		.encoding	= (enc), \
+		.validbits	= (prec), \
+		.precision	= (prec), \
+		.channels	= 1, \
+		.channel_mask	= AUFMT_MONAURAL, \
+		.frequency_type	= 1, \
+		.frequency	= { 8000 }, \
+	}
 static const struct audio_format arcofi_formats[] = {
 #if defined(AUDIO2)
 	// HW がサポートしているのは 8bit u-Law/A-Law と 16bit slinear_be である。
@@ -279,25 +290,21 @@ static const struct audio_format arcofi_formats[] = {
 	// なお、HW エンコードに u-Law を使う場合でもここが u-Law になるわけでは
 	// ないことに注意。ここで指定するフォーマットは MI 層との取り決めにより
 	// 必ず slinear_ne/16 であり、u-Law への変換は set_format で指定する。
-	{ NULL, AUMODE_PLAY | AUMODE_RECORD, AUDIO_ENCODING_SLINEAR_BE, 16, 16,
-	  1, AUFMT_MONAURAL, 1, { 8000 } },
+	ARCOFI_FORMAT(AUDIO_ENCODING_SLINEAR_BE, 16),
 #else
 	/*
 	 * 8-bit encodings:
 	 *  - u-Law and A-Law are native
 	 *  - linear are converted to 16-bit by auconv
 	 */
-	{NULL, AUMODE_PLAY | AUMODE_RECORD, AUDIO_ENCODING_ULAW, 8, 8,
-	 1, AUFMT_MONAURAL, 1, {8000}},
-	{NULL, AUMODE_PLAY | AUMODE_RECORD, AUDIO_ENCODING_ALAW, 8, 8,
-	 1, AUFMT_MONAURAL, 1, {8000}},
+	ARCOFI_FORMAT(AUDIO_ENCODING_ULAW,        8),
+	ARCOFI_FORMAT(AUDIO_ENCODING_ALAW,        8),
 	/*
 	 * 16-bit encodings:
 	 *  - slinear big-endian is native
 	 *  - unsigned or little-endian are converted by auconv
 	 */
-	{NULL, AUMODE_PLAY | AUMODE_RECORD, AUDIO_ENCODING_SLINEAR_BE, 16, 16,
-	 1, AUFMT_MONAURAL, 1, {8000}},
+	ARCOFI_FORMAT(AUDIO_ENCODING_SLINEAR_BE, 16),
 #endif
 };
 #define ARCOFI_NFORMATS  __arraycount(arcofi_formats)

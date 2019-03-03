@@ -112,51 +112,22 @@ static struct audio_device wm8750_device = {
 	"wm"
 };
 
+#define WM8750_FORMAT(enc, prec, ch, chmask) \
+	{ \
+		.mode		= AUMODE_PLAY | AUMODE_RECORD, \
+		.encoding	= (enc), \
+		.validbits	= (prec), \
+		.precision	= (prec), \
+		.channels	= (ch), \
+		.channel_mask	= (chmask), \
+		.frequency_type	= 0, \
+		.frequency	= { 4000, 48000 }, \
+	}
 static const struct audio_format wm8750_formats[] = {
-	{
-		.driver_data	= NULL,
-		.mode		= AUMODE_PLAY | AUMODE_RECORD,
-		.encoding	= AUDIO_ENCODING_SLINEAR_LE,
-		.validbits	= 16,
-		.precision	= 16,
-		.channels	= 2,
-		.channel_mask	= AUFMT_STEREO,
-		.frequency_type	= 0,
-		.frequency	= { 4000, 48000 }
-	},
-	{
-		.driver_data	= NULL,
-		.mode		= AUMODE_PLAY | AUMODE_RECORD,
-		.encoding	= AUDIO_ENCODING_SLINEAR_LE,
-		.validbits	= 16,
-		.precision	= 16,
-		.channels	= 1,
-		.channel_mask	= AUFMT_MONAURAL,
-		.frequency_type	= 0,
-		.frequency	= { 4000, 48000 }
-	},
-	{
-		.driver_data	= NULL,
-		.mode		= AUMODE_PLAY | AUMODE_RECORD,
-		.encoding	= AUDIO_ENCODING_ULINEAR_LE,
-		.validbits	= 8,
-		.precision	= 8,
-		.channels	= 2,
-		.channel_mask	= AUFMT_STEREO,
-		.frequency_type	= 0,
-		.frequency	= { 4000, 48000 }
-	},
-	{
-		.driver_data	= NULL,
-		.mode		= AUMODE_PLAY | AUMODE_RECORD,
-		.encoding	= AUDIO_ENCODING_ULINEAR_LE,
-		.validbits	= 8,
-		.precision	= 8,
-		.channels	= 1,
-		.channel_mask	= AUFMT_MONAURAL,
-		.frequency_type	= 0,
-		.frequency	= { 4000, 48000 }
-	},
+	WM8750_FORMAT(AUDIO_ENCODING_SLINEAR_LE, 16, 2, AUFMT_STEREO),
+	WM8750_FORMAT(AUDIO_ENCODING_SLINEAR_LE, 16, 1, AUFMT_MONAURAL),
+	WM8750_FORMAT(AUDIO_ENCODING_ULINEAR_LE,  8, 2, AUFMT_STEREO),
+	WM8750_FORMAT(AUDIO_ENCODING_ULINEAR_LE,  8, 1, AUFMT_MONAURAL),
 };
 static const int wm8750_nformats = (int)__arraycount(wm8750_formats);
 

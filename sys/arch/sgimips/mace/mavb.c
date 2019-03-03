@@ -109,11 +109,20 @@ const char *ad1843_input[] = {
 };
 
 #define MAVB_NFORMATS 2
+#define MAVB_FORMAT(ch, chmask) \
+	{ \
+		.mode		= AUMODE_PLAY | AUMODE_RECORD, \
+		.encoding	= AUDIO_ENCODING_SLINEAR_BE, \
+		.validbits	= 16, \
+		.precision	= 16, \
+		.channels	= (ch), \
+		.channel_mask	= (chmask), \
+		.frequency_type	= 0, \
+		.frequency	= { 8000, 48000 }, \
+	}
 static const struct audio_format mavb_formats[MAVB_NFORMATS] = {
-	{ NULL, AUMODE_PLAY | AUMODE_RECORD, AUDIO_ENCODING_SLINEAR_BE, 16, 16,
-	  1, AUFMT_MONAURAL, 0, { 8000, 48000 } },
-	{ NULL, AUMODE_PLAY | AUMODE_RECORD, AUDIO_ENCODING_SLINEAR_BE, 16, 16,
-	  2, AUFMT_STEREO, 0, { 8000, 48000 } },
+	MAVB_FORMAT(1, AUFMT_MONAURAL),
+	MAVB_FORMAT(2, AUFMT_STEREO),
 };
 
 struct mavb_softc {

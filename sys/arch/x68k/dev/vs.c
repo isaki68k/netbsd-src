@@ -147,13 +147,28 @@ static struct audio_device vs_device = {
 
 #if defined(AUDIO2)
 static const struct audio_format vs_formats[] = {
-	{ NULL, AUMODE_PLAY | AUMODE_RECORD, AUDIO_ENCODING_SLINEAR_BE, 16, 16,
-	  1, AUFMT_MONAURAL, 5,
-	  { VS_RATE_3K, VS_RATE_5K, VS_RATE_7K, VS_RATE_10K, VS_RATE_15K } },
-
-	{ NULL, AUMODE_PLAY | AUMODE_RECORD, AUDIO_ENCODING_ADPCM, 4, 4,
-	  1, AUFMT_MONAURAL, 5,
-	  { VS_RATE_3K, VS_RATE_5K, VS_RATE_7K, VS_RATE_10K, VS_RATE_15K } },
+	{
+		.mode		= AUMODE_PLAY | AUMODE_RECORD,
+		.encoding	= AUDIO_ENCODING_SLINEAR_BE,
+		.validbits	= 16,
+		.precision	= 16,
+		.channels	= 1,
+		.channel_mask	= AUFMT_MONAURAL,
+		.frequency_type	= 5,
+		.frequency	= { VS_RATE_3K, VS_RATE_5K, VS_RATE_7K,
+		                    VS_RATE_10K, VS_RATE_15K },
+	},
+	{
+		.mode		= AUMODE_PLAY | AUMODE_RECORD,
+		.encoding	= AUDIO_ENCODING_ADPCM,
+		.validbits	= 4,
+		.precision	= 4,
+		.channels	= 1,
+		.channel_mask	= AUFMT_MONAURAL,
+		.frequency_type	= 5,
+		.frequency	= { VS_RATE_3K, VS_RATE_5K, VS_RATE_7K,
+		                    VS_RATE_10K, VS_RATE_15K },
+	},
 };
 #endif
 
