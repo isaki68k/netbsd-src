@@ -162,11 +162,17 @@ static struct audio_device psgpam_device = {
 	"",
 };
 
-// fill by query_format
 static struct audio_format psgpam_format = {
-	NULL, AUMODE_PLAY, AUDIO_ENCODING_SLINEAR_BE, 16, 16,
-	1, AUFMT_MONAURAL,
-	1, {0},
+	{
+		.mode		= AUMODE_PLAY,
+		.encoding	= AUDIO_ENCODING_SLINEAR_BE,
+		.validbits	= 16,
+		.precision	= 16,
+		.channels	= 1,
+		.channel_mask	= AUFMT_MONAURAL,
+		.frequency_type	= 0,		/* filled by query_format */
+		.frequency	= { 0 },	/* filled by query_format */
+	},
 };
 
 /* private functions */

@@ -193,13 +193,20 @@ static struct audio_device mercury_device = {
 };
 
 #if defined(AUDIO2)
+#define MERCURY_FORMAT(ch, chmask) \
+	{ \
+		.mode		= AUMODE_PLAY | AUMODE_RECORD, \
+		.encoding	= AUDIO_ENCODING_SLINEAR_BE, \
+		.validbits	= 16, \
+		.precision	= 16, \
+		.channels	= (ch), \
+		.channel_mask	= (chmask), \
+		.frequency_type	= 6, \
+		.frequency	= { 16000, 22050, 24000, 32000, 44100, 48000 },\
+	}
 static const struct audio_format mercury_formats[] = {
-	{ NULL, AUMODE_PLAY | AUMODE_RECORD, AUDIO_ENCODING_SLINEAR_BE, 16, 16,
-	  1, AUFMT_MONAURAL,
-	  6, { 16000, 22050, 24000, 32000, 44100, 48000 } },
-	{ NULL, AUMODE_PLAY | AUMODE_RECORD, AUDIO_ENCODING_SLINEAR_BE, 16, 16,
-	  2, AUFMT_STEREO,
-	  6, { 16000, 22050, 24000, 32000, 44100, 48000 } },
+	MERCURY_FORMAT(1, AUFMT_MONAURAL),
+	MERCURY_FORMAT(2, AUFMT_STEREO),
 };
 #endif
 

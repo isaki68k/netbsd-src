@@ -134,8 +134,16 @@ static const struct audio_hw_if pad_hw_if = {
 #define PADMODE	AUMODE_PLAY
 #endif
 static const struct audio_format pad_formats[PAD_NFORMATS] = {
-	{ NULL, PADMODE, AUDIO_ENCODING_SLINEAR_NE, PADPREC, PADPREC,
-	  PADCHAN, AUFMT_STEREO, 1, { PADFREQ } },
+	{
+		.mode		= PADMODE,
+		.encoding	= AUDIO_ENCODING_SLINEAR_NE,
+		.validbits	= PADPREC,
+		.precision	= PADPREC,
+		.channels	= PADCHAN,
+		.channel_mask	= AUFMT_STEREO,
+		.frequency_type	= 1,
+		.frequency	= { PADFREQ },
+	},
 };
 
 extern void	padattach(int);
