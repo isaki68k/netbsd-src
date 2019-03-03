@@ -1,12 +1,29 @@
 <body>
-<h4>MD ドライバの AUDIO2 対応方法</h4>
-
-当面は AUDIO2 なしでもビルド可能なように完全に #ifdef にしておく。
+<h4>How to adapt your audio hardware driver to AUDIO2 framework.</h4>
 
 <ul>
-<li>query_encoding, set_params を query_format, set_format に変更。
+<li>Remove <tt>drain</tt> interface.
+<p>
+<tt>drain</tt>'ing is done by upper layer from AUDIO2,
+so hardware driver no longer requires it.
+Be careful not to forget to remove variables which was used only here.
+</p>
 
-<li>drain, setfd, mappage は削除 (ifndef)。
+<li>Remove <tt>mappage</tt> interface.
+<p>
+mmap'ping is done by upper layer since 8.0,
+so hardware driver no longer requires it.
+</p>
+
+<li>Remove <tt>setfd</tt> interface.
+<p>
+Nobody use <tt>setfd</tt>.
+</p>
+
+<li>Change <tt>query_encoding</tt> into <tt>query_format</tt> and<br>
+change <tt>set_params</tt> into <tt>set_format</tt>.
+<p>
+If your hardware supports SLINEAR_NE (Native Endian).
 
 <li>round_blocksize, round_buffersize を見直す。
 同値を返すだけの場合は削除。
