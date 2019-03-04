@@ -380,7 +380,7 @@ static const struct audio_format auich_modem_formats[AUICH_MODEM_NFORMATS] = {
 		.precision	= 16,
 		.channels	= 1,
 		.channel_mask	= AUFMT_MONAURAL,
-		.frequency_type	= 0,
+		.frequency_type	= 2,
 		.frequency	= { 8000, 16000 },
 	},
 };
