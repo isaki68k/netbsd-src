@@ -360,11 +360,29 @@ static const struct audio_format auich_audio_formats[AUICH_AUDIO_NFORMATS] = {
 
 #define AUICH_SPDIF_NFORMATS	1
 static const struct audio_format auich_spdif_formats[AUICH_SPDIF_NFORMATS] = {
-	AUICH_FORMAT(AUMODE_PLAY | AUMODE_RECORD, 2, AUFMT_STEREO),
+	{
+		.mode		= AUMODE_PLAY | AUMODE_RECORD,
+		.encoding	= AUDIO_ENCODING_SLINEAR_LE,
+		.validbits	= 16,
+		.precision	= 16,
+		.channels	= 2,
+		.channel_mask	= AUFMT_STEREO,
+		.frequency_type	= 1,
+		.frequency	= { 48000 },
+	},
 };
 
 static const struct audio_format auich_modem_formats[AUICH_MODEM_NFORMATS] = {
-	AUICH_FORMAT(AUMODE_PLAY | AUMODE_RECORD, 1, AUFMT_MONAURAL),
+	{
+		.mode		= AUMODE_PLAY | AUMODE_RECORD,
+		.encoding	= AUDIO_ENCODING_SLINEAR_LE,
+		.validbits	= 16,
+		.precision	= 16,
+		.channels	= 1,
+		.channel_mask	= AUFMT_MONAURAL,
+		.frequency_type	= 0,
+		.frequency	= { 8000, 16000 },
+	},
 };
 
 #define PCI_ID_CODE0(v, p)	PCI_ID_CODE(PCI_VENDOR_##v, PCI_PRODUCT_##v##_##p)
