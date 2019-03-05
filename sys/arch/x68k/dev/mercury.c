@@ -36,9 +36,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 
 #include <sys/audioio.h>
 #include <dev/audio_if.h>
-#if defined(AUDIO2)
-#include <dev/audio/aucodec.h>
-#else
+#if !defined(AUDIO2)
 #include <dev/auconv.h>
 #include <dev/mulaw.h>
 #endif
@@ -56,6 +54,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #define DPRINTF(fmt...)
 #endif
 
+// LE デバイスを BE マシンにつないでみたをテストする用
 //#define MERCURY_LE
 
 #define MERCURY_ADDR	(0xecc080)
@@ -193,10 +192,10 @@ static struct audio_device mercury_device = {
 };
 
 #if defined(AUDIO2)
-#define MERCURY_FORMAT(ch, chmask) \
+#define MERCURY_FORMAT(enc, ch, chmask) \
 	{ \
 		.mode		= AUMODE_PLAY | AUMODE_RECORD, \
-		.encoding	= AUDIO_ENCODING_SLINEAR_BE, \
+		.encoding	= (enc), \
 		.validbits	= 16, \
 		.precision	= 16, \
 		.channels	= (ch), \
@@ -205,8 +204,13 @@ static struct audio_device mercury_device = {
 		.frequency	= { 16000, 22050, 24000, 32000, 44100, 48000 },\
 	}
 static const struct audio_format mercury_formats[] = {
-	MERCURY_FORMAT(1, AUFMT_MONAURAL),
-	MERCURY_FORMAT(2, AUFMT_STEREO),
+#if defined(MERCURY_LE)
+	MERCURY_FORMAT(AUDIO_ENCODING_SLINEAR_LE, 1, AUFMT_MONAURAL),
+	MERCURY_FORMAT(AUDIO_ENCODING_SLINEAR_LE, 2, AUFMT_STEREO),
+#else
+	MERCURY_FORMAT(AUDIO_ENCODING_SLINEAR_BE, 1, AUFMT_MONAURAL),
+	MERCURY_FORMAT(AUDIO_ENCODING_SLINEAR_BE, 2, AUFMT_STEREO),
+#endif
 };
 #endif
 
@@ -267,6 +271,9 @@ mercury_attach(device_t parent, device_t self, void *aux)
 	    (DMAC_OCR_SIZE_WORD | DMAC_OCR_REQG_EXTERNAL));
 
 	aprint_normal_dev(sc->sc_dev, "Mercury Unit V2/V3\n");
+#if defined(MERCURY_LE)
+	aprint_normal_dev(sc->sc_dev, "LE emulation mode\n");
+#endif
 
 	audio_attach_mi(&mercury_hw_if, sc, sc->sc_dev);
 }
@@ -334,7 +341,11 @@ mercury_query_encoding(void *hdl, struct audio_encoding *ae)
 	switch (ae->index) {
 	case 0:
 		strcpy(ae->name, AudioEslinear_be);
+#if defined(MERCURY_LE)
+		ae->encoding = AUDIO_ENCODING_SLINEAR_LE;
+#else
 		ae->encoding = AUDIO_ENCODING_SLINEAR_BE;
+#endif
 		ae->precision = 16;
 		ae->flags = 0;
 		return 0;
@@ -386,13 +397,6 @@ mercury_set_format(void *hdl, int setmode,
 	default:
 		return EINVAL;
 	}
-
-#if defined(MERCURY_LE)
-	pfil->codec = audio_internal_to_linear16;
-	pfil->param.encoding = AUDIO_ENCODING_SLINEAR_LE;
-	rfil->codec = audio_linear16_to_internal;
-	rfil->param.encoding = AUDIO_ENCODING_SLINEAR_LE;
-#endif
 
 	sc->sc_cmd = cmd;
 	return 0;
