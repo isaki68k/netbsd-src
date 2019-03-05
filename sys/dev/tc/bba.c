@@ -137,6 +137,7 @@ struct am7930_glue bba_glue = {
  */
 
 #if defined(AUDIO2)
+static int	bba_query_format(void *, audio_format_query_t *);
 static int	bba_set_format(void *, int,
 				const audio_params_t *, const audio_params_t *,
 				audio_filter_reg_t *, audio_filter_reg_t *);
@@ -165,7 +166,7 @@ static const struct audio_hw_if sa_hw_if = {
 	.open			= am7930_open,
 	.close			= am7930_close,
 #if defined(AUDIO2)
-	.query_format		= am7930_query_format,
+	.query_format		= bba_query_format,
 	.set_format		= bba_set_format,
 #else
 	.query_encoding		= am7930_query_encoding,
@@ -196,6 +197,19 @@ static struct audio_device bba_device = {
 	"x",
 	"bba"
 };
+
+#if defined(AUDIO2)
+static const struct audio_format bba_format = {
+	.mode		= AUMODE_PLAY | AUMODE_RECORD,
+	.encoding	= AUDIO_ENCODING_ULAW, /* XXX */
+	.validbits	= 32,
+	.precision	= 32,
+	.channels	= 1,
+	.channel_mask	= AUFMT_MONAURAL,
+	.frequency_type	= 1,
+	.frequency	= { 8000 },
+};
+#endif
 
 static int	bba_intr(void *);
 static void	bba_reset(struct bba_softc *, int);
@@ -636,6 +650,13 @@ bba_get_props(void *addr)
 }
 
 #if defined(AUDIO2)
+static int
+bba_query_format(void *addr, audio_format_query_t *afp)
+{
+
+	return audio_query_format(&bba_format, 1, afp);
+}
+
 static int
 bba_set_format(void *addr, int setmode,
 		const audio_params_t *play, const audio_params_t *rec,
