@@ -6439,7 +6439,8 @@ audio_select_freq(const struct audio_format *fmt)
  * *modep is an in-out parameter.  It indicates the direction to configure
  * as an argument, and the direction configured is written back as out
  * parameter.
- * Return 0 if successful,  otherwise errno.
+ * If successful, probed hardware format is stored into *phwfmt, *rhwfmt
+ * depending on *modep, and return 0.  Otherwise it returns errno.
  * Must be called with sc_lock held.
  */
 static int
