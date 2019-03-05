@@ -29,8 +29,12 @@
 #ifndef _HAVE_AUDIODEV_H
 #define _HAVE_AUDIODEV_H
 
-//#include <sys/audioio.h>
+#if 1 // test
+#define AUDIO2
 #include "../../sys/sys/audioio.h"
+#else
+#include <sys/audioio.h>
+#endif
 #include <sys/queue.h>
 #include <sys/syslimits.h>
 
