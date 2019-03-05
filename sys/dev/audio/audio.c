@@ -5030,7 +5030,7 @@ static int
 audio_mixer_init(struct audio_softc *sc, int mode,
 	const audio_format2_t *hwfmt, const audio_filter_reg_t *reg)
 {
-	char fmtstr[64];
+	char codecbuf[64];
 	audio_trackmixer_t *mixer;
 	void (*softint_handler)(void *);
 	int len;
@@ -5193,18 +5193,22 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 	}
 
 	/* Succeeded so display it. */
-	audio_format2_tostr(fmtstr, sizeof(fmtstr), &mixer->track_fmt);
-	blkms = mixer->blktime_n * 1000 / mixer->blktime_d;
-	aprint_normal_dev(sc->sc_dev, "%s, blk %dms for %s\n",
-	    fmtstr, blkms,
-	    (mode == AUMODE_PLAY) ? "playback" : "recording");
+	codecbuf[0] = '\0';
 	if (mixer->codec) {
-		DPRINTF(1, "%s: codec %p -> %s %dbit\n",
-		    device_xname(sc->sc_dev),
-		    mixer->codec,
+		snprintf(codecbuf, sizeof(codecbuf), " %s %s:%d",
+		    (mode == AUMODE_PLAY) ? "->" : "<-",
 		    audio_encoding_name(mixer->hwbuf.fmt.encoding),
 		    mixer->hwbuf.fmt.precision);
 	}
+	blkms = mixer->blktime_n * 1000 / mixer->blktime_d;
+	aprint_normal_dev(sc->sc_dev, "%s:%d%s %dch %dHz, blk %dms for %s\n",
+	    audio_encoding_name(mixer->track_fmt.encoding),
+	    mixer->track_fmt.precision,
+	    codecbuf,
+	    mixer->track_fmt.channels,
+	    mixer->track_fmt.sample_rate,
+	    blkms,
+	    (mode == AUMODE_PLAY) ? "playback" : "recording");
 
 	return 0;
 
