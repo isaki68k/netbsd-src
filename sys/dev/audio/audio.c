@@ -7555,10 +7555,7 @@ audio_hw_set_params(struct audio_softc *sc, int setmode,
 	pp = format2_to_params(phwfmt);
 	rp = format2_to_params(rhwfmt);
 
-	if (use_set_format) {
-		pfil->param = pp;
-		rfil->param = rp;
-	} else {
+	if (use_set_format == false) {
 		memset(&pfilters, 0, sizeof(pfilters));
 		memset(&rfilters, 0, sizeof(rfilters));
 #if defined(OLD_FILTER)
@@ -7596,16 +7593,6 @@ audio_hw_set_params(struct audio_softc *sc, int setmode,
 			    __func__, error);
 			return error;
 		}
-	}
-
-	if (use_set_format) {
-		if (pfil->codec)
-			*phwfmt = params_to_format2(&pfil->param);
-		if (rfil->codec)
-			*rhwfmt = params_to_format2(&rfil->param);
-	} else {
-		*phwfmt = params_to_format2(&pp);
-		*rhwfmt = params_to_format2(&rp);
 	}
 
 	return 0;

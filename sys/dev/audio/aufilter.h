@@ -102,7 +102,6 @@ typedef void(*audio_filter_t)(audio_filter_arg_t *arg);
 
 /* Filter registration structure */
 typedef struct {
-	audio_params_t param;	/* HW encoding parameter */
 	audio_filter_t codec;	/* conversion function */
 	void *context;		/* optional codec's argument */
 } audio_filter_reg_t;
