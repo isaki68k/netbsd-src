@@ -413,26 +413,44 @@ arcofi_set_format(void *handle, int setmode,
 {
 	struct arcofi_softc *sc;
 
+	sc = handle;
+
 	if ((setmode & AUMODE_PLAY)) {
-		pfil->param = *play;
-		pfil->param.encoding = AUDIO_ENCODING_ULAW;
-		pfil->param.validbits = 8;
-		pfil->param.precision = 8;
-		pfil->codec = audio_internal_to_mulaw;
+		switch (play->encoding) {
+		case AUDIO_ENCODING_ULAW:
+			pfil->codec = audio_internal_to_mulaw;
+			break;
+		case AUDIO_ENCODING_ALAW:
+			pfil->codec = audio_internla_to_alaw;
+			break;
+		}
 	}
 	if ((setmode & AUMODE_RECORD)) {
-		rfil->param = *rec;
-		rfil->param.encoding = AUDIO_ENCODING_ULAW;
-		rfil->param.validbits = 8;
-		rfil->param.precision = 8;
-		rfil->codec = audio_mulaw_to_internal;
+		switch (rec->encoding) {
+		case AUDIO_ENCODING_ULAW:
+			rfil->codec = audio_mulaw_to_internal;
+			break;
+		case AUDIO_ENCODING_ALAW:
+			rfil->codec = audio_alaw_to_internal;
+			break;
+		}
 	}
 
-	sc = handle;
-	sc->sc_shadow.cr3 =
-	    (sc->sc_shadow.cr3 & ~CR3_OPMODE_MASK) |
-	    CR3_OPMODE_NORMAL;
-	sc->sc_shadow.cr4 |= CR4_ULAW;
+	/* *play and *rec are identical because !AUDIO_PROP_INDEPENDENT */
+
+	if (play->precision == 8) {
+		if (play->encoding == AUDIO_ENCODING_ULAW)
+			sc->sc_shadow.cr4 |= CR4_ULAW;
+		else
+			sc->sc_shadow.cr4 &= ~CR4_ULAW;
+		sc->sc_shadow.cr3 =
+		    (sc->sc_shadow.cr3 & ~CR3_OPMODE_MASK) |
+		    CR3_OPMODE_NORMAL;
+	} else {
+		sc->sc_shadow.cr3 =
+		    (sc->sc_shadow.cr3 & ~CR3_OPMODE_MASK) |
+		    CR3_OPMODE_LINEAR;
+	}
 
 	return 0;
 }
