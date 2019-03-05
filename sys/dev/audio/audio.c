@@ -6785,16 +6785,16 @@ audio_mixers_set_format(struct audio_softc *sc, const struct audio_info *ai)
 	/* Only channels and sample_rate are changeable. */
 	mode = ai->mode;
 	if ((mode & AUMODE_PLAY)) {
-		phwfmt.encoding    = AUDIO_ENCODING_SLINEAR_NE;
-		phwfmt.precision   = AUDIO_INTERNAL_BITS;
-		phwfmt.stride      = AUDIO_INTERNAL_BITS;
+		phwfmt.encoding    = ai->play.encoding;
+		phwfmt.precision   = ai->play.precision;
+		phwfmt.stride      = ai->play.precision;
 		phwfmt.channels    = ai->play.channels;
 		phwfmt.sample_rate = ai->play.sample_rate;
 	}
 	if ((mode & AUMODE_RECORD)) {
-		rhwfmt.encoding    = AUDIO_ENCODING_SLINEAR_NE;
-		rhwfmt.precision   = AUDIO_INTERNAL_BITS;
-		rhwfmt.stride      = AUDIO_INTERNAL_BITS;
+		rhwfmt.encoding    = ai->record.encoding;
+		rhwfmt.precision   = ai->record.precision;
+		rhwfmt.stride      = ai->record.precision;
 		rhwfmt.channels    = ai->record.channels;
 		rhwfmt.sample_rate = ai->record.sample_rate;
 	}
