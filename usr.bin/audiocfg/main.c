@@ -99,11 +99,7 @@ print_audiodev(struct audiodev *adev, int i)
 
 	TAILQ_FOREACH(f, &adev->formats, next) {
 		printf("       ");
-#if BYTE_ORDER == LITTLE_ENDIAN
-		if (f->fmt.encoding != AUDIO_ENCODING_SLINEAR_LE)
-#else
-		if (f->fmt.encoding != AUDIO_ENCODING_SLINEAR_BE)
-#endif
+		if (f->fmt.priority < 0)
 			printf("(  ) ");
 		else if ((f->fmt.mode & (AUMODE_PLAY | AUMODE_RECORD))
 		    == (AUMODE_PLAY | AUMODE_RECORD))
