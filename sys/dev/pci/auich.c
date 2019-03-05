@@ -1111,7 +1111,7 @@ auich_set_params(void *v, int setmode, int usemode,
 		    sc->sc_codectype == AC97_CODEC_TYPE_AUDIO) {
 			control = bus_space_read_4(sc->iot, sc->aud_ioh,
 			    ICH_GCTRL + sc->sc_modem_offset);
-				control &= ~sc->sc_pcm246_mask;
+			control &= ~sc->sc_pcm246_mask;
 			if (p->channels == 4) {
 				control |= sc->sc_pcm4;
 			} else if (p->channels == 6) {
