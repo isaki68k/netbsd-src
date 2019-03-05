@@ -42,7 +42,8 @@ usage(const char *p)
 {
 	fprintf(stderr, "usage: %s list [<index>]\n", p);
 	fprintf(stderr, "       %s default <index>\n", p);
-	fprintf(stderr, "       %s set  <index> [p|r] <ch> <freq>\n", p);
+	fprintf(stderr, "       %s set  <index> [p|r] <enc> <prec> <ch> <freq>\n",
+	    p);
 	fprintf(stderr, "       %s test <index>\n", p);
 	exit(EXIT_FAILURE);
 }
@@ -139,6 +140,8 @@ main(int argc, char *argv[])
 	struct audiodev *adev;
 	unsigned int n, i;
 	unsigned int j;
+	const char *enc;
+	unsigned int prec;
 	unsigned int ch;
 	unsigned int freq;
 	int mode;
@@ -180,8 +183,9 @@ main(int argc, char *argv[])
 			perror("couldn't set default device");
 			return EXIT_FAILURE;
 		}
-	} else if (strcmp(argv[1], "set") == 0 && argc == 6) {
-		/* audiocfg set <index> [p|r] <ch> <freq> */
+	} else if (strcmp(argv[1], "set") == 0 && argc == 8) {
+		/* XXX bad commandline... */
+		/* audiocfg set <index> [p|r] <enc> <prec> <ch> <freq> */
 		if (*argv[2] < '0' || *argv[2] > '9')
 			usage(argv[0]);
 			/* NOTREACHED */
@@ -205,18 +209,22 @@ main(int argc, char *argv[])
 			else
 				usage(argv[0]);
 		}
+		enc = argv[4];
+		prec = strtoul(argv[5], NULL, 10);
+		if (errno)
+			usage(argv[0]);
 		errno = 0;
-		ch = strtoul(argv[4], NULL, 10);
+		ch = strtoul(argv[6], NULL, 10);
 		if (errno)
 			usage(argv[0]);
 			/* NOTREACHED */
 		errno = 0;
-		freq = strtoul(argv[5], NULL, 10);
+		freq = strtoul(argv[7], NULL, 10);
 		if (errno)
 			usage(argv[0]);
 			/* NOTREACHED */
 
-		if (audiodev_set_param(adev, mode, ch, freq) == -1) {
+		if (audiodev_set_param(adev, mode, enc, prec, ch, freq) == -1) {
 			perror("couldn't set parameter");
 			return EXIT_FAILURE;
 		}

@@ -68,7 +68,8 @@ unsigned int		audiodev_count(void);
 struct audiodev *	audiodev_get(unsigned int);
 int			audiodev_set_default(struct audiodev *);
 int			audiodev_set_param(struct audiodev *, int,
-				unsigned int, unsigned int);
+				const char *, unsigned int, unsigned int,
+				unsigned int);
 int			audiodev_test(struct audiodev *, unsigned int);
 
 #endif /* !_HAVE_AUDIODEV_H */

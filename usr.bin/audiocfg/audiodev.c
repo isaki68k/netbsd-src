@@ -48,6 +48,28 @@ static TAILQ_HEAD(audiodevhead, audiodev) audiodevlist =
 
 #define AUDIODEV_SAMPLE_RATE	44100
 
+static const char *encoding_names[] = {
+	"none",
+	AudioEmulaw,
+	AudioEalaw,
+	"pcm16",
+	"pcm8",
+	AudioEadpcm,
+	AudioEslinear_le,
+	AudioEslinear_be,
+	AudioEulinear_le,
+	AudioEulinear_be,
+	AudioEslinear,
+	AudioEulinear,
+	AudioEmpeg_l1_stream,
+	AudioEmpeg_l1_packets,
+	AudioEmpeg_l1_system,
+	AudioEmpeg_l2_stream,
+	AudioEmpeg_l2_packets,
+	AudioEmpeg_l2_system,
+	AudioEac3,
+};
+
 static int
 audiodev_getinfo(struct audiodev *adev)
 {
@@ -248,21 +270,36 @@ audiodev_set_default(struct audiodev *adev)
 
 int
 audiodev_set_param(struct audiodev *adev, int mode,
-	unsigned int ch, unsigned int freq)
+	const char *encname, unsigned int prec, unsigned int ch, unsigned int freq)
 {
 	struct audio_info ai;
 	int setmode;
+	int enc;
 
 	setmode = 0;
 	ai = adev->info;
 
+	for (enc = 0; enc < __arraycount(encoding_names); enc++) {
+		if (strcmp(encname, encoding_names[enc]) == 0)
+			break;
+	}
+	if (enc >= __arraycount(encoding_names)) {
+		fprintf(stderr, "unknown encoding name: %s\n", encname);
+		errno = EINVAL;
+		return -1;
+	}
+
 	if ((ai.mode & mode & AUMODE_PLAY)) {
 		setmode |= AUMODE_PLAY;
+		ai.play.encoding = enc;
+		ai.play.precision = prec;
 		ai.play.channels = ch;
 		ai.play.sample_rate = freq;
 	}
 	if ((ai.mode & mode & AUMODE_RECORD)) {
 		setmode |= AUMODE_RECORD;
+		ai.record.encoding = enc;
+		ai.record.precision = prec;
 		ai.record.channels = ch;
 		ai.record.sample_rate = freq;
 	}
@@ -273,7 +310,8 @@ audiodev_set_param(struct audiodev *adev, int mode,
 	}
 
 	ai.mode = setmode;
-	printf("setting %s to %uch, %uHz\n", adev->xname, ch, freq);
+	printf("setting %s to %s:%u, %uch, %uHz\n",
+	    adev->xname, encname, prec, ch, freq);
 	if (ioctl(adev->fd, AUDIO_SETFORMAT, &ai) == -1) {
 		perror("ioctl AUDIO_SETFORMAT");
 		return -1;
