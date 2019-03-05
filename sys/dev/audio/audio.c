@@ -5030,12 +5030,14 @@ static int
 audio_mixer_init(struct audio_softc *sc, int mode,
 	const audio_format2_t *hwfmt, const audio_filter_reg_t *reg)
 {
+	char fmtstr[64];
 	audio_trackmixer_t *mixer;
 	void (*softint_handler)(void *);
 	int len;
 	int blksize;
 	int capacity;
 	size_t bufsize;
+	int blkms;
 	int error;
 
 	KASSERT(hwfmt != NULL);
@@ -5188,6 +5190,20 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 			error = ENOMEM;
 			goto abort;
 		}
+	}
+
+	/* Succeeded so display it. */
+	audio_format2_tostr(fmtstr, sizeof(fmtstr), &mixer->track_fmt);
+	blkms = mixer->blktime_n * 1000 / mixer->blktime_d;
+	aprint_normal_dev(sc->sc_dev, "%s, blk %dms for %s\n",
+	    fmtstr, blkms,
+	    (mode == AUMODE_PLAY) ? "playback" : "recording");
+	if (mixer->codec) {
+		DPRINTF(1, "%s: codec %p -> %s %dbit\n",
+		    device_xname(sc->sc_dev),
+		    mixer->codec,
+		    audio_encoding_name(mixer->hwbuf.fmt.encoding),
+		    mixer->hwbuf.fmt.precision);
 	}
 
 	return 0;
@@ -6314,8 +6330,6 @@ audio_mixers_init(struct audio_softc *sc, int mode,
 	const audio_format2_t *phwfmt, const audio_format2_t *rhwfmt,
 	const audio_filter_reg_t *pfil, const audio_filter_reg_t *rfil)
 {
-	char fmtstr[64];
-	int blkms;
 	int error;
 
 	KASSERT(phwfmt != NULL);
@@ -6331,23 +6345,7 @@ audio_mixers_init(struct audio_softc *sc, int mode,
 		}
 		sc->sc_pmixer = kmem_zalloc(sizeof(*sc->sc_pmixer), KM_SLEEP);
 		error = audio_mixer_init(sc, AUMODE_PLAY, phwfmt, pfil);
-		if (error == 0) {
-			audio_format2_tostr(fmtstr, sizeof(fmtstr),
-			    &sc->sc_pmixer->track_fmt);
-			blkms = sc->sc_pmixer->blktime_n * 1000 /
-			    sc->sc_pmixer->blktime_d;
-			aprint_normal_dev(sc->sc_dev,
-			    "%s, blk %dms for playback\n",
-			    fmtstr, blkms);
-			if (sc->sc_pmixer->codec) {
-				DPRINTF(1, "%s: codec %p -> %s %dbit\n",
-				    device_xname(sc->sc_dev),
-				    sc->sc_pmixer->codec,
-				    audio_encoding_name(
-				        sc->sc_pmixer->hwbuf.fmt.encoding),
-				    sc->sc_pmixer->hwbuf.fmt.precision);
-			}
-		} else {
+		if (error) {
 			aprint_error_dev(sc->sc_dev,
 			    "configuring playback mode failed\n");
 			kmem_free(sc->sc_pmixer, sizeof(*sc->sc_pmixer));
@@ -6362,23 +6360,7 @@ audio_mixers_init(struct audio_softc *sc, int mode,
 		}
 		sc->sc_rmixer = kmem_zalloc(sizeof(*sc->sc_rmixer), KM_SLEEP);
 		error = audio_mixer_init(sc, AUMODE_RECORD, rhwfmt, rfil);
-		if (error == 0) {
-			audio_format2_tostr(fmtstr, sizeof(fmtstr),
-			    &sc->sc_rmixer->track_fmt);
-			blkms = sc->sc_rmixer->blktime_n * 1000 /
-			    sc->sc_rmixer->blktime_d;
-			aprint_normal_dev(sc->sc_dev,
-			    "%s, blk %dms for recording\n",
-			    fmtstr, blkms);
-			if (sc->sc_rmixer->codec) {
-				DPRINTF(1, "%s: codec %p <- %s %dbit\n",
-				    device_xname(sc->sc_dev),
-				    sc->sc_rmixer->codec,
-				    audio_encoding_name(
-				        sc->sc_rmixer->hwbuf.fmt.encoding),
-				    sc->sc_rmixer->hwbuf.fmt.precision);
-			}
-		} else {
+		if (error) {
 			aprint_error_dev(sc->sc_dev,
 			    "configuring record mode failed\n");
 			kmem_free(sc->sc_rmixer, sizeof(*sc->sc_rmixer));
