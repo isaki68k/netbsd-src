@@ -254,17 +254,9 @@ am7930_set_format(void *addr, int setmode,
 {
 
 	if ((setmode & AUMODE_PLAY) != 0) {
-		pfil->param = *play;
-		pfil->param.encoding = AUDIO_ENCODING_ULAW;
-		pfil->param.validbits = 8;
-		pfil->param.precision = 8;
 		pfil->codec = audio_internal_to_mulaw;
 	}
 	if ((setmode & AUMODE_RECORD) != 0) {
-		rfil->param = *rec;
-		rfil->param.encoding = AUDIO_ENCODING_ULAW;
-		rfil->param.validbits = 8;
-		rfil->param.precision = 8;
 		rfil->codec = audio_mulaw_to_internal;
 	}
 

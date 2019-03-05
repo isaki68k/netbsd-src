@@ -411,18 +411,10 @@ vs_set_format(void *hdl, int setmode,
 	sc->sc_current.rate = rate;
 
 	if ((setmode & AUMODE_PLAY) != 0) {
-		pfil->param = *play;
-		pfil->param.encoding = AUDIO_ENCODING_ADPCM;
-		pfil->param.validbits = 4;
-		pfil->param.precision = 4;
 		pfil->codec = internal_to_msm6258;
 		pfil->context = &sc->sc_codecvar;
 	}
 	if ((setmode & AUMODE_RECORD) != 0) {
-		rfil->param = *rec;
-		rfil->param.encoding = AUDIO_ENCODING_ADPCM;
-		rfil->param.validbits = 4;
-		rfil->param.precision = 4;
 		rfil->codec = msm6258_to_internal;
 		rfil->context = &sc->sc_codecvar;
 	}

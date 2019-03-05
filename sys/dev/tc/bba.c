@@ -664,17 +664,9 @@ bba_set_format(void *addr, int setmode,
 {
 
 	if ((setmode & AUMODE_PLAY) != 0) {
-		pfil->param = *play;
-		pfil->param.encoding = AUDIO_ENCODING_ULAW;
-		pfil->param.validbits = 32;
-		pfil->param.precision = 32;
 		pfil->codec = audio_internal_to_mulaw32;
 	}
 	if ((setmode & AUMODE_RECORD) != 0) {
-		rfil->param = *rec;
-		rfil->param.encoding = AUDIO_ENCODING_ULAW;
-		rfil->param.validbits = 32;
-		rfil->param.precision = 32;
 		rfil->codec = audio_mulaw32_to_internal;
 	}
 
