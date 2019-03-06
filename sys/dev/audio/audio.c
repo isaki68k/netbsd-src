@@ -6514,7 +6514,7 @@ audio_hw_probe_fmt(struct audio_softc *sc, audio_format2_t *cand, int mode)
 
 /*
  * Choose the most preferred hardware format using query_format.
- * If successful, it will store the choosen format into *cand and return 0.
+ * If successful, it will store the chosen format into *cand and return 0.
  * Otherwise, return errno.
  * Must be called with sc_lock held.
  */
