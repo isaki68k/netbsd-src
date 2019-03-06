@@ -2918,7 +2918,6 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 			mutex_exit(sc->sc_lock);
 			/* Hide internal infomations */
 			query->fmt.driver_data = NULL;
-			query->fmt.priority = 0;
 		} else {
 			error = ENODEV;
 		}
