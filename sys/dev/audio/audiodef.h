@@ -211,6 +211,16 @@ struct audio_trackmixer {
 	audio_format2_t	mixfmt;
 	void		*mixsample;	/* mixing buf in double-sized int */
 
+	/*
+	 * true if trackmixer does LE<->BE conversion.
+	 * Generally an encoding conversion should be done by each hardware
+	 * driver but for most modern little endian drivers which support
+	 * only linear PCM it's troublesome issue to consider about big endian
+	 * arch.  Therefore, we do this conversion here only if the hardware
+	 * format is SLINEAR_OE:16.
+	 */
+	bool		swap_endian;
+
 	audio_filter_t	codec;		/* hardware codec */
 	audio_filter_arg_t codecarg;	/* and its argument */
 	audio_ring_t	codecbuf;	/* also used for wide->int conversion */

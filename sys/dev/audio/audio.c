@@ -5149,6 +5149,12 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 	mixer->track_fmt.channels = mixer->hwbuf.fmt.channels;
 	mixer->track_fmt.sample_rate = mixer->hwbuf.fmt.sample_rate;
 
+	if (mixer->hwbuf.fmt.encoding == AUDIO_ENCODING_SLINEAR_OE &&
+	    mixer->hwbuf.fmt.precision == AUDIO_INTERNAL_BITS) {
+		mixer->swap_endian = true;
+		DPRINTF(1, "%s: swap_endian\n", __func__);
+	}
+
 	if (mode == AUMODE_PLAY) {
 		/* Mixing buffer */
 		mixer->mixfmt = mixer->track_fmt;
@@ -5194,7 +5200,7 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 
 	/* Succeeded so display it. */
 	codecbuf[0] = '\0';
-	if (mixer->codec) {
+	if (mixer->codec || mixer->swap_endian) {
 		snprintf(codecbuf, sizeof(codecbuf), " %s %s:%d",
 		    (mode == AUMODE_PLAY) ? "->" : "<-",
 		    audio_encoding_name(mixer->hwbuf.fmt.encoding),
@@ -5466,8 +5472,14 @@ audio_pmixer_process(struct audio_softc *sc)
 	}
 
 	m = mixer->mixsample;
-	for (i = 0; i < sample_count; i++) {
-		*h++ = *m++;
+	if (mixer->swap_endian) {
+		for (i = 0; i < sample_count; i++) {
+			*h++ = bswap16(*m++);
+		}
+	} else {
+		for (i = 0; i < sample_count; i++) {
+			*h++ = *m++;
+		}
 	}
 
 	/* Hardware driver's codec */
@@ -5773,8 +5785,10 @@ audio_rmixer_process(struct audio_softc *sc)
 	audio_trackmixer_t *mixer;
 	audio_ring_t *mixersrc;
 	audio_file_t *f;
+	aint_t *p;
 	int count;
 	int bytes;
+	int i;
 
 	mixer = sc->sc_rmixer;
 
@@ -5801,6 +5815,14 @@ audio_rmixer_process(struct audio_softc *sc)
 		mixersrc = &mixer->codecbuf;
 	} else {
 		mixersrc = &mixer->hwbuf;
+	}
+
+	if (mixer->swap_endian) {
+		/* inplace conversion */
+		p = auring_headptr_aint(mixersrc);
+		for (i = 0; i < count * mixer->track_fmt.channels; i++, p++) {
+			*p = bswap16(*p);
+		}
 	}
 
 	/* Distribute to all tracks. */
