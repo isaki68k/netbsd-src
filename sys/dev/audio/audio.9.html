@@ -195,7 +195,8 @@ audio_attach_mi(const struct audio_hw_if *ahwp, void *hdl, device_t dev);
 		<span class=del>is called when the audio device is opened.</span>
 		<span class=a2>is called when the first device combining playback
 		and recording is opened.</span>
-		It should initialize the hardware for I/O.
+		<span class=del>
+		It should initialize the hardware for I/O.</span>
 		<span class=a2>
 		On a full duplex hardware,
 		(FREAD | FWRITE) is passed to <i>flags</i>.
@@ -383,7 +384,7 @@ AUDIO2 ではこれを廃止する。代わりに set_format を新設。
 	const audio_params_t *play, const audio_params_t *rec,
 	audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
 <dd class=p1><span class=a2>
-	is called to set hardware format,
+	is called to set specified format to the hardware,
 	when the device is attached or the hardware format is changed.
 	<i>setmode</i> is a combination of the
 	<tt>AUMODE_RECORD</tt> and <tt>AUMODE_PLAY</tt> flags to indicate which
@@ -693,7 +694,7 @@ Now mmap is done by audio layer.
 		<span class=a2>
 		It is called at any time.
 		<br><br>
-		<tt>AUDIO_PROP_MMAP</tt> is obsoleted, so
+		<tt>AUDIO_PROP_MMAP</tt> is acceptable but obsoleted, so
 		new drivers should not return this property.
 		</span>
 </dd>
