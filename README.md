@@ -71,7 +71,7 @@ vs(4) などの珍しい周波数の hardware がサポートできない。
 |sb(4)		|	|	|Work (*)
 |uaudio(4)	|	|	|Done
 |vs(4)		|	|x68k	|Done (*)
-|vsaudio(4)	|am7930	|vax	|Compiled but not tested
+|vsaudio(4)	|am7930	|vax	|Done
 
 Note:
 * mercury(4) は AUDIO2 で初サポート。
