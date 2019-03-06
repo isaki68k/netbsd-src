@@ -3392,6 +3392,11 @@ hdafg_probe_encoding(struct hdafg_softc *sc,
 		if (hdafg_rate_supported(sc, rate))
 			f.frequency[f.frequency_type++] = rate;
 	}
+#if defined(AUDIO2)
+	/* XXX ad hoc.. */
+	if (encoding == AUDIO_ENCODING_AC3)
+		f.priority = -1;
+#endif
 
 #define HDAUDIO_INITFMT(ch, chmask)			\
 	do {						\
