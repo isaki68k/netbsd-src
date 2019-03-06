@@ -5320,6 +5320,7 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
  *    mixsample [::::]                  wide-int 1 block (ring) buffer
  *                |
  *                |  convert aint2_t -> aint_t
+ *                |  (with byte swap if necessary)
  *                v
  *    hwbuf     [............]          NBLKHW blocks ring buffer
  *
