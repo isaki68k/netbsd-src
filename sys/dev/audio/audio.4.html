@@ -971,8 +971,7 @@ direction.</p>
 <p style="margin-left:12%;margin-top: 1em" valign="top"
 ><span class=a2>AUDIO_QUERYFORMAT (audio_format_query_t)</span></p>
 <p style="margin-left:20%;"><span class=a2>
-This command enumerates formats supported by the hardware
-(or underlying driver).
+This command enumerates formats supported by the hardware.
 Similarly to <tt>AUDIO_GETENC</tt>,
 to query all the supported formats,
 start with an index field of 0 and
@@ -1008,7 +1007,7 @@ ENODEV を返すにしてみたがどうか。
 <p style="margin-left:12%;margin-top: 1em" valign="top"><span class=a2
 >AUDIO_GETFORMAT (audio_info_t)</span></p>
 <p style="margin-left:20%;"><span class=a2>
-This command fetches the current track mixer's format.
+This command fetches the current hardware format.
 Only following members in audio_info_t are used.
 Members which is not listed here or belong in invalid direction
 are filled by -1.
@@ -1031,7 +1030,7 @@ are filled by -1.
 <p style="margin-left:12%;margin-top: 1em" valign="top"><span class=a2>
 AUDIO_SETFORMAT (audio_info_t)</span></p>
 <p style="margin-left:20%;"><span class=a2>
-This command sets the current track mixer's format.
+This command sets the hardware format.
 It will fail if there are any opened descriptors.
 So obviously, it must be issued on <tt>/dev/audioctl</tt>.
 Similarly to <tt>AUDIO_GETFORMAT</tt>,
