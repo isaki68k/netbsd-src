@@ -265,9 +265,15 @@ It never called on NetBSD8.
 </span>
 <br>
 <span class=a2>
-	The driver has to provide conversion between AUDIO_ENCODING_SLINEAR_NE:16
-	and your encoding:precision if the format is not
-	AUDIO_ENCODING_SLINEAR_NE:16.
+	If the driver supports SLINEAR_NE:16 and the upper layer chooses it,
+	the driver does not need to provide conversion function in set_format.
+	Similarly, if the driver supports SLINEAR_OE:16 and the upper layer
+	chooses it, the driver does not need to provide conversion function.
+	Because the upper layer only supports conversion between SLINEAR_NE:16 and
+	SLINEAR_OE:16 for convenience.
+	If the upper layer chooses other format,
+	the driver needs to provide conversion function in set_format.
+
 	See also set_format.
 	If the driver can not provide the conversion from/to SLINEAR_NE:16,
 	set priority to -1.
@@ -377,23 +383,20 @@ AUDIO2 ではこれを廃止する。代わりに set_format を新設。
 	const audio_params_t *play, const audio_params_t *rec,
 	audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
 <dd class=p1><span class=a2>
-	これはオーディオフォーマットをハードウェアに設定するため呼ばれます。
-	デバイスアタッチ時と
-	(audiocfg(1) などで) ミキシングフォーマットを変更した場合に呼ばれます。
-         setmode is a combination
-	     of the <tt>AUMODE_RECORD</tt> and <tt>AUMODE_PLAY</tt> flags to indicate which
-	     mode(s) are to be set.
+	is called to set hardware format,
+	when the device is attached or the hardware format is changed.
+	<i>setmode</i> is a combination of the
+	<tt>AUMODE_RECORD</tt> and <tt>AUMODE_PLAY</tt> flags to indicate which
+	     modes are to be set.
 <br><br>
-	     The play and rec structures contain the encoding parameters that
-	     should be set to the hardware.
-	【play と rec 構造体がハードウェアにセットするべきパラメータです。】
-	このうち encoding は <tt>AUDIO_ENCODING_SLINEAR_NE</tt>、
-	precision と validbits は <tt>AUDIO_INTERNAL_BITS</tt> で固定です。
-	query_format がある場合は channels と sample_rate は query_format の
-	返す集合と一致するものから選ばれており、
-	そのため、play, rec は必ず設定可能な値になっています。
-	query_format がない場合は channels と sample_rate がこのハードウェアで
-	設定できる保証はないため hardware driver が各自でチェックしてください。
+	     The <i>play</i> and <i>rec</i> structures contain
+	the encoding parameters that should be set to the hardware.
+	If the driver has query_format interface, all parameters on
+	<i>play</i> and/or <i>rec</i> are
+	chosen from formats returned by query_format.
+	Therefore <i>play</i> and/or <i>rec</i> are always settable.
+	If the driver does not have query_format interface,
+	the driver has to validate the format.
 </span>
 <br><br>
 <span class=comment>
@@ -403,14 +406,10 @@ AUDIO2 ではこれを廃止する。代わりに set_format を新設。
 <br><br>
 <span class=a2>
 	     If the hardware does not support
-		<tt>AUDIO_ENCODING_SLINEAR_NE:AUDIO_INTERNAL_BITS</tt>,
+		<tt>AUDIO_ENCODING_SLINEAR_{NE,OE}:16</tt>,
 	     conversion information should be filled the
 	     pfil for playing or rfil for recording.
-</span><span class=comment>
-set_params と違ってフィルタを複数指定することは出来ないので、
-1つのフィルタで処理すること (tc/bba.c しか該当しないはず)。
-</span><span class=a2>
-	The definition of audio_filter_reg_t and related structure follows:
+	The definition of audio_filter_reg_t and related structure follow:
 <br><br>
 <pre style="margin-left: 8%">
 typedef struct {
@@ -433,10 +432,11 @@ typedef struct {
 	<i>context</i> is optional opaque pointer passed to <i>codec</i>.
 <br><br>
 	When <i>codec</i> is called,
-	all parameters required by <i>codec</i> is contained <i>arg</i>.
-	<i>src</i> is input buffer, <i>srcfmt</i> contains input encoding parameter,
-	<i>dst</i> is output buffer and <i>dstfmt</i> contains output encoding
-	parameter.
+	all parameters required by <i>codec</i> is contained in <i>arg</i>.
+	<i>src</i> points input buffer block,
+	<i>srcfmt</i> contains input encoding parameter,
+	<i>dst</i> points output buffer block and
+	<i>dstfmt</i> contains output encoding parameter.
 	<i>count</i> represents the number of frames to process on this call.
 	<i>src</i> and <i>dst</i> are guaranteed to be able to consecutively access
 	number of frames specified by <i>count</i>.
@@ -444,8 +444,8 @@ typedef struct {
 	For example, let count = 100, srcfmt is { precision = 16, channels = 3 },
 	dstfmt is { precision = 8, channels = 4 } ,
 	in this case,
-	src buffer's length = 2(bytes) * 3(channels) * 100(frames) = 600 bytes,
-	The length to be written to dst is 1(byte) * 4(channels) * 100(frames)
+	src block length = 2(bytes) * 3(channels) * 100(frames) = 600 bytes,
+	The length to be written to dst block is 1(byte) * 4(channels) * 100(frames)
 	= 400 bytes.
 	<i>codec</i> cannot abort the conversion halfway and there is no
 	error reporting mechanism.
