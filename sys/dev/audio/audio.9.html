@@ -258,9 +258,10 @@ It never called on NetBSD8.
 	It is also used to determine the default format.
 	The upper layer chooses the most preferred one as default format
 	by following:<br>
-	1. Higher priority is preferred (the highest is 3, the lowest is 0).<br>
+	1. Higher priority is preferred (normally 0, the highest is 3, the lowest is 0).<br>
 	2. AUDIO_ENCODING_SLINEAR_NE:16 is preferred if exists.<br>
-	3. More channels is preferred.<br>
+	3. AUDIO_ENCODING_SLINEAR_OE:16 is preferred if exists.<br>
+	4. More channels is preferred.<br>
 </span>
 <br>
 <span class=a2>
@@ -268,7 +269,8 @@ It never called on NetBSD8.
 	and your encoding:precision if the format is not
 	AUDIO_ENCODING_SLINEAR_NE:16.
 	See also set_format.
-	If the driver can not provide the conversion, set priority to -1.
+	If the driver can not provide the conversion from/to SLINEAR_NE:16,
+	set priority to -1.
 	It means that the hardware supports this format but
 	the driver does not (e.g. AC3), and it will never be choosen.
 	</span>
@@ -423,33 +425,13 @@ typedef struct {
 typedef void(*audio_filter_t)(audio_filter_arg_t *arg);
 
 typedef struct {
-	audio_params_t param;
 	audio_filter_t codec;
 	void *context;
 } audio_filter_reg_t;
 </pre>
 	<i>codec</i> is conversion function and
 	<i>context</i> is optional opaque pointer passed to <i>codec</i>.
-	<i>param</i> contains encoding parameter same as <i>play</i> or <i>rec</i>.
-	you should update these <i>encoding</i>, <i>precision</i>,
-	<i>validbits</i> as you wish,
-	but
-	don't modify <i>channels</i> and <i>sample_rate</i> because
-	they are already determined appropriate value for the hardware.
 <br><br>
-	For example, <i>play</i> and <i>rec</i> request [slinear_ne, 16/16bit]
-	and if the hardware does not support 16bit slinear_ne, but
-	8bit mu-law, the driver should set:
-<pre style="margin-left: 8%">
-	pfil-&gt;codec = audio_internal_to_mulaw;
-	pfil-&gt;param.encoding = AUDIO_ENCODING_ULAW;
-	pfil-&gt;param.precision = 8;
-	pfil-&gt;param.validbits = 8;
-	rfil-&gt;codec = audio_mulaw_to_internal;
-	rfil-&gt;param.encoding = AUDIO_ENCODING_ULAW;
-	rfil-&gt;param.precision = 8;
-	rfil-&gt;param.validbits = 8;
-</pre>
 	When <i>codec</i> is called,
 	all parameters required by <i>codec</i> is contained <i>arg</i>.
 	<i>src</i> is input buffer, <i>srcfmt</i> contains input encoding parameter,
