@@ -441,8 +441,8 @@ intelfb*	at intelfbbus?
 #amdgpu*	at pci? dev ? function ?
 #amdgpufb*	at amdgpufbbus?
 
-nouveau*	at pci? dev ? function ?
-nouveaufb*	at nouveaufbbus?
+#nouveau*	at pci? dev ? function ?
+#nouveaufb*	at nouveaufbbus?
 
 # DRMUMS drivers
 #viadrmums*	at drm?
