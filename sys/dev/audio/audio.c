@@ -2054,11 +2054,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	if ((af->mode & AUMODE_RECORD))
 		af->rtrack = audio_track_create(sc, sc->sc_rmixer);
 
-	/*
-	 * Multiplex device: /dev/audio (mu-law) and /dev/sound (linear)
-	 * The /dev/audio is always (re)set to 8-bit mu-law mono
-	 * For the other devices, you get what they were last set to.
-	 */
+	/* Set parameters */
 	AUDIO_INITINFO(&ai);
 	if (bell) {
 		ai.play.sample_rate   = bell->sample_rate;
