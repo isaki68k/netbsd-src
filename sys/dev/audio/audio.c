@@ -7006,6 +7006,11 @@ audio_mixers_get_format(struct audio_softc *sc, struct audio_info *ai)
 // セットできれば sc_sound_[pr]* を更新する。
 // オープン時に呼ばれる時は file はまだ sc_files には繋がっていない。
 // sc_lock && sc_exlock で呼ぶこと。
+/*
+ * Set both track's parameters within a file depending on ai.
+ * Update sc_sound_[pr]* if set.
+ * Must be called with sc_lock and sc_exlock held.
+ */
 static int
 audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	const struct audio_info *ai)
