@@ -546,7 +546,7 @@ static int audio_sysctl_debug(SYSCTLFN_PROTO);
 #endif
 static void audio_format2_tostr(char *, size_t, const audio_format2_t *);
 #ifdef AUDIO_DEBUG
-static void audio_print_format2(const char *, const audio_format2_t *);
+static void audio_print_format2(const char *, const audio_format2_t *) __unused;
 #endif
 
 static void *audio_realloc(void *, size_t);
@@ -7167,16 +7167,19 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 		audio_file_clear(sc, file);
 #ifdef AUDIO_DEBUG
 		if (audiodebug >= 1) {
-			char modebuf[64];
-			snprintb(modebuf, sizeof(modebuf), "\177\020"
-			    "b\0PLAY\0" "b\1RECORD\0",
-			    mode);
-			printf("setting mode to %s (pchanges=%d rchanges=%d)\n",
-			    modebuf, pchanges, rchanges);
-			if (pchanges)
-				audio_print_format2("setting play mode:",&pfmt);
-			if (rchanges)
-				audio_print_format2("setting rec  mode:",&rfmt);
+			char fmtbuf[64];
+			if (pchanges) {
+				audio_format2_tostr(fmtbuf, sizeof(fmtbuf),
+				    &pfmt);
+				printf("set track#%d play mode: %s\n",
+				    ptrack->id, fmtbuf);
+			}
+			if (rchanges) {
+				audio_format2_tostr(fmtbuf, sizeof(fmtbuf),
+				    &rfmt);
+				printf("set track#%d rec  mode: %s\n",
+				    rtrack->id, fmtbuf);
+			}
 		}
 #endif
 	}
