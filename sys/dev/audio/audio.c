@@ -4564,12 +4564,15 @@ audio_append_silence(audio_track_t *track, audio_ring_t *ring)
 //	mulaw <-> aint_t 変換関数をそのまま利用できる場合にはこれを使用
 //	することが可能。
 //
-//	audio layer が MD ドライバに受け渡すフォーマットは内部形式と呼ぶもので、
+//	audio layer と underlying ドライバの間でやりとりされるフォーマットは
+//	内部形式と呼ぶもので、
 //	slinear_NE、16 bit、HW channels、HW frequency である。
 //	HW がこれをそのまま扱えるのなら MD フィルタは不要、
-//	encoding/precision を変換する必要があれば MD フィルタが必要。
-//	MD フィルタは通常 slinear_NE、16bit と HW エンコーディングの変換だけを
-//	受け持つ。
+//	encoding/precision を変換する必要があれば MD フィルタが必要となる。
+//	例外として encoding/precision が slinear_OE、16bit の場合に限り
+//	audio layer がエンディアン変換を行う。つまり
+//	MD フィルタは slinear_{NE,OE}、16bit と HW エンコーディングの変換
+//	だけを受け持つ。
 //
 //	変換関数(フィルタ)は以下のプロトタイプを持つ。
 //
