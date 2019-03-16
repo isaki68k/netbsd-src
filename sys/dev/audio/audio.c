@@ -2087,7 +2087,6 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 		ai.record.precision   = sc->sc_sound_rparams.precision;
 		ai.record.pause       = sc->sc_sound_rpause;
 	}
-	ai.mode = af->mode;
 	error = audio_file_setinfo(sc, af, &ai);
 	if (error)
 		goto bad2;
