@@ -7289,7 +7289,7 @@ audio_file_setinfo_check(audio_format2_t *fmt, const struct audio_prinfo *info)
 
 	if (changes) {
 		if (audio_check_params(fmt) != 0) {
-#if AUDIO_DEBUG >= 2
+#ifdef DIAGNOSTIC
 			char fmtbuf[64];
 			audio_format2_tostr(fmtbuf, sizeof(fmtbuf), fmt);
 			DPRINTF(0, "%s failed: %s\n", __func__, fmtbuf);
