@@ -45,6 +45,23 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #endif // !_KERNEL
 
 /*
+ * audio_internal_to_mulaw has two implementations.
+ *
+ * 1. Use 8bit table (MULAW_LQ_ENC)
+ *  It's traditional implementation and its precision is 8bit.
+ *  It's faster but the size is larger.  And you can hear a little noise
+ *  in silent part.
+ *
+ * 2. Calculation (default)
+ *  It calculates mu-law with full spec and its precision is 14bit.
+ *  It's about 10 times slower but the size is less than a half (on m68k,
+ *  for example).
+ *
+ * mu-law is no longer a popular format.  I think size-optimized is better.
+ */
+/* #define MULAW_LQ_ENC */
+
+/*
  * About mulaw32 format.
  *
  * The format which I call ``mulaw32'' is only used in dev/tc/bba.c .
@@ -63,23 +80,6 @@ __KERNEL_RCSID(0, "$NetBSD$");
  * define MULAW32 and include this file.  It's a bit tricky but I think
  * this is the simplest way.
  */
-
-/*
- * audio_internal_to_mulaw has two implementations.
- *
- * 1. Use 8bit table (MULAW_LQ_ENC)
- *  It's traditional implementation and its precision is 8bit.
- *  It's faster but the size is larger.  And you can hear a little noise
- *  in silent part.
- *
- * 2. Calculation (default)
- *  It calculates mu-law with full spec and its precision is 14bit.
- *  It's about 10 times slower but the size is less than a half (on m68k,
- *  for example).
- *
- * mu-law is no longer a popular format.  I think size-optimized is better.
- */
-/* #define MULAW_LQ_ENC */
 
 #if 0
 #define MPRINTF(fmt, ...)	printf(fmt, ## __VA_ARGS__)
