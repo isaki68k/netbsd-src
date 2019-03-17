@@ -547,8 +547,8 @@ static void audio_free_usrbuf(audio_track_t *);
 static audio_track_t *audio_track_create(struct audio_softc *,
 	audio_trackmixer_t *);
 static void audio_track_destroy(audio_track_t *);
-static audio_filter_t audio_track_get_codec(const audio_format2_t *,
-	const audio_format2_t *);
+static audio_filter_t audio_track_get_codec(audio_track_t *,
+	const audio_format2_t *, const audio_format2_t *);
 static int audio_track_set_format(audio_track_t *, audio_format2_t *);
 static void audio_track_play(audio_track_t *);
 static int audio_track_drain(struct audio_softc *, audio_track_t *);
@@ -951,8 +951,8 @@ audioattach(device_t parent, device_t self, void *aux)
 	// できればなくしたい。
 
 	mixer_init(sc);
-	DPRINTF(2, "%s: inputs ports=0x%x, input master=%d, "
-	    "output ports=0x%x, output master=%d\n", __func__,
+	TRACE(2, "inputs ports=0x%x, input master=%d, "
+	    "output ports=0x%x, output master=%d",
 	    sc->sc_inports.allports, sc->sc_inports.master,
 	    sc->sc_outports.allports, sc->sc_outports.master);
 
@@ -2915,7 +2915,7 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 			    cmd, addr, flag, l);
 			audio_exit_exclusive(sc);
 		} else {
-			DPRINTF(2, "audio_ioctl: unknown ioctl\n");
+			TRACEF(2, file, "unknown ioctl");
 			error = EINVAL;
 		}
 		break;
@@ -3151,8 +3151,7 @@ audio_mmap(struct audio_softc *sc, off_t *offp, size_t len, int prot,
 	KASSERT(!mutex_owned(sc->sc_lock));
 	KASSERT(file->lock);
 
-	DPRINTF(2, "%s%d: off=%lld, prot=%d\n", __func__,
-	    device_unit(sc->sc_dev), (long long)(*offp), prot);
+	TRACEF(2, file, "off=%lld, prot=%d", (long long)(*offp), prot);
 
 	if (*offp < 0)
 		return EINVAL;
@@ -3328,7 +3327,7 @@ audio_realloc_usrbuf(audio_track_t *track, int newbufsize)
 	    UVM_MAPFLAG(UVM_PROT_RW, UVM_PROT_RW, UVM_INH_NONE,
 	    UVM_ADV_RANDOM, 0));
 	if (error) {
-		DPRINTF(1, "%s: uvm_map failed\n", __func__);
+		TRACET(1, track, "uvm_map failed");
 		uao_detach(track->uobj);	/* release reference */
 		goto abort;
 	}
@@ -3336,7 +3335,7 @@ audio_realloc_usrbuf(audio_track_t *track, int newbufsize)
 	error = uvm_map_pageable(kernel_map, vstart, vstart + newvsize,
 	    false, 0);
 	if (error) {
-		DPRINTF(1, "%s: uvm_map_pageable failed\n", __func__);
+		TRACET(1, track, "uvm_map_pageable failed");
 		uvm_unmap(kernel_map, vstart, vstart + newvsize);
 		/* uvm_unmap also detach uobj */
 		goto abort;
@@ -3851,7 +3850,8 @@ audio_track_destroy(audio_track_t *track)
  * must be internal format.
  */
 static audio_filter_t
-audio_track_get_codec(const audio_format2_t *src, const audio_format2_t *dst)
+audio_track_get_codec(audio_track_t *track, const audio_format2_t *src,
+	const audio_format2_t *dst)
 {
 
 	if (audio_format2_is_internal(src)) {
@@ -3872,8 +3872,8 @@ audio_track_get_codec(const audio_format2_t *src, const audio_format2_t *dst)
 			case 32:
 				return audio_internal_to_linear32;
 			default:
-				DPRINTF(1, "%s: unsupported %s stride %d\n",
-				    __func__, "dst", dst->stride);
+				TRACET(1, track, "unsupported %s stride %d",
+				    "dst", dst->stride);
 				goto abort;
 			}
 		}
@@ -3895,22 +3895,22 @@ audio_track_get_codec(const audio_format2_t *src, const audio_format2_t *dst)
 			case 32:
 				return audio_linear32_to_internal;
 			default:
-				DPRINTF(1, "%s: unsupported %s stride %d\n",
-				    __func__, "src", src->stride);
+				TRACET(1, track, "unsupported %s stride %d",
+				    "src", src->stride);
 				goto abort;
 			}
 		}
 	}
 
-	DPRINTF(1, "unsupported encoding\n");
+	TRACET(1, track, "unsupported encoding");
 abort:
 #if defined(AUDIO_DEBUG)
 	if (audiodebug >= 2) {
 		char buf[100];
 		audio_format2_tostr(buf, sizeof(buf), src);
-		printf("%s: src %s\n", __func__, buf);
+		TRACET(2, track, "src %s", buf);
 		audio_format2_tostr(buf, sizeof(buf), dst);
-		printf("%s: dst %s\n", __func__, buf);
+		TRACET(2, track, "dst %s", buf);
 	}
 #endif
 	return NULL;
@@ -3951,10 +3951,9 @@ audio_track_init_codec(audio_track_t *track, audio_ring_t **last_dstp)
 		srcbuf->fmt.precision = srcfmt->precision;
 		srcbuf->fmt.stride = srcfmt->stride;
 
-		track->codec.filter = audio_track_get_codec(&srcbuf->fmt,
-		    dstfmt);
+		track->codec.filter = audio_track_get_codec(track,
+		    &srcbuf->fmt, dstfmt);
 		if (track->codec.filter == NULL) {
-			DPRINTF(1, "%s: get_codec_filter failed\n", __func__);
 			error = EINVAL;
 			goto abort;
 		}
@@ -3965,7 +3964,7 @@ audio_track_init_codec(audio_track_t *track, audio_ring_t **last_dstp)
 		len = auring_bytelen(srcbuf);
 		srcbuf->mem = audio_realloc(srcbuf->mem, len);
 		if (srcbuf->mem == NULL) {
-			DPRINTF(1, "%s: malloc(%d) failed\n", __func__, len);
+			TRACET(1, track, "malloc(%d) failed", len);
 			error = ENOMEM;
 			goto abort;
 		}
@@ -4032,7 +4031,7 @@ audio_track_init_chvol(audio_track_t *track, audio_ring_t **last_dstp)
 		len = auring_bytelen(srcbuf);
 		srcbuf->mem = audio_realloc(srcbuf->mem, len);
 		if (srcbuf->mem == NULL) {
-			DPRINTF(1, "%s: malloc(%d) failed\n", __func__, len);
+			TRACET(1, track, "malloc(%d) failed", len);
 			error = ENOMEM;
 			goto abort;
 		}
@@ -4104,7 +4103,7 @@ audio_track_init_chmix(audio_track_t *track, audio_ring_t **last_dstp)
 		len = auring_bytelen(srcbuf);
 		srcbuf->mem = audio_realloc(srcbuf->mem, len);
 		if (srcbuf->mem == NULL) {
-			DPRINTF(1, "%s: malloc(%d) failed\n", __func__, len);
+			TRACET(1, track, "malloc(%d) failed", len);
 			error = ENOMEM;
 			goto abort;
 		}
@@ -4189,7 +4188,7 @@ audio_track_init_freq(audio_track_t *track, audio_ring_t **last_dstp)
 		len = auring_bytelen(srcbuf);
 		srcbuf->mem = audio_realloc(srcbuf->mem, len);
 		if (srcbuf->mem == NULL) {
-			DPRINTF(1, "%s: malloc(%d) failed\n", __func__, len);
+			TRACET(1, track, "malloc(%d) failed", len);
 			error = ENOMEM;
 			goto abort;
 		}
@@ -4311,8 +4310,7 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 	newbufsize = rounddown(newbufsize, track->usrbuf_blksize);
 	error = audio_realloc_usrbuf(track, newbufsize);
 	if (error) {
-		DPRINTF(1, "%s: malloc usrbuf(%d) failed\n", __func__,
-		    newbufsize);
+		TRACET(1, track, "malloc usrbuf(%d) failed", newbufsize);
 		goto error;
 	}
 
@@ -4392,8 +4390,7 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 		len = auring_bytelen(track->input);
 		track->input->mem = audio_realloc(track->input->mem, len);
 		if (track->input->mem == NULL) {
-			DPRINTF(1, "%s: malloc input(%d) failed\n", __func__,
-			    len);
+			TRACET(1, track, "malloc input(%d) failed", len);
 			error = ENOMEM;
 			goto error;
 		}
@@ -4413,7 +4410,7 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 	len = auring_bytelen(&track->outbuf);
 	track->outbuf.mem = audio_realloc(track->outbuf.mem, len);
 	if (track->outbuf.mem == NULL) {
-		DPRINTF(1, "%s: malloc outbuf(%d) failed\n", __func__, len);
+		TRACET(1, track, "malloc outbuf(%d) failed", len);
 		error = ENOMEM;
 		goto error;
 	}
@@ -5017,8 +5014,7 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 		audio_params_t p = format2_to_params(&mixer->hwbuf.fmt);
 		rounded = sc->hw_if->round_blocksize(sc->hw_hdl, blksize,
 		    mode, &p);
-		DPRINTF(2, "%s round_blocksize %d -> %d\n", __func__,
-		    blksize, rounded);
+		TRACE(2, "round_blocksize %d -> %d", blksize, rounded);
 		if (rounded != blksize) {
 			if ((rounded * NBBY) % (mixer->hwbuf.fmt.stride *
 			    mixer->hwbuf.fmt.channels) != 0) {
@@ -5042,8 +5038,7 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 		size_t rounded;
 		rounded = sc->hw_if->round_buffersize(sc->hw_hdl, mode,
 		    bufsize);
-		DPRINTF(2, "%s round_buffersize %zd -> %zd\n", __func__,
-		    bufsize, rounded);
+		TRACE(2, "round_buffersize %zd -> %zd", bufsize, rounded);
 		if (rounded != bufsize) {
 			/* XXX what should I do? */
 			device_printf(sc->sc_dev,
@@ -5102,7 +5097,7 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 	if (mixer->hwbuf.fmt.encoding == AUDIO_ENCODING_SLINEAR_OE &&
 	    mixer->hwbuf.fmt.precision == AUDIO_INTERNAL_BITS) {
 		mixer->swap_endian = true;
-		DPRINTF(1, "%s: swap_endian\n", __func__);
+		TRACE(1, "swap_endian");
 	}
 
 	if (mode == AUMODE_PLAY) {
@@ -5577,8 +5572,7 @@ audio_pmixer_output(struct audio_softc *sc)
 			error = sc->hw_if->trigger_output(sc->hw_hdl,
 			    start, end, blksize, audio_pintr, sc, &params);
 			if (error) {
-				DPRINTF(1, "%s trigger_output failed: %d\n",
-				    __func__, error);
+				TRACE(1, "trigger_output failed: %d", error);
 				return;
 			}
 		}
@@ -5589,8 +5583,7 @@ audio_pmixer_output(struct audio_softc *sc)
 		error = sc->hw_if->start_output(sc->hw_hdl,
 		    start, blksize, audio_pintr, sc);
 		if (error) {
-			DPRINTF(1, "%s start_output failed: %d\n",
-			    __func__, error);
+			TRACE(1, "start_output failed: %d", error);
 			return;
 		}
 	}
@@ -5616,7 +5609,7 @@ audio_pintr(void *arg)
 		return;
 #if defined(DIAGNOSTIC)
 	if (sc->sc_pbusy == false) {
-		DPRINTF(1, "%s: stray interrupt\n", __func__);
+		device_printf(sc->sc_dev, "stray interrupt\n");
 		return;
 	}
 #endif
@@ -5848,8 +5841,7 @@ audio_rmixer_input(struct audio_softc *sc)
 			error = sc->hw_if->trigger_input(sc->hw_hdl,
 			    start, end, blksize, audio_rintr, sc, &params);
 			if (error) {
-				DPRINTF(1, "%s trigger_input failed: %d\n",
-				    __func__, error);
+				TRACE(1, "trigger_input failed: %d", error);
 				return;
 			}
 		}
@@ -5860,8 +5852,7 @@ audio_rmixer_input(struct audio_softc *sc)
 		error = sc->hw_if->start_input(sc->hw_hdl,
 		    start, blksize, audio_rintr, sc);
 		if (error) {
-			DPRINTF(1, "%s start_input failed: %d\n",
-			    __func__, error);
+			TRACE(1, "start_input failed: %d", error);
 			return;
 		}
 	}
@@ -5887,7 +5878,7 @@ audio_rintr(void *arg)
 		return;
 #if defined(DIAGNOSTIC)
 	if (sc->sc_rbusy == false) {
-		DPRINTF(1, "%s: stray interrupt\n", __func__);
+		device_printf(sc->sc_dev, "stray interrupt\n");
 		return;
 	}
 #endif
@@ -6779,7 +6770,7 @@ audio_mixers_set_format(struct audio_softc *sc, const struct audio_info *ai)
 
 	/* debug */
 	if ((mode & AUMODE_PLAY)) {
-		DPRINTF(1, "%s: play=%s/%d/%d/%dch/%dHz\n", __func__,
+		TRACE(1, "play=%s/%d/%d/%dch/%dHz",
 		    audio_encoding_name(phwfmt.encoding),
 		    phwfmt.precision,
 		    phwfmt.stride,
@@ -6787,7 +6778,7 @@ audio_mixers_set_format(struct audio_softc *sc, const struct audio_info *ai)
 		    phwfmt.sample_rate);
 	}
 	if ((mode & AUMODE_RECORD)) {
-		DPRINTF(1, "%s: rec =%s/%d/%d/%dch/%dHz\n", __func__,
+		TRACE(1, "rec =%s/%d/%d/%dch/%dHz",
 		    audio_encoding_name(rhwfmt.encoding),
 		    rhwfmt.precision,
 		    rhwfmt.stride,
@@ -6798,13 +6789,13 @@ audio_mixers_set_format(struct audio_softc *sc, const struct audio_info *ai)
 	/* Check the format */
 	if ((mode & AUMODE_PLAY)) {
 		if (audio_hw_validate_format(sc, AUMODE_PLAY, &phwfmt)) {
-			DPRINTF(1, "%s: invalid format\n", __func__);
+			TRACE(1, "invalid format");
 			return EINVAL;
 		}
 	}
 	if ((mode & AUMODE_RECORD)) {
 		if (audio_hw_validate_format(sc, AUMODE_RECORD, &rhwfmt)) {
-			DPRINTF(1, "%s: invalid format\n", __func__);
+			TRACE(1, "invalid format");
 			return EINVAL;
 		}
 	}
@@ -7096,8 +7087,7 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	if (ptrack) {
 		pchanges = audio_track_setinfo_check(&pfmt, pi);
 		if (pchanges == -1) {
-			DPRINTF(1, "%s: check play.params failed\n",
-			    __func__);
+			TRACET(1, ptrack, "check play.params failed");
 			return EINVAL;
 		}
 		if (SPECIFIED(ai->mode))
@@ -7106,8 +7096,7 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	if (rtrack) {
 		rchanges = audio_track_setinfo_check(&rfmt, ri);
 		if (rchanges == -1) {
-			DPRINTF(1, "%s: check record.params failed\n",
-			    __func__);
+			TRACET(1, rtrack, "check record.params failed");
 			return EINVAL;
 		}
 		if (SPECIFIED(ai->mode))
@@ -7153,8 +7142,7 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 			error = audio_track_set_format(ptrack, &pfmt);
 			audio_track_lock_exit(ptrack);
 			if (error) {
-				DPRINTF(1, "%s: set play.params failed\n",
-				    __func__);
+				TRACET(1, ptrack, "set play.params failed");
 				goto abort2;
 			}
 			sc->sc_sound_pparams = pfmt;
@@ -7173,8 +7161,7 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 			error = audio_track_set_format(rtrack, &rfmt);
 			audio_track_lock_exit(rtrack);
 			if (error) {
-				DPRINTF(1, "%s: set record.params failed\n",
-				    __func__);
+				TRACET(1, rtrack, "set record.params failed");
 				goto abort3;
 			}
 			sc->sc_sound_rparams = rfmt;
@@ -7243,7 +7230,7 @@ audio_track_setinfo_check(audio_format2_t *fmt, const struct audio_prinfo *info)
 #ifdef DIAGNOSTIC
 			char fmtbuf[64];
 			audio_format2_tostr(fmtbuf, sizeof(fmtbuf), fmt);
-			DPRINTF(0, "%s failed: %s\n", __func__, fmtbuf);
+			printf("%s failed: %s\n", __func__, fmtbuf);
 #endif
 			return -1;
 		}
@@ -7350,8 +7337,8 @@ audio_hw_setinfo(struct audio_softc *sc, const struct audio_info *newai,
 			oldpi->port = au_get_port(sc, &sc->sc_outports);
 		error = au_set_port(sc, &sc->sc_outports, newpi->port);
 		if (error) {
-			DPRINTF(1, "%s: set play.port=%d failed: %d\n",
-			    __func__, newpi->port, error);
+			TRACE(1, "set play.port=%d failed: %d",
+			    newpi->port, error);
 			goto abort;
 		}
 	}
@@ -7360,8 +7347,8 @@ audio_hw_setinfo(struct audio_softc *sc, const struct audio_info *newai,
 			oldri->port = au_get_port(sc, &sc->sc_inports);
 		error = au_set_port(sc, &sc->sc_inports, newri->port);
 		if (error) {
-			DPRINTF(1, "%s: set record.port=%d failed: %d\n",
-			    __func__, newri->port, error);
+			TRACE(1, "set record.port=%d failed: %d",
+			    newri->port, error);
 			goto abort;
 		}
 	}
@@ -7390,8 +7377,8 @@ audio_hw_setinfo(struct audio_softc *sc, const struct audio_info *newai,
 		error = au_set_gain(sc, &sc->sc_outports,
 		    newpi->gain, pbalance);
 		if (error) {
-			DPRINTF(1, "%s: set play.gain=%d failed: %d\n",
-			    __func__, newpi->gain, error);
+			TRACE(1, "set play.gain=%d failed: %d",
+			    newpi->gain, error);
 			goto abort;
 		}
 	}
@@ -7399,8 +7386,8 @@ audio_hw_setinfo(struct audio_softc *sc, const struct audio_info *newai,
 		error = au_set_gain(sc, &sc->sc_inports,
 		    newri->gain, rbalance);
 		if (error) {
-			DPRINTF(1, "%s: set record.gain=%d failed: %d\n",
-			    __func__, newri->gain, error);
+			TRACE(1, "set record.gain=%d failed: %d",
+			    newri->gain, error);
 			goto abort;
 		}
 	}
@@ -7408,8 +7395,8 @@ audio_hw_setinfo(struct audio_softc *sc, const struct audio_info *newai,
 		error = au_set_gain(sc, &sc->sc_outports,
 		    pgain, newpi->balance);
 		if (error) {
-			DPRINTF(1, "%s: set play.balance=%d failed: %d\n",
-			    __func__, newpi->balance, error);
+			TRACE(1, "set play.balance=%d failed: %d",
+			    newpi->balance, error);
 			goto abort;
 		}
 	}
@@ -7417,8 +7404,8 @@ audio_hw_setinfo(struct audio_softc *sc, const struct audio_info *newai,
 		error = au_set_gain(sc, &sc->sc_inports,
 		    rgain, newri->balance);
 		if (error) {
-			DPRINTF(1, "%s: set record.balance=%d failed: %d\n",
-			    __func__, newri->balance, error);
+			TRACE(1, "set record.balance=%d failed: %d",
+			    newri->balance, error);
 			goto abort;
 		}
 	}
@@ -7428,8 +7415,8 @@ audio_hw_setinfo(struct audio_softc *sc, const struct audio_info *newai,
 			oldai->monitor_gain = au_get_monitor_gain(sc);
 		error = au_set_monitor_gain(sc, newai->monitor_gain);
 		if (error) {
-			DPRINTF(1, "%s: set monitor_gain=%d failed: %d\n",
-			    __func__, newai->monitor_gain, error);
+			TRACE(1, "set monitor_gain=%d failed: %d",
+			    newai->monitor_gain, error);
 			goto abort;
 		}
 	}
@@ -7492,7 +7479,7 @@ audio_hw_set_params(struct audio_softc *sc, int setmode,
 	/* Use set_format if defined. */
 	use_set_format = (sc->hw_if->set_format != NULL);
 	if (use_set_format)
-		DPRINTF(2, "%s use_set_format\n", __func__);
+		TRACE(2, "use_set_format");
 
 	usemode = setmode;
 	pp = format2_to_params(phwfmt);
@@ -7515,16 +7502,14 @@ audio_hw_set_params(struct audio_softc *sc, int setmode,
 		error = sc->hw_if->set_format(sc->hw_hdl, setmode,
 		    &pp, &rp, pfil, rfil);
 		if (error) {
-			DPRINTF(1, "%s: set_format failed with %d\n",
-			    __func__, error);
+			TRACE(1, "set_format failed with %d", error);
 			return error;
 		}
 	} else {
 		error = sc->hw_if->set_params(sc->hw_hdl, setmode, usemode,
 		    &pp, &rp, &pfilters, &rfilters);
 		if (error) {
-			DPRINTF(1, "%s: set_params failed with %d\n",
-			    __func__, error);
+			TRACE(1, "set_params failed with %d", error);
 			return error;
 		}
 	}
@@ -7532,8 +7517,7 @@ audio_hw_set_params(struct audio_softc *sc, int setmode,
 	if (sc->hw_if->commit_settings) {
 		error = sc->hw_if->commit_settings(sc->hw_hdl);
 		if (error) {
-			DPRINTF(1, "%s: commit_settings failed with %d\n",
-			    __func__, error);
+			TRACE(1, "commit_settings failed with %d", error);
 			return error;
 		}
 	}
@@ -8100,7 +8084,7 @@ mixer_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 
 	KASSERT(mutex_owned(sc->sc_lock));
 
-	DPRINTF(1, "mixer_open: flags=0x%x\n", flags);
+	TRACE(1, "flags=0x%x", flags);
 
 	error = fd_allocfile(&fp, &fd);
 	if (error)
@@ -8165,7 +8149,7 @@ mixer_close(struct audio_softc *sc, audio_file_t *file)
 {
 
 	mutex_enter(sc->sc_lock);
-	DPRINTF(1, "mixer_close\n");
+	TRACE(1, "");
 	mixer_remove(sc);
 	mutex_exit(sc->sc_lock);
 
@@ -8183,7 +8167,7 @@ mixer_ioctl(struct audio_softc *sc, u_long cmd, void *addr, int flag,
 
 	KASSERT(!mutex_owned(sc->sc_lock));
 
-	DPRINTF(2, "mixer_ioctl(%lu,'%c',%lu)\n",
+	TRACE(2, "(%lu,'%c',%lu)",
 	    IOCPARM_LEN(cmd), (char)IOCGROUP(cmd), cmd & 0xff);
 	error = EINVAL;
 
@@ -8211,7 +8195,7 @@ mixer_ioctl(struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		break;
 
 	case AUDIO_GETDEV:
-		DPRINTF(2, "AUDIO_GETDEV\n");
+		TRACE(2, "AUDIO_GETDEV");
 		error = audio_enter_exclusive(sc);
 		if (error)
 			break;
@@ -8220,7 +8204,7 @@ mixer_ioctl(struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		break;
 
 	case AUDIO_MIXER_DEVINFO:
-		DPRINTF(2, "AUDIO_MIXER_DEVINFO\n");
+		TRACE(2, "AUDIO_MIXER_DEVINFO");
 		mi = (mixer_devinfo_t *)addr;
 
 		mi->un.v.delta = 0; /* default */
@@ -8230,7 +8214,7 @@ mixer_ioctl(struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		break;
 
 	case AUDIO_MIXER_READ:
-		DPRINTF(2, "AUDIO_MIXER_READ\n");
+		TRACE(2, "AUDIO_MIXER_READ");
 		mc = (mixer_ctrl_t *)addr;
 
 		error = audio_enter_exclusive(sc);
@@ -8250,7 +8234,7 @@ mixer_ioctl(struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		break;
 
 	case AUDIO_MIXER_WRITE:
-		DPRINTF(2, "AUDIO_MIXER_WRITE\n");
+		TRACE(2, "AUDIO_MIXER_WRITE");
 		error = audio_enter_exclusive(sc);
 		if (error)
 			break;
@@ -8283,7 +8267,7 @@ mixer_ioctl(struct audio_softc *sc, u_long cmd, void *addr, int flag,
 			error = EINVAL;
 		break;
 	}
-	DPRINTF(2, "mixer_ioctl(%lu,'%c',%lu) result %d\n",
+	TRACE(2, "(%lu,'%c',%lu) result %d",
 	    IOCPARM_LEN(cmd), (char)IOCGROUP(cmd), cmd & 0xff, error);
 	return error;
 }
@@ -8424,8 +8408,7 @@ au_set_gain(struct audio_softc *sc, struct au_mixer_ports *ports,
 		l = ((AUDIO_RIGHT_BALANCE - balance) * gain)
 		    / AUDIO_MID_BALANCE;
 	}
-	DPRINTF(2, "au_set_gain: gain=%d balance=%d, l=%d r=%d\n",
-	    gain, balance, l, r);
+	TRACE(2, "gain=%d balance=%d, l=%d r=%d", gain, balance, l, r);
 
 	if (ports->index == -1) {
 	usemaster:
