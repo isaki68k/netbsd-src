@@ -5477,7 +5477,7 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track,
 	/*
 	 * XXX If you limit the track volume to 1.0 or less (<= 256),
 	 *     it would be better to do this in the track conversion stage
-	 *     rather than here.  However, if you accepts the volume to
+	 *     rather than here.  However, if you accept the volume to
 	 *     be greater than 1.0 (> 256), it's better to do it here.
 	 *     Because the operation here is done by double-sized integer.
 	 */
@@ -6852,7 +6852,7 @@ audio_mixers_get_format(struct audio_softc *sc, struct audio_info *ai)
  * ai.{play,record}.precision		(R/W)
  * ai.{play,record}.channels		(R/W)
  *	These specify the playback or recording format.
- *	Ignore members of an inactive track.
+ *	Ignore members within an inactive track.
  *
  * ai.mode				(R/W)
  *	It specifies the playback or recording mode, AUMODE_*.
@@ -7194,8 +7194,12 @@ abort1:
 	return error;
 }
 
-// info のうち SPECIFIED なパラメータを抜き出して fmt に書き出す。
-// 戻り値は 1なら変更あり、0なら変更なし、負数ならエラー(EINVAL)
+/*
+ * Write SPECIFIED() parameters within info back to fmt.
+ * Return value of 1 indicates that fmt is modified.
+ * Return value of 0 indicates that fmt is not modified.
+ * Return value of -1 indicates that error EINVAL has occurred.
+ */
 static int
 audio_track_setinfo_check(audio_format2_t *fmt, const struct audio_prinfo *info)
 {
