@@ -16,7 +16,7 @@
 #include <sys/audioio.h>	/* required by audiovar.h */
 #include "audiovar.h"
 #include "audiodef.h"
-#include "aucodec.c"
+#include "linear.c"
 #include "mulaw.c"
 #include "alaw.c"
 

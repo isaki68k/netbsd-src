@@ -219,7 +219,7 @@ __KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.458 2018/09/03 16:29:30 riastradh Exp $"
 #include <dev/audiovar.h>
 #include <dev/auconv.h>
 #include <dev/audio/audiodef.h>
-#include <dev/audio/aucodec.h>
+#include <dev/audio/linear.h>
 #include <dev/audio/mulaw.h>
 
 #include <machine/endian.h>

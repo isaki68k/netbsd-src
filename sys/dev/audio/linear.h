@@ -26,8 +26,8 @@
  * SUCH DAMAGE.
  */
 
-#ifndef _SYS_DEV_AUDIO_AUCODEC_H_
-#define _SYS_DEV_AUDIO_AUCODEC_H_
+#ifndef _SYS_DEV_AUDIO_LINEAR_H_
+#define _SYS_DEV_AUDIO_LINEAR_H_
 
 #include <dev/audio_if.h>
 
@@ -40,4 +40,4 @@ extern void audio_linear16_to_internal(audio_filter_arg_t *);
 extern void audio_linear24_to_internal(audio_filter_arg_t *);
 extern void audio_linear32_to_internal(audio_filter_arg_t *);
 
-#endif /* !_SYS_DEV_AUDIO_AUCODEC_H_ */
+#endif /* !_SYS_DEV_AUDIO_LINEAR_H_ */

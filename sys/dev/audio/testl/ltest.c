@@ -15,7 +15,7 @@
 #include "userland.h"
 #include "audiovar.h"
 #include "audiodef.h"
-#include "aucodec.c"
+#include "linear.c"
 #include "mulaw.c"
 #include "alaw.c"
 #define AUDIO_DEBUG 0
