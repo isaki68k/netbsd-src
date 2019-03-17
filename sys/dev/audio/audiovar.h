@@ -65,8 +65,8 @@
  *	From: Header: audiovar.h,v 1.3 93/07/18 14:07:25 mccanne Exp  (LBL)
  */
 
-#ifndef _SYS_DEV_AUDIOVAR2_H_
-#define _SYS_DEV_AUDIOVAR2_H_
+#ifndef _SYS_DEV_AUDIO_AUDIOVAR_H_
+#define _SYS_DEV_AUDIO_AUDIOVAR_H_
 
 #if defined(_KERNEL)
 #include <sys/condvar.h>
@@ -320,4 +320,4 @@ int audiobellopen(dev_t, struct audiobell_arg *);
 int audiobellclose(audio_file_t *);
 int audiobellwrite(audio_file_t *, struct uio *);
 
-#endif /* _SYS_DEV_AUDIOVAR2_H_ */
+#endif /* _SYS_DEV_AUDIO_AUDIOVAR_H_ */
