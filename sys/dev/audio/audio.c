@@ -265,46 +265,37 @@ __KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.458 2018/09/03 16:29:30 riastradh Exp $"
 #include "mlog.h"
 #endif
 #else
-#define audio_mlog_flush()	/**/
+#define audio_mlog_printf(fmt...)	do { } while (0)
+#define audio_mlog_flush()		do { } while (0)
 #endif
 
 #ifdef AUDIO_DEBUG
-#define DPRINTF(n, fmt...)	do {	\
-	if (audiodebug >= (n)) {	\
-		audio_mlog_flush();	\
-		printf(fmt);		\
-	}				\
-} while (0)
 int	audiodebug = AUDIO_DEBUG;
-#else
-#define DPRINTF(n, fmt...)	do { } while (0)
-#endif
-
-#if AUDIO_DEBUG >= 3
-static void audio_vtrace(const char *, const char *, const char *, va_list);
-static void audio_trace(const char *, const char *, ...)
-	__printflike(2, 3);
+static void audio_vtrace(struct audio_softc *sc, const char *, const char *,
+	const char *, va_list);
+static void audio_trace(struct audio_softc *sc, const char *, const char *, ...)
+	__printflike(3, 4);
 static void audio_tracet(const char *, audio_track_t *, const char *, ...)
 	__printflike(3, 4);
 static void audio_tracef(const char *, audio_file_t *, const char *, ...)
 	__printflike(3, 4);
 
 static void
-audio_vtrace(const char *funcname, const char *header, const char *fmt,
-	va_list ap)
+audio_vtrace(struct audio_softc *sc, const char *funcname, const char *header,
+	const char *fmt, va_list ap)
 {
 	char buf[256];
 	int n;
 
 	n = 0;
 	buf[0] = '\0';
-	n += snprintf(buf + n, sizeof(buf) - n, "%s %s", funcname, header);
+	n += snprintf(buf + n, sizeof(buf) - n, "%s@%d %s",
+	    funcname, device_unit(sc->sc_dev), header);
 	n += vsnprintf(buf + n, sizeof(buf) - n, fmt, ap);
 
 	if (cpu_intr_p()) {
 		// 割り込み中なら覚えておくだけ
-		if (audiodebug >= 4)
-			audio_mlog_printf("%s\n", buf);
+		audio_mlog_printf("%s\n", buf);
 	} else {
 		audio_mlog_flush();
 		printf("%s\n", buf);
@@ -312,12 +303,12 @@ audio_vtrace(const char *funcname, const char *header, const char *fmt,
 }
 
 static void
-audio_trace(const char *funcname, const char *fmt, ...)
+audio_trace(struct audio_softc *sc, const char *funcname, const char *fmt, ...)
 {
 	va_list ap;
 
 	va_start(ap, fmt);
-	audio_vtrace(funcname, "", fmt, ap);
+	audio_vtrace(sc, funcname, "", fmt, ap);
 	va_end(ap);
 }
 
@@ -329,7 +320,7 @@ audio_tracet(const char *funcname, audio_track_t *track, const char *fmt, ...)
 
 	snprintf(hdr, sizeof(hdr), "#%d ", track->id);
 	va_start(ap, fmt);
-	audio_vtrace(funcname, hdr, fmt, ap);
+	audio_vtrace(track->mixer->sc, funcname, hdr, fmt, ap);
 	va_end(ap);
 }
 
@@ -349,10 +340,33 @@ audio_tracef(const char *funcname, audio_file_t *file, const char *fmt, ...)
 	snprintf(hdr, sizeof(hdr), "{%s,%s} ", phdr, rhdr);
 
 	va_start(ap, fmt);
-	audio_vtrace(funcname, hdr, fmt, ap);
+	audio_vtrace(file->sc, funcname, hdr, fmt, ap);
 	va_end(ap);
 }
 
+#define DPRINTF(n, fmt...)	do {	\
+	if (audiodebug >= (n)) {	\
+		audio_mlog_flush();	\
+		printf(fmt);		\
+	}				\
+} while (0)
+#define TRACE(n, fmt...)	do { \
+	if (audiodebug >= (n)) audio_trace(sc, __func__, fmt); \
+} while (0)
+#define TRACET(n, t, fmt...)	do { \
+	if (audiodebug >= (n)) audio_tracet(__func__, t, fmt); \
+} while (0)
+#define TRACEF(n, f, fmt...)	do { \
+	if (audiodebug >= (n)) audio_tracef(__func__, f, fmt); \
+} while (0)
+#else
+#define DPRINTF(n, fmt...)	do { } while (0)
+#define TRACE(n, fmt, ...)	do { } while (0)
+#define TRACET(n, t, fmt, ...)	do { } while (0)
+#define TRACEF(n, f, fmt, ...)	do { } while (0)
+#endif
+
+#if AUDIO_DEBUG >= 3
 struct audio_track_debugbuf {
 	char usrbuf[32];
 	char codec[32];
@@ -388,21 +402,7 @@ audio_track_bufstat(audio_track_t *track, struct audio_track_debugbuf *buf)
 	snprintf(buf->usrbuf, sizeof(buf->usrbuf), " usr=%d/%d/H%d",
 	    track->usrbuf.head, track->usrbuf.used, track->usrbuf_usedhigh);
 }
-
-#define TRACE(fmt, ...)		do { \
-	if (audiodebug >= 3) audio_trace(__func__, fmt, ## __VA_ARGS__); \
-} while (0)
-#define TRACET(t, fmt, ...)	do { \
-	if (audiodebug >= 3) audio_tracet(__func__, t, fmt, ## __VA_ARGS__); \
-} while (0)
-#define TRACEF(f, fmt, ...)	do { \
-	if (audiodebug >= 3) audio_tracef(__func__, f, fmt, ## __VA_ARGS__); \
-} while (0)
-#else
-#define TRACE(fmt, ...)		/**/
-#define TRACET(t, fmt, ...)	/**/
-#define TRACEF(f, fmt, ...)	/**/
-#endif
+#endif /* AUDIO_DEBUG >= 3 */
 
 #define SPECIFIED(x)	((x) != ~0)
 #define SPECIFIED_CH(x)	((x) != (u_char)~0)
@@ -952,8 +952,8 @@ audioattach(device_t parent, device_t self, void *aux)
 	// できればなくしたい。
 
 	mixer_init(sc);
-	DPRINTF(2, "audio_attach: inputs ports=0x%x, input master=%d, "
-	    "output ports=0x%x, output master=%d\n",
+	DPRINTF(2, "%s: inputs ports=0x%x, input master=%d, "
+	    "output ports=0x%x, output master=%d\n", __func__,
 	    sc->sc_inports.allports, sc->sc_inports.master,
 	    sc->sc_outports.allports, sc->sc_outports.master);
 
@@ -1214,7 +1214,7 @@ audiodetach(device_t self, int flags)
 	int error;
 
 	sc = device_private(self);
-	DPRINTF(1, "%s: sc=%p flags=%d\n", __func__, sc, flags);
+	TRACE(2, "flags=%d", flags);
 
 	/* device is not initialized */
 	if (sc->hw_if == NULL)
@@ -1466,11 +1466,11 @@ audio_track_waitio(struct audio_softc *sc, audio_track_t *track)
 		error = EIO;
 	}
 	if (error) {
-		TRACET(track, "cv_timedwait_sig failed %d", error);
+		TRACET(3, track, "cv_timedwait_sig failed %d", error);
 		if (error == EWOULDBLOCK)
 			device_printf(sc->sc_dev, "device timeout\n");
 	} else {
-		TRACET(track, "wakeup");
+		TRACET(3, track, "wakeup");
 	}
 	return error;
 }
@@ -1985,15 +1985,9 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	KASSERT(mutex_owned(sc->sc_lock));
 	KASSERT(sc->sc_exlock);
 
-#if AUDIO_DEBUG >= 3
-	TRACE("@%d start flags=0x%x po=%d ro=%d",
-	    device_unit(sc->sc_dev),
+	TRACE(1, "%sflags=0x%x po=%d ro=%d",
+	    (audiodebug >= 3) ? "start " : "",
 	    flags, sc->sc_popens, sc->sc_ropens);
-#else
-	DPRINTF(1, "%s@%d flags=0x%x po=%d ro=%d\n", __func__,
-	    device_unit(sc->sc_dev),
-	    flags, sc->sc_popens, sc->sc_ropens);
-#endif
 
 	af = kmem_zalloc(sizeof(audio_file_t), KM_SLEEP);
 	af->sc = sc;
@@ -2018,8 +2012,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	if (fullduplex == false) {
 		if ((af->mode & AUMODE_PLAY)) {
 			if (sc->sc_ropens != 0) {
-				DPRINTF(1, "%s: record track already exists\n",
-				    __func__);
+				TRACE(1, "record track already exists");
 				error = ENODEV;
 				goto bad1;
 			}
@@ -2028,8 +2021,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 		}
 		if ((af->mode & AUMODE_RECORD)) {
 			if (sc->sc_popens != 0) {
-				DPRINTF(1, "%s: play track already exists\n",
-				    __func__);
+				TRACE(1, "play track already exists");
 				error = ENODEV;
 				goto bad1;
 			}
@@ -2205,7 +2197,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 		KASSERT(error == EMOVEFD);
 	}
 
-	TRACEF(af, "done");
+	TRACEF(3, af, "done");
 	return error;
 
 	/*
@@ -2243,14 +2235,10 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
 	KASSERT(!mutex_owned(sc->sc_lock));
 	KASSERT(file->lock);
 
-#if AUDIO_DEBUG >= 3
-	TRACEF(file, "@%d start pid=%d.%d po=%d ro=%d",
-	    device_unit(sc->sc_dev),
+	TRACEF(1, file, "%spid=%d.%d po=%d ro=%d",
+	    (audiodebug >= 3) ? "start " : "",
 	    (int)curproc->p_pid, (int)curlwp->l_lid,
 	    sc->sc_popens, sc->sc_ropens);
-#else
-	DPRINTF(1, "%s@%d\n", __func__, device_unit(sc->sc_dev));
-#endif
 	KASSERTMSG(sc->sc_popens + sc->sc_ropens > 0,
 	    "sc->sc_popens=%d, sc->sc_ropens=%d",
 	    sc->sc_popens, sc->sc_ropens);
@@ -2289,7 +2277,8 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
 		mutex_enter(sc->sc_intr_lock);
 		file->ptrack = NULL;
 		mutex_exit(sc->sc_intr_lock);
-		TRACET(oldtrack, "dropframes=%" PRIu64, oldtrack->dropframes);
+		TRACET(3, oldtrack, "dropframes=%" PRIu64,
+		    oldtrack->dropframes);
 		audio_track_destroy(oldtrack);
 
 		KASSERT(sc->sc_popens > 0);
@@ -2311,7 +2300,8 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
 		mutex_enter(sc->sc_intr_lock);
 		file->rtrack = NULL;
 		mutex_exit(sc->sc_intr_lock);
-		TRACET(oldtrack, "dropframes=%" PRIu64, oldtrack->dropframes);
+		TRACET(3, oldtrack, "dropframes=%" PRIu64,
+		    oldtrack->dropframes);
 		audio_track_destroy(oldtrack);
 
 		KASSERT(sc->sc_ropens > 0);
@@ -2321,7 +2311,7 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
 	/* Call hw close if this is the last track. */
 	if (sc->sc_popens + sc->sc_ropens == 0) {
 		if (sc->hw_if->close) {
-			DPRINTF(2, "%s hw_if close\n", __func__);
+			TRACE(2, "hw_if close");
 			mutex_enter(sc->sc_intr_lock);
 			sc->hw_if->close(sc->hw_hdl);
 			mutex_exit(sc->sc_intr_lock);
@@ -2334,7 +2324,7 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
 	SLIST_REMOVE(&sc->sc_files, file, audio_file, entry);
 	mutex_exit(sc->sc_intr_lock);
 
-	TRACE("done");
+	TRACE(3, "done");
 	audio_exit_exclusive(sc);
 	return 0;
 }
@@ -2352,12 +2342,12 @@ audio_read_uiomove(audio_track_t *track, int head, int len, struct uio *uio)
 	usrbuf = &track->usrbuf;
 	error = uiomove((uint8_t *)usrbuf->mem + head, len, uio);
 	if (error) {
-		TRACET(track, "uiomove(len=%d) failed: %d", len, error);
+		TRACET(3, track, "uiomove(len=%d) failed: %d", len, error);
 		return error;
 	}
 	auring_take(usrbuf, len);
 	track->useriobytes += len;
-	TRACET(track, "uiomove(len=%d) usrbuf=%d/%d/C%d",
+	TRACET(3, track, "uiomove(len=%d) usrbuf=%d/%d/C%d",
 	    len,
 	    usrbuf->head, usrbuf->used, usrbuf->capacity);
 	return 0;
@@ -2374,7 +2364,7 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 
 	track = file->rtrack;
 	KASSERT(track);
-	TRACET(track, "resid=%u", (int)uio->uio_resid);
+	TRACET(3, track, "resid=%u", (int)uio->uio_resid);
 
 	KASSERT(!mutex_owned(sc->sc_lock));
 	KASSERT(file->lock);
@@ -2399,7 +2389,7 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 		return EBADF;
 	}
 
-	TRACET(track, "resid=%zd", uio->uio_resid);
+	TRACET(3, track, "resid=%zd", uio->uio_resid);
 
 	usrbuf = &track->usrbuf;
 	input = track->input;
@@ -2418,7 +2408,8 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 	while (uio->uio_resid > 0 && error == 0) {
 		int bytes;
 
-		TRACET(track, "while resid=%zd input=%d/%d/%d usrbuf=%d/%d/H%d",
+		TRACET(3, track,
+		    "while resid=%zd input=%d/%d/%d usrbuf=%d/%d/H%d",
 		    uio->uio_resid,
 		    input->head, input->used, input->capacity,
 		    usrbuf->head, usrbuf->used, track->usrbuf_usedhigh);
@@ -2438,7 +2429,7 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 				return EWOULDBLOCK;
 			}
 
-			TRACET(track, "sleep");
+			TRACET(3, track, "sleep");
 			error = audio_track_waitio(sc, track);
 			if (error) {
 				mutex_exit(sc->sc_lock);
@@ -2510,12 +2501,12 @@ audio_write_uiomove(audio_track_t *track, int tail, int len, struct uio *uio)
 	usrbuf = &track->usrbuf;
 	error = uiomove((uint8_t *)usrbuf->mem + tail, len, uio);
 	if (error) {
-		TRACET(track, "uiomove(len=%d) failed: %d", len, error);
+		TRACET(1, track, "uiomove(len=%d) failed: %d", len, error);
 		return error;
 	}
 	auring_push(usrbuf, len);
 	track->useriobytes += len;
-	TRACET(track, "uiomove(len=%d) usrbuf=%d/%d/C%d",
+	TRACET(3, track, "uiomove(len=%d) usrbuf=%d/%d/C%d",
 	    len,
 	    usrbuf->head, usrbuf->used, usrbuf->capacity);
 	return 0;
@@ -2532,7 +2523,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 
 	track = file->ptrack;
 	KASSERT(track);
-	TRACET(track, "begin pid=%d.%d ioflag=0x%x",
+	TRACET(3, track, "begin pid=%d.%d ioflag=0x%x",
 	    (int)curproc->p_pid, (int)curlwp->l_lid, ioflag);
 
 	KASSERT(!mutex_owned(sc->sc_lock));
@@ -2556,7 +2547,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 
 	usrbuf = &track->usrbuf;
 	outbuf = &track->outbuf;
-	TRACET(track, "resid=%zd", uio->uio_resid);
+	TRACET(3, track, "resid=%zd", uio->uio_resid);
 
 	/*
 	 * The first write starts pmixer.
@@ -2574,7 +2565,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 		int bytes;
 		int tail;
 
-		TRACET(track, "while resid=%zd usrbuf=%d/%d/H%d",
+		TRACET(3, track, "while resid=%zd usrbuf=%d/%d/H%d",
 		    uio->uio_resid,
 		    usrbuf->head, usrbuf->used, track->usrbuf_usedhigh);
 
@@ -2595,7 +2586,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 				goto abort;
 			}
 
-			TRACET(track, "sleep usrbuf=%d/H%d",
+			TRACET(3, track, "sleep usrbuf=%d/H%d",
 			    usrbuf->used, track->usrbuf_usedhigh);
 			error = audio_track_waitio(sc, track);
 			if (error) {
@@ -2640,7 +2631,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 	}
 
 abort:
-	TRACET(track, "done error=%d", error);
+	TRACET(3, track, "done error=%d", error);
 	return error;
 }
 
@@ -2689,8 +2680,7 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 	const char *ioctlname = "";
 	if (21 <= nameidx && nameidx <= 21 + __arraycount(ioctlnames))
 		ioctlname = ioctlnames[nameidx - 21];
-	DPRINTF(2, "audio_ioctl@%d(%lu,'%c',%lu)%s pid=%d.%d\n",
-	    device_unit(sc->sc_dev),
+	TRACEF(2, file, "(%lu,'%c',%lu)%s pid=%d.%d",
 	    IOCPARM_LEN(cmd), (char)IOCGROUP(cmd), cmd&0xff, ioctlname,
 	    (int)curproc->p_pid, (int)l->l_lid);
 #endif
@@ -2714,11 +2704,10 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		/* Set/Clear ASYNC I/O. */
 		if (*(int *)addr) {
 			file->async_audio = curproc->p_pid;
-			DPRINTF(2, "%s: FIOASYNC pid %d\n", __func__,
-			    file->async_audio);
+			TRACEF(2, file, "FIOASYNC pid %d", file->async_audio);
 		} else {
 			file->async_audio = 0;
-			DPRINTF(2, "%s: FIOASYNC off\n", __func__);
+			TRACEF(2, file, "FIOASYNC off");
 		}
 		break;
 
@@ -2792,7 +2781,7 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 			offs -= track->usrbuf.capacity;
 		ao->offset = offs;
 
-		TRACET(track, "GETOOFFS: samples=%u deltablks=%u offset=%u",
+		TRACET(3, track, "GETOOFFS: samples=%u deltablks=%u offset=%u",
 		    ao->samples, ao->deltablks, ao->offset);
 		break;
 
@@ -2932,8 +2921,7 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		}
 		break;
 	}
-	DPRINTF(2, "audio_ioctl@%d(%lu,'%c',%lu)%s result %d\n",
-	    device_unit(sc->sc_dev),
+	TRACEF(2, file, "(%lu,'%c',%lu)%s result %d",
 	    IOCPARM_LEN(cmd), (char)IOCGROUP(cmd), cmd&0xff, ioctlname,
 	    error);
 	return error;
@@ -2972,19 +2960,14 @@ audio_poll(struct audio_softc *sc, int events, struct lwp *l,
 	KASSERT(!mutex_owned(sc->sc_lock));
 	KASSERT(file->lock);
 
-#if AUDIO_DEBUG >= 3
+#if defined(AUDIO_DEBUG)
 #define POLLEV_BITMAP "\177\020" \
 	    "b\10WRBAND\0" \
 	    "b\7RDBAND\0" "b\6RDNORM\0" "b\5NVAL\0" "b\4HUP\0" \
 	    "b\3ERR\0" "b\2OUT\0" "b\1PRI\0" "b\0IN\0"
 	char evbuf[64];
-	snprintb(evbuf, sizeof(evbuf), POLLEV_BITMAP, events);
-	TRACEF(file, "@%d pid=%d.%d events=%s",
-	    device_unit(sc->sc_dev),
+	TRACEF(2, file, "pid=%d.%d events=%s",
 	    (int)curproc->p_pid, (int)l->l_lid, evbuf);
-#else
-	DPRINTF(2, "%s@%d: events=0x%x mode=%d\n", __func__,
-	    device_unit(sc->sc_dev), events, file->mode);
 #endif
 
 	revents = 0;
@@ -3012,22 +2995,19 @@ audio_poll(struct audio_softc *sc, int events, struct lwp *l,
 	if (revents == 0) {
 		mutex_enter(sc->sc_lock);
 		if (in_is_valid) {
-			TRACEF(file, "selrecord rsel");
+			TRACEF(3, file, "selrecord rsel");
 			selrecord(l, &sc->sc_rsel);
 		}
 		if (out_is_valid) {
-			TRACEF(file, "selrecord wsel");
+			TRACEF(3, file, "selrecord wsel");
 			selrecord(l, &sc->sc_wsel);
 		}
 		mutex_exit(sc->sc_lock);
 	}
 
-#if AUDIO_DEBUG >= 3
+#if defined(AUDIO_DEBUG)
 	snprintb(evbuf, sizeof(evbuf), POLLEV_BITMAP, revents);
-	TRACEF(file, "revents=%s", evbuf);
-#else
-	DPRINTF(2, "%s@%d: revents=0x%x\n", __func__,
-	    device_unit(sc->sc_dev), revents);
+	TRACEF(2, file, "revents=%s", evbuf);
 #endif
 	return revents;
 }
@@ -3047,7 +3027,7 @@ filt_audioread_detach(struct knote *kn)
 
 	file = kn->kn_hook;
 	sc = file->sc;
-	TRACEF(file, "");
+	TRACEF(3, file, "");
 
 	mutex_enter(sc->sc_lock);
 	SLIST_REMOVE(&sc->sc_rsel.sel_klist, kn, knote, kn_selnext);
@@ -3075,7 +3055,7 @@ filt_audioread_event(struct knote *kn, long hint)
 	}
 
 	kn->kn_data = audio_track_readablebytes(track);
-	TRACEF(file, "data=%" PRId64, kn->kn_data);
+	TRACEF(3, file, "data=%" PRId64, kn->kn_data);
 	return kn->kn_data > 0;
 }
 
@@ -3094,7 +3074,7 @@ filt_audiowrite_detach(struct knote *kn)
 
 	file = kn->kn_hook;
 	sc = file->sc;
-	TRACEF(file, "");
+	TRACEF(3, file, "");
 
 	mutex_enter(sc->sc_lock);
 	SLIST_REMOVE(&sc->sc_wsel.sel_klist, kn, knote, kn_selnext);
@@ -3122,7 +3102,7 @@ filt_audiowrite_event(struct knote *kn, long hint)
 	}
 
 	kn->kn_data = track->usrbuf_usedhigh - track->usrbuf.used;
-	TRACEF(file, "data=%" PRId64, kn->kn_data);
+	TRACEF(3, file, "data=%" PRId64, kn->kn_data);
 	return (track->usrbuf.used < track->usrbuf_usedlow);
 }
 
@@ -3134,7 +3114,7 @@ audio_kqfilter(struct audio_softc *sc, audio_file_t *file, struct knote *kn)
 	KASSERT(!mutex_owned(sc->sc_lock));
 	KASSERT(file->lock);
 
-	TRACEF(file, "kn=%p kn_filter=%x", kn, (int)kn->kn_filter);
+	TRACEF(3, file, "kn=%p kn_filter=%x", kn, (int)kn->kn_filter);
 
 	switch (kn->kn_filter) {
 	case EVFILT_READ:
@@ -3252,11 +3232,7 @@ audioctl_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	KASSERT(mutex_owned(sc->sc_lock));
 	KASSERT(sc->sc_exlock);
 
-#if AUDIO_DEBUG >= 3
-	TRACE("");
-#else
-	DPRINTF(1, "%s%d\n", __func__, device_unit(sc->sc_dev));
-#endif
+	TRACE(1, "");
 
 	error = fd_allocfile(&fp, &fd);
 	if (error)
@@ -3829,12 +3805,12 @@ audio_track_create(struct audio_softc *sc, audio_trackmixer_t *mixer)
 	track = kmem_zalloc(sizeof(*track), KM_SLEEP);
 
 	track->id = newid++;
-	/* Do TRACE after id is assigned. */
-	TRACET(track, "for %s",
-	    mixer->mode == AUMODE_PLAY ? "playback" : "recording");
-
 	track->mixer = mixer;
 	track->mode = mixer->mode;
+
+	/* Do TRACE after id is assigned. */
+	TRACET(3, track, "for %s",
+	    mixer->mode == AUMODE_PLAY ? "playback" : "recording");
 
 #if defined(AUDIO_SUPPORT_TRACK_VOLUME)
 	track->volume = 256;
@@ -4470,10 +4446,10 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 	    " usr=%d", track->usrbuf.capacity);
 
 	if (audio_track_is_playback(track)) {
-		TRACET(track, "bufsize%s%s%s%s%s%s",
+		TRACET(3, track, "bufsize%s%s%s%s%s%s",
 		    m.outbuf, m.freq, m.chmix, m.chvol, m.codec, m.usrbuf);
 	} else {
-		TRACET(track, "bufsize%s%s%s%s%s%s",
+		TRACET(3, track, "bufsize%s%s%s%s%s%s",
 		    m.freq, m.chmix, m.chvol, m.codec, m.outbuf, m.usrbuf);
 	}
 #endif
@@ -4662,7 +4638,7 @@ audio_track_play(audio_track_t *track)
 
 	KASSERT(track);
 	KASSERT(track->lock);
-	TRACET(track, "start pstate=%d", track->pstate);
+	TRACET(3, track, "start pstate=%d", track->pstate);
 
 	/* At this point usrbuf must not be empty. */
 	KASSERT(track->usrbuf.used > 0);
@@ -4711,7 +4687,7 @@ audio_track_play(audio_track_t *track)
 
 		if (track->pstate != AUDIO_STATE_DRAINING) {
 			/* Wait until filled. */
-			TRACET(track, "not enough; return");
+			TRACET(3, track, "not enough; return");
 			return;
 		}
 	}
@@ -4768,7 +4744,7 @@ audio_track_play(audio_track_t *track)
 		int n;
 		n = audio_append_silence(track, &track->freq.srcbuf);
 		if (n > 0) {
-			TRACET(track,
+			TRACET(3, track,
 			    "freq.srcbuf add silence %d -> %d/%d/%d",
 			    n,
 			    track->freq.srcbuf.head,
@@ -4789,7 +4765,7 @@ audio_track_play(audio_track_t *track)
 		 * treated as simple contiguous buffers in operation, so head
 		 * always should point 0.  This may happen during drain-age.
 		 */
-		TRACET(track, "reset stage");
+		TRACET(3, track, "reset stage");
 		if (track->codec.filter) {
 			KASSERT(track->codec.srcbuf.used == 0);
 			track->codec.srcbuf.head = 0;
@@ -4817,7 +4793,7 @@ audio_track_play(audio_track_t *track)
 #if AUDIO_DEBUG >= 3
 	struct audio_track_debugbuf m;
 	audio_track_bufstat(track, &m);
-	TRACET(track, "end%s%s%s%s%s%s",
+	TRACET(3, track, "end%s%s%s%s%s%s",
 	    m.outbuf, m.freq, m.chvol, m.chmix, m.codec, m.usrbuf);
 #endif
 }
@@ -4840,7 +4816,7 @@ audio_track_record(audio_track_t *track)
 	count = auring_get_contig_used(track->input);
 	count = uimin(count, track->mixer->frames_per_block);
 	if (count == 0) {
-		TRACET(track, "count == 0");
+		TRACET(3, track, "count == 0");
 		return;
 	}
 
@@ -4912,7 +4888,7 @@ audio_track_record(audio_track_t *track)
 #if AUDIO_DEBUG >= 3
 	struct audio_track_debugbuf m;
 	audio_track_bufstat(track, &m);
-	TRACET(track, "end%s%s%s%s%s%s",
+	TRACET(3, track, "end%s%s%s%s%s%s",
 	    m.freq, m.chvol, m.chmix, m.codec, m.outbuf, m.usrbuf);
 #endif
 }
@@ -5252,7 +5228,7 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
 	mutex_enter(sc->sc_intr_lock);
 
 	mixer = sc->sc_pmixer;
-	TRACE("begin mixseq=%d hwseq=%d hwbuf=%d/%d/%d%s",
+	TRACE(3, "begin mixseq=%d hwseq=%d hwbuf=%d/%d/%d%s",
 	    (int)mixer->mixseq, (int)mixer->hwseq,
 	    mixer->hwbuf.head, mixer->hwbuf.used, mixer->hwbuf.capacity,
 	    force ? " force" : "");
@@ -5267,7 +5243,7 @@ audio_pmixer_start(struct audio_softc *sc, bool force)
 	audio_pmixer_output(sc);
 	sc->sc_pbusy = true;
 
-	TRACE("end   mixseq=%d hwseq=%d hwbuf=%d/%d/%d",
+	TRACE(3, "end   mixseq=%d hwseq=%d hwbuf=%d/%d/%d",
 	    (int)mixer->mixseq, (int)mixer->hwseq,
 	    mixer->hwbuf.head, mixer->hwbuf.used, mixer->hwbuf.capacity);
 
@@ -5340,20 +5316,20 @@ audio_pmixer_process(struct audio_softc *sc)
 			continue;
 
 		if (track->is_pause) {
-			TRACET(track, "skip; paused");
+			TRACET(3, track, "skip; paused");
 			continue;
 		}
 
 		/* Skip if the track is used by process context. */
 		if (audio_track_lock_tryenter(track) == false) {
-			TRACET(track, "skip; in use");
+			TRACET(3, track, "skip; in use");
 			continue;
 		}
 
 		/* Emulate mmap'ped track */
 		if (track->mmapped) {
 			auring_push(&track->usrbuf, track->usrbuf_blksize);
-			TRACET(track, "mmap; usr=%d/%d/C%d",
+			TRACET(3, track, "mmap; usr=%d/%d/C%d",
 			    track->usrbuf.head,
 			    track->usrbuf.used,
 			    track->usrbuf.capacity);
@@ -5361,14 +5337,14 @@ audio_pmixer_process(struct audio_softc *sc)
 
 		if (track->outbuf.used < mixer->frames_per_block &&
 		    track->usrbuf.used > 0) {
-			TRACET(track, "process");
+			TRACET(3, track, "process");
 			audio_track_play(track);
 		}
 
 		if (track->outbuf.used > 0) {
 			mixed = audio_pmixer_mix_track(mixer, track, mixed);
 		} else {
-			TRACET(track, "skip; empty");
+			TRACET(3, track, "skip; empty");
 		}
 
 		audio_track_lock_exit(track);
@@ -5471,7 +5447,7 @@ audio_pmixer_process(struct audio_softc *sc)
 
 	auring_push(&mixer->hwbuf, frame_count);
 
-	TRACE("done mixseq=%d hwbuf=%d/%d/%d%s",
+	TRACE(3, "done mixseq=%d hwbuf=%d/%d/%d%s",
 	    (int)mixer->mixseq,
 	    mixer->hwbuf.head, mixer->hwbuf.used, mixer->hwbuf.capacity,
 	    (mixed == 0) ? " silent" : "");
@@ -5586,7 +5562,7 @@ audio_pmixer_output(struct audio_softc *sc)
 	int error;
 
 	mixer = sc->sc_pmixer;
-	TRACE("pbusy=%d hwbuf=%d/%d/%d",
+	TRACE(3, "pbusy=%d hwbuf=%d/%d/%d",
 	    sc->sc_pbusy,
 	    mixer->hwbuf.head, mixer->hwbuf.used, mixer->hwbuf.capacity);
 	KASSERT(mixer->hwbuf.used >= mixer->frames_per_block);
@@ -5653,7 +5629,8 @@ audio_pintr(void *arg)
 
 	auring_take(&mixer->hwbuf, mixer->frames_per_block);
 
-	TRACE("HW_INT ++hwseq=%" PRIu64 " cmplcnt=%" PRIu64 " hwbuf=%d/%d/%d",
+	TRACE(3,
+	    "HW_INT ++hwseq=%" PRIu64 " cmplcnt=%" PRIu64 " hwbuf=%d/%d/%d",
 	    mixer->hwseq, mixer->hw_complete_counter,
 	    mixer->hwbuf.head, mixer->hwbuf.used, mixer->hwbuf.capacity);
 
@@ -5722,10 +5699,10 @@ audio_rmixer_start(struct audio_softc *sc)
 
 	mutex_enter(sc->sc_intr_lock);
 
-	TRACE("begin");
+	TRACE(3, "begin");
 	audio_rmixer_input(sc);
 	sc->sc_rbusy = true;
-	TRACE("end");
+	TRACE(3, "end");
 
 	mutex_exit(sc->sc_intr_lock);
 }
@@ -5776,7 +5753,7 @@ audio_rmixer_process(struct audio_softc *sc)
 	count = auring_get_contig_used(&mixer->hwbuf);
 	count = uimin(count, mixer->frames_per_block);
 	if (count <= 0) {
-		TRACE("count %d: too short", count);
+		TRACE(3, "count %d: too short", count);
 		return;
 	}
 	bytes = frametobyte(&mixer->track_fmt, count);
@@ -5811,12 +5788,12 @@ audio_rmixer_process(struct audio_softc *sc)
 			continue;
 
 		if (track->is_pause) {
-			TRACET(track, "skip; paused");
+			TRACET(3, track, "skip; paused");
 			continue;
 		}
 
 		if (audio_track_lock_tryenter(track) == false) {
-			TRACET(track, "skip; in use");
+			TRACET(3, track, "skip; in use");
 			continue;
 		}
 
@@ -5826,7 +5803,7 @@ audio_rmixer_process(struct audio_softc *sc)
 			int drops = mixer->frames_per_block -
 			    (input->capacity - input->used);
 			track->dropframes += drops;
-			TRACET(track, "drop %d frames: inp=%d/%d/%d",
+			TRACET(3, track, "drop %d frames: inp=%d/%d/%d",
 			    drops,
 			    input->head, input->used, input->capacity);
 			auring_take(input, drops);
@@ -5923,7 +5900,8 @@ audio_rintr(void *arg)
 
 	auring_push(&mixer->hwbuf, mixer->frames_per_block);
 
-	TRACE("HW_INT ++hwseq=%" PRIu64 " cmplcnt=%" PRIu64 " hwbuf=%d/%d/%d",
+	TRACE(3,
+	    "HW_INT ++hwseq=%" PRIu64 " cmplcnt=%" PRIu64 " hwbuf=%d/%d/%d",
 	    mixer->hwseq, mixer->hw_complete_counter,
 	    mixer->hwbuf.head, mixer->hwbuf.used, mixer->hwbuf.capacity);
 
@@ -5955,7 +5933,7 @@ audio_pmixer_halt(struct audio_softc *sc)
 {
 	int error;
 
-	TRACE("");
+	TRACE(3, "");
 	KASSERT(mutex_owned(sc->sc_lock));
 	KASSERT(sc->sc_exlock);
 
@@ -5985,7 +5963,7 @@ audio_rmixer_halt(struct audio_softc *sc)
 {
 	int error;
 
-	TRACE("");
+	TRACE(3, "");
 	KASSERT(mutex_owned(sc->sc_lock));
 	KASSERT(sc->sc_exlock);
 
@@ -6013,7 +5991,7 @@ audio_track_clear(struct audio_softc *sc, audio_track_t *track)
 {
 
 	KASSERT(track);
-	TRACET(track, "clear");
+	TRACET(3, track, "clear");
 
 	audio_track_lock_enter(track);
 
@@ -6064,25 +6042,25 @@ audio_track_drain(struct audio_softc *sc, audio_track_t *track)
 	int error;
 
 	KASSERT(track);
-	TRACET(track, "start");
+	TRACET(3, track, "start");
 	mixer = track->mixer;
 	KASSERT(mutex_owned(sc->sc_lock));
 
 	/* Ignore them if pause. */
 	if (track->is_pause) {
-		TRACET(track, "pause -> clear");
+		TRACET(3, track, "pause -> clear");
 		track->pstate = AUDIO_STATE_CLEAR;
 	}
 	/* Terminate early here if there is no data in the track. */
 	if (track->pstate == AUDIO_STATE_CLEAR) {
-		TRACET(track, "no need to drain");
+		TRACET(3, track, "no need to drain");
 		return 0;
 	}
 	track->pstate = AUDIO_STATE_DRAINING;
 
 	for (;;) {
 		/* I want to display it bofore condition evaluation. */
-		TRACET(track, "pid=%d.%d trkseq=%d hwseq=%d out=%d/%d/%d",
+		TRACET(3, track, "pid=%d.%d trkseq=%d hwseq=%d out=%d/%d/%d",
 		    (int)curproc->p_pid, (int)curlwp->l_lid,
 		    (int)track->seq, (int)mixer->hwseq,
 		    track->outbuf.head, track->outbuf.used,
@@ -6097,7 +6075,7 @@ audio_track_drain(struct audio_softc *sc, audio_track_t *track)
 		if (done)
 			break;
 
-		TRACET(track, "sleep");
+		TRACET(3, track, "sleep");
 		error = audio_track_waitio(sc, track);
 		if (error)
 			return error;
@@ -6106,7 +6084,7 @@ audio_track_drain(struct audio_softc *sc, audio_track_t *track)
 	}
 
 	track->pstate = AUDIO_STATE_CLEAR;
-	TRACET(track, "done trk_inp=%d trk_out=%d",
+	TRACET(3, track, "done trk_inp=%d trk_out=%d",
 		(int)track->inputcounter, (int)track->outputcounter);
 	return 0;
 }
@@ -6141,14 +6119,14 @@ audio_softintr_rd(void *cookie)
 		if (track == NULL)
 			continue;
 
-		TRACET(track, "broadcast; inp=%d/%d/%d",
+		TRACET(3, track, "broadcast; inp=%d/%d/%d",
 		    track->input->head,
 		    track->input->used,
 		    track->input->capacity);
 
 		pid = f->async_audio;
 		if (pid != 0) {
-			TRACEF(f, "sending SIGIO %d", pid);
+			TRACEF(3, f, "sending SIGIO %d", pid);
 			mutex_enter(proc_lock);
 			if ((p = proc_find(pid)) != NULL)
 				psignal(p, SIGIO);
@@ -6184,7 +6162,7 @@ audio_softintr_wr(void *cookie)
 	proc_t *p;
 	pid_t pid;
 
-	TRACE("called");
+	TRACE(3, "called");
 	found = false;
 
 	mutex_enter(sc->sc_lock);
@@ -6196,7 +6174,7 @@ audio_softintr_wr(void *cookie)
 		if (track == NULL)
 			continue;
 
-		TRACET(track, "broadcast; trseq=%d out=%d/%d/%d",
+		TRACET(3, track, "broadcast; trseq=%d out=%d/%d/%d",
 		    (int)track->seq,
 		    track->outbuf.head,
 		    track->outbuf.used,
@@ -6211,7 +6189,7 @@ audio_softintr_wr(void *cookie)
 			found = true;
 			pid = f->async_audio;
 			if (pid != 0) {
-				TRACEF(f, "sending SIGIO %d", pid);
+				TRACEF(3, f, "sending SIGIO %d", pid);
 				mutex_enter(proc_lock);
 				if ((p = proc_find(pid)) != NULL)
 					psignal(p, SIGIO);
@@ -6226,7 +6204,7 @@ audio_softintr_wr(void *cookie)
 	 * It needs sc_lock (and not sc_intr_lock).
 	 */
 	if (found) {
-		TRACE("selnotify");
+		TRACE(3, "selnotify");
 		selnotify(&sc->sc_wsel, 0, NOTE_SUBMIT);
 		KNOTE(&sc->sc_wsel.sel_klist, 0);
 	}
@@ -6528,7 +6506,7 @@ audio_hw_probe_by_format(struct audio_softc *sc, audio_format2_t *cand,
 		if (error)
 			return error;
 
-#if AUDIO_DEBUG >= 1
+#if defined(AUDIO_DEBUG)
 		DPRINTF(1, "fmt[%d] %c%c pri=%d %s/%dbit/%dch/", i,
 		    (query.fmt.mode & AUMODE_PLAY)   ? 'P' : '-',
 		    (query.fmt.mode & AUMODE_RECORD) ? 'R' : '-',
@@ -7080,7 +7058,7 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 			SPRINTF(buf, ",record.pause=%d", ai->record.pause);
 
 		if (buflen > 0)
-			printf("%s: specified %s\n", __func__, buf + 1);
+			TRACE(2, "specified %s", buf + 1);
 	}
 #endif
 
@@ -7148,21 +7126,17 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	 */
 	if (pchanges || rchanges) {
 		audio_file_clear(sc, file);
-#ifdef AUDIO_DEBUG
-		if (audiodebug >= 1) {
-			char fmtbuf[64];
-			if (pchanges) {
-				audio_format2_tostr(fmtbuf, sizeof(fmtbuf),
-				    &pfmt);
-				printf("set track#%d play mode: %s\n",
-				    ptrack->id, fmtbuf);
-			}
-			if (rchanges) {
-				audio_format2_tostr(fmtbuf, sizeof(fmtbuf),
-				    &rfmt);
-				printf("set track#%d rec  mode: %s\n",
-				    rtrack->id, fmtbuf);
-			}
+#if defined(AUDIO_DEBUG)
+		char fmtbuf[64];
+		if (pchanges) {
+			audio_format2_tostr(fmtbuf, sizeof(fmtbuf), &pfmt);
+			DPRINTF(1, "audio track#%d play mode: %s\n",
+			    ptrack->id, fmtbuf);
+		}
+		if (rchanges) {
+			audio_format2_tostr(fmtbuf, sizeof(fmtbuf), &rfmt);
+			DPRINTF(1, "audio track#%d rec  mode: %s\n",
+			    rtrack->id, fmtbuf);
 		}
 #endif
 	}
