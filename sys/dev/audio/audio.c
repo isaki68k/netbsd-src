@@ -501,7 +501,6 @@ static int audio_file_setinfo(struct audio_softc *, audio_file_t *,
 	const struct audio_info *);
 static int audio_track_setinfo_check(audio_format2_t *,
 	const struct audio_prinfo *);
-static int audio_track_setinfo_set(audio_track_t *, audio_format2_t *, int);
 static void audio_track_setinfo_water(audio_track_t *,
 	const struct audio_info *);
 static int audio_hw_setinfo(struct audio_softc *, const struct audio_info *,
@@ -4260,9 +4259,8 @@ abort:
  * internal buffers.
  * It must be called without sc_intr_lock since uvm_* routines require non
  * intr_lock state.
- * It must be called with track lock held when the track is within
- * the file structure linked from sc->sc_files (as called from
- * audio_track_setinfo_set), since it may release and reallocate outbuf.
+ * It must be called with track lock held since it may release and reallocate
+ * outbuf.
  */
 static int
 audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
@@ -7155,8 +7153,9 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 			sc->sc_sound_ppause = pi->pause;
 		}
 		if (pchanges) {
-			error = audio_track_setinfo_set(ptrack, &pfmt,
-			    (mode & AUMODE_PLAY));
+			audio_track_lock_enter(ptrack);
+			error = audio_track_set_format(ptrack, &pfmt);
+			audio_track_lock_exit(ptrack);
 			if (error) {
 				DPRINTF(1, "%s: set play.params failed\n",
 				    __func__);
@@ -7174,8 +7173,9 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 			sc->sc_sound_rpause = ri->pause;
 		}
 		if (rchanges) {
-			error = audio_track_setinfo_set(rtrack, &rfmt,
-			    (mode & AUMODE_RECORD));
+			audio_track_lock_enter(rtrack);
+			error = audio_track_set_format(rtrack, &rfmt);
+			audio_track_lock_exit(rtrack);
 			if (error) {
 				DPRINTF(1, "%s: set record.params failed\n",
 				    __func__);
@@ -7191,18 +7191,20 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 abort3:
 	if (error != ENOMEM) {
 		rtrack->is_pause = saved_ai.record.pause;
-		audio_track_setinfo_set(rtrack, &saved_rfmt,
-		    (saved_ai.mode & AUMODE_RECORD));
+		audio_track_lock_enter(rtrack);
+		audio_track_set_format(rtrack, &saved_rfmt);
+		audio_track_lock_exit(rtrack);
 	}
 abort2:
 	if (ptrack && error != ENOMEM) {
 		ptrack->is_pause = saved_ai.play.pause;
-		file->mode = saved_ai.mode;
-		audio_track_setinfo_set(ptrack, &saved_pfmt,
-		    (file->mode & AUMODE_PLAY));
+		audio_track_lock_enter(ptrack);
+		audio_track_set_format(ptrack, &saved_pfmt);
+		audio_track_lock_exit(ptrack);
 		sc->sc_sound_pparams = saved_pfmt;
 		sc->sc_sound_ppause = saved_ai.play.pause;
 	}
+	file->mode = saved_ai.mode;
 abort1:
 	audio_hw_setinfo(sc, &saved_ai, NULL);
 
@@ -7252,27 +7254,6 @@ audio_track_setinfo_check(audio_format2_t *fmt, const struct audio_prinfo *info)
 	}
 
 	return changes;
-}
-
-/*
- * Set mode and fmt to the track.
- * mode must be either AUMODE_PLAY or AUMODE_RECORD.
- * If successful returns 0, otherwise errno.
- * This function itself does not roll back.
- */
-static int
-audio_track_setinfo_set(audio_track_t *track, audio_format2_t *fmt, int mode)
-{
-	int error;
-
-	KASSERT(track);
-
-	audio_track_lock_enter(track);
-	track->mode = mode;
-	error = audio_track_set_format(track, fmt);
-	audio_track_lock_exit(track);
-
-	return error;
 }
 
 /*
