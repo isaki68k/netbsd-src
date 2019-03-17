@@ -6478,10 +6478,10 @@ audio_hw_probe_by_format(struct audio_softc *sc, audio_format2_t *cand,
 	/*
 	 * Score each formats and choose the highest one.
 	 *
-	 *                +----- priority(0-3)
-	 *                |++--- encoding/precision
-	 *                |||+-- channels
-	 * score = 0x00000PEEC
+	 *                 +---- priority(0-3)
+	 *                 |+--- encoding/precision
+	 *                 ||+-- channels
+	 * score = 0x000000PEC
 	 */
 
 	cand_score = 0;
