@@ -499,9 +499,9 @@ static int audio_query_devinfo(struct audio_softc *, mixer_devinfo_t *);
 static inline int audio_track_readablebytes(const audio_track_t *);
 static int audio_file_setinfo(struct audio_softc *, audio_file_t *,
 	const struct audio_info *);
-static int audio_file_setinfo_check(audio_format2_t *,
+static int audio_track_setinfo_check(audio_format2_t *,
 	const struct audio_prinfo *);
-static int audio_file_setinfo_set(audio_track_t *, audio_format2_t *, int);
+static int audio_track_setinfo_set(audio_track_t *, audio_format2_t *, int);
 static void audio_track_setinfo_water(audio_track_t *,
 	const struct audio_info *);
 static int audio_hw_setinfo(struct audio_softc *, const struct audio_info *,
@@ -4262,7 +4262,7 @@ abort:
  * intr_lock state.
  * It must be called with track lock held when the track is within
  * the file structure linked from sc->sc_files (as called from
- * audio_file_setinfo_set), since it may release and reallocate outbuf.
+ * audio_track_setinfo_set), since it may release and reallocate outbuf.
  */
 static int
 audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
@@ -7100,7 +7100,7 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	}
 
 	if (ptrack) {
-		pchanges = audio_file_setinfo_check(&pfmt, pi);
+		pchanges = audio_track_setinfo_check(&pfmt, pi);
 		if (pchanges == -1) {
 			DPRINTF(1, "%s: check play.params failed\n",
 			    __func__);
@@ -7110,7 +7110,7 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 			pchanges = 1;
 	}
 	if (rtrack) {
-		rchanges = audio_file_setinfo_check(&rfmt, ri);
+		rchanges = audio_track_setinfo_check(&rfmt, ri);
 		if (rchanges == -1) {
 			DPRINTF(1, "%s: check record.params failed\n",
 			    __func__);
@@ -7155,7 +7155,7 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 			sc->sc_sound_ppause = pi->pause;
 		}
 		if (pchanges) {
-			error = audio_file_setinfo_set(ptrack, &pfmt,
+			error = audio_track_setinfo_set(ptrack, &pfmt,
 			    (mode & AUMODE_PLAY));
 			if (error) {
 				DPRINTF(1, "%s: set play.params failed\n",
@@ -7174,7 +7174,7 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 			sc->sc_sound_rpause = ri->pause;
 		}
 		if (rchanges) {
-			error = audio_file_setinfo_set(rtrack, &rfmt,
+			error = audio_track_setinfo_set(rtrack, &rfmt,
 			    (mode & AUMODE_RECORD));
 			if (error) {
 				DPRINTF(1, "%s: set record.params failed\n",
@@ -7191,14 +7191,14 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 abort3:
 	if (error != ENOMEM) {
 		rtrack->is_pause = saved_ai.record.pause;
-		audio_file_setinfo_set(rtrack, &saved_rfmt,
+		audio_track_setinfo_set(rtrack, &saved_rfmt,
 		    (saved_ai.mode & AUMODE_RECORD));
 	}
 abort2:
 	if (ptrack && error != ENOMEM) {
 		ptrack->is_pause = saved_ai.play.pause;
 		file->mode = saved_ai.mode;
-		audio_file_setinfo_set(ptrack, &saved_pfmt,
+		audio_track_setinfo_set(ptrack, &saved_pfmt,
 		    (file->mode & AUMODE_PLAY));
 		sc->sc_sound_pparams = saved_pfmt;
 		sc->sc_sound_ppause = saved_ai.play.pause;
@@ -7212,7 +7212,7 @@ abort1:
 // info のうち SPECIFIED なパラメータを抜き出して fmt に書き出す。
 // 戻り値は 1なら変更あり、0なら変更なし、負数ならエラー(EINVAL)
 static int
-audio_file_setinfo_check(audio_format2_t *fmt, const struct audio_prinfo *info)
+audio_track_setinfo_check(audio_format2_t *fmt, const struct audio_prinfo *info)
 {
 	int changes;
 
@@ -7261,7 +7261,7 @@ audio_file_setinfo_check(audio_format2_t *fmt, const struct audio_prinfo *info)
  * This function itself does not roll back.
  */
 static int
-audio_file_setinfo_set(audio_track_t *track, audio_format2_t *fmt, int mode)
+audio_track_setinfo_set(audio_track_t *track, audio_format2_t *fmt, int mode)
 {
 	int error;
 
