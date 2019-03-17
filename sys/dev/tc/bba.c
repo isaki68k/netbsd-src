@@ -52,6 +52,10 @@ __KERNEL_RCSID(0, "$NetBSD: bba.c,v 1.41 2018/09/03 16:29:33 riastradh Exp $");
 #include <dev/tc/ioasicreg.h>
 #include <dev/tc/ioasicvar.h>
 
+/* include mulaw.c (not .h file) here to expand mulaw32 */
+#define MULAW32
+#include <dev/audio/mulaw.c>
+
 #ifdef AUDIO_DEBUG
 #define DPRINTF(x)	if (am7930debug) printf x
 #else

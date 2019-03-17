@@ -58,10 +58,6 @@ __KERNEL_RCSID(0, "$NetBSD: am7930.c,v 1.57 2017/08/29 06:38:49 isaki Exp $");
 #include <dev/ic/am7930reg.h>
 #include <dev/ic/am7930var.h>
 
-/* include mulaw.c (not .h file) here to expand mulaw32 */
-#define MULAW32
-#include <dev/audio/mulaw.c>
-
 #ifdef AUDIO_DEBUG
 int     am7930debug = 0;
 #define DPRINTF(x)      if (am7930debug) printf x
