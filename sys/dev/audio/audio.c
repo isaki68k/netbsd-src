@@ -6957,10 +6957,6 @@ audio_mixers_get_format(struct audio_softc *sc, struct audio_info *ai)
  * yes	run	*	*->*	stop and restart
  */
 
-// ai に基づいて file の両トラックを諸々セットする。
-// セットできれば sc_sound_[pr]* を更新する。
-// オープン時に呼ばれる時は file はまだ sc_files には繋がっていない。
-// sc_lock && sc_exlock で呼ぶこと。
 /*
  * Set both track's parameters within a file depending on ai.
  * Update sc_sound_[pr]* if set.
