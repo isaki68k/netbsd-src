@@ -169,7 +169,6 @@ struct audio_file {
 	struct audio_softc *sc;
 	dev_t		dev;
 
-
 	/*
 	 * Playback and recording track, or NULL if the track is unavailable.
 	 */
