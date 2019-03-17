@@ -285,7 +285,9 @@ cmd_set_file(const char *filename)
 
 	f->file = sys_open(AUMODE_PLAY);
 	/* この辺は ioctl になる */
+#if defined(AUDIO_SUPPORT_TRACK_VOLUME)
 	f->file->ptrack->volume = opt_vol;
+#endif
 	f->file->ptrack->mixer->volume = 256;
 	for (int j = 0; j < 2; j++) {
 		f->file->ptrack->ch_volume[j] = 256;
@@ -563,8 +565,10 @@ audio_softc_init(const audio_format2_t *phwfmt, const audio_format2_t *rhwfmt)
 	sc->sc_blk_ms = audio_blk_ms;
 	printf("blk_ms = %d\n", sc->sc_blk_ms);
 
+	mutex_enter(sc->sc_lock);
 	audio_mixers_init(sc, AUMODE_PLAY | AUMODE_RECORD,
 		phwfmt, rhwfmt, &pfil, &rfil);
+	mutex_exit(sc->sc_lock);
 }
 
 audio_file_t *
@@ -576,19 +580,12 @@ sys_open(int mode)
 	file = calloc(1, sizeof(audio_file_t));
 	file->sc = sc;
 	file->mode = mode;
+	file->lock = 1;
 
 	if (mode == AUMODE_PLAY) {
-		error = audio_track_init(sc, &file->ptrack, AUMODE_PLAY);
-		if (error) {
-			printf("audio_track_init(PLAY) failed: %s\n", strerror(error));
-			exit(1);
-		}
+		file->ptrack = audio_track_create(sc, sc->sc_pmixer);
 	} else {
-		error = audio_track_init(sc, &file->rtrack, AUMODE_RECORD);
-		if (error) {
-			printf("audio_track_init(RECORD) failed: %s\n", strerror(error));
-			exit(1);
-		}
+		file->rtrack = audio_track_create(sc, sc->sc_rmixer);
 	}
 
 	SLIST_INSERT_HEAD(&sc->sc_files, file, entry);
@@ -608,9 +605,7 @@ sys_write(audio_file_t *file, void* buf, size_t len)
 
 	struct uio uio = buf_to_uio(buf, len, UIO_READ);
 
-	mutex_enter(file->sc->sc_lock);
 	int error = audio_write(file->sc, &uio, 0, file);
-	mutex_exit(file->sc->sc_lock);
 	if (error) {
 		errno = error;
 		return -1;
@@ -622,9 +617,7 @@ sys_write(audio_file_t *file, void* buf, size_t len)
 int
 sys_ioctl_drain(audio_track_t *track)
 {
-	mutex_enter(sc->sc_lock);
 	audio_track_drain(sc, track);
-	mutex_exit(sc->sc_lock);
 
 	return 0;
 }

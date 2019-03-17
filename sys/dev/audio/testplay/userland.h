@@ -292,6 +292,7 @@ cv_broadcast(kcondvar_t *cv)
 }
 
 int cv_wait_sig(kcondvar_t *cv, kmutex_t *lock);
+#define cv_timedwait_sig(cv, lock, timo) cv_wait_sig(cv, lock)
 
 static inline int
 mutex_owned(kmutex_t *mutex)
@@ -382,7 +383,10 @@ atomic_cas_32(volatile uint32_t *ptr, uint32_t expected, uint32_t newvalue)
 	}
 	return rv;
 }
+#define atomic_cas_uint atomic_cas_32
 
+/* <sys/param.h> */
+extern int hz;
 
 /* <sys/intr.h> */
 #define SOFTINT_SERIAL 3
@@ -487,6 +491,7 @@ atomic_swap_32(volatile uint32_t *var, uint32_t newval)
 	*var = newval;
 	return oldval;
 }
+#define atomic_swap_uint atomic_swap_32
 
 extern struct lwp *curlwp;
 
@@ -574,6 +579,7 @@ extern struct audio_softc local_sc;	/* audio_dev.c */
 #define device_lookup_private(a,b) &local_sc
 #define DVA_SYSTEM	0
 #define device_active(a, b)	do { } while (0)
+#define device_printf(a, b...) do { } while (0)
 
 /* <sys/error.h> */
 #define EMOVEFD	-6
@@ -617,8 +623,9 @@ struct knote {
 	void *kn_hook;
 	const struct filterops *kn_fop;
 	int kn_filter;
-	int kn_data;
+	uint64_t kn_data;
 };
+#define KNOTE(a, b)
 
 struct filterops {
 	int	f_isfd;			/* true if ident == filedescriptor */
