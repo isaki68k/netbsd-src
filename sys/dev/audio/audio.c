@@ -7440,7 +7440,7 @@ audio_hw_setinfo(struct audio_softc *sc, const struct audio_info *newai,
 	/* Restart the mixer if necessary */
 	error = 0;
 abort:
-	// XXX pmixer_start は false でいいんだろうか
+	/* XXX Is pmixer_start false ? */
 	if (restart_pmixer) {
 		audio_pmixer_start(sc, false);
 	}
@@ -7635,8 +7635,8 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 	 *     But struct audio_info has an united blocksize...
 	 *     Here, I use ptrack if available, otherwise rtrack.
 	 *
-	 * XXX I think that hiwat/lowat is playback-only parameter.  What
-	 *     should I return on recording only descriptor?
+	 * XXX hiwat/lowat is playback-only parameter.  What should I
+	 *     return on recording-only descriptor?
 	 */
 	track = ptrack ?: rtrack;
 	if (track) {
@@ -7828,7 +7828,6 @@ audio_sysctl_blk_ms(SYSCTLFN_ARGS)
 		goto abort;
 	}
 	sc->sc_blk_ms = t;
-	// format は変更なしなので現在の設定を使う
 	mode = 0;
 	if (sc->sc_pmixer) {
 		mode |= AUMODE_PLAY;
