@@ -8021,7 +8021,7 @@ audio_diagnostic_format2(const char *func, const audio_format2_t *fmt)
 
 	/* XXX MSM6258 vs(4) only has 4bit stride format. */
 	if (fmt->encoding == AUDIO_ENCODING_ADPCM) {
-		KASSERTMSG(fmt->stride == 4,
+		KASSERTMSG(fmt->stride == 4 || fmt->stride == 8,
 		    "%s: stride(%d) is invalid", func, fmt->stride);
 	} else {
 		KASSERTMSG(fmt->stride % NBBY == 0,
