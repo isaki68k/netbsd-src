@@ -269,8 +269,9 @@ repulse_attach(device_t parent, device_t self, void *aux)
 	bp = (struct repulse_hw *)zap->va;
 	sc->sc_boardp = bp;
 #if defined(AUDIO2)
-	sc->sc_playscale = 2/*ch*/ * 16/*prec*/ / 8;
-	sc->sc_captscale = 2/*ch*/ * 16/*prec*/ / 8;
+	/* AUDIO2 uses hardware format so these can be fixed. */
+	sc->sc_playscale = 4;
+	sc->sc_captscale = 4;
 #endif
 
 	needs_firmware = 0;
@@ -349,12 +350,6 @@ repulse_attach(device_t parent, device_t self, void *aux)
 		    "hardware AC'97 2.0 Variable Rate Audio\n",
 			device_xname(self));
 	}
-#endif
-
-#if defined(AUDIO2)
-	/* AUDIO2 uses hardware format so these can be fixed. */
-	sc->sc_playscale = 4;
-	sc->sc_captscale = 4;
 #endif
 
 	sc->sc_isr.isr_ipl = 2;
