@@ -149,7 +149,7 @@ internal_to_msm6258(audio_filter_arg_t *arg)
 {
 	KASSERT(arg->dstfmt->encoding == AUDIO_ENCODING_ADPCM);
 	KASSERT(arg->dstfmt->stride == 4);
-	KASSERT(is_internal_format(arg->srcfmt));
+	KASSERT(audio_format2_is_internal(arg->srcfmt));
 	KASSERT(arg->srcfmt->channels == arg->dstfmt->channels);
 	KASSERT((arg->count & 1) == 0);
 
@@ -349,7 +349,7 @@ msm6258_to_internal(audio_filter_arg_t *arg)
 {
 	KASSERT(arg->srcfmt->encoding == AUDIO_ENCODING_ADPCM);
 	KASSERT(arg->srcfmt->stride == 4);
-	KASSERT(is_internal_format(arg->dstfmt));
+	KASSERT(audio_format2_is_internal(arg->dstfmt));
 	KASSERT(arg->srcfmt->channels == arg->dstfmt->channels);
 	KASSERT((arg->count & 1) == 0);
 
