@@ -152,6 +152,7 @@ msm6258_internal_to_adpcm(audio_filter_arg_t *arg)
 	KASSERT(audio_format2_is_internal(arg->srcfmt));
 	KASSERT(arg->srcfmt->channels == arg->dstfmt->channels);
 	KASSERT((arg->count & 1) == 0);
+	KASSERT(arg->context);
 
 	const aint_t *sptr = arg->src;
 	uint8_t *dptr = arg->dst;
@@ -352,6 +353,7 @@ msm6258_adpcm_to_internal(audio_filter_arg_t *arg)
 	KASSERT(audio_format2_is_internal(arg->dstfmt));
 	KASSERT(arg->srcfmt->channels == arg->dstfmt->channels);
 	KASSERT((arg->count & 1) == 0);
+	KASSERT(arg->context);
 
 	const uint8_t *sptr = arg->src;
 	aint_t *dptr = arg->dst;
