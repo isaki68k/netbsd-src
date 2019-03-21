@@ -3941,6 +3941,7 @@ test_kqueue_5()
 	int kq;
 	char *buf;
 	int buflen;
+	int totallen;
 	int zero;
 
 	TEST("kqueue_5");
@@ -3995,34 +3996,38 @@ test_kqueue_5()
 		DPRINTF("  > blocksize=%d hiwat=%d lowat=%d buffer_size=%d\n",
 			ai.blocksize, ai.hiwat, ai.lowat, ai.play.buffer_size);
 
-		// lowat に到達するまでの見込み時間
-		int extsize = 0;
-		if (netbsd == 8) {
-			// 開始に3ブロックかかるらしいが詳細不明。
-			extsize = 3 * ai.blocksize;
-		} else if (netbsd >= 9) {
-			// AUDIO2 なら
-			// 再生開始時に2ブロックの無音挿入がある。
-			// 充填してから再生開始するので、割り込みは必要になるまで usrbuf
-			// からブロックを取り出さないため、NBLKOUT 分も余計に必要。
-			extsize = (2/*start latency*/ + 4/*NBLKOUT*/) * ai.blocksize;
-		}
-		double sec = ((double)ai.play.buffer_size - extsize -
-				(ai.lowat * ai.blocksize))
-			/ (ai.play.channels * ai.play.sample_rate * ai.play.precision / 8);
-
 		// 書き込み
 		buflen = ai.blocksize * ai.hiwat;
+		totallen = 0;
 		buf = (char *)malloc(buflen);
 		if (buf == NULL)
 			err(1, "malloc");
 		memset(buf, zero, buflen);
 		do {
 			r = WRITE(fd, buf, buflen);
+			if (r > 0)
+				totallen += r;
 		} while (r == buflen);
 		if (r == -1) {
 			XP_SYS_NG(EAGAIN, r);
 		}
+
+		// lowat までのバイト数
+		int remsize = totallen - ai.lowat * ai.blocksize;
+		// lowat までのブロック数
+		int remblks = howmany(remsize, ai.blocksize);
+		// 余分にかかるブロック数を追加
+		if (netbsd == 8) {
+			// 開始に3ブロックかかるらしいが詳細不明。
+			remblks += 3;
+		} else if (netbsd >= 9) {
+			// AUDIO2 のスタートレイテンシは2ブロック。
+			remblks += 2;	// start latency
+		}
+		// lowat に到達するまでの見込み時間
+		double sec = ((double)remblks * ai.blocksize)
+			/ (ai.play.channels * ai.play.sample_rate * ai.play.precision / 8);
+		DPRINTF("  > expected=%f sec\n", sec);
 
 		// kevent
 		kq = KQUEUE();
