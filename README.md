@@ -87,8 +87,8 @@ Note:
 * sys/dev/audio/audio.c … main routines (alternative to sys/dev/audio.c)
 * sys/dev/audio/audiodef.h … header file for audio.c (いるかなこれ?)
 * sys/dev/audio/audiovar.h … alternative to sys/dev/audiovar.h
-* sys/dev/audio/aucodec.[ch] … linear-to-linear conversion
 * sys/dev/audio/alaw.c … alaw conversion (alternative to sys/dev/mulaw.c)
+* sys/dev/audio/linear.[ch] … linear-to-linear conversion
 * sys/dev/audio/mulaw.[ch] … mulaw conversion (alternative to sys/dev/mulaw.[ch])
 
 
