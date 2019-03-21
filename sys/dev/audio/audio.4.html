@@ -799,7 +799,8 @@ AUDIO2 では録音トラックと再生トラックの blocksize は同じと�
 	u_long	seek;		/* BSD extension <span class=a2>[track]</span> */
 	u_int	avail_ports;	/* available I/O ports <span class=a2>[HWmixer]</span> */
 	u_int	buffer_size;	/* total size audio buffer <span class=a2>[track]</span> */
-	u_int	_ispare[1];	/* Current state of device: */
+	u_int	_ispare[1];
+	<span class=del>/* Current state of device: */</span>
 	u_int	samples;	/* number of samples <span class=a2>[track]</span> */
 	u_int	eof;		/* End Of File (zero-size writes) counter <span class=a2>[track]</span> */
 	u_char	pause;		/* non-zero if paused, zero to resume <span class=a2>[track]</span> */
