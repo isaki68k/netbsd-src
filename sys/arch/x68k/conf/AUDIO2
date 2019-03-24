@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.193 2019/02/06 11:58:32 rin Exp $
+# $NetBSD: GENERIC,v 1.194 2019/03/14 16:59:10 thorpej Exp $
 #
 # GENERIC machine description file
 # 
@@ -24,7 +24,7 @@ options 	AUDIO2
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident 		"GENERIC-$Revision: 1.193 $"
+#ident 		"GENERIC-$Revision: 1.194 $"
 
 makeoptions	COPTS="-O2 -fno-reorder-blocks"	# see share/mk/sys.mk
 options 	MSGBUFSIZE=32768
@@ -52,7 +52,6 @@ options 	EXTENDED_MEMORY		# support for >16MB memory
 #options 	FPSP			# floating point emulation for MC68040
 options 	M060SP			# int/fp emulation for MC68060
 #options 	JUPITER			# support for "Jupiter-X" accelerator
-#options 	MAPPEDCOPY		# use page mapping for large copyin/copyout
 #options 	ZSCONSOLE,ZSCN_SPEED="9600"	# use serial console
 
 
