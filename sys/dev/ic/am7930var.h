@@ -91,8 +91,3 @@ int	am7930_get_props(void *);
 int	am7930_set_port(void *, mixer_ctrl_t *);
 int	am7930_get_port(void *, mixer_ctrl_t *);
 int	am7930_query_devinfo(void *, mixer_devinfo_t *);
-
-#if defined(AUDIO2)
-void	audio_mulaw32_to_internal(audio_filter_arg_t *);
-void	audio_internal_to_mulaw32(audio_filter_arg_t *);
-#endif
