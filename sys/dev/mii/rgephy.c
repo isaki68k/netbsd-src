@@ -1,4 +1,4 @@
-/*	$NetBSD: rgephy.c,v 1.47 2019/02/21 15:41:56 msaitoh Exp $	*/
+/*	$NetBSD: rgephy.c,v 1.51 2019/02/26 05:26:10 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2003
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rgephy.c,v 1.47 2019/02/21 15:41:56 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rgephy.c,v 1.51 2019/02/26 05:26:10 msaitoh Exp $");
 
 
 /*
@@ -83,17 +83,10 @@ static const struct mii_phy_funcs rgephy_funcs = {
 };
 
 static const struct mii_phydesc rgephys[] = {
-	{ MII_OUI_xxREALTEK,		MII_MODEL_xxREALTEK_RTL8169S,
-	  MII_STR_xxREALTEK_RTL8169S },
-
-	{ MII_OUI_REALTEK,		MII_MODEL_REALTEK_RTL8169S,
-	  MII_STR_REALTEK_RTL8169S },
-
-	{ MII_OUI_REALTEK,		MII_MODEL_REALTEK_RTL8251,
-	  MII_STR_REALTEK_RTL8251 },
-
-	{ 0,				0,
-	  NULL }
+	MII_PHY_DESC(xxREALTEK, RTL8169S),
+	MII_PHY_DESC(REALTEK, RTL8169S),
+	MII_PHY_DESC(REALTEK, RTL8251),
+	MII_PHY_END,
 };
 
 static int
@@ -703,13 +696,11 @@ rgephy_reset(struct mii_softc *sc)
 	/* NWay enable and Restart NWay */
 	PHY_WRITE(sc, MII_BMCR, BMCR_RESET | BMCR_AUTOEN | BMCR_STARTNEG);
 
-	if (sc->mii_mpd_rev == RGEPHY_8211F) {
+	if (sc->mii_mpd_rev >= RGEPHY_8211D) {
 		/* RTL8211F */
 		delay(10000);
 		/* disable EEE */
-		PHY_WRITE(sc, MII_MMDACR, MMDACR_FN_ADDRESS | MDIO_MMD_AN);
-		PHY_WRITE(sc, MII_MMDAADR, MDIO_AN_EEEADVERT);
-		PHY_WRITE(sc, MII_MMDACR, MMDACR_FN_DATANPI | MDIO_MMD_AN);
-		PHY_WRITE(sc, MII_MMDAADR, 0x0000);
+		MMD_INDIRECT_WRITE(sc, MDIO_MMD_AN | MMDACR_FN_DATA,
+		    MDIO_AN_EEEADVERT, 0x0000);
 	}
 }

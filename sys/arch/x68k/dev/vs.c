@@ -1,4 +1,4 @@
-/*	$NetBSD: vs.c,v 1.49 2017/09/30 04:07:04 isaki Exp $	*/
+/*	$NetBSD: vs.c,v 1.50 2019/03/16 12:09:57 isaki Exp $	*/
 
 /*
  * Copyright (c) 2001 Tetsuya Isaki. All rights reserved.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vs.c,v 1.49 2017/09/30 04:07:04 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vs.c,v 1.50 2019/03/16 12:09:57 isaki Exp $");
 
 #include "audio.h"
 #include "vs.h"

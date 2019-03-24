@@ -1,4 +1,4 @@
-/*	$NetBSD: aucc.c,v 1.43 2014/03/22 01:52:44 christos Exp $ */
+/*	$NetBSD: aucc.c,v 1.44 2019/03/16 12:09:56 isaki Exp $ */
 
 /*
  * Copyright (c) 1999 Bernardo Innocenti
@@ -53,7 +53,7 @@
 #if NAUCC > 0
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: aucc.c,v 1.43 2014/03/22 01:52:44 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: aucc.c,v 1.44 2019/03/16 12:09:56 isaki Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>

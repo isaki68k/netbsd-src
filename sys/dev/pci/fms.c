@@ -1,4 +1,4 @@
-/*	$NetBSD: fms.c,v 1.44 2018/12/09 11:14:02 jdolecek Exp $	*/
+/*	$NetBSD: fms.c,v 1.45 2019/03/16 12:09:58 isaki Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2008 The NetBSD Foundation, Inc.
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fms.c,v 1.44 2018/12/09 11:14:02 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fms.c,v 1.45 2019/03/16 12:09:58 isaki Exp $");
 
 #include "mpu.h"
 

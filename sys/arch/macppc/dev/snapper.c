@@ -1,4 +1,4 @@
-/*	$NetBSD: snapper.c,v 1.48 2018/09/03 16:29:25 riastradh Exp $	*/
+/*	$NetBSD: snapper.c,v 1.49 2019/03/16 12:09:57 isaki Exp $	*/
 /*	Id: snapper.c,v 1.11 2002/10/31 17:42:13 tsubai Exp	*/
 /*	Id: i2s.c,v 1.12 2005/01/15 14:32:35 tsubai Exp		*/
 
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: snapper.c,v 1.48 2018/09/03 16:29:25 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: snapper.c,v 1.49 2019/03/16 12:09:57 isaki Exp $");
 
 #include <sys/param.h>
 #include <sys/audioio.h>

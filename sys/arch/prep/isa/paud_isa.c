@@ -1,4 +1,4 @@
-/*	$NetBSD: paud_isa.c,v 1.16 2011/11/24 03:35:57 mrg Exp $	*/
+/*	$NetBSD: paud_isa.c,v 1.17 2019/03/16 12:09:57 isaki Exp $	*/
 
 /*-
  * Copyright (c) 1998, 1999 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: paud_isa.c,v 1.16 2011/11/24 03:35:57 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: paud_isa.c,v 1.17 2019/03/16 12:09:57 isaki Exp $");
 
 #include "audio.h"
 #if NAUDIO > 0

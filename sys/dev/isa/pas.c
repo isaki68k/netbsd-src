@@ -1,4 +1,4 @@
-/*	$NetBSD: pas.c,v 1.70 2011/11/24 03:35:58 mrg Exp $	*/
+/*	$NetBSD: pas.c,v 1.71 2019/03/16 12:09:58 isaki Exp $	*/
 
 /*
  * Copyright (c) 1991-1993 Regents of the University of California.
@@ -57,7 +57,7 @@
 
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pas.c,v 1.70 2011/11/24 03:35:58 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pas.c,v 1.71 2019/03/16 12:09:58 isaki Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>

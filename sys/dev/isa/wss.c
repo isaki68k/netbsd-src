@@ -1,4 +1,4 @@
-/*	$NetBSD: wss.c,v 1.71 2011/11/24 03:35:58 mrg Exp $	*/
+/*	$NetBSD: wss.c,v 1.72 2019/03/16 12:09:58 isaki Exp $	*/
 
 /*
  * Copyright (c) 1994 John Brezak
@@ -36,7 +36,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: wss.c,v 1.71 2011/11/24 03:35:58 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: wss.c,v 1.72 2019/03/16 12:09:58 isaki Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>

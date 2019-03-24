@@ -1,4 +1,4 @@
-/*	$NetBSD: auvia.c,v 1.80 2018/12/09 11:14:01 jdolecek Exp $	*/
+/*	$NetBSD: auvia.c,v 1.82 2019/03/16 12:09:58 isaki Exp $	*/
 
 /*-
  * Copyright (c) 2000, 2008 The NetBSD Foundation, Inc.
@@ -40,7 +40,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: auvia.c,v 1.80 2018/12/09 11:14:01 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: auvia.c,v 1.82 2019/03/16 12:09:58 isaki Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>

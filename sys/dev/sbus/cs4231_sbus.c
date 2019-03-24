@@ -1,4 +1,4 @@
-/*	$NetBSD: cs4231_sbus.c,v 1.50 2017/05/02 08:11:16 martin Exp $	*/
+/*	$NetBSD: cs4231_sbus.c,v 1.51 2019/03/16 12:09:58 isaki Exp $	*/
 
 /*-
  * Copyright (c) 1998, 1999, 2002, 2007 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cs4231_sbus.c,v 1.50 2017/05/02 08:11:16 martin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cs4231_sbus.c,v 1.51 2019/03/16 12:09:58 isaki Exp $");
 
 #include "audio.h"
 #if NAUDIO > 0

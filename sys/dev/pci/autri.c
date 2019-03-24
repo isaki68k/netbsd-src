@@ -1,4 +1,4 @@
-/*	$NetBSD: autri.c,v 1.55 2017/06/01 02:45:11 chs Exp $	*/
+/*	$NetBSD: autri.c,v 1.56 2019/03/16 12:09:58 isaki Exp $	*/
 
 /*
  * Copyright (c) 2001 SOMEYA Yoshihiko and KUROSAWA Takahiro.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: autri.c,v 1.55 2017/06/01 02:45:11 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: autri.c,v 1.56 2019/03/16 12:09:58 isaki Exp $");
 
 #include "midi.h"
 

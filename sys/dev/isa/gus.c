@@ -1,4 +1,4 @@
-/*	$NetBSD: gus.c,v 1.114 2019/02/03 03:19:27 mrg Exp $	*/
+/*	$NetBSD: gus.c,v 1.115 2019/03/16 12:09:58 isaki Exp $	*/
 
 /*-
  * Copyright (c) 1996, 1999, 2008 The NetBSD Foundation, Inc.
@@ -88,7 +88,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gus.c,v 1.114 2019/02/03 03:19:27 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gus.c,v 1.115 2019/03/16 12:09:58 isaki Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>

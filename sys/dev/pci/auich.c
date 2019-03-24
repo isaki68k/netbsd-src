@@ -1,4 +1,4 @@
-/*	$NetBSD: auich.c,v 1.152 2018/03/24 18:32:13 jdolecek Exp $	*/
+/*	$NetBSD: auich.c,v 1.153 2019/03/16 12:09:58 isaki Exp $	*/
 
 /*-
  * Copyright (c) 2000, 2004, 2005, 2008 The NetBSD Foundation, Inc.
@@ -111,7 +111,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: auich.c,v 1.152 2018/03/24 18:32:13 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: auich.c,v 1.153 2019/03/16 12:09:58 isaki Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>

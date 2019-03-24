@@ -1,4 +1,4 @@
-/*	$NetBSD: aria.c,v 1.37 2012/10/27 17:18:23 chs Exp $	*/
+/*	$NetBSD: aria.c,v 1.39 2019/03/16 12:09:58 isaki Exp $	*/
 
 /*-
  * Copyright (c) 1995, 1996, 1998 The NetBSD Foundation, Inc.
@@ -50,7 +50,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: aria.c,v 1.37 2012/10/27 17:18:23 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: aria.c,v 1.39 2019/03/16 12:09:58 isaki Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>

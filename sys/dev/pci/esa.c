@@ -1,4 +1,4 @@
-/* $NetBSD: esa.c,v 1.62 2018/12/09 11:14:02 jdolecek Exp $ */
+/* $NetBSD: esa.c,v 1.63 2019/03/16 12:09:58 isaki Exp $ */
 
 /*
  * Copyright (c) 2001-2008 Jared D. McNeill <jmcneill@invisible.ca>
@@ -39,7 +39,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: esa.c,v 1.62 2018/12/09 11:14:02 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: esa.c,v 1.63 2019/03/16 12:09:58 isaki Exp $");
 
 #include <sys/types.h>
 #include <sys/errno.h>

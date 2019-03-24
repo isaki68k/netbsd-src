@@ -1,4 +1,4 @@
-/*	$NetBSD: eap.c,v 1.98 2018/12/09 11:14:02 jdolecek Exp $	*/
+/*	$NetBSD: eap.c,v 1.99 2019/03/16 12:09:58 isaki Exp $	*/
 /*      $OpenBSD: eap.c,v 1.6 1999/10/05 19:24:42 csapuntz Exp $ */
 
 /*
@@ -51,7 +51,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: eap.c,v 1.98 2018/12/09 11:14:02 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: eap.c,v 1.99 2019/03/16 12:09:58 isaki Exp $");
 
 #include "midi.h"
 #include "joy_eap.h"
