@@ -198,11 +198,9 @@ int	aucc_query_encoding(void *, struct audio_encoding *);
 int	aucc_round_blocksize(void *, int, int, const audio_params_t *);
 int	aucc_commit_settings(void *);
 int	aucc_start_output(void *, void *, int, void (*)(void *), void *);
-int	aucc_halt_output(void *);
-#if !defined(AUDIO2)
 int	aucc_start_input(void *, void *, int, void (*)(void *), void *);
+int	aucc_halt_output(void *);
 int	aucc_halt_input(void *);
-#endif
 int	aucc_getdev(void *, struct audio_device *);
 int	aucc_set_port(void *, mixer_ctrl_t *);
 int	aucc_get_port(void *, mixer_ctrl_t *);
@@ -263,11 +261,9 @@ const struct audio_hw_if sa_hw_if = {
 	.round_blocksize	= aucc_round_blocksize,
 	.commit_settings	= aucc_commit_settings,
 	.start_output		= aucc_start_output,
-	.halt_output		= aucc_halt_output,
-#if !defined(AUDIO2)
 	.start_input		= aucc_start_input,
+	.halt_output		= aucc_halt_output,
 	.halt_input		= aucc_halt_input,
-#endif
 	.getdev			= aucc_getdev,
 	.set_port		= aucc_set_port,
 	.get_port		= aucc_get_port,
@@ -862,7 +858,6 @@ aucc_start_output(void *addr, void *p, int cc, void (*intr)(void *), void *arg)
 	return 0;
 }
 
-#if !defined(AUDIO2)
 /* ARGSUSED */
 int
 aucc_start_input(void *addr, void *p, int cc, void (*intr)(void *), void *arg)
@@ -870,7 +865,6 @@ aucc_start_input(void *addr, void *p, int cc, void (*intr)(void *), void *arg)
 
 	return ENXIO; /* no input */
 }
-#endif
 
 int
 aucc_halt_output(void *addr)
@@ -893,7 +887,6 @@ aucc_halt_output(void *addr)
 	return 0;
 }
 
-#if !defined(AUDIO2)
 int
 aucc_halt_input(void *addr)
 {
@@ -901,7 +894,6 @@ aucc_halt_input(void *addr)
 	/* no input */
 	return ENXIO;
 }
-#endif
 
 int
 aucc_getdev(void *addr, struct audio_device *retp)
