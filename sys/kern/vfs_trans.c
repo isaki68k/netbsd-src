@@ -1,4 +1,4 @@
-/*	$NetBSD: vfs_trans.c,v 1.55 2019/02/21 08:52:53 hannken Exp $	*/
+/*	$NetBSD: vfs_trans.c,v 1.58 2019/03/07 11:09:10 hannken Exp $	*/
 
 /*-
  * Copyright (c) 2007 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_trans.c,v 1.55 2019/02/21 08:52:53 hannken Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_trans.c,v 1.58 2019/03/07 11:09:10 hannken Exp $");
 
 /*
  * File system transaction operations.
@@ -68,7 +68,7 @@ struct fstrans_lwp_info {
 	struct fstrans_lwp_info *fli_succ;
 	struct lwp *fli_self;
 	struct mount *fli_mount;
-	struct mount *fli_alias;
+	struct fstrans_lwp_info *fli_alias;
 	struct fstrans_mount_info *fli_mountinfo;
 	int fli_trans_cnt;
 	int fli_cow_cnt;
@@ -84,7 +84,6 @@ struct fstrans_mount_info {
 	struct mount *fmi_mount;
 };
 
-static specificdata_key_t lwp_data_key;	/* Our specific data key. */
 static kmutex_t vfs_suspend_lock;	/* Serialize suspensions. */
 static kmutex_t fstrans_lock;		/* Fstrans big lock. */
 static kmutex_t fstrans_mount_lock;	/* Fstrans mount big lock. */
@@ -95,7 +94,6 @@ static LIST_HEAD(fstrans_lwp_head, fstrans_lwp_info) fstrans_fli_head;
 					/* List of all fstrans_lwp_info. */
 static int fstrans_gone_count;		/* Number of fstrans_mount_info gone. */
 
-static void fstrans_lwp_dtor(void *);
 static void fstrans_mount_dtor(struct fstrans_mount_info *);
 static void fstrans_clear_lwp_info(void);
 static inline struct fstrans_lwp_info *
@@ -180,10 +178,6 @@ fstrans_debug_validate_mount(struct mount *mp)
 void
 fstrans_init(void)
 {
-	int error __diagused;
-
-	error = lwp_specific_key_create(&lwp_data_key, fstrans_lwp_dtor);
-	KASSERT(error == 0);
 
 	mutex_init(&vfs_suspend_lock, MUTEX_DEFAULT, IPL_NONE);
 	mutex_init(&fstrans_lock, MUTEX_DEFAULT, IPL_NONE);
@@ -197,14 +191,15 @@ fstrans_init(void)
 /*
  * Deallocate lwp state.
  */
-static void
-fstrans_lwp_dtor(void *arg)
+void
+fstrans_lwp_dtor(lwp_t *l)
 {
 	struct fstrans_lwp_info *fli, *fli_next;
 
-	for (fli = arg; fli; fli = fli_next) {
+	for (fli = l->l_fstrans; fli; fli = fli_next) {
 		KASSERT(fli->fli_trans_cnt == 0);
 		KASSERT(fli->fli_cow_cnt == 0);
+		KASSERT(fli->fli_self == l);
 		if (fli->fli_mount != NULL)
 			fstrans_mount_dtor(fli->fli_mountinfo);
 		fli_next = fli->fli_succ;
@@ -214,6 +209,8 @@ fstrans_lwp_dtor(void *arg)
 		membar_sync();
 		fli->fli_self = NULL;
 	}
+
+	l->l_fstrans = NULL;
 }
 
 /*
@@ -294,13 +291,12 @@ fstrans_unmount(struct mount *mp)
 static void
 fstrans_clear_lwp_info(void)
 {
-	struct fstrans_lwp_info *head, **p, *fli;
+	struct fstrans_lwp_info **p, *fli;
 
 	/*
 	 * Scan our list clearing entries whose mount is gone.
 	 */
-	head = lwp_getspecific(lwp_data_key);
-	for (p = &head; *p; p = &(*p)->fli_succ) {
+	for (p = &curlwp->l_fstrans; *p; ) {
 		fli = *p;
 		if (fli->fli_mount != NULL &&
 		    fli->fli_mountinfo->fmi_gone &&
@@ -312,12 +308,15 @@ fstrans_clear_lwp_info(void)
 			fli->fli_mountinfo = NULL;
 			membar_sync();
 			fli->fli_self = NULL;
-
-			if (*p == NULL)
-				break;
+		} else {
+			p = &(*p)->fli_succ;
 		}
 	}
-	lwp_setspecific(lwp_data_key, head);
+#ifdef DIAGNOSTIC
+	for (fli = curlwp->l_fstrans; fli; fli = fli->fli_succ)
+		if (fli->fli_alias != NULL)
+			KASSERT(fli->fli_alias->fli_self == curlwp);
+#endif /* DIAGNOSTIC */
 }
 
 /*
@@ -326,10 +325,10 @@ fstrans_clear_lwp_info(void)
 static struct fstrans_lwp_info *
 fstrans_alloc_lwp_info(struct mount *mp)
 {
-	struct fstrans_lwp_info *fli, *fli2;
+	struct fstrans_lwp_info *fli;
 	struct fstrans_mount_info *fmi;
 
-	for (fli = lwp_getspecific(lwp_data_key); fli; fli = fli->fli_succ) {
+	for (fli = curlwp->l_fstrans; fli; fli = fli->fli_succ) {
 		if (fli->fli_mount == mp)
 			return fli;
 	}
@@ -345,8 +344,8 @@ fstrans_alloc_lwp_info(struct mount *mp)
 			KASSERT(fli->fli_trans_cnt == 0);
 			KASSERT(fli->fli_cow_cnt == 0);
 			fli->fli_self = curlwp;
-			fli->fli_succ = lwp_getspecific(lwp_data_key);
-			lwp_setspecific(lwp_data_key, fli);
+			fli->fli_succ = curlwp->l_fstrans;
+			curlwp->l_fstrans = fli;
 			break;
 		}
 	}
@@ -359,8 +358,8 @@ fstrans_alloc_lwp_info(struct mount *mp)
 		fli->fli_self = curlwp;
 		LIST_INSERT_HEAD(&fstrans_fli_head, fli, fli_list);
 		mutex_exit(&fstrans_lock);
-		fli->fli_succ = lwp_getspecific(lwp_data_key);
-		lwp_setspecific(lwp_data_key, fli);
+		fli->fli_succ = curlwp->l_fstrans;
+		curlwp->l_fstrans = fli;
 	}
 
 	/*
@@ -378,10 +377,8 @@ fstrans_alloc_lwp_info(struct mount *mp)
 	mutex_exit(&fstrans_mount_lock);
 
 	if (mp) {
-		fli2 = fstrans_alloc_lwp_info(mp);
-		fli->fli_alias = fli2->fli_mount;
-
-		fli = fli2;
+		fli->fli_alias = fstrans_alloc_lwp_info(mp);
+		fli = fli->fli_alias;
 	}
 
 	return fli;
@@ -393,23 +390,17 @@ fstrans_alloc_lwp_info(struct mount *mp)
 static inline struct fstrans_lwp_info *
 fstrans_get_lwp_info(struct mount *mp, bool do_alloc)
 {
-	struct fstrans_lwp_info *head, *fli, *fli2;
-
-	head = lwp_getspecific(lwp_data_key);
+	struct fstrans_lwp_info *fli;
 
 	/*
 	 * Scan our list for a match.
 	 */
-	for (fli = head; fli; fli = fli->fli_succ) {
+	for (fli = curlwp->l_fstrans; fli; fli = fli->fli_succ) {
 		if (fli->fli_mount == mp) {
-			if (fli->fli_alias != NULL) {
-				for (fli2 = head; fli2; fli2 = fli2->fli_succ) {
-					if (fli2->fli_mount == fli->fli_alias)
-						break;
-				}
-				KASSERT(fli2 != NULL);
-				fli = fli2;
-			}
+			KASSERT((mp->mnt_lower == NULL) ==
+			    (fli->fli_alias == NULL));
+			if (fli->fli_alias != NULL)
+				fli = fli->fli_alias;
 			break;
 		}
 	}
@@ -543,6 +534,9 @@ fstrans_done(struct mount *mp)
 		return;
 	}
 
+	if (__predict_false(fstrans_gone_count > 0))
+		fstrans_clear_lwp_info();
+
 	s = pserialize_read_enter();
 	if (__predict_true(fmi->fmi_state == FSTRANS_NORMAL)) {
 		fli->fli_trans_cnt = 0;
@@ -551,9 +545,6 @@ fstrans_done(struct mount *mp)
 		return;
 	}
 	pserialize_read_exit(s);
-
-	if (__predict_false(fstrans_gone_count > 0))
-		fstrans_clear_lwp_info();
 
 	mutex_enter(&fstrans_lock);
 	fli->fli_trans_cnt = 0;
@@ -949,9 +940,17 @@ fstrans_print_lwp(struct proc *p, struct lwp *l, int verbose)
 			printf(" (%s)", fli->fli_mount->mnt_stat.f_mntonname);
 		else
 			printf(" NULL");
-		if (fli->fli_alias != NULL)
-			printf(" alias (%s)",
-			    fli->fli_alias->mnt_stat.f_mntonname);
+		if (fli->fli_alias != NULL) {
+			struct mount *amp = fli->fli_alias->fli_mount;
+
+			printf(" alias");
+			if (verbose)
+				printf(" @%p", fli->fli_alias);
+			if (amp == NULL)
+				printf(" NULL");
+			else
+				printf(" (%s)", amp->mnt_stat.f_mntonname);
+		}
 		if (fli->fli_mountinfo && fli->fli_mountinfo->fmi_gone)
 			printf(" gone");
 		if (fli->fli_trans_cnt == 0) {

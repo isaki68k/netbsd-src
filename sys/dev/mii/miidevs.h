@@ -1,10 +1,10 @@
-/*	$NetBSD: miidevs.h,v 1.140 2019/02/13 08:40:14 msaitoh Exp $	*/
+/*	$NetBSD: miidevs.h,v 1.147 2019/03/15 04:00:29 msaitoh Exp $	*/
 
 /*
  * THIS FILE AUTOMATICALLY GENERATED.  DO NOT EDIT.
  *
  * generated from:
- *	NetBSD: miidevs,v 1.140 2019/02/13 08:39:55 msaitoh Exp
+ *	NetBSD: miidevs,v 1.149 2019/03/15 04:00:06 msaitoh Exp
  */
 
 /*-
@@ -98,35 +98,28 @@
 #define	MII_OUI_TI	0x080028	/* Texas Instruments */
 #define	MII_OUI_BROADCOM4	0x18c086	/* Broadcom Corporation */
 
-/* Some Intel 82553's use an alternative OUI. */
-#define	MII_OUI_xxINTEL	0x001f00	/* Intel */
-
-/* Some VIA 6122's use an alternative OUI. */
-#define	MII_OUI_xxCICADA	0x00c08f	/* Cicada Semiconductor */
-
-/* bad bitorder (bits "g" and "h" (= MSBs byte 1) lost) */
+/* Unregisterd or wrong OUI */
+#define	MII_OUI_yyREALTEK	0x000004	/* Realtek */
 #define	MII_OUI_yyAMD	0x000058	/* Advanced Micro Devices */
-#define	MII_OUI_xxBROADCOM	0x000818	/* Broadcom Corporation */
-#define	MII_OUI_xxBROADCOM_ALT1	0x0050ef	/* Broadcom Corporation */
-#define	MII_OUI_xxDAVICOM	0x000676	/* Davicom Semiconductor */
-#define	MII_OUI_yyINTEL	0x005500	/* Intel */
-#define	MII_OUI_xxMARVELL	0x000ac2	/* Marvell Semiconductor */
 #define	MII_OUI_xxMYSON	0x00032d	/* Myson Technology */
-#define	MII_OUI_xxNATSEMI	0x1000e8	/* National Semiconductor */
-#define	MII_OUI_xxQUALSEMI	0x00068a	/* Quality Semiconductor */
 #define	MII_OUI_xxTSC	0x00039c	/* TDK Semiconductor */
-
-/* bad byteorder (bits "q" and "r" (= LSBs byte 3) lost) */
+#define	MII_OUI_xxASIX	0x000674	/* Asix Semiconductor */
+#define	MII_OUI_xxDAVICOM	0x000676	/* Davicom Semiconductor */
+#define	MII_OUI_xxQUALSEMI	0x00068a	/* Quality Semiconductor */
+#define	MII_OUI_xxREALTEK	0x000732	/* Realtek */
+#define	MII_OUI_xxBROADCOM	0x000818	/* Broadcom Corporation */
+#define	MII_OUI_xxPMCSIERRA	0x0009c0	/* PMC-Sierra */
+#define	MII_OUI_xxMARVELL	0x000ac2	/* Marvell Semiconductor */
+#define	MII_OUI_xxINTEL	0x001f00	/* Intel */
+#define	MII_OUI_xxBROADCOM_ALT1	0x0050ef	/* Broadcom Corporation */
+#define	MII_OUI_yyINTEL	0x005500	/* Intel */
+#define	MII_OUI_yyASIX	0x007063	/* Asix Semiconductor */
+#define	MII_OUI_xxPMCSIERRA2	0x009057	/* PMC-Sierra */
+#define	MII_OUI_xxCICADA	0x00c08f	/* Cicada Semiconductor */
+#define	MII_OUI_xxNATSEMI	0x1000e8	/* National Semiconductor */
 #define	MII_OUI_xxLEVEL1	0x782000	/* Level 1 */
 #define	MII_OUI_xxXAQTI	0xace000	/* XaQti Corp. */
 
-/* Don't know what's going on here. */
-#define	MII_OUI_xxASIX	0x000674	/* Asix Semiconductor */
-#define	MII_OUI_xxPMCSIERRA	0x0009c0	/* PMC-Sierra */
-#define	MII_OUI_xxPMCSIERRA2	0x009057	/* PMC-Sierra */
-
-#define	MII_OUI_xxREALTEK	0x000732	/* Realtek */
-#define	MII_OUI_yyREALTEK	0x000004	/* Realtek */
 /*
  * List of known models.  Grouped by oui.
  */
@@ -140,6 +133,26 @@
 /* Asix semiconductor PHYs */
 #define	MII_MODEL_xxASIX_AX88X9X	0x0031
 #define	MII_STR_xxASIX_AX88X9X	"Ax88x9x internal PHY"
+#define	MII_MODEL_yyASIX_AX88772	0x0001
+#define	MII_STR_yyASIX_AX88772	"AX88772 internal PHY"
+#define	MII_MODEL_yyASIX_AX88772A	0x0006
+#define	MII_STR_yyASIX_AX88772A	"AX88772A internal PHY"
+#define	MII_MODEL_yyASIX_AX88772B	0x0008
+#define	MII_STR_yyASIX_AX88772B	"AX88772B internal PHY"
+
+/* Altima Communications PHYs */
+/* Don't know the model for ACXXX */
+#define	MII_MODEL_ALTIMA_ACXXX	0x0001
+#define	MII_STR_ALTIMA_ACXXX	"ACXXX 10/100 media interface"
+#define	MII_MODEL_ALTIMA_AC101L	0x0012
+#define	MII_STR_ALTIMA_AC101L	"AC101L 10/100 media interface"
+#define	MII_MODEL_ALTIMA_AC101	0x0021
+#define	MII_STR_ALTIMA_AC101	"AC101 10/100 media interface"
+/* AMD Am79C87[45] have ALTIMA OUI */
+#define	MII_MODEL_ALTIMA_Am79C875	0x0014
+#define	MII_STR_ALTIMA_Am79C875	"Am79C875 10/100 media interface"
+#define	MII_MODEL_ALTIMA_Am79C874	0x0021
+#define	MII_STR_ALTIMA_Am79C874	"Am79C874 10/100 media interface"
 
 /* Atheros PHYs */
 #define	MII_MODEL_ATHEROS_F1	0x0001
@@ -156,20 +169,6 @@
 #define	MII_STR_ATTANSIC_AR8021	"Atheros AR8021 10/100/1000 PHY"
 #define	MII_MODEL_ATTANSIC_AR8035	0x0007
 #define	MII_STR_ATTANSIC_AR8035	"Atheros AR8035 10/100/1000 PHY"
-
-/* Altima Communications PHYs */
-/* Don't know the model for ACXXX */
-#define	MII_MODEL_ALTIMA_ACXXX	0x0001
-#define	MII_STR_ALTIMA_ACXXX	"ACXXX 10/100 media interface"
-#define	MII_MODEL_ALTIMA_AC101L	0x0012
-#define	MII_STR_ALTIMA_AC101L	"AC101L 10/100 media interface"
-#define	MII_MODEL_ALTIMA_AC101	0x0021
-#define	MII_STR_ALTIMA_AC101	"AC101 10/100 media interface"
-/* AMD Am79C87[45] have ALTIMA OUI */
-#define	MII_MODEL_ALTIMA_Am79C875	0x0014
-#define	MII_STR_ALTIMA_Am79C875	"Am79C875 10/100 media interface"
-#define	MII_MODEL_ALTIMA_Am79C874	0x0021
-#define	MII_STR_ALTIMA_Am79C874	"Am79C874 10/100 media interface"
 
 /* Advanced Micro Devices PHYs */
 /* see Davicom DM9101 for Am79C873 */
@@ -312,10 +311,20 @@
 
 /* Davicom Semiconductor PHYs */
 /* AMD Am79C873 seems to be a relabeled DM9101 */
+#define	MII_MODEL_DAVICOM_DM9101	0x0000
+#define	MII_STR_DAVICOM_DM9101	"DM9101 (AMD Am79C873) 10/100 media interface"
 #define	MII_MODEL_xxDAVICOM_DM9101	0x0000
 #define	MII_STR_xxDAVICOM_DM9101	"DM9101 (AMD Am79C873) 10/100 media interface"
 #define	MII_MODEL_xxDAVICOM_DM9102	0x0004
 #define	MII_STR_xxDAVICOM_DM9102	"DM9102 10/100 media interface"
+#define	MII_MODEL_xxDAVICOM_DM9161	0x0008
+#define	MII_STR_xxDAVICOM_DM9161	"DM9161 10/100 media interface"
+#define	MII_MODEL_xxDAVICOM_DM9161A	0x000a
+#define	MII_STR_xxDAVICOM_DM9161A	"DM9161A 10/100 media interface"
+#define	MII_MODEL_xxDAVICOM_DM9161B	0x000b
+#define	MII_STR_xxDAVICOM_DM9161B	"DM9161[BC] 10/100 media interface"
+#define	MII_MODEL_xxDAVICOM_DM9601	0x000c
+#define	MII_STR_xxDAVICOM_DM9601	"DM9601 internal 10/100 media interface"
 
 /* IC Plus Corp. PHYs */
 #define	MII_MODEL_ICPLUS_IP100	0x0004
@@ -378,8 +387,8 @@
 #define	MII_STR_xxMARVELL_I210	"I210 10/100/1000 media interface"
 #define	MII_MODEL_xxMARVELL_I82563	0x000a
 #define	MII_STR_xxMARVELL_I82563	"i82563 10/100/1000 media interface"
-#define	MII_MODEL_ATHEROS_I82578	0x0004
-#define	MII_STR_ATHEROS_I82578	"Intel 82578 10/100/1000 media interface"
+#define	MII_MODEL_ATTANSIC_I82578	0x0004
+#define	MII_STR_ATTANSIC_I82578	"Intel 82578 10/100/1000 media interface"
 
 
 /* JMicron PHYs */
@@ -541,10 +550,22 @@
 #define	MII_STR_SIS_900	"SiS 900 10/100 media interface"
 
 /* SMSC PHYs */
+#define	MII_MODEL_SMSC_LAN83C185	0x000a
+#define	MII_STR_SMSC_LAN83C185	"SMSC LAN83C185 10/100 PHY"
 #define	MII_MODEL_SMSC_LAN8700	0x000c
 #define	MII_STR_SMSC_LAN8700	"SMSC LAN8700 10/100 Ethernet Transceiver"
+#define	MII_MODEL_SMSC_LAN911X	0x000d
+#define	MII_STR_SMSC_LAN911X	"SMSC LAN911X internal 10/100 PHY"
+#define	MII_MODEL_SMSC_LAN75XX	0x000e
+#define	MII_STR_SMSC_LAN75XX	"SMSC LAN75XX internal 10/100 PHY"
 #define	MII_MODEL_SMSC_LAN8710_LAN8720	0x000f
 #define	MII_STR_SMSC_LAN8710_LAN8720	"SMSC LAN8710/LAN8720 10/100 Ethernet Transceiver"
+#define	MII_MODEL_SMSC_LAN8740	0x0011
+#define	MII_STR_SMSC_LAN8740	"SMSC LAN8740 10/100 media interface"
+#define	MII_MODEL_SMSC_LAN8741A	0x0012
+#define	MII_STR_SMSC_LAN8741A	"SMSC LAN8741A 10/100 media interface"
+#define	MII_MODEL_SMSC_LAN8742	0x0013
+#define	MII_STR_SMSC_LAN8742	"SMSC LAN8742 10/100 media interface"
 
 /* Texas Instruments PHYs */
 #define	MII_MODEL_TI_TLAN10T	0x0001
