@@ -609,10 +609,10 @@ format2_to_params(const audio_format2_t *f2)
 
 	/* Although audio_format2 and audio_params are compatible. */
 	p.sample_rate = f2->sample_rate;
-	p.channels = f2->channels;
-	p.encoding = f2->encoding;
-	p.validbits = f2->precision;
-	p.precision = f2->stride;
+	p.channels    = f2->channels;
+	p.encoding    = f2->encoding;
+	p.validbits   = f2->precision;
+	p.precision   = f2->stride;
 	return p;
 }
 
