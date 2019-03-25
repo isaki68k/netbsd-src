@@ -485,7 +485,7 @@ static void audio_rintr(void *);
 
 static int audio_query_devinfo(struct audio_softc *, mixer_devinfo_t *);
 
-static inline int audio_track_readablebytes(const audio_track_t *);
+static __inline int audio_track_readablebytes(const audio_track_t *);
 static int audio_file_setinfo(struct audio_softc *, audio_file_t *,
 	const struct audio_info *);
 static int audio_track_setinfo_check(audio_format2_t *,
@@ -591,7 +591,7 @@ static int au_get_monitor_gain(struct audio_softc *);
 static int audio_get_port(struct audio_softc *, mixer_ctrl_t *);
 static int audio_set_port(struct audio_softc *, mixer_ctrl_t *);
 
-static inline struct audio_params
+static __inline struct audio_params
 format2_to_params(const audio_format2_t *f2)
 {
 	audio_params_t p;
@@ -605,7 +605,7 @@ format2_to_params(const audio_format2_t *f2)
 	return p;
 }
 
-static inline audio_format2_t
+static __inline audio_format2_t
 params_to_format2(const struct audio_params *p)
 {
 	audio_format2_t f2;
@@ -620,7 +620,7 @@ params_to_format2(const struct audio_params *p)
 }
 
 /* Return true if this track is a playback track. */
-static inline bool
+static __inline bool
 audio_track_is_playback(const audio_track_t *track)
 {
 
@@ -628,7 +628,7 @@ audio_track_is_playback(const audio_track_t *track)
 }
 
 /* Return true if this track is a recording track. */
-static inline bool
+static __inline bool
 audio_track_is_record(const audio_track_t *track)
 {
 
@@ -639,7 +639,7 @@ audio_track_is_record(const audio_track_t *track)
 /*
  * Convert 0..255 volume used in userland to internal presentation 0..256.
  */
-static inline u_int
+static __inline u_int
 audio_volume_to_inner(u_int v)
 {
 
@@ -649,7 +649,7 @@ audio_volume_to_inner(u_int v)
 /*
  * Convert 0..256 internal presentation to 0..255 volume used in userland.
  */
-static inline u_int
+static __inline u_int
 audio_volume_to_outer(u_int v)
 {
 
@@ -1520,7 +1520,7 @@ audio_file_release(struct audio_softc *sc, audio_file_t *file)
  * Returns true if the track lock was acquired, or false if the track
  * lock was already acquired.
  */
-static inline bool
+static __inline bool
 audio_track_lock_tryenter(audio_track_t *track)
 {
 	return (atomic_cas_uint(&track->lock, 0, 1) == 0);
@@ -1529,7 +1529,7 @@ audio_track_lock_tryenter(audio_track_t *track)
 /*
  * Acquire track lock.
  */
-static inline void
+static __inline void
 audio_track_lock_enter(audio_track_t *track)
 {
 	/* Don't sleep here. */
@@ -1540,7 +1540,7 @@ audio_track_lock_enter(audio_track_t *track)
 /*
  * Release track lock.
  */
-static inline void
+static __inline void
 audio_track_lock_exit(audio_track_t *track)
 {
 	atomic_swap_uint(&track->lock, 0);
@@ -2321,7 +2321,7 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
  * Do uiomove 'len' bytes from the position 'head' of 'usrbuf' in this
  * 'track'.  It does not wrap around circular buffer (so call it twice).
  */
-static inline int
+static __inline int
 audio_read_uiomove(audio_track_t *track, int head, int len, struct uio *uio)
 {
 	audio_ring_t *usrbuf;
@@ -2480,7 +2480,7 @@ audio_file_clear(struct audio_softc *sc, audio_file_t *file)
  * Do uiomove 'len' bytes to the position 'tail' of 'usrbuf' in this
  * 'track'.  It does not wrap around circular buffer (so call it twice).
  */
-static inline int
+static __inline int
 audio_write_uiomove(audio_track_t *track, int tail, int len, struct uio *uio)
 {
 	audio_ring_t *usrbuf;
@@ -2918,7 +2918,7 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 /*
  * Returns the number of bytes that can be read on recording buffer.
  */
-static inline int
+static __inline int
 audio_track_readablebytes(const audio_track_t *track)
 {
 	int bytes;
