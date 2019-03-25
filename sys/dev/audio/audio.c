@@ -229,16 +229,15 @@ __KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.458 2018/09/03 16:29:30 riastradh Exp $"
 #include "ioconf.h"
 #endif /* _KERNEL */
 
-// デバッグレベルは
-// 0: ログ出力なし
-// 1: open/close/set_param等
-// 2: read/write/ioctlシステムコールくらいまでは含む
-// 3: 割り込み以外のTRACEも含む
-// 4: 割り込み内のTRACEも含む (要 AUDIO_DEBUG_MLOG)
-//
-// ここの値は初期値で sysctl hw.audioN.debug で変更出来る
-// (グローバル変数なのでデバイス個別ではないが、ツリーを別に用意するのが面倒
-// なので audio0 とかになっている)。
+/*
+ * 0: No debug logs
+ * 1: action changes like open/close/set_param...
+ * 2: + normal operations like read/write/ioctl...
+ * 3: + TRACEs except interrupt
+ * 4: + TRACEs including interrupt (need AUDIO_DEBUG_MLOG)
+ *
+ * XXX This debug level is shared among all audio devices.
+ */
 // ただし AUDIO_DEBUG 0..2 までと 3..4 には隔絶があり、
 // AUDIO_DEBUG 2 以下では TRACE がコンパイルされないため 3 以上は設定不可。
 // AUDIO_DEBUG 3 以上でコンパイルすれば 0..4 まで設定可能。
