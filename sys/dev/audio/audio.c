@@ -2362,7 +2362,7 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 
 	track = file->rtrack;
 	KASSERT(track);
-	TRACET(3, track, "resid=%u", (int)uio->uio_resid);
+	TRACET(2, track, "resid=%zd", uio->uio_resid);
 
 	KASSERT(!mutex_owned(sc->sc_lock));
 	KASSERT(file->lock);
@@ -2521,8 +2521,9 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 
 	track = file->ptrack;
 	KASSERT(track);
-	TRACET(3, track, "begin pid=%d.%d ioflag=0x%x",
-	    (int)curproc->p_pid, (int)curlwp->l_lid, ioflag);
+	TRACET(2, track, "%sresid=%zd pid=%d.%d ioflag=0x%x",
+	    audiodebug >= 3 ? "begin " : "",
+	    uio->uio_resid, (int)curproc->p_pid, (int)curlwp->l_lid, ioflag);
 
 	KASSERT(!mutex_owned(sc->sc_lock));
 	KASSERT(file->lock);
@@ -2545,7 +2546,6 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 
 	usrbuf = &track->usrbuf;
 	outbuf = &track->outbuf;
-	TRACET(3, track, "resid=%zd", uio->uio_resid);
 
 	/*
 	 * The first write starts pmixer.
