@@ -234,7 +234,7 @@ __KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.458 2018/09/03 16:29:30 riastradh Exp $"
  * 1: action changes like open/close/set_param...
  * 2: + normal operations like read/write/ioctl...
  * 3: + TRACEs except interrupt
- * 4: + TRACEs including interrupt (need AUDIO_DEBUG_MLOG)
+ * 4: + TRACEs including interrupt
  *
  * XXX This debug level is shared among all audio devices.
  */
@@ -252,20 +252,10 @@ __KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.458 2018/09/03 16:29:30 riastradh Exp $"
 # endif
 #endif
 
-// デバッグ用なんちゃってメモリログ。
-#if AUDIO_DEBUG >= 3
-#define AUDIO_DEBUG_MLOG
-#endif
-
-#if defined(AUDIO_DEBUG_MLOG)
 #if defined(_KERNEL)
 #include <dev/audio/mlog.h>
 #else
 #include "mlog.h"
-#endif
-#else
-#define audio_mlog_printf(fmt...)	do { } while (0)
-#define audio_mlog_flush()		do { } while (0)
 #endif
 
 #ifdef AUDIO_DEBUG
@@ -1028,7 +1018,7 @@ audioattach(device_t parent, device_t self, void *aux)
 	callout_schedule(&sc->sc_idle_counter, audio_idle_timeout * hz);
 #endif
 
-#if defined(AUDIO_DEBUG_MLOG)
+#if defined(AUDIO_DEBUG)
 	audio_mlog_init();
 #endif
 
@@ -1285,7 +1275,7 @@ audiodetach(device_t self, int flags)
 
 	cv_destroy(&sc->sc_exlockcv);
 
-#if defined(AUDIO_DEBUG_MLOG)
+#if defined(AUDIO_DEBUG)
 	audio_mlog_free();
 #endif
 

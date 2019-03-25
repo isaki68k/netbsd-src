@@ -10,13 +10,8 @@ static void audio_mlog_init(void);
 static void audio_mlog_free(void);
 static void audio_mlog_flush(void);
 static void audio_mlog_softintr(void *);
-#if AUDIO_DEBUG >= 4
 static void audio_mlog_printf(const char *, ...);
 static void audio_mlog_vprintf(const char *, va_list);
-#else
-#define audio_mlog_printf(fmt...) (void)0
-#define audio_mlog_vprintf(fmt, va_list) (void)0
-#endif
 
 static int mlog_refs;		// reference counter
 static char *mlog_buf[2];	// ダブルバッファ
@@ -98,8 +93,6 @@ audio_mlog_softintr(void *cookie)
 	audio_mlog_flush();
 }
 
-#if AUDIO_DEBUG >= 4
-
 // 一時バッファに書き込む。
 static void
 audio_mlog_printf(const char *fmt, ...)
@@ -138,5 +131,3 @@ audio_mlog_vprintf(const char *fmt, va_list ap)
 	if (mlog_sih)
 		softint_schedule(mlog_sih);
 }
-
-#endif /* AUDIO_DEBUG >= 4 */
