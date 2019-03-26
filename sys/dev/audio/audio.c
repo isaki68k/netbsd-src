@@ -265,7 +265,6 @@ static void audio_mlog_free(void);
 static void audio_mlog_flush(void);
 static void audio_mlog_softintr(void *);
 static void audio_mlog_printf(const char *, ...);
-static void audio_mlog_vprintf(const char *, va_list);
 
 static int mlog_refs;		// reference counter
 static char *mlog_buf[2];	// ダブルバッファ
@@ -351,18 +350,8 @@ audio_mlog_softintr(void *cookie)
 static void
 audio_mlog_printf(const char *fmt, ...)
 {
-	va_list ap;
-
-	va_start(ap, fmt);
-	audio_mlog_vprintf(fmt, ap);
-	va_end(ap);
-}
-
-// 一時バッファに書き込む。
-static void
-audio_mlog_vprintf(const char *fmt, va_list ap)
-{
 	int len;
+	va_list ap;
 
 	if (atomic_swap_32(&mlog_inuse, 1) == 1) {
 		/* already inuse */
@@ -370,11 +359,13 @@ audio_mlog_vprintf(const char *fmt, va_list ap)
 		return;
 	}
 
+	va_start(ap, fmt);
 	len = vsnprintf(
 	    mlog_buf[mlog_wpage] + mlog_used,
 	    mlog_buflen - mlog_used,
-	    fmt,
-	    ap);
+	    fmt, ap);
+	va_end(ap);
+
 	mlog_used += len;
 	if (mlog_buflen - mlog_used <= 1) {
 		mlog_full++;
@@ -385,6 +376,7 @@ audio_mlog_vprintf(const char *fmt, va_list ap)
 	if (mlog_sih)
 		softint_schedule(mlog_sih);
 }
+
 static void
 audio_vtrace(struct audio_softc *sc, const char *funcname, const char *header,
 	const char *fmt, va_list ap)
