@@ -260,21 +260,22 @@ static void audio_tracet(const char *, audio_track_t *, const char *, ...)
 static void audio_tracef(const char *, audio_file_t *, const char *, ...)
 	__printflike(3, 4);
 
+/* XXX sloppy memory logger */
 static void audio_mlog_init(void);
 static void audio_mlog_free(void);
 static void audio_mlog_flush(void);
 static void audio_mlog_softintr(void *);
 static void audio_mlog_printf(const char *, ...);
 
-static int mlog_refs;		// reference counter
-static char *mlog_buf[2];	// ダブルバッファ
-static int mlog_buflen;		// バッファ長
-static int mlog_used;		// 使用中のバッファ文字列の長さ
-static int mlog_full;		// バッファが一杯になってドロップした行数
-static int mlog_drop;		// バッファ使用中につきドロップした行数
-static volatile uint32_t mlog_inuse;	// 使用中フラグ
-static int mlog_wpage;		// 書き込みページ
-static void *mlog_sih;		// softint ハンドラ
+static int mlog_refs;		/* reference counter */
+static char *mlog_buf[2];	/* double buffer */
+static int mlog_buflen;		/* buffer length */
+static int mlog_used;		/* used length */
+static int mlog_full;		/* number of dropped lines by buffer full */
+static int mlog_drop;		/* number of dropped lines by busy */
+static volatile uint32_t mlog_inuse;	/* in-use */
+static int mlog_wpage;		/* active page */
+static void *mlog_sih;		/* softint handle */
 
 static void
 audio_mlog_init(void)
@@ -309,15 +310,17 @@ audio_mlog_free(void)
 	kmem_free(mlog_buf[1], mlog_buflen);
 }
 
-// 一時バッファの内容を出力する。
-// ハードウェア割り込みコンテキスト以外で使用する。
+/*
+ * Flush memory buffer.
+ * It must not be called from hardware interrupt context.
+ */
 static void
 audio_mlog_flush(void)
 {
 	if (mlog_refs == 0)
 		return;
 
-	// すでに使用中なら何もしない?
+	/* Nothing to do if already in use ? */
 	if (atomic_swap_32(&mlog_inuse, 1) == 1)
 		return;
 
@@ -326,7 +329,6 @@ audio_mlog_flush(void)
 	mlog_buf[mlog_wpage][0] = '\0';
 	mlog_used = 0;
 
-	// ロック解除
 	atomic_swap_32(&mlog_inuse, 0);
 
 	if (mlog_buf[rpage][0] != '\0') {
@@ -346,7 +348,6 @@ audio_mlog_softintr(void *cookie)
 	audio_mlog_flush();
 }
 
-// 一時バッファに書き込む。
 static void
 audio_mlog_printf(const char *fmt, ...)
 {
@@ -377,6 +378,7 @@ audio_mlog_printf(const char *fmt, ...)
 		softint_schedule(mlog_sih);
 }
 
+/* trace functions */
 static void
 audio_vtrace(struct audio_softc *sc, const char *funcname, const char *header,
 	const char *fmt, va_list ap)
@@ -391,7 +393,6 @@ audio_vtrace(struct audio_softc *sc, const char *funcname, const char *header,
 	n += vsnprintf(buf + n, sizeof(buf) - n, fmt, ap);
 
 	if (cpu_intr_p()) {
-		// 割り込み中なら覚えておくだけ
 		audio_mlog_printf("%s\n", buf);
 	} else {
 		audio_mlog_flush();
@@ -466,7 +467,6 @@ struct audio_track_debugbuf {
 	char outbuf[32];
 };
 
-// track の各バッファの状態を buf に出力する。
 static void
 audio_track_bufstat(audio_track_t *track, struct audio_track_debugbuf *buf)
 {
