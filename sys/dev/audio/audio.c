@@ -3879,9 +3879,6 @@ audio_track_destroy(audio_track_t *track)
 	kmem_free(track, sizeof(*track));
 }
 
-// src, dst のフォーマットに応じて変換フィルタを返す。
-// src か dst のどちらか一方が internal 形式であること。
-// 変換できない組み合わせの場合は NULL を返す。
 /*
  * It returns encoding conversion filter according to src and dst format.
  * If it is not a convertible pair, it returns NULL.  Either src or dst
@@ -4536,78 +4533,6 @@ audio_append_silence(audio_track_t *track, audio_ring_t *ring)
 	return n;
 }
 
-// どこに書くのがいいか分からんけど、フィルタの仕様みたいなもの。
-//
-// 概要
-//	変換フィルタは以下に分類できる。
-//	  1. ユーザランド側フィルタ
-//	   1a. 周波数変換フィルタ
-//	   1b. それ以外のフィルタ
-//	  2. HW フィルタ
-//
-//	1 のユーザランド側フィルタはすべて audio layer が責任を持っている
-//	ので MD ドライバは通常使用することはない。ただし HW フォーマット
-//	が mulaw なデバイスのように、audio layer が持っている
-//	mulaw <-> aint_t 変換関数をそのまま利用できる場合にはこれを使用
-//	することが可能。
-//
-//	audio layer と underlying ドライバの間でやりとりされるフォーマットは
-//	内部形式と呼ぶもので、
-//	slinear_NE、16 bit、HW channels、HW frequency である。
-//	HW がこれをそのまま扱えるのなら MD フィルタは不要、
-//	encoding/precision を変換する必要があれば MD フィルタが必要となる。
-//	例外として encoding/precision が slinear_OE、16bit の場合に限り
-//	audio layer がエンディアン変換を行う。つまり
-//	MD フィルタは slinear_{NE,OE}、16bit と HW エンコーディングの変換
-//	だけを受け持つ。
-//
-//	変換関数(フィルタ)は以下のプロトタイプを持つ。
-//
-//	  typedef struct {
-//		const void *src;
-//		const audio_format2_t *srcfmt;
-//		void *dst;
-//		const audio_format2_t *dstfmt;
-//		int count;
-//		void *context;
-//	  } audio_filter_arg_t;
-//
-//	  void filter(audio_filter_arg_t *arg);
-//
-//	変換に必要なパラメータは arg として渡される。filter() は arg->src
-//	から arg->count 個のフレームを読み込んで変換し arg->dst から
-//	arg->count 個のフレームに出力する。arg->src および arg->dst は
-//	arg->count フレームの読み書きが連続して行えることを保証している。
-//
-//	arg->count 個を全部処理する前の早期終了や途中でのエラー終了は今の所
-//	認めていない。また arg->src、arg->dst ポインタの進み具合によって
-//	呼び出し元に実際の読み込み数や書き込み数を通知することは出来ないので
-//	arg->src、arg->dst は filter() 側で破壊(変更)しても構わない。
-//
-//	同様に arg->count も filter() 側で破壊(変更)可能。
-//
-//	arg->srcfmt, arg->dstfmt には入出力のフォーマットが記述されている。
-//	通常、フィルタは自分自身が何から何への変換なのかを知っているので入出力
-//	フォーマットをチェックする必要はないはずである (例えば mulaw から
-//	aint_t への変換、など)。一方リニア PCM から aint_t への変換を
-//	すべて受け持つフィルタの場合は srcfmt をチェックする必要があるだろう。
-//
-//	context はフィルタ自身が自由に使用可能なポインタである。
-//	audio layer はこの値について一切関与しない。
-//
-// 周波数変換フィルタ
-//	周波数変換フィルタだけ入出力のフレーム数が変化するため、いろいろと
-//	特別対応が必要。まず入出力リングバッファは再生/録音の両方向とも
-//	freq.srcbuf、freq.dst なのでそれはもう直接使ってしまうことにする。
-//
-//	つまり filter() 呼び出し時点で要求出力フレーム数は arg->count フレーム、
-//	入力可能なフレーム数は freq.srcbuf.used フレームである。
-//
-//	変換処理によって消費した入力フレーム数は freq.srcbuf を、出力した
-//	フレーム数は freq.dst を filter() 側が更新すること。
-//	arg->count は破壊(変更)して構わない。
-//
-
 /*
  * Execute the conversion stage.
  * It prepares arg from this stage and executes stage->filter.
@@ -4654,10 +4579,6 @@ audio_apply_stage(audio_track_t *track, audio_stage_t *stage, bool isfreq)
 	}
 }
 
-// 再生時の入力データを変換してトラックバッファに投入する。
-// usrbuf が空でないことは呼び出し側でチェックしてから呼ぶこと。
-// outbuf に1ブロック以上の空きがあることは呼び出し側でチェックしてから
-// 呼ぶこと。
 /*
  * Produce output buffer for playback from user input buffer.
  * It must be called only if usrbuf is not empty and outbuf is
@@ -4711,9 +4632,6 @@ audio_track_play(audio_track_t *track)
 	count = uimin(usrbuf->used, track->usrbuf_blksize) / framesize;
 	bytes = count * framesize;
 
-	// 今回処理するバイト数(bytes) が1ブロックに満たない場合、
-	//  drain = no  : 溜まっていないのでここで帰る
-	//  drain = yes : リングバッファリセット(?)
 	/*
 	 * If bytes is less than one block,
 	 *  if not draining, buffer is not filled so return.
@@ -4837,8 +4755,9 @@ audio_track_play(audio_track_t *track)
 #endif
 }
 
-// 録音時、ミキサーによってトラックの input に渡されたブロックを
-// usrbuf まで変換する。
+/*
+ * Produce user output buffer for recording from input buffer.
+ */
 static void
 audio_track_record(audio_track_t *track)
 {
@@ -5519,8 +5438,10 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track,
 	s = auring_headptr_aint(&track->outbuf);
 	d = mixer->mixsample;
 
-	// 整数倍精度へ変換し、トラックボリュームを適用して加算合成
 	/*
+	 * Apply track volume with double-sized integer and perform
+	 * additive synthesis.
+	 *
 	 * XXX If you limit the track volume to 1.0 or less (<= 256),
 	 *     it would be better to do this in the track conversion stage
 	 *     rather than here.  However, if you accept the volume to
@@ -5692,7 +5613,7 @@ audio_pintr(void *arg)
 	 * Instead the latency is increased by one block.
 	 */
 
-	// まず出力待ちのシーケンスを出力
+	/* At first, output ready block. */
 	if (mixer->hwbuf.used >= mixer->frames_per_block) {
 		audio_pmixer_output(sc);
 	}
@@ -5703,7 +5624,7 @@ audio_pintr(void *arg)
 		later = true;
 	}
 
-	// 次のバッファを用意する
+	/* Then, process next block. */
 	audio_pmixer_process(sc);
 
 	if (later) {
@@ -7367,10 +7288,6 @@ audio_hw_setinfo(struct audio_softc *sc, const struct audio_info *newai,
 	 * Even setting either one of playback and recording, both
 	 * mixers must be halted.
 	 */
-	// XXX 再生portと録音portを同時に止めないといけないか
-	//     別個に設定できるかどうかは MD Hardware に依存するので
-	//     PROP_INDEPENDENT がそれと同じか違うのか、
-	//     違えばそれ用の property が必要なのでは?
 	if (SPECIFIED(newpi->port) || SPECIFIED(newri->port)) {
 		if (sc->sc_pbusy) {
 			audio_pmixer_halt(sc);
