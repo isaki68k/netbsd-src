@@ -1219,10 +1219,6 @@ audiodetach(device_t self, int flags)
 	/*
 	 * Nuke the vnodes for any open instances (calls close).
 	 * Will wait until any activity on the device nodes has ceased.
-	 *
-	 * XXXAD NOT YET.
-	 *
-	 * XXXAD NEED TO PREVENT NEW REFERENCES THROUGH AUDIO_ENTER().
 	 */
 	mn = device_unit(self);
 	vdevgone(maj, mn | SOUND_DEVICE,    mn | SOUND_DEVICE, VCHR);
