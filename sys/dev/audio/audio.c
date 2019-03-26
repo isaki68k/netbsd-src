@@ -238,10 +238,6 @@ __KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.458 2018/09/03 16:29:30 riastradh Exp $"
  *
  * XXX This debug level is shared among all audio devices.
  */
-// ただし AUDIO_DEBUG 0..2 までと 3..4 には隔絶があり、
-// AUDIO_DEBUG 2 以下では TRACE がコンパイルされないため 3 以上は設定不可。
-// AUDIO_DEBUG 3 以上でコンパイルすれば 0..4 まで設定可能。
-//
 // XXX 遅マシンで初期値 4 のままだと大抵一回目にはまるので、初期値を2種類
 //     用意しておく。どうしたもんか。
 #ifndef AUDIO_DEBUG
@@ -348,14 +344,7 @@ audio_tracef(const char *funcname, audio_file_t *file, const char *fmt, ...)
 #define TRACEF(n, f, fmt...)	do { \
 	if (audiodebug >= (n)) audio_tracef(__func__, f, fmt); \
 } while (0)
-#else
-#define DPRINTF(n, fmt...)	do { } while (0)
-#define TRACE(n, fmt, ...)	do { } while (0)
-#define TRACET(n, t, fmt, ...)	do { } while (0)
-#define TRACEF(n, f, fmt, ...)	do { } while (0)
-#endif
 
-#if AUDIO_DEBUG >= 3
 struct audio_track_debugbuf {
 	char usrbuf[32];
 	char codec[32];
@@ -391,7 +380,12 @@ audio_track_bufstat(audio_track_t *track, struct audio_track_debugbuf *buf)
 	snprintf(buf->usrbuf, sizeof(buf->usrbuf), " usr=%d/%d/H%d",
 	    track->usrbuf.head, track->usrbuf.used, track->usrbuf_usedhigh);
 }
-#endif /* AUDIO_DEBUG >= 3 */
+#else
+#define DPRINTF(n, fmt...)	do { } while (0)
+#define TRACE(n, fmt, ...)	do { } while (0)
+#define TRACET(n, t, fmt, ...)	do { } while (0)
+#define TRACEF(n, f, fmt, ...)	do { } while (0)
+#endif
 
 #define SPECIFIED(x)	((x) != ~0)
 #define SPECIFIED_CH(x)	((x) != (u_char)~0)
@@ -4404,37 +4398,41 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 		goto error;
 	}
 
-#if AUDIO_DEBUG >= 3
-	struct audio_track_debugbuf m;
+#if defined(AUDIO_DEBUG)
+	if (audiodebug >= 3) {
+		struct audio_track_debugbuf m;
 
-	memset(&m, 0, sizeof(m));
-	snprintf(m.outbuf, sizeof(m.outbuf), " out=%d",
-	    track->outbuf.capacity * frametobyte(&track->outbuf.fmt, 1));
-	if (track->freq.filter)
-		snprintf(m.freq, sizeof(m.freq), " freq=%d",
-		    track->freq.srcbuf.capacity *
-		    frametobyte(&track->freq.srcbuf.fmt, 1));
-	if (track->chmix.filter)
-		snprintf(m.chmix, sizeof(m.chmix), " chmix=%d",
-		    track->chmix.srcbuf.capacity *
-		    frametobyte(&track->chmix.srcbuf.fmt, 1));
-	if (track->chvol.filter)
-		snprintf(m.chvol, sizeof(m.chvol), " chvol=%d",
-		    track->chvol.srcbuf.capacity *
-		    frametobyte(&track->chvol.srcbuf.fmt, 1));
-	if (track->codec.filter)
-		snprintf(m.codec, sizeof(m.codec), " codec=%d",
-		    track->codec.srcbuf.capacity *
-		    frametobyte(&track->codec.srcbuf.fmt, 1));
-	snprintf(m.usrbuf, sizeof(m.usrbuf),
-	    " usr=%d", track->usrbuf.capacity);
+		memset(&m, 0, sizeof(m));
+		snprintf(m.outbuf, sizeof(m.outbuf), " out=%d",
+		    track->outbuf.capacity * frametobyte(&track->outbuf.fmt,1));
+		if (track->freq.filter)
+			snprintf(m.freq, sizeof(m.freq), " freq=%d",
+			    track->freq.srcbuf.capacity *
+			    frametobyte(&track->freq.srcbuf.fmt, 1));
+		if (track->chmix.filter)
+			snprintf(m.chmix, sizeof(m.chmix), " chmix=%d",
+			    track->chmix.srcbuf.capacity *
+			    frametobyte(&track->chmix.srcbuf.fmt, 1));
+		if (track->chvol.filter)
+			snprintf(m.chvol, sizeof(m.chvol), " chvol=%d",
+			    track->chvol.srcbuf.capacity *
+			    frametobyte(&track->chvol.srcbuf.fmt, 1));
+		if (track->codec.filter)
+			snprintf(m.codec, sizeof(m.codec), " codec=%d",
+			    track->codec.srcbuf.capacity *
+			    frametobyte(&track->codec.srcbuf.fmt, 1));
+		snprintf(m.usrbuf, sizeof(m.usrbuf),
+		    " usr=%d", track->usrbuf.capacity);
 
-	if (audio_track_is_playback(track)) {
-		TRACET(3, track, "bufsize%s%s%s%s%s%s",
-		    m.outbuf, m.freq, m.chmix, m.chvol, m.codec, m.usrbuf);
-	} else {
-		TRACET(3, track, "bufsize%s%s%s%s%s%s",
-		    m.freq, m.chmix, m.chvol, m.codec, m.outbuf, m.usrbuf);
+		if (audio_track_is_playback(track)) {
+			TRACET(0, track, "bufsize%s%s%s%s%s%s",
+			    m.outbuf, m.freq, m.chmix,
+			    m.chvol, m.codec, m.usrbuf);
+		} else {
+			TRACET(0, track, "bufsize%s%s%s%s%s%s",
+			    m.freq, m.chmix, m.chvol,
+			    m.codec, m.outbuf, m.usrbuf);
+		}
 	}
 #endif
 	return 0;
@@ -4774,11 +4772,13 @@ audio_track_play(audio_track_t *track)
 		track->outputcounter += track->outbuf.used - track_count_0;
 	}
 
-#if AUDIO_DEBUG >= 3
-	struct audio_track_debugbuf m;
-	audio_track_bufstat(track, &m);
-	TRACET(3, track, "end%s%s%s%s%s%s",
-	    m.outbuf, m.freq, m.chvol, m.chmix, m.codec, m.usrbuf);
+#if defined(AUDIO_DEBUG)
+	if (audiodebug >= 3) {
+		struct audio_track_debugbuf m;
+		audio_track_bufstat(track, &m);
+		TRACET(0, track, "end%s%s%s%s%s%s",
+		    m.outbuf, m.freq, m.chvol, m.chmix, m.codec, m.usrbuf);
+	}
 #endif
 }
 
@@ -4869,11 +4869,13 @@ audio_track_record(audio_track_t *track)
 
 	// XXX TODO: any counters here?
 
-#if AUDIO_DEBUG >= 3
-	struct audio_track_debugbuf m;
-	audio_track_bufstat(track, &m);
-	TRACET(3, track, "end%s%s%s%s%s%s",
-	    m.freq, m.chvol, m.chmix, m.codec, m.outbuf, m.usrbuf);
+#if defined(AUDIO_DEBUG)
+	if (audiodebug >= 3) {
+		struct audio_track_debugbuf m;
+		audio_track_bufstat(track, &m);
+		TRACET(0, track, "end%s%s%s%s%s%s",
+		    m.freq, m.chvol, m.chmix, m.codec, m.outbuf, m.usrbuf);
+	}
 #endif
 }
 
@@ -7857,17 +7859,8 @@ audio_sysctl_debug(SYSCTLFN_ARGS)
 	if (error || newp == NULL)
 		return error;
 
-	if (t < 0)
+	if (t < 0 || t > 4)
 		return EINVAL;
-#if AUDIO_DEBUG >= 3
-	if (t > 4)
-		return EINVAL;
-#else
-	if (t > 2) {
-		printf("audio: AUDIO_DEBUG >= 3 is not compiled.\n");
-		return EINVAL;
-	}
-#endif
 	audiodebug = t;
 	printf("audio: audiodebug = %d\n", audiodebug);
 	return 0;
