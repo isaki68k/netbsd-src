@@ -19,7 +19,6 @@
 #include "linear.c"
 #include "mulaw.c"
 #include "alaw.c"
-#include "mlog.h"
 
 #define malloc(len, a, b)	malloc(len)
 #define AUDIO_DEBUG 0

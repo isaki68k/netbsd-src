@@ -18,7 +18,6 @@
 #include "linear.c"
 #include "mulaw.c"
 #include "alaw.c"
-#include "mlog.h"
 #define AUDIO_DEBUG 0
 #include "audio.c"
 #include "userland.c"
