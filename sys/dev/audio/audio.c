@@ -884,29 +884,6 @@ CFATTACH_DECL3_NEW(audio, sizeof(struct audio_softc),
     audiomatch, audioattach, audiodetach, audioactivate, audiorescan,
     audiochilddet, DVF_DETACH_SHUTDOWN);
 
-#if 1
-static char audio_buildinfo[256];
-
-// ビルドオプションを文字列にする。(開発用)
-// テスト用なので解放していない。
-static void
-make_buildinfo(void)
-{
-	int n;
-
-	if (audio_buildinfo[0] != '\0')
-		return;
-
-	n = 0;
-	n += snprintf(audio_buildinfo + n, sizeof(audio_buildinfo) - n,
-	    "NBLKOUT=%d", NBLKOUT);
-#if defined(AUDIO_HW_SINGLE_BUFFER)
-	n += snprintf(audio_buildinfo + n, sizeof(audio_buildinfo) - n,
-	    ", HW_SINGLE_BUFFER");
-#endif
-}
-#endif
-
 static int
 audiomatch(device_t parent, cfdata_t match, void *aux)
 {
@@ -1079,19 +1056,6 @@ audioattach(device_t parent, device_t self, void *aux)
 		    CTLTYPE_INT, "debug",
 		    SYSCTL_DESCR("debug level (0..4)"),
 		    audio_sysctl_debug, 0, (void *)sc, 0,
-		    CTL_HW, node->sysctl_num, CTL_CREATE, CTL_EOL);
-#endif
-
-#if 1
-		// XXX adhoc debug info (should be removed)
-		// デバッグ用のビルドオプション表示
-		make_buildinfo();
-
-		sysctl_createv(&sc->sc_log, 0, NULL, NULL,
-		    CTLFLAG_PERMANENT,
-		    CTLTYPE_STRING, "buildinfo",
-		    SYSCTL_DESCR("audio build options"),
-		    NULL, 0, audio_buildinfo, 0,
 		    CTL_HW, node->sysctl_num, CTL_CREATE, CTL_EOL);
 #endif
 	}
