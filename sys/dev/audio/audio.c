@@ -572,12 +572,10 @@ static void au_setup_ports(struct audio_softc *, struct au_mixer_ports *,
 	mixer_devinfo_t *, const struct portname *);
 static int au_set_lr_value(struct audio_softc *, mixer_ctrl_t *, int, int);
 static int au_get_lr_value(struct audio_softc *, mixer_ctrl_t *, int *, int *);
-static int au_set_gain(struct audio_softc *, struct au_mixer_ports *,
-	int, int);
+static int au_set_gain(struct audio_softc *, struct au_mixer_ports *, int, int);
 static void au_get_gain(struct audio_softc *, struct au_mixer_ports *,
 	u_int *, u_char *);
-static int au_set_port(struct audio_softc *, struct au_mixer_ports *,
-	u_int);
+static int au_set_port(struct audio_softc *, struct au_mixer_ports *, u_int);
 static int au_get_port(struct audio_softc *, struct au_mixer_ports *);
 static int au_set_monitor_gain(struct audio_softc *, int);
 static int au_get_monitor_gain(struct audio_softc *);
