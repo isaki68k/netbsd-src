@@ -3002,6 +3002,7 @@ audio_poll(struct audio_softc *sc, int events, struct lwp *l,
 	    "b\7RDBAND\0" "b\6RDNORM\0" "b\5NVAL\0" "b\4HUP\0" \
 	    "b\3ERR\0" "b\2OUT\0" "b\1PRI\0" "b\0IN\0"
 	char evbuf[64];
+	snprintb(evbuf, sizeof(evbuf), POLLEV_BITMAP, events);
 	TRACEF(2, file, "pid=%d.%d events=%s",
 	    (int)curproc->p_pid, (int)l->l_lid, evbuf);
 #endif
