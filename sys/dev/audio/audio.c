@@ -240,7 +240,7 @@ __KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.458 2018/09/03 16:29:30 riastradh Exp $"
  */
 // XXX 遅マシンで初期値 4 のままだと大抵一回目にはまるので、初期値を2種類
 //     用意しておく。どうしたもんか。
-#ifndef AUDIO_DEBUG
+#if !defined(AUDIO_DEBUG)
 # if defined(__m68k__) || defined(__vax__)
 #  define AUDIO_DEBUG	1
 # else
@@ -254,7 +254,7 @@ __KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.458 2018/09/03 16:29:30 riastradh Exp $"
 #include "mlog.h"
 #endif
 
-#ifdef AUDIO_DEBUG
+#if defined(AUDIO_DEBUG)
 int	audiodebug = AUDIO_DEBUG;
 static void audio_vtrace(struct audio_softc *sc, const char *, const char *,
 	const char *, va_list);
@@ -515,11 +515,11 @@ static int audio_mixers_set_format(struct audio_softc *,
 static void audio_mixers_get_format(struct audio_softc *, struct audio_info *);
 static int audio_sysctl_volume(SYSCTLFN_PROTO);
 static int audio_sysctl_blk_ms(SYSCTLFN_PROTO);
-#ifdef AUDIO_DEBUG
+#if defined(AUDIO_DEBUG)
 static int audio_sysctl_debug(SYSCTLFN_PROTO);
 #endif
 static void audio_format2_tostr(char *, size_t, const audio_format2_t *);
-#ifdef AUDIO_DEBUG
+#if defined(AUDIO_DEBUG)
 static void audio_print_format2(const char *, const audio_format2_t *) __unused;
 #endif
 
@@ -7983,7 +7983,7 @@ audio_format2_tostr(char *buf, size_t bufsize, const audio_format2_t *fmt)
 	    fmt->channels, fmt->sample_rate);
 }
 
-#ifdef AUDIO_DEBUG
+#if defined(AUDIO_DEBUG)
 static void
 audio_print_format2(const char *s, const audio_format2_t *fmt)
 {
