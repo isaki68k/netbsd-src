@@ -630,7 +630,9 @@ static int audio_sysctl_blk_ms(SYSCTLFN_PROTO);
 #if defined(AUDIO_DEBUG)
 static int audio_sysctl_debug(SYSCTLFN_PROTO);
 #endif
+#if defined(DIAGNOSTIC) || defined(AUDIO_DEBUG)
 static void audio_format2_tostr(char *, size_t, const audio_format2_t *);
+#endif
 #if defined(AUDIO_DEBUG)
 static void audio_print_format2(const char *, const audio_format2_t *) __unused;
 #endif
@@ -7936,6 +7938,7 @@ audio_resume(device_t dv, const pmf_qual_t *qual)
 	return true;
 }
 
+#if defined(DIAGNOSTIC) || defined(AUDIO_DEBUG)
 static void
 audio_format2_tostr(char *buf, size_t bufsize, const audio_format2_t *fmt)
 {
@@ -7954,6 +7957,7 @@ audio_format2_tostr(char *buf, size_t bufsize, const audio_format2_t *fmt)
 	snprintf(buf + n, bufsize - n, " %uch %uHz",
 	    fmt->channels, fmt->sample_rate);
 }
+#endif
 
 #if defined(AUDIO_DEBUG)
 static void
