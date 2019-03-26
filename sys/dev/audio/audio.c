@@ -248,13 +248,12 @@ __KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.458 2018/09/03 16:29:30 riastradh Exp $"
 # endif
 #endif
 
+#if defined(AUDIO_DEBUG)
+
 #if defined(_KERNEL)
 #include <dev/audio/mlog.h>
-#else
-#include "mlog.h"
 #endif
 
-#if defined(AUDIO_DEBUG)
 int	audiodebug = AUDIO_DEBUG;
 static void audio_vtrace(struct audio_softc *sc, const char *, const char *,
 	const char *, va_list);
