@@ -1000,8 +1000,10 @@ audioattach(device_t parent, device_t self, void *aux)
 		goto bad;
 	}
 
-	// アタッチ時点では少なくとも片方生きていれば成功とする。
-	/* Init track mixers */
+	/*
+	 * Init track mixers.  If at least one direction is available on
+	 * attach time, we assume a success.
+	 */
 	error = audio_mixers_init(sc, mode, &phwfmt, &rhwfmt, &pfil, &rfil);
 	mutex_exit(sc->sc_lock);
 	if (sc->sc_pmixer == NULL && sc->sc_rmixer == NULL)
@@ -1016,9 +1018,7 @@ audioattach(device_t parent, device_t self, void *aux)
 	sc->sc_sound_ppause = false;
 	sc->sc_sound_rpause = false;
 
-	// XXX sc_ai の初期化について考えないといけない
-	// 今は sc_ai が一度でも初期化されたかどうかフラグがあるが
-	// できればなくしたい。
+	/* XXX TODO: consider about sc_ai */
 
 	mixer_init(sc);
 	TRACE(2, "inputs ports=0x%x, input master=%d, "
@@ -2123,13 +2123,6 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	if (error)
 		goto bad2;
 
-	// 録再合わせて1本目のオープンなら {
-	//	kauth の処理?
-	//	hw_if->open
-	//	下トラックの初期化?
-	// } else if (複数ユーザがオープンすることを許可してなければ) {
-	//	チェック?
-	// }
 	if (sc->sc_popens + sc->sc_ropens == 0) {
 		/* First open */
 
@@ -2421,7 +2414,7 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 	KASSERT(!mutex_owned(sc->sc_lock));
 	KASSERT(file->lock);
 
-	// N8 までは EINVAL だったがこっちのほうがよかろう
+	/* I think it's better than EINVAL. */
 	if (track->mmapped)
 		return EPERM;
 
@@ -2520,13 +2513,6 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 }
 
 
-// この file の再生 track と録音 track を即座に空にする。
-// ミキサーおよび HW には関与しない。呼ばれるのは以下の2か所から:
-// o audio_ioctl AUDIO_FLUSH で一切合切クリアする時
-// o audiosetinfo でパラメータを変更する必要がある時
-//
-// 元々 audio_clear() で、録音再生をその場で停止して hw halt_input/output も
-// 呼んでいた (呼ぶ必要があったのかどうかは分からない)。
 /*
  * Clear file's playback and/or record track buffer immediately.
  */
@@ -2582,7 +2568,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 	KASSERT(!mutex_owned(sc->sc_lock));
 	KASSERT(file->lock);
 
-	// N8 までは EINVAL だったがこっちのほうがよかろう
+	/* I think it's better than EINVAL. */
 	if (track->mmapped)
 		return EPERM;
 
@@ -2764,9 +2750,7 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		break;
 
 	case AUDIO_FLUSH:
-		// このコマンドはすべての再生と録音を停止し、すべてのキューの
-		// バッファをクリアし、エラーカウンタをリセットし、そして
-		// 現在のサンプリングモードで再生と録音を再開する。
+		/* XXX TODO: clear errors and restart? */
 		audio_file_clear(sc, file);
 		break;
 
