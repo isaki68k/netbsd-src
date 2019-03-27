@@ -29,7 +29,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 // 1: open/close/set_param等
 // 2: read/write/ioctlシステムコールくらいまでは含む
 // 3: 割り込み以外のTRACEも含む
-// 4: 割り込み内のTRACEも含む (要 AUDIO_DEBUG_MLOG)
+// 4: 割り込み内のTRACEも含む
 #define AUDIO_DEBUG	0
 
 #ifdef AUDIO_DEBUG
