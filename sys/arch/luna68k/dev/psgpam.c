@@ -418,7 +418,7 @@ psgpam_set_format(void *hdl, int setmode,
 
 	// set filter
 	switch (sc->sc_xp_enc) {
-	 case PAM_ENC_PAM2A:
+	case PAM_ENC_PAM2A:
 		if (sc->sc_dynamic) {
 			pfil->codec = psgpam_aint_to_pam2a_d;
 		} else {
@@ -426,7 +426,7 @@ psgpam_set_format(void *hdl, int setmode,
 		}
 		sc->sc_stride = 2;
 		break;
-	 case PAM_ENC_PAM2B:
+	case PAM_ENC_PAM2B:
 		if (sc->sc_dynamic) {
 			pfil->codec = psgpam_aint_to_pam2b_d;
 		} else {
@@ -434,7 +434,7 @@ psgpam_set_format(void *hdl, int setmode,
 		}
 		sc->sc_stride = 2;
 		break;
-	 case PAM_ENC_PAM3A:
+	case PAM_ENC_PAM3A:
 		if (sc->sc_dynamic) {
 			pfil->codec = psgpam_aint_to_pam3a_d;
 		} else {
@@ -442,7 +442,7 @@ psgpam_set_format(void *hdl, int setmode,
 		}
 		sc->sc_stride = 4;
 		break;
-	 case PAM_ENC_PAM3B:
+	case PAM_ENC_PAM3B:
 		if (sc->sc_dynamic) {
 			pfil->codec = psgpam_aint_to_pam3b_d;
 		} else {
