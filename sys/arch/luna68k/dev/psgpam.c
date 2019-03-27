@@ -156,9 +156,9 @@ static struct audio_device psgpam_device = {
 
 static struct audio_format psgpam_format = {
 	.mode		= AUMODE_PLAY,
-	.encoding	= AUDIO_ENCODING_SLINEAR_BE,
-	.validbits	= 16,
-	.precision	= 16,
+	.encoding	= AUDIO_ENCODING_NONE,
+	.validbits	= 0,		/* filled by query_format */
+	.precision	= 0,		/* filled by query_format */
 	.channels	= 1,
 	.channel_mask	= AUFMT_MONAURAL,
 	.frequency_type	= 0,		/* filled by query_format */
@@ -366,8 +366,20 @@ psgpam_query_format(void *hdl, audio_format_query_t *afp)
 	sc = hdl;
 
 	psgpam_xp_query(sc);
-	rept_max = sc->sc_xp_rept_max;
+	switch (sc->sc_xp_enc) {
+	case PAM_ENC_PAM2A:
+	case PAM_ENC_PAM2B:
+		psgpam_format.validbits = 16;
+		psgpam_format.precision = 16;
+		break;
+	case PAM_ENC_PAM3A:
+	case PAM_ENC_PAM3B:
+		psgpam_format.validbits = 32;
+		psgpam_format.precision = 32;
+		break;
+	}
 
+	rept_max = sc->sc_xp_rept_max;
 	if (rept_max >= AUFMT_MAX_FREQUENCIES) {
 		rept_max = AUFMT_MAX_FREQUENCIES - 1;
 	}
@@ -412,10 +424,6 @@ psgpam_set_format(void *hdl, int setmode,
 	sc->sc_sample_rate = play->sample_rate;
 
 	// set filter
-	pfil->param.sample_rate = sc->sc_sample_rate;
-	pfil->param.encoding = AUDIO_ENCODING_NONE;
-	pfil->param.channels = 1;
-
 	switch (sc->sc_xp_enc) {
 	 case PAM_ENC_PAM2A:
 		if (sc->sc_dynamic) {
@@ -423,7 +431,6 @@ psgpam_set_format(void *hdl, int setmode,
 		} else {
 			pfil->codec = psgpam_aint_to_pam2a;
 		}
-		pfil->param.precision = pfil->param.validbits = 16;
 		sc->sc_stride = 2;
 		break;
 	 case PAM_ENC_PAM2B:
@@ -432,7 +439,6 @@ psgpam_set_format(void *hdl, int setmode,
 		} else {
 			pfil->codec = psgpam_aint_to_pam2b;
 		}
-		pfil->param.precision = pfil->param.validbits = 16;
 		sc->sc_stride = 2;
 		break;
 	 case PAM_ENC_PAM3A:
@@ -441,7 +447,6 @@ psgpam_set_format(void *hdl, int setmode,
 		} else {
 			pfil->codec = psgpam_aint_to_pam3a;
 		}
-		pfil->param.precision = pfil->param.validbits = 32;
 		sc->sc_stride = 4;
 		break;
 	 case PAM_ENC_PAM3B:
@@ -450,7 +455,6 @@ psgpam_set_format(void *hdl, int setmode,
 		} else {
 			pfil->codec = psgpam_aint_to_pam3b;
 		}
-		pfil->param.precision = pfil->param.validbits = 32;
 		sc->sc_stride = 4;
 		break;
 	}
