@@ -4598,7 +4598,7 @@ audio_track_play(audio_track_t *track)
 
 	KASSERT(track);
 	KASSERT(track->lock);
-	TRACET(3, track, "start pstate=%d", track->pstate);
+	TRACET(4, track, "start pstate=%d", track->pstate);
 
 	/* At this point usrbuf must not be empty. */
 	KASSERT(track->usrbuf.used > 0);
@@ -4644,7 +4644,7 @@ audio_track_play(audio_track_t *track)
 
 		if (track->pstate != AUDIO_STATE_DRAINING) {
 			/* Wait until filled. */
-			TRACET(3, track, "not enough; return");
+			TRACET(4, track, "not enough; return");
 			return;
 		}
 	}
@@ -4701,7 +4701,7 @@ audio_track_play(audio_track_t *track)
 		int n;
 		n = audio_append_silence(track, &track->freq.srcbuf);
 		if (n > 0) {
-			TRACET(3, track,
+			TRACET(4, track,
 			    "freq.srcbuf add silence %d -> %d/%d/%d",
 			    n,
 			    track->freq.srcbuf.head,
@@ -4722,7 +4722,7 @@ audio_track_play(audio_track_t *track)
 		 * treated as simple contiguous buffers in operation, so head
 		 * always should point 0.  This may happen during drain-age.
 		 */
-		TRACET(3, track, "reset stage");
+		TRACET(4, track, "reset stage");
 		if (track->codec.filter) {
 			KASSERT(track->codec.srcbuf.used == 0);
 			track->codec.srcbuf.head = 0;
@@ -4776,7 +4776,7 @@ audio_track_record(audio_track_t *track)
 	count = auring_get_contig_used(track->input);
 	count = uimin(count, track->mixer->frames_per_block);
 	if (count == 0) {
-		TRACET(3, track, "count == 0");
+		TRACET(4, track, "count == 0");
 		return;
 	}
 
@@ -5276,20 +5276,20 @@ audio_pmixer_process(struct audio_softc *sc)
 			continue;
 
 		if (track->is_pause) {
-			TRACET(3, track, "skip; paused");
+			TRACET(4, track, "skip; paused");
 			continue;
 		}
 
 		/* Skip if the track is used by process context. */
 		if (audio_track_lock_tryenter(track) == false) {
-			TRACET(3, track, "skip; in use");
+			TRACET(4, track, "skip; in use");
 			continue;
 		}
 
 		/* Emulate mmap'ped track */
 		if (track->mmapped) {
 			auring_push(&track->usrbuf, track->usrbuf_blksize);
-			TRACET(3, track, "mmap; usr=%d/%d/C%d",
+			TRACET(4, track, "mmap; usr=%d/%d/C%d",
 			    track->usrbuf.head,
 			    track->usrbuf.used,
 			    track->usrbuf.capacity);
@@ -5297,14 +5297,14 @@ audio_pmixer_process(struct audio_softc *sc)
 
 		if (track->outbuf.used < mixer->frames_per_block &&
 		    track->usrbuf.used > 0) {
-			TRACET(3, track, "process");
+			TRACET(4, track, "process");
 			audio_track_play(track);
 		}
 
 		if (track->outbuf.used > 0) {
 			mixed = audio_pmixer_mix_track(mixer, track, mixed);
 		} else {
-			TRACET(3, track, "skip; empty");
+			TRACET(4, track, "skip; empty");
 		}
 
 		audio_track_lock_exit(track);
@@ -5407,7 +5407,7 @@ audio_pmixer_process(struct audio_softc *sc)
 
 	auring_push(&mixer->hwbuf, frame_count);
 
-	TRACE(3, "done mixseq=%d hwbuf=%d/%d/%d%s",
+	TRACE(4, "done mixseq=%d hwbuf=%d/%d/%d%s",
 	    (int)mixer->mixseq,
 	    mixer->hwbuf.head, mixer->hwbuf.used, mixer->hwbuf.capacity,
 	    (mixed == 0) ? " silent" : "");
@@ -5524,7 +5524,7 @@ audio_pmixer_output(struct audio_softc *sc)
 	int error;
 
 	mixer = sc->sc_pmixer;
-	TRACE(3, "pbusy=%d hwbuf=%d/%d/%d",
+	TRACE(4, "pbusy=%d hwbuf=%d/%d/%d",
 	    sc->sc_pbusy,
 	    mixer->hwbuf.head, mixer->hwbuf.used, mixer->hwbuf.capacity);
 	KASSERT(mixer->hwbuf.used >= mixer->frames_per_block);
@@ -5589,7 +5589,7 @@ audio_pintr(void *arg)
 
 	auring_take(&mixer->hwbuf, mixer->frames_per_block);
 
-	TRACE(3,
+	TRACE(4,
 	    "HW_INT ++hwseq=%" PRIu64 " cmplcnt=%" PRIu64 " hwbuf=%d/%d/%d",
 	    mixer->hwseq, mixer->hw_complete_counter,
 	    mixer->hwbuf.head, mixer->hwbuf.used, mixer->hwbuf.capacity);
@@ -5713,7 +5713,7 @@ audio_rmixer_process(struct audio_softc *sc)
 	count = auring_get_contig_used(&mixer->hwbuf);
 	count = uimin(count, mixer->frames_per_block);
 	if (count <= 0) {
-		TRACE(3, "count %d: too short", count);
+		TRACE(4, "count %d: too short", count);
 		return;
 	}
 	bytes = frametobyte(&mixer->track_fmt, count);
@@ -5748,12 +5748,12 @@ audio_rmixer_process(struct audio_softc *sc)
 			continue;
 
 		if (track->is_pause) {
-			TRACET(3, track, "skip; paused");
+			TRACET(4, track, "skip; paused");
 			continue;
 		}
 
 		if (audio_track_lock_tryenter(track) == false) {
-			TRACET(3, track, "skip; in use");
+			TRACET(4, track, "skip; in use");
 			continue;
 		}
 
@@ -5763,7 +5763,7 @@ audio_rmixer_process(struct audio_softc *sc)
 			int drops = mixer->frames_per_block -
 			    (input->capacity - input->used);
 			track->dropframes += drops;
-			TRACET(3, track, "drop %d frames: inp=%d/%d/%d",
+			TRACET(4, track, "drop %d frames: inp=%d/%d/%d",
 			    drops,
 			    input->head, input->used, input->capacity);
 			auring_take(input, drops);
@@ -5858,7 +5858,7 @@ audio_rintr(void *arg)
 
 	auring_push(&mixer->hwbuf, mixer->frames_per_block);
 
-	TRACE(3,
+	TRACE(4,
 	    "HW_INT ++hwseq=%" PRIu64 " cmplcnt=%" PRIu64 " hwbuf=%d/%d/%d",
 	    mixer->hwseq, mixer->hw_complete_counter,
 	    mixer->hwbuf.head, mixer->hwbuf.used, mixer->hwbuf.capacity);
@@ -6077,14 +6077,14 @@ audio_softintr_rd(void *cookie)
 		if (track == NULL)
 			continue;
 
-		TRACET(3, track, "broadcast; inp=%d/%d/%d",
+		TRACET(4, track, "broadcast; inp=%d/%d/%d",
 		    track->input->head,
 		    track->input->used,
 		    track->input->capacity);
 
 		pid = f->async_audio;
 		if (pid != 0) {
-			TRACEF(3, f, "sending SIGIO %d", pid);
+			TRACEF(4, f, "sending SIGIO %d", pid);
 			mutex_enter(proc_lock);
 			if ((p = proc_find(pid)) != NULL)
 				psignal(p, SIGIO);
@@ -6120,7 +6120,7 @@ audio_softintr_wr(void *cookie)
 	proc_t *p;
 	pid_t pid;
 
-	TRACE(3, "called");
+	TRACE(4, "called");
 	found = false;
 
 	mutex_enter(sc->sc_lock);
@@ -6132,7 +6132,7 @@ audio_softintr_wr(void *cookie)
 		if (track == NULL)
 			continue;
 
-		TRACET(3, track, "broadcast; trseq=%d out=%d/%d/%d",
+		TRACET(4, track, "broadcast; trseq=%d out=%d/%d/%d",
 		    (int)track->seq,
 		    track->outbuf.head,
 		    track->outbuf.used,
@@ -6147,7 +6147,7 @@ audio_softintr_wr(void *cookie)
 			found = true;
 			pid = f->async_audio;
 			if (pid != 0) {
-				TRACEF(3, f, "sending SIGIO %d", pid);
+				TRACEF(4, f, "sending SIGIO %d", pid);
 				mutex_enter(proc_lock);
 				if ((p = proc_find(pid)) != NULL)
 					psignal(p, SIGIO);
@@ -6162,7 +6162,7 @@ audio_softintr_wr(void *cookie)
 	 * It needs sc_lock (and not sc_intr_lock).
 	 */
 	if (found) {
-		TRACE(3, "selnotify");
+		TRACE(4, "selnotify");
 		selnotify(&sc->sc_wsel, 0, NOTE_SUBMIT);
 		KNOTE(&sc->sc_wsel.sel_klist, 0);
 	}
