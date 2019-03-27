@@ -2376,30 +2376,6 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
 	return 0;
 }
 
-/*
- * Do uiomove 'len' bytes from the position 'head' of 'usrbuf' in this
- * 'track'.  It does not wrap around circular buffer (so call it twice).
- */
-static __inline int
-audio_read_uiomove(audio_track_t *track, int head, int len, struct uio *uio)
-{
-	audio_ring_t *usrbuf;
-	int error;
-
-	usrbuf = &track->usrbuf;
-	error = uiomove((uint8_t *)usrbuf->mem + head, len, uio);
-	if (error) {
-		TRACET(3, track, "uiomove(len=%d) failed: %d", len, error);
-		return error;
-	}
-	auring_take(usrbuf, len);
-	track->useriobytes += len;
-	TRACET(3, track, "uiomove(len=%d) usrbuf=%d/%d/C%d",
-	    len,
-	    usrbuf->head, usrbuf->used, usrbuf->capacity);
-	return 0;
-}
-
 int
 audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 	audio_file_t *file)
@@ -2489,28 +2465,28 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 		audio_track_record(track);
 		audio_track_lock_exit(track);
 
+		/* uiomove from usrbuf as much as possible. */
 		bytes = uimin(usrbuf->used, uio->uio_resid);
-		int head = usrbuf->head;
-		if (head + bytes <= usrbuf->capacity) {
-			error = audio_read_uiomove(track, head, bytes, uio);
-			if (error)
-				break;
-		} else {
-			int bytes1;
-			int bytes2;
-
-			bytes1 = usrbuf->capacity - head;
-			error = audio_read_uiomove(track, head, bytes1, uio);
-			if (error)
-				break;
-
-			bytes2 = bytes - bytes1;
-			error = audio_read_uiomove(track, 0, bytes2, uio);
-			if (error)
-				break;
+		while (bytes > 0) {
+			int head = usrbuf->head;
+			int len = uimin(bytes, usrbuf->capacity - head);
+			error = uiomove((uint8_t *)usrbuf->mem + head, len,
+			    uio);
+			if (error) {
+				TRACET(1, track, "uiomove(len=%d) failed: %d",
+				    len, error);
+				goto abort;
+			}
+			auring_take(usrbuf, len);
+			track->useriobytes += len;
+			TRACET(3, track, "uiomove(len=%d) usrbuf=%d/%d/C%d",
+			    len,
+			    usrbuf->head, usrbuf->used, usrbuf->capacity);
+			bytes -= len;
 		}
 	}
 
+abort:
 	return error;
 }
 
@@ -2526,30 +2502,6 @@ audio_file_clear(struct audio_softc *sc, audio_file_t *file)
 		audio_track_clear(sc, file->ptrack);
 	if (file->rtrack)
 		audio_track_clear(sc, file->rtrack);
-}
-
-/*
- * Do uiomove 'len' bytes to the position 'tail' of 'usrbuf' in this
- * 'track'.  It does not wrap around circular buffer (so call it twice).
- */
-static __inline int
-audio_write_uiomove(audio_track_t *track, int tail, int len, struct uio *uio)
-{
-	audio_ring_t *usrbuf;
-	int error;
-
-	usrbuf = &track->usrbuf;
-	error = uiomove((uint8_t *)usrbuf->mem + tail, len, uio);
-	if (error) {
-		TRACET(1, track, "uiomove(len=%d) failed: %d", len, error);
-		return error;
-	}
-	auring_push(usrbuf, len);
-	track->useriobytes += len;
-	TRACET(3, track, "uiomove(len=%d) usrbuf=%d/%d/C%d",
-	    len,
-	    usrbuf->head, usrbuf->used, usrbuf->capacity);
-	return 0;
 }
 
 int
@@ -2603,7 +2555,6 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 	error = 0;
 	while (uio->uio_resid > 0 && error == 0) {
 		int bytes;
-		int tail;
 
 		TRACET(3, track, "while resid=%zd usrbuf=%d/%d/H%d",
 		    uio->uio_resid,
@@ -2636,29 +2587,25 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 		}
 		mutex_exit(sc->sc_lock);
 
-		/* Write to usrbuf as much as possible. */
+		/* uiomove to usrbuf as much as possible. */
 		bytes = uimin(track->usrbuf_usedhigh - usrbuf->used,
 		    uio->uio_resid);
-		tail = auring_tail(usrbuf);
-		if (bytes == 0) {
-			/* No space on usrbuf */
-		} else if (tail + bytes <= usrbuf->capacity) {
-			error = audio_write_uiomove(track, tail, bytes, uio);
-			if (error)
-				break;
-		} else {
-			int bytes1;
-			int bytes2;
-
-			bytes1 = usrbuf->capacity - tail;
-			error = audio_write_uiomove(track, tail, bytes1, uio);
-			if (error)
-				break;
-
-			bytes2 = bytes - bytes1;
-			error = audio_write_uiomove(track, 0, bytes2, uio);
-			if (error)
-				break;
+		while (bytes > 0) {
+			int tail = auring_tail(usrbuf);
+			int len = uimin(bytes, usrbuf->capacity - tail);
+			error = uiomove((uint8_t *)usrbuf->mem + tail, len,
+			    uio);
+			if (error) {
+				TRACET(1, track, "uiomove(len=%d) failed: %d",
+				    len, error);
+				goto abort;
+			}
+			auring_push(usrbuf, len);
+			track->useriobytes += len;
+			TRACET(3, track, "uiomove(len=%d) usrbuf=%d/%d/C%d",
+			    len,
+			    usrbuf->head, usrbuf->used, usrbuf->capacity);
+			bytes -= len;
 		}
 
 		/* Convert them as much as possible. */
