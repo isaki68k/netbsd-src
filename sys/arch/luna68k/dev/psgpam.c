@@ -301,13 +301,6 @@ psgpam_attach(device_t parent, device_t self, void *aux)
 	audio_attach_mi(&psgpam_hw_if, sc, sc->sc_dev);
 }
 
-void psgpam_detatch(void);
-void
-psgpam_detatch(void)
-{
-	// STUB
-}
-
 static int
 psgpam_open(void *hdl, int flags)
 {
