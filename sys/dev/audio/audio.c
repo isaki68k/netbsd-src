@@ -263,9 +263,9 @@ static void audio_tracef(const char *, audio_file_t *, const char *, ...)
 /* XXX sloppy memory logger */
 static void audio_mlog_init(void);
 static void audio_mlog_free(void);
-static void audio_mlog_flush(void);
 static void audio_mlog_softintr(void *);
-static void audio_mlog_printf(const char *, ...);
+extern void audio_mlog_flush(void);
+extern void audio_mlog_printf(const char *, ...);
 
 static int mlog_refs;		/* reference counter */
 static char *mlog_buf[2];	/* double buffer */
@@ -314,7 +314,7 @@ audio_mlog_free(void)
  * Flush memory buffer.
  * It must not be called from hardware interrupt context.
  */
-static void
+void
 audio_mlog_flush(void)
 {
 	if (mlog_refs == 0)
@@ -348,7 +348,7 @@ audio_mlog_softintr(void *cookie)
 	audio_mlog_flush();
 }
 
-static void
+void
 audio_mlog_printf(const char *fmt, ...)
 {
 	int len;

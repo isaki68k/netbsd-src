@@ -32,19 +32,6 @@ __KERNEL_RCSID(0, "$NetBSD$");
 // 4: 割り込み内のTRACEも含む (要 AUDIO_DEBUG_MLOG)
 #define AUDIO_DEBUG	0
 
-// デバッグ用なんちゃってメモリログ。
-#define AUDIO_DEBUG_MLOG
-
-#if defined(AUDIO_DEBUG_MLOG)
-#if defined(_KERNEL)
-#include <dev/audio/mlog.h>
-#else
-#include "mlog.h"
-#endif
-#else
-#define audio_mlog_flush()	/**/
-#endif
-
 #ifdef AUDIO_DEBUG
 #define DPRINTF(n, fmt...)	do {	\
 	if (audiodebug >= (n)) {	\
@@ -56,6 +43,11 @@ __KERNEL_RCSID(0, "$NetBSD$");
 		}	\
 	}				\
 } while (0)
+
+/* XXX Parasitic to audio.c... */
+extern void audio_mlog_flush(void);
+extern void audio_mlog_printf(const char *, ...);
+
 static int	audiodebug = AUDIO_DEBUG;
 #else
 #define DPRINTF(n, fmt...)	do { } while (0)
@@ -264,10 +256,6 @@ psgpam_attach(device_t parent, device_t self, void *aux)
 	struct psgpam_softc *sc;
 	const struct sysctlnode *node;
 
-#if defined(AUDIO_DEBUG_MLOG)
-	audio_mlog_init();
-#endif
-
 	sc = device_private(self);
 	sc->sc_dev = self;
 
@@ -320,9 +308,6 @@ void
 psgpam_detatch(void)
 {
 	// STUB
-#if defined(AUDIO_DEBUG_MLOG)
-	audio_mlog_free();
-#endif
 }
 
 static int
