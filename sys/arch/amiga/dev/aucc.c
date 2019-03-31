@@ -426,12 +426,13 @@ aucc_set_out_sr(void *addr, u_int sr)
 }
 
 #if defined(AUDIO2)
-// XXX *1 周波数の下限は適当。audio(4) の下限と揃えておくか。
-// XXX *2 周波数上限もできれば定数か何かにしたほうがいい。
-// XXX *3 実際にはこの周波数帯の中で誤差が最小になる値があって、
-//        本当はそれが優先的に採用される仕組みがほしい。
-// XXX *4 3,4ch モードは 8bit、1,2ch モードは 14bit になるので、
-//        たぶん 1,2ch モードを使うほうがいいという想像。
+// XXX *1 How lower limit of frequency should be?  same as audio(4)?
+// XXX *2 Should avoid a magic number at the upper limit of frequency.
+// XXX *3 In fact, there is a number in this range that have minimal errors.
+//        It would be better if there is a mechanism which such frequency
+//        is prioritized.
+// XXX *4 3/4ch modes use 8bits, 1/2ch modes use 14bits,
+//        so I imagined that 1/2ch modes are better.
 #define AUCC_FORMAT(prio, ch, chmask) \
 	{ \
 		.mode		= AUMODE_PLAY, \

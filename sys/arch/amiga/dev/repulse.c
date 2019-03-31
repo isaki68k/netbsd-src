@@ -606,9 +606,9 @@ rep_round_blocksize(void *arg, int blk, int mode, const audio_params_t *param)
 	int b1;
 
 #if defined(AUDIO2)
+	/* XXX I imagine that such mask is not necessary.. */
 	b1 = blk;
 #else
-	// たぶんこれいらないんじゃないかなあ
 	b1 = (blk & -32);
 #endif
 
