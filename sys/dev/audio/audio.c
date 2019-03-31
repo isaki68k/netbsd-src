@@ -7731,11 +7731,11 @@ audio_sysctl_blk_ms(SYSCTLFN_ARGS)
 	mode = 0;
 	if (sc->sc_pmixer) {
 		mode |= AUMODE_PLAY;
-		phwfmt = sc->sc_pmixer->track_fmt;
+		phwfmt = sc->sc_pmixer->hwbuf.fmt;
 	}
 	if (sc->sc_rmixer) {
 		mode |= AUMODE_RECORD;
-		rhwfmt = sc->sc_rmixer->track_fmt;
+		rhwfmt = sc->sc_rmixer->hwbuf.fmt;
 	}
 
 	/* re-init hardware */
