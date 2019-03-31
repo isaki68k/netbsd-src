@@ -235,18 +235,8 @@ __KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.458 2018/09/03 16:29:30 riastradh Exp $"
  * 2: + normal operations like read/write/ioctl...
  * 3: + TRACEs except interrupt
  * 4: + TRACEs including interrupt
- *
- * XXX This debug level is shared among all audio devices.
  */
-// XXX 遅マシンで初期値 4 のままだと大抵一回目にはまるので、初期値を2種類
-//     用意しておく。どうしたもんか。
-#if !defined(AUDIO_DEBUG)
-# if defined(__m68k__) || defined(__vax__)
-#  define AUDIO_DEBUG	1
-# else
-#  define AUDIO_DEBUG	4
-# endif
-#endif
+//#define AUDIO_DEBUG
 
 #if defined(AUDIO_DEBUG)
 
