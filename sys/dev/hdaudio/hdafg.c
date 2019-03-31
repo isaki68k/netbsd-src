@@ -4001,14 +4001,14 @@ hdafg_round_blocksize(void *opaque, int blksize, int mode,
 #if defined(AUDIO2)
 	(void)nblksize;
 
-	// HD audio のバッファ制約はたぶんこんな感じのようだ。
-	//
-	// バッファは 128バイト境界になければならない(MUST)。
-	// バッファ長は1サンプル以上(MUST)。
-	// 効率を考えると 128バイト単位が望ましい(SHOULD)。
-	//
-	// https://www.intel.co.jp/content/www/jp/ja/standards/high-definition-audio-specification.html
-	// の p70。
+	/*
+	 * HD audio's buffer constraint looks like following:
+	 * - The buffer MUST start on a 128bytes boundary.
+	 * - The buffer size MUST be one sample or more.
+	 * - The buffer size is preferred multiple of 128bytes for efficiency.
+	 *
+	 * https://www.intel.co.jp/content/www/jp/ja/standards/high-definition-audio-specification.html , p70.
+	 */
 
 	/* Make sure there are enough BDL descriptors */
 	bufsize = st->st_data.dma_size;
@@ -4282,9 +4282,7 @@ static size_t
 hdafg_round_buffersize(void *opaque, int direction, size_t bufsize)
 {
 #if AUDIO2
-	// バッファの開始位置が 128バイト境界でなければならないのと、
-	// バッファ長は 128 バイト単位だと効率が良いとは書いてあるが、
-	// バッファ長に 128 バイト単位という制約はない。
+	/* The buffer size does not seem to be limited multiple of 128byte. */
 #else
 	/* Multiple of 128 */
 	bufsize &= ~127;

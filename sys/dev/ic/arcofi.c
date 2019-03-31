@@ -286,18 +286,8 @@ static const struct audio_format arcofi_formats[] = {
 	// また、16bit 値の1バイト目だけ送りこんだところでキューが空になると
 	// 何がおきるか分からないというかそれが爆音の原因かも知れないのも
 	// あるのでその点でも 8bit エンコーディングのほうが望ましいと思われる。
-	/*
-	 * 8-bit encodings:
-	 *  - u-Law and A-Law are native
-	 *  - linear are converted to 16-bit by auconv
-	 */
 	ARCOFI_FORMAT(1, AUDIO_ENCODING_ULAW,        8),
 	ARCOFI_FORMAT(0, AUDIO_ENCODING_ALAW,        8),
-	/*
-	 * 16-bit encodings:
-	 *  - slinear big-endian is native
-	 *  - unsigned or little-endian are converted by auconv
-	 */
 	ARCOFI_FORMAT(0, AUDIO_ENCODING_SLINEAR_BE, 16),
 };
 #define ARCOFI_NFORMATS  __arraycount(arcofi_formats)
@@ -369,7 +359,7 @@ arcofi_close(void *v)
 }
 
 #if defined(AUDIO2)
-// drain 削除で sc_cv も不要になる
+/* XXX sc_cv also can be removed if drain is removed. */
 #endif
 static int
 arcofi_drain(void *v)
@@ -1282,8 +1272,10 @@ void
 arcofi_swintr(void *v)
 {
 #if !defined(AUDIO2)
-// swintr を消すと arch/hp300/dev/arcofi_dio.c の softint_establish() にも
-// 影響が波及する
+/*
+ * XXX Removing this swintr also affects softint_establish() at
+ *     arch/hp300/dev/arcofi_dio.c
+ */
 	struct arcofi_softc *sc = (struct arcofi_softc *)v;
 	int action;
 
@@ -1387,8 +1379,10 @@ arcofi_attach(struct arcofi_softc *sc, const char *versionstr)
 	mutex_init(&sc->sc_intr_lock, MUTEX_DEFAULT, IPL_AUDIO);
 	cv_init(&sc->sc_cv, device_xname(self));
 #if defined(AUDIO2)
-	// AUDIO2 ではこの create_encodings() と sc_encodings、この goto out
-	// の先のラベルが不要になるけど、そこまで ifdef するのは面倒なので。
+	/*
+	 * auconv_create_encodings(), sc_encodings, goto out and its label are
+	 * unnecessary.  At the moment it only complicates diff.
+	 */
 #endif
 	rc = auconv_create_encodings(arcofi_formats, ARCOFI_NFORMATS,
 	    &sc->sc_encodings);

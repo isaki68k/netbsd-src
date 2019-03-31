@@ -413,9 +413,11 @@ sbdsp_attach(struct sbdsp_softc *sc)
 	       sc->sc_model == SB_JAZZ ? ": <Jazz16>" : "");
 
 #if defined(AUDIO2)
-	// full duplex と言っても DRQ が足りなければ、片方を 8bitモードにして
-	// ソフトウェアで16bit変換することで、双方を16bit だと言い張っている
-	// ように読めるので、それはここでは full duplex とは言わないんだすまない。
+	/* XXX It's not true full duplex. */
+	// full duplex と言っても、DRQ が足りなければ片方を 8bitモードに設定
+	// して、ソフトウェアで16bitから8bitに変換することで、双方を 16bit に
+	// 見せかけているというように読めるので、ここではそれを full duplex とは
+	// 言わないんだすまない。
 	sc->sc_fullduplex = 0;
 #else
 	sc->sc_fullduplex = ISSB16CLASS(sc) &&

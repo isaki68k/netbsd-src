@@ -241,8 +241,6 @@ am7930_query_format(void *addr, audio_format_query_t *afp)
 	return audio_query_format(&am7930_format, 1, afp);
 }
 
-// tc/bba.c はこれではないフィルタを必要とするため、
-// この am7930 共通 set_format ではなく自前のほうを使うこと。
 int
 am7930_set_format(void *addr, int setmode,
 	const audio_params_t *play, const audio_params_t *rec,

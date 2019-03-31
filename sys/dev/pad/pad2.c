@@ -347,8 +347,8 @@ pad_dev_close(dev_t dev, int flags, int fmt, struct lwp *l)
 	if (sc == NULL)
 		return ENXIO;
 
-	// こっちも atomic にしないとだめなんでは
 	KASSERT(sc->sc_open > 0);
+	/* XXX should this be atomic too? */
 	sc->sc_open = 0;
 	DPRINTF("%s -> %d\n", __func__, sc->sc_open);
 
@@ -410,9 +410,10 @@ pad_set_format(void *opaque, int setmode,
     const audio_params_t *play, const audio_params_t *rec,
 	audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
 {
-	// SWVOL サポートしない時はこの関数は何もしないが、今の所、
-	// set_format があれば set_format を、なければ set_params を呼ぶ
-	// という構造になっているため、set_format を廃止することはできない。
+	/*
+	 * For now, MI audio calls set_format if set_format exists and
+	 * set_params otherwise.  For this reason, it's necessary even empty.
+	 */
 #if !defined(PAD_NO_SWVOL)
 	pad_softc_t *sc __diagused;
 
@@ -420,7 +421,7 @@ pad_set_format(void *opaque, int setmode,
 
 	KASSERT(mutex_owned(&sc->sc_lock));
 
-	// 元々再生側しかなかった
+	/* XXX playback only */
 	pfil->codec = pad_swvol_codec;
 	pfil->context = sc;
 #endif /* !PAD_NO_SWVOL */

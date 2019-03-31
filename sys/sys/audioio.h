@@ -134,7 +134,7 @@ typedef struct audio_offset {
 #define AUDIO_ENCODING_MPEG_L2_SYSTEM	17
 #define AUDIO_ENCODING_AC3		18
 
-// ユーザランドに export していいもんかどうかは要検討?
+/* XXX Consider whether to export to userland? */
 #if defined(_KERNEL)
 #if BYTE_ORDER == LITTLE_ENDIAN
 #define AUDIO_ENCODING_SLINEAR_NE AUDIO_ENCODING_SLINEAR_LE
