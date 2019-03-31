@@ -94,6 +94,7 @@ static struct audio_device wm8731_device = {
 
 static const struct audio_format wm8731_formats[] = {
 	{
+		.driver_data	= NULL,
 		.mode		= AUMODE_PLAY | AUMODE_RECORD,
 		.encoding	= AUDIO_ENCODING_SLINEAR_LE,
 		.validbits	= 16,
@@ -101,8 +102,8 @@ static const struct audio_format wm8731_formats[] = {
 		.channels	= 2,
 		.channel_mask	= AUFMT_STEREO,
 		.frequency_type	= 0,
-		.frequency	= { 4000, 48000 },
-	},
+		.frequency	= { 4000, 48000 }
+	}
 };
 static const int wm8731_nformats = (int)__arraycount(wm8731_formats);
 
