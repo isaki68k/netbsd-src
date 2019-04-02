@@ -95,10 +95,18 @@ enum vcaudio_dest {
  * 50ms.
  */
 
+#if defined(AUDIO2)
+/* 40ms block of 16bit 48kHz stereo is 7680 bytes. */
+#define VCAUDIO_MSGSIZE		1920
+#define VCAUDIO_NUMMSGS		4
+#define VCAUDIO_BLOCKSIZE	(VCAUDIO_MSGSIZE * VCAUDIO_NUMMSGS)
+/* The driver seems to have no buffer size restrictions. */
+#else
 #define VCAUDIO_MSGSIZE		1600
 #define VCAUDIO_NUMMSGS		4
 #define VCAUDIO_BLOCKSIZE	(VCAUDIO_MSGSIZE * VCAUDIO_NUMMSGS)
 #define VCAUDIO_BUFFERSIZE	128000
+#endif
 #define VCAUDIO_PREFILLCOUNT	2
 
 struct vcaudio_softc {
