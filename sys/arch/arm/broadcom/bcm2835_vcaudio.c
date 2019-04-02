@@ -158,10 +158,17 @@ static void	vcaudio_worker(void *);
 
 static int	vcaudio_open(void *, int);
 static void	vcaudio_close(void *);
+#if defined(AUDIO2)
+static int	vcaudio_query_format(void *, audio_format_query_t *);
+static int	vcaudio_set_format(void *, int,
+    const audio_params_t *, const audio_params_t *,
+    audio_filter_reg_t *, audio_filter_reg_t *);
+#else
 static int	vcaudio_query_encoding(void *, struct audio_encoding *);
 static int	vcaudio_set_params(void *, int, int,
     audio_params_t *, audio_params_t *,
     stream_filter_list_t *, stream_filter_list_t *);
+#endif
 static int	vcaudio_halt_output(void *);
 static int	vcaudio_halt_input(void *);
 static int	vcaudio_set_port(void *, mixer_ctrl_t *);
@@ -181,15 +188,24 @@ static int	vcaudio_trigger_input(void *, void *, void *, int,
 
 static void	vcaudio_get_locks(void *, kmutex_t **, kmutex_t **);
 
+#if defined(AUDIO2)
+static void vcaudio_swvol_codec(audio_filter_arg_t *);
+#else
 static stream_filter_t *vcaudio_swvol_filter(struct audio_softc *,
     const audio_params_t *, const audio_params_t *);
 static void	vcaudio_swvol_dtor(stream_filter_t *);
+#endif
 
 static const struct audio_hw_if vcaudio_hw_if = {
 	.open = vcaudio_open,
 	.close = vcaudio_close,
+#if defined(AUDIO2)
+	.query_format = vcaudio_query_format,
+	.set_format = vcaudio_set_format,
+#else
 	.query_encoding = vcaudio_query_encoding,
 	.set_params = vcaudio_set_params,
+#endif
 	.halt_output = vcaudio_halt_output,
 	.halt_input = vcaudio_halt_input,
 	.getdev = vcaudio_getdev,
@@ -486,7 +502,7 @@ vcaudio_worker(void *priv)
 		msg.u.write.cookie = intrarg;
 		msg.u.write.silence = 0;
 
-	    	block = (uint8_t *)sc->sc_pstart + sc->sc_ppos;
+		block = (uint8_t *)sc->sc_pstart + sc->sc_ppos;
 		resid = count;
 		off = 0;
 
@@ -521,7 +537,7 @@ vcaudio_worker(void *priv)
 			sc->sc_ppos = 0;
 
 		if (!sc->sc_started) {
-        		++sc->sc_pblkcnt;
+			++sc->sc_pblkcnt;
 
 			if (sc->sc_pblkcnt == VCAUDIO_PREFILLCOUNT) {
 
@@ -589,6 +605,28 @@ vcaudio_close(void *priv)
 {
 }
 
+#if defined(AUDIO2)
+static int
+vcaudio_query_format(void *priv, audio_format_query_t *afp)
+{
+	struct vcaudio_softc *sc = priv;
+
+	return audio_query_format(&sc->sc_format, 1, afp);
+}
+
+static int
+vcaudio_set_format(void *priv, int setmode,
+    const audio_params_t *play, const audio_params_t *rec,
+    audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
+{
+	struct vcaudio_softc *sc = priv;
+
+	pfil->codec = vcaudio_swvol_codec;
+	pfil->context = sc;
+
+	return 0;
+}
+#else
 static int
 vcaudio_query_encoding(void *priv, struct audio_encoding *ae)
 {
@@ -617,6 +655,7 @@ vcaudio_set_params(void *priv, int setmode, int usemode,
 
 	return 0;
 }
+#endif /* AUDIO2 */
 
 static int
 vcaudio_halt_output(void *priv)
@@ -899,6 +938,26 @@ vcaudio_get_locks(void *priv, kmutex_t **intr, kmutex_t **thread)
 	*thread = &sc->sc_lock;
 }
 
+#if defined(AUDIO2)
+static void
+vcaudio_swvol_codec(audio_filter_arg_t *arg)
+{
+	struct vcaudio_softc *sc = arg->context;
+	const aint_t *src;
+	aint_t *dst;
+	u_int sample_count;
+	u_int i;
+
+	src = arg->src;
+	dst = arg->dst;
+	sample_count = arg->count * arg->srcfmt->channels;
+	for (i = 0; i < sample_count; i++) {
+		aint2_t v = (aint2_t)(*src++);
+		v = v * sc->sc_swvol / 255;
+		*dst++ = (aint_t)v;
+	}
+}
+#else
 static stream_filter_t *
 vcaudio_swvol_filter(struct audio_softc *asc,
     const audio_params_t *from, const audio_params_t *to)
@@ -923,3 +982,4 @@ vcaudio_swvol_dtor(stream_filter_t *this)
 	if (this)
 		kmem_free(this, sizeof(auvolconv_filter_t));
 }
+#endif /* AUDIO2 */
