@@ -179,7 +179,9 @@ static int	vcaudio_get_props(void *);
 
 static int	vcaudio_round_blocksize(void *, int, int,
     const audio_params_t *);
+#if !defined(AUDIO2)
 static size_t	vcaudio_round_buffersize(void *, int, size_t);
+#endif
 
 static int	vcaudio_trigger_output(void *, void *, void *, int,
     void (*)(void *), void *, const audio_params_t *);
@@ -214,7 +216,9 @@ static const struct audio_hw_if vcaudio_hw_if = {
 	.query_devinfo = vcaudio_query_devinfo,
 	.get_props = vcaudio_get_props,
 	.round_blocksize = vcaudio_round_blocksize,
+#if !defined(AUDIO2)
 	.round_buffersize = vcaudio_round_buffersize,
+#endif
 	.trigger_output = vcaudio_trigger_output,
 	.trigger_input = vcaudio_trigger_input,
 	.get_locks = vcaudio_get_locks,
@@ -890,12 +894,14 @@ vcaudio_round_blocksize(void *priv, int bs, int mode,
 	return VCAUDIO_BLOCKSIZE;
 }
 
+#if !defined(AUDIO2)
 static size_t
 vcaudio_round_buffersize(void *priv, int direction, size_t bufsize)
 {
 
 	return VCAUDIO_BUFFERSIZE;
 }
+#endif
 
 static int
 vcaudio_trigger_output(void *priv, void *start, void *end, int blksize,
