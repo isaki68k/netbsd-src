@@ -54,24 +54,25 @@ vs(4) などの珍しい周波数の hardware がサポートできない。
 
 
 ## Supported devices
-|Device	|Backend|(port)	|対応度
+|Device	|Backend|(port)	|query_format|set_format|Status
 |-------|-------|-------|-------|
-|arcofi(4)	|	|hp300	|Done
-|audioamd(4)	|am7930	|sparc	|Compiled but not tested
-|auich(4)	|	|	|Done
-|aucc(4)	|	|amiga	|Compiled but not tested
-|bba(4)		|am7930	|alpha	|Done
-|eap(4)		|	|	|Done
-|hdafg(4)	|	|	|Done
-|melody(4)	|	|amiga	|Compiled but not tested
-|mercury(4)	|	|x68k	|Added, Done (*)
-|pad(4)		|	|	|Done
-|psgpam(4)	|	|luna68k|Added, Done (*)
-|repulse(4)	|	|amiga	|Compiled but not tested
-|sb(4)		|	|	|Work (*)
-|uaudio(4)	|	|	|Done
-|vs(4)		|	|x68k	|Done (*)
-|vsaudio(4)	|am7930	|vax	|Done
+|arcofi(4)	|	|hp300	|Done	|Done	|Done
+|audioamd(4)	|am7930	|sparc	|Done	|Done	|Compiled but not tested
+|auich(4)	|	|	|Done	|Done	|Done
+|aucc(4)	|	|amiga	|Done	|Done	|Compiled but not tested
+|bba(4)		|am7930	|alpha	|Done	|Done	|Done
+|eap(4)		|	|	|Done	|modify set_params|Done
+|hdafg(4)	|	|	|Done	|	|Done
+|melody(4)	|	|amiga	|	|	|Compiled but not tested
+|mercury(4)	|	|x68k	|Done	|Done	|Added, Done (*)
+|pad(4)		|	|	|Done	|Done	|Done
+|psgpam(4)	|	|luna68k|Done	|Done	|Added, Done (*)
+|repulse(4)	|	|amiga	|Done	|Done	|Compiled but not tested
+|sb(4)		|	|	|	|modify set_params|Work as half duplex (*)
+|uaudio(4)	|	|	|Done	|	|Done
+|vs(4)		|	|x68k	|Done	|Done	|Done (*)
+|vcaudio(4)	|	|evbarm/RPI	|Done	|Done	|Compiled but not tested
+|vsaudio(4)	|am7930	|vax	|Done	|Done	|Done
 
 Note:
 * mercury(4) は AUDIO2 で初サポート。
