@@ -55,7 +55,7 @@ vs(4) などの珍しい周波数の hardware がサポートできない。
 
 ## Supported devices
 |Device	|Backend|(port)	|query_format|set_format|Status
-|-------|-------|-------|-------|
+|-------|-------|-------|-------|-------|-------|
 |arcofi(4)	|	|hp300	|Done	|Done	|Work
 |audioamd(4)	|am7930	|sparc	|Done	|Done	|Compiled but not tested
 |auich(4)	|	|	|Done	|Done	|Work
