@@ -151,7 +151,11 @@ CFATTACH_DECL_NEW(yds, sizeof(struct yds_softc),
 
 static int	yds_open(void *, int);
 static void	yds_close(void *);
+#if defined(AUDIO2)
+static int	yds_query_format(void *, audio_format_query_t *);
+#else
 static int	yds_query_encoding(void *, struct audio_encoding *);
+#endif
 static int	yds_set_params(void *, int, int, audio_params_t *,
 			       audio_params_t *, stream_filter_list_t *,
 			       stream_filter_list_t *);
@@ -206,7 +210,11 @@ static const struct audio_hw_if yds_hw_if = {
 	.open		  = yds_open,
 	.close		  = yds_close,
 	.drain		  = NULL,
+#if defined(AUDIO2)
+	.query_format	  = yds_query_format,
+#else
 	.query_encoding	  = yds_query_encoding,
+#endif
 	.set_params	  = yds_set_params,
 	.round_blocksize  = yds_round_blocksize,
 	.commit_settings  = NULL,
@@ -267,6 +275,21 @@ static const struct {
 #define YDS_CAP_BITS	"\020\005P44\004LEGFLEX\003LEGSEL\002MCODE1E\001MCODE1"
 #endif
 
+#if defined(AUDIO2)
+/* Hardware also supports 5512.5Hz but it is not representable. */
+#define YDS_FORMAT(enc, prec, ch, chmask) \
+	{ \
+		.mode		= AUMODE_PLAY | AUMODE_RECORD, \
+		.encoding	= (enc), \
+		.validbits	= (prec), \
+		.precision	= (prec), \
+		.channels	= (ch), \
+		.channel_mask	= (chmask), \
+		.frequency_type	= 7, \
+		.frequency	= \
+		    { 8000, 11025, 16000, 22050, 32000, 44100, 48000 }, \
+	}
+#else
 #define YDS_FORMAT(enc, prec, ch, chmask) \
 	{ \
 		.mode		= AUMODE_PLAY | AUMODE_RECORD, \
@@ -278,6 +301,7 @@ static const struct {
 		.frequency_type	= 0, \
 		.frequency	= { 4000, 48000 }, \
 	}
+#endif
 static const struct audio_format yds_formats[] = {
 	YDS_FORMAT(AUDIO_ENCODING_SLINEAR_LE, 16, 2, AUFMT_STEREO),
 	YDS_FORMAT(AUDIO_ENCODING_SLINEAR_LE, 16, 1, AUFMT_MONAURAL),
@@ -937,12 +961,14 @@ detected:
 		}
 	}
 
+#if !defined(AUDIO2)
 	if (0 != auconv_create_encodings(yds_formats, YDS_NFORMATS,
 	    &sc->sc_encodings)) {
 		mutex_destroy(&sc->sc_lock);
 		mutex_destroy(&sc->sc_intr_lock);
 		return;
 	}
+#endif
 
 	audio_attach_mi(&yds_hw_if, sc, self);
 
@@ -1252,6 +1278,14 @@ yds_close(void *addr)
 	yds_halt(addr);
 }
 
+#if defined(AUDIO2)
+static int
+yds_query_format(void *addr, audio_format_query_t *afp)
+{
+
+	return audio_query_format(yds_formats, YDS_NFORMATS, afp);
+}
+#else
 static int
 yds_query_encoding(void *addr, struct audio_encoding *fp)
 {
@@ -1260,6 +1294,7 @@ yds_query_encoding(void *addr, struct audio_encoding *fp)
 	sc = addr;
 	return auconv_query_encoding(sc->sc_encodings, fp);
 }
+#endif
 
 static int
 yds_set_params(void *addr, int setmode, int usemode,
