@@ -1667,11 +1667,10 @@ yds_halt_input(void *addr)
 
 	DPRINTF(("yds: yds_halt_input\n"));
 	sc = addr;
-	sc->sc_rec.intr = NULL;
 	if (sc->sc_rec.intr) {
+		sc->sc_rec.intr = NULL;
 		/* Stop the rec slot operation */
 		YWRITE4(sc, YDS_MAPOF_REC, 0);
-		sc->sc_rec.intr = 0;
 		/* Sync rec slot control data */
 		bus_dmamap_sync(sc->sc_dmatag, sc->sc_ctrldata.map,
 				sc->rbankoff,
