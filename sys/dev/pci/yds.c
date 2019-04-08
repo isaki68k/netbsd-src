@@ -153,12 +153,15 @@ static int	yds_open(void *, int);
 static void	yds_close(void *);
 #if defined(AUDIO2)
 static int	yds_query_format(void *, audio_format_query_t *);
+static int	yds_set_format(void *, int,
+			       const audio_params_t *, const audio_params_t *,
+			       audio_filter_reg_t *, audio_filter_reg_t *);
 #else
 static int	yds_query_encoding(void *, struct audio_encoding *);
-#endif
 static int	yds_set_params(void *, int, int, audio_params_t *,
 			       audio_params_t *, stream_filter_list_t *,
 			       stream_filter_list_t *);
+#endif
 static int	yds_round_blocksize(void *, int, int, const audio_params_t *);
 static int	yds_trigger_output(void *, void *, void *, int,
 				   void (*)(void *), void *,
@@ -212,10 +215,11 @@ static const struct audio_hw_if yds_hw_if = {
 	.drain		  = NULL,
 #if defined(AUDIO2)
 	.query_format	  = yds_query_format,
+	.set_format	  = yds_set_format,
 #else
 	.query_encoding	  = yds_query_encoding,
-#endif
 	.set_params	  = yds_set_params,
+#endif
 	.round_blocksize  = yds_round_blocksize,
 	.commit_settings  = NULL,
 	.init_output	  = NULL,
@@ -1285,6 +1289,14 @@ yds_query_format(void *addr, audio_format_query_t *afp)
 
 	return audio_query_format(yds_formats, YDS_NFORMATS, afp);
 }
+
+static int
+yds_set_format(void *addr, int setmode,
+	const audio_params_t *play, const audio_params_t *rec,
+	audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
+{
+	return 0;
+}
 #else
 static int
 yds_query_encoding(void *addr, struct audio_encoding *fp)
@@ -1294,7 +1306,6 @@ yds_query_encoding(void *addr, struct audio_encoding *fp)
 	sc = addr;
 	return auconv_query_encoding(sc->sc_encodings, fp);
 }
-#endif
 
 static int
 yds_set_params(void *addr, int setmode, int usemode,
@@ -1313,6 +1324,7 @@ yds_set_params(void *addr, int setmode, int usemode,
 	}
 	return 0;
 }
+#endif /* AUDIO2 */
 
 static int
 yds_round_blocksize(void *addr, int blk, int mode,
