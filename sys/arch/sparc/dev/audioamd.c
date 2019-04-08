@@ -298,8 +298,6 @@ audioamd_attach(struct audioamd_softc *sc, int pri)
 	 */
 	self = sc->sc_am7930.sc_dev;
 	sc->sc_am7930.sc_glue = &audioamd_glue;
-	mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_HIGH);
-
 	am7930_init(&sc->sc_am7930, AUDIOAMD_POLL_MODE);
 
 	auiop = &sc->sc_au;
