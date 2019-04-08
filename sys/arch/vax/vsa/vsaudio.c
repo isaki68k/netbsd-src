@@ -284,6 +284,7 @@ vsaudio_attach(device_t parent, device_t self, void *aux)
         sc->sc_bt = va->va_memt;
         sc->sc_am7930.sc_dev = device_private(self);
         sc->sc_am7930.sc_glue = &vsaudio_glue;
+        mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_HIGH);
         am7930_init(&sc->sc_am7930, AUDIOAMD_POLL_MODE);
         auiop = &sc->sc_au;
                 /* Copy bus tag & handle for use by am7930_trap */
