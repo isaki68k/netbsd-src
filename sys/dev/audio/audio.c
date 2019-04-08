@@ -7408,14 +7408,16 @@ audio_hw_set_params(struct audio_softc *sc, int setmode,
 		error = sc->hw_if->set_format(sc->hw_hdl, setmode,
 		    &pp, &rp, pfil, rfil);
 		if (error) {
-			TRACE(1, "set_format failed with %d", error);
+			device_printf(sc->sc_dev,
+			    "set_format failed with %d\n", error);
 			return error;
 		}
 	} else {
 		error = sc->hw_if->set_params(sc->hw_hdl, setmode, usemode,
 		    &pp, &rp, &pfilters, &rfilters);
 		if (error) {
-			TRACE(1, "set_params failed with %d", error);
+			device_printf(sc->sc_dev,
+			    "set_params failed with %d\n", error);
 			return error;
 		}
 	}
@@ -7423,7 +7425,8 @@ audio_hw_set_params(struct audio_softc *sc, int setmode,
 	if (sc->hw_if->commit_settings) {
 		error = sc->hw_if->commit_settings(sc->hw_hdl);
 		if (error) {
-			TRACE(1, "commit_settings failed with %d", error);
+			device_printf(sc->sc_dev,
+			    "commit_settings failed with %d\n", error);
 			return error;
 		}
 	}
