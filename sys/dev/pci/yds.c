@@ -1509,7 +1509,7 @@ yds_trigger_output(void *addr, void *start, void *end, int blksize,
 	/* Now the play slot for the next frame is set up!! */
 	/* Sync play slot control data for both directions */
 	bus_dmamap_sync(sc->sc_dmatag, sc->sc_ctrldata.map,
-			sc->ptbloff,
+			sc->pbankoff,
 			sizeof(struct play_slot_ctrl_bank) *
 			    channels * N_PLAY_SLOT_CTRL_BANK,
 			BUS_DMASYNC_PREWRITE|BUS_DMASYNC_PREREAD);
