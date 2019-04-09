@@ -131,7 +131,6 @@ struct vsaudio_softc {
 
 	struct	auio sc_au;		/* recv and xmit buffers, etc */
 #define sc_intrcnt sc_au.au_intrcnt	/* statistics */
-	void	*sc_sicookie;		/* softintr(9) cookie */
 	int	sc_cvec;
 };
 
@@ -215,7 +214,6 @@ struct audio_device vsaudio_device = {
 };
 
 void	vsaudio_hwintr(void *);
-void	vsaudio_swintr(void *);
 struct auio *auiop;
 
 
@@ -294,14 +292,6 @@ vsaudio_attach(device_t parent, device_t self, void *aux)
 	evcnt_attach_dynamic(&sc->sc_intrcnt, EVCNT_TYPE_INTR, NULL,
 	    device_xname(self), "intr");
 
-	sc->sc_sicookie = softint_establish(SOFTINT_SERIAL,
-	    &vsaudio_swintr, sc);
-	if (sc->sc_sicookie == NULL) {
-		aprint_normal("\n%s: cannot establish software interrupt\n",
-		    device_xname(self));
-		return;
-	}
-
 	aprint_normal("\n");
 	audio_attach_mi(&vsaudio_hw_if, sc, self);
 
@@ -350,7 +340,7 @@ vsaudio_start_output(void *addr, void *p, int cc,
 	sc->sc_pintr = intr;
 	sc->sc_parg = arg;
 	sc->sc_au.au_pdata = p;
-	sc->sc_au.au_pend = (char *)p + cc - 1;
+	sc->sc_au.au_pend = (char *)p + cc;
 	return 0;
 }
 
@@ -371,7 +361,7 @@ vsaudio_start_input(void *addr, void *p, int cc,
 	sc->sc_rintr = intr;
 	sc->sc_rarg = arg;
 	sc->sc_au.au_rdata = p;
-	sc->sc_au.au_rend = (char *)p + cc -1;
+	sc->sc_au.au_rend = (char *)p + cc;
 	DPRINTF(("sa_start_input: started intrs.\n"));
 	return 0;
 }
@@ -381,6 +371,7 @@ vsaudio_halt_output(void *addr)
 {
 	struct vsaudio_softc *sc = addr;
 
+	sc->sc_pintr = NULL;
 	return am7930_halt_output(&sc->sc_am7930);
 }
 
@@ -389,16 +380,15 @@ vsaudio_halt_input(void *addr)
 {
 	struct vsaudio_softc *sc = addr;
 
+	sc->sc_rintr = NULL;
 	return am7930_halt_input(&sc->sc_am7930);
 }
-
 
 void
 vsaudio_hwintr(void *v)
 {
 	struct vsaudio_softc *sc;
 	struct auio *au;
-	uint8_t *d, *e;
 	int __attribute__((__unused__)) k;
 
 	sc = v;
@@ -414,54 +404,30 @@ vsaudio_hwintr(void *v)
 	}
 #endif
 	/* receive incoming data */
-	d = au->au_rdata;
-	e = au->au_rend;
-	if (d != NULL && d <= e) {
-		*d = vsaudio_codec_dread(sc, AM7930_DREG_BBRB);
-		au->au_rdata++;
-		if (d == e) {
-			DPRINTFN(1, ("vsaudio_hwintr: swintr(r) requested"));
-			softint_schedule(sc->sc_sicookie);
+	if (sc->sc_rintr) {
+		KASSERT(au->au_rdata);
+		if (au->au_rdata < au->au_rend) {
+			*au->au_rdata++ = vsaudio_codec_dread(sc,
+			    AM7930_DREG_BBRB);
+			if (au->au_rdata == au->au_rend) {
+				(*sc->sc_rintr)(sc->sc_rarg);
+			}
 		}
 	}
 
 	/* send outgoing data */
-	d = au->au_pdata;
-	e = au->au_pend;
-	if (d != NULL && d <= e) {
-		vsaudio_codec_dwrite(sc, AM7930_DREG_BBTB, *d);
-		au->au_pdata++;
-		if (d == e) {
-			DPRINTFN(1, ("vsaudio_hwintr: swintr(p) requested"));
-			softint_schedule(sc->sc_sicookie);
+	if (sc->sc_pintr) {
+		KASSERT(au->au_pdata);
+		if (au->au_pdata < au->au_pend) {
+			vsaudio_codec_dwrite(sc, AM7930_DREG_BBTB,
+			    *au->au_pdata++);
+			if (au->au_pdata == au->au_pend) {
+				(*sc->sc_pintr)(sc->sc_parg);
+			}
 		}
 	}
-	mutex_spin_exit(&sc->sc_am7930.sc_intr_lock);
-}
 
-void
-vsaudio_swintr(void *v)
-{
-	struct vsaudio_softc *sc;
-	struct auio *au;
-	int dor, dow;
-
-	sc = v;
-	au = &sc->sc_au;
-
-	DPRINTFN(1, ("audiointr: sc=%p\n", sc));
-
-	dor = dow = 0;
-	mutex_spin_enter(&sc->sc_am7930.sc_intr_lock);
-	if (au->au_rdata > au->au_rend && sc->sc_rintr != NULL)
-		dor = 1;
-	if (au->au_pdata > au->au_pend && sc->sc_pintr != NULL)
-		dow = 1;
-
-	if (dor != 0)
-		(*sc->sc_rintr)(sc->sc_rarg);
-	if (dow != 0)
-		(*sc->sc_pintr)(sc->sc_parg);
+	au->au_intrcnt.ev_count++;
 	mutex_spin_exit(&sc->sc_am7930.sc_intr_lock);
 }
 
