@@ -107,27 +107,15 @@ struct auio {
 	struct evcnt	au_intrcnt;	/* statistics */
 };
 
-struct am7930_intrhand {
-	int	(*ih_fun)(void *);
-	void	*ih_arg;
-};
-
-
 struct vsaudio_softc {
 	struct am7930_softc sc_am7930;	/* glue to MI code */
 	bus_space_tag_t sc_bt;		/* bus cookie */
 	bus_space_handle_t sc_bh;	/* device registers */
 
-	struct am7930_intrhand	sc_ih;	/* interrupt vector (hw or sw)  */
 	void	(*sc_rintr)(void*);	/* input completion intr handler */
 	void	*sc_rarg;		/* arg for sc_rintr() */
 	void	(*sc_pintr)(void*);	/* output completion intr handler */
 	void	*sc_parg;		/* arg for sc_pintr() */
-
-	uint8_t	*sc_rdata;		/* record data */
-	uint8_t	*sc_rend;		/* end of record data */
-	uint8_t	*sc_pdata;		/* play data */
-	uint8_t	*sc_pend;		/* end of play data */
 
 	struct	auio sc_au;		/* recv and xmit buffers, etc */
 #define sc_intrcnt sc_au.au_intrcnt	/* statistics */
@@ -214,7 +202,6 @@ struct audio_device vsaudio_device = {
 };
 
 void	vsaudio_hwintr(void *);
-struct auio *auiop;
 
 
 static int
@@ -282,8 +269,6 @@ vsaudio_attach(device_t parent, device_t self, void *aux)
 	sc->sc_am7930.sc_dev = device_private(self);
 	sc->sc_am7930.sc_glue = &vsaudio_glue;
 	am7930_init(&sc->sc_am7930, AUDIOAMD_POLL_MODE);
-	auiop = &sc->sc_au;
-		/* Copy bus tag & handle for use by am7930_trap */
 	sc->sc_au.au_bt = sc->sc_bt;
 	sc->sc_au.au_bh = sc->sc_bh;
 	scb_vecalloc(va->va_cvec, vsaudio_hwintr, sc, SCB_ISTACK,
@@ -307,9 +292,6 @@ vsaudio_open(void *addr, int flags)
 	sc->sc_rarg = 0;
 	sc->sc_pintr = NULL;
 	sc->sc_parg = 0;
-
-	sc->sc_rdata = NULL;
-	sc->sc_pdata = NULL;
 
 	return 0;
 }

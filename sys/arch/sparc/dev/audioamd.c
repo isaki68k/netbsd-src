@@ -72,21 +72,12 @@ struct auio *auiop;
 /* from amd7930intr.s: */
 void	amd7930_trap(void);
 
-/*
- * interrupt-handler status
- */
-struct am7930_intrhand {
-	int	(*ih_fun)(void *);
-	void	*ih_arg;
-};
-
 struct audioamd_softc {
 	struct am7930_softc sc_am7930;	/* glue to MI code */
 
 	bus_space_tag_t sc_bt;		/* bus cookie */
 	bus_space_handle_t sc_bh;	/* device registers */
 
-	struct am7930_intrhand	sc_ih;	/* interrupt vector (hw or sw)  */
 	void	(*sc_rintr)(void*);	/* input completion intr handler */
 	void	*sc_rarg;		/* arg for sc_rintr() */
 	void	(*sc_pintr)(void*);	/* output completion intr handler */
