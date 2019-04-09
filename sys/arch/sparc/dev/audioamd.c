@@ -149,7 +149,6 @@ int	audioamd_start_input(void *, void *, int, void (*)(void *), void *);
 int	audioamd_halt_output(void *);
 int	audioamd_halt_input(void *);
 int	audioamd_getdev(void *, struct audio_device *);
-void	audioamd_get_locks(void *opaque, kmutex_t **intr, kmutex_t **thread);
 
 const struct audio_hw_if sa_hw_if = {
 	.open			= audioamd_open,
@@ -172,7 +171,7 @@ const struct audio_hw_if sa_hw_if = {
 	.get_port		= am7930_get_port,
 	.query_devinfo		= am7930_query_devinfo,
 	.get_props		= am7930_get_props,
-	.get_locks		= audioamd_get_locks,
+	.get_locks		= am7930_get_locks,
 };
 
 struct audio_device audioamd_device = {
@@ -568,16 +567,6 @@ audioamd_getdev(void *addr, struct audio_device *retp)
 
 	*retp = audioamd_device;
 	return 0;
-}
-
-void
-audioamd_get_locks(void *opaque, kmutex_t **intr, kmutex_t **thread)
-{
-	struct audioamd_softc *asc = opaque;
-	struct am7930_softc *sc = &asc->sc_am7930;
- 
-	*intr = &sc->sc_intr_lock;
-	*thread = &sc->sc_lock;
 }
 
 #endif /* NAUDIO > 0 */

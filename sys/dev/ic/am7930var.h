@@ -87,3 +87,4 @@ int	am7930_get_props(void *);
 int	am7930_set_port(void *, mixer_ctrl_t *);
 int	am7930_get_port(void *, mixer_ctrl_t *);
 int	am7930_query_devinfo(void *, mixer_devinfo_t *);
+void	am7930_get_locks(void *, kmutex_t **, kmutex_t **);

@@ -163,8 +163,6 @@ static int	bba_trigger_output(void *, void *, void *, int,
 static int	bba_trigger_input(void *, void *, void *, int,
 				  void (*)(void *), void *,
 				  const audio_params_t *);
-static void	bba_get_locks(void *opaque, kmutex_t **intr,
-			      kmutex_t **thread);
 
 static const struct audio_hw_if sa_hw_if = {
 #if defined(AUDIO2)
@@ -191,7 +189,7 @@ static const struct audio_hw_if sa_hw_if = {
 	.get_props		= bba_get_props,
 	.trigger_output		= bba_trigger_output,	/* md */
 	.trigger_input		= bba_trigger_input,	/* md */
-	.get_locks		= bba_get_locks,
+	.get_locks		= am7930_get_locks,
 };
 
 static struct audio_device bba_device = {
@@ -583,16 +581,6 @@ bad:
 	if (state & 1)
 		bus_dmamap_destroy(sc->sc_dmat, d->dmam);
 	return 1;
-}
-
-static void
-bba_get_locks(void *opaque, kmutex_t **intr, kmutex_t **thread)
-{
-	struct bba_softc *bsc = opaque;
-	struct am7930_softc *sc = &bsc->sc_am7930;
- 
-	*intr = &sc->sc_intr_lock;
-	*thread = &sc->sc_lock;
 }
 
 static int

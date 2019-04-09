@@ -182,7 +182,6 @@ int	vsaudio_start_input(void *, void *, int, void (*)(void *), void *);
 int	vsaudio_halt_output(void *);
 int	vsaudio_halt_input(void *);
 int	vsaudio_getdev(void *, struct audio_device *);
-void	vsaudio_get_locks(void *opaque, kmutex_t **intr, kmutex_t **thread);
 
 struct audio_hw_if vsaudio_hw_if = {
 	.open			= vsaudio_open,
@@ -205,7 +204,7 @@ struct audio_hw_if vsaudio_hw_if = {
 	.get_port		= am7930_get_port,
 	.query_devinfo		= am7930_query_devinfo,
 	.get_props		= am7930_get_props,
-	.get_locks		= vsaudio_get_locks,
+	.get_locks		= am7930_get_locks,
 };
 
 
@@ -528,16 +527,6 @@ vsaudio_getdev(void *addr, struct audio_device *retp)
 {
 	*retp = vsaudio_device;
 	return 0;
-}
-
-void
-vsaudio_get_locks(void *opaque, kmutex_t **intr, kmutex_t **thread)
-{
-	struct vsaudio_softc *asc = opaque;
-	struct am7930_softc *sc = &asc->sc_am7930;
-
-	*intr = &sc->sc_intr_lock;
-	*thread = &sc->sc_lock;
 }
 
 /*

@@ -618,4 +618,14 @@ am7930_query_devinfo(void *addr, mixer_devinfo_t *dip)
 	return 0;
 }
 
+void
+am7930_get_locks(void *addr, kmutex_t **intr, kmutex_t **thread)
+{
+	struct am7930_softc *sc;
+
+	sc = addr;
+	*intr = &sc->sc_intr_lock;
+	*thread = &sc->sc_lock;
+}
+
 #endif	/* NAUDIO */
