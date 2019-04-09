@@ -133,7 +133,6 @@ struct vsaudio_softc {
 #define sc_intrcnt sc_au.au_intrcnt	/* statistics */
 	void	*sc_sicookie;		/* softintr(9) cookie */
 	int	sc_cvec;
-	kmutex_t sc_lock;
 };
 
 static int vsaudio_match(struct device *parent, struct cfdata *match, void *);
@@ -285,7 +284,6 @@ vsaudio_attach(device_t parent, device_t self, void *aux)
 	sc->sc_bt = va->va_memt;
 	sc->sc_am7930.sc_dev = device_private(self);
 	sc->sc_am7930.sc_glue = &vsaudio_glue;
-	mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_HIGH);
 	am7930_init(&sc->sc_am7930, AUDIOAMD_POLL_MODE);
 	auiop = &sc->sc_au;
 		/* Copy bus tag & handle for use by am7930_trap */
@@ -315,7 +313,6 @@ vsaudio_onopen(struct am7930_softc *sc)
 {
 	struct vsaudio_softc *vssc = (struct vsaudio_softc *)sc;
 
-	mutex_spin_enter(&vssc->sc_lock);
 	/* reset pdma state */
 	vssc->sc_rintr = NULL;
 	vssc->sc_rarg = 0;
@@ -324,7 +321,6 @@ vsaudio_onopen(struct am7930_softc *sc)
 
 	vssc->sc_rdata = NULL;
 	vssc->sc_pdata = NULL;
-	mutex_spin_exit(&vssc->sc_lock);
 }
 
 void
@@ -345,7 +341,6 @@ vsaudio_start_output(void *addr, void *p, int cc,
 
 	DPRINTFN(1, ("sa_start_output: cc=%d %p (%p)\n", cc, intr, arg));
 
-	mutex_spin_enter(&sc->sc_lock);
 	vsaudio_codec_iwrite(&sc->sc_am7930,
 	    AM7930_IREG_INIT, AM7930_INIT_PMS_ACTIVE);
 	DPRINTF(("sa_start_output: started intrs.\n"));
@@ -353,7 +348,6 @@ vsaudio_start_output(void *addr, void *p, int cc,
 	sc->sc_parg = arg;
 	sc->sc_au.au_pdata = p;
 	sc->sc_au.au_pend = (char *)p + cc - 1;
-	mutex_spin_exit(&sc->sc_lock);
 	return 0;
 }
 
@@ -368,7 +362,6 @@ vsaudio_start_input(void *addr, void *p, int cc,
 
 	DPRINTFN(1, ("sa_start_input: cc=%d %p (%p)\n", cc, intr, arg));
 
-	mutex_spin_enter(&sc->sc_lock);
 	vsaudio_codec_iwrite(&sc->sc_am7930,
 	    AM7930_IREG_INIT, AM7930_INIT_PMS_ACTIVE);
 
@@ -376,7 +369,6 @@ vsaudio_start_input(void *addr, void *p, int cc,
 	sc->sc_rarg = arg;
 	sc->sc_au.au_rdata = p;
 	sc->sc_au.au_rend = (char *)p + cc -1;
-	mutex_spin_exit(&sc->sc_lock);
 	DPRINTF(("sa_start_input: started intrs.\n"));
 	return 0;
 }
@@ -392,13 +384,13 @@ vsaudio_hwintr(void *v)
 
 	sc = v;
 	au = &sc->sc_au;
-	mutex_spin_enter(&sc->sc_lock);
+	mutex_spin_enter(&sc->sc_am7930.sc_intr_lock);
 	/* clear interrupt */
 	k = vsaudio_codec_dread(sc, AM7930_DREG_IR);
 #if 0   /* interrupt is not shared, this shouldn't happen */
 	if ((k & (AM7930_IR_DTTHRSH | AM7930_IR_DRTHRSH | AM7930_IR_DSRI |
 	    AM7930_IR_DERI | AM7930_IR_BBUFF)) == 0) {
-		mtx_leave(&audio_lock);
+		mutex_spin_exit(&sc->sc_am7930.sc_intr_lock);
 		return 0;
 	}
 #endif
@@ -425,7 +417,7 @@ vsaudio_hwintr(void *v)
 			softint_schedule(sc->sc_sicookie);
 		}
 	}
-	mutex_spin_exit(&sc->sc_lock);
+	mutex_spin_exit(&sc->sc_am7930.sc_intr_lock);
 }
 
 void

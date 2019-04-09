@@ -97,7 +97,6 @@ struct audioamd_softc {
 	struct  auio sc_au;		/* recv and xmit buffers, etc */
 #define sc_intrcnt	sc_au.au_intrcnt	/* statistics */
 	void	*sc_sicookie;		/* softintr(9) cookie */
-	kmutex_t	sc_lock;
 };
 
 int	audioamd_mainbus_match(device_t, cfdata_t, void *);
@@ -298,8 +297,6 @@ audioamd_attach(struct audioamd_softc *sc, int pri)
 	 */
 	self = sc->sc_am7930.sc_dev;
 	sc->sc_am7930.sc_glue = &audioamd_glue;
-	mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_HIGH);
-
 	am7930_init(&sc->sc_am7930, AUDIOAMD_POLL_MODE);
 
 	auiop = &sc->sc_au;
@@ -341,14 +338,12 @@ audioamd_onopen(struct am7930_softc *sc)
 	mdsc = (struct audioamd_softc *)sc;
 
 	/* reset pdma state */
-	mutex_spin_enter(&mdsc->sc_lock);
 	mdsc->sc_rintr = 0;
 	mdsc->sc_rarg = 0;
 	mdsc->sc_pintr = 0;
 	mdsc->sc_parg = 0;
 	mdsc->sc_au.au_rdata = 0;
 	mdsc->sc_au.au_pdata = 0;
-	mutex_spin_exit(&mdsc->sc_lock);
 }
 
 
@@ -369,14 +364,12 @@ audioamd_start_output(void *addr, void *p, int cc,
 	DPRINTFN(1, ("sa_start_output: cc=%d %p (%p)\n", cc, intr, arg));
 	sc = addr;
 
-	mutex_spin_enter(&sc->sc_lock);
 	audioamd_codec_iwrite(&sc->sc_am7930,
 	    AM7930_IREG_INIT, AM7930_INIT_PMS_ACTIVE);
 	sc->sc_pintr = intr;
 	sc->sc_parg = arg;
 	sc->sc_au.au_pdata = p;
 	sc->sc_au.au_pend = (char *)p + cc - 1;
-	mutex_spin_exit(&sc->sc_lock);
 
 	DPRINTF(("sa_start_output: started intrs.\n"));
 	return(0);
@@ -391,14 +384,12 @@ audioamd_start_input(void *addr, void *p, int cc,
 	DPRINTFN(1, ("sa_start_input: cc=%d %p (%p)\n", cc, intr, arg));
 	sc = addr;
 
-	mutex_spin_enter(&sc->sc_lock);
 	audioamd_codec_iwrite(&sc->sc_am7930,
 	    AM7930_IREG_INIT, AM7930_INIT_PMS_ACTIVE);
 	sc->sc_rintr = intr;
 	sc->sc_rarg = arg;
 	sc->sc_au.au_rdata = p;
 	sc->sc_au.au_rend = (char *)p + cc -1;
-	mutex_spin_exit(&sc->sc_lock);
 
 	DPRINTF(("sa_start_input: started intrs.\n"));
 
@@ -420,13 +411,13 @@ am7930hwintr(void *v)
 
 	sc = v;
 	au = &sc->sc_au;
-	mutex_spin_enter(&sc->sc_lock);
+	mutex_spin_enter(&sc->sc_am7930.sc_intr_lock);
 
 	/* clear interrupt */
 	k = audioamd_codec_dread(sc, AM7930_DREG_IR);
 	if ((k & (AM7930_IR_DTTHRSH|AM7930_IR_DRTHRSH|AM7930_IR_DSRI|
 		  AM7930_IR_DERI|AM7930_IR_BBUFF)) == 0) {
-		mutex_spin_exit(&sc->sc_lock);
+		mutex_spin_exit(&sc->sc_am7930.sc_intr_lock);
 		return 0;
 	}
 
@@ -455,7 +446,7 @@ am7930hwintr(void *v)
 	}
 
 	au->au_intrcnt.ev_count++;
-	mutex_spin_exit(&sc->sc_lock);
+	mutex_spin_exit(&sc->sc_am7930.sc_intr_lock);
 
 	return 1;
 }
@@ -472,7 +463,7 @@ am7930swintr(void *sc0)
 
 	au = &sc->sc_au;
 
-	mutex_spin_enter(&sc->sc_am7930.sc_lock);
+	mutex_spin_enter(&sc->sc_am7930.sc_intr_lock);
 	if (au->au_rdata > au->au_rend && sc->sc_rintr != NULL) {
 		(*sc->sc_rintr)(sc->sc_rarg);
 	}
@@ -480,7 +471,7 @@ am7930swintr(void *sc0)
 	if (pint)
 		(*sc->sc_pintr)(sc->sc_parg);
 
-	mutex_spin_exit(&sc->sc_am7930.sc_lock);
+	mutex_spin_exit(&sc->sc_am7930.sc_intr_lock);
 }
 
 
