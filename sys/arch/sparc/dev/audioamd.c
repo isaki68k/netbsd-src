@@ -126,16 +126,12 @@ uint8_t	audioamd_codec_dread(struct audioamd_softc *, int);
 void	audioamd_codec_iwrite(struct am7930_softc *, int, uint8_t);
 void	audioamd_codec_iwrite16(struct am7930_softc *, int, uint16_t);
 void	audioamd_codec_dwrite(struct audioamd_softc *, int, uint8_t);
-void	audioamd_onopen(struct am7930_softc *);
-void	audioamd_onclose(struct am7930_softc *);
 
 struct am7930_glue audioamd_glue = {
 	audioamd_codec_iread,
 	audioamd_codec_iwrite,
 	audioamd_codec_iread16,
 	audioamd_codec_iwrite16,
-	audioamd_onopen,
-	audioamd_onclose,
 #if !defined(AUDIO2)
 	0,
 	0,
@@ -146,14 +142,16 @@ struct am7930_glue audioamd_glue = {
 /*
  * Define our interface to the higher level audio driver.
  */
+int	audioamd_open(void *, int);
+void	audioamd_close(void *);
 int	audioamd_start_output(void *, void *, int, void (*)(void *), void *);
 int	audioamd_start_input(void *, void *, int, void (*)(void *), void *);
 int	audioamd_getdev(void *, struct audio_device *);
 void	audioamd_get_locks(void *opaque, kmutex_t **intr, kmutex_t **thread);
 
 const struct audio_hw_if sa_hw_if = {
-	.open			= am7930_open,
-	.close			= am7930_close,
+	.open			= audioamd_open,
+	.close			= audioamd_close,
 #if defined(AUDIO2)
 	.query_format		= am7930_query_format,
 	.set_format		= am7930_set_format,
@@ -330,29 +328,33 @@ audioamd_attach(struct audioamd_softc *sc, int pri)
 }
 
 
-void
-audioamd_onopen(struct am7930_softc *sc)
+int
+audioamd_open(void *addr, int flags)
 {
-	struct audioamd_softc *mdsc;
+	struct audioamd_softc *sc;
 
-	mdsc = (struct audioamd_softc *)sc;
+	sc = addr;
 
 	/* reset pdma state */
-	mdsc->sc_rintr = 0;
-	mdsc->sc_rarg = 0;
-	mdsc->sc_pintr = 0;
-	mdsc->sc_parg = 0;
-	mdsc->sc_au.au_rdata = 0;
-	mdsc->sc_au.au_pdata = 0;
+	sc->sc_rintr = 0;
+	sc->sc_rarg = 0;
+	sc->sc_pintr = 0;
+	sc->sc_parg = 0;
+	sc->sc_au.au_rdata = 0;
+	sc->sc_au.au_pdata = 0;
+
+	return 0;
 }
 
-
 void
-audioamd_onclose(struct am7930_softc *sc)
+audioamd_close(void *addr)
 {
+	struct audioamd_softc *sc;
+
+	sc = addr;
 	/* On sparc, just do the chipset-level halt. */
-	am7930_halt_input(sc);
-	am7930_halt_output(sc);
+	am7930_halt_input(&sc->sc_am7930);
+	am7930_halt_output(&sc->sc_am7930);
 }
 
 int

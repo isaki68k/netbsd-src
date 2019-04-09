@@ -114,8 +114,6 @@ static uint8_t	bba_codec_iread(struct am7930_softc *, int);
 static uint16_t	bba_codec_iread16(struct am7930_softc *, int);
 static void	bba_codec_iwrite(struct am7930_softc *, int, uint8_t);
 static void	bba_codec_iwrite16(struct am7930_softc *, int, uint16_t);
-static void	bba_onopen(struct am7930_softc *);
-static void	bba_onclose(struct am7930_softc *);
 
 #if !defined(AUDIO2)
 static stream_filter_factory_t bba_output_conv;
@@ -131,8 +129,6 @@ struct am7930_glue bba_glue = {
 	bba_codec_iwrite,
 	bba_codec_iread16,
 	bba_codec_iwrite16,
-	bba_onopen,
-	bba_onclose,
 #if !defined(AUDIO2)
 	4,
 	bba_input_conv,
@@ -171,8 +167,6 @@ static void	bba_get_locks(void *opaque, kmutex_t **intr,
 			      kmutex_t **thread);
 
 static const struct audio_hw_if sa_hw_if = {
-	.open			= am7930_open,
-	.close			= am7930_close,
 #if defined(AUDIO2)
 	.query_format		= bba_query_format,
 	.set_format		= bba_set_format,
@@ -279,18 +273,6 @@ bba_attach(device_t parent, device_t self, void *aux)
 	    bba_intr, sc);
 
 	audio_attach_mi(&sa_hw_if, asc, self);
-}
-
-
-static void
-bba_onopen(struct am7930_softc *sc)
-{
-}
-
-
-static void
-bba_onclose(struct am7930_softc *sc)
-{
 }
 
 

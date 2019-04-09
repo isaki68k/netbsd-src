@@ -150,8 +150,6 @@ uint8_t	vsaudio_codec_dread(struct vsaudio_softc *, int);
 void	vsaudio_codec_iwrite(struct am7930_softc *, int, uint8_t);
 void	vsaudio_codec_iwrite16(struct am7930_softc *, int, uint16_t);
 void	vsaudio_codec_dwrite(struct vsaudio_softc *, int, uint8_t);
-void	vsaudio_onopen(struct am7930_softc *);
-void	vsaudio_onclose(struct am7930_softc *);
 
 /*
 static stream_filter_factory_t vsaudio_output_conv;
@@ -167,8 +165,6 @@ struct am7930_glue vsaudio_glue = {
 	vsaudio_codec_iwrite,
 	vsaudio_codec_iread16,
 	vsaudio_codec_iwrite16,
-	vsaudio_onopen,
-	vsaudio_onclose,
 #if !defined(AUDIO2)
 	0,
 	/*vsaudio_input_conv*/0,
@@ -179,14 +175,16 @@ struct am7930_glue vsaudio_glue = {
 /*
  * Interface to the MI audio layer.
  */
+int	vsaudio_open(void *, int);
+void	vsaudio_close(void *);
 int	vsaudio_start_output(void *, void *, int, void (*)(void *), void *);
 int	vsaudio_start_input(void *, void *, int, void (*)(void *), void *);
 int	vsaudio_getdev(void *, struct audio_device *);
 void	vsaudio_get_locks(void *opaque, kmutex_t **intr, kmutex_t **thread);
 
 struct audio_hw_if vsaudio_hw_if = {
-	.open			= am7930_open,
-	.close			= am7930_close,
+	.open			= vsaudio_open,
+	.close			= vsaudio_close,
 #if defined(AUDIO2)
 	.query_format		= am7930_query_format,
 	.set_format		= am7930_set_format,
@@ -308,26 +306,30 @@ vsaudio_attach(device_t parent, device_t self, void *aux)
 
 }
 
-void
-vsaudio_onopen(struct am7930_softc *sc)
+int
+vsaudio_open(void *addr, int flags)
 {
-	struct vsaudio_softc *vssc = (struct vsaudio_softc *)sc;
+	struct vsaudio_softc *sc = addr;
 
 	/* reset pdma state */
-	vssc->sc_rintr = NULL;
-	vssc->sc_rarg = 0;
-	vssc->sc_pintr = NULL;
-	vssc->sc_parg = 0;
+	sc->sc_rintr = NULL;
+	sc->sc_rarg = 0;
+	sc->sc_pintr = NULL;
+	sc->sc_parg = 0;
 
-	vssc->sc_rdata = NULL;
-	vssc->sc_pdata = NULL;
+	sc->sc_rdata = NULL;
+	sc->sc_pdata = NULL;
+
+	return 0;
 }
 
 void
-vsaudio_onclose(struct am7930_softc *sc)
+vsaudio_close(void *addr)
 {
-	am7930_halt_input(sc);
-	am7930_halt_output(sc);
+	struct vsaudio_softc *sc = addr;
+
+	am7930_halt_input(&sc->sc_am7930);
+	am7930_halt_output(&sc->sc_am7930);
 }
 
 /*

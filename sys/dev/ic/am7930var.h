@@ -7,8 +7,6 @@ struct am7930_glue {
 	void	(*codec_iwrite)(struct am7930_softc *sc, int, uint8_t);
 	uint16_t	(*codec_iread16)(struct am7930_softc *sc, int);
 	void	(*codec_iwrite16)(struct am7930_softc *sc, int, uint16_t);
-	void	(*onopen)(struct am7930_softc *sc);
-	void	(*onclose)(struct am7930_softc *sc);
 #if !defined(AUDIO2)
 	int	factor;
 	stream_filter_factory_t *input_conv;
@@ -70,8 +68,6 @@ struct audio_device;
 struct audio_encoding;
 struct audio_params;
 
-int	am7930_open(void *, int);
-void	am7930_close(void *);
 #if defined(AUDIO2)
 int	am7930_query_format(void *, audio_format_query_t *);
 int	am7930_set_format(void *, int,

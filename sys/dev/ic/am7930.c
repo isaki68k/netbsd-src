@@ -210,29 +210,6 @@ am7930_init(struct am7930_softc *sc, int flag)
 	mutex_init(&sc->sc_intr_lock, MUTEX_DEFAULT, IPL_SCHED);
 }
 
-int
-am7930_open(void *addr, int flags)
-{
-	struct am7930_softc *sc;
-
-	sc = addr;
-	DPRINTF(("sa_open: unit %p\n", sc));
-	sc->sc_glue->onopen(sc);
-	DPRINTF(("saopen: ok -> sc=%p\n",sc));
-	return 0;
-}
-
-void
-am7930_close(void *addr)
-{
-	struct am7930_softc *sc;
-
-	sc = addr;
-	DPRINTF(("sa_close: sc=%p\n", sc));
-	sc->sc_glue->onclose(sc);
-	DPRINTF(("sa_close: closed.\n"));
-}
-
 #if defined(AUDIO2)
 int
 am7930_query_format(void *addr, audio_format_query_t *afp)
