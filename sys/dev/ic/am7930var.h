@@ -80,8 +80,8 @@ int	am7930_set_params(void *, int, int, audio_params_t *,
 int	am7930_round_blocksize(void *, int, int, const audio_params_t *);
 #endif
 int	am7930_commit_settings(void *);
-int	am7930_halt_output(void *);
-int	am7930_halt_input(void *);
+int	am7930_halt_output(struct am7930_softc *);
+int	am7930_halt_input(struct am7930_softc *);
 int	am7930_getdev(void *, struct audio_device *);
 int	am7930_get_props(void *);
 int	am7930_set_port(void *, mixer_ctrl_t *);

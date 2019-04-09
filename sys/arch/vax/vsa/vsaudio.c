@@ -179,6 +179,8 @@ int	vsaudio_open(void *, int);
 void	vsaudio_close(void *);
 int	vsaudio_start_output(void *, void *, int, void (*)(void *), void *);
 int	vsaudio_start_input(void *, void *, int, void (*)(void *), void *);
+int	vsaudio_halt_output(void *);
+int	vsaudio_halt_input(void *);
 int	vsaudio_getdev(void *, struct audio_device *);
 void	vsaudio_get_locks(void *opaque, kmutex_t **intr, kmutex_t **thread);
 
@@ -196,8 +198,8 @@ struct audio_hw_if vsaudio_hw_if = {
 	.commit_settings	= am7930_commit_settings,
 	.start_output		= vsaudio_start_output,
 	.start_input		= vsaudio_start_input,
-	.halt_output		= am7930_halt_output,
-	.halt_input		= am7930_halt_input,
+	.halt_output		= vsaudio_halt_output,
+	.halt_input		= vsaudio_halt_input,
 	.getdev			= vsaudio_getdev,
 	.set_port		= am7930_set_port,
 	.get_port		= am7930_get_port,
@@ -328,8 +330,8 @@ vsaudio_close(void *addr)
 {
 	struct vsaudio_softc *sc = addr;
 
-	am7930_halt_input(&sc->sc_am7930);
-	am7930_halt_output(&sc->sc_am7930);
+	vsaudio_halt_input(sc);
+	vsaudio_halt_output(sc);
 }
 
 /*
@@ -373,6 +375,22 @@ vsaudio_start_input(void *addr, void *p, int cc,
 	sc->sc_au.au_rend = (char *)p + cc -1;
 	DPRINTF(("sa_start_input: started intrs.\n"));
 	return 0;
+}
+
+int
+vsaudio_halt_output(void *addr)
+{
+	struct vsaudio_softc *sc = addr;
+
+	return am7930_halt_output(&sc->sc_am7930);
+}
+
+int
+vsaudio_halt_input(void *addr)
+{
+	struct vsaudio_softc *sc = addr;
+
+	return am7930_halt_input(&sc->sc_am7930);
 }
 
 

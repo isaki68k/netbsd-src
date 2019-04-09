@@ -146,6 +146,8 @@ int	audioamd_open(void *, int);
 void	audioamd_close(void *);
 int	audioamd_start_output(void *, void *, int, void (*)(void *), void *);
 int	audioamd_start_input(void *, void *, int, void (*)(void *), void *);
+int	audioamd_halt_output(void *);
+int	audioamd_halt_input(void *);
 int	audioamd_getdev(void *, struct audio_device *);
 void	audioamd_get_locks(void *opaque, kmutex_t **intr, kmutex_t **thread);
 
@@ -163,8 +165,8 @@ const struct audio_hw_if sa_hw_if = {
 	.commit_settings	= am7930_commit_settings,
 	.start_output		= audioamd_start_output,	/* md */
 	.start_input		= audioamd_start_input,		/* md */
-	.halt_output		= am7930_halt_output,
-	.halt_input		= am7930_halt_input,
+	.halt_output		= audioamd_halt_output,
+	.halt_input		= audioamd_halt_input,
 	.getdev			= audioamd_getdev,
 	.set_port		= am7930_set_port,
 	.get_port		= am7930_get_port,
@@ -353,8 +355,8 @@ audioamd_close(void *addr)
 
 	sc = addr;
 	/* On sparc, just do the chipset-level halt. */
-	am7930_halt_input(&sc->sc_am7930);
-	am7930_halt_output(&sc->sc_am7930);
+	audioamd_halt_input(sc);
+	audioamd_halt_output(sc);
 }
 
 int
@@ -396,6 +398,26 @@ audioamd_start_input(void *addr, void *p, int cc,
 	DPRINTF(("sa_start_input: started intrs.\n"));
 
 	return(0);
+}
+
+int
+audioamd_halt_output(void *addr)
+{
+	struct audioamd_softc *sc;
+
+	sc = addr;
+
+	return am7930_halt_output(&sc->sc_am7930);
+}
+
+int
+audioamd_halt_input(void *addr)
+{
+	struct audioamd_softc *sc;
+
+	sc = addr;
+
+	return am7930_halt_input(&sc->sc_am7930);
 }
 
 

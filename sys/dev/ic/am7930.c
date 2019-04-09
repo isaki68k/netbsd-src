@@ -381,24 +381,22 @@ am7930_commit_settings(void *addr)
 	return 0;
 }
 
+/* It should be called from MD halt_output() */
 int
-am7930_halt_output(void *addr)
+am7930_halt_output(struct am7930_softc *sc)
 {
-	struct am7930_softc *sc;
 
-	sc = addr;
 	/* XXX only halt, if input is also halted ?? */
 	AM7930_IWRITE(sc, AM7930_IREG_INIT,
 	    AM7930_INIT_PMS_ACTIVE | AM7930_INIT_INT_DISABLE);
 	return 0;
 }
 
+/* It should be called from MD halt_input() */
 int
-am7930_halt_input(void *addr)
+am7930_halt_input(struct am7930_softc *sc)
 {
-	struct am7930_softc *sc;
 
-	sc = addr;
 	/* XXX only halt, if output is also halted ?? */
 	AM7930_IWRITE(sc, AM7930_IREG_INIT,
 	    AM7930_INIT_PMS_ACTIVE | AM7930_INIT_INT_DISABLE);
