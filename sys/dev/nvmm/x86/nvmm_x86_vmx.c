@@ -1,4 +1,4 @@
-/*	$NetBSD: nvmm_x86_vmx.c,v 1.20 2019/03/21 20:21:41 maxv Exp $	*/
+/*	$NetBSD: nvmm_x86_vmx.c,v 1.25 2019/04/07 14:28:50 maxv Exp $	*/
 
 /*
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nvmm_x86_vmx.c,v 1.20 2019/03/21 20:21:41 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nvmm_x86_vmx.c,v 1.25 2019/04/07 14:28:50 maxv Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -205,6 +205,7 @@ int vmx_vmresume(uint64_t *gprs);
 #define VMCS_VIRTUAL_EXCEPTION			0x0000202A
 #define VMCS_XSS_EXIT_BITMAP			0x0000202C
 #define VMCS_ENCLS_EXIT_BITMAP			0x0000202E
+#define VMCS_SUBPAGE_PERM_TABLE_PTR		0x00002030
 #define VMCS_TSC_MULTIPLIER			0x00002032
 /* 64-bit read-only fields */
 #define VMCS_GUEST_PHYSICAL_ADDRESS		0x00002400
@@ -229,7 +230,7 @@ int vmx_vmresume(uint64_t *gprs);
 #define		PIN_CTLS_NMI_EXITING		__BIT(3)
 #define		PIN_CTLS_VIRTUAL_NMIS		__BIT(5)
 #define		PIN_CTLS_ACTIVATE_PREEMPT_TIMER	__BIT(6)
-#define		PIN_CTLS_PROCESS_POSTEd_INTS	__BIT(7)
+#define		PIN_CTLS_PROCESS_POSTED_INTS	__BIT(7)
 #define VMCS_PROCBASED_CTLS			0x00004002
 #define		PROC_CTLS_INT_WINDOW_EXITING	__BIT(2)
 #define		PROC_CTLS_USE_TSC_OFFSETTING	__BIT(3)
@@ -319,7 +320,9 @@ int vmx_vmresume(uint64_t *gprs);
 #define		PROC_CTLS2_CONCEAL_VMX_FROM_PT	__BIT(19)
 #define		PROC_CTLS2_XSAVES_ENABLE	__BIT(20)
 #define		PROC_CTLS2_MODE_BASED_EXEC_EPT	__BIT(22)
+#define		PROC_CTLS2_SUBPAGE_PERMISSIONS	__BIT(23)
 #define		PROC_CTLS2_USE_TSC_SCALING	__BIT(25)
+#define		PROC_CTLS2_ENCLV_EXITING	__BIT(28)
 #define VMCS_PLE_GAP				0x00004020
 #define VMCS_PLE_WINDOW				0x00004022
 /* 32-bit read-only data fields */
@@ -642,6 +645,7 @@ struct vmx_cpudata {
 	/* General */
 	uint64_t asid;
 	bool gtlb_want_flush;
+	bool gtsc_want_update;
 	uint64_t vcpu_htlb_gen;
 	kcpuset_t *htlb_want_flush;
 
@@ -666,9 +670,10 @@ struct vmx_cpudata {
 	bool ts_set;
 	struct xsave_header hfpu __aligned(64);
 
-	/* Event state */
+	/* Intr state */
 	bool int_window_exit;
 	bool nmi_window_exit;
+	bool evt_pending;
 
 	/* Guest state */
 	struct msr_entry *gmsr;
@@ -679,7 +684,7 @@ struct vmx_cpudata {
 	uint64_t gxcr0;
 	uint64_t gprs[NVMM_X64_NGPR];
 	uint64_t drs[NVMM_X64_NDR];
-	uint64_t tsc_offset;
+	uint64_t gtsc;
 	struct xsave_header gfpu __aligned(64);
 };
 
@@ -991,6 +996,8 @@ vmx_vcpu_inject(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 	vmx_vmwrite(VMCS_ENTRY_INTR_INFO, info);
 	vmx_vmwrite(VMCS_ENTRY_EXCEPTION_ERROR, event->u.error);
 
+	cpudata->evt_pending = true;
+
 out:
 	vmx_vmcs_leave(vcpu);
 	return ret;
@@ -1162,6 +1169,8 @@ vmx_exit_cpuid(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 	cpudata->gprs[NVMM_X64_GPR_RCX] = descs[2];
 	cpudata->gprs[NVMM_X64_GPR_RDX] = descs[3];
 
+	vmx_inkernel_handle_cpuid(vcpu, eax, ecx);
+
 	for (i = 0; i < VMX_NCPUIDS; i++) {
 		cpuid = &machdata->cpuid[i];
 		if (!machdata->cpuidpresent[i]) {
@@ -1185,9 +1194,6 @@ vmx_exit_cpuid(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 
 		break;
 	}
-
-	/* Overwrite non-tunable leaves. */
-	vmx_inkernel_handle_cpuid(vcpu, eax, ecx);
 
 	vmx_inkernel_advance();
 	exit->reason = NVMM_EXIT_NONE;
@@ -1493,13 +1499,16 @@ vmx_inkernel_handle_msr(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 		break;
 	case NVMM_EXIT_MSR_WRMSR:
 		if (exit->u.msr.msr == MSR_TSC) {
-			cpudata->tsc_offset = exit->u.msr.val - cpu_counter();
-			vmx_vmwrite(VMCS_TSC_OFFSET, cpudata->tsc_offset +
-			    curcpu()->ci_data.cpu_cc_skew);
+			cpudata->gtsc = exit->u.msr.val;
+			cpudata->gtsc_want_update = true;
 			goto handled;
 		}
 		if (exit->u.msr.msr == MSR_CR_PAT) {
-			vmx_vmwrite(VMCS_GUEST_IA32_PAT, exit->u.msr.val);
+			val = exit->u.msr.val;
+			if (__predict_false(!nvmm_x86_pat_validate(val))) {
+				goto error;
+			}
+			vmx_vmwrite(VMCS_GUEST_IA32_PAT, val);
 			goto handled;
 		}
 		if (exit->u.msr.msr == MSR_MISC_ENABLE) {
@@ -1518,6 +1527,10 @@ vmx_inkernel_handle_msr(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 
 handled:
 	vmx_inkernel_advance();
+	return true;
+
+error:
+	vmx_inject_gp(mach, vcpu);
 	return true;
 }
 
@@ -1793,8 +1806,7 @@ vmx_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 		vmx_vmwrite(VMCS_HOST_TR_BASE, (uint64_t)ci->ci_tss);
 		vmx_vmwrite(VMCS_HOST_GDTR_BASE, (uint64_t)ci->ci_gdt);
 		vmx_vmwrite(VMCS_HOST_GS_BASE, rdmsr(MSR_GSBASE));
-		vmx_vmwrite(VMCS_TSC_OFFSET, cpudata->tsc_offset +
-		    curcpu()->ci_data.cpu_cc_skew);
+		cpudata->gtsc_want_update = true;
 		vcpu->hcpu_last = hcpu;
 	}
 
@@ -1807,6 +1819,11 @@ vmx_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 			vpid_desc.addr = 0;
 			vmx_invvpid(vmx_tlb_flush_op, &vpid_desc);
 			cpudata->gtlb_want_flush = false;
+		}
+
+		if (__predict_false(cpudata->gtsc_want_update)) {
+			vmx_vmwrite(VMCS_TSC_OFFSET, cpudata->gtsc - rdtsc());
+			cpudata->gtsc_want_update = false;
 		}
 
 		s = splhigh();
@@ -1827,6 +1844,7 @@ vmx_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 			exit->reason = NVMM_EXIT_INVALID;
 			break;
 		}
+		cpudata->evt_pending = false;
 
 		launched = true;
 
@@ -1920,6 +1938,9 @@ vmx_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 
 	cpudata->vmcs_launched = launched;
 
+	vmx_vmread(VMCS_TSC_OFFSET, &cpudata->gtsc);
+	cpudata->gtsc += rdtsc();
+
 	vmx_vcpu_guest_misc_leave(vcpu);
 	vmx_vcpu_guest_dbregs_leave(vcpu);
 
@@ -1933,6 +1954,8 @@ vmx_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 	    cpudata->int_window_exit;
 	exit->exitstate[NVMM_X64_EXITSTATE_NMI_WINDOW_EXIT] =
 	    cpudata->nmi_window_exit;
+	exit->exitstate[NVMM_X64_EXITSTATE_EVT_PENDING] =
+	    cpudata->evt_pending;
 
 	vmx_vmcs_leave(vcpu);
 
@@ -2200,6 +2223,9 @@ vmx_vcpu_setstate(struct nvmm_cpu *vcpu, const void *data, uint64_t flags)
 		vmx_vmwrite(VMCS_GUEST_IA32_SYSENTER_EIP,
 		    state->msrs[NVMM_X64_MSR_SYSENTER_EIP]);
 
+		cpudata->gtsc = state->msrs[NVMM_X64_MSR_TSC];
+		cpudata->gtsc_want_update = true;
+
 		/* ENTRY_CTLS_LONG_MODE must match EFER_LMA. */
 		vmx_vmread(VMCS_ENTRY_CTLS, &ctls1);
 		if (state->msrs[NVMM_X64_MSR_EFER] & EFER_LMA) {
@@ -2210,21 +2236,21 @@ vmx_vcpu_setstate(struct nvmm_cpu *vcpu, const void *data, uint64_t flags)
 		vmx_vmwrite(VMCS_ENTRY_CTLS, ctls1);
 	}
 
-	if (flags & NVMM_X64_STATE_MISC) {
+	if (flags & NVMM_X64_STATE_INTR) {
 		vmx_vmread(VMCS_GUEST_INTERRUPTIBILITY, &intstate);
 		intstate &= ~(INT_STATE_STI|INT_STATE_MOVSS);
-		if (state->misc[NVMM_X64_MISC_INT_SHADOW]) {
+		if (state->intr.int_shadow) {
 			intstate |= INT_STATE_MOVSS;
 		}
 		vmx_vmwrite(VMCS_GUEST_INTERRUPTIBILITY, intstate);
 
-		if (state->misc[NVMM_X64_MISC_INT_WINDOW_EXIT]) {
+		if (state->intr.int_window_exiting) {
 			vmx_event_waitexit_enable(vcpu, false);
 		} else {
 			vmx_event_waitexit_disable(vcpu, false);
 		}
 
-		if (state->misc[NVMM_X64_MISC_NMI_WINDOW_EXIT]) {
+		if (state->intr.nmi_window_exiting) {
 			vmx_event_waitexit_enable(vcpu, true);
 		} else {
 			vmx_event_waitexit_disable(vcpu, true);
@@ -2321,17 +2347,17 @@ vmx_vcpu_getstate(struct nvmm_cpu *vcpu, void *data, uint64_t flags)
 		    &state->msrs[NVMM_X64_MSR_SYSENTER_ESP]);
 		vmx_vmread(VMCS_GUEST_IA32_SYSENTER_EIP,
 		    &state->msrs[NVMM_X64_MSR_SYSENTER_EIP]);
+
+		state->msrs[NVMM_X64_MSR_TSC] = cpudata->gtsc;
 	}
 
-	if (flags & NVMM_X64_STATE_MISC) {
+	if (flags & NVMM_X64_STATE_INTR) {
 		vmx_vmread(VMCS_GUEST_INTERRUPTIBILITY, &intstate);
-		state->misc[NVMM_X64_MISC_INT_SHADOW] =
+		state->intr.int_shadow =
 		    (intstate & (INT_STATE_STI|INT_STATE_MOVSS)) != 0;
-
-		state->misc[NVMM_X64_MISC_INT_WINDOW_EXIT] =
-		    cpudata->int_window_exit;
-		state->misc[NVMM_X64_MISC_NMI_WINDOW_EXIT] =
-		    cpudata->nmi_window_exit;
+		state->intr.int_window_exiting = cpudata->int_window_exit;
+		state->intr.nmi_window_exiting = cpudata->nmi_window_exit;
+		state->intr.evt_pending = cpudata->evt_pending;
 	}
 
 	CTASSERT(sizeof(cpudata->gfpu.xsh_fxsave) == sizeof(state->fpu));
@@ -2500,9 +2526,6 @@ vmx_vcpu_init(struct nvmm_machine *mach, struct nvmm_cpu *vcpu)
 	/* Init XSAVE header. */
 	cpudata->gfpu.xsh_xstate_bv = vmx_xcr0_mask;
 	cpudata->gfpu.xsh_xcomp_bv = 0;
-
-	/* Set guest TSC to zero, more or less. */
-	cpudata->tsc_offset = -cpu_counter();
 
 	/* These MSRs are static. */
 	cpudata->star = rdmsr(MSR_STAR);

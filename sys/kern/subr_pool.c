@@ -1,4 +1,4 @@
-/*	$NetBSD: subr_pool.c,v 1.243 2019/03/18 20:34:48 maxv Exp $	*/
+/*	$NetBSD: subr_pool.c,v 1.248 2019/04/07 09:20:04 maxv Exp $	*/
 
 /*
  * Copyright (c) 1997, 1999, 2000, 2002, 2007, 2008, 2010, 2014, 2015, 2018
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_pool.c,v 1.243 2019/03/18 20:34:48 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_pool.c,v 1.248 2019/04/07 09:20:04 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddb.h"
@@ -81,11 +81,6 @@ TAILQ_HEAD(, pool) pool_head = TAILQ_HEAD_INITIALIZER(pool_head);
 static struct pool phpool[PHPOOL_MAX];
 #define	PHPOOL_FREELIST_NELEM(idx) \
 	(((idx) == 0) ? 0 : BITMAP_SIZE * (1 << (idx)))
-
-#ifdef POOL_SUBPAGE
-/* Pool of subpages for use by normal pools. */
-static struct pool psppool;
-#endif
 
 #if defined(KASAN)
 #define POOL_REDZONE
@@ -148,6 +143,8 @@ static kcondvar_t pool_busy;
 /* This lock protects initialization of a potentially shared pool allocator */
 static kmutex_t pool_allocator_lock;
 
+static unsigned int poolid_counter = 0;
+
 typedef uint32_t pool_item_bitmap_t;
 #define	BITMAP_SIZE	(CHAR_BIT * sizeof(pool_item_bitmap_t))
 #define	BITMAP_MASK	(BITMAP_SIZE - 1)
@@ -156,8 +153,17 @@ struct pool_item_header {
 	/* Page headers */
 	LIST_ENTRY(pool_item_header)
 				ph_pagelist;	/* pool page list */
-	SPLAY_ENTRY(pool_item_header)
-				ph_node;	/* Off-page page headers */
+	union {
+		/* !PR_PHINPAGE */
+		struct {
+			SPLAY_ENTRY(pool_item_header)
+				phu_node;	/* off-page page headers */
+		} phu_offpage;
+		/* PR_PHINPAGE */
+		struct {
+			unsigned int phu_poolid;
+		} phu_onpage;
+	} ph_u1;
 	void *			ph_page;	/* this page's address */
 	uint32_t		ph_time;	/* last referenced */
 	uint16_t		ph_nmissing;	/* # of chunks in use */
@@ -172,10 +178,12 @@ struct pool_item_header {
 		struct {
 			pool_item_bitmap_t phu_bitmap[1];
 		} phu_notouch;
-	} ph_u;
+	} ph_u2;
 };
-#define	ph_itemlist	ph_u.phu_normal.phu_itemlist
-#define	ph_bitmap	ph_u.phu_notouch.phu_bitmap
+#define ph_node		ph_u1.phu_offpage.phu_node
+#define ph_poolid	ph_u1.phu_onpage.phu_poolid
+#define ph_itemlist	ph_u2.phu_normal.phu_itemlist
+#define ph_bitmap	ph_u2.phu_notouch.phu_bitmap
 
 #define PHSIZE	ALIGN(sizeof(struct pool_item_header))
 
@@ -224,8 +232,6 @@ static struct pool pcg_normal_pool;
 static struct pool pcg_large_pool;
 static struct pool cache_pool;
 static struct pool cache_cpu_pool;
-
-pool_cache_t pnbuf_cache;	/* pathname buffer cache */
 
 /* List of all caches. */
 TAILQ_HEAD(,pool_cache) pool_cache_head =
@@ -351,7 +357,7 @@ pr_item_linkedlist_put(const struct pool *pp, struct pool_item_header *ph,
 		 * Mark the pool_item as valid. The rest is already
 		 * invalid.
 		 */
-		kasan_mark(pi, sizeof(*pi), sizeof(*pi));
+		kasan_mark(pi, sizeof(*pi), sizeof(*pi), 0);
 	}
 
 	LIST_INSERT_HEAD(&ph->ph_itemlist, pi, pi_list);
@@ -450,6 +456,11 @@ pr_find_pagehead(struct pool *pp, void *v)
 				panic("%s: [%s] item %p below item space",
 				    __func__, pp->pr_wchan, v);
 			}
+			if (__predict_false(ph->ph_poolid != pp->pr_poolid)) {
+				panic("%s: [%s] item %p poolid %u != %u",
+				    __func__, pp->pr_wchan, v, ph->ph_poolid,
+				    pp->pr_poolid);
+			}
 		} else {
 			tmp.ph_page = page;
 			ph = SPLAY_FIND(phtree, &pp->pr_phtree, &tmp);
@@ -502,8 +513,15 @@ pr_rmpage(struct pool *pp, struct pool_item_header *ph,
 	 * Unlink the page from the pool and queue it for release.
 	 */
 	LIST_REMOVE(ph, ph_pagelist);
-	if ((pp->pr_roflags & PR_PHINPAGE) == 0)
+	if (pp->pr_roflags & PR_PHINPAGE) {
+		if (__predict_false(ph->ph_poolid != pp->pr_poolid)) {
+			panic("%s: [%s] ph %p poolid %u != %u",
+			    __func__, pp->pr_wchan, ph, ph->ph_poolid,
+			    pp->pr_poolid);
+		}
+	} else {
 		SPLAY_REMOVE(phtree, &pp->pr_phtree, ph);
+	}
 	LIST_INSERT_HEAD(pq, ph, ph_pagelist);
 
 	pp->pr_npages--;
@@ -545,10 +563,6 @@ pool_subsystem_init(void)
 		pool_init(&phpool[idx], sz, 0, 0, 0,
 		    phpool_names[idx], &pool_allocator_meta, IPL_VM);
 	}
-#ifdef POOL_SUBPAGE
-	pool_init(&psppool, POOL_SUBPAGE, POOL_SUBPAGE, 0,
-	    PR_RECURSIVE, "psppool", &pool_allocator_meta, IPL_VM);
-#endif
 
 	size = sizeof(pcg_t) +
 	    (PCG_NOBJECTS_NORMAL - 1) * sizeof(pcgpair_t);
@@ -659,14 +673,7 @@ pool_init(struct pool *pp, size_t size, u_int align, u_int ioff, int flags,
 
 	if (palloc == NULL)
 		palloc = &pool_allocator_kmem;
-#ifdef POOL_SUBPAGE
-	if (size > palloc->pa_pagesz) {
-		if (palloc == &pool_allocator_kmem)
-			palloc = &pool_allocator_kmem_fullpage;
-		else if (palloc == &pool_allocator_nointr)
-			palloc = &pool_allocator_nointr_fullpage;
-	}
-#endif /* POOL_SUBPAGE */
+
 	if (!cold)
 		mutex_enter(&pool_allocator_lock);
 	if (palloc->pa_refcnt++ == 0) {
@@ -713,6 +720,7 @@ pool_init(struct pool *pp, size_t size, u_int align, u_int ioff, int flags,
 	pp->pr_align = align;
 	pp->pr_wchan = wchan;
 	pp->pr_alloc = palloc;
+	pp->pr_poolid = atomic_inc_uint_nv(&poolid_counter);
 	pp->pr_nitems = 0;
 	pp->pr_nout = 0;
 	pp->pr_hardlimit = UINT_MAX;
@@ -1314,7 +1322,9 @@ pool_prime_page(struct pool *pp, void *storage, struct pool_item_header *ph)
 	ph->ph_page = storage;
 	ph->ph_nmissing = 0;
 	ph->ph_time = time_uptime;
-	if ((pp->pr_roflags & PR_PHINPAGE) == 0)
+	if (pp->pr_roflags & PR_PHINPAGE)
+		ph->ph_poolid = pp->pr_poolid;
+	else
 		SPLAY_INSERT(phtree, &pp->pr_phtree, ph);
 
 	pp->pr_nidle++;
@@ -2119,16 +2129,6 @@ pool_cache_reclaim(pool_cache_t pc)
 static void
 pool_cache_destruct_object1(pool_cache_t pc, void *object)
 {
-	if (pc->pc_pool.pr_redzone) {
-		/*
-		 * The object is marked as invalid. Temporarily mark it as
-		 * valid for the destructor. pool_put below will re-mark it
-		 * as invalid.
-		 */
-		kasan_mark(object, pc->pc_pool.pr_reqsize,
-		    pc->pc_pool.pr_reqsize_with_redzone);
-	}
-
 	(*pc->pc_dtor)(pc->pc_arg, object);
 	pool_put(&pc->pc_pool, object);
 }
@@ -2386,7 +2386,6 @@ pool_cache_get_slow(pool_cache_cpu_t *cc, int s, void **objectp,
 	}
 
 	FREECHECK_OUT(&pc->pc_freecheck, object);
-	pool_redzone_fill(&pc->pc_pool, object);
 	pool_cache_kleak_fill(pc, object);
 	return false;
 }
@@ -2692,50 +2691,17 @@ pool_cache_transfer(pool_cache_t pc)
 void	*pool_page_alloc(struct pool *, int);
 void	pool_page_free(struct pool *, void *);
 
-#ifdef POOL_SUBPAGE
-struct pool_allocator pool_allocator_kmem_fullpage = {
-	.pa_alloc = pool_page_alloc,
-	.pa_free = pool_page_free,
-	.pa_pagesz = 0
-};
-#else
 struct pool_allocator pool_allocator_kmem = {
 	.pa_alloc = pool_page_alloc,
 	.pa_free = pool_page_free,
 	.pa_pagesz = 0
 };
-#endif
 
-#ifdef POOL_SUBPAGE
-struct pool_allocator pool_allocator_nointr_fullpage = {
-	.pa_alloc = pool_page_alloc,
-	.pa_free = pool_page_free,
-	.pa_pagesz = 0
-};
-#else
 struct pool_allocator pool_allocator_nointr = {
 	.pa_alloc = pool_page_alloc,
 	.pa_free = pool_page_free,
 	.pa_pagesz = 0
 };
-#endif
-
-#ifdef POOL_SUBPAGE
-void	*pool_subpage_alloc(struct pool *, int);
-void	pool_subpage_free(struct pool *, void *);
-
-struct pool_allocator pool_allocator_kmem = {
-	.pa_alloc = pool_subpage_alloc,
-	.pa_free = pool_subpage_free,
-	.pa_pagesz = POOL_SUBPAGE
-};
-
-struct pool_allocator pool_allocator_nointr = {
-	.pa_alloc = pool_subpage_alloc,
-	.pa_free = pool_subpage_free,
-	.pa_pagesz = POOL_SUBPAGE
-};
-#endif /* POOL_SUBPAGE */
 
 struct pool_allocator pool_allocator_big[] = {
 	{
@@ -2819,7 +2785,7 @@ pool_allocator_free(struct pool *pp, void *v)
 	struct pool_allocator *pa = pp->pr_alloc;
 
 	if (pp->pr_redzone) {
-		kasan_mark(v, pa->pa_pagesz, pa->pa_pagesz);
+		kasan_mark(v, pa->pa_pagesz, pa->pa_pagesz, 0);
 	}
 	(*pa->pa_free)(pp, v);
 }
@@ -2954,7 +2920,8 @@ pool_redzone_fill(struct pool *pp, void *p)
 	if (!pp->pr_redzone)
 		return;
 #ifdef KASAN
-	kasan_mark(p, pp->pr_reqsize, pp->pr_reqsize_with_redzone);
+	kasan_mark(p, pp->pr_reqsize, pp->pr_reqsize_with_redzone,
+	    KASAN_POOL_REDZONE);
 #else
 	uint8_t *cp, pat;
 	const uint8_t *ep;
@@ -2983,7 +2950,7 @@ pool_redzone_check(struct pool *pp, void *p)
 	if (!pp->pr_redzone)
 		return;
 #ifdef KASAN
-	kasan_mark(p, 0, pp->pr_reqsize_with_redzone);
+	kasan_mark(p, 0, pp->pr_reqsize_with_redzone, KASAN_POOL_FREED);
 #else
 	uint8_t *cp, pat, expected;
 	const uint8_t *ep;
@@ -3023,23 +2990,6 @@ pool_cache_redzone_check(pool_cache_t pc, void *p)
 }
 
 #endif /* POOL_REDZONE */
-
-
-#ifdef POOL_SUBPAGE
-/* Sub-page allocator, for machines with large hardware pages. */
-void *
-pool_subpage_alloc(struct pool *pp, int flags)
-{
-	return pool_get(&psppool, flags);
-}
-
-void
-pool_subpage_free(struct pool *pp, void *v)
-{
-	pool_put(&psppool, v);
-}
-
-#endif /* POOL_SUBPAGE */
 
 #if defined(DDB)
 static bool
