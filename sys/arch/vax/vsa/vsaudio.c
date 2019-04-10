@@ -100,10 +100,16 @@ struct auio {
 	bus_space_tag_t		au_bt;	/* bus tag */
 	bus_space_handle_t	au_bh;	/* handle to chip registers */
 
-	uint8_t		*au_rdata;	/* record data */
-	uint8_t		*au_rend;	/* end of record data */
-	uint8_t		*au_pdata;	/* play data */
-	uint8_t		*au_pend;	/* end of play data */
+	uint8_t		*au_rstart;	/* start of record buffer */
+	uint8_t		*au_rdata;	/* record data pointer */
+	uint8_t		*au_rend;	/* end of record buffer */
+	uint8_t		*au_rblkend;	/* end of record block */
+	uint		au_rblksize;	/* record block size */
+	uint8_t		*au_pstart;	/* start of play buffer */
+	uint8_t		*au_pdata;	/* play data pointer */
+	uint8_t		*au_pend;	/* end of play buffer */
+	uint8_t		*au_pblkend;	/* end of play block */
+	uint		au_pblksize;	/* play block size */
 	struct evcnt	au_intrcnt;	/* statistics */
 };
 
@@ -117,8 +123,12 @@ struct vsaudio_softc {
 	void	(*sc_pintr)(void*);	/* output completion intr handler */
 	void	*sc_parg;		/* arg for sc_pintr() */
 
+	int	sc_rintr_pending;
+	int	sc_pintr_pending;
+
 	struct	auio sc_au;		/* recv and xmit buffers, etc */
 #define sc_intrcnt sc_au.au_intrcnt	/* statistics */
+	void	*sc_sicookie;		/* softint(9) cookie */
 	int	sc_cvec;
 };
 
@@ -164,8 +174,10 @@ struct am7930_glue vsaudio_glue = {
  */
 int	vsaudio_open(void *, int);
 void	vsaudio_close(void *);
-int	vsaudio_start_output(void *, void *, int, void (*)(void *), void *);
-int	vsaudio_start_input(void *, void *, int, void (*)(void *), void *);
+int	vsaudio_trigger_output(void *, void *, void *, int, void (*)(void *),
+		void *, const audio_params_t *);
+int	vsaudio_trigger_input(void *, void *, void *, int, void (*)(void *),
+		void *, const audio_params_t *);
 int	vsaudio_halt_output(void *);
 int	vsaudio_halt_input(void *);
 int	vsaudio_getdev(void *, struct audio_device *);
@@ -182,8 +194,8 @@ struct audio_hw_if vsaudio_hw_if = {
 	.round_blocksize	= am7930_round_blocksize,
 #endif
 	.commit_settings	= am7930_commit_settings,
-	.start_output		= vsaudio_start_output,
-	.start_input		= vsaudio_start_input,
+	.trigger_output		= vsaudio_trigger_output,
+	.trigger_input		= vsaudio_trigger_input,
 	.halt_output		= vsaudio_halt_output,
 	.halt_input		= vsaudio_halt_input,
 	.getdev			= vsaudio_getdev,
@@ -202,6 +214,7 @@ struct audio_device vsaudio_device = {
 };
 
 void	vsaudio_hwintr(void *);
+void	vsaudio_swintr(void *);
 
 
 static int
@@ -277,6 +290,14 @@ vsaudio_attach(device_t parent, device_t self, void *aux)
 	evcnt_attach_dynamic(&sc->sc_intrcnt, EVCNT_TYPE_INTR, NULL,
 	    device_xname(self), "intr");
 
+	sc->sc_sicookie = softint_establish(SOFTINT_SERIAL,
+	    &vsaudio_swintr, sc);
+	if (sc->sc_sicookie == NULL) {
+		aprint_normal("\n%s: cannot establish software interrupt\n",
+		    device_xname(self));
+		return;
+	}
+
 	aprint_normal("\n");
 	audio_attach_mi(&vsaudio_hw_if, sc, self);
 
@@ -290,8 +311,10 @@ vsaudio_open(void *addr, int flags)
 	/* reset pdma state */
 	sc->sc_rintr = NULL;
 	sc->sc_rarg = 0;
+	sc->sc_rintr_pending = 0;
 	sc->sc_pintr = NULL;
 	sc->sc_parg = 0;
+	sc->sc_pintr_pending = 0;
 
 	return 0;
 }
@@ -305,46 +328,53 @@ vsaudio_close(void *addr)
 	vsaudio_halt_output(sc);
 }
 
-/*
- * this is called by interrupt code-path, don't lock
- */
 int
-vsaudio_start_output(void *addr, void *p, int cc,
-    void (*intr)(void *), void *arg)
+vsaudio_trigger_output(void *addr, void *start, void *end, int blksize,
+    void (*intr)(void *), void *arg, const audio_params_t *params)
 {
 	struct vsaudio_softc *sc = addr;
 
-	DPRINTFN(1, ("sa_start_output: cc=%d %p (%p)\n", cc, intr, arg));
+	DPRINTFN(1, ("sa_trigger_output: blksize=%d %p (%p)\n",
+	    blksize, intr, arg));
 
-	vsaudio_codec_iwrite(&sc->sc_am7930,
-	    AM7930_IREG_INIT, AM7930_INIT_PMS_ACTIVE);
-	DPRINTF(("sa_start_output: started intrs.\n"));
 	sc->sc_pintr = intr;
 	sc->sc_parg = arg;
-	sc->sc_au.au_pdata = p;
-	sc->sc_au.au_pend = (char *)p + cc;
+	sc->sc_au.au_pstart = start;
+	sc->sc_au.au_pend = end;
+	sc->sc_au.au_pblksize = blksize;
+	sc->sc_au.au_pdata = sc->sc_au.au_pstart;
+	sc->sc_au.au_pblkend = sc->sc_au.au_pstart + sc->sc_au.au_pblksize;
+
+	if (sc->sc_rintr == NULL) {
+		vsaudio_codec_iwrite(&sc->sc_am7930,
+		    AM7930_IREG_INIT, AM7930_INIT_PMS_ACTIVE);
+		DPRINTF(("sa_start_output: started intrs.\n"));
+	}
 	return 0;
 }
 
-/*
- * this is called by interrupt code-path, don't lock
- */
 int
-vsaudio_start_input(void *addr, void *p, int cc,
-    void (*intr)(void *), void *arg)
+vsaudio_trigger_input(void *addr, void *start, void *end, int blksize,
+    void (*intr)(void *), void *arg, const audio_params_t *params)
 {
 	struct vsaudio_softc *sc = addr;
 
-	DPRINTFN(1, ("sa_start_input: cc=%d %p (%p)\n", cc, intr, arg));
-
-	vsaudio_codec_iwrite(&sc->sc_am7930,
-	    AM7930_IREG_INIT, AM7930_INIT_PMS_ACTIVE);
+	DPRINTFN(1, ("sa_trigger_input: blksize=%d %p (%p)\n",
+	    blksize, intr, arg));
 
 	sc->sc_rintr = intr;
 	sc->sc_rarg = arg;
-	sc->sc_au.au_rdata = p;
-	sc->sc_au.au_rend = (char *)p + cc;
-	DPRINTF(("sa_start_input: started intrs.\n"));
+	sc->sc_au.au_rstart = start;
+	sc->sc_au.au_rend = end;
+	sc->sc_au.au_rblksize = blksize;
+	sc->sc_au.au_rdata = sc->sc_au.au_rstart;
+	sc->sc_au.au_rblkend = sc->sc_au.au_rstart + sc->sc_au.au_rblksize;
+
+	if (sc->sc_pintr == NULL) {
+		vsaudio_codec_iwrite(&sc->sc_am7930,
+		    AM7930_IREG_INIT, AM7930_INIT_PMS_ACTIVE);
+		DPRINTF(("sa_start_input: started intrs.\n"));
+	}
 	return 0;
 }
 
@@ -354,7 +384,12 @@ vsaudio_halt_output(void *addr)
 	struct vsaudio_softc *sc = addr;
 
 	sc->sc_pintr = NULL;
-	return am7930_halt_output(&sc->sc_am7930);
+	if (sc->sc_rintr == NULL) {
+		vsaudio_codec_iwrite(&sc->sc_am7930,
+		    AM7930_IREG_INIT,
+		    AM7930_INIT_PMS_ACTIVE | AM7930_INIT_INT_DISABLE);
+	}
+	return 0;
 }
 
 int
@@ -363,7 +398,12 @@ vsaudio_halt_input(void *addr)
 	struct vsaudio_softc *sc = addr;
 
 	sc->sc_rintr = NULL;
-	return am7930_halt_input(&sc->sc_am7930);
+	if (sc->sc_pintr == NULL) {
+		vsaudio_codec_iwrite(&sc->sc_am7930,
+		    AM7930_IREG_INIT,
+		    AM7930_INIT_PMS_ACTIVE | AM7930_INIT_INT_DISABLE);
+	}
+	return 0;
 }
 
 void
@@ -375,41 +415,60 @@ vsaudio_hwintr(void *v)
 
 	sc = v;
 	au = &sc->sc_au;
-	mutex_spin_enter(&sc->sc_am7930.sc_intr_lock);
+
 	/* clear interrupt */
 	k = vsaudio_codec_dread(sc, AM7930_DREG_IR);
 #if 0   /* interrupt is not shared, this shouldn't happen */
 	if ((k & (AM7930_IR_DTTHRSH | AM7930_IR_DRTHRSH | AM7930_IR_DSRI |
 	    AM7930_IR_DERI | AM7930_IR_BBUFF)) == 0) {
-		mutex_spin_exit(&sc->sc_am7930.sc_intr_lock);
 		return 0;
 	}
 #endif
 	/* receive incoming data */
 	if (sc->sc_rintr) {
-		KASSERT(au->au_rdata);
-		if (au->au_rdata < au->au_rend) {
-			*au->au_rdata++ = vsaudio_codec_dread(sc,
-			    AM7930_DREG_BBRB);
-			if (au->au_rdata == au->au_rend) {
-				(*sc->sc_rintr)(sc->sc_rarg);
+		*au->au_rdata++ = vsaudio_codec_dread(sc, AM7930_DREG_BBRB);
+		if (au->au_rdata == au->au_rblkend) {
+			if (au->au_rblkend == au->au_rend) {
+				au->au_rdata = au->au_rstart;
+				au->au_rblkend = au->au_rstart;
 			}
+			au->au_rblkend += au->au_rblksize;
+			sc->sc_rintr_pending = 1;
+			softint_schedule(sc->sc_sicookie);
 		}
 	}
 
 	/* send outgoing data */
 	if (sc->sc_pintr) {
-		KASSERT(au->au_pdata);
-		if (au->au_pdata < au->au_pend) {
-			vsaudio_codec_dwrite(sc, AM7930_DREG_BBTB,
-			    *au->au_pdata++);
-			if (au->au_pdata == au->au_pend) {
-				(*sc->sc_pintr)(sc->sc_parg);
+		vsaudio_codec_dwrite(sc, AM7930_DREG_BBTB, *au->au_pdata++);
+		if (au->au_pdata == au->au_pblkend) {
+			if (au->au_pblkend == au->au_pend) {
+				au->au_pdata = au->au_pstart;
+				au->au_pblkend = au->au_pstart;
 			}
+			au->au_pblkend += au->au_pblksize;
+			sc->sc_pintr_pending = 1;
+			softint_schedule(sc->sc_sicookie);
 		}
 	}
 
 	au->au_intrcnt.ev_count++;
+}
+
+void
+vsaudio_swintr(void *cookie)
+{
+	struct vsaudio_softc *sc = cookie;
+
+	mutex_spin_enter(&sc->sc_am7930.sc_intr_lock);
+	if (sc->sc_rintr_pending) {
+		sc->sc_rintr_pending = 0;
+		(*sc->sc_rintr)(sc->sc_rarg);
+	}
+	if (sc->sc_pintr_pending) {
+		sc->sc_pintr_pending = 0;
+		(*sc->sc_pintr)(sc->sc_parg);
+	}
 	mutex_spin_exit(&sc->sc_am7930.sc_intr_lock);
 }
 

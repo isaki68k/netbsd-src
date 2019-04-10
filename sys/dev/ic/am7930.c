@@ -190,6 +190,7 @@ am7930_init(struct am7930_softc *sc, int flag)
 		AM7930_IWRITE(sc, AM7930_IREG_MUX_MCR2, AM7930_MCRCHAN_NC);
 		AM7930_IWRITE(sc, AM7930_IREG_MUX_MCR3, AM7930_MCRCHAN_NC);
 
+		mutex_init(&sc->sc_intr_lock, MUTEX_DEFAULT, IPL_SCHED);
 	} else {
 
 		/*
@@ -204,10 +205,11 @@ am7930_init(struct am7930_softc *sc, int flag)
 			(AM7930_MCRCHAN_BB << 4) | AM7930_MCRCHAN_BA);
 		AM7930_IWRITE(sc, AM7930_IREG_MUX_MCR4,
 			AM7930_MCR4_INT_ENABLE);
+
+		mutex_init(&sc->sc_intr_lock, MUTEX_DEFAULT, IPL_SOFTSERIAL);
 	}
 
 	mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_NONE);
-	mutex_init(&sc->sc_intr_lock, MUTEX_DEFAULT, IPL_SCHED);
 }
 
 #if defined(AUDIO2)
