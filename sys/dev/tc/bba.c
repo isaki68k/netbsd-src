@@ -112,8 +112,10 @@ CFATTACH_DECL_NEW(bba, sizeof(struct bba_softc),
 
 static uint8_t	bba_codec_iread(struct am7930_softc *, int);
 static uint16_t	bba_codec_iread16(struct am7930_softc *, int);
+static uint8_t	bba_codec_dread(struct am7930_softc *, int);
 static void	bba_codec_iwrite(struct am7930_softc *, int, uint8_t);
 static void	bba_codec_iwrite16(struct am7930_softc *, int, uint16_t);
+static void	bba_codec_dwrite(struct am7930_softc *, int, uint8_t);
 
 #if !defined(AUDIO2)
 static stream_filter_factory_t bba_output_conv;
@@ -129,6 +131,8 @@ struct am7930_glue bba_glue = {
 	bba_codec_iwrite,
 	bba_codec_iread16,
 	bba_codec_iwrite16,
+	bba_codec_dread,
+	bba_codec_dwrite,
 #if !defined(AUDIO2)
 	4,
 	bba_input_conv,
@@ -213,8 +217,6 @@ static const struct audio_format bba_format = {
 
 static int	bba_intr(void *);
 static void	bba_reset(struct bba_softc *, int);
-static void	bba_codec_dwrite(struct am7930_softc *, int, uint8_t);
-static uint8_t	bba_codec_dread(struct am7930_softc *, int);
 
 static int
 bba_match(device_t parent, cfdata_t cf, void *aux)

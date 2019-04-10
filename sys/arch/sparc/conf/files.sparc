@@ -233,7 +233,6 @@ attach	audioamd at mainbus with audioamd_mainbus
 attach	audioamd at obio with audioamd_obio
 attach	audioamd at sbus with audioamd_sbus
 file	arch/sparc/dev/audioamd.c		audioamd
-file	arch/sparc/sparc/amd7930intr.s		audioamd
 
 device	apc
 attach	apc at sbus

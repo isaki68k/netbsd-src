@@ -170,6 +170,9 @@ am7930_init(struct am7930_softc *sc, int flag)
 	sc->sc_out_port = AUDIOAMD_SPEAKER_VOL;
 	sc->sc_mic_mute = 0;
 
+	memset(&sc->sc_p, 0, sizeof(sc->sc_p));
+	memset(&sc->sc_r, 0, sizeof(sc->sc_r));
+
 	/* disable sample interrupts */
 	AM7930_IWRITE(sc, AM7930_IREG_MUX_MCR4, 0);
 
@@ -210,6 +213,13 @@ am7930_init(struct am7930_softc *sc, int flag)
 	}
 
 	mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_NONE);
+
+	sc->sc_sicookie = softint_establish(SOFTINT_SERIAL, &am7930_swintr, sc);
+	if (sc->sc_sicookie == NULL) {
+		aprint_error_dev(sc->sc_dev,
+		    "cannot establish software interrupt\n");
+		return;
+	}
 }
 
 #if defined(AUDIO2)
@@ -383,27 +393,151 @@ am7930_commit_settings(void *addr)
 	return 0;
 }
 
-/* It should be called from MD halt_output() */
 int
-am7930_halt_output(struct am7930_softc *sc)
+am7930_trigger_output(void *addr, void *start, void *end, int blksize,
+    void (*intr)(void *), void *arg, const audio_params_t *params)
 {
+	struct am7930_softc *sc = addr;
 
-	/* XXX only halt, if input is also halted ?? */
-	AM7930_IWRITE(sc, AM7930_IREG_INIT,
-	    AM7930_INIT_PMS_ACTIVE | AM7930_INIT_INT_DISABLE);
+	DPRINTF(("sa_trigger_output: blksize=%d %p(%p)\n", blksize, intr, arg));
+
+	sc->sc_p.intr = intr;
+	sc->sc_p.arg = arg;
+	sc->sc_p.start = start;
+	sc->sc_p.end = end;
+	sc->sc_p.blksize = blksize;
+	sc->sc_p.data = sc->sc_p.start;
+	sc->sc_p.blkend = sc->sc_p.start + sc->sc_p.blksize;
+
+	/* Start if either play or rec start. */
+	if (sc->sc_r.intr == NULL) {
+		AM7930_IWRITE(sc, AM7930_IREG_INIT, AM7930_INIT_PMS_ACTIVE);
+		DPRINTF(("sa_start_output: started intrs.\n"));
+	}
 	return 0;
 }
 
-/* It should be called from MD halt_input() */
 int
-am7930_halt_input(struct am7930_softc *sc)
+am7930_trigger_input(void *addr, void *start, void *end, int blksize,
+    void (*intr)(void *), void *arg, const audio_params_t *params)
 {
+	struct am7930_softc *sc = addr;
 
-	/* XXX only halt, if output is also halted ?? */
-	AM7930_IWRITE(sc, AM7930_IREG_INIT,
-	    AM7930_INIT_PMS_ACTIVE | AM7930_INIT_INT_DISABLE);
+	DPRINTF(("sa_trigger_input: blksize=%d %p(%p)\n", blksize, intr, arg));
+
+	sc->sc_r.intr = intr;
+	sc->sc_r.arg = arg;
+	sc->sc_r.start = start;
+	sc->sc_r.end = end;
+	sc->sc_r.blksize = blksize;
+	sc->sc_r.data = sc->sc_r.start;
+	sc->sc_r.blkend = sc->sc_r.start + sc->sc_r.blksize;
+
+	/* Start if either play or rec start. */
+	if (sc->sc_p.intr == NULL) {
+		AM7930_IWRITE(sc, AM7930_IREG_INIT, AM7930_INIT_PMS_ACTIVE);
+		DPRINTF(("sa_start_input: started intrs.\n"));
+	}
 	return 0;
 }
+
+int
+am7930_halt_output(void *addr)
+{
+	struct am7930_softc *sc = addr;
+
+	sc->sc_p.intr = NULL;
+	/* Halt if both of play and rec halt. */
+	if (sc->sc_r.intr == NULL) {
+		AM7930_IWRITE(sc, AM7930_IREG_INIT,
+		    AM7930_INIT_PMS_ACTIVE | AM7930_INIT_INT_DISABLE);
+	}
+	return 0;
+}
+
+int
+am7930_halt_input(void *addr)
+{
+	struct am7930_softc *sc = addr;
+
+	sc->sc_r.intr = NULL;
+	/* Halt if both of play and rec halt. */
+	if (sc->sc_p.intr == NULL) {
+		AM7930_IWRITE(sc, AM7930_IREG_INIT,
+		    AM7930_INIT_PMS_ACTIVE | AM7930_INIT_INT_DISABLE);
+	}
+	return 0;
+}
+
+void
+am7930_hwintr(void *arg)
+{
+	struct am7930_softc *sc;
+	int __attribute__((__unused__)) k;
+
+	sc = arg;
+
+	/*
+	 * This hwintr is called as pseudo-DMA.  So don't acquire intr_lock.
+	 */
+
+	/* clear interrupt */
+	k = AM7930_DREAD(sc, AM7930_DREG_IR);
+#if !defined(vax)
+	/* On vax, interrupt is not shared, this shouldn't happen */
+	if ((k & (AM7930_IR_DTTHRSH | AM7930_IR_DRTHRSH | AM7930_IR_DSRI |
+	    AM7930_IR_DERI | AM7930_IR_BBUFF)) == 0) {
+		return;
+	}
+#endif
+	/* receive incoming data */
+	if (sc->sc_r.intr) {
+		*sc->sc_r.data++ = AM7930_DREAD(sc, AM7930_DREG_BBRB);
+		if (sc->sc_r.data == sc->sc_r.blkend) {
+			if (sc->sc_r.blkend == sc->sc_r.end) {
+				sc->sc_r.data = sc->sc_r.start;
+				sc->sc_r.blkend = sc->sc_r.start;
+			}
+			sc->sc_r.blkend += sc->sc_r.blksize;
+			sc->sc_r.intr_pending = 1;
+			softint_schedule(sc->sc_sicookie);
+		}
+	}
+
+	/* send outgoing data */
+	if (sc->sc_p.intr) {
+		AM7930_DWRITE(sc, AM7930_DREG_BBTB, *sc->sc_p.data++);
+		if (sc->sc_p.data == sc->sc_p.blkend) {
+			if (sc->sc_p.blkend == sc->sc_p.end) {
+				sc->sc_p.data = sc->sc_p.start;
+				sc->sc_p.blkend = sc->sc_p.start;
+			}
+			sc->sc_p.blkend += sc->sc_p.blksize;
+			sc->sc_p.intr_pending = 1;
+			softint_schedule(sc->sc_sicookie);
+		}
+	}
+
+	sc->sc_intrcnt.ev_count++;
+}
+
+void
+am7930_swintr(void *cookie)
+{
+	struct am7930_softc *sc = cookie;
+
+	mutex_spin_enter(&sc->sc_intr_lock);
+	if (sc->sc_r.intr_pending) {
+		sc->sc_r.intr_pending = 0;
+		(*sc->sc_r.intr)(sc->sc_r.arg);
+	}
+	if (sc->sc_p.intr_pending) {
+		sc->sc_p.intr_pending = 0;
+		(*sc->sc_p.intr)(sc->sc_p.arg);
+	}
+	mutex_spin_exit(&sc->sc_intr_lock);
+}
+
 
 /*
  * XXX chip is full-duplex, but really attach-dependent.
