@@ -110,11 +110,7 @@ CFATTACH_DECL_NEW(vsaudio, sizeof(struct vsaudio_softc), vsaudio_match,
 /*
  * Hardware access routines for the MI code
  */
-uint8_t	vsaudio_codec_iread(struct am7930_softc *, int);
-uint16_t	vsaudio_codec_iread16(struct am7930_softc *, int);
 uint8_t	vsaudio_codec_dread(struct am7930_softc *, int);
-void	vsaudio_codec_iwrite(struct am7930_softc *, int, uint8_t);
-void	vsaudio_codec_iwrite16(struct am7930_softc *, int, uint16_t);
 void	vsaudio_codec_dwrite(struct am7930_softc *, int, uint8_t);
 
 /*
@@ -127,10 +123,6 @@ static int vsaudio_input_conv_fetch_to(struct audio_softc *,
 		*/
 
 struct am7930_glue vsaudio_glue = {
-	vsaudio_codec_iread,
-	vsaudio_codec_iwrite,
-	vsaudio_codec_iread16,
-	vsaudio_codec_iwrite16,
 	vsaudio_codec_dread,
 	vsaudio_codec_dwrite,
 #if !defined(AUDIO2)
@@ -247,44 +239,6 @@ vsaudio_attach(device_t parent, device_t self, void *aux)
 
 	aprint_normal("\n");
 	audio_attach_mi(&vsaudio_hw_if, sc, self);
-}
-
-/* indirect write */
-void
-vsaudio_codec_iwrite(struct am7930_softc *sc, int reg, uint8_t val)
-{
-
-	vsaudio_codec_dwrite(sc, AM7930_DREG_CR, reg);
-	vsaudio_codec_dwrite(sc, AM7930_DREG_DR, val);
-}
-
-void
-vsaudio_codec_iwrite16(struct am7930_softc *sc, int reg, uint16_t val)
-{
-
-	vsaudio_codec_dwrite(sc, AM7930_DREG_CR, reg);
-	vsaudio_codec_dwrite(sc, AM7930_DREG_DR, val);
-	vsaudio_codec_dwrite(sc, AM7930_DREG_DR, val >> 8);
-}
-
-/* indirect read */
-uint8_t
-vsaudio_codec_iread(struct am7930_softc *sc, int reg)
-{
-
-	vsaudio_codec_dwrite(sc, AM7930_DREG_CR, reg);
-	return vsaudio_codec_dread(sc, AM7930_DREG_DR);
-}
-
-uint16_t
-vsaudio_codec_iread16(struct am7930_softc *sc, int reg)
-{
-	uint lo, hi;
-
-	vsaudio_codec_dwrite(sc, AM7930_DREG_CR, reg);
-	lo = vsaudio_codec_dread(sc, AM7930_DREG_DR);
-	hi = vsaudio_codec_dread(sc, AM7930_DREG_DR);
-	return (hi << 8) | lo;
 }
 
 /* direct read */

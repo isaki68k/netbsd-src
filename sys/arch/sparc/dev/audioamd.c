@@ -94,18 +94,10 @@ CFATTACH_DECL_NEW(audioamd_sbus, sizeof(struct audioamd_softc),
  * Define our interface into the am7930 MI driver.
  */
 
-uint8_t	audioamd_codec_iread(struct am7930_softc *, int);
-uint16_t	audioamd_codec_iread16(struct am7930_softc *, int);
 uint8_t	audioamd_codec_dread(struct am7930_softc *, int);
-void	audioamd_codec_iwrite(struct am7930_softc *, int, uint8_t);
-void	audioamd_codec_iwrite16(struct am7930_softc *, int, uint16_t);
 void	audioamd_codec_dwrite(struct am7930_softc *, int, uint8_t);
 
 struct am7930_glue audioamd_glue = {
-	audioamd_codec_iread,
-	audioamd_codec_iwrite,
-	audioamd_codec_iread16,
-	audioamd_codec_iwrite16,
 	audioamd_codec_dread,
 	audioamd_codec_dwrite,
 #if !defined(AUDIO2)
@@ -284,46 +276,6 @@ audioamd_hwintr(void *arg)
 	return 1;
 }
 
-
-
-/* indirect write */
-void
-audioamd_codec_iwrite(struct am7930_softc *sc, int reg, uint8_t val)
-{
-
-	audioamd_codec_dwrite(sc, AM7930_DREG_CR, reg);
-	audioamd_codec_dwrite(sc, AM7930_DREG_DR, val);
-}
-
-void
-audioamd_codec_iwrite16(struct am7930_softc *sc, int reg, uint16_t val)
-{
-
-	audioamd_codec_dwrite(sc, AM7930_DREG_CR, reg);
-	audioamd_codec_dwrite(sc, AM7930_DREG_DR, val);
-	audioamd_codec_dwrite(sc, AM7930_DREG_DR, val>>8);
-}
-
-
-/* indirect read */
-uint8_t
-audioamd_codec_iread(struct am7930_softc *sc, int reg)
-{
-
-	audioamd_codec_dwrite(sc, AM7930_DREG_CR, reg);
-	return (audioamd_codec_dread(sc, AM7930_DREG_DR));
-}
-
-uint16_t
-audioamd_codec_iread16(struct am7930_softc *sc, int reg)
-{
-	uint8_t lo, hi;
-
-	audioamd_codec_dwrite(sc, AM7930_DREG_CR, reg);
-	lo = audioamd_codec_dread(sc, AM7930_DREG_DR);
-	hi = audioamd_codec_dread(sc, AM7930_DREG_DR);
-	return (hi << 8) | lo;
-}
 
 /* direct read */
 uint8_t

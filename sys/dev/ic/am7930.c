@@ -154,6 +154,42 @@ static const struct audio_format am7930_format = {
 };
 #endif
 
+static void
+am7930_iwrite(struct am7930_softc *sc, int reg, uint8_t val)
+{
+
+	AM7930_DWRITE(sc, AM7930_DREG_CR, reg);
+	AM7930_DWRITE(sc, AM7930_DREG_DR, val);
+}
+
+static uint8_t
+am7930_iread(struct am7930_softc *sc, int reg)
+{
+
+	AM7930_DWRITE(sc, AM7930_DREG_CR, reg);
+	return AM7930_DREAD(sc, AM7930_DREG_DR);
+}
+
+static void
+am7930_iwrite16(struct am7930_softc *sc, int reg, uint16_t val)
+{
+
+	AM7930_DWRITE(sc, AM7930_DREG_CR, reg);
+	AM7930_DWRITE(sc, AM7930_DREG_DR, val);
+	AM7930_DWRITE(sc, AM7930_DREG_DR, val >> 8);
+}
+
+static uint16_t __unused
+am7930_iread16(struct am7930_softc *sc, int reg)
+{
+	uint lo, hi;
+
+	AM7930_DWRITE(sc, AM7930_DREG_CR, reg);
+	lo = AM7930_DREAD(sc, AM7930_DREG_DR);
+	hi = AM7930_DREAD(sc, AM7930_DREG_DR);
+	return (hi << 8) | lo;
+}
+
 /*
  * Reset chip and set boot-time softc defaults.
  */

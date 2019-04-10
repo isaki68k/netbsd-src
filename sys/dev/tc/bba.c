@@ -110,11 +110,7 @@ CFATTACH_DECL_NEW(bba, sizeof(struct bba_softc),
  * Define our interface into the am7930 MI driver.
  */
 
-static uint8_t	bba_codec_iread(struct am7930_softc *, int);
-static uint16_t	bba_codec_iread16(struct am7930_softc *, int);
 static uint8_t	bba_codec_dread(struct am7930_softc *, int);
-static void	bba_codec_iwrite(struct am7930_softc *, int, uint8_t);
-static void	bba_codec_iwrite16(struct am7930_softc *, int, uint16_t);
 static void	bba_codec_dwrite(struct am7930_softc *, int, uint8_t);
 
 #if !defined(AUDIO2)
@@ -127,10 +123,6 @@ static int	bba_input_conv_fetch_to(struct audio_softc *, stream_fetcher_t *,
 #endif
 
 struct am7930_glue bba_glue = {
-	bba_codec_iread,
-	bba_codec_iwrite,
-	bba_codec_iread16,
-	bba_codec_iwrite16,
 	bba_codec_dread,
 	bba_codec_dwrite,
 #if !defined(AUDIO2)
@@ -736,57 +728,6 @@ bba_round_blocksize(void *addr, int blk, int mode, const audio_params_t *param)
 	return IOASIC_DMA_BLOCKSIZE;
 }
 
-
-/* indirect write */
-static void
-bba_codec_iwrite(struct am7930_softc *sc, int reg, uint8_t val)
-{
-
-	DPRINTF(("bba_codec_iwrite(): sc=%p, reg=%d, val=%d\n", sc, reg, val));
-	bba_codec_dwrite(sc, AM7930_DREG_CR, reg);
-	bba_codec_dwrite(sc, AM7930_DREG_DR, val);
-}
-
-
-static void
-bba_codec_iwrite16(struct am7930_softc *sc, int reg, uint16_t val)
-{
-
-	DPRINTF(("bba_codec_iwrite16(): sc=%p, reg=%d, val=%d\n", sc, reg, val));
-	bba_codec_dwrite(sc, AM7930_DREG_CR, reg);
-	bba_codec_dwrite(sc, AM7930_DREG_DR, val);
-	bba_codec_dwrite(sc, AM7930_DREG_DR, val>>8);
-}
-
-
-static uint16_t
-bba_codec_iread16(struct am7930_softc *sc, int reg)
-{
-	uint16_t val;
-
-	DPRINTF(("bba_codec_iread16(): sc=%p, reg=%d\n", sc, reg));
-	bba_codec_dwrite(sc, AM7930_DREG_CR, reg);
-	val = bba_codec_dread(sc, AM7930_DREG_DR) << 8;
-	val |= bba_codec_dread(sc, AM7930_DREG_DR);
-
-	return val;
-}
-
-
-/* indirect read */
-static uint8_t
-bba_codec_iread(struct am7930_softc *sc, int reg)
-{
-	uint8_t val;
-
-	DPRINTF(("bba_codec_iread(): sc=%p, reg=%d\n", sc, reg));
-	bba_codec_dwrite(sc, AM7930_DREG_CR, reg);
-	val = bba_codec_dread(sc, AM7930_DREG_DR);
-
-	DPRINTF(("read 0x%x (%d)\n", val, val));
-
-	return val;
-}
 
 /* direct write */
 static void

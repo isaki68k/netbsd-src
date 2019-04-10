@@ -3,10 +3,6 @@
 struct am7930_softc;
 
 struct am7930_glue {
-	uint8_t	(*codec_iread)(struct am7930_softc *sc, int);
-	void	(*codec_iwrite)(struct am7930_softc *sc, int, uint8_t);
-	uint16_t	(*codec_iread16)(struct am7930_softc *sc, int);
-	void	(*codec_iwrite16)(struct am7930_softc *sc, int, uint16_t);
 	uint8_t	(*codec_dread)(struct am7930_softc *sc, int);
 	void	(*codec_dwrite)(struct am7930_softc *sc, int, uint8_t);
 #if !defined(AUDIO2)
@@ -51,12 +47,13 @@ extern int     am7930debug;
 
 void	am7930_init(struct am7930_softc *, int);
 
-#define AM7930_IWRITE(x,y,z)	(*(x)->sc_glue->codec_iwrite)((x),(y),(z))
-#define AM7930_IREAD(x,y)	(*(x)->sc_glue->codec_iread)((x),(y))
-#define AM7930_IWRITE16(x,y,z)	(*(x)->sc_glue->codec_iwrite16)((x),(y),(z))
-#define AM7930_IREAD16(x,y)	(*(x)->sc_glue->codec_iread16)((x),(y))
+#define AM7930_IWRITE(sc,r,v)	am7930_iwrite(sc,r,v)
+#define AM7930_IREAD(sc,r)	am7930_iread(sc,r)
+#define AM7930_IWRITE16(sc,r,v)	am7930_iwrite16(sc,r,v)
+#define AM7930_IREAD16(sc,r)	am7930_iread16(sc,r)
 #define AM7930_DWRITE(x,y,z)	(*(x)->sc_glue->codec_dwrite)((x),(y),(z))
 #define AM7930_DREAD(x,y)	(*(x)->sc_glue->codec_dread)((x),(y))
+
 
 #define AUDIOAMD_POLL_MODE	0
 #define AUDIOAMD_DMA_MODE	1
