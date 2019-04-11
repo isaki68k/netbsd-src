@@ -279,20 +279,20 @@ audioamd_hwintr(void *arg)
 
 /* direct read */
 uint8_t
-audioamd_codec_dread(struct am7930_softc *sc, int reg)
+audioamd_codec_dread(struct am7930_softc *amsc, int reg)
 {
-	struct audioamd_softc *mdsc = (struct audioamd_softc *)sc;
+	struct audioamd_softc *sc = (struct audioamd_softc *)amsc;
 
-	return bus_space_read_1(mdsc->sc_bt, mdsc->sc_bh, reg);
+	return bus_space_read_1(sc->sc_bt, sc->sc_bh, reg);
 }
 
 /* direct write */
 void
-audioamd_codec_dwrite(struct am7930_softc *sc, int reg, uint8_t val)
+audioamd_codec_dwrite(struct am7930_softc *amsc, int reg, uint8_t val)
 {
-	struct audioamd_softc *mdsc = (struct audioamd_softc *)sc;
+	struct audioamd_softc *sc = (struct audioamd_softc *)amsc;
 
-	bus_space_write_1(mdsc->sc_bt, mdsc->sc_bh, reg, val);
+	bus_space_write_1(sc->sc_bt, sc->sc_bh, reg, val);
 }
 
 int

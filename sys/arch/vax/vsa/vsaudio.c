@@ -243,20 +243,20 @@ vsaudio_attach(device_t parent, device_t self, void *aux)
 
 /* direct read */
 uint8_t
-vsaudio_codec_dread(struct am7930_softc *sc, int reg)
+vsaudio_codec_dread(struct am7930_softc *amsc, int reg)
 {
-	struct vsaudio_softc *vssc = (struct vsaudio_softc *)sc;
+	struct vsaudio_softc *sc = (struct vsaudio_softc *)amsc;
 
-	return bus_space_read_1(vssc->sc_bt, vssc->sc_bh, reg << 2);
+	return bus_space_read_1(sc->sc_bt, sc->sc_bh, reg << 2);
 }
 
 /* direct write */
 void
-vsaudio_codec_dwrite(struct am7930_softc *sc, int reg, uint8_t val)
+vsaudio_codec_dwrite(struct am7930_softc *amsc, int reg, uint8_t val)
 {
-	struct vsaudio_softc *vssc = (struct vsaudio_softc *)sc;
+	struct vsaudio_softc *sc = (struct vsaudio_softc *)amsc;
 
-	bus_space_write_1(vssc->sc_bt, vssc->sc_bh, reg << 2, val);
+	bus_space_write_1(sc->sc_bt, sc->sc_bh, reg << 2, val);
 }
 
 int
