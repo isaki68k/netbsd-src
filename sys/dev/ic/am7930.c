@@ -509,7 +509,7 @@ void
 am7930_hwintr(void *arg)
 {
 	struct am7930_softc *sc;
-	int __attribute__((__unused__)) k;
+	int k;
 
 	sc = arg;
 
@@ -519,13 +519,12 @@ am7930_hwintr(void *arg)
 
 	/* clear interrupt */
 	k = AM7930_DREAD(sc, AM7930_DREG_IR);
-#if !defined(vax)
 	/* On vax, interrupt is not shared, this shouldn't happen */
 	if ((k & (AM7930_IR_DTTHRSH | AM7930_IR_DRTHRSH | AM7930_IR_DSRI |
 	    AM7930_IR_DERI | AM7930_IR_BBUFF)) == 0) {
 		return;
 	}
-#endif
+
 	/* receive incoming data */
 	if (sc->sc_r.intr) {
 		*sc->sc_r.data++ = AM7930_DREAD(sc, AM7930_DREG_BBRB);
