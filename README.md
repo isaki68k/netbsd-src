@@ -75,6 +75,7 @@ vs(4) などの珍しい周波数の hardware がサポートできない。
 |vcaudio(4)	|	|evbarm/RPI	|Done	|Done	|Compiled but not tested
 |vsaudio(4)	|am7930	|vax	|Done	|Done	|Work
 |wss(4)		|	|	|	|	|Work
+|yds(4)		|	|	|Done	|Done	|Work
 
 Note:
 * mercury(4) は AUDIO2 で初サポート。
