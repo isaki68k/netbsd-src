@@ -562,7 +562,7 @@ am7930_swintr(void *cookie)
 {
 	struct am7930_softc *sc = cookie;
 
-	mutex_spin_enter(&sc->sc_intr_lock);
+	mutex_enter(&sc->sc_intr_lock);
 	if (sc->sc_r.intr_pending) {
 		sc->sc_r.intr_pending = 0;
 		(*sc->sc_r.intr)(sc->sc_r.arg);
@@ -571,7 +571,7 @@ am7930_swintr(void *cookie)
 		sc->sc_p.intr_pending = 0;
 		(*sc->sc_p.intr)(sc->sc_p.arg);
 	}
-	mutex_spin_exit(&sc->sc_intr_lock);
+	mutex_exit(&sc->sc_intr_lock);
 }
 
 
