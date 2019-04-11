@@ -240,7 +240,7 @@ __KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.458 2018/09/03 16:29:30 riastradh Exp $"
 
 #if defined(AUDIO_DEBUG)
 
-int	audiodebug = AUDIO_DEBUG;
+int audiodebug = AUDIO_DEBUG;
 static void audio_vtrace(struct audio_softc *sc, const char *, const char *,
 	const char *, va_list);
 static void audio_trace(struct audio_softc *sc, const char *, const char *, ...)
@@ -497,7 +497,7 @@ audio_track_bufstat(audio_track_t *track, struct audio_track_debugbuf *buf)
 
 /* #define AUDIO_PM_IDLE */
 #ifdef AUDIO_PM_IDLE
-int	audio_idle_timeout = 30;
+int audio_idle_timeout = 30;
 #endif
 
 struct portname {
