@@ -170,7 +170,6 @@ struct audio_device vsaudio_device = {
 static int
 vsaudio_match(struct device *parent, struct cfdata *match, void *aux)
 {
-	struct vsbus_softc *sc  __attribute__((__unused__)) = device_private(parent);
 	struct vsbus_attach_args *va = aux;
 	volatile uint32_t *regs;
 	int i;
@@ -262,6 +261,7 @@ vsaudio_codec_dwrite(struct am7930_softc *amsc, int reg, uint8_t val)
 int
 vsaudio_getdev(void *addr, struct audio_device *retp)
 {
+
 	*retp = vsaudio_device;
 	return 0;
 }
