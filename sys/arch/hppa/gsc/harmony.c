@@ -77,7 +77,9 @@
 
 #include <sys/audioio.h>
 #include <dev/audio_if.h>
+#if !defined(AUDIO2)
 #include <dev/auconv.h>
+#endif
 
 #include <machine/cpu.h>
 #include <machine/intr.h>
@@ -92,9 +94,16 @@
 
 int	harmony_open(void *, int);
 void	harmony_close(void *);
+#if defined(AUDIO2)
+int	harmony_query_format(void *, audio_format_query_t *);
+int	harmony_set_format(void *, int,
+    const audio_params_t *, const audio_params_t *,
+    audio_filter_reg_t *, audio_filter_reg_t *);
+#else
 int	harmony_query_encoding(void *, struct audio_encoding *);
 int	harmony_set_params(void *, int, int, audio_params_t *,
     audio_params_t *, stream_filter_list_t *, stream_filter_list_t *);
+#endif
 int	harmony_round_blocksize(void *, int, int, const audio_params_t *);
 
 int	harmony_control_wait(struct harmony_softc *);
@@ -119,8 +128,13 @@ void	harmony_get_locks(void *, kmutex_t **, kmutex_t **);
 const struct audio_hw_if harmony_sa_hw_if = {
 	.open			= harmony_open,
 	.close			= harmony_close,
+#if defined(AUDIO2)
+	.query_format		= harmony_query_format,
+	.set_format		= harmony_set_format,
+#else
 	.query_encoding		= harmony_query_encoding,
 	.set_params		= harmony_set_params,
+#endif
 	.round_blocksize	= harmony_round_blocksize,
 	.commit_settings	= harmony_commit_settings,
 	.halt_output		= harmony_halt_output,
@@ -137,6 +151,36 @@ const struct audio_hw_if harmony_sa_hw_if = {
 	.trigger_input		= harmony_trigger_input,
 	.get_locks		= harmony_get_locks,
 };
+
+#if defined(AUDIO2)
+#define HARMONY_FORMAT(enc, prec, ch, chmask) \
+	{ \
+		.mode		= AUMODE_PLAY | AUMODE_RECORD, \
+		.encoding	= (enc), \
+		.validbits	= (prec), \
+		.precision	= (prec), \
+		.channels	= (ch), \
+		.channel_mask	= (chmask), \
+		.frequency_type = 14, \
+		.frequency	= { \
+			 5125,  6615,  8000,  9600, 11025, 16000, 18900, \
+			22050, 27428, 32000, 33075, 37800, 44100, 48000, \
+		 }, \
+	}
+static struct audio_format harmony_formats[] = {
+	/* First two may be disabled at attach. */
+	HARMONY_FORMAT(AUDIO_ENCODING_ULINEAR,     8, 1, AUFMT_MONAURAL),
+	HARMONY_FORMAT(AUDIO_ENCODING_ULINEAR,     8, 2, AUFMT_STEREO),
+
+	HARMONY_FORMAT(AUDIO_ENCODING_ULAW,        8, 1, AUFMT_MONAURAL),
+	HARMONY_FORMAT(AUDIO_ENCODING_ULAW,        8, 2, AUFMT_STEREO),
+	HARMONY_FORMAT(AUDIO_ENCODING_ALAW,        8, 1, AUFMT_MONAURAL),
+	HARMONY_FORMAT(AUDIO_ENCODING_ALAW,        8, 2, AUFMT_STEREO),
+	HARMONY_FORMAT(AUDIO_ENCODING_SLINEAR_BE, 16, 1, AUFMT_MONAURAL),
+	HARMONY_FORMAT(AUDIO_ENCODING_SLINEAR_BE, 16, 2, AUFMT_STEREO),
+};
+#define HARMONY_NFORMATS __arraycount(harmony_formats)
+#endif
 
 int harmony_match(device_t, struct cfdata *, void *);
 void harmony_attach(device_t, device_t, void *);
@@ -300,6 +344,13 @@ harmony_attach(device_t parent, device_t self, void *aux)
 
 	if ((rev & CS4215_REV_VER) >= CS4215_REV_VER_E)
 		sc->sc_hasulinear8 = 1;
+#if defined(AUDIO2)
+	/* XXX sc_hasulinear8 can be a local variable. */
+	if (!sc->sc_hasulinear8) {
+		AUFMT_INVALIDATE(&harmony_formats[0]);
+		AUFMT_INVALIDATE(&harmony_formats[1]);
+	}
+#endif
 
 	strlcpy(sc->sc_audev.name, ga->ga_name, sizeof(sc->sc_audev.name));
 	snprintf(sc->sc_audev.version, sizeof sc->sc_audev.version,
@@ -427,6 +478,63 @@ harmony_close(void *vsc)
 	harmony_intr_disable(sc);
 	sc->sc_open = 0;
 }
+
+#if defined(AUDIO2)
+int
+harmony_query_format(void *vsc, audio_format_query_t *afp)
+{
+
+	return audio_query_format(harmony_formats, HARMONY_NFORMATS, afp);
+}
+
+int
+harmony_set_format(void *vsc, int setmode,
+    const audio_params_t *play, const audio_params_t *rec,
+	audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
+{
+	struct harmony_softc *sc;
+	uint32_t bits;
+	int rate;
+
+	sc = vsc;
+
+	/* *play and *rec are the identical because !AUDIO_PROP_INDEPENDENT. */
+	switch (play->encoding) {
+	case AUDIO_ENCODING_ULAW:
+		bits = CNTL_FORMAT_ULAW;
+		break;
+	case AUDIO_ENCODING_ALAW:
+		bits = CNTL_FORMAT_ALAW;
+		break;
+	case AUDIO_ENCODING_SLINEAR_BE:
+		bits = CNTL_FORMAT_SLINEAR16BE;
+		break;
+	case AUDIO_ENCODING_ULINEAR:
+		bits = CNTL_FORMAT_ULINEAR8;
+		break;
+	default:
+		return EINVAL;
+	}
+
+	if (sc->sc_outputgain)
+		bits |= CNTL_OLB;
+
+	if (play->channels == 1)
+		bits |= CNTL_CHANS_MONO;
+	else if (play->channels == 2)
+		bits |= CNTL_CHANS_STEREO;
+	else
+		return EINVAL;
+
+	/* XXX modify harmony_speed_bits() not to rewrite rate */
+	rate = play->sample_rate;
+	sc->sc_cntlbits |= harmony_speed_bits(sc, &rate);
+	sc->sc_need_commit = 1;
+
+	return 0;
+}
+
+#else
 
 int
 harmony_query_encoding(void *vsc, struct audio_encoding *fp)
@@ -607,6 +715,8 @@ harmony_set_params(void *vsc, int setmode, int usemode,
 
 	return 0;
 }
+
+#endif /* AUDIO2 */
 
 int
 harmony_round_blocksize(void *vsc, int blk,
