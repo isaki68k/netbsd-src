@@ -79,8 +79,12 @@ __KERNEL_RCSID(0, "$NetBSD: vidcaudio.c,v 1.57 2019/03/16 12:09:56 isaki Exp $")
 
 #include <dev/audio_if.h>
 #include <dev/audiobellvar.h>
+#if defined(AUDIO2)
+#include <dev/audio/mulaw.h>
+#else
 #include <dev/auconv.h>
 #include <dev/mulaw.h>
+#endif
 
 #include <machine/intr.h>
 #include <machine/machdep.h>
@@ -138,19 +142,28 @@ static int vidcaudio_intr(void *);
 static void vidcaudio_rate(int);
 static void vidcaudio_ctrl(int);
 static void vidcaudio_stereo(int, int);
+#if !defined(AUDIO2)
 static stream_filter_factory_t mulaw_to_vidc;
 static stream_filter_factory_t mulaw_to_vidc_stereo;
 static int mulaw_to_vidc_fetch_to(struct audio_softc *, stream_fetcher_t *,
     audio_stream_t *, int);
 static int mulaw_to_vidc_stereo_fetch_to(struct audio_softc *, stream_fetcher_t *,
     audio_stream_t *, int);
+#endif
 
 CFATTACH_DECL_NEW(vidcaudio, sizeof(struct vidcaudio_softc),
     vidcaudio_probe, vidcaudio_attach, NULL, NULL);
 
+#if defined(AUDIO2)
+static int    vidcaudio_query_format(void *, audio_format_query_t *);
+static int    vidcaudio_set_format(void *, int,
+    const audio_params_t *, const audio_params_t *,
+    audio_filter_reg_t *, audio_filter_reg_t *);
+#else
 static int    vidcaudio_query_encoding(void *, struct audio_encoding *);
 static int    vidcaudio_set_params(void *, int, int, audio_params_t *,
     audio_params_t *, stream_filter_list_t *, stream_filter_list_t *);
+#endif
 static int    vidcaudio_round_blocksize(void *, int, int, const audio_params_t *);
 static int    vidcaudio_trigger_output(void *, void *, void *, int,
     void (*)(void *), void *, const audio_params_t *);
@@ -173,8 +186,13 @@ static struct audio_device vidcaudio_device = {
 
 static const struct audio_hw_if vidcaudio_hw_if = {
 	.close			= vidcaudio_close,
+#if defined(AUDIO2)
+	.query_format		= vidcaudio_query_format,
+	.set_format		= vidcaudio_set_format,
+#else
 	.query_encoding		= vidcaudio_query_encoding,
 	.set_params		= vidcaudio_set_params,
+#endif
 	.round_blocksize	= vidcaudio_round_blocksize,
 	.halt_output		= vidcaudio_halt_output,
 	.halt_input		= vidcaudio_halt_input,
@@ -187,6 +205,45 @@ static const struct audio_hw_if vidcaudio_hw_if = {
 	.trigger_input		= vidcaudio_trigger_input,
 	.get_locks		= vidcaudio_get_locks,
 };
+
+#if defined(AUDIO2)
+static const struct audio_format vidcaudio_formats_16bit = {
+	.mode		= AUMODE_PLAY,
+	.encoding	= AUDIO_ENCODING_SLINEAR_LE,
+	.validbits	= 16,
+	.precision	= 16,
+	.channels	= 2,
+	.channel_mask	= AUFMT_STEREO,
+	/* There are more selectable frequencies but these should be enough. */
+	.frequency_type	= 6,
+	.frequency	= {
+		19600,	/* /9 */
+		22050,	/* /8 */
+		25200,	/* /7 */
+		29400,	/* /6 */
+		35280,	/* /5 */
+		44100,	/* /4 */
+	},
+};
+static const struct audio_format vidcaudio_formats_8bit = {
+	.mode		= AUMODE_PLAY,
+	.encoding	= AUDIO_ENCODING_ULAW,
+	.validbits	= 8,
+	.precision	= 8,
+	.channels	= 2,	/* we use stereo always */
+	.channel_mask	= AUFMT_STEREO,
+	/* frequency is preferably an integer. */
+	.frequency_type	= 6,
+	.frequency	= {
+		10000,	/* 50us */
+		12500,	/* 40us */
+		20000,	/* 25us */
+		25000,	/* 20us */
+		31250,	/* 16us */
+		50000,	/* 10us */
+	},
+};
+#endif
 
 static int
 vidcaudio_probe(device_t parent, cfdata_t cf, void *aux)
@@ -281,6 +338,59 @@ vidcaudio_close(void *addr)
 /*
  * Interface to the generic audio driver
  */
+
+#if defined(AUDIO2)
+static int
+vidcaudio_query_format(void *addr, audio_format_query_t *afp)
+{
+	struct vidcaudio_softc *sc;
+
+	sc = addr;
+	if (sc->sc_is16bit)
+		return audio_query_format(&vidcaudio_formats_16bit, 1, afp);
+	else
+		return audio_query_format(&vidcaudio_formats_8bit, 1, afp);
+}
+
+static int
+vidcaudio_set_format(void *addr, int setmode,
+    const audio_params_t *play, const audio_params_t *rec,
+    audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
+{
+	struct vidcaudio_softc *sc;
+	int sample_period, ch;
+
+	sc = addr;
+	if (sc->sc_is16bit) {
+		/* ARM7500ish, 16-bit, two-channel */
+		sample_period = 705600 / 4 / play->sample_rate;
+		if (sample_period < 3)
+			sample_period = 3;
+		vidcaudio_rate(sample_period - 2);
+		vidcaudio_ctrl(SCR_SERIAL);
+	} else {
+		/* VIDC20ish, u-law, 8-channel */
+		/*
+		 * We always use two hardware channels, because using
+		 * one at 8kHz gives a nasty whining sound from the
+		 * speaker.
+		 */
+		sample_period = 1000000 / 2 / play->sample_rate;
+		if (sample_period < 3)
+			sample_period = 3;
+		vidcaudio_rate(sample_period - 2);
+		vidcaudio_ctrl(SCR_SDAC | SCR_CLKSEL);
+		for (ch = 0; ch < 8; ch += 2)
+			vidcaudio_stereo(ch, SIR_LEFT_100);
+		for (ch = 1; ch < 8; ch += 2)
+			vidcaudio_stereo(ch, SIR_RIGHT_100);
+
+		pfil->codec = audio_internal_to_mulaw;
+	}
+	return 0;
+}
+
+#else
 
 static int
 vidcaudio_query_encoding(void *addr, struct audio_encoding *fp)
@@ -429,6 +539,7 @@ vidcaudio_set_params(void *addr, int setmode, int usemode,
 	}
 	return 0;
 }
+#endif /* AUDIO2 */
 
 static int
 vidcaudio_round_blocksize(void *addr, int wantblk,
