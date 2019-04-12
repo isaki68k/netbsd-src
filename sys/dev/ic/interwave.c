@@ -270,7 +270,9 @@ iwopen(struct iw_softc *sc, int flags)
 	iw_inints = 0;
 #endif
 
+#if !defined(AUDIO2)
 	iwreset(sc, 1);
+#endif
 
 	return 0;
 }
