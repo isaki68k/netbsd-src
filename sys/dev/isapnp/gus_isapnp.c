@@ -66,8 +66,13 @@ static int     gus_isapnp_open(void *, int);
 static const struct audio_hw_if guspnp_hw_if = {
 	.open			= gus_isapnp_open,
 	.close			= iwclose,
+#if defined(AUDIO2)
+	.query_format		= iw_query_format,
+	.set_format		= iw_audio_set_format,
+#else
 	.query_encoding		= iw_query_encoding,
 	.set_params		= iw_set_params,
+#endif
 	.round_blocksize	= iw_round_blocksize,
 	.commit_settings	= iw_commit_settings,
 	.init_output		= iw_init_output,

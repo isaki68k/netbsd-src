@@ -49,7 +49,11 @@ __KERNEL_RCSID(0, "$NetBSD: interwave.c,v 1.40 2019/02/03 11:15:45 mrg Exp $");
 #include <machine/pio.h>
 
 #include <dev/audio_if.h>
+#if defined(AUDIO2)
+#include <dev/audio/linear.h>
+#else
 #include <dev/mulaw.h>
+#endif
 
 #include <dev/isa/isavar.h>
 #include <dev/isa/isadmavar.h>
@@ -89,6 +93,39 @@ struct audio_device iw_device = {
 	"0.1",
 	"guspnp"
 };
+
+#if defined(AUDIO2)
+#define IW_FORMAT(prio, enc, prec, ch, chmask) \
+	{ \
+		.priority	= (prio), \
+		.mode		= AUMODE_PLAY xxx, \
+		.encoding	= (enc), \
+		.validbits	= (prec), \
+		.precision	= (prec), \
+		.channels	= (ch), \
+		.channel_mask	= (chmask), \
+		.frequency_type	= 16, \
+		.frequency	= { \
+			 5510,  6620,  8000,  9600, 11025, \
+			16000, 18900, 22050, 27420, 32000, \
+			33075, 37800, 38400, 44100, 44800, \
+			48000, \
+		}, \
+	}
+/*
+ * LINEAR, ALAW, ULAW, ADPCM in HW, we'll use unsigned linear
+ * hardware mode for all 8-bit modes due to buggy (?) codec.
+ */
+static const struct audio_format iw_formats[] = {
+	IW_FORMAT( 0, AUDIO_ENCODING_SLINEAR_NE, 16, 1, AUFMT_MONAURAL),
+	IW_FORMAT( 0, AUDIO_ENCODING_SLINEAR_NE, 16, 2, AUFMT_STEREO),
+	IW_FORMAT( 0, AUDIO_ENCODING_ULINEAR,     8, 1, AUFMT_MONAURAL),
+	IW_FORMAT( 0, AUDIO_ENCODING_ULINEAR,     8, 2, AUFMT_STEREO),
+	IW_FORMAT(-1, AUDIO_ENCODING_ADPCM,       4, 1, AUFMT_MONAURAL),
+	IW_FORMAT(-1, AUDIO_ENCODING_ADPCM,       4, 2, AUFMT_STEREO),
+};
+#define IW_NFORMATS __arraycount(iw_formats)
+#endif
 
 #ifdef AUDIO_DEBUG
 int iw_debug;
@@ -582,6 +619,50 @@ iw_set_speed(struct iw_softc *sc, u_long freq, char in)
 	return freq;
 }
 
+#if defined(AUDIO2)
+int
+iw_query_format(void *addr, audio_format_query_t *afp)
+{
+
+	return audio_query_format(iw_format, IW_NFORMATS, afp);
+}
+
+int
+iw_audio_set_format(void *addr, int setmode,
+	const audio_params_t *p, const audio_params_t *q,
+	audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
+{
+	struct iw_softc *sc;
+
+	DPRINTF(("%s: code %u, prec %u, rate %u, chan %u\n", __func__,
+	    p->encoding, p->precision, p->sample_rate, p->channels));
+	sc = addr;
+
+	if (setmode & AUMODE_PLAY) {
+		sc->play_channels = p->channels;
+		sc->play_encoding = p->encoding;
+		sc->play_precision = p->precision;
+		iw_set_format(sc, p->precision, 0);
+		sc->sc_orate = iw_set_speed(sc, p->sample_rate, 0);
+
+		if (p->encoding == AUDIO_ENCODING_ULINEAR)
+			pfil->codec = audio_internal_to_linear8;
+	} else {
+		sc->rec_channels = q->channels;
+		sc->rec_encoding = q->encoding;
+		sc->rec_precision = q->precision;
+		/* XXX Is this 'p' a typo of 'q' ? */
+		iw_set_format(sc, p->precision, 1);
+		sc->sc_irate = iw_set_speed(sc, q->sample_rate, 1);
+
+		if (q->encoding == AUDIO_ENCODING_ULINEAR)
+			rfil->codec = audio_linear8_to_internal;
+	}
+	return 0;
+}
+
+#else
+
 /* Encoding. */
 int
 iw_query_encoding(void *addr, audio_encoding_t *fp)
@@ -782,6 +863,7 @@ iw_set_params(void *addr, int setmode, int usemode, audio_params_t *p,
 	return 0;
 }
 
+#endif /* AUDIO2 */
 
 int
 iw_round_blocksize(void *addr, int blk, int mode,
@@ -789,7 +871,11 @@ iw_round_blocksize(void *addr, int blk, int mode,
 {
 
 	/* Round to a multiple of the biggest sample size. */
+#if defined(AUDIO2)
+	return blk & -4;
+#else
 	return blk &= -4;
+#endif
 }
 
 void
