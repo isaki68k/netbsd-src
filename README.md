@@ -63,7 +63,7 @@ vs(4) などの珍しい周波数の hardware がサポートできない。
 |aucc(4)	|	|amiga	|Done	|Done	|Compiled but not tested
 |bba(4)		|am7930	|alpha	|Done	|Done	|Work
 |eap(4)		|	|	|Done	|modify set_params|Work
-|gus(4)@isapnp	|	|	|Done	|Done	|Compiled but not tested
+|gus(4)@isapnp	|iw	|	|Done	|Done	|Compiled but not tested
 |harmony(4)	|	|hppa	|Done	|Done	|Compiled but not tested
 |hdafg(4)	|	|	|Done	|	|Work
 |melody(4)	|	|amiga	|	|	|Compiled but not tested
@@ -77,7 +77,7 @@ vs(4) などの珍しい周波数の hardware がサポートできない。
 |vcaudio(4)	|	|evbarm/RPI	|Done	|Done	|Compiled but not tested
 |vidcaudio(4)	|	|acorn32|Done	|Done	|Compiled but not tested
 |vsaudio(4)	|am7930	|vax	|Done	|Done	|Work
-|wss(4)		|	|	|	|	|Work
+|wss(4)		|cs4231	|	|	|	|Work
 |yds(4)		|	|	|Done	|Done	|Work
 
 Note:
