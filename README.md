@@ -58,10 +58,12 @@ vs(4) などの珍しい周波数の hardware がサポートできない。
 |-------|-------|-------|-------|-------|-------|
 |arcofi(4)	|	|hp300	|Done	|Done	|Work
 |audioamd(4)	|am7930	|sparc	|Done	|Done	|Compiled but not tested
+|audiocs(4)	|cs4231	|sparc	|	|	|Work
 |auich(4)	|	|	|Done	|Done	|Work
 |autri(4)	|	|	|	|	|Work
 |aucc(4)	|	|amiga	|Done	|Done	|Compiled but not tested
 |bba(4)		|am7930	|alpha	|Done	|Done	|Work
+|dbri(4)	|	|sparc	|	|	|Work
 |eap(4)		|	|	|Done	|modify set_params|Work
 |gus(4)@isapnp	|iw	|	|Done	|Done	|Compiled but not tested
 |harmony(4)	|	|hppa	|Done	|Done	|Compiled but not tested
