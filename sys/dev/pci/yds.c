@@ -1112,26 +1112,24 @@ yds_intr(void *p)
 		printf ("yds_intr: timeout!\n");
 	}
 
-/*
- * YDS の割り込みは、「次フレーム要求」であり、
- * 「フレーム処理完了」ではないので、マニュアルにある
- * ように、YDS 処理バンクの逆側にアクセスして読み込んだときに
- * 逆側バンクに YDS が埋めることになっているフィールドは
- * まだ完成していない(ことがある)。
- * このため逆側バンクから pgstart を読み込むと不安定になっていた。
- *
- * YDS 処理バンク側のほうは、割り込み時点でフィールドが
- * 確定していることを YDS, CPU 双方が保証しないといけないので、
- * 読み取るだけであればそのバンクの処理開始時点の
- * 値が読み込めることになる。
- *
- */
+	/*
+	 * XXX
+	 * An interrupt in YMF754 occurs when next hardware frame is
+	 * requested, not when current hardware frame processing is
+	 * completed.  According to the datasheet, only access to the
+	 * inactive bank is permitted, but in fact, fields in inactive
+	 * bank that the chip should write to may or may not be filled
+	 * at that time.  On the other hand, both the CPU and the device
+	 * must guarantee that the fields in active bank are determined
+	 * at the beginning of the interrupt.
+	 * Therefore, we read active bank.
+	 */
 
 	if (status & YDS_STAT_INT) {
 		int nbank;
 		u_int pdma = 0, rdma = 0;
 
-		/* nbank is YDS processing bank ID */
+		/* nbank is bank number that YDS is processing now. */
 		nbank = YREAD4(sc, YDS_CONTROL_SELECT) & 1;
 
 		/* Clear interrupt flag */
