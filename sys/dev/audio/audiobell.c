@@ -143,7 +143,7 @@ audiobell(void *dev, u_int pitch, u_int period, u_int volume, int poll)
 			ptrack->is_pause = false;
 		}
 	}
-	/* play beep */
+	/* here we go! */
 	ptrack->is_pause = false;
 out:
 	if (buf != NULL)
