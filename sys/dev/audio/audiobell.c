@@ -30,8 +30,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#define AUDIOBELL_RECTANGLE
-
 #include <sys/types.h>
 __KERNEL_RCSID(0, "$NetBSD: audiobell.c,v 1.25 2017/07/01 05:32:24 nat Exp $");
 
@@ -48,15 +46,9 @@ __KERNEL_RCSID(0, "$NetBSD: audiobell.c,v 1.25 2017/07/01 05:32:24 nat Exp $");
 
 #include <dev/audio/audiodef.h>
 
-#if defined(AUDIOBELL_RECTANGLE)
-#include <dev/audiobelldata.h>
-#endif
-
 /* 44.1 kHz should reduce hum at higher pitches. */
 #define BELL_SAMPLE_RATE	44100
 #define BELL_SHIFT		3
-
-#if defined(AUDIOBELL_RECTANGLE)
 
 /*
  * dev is a device_t for the audio device to use.
@@ -158,116 +150,3 @@ out:
 		free(buf, M_TEMP);
 	audiobellclose(file);
 }
-
-#else
-
-static inline void
-audiobell_expandwave(int16_t *buf)
-{
-	u_int i;
-
-	for (i = 0; i < __arraycount(sinewave); i++)
-		buf[i] = sinewave[i];
-	for (i = __arraycount(sinewave); i < __arraycount(sinewave) * 2; i++)
-		 buf[i] = buf[__arraycount(sinewave) * 2 - i - 1];
-	for (i = __arraycount(sinewave) * 2; i < __arraycount(sinewave) * 4; i++)
-		buf[i] = -buf[__arraycount(sinewave) * 4 - i - 1];
-}
-
-/*
- * The algorithm here is based on that described in the RISC OS Programmer's
- * Reference Manual (pp1624--1628).
- */
-static inline int
-audiobell_synthesize(int16_t *buf, u_int pitch, u_int period, u_int volume,
-    uint16_t *phase)
-{
-	int16_t *wave;
-
-	wave = malloc(sizeof(sinewave) * 4, M_TEMP, M_WAITOK);
-	if (wave == NULL)
-		return -1;
-	audiobell_expandwave(wave);
-	pitch = pitch * ((sizeof(sinewave) * 4) << BELL_SHIFT) /
-	    BELL_SAMPLE_RATE / 2;
-	period = period * BELL_SAMPLE_RATE / 1000 / 2;
-
-	for (; period != 0; period--) {
-		*buf++ = wave[*phase >> BELL_SHIFT];
-		*phase += pitch;
-	}
-
-	free(wave, M_TEMP);
-	return 0;
-}
-
-void
-audiobell(void *v, u_int pitch, u_int period, u_int volume, int poll)
-{
-	dev_t audio;
-	int16_t *buf;
-	uint16_t phase;
-	struct audiobell_arg bellarg;
-	audio_file_t *file;
-	struct uio auio;
-	struct iovec aiov;
-	int size, len;
-
-	KASSERT(volume <= 100);
-
-	buf = NULL;
-	audio = AUDIO_DEVICE | device_unit((device_t)v);
-
-	/* The audio system isn't built for polling. */
-	if (poll)
-		return;
-
-	memset(&bellarg, 0, sizeof(bellarg));
-	bellarg.sample_rate = BELL_SAMPLE_RATE;
-	bellarg.encoding = AUDIO_ENCODING_SLINEAR_NE;
-	bellarg.channels = 1;
-	bellarg.precision = 16;
-
-	/* If not configured, we can't beep. */
-	if (audiobellopen(audio, &bellarg) != 0)
-		return;
-
-	file = bellarg.file;
-
-	if (bellarg.blocksize < BELL_SAMPLE_RATE)
-		bellarg.blocksize = BELL_SAMPLE_RATE;
-
-	len = period * BELL_SAMPLE_RATE / 1000 * 2;
-	size = uimin(len, bellarg.blocksize);
-	if (size == 0)
-		goto out;
-
-	buf = malloc(size, M_TEMP, M_WAITOK);
-	if (buf == NULL)
-		goto out;
-
-	phase = 0;
-	while (len > 0) {
-		size = uimin(len, bellarg.blocksize);
-		if (audiobell_synthesize(buf, pitch, size *
-				1000 / BELL_SAMPLE_RATE, volume, &phase) != 0)
-			goto out;
-		aiov.iov_base = (void *)buf;
-		aiov.iov_len = size;
-		auio.uio_iov = &aiov;
-		auio.uio_iovcnt = 1;
-		auio.uio_offset = 0;
-		auio.uio_resid = size;
-		auio.uio_rw = UIO_WRITE;
-		UIO_SETUP_SYSSPACE(&auio);
-
-		if (audiobellwrite(file, &auio) != 0)
-			break;
-		len -= size;
-	}
-out:
-	if (buf != NULL)
-		free(buf, M_TEMP);
-	audiobellclose(file);
-}
-#endif
