@@ -58,14 +58,21 @@ __KERNEL_RCSID(0, "$NetBSD: audiobell.c,v 1.25 2017/07/01 05:32:24 nat Exp $");
 
 #if defined(AUDIOBELL_RECTANGLE)
 
-/* Rectanglar wave */
+/*
+ * dev is a device_t for the audio device to use.
+ * pitch is the pitch of the bell in Hz,
+ * period is the length in ms,
+ * volume is the amplitude in % of max,
+ * poll is no longer used.
+ */
 void
-audiobell(void *v, u_int pitch, u_int period, u_int volume, int poll)
+audiobell(void *dev, u_int pitch, u_int period, u_int volume, int poll)
 {
 	dev_t audio;
 	int16_t *buf;
 	struct audiobell_arg bellarg;
 	audio_file_t *file;
+	audio_track_t *ptrack;
 	struct uio auio;
 	struct iovec aiov;
 	int i;
@@ -77,6 +84,10 @@ audiobell(void *v, u_int pitch, u_int period, u_int volume, int poll)
 
 	KASSERT(volume <= 100);
 
+	/* The audio system isn't built for polling. */
+	if (poll)
+		return;
+
 	/* pitch limit 20 to Nyquist freq. */
 	if (pitch > BELL_SAMPLE_RATE / 2)
 		pitch = BELL_SAMPLE_RATE;
@@ -84,29 +95,25 @@ audiobell(void *v, u_int pitch, u_int period, u_int volume, int poll)
 		pitch = 20;
 
 	buf = NULL;
-	audio = AUDIO_DEVICE | device_unit((device_t)v);
-
-	/* The audio system isn't built for polling. */
-	if (poll)
-		return;
+	audio = AUDIO_DEVICE | device_unit((device_t)dev);
 
 	memset(&bellarg, 0, sizeof(bellarg));
-	bellarg.sample_rate = BELL_SAMPLE_RATE;
 	bellarg.encoding = AUDIO_ENCODING_SLINEAR_NE;
-	bellarg.channels = 1;
 	bellarg.precision = 16;
+	bellarg.channels = 1;
+	bellarg.sample_rate = BELL_SAMPLE_RATE;
 
 	/* If not configured, we can't beep. */
 	if (audiobellopen(audio, &bellarg) != 0)
 		return;
 
 	file = bellarg.file;
+	ptrack = file->ptrack;
 
 	/* msec to sample count */
 	remaincount = period * BELL_SAMPLE_RATE / 1000;
 	remainlen = remaincount * sizeof(int16_t);
 
-	/* generate single wave */
 	wave1count = BELL_SAMPLE_RATE / pitch;
 	wave1len = wave1count * sizeof(int16_t);
 
@@ -114,6 +121,7 @@ audiobell(void *v, u_int pitch, u_int period, u_int volume, int poll)
 	if (buf == NULL)
 		goto out;
 
+	/* generate single wave */
 	vol = 32767 * volume / 100;
 	for (i = 0; i < wave1count / 2; i++) {
 		buf[i] = vol;
@@ -123,14 +131,8 @@ audiobell(void *v, u_int pitch, u_int period, u_int volume, int poll)
 		buf[i] = vol;
 	}
 
-#define USE_PAUSE
-#if defined(USE_PAUSE)
-	/* pause */
-	/* TODO: API */
-	file->ptrack->is_pause = true;
-#endif
-
-	/* write to audio */
+	/* write to audio while pausing */
+	ptrack->is_pause = true;
 	for (; remainlen > 0; remainlen -= wave1len) {
 		int len;
 		len = uimin(remainlen, wave1len);
@@ -145,15 +147,12 @@ audiobell(void *v, u_int pitch, u_int period, u_int volume, int poll)
 		if (audiobellwrite(file, &auio) != 0)
 			goto out;
 
-#if defined(USE_PAUSE)
-		if (file->ptrack->usrbuf.used >= file->ptrack->usrbuf_blksize * NBLKHW) {
-			file->ptrack->is_pause = false;
+		if (ptrack->usrbuf.used >= ptrack->usrbuf_blksize * NBLKHW) {
+			ptrack->is_pause = false;
 		}
-#endif
 	}
-#if defined(USE_PAUSE)
-	file->ptrack->is_pause = false;
-#endif
+	/* play beep */
+	ptrack->is_pause = false;
 out:
 	if (buf != NULL)
 		free(buf, M_TEMP);
