@@ -75,13 +75,13 @@
 
 #include <dev/audio_if.h>
 #include <dev/auconv.h>
-#include <dev/audio/aufilter.h>
+#include <dev/audio/audiofil.h>
 #else
 #include <stdint.h>
 #include <stdbool.h>
 #include "compat.h"
 #include "userland.h"
-#include "aufilter.h"
+#include "audiofil.h"
 #endif // _KERNEL
 
 /*

@@ -178,7 +178,7 @@ typedef struct stream_filter_list {
 
 #if defined(AUDIO2)
 /* XXX should be merged. */
-#include <dev/audio/aufilter.h>
+#include <dev/audio/audiofil.h>
 #endif
 
 struct audio_hw_if {
