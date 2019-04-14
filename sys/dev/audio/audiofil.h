@@ -26,8 +26,8 @@
  * SUCH DAMAGE.
  */
 
-// XXX This should be merged some other headers?
-#pragma once
+#ifndef _SYS_DEV_AUDIO_AUDIOFIL_H_
+#define _SYS_DEV_AUDIO_AUDIOFIL_H_
 
 /*
  * Number of bits for internal format.
@@ -105,3 +105,5 @@ typedef struct {
 	audio_filter_t codec;	/* conversion function */
 	void *context;		/* optional codec's argument */
 } audio_filter_reg_t;
+
+#endif /* !_SYS_DEV_AUDIO_AUDIOFIL_H_ */
