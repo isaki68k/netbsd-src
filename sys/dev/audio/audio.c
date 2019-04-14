@@ -6498,7 +6498,7 @@ audio_hw_probe_by_encoding(struct audio_softc *sc, audio_format2_t *cand,
 
 	KASSERT(mutex_owned(sc->sc_lock));
 
-	fmt.encoding  = AUDIO_ENCODING_SLINEAR_LE;
+	fmt.encoding  = AUDIO_ENCODING_SLINEAR_NE;
 	fmt.precision = AUDIO_INTERNAL_BITS;
 	fmt.stride    = AUDIO_INTERNAL_BITS;
 
