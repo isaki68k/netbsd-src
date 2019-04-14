@@ -30,10 +30,6 @@
 #ifndef _SYS_DEV_AUDIO_AUDIODEF_H_
 #define _SYS_DEV_AUDIO_AUDIODEF_H_
 
-/*
- * audiodef.h is included only from audio.c.
- */
-
 /* Number of HW buffer's blocks. */
 #define NBLKHW (3)
 
