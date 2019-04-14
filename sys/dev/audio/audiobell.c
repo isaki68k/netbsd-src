@@ -43,12 +43,10 @@ __KERNEL_RCSID(0, "$NetBSD: audiobell.c,v 1.25 2017/07/01 05:32:24 nat Exp $");
 #include <dev/audio_if.h>
 #include <dev/audiovar.h>
 #include <dev/audiobellvar.h>
-
 #include <dev/audio/audiodef.h>
 
 /* 44.1 kHz should reduce hum at higher pitches. */
 #define BELL_SAMPLE_RATE	44100
-#define BELL_SHIFT		3
 
 /*
  * dev is a device_t for the audio device to use.
@@ -80,7 +78,7 @@ audiobell(void *dev, u_int pitch, u_int period, u_int volume, int poll)
 	if (poll)
 		return;
 
-	/* pitch limit 20 to Nyquist freq. */
+	/* Limit the pitch from 20Hz to Nyquist frequency. */
 	if (pitch > BELL_SAMPLE_RATE / 2)
 		pitch = BELL_SAMPLE_RATE;
 	if (pitch < 20)
@@ -102,7 +100,7 @@ audiobell(void *dev, u_int pitch, u_int period, u_int volume, int poll)
 	file = bellarg.file;
 	ptrack = file->ptrack;
 
-	/* msec to sample count */
+	/* msec to sample count. */
 	remaincount = period * BELL_SAMPLE_RATE / 1000;
 	remainlen = remaincount * sizeof(int16_t);
 
@@ -113,7 +111,7 @@ audiobell(void *dev, u_int pitch, u_int period, u_int volume, int poll)
 	if (buf == NULL)
 		goto out;
 
-	/* generate single wave */
+	/* Generate single square wave.  It's enough to beep. */
 	vol = 32767 * volume / 100;
 	for (i = 0; i < wave1count / 2; i++) {
 		buf[i] = vol;
@@ -123,7 +121,7 @@ audiobell(void *dev, u_int pitch, u_int period, u_int volume, int poll)
 		buf[i] = vol;
 	}
 
-	/* write to audio while pausing */
+	/* Write while paused to avoid begin inserted silence. */
 	ptrack->is_pause = true;
 	for (; remainlen > 0; remainlen -= wave1len) {
 		int len;
@@ -143,7 +141,7 @@ audiobell(void *dev, u_int pitch, u_int period, u_int volume, int poll)
 			ptrack->is_pause = false;
 		}
 	}
-	/* here we go! */
+	/* Here we go! */
 	ptrack->is_pause = false;
 out:
 	if (buf != NULL)
