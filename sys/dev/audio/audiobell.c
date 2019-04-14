@@ -70,6 +70,7 @@ audiobell(void *dev, u_int pitch, u_int period, u_int volume, int poll)
 	int remainlen;
 	int wave1count;
 	int wave1len;
+	int len;
 	int16_t vol;
 
 	KASSERT(volume <= 100);
@@ -124,7 +125,6 @@ audiobell(void *dev, u_int pitch, u_int period, u_int volume, int poll)
 	/* Write while paused to avoid begin inserted silence. */
 	ptrack->is_pause = true;
 	for (; remainlen > 0; remainlen -= wave1len) {
-		int len;
 		len = uimin(remainlen, wave1len);
 		aiov.iov_base = (void *)buf;
 		aiov.iov_len = len;
@@ -137,9 +137,8 @@ audiobell(void *dev, u_int pitch, u_int period, u_int volume, int poll)
 		if (audiobellwrite(file, &auio) != 0)
 			goto out;
 
-		if (ptrack->usrbuf.used >= ptrack->usrbuf_blksize * NBLKHW) {
+		if (ptrack->usrbuf.used >= ptrack->usrbuf_blksize * NBLKHW)
 			ptrack->is_pause = false;
-		}
 	}
 	/* Here we go! */
 	ptrack->is_pause = false;
