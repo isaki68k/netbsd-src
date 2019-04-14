@@ -320,4 +320,4 @@ int audiobellopen(dev_t, struct audiobell_arg *);
 int audiobellclose(audio_file_t *);
 int audiobellwrite(audio_file_t *, struct uio *);
 
-#endif /* _SYS_DEV_AUDIO_AUDIOVAR_H_ */
+#endif /* !_SYS_DEV_AUDIO_AUDIOVAR_H_ */
