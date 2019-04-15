@@ -7206,6 +7206,8 @@ audio_hw_setinfo(struct audio_softc *sc, const struct audio_info *newai,
 	struct audio_prinfo *oldri;
 	bool restart_pmixer;
 	bool restart_rmixer;
+	int oldpport;
+	int oldrport;
 	u_int pgain;
 	u_int rgain;
 	u_char pbalance;
@@ -7227,10 +7229,13 @@ audio_hw_setinfo(struct audio_softc *sc, const struct audio_info *newai,
 	restart_rmixer = false;
 	/*
 	 * It's necessary to halt mixers to change the port.
-	 * Even setting either one of playback and recording, both
-	 * mixers must be halted.
+	 * XXX Even setting either one of playback and recording,
+	 * both mixers must be halted.
 	 */
-	if (SPECIFIED(newpi->port) || SPECIFIED(newri->port)) {
+	oldpport = au_get_port(sc, &sc->sc_outports);
+	oldrport = au_get_port(sc, &sc->sc_inports);
+	if ((SPECIFIED(newpi->port) && newpi->port != oldpport) ||
+	    (SPECIFIED(newri->port) && newri->port != oldrport)   ) {
 		if (sc->sc_pbusy) {
 			audio_pmixer_halt(sc);
 			restart_pmixer = true;
@@ -7241,9 +7246,9 @@ audio_hw_setinfo(struct audio_softc *sc, const struct audio_info *newai,
 		}
 	}
 
-	if (SPECIFIED(newpi->port)) {
+	if (SPECIFIED(newpi->port) && newpi->port != oldpport) {
 		if (oldai)
-			oldpi->port = au_get_port(sc, &sc->sc_outports);
+			oldpi->port = oldpport;
 		error = au_set_port(sc, &sc->sc_outports, newpi->port);
 		if (error) {
 			TRACE(1, "set play.port=%d failed: %d",
@@ -7251,9 +7256,9 @@ audio_hw_setinfo(struct audio_softc *sc, const struct audio_info *newai,
 			goto abort;
 		}
 	}
-	if (SPECIFIED(newri->port)) {
+	if (SPECIFIED(newri->port) && newri->port != oldrport) {
 		if (oldai)
-			oldri->port = au_get_port(sc, &sc->sc_inports);
+			oldri->port = oldrport;
 		error = au_set_port(sc, &sc->sc_inports, newri->port);
 		if (error) {
 			TRACE(1, "set record.port=%d failed: %d",
