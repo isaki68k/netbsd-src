@@ -6956,8 +6956,8 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	}
 #endif
 
+	AUDIO_INITINFO(&saved_ai);
 	/* XXX shut up gcc */
-	memset(&saved_ai, 0xff, sizeof(saved_ai));
 	memset(&saved_pfmt, 0, sizeof(saved_pfmt));
 	memset(&saved_rfmt, 0, sizeof(saved_rfmt));
 
