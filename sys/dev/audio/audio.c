@@ -6837,24 +6837,6 @@ audio_mixers_get_format(struct audio_softc *sc, struct audio_info *ai)
  * simple.
  * 1. The first read/write access of the first track makes mixer start.
  * 2. A pause of the last track doesn't make mixer stop.
- *
- * +-------------------------- necessary to stop hw (like set_port())
- * |	+--------------------- Is current mixer running?
- * |	|	+------------- Is current track running? 'run' means yes.
- * |	|	|	       'open' means opened but not running.
- * |	|	|	+----- pause value specified in SETINFO
- * hw	mixer	track	pause
- * ---------------------------
- * no	stop	open	0->1	nothing to do
- * no	stop	open	1->0	nothing to do
- * no	stop	run	0->1	nothing to do
- * no	stop	run	1->0	nothing to do (*1)
- * no	run	open	0->1	nothing to do
- * no	run	open	1->0	nothing to do
- * no	run	run	0->1	nothing to do (*2)
- * no	run	run	1->0	nothing to do
- * yes	stop	*	*->*	nothing to do
- * yes	run	*	*->*	stop and restart
  */
 
 /*
@@ -7204,10 +7186,6 @@ audio_hw_setinfo(struct audio_softc *sc, const struct audio_info *newai,
 	const struct audio_prinfo *newri;
 	struct audio_prinfo *oldpi;
 	struct audio_prinfo *oldri;
-	bool restart_pmixer;
-	bool restart_rmixer;
-	int oldpport;
-	int oldrport;
 	u_int pgain;
 	u_int rgain;
 	u_char pbalance;
@@ -7217,6 +7195,10 @@ audio_hw_setinfo(struct audio_softc *sc, const struct audio_info *newai,
 	KASSERT(mutex_owned(sc->sc_lock));
 	KASSERT(sc->sc_exlock);
 
+	/* XXX shut up gcc */
+	oldpi = NULL;
+	oldri = NULL;
+
 	newpi = &newai->play;
 	newri = &newai->record;
 	if (oldai) {
@@ -7225,30 +7207,14 @@ audio_hw_setinfo(struct audio_softc *sc, const struct audio_info *newai,
 	}
 	error = 0;
 
-	restart_pmixer = false;
-	restart_rmixer = false;
 	/*
-	 * It's necessary to halt mixers to change the port.
-	 * XXX Even setting either one of playback and recording,
-	 * both mixers must be halted.
+	 * It looks like unnecessary to halt HW mixers to set HW mixers.
+	 * mixer_ioctl(MIXER_WRITE) also doesn't halt.
 	 */
-	oldpport = au_get_port(sc, &sc->sc_outports);
-	oldrport = au_get_port(sc, &sc->sc_inports);
-	if ((SPECIFIED(newpi->port) && newpi->port != oldpport) ||
-	    (SPECIFIED(newri->port) && newri->port != oldrport)   ) {
-		if (sc->sc_pbusy) {
-			audio_pmixer_halt(sc);
-			restart_pmixer = true;
-		}
-		if (sc->sc_rbusy) {
-			audio_rmixer_halt(sc);
-			restart_rmixer = true;
-		}
-	}
 
-	if (SPECIFIED(newpi->port) && newpi->port != oldpport) {
+	if (SPECIFIED(newpi->port)) {
 		if (oldai)
-			oldpi->port = oldpport;
+			oldpi->port = au_get_port(sc, &sc->sc_outports);
 		error = au_set_port(sc, &sc->sc_outports, newpi->port);
 		if (error) {
 			TRACE(1, "set play.port=%d failed: %d",
@@ -7256,9 +7222,9 @@ audio_hw_setinfo(struct audio_softc *sc, const struct audio_info *newai,
 			goto abort;
 		}
 	}
-	if (SPECIFIED(newri->port) && newri->port != oldrport) {
+	if (SPECIFIED(newri->port)) {
 		if (oldai)
-			oldri->port = oldrport;
+			oldri->port = au_get_port(sc, &sc->sc_inports);
 		error = au_set_port(sc, &sc->sc_inports, newri->port);
 		if (error) {
 			TRACE(1, "set record.port=%d failed: %d",
@@ -7267,10 +7233,6 @@ audio_hw_setinfo(struct audio_softc *sc, const struct audio_info *newai,
 		}
 	}
 
-	/*
-	 * On the other hand, it's not necessary to halt the mixer to
-	 * change gain, balance and monitor_gain.
-	 */
 	/* Backup play.{gain,balance} */
 	if (SPECIFIED(newpi->gain) || SPECIFIED_CH(newpi->balance)) {
 		au_get_gain(sc, &sc->sc_outports, &pgain, &pbalance);
@@ -7338,17 +7300,8 @@ audio_hw_setinfo(struct audio_softc *sc, const struct audio_info *newai,
 	/* XXX TODO */
 	//sc->sc_ai = *ai;
 
-	/* Restart the mixer if necessary */
 	error = 0;
 abort:
-	/* XXX Is pmixer_start false ? */
-	if (restart_pmixer) {
-		audio_pmixer_start(sc, false);
-	}
-	if (restart_rmixer) {
-		audio_rmixer_start(sc);
-	}
-
 	return error;
 }
 
