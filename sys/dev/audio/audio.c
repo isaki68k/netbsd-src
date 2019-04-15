@@ -944,11 +944,10 @@ audioattach(device_t parent, device_t self, void *aux)
 	props = audio_get_props(sc);
 	mutex_exit(sc->sc_lock);
 
-	if ((props & AUDIO_PROP_FULLDUPLEX) != 0) {
+	if ((props & AUDIO_PROP_FULLDUPLEX))
 		aprint_normal(": full duplex");
-	} else {
+	else
 		aprint_normal(": half duplex");
-	}
 
 	is_indep = (props & AUDIO_PROP_INDEPENDENT);
 	mode = 0;
