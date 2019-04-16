@@ -1862,11 +1862,21 @@ emuxki_voice_start(struct emuxki_voice *voice,
 	voice->inth = inth;
 	voice->inthparam = inthparam;
 	if (voice->use & EMU_VOICE_USE_PLAY) {
+		bus_dmamap_sync(
+			voice->buffer->dmamem->dmat,
+			voice->buffer->dmamem->map,
+			0, voice->buffer->dmamem->size,
+			BUS_DMASYNC_PREWRITE);
 		voice->trigblk = 1;
 		emuxki_channel_start(voice->dataloc.chan[0]);
 		if (voice->stereo)
 			emuxki_channel_start(voice->dataloc.chan[1]);
 	} else {
+		bus_dmamap_sync(
+			voice->buffer->dmamem->dmat,
+			voice->buffer->dmamem->map,
+			0, voice->buffer->dmamem->size,
+			BUS_DMASYNC_PREREAD);
 		voice->trigblk = 1;
 		switch (voice->dataloc.source) {
 		case EMU_RECSRC_ADC:
@@ -1998,9 +2008,36 @@ emuxki_intr(void *arg)
 				    curblk < (voice->trigblk + voice->blkmod / 2)) ||
 				    ((int)voice->trigblk - (int)curblk) >
 				    (voice->blkmod / 2 + 1)) {
+
+if (voice->use & EMU_VOICE_USE_PLAY) {
+		bus_dmamap_sync(
+			voice->buffer->dmamem->dmat,
+			voice->buffer->dmamem->map,
+			0, voice->buffer->dmamem->size,
+			BUS_DMASYNC_POSTWRITE);
+} else {
+		bus_dmamap_sync(
+			voice->buffer->dmamem->dmat,
+			voice->buffer->dmamem->map,
+			0, voice->buffer->dmamem->size,
+			BUS_DMASYNC_POSTREAD);
+}
 					voice->inth(voice->inthparam);
 					voice->trigblk++;
 					voice->trigblk %= voice->blkmod;
+if (voice->use & EMU_VOICE_USE_PLAY) {
+		bus_dmamap_sync(
+			voice->buffer->dmamem->dmat,
+			voice->buffer->dmamem->map,
+			0, voice->buffer->dmamem->size,
+			BUS_DMASYNC_PREWRITE);
+} else {
+		bus_dmamap_sync(
+			voice->buffer->dmamem->dmat,
+			voice->buffer->dmamem->map,
+			0, voice->buffer->dmamem->size,
+			BUS_DMASYNC_PREREAD);
+}
 				}
 #endif
 			}
