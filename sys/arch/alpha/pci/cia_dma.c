@@ -315,7 +315,7 @@ cia_bus_dmamap_create_direct(
 		 * is greater than 1.  This is because many network
 		 * drivers allocate large contiguous blocks of memory
 		 * for control data structures, even though they won't
-		 * do any single DMA that crosses a page coundary.
+		 * do any single DMA that crosses a page boundary.
 		 *	-- thorpej@NetBSD.org, 2/5/2000
 		 */
 		map->_dm_flags |= DMAMAP_NO_COALESCE;
