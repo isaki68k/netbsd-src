@@ -371,8 +371,8 @@ qemufwcfg*	at acpi?		# QEMU Firmware Configuration device
 #wmieeepc*	at acpiwmibus?		# Asus Eee PC WMI mappings
 #wmihp*		at acpiwmibus?		# HP WMI mappings
 #wmimsi* 	at acpiwmibus?		# MSI WMI mappings
-#wss*		at acpi?		# NeoMagic 256AV in wss mode
-#ym*		at acpi?		# Yamaha OPL3-SA[23] audio
+wss*		at acpi?		# NeoMagic 256AV in wss mode
+ym*		at acpi?		# Yamaha OPL3-SA[23] audio
 
 # Sony Vaio jog dial
 #spic*		at acpi?		# Sony Programmable I/O Controller
@@ -380,13 +380,13 @@ qemufwcfg*	at acpi?		# QEMU Firmware Configuration device
 
 # Plug-and-Play BIOS and attached devices
 
-#pnpbios*	at mainbus?
+pnpbios*	at mainbus?
 
 # mainboard audio chips
-#ess*		at pnpbios? index ?	# ESS AudioDrive
-#sb*		at pnpbios? index ?	# NeoMagic 256AV in sb mode
-#wss*		at pnpbios? index ?	# NeoMagic 256AV in wss mode
-#ym*		at pnpbios? index ?	# Yamaha OPL3-SA[23] audio
+ess*		at pnpbios? index ?	# ESS AudioDrive
+sb*		at pnpbios? index ?	# NeoMagic 256AV in sb mode
+wss*		at pnpbios? index ?	# NeoMagic 256AV in wss mode
+ym*		at pnpbios? index ?	# Yamaha OPL3-SA[23] audio
 
 # com port
 # If enabled, consider changing "com0", "com1", and "com2" under "ISA Serial
@@ -1225,54 +1225,54 @@ include "dev/usb/usbdevices.config"
 # Audio Devices
 
 # PCI audio devices
-#auacer* at pci? dev ? function ?	# ALi M5455 integrated AC'97 Audio
+auacer* at pci? dev ? function ?	# ALi M5455 integrated AC'97 Audio
 auich*	at pci? dev ? function ?	# Intel ICH integrated AC'97 Audio
-#auixp*	at pci? dev ? function ?	# ATI IXP AC'97 Audio
-#autri*	at pci? dev ? function ?	# Trident 4DWAVE based AC'97 Audio
-#auvia*	at pci? dev ? function ?	# VIA VT82C686A integrated AC'97 Audio
-#azalia* at pci? dev ? function ?	# High Definition Audio
-#clcs*	at pci? dev ? function ?	# Cirrus Logic CS4280
-#clct*	at pci? dev ? function ?	# Cirrus Logic CS4281
-#cmpci*	at pci? dev ? function ?	# C-Media CMI8338/8738
+auixp*	at pci? dev ? function ?	# ATI IXP AC'97 Audio
+autri*	at pci? dev ? function ?	# Trident 4DWAVE based AC'97 Audio
+auvia*	at pci? dev ? function ?	# VIA VT82C686A integrated AC'97 Audio
+azalia* at pci? dev ? function ?	# High Definition Audio
+clcs*	at pci? dev ? function ?	# Cirrus Logic CS4280
+clct*	at pci? dev ? function ?	# Cirrus Logic CS4281
+cmpci*	at pci? dev ? function ?	# C-Media CMI8338/8738
 eap*	at pci? dev ? function ?	# Ensoniq AudioPCI
-#emuxki* at pci? dev ? function ?	# Creative SBLive! and PCI512
-#esa*	at pci? dev ? function ?	# ESS Allegro-1 / Maestro-3 PCI Audio
-#esm*	at pci? dev ? function ?	# ESS Maestro-1/2/2e PCI Audio Accelerator
-#eso*	at pci? dev ? function ?	# ESS Solo-1 PCI AudioDrive
-#fms*	at pci? dev ? function ?	# Forte Media FM801
-#gcscaudio* at pci? dev ? function ?	# AMD Geode CS5536 Companion Audio
-#neo*	at pci? dev ? function ?	# NeoMagic 256 AC'97 Audio
-#sv*	at pci? dev ? function ?	# S3 SonicVibes
-#yds*	at pci? dev ? function ?	# Yamaha DS-1 PCI Audio
+emuxki* at pci? dev ? function ?	# Creative SBLive! and PCI512
+esa*	at pci? dev ? function ?	# ESS Allegro-1 / Maestro-3 PCI Audio
+esm*	at pci? dev ? function ?	# ESS Maestro-1/2/2e PCI Audio Accelerator
+eso*	at pci? dev ? function ?	# ESS Solo-1 PCI AudioDrive
+fms*	at pci? dev ? function ?	# Forte Media FM801
+gcscaudio* at pci? dev ? function ?	# AMD Geode CS5536 Companion Audio
+neo*	at pci? dev ? function ?	# NeoMagic 256 AC'97 Audio
+sv*	at pci? dev ? function ?	# S3 SonicVibes
+yds*	at pci? dev ? function ?	# Yamaha DS-1 PCI Audio
 
 # ISA Plug-and-Play audio devices
-#ess*	at isapnp?			# ESS Tech ES1887, ES1888, ES888 audio
-#guspnp* at isapnp?			# Gravis Ultra Sound PnP audio
-#sb*	at isapnp?			# SoundBlaster-compatible audio
-#wss*	at isapnp?			# Windows Sound System
-#ym*	at isapnp?			# Yamaha OPL3-SA[23] audio
+ess*	at isapnp?			# ESS Tech ES1887, ES1888, ES888 audio
+guspnp* at isapnp?			# Gravis Ultra Sound PnP audio
+sb*	at isapnp?			# SoundBlaster-compatible audio
+wss*	at isapnp?			# Windows Sound System
+ym*	at isapnp?			# Yamaha OPL3-SA[23] audio
 
 # ISA audio devices
 # the "aria" probe might give false hits
-#aria0	at isa? port 0x290 irq 10 		# Aria
-#ess0	at isa? port 0x220 irq 5 drq 1 drq2 5	# ESS 18XX
-#gus0	at isa? port 0x220 irq 7 drq 1 drq2 6	# Gravis Ultra Sound
-#pas0	at isa? port 0x220 irq 7 drq 1		# ProAudio Spectrum
+aria0	at isa? port 0x290 irq 10 		# Aria
+ess0	at isa? port 0x220 irq 5 drq 1 drq2 5	# ESS 18XX
+gus0	at isa? port 0x220 irq 7 drq 1 drq2 6	# Gravis Ultra Sound
+pas0	at isa? port 0x220 irq 7 drq 1		# ProAudio Spectrum
 sb0	at isa? port 0x220 irq 5 drq 1 drq2 5	# SoundBlaster
-#wss0	at isa? port 0x530 irq 10 drq 0	drq2 1	# Windows Sound System
-#cms0	at isa? port 0x220			# Creative Music System
+wss0	at isa? port 0x530 irq 10 drq 0	drq2 1	# Windows Sound System
+cms0	at isa? port 0x220			# Creative Music System
 
 # OPL[23] FM synthesizers
-#opl0	at isa? port 0x388	# use only if not attached to sound card
-#opl*	at cmpci? flags 1
-#opl*	at eso?
-#opl*	at ess?
-#opl*	at fms?
-#opl*	at sb?
-#opl*	at sv?
-#opl*	at wss?
-#opl*	at yds?
-#opl*	at ym?
+opl0	at isa? port 0x388	# use only if not attached to sound card
+opl*	at cmpci? flags 1
+opl*	at eso?
+opl*	at ess?
+opl*	at fms?
+opl*	at sb?
+opl*	at sv?
+opl*	at wss?
+opl*	at yds?
+opl*	at ym?
 
 # High Definition Audio
 hdaudio*	at pci? dev ? function ?	# High Definition Audio
@@ -1282,14 +1282,14 @@ hdafg*		at hdaudiobus?
 audio*	at audiobus?
 
 # MPU 401 UARTs
-#mpu*	at isa? port 0x330 irq 9	# MPU401 or compatible card
-#mpu*	at isapnp?
-#mpu*	at cmpci?
-#mpu*	at eso?
-#mpu*	at fms?
-#mpu*	at sb?
-#mpu*	at yds?
-#mpu*	at ym?
+mpu*	at isa? port 0x330 irq 9	# MPU401 or compatible card
+mpu*	at isapnp?
+mpu*	at cmpci?
+mpu*	at eso?
+mpu*	at fms?
+mpu*	at sb?
+mpu*	at yds?
+mpu*	at ym?
 
 # MIDI support
 midi*	at midibus?
@@ -1297,7 +1297,7 @@ midi*	at pcppi?		# MIDI interface to the PC speaker
 
 # The spkr driver provides a simple tone interface to the built in speaker.
 spkr*	at pcppi?		# PC speaker
-#spkr*	at audio?		# PC speaker (synthesized)
+spkr*	at audio?		# PC speaker (synthesized)
 
 
 # FM-Radio devices
@@ -1332,8 +1332,8 @@ spkr*	at pcppi?		# PC speaker
 # TV cards
 
 # Brooktree 848/849/878/879 based TV cards
-#bktr*	at pci? dev ? function ?
-#radio*	at bktr?
+bktr*	at pci? dev ? function ?
+radio*	at bktr?
 
 
 # Bluetooth Controller and Device support
@@ -1368,7 +1368,7 @@ spkr*	at pcppi?		# PC speaker
 #wsmouse* at btmagic? mux 0
 
 # Bluetooth Audio support
-#btsco* at bthub?
+btsco* at bthub?
 
 
 # Mice
