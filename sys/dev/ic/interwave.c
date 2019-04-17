@@ -98,7 +98,7 @@ struct audio_device iw_device = {
 #define IW_FORMAT(prio, enc, prec, ch, chmask) \
 	{ \
 		.priority	= (prio), \
-		.mode		= AUMODE_PLAY xxx, \
+		.mode		= AUMODE_PLAY | AUMODE_RECORD, \
 		.encoding	= (enc), \
 		.validbits	= (prec), \
 		.precision	= (prec), \
@@ -626,45 +626,9 @@ int
 iw_query_format(void *addr, audio_format_query_t *afp)
 {
 
-	return audio_query_format(iw_format, IW_NFORMATS, afp);
+	return audio_query_format(iw_formats, IW_NFORMATS, afp);
 }
-
-int
-iw_audio_set_format(void *addr, int setmode,
-	const audio_params_t *p, const audio_params_t *q,
-	audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
-{
-	struct iw_softc *sc;
-
-	DPRINTF(("%s: code %u, prec %u, rate %u, chan %u\n", __func__,
-	    p->encoding, p->precision, p->sample_rate, p->channels));
-	sc = addr;
-
-	if (setmode & AUMODE_PLAY) {
-		sc->play_channels = p->channels;
-		sc->play_encoding = p->encoding;
-		sc->play_precision = p->precision;
-		iw_set_format(sc, p->precision, 0);
-		sc->sc_orate = iw_set_speed(sc, p->sample_rate, 0);
-
-		if (p->encoding == AUDIO_ENCODING_ULINEAR)
-			pfil->codec = audio_internal_to_linear8;
-	} else {
-		sc->rec_channels = q->channels;
-		sc->rec_encoding = q->encoding;
-		sc->rec_precision = q->precision;
-		/* XXX Is this 'p' a typo of 'q' ? */
-		iw_set_format(sc, p->precision, 1);
-		sc->sc_irate = iw_set_speed(sc, q->sample_rate, 1);
-
-		if (q->encoding == AUDIO_ENCODING_ULINEAR)
-			rfil->codec = audio_linear8_to_internal;
-	}
-	return 0;
-}
-
 #else
-
 /* Encoding. */
 int
 iw_query_encoding(void *addr, audio_encoding_t *fp)
@@ -722,8 +686,9 @@ iw_query_encoding(void *addr, audio_encoding_t *fp)
 	}
 	return 0;
 }
+#endif /* AUDIO2 */
 
-u_long
+static u_long
 iw_set_format(struct iw_softc *sc, u_long precision, int in)
 {
 	u_char	data;
@@ -786,6 +751,41 @@ iw_set_format(struct iw_softc *sc, u_long precision, int in)
 	return encoding;
 }
 
+#if defined(AUDIO2)
+int
+iw_audio_set_format(void *addr, int setmode,
+	const audio_params_t *p, const audio_params_t *q,
+	audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
+{
+	struct iw_softc *sc;
+
+	DPRINTF(("%s: code %u, prec %u, rate %u, chan %u\n", __func__,
+	    p->encoding, p->precision, p->sample_rate, p->channels));
+	sc = addr;
+
+	if (setmode & AUMODE_PLAY) {
+		sc->play_channels = p->channels;
+		sc->play_encoding = p->encoding;
+		sc->play_precision = p->precision;
+		iw_set_format(sc, p->precision, 0);
+		sc->sc_orate = iw_set_speed(sc, p->sample_rate, 0);
+
+		if (p->encoding == AUDIO_ENCODING_ULINEAR)
+			pfil->codec = audio_internal_to_linear8;
+	} else {
+		sc->rec_channels = q->channels;
+		sc->rec_encoding = q->encoding;
+		sc->rec_precision = q->precision;
+		/* XXX Is this 'p' a typo of 'q' ? */
+		iw_set_format(sc, p->precision, 1);
+		sc->sc_irate = iw_set_speed(sc, q->sample_rate, 1);
+
+		if (q->encoding == AUDIO_ENCODING_ULINEAR)
+			rfil->codec = audio_linear8_to_internal;
+	}
+	return 0;
+}
+#else
 int
 iw_set_params(void *addr, int setmode, int usemode, audio_params_t *p,
     audio_params_t *q, stream_filter_list_t *pfil, stream_filter_list_t *rfil)
@@ -864,7 +864,6 @@ iw_set_params(void *addr, int setmode, int usemode, audio_params_t *p,
 	}
 	return 0;
 }
-
 #endif /* AUDIO2 */
 
 int
