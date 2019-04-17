@@ -68,6 +68,7 @@ vs(4) などの珍しい周波数の hardware がサポートできない。
 |clct(4)	|cs4281	|	|Done	|Done	|Compiled but not tested
 |dbri(4)	|	|sparc	|	|	|Work
 |eap(4)		|	|	|Done	|modify set_params|Work
+|gus(4)		|ad1848?|	|Done	|	|Compiled but not tested
 |gus(4)@isapnp	|iw	|	|Done	|Done	|Compiled but not tested
 |harmony(4)	|	|hppa	|Done	|Done	|Compiled but not tested
 |hdafg(4)	|	|	|Done	|	|Work

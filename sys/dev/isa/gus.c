@@ -108,8 +108,10 @@ __KERNEL_RCSID(0, "$NetBSD: gus.c,v 1.115 2019/03/16 12:09:58 isaki Exp $");
 #include <sys/audioio.h>
 
 #include <dev/audio_if.h>
+#if !defined(AUDIO2)
 #include <dev/mulaw.h>
 #include <dev/auconv.h>
+#endif
 
 #include <dev/ic/ics2101reg.h>
 #include <dev/ic/cs4231reg.h>
@@ -420,7 +422,11 @@ STATIC int	gusmax_mixer_set_port(void *, mixer_ctrl_t *);
 STATIC int	gusmax_mixer_get_port(void *, mixer_ctrl_t *);
 STATIC int	gus_mixer_query_devinfo(void *, mixer_devinfo_t *);
 STATIC int	gusmax_mixer_query_devinfo(void *, mixer_devinfo_t *);
+#if defined(AUDIO2)
+STATIC int	gus_query_format(void *, audio_format_query_t *);
+#else
 STATIC int	gus_query_encoding(void *, struct audio_encoding *);
+#endif
 STATIC int	gus_get_props(void *);
 STATIC int	gusmax_get_props(void *);
 
@@ -578,7 +584,11 @@ static const unsigned short gus_log_volumes[512] = {
 const struct audio_hw_if gus_hw_if = {
 	.open			= gusopen,
 	.close			= gusclose,
+#if defined(AUDIO2)
+	.query_format		= gus_query_format,
+#else
 	.query_encoding		= gus_query_encoding,
+#endif
 	.set_params		= gus_set_params,
 	.round_blocksize	= gus_round_blocksize,
 	.commit_settings	= gus_commit_settings,
@@ -602,7 +612,11 @@ const struct audio_hw_if gus_hw_if = {
 static const struct audio_hw_if gusmax_hw_if = {
 	.open			= gusmaxopen,
 	.close			= gusmax_close,
+#if defined(AUDIO2)
+	.query_format		= gus_query_format,
+#else
 	.query_encoding		= gus_query_encoding,
+#endif
 	.set_params		= gusmax_set_params,
 	.round_blocksize	= gusmax_round_blocksize,
 	.commit_settings	= gusmax_commit_settings,
@@ -632,6 +646,31 @@ struct audio_device gus_device = {
 	"",
 	"gus",
 };
+
+#if defined(AUDIO2)
+#define GUS_FORMAT(enc, prec, ch, chmask) \
+	{ \
+		.mode		= AUMODE_PLAY | AUMODE_RECORD, \
+		.encoding	= (enc), \
+		.validbits	= (prec), \
+		.precision	= (prec), \
+		.channels	= (ch), \
+		.channel_mask	= (chmask), \
+		.frequency_type	= 0, \
+		.frequency	= { 8000, 48000 }, \
+	}
+STATIC const struct audio_format gus_formats[] = {
+	GUS_FORMAT(AUDIO_ENCODING_SLINEAR_LE, 16, 2, AUFMT_STEREO),
+	GUS_FORMAT(AUDIO_ENCODING_SLINEAR_LE, 16, 1, AUFMT_MONAURAL),
+	GUS_FORMAT(AUDIO_ENCODING_ULINEAR_LE, 16, 2, AUFMT_STEREO),
+	GUS_FORMAT(AUDIO_ENCODING_ULINEAR_LE, 16, 1, AUFMT_MONAURAL),
+	GUS_FORMAT(AUDIO_ENCODING_SLINEAR,     8, 2, AUFMT_STEREO),
+	GUS_FORMAT(AUDIO_ENCODING_SLINEAR,     8, 1, AUFMT_MONAURAL),
+	GUS_FORMAT(AUDIO_ENCODING_ULINEAR,     8, 2, AUFMT_STEREO),
+	GUS_FORMAT(AUDIO_ENCODING_ULINEAR,     8, 1, AUFMT_MONAURAL),
+};
+#define GUS_NFORMATS __arraycount(gus_formats)
+#endif
 
 #define FLIP_REV	5		/* This rev has flipped mixer chans */
 
@@ -2287,17 +2326,23 @@ gus_set_params(void *addr,int setmode, int usemode, audio_params_t *p,
 	       audio_params_t *r, stream_filter_list_t *pfil,
 	       stream_filter_list_t *rfil)
 {
+#if !defined(AUDIO2)
 	audio_params_t hw;
+#endif
 	struct gus_softc *sc;
 
 	sc = addr;
 	switch (p->encoding) {
+#if !defined(AUDIO2)
 	case AUDIO_ENCODING_ULAW:
 	case AUDIO_ENCODING_ALAW:
+#endif
 	case AUDIO_ENCODING_SLINEAR_LE:
 	case AUDIO_ENCODING_ULINEAR_LE:
+#if !defined(AUDIO2)
 	case AUDIO_ENCODING_SLINEAR_BE:
 	case AUDIO_ENCODING_ULINEAR_BE:
+#endif
 		break;
 	default:
 		return EINVAL;
@@ -2326,7 +2371,9 @@ gus_set_params(void *addr,int setmode, int usemode, audio_params_t *p,
 
 	mutex_spin_exit(&sc->sc_codec.sc_ad1848.sc_intr_lock);
 
+#if !defined(AUDIO2)
 	hw = *p;
+
 	/* clear req_size before setting a filter to avoid confliction
 	 * in gusmax_set_params() */
 	switch (p->encoding) {
@@ -2355,6 +2402,7 @@ gus_set_params(void *addr,int setmode, int usemode, audio_params_t *p,
 		rfil->append(rfil, swap_bytes, &hw);
 		break;
 	}
+#endif
 
 	return 0;
 }
@@ -4019,6 +4067,14 @@ mute:
 	return 0;
 }
 
+#if defined(AUDIO2)
+STATIC int
+gus_query_format(void *addr, audio_format_query_t *afp)
+{
+
+	return audio_query_format(gus_formats, GUS_NFORMATS, afp);
+}
+#else
 STATIC int
 gus_query_encoding(void *addr, struct audio_encoding *fp)
 {
@@ -4079,6 +4135,7 @@ gus_query_encoding(void *addr, struct audio_encoding *fp)
 	}
 	return 0;
 }
+#endif /* AUDIO2 */
 
 /*
  * Setup the ICS mixer in "transparent" mode: reset everything to a sensible
