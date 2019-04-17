@@ -440,6 +440,8 @@ mercury_set_params(void *hdl, int setmode, int usemode,
 		default:
 			return EINVAL;
 		}
+	} else {
+		return EINVAL;
 	}
 	sc->sc_cmd = cmd;
 	return 0;
