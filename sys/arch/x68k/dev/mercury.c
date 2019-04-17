@@ -36,7 +36,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 
 #include <sys/audioio.h>
 #include <dev/audio_if.h>
-#if !defined(AUDIO2)
+#if 1 //!defined(AUDIO2)
 #include <dev/auconv.h>
 #include <dev/mulaw.h>
 #endif
@@ -199,7 +199,7 @@ static struct audio_device mercury_device = {
 	"mercury",
 };
 
-#if defined(AUDIO2) && !defined(MERCURY_USE_OLDAPI)
+#if defined(AUDIO2)
 #define MERCURY_FORMAT(ch, chmask) \
 	{ \
 		.mode		= AUMODE_PLAY | AUMODE_RECORD, \
@@ -215,6 +215,7 @@ static const struct audio_format mercury_formats[] = {
 	MERCURY_FORMAT(1, AUFMT_MONAURAL),
 	MERCURY_FORMAT(2, AUFMT_STEREO),
 };
+#define MERCURY_NFORMATS __arraycount(mercury_formats)
 #endif
 
 static int
@@ -415,6 +416,19 @@ mercury_set_params(void *hdl, int setmode, int usemode,
 
 	sc = hdl;
 	cmd = 0;
+
+	if (setmode & AUMODE_RECORD) {
+		if (auconv_set_converter(mercury_formats, MERCURY_NFORMATS,
+					 AUMODE_RECORD, r, FALSE, rfil) < 0)
+			return EINVAL;
+	}
+	if (setmode & AUMODE_PLAY) {
+		if (auconv_set_converter(mercury_formats, MERCURY_NFORMATS,
+					 AUMODE_PLAY, p, FALSE, pfil) < 0)
+			return EINVAL;
+		if (pfil->req_size > 0)
+			p = &pfil->filters[0].param;
+	}
 
 	if (p->channels == 2) {
 		cmd |= MERC_CMD_STEREO;
