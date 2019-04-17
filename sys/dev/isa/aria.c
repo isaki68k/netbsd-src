@@ -36,12 +36,7 @@
  *  o   Look into where aria_prometheus_kludge() belongs.
  *  o   Add some DMA code.  It accomplishes its goal by
  *      direct IO at the moment.
- *  o   Different programs should be able to open the device
- *      with O_RDONLY and O_WRONLY at the same time.  But I
- *      do not see support for this in /sys/dev/audio.c, so
  *	I cannot effectively code it.
- *  o   We should nicely deal with the cards that can do mu-law
- *      and A-law output.
  *  o   Rework the mixer interface.
  *       o   Deal with the lvls better.  We need to do better mapping
  *           between logarithmic scales and the one byte that
@@ -66,8 +61,10 @@ __KERNEL_RCSID(0, "$NetBSD: aria.c,v 1.39 2019/03/16 12:09:58 isaki Exp $");
 #include <sys/audioio.h>
 
 #include <dev/audio_if.h>
+#if defined(AUDIO2)
 #include <dev/auconv.h>
 #include <dev/mulaw.h>
+#endif
 
 #include <dev/isa/isavar.h>
 #include <dev/isa/ariareg.h>
@@ -147,12 +144,22 @@ void	aria_do_kludge(bus_space_tag_t, bus_space_handle_t,
 		       u_short, u_short, u_short, u_short);
 void	aria_prometheus_kludge(struct isa_attach_args *, bus_space_handle_t);
 
+#if defined(AUDIO2)
+int	aria_query_format(void *, audio_format_query_t *);
+#else
 int	aria_query_encoding(void *, struct audio_encoding *);
+#endif
 int	aria_round_blocksize(void *, int, int, const audio_params_t *);
 int	aria_speaker_ctl(void *, int);
 int	aria_commit_settings(void *);
+#if defined(AUDIO2)
+int	aria_set_format(void *, int,
+			const audio_params_t *, const audio_params_t *,
+			audio_filter_reg_t *, audio_filter_reg_t *);
+#else
 int	aria_set_params(void *, int, int, audio_params_t *, audio_params_t *,
 			stream_filter_list_t *, stream_filter_list_t *);
+#endif
 int	aria_get_props(void *);
 void	aria_get_locks(void *, kmutex_t **, kmutex_t **);
 
@@ -196,6 +203,26 @@ struct audio_device aria_device = {
 	"aria"
 };
 
+#if defined(AUDIO2)
+#define ARIA_FORMAT(enc, prec) \
+	{ \
+		.mode		= AUMODE_PLAY | AUMODE_RECORD, \
+		.encoding	= (enc), \
+		.validbits	= (prec), \
+		.precision	= (prec), \
+		.channels	= 2, \
+		.channel_mask	= AUFMT_STEREO, \
+		.frequency_type	= 6, \
+		.frequency	= { 7875, 11025, 15750, 22050, 31500, 44100 }, \
+	}
+/* XXX Some models seems support mulaw/alaw.  */
+const struct audio_format aria_formats[] = {
+	ARIA_FORMAT(AUDIO_ENCODING_ULINEAR,     8),
+	ARIA_FORMAT(AUDIO_ENCODING_SLINEAR_LE, 16),
+};
+#define ARIA_NFORMATS __arraycount(aria_formats)
+#endif
+
 /*
  * Define our interface to the higher level audio driver.
  */
@@ -203,8 +230,13 @@ struct audio_device aria_device = {
 const struct audio_hw_if aria_hw_if = {
 	.open			= ariaopen,
 	.close			= ariaclose,
+#if defined(AUDIO2)
+	.query_format		= aria_query_format,
+	.set_format		= aria_set_format,
+#else
 	.query_encoding		= aria_query_encoding,
 	.set_params		= aria_set_params,
+#endif
 	.round_blocksize	= aria_round_blocksize,
 	.commit_settings	= aria_commit_settings,
 	.start_output		= aria_start_output,
@@ -499,6 +531,14 @@ aria_getdev(void *addr, struct audio_device *retp)
  * Various routines to interface to higher level audio driver
  */
 
+#if defined(AUDIO2)
+int
+aria_query_format(void *addr, audio_format_query_t *afp)
+{
+
+	return audio_query_format(aria_formats, ARIA_NFORMATS, afp);
+}
+#else
 int
 aria_query_encoding(void *addr, struct audio_encoding *fp)
 {
@@ -563,6 +603,7 @@ aria_query_encoding(void *addr, struct audio_encoding *fp)
 
 	return 0;
 }
+#endif
 
 /*
  * Store blocksize in bytes.
@@ -588,9 +629,32 @@ int
 aria_get_props(void *addr)
 {
 
+#if defined(AUDIO2)
+	/* XXX This driver doesn't seem to be written as full duplex. */
+	return 0;
+#else
 	return AUDIO_PROP_FULLDUPLEX;
+#endif
 }
 
+#if defined(AUDIO2)
+int
+aria_set_format(void *addr, int setmode,
+    const audio_params_t *p, const audio_params_t *r,
+    audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
+{
+	struct aria_softc *sc;
+
+	sc = addr;
+
+	/* *p and *r are the identical because !AUDIO_PROP_INDEPENDENT. */
+	sc->sc_encoding = p->encoding;
+	sc->sc_precision = p->precision;
+	sc->sc_chans = p->channels;
+	sc->sc_rate = p->sample_rate;
+	return 0;
+}
+#else
 int
 aria_set_params(
     void *addr,
@@ -678,6 +742,7 @@ aria_set_params(
 
 	return 0;
 }
+#endif /* AUDIO2 */
 
 /*
  * This is where all of the twiddling goes on.
