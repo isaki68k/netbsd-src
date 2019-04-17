@@ -70,8 +70,10 @@ __KERNEL_RCSID(0, "$NetBSD: cs4280.c,v 1.71 2019/03/16 12:09:58 isaki Exp $");
 
 #include <dev/audio_if.h>
 #include <dev/midi_if.h>
+#if !defined(AUDIO2)
 #include <dev/mulaw.h>
 #include <dev/auconv.h>
+#endif
 
 #include <dev/ic/ac97reg.h>
 #include <dev/ic/ac97var.h>
@@ -90,10 +92,17 @@ __KERNEL_RCSID(0, "$NetBSD: cs4280.c,v 1.71 2019/03/16 12:09:58 isaki Exp $");
 static int  cs4280_match(device_t, cfdata_t, void *);
 static void cs4280_attach(device_t, device_t, void *);
 static int  cs4280_intr(void *);
+#if defined(AUDIO2)
+static int  cs4280_query_format(void *, audio_format_query_t *);
+static int  cs4280_set_format(void *, int,
+			      const audio_params_t *, const audio_params_t *,
+			      audio_filter_reg_t *, audio_filter_reg_t *);
+#else
 static int  cs4280_query_encoding(void *, struct audio_encoding *);
 static int  cs4280_set_params(void *, int, int, audio_params_t *,
 			      audio_params_t *, stream_filter_list_t *,
 			      stream_filter_list_t *);
+#endif
 static int  cs4280_halt_output(void *);
 static int  cs4280_halt_input(void *);
 static int  cs4280_getdev(void *, struct audio_device *);
@@ -159,8 +168,13 @@ static const struct cs4280_card_t cs4280_cards[] = {
 #define CS4280_CARDS_SIZE (sizeof(cs4280_cards)/sizeof(cs4280_cards[0]))
 
 static const struct audio_hw_if cs4280_hw_if = {
+#if defined(AUDIO2)
+	.query_format		= cs4280_query_format,
+	.set_format		= cs4280_set_format,
+#else
 	.query_encoding		= cs4280_query_encoding,
 	.set_params		= cs4280_set_params,
+#endif
 	.round_blocksize	= cs428x_round_blocksize,
 	.halt_output		= cs4280_halt_output,
 	.halt_input		= cs4280_halt_input,
@@ -205,6 +219,28 @@ static struct audio_device cs4280_device = {
 	"cs4280"
 };
 
+#if defined(AUDIO2)
+/*
+ * XXX recording must be 16bit stereo and sample rate range from
+ *     11025Hz to 48000Hz.  However, it looks like to work with 8000Hz,
+ *     although data sheets say lower limit is 11025Hz.
+ * XXX The combination of available formats is complicated, so I use
+ *     a generic format only.  Please fix it if you are interested in.
+ */
+static const struct audio_format cs4280_formats[] = {
+	{
+		.mode		= AUMODE_PLAY | AUMODE_RECORD,
+		.encoding	= AUDIO_ENCODING_SLINEAR_LE,
+		.validbits	= 16,
+		.precision	= 16,
+		.channels	= 2,
+		.channel_mask	= AUFMT_STEREO,
+		.frequency_type	= 0,
+		.frequency	= { 8000, 48000 },
+	}
+};
+#define CS4280_NFORMATS __arraycount(cs4280_formats)
+#endif
 
 static int
 cs4280_match(device_t parent, cfdata_t match, void *aux)
@@ -549,6 +585,28 @@ cs4280_intr(void *p)
 	return handled;
 }
 
+#if defined(AUDIO2)
+static int
+cs4280_query_format(void *addr, audio_format_query_t *afp)
+{
+
+	return audio_query_format(cs4280_formats, CS4280_NFORMATS, afp);
+}
+
+static int
+cs4280_set_format(void *addr, int setmode,
+    const audio_params_t *play, const audio_params_t *rec,
+    audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
+{
+	struct cs428x_softc *sc;
+
+	sc = addr;
+	/* set sample rate */
+	cs4280_set_dac_rate(sc, play->sample_rate);
+	cs4280_set_adc_rate(sc, rec->sample_rate);
+	return 0;
+}
+#else
 static int
 cs4280_query_encoding(void *addr, struct audio_encoding *fp)
 {
@@ -710,6 +768,7 @@ cs4280_set_params(void *addr, int setmode, int usemode,
 	cs4280_set_adc_rate(sc, rec->sample_rate);
 	return 0;
 }
+#endif /* AUDIO2 */
 
 static int
 cs4280_halt_output(void *addr)

@@ -61,8 +61,10 @@ __KERNEL_RCSID(0, "$NetBSD: cs4281.c,v 1.54 2019/03/16 12:09:58 isaki Exp $");
 #include <sys/audioio.h>
 #include <dev/audio_if.h>
 #include <dev/midi_if.h>
+#if !defined(AUDIO2)
 #include <dev/mulaw.h>
 #include <dev/auconv.h>
+#endif
 
 #include <dev/ic/ac97reg.h>
 #include <dev/ic/ac97var.h>
@@ -83,10 +85,17 @@ __KERNEL_RCSID(0, "$NetBSD: cs4281.c,v 1.54 2019/03/16 12:09:58 isaki Exp $");
 static int	cs4281_match(device_t, cfdata_t, void *);
 static void	cs4281_attach(device_t, device_t, void *);
 static int	cs4281_intr(void *);
+#if defined(AUDIO2)
+static int	cs4281_query_format(void *, audio_format_query_t *);
+static int	cs4281_set_format(void *, int,
+				 const audio_params_t *, const audio_params_t *,
+				 audio_filter_reg_t *, audio_filter_reg_t *);
+#else
 static int	cs4281_query_encoding(void *, struct audio_encoding *);
 static int	cs4281_set_params(void *, int, int, audio_params_t *,
 				  audio_params_t *, stream_filter_list_t *,
 				  stream_filter_list_t *);
+#endif
 static int	cs4281_halt_output(void *);
 static int	cs4281_halt_input(void *);
 static int	cs4281_getdev(void *, struct audio_device *);
@@ -110,8 +119,13 @@ static bool	cs4281_suspend(device_t, const pmf_qual_t *);
 static bool	cs4281_resume(device_t, const pmf_qual_t *);
 
 static const struct audio_hw_if cs4281_hw_if = {
+#if defined(AUDIO2)
+	.query_format		= cs4281_query_format,
+	.set_format		= cs4281_set_format,
+#else
 	.query_encoding		= cs4281_query_encoding,
 	.set_params		= cs4281_set_params,
+#endif
 	.round_blocksize	= cs428x_round_blocksize,
 	.halt_output		= cs4281_halt_output,
 	.halt_input		= cs4281_halt_input,
@@ -156,6 +170,26 @@ static struct audio_device cs4281_device = {
 	"cs4281"
 };
 
+#if defined(AUDIO2)
+#define CS4281_FORMAT(enc, prec) \
+	{ \
+		.mode		= AUMODE_PLAY | AUMODE_RECORD, \
+		.encoding	= (enc), \
+		.validbits	= (prec), \
+		.precision	= (prec), \
+		.channels	= 2, \
+		.channel_mask	= AUFMT_STEREO, \
+		.frequency_type	= 6, \
+		.frequency	= { 8000, 11025, 16000, 22050, 44100, 48000 }, \
+	}
+static const struct audio_format cs4281_formats[] = {
+	CS4281_FORMAT(AUDIO_ENCODING_SLINEAR_NE, 16),
+	CS4281_FORMAT(AUDIO_ENCODING_ULINEAR_NE, 16),
+	CS4281_FORMAT(AUDIO_ENCODING_SLINEAR,     8),
+	CS4281_FORMAT(AUDIO_ENCODING_ULINEAR,     8),
+};
+#define CS4281_NFORMATS __arraycount(cs4281_formats)
+#endif
 
 static int
 cs4281_match(device_t parent, cfdata_t match, void *aux)
@@ -383,6 +417,28 @@ cs4281_intr(void *p)
 	return handled;
 }
 
+#if defined(AUDIO2)
+static int
+cs4281_query_format(void *addr, audio_format_query_t *afp)
+{
+
+	return audio_query_format(cs4281_formats, CS4281_NFORMATS, afp);
+}
+
+static int
+cs4281_set_format(void *addr, int setmode,
+    const audio_params_t *play, const audio_params_t *rec,
+    audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
+{
+	struct cs428x_softc *sc;
+
+	sc = addr;
+	/* set sample rate */
+	cs4281_set_dac_rate(sc, play->sample_rate);
+	cs4281_set_adc_rate(sc, rec->sample_rate);
+	return 0;
+}
+#else
 static int
 cs4281_query_encoding(void *addr, struct audio_encoding *fp)
 {
@@ -512,6 +568,7 @@ cs4281_set_params(void *addr, int setmode, int usemode,
 	cs4281_set_adc_rate(sc, rec->sample_rate);
 	return 0;
 }
+#endif
 
 static int
 cs4281_halt_output(void *addr)

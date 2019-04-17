@@ -63,6 +63,8 @@ vs(4) などの珍しい周波数の hardware がサポートできない。
 |autri(4)	|	|	|	|	|Work
 |aucc(4)	|	|amiga	|Done	|Done	|Compiled but not tested
 |bba(4)		|am7930	|alpha	|Done	|Done	|Work
+|clcs(4)	|cs4280	|	|Done	|Done	|Compiled but not tested
+|clct(4)	|cs4281	|	|Done	|Done	|Compiled but not tested
 |dbri(4)	|	|sparc	|	|	|Work
 |eap(4)		|	|	|Done	|modify set_params|Work
 |gus(4)@isapnp	|iw	|	|Done	|Done	|Compiled but not tested
