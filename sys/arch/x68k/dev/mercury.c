@@ -56,6 +56,11 @@ __KERNEL_RCSID(0, "$NetBSD$");
 
 // LE デバイスを BE マシンにつないでみたをテストする用
 //#define MERCURY_LE
+#if defined(MERCURY_LE)
+#define MERCURY_ENCODING_SLINEAR AUDIO_ENCODING_SLINEAR_LE
+#else
+#define MERCURY_ENCODING_SLINEAR AUDIO_ENCODING_SLINEAR_BE
+#endif
 
 #define MERCURY_ADDR	(0xecc080)
 #define MERCURY_SIZE	(0x80)
@@ -192,10 +197,10 @@ static struct audio_device mercury_device = {
 };
 
 #if defined(AUDIO2)
-#define MERCURY_FORMAT(enc, ch, chmask) \
+#define MERCURY_FORMAT(ch, chmask) \
 	{ \
 		.mode		= AUMODE_PLAY | AUMODE_RECORD, \
-		.encoding	= (enc), \
+		.encoding	= MERCURY_ENCODING_SLINEAR, \
 		.validbits	= 16, \
 		.precision	= 16, \
 		.channels	= (ch), \
@@ -204,13 +209,8 @@ static struct audio_device mercury_device = {
 		.frequency	= { 16000, 22050, 24000, 32000, 44100, 48000 },\
 	}
 static const struct audio_format mercury_formats[] = {
-#if defined(MERCURY_LE)
-	MERCURY_FORMAT(AUDIO_ENCODING_SLINEAR_LE, 1, AUFMT_MONAURAL),
-	MERCURY_FORMAT(AUDIO_ENCODING_SLINEAR_LE, 2, AUFMT_STEREO),
-#else
-	MERCURY_FORMAT(AUDIO_ENCODING_SLINEAR_BE, 1, AUFMT_MONAURAL),
-	MERCURY_FORMAT(AUDIO_ENCODING_SLINEAR_BE, 2, AUFMT_STEREO),
-#endif
+	MERCURY_FORMAT(1, AUFMT_MONAURAL),
+	MERCURY_FORMAT(2, AUFMT_STEREO),
 };
 #endif
 
@@ -340,12 +340,12 @@ mercury_query_encoding(void *hdl, struct audio_encoding *ae)
 
 	switch (ae->index) {
 	case 0:
-		strcpy(ae->name, AudioEslinear_be);
 #if defined(MERCURY_LE)
-		ae->encoding = AUDIO_ENCODING_SLINEAR_LE;
+		strcpy(ae->name, AudioEslinear_le);
 #else
-		ae->encoding = AUDIO_ENCODING_SLINEAR_BE;
+		strcpy(ae->name, AudioEslinear_be);
 #endif
+		ae->encoding = MERCURY_ENCODING_SLINEAR;
 		ae->precision = 16;
 		ae->flags = 0;
 		return 0;
@@ -417,7 +417,7 @@ mercury_set_params(void *hdl, int setmode, int usemode,
 		cmd |= MERC_CMD_STEREO;
 	}
 
-	if (p->encoding == AUDIO_ENCODING_SLINEAR_BE && p->precision == 16) {
+	if (p->encoding == MERCURY_ENCODING_SLINEAR && p->precision == 16) {
 		switch (p->sample_rate) {
 		case 16000:
 			cmd |= MERC_CMD_CLK_32000 | MERC_CMD_HALFRATE;
