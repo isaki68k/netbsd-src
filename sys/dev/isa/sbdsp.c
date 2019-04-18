@@ -787,6 +787,7 @@ panic("ulinear8 not supported; use set_format.");
 
 	}
 
+#if !defined(AUDIO2)
 	if (sc->sc_fullduplex &&
 	    usemode == (AUMODE_PLAY | AUMODE_RECORD) &&
 	    sc->sc_i.dmachan == sc->sc_o.dmachan) {
@@ -803,6 +804,7 @@ panic("ulinear8 not supported; use set_format.");
 			return EINVAL;
 		}
 	}
+#endif
 	DPRINTF(("sbdsp_set_params ichan=%d, ochan=%d\n",
 		 sc->sc_i.dmachan, sc->sc_o.dmachan));
 
