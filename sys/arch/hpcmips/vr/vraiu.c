@@ -74,12 +74,16 @@ struct vraiu_softc {
 	u_short	*sc_buf;	/* DMA buffer pointer */
 	int	sc_status;	/* status */
 	u_int	sc_rate;	/* sampling rate */
+#if !defined(AUDIO2)
 	u_int	sc_channels;	/* # of channels used */
 	u_int	sc_encoding;	/* encoding type */
 	int	sc_precision;	/* 8 or 16 bits */
 				/* pointer to format conversion routine */
+#endif
 	u_char	sc_volume;	/* volume */
+#if !defined(AUDIO2)
 	void	(*sc_decodefunc)(struct vraiu_softc *, u_short *, void *, int);
+#endif
 	void	(*sc_intr)(void *);	/* interrupt routine */
 	void	*sc_intrdata;		/* interrupt data */
 };
@@ -97,12 +101,32 @@ struct audio_device aiu_device = {
 	"aiu"
 };
 
+#if defined(AUDIO2)
+const struct audio_format vraiu_formats[] = {
+	{
+		.mode		= AUMODE_PLAY,
+		.encoding	= AUDIO_ENCODING_SLINEAR_NE,
+		.validbits	= 10,
+		.precision	= 16,
+		.channels	= 1,
+		.channel_mask	= AUFMT_MONAURAL,
+		.frequency_type	= 4,
+		.frequency	= { 8000, 11025, 22050, 44100 },
+	},
+};
+#define VRAIU_NFORMATS __arraycount(vraiu_formats)
+#endif
+
 /*
  * Define our interface to the higher level audio driver.
  */
 int vraiu_open(void *, int);
 void vraiu_close(void *);
+#if defined(AUDIO2)
+int vraiu_query_format(void *, audio_format_query_t *);
+#else
 int vraiu_query_encoding(void *, struct audio_encoding *);
+#endif
 int vraiu_round_blocksize(void *, int, int, const audio_params_t *);
 int vraiu_commit_settings(void *);
 int vraiu_init_output(void *, void*, int);
@@ -114,16 +138,27 @@ int vraiu_getdev(void *, struct audio_device *);
 int vraiu_set_port(void *, mixer_ctrl_t *);
 int vraiu_get_port(void *, mixer_ctrl_t *);
 int vraiu_query_devinfo(void *, mixer_devinfo_t *);
+#if defined(AUDIO2)
+int vraiu_set_format(void *, int,
+    const audio_params_t *, const audio_params_t *,
+    audio_filter_reg_t *, audio_filter_reg_t *);
+#else
 int vraiu_set_params(void *, int, int, audio_params_t *, audio_params_t *,
 		     stream_filter_list_t *, stream_filter_list_t *);
+#endif
 int vraiu_get_props(void *);
 void vraiu_get_locks(void *, kmutex_t **, kmutex_t **);
 
 const struct audio_hw_if vraiu_hw_if = {
 	.open			= vraiu_open,
 	.close			= vraiu_close,
+#if defined(AUDIO2)
+	.query_format		= vraiu_query_format,
+	.set_format		= vraiu_set_format,
+#else
 	.query_encoding		= vraiu_query_encoding,
 	.set_params		= vraiu_set_params,
+#endif
 	.round_blocksize	= vraiu_round_blocksize,
 	.commit_settings	= vraiu_commit_settings,
 	.init_output		= vraiu_init_output,
@@ -143,13 +178,16 @@ const struct audio_hw_if vraiu_hw_if = {
 /*
  * convert to 1ch 10bit unsigned PCM data.
  */
+#if !defined(AUDIO2)
 static void vraiu_slinear8_1(struct vraiu_softc *, u_short *, void *, int);
 static void vraiu_slinear8_2(struct vraiu_softc *, u_short *, void *, int);
 static void vraiu_ulinear8_1(struct vraiu_softc *, u_short *, void *, int);
 static void vraiu_ulinear8_2(struct vraiu_softc *, u_short *, void *, int);
 static void vraiu_mulaw_1(struct vraiu_softc *, u_short *, void *, int);
 static void vraiu_mulaw_2(struct vraiu_softc *, u_short *, void *, int);
+#endif
 static void vraiu_slinear16_1(struct vraiu_softc *, u_short *, void *, int);
+#if !defined(AUDIO2)
 static void vraiu_slinear16_2(struct vraiu_softc *, u_short *, void *, int);
 static void vraiu_slinear16sw_1(struct vraiu_softc *, u_short *, void *, int);
 static void vraiu_slinear16sw_2(struct vraiu_softc *, u_short *, void *, int);
@@ -157,6 +195,7 @@ static void vraiu_slinear16sw_2(struct vraiu_softc *, u_short *, void *, int);
  * software volume control
  */
 static void vraiu_volume(struct vraiu_softc *, u_short *, void *, int);
+#endif
 
 int
 vraiu_match(device_t parent, cfdata_t cf, void *aux)
@@ -261,10 +300,12 @@ vraiu_attach(device_t parent, device_t self, void *aux)
 
 	sc->sc_status = 0;
 	sc->sc_rate = SPS8000;
+#if !defined(AUDIO2)
 	sc->sc_channels = 1;
 	sc->sc_precision = 8;
 	sc->sc_encoding = AUDIO_ENCODING_ULAW;
 	sc->sc_decodefunc = vraiu_mulaw_1;
+#endif
 	DPRINTFN(1, ("vraiu_attach: reset AIU\n"))
 	bus_space_write_2(sc->sc_iot, sc->sc_ioh, SEQ_REG_W, AIURST);
 	/* attach audio subsystem */
@@ -297,6 +338,47 @@ vraiu_close(void *self)
 	sc->sc_status = 0;
 }
 
+#if defined(AUDIO2)
+int
+vraiu_query_format(void *self, audio_format_query_t *afp)
+{
+
+	return audio_query_format(vraiu_formats, VRAIU_NFORMATS, afp);
+}
+
+int
+vraiu_set_format(void *self, int setmode,
+		 const audio_params_t *play, const audio_params_t *rec,
+		 audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
+{
+	struct vraiu_softc *sc;
+
+	DPRINTFN(1, ("%s: %ubit, %uch, %uHz, encoding %u\n", __func__,
+		     play->precision, play->channels, play->sample_rate,
+		     play->encoding));
+	sc = self;
+
+	switch (play->sample_rate) {
+	case 8000:
+		sc->sc_rate = SPS8000;
+		break;
+	case 11025:
+		sc->sc_rate = SPS11025;
+		break;
+	case 22050:
+		sc->sc_rate = SPS22050;
+		break;
+	case 44100:
+		sc->sc_rate = SPS44100;
+		break;
+	default:
+		/* NOTREACHED */
+		panic("%s: rate error (%d)\n", __func__, play->sample_rate);
+	}
+
+	return 0;
+}
+#else
 int
 vraiu_query_encoding(void *self, struct audio_encoding *ae)
 {
@@ -519,10 +601,14 @@ vraiu_set_params(void *self, int setmode, int usemode,
 	sc->sc_channels = play->channels;
 	return 0;
 }
+#endif /* AUDIO2 */
 
 int
 vraiu_round_blocksize(void *self, int bs, int mode, const audio_params_t *param)
 {
+#if defined(AUDIO2)
+	return AUDIO_BUF_SIZE;
+#else
 	struct vraiu_softc *sc;
 	int n;
 
@@ -536,6 +622,7 @@ vraiu_round_blocksize(void *self, int bs, int mode, const audio_params_t *param)
 		     bs, n));
 
 	return n;
+#endif
 }
 
 int
@@ -593,8 +680,12 @@ vraiu_start_output(void *self, void *block, int bsize,
 	DPRINTFN(2, ("vraiu_start_output: block %p, bsize %d\n",
 		     block, bsize));
 	sc = self;
+#if defined(AUDIO2)
+	vraiu_slinear16_1(sc, sc->sc_buf, block, bsize);
+#else
 	sc->sc_decodefunc(sc, sc->sc_buf, block, bsize);
 	vraiu_volume(sc, sc->sc_buf, block, bsize);
+#endif
 	bus_dmamap_sync(sc->sc_dmat, sc->sc_dmap, 0, AUDIO_BUF_SIZE,
 			BUS_DMASYNC_PREWRITE);
 	sc->sc_intr = intr;
@@ -774,6 +865,7 @@ vraiu_get_locks(void *self, kmutex_t **intr, kmutex_t **thread)
 	*thread = &sc->sc_lock;
 }
 
+#if !defined(AUDIO2)
 unsigned char mulaw_to_lin[] = {
 	0x02, 0x06, 0x0a, 0x0e, 0x12, 0x16, 0x1a, 0x1e,
 	0x22, 0x26, 0x2a, 0x2e, 0x32, 0x36, 0x3a, 0x3e,
@@ -934,7 +1026,9 @@ vraiu_mulaw_2(struct vraiu_softc *sc, u_short *dmap, void *p, int n)
 		*dmap++ = (i + j) << 1;
 	}
 }
+#endif
 
+/* slinear16/mono -> ulinear10/mono with volume */
 static void
 vraiu_slinear16_1(struct vraiu_softc *sc, u_short *dmap, void *p, int n)
 {
@@ -951,11 +1045,17 @@ vraiu_slinear16_1(struct vraiu_softc *sc, u_short *dmap, void *p, int n)
 #endif
 	n /= 2;
 	while (n--) {
+#if defined(AUDIO2)
+		int i = *q++;
+		i = i * sc->sc_volume / 255;
+#else
 		short i = *q++;
+#endif
 		*dmap++ = (i >> 6) + 0x200;
 	}
 }
 
+#if !defined(AUDIO2)
 static void
 vraiu_slinear16_2(struct vraiu_softc *sc, u_short *dmap, void *p, int n)
 {
@@ -1038,3 +1138,4 @@ vraiu_volume(struct vraiu_softc *sc, u_short *dmap, void *p, int n)
 
 	return;
 }
+#endif /* AUDIO2 */
