@@ -111,10 +111,17 @@ static void autri_disable_loop_interrupt(void *);
 #endif
 
 static int	autri_open(void *, int);
+#if defined(AUDIO2)
+static int	autri_query_format(void *, audio_format_query_t *);
+static int	autri_set_format(void *, int,
+				 const audio_params_t *, const audio_params_t *,
+				 audio_filter_reg_t *, audio_filter_reg_t *);
+#else
 static int	autri_query_encoding(void *, struct audio_encoding *);
 static int	autri_set_params(void *, int, int, audio_params_t *,
 				 audio_params_t *, stream_filter_list_t *,
 				 stream_filter_list_t *);
+#endif
 static int	autri_round_blocksize(void *, int, int, const audio_params_t *);
 static int	autri_trigger_output(void *, void *, void *, int,
 				     void (*)(void *), void *,
@@ -137,8 +144,13 @@ static void	autri_get_locks(void *, kmutex_t **, kmutex_t **);
 
 static const struct audio_hw_if autri_hw_if = {
 	.open			= autri_open,
+#if defined(AUDIO2)
+	.query_format		= autri_query_format,
+	.set_format		= autri_set_format,
+#else
 	.query_encoding		= autri_query_encoding,
 	.set_params		= autri_set_params,
+#endif
 	.round_blocksize	= autri_round_blocksize,
 	.halt_output		= autri_halt_output,
 	.halt_input		= autri_halt_input,
@@ -906,6 +918,23 @@ autri_open(void *addr, int flags)
 	return 0;
 }
 
+#if defined(AUDIO2)
+static int
+autri_query_format(void *addr, audio_format_query_t *afp)
+{
+
+	return audio_query_format(autri_formats, AUTRI_NFORMATS, afp);
+}
+
+static int
+autri_set_format(void *addr, int setmode,
+    const audio_params_t *play, const audio_params_t *rec,
+    audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
+{
+
+	return 0;
+}
+#else
 static int
 autri_query_encoding(void *addr, struct audio_encoding *fp)
 {
@@ -983,6 +1012,7 @@ autri_set_params(void *addr, int setmode, int usemode,
 	}
 	return 0;
 }
+#endif
 
 static int
 autri_round_blocksize(void *addr, int block,
