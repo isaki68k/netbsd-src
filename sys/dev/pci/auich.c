@@ -130,7 +130,6 @@ __KERNEL_RCSID(0, "$NetBSD: auich.c,v 1.153 2019/03/16 12:09:58 isaki Exp $");
 #include <dev/pci/auichreg.h>
 
 #include <dev/audio_if.h>
-#include <dev/mulaw.h>
 #include <dev/auconv.h>
 
 #include <dev/ic/ac97reg.h>
@@ -231,8 +230,6 @@ struct auich_softc {
 #define AUICH_MODEM_NFORMATS	1
 	struct audio_format sc_audio_formats[AUICH_AUDIO_NFORMATS];
 	struct audio_format sc_modem_formats[AUICH_MODEM_NFORMATS];
-	struct audio_encoding_set *sc_encodings;
-	struct audio_encoding_set *sc_spdif_encodings;
 
 	int sc_cas_been_used;
 };
@@ -259,17 +256,10 @@ CFATTACH_DECL2_NEW(auich, sizeof(struct auich_softc),
 
 static int	auich_open(void *, int);
 static void	auich_close(void *);
-#if defined(AUDIO2)
 static int	auich_query_format(void *, struct audio_format_query *);
 static int	auich_set_format(void *, int,
 		    const audio_params_t *, const audio_params_t *,
 		    audio_filter_reg_t *, audio_filter_reg_t *);
-#else
-static int	auich_query_encoding(void *, struct audio_encoding *);
-static int	auich_set_params(void *, int, int, audio_params_t *,
-		    audio_params_t *, stream_filter_list_t *,
-		    stream_filter_list_t *);
-#endif
 static int	auich_round_blocksize(void *, int, int, const audio_params_t *);
 static void	auich_halt_pipe(struct auich_softc *, int);
 static int	auich_halt_output(void *);
@@ -281,9 +271,6 @@ static int	auich_query_devinfo(void *, mixer_devinfo_t *);
 static void	*auich_allocm(void *, int, size_t);
 static void	auich_freem(void *, void *, size_t);
 static size_t	auich_round_buffersize(void *, int, size_t);
-#if !defined(AUDIO2)
-static paddr_t	auich_mappage(void *, void *, off_t, int);
-#endif
 static int	auich_get_props(void *);
 static void	auich_trigger_pipe(struct auich_softc *, int, struct auich_ring *);
 static void	auich_intr_pipe(struct auich_softc *, int, struct auich_ring *);
@@ -316,13 +303,8 @@ static void	auich_spdif_event(void *, bool);
 static const struct audio_hw_if auich_hw_if = {
 	.open			= auich_open,
 	.close			= auich_close,
-#if defined(AUDIO2)
 	.query_format		= auich_query_format,
 	.set_format		= auich_set_format,
-#else
-	.query_encoding		= auich_query_encoding,
-	.set_params		= auich_set_params,
-#endif
 	.round_blocksize	= auich_round_blocksize,
 	.halt_output		= auich_halt_output,
 	.halt_input		= auich_halt_input,
@@ -333,9 +315,6 @@ static const struct audio_hw_if auich_hw_if = {
 	.allocm			= auich_allocm,
 	.freem			= auich_freem,
 	.round_buffersize	= auich_round_buffersize,
-#if !defined(AUDIO2)
-	.mappage		= auich_mappage,
-#endif
 	.get_props		= auich_get_props,
 	.trigger_output		= auich_trigger_output,
 	.trigger_input		= auich_trigger_input,
@@ -670,19 +649,10 @@ map_done:
 			}
 		}
 		mutex_exit(&sc->sc_lock);
-		if (0 != auconv_create_encodings(sc->sc_audio_formats,
-			AUICH_AUDIO_NFORMATS, &sc->sc_encodings))
-			return;
-		if (0 != auconv_create_encodings(auich_spdif_formats,
-			AUICH_SPDIF_NFORMATS, &sc->sc_spdif_encodings))
-			return;
 	} else {
 		mutex_exit(&sc->sc_lock);
 		memcpy(sc->sc_modem_formats, auich_modem_formats,
 		    sizeof(auich_modem_formats));
-		if (0 != auconv_create_encodings(sc->sc_modem_formats,
-			AUICH_MODEM_NFORMATS, &sc->sc_encodings))
-			return;
 	}
 
 	/* Watch for power change */
@@ -744,10 +714,6 @@ auich_detach(device_t self, int flags)
 	sysctl_teardown(&sc->sc_log);
 
 	mutex_enter(&sc->sc_lock);
-
-	/* audio_encoding_set */
-	auconv_delete_encodings(sc->sc_encodings);
-	auconv_delete_encodings(sc->sc_spdif_encodings);
 
 	/* ac97 */
 	if (sc->codec_if != NULL)
@@ -984,7 +950,6 @@ auich_close(void *addr)
 	mutex_spin_enter(&sc->sc_intr_lock);
 }
 
-#if defined(AUDIO2)
 static int
 auich_query_format(void *v, struct audio_format_query *afp)
 {
@@ -1003,17 +968,6 @@ auich_query_format(void *v, struct audio_format_query *afp)
 
 	return audio_query_format(formats, nf, afp);
 }
-#else
-static int
-auich_query_encoding(void *v, struct audio_encoding *aep)
-{
-	struct auich_softc *sc;
-
-	sc = (struct auich_softc *)v;
-	return auconv_query_encoding(
-	    sc->sc_spdif ? sc->sc_spdif_encodings : sc->sc_encodings, aep);
-}
-#endif
 
 static int
 auich_set_rate(struct auich_softc *sc, int mode, u_long srate)
@@ -1041,7 +995,6 @@ auich_set_rate(struct auich_softc *sc, int mode, u_long srate)
 	return ret;
 }
 
-#if defined(AUDIO2)
 static int
 auich_set_format(void *v, int setmode,
     const audio_params_t *play, const audio_params_t *rec,
@@ -1107,81 +1060,6 @@ auich_set_format(void *v, int setmode,
 
 	return 0;
 }
-#else
-static int
-auich_set_params(void *v, int setmode, int usemode,
-    audio_params_t *play, audio_params_t *rec, stream_filter_list_t *pfil,
-    stream_filter_list_t *rfil)
-{
-	struct auich_softc *sc;
-	audio_params_t *p;
-	stream_filter_list_t *fil;
-	int mode, index;
-	uint32_t control;
-
-	sc = v;
-	for (mode = AUMODE_RECORD; mode != -1;
-	     mode = mode == AUMODE_RECORD ? AUMODE_PLAY : -1) {
-		if ((setmode & mode) == 0)
-			continue;
-
-		p = mode == AUMODE_PLAY ? play : rec;
-		fil = mode == AUMODE_PLAY ? pfil : rfil;
-		if (p == NULL)
-			continue;
-
-		if (sc->sc_codectype == AC97_CODEC_TYPE_AUDIO) {
-			if (p->sample_rate <  8000 ||
-			    p->sample_rate > 48000)
-				return EINVAL;
-
-			if (!sc->sc_spdif)
-				index = auconv_set_converter(sc->sc_audio_formats,
-				    AUICH_AUDIO_NFORMATS, mode, p, TRUE, fil);
-			else
-				index = auconv_set_converter(auich_spdif_formats,
-				    AUICH_SPDIF_NFORMATS, mode, p, TRUE, fil);
-		} else {
-			if (p->sample_rate != 8000 && p->sample_rate != 16000)
-				return EINVAL;
-			index = auconv_set_converter(sc->sc_modem_formats,
-			    AUICH_MODEM_NFORMATS, mode, p, TRUE, fil);
-		}
-		if (index < 0)
-			return EINVAL;
-		if (fil->req_size > 0)
-			p = &fil->filters[0].param;
-		/* p represents HW encoding */
-		if (sc->sc_codectype == AC97_CODEC_TYPE_AUDIO) {
-			if (sc->sc_audio_formats[index].frequency_type != 1
-			    && auich_set_rate(sc, mode, p->sample_rate))
-				return EINVAL;
-		} else {
-			if (sc->sc_modem_formats[index].frequency_type != 1
-			    && auich_set_rate(sc, mode, p->sample_rate))
-				return EINVAL;
-			auich_write_codec(sc, AC97_REG_LINE1_RATE,
-					  p->sample_rate);
-			auich_write_codec(sc, AC97_REG_LINE1_LEVEL, 0);
-		}
-		if (mode == AUMODE_PLAY &&
-		    sc->sc_codectype == AC97_CODEC_TYPE_AUDIO) {
-			control = bus_space_read_4(sc->iot, sc->aud_ioh,
-			    ICH_GCTRL + sc->sc_modem_offset);
-			control &= ~sc->sc_pcm246_mask;
-			if (p->channels == 4) {
-				control |= sc->sc_pcm4;
-			} else if (p->channels == 6) {
-				control |= sc->sc_pcm6;
-			}
-			bus_space_write_4(sc->iot, sc->aud_ioh,
-			    ICH_GCTRL + sc->sc_modem_offset, control);
-		}
-	}
-
-	return 0;
-}
-#endif /* AUDIO2 */
 
 static int
 auich_round_blocksize(void *v, int blk, int mode,
@@ -1332,25 +1210,6 @@ auich_round_buffersize(void *v, int direction, size_t size)
 
 	return size;
 }
-
-#if !defined(AUDIO2)
-static paddr_t
-auich_mappage(void *v, void *mem, off_t off, int prot)
-{
-	struct auich_softc *sc;
-	struct auich_dma *p;
-
-	if (off < 0)
-		return -1;
-	sc = v;
-	for (p = sc->sc_dmas; p && KERNADDR(p) != mem; p = p->next)
-		continue;
-	if (!p)
-		return -1;
-	return bus_dmamem_mmap(sc->dmat, p->segs, p->nsegs,
-	    off, prot, BUS_DMA_WAITOK);
-}
-#endif
 
 static int
 auich_get_props(void *v)
