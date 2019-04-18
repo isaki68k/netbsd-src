@@ -172,10 +172,17 @@ int	ad1848_mixer_set_port(struct ad1848_softc *, const ad1848_devmap_t *,
 	    int, mixer_ctrl_t *);
 int	ad1848_set_speed(struct ad1848_softc *, u_int *);
 void	ad1848_mute_wave_output(struct ad1848_softc *, int, int);
+#if defined(AUDIO2)
+int	ad1848_query_format(void *, audio_format_query_t *);
+int	ad1848_set_format(void *, int,
+	    const audio_params_t *, const audio_params_t *,
+	    audio_filter_reg_t *, audio_filter_reg_t *);
+#else
 int	ad1848_query_encoding(void *, struct audio_encoding *);
 int	ad1848_set_params(void *, int, int, audio_params_t *,
 	    audio_params_t *, stream_filter_list_t *,
 	    stream_filter_list_t *);
+#endif
 int	ad1848_round_blocksize(void *, int, int, const audio_params_t *);
 int	ad1848_commit_settings(void *);
 int	ad1848_set_rec_port(struct ad1848_softc *, int);

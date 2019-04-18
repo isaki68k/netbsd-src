@@ -185,8 +185,13 @@ const struct audio_hw_if audiocs_hw_if = {
 	 * sample data, otherwise up to 1024.
 	 */
 	.drain			= NULL,
+#if defined(AUDIO2)
+	.query_format		= ad1848_query_format,
+	.set_format		= ad1848_set_format,
+#else
 	.query_encoding		= ad1848_query_encoding,
 	.set_params		= ad1848_set_params,
+#endif
 	.round_blocksize	= toccata_round_blocksize,
 	.commit_settings	= ad1848_commit_settings,
 	.init_output		= NULL,	/* XXX need this to prefill? */

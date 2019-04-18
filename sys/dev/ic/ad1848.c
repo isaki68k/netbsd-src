@@ -112,7 +112,9 @@ __KERNEL_RCSID(0, "$NetBSD: ad1848.c,v 1.31 2011/11/23 23:07:32 jmcneill Exp $")
 #include <sys/audioio.h>
 
 #include <dev/audio_if.h>
+#if !defined(AUDIO2)
 #include <dev/auconv.h>
+#endif
 
 #include <dev/ic/ad1848reg.h>
 #include <dev/ic/cs4231reg.h>
@@ -137,6 +139,22 @@ int	ad1848debug = 0;
 void ad1848_dump_regs(struct ad1848_softc *);
 #else
 #define DPRINTF(x)
+#endif
+
+#if defined(AUDIO2)
+static const struct audio_format ad1848_formats[] = {
+	{
+		.mode		= AUMODE_PLAY | AUMODE_RECORD,
+		.encoding	= AUDIO_ENCODING_SLINEAR_LE,
+		.validbits	= 16,
+		.precision	= 16,
+		.channels	= 2,
+		.channel_mask	= AUFMT_STEREO,
+		.frequency_type	= 0,
+		.frequency	= { },
+	},
+};
+#define AD1848_NFORMATS __arraycount(ad1848_formats)
 #endif
 
 /*
@@ -776,6 +794,43 @@ ad1848_mixer_set_port(struct ad1848_softc *ac, const struct ad1848_devmap *map,
 	return error;
 }
 
+#if defined(AUDIO2)
+int
+ad1848_query_format(void *addr, audio_format_query_t *afp)
+{
+
+	return audio_query_format(ad1848_formats, AD1848_NFORMATS, afp);
+}
+
+int
+ad1848_set_format(void *addr, int setmode,
+    const audio_params_t *p, const audio_params_t *r,
+    audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
+{
+	struct ad1848_softc *sc;
+	int rate;
+	int error;
+
+	/* *p and *r are the identical because !AUDIO_PROP_INDEPENDENT. */
+	DPRINTF(("%s: %u %u %u %u\n", __func__,
+	    p->encoding, p->precision, p->channels, p->sample_rate));
+
+	sc = addr;
+
+	rate = p->sample_rate;
+	error = ad1848_set_speed(sc, &rate);
+	if (error)
+		return error;
+
+	sc->format_bits = FMT_TWOS_COMP >> 5;
+	sc->channels = p->channels;
+	sc->precision = p->precision;
+	sc->need_commit = 1;
+
+	DPRINTF(("%s succeeded\n", __func__));
+	return 0;
+}
+#else
 int
 ad1848_query_encoding(void *addr, struct audio_encoding *fp)
 {
@@ -976,6 +1031,7 @@ ad1848_set_params(void *addr, int setmode, int usemode,
 	DPRINTF(("ad1848_set_params succeeded, bits=%x\n", bits));
 	return 0;
 }
+#endif /* AUDIO2 */
 
 int
 ad1848_set_rec_port(struct ad1848_softc *sc, int port)
