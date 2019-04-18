@@ -1,6 +1,5 @@
 include 	"arch/alpha/conf/GENERIC"
 ident		"AUDIO2"
-options 	AUDIO2
 options 	MSGBUFSIZE=16384
 emuxki* at pci? dev ? function ?	# Creative SBLive! and PCI512
 wss*	at	isa? port 0x530 irq 9 drq 0	# Windows Sound System

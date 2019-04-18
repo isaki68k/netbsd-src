@@ -1,12 +1,13 @@
 include 	"arch/amd64/conf/GENERIC"
 ident		"AUDIO2"
-options 	AUDIO2
 options 	DEBUG
 options 	LOCKDEBUG
 options 	DDB_ONPANIC=1
 no makeoptions	DEBUG
 
--nouveau*	at pci?
--nouveaufb*	at nouveaufbbus?
+no radeon*	at pci?
+no radeondrmkmsfb*	at radeonfbbus?
+no nouveau*	at pci?
+no nouveaufb*	at nouveaufbbus?
 
 azalia* at pci? dev ? function ?	# High Definition Audio

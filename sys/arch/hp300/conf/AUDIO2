@@ -1,2 +1,1 @@
 include 	"arch/hp300/conf/GENERIC"
-options 	AUDIO2

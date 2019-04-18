@@ -1,6 +1,5 @@
 include 	"arch/i386/conf/GENERIC"
 ident		"AUDIO2"
-options 	AUDIO2
 
 # Audio Devices
 

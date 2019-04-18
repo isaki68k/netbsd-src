@@ -1,5 +1,4 @@
 include 	"arch/amiga/conf/GENERIC"
-options 	AUDIO2
 
 melody* 	at zbus0		# Melody MPEG audio decoder
 audio*		at melody?

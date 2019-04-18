@@ -20,8 +20,6 @@
 
 include 	"arch/x68k/conf/std.x68k"
 
-options 	AUDIO2
-
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
 #ident 		"GENERIC-$Revision: 1.195 $"

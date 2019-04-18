@@ -1,2 +1,1 @@
 include 	"arch/vax/conf/GENERIC"
-options 	AUDIO2
