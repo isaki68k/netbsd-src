@@ -357,11 +357,7 @@ CFATTACH_DECL2_NEW(
     hdafg_childdet
 );
 
-#if defined(AUDIO2)
 static int	hdafg_query_format(void *, audio_format_query_t *);
-#else
-static int	hdafg_query_encoding(void *, struct audio_encoding *);
-#endif
 static int	hdafg_set_params(void *, int, int,
 				   audio_params_t *,
 				   audio_params_t *,
@@ -379,9 +375,6 @@ static void *	hdafg_allocm(void *, int, size_t);
 static void	hdafg_freem(void *, void *, size_t);
 static int	hdafg_getdev(void *, struct audio_device *);
 static size_t	hdafg_round_buffersize(void *, int, size_t);
-#if !defined(AUDIO2)
-static paddr_t	hdafg_mappage(void *, void *, off_t, int);
-#endif
 static int	hdafg_get_props(void *);
 static int	hdafg_trigger_output(void *, void *, void *, int,
 				       void (*)(void *), void *,
@@ -392,11 +385,7 @@ static int	hdafg_trigger_input(void *, void *, void *, int,
 static void	hdafg_get_locks(void *, kmutex_t **, kmutex_t **);
 
 static const struct audio_hw_if hdafg_hw_if = {
-#if defined(AUDIO2)
 	.query_format	= hdafg_query_format,
-#else
-	.query_encoding		= hdafg_query_encoding,
-#endif
 	.set_params		= hdafg_set_params,
 	.round_blocksize	= hdafg_round_blocksize,
 	.commit_settings	= hdafg_commit_settings,
@@ -409,9 +398,6 @@ static const struct audio_hw_if hdafg_hw_if = {
 	.allocm			= hdafg_allocm,
 	.freem			= hdafg_freem,
 	.round_buffersize	= hdafg_round_buffersize,
-#if !defined(AUDIO2)
-	.mappage		= hdafg_mappage,
-#endif
 	.get_props		= hdafg_get_props,
 	.trigger_output		= hdafg_trigger_output,
 	.trigger_input		= hdafg_trigger_input,
@@ -3392,11 +3378,9 @@ hdafg_probe_encoding(struct hdafg_softc *sc,
 		if (hdafg_rate_supported(sc, rate))
 			f.frequency[f.frequency_type++] = rate;
 	}
-#if defined(AUDIO2)
 	/* XXX ad hoc.. */
 	if (encoding == AUDIO_ENCODING_AC3)
 		f.priority = -1;
-#endif
 
 #define HDAUDIO_INITFMT(ch, chmask)			\
 	do {						\
@@ -3937,7 +3921,6 @@ hdafg_resume(device_t self, const pmf_qual_t *qual)
 }
 
 
-#if defined(AUDIO2)
 static int
 hdafg_query_format(void *opaque, audio_format_query_t *afp)
 {
@@ -3945,14 +3928,6 @@ hdafg_query_format(void *opaque, audio_format_query_t *afp)
 
 	return audio_query_format(ad->ad_formats, ad->ad_nformats, afp);
 }
-#else
-static int
-hdafg_query_encoding(void *opaque, struct audio_encoding *ae)
-{
-	struct hdaudio_audiodev *ad = opaque;
-	return auconv_query_encoding(ad->ad_encodings, ae);
-}
-#endif
 
 static int
 hdafg_set_params(void *opaque, int setmode, int usemode,
@@ -3989,7 +3964,7 @@ hdafg_round_blocksize(void *opaque, int blksize, int mode,
 {
 	struct hdaudio_audiodev *ad = opaque;
 	struct hdaudio_stream *st;
-	int bufsize, nblksize;
+	int bufsize;
 
 	st = (mode == AUMODE_PLAY) ? ad->ad_playback : ad->ad_capture;
 	if (st == NULL) {
@@ -3997,9 +3972,6 @@ hdafg_round_blocksize(void *opaque, int blksize, int mode,
 		    "round_blocksize called for invalid stream\n");
 		return 128;
 	}
-
-#if defined(AUDIO2)
-	(void)nblksize;
 
 	/*
 	 * HD audio's buffer constraint looks like following:
@@ -4016,26 +3988,6 @@ hdafg_round_blocksize(void *opaque, int blksize, int mode,
 		blksize = bufsize / HDAUDIO_BDL_MAX;
 	}
 	return blksize;
-#else
-	if (blksize > 8192)
-		blksize = 8192;
-	else if (blksize < 0)
-		blksize = 128;
-
-	/* HD audio wants a multiple of 128, and OSS wants a power of 2 */
-	for (nblksize = 128; nblksize < blksize; nblksize <<= 1)
-		;
-
-	/* Make sure there are enough BDL descriptors */
-	bufsize = st->st_data.dma_size;
-	if (bufsize > HDAUDIO_BDL_MAX * nblksize) {
-		blksize = bufsize / HDAUDIO_BDL_MAX;
-		for (nblksize = 128; nblksize < blksize; nblksize <<= 1)
-			;
-	}
-
-	return nblksize;
-#endif
 }
 
 static int
@@ -4281,38 +4233,8 @@ hdafg_freem(void *opaque, void *addr, size_t size)
 static size_t
 hdafg_round_buffersize(void *opaque, int direction, size_t bufsize)
 {
-#if AUDIO2
-	/* The buffer size does not seem to be limited multiple of 128byte. */
-#else
-	/* Multiple of 128 */
-	bufsize &= ~127;
-	if (bufsize <= 0)
-		bufsize = 128;
-#endif
 	return bufsize;
 }
-
-#if !defined(AUDIO2)
-static paddr_t
-hdafg_mappage(void *opaque, void *addr, off_t off, int prot)
-{
-	struct hdaudio_audiodev *ad = opaque;
-	struct hdaudio_stream *st;
-
-	if (addr == DMA_KERNADDR(&ad->ad_playback->st_data))
-		st = ad->ad_playback;
-	else if (addr == DMA_KERNADDR(&ad->ad_capture->st_data))
-		st = ad->ad_capture;
-	else
-		return -1;
-
-	if (st->st_data.dma_valid == false)
-		return -1;
-
-	return bus_dmamem_mmap(st->st_host->sc_dmat, st->st_data.dma_segs,
-	    st->st_data.dma_nsegs, off, prot, BUS_DMA_WAITOK);
-}
-#endif
 
 static int
 hdafg_get_props(void *opaque)
