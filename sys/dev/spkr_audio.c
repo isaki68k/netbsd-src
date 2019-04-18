@@ -71,28 +71,12 @@ spkr_audio_tone(device_t self, u_int xhz, u_int ticks)
 #ifdef SPKRDEBUG
 	aprint_debug_dev(self, "%s: %u %d\n", __func__, xhz, ticks);
 #endif /* SPKRDEBUG */
-#if defined(AUDIO2)
-	/* In AUDIO2, xhz == 0 (no pitch value) doesn't make a sound. */
-	if (xhz > 0)
-#endif
-	audiobell(sc->sc_audiodev, xhz, ticks * (1000 / hz),
-	    sc->sc_spkr.sc_vol, 0);
-}
-
-#if !defined(AUDIO2)
-static void
-spkr_audio_rest(device_t self, int ticks)
-{
-	struct spkr_audio_softc *sc = device_private(self);
-	
-#ifdef SPKRDEBUG
-	aprint_debug_dev(self, "%s: %d\n", __func__, ticks);
-#endif /* SPKRDEBUG */
-	if (ticks > 0)
-		audiobell(sc->sc_audiodev, 0, ticks * (1000 / hz),
+	/* xhz == 0 (no pitch value) doesn't make a sound. */
+	if (xhz > 0) {
+		audiobell(sc->sc_audiodev, xhz, ticks * (1000 / hz),
 		    sc->sc_spkr.sc_vol, 0);
+	}
 }
-#endif
 
 static int
 spkr_audio_probe(device_t parent, cfdata_t cf, void *aux)
@@ -115,11 +99,7 @@ spkr_audio_attach(device_t parent, device_t self, void *aux)
 	if (!pmf_device_register(self, NULL, NULL))
 		aprint_error_dev(self, "couldn't establish power handler\n"); 
 
-#if defined(AUDIO2)
 	spkr_attach(self, spkr_audio_tone);
-#else
-	spkr_attach(self, spkr_audio_tone, spkr_audio_rest);
-#endif
 }
 
 static int

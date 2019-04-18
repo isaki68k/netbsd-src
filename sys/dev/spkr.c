@@ -173,7 +173,6 @@ playinit(struct spkr_softc *sc)
 	sc->sc_octprefix = true;/* act as though there was an initial O(n) */
 }
 
-#if defined(AUDIO2)
 /* XXX It is taken from spkr_pcppi.c.  PZERO is for backward compatibility. */
 #define SPKRPRI (PZERO - 1)
 static void
@@ -188,9 +187,7 @@ rest(struct spkr_softc *sc, int ticks)
 		    ticks);
 	}
 }
-#endif
 
-#if defined(AUDIO2)
 /*
  * Play tone of proper duration for current rhythm signature.
  * note indicates "O0C" = 0, "O0C#" = 1, "O0D" = 2, ... , and
@@ -238,40 +235,6 @@ playtone(struct spkr_softc *sc, int note, int val, int sustain)
 	if (silence != 0)
 		rest(sc, silence);
 }
-#else
-static void
-playtone(struct spkr_softc *sc, int pitch, int val, int sustain)
-{
-	int sound, silence, snum = 1, sdenom = 1;
-
-	/* this weirdness avoids floating-point arithmetic */
-	for (; sustain; sustain--) {
-		snum *= NUM_MULT;
-		sdenom *= DENOM_MULT;
-	}
-
-	if (pitch == -1) {
-		(*sc->sc_rest)(sc->sc_dev, sc->sc_whole
-		    * snum / (val * sdenom));
-		return;
-	}
-
-	int fac = sc->sc_whole * (FILLTIME - sc->sc_fill);
-	int fval = FILLTIME * val;
-	sound = (sc->sc_whole * snum) / (val * sdenom) -  fac / fval;
-	silence = fac * snum / (fval * sdenom);
-
-#ifdef SPKRDEBUG
-	aprint_debug_dev(sc->sc_dev,
-	    "%s: pitch %d for %d ticks, rest for %d ticks\n", __func__,
-	    pitch, sound, silence);
-#endif /* SPKRDEBUG */
-
-	(*sc->sc_tone)(sc->sc_dev, pitchtab[pitch], sound);
-	if (sc->sc_fill != LEGATO)
-		(*sc->sc_rest)(sc->sc_dev, silence);
-}
-#endif /* !AUDIO2 */
 
 /* interpret and play an item from a notation string */
 static void
@@ -444,12 +407,7 @@ playstring(struct spkr_softc *sc, const char *cp, size_t slen)
 #define spkrenter(d)	device_lookup_private(&spkr_cd, d)
 
 void
-#if defined(AUDIO2)
 spkr_attach(device_t self, void (*tone)(device_t, u_int, u_int))
-#else
-spkr_attach(device_t self, void (*tone)(device_t, u_int, u_int),
-    void (*rest)(device_t, int))
-#endif
 {
 	struct spkr_softc *sc = device_private(self);
 
@@ -458,9 +416,6 @@ spkr_attach(device_t self, void (*tone)(device_t, u_int, u_int),
 #endif /* SPKRDEBUG */
 	sc->sc_dev = self;
 	sc->sc_tone = tone;
-#if !defined(AUDIO2)
-	sc->sc_rest = rest;
-#endif
 	sc->sc_inbuf = NULL;
 	sc->sc_wsbelldev = NULL;
 
@@ -586,11 +541,7 @@ static void
 playonetone(struct spkr_softc *sc, tone_t *tp)
 {
 	if (tp->frequency == 0)
-#if defined(AUDIO2)
 		rest(sc, tp->duration);
-#else
-		(*sc->sc_rest)(sc->sc_dev, tp->duration);
-#endif
 	else
 		(*sc->sc_tone)(sc->sc_dev, tp->frequency, tp->duration);
 }

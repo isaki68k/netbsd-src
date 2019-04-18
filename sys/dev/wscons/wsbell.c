@@ -128,9 +128,7 @@ __KERNEL_RCSID(0, "$NetBSD: wsbell.c,v 1.9 2017/11/03 19:49:23 maya Exp $");
 #include <sys/systm.h>
 #include <sys/tty.h>
 #include <sys/signalvar.h>
-#if defined(AUDIO2)
 #include <sys/sysctl.h>
-#endif
 #include <sys/device.h>
 #include <sys/vnode.h>
 #include <sys/callout.h>
@@ -216,9 +214,7 @@ wsbell_attach(device_t parent, device_t self, void *aux)
 {
 	struct wsbell_softc *sc = device_private(self);
 	struct wsbelldev_attach_args *ap = aux;
-#if defined(AUDIO2)
 	const struct sysctlnode *node;
-#endif
 #if NWSMUX > 0
 	int mux, error;
 #endif
@@ -253,7 +249,6 @@ wsbell_attach(device_t parent, device_t self, void *aux)
 	mutex_init(&sc->sc_bellock, MUTEX_DEFAULT, IPL_SCHED);
 	cv_init(&sc->sc_bellcv, "bellcv");
 
-#if defined(AUDIO2)
 	sc->sc_mute = 0;
 	sysctl_createv(&sc->sc_log, 0, NULL, &node,
 	    0,
@@ -272,7 +267,6 @@ wsbell_attach(device_t parent, device_t self, void *aux)
 		    NULL, 0, &sc->sc_mute, sizeof(sc->sc_mute),
 		    CTL_HW, node->sysctl_num, CTL_CREATE, CTL_EOL);
 	}
-#endif /* AUDIO2 */
 
 	kthread_create(PRI_BIO, KTHREAD_MPSAFE | KTHREAD_MUSTJOIN, NULL,
 	    bell_thread, sc, &sc->sc_bellthread, "%s", device_xname(self));
@@ -342,9 +336,7 @@ wsbell_detach(device_t self, int flags)
 	cv_destroy(&sc->sc_bellcv);
 	mutex_destroy(&sc->sc_bellock);
 
-#if defined(AUDIO2)
 	sysctl_teardown(&sc->sc_log);
-#endif
 
 	return (0);
 }
@@ -454,19 +446,13 @@ bell_thread(void *arg)
 			kthread_exit(0);
 		}
 
-#if defined(AUDIO2)
 		if (sc->sc_mute) {
 			mutex_exit(&sc->sc_bellock);
 			continue;
 		}
-#endif
 
 		tone.frequency = vb->pitch;
-#if defined(AUDIO2)
 		tone.duration = mstohz(vb->period);
-#else
-		tone.duration = vb->period;
-#endif
 		vol = vb->volume;
 		mutex_exit(&sc->sc_bellock);
 
@@ -484,11 +470,7 @@ spkr_audio_play(struct wsbell_softc *sc, u_int pitch, u_int period, u_int volume
 
 	mutex_enter(&sc->sc_bellock);
 	sc->sc_bell_args.pitch = pitch;
-#if defined(AUDIO2)
 	sc->sc_bell_args.period = period;
-#else
-	sc->sc_bell_args.period = period / 5;
-#endif
 	sc->sc_bell_args.volume = volume;
 
 	cv_broadcast(&sc->sc_bellcv);
