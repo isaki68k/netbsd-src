@@ -38,8 +38,10 @@ __KERNEL_RCSID(0, "$NetBSD: haltwo.c,v 1.24 2019/03/16 12:09:57 isaki Exp $");
 #include <sys/audioio.h>
 #include <sys/kmem.h>
 #include <dev/audio_if.h>
+#if !defined(AUDIO2)
 #include <dev/auconv.h>
 #include <dev/mulaw.h>
+#endif
 
 #include <uvm/uvm_extern.h>
 
@@ -399,13 +401,14 @@ haltwo_query_encoding(void *v, struct audio_encoding *e)
 		e->flags = 0;
 		break;
 
+#if !defined(AUDIO2)
 	case 2:
 		strcpy(e->name, AudioEmulaw);
 		e->encoding = AUDIO_ENCODING_ULAW;
 		e->precision = 8;
 		e->flags = AUDIO_ENCODINGFLAG_EMULATED;
 		break;
-
+#endif
 	default:
 		return EINVAL;
 	}
@@ -418,7 +421,9 @@ haltwo_set_params(void *v, int setmode, int usemode,
 		  audio_params_t *play, audio_params_t *rec,
 		  stream_filter_list_t *pfil, stream_filter_list_t *rfil)
 {
+#if !defined(AUDIO2)
 	audio_params_t hw;
+#endif
 	struct haltwo_softc *sc;
 	int master, inc, mod;
 	uint16_t tmp;
@@ -446,6 +451,7 @@ haltwo_set_params(void *v, int setmode, int usemode,
 	    " sample_rate = %ld\n", master, inc, mod,
 	    play->sample_rate));
 
+#if !defined(AUDIO2)
 	hw = *play;
 	switch (play->encoding) {
 	case AUDIO_ENCODING_ULAW:
@@ -463,6 +469,7 @@ haltwo_set_params(void *v, int setmode, int usemode,
 	default:
 		return EINVAL;
 	}
+#endif
 	/* play points HW encoding */
 
 	/* Setup samplerate to HW */
