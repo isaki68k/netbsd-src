@@ -142,6 +142,7 @@ void ad1848_dump_regs(struct ad1848_softc *);
 #endif
 
 #if defined(AUDIO2)
+/* XXX ad1848 supports more frequencies but I chose several major ones. */
 static const struct audio_format ad1848_formats[] = {
 	{
 		.mode		= AUMODE_PLAY | AUMODE_RECORD,
@@ -150,8 +151,8 @@ static const struct audio_format ad1848_formats[] = {
 		.precision	= 16,
 		.channels	= 2,
 		.channel_mask	= AUFMT_STEREO,
-		.frequency_type	= 0,
-		.frequency	= { },
+		.frequency_type	= 6,
+		.frequency	= { 8000, 11025, 16000, 22050, 44100, 48000 },
 	},
 };
 #define AD1848_NFORMATS __arraycount(ad1848_formats)
