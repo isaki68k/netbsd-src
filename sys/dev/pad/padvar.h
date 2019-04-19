@@ -48,8 +48,9 @@ typedef struct pad_softc {
 
 #define PAD_BUFSIZE	65536
 	uint8_t		sc_audiobuf[PAD_BUFSIZE];
-	uint32_t	sc_buflen;
-	uint32_t	sc_rpos, sc_wpos;
+	u_int		sc_buflen;
+	u_int		sc_rpos;
+	u_int		sc_wpos;
 
 	uint8_t		sc_swvol;
 } pad_softc_t;
