@@ -6405,11 +6405,12 @@ audio_hw_probe_by_format(struct audio_softc *sc, audio_format2_t *cand,
 			return error;
 
 #if defined(AUDIO_DEBUG)
-		DPRINTF(1, "fmt[%d] %c%c pri=%d %s/%dbit/%dch/", i,
+		DPRINTF(1, "fmt[%d] %c%c pri=%d %s,%d/%dbit,%dch,", i,
 		    (query.fmt.mode & AUMODE_PLAY)   ? 'P' : '-',
 		    (query.fmt.mode & AUMODE_RECORD) ? 'R' : '-',
 		    query.fmt.priority,
 		    audio_encoding_name(query.fmt.encoding),
+		    query.fmt.validbits,
 		    query.fmt.precision,
 		    query.fmt.channels);
 		if (query.fmt.frequency_type == 0) {
@@ -6464,19 +6465,20 @@ audio_hw_probe_by_format(struct audio_softc *sc, audio_format2_t *cand,
 		cand->channels    = query.fmt.channels;
 		cand->sample_rate = audio_select_freq(&query.fmt);
 		DPRINTF(1, "fmt[%d] candidate (score=0x%x)"
-		    " pri=%d %s/%d/%dch/%dHz\n", i,
+		    " pri=%d %s,%d/%d,%dch,%dHz\n", i,
 		    cand_score, query.fmt.priority,
 		    audio_encoding_name(query.fmt.encoding),
-		    cand->precision, cand->channels, cand->sample_rate);
+		    cand->precision, cand->stride,
+		    cand->channels, cand->sample_rate);
 	}
 
 	if (cand_score == 0) {
 		DPRINTF(1, "%s no fmt\n", __func__);
 		return ENXIO;
 	}
-	DPRINTF(1, "%s selected: %s/%d/%dch/%dHz\n", __func__,
+	DPRINTF(1, "%s selected: %s,%d/%d,%dch,%dHz\n", __func__,
 	    audio_encoding_name(cand->encoding),
-	    cand->precision, cand->channels, cand->sample_rate);
+	    cand->precision, cand->stride, cand->channels, cand->sample_rate);
 	return 0;
 }
 
