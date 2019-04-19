@@ -90,16 +90,10 @@ static void psgpam_attach(device_t, device_t, void *);
 /* MI audio layer interface */
 static int  psgpam_open(void *, int);
 static void psgpam_close(void *);
-#if defined(AUDIO2)
 static int  psgpam_query_format(void *, audio_format_query_t *);
 static int  psgpam_set_format(void *, int,
 	const audio_params_t *, const audio_params_t *,
 	audio_filter_reg_t *, audio_filter_reg_t *);
-#else
-static int  psgpam_query_encoding(void *, struct audio_encoding *);
-static int  psgpam_set_params(void *, int, int, audio_params_t *,
-	audio_params_t *, stream_filter_list_t *, stream_filter_list_t *);
-#endif
 static int  psgpam_start_output(void *, void *, int, void (*)(void *), void *);
 static int  psgpam_halt_output(void *);
 static int  psgpam_getdev(void *, struct audio_device *);
@@ -125,13 +119,8 @@ static int psgpam_matched;
 static const struct audio_hw_if psgpam_hw_if = {
 	.open			= psgpam_open,
 	.close			= psgpam_close,
-#if defined(AUDIO2)
 	.query_format		= psgpam_query_format,
 	.set_format		= psgpam_set_format,
-#else
-	.query_encoding		= psgpam_query_encoding,
-	.set_params		= psgpam_set_params,
-#endif
 	.start_output		= psgpam_start_output,
 	.halt_output		= psgpam_halt_output,
 	.getdev			= psgpam_getdev,
@@ -343,7 +332,6 @@ psgpam_close(void *hdl)
 	DPRINTF(1, "%s\n", __func__);
 }
 
-#if defined(AUDIO2)
 static int
 psgpam_query_format(void *hdl, audio_format_query_t *afp)
 {
@@ -387,19 +375,7 @@ psgpam_query_format(void *hdl, audio_format_query_t *afp)
 	afp->fmt = psgpam_format;
 	return 0;
 }
-#else
-static int
-psgpam_query_encoding(void *hdl, struct audio_encoding *ae)
-{
 
-	DPRINTF(1, "%s\n", __func__);
-
-	// unsupported
-	return EINVAL;
-}
-#endif
-
-#if defined(AUDIO2)
 static int
 psgpam_set_format(void *hdl, int setmode,
 	const audio_params_t *play, const audio_params_t *rec,
@@ -456,17 +432,6 @@ psgpam_set_format(void *hdl, int setmode,
 
 	return 0;
 }
-#else
-static int
-psgpam_set_params(void *hdl, int setmode, int usemode,
-	audio_params_t *play, audio_params_t *rec,
-	stream_filter_list_t *pfil, stream_filter_list_t *rfil)
-{
-
-	DPRINTF(1, "%s setmode=%x usemode=%x\n", __func__, setmode, usemode);
-	return 0;
-}
-#endif
 
 static int
 psgpam_start_output(void *hdl, void *block, int blksize,
