@@ -79,12 +79,7 @@ __KERNEL_RCSID(0, "$NetBSD: vidcaudio.c,v 1.57 2019/03/16 12:09:56 isaki Exp $")
 
 #include <dev/audio_if.h>
 #include <dev/audiobellvar.h>
-#if defined(AUDIO2)
 #include <dev/audio/mulaw.h>
-#else
-#include <dev/auconv.h>
-#include <dev/mulaw.h>
-#endif
 
 #include <machine/intr.h>
 #include <machine/machdep.h>
@@ -142,28 +137,14 @@ static int vidcaudio_intr(void *);
 static void vidcaudio_rate(int);
 static void vidcaudio_ctrl(int);
 static void vidcaudio_stereo(int, int);
-#if !defined(AUDIO2)
-static stream_filter_factory_t mulaw_to_vidc;
-static stream_filter_factory_t mulaw_to_vidc_stereo;
-static int mulaw_to_vidc_fetch_to(struct audio_softc *, stream_fetcher_t *,
-    audio_stream_t *, int);
-static int mulaw_to_vidc_stereo_fetch_to(struct audio_softc *, stream_fetcher_t *,
-    audio_stream_t *, int);
-#endif
 
 CFATTACH_DECL_NEW(vidcaudio, sizeof(struct vidcaudio_softc),
     vidcaudio_probe, vidcaudio_attach, NULL, NULL);
 
-#if defined(AUDIO2)
 static int    vidcaudio_query_format(void *, audio_format_query_t *);
 static int    vidcaudio_set_format(void *, int,
     const audio_params_t *, const audio_params_t *,
     audio_filter_reg_t *, audio_filter_reg_t *);
-#else
-static int    vidcaudio_query_encoding(void *, struct audio_encoding *);
-static int    vidcaudio_set_params(void *, int, int, audio_params_t *,
-    audio_params_t *, stream_filter_list_t *, stream_filter_list_t *);
-#endif
 static int    vidcaudio_round_blocksize(void *, int, int, const audio_params_t *);
 static int    vidcaudio_trigger_output(void *, void *, void *, int,
     void (*)(void *), void *, const audio_params_t *);
@@ -186,13 +167,8 @@ static struct audio_device vidcaudio_device = {
 
 static const struct audio_hw_if vidcaudio_hw_if = {
 	.close			= vidcaudio_close,
-#if defined(AUDIO2)
 	.query_format		= vidcaudio_query_format,
 	.set_format		= vidcaudio_set_format,
-#else
-	.query_encoding		= vidcaudio_query_encoding,
-	.set_params		= vidcaudio_set_params,
-#endif
 	.round_blocksize	= vidcaudio_round_blocksize,
 	.halt_output		= vidcaudio_halt_output,
 	.halt_input		= vidcaudio_halt_input,
@@ -206,7 +182,6 @@ static const struct audio_hw_if vidcaudio_hw_if = {
 	.get_locks		= vidcaudio_get_locks,
 };
 
-#if defined(AUDIO2)
 static const struct audio_format vidcaudio_formats_16bit = {
 	.mode		= AUMODE_PLAY,
 	.encoding	= AUDIO_ENCODING_SLINEAR_LE,
@@ -243,7 +218,6 @@ static const struct audio_format vidcaudio_formats_8bit = {
 		50000,	/* 10us */
 	},
 };
-#endif
 
 static int
 vidcaudio_probe(device_t parent, cfdata_t cf, void *aux)
@@ -339,7 +313,6 @@ vidcaudio_close(void *addr)
  * Interface to the generic audio driver
  */
 
-#if defined(AUDIO2)
 static int
 vidcaudio_query_format(void *addr, audio_format_query_t *afp)
 {
@@ -389,157 +362,6 @@ vidcaudio_set_format(void *addr, int setmode,
 	}
 	return 0;
 }
-
-#else
-
-static int
-vidcaudio_query_encoding(void *addr, struct audio_encoding *fp)
-{
-	struct vidcaudio_softc *sc;
-
-	sc = addr;
-	switch (fp->index) {
-	case 0:
-		strcpy(fp->name, AudioEmulaw);
-		fp->encoding = AUDIO_ENCODING_ULAW;
-		fp->precision = 8;
-		fp->flags = AUDIO_ENCODINGFLAG_EMULATED;
-		break;
-
-	case 1:
-		if (sc->sc_is16bit) {
-			strcpy(fp->name, AudioEslinear_le);
-			fp->encoding = AUDIO_ENCODING_SLINEAR_LE;
-			fp->precision = 16;
-			fp->flags = 0;
-			break;
-		}
-		/* FALLTHROUGH */
-	default:
-		return EINVAL;
-	}
-	return 0;
-}
-
-#define MULAW_TO_VIDC(m) (~((m) << 1 | (m) >> 7))
-
-static stream_filter_t *
-mulaw_to_vidc(struct audio_softc *sc, const audio_params_t *from,
-	      const audio_params_t *to)
-{
-
-	return auconv_nocontext_filter_factory(mulaw_to_vidc_fetch_to);
-}
-
-static int
-mulaw_to_vidc_fetch_to(struct audio_softc *sc, stream_fetcher_t *self,
-		       audio_stream_t *dst, int max_used)
-{
-	stream_filter_t *this;
-	int m, err;
-
-	this = (stream_filter_t *)self;
-	if ((err = this->prev->fetch_to(sc, this->prev, this->src, max_used)))
-		return err;
-	m = dst->end - dst->start;
-	m = uimin(m, max_used);
-	FILTER_LOOP_PROLOGUE(this->src, 1, dst, 1, m) {
-		*d = MULAW_TO_VIDC(*s);
-	} FILTER_LOOP_EPILOGUE(this->src, dst);
-	return 0;
-}
-
-static stream_filter_t *
-mulaw_to_vidc_stereo(struct audio_softc *sc, const audio_params_t *from,
-		     const audio_params_t *to)
-{
-
-	return auconv_nocontext_filter_factory(mulaw_to_vidc_stereo_fetch_to);
-}
-
-static int
-mulaw_to_vidc_stereo_fetch_to(struct audio_softc *sc, stream_fetcher_t *self,
-			      audio_stream_t *dst, int max_used)
-{
-	stream_filter_t *this;
-	int m, err;
-
-	this = (stream_filter_t *)self;
-	max_used = (max_used + 1) & ~1;
-	if ((err = this->prev->fetch_to(sc, this->prev, this->src, max_used / 2)))
-		return err;
-	m = (dst->end - dst->start) & ~1;
-	m = uimin(m, max_used);
-	FILTER_LOOP_PROLOGUE(this->src, 1, dst, 2, m) {
-		d[0] = d[1] = MULAW_TO_VIDC(*s);
-	} FILTER_LOOP_EPILOGUE(this->src, dst);
-	return 0;
-}
-
-static int
-vidcaudio_set_params(void *addr, int setmode, int usemode,
-    audio_params_t *p, audio_params_t *r,
-    stream_filter_list_t *pfil, stream_filter_list_t *rfil)
-{
-	audio_params_t hw;
-	struct vidcaudio_softc *sc;
-	int sample_period, ch;
-
-	if ((setmode & AUMODE_PLAY) == 0)
-		return 0;
-
-	sc = addr;
-	if (sc->sc_is16bit) {
-		/* ARM7500ish, 16-bit, two-channel */
-		hw = *p;
-		if (p->encoding == AUDIO_ENCODING_ULAW && p->precision == 8) {
-			hw.encoding = AUDIO_ENCODING_SLINEAR_LE;
-			hw.precision = hw.validbits = 16;
-			pfil->append(pfil, mulaw_to_linear16, &hw);
-		} else if (p->encoding != AUDIO_ENCODING_SLINEAR_LE ||
-		    p->precision != 16)
-			return EINVAL;
-		sample_period = 705600 / 4 / p->sample_rate;
-		if (sample_period < 3) sample_period = 3;
-		vidcaudio_rate(sample_period - 2);
-		vidcaudio_ctrl(SCR_SERIAL);
-		hw.sample_rate = 705600 / 4 / sample_period;
-		hw.channels = 2;
-		pfil->prepend(pfil, aurateconv, &hw);
-	} else {
-		/* VIDC20ish, u-law, 8-channel */
-		if (p->encoding != AUDIO_ENCODING_ULAW || p->precision != 8)
-			return EINVAL;
-		/*
-		 * We always use two hardware channels, because using
-		 * one at 8kHz gives a nasty whining sound from the
-		 * speaker.  The aurateconv mechanism doesn't support
-		 * ulaw, so we do the channel duplication ourselves,
-		 * and don't try to do rate conversion.
-		 */
-		sample_period = 1000000 / 2 / p->sample_rate;
-		if (sample_period < 3) sample_period = 3;
-		p->sample_rate = 1000000 / 2 / sample_period;
-		hw = *p;
-		hw.encoding = AUDIO_ENCODING_NONE;
-		hw.precision = 8;
-		vidcaudio_rate(sample_period - 2);
-		vidcaudio_ctrl(SCR_SDAC | SCR_CLKSEL);
-		if (p->channels == 1) {
-			pfil->append(pfil, mulaw_to_vidc_stereo, &hw);
-			for (ch = 0; ch < 8; ch++)
-				vidcaudio_stereo(ch, SIR_CENTRE);
-		} else {
-			pfil->append(pfil, mulaw_to_vidc, &hw);
-			for (ch = 0; ch < 8; ch += 2)
-				vidcaudio_stereo(ch, SIR_LEFT_100);
-			for (ch = 1; ch < 8; ch += 2)
-				vidcaudio_stereo(ch, SIR_RIGHT_100);
-		}
-	}
-	return 0;
-}
-#endif /* AUDIO2 */
 
 static int
 vidcaudio_round_blocksize(void *addr, int wantblk,
