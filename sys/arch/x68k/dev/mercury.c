@@ -64,6 +64,9 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <auconv.h>
 #endif
 
+// precision != stride のテストをする用
+//#define MERCURY_AS_10BIT
+
 #define MERCURY_ADDR	(0xecc080)
 #define MERCURY_SIZE	(0x80)
 
@@ -161,6 +164,9 @@ static void mercury_freem(void *, void *addr, size_t);
 static size_t mercury_round_buffersize(void *, int, size_t);
 static int  mercury_get_props(void *);
 static void mercury_get_locks(void *, kmutex_t **, kmutex_t **);
+#if defined(MERCURY_AS_10BIT)
+static void mercury_internal_to_slinear10(audio_filter_arg_t *);
+#endif
 
 CFATTACH_DECL_NEW(mercury, sizeof(struct mercury_softc),
 	mercury_match, mercury_attach, NULL, NULL);
@@ -198,11 +204,11 @@ static struct audio_device mercury_device = {
 	"mercury",
 };
 
-#define MERCURY_FORMAT(ch, chmask) \
+#define MERCURY_FORMAT(valid, ch, chmask) \
 	{ \
 		.mode		= AUMODE_PLAY | AUMODE_RECORD, \
 		.encoding	= MERCURY_ENCODING_SLINEAR, \
-		.validbits	= 16, \
+		.validbits	= (valid), \
 		.precision	= 16, \
 		.channels	= (ch), \
 		.channel_mask	= (chmask), \
@@ -210,8 +216,13 @@ static struct audio_device mercury_device = {
 		.frequency	= { 16000, 22050, 24000, 32000, 44100, 48000 },\
 	}
 static const struct audio_format mercury_formats[] = {
-	MERCURY_FORMAT(1, AUFMT_MONAURAL),
-	MERCURY_FORMAT(2, AUFMT_STEREO),
+#if defined(MERCURY_AS_10BIT)
+	MERCURY_FORMAT(10, 1, AUFMT_MONAURAL),
+	MERCURY_FORMAT(10, 2, AUFMT_STEREO),
+#else
+	MERCURY_FORMAT(16, 1, AUFMT_MONAURAL),
+	MERCURY_FORMAT(16, 2, AUFMT_STEREO),
+#endif
 };
 #define MERCURY_NFORMATS __arraycount(mercury_formats)
 
@@ -399,6 +410,10 @@ mercury_set_format(void *hdl, int setmode,
 		return EINVAL;
 	}
 
+#if defined(MERCURY_AS_10BIT)
+	pfil->codec = mercury_internal_to_slinear10;
+#endif
+
 	sc->sc_cmd = cmd;
 	return 0;
 }
@@ -479,11 +494,24 @@ mercury_start_output(void *hdl, void *block, int blksize,
 
 #if defined(MERCURY_LE)
 	/* Emulates little endian device */
-	int j;
-	uint16_t *p = block;
-	for (j = 0; j < blksize / 2; j++) {
-		*p = bswap16(*p);
-		p++;
+	{
+		uint16_t *p = block;
+		int j;
+		for (j = 0; j < blksize / 2; j++) {
+			*p = bswap16(*p);
+			p++;
+		}
+	}
+#endif
+#if defined(MERCURY_AS_10BIT)
+	/* Emulates 10bit device */
+	{
+		int16_t *p = block;
+		int j;
+		for (j = 0; j < blksize / 2; j++) {
+			*p = *p << 6;
+			p++;
+		}
 	}
 #endif
 
@@ -752,3 +780,18 @@ mercury_get_locks(void *hdl, kmutex_t **intr, kmutex_t **thread)
 	*intr = &sc->sc_intr_lock;
 	*thread = &sc->sc_thread_lock;
 }
+
+#if defined(MERCURY_AS_10BIT)
+static void
+mercury_internal_to_slinear10(audio_filter_arg_t *arg)
+{
+	int samples = arg->count * arg->srcfmt->channels;
+	const aint_t *src = arg->src;
+	uint16_t *dst = arg->dst;
+	int i;
+
+	for (i = 0; i < samples; i++) {
+		*dst++ = (*src++) >> 6;
+	}
+}
+#endif
