@@ -29,7 +29,6 @@
  * OKI MSM6258 ADPCM voice synthesizer codec.
  */
 
-#if defined(AUDIO2)
 struct msm6258_codecvar {
 	int16_t		mc_amp;
 	int8_t		mc_estim;
@@ -41,9 +40,3 @@ struct msm6258_codecvar {
 
 extern void msm6258_adpcm_to_internal(audio_filter_arg_t *);
 extern void msm6258_internal_to_adpcm(audio_filter_arg_t *);
-#else
-extern stream_filter_factory_t msm6258_slinear16_to_adpcm;
-extern stream_filter_factory_t msm6258_linear8_to_adpcm;
-extern stream_filter_factory_t msm6258_adpcm_to_slinear16;
-extern stream_filter_factory_t msm6258_adpcm_to_linear8;
-#endif

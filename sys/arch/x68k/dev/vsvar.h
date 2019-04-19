@@ -101,7 +101,5 @@ struct vs_softc {
 	uint sc_blksize;	/* block size */
 	void *sc_cookie;	/* softint cookie */
 
-#if defined(AUDIO2)
 	struct msm6258_codecvar sc_codecvar;
-#endif
 };
