@@ -36,10 +36,6 @@ __KERNEL_RCSID(0, "$NetBSD$");
 
 #include <sys/audioio.h>
 #include <dev/audio_if.h>
-#if 1 //!defined(AUDIO2)
-#include <dev/auconv.h>
-#include <dev/mulaw.h>
-#endif
 
 #include <machine/bus.h>
 #include <machine/cpu.h>
@@ -64,6 +60,9 @@ __KERNEL_RCSID(0, "$NetBSD$");
 
 // 旧APIのテストをする用
 //#define MERCURY_USE_OLDAPI
+#if defined(MERCURY_USE_OLDAPI)
+#include <auconv.h>
+#endif
 
 #define MERCURY_ADDR	(0xecc080)
 #define MERCURY_SIZE	(0x80)
@@ -139,7 +138,7 @@ static void mercury_dmamem_free(struct vs_dma *);
 /* MI audio layer interface */
 static int  mercury_open(void *, int);
 static void mercury_close(void *);
-#if defined(AUDIO2) && !defined(MERCURY_USE_OLDAPI)
+#if !defined(MERCURY_USE_OLDAPI)
 static int  mercury_query_format(void *, audio_format_query_t *);
 static int  mercury_set_format(void *, int,
 	const audio_params_t *, const audio_params_t *,
@@ -171,7 +170,7 @@ static int mercury_matched;
 static const struct audio_hw_if mercury_hw_if = {
 	.open			= mercury_open,
 	.close			= mercury_close,
-#if defined(AUDIO2) && !defined(MERCURY_USE_OLDAPI)
+#if !defined(MERCURY_USE_OLDAPI)
 	.query_format		= mercury_query_format,
 	.set_format		= mercury_set_format,
 #else
@@ -199,7 +198,6 @@ static struct audio_device mercury_device = {
 	"mercury",
 };
 
-#if defined(AUDIO2)
 #define MERCURY_FORMAT(ch, chmask) \
 	{ \
 		.mode		= AUMODE_PLAY | AUMODE_RECORD, \
@@ -216,7 +214,6 @@ static const struct audio_format mercury_formats[] = {
 	MERCURY_FORMAT(2, AUFMT_STEREO),
 };
 #define MERCURY_NFORMATS __arraycount(mercury_formats)
-#endif
 
 static int
 mercury_match(device_t parent, cfdata_t cf, void *aux)
@@ -327,7 +324,7 @@ mercury_close(void *hdl)
 	DPRINTF("%s\n", __func__);
 }
 
-#if defined(AUDIO2) && !defined(MERCURY_USE_OLDAPI)
+#if !defined(MERCURY_USE_OLDAPI)
 static int
 mercury_query_format(void *hdl, audio_format_query_t *afp)
 {
@@ -359,7 +356,7 @@ mercury_query_encoding(void *hdl, struct audio_encoding *ae)
 }
 #endif
 
-#if defined(AUDIO2) && !defined(MERCURY_USE_OLDAPI)
+#if !defined(MERCURY_USE_OLDAPI)
 static int
 mercury_set_format(void *hdl, int setmode,
 	const audio_params_t *play, const audio_params_t *rec,
