@@ -95,18 +95,11 @@ enum vcaudio_dest {
  * 50ms.
  */
 
-#if defined(AUDIO2)
 /* 40ms block of 16bit 48kHz stereo is 7680 bytes. */
 #define VCAUDIO_MSGSIZE		1920
 #define VCAUDIO_NUMMSGS		4
 #define VCAUDIO_BLOCKSIZE	(VCAUDIO_MSGSIZE * VCAUDIO_NUMMSGS)
 /* The driver seems to have no buffer size restrictions. */
-#else
-#define VCAUDIO_MSGSIZE		1600
-#define VCAUDIO_NUMMSGS		4
-#define VCAUDIO_BLOCKSIZE	(VCAUDIO_MSGSIZE * VCAUDIO_NUMMSGS)
-#define VCAUDIO_BUFFERSIZE	128000
-#endif
 #define VCAUDIO_PREFILLCOUNT	2
 
 struct vcaudio_softc {
@@ -166,17 +159,10 @@ static void	vcaudio_worker(void *);
 
 static int	vcaudio_open(void *, int);
 static void	vcaudio_close(void *);
-#if defined(AUDIO2)
 static int	vcaudio_query_format(void *, audio_format_query_t *);
 static int	vcaudio_set_format(void *, int,
     const audio_params_t *, const audio_params_t *,
     audio_filter_reg_t *, audio_filter_reg_t *);
-#else
-static int	vcaudio_query_encoding(void *, struct audio_encoding *);
-static int	vcaudio_set_params(void *, int, int,
-    audio_params_t *, audio_params_t *,
-    stream_filter_list_t *, stream_filter_list_t *);
-#endif
 static int	vcaudio_halt_output(void *);
 static int	vcaudio_halt_input(void *);
 static int	vcaudio_set_port(void *, mixer_ctrl_t *);
@@ -187,9 +173,6 @@ static int	vcaudio_get_props(void *);
 
 static int	vcaudio_round_blocksize(void *, int, int,
     const audio_params_t *);
-#if !defined(AUDIO2)
-static size_t	vcaudio_round_buffersize(void *, int, size_t);
-#endif
 
 static int	vcaudio_trigger_output(void *, void *, void *, int,
     void (*)(void *), void *, const audio_params_t *);
@@ -198,24 +181,13 @@ static int	vcaudio_trigger_input(void *, void *, void *, int,
 
 static void	vcaudio_get_locks(void *, kmutex_t **, kmutex_t **);
 
-#if defined(AUDIO2)
 static void vcaudio_swvol_codec(audio_filter_arg_t *);
-#else
-static stream_filter_t *vcaudio_swvol_filter(struct audio_softc *,
-    const audio_params_t *, const audio_params_t *);
-static void	vcaudio_swvol_dtor(stream_filter_t *);
-#endif
 
 static const struct audio_hw_if vcaudio_hw_if = {
 	.open = vcaudio_open,
 	.close = vcaudio_close,
-#if defined(AUDIO2)
 	.query_format = vcaudio_query_format,
 	.set_format = vcaudio_set_format,
-#else
-	.query_encoding = vcaudio_query_encoding,
-	.set_params = vcaudio_set_params,
-#endif
 	.halt_output = vcaudio_halt_output,
 	.halt_input = vcaudio_halt_input,
 	.getdev = vcaudio_getdev,
@@ -224,9 +196,6 @@ static const struct audio_hw_if vcaudio_hw_if = {
 	.query_devinfo = vcaudio_query_devinfo,
 	.get_props = vcaudio_get_props,
 	.round_blocksize = vcaudio_round_blocksize,
-#if !defined(AUDIO2)
-	.round_buffersize = vcaudio_round_buffersize,
-#endif
 	.trigger_output = vcaudio_trigger_output,
 	.trigger_input = vcaudio_trigger_input,
 	.get_locks = vcaudio_get_locks,
@@ -617,7 +586,6 @@ vcaudio_close(void *priv)
 {
 }
 
-#if defined(AUDIO2)
 static int
 vcaudio_query_format(void *priv, audio_format_query_t *afp)
 {
@@ -638,36 +606,6 @@ vcaudio_set_format(void *priv, int setmode,
 
 	return 0;
 }
-#else
-static int
-vcaudio_query_encoding(void *priv, struct audio_encoding *ae)
-{
-	struct vcaudio_softc *sc = priv;
-
-	return auconv_query_encoding(sc->sc_encodings, ae);
-}
-
-static int
-vcaudio_set_params(void *priv, int setmode, int usemode,
-    audio_params_t *play, audio_params_t *rec,
-    stream_filter_list_t *pfil, stream_filter_list_t *rfil)
-{
-	struct vcaudio_softc *sc = priv;
-	int index;
-
-	if (play && (setmode & AUMODE_PLAY)) {
-		index = auconv_set_converter(&sc->sc_format, 1,
-		    AUMODE_PLAY, play, true, pfil);
-		if (index < 0)
-			return EINVAL;
-		if (pfil->req_size > 0)
-			play = &pfil->filters[0].param;
-		pfil->prepend(pfil, vcaudio_swvol_filter, play);
-	}
-
-	return 0;
-}
-#endif /* AUDIO2 */
 
 static int
 vcaudio_halt_output(void *priv)
@@ -902,15 +840,6 @@ vcaudio_round_blocksize(void *priv, int bs, int mode,
 	return VCAUDIO_BLOCKSIZE;
 }
 
-#if !defined(AUDIO2)
-static size_t
-vcaudio_round_buffersize(void *priv, int direction, size_t bufsize)
-{
-
-	return VCAUDIO_BUFFERSIZE;
-}
-#endif
-
 static int
 vcaudio_trigger_output(void *priv, void *start, void *end, int blksize,
     void (*intr)(void *), void *intrarg, const audio_params_t *params)
@@ -952,7 +881,6 @@ vcaudio_get_locks(void *priv, kmutex_t **intr, kmutex_t **thread)
 	*thread = &sc->sc_lock;
 }
 
-#if defined(AUDIO2)
 static void
 vcaudio_swvol_codec(audio_filter_arg_t *arg)
 {
@@ -971,29 +899,3 @@ vcaudio_swvol_codec(audio_filter_arg_t *arg)
 		*dst++ = (aint_t)v;
 	}
 }
-#else
-static stream_filter_t *
-vcaudio_swvol_filter(struct audio_softc *asc,
-    const audio_params_t *from, const audio_params_t *to)
-{
-	auvolconv_filter_t *this;
-	device_t dev = audio_get_device(asc);
-	struct vcaudio_softc *sc = device_private(dev);
-
-	this = kmem_alloc(sizeof(auvolconv_filter_t), KM_SLEEP);
-	this->base.base.fetch_to = auvolconv_slinear16_le_fetch_to;
-	this->base.dtor = vcaudio_swvol_dtor;
-	this->base.set_fetcher = stream_filter_set_fetcher;
-	this->base.set_inputbuffer = stream_filter_set_inputbuffer;
-	this->vol = &sc->sc_swvol;
-
-	return (stream_filter_t *)this;
-}
-
-static void
-vcaudio_swvol_dtor(stream_filter_t *this)
-{
-	if (this)
-		kmem_free(this, sizeof(auvolconv_filter_t));
-}
-#endif /* AUDIO2 */
