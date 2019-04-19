@@ -102,7 +102,7 @@ struct harmony_softc {
 	int sc_playing, sc_capturing;
 	struct harmony_channel sc_playback, sc_capture;
 	struct harmony_volume sc_monitor_lvl, sc_input_lvl, sc_output_lvl;
-	int sc_in_port, sc_out_port, sc_hasulinear8;
+	int sc_in_port, sc_out_port;
 	int sc_micpreamp, sc_ov, sc_outputgain;
 	int sc_teleshare;
 
