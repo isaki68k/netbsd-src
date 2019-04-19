@@ -4950,7 +4950,7 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 			return EINVAL;
 		}
 	}
-	TRACE(1, "buffersize for %s = %zu\n",
+	TRACE(2, "buffersize for %s = %zu",
 	    (mode == AUMODE_PLAY) ? "playback" : "recording",
 	    bufsize);
 	mixer->hwbuf.capacity = capacity;
