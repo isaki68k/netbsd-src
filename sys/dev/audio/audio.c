@@ -7487,10 +7487,11 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 	 * XXX There may be different number of channels between playback
 	 *     and recording, so that blocksize also may be different.
 	 *     But struct audio_info has an united blocksize...
-	 *     Here, I use ptrack if available, otherwise rtrack.
+	 *     Here, I use play info precedencely if ptrack is available,
+	 *     otherwise record info.
 	 *
-	 * XXX hiwat/lowat is playback-only parameter.  What should I
-	 *     return on recording-only descriptor?
+	 * XXX hiwat/lowat is a playback-only parameter.  What should I
+	 *     return for a record-only descriptor?
 	 */
 	track = ptrack ?: rtrack;
 	if (track) {
