@@ -243,6 +243,7 @@ struct emuxki_softc {
 
 	struct dmamem		*ptb;
 	struct dmamem		*silentpage;
+	int addrmode;
 
 	struct emuxki_channel	*channel[EMU_NUMCHAN];
 	struct emuxki_voice	*recsrc[EMU_NUMRECSRCS];
