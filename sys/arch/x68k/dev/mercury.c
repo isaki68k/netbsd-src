@@ -51,8 +51,8 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #endif
 
 // LE デバイスを BE マシンにつないでみたをテストする用
-//#define MERCURY_LE
-#if defined(MERCURY_LE)
+//#define MERCURY_AS_LE
+#if defined(MERCURY_AS_LE)
 #define MERCURY_ENCODING_SLINEAR AUDIO_ENCODING_SLINEAR_LE
 #else
 #define MERCURY_ENCODING_SLINEAR AUDIO_ENCODING_SLINEAR_BE
@@ -283,7 +283,7 @@ mercury_attach(device_t parent, device_t self, void *aux)
 	    (DMAC_OCR_SIZE_WORD | DMAC_OCR_REQG_EXTERNAL));
 
 	aprint_normal_dev(sc->sc_dev, "Mercury Unit V2/V3\n");
-#if defined(MERCURY_LE)
+#if defined(MERCURY_AS_LE)
 	aprint_normal_dev(sc->sc_dev, "LE emulation mode\n");
 #endif
 
@@ -352,7 +352,7 @@ mercury_query_encoding(void *hdl, struct audio_encoding *ae)
 
 	switch (ae->index) {
 	case 0:
-#if defined(MERCURY_LE)
+#if defined(MERCURY_AS_LE)
 		strcpy(ae->name, AudioEslinear_le);
 #else
 		strcpy(ae->name, AudioEslinear_be);
@@ -492,7 +492,7 @@ mercury_start_output(void *hdl, void *block, int blksize,
 	sc->sc_intr = intr;
 	sc->sc_arg = intrarg;
 
-#if defined(MERCURY_LE)
+#if defined(MERCURY_AS_LE)
 	/* Emulates little endian device */
 	{
 		uint16_t *p = block;
