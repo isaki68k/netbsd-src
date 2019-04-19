@@ -42,9 +42,6 @@ __KERNEL_RCSID(0, "$NetBSD: repulse.c,v 1.21 2019/03/16 12:09:56 isaki Exp $");
 
 #include <sys/audioio.h>
 #include <dev/audio_if.h>
-#if !defined(AUDIO2)
-#include <dev/mulaw.h>
-#endif
 
 #include <dev/ic/ac97reg.h>
 #include <dev/ic/ac97var.h>
@@ -79,15 +76,9 @@ int rep_getdev(void *, struct audio_device *);
 int rep_get_props(void *);
 int rep_halt_output(void *);
 int rep_halt_input(void *);
-#if defined(AUDIO2)
 int rep_query_format(void *, audio_format_query_t *);
 int rep_set_format(void *, int, const audio_params_t *, const audio_params_t *,
 	audio_filter_reg_t *, audio_filter_reg_t *);
-#else
-int rep_query_encoding(void *, struct audio_encoding *);
-int rep_set_params(void *, int, int, audio_params_t *,
-    audio_params_t *, stream_filter_list_t *, stream_filter_list_t *);
-#endif
 int rep_round_blocksize(void *, int, int, const audio_params_t *);
 int rep_set_port(void *, mixer_ctrl_t *);
 int rep_get_port(void *, mixer_ctrl_t *);
@@ -105,13 +96,8 @@ int rep_intr(void *);
 
 const struct audio_hw_if rep_hw_if = {
 	.close			= rep_close,
-#if defined(AUDIO2)
 	.query_format		= rep_query_format,
 	.set_format		= rep_set_format,
-#else
-	.query_encoding		= rep_query_encoding,
-	.set_params		= rep_set_params,
-#endif
 	.round_blocksize	= rep_round_blocksize,
 	.start_output		= rep_start_output,
 	.start_input		= rep_start_input,
@@ -181,18 +167,6 @@ struct repulse_hw {
 #define REPFIFO_PLAYFIFOGAUGE(x) ((x << 4) & 0xf000)
 #define REPFIFO_RECFIFOGAUGE(x)		(x & 0xf000)
 
-#if !defined(AUDIO2)
-/* ac97 data stream transfer functions */
-void rep_read_16_stereo(struct repulse_hw *, uint8_t *, int, unsigned);
-void rep_read_16_mono(struct repulse_hw *, uint8_t *, int, unsigned);
-void rep_write_16_stereo(struct repulse_hw *, uint8_t *, int, unsigned);
-void rep_write_16_mono(struct repulse_hw *, uint8_t *, int, unsigned);
-void rep_read_8_stereo(struct repulse_hw *, uint8_t *, int, unsigned);
-void rep_read_8_mono(struct repulse_hw *, uint8_t *, int, unsigned);
-void rep_write_8_stereo(struct repulse_hw *, uint8_t *, int, unsigned);
-void rep_write_8_mono(struct repulse_hw *, uint8_t *, int, unsigned);
-#endif
-
 /* AmigaDOS Delay() ticks */
 
 #define USECPERTICK	(1000000/50)
@@ -210,9 +184,6 @@ struct repulse_softc {
 	void	(*sc_captmore)(void *);
 	void	 *sc_captarg;
 
-#if !defined(AUDIO2)
-	void	(*sc_captfun)(struct repulse_hw *, uint8_t *, int, unsigned);
-#endif
 	void	 *sc_captbuf;
 	int	  sc_captscale;
 	int	  sc_captbufsz;
@@ -221,9 +192,6 @@ struct repulse_softc {
 
 	void	(*sc_playmore)(void *);
 	void	 *sc_playarg;
-#if !defined(AUDIO2)
-	void	(*sc_playfun)(struct repulse_hw *, uint8_t *, int, unsigned);
-#endif
 	int	  sc_playscale;
 	unsigned  sc_playflags;
 
@@ -268,11 +236,8 @@ repulse_attach(device_t parent, device_t self, void *aux)
 	zap = aux;
 	bp = (struct repulse_hw *)zap->va;
 	sc->sc_boardp = bp;
-#if defined(AUDIO2)
-	/* AUDIO2 uses hardware format so these can be fixed. */
 	sc->sc_playscale = 4;
 	sc->sc_captscale = 4;
-#endif
 
 	needs_firmware = 0;
 	if (bp->rhw_fifostatus & 0x00f0)
@@ -506,7 +471,6 @@ rep_halt_input(void *arg)
 	return 0;
 }
 
-#if defined(AUDIO2)
 const struct audio_format repulse_format = {
 	.mode		= AUMODE_PLAY | AUMODE_RECORD,
 	.encoding	= AUDIO_ENCODING_SLINEAR_BE,
@@ -524,49 +488,6 @@ rep_query_format(void *arg, audio_format_query_t *afp)
 
 	return audio_query_format(&repulse_format, 1, afp);
 }
-#else
-/*
- * Encoding support.
- *
- * TODO: add 24bit and 32bit modes here and in setparams.
- */
-
-const struct repulse_encoding_query {
-	const char *name;
-	int encoding, precision, flags;
-} rep_encoding_queries[] = {
-	{ AudioEulinear, AUDIO_ENCODING_ULINEAR, 8, 0},
-	{ AudioEmulaw,	AUDIO_ENCODING_ULAW, 8, AUDIO_ENCODINGFLAG_EMULATED},
-	{ AudioEalaw,	AUDIO_ENCODING_ALAW, 8, AUDIO_ENCODINGFLAG_EMULATED},
-	{ AudioEslinear, AUDIO_ENCODING_SLINEAR, 8, 0},
-	{ AudioEslinear_le, AUDIO_ENCODING_SLINEAR_LE, 16, 0},
-	{ AudioEulinear_le, AUDIO_ENCODING_ULINEAR_LE, 16, 0},
-	{ AudioEulinear_be, AUDIO_ENCODING_ULINEAR_BE, 16, 0},
-	{ AudioEslinear_be, AUDIO_ENCODING_SLINEAR_BE, 16, 0},
-};
-
-int
-rep_query_encoding(void *arg, struct audio_encoding *fp)
-{
-	int i;
-	const struct repulse_encoding_query *p;
-
-	i = fp->index;
-
-	if (i >= sizeof(rep_encoding_queries) /
-	    sizeof(struct repulse_encoding_query))
-		return EINVAL;
-
-	p = &rep_encoding_queries[i];
-
-	strncpy (fp->name, p->name, sizeof(fp->name));
-	fp->encoding = p->encoding;
-	fp->precision = p->precision;
-	fp->flags = p->flags;
-
-	return 0;
-}
-#endif
 
 /*
  * XXX the following three functions need to be enhanced for the FPGA s/pdif
@@ -605,12 +526,7 @@ rep_round_blocksize(void *arg, int blk, int mode, const audio_params_t *param)
 {
 	int b1;
 
-#if defined(AUDIO2)
-	/* XXX I imagine that such mask is not necessary.. */
-	b1 = blk;
-#else
 	b1 = (blk & -32);
-#endif
 
 	if (b1 > 65536 / 2 / 2 /* channels */ / 4 /* bytes per channel */)
 		b1 =  65536 / 2 / 2 / 4;
@@ -633,7 +549,6 @@ rep_get_locks(void *opaque, kmutex_t **intr, kmutex_t **thread)
 }
 
 
-#if defined(AUDIO2)
 int
 rep_set_format(void *addr, int setmode,
 	const audio_params_t *play, const audio_params_t *rec,
@@ -652,317 +567,19 @@ rep_set_format(void *addr, int setmode,
 
 	return 0;
 }
-#else
-int
-rep_set_params(void *addr, int setmode, int usemode,
-	audio_params_t *play, audio_params_t *rec,
-	stream_filter_list_t *pfil, stream_filter_list_t *rfil)
-{
-	audio_params_t hw;
-	struct repulse_softc *sc;
-	audio_params_t *p;
-	int mode, reg;
-	unsigned  flags;
-	u_int16_t a;
 
-	sc = addr;
-	/* for mode in (RECORD, PLAY) */
-	for (mode = AUMODE_RECORD; mode != -1;
-	    mode = mode == AUMODE_RECORD ? AUMODE_PLAY : -1) {
-
-		if ((setmode & mode) == 0)
-		     continue;
-
-		p = mode == AUMODE_PLAY ? play : rec;
-
-		/* TODO XXX we can do upto 32bit, 96000 */
-		if (p->sample_rate < 4000 || p->sample_rate > 48000 ||
-		    (p->precision != 8 && p->precision != 16) ||
-		    (p->channels != 1 && p->channels != 2))
-			return EINVAL;
-
-		reg = mode == AUMODE_PLAY ?
-			AC97_REG_PCM_FRONT_DAC_RATE : AC97_REG_PCM_LR_ADC_RATE;
-
-		repac_write(sc, reg, (uint16_t) p->sample_rate);
-		repac_read(sc, reg, &a);
-		p->sample_rate = a;
-
-		if (mode == AUMODE_PLAY)
-			sc->sc_playscale = p->channels * p->precision / 8;
-		else
-			sc->sc_captscale = p->channels * p->precision / 8;
-
-		hw = *p;
-
-		/* everything else is software, alas... */
-		/* XXX TBD signed/unsigned, *law, etc */
-
-		flags = 0;
-		if (p->encoding == AUDIO_ENCODING_ULINEAR_LE ||
-		    p->encoding == AUDIO_ENCODING_ULINEAR_BE ||
-		    p->encoding == AUDIO_ENCODING_ULINEAR)
-			flags |= 1;
-
-		if (p->encoding == AUDIO_ENCODING_SLINEAR_LE ||
-		    p->encoding == AUDIO_ENCODING_ULINEAR_LE)
-			flags |= 2;
-
-		if (mode == AUMODE_PLAY) {
-			sc->sc_playflags = flags;
-			if (p->encoding == AUDIO_ENCODING_ULAW) {
-				sc->sc_playfun = p->channels == 1 ?
-					rep_write_16_mono :
-					rep_write_16_stereo;
-				sc->sc_playflags = 0;
-				sc->sc_playscale = p->channels * 2;
-				hw.encoding = AUDIO_ENCODING_SLINEAR_BE;
-				hw.precision = hw.validbits = 16;
-				pfil->append(pfil, mulaw_to_linear16, &hw);
-			} else
-			if (p->encoding == AUDIO_ENCODING_ALAW) {
-				sc->sc_playfun = p->channels == 1 ?
-					rep_write_16_mono :
-					rep_write_16_stereo;
-				sc->sc_playflags = 0;
-				sc->sc_playscale = p->channels * 2;
-				hw.encoding = AUDIO_ENCODING_SLINEAR_BE;
-				hw.precision = hw.validbits = 16;
-				pfil->append(pfil, alaw_to_linear16, &hw);
-			} else
-			if (p->precision == 8 && p->channels == 1)
-				sc->sc_playfun = rep_write_8_mono;
-			else if (p->precision == 8 && p->channels == 2)
-				sc->sc_playfun = rep_write_8_stereo;
-			else if (p->precision == 16 && p->channels == 1)
-				sc->sc_playfun = rep_write_16_mono;
-			else if (p->precision == 16 && p->channels == 2)
-				sc->sc_playfun = rep_write_16_stereo;
-		} else {
-			sc->sc_captflags = flags;
-			if (p->encoding == AUDIO_ENCODING_ULAW) {
-				sc->sc_captfun = p->channels == 1 ?
-					rep_read_8_mono :
-					rep_read_8_stereo;
-				sc->sc_captflags = 0;
-				hw.encoding = AUDIO_ENCODING_SLINEAR_LE;
-				rfil->append(rfil, linear8_to_mulaw, &hw);
-			} else
-			if (p->encoding == AUDIO_ENCODING_ALAW) {
-				sc->sc_captfun = p->channels == 1 ?
-					rep_read_8_mono :
-					rep_read_8_stereo;
-				sc->sc_captflags = 0;
-				rfil->append(rfil, linear8_to_alaw, &hw);
-			} else
-			if (p->precision == 8 && p->channels == 1)
-				sc->sc_captfun = rep_read_8_mono;
-			else if (p->precision == 8 && p->channels == 2)
-				sc->sc_captfun = rep_read_8_stereo;
-			else if (p->precision == 16 && p->channels == 1)
-				sc->sc_captfun = rep_read_16_mono;
-			else if (p->precision == 16 && p->channels == 2)
-				sc->sc_captfun = rep_read_16_stereo;
-		}
-		/* TBD: mu-law, A-law */
-	}
-	return 0;
-}
-
-void
-rep_write_8_mono(struct repulse_hw *bp, uint8_t *p, int length, unsigned flags)
-{
-	uint16_t sample;
-	uint16_t xor;
-
-	xor = flags & 1 ? 0x8000 : 0;
-
-	bp->rhw_fifo_pack = 0;
-
-	while (length-- > 0) {
-		sample = ((*p++) << 8) ^ xor;
-		bp->rhw_fifo_lh = sample;
-		bp->rhw_fifo_rh = sample;
-	}
-}
-
-void
-rep_write_8_stereo(struct repulse_hw *bp, uint8_t *p, int length,
-	unsigned flags)
-{
-	uint16_t xor;
-
-	xor = flags & 1 ? 0x8000 : 0;
-
-	bp->rhw_fifo_pack = 0;
-
-	while (length-- > 0) {
-		bp->rhw_fifo_lh = ((*p++) << 8) ^ xor;
-		bp->rhw_fifo_rh = ((*p++) << 8) ^ xor;
-	}
-}
-
-void
-rep_write_16_mono(struct repulse_hw *bp, uint8_t *p, int length,
-	unsigned flags)
-{
-	uint16_t *q;
-	uint16_t sample;
-	uint16_t xor;
-
-	q = (uint16_t *)p;
-	xor = flags & 1 ? 0x8000 : 0;
-
-	bp->rhw_fifo_pack = 0;
-
-	if (flags & 2) {
-		while (length > 0) {
-			sample = bswap16(*q++) ^ xor;
-			bp->rhw_fifo_lh = sample;
-			bp->rhw_fifo_rh = sample;
-			length -= 2;
-		}
-		return;
-	}
-
-	while (length > 0) {
-		sample = (*q++) ^ xor;
-		bp->rhw_fifo_lh = sample;
-		bp->rhw_fifo_rh = sample;
-		length -= 2;
-	}
-}
-
-void
-rep_write_16_stereo(struct repulse_hw *bp, uint8_t *p, int length,
-	unsigned flags)
-{
-	uint16_t *q;
-	uint16_t xor;
-
-	q = (uint16_t *)p;
-	xor = flags & 1 ? 0x8000 : 0;
-
-	bp->rhw_fifo_pack = 0;
-
-	if (flags & 2) {
-		while (length > 0) {
-			bp->rhw_fifo_lh = bswap16(*q++) ^ xor;
-			bp->rhw_fifo_rh = bswap16(*q++) ^ xor;
-			length -= 4;
-		}
-		return;
-	}
-	while (length > 0) {
-		bp->rhw_fifo_lh = (*q++) ^ xor;
-		bp->rhw_fifo_rh = (*q++) ^ xor;
-		length -= 4;
-	}
-}
-
-void
-rep_read_8_mono(struct repulse_hw *bp, uint8_t *p, int length, unsigned flags)
-{
-	uint16_t v, xor;
-
-	xor = flags & 1 ? 0x8000 : 0;
-
-	while (length > 0) {
-		*p++ = (bp->rhw_fifo_lh ^ xor) >> 8;
-		v    = bp->rhw_fifo_rh;
-		__USE(v);
-		length--;
-	}
-}
-
-void
-rep_read_16_mono(struct	repulse_hw *bp, uint8_t *p, int length, unsigned flags)
-{
-	uint16_t *q;
-	uint16_t v;
-	uint16_t xor;
-
-	q = (uint16_t *)p;
-	xor = flags & 1 ? 0x8000 : 0;
-
-	if (flags & 2) {
-		while (length > 0) {
-			*q++ = bswap16(bp->rhw_fifo_lh ^ xor);
-			v    = bp->rhw_fifo_rh;
-			__USE(v);
-			length -= 2;
-		}
-		return;
-	}
-
-	while (length > 0) {
-		*q++ = bp->rhw_fifo_lh ^ xor;
-		v    = bp->rhw_fifo_rh;
-		length -= 2;
-	}
-}
-
-void
-rep_read_8_stereo(struct repulse_hw *bp, uint8_t *p, int length,
-	unsigned flags)
-{
-	uint16_t xor;
-
-	xor = flags & 1 ? 0x8000 : 0;
-	while (length > 0) {
-		*p++ = (bp->rhw_fifo_lh ^ xor) >> 8;
-		*p++ = (bp->rhw_fifo_rh ^ xor) >> 8;
-		length -= 2;
-	}
-}
-
-void
-rep_read_16_stereo(struct repulse_hw *bp, uint8_t *p, int length,
-	unsigned flags)
-{
-	uint16_t *q;
-	uint16_t xor;
-
-	q = (uint16_t *)p;
-	xor = flags & 1 ? 0x8000 : 0;
-
-	if (flags & 2) {
-		while (length > 0) {
-			*q++ = bswap16(bp->rhw_fifo_lh ^ xor);
-			*q++ = bswap16(bp->rhw_fifo_rh ^ xor);
-			length -= 4;
-		}
-		return;
-	}
-	while (length > 0) {
-		*q++ = bp->rhw_fifo_lh ^ xor;
-		*q++ = bp->rhw_fifo_rh ^ xor;
-		length -= 4;
-	}
-}
-
-/*
- * At this point the transfer function is set.
- */
-#endif /* AUDIO2 */
 
 int
 rep_start_output(void *addr, void *block, int blksize,
 	void (*intr)(void*), void *intrarg)
 {
 	struct repulse_softc *sc;
-#if !defined(AUDIO2)
-	uint8_t *buf;
-#endif
 	struct repulse_hw *bp;
 	uint16_t status;
 
 
 	sc = addr;
 	bp = sc->sc_boardp;
-#if !defined(AUDIO2)
-	buf = block;
-#endif
 
 	/* TODO: prepare hw if necessary */
 	status = bp->rhw_status;
@@ -971,7 +588,6 @@ rep_start_output(void *addr, void *block, int blksize,
 		    REPSTATUS_PLAY | REPSTATUS_PLAYFIFORST;
 
 	/* copy data */
-#if defined(AUDIO2)
 	uint16_t *q = block;
 	int length = blksize;
 	while (length > 0) {
@@ -979,9 +595,6 @@ rep_start_output(void *addr, void *block, int blksize,
 		bp->rhw_fifo_rh = *q++;
 		length -= 4;
 	}
-#else
-	(*sc->sc_playfun)(bp, buf, blksize, sc->sc_playflags);
-#endif
 
 	/* TODO: set hw if necessary */
 	if (intr) {
@@ -1054,7 +667,6 @@ rep_intr(void *tag)
 		foundone = 1;
 		status &= ~REPSTATUS_RECIRQENABLE;
 		bp->rhw_status = status;
-#if defined(AUDIO2)
 		uint16_t *q = sc->sc_captbuf;
 		int length = sc->sc_captbufsz;
 		while (length > 0) {
@@ -1062,10 +674,6 @@ rep_intr(void *tag)
 			*q++ = bp->rhw_fifo_rh;
 			length -= 4;
 		}
-#else
-		(*sc->sc_captfun)(bp, sc->sc_captbuf, sc->sc_captbufsz,
-			sc->sc_captflags);
-#endif
 		(*sc->sc_captmore)(sc->sc_captarg);
 	}
 
