@@ -7,7 +7,6 @@
 // x Restore NetBSD8-like multiuser mode.
 // x Restore NetBSD8-like pad(4) behavior?
 // x Restore(?) suspend/resume.
-// x Restore(?) audiobell/spkr.
 // x Support software master volume? (mixerctl?)
 // x Support all MD drivers.
 // x Catch up userland programs such as audioctl(1).
