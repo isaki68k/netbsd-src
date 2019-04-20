@@ -785,7 +785,7 @@ const struct fileops audio_fileops = {
 };
 
 /* The default audio mode: 8 kHz mono mu-law */
-const struct audio_params audio_default = {
+static const struct audio_params audio_default = {
 	.sample_rate = 8000,
 	.encoding = AUDIO_ENCODING_ULAW,
 	.precision = 8,

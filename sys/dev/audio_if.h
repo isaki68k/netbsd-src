@@ -68,9 +68,6 @@ typedef struct audio_params {
 	u_int	channels;	/* mono(1), stereo(2) */
 } audio_params_t;
 
-/* The default audio mode: 8 kHz mono mu-law */
-extern const struct audio_params audio_default;
-
 #define	AUFMT_INVALIDATE(fmt)	(fmt)->mode |= 0x80000000
 #define	AUFMT_VALIDATE(fmt)	(fmt)->mode &= 0x7fffffff
 #define	AUFMT_IS_VALID(fmt)	(((fmt)->mode & 0x80000000) == 0)
