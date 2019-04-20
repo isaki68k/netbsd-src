@@ -70,18 +70,18 @@ static void vs_attach(device_t, device_t, void *);
 
 static int  vs_dmaintr(void *);
 static int  vs_dmaerrintr(void *);
-static void vs_softintr(void *);
 
 /* MI audio layer interface */
+static int  vs_open(void *, int);
+static void vs_close(void *);
 static int  vs_query_format(void *, audio_format_query_t *);
 static int  vs_set_format(void *, int, const audio_params_t *,
 	const audio_params_t *, audio_filter_reg_t *, audio_filter_reg_t *);
 static int  vs_commit_settings(void *);
-static int  vs_trigger_input(void *, void *, void *, int, void (*)(void *),
-	void *, const audio_params_t *);
-static int  vs_trigger_output(void *, void *, void *, int, void (*)(void *),
-	void *, const audio_params_t *);
-static int  vs_halt(void *);
+static int  vs_start_input(void *, void *, int, void (*)(void *), void *);
+static int  vs_start_output(void *, void *, int, void (*)(void *), void *);
+static int  vs_halt_output(void *);
+static int  vs_halt_input(void *);
 static int  vs_allocmem(struct vs_softc *, size_t, size_t, size_t,
 	struct vs_dma *);
 static void vs_freemem(struct vs_dma *);
@@ -107,13 +107,15 @@ CFATTACH_DECL_NEW(vs, sizeof(struct vs_softc),
 static int vs_attached;
 
 static const struct audio_hw_if vs_hw_if = {
+	.open			= vs_open,
+	.close			= vs_close,
 	.query_format		= vs_query_format,
 	.set_format		= vs_set_format,
 	.commit_settings	= vs_commit_settings,
-	.trigger_output		= vs_trigger_output,
-	.trigger_input		= vs_trigger_input,
-	.halt_output		= vs_halt,
-	.halt_input		= vs_halt,
+	.start_output		= vs_start_output,
+	.start_input		= vs_start_input,
+	.halt_output		= vs_halt_output,
+	.halt_input		= vs_halt_input,
 	.getdev			= vs_getdev,
 	.set_port		= vs_set_port,
 	.get_port		= vs_get_port,
@@ -213,9 +215,13 @@ vs_attach(device_t parent, device_t self, void *aux)
 	/* Initialize sc */
 	sc->sc_iot = iot;
 	sc->sc_ioh = ioh;
+	sc->sc_hw_if = &vs_hw_if;
 	sc->sc_addr = (void *) ia->ia_addr;
+	sc->sc_dmas = NULL;
+	sc->sc_prev_vd = NULL;
+	sc->sc_active = 0;
 	mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_NONE);
-	mutex_init(&sc->sc_intr_lock, MUTEX_DEFAULT, IPL_SOFTSERIAL);
+	mutex_init(&sc->sc_intr_lock, MUTEX_DEFAULT, IPL_VM);
 
 	/* XXX */
 	bus_space_map(iot, PPI_ADDR, PPI_MAPSIZE, BUS_SPACE_MAP_SHIFTED,
@@ -229,19 +235,13 @@ vs_attach(device_t parent, device_t self, void *aux)
 		(DMAC_DCR_XRM_CSWOH | DMAC_DCR_OTYP_EASYNC | DMAC_DCR_OPS_8BIT),
 		(DMAC_OCR_SIZE_BYTE | DMAC_OCR_REQG_EXTERNAL));
 
-	sc->sc_cookie = softint_establish(SOFTINT_SERIAL, vs_softintr, sc);
-	if (sc->sc_cookie == NULL) {
-		aprint_error_dev(self, "softint_establish failed\n");
-		return;
-	}
-
 	aprint_normal_dev(self, "MSM6258V ADPCM voice synthesizer\n");
 
 	audio_attach_mi(&vs_hw_if, sc, sc->sc_dev);
 }
 
 /*
- * vs hardware interrupt handler
+ * vs interrupt handler
  */
 static int
 vs_dmaintr(void *hdl)
@@ -251,17 +251,17 @@ vs_dmaintr(void *hdl)
 	DPRINTF(2, ("vs_dmaintr\n"));
 	sc = hdl;
 
-	if (sc->sc_intr == NULL) {
+	mutex_spin_enter(&sc->sc_intr_lock);
+
+	if (sc->sc_pintr) {
+		sc->sc_pintr(sc->sc_parg);
+	} else if (sc->sc_rintr) {
+		sc->sc_rintr(sc->sc_rarg);
+	} else {
 		printf("vs_dmaintr: spurious interrupt\n");
-		return 0;
 	}
 
-	sc->sc_curr += sc->sc_blksize;
-	if (sc->sc_curr >= sc->sc_end)
-		sc->sc_curr = 0;
-	dmac_start_xfer_offset(sc->sc_dma_ch->ch_softc, sc->sc_xfer,
-	    sc->sc_curr, sc->sc_blksize);
-	softint_schedule(sc->sc_cookie);
+	mutex_spin_exit(&sc->sc_intr_lock);
 
 	return 1;
 }
@@ -279,22 +279,31 @@ vs_dmaerrintr(void *hdl)
 	return 1;
 }
 
-static void
-vs_softintr(void *cookie)
-{
-	struct vs_softc *sc;
-
-	sc = cookie;
-
-	mutex_enter(&sc->sc_intr_lock);
-	if (sc->sc_intr)
-		(*sc->sc_intr)(sc->sc_arg);
-	mutex_exit(&sc->sc_intr_lock);
-}
 
 /*
  * audio MD layer interfaces
  */
+
+static int
+vs_open(void *hdl, int flags)
+{
+	struct vs_softc *sc;
+
+	DPRINTF(1, ("vs_open: flags=%d\n", flags));
+	sc = hdl;
+	sc->sc_pintr = NULL;
+	sc->sc_rintr = NULL;
+	sc->sc_active = 0;
+
+	return 0;
+}
+
+static void
+vs_close(void *hdl)
+{
+
+	DPRINTF(1, ("vs_close\n"));
+}
 
 static int
 vs_query_format(void *hdl, audio_format_query_t *afp)
@@ -321,17 +330,19 @@ vs_set_format(void *hdl, int setmode,
 	audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
 {
 	struct vs_softc *sc;
+	int rate;
 
 	sc = hdl;
 
 	DPRINTF(1, ("%s: mode=%d %s/%dbit/%dch/%dHz: ", __func__,
 	    setmode, audio_encoding_name(play->encoding),
-	    play->precision, play->channels, play->sample_rate));
+		play->precision, play->channels, play->sample_rate));
 
 	/* *play and *rec are identical because !AUDIO_PROP_INDEPENDENT */
 
-	sc->sc_rate = vs_round_sr(play->sample_rate);
-	KASSERT(sc->sc_rate >= 0);
+	rate = vs_round_sr(play->sample_rate);
+	KASSERT(rate >= 0);
+	sc->sc_current.rate = rate;
 
 	if ((setmode & AUMODE_PLAY) != 0) {
 		pfil->codec = msm6258_internal_to_adpcm;
@@ -353,7 +364,7 @@ vs_commit_settings(void *hdl)
 	int rate;
 
 	sc = hdl;
-	rate = sc->sc_rate;
+	rate = sc->sc_current.rate;
 
 	DPRINTF(1, ("commit_settings: sample rate to %d, %d\n",
 		 rate, (int)vs_l2r[rate].rate));
@@ -375,104 +386,129 @@ vs_set_panout(struct vs_softc *sc, u_long po)
 }
 
 static int
-vs_trigger_output(void *hdl, void *start, void *end, int blksize,
-	void (*intr)(void *), void *arg, const audio_params_t *params)
+vs_start_output(void *hdl, void *block, int blksize, void (*intr)(void *),
+	void *arg)
 {
 	struct vs_softc *sc;
 	struct vs_dma *vd;
+	struct dmac_channel_stat *chan;
 
-	DPRINTF(2, ("%s: blksize=%d\n", __func__, blksize));
+	DPRINTF(2, ("%s: block=%p blksize=%d\n", __func__, block, blksize));
 	sc = hdl;
+
+	sc->sc_pintr = intr;
+	sc->sc_parg  = arg;
 
 	/* Find DMA buffer. */
 	for (vd = sc->sc_dmas; vd != NULL; vd = vd->vd_next) {
-		if (KVADDR(vd) <= start && start < KVADDR_END(vd)
+		if (KVADDR(vd) <= block && block < KVADDR_END(vd)
 			break;
 	}
 	if (vd == NULL) {
 		printf("%s: start_output: bad addr %p\n",
-		    device_xname(sc->sc_dev), start);
+		    device_xname(sc->sc_dev), block);
 		return EINVAL;
 	}
+
+	chan = sc->sc_dma_ch;
+
 	if (vd != sc->sc_prev_vd) {
-		sc->sc_xfer = dmac_prepare_xfer(sc->sc_dma_ch, sc->sc_dmat,
+		sc->sc_current.xfer = dmac_prepare_xfer(chan, sc->sc_dmat,
 		    vd->vd_map, DMAC_OCR_DIR_MTD,
 		    (DMAC_SCR_MAC_COUNT_UP | DMAC_SCR_DAC_NO_COUNT),
 		    sc->sc_addr + MSM6258_DATA * 2 + 1);
 		sc->sc_prev_vd = vd;
 	}
+	dmac_start_xfer_offset(chan->ch_softc, sc->sc_current.xfer,
+	    (int)block - (int)KVADDR(vd), blksize);
 
-	sc->sc_intr = intr;
-	sc->sc_arg = arg;
-	sc->sc_end = (int)end - (int)start;
-	sc->sc_blksize = blksize;
-	sc->sc_curr = 0;
-	dmac_start_xfer_offset(sc->sc_dma_ch->ch_softc, sc->sc_xfer,
-	    sc->sc_curr, blksize);
-
-	vs_set_panout(sc, VS_PANOUT_LR);
-	bus_space_write_1(sc->sc_iot, sc->sc_ioh,
-	    MSM6258_CMD, MSM6258_CMD_PLAY_START);
+	if (sc->sc_active == 0) {
+		vs_set_panout(sc, VS_PANOUT_LR);
+		bus_space_write_1(sc->sc_iot, sc->sc_ioh,
+			MSM6258_CMD, MSM6258_CMD_PLAY_START);
+		sc->sc_active = 1;
+	}
 
 	return 0;
 }
 
 static int
-vs_trigger_input(void *hdl, void *start, void *end, int blksize,
-	void (*intr)(void *), void *arg, const audio_params_t *params)
+vs_start_input(void *hdl, void *block, int blksize, void (*intr)(void *),
+	void *arg)
 {
 	struct vs_softc *sc;
 	struct vs_dma *vd;
+	struct dmac_channel_stat *chan;
 
-	DPRINTF(2, ("%s: blksize=%d\n", __func__, blksize));
+	DPRINTF(2, ("%s: block=%p blksize=%d\n", __func__, block, blksize));
 	sc = hdl;
+
+	sc->sc_rintr = intr;
+	sc->sc_rarg  = arg;
 
 	/* Find DMA buffer. */
 	for (vd = sc->sc_dmas; vd != NULL; vd = vd->vd_next) {
-		if (KVADDR(vd) <= start && start < KVADDR_END(vd)
+		if (KVADDR(vd) <= block && block < KVADDR_END(vd)
 			break;
 	}
 	if (vd == NULL) {
 		printf("%s: start_output: bad addr %p\n",
-		    device_xname(sc->sc_dev), start);
+		    device_xname(sc->sc_dev), block);
 		return EINVAL;
 	}
+
+	chan = sc->sc_dma_ch;
+
 	if (vd != sc->sc_prev_vd) {
-		sc->sc_xfer = dmac_prepare_xfer(sc->sc_dma_ch, sc->sc_dmat,
+		sc->sc_current.xfer = dmac_prepare_xfer(chan, sc->sc_dmat,
 		    vd->vd_map, DMAC_OCR_DIR_DTM,
 		    (DMAC_SCR_MAC_COUNT_UP | DMAC_SCR_DAC_NO_COUNT),
 		    sc->sc_addr + MSM6258_DATA * 2 + 1);
 		sc->sc_prev_vd = vd;
 	}
+	dmac_start_xfer_offset(chan->ch_softc, sc->sc_current.xfer,
+	    (int)block - (int)KVADDR(vd), blksize);
 
-	sc->sc_intr = intr;
-	sc->sc_arg = arg;
-	sc->sc_end = (int)end - (int)start;
-	sc->sc_blksize = blksize;
-	sc->sc_curr = 0;
-	dmac_start_xfer_offset(sc->sc_dma_ch->ch_softc, sc->sc_xfer,
-	    sc->sc_curr, blksize);
-
-	bus_space_write_1(sc->sc_iot, sc->sc_ioh,
-		MSM6258_CMD, MSM6258_CMD_REC_START);
+	if (sc->sc_active == 0) {
+		bus_space_write_1(sc->sc_iot, sc->sc_ioh,
+			MSM6258_CMD, MSM6258_CMD_REC_START);
+		sc->sc_active = 1;
+	}
 
 	return 0;
 }
 
 static int
-vs_halt(void *hdl)
+vs_halt_output(void *hdl)
 {
 	struct vs_softc *sc;
 
-	DPRINTF(1, ("%s\n", __func__));
+	DPRINTF(1, ("vs_halt_output\n"));
 	sc = hdl;
-	if (sc->sc_intr) {
-		sc->sc_intr = NULL;
-		/* stop ADPCM */
-		dmac_abort_xfer(sc->sc_dma_ch->ch_softc, sc->sc_xfer);
+	if (sc->sc_active) {
+		/* stop ADPCM play */
+		dmac_abort_xfer(sc->sc_dma_ch->ch_softc, sc->sc_current.xfer);
 		bus_space_write_1(sc->sc_iot, sc->sc_ioh,
 			MSM6258_CMD, MSM6258_CMD_STOP);
-		vs_set_panout(sc, 0);
+		sc->sc_active = 0;
+	}
+
+	return 0;
+}
+
+static int
+vs_halt_input(void *hdl)
+{
+	struct vs_softc *sc;
+
+	DPRINTF(1, ("vs_halt_input\n"));
+	sc = hdl;
+	if (sc->sc_active) {
+		/* stop ADPCM recoding */
+		dmac_abort_xfer(sc->sc_dma_ch->ch_softc, sc->sc_current.xfer);
+		bus_space_write_1(sc->sc_iot, sc->sc_ioh,
+			MSM6258_CMD, MSM6258_CMD_STOP);
+		sc->sc_active = 0;
 	}
 
 	return 0;

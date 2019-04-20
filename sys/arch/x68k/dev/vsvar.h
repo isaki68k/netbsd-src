@@ -56,6 +56,8 @@
 #define VS_PANOUT_L	(0x02)
 #define VS_PANOUT_OFF	(0x03)
 
+#define VS_MAX_BUFSIZE	(65536*4) /* XXX: enough? */
+
 /* XXX: msm6258vreg.h */
 #define MSM6258_CMD 	0		/* W */
 #define MSM6258_CMD_STOP	(0x01)
@@ -91,15 +93,19 @@ struct vs_softc {
 	struct dmac_channel_stat *sc_dma_ch;
 	struct vs_dma *sc_dmas;
 	struct vs_dma *sc_prev_vd;
-	struct dmac_dma_xfer *sc_xfer;
-	int sc_rate;
 
-	void (*sc_intr)(void *);
-	void *sc_arg;
-	uint sc_end;		/* end offset + 1 of buffer */
-	uint sc_curr;		/* current offset */
-	uint sc_blksize;	/* block size */
-	void *sc_cookie;	/* softint cookie */
+	struct {
+		struct dmac_dma_xfer *xfer;
+		int rate;
+	} sc_current;
+	int sc_active;
+
+	const struct audio_hw_if *sc_hw_if;
+
+	void (*sc_pintr)(void *);
+	void (*sc_rintr)(void *);
+	void *sc_parg;
+	void *sc_rarg;
 
 	struct msm6258_codecvar sc_codecvar;
 };
