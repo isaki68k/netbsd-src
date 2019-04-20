@@ -170,8 +170,8 @@ static bool ym_resume(device_t, const pmf_qual_t *);
 const struct audio_hw_if ym_hw_if = {
 	.open			= ad1848_isa_open,
 	.close			= ad1848_isa_close,
-	.query_encoding		= ad1848_query_encoding,
-	.set_params		= ad1848_set_params,
+	.query_format		= ad1848_query_format,
+	.set_format		= ad1848_set_format,
 	.round_blocksize	= ad1848_round_blocksize,
 	.commit_settings	= ad1848_commit_settings,
 	.halt_output		= ad1848_isa_halt_output,

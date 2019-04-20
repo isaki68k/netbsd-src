@@ -98,8 +98,8 @@ static int	cs4231_ebus_halt_input(void *);
 const struct audio_hw_if audiocs_ebus_hw_if = {
 	.open			= cs4231_open,
 	.close			= cs4231_close,
-	.query_encoding		= ad1848_query_encoding,
-	.set_params		= ad1848_set_params,
+	.query_format		= ad1848_query_format,
+	.set_format		= ad1848_set_format,
 	.round_blocksize	= cs4231_ebus_round_blocksize,
 	.commit_settings	= ad1848_commit_settings,
 	.halt_output		= cs4231_ebus_halt_output,

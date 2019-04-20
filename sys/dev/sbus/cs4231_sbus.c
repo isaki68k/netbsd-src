@@ -99,8 +99,8 @@ static int	cs4231_sbus_halt_input(void *);
 const struct audio_hw_if audiocs_sbus_hw_if = {
 	.open			= cs4231_open,
 	.close			= cs4231_close,
-	.query_encoding		= ad1848_query_encoding,
-	.set_params		= ad1848_set_params,
+	.query_format		= ad1848_query_format,
+	.set_format		= ad1848_set_format,
 	.commit_settings	= ad1848_commit_settings,
 	.halt_output		= cs4231_sbus_halt_output,
 	.halt_input		= cs4231_sbus_halt_input,

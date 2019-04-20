@@ -108,10 +108,6 @@ __KERNEL_RCSID(0, "$NetBSD: gus.c,v 1.115 2019/03/16 12:09:58 isaki Exp $");
 #include <sys/audioio.h>
 
 #include <dev/audio_if.h>
-#if !defined(AUDIO2)
-#include <dev/mulaw.h>
-#include <dev/auconv.h>
-#endif
 
 #include <dev/ic/ics2101reg.h>
 #include <dev/ic/cs4231reg.h>
@@ -363,10 +359,12 @@ int	gus_set_in_gain(void *, u_int, u_char);
 int	gus_get_in_gain(void *);
 int	gus_set_out_gain(void *, u_int, u_char);
 int	gus_get_out_gain(void *);
-int	gus_set_params(void *, int, int, audio_params_t *,
-	    audio_params_t *, stream_filter_list_t *, stream_filter_list_t *);
-int	gusmax_set_params(void *, int, int, audio_params_t *,
-	    audio_params_t *, stream_filter_list_t *, stream_filter_list_t *);
+int	gus_set_format(void *, int,
+		const audio_params_t *, const audio_params_t *,
+		audio_filter_reg_t *, audio_filter_reg_t *);
+int	gusmax_set_format(void *, int,
+		const audio_params_t *, const audio_params_t *,
+		audio_filter_reg_t *, audio_filter_reg_t *);
 int	gus_round_blocksize(void *, int, int, const audio_params_t *);
 int	gus_commit_settings(void *);
 int	gus_dma_output(void *, void *, int, void (*)(void *), void *);
@@ -422,11 +420,7 @@ STATIC int	gusmax_mixer_set_port(void *, mixer_ctrl_t *);
 STATIC int	gusmax_mixer_get_port(void *, mixer_ctrl_t *);
 STATIC int	gus_mixer_query_devinfo(void *, mixer_devinfo_t *);
 STATIC int	gusmax_mixer_query_devinfo(void *, mixer_devinfo_t *);
-#if defined(AUDIO2)
 STATIC int	gus_query_format(void *, audio_format_query_t *);
-#else
-STATIC int	gus_query_encoding(void *, struct audio_encoding *);
-#endif
 STATIC int	gus_get_props(void *);
 STATIC int	gusmax_get_props(void *);
 
@@ -584,12 +578,8 @@ static const unsigned short gus_log_volumes[512] = {
 const struct audio_hw_if gus_hw_if = {
 	.open			= gusopen,
 	.close			= gusclose,
-#if defined(AUDIO2)
 	.query_format		= gus_query_format,
-#else
-	.query_encoding		= gus_query_encoding,
-#endif
-	.set_params		= gus_set_params,
+	.set_format		= gus_set_format,
 	.round_blocksize	= gus_round_blocksize,
 	.commit_settings	= gus_commit_settings,
 	.start_output		= gus_dma_output,
@@ -612,12 +602,8 @@ const struct audio_hw_if gus_hw_if = {
 static const struct audio_hw_if gusmax_hw_if = {
 	.open			= gusmaxopen,
 	.close			= gusmax_close,
-#if defined(AUDIO2)
 	.query_format		= gus_query_format,
-#else
-	.query_encoding		= gus_query_encoding,
-#endif
-	.set_params		= gusmax_set_params,
+	.set_format		= gusmax_set_format,
 	.round_blocksize	= gusmax_round_blocksize,
 	.commit_settings	= gusmax_commit_settings,
 	.start_output		= gusmax_dma_output,
@@ -647,30 +633,20 @@ struct audio_device gus_device = {
 	"gus",
 };
 
-#if defined(AUDIO2)
-#define GUS_FORMAT(enc, prec, ch, chmask) \
-	{ \
-		.mode		= AUMODE_PLAY | AUMODE_RECORD, \
-		.encoding	= (enc), \
-		.validbits	= (prec), \
-		.precision	= (prec), \
-		.channels	= (ch), \
-		.channel_mask	= (chmask), \
-		.frequency_type	= 0, \
-		.frequency	= { 8000, 48000 }, \
-	}
+/* The HW supports more formats but only SLINEAR_LE/16/2ch is enough. */
 STATIC const struct audio_format gus_formats[] = {
-	GUS_FORMAT(AUDIO_ENCODING_SLINEAR_LE, 16, 2, AUFMT_STEREO),
-	GUS_FORMAT(AUDIO_ENCODING_SLINEAR_LE, 16, 1, AUFMT_MONAURAL),
-	GUS_FORMAT(AUDIO_ENCODING_ULINEAR_LE, 16, 2, AUFMT_STEREO),
-	GUS_FORMAT(AUDIO_ENCODING_ULINEAR_LE, 16, 1, AUFMT_MONAURAL),
-	GUS_FORMAT(AUDIO_ENCODING_SLINEAR,     8, 2, AUFMT_STEREO),
-	GUS_FORMAT(AUDIO_ENCODING_SLINEAR,     8, 1, AUFMT_MONAURAL),
-	GUS_FORMAT(AUDIO_ENCODING_ULINEAR,     8, 2, AUFMT_STEREO),
-	GUS_FORMAT(AUDIO_ENCODING_ULINEAR,     8, 1, AUFMT_MONAURAL),
+	{
+		.mode		= AUMODE_PLAY | AUMODE_RECORD,
+		.encoding	= AUDIO_ENCODING_SLINEAR_LE,
+		.validbits	= 16,
+		.precision	= 16,
+		.channels	= 2,
+		.channel_mask	= AUFMT_STEREO,
+		.frequency_type	= 1,
+		.frequency	= { 44100 },
+	}
 };
 #define GUS_NFORMATS __arraycount(gus_formats)
-#endif
 
 #define FLIP_REV	5		/* This rev has flipped mixer chans */
 
@@ -2298,9 +2274,9 @@ gus_set_volume(struct gus_softc *sc, int voice, int volume)
  */
 
 int
-gusmax_set_params(void *addr, int setmode, int usemode, audio_params_t *p,
-		  audio_params_t *r, stream_filter_list_t *pfil,
-		  stream_filter_list_t *rfil)
+gusmax_set_format(void *addr, int setmode,
+		  const audio_params_t *p, const audio_params_t *r,
+		  audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
 {
 	struct ad1848_isa_softc *ac;
 	struct gus_softc *sc;
@@ -2308,101 +2284,38 @@ gusmax_set_params(void *addr, int setmode, int usemode, audio_params_t *p,
 
 	ac = addr;
 	sc = ac->sc_ad1848.parent;
-	error = ad1848_set_params(ac, setmode, usemode, p, r, pfil, rfil);
+	error = ad1848_set_format(ac, setmode, p, r, pfil, rfil);
 	if (error)
 		return error;
-	/*
-	 * ad1848_set_params() sets a filter for
-	 *  SLINEAR_LE 8, SLINEAR_BE 16, ULINEAR_LE 16, ULINEAR_BE 16.
-	 * gus_set_params() sets a filter for
-	 *  ULAW, ALAW, ULINEAR_BE (16), SLINEAR_BE (16)
-	 */
-	error = gus_set_params(sc, setmode, usemode, p, r, pfil, rfil);
+
+	error = gus_set_format(sc, setmode, p, r, pfil, rfil);
 	return error;
 }
 
 int
-gus_set_params(void *addr,int setmode, int usemode, audio_params_t *p,
-	       audio_params_t *r, stream_filter_list_t *pfil,
-	       stream_filter_list_t *rfil)
+gus_set_format(void *addr, int setmode,
+		const audio_params_t *p, const audio_params_t *r,
+		audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
 {
-#if !defined(AUDIO2)
-	audio_params_t hw;
-#endif
 	struct gus_softc *sc;
 
 	sc = addr;
-	switch (p->encoding) {
-#if !defined(AUDIO2)
-	case AUDIO_ENCODING_ULAW:
-	case AUDIO_ENCODING_ALAW:
-#endif
-	case AUDIO_ENCODING_SLINEAR_LE:
-	case AUDIO_ENCODING_ULINEAR_LE:
-#if !defined(AUDIO2)
-	case AUDIO_ENCODING_SLINEAR_BE:
-	case AUDIO_ENCODING_ULINEAR_BE:
-#endif
-		break;
-	default:
-		return EINVAL;
-	}
 
 	mutex_spin_enter(&sc->sc_codec.sc_ad1848.sc_intr_lock);
 
-	if (p->precision == 8) {
-		sc->sc_voc[GUS_VOICE_LEFT].voccntl &= ~GUSMASK_DATA_SIZE16;
-		sc->sc_voc[GUS_VOICE_RIGHT].voccntl &= ~GUSMASK_DATA_SIZE16;
-	} else {
-		sc->sc_voc[GUS_VOICE_LEFT].voccntl |= GUSMASK_DATA_SIZE16;
-		sc->sc_voc[GUS_VOICE_RIGHT].voccntl |= GUSMASK_DATA_SIZE16;
-	}
+	sc->sc_voc[GUS_VOICE_LEFT].voccntl |= GUSMASK_DATA_SIZE16;
+	sc->sc_voc[GUS_VOICE_RIGHT].voccntl |= GUSMASK_DATA_SIZE16;
 
 	sc->sc_encoding = p->encoding;
 	sc->sc_precision = p->precision;
 	sc->sc_channels = p->channels;
 
-	if (p->sample_rate > gus_max_frequency[sc->sc_voices - GUS_MIN_VOICES])
-		p->sample_rate = gus_max_frequency[sc->sc_voices - GUS_MIN_VOICES];
 	if (setmode & AUMODE_RECORD)
 		sc->sc_irate = p->sample_rate;
 	if (setmode & AUMODE_PLAY)
 		sc->sc_orate = p->sample_rate;
 
 	mutex_spin_exit(&sc->sc_codec.sc_ad1848.sc_intr_lock);
-
-#if !defined(AUDIO2)
-	hw = *p;
-
-	/* clear req_size before setting a filter to avoid confliction
-	 * in gusmax_set_params() */
-	switch (p->encoding) {
-	case AUDIO_ENCODING_ULAW:
-		hw.encoding = AUDIO_ENCODING_ULINEAR_LE;
-		pfil->req_size = rfil->req_size = 0;
-		pfil->append(pfil, mulaw_to_linear8, &hw);
-		rfil->append(rfil, linear8_to_mulaw, &hw);
-		break;
-	case AUDIO_ENCODING_ALAW:
-		hw.encoding = AUDIO_ENCODING_ULINEAR_LE;
-		pfil->req_size = rfil->req_size = 0;
-		pfil->append(pfil, alaw_to_linear8, &hw);
-		rfil->append(rfil, linear8_to_alaw, &hw);
-		break;
-	case AUDIO_ENCODING_ULINEAR_BE:
-		hw.encoding = AUDIO_ENCODING_ULINEAR_LE;
-		pfil->req_size = rfil->req_size = 0;
-		pfil->append(pfil, swap_bytes, &hw);
-		rfil->append(rfil, swap_bytes, &hw);
-		break;
-	case AUDIO_ENCODING_SLINEAR_BE:
-		hw.encoding = AUDIO_ENCODING_SLINEAR_LE;
-		pfil->req_size = rfil->req_size = 0;
-		pfil->append(pfil, swap_bytes, &hw);
-		rfil->append(rfil, swap_bytes, &hw);
-		break;
-	}
-#endif
 
 	return 0;
 }
@@ -4067,75 +3980,12 @@ mute:
 	return 0;
 }
 
-#if defined(AUDIO2)
 STATIC int
 gus_query_format(void *addr, audio_format_query_t *afp)
 {
 
 	return audio_query_format(gus_formats, GUS_NFORMATS, afp);
 }
-#else
-STATIC int
-gus_query_encoding(void *addr, struct audio_encoding *fp)
-{
-
-	switch (fp->index) {
-	case 0:
-		strcpy(fp->name, AudioEmulaw);
-		fp->encoding = AUDIO_ENCODING_ULAW;
-		fp->precision = 8;
-		fp->flags = AUDIO_ENCODINGFLAG_EMULATED;
-		break;
-	case 1:
-		strcpy(fp->name, AudioEslinear);
-		fp->encoding = AUDIO_ENCODING_SLINEAR;
-		fp->precision = 8;
-		fp->flags = 0;
-		break;
-	case 2:
-		strcpy(fp->name, AudioEslinear_le);
-		fp->encoding = AUDIO_ENCODING_SLINEAR_LE;
-		fp->precision = 16;
-		fp->flags = 0;
-		break;
-	case 3:
-		strcpy(fp->name, AudioEulinear);
-		fp->encoding = AUDIO_ENCODING_ULINEAR;
-		fp->precision = 8;
-		fp->flags = 0;
-		break;
-	case 4:
-		strcpy(fp->name, AudioEulinear_le);
-		fp->encoding = AUDIO_ENCODING_ULINEAR_LE;
-		fp->precision = 16;
-		fp->flags = 0;
-		break;
-	case 5:
-		strcpy(fp->name, AudioEslinear_be);
-		fp->encoding = AUDIO_ENCODING_SLINEAR_BE;
-		fp->precision = 16;
-		fp->flags = AUDIO_ENCODINGFLAG_EMULATED;
-		break;
-	case 6:
-		strcpy(fp->name, AudioEulinear_be);
-		fp->encoding = AUDIO_ENCODING_ULINEAR_BE;
-		fp->precision = 16;
-		fp->flags = AUDIO_ENCODINGFLAG_EMULATED;
-		break;
-	case 7:
-		strcpy(fp->name, AudioEalaw);
-		fp->encoding = AUDIO_ENCODING_ALAW;
-		fp->precision = 8;
-		fp->flags = AUDIO_ENCODINGFLAG_EMULATED;
-		break;
-
-	default:
-		return EINVAL;
-		/*NOTREACHED*/
-	}
-	return 0;
-}
-#endif /* AUDIO2 */
 
 /*
  * Setup the ICS mixer in "transparent" mode: reset everything to a sensible
