@@ -2611,26 +2611,26 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 
 #if defined(AUDIO_DEBUG)
 	const char *ioctlnames[] = {
-		" AUDIO_GETINFO",	// 21
-		" AUDIO_SETINFO",	// 22
-		" AUDIO_DRAIN",		// 23
-		" AUDIO_FLUSH",		// 24
-		" AUDIO_WSEEK",		// 25
-		" AUDIO_RERROR",	// 26
-		" AUDIO_GETDEV",	// 27
-		" AUDIO_GETENC",	// 28
-		" AUDIO_GETFD",		// 29
-		" AUDIO_SETFD",		// 30
-		" AUDIO_PERROR",	// 31
-		" AUDIO_GETIOFFS",	// 32
-		" AUDIO_GETOOFFS",	// 33
-		" AUDIO_GETPROPS",	// 34
-		" AUDIO_GETBUFINFO",	// 35
-		" AUDIO_SETCHAN",	// 36
-		" AUDIO_GETCHAN",	// 37
-		" AUDIO_QUERYFORMAT",	// 38
-		" AUDIO_GETFORMAT",	// 39
-		" AUDIO_SETFORMAT",	// 40
+		" AUDIO_GETINFO",	/* 21 */
+		" AUDIO_SETINFO",	/* 22 */
+		" AUDIO_DRAIN",		/* 23 */
+		" AUDIO_FLUSH",		/* 24 */
+		" AUDIO_WSEEK",		/* 25 */
+		" AUDIO_RERROR",	/* 26 */
+		" AUDIO_GETDEV",	/* 27 */
+		" AUDIO_GETENC",	/* 28 */
+		" AUDIO_GETFD",		/* 29 */
+		" AUDIO_SETFD",		/* 30 */
+		" AUDIO_PERROR",	/* 31 */
+		" AUDIO_GETIOFFS",	/* 32 */
+		" AUDIO_GETOOFFS",	/* 33 */
+		" AUDIO_GETPROPS",	/* 34 */
+		" AUDIO_GETBUFINFO",	/* 35 */
+		" AUDIO_SETCHAN",	/* 36 */
+		" AUDIO_GETCHAN",	/* 37 */
+		" AUDIO_QUERYFORMAT",	/* 38 */
+		" AUDIO_GETFORMAT",	/* 39 */
+		" AUDIO_SETFORMAT",	/* 40 */
 	};
 	int nameidx = (cmd & 0xff);
 	const char *ioctlname = "";
@@ -4695,7 +4695,7 @@ audio_track_record(audio_track_t *track)
 		auring_take(outbuf, bytes2 / framesize);
 	}
 
-	// XXX TODO: any counters here?
+	/* XXX TODO: any counters here? */
 
 #if defined(AUDIO_DEBUG)
 	if (audiodebug >= 3) {
@@ -7185,7 +7185,7 @@ audio_hw_setinfo(struct audio_softc *sc, const struct audio_info *newai,
 	}
 
 	/* XXX TODO */
-	//sc->sc_ai = *ai;
+	/* sc->sc_ai = *ai; */
 
 	error = 0;
 abort:
