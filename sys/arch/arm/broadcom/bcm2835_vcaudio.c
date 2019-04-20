@@ -43,8 +43,6 @@ __KERNEL_RCSID(0, "$NetBSD: bcm2835_vcaudio.c,v 1.13 2019/04/02 03:52:17 isaki E
 
 #include <sys/audioio.h>
 #include <dev/audio_if.h>
-#include <dev/auconv.h>
-#include <dev/auvolconv.h>
 
 #include <interface/compat/vchi_bsd.h>
 #include <interface/vchiq_arm/vchiq_netbsd.h>
@@ -116,7 +114,6 @@ struct vcaudio_softc {
 	kcondvar_t			sc_msgcv;
 
 	struct audio_format		sc_format;
-	struct audio_encoding_set	*sc_encodings;
 
 	void				(*sc_pint)(void *);
 	void				*sc_pintarg;
@@ -291,13 +288,6 @@ vcaudio_init(struct vcaudio_softc *sc)
 	sc->sc_format.frequency_type = 0;
 	sc->sc_format.frequency[0] = 48000;
 	sc->sc_format.frequency[1] = 48000;
-
-	error = auconv_create_encodings(&sc->sc_format, 1, &sc->sc_encodings);
-	if (error) {
-		aprint_error_dev(sc->sc_dev,
-		    "couldn't create encodings (error=%d)\n", error);
-		return error;
-	}
 
 	error = vchi_initialise(&sc->sc_instance);
 	if (error) {
