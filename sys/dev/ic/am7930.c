@@ -137,11 +137,6 @@ static const uint16_t ger_coeff[] = {
 #define NGER (sizeof(ger_coeff) / sizeof(ger_coeff[0]))
 };
 
-#if !defined(AUDIO2)
-extern stream_filter_factory_t null_filter;
-#endif
-
-#if defined(AUDIO2)
 static const struct audio_format am7930_format = {
 	.mode		= AUMODE_PLAY | AUMODE_RECORD,
 	.encoding	= AUDIO_ENCODING_ULAW,
@@ -152,7 +147,6 @@ static const struct audio_format am7930_format = {
 	.frequency_type	= 1,
 	.frequency	= { 8000 },
 };
-#endif
 
 static void
 am7930_iwrite(struct am7930_softc *sc, int reg, uint8_t val)
@@ -258,7 +252,6 @@ am7930_init(struct am7930_softc *sc, int flag)
 	}
 }
 
-#if defined(AUDIO2)
 int
 am7930_query_format(void *addr, audio_format_query_t *afp)
 {
@@ -281,101 +274,6 @@ am7930_set_format(void *addr, int setmode,
 
 	return 0;
 }
-
-#else
-
-/*
- * XXX should be extended to handle a few of the more common formats.
- */
-int
-am7930_set_params(void *addr, int setmode, int usemode, audio_params_t *p,
-    audio_params_t *r, stream_filter_list_t *pfil, stream_filter_list_t *rfil)
-{
-	audio_params_t hw;
-	struct am7930_softc *sc;
-
-	sc = addr;
-	if ((usemode & AUMODE_PLAY) == AUMODE_PLAY) {
-		if (p->sample_rate < 7500 || p->sample_rate > 8500 ||
-			(p->encoding != AUDIO_ENCODING_ULAW &&
-			 p->encoding != AUDIO_ENCODING_SLINEAR) ||
-			p->precision != 8 ||
-			p->channels != 1)
-				return EINVAL;
-		p->sample_rate = 8000;
-		if (sc->sc_glue->output_conv != NULL) {
-			hw = *p;
-			hw.encoding = AUDIO_ENCODING_NONE;
-			hw.precision = 8;
-			pfil->append(pfil, null_filter, &hw);
-			hw.precision *= sc->sc_glue->factor;
-			pfil->append(pfil, sc->sc_glue->output_conv, &hw);
-		}
-		if (p->encoding == AUDIO_ENCODING_SLINEAR) {
-			hw = *p;
-			hw.precision = 8;
-			hw.encoding = AUDIO_ENCODING_ULAW;
-			pfil->append(pfil, linear8_to_mulaw, &hw);
-		}
-
-	}
-	if ((usemode & AUMODE_RECORD) == AUMODE_RECORD) {
-		if (r->sample_rate < 7500 || r->sample_rate > 8500 ||
-			(r->encoding != AUDIO_ENCODING_ULAW &&
-			 r->encoding != AUDIO_ENCODING_SLINEAR) ||
-			r->precision != 8 ||
-			r->channels != 1)
-				return EINVAL;
-		r->sample_rate = 8000;
-		if (sc->sc_glue->input_conv != NULL) {
-			hw = *r;
-			hw.encoding = AUDIO_ENCODING_NONE;
-			hw.precision = 8;
-			rfil->append(rfil, null_filter, &hw);
-			hw.precision *= sc->sc_glue->factor;
-			rfil->append(rfil, sc->sc_glue->input_conv, &hw);
-		}
-	    	if (r->encoding == AUDIO_ENCODING_SLINEAR) {
-			hw = *r;
-			hw.precision = 8;
-			hw.encoding = AUDIO_ENCODING_ULAW;
-			rfil->append(rfil, mulaw_to_linear8, &hw);
-		}
-	}
-
-	return 0;
-}
-
-int
-am7930_query_encoding(void *addr, struct audio_encoding *fp)
-{
-	switch (fp->index) {
-	case 0:
-		strcpy(fp->name, AudioEmulaw);
-		fp->encoding = AUDIO_ENCODING_ULAW;
-		fp->precision = 8;
-		fp->flags = 0;
-		break;
-	case 1:
-		strcpy(fp->name, AudioEslinear);
-		fp->encoding = AUDIO_ENCODING_SLINEAR;
-		fp->precision = 8;
-		fp->flags = AUDIO_ENCODINGFLAG_EMULATED;
-		break;
-	default:
-		return EINVAL;
-		    /*NOTREACHED*/
-	}
-	return 0;
-}
-
-int
-am7930_round_blocksize(void *addr, int blk,
-    int mode, const audio_params_t *param)
-{
-	return blk;
-}
-#endif /* AUDIO2 */
 
 int
 am7930_commit_settings(void *addr)

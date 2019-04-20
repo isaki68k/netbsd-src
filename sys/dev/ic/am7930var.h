@@ -5,11 +5,6 @@ struct am7930_softc;
 struct am7930_glue {
 	uint8_t	(*codec_dread)(struct am7930_softc *sc, int);
 	void	(*codec_dwrite)(struct am7930_softc *sc, int, uint8_t);
-#if !defined(AUDIO2)
-	int	factor;
-	stream_filter_factory_t *input_conv;
-	stream_filter_factory_t *output_conv;
-#endif
 };
 
 struct am7930_buf {
@@ -85,17 +80,10 @@ struct audio_device;
 struct audio_encoding;
 struct audio_params;
 
-#if defined(AUDIO2)
 int	am7930_query_format(void *, audio_format_query_t *);
 int	am7930_set_format(void *, int,
 	    const audio_params_t *, const audio_params_t *,
 	    audio_filter_reg_t *, audio_filter_reg_t *);
-#else
-int	am7930_query_encoding(void *, struct audio_encoding *);
-int	am7930_set_params(void *, int, int, audio_params_t *,
-	    audio_params_t *, stream_filter_list_t *, stream_filter_list_t *);
-int	am7930_round_blocksize(void *, int, int, const audio_params_t *);
-#endif
 int	am7930_commit_settings(void *);
 int	am7930_trigger_output(void *, void *, void *, int, void (*)(void *),
 	    void *, const audio_params_t *);

@@ -100,11 +100,6 @@ void	audioamd_codec_dwrite(struct am7930_softc *, int, uint8_t);
 struct am7930_glue audioamd_glue = {
 	audioamd_codec_dread,
 	audioamd_codec_dwrite,
-#if !defined(AUDIO2)
-	0,
-	0,
-	0,
-#endif
 };
 
 /*
@@ -113,14 +108,8 @@ struct am7930_glue audioamd_glue = {
 int	audioamd_getdev(void *, struct audio_device *);
 
 const struct audio_hw_if sa_hw_if = {
-#if defined(AUDIO2)
 	.query_format		= am7930_query_format,
 	.set_format		= am7930_set_format,
-#else
-	.query_encoding		= am7930_query_encoding,
-	.set_params		= am7930_set_params,
-	.round_blocksize	= am7930_round_blocksize,
-#endif
 	.commit_settings	= am7930_commit_settings,
 	.trigger_output		= am7930_trigger_output,
 	.trigger_input		= am7930_trigger_input,

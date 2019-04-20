@@ -125,11 +125,6 @@ static int vsaudio_input_conv_fetch_to(struct audio_softc *,
 struct am7930_glue vsaudio_glue = {
 	vsaudio_codec_dread,
 	vsaudio_codec_dwrite,
-#if !defined(AUDIO2)
-	0,
-	/*vsaudio_input_conv*/0,
-	/*vsaudio_output_conv*/0,
-#endif
 };
 
 /*
@@ -138,14 +133,8 @@ struct am7930_glue vsaudio_glue = {
 int	vsaudio_getdev(void *, struct audio_device *);
 
 struct audio_hw_if vsaudio_hw_if = {
-#if defined(AUDIO2)
 	.query_format		= am7930_query_format,
 	.set_format		= am7930_set_format,
-#else
-	.query_encoding		= am7930_query_encoding,
-	.set_params		= am7930_set_params,
-	.round_blocksize	= am7930_round_blocksize,
-#endif
 	.commit_settings	= am7930_commit_settings,
 	.trigger_output		= am7930_trigger_output,
 	.trigger_input		= am7930_trigger_input,

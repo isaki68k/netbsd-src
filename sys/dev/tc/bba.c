@@ -52,13 +52,11 @@ __KERNEL_RCSID(0, "$NetBSD: bba.c,v 1.42 2019/03/16 12:09:58 isaki Exp $");
 #include <dev/tc/ioasicreg.h>
 #include <dev/tc/ioasicvar.h>
 
-#if defined(AUDIO2)
 /* include mulaw.c (not .h file) here to expand mulaw32 */
 void audio_mulaw32_to_internal(audio_filter_arg_t *);
 void audio_internal_to_mulaw32(audio_filter_arg_t *);
 #define MULAW32
 #include <dev/audio/mulaw.c>
-#endif
 
 #ifdef AUDIO_DEBUG
 #define DPRINTF(x)	if (am7930debug) printf x
@@ -113,35 +111,19 @@ CFATTACH_DECL_NEW(bba, sizeof(struct bba_softc),
 static uint8_t	bba_codec_dread(struct am7930_softc *, int);
 static void	bba_codec_dwrite(struct am7930_softc *, int, uint8_t);
 
-#if !defined(AUDIO2)
-static stream_filter_factory_t bba_output_conv;
-static stream_filter_factory_t bba_input_conv;
-static int	bba_output_conv_fetch_to(struct audio_softc *, stream_fetcher_t *,
-					 audio_stream_t *, int);
-static int	bba_input_conv_fetch_to(struct audio_softc *, stream_fetcher_t *,
-					audio_stream_t *, int);
-#endif
-
 struct am7930_glue bba_glue = {
 	bba_codec_dread,
 	bba_codec_dwrite,
-#if !defined(AUDIO2)
-	4,
-	bba_input_conv,
-	bba_output_conv,
-#endif
 };
 
 /*
  * Define our interface to the higher level audio driver.
  */
 
-#if defined(AUDIO2)
 static int	bba_query_format(void *, audio_format_query_t *);
 static int	bba_set_format(void *, int,
 				const audio_params_t *, const audio_params_t *,
 				audio_filter_reg_t *, audio_filter_reg_t *);
-#endif
 static int	bba_round_blocksize(void *, int, int, const audio_params_t *);
 static int	bba_halt_output(void *);
 static int	bba_halt_input(void *);
@@ -150,9 +132,6 @@ static void	*bba_allocm(void *, int, size_t);
 static void	bba_freem(void *, void *, size_t);
 static size_t	bba_round_buffersize(void *, int, size_t);
 static int	bba_get_props(void *);
-#if !defined(AUDIO2)
-static paddr_t	bba_mappage(void *, void *, off_t, int);
-#endif
 static int	bba_trigger_output(void *, void *, void *, int,
 				   void (*)(void *), void *,
 				   const audio_params_t *);
@@ -161,13 +140,8 @@ static int	bba_trigger_input(void *, void *, void *, int,
 				  const audio_params_t *);
 
 static const struct audio_hw_if sa_hw_if = {
-#if defined(AUDIO2)
 	.query_format		= bba_query_format,
 	.set_format		= bba_set_format,
-#else
-	.query_encoding		= am7930_query_encoding,
-	.set_params		= am7930_set_params,
-#endif
 	.round_blocksize	= bba_round_blocksize,	/* md */
 	.commit_settings	= am7930_commit_settings,
 	.halt_output		= bba_halt_output,	/* md */
@@ -179,9 +153,6 @@ static const struct audio_hw_if sa_hw_if = {
 	.allocm			= bba_allocm,		/* md */
 	.freem			= bba_freem,		/* md */
 	.round_buffersize	= bba_round_buffersize,	/* md */
-#if !defined(AUDIO2)
-	.mappage		= bba_mappage,
-#endif
 	.get_props		= bba_get_props,
 	.trigger_output		= bba_trigger_output,	/* md */
 	.trigger_input		= bba_trigger_input,	/* md */
@@ -194,7 +165,6 @@ static struct audio_device bba_device = {
 	"bba"
 };
 
-#if defined(AUDIO2)
 static const struct audio_format bba_format = {
 	.mode		= AUMODE_PLAY | AUMODE_RECORD,
 	.encoding	= AUDIO_ENCODING_ULAW, /* XXX */
@@ -205,7 +175,6 @@ static const struct audio_format bba_format = {
 	.frequency_type	= 1,
 	.frequency	= { 8000 },
 };
-#endif
 
 static int	bba_intr(void *);
 static void	bba_reset(struct bba_softc *, int);
@@ -621,7 +590,6 @@ bba_get_props(void *addr)
 	return AUDIO_PROP_MMAP | am7930_get_props(addr);
 }
 
-#if defined(AUDIO2)
 static int
 bba_query_format(void *addr, audio_format_query_t *afp)
 {
@@ -644,82 +612,6 @@ bba_set_format(void *addr, int setmode,
 
 	return 0;
 }
-#else
-static paddr_t
-bba_mappage(void *addr, void *mem, off_t offset, int prot)
-{
-	struct bba_softc *sc;
-	struct bba_mem **mp;
-	bus_dma_segment_t seg;
-	void *kva;
-
-	sc = addr;
-	kva = (void *)mem;
-	for (mp = &sc->sc_mem_head; *mp && (*mp)->kva != kva;
-	    mp = &(*mp)->next)
-		continue;
-	if (*mp == NULL || offset < 0) {
-		return -1;
-	}
-
-	seg.ds_addr = (*mp)->addr;
-	seg.ds_len = (*mp)->size;
-
-	return bus_dmamem_mmap(sc->sc_dmat, &seg, 1, offset,
-	    prot, BUS_DMA_WAITOK);
-}
-
-static stream_filter_t *
-bba_input_conv(struct audio_softc *sc, const audio_params_t *from,
-	       const audio_params_t *to)
-{
-	return auconv_nocontext_filter_factory(bba_input_conv_fetch_to);
-}
-
-static int
-bba_input_conv_fetch_to(struct audio_softc *sc, stream_fetcher_t *self,
-			audio_stream_t *dst, int max_used)
-{
-	stream_filter_t *this;
-	int m, err;
-
-	this = (stream_filter_t *)self;
-	if ((err = this->prev->fetch_to(sc, this->prev, this->src, max_used * 4)))
-		return err;
-	m = dst->end - dst->start;
-	m = uimin(m, max_used);
-	FILTER_LOOP_PROLOGUE(this->src, 4, dst, 1, m) {
-		*d = ((*(const uint32_t *)s) >> 16) & 0xff;
-	} FILTER_LOOP_EPILOGUE(this->src, dst);
-	return 0;
-}
-
-static stream_filter_t *
-bba_output_conv(struct audio_softc *sc, const audio_params_t *from,
-		const audio_params_t *to)
-{
-	return auconv_nocontext_filter_factory(bba_output_conv_fetch_to);
-}
-
-static int
-bba_output_conv_fetch_to(struct audio_softc *sc, stream_fetcher_t *self,
-			 audio_stream_t *dst, int max_used)
-{
-	stream_filter_t *this;
-	int m, err;
-
-	this = (stream_filter_t *)self;
-	max_used = (max_used + 3) & ~3;
-	if ((err = this->prev->fetch_to(sc, this->prev, this->src, max_used / 4)))
-		return err;
-	m = (dst->end - dst->start) & ~3;
-	m = uimin(m, max_used);
-	FILTER_LOOP_PROLOGUE(this->src, 1, dst, 4, m) {
-		*(uint32_t *)d = (*s << 16);
-	} FILTER_LOOP_EPILOGUE(this->src, dst);
-	return 0;
-}
-#endif
 
 static int
 bba_round_blocksize(void *addr, int blk, int mode, const audio_params_t *param)
