@@ -1,4 +1,3 @@
-// vi:set ts=8:
 /*	$NetBSD$	*/
 
 /*
