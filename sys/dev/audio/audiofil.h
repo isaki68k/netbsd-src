@@ -31,7 +31,7 @@
 
 /*
  * Number of bits for internal format.
- * XXX 32bit mode is not well tested.
+ * XXX 32bit mode is not completed.
  * XXX Is this necessary?
  */
 #define AUDIO_INTERNAL_BITS		16
