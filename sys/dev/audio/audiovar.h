@@ -74,7 +74,6 @@
 #include <sys/queue.h>
 
 #include <dev/audio_if.h>
-#include <dev/auconv.h>
 #include <dev/audio/audiofil.h>
 #else
 #include <stdint.h>
