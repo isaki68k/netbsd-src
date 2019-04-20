@@ -3402,37 +3402,6 @@ audio_track_chvol(audio_filter_arg_t *arg)
 static void
 audio_track_chmix_mixLR(audio_filter_arg_t *arg)
 {
-	// L と R、2つのサンプルの算術平均を取る。
-	//  mixed = (L + R) / 2;
-	// のように先に加算をしてしまうと整数オーバーフローが起きうる。
-	// aint2_t にキャストしてから演算すれば問題ないが、このために
-	// そこまでするかという気はする。
-	//
-	// そこで L と R を先に割っておいてから足す。
-	//  mixed = (L / 2) + (R / 2);  // (1)
-	// この式で例えば L = 1, R = 1 の場合数学的には答えは1 になってほしいが
-	// 先に切り捨てが起きるため答えは 0 となり、誤差は全域で最大
-	// (aint_t が 16bit の場合) 1/65536 (かな?)。
-	//
-	// ところで C で負数の除算は 0 方向への丸めと定義されているため、
-	// アセンブラの算術右シフトだけでは実現できず (算術右シフトはマイナス
-	// 無限大方向への丸めになる)、実行時に値が負数だったら 1補正する
-	// みたいな処理が(たぶん大抵)書いてある。少なくとも gcc 4.8 とかには。
-	// ただしここの目的は (たぶんこの後スピーカーから出て人間の耳に届く)
-	// 音声波形をなるべく高速に処理したいところなので、その誤差 1/65536
-	// を許容して高速化したい。
-	// ところが C で負数の右シフトは処理系定義となっている (不定動作では
-	// ない)。GCC では負数の右シフトは算術右シフトと定義してあるようなので
-	// https://gcc.gnu.org/onlinedocs/gcc-5.5.0/gcc/ (section 4.5)
-	// もし許されるなら使いたいところ。
-	//  mixed = (L >> 1) + (R >> 1); // (2)
-	// この場合の誤差は負領域のみで最大 (aint_t が 16bit の場合)
-	// 1/65536 (かな?)。
-	//
-	//	amd64 [times/msec]	x68k [times/sec]
-	// (1)	 78.8			176.4
-	// (2)	150.1			245.8
-
 	const aint_t *s;
 	aint_t *d;
 	u_int i;
@@ -3542,44 +3511,6 @@ audio_track_chmix_expand(audio_filter_arg_t *arg)
 		}
 	}
 }
-
-// 周波数変換は入出力周波数の比 (srcfreq / dstfreq) で計算を行う。
-// そのまま分数で計算するのがシンプルだが、ここでは除算回数を減らす
-// ため dstfreq を 65536 とした時の src/dst 比を用いる。
-// なおこのアイデアは S44PLAY.X から拝借したもの。
-//  http://stdkmd.com/kohx3/
-//
-// 例えば入力 24kHz を 48kHz に変換する場合は src/dst = 32768/65536 と
-// なり、この分子 32768 が track->freq_step である。
-// 原理としては出力1サンプルごとに変数(ここでは t)に freq_step を
-// 加算していき、これが 65536 以上になるごとに入力を行って、その間を
-// 補間する。
-//
-// 入出力周波数の組み合わせによっては freq_step が整数にならない場合も
-// 当然ある。例えば入力 8kHz を 48kHz に変換する場合
-//  freq_step = 8000 / 48000 * 65536 = 10922.6666…
-// となる。
-// この場合出力1サンプルあたり理論値よりも 0.6666 ずつカウントが少なく
-// なるわけなので、これをブロックごとに補正する。
-// 1ブロックの時間 AUDIO_BLK_MS が標準の 40msec であれば、出力周波数
-// 48kHz に対する1ブロックの出力サンプル数は
-//  dstcount = 48000[Hz] * 0.04[sec] = 1920
-// より 1920個なので、補正値は
-//  freq_leap = 0.6666… * 1920 = 1280
-// となる。つまり 8kHz を 48kHz に変換する場合、1920 出力サンプルごとに
-// t にこの 1280 を足すことで周波数変換誤差は出なくなる。
-//
-// さらに freq_leap が整数にならないような入出力周波数の組み合わせも
-// もちろんありうるが、日常使う程度の組み合わせではほぼ発生しないと
-// 思うし、また発生したとしてもその誤差は 10^-6 以下でありこれは水晶
-// 振動子の誤差程度かそれ以下であるので、用途に対しては十分許容できる
-// と思う。
-
-// AUDIO_DEBUG=1、AUDIO_ASSERT なしで main.c による計測。
-//
-//        44->48    8->48   48->44    48->8	[times/msec]
-// amd64    70.9    113.4    177.8    984.8	Pentium DC E5400/2.7GHz
-// x68k    0.048    0.065    0.129    0.688	68030/30MHz
 
 /*
  * This filter performs frequency conversion (up sampling).
@@ -4149,19 +4080,16 @@ audio_track_init_freq(audio_track_t *track, audio_ring_t **last_dstp)
 		/* freq_step is the ratio of src/dst when let dst 65536. */
 		track->freq_step = (uint64_t)srcfreq * 65536 / dstfreq;
 
-		// freq_leap は1ブロックごとの freq_step の補正値
-		// を四捨五入したもの。
 		dst_capacity = frame_per_block(track->mixer, dstfmt);
 		mod = (uint64_t)srcfreq * 65536 % dstfreq;
 		track->freq_leap = (mod * dst_capacity + dstfreq / 2) / dstfreq;
 
 		if (track->freq_step < 65536) {
 			track->freq.filter = audio_track_freq_up;
-			// 初回に繰り上がりを起こすため0ではなく 65536 で初期化
+			/* In order to carry at the first time. */
 			track->freq_current = 65536;
 		} else {
 			track->freq.filter = audio_track_freq_down;
-			// こっちは 0 からでいい
 			track->freq_current = 0;
 		}
 
@@ -4263,18 +4191,14 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 	/* usrbuf is the closest buffer to the userland. */
 	track->usrbuf.fmt = *usrfmt;
 
-	// 大きさは (ブロックサイズ * AUMINNOBLK) か 64KB の大きいほうにする。
-	// ただし usrbuf は基本この fmt を参照せずに、バイトバッファとして扱う。
-	// 参考: 1ブロック(40msec)は
-	// mulaw/8kHz/1ch で 320 byte    = 204 blocks/64KB
-	// s16/48kHz/2ch  で 7680 byte   = 8 blocks/64KB
-	// s16/48kHz/8ch  で 30720 byte  = 90KB/3blocks
-	// s16/96kHz/8ch  で 61440 byte  = 180KB/3blocks
-	// s32/192kHz/8ch で 245760 byte = 720KB/3blocks
-	//
-	// ちなみに N7 は 64KB を if->round_buffersize() したものとしている。
-	// ブロックサイズが 64KB を越えるケースはどうなるか未調査。
 	/*
+	 * For references, one block size (in 40msec) is:
+	 *  320 bytes    = 204 blocks/64KB for mulaw/8kHz/1ch
+	 *  7680 bytes   = 8 blocks/64KB for s16/48kHz/2ch
+	 *  30720 bytes  = 90 KB/3blocks for s16/48kHz/8ch
+	 *  61440 bytes  = 180 KB/3blocks for s16/96kHz/8ch
+	 *  245760 bytes = 720 KB/3blocks for s32/192kHz/8ch
+	 *
 	 * For example,
 	 * 1) If usrbuf_blksize = 7056 (s16/44.1k/2ch) and PAGE_SIZE = 8192,
 	 *     newbufsize = rounddown(65536 / 7056) = 63504
@@ -4286,10 +4210,6 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 	 *     newvsize = roundup2(61440, PAGE_SIZE) = 61440 (= 15 pages)
 	 *    Therefore it maps 15 * 4K pages and usrbuf->capacity = 61440.
 	 */
-	// XXX 64KB と言っておいて 15ページしかとらないケースがあるの大丈夫かな
-	// XXX 初期値の mulaw でも 64KB 取るので、/dev/audio 開いて 48k に設定
-	//     すると 16page 確保してすぐ解放して 15page 再確保ってなるけど
-	//     どうなん…。
 	oldblksize = track->usrbuf_blksize;
 	track->usrbuf_blksize = frametobyte(&track->usrbuf.fmt,
 	    frame_per_block(track->mixer, &track->usrbuf.fmt));
@@ -4603,9 +4523,6 @@ audio_track_play(audio_track_t *track)
 		}
 	}
 
-	// stamp はハードウェアで再生したバイト数に相当するので
-	// 無音挿入分も入れてここでカウントする。
-	// この時点で必ず1ブロック分になってる気がする。
 	track->usrbuf_stamp += bytes;
 
 	if (usrbuf->head + bytes < usrbuf->capacity) {
@@ -4738,7 +4655,7 @@ audio_track_record(audio_track_t *track)
 	if (track->freq.filter) {
 		if (track->freq.srcbuf.used > 0) {
 			audio_apply_stage(track, &track->freq, true);
-			// XXX freq の入力は先頭からでなくてよいか?
+			/* XXX should input of freq be from beginning of buf? */
 		}
 	}
 
@@ -4808,50 +4725,6 @@ audio_track_record(audio_track_t *track)
 	}
 #endif
 }
-
-// blktime は1ブロックの時間 [msec]。
-//
-// 例えば HW freq = 44100 に対して、
-// blktime 50 msec は 2205 frame/block でこれは割りきれるので問題ないが、
-// blktime 25 msec は 1102.5 frame/block となり、フレーム数が整数にならない。
-// この場合 frame/block を切り捨てるなり切り上げるなりすれば整数にはなる。
-// 例えば切り捨てて 1102 frame/block とするとこれに相当する1ブロックの時間は
-// 24.9886… [msec] と割りきれなくなる。周波数がシステム中で1つしかなければ
-// これでも構わないが、AUDIO2 ではブロック単位で周波数変換を行うため極力
-// 整数にしておきたい (整数にしておいても割りきれないケースは出るが後述)。
-//
-// ここではより多くの周波数に対して frame/block が整数になりやすいよう
-// AUDIO_BLK_MS の初期値を 40 msec に設定してある。
-//   8000 [Hz] * 40 [msec] = 320 [frame/block] (8000Hz - 48000Hz 系)
-//  11025 [Hz] * 40 [msec] = 441 [frame/block] (44100Hz 系)
-//  15625 [Hz] * 40 [msec] = 625 [frame/block]
-//
-// これにより主要な周波数についてはわりと誤差(端数)なく周波数変換が行える。
-// 例えば 44100 [Hz] を 48000 [Hz] に変換する場合 40 [msec] ブロックなら
-//  44100 [Hz] * 40 [msec] = 1764 [frame/block]
-//                           1920 [frame/block] = 48000 [Hz] * 40 [msec]
-// となり、1764 フレームを 1920 フレームに変換すればよいことになる。
-// ただし、入力周波数も HW 周波数も任意であるため、周波数変換前後で
-// frame/block が必ずしもきりのよい値になるとは限らないが、そこはどのみち
-// 仕方ない。(あくまで、主要な周波数で割り切れやすい、ということ)
-//
-// また、いくつかの変態ハードウェアではさらに手当てが必要。
-//
-// 1) vs(4) x68k MSM6258 ADPCM
-//  vs(4) は 15625 Hz、4bit、1channel である。このため
-//  blktime 40 [msec] は 625 [frame/block] と割りきれる値になるが、これは
-//  同時に 312.5 [byte/block] であり、バイト数が割りきれないため、これは不可。
-//  blktime 80 [msec] であれば 1250 [frame/block] = 625 [byte/block] となる
-//  のでこれなら可。
-//  vs(4) 以外はすべて stride が 8 の倍数なので、この「frame/block は割り
-//  切れるのに byte/block にすると割りきれない」問題は起きない。
-//
-//  # 世の中には 3bit per frame とかいう ADPCM もあるにはあるが、
-//  # 現行 NetBSD はこれをサポートしておらず、今更今後サポートするとも
-//  # 思えないのでこれについては考慮しない。やりたい人がいたら頑張って。
-//
-// 2) aucc(4) amiga
-//  周波数が変態だが詳細未調査。
 
 /*
  * Calcurate blktime [msec] from mixer(.hwbuf.fmt).
@@ -5334,7 +5207,9 @@ audio_pmixer_process(struct audio_softc *sc)
 		}
 	}
 
-	// ここから ハードウェアチャンネル
+	/*
+	 * The rest is the hardware part.
+	 */
 
 	if (mixer->codec) {
 		h = auring_tailptr_aint(&mixer->codecbuf);
