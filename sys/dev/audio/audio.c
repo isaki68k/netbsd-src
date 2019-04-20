@@ -1,23 +1,4 @@
-// vi:set ts=8:
-// C++ style comment is unformal comment (that is, comment for comment).
-
-// TODO:
-// x Restore mmap.
-// x Restore NetBSD8-like track volume control on mixerctl?
-// x Restore NetBSD8-like multiuser mode.
-// x Restore NetBSD8-like pad(4) behavior?
-// x Restore(?) suspend/resume.
-// x Support software master volume? (mixerctl?)
-// x Support all MD drivers.
-// x Catch up userland programs such as audioctl(1).
-// x No idea about channel mapping.
-// x Documents (even in Japanese).
-// x Documents (in English).
-// x Purge all C++ style comments.
-// x Reconsideration about overflow handling on track mixer.
-// x better name for audio_file_t ?
-// x better name for audio_filter_* ?
-// x Improve sizeof(audio_track_t).
+/*	$NetBSD$	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
