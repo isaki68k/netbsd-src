@@ -80,7 +80,7 @@
 #include "compat.h"
 #include "userland.h"
 #include "audiofil.h"
-#endif // _KERNEL
+#endif /* _KERNEL */
 
 /*
  * Whether supports [US]LINEAR24/24 as userland format.

@@ -40,7 +40,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <stdbool.h>
 #include "compat.h"
 #include "audiovar.h"
-#endif // _KERNEL
+#endif /* _KERNEL */
 
 /*
  * audio_linear8_to_internal:
