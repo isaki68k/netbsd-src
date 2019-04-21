@@ -68,7 +68,6 @@ __KERNEL_RCSID(0, "$NetBSD: auixp.c,v 1.45 2019/03/16 12:09:58 isaki Exp $");
 #include <sys/intr.h>
 
 #include <dev/audio_if.h>
-#include <dev/mulaw.h>
 #include <dev/auconv.h>
 
 #include <dev/ic/ac97var.h>
@@ -135,7 +134,7 @@ static int	auixp_detach(device_t, int);
 
 
 /* audio(9) function prototypes */
-static int	auixp_query_encoding(void *, struct audio_encoding *);
+static int	auixp_query_format(void *, audio_format_query_t *);
 static int	auixp_set_params(void *, int, int, audio_params_t *,
 				 audio_params_t *,
 		stream_filter_list_t *, stream_filter_list_t *);
@@ -161,7 +160,6 @@ static int	auixp_intr(void *);
 static int	auixp_allocmem(struct auixp_softc *, size_t, size_t,
 		struct auixp_dma *);
 static int	auixp_freemem(struct auixp_softc *, struct auixp_dma *);
-static paddr_t	auixp_mappage(void *, void *, off_t, int);
 
 /* Supporting subroutines */
 static int	auixp_init(struct auixp_softc *);
@@ -207,7 +205,7 @@ static void auixp_dumpreg(void);
 
 
 static const struct audio_hw_if auixp_hw_if = {
-	.query_encoding		= auixp_query_encoding,
+	.query_format		= auixp_query_format,
 	.set_params		= auixp_set_params,
 	.round_blocksize	= auixp_round_blocksize,
 	.commit_settings	= auixp_commit_settings,
@@ -220,7 +218,6 @@ static const struct audio_hw_if auixp_hw_if = {
 	.allocm			= auixp_malloc,
 	.freem			= auixp_free,
 	.round_buffersize	= auixp_round_buffersize,
-	.mappage		= auixp_mappage,
 	.get_props		= auixp_get_props,
 	.trigger_output		= auixp_trigger_output,
 	.trigger_input		= auixp_trigger_input,
@@ -237,14 +234,14 @@ CFATTACH_DECL_NEW(auixp, sizeof(struct auixp_softc), auixp_match, auixp_attach,
  */
 
 static int
-auixp_query_encoding(void *hdl, struct audio_encoding *ae)
+auixp_query_format(void *hdl, audio_format_query_t *afp)
 {
 	struct auixp_codec *co;
 	struct auixp_softc *sc;
 
 	co = (struct auixp_codec *) hdl;
 	sc = co->sc;
-	return auconv_query_encoding(sc->sc_encodings, ae);
+	return audio_query_format(sc->sc_formats, AUIXP_NFORMATS, afp);
 }
 
 
@@ -1019,36 +1016,6 @@ auixp_freemem(struct auixp_softc *sc, struct auixp_dma *p)
 }
 
 
-/* memory map dma memory */
-static paddr_t
-auixp_mappage(void *hdl, void *mem, off_t off, int prot)
-{
-	struct auixp_codec *co;
-	struct auixp_softc *sc;
-	struct auixp_dma *p;
-
-	co = (struct auixp_codec *) hdl;
-	sc  = co->sc;
-	/* for sanity */
-	if (off < 0)
-		return -1;
-
-	/* look up allocated DMA area */
-	SLIST_FOREACH(p, &sc->sc_dma_list, dma_chain) {
-		if (KERNADDR(p) == mem)
-			break;
-	}
-
-	/* have we found it ? */
-	if (!p)
-		return -1;
-
-	/* return mmap'd region */
-	return bus_dmamem_mmap(sc->sc_dmat, p->segs, p->nsegs,
-			       off, prot, BUS_DMA_WAITOK);
-}
-
-
 /*
  * Attachment section
  */
@@ -1199,7 +1166,7 @@ auixp_post_config(device_t self)
 	struct auixp_softc *sc;
 	struct auixp_codec *codec;
 	int codec_nr;
-	int res, i;
+	int i;
 
 	sc = device_private(self);
 	/* detect the AC97 codecs */
@@ -1243,17 +1210,6 @@ auixp_post_config(device_t self)
 		default :
 			break;
 		}
-	}
-
-	/*
-	 * Create all encodings (and/or -translations) based on the formats
-	 * supported. */
-	res = auconv_create_encodings(sc->sc_formats, AUIXP_NFORMATS,
-	    &sc->sc_encodings);
-	if (res) {
-		printf("%s: auconv_create_encodings failed; "
-		    "no attachments\n", device_xname(sc->sc_dev));
-		return;
 	}
 
 	if (sc->has_spdif) {
