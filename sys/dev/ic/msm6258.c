@@ -109,32 +109,31 @@ pcm2adpcm_step(struct msm6258_codecvar *mc, int16_t a)
 void
 msm6258_internal_to_adpcm(audio_filter_arg_t *arg)
 {
-	KASSERT(arg->dstfmt->encoding == AUDIO_ENCODING_ADPCM);
-	KASSERT(arg->dstfmt->stride == 4);
-	KASSERT(audio_format2_is_internal(arg->srcfmt));
-	KASSERT(arg->srcfmt->channels == arg->dstfmt->channels);
+	struct msm6258_codecvar *mc;
+	const aint_t *src;
+	uint8_t *dst;
+	u_int sample_count;
+	u_int i;
+
 	KASSERT((arg->count & 1) == 0);
-	KASSERT(arg->context);
 
-	const aint_t *sptr = arg->src;
-	uint8_t *dptr = arg->dst;
-	int sample_count = arg->count * arg->srcfmt->channels;
-
-	struct msm6258_codecvar *mc = arg->context;
-
-	for (int i = 0; i < sample_count / 2; i++) {
+	mc = arg->context;
+	src = arg->src;
+	dst = arg->dst;
+	sample_count = arg->count * arg->srcfmt->channels;
+	for (i = 0; i < sample_count / 2; i++) {
 		aint_t s;
 		uint8_t f;
 
-		s = *sptr++;
+		s = *src++;
 		s >>= AUDIO_INTERNAL_BITS - 16;
 		f = pcm2adpcm_step(mc, s);
 
-		s = *sptr++;
+		s = *src++;
 		s >>= AUDIO_INTERNAL_BITS - 16;
 		f |= pcm2adpcm_step(mc, s) << 4;
 
-		*dptr++ = (uint8_t)f;
+		*dst++ = (uint8_t)f;
 	}
 }
 
@@ -173,29 +172,28 @@ adpcm2pcm_step(struct msm6258_codecvar *mc, uint8_t b)
 void
 msm6258_adpcm_to_internal(audio_filter_arg_t *arg)
 {
-	KASSERT(arg->srcfmt->encoding == AUDIO_ENCODING_ADPCM);
-	KASSERT(arg->srcfmt->stride == 4);
-	KASSERT(audio_format2_is_internal(arg->dstfmt));
-	KASSERT(arg->srcfmt->channels == arg->dstfmt->channels);
+	struct msm6258_codecvar *mc;
+	const uint8_t *src;
+	aint_t *dst;
+	u_int sample_count;
+	u_int i;
+
 	KASSERT((arg->count & 1) == 0);
-	KASSERT(arg->context);
 
-	const uint8_t *sptr = arg->src;
-	aint_t *dptr = arg->dst;
-	int sample_count = arg->count * arg->srcfmt->channels;
-
-	struct msm6258_codecvar *mc = arg->context;
-
-	for (int i = 0; i < sample_count / 2; i++) {
-		uint8_t a = *sptr++;
+	mc = arg->context;
+	src = arg->src;
+	dst = arg->dst;
+	sample_count = arg->count * arg->srcfmt->channels;
+	for (i = 0; i < sample_count / 2; i++) {
+		uint8_t a = *src++;
 		aint_t s;
 
 		s = adpcm2pcm_step(mc, a & 0x0f);
 		s <<= AUDIO_INTERNAL_BITS - 16;
-		*dptr++ = s;
+		*dst++ = s;
 
 		s = adpcm2pcm_step(mc, a >> 4);
 		s <<= AUDIO_INTERNAL_BITS - 16;
-		*dptr++ = s;
+		*dst++ = s;
 	}
 }

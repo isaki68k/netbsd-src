@@ -33,9 +33,7 @@ struct msm6258_codecvar {
 	int16_t		mc_amp;
 	int8_t		mc_estim;
 
-	/* hold one pending sample. */
-	aint_t pending_sample;
-	bool is_pending;
+	aint_t pending_sample;	/* hold one pending sample. */
 };
 
 extern void msm6258_adpcm_to_internal(audio_filter_arg_t *);
