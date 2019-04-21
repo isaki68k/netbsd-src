@@ -189,6 +189,35 @@ const struct audio_hw_if sa_hw_if = {
 	.get_locks		= aucc_get_locks,
 };
 
+/*
+ * XXX *1 How lower limit of frequency should be?  same as audio(4)?
+ * XXX *2 Should avoid a magic number at the upper limit of frequency.
+ * XXX *3 In fact, there is a number in this range that have minimal errors.
+ *        It would be better if there is a mechanism which such frequency
+ *        is prioritized.
+ * XXX *4 3/4ch modes use 8bits, 1/2ch modes use 14bits,
+ *        so I imagined that 1/2ch modes are better.
+ */
+#define AUCC_FORMAT(prio, ch, chmask) \
+	{ \
+		.mode		= AUMODE_PLAY, \
+		.priority	= (prio), \
+		.encoding	= AUDIO_ENCODING_SLINEAR_BE, \
+		.validbits	= 16, \
+		.precision	= 16, \
+		.channels	= (ch), \
+		.channel_mask	= (chmask), \
+		.frequency_type	= 0, \
+		.frequency	= { AUDIO_MIN_FREQUENCY, 28867 }, \
+	}
+static const struct audio_format aucc_formats[] = {
+	AUCC_FORMAT(1, 1, AUFMT_MONAURAL),
+	AUCC_FORMAT(1, 2, AUFMT_STEREO),
+	AUCC_FORMAT(0, 3, AUFMT_UNKNOWN_POSITION),
+	AUCC_FORMAT(0, 4, AUFMT_UNKNOWN_POSITION),
+};
+#define AUCC_NFORMATS __arraycount(aucc_formats)
+
 /* autoconfig routines */
 
 int
@@ -335,40 +364,11 @@ aucc_set_out_sr(void *addr, u_int sr)
 	return 0;
 }
 
-/*
- * XXX *1 How lower limit of frequency should be?  same as audio(4)?
- * XXX *2 Should avoid a magic number at the upper limit of frequency.
- * XXX *3 In fact, there is a number in this range that have minimal errors.
- *        It would be better if there is a mechanism which such frequency
- *        is prioritized.
- * XXX *4 3/4ch modes use 8bits, 1/2ch modes use 14bits,
- *        so I imagined that 1/2ch modes are better.
- */
-#define AUCC_FORMAT(prio, ch, chmask) \
-	{ \
-		.mode		= AUMODE_PLAY, \
-		.priority	= (prio), \
-		.encoding	= AUDIO_ENCODING_SLINEAR_BE, \
-		.validbits	= 16, \
-		.precision	= 16, \
-		.channels	= (ch), \
-		.channel_mask	= (chmask), \
-		.frequency_type	= 0, \
-		.frequency	= { AUDIO_MIN_FREQUENCY, 28867 }, \
-	}
-static const struct audio_format aucc_formats[] = {
-	AUCC_FORMAT(1, 1, AUFMT_MONAURAL),
-	AUCC_FORMAT(1, 2, AUFMT_STEREO),
-	AUCC_FORMAT(0, 3, AUFMT_UNKNOWN_POSITION),
-	AUCC_FORMAT(0, 4, AUFMT_UNKNOWN_POSITION),
-};
-
 int
 aucc_query_format(void *addr, audio_format_query_t *afp)
 {
 
-	return audio_query_format(aucc_formats, __arraycount(aucc_formats),
-	    afp);
+	return audio_query_format(aucc_formats, AUCC_NFORMATS, afp);
 }
 
 int
