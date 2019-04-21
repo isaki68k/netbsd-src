@@ -71,7 +71,6 @@ enum ac97_host_flag repac_flags(void *);
 
 /* audio attachment functions */
 
-void rep_close(void *);
 int rep_getdev(void *, struct audio_device *);
 int rep_get_props(void *);
 int rep_halt_output(void *);
@@ -83,7 +82,6 @@ int rep_round_blocksize(void *, int, int, const audio_params_t *);
 int rep_set_port(void *, mixer_ctrl_t *);
 int rep_get_port(void *, mixer_ctrl_t *);
 int rep_query_devinfo(void *, mixer_devinfo_t *);
-size_t rep_round_buffersize(void *, int, size_t);
 void rep_get_locks(void *, kmutex_t **, kmutex_t **);
 
 int rep_start_input(void *, void *, int, void (*)(void *), void *);
@@ -95,7 +93,6 @@ int rep_intr(void *);
 /* audio attachment */
 
 const struct audio_hw_if rep_hw_if = {
-	.close			= rep_close,
 	.query_format		= rep_query_format,
 	.set_format		= rep_set_format,
 	.round_blocksize	= rep_round_blocksize,
@@ -107,7 +104,6 @@ const struct audio_hw_if rep_hw_if = {
 	.set_port		= rep_set_port,
 	.get_port		= rep_get_port,
 	.query_devinfo		= rep_query_devinfo,
-	.round_buffersize	= rep_round_buffersize,
 	.get_props		= rep_get_props,
 	.get_locks		= rep_get_locks,
 };
@@ -421,16 +417,6 @@ repac_attach(void *arg, struct ac97_codec_if *acip)
 
 /* audio(9) support stuff which is not ac97-constant */
 
-void
-rep_close(void *arg)
-{
-	struct repulse_softc *sc;
-
-	sc = arg;
-	rep_halt_output(sc);
-	rep_halt_input(sc);
-}
-
 int
 rep_getdev(void *arg, struct audio_device *retp)
 {
@@ -531,12 +517,6 @@ rep_round_blocksize(void *arg, int blk, int mode, const audio_params_t *param)
 	if (b1 > 65536 / 2 / 2 /* channels */ / 4 /* bytes per channel */)
 		b1 =  65536 / 2 / 2 / 4;
 	return b1;
-}
-
-size_t
-rep_round_buffersize(void *arg, int direction, size_t size)
-{
-	return size;
 }
 
 void
