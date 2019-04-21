@@ -75,8 +75,9 @@ static int  vs_dmaerrintr(void *);
 static int  vs_open(void *, int);
 static void vs_close(void *);
 static int  vs_query_format(void *, audio_format_query_t *);
-static int  vs_set_format(void *, int, const audio_params_t *,
-	const audio_params_t *, audio_filter_reg_t *, audio_filter_reg_t *);
+static int  vs_set_format(void *, int,
+	const audio_params_t *, const audio_params_t *,
+	audio_filter_reg_t *, audio_filter_reg_t *);
 static int  vs_commit_settings(void *);
 static int  vs_start_input(void *, void *, int, void (*)(void *), void *);
 static int  vs_start_output(void *, void *, int, void (*)(void *), void *);
@@ -336,7 +337,7 @@ vs_set_format(void *hdl, int setmode,
 
 	DPRINTF(1, ("%s: mode=%d %s/%dbit/%dch/%dHz: ", __func__,
 	    setmode, audio_encoding_name(play->encoding),
-		play->precision, play->channels, play->sample_rate));
+	    play->precision, play->channels, play->sample_rate));
 
 	/* *play and *rec are identical because !AUDIO_PROP_INDEPENDENT */
 
@@ -380,6 +381,7 @@ vs_commit_settings(void *hdl)
 static inline void
 vs_set_panout(struct vs_softc *sc, u_long po)
 {
+
 	bus_space_write_1(sc->sc_iot, sc->sc_ppi, PPI_PORTC,
 			  (bus_space_read_1(sc->sc_iot, sc->sc_ppi, PPI_PORTC)
 			   & 0xfc) | po);
@@ -656,30 +658,6 @@ vs_round_buffersize(void *hdl, int direction, size_t bufsize)
 		bufsize = DMAC_MAXSEGSZ;
 	return bufsize;
 }
-
-#if 0
-paddr_t
-vs_mappage(void *addr, void *mem, off_t off, int prot)
-{
-	struct vs_softc *sc;
-	struct vs_dma *p;
-
-	if (off < 0)
-		return -1;
-	sc = addr;
-	for (p = sc->sc_dmas; p != NULL && KVADDR(p) != mem;
-	     p = p->vd_next)
-		continue;
-	if (p == NULL) {
-		printf("%s: mappage: bad addr %p\n",
-		    device_xname(sc->sc_dev), start);
-		return -1;
-	}
-
-	return bus_dmamem_mmap(sc->sc_dmat, p->vd_segs, p->vd_nsegs,
-			       off, prot, BUS_DMA_WAITOK);
-}
-#endif
 
 static int
 vs_get_props(void *hdl)
