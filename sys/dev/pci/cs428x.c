@@ -165,29 +165,6 @@ cs428x_round_buffersize(void *addr, int direction,
 	return size;
 }
 
-paddr_t
-cs428x_mappage(void *addr, void *mem, off_t off, int prot)
-{
-	struct cs428x_softc *sc;
-	struct cs428x_dma *p;
-
-	sc = addr;
-
-	if (off < 0)
-		return -1;
-
-	for (p = sc->sc_dmas; p && BUFADDR(p) != mem; p = p->next)
-		continue;
-
-	if (p == NULL) {
-		DPRINTF(("cs428x_mappage: bad buffer address\n"));
-		return -1;
-	}
-
-	return (bus_dmamem_mmap(sc->sc_dmatag, p->segs, p->nsegs,
-	    off, prot, BUS_DMA_WAITOK));
-}
-
 int
 cs428x_get_props(void *addr)
 {

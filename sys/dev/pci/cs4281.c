@@ -120,7 +120,6 @@ static const struct audio_hw_if cs4281_hw_if = {
 	.allocm			= cs428x_malloc,
 	.freem			= cs428x_free,
 	.round_buffersize	= cs428x_round_buffersize,
-	.mappage		= cs428x_mappage,
 	.get_props		= cs428x_get_props,
 	.trigger_output		= cs4281_trigger_output,
 	.trigger_input		= cs4281_trigger_input,

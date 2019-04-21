@@ -184,7 +184,6 @@ int  cs428x_query_devinfo(void *, mixer_devinfo_t *);
 void *cs428x_malloc(void *, int, size_t);
 size_t cs428x_round_buffersize(void *, int, size_t);
 void cs428x_free(void *, void *, size_t);
-paddr_t cs428x_mappage(void *, void *, off_t, int);
 void cs428x_get_locks(void *, kmutex_t **, kmutex_t **);
 
 /* internal functions */
