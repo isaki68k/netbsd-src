@@ -438,8 +438,6 @@ harmony_close(void *vsc)
 	struct harmony_softc *sc;
 
 	sc = vsc;
-	harmony_halt_input(sc);
-	harmony_halt_output(sc);
 	harmony_intr_disable(sc);
 	sc->sc_open = 0;
 }
