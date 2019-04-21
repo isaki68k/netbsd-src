@@ -92,7 +92,9 @@ struct snapper_softc {
 	int sc_rate;                    /* current sampling rate */
 	int sc_bitspersample;
 
-	int sc_swvol;
+	/* for SNAPPER_SWVOL */
+	u_int sc_swvol_l;
+	u_int sc_swvol_r;
 
 	u_int sc_vol_l;
 	u_int sc_vol_r;
@@ -156,17 +158,18 @@ snapper_volume(audio_filter_arg_t *arg)
 	struct snapper_softc *sc;
 	const aint_t *src;
 	aint_t *dst;
-	u_int sample_count;
 	u_int i;
 
 	sc = arg->context;
 	src = arg->src;
 	dst = arg->dst;
-	sample_count = arg->count * arg->srcfmt->channels;
-	for (i = 0; i < sample_count; i++) {
-		aint2_t v = (aint2_t)(*src++);
-		v = v * sc->sc_vol_l / 255;
-		*dst++ = (aint_t)v;
+	for (i = 0; i < arg->count; i++) {
+		aint2_t l = (aint2_t)(*src++);
+		aint2_t r = (aint2_t)(*src++);
+		l = l * sc->sc_swvol_l / 255;
+		r = r * sc->sc_swvol_r / 255;
+		*dst++ = (aint_t)l;
+		*dst++ = (aint_t)r;
 	}
 }
 
@@ -666,6 +669,8 @@ snapper_attach(device_t parent, device_t self, void *aux)
 
 	if (strcmp(compat, "tumbler") == 0)
 		sc->sc_mode = SNAPPER_IS_TAS3001;
+	sc->sc_swvol_l = 255;
+	sc->sc_swvol_r = 255;
 	sc->sc_vol_l = 128;
 	sc->sc_vol_r = 128;
 	sc->sc_rval = 0;
@@ -1373,7 +1378,10 @@ snapper_set_volume(struct snapper_softc *sc, u_int left, u_int right)
 	left = uimin(255, left);
 	right = uimin(255, right);
 
-	if (sc->sc_mode != SNAPPER_SWVOL) {
+	if (sc->sc_mode == SNAPPER_SWVOL) {
+		sc->sc_swvol_l = left;
+		sc->sc_swvol_r = right;
+	} else {
 		/*
 		 * for some insane reason the gain table for master volume and the
 		 * mixer channels is almost identical - just shifted by 4 bits
