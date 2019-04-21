@@ -374,7 +374,6 @@ static int	hdafg_query_devinfo(void *, mixer_devinfo_t *);
 static void *	hdafg_allocm(void *, int, size_t);
 static void	hdafg_freem(void *, void *, size_t);
 static int	hdafg_getdev(void *, struct audio_device *);
-static size_t	hdafg_round_buffersize(void *, int, size_t);
 static int	hdafg_get_props(void *);
 static int	hdafg_trigger_output(void *, void *, void *, int,
 				       void (*)(void *), void *,
@@ -397,7 +396,6 @@ static const struct audio_hw_if hdafg_hw_if = {
 	.query_devinfo		= hdafg_query_devinfo,
 	.allocm			= hdafg_allocm,
 	.freem			= hdafg_freem,
-	.round_buffersize	= hdafg_round_buffersize,
 	.get_props		= hdafg_get_props,
 	.trigger_output		= hdafg_trigger_output,
 	.trigger_input		= hdafg_trigger_input,
@@ -3920,7 +3918,6 @@ hdafg_resume(device_t self, const pmf_qual_t *qual)
 	return true;
 }
 
-
 static int
 hdafg_query_format(void *opaque, audio_format_query_t *afp)
 {
@@ -4228,12 +4225,6 @@ hdafg_freem(void *opaque, void *addr, size_t size)
 		return;
 
 	hdaudio_dma_free(st->st_host, &st->st_data);
-}
-
-static size_t
-hdafg_round_buffersize(void *opaque, int direction, size_t bufsize)
-{
-	return bufsize;
 }
 
 static int
