@@ -249,7 +249,7 @@ static const struct audio_hw_if auvia_hw_if = {
 #define AUVIA_FORMAT_U8(aumode, ch, chmask) \
 	{ \
 		.mode		= (aumode), \
-		.encoding	= AUDIO_ENCODING_SLINEAR_LE, \
+		.encoding	= AUDIO_ENCODING_ULINEAR_LE, \
 		.validbits	= 8, \
 		.precision	= 8, \
 		.channels	= (ch), \
