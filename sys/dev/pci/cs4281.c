@@ -154,22 +154,17 @@ static struct audio_device cs4281_device = {
 	"cs4281"
 };
 
-#define CS4281_FORMAT(enc, prec) \
-	{ \
-		.mode		= AUMODE_PLAY | AUMODE_RECORD, \
-		.encoding	= (enc), \
-		.validbits	= (prec), \
-		.precision	= (prec), \
-		.channels	= 2, \
-		.channel_mask	= AUFMT_STEREO, \
-		.frequency_type	= 6, \
-		.frequency	= { 8000, 11025, 16000, 22050, 44100, 48000 }, \
-	}
 static const struct audio_format cs4281_formats[] = {
-	CS4281_FORMAT(AUDIO_ENCODING_SLINEAR_NE, 16),
-	CS4281_FORMAT(AUDIO_ENCODING_ULINEAR_NE, 16),
-	CS4281_FORMAT(AUDIO_ENCODING_SLINEAR,     8),
-	CS4281_FORMAT(AUDIO_ENCODING_ULINEAR,     8),
+	{
+		.mode		= AUMODE_PLAY | AUMODE_RECORD,
+		.encoding	= AUDIO_ENCODING_SLINEAR_NE,
+		.validbits	= 16,
+		.precision	= 16,
+		.channels	= 2,
+		.channel_mask	= AUFMT_STEREO,
+		.frequency_type	= 6,
+		.frequency	= { 8000, 11025, 16000, 22050, 44100, 48000 },
+	},
 };
 #define CS4281_NFORMATS __arraycount(cs4281_formats)
 
@@ -514,16 +509,8 @@ cs4281_trigger_output(void *addr, void *start, void *end, int blksize,
 
 	/* set playback format */
 	fmt = BA0READ4(sc, CS4281_DMR0) & ~DMRn_FMTMSK;
-	if (param->precision == 8)
-		fmt |= DMRn_SIZE8;
-	if (param->channels == 1)
-		fmt |= DMRn_MONO;
-	if (param->encoding == AUDIO_ENCODING_ULINEAR_BE ||
-	    param->encoding == AUDIO_ENCODING_SLINEAR_BE)
+	if (param->encoding == AUDIO_ENCODING_SLINEAR_BE)
 		fmt |= DMRn_BEND;
-	if (param->encoding == AUDIO_ENCODING_ULINEAR_BE ||
-	    param->encoding == AUDIO_ENCODING_ULINEAR_LE)
-		fmt |= DMRn_USIGN;
 	BA0WRITE4(sc, CS4281_DMR0, fmt);
 
 	/* set sample rate */
@@ -602,16 +589,8 @@ cs4281_trigger_input(void *addr, void *start, void *end, int blksize,
 
 	/* set recording format */
 	fmt = BA0READ4(sc, CS4281_DMR1) & ~DMRn_FMTMSK;
-	if (param->precision == 8)
-		fmt |= DMRn_SIZE8;
-	if (param->channels == 1)
-		fmt |= DMRn_MONO;
-	if (param->encoding == AUDIO_ENCODING_ULINEAR_BE ||
-	    param->encoding == AUDIO_ENCODING_SLINEAR_BE)
+	if (param->encoding == AUDIO_ENCODING_SLINEAR_BE)
 		fmt |= DMRn_BEND;
-	if (param->encoding == AUDIO_ENCODING_ULINEAR_BE ||
-	    param->encoding == AUDIO_ENCODING_ULINEAR_LE)
-		fmt |= DMRn_USIGN;
 	BA0WRITE4(sc, CS4281_DMR1, fmt);
 
 	/* set sample rate */
