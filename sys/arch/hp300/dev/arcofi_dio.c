@@ -80,11 +80,6 @@ arcofi_dio_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	sc->sc_sih = softint_establish(SOFTINT_AUDIO, arcofi_swintr, sc);
-	if (sc->sc_sih == NULL) {
-		aprint_error(": can't register soft interrupt\n");
-		return;
-	}
 	ipl = da->da_ipl;
 	dio_intr_establish(arcofi_hwintr, sc, ipl, IPL_AUDIO);
 

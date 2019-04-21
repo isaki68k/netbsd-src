@@ -26,7 +26,6 @@ struct arcofi_softc {
 	bus_space_handle_t	sc_ioh;
 
 	struct audio_device	sc_audio_device;
-	void			*sc_sih;
 
 	int			sc_open;
 	int			sc_mode;
@@ -47,10 +46,7 @@ struct arcofi_softc {
 				sc_xmit;
 	kmutex_t		sc_lock;
 	kmutex_t		sc_intr_lock;
-	kcondvar_t		sc_cv;
-	struct audio_encoding_set *sc_encodings;
 };
 
 void	arcofi_attach(struct arcofi_softc *, const char *);
 int	arcofi_hwintr(void *);
-void	arcofi_swintr(void *);

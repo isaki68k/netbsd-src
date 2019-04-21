@@ -36,15 +36,13 @@
 #include <sys/kernel.h>
 #include <sys/proc.h>
 #include <sys/mutex.h>
-#include <sys/condvar.h>
 #include <sys/bus.h>
 #include <sys/intr.h>
 
 #include <sys/audioio.h>
 
 #include <dev/audio_if.h>
-#include <dev/auconv.h>
-#include <dev/mulaw.h>
+#include <dev/audio/mulaw.h>
 
 #include <dev/ic/arcofivar.h>
 
@@ -197,25 +195,15 @@ static int	arcofi_cr3_to_portmask(uint, int);
 static int	arcofi_gain_to_mi(uint);
 static uint	arcofi_mi_to_gain(int);
 static uint	arcofi_portmask_to_cr3(int);
-#if defined(AUDIO2)
 static int	arcofi_recv_data(struct arcofi_softc *);
 static int	arcofi_xmit_data(struct arcofi_softc *);
-#endif
 
 static int	arcofi_open(void *, int);
 static void	arcofi_close(void *);
-static int	arcofi_drain(void *);
-#if defined(AUDIO2)
 static int	arcofi_query_format(void *, audio_format_query_t *);
 static int	arcofi_set_format(void *, int,
 		    const audio_params_t *, const audio_params_t *,
 		    audio_filter_reg_t *, audio_filter_reg_t *);
-#else
-static int	arcofi_query_encoding(void *, struct audio_encoding *);
-static int	arcofi_set_params(void *, int, int,
-		    struct audio_params *, struct audio_params *,
-		    stream_filter_list_t *, stream_filter_list_t *);
-#endif
 static int	arcofi_round_blocksize(void *, int, int,
 		    const audio_params_t *);
 static int	arcofi_commit_settings(void *);
@@ -235,14 +223,8 @@ static void	arcofi_get_locks(void *, kmutex_t **, kmutex_t **);
 static const struct audio_hw_if arcofi_hw_if = {
 	.open		  = arcofi_open,
 	.close		  = arcofi_close,
-	.drain		  = arcofi_drain,
-#if defined(AUDIO2)
 	.query_format	  = arcofi_query_format,
 	.set_format	  = arcofi_set_format,
-#else
-	.query_encoding	  = arcofi_query_encoding,
-	.set_params	  = arcofi_set_params,
-#endif
 	.round_blocksize  = arcofi_round_blocksize,
 	.commit_settings  = arcofi_commit_settings,
 	.start_output	  = arcofi_start_output,
@@ -353,42 +335,9 @@ arcofi_close(void *v)
 {
 	struct arcofi_softc *sc = (struct arcofi_softc *)v;
 
-	arcofi_halt_input(v);
-	arcofi_halt_output(v);
 	sc->sc_open = 0;
 }
 
-#if defined(AUDIO2)
-/* XXX sc_cv also can be removed if drain is removed. */
-#endif
-static int
-arcofi_drain(void *v)
-{
-	struct arcofi_softc *sc = (struct arcofi_softc *)v;
-
-#ifdef ARCOFI_DEBUG
-	printf("%s: %s, mode %d\n",
-	    device_xname(sc->sc_dev), __func__, sc->sc_mode);
-#endif
-	if ((arcofi_read(sc, ARCOFI_FIFO_SR) & FIFO_SR_OUT_EMPTY) == 0) {
-		/* enable output FIFO empty interrupt... */
-		arcofi_write(sc, ARCOFI_FIFO_IR,
-		    arcofi_read(sc, ARCOFI_FIFO_IR) |
-		    FIFO_IR_ENABLE(FIFO_IR_OUT_EMPTY));
-		/* ...and wait for it to fire */
-		if (cv_timedwait(&sc->sc_cv, &sc->sc_intr_lock,
-		    ((ARCOFI_FIFO_SIZE * hz) / 8000) + 100) != 0) {
-			printf("%s: drain did not complete\n",
-			    device_xname(sc->sc_dev));
-			arcofi_write(sc, ARCOFI_FIFO_IR,
-			    arcofi_read(sc, ARCOFI_FIFO_IR) &
-			    ~FIFO_IR_ENABLE(FIFO_IR_OUT_EMPTY));
-		}
-	}
-	return 0;
-}
-
-#if defined(AUDIO2)
 static int
 arcofi_query_format(void *v, audio_format_query_t *afp)
 {
@@ -411,7 +360,7 @@ arcofi_set_format(void *handle, int setmode,
 			pfil->codec = audio_internal_to_mulaw;
 			break;
 		case AUDIO_ENCODING_ALAW:
-			pfil->codec = audio_internla_to_alaw;
+			pfil->codec = audio_internal_to_alaw;
 			break;
 		}
 	}
@@ -444,83 +393,6 @@ arcofi_set_format(void *handle, int setmode,
 
 	return 0;
 }
-
-#else
-
-static int
-arcofi_query_encoding(void *v, struct audio_encoding *aep)
-{
-	struct arcofi_softc *sc = (struct arcofi_softc *)v;
-
-	return auconv_query_encoding(sc->sc_encodings, aep);
-}
-
-/*
- * Compute proper sample and hardware settings.
- */
-static int
-arcofi_set_params(void *handle, int setmode, int usemode,
-    audio_params_t *play, audio_params_t *rec,
-    stream_filter_list_t *pfil, stream_filter_list_t *rfil)
-{
-	struct arcofi_softc *sc;
-	int i;
-
-	sc = handle;
-	for (i = 0; i < 2; i++) {
-		int mode;
-		audio_params_t *p;
-		stream_filter_list_t *fil;
-		int ind;
-
-		switch (i) {
-		case 0:
-			mode = AUMODE_PLAY;
-			p = play;
-			fil = pfil;
-			break;
-		case 1:
-			mode = AUMODE_RECORD;
-			p = rec;
-			fil = rfil;
-			break;
-		default:
-			return EINVAL;
-		}
-
-		if ((setmode & mode) == 0)
-			continue;
-
-#ifdef ARCOFI_DEBUG
-		printf("%s: %s, mode %d encoding %d precision %d\n",
-		    device_xname(sc->sc_dev), __func__,
-		    mode, p->encoding, p->precision);
-#endif
-
-		ind = auconv_set_converter(arcofi_formats, ARCOFI_NFORMATS,
-		    mode, p, false, fil);
-		if (ind < 0)
-			return EINVAL;
-		if (fil->req_size > 0)
-			p = &fil->filters[0].param;
-		if (p->precision == 8) {
-			if (p->encoding == AUDIO_ENCODING_ALAW)
-				sc->sc_shadow.cr4 &= ~CR4_ULAW;
-			else
-				sc->sc_shadow.cr4 |= CR4_ULAW;
-			sc->sc_shadow.cr3 =
-			    (sc->sc_shadow.cr3 & ~CR3_OPMODE_MASK) |
-			    CR3_OPMODE_NORMAL;
-		} else {
-			sc->sc_shadow.cr3 =
-			    (sc->sc_shadow.cr3 & ~CR3_OPMODE_MASK) |
-			    CR3_OPMODE_LINEAR;
-		}
-	}
-
-	return 0;
-}
-#endif /* AUDIO2 */
 
 static int
 arcofi_round_blocksize(void *handle, int block, int mode,
@@ -605,7 +477,6 @@ arcofi_commit_settings(void *v)
 	return rc;
 }
 
-#if defined(AUDIO2)
 /*
  * Take it out of the queue as much as possible.
  */
@@ -647,7 +518,6 @@ arcofi_xmit_data(struct arcofi_softc *sc)
 
 	return past - cur;
 }
-#endif /* AUDIO2 */
 
 static int
 arcofi_start_input(void *v, void *rbuf, int rsz, void (*cb)(void *),
@@ -700,10 +570,8 @@ arcofi_start_output(void *v, void *wbuf, int wsz, void (*cb)(void *),
 	sc->sc_xmit.cb = cb;
 	sc->sc_xmit.cbarg = cbarg;
 
-#if defined(AUDIO2)
 	/* Fill FIFO */
 	arcofi_xmit_data(sc);
-#endif
 
 	/* enable output FIFO interrupts */
 	arcofi_write(sc, ARCOFI_FIFO_IR, arcofi_read(sc, ARCOFI_FIFO_IR) |
@@ -1147,10 +1015,6 @@ int
 arcofi_hwintr(void *v)
 {
 	struct arcofi_softc *sc = (struct arcofi_softc *)v;
-#if !defined(AUDIO2)
-	uint8_t *cur, *past;
-	uint8_t data;
-#endif
 	uint8_t csr, fir;
 	int rc = 0;
 
@@ -1160,7 +1024,6 @@ arcofi_hwintr(void *v)
 
 	fir = arcofi_read(sc, ARCOFI_FIFO_IR);
 
-#if defined(AUDIO2)
 	/* receive */
 	if ((sc->sc_mode & AUMODE_RECORD) &&
 	    (fir & FIFO_IR_EVENT(FIFO_IR_IN_HALF_EMPTY))) {
@@ -1192,71 +1055,6 @@ arcofi_hwintr(void *v)
 			sc->sc_xmit.cb(sc->sc_xmit.cbarg);
 		}
 	}
-#else
-	/* receive */
-	if (fir & FIFO_IR_EVENT(FIFO_IR_IN_HALF_EMPTY)) {
-		rc = 1;
-		cur = sc->sc_recv.buf;
-		past = sc->sc_recv.past;
-
-		while ((arcofi_read(sc, ARCOFI_FIFO_SR) &
-		    FIFO_SR_IN_EMPTY) == 0) {
-			data = arcofi_read(sc, ARCOFI_FIFO_DATA);
-			if (cur != NULL && cur != past) {
-				*cur++ = data;
-				if (cur == past) {
-					softint_schedule(sc->sc_sih);
-					break;
-				}
-			}
-		}
-		sc->sc_recv.buf = cur;
-
-		if (cur == NULL || cur == past) {
-			/* underrun, disable further interrupts */
-			arcofi_write(sc, ARCOFI_FIFO_IR,
-			    arcofi_read(sc, ARCOFI_FIFO_IR) &
-			    ~FIFO_IR_ENABLE(FIFO_IR_IN_HALF_EMPTY));
-		}
-	}
-
-	/* xmit */
-	if (fir & FIFO_IR_EVENT(FIFO_IR_OUT_HALF_EMPTY)) {
-		rc = 1;
-		cur = sc->sc_xmit.buf;
-		past = sc->sc_xmit.past;
-		if (cur != NULL) {
-			while ((arcofi_read(sc, ARCOFI_FIFO_SR) &
-			    FIFO_SR_OUT_FULL) == 0) {
-				if (cur != past)
-					arcofi_write(sc, ARCOFI_FIFO_DATA,
-					    *cur++);
-				if (cur == past) {
-					softint_schedule(sc->sc_sih);
-					break;
-				}
-			}
-		}
-		if (cur == NULL || cur == past) {
-			/* disable further interrupts */
-			arcofi_write(sc, ARCOFI_FIFO_IR,
-			    arcofi_read(sc, ARCOFI_FIFO_IR) &
-			    ~FIFO_IR_ENABLE(FIFO_IR_OUT_HALF_EMPTY));
-		}
-		sc->sc_xmit.buf = cur;
-	}
-
-	/* drain */
-	if (fir & FIFO_IR_EVENT(FIFO_IR_OUT_EMPTY)) {
-		rc = 1;
-		arcofi_write(sc, ARCOFI_FIFO_IR,
-		    arcofi_read(sc, ARCOFI_FIFO_IR) &
-		    ~FIFO_IR_ENABLE(FIFO_IR_OUT_EMPTY));
-		mutex_spin_enter(&sc->sc_intr_lock);
-		cv_signal(&sc->sc_cv);
-		mutex_spin_exit(&sc->sc_intr_lock);
-	}
-#endif /* AUDIO2 */
 
 #ifdef ARCOFI_DEBUG
 	if (rc == 0)
@@ -1266,36 +1064,6 @@ arcofi_hwintr(void *v)
 #endif
 
 	return rc;
-}
-
-void
-arcofi_swintr(void *v)
-{
-#if !defined(AUDIO2)
-/*
- * XXX Removing this swintr also affects softint_establish() at
- *     arch/hp300/dev/arcofi_dio.c
- */
-	struct arcofi_softc *sc = (struct arcofi_softc *)v;
-	int action;
-
-	action = 0;
-	mutex_spin_enter(&sc->sc_intr_lock);
-	if (sc->sc_recv.buf != NULL && sc->sc_recv.buf == sc->sc_recv.past)
-		action |= AUMODE_RECORD;
-	if (sc->sc_xmit.buf != NULL && sc->sc_xmit.buf == sc->sc_xmit.past)
-		action |= AUMODE_PLAY;
-
-	if (action & AUMODE_RECORD) {
-		if (sc->sc_recv.cb)
-			sc->sc_recv.cb(sc->sc_recv.cbarg);
-	}
-	if (action & AUMODE_PLAY) {
-		if (sc->sc_xmit.cb)
-			sc->sc_xmit.cb(sc->sc_xmit.cbarg);
-	}
-	mutex_spin_exit(&sc->sc_intr_lock);
-#endif
 }
 
 static int
@@ -1377,17 +1145,6 @@ arcofi_attach(struct arcofi_softc *sc, const char *versionstr)
 	self = sc->sc_dev;
 	mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_NONE);
 	mutex_init(&sc->sc_intr_lock, MUTEX_DEFAULT, IPL_AUDIO);
-	cv_init(&sc->sc_cv, device_xname(self));
-#if defined(AUDIO2)
-	/*
-	 * auconv_create_encodings(), sc_encodings, goto out and its label are
-	 * unnecessary.  At the moment it only complicates diff.
-	 */
-#endif
-	rc = auconv_create_encodings(arcofi_formats, ARCOFI_NFORMATS,
-	    &sc->sc_encodings);
-	if (rc != 0)
-		goto out;
 
 	/*
 	 * Reset logic.
@@ -1450,8 +1207,6 @@ arcofi_attach(struct arcofi_softc *sc, const char *versionstr)
 	arcofi_write(sc, ARCOFI_ID, 0);
 	aprint_error("%s: %02x command failed, error %d\n",
 	    __func__, op, rc);
- out:
-	cv_destroy(&sc->sc_cv);
 	mutex_destroy(&sc->sc_intr_lock);
 	mutex_destroy(&sc->sc_lock);
 }
