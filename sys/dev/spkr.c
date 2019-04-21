@@ -1,4 +1,4 @@
-/*	$NetBSD: spkr.c,v 1.16 2018/09/03 16:29:30 riastradh Exp $	*/
+/*	$NetBSD: spkr.c,v 1.17 2019/04/18 13:01:38 isaki Exp $	*/
 
 /*
  * Copyright (c) 1990 Eric S. Raymond (esr@snark.thyrsus.com)
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: spkr.c,v 1.16 2018/09/03 16:29:30 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: spkr.c,v 1.17 2019/04/18 13:01:38 isaki Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "wsmux.h"
@@ -140,8 +140,8 @@ static void playstring(struct spkr_softc *, const char *, size_t);
 #define NUM_MULT	3	/* numerator of dot multiplier */
 #define DENOM_MULT	2	/* denominator of dot multiplier */
 
-/* letter to half-tone:        A   B  C  D  E  F  G */
-static const int notetab[8] = {9, 11, 0, 2, 4, 5, 7};
+/* letter to half-tone:         A   B  C  D  E  F  G */
+static const int notetab[8] = { 9, 11, 0, 2, 4, 5, 7 };
 
 /*
  * This is the American Standard A440 Equal-Tempered scale with frequencies
