@@ -109,7 +109,7 @@ const char *ad1843_input[] = {
 
 static const struct audio_format mavb_formats[] = {
 	{
-		.mode		= AUMODE_PLAY | AUMODE_RECORD,
+		.mode		= AUMODE_PLAY,
 		.encoding	= AUDIO_ENCODING_SLINEAR_BE,
 		.validbits	= 16,
 		.precision	= 16,
