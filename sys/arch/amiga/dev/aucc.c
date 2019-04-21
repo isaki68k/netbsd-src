@@ -58,7 +58,7 @@ __KERNEL_RCSID(0, "$NetBSD: aucc.c,v 1.44 2019/03/16 12:09:56 isaki Exp $");
 
 #include <sys/audioio.h>
 #include <dev/audio_if.h>
-#include <dev/audiovar.h>	/* for AUDIO_MIN_FREQUENCY */
+#include <dev/audio/audiovar.h>	/* for AUDIO_MIN_FREQUENCY */
 
 #include <amiga/amiga/cc.h>
 #include <amiga/amiga/custom.h>
@@ -290,7 +290,7 @@ init_aucc(struct aucc_softc *sc)
 	sc->sc_channelmask = 0xf;
 	sc->sc_precision = 16;
 	sc->sc_14bit = 1;
-	sc->sc_encoding = AUDIO_ENCODING_SLINEAR_NE;
+	sc->sc_encoding = AUDIO_ENCODING_SLINEAR_BE;
 	sc->sc_decodefunc = aucc_decode_slinear16_2ch;
 
 	/* clear interrupts and DMA: */
@@ -334,10 +334,6 @@ aucc_close(void *addr)
 
 	sc = addr;
 	DPRINTF(("sa_close: sc=%p\n", sc));
-	/*
-	 * halt i/o, clear open flag, and done.
-	 */
-	aucc_halt_output(sc);
 	sc->sc_open = 0;
 
 	DPRINTF(("sa_close: closed.\n"));
