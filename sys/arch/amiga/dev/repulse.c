@@ -199,6 +199,17 @@ struct repulse_softc {
 	kmutex_t  sc_intr_lock;
 };
 
+const struct audio_format repulse_format = {
+	.mode		= AUMODE_PLAY | AUMODE_RECORD,
+	.encoding	= AUDIO_ENCODING_SLINEAR_BE,
+	.validbits	= 16,
+	.precision	= 16,
+	.channels	= 2,
+	.channel_mask	= AUFMT_STEREO,
+	.frequency_type	= 6,
+	.frequency	= { 8000, 16000, 22050, 32000, 44100, 48000 },
+};
+
 int repulse_match (device_t, cfdata_t, void *);
 void repulse_attach (device_t, device_t, void *);
 
@@ -470,17 +481,6 @@ rep_halt_input(void *arg)
 
 	return 0;
 }
-
-const struct audio_format repulse_format = {
-	.mode		= AUMODE_PLAY | AUMODE_RECORD,
-	.encoding	= AUDIO_ENCODING_SLINEAR_BE,
-	.validbits	= 16,
-	.precision	= 16,
-	.channels	= 2,
-	.channel_mask	= AUFMT_STEREO,
-	.frequency_type	= 6,
-	.frequency	= { 8000, 16000, 22050, 32000, 44100, 48000 },
-};
 
 int
 rep_query_format(void *arg, audio_format_query_t *afp)
