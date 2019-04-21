@@ -154,8 +154,6 @@ static int	vcaudio_msg_sync(struct vcaudio_softc *, VC_AUDIO_MSG_T *,
     size_t);
 static void	vcaudio_worker(void *);
 
-static int	vcaudio_open(void *, int);
-static void	vcaudio_close(void *);
 static int	vcaudio_query_format(void *, audio_format_query_t *);
 static int	vcaudio_set_format(void *, int,
     const audio_params_t *, const audio_params_t *,
@@ -181,8 +179,6 @@ static void	vcaudio_get_locks(void *, kmutex_t **, kmutex_t **);
 static void vcaudio_swvol_codec(audio_filter_arg_t *);
 
 static const struct audio_hw_if vcaudio_hw_if = {
-	.open = vcaudio_open,
-	.close = vcaudio_close,
 	.query_format = vcaudio_query_format,
 	.set_format = vcaudio_set_format,
 	.halt_output = vcaudio_halt_output,
@@ -563,17 +559,6 @@ done:
 	mutex_exit(&sc->sc_msglock);
 
 	return error;
-}
-
-static int
-vcaudio_open(void *priv, int flags)
-{
-	return 0;
-}
-
-static void
-vcaudio_close(void *priv)
-{
 }
 
 static int
