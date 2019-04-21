@@ -96,8 +96,6 @@ __KERNEL_RCSID(0, "$NetBSD: sbdsp.c,v 1.139 2019/02/03 03:19:27 mrg Exp $");
 #include <sys/audioio.h>
 #include <dev/audio_if.h>
 #include <dev/midi_if.h>
-#include <dev/mulaw.h>
-#include <dev/auconv.h>
 
 #include <dev/isa/isavar.h>
 #include <dev/isa/isadmavar.h>
