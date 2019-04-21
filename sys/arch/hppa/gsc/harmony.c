@@ -138,6 +138,7 @@ const struct audio_hw_if harmony_sa_hw_if = {
 	.get_locks		= harmony_get_locks,
 };
 
+/* The HW actually supports more frequencies, but these looks enough. */
 #define HARMONY_FORMAT(enc, prec) \
 	{ \
 		.mode		= AUMODE_PLAY | AUMODE_RECORD, \
@@ -146,15 +147,10 @@ const struct audio_hw_if harmony_sa_hw_if = {
 		.precision	= (prec), \
 		.channels	= 2, \
 		.channel_mask	= AUFMT_STEREO, \
-		.frequency_type = 14, \
-		.frequency	= { \
-			 5125,  6615,  8000,  9600, 11025, 16000, 18900, \
-			22050, 27428, 32000, 33075, 37800, 44100, 48000, \
-		 }, \
+		.frequency_type = 4, \
+		.frequency	= { 16000, 32000, 44100, 48000 }, \
 	}
 static struct audio_format harmony_formats[] = {
-	/* First one may be disabled at attach. */
-	HARMONY_FORMAT(AUDIO_ENCODING_ULINEAR,     8),
 	HARMONY_FORMAT(AUDIO_ENCODING_ULAW,        8),
 	HARMONY_FORMAT(AUDIO_ENCODING_ALAW,        8),
 	HARMONY_FORMAT(AUDIO_ENCODING_SLINEAR_BE, 16),
@@ -321,10 +317,6 @@ harmony_attach(device_t parent, device_t self, void *aux)
 		printf(", teleshare");
 	aprint_normal("\n");
 
-	if ((rev & CS4215_REV_VER) < CS4215_REV_VER_E) {
-		AUFMT_INVALIDATE(&harmony_formats[0]);
-	}
-
 	strlcpy(sc->sc_audev.name, ga->ga_name, sizeof(sc->sc_audev.name));
 	snprintf(sc->sc_audev.version, sizeof sc->sc_audev.version,
 	    "%u.%u;%u", ga->ga_type.iodc_sv_rev,
@@ -481,9 +473,6 @@ harmony_set_format(void *vsc, int setmode,
 	case AUDIO_ENCODING_SLINEAR_BE:
 		bits = CNTL_FORMAT_SLINEAR16BE;
 		break;
-	case AUDIO_ENCODING_ULINEAR:
-		bits = CNTL_FORMAT_ULINEAR8;
-		break;
 	default:
 		return EINVAL;
 	}
@@ -491,12 +480,7 @@ harmony_set_format(void *vsc, int setmode,
 	if (sc->sc_outputgain)
 		bits |= CNTL_OLB;
 
-	if (play->channels == 1)
-		bits |= CNTL_CHANS_MONO;
-	else if (play->channels == 2)
-		bits |= CNTL_CHANS_STEREO;
-	else
-		return EINVAL;
+	bits |= CNTL_CHANS_STEREO;
 
 	/* XXX modify harmony_speed_bits() not to rewrite rate */
 	rate = play->sample_rate;
