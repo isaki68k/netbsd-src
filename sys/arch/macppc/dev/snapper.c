@@ -43,9 +43,7 @@ __KERNEL_RCSID(0, "$NetBSD: snapper.c,v 1.49 2019/03/16 12:09:57 isaki Exp $");
 #include <sys/systm.h>
 #include <sys/malloc.h>
 
-#include <dev/auconv.h>
 #include <dev/audio_if.h>
-#include <dev/mulaw.h>
 #include <dev/ofw/openfirm.h>
 #include <macppc/dev/dbdma.h>
 
@@ -847,18 +845,13 @@ snapper_set_format(void *h, int setmode,
 	/* *play and *rec are the identical because !AUDIO_PROP_INDEPENDENT. */
 
 	if (play->precision == 16) {
-		/* XXX Does rfil make sense? */
 		if (sc->sc_mode == SNAPPER_SWVOL) {
 			pfil->codec = snapper_volume;
 			pfil->context = sc;
 			rfil->codec = snapper_volume;
 			rfil->context = sc;
 		} else if (sc->sc_mode == 0 && play->channels == 2) {
-			/*
-			 * Fix phase problems on TAS3004.
-			 * This filter must go last on the chain,
-			 * so prepend it, not append it.
-			 */
+			/* Fix phase problems on TAS3004.  */
 			pfil->codec = snapper_fixphase;
 			pfil->context = sc;
 			rfil->codec = snapper_fixphase;
