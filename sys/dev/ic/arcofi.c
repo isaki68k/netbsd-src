@@ -261,15 +261,15 @@ static const struct audio_hw_if arcofi_hw_if = {
 		.frequency	= { 8000 }, \
 	}
 static const struct audio_format arcofi_formats[] = {
-	// HW がサポートしているのは 8bit u-Law/A-Law と slinear_be:16 である。
-	// ただし HW のキューは 128バイト固定なので、16bit エンコードを使うと
-	// キューが空になるまでのタイムリミットが半分になることを意味する。
-	// そのため時間制約に余裕のある 8bit u-Law を使いたい。
-	// また、16bit 値の1バイト目だけ送りこんだところでキューが空になると
-	// 何がおきるか分からないというかそれが爆音の原因かも知れないのも
-	// あるのでその点でも 8bit エンコーディングのほうが望ましいと思われる。
+	/*
+	 * 8-bit u-Law and A-Law are native.
+	 */
 	ARCOFI_FORMAT(1, AUDIO_ENCODING_ULAW,        8),
 	ARCOFI_FORMAT(0, AUDIO_ENCODING_ALAW,        8),
+	/*
+	 * 16-bit slinear big-endian is native.
+	 * But it's hard to use due to hardware restrictions.
+	 */
 	ARCOFI_FORMAT(0, AUDIO_ENCODING_SLINEAR_BE, 16),
 };
 #define ARCOFI_NFORMATS  __arraycount(arcofi_formats)
