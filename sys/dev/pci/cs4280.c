@@ -208,7 +208,7 @@ static struct audio_device cs4280_device = {
  *     11025Hz to 48000Hz.  However, it looks like to work with 8000Hz,
  *     although data sheets say lower limit is 11025Hz.
  * XXX The combination of available formats is complicated, so I use
- *     a generic format only.  Please fix it if you are interested in.
+ *     a common format only.  Please fix it if not suitable.
  */
 static const struct audio_format cs4280_formats[] = {
 	{
