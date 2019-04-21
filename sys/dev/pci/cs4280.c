@@ -692,19 +692,8 @@ cs4280_trigger_output(void *addr, void *start, void *end, int blksize,
 
 	/* set PFIE */
 	pfie = BA1READ4(sc, CS4280_PFIE) & ~PFIE_MASK;
-
-	if (param->precision == 8)
-		pfie |= PFIE_8BIT;
-	if (param->channels == 1)
-		pfie |= PFIE_MONO;
-
-	if (param->encoding == AUDIO_ENCODING_ULINEAR_BE ||
-	    param->encoding == AUDIO_ENCODING_SLINEAR_BE)
+	if (param->encoding == AUDIO_ENCODING_SLINEAR_BE)
 		pfie |= PFIE_SWAPPED;
-	if (param->encoding == AUDIO_ENCODING_ULINEAR_BE ||
-	    param->encoding == AUDIO_ENCODING_ULINEAR_LE)
-		pfie |= PFIE_UNSIGNED;
-
 	BA1WRITE4(sc, CS4280_PFIE, pfie | PFIE_PI_ENABLE);
 
 	sc->sc_prate = param->sample_rate;
