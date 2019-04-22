@@ -48,14 +48,11 @@ struct tav_softc {
 	device_t	sc_dev;
 	kmutex_t	sc_lock;
 	kmutex_t	sc_intr_lock;
-	kcondvar_t	sc_cv;
 
 	bus_space_tag_t sc_iot;
 	bus_space_handle_t sc_ioh;
 
-#if defined(AUDIO2)
 	int		sc_active;
-#endif
 
 	/* above audio callback function */
 	void		(*sc_intr)(void *);

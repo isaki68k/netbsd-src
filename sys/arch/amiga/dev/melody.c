@@ -114,7 +114,6 @@ melody_attach(device_t parent, device_t self, void *aux)
 
 	mutex_init(&sc->sc_tav.sc_lock, MUTEX_DEFAULT, IPL_NONE);
 	mutex_init(&sc->sc_tav.sc_intr_lock, MUTEX_DEFAULT, IPL_SCHED);
-	cv_init(&sc->sc_tav.sc_cv, device_xname(self));
 
 	/*
 	 * Attach option boards now. They might provide additional
