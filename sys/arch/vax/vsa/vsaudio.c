@@ -78,7 +78,6 @@
 
 #include <sys/audioio.h>
 #include <dev/audio_if.h>
-#include <dev/auconv.h>
 
 #include <dev/ic/am7930reg.h>
 #include <dev/ic/am7930var.h>

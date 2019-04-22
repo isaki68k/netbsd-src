@@ -43,7 +43,6 @@ __KERNEL_RCSID(0, "$NetBSD: bba.c,v 1.42 2019/03/16 12:09:58 isaki Exp $");
 
 #include <sys/audioio.h>
 #include <dev/audio_if.h>
-#include <dev/auconv.h>
 
 #include <dev/ic/am7930reg.h>
 #include <dev/ic/am7930var.h>

@@ -53,7 +53,7 @@ __KERNEL_RCSID(0, "$NetBSD: am7930.c,v 1.57 2017/08/29 06:38:49 isaki Exp $");
 
 #include <sys/audioio.h>
 #include <dev/audio_if.h>
-#include <dev/mulaw.h>
+#include <dev/audio/mulaw.h>
 
 #include <dev/ic/am7930reg.h>
 #include <dev/ic/am7930var.h>
