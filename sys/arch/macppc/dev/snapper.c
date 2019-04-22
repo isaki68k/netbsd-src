@@ -447,25 +447,22 @@ const uint8_t snapper_mixer_gain[178][3] = {
 	{ 0x00, 0x00, 0x00 }  /* Mute */
 };
 
-#define SNAPPER_NFORMATS	2
-#define SNAPPER_FORMAT(prec) \
-	{ \
-		.mode		= AUMODE_PLAY | AUMODE_RECORD, \
-		.encoding	= AUDIO_ENCODING_SLINEAR_BE, \
-		.validbits	= (prec), \
-		.precision	= (prec), \
-		.channels	= 2, \
-		.channel_mask	= AUFMT_STEREO, \
-		.frequency_type	= 3, \
-		.frequency	= { 32000, 44100, 48000 }, \
+/* The HW actually supports precisions more than 16bit, but 16bit is enough. */
+static const struct audio_format snapper_formats[] = {
+	{
+		.mode		= AUMODE_PLAY | AUMODE_RECORD,
+		.encoding	= AUDIO_ENCODING_SLINEAR_BE,
+		.validbits	= 16,
+		.precision	= 16,
+		.channels	= 2,
+		.channel_mask	= AUFMT_STEREO,
+		.frequency_type	= 3,
+		.frequency	= { 32000, 44100, 48000 },
 	}
-static const struct audio_format snapper_formats[SNAPPER_NFORMATS] = {
-	SNAPPER_FORMAT(16),
-	SNAPPER_FORMAT(24),
 };
+#define SNAPPER_NFORMATS	__arraycount(snapper_formats)
 
-#define TUMBLER_NFORMATS	1
-static const struct audio_format tumbler_formats[TUMBLER_NFORMATS] = {
+static const struct audio_format tumbler_formats[] = {
 	{
 		.mode		= AUMODE_PLAY | AUMODE_RECORD,
 		.encoding	= AUDIO_ENCODING_SLINEAR_BE,
@@ -477,6 +474,7 @@ static const struct audio_format tumbler_formats[TUMBLER_NFORMATS] = {
 		.frequency	= { 32000, 44100, 48000, 96000 },
 	},
 };
+#define TUMBLER_NFORMATS	__arraycount(tumbler_formats)
 
 static bus_size_t amp_mute;
 static bus_size_t headphone_mute;
@@ -849,19 +847,17 @@ snapper_set_format(void *h, int setmode,
 
 	/* *play and *rec are the identical because !AUDIO_PROP_INDEPENDENT. */
 
-	if (play->precision == 16) {
-		if (sc->sc_mode == SNAPPER_SWVOL) {
-			pfil->codec = snapper_volume;
-			pfil->context = sc;
-			rfil->codec = snapper_volume;
-			rfil->context = sc;
-		} else if (sc->sc_mode == 0 && play->channels == 2) {
-			/* Fix phase problems on TAS3004.  */
-			pfil->codec = snapper_fixphase;
-			pfil->context = sc;
-			rfil->codec = snapper_fixphase;
-			rfil->context = sc;
-		}
+	if (sc->sc_mode == SNAPPER_SWVOL) {
+		pfil->codec = snapper_volume;
+		pfil->context = sc;
+		rfil->codec = snapper_volume;
+		rfil->context = sc;
+	} else if (sc->sc_mode == 0 && play->channels == 2) {
+		/* Fix phase problems on TAS3004.  */
+		pfil->codec = snapper_fixphase;
+		pfil->context = sc;
+		rfil->codec = snapper_fixphase;
+		rfil->context = sc;
 	}
 
 	/* Set the speed. */
