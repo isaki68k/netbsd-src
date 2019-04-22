@@ -331,10 +331,10 @@ int
 am7930_trigger_output(void *addr, void *start, void *end, int blksize,
     void (*intr)(void *), void *arg, const audio_params_t *params)
 {
-	struct am7930_softc *sc = addr;
+	struct am7930_softc *sc;
 
 	DPRINTF(("sa_trigger_output: blksize=%d %p(%p)\n", blksize, intr, arg));
-
+	sc = addr;
 	sc->sc_p.intr = intr;
 	sc->sc_p.arg = arg;
 	sc->sc_p.start = start;
@@ -355,10 +355,10 @@ int
 am7930_trigger_input(void *addr, void *start, void *end, int blksize,
     void (*intr)(void *), void *arg, const audio_params_t *params)
 {
-	struct am7930_softc *sc = addr;
+	struct am7930_softc *sc;
 
 	DPRINTF(("sa_trigger_input: blksize=%d %p(%p)\n", blksize, intr, arg));
-
+	sc = addr;
 	sc->sc_r.intr = intr;
 	sc->sc_r.arg = arg;
 	sc->sc_r.start = start;
@@ -378,8 +378,9 @@ am7930_trigger_input(void *addr, void *start, void *end, int blksize,
 int
 am7930_halt_output(void *addr)
 {
-	struct am7930_softc *sc = addr;
+	struct am7930_softc *sc;
 
+	sc = addr;
 	sc->sc_p.intr = NULL;
 	/* Halt if both of play and rec halt. */
 	if (sc->sc_r.intr == NULL) {
@@ -392,8 +393,9 @@ am7930_halt_output(void *addr)
 int
 am7930_halt_input(void *addr)
 {
-	struct am7930_softc *sc = addr;
+	struct am7930_softc *sc;
 
+	sc = addr;
 	sc->sc_r.intr = NULL;
 	/* Halt if both of play and rec halt. */
 	if (sc->sc_p.intr == NULL) {

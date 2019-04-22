@@ -41,6 +41,8 @@ struct am7930_softc {
 extern int     am7930debug;
 
 void	am7930_init(struct am7930_softc *, int);
+void	am7930_hwintr(void *);
+void	am7930_swintr(void *);
 
 #define AM7930_IWRITE(sc,r,v)	am7930_iwrite(sc,r,v)
 #define AM7930_IREAD(sc,r)	am7930_iread(sc,r)
@@ -76,10 +78,6 @@ void	am7930_init(struct am7930_softc *, int);
  * audio(9) MI callbacks from upper-level audio layer.
  */
 
-struct audio_device;
-struct audio_encoding;
-struct audio_params;
-
 int	am7930_query_format(void *, audio_format_query_t *);
 int	am7930_set_format(void *, int,
 	    const audio_params_t *, const audio_params_t *,
@@ -97,5 +95,3 @@ int	am7930_set_port(void *, mixer_ctrl_t *);
 int	am7930_get_port(void *, mixer_ctrl_t *);
 int	am7930_query_devinfo(void *, mixer_devinfo_t *);
 void	am7930_get_locks(void *, kmutex_t **, kmutex_t **);
-void	am7930_hwintr(void *);
-void	am7930_swintr(void *);
