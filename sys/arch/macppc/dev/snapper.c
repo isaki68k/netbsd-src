@@ -158,18 +158,17 @@ snapper_volume(audio_filter_arg_t *arg)
 	struct snapper_softc *sc;
 	const aint_t *src;
 	aint_t *dst;
+	u_int sample_count;
 	u_int i;
 
 	sc = arg->context;
 	src = arg->src;
 	dst = arg->dst;
-	for (i = 0; i < arg->count; i++) {
+	sample_count = arg->count * arg->srcfmt->channels;
+	for (i = 0; i < sample_count; i++) {
 		aint2_t l = (aint2_t)(*src++);
-		aint2_t r = (aint2_t)(*src++);
 		l = l * sc->sc_swvol_l / 255;
-		r = r * sc->sc_swvol_r / 255;
 		*dst++ = (aint_t)l;
-		*dst++ = (aint_t)r;
 	}
 }
 
