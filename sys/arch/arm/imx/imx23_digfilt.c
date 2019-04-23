@@ -457,6 +457,9 @@ digfilt_start_output(void *priv, void *start, int bs, void (*intr)(void*), void 
 static int
 digfilt_halt_output(void *priv)
 {
+	struct digfilt_softc *sc = priv;
+
+	sc->sc_cmd_index = 0;
 	return 0;
 }
 
