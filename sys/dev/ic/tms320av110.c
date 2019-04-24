@@ -162,8 +162,10 @@ tms320av110_intr(void *p)
 	intlist = tav_read_short(sc->sc_iot, sc->sc_ioh, TAV_INTR)
 	    /* & tav_read_short(sc->sc_iot, sc->sc_ioh, TAV_INTR_EN)*/;
 
-	if (!intlist)
+	if (!intlist) {
+		mutex_spin_exit(&sc->sc_intr_lock);
 		return 0;
+	}
 
 	/* ack now, so that we don't miss later interrupts */
 	if (sc->sc_intack)
