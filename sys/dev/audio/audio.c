@@ -4799,7 +4799,8 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 				return EINVAL;
 			}
 			/* Recalculation */
-			mixer->frames_per_block = rounded * NBBY /
+			blksize = rounded;
+			mixer->frames_per_block = blksize * NBBY /
 			    (mixer->hwbuf.fmt.stride *
 			     mixer->hwbuf.fmt.channels);
 		}
@@ -4814,12 +4815,26 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 		rounded = sc->hw_if->round_buffersize(sc->hw_hdl, mode,
 		    bufsize);
 		TRACE(2, "round_buffersize %zd -> %zd", bufsize, rounded);
-		if (rounded != bufsize) {
-			/* XXX what should I do? */
+		if (rounded < bufsize) {
+			/* buffersize needs NBLKHW blocks at least. */
 			device_printf(sc->sc_dev,
-			    "buffer size not configured %zu -> %zu\n",
-			    bufsize, rounded);
+			    "buffersize too small: buffersize=%zd blksize=%d\n",
+			    rounded, blksize);
 			return EINVAL;
+		}
+		if (rounded % blksize != 0) {
+			/* buffersize/blksize constraint mismatch? */
+			device_printf(sc->sc_dev,
+			    "buffersize must be multiple of blksize: "
+			    "buffersize=%zu blksize=%d\n",
+			    rounded, blksize);
+			return EINVAL;
+		}
+		if (rounded != bufsize) {
+			/* Recalcuration */
+			bufsize = rounded;
+			mixer->hwblks = bufsize / blksize;
+			capacity = mixer->frames_per_block * mixer->hwblks;
 		}
 	}
 	TRACE(2, "buffersize for %s = %zu",
