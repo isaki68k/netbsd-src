@@ -46,7 +46,6 @@ __KERNEL_RCSID(0, "$NetBSD: auconv.c,v 1.37 2018/09/03 16:29:30 riastradh Exp $"
 #include <sys/systm.h>
 #include <dev/audio_if.h>
 #include <dev/auconv.h>
-#include <dev/mulaw.h>
 #include <machine/limits.h>
 #ifndef _KERNEL
 #include <stddef.h>
