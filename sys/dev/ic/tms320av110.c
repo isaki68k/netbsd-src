@@ -89,6 +89,10 @@ const struct audio_hw_if tav_audio_if = {
 	.get_locks		= tav_get_locks,
 };
 
+/*
+ * XXX: The frequency might depend on the specific board.
+ * should be handled by the backend.
+ */
 #define TAV_FORMAT(prio, enc, prec) \
 	{ \
 		.priority	= (prio), \
@@ -343,11 +347,6 @@ tav_set_format(void *hdl, int setmode,
 
 	KASSERT((setmode & AUMODE_PLAY));
 	KASSERT(p->encoding == AUDIO_ENCODING_SLINEAR_BE);
-
-	/*
-	 * XXX: Frequency might depend on the specific board.
-	 * should be handled by the backend.
-	 */
 
 	bus_space_write_1(iot, ioh, TAV_STR_SEL, TAV_STR_SEL_AUDIO_BYPASS);
 
