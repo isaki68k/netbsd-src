@@ -912,12 +912,6 @@ thunk_audio_close(int fd)
 }
 
 int
-thunk_audio_drain(int fd)
-{
-	return ioctl(fd, AUDIO_DRAIN, 0);
-}
-
-int
 thunk_audio_config(int fd, const thunk_audio_config_t *pconf,
     const thunk_audio_config_t *rconf)
 {

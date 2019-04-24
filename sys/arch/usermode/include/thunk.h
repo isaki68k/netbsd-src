@@ -185,7 +185,6 @@ typedef struct {
 
 int	thunk_audio_open(const char *);
 int	thunk_audio_close(int);
-int	thunk_audio_drain(int);
 int	thunk_audio_config(int, const thunk_audio_config_t *,
 			   const thunk_audio_config_t *);
 int	thunk_audio_pollout(int);
