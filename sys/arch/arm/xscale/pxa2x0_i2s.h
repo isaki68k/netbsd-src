@@ -59,11 +59,10 @@ void	pxa2x0_i2s_open(struct pxa2x0_i2s_softc *);
 void	pxa2x0_i2s_close(struct pxa2x0_i2s_softc *);
 void	pxa2x0_i2s_write(struct pxa2x0_i2s_softc *, uint32_t);
 
-void	pxa2x0_i2s_setspeed(struct pxa2x0_i2s_softc *, u_int *);
+void	pxa2x0_i2s_setspeed(struct pxa2x0_i2s_softc *, u_int);
 
 void *	pxa2x0_i2s_allocm(void *, int, size_t);
 void	pxa2x0_i2s_freem(void  *, void *, size_t);
-paddr_t	pxa2x0_i2s_mappage(void *, void *, off_t, int);
 int	pxa2x0_i2s_round_blocksize(void *, int, int, const struct audio_params *);
 size_t	pxa2x0_i2s_round_buffersize(void *, int, size_t);
 int	pxa2x0_i2s_halt_output(void *);
