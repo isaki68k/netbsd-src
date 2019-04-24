@@ -53,7 +53,6 @@ __KERNEL_RCSID(0, "$NetBSD: tms320av110.c,v 1.25 2019/03/16 12:09:57 isaki Exp $
 
 #include <sys/bus.h>
 
-int tav_open(void *, int);
 void tav_close(void *);
 int tav_query_format(void *, audio_format_query_t *);
 int tav_set_format(void *, int,
@@ -73,7 +72,6 @@ int tav_get_props(void *);
 void tav_get_locks(void *, kmutex_t **, kmutex_t **);
 
 const struct audio_hw_if tav_audio_if = {
-	.open			= tav_open,
 	.close			= tav_close,
 	.query_format		= tav_query_format,
 	.set_format		= tav_set_format,
@@ -146,6 +144,8 @@ tms320av110_attach_mi(struct tav_softc *sc)
 	tav_write_byte(iot, ioh, TAV_SYNC_ECM, TAV_ECM_REPEAT);
 	tav_write_byte(iot, ioh, TAV_CRC_ECM, TAV_ECM_REPEAT);
 
+	sc->sc_active = 0;
+
 	audio_attach_mi(&tav_audio_if, sc, sc->sc_dev);
 }
 
@@ -178,16 +178,6 @@ tms320av110_intr(void *p)
 	mutex_spin_exit(&sc->sc_intr_lock);
 
 	return 1;
-}
-
-int
-tav_open(void *hdl, int flags)
-{
-	struct tav_softc *sc;
-
-	sc = hdl;
-	sc->sc_active = 0;
-	return 0;
 }
 
 void
