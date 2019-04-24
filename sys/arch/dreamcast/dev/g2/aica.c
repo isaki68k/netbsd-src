@@ -40,8 +40,6 @@ __KERNEL_RCSID(0, "$NetBSD: aica.c,v 1.25 2019/03/16 12:09:56 isaki Exp $");
 #include <sys/bus.h>
 
 #include <dev/audio_if.h>
-#include <dev/mulaw.h>
-#include <dev/auconv.h>
 
 #include <machine/sysasicvar.h>
 
@@ -65,7 +63,6 @@ struct aica_softc {
 
 	/* audio property */
 	int			sc_open;
-	int			sc_encodings;
 	int			sc_precision;
 	int			sc_channels;
 	int			sc_rate;
@@ -85,41 +82,19 @@ struct aica_softc {
 	int			sc_nextfill;
 };
 
-const struct {
-	const char *name;
-	int	encoding;
-	int	precision;
-} aica_encodings[] = {
-	{AudioEadpcm,		AUDIO_ENCODING_ADPCM,		4},
-	{AudioEslinear,		AUDIO_ENCODING_SLINEAR,		8},
-	{AudioEulinear,		AUDIO_ENCODING_ULINEAR,		8},
-	{AudioEmulaw,		AUDIO_ENCODING_ULAW,		8},
-	{AudioEalaw,		AUDIO_ENCODING_ALAW,		8},
-	{AudioEslinear_be,	AUDIO_ENCODING_SLINEAR_BE,	16},
-	{AudioEslinear_le,	AUDIO_ENCODING_SLINEAR_LE,	16},
-	{AudioEulinear_be,	AUDIO_ENCODING_ULINEAR_BE,	16},
-	{AudioEulinear_le,	AUDIO_ENCODING_ULINEAR_LE,	16},
-};
-
-#define AICA_NFORMATS	5
-#define AICA_FORMAT(enc, prec, ch, chmask) \
-	{ \
-		.mode		= AUMODE_PLAY, \
-		.encoding	= (enc), \
-		.validbits	= (prec), \
-		.precision	= (prec), \
-		.channels	= (ch), \
-		.channel_mask	= (chmask), \
-		.frequency_type	= 0, \
-		.frequency	= { 1, 65536 }, \
+static const struct audio_format aica_formats[] = {
+	{
+		.mode		= AUMODE_PLAY,
+		.encoding	= AUDIO_ENCODING_SLINEAR_LE,
+		.validbits	= 16,
+		.precision	= 16,
+		.channels	= 2,
+		.channel_mask	= AUFMT_STEREO,
+		.frequency_type	= 0,
+		.frequency	= { 1, 65536 },
 	}
-static const struct audio_format aica_formats[AICA_NFORMATS] = {
-	AICA_FORMAT(AUDIO_ENCODING_ADPCM,       4, 1, AUFMT_MONAURAL),
-	AICA_FORMAT(AUDIO_ENCODING_SLINEAR_LE, 16, 1, AUFMT_MONAURAL),
-	AICA_FORMAT(AUDIO_ENCODING_SLINEAR_LE, 16, 2, AUFMT_STEREO),
-	AICA_FORMAT(AUDIO_ENCODING_SLINEAR_LE,  8, 1, AUFMT_MONAURAL),
-	AICA_FORMAT(AUDIO_ENCODING_SLINEAR_LE,  8, 2, AUFMT_STEREO),
 };
+#define AICA_NFORMATS __arraycount(aica_formats)
 
 int aica_match(device_t, cfdata_t, void *);
 void aica_attach(device_t, device_t, void *);
@@ -139,7 +114,6 @@ void aica_enable(struct aica_softc *);
 void aica_disable(struct aica_softc *);
 void aica_memwrite(struct aica_softc *, bus_size_t, uint32_t *, int);
 void aica_ch2p16write(struct aica_softc *, bus_size_t, uint16_t *, int);
-void aica_ch2p8write(struct aica_softc *, bus_size_t, uint8_t *, int);
 void aica_command(struct aica_softc *, uint32_t);
 void aica_sendparam(struct aica_softc *, uint32_t, int, int);
 void aica_play(struct aica_softc *, int, int, int, int);
@@ -151,9 +125,10 @@ int aica_intr(void *);
 /* for audio */
 int aica_open(void *, int);
 void aica_close(void *);
-int aica_query_encoding(void *, struct audio_encoding *);
-int aica_set_params(void *, int, int, audio_params_t *,
-    audio_params_t *, stream_filter_list_t *, stream_filter_list_t *);
+int aica_query_format(void *, audio_format_query_t *);
+int aica_set_format(void *, int,
+    const audio_params_t *, const audio_params_t *,
+    audio_filter_reg_t *, audio_filter_reg_t *);
 int aica_round_blocksize(void *, int, int, const audio_params_t *);
 size_t aica_round_buffersize(void *, int, size_t);
 int aica_trigger_output(void *, void *, void *, int, void (*)(void *), void *,
@@ -173,8 +148,8 @@ void aica_get_locks(void *, kmutex_t **, kmutex_t **);
 const struct audio_hw_if aica_hw_if = {
 	.open			= aica_open,
 	.close			= aica_close,
-	.query_encoding		= aica_query_encoding,
-	.set_params		= aica_set_params,
+	.query_format		= aica_query_format,
+	.set_format		= aica_set_format,
 	.round_blocksize	= aica_round_blocksize,
 	.halt_output		= aica_halt_output,
 	.halt_input		= aica_halt_input,
@@ -351,71 +326,6 @@ aica_ch2p16write(struct aica_softc *sc, bus_size_t offset, uint16_t *src,
 	}
 }
 
-void
-aica_ch2p8write(struct aica_softc *sc, bus_size_t offset, uint8_t *src,
-    int len)
-{
-	uint32_t buf[8];
-	uint8_t *p;
-	int i;
-
-	KASSERT((offset & 3) == 0);
-	while (len >= 32) {
-		p = (uint8_t *)buf;
-
-		*p++ = *src++; src++;
-		*p++ = *src++; src++;
-		*p++ = *src++; src++;
-		*p++ = *src++; src++;
-		*p++ = *src++; src++;
-		*p++ = *src++; src++;
-		*p++ = *src++; src++;
-		*p++ = *src++; src++;
-		*p++ = *src++; src++;
-		*p++ = *src++; src++;
-		*p++ = *src++; src++;
-		*p++ = *src++; src++;
-		*p++ = *src++; src++;
-		*p++ = *src++; src++;
-		*p++ = *src++; src++;
-		*p++ = *src++; src++;
-		*p++ = *src++; src++;
-		*p++ = *src++; src++;
-		*p++ = *src++; src++;
-		*p++ = *src++; src++;
-		*p++ = *src++; src++;
-		*p++ = *src++; src++;
-		*p++ = *src++; src++;
-		*p++ = *src++; src++;
-		*p++ = *src++; src++;
-		*p++ = *src++; src++;
-		*p++ = *src++; src++;
-		*p++ = *src++; src++;
-		*p++ = *src++; src++;
-		*p++ = *src++; src++;
-		*p++ = *src++; src++;
-		*p++ = *src++; src++;
-
-		aica_g2fifo_wait();
-		bus_space_write_region_4(sc->sc_memt, sc->sc_aica_memh,
-		    offset, buf, 32 / 4);
-
-		offset += 32;
-		len -= 32;
-	}
-
-	if (len) {
-		p = (uint8_t *)buf;
-		for (i = 0; i < len; i++) {
-			*p++ = *src++; src++;
-		}
-
-		aica_g2fifo_wait();
-		bus_space_write_region_4(sc->sc_memt, sc->sc_aica_memh,
-		    offset, buf, len / 4);
-	}
-}
-
 int
 aica_open(void *addr, int flags)
 {
@@ -442,83 +352,42 @@ aica_close(void *addr)
 }
 
 int
-aica_query_encoding(void *addr, struct audio_encoding *fp)
+aica_query_format(void *addr, audio_format_query_t *afp)
 {
-	if (fp->index >= sizeof(aica_encodings) / sizeof(aica_encodings[0]))
-		return EINVAL;
 
-	strcpy(fp->name, aica_encodings[fp->index].name);
-	fp->encoding = aica_encodings[fp->index].encoding;
-	fp->precision = aica_encodings[fp->index].precision;
-	fp->flags = 0;
-
-	return 0;
+	return audio_query_format(aica_formats, AICA_NFORMATS, afp);
 }
 
 int
-aica_set_params(void *addr, int setmode, int usemode,
-    audio_params_t *play, audio_params_t *rec,
-    stream_filter_list_t *pfil, stream_filter_list_t *rfil)
+aica_set_format(void *addr, int setmode,
+    const audio_params_t *play, const audio_params_t *rec,
+    audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
 {
 	struct aica_softc *sc;
-	const audio_params_t *hw;
-	int i;
 
-	i = auconv_set_converter(aica_formats, AICA_NFORMATS,
-				 AUMODE_PLAY, play, false, pfil);
-	if (i < 0)
-		return EINVAL;
-	hw = pfil->req_size > 0 ? &pfil->filters[0].param : play;
 	sc = addr;
-	sc->sc_precision = hw->precision;
-	sc->sc_channels = hw->channels;
-	sc->sc_rate = hw->sample_rate;
-	sc->sc_encodings = hw->encoding;
+	sc->sc_precision = play->precision;
+	sc->sc_channels = play->channels;
+	sc->sc_rate = play->sample_rate;
 	return 0;
 }
 
 int
 aica_round_blocksize(void *addr, int blk, int mode, const audio_params_t *param)
 {
-#if 0	/* XXX this has not worked since kent-audio1 merge? */
-	struct aica_softc *sc;
 
-	sc = addr;
-	switch (sc->sc_precision) {
-	case 4:
-		if (sc->sc_channels == 1)
-			return AICA_DMABUF_SIZE / 4;
-		else
-			return AICA_DMABUF_SIZE / 2;
-		break;
-	case 8:
-		if (sc->sc_channels == 1)
-			return AICA_DMABUF_SIZE / 2;
-		else
-			return AICA_DMABUF_SIZE;
-		break;
-	case 16:
-		if (sc->sc_channels == 1)
-			return AICA_DMABUF_SIZE;
-		else
-			return AICA_DMABUF_SIZE * 2;
-		break;
-	default:
-		break;
-	}
-
-#endif
-	return AICA_DMABUF_SIZE / 4;
+	return blk & ~0x1f;
 }
 
 size_t
 aica_round_buffersize(void *addr, int dir, size_t bufsize)
 {
+	struct aica_softc *sc;
 
-	if (dir == AUMODE_PLAY)
-		return 65536;
-
-	return 512;	/* XXX: AUMINBUF */
+	sc = addr;
+	if (bufsize > 65536 * sc->sc_channels)
+		return 65536 * sc->sc_channels;
+	return bufsize;
 }
 
 void
@@ -566,19 +435,13 @@ aica_fillbuffer(struct aica_softc *sc)
 {
 
 	if (sc->sc_channels == 2) {
-		if (sc->sc_precision == 16) {
-			aica_ch2p16write(sc,
-			    AICA_DMABUF_LEFT + sc->sc_nextfill,
-			    (uint16_t *)sc->sc_buffer + 0, sc->sc_blksize / 2);
-			aica_ch2p16write(sc,
-			    AICA_DMABUF_RIGHT + sc->sc_nextfill,
-			    (uint16_t *)sc->sc_buffer + 1, sc->sc_blksize / 2);
-		} else if (sc->sc_precision == 8) {
-			aica_ch2p8write(sc, AICA_DMABUF_LEFT + sc->sc_nextfill,
-			    (uint8_t *)sc->sc_buffer + 0, sc->sc_blksize / 2);
-			aica_ch2p8write(sc, AICA_DMABUF_RIGHT + sc->sc_nextfill,
-			    (uint8_t *)sc->sc_buffer + 1, sc->sc_blksize / 2);
-		}
+		KASSERT(sc->sc_precision == 16);
+		aica_ch2p16write(sc,
+		    AICA_DMABUF_LEFT + sc->sc_nextfill,
+		    (uint16_t *)sc->sc_buffer + 0, sc->sc_blksize / 2);
+		aica_ch2p16write(sc,
+		    AICA_DMABUF_RIGHT + sc->sc_nextfill,
+		    (uint16_t *)sc->sc_buffer + 1, sc->sc_blksize / 2);
 	} else {
 		aica_memwrite(sc, AICA_DMABUF_MONO + sc->sc_nextfill,
 		    sc->sc_buffer, sc->sc_blksize);
