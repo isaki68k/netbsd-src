@@ -50,8 +50,6 @@ struct aaci_softc {
 
 	uint32_t		*sc_pcur;
 	int			sc_pblkresid;
-
-	struct audio_encoding_set *sc_encodings;
 };
 
 void	aaci_attach(struct aaci_softc *);
