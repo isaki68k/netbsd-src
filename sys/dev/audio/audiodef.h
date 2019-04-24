@@ -220,7 +220,6 @@ struct audio_trackmixer {
 	audio_ring_t	codecbuf;	/* also used for wide->int conversion */
 
 	audio_ring_t	hwbuf;		/* HW I/O buf */
-	int		hwblks;		/* number of blocks in hwbuf */
 
 	void		*sih;		/* softint cookie */
 

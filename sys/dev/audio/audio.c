@@ -4759,6 +4759,7 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 	int blksize;
 	int capacity;
 	size_t bufsize;
+	int hwblks;
 	int blkms;
 	int error;
 
@@ -4779,8 +4780,8 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 	mixer->volume = 256;
 	mixer->blktime_d = 1000;
 	mixer->blktime_n = audio_mixer_calc_blktime(sc, mixer);
-	mixer->hwblks = NBLKHW;
 	sc->sc_blk_ms = mixer->blktime_n;
+	hwblks = NBLKHW;
 
 	mixer->frames_per_block = frame_per_block(mixer, &mixer->hwbuf.fmt);
 	blksize = frametobyte(&mixer->hwbuf.fmt, mixer->frames_per_block);
@@ -4808,7 +4809,7 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 	mixer->blktime_n = mixer->frames_per_block;
 	mixer->blktime_d = mixer->hwbuf.fmt.sample_rate;
 
-	capacity = mixer->frames_per_block * mixer->hwblks;
+	capacity = mixer->frames_per_block * hwblks;
 	bufsize = frametobyte(&mixer->hwbuf.fmt, capacity);
 	if (sc->hw_if->round_buffersize) {
 		size_t rounded;
@@ -4833,8 +4834,8 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 		if (rounded != bufsize) {
 			/* Recalcuration */
 			bufsize = rounded;
-			mixer->hwblks = bufsize / blksize;
-			capacity = mixer->frames_per_block * mixer->hwblks;
+			hwblks = bufsize / blksize;
+			capacity = mixer->frames_per_block * hwblks;
 		}
 	}
 	TRACE(2, "buffersize for %s = %zu",
