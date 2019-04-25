@@ -36,7 +36,7 @@ __KERNEL_RCSID(0, "$NetBSD: emuxki.c,v 1.67 2019/03/16 12:09:58 isaki Exp $");
 #include <dev/pci/emuxkireg.h>
 #include <dev/pci/emuxkivar.h>
 
-#define AUDIO_DEBUG 1
+/* #define AUDIO_DEBUG 1 */
 #ifdef AUDIO_DEBUG
 extern int audiodebug;
 #define emudebug audiodebug
