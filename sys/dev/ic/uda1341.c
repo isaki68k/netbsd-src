@@ -133,7 +133,7 @@ uda1341_set_format(void *handle, int setmode,
 {
 	struct uda1341_softc *sc = handle;
 	if (sc->sc_system_clock == UDA1341_CLOCK_NA)
-		panic("uda1341_set_params was called without sc_system_clock set!\n");
+		panic("%s was called without sc_system_clock set!\n", __func__);
 
 	/* Select status register */
 	sc->sc_l3_write(sc, 0, UDA1341_L3_ADDR_DEVICE |
