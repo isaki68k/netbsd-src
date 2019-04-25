@@ -68,7 +68,6 @@ __KERNEL_RCSID(0, "$NetBSD: auixp.c,v 1.45 2019/03/16 12:09:58 isaki Exp $");
 #include <sys/intr.h>
 
 #include <dev/audio_if.h>
-#include <dev/auconv.h>
 
 #include <dev/ic/ac97var.h>
 #include <dev/ic/ac97reg.h>
@@ -121,24 +120,21 @@ struct audio_device auixp_device = {
 /*
  * current AC'97 driver only supports SPDIF outputting channel 3&4 i.e. STEREO
  */
-#define AUIXP_FORMAT(aumode, prec, ch, chmask) \
+#define AUIXP_FORMAT(aumode, ch, chmask) \
 	{ \
 		.mode		= (aumode), \
 		.encoding	= AUDIO_ENCODING_SLINEAR_LE, \
-		.validbits	= (prec), \
-		.precision	= (prec), \
+		.validbits	= 16, \
+		.precision	= 16, \
 		.channels	= (ch), \
 		.channel_mask	= (chmask), \
 		.frequency_type	= 0, \
 		.frequency	= { 7000, 48000 }, \
 	}
 static const struct audio_format auixp_formats[AUIXP_NFORMATS] = {
-	AUIXP_FORMAT(AUMODE_PLAY | AUMODE_RECORD, 16, 2, AUFMT_STEREO),
-	AUIXP_FORMAT(AUMODE_PLAY | AUMODE_RECORD, 32, 2, AUFMT_STEREO),
-	AUIXP_FORMAT(AUMODE_PLAY                , 16, 4, AUFMT_SURROUND4),
-	AUIXP_FORMAT(AUMODE_PLAY                , 32, 4, AUFMT_SURROUND4),
-	AUIXP_FORMAT(AUMODE_PLAY                , 16, 6, AUFMT_DOLBY_5_1),
-	AUIXP_FORMAT(AUMODE_PLAY                , 32, 6, AUFMT_DOLBY_5_1),
+	AUIXP_FORMAT(AUMODE_PLAY | AUMODE_RECORD, 2, AUFMT_STEREO),
+	AUIXP_FORMAT(AUMODE_PLAY                , 4, AUFMT_SURROUND4),
+	AUIXP_FORMAT(AUMODE_PLAY                , 6, AUFMT_DOLBY_5_1),
 };
 
 /* codec detection constant indicating the interrupt flags */
@@ -157,9 +153,9 @@ static int	auixp_detach(device_t, int);
 
 /* audio(9) function prototypes */
 static int	auixp_query_format(void *, audio_format_query_t *);
-static int	auixp_set_params(void *, int, int, audio_params_t *,
-				 audio_params_t *,
-		stream_filter_list_t *, stream_filter_list_t *);
+static int	auixp_set_format(void *, int,
+			const audio_params_t *, const audio_params_t *,
+			audio_filter_reg_t *, audio_filter_reg_t *);
 static int	auixp_commit_settings(void *);
 static int	auixp_round_blocksize(void *, int, int, const audio_params_t *);
 static int	auixp_trigger_output(void *, void *, void *, int,
@@ -228,7 +224,7 @@ static void auixp_dumpreg(void);
 
 static const struct audio_hw_if auixp_hw_if = {
 	.query_format		= auixp_query_format,
-	.set_params		= auixp_set_params,
+	.set_format		= auixp_set_format,
 	.round_blocksize	= auixp_round_blocksize,
 	.commit_settings	= auixp_commit_settings,
 	.halt_output		= auixp_halt_output,
@@ -384,14 +380,13 @@ auixp_commit_settings(void *hdl)
 
 /* set audio properties in desired setting */
 static int
-auixp_set_params(void *hdl, int setmode, int usemode,
-    audio_params_t *play, audio_params_t *rec, stream_filter_list_t *pfil,
-    stream_filter_list_t *rfil)
+auixp_set_format(void *hdl, int setmode,
+    const audio_params_t *play, const audio_params_t *rec,
+    audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
 {
 	struct auixp_codec *co;
 	struct auixp_softc *sc;
-	audio_params_t *params;
-	stream_filter_list_t *fil;
+	const audio_params_t *params;
 	int mode, index;
 
 	/*
@@ -406,27 +401,12 @@ auixp_set_params(void *hdl, int setmode, int usemode,
 		if ((setmode & mode) == 0)
 			continue;
 
-		params = (mode == AUMODE_PLAY) ? play :  rec;
-		fil    = (mode == AUMODE_PLAY) ? pfil : rfil;
+		params = (mode == AUMODE_PLAY) ? play : rec;
 		if (params == NULL)
 			continue;
 
-		/* AD1888 settings ... don't know the IXP limits */
-		if (params->sample_rate < AUIXP_MINRATE)
-			return EINVAL;
-		if (params->sample_rate > AUIXP_MAXRATE)
-			return EINVAL;
-
-		index = auconv_set_converter(sc->sc_formats, AUIXP_NFORMATS,
-					     mode, params, TRUE, fil);
-
-		/* nothing found? */
-		if (index < 0)
-			return EINVAL;
-
-		/* not sure yet as to why i have to change params here */
-		if (fil->req_size > 0)
-			params = &fil->filters[0].param;
+		index = audio_indexof_format(sc->sc_formats, AUIXP_NFORMATS,
+					     mode, params);
 
 		/* if variable speed and we can't set the desired rate, fail */
 		if ((sc->sc_formats[index].frequency_type != 1) &&
