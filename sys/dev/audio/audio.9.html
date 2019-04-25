@@ -471,21 +471,6 @@ typedef struct {
 	     the hardware driver.
 		<span class=a2>It is called at Attach or Closed phase.</span>
 <br>
-<span class=comment>
-いくつかのドライバでは必要もないのに与えられた blocksize の変更を指示するものが
-ある。これらは実際 N8 までは問題はなかったが、AUDIO2 では問題となる。
-特に多いのが以下の2つの誤解(と思われるもの)。
-1つ目は、指示された値を 2^n に切り上げるか切り捨てるなどしたほうが
-アラインメントの観点から幸せだろうというコード。
-呼び出し側(audio layer) には round_blocksize() の戻り値の下位何ビットが
-ゼロだったらどうこうという処理は
-最初から書いてないのでこれは(少なくとも現在ではたぶん)何の意味もない。
-2つ目は OSS Audio がブロックサイズは 2^n であることを要求しているという誤解。
-これそのものが誤解である上に、さらにそもそもここはレイヤーが違う。
-この2つの理由以外で、
-指定の blocksize が設定できないハードウェアがあれば、
-現在の AUDIO2 は対応していないので、その場合は要検討。
-</span>
 </dd>
 
 <dt class=p1>
@@ -663,12 +648,8 @@ No drivers implement this function.
 		<span class=a2>It is called at Attached or Closed phase.</span>
 <br>
 <span class=comment>
-これも round_blocksize 同様、
-無意味に指定値を変更するドライバは AUDIO2 で問題となるかもしれない。
-round_blocksize() のコメント参照。
-ただしこちらは blocksize とは違って (DMA の制約のように)
-実際に設定できない場合があることが分かっているので、
-それに該当してしまったらどうすればいいかという考察はまだしていない。
+buffersize は blocksize の (3以上の) 整数倍である必要がある。
+3以上というところは今の実装での話なので、それをどうするかというのもあるけど。
 </span>
 </dd>
 
