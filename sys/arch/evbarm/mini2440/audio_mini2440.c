@@ -266,7 +266,6 @@ uda_ssio_set_format(void *handle, int setmode,
 	int retval;
 
 	DPRINTF(("%s: setmode: %d\n", __func__, setmode));
-	DPRINTF(("%s: usemode: %d\n", __func__, usemode));
 
 	/* *play and *rec are the identical because !AUDIO_PROP_INDEPENDENT. */
 
