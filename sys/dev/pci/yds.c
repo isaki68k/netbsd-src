@@ -792,6 +792,7 @@ yds_attach(device_t parent, device_t self, void *aux)
 	revision = PCI_REVISION(pa->pa_class);
 
 	pci_aprint_devinfo(pa, NULL);
+printf("dmat=%p\n", (char*)pa->pa_dmat);
 
 	/* Map register to memory */
 	if (pci_mapreg_map(pa, YDS_PCI_MBA, PCI_MAPREG_TYPE_MEM, 0,

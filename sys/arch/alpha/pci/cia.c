@@ -393,6 +393,8 @@ ciaattach(device_t parent, device_t self, void *aux)
 	pba.pba_memt = &ccp->cc_memt;
 	pba.pba_dmat =
 	    alphabus_dma_get_tag(&ccp->cc_dmat_direct, ALPHA_BUS_PCI);
+printf("cia dmat _wbase=%p\n", (char *)pba.pba_dmat->_wbase);
+
 	pba.pba_dmat64 = NULL;
 	pba.pba_pc = &ccp->cc_pc;
 	pba.pba_bus = 0;
