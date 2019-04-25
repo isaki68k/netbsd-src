@@ -30,7 +30,9 @@ struct dmamem {
 };
 
 #define	KERNADDR(ptr)		((void *)((ptr)->kaddr))
-#define	DMASEGADDR(ptr, segno)	((ptr)->segs[segno].ds_addr)
+// (ptr)->segs[] は CPU 側の MMU で変換された CPU 側の PA
+// (ptr)->map->dm_segs[] は PCI 側の MMU で変換された PCI Device 側の PA
+#define	DMASEGADDR(ptr, segno)	((ptr)->map->dm_segs[segno].ds_addr)
 #define	DMAADDR(ptr)		DMASEGADDR(ptr, 0)
 #define DMASIZE(ptr)		((ptr)->size)
 
