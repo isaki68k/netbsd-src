@@ -384,7 +384,7 @@ static int	hdafg_trigger_input(void *, void *, void *, int,
 static void	hdafg_get_locks(void *, kmutex_t **, kmutex_t **);
 
 static const struct audio_hw_if hdafg_hw_if = {
-	.query_format	= hdafg_query_format,
+	.query_format		= hdafg_query_format,
 	.set_params		= hdafg_set_params,
 	.round_blocksize	= hdafg_round_blocksize,
 	.commit_settings	= hdafg_commit_settings,
