@@ -1,5 +1,9 @@
 /*	$NetBSD: emuxkivar.h,v 1.13 2011/11/23 23:07:35 jmcneill Exp $	*/
 
+#if 1
+#include "emuxkisv.h"
+#else
+
 /*-
  * Copyright (c) 2001 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -262,3 +266,5 @@ struct emuxki_softc {
 };
 
 #endif				/* !_DEV_PCI_EMU10K1VAR_H_ */
+
+#endif

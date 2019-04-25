@@ -1,5 +1,9 @@
 /*	$NetBSD: emuxki.c,v 1.67 2019/03/16 12:09:58 isaki Exp $	*/
 
+#if 1
+#include "emuxkisv.c"
+#else
+
 /*-
  * Copyright (c) 2001, 2007 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -2548,3 +2552,4 @@ emuxki_get_locks(void *arg, kmutex_t **intr, kmutex_t **proc)
 	*intr = &sc->sc_intr_lock;
 	*proc = &sc->sc_lock;
 }
+#endif
