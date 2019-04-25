@@ -275,6 +275,8 @@ int	audioprint(void *, const char *);
 
 extern int audio_query_format(const struct audio_format *, int,
 	audio_format_query_t *);
+extern int audio_indexof_format(const struct audio_format *, int, int,
+	const audio_params_t *);
 extern const char *audio_encoding_name(int);
 
 /* Device identity flags */

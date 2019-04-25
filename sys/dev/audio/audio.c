@@ -7515,6 +7515,59 @@ audio_query_format(const struct audio_format *format, int nformats,
 }
 
 /*
+ * Get the index of array formats[] that matches param and mode.  mode is
+ * either of AUMODE_PLAY or AUMODE_RECORD.
+ * This function is provided for the hardware driver's set_format() to
+ * find index matches with param from audio_format_t array.  This will be
+ * alternate for auconv_set_converter().
+ *
+ * It returns the matched index and never fails.  Because param passed to
+ * set_format() is selected from query_format().
+ */
+int
+audio_indexof_format(const struct audio_format *formats, int nformats,
+	int mode, const audio_params_t *param)
+{
+	const struct audio_format *f;
+	int index;
+	int j;
+
+	for (index = 0; index < nformats; index++) {
+		f = &formats[index];
+
+		if (!AUFMT_IS_VALID(f))
+			continue;
+		if ((f->mode & mode) == 0)
+			continue;
+		if (f->encoding != param->encoding)
+			continue;
+		if (f->validbits != param->precision)
+			continue;
+		if (f->channels != param->channels)
+			continue;
+
+		if (f->frequency_type == 0) {
+			if (param->sample_rate < f->frequency[0] ||
+			    param->sample_rate > f->frequency[1])
+				continue;
+		} else {
+			for (j = 0; j < f->frequency_type; j++) {
+				if (param->sample_rate == f->frequency[j])
+					break;
+			}
+			if (j == f->frequency_type)
+				continue;
+		}
+
+		/* Then, matched */
+		return index;
+	}
+
+	/* Not matched.  This should not be happened. */
+	panic("%s: cannot find matched format\n", __func__);
+}
+
+/*
  * Get or set software master volume: 0..256
  * XXX It's for debug.
  */
