@@ -118,6 +118,28 @@ struct audio_device auixp_device = {
 	"auixp"
 };
 
+/*
+ * current AC'97 driver only supports SPDIF outputting channel 3&4 i.e. STEREO
+ */
+#define AUIXP_FORMAT(aumode, prec, ch, chmask) \
+	{ \
+		.mode		= (aumode), \
+		.encoding	= AUDIO_ENCODING_SLINEAR_LE, \
+		.validbits	= (prec), \
+		.precision	= (prec), \
+		.channels	= (ch), \
+		.channel_mask	= (chmask), \
+		.frequency_type	= 0, \
+		.frequency	= { 7000, 48000 }, \
+	}
+static const struct audio_format auixp_formats[AUIXP_NFORMATS] = {
+	AUIXP_FORMAT(AUMODE_PLAY | AUMODE_RECORD, 16, 2, AUFMT_STEREO),
+	AUIXP_FORMAT(AUMODE_PLAY | AUMODE_RECORD, 32, 2, AUFMT_STEREO),
+	AUIXP_FORMAT(AUMODE_PLAY                , 16, 4, AUFMT_SURROUND4),
+	AUIXP_FORMAT(AUMODE_PLAY                , 32, 4, AUFMT_SURROUND4),
+	AUIXP_FORMAT(AUMODE_PLAY                , 16, 6, AUFMT_DOLBY_5_1),
+	AUIXP_FORMAT(AUMODE_PLAY                , 32, 6, AUFMT_DOLBY_5_1),
+};
 
 /* codec detection constant indicating the interrupt flags */
 #define ALL_CODECS_NOT_READY \
