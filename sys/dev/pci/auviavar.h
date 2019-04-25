@@ -71,10 +71,8 @@ struct auvia_softc {
 
 	struct auvia_softc_chan sc_play, sc_record;
 
-#define AUVIA_NFORMATS	8
+#define AUVIA_NFORMATS	4
 	struct audio_format sc_formats[AUVIA_NFORMATS];
-	struct audio_encoding_set *sc_encodings;
-	struct audio_encoding_set *sc_spdif_encodings;
 };
 
 #endif /* !_DEV_PCI_AUVIAVAR_H_ */
