@@ -88,8 +88,10 @@ struct emuxki_softc {
 	device_t	sc_dev;
 	audio_device_t	sc_audv;
 	enum {
-		EMUXKI_SBLIVE = 0x00, EMUXKI_AUDIGY = 0x01,
-		EMUXKI_AUDIGY2 = 0x02, EMUXKI_LIVE_5_1 = 0x04,
+		EMUXKI_SBLIVE = 0x00,
+		EMUXKI_AUDIGY = 0x01,
+		EMUXKI_AUDIGY2 = 0x02,
+		EMUXKI_LIVE_5_1 = 0x04,
 		EMUXKI_APS = 0x08
 	} sc_type;
 
@@ -134,7 +136,6 @@ struct emuxki_softc {
 	struct ac97_host_if	hostif;
 	struct ac97_codec_if	*codecif;
 	device_t		sc_audev;
-
 };
 
 /* blackmagic */
