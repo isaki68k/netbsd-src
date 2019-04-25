@@ -130,7 +130,6 @@ __KERNEL_RCSID(0, "$NetBSD: auich.c,v 1.154 2019/04/18 13:01:38 isaki Exp $");
 #include <dev/pci/auichreg.h>
 
 #include <dev/audio_if.h>
-#include <dev/auconv.h>
 
 #include <dev/ic/ac97reg.h>
 #include <dev/ic/ac97var.h>
@@ -1012,23 +1011,20 @@ auich_set_format(void *v, int setmode,
 			continue;
 
 		p = mode == AUMODE_PLAY ? play : rec;
-		if (p == NULL)
-			continue;
 
 		if (sc->sc_codectype == AC97_CODEC_TYPE_AUDIO) {
 			if (!sc->sc_spdif)
-				index = auconv_set_converter(
+				index = audio_indexof_format(
 				    sc->sc_audio_formats, AUICH_AUDIO_NFORMATS,
-				    mode, p, false, NULL);
+				    mode, p);
 			else
-				index = auconv_set_converter(
+				index = audio_indexof_format(
 				    auich_spdif_formats, AUICH_SPDIF_NFORMATS,
-				    mode, p, false, NULL);
+				    mode, p);
 		} else {
-			index = auconv_set_converter(sc->sc_modem_formats,
-			    AUICH_MODEM_NFORMATS, mode, p, false, NULL);
+			index = audio_indexof_format(sc->sc_modem_formats,
+			    AUICH_MODEM_NFORMATS, mode, p);
 		}
-		KASSERT(index >= 0);
 
 		/* p represents HW encoding */
 		if (sc->sc_codectype == AC97_CODEC_TYPE_AUDIO) {
