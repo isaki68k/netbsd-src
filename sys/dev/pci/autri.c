@@ -171,28 +171,23 @@ static const struct midi_hw_if autri_midi_hw_if = {
 };
 #endif
 
-#define AUTRI_NFORMATS	8
-#define AUTRI_FORMAT(enc, prec, ch, chmask) \
-	{ \
-		.mode		= AUMODE_PLAY | AUMODE_RECORD, \
-		.encoding	= (enc), \
-		.validbits	= (prec), \
-		.precision	= (prec), \
-		.channels	= (ch), \
-		.channel_mask	= (chmask), \
-		.frequency_type	= 0, \
-		.frequency	= { 4000, 48000 }, \
-	}
-static const struct audio_format autri_formats[AUTRI_NFORMATS] = {
-	AUTRI_FORMAT(AUDIO_ENCODING_SLINEAR_LE, 16, 2, AUFMT_STEREO),
-	AUTRI_FORMAT(AUDIO_ENCODING_SLINEAR_LE, 16, 1, AUFMT_MONAURAL),
-	AUTRI_FORMAT(AUDIO_ENCODING_ULINEAR_LE, 16, 2, AUFMT_STEREO),
-	AUTRI_FORMAT(AUDIO_ENCODING_ULINEAR_LE, 16, 1, AUFMT_MONAURAL),
-	AUTRI_FORMAT(AUDIO_ENCODING_ULINEAR_LE,  8, 2, AUFMT_STEREO),
-	AUTRI_FORMAT(AUDIO_ENCODING_ULINEAR_LE,  8, 1, AUFMT_MONAURAL),
-	AUTRI_FORMAT(AUDIO_ENCODING_SLINEAR_LE,  8, 2, AUFMT_STEREO),
-	AUTRI_FORMAT(AUDIO_ENCODING_SLINEAR_LE,  8, 1, AUFMT_MONAURAL),
+/*
+ * The hardware actually supports frequencies other than 48kHz.  But
+ * 48kHz is the basis frequency of this hardware and it's enough.
+ */
+static const struct audio_format autri_formats[] = {
+	{
+		.mode		= AUMODE_PLAY | AUMODE_RECORD,
+		.encoding	= AUDIO_ENCODING_SLINEAR_LE,
+		.validbits	= 16,
+		.precision	= 16,
+		.channels	= 2,
+		.channel_mask	= AUFMT_STEREO,
+		.frequency_type	= 1,
+		.frequency	= { 48000 },
+	},
 };
+#define AUTRI_NFORMATS __arraycount(autri_formats)
 
 /*
  * register set/clear bit
