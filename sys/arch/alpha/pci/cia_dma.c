@@ -70,8 +70,11 @@ void	cia_bus_dmamap_unload_sgmap(bus_dma_tag_t, bus_dmamap_t);
 /*
  * Direct-mapped window: 1G at 1G
  */
-#define	CIA_DIRECT_MAPPED_BASE	(1*1024*1024*1024)
-#define	CIA_DIRECT_MAPPED_SIZE	(1*1024*1024*1024)
+//#define	CIA_DIRECT_MAPPED_BASE	(1*1024*1024*1024)
+//#define	CIA_DIRECT_MAPPED_SIZE	(1*1024*1024*1024)
+// 512M at 512M
+#define	CIA_DIRECT_MAPPED_BASE	(512*1024*1024)
+#define	CIA_DIRECT_MAPPED_SIZE	(512*1024*1024)
 
 /*
  * SGMAP window: 8M at 8M
@@ -182,6 +185,15 @@ cia_dma_init(struct cia_config *ccp)
 	if ((tbase & CIA_PCI_TnBASE_MASK) != tbase)
 		panic("cia_dma_init: bad page table address");
 	REGVAL(CIA_PCI_T0BASE) = tbase;
+	alpha_mb();
+
+	/* XXX やってみよう */
+	REGVAL(CIA_PCI_W1MASK) = CIA_PCI_WnMASK_512M;
+	alpha_mb();
+	REGVAL(CIA_PCI_T1BASE) = 0;
+	alpha_mb();
+	REGVAL(CIA_PCI_W1BASE) = CIA_DIRECT_MAPPED_BASE |
+		CIA_PCI_WnBASE_W_EN;
 	alpha_mb();
 
 	/*
