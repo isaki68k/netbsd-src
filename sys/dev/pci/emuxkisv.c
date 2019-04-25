@@ -646,8 +646,6 @@ emuxki_init(struct emuxki_softc *sc)
 		DPRINTF(("ptb allocation error\n"));
 		return ENOMEM;
 	}
-	DPRINTF(("dmat->_wbase=%p\n", (char*)sc->sc_dmat->_wbase));
-	DPRINTF(("PTB=%p\n", (char *)DMAADDR(sc->ptb)));
 	emuxki_write(sc, 0, EMU_PTB, DMAADDR(sc->ptb));
 
 	emuxki_write(sc, 0, EMU_TCBS, 0);	/* This means 16K TCB */
