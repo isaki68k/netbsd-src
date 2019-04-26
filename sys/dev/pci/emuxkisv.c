@@ -141,9 +141,9 @@ struct emuxki_softc {
 };
 
 /* blackmagic */
-#define X1(x)		(sc->sc_type & EMUXKI_AUDIGY) ? EMU_A_##x : EMU_##x
-#define X2(x, y)	(sc->sc_type & EMUXKI_AUDIGY) \
-	? EMU_A_##x(EMU_A_##y) : EMU_##x(EMU_##y)
+#define X1(x)		((sc->sc_type & EMUXKI_AUDIGY) ? EMU_A_##x : EMU_##x)
+#define X2(x, y)	((sc->sc_type & EMUXKI_AUDIGY) \
+	? EMU_A_##x(EMU_A_##y) : EMU_##x(EMU_##y))
 #define EMU_A_DSP_FX		EMU_DSP_FX
 #define EMU_A_DSP_IN_AC97	EMU_DSP_IN_AC97
 
