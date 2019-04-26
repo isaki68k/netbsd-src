@@ -817,12 +817,12 @@ emuxki_initfx(struct emuxki_softc *sc)
 	    X2(DSP_OUTL, DSP_OUT_A_FRONT),
 	    X1(DSP_CST(0)),
 	    X1(DSP_FX(0)),
-	    X1(DSP_CST(4)));
+	    X1(DSP_CST(1)));
 	emuxki_dsp_addop(sc, &pc, EMU_DSP_OP_MACINTS,
 	    X2(DSP_OUTR, DSP_OUT_A_FRONT),
 	    X1(DSP_CST(0)),
 	    X1(DSP_FX(1)),
-	    X1(DSP_CST(4)));
+	    X1(DSP_CST(1)));
 #if 0
 	/* XXX: rear feature??? */
 	/* Rear OUT[L/R] = 0 + FX[L/R] * 1 */
