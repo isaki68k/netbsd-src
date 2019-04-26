@@ -69,7 +69,6 @@ __KERNEL_RCSID(0, "$NetBSD: eap.c,v 1.99 2019/03/16 12:09:58 isaki Exp $");
 #include <sys/audioio.h>
 
 #include <dev/audio_if.h>
-#include <dev/auconv.h>
 #include <dev/midi_if.h>
 
 #include <dev/pci/pcidevs.h>
@@ -109,9 +108,9 @@ CFATTACH_DECL_NEW(eap, sizeof(struct eap_softc),
 
 static int	eap_open(void *, int);
 static int	eap_query_format(void *, struct audio_format_query *);
-static int	eap_set_params(void *, int, int, audio_params_t *,
-			       audio_params_t *, stream_filter_list_t *,
-			       stream_filter_list_t *);
+static int	eap_set_format(void *, int,
+			       const audio_params_t *, const audio_params_t *,
+			       audio_filter_reg_t *, audio_filter_reg_t *);
 static int	eap_trigger_output(void *, void *, void *, int,
 				   void (*)(void *), void *,
 				   const audio_params_t *);
@@ -157,7 +156,7 @@ static void	eap_uart_txrdy(struct eap_softc *);
 static const struct audio_hw_if eap1370_hw_if = {
 	.open			= eap_open,
 	.query_format		= eap_query_format,
-	.set_params		= eap_set_params,
+	.set_format		= eap_set_format,
 	.halt_output		= eap_halt_output,
 	.halt_input		= eap_halt_input,
 	.getdev			= eap_getdev,
@@ -176,7 +175,7 @@ static const struct audio_hw_if eap1370_hw_if = {
 static const struct audio_hw_if eap1371_hw_if = {
 	.open			= eap_open,
 	.query_format		= eap_query_format,
-	.set_params		= eap_set_params,
+	.set_format		= eap_set_format,
 	.halt_output		= eap_halt_output,
 	.halt_input		= eap_halt_input,
 	.getdev			= eap_getdev,
@@ -944,40 +943,23 @@ eap_query_format(void *addr, struct audio_format_query *afp)
 }
 
 static int
-eap_set_params(void *addr, int setmode, int usemode,
-	       audio_params_t *play, audio_params_t *rec,
-	       stream_filter_list_t *pfil, stream_filter_list_t *rfil)
+eap_set_format(void *addr, int setmode,
+	       const audio_params_t *play, const audio_params_t *rec,
+	       audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
 {
 	struct eap_instance *ei;
 	struct eap_softc *sc;
-	struct audio_params *p;
-	stream_filter_list_t *fil;
-	int mode, i;
 	uint32_t div;
 
 	ei = addr;
 	sc = device_private(ei->parent);
-
-	for (mode = AUMODE_RECORD; mode != -1;
-	     mode = mode == AUMODE_RECORD ? AUMODE_PLAY : -1) {
-		if ((setmode & mode) == 0)
-			continue;
-
-		p = mode == AUMODE_PLAY ? play : rec;
-
-		fil = mode == AUMODE_PLAY ? pfil : rfil;
-		i = auconv_set_converter(eap_formats, EAP_NFORMATS,
-					 mode, p, FALSE, fil);
-		if (i < 0)
-			return EINVAL;
-	}
 
 	if (sc->sc_1371) {
 		eap1371_set_dac_rate(ei, play->sample_rate);
 		eap1371_set_adc_rate(sc, rec->sample_rate);
 	} else if (ei->index == EAP_DAC2) {
 		/* Set the speed */
-		DPRINTFN(2, ("eap_set_params: old ICSC = 0x%08x\n",
+		DPRINTFN(2, ("%s: old ICSC = 0x%08x\n", __func__,
 			     EREAD4(sc, EAP_ICSC)));
 		div = EREAD4(sc, EAP_ICSC) & ~EAP_PCLKBITS;
 		/*
@@ -986,7 +968,7 @@ eap_set_params(void *addr, int setmode, int usemode,
 		 * time match
 		 * what I expect.  - mycroft
 		 */
-		if (usemode == AUMODE_RECORD)
+		if (setmode == AUMODE_RECORD)
 			div |= EAP_SET_PCLKDIV(EAP_XTAL_FREQ /
 				rec->sample_rate - 2);
 		else
@@ -1001,14 +983,14 @@ eap_set_params(void *addr, int setmode, int usemode,
 		 */
 #endif
 		EWRITE4(sc, EAP_ICSC, div);
-		DPRINTFN(2, ("eap_set_params: set ICSC = 0x%08x\n", div));
+		DPRINTFN(2, ("%s: set ICSC = 0x%08x\n", __func__, div));
 	} else {
 		/*
 		 * The FM DAC has only a few fixed-frequency choises, so
 		 * pick out the best candidate.
 		 */
 		div = EREAD4(sc, EAP_ICSC);
-		DPRINTFN(2, ("eap_set_params: old ICSC = 0x%08x\n", div));
+		DPRINTFN(2, ("%s: old ICSC = 0x%08x\n", __func__, div));
 
 		div &= ~EAP_WTSRSEL;
 		if (play->sample_rate < 8268)
@@ -1021,7 +1003,7 @@ eap_set_params(void *addr, int setmode, int usemode,
 			div |= EAP_WTSRSEL_44;
 
 		EWRITE4(sc, EAP_ICSC, div);
-		DPRINTFN(2, ("eap_set_params: set ICSC = 0x%08x\n", div));
+		DPRINTFN(2, ("%s: set ICSC = 0x%08x\n", __func__, div));
 	}
 
 	return 0;
