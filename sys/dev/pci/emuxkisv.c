@@ -50,6 +50,8 @@ extern int audiodebug;
 
 /*
  * PCI
+ * Note: emuxki's page table entry uses only 31bit addressing.
+ *       (Maybe, later chip has 32bit mode, but not used now.)
  */
 
 #define	EMU_PCI_CBIO		0x10
@@ -61,7 +63,7 @@ extern int audiodebug;
 #define EMU_NUMCHAN	64
 
 /*
- * Recording configuration
+ * Internal recording DMA buffer
  */
 /* recommend == EMU_PTESIZE, for symmetric play/rec */
 #define EMU_REC_DMABLKSIZE	4096
