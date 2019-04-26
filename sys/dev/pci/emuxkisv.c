@@ -1296,7 +1296,7 @@ emuxki_trigger_output(void *hdl, void *start, void *end, int blksize,
 	sc->pblksize = blksize;
 	sc->plength = (char *)end - (char *)start;
 	sc->poffset = 0;
-	npage = (sc->plength + EMU_PTESIZE - 1) / EMU_PTESIZE;
+	npage = roundup(sc->plength, EMU_PTESIZE);
 
 	kptb = KERNADDR(sc->ptb);
 	dpmem = DMAADDR(sc->pmem);
