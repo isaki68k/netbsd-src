@@ -428,7 +428,7 @@ haltwo_set_format(void *v, int setmode,
 	    (1 << HAL2_C1_CLKID_SHIFT) |
 	    (play->channels << HAL2_C1_DATAT_SHIFT), 0);
 
-	DPRINTF(("haltwo_set_params: hw_encoding = %d hw_channels = %d\n",
+	DPRINTF(("%s: hw_encoding = %d hw_channels = %d\n", __func__,
 	    play->encoding, play->channels));
 
 	return 0;
