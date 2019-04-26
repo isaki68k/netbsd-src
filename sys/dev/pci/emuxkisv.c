@@ -661,7 +661,7 @@ emuxki_init(struct emuxki_softc *sc)
 		emuxki_write(sc, i, EMU_CHAN_CPF, 0);
 		emuxki_write(sc, i, EMU_CHAN_CCR, 0);
 		emuxki_write(sc, i, EMU_CHAN_PSST, 0);
-		emuxki_write(sc, i, EMU_CHAN_DSL, 0x10);	/* Why 16 ? */
+		emuxki_write(sc, i, EMU_CHAN_DSL, 0);
 		emuxki_write(sc, i, EMU_CHAN_CCCA, EMU_CHAN_CCCA_INTERPROM_1);
 		emuxki_write(sc, i, EMU_CHAN_Z1, 0);
 		emuxki_write(sc, i, EMU_CHAN_Z2, 0);
