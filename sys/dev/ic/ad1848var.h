@@ -201,6 +201,7 @@ paddr_t	ad1848_mappage(void *, void *, off_t, int);
 void	ad1848_get_locks(void *, kmutex_t **, kmutex_t **);
 
 #ifdef AUDIO_DEBUG
+extern int	ad1848debug;
 void	ad1848_dump_regs(struct ad1848_softc *);
 #endif
 

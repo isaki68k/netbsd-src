@@ -971,7 +971,7 @@ btsco_allocm(void *hdl, int direction, size_t size)
 	struct btsco_softc *sc = hdl;
 	void *addr;
 
-	DPRINTF("%s: size %d direction %d\n", sc->sc_name, size, direction);
+	DPRINTF("%s: size %zd direction %d\n", sc->sc_name, size, direction);
 
 	addr = kmem_alloc(size, KM_SLEEP);
 

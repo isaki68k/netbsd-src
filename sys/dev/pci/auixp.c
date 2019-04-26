@@ -215,7 +215,7 @@ static bool	auixp_resume(device_t, const pmf_qual_t *);
 
 #ifdef DEBUG_AUIXP
 static struct auixp_softc *static_sc;
-static void auixp_dumpreg(void);
+static void auixp_dumpreg(void) __unused;
 #	define DPRINTF(x) printf x;
 #else
 #	define DPRINTF(x)
@@ -470,7 +470,7 @@ auixp_malloc(void *hdl, int direction, size_t size)
 	}
 	SLIST_INSERT_HEAD(&sc->sc_dma_list, dma, dma_chain);
 
-	DPRINTF(("auixp_malloc: returning kern %p,   hw 0x%08x for %d bytes "
+	DPRINTF(("auixp_malloc: returning kern %p,   hw 0x%08x for %zd bytes "
 	    "in %d segs\n", KERNADDR(dma), (uint32_t) DMAADDR(dma), dma->size,
 	    dma->nsegs)
 	);

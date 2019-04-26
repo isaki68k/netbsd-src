@@ -695,7 +695,7 @@ haltwo_trigger_output(void *v, void *start, void *end, int blksize,
 	fifoend = (param->channels * 8) >> 3;
 
 	DPRINTF(("haltwo_trigger_output: hw_channels = %d highwater = %d"
-	    " fifobeg = %d fifoend = %d\n", param->hw_channels, highwater,
+	    " fifobeg = %d fifoend = %d\n", param->channels, highwater,
 	    fifobeg, fifoend));
 
 	ctrl = HPC3_PBUS_DMACTL_RT
