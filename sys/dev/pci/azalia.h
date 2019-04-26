@@ -584,7 +584,6 @@ typedef struct codec_t {
 	struct audio_format *formats;
 	int nformats;
 	size_t szformats;
-	struct audio_encoding_set *encodings;
 
 	uint32_t *extra;
 	size_t szextra;
