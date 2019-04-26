@@ -3,8 +3,10 @@
  */
 /*
  * EMU10K1 single voice driver
- * o. only 1 voice
+ * o. only 1 voice playback, 1 recording
  * o. only s16le 2ch 48k
+ * This is nessecery for simplify buffer and interrupt control,
+ * safficient for playback and recording quality.
  */
 
 #include <sys/cdefs.h>
@@ -122,7 +124,7 @@ struct emuxki_softc {
 	int plength;
 	int poffset;
 
-	struct dmamem		*rmem;		/* rec memory */
+	struct dmamem		*rmem;		/* rec internal memory */
 	void (*rintr)(void *);
 	void *rintrarg;
 	audio_params_t rec;
@@ -1182,6 +1184,11 @@ emuxki_round_blocksize(void *hdl, int blksize,
     int mode, const audio_params_t* param)
 {
 
+	/*
+	 * This is not necessary for recording, but symmetric for easy.
+	 * For recording buffer/block size requirements of hardware,
+	 * see EMU_RECBS_BUFSIZE_*
+	 */
 	return roundup(blksize, EMU_PTESIZE);
 }
 
@@ -1189,6 +1196,7 @@ static size_t
 emuxki_round_buffersize(void *hdl, int direction, size_t bsize)
 {
 
+	/* This is not necessary for recording, but symmetric for easy */
 	return roundup(bsize, EMU_PTESIZE);
 }
 
