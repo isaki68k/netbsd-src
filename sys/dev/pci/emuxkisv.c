@@ -61,6 +61,16 @@ extern int audiodebug;
 #define EMU_NUMCHAN	64
 
 /*
+ * Recording configuration
+ */
+/* recommend == EMU_PTESIZE, for symmetric play/rec */
+#define EMU_REC_DMABLKSIZE	4096
+/* must be EMU_REC_DMABLKSIZE * 2 */
+#define EMU_REC_DMASIZE	8192
+/* must be EMU_RECBS_BUFSIZE_(EMU_REC_DMASIZE) */
+#define EMU_REC_BUFSIZE_RECBS	EMU_RECBS_BUFSIZE_8192
+
+/*
  * DMA memory management
  */
 
@@ -128,10 +138,12 @@ struct emuxki_softc {
 	void (*rintr)(void *);
 	void *rintrarg;
 	audio_params_t rec;
-
-	int timer;
-#define EMU_TIMER_PLAY	0x01
-#define EMU_TIMER_REC	0x02
+	void *rptr;				/* rec MI ptr */
+	int rcurrent;				/* rec software trans count */
+	int rframesize;
+	int rblksize;
+	int rlength;
+	int roffset;
 
 	/* others */
 
@@ -542,8 +554,12 @@ emuxki_attach(device_t parent, device_t self, void *aux)
 	sc->rintr = NULL;
 	sc->rintrarg = NULL;
 	memset(&sc->rec, 0, sizeof(sc->rec));
-
-	sc->timer = 0;
+	sc->rptr = NULL;
+	sc->rcurrent = 0;
+	sc->rframesize = 0;
+	sc->rblksize = 0;
+	sc->rlength = 0;
+	sc->roffset = 0;
 
 	sc->sc_audev = audio_attach_mi(&emuxki_hw_if, sc, self);
 	if (sc->sc_audev == NULL) {
@@ -896,37 +912,31 @@ emuxki_play_stop(struct emuxki_softc *sc, int ch)
 }
 
 static void
-emuxki_timer_start(struct emuxki_softc *sc, int request)
+emuxki_timer_start(struct emuxki_softc *sc)
 {
 	uint32_t timer;
 
-	if (sc->timer == 0) {
-		/* frame count of half PTE at 48kHz */
-		timer = EMU_PTESIZE / 4 / 2;
+	/* frame count of half PTE at 16bit, 2ch, 48kHz */
+	timer = EMU_PTESIZE / 4 / 2;
 
-		/* EMU_TIMER is 16bit register */
-		emuxki_writeio_2(sc, EMU_TIMER, timer);
-		emuxki_writeio_4(sc, EMU_INTE,
-		    emuxki_readio_4(sc, EMU_INTE) |
-		        EMU_INTE_INTERTIMERENB);
-		DPRINTF(("timer start\n"));
-	}
-	sc->timer |= request;
+	/* EMU_TIMER is 16bit register */
+	emuxki_writeio_2(sc, EMU_TIMER, timer);
+	emuxki_writeio_4(sc, EMU_INTE,
+	    emuxki_readio_4(sc, EMU_INTE) |
+	        EMU_INTE_INTERTIMERENB);
+	DPRINTF(("timer start\n"));
 }
 
 static void
-emuxki_timer_stop(struct emuxki_softc *sc, int request)
+emuxki_timer_stop(struct emuxki_softc *sc)
 {
 
-	sc->timer &= ~request;
-	if (sc->timer == 0) {
-		emuxki_writeio_4(sc, EMU_INTE,
-		    emuxki_readio_4(sc, EMU_INTE) &
-		        ~EMU_INTE_INTERTIMERENB);
-		/* EMU_TIMER is 16bit register */
-		emuxki_writeio_2(sc, EMU_TIMER, 0);
-		DPRINTF(("timer stop\n"));
-	}
+	emuxki_writeio_4(sc, EMU_INTE,
+	    emuxki_readio_4(sc, EMU_INTE) &
+	        ~EMU_INTE_INTERTIMERENB);
+	/* EMU_TIMER is 16bit register */
+	emuxki_writeio_2(sc, EMU_TIMER, 0);
+	DPRINTF(("timer stop\n"));
 }
 
 /*
@@ -992,7 +1002,7 @@ emuxki_halt_output(void *hdl)
 {
 	struct emuxki_softc *sc = hdl;
 
-	emuxki_timer_stop(sc, EMU_TIMER_PLAY);
+	emuxki_timer_stop(sc);
 	emuxki_play_stop(sc, 0);
 	emuxki_play_stop(sc, 1);
 	return 0;
@@ -1001,8 +1011,16 @@ emuxki_halt_output(void *hdl)
 static int
 emuxki_halt_input(void *hdl)
 {
+	struct emuxki_softc *sc = hdl;
 
-	DPRINTF(("not supported now\n"));
+	/* stop ADC */
+	emuxki_write(sc, 0, EMU_ADCCR, 0);
+
+	/* disable interrupt */
+	emuxki_writeio_4(sc, EMU_INTE,
+	    emuxki_readio_4(sc, EMU_INTE) &
+	        ~EMU_INTE_ADCBUFENABLE);
+
 	return 0;
 }
 
@@ -1012,37 +1030,65 @@ emuxki_intr(void *hdl)
 	struct emuxki_softc *sc = hdl;
 	uint32_t ipr;
 	uint32_t curaddr;
+	int handled = 0;
 
 	mutex_spin_enter(&sc->sc_intr_lock);
 
 	ipr = emuxki_readio_4(sc, EMU_IPR);
 	DPRINTFN(3, ("emuxki: ipr=%08x\n", ipr));
-	if ((ipr & EMU_IPR_INTERVALTIMER)) {
-		if (sc->pintr) {
-			/* read ch 0 */
-			curaddr = emuxki_read(sc, 0, EMU_CHAN_CCCA) &
-			    EMU_CHAN_CCCA_CURRADDR_MASK;
-			DPRINTFN(3, ("curaddr=%08x\n", curaddr));
-			curaddr *= sc->pframesize;
+	if (sc->pintr && (ipr & EMU_IPR_INTERVALTIMER)) {
+		/* read ch 0 */
+		curaddr = emuxki_read(sc, 0, EMU_CHAN_CCCA) &
+		    EMU_CHAN_CCCA_CURRADDR_MASK;
+		DPRINTFN(3, ("curaddr=%08x\n", curaddr));
+		curaddr *= sc->pframesize;
 
-			if (curaddr < sc->poffset)
-				curaddr += sc->plength;
-			if (curaddr >= sc->poffset + sc->pblksize) {
-				dmamem_sync(sc->pmem, BUS_DMASYNC_POSTWRITE);
-				sc->pintr(sc->pintrarg);
-				sc->poffset += sc->pblksize;
-				if (sc->poffset >= sc->plength) {
-					sc->poffset -= sc->plength;
-				}
-				dmamem_sync(sc->pmem, BUS_DMASYNC_PREWRITE);
+		if (curaddr < sc->poffset)
+			curaddr += sc->plength;
+		if (curaddr >= sc->poffset + sc->pblksize) {
+			dmamem_sync(sc->pmem, BUS_DMASYNC_POSTWRITE);
+			sc->pintr(sc->pintrarg);
+			sc->poffset += sc->pblksize;
+			if (sc->poffset >= sc->plength) {
+				sc->poffset -= sc->plength;
+			}
+			dmamem_sync(sc->pmem, BUS_DMASYNC_PREWRITE);
+		}
+		handled = 1;
+	}
+
+	if (sc->rintr &&
+	    (ipr & (EMU_IPR_ADCBUFHALFFULL | EMU_IPR_ADCBUFFULL))) {
+		char *src, *dst;
+
+		/* Record DMA buffer has just 2 blocks */
+		src = KERNADDR(sc->rmem);
+		if (ipr & EMU_IPR_ADCBUFFULL) {
+			/* 2nd block */
+			src += EMU_REC_DMABLKSIZE;
+		}
+		dst = (char *)sc->rptr + sc->rcurrent;
+
+		dmamem_sync(sc->rmem, BUS_DMASYNC_POSTREAD);
+		memcpy(dst, src, EMU_REC_DMABLKSIZE);
+		/* for next trans */
+		dmamem_sync(sc->rmem, BUS_DMASYNC_PREREAD);
+		sc->rcurrent += EMU_REC_DMABLKSIZE;
+
+		if (sc->rcurrent >= sc->roffset + sc->rblksize) {
+			sc->rintr(sc->rintrarg);
+			sc->roffset += sc->rblksize;
+			if (sc->roffset >= sc->rlength) {
+				sc->roffset = 0;
+				sc->rcurrent = 0;
 			}
 		}
-		if (sc->rintr) {
-			/* not impl */
-		}
+
+		handled = 1;
 	}
+
 #if defined(EMUXKI_DEBUG)
-	else {
+	if (!handled) {
 #if 0
 		snprintb(buf, sizeof(buf),
 		    "\x20"
@@ -1095,15 +1141,19 @@ emuxki_intr(void *hdl)
 			strcat(buf, " CHANNELLOOP");
 
 		DPRINTF(("unexpected intr: %s", buf));
+
+		/* for debugging (must not handle if !DEBUG) */
+		handled = 1;
 	}
 #endif
 
+	/* Reset interrupt bit */
 	emuxki_writeio_4(sc, EMU_IPR, ipr);
 
 	mutex_spin_exit(&sc->sc_intr_lock);
 
-	/* handled */
-	return 1;
+	/* Interrupt handler must return !=0 if handled */
+	return handled;
 }
 
 static int
@@ -1152,12 +1202,17 @@ emuxki_allocm(void *hdl, int direction, size_t size)
 		sc->pmem = dmamem_alloc(sc, size);
 		return KERNADDR(sc->pmem);
 	} else {
+		/* rmem is fixed size internal DMA buffer */
 		if (sc->rmem) {
 			panic("rmem already allocated\n");
 			return NULL;
 		}
-		sc->rmem = dmamem_alloc(sc, size);
-		return KERNADDR(sc->rmem);
+		/* rmem fixed size */
+		sc->rmem = dmamem_alloc(sc, EMU_REC_DMASIZE);
+
+		/* recording MI buffer is normal kmem, software trans. */
+		sc->rptr = kmem_alloc(size, KM_SLEEP);
+		return sc->rptr;
 	}
 }
 
@@ -1170,9 +1225,11 @@ emuxki_freem(void *hdl, void *ptr, size_t size)
 		dmamem_free(sc->pmem);
 		sc->pmem = NULL;
 	}
-	if (sc->rmem && ptr == KERNADDR(sc->rmem)) {
+	if (sc->rmem && ptr == sc->rptr) {
 		dmamem_free(sc->rmem);
 		sc->rmem = NULL;
+		kmem_free(sc->rptr, size);
+		sc->rptr = NULL;
 	}
 }
 
@@ -1249,17 +1306,75 @@ emuxki_trigger_output(void *hdl, void *start, void *end, int blksize,
 	emuxki_play_start(sc, 0, hwstart, hwend);
 	emuxki_play_start(sc, 1, hwstart, hwend);
 
-	emuxki_timer_start(sc, EMU_TIMER_PLAY);
+	emuxki_timer_start(sc);
 
 	return 0;
 }
+
+/*
+ * 録音のバッファサイズが半固定長なので
+ * ハンドリングは2通り考えられて
+ * 1. タイマーを再生と共有
+ *    これは余分なメモリ転送がないが、タイマタイミングが
+ *    再生と共有なのでスプリアスや取りこぼし相当が心配。
+ * 2. 中間バッファを使用
+ *    これは余分なメモリ転送が発生するが、ADC_HALF/FULL 割り込みを
+ *    使えるので再生と衝突しない。
+ * というわけで 2 の中間バッファ方式を使用する。
+ */
 
 static int
 emuxki_trigger_input(void *hdl, void *start, void *end, int blksize,
     void (*intr)(void *), void *arg, const audio_params_t *params)
 {
+	struct emuxki_softc *sc = hdl;
 
-	DPRINTF(("not implemented\n"));
+	if (sc->rmem == NULL)
+		panic("rmem == NULL\n");
+	if (start != sc->rptr)
+		panic("start != sc->rptr\n");
+
+	sc->rframesize = 4;	/* channels * bit / 8 = 2*16/8=4 */
+	sc->rblksize = blksize;
+	sc->rlength = (char *)end - (char *)start;
+	sc->roffset = 0;
+	sc->rcurrent = 0;
+
+	sc->rintr = intr;
+	sc->rintrarg = arg;
+
+	/*
+	 * Memo:
+	 *  recording source selected by AC97
+	 *  AC97 input source route to ADC by FX(DSP)
+	 *
+	 * Must keep following sequence order
+	 */
+
+	/* first, stop ADC */
+	emuxki_write(sc, 0, EMU_ADCCR, 0);
+	emuxki_write(sc, 0, EMU_ADCBA, 0);
+	emuxki_write(sc, 0, EMU_ADCBS, 0);
+
+	dmamem_sync(sc->rmem, BUS_DMASYNC_PREREAD);
+
+	/* ADC interrupt enable */
+	emuxki_writeio_4(sc, EMU_INTE,
+	    emuxki_readio_4(sc, EMU_INTE) |
+	        EMU_INTE_ADCBUFENABLE);
+
+	/* ADC Enable */
+	/* stereo, 48kHz, enable */
+	emuxki_write(sc, 0, EMU_ADCCR,
+		X1(ADCCR_LCHANENABLE) | X1(ADCCR_RCHANENABLE));
+
+	/* ADC buffer address */
+	emuxki_write(sc, 0, X1(ADCIDX), 0);
+	emuxki_write(sc, 0, EMU_ADCBA, DMAADDR(sc->rmem));
+
+	/* ADC buffer size, to start */
+	emuxki_write(sc, 0, EMU_ADCBS, EMU_REC_BUFSIZE_RECBS);
+
 	return 0;
 }
 
