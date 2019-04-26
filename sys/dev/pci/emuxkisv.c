@@ -58,8 +58,10 @@ extern int audiodebug;
 #define EMU_SUBSYS_APS		0x40011102
 
 #define	EMU_PTESIZE		4096
-// XXX test for limit 256 pages
-#define EMU_MAXPTE	0x100
+#define EMU_MINPTE	3
+/* hardware limit is 4096 entry, it's too big for single voice */
+/* reasonable: 48kHz*2ch*2byte*1sec*3buf/EMU_PTESIZE=141, roundup 2^n */
+#define EMU_MAXPTE	256
 #define EMU_NUMCHAN	64
 
 /*
@@ -1248,7 +1250,9 @@ emuxki_round_blocksize(void *hdl, int blksize,
 	 * For recording buffer/block size requirements of hardware,
 	 * see EMU_RECBS_BUFSIZE_*
 	 */
-	return roundup(blksize, EMU_PTESIZE);
+	if (blksize < EMU_PTESIZE)
+		blksize = EMU_PTESIZE;
+	return rounddown(blksize, EMU_PTESIZE);
 }
 
 static size_t
@@ -1256,6 +1260,11 @@ emuxki_round_buffersize(void *hdl, int direction, size_t bsize)
 {
 
 	/* This is not necessary for recording, but symmetric for easy */
+	if (bsize < EMU_MINPTE * EMU_PTESIZE) {
+		bsize = EMU_MINPTE * EMU_PTESIZE;
+	} else if (bsize > EMU_MAXPTE * EMU_PTESIZE) {
+		bsize = EMU_MAXPTE * EMU_PTESIZE;
+	}
 	return roundup(bsize, EMU_PTESIZE);
 }
 
