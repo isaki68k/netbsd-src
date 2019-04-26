@@ -270,7 +270,6 @@ struct hdaudio_mixer {
 struct hdaudio_audiodev {
 	struct hdafg_softc	*ad_sc;
 	device_t			ad_audiodev;
-	struct audio_encoding_set	*ad_encodings;
 	int				ad_nformats;
 	struct audio_format		ad_formats[HDAUDIO_MAXFORMATS];
 
@@ -3661,7 +3660,7 @@ hdafg_attach(device_t parent, device_t self, void *opaque)
 	uint64_t fgptr = 0;
 	uint32_t astype = 0;
 	uint8_t nid = 0;
-	int err, i;
+	int i;
 	bool rv;
 
 	aprint_naive("\n");
@@ -3775,12 +3774,6 @@ hdafg_attach(device_t parent, device_t self, void *opaque)
 	hda_debug(sc, "configuring encodings\n");
 	sc->sc_audiodev.ad_sc = sc;
 	hdafg_configure_encodings(sc);
-	err = auconv_create_encodings(sc->sc_audiodev.ad_formats,
-	    sc->sc_audiodev.ad_nformats, &sc->sc_audiodev.ad_encodings);
-	if (err) {
-		hda_error(sc, "couldn't create encodings\n");
-		return;
-	}
 
 	hda_debug(sc, "reserving streams\n");
 	sc->sc_audiodev.ad_capture = hdaudio_stream_establish(sc->sc_host,
@@ -3834,8 +3827,6 @@ hdafg_detach(device_t self, int flags)
 		prop_object_release(sc->sc_config);
 	if (sc->sc_audiodev.ad_audiodev)
 		config_detach(sc->sc_audiodev.ad_audiodev, flags);
-	if (sc->sc_audiodev.ad_encodings)
-		auconv_delete_encodings(sc->sc_audiodev.ad_encodings);
 	if (sc->sc_audiodev.ad_playback)
 		hdaudio_stream_disestablish(sc->sc_audiodev.ad_playback);
 	if (sc->sc_audiodev.ad_capture)
