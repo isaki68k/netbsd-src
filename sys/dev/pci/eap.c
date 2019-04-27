@@ -107,7 +107,8 @@ CFATTACH_DECL_NEW(eap, sizeof(struct eap_softc),
     eap_match, eap_attach, eap_detach, NULL);
 
 static int	eap_open(void *, int);
-static int	eap_query_format(void *, struct audio_format_query *);
+static int	eap1370_query_format(void *, struct audio_format_query *);
+static int	eap1371_query_format(void *, struct audio_format_query *);
 static int	eap_set_format(void *, int,
 			       const audio_params_t *, const audio_params_t *,
 			       audio_filter_reg_t *, audio_filter_reg_t *);
@@ -154,7 +155,7 @@ static void	eap_uart_txrdy(struct eap_softc *);
 
 static const struct audio_hw_if eap1370_hw_if = {
 	.open			= eap_open,
-	.query_format		= eap_query_format,
+	.query_format		= eap1370_query_format,
 	.set_format		= eap_set_format,
 	.halt_output		= eap_halt_output,
 	.halt_input		= eap_halt_input,
@@ -172,7 +173,7 @@ static const struct audio_hw_if eap1370_hw_if = {
 
 static const struct audio_hw_if eap1371_hw_if = {
 	.open			= eap_open,
-	.query_format		= eap_query_format,
+	.query_format		= eap1371_query_format,
 	.set_format		= eap_set_format,
 	.halt_output		= eap_halt_output,
 	.halt_input		= eap_halt_input,
@@ -205,23 +206,26 @@ static struct audio_device eap_device = {
 	"eap"
 };
 
-#define EAP_NFORMATS	4
-#define EAP_FORMAT(enc, prec, ch, chmask) \
-	{ \
-		.mode		= AUMODE_PLAY | AUMODE_RECORD, \
-		.encoding	= (enc), \
-		.validbits	= (prec), \
-		.precision	= (prec), \
-		.channels	= (ch), \
-		.channel_mask	= (chmask), \
-		.frequency_type	= 0, \
-		.frequency	= { 4000, 48000 }, \
-	}
-static const struct audio_format eap_formats[EAP_NFORMATS] = {
-	EAP_FORMAT(AUDIO_ENCODING_SLINEAR_LE, 16, 2, AUFMT_STEREO),
-	EAP_FORMAT(AUDIO_ENCODING_SLINEAR_LE, 16, 1, AUFMT_MONAURAL),
-	EAP_FORMAT(AUDIO_ENCODING_ULINEAR_LE,  8, 2, AUFMT_STEREO),
-	EAP_FORMAT(AUDIO_ENCODING_ULINEAR_LE,  8, 1, AUFMT_MONAURAL),
+static const struct audio_format eap1371_format = {
+	.mode		= AUMODE_PLAY | AUMODE_RECORD,
+	.encoding	= AUDIO_ENCODING_SLINEAR_LE,
+	.validbits	= 16,
+	.precision	= 16,
+	.channels	= 2,
+	.channel_mask	= AUFMT_STEREO,
+	.frequency_type	= 1,
+	.frequency	= { 48000 },
+};
+
+static const struct audio_format eap1370_format = {
+	.mode		= AUMODE_PLAY | AUMODE_RECORD,
+	.encoding	= AUDIO_ENCODING_SLINEAR_LE,
+	.validbits	= 16,
+	.precision	= 16,
+	.channels	= 2,
+	.channel_mask	= AUFMT_STEREO,
+	.frequency_type	= 4,
+	.frequency	= { 5512, 11025, 22050, 44100 },
 };
 
 static int
@@ -933,10 +937,17 @@ eap_open(void *addr, int flags)
 }
 
 static int
-eap_query_format(void *addr, struct audio_format_query *afp)
+eap1370_query_format(void *addr, struct audio_format_query *afp)
 {
 
-	return audio_query_format(eap_formats, EAP_NFORMATS, afp);
+	return audio_query_format(&eap1370_format, 1, afp);
+}
+
+static int
+eap1371_query_format(void *addr, struct audio_format_query *afp)
+{
+
+	return audio_query_format(&eap1371_format, 1, afp);
 }
 
 static int
@@ -990,11 +1001,11 @@ eap_set_format(void *addr, int setmode,
 		DPRINTFN(2, ("%s: old ICSC = 0x%08x\n", __func__, div));
 
 		div &= ~EAP_WTSRSEL;
-		if (play->sample_rate < 8268)
+		if (play->sample_rate == 5512)
 			div |= EAP_WTSRSEL_5;
-		else if (play->sample_rate < 16537)
+		else if (play->sample_rate == 11025)
 			div |= EAP_WTSRSEL_11;
-		else if (play->sample_rate < 33075)
+		else if (play->sample_rate == 22050)
 			div |= EAP_WTSRSEL_22;
 		else
 			div |= EAP_WTSRSEL_44;
