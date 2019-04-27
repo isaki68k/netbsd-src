@@ -7516,11 +7516,12 @@ audio_query_format(const struct audio_format *format, int nformats,
 
 /*
  * This function is provided for the hardware driver's set_format() to
- * find index matches with param from array of audio_format_t 'formats'.
+ * find index matches with 'param' from array of audio_format_t 'formats'.
  * 'mode' is either of AUMODE_PLAY or AUMODE_RECORD.
  * It returns the matched index and never fails.  Because param passed to
  * set_format() is selected from query_format().
- * This function will be alternate for auconv_set_converter().
+ * This function will be an alternative to auconv_set_converter() to
+ * find index.
  */
 int
 audio_indexof_format(const struct audio_format *formats, int nformats,
