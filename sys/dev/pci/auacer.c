@@ -491,7 +491,7 @@ auacer_query_format(void *v, audio_format_query_t *afp)
 {
 	struct auacer_softc *sc;
 
-	DPRINTF(ALI_DEBUG_API, ("auacer_query_format\n"));
+	DPRINTF(ALI_DEBUG_API, ("%s\n", __func__));
 	sc = v;
 	return audio_query_format(sc->sc_formats, AUACER_NFORMATS, afp);
 }
