@@ -128,7 +128,6 @@ static int	eap1371_mixer_get_port(void *, mixer_ctrl_t *);
 static int	eap1370_query_devinfo(void *, mixer_devinfo_t *);
 static void	*eap_malloc(void *, int, size_t);
 static void	eap_free(void *, void *, size_t);
-static size_t	eap_round_buffersize(void *, int, size_t);
 static int	eap_get_props(void *);
 static void	eap1370_set_mixer(struct eap_softc *, int, int);
 static uint32_t eap1371_src_wait(struct eap_softc *);
@@ -165,7 +164,6 @@ static const struct audio_hw_if eap1370_hw_if = {
 	.query_devinfo		= eap1370_query_devinfo,
 	.allocm			= eap_malloc,
 	.freem			= eap_free,
-	.round_buffersize	= eap_round_buffersize,
 	.get_props		= eap_get_props,
 	.trigger_output		= eap_trigger_output,
 	.trigger_input		= eap_trigger_input,
@@ -184,7 +182,6 @@ static const struct audio_hw_if eap1371_hw_if = {
 	.query_devinfo		= eap1371_query_devinfo,
 	.allocm			= eap_malloc,
 	.freem			= eap_free,
-	.round_buffersize	= eap_round_buffersize,
 	.get_props		= eap_get_props,
 	.trigger_output		= eap_trigger_output,
 	.trigger_input		= eap_trigger_input,
@@ -1639,13 +1636,6 @@ eap_free(void *addr, void *ptr, size_t size)
 			return;
 		}
 	}
-}
-
-static size_t
-eap_round_buffersize(void *addr, int direction, size_t size)
-{
-
-	return size;
 }
 
 static int
