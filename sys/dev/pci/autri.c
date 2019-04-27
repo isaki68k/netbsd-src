@@ -127,8 +127,6 @@ static int	autri_mixer_set_port(void *, mixer_ctrl_t *);
 static int	autri_mixer_get_port(void *, mixer_ctrl_t *);
 static void*	autri_malloc(void *, int, size_t);
 static void	autri_free(void *, void *, size_t);
-static size_t	autri_round_buffersize(void *, int, size_t);
-static paddr_t autri_mappage(void *, void *, off_t, int);
 static int	autri_get_props(void *);
 static int	autri_query_devinfo(void *, mixer_devinfo_t *);
 static void	autri_get_locks(void *, kmutex_t **, kmutex_t **);
@@ -146,8 +144,6 @@ static const struct audio_hw_if autri_hw_if = {
 	.query_devinfo		= autri_query_devinfo,
 	.allocm			= autri_malloc,
 	.freem			= autri_free,
-	.round_buffersize	= autri_round_buffersize,
-	.mappage		= autri_mappage,
 	.get_props		= autri_get_props,
 	.trigger_output		= autri_trigger_output,
 	.trigger_input		= autri_trigger_input,
@@ -1060,30 +1056,6 @@ autri_find_dma(struct autri_softc *sc, void *addr)
 		continue;
 
 	return p;
-}
-
-static size_t
-autri_round_buffersize(void *addr, int direction, size_t size)
-{
-
-	return size;
-}
-
-static paddr_t
-autri_mappage(void *addr, void *mem, off_t off, int prot)
-{
-	struct autri_softc *sc;
-	struct autri_dma *p;
-
-	if (off < 0)
-		return -1;
-	sc = addr;
-	p = autri_find_dma(sc, mem);
-	if (!p)
-		return -1;
-
-	return bus_dmamem_mmap(sc->sc_dmatag, p->segs, p->nsegs,
-	    off, prot, BUS_DMA_WAITOK);
 }
 
 static int
