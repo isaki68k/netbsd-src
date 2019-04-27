@@ -112,7 +112,6 @@ struct sunxi_codec_softc {
 	kmutex_t		sc_intr_lock;
 
 	struct audio_format	sc_format;
-	struct audio_encoding_set *sc_encodings;
 
 	struct sunxi_codec_chan	sc_pchan;
 	struct sunxi_codec_chan	sc_rchan;
