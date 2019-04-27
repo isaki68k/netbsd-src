@@ -42,7 +42,7 @@
 
 /* audio format structure describing our hardware capabilities */
 /* XXX min and max sample rates are for AD1888 codec XXX */
-#define AUIXP_NFORMATS 6
+#define AUIXP_NFORMATS 3
 
 
 #define AUIXP_MINRATE  7000
