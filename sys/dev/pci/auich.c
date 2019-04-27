@@ -953,19 +953,15 @@ static int
 auich_query_format(void *v, struct audio_format_query *afp)
 {
 	struct auich_softc *sc;
-	const struct audio_format *formats;
-	int nf;
 
 	sc = (struct auich_softc *)v;
 	if (sc->sc_spdif) {
-		formats = auich_spdif_formats;
-		nf = __arraycount(auich_spdif_formats);
+		return audio_query_format(auich_spdif_formats,
+		    AUICH_SPDIF_NFORMATS, afp);
 	} else {
-		formats = sc->sc_audio_formats;
-		nf = AUICH_AUDIO_NFORMATS;
+		return audio_query_format(auich_audio_formats,
+		    AUICH_AUDIO_NFORMATS, afp);
 	}
-
-	return audio_query_format(formats, nf, afp);
 }
 
 static int
