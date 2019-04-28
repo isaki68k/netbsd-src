@@ -207,7 +207,6 @@ struct uaudio_softc {
 	device_t	sc_audiodev;
 	struct audio_format *sc_formats;
 	int		sc_nformats;
-	struct audio_encoding_set *sc_encodings;
 	u_int		sc_channel_config;
 	char		sc_dying;
 	struct audio_device sc_adev;
@@ -540,7 +539,6 @@ uaudio_detach(device_t self, int flags)
 	if (sc->sc_formats != NULL)
 		kmem_free(sc->sc_formats,
 		    sizeof(struct audio_format) * sc->sc_nformats);
-	auconv_delete_encodings(sc->sc_encodings);
 
 	mutex_destroy(&sc->sc_lock);
 	mutex_destroy(&sc->sc_intr_lock);
@@ -1838,14 +1836,6 @@ uaudio_identify_as(struct uaudio_softc *sc,
 			}
 		}
 		sc->sc_alts[i].aformat = auf;
-	}
-
-	if (0 != auconv_create_encodings(sc->sc_formats, sc->sc_nformats,
-					 &sc->sc_encodings)) {
-		kmem_free(sc->sc_formats,
-		    sizeof(struct audio_format) * sc->sc_nformats);
-		sc->sc_formats = NULL;
-		return ENOMEM;
 	}
 
 	return USBD_NORMAL_COMPLETION;
