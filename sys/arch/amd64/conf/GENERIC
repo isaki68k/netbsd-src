@@ -970,8 +970,6 @@ neo*	at pci? dev ? function ?	# NeoMagic 256 AC'97 Audio
 sv*	at pci? dev ? function ?	# S3 SonicVibes
 yds*	at pci? dev ? function ?	# Yamaha DS-1 PCI Audio
 
-sb0	at isa? port 0x220 irq 5 drq 1 drq2 5	# SoundBlaster
-
 # OPL[23] FM synthesizers
 #opl0	at isa? port 0x388	# use only if not attached to sound card
 opl*	at cmpci? flags 1
@@ -989,7 +987,7 @@ audio*	at audiobus?
 # The spkr driver provides a simple tone interface to the built in speaker.
 spkr*	at pcppi?		# PC speaker
 spkr*	at audio?		# PC speaker (synthesized)
-wsbell* at spkr?		# Bell for wscons display (module by default)
+#wsbell* at spkr?		# Bell for wscons display (module by default)
 
 # MPU 401 UARTs
 #mpu*	at isa? port 0x330 irq 9	# MPU401 or compatible card
