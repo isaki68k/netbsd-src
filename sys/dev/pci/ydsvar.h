@@ -112,10 +112,6 @@ struct yds_softc {
 	device_t 		sc_mpu;
 	bus_space_handle_t	sc_mpu_ioh;
 
-#if !defined(AUDIO2)
-	struct audio_encoding_set *sc_encodings;
-#endif
-
 	/*
 	 * Power management
 	 */

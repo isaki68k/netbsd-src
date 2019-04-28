@@ -57,8 +57,6 @@ __KERNEL_RCSID(0, "$NetBSD: yds.c,v 1.61 2019/04/08 15:35:57 isaki Exp $");
 
 #include <sys/audioio.h>
 #include <dev/audio_if.h>
-#include <dev/mulaw.h>
-#include <dev/auconv.h>
 #include <dev/ic/ac97reg.h>
 #include <dev/ic/ac97var.h>
 #include <dev/ic/mpuvar.h>
@@ -151,17 +149,10 @@ CFATTACH_DECL_NEW(yds, sizeof(struct yds_softc),
 
 static int	yds_open(void *, int);
 static void	yds_close(void *);
-#if defined(AUDIO2)
 static int	yds_query_format(void *, audio_format_query_t *);
 static int	yds_set_format(void *, int,
 			       const audio_params_t *, const audio_params_t *,
 			       audio_filter_reg_t *, audio_filter_reg_t *);
-#else
-static int	yds_query_encoding(void *, struct audio_encoding *);
-static int	yds_set_params(void *, int, int, audio_params_t *,
-			       audio_params_t *, stream_filter_list_t *,
-			       stream_filter_list_t *);
-#endif
 static int	yds_round_blocksize(void *, int, int, const audio_params_t *);
 static int	yds_trigger_output(void *, void *, void *, int,
 				   void (*)(void *), void *,
@@ -177,7 +168,6 @@ static int	yds_mixer_get_port(void *, mixer_ctrl_t *);
 static void *	yds_malloc(void *, int, size_t);
 static void	yds_free(void *, void *, size_t);
 static size_t	yds_round_buffersize(void *, int, size_t);
-static paddr_t	yds_mappage(void *, void *, off_t, int);
 static int	yds_get_props(void *);
 static int	yds_query_devinfo(void *, mixer_devinfo_t *);
 static void	yds_get_locks(void *, kmutex_t **, kmutex_t **);
@@ -213,13 +203,8 @@ static const struct audio_hw_if yds_hw_if = {
 	.open		  = yds_open,
 	.close		  = yds_close,
 	.drain		  = NULL,
-#if defined(AUDIO2)
 	.query_format	  = yds_query_format,
 	.set_format	  = yds_set_format,
-#else
-	.query_encoding	  = yds_query_encoding,
-	.set_params	  = yds_set_params,
-#endif
 	.round_blocksize  = yds_round_blocksize,
 	.commit_settings  = NULL,
 	.init_output	  = NULL,
@@ -237,7 +222,6 @@ static const struct audio_hw_if yds_hw_if = {
 	.allocm		  = yds_malloc,
 	.freem		  = yds_free,
 	.round_buffersize = yds_round_buffersize,
-	.mappage	  = yds_mappage,
 	.get_props	  = yds_get_props,
 	.trigger_output	  = yds_trigger_output,
 	.trigger_input	  = yds_trigger_input,
@@ -279,38 +263,18 @@ static const struct {
 #define YDS_CAP_BITS	"\020\005P44\004LEGFLEX\003LEGSEL\002MCODE1E\001MCODE1"
 #endif
 
-#if defined(AUDIO2)
-/* Hardware also supports 5512.5Hz but it is not representable. */
-#define YDS_FORMAT(enc, prec, ch, chmask) \
-	{ \
-		.mode		= AUMODE_PLAY | AUMODE_RECORD, \
-		.encoding	= (enc), \
-		.validbits	= (prec), \
-		.precision	= (prec), \
-		.channels	= (ch), \
-		.channel_mask	= (chmask), \
-		.frequency_type	= 7, \
-		.frequency	= \
-		    { 8000, 11025, 16000, 22050, 32000, 44100, 48000 }, \
-	}
-#else
-#define YDS_FORMAT(enc, prec, ch, chmask) \
-	{ \
-		.mode		= AUMODE_PLAY | AUMODE_RECORD, \
-		.encoding	= (enc), \
-		.validbits	= (prec), \
-		.precision	= (prec), \
-		.channels	= (ch), \
-		.channel_mask	= (chmask), \
-		.frequency_type	= 0, \
-		.frequency	= { 4000, 48000 }, \
-	}
-#endif
 static const struct audio_format yds_formats[] = {
-	YDS_FORMAT(AUDIO_ENCODING_SLINEAR_LE, 16, 2, AUFMT_STEREO),
-	YDS_FORMAT(AUDIO_ENCODING_SLINEAR_LE, 16, 1, AUFMT_MONAURAL),
-	YDS_FORMAT(AUDIO_ENCODING_ULINEAR_LE,  8, 2, AUFMT_STEREO),
-	YDS_FORMAT(AUDIO_ENCODING_ULINEAR_LE,  8, 1, AUFMT_MONAURAL),
+	{
+		.mode		= AUMODE_PLAY | AUMODE_RECORD,
+		.encoding	= AUDIO_ENCODING_SLINEAR_LE,
+		.validbits	= 16,
+		.precision	= 16,
+		.channels	= 2,
+		.channel_mask	= AUFMT_STEREO,
+		.frequency_type	= 8,
+		.frequency	=
+		    { 5512, 8000, 11025, 16000, 22050, 32000, 44100, 48000 },
+	},
 };
 #define	YDS_NFORMATS	(sizeof(yds_formats) / sizeof(struct audio_format))
 
@@ -792,7 +756,6 @@ yds_attach(device_t parent, device_t self, void *aux)
 	revision = PCI_REVISION(pa->pa_class);
 
 	pci_aprint_devinfo(pa, NULL);
-printf("dmat=%p\n", (char*)pa->pa_dmat);
 
 	/* Map register to memory */
 	if (pci_mapreg_map(pa, YDS_PCI_MBA, PCI_MAPREG_TYPE_MEM, 0,
@@ -965,15 +928,6 @@ detected:
 			return;
 		}
 	}
-
-#if !defined(AUDIO2)
-	if (0 != auconv_create_encodings(yds_formats, YDS_NFORMATS,
-	    &sc->sc_encodings)) {
-		mutex_destroy(&sc->sc_lock);
-		mutex_destroy(&sc->sc_intr_lock);
-		return;
-	}
-#endif
 
 	audio_attach_mi(&yds_hw_if, sc, self);
 
@@ -1297,7 +1251,6 @@ yds_close(void *addr)
 	yds_halt(addr);
 }
 
-#if defined(AUDIO2)
 static int
 yds_query_format(void *addr, audio_format_query_t *afp)
 {
@@ -1312,34 +1265,6 @@ yds_set_format(void *addr, int setmode,
 {
 	return 0;
 }
-#else
-static int
-yds_query_encoding(void *addr, struct audio_encoding *fp)
-{
-	struct yds_softc *sc;
-
-	sc = addr;
-	return auconv_query_encoding(sc->sc_encodings, fp);
-}
-
-static int
-yds_set_params(void *addr, int setmode, int usemode,
-	       audio_params_t *play, audio_params_t* rec,
-	       stream_filter_list_t *pfil, stream_filter_list_t *rfil)
-{
-	if (setmode & AUMODE_RECORD) {
-		if (auconv_set_converter(yds_formats, YDS_NFORMATS,
-					 AUMODE_RECORD, rec, FALSE, rfil) < 0)
-			return EINVAL;
-	}
-	if (setmode & AUMODE_PLAY) {
-		if (auconv_set_converter(yds_formats, YDS_NFORMATS,
-					 AUMODE_PLAY, play, FALSE, pfil) < 0)
-			return EINVAL;
-	}
-	return 0;
-}
-#endif /* AUDIO2 */
 
 static int
 yds_round_blocksize(void *addr, int blk, int mode,
@@ -1795,22 +1720,6 @@ yds_round_buffersize(void *addr, int direction, size_t size)
 	if (size < 1024 * 3)
 		size = 1024 * 3;
 	return size;
-}
-
-static paddr_t
-yds_mappage(void *addr, void *mem, off_t off, int prot)
-{
-	struct yds_softc *sc;
-	struct yds_dma *p;
-
-	if (off < 0)
-		return -1;
-	sc = addr;
-	p = yds_find_dma(sc, mem);
-	if (p == NULL)
-		return -1;
-	return bus_dmamem_mmap(sc->sc_dmatag, p->segs, p->nsegs,
-	    off, prot, BUS_DMA_WAITOK);
 }
 
 static int
