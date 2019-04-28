@@ -231,8 +231,6 @@
  * Sample rate related constants.
  * Note: the use of these clock sources must be explicitly enabled for Audio 1.
  */
-#define ESO_MINRATE		6000
-#define ESO_MAXRATE		48000
 #define ESO_CLK0		793800L	/* Clock source 0 frequency */
 #define ESO_CLK1		768000L	/* Clock source 1 frequency */
 #define ESO_CLK1_SELECT		0x80	/* MSb of divider selects clock src */
