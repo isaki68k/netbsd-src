@@ -1082,7 +1082,8 @@ yds_intr(void *p)
 
 	if (status & YDS_STAT_INT) {
 		int nbank;
-		u_int pdma = 0, rdma = 0;
+		u_int pdma = 0;
+		u_int rdma = 0;
 
 		/* nbank is bank number that YDS is processing now. */
 		nbank = YREAD4(sc, YDS_CONTROL_SELECT) & 1;
@@ -1101,7 +1102,8 @@ yds_intr(void *p)
 					BUS_DMASYNC_POSTWRITE|
 					BUS_DMASYNC_POSTREAD);
 			/* start offset of current processing bank */
-			pdma = le32toh(sc->pbankp[nbank]->pgstart) * sc->sc_play.factor;
+			pdma = le32toh(sc->pbankp[nbank]->pgstart) *
+			    sc->sc_play.factor;
 		}
 
 		if (sc->sc_rec.intr) {
@@ -1114,16 +1116,17 @@ yds_intr(void *p)
 					BUS_DMASYNC_POSTWRITE|
 					BUS_DMASYNC_POSTREAD);
 			/* start offset of current processing bank */
-			rdma = le32toh(sc->rbank[YDS_INPUT_SLOT*2 + nbank].pgstartadr);
+			rdma = le32toh(
+			    sc->rbank[YDS_INPUT_SLOT * 2 + nbank].pgstartadr);
 		}
 
 		/* Buffer for the next frame is always ready. */
 		YWRITE4(sc, YDS_MODE, YREAD4(sc, YDS_MODE) | YDS_MODE_ACTV2);
 
 		if (sc->sc_play.intr) {
-			if (pdma < sc->sc_play.offset) pdma += sc->sc_play.length;
+			if (pdma < sc->sc_play.offset)
+				pdma += sc->sc_play.length;
 			if (pdma >= sc->sc_play.offset + sc->sc_play.blksize) {
-
 				/* We can fill the next block */
 				/* Sync ring buffer for previous write */
 				bus_dmamap_sync(sc->sc_dmatag,
@@ -1147,7 +1150,8 @@ yds_intr(void *p)
 			}
 		}
 		if (sc->sc_rec.intr) {
-			if (rdma < sc->sc_rec.offset) rdma += sc->sc_rec.length;
+			if (rdma < sc->sc_rec.offset)
+				rdma += sc->sc_rec.length;
 			if (rdma >= sc->sc_rec.offset + sc->sc_rec.blksize) {
 				/* We can drain the current block */
 				/* Sync ring buffer first */
