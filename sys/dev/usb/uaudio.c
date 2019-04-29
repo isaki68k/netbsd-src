@@ -62,7 +62,6 @@ __KERNEL_RCSID(0, "$NetBSD: uaudio.c,v 1.158 2019/03/16 12:09:58 isaki Exp $");
 
 #include <sys/audioio.h>
 #include <dev/audio_if.h>
-#include <dev/audiovar.h>
 
 #include <dev/usb/usb.h>
 #include <dev/usb/usbdi.h>
@@ -331,8 +330,6 @@ Static void	uaudio_chan_rintr
 	(struct usbd_xfer *, void *, usbd_status);
 
 Static int	uaudio_open(void *, int);
-Static void	uaudio_close(void *);
-Static int	uaudio_drain(void *);
 Static int	uaudio_query_format(void *, audio_format_query_t *);
 Static int	uaudio_set_format
      (void *, int, const audio_params_t *, const audio_params_t *,
@@ -355,8 +352,6 @@ Static void	uaudio_get_locks(void *, kmutex_t **, kmutex_t **);
 
 Static const struct audio_hw_if uaudio_hw_if = {
 	.open			= uaudio_open,
-	.close			= uaudio_close,
-	.drain			= uaudio_drain,
 	.query_format		= uaudio_query_format,
 	.set_format		= uaudio_set_format,
 	.round_blocksize	= uaudio_round_blocksize,
@@ -2161,27 +2156,6 @@ uaudio_open(void *addr, int flags)
 		return EACCES;
 	if ((flags & FREAD) && !(sc->sc_mode & AUMODE_RECORD))
 		return EACCES;
-
-	return 0;
-}
-
-/*
- * Close function is called at splaudio().
- */
-Static void
-uaudio_close(void *addr)
-{
-}
-
-Static int
-uaudio_drain(void *addr)
-{
-	struct uaudio_softc *sc = addr;
-
-	KASSERT(mutex_owned(&sc->sc_intr_lock));
-
-	kpause("uaudiodr", false,
-	    mstohz(UAUDIO_NCHANBUFS * UAUDIO_NFRAMES), &sc->sc_intr_lock);
 
 	return 0;
 }
