@@ -1652,19 +1652,9 @@ eap_free(void *addr, void *ptr, size_t size)
 static int
 eap_get_props(void *addr)
 {
-	struct eap_instance *ei;
-	struct eap_softc *sc;
-	int prop;
 
-	ei = addr;
-	sc = device_private(ei->parent);
-	prop = AUDIO_PROP_MMAP | AUDIO_PROP_FULLDUPLEX |
-	    AUDIO_PROP_INDEPENDENT;
-	/* The es1370 only has one clock, so it's not independent */
-	if (!sc->sc_1371 && ei->index == EAP_DAC2)
-		prop &= ~AUDIO_PROP_INDEPENDENT;
-
-	return prop;
+	return AUDIO_PROP_MMAP | AUDIO_PROP_INDEPENDENT |
+	    AUDIO_PROP_FULLDUPLEX;
 }
 
 static void
