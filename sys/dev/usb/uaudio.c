@@ -63,8 +63,6 @@ __KERNEL_RCSID(0, "$NetBSD: uaudio.c,v 1.158 2019/03/16 12:09:58 isaki Exp $");
 #include <sys/audioio.h>
 #include <dev/audio_if.h>
 #include <dev/audiovar.h>
-#include <dev/mulaw.h>
-#include <dev/auconv.h>
 
 #include <dev/usb/usb.h>
 #include <dev/usb/usbdi.h>
@@ -336,9 +334,9 @@ Static int	uaudio_open(void *, int);
 Static void	uaudio_close(void *);
 Static int	uaudio_drain(void *);
 Static int	uaudio_query_format(void *, audio_format_query_t *);
-Static int	uaudio_set_params
-	(void *, int, int, struct audio_params *, struct audio_params *,
-	 stream_filter_list_t *, stream_filter_list_t *);
+Static int	uaudio_set_format
+     (void *, int, const audio_params_t *, const audio_params_t *,
+	 audio_filter_reg_t *, audio_filter_reg_t *);
 Static int	uaudio_round_blocksize(void *, int, int, const audio_params_t *);
 Static int	uaudio_trigger_output
 	(void *, void *, void *, int, void (*)(void *), void *,
@@ -360,7 +358,7 @@ Static const struct audio_hw_if uaudio_hw_if = {
 	.close			= uaudio_close,
 	.drain			= uaudio_drain,
 	.query_format		= uaudio_query_format,
-	.set_params		= uaudio_set_params,
+	.set_format		= uaudio_set_format,
 	.round_blocksize	= uaudio_round_blocksize,
 	.halt_output		= uaudio_halt_out_dma,
 	.halt_input		= uaudio_halt_in_dma,
@@ -2985,15 +2983,12 @@ uaudio_chan_set_param(struct chan *ch, u_char *start, u_char *end, int blksize)
 }
 
 Static int
-uaudio_set_params(void *addr, int setmode, int usemode,
-		  struct audio_params *play, struct audio_params *rec,
-		  stream_filter_list_t *pfil, stream_filter_list_t *rfil)
+uaudio_set_format(void *addr, int setmode,
+		  const audio_params_t *play, const audio_params_t *rec,
+		  audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
 {
 	struct uaudio_softc *sc;
 	int paltidx, raltidx;
-	struct audio_params *p;
-	stream_filter_list_t *fil;
-	int mode, i;
 
 	sc = addr;
 	paltidx = -1;
@@ -3001,14 +2996,10 @@ uaudio_set_params(void *addr, int setmode, int usemode,
 	if (sc->sc_dying)
 		return EIO;
 
-	if (((usemode & AUMODE_PLAY) && sc->sc_playchan.pipe != NULL) ||
-	    ((usemode & AUMODE_RECORD) && sc->sc_recchan.pipe != NULL))
-		return EBUSY;
-
-	if ((usemode & AUMODE_PLAY) && sc->sc_playchan.altidx != -1) {
+	if ((setmode & AUMODE_PLAY) && sc->sc_playchan.altidx != -1) {
 		sc->sc_alts[sc->sc_playchan.altidx].sc_busy = 0;
 	}
-	if ((usemode & AUMODE_RECORD) && sc->sc_recchan.altidx != -1) {
+	if ((setmode & AUMODE_RECORD) && sc->sc_recchan.altidx != -1) {
 		sc->sc_alts[sc->sc_recchan.altidx].sc_busy = 0;
 	}
 
@@ -3016,45 +3007,23 @@ uaudio_set_params(void *addr, int setmode, int usemode,
 	   matching mode for the unsupported direction. */
 	setmode &= sc->sc_mode;
 
-	for (mode = AUMODE_RECORD; mode != -1;
-	     mode = mode == AUMODE_RECORD ? AUMODE_PLAY : -1) {
-		if ((setmode & mode) == 0)
-			continue;
-
-		if (mode == AUMODE_PLAY) {
-			p = play;
-			fil = pfil;
-		} else {
-			p = rec;
-			fil = rfil;
-		}
-		i = auconv_set_converter(sc->sc_formats, sc->sc_nformats,
-					 mode, p, TRUE, fil);
-		if (i < 0)
-			return EINVAL;
-
-		if (mode == AUMODE_PLAY)
-			paltidx = i;
-		else
-			raltidx = i;
-	}
-
 	if ((setmode & AUMODE_PLAY)) {
-		p = pfil->req_size > 0 ? &pfil->filters[0].param : play;
-		/* XXX abort transfer if currently happening? */
-		uaudio_chan_init(&sc->sc_playchan, paltidx, p, 0);
+		paltidx = audio_indexof_format(sc->sc_formats, sc->sc_nformats,
+		    AUMODE_PLAY, play);
+		/* No transfer should occur */
+		uaudio_chan_init(&sc->sc_playchan, paltidx, play, 0);
 	}
 	if ((setmode & AUMODE_RECORD)) {
-		p = rfil->req_size > 0 ? &rfil->filters[0].param : rec;
-		/* XXX abort transfer if currently happening? */
-		uaudio_chan_init(&sc->sc_recchan, raltidx, p,
-		    UGETW(sc->sc_alts[raltidx].edesc->wMaxPacketSize));
+		raltidx = audio_indexof_format(sc->sc_formats, sc->sc_nformats,
+		    AUMODE_RECORD, rec);
+		/* No transfer should occur */
+		uaudio_chan_init(&sc->sc_recchan, raltidx, rec, 0);
 	}
 
-	if ((usemode & AUMODE_PLAY) && sc->sc_playchan.altidx != -1) {
+	if ((setmode & AUMODE_PLAY) && sc->sc_playchan.altidx != -1) {
 		sc->sc_alts[sc->sc_playchan.altidx].sc_busy = 1;
 	}
-	if ((usemode & AUMODE_RECORD) && sc->sc_recchan.altidx != -1) {
+	if ((setmode & AUMODE_RECORD) && sc->sc_recchan.altidx != -1) {
 		sc->sc_alts[sc->sc_recchan.altidx].sc_busy = 1;
 	}
 
