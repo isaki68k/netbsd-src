@@ -37,15 +37,14 @@ __KERNEL_RCSID(0, "$NetBSD: emuxki.c,v 1.67 2019/03/16 12:09:58 isaki Exp $");
 
 #include <dev/pci/emuxkireg.h>
 
-/* #define AUDIO_DEBUG 1 */
-#ifdef AUDIO_DEBUG
-extern int audiodebug;
-#define emudebug audiodebug
-# define DPRINTF(x)	if (emudebug) printf x
-# define DPRINTFN(n,x)	if (emudebug>=(n)) printf x
+#define EMUXKI_DEBUG 1
+#ifdef EMUXKI_DEBUG
+#define emudebug EMUXKI_DEBUG
+# define DPRINTF(fmt...)	do { if (emudebug) printf(fmt); } while (0)
+# define DPRINTFN(n,fmt...)	do { if (emudebug>=(n)) printf(fmt); } while (0)
 #else
-# define DPRINTF(x)
-# define DPRINTFN(n,x)
+# define DPRINTF(fmt...)	do { } while (0)
+# define DPRINTFN(n,fmt...)	do { } while (0)
 #endif
 
 /*
@@ -312,8 +311,8 @@ dmamem_alloc(struct emuxki_softc *sc, size_t size)
 		goto destroy;
 	}
 
-	DPRINTF(("map ds=%p\n", (char*)mem->map->dm_segs[0].ds_addr));
-	DPRINTF(("segs ds=%p\n", (char*)mem->segs[0].ds_addr));
+	DPRINTF("map ds=%p\n", (char*)mem->map->dm_segs[0].ds_addr);
+	DPRINTF("segs ds=%p\n", (char*)mem->segs[0].ds_addr);
 
 	return mem;
 
@@ -477,7 +476,7 @@ emuxki_attach(device_t parent, device_t self, void *aux)
 	pa = aux;
 
 	pci_aprint_devinfo(pa, "Audio controller");
-	DPRINTF(("dmat=%p\n", (char *)pa->pa_dmat));
+	DPRINTF("dmat=%p\n", (char *)pa->pa_dmat);
 
 	mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_NONE);
 	mutex_init(&sc->sc_intr_lock, MUTEX_DEFAULT, IPL_AUDIO);
@@ -929,7 +928,7 @@ emuxki_timer_start(struct emuxki_softc *sc)
 	emuxki_writeio_4(sc, EMU_INTE,
 	    emuxki_readio_4(sc, EMU_INTE) |
 	        EMU_INTE_INTERTIMERENB);
-	DPRINTF(("timer start\n"));
+	DPRINTF("timer start\n");
 }
 
 static void
@@ -941,7 +940,7 @@ emuxki_timer_stop(struct emuxki_softc *sc)
 	        ~EMU_INTE_INTERTIMERENB);
 	/* EMU_TIMER is 16bit register */
 	emuxki_writeio_2(sc, EMU_TIMER, 0);
-	DPRINTF(("timer stop\n"));
+	DPRINTF("timer stop\n");
 }
 
 /*
@@ -952,9 +951,9 @@ static int
 emuxki_open(void *hdl, int flags)
 {
 
-	DPRINTF(("%s for %s%s\n", __func__,
+	DPRINTF("%s for %s%s\n", __func__,
 	    (flags & FWRITE) ? "P" : "",
-	    (flags & FREAD)  ? "R" : ""));
+	    (flags & FREAD)  ? "R" : "");
 
 	return 0;
 }
@@ -963,7 +962,7 @@ static void
 emuxki_close(void *hdl)
 {
 
-	DPRINTF(("%s\n", __func__));
+	DPRINTF("%s\n", __func__);
 }
 
 static int
@@ -1025,12 +1024,12 @@ emuxki_intr(void *hdl)
 	mutex_spin_enter(&sc->sc_intr_lock);
 
 	ipr = emuxki_readio_4(sc, EMU_IPR);
-	DPRINTFN(3, ("emuxki: ipr=%08x\n", ipr));
+	DPRINTFN(3, "emuxki: ipr=%08x\n", ipr);
 	if (sc->pintr && (ipr & EMU_IPR_INTERVALTIMER)) {
 		/* read ch 0 */
 		curaddr = emuxki_read(sc, 0, EMU_CHAN_CCCA) &
 		    EMU_CHAN_CCCA_CURRADDR_MASK;
-		DPRINTFN(3, ("curaddr=%08x\n", curaddr));
+		DPRINTFN(3, "curaddr=%08x\n", curaddr);
 		curaddr *= sc->pframesize;
 
 		if (curaddr < sc->poffset)
@@ -1130,7 +1129,7 @@ emuxki_intr(void *hdl)
 		if (ipr & EMU_IPR_CHANNELLOOP)
 			strcat(buf, " CHANNELLOOP");
 
-		DPRINTF(("unexpected intr: %s", buf));
+		DPRINTF("unexpected intr: %s", buf);
 
 		/* for debugging (must not handle if !DEBUG) */
 		handled = 1;
