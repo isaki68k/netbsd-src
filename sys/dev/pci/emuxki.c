@@ -2102,26 +2102,9 @@ emuxki_set_format(void *addr, int setmode,
     const audio_params_t *play, const audio_params_t *rec,
     audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
 {
-	struct emuxki_softc *sc;
-	int error;
 
-	sc = addr;
-	if ((setmode & AUMODE_PLAY)) {
-		error = emuxki_voice_set_audioparms(sc, sc->pvoice,
-		    play->channels == 2, play->precision == 16,
-		    play->sample_rate);
-		if (error)
-			return error;
-	}
-	if ((setmode & AUMODE_RECORD)) {
-		error = emuxki_voice_set_audioparms(sc, sc->rvoice,
-		    rec->channels == 2, rec->precision == 16,
-		    rec->sample_rate);
-		if (error)
-			return error;
-	}
-
-	return 0;
+	/* XXX impossible to use this driver as is */
+	return ENXIO;
 }
 
 static int
