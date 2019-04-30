@@ -1,12 +1,13 @@
 /*
  *
  */
+
 /*
  * EMU10K1 single voice driver
  * o. only 1 voice playback, 1 recording
  * o. only s16le 2ch 48k
- * This is nessecery for simplify buffer and interrupt control,
- * safficient for playback and recording quality.
+ * This makes it simple to control buffers and interrupts
+ * while satisfying playback and recording quality.
  */
 
 #include <sys/cdefs.h>
@@ -222,7 +223,7 @@ static int	emuxki_ac97_write(void *, uint8_t, uint16_t);
 static int	emuxki_ac97_reset(void *);
 static enum ac97_host_flags	emuxki_ac97_flags(void *);
 
-/* CF DECL */
+
 CFATTACH_DECL_NEW(emuxki, sizeof(struct emuxki_softc),
     emuxki_match, emuxki_attach, emuxki_detach, NULL);
 
@@ -1309,15 +1310,8 @@ emuxki_trigger_output(void *hdl, void *start, void *end, int blksize,
 }
 
 /*
- * 録音のバッファサイズが半固定長なので
- * ハンドリングは2通り考えられて
- * 1. タイマーを再生と共有
- *    これは余分なメモリ転送がないが、タイマタイミングが
- *    再生と共有なのでスプリアスや取りこぼし相当が心配。
- * 2. 中間バッファを使用
- *    これは余分なメモリ転送が発生するが、ADC_HALF/FULL 割り込みを
- *    使えるので再生と衝突しない。
- * というわけで 2 の中間バッファ方式を使用する。
+ * Recording uses temporary buffer.  Because it can use ADC_HALF/FULL
+ * interrupts and this method doesn't conflict with playback.
  */
 
 static int
@@ -1342,8 +1336,8 @@ emuxki_trigger_input(void *hdl, void *start, void *end, int blksize,
 
 	/*
 	 * Memo:
-	 *  recording source selected by AC97
-	 *  AC97 input source route to ADC by FX(DSP)
+	 *  recording source is selected by AC97
+	 *  AC97 input source routes to ADC by FX(DSP)
 	 *
 	 * Must keep following sequence order
 	 */
