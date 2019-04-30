@@ -53,27 +53,27 @@ __KERNEL_RCSID(0, "$NetBSD: emuxki.c,v 1.67 2019/03/16 12:09:58 isaki Exp $");
  *       (Maybe, later chip has 32bit mode, but it isn't used now.)
  */
 
-#define	EMU_PCI_CBIO		0x10
-#define EMU_SUBSYS_APS		0x40011102
+#define	EMU_PCI_CBIO		(0x10)
+#define EMU_SUBSYS_APS		(0x40011102)
 
-#define	EMU_PTESIZE		4096
-#define EMU_MINPTE	3
+#define	EMU_PTESIZE		(4096)
+#define EMU_MINPTE		(3)
 /*
  * Hardware limit of PTE is 4096 entry but it's too big for single voice.
  * Reasonable candidate is:
  *  48kHz * 2ch * 2byte * 1sec * 3buf/EMU_PTESIZE = 141
  * and then round it up to 2^n.
  */
-#define EMU_MAXPTE	256
-#define EMU_NUMCHAN	64
+#define EMU_MAXPTE		(256)
+#define EMU_NUMCHAN		(64)
 
 /*
  * Internal recording DMA buffer
  */
 /* Recommend the same size as EMU_PTESIZE to be symmetrical for play/rec */
-#define EMU_REC_DMABLKSIZE	4096
+#define EMU_REC_DMABLKSIZE	(4096)
 /* must be EMU_REC_DMABLKSIZE * 2 */
-#define EMU_REC_DMASIZE	8192
+#define EMU_REC_DMASIZE		(8192)
 /* must be EMU_RECBS_BUFSIZE_(EMU_REC_DMASIZE) */
 #define EMU_REC_BUFSIZE_RECBS	EMU_RECBS_BUFSIZE_8192
 
@@ -81,8 +81,8 @@ __KERNEL_RCSID(0, "$NetBSD: emuxki.c,v 1.67 2019/03/16 12:09:58 isaki Exp $");
  * DMA memory management
  */
 
-#define	EMU_DMA_ALIGN	4096
-#define	EMU_DMA_NSEGS	1
+#define	EMU_DMA_ALIGN		(4096)
+#define	EMU_DMA_NSEGS		(1)
 
 struct dmamem {
 	bus_dma_tag_t   dmat;
@@ -161,7 +161,7 @@ struct emuxki_softc {
 /* blackmagic */
 #define X1(x)		((sc->sc_type & EMUXKI_AUDIGY) ? EMU_A_##x : EMU_##x)
 #define X2(x, y)	((sc->sc_type & EMUXKI_AUDIGY) \
-	? EMU_A_##x(EMU_A_##y) : EMU_##x(EMU_##y))
+    ? EMU_A_##x(EMU_A_##y) : EMU_##x(EMU_##y))
 #define EMU_A_DSP_FX		EMU_DSP_FX
 #define EMU_A_DSP_IN_AC97	EMU_DSP_IN_AC97
 
@@ -283,29 +283,28 @@ dmamem_alloc(struct emuxki_softc *sc, size_t size)
 	mem->segs = kmem_alloc(mem->nsegs * sizeof(*(mem->segs)), KM_SLEEP);
 
 	if (bus_dmamem_alloc(mem->dmat, mem->size, mem->align, mem->bound,
-			     mem->segs, mem->nsegs, &(mem->rsegs),
-			     BUS_DMA_WAITOK)) {
+	    mem->segs, mem->nsegs, &mem->rsegs, BUS_DMA_WAITOK)) {
 		device_printf(sc->sc_dev,
 		    "%s bus_dmamem_alloc failed\n", __func__);
 		goto memfree;
 	}
 
 	if (bus_dmamem_map(mem->dmat, mem->segs, mem->nsegs, mem->size,
-			   &(mem->kaddr), BUS_DMA_WAITOK | BUS_DMA_COHERENT)) {
+	    &mem->kaddr, BUS_DMA_WAITOK | BUS_DMA_COHERENT)) {
 		device_printf(sc->sc_dev,
 		    "%s bus_dmamem_map failed\n", __func__);
 		goto free;
 	}
 
 	if (bus_dmamap_create(mem->dmat, mem->size, mem->nsegs, mem->size,
-			      mem->bound, BUS_DMA_WAITOK, &(mem->map))) {
+	    mem->bound, BUS_DMA_WAITOK, &mem->map)) {
 		device_printf(sc->sc_dev,
 		    "%s bus_dmamap_create failed\n", __func__);
 		goto unmap;
 	}
 
 	if (bus_dmamap_load(mem->dmat, mem->map, mem->kaddr,
-			    mem->size, NULL, BUS_DMA_WAITOK)) {
+	    mem->size, NULL, BUS_DMA_WAITOK)) {
 		device_printf(sc->sc_dev,
 		    "%s bus_dmamap_load failed\n", __func__);
 		goto destroy;
@@ -412,6 +411,7 @@ static void
 emuxki_writeptr(struct emuxki_softc *sc, int aptr, int dptr, int addr,
     uint32_t data)
 {
+
 	mutex_spin_enter(&sc->sc_index_lock);
 	emuxki_writeio_4(sc, aptr, addr);
 	emuxki_writeio_4(sc, dptr, data);
@@ -487,7 +487,7 @@ emuxki_attach(device_t parent, device_t self, void *aux)
 
 	reg = pci_conf_read(pa->pa_pc, pa->pa_tag, PCI_COMMAND_STATUS_REG);
 	reg |= PCI_COMMAND_IO_ENABLE | PCI_COMMAND_MASTER_ENABLE |
-		PCI_COMMAND_MEM_ENABLE;
+	    PCI_COMMAND_MEM_ENABLE;
 	pci_conf_write(pa->pa_pc, pa->pa_tag, PCI_COMMAND_STATUS_REG, reg);
 
 	if (pci_mapreg_map(pa, EMU_PCI_CBIO, PCI_MAPREG_TYPE_IO, 0,
@@ -1048,7 +1048,8 @@ emuxki_intr(void *hdl)
 
 	if (sc->rintr &&
 	    (ipr & (EMU_IPR_ADCBUFHALFFULL | EMU_IPR_ADCBUFFULL))) {
-		char *src, *dst;
+		char *src;
+		char *dst;
 
 		/* Record DMA buffer has just 2 blocks */
 		src = KERNADDR(sc->rmem);
@@ -1362,7 +1363,7 @@ emuxki_trigger_input(void *hdl, void *start, void *end, int blksize,
 	/* ADC Enable */
 	/* stereo, 48kHz, enable */
 	emuxki_write(sc, 0, EMU_ADCCR,
-		X1(ADCCR_LCHANENABLE) | X1(ADCCR_RCHANENABLE));
+	    X1(ADCCR_LCHANENABLE) | X1(ADCCR_RCHANENABLE));
 
 	/* ADC buffer address */
 	emuxki_write(sc, 0, X1(ADCIDX), 0);
@@ -1390,6 +1391,7 @@ emuxki_get_locks(void *hdl, kmutex_t **intr, kmutex_t **proc)
 static int
 emuxki_ac97_init(struct emuxki_softc *sc)
 {
+
 	sc->hostif.arg = sc;
 	sc->hostif.attach = emuxki_ac97_attach;
 	sc->hostif.read = emuxki_ac97_read;
