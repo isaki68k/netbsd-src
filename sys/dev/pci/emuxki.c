@@ -51,7 +51,6 @@
  * - Independent modification of each channel's parameters (via mixer ?)
  * - DSP FX patches (to make fx like chipmunk)
  */
-#define EMUXKI_DEBUG
 
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD: emuxki.c,v 1.67 2019/03/16 12:09:58 isaki Exp $");
@@ -90,7 +89,6 @@ static int	emuxki_detach(device_t, int);
 static struct dmamem *dmamem_alloc(bus_dma_tag_t, size_t, bus_size_t,
 		int);
 static void	dmamem_free(struct dmamem *);
-static void dmamem_sync(struct dmamem *, int);
 
 /* Emu10k1 init & shutdown */
 static int	emuxki_init(struct emuxki_softc *);
@@ -253,12 +251,6 @@ static const struct audio_format emuxki_formats[EMUXKI_NFORMATS] = {
 /*
  * DMA memory mgmt
  */
-
-static void
-dmamem_sync(struct dmamem *mem, int ops)
-{
-	bus_dmamap_sync(mem->dmat, mem->map, 0, mem->size, ops);
-}
 
 static void
 dmamem_delete(struct dmamem *mem)
@@ -428,8 +420,6 @@ emuxki_attach(device_t parent, device_t self, void *aux)
 	sc = device_private(self);
 	sc->sc_dev = self;
 	pa = aux;
-
-	sc->addrmode = 1;
 
 	mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_NONE);
 	mutex_init(&sc->sc_intr_lock, MUTEX_DEFAULT, IPL_AUDIO);
@@ -888,40 +878,19 @@ emuxki_init(struct emuxki_softc *sc)
 	/* Zero out the silent page */
 	/* This might not be always true, it might be 128 for 8bit channels */
 	memset(KERNADDR(sc->silentpage), 0, DMASIZE(sc->silentpage));
-{
- int16_t *sp = KERNADDR(sc->silentpage);
- for (int t = 0; t < DMASIZE(sc->silentpage) / 2; t++) {
-  *sp++ = (int16_t)(t * 4);
- }
-}
 
-	dmamem_sync(sc->silentpage, BUS_DMASYNC_PREWRITE);
-
-printf("silentpage K=%p D=%p\n", KERNADDR(sc->silentpage), (char*)DMAADDR(sc->silentpage));
 	/*
 	 * Set all the PTB Entries to the silent page We shift the physical
 	 * address by one and OR it with the page number. I don't know what
 	 * the ORed index is for, might be a very useful unused feature...
 	 */
-	silentpage = DMAADDR(sc->silentpage) << sc->addrmode;
-printf("silentpage tag=%p\n", (char*)silentpage);
+	silentpage = DMAADDR(sc->silentpage) << 1;
 	ptb = KERNADDR(sc->ptb);
 	for (i = 0; i < EMU_MAXPTE; i++)
 		ptb[i] = htole32(silentpage | i);
 
-	dmamem_sync(sc->ptb, BUS_DMASYNC_PREWRITE);
-printf("ptb K=%p D=%p\n", KERNADDR(sc->ptb), (char*)DMAADDR(sc->ptb));
-
 	/* Write PTB address and set TCB to none */
 	emuxki_write(sc, 0, EMU_PTB, DMAADDR(sc->ptb));
-	{
-		uint32_t t = emuxki_read(sc, 0, EMU_PTB);
-		printf("ptb hw=%08x\n", t);
-		if (t != DMAADDR(sc->ptb)) {
-			printf("mismatch!!!!\n");
-		}
-	}
-
 	emuxki_write(sc, 0, EMU_TCBS, 0);	/* This means 16K TCB */
 	emuxki_write(sc, 0, EMU_TCB, 0);	/* No TCB use for now */
 
@@ -1015,13 +984,13 @@ emuxki_mem_new(struct emuxki_softc *sc, int ptbidx, size_t size)
 		kmem_free(mem, sizeof(*mem));
 		return NULL;
 	}
-printf("mem K=%p D=%p\n", KERNADDR(mem->dmamem), (char*)DMAADDR(mem->dmamem));
 	return mem;
 }
 
 static void
 emuxki_mem_delete(struct emuxki_mem *mem, size_t size)
 {
+
 	dmamem_free(mem->dmamem);
 	kmem_free(mem, sizeof(*mem));
 }
@@ -1035,7 +1004,7 @@ emuxki_pmem_alloc(struct emuxki_softc *sc, size_t size)
 	uint32_t *ptb, silentpage;
 
 	ptb = KERNADDR(sc->ptb);
-	silentpage = DMAADDR(sc->silentpage) << sc->addrmode;
+	silentpage = DMAADDR(sc->silentpage) << 1;
 	numblocks = size / EMU_PTESIZE;
 	if (size % EMU_PTESIZE)
 		numblocks++;
@@ -1058,10 +1027,9 @@ emuxki_pmem_alloc(struct emuxki_softc *sc, size_t size)
 				for (j = 0; j < numblocks; j++)
 					ptb[i + j] =
 					    htole32((((DMAADDR(mem->dmamem) +
-					    j * EMU_PTESIZE)) << sc->addrmode) | (i + j));
+					    j * EMU_PTESIZE)) << 1) | (i + j));
 				LIST_INSERT_HEAD(&(sc->mem), mem, next);
 				mutex_spin_exit(&sc->sc_intr_lock);
-				dmamem_sync(sc->ptb, BUS_DMASYNC_PREWRITE);
 				return (KERNADDR(mem->dmamem));
 			} else
 				i += j;
@@ -1286,14 +1254,13 @@ emuxki_channel_commit_parms(struct emuxki_channel *chan)
 	chano = chan->num;
 	start = chan->loop.start +
 		(voice->stereo ? 28 : 30) * (voice->b16 + 1);
-	mapval = (DMAADDR(sc->silentpage) << sc->addrmode) | EMU_CHAN_MAP_PTI_MASK;
+	mapval = DMAADDR(sc->silentpage) << 1 | EMU_CHAN_MAP_PTI_MASK;
 
 	KASSERT(mutex_owned(&sc->sc_intr_lock));
 	emuxki_write(sc, chano, EMU_CHAN_CPF_STEREO, voice->stereo);
 
 	emuxki_channel_commit_fx(chan);
 
-printf("chan start: ch=%d start=%x\n", chano, start);
 	emuxki_write(sc, chano, EMU_CHAN_CCCA,
 		(chan->filter.lowpass_resonance_height << 28) |
 		(chan->filter.interpolation_ROM << 25) |
@@ -1302,7 +1269,6 @@ printf("chan start: ch=%d start=%x\n", chano, start);
 	emuxki_write(sc, chano, EMU_CHAN_Z2, 0);
 	emuxki_write(sc, chano, EMU_CHAN_MAPA, mapval);
 	emuxki_write(sc, chano, EMU_CHAN_MAPB, mapval);
-
 	emuxki_write(sc, chano, EMU_CHAN_CVCF_CURRFILTER,
 		chan->filter.current_cutoff_frequency);
 	emuxki_write(sc, chano, EMU_CHAN_VTFT_FILTERTARGET,
@@ -1706,7 +1672,7 @@ emuxki_voice_set_bufparms(struct emuxki_voice *voice, void *ptr,
 		if (voice->use & EMU_VOICE_USE_PLAY) {
 			voice->blksize = blksize / sample_size;
 			chan = voice->dataloc.chan;
-			start = mem->ptbidx << 12;	 // XXX
+			start = mem->ptbidx << 12;
 			end = start + bufsize / sample_size;
 			emuxki_channel_set_bufparms(chan[0],
 						     start, end);
@@ -1717,14 +1683,6 @@ emuxki_voice_set_bufparms(struct emuxki_voice *voice, void *ptr,
 			    voice->blksize / voice->sample_rate;
 			if (voice->timerate < 5)
 				error = EINVAL;
-{
-printf("start=%d end=%d ptbidx=%d\n", start, end, mem->ptbidx);
-for (int pidx = mem->ptbidx; pidx < mem->ptbidx + 16; pidx++) {
-uint32_t *ptb = KERNADDR(voice->sc->ptb);
-printf("ptb[%d]: %08x\n", pidx, ptb[pidx]);
-}
-}
-
 		} else {
 			voice->blksize = blksize;
 			for(idx = sizeof(emuxki_recbuf_sz) /
@@ -1908,13 +1866,11 @@ emuxki_voice_start(struct emuxki_voice *voice,
 	voice->inth = inth;
 	voice->inthparam = inthparam;
 	if (voice->use & EMU_VOICE_USE_PLAY) {
-		dmamem_sync(voice->buffer->dmamem, BUS_DMASYNC_PREWRITE);
 		voice->trigblk = 1;
 		emuxki_channel_start(voice->dataloc.chan[0]);
 		if (voice->stereo)
 			emuxki_channel_start(voice->dataloc.chan[1]);
 	} else {
-		dmamem_sync(voice->buffer->dmamem, BUS_DMASYNC_PREREAD);
 		voice->trigblk = 1;
 		switch (voice->dataloc.source) {
 		case EMU_RECSRC_ADC:
@@ -2046,20 +2002,9 @@ emuxki_intr(void *arg)
 				    curblk < (voice->trigblk + voice->blkmod / 2)) ||
 				    ((int)voice->trigblk - (int)curblk) >
 				    (voice->blkmod / 2 + 1)) {
-
-if (voice->use & EMU_VOICE_USE_PLAY) {
-		dmamem_sync(voice->buffer->dmamem, BUS_DMASYNC_POSTWRITE);
-} else {
-		dmamem_sync(voice->buffer->dmamem, BUS_DMASYNC_POSTREAD);
-}
 					voice->inth(voice->inthparam);
 					voice->trigblk++;
 					voice->trigblk %= voice->blkmod;
-if (voice->use & EMU_VOICE_USE_PLAY) {
-		dmamem_sync(voice->buffer->dmamem, BUS_DMASYNC_PREWRITE);
-} else {
-		dmamem_sync(voice->buffer->dmamem, BUS_DMASYNC_PREREAD);
-}
 				}
 #endif
 			}
@@ -2354,11 +2299,9 @@ emuxki_freem(void *addr, void *ptr, size_t size)
 	size_t numblocks;
 	int i;
 
-printf("freem\n");
-
 	sc = addr;
 	ptb = KERNADDR(sc->ptb);
-	silentpage = DMAADDR(sc->silentpage) << sc->addrmode;
+	silentpage = DMAADDR(sc->silentpage) << 1;
 	LIST_FOREACH(mem, &sc->mem, next) {
 		if (KERNADDR(mem->dmamem) != ptr)
 			continue;
@@ -2371,13 +2314,7 @@ printf("freem\n");
 			for (i = 0; i < numblocks; i++)
 				ptb[mem->ptbidx + i] =
 				    htole32(silentpage | (mem->ptbidx + i));
-			dmamem_sync(sc->ptb, BUS_DMASYNC_PREWRITE);
 		}
-{
-for (int pidx = mem->ptbidx; pidx < mem->ptbidx + 16; pidx++) {
-printf("ptb[%d]: %08x\n", pidx, ptb[pidx]);
-}
-}
 		LIST_REMOVE(mem, next);
 		mutex_spin_exit(&sc->sc_intr_lock);
 
@@ -2392,13 +2329,63 @@ static int
 emuxki_round_blocksize(void *addr, int blksize,
     int mode, const audio_params_t* param)
 {
-	return ((blksize + EMU_PTESIZE - 1) / EMU_PTESIZE) * EMU_PTESIZE;
+#if 0
+	struct emuxki_softc *sc;
+	struct audio_softc *au;
+#endif
+	int bufsize;
+#if 0
+	sc = addr;
+	if (sc == NULL)
+		return blksize;
+
+	au = device_private(sc->sc_audev);
+	if (au == NULL)
+		return blksize;
+
+	bufsize = emuxki_round_buffersize(sc, AUMODE_RECORD,
+	    au->sc_rr.bufsize);
+#else
+	bufsize = 65536;
+#endif
+
+	while (bufsize > blksize)
+		bufsize /= 2;
+
+	return bufsize;
 }
 
 static size_t
 emuxki_round_buffersize(void *addr, int direction, size_t bsize)
 {
-	return ((bsize + EMU_PTESIZE - 1) / EMU_PTESIZE) * EMU_PTESIZE;
+
+	if (direction == AUMODE_PLAY) {
+		if (bsize < EMU_PTESIZE)
+			bsize = EMU_PTESIZE;
+		else if (bsize > (EMU_PTESIZE * EMU_MAXPTE))
+			bsize = EMU_PTESIZE * EMU_MAXPTE;
+		/* Would be better if set to max available */
+		else if (bsize % EMU_PTESIZE)
+			bsize = bsize -
+				(bsize % EMU_PTESIZE) +
+				EMU_PTESIZE;
+	} else {
+		int idx;
+
+		/* find nearest lower recbuf size */
+		for(idx = sizeof(emuxki_recbuf_sz) /
+		    sizeof(emuxki_recbuf_sz[0]); --idx >= 0; ) {
+			if (bsize >= emuxki_recbuf_sz[idx]) {
+				bsize = emuxki_recbuf_sz[idx];
+				break;
+			}
+		}
+
+		if (bsize == 0)
+			bsize = 384;
+	}
+
+	return bsize;
 }
 
 static paddr_t
@@ -2441,13 +2428,6 @@ emuxki_trigger_output(void *addr, void *start, void *end, int blksize,
 
 	sc = addr;
 	voice = sc->pvoice;
-	{
-		uint32_t t = emuxki_read(sc, 0, EMU_PTB);
-		printf("ptb hw=%08x\n", t);
-		if (t != DMAADDR(sc->ptb)) {
-			printf("mismatch!!!!\n");
-		}
-	}
 	if (voice == NULL)
 		return ENXIO;
 	if ((error = emuxki_voice_set_audioparms(sc, voice, params->channels == 2,
