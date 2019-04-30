@@ -50,6 +50,11 @@
  * ftp://download.intel.com/ial/scalableplatforms/audio/ac97r21.pdf
  */
 
+/*
+ * TODO:
+ * - Remove DAC1 and secondary audio device support.
+ */
+
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD: eap.c,v 1.99 2019/03/16 12:09:58 isaki Exp $");
 
@@ -107,8 +112,7 @@ CFATTACH_DECL_NEW(eap, sizeof(struct eap_softc),
     eap_match, eap_attach, eap_detach, NULL);
 
 static int	eap_open(void *, int);
-static int	eap1370_query_format(void *, struct audio_format_query *);
-static int	eap1371_query_format(void *, struct audio_format_query *);
+static int	eap_query_format(void *, struct audio_format_query *);
 static int	eap_set_format(void *, int,
 			       const audio_params_t *, const audio_params_t *,
 			       audio_filter_reg_t *, audio_filter_reg_t *);
@@ -155,7 +159,7 @@ static void	eap_uart_txrdy(struct eap_softc *);
 
 static const struct audio_hw_if eap1370_hw_if = {
 	.open			= eap_open,
-	.query_format		= eap1370_query_format,
+	.query_format		= eap_query_format,
 	.set_format		= eap_set_format,
 	.halt_output		= eap_halt_output,
 	.halt_input		= eap_halt_input,
@@ -173,7 +177,7 @@ static const struct audio_hw_if eap1370_hw_if = {
 
 static const struct audio_hw_if eap1371_hw_if = {
 	.open			= eap_open,
-	.query_format		= eap1371_query_format,
+	.query_format		= eap_query_format,
 	.set_format		= eap_set_format,
 	.halt_output		= eap_halt_output,
 	.halt_input		= eap_halt_input,
@@ -206,27 +210,19 @@ static struct audio_device eap_device = {
 	"eap"
 };
 
-static const struct audio_format eap1371_format = {
-	.mode		= AUMODE_PLAY | AUMODE_RECORD,
-	.encoding	= AUDIO_ENCODING_SLINEAR_LE,
-	.validbits	= 16,
-	.precision	= 16,
-	.channels	= 2,
-	.channel_mask	= AUFMT_STEREO,
-	.frequency_type	= 1,
-	.frequency	= { 48000 },
+static const struct audio_format eap_formats[] = {
+	{
+		.mode		= AUMODE_PLAY | AUMODE_RECORD,
+		.encoding	= AUDIO_ENCODING_SLINEAR_LE,
+		.validbits	= 16,
+		.precision	= 16,
+		.channels	= 2,
+		.channel_mask	= AUFMT_STEREO,
+		.frequency_type	= 2,
+		.frequency	= { 4000, 48000 },
+	},
 };
-
-static const struct audio_format eap1370_format = {
-	.mode		= AUMODE_PLAY | AUMODE_RECORD,
-	.encoding	= AUDIO_ENCODING_SLINEAR_LE,
-	.validbits	= 16,
-	.precision	= 16,
-	.channels	= 2,
-	.channel_mask	= AUFMT_STEREO,
-	.frequency_type	= 4,
-	.frequency	= { 5512, 11025, 22050, 44100 },
-};
+#define EAP_NFORMATS	__arraycount(eap_formats)
 
 static int
 eap_match(device_t parent, cfdata_t match, void *aux)
@@ -937,17 +933,10 @@ eap_open(void *addr, int flags)
 }
 
 static int
-eap1370_query_format(void *addr, struct audio_format_query *afp)
+eap_query_format(void *addr, struct audio_format_query *afp)
 {
 
-	return audio_query_format(&eap1370_format, 1, afp);
-}
-
-static int
-eap1371_query_format(void *addr, struct audio_format_query *afp)
-{
-
-	return audio_query_format(&eap1371_format, 1, afp);
+	return audio_query_format(eap_formats, EAP_NFORMATS, afp);
 }
 
 static int
@@ -971,17 +960,17 @@ eap_set_format(void *addr, int setmode,
 			     EREAD4(sc, EAP_ICSC)));
 		div = EREAD4(sc, EAP_ICSC) & ~EAP_PCLKBITS;
 		/*
+		 * *play and *rec are the identical on es1370 because
+		 * !AUDIO_PROP_INDEPENDENT.
+		 */
+
+		/*
 		 * XXX
 		 * The -2 isn't documented, but seemed to make the wall
 		 * time match
 		 * what I expect.  - mycroft
 		 */
-		if (setmode == AUMODE_RECORD)
-			div |= EAP_SET_PCLKDIV(EAP_XTAL_FREQ /
-				rec->sample_rate - 2);
-		else
-			div |= EAP_SET_PCLKDIV(EAP_XTAL_FREQ /
-				play->sample_rate - 2);
+		div |= EAP_SET_PCLKDIV(EAP_XTAL_FREQ / play->sample_rate - 2);
 #if 0
 		div |= EAP_CCB_INTRM;
 #else
@@ -1652,9 +1641,19 @@ eap_free(void *addr, void *ptr, size_t size)
 static int
 eap_get_props(void *addr)
 {
+	struct eap_instance *ei;
+	struct eap_softc *sc;
+	int prop;
 
-	return AUDIO_PROP_MMAP | AUDIO_PROP_INDEPENDENT |
+	ei = addr;
+	sc = device_private(ei->parent);
+	prop = AUDIO_PROP_MMAP | AUDIO_PROP_INDEPENDENT |
 	    AUDIO_PROP_FULLDUPLEX;
+	/* The es1370 only has one clock, so it's not independent */
+	if (!sc->sc_1371 && ei->index == EAP_DAC2)
+		prop &= ~AUDIO_PROP_INDEPENDENT;
+
+	return prop;
 }
 
 static void
