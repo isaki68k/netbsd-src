@@ -51,7 +51,7 @@ extern int audiodebug;
 /*
  * PCI
  * Note: emuxki's page table entry uses only 31bit addressing.
- *       (Maybe, later chip has 32bit mode, but not used now.)
+ *       (Maybe, later chip has 32bit mode, but it isn't used now.)
  */
 
 #define	EMU_PCI_CBIO		0x10
@@ -59,15 +59,19 @@ extern int audiodebug;
 
 #define	EMU_PTESIZE		4096
 #define EMU_MINPTE	3
-/* hardware limit is 4096 entry, it's too big for single voice */
-/* reasonable: 48kHz*2ch*2byte*1sec*3buf/EMU_PTESIZE=141, roundup 2^n */
+/*
+ * Hardware limit of PTE is 4096 entry but it's too big for single voice.
+ * Reasonable candidate is:
+ *  48kHz * 2ch * 2byte * 1sec * 3buf/EMU_PTESIZE = 141
+ * and then round it up to 2^n.
+ */
 #define EMU_MAXPTE	256
 #define EMU_NUMCHAN	64
 
 /*
  * Internal recording DMA buffer
  */
-/* recommend == EMU_PTESIZE, for symmetric play/rec */
+/* Recommend the same size as EMU_PTESIZE to be symmetrical for play/rec */
 #define EMU_REC_DMABLKSIZE	4096
 /* must be EMU_REC_DMABLKSIZE * 2 */
 #define EMU_REC_DMASIZE	8192
@@ -94,8 +98,10 @@ struct dmamem {
 };
 
 #define	KERNADDR(ptr)		((void *)((ptr)->kaddr))
-// (ptr)->segs[] は CPU 側の MMU で変換された CPU 側の PA
-// (ptr)->map->dm_segs[] は PCI 側の MMU で変換された PCI Device 側の PA
+/*
+ * (ptr)->segs[] is CPU's PA translated by CPU's MMU.
+ * (ptr)->map->dm_segs[] is PCI device's PA translated by PCI's MMU.
+ */
 #define	DMASEGADDR(ptr, segno)	((ptr)->map->dm_segs[segno].ds_addr)
 #define	DMAADDR(ptr)		DMASEGADDR(ptr, 0)
 #define DMASIZE(ptr)		((ptr)->size)
