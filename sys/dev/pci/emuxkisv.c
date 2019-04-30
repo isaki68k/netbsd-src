@@ -133,9 +133,6 @@ struct emuxki_softc {
 	/* register parameters */
 	struct dmamem		*ptb;		/* page table */
 
-	/* audio interface parameters */
-	int mode;				/* play and/or rec */
-
 	struct dmamem		*pmem;		/* play memory */
 	void (*pintr)(void *);
 	void *pintrarg;
@@ -549,8 +546,6 @@ emuxki_attach(device_t parent, device_t self, void *aux)
 		goto intrdis;
 	}
 
-	sc->mode = 0;
-
 	sc->pmem = NULL;
 	sc->pintr = NULL;
 	sc->pintrarg = NULL;
@@ -956,34 +951,19 @@ emuxki_timer_stop(struct emuxki_softc *sc)
 static int
 emuxki_open(void *hdl, int flags)
 {
-	struct emuxki_softc *sc = hdl;
 
 	DPRINTF(("%s for %s%s\n", __func__,
 	    (flags & FWRITE) ? "P" : "",
 	    (flags & FREAD)  ? "R" : ""));
 
-	if (sc->mode) {
-		DPRINTF(("dup open"));
-		return EINVAL;
-	}
-
-	if (flags & FWRITE) {
-		sc->mode |= AUMODE_PLAY;
-	}
-	if (flags & FREAD) {
-		sc->mode |= AUMODE_RECORD;
-	}
 	return 0;
 }
 
 static void
 emuxki_close(void *hdl)
 {
-	struct emuxki_softc *sc = hdl;
 
 	DPRINTF(("%s\n", __func__));
-
-	sc->mode = 0;
 }
 
 static int
