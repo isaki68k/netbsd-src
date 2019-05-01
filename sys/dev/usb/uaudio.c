@@ -2240,7 +2240,7 @@ uaudio_round_blocksize(void *addr, int blk,
 	} else {
 		/*
 		 * use wMaxPacketSize in bytes_per_frame.
-		 * See uaudio_set_params() and uaudio_chan_init()
+		 * See uaudio_set_format() and uaudio_chan_init()
 		 */
 		b = sc->sc_recchan.bytes_per_frame
 		    * UAUDIO_NFRAMES * UAUDIO_NCHANBUFS;
