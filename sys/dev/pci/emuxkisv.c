@@ -61,7 +61,7 @@ __KERNEL_RCSID(0, "$NetBSD: emuxki.c,v 1.67 2019/03/16 12:09:58 isaki Exp $");
 
 #include <dev/pci/emuxkireg.h>
 
-#define EMUXKI_DEBUG 1
+/* #define EMUXKI_DEBUG 1 */
 #ifdef EMUXKI_DEBUG
 #define emudebug EMUXKI_DEBUG
 # define DPRINTF(fmt...)	do { if (emudebug) printf(fmt); } while (0)
