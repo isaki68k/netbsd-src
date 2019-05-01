@@ -609,7 +609,6 @@ audioamd0	at sbus0 slot ? offset ?		# sun4m
 audiocs0	at sbus0 slot ? offset ?		# SUNW,CS4231
 
 #options 	DBRI_DEBUG	# noisy debug output from the dbri driver
-#options 	DBRI_BIG_BUFFER	# use bigger DMA buffers, for slow CPUs
 dbri*		at sbus? slot ? offset ?		# SUNW,DBRI[s3|e]
 
 audio*		at audiobus?

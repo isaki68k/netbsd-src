@@ -128,7 +128,7 @@ file	dev/sbus/p9100.c		pnozz needs-flag
 
 # SUNW,DBRI audio
 defflag	opt_sbus_dbri.h	DBRI_DEBUG
-defflag	opt_sbus_dbri.h	DBRI_BIG_BUFFER DBRI_SPIN
+defflag	opt_sbus_dbri.h	DBRI_SPIN
 device	dbri { }: audiobus, auconv, mulaw
 attach	dbri at sbus
 file	dev/sbus/dbri.c			dbri
