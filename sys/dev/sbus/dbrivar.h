@@ -42,6 +42,8 @@
 
 #define DBRI_PIPE_MAX		32
 
+struct dbri_softc;
+
 enum direction {
 	in,
 	out
@@ -104,6 +106,7 @@ struct dbri_desc {
 	void		(*callback)(void *);
 	void		*callback_args;
 	void		*softint;
+	struct dbri_softc *sc;
 };
 
 struct dbri_dma {
