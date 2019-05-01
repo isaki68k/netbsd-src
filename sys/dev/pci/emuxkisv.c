@@ -569,26 +569,6 @@ emuxki_attach(device_t parent, device_t self, void *aux)
 		goto intrdis;
 	}
 
-	sc->pmem = NULL;
-	sc->pintr = NULL;
-	sc->pintrarg = NULL;
-	memset(&sc->play, 0, sizeof(sc->play));
-	sc->pframesize = 0;
-	sc->pblksize = 0;
-	sc->plength = 0;
-	sc->poffset = 0;
-
-	sc->rmem = NULL;
-	sc->rintr = NULL;
-	sc->rintrarg = NULL;
-	memset(&sc->rec, 0, sizeof(sc->rec));
-	sc->rptr = NULL;
-	sc->rcurrent = 0;
-	sc->rframesize = 0;
-	sc->rblksize = 0;
-	sc->rlength = 0;
-	sc->roffset = 0;
-
 	sc->sc_audev = audio_attach_mi(&emuxki_hw_if, sc, self);
 	if (sc->sc_audev == NULL) {
 		aprint_error("audio_attach_mi error\n");
