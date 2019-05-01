@@ -2984,13 +2984,13 @@ uaudio_set_format(void *addr, int setmode,
 	if ((setmode & AUMODE_PLAY)) {
 		paltidx = audio_indexof_format(sc->sc_formats, sc->sc_nformats,
 		    AUMODE_PLAY, play);
-		/* No transfer should occur */
+		/* Transfer should have halted */
 		uaudio_chan_init(&sc->sc_playchan, paltidx, play, 0);
 	}
 	if ((setmode & AUMODE_RECORD)) {
 		raltidx = audio_indexof_format(sc->sc_formats, sc->sc_nformats,
 		    AUMODE_RECORD, rec);
-		/* No transfer should occur */
+		/* Transfer should have halted */
 		uaudio_chan_init(&sc->sc_recchan, raltidx, rec, 0);
 	}
 
