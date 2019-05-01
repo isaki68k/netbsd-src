@@ -231,7 +231,7 @@ static int	emuxki_getdev(void *, struct audio_device *);
 static int	emuxki_set_port(void *, mixer_ctrl_t *);
 static int	emuxki_get_port(void *, mixer_ctrl_t *);
 static int	emuxki_query_devinfo(void *, mixer_devinfo_t *);
-static void *	emuxki_allocm(void *, int, size_t);
+static void	*emuxki_allocm(void *, int, size_t);
 static void	emuxki_freem(void *, void *, size_t);
 static int	emuxki_round_blocksize(void *, int, int,
 		    const audio_params_t *);
