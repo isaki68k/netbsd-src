@@ -71,8 +71,8 @@ __KERNEL_RCSID(0, "$NetBSD: emuxki.c,v 1.67 2019/03/16 12:09:58 isaki Exp $");
 # define DPRINTF(fmt...)	do { if (emudebug) printf(fmt); } while (0)
 # define DPRINTFN(n,fmt...)	do { if (emudebug>=(n)) printf(fmt); } while (0)
 #else
-# define DPRINTF(fmt...)	do { } while (0)
-# define DPRINTFN(n,fmt...)	do { } while (0)
+# define DPRINTF(fmt...)	__nothing
+# define DPRINTFN(n,fmt...)	__nothing
 #endif
 
 /*
