@@ -58,12 +58,6 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #define MERCURY_ENCODING_SLINEAR AUDIO_ENCODING_SLINEAR_BE
 #endif
 
-// 旧APIのテストをする用
-//#define MERCURY_USE_OLDAPI
-#if defined(MERCURY_USE_OLDAPI)
-#include <auconv.h>
-#endif
-
 // precision != stride のテストをする用
 //#define MERCURY_AS_10BIT
 
@@ -141,16 +135,10 @@ static void mercury_dmamem_free(struct vs_dma *);
 /* MI audio layer interface */
 static int  mercury_open(void *, int);
 static void mercury_close(void *);
-#if !defined(MERCURY_USE_OLDAPI)
 static int  mercury_query_format(void *, audio_format_query_t *);
 static int  mercury_set_format(void *, int,
 	const audio_params_t *, const audio_params_t *,
 	audio_filter_reg_t *, audio_filter_reg_t *);
-#else
-static int  mercury_query_encoding(void *, struct audio_encoding *);
-static int  mercury_set_params(void *, int, int, audio_params_t *,
-	audio_params_t *, stream_filter_list_t *, stream_filter_list_t *);
-#endif
 static int  mercury_start_output(void *, void *, int, void (*)(void *), void *);
 static int  mercury_start_input(void *, void *, int, void (*)(void *), void *);
 static int  mercury_halt_output(void *);
@@ -176,13 +164,8 @@ static int mercury_matched;
 static const struct audio_hw_if mercury_hw_if = {
 	.open			= mercury_open,
 	.close			= mercury_close,
-#if !defined(MERCURY_USE_OLDAPI)
 	.query_format		= mercury_query_format,
 	.set_format		= mercury_set_format,
-#else
-	.query_encoding		= mercury_query_encoding,
-	.set_params		= mercury_set_params,
-#endif
 	.start_output		= mercury_start_output,
 	.start_input		= mercury_start_input,
 	.halt_output		= mercury_halt_output,
@@ -335,7 +318,6 @@ mercury_close(void *hdl)
 	DPRINTF("%s\n", __func__);
 }
 
-#if !defined(MERCURY_USE_OLDAPI)
 static int
 mercury_query_format(void *hdl, audio_format_query_t *afp)
 {
@@ -343,31 +325,7 @@ mercury_query_format(void *hdl, audio_format_query_t *afp)
 	return audio_query_format(mercury_formats,
 	    __arraycount(mercury_formats), afp);
 }
-#else
-static int
-mercury_query_encoding(void *hdl, struct audio_encoding *ae)
-{
 
-	DPRINTF("%s\n", __func__);
-
-	switch (ae->index) {
-	case 0:
-#if defined(MERCURY_AS_LE)
-		strcpy(ae->name, AudioEslinear_le);
-#else
-		strcpy(ae->name, AudioEslinear_be);
-#endif
-		ae->encoding = MERCURY_ENCODING_SLINEAR;
-		ae->precision = 16;
-		ae->flags = 0;
-		return 0;
-	}
-
-	return EINVAL;
-}
-#endif
-
-#if !defined(MERCURY_USE_OLDAPI)
 static int
 mercury_set_format(void *hdl, int setmode,
 	const audio_params_t *play, const audio_params_t *rec,
@@ -417,65 +375,6 @@ mercury_set_format(void *hdl, int setmode,
 	sc->sc_cmd = cmd;
 	return 0;
 }
-#else
-static int
-mercury_set_params(void *hdl, int setmode, int usemode,
-	audio_params_t *p, audio_params_t *r,
-	stream_filter_list_t *pfil, stream_filter_list_t *rfil)
-{
-	struct mercury_softc *sc;
-	uint8_t cmd;
-
-	sc = hdl;
-	cmd = 0;
-
-	if (setmode & AUMODE_RECORD) {
-		if (auconv_set_converter(mercury_formats, MERCURY_NFORMATS,
-					 AUMODE_RECORD, r, FALSE, rfil) < 0)
-			return EINVAL;
-	}
-	if (setmode & AUMODE_PLAY) {
-		if (auconv_set_converter(mercury_formats, MERCURY_NFORMATS,
-					 AUMODE_PLAY, p, FALSE, pfil) < 0)
-			return EINVAL;
-		if (pfil->req_size > 0)
-			p = &pfil->filters[0].param;
-	}
-
-	if (p->channels == 2) {
-		cmd |= MERC_CMD_STEREO;
-	}
-
-	if (p->encoding == MERCURY_ENCODING_SLINEAR && p->precision == 16) {
-		switch (p->sample_rate) {
-		case 16000:
-			cmd |= MERC_CMD_CLK_32000 | MERC_CMD_HALFRATE;
-			break;
-		case 22050:
-			cmd |= MERC_CMD_CLK_44100 | MERC_CMD_HALFRATE;
-			break;
-		case 24000:
-			cmd |= MERC_CMD_CLK_48000 | MERC_CMD_HALFRATE;
-			break;
-		case 32000:
-			cmd |= MERC_CMD_CLK_32000 | MERC_CMD_NORMALRATE;
-			break;
-		case 44100:
-			cmd |= MERC_CMD_CLK_44100 | MERC_CMD_NORMALRATE;
-			break;
-		case 48000:
-			cmd |= MERC_CMD_CLK_48000 | MERC_CMD_NORMALRATE;
-			break;
-		default:
-			return EINVAL;
-		}
-	} else {
-		return EINVAL;
-	}
-	sc->sc_cmd = cmd;
-	return 0;
-}
-#endif
 
 static int
 mercury_start_output(void *hdl, void *block, int blksize,
