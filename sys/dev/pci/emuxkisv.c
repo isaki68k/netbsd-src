@@ -1083,58 +1083,30 @@ emuxki_intr(void *hdl)
 
 #if defined(EMUXKI_DEBUG)
 	if (!handled) {
-#if 0
-		snprintb(buf, sizeof(buf),
-		    "\x20"
-		    "\x0bCDROMSTCHANGE"
-		    /* INTERVALTIMER */
-		    "\x09MIDITRANSBUFE"
-		    "\x08MIDIRECVBUFE"
-		    "\x07CHANNELLOOP"
-#endif
 		char buf[1024];
-		buf[0] = '\0';
-
-		if (ipr & EMU_IPR_RATETRCHANGE)
-			strcat(buf, " RATETRCHANGE");
-		if (ipr & EMU_IPR_FXDSP)
-			strcat(buf, " FXDSP");
-		if (ipr & EMU_IPR_FORCEINT)
-			strcat(buf, " FORCEINT");
-		if (ipr & EMU_PCIERROR)
-			strcat(buf, " PCIERROR");
-		if (ipr & EMU_IPR_VOLINCR)
-			strcat(buf, " VOLINCR");
-		if (ipr & EMU_IPR_VOLDECR)
-			strcat(buf, " VOLDECR");
-		if (ipr & EMU_IPR_MUTE)
-			strcat(buf, " MUTE");
-		if (ipr & EMU_IPR_MICBUFFULL)
-			strcat(buf, " MICBUFFULL");
-		if (ipr & EMU_IPR_MICBUFHALFFULL)
-			strcat(buf, " MICBUFHALFFULL");
-		if (ipr & EMU_IPR_ADCBUFFULL)
-			strcat(buf, " ADCBUFFULL");
-		if (ipr & EMU_IPR_ADCBUFHALFFULL)
-			strcat(buf, " ADCBUFHALFFULL");
-		if (ipr & EMU_IPR_EFXBUFFULL)
-			strcat(buf, " EFXBUFFULL");
-		if (ipr & EMU_IPR_EFXBUFHALFFULL)
-			strcat(buf, " EFXBUFHALFFULL");
-		if (ipr & EMU_IPR_GPSPDIFSTCHANGE)
-			strcat(buf, " GPSPDIFSTCHANGE");
-		if (ipr & EMU_IPR_CDROMSTCHANGE)
-			strcat(buf, " CDROMSTCHANGE");
-		if (ipr & EMU_IPR_INTERVALTIMER)
-			/* nop */;
-		if (ipr & EMU_IPR_MIDITRANSBUFE)
-			strcat(buf, " MIDITRANSBUFE");
-		if (ipr & EMU_IPR_MIDIRECVBUFE)
-			strcat(buf, " MIDIRECVBUFE");
-		if (ipr & EMU_IPR_CHANNELLOOP)
-			strcat(buf, " CHANNELLOOP");
-
-		DPRINTF("unexpected intr: %s", buf);
+		snprintb(buf, sizeof(buf),
+		    "\20"
+		    "\x19""RATETRCHANGE"
+		    "\x18""FXDSP"
+		    "\x17""FORCEINT"
+		    "\x16""PCIERROR"
+		    "\x15""VOLINCR"
+		    "\x14""VOLDECR"
+		    "\x13""MUTE"
+		    "\x12""MICBUFFULL"
+		    "\x11""MICBUFHALFFULL"
+		    "\x10""ADCBUFFULL"
+		    "\x0f""ADCBUFHALFFULL"
+		    "\x0e""EFXBUFFULL"
+		    "\x0d""EFXBUFHALFFULL"
+		    "\x0c""GPSPDIFSTCHANGE"
+		    "\x0b""CDROMSTCHANGE"
+		    /*     INTERVALTIMER */
+		    "\x09""MIDITRANSBUFE"
+		    "\x08""MIDIRECVBUFE"
+		    "\x07""CHANNELLOOP"
+		    , ipr);
+		DPRINTF("unexpected intr: %s\n", buf);
 
 		/* for debugging (must not handle if !DEBUG) */
 		handled = 1;
