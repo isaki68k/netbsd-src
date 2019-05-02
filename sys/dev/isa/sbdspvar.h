@@ -178,7 +178,7 @@ struct sbdsp_softc {
 #define SBVER_MAJOR(v)	(((v)>>8) & 0xff)
 #define SBVER_MINOR(v)	((v)&0xff)
 
-	struct audio_format sc_formats[6];
+	struct audio_format sc_formats[4];
 	int sc_nformats;
 
 #if NMPU > 0
