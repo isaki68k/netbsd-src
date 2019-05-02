@@ -217,11 +217,6 @@ int	sbdsp_query_format(void *, audio_format_query_t *);
 int	sbdsp_set_format(void *, int,
 	    const audio_params_t *, const audio_params_t *,
 	    audio_filter_reg_t *, audio_filter_reg_t *);
-#if 1
-int	sbdsp_query_encoding(void *, struct audio_encoding *);
-int	sbdsp_set_params(void *, int, int, audio_params_t *, audio_params_t *,
-	    stream_filter_list_t *, stream_filter_list_t *);
-#endif
 int	sbdsp_round_blocksize(void *, int, int, const audio_params_t *);
 int	sbdsp_get_avail_in_ports(void *);
 int	sbdsp_get_avail_out_ports(void *);

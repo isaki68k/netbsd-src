@@ -125,8 +125,8 @@ void	pasconf(int, int, int, int);
 const struct audio_hw_if pas_hw_if = {
 	.open			= sbdsp_open,
 	.close			= sbdsp_close,
-	.query_encoding		= sbdsp_query_encoding,
-	.set_params		= sbdsp_set_params,
+	.query_format		= sbdsp_query_format,
+	.set_format		= sbdsp_set_format,
 	.round_blocksize	= sbdsp_round_blocksize,
 	.halt_output		= sbdsp_halt_output,
 	.halt_input		= sbdsp_halt_input,
