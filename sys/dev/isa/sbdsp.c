@@ -410,9 +410,6 @@ sbdsp_attach(struct sbdsp_softc *sc)
 	       SBVER_MAJOR(sc->sc_version), SBVER_MINOR(sc->sc_version),
 	       sc->sc_model == SB_JAZZ ? ": <Jazz16>" : "");
 
-	/* XXX It's not true full duplex. */
-	sc->sc_fullduplex = 0;
-
 	if (sc->sc_drq8 != -1) {
 		sc->sc_drq8_maxsize = isa_dmamaxsize(sc->sc_ic,
 		    sc->sc_drq8);
@@ -2303,11 +2300,8 @@ sb_mappage(void *addr, void *mem, off_t off, int prot)
 int
 sbdsp_get_props(void *addr)
 {
-	struct sbdsp_softc *sc;
 
-	sc = addr;
-	return AUDIO_PROP_MMAP | AUDIO_PROP_INDEPENDENT |
-	       (sc->sc_fullduplex ? AUDIO_PROP_FULLDUPLEX : 0);
+	return AUDIO_PROP_MMAP | AUDIO_PROP_INDEPENDENT;
 }
 
 void

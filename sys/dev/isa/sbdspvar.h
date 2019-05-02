@@ -116,7 +116,6 @@ struct sbdsp_softc {
 #define SB_CLOSED 0
 #define SB_OPEN_AUDIO 1
 #define SB_OPEN_MIDI 2
-	u_char	sc_fullduplex;		/* can do full duplex */
 
 	u_char	gain[SB_NDEVS][2];	/* kept in input levels */
 #define SB_LEFT 0
