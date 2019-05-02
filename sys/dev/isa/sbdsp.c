@@ -95,6 +95,7 @@ __KERNEL_RCSID(0, "$NetBSD: sbdsp.c,v 1.139 2019/02/03 03:19:27 mrg Exp $");
 
 #include <sys/audioio.h>
 #include <dev/audio_if.h>
+#include <dev/audio/linear.h>
 #include <dev/midi_if.h>
 
 #include <dev/isa/isavar.h>
@@ -206,8 +207,71 @@ static struct sbmode sbrmodes[] = {
  { .model = -1 }
 };
 
+/* SB_1, SB_2 have different range in play and rec but have only one clock */
+static const struct audio_format sbdsp_format_1 = {
+	.mode		= AUMODE_PLAY | AUMODE_RECORD,
+	/* linear8 is always native endian */
+	.encoding	= AUDIO_ENCODING_ULINEAR_NE,
+	.validbits	= 8,
+	.precision	= 8,
+	.channels	= 1,
+	.channel_mask	= AUFMT_MONAURAL,
+	.frequency_type	= 0,
+	.frequency	= { 4000, 12987 },
+};
+
+/* SB_2x has different range in play and rec but have only one clock */
+static const struct audio_format sbdsp_format_2x = {
+	.mode		= AUMODE_PLAY | AUMODE_RECORD,
+	/* linear8 is always native endian */
+	.encoding	= AUDIO_ENCODING_ULINEAR_NE,
+	.validbits	= 8,
+	.precision	= 8,
+	.channels	= 1,
+	.channel_mask	= AUFMT_MONAURAL,
+	.frequency_type	= 0,
+	.frequency	= { 4000, 14925 },
+};
+
+/*
+ * For SB16_JAZZ, configurable sample rates are represented in range.
+ * But we select several fixed rates which doesn't have rounding error
+ * within the range.
+ */
+static const struct audio_format sbdsp_formats_jazz[] = {
+	{
+		.mode		= AUMODE_PLAY | AUMODE_RECORD,
+		.encoding	= AUDIO_ENCODING_ULINEAR_NE,
+		.validbits	= 8,
+		.precision	= 8,
+		.channels	= 1,
+		.channel_mask	= AUFMT_MONAURAL,
+		.frequency_type	= 9,
+		.frequency	= { 4000, 5000, 6250, 10000, 12500,
+		                    15625, 20000, 25000, 31250 },
+	},
+	{
+		.mode		= AUMODE_PLAY | AUMODE_RECORD,
+		.encoding	= AUDIO_ENCODING_SLINEAR_LE,
+		.validbits	= 16,
+		.precision	= 16,
+		.channels	= 2,
+		.channel_mask	= AUFMT_STEREO,
+		.frequency_type	= 3,
+		.frequency	= { 12500, 15625, 20000 },
+	},
+};
+
 void	sbversion(struct sbdsp_softc *);
 void	sbdsp_jazz16_probe(struct sbdsp_softc *);
+void	sbdsp_sbmode2format(struct audio_format *, const struct sbmode *);
+int	sbdsp_set_format16(struct sbdsp_softc *, int,
+	    const audio_params_t *, const audio_params_t *,
+	    audio_filter_reg_t *, audio_filter_reg_t *);
+int	sbdsp_set_format8(struct sbdsp_softc *, int,
+	    const audio_params_t *, const audio_params_t *,
+	    audio_filter_reg_t *, audio_filter_reg_t *);
+void	sbdsp_init_format(struct sbdsp_softc *);
 void	sbdsp_set_mixer_gain(struct sbdsp_softc *, int);
 void	sbdsp_pause(struct sbdsp_softc *);
 int	sbdsp_set_timeconst(struct sbdsp_softc *, int);
@@ -435,6 +499,14 @@ sbdsp_attach(struct sbdsp_softc *sc)
 		}
 	}
 
+	/* Construct sc_format from model */
+	sbdsp_init_format(sc);
+	if (sc->sc_nformats == 0) {
+		aprint_error_dev(sc->sc_dev,
+		    "No available formats; model mismatch?\n");
+		return;
+	}
+
 	if (!pmf_device_register(sc->sc_dev, NULL, sbdsp_resume))
 		aprint_error_dev(sc->sc_dev,
 		    "couldn't establish power handler\n");
@@ -485,10 +557,120 @@ sbdsp_mix_read(struct sbdsp_softc *sc, int mixerport)
 	return val;
 }
 
+void
+sbdsp_sbmode2format(struct audio_format *f, const struct sbmode *m)
+{
+	memset(f, 0, sizeof(*f));
+	f->mode = AUMODE_PLAY;
+	if (m->precision == 8) {
+		f->encoding = AUDIO_ENCODING_ULINEAR_NE;
+		f->validbits = 8;
+		f->precision = 8;
+	} else {
+		f->encoding = AUDIO_ENCODING_SLINEAR_LE;
+		f->validbits = 16;
+		f->precision = 16;
+	}
+	f->channels = m->channels;
+	f->frequency_type = 0;
+	f->frequency[0] = m->lowrate;
+	f->frequency[1] = m->highrate;
+}
+
+/*
+ * Create sc_formats[] from sbpmodes[], sbrmodes[].
+ */
+void
+sbdsp_init_format(struct sbdsp_softc *sc)
+{
+	struct audio_format ftmp;
+	struct audio_format *fp;
+	struct sbmode *m;
+	int i;
+	int j;
+	int np;
+	int nr;
+
+	/*
+	 * SB_1, _2 and _2x have different range in playback and recording
+	 * but have only one clock.
+	 */
+	switch (sc->sc_model) {
+	case SB_1:
+	case SB_20:
+		sc->sc_formats[0] = sbdsp_format_1;
+		sc->sc_nformats = 1;
+		return;
+	case SB_2x:
+		sc->sc_formats[0] = sbdsp_format_2x;
+		sc->sc_nformats = 1;
+		return;
+	default:
+		break;
+	}
+
+	/*
+	 * For other models, create from sb[pr]models[].
+	 */
+
+	/* lookup sbpmodes first */
+	np = 0;
+	for (i = 0; ; i++) {
+		m = &sbpmodes[i];
+		if (m->model == -1)
+			break;
+		if (sc->sc_model == m->model) {
+			sbdsp_sbmode2format(&sc->sc_formats[np], m);
+			sc->sc_formats[np].mode = AUMODE_PLAY;
+			np++;
+		}
+	}
+
+	/* then, lookup sbrmodes and merge if necessary */
+	nr = np;
+	for (i = 0; ; i++) {
+		m = &sbrmodes[i];
+		if (m->model == -1)
+			break;
+		if (sc->sc_model == m->model) {
+			sbdsp_sbmode2format(&ftmp, m);
+			/* lookup the same params in [0..np] */
+			for (j = 0; j < np; j++) {
+				fp = &sc->sc_formats[j];
+				if (ftmp.precision == fp->precision &&
+				    ftmp.channels == fp->channels &&
+				    ftmp.frequency[0] == fp->frequency[0] &&
+				    ftmp.frequency[1] == fp->frequency[1]) {
+					/* merge */
+					fp->mode |= AUMODE_RECORD;
+					break;
+				}
+			}
+			if (j == np) {
+				/* not merged */
+				ftmp.mode = AUMODE_RECORD;
+				sc->sc_formats[nr++] = ftmp;
+			}
+		}
+	}
+
+	sc->sc_nformats = nr;
+}
+
 /*
  * Various routines to interface to higher level audio driver
  */
 
+int
+sbdsp_query_format(void *addr, audio_format_query_t *afp)
+{
+	struct sbdsp_softc *sc;
+
+	sc = addr;
+	return audio_query_format(sc->sc_formats, sc->sc_nformats, afp);
+}
+
+#if 1
 int
 sbdsp_query_encoding(void *addr, struct audio_encoding *fp)
 {
@@ -557,47 +739,64 @@ sbdsp_query_encoding(void *addr, struct audio_encoding *fp)
 	}
 	return 0;
 }
+#endif
+
+static struct sbmode *
+sbdsp_find_mode(struct sbmode *sbmodes, int model,
+    const audio_params_t *p)
+{
+	struct sbmode *m;
+
+	for (m = sbmodes; m->model != -1; m++) {
+		if (model == m->model &&
+		    p->channels == m->channels &&
+		    p->precision == m->precision &&
+		    p->sample_rate >= m->lowrate &&
+		    p->sample_rate <= m->highrate)
+			return m;
+	}
+	return NULL;
+}
 
 int
-sbdsp_set_params(
-	void *addr,
-	int setmode, int usemode,
-	audio_params_t *play, audio_params_t *rec,
-	stream_filter_list_t *pfil, stream_filter_list_t *rfil)
+sbdsp_set_format(void *addr, int setmode,
+	const audio_params_t *play, const audio_params_t *rec,
+	audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
 {
 	struct sbdsp_softc *sc;
-	struct sbmode *m;
-	u_int rate, tc, bmode;
-	int model;
-	int chan;
-	struct audio_params *p;
-	audio_params_t hw __unused;
-	int mode;
+	int error;
 
 	sc = addr;
 
 	if (sc->sc_open == SB_OPEN_MIDI)
 		return EBUSY;
 
-	/* Later models work like SB16. */
-	model = uimin(sc->sc_model, SB_16);
-
-	/*
-	 * Prior to the SB16, we have only one clock, so make the sample
-	 * rates match.
-	 */
-	if (!ISSB16CLASS(sc) &&
-	    play->sample_rate != rec->sample_rate &&
-	    usemode == (AUMODE_PLAY | AUMODE_RECORD)) {
-		if (setmode == AUMODE_PLAY) {
-			rec->sample_rate = play->sample_rate;
-			setmode |= AUMODE_RECORD;
-		} else if (setmode == AUMODE_RECORD) {
-			play->sample_rate = rec->sample_rate;
-			setmode |= AUMODE_PLAY;
-		} else
-			return EINVAL;
+	if (sc->sc_model >= SB_16) {
+		/* Later models work like SB16. */
+		error = sbdsp_set_format16(sc, setmode, play, rec, pfil, rfil);
+	} else {
+		error = sbdsp_set_format8(sc, setmode, play, rec, pfil, rfil);
 	}
+	if (error)
+		return error;
+
+	DPRINTF(("%s ichan=%d, ochan=%d\n", __func__,
+	    sc->sc_i.dmachan, sc->sc_o.dmachan));
+	return 0;
+}
+
+/* set_format for SB_16 or later */
+int
+sbdsp_set_format16(struct sbdsp_softc *sc, int setmode,
+	const audio_params_t *play, const audio_params_t *rec,
+	audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
+{
+	struct sbmode *sbmodes;
+	struct sbmode *m;
+	struct sbdsp_state *io;
+	const audio_params_t *p;
+	u_int bmode;
+	int mode;
 
 	/* Set first record info, then play info */
 	for (mode = AUMODE_RECORD; mode != -1;
@@ -605,76 +804,88 @@ sbdsp_set_params(
 		if ((setmode & mode) == 0)
 			continue;
 
-		p = mode == AUMODE_PLAY ? play : rec;
-		/* Locate proper commands */
-		for (m = mode == AUMODE_PLAY ? sbpmodes : sbrmodes;
-		    m->model != -1; m++) {
-			if (model == m->model &&
-			    p->channels == m->channels &&
-			    p->precision == m->precision &&
-			    p->sample_rate >= m->lowrate &&
-			    p->sample_rate <= m->highrate)
-				break;
-		}
-		if (m->model == -1)
-			return EINVAL;
-		rate = p->sample_rate;
-		hw = *p;
-		tc = 1;
-		bmode = -1;
-		if (model == SB_16) {
-			switch (p->encoding) {
-				/* FALLTHROUGH */
-			case AUDIO_ENCODING_SLINEAR:
-			case AUDIO_ENCODING_SLINEAR_LE:
-				bmode = SB_BMODE_SIGNED;
-				break;
-
-			default:
-				return EINVAL;
-			}
-			if (p->channels == 2)
-				bmode |= SB_BMODE_STEREO;
-		} else if (m->model == SB_JAZZ && m->precision == 16) {
-			switch (p->encoding) {
-			case AUDIO_ENCODING_SLINEAR:
-			case AUDIO_ENCODING_SLINEAR_LE:
-				break;
-			default:
-				return EINVAL;
-			}
-			tc = SB_RATE_TO_TC(p->sample_rate * p->channels);
-			p->sample_rate = SB_TC_TO_RATE(tc) / p->channels;
-			hw.sample_rate = p->sample_rate;
-		} else {
-			panic("ulinear8 not supported; use set_format.");
-		}
-
-		chan = m->precision == 16 ? sc->sc_drq16 : sc->sc_drq8;
+		p = NULL; /* XXX shut up gcc */
 		if (mode == AUMODE_PLAY) {
-			sc->sc_o.rate = rate;
-			sc->sc_o.tc = tc;
-			sc->sc_o.modep = m;
-			sc->sc_o.bmode = bmode;
-			sc->sc_o.dmachan = chan;
+			p = play;
+			sbmodes = sbpmodes;
+			io = &sc->sc_o;
 		} else {
-			sc->sc_i.rate = rate;
-			sc->sc_i.tc = tc;
-			sc->sc_i.modep = m;
-			sc->sc_i.bmode = bmode;
-			sc->sc_i.dmachan = chan;
+			p = rec;
+			sbmodes = sbrmodes;
+			io = &sc->sc_i;
 		}
+		/* Locate proper commands */
+		m = sbdsp_find_mode(sbmodes, SB_16, p);
+		if (m == NULL)
+			return EINVAL;
 
-		DPRINTF(("sbdsp_set_params: model=%d, mode=%d, rate=%u, "
-			 "prec=%d, chan=%d, enc=%d -> tc=%02x, cmd=%02x, "
-			 "bmode=%02x, cmdchan=%02x\n", sc->sc_model, mode,
-			 p->sample_rate, p->precision, p->channels,
-			 p->encoding, tc, m->cmd, bmode, m->cmdchan));
+		bmode = SB_BMODE_SIGNED;
+		if (p->channels == 2)
+			bmode |= SB_BMODE_STEREO;
 
+		io->rate = p->sample_rate;
+		io->tc = 1;
+		io->modep = m;
+		io->bmode = bmode;
+		io->dmachan = m->precision == 16 ? sc->sc_drq16 : sc->sc_drq8;
+
+		DPRINTF(("%s: model=%d, mode=%d, "
+		    "rate=%u, prec=%d, chan=%d, enc=%d -> "
+		    "tc=%02x, cmd=%02x, bmode=%02x, cmdchan=%02x\n",
+		    __func__, sc->sc_model, mode,
+		    p->sample_rate, p->precision, p->channels, p->encoding,
+		    tc, m->cmd, bmode, m->cmdchan));
+	}
+	return 0;
+}
+
+/* set_format for prior to SB_16 */
+int
+sbdsp_set_format8(struct sbdsp_softc *sc, int setmode,
+	const audio_params_t *play, const audio_params_t *rec,
+	audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
+{
+	struct sbmode *mp;
+	struct sbmode *mr;
+	u_int tc;
+	int chan;
+
+	/* *play and *rec are the identical because !AUDIO_PROP_INDEPENDENT. */
+
+	/* Locate proper commands */
+	mp = sbdsp_find_mode(sbpmodes, sc->sc_model, play);
+	if (mp == NULL)
+		return EINVAL;
+	mr = sbdsp_find_mode(sbrmodes, sc->sc_model, rec);
+	if (mr == NULL)
+		return EINVAL;
+
+	tc = SB_RATE_TO_TC(play->sample_rate * play->channels);
+	chan = mp->precision == 16 ? sc->sc_drq16 : sc->sc_drq8;
+
+	sc->sc_o.rate = play->sample_rate;
+	sc->sc_o.tc = tc;
+	sc->sc_o.modep = mp;
+	sc->sc_o.bmode = -1;
+	sc->sc_o.dmachan = chan;
+
+	sc->sc_i.rate = rec->sample_rate;
+	sc->sc_i.tc = tc;
+	sc->sc_i.modep = mr;
+	sc->sc_i.bmode = -1;
+	sc->sc_i.dmachan = chan;
+
+	if (mp->precision == 8) {
+		pfil->codec = audio_internal_to_linear8;
+		rfil->codec = audio_linear8_to_internal;
 	}
 
-	DPRINTF(("sbdsp_set_params ichan=%d, ochan=%d\n",
-		 sc->sc_i.dmachan, sc->sc_o.dmachan));
+	DPRINTF(("%s: model=%d, "
+	    "rate=%u, prec=%d, chan=%d, enc=%d -> "
+	    "tc=%02x, cmd=%02x, cmdchan=%02x\n",
+	    __func__, sc->sc_model,
+	    p->sample_rate, p->precision, p->channels, p->encoding,
+	    tc, m->cmd, m->cmdchan));
 
 	return 0;
 }
@@ -2300,8 +2511,17 @@ sb_mappage(void *addr, void *mem, off_t off, int prot)
 int
 sbdsp_get_props(void *addr)
 {
+	struct sbdsp_softc *sc;
+	int prop;
 
-	return AUDIO_PROP_MMAP | AUDIO_PROP_INDEPENDENT;
+	sc = addr;
+	prop = AUDIO_PROP_MMAP;
+
+	/* Prior to the SB16, it has only one clock */
+	if (ISSB16CLASS(sc))
+		prop |= AUDIO_PROP_INDEPENDENT;
+
+	return prop;
 }
 
 void

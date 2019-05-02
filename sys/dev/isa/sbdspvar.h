@@ -178,6 +178,9 @@ struct sbdsp_softc {
 #define SBVER_MAJOR(v)	(((v)>>8) & 0xff)
 #define SBVER_MINOR(v)	((v)&0xff)
 
+	struct audio_format sc_formats[6];
+	int sc_nformats;
+
 #if NMPU > 0
 	int	sc_hasmpu;
 #define SBMPU_EXTERNAL	1
@@ -210,9 +213,15 @@ int	sbdsp_set_out_gain_real(void *, u_int, u_char);
 int	sbdsp_get_out_gain(void *);
 int	sbdsp_set_monitor_gain(void *, u_int);
 int	sbdsp_get_monitor_gain(void *);
+int	sbdsp_query_format(void *, audio_format_query_t *);
+int	sbdsp_set_format(void *, int,
+	    const audio_params_t *, const audio_params_t *,
+	    audio_filter_reg_t *, audio_filter_reg_t *);
+#if 1
 int	sbdsp_query_encoding(void *, struct audio_encoding *);
 int	sbdsp_set_params(void *, int, int, audio_params_t *, audio_params_t *,
 	    stream_filter_list_t *, stream_filter_list_t *);
+#endif
 int	sbdsp_round_blocksize(void *, int, int, const audio_params_t *);
 int	sbdsp_get_avail_in_ports(void *);
 int	sbdsp_get_avail_out_ports(void *);

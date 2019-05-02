@@ -82,7 +82,7 @@ int	sb_getdev(void *, struct audio_device *);
 const struct audio_hw_if sb_hw_if = {
 	.open			= sbdsp_open,
 	.close			= sbdsp_close,
-	.query_encoding		= sbdsp_query_encoding,
+	.query_format		= sbdsp_query_format,
 	.set_params		= sbdsp_set_params,
 	.round_blocksize	= sbdsp_round_blocksize,
 	.halt_output		= sbdsp_halt_output,
