@@ -254,7 +254,6 @@ int	sbdsp_mixer_query_devinfo(void *, mixer_devinfo_t *);
 void	*sb_malloc(void *, int, size_t);
 void	sb_free(void *, void *, size_t);
 size_t	sb_round_buffersize(void *, int, size_t);
-paddr_t	sb_mappage(void *, void *, off_t, int);
 
 int	sbdsp_get_props(void *);
 void	sbdsp_get_locks(void *, kmutex_t **, kmutex_t **);

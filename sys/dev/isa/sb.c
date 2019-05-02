@@ -95,7 +95,6 @@ const struct audio_hw_if sb_hw_if = {
 	.allocm			= sb_malloc,
 	.freem			= sb_free,
 	.round_buffersize	= sb_round_buffersize,
-	.mappage		= sb_mappage,
 	.get_props		= sbdsp_get_props,
 	.trigger_output		= sbdsp_trigger_output,
 	.trigger_input		= sbdsp_trigger_input,
