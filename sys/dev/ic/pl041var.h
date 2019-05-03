@@ -29,7 +29,6 @@
 #ifndef _PL041VAR_H
 #define _PL041VAR_H
 
-#include <dev/audiovar.h>
 #include <dev/ic/ac97var.h>
 
 struct aaci_softc {

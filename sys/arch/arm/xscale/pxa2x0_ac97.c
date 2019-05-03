@@ -48,7 +48,6 @@
 #include <sys/bus.h>
 
 #include <dev/audio_if.h>
-#include <dev/audiovar.h>
 #include <dev/ic/ac97reg.h>
 #include <dev/ic/ac97var.h>
 

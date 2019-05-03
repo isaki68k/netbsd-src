@@ -39,7 +39,6 @@ __KERNEL_RCSID(0, "$NetBSD: msm6258.c,v 1.25 2018/09/03 16:29:31 riastradh Exp $
 #include <sys/audioio.h>
 
 #include <dev/audio_if.h>
-#include <dev/audiovar.h>
 #include <dev/ic/msm6258var.h>
 
 static inline uint8_t	pcm2adpcm_step(struct msm6258_codecvar *, int16_t);

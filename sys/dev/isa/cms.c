@@ -39,7 +39,6 @@ __KERNEL_RCSID(0, "$NetBSD: cms.c,v 1.22 2016/12/10 17:41:44 maya Exp $");
 
 #include <sys/audioio.h>
 #include <dev/audio_if.h>
-#include <dev/audiovar.h>
 
 #include <sys/midiio.h>
 #include <dev/midi_if.h>
