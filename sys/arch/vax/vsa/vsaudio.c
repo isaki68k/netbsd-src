@@ -112,15 +112,6 @@ CFATTACH_DECL_NEW(vsaudio, sizeof(struct vsaudio_softc), vsaudio_match,
 uint8_t	vsaudio_codec_dread(struct am7930_softc *, int);
 void	vsaudio_codec_dwrite(struct am7930_softc *, int, uint8_t);
 
-/*
-static stream_filter_factory_t vsaudio_output_conv;
-static stream_filter_factory_t vsaudio_input_conv;
-static int vsaudio_output_conv_fetch_to(struct audio_softc *,
-		stream_fetcher_t *, audio_stream_t *, int);
-static int vsaudio_input_conv_fetch_to(struct audio_softc *,
-		stream_fetcher_t *, audio_stream_t *, int);
-		*/
-
 struct am7930_glue vsaudio_glue = {
 	vsaudio_codec_dread,
 	vsaudio_codec_dwrite,
@@ -253,58 +244,5 @@ vsaudio_getdev(void *addr, struct audio_device *retp)
 	*retp = vsaudio_device;
 	return 0;
 }
-
-/*
-static stream_filter_t *
-vsaudio_input_conv(struct audio_softc *sc, const audio_params_t *from,
-		const audio_params_t *to)
-{
-	return auconv_nocontext_filter_factory(vsaudio_input_conv_fetch_to);
-}
-
-static int
-vsaudio_input_conv_fetch_to(struct audio_softc *sc, stream_fetcher_t *self,
-		audio_stream_t *dst, int max_used)
-{
-	stream_filter_t *this;
-	int m, err;
-
-	this = (stream_filter_t *)self;
-	if ((err = this->prev->fetch_to(sc, this->prev, this->src, max_used * 4)))
-		return err;
-	m = dst->end - dst->start;
-	m = uimin(m, max_used);
-	FILTER_LOOP_PROLOGUE(this->src, 4, dst, 1, m) {
-		*d = ((*(const uint32_t *)s) >> 16) & 0xff;
-	} FILTER_LOOP_EPILOGUE(this->src, dst);
-	return 0;
-}
-
-static stream_filter_t *
-vsaudio_output_conv(struct audio_softc *sc, const audio_params_t *from,
-		const audio_params_t *to)
-{
-	return auconv_nocontext_filter_factory(vsaudio_output_conv_fetch_to);
-}
-
-static int
-vsaudio_output_conv_fetch_to(struct audio_softc *sc, stream_fetcher_t *self,
-		audio_stream_t *dst, int max_used)
-{
-	stream_filter_t *this;
-	int m, err;
-
-	this = (stream_filter_t *)self;
-	max_used = (max_used + 3) & ~3;
-	if ((err = this->prev->fetch_to(sc, this->prev, this->src, max_used / 4)))
-		return err;
-	m = (dst->end - dst->start) & ~3;
-	m = uimin(m, max_used);
-	FILTER_LOOP_PROLOGUE(this->src, 1, dst, 4, m) {
-		*(uint32_t *)d = (*s << 16);
-	} FILTER_LOOP_EPILOGUE(this->src, dst);
-	return 0;
-}
-*/
 
 #endif /* NAUDIO > 0 */
