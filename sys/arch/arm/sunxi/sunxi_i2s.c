@@ -481,7 +481,6 @@ sunxi_i2s_get_locks(void *priv, kmutex_t **intr, kmutex_t **thread)
 }
 
 static const struct audio_hw_if sunxi_i2s_hw_if = {
-	.drain = NULL,
 	.query_format = sunxi_i2s_query_format,
 	.set_format = sunxi_i2s_set_format,
 	.allocm = sunxi_i2s_allocm,

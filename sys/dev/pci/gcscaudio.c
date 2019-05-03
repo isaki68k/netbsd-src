@@ -181,7 +181,6 @@ static struct audio_device gcscaudio_device = {
 static const struct audio_hw_if gcscaudio_hw_if = {
 	.open			= gcscaudio_open,
 	.close			= gcscaudio_close,
-	.drain			= NULL,
 	.query_format		= gcscaudio_query_format,
 	.set_format		= gcscaudio_set_format,
 	.round_blocksize	= gcscaudio_round_blocksize,

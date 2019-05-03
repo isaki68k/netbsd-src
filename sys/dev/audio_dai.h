@@ -138,14 +138,6 @@ audio_dai_close(audio_dai_tag_t dai)
 }
 
 static inline int
-audio_dai_drain(audio_dai_tag_t dai)
-{
-	if (!dai->dai_hw_if->drain)
-		return 0;
-	return dai->dai_hw_if->drain(dai->dai_priv);
-}
-
-static inline int
 audio_dai_query_format(audio_dai_tag_t dai, audio_format_query_t *afp)
 {
 	if (!dai->dai_hw_if->query_format)

@@ -202,7 +202,6 @@ static void	yds_dump_play_slot(struct yds_softc *, int);
 static const struct audio_hw_if yds_hw_if = {
 	.open		  = yds_open,
 	.close		  = yds_close,
-	.drain		  = NULL,
 	.query_format	  = yds_query_format,
 	.set_format	  = yds_set_format,
 	.round_blocksize  = yds_round_blocksize,

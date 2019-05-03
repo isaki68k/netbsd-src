@@ -108,14 +108,6 @@ failed:
 }
 
 static int
-ausoc_drain(void *priv)
-{
-	struct ausoc_link * const link = priv;
-
-	return audio_dai_drain(link->link_cpu);
-}
-
-static int
 ausoc_query_format(void *priv, audio_format_query_t *afp)
 {
 	struct ausoc_link * const link = priv;
@@ -338,7 +330,6 @@ ausoc_get_locks(void *priv, kmutex_t **intr, kmutex_t **thread)
 static const struct audio_hw_if ausoc_hw_if = {
 	.open = ausoc_open,
 	.close = ausoc_close,
-	.drain = ausoc_drain,
 	.query_format = ausoc_query_format,
 	.set_format = ausoc_set_format,
 	.allocm = ausoc_allocm,

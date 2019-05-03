@@ -103,7 +103,6 @@
  *	----------------------- ------- -------	-------------------------
  *	open 			x	x +
  *	close 			x	x +
- *	drain 			x	x	(Not used in AUDIO2)
  *	query_format		-	x
  *	set_format		-	x
  *	round_blocksize		-	x

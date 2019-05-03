@@ -110,7 +110,6 @@ static int wm8731_query_devinfo(void *, struct mixer_devinfo *);
 static struct audio_hw_if wm8731_hw_if = {
 	.open			= zaudio_open,
 	.close			= zaudio_close,
-	.drain			= NULL,
 	.query_format		= zaudio_query_format,
 	.set_format		= zaudio_set_format,
 	.round_blocksize	= zaudio_round_blocksize,

@@ -179,9 +179,6 @@ struct audio_hw_if {
 	int	(*open)(void *, int);	/* open hardware */
 	void	(*close)(void *);	/* close hardware */
 
-	/* Obsoleted in AUDIO2. */
-	int	(*drain)(void *);	/* Optional: drain buffers */
-
 	int	(*query_format)(void *, audio_format_query_t *);
 	int	(*set_format)(void *, int,
 		    const audio_params_t *, const audio_params_t *,
