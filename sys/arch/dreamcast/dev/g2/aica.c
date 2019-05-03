@@ -40,6 +40,7 @@ __KERNEL_RCSID(0, "$NetBSD: aica.c,v 1.25 2019/03/16 12:09:56 isaki Exp $");
 #include <sys/bus.h>
 
 #include <dev/audio_if.h>
+#include <dev/audio/audiovar.h>	/* AUDIO_MIN_FREQUENCY */
 
 #include <machine/sysasicvar.h>
 
@@ -91,10 +92,10 @@ static const struct audio_format aica_formats[] = {
 		.channels	= 2,
 		.channel_mask	= AUFMT_STEREO,
 		.frequency_type	= 0,
-		.frequency	= { 1, 65536 },
-	}
+		.frequency	= { AUDIO_MIN_FREQUENCY, 65536 },
+	},
 };
-#define AICA_NFORMATS __arraycount(aica_formats)
+#define AICA_NFORMATS	__arraycount(aica_formats)
 
 int aica_match(device_t, cfdata_t, void *);
 void aica_attach(device_t, device_t, void *);
@@ -114,6 +115,7 @@ void aica_enable(struct aica_softc *);
 void aica_disable(struct aica_softc *);
 void aica_memwrite(struct aica_softc *, bus_size_t, uint32_t *, int);
 void aica_ch2p16write(struct aica_softc *, bus_size_t, uint16_t *, int);
+void aica_ch2p8write(struct aica_softc *, bus_size_t, uint8_t *, int);
 void aica_command(struct aica_softc *, uint32_t);
 void aica_sendparam(struct aica_softc *, uint32_t, int, int);
 void aica_play(struct aica_softc *, int, int, int, int);
@@ -326,6 +328,71 @@ aica_ch2p16write(struct aica_softc *sc, bus_size_t offset, uint16_t *src,
 	}
 }
 
+void
+aica_ch2p8write(struct aica_softc *sc, bus_size_t offset, uint8_t *src,
+    int len)
+{
+	uint32_t buf[8];
+	uint8_t *p;
+	int i;
+
+	KASSERT((offset & 3) == 0);
+	while (len >= 32) {
+		p = (uint8_t *)buf;
+
+		*p++ = *src++; src++;
+		*p++ = *src++; src++;
+		*p++ = *src++; src++;
+		*p++ = *src++; src++;
+		*p++ = *src++; src++;
+		*p++ = *src++; src++;
+		*p++ = *src++; src++;
+		*p++ = *src++; src++;
+		*p++ = *src++; src++;
+		*p++ = *src++; src++;
+		*p++ = *src++; src++;
+		*p++ = *src++; src++;
+		*p++ = *src++; src++;
+		*p++ = *src++; src++;
+		*p++ = *src++; src++;
+		*p++ = *src++; src++;
+		*p++ = *src++; src++;
+		*p++ = *src++; src++;
+		*p++ = *src++; src++;
+		*p++ = *src++; src++;
+		*p++ = *src++; src++;
+		*p++ = *src++; src++;
+		*p++ = *src++; src++;
+		*p++ = *src++; src++;
+		*p++ = *src++; src++;
+		*p++ = *src++; src++;
+		*p++ = *src++; src++;
+		*p++ = *src++; src++;
+		*p++ = *src++; src++;
+		*p++ = *src++; src++;
+		*p++ = *src++; src++;
+		*p++ = *src++; src++;
+
+		aica_g2fifo_wait();
+		bus_space_write_region_4(sc->sc_memt, sc->sc_aica_memh,
+		    offset, buf, 32 / 4);
+
+		offset += 32;
+		len -= 32;
+	}
+
+	if (len) {
+		p = (uint8_t *)buf;
+		for (i = 0; i < len; i++) {
+			*p++ = *src++; src++;
+		}
+
+		aica_g2fifo_wait();
+		bus_space_write_region_4(sc->sc_memt, sc->sc_aica_memh,
+		    offset, buf, len / 4);
+	}
+}
+
 int
 aica_open(void *addr, int flags)
 {
@@ -375,8 +442,35 @@ aica_set_format(void *addr, int setmode,
 int
 aica_round_blocksize(void *addr, int blk, int mode, const audio_params_t *param)
 {
+#if 0	/* XXX this has not worked since kent-audio1 merge? */
+	struct aica_softc *sc;
 
-	return blk & ~0x1f;
+	sc = addr;
+	switch (sc->sc_precision) {
+	case 4:
+		if (sc->sc_channels == 1)
+			return AICA_DMABUF_SIZE / 4;
+		else
+			return AICA_DMABUF_SIZE / 2;
+		break;
+	case 8:
+		if (sc->sc_channels == 1)
+			return AICA_DMABUF_SIZE / 2;
+		else
+			return AICA_DMABUF_SIZE;
+		break;
+	case 16:
+		if (sc->sc_channels == 1)
+			return AICA_DMABUF_SIZE;
+		else
+			return AICA_DMABUF_SIZE * 2;
+		break;
+	default:
+		break;
+	}
+
+#endif
+	return AICA_DMABUF_SIZE / 4;
 }
 
 size_t
@@ -435,13 +529,19 @@ aica_fillbuffer(struct aica_softc *sc)
 {
 
 	if (sc->sc_channels == 2) {
-		KASSERT(sc->sc_precision == 16);
-		aica_ch2p16write(sc,
-		    AICA_DMABUF_LEFT + sc->sc_nextfill,
-		    (uint16_t *)sc->sc_buffer + 0, sc->sc_blksize / 2);
-		aica_ch2p16write(sc,
-		    AICA_DMABUF_RIGHT + sc->sc_nextfill,
-		    (uint16_t *)sc->sc_buffer + 1, sc->sc_blksize / 2);
+		if (sc->sc_precision == 16) {
+			aica_ch2p16write(sc,
+			    AICA_DMABUF_LEFT + sc->sc_nextfill,
+			    (uint16_t *)sc->sc_buffer + 0, sc->sc_blksize / 2);
+			aica_ch2p16write(sc,
+			    AICA_DMABUF_RIGHT + sc->sc_nextfill,
+			    (uint16_t *)sc->sc_buffer + 1, sc->sc_blksize / 2);
+		} else if (sc->sc_precision == 8) {
+			aica_ch2p8write(sc, AICA_DMABUF_LEFT + sc->sc_nextfill,
+			    (uint8_t *)sc->sc_buffer + 0, sc->sc_blksize / 2);
+			aica_ch2p8write(sc, AICA_DMABUF_RIGHT + sc->sc_nextfill,
+			    (uint8_t *)sc->sc_buffer + 1, sc->sc_blksize / 2);
+		}
 	} else {
 		aica_memwrite(sc, AICA_DMABUF_MONO + sc->sc_nextfill,
 		    sc->sc_buffer, sc->sc_blksize);
