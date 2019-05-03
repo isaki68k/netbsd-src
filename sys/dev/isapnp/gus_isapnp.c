@@ -46,7 +46,6 @@ __KERNEL_RCSID(0, "$NetBSD: gus_isapnp.c,v 1.39 2019/03/16 12:09:58 isaki Exp $"
 
 #include <dev/audio_if.h>
 #include <dev/audiovar.h>
-#include <dev/mulaw.h>
 
 #include <dev/isa/isavar.h>
 #include <dev/isa/isadmavar.h>

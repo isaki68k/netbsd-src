@@ -57,7 +57,6 @@ __KERNEL_RCSID(0, "$NetBSD: umidi.c,v 1.76 2019/02/07 13:20:41 skrll Exp $");
 #include <dev/usb/usbdi.h>
 #include <dev/usb/usbdi_util.h>
 
-#include <dev/auconv.h>
 #include <dev/usb/usbdevs.h>
 #include <dev/usb/umidi_quirks.h>
 #include <dev/midi_if.h>

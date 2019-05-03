@@ -43,7 +43,6 @@ __KERNEL_RCSID(0, "$NetBSD: sb_ofisa.c,v 1.18 2016/12/09 17:18:35 christos Exp $
 #include <sys/audioio.h>
 #include <dev/audio_if.h>
 #include <dev/midi_if.h>
-#include <dev/mulaw.h>
 
 #include <dev/ofw/openfirm.h>
 #include <dev/isa/isavar.h>

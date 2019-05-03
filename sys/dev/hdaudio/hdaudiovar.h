@@ -32,7 +32,7 @@
 #ifndef _HDAUDIOVAR_H
 #define _HDAUDIOVAR_H
 
-#include <dev/auconv.h>
+#include <dev/audio_if.h>
 
 #ifdef _KERNEL_OPT
 #include "opt_hdaudio.h"

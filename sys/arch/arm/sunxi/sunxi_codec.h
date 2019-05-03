@@ -31,7 +31,6 @@
 
 #include <sys/audioio.h>
 #include <dev/audio_if.h>
-#include <dev/auconv.h>
 
 #include <dev/fdt/fdtvar.h>
 

@@ -39,6 +39,7 @@ __KERNEL_RCSID(0, "$NetBSD: umidi_quirks.c,v 1.21 2016/11/25 12:56:29 skrll Exp 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/kernel.h>
+#include <sys/audioio.h>
 #include <sys/device.h>
 #include <sys/ioctl.h>
 #include <sys/conf.h>
@@ -52,7 +53,6 @@ __KERNEL_RCSID(0, "$NetBSD: umidi_quirks.c,v 1.21 2016/11/25 12:56:29 skrll Exp 
 #include <dev/usb/usbdi.h>
 #include <dev/usb/usbdi_util.h>
 
-#include <dev/auconv.h>
 #include <dev/usb/usbdevs.h>
 #include <dev/usb/uaudioreg.h>
 #include <dev/usb/umidi_quirks.h>

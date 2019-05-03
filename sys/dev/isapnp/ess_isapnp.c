@@ -49,7 +49,6 @@ __KERNEL_RCSID(0, "$NetBSD: ess_isapnp.c,v 1.22 2010/05/22 16:35:00 tsutsui Exp 
 
 #include <sys/audioio.h>
 #include <dev/audio_if.h>
-#include <dev/mulaw.h>
 
 #include <dev/isa/isavar.h>
 #include <dev/isa/isadmavar.h>
