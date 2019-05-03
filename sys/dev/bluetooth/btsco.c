@@ -157,7 +157,6 @@ static int btsco_start_input(void *, void *, int, void (*)(void *), void *);
 static int btsco_halt_output(void *);
 static int btsco_halt_input(void *);
 static int btsco_getdev(void *, struct audio_device *);
-static int btsco_setfd(void *, int);
 static int btsco_set_port(void *, mixer_ctrl_t *);
 static int btsco_get_port(void *, mixer_ctrl_t *);
 static int btsco_query_devinfo(void *, mixer_devinfo_t *);
@@ -178,7 +177,6 @@ static const struct audio_hw_if btsco_if = {
 	.halt_output		= btsco_halt_output,
 	.halt_input		= btsco_halt_input,
 	.getdev			= btsco_getdev,
-	.setfd			= btsco_setfd,
 	.set_port		= btsco_set_port,
 	.get_port		= btsco_get_port,
 	.query_devinfo		= btsco_query_devinfo,
@@ -843,14 +841,6 @@ btsco_getdev(void *hdl, struct audio_device *ret)
 {
 
 	*ret = btsco_device;
-	return 0;
-}
-
-static int
-btsco_setfd(void *hdl, int fd)
-{
-	DPRINTF("set %s duplex\n", fd ? "full" : "half");
-
 	return 0;
 }
 

@@ -159,7 +159,6 @@ static const struct audio_hw_if digfilt_hw_if = {
 	.halt_output = digfilt_halt_output,
 	.speaker_ctl = NULL,
 	.getdev = digfilt_getdev,
-	.setfd = NULL,
 	.set_port = digfilt_set_port,
 	.get_port = digfilt_get_port,
 	.query_devinfo = digfilt_query_devinfo,

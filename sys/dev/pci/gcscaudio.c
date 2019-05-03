@@ -193,7 +193,6 @@ static const struct audio_hw_if gcscaudio_hw_if = {
 	.halt_input		= gcscaudio_halt_input,
 	.speaker_ctl		= NULL,
 	.getdev			= gcscaudio_getdev,
-	.setfd			= NULL,
 	.set_port		= gcscaudio_set_port,
 	.get_port		= gcscaudio_get_port,
 	.query_devinfo		= gcscaudio_query_devinfo,

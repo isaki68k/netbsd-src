@@ -214,7 +214,6 @@ static const struct audio_hw_if yds_hw_if = {
 	.halt_input	  = yds_halt_input,
 	.speaker_ctl	  = NULL,
 	.getdev		  = yds_getdev,
-	.setfd		  = NULL,
 	.set_port	  = yds_mixer_set_port,
 	.get_port	  = yds_mixer_get_port,
 	.query_devinfo	  = yds_query_devinfo,

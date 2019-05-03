@@ -213,9 +213,6 @@ struct audio_hw_if {
 
 	int	(*getdev)(void *, struct audio_device *);
 
-	/* Obsoleted in AUDIO2. */
-	int	(*setfd)(void *, int);
-
 	/* Mixer (in/out ports) */
 	int	(*set_port)(void *, mixer_ctrl_t *);
 	int	(*get_port)(void *, mixer_ctrl_t *);

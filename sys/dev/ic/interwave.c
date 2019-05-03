@@ -1032,13 +1032,6 @@ iw_getdev(void *addr, struct audio_device *retp)
 	return 0;
 }
 
-int
-iw_setfd(void *addr, int flag)
-{
-
-	return 0;
-}
-
 /* Mixer (in/out ports) */
 int
 iw_set_port(void *addr, mixer_ctrl_t *cp)

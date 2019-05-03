@@ -224,7 +224,6 @@ int	iw_halt_input(void *);
 
 int	iw_speaker_ctl(void *, int);
 int	iw_getdev(void *, struct audio_device *);
-int	iw_setfd(void *, int);
 
 	/* Mixer (in/out ports) */
 int	iw_set_port(void *, mixer_ctrl_t *);

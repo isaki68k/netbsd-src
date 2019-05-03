@@ -142,7 +142,6 @@ static struct audio_hw_if wm8750_hw_if = {
 	.halt_input		= wm8750_halt_input,
 	.speaker_ctl		= NULL,
 	.getdev			= wm8750_getdev,
-	.setfd			= NULL,
 	.set_port		= wm8750_set_port,
 	.get_port		= wm8750_get_port,
 	.query_devinfo		= wm8750_query_devinfo,

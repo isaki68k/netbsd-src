@@ -233,7 +233,6 @@ static const struct audio_hw_if arcofi_hw_if = {
 	.halt_input	  = arcofi_halt_input,
 	.speaker_ctl	  = NULL,
 	.getdev		  = arcofi_getdev,
-	.setfd		  = NULL,
 	.set_port	  = arcofi_set_port,
 	.get_port	  = arcofi_get_port,
 	.query_devinfo	  = arcofi_query_devinfo,

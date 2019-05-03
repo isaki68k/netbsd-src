@@ -76,7 +76,6 @@ static const struct audio_hw_if guspnp_hw_if = {
 	.halt_input		= iw_halt_input,
 	.speaker_ctl		= iw_speaker_ctl,
 	.getdev			= iw_getdev,
-	.setfd			= iw_setfd,
 	.set_port		= iw_set_port,
 	.get_port		= iw_get_port,
 	.query_devinfo		= iw_query_devinfo,

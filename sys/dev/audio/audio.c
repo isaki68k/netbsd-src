@@ -115,7 +115,6 @@
  *	halt_input 		x	x +
  *	speaker_ctl 		x	x
  *	getdev 			-	x
- *	setfd 			-	x	(Not used in AUDIO2)
  *	set_port 		-	x +
  *	get_port 		-	x +
  *	query_devinfo 		-	x
