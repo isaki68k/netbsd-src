@@ -83,7 +83,6 @@ static const struct audio_hw_if guspnp_hw_if = {
 	.allocm			= iw_malloc,
 	.freem			= iw_free,
 	.round_buffersize	= iw_round_buffersize,
-	.mappage		= iw_mappage,
 	.get_props		= iw_get_props,
 	.get_locks		= iw_get_locks,
 };

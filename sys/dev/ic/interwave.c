@@ -1454,13 +1454,6 @@ iw_round_buffersize(void *addr, int direction, size_t size)
 	return size;
 }
 
-paddr_t
-iw_mappage(void *addr, void *mem, off_t off, int prot)
-{
-
-	return isa_mappage(mem, off, prot);
-}
-
 int
 iw_get_props(void *addr)
 {

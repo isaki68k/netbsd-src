@@ -122,7 +122,6 @@
  *	allocm 			-	- +	(*1)
  *	freem 			-	- +	(*1)
  *	round_buffersize 	-	x
- *	mappage 		-	-	(Not used in AUDIO2)
  *	get_props 		-	x
  *	trigger_output 		x	x +
  *	trigger_input 		x	x +

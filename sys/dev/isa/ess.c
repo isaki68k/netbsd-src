@@ -147,7 +147,6 @@ int	ess_get_port(void *, mixer_ctrl_t *);
 void   *ess_malloc(void *, int, size_t);
 void	ess_free(void *, void *, size_t);
 size_t	ess_round_buffersize(void *, int, size_t);
-paddr_t	ess_mappage(void *, void *, off_t, int);
 
 
 int	ess_query_devinfo(void *, mixer_devinfo_t *);

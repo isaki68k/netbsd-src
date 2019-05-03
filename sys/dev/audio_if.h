@@ -227,9 +227,6 @@ struct audio_hw_if {
 	void	(*freem)(void *, void *, size_t);
 	size_t	(*round_buffersize)(void *, int, size_t);
 
-	/* Obsoleted in AUDIO2. */
-	paddr_t	(*mappage)(void *, void *, off_t, int);
-
 	int	(*get_props)(void *); /* device properties */
 
 	int	(*trigger_output)(void *, void *, void *, int,

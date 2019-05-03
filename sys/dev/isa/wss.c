@@ -100,7 +100,6 @@ const struct audio_hw_if wss_hw_if = {
 	.allocm			= ad1848_isa_malloc,
 	.freem			= ad1848_isa_free,
 	.round_buffersize	= ad1848_isa_round_buffersize,
-	.mappage		= ad1848_isa_mappage,
 	.get_props		= ad1848_isa_get_props,
 	.trigger_output		= ad1848_isa_trigger_output,
 	.trigger_input		= ad1848_isa_trigger_input,

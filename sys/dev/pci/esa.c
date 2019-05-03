@@ -132,7 +132,6 @@ static int		esa_intr(void *);
 static int		esa_allocmem(struct esa_softc *, size_t, size_t,
 				     struct esa_dma *);
 static int		esa_freemem(struct esa_softc *, struct esa_dma *);
-static paddr_t		esa_mappage(void *, void *, off_t, int);
 
 /* Supporting subroutines */
 static uint16_t		esa_read_assp(struct esa_softc *, uint16_t, uint16_t);
@@ -192,7 +191,6 @@ static const struct audio_hw_if esa_hw_if = {
 	.query_devinfo		= esa_query_devinfo,
 	.allocm			= esa_malloc,
 	.freem			= esa_free,
-	.mappage		= esa_mappage,
 	.get_props		= esa_get_props,
 	.trigger_output		= esa_trigger_output,
 	.trigger_input		= esa_trigger_input,
@@ -1702,25 +1700,6 @@ esa_get_pointer(struct esa_softc *sc, struct esa_channel *ch)
 
 	addr = lo | ((uint32_t)hi << 16);
 	return (addr - ch->start);
-}
-
-static paddr_t
-esa_mappage(void *addr, void *mem, off_t off, int prot)
-{
-	struct esa_voice *vc;
-	struct esa_softc *sc;
-	struct esa_dma *p;
-
-	vc = addr;
-	sc = device_private(vc->parent);
-	if (off < 0)
-		return -1;
-	for (p = vc->dma; p && KERNADDR(p) != mem; p = p->next)
-		continue;
-	if (p == NULL)
-		return -1;
-	return bus_dmamem_mmap(sc->sc_dmat, p->segs, p->nsegs,
-			       off, prot, BUS_DMA_WAITOK);
 }
 
 static void

@@ -197,7 +197,6 @@ void	ad1848_destroy_locks(struct ad1848_softc *);
 
 int	ad1848_halt_output(void *);
 int	ad1848_halt_input(void *);
-paddr_t	ad1848_mappage(void *, void *, off_t, int);
 void	ad1848_get_locks(void *, kmutex_t **, kmutex_t **);
 
 #ifdef AUDIO_DEBUG

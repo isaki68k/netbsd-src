@@ -166,7 +166,6 @@ static const struct audio_hw_if digfilt_hw_if = {
 	.allocm = digfilt_allocm,
 	.freem = digfilt_freem,
 	.round_buffersize = digfilt_round_buffersize,
-	.mappage = NULL,
 	.get_props = digfilt_get_props,
 	.trigger_output = NULL,
 	.trigger_input = NULL,

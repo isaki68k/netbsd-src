@@ -777,12 +777,6 @@ ad1848_isa_round_buffersize(void *addr, int direction, size_t size)
 	return size;
 }
 
-paddr_t
-ad1848_isa_mappage(void *addr, void *mem, off_t off, int prot)
-{
-	return isa_mappage(mem, off, prot);
-}
-
 int
 ad1848_isa_get_props(void *addr)
 {

@@ -240,7 +240,6 @@ static const struct audio_hw_if arcofi_hw_if = {
 	.allocm		  = NULL,
 	.freem		  = NULL,
 	.round_buffersize = NULL,
-	.mappage	  = NULL,
 	.get_props	  = arcofi_get_props,
 	.trigger_output	  = NULL,
 	.trigger_input	  = NULL,

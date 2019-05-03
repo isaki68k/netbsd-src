@@ -236,7 +236,6 @@ struct malloc_type;
 void *	iw_malloc(void *, int, size_t);
 void	iw_free(void *, void *, size_t);
 size_t	iw_round_buffersize(void *, int, size_t);
-paddr_t	iw_mappage(void *, void *, off_t, int);
 int	iw_get_props(void *);
 void	iw_get_locks(void *, kmutex_t **, kmutex_t **);
 
