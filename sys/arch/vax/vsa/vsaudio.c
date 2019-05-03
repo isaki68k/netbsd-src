@@ -103,6 +103,8 @@ struct vsaudio_softc {
 static int vsaudio_match(struct device *parent, struct cfdata *match, void *);
 static void vsaudio_attach(device_t parent, device_t self, void *);
 
+static void vsaudio_hwintr(void *);
+
 CFATTACH_DECL_NEW(vsaudio, sizeof(struct vsaudio_softc), vsaudio_match,
 		vsaudio_attach, NULL, NULL);
 
@@ -210,13 +212,20 @@ vsaudio_attach(device_t parent, device_t self, void *aux)
 	sc->sc_am7930.sc_dev = device_private(self);
 	sc->sc_am7930.sc_glue = &vsaudio_glue;
 	am7930_init(&sc->sc_am7930, AUDIOAMD_POLL_MODE);
-	scb_vecalloc(va->va_cvec, am7930_hwintr, &sc->sc_am7930, SCB_ISTACK,
+	scb_vecalloc(va->va_cvec, vsaudio_hwintr, &sc->sc_am7930, SCB_ISTACK,
 	    &sc->sc_am7930.sc_intrcnt);
 	evcnt_attach_dynamic(&sc->sc_am7930.sc_intrcnt, EVCNT_TYPE_INTR, NULL,
 	    device_xname(self), "intr");
 
 	aprint_normal("\n");
 	audio_attach_mi(&vsaudio_hw_if, sc, self);
+}
+
+static void
+vsaudio_hwintr(void *arg)
+{
+
+	am7930_hwintr(arg);
 }
 
 /* direct read */

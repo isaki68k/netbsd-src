@@ -405,7 +405,7 @@ am7930_halt_input(void *addr)
 	return 0;
 }
 
-void
+int
 am7930_hwintr(void *arg)
 {
 	struct am7930_softc *sc;
@@ -422,7 +422,7 @@ am7930_hwintr(void *arg)
 	/* On vax, interrupt is not shared, this shouldn't happen */
 	if ((k & (AM7930_IR_DTTHRSH | AM7930_IR_DRTHRSH | AM7930_IR_DSRI |
 	    AM7930_IR_DERI | AM7930_IR_BBUFF)) == 0) {
-		return;
+		return 0;
 	}
 
 	/* receive incoming data */
@@ -454,6 +454,7 @@ am7930_hwintr(void *arg)
 	}
 
 	sc->sc_intrcnt.ev_count++;
+	return 1;
 }
 
 void

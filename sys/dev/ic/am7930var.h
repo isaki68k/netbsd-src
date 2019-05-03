@@ -41,7 +41,7 @@ struct am7930_softc {
 extern int     am7930debug;
 
 void	am7930_init(struct am7930_softc *, int);
-void	am7930_hwintr(void *);
+int	am7930_hwintr(void *);
 void	am7930_swintr(void *);
 
 #define AM7930_IWRITE(sc,r,v)	am7930_iwrite(sc,r,v)

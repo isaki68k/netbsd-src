@@ -64,8 +64,6 @@ __KERNEL_RCSID(0, "$NetBSD: audioamd.c,v 1.28 2019/03/16 12:09:57 isaki Exp $");
 #define DPRINTFN(n,x)
 #endif	/* AUDIO_DEBUG */
 
-int	audioamd_hwintr(void *);
-
 struct audioamd_softc {
 	struct am7930_softc sc_am7930;	/* glue to MI code */
 
@@ -248,7 +246,7 @@ audioamd_attach(struct audioamd_softc *sc, int pri)
 	am7930_init(&sc->sc_am7930, AUDIOAMD_POLL_MODE);
 
 	(void)bus_intr_establish2(sc->sc_bt, pri, IPL_HIGH,
-				  audioamd_hwintr, sc, NULL);
+				  am7930_hwintr, sc, NULL);
 
 	printf("\n");
 
@@ -256,13 +254,6 @@ audioamd_attach(struct audioamd_softc *sc, int pri)
 	    device_xname(self), "intr");
 
 	audio_attach_mi(&sa_hw_if, sc, self);
-}
-
-int
-audioamd_hwintr(void *arg)
-{
-	am7930_hwintr(arg);
-	return 1;
 }
 
 
