@@ -210,8 +210,8 @@ static struct sbmode sbrmodes[] = {
 /*
  * We actually can specify any value within the frequency range defined
  * above.  But according to definition of SB_RATE_TO_TC macro, only some
- * of them are dividable.  There are 9 values in the range that satisfy
- * this condition but it's too much.
+ * of them are dividable (it's preferable, not mandatory).  There are 9
+ * values in the range that satisfy this condition but it's too much.
  */
 static const int sbdsp_rates[] = {
 	4000,
@@ -536,6 +536,7 @@ sbdsp_sbmode2format(struct audio_format *f, const struct sbmode *m, int mode)
 		f->precision = 16;
 	}
 	f->channels = m->channels;
+	f->channel_mask = (m->channels == 1) ? AUFMT_MONAURAL : AUFMT_STEREO;
 	f->frequency_type = 0;
 	f->frequency[0] = m->lowrate;
 	f->frequency[1] = m->highrate;
@@ -582,11 +583,8 @@ sbdsp_init_format(struct sbdsp_softc *sc)
 			sbmodes = sbrmodes;
 			dbase = dr;
 		}
-		for (j = 0; ; j++) {
-			m = &sbmodes[j];
-			if (m->model == -1)
-				break;
-			if (model != m->model)
+		for (m = sbmodes; m->model != -1; m++) {
+			if (m->model != model)
 				continue;
 
 			sbdsp_sbmode2format(&tmp, m, mode);
