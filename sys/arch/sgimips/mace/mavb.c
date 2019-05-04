@@ -111,8 +111,8 @@ static const struct audio_format mavb_formats[] = {
 	{
 		.mode		= AUMODE_PLAY,
 		.encoding	= AUDIO_ENCODING_SLINEAR_BE,
-		.validbits	= 16,
-		.precision	= 16,
+		.validbits	= 24,
+		.precision	= 32,
 		.channels	= 2,
 		.channel_mask	= AUFMT_STEREO,
 		.frequency_type	= 0,
