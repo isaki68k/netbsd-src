@@ -43,7 +43,7 @@ __KERNEL_RCSID(0, "$NetBSD: audiobell.c,v 1.26 2018/09/03 16:29:30 riastradh Exp
 #include <dev/audio_if.h>
 #include <dev/audio/audiovar.h>
 #include <dev/audio/audiodef.h>
-#include <dev/audiobellvar.h>
+#include <dev/audio/audiobellvar.h>
 
 /* 44.1 kHz should reduce hum at higher pitches. */
 #define BELL_SAMPLE_RATE	44100
