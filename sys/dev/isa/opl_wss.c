@@ -45,7 +45,7 @@ __KERNEL_RCSID(0, "$NetBSD: opl_wss.c,v 1.15 2012/04/09 10:18:17 plunky Exp $");
 
 #include <sys/bus.h>
 
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 #include <dev/midi_if.h>
 #include <dev/ic/oplreg.h>
 #include <dev/ic/oplvar.h>

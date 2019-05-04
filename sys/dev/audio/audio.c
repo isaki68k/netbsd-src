@@ -189,7 +189,7 @@ __KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.458 2018/09/03 16:29:30 riastradh Exp $"
 #include <sys/syslog.h>
 #include <sys/vnode.h>
 
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 #include <dev/audio/audiovar.h>
 #include <dev/audio/audiodef.h>
 #include <dev/audio/linear.h>
@@ -8489,7 +8489,7 @@ audio_query_devinfo(struct audio_softc *sc, mixer_devinfo_t *di)
 #include <sys/systm.h>
 #include <sys/device.h>
 #include <sys/audioio.h>
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 #endif
 
 #if NAUDIO > 0 || (NMIDI > 0 || NMIDIBUS > 0)

@@ -30,7 +30,7 @@
 #define _ARM_SUNXI_CODEC_H
 
 #include <sys/audioio.h>
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 
 #include <dev/fdt/fdtvar.h>
 

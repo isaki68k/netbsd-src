@@ -43,7 +43,7 @@ __KERNEL_RCSID(0, "$NetBSD: cs428x.c,v 1.18 2017/06/01 02:45:11 chs Exp $");
 #include <sys/audioio.h>
 #include <sys/bus.h>
 
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 #include <dev/midi_if.h>
 
 #include <dev/ic/ac97reg.h>

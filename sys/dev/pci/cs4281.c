@@ -59,7 +59,7 @@ __KERNEL_RCSID(0, "$NetBSD: cs4281.c,v 1.54 2019/03/16 12:09:58 isaki Exp $");
 #include <dev/pci/cs428xreg.h>
 
 #include <sys/audioio.h>
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 #include <dev/midi_if.h>
 
 #include <dev/ic/ac97reg.h>

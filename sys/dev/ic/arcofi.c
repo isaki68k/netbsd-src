@@ -41,7 +41,7 @@
 
 #include <sys/audioio.h>
 
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 #include <dev/audio/mulaw.h>
 
 #include <dev/ic/arcofivar.h>

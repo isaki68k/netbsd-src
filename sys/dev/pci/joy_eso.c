@@ -45,7 +45,7 @@ __KERNEL_RCSID(0, "$NetBSD: joy_eso.c,v 1.15 2011/11/23 23:07:35 jmcneill Exp $"
 
 #include <sys/bus.h>
 
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 
 #include <dev/pci/pcireg.h>
 #include <dev/pci/pcivar.h>

@@ -107,7 +107,7 @@ __KERNEL_RCSID(0, "$NetBSD: gus.c,v 1.115 2019/03/16 12:09:58 isaki Exp $");
 #include <sys/bus.h>
 #include <sys/audioio.h>
 
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 
 #include <dev/ic/ics2101reg.h>
 #include <dev/ic/cs4231reg.h>

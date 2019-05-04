@@ -38,7 +38,7 @@ __KERNEL_RCSID(0, "$NetBSD: awacs.c,v 1.46 2019/03/16 12:09:57 isaki Exp $");
 #include <sys/mutex.h>
 #include <sys/condvar.h>
 
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 
 #include <uvm/uvm_extern.h>
 #include <machine/autoconf.h>

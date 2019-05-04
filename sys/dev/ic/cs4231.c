@@ -47,7 +47,7 @@ __KERNEL_RCSID(0, "$NetBSD: cs4231.c,v 1.29 2017/06/01 02:45:10 chs Exp $");
 #include <sys/cpu.h>
 
 #include <sys/audioio.h>
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 
 #include <dev/ic/ad1848reg.h>
 #include <dev/ic/cs4231reg.h>

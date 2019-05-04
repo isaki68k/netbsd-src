@@ -39,7 +39,7 @@ __KERNEL_RCSID(0, "$NetBSD: gcscaudio.c,v 1.16 2018/12/09 11:14:02 jdolecek Exp 
 #include <dev/pci/pcivar.h>
 
 #include <sys/audioio.h>
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 
 #include <dev/ic/ac97reg.h>
 #include <dev/ic/ac97var.h>

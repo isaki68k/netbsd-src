@@ -12,7 +12,7 @@
 #if defined(_KERNEL)
 #include <sys/device.h>
 #include <sys/audioio.h>
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 #else
 #include <stdint.h>
 #include <stdlib.h>

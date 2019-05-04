@@ -36,7 +36,7 @@ __KERNEL_RCSID(0, "$NetBSD: ym_acpi.c,v 1.15 2016/07/11 11:31:50 msaitoh Exp $")
 
 #include <dev/acpi/acpivar.h>
 
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 
 #include <dev/ic/ad1848reg.h>
 #include <dev/ic/opl3sa3reg.h>

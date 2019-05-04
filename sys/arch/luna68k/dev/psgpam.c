@@ -11,7 +11,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 
 #include <sys/cpu.h>
 #include <sys/audioio.h>
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 
 #include <machine/autoconf.h>
 

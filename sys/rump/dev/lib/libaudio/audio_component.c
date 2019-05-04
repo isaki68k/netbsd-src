@@ -34,7 +34,7 @@ __KERNEL_RCSID(0, "$NetBSD: audio_component.c,v 1.4 2017/06/01 09:44:30 pgoyette
 #include <sys/mbuf.h>
 #include <sys/stat.h>
 
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 
 #include <rump-sys/kern.h>
 #include <rump-sys/vfs.h>

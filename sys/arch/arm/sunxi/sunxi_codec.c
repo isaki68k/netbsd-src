@@ -39,7 +39,7 @@ __KERNEL_RCSID(0, "$NetBSD: sunxi_codec.c,v 1.5 2018/04/20 18:07:40 bouyer Exp $
 #include <sys/gpio.h>
 
 #include <sys/audioio.h>
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 
 #include <dev/fdt/fdtvar.h>
 

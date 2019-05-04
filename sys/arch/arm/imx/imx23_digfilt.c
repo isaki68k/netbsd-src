@@ -38,8 +38,8 @@
 #include <sys/bus.h>
 #include <sys/mutex.h>
 #include <sys/audioio.h>
-#include <dev/audio_if.h>
 #include <sys/mallocvar.h>
+#include <dev/audio/audio_if.h>
 #include <arm/imx/imx23_digfiltreg.h>
 #include <arm/imx/imx23_rtcvar.h>
 #include <arm/imx/imx23_clkctrlvar.h>

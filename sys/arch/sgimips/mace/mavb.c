@@ -29,7 +29,7 @@
 #include <machine/autoconf.h>
 
 #include <sys/audioio.h>
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 
 #include <arch/sgimips/mace/macevar.h>
 #include <arch/sgimips/mace/macereg.h>

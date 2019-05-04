@@ -30,7 +30,7 @@
 #define _DEV_AUDIO_AUDIO_DAI_H
 
 #include <sys/errno.h>
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 
 #define	AUDIO_DAI_FORMAT_MASK		__BITS(3,0)
 #define	AUDIO_DAI_FORMAT_I2S		0

@@ -43,7 +43,7 @@ __KERNEL_RCSID(0, "$NetBSD: snapper.c,v 1.49 2019/03/16 12:09:57 isaki Exp $");
 #include <sys/systm.h>
 #include <sys/malloc.h>
 
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 #include <dev/ofw/openfirm.h>
 #include <macppc/dev/dbdma.h>
 

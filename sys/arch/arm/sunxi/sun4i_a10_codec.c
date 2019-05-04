@@ -37,7 +37,7 @@ __KERNEL_RCSID(0, "$NetBSD: sun4i_a10_codec.c,v 1.2 2017/08/27 22:22:32 jmcneill
 #include <sys/bitops.h>
 
 #include <sys/audioio.h>
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 
 #include <arm/sunxi/sunxi_codec.h>
 

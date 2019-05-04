@@ -45,7 +45,7 @@ __KERNEL_RCSID(0, "$NetBSD: pad.c,v 1.38 2017/07/01 05:50:10 nat Exp $");
 #include <sys/atomic.h>
 #include <sys/time.h>
 
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 #include <dev/audio/audiovar.h>
 
 #include <dev/pad/padvar.h>

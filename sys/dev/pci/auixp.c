@@ -67,7 +67,7 @@ __KERNEL_RCSID(0, "$NetBSD: auixp.c,v 1.45 2019/03/16 12:09:58 isaki Exp $");
 #include <sys/bus.h>
 #include <sys/intr.h>
 
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 
 #include <dev/ic/ac97var.h>
 #include <dev/ic/ac97reg.h>

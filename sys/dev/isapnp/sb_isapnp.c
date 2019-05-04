@@ -48,7 +48,7 @@ __KERNEL_RCSID(0, "$NetBSD: sb_isapnp.c,v 1.52 2008/03/15 21:09:02 cube Exp $");
 #include <sys/bus.h>
 
 #include <sys/audioio.h>
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 #include <dev/midi_if.h>
 
 #include <dev/isa/isavar.h>

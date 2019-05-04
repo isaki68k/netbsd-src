@@ -59,7 +59,7 @@ __KERNEL_RCSID(0, "$NetBSD: auacer.c,v 1.36 2019/03/16 12:09:58 isaki Exp $");
 #include <dev/pci/auacerreg.h>
 
 #include <sys/audioio.h>
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 
 #include <sys/bus.h>
 

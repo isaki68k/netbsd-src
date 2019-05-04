@@ -51,7 +51,7 @@ __KERNEL_RCSID(0, "$NetBSD: wm8731_zaudio.c,v 1.2 2018/06/16 21:22:13 thorpej Ex
 #include <sys/intr.h>
 #include <sys/bus.h>
 
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 
 #include <dev/i2c/i2cvar.h>
 

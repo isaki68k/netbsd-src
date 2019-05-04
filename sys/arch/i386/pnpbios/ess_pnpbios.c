@@ -43,7 +43,7 @@ __KERNEL_RCSID(0, "$NetBSD: ess_pnpbios.c,v 1.22 2011/07/01 18:14:15 dyoung Exp 
 #include <sys/bus.h>
 
 #include <sys/audioio.h>
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 #include <dev/midi_if.h>
 
 #include <dev/isa/isavar.h>

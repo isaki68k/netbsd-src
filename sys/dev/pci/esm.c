@@ -76,7 +76,7 @@ __KERNEL_RCSID(0, "$NetBSD: esm.c,v 1.61 2019/03/16 12:09:58 isaki Exp $");
 #include <sys/bus.h>
 #include <sys/audioio.h>
 
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 
 #include <dev/ic/ac97var.h>
 #include <dev/ic/ac97reg.h>

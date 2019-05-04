@@ -57,7 +57,7 @@ __KERNEL_RCSID(0, "$NetBSD: midi.c,v 1.88 2017/10/28 03:47:24 riastradh Exp $");
 #include <sys/intr.h>
 #include <sys/module.h>
 
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 #include <dev/midi_if.h>
 #include <dev/midivar.h>
 

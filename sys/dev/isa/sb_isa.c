@@ -48,7 +48,7 @@ __KERNEL_RCSID(0, "$NetBSD: sb_isa.c,v 1.38 2011/11/24 03:35:58 mrg Exp $");
 #include <sys/bus.h>
 
 #include <sys/audioio.h>
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 #include <dev/midi_if.h>
 
 #include <dev/isa/isavar.h>

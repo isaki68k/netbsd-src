@@ -52,7 +52,7 @@ __KERNEL_RCSID(0, "$NetBSD: ym_isapnp.c,v 1.25 2011/06/02 14:12:25 tsutsui Exp $
 #include <sys/errno.h>
 
 #include <sys/audioio.h>
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 
 #include <dev/isa/isavar.h>
 #include <dev/isa/isadmavar.h>

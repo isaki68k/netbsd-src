@@ -73,7 +73,7 @@ __KERNEL_RCSID(0, "$NetBSD: ac97.c,v 1.97 2017/07/28 01:36:40 nat Exp $");
 #include <sys/sysctl.h>
 
 #include <sys/audioio.h>
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 
 #include <dev/ic/ac97reg.h>
 #include <dev/ic/ac97var.h>

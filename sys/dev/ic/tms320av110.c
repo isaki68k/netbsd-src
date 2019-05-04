@@ -46,7 +46,7 @@ __KERNEL_RCSID(0, "$NetBSD: tms320av110.c,v 1.25 2019/03/16 12:09:57 isaki Exp $
 #include <sys/proc.h>
 
 #include <sys/audioio.h>
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 
 #include <dev/ic/tms320av110reg.h>
 #include <dev/ic/tms320av110var.h>

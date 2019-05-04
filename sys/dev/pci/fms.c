@@ -51,7 +51,7 @@ __KERNEL_RCSID(0, "$NetBSD: fms.c,v 1.45 2019/03/16 12:09:58 isaki Exp $");
 #include <dev/pci/pcidevs.h>
 #include <dev/pci/pcivar.h>
 
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 
 #include <dev/ic/ac97var.h>
 #include <dev/ic/mpuvar.h>

@@ -37,7 +37,7 @@ __KERNEL_RCSID(0, "$NetBSD: sunxi_i2s.c,v 1.3 2018/11/17 20:36:23 jmcneill Exp $
 #include <sys/gpio.h>
 
 #include <sys/audioio.h>
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 #include <dev/audio/linear.h>
 
 #include <dev/fdt/fdtvar.h>

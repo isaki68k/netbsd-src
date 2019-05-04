@@ -61,7 +61,7 @@ __KERNEL_RCSID(0, "$NetBSD: uaudio.c,v 1.158 2019/03/16 12:09:58 isaki Exp $");
 #include <sys/atomic.h>
 
 #include <sys/audioio.h>
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 
 #include <dev/usb/usb.h>
 #include <dev/usb/usbdi.h>

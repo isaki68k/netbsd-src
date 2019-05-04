@@ -40,8 +40,8 @@ __KERNEL_RCSID(0, "$NetBSD: spkr_audio.c,v 1.6 2017/06/11 21:54:22 pgoyette Exp 
 #include <sys/ioctl.h>
 #include <sys/conf.h>
 #include <sys/sysctl.h>
-#include <dev/audio_if.h>
 
+#include <dev/audio/audio_if.h>
 #include <dev/audio/audiobellvar.h>
 
 #include <dev/spkrvar.h>

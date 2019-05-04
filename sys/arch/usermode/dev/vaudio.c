@@ -38,7 +38,7 @@ __KERNEL_RCSID(0, "$NetBSD: vaudio.c,v 1.4 2014/03/26 08:29:41 christos Exp $");
 #include <machine/mainbus.h>
 #include <machine/thunk.h>
 
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 
 static const struct audio_format vaudio_audio_formats[1] = {
 	{

@@ -104,7 +104,7 @@ typedef struct audio_params audio_params_t;
 // audio_params 定義後 audio_hw_if より前…
 #include "audiofil.h"
 
-/* <dev/audio_if.h> */
+/* <dev/audio/audio_if.h> */
 #define SOUND_DEVICE		0
 #define AUDIO_DEVICE		0x80
 #define AUDIOCTL_DEVICE		0xc0

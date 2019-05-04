@@ -44,7 +44,7 @@ __KERNEL_RCSID(0, "$NetBSD: mpu_sb.c,v 1.16 2011/11/23 23:07:32 jmcneill Exp $")
 
 #include <sys/bus.h>
 
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 #include <dev/midi_if.h>
 
 #include <dev/isa/isavar.h>

@@ -10,7 +10,7 @@ __KERNEL_RCSID(0, "$NetBSD: joy_eap.c,v 1.13 2011/11/23 23:07:35 jmcneill Exp $"
 #include <sys/audioio.h>
 #include <sys/bus.h>
 
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 
 #include <dev/pci/eapreg.h>
 #include <dev/pci/eapvar.h>

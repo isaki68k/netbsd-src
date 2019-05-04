@@ -82,7 +82,7 @@ __KERNEL_RCSID(0, "$NetBSD: ess.c,v 1.84 2019/03/16 12:09:58 isaki Exp $");
 #include <sys/audioio.h>
 #include <sys/malloc.h>
 
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 
 #include <dev/isa/isavar.h>
 #include <dev/isa/isadmavar.h>

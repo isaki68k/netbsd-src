@@ -51,7 +51,7 @@ __KERNEL_RCSID(0, "$NetBSD: opl.c,v 1.42 2016/07/14 10:19:06 msaitoh Exp $");
 
 #include <sys/audioio.h>
 #include <sys/midiio.h>
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 
 #include <dev/midi_if.h>
 #include <dev/midivar.h>

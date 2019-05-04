@@ -39,7 +39,7 @@ __KERNEL_RCSID(0, "$NetBSD: aica.c,v 1.25 2019/03/16 12:09:56 isaki Exp $");
 #include <sys/audioio.h>
 #include <sys/bus.h>
 
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 #include <dev/audio/audiovar.h>	/* AUDIO_MIN_FREQUENCY */
 
 #include <machine/sysasicvar.h>

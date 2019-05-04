@@ -77,7 +77,7 @@ __KERNEL_RCSID(0, "$NetBSD: vidcaudio.c,v 1.57 2019/03/16 12:09:56 isaki Exp $")
 
 #include <uvm/uvm_extern.h>
 
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 #include <dev/audio/audiobellvar.h>
 #include <dev/audio/mulaw.h>
 

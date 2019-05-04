@@ -25,7 +25,7 @@
 #include <sys/intr.h>
 
 #include <sys/audioio.h>
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 #include <dev/ic/arcofivar.h>
 
 #include <hp300/dev/dioreg.h>

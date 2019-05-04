@@ -73,7 +73,7 @@ __KERNEL_RCSID(0, "$NetBSD: hdafg.c,v 1.16 2018/09/27 01:18:11 manu Exp $");
 #include <sys/module.h>
 
 #include <sys/audioio.h>
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 
 #ifdef _KERNEL_OPT
 #include "opt_hdaudio.h"

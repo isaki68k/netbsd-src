@@ -42,7 +42,7 @@ __KERNEL_RCSID(0, "$NetBSD: bcm2835_vcaudio.c,v 1.13 2019/04/02 03:52:17 isaki E
 #include <sys/kmem.h>
 
 #include <sys/audioio.h>
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 
 #include <interface/compat/vchi_bsd.h>
 #include <interface/vchiq_arm/vchiq_netbsd.h>

@@ -65,7 +65,7 @@ int cmpcidebug = 0;
 #include <dev/pci/pcivar.h>
 
 #include <sys/audioio.h>
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 #include <dev/midi_if.h>
 
 #include <dev/pci/cmpcireg.h>

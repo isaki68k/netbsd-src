@@ -41,7 +41,7 @@ __KERNEL_RCSID(0, "$NetBSD: vraiu.c,v 1.16 2019/03/16 12:09:56 isaki Exp $");
 #include <machine/config_hook.h>
 
 #include <sys/audioio.h>
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 
 #include <hpcmips/vr/vr.h>
 #include <hpcmips/vr/vripif.h>

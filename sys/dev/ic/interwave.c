@@ -48,7 +48,7 @@ __KERNEL_RCSID(0, "$NetBSD: interwave.c,v 1.40 2019/02/03 11:15:45 mrg Exp $");
 
 #include <machine/pio.h>
 
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 
 #include <dev/isa/isavar.h>
 #include <dev/isa/isadmavar.h>

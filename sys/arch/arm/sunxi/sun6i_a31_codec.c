@@ -37,7 +37,7 @@ __KERNEL_RCSID(0, "$NetBSD: sun6i_a31_codec.c,v 1.1 2017/10/07 21:53:16 jmcneill
 #include <sys/bitops.h>
 
 #include <sys/audioio.h>
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 
 #include <arm/sunxi/sunxi_codec.h>
 

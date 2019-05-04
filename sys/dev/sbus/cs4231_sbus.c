@@ -46,7 +46,7 @@ __KERNEL_RCSID(0, "$NetBSD: cs4231_sbus.c,v 1.51 2019/03/16 12:09:58 isaki Exp $
 #include <dev/sbus/sbusvar.h>
 
 #include <sys/audioio.h>
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 
 #include <dev/ic/ad1848reg.h>
 #include <dev/ic/cs4231reg.h>

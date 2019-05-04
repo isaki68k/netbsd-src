@@ -76,7 +76,7 @@
 #include <sys/rndsource.h>
 
 #include <sys/audioio.h>
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 
 #include <machine/cpu.h>
 #include <machine/intr.h>

@@ -57,7 +57,7 @@ __KERNEL_RCSID(0, "$NetBSD: aucc.c,v 1.44 2019/03/16 12:09:56 isaki Exp $");
 #include <machine/cpu.h>
 
 #include <sys/audioio.h>
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 #include <dev/audio/audiovar.h>	/* for AUDIO_MIN_FREQUENCY */
 
 #include <amiga/amiga/cc.h>

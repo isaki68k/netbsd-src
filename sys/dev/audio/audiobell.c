@@ -40,7 +40,7 @@ __KERNEL_RCSID(0, "$NetBSD: audiobell.c,v 1.26 2018/09/03 16:29:30 riastradh Exp
 #include <sys/systm.h>
 #include <sys/uio.h>
 
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 #include <dev/audio/audiovar.h>
 #include <dev/audio/audiodef.h>
 #include <dev/audio/audiobellvar.h>

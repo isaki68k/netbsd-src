@@ -37,10 +37,10 @@ __KERNEL_RCSID(0, "$NetBSD: haltwo.c,v 1.24 2019/03/16 12:09:57 isaki Exp $");
 #include <sys/device.h>
 #include <sys/audioio.h>
 #include <sys/kmem.h>
-#include <dev/audio_if.h>
-
 #include <sys/bus.h>
 #include <machine/sysconf.h>
+
+#include <dev/audio/audio_if.h>
 
 #include <sgimips/hpc/hpcvar.h>
 #include <sgimips/hpc/hpcreg.h>

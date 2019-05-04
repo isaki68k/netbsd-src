@@ -72,7 +72,7 @@
 #include <sys/proc.h>
 #include <sys/queue.h>
 
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 #include <dev/audio/audiofil.h>
 #else
 #include <stdint.h>

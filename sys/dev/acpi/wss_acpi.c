@@ -33,7 +33,7 @@ __KERNEL_RCSID(0, "$NetBSD: wss_acpi.c,v 1.31 2016/07/14 04:19:26 msaitoh Exp $"
 #include <sys/device.h>
 #include <sys/systm.h>
 
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 
 #include <dev/acpi/acpivar.h>
 

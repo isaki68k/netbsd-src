@@ -37,7 +37,7 @@ __KERNEL_RCSID(0, "$NetBSD: sun8i_h3_codec.c,v 1.3 2017/12/21 11:52:00 nat Exp $
 #include <sys/bitops.h>
 
 #include <sys/audioio.h>
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 
 #include <arm/sunxi/sunxi_codec.h>
 

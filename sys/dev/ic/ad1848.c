@@ -110,7 +110,7 @@ __KERNEL_RCSID(0, "$NetBSD: ad1848.c,v 1.31 2011/11/23 23:07:32 jmcneill Exp $")
 #include <sys/bus.h>
 
 #include <sys/audioio.h>
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 
 #include <dev/ic/ad1848reg.h>
 #include <dev/ic/cs4231reg.h>

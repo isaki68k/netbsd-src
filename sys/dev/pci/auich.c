@@ -129,7 +129,7 @@ __KERNEL_RCSID(0, "$NetBSD: auich.c,v 1.154 2019/04/18 13:01:38 isaki Exp $");
 #include <dev/pci/pcivar.h>
 #include <dev/pci/auichreg.h>
 
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 
 #include <dev/ic/ac97reg.h>
 #include <dev/ic/ac97var.h>

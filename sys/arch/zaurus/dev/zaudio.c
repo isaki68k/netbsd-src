@@ -59,7 +59,7 @@ __KERNEL_RCSID(0, "$NetBSD: zaudio.c,v 1.21 2014/09/23 14:49:46 nonaka Exp $");
 #include <sys/device.h>
 #include <sys/mutex.h>
 
-#include <dev/audio_if.h>
+#include <dev/audio/audio_if.h>
 
 #include <dev/i2c/i2cvar.h>
 
