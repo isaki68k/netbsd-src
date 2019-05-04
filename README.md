@@ -56,6 +56,7 @@ vs(4) などの珍しい周波数の hardware がサポートできない。
 ## Supported devices
 |Device	|Backend|(port)	|Status
 |-------|-------|-------|-------|
+|aica(4)	|	|dreamcast	|Work In Progress
 |arcofi(4)	|	|hp300	|Work
 |audiocs(4)	|cs4231	|sparc	|Work
 |auich(4)	|	|	|Work
@@ -63,16 +64,19 @@ vs(4) などの珍しい周波数の hardware がサポートできない。
 |bba(4)		|am7930	|alpha	|Work
 |clcs(4)	|cs4280	|	|Not tested
 |clct(4)	|cs4281	|	|Not tested
+|cmpci(c)	|	|	|Work
 |dbri(4)	|	|sparc	|Work
-|eap(4)		|	|	|Work
+|eap(4)		|	|	|Work/Not Work
+|emuxki(4)	|	|	|Work
+|ess(4)		|	|	|Work
 |gus(4)		|ad1848?|	|Not tested
 |gus(4)@isapnp	|iw	|	|Not tested
-|haltwo(4)	|sgimips|	|Not tested
+|haltwo(4)	|sgimips|	|Work
 |hdafg(4)	|	|	|Work
 |mercury(4)	|	|x68k	|Added, Work (*)
 |pad(4)		|	|	|Work
 |psgpam(4)	|	|luna68k|Added, Work (*)
-|sb(4)		|	|	|Work
+|sb(4)		|	|	|Work/Not Work
 |uaudio(4)	|	|	|Work
 |vs(4)		|	|x68k	|Work (*)
 |vsaudio(4)	|am7930	|vax	|Work
