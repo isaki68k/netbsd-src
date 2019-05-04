@@ -55,7 +55,7 @@ defparam	opt_pxa2x0_dmac.h	PXA2X0_DMAC_FIXED_PRIORITY
 defparam	opt_pxa2x0_dmac.h	PXA2X0_DMAC_DMOVER_CONCURRENCY
 
 # AC97 Controller
-device	pxaacu: audiobus, auconv, mulaw, ac97, aurateconv
+device	pxaacu: audiobus, ac97
 attach	pxaacu at pxaip
 file	arch/arm/xscale/pxa2x0_ac97.c		pxaacu
 

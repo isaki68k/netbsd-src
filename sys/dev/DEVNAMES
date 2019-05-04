@@ -127,7 +127,6 @@ auacer			MI
 aubus			evbmips
 aucc			amiga
 aucc			amigappc
-auconv			MI		Attribute
 audio			MI
 audio			MI		Attribute
 audioamd		MI
@@ -140,7 +139,6 @@ auixp			MI
 aumac			evbmips
 aupci			evbmips
 aupcmcia		evbmips
-aurateconv		MI		Attribute
 aurtc			evbmips
 auspi			evbmips
 autri			MI
@@ -916,7 +914,6 @@ mtc			MI
 mtd			MI
 mtty			MI
 mu			vax
-mulaw			MI		Attribute
 mvgbe			MI
 mvpex			MI
 mvsata			MI

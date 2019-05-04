@@ -30,7 +30,7 @@ device	veth { } : arp, ether, ifnet
 attach	veth at thunkbus
 file	arch/usermode/dev/if_veth.c		veth
 
-device	vaudio { } : audiobus, auconv, aurateconv, mulaw
+device	vaudio { } : audiobus
 attach	vaudio at thunkbus
 file	arch/usermode/dev/vaudio.c		vaudio
 

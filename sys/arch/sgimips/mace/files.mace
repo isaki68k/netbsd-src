@@ -22,7 +22,7 @@ device mec: arp, ether, ifnet, mii
 attach mec at mace
 file arch/sgimips/mace/if_mec.c		mec
 
-device mavb: audiobus, auconv, mulaw, aurateconv
+device mavb: audiobus
 attach mavb at mace
 file arch/sgimips/mace/mavb.c		mavb
 

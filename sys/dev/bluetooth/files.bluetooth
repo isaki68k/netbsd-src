@@ -33,7 +33,7 @@ attach btmagic at bthub
 file dev/bluetooth/btmagic.c		btmagic
 
 # SCO Audio
-device btsco: bluetooth, audiobus, auconv, mulaw, aurateconv
+device btsco: bluetooth, audiobus
 attach btsco at bthub
 file dev/bluetooth/btsco.c		btsco
 

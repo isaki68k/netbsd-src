@@ -117,11 +117,11 @@ device	melody: audiobus, tms320av110
 attach	melody at zbus
 file	arch/amiga/dev/melody.c		melody
 
-device repulse: audiobus, ac97, mulaw
+device repulse: audiobus, ac97
 attach	repulse at zbus
 file	arch/amiga/dev/repulse.c	repulse
 
-device toccata: audiobus, ad1848, auconv
+device toccata: audiobus, ad1848
 attach	toccata at zbus
 file	arch/amiga/dev/toccata.c	toccata
 

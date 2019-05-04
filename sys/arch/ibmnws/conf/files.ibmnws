@@ -91,7 +91,7 @@ file	arch/powerpc/isa/isadma_machdep.c	isa
 file	arch/powerpc/isa/isapnp_machdep.c	isapnp
 
 # Audio controller
-device	paud { }: audiobus, isadma, ad1848, auconv
+device	paud { }: audiobus, isadma, ad1848
 attach	paud at isa with paud_isa
 file	arch/prep/isa/paud_isa.c	paud_isa
 

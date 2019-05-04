@@ -126,7 +126,7 @@ file	dev/isa/fdc_isa.c		fdc_isa
 device	fd: disk
 attach	fd at fdc
 
-device	paud { }: audiobus, isadma, ad1848, auconv
+device	paud { }: audiobus, isadma, ad1848
 attach	paud at isa with paud_isa
 file	arch/prep/isa/paud_isa.c	paud_isa
 

@@ -16,7 +16,7 @@ device	hdaudio: hdaudiobus
 file	dev/hdaudio/hdaudio.c		hdaudio
 file	dev/hdaudio/hdaudio_verbose.c	hdaudio & hdaudioverbose
 
-device	hdafg: audiobus, auconv, aurateconv, mulaw
+device	hdafg: audiobus
 attach	hdafg at hdaudiobus
 file	dev/hdaudio/hdafg.c		hdafg
 file	dev/hdaudio/hdafg_dd.c		hdafg
