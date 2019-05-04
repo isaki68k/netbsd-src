@@ -54,46 +54,35 @@ vs(4) などの珍しい周波数の hardware がサポートできない。
 
 
 ## Supported devices
-|Device	|Backend|(port)	|query_format|set_format|Status
-|-------|-------|-------|-------|-------|-------|
-|arcofi(4)	|	|hp300	|Done	|Done	|Work
-|aria(4)	|	|	|Done	|Done	|Compiled but not tested
-|audioamd(4)	|am7930	|sparc	|Done	|Done	|Compiled but not tested
-|audiocs(4)	|cs4231	|sparc	|	|	|Work
-|auich(4)	|	|	|Done	|Done	|Work
-|autri(4)	|	|	|	|	|Work
-|aucc(4)	|	|amiga	|Done	|Done	|Compiled but not tested
-|bba(4)		|am7930	|alpha	|Done	|Done	|Work
-|clcs(4)	|cs4280	|	|Done	|Done	|Compiled but not tested
-|clct(4)	|cs4281	|	|Done	|Done	|Compiled but not tested
-|dbri(4)	|	|sparc	|	|	|Work
-|eap(4)		|	|	|Done	|modify set_params|Work
-|gus(4)		|ad1848?|	|Done	|	|Compiled but not tested
-|gus(4)@isapnp	|iw	|	|Done	|Done	|Compiled but not tested
-|haltwo(4)	|sgimips|	|	|	|Compiled but not tested
-|harmony(4)	|	|hppa	|Done	|Done	|Compiled but not tested
-|hdafg(4)	|	|	|Done	|	|Work
-|melody(4)	|	|amiga	|	|	|Compiled but not tested
-|mercury(4)	|	|x68k	|Done	|Done	|Added, Work (*)
-|pad(4)		|	|	|Done	|Done	|Work
-|psgpam(4)	|	|luna68k|Done	|Done	|Added, Work (*)
-|repulse(4)	|	|amiga	|Done	|Done	|Compiled but not tested
-|sb(4)		|	|	|	|modify set_params|Work as half duplex (*)
-|uaudio(4)	|	|	|Done	|	|Work
-|vs(4)		|	|x68k	|Done	|Done	|Work (*)
-|vcaudio(4)	|	|evbarm/RPI	|Done	|Done	|Compiled but not tested
-|vidcaudio(4)	|	|acorn32|Done	|Done	|Compiled but not tested
-|vraiu(4)	|hpcmips|	|Done	|Done	|Compiled but not tested
-|vsaudio(4)	|am7930	|vax	|Done	|Done	|Work
-|wss(4)		|cs4231	|	|	|	|Work
-|yds(4)		|	|	|Done	|Done	|Work
+|Device	|Backend|(port)	|Status
+|-------|-------|-------|-------|
+|arcofi(4)	|	|hp300	|Work
+|audiocs(4)	|cs4231	|sparc	|Work
+|auich(4)	|	|	|Work
+|autri(4)	|	|	|Work
+|bba(4)		|am7930	|alpha	|Work
+|clcs(4)	|cs4280	|	|Not tested
+|clct(4)	|cs4281	|	|Not tested
+|dbri(4)	|	|sparc	|Work
+|eap(4)		|	|	|Work
+|gus(4)		|ad1848?|	|Not tested
+|gus(4)@isapnp	|iw	|	|Not tested
+|haltwo(4)	|sgimips|	|Not tested
+|hdafg(4)	|	|	|Work
+|mercury(4)	|	|x68k	|Added, Work (*)
+|pad(4)		|	|	|Work
+|psgpam(4)	|	|luna68k|Added, Work (*)
+|sb(4)		|	|	|Work
+|uaudio(4)	|	|	|Work
+|vs(4)		|	|x68k	|Work (*)
+|vsaudio(4)	|am7930	|vax	|Work
+|wss(4)		|cs4231	|	|Work
+|yds(4)		|	|	|Work
 
 Note:
 * mercury(4) は AUDIO2 で初サポート。
 * psgpam(4) は AUDIO2 で初サポート。
 周波数特性上 AUDIO2 でないと正しくサポートできない。
-* sb(4) は full duplex モデルもあるが、その実現方法がちょっとイレギュラー
-なので、今の所 half duplex デバイスとして実装してある。
 * vs(4) は周波数特性上 AUDIO2 でないと正しくサポートできない。
 
 
