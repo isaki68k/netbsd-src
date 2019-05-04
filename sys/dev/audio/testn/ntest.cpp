@@ -1644,8 +1644,7 @@ test_open_6()
 
 	for (int i = 0; i <= 1; i++) {
 		// N7 には multiuser の概念がない
-		// AUDIO2 は未実装
-		if (netbsd != 8) {
+		if (netbsd == 7) {
 			if (i == 1)
 				break;
 			multiuser = 0;
@@ -1672,6 +1671,7 @@ test_open_6()
 				errx(1, "set multiuser=%d failed", multiuser);
 		}
 
+		// まず root でオープン
 		fd0 = OPEN(devaudio, O_WRONLY);
 		if (fd0 == -1)
 			err(1, "open");
@@ -1681,6 +1681,7 @@ test_open_6()
 		if (r == -1)
 			err(1, "setuid");
 
+		// 一般ユーザでオープン
 		fd1 = OPEN(devaudio, O_WRONLY);
 		if (multiuser) {
 			// 別ユーザもオープン可能
@@ -1706,6 +1707,40 @@ test_open_6()
 
 		r = CLOSE(fd0);
 		XP_SYS_EQ(0, r);
+
+		// テスト2
+		// 先に一般ユーザでオープン
+		ouid = GETUID();
+		r = SETEUID(1);
+		if (r == -1)
+			err(1, "setuid");
+
+		fd0 = OPEN(devaudio, O_WRONLY);
+		if (fd0 == -1)
+			err(1, "open");
+
+		// 特権ユーザでオープン
+		r = SETEUID(ouid);
+		if (r == -1)
+			err(1, "setuid");
+
+		// このケースは常にオープン可
+		fd1 = OPEN(devaudio, O_WRONLY);
+		XP_SYS_OK(fd1);
+		if (fd1 != -1) {
+			r = CLOSE(fd1);
+			XP_SYS_EQ(0, r);
+		}
+
+		// もう一度一般ユーザになってクローズ
+		r = SETEUID(1);
+		if (r == -1)
+			err(1, "setuid");
+		r = CLOSE(fd0);
+		XP_SYS_EQ(0, r);
+		r = SETEUID(ouid);
+		if (r == -1)
+			err(1, "setuid");
 	}
 }
 
