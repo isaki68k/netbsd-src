@@ -27,7 +27,6 @@ struct arcofi_softc {
 
 	struct audio_device	sc_audio_device;
 
-	int			sc_open;
 	int			sc_mode;
 
 	struct {

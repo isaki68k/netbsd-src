@@ -89,7 +89,6 @@
 #include <hppa/gsc/harmonyreg.h>
 #include <hppa/gsc/harmonyvar.h>
 
-int	harmony_open(void *, int);
 void	harmony_close(void *);
 int	harmony_query_format(void *, audio_format_query_t *);
 int	harmony_set_format(void *, int,
@@ -117,7 +116,6 @@ int	harmony_trigger_input(void *, void *, void *, int,
 void	harmony_get_locks(void *, kmutex_t **, kmutex_t **);
 
 const struct audio_hw_if harmony_sa_hw_if = {
-	.open			= harmony_open,
 	.close			= harmony_close,
 	.query_format		= harmony_query_format,
 	.set_format		= harmony_set_format,
@@ -420,18 +418,6 @@ harmony_intr_disable(struct harmony_softc *sc)
 	SYNC_REG(sc, HARMONY_DSTATUS, BUS_SPACE_BARRIER_WRITE);
 }
 
-int
-harmony_open(void *vsc, int flags)
-{
-	struct harmony_softc *sc;
-
-	sc = vsc;
-	if (sc->sc_open)
-		return EBUSY;
-	sc->sc_open = 1;
-	return 0;
-}
-
 void
 harmony_close(void *vsc)
 {
@@ -439,7 +425,6 @@ harmony_close(void *vsc)
 
 	sc = vsc;
 	harmony_intr_disable(sc);
-	sc->sc_open = 0;
 }
 
 int

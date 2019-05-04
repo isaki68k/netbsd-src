@@ -87,7 +87,6 @@ struct harmony_softc {
 	bus_dma_tag_t sc_dmat;
 	bus_space_tag_t sc_bt;
 	bus_space_handle_t sc_bh;
-	int sc_open;
 	uint32_t sc_cntlbits;
 	int sc_need_commit;
 	int sc_playback_empty;

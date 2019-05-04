@@ -199,7 +199,6 @@ static int	arcofi_recv_data(struct arcofi_softc *);
 static int	arcofi_xmit_data(struct arcofi_softc *);
 
 static int	arcofi_open(void *, int);
-static void	arcofi_close(void *);
 static int	arcofi_query_format(void *, audio_format_query_t *);
 static int	arcofi_set_format(void *, int,
 		    const audio_params_t *, const audio_params_t *,
@@ -222,7 +221,6 @@ static void	arcofi_get_locks(void *, kmutex_t **, kmutex_t **);
 
 static const struct audio_hw_if arcofi_hw_if = {
 	.open		  = arcofi_open,
-	.close		  = arcofi_close,
 	.query_format	  = arcofi_query_format,
 	.set_format	  = arcofi_set_format,
 	.round_blocksize  = arcofi_round_blocksize,
@@ -318,22 +316,11 @@ static const uint16_t arcofi_gains[1 + NEGATIVE_GAINS + 1 + POSITIVE_GAINS] = {
 static int
 arcofi_open(void *v, int flags)
 {
-	struct arcofi_softc *sc = (struct arcofi_softc *)v;
+	struct arcofi_softc *sc __diagused = (struct arcofi_softc *)v;
 
-	if (sc->sc_open)
-		return EBUSY;
-	sc->sc_open = 1;
 	KASSERT(sc->sc_mode == 0);
 
 	return 0;
-}
-
-static void
-arcofi_close(void *v)
-{
-	struct arcofi_softc *sc = (struct arcofi_softc *)v;
-
-	sc->sc_open = 0;
 }
 
 static int
