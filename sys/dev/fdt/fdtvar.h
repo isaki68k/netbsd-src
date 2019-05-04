@@ -42,7 +42,7 @@
 #include "audio.h"
 #endif
 #if NAUDIO > 0
-#include <dev/audio_dai.h>
+#include <dev/audio/audio_dai.h>
 #else
 typedef void *audio_dai_tag_t;
 #endif

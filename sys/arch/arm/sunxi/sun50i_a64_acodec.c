@@ -36,7 +36,7 @@ __KERNEL_RCSID(0, "$NetBSD: sun50i_a64_acodec.c,v 1.8 2018/05/16 10:23:43 jmcnei
 #include <sys/kmem.h>
 #include <sys/bitops.h>
 
-#include <dev/audio_dai.h>
+#include <dev/audio/audio_dai.h>
 
 #include <dev/fdt/fdtvar.h>
 

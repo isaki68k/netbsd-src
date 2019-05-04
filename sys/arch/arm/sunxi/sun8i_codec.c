@@ -38,7 +38,7 @@ __KERNEL_RCSID(0, "$NetBSD: sun8i_codec.c,v 1.5 2018/05/16 10:22:54 jmcneill Exp
 #include <sys/gpio.h>
 #include <sys/workqueue.h>
 
-#include <dev/audio_dai.h>
+#include <dev/audio/audio_dai.h>
 
 #include <dev/fdt/fdtvar.h>
 

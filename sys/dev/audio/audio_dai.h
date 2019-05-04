@@ -26,8 +26,8 @@
  * SUCH DAMAGE.
  */
 
-#ifndef _DEV_AUDIO_DAI_H
-#define _DEV_AUDIO_DAI_H
+#ifndef _DEV_AUDIO_AUDIO_DAI_H
+#define _DEV_AUDIO_AUDIO_DAI_H
 
 #include <sys/errno.h>
 #include <dev/audio_if.h>
@@ -288,4 +288,4 @@ audio_dai_get_locks(audio_dai_tag_t dai, kmutex_t **intr, kmutex_t **thread)
 	dai->dai_hw_if->get_locks(dai->dai_priv, intr, thread);
 }
 
-#endif /* _DEV_AUDIO_DAI_H */
+#endif /* _DEV_AUDIO_AUDIO_DAI_H */

@@ -38,7 +38,7 @@ __KERNEL_RCSID(0, "$NetBSD: ausoc.c,v 1.3 2018/05/12 23:51:06 jmcneill Exp $");
 
 #include <sys/audioio.h>
 #include <dev/audio_if.h>
-#include <dev/audio_dai.h>
+#include <dev/audio/audio_dai.h>
 
 #include <dev/fdt/fdtvar.h>
 
