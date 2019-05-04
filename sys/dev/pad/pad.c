@@ -401,7 +401,7 @@ pad_set_format(void *opaque, int setmode,
     const audio_params_t *play, const audio_params_t *rec,
 	audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
 {
-	pad_softc_t *sc __diagused;
+	pad_softc_t *sc;
 
 	sc = (pad_softc_t *)opaque;
 
