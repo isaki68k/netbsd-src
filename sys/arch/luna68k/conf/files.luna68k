@@ -57,7 +57,7 @@ device xp
 attach xp at xpbus
 file arch/luna68k/dev/xp.c		xp
 
-device psgpam: audiobus, auconv, mulaw
+device psgpam: audiobus
 attach psgpam at xpbus
 file arch/luna68k/dev/psgpam.c		psgpam
 file arch/luna68k/dev/psgpam_enc.c	psgpam
