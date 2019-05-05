@@ -119,7 +119,6 @@ struct auixp_softc {
 
 	/* audio formats supported */
 	struct audio_format sc_formats[AUIXP_NFORMATS];
-	struct audio_encoding_set *sc_encodings;
 
 	/* codecs */
 	int			sc_num_codecs;
