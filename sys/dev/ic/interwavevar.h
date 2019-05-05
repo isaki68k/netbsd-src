@@ -213,8 +213,6 @@ int	iw_commit_settings(void *);
 int	iw_start_output(void *, void *, int, void (*)(void *), void *);
 int	iw_start_input(void *, void *, int, void (*)(void *), void *);
 
-int	iw_init_input(void *, void *, int);
-int	iw_init_output(void *, void *, int);
 int	iw_halt_output(void *);
 int	iw_halt_input(void *);
 

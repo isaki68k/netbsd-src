@@ -857,31 +857,6 @@ iw_dma_count(struct iw_softc *sc, u_short count, int io)
 }
 
 int
-iw_init_output(void *addr, void *sbuf, int cc)
-{
-	struct iw_softc *sc = (struct iw_softc *) addr;
-
-	DPRINTF(("iw_init_output\n"));
-
-	isa_dmastart(sc->sc_ic, sc->sc_playdrq, sbuf,
-		     cc, NULL, DMAMODE_WRITE | DMAMODE_LOOP, BUS_DMA_NOWAIT);
-	return 0;
-}
-
-int
-iw_init_input(void *addr, void *sbuf, int cc)
-{
-	struct	iw_softc *sc;
-
-	DPRINTF(("iw_init_input\n"));
-	sc = (struct iw_softc *) addr;
-	isa_dmastart(sc->sc_ic, sc->sc_recdrq, sbuf,
-		     cc, NULL, DMAMODE_READ | DMAMODE_LOOP, BUS_DMA_NOWAIT);
-	return 0;
-}
-
-
-int
 iw_start_output(void *addr, void *p, int cc, void (*intr)(void *), void *arg)
 {
 	struct	iw_softc *sc;
