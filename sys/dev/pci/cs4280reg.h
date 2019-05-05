@@ -217,14 +217,6 @@
 #define	 FRMT_FTV	  0x00000adf
 
 
-#define CF_MONO		  0x01
-#define CF_8BIT		  0x02
-
-#define CF_16BIT_STEREO	  0x00
-#define CF_16BIT_MONO	  0x01
-#define CF_8BIT_STEREO	  0x02
-#define CF_8BIT_MONO	  0x03
-
 #define MIDI_BUSY_WAIT		100
 #define MIDI_BUSY_DELAY		100	/* Delay when UART is busy */
 

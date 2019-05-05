@@ -118,7 +118,6 @@ struct cs428x_softc {
 	int	sc_ri;
 	struct	cs428x_dma *sc_rdma;
 	char	*sc_rbuf;
-	int	sc_rparam;		/* record format */
 	int	(*halt_input)(void *);
 	char	sc_rrun;		/* recording status */
 	int	sc_rrate;		/* recording sample rate */
