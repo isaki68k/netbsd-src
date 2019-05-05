@@ -209,10 +209,6 @@ int	iw_round_blocksize(void *, int, int, const audio_params_t *);
 
 int	iw_commit_settings(void *);
 
-	/* Software en/decode functions, set if SW coding required by HW */
-void	iw_sw_encode(void *, int, u_char *, int);
-void	iw_sw_decode(void *, int, u_char *, int);
-
 	/* Start input/output routines. These usually control DMA. */
 int	iw_start_output(void *, void *, int, void (*)(void *), void *);
 int	iw_start_input(void *, void *, int, void (*)(void *), void *);
