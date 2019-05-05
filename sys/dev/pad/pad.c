@@ -337,24 +337,12 @@ pad_cdev_open(dev_t dev, int flags, int fmt, struct lwp *l)
 
 	existing = false;
 	paddev = device_lookup(&pad_cd, minor(dev));
-#if 1
-	if (paddev) {
-DPRINTF("%s existing\n", __func__);
-		existing = true;
-	} else {
-		paddev = config_attach_pseudo(cf);
-DPRINTF("%s config_attach_pseudo %p\n", __func__, paddev);
-		if (paddev == NULL)
-			goto bad;
-	}
-#else
 	if (paddev == NULL)
 		paddev = config_attach_pseudo(cf);
 	else
 		existing = true;
 	if (paddev == NULL)
 		goto bad;
-#endif
 
 	sc = device_private(paddev);
 	if (sc == NULL)
