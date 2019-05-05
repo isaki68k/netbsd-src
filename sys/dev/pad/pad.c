@@ -45,7 +45,6 @@ __KERNEL_RCSID(0, "$NetBSD: pad.c,v 1.38 2017/07/01 05:50:10 nat Exp $");
 #include <sys/proc.h>
 #include <sys/select.h>
 #include <sys/stat.h>
-//#include <sys/time.h>
 #include <sys/vnode.h>
 
 #include <dev/audio/audio_if.h>
@@ -505,8 +504,7 @@ pad_cdev_read(dev_t dev, struct uio *uio, int ioflags)
 	struct pad_softc *sc;
 
 	DPRINTF("%s\n", __func__);
-//	sc = device_lookup_private(&pad_cd, PADUNIT(dev));
-	sc = device_private(device_lookup(&pad_cd, PADUNIT(dev)));
+	sc = device_lookup_private(&pad_cd, PADUNIT(dev));
 	if (sc == NULL)
 		return ENXIO;
 
