@@ -178,14 +178,9 @@ static const struct audio_hw_if pad_hw_if = {
 };
 
 #define PAD_NFORMATS	1
-#if defined(PAD_SUPPORT_RECORD)
-#define PADMODE	(AUMODE_PLAY | AUMODE_RECORD)
-#else
-#define PADMODE	AUMODE_PLAY
-#endif
 static const struct audio_format pad_formats[PAD_NFORMATS] = {
 	{
-		.mode		= PADMODE,
+		.mode		= AUMODE_PLAY,
 		.encoding	= AUDIO_ENCODING_SLINEAR_NE,
 		.validbits	= PADPREC,
 		.precision	= PADPREC,
@@ -822,11 +817,7 @@ pad_get_props(void *opaque)
 
 	KASSERT(mutex_owned(&sc->sc_lock));
 
-#if defined(PAD_SUPPORT_RECORD)
-	return 0;
-#else
 	return AUDIO_PROP_PLAYBACK;
-#endif
 }
 
 static void
