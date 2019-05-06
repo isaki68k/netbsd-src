@@ -68,7 +68,7 @@ __KERNEL_RCSID(0, "$NetBSD: pad.c,v 1.38 2017/07/01 05:50:10 nat Exp $");
 #define PADPREC		16
 
 extern struct cfdriver pad_cd;
-static kmutex_t padconfig;
+kmutex_t padconfig;
 
 typedef struct pad_block {
 	uint8_t		*pb_ptr;
@@ -461,6 +461,97 @@ pad_cdev_close(dev_t dev, int flags, int fmt, struct lwp *l)
 }
 
 static int
+pad_fops_poll(struct file *fp, int events)
+{
+
+	DPRINTF("%s\n", __func__);
+	return ENODEV;
+}
+
+static int
+pad_fops_kqfilter(struct file *fp, struct knote *kn)
+{
+	struct pad_softc *sc;
+	dev_t dev;
+
+	DPRINTF("%s\n", __func__);
+	sc = fp->f_pad;
+	if (sc == NULL)
+		return EIO;
+
+	dev = makedev(cdevsw_lookup_major(&pad_cdevsw),
+	    device_unit(sc->sc_dev));
+
+	return seltrue_kqfilter(dev, kn);
+}
+
+static int
+pad_fops_ioctl(struct file *fp, u_long cmd, void *data)
+{
+
+	DPRINTF("%s\n", __func__);
+	return ENODEV;
+}
+
+static int
+pad_fops_stat(struct file *fp, struct stat *st)
+{
+	struct pad_softc *sc;
+
+	DPRINTF("%s\n", __func__);
+	sc = fp->f_pad;
+	if (sc == NULL)
+		return EIO;
+
+	memset(st, 0, sizeof(*st));
+
+	st->st_dev = makedev(cdevsw_lookup_major(&pad_cdevsw),
+	    device_unit(sc->sc_dev));
+
+	st->st_uid = kauth_cred_geteuid(fp->f_cred);
+	st->st_gid = kauth_cred_getegid(fp->f_cred);
+	st->st_mode = S_IFCHR;
+
+	return 0;
+}
+
+static int
+pad_fops_mmap(struct file *fp, off_t *offp, size_t len, int prot, int *flagsp,
+    int *advicep, struct uvm_object **uobjp, int *maxprotp)
+{
+
+	DPRINTF("%s\n", __func__);
+	return 1;
+}
+
+int
+pad_cdev_read(dev_t dev, struct uio *uio, int ioflags)
+{
+	struct pad_softc *sc;
+
+	DPRINTF("%s\n", __func__);
+	sc = device_lookup_private(&pad_cd, PADUNIT(dev));
+	if (sc == NULL)
+		return ENXIO;
+
+	return pad_read(sc, NULL, uio, ioflags);
+}
+
+int
+pad_fops_read(struct file *fp, off_t *offp, struct uio *uio, kauth_cred_t cred,
+    int ioflag)
+{
+	struct pad_softc *sc;
+
+	DPRINTF("%s\n", __func__);
+	sc = fp->f_pad;
+	if (sc == NULL)
+		return ENXIO;
+
+	return pad_read(sc, offp, uio, ioflag);
+}
+
+static int
 pad_read(struct pad_softc *sc, off_t *offp, struct uio *uio, int ioflag)
 {
 	pad_block_t pb;
@@ -498,33 +589,6 @@ pad_read(struct pad_softc *sc, off_t *offp, struct uio *uio, int ioflag)
 	return err;
 }
 
-int
-pad_cdev_read(dev_t dev, struct uio *uio, int ioflags)
-{
-	struct pad_softc *sc;
-
-	DPRINTF("%s\n", __func__);
-	sc = device_lookup_private(&pad_cd, PADUNIT(dev));
-	if (sc == NULL)
-		return ENXIO;
-
-	return pad_read(sc, NULL, uio, ioflags);
-}
-
-int
-pad_fops_read(struct file *fp, off_t *offp, struct uio *uio, kauth_cred_t cred,
-    int ioflag)
-{
-	struct pad_softc *sc;
-
-	DPRINTF("%s\n", __func__);
-	sc = fp->f_pad;
-	if (sc == NULL)
-		return ENXIO;
-
-	return pad_read(sc, offp, uio, ioflag);
-}
-
 static int
 pad_fops_write(struct file *fp, off_t *offp, struct uio *uio, kauth_cred_t cred,
 	  int ioflag)
@@ -532,70 +596,6 @@ pad_fops_write(struct file *fp, off_t *offp, struct uio *uio, kauth_cred_t cred,
 
 	DPRINTF("%s\n", __func__);
 	return EOPNOTSUPP;
-}
-
-static int
-pad_fops_ioctl(struct file *fp, u_long cmd, void *data)
-{
-
-	DPRINTF("%s\n", __func__);
-	return ENODEV;
-}
-
-static int
-pad_fops_kqfilter(struct file *fp, struct knote *kn)
-{
-	struct pad_softc *sc;
-	dev_t dev;
-
-	DPRINTF("%s\n", __func__);
-	sc = fp->f_pad;
-	if (sc == NULL)
-		return EIO;
-
-	dev = makedev(cdevsw_lookup_major(&pad_cdevsw),
-	    device_unit(sc->sc_dev));
-
-	return seltrue_kqfilter(dev, kn);
-}
-
-static int
-pad_fops_poll(struct file *fp, int events)
-{
-
-	DPRINTF("%s\n", __func__);
-	return ENODEV;
-}
-
-static int
-pad_fops_stat(struct file *fp, struct stat *st)
-{
-	struct pad_softc *sc;
-
-	DPRINTF("%s\n", __func__);
-	sc = fp->f_pad;
-	if (sc == NULL)
-		return EIO;
-
-	memset(st, 0, sizeof(*st));
-
-	st->st_dev = makedev(cdevsw_lookup_major(&pad_cdevsw),
-	    device_unit(sc->sc_dev));
-
-	st->st_uid = kauth_cred_geteuid(fp->f_cred);
-	st->st_gid = kauth_cred_getegid(fp->f_cred);
-	st->st_mode = S_IFCHR;
-
-	return 0;
-}
-
-static int
-pad_fops_mmap(struct file *fp, off_t *offp, size_t len, int prot, int *flagsp,
-    int *advicep, struct uvm_object **uobjp, int *maxprotp)
-{
-
-	DPRINTF("%s\n", __func__);
-	return 1;
 }
 
 static int
@@ -852,95 +852,66 @@ MODULE(MODULE_CLASS_DRIVER, pad, "audio");
 
 #ifdef _MODULE
 
-static const struct cfiattrdata audiobuscf_iattrdata = {
-	"audiobus", 0, { { NULL, NULL, 0 }, }
-};
-static const struct cfiattrdata * const pad_attrs[] = {
-	&audiobuscf_iattrdata, NULL
-};
+#include "ioconf.c"
 
-CFDRIVER_DECL(pad, DV_DULL, pad_attrs);
-extern struct cfattach pad_ca;
-static int padloc[] = { -1, -1 };
+devmajor_t cmajor = NODEVMAJOR, bmajor = NODEVMAJOR;
 
-static struct cfdata pad_cfdata[] = {
-	{
-		.cf_name = "pad",
-		.cf_atname = "pad",
-		.cf_unit = 0,
-		.cf_fstate = FSTATE_STAR,
-		.cf_loc = padloc,
-		.cf_flags = 0,
-		.cf_pspec = NULL,
-	},
-	{ NULL, NULL, 0, 0, NULL, 0, NULL }
+/*
+ * We need our own version of cfattach since config(1)'s ioconf does not
+ * generate what we need
+ */
+
+static struct cfattach *pad_cfattachinit[] = { &pad_ca, NULL };
+
+static struct cfattachinit pad_cfattach[] = {
+	{ "pad", pad_cfattachinit },
+	{ NULL, NULL }
 };
 #endif
 
 static int
 pad_modcmd(modcmd_t cmd, void *arg)
 {
-#ifdef _MODULE
-	devmajor_t cmajor = NODEVMAJOR, bmajor = NODEVMAJOR;
-#endif
 	int error = 0;
 
 	switch (cmd) {
 	case MODULE_CMD_INIT:
 #ifdef _MODULE
-		error = config_cfdriver_attach(&pad_cd);
-		if (error) {
+		pad_cfattach[1] = cfattach_ioconf_pad[0];
+		error = config_init_component(cfdriver_ioconf_pad,
+		    pad_cfattach, cfdata_ioconf_pad);
+		if (error)
 			break;
-		}
-
-		error = config_cfattach_attach(pad_cd.cd_name, &pad_ca);
-		if (error) {
-			config_cfdriver_detach(&pad_cd);
-			aprint_error("%s: unable to register cfattach\n",
-				pad_cd.cd_name);
-
-			break;
-		}
-
-		error = config_cfdata_attach(pad_cfdata, 1);
-		if (error) {
-			config_cfattach_detach(pad_cd.cd_name, &pad_ca);
-			config_cfdriver_detach(&pad_cd);
-			aprint_error("%s: unable to register cfdata\n",
-				pad_cd.cd_name);
-
-			break;
-		}
 
 		error = devsw_attach(pad_cd.cd_name, NULL, &bmajor,
-		    &pad_cdevsw, &cmajor);
+			    &pad_cdevsw, &cmajor);
 		if (error) {
-			config_cfdata_detach(pad_cfdata);
-			config_cfattach_detach(pad_cd.cd_name, &pad_ca);
-			config_cfdriver_detach(&pad_cd);
-			aprint_error("%s: unable to register devsw\n",
-				pad_cd.cd_name);
-
+			config_fini_component(cfdriver_ioconf_pad,
+			    pad_cfattach, cfdata_ioconf_pad);
 			break;
 		}
+		mutex_init(&padconfig, MUTEX_DEFAULT, IPL_NONE);
 
-		(void)config_attach_pseudo(pad_cfdata);
 #endif
-
 		break;
+
 	case MODULE_CMD_FINI:
 #ifdef _MODULE
-		error = config_cfdata_detach(pad_cfdata);
+		error = devsw_detach(NULL, &pad_cdevsw);
+		if (error)
+			break;
+
+		error = config_fini_component(cfdriver_ioconf_pad,
+		    pad_cfattach, cfdata_ioconf_pad);
 		if (error) {
+			devsw_attach(pad_cd.cd_name, NULL, &bmajor,
+			    &pad_cdevsw, &cmajor);
 			break;
 		}
-
-		config_cfattach_detach(pad_cd.cd_name, &pad_ca);
-		config_cfdriver_detach(&pad_cd);
-		devsw_detach(NULL, &pad_cdevsw);
+		mutex_destroy(&padconfig);
 #endif
-
 		break;
+
 	default:
 		error = ENOTTY;
 	}
