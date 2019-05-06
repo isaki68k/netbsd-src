@@ -19,6 +19,9 @@ __RCSID("$NetBSD$");
 
 #include "h_macros.h"
 
+/* XXX rump cannot test half duplex */
+int hwfull = 1;
+
 /* Convert O_* into AUMODE_* for HW Full */
 int mode2aumode_full[] = {
 	AUMODE_RECORD,
@@ -29,10 +32,8 @@ int mode2aumode_full[] = {
 int mode2aumode(int mode)
 {
 	int aumode = mode2aumode_full[mode];
-#if 0 /* XXX rump cannot emulate half duplex mode */
 	if (hwfull == 0 && mode == O_RDWR)
 		aumode &= ~AUMODE_RECORD;
-#endif
 	return aumode;
 }
 
@@ -55,12 +56,16 @@ int mode2ropen_full[] = {
 int mode2ropen(int mode)
 {
 	int rec = mode2ropen_full[mode];
-#if 0 /* XXX rump cannot emulate half duplex mode */
 	if (hwfull == 0 && mode == O_RDWR)
 		rec = 0;
-#endif
 	return rec;
 }
+
+static const char *openmodetable[] = {
+	"O_RDONLY",
+	"O_WRONLY",
+	"O_RDWR",
+};
 
 /*
  * Check exp == val (for each member not -1)
@@ -476,6 +481,108 @@ ATF_TC_BODY(open_audio_sound, tc)
 	RL(rump_sys_close(padfd));
 }
 
+/*
+ * Open multiple descriptors and check its mode.
+ */
+ATF_TC(open_multifd);
+ATF_TC_HEAD(open_multifd, tc)
+{
+	atf_tc_set_md_var(tc, "descr", "multiple open");
+}
+ATF_TC_BODY(open_multifd, tc)
+{
+	struct audio_info ai;
+	int padfd;
+	int fd1, fd2;
+	int i;
+	int r;
+	int actmode;
+#define AUMODE_BOTH (AUMODE_PLAY | AUMODE_RECORD)
+	struct {
+		int mode1;
+		int mode2;
+	} expfulltable[] = {
+		/* fd0's expected	fd1's expected or errno */
+		{ AUMODE_RECORD,	AUMODE_RECORD },	// REC, REC
+		{ AUMODE_RECORD,	AUMODE_PLAY },		// REC, PLAY
+		{ AUMODE_RECORD,	AUMODE_BOTH },		// REC, BOTH
+		{ AUMODE_PLAY,		AUMODE_RECORD },	// PLAY, REC
+		{ AUMODE_PLAY,		AUMODE_PLAY },		// PLAY, PLAY
+		{ AUMODE_PLAY,		AUMODE_BOTH },		// PLAY, BOTH
+		{ AUMODE_BOTH,		AUMODE_RECORD },	// BOTH, REC
+		{ AUMODE_BOTH,		AUMODE_PLAY },		// BOTH, PLAY
+		{ AUMODE_BOTH,		AUMODE_BOTH },		// BOTH, BOTH
+	},
+	exphalftable[] = {
+		/* fd0's expected	fd1's expected or errno */
+		{ AUMODE_RECORD,	AUMODE_RECORD },	// REC, REC
+		{ AUMODE_RECORD,	-ENODEV },		// REC, PLAY
+		{ AUMODE_RECORD,	-ENODEV },		// REC, BOTH
+		{ AUMODE_PLAY,		-ENODEV },		// PLAY, REC
+		{ AUMODE_PLAY,		AUMODE_PLAY },		// PLAY, PLAY
+		{ AUMODE_PLAY,		AUMODE_PLAY },		// PLAY, BOTH
+		{ AUMODE_PLAY,		-ENODEV },		// BOTH, REC
+		{ AUMODE_PLAY,		AUMODE_PLAY },		// BOTH, PLAY
+		{ AUMODE_PLAY,		AUMODE_PLAY },		// BOTH, BOTH
+	}, *exptable;
+
+	/* XXX cannot test half duplex */
+	if (hwfull) {
+		exptable = expfulltable;
+	} else {
+		exptable = exphalftable;
+	}
+
+	rump_init();
+	padfd = rump_sys_open("/dev/pad0", O_RDONLY);
+	ATF_REQUIRE(padfd >= 0);
+
+	for (i = 0; i < 9; i++) {
+		int mode1 = i / 3;
+		int mode2 = i % 3;
+		char desc[64];
+
+		/* XXX pad only supports O_WRONLY... */
+		if (mode1 != O_WRONLY || mode2 != O_WRONLY)
+			continue;
+
+		snprintf(desc, sizeof(desc), "%s,%s",
+		    openmodetable[mode1], openmodetable[mode2]);
+
+		/* 1st fd */
+		fd1 = rump_sys_open("/dev/audio0", mode1);
+		ATF_REQUIRE(fd1 >= 0);
+		RL(rump_sys_ioctl(fd1, AUDIO_GETBUFINFO, &ai));
+		actmode = ai.mode & (AUMODE_PLAY | AUMODE_RECORD);
+		ATF_CHECK_EQ_MSG(exptable[i].mode1, actmode, "%s", desc);
+
+		/* 2nd fd */
+		fd2 = rump_sys_open("/dev/audio0", mode2);
+		if (exptable[i].mode2 >= 0) {
+			/* expected to be able to open */
+			ATF_CHECK_MSG(fd2 >= 0, "fd >= 0 not met: %s", desc);
+			r = rump_sys_ioctl(fd2, AUDIO_GETBUFINFO, &ai);
+			ATF_CHECK_EQ_MSG(0, r, "%s", desc);
+			if (r == 0) {
+				actmode = ai.mode & (AUMODE_PLAY|AUMODE_RECORD);
+				ATF_CHECK_EQ_MSG(exptable[i].mode2, actmode,
+				    "%s", desc);
+			}
+		} else {
+			/* expected not to be able to open */
+			ATF_CHECK_EQ(-1, fd2);
+			if (fd2 == -1) {
+				ATF_CHECK_EQ_MSG(-exptable[i].mode2, errno,
+				    "%s", desc);
+			}
+		}
+		if (fd2 >= 0)
+			RL(rump_sys_close(fd2));
+		RL(rump_sys_close(fd1));
+	}
+}
+
+
 ATF_TP_ADD_TCS(tp)
 {
 	ATF_TP_ADD_TC(tp, open_audio_RDONLY);
@@ -487,6 +594,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, open_sound_RDWR);
 
 	ATF_TP_ADD_TC(tp, open_audio_sound);
+	ATF_TP_ADD_TC(tp, open_multifd);
 
 	return atf_no_error();
 }
