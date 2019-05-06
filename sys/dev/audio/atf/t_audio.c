@@ -234,30 +234,21 @@ test_open_audio(int mode)
 }
 
 ATF_TC(open_audio_RDONLY);
-ATF_TC_HEAD(open_audio_RDONLY, tc)
-{
-	atf_tc_set_md_var(tc, "descr", "initial parameters on /dev/audio");
-}
+ATF_TC_HEAD(open_audio_RDONLY, tc) {}
 ATF_TC_BODY(open_audio_RDONLY, tc)
 {
 	test_open_audio(O_RDONLY);
 }
 
 ATF_TC(open_audio_WRONLY);
-ATF_TC_HEAD(open_audio_WRONLY, tc)
-{
-	atf_tc_set_md_var(tc, "descr", "initial parameters on /dev/audio");
-}
+ATF_TC_HEAD(open_audio_WRONLY, tc) {}
 ATF_TC_BODY(open_audio_WRONLY, tc)
 {
 	test_open_audio(O_WRONLY);
 }
 
 ATF_TC(open_audio_RDWR);
-ATF_TC_HEAD(open_audio_RDWR, tc)
-{
-	atf_tc_set_md_var(tc, "descr", "initial parameters on /dev/audio");
-}
+ATF_TC_HEAD(open_audio_RDWR, tc) {}
 ATF_TC_BODY(open_audio_RDWR, tc)
 {
 	test_open_audio(O_RDWR);
@@ -401,30 +392,21 @@ test_open_sound(int mode)
 }
 
 ATF_TC(open_sound_RDONLY);
-ATF_TC_HEAD(open_sound_RDONLY, tc)
-{
-	atf_tc_set_md_var(tc, "descr", "initial parameters on /dev/sound");
-}
+ATF_TC_HEAD(open_sound_RDONLY, tc) {}
 ATF_TC_BODY(open_sound_RDONLY, tc)
 {
 	test_open_sound(O_RDONLY);
 }
 
 ATF_TC(open_sound_WRONLY);
-ATF_TC_HEAD(open_sound_WRONLY, tc)
-{
-	atf_tc_set_md_var(tc, "descr", "initial parameters on /dev/sound");
-}
+ATF_TC_HEAD(open_sound_WRONLY, tc) {}
 ATF_TC_BODY(open_sound_WRONLY, tc)
 {
 	test_open_sound(O_WRONLY);
 }
 
 ATF_TC(open_sound_RDWR);
-ATF_TC_HEAD(open_sound_RDWR, tc)
-{
-	atf_tc_set_md_var(tc, "descr", "initial parameters on /dev/sound");
-}
+ATF_TC_HEAD(open_sound_RDWR, tc) {}
 ATF_TC_BODY(open_sound_RDWR, tc)
 {
 	test_open_sound(O_RDWR);
@@ -437,10 +419,7 @@ ATF_TC_BODY(open_sound_RDWR, tc)
  * there is only one sticky parameter per device.
  */
 ATF_TC(open_audio_sound);
-ATF_TC_HEAD(open_audio_sound, tc)
-{
-	atf_tc_set_md_var(tc, "descr", "sticky parameter and /dev/audio");
-}
+ATF_TC_HEAD(open_audio_sound, tc) {}
 ATF_TC_BODY(open_audio_sound, tc)
 {
 	struct audio_info ai;
@@ -485,10 +464,7 @@ ATF_TC_BODY(open_audio_sound, tc)
  * Open multiple descriptors and check its mode.
  */
 ATF_TC(open_multifd);
-ATF_TC_HEAD(open_multifd, tc)
-{
-	atf_tc_set_md_var(tc, "descr", "multiple open");
-}
+ATF_TC_HEAD(open_multifd, tc) {}
 ATF_TC_BODY(open_multifd, tc)
 {
 	struct audio_info ai;
