@@ -2,17 +2,16 @@
 
 .include "../Makefile.inc"
 
-.PATH:	${S}/dev
+.PATH:	${S}/dev/audio
 
 KMOD=	audio
 IOCONF=	audio.ioconf
 SRCS=	audio.c \
-	auconv.c \
-	aurateconv.c \
-	auvolconv.c \
+	alaw.c \
+	linear.c \
 	mulaw.c
 
-CPPFLAGS+=	-DNAUDIO=1 -DNAURATECONV=1 -DNMULAW=1
+CPPFLAGS+=	-DNAUDIO=1
 
 WARNS=	3
 
