@@ -48,28 +48,6 @@ static TAILQ_HEAD(audiodevhead, audiodev) audiodevlist =
 
 #define AUDIODEV_SAMPLE_RATE	44100
 
-static const char *encoding_names[] = {
-	"none",
-	AudioEmulaw,
-	AudioEalaw,
-	"pcm16",
-	"pcm8",
-	AudioEadpcm,
-	AudioEslinear_le,
-	AudioEslinear_be,
-	AudioEulinear_le,
-	AudioEulinear_be,
-	AudioEslinear,
-	AudioEulinear,
-	AudioEmpeg_l1_stream,
-	AudioEmpeg_l1_packets,
-	AudioEmpeg_l1_system,
-	AudioEmpeg_l2_stream,
-	AudioEmpeg_l2_packets,
-	AudioEmpeg_l2_system,
-	AudioEac3,
-};
-
 static int
 audiodev_getinfo(struct audiodev *adev)
 {
@@ -279,11 +257,11 @@ audiodev_set_param(struct audiodev *adev, int mode,
 	setmode = 0;
 	ai = adev->info;
 
-	for (enc = 0; enc < __arraycount(encoding_names); enc++) {
+	for (enc = 0; enc < encoding_max; enc++) {
 		if (strcmp(encname, encoding_names[enc]) == 0)
 			break;
 	}
-	if (enc >= __arraycount(encoding_names)) {
+	if (enc >= encoding_max) {
 		fprintf(stderr, "unknown encoding name: %s\n", encname);
 		errno = EINVAL;
 		return -1;

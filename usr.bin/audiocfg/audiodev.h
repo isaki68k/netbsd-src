@@ -72,4 +72,7 @@ int			audiodev_set_param(struct audiodev *, int,
 				unsigned int);
 int			audiodev_test(struct audiodev *, unsigned int);
 
+extern const char *	encoding_names[];
+extern int		encoding_max;
+
 #endif /* !_HAVE_AUDIODEV_H */

@@ -48,7 +48,7 @@ usage(const char *p)
 	exit(EXIT_FAILURE);
 }
 
-static const char *encoding_names[] = {
+const char *encoding_names[] = {
 	"none",
 	AudioEmulaw,
 	AudioEalaw,
@@ -69,6 +69,7 @@ static const char *encoding_names[] = {
 	AudioEmpeg_l2_system,
 	AudioEac3,
 };
+int encoding_max = __arraycount(encoding_names);
 
 static void
 print_audiodev(struct audiodev *adev, int i)
@@ -110,7 +111,7 @@ print_audiodev(struct audiodev *adev, int i)
 		else if ((f->fmt.mode & AUMODE_RECORD))
 			printf("(-R) ");
 
-		if (f->fmt.encoding < __arraycount(encoding_names))
+		if (f->fmt.encoding < encoding_max)
 			printf("%s", encoding_names[f->fmt.encoding]);
 		else
 			printf("unknown_encoding_%d", f->fmt.encoding);
