@@ -232,7 +232,6 @@ struct audio_hw_if {
 		    void (*)(void *), void *, const audio_params_t *);
 	int	(*dev_ioctl)(void *, u_long, void *, int, struct lwp *);
 	void	(*get_locks)(void *, kmutex_t **, kmutex_t **);
-
 };
 
 struct audio_attach_args {
