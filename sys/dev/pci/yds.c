@@ -1456,7 +1456,7 @@ yds_trigger_output(void *addr, void *start, void *end, int blksize,
 			    channels * N_PLAY_SLOT_CTRL_BANK,
 			BUS_DMASYNC_PREWRITE|BUS_DMASYNC_PREREAD);
 	/* Sync ring buffer */
-	bus_dmamap_sync(sc->sc_dmatag, p->map, 0, sc->sc_play.length,
+	bus_dmamap_sync(sc->sc_dmatag, p->map, 0, blksize,
 			BUS_DMASYNC_PREWRITE);
 	/* HERE WE GO!! */
 	YWRITE4(sc, YDS_MODE,
