@@ -1,4 +1,4 @@
-/* $NetBSD: sunxi_codec.h,v 1.4 2017/10/07 21:53:16 jmcneill Exp $ */
+/* $NetBSD: sunxi_codec.h,v 1.5 2019/05/08 13:40:14 isaki Exp $ */
 
 /*-
  * Copyright (c) 2014-2017 Jared McNeill <jmcneill@invisible.ca>

@@ -1,4 +1,4 @@
-/*	$NetBSD: emuxki.c,v 1.67 2019/03/16 12:09:58 isaki Exp $	*/
+/*	$NetBSD: emuxki.c,v 1.68 2019/05/08 13:40:18 isaki Exp $	*/
 
 /*-
  * Copyright (c) 2001, 2007 The NetBSD Foundation, Inc.
@@ -38,7 +38,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: emuxki.c,v 1.67 2019/03/16 12:09:58 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: emuxki.c,v 1.68 2019/05/08 13:40:18 isaki Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>

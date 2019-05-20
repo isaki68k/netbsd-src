@@ -1,4 +1,4 @@
-/*	$NetBSD$	*/
+/*	$NetBSD: audio.c,v 1.7 2019/05/13 08:50:25 nakayama Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -149,7 +149,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.458 2018/09/03 16:29:30 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.7 2019/05/13 08:50:25 nakayama Exp $");
 
 #ifdef _KERNEL_OPT
 #include "audio.h"
@@ -928,12 +928,16 @@ audioattach(device_t parent, device_t self, void *aux)
 	memset(&pfil, 0, sizeof(pfil));
 	memset(&rfil, 0, sizeof(rfil));
 	mutex_enter(sc->sc_lock);
-	if (audio_hw_probe(sc, is_indep, &mode, &phwfmt, &rhwfmt) != 0) {
+	error = audio_hw_probe(sc, is_indep, &mode, &phwfmt, &rhwfmt);
+	if (error) {
 		mutex_exit(sc->sc_lock);
+		aprint_error_dev(self, "audio_hw_probe failed, "
+		    "error = %d\n", error);
 		goto bad;
 	}
 	if (mode == 0) {
 		mutex_exit(sc->sc_lock);
+		aprint_error_dev(self, "audio_hw_probe failed, no mode\n");
 		goto bad;
 	}
 	/* Init hardware. */
@@ -941,6 +945,8 @@ audioattach(device_t parent, device_t self, void *aux)
 	error = audio_hw_set_format(sc, mode, &phwfmt, &rhwfmt, &pfil, &rfil);
 	if (error) {
 		mutex_exit(sc->sc_lock);
+		aprint_error_dev(self, "audio_hw_set_format failed, "
+		    "error = %d\n", error);
 		goto bad;
 	}
 
@@ -950,8 +956,11 @@ audioattach(device_t parent, device_t self, void *aux)
 	 */
 	error = audio_mixers_init(sc, mode, &phwfmt, &rhwfmt, &pfil, &rfil);
 	mutex_exit(sc->sc_lock);
-	if (sc->sc_pmixer == NULL && sc->sc_rmixer == NULL)
+	if (sc->sc_pmixer == NULL && sc->sc_rmixer == NULL) {
+		aprint_error_dev(self, "audio_mixers_init failed, "
+		    "error = %d\n", error);
 		goto bad;
+	}
 
 	selinit(&sc->sc_wsel);
 	selinit(&sc->sc_rsel);
@@ -2037,12 +2046,17 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 			 * hw_if->open() is always (FREAD | FWRITE)
 			 * regardless of this open()'s flags.
 			 * see also dev/isa/aria.c
+			 * but ckeck its playback or recording capability.
 			 * On half duplex hardware, the flags passed to
 			 * hw_if->open() is either FREAD or FWRITE.
 			 * see also arch/evbarm/mini2440/audio_mini2440.c
 			 */
 			if (fullduplex) {
 				hwflags = FREAD | FWRITE;
+				if (!audio_can_playback(sc))
+					hwflags &= ~FWRITE;
+				if (!audio_can_capture(sc))
+					hwflags &= ~FREAD;
 			} else {
 				/* Construct hwflags from af->mode. */
 				hwflags = 0;
@@ -6140,17 +6154,23 @@ audio_hw_probe(struct audio_softc *sc, int is_indep, int *modep,
 	    "invalid mode = %x", mode);
 
 	if (is_indep) {
+		int errorp = 0, errorr = 0;
+
 		/* On independent devices, probe separately. */
 		if ((mode & AUMODE_PLAY) != 0) {
-			error = audio_hw_probe_fmt(sc, phwfmt, AUMODE_PLAY);
-			if (error)
+			errorp = audio_hw_probe_fmt(sc, phwfmt, AUMODE_PLAY);
+			if (errorp)
 				mode &= ~AUMODE_PLAY;
 		}
 		if ((mode & AUMODE_RECORD) != 0) {
-			error = audio_hw_probe_fmt(sc, rhwfmt, AUMODE_RECORD);
-			if (error)
+			errorr = audio_hw_probe_fmt(sc, rhwfmt, AUMODE_RECORD);
+			if (errorr)
 				mode &= ~AUMODE_RECORD;
 		}
+
+		/* Return error if both play and record probes failed. */
+		if (errorp && errorr)
+			error = errorp;
 	} else {
 		/* On non independent devices, probe simultaneously. */
 		error = audio_hw_probe_fmt(sc, &fmt, mode);
@@ -7214,7 +7234,7 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 	 * XXX hiwat/lowat is a playback-only parameter.  What should I
 	 *     return for a record-only descriptor?
 	 */
-	track = ptrack ?: rtrack;
+	track = ptrack ? ptrack : rtrack;
 	if (track) {
 		ai->blocksize = track->usrbuf_blksize;
 		ai->hiwat = track->usrbuf_usedhigh / track->usrbuf_blksize;
@@ -7496,7 +7516,8 @@ audio_sysctl_multiuser(SYSCTLFN_ARGS)
 {
 	struct sysctlnode node;
 	struct audio_softc *sc;
-	int t, error;
+	bool t;
+	int error;
 
 	node = *rnode;
 	sc = node.sysctl_data;

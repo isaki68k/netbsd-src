@@ -1,4 +1,4 @@
-/*	$NetBSD: azalia.c,v 1.86 2019/03/16 12:09:58 isaki Exp $	*/
+/*	$NetBSD: azalia.c,v 1.87 2019/05/08 13:40:18 isaki Exp $	*/
 
 /*-
  * Copyright (c) 2005, 2008 The NetBSD Foundation, Inc.
@@ -41,7 +41,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: azalia.c,v 1.86 2019/03/16 12:09:58 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: azalia.c,v 1.87 2019/05/08 13:40:18 isaki Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>

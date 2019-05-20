@@ -1,4 +1,4 @@
-/*	$NetBSD: ucom.c,v 1.122 2019/04/20 05:53:18 mrg Exp $	*/
+/*	$NetBSD: ucom.c,v 1.125 2019/05/09 02:43:35 mrg Exp $	*/
 
 /*
  * Copyright (c) 1998, 2000 The NetBSD Foundation, Inc.
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ucom.c,v 1.122 2019/04/20 05:53:18 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ucom.c,v 1.125 2019/05/09 02:43:35 mrg Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -69,8 +69,8 @@ __KERNEL_RCSID(0, "$NetBSD: ucom.c,v 1.122 2019/04/20 05:53:18 mrg Exp $");
 #include <dev/usb/ucomvar.h>
 
 #include "ucom.h"
-
 #include "locators.h"
+#include "ioconf.h"
 
 #if NUCOM > 0
 
@@ -245,10 +245,9 @@ static void	ucom_softintr(void *);
 int ucom_match(device_t, cfdata_t, void *);
 void ucom_attach(device_t, device_t, void *);
 int ucom_detach(device_t, int);
-int ucom_activate(device_t, enum devact);
-extern struct cfdriver ucom_cd;
+
 CFATTACH_DECL_NEW(ucom, sizeof(struct ucom_softc), ucom_match, ucom_attach,
-    ucom_detach, ucom_activate);
+    ucom_detach, NULL);
 
 int
 ucom_match(device_t parent, cfdata_t match, void *aux)
@@ -413,10 +412,14 @@ ucom_detach(device_t self, int flags)
 
 	pmf_device_deregister(self);
 
-	if (sc->sc_bulkin_pipe != NULL)
+	if (sc->sc_bulkin_pipe != NULL) {
 		usbd_abort_pipe(sc->sc_bulkin_pipe);
-	if (sc->sc_bulkout_pipe != NULL)
+		sc->sc_bulkin_pipe = NULL;
+	}
+	if (sc->sc_bulkout_pipe != NULL) {
 		usbd_abort_pipe(sc->sc_bulkout_pipe);
+		sc->sc_bulkout_pipe = NULL;
+	}
 
 	mutex_enter(&sc->sc_lock);
 
@@ -493,26 +496,6 @@ ucom_detach(device_t self, int flags)
 	cv_destroy(&sc->sc_detachcv);
 
 	return 0;
-}
-
-int
-ucom_activate(device_t self, enum devact act)
-{
-	struct ucom_softc *sc = device_private(self);
-
-	UCOMHIST_FUNC(); UCOMHIST_CALLED();
-
-	DPRINTFN(5, "%jd", act, 0, 0, 0);
-
-	switch (act) {
-	case DVACT_DEACTIVATE:
-		mutex_enter(&sc->sc_lock);
-		sc->sc_dying = true;
-		mutex_exit(&sc->sc_lock);
-		return 0;
-	default:
-		return EOPNOTSUPP;
-	}
 }
 
 void
@@ -1263,7 +1246,9 @@ ucomhwiflow(struct tty *tp, int block)
 	if (sc == NULL)
 		return 0;
 
-	mutex_enter(&sc->sc_lock);
+	KASSERT(&sc->sc_lock);
+	KASSERT(mutex_owned(&tty_lock));
+
 	old = sc->sc_rx_stopped;
 	sc->sc_rx_stopped = (u_char)block;
 
@@ -1273,7 +1258,6 @@ ucomhwiflow(struct tty *tp, int block)
 		softint_schedule(sc->sc_si);
 		kpreempt_enable();
 	}
-	mutex_exit(&sc->sc_lock);
 
 	return 1;
 }

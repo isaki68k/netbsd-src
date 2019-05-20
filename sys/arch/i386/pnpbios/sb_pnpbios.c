@@ -1,4 +1,4 @@
-/* $NetBSD: sb_pnpbios.c,v 1.17 2016/07/11 11:31:49 msaitoh Exp $ */
+/* $NetBSD: sb_pnpbios.c,v 1.18 2019/05/08 13:40:15 isaki Exp $ */
 /*
  * Copyright (c) 1999
  * 	Matthias Drochner.  All rights reserved.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sb_pnpbios.c,v 1.17 2016/07/11 11:31:49 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sb_pnpbios.c,v 1.18 2019/05/08 13:40:15 isaki Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>

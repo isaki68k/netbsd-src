@@ -1,4 +1,4 @@
-/*	$NetBSD: ess.c,v 1.84 2019/03/16 12:09:58 isaki Exp $	*/
+/*	$NetBSD: ess.c,v 1.85 2019/05/08 13:40:18 isaki Exp $	*/
 
 /*
  * Copyright 1997
@@ -66,7 +66,7 @@
 */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ess.c,v 1.84 2019/03/16 12:09:58 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ess.c,v 1.85 2019/05/08 13:40:18 isaki Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>

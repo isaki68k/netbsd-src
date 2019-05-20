@@ -1,4 +1,4 @@
-#	$NetBSD: files.dreamcast,v 1.31 2016/12/29 11:49:05 tsutsui Exp $
+#	$NetBSD: files.dreamcast,v 1.32 2019/05/08 13:40:14 isaki Exp $
 
 # maxpartitions must be first item in files.${MACHINE}
 maxpartitions 16

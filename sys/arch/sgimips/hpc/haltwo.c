@@ -1,4 +1,4 @@
-/* $NetBSD: haltwo.c,v 1.24 2019/03/16 12:09:57 isaki Exp $ */
+/* $NetBSD: haltwo.c,v 1.25 2019/05/08 13:40:16 isaki Exp $ */
 
 /*
  * Copyright (c) 2003 Ilpo Ruotsalainen
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: haltwo.c,v 1.24 2019/03/16 12:09:57 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: haltwo.c,v 1.25 2019/05/08 13:40:16 isaki Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>

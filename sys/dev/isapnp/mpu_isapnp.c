@@ -1,7 +1,7 @@
-/*	$NetBSD: mpu_isapnp.c,v 1.20 2011/12/07 17:35:01 jakllsch Exp $	*/
+/*	$NetBSD: mpu_isapnp.c,v 1.21 2019/05/08 13:40:18 isaki Exp $	*/
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mpu_isapnp.c,v 1.20 2011/12/07 17:35:01 jakllsch Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mpu_isapnp.c,v 1.21 2019/05/08 13:40:18 isaki Exp $");
 
 #include "midi.h"
 

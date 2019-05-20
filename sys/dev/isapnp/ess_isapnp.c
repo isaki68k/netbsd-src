@@ -1,4 +1,4 @@
-/*	$NetBSD: ess_isapnp.c,v 1.22 2010/05/22 16:35:00 tsutsui Exp $	*/
+/*	$NetBSD: ess_isapnp.c,v 1.23 2019/05/08 13:40:18 isaki Exp $	*/
 
 /*
  * Copyright (c) 1991-1993 Regents of the University of California.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ess_isapnp.c,v 1.22 2010/05/22 16:35:00 tsutsui Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ess_isapnp.c,v 1.23 2019/05/08 13:40:18 isaki Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>

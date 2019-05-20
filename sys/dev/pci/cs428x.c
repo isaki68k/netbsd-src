@@ -1,4 +1,4 @@
-/*	$NetBSD: cs428x.c,v 1.18 2017/06/01 02:45:11 chs Exp $	*/
+/*	$NetBSD: cs428x.c,v 1.19 2019/05/08 13:40:18 isaki Exp $	*/
 
 /*
  * Copyright (c) 2000 Tatoku Ogaito.  All rights reserved.
@@ -33,7 +33,7 @@
 /* Common functions for CS4280 and CS4281 */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cs428x.c,v 1.18 2017/06/01 02:45:11 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cs428x.c,v 1.19 2019/05/08 13:40:18 isaki Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>

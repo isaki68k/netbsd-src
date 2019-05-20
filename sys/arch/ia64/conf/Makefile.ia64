@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile.ia64,v 1.6 2018/09/22 12:24:02 rin Exp $
+#	$NetBSD: Makefile.ia64,v 1.8 2019/05/09 15:48:55 scole Exp $
 
 # Makefile for NetBSD
 #

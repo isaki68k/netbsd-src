@@ -1,4 +1,4 @@
-/*	$NetBSD: audioamd.c,v 1.28 2019/03/16 12:09:57 isaki Exp $	*/
+/*	$NetBSD: audioamd.c,v 1.29 2019/05/08 13:40:16 isaki Exp $	*/
 /*	NetBSD: am7930_sparc.c,v 1.44 1999/03/14 22:29:00 jonathan Exp 	*/
 
 /*
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: audioamd.c,v 1.28 2019/03/16 12:09:57 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: audioamd.c,v 1.29 2019/05/08 13:40:16 isaki Exp $");
 
 #include "audio.h"
 #if NAUDIO > 0

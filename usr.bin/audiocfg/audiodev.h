@@ -1,4 +1,4 @@
-/* $NetBSD: audiodev.h,v 1.4 2013/08/11 06:31:00 dholland Exp $ */
+/* $NetBSD: audiodev.h,v 1.5 2019/05/08 14:36:12 isaki Exp $ */
 
 /*
  * Copyright (c) 2010 Jared D. McNeill <jmcneill@invisible.ca>
@@ -73,6 +73,6 @@ int			audiodev_set_param(struct audiodev *, int,
 int			audiodev_test(struct audiodev *, unsigned int);
 
 extern const char *	encoding_names[];
-extern int		encoding_max;
+extern u_int		encoding_max;
 
 #endif /* !_HAVE_AUDIODEV_H */

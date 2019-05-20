@@ -1,4 +1,4 @@
-/*	$NetBSD: gcscaudio.c,v 1.16 2018/12/09 11:14:02 jdolecek Exp $	*/
+/*	$NetBSD: gcscaudio.c,v 1.17 2019/05/08 13:40:19 isaki Exp $	*/
 
 /*-
  * Copyright (c) 2008 SHIMIZU Ryo <ryo@nerv.org>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gcscaudio.c,v 1.16 2018/12/09 11:14:02 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gcscaudio.c,v 1.17 2019/05/08 13:40:19 isaki Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>

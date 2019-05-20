@@ -1,7 +1,7 @@
-/* $NetBSD: joy_ess.c,v 1.6 2011/11/23 23:07:32 jmcneill Exp $ */
+/* $NetBSD: joy_ess.c,v 1.7 2019/05/08 13:40:18 isaki Exp $ */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: joy_ess.c,v 1.6 2011/11/23 23:07:32 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: joy_ess.c,v 1.7 2019/05/08 13:40:18 isaki Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>

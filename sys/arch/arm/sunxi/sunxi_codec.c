@@ -1,4 +1,4 @@
-/* $NetBSD: sunxi_codec.c,v 1.5 2018/04/20 18:07:40 bouyer Exp $ */
+/* $NetBSD: sunxi_codec.c,v 1.6 2019/05/08 13:40:14 isaki Exp $ */
 
 /*-
  * Copyright (c) 2014-2017 Jared McNeill <jmcneill@invisible.ca>
@@ -29,7 +29,7 @@
 #include "opt_ddb.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sunxi_codec.c,v 1.5 2018/04/20 18:07:40 bouyer Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sunxi_codec.c,v 1.6 2019/05/08 13:40:14 isaki Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>

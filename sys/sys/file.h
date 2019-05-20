@@ -1,4 +1,4 @@
-/*	$NetBSD: file.h,v 1.84 2018/08/27 22:22:16 dholland Exp $	*/
+/*	$NetBSD: file.h,v 1.85 2019/05/08 13:40:19 isaki Exp $	*/
 
 /*-
  * Copyright (c) 2009 The NetBSD Foundation, Inc.

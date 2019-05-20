@@ -1,4 +1,4 @@
-/*	$NetBSD: arcofivar.h,v 1.1 2014/08/24 08:17:44 tsutsui Exp $	*/
+/*	$NetBSD: arcofivar.h,v 1.2 2019/05/08 13:40:18 isaki Exp $	*/
 /*	$OpenBSD: arcofivar.h,v 1.2 2011/12/25 00:07:27 miod Exp $	*/
 
 /*

@@ -1,4 +1,4 @@
-/* $NetBSD: main.c,v 1.7 2013/08/12 14:03:18 joerg Exp $ */
+/* $NetBSD: main.c,v 1.8 2019/05/08 14:36:12 isaki Exp $ */
 
 /*
  * Copyright (c) 2010 Jared D. McNeill <jmcneill@invisible.ca>
@@ -69,7 +69,7 @@ const char *encoding_names[] = {
 	AudioEmpeg_l2_system,
 	AudioEac3,
 };
-int encoding_max = __arraycount(encoding_names);
+u_int encoding_max = __arraycount(encoding_names);
 
 static void
 print_audiodev(struct audiodev *adev, int i)

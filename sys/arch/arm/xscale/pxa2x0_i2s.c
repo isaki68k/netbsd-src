@@ -1,4 +1,4 @@
-/*	$NetBSD: pxa2x0_i2s.c,v 1.12 2017/06/01 02:45:06 chs Exp $	*/
+/*	$NetBSD: pxa2x0_i2s.c,v 1.13 2019/05/08 13:40:14 isaki Exp $	*/
 /*	$OpenBSD: pxa2x0_i2s.c,v 1.7 2006/04/04 11:45:40 pascoe Exp $	*/
 
 /*
@@ -18,7 +18,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pxa2x0_i2s.c,v 1.12 2017/06/01 02:45:06 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pxa2x0_i2s.c,v 1.13 2019/05/08 13:40:14 isaki Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>

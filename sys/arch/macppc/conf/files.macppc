@@ -1,4 +1,4 @@
-#	$NetBSD: files.macppc,v 1.110 2018/05/02 22:07:37 macallan Exp $
+#	$NetBSD: files.macppc,v 1.111 2019/05/08 13:40:15 isaki Exp $
 #
 # macppc-specific configuration info
 

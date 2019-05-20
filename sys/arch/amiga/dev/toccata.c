@@ -1,4 +1,4 @@
-/* $NetBSD: toccata.c,v 1.18 2019/03/16 12:09:56 isaki Exp $ */
+/* $NetBSD: toccata.c,v 1.19 2019/05/08 13:40:14 isaki Exp $ */
 
 /*-
  * Copyright (c) 1998, 1999, 2001, 2002 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: toccata.c,v 1.18 2019/03/16 12:09:56 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: toccata.c,v 1.19 2019/05/08 13:40:14 isaki Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>

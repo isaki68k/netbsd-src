@@ -1,4 +1,4 @@
-/*	$NetBSD$	*/
+/*	$NetBSD: alaw.c,v 1.2 2019/05/08 13:40:17 isaki Exp $	*/
 
 /*
  * Copyright (C) 2018 Tetsuya Isaki. All rights reserved.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD$");
+__KERNEL_RCSID(0, "$NetBSD: alaw.c,v 1.2 2019/05/08 13:40:17 isaki Exp $");
 
 #if defined(_KERNEL)
 #include <sys/types.h>

@@ -1,4 +1,4 @@
-#	$NetBSD: files.mini2440,v 1.1 2012/01/30 03:28:33 nisimura Exp $
+#	$NetBSD: files.mini2440,v 1.2 2019/05/08 13:40:14 isaki Exp $
 #
 # FriendlyARM MINI2440 board configuration info
 #

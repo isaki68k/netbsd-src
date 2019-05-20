@@ -1,4 +1,4 @@
-# 	$NetBSD: TADPOLE3GX,v 1.77 2019/04/13 08:23:00 isaki Exp $
+# 	$NetBSD: TADPOLE3GX,v 1.78 2019/05/08 13:40:16 isaki Exp $
 
 include "arch/sparc/conf/std.sparc"
 

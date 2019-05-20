@@ -1,4 +1,4 @@
-/* $NetBSD: audiodev.c,v 1.6 2016/03/05 22:10:39 mrg Exp $ */
+/* $NetBSD: audiodev.c,v 1.7 2019/05/08 14:36:12 isaki Exp $ */
 
 /*
  * Copyright (c) 2010 Jared D. McNeill <jmcneill@invisible.ca>
@@ -252,7 +252,7 @@ audiodev_set_param(struct audiodev *adev, int mode,
 {
 	struct audio_info ai;
 	int setmode;
-	int enc;
+	u_int enc;
 
 	setmode = 0;
 	ai = adev->info;

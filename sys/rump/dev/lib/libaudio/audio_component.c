@@ -1,4 +1,4 @@
-/*	$NetBSD: audio_component.c,v 1.4 2017/06/01 09:44:30 pgoyette Exp $	*/
+/*	$NetBSD: audio_component.c,v 1.5 2019/05/08 13:40:19 isaki Exp $	*/
 
 /*
  * Copyright (c) 2010 Antti Kantee.  All Rights Reserved.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: audio_component.c,v 1.4 2017/06/01 09:44:30 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: audio_component.c,v 1.5 2019/05/08 13:40:19 isaki Exp $");
 
 #include <sys/param.h>
 #include <sys/conf.h>

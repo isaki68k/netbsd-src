@@ -1,4 +1,4 @@
-/*	$NetBSD: zaudiovar.h,v 1.2 2016/07/07 06:55:40 msaitoh Exp $	*/
+/*	$NetBSD: zaudiovar.h,v 1.3 2019/05/08 13:40:17 isaki Exp $	*/
 /*	$OpenBSD: zaurus_audio.c,v 1.8 2005/08/18 13:23:02 robert Exp $	*/
 
 /*

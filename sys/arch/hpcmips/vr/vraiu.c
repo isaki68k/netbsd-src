@@ -1,4 +1,4 @@
-/*	$NetBSD: vraiu.c,v 1.16 2019/03/16 12:09:56 isaki Exp $	*/
+/*	$NetBSD: vraiu.c,v 1.17 2019/05/08 13:40:15 isaki Exp $	*/
 
 /*
  * Copyright (c) 2001 HAMAJIMA Katsuomi. All rights reserved.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vraiu.c,v 1.16 2019/03/16 12:09:56 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vraiu.c,v 1.17 2019/05/08 13:40:15 isaki Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>

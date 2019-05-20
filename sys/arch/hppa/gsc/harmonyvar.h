@@ -1,4 +1,4 @@
-/*	$NetBSD: harmonyvar.h,v 1.1 2014/02/24 07:23:43 skrll Exp $	*/
+/*	$NetBSD: harmonyvar.h,v 1.2 2019/05/08 13:40:15 isaki Exp $	*/
 
 /*	$OpenBSD: harmonyvar.h,v 1.8 2003/08/15 13:25:53 mickey Exp $	*/
 

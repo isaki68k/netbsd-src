@@ -1,4 +1,4 @@
-/*	$NetBSD: cs428x.h,v 1.16 2012/10/27 17:18:31 chs Exp $	*/
+/*	$NetBSD: cs428x.h,v 1.17 2019/05/08 13:40:18 isaki Exp $	*/
 
 /*
  * Copyright (c) 2000 Tatoku Ogaito.  All rights reserved.

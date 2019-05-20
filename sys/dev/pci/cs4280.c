@@ -1,4 +1,4 @@
-/*	$NetBSD: cs4280.c,v 1.71 2019/03/16 12:09:58 isaki Exp $	*/
+/*	$NetBSD: cs4280.c,v 1.72 2019/05/08 13:40:18 isaki Exp $	*/
 
 /*
  * Copyright (c) 1999, 2000 Tatoku Ogaito.  All rights reserved.
@@ -52,7 +52,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cs4280.c,v 1.71 2019/03/16 12:09:58 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cs4280.c,v 1.72 2019/05/08 13:40:18 isaki Exp $");
 
 #include "midi.h"
 

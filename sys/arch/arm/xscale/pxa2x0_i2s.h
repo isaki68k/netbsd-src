@@ -1,4 +1,4 @@
-/*	$NetBSD: pxa2x0_i2s.h,v 1.5 2012/11/12 18:00:38 skrll Exp $	*/
+/*	$NetBSD: pxa2x0_i2s.h,v 1.6 2019/05/08 13:40:14 isaki Exp $	*/
 /*	$OpenBSD: pxa2x0_i2s.h,v 1.3 2006/04/04 11:45:40 pascoe Exp $	*/
 
 /*

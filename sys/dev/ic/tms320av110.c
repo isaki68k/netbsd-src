@@ -1,4 +1,4 @@
-/*	$NetBSD: tms320av110.c,v 1.25 2019/03/16 12:09:57 isaki Exp $	*/
+/*	$NetBSD: tms320av110.c,v 1.26 2019/05/08 13:40:18 isaki Exp $	*/
 
 /*-
  * Copyright (c) 1997 The NetBSD Foundation, Inc.
@@ -37,7 +37,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tms320av110.c,v 1.25 2019/03/16 12:09:57 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tms320av110.c,v 1.26 2019/05/08 13:40:18 isaki Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>

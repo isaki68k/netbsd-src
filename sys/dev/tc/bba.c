@@ -1,4 +1,4 @@
-/* $NetBSD: bba.c,v 1.42 2019/03/16 12:09:58 isaki Exp $ */
+/* $NetBSD: bba.c,v 1.43 2019/05/08 13:40:19 isaki Exp $ */
 
 /*
  * Copyright (c) 2000 The NetBSD Foundation, Inc.
@@ -29,7 +29,7 @@
 /* maxine/alpha baseboard audio (bba) */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bba.c,v 1.42 2019/03/16 12:09:58 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bba.c,v 1.43 2019/05/08 13:40:19 isaki Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>

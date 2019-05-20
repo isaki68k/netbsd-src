@@ -1,4 +1,4 @@
-/*	$NetBSD: ess_ofisa.c,v 1.27 2016/12/09 17:18:35 christos Exp $	*/
+/*	$NetBSD: ess_ofisa.c,v 1.28 2019/05/08 13:40:18 isaki Exp $	*/
 
 /*-
  * Copyright (c) 1998 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ess_ofisa.c,v 1.27 2016/12/09 17:18:35 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ess_ofisa.c,v 1.28 2019/05/08 13:40:18 isaki Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>

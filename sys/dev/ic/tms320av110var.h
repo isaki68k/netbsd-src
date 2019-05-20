@@ -1,4 +1,4 @@
-/*	$NetBSD: tms320av110var.h,v 1.12 2012/10/27 17:18:23 chs Exp $	*/
+/*	$NetBSD: tms320av110var.h,v 1.13 2019/05/08 13:40:18 isaki Exp $	*/
 
 /*-
  * Copyright (c) 1997 The NetBSD Foundation, Inc.

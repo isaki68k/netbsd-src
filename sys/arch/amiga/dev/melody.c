@@ -1,4 +1,4 @@
-/*	$NetBSD: melody.c,v 1.18 2012/10/27 17:17:30 chs Exp $ */
+/*	$NetBSD: melody.c,v 1.19 2019/05/08 13:40:14 isaki Exp $ */
 
 /*-
  * Copyright (c) 1997 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: melody.c,v 1.18 2012/10/27 17:17:30 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: melody.c,v 1.19 2019/05/08 13:40:14 isaki Exp $");
 
 /*
  * Melody audio driver.

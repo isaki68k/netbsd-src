@@ -1,4 +1,4 @@
-/*	$NetBSD: auviavar.h,v 1.16 2011/11/23 23:07:34 jmcneill Exp $	*/
+/*	$NetBSD: auviavar.h,v 1.17 2019/05/08 13:40:18 isaki Exp $	*/
 
 /*-
  * Copyright (c) 2000, 2008 The NetBSD Foundation, Inc.

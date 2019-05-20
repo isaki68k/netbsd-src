@@ -1,4 +1,4 @@
-/*	$NetBSD$	*/
+/*	$NetBSD: linear.c,v 1.2 2019/05/08 13:40:17 isaki Exp $	*/
 
 /*
  * Copyright (C) 2017 Tetsuya Isaki. All rights reserved.
@@ -28,7 +28,7 @@
 
 #if defined(_KERNEL)
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD$");
+__KERNEL_RCSID(0, "$NetBSD: linear.c,v 1.2 2019/05/08 13:40:17 isaki Exp $");
 
 #include <sys/types.h>
 #include <sys/systm.h>

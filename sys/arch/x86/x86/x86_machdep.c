@@ -1,4 +1,4 @@
-/*	$NetBSD: x86_machdep.c,v 1.124 2019/02/15 08:54:01 nonaka Exp $	*/
+/*	$NetBSD: x86_machdep.c,v 1.126 2019/05/19 08:17:02 maxv Exp $	*/
 
 /*-
  * Copyright (c) 2002, 2006, 2007 YAMAMOTO Takashi,
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: x86_machdep.c,v 1.124 2019/02/15 08:54:01 nonaka Exp $");
+__KERNEL_RCSID(0, "$NetBSD: x86_machdep.c,v 1.126 2019/05/19 08:17:02 maxv Exp $");
 
 #include "opt_modular.h"
 #include "opt_physmem.h"
@@ -1287,7 +1287,6 @@ SYSCTL_SETUP(sysctl_machdep_setup, "sysctl machdep subtree setup")
 		       sysctl_machdep_hypervisor, 0, NULL, 0,
 		       CTL_MACHDEP, CTL_CREATE, CTL_EOL);
 #ifdef SVS
-	int sysctl_machdep_svs_enabled(SYSCTLFN_ARGS);
 	const struct sysctlnode *svs_rnode = NULL;
 	sysctl_createv(clog, 0, NULL, &svs_rnode,
 		       CTLFLAG_PERMANENT,
@@ -1295,10 +1294,10 @@ SYSCTL_SETUP(sysctl_machdep_setup, "sysctl machdep subtree setup")
 		       NULL, 0, NULL, 0,
 		       CTL_MACHDEP, CTL_CREATE);
 	sysctl_createv(clog, 0, &svs_rnode, &svs_rnode,
-		       CTLFLAG_READWRITE,
+		       CTLFLAG_PERMANENT,
 		       CTLTYPE_BOOL, "enabled",
 		       SYSCTL_DESCR("Whether the kernel uses SVS"),
-		       sysctl_machdep_svs_enabled, 0, &svs_enabled, 0,
+		       NULL, 0, &svs_enabled, 0,
 		       CTL_CREATE, CTL_EOL);
 #endif
 
@@ -1307,10 +1306,8 @@ SYSCTL_SETUP(sysctl_machdep_setup, "sysctl machdep subtree setup")
 	sysctl_speculation_init(clog);
 #endif
 
-#ifndef XEN
 	void sysctl_eagerfpu_init(struct sysctllog **);
 	sysctl_eagerfpu_init(clog);
-#endif
 
 	/* None of these can ever change once the system has booted */
 	const_sysctl(clog, "fpu_present", CTLTYPE_INT, i386_fpu_present,

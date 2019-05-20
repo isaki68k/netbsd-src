@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2018, Intel Corp.
+ * Copyright (C) 2000 - 2019, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -301,7 +301,7 @@ AcpiEvAddressSpaceDispatch (
         /*
          * For handlers other than the default (supplied) handlers, we must
          * exit the interpreter because the handler *might* block -- we don't
-         * know what it will do, so we can't hold the lock on the intepreter.
+         * know what it will do, so we can't hold the lock on the interpreter.
          */
         AcpiExExitInterpreter();
     }
@@ -581,7 +581,7 @@ AcpiEvExecuteRegMethod (
     ACPI_EVALUATE_INFO      *Info;
     ACPI_OPERAND_OBJECT     *Args[3];
     ACPI_OPERAND_OBJECT     *RegionObj2;
-    const ACPI_NAME         *RegNamePtr = ACPI_CAST_PTR (ACPI_NAME, METHOD_NAME__REG);
+    const ACPI_NAME         *RegNamePtr = ACPI_ALIGNED_STR_UNION (ACPI_NAME, METHOD_NAME__REG);
     ACPI_NAMESPACE_NODE     *MethodNode;
     ACPI_NAMESPACE_NODE     *Node;
     ACPI_STATUS             Status;

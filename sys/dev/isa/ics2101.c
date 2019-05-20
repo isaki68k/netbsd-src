@@ -1,4 +1,4 @@
-/* $NetBSD: ics2101.c,v 1.17 2011/11/23 23:07:32 jmcneill Exp $ */
+/* $NetBSD: ics2101.c,v 1.18 2019/05/08 13:40:18 isaki Exp $ */
 
 /*-
  * Copyright (c) 1996 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ics2101.c,v 1.17 2011/11/23 23:07:32 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ics2101.c,v 1.18 2019/05/08 13:40:18 isaki Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>

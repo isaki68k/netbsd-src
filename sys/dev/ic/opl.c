@@ -1,4 +1,4 @@
-/*	$NetBSD: opl.c,v 1.42 2016/07/14 10:19:06 msaitoh Exp $	*/
+/*	$NetBSD: opl.c,v 1.43 2019/05/08 13:40:18 isaki Exp $	*/
 
 /*
  * Copyright (c) 1998, 2008 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: opl.c,v 1.42 2016/07/14 10:19:06 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: opl.c,v 1.43 2019/05/08 13:40:18 isaki Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>

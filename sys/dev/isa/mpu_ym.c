@@ -1,4 +1,4 @@
-/*	$NetBSD: mpu_ym.c,v 1.16 2011/11/23 23:07:32 jmcneill Exp $	*/
+/*	$NetBSD: mpu_ym.c,v 1.17 2019/05/08 13:40:18 isaki Exp $	*/
 
 /*
  * Copyright (c) 1998, 2008 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mpu_ym.c,v 1.16 2011/11/23 23:07:32 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mpu_ym.c,v 1.17 2019/05/08 13:40:18 isaki Exp $");
 
 #define NMPU_YM 1
 

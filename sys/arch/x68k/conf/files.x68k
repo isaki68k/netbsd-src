@@ -1,4 +1,4 @@
-#	$NetBSD: files.x68k,v 1.82 2019/02/18 01:12:24 thorpej Exp $
+#	$NetBSD: files.x68k,v 1.83 2019/05/08 13:40:17 isaki Exp $
 #
 # new style config file for x68k architecture
 #

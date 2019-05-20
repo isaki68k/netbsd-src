@@ -1,4 +1,4 @@
-/* $NetBSD: vaudio.c,v 1.4 2014/03/26 08:29:41 christos Exp $ */
+/* $NetBSD: vaudio.c,v 1.5 2019/05/08 13:40:16 isaki Exp $ */
 
 /*-
  * Copyright (c) 2011 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vaudio.c,v 1.4 2014/03/26 08:29:41 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vaudio.c,v 1.5 2019/05/08 13:40:16 isaki Exp $");
 
 #include <sys/param.h>
 #include <sys/proc.h>

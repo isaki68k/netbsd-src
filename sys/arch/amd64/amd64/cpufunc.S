@@ -1,4 +1,4 @@
-/*	$NetBSD: cpufunc.S,v 1.36 2019/02/11 14:59:32 cherry Exp $	*/
+/*	$NetBSD: cpufunc.S,v 1.40 2019/05/19 08:17:02 maxv Exp $	*/
 
 /*
  * Copyright (c) 1998, 2007, 2008 The NetBSD Foundation, Inc.
@@ -88,57 +88,7 @@ ENTRY(ltr)
 	ltr	%di
 	ret
 END(ltr)
-
-ENTRY(lcr0)
-	movq	%rdi, %cr0
-	ret
-END(lcr0)
-
-ENTRY(rcr0)
-	movq	%cr0, %rax
-	ret
-END(rcr0)
-
-ENTRY(lcr2)
-	movq	%rdi, %cr2
-	ret
-END(lcr2)
-
-ENTRY(rcr2)
-	movq	%cr2, %rax
-	ret
-END(rcr2)
-
-ENTRY(lcr3)
-	movq	%rdi, %cr3
-	ret
-END(lcr3)
-
-ENTRY(rcr3)
-	movq	%cr3, %rax
-	ret
-END(rcr3)
 #endif
-
-ENTRY(lcr4)
-	movq	%rdi, %cr4
-	ret
-END(lcr4)
-
-ENTRY(rcr4)
-	movq	%cr4, %rax
-	ret
-END(rcr4)
-
-ENTRY(lcr8)
-	movq	%rdi, %cr8
-	ret
-END(lcr8)
-
-ENTRY(rcr8)
-	movq	%cr8, %rax
-	ret
-END(rcr8)
 
 /*
  * Big hammer: flush all TLB entries, including ones from PTE's
@@ -177,76 +127,6 @@ ENTRY(tlbflush)
 	ret
 END(tlbflush)
 
-ENTRY(ldr0)
-	movq	%rdi, %dr0
-	ret
-END(ldr0)
-
-ENTRY(rdr0)
-	movq	%dr0, %rax
-	ret
-END(rdr0)
-
-ENTRY(ldr1)
-	movq	%rdi, %dr1
-	ret
-END(ldr1)
-
-ENTRY(rdr1)
-	movq	%dr1, %rax
-	ret
-END(rdr1)
-
-ENTRY(ldr2)
-	movq	%rdi, %dr2
-	ret
-END(ldr2)
-
-ENTRY(rdr2)
-	movq	%dr2, %rax
-	ret
-END(rdr2)
-
-ENTRY(ldr3)
-	movq	%rdi, %dr3
-	ret
-END(ldr3)
-
-ENTRY(rdr3)
-	movq	%dr3, %rax
-	ret
-END(rdr3)
-
-ENTRY(ldr6)
-	movq	%rdi, %dr6
-	ret
-END(ldr6)
-
-ENTRY(rdr6)
-	movq	%dr6, %rax
-	ret
-END(rdr6)
-
-ENTRY(ldr7)
-	movq	%rdi, %dr7
-	ret
-END(ldr7)
-
-ENTRY(rdr7)
-	movq	%dr7, %rax
-	ret
-END(rdr7)
-
-ENTRY(x86_disable_intr)
-	cli
-	ret
-END(x86_disable_intr)
-
-ENTRY(x86_enable_intr)
-	sti
-	ret
-END(x86_enable_intr)
-
 ENTRY(x86_read_flags)
 	pushfq
 	popq	%rax
@@ -263,24 +143,6 @@ END(x86_write_flags)
 
 STRONG_ALIAS(x86_write_psl,x86_write_flags)
 #endif /* XENPV */
-
-ENTRY(rdmsr)
-	movq	%rdi, %rcx
-	xorq	%rax, %rax
-	rdmsr
-	shlq	$32, %rdx
-	orq	%rdx, %rax
-	ret
-END(rdmsr)
-
-ENTRY(wrmsr)
-	movq	%rdi, %rcx
-	movq	%rsi, %rax
-	movq	%rsi, %rdx
-	shrq	$32, %rdx
-	wrmsr
-	ret
-END(wrmsr)
 
 ENTRY(rdmsr_locked)
 	movq	%rdi, %rcx
@@ -324,23 +186,6 @@ ENTRY(rdmsr_safe)
 	ret
 END(rdmsr_safe)
 
-ENTRY(rdxcr)
-	movq	%rdi, %rcx
-	xgetbv
-	shlq	$32, %rdx
-	orq	%rdx, %rax
-	ret
-END(rdxcr)
-
-ENTRY(wrxcr)
-	movq	%rdi, %rcx
-	movq	%rsi, %rax
-	movq	%rsi, %rdx
-	shrq	$32, %rdx
-	xsetbv
-	ret
-END(wrxcr)
-
 /*
  * MSR operations fault handler
  */
@@ -373,23 +218,6 @@ ENTRY(cpu_counter32)
 	addl	CPUVAR(CC_SKEW), %eax
 	ret
 END(cpu_counter32)
-
-ENTRY(rdpmc)
-	movq	%rdi, %rcx
-	xorq	%rax, %rax
-	rdpmc
-	shlq	$32, %rdx
-	orq	%rdx, %rax
-	ret
-END(rdpmc)
-
-ENTRY(rdtsc)
-	xorq	%rax,%rax
-	rdtsc
-	shlq	$32,%rdx
-	orq	%rdx,%rax
-	ret
-END(rdtsc)
 
 ENTRY(breakpoint)
 	pushq	%rbp
@@ -507,11 +335,6 @@ ENTRY(x86_mwait)
 	ret
 END(x86_mwait)
 
-ENTRY(x86_pause)
-	pause
-	ret
-END(x86_pause)
-
 ENTRY(x86_cpuid2)
 	movq	%rbx, %r8
 	movq	%rdi, %rax
@@ -525,26 +348,6 @@ ENTRY(x86_cpuid2)
 	movq	%r8, %rbx
 	ret
 END(x86_cpuid2)
-
-ENTRY(x86_getss)
-	movl	%ss, %eax
-	ret
-END(x86_getss)
-
-ENTRY(fldcw)
-	fldcw	(%rdi)
-	ret
-END(fldcw)
-
-ENTRY(fnclex)
-	fnclex
-	ret
-END(fnclex)
-
-ENTRY(fninit)
-	fninit
-	ret
-END(fninit)
 
 ENTRY(fnsave)
 	fnsave	(%rdi)
@@ -566,28 +369,10 @@ ENTRY(fnstsw)
 	ret
 END(fnstsw)
 
-ENTRY(fp_divide_by_0)
-	fldz
-	fld1
-	fdiv	%st, %st(1)
-	fwait
-	ret
-END(fp_divide_by_0)
-
 ENTRY(frstor)
 	frstor	(%rdi)
 	ret
 END(frstor)
-
-ENTRY(fwait)
-	fwait
-	ret
-END(fwait)
-
-ENTRY(clts)
-	clts
-	ret
-END(clts)
 
 ENTRY(stts)
 	movq	%cr0, %rax
@@ -738,21 +523,6 @@ ENTRY(outsl)
 	outsl
 	ret
 END(outsl)
-
-ENTRY(setds)
-	movw	%di, %ds
-	ret
-END(setds)
-
-ENTRY(setes)
-	movw	%di, %es
-	ret
-END(setes)
-
-ENTRY(setfs)
-	movw	%di, %fs
-	ret
-END(setfs)
 
 #ifndef XENPV
 ENTRY(setusergs)

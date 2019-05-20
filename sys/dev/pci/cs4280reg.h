@@ -1,4 +1,4 @@
-/*	$NetBSD: cs4280reg.h,v 1.7 2006/04/15 21:20:47 jmcneill Exp $	*/
+/*	$NetBSD: cs4280reg.h,v 1.8 2019/05/08 13:40:18 isaki Exp $	*/
 
 /*
  * Copyright (c) 1999, 2000 Tatoku Ogaito.  All rights reserved.

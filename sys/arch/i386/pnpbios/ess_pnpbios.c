@@ -1,4 +1,4 @@
-/*	$NetBSD: ess_pnpbios.c,v 1.22 2011/07/01 18:14:15 dyoung Exp $	*/
+/*	$NetBSD: ess_pnpbios.c,v 1.23 2019/05/08 13:40:15 isaki Exp $	*/
 
 /*-
  * Copyright (c) 2000 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ess_pnpbios.c,v 1.22 2011/07/01 18:14:15 dyoung Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ess_pnpbios.c,v 1.23 2019/05/08 13:40:15 isaki Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>

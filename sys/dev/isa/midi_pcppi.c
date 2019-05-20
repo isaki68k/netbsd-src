@@ -1,4 +1,4 @@
-/*	$NetBSD: midi_pcppi.c,v 1.26 2012/04/09 10:18:17 plunky Exp $	*/
+/*	$NetBSD: midi_pcppi.c,v 1.27 2019/05/08 13:40:18 isaki Exp $	*/
 
 /*
  * Copyright (c) 1998, 2008 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: midi_pcppi.c,v 1.26 2012/04/09 10:18:17 plunky Exp $");
+__KERNEL_RCSID(0, "$NetBSD: midi_pcppi.c,v 1.27 2019/05/08 13:40:18 isaki Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>

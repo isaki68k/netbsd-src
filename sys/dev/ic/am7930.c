@@ -1,4 +1,4 @@
-/*	$NetBSD: am7930.c,v 1.57 2017/08/29 06:38:49 isaki Exp $	*/
+/*	$NetBSD: am7930.c,v 1.58 2019/05/08 13:40:18 isaki Exp $	*/
 
 /*
  * Copyright (c) 1995 Rolf Grossmann
@@ -36,7 +36,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: am7930.c,v 1.57 2017/08/29 06:38:49 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: am7930.c,v 1.58 2019/05/08 13:40:18 isaki Exp $");
 
 #include "audio.h"
 #if NAUDIO > 0
