@@ -1,4 +1,4 @@
-/* $NetBSD: sunxi_emac.c,v 1.23 2019/03/05 08:25:02 msaitoh Exp $ */
+/* $NetBSD: sunxi_emac.c,v 1.26 2019/05/09 01:46:37 ozaki-r Exp $ */
 
 /*-
  * Copyright (c) 2016-2017 Jared McNeill <jmcneill@invisible.ca>
@@ -33,7 +33,7 @@
 #include "opt_net_mpsafe.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sunxi_emac.c,v 1.23 2019/03/05 08:25:02 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sunxi_emac.c,v 1.26 2019/05/09 01:46:37 ozaki-r Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -543,6 +543,7 @@ sunxi_emac_setup_rxfilter(struct sunxi_emac_softc *sc)
 		hash[0] = hash[1] = ~0;
 	} else {
 		val |= HASH_MULTICAST;
+		ETHER_LOCK(&sc->ec);
 		ETHER_FIRST_MULTI(step, &sc->ec, enm);
 		while (enm != NULL) {
 			crc = ether_crc32_le(enm->enm_addrlo, ETHER_ADDR_LEN);
@@ -553,6 +554,7 @@ sunxi_emac_setup_rxfilter(struct sunxi_emac_softc *sc)
 			hash[hashreg] |= (1 << hashbit);
 			ETHER_NEXT_MULTI(step, enm);
 		}
+		ETHER_UNLOCK(&sc->ec);
 	}
 
 	/* Write our unicast address */
@@ -908,8 +910,6 @@ static int
 sunxi_emac_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 {
 	struct sunxi_emac_softc *sc = ifp->if_softc;
-	struct mii_data *mii = &sc->mii;
-	struct ifreq *ifr = data;
 	int error, s;
 
 #ifndef EMAC_MPSAFE
@@ -917,16 +917,6 @@ sunxi_emac_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 #endif
 
 	switch (cmd) {
-	case SIOCSIFMEDIA:
-	case SIOCGIFMEDIA:
-#ifdef EMAC_MPSAFE
-		s = splnet();
-#endif
-		error = ifmedia_ioctl(ifp, ifr, &mii->mii_media, cmd);
-#ifdef EMAC_MPSAFE
-		splx(s);
-#endif
-		break;
 	default:
 #ifdef EMAC_MPSAFE
 		s = splnet();

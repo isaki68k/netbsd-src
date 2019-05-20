@@ -1,8 +1,8 @@
-/* $NetBSD: dwc_tmr_reg.h,v 1.1 2015/01/17 15:04:47 jmcneill Exp $ */
+/*	$NetBSD: mulaw.h,v 1.2 2019/05/08 13:40:17 isaki Exp $	*/
 
-/*-
- * Copyright (c) 2015 Jared D. McNeill <jmcneill@invisible.ca>
- * All rights reserved.
+/*
+ * Copyright (C) 2017 Tetsuya Isaki. All rights reserved.
+ * Copyright (C) 2017 Y.Sugahara (moveccr). All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,16 +26,14 @@
  * SUCH DAMAGE.
  */
 
-#ifndef _DWC_TMR_REG_H
-#define _DWC_TMR_REG_H
+#ifndef _SYS_DEV_AUDIO_MULAW_H_
+#define _SYS_DEV_AUDIO_MULAW_H_
 
-#define DWC_TMR_LOAD_COUNT_REG		0x0000
-#define DWC_TMR_CURRENT_VALUE_REG	0x0004
-#define DWC_TMR_CONTROL_REG		0x0008
-#define DWC_TMR_INTSTATUS_REG		0x0010
+#include <dev/audio/audio_if.h>
 
-#define DWC_TMR_CONTROL_INTERRUPT_MASK	__BIT(2)
-#define DWC_TMR_CONTROL_MODE		__BIT(1)
-#define DWC_TMR_CONTROL_ENABLE		__BIT(0)
+extern void audio_mulaw_to_internal(audio_filter_arg_t *);
+extern void audio_internal_to_mulaw(audio_filter_arg_t *);
+extern void audio_alaw_to_internal(audio_filter_arg_t *);
+extern void audio_internal_to_alaw(audio_filter_arg_t *);
 
-#endif /* !_DWC_TMR_REG_H */
+#endif /* !_SYS_DEV_AUDIO_MULAW_H_ */

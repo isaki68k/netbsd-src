@@ -1,4 +1,4 @@
-/* $NetBSD: compat_stub.c,v 1.9 2019/04/15 02:07:11 pgoyette Exp $	*/
+/* $NetBSD: compat_stub.c,v 1.12 2019/05/17 07:37:12 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -203,7 +203,9 @@ struct rtsock_oifmsg_50_hook_t rtsock_oifmsg_50_hook;
 struct rtsock_rt_missmsg_50_hook_t rtsock_rt_missmsg_50_hook;
 struct rtsock_rt_ifmsg_50_hook_t rtsock_rt_ifmsg_50_hook;
 struct rtsock_rt_ifannouncemsg_50_hook_t rtsock_rt_ifannouncemsg_50_hook;
-struct rtsock_rt_newaddrmsg_50_hook_t rtsock_rt_newaddrmsg_50_hook;
+struct rtsock_rt_addrmsg_rt_50_hook_t rtsock_rt_addrmsg_rt_50_hook;
+struct rtsock_rt_addrmsg_src_50_hook_t rtsock_rt_addrmsg_src_50_hook;
+struct rtsock_rt_addrmsg_50_hook_t rtsock_rt_addrmsg_50_hook;
 struct rtsock_rt_ieee80211msg_50_hook_t rtsock_rt_ieee80211msg_50_hook;
 
 /*
@@ -260,6 +262,12 @@ struct uipc_unp_70_hook_t uipc_unp_70_hook;
  * Hook for sysvipc50_sysctl
  */
 struct sysvipc_sysctl_50_hook_t sysvipc_sysctl_50_hook;
+
+/*
+ * ifmedia_80 compatability
+ */
+struct ifmedia_80_pre_hook_t ifmedia_80_pre_hook;
+struct ifmedia_80_post_hook_t ifmedia_80_post_hook;
 
 /*
  * Hook for 32-bit machine name

@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.S,v 1.180 2019/03/09 08:42:25 maxv Exp $	*/
+/*	$NetBSD: locore.S,v 1.185 2019/05/18 13:32:12 maxv Exp $	*/
 
 /*
  * Copyright-o-rama!
@@ -1147,7 +1147,6 @@ ENTRY(cpu_switchto)
 	movq	%r12,%rsi
 	callq	_C_LABEL(x86_dbregs_switch)
 
-#ifndef XENPV
 	movb	_C_LABEL(x86_fpu_eager),%dl
 	testb	%dl,%dl
 	jz	.Lno_eagerfpu
@@ -1155,7 +1154,6 @@ ENTRY(cpu_switchto)
 	movq	%r12,%rsi
 	callq	_C_LABEL(fpu_eagerswitch)
 .Lno_eagerfpu:
-#endif
 
 	/* Don't bother with the rest if switching to a system process. */
 	testl	$LW_SYSTEM,L_FLAG(%r12)
@@ -1483,6 +1481,7 @@ IDTVEC_END(osyscall)
 	TEXT_USER_BEGIN
 	_ALIGN_TEXT
 LABEL(syscall_sysret)
+	MDS_LEAVE
 	SVS_LEAVE
 	IBRS_LEAVE
 	INTR_RESTORE_GPRS
@@ -1572,26 +1571,29 @@ END(pagezero)
 #define TF_BACKW(val, reg)	(val - (TF_REGSIZE+16))(reg)
 
 	_ALIGN_TEXT
+	.type intrfastexit,@function
 LABEL(intrfastexit)
 	NOT_XEN(cli;)
+
+	testb	$SEL_UPL,TF_CS(%rsp)
+	jz	.Lkexit
+
+	MDS_LEAVE
 	SVS_LEAVE
 	IBRS_LEAVE
 	INTR_RESTORE_GPRS
 	addq	$(TF_REGSIZE+16),%rsp	/* iret frame */
+	SWAPGS
 
-	testb	$SEL_UPL,TF_BACKW(TF_CS, %rsp)
-	jz	.Lkexit
 	cmpw	$LSEL(LUCODE_SEL, SEL_UPL),TF_BACKW(TF_CS, %rsp)
-	je	.Luexit64
+	je	do_iret
 	cmpw	$GSEL(GUCODE_SEL, SEL_UPL),TF_BACKW(TF_CS, %rsp)
-	je	.Luexit64
+	je	do_iret
 #ifdef XENPV
 	cmpw	$FLAT_RING3_CS64,TF_BACKW(TF_CS, %rsp)
-	je	.Luexit64
+	je	do_iret
 #endif
 
-.Luexit32:
-	SWAPGS
 do_mov_es:
 	movw	TF_BACKW(TF_ES, %rsp),%es
 do_mov_ds:
@@ -1602,13 +1604,13 @@ do_mov_fs:
 do_mov_gs:
 	movw	TF_BACKW(TF_GS, %rsp),%gs
 #endif
-	jmp	.Lkexit
 
-.Luexit64:
-	SWAPGS
+do_iret:
+	iretq
 
 .Lkexit:
-do_iret:
+	INTR_RESTORE_GPRS
+	addq	$(TF_REGSIZE+16),%rsp	/* iret frame */
 	iretq
 END(intrfastexit)
 
@@ -1619,10 +1621,6 @@ END(intrfastexit)
 	.globl	svs_enter_altstack, svs_enter_altstack_end
 	.globl	svs_leave, svs_leave_end
 	.globl	svs_leave_altstack, svs_leave_altstack_end
-	.globl	nosvs_enter, nosvs_enter_end
-	.globl	nosvs_enter_altstack, nosvs_enter_altstack_end
-	.globl	nosvs_leave, nosvs_leave_end
-	.globl	nosvs_leave_altstack, nosvs_leave_altstack_end
 
 LABEL(svs_enter)
 	movabs	SVS_UTLS+UTLS_KPDIRPA,%rax
@@ -1646,12 +1644,9 @@ LABEL(svs_enter_nmi)
 LABEL(svs_enter_nmi_end)
 
 LABEL(svs_leave)
-	testb	$SEL_UPL,TF_CS(%rsp)
-	jz	1234f
 	movq	CPUVAR(URSP0),%rsp
 	movq	CPUVAR(UPDIRPA),%rax
 	movq	%rax,%cr3
-1234:
 LABEL(svs_leave_end)
 
 LABEL(svs_leave_altstack)
@@ -1666,30 +1661,6 @@ LABEL(svs_leave_nmi)
 	movq	(FRAMESIZE+1*8)(%rsp),%rax	/* nmistore->scratch */
 	movq	%rax,%cr3
 LABEL(svs_leave_nmi_end)
-
-LABEL(nosvs_enter)
-	NOSVS_ENTER
-LABEL(nosvs_enter_end)
-
-LABEL(nosvs_enter_altstack)
-	NOSVS_ENTER_ALTSTACK
-LABEL(nosvs_enter_altstack_end)
-
-LABEL(nosvs_enter_nmi)
-	NOSVS_ENTER_NMI
-LABEL(nosvs_enter_nmi_end)
-
-LABEL(nosvs_leave)
-	NOSVS_LEAVE
-LABEL(nosvs_leave_end)
-
-LABEL(nosvs_leave_altstack)
-	NOSVS_LEAVE_ALTSTACK
-LABEL(nosvs_leave_altstack_end)
-
-LABEL(nosvs_leave_nmi)
-	NOSVS_LEAVE_NMI
-LABEL(nosvs_leave_nmi_end)
 #endif
 
 	.globl	ibrs_enter, ibrs_enter_end
@@ -1698,20 +1669,17 @@ LABEL(nosvs_leave_nmi_end)
 	/* IBRS <- 1 */
 LABEL(ibrs_enter)
 	movl	$MSR_IA32_SPEC_CTRL,%ecx
-	movl	$IA32_SPEC_CTRL_IBRS,%eax
-	movl	$(IA32_SPEC_CTRL_IBRS >> 32),%edx
+	rdmsr
+	orl	$IA32_SPEC_CTRL_IBRS,%eax
 	wrmsr
 LABEL(ibrs_enter_end)
 
 	/* IBRS <- 0 */
 LABEL(ibrs_leave)
-	testb	$SEL_UPL,TF_CS(%rsp)
-	jz	1234f
 	movl	$MSR_IA32_SPEC_CTRL,%ecx
-	xorl	%eax,%eax
-	xorl	%edx,%edx
+	rdmsr
+	andl	$~IA32_SPEC_CTRL_IBRS,%eax
 	wrmsr
-1234:
 LABEL(ibrs_leave_end)
 
 LABEL(noibrs_enter)
@@ -1721,3 +1689,15 @@ LABEL(noibrs_enter_end)
 LABEL(noibrs_leave)
 	NOIBRS_LEAVE
 LABEL(noibrs_leave_end)
+
+	.globl	mds_leave, mds_leave_end
+
+LABEL(mds_leave)
+	pushq	$GSEL(GDATA_SEL, SEL_KPL)
+	verw	(%rsp)
+	addq	$8,%rsp
+LABEL(mds_leave_end)
+
+LABEL(nomds_leave)
+	NOMDS_LEAVE
+LABEL(nomds_leave_end)

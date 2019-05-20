@@ -1,4 +1,4 @@
-/*	$NetBSD: if_media.c,v 1.41 2019/04/16 06:48:33 msaitoh Exp $	*/
+/*	$NetBSD: if_media.c,v 1.45 2019/05/17 07:37:12 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 1998 The NetBSD Foundation, Inc.
@@ -76,7 +76,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_media.c,v 1.41 2019/04/16 06:48:33 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_media.c,v 1.45 2019/05/17 07:37:12 msaitoh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -97,8 +97,8 @@ static int	_ifmedia_ioctl(struct ifnet *, struct ifreq *,
 /*
  * Compile-time options:
  * IFMEDIA_DEBUG:
- *	turn on implementation-level debug printfs.
- * 	Useful for debugging newly-ported  drivers.
+ *	Turn on implementation-level debug printfs.
+ * 	Useful for debugging newly-ported drivers.
  */
 
 #ifdef IFMEDIA_DEBUG
@@ -252,13 +252,10 @@ _ifmedia_ioctl(struct ifnet *ifp, struct ifreq *ifr, struct ifmedia *ifm,
 	int error = 0;
 
 	if (ifp == NULL || ifr == NULL || ifm == NULL)
-		return (EINVAL);
+		return EINVAL;
 
 	switch (cmd) {
-	/*
-	 * Set the current media.
-	 */
-	case SIOCSIFMEDIA:
+	case SIOCSIFMEDIA:	/* Set the current media. */
 	{
 		struct ifmedia_entry *oldentry;
 		u_int oldmedia;
@@ -268,9 +265,8 @@ _ifmedia_ioctl(struct ifnet *ifp, struct ifreq *ifr, struct ifmedia *ifm,
 		if (match == NULL) {
 #ifdef IFMEDIA_DEBUG
 			if (ifmedia_debug) {
-				printf(
-				    "ifmedia_ioctl: no media found for 0x%x\n",
-				    newmedia);
+				printf("ifmedia_ioctl: no media found for "
+				    "0x%08x\n", newmedia);
 			}
 #endif
 			return EINVAL;
@@ -310,9 +306,7 @@ _ifmedia_ioctl(struct ifnet *ifp, struct ifreq *ifr, struct ifmedia *ifm,
 		break;
 	}
 
-	/*
-	 * Get list of available media and current media on interface.
-	 */
+	/* Get list of available media and current media on interface. */
 	case SIOCGIFMEDIA:
 	{
 		struct ifmedia_entry *ep;
@@ -342,6 +336,8 @@ _ifmedia_ioctl(struct ifnet *ifp, struct ifreq *ifr, struct ifmedia *ifm,
 			int *kptr = malloc(minwords * sizeof(int), M_TEMP,
 			    M_WAITOK);
 
+			if (kptr == NULL)
+				return ENOMEM;
 			/* Get the media words from the interface's list. */
 			ep = TAILQ_FIRST(&ifm->ifm_list);
 			for (count = 0; ep != NULL && count < minwords;
@@ -354,6 +350,7 @@ _ifmedia_ioctl(struct ifnet *ifp, struct ifreq *ifr, struct ifmedia *ifm,
 				error = E2BIG;	/* oops! */
 			free(kptr, M_TEMP);
 		}
+		/* Update with the real number */
 		ifmr->ifm_count = nwords;
 		break;
 	}
@@ -451,9 +448,9 @@ ifmedia_baudrate(int mword)
 	int i;
 
 	for (i = 0; ifmedia_baudrate_descriptions[i].ifmb_word != 0; i++) {
-		if ((mword & (IFM_NMASK|IFM_TMASK)) ==
-		    ifmedia_baudrate_descriptions[i].ifmb_word)
-			return (ifmedia_baudrate_descriptions[i].ifmb_baudrate);
+		if (IFM_TYPE_SUBTYPE_MATCH(mword,
+		    ifmedia_baudrate_descriptions[i].ifmb_word))
+			return ifmedia_baudrate_descriptions[i].ifmb_baudrate;
 	}
 
 	/* Not known. */

@@ -1,5 +1,5 @@
 #
-#	$NetBSD: GENERIC64,v 1.87 2019/04/19 19:36:26 jmcneill Exp $
+#	$NetBSD: GENERIC64,v 1.92 2019/05/01 10:41:54 jmcneill Exp $
 #
 #	GENERIC ARM (aarch64) kernel
 #
@@ -179,6 +179,7 @@ armgtmr0	at gtmr?
 tegratimer*	at fdt?			# Timers
 
 # Watchdog
+mesongxwdt*	at fdt?			# Amlogic Meson GX watchdog
 sbsawdt*	at acpi?		# ARM SBSA-compliant watchdog
 sunxiwdt*	at fdt?			# Allwinner watchdog
 watchdog*	at fdt?			# Broadcom BCM283x watchdog
@@ -244,6 +245,7 @@ rkgpio*		at rkiomux?		# Rockchip GPIO
 gpio*		at gpiobus?
 
 # PWM controller
+rkpwm*		at fdt? pass 3		# Rockchip PWM
 sunxipwm*	at fdt? pass 3		# Allwinner PWM
 
 # MPIO / Pinmux
@@ -275,6 +277,7 @@ exphy* 		at mii? phy ?		# 3Com internal PHYs
 gentbi* 	at mii? phy ?		# Generic Ten-Bit 1000BASE-[CLS]X PHYs
 glxtphy*	at mii? phy ?		# Level One LXT-1000 PHYs
 gphyter* 	at mii? phy ?		# NS83861 Gig-E PHY
+gxlphy*		at mii? phy ?		# Amlogic Meson GX internal PHY
 icsphy*		at mii? phy ?		# Integrated Circuit Systems ICS189x
 igphy*		at mii? phy ?		# Intel IGP01E1000
 ihphy*		at mii? phy ?		# Intel 82577 PHYs
@@ -335,9 +338,10 @@ rkreg*		at rkpmic?
 tcagpio*	at iic?
 
 # Random number generators
-bcmrng*		at fdt?			# Broadcom BCM283x RNG
 amdccp*		at fdt?			# AMD Cryptograhic Coprocessor RNG
 amdccp*		at acpi?
+bcmrng*		at fdt?			# Broadcom BCM283x RNG
+mesonrng*	at fdt?			# Amlogic Meson RNG
 
 # RTC
 plrtc*		at fdt?			# ARM PrimeCell RTC
@@ -434,9 +438,13 @@ options 	FONT_BOLD16x32
 # Backlight
 pwmbacklight*	at fdt?			# PWM Backlight controls
 
+# Fan
+pwmfan*		at fdt?			# PWM Fan controls
+
 # Thermal throttling controller
 sunxithermal*	at fdt?			# Allwinner thermal sensor controller
 tegrasoctherm*	at fdt?			# NVIDIA Tegra SOC_THERM
+rktsadc*	at fdt?			# RockChip TSASC
 
 # USB
 mesonusbphy*	at fdt? pass 9		# Amlogic Meson USB2 PHY

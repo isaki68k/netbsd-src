@@ -1,8 +1,8 @@
-/* $NetBSD: dwc_tmr_var.h,v 1.1 2015/01/17 15:04:47 jmcneill Exp $ */
+/*	$NetBSD: linear.h,v 1.2 2019/05/08 13:40:17 isaki Exp $	*/
 
-/*-
- * Copyright (c) 2015 Jared D. McNeill <jmcneill@invisible.ca>
- * All rights reserved.
+/*
+ * Copyright (C) 2017 Tetsuya Isaki. All rights reserved.
+ * Copyright (C) 2017 Y.Sugahara (moveccr). All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,20 +26,18 @@
  * SUCH DAMAGE.
  */
 
-#ifndef _DWC_TMR_VAR_H
-#define _DWC_TMR_VAR_H
+#ifndef _SYS_DEV_AUDIO_LINEAR_H_
+#define _SYS_DEV_AUDIO_LINEAR_H_
 
-#include <sys/bus.h>
-#include <sys/device.h>
-#include <sys/timetc.h>
+#include <dev/audio/audio_if.h>
 
-struct dwc_tmr_softc {
-	device_t sc_dev;
-	bus_space_tag_t sc_bst;
-	bus_space_handle_t sc_bsh;
-	struct timecounter sc_tc;
-};
+extern void audio_internal_to_linear8(audio_filter_arg_t *);
+extern void audio_internal_to_linear16(audio_filter_arg_t *);
+extern void audio_internal_to_linear24(audio_filter_arg_t *);
+extern void audio_internal_to_linear32(audio_filter_arg_t *);
+extern void audio_linear8_to_internal(audio_filter_arg_t *);
+extern void audio_linear16_to_internal(audio_filter_arg_t *);
+extern void audio_linear24_to_internal(audio_filter_arg_t *);
+extern void audio_linear32_to_internal(audio_filter_arg_t *);
 
-void	dwc_tmr_attach_subr(struct dwc_tmr_softc *, u_int64_t);
-
-#endif /* !_DWC_TMR_VAR_H */
+#endif /* !_SYS_DEV_AUDIO_LINEAR_H_ */

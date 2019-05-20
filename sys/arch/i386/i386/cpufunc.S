@@ -1,4 +1,4 @@
-/*	$NetBSD: cpufunc.S,v 1.28 2019/02/11 14:59:32 cherry Exp $	*/
+/*	$NetBSD: cpufunc.S,v 1.32 2019/05/19 08:17:02 maxv Exp $	*/
 
 /*-
  * Copyright (c) 1998, 2007 The NetBSD Foundation, Inc.
@@ -38,7 +38,7 @@
 #include <sys/errno.h>
 
 #include <machine/asm.h>
-__KERNEL_RCSID(0, "$NetBSD: cpufunc.S,v 1.28 2019/02/11 14:59:32 cherry Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpufunc.S,v 1.32 2019/05/19 08:17:02 maxv Exp $");
 
 #include "opt_xen.h"
 
@@ -73,22 +73,6 @@ ENTRY(lidt)
 END(lidt)
 #endif /* XENPV */
 
-ENTRY(rcr3)
-	movl	%cr3, %eax
-	ret
-END(rcr3)
-
-ENTRY(lcr4)
-	movl	4(%esp), %eax
-	movl	%eax, %cr4
-	ret
-END(lcr4)
-
-ENTRY(rcr4)
-	movl	%cr4, %eax
-	ret
-END(rcr4)
-
 ENTRY(x86_read_flags)
 	pushfl
 	popl	%eax
@@ -106,20 +90,6 @@ END(x86_write_flags)
 STRONG_ALIAS(x86_write_psl,x86_write_flags)
 STRONG_ALIAS(x86_read_psl,x86_read_flags)
 #endif	/* XENPV */
-
-ENTRY(rdmsr)
-	movl	4(%esp), %ecx
-	rdmsr
-	ret
-END(rdmsr)
-
-ENTRY(wrmsr)
-	movl	4(%esp), %ecx
-	movl	8(%esp), %eax
-	movl	12(%esp), %edx
-	wrmsr
-	ret
-END(wrmsr)
 
 ENTRY(rdmsr_locked)
 	movl	4(%esp), %ecx
@@ -164,23 +134,6 @@ ENTRY(rdmsr_safe)
 	ret
 END(rdmsr_safe)
 
-/* uint64_t rdxcr(uint32_t) */
-ENTRY(rdxcr)
-	movl	4(%esp), %ecx	/* extended control reg number */
-	xgetbv			/* Read to %edx:%eax */
-	ret
-END(rdxcr)
-
-/* void wrxcr(uint32_t, uint64_t) */
-ENTRY(wrxcr)
-	movl	4(%esp), %ecx	/* extended control reg number */
-	movl	8(%esp), %eax	/* feature mask bits */
-	movl	12(%esp), %edx
-	xsetbv
-	ret
-END(wrxcr)
-	
-
 /*
  * MSR operations fault handler
  */
@@ -204,17 +157,6 @@ ENTRY(cpu_counter32)
 	addl	CPUVAR(CC_SKEW), %eax
 	ret
 END(cpu_counter32)
-
-ENTRY(rdpmc)
-	movl	4(%esp), %ecx
-	rdpmc
-	ret
-END(rdpmc)
-
-ENTRY(rdtsc)
-	rdtsc
-	ret
-END(rdtsc)
 
 ENTRY(breakpoint)
 	pushl	%ebp
@@ -302,11 +244,6 @@ ENTRY(x86_mwait)
 	ret
 END(x86_mwait)  
 
-ENTRY(x86_pause)
-	pause
-	ret
-END(x86_pause)
-
 ENTRY(x86_cpuid2)
 	pushl	%ebx
 	pushl	%edi
@@ -322,27 +259,6 @@ ENTRY(x86_cpuid2)
 	popl	%ebx
 	ret
 END(x86_cpuid2)
-
-ENTRY(x86_getss)
-	movl	%ss, %eax
-	ret
-END(x86_getss)
-
-ENTRY(fldcw)
-	movl	4(%esp), %eax
-	fldcw	(%eax)
-	ret
-END(fldcw)
-
-ENTRY(fnclex)	
-	fnclex
-	ret
-END(fnclex)	
-
-ENTRY(fninit)
-	fninit
-	ret
-END(fninit)
 
 ENTRY(fnsave)
 	movl	4(%esp), %eax
@@ -367,29 +283,11 @@ ENTRY(fnstsw)
 	ret
 END(fnstsw)
 
-ENTRY(fp_divide_by_0)
-	fldz
-	fld1
-	fdiv	%st, %st(1)
-	fwait
-	ret
-END(fp_divide_by_0)
-
 ENTRY(frstor)
 	movl	4(%esp), %eax
 	frstor	(%eax)
 	ret
 END(frstor)
-
-ENTRY(fwait)
-	fwait
-	ret
-END(fwait)
-
-ENTRY(clts)
-	clts
-	ret
-END(clts)
 
 ENTRY(stts)
 	movl	%cr0, %eax
