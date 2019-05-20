@@ -4331,6 +4331,103 @@ test_kqueue_6()
 	}
 }
 
+// ioctl_1 スレッド間共有データ
+struct ioctl_1_data {
+	int fd;
+	struct timeval start;	// 書き込み時刻
+	int terminated;
+};
+
+// ioctl_1 のテストスレッド
+void *
+thread_ioctl_1(void *arg)
+{
+	struct ioctl_1_data *data = (struct ioctl_1_data *)arg;
+	struct timeval now, res;
+	struct audio_info ai;
+	int r;
+
+	// 書き込みから 0.5秒経過したらブロックしたと判定するか
+	do {
+		usleep(100);
+		gettimeofday(&now, NULL);
+		timersub(&now, &data->start, &res);
+	} while (res.tv_usec < 500000);
+
+	// ブロックしたので ioctl 発行
+	r = IOCTL(data->fd, AUDIO_GETBUFINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+
+	// 終了処理
+	data->terminated = 1;
+
+	// pause を解除して write(2) を再開させる。
+	AUDIO_INITINFO(&ai);
+	if (netbsd == 7) {
+		// N7 にはバグがあって pause 解除が出来ないので、エンコーディングを
+		// 切り替えるとバッファがおじゃんになるという挙動を利用して、
+		// 叩き起こす。
+		ai.play.encoding = AUDIO_ENCODING_SLINEAR_LE;
+	}
+	ai.play.pause = 0;
+	r = IOCTL(data->fd, AUDIO_SETINFO, &ai, "pause=0");
+	XP_SYS_EQ(0, r);
+
+	return NULL;
+}
+
+// write 中に ioctl が発行できるか
+void
+test_ioctl_1(void)
+{
+	struct audio_info ai;
+	struct ioctl_1_data data0, *data;
+	char buf[8192];
+	pthread_t tid;
+	int r;
+
+	TEST("ioctl_1");
+
+	data = &data0;
+	memset(data, 0, sizeof(*data));
+	memset(buf, 0xff, sizeof(buf));
+
+	data->fd = OPEN(devaudio, O_WRONLY);
+	if (data->fd == -1)
+		err(1, "open");
+
+	// write(2) をブロックさせるための pause
+	AUDIO_INITINFO(&ai);
+	ai.play.pause = 1;
+	r = IOCTL(data->fd, AUDIO_SETINFO, &ai, "pause=1");
+	XP_SYS_EQ(0, r);
+
+	gettimeofday(&data->start, NULL);
+
+	pthread_create(&tid, NULL, thread_ioctl_1, data);
+
+	// ブロックするまで書き込む
+	for (;;) {
+		r = WRITE(data->fd, buf, sizeof(buf));
+		if (data->terminated) {
+			// すでにクローズされている
+			break;
+		}
+		XP_SYS_EQ(sizeof(buf), r);
+
+		// 書き込み時刻更新
+		gettimeofday(&data->start, NULL);
+	}
+
+	pthread_join(tid, NULL);
+
+	// 溜まってるデータは破棄。
+	r = IOCTL(data->fd, AUDIO_FLUSH, NULL, "");
+	XP_SYS_EQ(0, r);
+	r = CLOSE(data->fd);
+	XP_SYS_EQ(0, r);
+}
+
 // FIOASYNC が同時に2人設定できるか
 void
 test_FIOASYNC_1(void)
@@ -7353,6 +7450,7 @@ struct testtable testtable[] = {
 	DEF(kqueue_4),
 	DEF(kqueue_5),
 	DEF(kqueue_6),
+	DEF(ioctl_1),
 	DEF(FIOASYNC_1),
 	DEF(FIOASYNC_2),
 	DEF(FIOASYNC_3),
