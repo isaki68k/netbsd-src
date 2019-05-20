@@ -465,6 +465,24 @@ audio_track_bufstat(audio_track_t *track, struct audio_track_debugbuf *buf)
 #define SPECIFIED(x)	((x) != ~0)
 #define SPECIFIED_CH(x)	((x) != (u_char)~0)
 
+/*
+ * AUDIO_ASR() macro should be used for audio wave data only.
+ * The right shift operation for signed integers is "implementation defined"
+ * behavior (note that it's not "undefined" behavior) in C.
+ *
+ * Let's consider about (-1 / 2).  The methematical answer is -0.5, so it's
+ * 0 for integers.  And (-1 >> 1) is -1.  These two answers are different
+ * but this value is audio wave data that human hears.  I took performance
+ * instead of mathematical 1/65536 accuracy in audio wave.
+ * Using right shift is 1.9 times faster than division on my amd64, and
+ * 1.3 times faster on my m68k.  -- isaki 201801.
+ */
+#if defined(__GNUC__)
+#define AUDIO_ASR(value, shift)	((value) >> (shift))
+#else
+#define AUDIO_ASR(value, shift)	((value) / (1 << shift))
+#endif
+
 /* Device timeout in msec */
 #define AUDIO_TIMEOUT	(3000)
 
@@ -3308,11 +3326,7 @@ audio_track_chvol(audio_filter_arg_t *arg)
 		for (ch = 0; ch < channels; ch++) {
 			aint2_t val;
 			val = *s++;
-#if defined(AUDIO_USE_C_IMPLEMENTATION_DEFINED_BEHAVIOR) && defined(__GNUC__)
-			val = val * ch_volume[ch] >> 8;
-#else
-			val = val * ch_volume[ch] / 256;
-#endif
+			val = AUDIO_ASR(val * ch_volume[ch], 8);
 			*d++ = (aint_t)val;
 		}
 	}
@@ -3334,11 +3348,7 @@ audio_track_chmix_mixLR(audio_filter_arg_t *arg)
 	d = arg->dst;
 
 	for (i = 0; i < arg->count; i++) {
-#if defined(AUDIO_USE_C_IMPLEMENTATION_DEFINED_BEHAVIOR) && defined(__GNUC__)
-		*d++ = (s[0] >> 1) + (s[1] >> 1);
-#else
-		*d++ = (s[0] / 2) + (s[1] / 2);
-#endif
+		*d++ = AUDIO_ASR(s[0], 1) + AUDIO_ASR(s[1], 1);
 		s += arg->srcfmt->channels;
 	}
 }
@@ -5135,11 +5145,7 @@ audio_pmixer_process(struct audio_softc *sc)
 		if (vol != 256) {
 			m = mixer->mixsample;
 			for (i = 0; i < sample_count; i++) {
-#if defined(AUDIO_USE_C_IMPLEMENTATION_DEFINED_BEHAVIOR) && defined(__GNUC__)
-				*m = *m * vol >> 8;
-#else
-				*m = *m * vol / 256;
-#endif
+				*m = AUDIO_ASR(*m * vol, 8);
 				m++;
 			}
 		}
@@ -5227,11 +5233,9 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track,
 #if defined(AUDIO_SUPPORT_TRACK_VOLUME)
 		if (track->volume != 256) {
 			for (i = 0; i < sample_count; i++) {
-#if defined(AUDIO_USE_C_IMPLEMENTATION_DEFINED_BEHAVIOR) && defined(__GNUC__)
-				*d++ = ((aint2_t)*s++) * track->volume >> 8;
-#else
-				*d++ = ((aint2_t)*s++) * track->volume / 256;
-#endif
+				aint2_t v;
+				v = *s++;
+				*d++ = AUDIO_ASR(v * track->volume, 8)
 			}
 		} else
 #endif
@@ -5245,11 +5249,9 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track,
 #if defined(AUDIO_SUPPORT_TRACK_VOLUME)
 		if (track->volume != 256) {
 			for (i = 0; i < sample_count; i++) {
-#if defined(AUDIO_USE_C_IMPLEMENTATION_DEFINED_BEHAVIOR) && defined(__GNUC__)
-				*d++ += ((aint2_t)*s++) * track->volume >> 8;
-#else
-				*d++ += ((aint2_t)*s++) * track->volume / 256;
-#endif
+				aint2_t v;
+				v = *s++;
+				*d++ += AUDIO_ASR(v * track->volume, 8);
 			}
 		} else
 #endif

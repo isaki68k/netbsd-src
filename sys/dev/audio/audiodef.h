@@ -63,12 +63,6 @@
  */
 /* #define AUDIO_SUPPORT_TRACK_VOLUME */
 
-/*
- * Whether use C language's "implementation defined" behavior (note that
- * it's not "undefined" behavior).  It improves performance well.
- */
-#define AUDIO_USE_C_IMPLEMENTATION_DEFINED_BEHAVIOR
-
 /* conversion stage */
 typedef struct {
 	audio_ring_t srcbuf;
