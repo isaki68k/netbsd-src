@@ -466,9 +466,8 @@ audio_track_bufstat(audio_track_t *track, struct audio_track_debugbuf *buf)
 #define SPECIFIED_CH(x)	((x) != (u_char)~0)
 
 /*
- * AUDIO_ASR() macro should be used for audio wave data only.
- * The right shift operation for signed integers is "implementation defined"
- * behavior (note that it's not "undefined" behavior) in C.
+ * AUDIO_ASR() does arithmetic shift right operation.
+ * This macro should be used for audio wave data only.
  *
  * Let's consider about (-1 / 2).  The methematical answer is -0.5, so it's
  * 0 for integers.  And (-1 >> 1) is -1.  These two answers are different
@@ -476,6 +475,9 @@ audio_track_bufstat(audio_track_t *track, struct audio_track_debugbuf *buf)
  * instead of mathematical 1/65536 accuracy in audio wave.
  * Using right shift is 1.9 times faster than division on my amd64, and
  * 1.3 times faster on my m68k.  -- isaki 201801.
+ *
+ * The right shift operation for signed integers is "implementation defined"
+ * behavior (note that it's not "undefined" behavior) in C.
  */
 #if defined(__GNUC__)
 #define AUDIO_ASR(value, shift)	((value) >> (shift))
