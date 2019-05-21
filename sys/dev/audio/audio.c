@@ -598,11 +598,7 @@ static int audio_sysctl_blk_ms(SYSCTLFN_PROTO);
 static int audio_sysctl_multiuser(SYSCTLFN_PROTO);
 #if defined(AUDIO_DEBUG)
 static int audio_sysctl_debug(SYSCTLFN_PROTO);
-#endif
-#if defined(DIAGNOSTIC) || defined(AUDIO_DEBUG)
 static void audio_format2_tostr(char *, size_t, const audio_format2_t *);
-#endif
-#if defined(AUDIO_DEBUG)
 static void audio_print_format2(const char *, const audio_format2_t *) __unused;
 #endif
 
@@ -6753,7 +6749,12 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	if (ptrack) {
 		pchanges = audio_track_setinfo_check(&pfmt, pi);
 		if (pchanges == -1) {
-			TRACET(1, ptrack, "check play.params failed");
+#if defined(AUDIO_DEBUG)
+			char fmtbuf[64];
+			audio_format2_tostr(fmtbuf, sizeof(fmtbuf), &pfmt);
+			TRACET(1, ptrack, "check play.params failed: %s",
+			    fmtbuf);
+#endif
 			return EINVAL;
 		}
 		if (SPECIFIED(ai->mode))
@@ -6762,7 +6763,12 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	if (rtrack) {
 		rchanges = audio_track_setinfo_check(&rfmt, ri);
 		if (rchanges == -1) {
-			TRACET(1, rtrack, "check record.params failed");
+#if defined(AUDIO_DEBUG)
+			char fmtbuf[64];
+			audio_format2_tostr(fmtbuf, sizeof(fmtbuf), &rfmt);
+			TRACET(1, rtrack, "check record.params failed: %s",
+			    fmtbuf);
+#endif
 			return EINVAL;
 		}
 		if (SPECIFIED(ai->mode))
@@ -6896,14 +6902,8 @@ audio_track_setinfo_check(audio_format2_t *fmt, const struct audio_prinfo *info)
 	}
 
 	if (changes) {
-		if (audio_check_params(fmt) != 0) {
-#ifdef DIAGNOSTIC
-			char fmtbuf[64];
-			audio_format2_tostr(fmtbuf, sizeof(fmtbuf), fmt);
-			printf("%s failed: %s\n", __func__, fmtbuf);
-#endif
+		if (audio_check_params(fmt) != 0)
 			return -1;
-		}
 	}
 
 	return changes;
@@ -7664,7 +7664,7 @@ audio_resume(device_t dv, const pmf_qual_t *qual)
 	return true;
 }
 
-#if defined(DIAGNOSTIC) || defined(AUDIO_DEBUG)
+#if defined(AUDIO_DEBUG)
 static void
 audio_format2_tostr(char *buf, size_t bufsize, const audio_format2_t *fmt)
 {
