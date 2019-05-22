@@ -5792,7 +5792,7 @@ audio_track_drain(struct audio_softc *sc, audio_track_t *track)
 	track->pstate = AUDIO_STATE_DRAINING;
 
 	for (;;) {
-		/* I want to display it bofore condition evaluation. */
+		/* I want to display it before condition evaluation. */
 		TRACET(3, track, "pid=%d.%d trkseq=%d hwseq=%d out=%d/%d/%d",
 		    (int)curproc->p_pid, (int)curlwp->l_lid,
 		    (int)track->seq, (int)mixer->hwseq,
