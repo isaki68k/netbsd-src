@@ -176,13 +176,6 @@ struct audio_file {
 	/* process who wants audio SIGIO. */
 	pid_t		async_audio;
 
-	/*
-	 * Non-zero if some thread context is using this file structure
-	 * (including ptrack and rtrack) now.
-	 * Must be protected by sc_lock.
-	 */
-	volatile int lock;
-
 	SLIST_ENTRY(audio_file) entry;
 };
 
