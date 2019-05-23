@@ -2229,8 +2229,6 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 		return EBADF;
 	}
 
-	TRACET(3, track, "resid=%zd", uio->uio_resid);
-
 	usrbuf = &track->usrbuf;
 	input = track->input;
 
