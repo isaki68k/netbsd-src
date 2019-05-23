@@ -6812,6 +6812,265 @@ test_audioctl_kqueue()
 	XP_SYS_EQ(0, r);
 }
 
+// システムコールの同時実行テスト用
+struct oper_vs_oper {
+	int fd;
+	int op1;
+	int op2;
+#define OPER_READ	(1)
+#define OPER_WRITE	(2)
+#define OPER_GET	(3)	// ioctl(GET)
+#define OPER_SET	(4)	// ioctl(SET)
+	int go;		// 手抜きでcvとか使わない
+	int res;
+	int exp2;			// 2つ目の操作の期待値
+	struct timeval t2;
+	char buf[8000];
+	struct timeval lastwrite;	// writeをブロックさせるための時間測定
+	int terminated;				// ブロックしてる write を終わらせるため
+};
+
+const char *opername[] = {
+	"?",
+	"read",
+	"write",
+	"get",
+	"set",
+};
+
+void *
+thread_oper(void *arg)
+{
+	struct oper_vs_oper *data = (struct oper_vs_oper *)arg;
+	struct audio_info ai;
+	struct timeval start, end;
+	struct timeval now, res;
+	int r;
+
+	// 開始を待つ
+	if (data->op1 == OPER_WRITE) {
+		// 最後の書き込みから 0.5秒経過したらブロックしたと判定するか
+		do {
+			usleep(100);
+			gettimeofday(&now, NULL);
+			timersub(&now, &data->lastwrite, &res);
+		} while (res.tv_usec < 500000);
+	} else {
+		// そうでなければ go が立つのを適当に待つ。
+		while (data->go == 0) {
+			usleep(50);
+		}
+	}
+
+	// 2つ目の操作実行。
+	switch (data->op2) {
+	 case OPER_READ:
+		// 0バイト読み込みなのですぐ帰ってくるはず
+		gettimeofday(&start, NULL);
+		data->res = READ(data->fd, data->buf, 0);
+		gettimeofday(&end, NULL);
+		data->exp2 = 0;
+		break;
+
+	 case OPER_WRITE:
+		// 0バイトの書き込みなのですぐ帰ってくるはず
+		gettimeofday(&start, NULL);
+		data->res = WRITE(data->fd, data->buf, 0);
+		gettimeofday(&end, NULL);
+		data->exp2 = 0;
+		break;
+
+	 case OPER_GET:
+		gettimeofday(&start, NULL);
+		data->res = IOCTL(data->fd, AUDIO_GETBUFINFO, &ai, "");
+		gettimeofday(&end, NULL);
+		data->exp2 = 0;
+		break;
+
+	 case OPER_SET:
+		AUDIO_INITINFO(&ai);
+		ai.play.encoding = AUDIO_ENCODING_ALAW;
+		gettimeofday(&start, NULL);
+		data->res = IOCTL(data->fd, AUDIO_SETINFO, &ai, "encoding=alaw");
+		gettimeofday(&end, NULL);
+		data->exp2 = 0;
+		break;
+	}
+
+	timersub(&end, &start, &data->t2);
+
+	data->terminated = 1;
+	if (data->op1 == OPER_WRITE) {
+		// pause を解除して write(2) を再開させる。
+		AUDIO_INITINFO(&ai);
+		if (netbsd == 7) {
+			// N7 にはバグがあって pause 解除が出来ないので、エンコーディングを
+			// 切り替えるとバッファがおじゃんになるという挙動を利用して、
+			// 叩き起こす。
+			ai.play.encoding = AUDIO_ENCODING_SLINEAR_LE;
+		}
+		ai.play.pause = 0;
+		r = IOCTL(data->fd, AUDIO_SETINFO, &ai, "pause=0");
+		XP_SYS_EQ(0, r);
+	}
+
+	return NULL;
+}
+
+// システムコール中に別スレッドから同じ fd にシステムコールを発行して
+// ブロックされるかされないかのテストの共通部分。
+static void
+test_oper(int op1, int op2, int block_expected)
+{
+	struct oper_vs_oper data;
+	struct audio_info ai;
+	struct timeval start, end, t1;
+	pthread_t tid;
+	int r;
+
+	memset(&data, 0, sizeof(data));
+	memset(&data.buf, 0xff, sizeof(data.buf));
+	data.op1 = op1;
+	data.op2 = op2;
+
+	// オープン。モードもop1によって異なる。
+	int openmode;
+	if (op1 == OPER_READ)
+		openmode = O_RDONLY;
+	else
+		openmode = O_WRONLY;
+	data.fd = OPEN(devaudio, openmode);
+	if (data.fd == -1)
+		err(1, "open");
+
+	// op1 が WRITE ならブロックさせる準備。スレッド作成前に必要。
+	if (op1 == OPER_WRITE) {
+		// write(2) をブロックさせるための pause
+		AUDIO_INITINFO(&ai);
+		ai.play.pause = 1;
+		r = IOCTL(data.fd, AUDIO_SETINFO, &ai, "pause=1");
+		XP_SYS_EQ(0, r);
+	}
+
+	// 裏スレッド作成。
+	pthread_create(&tid, NULL, thread_oper, &data);
+
+	if (op1 == OPER_WRITE) {
+		// op1 が WRITE なら
+
+		// ブロックするまで書き込む
+		gettimeofday(&data.lastwrite, NULL);
+		for (;;) {
+			r = WRITE(data.fd, data.buf, sizeof(data.buf));
+			if (data.terminated) {
+				// すでにクローズされている
+				break;
+			}
+			XP_SYS_EQ(sizeof(data.buf), r);
+
+			// 書き込み時刻更新
+			gettimeofday(&data.lastwrite, NULL);
+		}
+	} else {
+		// write(2) 以外なら気分的に、ちょっと待つ、だけでいい。
+		usleep(1000);
+
+		data.go = 1;
+		switch (op1) {
+		 case OPER_READ:
+			gettimeofday(&start, NULL);
+			r = READ(data.fd, data.buf, sizeof(data.buf));
+			gettimeofday(&end, NULL);
+			XP_SYS_EQ(sizeof(data.buf), r);
+			break;
+		}
+	}
+
+	timersub(&end, &start, &t1);
+	pthread_join(tid, NULL);
+
+	if (op1 == OPER_WRITE) {
+		// 溜まってるデータは破棄。
+		r = IOCTL(data.fd, AUDIO_FLUSH, NULL, "");
+		XP_SYS_EQ(0, r);
+	}
+	r = CLOSE(data.fd);
+	XP_SYS_EQ(0, r);
+
+	// 2つ目のほうの検査
+	XP_SYS_EQ(data.exp2, data.res);
+
+	DPRINTF("  > 1st op %d.%06d\n", (int)t1.tv_sec, (int)t1.tv_usec);
+	DPRINTF("  > 2nd op %d.%06d\n",
+		(int)data.t2.tv_sec, (int)data.t2.tv_usec);
+
+	if (block_expected) {
+		// ブロックするので t2 が1秒近くあるはず
+		int t2 = data.t2.tv_sec * 1000000 + data.t2.tv_usec;
+		if (t2 < 800*1000) {
+			XP_FAIL("2nd op expected blocked but didn't block");
+		}
+	} else {
+		// ブロックしないので t2 が0秒近くのはず、だが実際には
+		// t1 と t2 に同じだけのゲタが入ることがあるようなので
+		// t1 との差をとる。差が 1 秒近くなら正常。
+		int diff = (t1.tv_sec * 1000000 + t1.tv_usec) -
+			(data.t2.tv_sec * 1000000 + data.t2.tv_usec);
+		if (diff < 800*1000) {
+			XP_FAIL("2nd op expected non-block but blocked");
+		}
+	}
+}
+
+// read() ブロック中の read() は待たされる
+void
+test_oper_read_vs_read()
+{
+	TEST("oper_read_vs_read");
+	test_oper(OPER_READ, OPER_READ, 1);
+}
+
+// read() ブロック中の ioctl(GET) は待たされない
+void
+test_oper_read_vs_get()
+{
+	TEST("oper_read_vs_get");
+	test_oper(OPER_READ, OPER_GET, 0);
+}
+
+// read() ブロック中の ioctl(SET) は待たされる
+void
+test_oper_read_vs_set()
+{
+	TEST("oper_read_vs_set");
+	test_oper(OPER_READ, OPER_SET, 1);
+}
+
+// write() ブロック中の write() は待たされる
+void
+test_oper_write_vs_write()
+{
+	TEST("oper_write_vs_write");
+	test_oper(OPER_WRITE, OPER_WRITE, 1);
+}
+
+// write() ブロック中の ioctl(GET) は待たされない
+void
+test_oper_write_vs_get()
+{
+	TEST("oper_write_vs_get");
+	test_oper(OPER_WRITE, OPER_GET, 0);
+}
+
+// write() ブロック中の ioctl(SET) は待たされる
+void
+test_oper_write_vs_set()
+{
+	TEST("oper_write_vs_set");
+	test_oper(OPER_WRITE, OPER_SET, 1);
+}
+
+
 // 並列テスト用
 struct concurrent_open {
 	int id;
@@ -7483,6 +7742,12 @@ struct testtable testtable[] = {
 	DEF(audioctl_rw),
 	DEF(audioctl_poll),
 	DEF(audioctl_kqueue),
+	DEF(oper_read_vs_read),
+	DEF(oper_read_vs_get),
+	DEF(oper_read_vs_set),
+	DEF(oper_write_vs_write),
+	DEF(oper_write_vs_get),
+	DEF(oper_write_vs_set),
 	DEF(concurrent_open),
 	DEF(concurrent_close),
 	DEF(concurrent_write),
