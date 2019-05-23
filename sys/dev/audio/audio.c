@@ -523,6 +523,8 @@ static void audio_softintr_wr(void *);
 static int  audio_enter_exclusive(struct audio_softc *);
 static void audio_exit_exclusive(struct audio_softc *);
 static int audio_track_waitio(struct audio_softc *, audio_track_t *);
+static int audio_file_acquire(struct audio_softc *, audio_file_t *, u_int);
+static void audio_file_release(struct audio_softc *, audio_file_t *, u_int);
 
 static int audioclose(struct file *);
 static int audioread(struct file *, off_t *, struct uio *, kauth_cred_t, int);
@@ -1445,6 +1447,94 @@ audio_track_waitio(struct audio_softc *sc, audio_track_t *track)
 }
 
 /*
+ * Acquire the file lock.
+ * If file is acquired successfully, returns 0.  Otherwise returns errno.
+ * In both case, sc_lock is released.
+ */
+static int
+audio_file_acquire(struct audio_softc *sc, audio_file_t *file, u_int locker)
+{
+	int error;
+	u_int mask = 0;
+
+	KASSERT(!mutex_owned(sc->sc_lock));
+
+	mutex_enter(sc->sc_lock);
+	if (sc->sc_dying) {
+		mutex_exit(sc->sc_lock);
+		return EIO;
+	}
+
+	if (locker & ALOCK_PLAY)
+		mask |= ALOCK_PLAY | ALOCK_PSET;
+	if (locker & ALOCK_PGET)
+		mask |= ALOCK_PSET;
+	if (locker & ALOCK_PSET)
+		mask |= ALOCK_PLAY | ALOCK_PGET | ALOCK_PSET;
+
+	if (locker & ALOCK_REC)
+		mask |= ALOCK_REC | ALOCK_RSET;
+	if (locker & ALOCK_RGET)
+		mask |= ALOCK_RSET;
+	if (locker & ALOCK_RSET)
+		mask |= ALOCK_REC | ALOCK_RGET | ALOCK_RSET;
+
+	KASSERT(mask);
+
+	while (__predict_false((file->lock & mask) != 0)) {
+		error = cv_wait_sig(&sc->sc_exlockcv, sc->sc_lock);
+		if (sc->sc_dying)
+			error = EIO;
+		if (error) {
+			mutex_exit(sc->sc_lock);
+			return error;
+		}
+	}
+
+	/* Mark this file locked */
+	file->lock |= locker;
+	if (locker & ALOCK_PGET) {
+		file->pshare++;
+	}
+	if (locker & ALOCK_RGET) {
+		file->rshare++;
+	}
+	mutex_exit(sc->sc_lock);
+
+	return 0;
+}
+
+/*
+ * Release the file lock.
+ */
+static void
+audio_file_release(struct audio_softc *sc, audio_file_t *file, u_int locker)
+{
+
+	KASSERT(!mutex_owned(sc->sc_lock));
+
+	mutex_enter(sc->sc_lock);
+	KASSERT(file->lock);
+	if (locker & ALOCK_PGET) {
+		file->pshare--;
+		if (file->pshare) {
+			/* still active */
+			locker &= ~ALOCK_PGET;
+		}
+	}
+	if (locker & ALOCK_RGET) {
+		file->rshare--;
+		if (file->rshare) {
+			/* still active */
+			locker &= ~ALOCK_RGET;
+		}
+	}
+	file->lock &= ~locker;
+	cv_broadcast(&sc->sc_exlockcv);
+	mutex_exit(sc->sc_lock);
+}
+
+/*
  * Try to acquire track lock.
  * It doesn't block if the track lock is already aquired.
  * Returns true if the track lock was acquired, or false if the track
@@ -1528,6 +1618,11 @@ audioclose(struct file *fp)
 
 	/* audio_{enter,exit}_exclusive() is called by lower audio_close() */
 
+	/* XXX what should I do when an error occurs? */
+	error = audio_file_acquire(sc, file, ALOCK_CLOSE);
+	if (error)
+		return error;
+
 	device_active(sc->sc_dev, DVA_SYSTEM);
 	switch (AUDIODEV(dev)) {
 	case SOUND_DEVICE:
@@ -1566,6 +1661,10 @@ audioread(struct file *fp, off_t *offp, struct uio *uio, kauth_cred_t cred,
 	sc = file->sc;
 	dev = file->dev;
 
+	error = audio_file_acquire(sc, file, ALOCK_REC);
+	if (error)
+		return error;
+
 	if (fp->f_flag & O_NONBLOCK)
 		ioflag |= IO_NDELAY;
 
@@ -1582,6 +1681,7 @@ audioread(struct file *fp, off_t *offp, struct uio *uio, kauth_cred_t cred,
 		error = ENXIO;
 		break;
 	}
+	audio_file_release(sc, file, ALOCK_REC);
 
 	return error;
 }
@@ -1600,6 +1700,10 @@ audiowrite(struct file *fp, off_t *offp, struct uio *uio, kauth_cred_t cred,
 	sc = file->sc;
 	dev = file->dev;
 
+	error = audio_file_acquire(sc, file, ALOCK_PLAY);
+	if (error)
+		return error;
+
 	if (fp->f_flag & O_NONBLOCK)
 		ioflag |= IO_NDELAY;
 
@@ -1616,6 +1720,7 @@ audiowrite(struct file *fp, off_t *offp, struct uio *uio, kauth_cred_t cred,
 		error = ENXIO;
 		break;
 	}
+	audio_file_release(sc, file, ALOCK_PLAY);
 
 	return error;
 }
@@ -1628,11 +1733,42 @@ audioioctl(struct file *fp, u_long cmd, void *addr)
 	struct lwp *l = curlwp;
 	int error;
 	dev_t dev;
+	u_int locker;
 
 	KASSERT(fp->f_audioctx);
 	file = fp->f_audioctx;
 	sc = file->sc;
 	dev = file->dev;
+
+	switch (cmd) {
+	case FIOASYNC:
+	case AUDIO_FLUSH:
+		locker = ALOCK_PSET | ALOCK_RSET;
+		break;
+	case AUDIO_SETINFO:
+		/* safety side */
+		locker = ALOCK_PSET | ALOCK_RSET;
+		break;
+	case AUDIO_PERROR:
+	case AUDIO_GETOOFFS:
+	case AUDIO_WSEEK:
+		locker = ALOCK_PGET;
+		break;
+	case AUDIO_RERROR:
+	case AUDIO_GETIOFFS:
+		locker = ALOCK_RGET;
+		break;
+	case AUDIO_DRAIN:
+		locker = ALOCK_PSET;
+		break;
+	default:
+		locker = ALOCK_PGET | ALOCK_RGET;
+		break;
+	}
+
+	error = audio_file_acquire(sc, file, locker);
+	if (error)
+		return error;
 
 	switch (AUDIODEV(dev)) {
 	case SOUND_DEVICE:
@@ -1654,6 +1790,7 @@ audioioctl(struct file *fp, u_long cmd, void *addr)
 		error = ENXIO;
 		break;
 	}
+	audio_file_release(sc, file, locker);
 
 	return error;
 }
@@ -1683,11 +1820,15 @@ audiopoll(struct file *fp, int events)
 	struct lwp *l = curlwp;
 	int revents;
 	dev_t dev;
+	const u_int locker = ALOCK_PGET | ALOCK_RGET;
 
 	KASSERT(fp->f_audioctx);
 	file = fp->f_audioctx;
 	sc = file->sc;
 	dev = file->dev;
+
+	if (audio_file_acquire(sc, file, locker) != 0)
+		return 0;
 
 	switch (AUDIODEV(dev)) {
 	case SOUND_DEVICE:
@@ -1702,6 +1843,7 @@ audiopoll(struct file *fp, int events)
 		revents = POLLERR;
 		break;
 	}
+	audio_file_release(sc, file, locker);
 
 	return revents;
 }
@@ -1713,11 +1855,16 @@ audiokqfilter(struct file *fp, struct knote *kn)
 	audio_file_t *file;
 	dev_t dev;
 	int error;
+	const u_int locker = ALOCK_PGET | ALOCK_RGET;
 
 	KASSERT(fp->f_audioctx);
 	file = fp->f_audioctx;
 	sc = file->sc;
 	dev = file->dev;
+
+	error = audio_file_acquire(sc, file, locker);
+	if (error)
+		return error;
 
 	switch (AUDIODEV(dev)) {
 	case SOUND_DEVICE:
@@ -1732,6 +1879,7 @@ audiokqfilter(struct file *fp, struct knote *kn)
 		error = ENXIO;
 		break;
 	}
+	audio_file_release(sc, file, locker);
 
 	return error;
 }
@@ -1744,11 +1892,16 @@ audiommap(struct file *fp, off_t *offp, size_t len, int prot, int *flagsp,
 	audio_file_t *file;
 	dev_t dev;
 	int error;
+	const u_int locker = ALOCK_PSET;
 
 	KASSERT(fp->f_audioctx);
 	file = fp->f_audioctx;
 	sc = file->sc;
 	dev = file->dev;
+
+	error = audio_file_acquire(sc, file, locker);
+	if (error)
+		return error;
 
 	mutex_enter(sc->sc_lock);
 	device_active(sc->sc_dev, DVA_SYSTEM); /* XXXJDM */
@@ -1766,6 +1919,7 @@ audiommap(struct file *fp, off_t *offp, size_t len, int prot, int *flagsp,
 		error = ENOTSUP;
 		break;
 	}
+	audio_file_release(sc, file, locker);
 
 	return error;
 }
@@ -1812,6 +1966,11 @@ audiobellclose(audio_file_t *file)
 
 	sc = file->sc;
 
+	/* XXX what should I do when an error occurs? */
+	error = audio_file_acquire(sc, file, ALOCK_CLOSE);
+	if (error)
+		return error;
+
 	device_active(sc->sc_dev, DVA_SYSTEM);
 	error = audio_close(sc, file);
 
@@ -1831,7 +1990,13 @@ audiobellwrite(audio_file_t *file, struct uio *uio)
 	int error;
 
 	sc = file->sc;
+	error = audio_file_acquire(sc, file, ALOCK_PLAY);
+	if (error)
+		return error;
+
 	error = audio_write(sc, uio, 0, file);
+
+	audio_file_release(sc, file, ALOCK_PLAY);
 	return error;
 }
 
@@ -2125,8 +2290,10 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
 	/* Then, acquire exclusive lock to protect counters. */
 	/* XXX what should I do when an error occurs? */
 	error = audio_enter_exclusive(sc);
-	if (error)
+	if (error) {
+		audio_file_release(sc, file, ALOCK_CLOSE);
 		return error;
+	}
 
 	if (file->ptrack) {
 		/* Call hw halt_output if this is the last playback track. */
