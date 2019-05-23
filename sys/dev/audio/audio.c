@@ -459,23 +459,26 @@ audio_track_bufstat(audio_track_t *track, struct audio_track_debugbuf *buf)
 #define SPECIFIED_CH(x)	((x) != (u_char)~0)
 
 /*
- * AUDIO_ASR() does arithmetic shift right operation.
+ * AUDIO_ASR() does Arithmetic Shift Right operation.
  * This macro should be used for audio wave data only.
  *
- * Let's consider about (-1 / 2).  The methematical answer is -0.5, so it's
- * 0 for integers.  And (-1 >> 1) is -1.  These two answers are different
- * but this value is audio wave data that human hears.  I took performance
- * instead of mathematical 1/65536 accuracy in audio wave.
- * Using right shift is 1.9 times faster than division on my amd64, and
- * 1.3 times faster on my m68k.  -- isaki 201801.
+ * Division by power of two is replaced with shift operation in the most
+ * compiler, but even then rounding-to-zero occurs on negative value.
+ * What we handle here is the audio wave data that human hear, so we can
+ * ignore the rounding difference.  Therefore we want to use faster
+ * arithmetic shift right operation.  But the right shift operator ('>>')
+ * for negative integer is "implementation defined" behavior in C (note
+ * that it's not "undefined" behavior).  So if implementation defines '>>'
+ * as ASR, we use it.
  *
- * The right shift operation for signed integers is "implementation defined"
- * behavior (note that it's not "undefined" behavior) in C.
+ * Using ASR is 1.9 times faster than division on my amd64, and 1.3 times
+ * faster on my m68k.  -- isaki 201801.
  */
 #if defined(__GNUC__)
+/* gcc defines '>>' as ASR. */
 #define AUDIO_ASR(value, shift)	((value) >> (shift))
 #else
-#define AUDIO_ASR(value, shift)	((value) / (1 << shift))
+#define AUDIO_ASR(value, shift)	((value) / (1 << (shift)))
 #endif
 
 /* Device timeout in msec */
