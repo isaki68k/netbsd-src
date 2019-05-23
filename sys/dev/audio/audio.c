@@ -131,7 +131,7 @@
  *   neither lock were necessary.  Currently, on the other hand, since
  *   these may be also called after attach, the thread lock is required.
  *
- * In addition, there is an additional locks.
+ * In addition, there is an additional lock.
  *
  * - track->lock.  This is an atomic variable and is similar to the
  *   "interrupt lock".  This is one for each track.  If any thread context
