@@ -6920,7 +6920,7 @@ thread_oper(void *arg)
 // システムコール中に別スレッドから同じ fd にシステムコールを発行して
 // ブロックされるかされないかのテストの共通部分。
 static void
-test_oper(int op1, int op2, int block_expected)
+test_oper(int op1, int op2)
 {
 	struct oper_vs_oper data;
 	struct audio_info ai;
@@ -7004,70 +7004,62 @@ test_oper(int op1, int op2, int block_expected)
 	DPRINTF("  > 2nd op %d.%06d\n",
 		(int)data.t2.tv_sec, (int)data.t2.tv_usec);
 
-	if (block_expected) {
-		// ブロックするので t2 が1秒近くあるはず
-		int t2 = data.t2.tv_sec * 1000000 + data.t2.tv_usec;
-		if (t2 < 800*1000) {
-			XP_FAIL("2nd op expected blocked but didn't block");
-		}
-	} else {
-		// ブロックしないので t2 が0秒近くのはず、だが実際には
-		// t1 と t2 に同じだけのゲタが入ることがあるようなので
-		// t1 との差をとる。差が 1 秒近くなら正常。
-		int diff = (t1.tv_sec * 1000000 + t1.tv_usec) -
-			(data.t2.tv_sec * 1000000 + data.t2.tv_usec);
-		if (diff < 800*1000) {
-			XP_FAIL("2nd op expected non-block but blocked");
-		}
+	// ブロックしないので t2 が0秒近くのはず、だが実際には
+	// t1 と t2 に同じだけのゲタが入ることがあるようなので
+	// t1 との差をとる。差が 1 秒近くなら正常。
+	int diff = (t1.tv_sec * 1000000 + t1.tv_usec) -
+		(data.t2.tv_sec * 1000000 + data.t2.tv_usec);
+	if (diff < 800*1000) {
+		XP_FAIL("2nd op expected non-block but blocked");
 	}
 }
 
-// read() ブロック中の read() は待たされる
+// read() ブロック中の read()
 void
 test_oper_read_vs_read()
 {
 	TEST("oper_read_vs_read");
-	test_oper(OPER_READ, OPER_READ, 1);
+	test_oper(OPER_READ, OPER_READ);
 }
 
-// read() ブロック中の ioctl(GET) は待たされない
+// read() ブロック中の ioctl(GET)
 void
 test_oper_read_vs_get()
 {
 	TEST("oper_read_vs_get");
-	test_oper(OPER_READ, OPER_GET, 0);
+	test_oper(OPER_READ, OPER_GET);
 }
 
-// read() ブロック中の ioctl(SET) は待たされる
+// read() ブロック中の ioctl(SET)
 void
 test_oper_read_vs_set()
 {
 	TEST("oper_read_vs_set");
-	test_oper(OPER_READ, OPER_SET, 1);
+	test_oper(OPER_READ, OPER_SET);
 }
 
-// write() ブロック中の write() は待たされる
+// write() ブロック中の write()
 void
 test_oper_write_vs_write()
 {
 	TEST("oper_write_vs_write");
-	test_oper(OPER_WRITE, OPER_WRITE, 1);
+	test_oper(OPER_WRITE, OPER_WRITE);
 }
 
-// write() ブロック中の ioctl(GET) は待たされない
+// write() ブロック中の ioctl(GET)
 void
 test_oper_write_vs_get()
 {
 	TEST("oper_write_vs_get");
-	test_oper(OPER_WRITE, OPER_GET, 0);
+	test_oper(OPER_WRITE, OPER_GET);
 }
 
-// write() ブロック中の ioctl(SET) は待たされる
+// write() ブロック中の ioctl(SET)
 void
 test_oper_write_vs_set()
 {
 	TEST("oper_write_vs_set");
-	test_oper(OPER_WRITE, OPER_SET, 1);
+	test_oper(OPER_WRITE, OPER_SET);
 }
 
 
