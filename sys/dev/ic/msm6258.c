@@ -69,7 +69,7 @@ static inline uint8_t
 pcm2adpcm_step(struct msm6258_codecvar *mc, int16_t a)
 {
 	int estim = (int)mc->mc_estim;
-	int32_t ea;
+	int amp;
 	int32_t df;
 	int16_t dl, c;
 	uint8_t b;
@@ -88,13 +88,13 @@ pcm2adpcm_step(struct msm6258_codecvar *mc, int16_t a)
 	if (b > 7)
 		b = 7;
 	s |= b;
-	ea = mc->mc_amp + adpcm_estimindex[s] * dl;
-	if (ea > 32767) {
-		ea = 32767;
-	} else if (ea < -32768) {
-		ea = -32768;
+	amp = mc->mc_amp + adpcm_estimindex[s] * dl;
+	if (amp > 32767) {
+		amp = 32767;
+	} else if (amp < -32768) {
+		amp = -32768;
 	}
-	mc->mc_amp = ea;
+	mc->mc_amp = amp;
 	estim += adpcm_estimstep[b];
 	if (estim < 0)
 		estim = 0;
@@ -144,18 +144,19 @@ static inline int16_t
 adpcm2pcm_step(struct msm6258_codecvar *mc, uint8_t b)
 {
 	int estim = (int)mc->mc_estim;
+	int amp;
+
 	KASSERT(estim >= 0);
 	KASSERT(estim < 49);
 	KASSERT(b < 16);
 
-	int d = adpcm_estim[estim] * adpcm_estimindex[b];
-	int a = mc->mc_amp + d;
-	if (a > 32767) {
-		a = 32767;
-	} else if (a < -32768) {
-		a = -32768;
+	amp = mc->mc_amp + adpcm_estim[estim] * adpcm_estimindex[b];
+	if (amp > 32767) {
+		amp = 32767;
+	} else if (amp < -32768) {
+		amp = -32768;
 	}
-	mc->mc_amp = a;
+	mc->mc_amp = amp;
 	estim += adpcm_estimstep[b];
 
 	if (estim < 0)
