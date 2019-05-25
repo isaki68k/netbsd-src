@@ -88,20 +88,21 @@ pcm2adpcm_step(struct msm6258_codecvar *mc, int16_t a)
 	if (b > 7)
 		b = 7;
 	s |= b;
+
 	amp = mc->mc_amp + adpcm_estimindex[s] * dl;
-	if (amp > 32767) {
+	if (amp > 32767)
 		amp = 32767;
-	} else if (amp < -32768) {
+	else if (amp < -32768)
 		amp = -32768;
-	}
 	mc->mc_amp = amp;
+
 	estim += adpcm_estimstep[b];
 	if (estim < 0)
 		estim = 0;
 	else if (estim > 48)
 		estim = 48;
-
 	mc->mc_estim = estim;
+
 	return s;
 }
 
@@ -151,19 +152,17 @@ adpcm2pcm_step(struct msm6258_codecvar *mc, uint8_t b)
 	KASSERT(b < 16);
 
 	amp = mc->mc_amp + adpcm_estim[estim] * adpcm_estimindex[b];
-	if (amp > 32767) {
+	if (amp > 32767)
 		amp = 32767;
-	} else if (amp < -32768) {
+	else if (amp < -32768)
 		amp = -32768;
-	}
 	mc->mc_amp = amp;
-	estim += adpcm_estimstep[b];
 
+	estim += adpcm_estimstep[b];
 	if (estim < 0)
 		estim = 0;
 	else if (estim > 48)
 		estim = 48;
-
 	mc->mc_estim = estim;
 
 	return mc->mc_amp;
