@@ -44,7 +44,7 @@ __KERNEL_RCSID(0, "$NetBSD: msm6258.c,v 1.26 2019/05/08 13:40:18 isaki Exp $");
 static inline uint8_t	pcm2adpcm_step(struct msm6258_codecvar *, int16_t);
 static inline int16_t	adpcm2pcm_step(struct msm6258_codecvar *, uint8_t);
 
-static const int8_t adpcm_estimindex[16] = {
+static const int16_t adpcm_estimindex[16] = {
 	 2,  6,  10,  14,  18,  22,  26,  30,
 	-2, -6, -10, -14, -18, -22, -26, -30
 };
@@ -57,7 +57,7 @@ static const int16_t adpcm_estim[49] = {
 	724, 796, 876, 963, 1060, 1166, 1282, 1411, 1552
 };
 
-static const int8_t adpcm_estimstep[16] = {
+static const int16_t adpcm_estimstep[16] = {
 	-1, -1, -1, -1, 2, 4, 6, 8,
 	-1, -1, -1, -1, 2, 4, 6, 8
 };
