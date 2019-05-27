@@ -1854,8 +1854,9 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	KASSERT(mutex_owned(sc->sc_lock));
 	KASSERT(sc->sc_exlock);
 
-	TRACE(1, "%sflags=0x%x po=%d ro=%d",
+	TRACE(1, "%sdev=%s flags=0x%x po=%d ro=%d",
 	    (audiodebug >= 3) ? "start " : "",
+	    ISDEVSOUND(dev) ? "sound" : "audio",
 	    flags, sc->sc_popens, sc->sc_ropens);
 
 	af = kmem_zalloc(sizeof(audio_file_t), KM_SLEEP);
