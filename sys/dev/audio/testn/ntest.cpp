@@ -5564,6 +5564,11 @@ test_AUDIO_SETINFO_blocksize()
 		// 実際には in-out パラメータではないようだ
 		XP_EQ(0, ai.blocksize);
 	}
+	// GET してみればセットされた値が入っているはず
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+	DPRINTF("  > blocksize = %d\n", ai.blocksize);
+	XP_EQ(initblksize, ai.blocksize);
 
 	struct {
 		u_int blocksize;
@@ -5574,7 +5579,8 @@ test_AUDIO_SETINFO_blocksize()
 		{ 64,			64 },
 		{ 128,			128 },
 		{ 129,			129 },
-		{ 0x80000000,	initblksize },	// ほんまかいな
+		{ 4096,			4096 },
+		{ 0x80000000,	0x80000000 },	// ほんまかいな
 	};
 	for (int i = 0; i < __arraycount(table); i++) {
 		u_int blocksize = table[i].blocksize;
@@ -5584,10 +5590,6 @@ test_AUDIO_SETINFO_blocksize()
 
 		// ただし MI-MD 仕様が gdgd でテストできないケースが多い。
 		if (netbsd == 7) {
-			// 32 が最小
-			if (expected == 1)
-				expected = 32;
-
 			// hw->round_blocksize が keep good alignment とか言って
 			// 下位ビットを落としてるやつは、それより小さい blocksize を渡すと
 			// 0 が返る。そして呼び出し側は round_blocksize() の戻り値が
@@ -5614,23 +5616,29 @@ test_AUDIO_SETINFO_blocksize()
 
 		if (expect_inoutparam) {
 			// SETINFO が blocksize を更新する場合
+			DPRINTF("  > blocksize = %d\n", ai.blocksize);
 
 			// もう一度取得してみる
 			memset(&ai0, 0, sizeof(ai0));
 			r = IOCTL(fd, AUDIO_GETBUFINFO, &ai0, "");
 			XP_SYS_EQ(0, r);
-			if (expected) {
-				XP_EQ(expected, ai.blocksize);
-			} else {
-				XP_EQ(initblksize, ai.blocksize);
-			}
+			XP_EQ(expected, ai.blocksize);
 
 			// SETINFO 時の戻り blocksize は setinfo が設定したサイズに
 			// なっているはずなので、この2つは一致するはず。
 			XP_EQ(ai0.blocksize, ai.blocksize);
 		} else {
 			// SETINFO が blocksize を更新しない場合
+
+			// SETINFO 後の blocksize は常に変更されてない
 			XP_EQ(blocksize, ai.blocksize);
+
+			// どう変更されたかはもう一度取得してみる
+			memset(&ai0, 0, sizeof(ai0));
+			r = IOCTL(fd, AUDIO_GETBUFINFO, &ai0, "");
+			XP_SYS_EQ(0, r);
+			DPRINTF("  > blocksize = %d\n", ai.blocksize);
+			XP_EQ(expected, ai.blocksize);
 		}
 	}
 
