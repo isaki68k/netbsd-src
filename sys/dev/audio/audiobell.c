@@ -72,6 +72,8 @@ audiobell(void *dev, u_int pitch, u_int period, u_int volume, int poll)
 	int wave1len;
 	int len;
 	int16_t vol;
+	int32_t a;
+	int32_t step;
 
 	KASSERT(volume <= 100);
 
@@ -114,6 +116,8 @@ audiobell(void *dev, u_int pitch, u_int period, u_int volume, int poll)
 
 	/* Generate single square wave.  It's enough to beep. */
 	vol = 32767 * volume / 100;
+if ((period / 10) % 10 == 0) {
+printf("SQUARE: period=%d\n", period);
 	for (i = 0; i < wave1count / 2; i++) {
 		buf[i] = vol;
 	}
@@ -121,6 +125,24 @@ audiobell(void *dev, u_int pitch, u_int period, u_int volume, int poll)
 	for (; i < wave1count; i++) {
 		buf[i] = vol;
 	}
+} else {
+printf("TRIANGLE: period=%d\n", period);
+	/* TODO: use SCALEDOWN */
+	a =  0;
+	step = (vol * 256) * 4 / wave1count;
+	for (i = 0; i < wave1count / 4; i++) {
+		buf[i] = a / 256;
+		a += step;
+	}
+	for (; i < wave1count * 3 / 4; i++) {
+		buf[i] = a / 256;
+		a -= step;
+	}
+	for (; i < wave1count; i++) {
+		buf[i] = a / 256;
+		a += step;
+	}
+}
 
 	/* Write while paused to avoid begin inserted silence. */
 	ptrack->is_pause = true;
