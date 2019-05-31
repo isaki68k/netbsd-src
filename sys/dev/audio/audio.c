@@ -459,26 +459,21 @@ audio_track_bufstat(audio_track_t *track, struct audio_track_debugbuf *buf)
 #define SPECIFIED_CH(x)	((x) != (u_char)~0)
 
 /*
- * AUDIO_ASR() does Arithmetic Shift Right operation.
+ * AUDIO_SCALEDOWN()
  * This macro should be used for audio wave data only.
  *
- * Division by power of two is replaced with shift operation in the most
- * compiler, but even then rounding-to-zero occurs on negative value.
- * What we handle here is the audio wave data that human hear, so we can
- * ignore the rounding difference.  Therefore we want to use faster
- * arithmetic shift right operation.  But the right shift operator ('>>')
- * for negative integer is "implementation defined" behavior in C (note
- * that it's not "undefined" behavior).  So if implementation defines '>>'
- * as ASR, we use it.
- *
+ * The right shift operator ('>>') for negative integer is "implementation
+ * defined" behavior in C (note that it's not "undefined" behavior).  So
+ * only if implementation defines '>>' as arithmetic shift right, we use it.
  * Using ASR is 1.9 times faster than division on my amd64, and 1.3 times
  * faster on my m68k.  -- isaki 201801.
  */
 #if defined(__GNUC__)
 /* gcc defines '>>' as ASR. */
-#define AUDIO_ASR(value, shift)	((value) >> (shift))
+#define AUDIO_SCALEDOWN(value, bits)	((value) >> (bits))
 #else
-#define AUDIO_ASR(value, shift)	((value) / (1 << (shift)))
+/* alternate, approximate operation using division. */
+#define AUDIO_SCALEDOWN(value, bits)	((value) / (1 << (bits)))
 #endif
 
 /* Device timeout in msec */
@@ -3216,7 +3211,7 @@ audio_track_chvol(audio_filter_arg_t *arg)
 		for (ch = 0; ch < channels; ch++) {
 			aint2_t val;
 			val = *s++;
-			val = AUDIO_ASR(val * ch_volume[ch], 8);
+			val = AUDIO_SCALEDOWN(val * ch_volume[ch], 8);
 			*d++ = (aint_t)val;
 		}
 	}
@@ -3238,7 +3233,7 @@ audio_track_chmix_mixLR(audio_filter_arg_t *arg)
 	d = arg->dst;
 
 	for (i = 0; i < arg->count; i++) {
-		*d++ = AUDIO_ASR(s[0], 1) + AUDIO_ASR(s[1], 1);
+		*d++ = AUDIO_SCALEDOWN(s[0], 1) + AUDIO_SCALEDOWN(s[1], 1);
 		s += arg->srcfmt->channels;
 	}
 }
@@ -5035,7 +5030,7 @@ audio_pmixer_process(struct audio_softc *sc)
 		if (vol != 256) {
 			m = mixer->mixsample;
 			for (i = 0; i < sample_count; i++) {
-				*m = AUDIO_ASR(*m * vol, 8);
+				*m = AUDIO_SCALEDOWN(*m * vol, 8);
 				m++;
 			}
 		}
@@ -5125,7 +5120,7 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track,
 			for (i = 0; i < sample_count; i++) {
 				aint2_t v;
 				v = *s++;
-				*d++ = AUDIO_ASR(v * track->volume, 8)
+				*d++ = AUDIO_SCALEDOWN(v * track->volume, 8)
 			}
 		} else
 #endif
@@ -5141,7 +5136,7 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track,
 			for (i = 0; i < sample_count; i++) {
 				aint2_t v;
 				v = *s++;
-				*d++ += AUDIO_ASR(v * track->volume, 8);
+				*d++ += AUDIO_SCALEDOWN(v * track->volume, 8);
 			}
 		} else
 #endif
