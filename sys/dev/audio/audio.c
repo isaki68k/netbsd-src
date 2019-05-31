@@ -462,9 +462,14 @@ audio_track_bufstat(audio_track_t *track, struct audio_track_debugbuf *buf)
  * AUDIO_SCALEDOWN()
  * This macro should be used for audio wave data only.
  *
- * The right shift operator ('>>') for negative integer is "implementation
- * defined" behavior in C (note that it's not "undefined" behavior).  So
- * only if implementation defines '>>' as arithmetic shift right, we use it.
+ * The arithmetic shift right (ASR) (in other words, floor()) is good for
+ * this, and will be fast on the most platform.
+ * The division (in other words, truncate()) is also good alternate for
+ * this.
+ *
+ * And then, the right shift operator ('>>') for negative integer is
+ * "implementation defined" behavior in C (note that it's not "undefined"
+ * behavior).  So only if implementation defines '>>' as ASR, we use it.
  * Using ASR is 1.9 times faster than division on my amd64, and 1.3 times
  * faster on my m68k.  -- isaki 201801.
  */
@@ -472,7 +477,6 @@ audio_track_bufstat(audio_track_t *track, struct audio_track_debugbuf *buf)
 /* gcc defines '>>' as ASR. */
 #define AUDIO_SCALEDOWN(value, bits)	((value) >> (bits))
 #else
-/* alternate, approximate operation using division. */
 #define AUDIO_SCALEDOWN(value, bits)	((value) / (1 << (bits)))
 #endif
 
