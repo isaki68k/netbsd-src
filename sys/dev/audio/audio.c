@@ -463,9 +463,9 @@ audio_track_bufstat(audio_track_t *track, struct audio_track_debugbuf *buf)
  * This macro should be used for audio wave data only.
  *
  * The arithmetic shift right (ASR) (in other words, floor()) is good for
- * this, and will be fast on the most platform.
- * The division (in other words, truncate()) is also good alternate for
- * this.
+ * this purpose, and will be fast on the most platform.
+ * The division (in other words, truncate()) is not so bad alternate for
+ * this purpose, but will be slower than ASR.
  *
  * And then, the right shift operator ('>>') for negative integer is
  * "implementation defined" behavior in C (note that it's not "undefined"
