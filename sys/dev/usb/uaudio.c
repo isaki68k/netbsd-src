@@ -2152,11 +2152,6 @@ uaudio_open(void *addr, int flags)
 	if (sc->sc_dying)
 		return EIO;
 
-	if ((flags & FWRITE) && !(sc->sc_mode & AUMODE_PLAY))
-		return EACCES;
-	if ((flags & FREAD) && !(sc->sc_mode & AUMODE_RECORD))
-		return EACCES;
-
 	return 0;
 }
 
@@ -2989,10 +2984,6 @@ uaudio_set_format(void *addr, int setmode,
 	if ((setmode & AUMODE_RECORD) && sc->sc_recchan.altidx != -1) {
 		sc->sc_alts[sc->sc_recchan.altidx].sc_busy = 0;
 	}
-
-	/* Some uaudio devices are unidirectional.  Don't try to find a
-	   matching mode for the unsupported direction. */
-	setmode &= sc->sc_mode;
 
 	if ((setmode & AUMODE_PLAY)) {
 		paltidx = audio_indexof_format(sc->sc_formats, sc->sc_nformats,
