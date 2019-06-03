@@ -2264,8 +2264,21 @@ uaudio_round_blocksize(void *addr, int blk,
 Static int
 uaudio_get_props(void *addr)
 {
-	return AUDIO_PROP_FULLDUPLEX | AUDIO_PROP_INDEPENDENT;
+	struct uaudio_softc *sc;
+	int props;
 
+	sc = addr;
+	props = 0;
+	if ((sc->sc_mode & AUMODE_PLAY))
+		props |= AUDIO_PROP_PLAYBACK;
+	if ((sc->sc_mode & AUMODE_RECORD))
+		props |= AUDIO_PROP_CAPTURE;
+
+	/* XXX I'm not sure all bidirectional devices support FULLDUP&INDEP */
+	if (props == (AUDIO_PROP_PLAYBACK | AUDIO_PROP_CAPTURE))
+		props |= AUDIO_PROP_FULLDUPLEX | AUDIO_PROP_INDEPENDENT;
+
+	return props;
 }
 
 Static void
