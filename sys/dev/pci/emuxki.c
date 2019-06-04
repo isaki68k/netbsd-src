@@ -337,9 +337,6 @@ dmamem_alloc(struct emuxki_softc *sc, size_t size)
 		goto destroy;
 	}
 
-	DPRINTF("map ds=%p\n", (char*)mem->map->dm_segs[0].ds_addr);
-	DPRINTF("segs ds=%p\n", (char*)mem->segs[0].ds_addr);
-
 	return mem;
 
 destroy:
