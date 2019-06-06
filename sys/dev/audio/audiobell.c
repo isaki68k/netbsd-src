@@ -151,7 +151,7 @@ audiobell(void *dev, u_int pitch, u_int period, u_int volume, int poll)
 	j = offset;
 	for (i = 0; i < blkbytes / sizeof(int16_t); i++) {
 		/* XXX audio already has track volume feature though #if 0 */
-		buf[i] = sinewave[j] * volume / 100;
+		buf[i] = (int)sinewave[j] * (int)volume / 100;
 		j += step;
 		j %= __arraycount(sinewave);
 	}
