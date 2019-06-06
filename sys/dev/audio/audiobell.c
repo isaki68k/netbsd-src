@@ -45,8 +45,18 @@ __KERNEL_RCSID(0, "$NetBSD: audiobell.c,v 1.2 2019/05/08 13:40:17 isaki Exp $");
 #include <dev/audio/audiodef.h>
 #include <dev/audio/audiobellvar.h>
 
-#define BELL_RATE_MAX	(AUDIO_MAX_FREQUENCY / 16)
-
+// 16角形あれば十分正弦波が近似できる。
+// 原理的には1/4波あればいいのはわかっているがこのくらいなら1波用意したほうが
+// コードが楽だし、データ量もしれてる。
+// こちらは常にこの16点を出力するが再生周波数を変えることで任意の周波数を
+// 再生している。
+// audio 側が周波数変換で線形補間してくれるのでなめらかな波形になる。
+// audiobell の周波数が高くなって(あるいはデバイスの周波数上限が低くて)
+// 1波で16点表現できなくなる場合は、8点 -> 4点.. のように2^n で間引く。
+// 最終的には2点になるので矩形波になる。
+// 再生周波数は、ナイキストの定理から、デバイスのサンプリング周波数/2 が上限、
+// それを超える音は上限値にする。どうせ出ないので。
+// XXX 何dbか下げること
 int16_t sinewave[] = {
 	0,  12539,  23169,  30272,  32767,  30272,  23169,  12539,
 	0, -12539, -23169, -30272, -32767, -30272, -23169, -12539,
@@ -64,16 +74,20 @@ audiobell(void *dev, u_int pitch, u_int period, u_int volume, int poll)
 {
 	dev_t audio;
 	int16_t *buf;
-	struct audiobell_arg bellarg;
 	audio_file_t *file;
 	audio_track_t *ptrack;
 	struct uio auio;
 	struct iovec aiov;
 	int i;
+	int j;
 	int remaincount;
 	int remainlen;
 	int wave1len;
 	int len;
+	int step;
+	int offset;
+	int mixer_sample_rate;
+	int sample_rate;
 
 	KASSERT(volume <= 100);
 
@@ -81,42 +95,56 @@ audiobell(void *dev, u_int pitch, u_int period, u_int volume, int poll)
 	if (poll)
 		return;
 
-	/* Limit the pitch */
-	if (pitch > BELL_RATE_MAX)
-		pitch = BELL_RATE_MAX;
-	if (pitch < 20)
-		pitch = 20;
-
 	buf = NULL;
 	audio = AUDIO_DEVICE | device_unit((device_t)dev);
 
-	memset(&bellarg, 0, sizeof(bellarg));
-	bellarg.encoding = AUDIO_ENCODING_SLINEAR_NE;
-	bellarg.precision = 16;
-	bellarg.channels = 1;
-	bellarg.sample_rate = pitch * 16;
-
 	/* If not configured, we can't beep. */
-	if (audiobellopen(audio, &bellarg) != 0)
+	if (audiobellopen(audio, &file) != 0)
 		return;
 
-	file = bellarg.file;
 	ptrack = file->ptrack;
+	mixer_sample_rate = ptrack->mixer->track_fmt.sample_rate;
+
+	/* Limit pitch */
+	if (pitch < 20)
+		pitch = 20;
+
+	offset = 0;
+	if (pitch <= mixer_sample_rate / 16) {
+		/* 16-point sine wave */
+		step = 1;
+	} else if (pitch <= mixer_sample_rate / 8) {
+		/* 8-point sine wave */
+		step = 2;
+	} else if (pitch <= mixer_sample_rate / 4) {
+		/* 4-point sine wave, aka, triangular wave */
+		step = 4;
+	} else {
+		/* Rectangular wave */
+		if (pitch > mixer_sample_rate / 2)
+			pitch = mixer_sample_rate / 2;
+		step = 8;
+		offset = 4;
+	}
+
+	sample_rate = pitch * (16 / step);
+	audiobellsetrate(file, sample_rate);
 
 	/* msec to sample count. */
-	remaincount = period * bellarg.sample_rate / 1000;
+	remaincount = period * sample_rate / 1000;
 	remainlen = remaincount * sizeof(int16_t);
 
-	wave1len = sizeof(sinewave);
-
+	wave1len = sizeof(sinewave) / step;
 	buf = malloc(wave1len, M_TEMP, M_WAITOK);
 	if (buf == NULL)
 		goto out;
 
 	/* Generate sinewave with specified volume */
 	/* XXX audio already has track volume feature though #if 0 */
-	for (i = 0; i < __arraycount(sinewave); i++) {
-		buf[i] = sinewave[i] * volume / 100;
+	i = 0;
+	j = offset;
+	for (; i < __arraycount(sinewave) / step; i++, j += step) {
+		buf[i] = sinewave[j] * volume / 100;
 	}
 
 	/* Write while paused to avoid begin inserted silence. */

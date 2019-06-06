@@ -312,15 +312,8 @@ audio_format2_endian(const audio_format2_t *fmt)
 }
 
 /* Interfaces for audiobell. */
-struct audiobell_arg {
-	u_int sample_rate;	/* IN */
-	u_int encoding;		/* IN */
-	u_int channels;		/* IN */
-	u_int precision;	/* IN */
-	u_int blocksize;	/* OUT */
-	audio_file_t *file;	/* OUT */
-};
-int audiobellopen(dev_t, struct audiobell_arg *);
+int audiobellopen(dev_t, audio_file_t **);
+int audiobellsetrate(audio_file_t *, u_int);
 int audiobellclose(audio_file_t *);
 int audiobellwrite(audio_file_t *, struct uio *);
 
