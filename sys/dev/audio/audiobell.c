@@ -81,8 +81,10 @@ audiobell(void *dev, u_int pitch, u_int period, u_int volume, int poll)
 	int i;
 	int j;
 	int remaincount;
-	int remainlen;
-	int wave1len;
+	int remainbytes;
+	int wave1count;
+	int wave1bytes;
+	int blkbytes;
 	int len;
 	int step;
 	int offset;
@@ -127,30 +129,37 @@ audiobell(void *dev, u_int pitch, u_int period, u_int volume, int poll)
 		offset = 4;
 	}
 
-	sample_rate = pitch * (16 / step);
+	wave1count = __arraycount(sinewave) / step;
+	sample_rate = pitch * wave1count;
 	audiobellsetrate(file, sample_rate);
 
 	/* msec to sample count. */
 	remaincount = period * sample_rate / 1000;
-	remainlen = remaincount * sizeof(int16_t);
+	// 波形を1波出すための roundup
+	remaincount = roundup(remaincount, wave1count);
+	remainbytes = remaincount * sizeof(int16_t);
+	wave1bytes = wave1count * sizeof(int16_t);
 
-	wave1len = sizeof(sinewave) / step;
-	buf = malloc(wave1len, M_TEMP, M_WAITOK);
+	blkbytes = ptrack->usrbuf_blksize;
+	blkbytes = rounddown(blkbytes, wave1bytes);
+	blkbytes = uimin(blkbytes, remainbytes);
+	buf = malloc(blkbytes, M_TEMP, M_WAITOK);
 	if (buf == NULL)
 		goto out;
 
 	/* Generate sinewave with specified volume */
-	/* XXX audio already has track volume feature though #if 0 */
-	i = 0;
 	j = offset;
-	for (; i < __arraycount(sinewave) / step; i++, j += step) {
+	for (i = 0; i < blkbytes / sizeof(int16_t); i++) {
+		/* XXX audio already has track volume feature though #if 0 */
 		buf[i] = sinewave[j] * volume / 100;
+		j += step;
+		j %= __arraycount(sinewave);
 	}
 
 	/* Write while paused to avoid begin inserted silence. */
 	ptrack->is_pause = true;
-	for (; remainlen > 0; remainlen -= wave1len) {
-		len = uimin(remainlen, wave1len);
+	for (; remainbytes > 0; remainbytes -= blkbytes) {
+		len = uimin(remainbytes, blkbytes);
 		aiov.iov_base = (void *)buf;
 		aiov.iov_len = len;
 		auio.uio_iov = &aiov;
