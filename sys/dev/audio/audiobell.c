@@ -45,8 +45,12 @@ __KERNEL_RCSID(0, "$NetBSD: audiobell.c,v 1.2 2019/05/08 13:40:17 isaki Exp $");
 #include <dev/audio/audiodef.h>
 #include <dev/audio/audiobellvar.h>
 
-/* 44.1 kHz should reduce hum at higher pitches. */
-#define BELL_SAMPLE_RATE	44100
+#define BELL_RATE_MAX	(AUDIO_MAX_FREQUENCY / 16)
+
+int16_t sinewave[] = {
+	0,  12539,  23169,  30272,  32767,  30272,  23169,  12539,
+	0, -12539, -23169, -30272, -32767, -30272, -23169, -12539,
+};
 
 /*
  * dev is a device_t for the audio device to use.
@@ -68,12 +72,8 @@ audiobell(void *dev, u_int pitch, u_int period, u_int volume, int poll)
 	int i;
 	int remaincount;
 	int remainlen;
-	int wave1count;
 	int wave1len;
 	int len;
-	int16_t vol;
-	int32_t a;
-	int32_t step;
 
 	KASSERT(volume <= 100);
 
@@ -81,9 +81,9 @@ audiobell(void *dev, u_int pitch, u_int period, u_int volume, int poll)
 	if (poll)
 		return;
 
-	/* Limit the pitch from 20Hz to Nyquist frequency. */
-	if (pitch > BELL_SAMPLE_RATE / 2)
-		pitch = BELL_SAMPLE_RATE;
+	/* Limit the pitch */
+	if (pitch > BELL_RATE_MAX)
+		pitch = BELL_RATE_MAX;
 	if (pitch < 20)
 		pitch = 20;
 
@@ -94,7 +94,7 @@ audiobell(void *dev, u_int pitch, u_int period, u_int volume, int poll)
 	bellarg.encoding = AUDIO_ENCODING_SLINEAR_NE;
 	bellarg.precision = 16;
 	bellarg.channels = 1;
-	bellarg.sample_rate = BELL_SAMPLE_RATE;
+	bellarg.sample_rate = pitch * 16;
 
 	/* If not configured, we can't beep. */
 	if (audiobellopen(audio, &bellarg) != 0)
@@ -104,45 +104,20 @@ audiobell(void *dev, u_int pitch, u_int period, u_int volume, int poll)
 	ptrack = file->ptrack;
 
 	/* msec to sample count. */
-	remaincount = period * BELL_SAMPLE_RATE / 1000;
+	remaincount = period * bellarg.sample_rate / 1000;
 	remainlen = remaincount * sizeof(int16_t);
 
-	wave1count = BELL_SAMPLE_RATE / pitch;
-	wave1len = wave1count * sizeof(int16_t);
+	wave1len = sizeof(sinewave);
 
 	buf = malloc(wave1len, M_TEMP, M_WAITOK);
 	if (buf == NULL)
 		goto out;
 
-	/* Generate single square wave.  It's enough to beep. */
-	vol = 32767 * volume / 100;
-if ((period / 10) % 10 == 0) {
-printf("SQUARE: period=%d\n", period);
-	for (i = 0; i < wave1count / 2; i++) {
-		buf[i] = vol;
+	/* Generate sinewave with specified volume */
+	/* XXX audio already has track volume feature though #if 0 */
+	for (i = 0; i < __arraycount(sinewave); i++) {
+		buf[i] = sinewave[i] * volume / 100;
 	}
-	vol = -vol;
-	for (; i < wave1count; i++) {
-		buf[i] = vol;
-	}
-} else {
-printf("TRIANGLE: period=%d\n", period);
-	/* TODO: use SCALEDOWN */
-	a =  0;
-	step = (vol * 256) * 4 / wave1count;
-	for (i = 0; i < wave1count / 4; i++) {
-		buf[i] = a / 256;
-		a += step;
-	}
-	for (; i < wave1count * 3 / 4; i++) {
-		buf[i] = a / 256;
-		a -= step;
-	}
-	for (; i < wave1count; i++) {
-		buf[i] = a / 256;
-		a += step;
-	}
-}
 
 	/* Write while paused to avoid begin inserted silence. */
 	ptrack->is_pause = true;
