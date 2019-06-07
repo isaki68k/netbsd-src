@@ -274,7 +274,7 @@ vs0 at intio0 addr 0xe92000 dma 3 dmaintr 106
 mercury0 at intio0 addr 0xecc080 dma 2 dmaintr 104
 audio*	at audiobus?
 
-#spkr*	at audio?				# PC speaker (synthesized)
+spkr*	at audio?				# PC speaker (synthesized)
 
 ## Network interfaces
 ne*	at intio0 addr 0xece300 intr 249	# Nereid Ethernet
