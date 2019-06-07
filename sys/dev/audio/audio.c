@@ -7336,6 +7336,8 @@ audio_sysctl_volume(SYSCTLFN_ARGS)
 	node = *rnode;
 	sc = node.sysctl_data;
 
+	mutex_enter(sc->sc_lock);
+
 	if (sc->sc_pmixer)
 		t = sc->sc_pmixer->volume;
 	else
@@ -7343,15 +7345,22 @@ audio_sysctl_volume(SYSCTLFN_ARGS)
 	node.sysctl_data = &t;
 	error = sysctl_lookup(SYSCTLFN_CALL(&node));
 	if (error || newp == NULL)
-		return error;
+		goto abort;
 
-	if (sc->sc_pmixer == NULL)
-		return EINVAL;
-	if (t < 0)
-		return EINVAL;
+	if (sc->sc_pmixer == NULL) {
+		error = EINVAL;
+		goto abort;
+	}
+	if (t < 0) {
+		error = EINVAL;
+		goto abort;
+	}
 
 	sc->sc_pmixer->volume = t;
-	return 0;
+	error = 0;
+abort:
+	mutex_exit(sc->sc_lock);
+	return error;
 }
 
 /*
