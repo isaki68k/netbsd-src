@@ -2275,7 +2275,9 @@ azalia_round_buffersize(void *v, int dir, size_t size)
 static int
 azalia_get_props(void *v)
 {
-	return AUDIO_PROP_INDEPENDENT | AUDIO_PROP_FULLDUPLEX;
+
+	return AUDIO_PROP_PLAYBACK | AUDIO_PROP_CAPTURE |
+	    AUDIO_PROP_INDEPENDENT | AUDIO_PROP_FULLDUPLEX;
 }
 
 static int

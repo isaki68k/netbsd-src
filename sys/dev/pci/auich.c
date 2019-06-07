@@ -1206,20 +1206,9 @@ auich_round_buffersize(void *v, int direction, size_t size)
 static int
 auich_get_props(void *v)
 {
-	struct auich_softc *sc;
-	int props;
 
-	props = AUDIO_PROP_INDEPENDENT | AUDIO_PROP_FULLDUPLEX;
-	sc = v;
-	/*
-	 * Even if the codec is fixed-rate, set_param() succeeds for any sample
-	 * rate because of aurateconv.  Applications can't know what rate the
-	 * device can process in the case of mmap().
-	 */
-	if (!AC97_IS_FIXED_RATE(sc->codec_if) ||
-	    sc->sc_codectype == AC97_CODEC_TYPE_MODEM)
-		props |= AUDIO_PROP_MMAP;
-	return props;
+	return AUDIO_PROP_PLAYBACK | AUDIO_PROP_CAPTURE |
+	    AUDIO_PROP_INDEPENDENT | AUDIO_PROP_FULLDUPLEX;
 }
 
 static int

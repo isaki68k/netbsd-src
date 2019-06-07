@@ -166,14 +166,9 @@ cs428x_round_buffersize(void *addr, int direction,
 int
 cs428x_get_props(void *addr)
 {
-	int retval;
 
-	retval = AUDIO_PROP_INDEPENDENT | AUDIO_PROP_FULLDUPLEX;
-#ifdef MMAP_READY
-	/* How can I mmap ? */
-	retval |= AUDIO_PROP_MMAP;
-#endif
-	return retval;
+	return AUDIO_PROP_PLAYBACK | AUDIO_PROP_CAPTURE |
+	    AUDIO_PROP_INDEPENDENT | AUDIO_PROP_FULLDUPLEX;
 }
 
 /* AC97 */

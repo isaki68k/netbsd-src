@@ -1647,8 +1647,8 @@ eap_get_props(void *addr)
 
 	ei = addr;
 	sc = device_private(ei->parent);
-	prop = AUDIO_PROP_MMAP | AUDIO_PROP_INDEPENDENT |
-	    AUDIO_PROP_FULLDUPLEX;
+	prop = AUDIO_PROP_PLAYBACK | AUDIO_PROP_CAPTURE |
+	    AUDIO_PROP_INDEPENDENT | AUDIO_PROP_FULLDUPLEX;
 	/* The es1370 only has one clock, so it's not independent */
 	if (!sc->sc_1371 && ei->index == EAP_DAC2)
 		prop &= ~AUDIO_PROP_INDEPENDENT;

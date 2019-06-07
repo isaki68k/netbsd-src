@@ -971,19 +971,9 @@ auvia_free(void *addr, void *ptr, size_t size)
 static int
 auvia_get_props(void *addr)
 {
-	struct auvia_softc *sc;
-	int props;
 
-	props = AUDIO_PROP_INDEPENDENT | AUDIO_PROP_FULLDUPLEX;
-	sc = addr;
-	/*
-	 * Even if the codec is fixed-rate, set_param() succeeds for any sample
-	 * rate because of aurateconv.  Applications can't know what rate the
-	 * device can process in the case of mmap().
-	 */
-	if (!AC97_IS_FIXED_RATE(sc->codec_if))
-		props |= AUDIO_PROP_MMAP;
-	return props;
+	return AUDIO_PROP_PLAYBACK | AUDIO_PROP_CAPTURE |
+	    AUDIO_PROP_INDEPENDENT | AUDIO_PROP_FULLDUPLEX;
 }
 
 static void

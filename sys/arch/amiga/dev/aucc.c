@@ -693,7 +693,8 @@ aucc_get_port(void *addr, mixer_ctrl_t *cp)
 int
 aucc_get_props(void *addr)
 {
-	return 0;
+
+	return AUDIO_PROP_PLAYBACK | AUDIO_PROP_CAPTURE;
 }
 
 

@@ -948,8 +948,8 @@ static int
 neo_get_props(void *addr)
 {
 
-	return AUDIO_PROP_INDEPENDENT | AUDIO_PROP_MMAP |
-	    AUDIO_PROP_FULLDUPLEX;
+	return AUDIO_PROP_PLAYBACK | AUDIO_PROP_CAPTURE |
+	    AUDIO_PROP_INDEPENDENT | AUDIO_PROP_FULLDUPLEX;
 }
 
 static void

@@ -664,7 +664,7 @@ vs_get_props(void *hdl)
 {
 
 	DPRINTF(1, ("vs_get_props\n"));
-	return 0 /* | dependent | half duplex | no mmap */;
+	return AUDIO_PROP_PLAYBACK | AUDIO_PROP_CAPTURE;
 }
 
 static void

@@ -231,7 +231,7 @@ int
 zaudio_get_props(void *hdl)
 {
 
-	return AUDIO_PROP_MMAP;
+	return AUDIO_PROP_PLAYBACK | AUDIO_PROP_CAPTURE;
 }
 
 void

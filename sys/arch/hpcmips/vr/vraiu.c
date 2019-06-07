@@ -518,7 +518,7 @@ vraiu_get_props(void *self)
 {
 	DPRINTFN(3, ("vraiu_get_props\n"));
 
-	return 0;
+	return AUDIO_PROP_PLAYBACK | AUDIO_PROP_CAPTURE;
 }
 
 void

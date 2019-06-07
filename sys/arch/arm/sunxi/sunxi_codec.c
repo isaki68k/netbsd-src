@@ -255,9 +255,9 @@ sunxi_codec_getdev(void *priv, struct audio_device *adev)
 static int
 sunxi_codec_get_props(void *priv)
 {
-	return AUDIO_PROP_PLAYBACK|AUDIO_PROP_CAPTURE|
-	    AUDIO_PROP_INDEPENDENT|AUDIO_PROP_MMAP|
-	    AUDIO_PROP_FULLDUPLEX;
+
+	return AUDIO_PROP_PLAYBACK | AUDIO_PROP_CAPTURE|
+	    AUDIO_PROP_INDEPENDENT | AUDIO_PROP_FULLDUPLEX;
 }
 
 static int

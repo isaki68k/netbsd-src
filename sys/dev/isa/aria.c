@@ -543,7 +543,7 @@ aria_get_props(void *addr)
 {
 
 	/* XXX This driver doesn't seem to be written as full duplex. */
-	return 0;
+	return AUDIO_PROP_PLAYBACK | AUDIO_PROP_CAPTURE;
 }
 
 int

@@ -1061,8 +1061,9 @@ autri_find_dma(struct autri_softc *sc, void *addr)
 static int
 autri_get_props(void *addr)
 {
-	return AUDIO_PROP_MMAP | AUDIO_PROP_INDEPENDENT |
-	    AUDIO_PROP_FULLDUPLEX;
+
+	return AUDIO_PROP_PLAYBACK | AUDIO_PROP_CAPTURE |
+	    AUDIO_PROP_INDEPENDENT | AUDIO_PROP_FULLDUPLEX;
 }
 
 static void

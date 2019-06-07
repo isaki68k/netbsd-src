@@ -444,7 +444,8 @@ toccata_getdev(void *addr, struct audio_device *retp)
 int
 toccata_get_props(void *addr)
 {
-	return 0;
+
+	return AUDIO_PROP_PLAYBACK | AUDIO_PROP_CAPTURE;
 }
 
 void

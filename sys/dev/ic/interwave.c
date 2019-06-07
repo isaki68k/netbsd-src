@@ -1428,7 +1428,7 @@ iw_get_props(void *addr)
 	struct iw_softc *sc;
 
 	sc = addr;
-	return AUDIO_PROP_MMAP |
+	return AUDIO_PROP_PLAYBACK | AUDIO_PROP_CAPTURE |
 		(sc->sc_fullduplex ? AUDIO_PROP_FULLDUPLEX : 0);
 }
 

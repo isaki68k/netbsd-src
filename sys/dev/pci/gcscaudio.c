@@ -684,19 +684,9 @@ gcscaudio_round_buffersize(void *addr, int direction, size_t size)
 static int
 gcscaudio_get_props(void *addr)
 {
-	struct gcscaudio_softc *sc;
-	int props;
 
-	sc = (struct gcscaudio_softc *)addr;
-	props = AUDIO_PROP_INDEPENDENT | AUDIO_PROP_FULLDUPLEX;
-	/*
-	 * Even if the codec is fixed-rate, set_param() succeeds for any sample
-	 * rate because of aurateconv.  Applications can't know what rate the
-	 * device can process in the case of mmap().
-	 */
-	if (!AC97_IS_FIXED_RATE(sc->codec_if))
-		props |= AUDIO_PROP_MMAP;
-	return props;
+	return AUDIO_PROP_PLAYBACK | AUDIO_PROP_CAPTURE |
+	    AUDIO_PROP_INDEPENDENT | AUDIO_PROP_FULLDUPLEX;
 }
 
 static int

@@ -984,7 +984,7 @@ static int
 arcofi_get_props(void *v)
 {
 
-	return 0;
+	return AUDIO_PROP_PLAYBACK | AUDIO_PROP_CAPTURE;
 }
 
 static void

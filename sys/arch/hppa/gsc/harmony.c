@@ -972,7 +972,8 @@ int
 harmony_get_props(void *vsc)
 {
 
-	return AUDIO_PROP_FULLDUPLEX;
+	return AUDIO_PROP_PLAYBACK | AUDIO_PROP_CAPTURE |
+	    AUDIO_PROP_FULLDUPLEX;
 }
 
 void

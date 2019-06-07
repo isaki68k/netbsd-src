@@ -3620,7 +3620,7 @@ gus_get_props(void *addr)
 	struct gus_softc *sc;
 
 	sc = addr;
-	return AUDIO_PROP_MMAP |
+	return AUDIO_PROP_PLAYBACK | AUDIO_PROP_CAPTURE |
 	    (sc->sc_recdrq == sc->sc_playdrq ? 0 : AUDIO_PROP_FULLDUPLEX);
 }
 

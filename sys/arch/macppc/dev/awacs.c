@@ -967,7 +967,9 @@ awacs_round_buffersize(void *h, int dir, size_t size)
 static int
 awacs_get_props(void *h)
 {
-	return AUDIO_PROP_FULLDUPLEX /* | AUDIO_PROP_MMAP */;
+
+	return AUDIO_PROP_PLAYBACK | AUDIO_PROP_CAPTURE |
+	    AUDIO_PROP_FULLDUPLEX;
 }
 
 static int

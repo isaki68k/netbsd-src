@@ -783,6 +783,6 @@ ad1848_isa_get_props(void *addr)
 	struct ad1848_isa_softc *isc;
 
 	isc = addr;
-	return AUDIO_PROP_MMAP |
+	return AUDIO_PROP_PLAYBACK | AUDIO_PROP_CAPTURE |
 		(isc->sc_playdrq != isc->sc_recdrq ? AUDIO_PROP_FULLDUPLEX : 0);
 }

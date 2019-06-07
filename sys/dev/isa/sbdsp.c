@@ -2480,7 +2480,7 @@ sbdsp_get_props(void *addr)
 	int prop;
 
 	sc = addr;
-	prop = AUDIO_PROP_MMAP;
+	prop = AUDIO_PROP_PLAYBACK | AUDIO_PROP_CAPTURE;
 
 	/* Prior to the SB16, it has only one clock */
 	if (ISSB16CLASS(sc))

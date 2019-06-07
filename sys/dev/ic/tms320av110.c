@@ -319,7 +319,8 @@ tav_round_blocksize(void *hdl, int size, int mode, const audio_params_t *param)
 int
 tav_get_props(void *hdl)
 {
-	return 0;
+
+	return AUDIO_PROP_PLAYBACK | AUDIO_PROP_CAPTURE;
 }
 
 void
