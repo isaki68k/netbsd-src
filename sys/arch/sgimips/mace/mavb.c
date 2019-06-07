@@ -711,8 +711,7 @@ int
 mavb_get_props(void *hdl)
 {
 
-	return AUDIO_PROP_PLAYBACK |
-	    AUDIO_PROP_FULLDUPLEX | AUDIO_PROP_INDEPENDENT;
+	return AUDIO_PROP_PLAYBACK;
 }
 
 static void
