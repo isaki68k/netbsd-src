@@ -930,6 +930,11 @@ audioattach(device_t parent, device_t self, void *aux)
 	aprint_normal("\n");
 
 	KASSERT((mode & (AUMODE_PLAY | AUMODE_RECORD)) != 0);
+	/* Unidirectional device must have neither FULLDUP nor INDEPENDENT. */
+	if ((mode & AUMODE_PLAY) == 0 || (mode & AUMODE_RECORD) == 0) {
+		KASSERT((props & AUDIO_PROP_FULLDUPLEX) == 0);
+		KASSERT((props & AUDIO_PROP_INDEPENDENT) == 0);
+	}
 
 	/* probe hw params */
 	memset(&phwfmt, 0, sizeof(phwfmt));
