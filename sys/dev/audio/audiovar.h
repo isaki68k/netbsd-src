@@ -142,6 +142,12 @@ struct audio_softc {
 	void		*hw_hdl;
 
 	/*
+	 * Properties obtained by get_props().
+	 * No need any locks to read this variable.
+	 */
+	int sc_props;
+
+	/*
 	 * List of opened descriptors.
 	 * Must be protected by sc_intr_lock.
 	 */
