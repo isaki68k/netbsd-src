@@ -1,4 +1,4 @@
-/* $NetBSD: mavb.c,v 1.13 2019/05/08 13:40:16 isaki Exp $ */
+/* $NetBSD: mavb.c,v 1.14 2019/06/07 13:24:21 isaki Exp $ */
 /* $OpenBSD: mavb.c,v 1.6 2005/04/15 13:05:14 mickey Exp $ */
 
 /*

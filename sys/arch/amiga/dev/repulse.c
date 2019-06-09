@@ -1,4 +1,4 @@
-/*	$NetBSD: repulse.c,v 1.22 2019/05/08 13:40:14 isaki Exp $ */
+/*	$NetBSD: repulse.c,v 1.23 2019/06/08 08:02:36 isaki Exp $ */
 
 /*-
  * Copyright (c) 2001 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: repulse.c,v 1.22 2019/05/08 13:40:14 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: repulse.c,v 1.23 2019/06/08 08:02:36 isaki Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>

@@ -1,4 +1,4 @@
-/*	$NetBSD: audio.c,v 1.7 2019/05/13 08:50:25 nakayama Exp $	*/
+/*	$NetBSD: audio.c,v 1.13 2019/06/08 08:20:10 isaki Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -142,7 +142,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.7 2019/05/13 08:50:25 nakayama Exp $");
+__KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.13 2019/06/08 08:20:10 isaki Exp $");
 
 #ifdef _KERNEL_OPT
 #include "audio.h"
@@ -1992,17 +1992,12 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 			 * hw_if->open() is always (FREAD | FWRITE)
 			 * regardless of this open()'s flags.
 			 * see also dev/isa/aria.c
-			 * but ckeck its playback or recording capability.
 			 * On half duplex hardware, the flags passed to
 			 * hw_if->open() is either FREAD or FWRITE.
 			 * see also arch/evbarm/mini2440/audio_mini2440.c
 			 */
 			if (fullduplex) {
 				hwflags = FREAD | FWRITE;
-				if (!audio_can_playback(sc))
-					hwflags &= ~FWRITE;
-				if (!audio_can_capture(sc))
-					hwflags &= ~FREAD;
 			} else {
 				/* Construct hwflags from af->mode. */
 				hwflags = 0;

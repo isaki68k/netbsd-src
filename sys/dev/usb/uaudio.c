@@ -1,4 +1,4 @@
-/*	$NetBSD: uaudio.c,v 1.160 2019/05/08 13:40:19 isaki Exp $	*/
+/*	$NetBSD: uaudio.c,v 1.161 2019/06/06 12:59:33 isaki Exp $	*/
 
 /*
  * Copyright (c) 1999, 2012 The NetBSD Foundation, Inc.
@@ -37,7 +37,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uaudio.c,v 1.160 2019/05/08 13:40:19 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uaudio.c,v 1.161 2019/06/06 12:59:33 isaki Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"

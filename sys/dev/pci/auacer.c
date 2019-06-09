@@ -1,4 +1,4 @@
-/*	$NetBSD: auacer.c,v 1.37 2019/05/08 13:40:18 isaki Exp $	*/
+/*	$NetBSD: auacer.c,v 1.38 2019/06/08 08:02:38 isaki Exp $	*/
 
 /*-
  * Copyright (c) 2004, 2008 The NetBSD Foundation, Inc.
@@ -44,7 +44,7 @@
 
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: auacer.c,v 1.37 2019/05/08 13:40:18 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: auacer.c,v 1.38 2019/06/08 08:02:38 isaki Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>

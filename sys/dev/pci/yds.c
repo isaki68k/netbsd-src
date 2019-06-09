@@ -1,4 +1,4 @@
-/*	$NetBSD: yds.c,v 1.62 2019/05/08 13:40:19 isaki Exp $	*/
+/*	$NetBSD: yds.c,v 1.64 2019/06/08 08:02:38 isaki Exp $	*/
 
 /*
  * Copyright (c) 2000, 2001 Kazuki Sakamoto and Minoura Makoto.
@@ -39,7 +39,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: yds.c,v 1.62 2019/05/08 13:40:19 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: yds.c,v 1.64 2019/06/08 08:02:38 isaki Exp $");
 
 #include "mpu.h"
 

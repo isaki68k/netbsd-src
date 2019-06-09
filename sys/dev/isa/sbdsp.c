@@ -1,4 +1,4 @@
-/*	$NetBSD: sbdsp.c,v 1.140 2019/05/08 13:40:18 isaki Exp $	*/
+/*	$NetBSD: sbdsp.c,v 1.141 2019/06/08 08:02:38 isaki Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2008 The NetBSD Foundation, Inc.
@@ -74,7 +74,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sbdsp.c,v 1.140 2019/05/08 13:40:18 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sbdsp.c,v 1.141 2019/06/08 08:02:38 isaki Exp $");
 
 #include "midi.h"
 #include "mpu.h"
