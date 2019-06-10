@@ -121,10 +121,10 @@
  *	allocm 			-	- +	(*1)
  *	freem 			-	- +	(*1)
  *	round_buffersize 	-	x
+ *	get_props 		-	x	Called at attach time
  *	trigger_output 		x	x +
  *	trigger_input 		x	x +
  *	dev_ioctl 		-	x
- *	get_props 		-	x	Called at attach time
  *	get_locks 		-	-	Called at attach time
  *
  * *1 Note: Before 8.0, since these have been called only at attach time,
