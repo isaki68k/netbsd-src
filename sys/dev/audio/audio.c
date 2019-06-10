@@ -5233,7 +5233,7 @@ audio_pmixer_output(struct audio_softc *sc)
 			    start, end, blksize, audio_pintr, sc, &params);
 			if (error) {
 				device_printf(sc->sc_dev,
-				    "trigger_output failed with %d", error);
+				    "trigger_output failed with %d\n", error);
 				return;
 			}
 		}
@@ -5245,7 +5245,7 @@ audio_pmixer_output(struct audio_softc *sc)
 		    start, blksize, audio_pintr, sc);
 		if (error) {
 			device_printf(sc->sc_dev,
-			    "start_output failed with %d", error);
+			    "start_output failed with %d\n", error);
 			return;
 		}
 	}
@@ -5504,7 +5504,7 @@ audio_rmixer_input(struct audio_softc *sc)
 			    start, end, blksize, audio_rintr, sc, &params);
 			if (error) {
 				device_printf(sc->sc_dev,
-				    "trigger_input failed with %d", error);
+				    "trigger_input failed with %d\n", error);
 				return;
 			}
 		}
@@ -5516,7 +5516,7 @@ audio_rmixer_input(struct audio_softc *sc)
 		    start, blksize, audio_rintr, sc);
 		if (error) {
 			device_printf(sc->sc_dev,
-			    "start_input failed with %d", error);
+			    "start_input failed with %d\n", error);
 			return;
 		}
 	}
