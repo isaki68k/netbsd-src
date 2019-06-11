@@ -4365,12 +4365,6 @@ audio_track_play(audio_track_t *track)
 	 */
 	if (count < track->usrbuf_blksize / framesize) {
 		dropcount = track->usrbuf_blksize / framesize - count;
-
-		if (track->pstate != AUDIO_STATE_DRAINING) {
-			/* Wait until filled. */
-			TRACET(4, track, "not enough; return");
-			return;
-		}
 	}
 
 	track->usrbuf_stamp += bytes;
