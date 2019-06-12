@@ -4964,9 +4964,6 @@ audio_pmixer_process(struct audio_softc *sc)
 
 	mixer->mixseq++;
 
-	/* Initialize as silence */
-	memset(mixer->mixsample, 0, frametobyte(&mixer->mixfmt, frame_count));
-
 	/* Mix all tracks */
 	mixed = 0;
 	SLIST_FOREACH(f, &sc->sc_files, entry) {
@@ -5010,7 +5007,11 @@ audio_pmixer_process(struct audio_softc *sc)
 		audio_track_lock_exit(track);
 	}
 
-	if (mixed != 0) {
+	if (mixed == 0) {
+		/* Silence */
+		memset(mixer->mixsample, 0,
+		    frametobyte(&mixer->mixfmt, frame_count));
+	} else {
 		aint2_t ovf_plus;
 		aint2_t ovf_minus;
 		int vol;
@@ -5145,18 +5146,40 @@ audio_pmixer_mix_track(audio_trackmixer_t *mixer, audio_track_t *track,
 	 *     Because the operation here is done by double-sized integer.
 	 */
 	sample_count = count * mixer->mixfmt.channels;
+	if (mixed == 0) {
+		/* If this is the first track, assignment can be used. */
 #if defined(AUDIO_SUPPORT_TRACK_VOLUME)
-	if (track->volume != 256) {
-		for (i = 0; i < sample_count; i++) {
-			aint2_t v;
-			v = *s++;
-			*d++ += AUDIO_SCALEDOWN(v * track->volume, 8);
-		}
-	} else
+		if (track->volume != 256) {
+			for (i = 0; i < sample_count; i++) {
+				aint2_t v;
+				v = *s++;
+				*d++ = AUDIO_SCALEDOWN(v * track->volume, 8)
+			}
+		} else
 #endif
-	{
-		for (i = 0; i < sample_count; i++) {
-			*d++ += ((aint2_t)*s++);
+		{
+			for (i = 0; i < sample_count; i++) {
+				*d++ = ((aint2_t)*s++);
+			}
+		}
+		/* Fill silence if the first track is not filled. */
+		for (; i < mixer->frames_per_block * mixer->mixfmt.channels; i++)
+			*d++ = 0;
+	} else {
+		/* If this is the second or later, add it. */
+#if defined(AUDIO_SUPPORT_TRACK_VOLUME)
+		if (track->volume != 256) {
+			for (i = 0; i < sample_count; i++) {
+				aint2_t v;
+				v = *s++;
+				*d++ += AUDIO_SCALEDOWN(v * track->volume, 8);
+			}
+		} else
+#endif
+		{
+			for (i = 0; i < sample_count; i++) {
+				*d++ += ((aint2_t)*s++);
+			}
 		}
 	}
 
