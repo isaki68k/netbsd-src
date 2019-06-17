@@ -140,7 +140,7 @@ static const struct audio_hw_if pad_hw_if = {
 static const struct audio_format pad_formats[PAD_NFORMATS] = {
 	{
 		.mode		= AUMODE_PLAY,
-		.encoding	= AUDIO_ENCODING_SLINEAR_NE,
+		.encoding	= AUDIO_ENCODING_SLINEAR_LE,
 		.validbits	= PADPREC,
 		.precision	= PADPREC,
 		.channels	= PADCHAN,
