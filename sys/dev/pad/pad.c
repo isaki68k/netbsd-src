@@ -615,12 +615,14 @@ pad_start_output(void *opaque, void *block, int blksize,
 	err = pad_add_block(sc, block, blksize);
 	mutex_exit(&sc->sc_cond_lock);
 	cv_broadcast(&sc->sc_condvar);
+	if (err)
+		return err;
 
 	ms = blksize * 1000 / PADCHAN / (PADPREC / NBBY) / PADFREQ;
 	DPRINTF("%s: callout ms=%d\n", __func__, ms);
 	callout_reset(&sc->sc_pcallout, mstohz(ms), pad_done_output, sc);
 
-	return err;
+	return 0;
 }
 
 static int
