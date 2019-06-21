@@ -158,7 +158,7 @@ audiobell(void *dev, u_int pitch, u_int period, u_int volume, int poll)
 
 	/* Write while paused to avoid begin inserted silence. */
 	ptrack->is_pause = true;
-	for (; remainbytes > 0; remainbytes -= blkbytes) {
+	for (; remainbytes > 0; remainbytes -= len) {
 		len = uimin(remainbytes, blkbytes);
 		aiov.iov_base = (void *)buf;
 		aiov.iov_len = len;
