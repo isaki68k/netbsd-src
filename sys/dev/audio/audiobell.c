@@ -156,7 +156,7 @@ audiobell(void *dev, u_int pitch, u_int period, u_int volume, int poll)
 		j %= __arraycount(sinewave);
 	}
 
-	/* Write while paused to avoid begin inserted silence. */
+	/* Write while paused to avoid inserting silence. */
 	ptrack->is_pause = true;
 	for (; remainbytes > 0; remainbytes -= len) {
 		len = uimin(remainbytes, blkbytes);
