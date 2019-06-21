@@ -111,6 +111,27 @@ audiobell(void *dev, u_int pitch, u_int period, u_int volume, int poll)
 	if (pitch < 20)
 		pitch = 20;
 
+#ifdef RECT
+#define BELL_SAMPLE_RATE 44100
+	(void)sample_rate;
+	(void)mixer_sample_rate;
+	(void)offset;
+	(void)step;
+	(void)j;
+	if (pitch >= BELL_SAMPLE_RATE / 2)
+		pitch = BELL_SAMPLE_RATE / 2;
+
+	audiobellsetrate(file, BELL_SAMPLE_RATE);
+
+	/* msec to sample count. */
+	remaincount = period * BELL_SAMPLE_RATE / 1000;
+	remainbytes = remaincount * sizeof(int16_t);
+
+	wave1count = BELL_SAMPLE_RATE / pitch;
+	wave1bytes = wave1count * sizeof(int16_t);
+
+	blkbytes = wave1bytes;
+#else
 	offset = 0;
 	if (pitch <= mixer_sample_rate / 16) {
 		/* 16-point sine wave */
@@ -143,10 +164,22 @@ audiobell(void *dev, u_int pitch, u_int period, u_int volume, int poll)
 	blkbytes = ptrack->usrbuf_blksize;
 	blkbytes = rounddown(blkbytes, wave1bytes);
 	blkbytes = uimin(blkbytes, remainbytes);
+#endif
 	buf = malloc(blkbytes, M_TEMP, M_WAITOK);
 	if (buf == NULL)
 		goto out;
 
+#ifdef RECT
+	int vol;
+	vol = 32767 * volume / 100;
+	for (i = 0; i < wave1count / 2; i++) {
+		buf[i] = vol;
+	}
+	vol = -vol;
+	for (; i < wave1count; i++) {
+		buf[i] = vol;
+	}
+#else
 	/* Generate sinewave with specified volume */
 	j = offset;
 	for (i = 0; i < blkbytes / sizeof(int16_t); i++) {
@@ -155,6 +188,7 @@ audiobell(void *dev, u_int pitch, u_int period, u_int volume, int poll)
 		j += step;
 		j %= __arraycount(sinewave);
 	}
+#endif
 
 	/* Write while paused to avoid begin inserted silence. */
 	ptrack->is_pause = true;
