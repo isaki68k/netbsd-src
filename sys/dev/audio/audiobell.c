@@ -57,9 +57,25 @@ __KERNEL_RCSID(0, "$NetBSD: audiobell.c,v 1.2 2019/05/08 13:40:17 isaki Exp $");
 // 再生周波数は、ナイキストの定理から、デバイスのサンプリング周波数/2 が上限、
 // それを超える音は上限値にする。どうせ出ないので。
 // XXX 何dbか下げること
-int16_t sinewave[] = {
-	0,  12539,  23169,  30272,  32767,  30272,  23169,  12539,
-	0, -12539, -23169, -30272, -32767, -30272, -23169, -12539,
+
+/* sin(2*pi * (x/16)) / 100 * 65536 */
+static const int32_t sinewave[] = {
+	        0,
+	  8217813,
+	 15184539,
+	 19839556,
+	 21474181,
+	 19839556,
+	 15184539,
+	  8217813,
+	        0,
+	 -8217814,
+	-15184540,
+	-19839557,
+	-21474182,
+	-19839557,
+	-15184540,
+	 -8217814,
 };
 
 /*
@@ -151,7 +167,7 @@ audiobell(void *dev, u_int pitch, u_int period, u_int volume, int poll)
 	j = offset;
 	for (i = 0; i < blkbytes / sizeof(int16_t); i++) {
 		/* XXX audio already has track volume feature though #if 0 */
-		buf[i] = (int)sinewave[j] * (int)volume / 100;
+		buf[i] = AUDIO_SCALEDOWN(sinewave[j] * (int)volume, 16);
 		j += step;
 		j %= __arraycount(sinewave);
 	}
