@@ -72,7 +72,7 @@ spkr_audio_tone(device_t self, u_int xhz, u_int ticks)
 #endif /* SPKRDEBUG */
 	/* xhz == 0 (no pitch value) doesn't make a sound. */
 	if (xhz > 0) {
-		audiobell(sc->sc_audiodev, xhz, ticks * (1000 / hz),
+		audiobell(sc->sc_audiodev, xhz, hztoms(ticks),
 		    sc->sc_spkr.sc_vol, 0);
 	}
 }
