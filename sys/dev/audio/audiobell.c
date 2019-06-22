@@ -45,18 +45,16 @@ __KERNEL_RCSID(0, "$NetBSD: audiobell.c,v 1.2 2019/05/08 13:40:17 isaki Exp $");
 #include <dev/audio/audiodef.h>
 #include <dev/audio/audiobellvar.h>
 
-// 16角形あれば十分正弦波が近似できる。
-// 原理的には1/4波あればいいのはわかっているがこのくらいなら1波用意したほうが
-// コードが楽だし、データ量もしれてる。
-// こちらは常にこの16点を出力するが再生周波数を変えることで任意の周波数を
-// 再生している。
-// audio 側が周波数変換で線形補間してくれるのでなめらかな波形になる。
-// audiobell の周波数が高くなって(あるいはデバイスの周波数上限が低くて)
-// 1波で16点表現できなくなる場合は、8点 -> 4点.. のように2^n で間引く。
-// 最終的には2点になるので矩形波になる。
-// 再生周波数は、ナイキストの定理から、デバイスのサンプリング周波数/2 が上限、
-// それを超える音は上限値にする。どうせ出ないので。
-// XXX 何dbか下げること
+/*
+ * The hexadecagon is sufficiently close to a sine wave.
+ * Audiobell always outputs this 16 points data but changes its playback
+ * frequency.  In addition, audio layer does linear interpolation in the
+ * frequency conversion stage, so the waveform becomes smooth.
+ * When the playback frequency rises (or the device frequency is not enough
+ * high) and one wave cannot be expressed with 16 points, the data is thinned
+ * out by power of two, like 8 points -> 4 points (triangular wave)
+ * -> 2 points (rectangular wave).
+ */
 
 /* Amplitude.  Full scale amplitude is too loud. */
 #define A(x) ((x) * 0.6)
@@ -153,9 +151,9 @@ audiobell(void *dev, u_int pitch, u_int period, u_int volume, int poll)
 	sample_rate = pitch * wave1count;
 	audiobellsetrate(file, sample_rate);
 
-	/* msec to sample count. */
+	/* msec to sample count */
 	remaincount = period * sample_rate / 1000;
-	// 波形を1波出すための roundup
+	/* Roundup to full wave */
 	remaincount = roundup(remaincount, wave1count);
 	remainbytes = remaincount * sizeof(int16_t);
 	wave1bytes = wave1count * sizeof(int16_t);
