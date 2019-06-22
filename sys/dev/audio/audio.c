@@ -1258,6 +1258,9 @@ audiodetach(device_t self, int flags)
 		cv_broadcast(&sc->sc_rmixer->outcv);
 	mutex_exit(sc->sc_lock);
 
+	/* delete sysctl nodes */
+	sysctl_teardown(&sc->sc_log);
+
 	/* locate the major number */
 	maj = cdevsw_lookup_major(&audio_cdevsw);
 
