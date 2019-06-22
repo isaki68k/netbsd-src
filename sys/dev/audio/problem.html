@@ -657,15 +657,15 @@ X server vt switching stops audio
 playing audio in firefox doesn't work after kernel update
 <dd>file lock がきつすぎた件。
 
-<dt><a href="http://gnats.netbsd.org/54186">kern/54186</a>
+<dt><s><a href="http://gnats.netbsd.org/54186">kern/54186</a></s>
 pad(4) audio tests fail
 <dd>padのテストが (sparc で) こける。次の PR にマージした。
 
-<dt><a href="http://gnats.netbsd.org/54187">kern/54187</a>
+<dt><s><a href="http://gnats.netbsd.org/54187">kern/54187</a></s>
 dev/audio/t_pad:pad_output test now fails
 <dd>padのテストが (i386/amd64 で) こける。
 
-<dt><a href="http://gnats.netbsd.org/54229">kern/54229</a>
+<dt><s><a href="http://gnats.netbsd.org/54229">kern/54229</a></s>
 audio in firefox stops playing
 <dd>/dev/sound の pause が他人に影響する話。
 
@@ -676,6 +676,11 @@ mpv drops video frames with `--ao=oss' (probably after isaki-audio2 merge)
 <dt><a href="http://gnats.netbsd.org/54243">kern/54243</a>
 beeping woes with -current
 <dd>beepがうるさい(?)という話?
+
+<dt><s><a href="http://gnats.netbsd.org/54245">xsrc/54245</a></s>
+xset(1): bell duration 0 is infinite
+<dd>xset b * * 0 でビープが無限(実際にはすごく長い値)になるという話。
+wscons 側の問題。
 
 <dt><s><a href="http://gnats.netbsd.org/54264">kern/54264</a></s>
 audio(4) API fails to detect a capture-only device
