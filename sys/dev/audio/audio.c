@@ -204,6 +204,8 @@ __KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.13 2019/06/08 08:20:10 isaki Exp $");
  */
 //#define AUDIO_DEBUG 1
 
+int audiobell_amp=100;
+
 #if defined(AUDIO_DEBUG)
 
 int audiodebug = AUDIO_DEBUG;
@@ -1018,6 +1020,12 @@ audioattach(device_t parent, device_t self, void *aux)
 		    audio_sysctl_debug, 0, (void *)sc, 0,
 		    CTL_HW, node->sysctl_num, CTL_CREATE, CTL_EOL);
 #endif
+		sysctl_createv(&sc->sc_log, 0, NULL, NULL,
+		    CTLFLAG_READWRITE,
+		    CTLTYPE_INT, "bellamp",
+		    SYSCTL_DESCR(""),
+		    NULL, 0, &audiobell_amp, 0,
+		    CTL_HW, node->sysctl_num, CTL_CREATE, CTL_EOL);
 	}
 
 #ifdef AUDIO_PM_IDLE
