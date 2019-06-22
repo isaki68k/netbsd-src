@@ -419,9 +419,9 @@ getbell:
 			return (EACCES);
 		if (data == NULL)
 			return 0;
-#define d ((struct wskbd_bell_data *)data)
-		spkr_audio_play(sc, d->pitch, d->period, d->volume);
-#undef d
+		ubdp = (struct wskbd_bell_data *)data;
+		SETBELL(ubdp, ubdp, &sc->sc_bell_data);
+		spkr_audio_play(sc, ubdp->pitch, ubdp->period, ubdp->volume);
 		return 0;
 	}
 
