@@ -58,7 +58,7 @@ __KERNEL_RCSID(0, "$NetBSD: audiobell.c,v 1.2 2019/05/08 13:40:17 isaki Exp $");
 // それを超える音は上限値にする。どうせ出ないので。
 // XXX 何dbか下げること
 
-/* sin(2*pi * (x/16)) / 100 * 65536 */
+/* (sin(2*pi * (x/16)) * 32767 / 100) << 16 */
 static const int32_t sinewave[] = {
 	        0,
 	  8217813,
