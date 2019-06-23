@@ -2169,6 +2169,13 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
 
 		KASSERT(sc->sc_popens > 0);
 		sc->sc_popens--;
+
+		/* Restore mixing volume if all tracks are gone. */
+		if (sc->sc_popens == 0) {
+			mutex_enter(sc->sc_intr_lock);
+			sc->sc_pmixer->volume = 256;
+			mutex_exit(sc->sc_intr_lock);
+		}
 	}
 	if (file->rtrack) {
 		/* Call hw halt_input if this is the last recording track. */
@@ -5024,8 +5031,8 @@ audio_pmixer_process(struct audio_softc *sc)
 				if (mixer->volume > 128) {
 					mixer->volume =
 					    (mixer->volume * 95) / 100;
-					device_printf(sc->sc_dev,
-					    "auto volume adjust: volume %d\n",
+					TRACE(2,
+					    "auto volume adjust: volume %d",
 					    mixer->volume);
 				}
 			}

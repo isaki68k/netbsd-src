@@ -209,7 +209,11 @@ struct audio_trackmixer {
 
 	int		frames_per_block; /* number of frames in a block */
 
-	u_int		volume;		/* software master volume (0..256) */
+	/*
+	 * software master volume (0..256)
+	 * Must be protected by sc_intr_lock.
+	 */
+	u_int		volume;
 
 	audio_format2_t	mixfmt;
 	void		*mixsample;	/* mixing buf in double-sized int */
