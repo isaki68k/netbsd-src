@@ -152,7 +152,7 @@ audiobell(void *dev, u_int pitch, u_int period, u_int volume, int poll)
 	audiobellsetrate(file, sample_rate);
 
 	/* msec to sample count */
-	remaincount = period * sample_rate / 1000;
+	remaincount = sample_rate * period / 1000;
 	/* Roundup to full wave */
 	remaincount = roundup(remaincount, wave1count);
 	remainbytes = remaincount * sizeof(int16_t);
