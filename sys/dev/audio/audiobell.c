@@ -57,7 +57,7 @@ __KERNEL_RCSID(0, "$NetBSD: audiobell.c,v 1.2 2019/05/08 13:40:17 isaki Exp $");
  */
 
 /* Amplitude.  Full scale amplitude is too loud. */
-#define A(x) (x) //((x) * 0.6)
+#define A(x) ((x) * 0.6)
 
 /* (sin(2*pi * (x/16)) * 32767 / 100) << 16 */
 static const int32_t sinewave[] = {
@@ -79,8 +79,6 @@ static const int32_t sinewave[] = {
 	A( -8217814),
 };
 #undef A
-
-extern int audiobell_amp;
 
 /*
  * dev is a device_t for the audio device to use.
@@ -171,7 +169,7 @@ audiobell(void *dev, u_int pitch, u_int period, u_int volume, int poll)
 	j = offset;
 	for (i = 0; i < blkbytes / sizeof(int16_t); i++) {
 		/* XXX audio already has track volume feature though #if 0 */
-		buf[i] = AUDIO_SCALEDOWN(sinewave[j] * (int)volume / (int)100 * audiobell_amp, 16);
+		buf[i] = AUDIO_SCALEDOWN(sinewave[j] * (int)volume, 16);
 		j += step;
 		j %= __arraycount(sinewave);
 	}
