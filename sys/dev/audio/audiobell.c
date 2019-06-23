@@ -106,8 +106,8 @@ audiobell(void *dev, u_int pitch, u_int period, u_int volume, int poll)
 	int len;
 	int step;
 	int offset;
+	int play_sample_rate;
 	int mixer_sample_rate;
-	int sample_rate;
 
 	KASSERT(volume <= 100);
 
@@ -148,11 +148,11 @@ audiobell(void *dev, u_int pitch, u_int period, u_int volume, int poll)
 	}
 
 	wave1count = __arraycount(sinewave) / step;
-	sample_rate = pitch * wave1count;
-	audiobellsetrate(file, sample_rate);
+	play_sample_rate = pitch * wave1count;
+	audiobellsetrate(file, play_sample_rate);
 
 	/* msec to sample count */
-	remaincount = sample_rate * period / 1000;
+	remaincount = play_sample_rate * period / 1000;
 	/* Roundup to full wave */
 	remaincount = roundup(remaincount, wave1count);
 	remainbytes = remaincount * sizeof(int16_t);
