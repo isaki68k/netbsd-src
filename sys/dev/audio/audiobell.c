@@ -96,18 +96,18 @@ audiobell(void *dev, u_int pitch, u_int period, u_int volume, int poll)
 	audio_track_t *ptrack;
 	struct uio auio;
 	struct iovec aiov;
-	int i;
-	int j;
-	int remaincount;
-	int remainbytes;
-	int wave1count;
-	int wave1bytes;
-	int blkbytes;
-	int len;
-	int step;
-	int offset;
-	int play_sample_rate;
-	int mixer_sample_rate;
+	u_int i;
+	u_int j;
+	u_int remaincount;
+	u_int remainbytes;
+	u_int wave1count;
+	u_int wave1bytes;
+	u_int blkbytes;
+	u_int len;
+	u_int step;
+	u_int offset;
+	u_int play_sample_rate;
+	u_int mixer_sample_rate;
 
 	KASSERT(volume <= 100);
 
