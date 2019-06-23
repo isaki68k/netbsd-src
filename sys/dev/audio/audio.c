@@ -567,7 +567,6 @@ static int audio_hw_validate_format(struct audio_softc *, int,
 static int audio_mixers_set_format(struct audio_softc *,
 	const struct audio_info *);
 static void audio_mixers_get_format(struct audio_softc *, struct audio_info *);
-static int audio_sysctl_volume(SYSCTLFN_PROTO);
 static int audio_sysctl_blk_ms(SYSCTLFN_PROTO);
 static int audio_sysctl_multiuser(SYSCTLFN_PROTO);
 #if defined(AUDIO_DEBUG)
@@ -991,13 +990,6 @@ audioattach(device_t parent, device_t self, void *aux)
 	    CTL_CREATE, CTL_EOL);
 
 	if (node != NULL) {
-		sysctl_createv(&sc->sc_log, 0, NULL, NULL,
-		    CTLFLAG_READWRITE,
-		    CTLTYPE_INT, "volume",
-		    SYSCTL_DESCR("software volume test"),
-		    audio_sysctl_volume, 0, (void *)sc, 0,
-		    CTL_HW, node->sysctl_num, CTL_CREATE, CTL_EOL);
-
 		sysctl_createv(&sc->sc_log, 0, NULL, NULL,
 		    CTLFLAG_READWRITE,
 		    CTLTYPE_INT, "blk_ms",
@@ -7278,47 +7270,6 @@ audio_indexof_format(const struct audio_format *formats, int nformats,
 
 	/* Not matched.  This should not be happened. */
 	panic("%s: cannot find matched format\n", __func__);
-}
-
-/*
- * Get or set software master volume: 0..256
- * XXX It's for debug.
- */
-static int
-audio_sysctl_volume(SYSCTLFN_ARGS)
-{
-	struct sysctlnode node;
-	struct audio_softc *sc;
-	int t, error;
-
-	node = *rnode;
-	sc = node.sysctl_data;
-
-	mutex_enter(sc->sc_lock);
-
-	if (sc->sc_pmixer)
-		t = sc->sc_pmixer->volume;
-	else
-		t = -1;
-	node.sysctl_data = &t;
-	error = sysctl_lookup(SYSCTLFN_CALL(&node));
-	if (error || newp == NULL)
-		goto abort;
-
-	if (sc->sc_pmixer == NULL) {
-		error = EINVAL;
-		goto abort;
-	}
-	if (t < 0) {
-		error = EINVAL;
-		goto abort;
-	}
-
-	sc->sc_pmixer->volume = t;
-	error = 0;
-abort:
-	mutex_exit(sc->sc_lock);
-	return error;
 }
 
 /*
