@@ -7070,6 +7070,42 @@ test_oper_write_vs_set()
 	test_oper(OPER_WRITE, OPER_SET);
 }
 
+// pad を poll する
+void
+test_pad_poll()
+{
+	struct pollfd pfd;
+	int fdpad;
+	int fdaudio;
+	int r;
+
+	TEST("pad_poll");
+
+	fdpad = OPEN("/dev/pad", O_RDONLY);
+	if (fdpad == -1)
+		err(1, "open: dev/pad");
+
+	/* XXX devicename */
+#define DEV "/dev/audio1"
+	fdaudio = OPEN(DEV, O_WRONLY);
+	if (fdaudio == -1)
+		err(1, "open: " DEV);
+
+	pfd.fd = fdpad;
+	pfd.events = POLLIN;
+	pfd.revents = 0;
+	r = POLL(&pfd, 1, 1000);
+	XP_SYS_EQ(1, r);
+	if (r == 1)
+		XP_EQ(POLLERR, pfd.revents);
+
+	XP_SYS_OK(fdaudio);
+	r = CLOSE(fdaudio);
+	XP_SYS_EQ(0, r);
+
+	r = CLOSE(fdpad);
+	XP_SYS_EQ(0, r);
+}
 
 // 並列テスト用
 struct concurrent_open {
@@ -7748,6 +7784,7 @@ struct testtable testtable[] = {
 	DEF(oper_write_vs_write),
 	DEF(oper_write_vs_get),
 	DEF(oper_write_vs_set),
+	DEF(pad_poll),
 	DEF(concurrent_open),
 	DEF(concurrent_close),
 	DEF(concurrent_write),

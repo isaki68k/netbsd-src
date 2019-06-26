@@ -40,6 +40,7 @@ __KERNEL_RCSID(0, "$NetBSD: pad.c,v 1.59 2019/05/08 13:40:18 isaki Exp $");
 #include <sys/kmem.h>
 #include <sys/kernel.h>
 #include <sys/device.h>
+#include <sys/poll.h>
 #include <sys/proc.h>
 #include <sys/condvar.h>
 #include <sys/select.h>
@@ -453,7 +454,7 @@ static int
 fops_pad_poll(struct file *fp, int events)
 {
 
-	return ENODEV;
+	return POLLERR;
 }
 
 static int
