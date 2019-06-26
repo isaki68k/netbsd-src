@@ -213,6 +213,43 @@ padattach(int n)
 }
 
 static int
+pad_match(device_t parent, cfdata_t data, void *opaque)
+{
+
+	return 1;
+}
+
+static void
+pad_attach(device_t parent, device_t self, void *opaque)
+{
+
+	aprint_normal_dev(self, "outputs: 44100Hz, 16-bit, stereo\n");
+}
+
+static int
+pad_detach(device_t self, int flags)
+{
+	struct pad_softc *sc;
+	int cmaj, mn;
+
+	sc = device_private(self);
+	cmaj = cdevsw_lookup_major(&pad_cdevsw);
+	mn = device_unit(sc->sc_dev);
+	if (!sc->sc_dying)
+		vdevgone(cmaj, mn, mn, VCHR);
+
+	return 0;
+}
+
+static void
+pad_childdet(device_t self, device_t child)
+{
+	struct pad_softc *sc = device_private(self);
+
+	sc->sc_audiodev = NULL;
+}
+
+static int
 pad_add_block(struct pad_softc *sc, uint8_t *blk, int blksize)
 {
 	int l;
@@ -254,43 +291,6 @@ pad_get_block(struct pad_softc *sc, pad_block_t *pb, int blksize)
 		sc->sc_rpos = 0;
 	}
 	sc->sc_buflen -= pb->pb_len;
-
-	return 0;
-}
-
-static int
-pad_match(device_t parent, cfdata_t data, void *opaque)
-{
-
-	return 1;
-}
-
-static void
-pad_childdet(device_t self, device_t child)
-{
-	struct pad_softc *sc = device_private(self);
-
-	sc->sc_audiodev = NULL;
-}
-
-static void
-pad_attach(device_t parent, device_t self, void *opaque)
-{
-
-	aprint_normal_dev(self, "outputs: 44100Hz, 16-bit, stereo\n");
-}
-
-static int
-pad_detach(device_t self, int flags)
-{
-	struct pad_softc *sc;
-	int cmaj, mn;
-
-	sc = device_private(self);
-	cmaj = cdevsw_lookup_major(&pad_cdevsw);
-	mn = device_unit(sc->sc_dev);
-	if (!sc->sc_dying)
-		vdevgone(cmaj, mn, mn, VCHR);
 
 	return 0;
 }
