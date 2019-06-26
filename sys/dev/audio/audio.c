@@ -5936,11 +5936,14 @@ audio_mixers_init(struct audio_softc *sc, int mode,
 	KASSERT(mutex_owned(sc->sc_lock));
 
 	if ((mode & AUMODE_PLAY)) {
-		if (sc->sc_pmixer) {
+		if (sc->sc_pmixer == NULL) {
+			sc->sc_pmixer = kmem_zalloc(sizeof(*sc->sc_pmixer),
+			    KM_SLEEP);
+		} else {
+			/* destroy() doesn't free memory. */
 			audio_mixer_destroy(sc, sc->sc_pmixer);
-			kmem_free(sc->sc_pmixer, sizeof(*sc->sc_pmixer));
+			memset(sc->sc_pmixer, 0, sizeof(*sc->sc_pmixer));
 		}
-		sc->sc_pmixer = kmem_zalloc(sizeof(*sc->sc_pmixer), KM_SLEEP);
 		error = audio_mixer_init(sc, AUMODE_PLAY, phwfmt, pfil);
 		if (error) {
 			aprint_error_dev(sc->sc_dev,
@@ -5951,11 +5954,14 @@ audio_mixers_init(struct audio_softc *sc, int mode,
 		}
 	}
 	if ((mode & AUMODE_RECORD)) {
-		if (sc->sc_rmixer) {
+		if (sc->sc_rmixer == NULL) {
+			sc->sc_rmixer = kmem_zalloc(sizeof(*sc->sc_rmixer),
+			    KM_SLEEP);
+		} else {
+			/* destroy() doesn't free memory. */
 			audio_mixer_destroy(sc, sc->sc_rmixer);
-			kmem_free(sc->sc_rmixer, sizeof(*sc->sc_rmixer));
+			memset(sc->sc_rmixer, 0, sizeof(*sc->sc_rmixer));
 		}
-		sc->sc_rmixer = kmem_zalloc(sizeof(*sc->sc_rmixer), KM_SLEEP);
 		error = audio_mixer_init(sc, AUMODE_RECORD, rhwfmt, rfil);
 		if (error) {
 			aprint_error_dev(sc->sc_dev,
