@@ -1760,10 +1760,7 @@ audiommap(struct file *fp, off_t *offp, size_t len, int prot, int *flagsp,
 
 /*
  * Open for audiobell.
- * sample_rate, encoding, precision and channels in arg are in-parameter
- * and indicates input encoding.
- * Stores allocated file to arg->file.
- * Stores blocksize to arg->blocksize.
+ * It stores allocated file to *filep.
  * If successful returns 0, otherwise errno.
  */
 int
