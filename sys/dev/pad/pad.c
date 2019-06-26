@@ -152,8 +152,8 @@ static const struct audio_format pad_formats[PAD_NFORMATS] = {
 
 extern void	padattach(int);
 
-static int	pad_add_block(pad_softc_t *, uint8_t *, int);
-static int	pad_get_block(pad_softc_t *, pad_block_t *, int);
+static int	pad_add_block(struct pad_softc *, uint8_t *, int);
+static int	pad_get_block(struct pad_softc *, pad_block_t *, int);
 
 dev_type_open(pad_open);
 dev_type_close(cdev_pad_close);
@@ -188,7 +188,8 @@ const struct fileops pad_fileops = {
 	.fo_restart = fnullop_restart
 };
 
-CFATTACH_DECL2_NEW(pad, sizeof(pad_softc_t), pad_match, pad_attach, pad_detach,
+CFATTACH_DECL2_NEW(pad, sizeof(struct pad_softc),
+    pad_match, pad_attach, pad_detach,
     NULL, NULL, pad_childdet);
 
 void
@@ -209,7 +210,7 @@ padattach(int n)
 }
 
 static int
-pad_add_block(pad_softc_t *sc, uint8_t *blk, int blksize)
+pad_add_block(struct pad_softc *sc, uint8_t *blk, int blksize)
 {
 	int l;
 
@@ -234,7 +235,7 @@ pad_add_block(pad_softc_t *sc, uint8_t *blk, int blksize)
 }
 
 static int
-pad_get_block(pad_softc_t *sc, pad_block_t *pb, int blksize)
+pad_get_block(struct pad_softc *sc, pad_block_t *pb, int blksize)
 {
 	int l;
 
@@ -264,7 +265,7 @@ pad_match(device_t parent, cfdata_t data, void *opaque)
 static void
 pad_childdet(device_t self, device_t child)
 {
-	pad_softc_t *sc = device_private(self);
+	struct pad_softc *sc = device_private(self);
 
 	sc->sc_audiodev = NULL;
 }
@@ -280,7 +281,7 @@ pad_attach(device_t parent, device_t self, void *opaque)
 static int
 pad_detach(device_t self, int flags)
 {
-	pad_softc_t *sc;
+	struct pad_softc *sc;
 	int cmaj, mn;
 
 	sc = device_private(self);
@@ -295,7 +296,7 @@ pad_detach(device_t self, int flags)
 int
 pad_open(dev_t dev, int flags, int fmt, struct lwp *l)
 {
-	pad_softc_t *sc;
+	struct pad_softc *sc;
 	struct file *fp;
 	device_t paddev;
 	cfdata_t cf;
@@ -423,7 +424,7 @@ pad_close(struct pad_softc *sc)
 static int
 fops_pad_close(struct file *fp)
 {
-	pad_softc_t *sc;
+	struct pad_softc *sc;
 	int error;
 
 	sc = fp->f_pad;
@@ -439,7 +440,7 @@ fops_pad_close(struct file *fp)
 int
 cdev_pad_close(dev_t dev, int flags, int ifmt, struct lwp *l)
 {
-	pad_softc_t *sc;
+	struct pad_softc *sc;
 	sc = device_private(device_lookup(&pad_cd, PADUNIT(dev)));
 
 	return pad_close(sc);
@@ -502,7 +503,7 @@ pad_mmap(struct file *fp, off_t *offp, size_t len, int prot, int *flagsp,
 int
 cdev_pad_read(dev_t dev, struct uio *uio, int ioflag)
 {
-	pad_softc_t *sc;
+	struct pad_softc *sc;
 	sc = device_private(device_lookup(&pad_cd, PADUNIT(dev)));
 	if (sc == NULL)
 		return ENXIO;
@@ -514,7 +515,7 @@ static int
 fops_pad_read(struct file *fp, off_t *offp, struct uio *uio, kauth_cred_t cred,
 	  int ioflag)
 {
-	pad_softc_t *sc;
+	struct pad_softc *sc;
 
 	sc = fp->f_pad;
 	if (sc == NULL)
@@ -581,9 +582,9 @@ pad_set_format(void *opaque, int setmode,
     const audio_params_t *play, const audio_params_t *rec,
     audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
 {
-	pad_softc_t *sc;
+	struct pad_softc *sc;
 
-	sc = (pad_softc_t *)opaque;
+	sc = (struct pad_softc *)opaque;
 
 	KASSERT(mutex_owned(&sc->sc_lock));
 
@@ -598,11 +599,11 @@ static int
 pad_start_output(void *opaque, void *block, int blksize,
     void (*intr)(void *), void *intrarg)
 {
-	pad_softc_t *sc;
+	struct pad_softc *sc;
 	int err;
 	int ms;
 
-	sc = (pad_softc_t *)opaque;
+	sc = (struct pad_softc *)opaque;
 
 	KASSERT(mutex_owned(&sc->sc_intr_lock));
 
@@ -629,9 +630,9 @@ static int
 pad_start_input(void *opaque, void *block, int blksize,
     void (*intr)(void *), void *intrarg)
 {
-	pad_softc_t *sc __diagused;
+	struct pad_softc *sc __diagused;
 
-	sc = (pad_softc_t *)opaque;
+	sc = (struct pad_softc *)opaque;
 
 	KASSERT(mutex_owned(&sc->sc_intr_lock));
 
@@ -641,9 +642,9 @@ pad_start_input(void *opaque, void *block, int blksize,
 static int
 pad_halt_output(void *opaque)
 {
-	pad_softc_t *sc;
+	struct pad_softc *sc;
 
-	sc = (pad_softc_t *)opaque;
+	sc = (struct pad_softc *)opaque;
 
 	DPRINTF("%s\n", __func__);
 	KASSERT(mutex_owned(&sc->sc_intr_lock));
@@ -661,9 +662,9 @@ pad_halt_output(void *opaque)
 static int
 pad_halt_input(void *opaque)
 {
-	pad_softc_t *sc __diagused;
+	struct pad_softc *sc __diagused;
 
-	sc = (pad_softc_t *)opaque;
+	sc = (struct pad_softc *)opaque;
 
 	KASSERT(mutex_owned(&sc->sc_intr_lock));
 
@@ -673,10 +674,10 @@ pad_halt_input(void *opaque)
 static void
 pad_done_output(void *arg)
 {
-	pad_softc_t *sc;
+	struct pad_softc *sc;
 
 	DPRINTF("%s\n", __func__);
-	sc = (pad_softc_t *)arg;
+	sc = (struct pad_softc *)arg;
 	callout_stop(&sc->sc_pcallout);
 
 	mutex_enter(&sc->sc_intr_lock);
@@ -697,9 +698,9 @@ pad_getdev(void *opaque, struct audio_device *ret)
 static int
 pad_set_port(void *opaque, mixer_ctrl_t *mc)
 {
-	pad_softc_t *sc;
+	struct pad_softc *sc;
 
-	sc = (pad_softc_t *)opaque;
+	sc = (struct pad_softc *)opaque;
 
 	KASSERT(mutex_owned(&sc->sc_lock));
 
@@ -718,9 +719,9 @@ pad_set_port(void *opaque, mixer_ctrl_t *mc)
 static int
 pad_get_port(void *opaque, mixer_ctrl_t *mc)
 {
-	pad_softc_t *sc;
+	struct pad_softc *sc;
 
-	sc = (pad_softc_t *)opaque;
+	sc = (struct pad_softc *)opaque;
 
 	KASSERT(mutex_owned(&sc->sc_lock));
 
@@ -739,9 +740,9 @@ pad_get_port(void *opaque, mixer_ctrl_t *mc)
 static int
 pad_query_devinfo(void *opaque, mixer_devinfo_t *di)
 {
-	pad_softc_t *sc __diagused;
+	struct pad_softc *sc __diagused;
 
-	sc = (pad_softc_t *)opaque;
+	sc = (struct pad_softc *)opaque;
 
 	KASSERT(mutex_owned(&sc->sc_lock));
 
@@ -782,9 +783,9 @@ pad_query_devinfo(void *opaque, mixer_devinfo_t *di)
 static int
 pad_get_props(void *opaque)
 {
-	pad_softc_t *sc __diagused;
+	struct pad_softc *sc __diagused;
 
-	sc = (pad_softc_t *)opaque;
+	sc = (struct pad_softc *)opaque;
 
 	KASSERT(mutex_owned(&sc->sc_lock));
 
@@ -794,9 +795,9 @@ pad_get_props(void *opaque)
 static void
 pad_get_locks(void *opaque, kmutex_t **intr, kmutex_t **thread)
 {
-	pad_softc_t *sc;
+	struct pad_softc *sc;
 
-	sc = (pad_softc_t *)opaque;
+	sc = (struct pad_softc *)opaque;
 
 	*intr = &sc->sc_intr_lock;
 	*thread = &sc->sc_lock;
