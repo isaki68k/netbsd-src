@@ -93,9 +93,9 @@ static int	pad_set_format(void *, int,
 		    const audio_params_t *, const audio_params_t *,
 		    audio_filter_reg_t *, audio_filter_reg_t *);
 static int	pad_start_output(void *, void *, int,
-				    void (*)(void *), void *);
+		    void (*)(void *), void *);
 static int	pad_start_input(void *, void *, int,
-				   void (*)(void *), void *);
+		    void (*)(void *), void *);
 static int	pad_halt_output(void *);
 static int	pad_halt_input(void *);
 static int	pad_getdev(void *, struct audio_device *);
@@ -108,32 +108,35 @@ static void	pad_get_locks(void *, kmutex_t **, kmutex_t **);
 static void	pad_done_output(void *);
 static void	pad_swvol_codec(audio_filter_arg_t *);
 
-static int pad_close(struct pad_softc *);
-static int pad_read(struct pad_softc *, off_t *, struct uio *, kauth_cred_t, int);
+static int	pad_close(struct pad_softc *);
+static int	pad_read(struct pad_softc *, off_t *, struct uio *,
+		    kauth_cred_t, int);
 
-static int fops_pad_close(struct file *);
-static int fops_pad_read(struct file *, off_t *, struct uio *, kauth_cred_t, int);
-static int fops_pad_write(struct file *, off_t *, struct uio *, kauth_cred_t, int);
-static int fops_pad_ioctl(struct file *, u_long, void *);
-static int fops_pad_kqfilter(struct file *, struct knote *);
-static int fops_pad_poll(struct file *, int);
-static int fops_pad_stat(struct file *, struct stat *);
-static int fops_pad_mmap(struct file *, off_t *, size_t, int, int *, int *,
-			   struct uvm_object **, int *);
+static int	fops_pad_close(struct file *);
+static int	fops_pad_read(struct file *, off_t *, struct uio *,
+		    kauth_cred_t, int);
+static int	fops_pad_write(struct file *, off_t *, struct uio *,
+		    kauth_cred_t, int);
+static int	fops_pad_ioctl(struct file *, u_long, void *);
+static int	fops_pad_kqfilter(struct file *, struct knote *);
+static int	fops_pad_poll(struct file *, int);
+static int	fops_pad_stat(struct file *, struct stat *);
+static int	fops_pad_mmap(struct file *, off_t *, size_t, int, int *, int *,
+		    struct uvm_object **, int *);
 
 static const struct audio_hw_if pad_hw_if = {
-	.query_format = pad_query_format,
-	.set_format = pad_set_format,
-	.start_output = pad_start_output,
-	.start_input = pad_start_input,
-	.halt_output = pad_halt_output,
-	.halt_input = pad_halt_input,
-	.getdev = pad_getdev,
-	.set_port = pad_set_port,
-	.get_port = pad_get_port,
-	.query_devinfo = pad_query_devinfo,
-	.get_props = pad_get_props,
-	.get_locks = pad_get_locks,
+	.query_format	= pad_query_format,
+	.set_format	= pad_set_format,
+	.start_output	= pad_start_output,
+	.start_input	= pad_start_input,
+	.halt_output	= pad_halt_output,
+	.halt_input	= pad_halt_input,
+	.getdev		= pad_getdev,
+	.set_port	= pad_set_port,
+	.get_port	= pad_get_port,
+	.query_devinfo	= pad_query_devinfo,
+	.get_props	= pad_get_props,
+	.get_locks	= pad_get_locks,
 };
 
 #define PAD_NFORMATS	1
@@ -160,32 +163,32 @@ dev_type_close(cdev_pad_close);
 dev_type_read(cdev_pad_read);
 
 const struct cdevsw pad_cdevsw = {
-	.d_open = cdev_pad_open,
-	.d_close = cdev_pad_close,
-	.d_read = cdev_pad_read,
-	.d_write = nowrite,
-	.d_ioctl = noioctl,
-	.d_stop = nostop,
-	.d_tty = notty,
-	.d_poll = nopoll,
-	.d_mmap = nommap,
-	.d_kqfilter = nokqfilter,
-	.d_discard = nodiscard,
-	.d_flag = D_OTHER | D_MPSAFE,
+	.d_open		= cdev_pad_open,
+	.d_close	= cdev_pad_close,
+	.d_read		= cdev_pad_read,
+	.d_write	= nowrite,
+	.d_ioctl	= noioctl,
+	.d_stop		= nostop,
+	.d_tty		= notty,
+	.d_poll		= nopoll,
+	.d_mmap		= nommap,
+	.d_kqfilter	= nokqfilter,
+	.d_discard	= nodiscard,
+	.d_flag		= D_OTHER | D_MPSAFE,
 };
 
 const struct fileops pad_fileops = {
-	.fo_name = "pad",
-	.fo_read = fops_pad_read,
-	.fo_write = fops_pad_write,
-	.fo_ioctl = fops_pad_ioctl,
-	.fo_fcntl = fnullop_fcntl,
-	.fo_stat = fops_pad_stat,
-	.fo_poll = fops_pad_poll,
-	.fo_close = fops_pad_close,
-	.fo_mmap = fops_pad_mmap,
-	.fo_kqfilter = fops_pad_kqfilter,
-	.fo_restart = fnullop_restart
+	.fo_name	= "pad",
+	.fo_read	= fops_pad_read,
+	.fo_write	= fops_pad_write,
+	.fo_ioctl	= fops_pad_ioctl,
+	.fo_fcntl	= fnullop_fcntl,
+	.fo_stat	= fops_pad_stat,
+	.fo_poll	= fops_pad_poll,
+	.fo_close	= fops_pad_close,
+	.fo_mmap	= fops_pad_mmap,
+	.fo_kqfilter	= fops_pad_kqfilter,
+	.fo_restart	= fnullop_restart
 };
 
 CFATTACH_DECL2_NEW(pad, sizeof(struct pad_softc),
@@ -273,9 +276,8 @@ pad_childdet(device_t self, device_t child)
 static void
 pad_attach(device_t parent, device_t self, void *opaque)
 {
-	aprint_normal_dev(self, "outputs: 44100Hz, 16-bit, stereo\n");
 
-	return;
+	aprint_normal_dev(self, "outputs: 44100Hz, 16-bit, stereo\n");
 }
 
 static int
@@ -367,7 +369,8 @@ cdev_pad_open(dev_t dev, int flags, int fmt, struct lwp *l)
 	sc->sc_audiodev = audio_attach_mi(&pad_hw_if, sc, sc->sc_dev);
 
 	if (!pmf_device_register(sc->sc_dev, NULL, NULL))
-		aprint_error_dev(sc->sc_dev, "couldn't establish power handler\n");
+		aprint_error_dev(sc->sc_dev,
+		    "couldn't establish power handler\n");
 
 	if (PADUNIT(dev) == PADCLONER) {
 		error = fd_clone(fp, fd, flags, &pad_fileops, sc);
@@ -449,6 +452,7 @@ cdev_pad_close(dev_t dev, int flags, int ifmt, struct lwp *l)
 static int
 fops_pad_poll(struct file *fp, int events)
 {
+
 	return ENODEV;
 }
 
@@ -462,7 +466,8 @@ fops_pad_kqfilter(struct file *fp, struct knote *kn)
 	if (sc == NULL)
 		return EIO;
 
-	dev = makedev(cdevsw_lookup_major(&pad_cdevsw), device_unit(sc->sc_dev));
+	dev = makedev(cdevsw_lookup_major(&pad_cdevsw),
+	    device_unit(sc->sc_dev));
 
 	return seltrue_kqfilter(dev, kn);
 }
@@ -470,6 +475,7 @@ fops_pad_kqfilter(struct file *fp, struct knote *kn)
 static int
 fops_pad_ioctl(struct file *fp, u_long cmd, void *data)
 {
+
 	return ENODEV;
 }
 
@@ -484,7 +490,8 @@ fops_pad_stat(struct file *fp, struct stat *st)
 
 	memset(st, 0, sizeof(*st));
 
-	st->st_dev = makedev(cdevsw_lookup_major(&pad_cdevsw), device_unit(sc->sc_dev));
+	st->st_dev = makedev(cdevsw_lookup_major(&pad_cdevsw),
+	    device_unit(sc->sc_dev));
 
 	st->st_uid = kauth_cred_geteuid(fp->f_cred);
 	st->st_gid = kauth_cred_getegid(fp->f_cred);
@@ -495,8 +502,9 @@ fops_pad_stat(struct file *fp, struct stat *st)
 
 static int
 fops_pad_mmap(struct file *fp, off_t *offp, size_t len, int prot, int *flagsp,
-	     int *advicep, struct uvm_object **uobjp, int *maxprotp)
+    int *advicep, struct uvm_object **uobjp, int *maxprotp)
 {
+
 	return 1;
 }
 
@@ -504,6 +512,7 @@ int
 cdev_pad_read(dev_t dev, struct uio *uio, int ioflag)
 {
 	struct pad_softc *sc;
+
 	sc = device_private(device_lookup(&pad_cd, PADUNIT(dev)));
 	if (sc == NULL)
 		return ENXIO;
@@ -513,7 +522,7 @@ cdev_pad_read(dev_t dev, struct uio *uio, int ioflag)
 
 static int
 fops_pad_read(struct file *fp, off_t *offp, struct uio *uio, kauth_cred_t cred,
-	  int ioflag)
+    int ioflag)
 {
 	struct pad_softc *sc;
 
@@ -526,7 +535,7 @@ fops_pad_read(struct file *fp, off_t *offp, struct uio *uio, kauth_cred_t cred,
 
 static int
 pad_read(struct pad_softc *sc, off_t *offp, struct uio *uio, kauth_cred_t cred,
-	  int ioflag)
+    int ioflag)
 {
 	pad_block_t pb;
 	int len;
@@ -565,8 +574,9 @@ pad_read(struct pad_softc *sc, off_t *offp, struct uio *uio, kauth_cred_t cred,
 
 static int
 fops_pad_write(struct file *fp, off_t *offp, struct uio *uio, kauth_cred_t cred,
-	  int ioflag)
+    int ioflag)
 {
+
 	return EOPNOTSUPP;
 }
 
@@ -688,6 +698,7 @@ pad_done_output(void *arg)
 static int
 pad_getdev(void *opaque, struct audio_device *ret)
 {
+
 	strlcpy(ret->name, "Virtual Audio", sizeof(ret->name));
 	strlcpy(ret->version, osrelease, sizeof(ret->version));
 	strlcpy(ret->config, "pad", sizeof(ret->config));
