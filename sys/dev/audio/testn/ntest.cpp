@@ -7163,6 +7163,9 @@ test_pad_ioctl_1()
 	test_pad_ioctl("/dev/pad0");
 }
 
+// XXX 自動取得できない場合の audio unit number
+#define PAD_AUDIO_UNIT 1
+
 // pad を poll する
 void
 test_pad_poll()
@@ -7185,8 +7188,7 @@ test_pad_poll()
 	if (r == -1) {
 		if (errno == ENODEV) {
 			// この ioctl がない環境なので仕方ないのでコンパイル時指定
-			// XXX 環境に合わせて変えること
-			unit = 1;
+			unit = PAD_AUDIO_UNIT;
 		} else {
 			// それ以外はエラー
 			XP_SYS_EQ(0, r);
@@ -7206,11 +7208,68 @@ test_pad_poll()
 	if (r == 1)
 		XP_EQ(POLLERR, pfd.revents);
 
-	XP_SYS_OK(fdaudio);
 	r = CLOSE(fdaudio);
 	XP_SYS_EQ(0, r);
 
 	r = CLOSE(fdpad);
+	XP_SYS_EQ(0, r);
+}
+
+// audio はオープンせずに pad だけ close するケース
+void
+test_pad_close_1()
+{
+	int fdpad;
+	int r;
+
+	TEST("pad_close_1");
+
+	fdpad = OPEN("/dev/pad", O_RDONLY);
+	if (fdpad == -1)
+		err(1, "open: dev/pad");
+
+	r = CLOSE(fdpad);
+	XP_SYS_EQ(0, r);
+}
+
+// audio より先に pad を close するケース
+// (正順にクローズするのは pad_ioctl とかで通ってるのでやらない)
+void
+test_pad_close_2()
+{
+	char devname[16];
+	int fdpad;
+	int fdaudio;
+	int unit;
+	int r;
+
+	TEST("pad_close_2");
+
+	fdpad = OPEN("/dev/pad", O_RDONLY);
+	if (fdpad == -1)
+		err(1, "open: dev/pad");
+
+	// 可能なら紐づいてる audio を自動取得
+	r = IOCTL(fdpad, PAD_GET_AUDIOUNIT, &unit, "");
+	if (r == -1) {
+		if (errno == ENODEV) {
+			// この ioctl がない環境なので仕方ないのでコンパイル時指定
+			unit = PAD_AUDIO_UNIT;
+		} else {
+			// それ以外はエラー
+			XP_SYS_EQ(0, r);
+		}
+	}
+	snprintf(devname, sizeof(devname), "/dev/audio%d", unit);
+
+	fdaudio = OPEN(devname, O_WRONLY);
+	if (fdaudio == -1)
+		err(1, "open: %s", devname);
+
+	r = CLOSE(fdpad);
+	XP_SYS_EQ(0, r);
+
+	r = CLOSE(fdaudio);
 	XP_SYS_EQ(0, r);
 }
 
@@ -7894,6 +7953,8 @@ struct testtable testtable[] = {
 	DEF(pad_ioctl_0),
 	DEF(pad_ioctl_1),
 	DEF(pad_poll),
+	DEF(pad_close_1),
+	DEF(pad_close_2),
 	DEF(concurrent_open),
 	DEF(concurrent_close),
 	DEF(concurrent_write),
