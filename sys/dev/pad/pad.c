@@ -51,6 +51,7 @@ __KERNEL_RCSID(0, "$NetBSD: pad.c,v 1.59 2019/05/08 13:40:18 isaki Exp $");
 #include <dev/audio/audio_if.h>
 #include <dev/audio/audiovar.h>
 
+#include <dev/pad/padio.h>
 #include <dev/pad/padvar.h>
 
 /* #define PAD_DEBUG */
@@ -112,6 +113,7 @@ static void	pad_swvol_codec(audio_filter_arg_t *);
 static int	pad_close(struct pad_softc *);
 static int	pad_read(struct pad_softc *, off_t *, struct uio *,
 		    kauth_cred_t, int);
+static int	pad_ioctl(struct pad_softc *, u_long, void *);
 
 static int	fops_pad_close(struct file *);
 static int	fops_pad_read(struct file *, off_t *, struct uio *,
@@ -162,13 +164,14 @@ static int	pad_get_block(struct pad_softc *, pad_block_t *, int);
 dev_type_open(cdev_pad_open);
 dev_type_close(cdev_pad_close);
 dev_type_read(cdev_pad_read);
+dev_type_ioctl(cdev_pad_ioctl);
 
 const struct cdevsw pad_cdevsw = {
 	.d_open		= cdev_pad_open,
 	.d_close	= cdev_pad_close,
 	.d_read		= cdev_pad_read,
 	.d_write	= nowrite,
-	.d_ioctl	= noioctl,
+	.d_ioctl	= cdev_pad_ioctl,
 	.d_stop		= nostop,
 	.d_tty		= notty,
 	.d_poll		= nopoll,
@@ -473,11 +476,43 @@ fops_pad_kqfilter(struct file *fp, struct knote *kn)
 	return seltrue_kqfilter(dev, kn);
 }
 
+int
+cdev_pad_ioctl(dev_t dev, u_long cmd, void *addr, int flag, struct lwp *l)
+{
+	struct pad_softc *sc;
+
+	sc = device_private(device_lookup(&pad_cd, PADUNIT(dev)));
+	if (sc == NULL)
+		return ENXIO;
+
+	return pad_ioctl(sc, cmd, addr);
+}
+
 static int
-fops_pad_ioctl(struct file *fp, u_long cmd, void *data)
+fops_pad_ioctl(struct file *fp, u_long cmd, void *addr)
+{
+	struct pad_softc *sc;
+
+	sc = fp->f_pad;
+	if (sc == NULL)
+		return EIO;
+
+	return pad_ioctl(sc, cmd, addr);
+}
+
+static int
+pad_ioctl(struct pad_softc *sc, u_long cmd, void *addr)
 {
 
-	return ENODEV;
+	switch (cmd) {
+	case PAD_GET_AUDIOUNIT:
+		/* Return the unit number of associated audio device */
+		*(int *)addr = device_unit(sc->sc_audiodev);
+		break;
+	default:
+		return EINVAL;
+	}
+	return 0;
 }
 
 static int
