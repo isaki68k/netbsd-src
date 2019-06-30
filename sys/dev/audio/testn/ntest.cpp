@@ -22,6 +22,7 @@
 #include <sys/param.h>
 #include <sys/time.h>
 #include <sys/event.h>
+#include <sys/stat.h>
 #include <sys/sysctl.h>
 #include <sys/wait.h>
 
@@ -7070,6 +7071,98 @@ test_oper_write_vs_set()
 	test_oper(OPER_WRITE, OPER_SET);
 }
 
+// pad に対応する audio デバイスを問い合わせる ioctl を作りたい。
+// /dev/pad 編。
+static void
+test_pad_ioctl(const char *padfilename)
+{
+#if 1//defined(PAD_GET_AUDIOUNIT)
+#include "../../pad/padio.h"
+	struct stat st;
+	char devname[16];
+	int fdpad1;
+	int fdpad2;
+	int fdaudio1;
+	int fdaudio2;
+	int unit1;
+	int unit2;
+	int r;
+
+	if (netbsd < 9) {
+		XP_SKIP("PAD_GET_AUDIOUNIT not available");
+		return;
+	}
+
+	// パスがデバイスファイルでなければテストする意味ない。
+	// 特に /dev/pad が /dev/pad0 とかをさしてるケース。
+	r = lstat(padfilename, &st);
+	if (r == -1)
+		err(1, "stat: %s", padfilename);
+	if (S_ISLNK(st.st_mode)) {
+		XP_SKIP("%s is not real device file", padfilename);
+		return;
+	}
+
+	// 1本目
+	fdpad1 = OPEN(padfilename, O_RDONLY);
+	if (fdpad1 == -1)
+		err(1, "open: %s", padfilename);
+
+	unit1 = -1;
+	r = IOCTL(fdpad1, PAD_GET_AUDIOUNIT, &unit1, "");
+	XP_SYS_EQ(0, r);
+	if (unit1 < 0)
+		XP_FAIL("unit1 expects >=0 but %d", unit1);
+
+	snprintf(devname, sizeof(devname), "/dev/audio%d", unit1);
+	fdaudio1 = OPEN(devname, O_WRONLY);
+	XP_SYS_OK(fdaudio1);
+
+	// 2本目
+	fdpad2 = OPEN("/dev/pad", O_RDONLY);
+	XP_SYS_OK(fdpad2);
+
+	unit2 = -1;
+	r = IOCTL(fdpad2, PAD_GET_AUDIOUNIT, &unit2, "");
+	XP_SYS_EQ(0, r);
+	if (unit2 < 0)
+		XP_FAIL("unit2 expects >=0 but %d", unit2);
+	// たぶん1つ上のはず?
+	XP_EQ(unit1 + 1, unit2);
+
+	snprintf(devname, sizeof(devname), "/dev/audio%d", unit2);
+	fdaudio2 = OPEN(devname, O_WRONLY);
+	XP_SYS_OK(fdaudio2);
+
+	// 解放
+	r = CLOSE(fdaudio2);
+	XP_SYS_EQ(0, r);
+	r = CLOSE(fdpad2);
+	XP_SYS_EQ(0, r);
+
+	r = CLOSE(fdaudio1);
+	XP_SYS_EQ(0, r);
+	r = CLOSE(fdpad1);
+	XP_SYS_EQ(0, r);
+#else
+	XP_SKIP("PAD_GET_AUDIOUNIT not defined");
+#endif
+}
+
+void
+test_pad_ioctl_0()
+{
+	TEST("pad_ioctl_0");
+	test_pad_ioctl("/dev/pad");
+}
+
+void
+test_pad_ioctl_1()
+{
+	TEST("pad_ioctl_1");
+	test_pad_ioctl("/dev/pad0");
+}
+
 // pad を poll する
 void
 test_pad_poll()
@@ -7784,6 +7877,8 @@ struct testtable testtable[] = {
 	DEF(oper_write_vs_write),
 	DEF(oper_write_vs_get),
 	DEF(oper_write_vs_set),
+	DEF(pad_ioctl_0),
+	DEF(pad_ioctl_1),
 	DEF(pad_poll),
 	DEF(concurrent_open),
 	DEF(concurrent_close),
