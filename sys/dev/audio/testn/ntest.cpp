@@ -7167,9 +7167,11 @@ test_pad_ioctl_1()
 void
 test_pad_poll()
 {
+	char devname[16];
 	struct pollfd pfd;
 	int fdpad;
 	int fdaudio;
+	int unit;
 	int r;
 
 	TEST("pad_poll");
@@ -7178,11 +7180,23 @@ test_pad_poll()
 	if (fdpad == -1)
 		err(1, "open: dev/pad");
 
-	/* XXX devicename */
-#define DEV "/dev/audio1"
-	fdaudio = OPEN(DEV, O_WRONLY);
+	// 可能なら紐づいてる audio を自動取得
+	r = IOCTL(fdpad, PAD_GET_AUDIOUNIT, &unit, "");
+	if (r == -1) {
+		if (errno == ENODEV) {
+			// この ioctl がない環境なので仕方ないのでコンパイル時指定
+			// XXX 環境に合わせて変えること
+			unit = 1;
+		} else {
+			// それ以外はエラー
+			XP_SYS_EQ(0, r);
+		}
+	}
+	snprintf(devname, sizeof(devname), "/dev/audio%d", unit);
+
+	fdaudio = OPEN(devname, O_WRONLY);
 	if (fdaudio == -1)
-		err(1, "open: " DEV);
+		err(1, "open: %s", devname);
 
 	pfd.fd = fdpad;
 	pfd.events = POLLIN;
