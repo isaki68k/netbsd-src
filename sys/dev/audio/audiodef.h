@@ -214,6 +214,7 @@ struct audio_trackmixer {
 	 * Must be protected by sc_intr_lock.
 	 */
 	u_int		volume;
+	int			voltimer;	/* volume recovery timer */
 
 	audio_format2_t	mixfmt;
 	void		*mixsample;	/* mixing buf in double-sized int */
