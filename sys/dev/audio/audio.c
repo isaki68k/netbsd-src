@@ -202,7 +202,7 @@ __KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.13 2019/06/08 08:20:10 isaki Exp $");
  * 3: + TRACEs except interrupt
  * 4: + TRACEs including interrupt
  */
-//#define AUDIO_DEBUG 1
+#define AUDIO_DEBUG 2
 
 #if defined(AUDIO_DEBUG)
 
@@ -2156,6 +2156,7 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
 		if (sc->sc_popens == 0) {
 			mutex_enter(sc->sc_intr_lock);
 			sc->sc_pmixer->volume = 256;
+			sc->sc_pmixer->voltimer = 0;
 			mutex_exit(sc->sc_intr_lock);
 		}
 	}
