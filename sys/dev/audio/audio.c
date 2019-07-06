@@ -4974,9 +4974,11 @@ audio_pmixer_process(struct audio_softc *sc)
 		    frametobyte(&mixer->mixfmt, frame_count));
 	} else {
 		if (mixed > 1) {
+			/* If there are multiple tracks, do auto gain control */
 			audio_pmixer_agc(mixer, sample_count);
 		}
-		/* Apply Master Volume. */
+
+		/* Apply master volume */
 		if (mixer->volume < 256) {
 			m = mixer->mixsample;
 			for (i = 0; i < sample_count; i++) {
@@ -4984,14 +4986,19 @@ audio_pmixer_process(struct audio_softc *sc)
 				m++;
 			}
 
-			/* ボリューム適用したので次回のためにミキサボリュームを回復 */
-			// 0.1 秒ごとに 1 回復 = 10Hz
-			const int VOLHZ = 10;
+			/*
+			 * Recover the volume gradually at the pace of
+			 * several times per second.  If it's too fast, you
+			 * can recognize that the volume changes up and down
+			 * quickly and it's not so comfortable.
+			 */
 			mixer->voltimer += mixer->blktime_n;
-			if (mixer->voltimer * VOLHZ >= mixer->blktime_d) {
+			if (mixer->voltimer * 4 >= mixer->blktime_d) {
 				mixer->volume++;
 				mixer->voltimer = 0;
-				TRACE(1, "recover volume: %d", mixer->volume);
+#if defined(AUDIO_DEBUG_AGC)
+				TRACE(1, "volume recover: %d", mixer->volume);
+#endif
 			}
 		}
 	}
@@ -5036,26 +5043,29 @@ audio_pmixer_process(struct audio_softc *sc)
 }
 
 /*
- * auto gain control
+ * Do auto gain control.
+ * Must be called sc_intr_lock held.
  */
 static void
 audio_pmixer_agc(audio_trackmixer_t *mixer, int sample_count)
 {
+	struct audio_softc *sc __unused;
+	aint2_t val;
 	aint2_t maxval;
 	aint2_t minval;
 	aint2_t over_plus;
 	aint2_t over_minus;
 	aint2_t *m;
+	int newvol;
 	int i;
-	struct audio_softc *sc = mixer->sc;
+
+	sc = mixer->sc;
 
 	/* Overflow detection */
 	maxval = AINT_T_MAX;
 	minval = AINT_T_MIN;
 	m = mixer->mixsample;
 	for (i = 0; i < sample_count; i++) {
-		aint2_t val;
-
 		val = *m++;
 		if (val > maxval)
 			maxval = val;
@@ -5063,27 +5073,27 @@ audio_pmixer_agc(audio_trackmixer_t *mixer, int sample_count)
 			minval = val;
 	}
 
-	/* あふれ量の絶対値に変換 */
+	/* Absolute value of overflowed amount */
 	over_plus = maxval - AINT_T_MAX;
 	over_minus = AINT_T_MIN - minval;
 
 	if (over_plus > 0 || over_minus > 0) {
-		aint2_t newvol;
-		/* あふれた量が多い符号側を計算 */
 		if (over_plus > over_minus) {
 			newvol = (int)((aint2_t)AINT_T_MAX * 256 / maxval);
 		} else {
 			newvol = (int)((aint2_t)AINT_T_MIN * 256 / minval);
 		}
 
-		/* ボリュームを小さくする方向だけ、ミキサボリュームを変更 */
-		// 変更なしの時もタイマーはリセットしたい。
+		/*
+		 * Change the volume only if new one is smaller.
+		 * Reset the timer even if the volume isn't changed.
+		 */
 		if (newvol <= mixer->volume) {
 			mixer->volume = newvol;
 			mixer->voltimer = 0;
-			TRACE(1,
-			    "auto volume adjust: volume %d",
-			    mixer->volume);
+#if defined(AUDIO_DEBUG_AGC)
+			TRACE(1, "auto volume adjust: %d", mixer->volume);
+#endif
 		}
 	}
 }
