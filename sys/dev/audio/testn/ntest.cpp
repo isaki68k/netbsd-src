@@ -1631,7 +1631,7 @@ test_open_6()
 {
 	char name[32];
 	char cmd[64];
-	int multiuser;
+	bool multiuser;
 	int fd0;
 	int fd1;
 	int r;
@@ -1648,14 +1648,14 @@ test_open_6()
 		if (netbsd == 7) {
 			if (i == 1)
 				break;
-			multiuser = 0;
+			multiuser = false;
 		} else {
-			multiuser = 1 - i;
-			DESC("multiuser%d", multiuser);
+			multiuser = (i == 0);
+			DESC("multiuser%d", (int)multiuser);
 
 			snprintf(name, sizeof(name), "hw.%s.multiuser", hwconfigname());
 			snprintf(cmd, sizeof(cmd),
-				"sysctl -w %s=%d > /dev/null", name, multiuser);
+				"sysctl -w %s=%d > /dev/null", name, (int)multiuser);
 			r = SYSTEM(cmd);
 			if (r == -1)
 				err(1, "system: %s", cmd);
@@ -1663,13 +1663,13 @@ test_open_6()
 				errx(1, "system failed: %s", cmd);
 
 			// 確認
-			int newval = 0;
+			bool newval = false;
 			size_t len = sizeof(newval);
 			r = SYSCTLBYNAME(name, &newval, &len, NULL, 0);
 			if (r == -1)
 				err(1, "multiuser");
 			if (newval != multiuser)
-				errx(1, "set multiuser=%d failed", multiuser);
+				errx(1, "set multiuser=%d failed", (int)multiuser);
 		}
 
 		// まず root でオープン
@@ -6587,7 +6587,7 @@ test_audioctl_open_4()
 	int fd;
 	int fc;
 	int r;
-	int multiuser;
+	bool multiuser;
 	uid_t ouid;
 
 	TEST("audioctl_open_4");
@@ -6605,12 +6605,12 @@ test_audioctl_open_4()
 			if (i == 1)
 				break;
 		} else {
-			multiuser = 1 - i;
-			DESC("multiuser%d", multiuser);
+			multiuser = (i == 0);
+			DESC("multiuser%d", (int)multiuser);
 
 			snprintf(name, sizeof(name), "hw.%s.multiuser", hwconfigname());
 			snprintf(cmd, sizeof(cmd),
-				"sysctl -w %s=%d > /dev/null", name, multiuser);
+				"sysctl -w %s=%d > /dev/null", name, (int)multiuser);
 			r = SYSTEM(cmd);
 			if (r == -1)
 				err(1, "system: %s", cmd);
@@ -6624,7 +6624,7 @@ test_audioctl_open_4()
 			if (r == -1)
 				err(1, "multiuser");
 			if (newval != multiuser)
-				errx(1, "set multiuser=%d failed", multiuser);
+				errx(1, "set multiuser=%d failed", (int)multiuser);
 		}
 
 		fd = OPEN(devaudio, O_RDWR);
@@ -6666,7 +6666,7 @@ test_audioctl_open_5()
 	int fd;
 	int fc;
 	int r;
-	int multiuser;
+	bool multiuser;
 	uid_t ouid;
 
 	TEST("audioctl_open_5");
@@ -6684,12 +6684,12 @@ test_audioctl_open_5()
 			if (i == 1)
 				break;
 		} else {
-			multiuser = 1 - i;
-			DESC("multiuser%d", multiuser);
+			multiuser = (i == 0);
+			DESC("multiuser%d", (int)multiuser);
 
 			snprintf(name, sizeof(name), "hw.%s.multiuser", hwconfigname());
 			snprintf(cmd, sizeof(cmd),
-				"sysctl -w %s=%d > /dev/null", name, multiuser);
+				"sysctl -w %s=%d > /dev/null", name, (int)multiuser);
 			r = SYSTEM(cmd);
 			if (r == -1)
 				err(1, "system: %s", cmd);
@@ -6697,13 +6697,13 @@ test_audioctl_open_5()
 				errx(1, "system failed: %s", cmd);
 
 			// 確認
-			int newval = 0;
+			bool newval = false;
 			size_t len = sizeof(newval);
 			r = SYSCTLBYNAME(name, &newval, &len, NULL, 0);
 			if (r == -1)
 				err(1, "multiuser");
 			if (newval != multiuser)
-				errx(1, "set multiuser=%d failed", multiuser);
+				errx(1, "set multiuser=%d failed", (int)multiuser);
 		}
 
 		fc = OPEN(devaudioctl, O_RDWR);
