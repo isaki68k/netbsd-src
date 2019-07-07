@@ -6968,7 +6968,9 @@ test_oper(int op1, int op2)
 		// op1 が WRITE なら
 
 		// ブロックするまで書き込む
-		gettimeofday(&data.lastwrite, NULL);
+		gettimeofday(&start, NULL);
+		end = start;
+		data.lastwrite = start;
 		for (;;) {
 			r = WRITE(data.fd, data.buf, sizeof(data.buf));
 			if (data.terminated) {
@@ -6978,7 +6980,8 @@ test_oper(int op1, int op2)
 			XP_SYS_EQ(sizeof(data.buf), r);
 
 			// 書き込み時刻更新
-			gettimeofday(&data.lastwrite, NULL);
+			gettimeofday(&end, NULL);
+			data.lastwrite = end;
 		}
 	} else {
 		// write(2) 以外なら気分的に、ちょっと待つ、だけでいい。
@@ -7013,12 +7016,14 @@ test_oper(int op1, int op2)
 	DPRINTF("  > 2nd op %d.%06d\n",
 		(int)data.t2.tv_sec, (int)data.t2.tv_usec);
 
-	// ブロックしないので t2 が0秒近くのはず、だが実際には
-	// t1 と t2 に同じだけのゲタが入ることがあるようなので
-	// t1 との差をとる。差が 1 秒近くなら正常。
-	int diff = (t1.tv_sec * 1000000 + t1.tv_usec) -
-		(data.t2.tv_sec * 1000000 + data.t2.tv_usec);
-	if (diff < 800*1000) {
+	// ブロックしないので t2 が0秒近くのはず、と言っても
+	// amd64(VirtualBox) では t2 は数 msec、x68k (XM6i) で数十msec 程度。
+	int thres = 10000;
+	if (x68k) {
+		thres *= 10;
+	}
+	int t2usec = data.t2.tv_sec * 1000000 + data.t2.tv_usec;
+	if (t2usec > thres) {
 		XP_FAIL("2nd op expected non-block but blocked");
 	}
 }
