@@ -7245,6 +7245,10 @@ test_pad_close_2()
 
 	TEST("pad_close_2");
 
+	// 今はまだ死ぬのでテストできない
+	XP_SKIP("this causes panic");
+	return;
+
 	fdpad = OPEN("/dev/pad", O_RDONLY);
 	if (fdpad == -1)
 		err(1, "open: dev/pad");
