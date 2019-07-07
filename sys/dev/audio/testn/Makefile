@@ -11,5 +11,8 @@ ntest.x68k:	ntest.cpp
 ntest.amd64-8:	ntest.cpp
 	/var/obj/8/amd64/tools/bin/x86_64--netbsd-g++ --sysroot=/var/obj/8/amd64/dst -pthread ${CPPFLAGS} -o $@ $> ${LIBS}
 
+ntest.alpha:	ntest.cpp
+	${CXX.alpha} -pthread $(CPPFLAGS) -o $@ $> $(LIBS)
+
 clean:
 	rm -f ntest.${MACHINE} ntest.x68k ntest.amd64-8 *.o *.core

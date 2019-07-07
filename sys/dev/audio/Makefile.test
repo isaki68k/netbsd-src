@@ -7,6 +7,12 @@ CC.x68k=	/var/obj/7/x68k/tools/bin/m68k--netbsdelf-gcc \
 		--sysroot=/var/obj/7/x68k/dst -std=gnu99
 CXX.x68k=	/var/obj/7/x68k/tools/bin/m68k--netbsdelf-g++ \
 		--sysroot=/var/obj/7/x68k/dst
+
+CC.alpha=	/var/obj/7/alpha/tools/bin/alpha--netbsd-gcc \
+		--sysroot=/var/obj/7/alpha/dst -std=gnu99
+CXX.alpha=	/var/obj/7/alpha/tools/bin/alpha--netbsd-g++ \
+		--sysroot=/var/obj/7/alpha/dst
+
 CPPFLAGS+=	-g
 CPPFLAGS+=	-Wall -Wno-sign-compare -Wno-narrowing -Wformat
 LIBS+=	-lutil
