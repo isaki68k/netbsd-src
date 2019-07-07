@@ -7105,8 +7105,14 @@ test_pad_ioctl(const char *padfilename)
 
 	// 1本目
 	fdpad1 = OPEN(padfilename, O_RDONLY);
-	if (fdpad1 == -1)
+	if (fdpad1 == -1) {
+		if (errno == ENXIO) {
+			// pad が組み込まれていない
+			XP_SKIP("pad seems not be configured.");
+			return;
+		}
 		err(1, "open: %s", padfilename);
+	}
 
 	unit1 = -1;
 	r = IOCTL(fdpad1, PAD_GET_AUDIOUNIT, &unit1, "");
@@ -7180,8 +7186,14 @@ test_pad_poll()
 	TEST("pad_poll");
 
 	fdpad = OPEN("/dev/pad", O_RDONLY);
-	if (fdpad == -1)
+	if (fdpad == -1) {
+		if (errno == ENXIO) {
+			// pad が組み込まれていない
+			XP_SKIP("pad seems not be configured.");
+			return;
+		}
 		err(1, "open: dev/pad");
+	}
 
 	// 可能なら紐づいてる audio を自動取得
 	r = IOCTL(fdpad, PAD_GET_AUDIOUNIT, &unit, "");
@@ -7225,8 +7237,14 @@ test_pad_close_1()
 	TEST("pad_close_1");
 
 	fdpad = OPEN("/dev/pad", O_RDONLY);
-	if (fdpad == -1)
+	if (fdpad == -1) {
+		if (errno == ENXIO) {
+			// pad が組み込まれていない
+			XP_SKIP("pad seems not be configured.");
+			return;
+		}
 		err(1, "open: dev/pad");
+	}
 
 	r = CLOSE(fdpad);
 	XP_SYS_EQ(0, r);
@@ -7250,8 +7268,14 @@ test_pad_close_2()
 	return;
 
 	fdpad = OPEN("/dev/pad", O_RDONLY);
-	if (fdpad == -1)
+	if (fdpad == -1) {
+		if (errno == ENXIO) {
+			// pad が組み込まれていない
+			XP_SKIP("pad seems not be configured.");
+			return;
+		}
 		err(1, "open: dev/pad");
+	}
 
 	// 可能なら紐づいてる audio を自動取得
 	r = IOCTL(fdpad, PAD_GET_AUDIOUNIT, &unit, "");
