@@ -25,6 +25,7 @@
 #include <sys/stat.h>
 #include <sys/sysctl.h>
 #include <sys/wait.h>
+#include "../../pad/padio.h"	// PAD_GET_AUDIOUNIT
 
 #if !defined(AUDIO_ENCODING_SLINEAR_NE)
 #if BYTE_ORDER == LITTLE_ENDIAN
@@ -7077,14 +7078,22 @@ test_oper_write_vs_set()
 	test_oper(OPER_WRITE, OPER_SET);
 }
 
+#define PAD_CHECK_LNK(filename) \
+	do { \
+		struct stat st; \
+		r = lstat(filename, &st); \
+		if (r == -1) \
+			err(1, "stat: %s", filename); \
+		if (S_ISLNK(st.st_mode)) { \
+			XP_SKIP("%s is not real device file", filename); \
+			return; \
+		} \
+	} while (0)
+
 // pad に対応する audio デバイスを問い合わせる ioctl を作りたい。
-// /dev/pad 編。
 static void
-test_pad_ioctl(const char *padfilename)
+test_pad_ioctl(const char *pad1filename, const char *pad2filename)
 {
-#if 1//defined(PAD_GET_AUDIOUNIT)
-#include "../../pad/padio.h"
-	struct stat st;
 	char devname[16];
 	int fdpad1;
 	int fdpad2;
@@ -7099,25 +7108,19 @@ test_pad_ioctl(const char *padfilename)
 		return;
 	}
 
-	// パスがデバイスファイルでなければテストする意味ない。
-	// 特に /dev/pad が /dev/pad0 とかをさしてるケース。
-	r = lstat(padfilename, &st);
-	if (r == -1)
-		err(1, "stat: %s", padfilename);
-	if (S_ISLNK(st.st_mode)) {
-		XP_SKIP("%s is not real device file", padfilename);
-		return;
-	}
+	// /dev/pad -> /dev/pad0 のような状態だと意図したのと違うのでスキップ。
+	PAD_CHECK_LNK(pad1filename);
+	PAD_CHECK_LNK(pad2filename);
 
 	// 1本目
-	fdpad1 = OPEN(padfilename, O_RDONLY);
+	fdpad1 = OPEN(pad1filename, O_RDONLY);
 	if (fdpad1 == -1) {
 		if (errno == ENXIO) {
 			// pad が組み込まれていない
 			XP_SKIP("pad seems not be configured.");
 			return;
 		}
-		err(1, "open: %s", padfilename);
+		err(1, "open: %s", pad1filename);
 	}
 
 	unit1 = -1;
@@ -7131,7 +7134,7 @@ test_pad_ioctl(const char *padfilename)
 	XP_SYS_OK(fdaudio1);
 
 	// 2本目
-	fdpad2 = OPEN("/dev/pad", O_RDONLY);
+	fdpad2 = OPEN(pad2filename, O_RDONLY);
 	XP_SYS_OK(fdpad2);
 
 	unit2 = -1;
@@ -7156,31 +7159,42 @@ test_pad_ioctl(const char *padfilename)
 	XP_SYS_EQ(0, r);
 	r = CLOSE(fdpad1);
 	XP_SYS_EQ(0, r);
-#else
-	XP_SKIP("PAD_GET_AUDIOUNIT not defined");
-#endif
 }
 
 void
-test_pad_ioctl_0()
+test_pad_ioctl_clone()
 {
-	TEST("pad_ioctl_0");
-	test_pad_ioctl("/dev/pad");
+	TEST("pad_ioctl_clone");
+	test_pad_ioctl("/dev/pad", "/dev/pad");
 }
 
 void
-test_pad_ioctl_1()
+test_pad_ioctl_static()
 {
-	TEST("pad_ioctl_1");
-	test_pad_ioctl("/dev/pad0");
+	TEST("pad_ioctl_static");
+	test_pad_ioctl("/dev/pad0", "/dev/pad1");
+}
+
+void
+test_pad_ioctl_mixed1()
+{
+	TEST("pad_ioctl_mixed1");
+	test_pad_ioctl("/dev/pad", "/dev/pad1");
+}
+
+void
+test_pad_ioctl_mixed2()
+{
+	TEST("pad_ioctl_mixed2");
+	test_pad_ioctl("/dev/pad0", "/dev/pad");
 }
 
 // XXX 自動取得できない場合の audio unit number
 #define PAD_AUDIO_UNIT 1
 
 // pad を poll する
-void
-test_pad_poll()
+static void
+test_pad_poll(const char *padfilename)
 {
 	char devname[16];
 	struct pollfd pfd;
@@ -7189,16 +7203,17 @@ test_pad_poll()
 	int unit;
 	int r;
 
-	TEST("pad_poll");
+	// /dev/pad -> /dev/pad0 のような状態だと意図したのと違うのでスキップ。
+	PAD_CHECK_LNK(padfilename);
 
-	fdpad = OPEN("/dev/pad", O_RDONLY);
+	fdpad = OPEN(padfilename, O_RDONLY);
 	if (fdpad == -1) {
 		if (errno == ENXIO) {
 			// pad が組み込まれていない
 			XP_SKIP("pad seems not be configured.");
 			return;
 		}
-		err(1, "open: dev/pad");
+		err(1, "open: %s", padfilename);
 	}
 
 	// 可能なら紐づいてる audio を自動取得
@@ -7207,6 +7222,7 @@ test_pad_poll()
 		if (errno == ENODEV) {
 			// この ioctl がない環境なので仕方ないのでコンパイル時指定
 			unit = PAD_AUDIO_UNIT;
+			DPRINTF("  > No GET_AUDIOUNIT ioctl so use audio%d\n", unit);
 		} else {
 			// それ以外はエラー
 			XP_SYS_EQ(0, r);
@@ -7233,27 +7249,62 @@ test_pad_poll()
 	XP_SYS_EQ(0, r);
 }
 
+void
+test_pad_poll_clone()
+{
+	TEST("pad_poll_clone");
+	test_pad_poll("/dev/pad");
+}
+
+void
+test_pad_poll_static()
+{
+	TEST("pad_poll_static");
+
+	// cdev_poll() は nopoll になってて、これが POLLIN を返す仕様なので
+	// 今のところ正しくない。真面目に作るしかないけど、後回し。
+	XP_SKIP("cdev_pad_poll() not correctly implemented");
+	return;
+
+	test_pad_poll("/dev/pad0");
+}
+
 // audio はオープンせずに pad だけ close するケース
 void
-test_pad_close_1()
+test_pad_close_1(const char *padfilename)
 {
 	int fdpad;
 	int r;
 
-	TEST("pad_close_1");
+	// /dev/pad -> /dev/pad0 のような状態だと意図したのと違うのでスキップ。
+	PAD_CHECK_LNK(padfilename);
 
-	fdpad = OPEN("/dev/pad", O_RDONLY);
+	fdpad = OPEN(padfilename, O_RDONLY);
 	if (fdpad == -1) {
 		if (errno == ENXIO) {
 			// pad が組み込まれていない
 			XP_SKIP("pad seems not be configured.");
 			return;
 		}
-		err(1, "open: dev/pad");
+		err(1, "open: %s", padfilename);
 	}
 
 	r = CLOSE(fdpad);
 	XP_SYS_EQ(0, r);
+}
+
+void
+test_pad_close_1_clone()
+{
+	TEST("pad_close_1_clone");
+	test_pad_close_1("/dev/pad");
+}
+
+void
+test_pad_close_1_static()
+{
+	TEST("pad_close_1_static");
+	test_pad_close_1("/dev/pad0");
 }
 
 // audio より先に pad を close するケース
@@ -7289,6 +7340,7 @@ test_pad_close_2()
 		if (errno == ENODEV) {
 			// この ioctl がない環境なので仕方ないのでコンパイル時指定
 			unit = PAD_AUDIO_UNIT;
+			DPRINTF("  > No GET_AUDIOUNIT ioctl so use audio%d\n", unit);
 		} else {
 			// それ以外はエラー
 			XP_SYS_EQ(0, r);
@@ -7984,10 +8036,14 @@ struct testtable testtable[] = {
 	DEF(oper_write_vs_write),
 	DEF(oper_write_vs_get),
 	DEF(oper_write_vs_set),
-	DEF(pad_ioctl_0),
-	DEF(pad_ioctl_1),
-	DEF(pad_poll),
-	DEF(pad_close_1),
+	DEF(pad_ioctl_clone),
+	DEF(pad_ioctl_static),
+	DEF(pad_ioctl_mixed1),
+	DEF(pad_ioctl_mixed2),
+	DEF(pad_poll_clone),
+	DEF(pad_poll_static),
+	DEF(pad_close_1_clone),
+	DEF(pad_close_1_static),
 	DEF(pad_close_2),
 	DEF(concurrent_open),
 	DEF(concurrent_close),
