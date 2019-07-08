@@ -2117,10 +2117,11 @@ test_close_1(void)
 
 	timersub(&end, &start, &result);
 	msec = (result.tv_sec * 1000000 + result.tv_usec) / 1000;
-	if (debug)
-		printf("%s: %d.%03d msec\n", testname, msec / 1000, msec % 1000);
-	// しきい値は適当
-	if (msec < 900)
+	DPRINTF("  > %d.%03d sec (theoretical value = 1.0 sec)\n",
+		msec / 1000, msec % 1000);
+	// VirtualBox だと 0.8秒台、VMware だと 1.2 秒台が出たりするので
+	// 厳密な検査は無理げだけど。
+	if (msec < 800)
 		XP_FAIL("%d.%03d: too early?", msec / 1000, msec % 1000);
 	if (msec > 1500)
 		XP_FAIL("%d.%03d: too late?", msec / 1000, msec % 1000);
