@@ -4134,18 +4134,17 @@ test_kqueue_5()
 				}
 
 				// イベントが起きるまでの時間がだいたい正しそうか
-				// AUDIO2 ならとりあえずプラマイ 10% でどうか。
 				// N8 はプラマイ 20% なら入るようだがそれでいいのかどうかは
 				// しらん。ソースコード上は 1バイトでも空けばすぐに
 				// EVFILT_WRITE が立ちそうに見えるのだが、そこそこ動作する
 				// ようだ。詳細は知らん。
+				// AUDIO2 は実機ならプラマイ 10% でもいけそうだが、
+				// エミュレータだとよくひっかかるのでプラマイ 20% でどうか。
 				timersub(&end, &start, &result);
 				double res = (double)result.tv_sec +
 					(double)result.tv_usec / 1000000;
 				DPRINTF("  > result=%f sec\n", res);
-				double margin = 0.1;
-				if (netbsd == 8)
-					margin = 0.2;
+				double margin = 0.2;
 				if (res < sec * (1.0 - margin) || res > sec * (1.0 + margin)) {
 					XP_FAIL("result time expects %f sec but %f sec", sec, res);
 				}
@@ -4298,7 +4297,9 @@ test_kqueue_6()
 		XP_SYS_EQ(0, r);
 
 		// タイムアウト
-		double tvsec = sec * 2;
+		// 2倍でもよさそうなもんだが、XM6i では i=1 のケースが3倍必要、
+		// i=0 のケースでは4倍が必要らしい。なぜ i=0 と i=1 で違うのか…。
+		double tvsec = sec * 4;
 		ts.tv_sec = (int)tvsec;
 		ts.tv_nsec = (long)((tvsec - (int)tvsec) * 1e9);
 
