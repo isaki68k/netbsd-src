@@ -1073,7 +1073,7 @@ test_open_2(void)
 		} else {
 			// それ以外は play track が見えるべき。
 			XP_EQ(buff_size / ai.blocksize, ai.hiwat);
-			XP_EQ(buff_size * 3 / 4 / ai.blocksize, ai.lowat);
+			XP_EQ(buff_size / ai.blocksize * 3 / 4, ai.lowat);
 		}
 		XP_EQ(mode2aumode(mode), ai.mode);
 
@@ -1323,7 +1323,7 @@ test_open_3(void)
 		} else {
 			// それ以外は play track が見えるべき。
 			XP_EQ(buff_size / ai.blocksize, ai.hiwat);
-			XP_EQ(buff_size * 3 / 4 / ai.blocksize, ai.lowat);
+			XP_EQ(buff_size / ai.blocksize * 3 / 4, ai.lowat);
 		}
 		XP_EQ(mode2aumode(mode), ai.mode);
 		aimode = ai.mode;
@@ -1429,7 +1429,7 @@ test_open_3(void)
 		} else {
 			// それ以外は play track が見えるべき。
 			XP_EQ(buff_size / ai.blocksize, ai.hiwat);
-			XP_EQ(buff_size * 3 / 4 / ai.blocksize, ai.lowat);
+			XP_EQ(buff_size / ai.blocksize * 3 / 4, ai.lowat);
 		}
 		// mode は引き継がない
 		XP_EQ(mode2aumode(mode), ai.mode);
@@ -5854,7 +5854,7 @@ test_AUDIO_SETINFO_hiwat2()
 		}
 		// hiwat, lowat はそのブロックサイズから計算
 		exphi = expbuf / expblk;
-		explo = expbuf * 3 / 4 / expblk;
+		explo = expbuf / expblk * 3 / 4;
 		DPRINTF("  > expbuf=%d expblk=%d exphi=%d explo=%d\n",
 			expbuf, expblk, exphi, explo);
 		XP_EQ(expbuf, ai.play.buffer_size);
