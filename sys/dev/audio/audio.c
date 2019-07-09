@@ -4685,13 +4685,7 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 			return ENOMEM;
 		}
 	} else {
-		mixer->hwbuf.mem = kern_malloc(bufsize, M_NOWAIT);
-		if (mixer->hwbuf.mem == NULL) {
-			device_printf(sc->sc_dev,
-			    "%s: malloc hwbuf(%zu) failed\n",
-			    __func__, bufsize);
-			return ENOMEM;
-		}
+		mixer->hwbuf.mem = kmem_alloc(bufsize, KM_SLEEP);
 	}
 
 	/* From here, audio_mixer_destroy is necessary to exit. */
@@ -4801,18 +4795,17 @@ abort:
 static void
 audio_mixer_destroy(struct audio_softc *sc, audio_trackmixer_t *mixer)
 {
-	int mode;
+	int bufsize;
 
 	KASSERT(mutex_owned(sc->sc_lock));
 
-	mode = mixer->mode;
-	KASSERT(mode == AUMODE_PLAY || mode == AUMODE_RECORD);
+	bufsize = frametobyte(&mixer->hwbuf.fmt, mixer->hwbuf.capacity);
 
 	if (mixer->hwbuf.mem != NULL) {
 		if (sc->hw_if->freem) {
-			sc->hw_if->freem(sc->hw_hdl, mixer->hwbuf.mem, mode);
+			sc->hw_if->freem(sc->hw_hdl, mixer->hwbuf.mem, bufsize);
 		} else {
-			kern_free(mixer->hwbuf.mem);
+			kmem_free(mixer->hwbuf.mem, bufsize);
 		}
 		mixer->hwbuf.mem = NULL;
 	}
