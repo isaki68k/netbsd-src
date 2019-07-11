@@ -316,11 +316,15 @@ cdev_pad_open(dev_t dev, int flags, int fmt, struct lwp *l)
 			if (device_lookup(&pad_cd, i) == NULL)
 				break;
 		}
-		if (i == MAXDEVS)
+		if (i == MAXDEVS) {
+			error = ENXIO;
 			goto bad;
+		}
 	} else {
-		if (PADUNIT(dev) >= MAXDEVS)
+		if (PADUNIT(dev) >= MAXDEVS) {
+			error = ENXIO;
 			goto bad;
+		}
 		i = PADUNIT(dev);
 	}
 
@@ -336,16 +340,20 @@ cdev_pad_open(dev_t dev, int flags, int fmt, struct lwp *l)
 		paddev = config_attach_pseudo(cf);
 	else
 		existing = true;
-	if (paddev == NULL)
+	if (paddev == NULL) {
+		error = ENXIO;
 		goto bad;
+	}
 
 	sc = device_private(paddev);
-	if (sc == NULL)
+	if (sc == NULL) {
+		error = ENXIO;
 		goto bad;
+	}
 
 	if (sc->sc_open == 1) {
-		mutex_exit(&padconfig);
-		return EBUSY;
+		error = EBUSY;
+		goto bad;
 	}
 
 	sc->sc_dev = paddev;
@@ -356,8 +364,7 @@ cdev_pad_open(dev_t dev, int flags, int fmt, struct lwp *l)
 		if (error) {
 			if (existing == false)
 				config_detach(sc->sc_dev, 0);
-			mutex_exit(&padconfig);
-			return error;
+			goto bad;
 		}
 	}
 
@@ -381,12 +388,9 @@ cdev_pad_open(dev_t dev, int flags, int fmt, struct lwp *l)
 		KASSERT(error == EMOVEFD);
 	}	
 	sc->sc_open = 1;
-	mutex_exit(&padconfig);
-
-	return error;
 bad:
 	mutex_exit(&padconfig);
-	return ENXIO;
+	return error;
 }
 
 static int
