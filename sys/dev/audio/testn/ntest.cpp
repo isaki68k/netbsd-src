@@ -2128,10 +2128,32 @@ test_close_1(void)
 		XP_FAIL("%d.%03d: too late?", msec / 1000, msec % 1000);
 }
 
+// 通常再生 (PLAY_ALL)
+void
+test_write_1(void)
+{
+	char buf[8000];
+	int fd;
+	int r;
+
+	TEST("write_1");
+
+	fd = OPEN(devaudio, O_WRONLY);
+	if (fd == -1)
+		err(1, "open");
+
+	memset(buf, 0xff, sizeof(buf));
+	r = WRITE(fd, buf, sizeof(buf));
+	XP_SYS_EQ(sizeof(buf), r);
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+}
+
 // PLAY_SYNC でブロックサイズずつ書き込む
 // 期待通りの音が出るかは分からないので、play.error が0なことだけ確認
 void
-test_playsync_1(void)
+test_write_2(void)
 {
 	struct audio_info ai;
 	char *wav;
@@ -2139,7 +2161,7 @@ test_playsync_1(void)
 	int fd;
 	int r;
 
-	TEST("playsync_1");
+	TEST("write_2");
 
 	fd = OPEN(devaudio, O_WRONLY);
 	if (fd == -1)
@@ -2184,6 +2206,27 @@ test_playsync_1(void)
 	XP_SYS_EQ(0, r);
 
 	free(wav);
+}
+
+// 通常録音
+void
+test_read_1(void)
+{
+	char buf[8000];
+	int fd;
+	int r;
+
+	TEST("read_1");
+
+	fd = OPEN(devaudio, O_RDONLY);
+	if (fd == -1)
+		err(1, "open");
+
+	r = READ(fd, buf, sizeof(buf));
+	XP_SYS_EQ(sizeof(buf), r);
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
 }
 
 // HWFull/Half によらず open mode の方の操作(read/write)はできる。
@@ -7976,7 +8019,9 @@ struct testtable testtable[] = {
 	DEF(drain_2),
 	DEF(drain_3),
 	DEF(close_1),
-	DEF(playsync_1),
+	DEF(write_1),
+	DEF(write_2),
+	DEF(read_1),
 	DEF(readwrite_1),
 	DEF(readwrite_2),
 	DEF(readwrite_3),
