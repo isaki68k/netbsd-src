@@ -7066,12 +7066,13 @@ test_oper(int op1, int op2)
 	DPRINTF("  > 2nd op %d.%06d\n",
 		(int)data.t2.tv_sec, (int)data.t2.tv_usec);
 
-	// ブロックしないので t2 が0秒近くのはず、と言っても
-	// amd64(VirtualBox) では t2 は数 msec、x68k (XM6i) で数十msec 程度。
-	int thres = 10000;
-	if (x68k) {
-		thres *= 10;
-	}
+	// read_vs_* の場合、ブロックすると 1st/2nd op いずれも1秒程度、
+	// ブロックしない(=正常な)場合 2nd op は 0秒近く。
+	// write_vs_* の場合、ブロックすると 2nd op は帰ってこれない、
+	// ブロックしない(=正常な)場合 2nd op は 0秒近く (なので、帰ってきさえ
+	// すれば秒数に関係なく成功したとも言える)。
+	// なのでどちらのケースでも 0.5秒をしきい値にしておく。
+	int thres = 500 * 1000;
 	int t2usec = data.t2.tv_sec * 1000000 + data.t2.tv_usec;
 	if (t2usec > thres) {
 		XP_FAIL("2nd op expected non-block but blocked");
