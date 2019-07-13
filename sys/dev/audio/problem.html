@@ -632,7 +632,7 @@ amd64 panic during audio tests
 hdafg: no sound from jack port on a laptop</font>
 <dd>ハードウェアドライバ固有の問題?
 
-<dt><a href="http://gnats.netbsd.org/53028">kern/53028</a>
+<dt><s><a href="http://gnats.netbsd.org/53028">kern/53028</a></s>
 hdaudio default latency too high, mpv spins at 100% CPU playing audio
 <dd>レイテンシが高すぎるという話と、s32 再生で CPU 100% になるという話。
 
@@ -686,9 +686,9 @@ wscons 側の問題。
 audio(4) API fails to detect a capture-only device
 <dd>uaudio(4) の get_props() が正しくなかった問題。
 
-<dt><a href="http://gnats.netbsd.org/54282">kern/54282</a>
+<dt><s><a href="http://gnats.netbsd.org/54282">kern/54282</a></s>
 kernel panic when 'sysctl hw.audio0'
-<dd>詳細不明。
+<dd>sysctl_teardown() が原因だったっぽい。
 
 
 </dl>
