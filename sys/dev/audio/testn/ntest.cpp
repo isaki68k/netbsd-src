@@ -24,6 +24,7 @@
 #include <sys/event.h>
 #include <sys/stat.h>
 #include <sys/sysctl.h>
+#include <sys/utsname.h>
 #include <sys/wait.h>
 #include "../../pad/padio.h"	// PAD_GET_AUDIOUNIT
 
@@ -56,6 +57,7 @@ int hwfull;
 char hwconfig[16];
 char hwconfig9[16];	// audio%d
 int x68k;
+int vs0;
 char testname[100];
 char descname[100];
 int testcount;
@@ -127,6 +129,7 @@ main(int ac, char *av[])
 	props = -1;
 	hwfull = 0;
 	x68k = 0;
+	vs0 = 0;
 	unit = 0;
 
 	// global option
@@ -367,11 +370,19 @@ init(int unit)
 	}
 	if (debug)
 		printf("hwconfig = %s\n", hwconfig);
-
-	// ショートカット
-	if (strcmp(dev.config, "vs") == 0)
-		x68k = 1;
 	close(fd);
+
+	// vs0 だけ制約がいろいろ多い。
+	if (strcmp(hwconfig, "vs0") == 0)
+		vs0 = 1;
+
+	// x68k という制約もある。
+	struct utsname utsname;
+	r = uname(&utsname);
+	if (r == -1)
+		err(1, "uname");
+	if (strcmp(utsname.machine, "x68k") == 0)
+		x68k = 1;
 }
 
 // テスト名
@@ -1136,7 +1147,7 @@ test_open_2(void)
 		ai0 = ai;
 
 		// できるだけ変更
-		channels = (netbsd <= 7 && x68k) ? 1 : 2;
+		channels = (netbsd <= 7 && vs0) ? 1 : 2;
 		AUDIO_INITINFO(&ai);
 		ai.blocksize = ai0.blocksize * 2;
 		if (ai0.hiwat > 0)
@@ -1383,7 +1394,7 @@ test_open_3(void)
 		// できるだけ変更
 		ai0 = ai;
 		AUDIO_INITINFO(&ai);
-		channels = (netbsd <= 7 && x68k) ? 1 : 2;
+		channels = (netbsd <= 7 && vs0) ? 1 : 2;
 		ai.blocksize = ai0.blocksize * 2;
 		ai.mode = aimode & ~AUMODE_PLAY_ALL;
 		ai.play.sample_rate = 11025;
@@ -2018,7 +2029,7 @@ test_drain_1(void)
 	// 1フレーム複数バイト、PLAY に設定
 	ai.play.encoding = AUDIO_ENCODING_SLINEAR_LE;
 	ai.play.precision = 16;
-	ai.play.channels = (netbsd <= 7 && x68k) ? 1 : 2;
+	ai.play.channels = (netbsd <= 7 && vs0) ? 1 : 2;
 	ai.play.sample_rate = 11050;
 	ai.mode = AUMODE_PLAY;
 	r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
@@ -2048,7 +2059,7 @@ test_drain_2(void)
 	AUDIO_INITINFO(&ai);
 	ai.play.encoding = AUDIO_ENCODING_SLINEAR_LE;
 	ai.play.precision = 16;
-	ai.play.channels = (netbsd <= 7 && x68k) ? 1 : 2;
+	ai.play.channels = (netbsd <= 7 && vs0) ? 1 : 2;
 	ai.play.sample_rate = 11050;
 	ai.mode = AUMODE_PLAY;
 	ai.play.pause = 1;
@@ -3060,7 +3071,7 @@ test_mmap_9()
 	int r;
 
 	TEST("mmap_9");
-	if (x68k && netbsd <= 7) {
+	if (vs0 && netbsd <= 7) {
 		// HW エンコードにセットするあたりのテストが面倒
 		XP_SKIP("not supported yet");
 		return;
@@ -4061,7 +4072,7 @@ test_kqueue_5()
 	for (int emul = 0; emul < 2; emul++) {
 		DESC("emul=%d", emul);
 
-		if (x68k && emul == 0) {
+		if (strcmp(hwconfig, "vs0") == 0 && emul == 0) {
 			XP_SKIP("cannot set native encoding on vs(4)");
 			continue;
 		}
@@ -4749,7 +4760,7 @@ test_AUDIO_WSEEK_1(void)
 	AUDIO_INITINFO(&ai);
 	ai.play.encoding = AUDIO_ENCODING_SLINEAR_LE;
 	ai.play.precision = 8;
-	ai.play.channels = (netbsd <= 7 && x68k) ? 1 : 2;
+	ai.play.channels = (netbsd <= 7 && vs0) ? 1 : 2;
 	ai.play.sample_rate = 11050;
 	ai.play.pause = 1;
 	ai.mode = AUMODE_PLAY_ALL;
@@ -4987,7 +4998,7 @@ test_AUDIO_GETINFO_seek()
 	AUDIO_INITINFO(&ai);
 	ai.play.encoding = AUDIO_ENCODING_SLINEAR_LE;
 	ai.play.precision = 16;
-	ai.play.channels = x68k ? 1 : 2;
+	ai.play.channels = vs0 ? 1 : 2;
 	ai.play.sample_rate = 16000;
 	r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
 	XP_SYS_EQ(0, r);
@@ -5804,7 +5815,7 @@ test_AUDIO_SETINFO_hiwat1()
 		XP_SYS_EQ(0, r);
 
 		// XXX どうしてこうなるのか理解出来ない
-		if (netbsd <= 8 && x68k) {
+		if (netbsd <= 8 && vs0) {
 			if (exphi > 340)
 				exphi = 340;
 			if (explo >= exphi)
