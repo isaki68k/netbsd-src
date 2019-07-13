@@ -2229,7 +2229,7 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 	if (track->mmapped)
 		return EPERM;
 
-	TRACET(2, track, "resid=%zd", uio->uio_resid);
+	TRACET(2, track, "resid=%zd ioflag=0x%x", uio->uio_resid, ioflag);
 
 #ifdef AUDIO_PM_IDLE
 	mutex_enter(sc->sc_lock);
