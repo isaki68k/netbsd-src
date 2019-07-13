@@ -2176,6 +2176,10 @@ test_playsync_1(void)
 		XP_EQ(0, ai.play.error);
 	}
 
+	// 再生データは不要なのでフラッシュする
+	r = IOCTL(fd, AUDIO_FLUSH, NULL, "");
+	XP_SYS_EQ(0, r);
+
 	r = CLOSE(fd);
 	XP_SYS_EQ(0, r);
 
