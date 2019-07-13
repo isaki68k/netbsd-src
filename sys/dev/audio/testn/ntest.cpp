@@ -4064,7 +4064,9 @@ test_kqueue_5()
 	int kq;
 	char *buf;
 	int buflen;
-	int totallen;
+	int blocksize;
+	int hiwat;
+	int lowat;
 	int zero;
 
 	TEST("kqueue_5");
@@ -4082,24 +4084,28 @@ test_kqueue_5()
 		if (fd == -1)
 			err(1, "open");
 
-		// pause を設定
 		AUDIO_INITINFO(&ai);
+		// pause を設定
 		ai.play.pause = 1;
 		// ついでにエンコーディングも設定
 		// XXX 本当は GETENC でチェックすべきだが手抜き
-		// emul==0: s16/2ch/8kHz は 32000 byte/sec
-		// emul==1: mulaw/1ch/32kHz は 32000 byte/sec
+		// emul==0: s16/1ch/8kHz は 16000 byte/sec
+		// emul==1: mulaw/1ch/16kHz は 16000 byte/sec
 		if (emul == 0) {
 			// native
 			ai.play.encoding = AUDIO_ENCODING_SLINEAR_NE;
 			ai.play.precision = 16;
-			ai.play.channels = 2;
+			ai.play.channels = 1;
 			ai.play.sample_rate = 8000;
 			zero = 0;
 		} else {
-			ai.play.sample_rate = 32000;
+			ai.play.sample_rate = 16000;
 			zero = 0xff;
 		}
+		// ついでにブロックサイズも設定を試みる
+		blocksize = 2000;	// 16000Hz なので 1/8 sec
+		hiwat = 12;			// 1.5sec
+		lowat = 4;			// 0.5sec
 		r = IOCTL(fd, AUDIO_SETINFO, &ai, "enc;pause=1");
 		XP_SYS_EQ(0, r);
 
@@ -4107,38 +4113,40 @@ test_kqueue_5()
 		r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
 		XP_SYS_EQ(0, r);
 
-		// lowat を約半分に再設定
+		if (ai.blocksize <= 2000) {
+			// AUDIO2 ではブロックサイズが変更できずおそらく 1000 より
+			// 小さいので、hiwat/lowat 側で調整する。
+			blocksize = ai.blocksize;
+			hiwat = howmany(16000 * 1.5, blocksize);
+			lowat = howmany(16000 * 0.5, blocksize);
+		}
+		// ともかく改めてこのパラメータで設定
 		AUDIO_INITINFO(&ai2);
-		ai2.lowat = ai.hiwat / 2;
-		r = IOCTL(fd, AUDIO_SETINFO, &ai2, "lowat");
+		ai2.blocksize = blocksize;
+		ai2.hiwat = hiwat;
+		ai2.lowat = lowat;
+		r = IOCTL(fd, AUDIO_SETINFO, &ai2, "hiwat/lowat");
 		XP_SYS_EQ(0, r);
 
 		// でまた再取得
-		r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "lowat");
+		r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "hiwat/lowat");
 		XP_SYS_EQ(0, r);
 		DPRINTF("  > blocksize=%d hiwat=%d lowat=%d buffer_size=%d\n",
 			ai.blocksize, ai.hiwat, ai.lowat, ai.play.buffer_size);
 
 		// 書き込み
 		buflen = ai.blocksize * ai.hiwat;
-		totallen = 0;
 		buf = (char *)malloc(buflen);
 		if (buf == NULL)
 			err(1, "malloc");
 		memset(buf, zero, buflen);
-		do {
-			r = WRITE(fd, buf, buflen);
-			if (r > 0)
-				totallen += r;
-		} while (r == buflen);
+		r = WRITE(fd, buf, buflen);
 		if (r == -1) {
 			XP_SYS_NG(EAGAIN, r);
 		}
 
-		// lowat までのバイト数
-		int remsize = totallen - ai.lowat * ai.blocksize;
 		// lowat までのブロック数
-		int remblks = howmany(remsize, ai.blocksize);
+		int remblks = ai.hiwat - ai.lowat;
 		// 余分にかかるブロック数を追加
 		if (netbsd == 8) {
 			// 開始に3ブロックかかるらしいが詳細不明。
@@ -4160,22 +4168,10 @@ test_kqueue_5()
 		r = KEVENT_SET(kq, &kev, 1);
 		XP_SYS_EQ(0, r);
 
-		// seek 確認
-		// バッファフルなので、seek はバッファ一杯であること
-		// 一杯の定義が実装によって違うがもう仕方ないな
-		// N7(emul=0) は blocksize * hiwat、
-		// N7(emul=1) は buffer_size
-		// N8 は buffer_size
-		r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "seek");
-		XP_SYS_EQ(0, r);
-		DPRINTF("  > seek=%d\n", ai.play.seek);
-		if (netbsd == 7 && emul == 0) {
-			XP_EQ(ai.blocksize * ai.hiwat, ai.play.seek);
-		} else {
-			XP_EQ(ai.play.buffer_size, ai.play.seek);
-		}
-
-		// バッファフルでイベント起きないはずのことはもう調べない。
+		// タイムアウトは2倍にしとく
+		double tvsec = sec * 2;
+		ts.tv_sec = (int)tvsec;
+		ts.tv_nsec = (long)((tvsec - (int)tvsec) * 1e9);
 
 		// pause 解除
 		AUDIO_INITINFO(&ai2);
@@ -4183,10 +4179,6 @@ test_kqueue_5()
 		r = IOCTL(fd, AUDIO_SETINFO, &ai2, "pause=0");
 		XP_SYS_EQ(0, r);
 
-		// タイムアウトは2倍にしとく
-		double tvsec = sec * 2;
-		ts.tv_sec = (int)tvsec;
-		ts.tv_nsec = (long)((tvsec - (int)tvsec) * 1e9);
 		// 成立するまで待つ
 		gettimeofday(&start, NULL);
 		r = KEVENT_POLL(kq, &kev, 1, &ts);
