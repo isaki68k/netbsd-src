@@ -3535,6 +3535,8 @@ test_poll_6()
 	int r;
 	char *buf;
 	int blocksize;
+	int hiwat;
+	int lowat;
 	int buflen;
 	int time;
 
@@ -3558,11 +3560,30 @@ test_poll_6()
 		if (fd[1] == -1)
 			err(1, "open");
 
+		// ブロックサイズと hiwat/lowat の調整。
+		// 出来ればブロックサイズをほどよくしてから hiwat/lowat を決めたい。
+		blocksize = 1000;	// mulaw 8000Hz なので 1/8sec
+		hiwat = 12;			// 1.5sec
+		lowat = 4;			// 0.5sec
 		AUDIO_INITINFO(&ai);
-		// 再生時間を縮めるため blocksize を小さくしたいが N8 では効かないっぽい
-		ai.blocksize = 320;
-		ai.hiwat = 6;
-		ai.lowat = 3;
+		ai.blocksize = blocksize;
+		ai.hiwat = hiwat;
+		ai.lowat = lowat;
+		r = IOCTL(fd[0], AUDIO_SETINFO, &ai, "blocksize=1000");
+		XP_SYS_EQ(0, r);
+		r = IOCTL(fd[0], AUDIO_GETBUFINFO, &ai, "read back blocksize");
+		if (ai.blocksize <= 1000) {
+			// A2 はブロックサイズが変更できずおそらく 1000 より小さいので
+			// hiwat/lowat 側で調整する。
+			blocksize = ai.blocksize;
+			hiwat = howmany(8000 * 1.5, blocksize);
+			lowat = howmany(8000 * 0.5, blocksize);
+		}
+		// ともかく改めてこのパラメータで fdA, fdB を設定
+		AUDIO_INITINFO(&ai);
+		ai.blocksize = blocksize;
+		ai.hiwat = hiwat;
+		ai.lowat = lowat;
 		// fdA は pause を設定
 		ai.play.pause = 1;
 		r = IOCTL(fd[a], AUDIO_SETINFO, &ai, "pause=1");
@@ -3572,19 +3593,18 @@ test_poll_6()
 		r = IOCTL(fd[b], AUDIO_SETINFO, &ai, "pause=0");
 		XP_SYS_EQ(0, r);
 
-		// いろいろ再取得
-		// 手抜きして使い回す
-		r = IOCTL(fd[a], AUDIO_GETBUFINFO, &ai, "");
+		// 念のため再取得。手抜きで片方だけでいいや
+		r = IOCTL(fd[0], AUDIO_GETBUFINFO, &ai, "");
 		XP_SYS_EQ(0, r);
-		XP_EQ(6, ai.hiwat);
-		XP_EQ(3, ai.lowat);
-		blocksize = ai.blocksize;
+		DPRINTF("  > blocksize=%d lowat=%d hiwat=%d\n",
+			ai.blocksize, ai.lowat, ai.hiwat);
 
 		// 8kHz での再生時間 msec に対して十分長くとる
-		time = ai.hiwat * blocksize / 8 * 2;
+		time = (ai.hiwat - ai.lowat) * blocksize / 8;  /*[msec]*/
+		time *= 2;
 
 		// fdA に書き込み
-		buflen = blocksize * ai.hiwat;
+		buflen = blocksize * ai.lowat;
 		buf = (char *)malloc(buflen);
 		if (buf == NULL)
 			err(1, "malloc");
@@ -3604,12 +3624,13 @@ test_poll_6()
 		XP_SYS_EQ(0, r);
 		XP_EQ(0, pfd[0].revents);
 
-		// fdB に(lowat以上)書き込む
+		// fdB に lowat 以上書き込む
 		r = WRITE(fd[b], buf, buflen);
 		XP_SYS_EQ(buflen, r);
-		do {
-			r = WRITE(fd[b], buf, buflen);
-		} while (r == buflen);
+		r = WRITE(fd[b], buf, buflen);
+		if (r == -1) {
+			XP_SYS_NG(EAGAIN, r);
+		}
 
 		memset(pfd, 0, sizeof(pfd));
 		pfd[0].fd = fd[0];
@@ -3623,6 +3644,12 @@ test_poll_6()
 			XP_EQ(0, pfd[a].revents);
 			XP_EQ(POLLOUT, pfd[b].revents);
 		}
+
+		// 残りのデータは不要
+		r = IOCTL(fd[0], AUDIO_FLUSH, NULL, "");
+		XP_SYS_EQ(0, r);
+		r = IOCTL(fd[1], AUDIO_FLUSH, NULL, "");
+		XP_SYS_EQ(0, r);
 
 		r = CLOSE(fd[0]);
 		XP_SYS_EQ(0, r);
