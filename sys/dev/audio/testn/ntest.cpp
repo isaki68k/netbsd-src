@@ -2150,15 +2150,19 @@ test_write_1(void)
 	TEST("write_1");
 
 	fd = OPEN(devaudio, O_WRONLY);
-	if (fd == -1)
-		err(1, "open");
+	if ((props & AUDIO_PROP_PLAYBACK)) {
+		if (fd == -1)
+			err(1, "open");
 
-	memset(buf, 0xff, sizeof(buf));
-	r = WRITE(fd, buf, sizeof(buf));
-	XP_SYS_EQ(sizeof(buf), r);
+		memset(buf, 0xff, sizeof(buf));
+		r = WRITE(fd, buf, sizeof(buf));
+		XP_SYS_EQ(sizeof(buf), r);
 
-	r = CLOSE(fd);
-	XP_SYS_EQ(0, r);
+		r = CLOSE(fd);
+		XP_SYS_EQ(0, r);
+	} else {
+		XP_SYS_NG(ENXIO, fd);
+	}
 }
 
 // PLAY_SYNC でブロックサイズずつ書き込む
@@ -2230,14 +2234,18 @@ test_read_1(void)
 	TEST("read_1");
 
 	fd = OPEN(devaudio, O_RDONLY);
-	if (fd == -1)
-		err(1, "open");
+	if ((props & AUDIO_PROP_CAPTURE)) {
+		if (fd == -1)
+			err(1, "open");
 
-	r = READ(fd, buf, sizeof(buf));
-	XP_SYS_EQ(sizeof(buf), r);
+		r = READ(fd, buf, sizeof(buf));
+		XP_SYS_EQ(sizeof(buf), r);
 
-	r = CLOSE(fd);
-	XP_SYS_EQ(0, r);
+		r = CLOSE(fd);
+		XP_SYS_EQ(0, r);
+	} else {
+		XP_SYS_NG(ENXIO, fd);
+	}
 }
 
 // HWFull/Half によらず open mode の方の操作(read/write)はできる。
