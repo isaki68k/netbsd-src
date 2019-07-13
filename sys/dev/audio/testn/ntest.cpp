@@ -54,6 +54,8 @@ int debug;
 int netbsd;
 int props;
 int hwfull;
+int canplay;
+int canrec;
 char hwconfig[16];
 char hwconfig9[16];	// audio%d
 int x68k;
@@ -128,6 +130,8 @@ main(int ac, char *av[])
 
 	props = -1;
 	hwfull = 0;
+	canplay = 0;
+	canrec = 0;
 	x68k = 0;
 	vs0 = 0;
 	unit = 0;
@@ -339,6 +343,8 @@ init(int unit)
 	r = ioctl(fd, AUDIO_GETPROPS, &props);
 	if (r == -1)
 		err(1, "init:AUDIO_GETPROPS");
+	canplay = (props & AUDIO_PROP_PLAYBACK) ? 1 : 0;
+	canrec = (props & AUDIO_PROP_CAPTURE) ? 1 : 0;
 	hwfull = (props & AUDIO_PROP_FULLDUPLEX) ? 1 : 0;
 
 	// NetBSD8 の sysctl 用に MD 名を取得。
@@ -1006,35 +1012,59 @@ test_open_1(void)
 	struct audio_info ai;
 	int fd;
 	int r;
+	//			RDONLY	WRONLY	RDWR
+	// 再生専用	x		o		x?
+	// 録音専用	o		x		x?
+	// 両対応	o		o		o
+	bool table_playback[] = { false,	true,	false };
+	bool table_capture[]  = { true,		false,	false };
+	bool table_both[]     = { true,		true,	true };
+	bool *table;
 
-	// 再生専用デバイスのテストとかはまた
 	TEST("open_1");
+	if (canplay == 1 && canrec == 1)
+		table = table_both;
+	else if (canplay == 1 && canrec == 0)
+		table = table_playback;
+	else if (canplay == 0 && canrec == 1)
+		table = table_capture;
+	else
+		err(1, "unknown property");
+
 	for (int mode = 0; mode <= 2; mode++) {
 		DESC("%s", openmodetable[mode]);
 		fd = OPEN(devaudio, mode);
-		XP_SYS_OK(fd);
+		if (table[mode]) {
+			// オープンできるケース
+			XP_SYS_OK(fd);
 
-		memset(&ai, 0, sizeof(ai));
-		r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
-		XP_SYS_EQ(0, r);
-		XP_EQ(0, ai.play.pause);
-		XP_EQ(0, ai.record.pause);
-		XP_EQ(mode2popen(mode), ai.play.open);
-		XP_EQ(mode2ropen(mode), ai.record.open);
-		// ai.mode は open_5 で調べている
+			memset(&ai, 0, sizeof(ai));
+			r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+			XP_SYS_EQ(0, r);
+			XP_EQ(0, ai.play.pause);
+			XP_EQ(0, ai.record.pause);
+			XP_EQ(mode2popen(mode), ai.play.open);
+			XP_EQ(mode2ropen(mode), ai.record.open);
+			// ai.mode は open_5 で調べている
 
-		if (netbsd <= 8) {
-			// N7、N8 では使わないほうのトラックのバッファも常にある
-			XP_NE(0, ai.play.buffer_size);
-			XP_NE(0, ai.record.buffer_size);
+			if (netbsd <= 8) {
+				// N7、N8 では使わないほうのトラックのバッファも常にある
+				XP_NE(0, ai.play.buffer_size);
+				XP_NE(0, ai.record.buffer_size);
+			} else {
+				// AUDIO2 では使わないほうのバッファは確保してない
+				XP_BUFFSIZE(mode2popen(mode), ai.play.buffer_size);
+				XP_BUFFSIZE(mode2ropen(mode), ai.record.buffer_size);
+			}
 		} else {
-			// AUDIO2 では使わないほうのバッファは確保してない
-			XP_BUFFSIZE(mode2popen(mode), ai.play.buffer_size);
-			XP_BUFFSIZE(mode2ropen(mode), ai.record.buffer_size);
+			// オープンできないケース (再生専用デバイスに O_RDONLY など)
+			XP_SYS_NG(ENXIO, fd);
 		}
 
-		r = CLOSE(fd);
-		XP_SYS_EQ(0, r);
+		if (fd >= 0) {
+			r = CLOSE(fd);
+			XP_SYS_EQ(0, r);
+		}
 	}
 }
 
