@@ -1496,10 +1496,12 @@ DEF(open_sound_sticky)
 
 	TEST("open_sound_sticky");
 
-	if (hw_canplay() == false)
-		openmode = O_RDONLY;
-	else
+	if (hw_bidir())
+		openmode = O_RDWR;
+	else if (hw_canplay())
 		openmode = O_WRONLY;
+	else
+		openmode = O_RDONLY;
 
 	/* First, open /dev/sound and change encoding as a delegate */
 	fd = OPEN(devsound, openmode);
