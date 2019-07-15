@@ -3,14 +3,14 @@
 
 .include <bsd.own.mk>
 
-# XXX
-CPPFLAGS+=	-I/rina/NetBSD/current/src/tests
+# XXX t_audio.sh is generated from Makefile.t_audio
+TESTS_SH=	t_audio
 
-TESTS_C=	t_audio
+PROGS=		h_audio
+CPPFLAGS+=	-g
+LDADD+=	-lrump -lrumpdev_audio -lrumpdev_pad -lrumpdev -lrumpvfs
 
-LDADD.t_audio+=	-lrump -lrumpdev_audio -lrumpdev_pad -lrumpdev -lrumpvfs
-
+#WARNS=4
 MKMAN=no
-#BINDIR=		${TESTDIR}
 
 .include <bsd.test.mk>
