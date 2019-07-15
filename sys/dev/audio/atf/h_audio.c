@@ -42,7 +42,7 @@ __RCSID("$NetBSD$");
 
 struct testentry {
 	const char *name;
-	void (*func)();
+	void (*func)(void);
 };
 
 void xp_err(int, int, const char *, ...) __printflike(3, 4) __dead;
@@ -54,7 +54,8 @@ void xp_fail(int, const char *, ...) __printflike(2, 3);
 void xp_skip(int, const char *, ...) __printflike(2, 3);
 
 /* from audio.c */
-static const char *encoding_names[] = {
+static const char *encoding_names[]
+__unused = {
 	"none",
 	AudioEmulaw,
 	AudioEalaw,
@@ -96,7 +97,7 @@ bool use_rump;
 int padfd;
 
 void __dead
-usage()
+usage(void)
 {
 	fprintf(stderr, "usage:\t%s [<options>] [<testname>...]\n",
 	    getprogname());
@@ -233,7 +234,7 @@ main(int argc, char *argv[])
 	if (opt_atf == false) {
 		printf("Result: %d tests, %d success",
 		    testcount,
-		    testcount - failcount - expfcount, skipcount);
+		    testcount - failcount - expfcount - skipcount);
 		if (failcount > 0)
 			printf(", %d failed", failcount);
 		if (expfcount > 0)
@@ -372,7 +373,7 @@ rump_or_poll(struct pollfd *fds, nfds_t nfds, int timeout)
 
 /* kqueue(2) or rump_sys_kqueue(3) */
 int
-rump_or_kqueue()
+rump_or_kqueue(void)
 {
 	int r;
 
@@ -403,25 +404,25 @@ rump_or_kevent(int kq, const struct kevent *chlist, size_t nch,
 }
 
 bool
-hw_canplay()
+hw_canplay(void)
 {
 	return (props & AUDIO_PROP_PLAYBACK) != 0;
 }
 
 bool
-hw_canrec()
+hw_canrec(void)
 {
 	return (props & AUDIO_PROP_CAPTURE) != 0;
 }
 
 bool
-hw_bidir()
+hw_bidir(void)
 {
 	return hw_canplay() && hw_canrec();
 }
 
 bool
-hw_fulldup()
+hw_fulldup(void)
 {
 	return (props & AUDIO_PROP_FULLDUPLEX) != 0;
 }
@@ -809,8 +810,11 @@ int debug_fcntl(int line, int fd, int name, const char *namestr, ...)
 		DPRINTFF(line, "fcntl(%d, %s)", fd, namestr);
 		r = rump_or_fcntl(fd, name);
 		break;
+	 default:
+		__unreachable();
 	}
 	DRESULT(r);
+	return r;
 }
 
 #define CLOSE(fd)	\
@@ -992,7 +996,9 @@ uid_t debug_getuid(int line)
 {
 	DPRINTFF(line, "getuid");
 	uid_t r = getuid();
-	DRESULT(r);
+	/* getuid() never fails */
+	DPRINTF(" = %u\n", r);
+	return r;
 }
 
 /* XXX rump? */
@@ -1078,13 +1084,14 @@ mode2rec(int mode)
  */
 
 
-#define DEF(name) void test__ ## name (void)
+#define DEF(name) \
+	void test__ ## name (void); \
+	void test__ ## name (void)
 
 /* Whether it can be open()ed with specified mode */
 void
 test_open_mode(int mode)
 {
-	struct audio_info ai;
 	int fd;
 	int r;
 	int can_play;
@@ -1538,5 +1545,5 @@ struct testentry testtable[] = {
 	ENT(open_sound_WRONLY),
 	ENT(open_sound_RDWR),
 	ENT(open_sound_sticky),
-	NULL,
+	{ NULL, NULL },
 };
