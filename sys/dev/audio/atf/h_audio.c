@@ -1109,19 +1109,9 @@ test_open_mode(int mode)
 		XP_SYS_EQ(0, r);
 	}
 }
-
-DEF(open_mode_RDONLY)
-{
-	test_open_mode(O_RDONLY);
-}
-DEF(open_mode_WRONLY)
-{
-	test_open_mode(O_WRONLY);
-}
-DEF(open_mode_RDWR)
-{
-	test_open_mode(O_RDWR);
-}
+DEF(open_mode_RDONLY)	{ test_open_mode(O_RDONLY); }
+DEF(open_mode_WRONLY)	{ test_open_mode(O_WRONLY); }
+DEF(open_mode_RDWR)	{ test_open_mode(O_RDWR);   }
 
 
 /* The initial parameters are always the same whenever you open /dev/audio */
@@ -1274,19 +1264,9 @@ test_open_audio(int mode)
 	r = CLOSE(fd);
 	XP_SYS_EQ(0, r);
 }
-
-DEF(open_audio_RDONLY)
-{
-	test_open_audio(O_RDONLY);
-}
-DEF(open_audio_WRONLY)
-{
-	test_open_audio(O_WRONLY);
-}
-DEF(open_audio_RDWR)
-{
-	test_open_audio(O_RDWR);
-}
+DEF(open_audio_RDONLY)	{ test_open_audio(O_RDONLY); }
+DEF(open_audio_WRONLY)	{ test_open_audio(O_WRONLY); }
+DEF(open_audio_RDWR)	{ test_open_audio(O_RDWR);   }
 
 /*
  * /dev/sound inherits the initial parameters from /dev/sound and /dev/audio.
@@ -1462,19 +1442,9 @@ test_open_sound(int mode)
 	r = CLOSE(fd);
 	XP_SYS_EQ(0, r);
 }
-
-DEF(open_sound_RDONLY)
-{
-	test_open_sound(O_RDONLY);
-}
-DEF(open_sound_WRONLY)
-{
-	test_open_sound(O_WRONLY);
-}
-DEF(open_sound_RDWR)
-{
-	test_open_sound(O_RDWR);
-}
+DEF(open_sound_RDONLY)	{ test_open_sound(O_RDONLY); }
+DEF(open_sound_WRONLY)	{ test_open_sound(O_WRONLY); }
+DEF(open_sound_RDWR)	{ test_open_sound(O_RDWR);   }
 
 /*
  * Open (1) /dev/sound -> (2) /dev/audio -> (3) /dev/sound,
@@ -1628,7 +1598,6 @@ test_open_simul(int mode0, int mode1)
 	r = CLOSE(fd0);
 	XP_SYS_EQ(0, r);
 }
-
 DEF(open_simul_RDONLY_RDONLY)	{ test_open_simul(O_RDONLY, O_RDONLY);	}
 DEF(open_simul_RDONLY_WRONLY)	{ test_open_simul(O_RDONLY, O_WRONLY);	}
 DEF(open_simul_RDONLY_RDWR)	{ test_open_simul(O_RDONLY, O_RDWR);	}
