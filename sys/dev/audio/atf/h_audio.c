@@ -1094,16 +1094,11 @@ test_open_mode(int mode)
 {
 	int fd;
 	int r;
-	int can_play;
-	int can_rec;
 
 	TEST("open_mode_%s", openmode_str[mode] + 2);
 
-	can_play = mode2play(mode);
-	can_rec  = mode2rec(mode);
-
 	fd = OPEN(devaudio, mode);
-	if (can_play + can_rec != 0) {
+	if (mode2aumode(mode) != 0) {
 		XP_SYS_OK(fd);
 	} else {
 		XP_SYS_NG(ENXIO, fd);
