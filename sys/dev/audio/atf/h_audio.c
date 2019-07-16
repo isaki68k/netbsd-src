@@ -87,10 +87,11 @@ int failcount;
 int expfcount;
 int skipcount;
 int unit;
-char devaudio[16];
-char devsound[16];
-char devaudioctl[16];
-char devmixer[16];
+char devicename[16];	/* "audioN" */
+char devaudio[16];	/* "/dev/audioN" */
+char devsound[16];	/* "/dev/soundN" */
+char devaudioctl[16];	/* "/dev/audioctlN" */
+char devmixer[16];	/* "/dev/mixerN" */
 extern struct testentry testtable[];
 
 bool use_rump;
@@ -486,6 +487,7 @@ init(int requnit)
 	}
 
 	/* Set device name */
+	snprintf(devicename, sizeof(devicename), "audio%d", unit);
 	snprintf(devaudio, sizeof(devaudio), "/dev/audio%d", unit);
 	snprintf(devsound, sizeof(devsound), "/dev/sound%d", unit);
 	snprintf(devaudioctl, sizeof(devaudioctl), "/dev/audioctl%d", unit);
@@ -1038,6 +1040,17 @@ int debug_system(int line, const char *cmd)
 	DRESULT(r);
 }
 
+/* Return openable mode on this hardware property */
+int
+openable_mode(void)
+{
+	if (hw_bidir())
+		return O_RDWR;
+	if (hw_canplay())
+		return O_WRONLY;
+	else
+		return O_RDONLY;
+}
 
 int mode2aumode_full[] = {
 	                                AUMODE_RECORD,	/* O_RDONLY */
@@ -1608,6 +1621,114 @@ DEF(open_simul_RDWR_RDONLY)	{ test_open_simul(O_RDWR, O_RDONLY);	}
 DEF(open_simul_RDWR_WRONLY)	{ test_open_simul(O_RDWR, O_WRONLY);	}
 DEF(open_simul_RDWR_RDWR)	{ test_open_simul(O_RDWR, O_RDWR);	}
 
+/* Multiuser open */
+void
+test_open_multiuser(int multiuser)
+{
+	char mibname[32];
+	int fd0;
+	int fd1;
+	int r;
+	bool newval;
+	bool oldval;
+	size_t oldlen;
+	uid_t ouid;
+
+	TEST("open_multiuser_%d", multiuser);
+	if (geteuid() != 0) {
+		XP_SKIP("Must be run as a privileged user");
+		return;
+	}
+
+	/* Set multiuser mode (and save the previous one) */
+	snprintf(mibname, sizeof(mibname), "hw.%s.multiuser", devicename);
+	newval = multiuser;
+	oldlen = sizeof(oldval);
+	r = SYSCTLBYNAME(mibname, &oldval, &oldlen, &newval, sizeof(newval));
+	if (r == -1)
+		err(1, "sysctl multiuser=%d", multiuser);
+
+	/*
+	 * Test1: Open as root first and then unprivileged user.
+	 */
+
+	/* At first, open as root */
+	fd0 = OPEN(devaudio, openable_mode());
+	if (fd0 == -1)
+		err(1, "open");
+
+	ouid = GETUID();
+	r = SETEUID(1);
+	if (r == -1)
+		err(1, "seteuid");
+
+	/* Then, open as unprivileged user */
+	fd1 = OPEN(devaudio, openable_mode());
+	if (multiuser) {
+		/* If multiuser, another user also can open */
+		XP_SYS_OK(fd1);
+	} else {
+		/* If not multiuser, another user cannot open */
+		XP_SYS_NG(EPERM, fd1);
+	}
+	if (fd1 != -1) {
+		r = CLOSE(fd1);
+		XP_SYS_EQ(0, r);
+	}
+
+	r = SETEUID(ouid);
+	if (r == -1)
+		err(1, "seteuid");
+
+	r = CLOSE(fd0);
+	XP_SYS_EQ(0, r);
+
+	/*
+	 * Test2: Open as unprivileged user first and then root.
+	 */
+
+	/* At first, open as unprivileged user */
+	ouid = GETUID();
+	r = SETEUID(1);
+	if (r == -1)
+		err(1, "seteuid");
+
+	fd0 = OPEN(devaudio, openable_mode());
+	if (fd0 == -1)
+		err(1, "open");
+
+	/* Then open as root */
+	r = SETEUID(ouid);
+	if (r == -1)
+		err(1, "seteuid");
+
+	/* root always can open */
+	fd1 = OPEN(devaudio, openable_mode());
+	XP_SYS_OK(fd1);
+	if (fd1 != -1) {
+		r = CLOSE(fd1);
+		XP_SYS_EQ(0, r);
+	}
+
+	/* Close first one as unprivileged user */
+	r = SETEUID(1);
+	if (r == -1)
+		err(1, "seteuid");
+	r = CLOSE(fd0);
+	XP_SYS_EQ(0, r);
+	r = SETEUID(ouid);
+	if (r == -1)
+		err(1, "seteuid");
+
+	/* Restore multiuser mode */
+	newval = oldval;
+	r = SYSCTLBYNAME(mibname, NULL, NULL, &newval, sizeof(newval));
+	if (r == -1)
+		err(1, "sysctl multiuser=%d", multiuser);
+}
+DEF(open_multiuser_0)	{ test_open_multiuser(0); }
+DEF(open_multiuser_1)	{ test_open_multiuser(1); }
+
 
 #define ENT(x) { #x, test__ ## x }
 struct testentry testtable[] = {
@@ -1630,5 +1751,7 @@ struct testentry testtable[] = {
 	ENT(open_simul_RDWR_RDONLY),
 	ENT(open_simul_RDWR_WRONLY),
 	ENT(open_simul_RDWR_RDWR),
+	ENT(open_multiuser_0),
+	ENT(open_multiuser_1),
 	{ NULL, NULL },
 };
