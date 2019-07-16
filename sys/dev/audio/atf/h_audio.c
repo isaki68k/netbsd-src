@@ -1027,18 +1027,6 @@ int debug_sysctlbyname(int line, const char *name, void *oldp, size_t *oldlenp,
 	DRESULT(r);
 }
 
-/* XXX rump? */
-#define SYSTEM(cmd)	debug_system(__LINE__, cmd)
-int debug_system(int line, const char *cmd)
-{
-#if !defined(NO_RUMP)
-	if (use_rump)
-		errx(1, "rump doesn't support system(3)");
-#endif
-	DPRINTFF(line, "system(\"%s\")", cmd);
-	int r = system(cmd);
-	DRESULT(r);
-}
 
 /* Return openable mode on this hardware property */
 int
