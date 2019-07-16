@@ -21,8 +21,8 @@ BEGIN {
 	print "}"
 	print ""
 }
-/^DEF\(/ {
-	name = substr($0, 5, length - 5)
+match($0, /^DEF\([^\)]*\)/) {
+	name = substr($0, RSTART + 4, RLENGTH - 5)
 	tests[n] = name
 	n++;
 	

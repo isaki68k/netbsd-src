@@ -1530,6 +1530,116 @@ DEF(open_sound_sticky)
 	XP_SYS_EQ(0, r);
 }
 
+/* Open two descriptors simultaneously */
+void
+test_open_simul(int mode0, int mode1)
+{
+	struct audio_info ai;
+	int fd0, fd1;
+	int i;
+	int r;
+	int actmode;
+#define AUMODE_BOTH (AUMODE_PLAY | AUMODE_RECORD)
+	struct {
+		int mode0;
+		int mode1;
+	} expfulltable[] = {
+		/* expected fd0		expected fd1 (-error expects error) */
+		{ AUMODE_RECORD,	AUMODE_RECORD },	// REC, REC
+		{ AUMODE_RECORD,	AUMODE_PLAY },		// REC, PLAY
+		{ AUMODE_RECORD,	AUMODE_BOTH },		// REC, BOTH
+		{ AUMODE_PLAY,		AUMODE_RECORD },	// PLAY, REC
+		{ AUMODE_PLAY,		AUMODE_PLAY },		// PLAY, PLAY
+		{ AUMODE_PLAY,		AUMODE_BOTH },		// PLAY, BOTH
+		{ AUMODE_BOTH,		AUMODE_RECORD },	// BOTH, REC
+		{ AUMODE_BOTH,		AUMODE_PLAY },		// BOTH, PLAY
+		{ AUMODE_BOTH,		AUMODE_BOTH },		// BOTH, BOTH
+	},
+	exphalftable[] = {
+		/* expected fd0		expected fd1 (-error expects error) */
+		{ AUMODE_RECORD,	AUMODE_RECORD },	// REC, REC
+		{ AUMODE_RECORD,	-ENODEV },		// REC, PLAY
+		{ AUMODE_RECORD,	-ENODEV },		// REC, BOTH
+		{ AUMODE_PLAY,		-ENODEV },		// PLAY, REC
+		{ AUMODE_PLAY,		AUMODE_PLAY },		// PLAY, PLAY
+		{ AUMODE_PLAY,		AUMODE_PLAY },		// PLAY, BOTH
+		{ AUMODE_PLAY,		-ENODEV },		// BOTH, REC
+		{ AUMODE_PLAY,		AUMODE_PLAY },		// BOTH, PLAY
+		{ AUMODE_PLAY,		AUMODE_PLAY },		// BOTH, BOTH
+	}, *exptable;
+
+	/* The expected values are different in half-duplex or full-duplex */
+	if (hw_fulldup()) {
+		exptable = expfulltable;
+	} else {
+		exptable = exphalftable;
+	}
+
+	TEST("open_simul_%s_%s",
+	    openmode_str[mode0] + 2,
+	    openmode_str[mode1] + 2);
+
+	if (mode2aumode(mode0) == 0 || mode2aumode(mode1) == 0) {
+		XP_SKIP("operation not allowed on this hardware property");
+		return;
+	}
+
+	i = mode0 * 3 + mode1;
+
+	/* Open first one */
+	fd0 = OPEN(devaudio, mode0);
+	if (fd0 == -1)
+		err(1, "open");
+	r = IOCTL(fd0, AUDIO_GETBUFINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+	actmode = ai.mode & AUMODE_BOTH;
+	XP_EQ(exptable[i].mode0, actmode);
+
+	/* Open second one */
+	fd1 = OPEN(devaudio, mode1);
+	if (exptable[i].mode1 >= 0) {
+		/* Case to expect to be able to open */
+		XP_SYS_OK(fd1);
+		r = IOCTL(fd1, AUDIO_GETBUFINFO, &ai, "");
+		XP_SYS_EQ(0, r);
+		if (r == 0) {
+			actmode = ai.mode & AUMODE_BOTH;
+			XP_EQ(exptable[i].mode1, actmode);
+		}
+	} else {
+		/* Case to expect not to be able to open */
+		XP_SYS_NG(ENODEV, fd1);
+		if (fd1 == -1) {
+			XP_EQ(-exptable[i].mode1, errno);
+		} else {
+			r = IOCTL(fd1, AUDIO_GETBUFINFO, &ai, "");
+			XP_SYS_EQ(0, r);
+			if (r == 0) {
+				actmode = ai.mode & AUMODE_BOTH;
+				XP_FAIL("expects error but %d", actmode);
+			}
+		}
+	}
+	if (fd1 >= 0) {
+		r = CLOSE(fd1);
+		XP_SYS_EQ(0, r);
+	}
+
+	r = CLOSE(fd0);
+	XP_SYS_EQ(0, r);
+}
+
+DEF(open_simul_RDONLY_RDONLY)	{ test_open_simul(O_RDONLY, O_RDONLY);	}
+DEF(open_simul_RDONLY_WRONLY)	{ test_open_simul(O_RDONLY, O_WRONLY);	}
+DEF(open_simul_RDONLY_RDWR)	{ test_open_simul(O_RDONLY, O_RDWR);	}
+DEF(open_simul_WRONLY_RDONLY)	{ test_open_simul(O_WRONLY, O_RDONLY);	}
+DEF(open_simul_WRONLY_WRONLY)	{ test_open_simul(O_WRONLY, O_WRONLY);	}
+DEF(open_simul_WRONLY_RDWR)	{ test_open_simul(O_WRONLY, O_RDWR);	}
+DEF(open_simul_RDWR_RDONLY)	{ test_open_simul(O_RDWR, O_RDONLY);	}
+DEF(open_simul_RDWR_WRONLY)	{ test_open_simul(O_RDWR, O_WRONLY);	}
+DEF(open_simul_RDWR_RDWR)	{ test_open_simul(O_RDWR, O_RDWR);	}
+
+
 #define ENT(x) { #x, test__ ## x }
 struct testentry testtable[] = {
 	ENT(open_mode_RDONLY),
@@ -1542,5 +1652,14 @@ struct testentry testtable[] = {
 	ENT(open_sound_WRONLY),
 	ENT(open_sound_RDWR),
 	ENT(open_sound_sticky),
+	ENT(open_simul_RDONLY_RDONLY),
+	ENT(open_simul_RDONLY_WRONLY),
+	ENT(open_simul_RDONLY_RDWR),
+	ENT(open_simul_WRONLY_RDONLY),
+	ENT(open_simul_WRONLY_WRONLY),
+	ENT(open_simul_WRONLY_RDWR),
+	ENT(open_simul_RDWR_RDONLY),
+	ENT(open_simul_RDWR_WRONLY),
+	ENT(open_simul_RDWR_RDWR),
 	{ NULL, NULL },
 };
