@@ -1018,10 +1018,6 @@ int debug_seteuid(int line, uid_t id)
 int debug_sysctlbyname(int line, const char *name, void *oldp, size_t *oldlenp,
 	const void *newp, size_t newlen)
 {
-#if !defined(NO_RUMP)
-	if (use_rump)
-		errx(1, "rump doesn't support sysctlbyname");
-#endif
 	DPRINTFF(line, "sysctlbyname(\"%s\")", name);
 	int r = sysctlbyname(name, oldp, oldlenp, newp, newlen);
 	DRESULT(r);
