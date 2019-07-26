@@ -50,7 +50,7 @@ void xp_errx(int, int, const char *, ...) __printflike(3, 4) __dead;
 void init(int);
 void do_test(int);
 void TEST(const char *, ...) __printflike(1, 2);
-void xp_fail(int, const char *, ...) __printflike(2, 3);
+bool xp_fail(int, const char *, ...) __printflike(2, 3);
 void xp_skip(int, const char *, ...) __printflike(2, 3);
 
 /* from audio.c */
@@ -559,7 +559,7 @@ TEST(const char *name, ...)
 	testcount++;	\
 	xp_fail(__LINE__, fmt);	\
 } while (0)
-void xp_fail(int line, const char *fmt, ...)
+bool xp_fail(int line, const char *fmt, ...)
 {
 	va_list ap;
 
@@ -572,6 +572,8 @@ void xp_fail(int line, const char *fmt, ...)
 	printf("\n");
 	fflush(stdout);
 	failcount++;
+
+	return false;
 }
 
 /*
@@ -598,43 +600,57 @@ void xp_skip(int line, const char *fmt, ...)
 }
 
 #define XP_EQ(exp, act)	xp_eq(__LINE__, exp, act, #act)
-void xp_eq(int line, int exp, int act, const char *varname)
+bool xp_eq(int line, int exp, int act, const char *varname)
 {
+	bool r = true;
+
 	testcount++;
-	if (exp != act)
-		xp_fail(line, "%s expects %d but %d", varname, exp, act);
+	if (exp != act) {
+		r = xp_fail(line, "%s expects %d but %d", varname, exp, act);
+	}
+	return r;
 }
 #define XP_EQ_STR(exp, act) xp_eq_str(__LINE__, exp, act, #act)
-void xp_eq_str(int line, const char *exp, const char *act, const char *varname)
+bool xp_eq_str(int line, const char *exp, const char *act, const char *varname)
 {
+	bool r = true;
+
 	testcount++;
 	if (strcmp(exp, act) != 0) {
-		xp_fail(line, "%s expects \"%s\" but \"%s\"",
+		r = xp_fail(line, "%s expects \"%s\" but \"%s\"",
 		    varname, exp, act);
 	}
+	return r;
 }
 
 #define XP_NE(exp, act)	xp_ne(__LINE__, exp, act, #act)
-void xp_ne(int line, int exp, int act, const char *varname)
+bool xp_ne(int line, int exp, int act, const char *varname)
 {
+	bool r = true;
+
 	testcount++;
-	if (exp == act)
-		xp_fail(line, "%s expects != %d but %d", varname, exp, act);
+	if (exp == act) {
+		r = xp_fail(line, "%s expects != %d but %d", varname, exp, act);
+	}
+	return r;
 }
 
 /* This expects that the system call returns 'exp'. */
 #define XP_SYS_EQ(exp, act)	xp_sys_eq(__LINE__, exp, act, #act)
-void xp_sys_eq(int line, int exp, int act, const char *varname)
+bool xp_sys_eq(int line, int exp, int act, const char *varname)
 {
+	bool r = true;
+
 	testcount++;
 	if (exp != act) {
 		if (act == -1) {
-			xp_fail(line, "%s expects %d but -1,err#%d(%s)",
+			r = xp_fail(line, "%s expects %d but -1,err#%d(%s)",
 			    varname, exp, errno, strerror(errno));
 		} else {
-			xp_eq(line, exp, act, varname);
+			r = xp_eq(line, exp, act, varname);
 		}
 	}
+	return r;
 }
 
 /*
@@ -642,12 +658,15 @@ void xp_sys_eq(int line, int exp, int act, const char *varname)
  * Errors are included in success.
  */
 #define XP_SYS_NE(exp, act)	xp_sys_ne(__LINE__, exp, act, #act)
-void xp_sys_ne(int line, int exp, int act, const char *varname)
+bool xp_sys_ne(int line, int exp, int act, const char *varname)
 {
+	bool r = true;
+
 	testcount++;
 	if (act != -1) {
-		xp_ne(line, exp, act, varname);
+		r = xp_ne(line, exp, act, varname);
 	}
+	return r;
 }
 
 /*
@@ -656,57 +675,69 @@ void xp_sys_ne(int line, int exp, int act, const char *varname)
  * the expected return value, such as open(2).
  */
 #define XP_SYS_OK(act)	xp_sys_ok(__LINE__, act, #act)
-void xp_sys_ok(int line, int act, const char *varname)
+bool xp_sys_ok(int line, int act, const char *varname)
 {
+	bool r = true;
+
 	testcount++;
 	if (act == -1) {
-		xp_fail(line, "%s expects success but -1,err#%d(%s)",
+		r = xp_fail(line, "%s expects success but -1,err#%d(%s)",
 		    varname, errno, strerror(errno));
 	}
+	return r;
 }
 #define XP_SYS_OK_PTR(act) xp_sys_ok_ptr(__LINE__, act, #act)
-void xp_sys_ok_ptr(int line, void *act, const char *varname)
+bool xp_sys_ok_ptr(int line, void *act, const char *varname)
 {
+	bool r = true;
+
 	testcount++;
 	if (act == (void *)-1) {
-		xp_fail(line, "%s expects success but -1,err#%d(%s)",
+		r = xp_fail(line, "%s expects success but -1,err#%d(%s)",
 		    varname, errno, strerror(errno));
 	}
+	return r;
 }
 
 /* This expects that the system call fails with 'experrno'. */
 #define XP_SYS_NG(experrno, act) xp_sys_ng(__LINE__, experrno, act, #act)
-void xp_sys_ng(int line, int experrno, int act, const char *varname)
+bool xp_sys_ng(int line, int experrno, int act, const char *varname)
 {
+	bool r = true;
+
 	testcount++;
 	if (act != -1) {
-		xp_fail(line, "%s expects -1,err#%d but %d",
+		r = xp_fail(line, "%s expects -1,err#%d but %d",
 		    varname, experrno, act);
 	} else if (experrno != errno) {
 		char acterrbuf[100];
 		int acterrno = errno;
 		strlcpy(acterrbuf, strerror(acterrno), sizeof(acterrbuf));
-		xp_fail(line, "%s expects -1,err#%d(%s) but -1,err#%d(%s)",
+		r = xp_fail(line, "%s expects -1,err#%d(%s) but -1,err#%d(%s)",
 		    varname, experrno, strerror(experrno),
 		    acterrno, acterrbuf);
 	}
+	return r;
 }
 #define XP_SYS_NG_PTR(experrno, act) \
 	xp_sys_ng_ptr(__LINE__, experrno, act, #act)
-void xp_sys_ng_ptr(int line, int experrno, void *act, const char *varname)
+bool xp_sys_ng_ptr(int line, int experrno, void *act, const char *varname)
 {
+	bool r = true;
+
 	testcount++;
 	if (act != (void *)-1) {
-		xp_fail(line, "%s expects -1,err#%d but %p",
+		r = xp_fail(line, "%s expects -1,err#%d but %p",
 		    varname, experrno, act);
 	} else if (experrno != errno) {
 		char acterrbuf[100];
 		int acterrno = errno;
 		strlcpy(acterrbuf, strerror(acterrno), sizeof(acterrbuf));
-		xp_fail(line, "%s expects -1,err#%d(%s) but -1,err#%d(%s)",
+		r = xp_fail(line, "%s expects -1,err#%d(%s) but -1,err#%d(%s)",
 		    varname, experrno, strerror(experrno),
 		    acterrno, acterrbuf);
 	}
+	return r;
 }
 
 /*
@@ -716,19 +747,33 @@ void xp_sys_ng_ptr(int line, int experrno, void *act, const char *varname)
  */
 #define XP_BUFFSIZE(exp, act)	\
 	xp_buffsize(__LINE__, exp, act, #act)
-void xp_buffsize(int line, bool exp, int act, const char *varname)
+bool xp_buffsize(int line, bool exp, int act, const char *varname)
 {
+	bool r = true;
+
 	testcount++;
 	if (exp) {
 		if (act == 0)
-			xp_fail(line, "%s expects non-zero but %d",
+			r = xp_fail(line, "%s expects non-zero but %d",
 			    varname, act);
 	} else {
 		if (act != 0)
-			xp_fail(line, "%s expects zero but %d",
+			r = xp_fail(line, "%s expects zero but %d",
 			    varname, act);
 	}
+	return r;
 }
+
+/*
+ * REQUIRED_* return immediately if condition does not meet.
+ */
+#define REQUIRED_EQ(e, a) do { if (!XP_EQ(e, a)) return; } while (0)
+#define REQUIRED_NE(e, a) do { if (!XP_NE(e, a)) return; } while (0)
+#define REQUIRED_SYS_EQ(e, a) do { if (!XP_SYS_EQ(e, a)) return; } while (0)
+#define REQUIRED_SYS_NE(e, a) do { if (!XP_SYS_NE(e, a)) return; } while (0)
+#define REQUIRED_SYS_OK(a)    do { if (!XP_SYS_OK(a))    return; } while (0)
+#define REQUIRED_SYS_NG(e, a) do { if (!XP_SYS_NG(e, a)) return; } while (0)
+
 
 static const char *openmode_str[] = {
 	"O_RDONLY",
@@ -1135,11 +1180,10 @@ test_open_audio(int mode)
 	 * Open /dev/audio and check parameters
 	 */
 	fd = OPEN(devaudio, mode);
-	if (fd == -1)
-		err(1, "open");
+	REQUIRED_SYS_OK(fd);
 	memset(&ai, 0, sizeof(ai));
 	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
-	XP_SYS_EQ(0, r);
+	REQUIRED_SYS_EQ(0, r);
 
 	XP_NE(0, ai.blocksize);
 		/* hiwat/lowat */
@@ -1203,19 +1247,18 @@ test_open_audio(int mode)
 	ai.record.encoding = AUDIO_ENCODING_SLINEAR_LE;
 	ai.record.pause = 1;
 	r = IOCTL(fd, AUDIO_SETINFO, &ai, "ai");
-	XP_SYS_EQ(0, r);
+	REQUIRED_SYS_EQ(0, r);
 	r = CLOSE(fd);
-	XP_SYS_EQ(0, r);
+	REQUIRED_SYS_EQ(0, r);
 
 	/*
 	 * Open /dev/audio again and check
 	 */
 	fd = OPEN(devaudio, mode);
-	if (fd == -1)
-		err(1, "open");
+	REQUIRED_SYS_OK(fd);
 	memset(&ai, 0, sizeof(ai));
 	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
-	XP_SYS_EQ(0, r);
+	REQUIRED_SYS_EQ(0, r);
 
 	XP_EQ(ai0.blocksize, ai.blocksize);
 	XP_EQ(ai0.hiwat, ai.hiwat);
@@ -1259,7 +1302,7 @@ test_open_audio(int mode)
 	XP_EQ(0, ai.record.active);
 
 	r = CLOSE(fd);
-	XP_SYS_EQ(0, r);
+	REQUIRED_SYS_EQ(0, r);
 }
 DEF(open_audio_RDONLY)	{ test_open_audio(O_RDONLY); }
 DEF(open_audio_WRONLY)	{ test_open_audio(O_WRONLY); }
@@ -1293,17 +1336,15 @@ test_open_sound(int mode)
 	 */
 	if (hw_canplay()) {
 		fd = OPEN(devaudio, O_WRONLY);
-		if (fd == -1)
-			err(1, "open");
+		REQUIRED_SYS_OK(fd);
 		r = CLOSE(fd);
-		XP_SYS_EQ(0, r);
+		REQUIRED_SYS_EQ(0, r);
 	}
 	if (hw_canrec()) {
 		fd = OPEN(devaudio, O_RDONLY);
-		if (fd == -1)
-			err(1, "open");
+		REQUIRED_SYS_OK(fd);
 		r = CLOSE(fd);
-		XP_SYS_EQ(0, r);
+		REQUIRED_SYS_EQ(0, r);
 	}
 
 	/*
@@ -1311,11 +1352,10 @@ test_open_sound(int mode)
 	 * It should be the same with /dev/audio's initial parameters.
 	 */
 	fd = OPEN(devsound, mode);
-	if (fd == -1)
-		err(1, "open");
+	REQUIRED_SYS_OK(fd);
 	memset(&ai, 0, sizeof(ai));
 	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
-	XP_SYS_EQ(0, r);
+	REQUIRED_SYS_EQ(0, r);
 
 	XP_NE(0, ai.blocksize);
 		/* hiwat/lowat */
@@ -1378,23 +1418,20 @@ test_open_sound(int mode)
 	ai.record.encoding = AUDIO_ENCODING_SLINEAR_LE;
 	ai.record.pause = 1;
 	r = IOCTL(fd, AUDIO_SETINFO, &ai, "ai");
-	if (r == -1)
-		err(1, "AUDIO_SETINFO");
+	REQUIRED_SYS_EQ(0, r);
 	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai0, "ai0");
-	if (r == -1)
-		err(1, "AUDIO_GETBUFINFO");
+	REQUIRED_SYS_EQ(0, r);
 	r = CLOSE(fd);
-	XP_SYS_EQ(0, r);
+	REQUIRED_SYS_EQ(0, r);
 
 	/*
 	 * Open /dev/sound again and check
 	 */
 	fd = OPEN(devsound, mode);
-	if (fd == -1)
-		err(1, "open");
+	REQUIRED_SYS_OK(fd);
 	memset(&ai, 0, sizeof(ai));
 	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
-	XP_SYS_EQ(0, r);
+	REQUIRED_SYS_EQ(0, r);
 
 	XP_EQ(ai0.blocksize, ai.blocksize);
 		/* hiwat/lowat */
@@ -1437,7 +1474,7 @@ test_open_sound(int mode)
 	XP_EQ(0, ai.record.active);
 
 	r = CLOSE(fd);
-	XP_SYS_EQ(0, r);
+	REQUIRED_SYS_EQ(0, r);
 }
 DEF(open_sound_RDONLY)	{ test_open_sound(O_RDONLY); }
 DEF(open_sound_WRONLY)	{ test_open_sound(O_WRONLY); }
@@ -1467,34 +1504,31 @@ DEF(open_sound_sticky)
 
 	/* First, open /dev/sound and change encoding as a delegate */
 	fd = OPEN(devsound, openmode);
-	if (fd == -1)
-		err(1, "open");
+	REQUIRED_SYS_OK(fd);
 	AUDIO_INITINFO(&ai);
 	ai.play.encoding = AUDIO_ENCODING_SLINEAR_LE;
 	ai.record.encoding = AUDIO_ENCODING_SLINEAR_LE;
 	r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
-	XP_SYS_EQ(0, r);
+	REQUIRED_SYS_EQ(0, r);
 	r = CLOSE(fd);
-	XP_SYS_EQ(0, r);
+	REQUIRED_SYS_EQ(0, r);
 
 	/* Next, open /dev/audio.  It makes the encoding mulaw */
 	fd = OPEN(devaudio, openmode);
-	if (fd == -1)
-		err(1, "open");
+	REQUIRED_SYS_OK(fd);
 	r = CLOSE(fd);
-	XP_SYS_EQ(0, r);
+	REQUIRED_SYS_EQ(0, r);
 
 	/* And then, open /dev/sound again */
 	fd = OPEN(devsound, openmode);
-	if (fd == -1)
-		err(1, "open");
+	REQUIRED_SYS_OK(fd);
 	memset(&ai, 0, sizeof(ai));
 	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
-	XP_SYS_EQ(0, r);
+	REQUIRED_SYS_EQ(0, r);
 	XP_EQ(AUDIO_ENCODING_ULAW, ai.play.encoding);
 	XP_EQ(AUDIO_ENCODING_ULAW, ai.record.encoding);
 	r = CLOSE(fd);
-	XP_SYS_EQ(0, r);
+	REQUIRED_SYS_EQ(0, r);
 }
 
 /* Open two descriptors simultaneously */
@@ -1555,10 +1589,9 @@ test_open_simul(int mode0, int mode1)
 
 	/* Open first one */
 	fd0 = OPEN(devaudio, mode0);
-	if (fd0 == -1)
-		err(1, "open");
+	REQUIRED_SYS_OK(fd0);
 	r = IOCTL(fd0, AUDIO_GETBUFINFO, &ai, "");
-	XP_SYS_EQ(0, r);
+	REQUIRED_SYS_EQ(0, r);
 	actmode = ai.mode & AUMODE_BOTH;
 	XP_EQ(exptable[i].mode0, actmode);
 
@@ -1566,7 +1599,7 @@ test_open_simul(int mode0, int mode1)
 	fd1 = OPEN(devaudio, mode1);
 	if (exptable[i].mode1 >= 0) {
 		/* Case to expect to be able to open */
-		XP_SYS_OK(fd1);
+		REQUIRED_SYS_OK(fd1);
 		r = IOCTL(fd1, AUDIO_GETBUFINFO, &ai, "");
 		XP_SYS_EQ(0, r);
 		if (r == 0) {
@@ -1629,8 +1662,12 @@ test_open_multiuser(int multiuser)
 	newval = multiuser;
 	oldlen = sizeof(oldval);
 	r = SYSCTLBYNAME(mibname, &oldval, &oldlen, &newval, sizeof(newval));
-	if (r == -1)
-		err(1, "sysctl multiuser=%d", multiuser);
+	REQUIRED_SYS_EQ(0, r);
+
+	/* Check */
+	r = SYSCTLBYNAME(mibname, &newval, &oldlen, NULL, 0);
+	REQUIRED_SYS_EQ(0, r);
+	REQUIRED_EQ(multiuser, newval);
 
 	/*
 	 * Test1: Open as root first and then unprivileged user.
@@ -1638,13 +1675,11 @@ test_open_multiuser(int multiuser)
 
 	/* At first, open as root */
 	fd0 = OPEN(devaudio, openable_mode());
-	if (fd0 == -1)
-		err(1, "open");
+	REQUIRED_SYS_OK(fd0);
 
 	ouid = GETUID();
 	r = SETEUID(1);
-	if (r == -1)
-		err(1, "seteuid");
+	REQUIRED_SYS_EQ(0, r);
 
 	/* Then, open as unprivileged user */
 	fd1 = OPEN(devaudio, openable_mode());
@@ -1661,8 +1696,7 @@ test_open_multiuser(int multiuser)
 	}
 
 	r = SETEUID(ouid);
-	if (r == -1)
-		err(1, "seteuid");
+	REQUIRED_SYS_EQ(0, r);
 
 	r = CLOSE(fd0);
 	XP_SYS_EQ(0, r);
@@ -1674,17 +1708,14 @@ test_open_multiuser(int multiuser)
 	/* At first, open as unprivileged user */
 	ouid = GETUID();
 	r = SETEUID(1);
-	if (r == -1)
-		err(1, "seteuid");
+	REQUIRED_SYS_EQ(0, r);
 
 	fd0 = OPEN(devaudio, openable_mode());
-	if (fd0 == -1)
-		err(1, "open");
+	REQUIRED_SYS_OK(fd0);
 
 	/* Then open as root */
 	r = SETEUID(ouid);
-	if (r == -1)
-		err(1, "seteuid");
+	REQUIRED_SYS_EQ(0, r);
 
 	/* root always can open */
 	fd1 = OPEN(devaudio, openable_mode());
@@ -1696,19 +1727,16 @@ test_open_multiuser(int multiuser)
 
 	/* Close first one as unprivileged user */
 	r = SETEUID(1);
-	if (r == -1)
-		err(1, "seteuid");
+	REQUIRED_SYS_EQ(0, r);
 	r = CLOSE(fd0);
 	XP_SYS_EQ(0, r);
 	r = SETEUID(ouid);
-	if (r == -1)
-		err(1, "seteuid");
+	REQUIRED_SYS_EQ(0, r);
 
 	/* Restore multiuser mode */
 	newval = oldval;
 	r = SYSCTLBYNAME(mibname, NULL, NULL, &newval, sizeof(newval));
-	if (r == -1)
-		err(1, "sysctl multiuser=%d", multiuser);
+	REQUIRED_SYS_EQ(0, r);
 }
 DEF(open_multiuser_0)	{ test_open_multiuser(0); }
 DEF(open_multiuser_1)	{ test_open_multiuser(1); }
