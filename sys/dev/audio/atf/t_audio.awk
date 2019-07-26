@@ -7,7 +7,7 @@ BEGIN {
 	print "# Call real test program, and then dispatch the result for atf."
 	print "h_audio() {"
 	print "	local testname=$1"
-	print "	outmsg=`$(atf_get_srcdir)/h_audio -AR $testname`"
+	print "	outmsg=`$(atf_get_srcdir)/audiotest -AR $testname`"
 	print "	local retval=$?"
 	print "	if [ \"$retval\" = \"0\" ]; then"
 	print "		atf_pass"

@@ -1,7 +1,7 @@
 # XXX should be made automatically in Makefile...
 #     (or should be made automatically at runtime)
 
-t_audio.sh:	t_audio.awk h_audio.c
+t_audio.sh:	t_audio.awk audiotest.c
 	awk -f ${.ALLSRC} > ${.TARGET}
 
 clean:

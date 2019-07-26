@@ -5,7 +5,7 @@
 # Call real test program, and then dispatch the result for atf.
 h_audio() {
 	local testname=$1
-	outmsg=`$(atf_get_srcdir)/h_audio -AR $testname`
+	outmsg=`$(atf_get_srcdir)/audiotest -AR $testname`
 	local retval=$?
 	if [ "$retval" = "0" ]; then
 		atf_pass
