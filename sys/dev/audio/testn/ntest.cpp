@@ -1989,7 +1989,7 @@ test_encoding_3()
 		/* PCM8:prec8   -> ULINEAR_NE:8 */
 		/* PCM16:prec16 -> SLINEAR_NE:16 */
 		{ AUDIO_ENCODING_PCM8,	8,		AUDIO_ENCODING_ULINEAR_NE,	8 },
-		{ AUDIO_ENCODING_PCM8,	8,		AUDIO_ENCODING_ULINEAR_NE,	8 },
+		{ AUDIO_ENCODING_PCM16,	16,		AUDIO_ENCODING_SLINEAR_NE,	16 },
 		/*
 		 * なぜか分からんけど今の NetBSD7 はこうなっている。
 		 */
