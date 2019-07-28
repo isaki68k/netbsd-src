@@ -1,5 +1,5 @@
 // vi:set ts=8:
-/*	$NetBSD	*/
+/*	$NetBSD$	*/
 
 #include <sys/cdefs.h>
 __RCSID("$NetBSD$");
@@ -1741,6 +1741,142 @@ test_open_multiuser(int multiuser)
 DEF(open_multiuser_0)	{ test_open_multiuser(0); }
 DEF(open_multiuser_1)	{ test_open_multiuser(1); }
 
+/*
+ * Normal playback (with PLAY_ALL)
+ * It does not verify real playback data.
+ */
+DEF(write_1)
+{
+	char buf[8000];
+	int fd;
+	int r;
+
+	TEST("write_1");
+
+	fd = OPEN(devaudio, O_WRONLY);
+	if (mode2play(O_WRONLY)) {
+		REQUIRED_SYS_OK(fd);
+
+		/* mulaw 1sec silence */
+		memset(buf, 0xff, sizeof(buf));
+		r = WRITE(fd, buf, sizeof(buf));
+		XP_SYS_EQ(sizeof(buf), r);
+
+		r = CLOSE(fd);
+		XP_SYS_EQ(0, r);
+	} else {
+		XP_SYS_NG(ENXIO, fd);
+	}
+}
+
+/*
+ * Normal playback (without PLAY_ALL)
+ * It does not verify real playback data.
+ */
+DEF(write_2)
+{
+	struct audio_info ai;
+	char *wav;
+	int wavsize;
+	int totalsize;
+	int fd;
+	int r;
+
+	TEST("write_2");
+
+	fd = OPEN(devaudio, O_WRONLY);
+	REQUIRED_SYS_OK(fd);
+
+	/* Drop PLAY_ALL */
+	AUDIO_INITINFO(&ai);
+	ai.mode = AUMODE_PLAY;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "mode");
+	REQUIRED_SYS_EQ(0, r);
+
+	/* Check mode and get blocksize */
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	REQUIRED_SYS_EQ(0, r);
+	XP_EQ(AUMODE_PLAY, ai.mode);
+
+	wavsize = ai.blocksize;
+	wav = (char *)malloc(wavsize);
+	if (wav == NULL)
+		err(1, "malloc");
+	memset(wav, 0xff, wavsize);
+
+	/* Write blocks */
+	for (totalsize = 0; totalsize < 8000; ) {
+		r = WRITE(fd, wav, wavsize);
+		XP_SYS_EQ(wavsize, r);
+		if (r == -1)
+			break;	/* XXX */
+		totalsize += r;
+	}
+
+	/* Check ai.play.error */
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	REQUIRED_SYS_EQ(0, r);
+	XP_EQ(0, ai.play.error);
+
+	/* Playback data is no longer necessary */
+	r = IOCTL(fd, AUDIO_FLUSH, NULL, "");
+	REQUIRED_SYS_EQ(0, r);
+
+	r = CLOSE(fd);
+	REQUIRED_SYS_EQ(0, r);
+
+	free(wav);
+}
+
+/*
+ * Normal recording
+ * It does not verify real recorded data.
+ */
+DEF(read_1)
+{
+	char buf[8000];
+	int fd;
+	int r;
+
+	TEST("read_1");
+
+	fd = OPEN(devaudio, O_RDONLY);
+	if (mode2rec(O_RDONLY)) {
+		REQUIRED_SYS_OK(fd);
+
+		r = READ(fd, buf, sizeof(buf));
+		XP_SYS_EQ(sizeof(buf), r);
+
+		r = CLOSE(fd);
+		XP_SYS_EQ(0, r);
+	} else {
+		XP_SYS_NG(ENXIO, fd);
+	}
+}
+
+/* DRAIN does not affect for record-only descriptor */
+DEF(drain_onrec)
+{
+	int fd;
+	int r;
+
+	TEST("drain_onrec");
+
+	if (mode2rec(O_RDONLY) == 0) {
+		XP_SKIP("operation not allowed on this hardware property");
+		return;
+	}
+
+	fd = OPEN(devaudio, O_RDONLY);
+	REQUIRED_SYS_OK(fd);
+
+	r = IOCTL(fd, AUDIO_DRAIN, NULL, "");
+	XP_SYS_EQ(0, r);
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+}
+
 
 #define ENT(x) { #x, test__ ## x }
 struct testentry testtable[] = {
@@ -1765,5 +1901,9 @@ struct testentry testtable[] = {
 	ENT(open_simul_RDWR_RDWR),
 	ENT(open_multiuser_0),
 	ENT(open_multiuser_1),
+	ENT(write_1),
+	ENT(write_2),
+	ENT(read_1),
+	ENT(drain_onrec),
 	{ NULL, NULL },
 };
