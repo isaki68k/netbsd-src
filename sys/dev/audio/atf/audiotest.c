@@ -1745,13 +1745,13 @@ DEF(open_multiuser_1)	{ test_open_multiuser(1); }
  * Normal playback (with PLAY_ALL)
  * It does not verify real playback data.
  */
-DEF(write_1)
+DEF(write_PLAY_ALL)
 {
 	char buf[8000];
 	int fd;
 	int r;
 
-	TEST("write_1");
+	TEST("write_PLAY_ALL");
 
 	fd = OPEN(devaudio, O_WRONLY);
 	if (mode2play(O_WRONLY)) {
@@ -1773,7 +1773,7 @@ DEF(write_1)
  * Normal playback (without PLAY_ALL)
  * It does not verify real playback data.
  */
-DEF(write_2)
+DEF(write_PLAY)
 {
 	struct audio_info ai;
 	char *wav;
@@ -1782,7 +1782,7 @@ DEF(write_2)
 	int fd;
 	int r;
 
-	TEST("write_2");
+	TEST("write_PLAY");
 
 	fd = OPEN(devaudio, O_WRONLY);
 	REQUIRED_SYS_OK(fd);
@@ -1832,13 +1832,13 @@ DEF(write_2)
  * Normal recording
  * It does not verify real recorded data.
  */
-DEF(read_1)
+DEF(read)
 {
 	char buf[8000];
 	int fd;
 	int r;
 
-	TEST("read_1");
+	TEST("read");
 
 	fd = OPEN(devaudio, O_RDONLY);
 	if (mode2rec(O_RDONLY)) {
@@ -1901,9 +1901,9 @@ struct testentry testtable[] = {
 	ENT(open_simul_RDWR_RDWR),
 	ENT(open_multiuser_0),
 	ENT(open_multiuser_1),
-	ENT(write_1),
-	ENT(write_2),
-	ENT(read_1),
+	ENT(write_PLAY_ALL),
+	ENT(write_PLAY),
+	ENT(read),
 	ENT(drain_onrec),
 	{ NULL, NULL },
 };
