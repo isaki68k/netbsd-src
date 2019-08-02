@@ -17,6 +17,7 @@
 #include <sys/param.h>
 #include <sys/sysctl.h>
 #include <sys/time.h>
+#include "../../pad/padio.h"	// PAD_GET_AUDIOUNIT
 
 struct cmdtable {
 	const char *name;
@@ -588,6 +589,51 @@ cmd_playmmap(int ac, char *av[])
 	return 0;
 }
 
+#define PAD_AUDIO_UNIT 1
+
+// pad を先に close する
+int
+cmd_pad_close(int ac, char *av[])
+{
+	char devname[16];
+	int fdpad;
+	int fdaudio;
+	int unit;
+	int r;
+
+	fdpad = OPEN("/dev/pad", O_RDONLY);
+	if (fdpad == -1) {
+		if (errno == ENXIO) {
+			// pad が組み込まれていない
+			errx(1, "pad seems not be configured.");
+		}
+		err(1, "open: dev/pad");
+	}
+
+	// 可能なら紐づいてる audio を自動取得
+	r = IOCTL(fdpad, PAD_GET_AUDIOUNIT, &unit, "");
+	if (r == -1) {
+		if (errno == ENODEV) {
+			// この ioctl がない環境なので仕方ないのでコンパイル時指定
+			unit = PAD_AUDIO_UNIT;
+			printf("  > No GET_AUDIOUNIT ioctl so use audio%d\n", unit);
+		} else {
+			// それ以外はエラー
+			err(1, "PAD_GET_AUDIOUNIT");
+		}
+	}
+	snprintf(devname, sizeof(devname), "/dev/audio%d", unit);
+
+	fdaudio = OPEN(devname, O_WRONLY);
+	if (fdaudio == -1)
+		err(1, "open: %s", devname);
+
+	r = CLOSE(fdpad);
+
+	r = CLOSE(fdaudio);
+
+	return 0;
+}
 
 // コマンド一覧
 #define DEF(x)	{ #x, cmd_ ## x }
@@ -599,6 +645,7 @@ struct cmdtable cmdtable[] = {
 	DEF(eap_input),
 	DEF(poll_1),
 	DEF(playmmap),
+	DEF(pad_close),
 	{ NULL, NULL },
 };
 #undef DEF
