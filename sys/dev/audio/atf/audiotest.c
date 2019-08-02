@@ -1545,7 +1545,7 @@ test_open_simul(int mode0, int mode1)
 		int mode0;
 		int mode1;
 	} expfulltable[] = {
-		/* expected fd0		expected fd1 (-error expects error) */
+		/* expected fd0		expected fd1 (-errno expects error) */
 		{ AUMODE_RECORD,	AUMODE_RECORD },	// REC, REC
 		{ AUMODE_RECORD,	AUMODE_PLAY },		// REC, PLAY
 		{ AUMODE_RECORD,	AUMODE_BOTH },		// REC, BOTH
@@ -1557,7 +1557,7 @@ test_open_simul(int mode0, int mode1)
 		{ AUMODE_BOTH,		AUMODE_BOTH },		// BOTH, BOTH
 	},
 	exphalftable[] = {
-		/* expected fd0		expected fd1 (-error expects error) */
+		/* expected fd0		expected fd1 (-errno expects error) */
 		{ AUMODE_RECORD,	AUMODE_RECORD },	// REC, REC
 		{ AUMODE_RECORD,	-ENODEV },		// REC, PLAY
 		{ AUMODE_RECORD,	-ENODEV },		// REC, BOTH
