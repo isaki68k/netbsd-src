@@ -690,7 +690,7 @@ audio(4) API fails to detect a capture-only device
 kernel panic when 'sysctl hw.audio0'
 <dd>sysctl_teardown() が原因だったっぽい。
 
-<dt><s><a href="http://gnats.netbsd.org/54427">kern/54427</a></s>
+<dt><a href="http://gnats.netbsd.org/54427">kern/54427</a>
 panic in audio_close
 <dd>pad を先にクローズすると死ぬ問題。
 
