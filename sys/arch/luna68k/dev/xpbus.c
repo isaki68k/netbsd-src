@@ -58,8 +58,6 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #define PORT_B		1
 #define PORT_C		2
 #define CTRL		3
-#define OBIO_PIO0A	(PIO_ADDR + PORT_A)
-#define OBIO_PIO0B	(PIO_ADDR + PORT_B)
 
 /* PIO0 Port C bit definition */
 #define XP_INT1_REQ	0	/* INTR B */
