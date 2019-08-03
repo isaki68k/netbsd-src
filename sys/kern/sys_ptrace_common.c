@@ -1,4 +1,4 @@
-/*	$NetBSD: sys_ptrace_common.c,v 1.54 2019/05/25 03:20:43 kamil Exp $	*/
+/*	$NetBSD: sys_ptrace_common.c,v 1.58 2019/07/18 20:10:46 kamil Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2009 The NetBSD Foundation, Inc.
@@ -118,7 +118,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sys_ptrace_common.c,v 1.54 2019/05/25 03:20:43 kamil Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sys_ptrace_common.c,v 1.58 2019/07/18 20:10:46 kamil Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ptrace.h"
@@ -367,14 +367,19 @@ ptrace_find(struct lwp *l, int req, pid_t pid)
 }
 
 static int
-ptrace_allowed(struct lwp *l, int req, struct proc *t, struct proc *p)
+ptrace_allowed(struct lwp *l, int req, struct proc *t, struct proc *p,
+    bool *locked)
 {
+	*locked = false;
+
 	/*
 	 * Grab a reference on the process to prevent it from execing or
 	 * exiting.
 	 */
 	if (!rw_tryenter(&t->p_reflock, RW_READER))
 		return EBUSY;
+
+	*locked = true;
 
 	/* Make sure we can operate on it. */
 	switch (req) {
@@ -547,9 +552,9 @@ ptrace_update_lwp(struct proc *t, struct lwp **lt, lwpid_t lid)
 	if (lid == 0 || lid == (*lt)->l_lid || t->p_nlwps == 1)
 		return 0;
 
-	lwp_delref(*lt);
-
 	mutex_enter(t->p_lock);
+	lwp_delref2(*lt);
+
 	*lt = lwp_find(t, lid);
 	if (*lt == NULL) {
 		mutex_exit(t->p_lock);
@@ -557,6 +562,7 @@ ptrace_update_lwp(struct proc *t, struct lwp **lt, lwpid_t lid)
 	}
 
 	if ((*lt)->l_flag & LW_SYSTEM) {
+		mutex_exit(t->p_lock);
 		*lt = NULL;
 		return EINVAL;
 	}
@@ -596,9 +602,6 @@ ptrace_set_siginfo(struct proc *t, struct lwp **lt, struct ptrace_methods *ptm,
 	if (psi.psi_siginfo.si_signo < 0 || psi.psi_siginfo.si_signo >= NSIG)
 		return EINVAL;
 
-	if ((error = ptrace_update_lwp(t, lt, psi.psi_lwpid)) != 0)
-		return error;
-
 	t->p_sigctx.ps_faked = true;
 	t->p_sigctx.ps_info = psi.psi_siginfo._info;
 	t->p_sigctx.ps_lwp = psi.psi_lwpid;
@@ -627,6 +630,8 @@ ptrace_get_event_mask(struct proc *t, void *addr, size_t data)
 	    PTRACE_LWP_CREATE : 0;
 	pe.pe_set_event |= ISSET(t->p_slflag, PSL_TRACELWP_EXIT) ?
 	    PTRACE_LWP_EXIT : 0;
+	pe.pe_set_event |= ISSET(t->p_slflag, PSL_TRACEPOSIX_SPAWN) ?
+	    PTRACE_POSIX_SPAWN : 0;
 	DPRINTF(("%s: lwp=%d event=%#x\n", __func__,
 	    t->p_sigctx.ps_lwp, pe.pe_set_event));
 	return copyout(&pe, addr, sizeof(pe));
@@ -671,6 +676,12 @@ ptrace_set_event_mask(struct proc *t, void *addr, size_t data)
 		SET(t->p_slflag, PSL_TRACELWP_EXIT);
 	else
 		CLR(t->p_slflag, PSL_TRACELWP_EXIT);
+
+	if (pe.pe_set_event & PTRACE_POSIX_SPAWN)
+		SET(t->p_slflag, PSL_TRACEPOSIX_SPAWN);
+	else
+		CLR(t->p_slflag, PSL_TRACEPOSIX_SPAWN);
+
 	return 0;
 }
 
@@ -700,6 +711,9 @@ ptrace_get_process_state(struct proc *t, void *addr, size_t data)
 	} else if (t->p_lwp_exited) {
 		ps.pe_report_event = PTRACE_LWP_EXIT;
 		ps.pe_lwp = t->p_lwp_exited;
+	} else if (t->p_pspid) {
+		ps.pe_report_event = PTRACE_POSIX_SPAWN;
+		ps.pe_other_pid = t->p_pspid;
 	}
 	DPRINTF(("%s: lwp=%d event=%#x pid=%d lwp=%d\n", __func__,
 	    t->p_sigctx.ps_lwp, ps.pe_report_event,
@@ -885,6 +899,7 @@ ptrace_sendsig(struct proc *t, struct lwp *lt, int signo, int resume_all)
 	t->p_vfpid_done = 0;
 	t->p_lwp_created = 0;
 	t->p_lwp_exited = 0;
+	t->p_pspid = 0;
 
 	/* Finally, deliver the requested signal (or none). */
 	if (t->p_stat == SSTOP) {
@@ -1033,6 +1048,7 @@ do_ptrace(struct ptrace_methods *ptm, struct lwp *l, int req, pid_t pid,
 	int error, write, tmp, pheld;
 	int signo = 0;
 	int resume_all;
+	bool locked;
 	error = 0;
 
 	/*
@@ -1048,7 +1064,7 @@ do_ptrace(struct ptrace_methods *ptm, struct lwp *l, int req, pid_t pid,
 	}
 
 	pheld = 1;
-	if ((error = ptrace_allowed(l, req, t, p)) != 0)
+	if ((error = ptrace_allowed(l, req, t, p, &locked)) != 0)
 		goto out;
 
 	if ((error = kauth_authorize_process(l->l_cred,
@@ -1415,7 +1431,8 @@ out:
 	}
 	if (lt != NULL)
 		lwp_delref(lt);
-	rw_exit(&t->p_reflock);
+	if (locked)
+		rw_exit(&t->p_reflock);
 
 	return error;
 }
@@ -1471,9 +1488,13 @@ process_doregs(struct lwp *curl /*tracer*/,
 	regwfunc_t w;
 
 #ifdef COMPAT_NETBSD32
-	const bool pk32 = (l->l_proc->p_flag & PK_32) != 0;
+	const bool pk32 = (curl->l_proc->p_flag & PK_32) != 0;
 
 	if (__predict_false(pk32)) {
+		if ((l->l_proc->p_flag & PK_32) == 0) {
+			// 32 bit tracer can't trace 64 bit process
+			return EINVAL;
+		}
 		s = sizeof(process_reg32);
 		r = (regrfunc_t)process_read_regs32;
 		w = (regwfunc_t)process_write_regs32;
@@ -1512,9 +1533,13 @@ process_dofpregs(struct lwp *curl /*tracer*/,
 	regwfunc_t w;
 
 #ifdef COMPAT_NETBSD32
-	const bool pk32 = (l->l_proc->p_flag & PK_32) != 0;
+	const bool pk32 = (curl->l_proc->p_flag & PK_32) != 0;
 
 	if (__predict_false(pk32)) {
+		if ((l->l_proc->p_flag & PK_32) == 0) {
+			// 32 bit tracer can't trace 64 bit process
+			return EINVAL;
+		}
 		s = sizeof(process_fpreg32);
 		r = (regrfunc_t)process_read_fpregs32;
 		w = (regwfunc_t)process_write_fpregs32;
@@ -1553,9 +1578,13 @@ process_dodbregs(struct lwp *curl /*tracer*/,
 	regwfunc_t w;
 
 #ifdef COMPAT_NETBSD32
-	const bool pk32 = (l->l_proc->p_flag & PK_32) != 0;
+	const bool pk32 = (curl->l_proc->p_flag & PK_32) != 0;
 
 	if (__predict_false(pk32)) {
+		if ((l->l_proc->p_flag & PK_32) == 0) {
+			// 32 bit tracer can't trace 64 bit process
+			return EINVAL;
+		}
 		s = sizeof(process_dbreg32);
 		r = (regrfunc_t)process_read_dbregs32;
 		w = (regwfunc_t)process_write_dbregs32;

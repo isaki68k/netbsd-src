@@ -1,4 +1,4 @@
-/*	$NetBSD: usb_subr.c,v 1.230 2019/02/12 14:17:44 rin Exp $	*/
+/*	$NetBSD: usb_subr.c,v 1.236 2019/07/31 19:40:59 maxv Exp $	*/
 /*	$FreeBSD: src/sys/dev/usb/usb_subr.c,v 1.18 1999/11/17 22:33:47 n_hibma Exp $	*/
 
 /*
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: usb_subr.c,v 1.230 2019/02/12 14:17:44 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: usb_subr.c,v 1.236 2019/07/31 19:40:59 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
@@ -135,6 +135,8 @@ usbd_get_string_desc(struct usbd_device *dev, int sindex, int langid,
 	if (actlen < 2)
 		return USBD_SHORT_XFER;
 
+	if (sdesc->bLength > sizeof(*sdesc))
+		return USBD_INVAL;
 	USETW(req.wLength, sdesc->bLength);	/* the whole string */
 	err = usbd_do_request_flags(dev, &req, sdesc, USBD_SHORT_XFER_OK,
 		&actlen, USBD_DEFAULT_TIMEOUT);
@@ -366,8 +368,8 @@ usbd_find_idesc(usb_config_descriptor_t *cd, int ifaceidx, int altidx)
 		    altidx, curaidx);
 		DPRINTFN(4, "len=%jd type=%jd", d->bLength, d->bDescriptorType,
 		    0, 0);
-		if (d->bLength == 0) /* bad descriptor */
-			break;
+		if (d->bLength == 0)
+			break; /* bad descriptor */
 		p += d->bLength;
 		if (p <= end && d->bDescriptorType == UDESC_INTERFACE) {
 			if (d->bInterfaceNumber != lastidx) {
@@ -402,8 +404,8 @@ usbd_find_edesc(usb_config_descriptor_t *cd, int ifaceidx, int altidx,
 	curidx = -1;
 	for (p = (char *)d + d->bLength; p < end; ) {
 		e = (usb_endpoint_descriptor_t *)p;
-		if (e->bLength == 0) /* bad descriptor */
-			break;
+		if (e->bLength == 0)
+			break; /* bad descriptor */
 		p += e->bLength;
 		if (p <= end && e->bDescriptorType == UDESC_INTERFACE)
 			return NULL;
@@ -450,7 +452,8 @@ usbd_fill_iface_data(struct usbd_device *dev, int ifaceidx, int altidx)
 			DPRINTFN(10, "p=%#jx end=%#jx len=%jd type=%jd",
 			    (uintptr_t)p, (uintptr_t)end, ed->bLength,
 			    ed->bDescriptorType);
-			if (p + ed->bLength <= end && ed->bLength != 0 &&
+			if (p + ed->bLength <= end &&
+			    ed->bLength >= USB_ENDPOINT_DESCRIPTOR_SIZE &&
 			    ed->bDescriptorType == UDESC_ENDPOINT)
 				goto found;
 			if (ed->bLength == 0 ||
@@ -607,7 +610,7 @@ usbd_set_config_index(struct usbd_device *dev, int index, int msg)
 		return err;
 	}
 	len = UGETW(cd.wTotalLength);
-	if (len == 0) {
+	if (len < USB_CONFIG_DESCRIPTOR_SIZE) {
 		DPRINTF("empty short descriptor", 0, 0, 0, 0);
 		return USBD_INVAL;
 	}
@@ -629,6 +632,11 @@ usbd_set_config_index(struct usbd_device *dev, int index, int msg)
 		err = USBD_INVAL;
 		goto bad;
 	}
+	if (UGETW(cdp->wTotalLength) != UGETW(cd.wTotalLength)) {
+		DPRINTF("bad len %jd", UGETW(cdp->wTotalLength), 0, 0, 0);
+		err = USBD_INVAL;
+		goto bad;
+	}
 
 	if (USB_IS_SS(dev->ud_speed)) {
 		usb_bos_descriptor_t bd;
@@ -637,7 +645,7 @@ usbd_set_config_index(struct usbd_device *dev, int index, int msg)
 		err = usbd_get_bos_desc(dev, index, &bd);
 		if (!err) {
 			int blen = UGETW(bd.wTotalLength);
-			if (blen == 0) {
+			if (blen < USB_BOS_DESCRIPTOR_SIZE) {
 				DPRINTF("empty bos descriptor", 0, 0, 0, 0);
 				err = USBD_INVAL;
 				goto bad;
@@ -652,7 +660,8 @@ usbd_set_config_index(struct usbd_device *dev, int index, int msg)
 					break;
 				usbd_delay_ms(dev, 200);
 			}
-			if (err || bdp->bDescriptorType != UDESC_BOS) {
+			if (err || bdp->bDescriptorType != UDESC_BOS ||
+			    UGETW(bdp->wTotalLength) != UGETW(bd.wTotalLength)) {
 				DPRINTF("error %jd or bad desc %jd", err,
 				    bdp->bDescriptorType, 0, 0);
 				kmem_free(bdp, blen);

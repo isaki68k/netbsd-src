@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.221 2019/03/26 00:36:14 pgoyette Exp $
+#	$NetBSD: Makefile,v 1.223 2019/07/31 09:13:16 mrg Exp $
 
 .include <bsd.own.mk>
 
@@ -160,8 +160,10 @@ SUBDIR+=	tmpfs
 SUBDIR+=	ualea
 SUBDIR+=	uatp
 SUBDIR+=	udf
+SUBDIR+=	ufs
 SUBDIR+=	umap
 SUBDIR+=	union
+SUBDIR+=	usbnet
 SUBDIR+=	usbverbose
 SUBDIR+=	vcoda
 SUBDIR+=	v7fs

@@ -1,4 +1,4 @@
-/* $NetBSD: if_txp.c,v 1.57 2019/05/29 10:07:29 msaitoh Exp $ */
+/* $NetBSD: if_txp.c,v 1.59 2019/07/09 08:46:59 msaitoh Exp $ */
 
 /*
  * Copyright (c) 2001
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_txp.c,v 1.57 2019/05/29 10:07:29 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_txp.c,v 1.59 2019/07/09 08:46:59 msaitoh Exp $");
 
 #include "opt_inet.h"
 
@@ -275,8 +275,6 @@ txp_attach(device_t parent, device_t self, void *aux)
 	if (txp_command(sc, TXP_CMD_STATION_ADDRESS_READ, 0, 0, 0,
 	    &p1, &p2, NULL, 1))
 		goto cleanupintr;
-
-	txp_set_filter(sc);
 
 	p1 = htole16(p1);
 	enaddr[0] = ((uint8_t *)&p1)[1];
@@ -2024,6 +2022,7 @@ txp_capabilities(struct txp_softc *sc)
 		sc->sc_tx_capability |= OFFLOAD_VLAN;
 		sc->sc_rx_capability |= OFFLOAD_VLAN;
 		sc->sc_arpcom.ec_capabilities |= ETHERCAP_VLAN_HWTAGGING;
+		sc->sc_arpcom.ec_capenable |= ETHERCAP_VLAN_HWTAGGING;
 	}
 
 #if 0

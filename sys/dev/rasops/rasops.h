@@ -1,4 +1,4 @@
-/* 	$NetBSD: rasops.h,v 1.32 2017/04/22 15:05:02 macallan Exp $ */
+/* 	$NetBSD: rasops.h,v 1.42 2019/07/31 04:45:44 rin Exp $ */
 
 /*-
  * Copyright (c) 1999 The NetBSD Foundation, Inc.
@@ -72,7 +72,7 @@
 struct rasops_info {
 	/* These must be filled in by the caller */
 	int	ri_depth;	/* depth in bits */
-	u_char	*ri_bits;	/* ptr to bits */
+	uint8_t	*ri_bits;	/* ptr to bits */
 	int	ri_width;	/* width (pels) */
 	int	ri_height;	/* height (pels) */
 	int	ri_stride;	/* stride in bytes */
@@ -81,7 +81,7 @@ struct rasops_info {
 	 * If you want shadow framebuffer support, point ri_hwbits
 	 * to the real framebuffer, and ri_bits to the shadow framebuffer
 	 */
-	u_char	*ri_hwbits;
+	uint8_t	*ri_hwbits;
 
 	/*
 	 * These can optionally be left zeroed out. If you fill ri_font,
@@ -100,13 +100,12 @@ struct rasops_info {
 	 * on depths other than 15, 16, 24 and 32 bits per pel. On
 	 * 24 bit displays, ri_{r,g,b}num must be 8.
 	 */
-	u_char	ri_rnum;
-	/* number of bits for red */
-	u_char	ri_gnum;	/* number of bits for green */
-	u_char	ri_bnum;	/* number of bits for blue */
-	u_char	ri_rpos;	/* which bit red starts at */
-	u_char	ri_gpos;	/* which bit green starts at */
-	u_char	ri_bpos;	/* which bit blue starts at */
+	uint8_t	ri_rnum;	/* number of bits for red */
+	uint8_t	ri_gnum;	/* number of bits for green */
+	uint8_t	ri_bnum;	/* number of bits for blue */
+	uint8_t	ri_rpos;	/* which bit red starts at */
+	uint8_t	ri_gpos;	/* which bit green starts at */
+	uint8_t	ri_bpos;	/* which bit blue starts at */
 
 	/* These are filled in by rasops_init() */
 	int	ri_emuwidth;	/* width we actually care about */
@@ -114,16 +113,16 @@ struct rasops_info {
 	int	ri_emustride;	/* bytes per row we actually care about */
 	int	ri_rows;	/* number of rows (characters, not pels) */
 	int	ri_cols;	/* number of columns (characters, not pels) */
-	int	ri_delta;	/* row delta in bytes */
 	int	ri_pelbytes;	/* bytes per pel (may be zero) */
 	int	ri_fontscale;	/* fontheight * fontstride */
 	int	ri_xscale;	/* fontwidth * pelbytes */
 	int	ri_yscale;	/* fontheight * stride */
-	u_char  *ri_origbits;	/* where screen bits actually start */
-	u_char  *ri_hworigbits;	/* where hw bits actually start */
+	uint8_t	*ri_origbits;	/* where screen bits actually start */
+	uint8_t *ri_hworigbits;	/* where hw bits actually start */
 	int	ri_xorigin;	/* where ri_bits begins (x) */
 	int	ri_yorigin;	/* where ri_bits begins (y) */
-	int32_t	ri_devcmap[16]; /* color -> framebuffer data */
+	uint32_t
+		ri_devcmap[16]; /* color -> framebuffer data */
 
 	/* The emulops you need to use, and the screen caps for wscons */
 	struct	wsdisplay_emulops ri_ops;
@@ -132,13 +131,20 @@ struct rasops_info {
 	/* Callbacks so we can share some code */
 	void	(*ri_do_cursor)(struct rasops_info *);
 
+	/* buffer capable of single-row pixels */
+	void	*ri_buf;
+	size_t	ri_buflen;
+
+	/* 4x1 stamp for optimized character blitting */
+	void	*ri_stamp;
+	long	ri_stamp_attr;
+	size_t	ri_stamp_len;
+
 #if NRASOPS_ROTATION > 0
 	/* Used to intercept putchar to permit display rotation */
 	struct	wsdisplay_emulops ri_real_ops;
 #endif
 };
-
-#define DELTA(p, d, cast) ((p) = (cast)((char *)(p) + (d)))
 
 #define CHAR_IN_FONT(c,font) 					\
        ((c) >= (font)->firstchar && 				\
@@ -162,9 +168,19 @@ struct rasops_info {
  * to -1 (or a new, valid cookie).
  */
 
+/* rasops.c */
+int	rasops_init(struct rasops_info *, int, int);
+int	rasops_reconfig(struct rasops_info *, int, int);
+void	rasops_unpack_attr(long, int *, int *, int *);
+void	rasops_eraserows(void *, int, int, long);
+void	rasops_erasecols(void *, int, int, int, long);
+int	rasops_get_cmap(struct rasops_info *, uint8_t *, size_t);
+
+extern const uint8_t	rasops_cmap[256 * 3];
+
+#ifdef _RASOPS_PRIVATE
 /*
- * Per-depth initialization functions. These should not be called outside
- * the rasops code.
+ * Per-depth initialization functions.
  */
 void	rasops1_init(struct rasops_info *);
 void	rasops2_init(struct rasops_info *);
@@ -174,17 +190,25 @@ void	rasops15_init(struct rasops_info *);
 void	rasops24_init(struct rasops_info *);
 void	rasops32_init(struct rasops_info *);
 
-/* rasops.c */
-int	rasops_init(struct rasops_info *, int, int);
-int	rasops_reconfig(struct rasops_info *, int, int);
-void	rasops_unpack_attr(long, int *, int *, int *);
-void	rasops_eraserows(void *, int, int, long);
-void	rasops_erasecols(void *, int, int, int, long);
-void	rasops_copycols(void *, int, int, int, int);
-int	rasops_get_cmap(struct rasops_info *, uint8_t *, size_t);
+void	rasops_allocstamp(struct rasops_info *, size_t);
 
+#define	DELTA(p, d, cast) ((p) = (cast)((uint8_t *)(p) + (d)))
 
-extern const u_char	rasops_isgray[16];
-extern const u_char	rasops_cmap[256*3];
+#define	FONT_GLYPH(uc, font, ri)					\
+	((uint8_t *)(font)->data + ((uc) - ((font)->firstchar)) *	\
+	    (ri)->ri_fontscale)
+
+static __inline uint32_t
+be32uatoh(uint8_t *p)
+{
+	uint32_t u;
+
+	u  = p[0]; u <<= 8;
+	u |= p[1]; u <<= 8;
+	u |= p[2]; u <<= 8;
+	u |= p[3];
+	return u;
+}
+#endif /* _RASOPS_PRIVATE */
 
 #endif /* _RASOPS_H_ */

@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_proc.c,v 1.232 2019/06/01 19:48:29 kamil Exp $	*/
+/*	$NetBSD: kern_proc.c,v 1.234 2019/08/02 22:46:44 kamil Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2006, 2007, 2008 The NetBSD Foundation, Inc.
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_proc.c,v 1.232 2019/06/01 19:48:29 kamil Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_proc.c,v 1.234 2019/08/02 22:46:44 kamil Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_kstack.h"
@@ -1819,6 +1819,8 @@ sysctl_doeproc(SYSCTLFN_ARGS)
 
 		if (buflen >= elem_size &&
 		    (type == KERN_PROC || elem_count > 0)) {
+			ruspace(p);	/* Update process vm resource use */
+
 			if (type == KERN_PROC) {
 				fill_proc(p, &kbuf->kproc.kp_proc, allowaddr);
 				fill_eproc(p, &kbuf->kproc.kp_eproc, zombie,
@@ -2266,6 +2268,7 @@ fill_proc(const struct proc *psrc, struct proc *p, bool allowaddr)
 	p->p_vfpid_done = psrc->p_vfpid_done;
 	p->p_lwp_created = psrc->p_lwp_created;
 	p->p_lwp_exited = psrc->p_lwp_exited;
+	p->p_pspid = psrc->p_pspid;
 	COND_SET_VALUE(p->p_path, psrc->p_path, allowaddr);
 	COND_SET_VALUE(p->p_sigctx, psrc->p_sigctx, allowaddr);
 	p->p_nice = psrc->p_nice;

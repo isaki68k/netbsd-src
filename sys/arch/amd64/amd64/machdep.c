@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.331 2019/05/19 08:46:15 maxv Exp $	*/
+/*	$NetBSD: machdep.c,v 1.335 2019/07/24 16:36:47 bouyer Exp $	*/
 
 /*
  * Copyright (c) 1996, 1997, 1998, 2000, 2006, 2007, 2008, 2011
@@ -110,7 +110,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.331 2019/05/19 08:46:15 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.335 2019/07/24 16:36:47 bouyer Exp $");
 
 #include "opt_modular.h"
 #include "opt_user_ldt.h"
@@ -2064,15 +2064,6 @@ cpu_setmcontext(struct lwp *l, const mcontext_t *mcp, unsigned int flags)
 		tf->tf_rsp  = gr[_REG_RSP];
 		tf->tf_ss   = LSEL(LUDATA_SEL, SEL_UPL);
 
-#ifdef XENPV
-		/*
-		 * Xen has its own way of dealing with %cs and %ss,
-		 * reset them to proper values.
-		 */
-		tf->tf_ss = GSEL(GUDATA_SEL, SEL_UPL);
-		tf->tf_cs = GSEL(GUCODE_SEL, SEL_UPL);
-#endif
-
 		l->l_md.md_flags |= MDL_IRET;
 	}
 
@@ -2161,6 +2152,8 @@ mm_md_kernacc(void *ptr, vm_prot_t prot, bool *handled)
 	for (i = 0; i < BTSPACE_NSEGS; i++) {
 		kva = bootspace.segs[i].va;
 		kva_end = kva + bootspace.segs[i].sz;
+		if (v < kva || v >= kva_end)
+			continue;
 		*handled = true;
 		if (bootspace.segs[i].type == BTSEG_TEXT ||
 		    bootspace.segs[i].type == BTSEG_RODATA) {
@@ -2180,8 +2173,9 @@ mm_md_kernacc(void *ptr, vm_prot_t prot, bool *handled)
 
 	if (v >= bootspace.smodule && v < bootspace.emodule) {
 		*handled = true;
-		if (!uvm_map_checkprot(module_map, v, v + 1, prot))
+		if (!uvm_map_checkprot(module_map, v, v + 1, prot)) {
 			return EFAULT;
+		}
 	} else {
 		*handled = false;
 	}

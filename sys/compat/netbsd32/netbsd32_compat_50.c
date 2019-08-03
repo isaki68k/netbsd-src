@@ -1,4 +1,4 @@
-/*	$NetBSD: netbsd32_compat_50.c,v 1.36 2019/03/01 11:06:56 pgoyette Exp $	*/
+/*	$NetBSD: netbsd32_compat_50.c,v 1.39 2019/06/27 02:36:27 christos Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -36,11 +36,13 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: netbsd32_compat_50.c,v 1.36 2019/03/01 11:06:56 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: netbsd32_compat_50.c,v 1.39 2019/06/27 02:36:27 christos Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_compat_netbsd.h"
-#include <opt_ntp.h>
+#include "opt_compat_netbsd32.h"
+#include "opt_ntp.h"
+#include "opt_quota.h"
 #endif
 
 
@@ -116,7 +118,7 @@ compat_50_netbsd32_mknod(struct lwp *l,
 		syscallarg(uint32_t) dev;
 	} */
 	return do_sys_mknod(l, SCARG_P32(uap, path), SCARG(uap, mode),
-	    SCARG(uap, dev), retval, UIO_USERSPACE);
+	    SCARG(uap, dev), UIO_USERSPACE);
 }
 
 int
@@ -915,6 +917,7 @@ compat_50_netbsd32_getitimer(struct lwp *l, const struct compat_50_netbsd32_geti
 	return copyout(&s32it, SCARG_P32(uap, itv), sizeof(s32it));
 }
 
+#ifdef QUOTA
 int
 compat_50_netbsd32_quotactl(struct lwp *l, const struct compat_50_netbsd32_quotactl_args *uap, register_t *retval)
 {
@@ -932,6 +935,7 @@ compat_50_netbsd32_quotactl(struct lwp *l, const struct compat_50_netbsd32_quota
 	NETBSD32TOP_UAP(arg, void *);
 	return (compat_50_sys_quotactl(l, &ua, retval));
 }
+#endif
 
 #ifdef NTP
 int
@@ -1023,8 +1027,10 @@ static struct syscall_package compat_netbsd32_50_syscalls[] = {
 	    (sy_call_t *)compat_50_netbsd32_setitimer }, 
 	{ NETBSD32_SYS_compat_50_netbsd32_getitimer, 0,
 	    (sy_call_t *)compat_50_netbsd32_getitimer }, 
+#ifdef QUOTA
 	{ NETBSD32_SYS_compat_50_netbsd32_quotactl, 0,
 	    (sy_call_t *)compat_50_netbsd32_quotactl }, 
+#endif
 #ifdef NTP
 	{ NETBSD32_SYS_compat_50_netbsd32_ntp_gettime, 0,
 	    (sy_call_t *)compat_50_netbsd32_ntp_gettime }, 

@@ -1,4 +1,4 @@
-/*	$NetBSD: boot.c,v 1.10 2018/04/11 10:32:09 nonaka Exp $	*/
+/*	$NetBSD: boot.c,v 1.13 2019/07/29 11:28:51 nonaka Exp $	*/
 
 /*-
  * Copyright (c) 2016 Kimihiro Nonaka <nonaka@netbsd.org>
@@ -62,6 +62,7 @@ static const char * const names[][2] = {
 void	command_help(char *);
 void	command_quit(char *);
 void	command_boot(char *);
+void	command_pkboot(char *);
 void	command_consdev(char *);
 void	command_dev(char *);
 void	command_devpath(char *);
@@ -84,6 +85,7 @@ const struct bootblk_command commands[] = {
 	{ "?",		command_help },
 	{ "quit",	command_quit },
 	{ "boot",	command_boot },
+	{ "pkboot",	command_pkboot },
 	{ "consdev",	command_consdev },
 	{ "dev",	command_dev },
 	{ "devpath",	command_devpath },
@@ -224,40 +226,16 @@ clearit(void)
 static void
 bootit(const char *filename, int howto)
 {
-	EFI_STATUS status;
-	EFI_PHYSICAL_ADDRESS bouncebuf;
-	UINTN npages;
-	u_long allocsz;
 
 	if (howto & AB_VERBOSE)
 		printf("booting %s (howto 0x%x)\n", sprint_bootsel(filename),
 		    howto);
 
-	if (count_netbsd(filename, &allocsz) < 0) {
-		printf("boot: %s: %s\n", sprint_bootsel(filename),
-		       strerror(errno));
-		return;
-	}
-
-	bouncebuf = EFI_ALLOCATE_MAX_ADDRESS;
-	npages = EFI_SIZE_TO_PAGES(allocsz);
-	status = uefi_call_wrapper(BS->AllocatePages, 4, AllocateMaxAddress,
-	    EfiLoaderData, npages, &bouncebuf);
-	if (EFI_ERROR(status)) {
-		printf("boot: %s: %s\n", sprint_bootsel(filename),
-		       strerror(ENOMEM));
-		return;
-	}
-
-	efi_loadaddr = bouncebuf;
-	if (exec_netbsd(filename, bouncebuf, howto, 0, efi_cleanup) < 0)
+	if (exec_netbsd(filename, efi_loadaddr, howto, 0, efi_cleanup) < 0)
 		printf("boot: %s: %s\n", sprint_bootsel(filename),
 		       strerror(errno));
 	else
 		printf("boot returned\n");
-
-	(void) uefi_call_wrapper(BS->FreePages, 2, bouncebuf, npages);
-	efi_loadaddr = 0;
 }
 
 void
@@ -362,7 +340,8 @@ command_help(char *arg)
 
 	printf("commands are:\n"
 	       "boot [xdNx:][filename] [-12acdqsvxz]\n"
-	       "     (ex. \"hd0a:netbsd.old -s\"\n"
+	       "     (ex. \"hd0a:netbsd.old -s\")\n"
+	       "pkboot [xdNx:][filename] [-12acdqsvxz]\n"
 	       "dev [xd[N[x]]:]\n"
 	       "consdev {pc|com[0123][,{speed}]|com,{ioport}[,{speed}]}\n"
 	       "devpath\n"
@@ -372,7 +351,7 @@ command_help(char *arg)
 #if LIBSA_ENABLE_LS_OP
 	       "ls [path]\n"
 #endif
-	       "memmap [{sorted|unsorted}]\n"
+	       "memmap [{sorted|unsorted|compact}]\n"
 #ifndef SMALL
 	       "menu (reenters boot menu, if defined in boot.cfg)\n"
 #endif
@@ -432,6 +411,15 @@ command_boot(char *arg)
 			bootit(names[i][1], howto);
 		}
 	}
+}
+
+void
+command_pkboot(char *arg)
+{
+	extern int has_prekern;
+	has_prekern = 1;
+	command_boot(arg);
+	has_prekern = 0;
 }
 
 void
@@ -625,18 +613,21 @@ void
 command_memmap(char *arg)
 {
 	bool sorted = true;
+	bool compact = false;
 
 	if (*arg == '\0' || strcmp(arg, "sorted") == 0)
 		/* Already sorted is true. */;
 	else if (strcmp(arg, "unsorted") == 0)
 		sorted = false;
+	else if (strcmp(arg, "compact") == 0)
+		compact = true;
 	else {
 		printf("invalid flag, "
-		    "must be 'sorted' or 'unsorted'.\n");
+		    "must be 'sorted', 'unsorted' or 'compact'.\n");
 		return;
 	}
 
-	efi_memory_show_map(sorted);
+	efi_memory_show_map(sorted, compact);
 }
 
 void
