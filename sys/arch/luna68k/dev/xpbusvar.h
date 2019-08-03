@@ -28,9 +28,14 @@
 #ifndef _XPBUSVAR_H_
 #define _XPBUSVAR_H_
 
-#define XP_SHM_BASE	0x71000000
+#include <machine/board.h>
+
+#define TRI_PORT_RAM_XP_OFFSET	0x00000
+
+#define XP_SHM_BASE	(TRI_PORT_RAM + TRI_PORT_RAM_XP_OFFSET)
 #define XP_SHM_SIZE	0x00010000	/* 64KB for XP; rest 64KB for lance */
-#define XP_TAS_ADDR	0x61000000
+#define XP_TAS_ADDR	OBIO_TAS
+
 
 struct xpbus_attach_args {
 	const char *xa_name;

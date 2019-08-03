@@ -1,4 +1,4 @@
-/*	$NetBSD: audiovar.h,v 1.2 2019/05/08 13:40:17 isaki Exp $	*/
+/*	$NetBSD: audiovar.h,v 1.4 2019/06/26 06:57:45 isaki Exp $	*/
 
 /*-
  * Copyright (c) 2002 The NetBSD Foundation, Inc.

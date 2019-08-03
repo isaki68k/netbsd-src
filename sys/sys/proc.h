@@ -1,4 +1,4 @@
-/*	$NetBSD: proc.h,v 1.352 2019/04/06 11:54:21 kamil Exp $	*/
+/*	$NetBSD: proc.h,v 1.355 2019/07/15 19:34:45 pgoyette Exp $	*/
 
 /*-
  * Copyright (c) 2006, 2007, 2008 The NetBSD Foundation, Inc.
@@ -153,8 +153,8 @@ struct emul {
 	const uint32_t	*e_nomodbits;	/* sys_nosys/sys_nomodule flags
 					 * for syscall_disestablish() */
 	const char * const *e_syscallnames; /* System call name array */
+	struct sc_autoload *e_sc_autoload; /* List of autoloadable syscalls */
 					/* Signal sending function */
-	struct sc_autoload *e_sc_autoload;	/* List of autoloadable syscalls */
 	void		(*e_sendsig)(const struct ksiginfo *,
 					  const sigset_t *);
 	void		(*e_trapsignal)(struct lwp *, struct ksiginfo *);
@@ -316,6 +316,7 @@ struct proc {
 	pid_t 		p_vfpid_done;	/* :: vforked done pid */
 	lwpid_t		p_lwp_created;	/* :: lwp created */
 	lwpid_t		p_lwp_exited;	/* :: lwp exited */
+	pid_t 		p_pspid;	/* :: posix_spawn pid */
 	char		*p_path;	/* :: full pathname of executable */
 
 /*
@@ -394,7 +395,6 @@ struct proc {
 #define	PS_STOPFORK	0x00800000 /* Child will be stopped on fork(2) */
 #define	PS_STOPEXEC	0x01000000 /* Will be stopped on exec(2) */
 #define	PS_STOPEXIT	0x02000000 /* Will be stopped at process exit */
-#define	PS_NOTIFYSTOP	0x10000000 /* Notify parent of successful STOP */
 #define	PS_COREDUMP	0x20000000 /* Process core-dumped */
 #define	PS_CONTINUED	0x40000000 /* Process is continued */
 #define	PS_STOPPING	0x80000000 /* Transitioning SACTIVE -> SSTOP */
@@ -411,6 +411,8 @@ struct proc {
 			0x00000008 /* traced process wants LWP create events */
 #define	PSL_TRACELWP_EXIT	\
 			0x00000010 /* traced process wants LWP exit events */
+#define	PSL_TRACEPOSIX_SPAWN	\
+			0x00000020 /* traced process wants posix_spawn events */
 
 #define	PSL_TRACED	0x00000800 /* Debugged process being traced */
 #define	PSL_CHTRACED	0x00400000 /* Child has been traced & reparented */

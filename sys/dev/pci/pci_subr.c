@@ -1,4 +1,4 @@
-/*	$NetBSD: pci_subr.c,v 1.212 2019/03/01 09:26:00 msaitoh Exp $	*/
+/*	$NetBSD: pci_subr.c,v 1.215 2019/07/18 07:49:26 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 1997 Zubin D. Dittia.  All rights reserved.
@@ -40,7 +40,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pci_subr.c,v 1.212 2019/03/01 09:26:00 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pci_subr.c,v 1.215 2019/07/18 07:49:26 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_pci.h"
@@ -1524,7 +1524,7 @@ pci_conf_print_subsystem_cap(const pcireg_t *regs, int capoff)
 	reg = regs[o2i(capoff + PCI_CAP_SUBSYS_ID)];
 
 	printf("\n  Subsystem ID Capability Register\n");
-	printf("    Subsystem ID : 0x%08x\n", reg);
+	printf("    Subsystem ID: 0x%08x\n", reg);
 }
 
 /* XXX pci_conf_print_agp8_cap */
@@ -1570,7 +1570,7 @@ pci_conf_print_secure_cap(const pcireg_t *regs, int capoff)
 	onoff("Enable", reg, PCI_SECURE_IOMMU_BAL_EN);
 	reg2 = regs[o2i(capoff + PCI_SECURE_IOMMU_BAH)];
 	printf("    Base Address High Register: 0x%08x\n", reg2);
-	printf("      Base Address : 0x%016" PRIx64 "\n",
+	printf("      Base Address: 0x%016" PRIx64 "\n",
 	    ((uint64_t)reg2 << 32)
 	    | (reg & (PCI_SECURE_IOMMU_BAL_H | PCI_SECURE_IOMMU_BAL_L)));
 	
@@ -1688,7 +1688,7 @@ pci_print_pcie_compl_timeout(uint32_t val)
 	}
 }
 
-static const char * const pcie_linkspeeds[] = {"2.5", "5.0", "8.0"};
+static const char * const pcie_linkspeeds[] = {"2.5", "5.0", "8.0", "16.0"};
 
 /*
  * Print link speed. This function is used for the following register bits:
@@ -4240,6 +4240,9 @@ static struct {
 	  NULL },
 	{ PCI_EXTCAP_VF_RESIZBAR, "VF Resizable BARs",
 	  NULL },
+	{ 0x25, "unknown", NULL },
+	{ 0x26, "unknown", NULL },
+	{ 0x27, "unknown", NULL },
 	{ PCI_EXTCAP_HIERARCHYID, "Hierarchy ID",
 	  NULL },
 	{ PCI_EXTCAP_NPEM,	"Native PCIe Enclosure Management",

@@ -1,4 +1,4 @@
-/*	$NetBSD: audiobell.c,v 1.2 2019/05/08 13:40:17 isaki Exp $	*/
+/*	$NetBSD: audiobell.c,v 1.3 2019/06/26 06:57:45 isaki Exp $	*/
 
 /*
  * Copyright (c) 1999 Richard Earnshaw
@@ -31,7 +31,7 @@
  */
 
 #include <sys/types.h>
-__KERNEL_RCSID(0, "$NetBSD: audiobell.c,v 1.2 2019/05/08 13:40:17 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: audiobell.c,v 1.3 2019/06/26 06:57:45 isaki Exp $");
 
 #include <sys/audioio.h>
 #include <sys/conf.h>

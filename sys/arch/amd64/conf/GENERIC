@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.528 2019/05/24 14:28:48 nonaka Exp $
+# $NetBSD: GENERIC,v 1.532 2019/08/01 13:48:50 msaitoh Exp $
 #
 # GENERIC machine description file
 #
@@ -22,7 +22,7 @@ include 	"arch/amd64/conf/std.amd64"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident		"GENERIC-$Revision: 1.528 $"
+#ident		"GENERIC-$Revision: 1.532 $"
 
 maxusers	64		# estimated number of users
 
@@ -115,7 +115,8 @@ options 	DDB_HISTORY_SIZE=512	# enable history editing in DDB
 #options 	KGDB		# remote debugger
 #options 	KGDB_DEVNAME="\"com\"",KGDB_DEVADDR=0x3f8,KGDB_DEVRATE=9600
 makeoptions	DEBUG="-g"	# compile full symbol table for CTF
-#options	KUBSAN		# Kernel Undefined Behavior Sanitizer (kUBSan)
+#options 	KUBSAN		# Kernel Undefined Behavior Sanitizer (kUBSan)
+#options 	UBSAN_ALWAYS_FATAL	# (optional) Panic on all kUBSan reports
 #options 	SYSCALL_STATS	# per syscall counts
 #options 	SYSCALL_TIMES	# per syscall times
 #options 	SYSCALL_TIMES_HASCOUNTER	# use 'broken' rdtsc (soekris)
@@ -123,10 +124,12 @@ options 	KDTRACE_HOOKS	# kernel DTrace hooks
 
 # Kernel Address Sanitizer (kASan). You need to disable SVS to use it.
 # The quarantine is optional and can help KASAN find more use-after-frees.
-#makeoptions 	KASAN=1		# Kernel Address Sanitizer
-#options 	KASAN
-#no options	SVS
-#options	POOL_QUARANTINE
+# Use KASAN_PANIC if you want panics instead of warnings.
+#makeoptions 	KASAN=1		# mandatory
+#options 	KASAN		# mandatory
+#no options	SVS		# mandatory
+#options 	POOL_QUARANTINE	# optional
+#options 	KASAN_PANIC	# optional
 
 # Kernel Info Leak Detector.
 #makeoptions 	KLEAK=1
@@ -134,13 +137,13 @@ options 	KDTRACE_HOOKS	# kernel DTrace hooks
 
 # Kernel Code Coverage Driver.
 #makeoptions	KCOV=1
-#options	KCOV
+#options 	KCOV
 
 # Compatibility options
 # x86_64 never shipped with a.out binaries; the two options below are
 # only relevant to 32-bit i386 binaries
 #options 	EXEC_AOUT	# required by binaries from before 1.5
-#options	COMPAT_NOMID	# NetBSD 0.8, 386BSD, and BSDI
+#options 	COMPAT_NOMID	# NetBSD 0.8, 386BSD, and BSDI
 
 # NetBSD backward compatibility. Support goes from COMPAT_15 up until
 # the latest release. Note that really old compat (< COMPAT_16) is only
@@ -768,6 +771,7 @@ bnx*	at pci? dev ? function ?	# Broadcom NetXtremeII gigabit Ethernet
 bwi*	at pci? dev ? function ?	# Broadcom BCM43xx wireless
 bwfm*	at pci? dev ? function ?	# Broadcom FullMAC
 dge*	at pci? dev ? function ?	# Intel 82597 10GbE LR
+ena*	at pci? dev ? function ?	# Amazon.com Elastic Network Adapter
 ep*	at pci? dev ? function ?	# 3Com 3c59x
 epic*	at pci? dev ? function ?	# SMC EPIC/100 Ethernet
 esh*	at pci? dev ? function ?	# Essential HIPPI card

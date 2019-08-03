@@ -41,6 +41,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include <sys/device.h>
 
 #include <machine/autoconf.h>
+#include <machine/board.h>
 
 #include <luna68k/dev/xpbusvar.h>
 
@@ -52,7 +53,7 @@ __KERNEL_RCSID(0, "$NetBSD$");
  *
  * XXX: PIO port functions should be shared with machdep.c for DIP SWs
  */
-#define PIO_ADDR	0x49000000
+#define PIO_ADDR	OBIO_PIO0_BASE
 #define PORT_A		0
 #define PORT_B		1
 #define PORT_C		2

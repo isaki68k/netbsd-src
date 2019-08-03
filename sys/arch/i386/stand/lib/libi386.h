@@ -1,4 +1,4 @@
-/*	$NetBSD: libi386.h,v 1.42 2017/03/12 05:33:48 nonaka Exp $	*/
+/*	$NetBSD: libi386.h,v 1.44 2019/07/26 12:09:48 nonaka Exp $	*/
 
 /*
  * Copyright (c) 1996
@@ -43,7 +43,6 @@ void multiboot(physaddr_t, physaddr_t, physaddr_t);
 
 int exec_netbsd(const char *, physaddr_t, int, int, void (*)(void));
 int exec_multiboot(const char *, char *);
-int count_netbsd(const char *, u_long *);
 
 void delay(int);
 int getbasemem(void);
@@ -145,6 +144,7 @@ void splash_add(char *);
 void rnd_add(char *);
 void fs_add(char *);
 void userconf_add(char *);
+void module_add_split(const char *, uint8_t);
 
 struct btinfo_framebuffer;
 void framebuffer_configure(struct btinfo_framebuffer *);

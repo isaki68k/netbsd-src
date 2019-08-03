@@ -1,4 +1,4 @@
-/*	$NetBSD: if_vlan.c,v 1.136 2019/05/15 02:59:18 ozaki-r Exp $	*/
+/*	$NetBSD: if_vlan.c,v 1.141 2019/07/17 03:26:24 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2000, 2001 The NetBSD Foundation, Inc.
@@ -78,7 +78,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_vlan.c,v 1.136 2019/05/15 02:59:18 ozaki-r Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_vlan.c,v 1.141 2019/07/17 03:26:24 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -130,14 +130,9 @@ struct vlan_mc_entry {
 	 * used since multiple sockaddr may mapped into the same
 	 * ether_multi (e.g., AF_UNSPEC).
 	 */
-	union {
-		struct ether_multi	*mcu_enm;
-	} mc_u;
+	struct ether_multi	*mc_enm;
 	struct sockaddr_storage		mc_addr;
 };
-
-#define	mc_enm		mc_u.mcu_enm
-
 
 struct ifvlan_linkmib {
 	struct ifvlan *ifvm_ifvlan;
@@ -147,15 +142,13 @@ struct ifvlan_linkmib {
 	int	ifvm_mintu;	/* min transmission unit */
 	uint16_t ifvm_proto;	/* encapsulation ethertype */
 	uint16_t ifvm_tag;	/* tag to apply on packets */
-	struct ifnet *ifvm_p;		/* parent interface of this vlan */
+	struct ifnet *ifvm_p;	/* parent interface of this vlan */
 
 	struct psref_target ifvm_psref;
 };
 
 struct ifvlan {
-	union {
-		struct ethercom ifvu_ec;
-	} ifv_u;
+	struct ethercom ifv_ec;
 	struct ifvlan_linkmib *ifv_mib;	/*
 					 * reader must use vlan_getref_linkmib()
 					 * instead of direct dereference
@@ -170,8 +163,6 @@ struct ifvlan {
 };
 
 #define	IFVF_PROMISC	0x01		/* promiscuous mode enabled */
-
-#define	ifv_ec		ifv_u.ifvu_ec
 
 #define	ifv_if		ifv_ec.ec_if
 
@@ -199,30 +190,25 @@ const struct vlan_multisw vlan_ether_multisw = {
 
 static int	vlan_clone_create(struct if_clone *, int);
 static int	vlan_clone_destroy(struct ifnet *);
-static int	vlan_config(struct ifvlan *, struct ifnet *,
-    uint16_t);
+static int	vlan_config(struct ifvlan *, struct ifnet *, uint16_t);
 static int	vlan_ioctl(struct ifnet *, u_long, void *);
 static void	vlan_start(struct ifnet *);
 static int	vlan_transmit(struct ifnet *, struct mbuf *);
 static void	vlan_unconfig(struct ifnet *);
-static int	vlan_unconfig_locked(struct ifvlan *,
-    struct ifvlan_linkmib *);
+static int	vlan_unconfig_locked(struct ifvlan *, struct ifvlan_linkmib *);
 static void	vlan_hash_init(void);
 static int	vlan_hash_fini(void);
 static int	vlan_tag_hash(uint16_t, u_long);
 static struct ifvlan_linkmib*	vlan_getref_linkmib(struct ifvlan *,
     struct psref *);
-static void	vlan_putref_linkmib(struct ifvlan_linkmib *,
-    struct psref *);
-static void	vlan_linkmib_update(struct ifvlan *,
-    struct ifvlan_linkmib *);
+static void	vlan_putref_linkmib(struct ifvlan_linkmib *, struct psref *);
+static void	vlan_linkmib_update(struct ifvlan *, struct ifvlan_linkmib *);
 static struct ifvlan_linkmib*	vlan_lookup_tag_psref(struct ifnet *,
     uint16_t, struct psref *);
 
-LIST_HEAD(vlan_ifvlist, ifvlan);
 static struct {
 	kmutex_t lock;
-	struct vlan_ifvlist list;
+	LIST_HEAD(vlan_ifvlist, ifvlan) list;
 } ifv_list __cacheline_aligned;
 
 
@@ -348,7 +334,7 @@ vlan_clone_create(struct if_clone *ifc, int unit)
 	struct ifvlan_linkmib *mib;
 	int rv;
 
-	ifv = malloc(sizeof(struct ifvlan), M_DEVBUF, M_WAITOK|M_ZERO);
+	ifv = malloc(sizeof(struct ifvlan), M_DEVBUF, M_WAITOK | M_ZERO);
 	mib = kmem_zalloc(sizeof(struct ifvlan_linkmib), KM_SLEEP);
 	ifp = &ifv->ifv_if;
 	LIST_INIT(&ifv->ifv_mc_listhead);
@@ -471,6 +457,8 @@ vlan_config(struct ifvlan *ifv, struct ifnet *p, uint16_t tag)
 	case IFT_ETHER:
 	    {
 		struct ethercom *ec = (void *)p;
+		struct vlanid_list *vidmem;
+
 		nmib->ifvm_msw = &vlan_ether_multisw;
 		nmib->ifvm_encaplen = ETHER_VLAN_ENCAP_LEN;
 		nmib->ifvm_mintu = ETHERMIN;
@@ -497,7 +485,36 @@ vlan_config(struct ifvlan *ifv, struct ifnet *p, uint16_t tag)
 			}
 			error = 0;
 		}
-
+		/*
+		 * Add a vid to the list even if it's not enabled in case
+		 * it's enabled later.
+		 */
+		if (ec->ec_capabilities & ETHERCAP_VLAN_HWFILTER) {
+			vidmem = kmem_alloc(sizeof(struct vlanid_list),
+			    KM_SLEEP);
+			if (vidmem == NULL){
+				ec->ec_nvlans--;
+				if (ec->ec_nvlans == 0)
+					(void)ether_disable_vlan_mtu(p);
+				error = ENOMEM;
+				goto done;
+			}
+			vidmem->vid = vid;
+			mutex_enter(ec->ec_lock);
+			SIMPLEQ_INSERT_TAIL(&ec->ec_vids, vidmem, vid_list);
+			mutex_exit(ec->ec_lock);
+		}
+		if (ec->ec_capenable & ETHERCAP_VLAN_HWFILTER) {
+			if (ec->ec_vlan_cb != NULL) {
+				error = (*ec->ec_vlan_cb)(ec, vid, true);
+				if (error) {
+					ec->ec_nvlans--;
+					if (ec->ec_nvlans == 0)
+						(void)ether_disable_vlan_mtu(p);
+					goto done;
+				}
+			}
+		}
 		/*
 		 * If the parent interface can do hardware-assisted
 		 * VLAN encapsulation, then propagate its hardware-
@@ -505,14 +522,13 @@ vlan_config(struct ifvlan *ifv, struct ifnet *p, uint16_t tag)
 		 * offload.
 		 */
 		if (ec->ec_capabilities & ETHERCAP_VLAN_HWTAGGING) {
-			ec->ec_capenable |= ETHERCAP_VLAN_HWTAGGING;
 			ifp->if_capabilities = p->if_capabilities &
 			    (IFCAP_TSOv4 | IFCAP_TSOv6 |
-			     IFCAP_CSUM_IPv4_Tx|IFCAP_CSUM_IPv4_Rx|
-			     IFCAP_CSUM_TCPv4_Tx|IFCAP_CSUM_TCPv4_Rx|
-			     IFCAP_CSUM_UDPv4_Tx|IFCAP_CSUM_UDPv4_Rx|
-			     IFCAP_CSUM_TCPv6_Tx|IFCAP_CSUM_TCPv6_Rx|
-			     IFCAP_CSUM_UDPv6_Tx|IFCAP_CSUM_UDPv6_Rx);
+				IFCAP_CSUM_IPv4_Tx  | IFCAP_CSUM_IPv4_Rx |
+				IFCAP_CSUM_TCPv4_Tx | IFCAP_CSUM_TCPv4_Rx |
+				IFCAP_CSUM_UDPv4_Tx | IFCAP_CSUM_UDPv4_Rx |
+				IFCAP_CSUM_TCPv6_Tx | IFCAP_CSUM_TCPv6_Rx |
+				IFCAP_CSUM_UDPv6_Tx | IFCAP_CSUM_UDPv6_Rx);
 		}
 
 		/*
@@ -598,7 +614,7 @@ vlan_unconfig_locked(struct ifvlan *ifv, struct ifvlan_linkmib *nmib)
 	KASSERT(IFNET_LOCKED(ifp));
 	KASSERT(mutex_owned(&ifv->ifv_lock));
 
-	ifp->if_flags &= ~(IFF_UP|IFF_RUNNING);
+	ifp->if_flags &= ~(IFF_UP | IFF_RUNNING);
 
 	omib = ifv->ifv_mib;
 	p = omib->ifvm_p;
@@ -613,7 +629,7 @@ vlan_unconfig_locked(struct ifvlan *ifv, struct ifvlan_linkmib *nmib)
 	psref_target_init(nmib_psref, ifvm_psref_class);
 
 	/*
- 	 * Since the interface is being unconfigured, we need to empty the
+	 * Since the interface is being unconfigured, we need to empty the
 	 * list of multicast groups that we may have joined while we were
 	 * alive and remove them from the parent's list also.
 	 */
@@ -624,9 +640,23 @@ vlan_unconfig_locked(struct ifvlan *ifv, struct ifvlan_linkmib *nmib)
 	case IFT_ETHER:
 	    {
 		struct ethercom *ec = (void *)p;
+		struct vlanid_list *vlanidp, *tmpp;
+		uint16_t vid = EVL_VLANOFTAG(nmib->ifvm_tag);
+
+		mutex_enter(ec->ec_lock);
+		SIMPLEQ_FOREACH_SAFE(vlanidp, &ec->ec_vids, vid_list, tmpp) {
+			if (vlanidp->vid == vid) {
+				SIMPLEQ_REMOVE(&ec->ec_vids, vlanidp,
+				    vlanid_list, vid_list);
+				kmem_free(vlanidp, sizeof(*vlanidp));
+			}
+		}
+		mutex_exit(ec->ec_lock);
+		if (ec->ec_vlan_cb != NULL)
+			(void)(*ec->ec_vlan_cb)(ec, vid, false);
 		if (--ec->ec_nvlans == 0) {
 			IFNET_LOCK(p);
-			(void) ether_disable_vlan_mtu(p);
+			(void)ether_disable_vlan_mtu(p);
 			IFNET_UNLOCK(p);
 		}
 
@@ -860,8 +890,8 @@ vlan_ifdetach(struct ifnet *p)
 
 		/* XXX ifv_mib = NULL? */
 		if (ifv->ifv_mib->ifvm_p == p) {
-			KASSERTMSG(i < cnt, "no memory for unconfig, parent=%s",
-			    p->if_xname);
+			KASSERTMSG(i < cnt,
+			    "no memory for unconfig, parent=%s", p->if_xname);
 			error = vlan_unconfig_locked(ifv, nmibs[i]);
 			if (!error) {
 				nmibs[i] = NULL;
@@ -1005,10 +1035,10 @@ vlan_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 			error = ENOENT;
 			break;
 		}
+		
 		error = vlan_config(ifv, pr, vlr.vlr_tag);
-		if (error != 0) {
+		if (error != 0)
 			break;
-		}
 
 		/* Update promiscuous mode, if necessary. */
 		vlan_set_promisc(ifp);
@@ -1607,8 +1637,8 @@ vlan_input(struct ifnet *ifp, struct mbuf *m)
 	KASSERT(mib->ifvm_encaplen == ETHER_VLAN_ENCAP_LEN);
 
 	ifv = mib->ifvm_ifvlan;
-	if ((ifv->ifv_if.if_flags & (IFF_UP|IFF_RUNNING)) !=
-	    (IFF_UP|IFF_RUNNING)) {
+	if ((ifv->ifv_if.if_flags & (IFF_UP | IFF_RUNNING)) !=
+	    (IFF_UP | IFF_RUNNING)) {
 		m_freem(m);
 		ifp->if_noproto++;
 		goto out;

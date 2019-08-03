@@ -1,4 +1,4 @@
-/* $NetBSD: padvar.h,v 1.12 2019/05/08 13:40:18 isaki Exp $ */
+/* $NetBSD: padvar.h,v 1.13 2019/06/26 11:53:15 isaki Exp $ */
 
 /*-
  * Copyright (c) 2007 Jared D. McNeill <jmcneill@invisible.ca>
