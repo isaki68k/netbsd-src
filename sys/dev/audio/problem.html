@@ -473,13 +473,80 @@ Audio subsystem is writeonly-hostile (and readonly-hostile)
 <dd>単方向デバイスのサポートがいまいちだと言っているようだ。
 ちなみに NetBSD 1.2 時代。
 
-<dt>
-<dd><p>:</p>
+<dt><a href="http://gnats.netbsd.org/6827">kern/6827</a>
+/dev/audio does not support mmap for recording</a>
+<dd>もう仕様にしては…。
+
+<dt><font color=#555><a href="http://gnats.netbsd.org/8479">kern/8479</a>
+ossaudio emulation (mis-)interprets record source MIXER_ENUMS</font>
+<dd>ミキサーか eso(4) の話?
+
+<dt><a href="http://gnats.netbsd.org/9087">kern/9087</a>
+audio mmap(2) interface not entirely clear
+<dd>
+
+<dt><font color=#555>kern/9196 OPTi93x audio</font>
+<dd>ad1848 系の亜種を足してほしかったようだ
+
+<dt><font color=#555><a href="http://gnats.netbsd.org/14065">kern/14065</a>
+Record DMA not supported in the audio driver isa/wss_isa.c</font>
+<dd>wss(4) の録音側が不十分な件?
+
+<dt><a href="http://gnats.netbsd.org/23571">kern/23571</a>
+devel/pth is unable to read audio device in various packages
+<dd>詳細未調査。
+
+<dt><font color=#555>kern/29245 Fix to make audio work on Alpha PWS</font>
+<dd>ess(4) あたりの混ぜるな危険という話?
+
+<dt><font color=#555><a href="http://gnats.netbsd.org/30898">kern/30898</a>
+auvia(4) plays audiofiles to fast and distorted</font>
+<dd>関係なさげ?
+
+<dt><font color=#555>kern/32481 audiocs(4) mixer does not label inputs correctly, does not control output ports</font>
+
+<dt><a href="http://gnats.netbsd.org/34821">kern/34821</a>
+[PATCH] Audio drivers use obsolete record gain control
+<dd>
+
+<dt><font color=#555>kern/35465 GUS PnP audio device's still faulty</font>
 
 <dt><font color=#555><a href="http://gnats.netbsd.org/38859">kern/38859</a>
 azalia record does not work on Analog Devices AD1984</font>
 <dd>4.99.64 の頃から録音が動かないらしい。
 おそらく MD の問題だとは思うけど。
+
+<dt><font color=#555><a href="http://gnats.netbsd.org/40243">kern/40243</a>
+audio hanging and not working</font>
+<dd>auixp(4) 固有の話みたい。
+
+<dt><font color=#555>kern/41957 hdaudio failure (was: azalia crashes during boot)</font>
+<dt><font color=#555>kern/42055 hdaudio doesn't work on Dell Inspiron 6400</font>
+
+<dt><a href="http://gnats.netbsd.org/42016">kern/42016</a>
+audio(4) does not handle formats where validbits!=precision
+<dd>24/24 と 24/32 がユーザランドで指定できないという話。
+
+<dt><font color=#555><a href="http://gnats.netbsd.org/42028">kern/42028</a>
+hdaudio: mplayer can't change volume</font>
+<dd>hdaudio 固有の話?
+
+<dt><font color=#555>kern/42315 hdaudio: Very low volume on laptop speakers on Dell XPS M1330</font>
+<dt><font color=#555>kern/44654 No sound with hdaudio(4) and hdaudioctl(8) panic (Realtek ALC260)</font>
+<dt><font color=#555>kern/44670 audio output doesn't work on my MacBook1,1</font>
+<dt><font color=#555>kern/45477 cannot change audio volume on 5.99.55 (GENERIC)</font>
+
+<dt><font color=#555><a href="http://gnats.netbsd.org/45862">kern/45862</a>
+more hdaudio/mixer failure data in -current</font>
+<dd>情報不足でよく分からないしたぶん関係ない。
+
+<dt><font color=#555>kern/46927 audio(4) doesn't attache to HDMI hdaudio</font>
+
+<dt><a href="http://gnats.netbsd.org/47077">kern/47077</a>
+[dM] audio(4) disagrees with the code
+<dd> SETINFO が書き戻しをするかどうかの話。
+
+<dt><font color=#555>kern/47236 hdaudio/mixer initialization badly wrong on Thinpad X61s</font>
 
 <dt><a href="http://gnats.netbsd.org/48792">kern/48792</a>
 hdaudio(4) doesn't support mmap
