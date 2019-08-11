@@ -336,13 +336,14 @@ cdev_pad_open(dev_t dev, int flags, int fmt, struct lwp *l)
 
 	bool existing = false;
 	paddev = device_lookup(&pad_cd, minor(dev));
-	if (paddev == NULL)
-		paddev = config_attach_pseudo(cf);
-	else
+	if (paddev) {
 		existing = true;
-	if (paddev == NULL) {
-		error = ENXIO;
-		goto bad;
+	} else {
+		paddev = config_attach_pseudo(cf);
+		if (paddev == NULL) {
+			error = ENXIO;
+			goto bad;
+		}
 	}
 
 	sc = device_private(paddev);
