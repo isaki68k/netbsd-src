@@ -30,7 +30,6 @@
 #define _HAVE_AUDIODEV_H
 
 #if 1 // test
-#define AUDIO2
 #include "../../sys/sys/audioio.h"
 #else
 #include <sys/audioio.h>
