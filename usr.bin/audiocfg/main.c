@@ -164,7 +164,12 @@ main(int argc, char *argv[])
 		if (errno)
 			usage(argv[0]);
 			/* NOTREACHED */
-		print_audiodev(audiodev_get(i), i);
+		adev = audiodev_get(i);
+		if (adev == NULL) {
+			fprintf(stderr, "no such device\n");
+			return EXIT_FAILURE;
+		}
+		print_audiodev(adev, i);
 	} else if (strcmp(argv[1], "default") == 0 && argc == 3) {
 		if (*argv[2] < '0' || *argv[2] > '9')
 			usage(argv[0]);
