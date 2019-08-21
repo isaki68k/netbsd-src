@@ -45,6 +45,7 @@
 
 static TAILQ_HEAD(audiodevhead, audiodev) audiodevlist =
     TAILQ_HEAD_INITIALIZER(audiodevlist);
+static int maxunit;
 
 #define AUDIODEV_SAMPLE_RATE	44100
 
@@ -135,6 +136,9 @@ audiodev_add(const char *pdev, const char *dev, unsigned int unit)
 
 	TAILQ_INSERT_TAIL(&audiodevlist, adev, next);
 
+	if (unit > maxunit)
+		maxunit = unit;
+
 	return 0;
 }
 
@@ -176,29 +180,22 @@ audiodev_refresh(void)
 }
 
 unsigned int
-audiodev_count(void)
+audiodev_maxunit()
 {
-	struct audiodev *adev;
-	unsigned int n;
-
-	n = 0;
-	TAILQ_FOREACH(adev, &audiodevlist, next)
-		++n;
-
-	return n;
+	return maxunit;
 }
 
+/*
+ * Get audiodev corresponding to audio<i> device.
+ */
 struct audiodev *
 audiodev_get(unsigned int i)
 {
 	struct audiodev *adev;
-	unsigned int n;
 
-	n = 0;
 	TAILQ_FOREACH(adev, &audiodevlist, next) {
-		if (n == i)
+		if (i == adev->unit)
 			return adev;
-		++n;
 	}
 
 	return NULL;
