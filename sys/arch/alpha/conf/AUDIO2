@@ -4,3 +4,4 @@ options 	MSGBUFSIZE=16384
 emuxki* at pci? dev ? function ?	# Creative SBLive! and PCI512
 wss*	at	isa? port 0x530 irq 9 drq 0	# Windows Sound System
 wsbell* at spkr?		# Bell for wscons display (module by default)
+pseudo-device	pad
