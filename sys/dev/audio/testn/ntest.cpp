@@ -2253,6 +2253,42 @@ test_write_2(void)
 	free(wav);
 }
 
+// 再生 (open-write-close) を複数回繰り返し
+void
+test_write_rept(void)
+{
+	struct timeval start, end, result;
+	double res;
+	char buf[8000];	// 1sec in 8bit-mulaw,1ch,8000Hz
+	int fd;
+	int r;
+	int n;
+
+	TEST("write_rept");
+
+	memset(buf, 0xff, sizeof(buf));
+	n = 4;
+	gettimeofday(&start, NULL);
+	for (int i = 0; i < n; i++) {
+		fd = OPEN(devaudio, O_WRONLY);
+		if (fd == -1)
+			err(1, "open: %s", devaudio);
+
+		r = WRITE(fd, buf, sizeof(buf));
+		XP_SYS_EQ(sizeof(buf), r);
+
+		r = CLOSE(fd);
+		XP_SYS_EQ(0, r);
+	}
+	gettimeofday(&end, NULL);
+	timersub(&end, &start, &result);
+	res = (double)result.tv_sec + (double)result.tv_usec / 1000000;
+	// 適当な閾値
+	if (res >= n * 1.25) {
+		XP_FAIL("expects %d sec but %4.1f sec\n", n, res);
+	}
+}
+
 // 通常録音
 void
 test_read_1(void)
@@ -8090,6 +8126,7 @@ struct testtable testtable[] = {
 	DEF(close_1),
 	DEF(write_1),
 	DEF(write_2),
+	DEF(write_rept),
 	DEF(read_1),
 	DEF(readwrite_1),
 	DEF(readwrite_2),
