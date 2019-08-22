@@ -5256,12 +5256,12 @@ audio_pintr(void *arg)
 
 	if (sc->sc_dying)
 		return;
-#if defined(DIAGNOSTIC)
 	if (sc->sc_pbusy == false) {
+#if defined(DIAGNOSTIC)
 		device_printf(sc->sc_dev, "stray interrupt\n");
+#endif
 		return;
 	}
-#endif
 
 	mixer = sc->sc_pmixer;
 	mixer->hw_complete_counter += mixer->frames_per_block;
@@ -5527,12 +5527,12 @@ audio_rintr(void *arg)
 
 	if (sc->sc_dying)
 		return;
-#if defined(DIAGNOSTIC)
 	if (sc->sc_rbusy == false) {
+#if defined(DIAGNOSTIC)
 		device_printf(sc->sc_dev, "stray interrupt\n");
+#endif
 		return;
 	}
-#endif
 
 	mixer = sc->sc_rmixer;
 	mixer->hw_complete_counter += mixer->frames_per_block;
