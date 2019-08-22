@@ -5579,7 +5579,6 @@ audio_pmixer_halt(struct audio_softc *sc)
 
 	mutex_enter(sc->sc_intr_lock);
 	error = sc->hw_if->halt_output(sc->hw_hdl);
-	mutex_exit(sc->sc_intr_lock);
 
 	/* Halts anyway even if some error has occurred. */
 	sc->sc_pbusy = false;
@@ -5587,6 +5586,7 @@ audio_pmixer_halt(struct audio_softc *sc)
 	sc->sc_pmixer->hwbuf.used = 0;
 	sc->sc_pmixer->mixseq = 0;
 	sc->sc_pmixer->hwseq = 0;
+	mutex_exit(sc->sc_intr_lock);
 
 	return error;
 }
@@ -5609,7 +5609,6 @@ audio_rmixer_halt(struct audio_softc *sc)
 
 	mutex_enter(sc->sc_intr_lock);
 	error = sc->hw_if->halt_input(sc->hw_hdl);
-	mutex_exit(sc->sc_intr_lock);
 
 	/* Halts anyway even if some error has occurred. */
 	sc->sc_rbusy = false;
@@ -5617,6 +5616,7 @@ audio_rmixer_halt(struct audio_softc *sc)
 	sc->sc_rmixer->hwbuf.used = 0;
 	sc->sc_rmixer->mixseq = 0;
 	sc->sc_rmixer->hwseq = 0;
+	mutex_exit(sc->sc_intr_lock);
 
 	return error;
 }
