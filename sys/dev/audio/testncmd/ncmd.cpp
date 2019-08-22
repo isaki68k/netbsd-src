@@ -635,29 +635,6 @@ cmd_pad_close(int ac, char *av[])
 	return 0;
 }
 
-// open-write-close を連続する。
-// audiocfg test でこの形態で使われると hdafg(VBox) とかが
-// ふしぎなおどりになるので、そのテスト。
-int
-cmd_writecont(int ac, char *av[])
-{
-	char buf[8000];
-	int fd;
-
-	memset(buf, 0xff, sizeof(buf));
-
-	for (int i = 0; i < 4; i++) {
-		fd = OPEN(devaudio, O_WRONLY);
-		if (fd == -1)
-			err(1, "open: %s", devaudio);
-
-		WRITE(fd, buf, sizeof(buf));
-
-		CLOSE(fd);
-	}
-	return 0;
-}
-
 // コマンド一覧
 #define DEF(x)	{ #x, cmd_ ## x }
 struct cmdtable cmdtable[] = {
@@ -669,7 +646,6 @@ struct cmdtable cmdtable[] = {
 	DEF(poll_1),
 	DEF(playmmap),
 	DEF(pad_close),
-	DEF(writecont),
 	{ NULL, NULL },
 };
 #undef DEF
