@@ -282,11 +282,6 @@ audiodev_set_param(struct audiodev *adev, int mode,
 		ai.record.sample_rate = freq;
 	}
 
-	if (setmode == 0) {
-		errno = EINVAL;
-		return -1;
-	}
-
 	ai.mode = setmode;
 	printf("setting %s to %s:%u, %uch, %uHz\n",
 	    adev->xname, encname, prec, ch, freq);

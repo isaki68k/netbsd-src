@@ -222,6 +222,9 @@ main(int argc, char *argv[])
 			else
 				usage(argv[0]);
 		}
+		if (mode == 0)
+			usage(argv[0]);
+			/* NOTREACHED */
 		enc = argv[4];
 		prec = strtoul(argv[5], NULL, 10);
 		if (errno)
