@@ -51,8 +51,6 @@ static TAILQ_HEAD(audiodevhead, audiodev) audiodevlist =
     TAILQ_HEAD_INITIALIZER(audiodevlist);
 static unsigned int maxunit;
 
-#define AUDIODEV_SAMPLE_RATE	44100
-
 static int
 audiodev_getinfo(struct audiodev *adev)
 {
@@ -308,7 +306,7 @@ audiodev_test(struct audiodev *adev)
 	}
 
 	AUDIO_INITINFO(&info);
-	info.play.sample_rate = AUDIODEV_SAMPLE_RATE;
+	info.play.sample_rate = adev->hwinfo.play.sample_rate;
 	info.play.channels = adev->hwinfo.play.channels;
 	info.play.precision = 16;
 	info.play.encoding = AUDIO_ENCODING_SLINEAR_LE;
@@ -347,7 +345,7 @@ audiodev_test_chmask(struct audiodev *adev, unsigned int chanmask,
 
 	rv = -1;
 
-	dtmf_new(&buf, &buflen, info->play.sample_rate, 2,
+	dtmf_new(&buf, &buflen, adev->hwinfo.play.sample_rate, 2,
 	    adev->hwinfo.play.channels, chanmask, 350.0, 440.0);
 	if (buf == NULL) {
 		return -1;
