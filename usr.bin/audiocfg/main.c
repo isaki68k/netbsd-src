@@ -256,13 +256,8 @@ main(int argc, char *argv[])
 			return EXIT_FAILURE;
 		}
 		print_audiodev(adev);
-		for (i = 0; i < adev->hwinfo.play.channels; i++) {
-			printf("  testing channel %d...", i);
-			fflush(stdout);
-			if (audiodev_test(adev, 1 << i) == -1)
-				return EXIT_FAILURE;
-			printf(" done\n");
-		}
+		if (audiodev_test(adev) == -1)
+			return EXIT_FAILURE;
 	} else
 		usage(argv[0]);
 		/* NOTREACHED */
