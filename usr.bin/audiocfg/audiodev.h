@@ -50,14 +50,14 @@ struct audiodev {
 	uint16_t unit;
 	char path[PATH_MAX+1];
 	char ctlpath[PATH_MAX+1];
+	int ctlfd;
 
-	int fd;
 	dev_t dev;
 	bool defaultdev;
 
 	audio_device_t audio_device;
 	TAILQ_HEAD(, audiofmt) formats;
-	struct audio_info info;
+	audio_info_t hwinfo;
 
 	TAILQ_ENTRY(audiodev) next;
 };
