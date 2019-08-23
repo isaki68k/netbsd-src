@@ -317,8 +317,8 @@ audiodev_test(struct audiodev *adev)
 		warn("ioctl AUDIO_SETINFO");
 		goto done;
 	}
-	if (ioctl(adev->fd, AUDIO_GETINFO, &info) == -1) {
-		warn("ioctl AUDIO_GETINFO");
+	if (ioctl(adev->fd, AUDIO_GETBUFINFO, &info) == -1) {
+		warn("ioctl AUDIO_GETBUFINFO");
 		goto done;
 	}
 
