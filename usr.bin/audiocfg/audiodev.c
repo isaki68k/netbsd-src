@@ -49,7 +49,6 @@ static int audiodev_test_chmask(struct audiodev *, unsigned int,
 
 static TAILQ_HEAD(audiodevhead, audiodev) audiodevlist =
     TAILQ_HEAD_INITIALIZER(audiodevlist);
-static unsigned int maxunit;
 
 static int
 audiodev_getinfo(struct audiodev *adev)
@@ -138,9 +137,6 @@ audiodev_add(const char *pdev, const char *dev, unsigned int unit)
 
 	TAILQ_INSERT_TAIL(&audiodevlist, adev, next);
 
-	if (unit > maxunit)
-		maxunit = unit;
-
 	return 0;
 }
 
@@ -182,22 +178,29 @@ audiodev_refresh(void)
 }
 
 unsigned int
-audiodev_maxunit(void)
+audiodev_count(void)
 {
-	return maxunit;
+	struct audiodev *adev;
+	unsigned int n;
+
+	n = 0;
+	TAILQ_FOREACH(adev, &audiodevlist, next)
+		++n;
+
+	return n;
 }
 
-/*
- * Get audiodev corresponding to audio<i> device.
- */
 struct audiodev *
 audiodev_get(unsigned int i)
 {
 	struct audiodev *adev;
+	unsigned int n;
 
+	n = 0;
 	TAILQ_FOREACH(adev, &audiodevlist, next) {
-		if (i == adev->unit)
+		if (n == i)
 			return adev;
+		++n;
 	}
 
 	return NULL;
