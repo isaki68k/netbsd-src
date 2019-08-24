@@ -48,7 +48,7 @@ static int audiodev_test_chmask(struct audiodev *, unsigned int,
 
 static TAILQ_HEAD(audiodevhead, audiodev) audiodevlist =
     TAILQ_HEAD_INITIALIZER(audiodevlist);
-static int maxunit;
+static unsigned int maxunit;
 
 #define AUDIODEV_SAMPLE_RATE	44100
 
@@ -183,7 +183,7 @@ audiodev_refresh(void)
 }
 
 unsigned int
-audiodev_maxunit()
+audiodev_maxunit(void)
 {
 	return maxunit;
 }
