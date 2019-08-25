@@ -1,4 +1,4 @@
-/* $NetBSD: audiodev.c,v 1.7 2019/05/08 14:36:12 isaki Exp $ */
+/* $NetBSD: audiodev.c,v 1.14 2019/08/24 06:32:25 isaki Exp $ */
 
 /*
  * Copyright (c) 2010 Jared D. McNeill <jmcneill@invisible.ca>

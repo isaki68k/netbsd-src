@@ -1,4 +1,4 @@
-/* $NetBSD: ixgbe.c,v 1.199 2019/07/30 08:44:28 msaitoh Exp $ */
+/* $NetBSD: ixgbe.c,v 1.202 2019/08/21 10:01:53 msaitoh Exp $ */
 
 /******************************************************************************
 
@@ -219,10 +219,11 @@ static void	ixgbe_configure_ivars(struct adapter *);
 static u8 *	ixgbe_mc_array_itr(struct ixgbe_hw *, u8 **, u32 *);
 static void	ixgbe_eitr_write(struct adapter *, uint32_t, uint32_t);
 
+static void	ixgbe_setup_vlan_hw_tagging(struct adapter *);
 static void	ixgbe_setup_vlan_hw_support(struct adapter *);
 static int	ixgbe_vlan_cb(struct ethercom *, uint16_t, bool);
-static int	ixgbe_register_vlan(void *, struct ifnet *, u16);
-static int	ixgbe_unregister_vlan(void *, struct ifnet *, u16);
+static int	ixgbe_register_vlan(struct adapter *, u16);
+static int	ixgbe_unregister_vlan(struct adapter *, u16);
 
 static void	ixgbe_add_device_sysctls(struct adapter *);
 static void	ixgbe_add_hw_stats(struct adapter *);
@@ -2305,12 +2306,23 @@ static int
 ixgbe_vlan_cb(struct ethercom *ec, uint16_t vid, bool set)
 {
 	struct ifnet *ifp = &ec->ec_if;
+	struct adapter *adapter = ifp->if_softc;
 	int rv;
 
 	if (set)
-		rv = ixgbe_register_vlan(ifp->if_softc, ifp, vid);
+		rv = ixgbe_register_vlan(adapter, vid);
 	else
-		rv = ixgbe_unregister_vlan(ifp->if_softc, ifp, vid);
+		rv = ixgbe_unregister_vlan(adapter, vid);
+
+	if (rv != 0)
+		return rv;
+
+	/*
+	 * Control VLAN HW tagging when ec_nvlan is changed from 1 to 0
+	 * or 0 to 1.
+	 */
+	if ((set && (ec->ec_nvlans == 1)) || (!set && (ec->ec_nvlans == 0)))
+		ixgbe_setup_vlan_hw_tagging(adapter);
 
 	return rv;
 }
@@ -2324,14 +2336,10 @@ ixgbe_vlan_cb(struct ethercom *ec, uint16_t vid, bool set)
  *   VFTA, init will repopulate the real table.
  ************************************************************************/
 static int
-ixgbe_register_vlan(void *arg, struct ifnet *ifp, u16 vtag)
+ixgbe_register_vlan(struct adapter *adapter, u16 vtag)
 {
-	struct adapter	*adapter = ifp->if_softc;
 	u16		index, bit;
 	int		error;
-
-	if (ifp->if_softc != arg)   /* Not our event */
-		return EINVAL;
 
 	if ((vtag == 0) || (vtag > 4095))	/* Invalid */
 		return EINVAL;
@@ -2355,14 +2363,10 @@ ixgbe_register_vlan(void *arg, struct ifnet *ifp, u16 vtag)
  *   Run via vlan unconfig EVENT, remove our entry in the soft vfta.
  ************************************************************************/
 static int
-ixgbe_unregister_vlan(void *arg, struct ifnet *ifp, u16 vtag)
+ixgbe_unregister_vlan(struct adapter *adapter, u16 vtag)
 {
-	struct adapter	*adapter = ifp->if_softc;
 	u16		index, bit;
 	int		error;
-
-	if (ifp->if_softc != arg)
-		return EINVAL;
 
 	if ((vtag == 0) || (vtag > 4095))	/* Invalid */
 		return EINVAL;
@@ -2381,20 +2385,14 @@ ixgbe_unregister_vlan(void *arg, struct ifnet *ifp, u16 vtag)
 } /* ixgbe_unregister_vlan */
 
 static void
-ixgbe_setup_vlan_hw_support(struct adapter *adapter)
+ixgbe_setup_vlan_hw_tagging(struct adapter *adapter)
 {
 	struct ethercom *ec = &adapter->osdep.ec;
 	struct ixgbe_hw *hw = &adapter->hw;
 	struct rx_ring	*rxr;
-	int		i;
 	u32		ctrl;
-	struct vlanid_list *vlanidp;
+	int		i;
 	bool		hwtagging;
-
-	/*
-	 *  This function is called from both if_init and ifflags_cb()
-	 * on NetBSD.
-	 */
 
 	/* Enable HW tagging only if any vlan is attached */
 	hwtagging = (ec->ec_capenable & ETHERCAP_VLAN_HWTAGGING)
@@ -2417,11 +2415,46 @@ ixgbe_setup_vlan_hw_support(struct adapter *adapter)
 		rxr->vtag_strip = hwtagging ? TRUE : FALSE;
 	}
 
+	/* VLAN hw tagging for 82598 */
+	if (hw->mac.type == ixgbe_mac_82598EB) {
+		ctrl = IXGBE_READ_REG(hw, IXGBE_VLNCTRL);
+		if (hwtagging)
+			ctrl |= IXGBE_VLNCTRL_VME;
+		else
+			ctrl &= ~IXGBE_VLNCTRL_VME;
+		IXGBE_WRITE_REG(hw, IXGBE_VLNCTRL, ctrl);
+	}
+} /* ixgbe_setup_vlan_hw_tagging */
+
+static void
+ixgbe_setup_vlan_hw_support(struct adapter *adapter)
+{
+	struct ethercom *ec = &adapter->osdep.ec;
+	struct ixgbe_hw *hw = &adapter->hw;
+	int		i;
+	u32		ctrl;
+	struct vlanid_list *vlanidp;
+
+	/*
+	 *  This function is called from both if_init and ifflags_cb()
+	 * on NetBSD.
+	 */
+
+	/*
+	 * Part 1:
+	 * Setup VLAN HW tagging
+	 */
+	ixgbe_setup_vlan_hw_tagging(adapter);
+
+	/*
+	 * Part 2:
+	 * Setup VLAN HW filter
+	 */
 	/* Cleanup shadow_vfta */
 	for (i = 0; i < IXGBE_VFTA_SIZE; i++)
 		adapter->shadow_vfta[i] = 0;
 	/* Generate shadow_vfta from ec_vids */
-	mutex_enter(ec->ec_lock);
+	ETHER_LOCK(ec);
 	SIMPLEQ_FOREACH(vlanidp, &ec->ec_vids, vid_list) {
 		uint32_t idx;
 
@@ -2429,7 +2462,7 @@ ixgbe_setup_vlan_hw_support(struct adapter *adapter)
 		KASSERT(idx < IXGBE_VFTA_SIZE);
 		adapter->shadow_vfta[idx] |= (u32)1 << (vlanidp->vid % 32);
 	}
-	mutex_exit(ec->ec_lock);
+	ETHER_UNLOCK(ec);
 	for (i = 0; i < IXGBE_VFTA_SIZE; i++)
 		IXGBE_WRITE_REG(hw, IXGBE_VFTA(i), adapter->shadow_vfta[i]);
 
@@ -2439,13 +2472,6 @@ ixgbe_setup_vlan_hw_support(struct adapter *adapter)
 		ctrl |= IXGBE_VLNCTRL_VFE;
 	else
 		ctrl &= ~IXGBE_VLNCTRL_VFE;
-	/* VLAN hw tagging for 82598 */
-	if (hw->mac.type == ixgbe_mac_82598EB) {
-		if (hwtagging)
-			ctrl |= IXGBE_VLNCTRL_VME;
-		else
-			ctrl &= ~IXGBE_VLNCTRL_VME;
-	}
 	IXGBE_WRITE_REG(hw, IXGBE_VLNCTRL, ctrl);
 } /* ixgbe_setup_vlan_hw_support */
 

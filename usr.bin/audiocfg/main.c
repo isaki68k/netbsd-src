@@ -1,4 +1,4 @@
-/* $NetBSD: main.c,v 1.8 2019/05/08 14:36:12 isaki Exp $ */
+/* $NetBSD: main.c,v 1.15 2019/08/24 06:11:10 isaki Exp $ */
 
 /*
  * Copyright (c) 2010 Jared D. McNeill <jmcneill@invisible.ca>

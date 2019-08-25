@@ -1,4 +1,4 @@
-/* $NetBSD: dtmf.c,v 1.3 2013/08/11 06:31:00 dholland Exp $ */
+/* $NetBSD: dtmf.c,v 1.4 2019/08/24 06:00:49 isaki Exp $ */
 
 /*
  * Copyright (c) 2010 Jared D. McNeill <jmcneill@invisible.ca>

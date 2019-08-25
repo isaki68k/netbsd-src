@@ -1,4 +1,4 @@
-/*	$NetBSD: nd6.c,v 1.256 2019/07/26 10:18:42 christos Exp $	*/
+/*	$NetBSD: nd6.c,v 1.259 2019/08/22 21:22:50 roy Exp $	*/
 /*	$KAME: nd6.c,v 1.279 2002/06/08 11:16:51 itojun Exp $	*/
 
 /*
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nd6.c,v 1.256 2019/07/26 10:18:42 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nd6.c,v 1.259 2019/08/22 21:22:50 roy Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_net_mpsafe.h"
@@ -666,8 +666,12 @@ nd6_timer_work(struct work *wk, void *arg)
 			if (ip6_use_tempaddr &&
 			    (ia6->ia6_flags & IN6_IFF_TEMPORARY) != 0 &&
 			    (oldflags & IN6_IFF_DEPRECATED) == 0) {
+				int ret;
 
-				if (regen_tmpaddr(ia6) == 0) {
+				IFNET_LOCK(ia6->ia_ifa.ifa_ifp);
+				ret = regen_tmpaddr(ia6);
+				IFNET_UNLOCK(ia6->ia_ifa.ifa_ifp);
+				if (ret == 0) {
 					/*
 					 * A new temporary address is
 					 * generated.
@@ -1188,6 +1192,7 @@ nd6_free(struct llentry *ln, int gc)
 	struct nd_defrouter *dr;
 	struct ifnet *ifp;
 	struct in6_addr *in6;
+	struct sockaddr_in6 sin6;
 
 	KASSERT(ln != NULL);
 	LLE_WLOCK_ASSERT(ln);
@@ -1288,6 +1293,10 @@ nd6_free(struct llentry *ln, int gc)
 		if (ln->ln_router || dr)
 			LLE_WLOCK(ln);
 	}
+
+	sockaddr_in6_init(&sin6, in6, 0, 0, 0);
+	rt_clonedmsg(RTM_DELETE, sin6tosa(&sin6),
+	    (const uint8_t *)&ln->ll_addr, ifp);
 
 	/*
 	 * Save to unlock. We still hold an extra reference and will not
@@ -2221,11 +2230,13 @@ nd6_cache_lladdr(
 		break;
 	}
 
-#if 0
-	/* XXX should we send rtmsg as it used to be? */
-	if (do_update)
-		rt_newmsg(RTM_CHANGE, rt);  /* tell user process */
-#endif
+	if (do_update) {
+		struct sockaddr_in6 sin6;
+
+		sockaddr_in6_init(&sin6, from, 0, 0, 0);
+		rt_clonedmsg(is_newentry ? RTM_ADD : RTM_CHANGE,
+		    sin6tosa(&sin6), lladdr, ifp);
+	}
 
 	if (ln != NULL) {
 		router = ln->ln_router;
@@ -2353,7 +2364,8 @@ nd6_resolve(struct ifnet *ifp, const struct rtentry *rt, struct mbuf *m,
 		}
 
 		sockaddr_in6_init(&sin6, &ln->r_l3addr.addr6, 0, 0, 0);
-		rt_clonedmsg(sin6tosa(&sin6), ifp, rt);
+		if (rt != NULL)
+			rt_clonedmsg(RTM_ADD, sin6tosa(&sin6), NULL, ifp);
 
 		created = true;
 	}
