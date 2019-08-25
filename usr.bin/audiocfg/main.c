@@ -1,4 +1,4 @@
-/* $NetBSD: main.c,v 1.8 2019/05/08 14:36:12 isaki Exp $ */
+/* $NetBSD: main.c,v 1.15 2019/08/24 06:11:10 isaki Exp $ */
 
 /*
  * Copyright (c) 2010 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,6 +27,7 @@
  */
 
 #include <assert.h>
+#include <err.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
@@ -38,8 +39,10 @@
 #include "drvctl.h"
 
 __dead static void
-usage(const char *p)
+usage(void)
 {
+	const char *p = getprogname();
+
 	fprintf(stderr, "usage: %s list [<index>]\n", p);
 	fprintf(stderr, "       %s default <index>\n", p);
 	fprintf(stderr, "       %s set  <index> [p|r] <enc> <prec> <ch> <freq>\n",
@@ -72,32 +75,36 @@ const char *encoding_names[] = {
 u_int encoding_max = __arraycount(encoding_names);
 
 static void
-print_audiodev(struct audiodev *adev, int i)
+print_audiodev(struct audiodev *adev)
 {
 	struct audiofmt *f;
 	int j;
 
 	assert(adev != NULL);
 
-	printf("%u: [%c] %s @ %s: ",
-	    i, adev->defaultdev ? '*' : ' ',
+	printf("[%c] %s @ %s: ",
+	    adev->defaultdev ? '*' : ' ',
 	    adev->xname, adev->pxname);
 	printf("%s", adev->audio_device.name);
 	if (strlen(adev->audio_device.version) > 0)
 		printf(" %s", adev->audio_device.version);
 	printf("\n");
 	printf("       playback: ");
-	if ((adev->info.mode & AUMODE_PLAY))
+	if ((adev->hwinfo.mode & AUMODE_PLAY)) {
 		printf("%uch, %uHz\n",
-		    adev->info.play.channels, adev->info.play.sample_rate);
-	else
+		    adev->hwinfo.play.channels,
+		    adev->hwinfo.play.sample_rate);
+	} else {
 		printf("unavailable\n");
+	}
 	printf("       record:   ");
-	if ((adev->info.mode & AUMODE_RECORD))
+	if ((adev->hwinfo.mode & AUMODE_RECORD)) {
 		printf("%uch, %uHz\n",
-		    adev->info.record.channels, adev->info.record.sample_rate);
-	else
+		    adev->hwinfo.record.channels,
+		    adev->hwinfo.record.sample_rate);
+	} else {
 		printf("unavailable\n");
+	}
 
 	TAILQ_FOREACH(f, &adev->formats, next) {
 		printf("       ");
@@ -135,6 +142,28 @@ print_audiodev(struct audiodev *adev, int i)
 	}
 }
 
+/* Always return non-null adev, or exit */
+static struct audiodev *
+getadev_fromstr(const char *str)
+{
+	struct audiodev *adev;
+	unsigned int i;
+
+	if (*str < '0' || *str > '9')
+		usage();
+		/* NOTREACHED */
+	errno = 0;
+	i = strtoul(str, NULL, 10);
+	if (errno)
+		usage();
+		/* NOTREACHED */
+	adev = audiodev_get(i);
+	if (adev == NULL) {
+		errx(EXIT_FAILURE, "no such device");
+	}
+	return adev;
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -151,56 +180,28 @@ main(int argc, char *argv[])
 		return EXIT_FAILURE;
 
 	if (argc < 2)
-		usage(argv[0]);
+		usage();
 		/* NOTREACHED */
 
 	if (strcmp(argv[1], "list") == 0 && argc == 2) {
-		n = audiodev_count();
-		for (i = 0; i < n; i++)
-			print_audiodev(audiodev_get(i), i);
-	} else if (strcmp(argv[1], "list") == 0 && argc == 3) {
-		errno = 0;
-		i = strtoul(argv[2], NULL, 10);
-		if (errno)
-			usage(argv[0]);
-			/* NOTREACHED */
-		print_audiodev(audiodev_get(i), i);
-	} else if (strcmp(argv[1], "default") == 0 && argc == 3) {
-		if (*argv[2] < '0' || *argv[2] > '9')
-			usage(argv[0]);
-			/* NOTREACHED */
-		errno = 0;
-		i = strtoul(argv[2], NULL, 10);
-		if (errno)
-			usage(argv[0]);
-			/* NOTREACHED */
-		adev = audiodev_get(i);
-		if (adev == NULL) {
-			fprintf(stderr, "no such device\n");
-			return EXIT_FAILURE;
+		n = audiodev_maxunit();
+		for (i = 0; i <= n; i++) {
+			adev = audiodev_get(i);
+			if (adev)
+				print_audiodev(adev);
 		}
+	} else if (strcmp(argv[1], "list") == 0 && argc == 3) {
+		print_audiodev(getadev_fromstr(argv[2]));
+	} else if (strcmp(argv[1], "default") == 0 && argc == 3) {
+		adev = getadev_fromstr(argv[2]);
 		printf("setting default audio device to %s\n", adev->xname);
 		if (audiodev_set_default(adev) == -1) {
-			perror("couldn't set default device");
-			return EXIT_FAILURE;
+			errx(EXIT_FAILURE, "couldn't set default device");
 		}
 	} else if (strcmp(argv[1], "set") == 0 && argc == 8) {
 		/* XXX bad commandline... */
 		/* audiocfg set <index> [p|r] <enc> <prec> <ch> <freq> */
-		if (*argv[2] < '0' || *argv[2] > '9')
-			usage(argv[0]);
-			/* NOTREACHED */
-		errno = 0;
-		i = strtoul(argv[2], NULL, 10);
-		if (errno)
-			usage(argv[0]);
-			/* NOTREACHED */
-		adev = audiodev_get(i);
-		if (adev == NULL) {
-			fprintf(stderr, "no such device\n");
-			return EXIT_FAILURE;
-		}
-
+		adev = getadev_fromstr(argv[2]);
 		mode = 0;
 		for (j = 0; j < strlen(argv[3]); j++) {
 			if (argv[3][j] == 'p')
@@ -208,51 +209,36 @@ main(int argc, char *argv[])
 			else if (argv[3][j] == 'r')
 				mode |= AUMODE_RECORD;
 			else
-				usage(argv[0]);
+				usage();
 		}
+		if (mode == 0)
+			usage();
+			/* NOTREACHED */
 		enc = argv[4];
 		prec = strtoul(argv[5], NULL, 10);
 		if (errno)
-			usage(argv[0]);
+			usage();
 		errno = 0;
 		ch = strtoul(argv[6], NULL, 10);
 		if (errno)
-			usage(argv[0]);
+			usage();
 			/* NOTREACHED */
 		errno = 0;
 		freq = strtoul(argv[7], NULL, 10);
 		if (errno)
-			usage(argv[0]);
+			usage();
 			/* NOTREACHED */
 
 		if (audiodev_set_param(adev, mode, enc, prec, ch, freq) == -1) {
-			perror("couldn't set parameter");
-			return EXIT_FAILURE;
+			errx(EXIT_FAILURE, "couldn't set parameter");
 		}
 	} else if (strcmp(argv[1], "test") == 0 && argc == 3) {
-		if (*argv[2] < '0' || *argv[2] > '9')
-			usage(argv[0]);
-			/* NOTREACHED */
-		errno = 0;
-		i = strtoul(argv[2], NULL, 10);
-		if (errno)
-			usage(argv[0]);
-			/* NOTREACHED */
-		adev = audiodev_get(i);
-		if (adev == NULL) {
-			fprintf(stderr, "no such device\n");
+		adev = getadev_fromstr(argv[2]);
+		print_audiodev(adev);
+		if (audiodev_test(adev) == -1)
 			return EXIT_FAILURE;
-		}
-		print_audiodev(adev, i);
-		for (i = 0; i < adev->info.play.channels; i++) {
-			printf("  testing channel %d...", i);
-			fflush(stdout);
-			if (audiodev_test(adev, 1 << i) == -1)
-				return EXIT_FAILURE;
-			printf(" done\n");
-		}
 	} else
-		usage(argv[0]);
+		usage();
 		/* NOTREACHED */
 
 	return EXIT_SUCCESS;
