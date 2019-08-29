@@ -149,7 +149,8 @@ struct audio_softc {
 
 	/*
 	 * List of opened descriptors.
-	 * Must be protected by sc_intr_lock.
+	 * Must be protected by sc_lock || sc_intr_lock for traversal(FOREACH).
+	 * Must be protected by sc_lock && sc_intr_lock for insertion/removal.
 	 */
 	SLIST_HEAD(, audio_file) sc_files;
 
