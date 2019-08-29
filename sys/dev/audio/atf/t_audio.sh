@@ -165,6 +165,34 @@ open_multiuser_1_body() {
 	h_audio open_multiuser_1
 }
 
+atf_test_case write_PLAY_ALL
+write_PLAY_ALL_head() {
+}
+write_PLAY_ALL_body() {
+	h_audio write_PLAY_ALL
+}
+
+atf_test_case write_PLAY
+write_PLAY_head() {
+}
+write_PLAY_body() {
+	h_audio write_PLAY
+}
+
+atf_test_case read
+read_head() {
+}
+read_body() {
+	h_audio read
+}
+
+atf_test_case drain_onrec
+drain_onrec_head() {
+}
+drain_onrec_body() {
+	h_audio drain_onrec
+}
+
 atf_init_test_cases() {
 	atf_add_test_case open_mode_RDONLY
 	atf_add_test_case open_mode_WRONLY
@@ -187,4 +215,8 @@ atf_init_test_cases() {
 	atf_add_test_case open_simul_RDWR_RDWR
 	atf_add_test_case open_multiuser_0
 	atf_add_test_case open_multiuser_1
+	atf_add_test_case write_PLAY_ALL
+	atf_add_test_case write_PLAY
+	atf_add_test_case read
+	atf_add_test_case drain_onrec
 }
