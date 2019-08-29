@@ -1854,6 +1854,62 @@ DEF(read)
 	}
 }
 
+/*
+ * O_RDWR falls back to O_WRONLY on half-duplex hardware.
+ * expwrite: expected to be able to play.
+ * expread : expected to be able to recored.
+ */
+void
+rdwr_fallback(int openmode, bool expwrite, bool expread)
+{
+	struct audio_info ai;
+	char buf[10];
+	int fd;
+	int r;
+
+	TEST("rdwr_fallback_%s", openmode_str[openmode] + 2);
+
+	if (hw_bidir() == false) {
+		XP_SKIP("This test is only for bi-directional device");
+		return;
+	}
+
+	AUDIO_INITINFO(&ai);
+	ai.play.pause = 1;
+	ai.record.pause = 1;
+
+	fd = OPEN(devaudio, openmode);
+	REQUIRED_SYS_OK(fd);
+
+	/* Set pause not to play noise */
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "pause");
+	REQUIRED_SYS_EQ(0, r);
+
+	memset(buf, 0xff, sizeof(buf));
+	r = WRITE(fd, buf, sizeof(buf));
+	if (expwrite) {
+		XP_SYS_EQ(sizeof(buf), r);
+	} else {
+		XP_SYS_NG(EBADF, r);
+	}
+
+	r = READ(fd, buf, 0);
+	if (expread) {
+		XP_SYS_EQ(0, r);
+	} else {
+		XP_SYS_NG(EBADF, r);
+	}
+
+	r = CLOSE(fd);
+	REQUIRED_SYS_EQ(0, r);
+}
+DEF(rdwr_fallback_RDONLY) { rdwr_fallback(O_RDONLY, false, true); }
+DEF(rdwr_fallback_WRONLY) { rdwr_fallback(O_WRONLY, true, false); }
+DEF(rdwr_fallback_RDWR) {
+	bool expread = hw_fulldup() ? true : false;
+	rdwr_fallback(O_RDWR, true, expread);
+}
+
 /* DRAIN does not affect for record-only descriptor */
 DEF(drain_onrec)
 {
@@ -1904,6 +1960,9 @@ struct testentry testtable[] = {
 	ENT(write_PLAY_ALL),
 	ENT(write_PLAY),
 	ENT(read),
+	ENT(rdwr_fallback_RDONLY),
+	ENT(rdwr_fallback_WRONLY),
+	ENT(rdwr_fallback_RDWR),
 	ENT(drain_onrec),
 	{ NULL, NULL },
 };
