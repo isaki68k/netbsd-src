@@ -1007,7 +1007,7 @@ int mode2ropen(int mode)
 
 // オープンモードによるオープン直後の状態を調べる
 void
-test_open_1(void)
+test_open_mode(void)
 {
 	struct audio_info ai;
 	int fd;
@@ -1021,7 +1021,7 @@ test_open_1(void)
 	bool table_both[]     = { true,		true,	true };
 	bool *table;
 
-	TEST("open_1");
+	TEST("open_mode");
 	if (canplay == 1 && canrec == 1)
 		table = table_both;
 	else if (canplay == 1 && canrec == 0)
@@ -1045,7 +1045,7 @@ test_open_1(void)
 			XP_EQ(0, ai.record.pause);
 			XP_EQ(mode2popen(mode), ai.play.open);
 			XP_EQ(mode2ropen(mode), ai.record.open);
-			// ai.mode は open_5 で調べている
+			// ai.mode は open_simul で調べている
 
 			if (netbsd <= 8) {
 				// N7、N8 では使わないほうのトラックのバッファも常にある
@@ -1071,7 +1071,7 @@ test_open_1(void)
 // /dev/audio は何回開いても初期値は同じ。
 // /dev/audio の初期値確認、いろいろ変更して close、もう一度開いて初期値確認。
 void
-test_open_2(void)
+test_open_audio(void)
 {
 	struct audio_info ai, ai0;
 	int channels;
@@ -1080,7 +1080,7 @@ test_open_2(void)
 	bool pbuff, rbuff;
 	int buff_size;
 
-	TEST("open_2");
+	TEST("open_audio");
 	for (int mode = 0; mode <= 2; mode++) {
 		DESC("%s", openmodetable[mode]);
 
@@ -1279,7 +1279,7 @@ test_open_2(void)
 // /dev/sound の初期値がそれになることを確認、
 // いろいろ変更して close、もう一度開いて残っていることを確認。
 void
-test_open_3(void)
+test_open_sound(void)
 {
 	struct audio_info ai, ai0;
 	int channels;
@@ -1289,7 +1289,7 @@ test_open_3(void)
 	bool pbuff, rbuff;
 	int buff_size;
 
-	TEST("open_3");
+	TEST("open_sound");
 
 	// N8 eap だと panic する。
 	// ncmd.cpp の cmd_eap_input 参照。
@@ -1523,17 +1523,17 @@ test_open_3(void)
 // /dev/sound はそれを継承して使い、/dev/audio はそれを初期化して使う。
 // というイメージのようだ。
 void
-test_open_4(void)
+test_open_sound_sticky(void)
 {
 	struct audio_info ai;
 	int fd;
 	int r;
 
-	TEST("open_4");
+	TEST("open_sound_sticky");
 
 	// まず /dev/sound を開いて適当に設定。
 	// 代表値でエンコーディングだけ変える。
-	// このケースでだけ open_2、open_3 とは挙動が違う項目が一つだけ
+	// このケースでだけ open_audio、open_sound とは挙動が違う項目が一つだけ
 	// あるとかだと捕捉できないが、さすがにいいだろう…。
 	fd = OPEN(devsound, O_WRONLY);
 	if (fd == -1)
@@ -1574,7 +1574,7 @@ test_open_4(void)
 // read/write がおかしいので、よくない。
 // AUDIO2 では HW Half ならおかしい組み合わせは弾く。
 void
-test_open_5()
+test_open_simul()
 {
 	struct audio_info ai;
 	int fd0, fd1;
@@ -1616,7 +1616,7 @@ test_open_5()
 		exptable = exphalftable;
 	}
 
-	TEST("open_5");
+	TEST("open_simul");
 	// 1本目をオープン
 	for (int i = 0; i <= 2; i++) {
 		for (int j = 0; j <= 2; j++) {
@@ -1669,7 +1669,7 @@ test_open_5()
 
 // 別ユーザとのオープン
 void
-test_open_6()
+test_open_multiuser()
 {
 	char name[32];
 	char cmd[64];
@@ -1679,7 +1679,7 @@ test_open_6()
 	int r;
 	uid_t ouid;
 
-	TEST("open_6");
+	TEST("open_multiuser");
 	if (geteuid() != 0) {
 		XP_SKIP("This test must be priviledged user");
 		return;
@@ -2171,13 +2171,13 @@ test_close_1(void)
 
 // 通常再生 (PLAY_ALL)
 void
-test_write_1(void)
+test_write_PLAY_ALL(void)
 {
 	char buf[8000];
 	int fd;
 	int r;
 
-	TEST("write_1");
+	TEST("write_PLAY_ALL");
 
 	fd = OPEN(devaudio, O_WRONLY);
 	if ((props & AUDIO_PROP_PLAYBACK)) {
@@ -2198,7 +2198,7 @@ test_write_1(void)
 // PLAY_SYNC でブロックサイズずつ書き込む
 // 期待通りの音が出るかは分からないので、play.error が0なことだけ確認
 void
-test_write_2(void)
+test_write_PLAY(void)
 {
 	struct audio_info ai;
 	char *wav;
@@ -2206,7 +2206,7 @@ test_write_2(void)
 	int fd;
 	int r;
 
-	TEST("write_2");
+	TEST("write_PLAY");
 
 	fd = OPEN(devaudio, O_WRONLY);
 	if (fd == -1)
@@ -2291,13 +2291,13 @@ test_write_rept(void)
 
 // 通常録音
 void
-test_read_1(void)
+test_read(void)
 {
 	char buf[8000];
 	int fd;
 	int r;
 
-	TEST("read_1");
+	TEST("read");
 
 	fd = OPEN(devaudio, O_RDONLY);
 	if ((props & AUDIO_PROP_CAPTURE)) {
@@ -2316,7 +2316,7 @@ test_read_1(void)
 
 // HWFull/Half によらず open mode の方の操作(read/write)はできる。
 void
-test_readwrite_1(void)
+test_rdwr_fallback(void)
 {
 	struct audio_info ai;
 	char buf[10];
@@ -2340,7 +2340,7 @@ test_readwrite_1(void)
 		{ 99, },			// 仕方ないので番兵
 	}, *exptable;
 
-	TEST("readwrite_1");
+	TEST("rdwr_fallback");
 	if (netbsd <= 8)
 		exptable = exp7table;
 	else
@@ -8111,12 +8111,12 @@ test_concurrent_3()
 // テスト一覧
 #define DEF(x)	{ #x, test_ ## x }
 struct testtable testtable[] = {
-	DEF(open_1),
-	DEF(open_2),
-	DEF(open_3),
-	DEF(open_4),
-	DEF(open_5),
-	DEF(open_6),
+	DEF(open_mode),
+	DEF(open_audio),
+	DEF(open_sound),
+	DEF(open_sound_sticky),
+	DEF(open_simul),
+	DEF(open_multiuser),
 	DEF(encoding_1),
 	DEF(encoding_2),
 	DEF(encoding_3),
@@ -8124,11 +8124,11 @@ struct testtable testtable[] = {
 	DEF(drain_2),
 	DEF(drain_3),
 	DEF(close_1),
-	DEF(write_1),
-	DEF(write_2),
+	DEF(write_PLAY_ALL),
+	DEF(write_PLAY),
 	DEF(write_rept),
-	DEF(read_1),
-	DEF(readwrite_1),
+	DEF(read),
+	DEF(rdwr_fallback),
 	DEF(readwrite_2),
 	DEF(readwrite_3),
 	DEF(mmap_1),
