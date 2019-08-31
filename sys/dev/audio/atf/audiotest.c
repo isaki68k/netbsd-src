@@ -125,7 +125,7 @@ xp_err(int code, int line, const char *fmt, ...)
 	int backup_errno;
 
 	backup_errno = errno;
-	printf(" ERR %d: ", line);
+	printf(" %s %d: ", (opt_atf ? "Line" : "ERROR:"), line);
 	va_start(ap, fmt);
 	vprintf(fmt, ap);
 	va_end(ap);
@@ -140,7 +140,7 @@ xp_errx(int code, int line, const char *fmt, ...)
 {
 	va_list ap;
 
-	printf(" ERR %d: ", line);
+	printf(" %s %d: ", (opt_atf ? "Line" : "ERROR:"), line);
 	va_start(ap, fmt);
 	vprintf(fmt, ap);
 	va_end(ap);
