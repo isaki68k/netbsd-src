@@ -1784,6 +1784,11 @@ DEF(write_PLAY)
 
 	TEST("write_PLAY");
 
+	if (hw_canplay() == false) {
+		XP_SKIP("Operation not allowed on record only hardware");
+		return;
+	}
+
 	fd = OPEN(devaudio, O_WRONLY);
 	REQUIRED_SYS_OK(fd);
 
@@ -1842,6 +1847,11 @@ DEF(write_rept)
 	int n;
 
 	TEST("write_rept");
+
+	if (hw_canplay() == false) {
+		XP_SKIP("Operation not allowed on record only hardware");
+		return;
+	}
 
 	memset(buf, 0xff, sizeof(buf));
 	n = 4;
