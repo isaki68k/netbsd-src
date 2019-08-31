@@ -179,6 +179,13 @@ write_PLAY_body() {
 	h_audio write_PLAY
 }
 
+atf_test_case write_rept
+write_rept_head() {
+}
+write_rept_body() {
+	h_audio write_rept
+}
+
 atf_test_case read
 read_head() {
 }
@@ -238,6 +245,7 @@ atf_init_test_cases() {
 	atf_add_test_case open_multiuser_1
 	atf_add_test_case write_PLAY_ALL
 	atf_add_test_case write_PLAY
+	atf_add_test_case write_rept
 	atf_add_test_case read
 	atf_add_test_case rdwr_fallback_RDONLY
 	atf_add_test_case rdwr_fallback_WRONLY

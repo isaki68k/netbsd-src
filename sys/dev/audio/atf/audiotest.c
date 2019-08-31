@@ -1829,6 +1829,44 @@ DEF(write_PLAY)
 }
 
 /*
+ * Repeat open-write-close cycle.
+ * It may timeout on some (broken?) hardware driver.
+ */
+DEF(write_rept)
+{
+	struct timeval start, end, result;
+	double res;
+	char buf[8000];	/* 1sec in 8bit-mulaw,1ch,8000Hz */
+	int fd;
+	int r;
+	int n;
+
+	TEST("write_rept");
+
+	memset(buf, 0xff, sizeof(buf));
+	n = 4;
+	gettimeofday(&start, NULL);
+	for (int i = 0; i < n; i++) {
+		fd = OPEN(devaudio, O_WRONLY);
+		REQUIRED_SYS_OK(fd);
+
+		r = WRITE(fd, buf, sizeof(buf));
+		XP_SYS_EQ(sizeof(buf), r);
+
+		r = CLOSE(fd);
+		XP_SYS_EQ(0, r);
+	}
+	gettimeofday(&end, NULL);
+	timersub(&end, &start, &result);
+	res = (double)result.tv_sec + (double)result.tv_usec / 1000000;
+	/* Make judgement but not too strict */
+	if (res >= n * 1.5) {
+		XP_FAIL("expects %d sec but %4.1f sec", n, res);
+		return;
+	}
+}
+
+/*
  * Normal recording
  * It does not verify real recorded data.
  */
@@ -1959,6 +1997,7 @@ struct testentry testtable[] = {
 	ENT(open_multiuser_1),
 	ENT(write_PLAY_ALL),
 	ENT(write_PLAY),
+	ENT(write_rept),
 	ENT(read),
 	ENT(rdwr_fallback_RDONLY),
 	ENT(rdwr_fallback_WRONLY),
