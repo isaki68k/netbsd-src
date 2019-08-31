@@ -1172,7 +1172,7 @@ test_open_audio(int mode)
 	can_play = mode2play(mode);
 	can_rec  = mode2rec(mode);
 	if (can_play + can_rec == 0) {
-		XP_SKIP("operation not allowed on this hardware property");
+		XP_SKIP("Operation not allowed on this hardware property");
 		return;
 	}
 
@@ -1326,7 +1326,7 @@ test_open_sound(int mode)
 	can_play = mode2play(mode);
 	can_rec  = mode2rec(mode);
 	if (can_play + can_rec == 0) {
-		XP_SKIP("operation not allowed on this hardware property");
+		XP_SKIP("Operation not allowed on this hardware property");
 		return;
 	}
 
@@ -1576,7 +1576,7 @@ test_open_simul(int mode0, int mode1)
 	    openmode_str[mode1] + 2);
 
 	if (mode2aumode(mode0) == 0 || mode2aumode(mode1) == 0) {
-		XP_SKIP("operation not allowed on this hardware property");
+		XP_SKIP("Operation not allowed on this hardware property");
 		return;
 	}
 
@@ -1749,7 +1749,7 @@ DEF(write_PLAY_ALL)
 	TEST("write_PLAY_ALL");
 
 	fd = OPEN(devaudio, O_WRONLY);
-	if (mode2play(O_WRONLY)) {
+	if (hw_canplay()) {
 		REQUIRED_SYS_OK(fd);
 
 		/* mulaw 1sec silence */
@@ -1780,7 +1780,7 @@ DEF(write_PLAY)
 	TEST("write_PLAY");
 
 	if (hw_canplay() == false) {
-		XP_SKIP("Operation not allowed on record only hardware");
+		XP_SKIP("This test is only for playable device");
 		return;
 	}
 
@@ -1844,7 +1844,7 @@ DEF(write_rept)
 	TEST("write_rept");
 
 	if (hw_canplay() == false) {
-		XP_SKIP("Operation not allowed on record only hardware");
+		XP_SKIP("This test is only for playable device");
 		return;
 	}
 
@@ -1884,7 +1884,7 @@ DEF(read)
 	TEST("read");
 
 	fd = OPEN(devaudio, O_RDONLY);
-	if (mode2rec(O_RDONLY)) {
+	if (hw_canrec()) {
 		REQUIRED_SYS_OK(fd);
 
 		r = READ(fd, buf, sizeof(buf));
@@ -1961,8 +1961,8 @@ DEF(drain_onrec)
 
 	TEST("drain_onrec");
 
-	if (mode2rec(O_RDONLY) == 0) {
-		XP_SKIP("operation not allowed on this hardware property");
+	if (hw_canrec() == false) {
+		XP_SKIP("This test is only for recordable device");
 		return;
 	}
 
