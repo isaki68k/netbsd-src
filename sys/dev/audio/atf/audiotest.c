@@ -363,7 +363,7 @@ rump_or_poll(struct pollfd *fds, nfds_t nfds, int timeout)
 {
 	int r;
 
-#if !defined(no_rump)
+#if !defined(NO_RUMP)
 	if (use_rump)
 		r = rump_sys_poll(fds, nfds, timeout);
 	else
@@ -378,7 +378,7 @@ rump_or_kqueue(void)
 {
 	int r;
 
-#if !defined(no_rump)
+#if !defined(NO_RUMP)
 	if (use_rump)
 		r = rump_sys_kqueue();
 	else
@@ -395,7 +395,7 @@ rump_or_kevent(int kq, const struct kevent *chlist, size_t nch,
 {
 	int r;
 
-#if !defined(no_rump)
+#if !defined(NO_RUMP)
 	if (use_rump)
 		r = rump_sys_kevent(kq, chlist, nch, evlist, nev, timeout);
 	else
