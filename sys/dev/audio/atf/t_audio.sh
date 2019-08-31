@@ -214,6 +214,20 @@ rdwr_fallback_RDWR_body() {
 	h_audio rdwr_fallback_RDWR
 }
 
+atf_test_case drain_incomplete
+drain_incomplete_head() {
+}
+drain_incomplete_body() {
+	h_audio drain_incomplete
+}
+
+atf_test_case drain_pause
+drain_pause_head() {
+}
+drain_pause_body() {
+	h_audio drain_pause
+}
+
 atf_test_case drain_onrec
 drain_onrec_head() {
 }
@@ -250,5 +264,7 @@ atf_init_test_cases() {
 	atf_add_test_case rdwr_fallback_RDONLY
 	atf_add_test_case rdwr_fallback_WRONLY
 	atf_add_test_case rdwr_fallback_RDWR
+	atf_add_test_case drain_incomplete
+	atf_add_test_case drain_pause
 	atf_add_test_case drain_onrec
 }

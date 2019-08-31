@@ -1953,6 +1953,66 @@ DEF(rdwr_fallback_RDWR) {
 	rdwr_fallback(O_RDWR, true, expread);
 }
 
+/* DRAIN should work even on incomplete data left */
+DEF(drain_incomplete)
+{
+	struct audio_info ai;
+	int r;
+	int fd;
+
+	TEST("drain_incomplete");
+
+	if (hw_canplay() == 0) {
+		XP_SKIP("This test is only for playable device");
+		return;
+	}
+
+	fd = OPEN(devaudio, O_WRONLY);
+	REQUIRED_SYS_OK(fd);
+
+	AUDIO_INITINFO(&ai);
+	/* let precision > 8 */
+	ai.play.encoding = AUDIO_ENCODING_SLINEAR_LE;
+	ai.play.precision = 16;
+	ai.mode = AUMODE_PLAY;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
+	REQUIRED_SYS_EQ(0, r);
+	/* Write one byte and then close */
+	r = WRITE(fd, &r, 1);
+	XP_SYS_EQ(1, r);
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+}
+
+/* DRAIN should work even in pause */
+DEF(drain_pause)
+{
+	struct audio_info ai;
+	int r;
+	int fd;
+
+	TEST("drain_pause");
+
+	if (hw_canplay() == 0) {
+		XP_SKIP("This test is only for playable device");
+		return;
+	}
+
+	fd = OPEN(devaudio, O_WRONLY);
+	REQUIRED_SYS_OK(fd);
+
+	/* Set pause */
+	AUDIO_INITINFO(&ai);
+	ai.play.pause = 1;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+	/* Write some data and then close */
+	r = WRITE(fd, &r, 4);
+	XP_SYS_EQ(4, r);
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+}
+
 /* DRAIN does not affect for record-only descriptor */
 DEF(drain_onrec)
 {
@@ -2007,6 +2067,8 @@ struct testentry testtable[] = {
 	ENT(rdwr_fallback_RDONLY),
 	ENT(rdwr_fallback_WRONLY),
 	ENT(rdwr_fallback_RDWR),
+	ENT(drain_incomplete),
+	ENT(drain_pause),
 	ENT(drain_onrec),
 	{ NULL, NULL },
 };
