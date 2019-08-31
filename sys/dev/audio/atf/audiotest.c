@@ -690,13 +690,11 @@ bool xp_sys_eq(int line, int exp, int act, const char *varname)
 	bool r = true;
 
 	testcount++;
-	if (exp != act) {
-		if (act == -1) {
-			r = xp_fail(line, "%s expects %d but -1,err#%d(%s)",
-			    varname, exp, errno, strerror(errno));
-		} else {
-			r = xp_eq(line, exp, act, varname);
-		}
+	if (act == -1) {
+		r = xp_fail(line, "%s expects %d but -1,err#%d(%s)",
+		    varname, exp, errno, strerror(errno));
+	} else {
+		r = xp_eq(line, exp, act, varname);
 	}
 	return r;
 }
