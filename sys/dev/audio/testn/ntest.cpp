@@ -2043,12 +2043,12 @@ test_encoding_3()
 }
 
 void
-test_drain_1(void)
+test_drain_incomplete(void)
 {
 	int r;
 	int fd;
 
-	TEST("drain_1");
+	TEST("drain_incomplete");
 
 	fd = OPEN(devaudio, O_WRONLY);
 	if (fd == -1)
@@ -2074,12 +2074,12 @@ test_drain_1(void)
 
 // pause したまま drain
 void
-test_drain_2(void)
+test_drain_pause(void)
 {
 	int r;
 	int fd;
 
-	TEST("drain_2");
+	TEST("drain_pause");
 
 	fd = OPEN(devaudio, O_WRONLY);
 	if (fd == -1)
@@ -2105,12 +2105,12 @@ test_drain_2(void)
 
 // 録音専用ディスクリプタに drain してみる
 void
-test_drain_3(void)
+test_drain_onrec(void)
 {
 	int r;
 	int fd;
 
-	TEST("drain_3");
+	TEST("drain_onrec");
 
 	fd = OPEN(devaudio, O_RDONLY);
 	if (fd == -1)
@@ -8120,9 +8120,9 @@ struct testtable testtable[] = {
 	DEF(encoding_1),
 	DEF(encoding_2),
 	DEF(encoding_3),
-	DEF(drain_1),
-	DEF(drain_2),
-	DEF(drain_3),
+	DEF(drain_incomplete),
+	DEF(drain_pause),
+	DEF(drain_onrec),
 	DEF(close_1),
 	DEF(write_PLAY_ALL),
 	DEF(write_PLAY),
