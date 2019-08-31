@@ -8,6 +8,7 @@ __RCSID("$NetBSD$");
 #include <fcntl.h>
 #define __STDC_FORMAT_MACROS	/* for PRIx64 */
 #include <inttypes.h>
+#include <pthread.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -52,6 +53,7 @@ void do_test(int);
 void TEST(const char *, ...) __printflike(1, 2);
 bool xp_fail(int, const char *, ...) __printflike(2, 3);
 void xp_skip(int, const char *, ...) __printflike(2, 3);
+void *consumer_thread(void *);
 
 /* from audio.c */
 static const char *encoding_names[]
@@ -87,15 +89,16 @@ int failcount;
 int expfcount;
 int skipcount;
 int unit;
+bool use_rump;
+bool use_pad;
+int padfd;
+pthread_t th;
 char devicename[16];	/* "audioN" */
 char devaudio[16];	/* "/dev/audioN" */
 char devsound[16];	/* "/dev/soundN" */
 char devaudioctl[16];	/* "/dev/audioctlN" */
 char devmixer[16];	/* "/dev/mixerN" */
 extern struct testentry testtable[];
-
-bool use_rump;
-int padfd;
 
 void __dead
 usage(void)
@@ -106,8 +109,9 @@ usage(void)
 	fprintf(stderr, "\t-a        : Test all\n");
 	fprintf(stderr, "\t-d        : Increase debug level\n");
 	fprintf(stderr, "\t-l        : List all tests\n");
+	fprintf(stderr, "\t-p        : Open pad\n");
 #if !defined(NO_RUMP)
-	fprintf(stderr, "\t-R        : Use rump\n");
+	fprintf(stderr, "\t-R        : Use rump (implies -p)\n");
 #endif
 	fprintf(stderr, "\t-u <unit> : Use audio<unit> (default:0)\n");
 	exit(1);
@@ -164,8 +168,10 @@ main(int argc, char *argv[])
 	hwfull = 0;
 	unit = 0;
 	cmd = CMD_TEST;
+	use_pad = false;
+	padfd = -1;
 
-	while ((c = getopt(argc, argv, "AadlRu:")) != -1) {
+	while ((c = getopt(argc, argv, "AadlpRu:")) != -1) {
 		switch (c) {
 		case 'A':
 			opt_atf = true;
@@ -179,9 +185,13 @@ main(int argc, char *argv[])
 		case 'l':
 			cmd = CMD_LIST;
 			break;
+		case 'p':
+			use_pad = true;
+			break;
 		case 'R':
 #if !defined(NO_RUMP)
 			use_rump = true;
+			use_pad = true;
 #else
 			usage();
 #endif
@@ -470,7 +480,7 @@ hw_fulldup(void)
 
 
 /*
- * requnit <  0: Use pad (not implemented).
+ * requnit <  0: Use auto by pad (not implemented).
  * requnit >= 0: Use audio<requnit>.
  */
 void
@@ -497,12 +507,23 @@ init(int requnit)
 	if (use_rump) {
 		DPRINTF("  use rump\n");
 		rump_init();
-
-		padfd = rump_sys_open("/dev/pad0", O_WRONLY);
-		if (padfd == -1)
-			err(1, "%s: rump_sys_open", __func__);
 	}
 #endif
+
+	/*
+	 * Open pad device before all accesses (including /dev/audioctl).
+	 */
+	if (use_pad) {
+
+		padfd = rump_or_open("/dev/pad0", O_RDONLY);
+		if (padfd == -1)
+			err(1, "%s: rump_or_open", __func__);
+
+		/* Create consumer thread */
+		pthread_create(&th, NULL, consumer_thread, NULL);
+		/* Set this thread's name */
+		pthread_setname_np(pthread_self(), "main", NULL);
+	}
 
 	/*
 	 * Get device properties, etc.
@@ -530,6 +551,33 @@ init(int requnit)
 			printf(" fullduplex");
 		printf("\n");
 	}
+
+}
+
+/* Consumer thread used by pad */
+void *
+consumer_thread(void *arg)
+{
+	char buf[1024];
+	int r;
+
+	pthread_setname_np(pthread_self(), "consumer", NULL);
+	pthread_detach(pthread_self());
+
+	for (;;) {
+		r = read(padfd, buf, sizeof(buf));
+		if (r == 0) {
+			fprintf(stderr, "EOF on pad ?");
+			exit(1);
+		}
+		if (r == -1) {
+			fprintf(stderr, "consumer_thread read: %s\n",
+			    strerror(errno));
+			exit(1);
+		}
+	}
+
+	return NULL;
 }
 
 /*
