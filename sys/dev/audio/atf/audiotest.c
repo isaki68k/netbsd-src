@@ -118,7 +118,6 @@ usage(void)
 }
 
 /* Customized err(3) */
-#define err(code, fmt...)	xp_err(code, __LINE__, fmt)
 void
 xp_err(int code, int line, const char *fmt, ...)
 {
@@ -136,7 +135,6 @@ xp_err(int code, int line, const char *fmt, ...)
 }
 
 /* Customized errx(3) */
-#define errx(code, fmt...)	xp_errx(code, __LINE__, fmt)
 void
 xp_errx(int code, int line, const char *fmt, ...)
 {
@@ -491,7 +489,7 @@ init(int requnit)
 	int r;
 
 	if (requnit < 0) {
-		errx(1, "requnit < 0: not implemented.");
+		xp_errx(1, __LINE__, "requnit < 0 not implemented.");
 	} else {
 		unit = requnit;
 	}
@@ -517,7 +515,7 @@ init(int requnit)
 
 		padfd = rump_or_open("/dev/pad0", O_RDONLY);
 		if (padfd == -1)
-			err(1, "%s: rump_or_open", __func__);
+			xp_err(1, __LINE__, "rump_or_open");
 
 		/* Create consumer thread */
 		pthread_create(&th, NULL, consumer_thread, NULL);
@@ -530,13 +528,13 @@ init(int requnit)
 	 */
 	fd = rump_or_open(devaudioctl, O_RDONLY);
 	if (fd == -1)
-		err(1, "%s: open: %s", __func__, devaudioctl);
+		xp_err(1, __LINE__, "open %s", devaudioctl);
 	r = rump_or_ioctl(fd, AUDIO_GETPROPS, &props);
 	if (r == -1)
-		err(1, "%s: AUDIO_GETPROPS", __func__);
+		xp_err(1, __LINE__, "AUDIO_GETPROPS");
 	r = rump_or_ioctl(fd, AUDIO_GETDEV, &devinfo);
 	if (r == -1)
-		err(1, "%s: AUDIO_GETDEV", __func__);
+		xp_err(1, __LINE__, "AUDIO_GETDEV");
 	rump_or_close(fd);
 
 	if (debug) {
@@ -907,7 +905,7 @@ void *debug_mmap(int line, void *ptr, size_t len, int prot, int flags, int fd,
 
 #if !defined(NO_RUMP)
 	if (use_rump)
-		errx(1, "rump doesn't support mmap");
+		xp_errx(1, __LINE__, "rump doesn't support mmap");
 #endif
 
 #define ADDFLAG(buf, var, name)	do {				\
@@ -961,7 +959,7 @@ int debug_munmap(int line, void *ptr, int len)
 {
 #if !defined(NO_RUMP)
 	if (use_rump)
-		errx(1, "rump doesn't support munmap");
+		xp_errx(1, __LINE__, "rump doesn't support munmap");
 #endif
 	DPRINTFF(line, "munmap(%p, %d)", ptr, len);
 	int r = munmap(ptr, len);
