@@ -702,22 +702,6 @@ bool xp_sys_eq(int line, int exp, int act, const char *varname)
 }
 
 /*
- * This expects that system call doesn't return 'exp'.
- * Errors are included in success.
- */
-#define XP_SYS_NE(exp, act)	xp_sys_ne(__LINE__, exp, act, #act)
-bool xp_sys_ne(int line, int exp, int act, const char *varname)
-{
-	bool r = true;
-
-	testcount++;
-	if (act != -1) {
-		r = xp_ne(line, exp, act, varname);
-	}
-	return r;
-}
-
-/*
  * This expects that system call succeeds.
  * This is useful when you expect the system call succeeds but don't know
  * the expected return value, such as open(2).
@@ -818,9 +802,7 @@ bool xp_buffsize(int line, bool exp, int act, const char *varname)
 #define REQUIRED_EQ(e, a) do { if (!XP_EQ(e, a)) return; } while (0)
 #define REQUIRED_NE(e, a) do { if (!XP_NE(e, a)) return; } while (0)
 #define REQUIRED_SYS_EQ(e, a) do { if (!XP_SYS_EQ(e, a)) return; } while (0)
-#define REQUIRED_SYS_NE(e, a) do { if (!XP_SYS_NE(e, a)) return; } while (0)
 #define REQUIRED_SYS_OK(a)    do { if (!XP_SYS_OK(a))    return; } while (0)
-#define REQUIRED_SYS_NG(e, a) do { if (!XP_SYS_NG(e, a)) return; } while (0)
 
 
 static const char *openmode_str[] = {
