@@ -1826,7 +1826,7 @@ DEF(write_PLAY)
 	REQUIRED_SYS_IF(wav != NULL);
 	memset(wav, 0xff, wavsize);
 
-	/* Write blocks */
+	/* Write blocks until 1sec */
 	for (totalsize = 0; totalsize < 8000; ) {
 		r = WRITE(fd, wav, wavsize);
 		XP_SYS_EQ(wavsize, r);
