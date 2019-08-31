@@ -404,28 +404,28 @@ rump_or_kevent(int kq, const struct kevent *chlist, size_t nch,
 	return r;
 }
 
-bool
+int
 hw_canplay(void)
 {
-	return (props & AUDIO_PROP_PLAYBACK) != 0;
+	return (props & AUDIO_PROP_PLAYBACK) ? 1 : 0;
 }
 
-bool
+int
 hw_canrec(void)
 {
-	return (props & AUDIO_PROP_CAPTURE) != 0;
+	return (props & AUDIO_PROP_CAPTURE) ? 1 : 0;
 }
 
-bool
+int
 hw_bidir(void)
 {
-	return hw_canplay() && hw_canrec();
+	return hw_canplay() & hw_canrec();
 }
 
-bool
+int
 hw_fulldup(void)
 {
-	return (props & AUDIO_PROP_FULLDUPLEX) != 0;
+	return (props & AUDIO_PROP_FULLDUPLEX) ? 1 : 0;
 }
 
 #define DPRINTF(fmt...) do {	\
@@ -1094,9 +1094,9 @@ mode2aumode(int mode)
 	int aumode;
 
 	aumode = mode2aumode_full[mode];
-	if (hw_canplay() == false)
+	if (hw_canplay() == 0)
 		aumode &= ~(AUMODE_PLAY | AUMODE_PLAY_ALL);
-	if (hw_canrec() == false)
+	if (hw_canrec() == 0)
 		aumode &= ~AUMODE_RECORD;
 	return aumode;
 }
@@ -1779,7 +1779,7 @@ DEF(write_PLAY)
 
 	TEST("write_PLAY");
 
-	if (hw_canplay() == false) {
+	if (hw_canplay() == 0) {
 		XP_SKIP("This test is only for playable device");
 		return;
 	}
@@ -1843,7 +1843,7 @@ DEF(write_rept)
 
 	TEST("write_rept");
 
-	if (hw_canplay() == false) {
+	if (hw_canplay() == 0) {
 		XP_SKIP("This test is only for playable device");
 		return;
 	}
@@ -1912,7 +1912,7 @@ rdwr_fallback(int openmode, bool expwrite, bool expread)
 
 	TEST("rdwr_fallback_%s", openmode_str[openmode] + 2);
 
-	if (hw_bidir() == false) {
+	if (hw_bidir() == 0) {
 		XP_SKIP("This test is only for bi-directional device");
 		return;
 	}
@@ -1961,7 +1961,7 @@ DEF(drain_onrec)
 
 	TEST("drain_onrec");
 
-	if (hw_canrec() == false) {
+	if (hw_canrec() == 0) {
 		XP_SKIP("This test is only for recordable device");
 		return;
 	}
