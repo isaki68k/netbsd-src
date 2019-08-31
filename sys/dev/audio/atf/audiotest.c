@@ -749,23 +749,17 @@ bool xp_sys_ng(int line, int experrno, int act, const char *varname)
 	}
 	return r;
 }
-#define XP_SYS_NG_PTR(experrno, act) \
-	xp_sys_ng_ptr(__LINE__, experrno, act, #act)
-bool xp_sys_ng_ptr(int line, int experrno, void *act, const char *varname)
+
+/* This expects that the system call result is expressed in expr. */
+/* GCC extension */
+#define XP_SYS_IF(expr) xp_sys_if(__LINE__, (expr), #expr)
+bool xp_sys_if(int line, bool expr, const char *exprname)
 {
 	bool r = true;
-
 	testcount++;
-	if (act != (void *)-1) {
-		r = xp_fail(line, "%s expects -1,err#%d but %p",
-		    varname, experrno, act);
-	} else if (experrno != errno) {
-		char acterrbuf[100];
-		int acterrno = errno;
-		strlcpy(acterrbuf, strerror(acterrno), sizeof(acterrbuf));
-		r = xp_fail(line, "%s expects -1,err#%d(%s) but -1,err#%d(%s)",
-		    varname, experrno, strerror(experrno),
-		    acterrno, acterrbuf);
+	if (!expr) {
+		r = xp_fail(__LINE__, "(%s) is expected but err#%d(%s)",
+		    exprname, errno, strerror(errno));
 	}
 	return r;
 }
@@ -801,6 +795,7 @@ bool xp_buffsize(int line, bool exp, int act, const char *varname)
 #define REQUIRED_NE(e, a) do { if (!XP_NE(e, a)) return; } while (0)
 #define REQUIRED_SYS_EQ(e, a) do { if (!XP_SYS_EQ(e, a)) return; } while (0)
 #define REQUIRED_SYS_OK(a)    do { if (!XP_SYS_OK(a))    return; } while (0)
+#define REQUIRED_SYS_IF(expr) do { if (!XP_SYS_IF(expr)) return; } while (0)
 
 
 static const char *openmode_str[] = {
@@ -1828,8 +1823,7 @@ DEF(write_PLAY)
 
 	wavsize = ai.blocksize;
 	wav = (char *)malloc(wavsize);
-	if (wav == NULL)
-		err(1, "malloc");
+	REQUIRED_SYS_IF(wav != NULL);
 	memset(wav, 0xff, wavsize);
 
 	/* Write blocks */
