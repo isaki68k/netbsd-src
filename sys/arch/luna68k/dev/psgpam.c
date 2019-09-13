@@ -582,6 +582,9 @@ psgpam_round_blocksize(void *hdl, int bs, int mode,
 static size_t
 psgpam_round_buffersize(void *hdl, int direction, size_t bufsize)
 {
+	if (bufsize > 28 * 1024) {
+		bufsize = 28 * 1024;
+	}
 	return bufsize;
 }
 
