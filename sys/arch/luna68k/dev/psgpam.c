@@ -108,6 +108,7 @@ static size_t psgpam_round_buffersize(void *, int, size_t);
 
 static int  psgpam_intr(void *);
 
+static int  psgpam_sysctl_debug(SYSCTLFN_PROTO);
 static int  psgpam_sysctl_enc(SYSCTLFN_PROTO);
 static int  psgpam_sysctl_dynamic(SYSCTLFN_PROTO);
 
@@ -270,6 +271,13 @@ psgpam_attach(device_t parent, device_t self, void *aux)
 		CTL_HW,
 		CTL_CREATE, CTL_EOL);
 	if (node != NULL) {
+		sysctl_createv(NULL, 0, NULL, NULL,
+			CTLFLAG_READWRITE,
+			CTLTYPE_INT, "debug",
+			SYSCTL_DESCR("PSGPAM debug"),
+			psgpam_sysctl_debug, 0, (void *)sc, 0,
+			CTL_HW, node->sysctl_num,
+			CTL_CREATE, CTL_EOL);
 		sysctl_createv(NULL, 0, NULL, NULL,
 			CTLFLAG_READWRITE,
 			CTLTYPE_INT, "enc",
@@ -657,6 +665,31 @@ psgpam_intr(void *hdl)
 
 	/* handled */
 	return 1;
+}
+
+/* sysctl */
+static int
+psgpam_sysctl_debug(SYSCTLFN_ARGS)
+{
+	struct sysctlnode node;
+	int t, error;
+
+	node = *rnode;
+
+	t = audiodebug;
+	node.sysctl_data = &t;
+
+	error = sysctl_lookup(SYSCTLFN_CALL(&node));
+	if (error || newp == NULL) {
+		return error;
+	}
+
+	if (t < 0)
+		return EINVAL;
+	if (t > 4)
+		return EINVAL;
+	audiodebug = t;
+	return 0;
 }
 
 /* sysctl */
