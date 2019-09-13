@@ -339,7 +339,10 @@ psgpam_query_format(void *hdl, audio_format_query_t *afp)
 	u_int freq;
 	uint8_t rept_max;
 	int clk;
-	int i;
+	int i, n;
+
+#define XP_FREQ_MAXCOUNT	40
+	int f[XP_FREQ_MAXCOUNT];
 
 	if (afp->index != 0)
 		return EINVAL;
@@ -360,17 +363,56 @@ psgpam_query_format(void *hdl, audio_format_query_t *afp)
 		break;
 	}
 
-	rept_max = sc->sc_xp_rept_max;
-	if (rept_max >= AUFMT_MAX_FREQUENCIES) {
-		rept_max = AUFMT_MAX_FREQUENCIES - 1;
+	// convert xp's max to AUFMT's max
+	rept_max = sc->sc_xp_rept_max + 1;
+
+	if (rept_max <= AUFMT_MAX_FREQUENCIES) {
+		// all choice
+		for (i = 0; i < rept_max; i++) {
+			clk = sc->sc_xp_cycle_clk + i * sc->sc_xp_rept_clk;
+			freq = XP_CPU_FREQ / clk;
+			psgpam_format.frequency[i] = freq;
+		}
+		n = rept_max;
+	} else {
+		if (rept_max > XP_FREQ_MAXCOUNT)
+			rept_max = XP_FREQ_MAXCOUNT;
+
+		for (i = 0; i < rept_max; i++) {
+			clk = sc->sc_xp_cycle_clk + i * sc->sc_xp_rept_clk;
+			freq = XP_CPU_FREQ / clk;
+			if (freq < 4000) break;
+			f[i] = freq;
+		}
+		for (; i < XP_FREQ_MAXCOUNT; i++)
+			f[i] = 0;
+
+		// keep: first, last
+		// remove: any unusable freq
+		for (i = 1; i < rept_max - 1; i++) {
+			if ((4000 <= f[i] && f[i] < 6000
+			 && f[i - 1] < 6000 && f[i + 1] > 4000)
+			||  (6000 <= f[i] && f[i] < 8000
+			 && f[i - 1] < 8000 && f[i + 1] > 6000)
+			||  (8000 <= f[i] && f[i] < 12000
+			 && f[i - 1] < 12000 && f[i + 1] > 8000)
+			||  (12000 <= f[i] && f[i] < 16000
+			 && f[i - 1] < 16000 && f[i + 1] > 12000)) {
+				f[i] = 0;
+			}
+		}
+		n = 0;
+		for (i = 0; i < rept_max; i++) {
+			if (f[i] != 0) {
+				psgpam_format.frequency[n] = f[i];
+				n++;
+				if (n == AUFMT_MAX_FREQUENCIES)
+					break;
+			}
+		}
 	}
 
-	for (i = 0; i <= rept_max; i++) {
-		clk = sc->sc_xp_cycle_clk + i * sc->sc_xp_rept_clk;
-		freq = XP_CPU_FREQ / clk;
-		psgpam_format.frequency[i] = freq;
-	}
-	psgpam_format.frequency_type = rept_max + 1;
+	psgpam_format.frequency_type = n;
 
 	afp->fmt = psgpam_format;
 	return 0;
