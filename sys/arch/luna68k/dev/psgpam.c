@@ -25,6 +25,8 @@ __KERNEL_RCSID(0, "$NetBSD$");
 #include "xpcmd.h"
 #include "xplx/xplxdefs.h"
 
+#define PSGPAM_USE_TRIGGER
+
 // デバッグレベルは
 // 1: open/close/set_param等
 // 2: read/write/ioctlシステムコールくらいまでは含む
@@ -81,6 +83,12 @@ struct psgpam_softc {
 	int      sc_stride;
 	int      sc_dynamic;
 
+	uint8_t *sc_start_ptr;
+	uint8_t *sc_end_ptr;
+	int      sc_blksize;
+	int      sc_blkcount;
+	int      sc_cur_blk_id;
+
 	struct psgpam_codecvar sc_psgpam_codecvar;
 };
 
@@ -94,7 +102,13 @@ static int  psgpam_query_format(void *, audio_format_query_t *);
 static int  psgpam_set_format(void *, int,
 	const audio_params_t *, const audio_params_t *,
 	audio_filter_reg_t *, audio_filter_reg_t *);
+
+#if defined(PSGPAM_USE_TRIGGER)
+static int  psgpam_trigger_output(void *, void *, void *, int, void (*)(void *), void *, const audio_params_t *);
+#else
 static int  psgpam_start_output(void *, void *, int, void (*)(void *), void *);
+#endif
+
 static int  psgpam_halt_output(void *);
 static int  psgpam_getdev(void *, struct audio_device *);
 static int  psgpam_set_port(void *, mixer_ctrl_t *);
@@ -122,7 +136,11 @@ static const struct audio_hw_if psgpam_hw_if = {
 	.close			= psgpam_close,
 	.query_format		= psgpam_query_format,
 	.set_format		= psgpam_set_format,
+#if defined(PSGPAM_USE_TRIGGER)
+	.trigger_output		= psgpam_trigger_output,
+#else
 	.start_output		= psgpam_start_output,
+#endif
 	.halt_output		= psgpam_halt_output,
 	.getdev			= psgpam_getdev,
 	.set_port		= psgpam_set_port,
@@ -483,6 +501,7 @@ psgpam_set_format(void *hdl, int setmode,
 	return 0;
 }
 
+#if !defined(PSGPAM_USE_TRIGGER)
 static int
 psgpam_start_output(void *hdl, void *block, int blksize,
 	void (*intr)(void *), void *intrarg)
@@ -548,6 +567,84 @@ psgpam_start_output(void *hdl, void *block, int blksize,
 
 	return 0;
 }
+#endif /* !PSGPAM_USE_TRIGGER */
+
+/* XXX: currentry trigger only but call from start in future. */
+/* marking block */
+static void
+psgpam_mark_blk(struct psgpam_softc *sc, int blk_id)
+{
+	int markoffset;
+	uint marker;
+
+	markoffset = sc->sc_blksize * (blk_id + 1);
+
+	if (blk_id == sc->sc_blkcount - 1) {
+		marker = XP_ATN_RELOAD;
+	} else {
+		marker = XP_ATN_STAT;
+	}
+
+	// marking
+	uint8_t *start = sc->sc_start_ptr;
+	if (sc->sc_stride == 2) {
+		uint16_t *markptr = (uint16_t*)(start + markoffset);
+		markptr -= 1;
+		*markptr |= marker;
+	} else {
+		// stride == 4
+		uint32_t *markptr = (uint32_t*)(start + markoffset);
+		markptr -= 1;
+		*markptr |= marker;
+	}
+}
+
+#if defined(PSGPAM_USE_TRIGGER)
+static int
+psgpam_trigger_output(void *hdl, void *start, void *end, int blksize,
+	void (*intr)(void *), void *intrarg, const audio_params_t *param)
+{
+	void *dp;
+
+	struct psgpam_softc *sc;
+
+	sc = hdl;
+
+	DPRINTF(2, "%s start=%p end=%p blksize=%d\n", __func__,
+		start, end, blksize);
+
+	sc->sc_outcount++;
+
+	sc->sc_intr = intr;
+	sc->sc_arg = intrarg;
+	sc->sc_blksize = blksize;
+
+	sc->sc_start_ptr = start;
+	sc->sc_end_ptr = end;
+	sc->sc_blkcount = (sc->sc_end_ptr - sc->sc_start_ptr) / sc->sc_blksize;
+	sc->sc_xp_addr = PAM_BUF;
+
+	psgpam_mark_blk(sc, 0);
+	psgpam_mark_blk(sc, 1);
+
+	// transfer
+	dp = xp_shmptr(sc->sc_xp_addr);
+	memcpy(dp, start, blksize * 2);
+
+	// (preincrement variable in intr)
+	sc->sc_cur_blk_id = 1;
+	sc->sc_xp_addr += blksize;
+
+	// play start
+	if (sc->sc_started == 0) {
+		// 先にフラグを立てておく
+		sc->sc_started = 1;
+		psgpam_xp_start(sc);
+	}
+
+	return 0;
+}
+#endif
 
 static int
 psgpam_halt_output(void *hdl)
@@ -646,12 +743,25 @@ psgpam_intr(void *hdl)
 	xp_intr5_acknowledge();
 	DPRINTF(4, "psgpam intr\n");
 
+#if defined(PSGPAM_USE_TRIGGER)
+	sc->sc_cur_blk_id++;
+	sc->sc_xp_addr += sc->sc_blksize;
+	if (sc->sc_cur_blk_id == sc->sc_blkcount) {
+		sc->sc_cur_blk_id = 0;
+		sc->sc_xp_addr = PAM_BUF;
+	}
+	psgpam_mark_blk(sc, sc->sc_cur_blk_id);
+	memcpy(xp_shmptr(sc->sc_xp_addr),
+		sc->sc_start_ptr + sc->sc_cur_blk_id * sc->sc_blksize,
+		sc->sc_blksize);
+#else
 	if (sc->sc_outcount <= 0) {
 		DPRINTF(4, "loop detected");
 		psgpam_halt_output(sc);
 		return 1;
 	}
 	sc->sc_outcount--;
+#endif
 
 	mutex_spin_enter(&sc->sc_intr_lock);
 
