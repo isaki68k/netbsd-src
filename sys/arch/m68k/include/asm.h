@@ -199,19 +199,15 @@
 #define CPUINFO_INCREMENT(n)					\
 	lea	_C_LABEL(cpu_info_store)+(n)+4,%a1;		\
 	addq.l	#1,(%a1);					\
-	clr.l	%d0;		/* doesn't change CCR[X] */	\
-	move.l	-(%a1),%d1;	/* doesn't change CCR[X] */	\
-	addx.l	%d0,%d1;					\
-	move.l	%d1,(%a1)
+	subx.l	%d0,%d0;	/* d0 = CCR[X] ? -1 : 0 */	\
+	sub.l	%d0,-(%a1)
 
 /* 64-bit counter increments */
 #define CPUINFO_ADD(n, addend)					\
 	lea	_C_LABEL(cpu_info_store)+(n)+4,%a1;		\
 	add.l	addend,(%a1);					\
-	clr.l	%d0;		/* doesn't change CCR[X] */	\
-	move.l	-(%a1),%d1;	/* doesn't change CCR[X] */	\
-	addx.l	%d0,%d1;					\
-	move.l	%d1,(%a1)
+	subx.l	%d0,%d0;	/* d0 = CCR[X] ? -1 : 0 */	\
+	sub.l	%d0,-(%a1)
 
 #endif /* _KERNEL */
 
