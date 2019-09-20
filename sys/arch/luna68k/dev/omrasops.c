@@ -73,12 +73,13 @@ static void	om4_unpack_attr(long, int *, int *, int *);
 static int	omrasops_init(struct rasops_info *, int, int);
 
 static void
+om_fill(int, int,
+	uint32_t,
+	uint8_t *, int, int, int, int);
+static void
 om_putchar_subr(int, int,
 	uint8_t *, int,
 	uint8_t *, int, int, int, int);
-static void
-om_fill(int, uint32_t, uint8_t *, int,
-	int, int, int);
 
 #define	ALL1BITS	(~0U)
 #define	ALL0BITS	(0U)
@@ -112,9 +113,13 @@ om_fill(int, uint32_t, uint8_t *, int,
 
 /*
  * fill rectangle
+ * v は書き込み位置にかかわらず 32 bit の値をそのまま使うため、
+ * 実質 ALL0BITS か ALL1BITS しか想定していない。
  */
 static void
-om_fill(int planemask, uint32_t v, uint8_t *ptr, int bitofs,
+om_fill(int planemask, int rop,
+	uint32_t v,
+	uint8_t *ptr, int bitofs,
 	int w, int height, int span)
 {
 	uint32_t mask;
@@ -136,7 +141,7 @@ om_fill(int planemask, uint32_t v, uint8_t *ptr, int bitofs,
 			dw -= rzbit;
 		}
 
-		((volatile uint32_t *)OMFB_ROPFUNC)[ROP_THROUGH] = mask;
+		((volatile uint32_t *)OMFB_ROPFUNC)[rop] = mask;
 		uint8_t *p = ptr;
 		for (h = height; h > 0; h--) {
 			*W(p) = v;
@@ -431,7 +436,8 @@ om4_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 	if (bg == 0) {
 		if (fg != 15) {
 			/* 背景色＝０で塗りつぶす */
-			om_fill(0xf, ALL0BITS, p, sl, width, height, scanspan);
+			om_fill(0xf, ROP_THROUGH, ALL0BITS,
+				p, sl, width, height, scanspan);
 		}
 		/* 前景色のプレーンに文字を描く */
 		/* 前景色が選択していないプレーンは変化しない */
@@ -445,8 +451,10 @@ om4_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 		背景色で選択されているプレーンを１で埋めて
 		*/
 		/* erase background by bg */
-		om_fill(~bg, ALL0BITS, p, sl, width, height, scanspan);
-		om_fill( bg, ALL1BITS, p, sl, width, height, scanspan);
+		om_fill(~bg, ROP_THROUGH, ALL0BITS,
+			p, sl, width, height, scanspan);
+		om_fill( bg, ROP_THROUGH, ALL1BITS,
+			p, sl, width, height, scanspan);
 
 		/*
 		 前景色で選択されているプレーンと背景色で選択されるプレーンの
