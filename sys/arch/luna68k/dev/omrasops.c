@@ -72,6 +72,14 @@ static void	om4_unpack_attr(long, int *, int *, int *);
 
 static int	omrasops_init(struct rasops_info *, int, int);
 
+static void
+om_putchar_subr(int, int,
+	uint8_t *, int,
+	uint8_t *, int, int, int, int);
+static void
+om_fill(int, uint32_t, uint8_t *, int,
+	int, int, int);
+
 #define	ALL1BITS	(~0U)
 #define	ALL0BITS	(0U)
 #define	BLITWIDTH	(32)
@@ -183,6 +191,7 @@ om1_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 static void
 om4_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 {
+#if 0
 	struct rasops_info *ri = cookie;
 	uint8_t *p;
 	int scanspan, startx, height, width, align, y;
@@ -306,7 +315,148 @@ om4_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 	}
 	/* select plane #0 only; XXX need this ? */
 	*(volatile uint32_t *)OMFB_PLANEMASK = 0x01;
+#else
+
+	struct rasops_info *ri = cookie;
+	int startx;
+	int width;
+	int height;
+	int fg, bg;
+	int sh, sl;
+	int y;
+	int scanspan;
+	uint8_t *fb;
+	uint8_t *p;
+
+	scanspan = ri->ri_stride;
+	y = ri->ri_font->fontheight * row;
+	startx = ri->ri_font->fontwidth * startcol;
+	width = ri->ri_font->fontwidth;
+	height = ri->ri_font->fontheight;
+	fb = (uint8_t *)ri->ri_font->data +
+	    (uc - ri->ri_font->firstchar) * ri->ri_fontscale;
+	om4_unpack_attr(attr, &fg, &bg, NULL);
+	sh = startx >> 5;
+	sl = startx & 0x1f;
+	p = (uint8_t *)ri->ri_bits + y * scanspan + sh * 4;
+
+	if (bg == 0) {
+		if (fg != 15) {
+			/* 背景色＝０で塗りつぶす */
+			om_fill(0xf, ALL0BITS, p, sl, width, height, scanspan);
+		}
+		/* 前景色のプレーンに文字を描く */
+		/* 前景色が選択していないプレーンは変化しない */
+		/* 前景色が白の時は全プレーンが選択されるので背景色の塗りつぶしは不要 */
+		om_putchar_subr(fg, ROP_THROUGH,
+			fb, ri->ri_font->stride,
+			p, sl, width, height, scanspan);
+	} else {
+		/* 背景色が指定されているときは、
+		背景色で選択されていないプレーンを０で埋めて
+		背景色で選択されているプレーンを１で埋めて
+		*/
+		/* erase background by bg */
+		om_fill(~bg, ALL0BITS, p, sl, width, height, scanspan);
+		om_fill( bg, ALL1BITS, p, sl, width, height, scanspan);
+
+		/*
+		 前景色で選択されているプレーンと背景色で選択されるプレーンの
+		 EOR したプレーンに、フォントデータを EOR で書くと前景色で書かれる
+		 はず。。。 */
+		om_putchar_subr(fg ^ bg, ROP_EOR,
+			fb, ri->ri_font->stride,
+			p, sl, width, height, scanspan);
+	}
+
+	/* reset mask value */
+	((volatile uint32_t *)OMFB_ROPFUNC)[ROP_THROUGH] = ALL1BITS;
+#endif
 }
+
+static void
+om_putchar_subr(int planemask, int rop,
+	uint8_t *fontptr, int fontstride,
+	uint8_t *ptr, int bitofs, int w, int height, int span)
+{
+	uint32_t mask;
+	int dw;
+	int rzbit;
+	int h;
+	int x = 0;
+
+	*(volatile uint32_t *)OMFB_PLANEMASK = planemask;
+
+	while (w > 0)  {
+		mask = ALL1BITS >> bitofs;
+		/* 1 pass width */
+		dw = 32 - bitofs;
+		/* right zero bit */
+		rzbit = dw - w;
+
+		if (rzbit > 0) {
+			mask &= ALL1BITS << rzbit;
+			dw -= rzbit;
+		} else {
+			rzbit = 0;
+		}
+
+		((volatile uint32_t *)OMFB_ROPFUNC)[rop] = mask;
+		uint8_t *p = ptr;
+		uint8_t *f = fontptr;
+		for (h = height; h > 0; h--) {
+			uint32_t v;
+			GETBITS(f, x, dw, v);
+			v <<= rzbit;
+			*W(p) = v;
+			p += span;
+			f += fontstride;
+		}
+
+		bitofs = 0;
+		w -= dw;
+		x += dw;
+		ptr += 4;
+	}
+}
+
+static void
+om_fill(int planemask, uint32_t v, uint8_t *ptr, int bitofs,
+	int w, int height, int span)
+{
+	uint32_t mask;
+	int dw;
+	int rzbit;
+	int h;
+
+	*(volatile uint32_t *)OMFB_PLANEMASK = planemask;
+
+	while (w > 0)  {
+		mask = ALL1BITS >> bitofs;
+		/* 1 pass width */
+		dw = 32 - bitofs;
+		/* right zero bit */
+		rzbit = dw - w;
+
+		if (rzbit > 0) {
+			mask &= ALL1BITS << rzbit;
+			dw -= rzbit;
+		}
+
+		((volatile uint32_t *)OMFB_ROPFUNC)[ROP_THROUGH] = mask;
+		uint8_t *p = ptr;
+		for (h = height; h > 0; h--) {
+			*W(p) = v;
+			p += span;
+		}
+
+		bitofs = 0;
+		w -= dw;
+		ptr += 4;
+	}
+}
+
+
 
 static void
 om1_erasecols(void *cookie, int row, int startcol, int ncols, long attr)
