@@ -595,100 +595,99 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 
 	struct rasops_info *ri = cookie;
 	uint8_t *src, *dst;
-	int scanspan, offset, srcy, height, w;
+	int offset, srcy, height, w, rowofs;
 	int step;
 
 	w = ri->ri_emuwidth;
+	int wh = (w >> 5);
+	int wl = w & 0x1f;
+
 	height = ri->ri_font->fontheight * nrows;
+
 	if (height <= 0)
 		return;
-	scanspan = ri->ri_stride;
-
-	offset = (dstrow - srcrow) * scanspan * ri->ri_font->fontheight;
 	srcy = ri->ri_font->fontheight * srcrow;
-	if (srcrow < dstrow && srcrow + nrows > dstrow) {
+	rowofs = dstrow - srcrow;
+	if (rowofs == 0) {
+		return;
+	} else if (rowofs > 0) {
 		/* y-backward */
-		step = -scanspan - ((w >> 5) << 2);
+		step = -ri->ri_stride - wh * 4;
 		srcy = srcy + height - 1;
 	} else {
 		/* y-forward*/
-		step = scanspan - ((w >> 5) << 2);
+		step = ri->ri_stride - wh * 4;
 	}
+	offset = rowofs * ri->ri_stride * ri->ri_font->fontheight;
 
+	int PG_OFS = 0x40000;
 	src = (uint8_t *)ri->ri_bits + srcy * ri->ri_stride;
-	dst = src + offset;
+	uint8_t *src2;
+	uint8_t *dst2;
 
 	asm volatile(
-		"move.l	#0x40000,%%d1;\n\t"
-		"move.l	#0x40000 * 3,%%d2;\n"
-		"move.l	%[height],%%d7;\n\t"
-		"subq.l	#1,%%d7;\n\t"
-		"\n"
-"om4_copyrows_32byte: ;\n\t"
-		"move.l	%[w],%%d0;\n\t"
-		"asr.l	#(5+3),%%d0;\n\t"
-		"beq		om4_copyrows_4byte;\n\t"
-		"subq.l	#1,%%d0;\n\t"
-		"\n"
-"om4_copyrows_32byte_loop: ;\n\t"
-		"movem.l	(%[src]),%%d3-%%d6/%%a2-%%a5;\n\t"
-		"movem.l	%%d3-%%d6/%%a2-%%a5,(%[dst]);\n\t"
-		"movem.l	(%[src],%%d1.l),%%d3-%%d6/%%a2-%%a5;\n\t"
-		"movem.l	%%d3-%%d6/%%a2-%%a5,(%[dst],%%d1.l);\n\t"
-		"movem.l	(%[src],%%d1.l*2),%%d3-%%d6/%%a2-%%a5;\n\t"
-		"movem.l	%%d3-%%d6/%%a2-%%a5,(%[dst],%%d1.l*2);\n\t"
-		"movem.l	(%[src],%%d2.l),%%d3-%%d6/%%a2-%%a5;\n\t"
-		"movem.l	%%d3-%%d6/%%a2-%%a5,(%[dst],%%d2.l);\n\t"
-		"lea.l	8*4(%[src]),%[src];\n\t"
-		"lea.l	8*4(%[dst]),%[dst];\n\t"
-		"dbra	%%d0, om4_copyrows_32byte_loop;\n\t"
+		"adda.l	%[PG_OFS],%[src];\n\t"	/* Selet P0 */
+		"lea.l	(%[src], %[PG_OFS].l*2),%[src2];\n\t"
+		"lea.l	(%[src], %[offset]),%[dst];\n\t"
+		"lea.l	(%[dst], %[PG_OFS].l*2),%[dst2];\n\t"
+		"subq.l	#1,%[height];\n\t"	/* for dbra */
+		"subq.l #1,%[wh];\n\t"	/* for dbra */
 		"\n"
 "om4_copyrows_4byte: ;\n\t"
-		"move.l	%[w],%%d0;\n\t"
-		"asr.l	#5,%%d0;\n\t"
-		"andi.w	#7,%%d0;\n\t"
-		"beq	om4_copyrows_bit;\n\t"
-		"subq.l	#1,%%d0;\n\t"
+		"move.l	%[wh],%%d0;\n\t"
+		"jbmi	om4_copyrows_bit;\n\t"
 		"\n"
+
 "om4_copyrows_4byte_loop: ;\n\t"
-		"move.l	(%[src]),(%[dst]);\n\t"
-		"move.l	(%[src],%%d1.l),(%[dst],%%d1.l);\n\t"
-		"move.l	(%[src],%%d1.l*2),(%[dst],%%d1.l*2);\n\t"
-		"move.l	(%[src],%%d2.l),(%[dst],%%d2.l);\n\t"
-		"addq.l	#4,%[src];\n\t"
-		"addq.l	#4,%[dst];\n\t"
+		"move.l	(%[src2],%[PG_OFS].l),(%[dst2],%[PG_OFS].l);\n\t"
+		"move.l	(%[src2])+,(%[dst2])+;\n\t"
+		"move.l	(%[src],%[PG_OFS].l),(%[dst],%[PG_OFS].l);\n\t"
+		"move.l	(%[src])+,(%[dst])+;\n\t"
 		"dbra	%%d0, om4_copyrows_4byte_loop;\n\t"
 		"\n"
+
 "om4_copyrows_bit: ;\n\t"
-		"move.l	%[w],%%d0;\n\t"
-		"andi.w	#0x1f,%%d0;\n\t"
-		"beq	om4_copyrows_bit_end\n\t"
-		"bfextu	(%[src]){0:%%d0},%%d3;\n\t"
-		"bfins	%%d3,(%[dst]){0:%%d0};\n\t"
-		"bfextu	(%[src],%%d1.l){0:%%d0},%%d3;\n\t"
-		"bfins	%%d3,(%[dst],%%d1.l){0:%%d0};\n\t"
-		"bfextu	(%[src],%%d1.l*2){0:%%d0},%%d3;\n\t"
-		"bfins	%%d3,(%[dst],%%d1.l*2){0:%%d0};\n\t"
-		"bfextu	(%[src],%%d2.l){0:%%d0},%%d3;\n\t"
-		"bfins	%%d3,(%[dst],%%d2.l){0:%%d0};\n\t"
+		"move.l	%[wl],%%d0;\n\t"
+		"jbeq	om4_copyrows_bit_end\n\t"
+		"bfextu	(%[src2],%[PG_OFS].l){0:%%d0},%%d1;\n\t"
+		"bfins	%%d1,(%[dst2],%[PG_OFS].l){0:%%d0};\n\t"
+		"bfextu	(%[src2]){0:%%d0},%%d1;\n\t"
+		"bfins	%%d1,(%[dst2]){0:%%d0};\n\t"
+		"bfextu	(%[src],%[PG_OFS].l){0:%%d0},%%d1;\n\t"
+		"bfins	%%d1,(%[dst],%[PG_OFS].l){0:%%d0};\n\t"
+		"bfextu	(%[src]){0:%%d0},%%d1;\n\t"
+		"bfins	%%d1,(%[dst]){0:%%d0};\n\t"
 		"\n"
 "om4_copyrows_bit_end: ;\n\t"
 		"adda.l	%[step],%[src];\n\t"
 		"adda.l	%[step],%[dst];\n\t"
-		"dbra	%%d7,om4_copyrows_32byte;\n\t"
+
+		"adda.l	%[step],%[src2];\n\t"
+		"adda.l	%[step],%[dst2];\n\t"
+
+		"dbra	%[height],om4_copyrows_4byte;\n\t"
 		"\n"
 "om4_copyrows_end: ;\n\t"
 		";\n\t"
 
 	: /* output */
-	  [src]"+a"(src), [dst]"+a"(dst)
+	  [src]"+a"(src), [dst]"=&a"(dst),
+	  [src2]"=&a"(src2), [dst2]"=&a"(dst2),
+	  [wh]"+d"(wh)
 	: /* input */
-	  [w]"g"(w),
-	  [height]"g"(height),
+	  [wl]"g"(wl),
+	  [height]"d"(height),
+	  [offset]"r"(offset),
+	  [PG_OFS]"r"(PG_OFS),
 	  [step]"g"(step)
 	: /* clobbers */
+	  "%d0", "%d1"
+
+/*
+	registers
 	  "%d0", "%d1", "%d2", "%d3", "%d4", "%d5", "%d6", "%d7",
-	                "%a2", "%a3", "%a4", "%a5"
+	  "%a0", "%a1", "%a2", "%a3", "%a4", "%a5", "%a6", "%a7"
+*/
 	);
 
 #endif
