@@ -370,6 +370,8 @@ om4_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 	}
 
 	/* reset mask value */
+	/* 先に ROP を設定するプレーンマスクを全プレーンにセット */
+	*(volatile uint32_t *)OMFB_PLANEMASK = 0xf;
 	((volatile uint32_t *)OMFB_ROPFUNC)[ROP_THROUGH] = ALL1BITS;
 #endif
 }
