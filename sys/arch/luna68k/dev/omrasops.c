@@ -111,6 +111,94 @@ om_fill(int, uint32_t, uint8_t *, int,
 #define	PUTBITS(src, x, w, pdst)	FASTPUTBITS(src, x, w, pdst)
 
 /*
+ * fill rectangle
+ */
+static void
+om_fill(int planemask, uint32_t v, uint8_t *ptr, int bitofs,
+	int w, int height, int span)
+{
+	uint32_t mask;
+	int dw;
+	int rzbit;
+	int h;
+
+	*(volatile uint32_t *)OMFB_PLANEMASK = planemask;
+
+	while (w > 0)  {
+		mask = ALL1BITS >> bitofs;
+		/* 1 pass width */
+		dw = 32 - bitofs;
+		/* right zero bit */
+		rzbit = dw - w;
+
+		if (rzbit > 0) {
+			mask &= ALL1BITS << rzbit;
+			dw -= rzbit;
+		}
+
+		((volatile uint32_t *)OMFB_ROPFUNC)[ROP_THROUGH] = mask;
+		uint8_t *p = ptr;
+		for (h = height; h > 0; h--) {
+			*W(p) = v;
+			p += span;
+		}
+
+		bitofs = 0;
+		w -= dw;
+		ptr += 4;
+	}
+}
+
+/*
+ * putchar subroutine
+ */
+static void
+om_putchar_subr(int planemask, int rop,
+	uint8_t *fontptr, int fontstride,
+	uint8_t *ptr, int bitofs, int w, int height, int span)
+{
+	uint32_t mask;
+	int dw;
+	int rzbit;
+	int h;
+	int x = 0;
+
+	*(volatile uint32_t *)OMFB_PLANEMASK = planemask;
+
+	while (w > 0)  {
+		mask = ALL1BITS >> bitofs;
+		/* 1 pass width */
+		dw = 32 - bitofs;
+		/* right zero bit */
+		rzbit = dw - w;
+
+		if (rzbit > 0) {
+			mask &= ALL1BITS << rzbit;
+			dw -= rzbit;
+		} else {
+			rzbit = 0;
+		}
+
+		((volatile uint32_t *)OMFB_ROPFUNC)[rop] = mask;
+		uint8_t *p = ptr;
+		uint8_t *f = fontptr;
+		for (h = height; h > 0; h--) {
+			uint32_t v;
+			GETBITS(f, x, dw, v);
+			v <<= rzbit;
+			*W(p) = v;
+			p += span;
+			f += fontstride;
+		}
+
+		bitofs = 0;
+		w -= dw;
+		x += dw;
+		ptr += 4;
+	}
+}
+
+/*
  * Blit a character at the specified co-ordinates.
  */
 static void
@@ -375,90 +463,6 @@ om4_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 	((volatile uint32_t *)OMFB_ROPFUNC)[ROP_THROUGH] = ALL1BITS;
 #endif
 }
-
-static void
-om_putchar_subr(int planemask, int rop,
-	uint8_t *fontptr, int fontstride,
-	uint8_t *ptr, int bitofs, int w, int height, int span)
-{
-	uint32_t mask;
-	int dw;
-	int rzbit;
-	int h;
-	int x = 0;
-
-	*(volatile uint32_t *)OMFB_PLANEMASK = planemask;
-
-	while (w > 0)  {
-		mask = ALL1BITS >> bitofs;
-		/* 1 pass width */
-		dw = 32 - bitofs;
-		/* right zero bit */
-		rzbit = dw - w;
-
-		if (rzbit > 0) {
-			mask &= ALL1BITS << rzbit;
-			dw -= rzbit;
-		} else {
-			rzbit = 0;
-		}
-
-		((volatile uint32_t *)OMFB_ROPFUNC)[rop] = mask;
-		uint8_t *p = ptr;
-		uint8_t *f = fontptr;
-		for (h = height; h > 0; h--) {
-			uint32_t v;
-			GETBITS(f, x, dw, v);
-			v <<= rzbit;
-			*W(p) = v;
-			p += span;
-			f += fontstride;
-		}
-
-		bitofs = 0;
-		w -= dw;
-		x += dw;
-		ptr += 4;
-	}
-}
-
-static void
-om_fill(int planemask, uint32_t v, uint8_t *ptr, int bitofs,
-	int w, int height, int span)
-{
-	uint32_t mask;
-	int dw;
-	int rzbit;
-	int h;
-
-	*(volatile uint32_t *)OMFB_PLANEMASK = planemask;
-
-	while (w > 0)  {
-		mask = ALL1BITS >> bitofs;
-		/* 1 pass width */
-		dw = 32 - bitofs;
-		/* right zero bit */
-		rzbit = dw - w;
-
-		if (rzbit > 0) {
-			mask &= ALL1BITS << rzbit;
-			dw -= rzbit;
-		}
-
-		((volatile uint32_t *)OMFB_ROPFUNC)[ROP_THROUGH] = mask;
-		uint8_t *p = ptr;
-		for (h = height; h > 0; h--) {
-			*W(p) = v;
-			p += span;
-		}
-
-		bitofs = 0;
-		w -= dw;
-		ptr += 4;
-	}
-}
-
-
 
 static void
 om1_erasecols(void *cookie, int row, int startcol, int ncols, long attr)
