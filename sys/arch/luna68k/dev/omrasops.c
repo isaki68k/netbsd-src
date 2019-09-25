@@ -52,6 +52,20 @@ __KERNEL_RCSID(0, "$NetBSD: omrasops.c,v 1.21 2019/07/31 02:09:02 rin Exp $");
 
 #include <arch/luna68k/dev/omrasopsvar.h>
 
+#define USE_M68K_ASM	1
+
+// gcc でコンパイラに最適化の条件を与える。
+// clang 5 にはあるようだ…
+#if defined(__GNUC__)
+#define __assume(cond)	if (!(cond))__unreachable()
+#elif defined(__clang__)
+# if __has_builtin(__builtin_assume)
+#  define __assume(cond)	__builtin_assume(cond)
+# endif
+#else
+#define __assume(cond)	(void)(cond)
+#endif
+
 /* wscons emulator operations */
 static void	om1_cursor(void *, int, int, int);
 static void	om4_cursor(void *, int, int, int);
@@ -74,18 +88,27 @@ static int	omrasops_init(struct rasops_info *, int, int);
 
 static void
 om_fill(int, int,
+	uint8_t *, int, int,
 	uint32_t,
-	uint8_t *, int, int, int, int);
+	int, int);
+static void
+om_fill_color(int,
+	uint8_t *, int, int,
+	int, int);
 static void
 om_putchar_subr(int, int,
+	uint8_t *, int, int,
 	uint8_t *, int,
-	uint8_t *, int, int, int, int);
+	int, int);
 
 #define	ALL1BITS	(~0U)
 #define	ALL0BITS	(0U)
 #define	BLITWIDTH	(32)
 #define	ALIGNMASK	(0x1f)
 #define	BYTESDONE	(4)
+
+extern int hwplanemask;
+extern int hwplanecount;
 
 /*
  * macros to handle unaligned bit copy ops.
@@ -111,6 +134,55 @@ om_putchar_subr(int, int,
 #define	GETBITS(psrc, x, w, dst)	FASTGETBITS(psrc, x, w, dst)
 #define	PUTBITS(src, x, w, pdst)	FASTPUTBITS(src, x, w, pdst)
 
+/* set planemask for common plane and common ROP */
+static inline void
+om_setplanemask(int planemask)
+{
+	*(volatile uint32_t *)OMFB_PLANEMASK = planemask;
+}
+
+/* set ROP and ROP's mask for individual plane */
+static inline void
+om_setROP(int plane, int rop, uint32_t mask)
+{
+	((volatile uint32_t *)(BMAP_FN0 + OMFB_PLANEOFS * plane))[rop] = mask;
+}
+
+/* set ROP and ROP's mask for current setplanemask-ed plane(s) */
+static inline void
+om_setROP_curplane(int rop, uint32_t mask)
+{
+	((volatile uint32_t *)(OMFB_ROPFUNC))[rop] = mask;
+}
+
+/*
+ * mask clear right
+ */
+/* ex.: width==3, (cycles at MC68030)
+    mask filled with 1 at least width bits.
+    mask=0b..1111111
+     bclr	(6 cycle)
+    mask=0b..1110111
+     addq	(2 cycle)
+    mask=0b..1111000 (clear right 3 bit)
+*/
+#if USE_M68K_ASM
+#define FASTMASK_CLEAR_RIGHT(c_mask, c_bits)				\
+	__asm volatile(							\
+	"bclr	%[bits],%[mask];\n\t"					\
+	"addq.l	#1,%[mask];\n\t"					\
+	: [mask]"+&d"(c_mask)						\
+	: [bits]"d"(c_bits)						\
+	:								\
+	)
+#define MASK_CLEAR_RIGHT	FASTMASK_CLEAR_RIGHT
+#else
+#define MASK_CLEAR_RIGHT(c_mask, c_bits)				\
+	c_mask = (c_mask & (1 << c_bits)) + 1
+#endif
+
+
+
 /*
  * fill rectangle
  * v は書き込み位置にかかわらず 32 bit の値をそのまま使うため、
@@ -118,40 +190,158 @@ om_putchar_subr(int, int,
  */
 static void
 om_fill(int planemask, int rop,
+	uint8_t *dstptr, int dstbitofs, int dstspan,
 	uint32_t v,
-	uint8_t *ptr, int bitofs,
-	int w, int height, int span)
+	int width, int height)
 {
 	uint32_t mask;
-	int dw;
-	int rzbit;
-	int h;
+	int dw;		/* 1 pass width bits */
 
-	*(volatile uint32_t *)OMFB_PLANEMASK = planemask;
+	__assume(width > 0);
+	__assume(height > 0);
+	__assume(0 <= dstbitofs && dstbitofs < 32);
 
-	while (w > 0)  {
-		mask = ALL1BITS >> bitofs;
-		/* 1 pass width */
-		dw = 32 - bitofs;
-		/* right zero bit */
-		rzbit = dw - w;
+	om_setplanemask(planemask);
 
-		if (rzbit > 0) {
-			mask &= ALL1BITS << rzbit;
-			dw -= rzbit;
+	int16_t h16 = height - 1;
+
+	mask = ALL1BITS >> dstbitofs;
+	dw = 32 - dstbitofs;
+
+	do {
+		width -= dw;
+		if (width < 0) {
+			/* clear right zero bits */
+			width = -width;
+			MASK_CLEAR_RIGHT(mask, width);
+
+			/* loop exit after done */
+			width = 0;
 		}
 
-		((volatile uint32_t *)OMFB_ROPFUNC)[rop] = mask;
-		uint8_t *p = ptr;
-		for (h = height; h > 0; h--) {
-			*W(p) = v;
-			p += span;
+		om_setROP_curplane(rop, mask);
+
+		{
+			uint8_t *d = dstptr;
+			dstptr += 4;
+			int16_t h = h16;
+
+#if USE_M68K_ASM
+			__asm volatile(
+"om_fill_loop_h:\n\t"
+			"move.l	%[v],(%[d]);\n\t"
+			"add.l	%[dstspan],%[d];\n\t"
+			"dbra	%[h],om_fill_loop_h;\n\t"
+			: [d]"+&a"(d)
+			 ,[h]"+&d"(h)
+			: [v]"d"(v)
+			 ,[dstspan]"r"(dstspan)
+			: "memory"
+			);
+#else
+			do {
+				*d = v;
+				d += dstspan;
+			} while (--h >= 0);
+#endif
 		}
 
-		bitofs = 0;
-		w -= dw;
-		ptr += 4;
-	}
+		mask = ALL1BITS;
+		dw = 32;
+	} while (width > 0);
+}
+
+static void
+om_fill_color(int color,
+	uint8_t *dstptr, int dstbitofs, int dstspan,
+	int width, int height)
+{
+	uint32_t mask;
+	int dw;		/* 1 pass width bits */
+
+	__assume(width > 0);
+	__assume(height > 0);
+	__assume(hwplanecount > 0);
+
+	/* select all planes */
+	om_setplanemask(hwplanemask);
+
+	mask = ALL1BITS >> dstbitofs;
+	dw = 32 - dstbitofs;
+	int16_t h16 = height - 1;
+	int16_t lastplane = hwplanecount - 1;
+
+#define MAX_PLANES	(8)
+
+	do {
+		width -= dw;
+		if (width < 0) {
+			/* clear right zero bits */
+			width = -width;
+			MASK_CLEAR_RIGHT(mask, width);
+			/* loop exit after done */
+			width = 0;
+		}
+
+		{
+			/* TODO: 中間ならマスクを再設定しない */
+			uint32_t *ropfn = (uint32_t *)(BMAP_FN0 + OMFB_PLANEOFS * lastplane);
+			int16_t plane = lastplane;
+			int16_t rop;
+
+#if !USE_M68K_ASM
+			__asm volatile(
+"om_fill_color_rop:\n\t"
+			"btst	%[plane],%[color];\n\t"
+			"seq	%[rop];\n\t"
+			"andi.w	#0x3c,%[rop];\n\t"
+			"move.l	%[mask],(%[ropfn],%[rop].w);\n\t"
+			"suba.l	#0x40000,%[ropfn];\n\t"
+			"dbra	%[plane],om_fill_color_rop;\n\t"
+			: [plane]"+&d"(plane)
+			 ,[ropfn]"+&a"(ropfn)
+			 ,[rop]"=&d"(rop)
+			: [color]"d"(color)
+			 ,[mask]"g"(mask)
+			: "memory"
+			);
+#else
+			do {
+				rop = (color & (1 << plane)) ? 0xff: 0;
+				rop &= ROP_ONE;
+				ropfn[rop] = mask;
+				ropfn -= (OMFB_PLANEOFS >> 2);
+			} while (--plane >= 0);
+#endif
+		}
+
+		{
+			uint8_t *d = dstptr;
+			dstptr += 4;
+			int16_t h = h16;
+
+#if USE_M68K_ASM
+			__asm volatile(
+"om_fill_color_loop_h:\n\t"
+			"clr.l	(%[d]);\n\t"	/* any data to write */
+			"add.l	%[dstspan],%[d];\n\t"
+			"dbra	%[h],om_fill_color_loop_h;\n\t"
+			: [d]"+&a"(d)
+			 ,[h]"+&d"(h)
+			: [dstspan]"r"(dstspan)
+			: "memory"
+			);
+#else
+			do {
+				*d = 0;
+				d += dstspan;
+			} while (--h >= 0);
+#endif
+		}
+
+		mask = ALL1BITS;
+		dw = 32;
+	} while (width > 0);
 }
 
 /*
@@ -159,48 +349,51 @@ om_fill(int planemask, int rop,
  */
 static void
 om_putchar_subr(int planemask, int rop,
-	uint8_t *fontptr, int fontstride,
-	uint8_t *ptr, int bitofs, int w, int height, int span)
+	uint8_t *dstptr, int dstbitofs, int dstspan,
+	uint8_t *fontptr, int fontspan,
+	int width, int height)
 {
 	uint32_t mask;
-	int dw;
-	int rzbit;
-	int h;
+	int dw;		/* 1 pass width bits */
 	int x = 0;
+	int16_t h16 = height - 1;
 
-	*(volatile uint32_t *)OMFB_PLANEMASK = planemask;
+	om_setplanemask(planemask);
 
-	while (w > 0)  {
-		mask = ALL1BITS >> bitofs;
-		/* 1 pass width */
-		dw = 32 - bitofs;
-		/* right zero bit */
-		rzbit = dw - w;
+	mask = ALL1BITS >> dstbitofs;
+	dw = 32 - dstbitofs;
 
-		if (rzbit > 0) {
-			mask &= ALL1BITS << rzbit;
-			dw -= rzbit;
-		} else {
-			rzbit = 0;
+	do {
+		width -= dw;
+		if (width < 0) {
+			/* clear right zero bits */
+			width = -width;
+			MASK_CLEAR_RIGHT(mask, width);
+			/* loop exit after done */
+			width = 0;
 		}
 
-		((volatile uint32_t *)OMFB_ROPFUNC)[rop] = mask;
-		uint8_t *p = ptr;
-		uint8_t *f = fontptr;
-		for (h = height; h > 0; h--) {
-			uint32_t v;
-			GETBITS(f, x, dw, v);
-			v <<= rzbit;
-			*W(p) = v;
-			p += span;
-			f += fontstride;
+		om_setROP_curplane(rop, mask);
+
+		{
+			uint8_t *d = dstptr;
+			uint8_t *f = fontptr;
+			int16_t h = h16;
+			do {
+				uint32_t v;
+				GETBITS(f, x, dw, v);
+				/* no need to shift of v. masked by ROP */
+				*W(d) = v;
+				d += dstspan;
+				f += fontspan;
+			} while (--h >= 0);
 		}
 
-		bitofs = 0;
-		w -= dw;
+		dstptr += 4;
 		x += dw;
-		ptr += 4;
-	}
+		mask = ALL1BITS;
+		dw = 32;
+	} while (width > 0);
 }
 
 /*
@@ -434,41 +627,40 @@ om4_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 	p = (uint8_t *)ri->ri_bits + y * scanspan + sh * 4;
 
 	if (bg == 0) {
-		if (fg != 15) {
+		if (fg != hwplanemask) {
 			/* 背景色＝０で塗りつぶす */
-			om_fill(0xf, ROP_THROUGH, ALL0BITS,
-				p, sl, width, height, scanspan);
+			om_fill(hwplanemask, ROP_THROUGH,
+				p, sl, scanspan,
+				ALL0BITS, width, height);
 		}
 		/* 前景色のプレーンに文字を描く */
 		/* 前景色が選択していないプレーンは変化しない */
 		/* 前景色が白の時は全プレーンが選択されるので背景色の塗りつぶしは不要 */
 		om_putchar_subr(fg, ROP_THROUGH,
+			p, sl, scanspan,
 			fb, ri->ri_font->stride,
-			p, sl, width, height, scanspan);
+			width, height);
 	} else {
-		/* 背景色が指定されているときは、
-		背景色で選択されていないプレーンを０で埋めて
-		背景色で選択されているプレーンを１で埋めて
-		*/
+		/*
+		 * 背景色が指定されているときは、まず背景色で埋める
+		 */
 		/* erase background by bg */
-		om_fill(~bg, ROP_THROUGH, ALL0BITS,
-			p, sl, width, height, scanspan);
-		om_fill( bg, ROP_THROUGH, ALL1BITS,
-			p, sl, width, height, scanspan);
+		om_fill_color(bg, p, sl, scanspan, width, height);
 
 		/*
 		 前景色で選択されているプレーンと背景色で選択されるプレーンの
 		 EOR したプレーンに、フォントデータを EOR で書くと前景色で書かれる
 		 はず。。。 */
 		om_putchar_subr(fg ^ bg, ROP_EOR,
+			p, sl, scanspan,
 			fb, ri->ri_font->stride,
-			p, sl, width, height, scanspan);
+			width, height);
 	}
 
 	/* reset mask value */
 	/* 先に ROP を設定するプレーンマスクを全プレーンにセット */
-	*(volatile uint32_t *)OMFB_PLANEMASK = 0xf;
-	((volatile uint32_t *)OMFB_ROPFUNC)[ROP_THROUGH] = ALL1BITS;
+	om_setplanemask(hwplanemask);
+	om_setROP_curplane(ROP_THROUGH, ALL1BITS);
 #endif
 }
 
@@ -523,6 +715,7 @@ om1_erasecols(void *cookie, int row, int startcol, int ncols, long attr)
 static void
 om4_erasecols(void *cookie, int row, int startcol, int ncols, long attr)
 {
+#if 0
 	struct rasops_info *ri = cookie;
 	uint8_t *p;
 	int scanspan, startx, height, width, align, w, y, fg, bg;
@@ -585,6 +778,40 @@ om4_erasecols(void *cookie, int row, int startcol, int ncols, long attr)
 			height--;
 		}
 	}
+#else
+	struct rasops_info *ri = cookie;
+	int startx;
+	int width;
+	int height;
+	int fg, bg;
+	int sh, sl;
+	int y;
+	int scanspan;
+	uint8_t *p;
+
+	scanspan = ri->ri_stride;
+	y = ri->ri_font->fontheight * row;
+	startx = ri->ri_font->fontwidth * startcol;
+	width = ri->ri_font->fontwidth * ncols;
+	height = ri->ri_font->fontheight;
+	om4_unpack_attr(attr, &fg, &bg, NULL);
+	sh = startx >> 5;
+	sl = startx & 0x1f;
+	p = (uint8_t *)ri->ri_bits + y * scanspan + sh * 4;
+
+	if (bg == 0) {
+		// om_fill のほうが効率がすこし良い
+		om_fill(hwplanemask, ROP_ZERO,
+			p, sl, scanspan, 0, width, height);
+	} else {
+		om_fill_color(bg, p, sl, scanspan, width, height);
+	}
+
+	/* reset mask value */
+	/* 先に ROP を設定するプレーンマスクを全プレーンにセット */
+	om_setplanemask(hwplanemask);
+	om_setROP_curplane(ROP_THROUGH, ALL1BITS);
+#endif
 }
 
 static void
@@ -624,6 +851,7 @@ om1_eraserows(void *cookie, int startrow, int nrows, long attr)
 static void
 om4_eraserows(void *cookie, int startrow, int nrows, long attr)
 {
+#if 0
 	struct rasops_info *ri = cookie;
 	uint8_t *p, *q;
 	int scanspan, starty, height, width, w, fg, bg;
@@ -666,6 +894,39 @@ om4_eraserows(void *cookie, int startrow, int nrows, long attr)
 		width = w;
 		height--;
 	}
+#else
+	struct rasops_info *ri = cookie;
+	int startx;
+	int width;
+	int height;
+	int fg, bg;
+	int sh, sl;
+	int y;
+	int scanspan;
+	uint8_t *p;
+
+	scanspan = ri->ri_stride;
+	y = ri->ri_font->fontheight * startrow;
+	startx = 0;
+	width = ri->ri_emuwidth;
+	height = ri->ri_font->fontheight * nrows;
+	om4_unpack_attr(attr, &fg, &bg, NULL);
+	sh = startx >> 5;
+	sl = startx & 0x1f;
+	p = (uint8_t *)ri->ri_bits + y * scanspan + sh * 4;
+
+	if (bg == 0) {
+		// om_fill のほうが効率がすこし良い
+		om_fill(hwplanemask, ROP_ZERO,
+			p, sl, scanspan, 0, width, height);
+	} else {
+		om_fill_color(bg, p, sl, scanspan, width, height);
+	}
+	/* reset mask value */
+	/* 先に ROP を設定するプレーンマスクを全プレーンにセット */
+	om_setplanemask(hwplanemask);
+	om_setROP_curplane(ROP_THROUGH, ALL1BITS);
+#endif
 }
 
 static void
@@ -790,7 +1051,7 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 	uint8_t *dst2;
 
 	asm volatile(
-		"adda.l	%[PG_OFS],%[src];\n\t"	/* Selet P0 */
+		"adda.l	%[PG_OFS],%[src];\n\t"	/* Select P0 */
 		"lea.l	(%[src], %[PG_OFS].l*2),%[src2];\n\t"
 		"lea.l	(%[src], %[offset]),%[dst];\n\t"
 		"lea.l	(%[dst], %[PG_OFS].l*2),%[dst2];\n\t"
@@ -834,18 +1095,21 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 "om4_copyrows_end: ;\n\t"
 		";\n\t"
 
-	: /* output */
-	  [src]"+a"(src), [dst]"=&a"(dst),
-	  [src2]"=&a"(src2), [dst2]"=&a"(dst2),
-	  [wh]"+d"(wh)
-	: /* input */
-	  [wl]"g"(wl),
-	  [height]"d"(height),
-	  [offset]"r"(offset),
-	  [PG_OFS]"r"(PG_OFS),
-	  [step]"g"(step)
+	  /* output */
+	: [src]"+a"(src)
+	 ,[dst]"=&a"(dst)
+	 ,[src2]"=&a"(src2)
+	 ,[dst2]"=&a"(dst2)
+	 ,[wh]"+d"(wh)
+	  /* input */
+	: [wl]"g"(wl)
+	 ,[height]"d"(height)
+	 ,[offset]"r"(offset)
+	 ,[PG_OFS]"r"(PG_OFS)
+	 ,[step]"g"(step)
 	: /* clobbers */
-	  "%d0", "%d1"
+	  "memory"
+	 ,"%d0", "%d1"
 
 /*
 	registers
@@ -1257,6 +1521,7 @@ om1_cursor(void *cookie, int on, int row, int col)
 static void
 om4_cursor(void *cookie, int on, int row, int col)
 {
+#if 0
 	struct rasops_info *ri = cookie;
 	uint8_t *p;
 	int scanspan, startx, height, width, align, y;
@@ -1325,6 +1590,51 @@ om4_cursor(void *cookie, int on, int row, int col)
 	*(volatile uint32_t *)OMFB_PLANEMASK = 0x01;
 
 	ri->ri_flg ^= RI_CURSOR;
+#else
+
+	struct rasops_info *ri = cookie;
+	int startx;
+	int width;
+	int height;
+	int sh, sl;
+	int y;
+	int scanspan;
+	uint8_t *p;
+
+	if (!on) {
+		/* make sure it's on */
+		if ((ri->ri_flg & RI_CURSOR) == 0)
+			return;
+
+		row = ri->ri_crow;
+		col = ri->ri_ccol;
+	} else {
+		/* unpaint the old copy. */
+		ri->ri_crow = row;
+		ri->ri_ccol = col;
+	}
+
+	scanspan = ri->ri_stride;
+	y = ri->ri_font->fontheight * row;
+	startx = ri->ri_font->fontwidth * col;
+	width = ri->ri_font->fontwidth;
+	height = ri->ri_font->fontheight;
+	sh = startx >> 5;
+	sl = startx & 0x1f;
+	p = (uint8_t *)ri->ri_bits + y * scanspan + sh * 4;
+
+	/* ROP_INV2: result = ~VRAM (ignore data from MPU) */
+	om_fill(hwplanemask, ROP_INV2,
+		p, sl, scanspan,
+		0, width, height);
+
+	ri->ri_flg ^= RI_CURSOR;
+
+	/* reset mask value */
+	/* 先に ROP を設定するプレーンマスクを全プレーンにセット */
+	om_setplanemask(hwplanemask);
+	om_setROP_curplane(ROP_THROUGH, ALL1BITS);
+#endif
 }
 
 /*

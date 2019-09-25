@@ -23,19 +23,24 @@
 #include <machine/board.h>
 
 #define OMFB_PLANEMASK	BMAP_BMSEL	/* BMSEL register */
+
+// XXX: maybe move to lunafb.c
+// these are no mean for users, also omrasops.c
 #define OMFB_FB_WADDR	(BMAP_BMP + 8)	/* common plane */
 #define OMFB_FB_RADDR	(BMAP_BMAP0 + 8)/* plane #0 */
+
 #define OMFB_ROPFUNC	BMAP_FN		/* common ROP function */
+#define OMFB_PLANEOFS	(0x40000)	/* plane offset */
 
 /*
  * Helper macros
  */
 #define W(addr)  ((uint32_t *)(addr))
-#define R(addr)  ((uint32_t *)((uint8_t *)(addr) +  0x40000))
-#define P0(addr) ((uint32_t *)((uint8_t *)(addr) +  0x40000))
-#define P1(addr) ((uint32_t *)((uint8_t *)(addr) +  0x80000))
-#define P2(addr) ((uint32_t *)((uint8_t *)(addr) +  0xC0000))
-#define P3(addr) ((uint32_t *)((uint8_t *)(addr) + 0x100000))
+
+#define P0(addr) ((uint32_t *)((uint8_t *)(addr) + OMFB_PLANEOFS * 1))
+#define P1(addr) ((uint32_t *)((uint8_t *)(addr) + OMFB_PLANEOFS * 2))
+#define P2(addr) ((uint32_t *)((uint8_t *)(addr) + OMFB_PLANEOFS * 3))
+#define P3(addr) ((uint32_t *)((uint8_t *)(addr) + OMFB_PLANEOFS * 4))
 
 /*
  * ROP function
