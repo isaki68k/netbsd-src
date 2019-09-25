@@ -1019,7 +1019,7 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 #else
 
 	struct rasops_info *ri = cookie;
-	uint8_t *src, *dst;
+	uint8_t *src;
 	int offset, srcy, height, w, rowofs;
 	int step;
 
@@ -1045,50 +1045,198 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 	}
 	offset = rowofs * ri->ri_stride * ri->ri_font->fontheight;
 
-	int PG_OFS = 0x40000;
+	/* const for asm */
+	int32_t planeofs = OMFB_PLANEOFS;
+	int32_t rewind = 4 - OMFB_PLANEOFS * 3;
+
 	src = (uint8_t *)ri->ri_bits + srcy * ri->ri_stride;
-	uint8_t *src2;
-	uint8_t *dst2;
+	src += planeofs;	/* select P0 */
+	uint8_t *dst0, *dst1, *dst2, *dst3;
+	dst0 = src + offset;
+	dst1 = dst0 + planeofs;
+	dst2 = dst1 + planeofs;
+	dst3 = dst2 + planeofs;
+	int loop, tmp;
+
+	if (wh > 0 && wl == 0) {
+
+#if 0
+	om_setplanemask(hwplanemask);
+	om_setROP_curplane(ROP_THROUGH, ALL1BITS);
+
+	int tmp1;
+	uint8_t *dstC = dst0 - planeofs;	// XXX hack
+	wh--;
+	height--;
+
+	// もしライトウェイトが死ぬほど大きければこっちのほうが速く
+	// なるかもしれない
+	// dd if=32 2.6sec
 
 	asm volatile(
-		"adda.l	%[PG_OFS],%[src];\n\t"	/* Select P0 */
-		"lea.l	(%[src], %[PG_OFS].l*2),%[src2];\n\t"
-		"lea.l	(%[src], %[offset]),%[dst];\n\t"
-		"lea.l	(%[dst], %[PG_OFS].l*2),%[dst2];\n\t"
+"om4_copyrows_P_4byte:\n\t"
+		"move.l	%[wh],%[loop];\n\t"
+"om4_copyrows_P_4byte_loop:\n\t"
+		"move.l	(%[src]),%[tmp0];\n\t"
+		"move.l	%[tmp0],(%[dstC])+;\n\t"
+		"adda.l	%[PLANEOFS],%[src];\n\t"
+		"move.l	(%[src]),%[tmp1];\n\t"
+		"adda.l	%[PLANEOFS],%[src];\n\t"
+		"cmp.l	%[tmp0],%[tmp1];\n\t"
+		"jbne	om4_copyrows_P_1;\n\t"
+		"move.l	(%[src]),%[tmp1];\n\t"
+		"adda.l	%[PLANEOFS],%[src];\n\t"
+		"cmp.l	%[tmp0],%[tmp1];\n\t"
+		"jbne	om4_copyrows_P_2;\n\t"
+		"move.l	(%[src]),%[tmp1];\n\t"
+		"adda.l	%[REWIND],%[src];\n\t"
+		"cmp.l	%[tmp0],%[tmp1];\n\t"
+		"jbne	om4_copyrows_P_3;\n\t"
+
+		"dbra	%[loop],om4_copyrows_P_4byte_loop;\n\t"
+
+		"adda.l	%[step],%[dstC];\n\t"
+		"adda.l	%[step],%[src];\n\t"
+		"dbra	%[height],om4_copyrows_P_4byte;\n\t"
+		"jbra	om4_copyrows_P_4byte_end;\n\t"
+
+"om4_copyrows_P_1:\n\t"
+		"move.l	%[tmp1],-4(%[dstC],%[PLANEOFS].l*2);\n\t"
+		"move.l	(%[src]),%[tmp1];\n\t"
+		"adda.l	%[PLANEOFS],%[src];\n\t"
+"om4_copyrows_P_2:\n\t"
+		"move.l	%[tmp1],-4(%[dstC],%[PLANEOFS_3].l);\n\t"
+		"move.l	(%[src]),%[tmp1];\n\t"
+		"adda.l	%[REWIND],%[src];\n\t"
+"om4_copyrows_P_3:\n\t"
+		"move.l	%[tmp1],-4(%[dstC],%[PLANEOFS].l*4);\n\t"
+		"dbra	%[loop],om4_copyrows_P_4byte_loop;\n\t"
+
+		"adda.l	%[step],%[dstC];\n\t"
+		"adda.l	%[step],%[src];\n\t"
+		"dbra	%[height],om4_copyrows_P_4byte;\n\t"
+"om4_copyrows_P_4byte_end:\n\t"
+
+	: [src]"+&a"(src)
+	 ,[dstC]"+&a"(dstC)
+	 ,[height]"+d"(height)
+	 ,[loop]"=&d"(loop)
+	 ,[tmp0]"=&d"(tmp)
+	 ,[tmp1]"=&d"(tmp1)
+	: [wh]"r"(wh)
+	 ,[PLANEOFS]"r"(planeofs)
+	 ,[REWIND]"r"(rewind)
+	 ,[step]"g"(step)
+	 ,[PLANEOFS_3]"r"(planeofs * 3)
+	: "memory"
+	);
+#else
+
+	// dd if=32 2.217sec
+
+	asm volatile(
+		"subq.l	#1,%[height];\n\t"	/* for dbra */
+		"subq.l #1,%[wh];\n\t"	/* for dbra */
+		"\n"
+"om4_copyrows_L_4byte: ;\n\t"
+		"move.l	%[wh],%[loop];\n\t"
+		"\n"
+
+		/* fastest way for MC68030 */
+		/* 命令のオーバーラップとアクセスウェイトの関係で、LUNA では
+		   move.l (An)+,(An)+ よりも
+		   move.l (An,Dn),(An,Dn) よりも
+		   movem.l よりも速い */
+"om4_copyrows_L_4byte_loop: ;\n\t"
+		"move.l	(%[src]),(%[dst0])+;\n\t"
+		"adda.l	%[PLANEOFS],%[src];\n\t"
+		"move.l	(%[src]),(%[dst1])+;\n\t"
+		"adda.l	%[PLANEOFS],%[src];\n\t"
+		"move.l	(%[src]),(%[dst2])+;\n\t"
+		"adda.l	%[PLANEOFS],%[src];\n\t"
+		"move.l	(%[src]),(%[dst3])+;\n\t"
+		"adda.l	%[REWIND],%[src];\n\t"
+		"dbra	%[loop],om4_copyrows_L_4byte_loop;\n\t"
+		"\n"
+
+		"adda.l	%[step],%[src];\n\t"
+		"adda.l	%[step],%[dst0];\n\t"
+		"adda.l	%[step],%[dst1];\n\t"
+		"adda.l	%[step],%[dst2];\n\t"
+		"adda.l	%[step],%[dst3];\n\t"
+
+		"dbra	%[height],om4_copyrows_L_4byte;\n\t"
+		"\n"
+"om4_copyrows_L_end: ;\n\t"
+		";\n\t"
+
+	  /* output */
+	: [src]"+&a"(src)
+	 ,[dst0]"+&a"(dst0)
+	 ,[dst1]"+&a"(dst1)
+	 ,[dst2]"+&a"(dst2)
+	 ,[dst3]"+&a"(dst3)
+	 ,[height]"+d"(height)
+	 ,[loop]"=&d"(loop)
+	  /* input */
+	: [wh]"r"(wh)
+	 ,[PLANEOFS]"r"(planeofs)
+	 ,[REWIND]"r"(rewind)
+	 ,[step]"g"(step)
+	: /* clobbers */
+	  "memory"
+	);
+#endif
+
+	} else {
+
+	asm volatile(
 		"subq.l	#1,%[height];\n\t"	/* for dbra */
 		"subq.l #1,%[wh];\n\t"	/* for dbra */
 		"\n"
 "om4_copyrows_4byte: ;\n\t"
-		"move.l	%[wh],%%d0;\n\t"
+		"move.l	%[wh],%[loop];\n\t"
 		"jbmi	om4_copyrows_bit;\n\t"
 		"\n"
 
+		/* fastest way for MC68030 */
 "om4_copyrows_4byte_loop: ;\n\t"
-		"move.l	(%[src2],%[PG_OFS].l),(%[dst2],%[PG_OFS].l);\n\t"
-		"move.l	(%[src2])+,(%[dst2])+;\n\t"
-		"move.l	(%[src],%[PG_OFS].l),(%[dst],%[PG_OFS].l);\n\t"
-		"move.l	(%[src])+,(%[dst])+;\n\t"
-		"dbra	%%d0, om4_copyrows_4byte_loop;\n\t"
+		"move.l	(%[src]),(%[dst0])+;\n\t"
+		"adda.l	%[PLANEOFS],%[src];\n\t"
+		"move.l	(%[src]),(%[dst1])+;\n\t"
+		"adda.l	%[PLANEOFS],%[src];\n\t"
+		"move.l	(%[src]),(%[dst2])+;\n\t"
+		"adda.l	%[PLANEOFS],%[src];\n\t"
+		"move.l	(%[src]),(%[dst3])+;\n\t"
+		"adda.l	%[REWIND],%[src];\n\t"
+		"dbra	%[loop],om4_copyrows_4byte_loop;\n\t"
 		"\n"
 
 "om4_copyrows_bit: ;\n\t"
-		"move.l	%[wl],%%d0;\n\t"
-		"jbeq	om4_copyrows_bit_end\n\t"
-		"bfextu	(%[src2],%[PG_OFS].l){0:%%d0},%%d1;\n\t"
-		"bfins	%%d1,(%[dst2],%[PG_OFS].l){0:%%d0};\n\t"
-		"bfextu	(%[src2]){0:%%d0},%%d1;\n\t"
-		"bfins	%%d1,(%[dst2]){0:%%d0};\n\t"
-		"bfextu	(%[src],%[PG_OFS].l){0:%%d0},%%d1;\n\t"
-		"bfins	%%d1,(%[dst],%[PG_OFS].l){0:%%d0};\n\t"
-		"bfextu	(%[src]){0:%%d0},%%d1;\n\t"
-		"bfins	%%d1,(%[dst]){0:%%d0};\n\t"
+		"tst.l	%[wl];\n\t"
+		"jbeq	om4_copyrows_bit_end;\n\t"
+		"bfextu	(%[src]){0:%[wl]},%[tmp];\n\t"
+		"bfins	%[tmp],(%[dst0]){0:%[wl]};\n\t"
+		"adda.l	%[PLANEOFS],%[src];\n\t"
+		"bfextu	(%[src]){0:%[wl]},%[tmp];\n\t"
+		"bfins	%[tmp],(%[dst1]){0:%[wl]};\n\t"
+		"adda.l	%[PLANEOFS],%[src];\n\t"
+		"bfextu	(%[src]){0:%[wl]},%[tmp];\n\t"
+		"bfins	%[tmp],(%[dst2]){0:%[wl]};\n\t"
+		"adda.l	%[PLANEOFS],%[src];\n\t"
+		"bfextu	(%[src]){0:%[wl]},%[tmp];\n\t"
+		"bfins	%[tmp],(%[dst3]){0:%[wl]};\n\t"
+		"adda.l	%[REWIND],%[src];\n\t"
+			/* rewind has 4 offset, optimize for 4byte case.
+			   not need this offset here. */
+		"subq.l	#4,%[src];\n\t"
 		"\n"
 "om4_copyrows_bit_end: ;\n\t"
 		"adda.l	%[step],%[src];\n\t"
-		"adda.l	%[step],%[dst];\n\t"
-
-		"adda.l	%[step],%[src2];\n\t"
+		"adda.l	%[step],%[dst0];\n\t"
+		"adda.l	%[step],%[dst1];\n\t"
 		"adda.l	%[step],%[dst2];\n\t"
+		"adda.l	%[step],%[dst3];\n\t"
 
 		"dbra	%[height],om4_copyrows_4byte;\n\t"
 		"\n"
@@ -1096,27 +1244,25 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 		";\n\t"
 
 	  /* output */
-	: [src]"+a"(src)
-	 ,[dst]"=&a"(dst)
-	 ,[src2]"=&a"(src2)
-	 ,[dst2]"=&a"(dst2)
-	 ,[wh]"+d"(wh)
+	: [src]"+&a"(src)
+	 ,[dst0]"+&a"(dst0)
+	 ,[dst1]"+&a"(dst1)
+	 ,[dst2]"+&a"(dst2)
+	 ,[dst3]"+&a"(dst3)
+	 ,[height]"+d"(height)
+	 ,[loop]"=&d"(loop)
+	 ,[tmp]"=&d"(tmp)
 	  /* input */
-	: [wl]"g"(wl)
-	 ,[height]"d"(height)
-	 ,[offset]"r"(offset)
-	 ,[PG_OFS]"r"(PG_OFS)
+	: [wl]"d"(wl)
+	 ,[wh]"r"(wh)
+	 ,[PLANEOFS]"r"(planeofs)
+	 ,[REWIND]"r"(rewind)
 	 ,[step]"g"(step)
 	: /* clobbers */
 	  "memory"
-	 ,"%d0", "%d1"
-
-/*
-	registers
-	  "%d0", "%d1", "%d2", "%d3", "%d4", "%d5", "%d6", "%d7",
-	  "%a0", "%a1", "%a2", "%a3", "%a4", "%a5", "%a6", "%a7"
-*/
 	);
+
+	}
 
 #endif
 }
