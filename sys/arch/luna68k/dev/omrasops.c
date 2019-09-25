@@ -1134,6 +1134,9 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 
 	// dd if=32 2.217sec
 
+	// move.l (An)+,(An)+; move.l (An,Dn),(An,Dn)版
+	// dd if=32 2.333sec だった。
+
 	asm volatile(
 		"subq.l	#1,%[height];\n\t"	/* for dbra */
 		"subq.l #1,%[wh];\n\t"	/* for dbra */
