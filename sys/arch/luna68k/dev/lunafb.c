@@ -173,6 +173,8 @@ CFATTACH_DECL_NEW(fb, sizeof(struct omfb_softc),
 
 extern int hwplanemask;	/* hardware planemask; retrieved at boot */
 
+int hwplanecount;	/* for omrasops */
+
 static int omfb_console;
 int  omfb_cnattach(void);
 
@@ -450,7 +452,7 @@ omfb_resetcmap(struct om_hwdevconfig *dc)
 static void
 omfb_getdevconfig(paddr_t paddr, struct om_hwdevconfig *dc)
 {
-	int bpp, i;
+	int i;
 	struct rasops_info *ri;
 	union {
 		struct { short h, v; } p;
@@ -459,21 +461,21 @@ omfb_getdevconfig(paddr_t paddr, struct om_hwdevconfig *dc)
 
 	switch (hwplanemask) {
 	case 0xff:
-		bpp = 8;	/* XXX check monochrome bit in DIPSW */
+		hwplanecount = 8;	/* XXX check monochrome bit in DIPSW */
 		break;
 	default:
 	case 0x0f:
-		bpp = 4;	/* XXX check monochrome bit in DIPSW */
+		hwplanecount = 4;	/* XXX check monochrome bit in DIPSW */
 		break;
 	case 1:
-		bpp = 1;
+		hwplanecount = 1;
 		break;
 	}
 	dc->dc_wid = 1280;
 	dc->dc_ht = 1024;
-	dc->dc_depth = bpp;
+	dc->dc_depth = hwplanecount;
 	dc->dc_rowbytes = 2048 / 8;
-	dc->dc_cmsize = (bpp == 1) ? 0 : 1 << bpp;
+	dc->dc_cmsize = (hwplanecount == 1) ? 0 : 1 << hwplanecount;
 	dc->dc_videobase = paddr;
 
 	omfb_resetcmap(dc);
@@ -503,7 +505,7 @@ omfb_getdevconfig(paddr_t paddr, struct om_hwdevconfig *dc)
 		ri->ri_flg |= RI_NO_AUTO;
 	ri->ri_hw = dc;
 
-	if (bpp == 4 || bpp == 8)
+	if (hwplanecount == 4 || hwplanecount == 8)
 		omrasops4_init(ri, 34, 80);
 	else
 		omrasops1_init(ri, 34, 80);
