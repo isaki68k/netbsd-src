@@ -208,6 +208,7 @@ om_fill(int planemask, int rop,
 	mask = ALL1BITS >> dstbitofs;
 	dw = 32 - dstbitofs;
 
+	/* for loop waste 4 clock */
 	do {
 		width -= dw;
 		if (width < 0) {
@@ -227,7 +228,7 @@ om_fill(int planemask, int rop,
 			int16_t h = h16;
 
 #if USE_M68K_ASM
-			__asm volatile(
+			asm volatile(
 "om_fill_loop_h:\n\t"
 			"move.l	%[v],(%[d]);\n\t"
 			"add.l	%[dstspan],%[d];\n\t"
@@ -972,6 +973,8 @@ static void
 om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 {
 #if 0
+	// dd if=32 3.50sec
+
 	struct rasops_info *ri = cookie;
 	uint8_t *p, *q;
 	int scanspan, offset, srcy, height, width, w;
@@ -1060,7 +1063,7 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 
 	if (wh > 0 && wl == 0) {
 
-#if 0
+#if 1
 	om_setplanemask(hwplanemask);
 	om_setROP_curplane(ROP_THROUGH, ALL1BITS);
 
@@ -1071,26 +1074,25 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 
 	// もしライトウェイトが死ぬほど大きければこっちのほうが速く
 	// なるかもしれない
-	// dd if=32 2.6sec
+	// dd if=32 2.60sec
+	// 0 クリアして 0 でないところだけ書く版 2.67sec
 
 	asm volatile(
 "om4_copyrows_P_4byte:\n\t"
 		"move.l	%[wh],%[loop];\n\t"
 "om4_copyrows_P_4byte_loop:\n\t"
-		"move.l	(%[src]),%[tmp0];\n\t"
-		"move.l	%[tmp0],(%[dstC])+;\n\t"
-		"adda.l	%[PLANEOFS],%[src];\n\t"
+		"clr.l	(%[dstC])+;\n\t"
 		"move.l	(%[src]),%[tmp1];\n\t"
 		"adda.l	%[PLANEOFS],%[src];\n\t"
-		"cmp.l	%[tmp0],%[tmp1];\n\t"
+		"jbne	om4_copyrows_P_0;\n\t"
+		"move.l	(%[src]),%[tmp1];\n\t"
+		"adda.l	%[PLANEOFS],%[src];\n\t"
 		"jbne	om4_copyrows_P_1;\n\t"
 		"move.l	(%[src]),%[tmp1];\n\t"
 		"adda.l	%[PLANEOFS],%[src];\n\t"
-		"cmp.l	%[tmp0],%[tmp1];\n\t"
 		"jbne	om4_copyrows_P_2;\n\t"
 		"move.l	(%[src]),%[tmp1];\n\t"
 		"adda.l	%[REWIND],%[src];\n\t"
-		"cmp.l	%[tmp0],%[tmp1];\n\t"
 		"jbne	om4_copyrows_P_3;\n\t"
 
 		"dbra	%[loop],om4_copyrows_P_4byte_loop;\n\t"
@@ -1100,6 +1102,10 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 		"dbra	%[height],om4_copyrows_P_4byte;\n\t"
 		"jbra	om4_copyrows_P_4byte_end;\n\t"
 
+"om4_copyrows_P_0:\n\t"
+		"move.l	%[tmp1],-4(%[dstC],%[PLANEOFS].l);\n\t"
+		"move.l	(%[src]),%[tmp1];\n\t"
+		"adda.l	%[PLANEOFS],%[src];\n\t"
 "om4_copyrows_P_1:\n\t"
 		"move.l	%[tmp1],-4(%[dstC],%[PLANEOFS].l*2);\n\t"
 		"move.l	(%[src]),%[tmp1];\n\t"
