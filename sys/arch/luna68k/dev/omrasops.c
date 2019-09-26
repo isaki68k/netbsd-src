@@ -1076,6 +1076,7 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 	// なるかもしれない
 	// dd if=32 2.60sec
 	// 0 クリアして 0 でないところだけ書く版 2.67sec
+	//              本当に0でないところだけ版 2.68sec
 
 	asm volatile(
 "om4_copyrows_P_4byte:\n\t"
@@ -1088,12 +1089,15 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 		"move.l	(%[src]),%[tmp1];\n\t"
 		"adda.l	%[PLANEOFS],%[src];\n\t"
 		"jbne	om4_copyrows_P_1;\n\t"
+"om4_copyrows_P_4byte_skip1:\n\t"
 		"move.l	(%[src]),%[tmp1];\n\t"
 		"adda.l	%[PLANEOFS],%[src];\n\t"
 		"jbne	om4_copyrows_P_2;\n\t"
+"om4_copyrows_P_4byte_skip2:\n\t"
 		"move.l	(%[src]),%[tmp1];\n\t"
 		"adda.l	%[REWIND],%[src];\n\t"
 		"jbne	om4_copyrows_P_3;\n\t"
+"om4_copyrows_P_4byte_skip3:\n\t"
 
 		"dbra	%[loop],om4_copyrows_P_4byte_loop;\n\t"
 
@@ -1106,14 +1110,17 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 		"move.l	%[tmp1],-4(%[dstC],%[PLANEOFS].l);\n\t"
 		"move.l	(%[src]),%[tmp1];\n\t"
 		"adda.l	%[PLANEOFS],%[src];\n\t"
+		"jbeq	om4_copyrows_P_4byte_skip1;\n\t"
 "om4_copyrows_P_1:\n\t"
 		"move.l	%[tmp1],-4(%[dstC],%[PLANEOFS].l*2);\n\t"
 		"move.l	(%[src]),%[tmp1];\n\t"
 		"adda.l	%[PLANEOFS],%[src];\n\t"
+		"jbeq	om4_copyrows_P_4byte_skip2;\n\t"
 "om4_copyrows_P_2:\n\t"
 		"move.l	%[tmp1],-4(%[dstC],%[PLANEOFS_3].l);\n\t"
 		"move.l	(%[src]),%[tmp1];\n\t"
 		"adda.l	%[REWIND],%[src];\n\t"
+		"jbeq	om4_copyrows_P_4byte_skip3;\n\t"
 "om4_copyrows_P_3:\n\t"
 		"move.l	%[tmp1],-4(%[dstC],%[PLANEOFS].l*4);\n\t"
 		"dbra	%[loop],om4_copyrows_P_4byte_loop;\n\t"
