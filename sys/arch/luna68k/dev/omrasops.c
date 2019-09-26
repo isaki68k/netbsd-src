@@ -1061,12 +1061,149 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 	dst3 = dst2 + planeofs;
 	int loop, tmp;
 
+
+#if 0
+	// 2.26sec
+	(void)tmp, (void)loop, (void)step, (void)dst3;
+	height--;	/* for dbra */
+	wh--;		/* for dbra */
+	rewind = ri->ri_stride * ((rowofs > 0) ? -1 : 1);
+	step = 4 + (height + 1) * ri->ri_stride * ((rowofs > 0) ? 1 : -1);
+
+	int16_t h;
+
+	asm volatile(
+"om4_copyrows_H_w_loop:;\n\t"
+		"move.l	%[height],%[h];\n\t"
+"om4_copyrows_H_h_loop:;\n\t"
+		"move.l	(%[src]),(%[dst]);\n\t"
+		"move.l	(%[src],%[PLANEOFS].l),(%[dst],%[PLANEOFS].l);\n\t"
+		"move.l	(%[src],%[PLANEOFS].l*2),(%[dst],%[PLANEOFS].l*2);\n\t"
+		"move.l	(%[src],%[PLANEOFS_3].l),(%[dst],%[PLANEOFS_3].l);\n\t"
+		"add.l	%[REWIND],%[src];\n\t"
+		"add.l	%[REWIND],%[dst];\n\t"
+		"dbra	%[h],om4_copyrows_H_h_loop;\n\t"
+		"add.l	%[step],%[src];\n\t"
+		"add.l	%[step],%[dst];\n\t"
+		"dbra	%[wh],om4_copyrows_H_w_loop;\n\t"
+	: [src]"+&a"(src)
+	 ,[dst]"+&a"(dst0)
+	 ,[h]"=&d"(h)
+	 ,[wh]"+&d"(wh)
+	: [height]"r"(height)
+	 ,[PLANEOFS]"r"(planeofs)
+	 ,[PLANEOFS_3]"r"(planeofs*3)
+	 ,[REWIND]"r"(rewind)
+	 ,[step]"r"(step)
+	: "memory"
+	);
+
+	if (wl) {
+		uint32_t mask = ALL1BITS << (32 - wl);
+		om_setROP_curplane(ROP_THROUGH, mask);
+		uint8_t *d = dst0;
+		uint8_t *s = src;
+		for (h = height; h >= 0; h--) {
+			*W(d) = *W(s);
+			d += planeofs;
+			s += planeofs;
+			*W(d) = *W(s);
+			d += planeofs;
+			s += planeofs;
+			*W(d) = *W(s);
+			d += planeofs;
+			s += planeofs;
+			*W(d) = *W(s);
+			d += rewind;
+			s += rewind;
+		}
+		om_setROP_curplane(ROP_THROUGH, ALL1BITS);
+	}
+
+#else /* H_LOOP */
+
 	if (wh > 0 && wl == 0) {
 
 	// dd if=32 2.217sec
 
 	// move.l (An)+,(An)+; move.l (An,Dn),(An,Dn)版
 	// dd if=32 2.333sec だった。
+
+#if 1	/* _X */
+	asm volatile(
+		"subq.l	#1,%[height];\n\t"	/* for dbra */
+		"ror.l	#1,%[wh];\n\t"	/* /2, save lsb to msb */
+		"subq.w #1,%[wh];\n\t"	/* for dbra */
+		"\n"
+"om4_copyrows_X_8byte: ;\n\t"
+		"move.w	%[wh],%[loop];\n\t"
+		"\n"
+
+"om4_copyrows_X_8byte_loop: \n\t"
+		"move.l	(%[src]),(%[dst0])+;\n\t"	/* P0 */
+		"adda.l	%[PLANEOFS],%[src];\n\t"
+		"move.l	(%[src]),(%[dst1])+;\n\t"	/* P1 */
+		"adda.l	%[PLANEOFS],%[src];\n\t"
+		"move.l	(%[src]),(%[dst2])+;\n\t"	/* P2 */
+		"adda.l	%[PLANEOFS],%[src];\n\t"
+		"move.l	(%[src]),(%[dst3])+;\n\t"	/* P3 */
+
+		"addq.l	#4,%[src];\n\t"
+
+		"move.l	(%[src]),(%[dst3])+;\n\t"	/* P3 */
+		"suba.l	%[PLANEOFS],%[src];\n\t"
+		"move.l	(%[src]),(%[dst2])+;\n\t"	/* P2 */
+		"suba.l	%[PLANEOFS],%[src];\n\t"
+		"move.l	(%[src]),(%[dst1])+;\n\t"	/* P1 */
+		"suba.l	%[PLANEOFS],%[src];\n\t"
+		"move.l	(%[src])+,(%[dst0])+;\n\t"	/* P0 */
+
+		"dbra	%[loop],om4_copyrows_X_8byte_loop;\n\t"
+
+#if 0
+		"tst.l	%[wh];\n\t"
+		"jbpl	om4_copyrows_X_next;\n\t"
+										/* original wh odd case */
+		
+		"move.l	(%[src]),(%[dst0])+;\n\t"
+		"adda.l	%[PLANEOFS],%[src];\n\t"
+		"move.l	(%[src]),(%[dst1])+;\n\t"
+		"adda.l	%[PLANEOFS],%[src];\n\t"
+		"move.l	(%[src]),(%[dst2])+;\n\t"
+		"adda.l	%[PLANEOFS],%[src];\n\t"
+		"move.l	(%[src]),(%[dst3])+;\n\t"
+		"adda.l	%[REWIND],%[src];\n\t"
+
+"om4_copyrows_X_next: \n\t"
+#endif
+
+		"adda.l	%[step],%[src];\n\t"
+		"adda.l	%[step],%[dst0];\n\t"
+		"adda.l	%[step],%[dst1];\n\t"
+		"adda.l	%[step],%[dst2];\n\t"
+		"adda.l	%[step],%[dst3];\n\t"
+
+		"dbra	%[height],om4_copyrows_X_8byte;\n\t"
+	  /* output */
+	: [src]"+&a"(src)
+	 ,[dst0]"+&a"(dst0)
+	 ,[dst1]"+&a"(dst1)
+	 ,[dst2]"+&a"(dst2)
+	 ,[dst3]"+&a"(dst3)
+	 ,[height]"+d"(height)
+	 ,[loop]"=&d"(loop)
+	  /* input */
+	: [wh]"r"(wh)
+	 ,[PLANEOFS]"r"(planeofs)
+	 ,[REWIND]"r"(rewind)
+	 ,[step]"g"(step)
+	: /* clobbers */
+	  "memory"
+	);
+		
+
+#else	/* X_ */
+		
 
 	asm volatile(
 		"subq.l	#1,%[height];\n\t"	/* for dbra */
@@ -1081,6 +1218,9 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 		   move.l (An)+,(An)+ よりも
 		   move.l (An,Dn),(An,Dn) よりも
 		   movem.l よりも速い */
+		/* ソースの (An)+ は Head 0 だけど adda は Head 2 なので、
+		   前の命令にライトウェイトサイクルがあって Tail が発生すると
+		   (An)+,.. はオーバーラップしないが adda はオーバーラップできる。 */
 "om4_copyrows_L_4byte_loop: ;\n\t"
 		"move.l	(%[src]),(%[dst0])+;\n\t"
 		"adda.l	%[PLANEOFS],%[src];\n\t"
@@ -1120,6 +1260,7 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 	: /* clobbers */
 	  "memory"
 	);
+#endif	/* _X */
 
 	} else {
 
@@ -1146,8 +1287,6 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 		"\n"
 
 "om4_copyrows_bit: ;\n\t"
-		"tst.l	%[wl];\n\t"
-		"jbeq	om4_copyrows_bit_end;\n\t"
 		"bfextu	(%[src]){0:%[wl]},%[tmp];\n\t"
 		"bfins	%[tmp],(%[dst0]){0:%[wl]};\n\t"
 		"adda.l	%[PLANEOFS],%[src];\n\t"
@@ -1196,6 +1335,8 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 	);
 
 	}
+
+#endif	/* H_LOOP */
 
 #endif
 }
