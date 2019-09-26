@@ -1063,88 +1063,6 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 
 	if (wh > 0 && wl == 0) {
 
-#if 1
-	om_setplanemask(hwplanemask);
-	om_setROP_curplane(ROP_THROUGH, ALL1BITS);
-
-	int tmp1;
-	uint8_t *dstC = dst0 - planeofs;	// XXX hack
-	wh--;
-	height--;
-
-	// もしライトウェイトが死ぬほど大きければこっちのほうが速く
-	// なるかもしれない
-	// dd if=32 2.60sec
-	// 0 クリアして 0 でないところだけ書く版 2.67sec
-	//              本当に0でないところだけ版 2.68sec
-
-	asm volatile(
-"om4_copyrows_P_4byte:\n\t"
-		"move.l	%[wh],%[loop];\n\t"
-"om4_copyrows_P_4byte_loop:\n\t"
-		"clr.l	(%[dstC])+;\n\t"
-		"move.l	(%[src]),%[tmp1];\n\t"
-		"adda.l	%[PLANEOFS],%[src];\n\t"
-		"jbne	om4_copyrows_P_0;\n\t"
-		"move.l	(%[src]),%[tmp1];\n\t"
-		"adda.l	%[PLANEOFS],%[src];\n\t"
-		"jbne	om4_copyrows_P_1;\n\t"
-"om4_copyrows_P_4byte_skip1:\n\t"
-		"move.l	(%[src]),%[tmp1];\n\t"
-		"adda.l	%[PLANEOFS],%[src];\n\t"
-		"jbne	om4_copyrows_P_2;\n\t"
-"om4_copyrows_P_4byte_skip2:\n\t"
-		"move.l	(%[src]),%[tmp1];\n\t"
-		"adda.l	%[REWIND],%[src];\n\t"
-		"jbne	om4_copyrows_P_3;\n\t"
-"om4_copyrows_P_4byte_skip3:\n\t"
-
-		"dbra	%[loop],om4_copyrows_P_4byte_loop;\n\t"
-
-		"adda.l	%[step],%[dstC];\n\t"
-		"adda.l	%[step],%[src];\n\t"
-		"dbra	%[height],om4_copyrows_P_4byte;\n\t"
-		"jbra	om4_copyrows_P_4byte_end;\n\t"
-
-"om4_copyrows_P_0:\n\t"
-		"move.l	%[tmp1],-4(%[dstC],%[PLANEOFS].l);\n\t"
-		"move.l	(%[src]),%[tmp1];\n\t"
-		"adda.l	%[PLANEOFS],%[src];\n\t"
-		"jbeq	om4_copyrows_P_4byte_skip1;\n\t"
-"om4_copyrows_P_1:\n\t"
-		"move.l	%[tmp1],-4(%[dstC],%[PLANEOFS].l*2);\n\t"
-		"move.l	(%[src]),%[tmp1];\n\t"
-		"adda.l	%[PLANEOFS],%[src];\n\t"
-		"jbeq	om4_copyrows_P_4byte_skip2;\n\t"
-"om4_copyrows_P_2:\n\t"
-		"move.l	%[tmp1],-4(%[dstC],%[PLANEOFS_3].l);\n\t"
-		"move.l	(%[src]),%[tmp1];\n\t"
-		"adda.l	%[REWIND],%[src];\n\t"
-		"jbeq	om4_copyrows_P_4byte_skip3;\n\t"
-"om4_copyrows_P_3:\n\t"
-		"move.l	%[tmp1],-4(%[dstC],%[PLANEOFS].l*4);\n\t"
-		"dbra	%[loop],om4_copyrows_P_4byte_loop;\n\t"
-
-		"adda.l	%[step],%[dstC];\n\t"
-		"adda.l	%[step],%[src];\n\t"
-		"dbra	%[height],om4_copyrows_P_4byte;\n\t"
-"om4_copyrows_P_4byte_end:\n\t"
-
-	: [src]"+&a"(src)
-	 ,[dstC]"+&a"(dstC)
-	 ,[height]"+d"(height)
-	 ,[loop]"=&d"(loop)
-	 ,[tmp0]"=&d"(tmp)
-	 ,[tmp1]"=&d"(tmp1)
-	: [wh]"r"(wh)
-	 ,[PLANEOFS]"r"(planeofs)
-	 ,[REWIND]"r"(rewind)
-	 ,[step]"g"(step)
-	 ,[PLANEOFS_3]"r"(planeofs * 3)
-	: "memory"
-	);
-#else
-
 	// dd if=32 2.217sec
 
 	// move.l (An)+,(An)+; move.l (An,Dn),(An,Dn)版
@@ -1202,7 +1120,6 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 	: /* clobbers */
 	  "memory"
 	);
-#endif
 
 	} else {
 
