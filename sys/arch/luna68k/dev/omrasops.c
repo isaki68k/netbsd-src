@@ -95,11 +95,6 @@ static void
 om_fill_color(int,
 	uint8_t *, int, int,
 	int, int);
-static void
-om_putchar_subr(int, int,
-	uint8_t *, int, int,
-	uint8_t *, int,
-	int, int);
 
 #define	ALL1BITS	(~0U)
 #define	ALL0BITS	(0U)
@@ -373,58 +368,6 @@ om_fill_color(int color,
 #endif
 		}
 
-		mask = ALL1BITS;
-		dw = 32;
-	} while (width > 0);
-}
-
-/*
- * putchar subroutine
- */
-static void
-om_putchar_subr(int planemask, int rop,
-	uint8_t *dstptr, int dstbitofs, int dstspan,
-	uint8_t *fontptr, int fontspan,
-	int width, int height)
-{
-	uint32_t mask;
-	int dw;		/* 1 pass width bits */
-	int x = 0;
-	int16_t h16 = height - 1;
-
-	om_setplanemask(planemask);
-
-	mask = ALL1BITS >> dstbitofs;
-	dw = 32 - dstbitofs;
-
-	do {
-		width -= dw;
-		if (width < 0) {
-			/* clear right zero bits */
-			width = -width;
-			MASK_CLEAR_RIGHT(mask, width);
-			/* loop exit after done */
-			width = 0;
-		}
-
-		om_setROP_curplane(rop, mask);
-
-		{
-			uint8_t *d = dstptr;
-			uint8_t *f = fontptr;
-			int16_t h = h16;
-			do {
-				uint32_t v;
-				GETBITS(f, x, dw, v);
-				/* no need to shift of v. masked by ROP */
-				*W(d) = v;
-				d += dstspan;
-				f += fontspan;
-			} while (--h >= 0);
-		}
-
-		dstptr += 4;
-		x += dw;
 		mask = ALL1BITS;
 		dw = 32;
 	} while (width > 0);
@@ -745,13 +688,9 @@ om4_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 	int width;
 	int height;
 	int fg, bg;
-	int sh, sl;
 	int y;
-	int scanspan;
 	uint8_t *fb;
-	uint8_t *p;
 
-	scanspan = ri->ri_stride;
 	y = ri->ri_font->fontheight * row;
 	startx = ri->ri_font->fontwidth * startcol;
 	width = ri->ri_font->fontwidth;
@@ -759,47 +698,12 @@ om4_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 	fb = (uint8_t *)ri->ri_font->data +
 	    (uc - ri->ri_font->firstchar) * ri->ri_fontscale;
 	om4_unpack_attr(attr, &fg, &bg, NULL);
-	sh = startx >> 5;
-	sl = startx & 0x1f;
-	p = (uint8_t *)ri->ri_bits + y * scanspan + sh * 4;
 
 	om_set_rowattr(row, fg, bg);
 
 	omfb_putchar(ri, startx, y, width, height,
 		fb, ri->ri_font->stride,
 		fg, bg);
-if (0) {
-	if (bg == 0) {
-		if (fg != hwplanemask) {
-			/* 背景色＝０で塗りつぶす */
-			om_fill(hwplanemask, ROP_THROUGH,
-				p, sl, scanspan,
-				ALL0BITS, width, height);
-		}
-		/* 前景色のプレーンに文字を描く */
-		/* 前景色が選択していないプレーンは変化しない */
-		/* 前景色が白の時は全プレーンが選択されるので背景色の塗りつぶしは不要 */
-		om_putchar_subr(fg, ROP_THROUGH,
-			p, sl, scanspan,
-			fb, ri->ri_font->stride,
-			width, height);
-	} else {
-		/*
-		 * 背景色が指定されているときは、まず背景色で埋める
-		 */
-		/* erase background by bg */
-		om_fill_color(bg, p, sl, scanspan, width, height);
-
-		/*
-		 前景色で選択されているプレーンと背景色で選択されるプレーンの
-		 EOR したプレーンに、フォントデータを EOR で書くと前景色で書かれる
-		 はず。。。 */
-		om_putchar_subr(fg ^ bg, ROP_EOR,
-			p, sl, scanspan,
-			fb, ri->ri_font->stride,
-			width, height);
-	}
-}
 
 	/* reset mask value */
 	/* 先に ROP を設定するプレーンマスクを全プレーンにセット */
