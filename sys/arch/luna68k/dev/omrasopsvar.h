@@ -22,6 +22,16 @@
 
 #include <machine/board.h>
 
+/*
+BMSEL は共通ビットマッププレーンへの書き込みがどのプレーンに反映されるか、
+および共通 ROP への書き込みがどのプレーンの ROP に反映されるかの
+両方に影響する。
+
+共通 ROP へのセットは、現在プレーンマスクで選択されている
+プレーンの ROP をひとつづつセットしていくのと同じ効果がある。
+共通プレーンへ書き込んだときの ROP という意味ではない。
+*/
+
 #define OMFB_PLANEMASK	BMAP_BMSEL	/* BMSEL register */
 
 // XXX: maybe move to lunafb.c
@@ -33,6 +43,26 @@
 #define OMFB_PLANEOFS	(0x40000)	/* plane offset */
 
 #define OMFB_RASTERBYTES	(2048/8) /* bytes in VRAM raster */
+
+
+#define OMFB_MAX_PLANECOUNT	(8)
+
+/* 個別のプレーンや ROP の処理を行うため、定義をやり直す */
+
+#define OMFB_PLANE_C	BMAP_BMP		/* common plane */
+#define OMFB_PLANE_0	BMAP_BMAP0
+
+#define OMFB_ROP_C		BMAP_FN			/* common ROP */
+#define OMFB_ROP_0		BMAP_FN0
+
+#define OMFB_STRIDE		(2048/8)		/* stride [byte] */
+
+
+/* 差し替え予定 */
+#define omfb_planemask	hwplanemask
+#define omfb_planecount hwplanecount
+extern int hwplanemask;
+extern int hwplanecount;
 
 /*
  * Helper macros
@@ -76,3 +106,36 @@
 
 int omrasops1_init(struct rasops_info *, int, int);
 int omrasops4_init(struct rasops_info *, int, int);
+
+/*
+ * planemask and ROP inline functions
+ */
+
+/* set planemask for common plane and common ROP */
+static inline void
+omfb_setplanemask(int planemask)
+{
+	*(volatile uint32_t *)OMFB_PLANEMASK = planemask;
+}
+
+/* set ROP and ROP's mask for individual plane */
+static inline void
+omfb_setROP(int plane, int rop, uint32_t mask)
+{
+	((volatile uint32_t *)(OMFB_ROP_0 + OMFB_PLANEOFS * plane))[rop] = mask;
+}
+
+/* set ROP and ROP's mask for current setplanemask-ed plane(s) */
+static inline void
+omfb_setROP_curplane(int rop, uint32_t mask)
+{
+	((volatile uint32_t *)(OMFB_ROP_C))[rop] = mask;
+}
+
+/* reset planemask and ROP */
+static inline void
+omfb_resetplanemask_and_ROP(void)
+{
+	omfb_setplanemask(omfb_planemask);
+	omfb_setROP_curplane(ROP_THROUGH, ~0U);
+}

@@ -431,6 +431,109 @@ om_putchar_subr(int planemask, int rop,
 }
 
 /*
+ * 指定した色で文字を描画する。
+ * プレーンROP を前景・背景に応じて次のように設定する。
+ * fg bg  rop          result
+ *  0  0  ROP_ZERO      0
+ *  0  1  ROP_INV1     ~D
+ *  1  0  ROP_THROUGH   D
+ *  1  1  ROP_ONE       1
+ * これにより1度の共通プレーン書き込みで、前景・背景で文字を描画できる。
+ */
+/*
+ * x, y: destination Left-Top in pixel
+ * width, height : in pixel
+ * fontptr: source pointer of fontdata
+ * fontstride: y-stride of fontdata [byte]
+ * fg : foreground color
+ * bg : background color
+ *
+ * breaks: planemask, ROP
+ */
+static void
+omfb_putchar(
+	struct rasops_info *ri,
+	int x, int y,
+	int width, int height,
+	uint8_t *fontptr, int fontstride,
+	uint8_t fg, uint8_t bg)
+{
+	static uint8_t rop[OMFB_MAX_PLANECOUNT];
+	static const uint8_t ropsel[] = {
+		ROP_ZERO, ROP_INV1, ROP_THROUGH, ROP_ONE };
+	static int saved_fg, saved_bg;
+
+	uint32_t mask;
+	int plane;
+	int dw;		/* 1 pass width bits */
+	uint8_t *dstC;
+	int xh, xl;
+	int fontx = 0;
+
+	if (saved_fg != fg || saved_bg != bg) {
+		saved_fg = fg;
+		saved_bg = bg;
+		/* ROP を求める */
+		for (plane = 0; plane < omfb_planecount; plane++) {
+			int t = (fg & 1) * 2 + (bg & 1);
+			rop[plane] = ropsel[t];
+			fg >>= 1;
+			bg >>= 1;
+		}
+	}
+
+	// x の下位5ビットと上位に分ける
+	xh = x >> 5;
+	xl = x & 0x1f;
+
+	/* write to common plane */
+	dstC = (uint8_t *)ri->ri_bits + xh * 4 + y * OMFB_STRIDE;
+
+	/* select all plane */
+	omfb_setplanemask(omfb_planemask);
+
+	mask = ALL1BITS >> xl;
+	dw = 32 - xl;
+
+	do {
+		width -= dw;
+		if (width < 0) {
+			/* clear right zero bits */
+			width = -width;
+			MASK_CLEAR_RIGHT(mask, width);
+			/* loop exit after done */
+			width = 0;
+		}
+
+		/* putchar の場合、width ループは 1 か 2 回で毎回 mask が違う
+		はずなので毎回セットしたほうがいい */
+		for (plane = 0; plane < omfb_planecount; plane++) {
+			omfb_setROP(plane, rop[plane], mask);
+		}
+
+		{
+			uint8_t *d = dstC;
+			uint8_t *f = fontptr;
+			int16_t h = height - 1;
+			do {
+				uint32_t v;
+				GETBITS(f, fontx, dw, v);
+				/* no need to shift of v. masked by ROP */
+				*W(d) = v;
+				d += OMFB_STRIDE;
+				f += fontstride;
+			} while (--h >= 0);
+		}
+
+		dstC += 4;
+		fontx += dw;
+		mask = ALL1BITS;
+		dw = 32;
+	} while (width > 0);
+}
+
+
+/*
  * Blit a character at the specified co-ordinates.
  */
 static void
@@ -662,6 +765,10 @@ om4_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 
 	om_set_rowattr(row, fg, bg);
 
+	omfb_putchar(ri, startx, y, width, height,
+		fb, ri->ri_font->stride,
+		fg, bg);
+if (0) {
 	if (bg == 0) {
 		if (fg != hwplanemask) {
 			/* 背景色＝０で塗りつぶす */
@@ -692,6 +799,7 @@ om4_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 			fb, ri->ri_font->stride,
 			width, height);
 	}
+}
 
 	/* reset mask value */
 	/* 先に ROP を設定するプレーンマスクを全プレーンにセット */
