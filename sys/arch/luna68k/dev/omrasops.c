@@ -455,7 +455,7 @@ om1_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 			/* set lmask as ROP mask value, with THROUGH mode */
 			((volatile uint32_t *)OMFB_ROPFUNC)[ROP_THROUGH] =
 			    lmask;
-			
+
 			*W(p) = lhalf;
 
 			p += BYTESDONE;
@@ -1379,7 +1379,7 @@ om1_copycols(void *cookie, int startrow, int srccol, int dstcol, int ncols)
 
 	lmask = (db == 0) ? 0 : ALL1BITS >> db;
 	eb = (db + w) & ALIGNMASK;
-	rmask = (eb == 0) ? 0 : ALL1BITS << (32 - eb); 
+	rmask = (eb == 0) ? 0 : ALL1BITS << (32 - eb);
 	lnum = (32 - db) & ALIGNMASK;
 	rnum = (dstx + w) & ALIGNMASK;
 
@@ -1515,7 +1515,7 @@ om4_copycols(void *cookie, int startrow, int srccol, int dstcol, int ncols)
 
 	lmask = (db == 0) ? 0 : ALL1BITS >> db;
 	eb = (db + w) & ALIGNMASK;
-	rmask = (eb == 0) ? 0 : ALL1BITS << (32 - eb); 
+	rmask = (eb == 0) ? 0 : ALL1BITS << (32 - eb);
 	lnum = (32 - db) & ALIGNMASK;
 	rnum = (dstx + w) & ALIGNMASK;
 
