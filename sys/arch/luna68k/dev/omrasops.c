@@ -110,6 +110,37 @@ om_putchar_subr(int, int,
 extern int hwplanemask;
 extern int hwplanecount;
 
+// XXX
+struct rowattr_t
+{
+	union {
+		uint16_t u16;
+		struct {
+			uint8_t ismulti;	/* is multi color used */
+			uint8_t fg;
+		};
+	};
+};
+static struct rowattr_t rowattr[43];
+
+static inline void
+om_set_rowattr(int row, int fg, int bg)
+{
+	// bg が0でないか、元のfgが0でなくてfgが変更されるとき true
+	rowattr[row].ismulti |= bg;
+	if (rowattr[row].fg != 0) {
+		rowattr[row].ismulti |= rowattr[row].fg ^ fg;
+	}
+	rowattr[row].fg = fg;
+}
+
+static inline void
+om_reset_rowattr(int row)
+{
+	rowattr[row].u16 = 0;
+}
+
+
 /*
  * macros to handle unaligned bit copy ops.
  * See src/sys/dev/rasops/rasops_mask.h for MI version.
@@ -133,6 +164,8 @@ extern int hwplanecount;
 
 #define	GETBITS(psrc, x, w, dst)	FASTGETBITS(psrc, x, w, dst)
 #define	PUTBITS(src, x, w, pdst)	FASTPUTBITS(src, x, w, pdst)
+
+/* plane mask, ROP, ROPmask */
 
 /* set planemask for common plane and common ROP */
 static inline void
@@ -627,6 +660,8 @@ om4_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 	sl = startx & 0x1f;
 	p = (uint8_t *)ri->ri_bits + y * scanspan + sh * 4;
 
+	om_set_rowattr(row, fg, bg);
+
 	if (bg == 0) {
 		if (fg != hwplanemask) {
 			/* 背景色＝０で塗りつぶす */
@@ -800,6 +835,9 @@ om4_erasecols(void *cookie, int row, int startcol, int ncols, long attr)
 	sl = startx & 0x1f;
 	p = (uint8_t *)ri->ri_bits + y * scanspan + sh * 4;
 
+	// 本当はどうなの
+	om_set_rowattr(row, fg, bg);
+
 	if (bg == 0) {
 		// om_fill のほうが効率がすこし良い
 		om_fill(hwplanemask, ROP_ZERO,
@@ -916,6 +954,11 @@ om4_eraserows(void *cookie, int startrow, int nrows, long attr)
 	sl = startx & 0x1f;
 	p = (uint8_t *)ri->ri_bits + y * scanspan + sh * 4;
 
+	for (int row = startrow; row < startrow + nrows; row++) {
+		om_reset_rowattr(row);
+		om_set_rowattr(row, 0, bg);
+	}
+
 	if (bg == 0) {
 		// om_fill のほうが効率がすこし良い
 		om_fill(hwplanemask, ROP_ZERO,
@@ -969,6 +1012,346 @@ om1_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 	}
 }
 
+/*
+ * solo plane raster copy (forward copy)
+ * dst : destination plane pointer
+ * src : source plane pointer
+ * width: pixel width (must > 0)
+ * height: pixel height (must > 0)
+ * rop: rop[hwplanecount] ROP
+ */
+static void
+om_rascopy_solo(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
+	uint8_t rop[])
+{
+	int wh;
+	int16_t h = height - 1;	/* for dbra */
+	int16_t wloop, hloop;
+	int step;
+
+	// もしバックワードコピーが必要ならば step の符号を引数にするとか
+
+	// solo では2ロングワード単位の処理をする必然は無いが、
+	// 対称性と高速化の両面から考えて、2ロングワード処理を行う。
+
+	// まず2ロングワード単位の矩形を転送する
+	wh = (width >> 6);
+	if (wh > 0) {
+		// 2ロングワード単位で転送
+
+		step = OMFB_RASTERBYTES;
+		step -= wh * 8;
+		wh--;	/* for dbra */
+
+		asm volatile(
+		"move.w	%[h],%[hloop];\n\t"
+"om_rascopy_solo_LL: ;\n\t"
+		"move.w	%[wh],%[wloop];\n\t"
+
+"om_rascopy_solo_LL_wloop: \n\t"
+		"move.l	(%[src])+,(%[dst])+;\n\t"
+		"move.l	(%[src])+,(%[dst])+;\n\t"
+		"dbra	%[wloop],om_rascopy_solo_LL_wloop;\n\t"
+
+		"adda.l	%[step],%[src];\n\t"
+		"adda.l	%[step],%[dst];\n\t"
+
+		"dbra	%[hloop],om_rascopy_solo_LL;\n\t"
+		  /* output */
+		: [src]"+&a"(src)
+		 ,[dst]"+&a"(dst)
+		 ,[hloop]"=&d"(hloop)
+		 ,[wloop]"=&d"(wloop)
+		  /* input */
+		: [wh]"r"(wh)
+		 ,[h]"g"(h)
+		 ,[step]"r"(step)
+		: /* clobbers */
+		  "memory"
+		);
+
+		if ((width & 0x3f) == 0) {
+			// 転送完了
+			return;
+		}
+
+		// 次の転送のために y を巻き戻す
+		src -= height * OMFB_RASTERBYTES;
+		dst -= height * OMFB_RASTERBYTES;
+	}
+
+	// これ以降はロングワード単位の転送なので step は変わらない
+	step = OMFB_RASTERBYTES;
+
+	if (width & 32) {
+
+		// 奇数ロングワードなので 1 ロングワード転送
+		asm volatile(
+		"move.l	%[h],%[hloop];\n\t"
+"om_rascopy_solo_L: \n\t"
+		"move.l	(%[src]),(%[dst]);\n\t"
+
+		"adda.l	%[step],%[src];\n\t"
+		"adda.l	%[step],%[dst];\n\t"
+
+		"dbra	%[hloop],om_rascopy_solo_L;\n\t"
+		  /* output */
+		: [src]"+&a"(src)
+		 ,[dst]"+&a"(dst)
+		 ,[hloop]"=&d"(hloop)
+		  /* input */
+		: [h]"g"(h)
+		 ,[step]"r"(step)
+		: /* clobbers */
+		  "memory"
+		);
+
+		if ((width & 0x1f) == 0) {
+			// 転送完了
+			return;
+		}
+
+		// 次の転送のために y を巻き戻す
+		src += 4 - height * OMFB_RASTERBYTES;
+		dst += 4 - height * OMFB_RASTERBYTES;
+	}
+	int wl = width & 0x1f;
+	// ここまで来ていれば wl > 0
+	{
+		// 端数ビットの転送
+		uint32_t mask;
+		int plane;
+
+		mask = ALL1BITS << (32 - wl);
+		// ROP の状態を保持したたまマスクを設定することがハード的には
+		// できないので、ここでは共通ROPは使えない。
+		for (plane = 0; plane < hwplanecount; plane++) {
+			om_setROP(plane, rop[plane], mask);
+		}
+
+		asm volatile(
+		"move.l	%[h],%[hloop];\n\t"
+"om4_rascopy_solo_bit: \n\t"
+		"move.l	(%[src]),(%[dst]);\n\t"
+
+		"adda.l	%[step],%[src];\n\t"
+		"adda.l	%[step],%[dst];\n\t"
+
+		"dbra	%[hloop],om4_rascopy_solo_bit;\n\t"
+		  /* output */
+		: [src]"+&a"(src)
+		 ,[dst]"+&a"(dst)
+		 ,[hloop]"=&d"(hloop)
+		  /* input */
+		: [h]"g"(h)
+		 ,[step]"r"(step)
+		: /* clobbers */
+		  "memory"
+		);
+
+		for (plane = 0; plane < hwplanecount; plane++) {
+			om_setROP(plane, rop[plane], ALL1BITS);
+		}
+	}
+}
+
+
+/*
+ * multiple plane raster copy (forward copy)
+ * dst0 : destination Plane0 pointer
+ * src0 : source Plane0 pointer
+ * width: pixel width (must > 0)
+ * height: pixel height (must > 0)
+ */
+static void
+om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
+{
+	int wh;
+	int16_t h = height - 1;	/* for dbra */
+	int16_t wloop, hloop;
+	uint8_t *dst1, *dst2, *dst3;
+	int rewind, step;
+
+	dst1 = dst0 + OMFB_PLANEOFS;
+	dst2 = dst1 + OMFB_PLANEOFS;
+	dst3 = dst2 + OMFB_PLANEOFS;
+
+#define OMFB_RASTERBYTES	(2048/8)
+	// もしバックワードコピーが必要ならば step の符号を引数にするとか
+
+	// まず2ロングワード単位の矩形を転送する
+	wh = (width >> 6);
+	if (wh > 0) {
+		// 2ロングワード単位で転送
+
+		step = OMFB_RASTERBYTES - wh * 8;
+		wh--;	/* for dbra */
+
+		asm volatile(
+		"move.w	%[h],%[hloop];\n\t"
+"om4_rascopy_multi_LL: ;\n\t"
+		"move.w	%[wh],%[wloop];\n\t"
+
+"om4_rascopy_multi_LL_wloop: \n\t"
+		"move.l	(%[src]),(%[dst0])+;\n\t"	/* P0 */
+		"adda.l	%[PLANEOFS],%[src];\n\t"
+		"move.l	(%[src]),(%[dst1])+;\n\t"	/* P1 */
+		"adda.l	%[PLANEOFS],%[src];\n\t"
+		"move.l	(%[src]),(%[dst2])+;\n\t"	/* P2 */
+		"adda.l	%[PLANEOFS],%[src];\n\t"
+		"move.l	(%[src]),(%[dst3])+;\n\t"	/* P3 */
+
+		"addq.l	#4,%[src];\n\t"	// オーバーラップを期待して ()+ にしない
+
+		"move.l	(%[src]),(%[dst3])+;\n\t"	/* P3 */
+		"suba.l	%[PLANEOFS],%[src];\n\t"
+		"move.l	(%[src]),(%[dst2])+;\n\t"	/* P2 */
+		"suba.l	%[PLANEOFS],%[src];\n\t"
+		"move.l	(%[src]),(%[dst1])+;\n\t"	/* P1 */
+		"suba.l	%[PLANEOFS],%[src];\n\t"
+		"move.l	(%[src])+,(%[dst0])+;\n\t"	/* P0 */
+
+		"dbra	%[wloop],om4_rascopy_multi_LL_wloop;\n\t"
+
+		"adda.l	%[step],%[src];\n\t"
+		"adda.l	%[step],%[dst0];\n\t"
+		"adda.l	%[step],%[dst1];\n\t"
+		"adda.l	%[step],%[dst2];\n\t"
+		"adda.l	%[step],%[dst3];\n\t"
+
+		"dbra	%[hloop],om4_rascopy_multi_LL;\n\t"
+		  /* output */
+		: [src]"+&a"(src0)
+		 ,[dst0]"+&a"(dst0)
+		 ,[dst1]"+&a"(dst1)
+		 ,[dst2]"+&a"(dst2)
+		 ,[dst3]"+&a"(dst3)
+		 ,[hloop]"=&d"(hloop)
+		 ,[wloop]"=&d"(wloop)
+		  /* input */
+		: [wh]"r"(wh)
+		 ,[h]"g"(h)
+		 ,[PLANEOFS]"r"(OMFB_PLANEOFS)
+		 ,[step]"r"(step)
+		: /* clobbers */
+		  "memory"
+		);
+
+		if ((width & 0x3f) == 0) {
+			// 転送完了
+			return;
+		}
+
+		// 次の転送のために y を巻き戻す
+		src0 -= height * OMFB_RASTERBYTES;
+		dst0 -= height * OMFB_RASTERBYTES;
+		dst1 -= height * OMFB_RASTERBYTES;
+		dst2 -= height * OMFB_RASTERBYTES;
+		dst3 -= height * OMFB_RASTERBYTES;
+	}
+
+	// これ以降はロングワード単位の転送なので step は変わらない
+	step = OMFB_RASTERBYTES;
+	rewind = OMFB_RASTERBYTES - OMFB_PLANEOFS * 3;
+
+	if (width & 32) {
+
+		// 奇数ロングワードなので 1 ロングワード転送
+		asm volatile(
+		"move.l	%[h],%[hloop];\n\t"
+"om4_rascopy_multi_L: \n\t"
+		"move.l	(%[src]),(%[dst0]);\n\t"
+		"adda.l	%[PLANEOFS],%[src];\n\t"
+		"move.l	(%[src]),(%[dst1]);\n\t"
+		"adda.l	%[PLANEOFS],%[src];\n\t"
+		"move.l	(%[src]),(%[dst2]);\n\t"
+		"adda.l	%[PLANEOFS],%[src];\n\t"
+		"move.l	(%[src]),(%[dst3]);\n\t"
+		"adda.l	%[rewind],%[src];\n\t"
+
+		"adda.l	%[step],%[dst0];\n\t"
+		"adda.l	%[step],%[dst1];\n\t"
+		"adda.l	%[step],%[dst2];\n\t"
+		"adda.l	%[step],%[dst3];\n\t"
+
+		"dbra	%[hloop],om4_rascopy_multi_L;\n\t"
+		  /* output */
+		: [src]"+&a"(src0)
+		 ,[dst0]"+&a"(dst0)
+		 ,[dst1]"+&a"(dst1)
+		 ,[dst2]"+&a"(dst2)
+		 ,[dst3]"+&a"(dst3)
+		 ,[hloop]"=&d"(hloop)
+		  /* input */
+		: [h]"g"(h)
+		 ,[PLANEOFS]"r"(OMFB_PLANEOFS)
+		 ,[rewind]"r"(rewind)
+		 ,[step]"r"(step)
+		: /* clobbers */
+		  "memory"
+		);
+
+		if ((width & 0x1f) == 0) {
+			// 転送完了
+			return;
+		}
+
+		// 次の転送のために y を巻き戻す
+		src0 += 4 - height * OMFB_RASTERBYTES;
+		dst0 += 4 - height * OMFB_RASTERBYTES;
+		dst1 += 4 - height * OMFB_RASTERBYTES;
+		dst2 += 4 - height * OMFB_RASTERBYTES;
+		dst3 += 4 - height * OMFB_RASTERBYTES;
+	}
+	int wl = width & 0x1f;
+	// ここまで来ていれば wl > 0
+	{
+		// 端数ビットの転送
+		uint32_t mask;
+
+		mask = ALL1BITS << (32 - wl);
+		om_setplanemask(hwplanemask);
+		om_setROP_curplane(ROP_THROUGH, mask);
+
+		asm volatile(
+		"move.l	%[h],%[hloop];\n\t"
+"om4_rascopy_multi_bit: \n\t"
+		"move.l	(%[src]),(%[dst0]);\n\t"
+		"adda.l	%[PLANEOFS],%[src];\n\t"
+		"move.l	(%[src]),(%[dst1]);\n\t"
+		"adda.l	%[PLANEOFS],%[src];\n\t"
+		"move.l	(%[src]),(%[dst2]);\n\t"
+		"adda.l	%[PLANEOFS],%[src];\n\t"
+		"move.l	(%[src]),(%[dst3]);\n\t"
+		"adda.l	%[rewind],%[src];\n\t"
+
+		"adda.l	%[step],%[dst0];\n\t"
+		"adda.l	%[step],%[dst1];\n\t"
+		"adda.l	%[step],%[dst2];\n\t"
+		"adda.l	%[step],%[dst3];\n\t"
+
+		"dbra	%[hloop],om4_rascopy_multi_bit;\n\t"
+		  /* output */
+		: [src]"+&a"(src0)
+		 ,[dst0]"+&a"(dst0)
+		 ,[dst1]"+&a"(dst1)
+		 ,[dst2]"+&a"(dst2)
+		 ,[dst3]"+&a"(dst3)
+		 ,[hloop]"=&d"(hloop)
+		  /* input */
+		: [h]"g"(h)
+		 ,[PLANEOFS]"r"(OMFB_PLANEOFS)
+		 ,[rewind]"r"(rewind)
+		 ,[step]"r"(step)
+		: /* clobbers */
+		  "memory"
+		);
+
+		om_setplanemask(hwplanemask);
+		om_setROP_curplane(ROP_THROUGH, ALL1BITS);
+	}
+}
+
 static void
 om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 {
@@ -1018,6 +1401,84 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 		width = w;
 		height--;
 	}
+
+#elif 1
+	// dd if=32 0.116sec
+
+	struct rasops_info *ri = cookie;
+	uint8_t *src, *dst;
+	int width, height;
+	int rowofs, ptrstep, rowstep;
+
+	width = ri->ri_emuwidth;
+	height = ri->ri_font->fontheight;
+	rowofs = dstrow - srcrow;
+	if (rowofs == 0) {
+		return;
+	} else if (rowofs > 0) {
+		/* y-backward */
+		ptrstep = -ri->ri_stride * height;
+		rowstep = -1;
+	} else {
+		/* y-forward*/
+		ptrstep = ri->ri_stride * height;
+		rowstep = 1;
+	}
+
+	src = (uint8_t *)ri->ri_bits + srcrow * height * ri->ri_stride;
+	dst = (uint8_t *)ri->ri_bits + dstrow * height * ri->ri_stride;
+
+	om_setplanemask(hwplanemask);
+
+	int prev = -1;
+	int srcplane = 0;
+	int i;
+
+	const int MAXPLANECOUNT = 8;
+	uint8_t rop[MAXPLANECOUNT];
+
+	uint32_t srcplaneofs = 0;
+
+	while (nrows-- > 0) {
+		if (rowattr[srcrow].ismulti) {
+			// src とdst は共通プレーンを指しているので P0 に変換
+			uint8_t *src0 = src + OMFB_PLANEOFS;
+			uint8_t *dst0 = dst + OMFB_PLANEOFS;
+			om_setROP_curplane(ROP_THROUGH, ALL1BITS);
+			prev = -1;
+			om4_rascopy_multi(dst0, src0, width, height);
+		} else if (rowattr[srcrow].fg == 0 && rowattr[dstrow].u16 == 0) {
+			// skip
+		} else {
+			if (prev != rowattr[srcrow].u16) {
+				prev = rowattr[srcrow].u16;
+				uint8_t fg = rowattr[srcrow].fg;
+				srcplane = 0;
+				for (i = 0; i < hwplanecount; i++) {
+					if (fg & (1 << i)) {
+						rop[i] = ROP_THROUGH;
+						om_setROP(i, ROP_THROUGH, ALL1BITS);
+						srcplane = i;
+					} else {
+						rop[i] = ROP_ZERO;
+						om_setROP(i, ROP_ZERO, ALL1BITS);
+					}
+				}
+				srcplaneofs = OMFB_PLANEOFS + srcplane * OMFB_PLANEOFS;
+			}
+			uint8_t *srcP = src + srcplaneofs;
+			om_rascopy_solo(dst, srcP, width, height, rop);
+		}
+
+		rowattr[dstrow] = rowattr[srcrow];
+
+		srcrow += rowstep;
+		dstrow += rowstep;
+		src += ptrstep;
+		dst += ptrstep;
+	}
+
+
 
 #else
 
@@ -1164,7 +1625,7 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 		"tst.l	%[wh];\n\t"
 		"jbpl	om4_copyrows_X_next;\n\t"
 										/* original wh odd case */
-		
+
 		"move.l	(%[src]),(%[dst0])+;\n\t"
 		"adda.l	%[PLANEOFS],%[src];\n\t"
 		"move.l	(%[src]),(%[dst1])+;\n\t"
@@ -1200,10 +1661,10 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 	: /* clobbers */
 	  "memory"
 	);
-		
+
 
 #else	/* X_ */
-		
+
 
 	asm volatile(
 		"subq.l	#1,%[height];\n\t"	/* for dbra */

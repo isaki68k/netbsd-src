@@ -32,6 +32,8 @@
 #define OMFB_ROPFUNC	BMAP_FN		/* common ROP function */
 #define OMFB_PLANEOFS	(0x40000)	/* plane offset */
 
+#define OMFB_RASTERBYTES	(2048/8) /* bytes in VRAM raster */
+
 /*
  * Helper macros
  */
