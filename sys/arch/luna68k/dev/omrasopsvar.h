@@ -125,6 +125,13 @@ omfb_setROP(int plane, int rop, uint32_t mask)
 	((volatile uint32_t *)(OMFB_ROP_0 + OMFB_PLANEOFS * plane))[rop] = mask;
 }
 
+/* get ROP address */
+static inline uint32_t *
+omfb_ROPaddr(int plane, int rop)
+{
+	return (uint32_t *)(OMFB_ROP_0 + OMFB_PLANEOFS * plane + rop * 4);
+}
+
 /* set ROP and ROP's mask for current setplanemask-ed plane(s) */
 static inline void
 omfb_setROP_curplane(int rop, uint32_t mask)

@@ -375,6 +375,7 @@ om_fill_color(int color,
 
 /*
  * 指定した色で文字を描画する。
+ * しくみ：
  * プレーンROP を前景・背景に応じて次のように設定する。
  * fg bg  rop          result
  *  0  0  ROP_ZERO      0
@@ -401,7 +402,8 @@ omfb_putchar(
 	uint8_t *fontptr, int fontstride,
 	uint8_t fg, uint8_t bg)
 {
-	static uint8_t rop[OMFB_MAX_PLANECOUNT];
+	/* ROP アドレスのキャッシュ */
+	static volatile uint32_t *ropaddr[OMFB_MAX_PLANECOUNT];
 	static const uint8_t ropsel[] = {
 		ROP_ZERO, ROP_INV1, ROP_THROUGH, ROP_ONE };
 	static int saved_fg, saved_bg;
@@ -419,7 +421,7 @@ omfb_putchar(
 		/* ROP を求める */
 		for (plane = 0; plane < omfb_planecount; plane++) {
 			int t = (fg & 1) * 2 + (bg & 1);
-			rop[plane] = ropsel[t];
+			ropaddr[plane] = omfb_ROPaddr(plane, ropsel[t]);
 			fg >>= 1;
 			bg >>= 1;
 		}
@@ -438,6 +440,11 @@ omfb_putchar(
 	mask = ALL1BITS >> xl;
 	dw = 32 - xl;
 
+	__assume(
+		omfb_planecount == 8
+	 || omfb_planecount == 4
+	 || omfb_planecount == 1);
+
 	do {
 		width -= dw;
 		if (width < 0) {
@@ -450,9 +457,28 @@ omfb_putchar(
 
 		/* putchar の場合、width ループは 1 か 2 回で毎回 mask が違う
 		はずなので毎回セットしたほうがいい */
+#if 0
 		for (plane = 0; plane < omfb_planecount; plane++) {
-			omfb_setROP(plane, rop[plane], mask);
+			*(ropaddr[plane]) = mask;
 		}
+#else
+		switch (omfb_planecount) {
+		 case 8:
+			*(ropaddr[7]) = mask;
+			*(ropaddr[6]) = mask;
+			*(ropaddr[5]) = mask;
+			*(ropaddr[4]) = mask;
+			/* FALLTHROUGH */
+		 case 4:
+			*(ropaddr[3]) = mask;
+			*(ropaddr[2]) = mask;
+			*(ropaddr[1]) = mask;
+			/* FALLTHROUGH */
+		 case 1:
+			*(ropaddr[0]) = mask;
+			break;
+		}
+#endif
 
 		{
 			uint8_t *d = dstC;
@@ -705,10 +731,7 @@ om4_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 		fb, ri->ri_font->stride,
 		fg, bg);
 
-	/* reset mask value */
-	/* 先に ROP を設定するプレーンマスクを全プレーンにセット */
-	om_setplanemask(hwplanemask);
-	om_setROP_curplane(ROP_THROUGH, ALL1BITS);
+	omfb_resetplanemask_and_ROP();
 #endif
 }
 
