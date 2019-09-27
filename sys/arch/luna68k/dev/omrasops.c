@@ -109,10 +109,12 @@ extern int hwplanecount;
 struct rowattr_t
 {
 	union {
-		uint16_t u16;
+		int32_t all;
 		struct {
-			uint8_t ismulti;	/* is multi color used */
+			int8_t ismulti; /* is multi color used */
 			uint8_t fg;
+			uint8_t bg;
+			uint8_t reserved;
 		};
 	};
 };
@@ -121,18 +123,33 @@ static struct rowattr_t rowattr[43];
 static inline void
 om_set_rowattr(int row, int fg, int bg)
 {
-	// bg が0でないか、元のfgが0でなくてfgが変更されるとき true
-	rowattr[row].ismulti |= bg;
-	if (rowattr[row].fg != 0) {
-		rowattr[row].ismulti |= rowattr[row].fg ^ fg;
+	if (rowattr[row].fg == fg && rowattr[row].bg == bg)
+		return;
+	if (rowattr[row].ismulti)
+		return;
+
+	/* 単色のクリア状態から */
+	if (rowattr[row].fg == rowattr[row].bg) {
+		/* 両方いっぺんに変更されたらマルチカラー */
+		if (rowattr[row].fg != fg && rowattr[row].bg != bg) {
+			rowattr[row].ismulti = true;
+		} else {
+			/* そうでなければモノカラー */
+			rowattr[row].fg = fg;
+			rowattr[row].bg = bg;
+		}
+	} else {
+		/* 色が変更されたらここ */
+		rowattr[row].ismulti = true;
 	}
-	rowattr[row].fg = fg;
 }
 
 static inline void
-om_reset_rowattr(int row)
+om_reset_rowattr(int row, int bg)
 {
-	rowattr[row].u16 = 0;
+	rowattr[row].ismulti = false;
+	rowattr[row].bg = bg;
+	rowattr[row].fg = bg;	 /* fg sets same value */
 }
 
 
@@ -373,6 +390,9 @@ om_fill_color(int color,
 	} while (width > 0);
 }
 
+static const uint8_t ropsel[] = {
+	ROP_ZERO, ROP_INV1, ROP_THROUGH, ROP_ONE };
+
 /*
  * 指定した色で文字を描画する。
  * しくみ：
@@ -404,8 +424,6 @@ omfb_putchar(
 {
 	/* ROP アドレスのキャッシュ */
 	static volatile uint32_t *ropaddr[OMFB_MAX_PLANECOUNT];
-	static const uint8_t ropsel[] = {
-		ROP_ZERO, ROP_INV1, ROP_THROUGH, ROP_ONE };
 	static int saved_fg, saved_bg;
 
 	uint32_t mask;
@@ -990,8 +1008,7 @@ om4_eraserows(void *cookie, int startrow, int nrows, long attr)
 	p = (uint8_t *)ri->ri_bits + y * scanspan + sh * 4;
 
 	for (int row = startrow; row < startrow + nrows; row++) {
-		om_reset_rowattr(row);
-		om_set_rowattr(row, 0, bg);
+		om_reset_rowattr(row, bg);
 	}
 
 	if (bg == 0) {
@@ -1062,9 +1079,14 @@ om_rascopy_solo(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 	int wh;
 	int16_t h = height - 1;	/* for dbra */
 	int16_t wloop, hloop;
-	int step;
+	int step = OMFB_STRIDE;
 
-	// もしバックワードコピーが必要ならば step の符号を引数にするとか
+	// もしバックワードコピーならY は逆順になるようにする
+	if (((uint32_t)src & (OMFB_PLANEOFS - 1)) < ((uint32_t)dst & (OMFB_PLANEOFS - 1))) {
+		src += (height - 1) * OMFB_STRIDE;
+		dst += (height - 1) * OMFB_STRIDE;
+		step = -step;
+	}
 
 	// solo では2ロングワード単位の処理をする必然は無いが、
 	// 対称性と高速化の両面から考えて、2ロングワード処理を行う。
@@ -1074,8 +1096,7 @@ om_rascopy_solo(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 	if (wh > 0) {
 		// 2ロングワード単位で転送
 
-		step = OMFB_RASTERBYTES;
-		step -= wh * 8;
+		int step8 = step - wh * 8;
 		wh--;	/* for dbra */
 
 		asm volatile(
@@ -1100,7 +1121,7 @@ om_rascopy_solo(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 		  /* input */
 		: [wh]"r"(wh)
 		 ,[h]"g"(h)
-		 ,[step]"r"(step)
+		 ,[step]"r"(step8)
 		: /* clobbers */
 		  "memory"
 		);
@@ -1111,12 +1132,9 @@ om_rascopy_solo(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 		}
 
 		// 次の転送のために y を巻き戻す
-		src -= height * OMFB_RASTERBYTES;
-		dst -= height * OMFB_RASTERBYTES;
+		src -= height * step;
+		dst -= height * step;
 	}
-
-	// これ以降はロングワード単位の転送なので step は変わらない
-	step = OMFB_RASTERBYTES;
 
 	if (width & 32) {
 
@@ -1147,9 +1165,10 @@ om_rascopy_solo(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 		}
 
 		// 次の転送のために y を巻き戻す
-		src += 4 - height * OMFB_RASTERBYTES;
-		dst += 4 - height * OMFB_RASTERBYTES;
+		src += 4 - height * step;
+		dst += 4 - height * step;
 	}
+
 	int wl = width & 0x1f;
 	// ここまで来ていれば wl > 0
 	{
@@ -1205,21 +1224,27 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 	int16_t h = height - 1;	/* for dbra */
 	int16_t wloop, hloop;
 	uint8_t *dst1, *dst2, *dst3;
-	int rewind, step;
+	int rewind;
+	int step = OMFB_STRIDE;
+
+	// もしバックワードコピーならY は逆順になるようにする
+	if (((uint32_t)src0 & (OMFB_PLANEOFS - 1)) < ((uint32_t)dst0 & (OMFB_PLANEOFS - 1))) {
+		src0 += (height - 1) * OMFB_STRIDE;
+		dst0 += (height - 1) * OMFB_STRIDE;
+		step = -step;
+	}
 
 	dst1 = dst0 + OMFB_PLANEOFS;
 	dst2 = dst1 + OMFB_PLANEOFS;
 	dst3 = dst2 + OMFB_PLANEOFS;
 
-#define OMFB_RASTERBYTES	(2048/8)
-	// もしバックワードコピーが必要ならば step の符号を引数にするとか
 
 	// まず2ロングワード単位の矩形を転送する
 	wh = (width >> 6);
 	if (wh > 0) {
 		// 2ロングワード単位で転送
 
-		step = OMFB_RASTERBYTES - wh * 8;
+		int step8 = step - wh * 8;
 		wh--;	/* for dbra */
 
 		asm volatile(
@@ -1276,7 +1301,7 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		: [wh]"r"(wh)
 		 ,[h]"g"(h)
 		 ,[PLANEOFS]"r"(OMFB_PLANEOFS)
-		 ,[step]"r"(step)
+		 ,[step]"r"(step8)
 		: /* clobbers */
 		  "memory"
 		);
@@ -1287,16 +1312,15 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		}
 
 		// 次の転送のために y を巻き戻す
-		src0 -= height * OMFB_RASTERBYTES;
-		dst0 -= height * OMFB_RASTERBYTES;
-		dst1 -= height * OMFB_RASTERBYTES;
-		dst2 -= height * OMFB_RASTERBYTES;
-		dst3 -= height * OMFB_RASTERBYTES;
+		src0 -= height * step;
+		dst0 -= height * step;
+		dst1 -= height * step;
+		dst2 -= height * step;
+		dst3 -= height * step;
 	}
 
-	// これ以降はロングワード単位の転送なので step は変わらない
-	step = OMFB_RASTERBYTES;
-	rewind = OMFB_RASTERBYTES - OMFB_PLANEOFS * 3;
+	// rewind はプレーンの巻き戻しなので Y 順序とは関係ない
+	rewind = OMFB_STRIDE - OMFB_PLANEOFS * 3;
 
 	if (width & 32) {
 
@@ -1341,11 +1365,11 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		}
 
 		// 次の転送のために y を巻き戻す
-		src0 += 4 - height * OMFB_RASTERBYTES;
-		dst0 += 4 - height * OMFB_RASTERBYTES;
-		dst1 += 4 - height * OMFB_RASTERBYTES;
-		dst2 += 4 - height * OMFB_RASTERBYTES;
-		dst3 += 4 - height * OMFB_RASTERBYTES;
+		src0 += 4 - height * step;
+		dst0 += 4 - height * step;
+		dst1 += 4 - height * step;
+		dst2 += 4 - height * step;
+		dst3 += 4 - height * step;
 	}
 	int wl = width & 0x1f;
 	// ここまで来ていれば wl > 0
@@ -1475,52 +1499,69 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 
 	om_setplanemask(hwplanemask);
 
-	int prev = -1;
 	int srcplane = 0;
 	int i;
 
-	const int MAXPLANECOUNT = 8;
-	uint8_t rop[MAXPLANECOUNT];
+	uint8_t rop[OMFB_MAX_PLANECOUNT];
 
 	uint32_t srcplaneofs = 0;
+	int r;
 
-	while (nrows-- > 0) {
+	while (nrows > 0) {
+		r = 1;
+		if (rowattr[srcrow].ismulti == false
+		 && rowattr[srcrow].fg == rowattr[srcrow].bg
+		 && rowattr[srcrow].all == rowattr[dstrow].all) {
+			goto skip;
+		}
+
+		/* 同じ行状態にある行数を数える */
+		for (; r < nrows; r++) {
+			if (rowattr[srcrow + r].all != rowattr[srcrow].all) {
+				break;
+			}
+		}
+		// この結果、r は srcrow 自身を含めた行数
+
 		if (rowattr[srcrow].ismulti) {
 			// src とdst は共通プレーンを指しているので P0 に変換
 			uint8_t *src0 = src + OMFB_PLANEOFS;
 			uint8_t *dst0 = dst + OMFB_PLANEOFS;
 			om_setROP_curplane(ROP_THROUGH, ALL1BITS);
-			prev = -1;
-			om4_rascopy_multi(dst0, src0, width, height);
-		} else if (rowattr[srcrow].fg == 0 && rowattr[dstrow].u16 == 0) {
-			// skip
+			om4_rascopy_multi(dst0, src0, width, height * r);
 		} else {
-			if (prev != rowattr[srcrow].u16) {
-				prev = rowattr[srcrow].u16;
-				uint8_t fg = rowattr[srcrow].fg;
-				srcplane = 0;
-				for (i = 0; i < hwplanecount; i++) {
-					if (fg & (1 << i)) {
-						rop[i] = ROP_THROUGH;
-						om_setROP(i, ROP_THROUGH, ALL1BITS);
-						srcplane = i;
-					} else {
-						rop[i] = ROP_ZERO;
-						om_setROP(i, ROP_ZERO, ALL1BITS);
-					}
+			uint8_t fg = rowattr[srcrow].fg;
+			uint8_t bg = rowattr[srcrow].bg;
+			srcplane = 0;
+			/* ROP 選択のロジックは putchar と同じ */
+			/* srcplane は fg が立ってて bg が立ってないプレーン */
+			for (i = 0; i < hwplanecount; i++) {
+				int t = (fg & 1) * 2 + (bg & 1);
+				rop[i] = ropsel[t];
+				om_setROP(i, rop[i], ALL1BITS);
+				if (t == 2) {
+					srcplane = i;
 				}
-				srcplaneofs = OMFB_PLANEOFS + srcplane * OMFB_PLANEOFS;
+				fg >>= 1;
+				bg >>= 1;
 			}
+
+			srcplaneofs = OMFB_PLANEOFS + srcplane * OMFB_PLANEOFS;
+
 			uint8_t *srcP = src + srcplaneofs;
-			om_rascopy_solo(dst, srcP, width, height, rop);
+			om_rascopy_solo(dst, srcP, width, height * r, rop);
 		}
 
-		rowattr[dstrow] = rowattr[srcrow];
+ skip:
+		for (i = 0; i < r; i++) {
+			rowattr[dstrow] = rowattr[srcrow];
 
-		srcrow += rowstep;
-		dstrow += rowstep;
-		src += ptrstep;
-		dst += ptrstep;
+			srcrow += rowstep;
+			dstrow += rowstep;
+			src += ptrstep;
+			dst += ptrstep;
+			nrows--;
+		}
 	}
 #endif
 }
