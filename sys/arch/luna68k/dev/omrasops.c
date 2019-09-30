@@ -1065,28 +1065,34 @@ om1_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 }
 
 /*
- * solo plane raster copy (forward copy)
+ * solo plane raster copy
  * dst : destination plane pointer
  * src : source plane pointer
+ *    if y-forward, src > dst, point to Left-Top.
+ *    if y-backward, src < dst, point to Left-Bottom.
  * width: pixel width (must > 0)
- * height: pixel height (must > 0)
+ * height: pixel height (> 0 : forward, < 0 backward)
  * rop: rop[hwplanecount] ROP
+ * プレーンマスクとROP は破壊される
  */
 static void
 om_rascopy_solo(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 	uint8_t rop[])
 {
 	int wh;
-	int16_t h = height - 1;	/* for dbra */
+	int16_t h;
 	int16_t wloop, hloop;
 	int step = OMFB_STRIDE;
 
+	// X 方向は (An)+ のため、常に昇順方向
+
 	// もしバックワードコピーならY は逆順になるようにする
-	if (((uint32_t)src & (OMFB_PLANEOFS - 1)) < ((uint32_t)dst & (OMFB_PLANEOFS - 1))) {
-		src += (height - 1) * OMFB_STRIDE;
-		dst += (height - 1) * OMFB_STRIDE;
+	if (height < 0) {
+		// 符号は step 側で管理するため、height は正にする
 		step = -step;
+		height = -height;
 	}
+	h = height - 1;	/* for dbra */
 
 	// solo では2ロングワード単位の処理をする必然は無いが、
 	// 対称性と高速化の両面から考えて、2ロングワード処理を行う。
@@ -1211,28 +1217,34 @@ om_rascopy_solo(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 
 
 /*
- * multiple plane raster copy (forward copy)
+ * multiple plane raster copy
  * dst0 : destination Plane0 pointer
  * src0 : source Plane0 pointer
+ *    if y-forward, src0 > dst0, point to Left-Top.
+ *    if y-backward, src0 < dst0, point to Left-Bottom.
  * width: pixel width (must > 0)
- * height: pixel height (must > 0)
+ * height: pixel height (> 0 : forward, < 0 backward)
+ * プレーンマスクとROP は破壊される
  */
 static void
 om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 {
 	int wh;
-	int16_t h = height - 1;	/* for dbra */
+	int16_t h;
 	int16_t wloop, hloop;
 	uint8_t *dst1, *dst2, *dst3;
 	int rewind;
 	int step = OMFB_STRIDE;
 
+	// X 方向は (An)+ のため、常に昇順方向
+
 	// もしバックワードコピーならY は逆順になるようにする
-	if (((uint32_t)src0 & (OMFB_PLANEOFS - 1)) < ((uint32_t)dst0 & (OMFB_PLANEOFS - 1))) {
-		src0 += (height - 1) * OMFB_STRIDE;
-		dst0 += (height - 1) * OMFB_STRIDE;
+	if (height < 0) {
+		// 符号は step 側で管理するため、height は正にする
 		step = -step;
+		height = -height;
 	}
+	h = height - 1;	/* for dbra */
 
 	dst1 = dst0 + OMFB_PLANEOFS;
 	dst2 = dst1 + OMFB_PLANEOFS;
@@ -1398,8 +1410,6 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		"adda.l	%[step],%[dst2];\n\t"
 		"adda.l	%[step],%[dst3];\n\t"
 
-		"dbra	%[hloop],om4_rascopy_multi_bit;\n\t"
-		  /* output */
 		: [src]"+&a"(src0)
 		 ,[dst0]"+&a"(dst0)
 		 ,[dst1]"+&a"(dst1)
@@ -1476,34 +1486,37 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 
 	struct rasops_info *ri = cookie;
 	uint8_t *src, *dst;
-	int width, height;
-	int rowofs, ptrstep, rowstep;
+	int width, rowheight;
+	int ptrstep, rowstep;
 
 	width = ri->ri_emuwidth;
-	height = ri->ri_font->fontheight;
-	rowofs = dstrow - srcrow;
-	if (rowofs == 0) {
+	rowheight = ri->ri_font->fontheight;
+	src = (uint8_t *)ri->ri_bits + srcrow * rowheight * ri->ri_stride;
+	dst = (uint8_t *)ri->ri_bits + dstrow * rowheight * ri->ri_stride;
+
+	if (nrows <= 0 || srcrow == dstrow) {
 		return;
-	} else if (rowofs > 0) {
+	} else if (srcrow < dstrow) {
 		/* y-backward */
-		ptrstep = -ri->ri_stride * height;
+		// Bottom 行、Bottom ラスタを選択
+		srcrow += nrows - 1;
+		dstrow += nrows - 1;
+		src += nrows * rowheight * ri->ri_stride - ri->ri_stride;
+		dst += nrows * rowheight * ri->ri_stride - ri->ri_stride;
 		rowstep = -1;
+		rowheight = -rowheight;
 	} else {
 		/* y-forward*/
-		ptrstep = ri->ri_stride * height;
 		rowstep = 1;
 	}
+	ptrstep = ri->ri_stride * rowheight;
 
-	src = (uint8_t *)ri->ri_bits + srcrow * height * ri->ri_stride;
-	dst = (uint8_t *)ri->ri_bits + dstrow * height * ri->ri_stride;
 
 	om_setplanemask(hwplanemask);
 
+	uint8_t rop[OMFB_MAX_PLANECOUNT];
 	int srcplane = 0;
 	int i;
-
-	uint8_t rop[OMFB_MAX_PLANECOUNT];
-
 	uint32_t srcplaneofs = 0;
 	int r;
 
@@ -1517,7 +1530,7 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 
 		/* 同じ行状態にある行数を数える */
 		for (; r < nrows; r++) {
-			if (rowattr[srcrow + r].all != rowattr[srcrow].all) {
+			if (rowattr[srcrow + r * rowstep].all != rowattr[srcrow].all) {
 				break;
 			}
 		}
@@ -1528,7 +1541,7 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 			uint8_t *src0 = src + OMFB_PLANEOFS;
 			uint8_t *dst0 = dst + OMFB_PLANEOFS;
 			om_setROP_curplane(ROP_THROUGH, ALL1BITS);
-			om4_rascopy_multi(dst0, src0, width, height * r);
+			om4_rascopy_multi(dst0, src0, width, rowheight * r);
 		} else {
 			uint8_t fg = rowattr[srcrow].fg;
 			uint8_t bg = rowattr[srcrow].bg;
@@ -1549,7 +1562,7 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 			srcplaneofs = OMFB_PLANEOFS + srcplane * OMFB_PLANEOFS;
 
 			uint8_t *srcP = src + srcplaneofs;
-			om_rascopy_solo(dst, srcP, width, height * r, rop);
+			om_rascopy_solo(dst, srcP, width, rowheight * r, rop);
 		}
 
  skip:
