@@ -39,13 +39,6 @@
 #define NISRAUTOVEC	8
 
 /*
- * The location and size of the vectored interrupt portion
- * of the vector table.
- */
-#define ISRVECTORED	0x40
-#define NISRVECTORED	192
-
-/*
  * Autovectored interrupt handler cookie.
  */
 struct isr_autovec {
@@ -59,17 +52,6 @@ struct isr_autovec {
 typedef LIST_HEAD(, isr_autovec) isr_autovec_list_t;
 
 /*
- * Vectored interrupt handler cookie.  The handler may request to
- * receive the exception frame as an argument by specifying NULL
- * when establishing the interrupt.
- */
-struct isr_vectored {
-	int		(*isr_func)(void *);
-	void		*isr_arg;
-	int		isr_ipl;
-};
-
-/*
  * Autovectored ISR priorities.  These are not the same as interrupt levels.
  */
 #define ISRPRI_BIO		0
@@ -79,7 +61,9 @@ struct isr_vectored {
 
 void	isrinit(void);
 void	isrlink_autovec(int (*)(void *), void *, int, int);
-void	isrlink_vectored(int (*)(void *), void *, int, int);
-void	isrunlink_vectored(int);
-void	isrdispatch_autovec(int);
-void	isrdispatch_vectored(int, int, void *);
+void	isrdispatch_autovec_lev1(void);
+void	isrdispatch_autovec_lev2(void);
+void	isrdispatch_autovec_lev3(void);
+void	isrdispatch_autovec_lev4(void);
+void	isrdispatch_autovec_lev5(void);
+void	isrdispatch_autovec_lev6(void);

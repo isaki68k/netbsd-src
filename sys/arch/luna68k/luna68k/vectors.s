@@ -78,12 +78,12 @@ GLOBAL(vectab)
 	VECTOR(badtrap)		/* 22: unassigned, reserved */
 	VECTOR(badtrap)		/* 23: unassigned, reserved */
 	VECTOR(spurintr)	/* 24: spurious interrupt */
-	VECTOR(intrhand_autovec)/* 25: level 1 interrupt autovector */
-	VECTOR(intrhand_autovec)/* 26: level 2 interrupt autovector */
-	VECTOR(intrhand_autovec)/* 27: level 3 interrupt autovector */
-	VECTOR(intrhand_autovec)/* 28: level 4 interrupt autovector */
+	VECTOR(lev1intr)	/* 25: level 1 interrupt autovector */
+	VECTOR(lev2intr)	/* 26: level 2 interrupt autovector */
+	VECTOR(lev3intr)	/* 27: level 3 interrupt autovector */
+	VECTOR(lev4intr)	/* 28: level 4 interrupt autovector */
 	VECTOR(lev5intr)	/* 29: level 5 interrupt hardwired */
-	VECTOR(intrhand_autovec)/* 30: level 6 interrupt autovector */
+	VECTOR(lev6intr)	/* 30: level 6 interrupt autovector */
 	VECTOR(lev7intr)	/* 31: level 7 interrupt hardwired */
 	VECTOR(trap0)		/* 32: syscalls */
 #ifdef COMPAT_13

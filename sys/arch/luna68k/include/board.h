@@ -114,4 +114,14 @@
 #define SCSI_2_ADDR	U(0xE1000040) 	/* 2nd SCSI address */
 #define LANCE_ADDR	U(0xF1000000) 	/* LANCE */
 
+/* PIO0 Port C bit definition */
+#define XP_INT1_REQ	0	/* INTR B */
+	/* unused */		/* IBF B */
+#define XP_INT1_ENA	2	/* INTE B */
+#define XP_INT5_REQ	3	/* INTR A */
+#define XP_INT5_ENA	4	/* INTE A */
+	/* unused */		/* IBF A */
+#define PIO0C_PARITY	6	/* PC6 output to enable parity error */
+#define XP_RESET	7	/* PC7 output to reset HD647180 XP */
+
 #endif /* _MACHINE_BOARD_H_ */
