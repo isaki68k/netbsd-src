@@ -96,6 +96,13 @@ om_fill_color(int,
 	uint8_t *, int, int,
 	int, int);
 
+#if defined(VT100_SIXEL)
+static void
+omfb_sixel(struct rasops_info */*ri*/,
+	int /*y*/, int /*x*/,
+	u_int /*uc*/, long /*attr*/);
+#endif
+
 #define	ALL1BITS	(~0U)
 #define	ALL0BITS	(0U)
 #define	BLITWIDTH	(32)
@@ -734,6 +741,13 @@ om4_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 	int fg, bg;
 	int y;
 	uint8_t *fb;
+
+#if defined(VT100_SIXEL)
+	if (attr & 1 /* WTATTR_SIXEL */) {
+		omfb_sixel(ri, row, startcol, uc, attr);
+		return;
+	}
+#endif
 
 	y = ri->ri_font->fontheight * row;
 	startx = ri->ri_font->fontwidth * startcol;
@@ -2134,6 +2148,13 @@ om4_allocattr(void *id, int fg, int bg, int flags, long *attrp)
 		fg += 8;
 
 	*attrp = (fg << 24) | (bg << 16);
+
+#if defined(VT100_SIXEL)
+	if (flags & WSATTR_SIXEL) {
+		*attrp |= (flags >> 16) & 3;
+	}
+#endif
+
 	return 0;
 }
 
@@ -2265,3 +2286,166 @@ omrasops_init(struct rasops_info *ri, int wantrows, int wantcols)
 
 	return 0;
 }
+
+#if defined(VT100_SIXEL)
+/*
+ * rendering SIXEL graphics
+ * y: (row-relative-y [pixel]) << 16 | row
+ * x: (col-relative-x [pixel]) << 16 | col
+ * uc: sixel char
+ * attr: (attr:fg) = color
+ *       (attr:16:16) = sixel repeat count
+ */
+static void
+omfb_sixel(struct rasops_info *ri, int yrow, int xcol, u_int uc, long attr)
+{
+#if 0
+	const uint32_t table[64] = {
+		0x000000,0x000001,0x000010,0x000011,0x000100,0x000101,0x000110,0x000111,
+		0x001000,0x001001,0x001010,0x001011,0x001100,0x001101,0x001110,0x001111,
+		0x010000,0x010001,0x010010,0x010011,0x010100,0x010101,0x010110,0x010111,
+		0x011000,0x011001,0x011010,0x011011,0x011100,0x011101,0x011110,0x011111,
+		0x100000,0x100001,0x100010,0x100011,0x100100,0x100101,0x100110,0x100111,
+		0x101000,0x101001,0x101010,0x101011,0x101100,0x101101,0x101110,0x101111,
+		0x110000,0x110001,0x110010,0x110011,0x110100,0x110101,0x110110,0x110111,
+		0x111000,0x111001,0x111010,0x111011,0x111100,0x111101,0x111110,0x111111,
+	};
+#endif
+	uint32_t ptn;
+	int xh, xl;
+	int fg, bg;
+	int dw;
+	int i;
+	uint8_t *dst;
+	uint32_t mask;
+	int16_t ormode;
+	int16_t width;
+	int col;
+	int x;
+	int row;
+	int y;
+
+	width = (uc >> 16) & 2047;
+	uc &= 0xffff;
+	if ('?' <= uc && uc <= '~') {
+		ptn = uc - '?';
+	} else {
+		return;
+	}
+
+	col = xcol & 0xffff;
+	x = (xcol >> 16) & 0xffff;
+	x += col * ri->ri_font->fontwidth;
+	row = yrow & 0xffff;
+	y = (yrow >> 16) & 0xffff;
+
+	rowattr[row].ismulti = 1;
+	if (y + 5 > ri->ri_font->fontheight) {
+		// 行をまたぐ書き込み
+		// rowattr は余裕を見て確保されている
+		rowattr[row + 1].ismulti = 1;
+	}
+
+	y += row * ri->ri_font->fontheight;
+
+	xh = x >> 5;
+	xl = x & 0x1f;
+
+	om4_unpack_attr(attr, &fg, &bg, NULL);
+
+	dst = (uint8_t *)ri->ri_bits + y * ri->ri_stride + xh * 4;
+	ormode = attr & 0x2;
+
+	/*
+	ormode
+		fg D  result
+		0  0  M
+		0  1  M   planemasked
+		1  0  M
+		1  1  1   D+M = OR1
+	not ormode (overwrite mode)
+		fg D  result
+		0  0  M
+		0  1  0   ~D*M = AND2
+		1  0  M
+		1  1  1   D+M = OR1
+	*/
+
+	if (width == 1) {
+		// ほとんどのケースで width == 1 なのでファストパスする
+		// 左からのビット位置に変換
+		xl = 31 - xl;
+		if (ormode) {
+			omfb_setplanemask(fg);
+			omfb_setROP_curplane(ROP_OR1, 1 << xl);
+		} else {
+			omfb_setplanemask(hwplanemask);
+			omfb_setROP_curplane(ROP_AND2, 1 << xl);
+			omfb_setplanemask(fg);
+			omfb_setROP_curplane(ROP_OR1, 1 << xl);
+			omfb_setplanemask(hwplanemask);
+		}
+
+		// 左ローテート命令にコンパイルされてほしい
+		// rol.l	%[xl],%[ptn]
+		ptn = (ptn << xl) | (ptn >> (32 - xl));
+
+		for (i = 0; i < 6; i++) {
+			// ROP masked xl bit
+			*W(dst) = ptn;
+			dst += ri->ri_stride;
+			// 右ローテート命令にコンパイルされてほしい
+			// ror.l	#1,%[ptn]
+			ptn = (ptn >> 1) | (ptn << 31);
+		}
+		return;
+	}
+
+	/* fill のアルゴリズム */
+
+	uint32_t v[6];
+	v[0] = (ptn & 0x01) ? ALL1BITS : ALL0BITS;
+	v[1] = (ptn & 0x02) ? ALL1BITS : ALL0BITS;
+	v[2] = (ptn & 0x04) ? ALL1BITS : ALL0BITS;
+	v[3] = (ptn & 0x08) ? ALL1BITS : ALL0BITS;
+	v[4] = (ptn & 0x10) ? ALL1BITS : ALL0BITS;
+	v[5] = (ptn & 0x20) ? ALL1BITS : ALL0BITS;
+
+
+	mask = ALL1BITS >> xl;
+	dw = 32 - xl;
+
+	do {
+		width -= dw;
+		if (width < 0) {
+			width = -width;
+			MASK_CLEAR_RIGHT(mask, width);
+
+			width = 0;
+		}
+
+		if (ormode) {
+			omfb_setplanemask(fg);
+			omfb_setROP_curplane(ROP_OR1, mask);
+		} else {
+			omfb_setplanemask(hwplanemask);
+			omfb_setROP_curplane(ROP_AND2, mask);
+			omfb_setplanemask(fg);
+			omfb_setROP_curplane(ROP_OR1, mask);
+			omfb_setplanemask(hwplanemask);
+		}
+
+		{
+			uint8_t *d = dst;
+			for (i = 0; i < 6; i++) {
+				// ROP masked
+				*W(d) = v[i];
+				d += ri->ri_stride;
+			}
+		}
+		dst += 4;
+		mask = ALL1BITS;
+		dw = 32;
+	} while (width > 0);
+}
+#endif

@@ -28,6 +28,33 @@
 
 #include <dev/wscons/vt100_base.h>
 
+#if defined(VT100_SIXEL)
+struct sixelinfo {
+	enum {
+		DECSIXEL_INIT = 0,
+		DECSIXEL_RASTER_PAD,
+		DECSIXEL_RASTER_PH,
+		DECSIXEL_RASTER_PV,
+		DECSIXEL_REPEAT = '!',
+		DECSIXEL_RASTER = '\"',
+		DECSIXEL_COLOR = '#',
+	} decsixel_state;
+	int     decsixel_ph;
+	int     decsixel_x;
+	int     decsixel_y;
+	int		decsixel_repcount;
+	int     decsixel_color;
+	int     decsixel_ormode;
+
+	long    attr;			/* allocattr out value */
+	int     attrflags;		/* allocattr in value */
+	int     savedflags;		/* save for cursor flag */
+	int     maxwidth;
+	int     fontwidth;
+	int     fontheight;
+};
+#endif
+
 struct wsemul_vt100_emuldata {
 	struct vt100base_data bd;
 
@@ -49,6 +76,9 @@ struct wsemul_vt100_emuldata {
 	int savedattrflags, savedfgcol, savedbgcol;
 	int savedchartab0, savedchartab1;
 	u_int *savedchartab_G[4];
+#if defined(VT100_SIXEL)
+	struct sixelinfo sixel;
+#endif
 };
 
 void wsemul_vt100_reset(struct wsemul_vt100_emuldata *);
