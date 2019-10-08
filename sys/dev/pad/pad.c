@@ -96,10 +96,7 @@ static int	pad_set_format(void *, int,
 		    audio_filter_reg_t *, audio_filter_reg_t *);
 static int	pad_start_output(void *, void *, int,
 		    void (*)(void *), void *);
-static int	pad_start_input(void *, void *, int,
-		    void (*)(void *), void *);
 static int	pad_halt_output(void *);
-static int	pad_halt_input(void *);
 static int	pad_getdev(void *, struct audio_device *);
 static int	pad_set_port(void *, mixer_ctrl_t *);
 static int	pad_get_port(void *, mixer_ctrl_t *);
@@ -131,9 +128,7 @@ static const struct audio_hw_if pad_hw_if = {
 	.query_format	= pad_query_format,
 	.set_format	= pad_set_format,
 	.start_output	= pad_start_output,
-	.start_input	= pad_start_input,
 	.halt_output	= pad_halt_output,
-	.halt_input	= pad_halt_input,
 	.getdev		= pad_getdev,
 	.set_port	= pad_set_port,
 	.get_port	= pad_get_port,
@@ -678,19 +673,6 @@ pad_start_output(void *opaque, void *block, int blksize,
 }
 
 static int
-pad_start_input(void *opaque, void *block, int blksize,
-    void (*intr)(void *), void *intrarg)
-{
-	struct pad_softc *sc __diagused;
-
-	sc = (struct pad_softc *)opaque;
-
-	KASSERT(mutex_owned(&sc->sc_intr_lock));
-
-	return EOPNOTSUPP;
-}
-
-static int
 pad_halt_output(void *opaque)
 {
 	struct pad_softc *sc;
@@ -706,18 +688,6 @@ pad_halt_output(void *opaque)
 	sc->sc_intrarg = NULL;
 	sc->sc_buflen = 0;
 	sc->sc_rpos = sc->sc_wpos = 0;
-
-	return 0;
-}
-
-static int
-pad_halt_input(void *opaque)
-{
-	struct pad_softc *sc __diagused;
-
-	sc = (struct pad_softc *)opaque;
-
-	KASSERT(mutex_owned(&sc->sc_intr_lock));
 
 	return 0;
 }

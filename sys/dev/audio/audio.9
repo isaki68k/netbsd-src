@@ -376,6 +376,7 @@ will normally initiate another call to
 .Va start_output .
 Return 0 on success, otherwise an error code.
 It is called at Opened phase.
+This field is optional only if the driver doesn't support playback.
 .It Dv int start_input(void *hdl, void *block, int blksize,
 .Dv "void (*intr)(void*), void *intrarg)"
 .Pp
@@ -396,18 +397,21 @@ will normally initiate another call to
 .Va start_input .
 Return 0 on success, otherwise an error code.
 It is called at Opened phase.
+This field is optional only if the driver doesn't support recording.
 .It Dv int halt_output(void *hdl)
 is called to abort the output transfer (started by
 .Va start_output )
 in progress.
 Return 0 on success, otherwise an error code.
 It is called at Opened phase.
+This field is optional only if the driver doesn't support playback.
 .It Dv int halt_input(void *hdl)
 is called to abort the input transfer (started by
 .Va start_input )
 in progress.
 Return 0 on success, otherwise an error code.
 It is called at Opened phase.
+This field is optional only if the driver doesn't support recording,
 .It Dv int speaker_ctl(void *hdl, int on)
 optional, is called when a half duplex device changes between
 playing and recording.

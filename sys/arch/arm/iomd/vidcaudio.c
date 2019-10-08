@@ -148,10 +148,7 @@ static int    vidcaudio_set_format(void *, int,
 static int    vidcaudio_round_blocksize(void *, int, int, const audio_params_t *);
 static int    vidcaudio_trigger_output(void *, void *, void *, int,
     void (*)(void *), void *, const audio_params_t *);
-static int    vidcaudio_trigger_input(void *, void *, void *, int,
-    void (*)(void *), void *, const audio_params_t *);
 static int    vidcaudio_halt_output(void *);
-static int    vidcaudio_halt_input(void *);
 static int    vidcaudio_getdev(void *, struct audio_device *);
 static int    vidcaudio_set_port(void *, mixer_ctrl_t *);
 static int    vidcaudio_get_port(void *, mixer_ctrl_t *);
@@ -171,14 +168,12 @@ static const struct audio_hw_if vidcaudio_hw_if = {
 	.set_format		= vidcaudio_set_format,
 	.round_blocksize	= vidcaudio_round_blocksize,
 	.halt_output		= vidcaudio_halt_output,
-	.halt_input		= vidcaudio_halt_input,
 	.getdev			= vidcaudio_getdev,
 	.set_port		= vidcaudio_set_port,
 	.get_port		= vidcaudio_get_port,
 	.query_devinfo		= vidcaudio_query_devinfo,
 	.get_props		= vidcaudio_get_props,
 	.trigger_output		= vidcaudio_trigger_output,
-	.trigger_input		= vidcaudio_trigger_input,
 	.get_locks		= vidcaudio_get_locks,
 };
 
@@ -427,14 +422,6 @@ vidcaudio_trigger_output(void *addr, void *start, void *end, int blksize,
 }
 
 static int
-vidcaudio_trigger_input(void *addr, void *start, void *end, int blksize,
-    void (*intr)(void *), void *arg, const audio_params_t *params)
-{
-
-	return ENODEV;
-}
-
-static int
 vidcaudio_halt_output(void *addr)
 {
 	struct vidcaudio_softc *sc;
@@ -444,13 +431,6 @@ vidcaudio_halt_output(void *addr)
 	disable_irq(sc->sc_dma_intr);
 	IOMD_WRITE_WORD(IOMD_SD0CR, IOMD_DMACR_CLEAR | IOMD_DMACR_QUADWORD);
 	return 0;
-}
-
-static int
-vidcaudio_halt_input(void *addr)
-{
-
-	return ENODEV;
 }
 
 static int

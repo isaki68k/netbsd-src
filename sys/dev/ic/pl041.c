@@ -200,13 +200,6 @@ aaci_trigger_output(void *priv, void *start, void *end, int blksize,
 }
 
 static int
-aaci_trigger_input(void *priv, void *start, void *end, int blksize,
-    void (*intr)(void *), void *intrarg, const audio_params_t *params)
-{
-	return ENXIO;
-}
-
-static int
 aaci_halt_output(void *priv)
 {
 	struct aaci_softc * const sc = priv;
@@ -217,12 +210,6 @@ aaci_halt_output(void *priv)
 	AACI_WRITE(sc, AACIIE, 0);
 
 	return 0;
-}
-
-static int
-aaci_halt_input(void *priv)
-{
-	return ENXIO;
 }
 
 static int
@@ -249,9 +236,7 @@ static const struct audio_hw_if aaci_hw_if = {
 	.query_devinfo = aaci_query_devinfo,
 	.get_props = aaci_get_props,
 	.trigger_output = aaci_trigger_output,
-	.trigger_input = aaci_trigger_input,
 	.halt_output = aaci_halt_output,
-	.halt_input = aaci_halt_input,
 	.round_blocksize = aaci_round_blocksize,
 	.get_locks = aaci_get_locks,
 };
