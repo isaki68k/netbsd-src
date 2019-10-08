@@ -835,11 +835,6 @@ pad_query_devinfo(void *opaque, mixer_devinfo_t *di)
 static int
 pad_get_props(void *opaque)
 {
-	struct pad_softc *sc __diagused;
-
-	sc = (struct pad_softc *)opaque;
-
-	KASSERT(mutex_owned(&sc->sc_lock));
 
 	return AUDIO_PROP_PLAYBACK;
 }

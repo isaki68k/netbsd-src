@@ -121,7 +121,7 @@
  *	allocm 			-	- +	(*1)
  *	freem 			-	- +	(*1)
  *	round_buffersize 	-	x
- *	get_props 		-	x	Called at attach time
+ *	get_props 		-	-	Called at attach time
  *	trigger_output 		x	x +
  *	trigger_input 		x	x +
  *	dev_ioctl 		-	x
@@ -881,9 +881,7 @@ audioattach(device_t parent, device_t self, void *aux)
 	SLIST_INIT(&sc->sc_files);
 	cv_init(&sc->sc_exlockcv, "audiolk");
 
-	mutex_enter(sc->sc_lock);
 	sc->sc_props = hw_if->get_props(sc->hw_hdl);
-	mutex_exit(sc->sc_lock);
 
 	/* MMAP is now supported by upper layer.  */
 	sc->sc_props |= AUDIO_PROP_MMAP;
