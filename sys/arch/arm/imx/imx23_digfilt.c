@@ -287,7 +287,7 @@ digfilt_attach(device_t parent, device_t self, void *aux)
 	mutex_init(&sc->sc_intr_lock, MUTEX_DEFAULT, IPL_SCHED);
 
 	/* HW supported formats. */
-	sc->sc_format.mode = AUMODE_PLAY|AUMODE_RECORD;
+	sc->sc_format.mode = AUMODE_PLAY;
 	sc->sc_format.encoding = AUDIO_ENCODING_SLINEAR_LE;
 	sc->sc_format.validbits = 16;
 	sc->sc_format.precision = 16;
@@ -773,7 +773,8 @@ digfilt_round_buffersize(void *hdl, int direction, size_t bs)
 static int
 digfilt_get_props(void *sc)
 {
-	return (AUDIO_PROP_PLAYBACK | AUDIO_PROP_INDEPENDENT);
+
+	return AUDIO_PROP_PLAYBACK;
 }
 
 static void
