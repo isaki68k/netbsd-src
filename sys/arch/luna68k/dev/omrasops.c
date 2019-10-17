@@ -52,6 +52,10 @@ __KERNEL_RCSID(0, "$NetBSD: omrasops.c,v 1.21 2019/07/31 02:09:02 rin Exp $");
 
 #include <arch/luna68k/dev/omrasopsvar.h>
 
+// フォントビットマップは VRAM x=1280 の位置に置かれる
+// [バイトオフセット]
+#define FONTOFFSET		(1280 / 8)
+
 #define USE_M68K_ASM	1
 
 // gcc でコンパイラに最適化の条件を与える。
@@ -413,9 +417,11 @@ static const uint8_t ropsel[] = {
  */
 /*
  * x, y: destination Left-Top in pixel
- * width, height : in pixel
+ * width, height : source font size in pixel
  * fontptr: source pointer of fontdata
  * fontstride: y-stride of fontdata [byte]
+ * fontx: font bit offset from fontptr MSB
+ * heightscale: 0=等倍 else=縦倍角 [dstheight = height * (heightscale + 1)]
  * fg : foreground color
  * bg : background color
  *
@@ -426,7 +432,7 @@ omfb_putchar(
 	struct rasops_info *ri,
 	int x, int y,
 	int width, int height,
-	uint8_t *fontptr, int fontstride,
+	uint8_t *fontptr, int fontstride, int fontx, int heightscale,
 	uint8_t fg, uint8_t bg)
 {
 	/* ROP アドレスのキャッシュ */
@@ -438,7 +444,6 @@ omfb_putchar(
 	int dw;		/* 1 pass width bits */
 	uint8_t *dstC;
 	int xh, xl;
-	int fontx = 0;
 
 	if (saved_fg != fg || saved_bg != bg) {
 		saved_fg = fg;
@@ -505,7 +510,7 @@ omfb_putchar(
 		}
 #endif
 
-		{
+		if (heightscale == 0) {
 			uint8_t *d = dstC;
 			uint8_t *f = fontptr;
 			int16_t h = height - 1;
@@ -513,6 +518,20 @@ omfb_putchar(
 				uint32_t v;
 				GETBITS(f, fontx, dw, v);
 				/* no need to shift of v. masked by ROP */
+				*W(d) = v;
+				d += OMFB_STRIDE;
+				f += fontstride;
+			} while (--h >= 0);
+		} else {
+			uint8_t *d = dstC;
+			uint8_t *f = fontptr;
+			int16_t h = height - 1;
+			do {
+				uint32_t v;
+				GETBITS(f, fontx, dw, v);
+				/* no need to shift of v. masked by ROP */
+				*W(d) = v;
+				d += OMFB_STRIDE;
 				*W(d) = v;
 				d += OMFB_STRIDE;
 				f += fontstride;
@@ -525,7 +544,6 @@ omfb_putchar(
 		dw = 32;
 	} while (width > 0);
 }
-
 
 /*
  * Blit a character at the specified co-ordinates.
@@ -735,11 +753,13 @@ om4_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 #else
 
 	struct rasops_info *ri = cookie;
-	int startx;
 	int width;
 	int height;
 	int fg, bg;
-	int y;
+	int x, y;
+	int fontx, fonty;
+	int fontstride;
+	int heightscale;
 	uint8_t *fb;
 
 #if defined(VT100_SIXEL)
@@ -750,17 +770,102 @@ om4_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 #endif
 
 	y = ri->ri_font->fontheight * row;
-	startx = ri->ri_font->fontwidth * startcol;
-	width = ri->ri_font->fontwidth;
-	height = ri->ri_font->fontheight;
-	fb = (uint8_t *)ri->ri_font->data +
-	    (uc - ri->ri_font->firstchar) * ri->ri_fontscale;
+	x = ri->ri_font->fontwidth * startcol;
+	fontx = 0;
+	heightscale = 0;
+
+	if (uc <= 0x7f) {
+		width = ri->ri_font->fontwidth;
+		height = ri->ri_font->fontheight;
+
+		fb = (uint8_t *)ri->ri_font->data +
+		    (uc - ri->ri_font->firstchar) * ri->ri_fontscale;
+		fontstride = ri->ri_font->stride;
+	} else {
+		uint8_t fonttype = *(uint8_t *)(OMFB_PLANE_0 + OMFB_PLANEOFS - 1);
+		if (hwplanecount == 1 || fonttype == 1) {
+			height = 10;
+			heightscale = 1;
+			if (uc >= 0xcfd4) {
+				// 1bpp support only JIS-1
+				return;
+			}
+		} else if (fonttype == 4) {
+			height = 20;
+		} else {
+			// font file not loaded
+			return;
+		}
+
+		if (0x8ea1 <= uc && uc <= 0x8edf) {
+			// 半角カナ
+			int fontstep;
+			int idx;
+
+			x += 1;
+			width = 10;
+			idx = (uc - 0x8ea1);
+			// 定数除算になることを期待している
+			fontstep = 768 / width;
+			fontx = idx % fontstep;
+			fontx = fontx * width;
+			// 半角カナは y=0 位置
+			fonty = 0;
+		} else {
+			// 全角
+			uint8_t H, L;
+			int fontstep;
+			int idx;
+
+			x += 2;
+			width = 20;
+
+			H = uc >> 8;
+			L = uc;
+			if (L < 0xa1 || L == 0xff) {
+				return;
+			}
+			L -= 0xa1;
+
+			if (H < 0xa1) {
+				return;
+			}
+			if (H <= 0xa8) {
+				H = H - 0xa1;
+			} else if (H < 0xad) {
+				return;
+			} else if (H <= 0xad) {
+				H = H - 0xad + (0xa8 - 0xa1 + 1);
+			} else if (H < 0xb0) {
+				return;
+			} else if (H <= 0xfc) {
+				H = H - 0xb0 + (1 /* ad */) + (0xa8 - 0xa1 + 1);
+			} else {
+				return;
+			}
+			idx = (u_int)H * (0xfe - 0xa1 + 1) + L;
+			// 定数除算になることを期待している
+			// 1行に記録されている文字数
+			fontstep = 768 / width;
+			fontx = idx % fontstep;
+			fonty = idx / fontstep;
+			// ドット位置に変換
+			fontx = fontx * width;
+			// 半角カナのエリアが1行ある
+			fonty += 1;
+		}
+		// m68k ではビットフィールド命令により、fontx をバイト位置に
+		// 分離してポインタに加算する必要がない。
+		fb = (uint8_t *)OMFB_PLANE_0 + FONTOFFSET
+			+ fonty * height * OMFB_STRIDE;
+		fontstride = OMFB_STRIDE;
+	}
 	om4_unpack_attr(attr, &fg, &bg, NULL);
 
 	om_set_rowattr(row, fg, bg);
 
-	omfb_putchar(ri, startx, y, width, height,
-		fb, ri->ri_font->stride,
+	omfb_putchar(ri, x, y, width, height,
+		fb, fontstride, fontx, heightscale,
 		fg, bg);
 
 	omfb_resetplanemask_and_ROP();

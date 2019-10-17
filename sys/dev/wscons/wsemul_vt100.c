@@ -392,6 +392,49 @@ wsemul_vt100_output_normal(struct wsemul_vt100_emuldata *edp, u_char c,
 	struct vt100base_data *vd = &edp->bd;
 	u_int *ct, dc;
 
+#if defined(VT100_EUC)
+	if (c & 0x80) {
+		if (edp->euc0) {
+			int w;
+			dc = ((u_int)edp->euc0 << 8) | c;
+			if (edp->euc0 == 0x8e) {
+				// halfwidth KANA
+				w = 1;
+			} else {
+				// fullwidth KANJI
+				w = 2;
+			}
+			edp->euc0 = 0;
+
+			if (COLS_LEFT(vd) < w) {
+				wsemul_vt100_nextline(edp);
+				vd->ccol = 0;
+				vd->flags &= ~VTFL_LASTCHAR;
+			}
+			if ((vd->flags & VTFL_INSERTMODE)
+			 && COLS_LEFT(vd) - w + 1 > 0) {
+				COPYCOLS(vd, vd->ccol, vd->ccol + w,
+				  COLS_LEFT(vd) - w + 1);
+			}
+
+			(*vd->emulops->putchar)(vd->emulcookie, vd->crow,
+				 vd->ccol << vd->dw, dc,
+				 kernel ? edp->kernattr : vd->curattr);
+
+			if (COLS_LEFT(vd) >= w)
+				vd->ccol += w;
+			else
+				vd->flags |= VTFL_LASTCHAR;
+			return;
+		} else {
+			edp->euc0 = c;
+			return;
+		}
+	} else {
+		edp->euc0 = 0;
+	}
+#endif
+
 	if ((vd->flags & (VTFL_LASTCHAR | VTFL_DECAWM)) ==
 	    (VTFL_LASTCHAR | VTFL_DECAWM)) {
 		wsemul_vt100_nextline(edp);
@@ -1226,7 +1269,11 @@ wsemul_vt100_output(void *cookie, const u_char *data, u_int count, int kernel)
 		(*vd->emulops->cursor)(vd->emulcookie, 0,
 					vd->crow, vd->ccol << vd->dw);
 	for (; count > 0; data++, count--) {
+#if defined(VT100_EUC)
+		if (*data < 0x20) {
+#else
 		if ((*data & 0x7f) < 0x20) {
+#endif
 			wsemul_vt100_output_c0c1(edp, *data, kernel);
 			continue;
 		}

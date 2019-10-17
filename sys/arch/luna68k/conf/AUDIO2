@@ -130,7 +130,10 @@ options 	WSDISPLAY_COMPAT_USL		# wsconscfg VT handling
 options 	WSDISPLAY_COMPAT_RAWKBD
 options 	FONT_OMRON12x20
 
+# SIXEL support
 options		VT100_SIXEL
+# EUC console
+options		VT100_EUC
 
 config		netbsd root on ? type ?
 

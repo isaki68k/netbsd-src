@@ -79,6 +79,9 @@ struct wsemul_vt100_emuldata {
 #if defined(VT100_SIXEL)
 	struct sixelinfo sixel;
 #endif
+#if defined(VT100_EUC)
+	u_char euc0;
+#endif
 };
 
 void wsemul_vt100_reset(struct wsemul_vt100_emuldata *);
