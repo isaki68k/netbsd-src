@@ -113,9 +113,6 @@ omfb_sixel(struct rasops_info */*ri*/,
 #define	ALIGNMASK	(0x1f)
 #define	BYTESDONE	(4)
 
-extern int hwplanemask;
-extern int hwplanecount;
-
 // XXX
 struct rowattr_t
 {
@@ -295,15 +292,15 @@ om_fill_color(int color,
 
 	__assume(width > 0);
 	__assume(height > 0);
-	__assume(hwplanecount > 0);
+	__assume(omfb_planecount > 0);
 
 	/* select all planes */
-	omfb_setplanemask(hwplanemask);
+	omfb_setplanemask(omfb_planemask);
 
 	mask = ALL1BITS >> dstbitofs;
 	dw = 32 - dstbitofs;
 	int16_t h16 = height - 1;
-	int16_t lastplane = hwplanecount - 1;
+	int16_t lastplane = omfb_planecount - 1;
 
 #define MAX_PLANES	(8)
 
@@ -760,7 +757,7 @@ om4_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 		fontstride = ri->ri_font->stride;
 	} else {
 		uint8_t fonttype = *(uint8_t *)(OMFB_PLANE_0 + OMFB_PLANEOFS - 1);
-		if (hwplanecount == 1 || fonttype == 1) {
+		if (omfb_planecount == 1 || fonttype == 1) {
 			height = 10;
 			heightscale = 1;
 			if (uc >= 0xcfd4) {
@@ -989,7 +986,7 @@ om4_erasecols(void *cookie, int row, int startcol, int ncols, long attr)
 
 	if (bg == 0) {
 		// om_fill のほうが効率がすこし良い
-		om_fill(hwplanemask, ROP_ZERO,
+		om_fill(omfb_planemask, ROP_ZERO,
 			p, sl, scanspan, 0, width, height);
 	} else {
 		om_fill_color(bg, p, sl, scanspan, width, height);
@@ -1107,7 +1104,7 @@ om4_eraserows(void *cookie, int startrow, int nrows, long attr)
 
 	if (bg == 0) {
 		// om_fill のほうが効率がすこし良い
-		om_fill(hwplanemask, ROP_ZERO,
+		om_fill(omfb_planemask, ROP_ZERO,
 			p, sl, scanspan, 0, width, height);
 	} else {
 		om_fill_color(bg, p, sl, scanspan, width, height);
@@ -1164,7 +1161,7 @@ om1_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
  *    if y-backward, src < dst, point to Left-Bottom.
  * width: pixel width (must > 0)
  * height: pixel height (> 0 : forward, < 0 backward)
- * rop: rop[hwplanecount] ROP
+ * rop: rop[omfb_planecount] ROP
  * プレーンマスクとROP は破壊される
  */
 static void
@@ -1277,7 +1274,7 @@ om_rascopy_solo(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 		mask = ALL1BITS << (32 - wl);
 		// ROP の状態を保持したたまマスクを設定することがハード的には
 		// できないので、ここでは共通ROPは使えない。
-		for (plane = 0; plane < hwplanecount; plane++) {
+		for (plane = 0; plane < omfb_planecount; plane++) {
 			omfb_setROP(plane, rop[plane], mask);
 		}
 
@@ -1301,7 +1298,7 @@ om_rascopy_solo(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 		  "memory"
 		);
 
-		for (plane = 0; plane < hwplanecount; plane++) {
+		for (plane = 0; plane < omfb_planecount; plane++) {
 			omfb_setROP(plane, rop[plane], ALL1BITS);
 		}
 	}
@@ -1482,7 +1479,7 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		uint32_t mask;
 
 		mask = ALL1BITS << (32 - wl);
-		omfb_setplanemask(hwplanemask);
+		omfb_setplanemask(omfb_planemask);
 		omfb_setROP_curplane(ROP_THROUGH, mask);
 
 		asm volatile(
@@ -1604,7 +1601,7 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 	ptrstep = ri->ri_stride * rowheight;
 
 
-	omfb_setplanemask(hwplanemask);
+	omfb_setplanemask(omfb_planemask);
 
 	uint8_t rop[OMFB_MAX_PLANECOUNT];
 	int srcplane = 0;
@@ -1640,7 +1637,7 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 			srcplane = 0;
 			/* ROP 選択のロジックは putchar と同じ */
 			/* srcplane は fg が立ってて bg が立ってないプレーン */
-			for (i = 0; i < hwplanecount; i++) {
+			for (i = 0; i < omfb_planecount; i++) {
 				int t = (fg & 1) * 2 + (bg & 1);
 				rop[i] = ropsel[t];
 				omfb_setROP(i, rop[i], ALL1BITS);
@@ -2174,7 +2171,7 @@ om4_cursor(void *cookie, int on, int row, int col)
 	p = (uint8_t *)ri->ri_bits + y * scanspan + sh * 4;
 
 	/* ROP_INV2: result = ~VRAM (ignore data from MPU) */
-	om_fill(hwplanemask, ROP_INV2,
+	om_fill(omfb_planemask, ROP_INV2,
 		p, sl, scanspan,
 		0, width, height);
 
@@ -2456,11 +2453,11 @@ omfb_sixel(struct rasops_info *ri, int yrow, int xcol, u_int uc, long attr)
 			omfb_setplanemask(fg);
 			omfb_setROP_curplane(ROP_OR1, 1 << xl);
 		} else {
-			omfb_setplanemask(hwplanemask);
+			omfb_setplanemask(omfb_planemask);
 			omfb_setROP_curplane(ROP_AND2, 1 << xl);
 			omfb_setplanemask(fg);
 			omfb_setROP_curplane(ROP_OR1, 1 << xl);
-			omfb_setplanemask(hwplanemask);
+			omfb_setplanemask(omfb_planemask);
 		}
 
 		// 左ローテート命令にコンパイルされてほしい
@@ -2505,11 +2502,11 @@ omfb_sixel(struct rasops_info *ri, int yrow, int xcol, u_int uc, long attr)
 			omfb_setplanemask(fg);
 			omfb_setROP_curplane(ROP_OR1, mask);
 		} else {
-			omfb_setplanemask(hwplanemask);
+			omfb_setplanemask(omfb_planemask);
 			omfb_setROP_curplane(ROP_AND2, mask);
 			omfb_setplanemask(fg);
 			omfb_setROP_curplane(ROP_OR1, mask);
-			omfb_setplanemask(hwplanemask);
+			omfb_setplanemask(omfb_planemask);
 		}
 
 		{
