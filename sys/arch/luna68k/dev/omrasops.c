@@ -600,132 +600,6 @@ om1_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 static void
 om4_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 {
-#if 0
-	struct rasops_info *ri = cookie;
-	uint8_t *p;
-	int scanspan, startx, height, width, align, y;
-	uint32_t lmask, rmask, glyph, glyphbg, fgpat, bgpat;
-	uint32_t fgmask0, fgmask1, fgmask2, fgmask3;
-	uint32_t bgmask0, bgmask1, bgmask2, bgmask3;
-	int i, fg, bg;
-	uint8_t *fb;
-
-	scanspan = ri->ri_stride;
-	y = ri->ri_font->fontheight * row;
-	startx = ri->ri_font->fontwidth * startcol;
-	height = ri->ri_font->fontheight;
-	fb = (uint8_t *)ri->ri_font->data +
-	    (uc - ri->ri_font->firstchar) * ri->ri_fontscale;
-	om4_unpack_attr(attr, &fg, &bg, NULL);
-	fgmask0 = (fg & 0x01) ? ALL1BITS : ALL0BITS;
-	fgmask1 = (fg & 0x02) ? ALL1BITS : ALL0BITS;
-	fgmask2 = (fg & 0x04) ? ALL1BITS : ALL0BITS;
-	fgmask3 = (fg & 0x08) ? ALL1BITS : ALL0BITS;
-	bgmask0 = (bg & 0x01) ? ALL1BITS : ALL0BITS;
-	bgmask1 = (bg & 0x02) ? ALL1BITS : ALL0BITS;
-	bgmask2 = (bg & 0x04) ? ALL1BITS : ALL0BITS;
-	bgmask3 = (bg & 0x08) ? ALL1BITS : ALL0BITS;
-
-	p = (uint8_t *)ri->ri_bits + y * scanspan + ((startx / 32) * 4);
-	align = startx & ALIGNMASK;
-	width = ri->ri_font->fontwidth + align;
-	lmask = ALL1BITS >> align;
-	rmask = ALL1BITS << (-width & ALIGNMASK);
-
-	/* select all planes for later ROP function target */
-	*(volatile uint32_t *)OMFB_PLANEMASK = 0xff;
-
-	if (width <= BLITWIDTH) {
-		lmask &= rmask;
-		/* set lmask as ROP mask value, with THROUGH mode */
-		((volatile uint32_t *)OMFB_ROPFUNC)[ROP_THROUGH] = lmask;
-
-		while (height > 0) {
-			glyph = 0;
-			for (i = ri->ri_font->stride; i != 0; i--)
-				glyph = (glyph << 8) | *fb++;
-			glyph <<= (4 - ri->ri_font->stride) * NBBY;
-			glyph = (glyph >> align);
-			glyphbg = glyph ^ ALL1BITS;
-
-			fgpat = glyph   & fgmask0;
-			bgpat = glyphbg & bgmask0;
-			*P0(p) = (fgpat | bgpat);
-			fgpat = glyph   & fgmask1;
-			bgpat = glyphbg & bgmask1;
-			*P1(p) = (fgpat | bgpat);
-			fgpat = glyph   & fgmask2;
-			bgpat = glyphbg & bgmask2;
-			*P2(p) = (fgpat | bgpat);
-			fgpat = glyph   & fgmask3;
-			bgpat = glyphbg & bgmask3;
-			*P3(p) = (fgpat | bgpat);
-
-			p += scanspan;
-			height--;
-		}
-		/* reset mask value */
-		((volatile uint32_t *)OMFB_ROPFUNC)[ROP_THROUGH] = ALL1BITS;
-	} else {
-		uint8_t *q = p;
-		uint32_t lhalf, rhalf;
-		uint32_t lhalfbg, rhalfbg;
-
-		while (height > 0) {
-			glyph = 0;
-			for (i = ri->ri_font->stride; i != 0; i--)
-				glyph = (glyph << 8) | *fb++;
-			glyph <<= (4 - ri->ri_font->stride) * NBBY;
-			lhalf = (glyph >> align);
-			lhalfbg = lhalf ^ ALL1BITS;
-			/* set lmask as ROP mask value, with THROUGH mode */
-			((volatile uint32_t *)OMFB_ROPFUNC)[ROP_THROUGH] =
-			    lmask;
-
-			fgpat = lhalf   & fgmask0;
-			bgpat = lhalfbg & bgmask0;
-			*P0(p) = (fgpat | bgpat);
-			fgpat = lhalf   & fgmask1;
-			bgpat = lhalfbg & bgmask1;
-			*P1(p) = (fgpat | bgpat);
-			fgpat = lhalf   & fgmask2;
-			bgpat = lhalfbg & bgmask2;
-			*P2(p) = (fgpat | bgpat);
-			fgpat = lhalf   & fgmask3;
-			bgpat = lhalfbg & bgmask3;
-			*P3(p) = (fgpat | bgpat);
-
-			p += BYTESDONE;
-
-			rhalf = (glyph << (BLITWIDTH - align));
-			rhalfbg = rhalf ^ ALL1BITS;
-			/* set rmask as ROP mask value, with THROUGH mode */
-			((volatile uint32_t *)OMFB_ROPFUNC)[ROP_THROUGH] =
-			    rmask;
-
-			fgpat = rhalf   & fgmask0;
-			bgpat = rhalfbg & bgmask0;
-			*P0(p) = (fgpat | bgpat);
-			fgpat = rhalf   & fgmask1;
-			bgpat = rhalfbg & bgmask1;
-			*P1(p) = (fgpat | bgpat);
-			fgpat = rhalf   & fgmask2;
-			bgpat = rhalfbg & bgmask2;
-			*P2(p) = (fgpat | bgpat);
-			fgpat = rhalf   & fgmask3;
-			bgpat = rhalfbg & bgmask3;
-			*P3(p) = (fgpat | bgpat);
-
-			p = (q += scanspan);
-			height--;
-		}
-		/* reset mask value */
-		((volatile uint32_t *)OMFB_ROPFUNC)[ROP_THROUGH] = ALL1BITS;
-	}
-	/* select plane #0 only; XXX need this ? */
-	*(volatile uint32_t *)OMFB_PLANEMASK = 0x01;
-#else
-
 	struct rasops_info *ri = cookie;
 	int width;
 	int height;
@@ -843,7 +717,6 @@ om4_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 		fg, bg);
 
 	omfb_resetplanemask_and_ROP();
-#endif
 }
 
 static void
@@ -897,70 +770,6 @@ om1_erasecols(void *cookie, int row, int startcol, int ncols, long attr)
 static void
 om4_erasecols(void *cookie, int row, int startcol, int ncols, long attr)
 {
-#if 0
-	struct rasops_info *ri = cookie;
-	uint8_t *p;
-	int scanspan, startx, height, width, align, w, y, fg, bg;
-	uint32_t lmask, rmask, fill0, fill1, fill2, fill3;
-
-	scanspan = ri->ri_stride;
-	y = ri->ri_font->fontheight * row;
-	startx = ri->ri_font->fontwidth * startcol;
-	height = ri->ri_font->fontheight;
-	w = ri->ri_font->fontwidth * ncols;
-	om4_unpack_attr(attr, &fg, &bg, NULL);
-	fill0 = ((bg & 0x01) != 0) ? ALL1BITS : ALL0BITS;
-	fill1 = ((bg & 0x02) != 0) ? ALL1BITS : ALL0BITS;
-	fill2 = ((bg & 0x04) != 0) ? ALL1BITS : ALL0BITS;
-	fill3 = ((bg & 0x08) != 0) ? ALL1BITS : ALL0BITS;
-
-	p = (uint8_t *)ri->ri_bits + y * scanspan + ((startx / 32) * 4);
-	align = startx & ALIGNMASK;
-	width = w + align;
-	lmask = ALL1BITS >> align;
-	rmask = ALL1BITS << (-width & ALIGNMASK);
-	if (width <= BLITWIDTH) {
-		lmask &= rmask;
-		fill0 &= lmask;
-		fill1 &= lmask;
-		fill2 &= lmask;
-		fill3 &= lmask;
-		while (height > 0) {
-			*P0(p) = (*P0(p) & ~lmask) | fill0;
-			*P1(p) = (*P1(p) & ~lmask) | fill1;
-			*P2(p) = (*P2(p) & ~lmask) | fill2;
-			*P3(p) = (*P3(p) & ~lmask) | fill3;
-			p += scanspan;
-			height--;
-		}
-	} else {
-		uint8_t *q = p;
-		while (height > 0) {
-			*P0(p) = (*P0(p) & ~lmask) | (fill0 & lmask);
-			*P1(p) = (*P1(p) & ~lmask) | (fill1 & lmask);
-			*P2(p) = (*P2(p) & ~lmask) | (fill2 & lmask);
-			*P3(p) = (*P3(p) & ~lmask) | (fill3 & lmask);
-			width -= 2 * BLITWIDTH;
-			while (width > 0) {
-				p += BYTESDONE;
-				*P0(p) = fill0;
-				*P1(p) = fill1;
-				*P2(p) = fill2;
-				*P3(p) = fill3;
-				width -= BLITWIDTH;
-			}
-			p += BYTESDONE;
-			*P0(p) = (fill0 & rmask) | (*P0(p) & ~rmask);
-			*P1(p) = (fill1 & rmask) | (*P1(p) & ~rmask);
-			*P2(p) = (fill2 & rmask) | (*P2(p) & ~rmask);
-			*P3(p) = (fill3 & rmask) | (*P3(p) & ~rmask);
-
-			p = (q += scanspan);
-			width = w + align;
-			height--;
-		}
-	}
-#else
 	struct rasops_info *ri = cookie;
 	int startx;
 	int width;
@@ -994,7 +803,6 @@ om4_erasecols(void *cookie, int row, int startcol, int ncols, long attr)
 
 	/* reset mask value */
 	omfb_resetplanemask_and_ROP();
-#endif
 }
 
 static void
@@ -1034,50 +842,6 @@ om1_eraserows(void *cookie, int startrow, int nrows, long attr)
 static void
 om4_eraserows(void *cookie, int startrow, int nrows, long attr)
 {
-#if 0
-	struct rasops_info *ri = cookie;
-	uint8_t *p, *q;
-	int scanspan, starty, height, width, w, fg, bg;
-	uint32_t rmask, fill0, fill1, fill2, fill3;
-
-	scanspan = ri->ri_stride;
-	starty = ri->ri_font->fontheight * startrow;
-	height = ri->ri_font->fontheight * nrows;
-	w = ri->ri_emuwidth;
-	om4_unpack_attr(attr, &fg, &bg, NULL);
-	fill0 = ((bg & 0x01) != 0) ? ALL1BITS : ALL0BITS;
-	fill1 = ((bg & 0x02) != 0) ? ALL1BITS : ALL0BITS;
-	fill2 = ((bg & 0x04) != 0) ? ALL1BITS : ALL0BITS;
-	fill3 = ((bg & 0x08) != 0) ? ALL1BITS : ALL0BITS;
-
-	p = (uint8_t *)ri->ri_bits + starty * scanspan;
-	width = w;
-	rmask = ALL1BITS << (-width & ALIGNMASK);
-	q = p;
-	while (height > 0) {
-		*P0(p) = fill0;				/* always aligned */
-		*P1(p) = fill1;
-		*P2(p) = fill2;
-		*P3(p) = fill3;
-		width -= 2 * BLITWIDTH;
-		while (width > 0) {
-			p += BYTESDONE;
-			*P0(p) = fill0;
-			*P1(p) = fill1;
-			*P2(p) = fill2;
-			*P3(p) = fill3;
-			width -= BLITWIDTH;
-		}
-		p += BYTESDONE;
-		*P0(p) = (fill0 & rmask) | (*P0(p) & ~rmask);
-		*P1(p) = (fill1 & rmask) | (*P1(p) & ~rmask);
-		*P2(p) = (fill2 & rmask) | (*P2(p) & ~rmask);
-		*P3(p) = (fill3 & rmask) | (*P3(p) & ~rmask);
-		p = (q += scanspan);
-		width = w;
-		height--;
-	}
-#else
 	struct rasops_info *ri = cookie;
 	int startx;
 	int width;
@@ -1111,7 +875,6 @@ om4_eraserows(void *cookie, int startrow, int nrows, long attr)
 	}
 	/* reset mask value */
 	omfb_resetplanemask_and_ROP();
-#endif
 }
 
 static void
@@ -1522,55 +1285,6 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 static void
 om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 {
-#if 0
-	// dd if=32 3.50sec
-
-	struct rasops_info *ri = cookie;
-	uint8_t *p, *q;
-	int scanspan, offset, srcy, height, width, w;
-	uint32_t rmask;
-
-	scanspan = ri->ri_stride;
-	height = ri->ri_font->fontheight * nrows;
-	offset = (dstrow - srcrow) * scanspan * ri->ri_font->fontheight;
-	srcy = ri->ri_font->fontheight * srcrow;
-	if (srcrow < dstrow && srcrow + nrows > dstrow) {
-		scanspan = -scanspan;
-		srcy = srcy + height - 1;
-	}
-
-	p = (uint8_t *)ri->ri_bits + srcy * ri->ri_stride;
-	w = ri->ri_emuwidth;
-	width = w;
-	rmask = ALL1BITS << (-width & ALIGNMASK);
-	q = p;
-	while (height > 0) {
-		*P0(p + offset) = *P0(p);		/* always aligned */
-		*P1(p + offset) = *P1(p);
-		*P2(p + offset) = *P2(p);
-		*P3(p + offset) = *P3(p);
-		width -= 2 * BLITWIDTH;
-		while (width > 0) {
-			p += BYTESDONE;
-			*P0(p + offset) = *P0(p);
-			*P1(p + offset) = *P1(p);
-			*P2(p + offset) = *P2(p);
-			*P3(p + offset) = *P3(p);
-			width -= BLITWIDTH;
-		}
-		p += BYTESDONE;
-		*P0(p + offset) = (*P0(p) & rmask) | (*P0(p + offset) & ~rmask);
-		*P1(p + offset) = (*P1(p) & rmask) | (*P1(p + offset) & ~rmask);
-		*P2(p + offset) = (*P2(p) & rmask) | (*P2(p + offset) & ~rmask);
-		*P3(p + offset) = (*P3(p) & rmask) | (*P3(p + offset) & ~rmask);
-
-		p = (q += scanspan);
-		width = w;
-		height--;
-	}
-
-#else
-
 	// dd if=32 0.116sec
 
 	struct rasops_info *ri = cookie;
@@ -1665,7 +1379,6 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 			nrows--;
 		}
 	}
-#endif
 }
 
 static void
@@ -2068,77 +1781,6 @@ om1_cursor(void *cookie, int on, int row, int col)
 static void
 om4_cursor(void *cookie, int on, int row, int col)
 {
-#if 0
-	struct rasops_info *ri = cookie;
-	uint8_t *p;
-	int scanspan, startx, height, width, align, y;
-	uint32_t lmask, rmask;
-
-	if (!on) {
-		/* make sure it's on */
-		if ((ri->ri_flg & RI_CURSOR) == 0)
-			return;
-
-		row = ri->ri_crow;
-		col = ri->ri_ccol;
-	} else {
-		/* unpaint the old copy. */
-		ri->ri_crow = row;
-		ri->ri_ccol = col;
-	}
-
-	scanspan = ri->ri_stride;
-	y = ri->ri_font->fontheight * row;
-	startx = ri->ri_font->fontwidth * col;
-	height = ri->ri_font->fontheight;
-
-	p = (uint8_t *)ri->ri_bits + y * scanspan + ((startx / 32) * 4);
-	align = startx & ALIGNMASK;
-	width = ri->ri_font->fontwidth + align;
-	lmask = ALL1BITS >> align;
-	rmask = ALL1BITS << (-width & ALIGNMASK);
-
-	/* select all planes for later ROP function target */
-	*(volatile uint32_t *)OMFB_PLANEMASK = 0xff;
-
-	if (width <= BLITWIDTH) {
-		lmask &= rmask;
-		/* set lmask as ROP mask value, with INV2 mode */
-		((volatile uint32_t *)OMFB_ROPFUNC)[ROP_INV2] = lmask;
-
-		while (height > 0) {
-			*W(p) = ALL1BITS;
-			p += scanspan;
-			height--;
-		}
-		/* reset mask value */
-		((volatile uint32_t *)OMFB_ROPFUNC)[ROP_THROUGH] = ALL1BITS;
-	} else {
-		uint8_t *q = p;
-
-		while (height > 0) {
-			/* set lmask as ROP mask value, with INV2 mode */
-			((volatile uint32_t *)OMFB_ROPFUNC)[ROP_INV2] = lmask;
-			*W(p) = ALL1BITS;
-
-			p += BYTESDONE;
-
-			/* set rmask as ROP mask value, with INV2 mode */
-			((volatile uint32_t *)OMFB_ROPFUNC)[ROP_INV2] = rmask;
-			*W(p) = ALL1BITS;
-
-			p = (q += scanspan);
-			height--;
-		}
-		/* reset mask value */
-		((volatile uint32_t *)OMFB_ROPFUNC)[ROP_THROUGH] = ALL1BITS;
-	}
-	/* select plane #0 only; XXX need this ? */
-	*(volatile uint32_t *)OMFB_PLANEMASK = 0x01;
-
-	ri->ri_flg ^= RI_CURSOR;
-#else
-
 	struct rasops_info *ri = cookie;
 	int startx;
 	int width;
@@ -2179,7 +1821,6 @@ om4_cursor(void *cookie, int on, int row, int col)
 
 	/* reset mask value */
 	omfb_resetplanemask_and_ROP();
-#endif
 }
 
 /*
