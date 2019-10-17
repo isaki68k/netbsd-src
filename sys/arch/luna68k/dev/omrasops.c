@@ -79,8 +79,7 @@ static void	om4_copycols(void *, int, int, int, int);
 static void	om1_copyrows(void *, int, int, int num);
 static void	om4_copyrows(void *, int, int, int num);
 static void	omfb_erasecols(void *, int, int, int, long);
-static void	om1_eraserows(void *, int, int, long);
-static void	om4_eraserows(void *, int, int, long);
+static void	omfb_eraserows(void *, int, int, long);
 static int	omfb_allocattr(void *, int, int, int, long *);
 static void	omfb_unpack_attr(long, int *, int *, int *);
 
@@ -679,41 +678,7 @@ omfb_erasecols(void *cookie, int row, int startcol, int ncols, long attr)
 }
 
 static void
-om1_eraserows(void *cookie, int startrow, int nrows, long attr)
-{
-	struct rasops_info *ri = cookie;
-	uint8_t *p, *q;
-	int scanspan, starty, height, width, w;
-	uint32_t rmask, fill;
-
-	scanspan = ri->ri_stride;
-	starty = ri->ri_font->fontheight * startrow;
-	height = ri->ri_font->fontheight * nrows;
-	w = ri->ri_emuwidth;
-	fill = ((attr & 0x00000001) != 0) ? ALL1BITS : ALL0BITS;
-
-	p = (uint8_t *)ri->ri_bits + starty * scanspan;
-	width = w;
-	rmask = ALL1BITS << (-width & ALIGNMASK);
-	q = p;
-	while (height > 0) {
-		*P0(p) = fill;				/* always aligned */
-		width -= 2 * BLITWIDTH;
-		while (width > 0) {
-			p += BYTESDONE;
-			*P0(p) = fill;
-			width -= BLITWIDTH;
-		}
-		p += BYTESDONE;
-		*P0(p) = (fill & rmask) | (*P0(p) & ~rmask);
-		p = (q += scanspan);
-		width = w;
-		height--;
-	}
-}
-
-static void
-om4_eraserows(void *cookie, int startrow, int nrows, long attr)
+omfb_eraserows(void *cookie, int startrow, int nrows, long attr)
 {
 	struct rasops_info *ri = cookie;
 	int startx;
@@ -1750,7 +1715,7 @@ omrasops1_init(struct rasops_info *ri, int wantrows, int wantcols)
 	ri->ri_ops.copycols  = om1_copycols;
 	ri->ri_ops.erasecols = omfb_erasecols;
 	ri->ri_ops.copyrows  = om1_copyrows;
-	ri->ri_ops.eraserows = om1_eraserows;
+	ri->ri_ops.eraserows = omfb_eraserows;
 	ri->ri_ops.allocattr = omfb_allocattr;
 	ri->ri_caps = WSSCREEN_REVERSE;
 
@@ -1772,7 +1737,7 @@ omrasops4_init(struct rasops_info *ri, int wantrows, int wantcols)
 	ri->ri_ops.copycols  = om4_copycols;
 	ri->ri_ops.erasecols = omfb_erasecols;
 	ri->ri_ops.copyrows  = om4_copyrows;
-	ri->ri_ops.eraserows = om4_eraserows;
+	ri->ri_ops.eraserows = omfb_eraserows;
 	ri->ri_ops.allocattr = omfb_allocattr;
 	ri->ri_caps = WSSCREEN_HILIT | WSSCREEN_WSCOLORS | WSSCREEN_REVERSE;
 
