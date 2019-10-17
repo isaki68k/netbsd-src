@@ -74,8 +74,7 @@ __KERNEL_RCSID(0, "$NetBSD: omrasops.c,v 1.21 2019/07/31 02:09:02 rin Exp $");
 static void	om1_cursor(void *, int, int, int);
 static void	om4_cursor(void *, int, int, int);
 static int	om_mapchar(void *, int, unsigned int *);
-static void	om1_putchar(void *, int, int, u_int, long);
-static void	om4_putchar(void *, int, int, u_int, long);
+static void	omfb_putchar(void *, int, int, u_int, long);
 static void	om1_copycols(void *, int, int, int, int);
 static void	om4_copycols(void *, int, int, int, int);
 static void	om1_copyrows(void *, int, int, int num);
@@ -522,82 +521,7 @@ omfb_drawchar(
  * Blit a character at the specified co-ordinates.
  */
 static void
-om1_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
-{
-	struct rasops_info *ri = cookie;
-	uint8_t *p;
-	int scanspan, startx, height, width, align, y;
-	uint32_t lmask, rmask, glyph, inverse;
-	int i;
-	uint8_t *fb;
-
-	scanspan = ri->ri_stride;
-	y = ri->ri_font->fontheight * row;
-	startx = ri->ri_font->fontwidth * startcol;
-	height = ri->ri_font->fontheight;
-	fb = (uint8_t *)ri->ri_font->data +
-	    (uc - ri->ri_font->firstchar) * ri->ri_fontscale;
-	inverse = ((attr & 0x00000001) != 0) ? ALL1BITS : ALL0BITS;
-
-	p = (uint8_t *)ri->ri_bits + y * scanspan + ((startx / 32) * 4);
-	align = startx & ALIGNMASK;
-	width = ri->ri_font->fontwidth + align;
-	lmask = ALL1BITS >> align;
-	rmask = ALL1BITS << (-width & ALIGNMASK);
-	if (width <= BLITWIDTH) {
-		lmask &= rmask;
-		/* set lmask as ROP mask value, with THROUGH mode */
-		((volatile uint32_t *)OMFB_ROPFUNC)[ROP_THROUGH] = lmask;
-
-		while (height > 0) {
-			glyph = 0;
-			for (i = ri->ri_font->stride; i != 0; i--)
-				glyph = (glyph << 8) | *fb++;
-			glyph <<= (4 - ri->ri_font->stride) * NBBY;
-			glyph = (glyph >> align) ^ inverse;
-
-			*W(p) = glyph;
-
-			p += scanspan;
-			height--;
-		}
-		/* reset mask value */
-		((volatile uint32_t *)OMFB_ROPFUNC)[ROP_THROUGH] = ALL1BITS;
-	} else {
-		uint8_t *q = p;
-		uint32_t lhalf, rhalf;
-
-		while (height > 0) {
-			glyph = 0;
-			for (i = ri->ri_font->stride; i != 0; i--)
-				glyph = (glyph << 8) | *fb++;
-			glyph <<= (4 - ri->ri_font->stride) * NBBY;
-			lhalf = (glyph >> align) ^ inverse;
-			/* set lmask as ROP mask value, with THROUGH mode */
-			((volatile uint32_t *)OMFB_ROPFUNC)[ROP_THROUGH] =
-			    lmask;
-
-			*W(p) = lhalf;
-
-			p += BYTESDONE;
-
-			rhalf = (glyph << (BLITWIDTH - align)) ^ inverse;
-			/* set rmask as ROP mask value, with THROUGH mode */
-			((volatile uint32_t *)OMFB_ROPFUNC)[ROP_THROUGH] =
-			    rmask;
-
-			*W(p) = rhalf;
-
-			p = (q += scanspan);
-			height--;
-		}
-		/* reset mask value */
-		((volatile uint32_t *)OMFB_ROPFUNC)[ROP_THROUGH] = ALL1BITS;
-	}
-}
-
-static void
-om4_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
+omfb_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 {
 	struct rasops_info *ri = cookie;
 	int width;
@@ -1938,7 +1862,7 @@ omrasops1_init(struct rasops_info *ri, int wantrows, int wantcols)
 	/* fill our own emulops */
 	ri->ri_ops.cursor    = om1_cursor;
 	ri->ri_ops.mapchar   = om_mapchar;
-	ri->ri_ops.putchar   = om1_putchar;
+	ri->ri_ops.putchar   = omfb_putchar;
 	ri->ri_ops.copycols  = om1_copycols;
 	ri->ri_ops.erasecols = om1_erasecols;
 	ri->ri_ops.copyrows  = om1_copyrows;
@@ -1960,7 +1884,7 @@ omrasops4_init(struct rasops_info *ri, int wantrows, int wantcols)
 	/* fill our own emulops */
 	ri->ri_ops.cursor    = om4_cursor;
 	ri->ri_ops.mapchar   = om_mapchar;
-	ri->ri_ops.putchar   = om4_putchar;
+	ri->ri_ops.putchar   = omfb_putchar;
 	ri->ri_ops.copycols  = om4_copycols;
 	ri->ri_ops.erasecols = om4_erasecols;
 	ri->ri_ops.copyrows  = om4_copyrows;
