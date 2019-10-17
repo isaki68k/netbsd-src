@@ -188,29 +188,6 @@ om_reset_rowattr(int row, int bg)
 #define	GETBITS(psrc, x, w, dst)	FASTGETBITS(psrc, x, w, dst)
 #define	PUTBITS(src, x, w, pdst)	FASTPUTBITS(src, x, w, pdst)
 
-/* plane mask, ROP, ROPmask */
-
-/* set planemask for common plane and common ROP */
-static inline void
-om_setplanemask(int planemask)
-{
-	*(volatile uint32_t *)OMFB_PLANEMASK = planemask;
-}
-
-/* set ROP and ROP's mask for individual plane */
-static inline void
-om_setROP(int plane, int rop, uint32_t mask)
-{
-	((volatile uint32_t *)(BMAP_FN0 + OMFB_PLANEOFS * plane))[rop] = mask;
-}
-
-/* set ROP and ROP's mask for current setplanemask-ed plane(s) */
-static inline void
-om_setROP_curplane(int rop, uint32_t mask)
-{
-	((volatile uint32_t *)(OMFB_ROPFUNC))[rop] = mask;
-}
-
 /*
  * mask clear right
  */
@@ -257,7 +234,7 @@ om_fill(int planemask, int rop,
 	__assume(height > 0);
 	__assume(0 <= dstbitofs && dstbitofs < 32);
 
-	om_setplanemask(planemask);
+	omfb_setplanemask(planemask);
 
 	int16_t h16 = height - 1;
 
@@ -276,7 +253,7 @@ om_fill(int planemask, int rop,
 			width = 0;
 		}
 
-		om_setROP_curplane(rop, mask);
+		omfb_setROP_curplane(rop, mask);
 
 		{
 			uint8_t *d = dstptr;
@@ -321,7 +298,7 @@ om_fill_color(int color,
 	__assume(hwplanecount > 0);
 
 	/* select all planes */
-	om_setplanemask(hwplanemask);
+	omfb_setplanemask(hwplanemask);
 
 	mask = ALL1BITS >> dstbitofs;
 	dw = 32 - dstbitofs;
@@ -1019,9 +996,7 @@ om4_erasecols(void *cookie, int row, int startcol, int ncols, long attr)
 	}
 
 	/* reset mask value */
-	/* 先に ROP を設定するプレーンマスクを全プレーンにセット */
-	om_setplanemask(hwplanemask);
-	om_setROP_curplane(ROP_THROUGH, ALL1BITS);
+	omfb_resetplanemask_and_ROP();
 #endif
 }
 
@@ -1138,9 +1113,7 @@ om4_eraserows(void *cookie, int startrow, int nrows, long attr)
 		om_fill_color(bg, p, sl, scanspan, width, height);
 	}
 	/* reset mask value */
-	/* 先に ROP を設定するプレーンマスクを全プレーンにセット */
-	om_setplanemask(hwplanemask);
-	om_setROP_curplane(ROP_THROUGH, ALL1BITS);
+	omfb_resetplanemask_and_ROP();
 #endif
 }
 
@@ -1305,7 +1278,7 @@ om_rascopy_solo(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 		// ROP の状態を保持したたまマスクを設定することがハード的には
 		// できないので、ここでは共通ROPは使えない。
 		for (plane = 0; plane < hwplanecount; plane++) {
-			om_setROP(plane, rop[plane], mask);
+			omfb_setROP(plane, rop[plane], mask);
 		}
 
 		asm volatile(
@@ -1329,7 +1302,7 @@ om_rascopy_solo(uint8_t *dst, uint8_t *src, int16_t width, int16_t height,
 		);
 
 		for (plane = 0; plane < hwplanecount; plane++) {
-			om_setROP(plane, rop[plane], ALL1BITS);
+			omfb_setROP(plane, rop[plane], ALL1BITS);
 		}
 	}
 }
@@ -1509,8 +1482,8 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		uint32_t mask;
 
 		mask = ALL1BITS << (32 - wl);
-		om_setplanemask(hwplanemask);
-		om_setROP_curplane(ROP_THROUGH, mask);
+		omfb_setplanemask(hwplanemask);
+		omfb_setROP_curplane(ROP_THROUGH, mask);
 
 		asm volatile(
 		"move.l	%[h],%[hloop];\n\t"
@@ -1544,8 +1517,8 @@ om4_rascopy_multi(uint8_t *dst0, uint8_t *src0, int16_t width, int16_t height)
 		  "memory"
 		);
 
-		om_setplanemask(hwplanemask);
-		om_setROP_curplane(ROP_THROUGH, ALL1BITS);
+		omfb_resetplanemask_and_ROP();
+
 	}
 }
 
@@ -1631,7 +1604,7 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 	ptrstep = ri->ri_stride * rowheight;
 
 
-	om_setplanemask(hwplanemask);
+	omfb_setplanemask(hwplanemask);
 
 	uint8_t rop[OMFB_MAX_PLANECOUNT];
 	int srcplane = 0;
@@ -1659,7 +1632,7 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 			// src とdst は共通プレーンを指しているので P0 に変換
 			uint8_t *src0 = src + OMFB_PLANEOFS;
 			uint8_t *dst0 = dst + OMFB_PLANEOFS;
-			om_setROP_curplane(ROP_THROUGH, ALL1BITS);
+			omfb_setROP_curplane(ROP_THROUGH, ALL1BITS);
 			om4_rascopy_multi(dst0, src0, width, rowheight * r);
 		} else {
 			uint8_t fg = rowattr[srcrow].fg;
@@ -1670,7 +1643,7 @@ om4_copyrows(void *cookie, int srcrow, int dstrow, int nrows)
 			for (i = 0; i < hwplanecount; i++) {
 				int t = (fg & 1) * 2 + (bg & 1);
 				rop[i] = ropsel[t];
-				om_setROP(i, rop[i], ALL1BITS);
+				omfb_setROP(i, rop[i], ALL1BITS);
 				if (t == 2) {
 					srcplane = i;
 				}
@@ -2209,8 +2182,7 @@ om4_cursor(void *cookie, int on, int row, int col)
 
 	/* reset mask value */
 	/* 先に ROP を設定するプレーンマスクを全プレーンにセット */
-	om_setplanemask(hwplanemask);
-	om_setROP_curplane(ROP_THROUGH, ALL1BITS);
+	omfb_setROP_curplane(ROP_THROUGH, ALL1BITS);
 #endif
 }
 
