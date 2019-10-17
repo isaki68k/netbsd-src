@@ -73,6 +73,7 @@ extern int hwplanecount;
  */
 #define W(addr)  ((uint32_t *)(addr))
 
+/* obsoleted */
 #define P0(addr) ((uint32_t *)((uint8_t *)(addr) + OMFB_PLANEOFS * 1))
 #define P1(addr) ((uint32_t *)((uint8_t *)(addr) + OMFB_PLANEOFS * 2))
 #define P2(addr) ((uint32_t *)((uint8_t *)(addr) + OMFB_PLANEOFS * 3))
