@@ -79,8 +79,7 @@ static void	om1_copycols(void *, int, int, int, int);
 static void	om4_copycols(void *, int, int, int, int);
 static void	om1_copyrows(void *, int, int, int num);
 static void	om4_copyrows(void *, int, int, int num);
-static void	om1_erasecols(void *, int, int, int, long);
-static void	om4_erasecols(void *, int, int, int, long);
+static void	omfb_erasecols(void *, int, int, int, long);
 static void	om1_eraserows(void *, int, int, long);
 static void	om4_eraserows(void *, int, int, long);
 static int	omfb_allocattr(void *, int, int, int, long *);
@@ -643,55 +642,7 @@ omfb_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 }
 
 static void
-om1_erasecols(void *cookie, int row, int startcol, int ncols, long attr)
-{
-	struct rasops_info *ri = cookie;
-	uint8_t *p;
-	int scanspan, startx, height, width, align, w, y;
-	uint32_t lmask, rmask, fill;
-
-	scanspan = ri->ri_stride;
-	y = ri->ri_font->fontheight * row;
-	startx = ri->ri_font->fontwidth * startcol;
-	height = ri->ri_font->fontheight;
-	w = ri->ri_font->fontwidth * ncols;
-	fill = ((attr & 0x00000001) != 0) ? ALL1BITS : ALL0BITS;
-
-	p = (uint8_t *)ri->ri_bits + y * scanspan + ((startx / 32) * 4);
-	align = startx & ALIGNMASK;
-	width = w + align;
-	lmask = ALL1BITS >> align;
-	rmask = ALL1BITS << (-width & ALIGNMASK);
-	if (width <= BLITWIDTH) {
-		lmask &= rmask;
-		fill  &= lmask;
-		while (height > 0) {
-			*P0(p) = (*P0(p) & ~lmask) | fill;
-			p += scanspan;
-			height--;
-		}
-	} else {
-		uint8_t *q = p;
-		while (height > 0) {
-			*P0(p) = (*P0(p) & ~lmask) | (fill & lmask);
-			width -= 2 * BLITWIDTH;
-			while (width > 0) {
-				p += BYTESDONE;
-				*P0(p) = fill;
-				width -= BLITWIDTH;
-			}
-			p += BYTESDONE;
-			*P0(p) = (fill & rmask) | (*P0(p) & ~rmask);
-
-			p = (q += scanspan);
-			width = w + align;
-			height--;
-		}
-	}
-}
-
-static void
-om4_erasecols(void *cookie, int row, int startcol, int ncols, long attr)
+omfb_erasecols(void *cookie, int row, int startcol, int ncols, long attr)
 {
 	struct rasops_info *ri = cookie;
 	int startx;
@@ -1864,7 +1815,7 @@ omrasops1_init(struct rasops_info *ri, int wantrows, int wantcols)
 	ri->ri_ops.mapchar   = om_mapchar;
 	ri->ri_ops.putchar   = omfb_putchar;
 	ri->ri_ops.copycols  = om1_copycols;
-	ri->ri_ops.erasecols = om1_erasecols;
+	ri->ri_ops.erasecols = omfb_erasecols;
 	ri->ri_ops.copyrows  = om1_copyrows;
 	ri->ri_ops.eraserows = om1_eraserows;
 	ri->ri_ops.allocattr = omfb_allocattr;
@@ -1886,7 +1837,7 @@ omrasops4_init(struct rasops_info *ri, int wantrows, int wantcols)
 	ri->ri_ops.mapchar   = om_mapchar;
 	ri->ri_ops.putchar   = omfb_putchar;
 	ri->ri_ops.copycols  = om4_copycols;
-	ri->ri_ops.erasecols = om4_erasecols;
+	ri->ri_ops.erasecols = omfb_erasecols;
 	ri->ri_ops.copyrows  = om4_copyrows;
 	ri->ri_ops.eraserows = om4_eraserows;
 	ri->ri_ops.allocattr = omfb_allocattr;
