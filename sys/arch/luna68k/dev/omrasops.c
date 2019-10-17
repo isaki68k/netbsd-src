@@ -2178,8 +2178,7 @@ om4_cursor(void *cookie, int on, int row, int col)
 	ri->ri_flg ^= RI_CURSOR;
 
 	/* reset mask value */
-	/* 先に ROP を設定するプレーンマスクを全プレーンにセット */
-	omfb_setROP_curplane(ROP_THROUGH, ALL1BITS);
+	omfb_resetplanemask_and_ROP();
 #endif
 }
 
