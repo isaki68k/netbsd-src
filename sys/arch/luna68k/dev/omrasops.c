@@ -84,9 +84,8 @@ static void	om1_erasecols(void *, int, int, int, long);
 static void	om4_erasecols(void *, int, int, int, long);
 static void	om1_eraserows(void *, int, int, long);
 static void	om4_eraserows(void *, int, int, long);
-static int	om1_allocattr(void *, int, int, int, long *);
-static int	om4_allocattr(void *, int, int, int, long *);
-static void	om4_unpack_attr(long, int *, int *, int *);
+static int	omfb_allocattr(void *, int, int, int, long *);
+static void	omfb_unpack_attr(long, int *, int *, int *);
 
 static int	omrasops_init(struct rasops_info *, int, int);
 
@@ -611,7 +610,7 @@ om4_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 	uint8_t *fb;
 
 #if defined(VT100_SIXEL)
-	if (attr & 1 /* WTATTR_SIXEL */) {
+	if ((attr & OMFB_ATTR_SIXEL)) {
 		omfb_sixel(ri, row, startcol, uc, attr);
 		return;
 	}
@@ -708,7 +707,7 @@ om4_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 			+ fonty * height * OMFB_STRIDE;
 		fontstride = OMFB_STRIDE;
 	}
-	om4_unpack_attr(attr, &fg, &bg, NULL);
+	omfb_unpack_attr(attr, &fg, &bg, NULL);
 
 	om_set_rowattr(row, fg, bg);
 
@@ -785,7 +784,7 @@ om4_erasecols(void *cookie, int row, int startcol, int ncols, long attr)
 	startx = ri->ri_font->fontwidth * startcol;
 	width = ri->ri_font->fontwidth * ncols;
 	height = ri->ri_font->fontheight;
-	om4_unpack_attr(attr, &fg, &bg, NULL);
+	omfb_unpack_attr(attr, &fg, &bg, NULL);
 	sh = startx >> 5;
 	sl = startx & 0x1f;
 	p = (uint8_t *)ri->ri_bits + y * scanspan + sh * 4;
@@ -857,7 +856,7 @@ om4_eraserows(void *cookie, int startrow, int nrows, long attr)
 	startx = 0;
 	width = ri->ri_emuwidth;
 	height = ri->ri_font->fontheight * nrows;
-	om4_unpack_attr(attr, &fg, &bg, NULL);
+	omfb_unpack_attr(attr, &fg, &bg, NULL);
 	sh = startx >> 5;
 	sl = startx & 0x1f;
 	p = (uint8_t *)ri->ri_bits + y * scanspan + sh * 4;
@@ -1826,58 +1825,105 @@ om4_cursor(void *cookie, int on, int row, int col)
 /*
  * Allocate attribute. We just pack these into an integer.
  */
+/*
+ * attr bitmap:
+ * 31 30 29 ............ 18 17 16
+ * SI MC <--- reserved ---> UL BO
+ *  SI: SIXEL mode (VT100_SIXEL で使用)
+ *  MC: multi-color row attribute (copyrows で利用)
+ *   SI or MC が立っている行は複数カラー使用されていると判定する
+ *  UL: Underline (現在未サポート)
+ *  BO: Bold (1bpp HILIT サポート用、現在未サポート)
+ *  reserved: must be 0
+ * 15 ... 8  7 .... 0
+ * <--fg-->  <--bg-->
+#if 0
+ * TODO:
+ * f8 b8 f7 b7 f6 b6 f5 b5 f4 b4 f3 b3 f2 b2 f1 b1 f0 b0
+ * reverse を処理した後の fg, bg  を 1 ビットごとに分解して格納する。
+ * プレーン ROP の設定時の演算コストを下げるためにここで分解する。
+ * 1bpp の場合は f0, b0 を使用する。
+ * 4bpp の場合は f3...b0 を使用する。
+ * 8bpp の場合は f7...b0 を使用する。
+#endif
+ */
 static int
-om1_allocattr(void *id, int fg, int bg, int flags, long *attrp)
+omfb_allocattr(void *id, int fg, int bg, int flags, long *attrp)
 {
+	uint32_t a = 0;
+	uint16_t c = 0;
 
-	if ((flags & (WSATTR_HILIT | WSATTR_BLINK |
-	    WSATTR_UNDERLINE | WSATTR_WSCOLORS)) != 0)
+	if ((flags && WSATTR_BLINK))
 		return EINVAL;
-	if ((flags & WSATTR_REVERSE) != 0)
-		*attrp = 1;
-	else
-		*attrp = 0;
-	return 0;
-}
 
-static int
-om4_allocattr(void *id, int fg, int bg, int flags, long *attrp)
-{
-
-	if ((flags & (WSATTR_BLINK | WSATTR_UNDERLINE)) != 0)
-		return EINVAL;
 	if ((flags & WSATTR_WSCOLORS) == 0) {
-		fg = WSCOL_WHITE;
-		bg = WSCOL_BLACK;
+		fg = WSCOL_WHITE;	/* maybe 7 or 1 */
+		bg = WSCOL_BLACK;	/* maybe 0 */
 	}
 
-	if ((flags & WSATTR_REVERSE) != 0) {
+	if ((flags & WSATTR_REVERSE)) {
 		int swap;
 		swap = fg;
 		fg = bg;
 		bg = swap;
 	}
 
-	if ((flags & WSATTR_HILIT) != 0)
-		fg += 8;
+	if ((flags & WSATTR_HILIT)) {
+		if (omfb_planecount == 1) {
+#if 0
+			a |= OMFB_ATTR_BOLD;
+#else
+			return EINVAL;
+#endif
+		} else if (fg < 8) {
+			fg += 8;
+		}
+	}
 
-	*attrp = (fg << 24) | (bg << 16);
+	if ((flags & WSATTR_UNDERLINE)) {
+#if 0
+		a |= OMFB_ATTR_UNDERLINE;
+#else
+		return EINVAL;
+#endif
+	}
 
 #if defined(VT100_SIXEL)
-	if (flags & WSATTR_SIXEL) {
-		*attrp |= (flags >> 16) & 3;
+	if ((flags & WSATTR_SIXEL)) {
+		a |= OMFB_ATTR_SIXEL;
 	}
 #endif
 
+	fg &= omfb_planemask;
+	bg &= omfb_planemask;
+
+#if 0
+	int i;
+	for (i = 0; i < omfb_planecount; i++) {
+		c += c;
+		c += ((fg & 1) << 1) | (bg & 1);
+		fg >>= 1;
+		bg >>= 1;
+	}
+#else
+	c = (fg  << 8) | bg;
+#endif
+	a |= c;
+
+	*attrp = a;
 	return 0;
 }
 
 static void
-om4_unpack_attr(long attr, int *fg, int *bg, int *underline)
+omfb_unpack_attr(long attr, int *fg, int *bg, int *underline)
 {
+	int f, b;
 
-	*fg = ((u_int)attr >> 24) & 0xf;
-	*bg = ((u_int)attr >> 16) & 0xf;
+	f = (attr >> 8) & omfb_planemask;
+	b = attr & omfb_planemask;
+
+	if (fg) *fg = f;
+	if (bg) *bg = b;
 }
 
 /*
@@ -1897,7 +1943,7 @@ omrasops1_init(struct rasops_info *ri, int wantrows, int wantcols)
 	ri->ri_ops.erasecols = om1_erasecols;
 	ri->ri_ops.copyrows  = om1_copyrows;
 	ri->ri_ops.eraserows = om1_eraserows;
-	ri->ri_ops.allocattr = om1_allocattr;
+	ri->ri_ops.allocattr = omfb_allocattr;
 	ri->ri_caps = WSSCREEN_REVERSE;
 
 	ri->ri_flg |= RI_CFGDONE;
@@ -1919,7 +1965,7 @@ omrasops4_init(struct rasops_info *ri, int wantrows, int wantcols)
 	ri->ri_ops.erasecols = om4_erasecols;
 	ri->ri_ops.copyrows  = om4_copyrows;
 	ri->ri_ops.eraserows = om4_eraserows;
-	ri->ri_ops.allocattr = om4_allocattr;
+	ri->ri_ops.allocattr = omfb_allocattr;
 	ri->ri_caps = WSSCREEN_HILIT | WSSCREEN_WSCOLORS | WSSCREEN_REVERSE;
 
 	ri->ri_flg |= RI_CFGDONE;
@@ -2007,8 +2053,9 @@ omrasops_init(struct rasops_info *ri, int wantrows, int wantcols)
  * y: (row-relative-y [pixel]) << 16 | row
  * x: (col-relative-x [pixel]) << 16 | col
  * uc: sixel char
+ *  uc:0:16 = repeat width
+ *  uc:16:16 = sixel pattern
  * attr: (attr:fg) = color
- *       (attr:16:16) = sixel repeat count
  */
 static void
 omfb_sixel(struct rasops_info *ri, int yrow, int xcol, u_int uc, long attr)
@@ -2053,7 +2100,7 @@ omfb_sixel(struct rasops_info *ri, int yrow, int xcol, u_int uc, long attr)
 	xh = x >> 5;
 	xl = x & 0x1f;
 
-	om4_unpack_attr(attr, &fg, &bg, NULL);
+	omfb_unpack_attr(attr, &fg, &bg, NULL);
 
 	dst = (uint8_t *)ri->ri_bits + y * ri->ri_stride + xh * 4;
 	ormode = attr & 0x2;

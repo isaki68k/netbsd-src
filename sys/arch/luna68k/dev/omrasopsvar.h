@@ -109,6 +109,17 @@ extern int hwplanecount;
 #define ROP_NAND	14	/* ~D | ~M	*/
 #define ROP_ONE		15	/* all 1	*/
 
+/*
+ * internal attributes. see allocattr
+ */
+#define OMFB_ATTR_SIXEL			(1U << 31)
+#define OMFB_ATTR_MULTICOLOR		(1U << 30)
+#define OMFB_ATTR_UNDERLINE		(1U << 17)
+#define OMFB_ATTR_BOLD			(1U << 16)
+
+/*
+ */
+
 int omrasops1_init(struct rasops_info *, int, int);
 int omrasops4_init(struct rasops_info *, int, int);
 
