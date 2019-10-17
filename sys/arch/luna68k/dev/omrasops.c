@@ -71,8 +71,7 @@ __KERNEL_RCSID(0, "$NetBSD: omrasops.c,v 1.21 2019/07/31 02:09:02 rin Exp $");
 #endif
 
 /* wscons emulator operations */
-static void	om1_cursor(void *, int, int, int);
-static void	om4_cursor(void *, int, int, int);
+static void	omfb_cursor(void *, int, int, int);
 static int	om_mapchar(void *, int, unsigned int *);
 static void	omfb_putchar(void *, int, int, u_int, long);
 static void	om1_copycols(void *, int, int, int, int);
@@ -1587,73 +1586,7 @@ om_mapchar(void *cookie, int c, u_int *cp)
  * Position|{enable|disable} the cursor at the specified location.
  */
 static void
-om1_cursor(void *cookie, int on, int row, int col)
-{
-	struct rasops_info *ri = cookie;
-	uint8_t *p;
-	int scanspan, startx, height, width, align, y;
-	uint32_t lmask, rmask;
-
-	if (!on) {
-		/* make sure it's on */
-		if ((ri->ri_flg & RI_CURSOR) == 0)
-			return;
-
-		row = ri->ri_crow;
-		col = ri->ri_ccol;
-	} else {
-		/* unpaint the old copy. */
-		ri->ri_crow = row;
-		ri->ri_ccol = col;
-	}
-
-	scanspan = ri->ri_stride;
-	y = ri->ri_font->fontheight * row;
-	startx = ri->ri_font->fontwidth * col;
-	height = ri->ri_font->fontheight;
-
-	p = (uint8_t *)ri->ri_bits + y * scanspan + ((startx / 32) * 4);
-	align = startx & ALIGNMASK;
-	width = ri->ri_font->fontwidth + align;
-	lmask = ALL1BITS >> align;
-	rmask = ALL1BITS << (-width & ALIGNMASK);
-	if (width <= BLITWIDTH) {
-		lmask &= rmask;
-		/* set lmask as ROP mask value, with INV2 mode */
-		((volatile uint32_t *)OMFB_ROPFUNC)[ROP_INV2] = lmask;
-
-		while (height > 0) {
-			*P0(p) = ALL1BITS;
-			p += scanspan;
-			height--;
-		}
-		/* reset mask value */
-		((volatile uint32_t *)OMFB_ROPFUNC)[ROP_THROUGH] = ALL1BITS;
-	} else {
-		uint8_t *q = p;
-
-		while (height > 0) {
-			/* set lmask as ROP mask value, with INV2 mode */
-			((volatile uint32_t *)OMFB_ROPFUNC)[ROP_INV2] = lmask;
-			*W(p) = ALL1BITS;
-
-			p += BYTESDONE;
-
-			/* set lmask as ROP mask value, with INV2 mode */
-			((volatile uint32_t *)OMFB_ROPFUNC)[ROP_INV2] = rmask;
-			*W(p) = ALL1BITS;
-
-			p = (q += scanspan);
-			height--;
-		}
-		/* reset mask value */
-		((volatile uint32_t *)OMFB_ROPFUNC)[ROP_THROUGH] = ALL1BITS;
-	}
-	ri->ri_flg ^= RI_CURSOR;
-}
-
-static void
-om4_cursor(void *cookie, int on, int row, int col)
+omfb_cursor(void *cookie, int on, int row, int col)
 {
 	struct rasops_info *ri = cookie;
 	int startx;
@@ -1811,7 +1744,7 @@ omrasops1_init(struct rasops_info *ri, int wantrows, int wantcols)
 	omrasops_init(ri, wantrows, wantcols);
 
 	/* fill our own emulops */
-	ri->ri_ops.cursor    = om1_cursor;
+	ri->ri_ops.cursor    = omfb_cursor;
 	ri->ri_ops.mapchar   = om_mapchar;
 	ri->ri_ops.putchar   = omfb_putchar;
 	ri->ri_ops.copycols  = om1_copycols;
@@ -1833,7 +1766,7 @@ omrasops4_init(struct rasops_info *ri, int wantrows, int wantcols)
 	omrasops_init(ri, wantrows, wantcols);
 
 	/* fill our own emulops */
-	ri->ri_ops.cursor    = om4_cursor;
+	ri->ri_ops.cursor    = omfb_cursor;
 	ri->ri_ops.mapchar   = om_mapchar;
 	ri->ri_ops.putchar   = omfb_putchar;
 	ri->ri_ops.copycols  = om4_copycols;
