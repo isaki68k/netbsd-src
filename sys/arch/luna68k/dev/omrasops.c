@@ -402,7 +402,7 @@ static const uint8_t ropsel[] = {
  * breaks: planemask, ROP
  */
 static void
-omfb_putchar(
+omfb_drawchar(
 	struct rasops_info *ri,
 	int x, int y,
 	int width, int height,
@@ -459,7 +459,7 @@ omfb_putchar(
 			width = 0;
 		}
 
-		/* putchar の場合、width ループは 1 か 2 回で毎回 mask が違う
+		/* drawchar の場合、width ループは 1 か 2 回で毎回 mask が違う
 		はずなので毎回セットしたほうがいい */
 #if 0
 		for (plane = 0; plane < omfb_planecount; plane++) {
@@ -712,7 +712,7 @@ om4_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 
 	om_set_rowattr(row, fg, bg);
 
-	omfb_putchar(ri, x, y, width, height,
+	omfb_drawchar(ri, x, y, width, height,
 		fb, fontstride, fontx, heightscale,
 		fg, bg);
 
