@@ -234,9 +234,48 @@ test_SNDCTL_DSP_SPEED()
 	}
 }
 
+void
+test_SNDCTL_DSP_STEREO()
+{
+	int fd;
+	int r;
+	int is_stereo;
+
+	TEST("SNDCTL_DSP_STEREO");
+
+	for (int mode = 0; mode <= 2; mode++) {
+		DESC("%s", openmodetable[mode]);
+
+		fd = OPEN(devaudio, mode);
+		if (fd == -1) {
+			// テスト不要
+			continue;
+		}
+
+		// 検査(mono)
+		is_stereo = 0;
+		r = IOCTL(fd, SNDCTL_DSP_STEREO, &is_stereo, "stereo=0");
+		XP_SYS_EQ(0, r);
+		XP_EQ(0, is_stereo);
+
+		// 検査(stereo)
+		// 非ゼロなら stereo のはず
+		is_stereo = 100;
+		r = IOCTL(fd, SNDCTL_DSP_STEREO, &is_stereo, "stereo=1");
+		XP_SYS_EQ(0, r);
+		// 非ゼロかだけ調べる
+		DPRINTF("  > %d: is_stereo = %d\n", __LINE__, is_stereo);
+		XP_NE(0, is_stereo);
+
+		r = CLOSE(fd);
+		XP_SYS_EQ(0, r);
+	}
+}
+
 // テスト一覧
 #define DEF(x)	{ #x, test_ ## x }
 struct testtable testtable[] = {
 	DEF(SNDCTL_DSP_SPEED),
+	DEF(SNDCTL_DSP_STEREO),
 	{ NULL, NULL },
 };
