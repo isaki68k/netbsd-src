@@ -15,6 +15,7 @@ CXX.alpha=	/var/obj/7/alpha/tools/bin/alpha--netbsd-g++ \
 
 CPPFLAGS+=	-g
 CPPFLAGS+=	-Wall -Wno-sign-compare -Wno-narrowing -Wformat
+CPPFLAGS+=	-Wno-format-truncation
 LIBS+=	-lutil
 
 # 限りなくカーネル内と近いオブジェクトを生成するため。
