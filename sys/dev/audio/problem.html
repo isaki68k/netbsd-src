@@ -761,6 +761,29 @@ kernel panic when 'sysctl hw.audio0'
 panic in audio_close
 <dd>pad を先にクローズすると死ぬ問題。
 
+<dt><a href="http://gnats.netbsd.org/54474">kern/54474</a>
+Jetson TK1 audio playback has clicks since isaki-audio2 merge
+<dd>hdafg の問題だったようだが、追試ないと分からん。
+
+<dt><a href="http://gnats.netbsd.org/54547">kern/54547</a>
+running stress-ng --dev 1 will cause the kernel to panic and reboot
+<dd>詳細不明。nat が N8 の mmap あたりを直したようだ。
+
+<dt><font color=#555><a href="http://gnats.netbsd.org/54614">kern/54614</a>
+playing with uaudio panics on rpi</font>
+<dd>DMA あたりの問題?
+
+<dt><font color=#555><s><a href="http://gnats.netbsd.org/54658">kern/54658</a></s>
+zaudio(4) attach failure (after MI i2c(4) changes?)</font>
+<dd>MI i2c 側の問題。
+
+<dt><s><a href="http://gnats.netbsd.org/54662">kern/54662</a></s>
+uaudio sometimes not recognized
+<dd>メンバ変数の初期化漏れ。他に同様のドライバはなかった。
+
+<dt><s><a href="http://gnats.netbsd.org/54667">kern/54667</a></s>
+libossaudio returns incorrect recording sample rate
+<dd>録音再生が分離されたことに libossaudio 側が対応してなかった件。
 
 </dl>
 
