@@ -272,10 +272,75 @@ test_SNDCTL_DSP_STEREO()
 	}
 }
 
+void
+test_SNDCTL_DSP_SETFMT()
+{
+	int fd;
+	int r;
+	int fmt;
+
+	TEST("SNDCTL_DSP_SETFMT");
+
+	for (int mode = 0; mode <= 2; mode++) {
+		DESC("%s", openmodetable[mode]);
+
+		fd = OPEN(devaudio, mode);
+		if (fd == -1) {
+			// テスト不要
+			continue;
+		}
+
+		// 検査
+		// とりあえず代表で一つだけ
+		fmt = AFMT_S16_LE;
+		r = IOCTL(fd, SNDCTL_DSP_SETFMT, &fmt, "");
+		XP_SYS_EQ(0, r);
+		DPRINTF("  > %d: fmt = %d\n", __LINE__, fmt);
+		XP_EQ(AFMT_S16_LE, fmt);
+
+		r = CLOSE(fd);
+		XP_SYS_EQ(0, r);
+	}
+}
+
+void
+test_SNDCTL_DSP_CHANNELS()
+{
+	int fd;
+	int r;
+	int channels;
+
+	TEST("SNDCTL_DSP_CHANNELS");
+
+	for (int mode = 0; mode <= 2; mode++) {
+		DESC("%s", openmodetable[mode]);
+
+		fd = OPEN(devaudio, mode);
+		if (fd == -1) {
+			// テスト不要
+			continue;
+		}
+
+		// 検査
+		// とりあえず代表で一つだけ
+		channels = 2;
+		r = IOCTL(fd, SNDCTL_DSP_CHANNELS, &channels, "");
+		XP_SYS_EQ(0, r);
+		DPRINTF("  > %d: channels = %d\n", __LINE__, channels);
+		XP_EQ(2, channels);
+
+		r = CLOSE(fd);
+		XP_SYS_EQ(0, r);
+	}
+}
+
+
 // テスト一覧
 #define DEF(x)	{ #x, test_ ## x }
 struct testtable testtable[] = {
 	DEF(SNDCTL_DSP_SPEED),
 	DEF(SNDCTL_DSP_STEREO),
+	DEF(SNDCTL_DSP_SETFMT),
+	DEF(SNDCTL_DSP_CHANNELS),
 	{ NULL, NULL },
 };
