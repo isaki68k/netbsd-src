@@ -1,4 +1,4 @@
-/*	$NetBSD: imxpcie.c,v 1.1 2019/07/24 12:33:18 hkenken Exp $	*/
+/*	$NetBSD: imxpcie.c,v 1.3 2019/10/16 11:16:30 hkenken Exp $	*/
 
 /*
  * Copyright (c) 2019  Genetec Corporation.  All rights reserved.
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: imxpcie.c,v 1.1 2019/07/24 12:33:18 hkenken Exp $");
+__KERNEL_RCSID(0, "$NetBSD: imxpcie.c,v 1.3 2019/10/16 11:16:30 hkenken Exp $");
 
 #include "opt_pci.h"
 #include "opt_fdt.h"
@@ -133,6 +133,7 @@ imxpcie_init_phy(struct imxpcie_softc *sc)
 	v |= __SHIFTIN(20, IOMUX_GPR8_PCS_TX_DEEMPH_GEN1);
 	sc->sc_gpr_write(sc, IOMUX_GPR8, v);
 
+	v = sc->sc_gpr_read(sc, IOMUX_GPR12);
 	v &= ~IOMUX_GPR12_DEVICE_TYPE;
 	v |= IOMUX_GPR12_DEVICE_TYPE_PCIE_RC;
 	sc->sc_gpr_write(sc, IOMUX_GPR12, v);
@@ -244,28 +245,26 @@ imxpcie_phy_read(struct imxpcie_softc *sc, uint32_t addr)
 static int
 imxpcie_assert_core_reset(struct imxpcie_softc *sc)
 {
-	uint32_t gpr1;
-	uint32_t gpr12;
+	uint32_t gpr1 = sc->sc_gpr_read(sc, IOMUX_GPR1);
 
-	gpr1 = sc->sc_gpr_read(sc, IOMUX_GPR1);
-	gpr12 = sc->sc_gpr_read(sc, IOMUX_GPR12);
+	if (sc->sc_have_sw_reset) {
+		gpr1 |= IOMUX_GPR1_PCIE_SW_RST;
+		sc->sc_gpr_write(sc, IOMUX_GPR1, gpr1);
+	} else {
+		uint32_t gpr12 = sc->sc_gpr_read(sc, IOMUX_GPR12);
 
-	/* already enabled by bootloader */
-	if ((gpr1 & IOMUX_GPR1_REF_SSP_EN) &&
-	    (gpr12 & IOMUX_GPR12_APP_LTSSM_ENABLE)) {
-		uint32_t v = PCIE_READ(sc, PCIE_PL_PFLR);
-		v &= ~PCIE_PL_PFLR_LINK_STATE;
-		v |= PCIE_PL_PFLR_FORCE_LINK;
-		PCIE_WRITE(sc, PCIE_PL_PFLR, v);
+		/* already enabled by bootloader */
+		if ((gpr1 & IOMUX_GPR1_REF_SSP_EN) &&
+		    (gpr12 & IOMUX_GPR12_APP_LTSSM_ENABLE)) {
+			uint32_t v = PCIE_READ(sc, PCIE_PL_PFLR);
+			v &= ~PCIE_PL_PFLR_LINK_STATE;
+			v |= PCIE_PL_PFLR_FORCE_LINK;
+			PCIE_WRITE(sc, PCIE_PL_PFLR, v);
 
-		gpr12 &= ~IOMUX_GPR12_APP_LTSSM_ENABLE;
-		sc->sc_gpr_write(sc, IOMUX_GPR12, gpr12);
+			gpr12 &= ~IOMUX_GPR12_APP_LTSSM_ENABLE;
+			sc->sc_gpr_write(sc, IOMUX_GPR12, gpr12);
+		}
 	}
-
-#if defined(IMX6DQP)
-	gpr1 |= IOMUX_GPR1_PCIE_SW_RST;
-	sc->sc_gpr_write(sc, IOMUX_GPR1, gpr1);
-#endif
 
 	gpr1 |= IOMUX_GPR1_TEST_POWERDOWN;
 	sc->sc_gpr_write(sc, IOMUX_GPR1, gpr1);
@@ -280,28 +279,34 @@ imxpcie_deassert_core_reset(struct imxpcie_softc *sc)
 {
 	int error;
 
-	error = clk_enable(sc->sc_clk_pcie_axi);
+	error = clk_enable(sc->sc_clk_pcie);
 	if (error) {
-		aprint_error_dev(sc->sc_dev, "couldn't enable pcie_axi: %d\n", error);
+		aprint_error_dev(sc->sc_dev, "couldn't enable pcie: %d\n", error);
 		return error;
 	}
-	error = clk_enable(sc->sc_clk_lvds1_gate);
-	if (error) {
-		aprint_error_dev(sc->sc_dev, "couldn't enable lvds1_gate: %d\n", error);
-		return error;
+
+	if (sc->sc_ext_osc) {
+		error = clk_enable(sc->sc_clk_pcie_ext);
+		if (error) {
+			aprint_error_dev(sc->sc_dev, "couldn't enable ext: %d\n", error);
+			return error;
+		}
+	} else {
+		error = clk_enable(sc->sc_clk_pcie_bus);
+		if (error) {
+			aprint_error_dev(sc->sc_dev, "couldn't enable pcie_bus: %d\n",
+			    error);
+			return error;
+		}
 	}
-	error = clk_enable(sc->sc_clk_pcie_ref);
+
+	error = clk_enable(sc->sc_clk_pcie_phy);
 	if (error) {
 		aprint_error_dev(sc->sc_dev, "couldn't enable pcie_ref: %d\n", error);
 		return error;
 	}
 
 	uint32_t gpr1 = sc->sc_gpr_read(sc, IOMUX_GPR1);
-
-#if defined(IMX6DQP)
-	gpr1 &= ~IOMUX_GPR1_PCIE_SW_RST;
-	sc->sc_gpr_write(sc, IOMUX_GPR1, gpr1);
-#endif
 
 	delay(50 * 1000);
 
@@ -316,6 +321,47 @@ imxpcie_deassert_core_reset(struct imxpcie_softc *sc)
 	/* Reset */
 	if (sc->sc_reset != NULL)
 		sc->sc_reset(sc);
+
+	if (sc->sc_have_sw_reset) {
+		gpr1 &= ~IOMUX_GPR1_PCIE_SW_RST;
+		sc->sc_gpr_write(sc, IOMUX_GPR1, gpr1);
+		delay(200);
+	}
+
+	uint64_t rate;
+	if (sc->sc_ext_osc)
+		rate = clk_get_rate(sc->sc_clk_pcie_ext);
+	else
+		rate = clk_get_rate(sc->sc_clk_pcie_phy);
+	aprint_normal_dev(sc->sc_dev, "PCIe ref clk %d MHz\n", (int)(rate / 1000 / 1000));
+
+	int mult;
+	int div;
+	if (rate == 100000000) {
+		mult = 25;
+		div = 0;
+	} else if (rate == 125000000) {
+		mult = 40;
+		div = 1;
+	} else if (rate == 200000000) {
+		mult = 25;
+		div = 1;
+	} else {
+		return -1;
+	}
+
+	uint32_t val;
+	val = imxpcie_phy_read(sc, PCIE_PHY_MPLL_OVRD_IN_LO);
+	val &= ~MPLL_MULTIPLIER;
+	val |= __SHIFTIN(mult, MPLL_MULTIPLIER);
+	val |= MPLL_MULTIPLIER_OVRD;
+	imxpcie_phy_write(sc, PCIE_PHY_MPLL_OVRD_IN_LO, val);
+
+	val = imxpcie_phy_read(sc, PCIE_PHY_ATEOVRD);
+	val &= ~REF_CLKDIV2;
+	val |= __SHIFTIN(div, REF_CLKDIV2);
+	val |= ATEOVRD_EN;
+	imxpcie_phy_write(sc, PCIE_PHY_ATEOVRD, val);
 
 	return 0;
 }

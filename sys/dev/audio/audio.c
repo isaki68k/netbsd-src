@@ -1,4 +1,4 @@
-/*	$NetBSD: audio.c,v 1.29 2019/08/23 09:41:26 maxv Exp $	*/
+/*	$NetBSD: audio.c,v 1.32 2019/10/18 04:09:02 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -142,7 +142,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.29 2019/08/23 09:41:26 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.32 2019/10/18 04:09:02 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "audio.h"
@@ -5969,7 +5969,7 @@ audio_check_params(audio_format2_t *p)
 
 /*
  * Initialize playback and record mixers.
- * mode (AUMODE_{PLAY,RECORD}) indicates the mixer to be initalized.
+ * mode (AUMODE_{PLAY,RECORD}) indicates the mixer to be initialized.
  * phwfmt and rhwfmt indicate the hardware format.  pfil and rfil indicate
  * the filter registration information.  These four must not be NULL.
  * If successful returns 0.  Otherwise returns errno.

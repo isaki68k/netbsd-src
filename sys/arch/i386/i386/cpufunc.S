@@ -1,4 +1,4 @@
-/*	$NetBSD: cpufunc.S,v 1.34 2019/07/05 17:08:55 maxv Exp $	*/
+/*	$NetBSD: cpufunc.S,v 1.36 2019/10/30 17:06:57 maxv Exp $	*/
 
 /*-
  * Copyright (c) 1998, 2007 The NetBSD Foundation, Inc.
@@ -38,7 +38,7 @@
 #include <sys/errno.h>
 
 #include <machine/asm.h>
-__KERNEL_RCSID(0, "$NetBSD: cpufunc.S,v 1.34 2019/07/05 17:08:55 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpufunc.S,v 1.36 2019/10/30 17:06:57 maxv Exp $");
 
 #include "opt_xen.h"
 
@@ -90,26 +90,6 @@ END(x86_write_flags)
 STRONG_ALIAS(x86_write_psl,x86_write_flags)
 STRONG_ALIAS(x86_read_psl,x86_read_flags)
 #endif	/* XENPV */
-
-ENTRY(rdmsr_locked)
-	movl	4(%esp), %ecx
-	pushl	%edi
-	movl	$OPTERON_MSR_PASSCODE, %edi
-	rdmsr
-	popl	%edi
-	ret
-END(rdmsr_locked)
-
-ENTRY(wrmsr_locked)
-	movl	4(%esp), %ecx
-	movl	8(%esp), %eax
-	movl	12(%esp), %edx
-	pushl	%edi
-	movl	$OPTERON_MSR_PASSCODE, %edi
-	wrmsr
-	popl	%edi
-	ret
-END(wrmsr_locked)
 
 /*
  * Support for reading MSRs in the safe manner (returns EFAULT on fault)
@@ -244,18 +224,6 @@ ENTRY(x86_mwait)
 	ret
 END(x86_mwait)  
 
-ENTRY(fnsave)
-	movl	4(%esp), %eax
-	fnsave	(%eax)
-	ret
-END(fnsave)
-
-ENTRY(frstor)
-	movl	4(%esp), %eax
-	frstor	(%eax)
-	ret
-END(frstor)
-
 ENTRY(stts)
 	movl	%cr0, %eax
 	testl	$CR0_TS, %eax
@@ -265,42 +233,6 @@ ENTRY(stts)
 1:
 	ret
 END(stts)
-
-ENTRY(fxsave)
-	movl	4(%esp), %eax
-	fxsave	(%eax)
-	ret
-END(fxsave)
-
-ENTRY(fxrstor)
-	movl	4(%esp), %eax
-	fxrstor	(%eax)
-	ret
-END(fxrstor)
-
-ENTRY(xsave)
-	movl	4(%esp), %ecx
-	movl	8(%esp), %eax	/* feature mask bits */
-	movl	12(%esp), %edx
-	xsave	(%ecx)
-	ret
-END(xsave)
-
-ENTRY(xsaveopt)
-	movl	4(%esp), %ecx
-	movl	8(%esp), %eax	/* feature mask bits */
-	movl	12(%esp), %edx
-	xsaveopt	(%ecx)
-	ret
-END(xsaveopt)
-
-ENTRY(xrstor)
-	movl	4(%esp), %ecx
-	movl	8(%esp), %eax	/* feature mask bits */
-	movl	12(%esp), %edx
-	xrstor	(%ecx)
-	ret
-END(xrstor)
 
 ENTRY(fldummy)
 	ffree	%st(7)

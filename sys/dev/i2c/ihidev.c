@@ -1,4 +1,4 @@
-/* $NetBSD: ihidev.c,v 1.7 2018/11/16 23:05:50 jmcneill Exp $ */
+/* $NetBSD: ihidev.c,v 1.9 2019/10/01 18:00:08 chs Exp $ */
 /* $OpenBSD ihidev.c,v 1.13 2017/04/08 02:57:23 deraadt Exp $ */
 
 /*-
@@ -54,7 +54,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ihidev.c,v 1.7 2018/11/16 23:05:50 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ihidev.c,v 1.9 2019/10/01 18:00:08 chs Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -183,11 +183,7 @@ ihidev_attach(device_t parent, device_t self, void *aux)
 
 	sc->sc_nrepid++;
 	sc->sc_subdevs = kmem_zalloc(sc->sc_nrepid * sizeof(struct ihidev *),
-	    KM_NOSLEEP);
-	if (sc->sc_subdevs == NULL) {
-		aprint_error_dev(self, "failed allocating memory\n");
-		return;
-	}
+	    KM_SLEEP);
 
 	/* find largest report size and allocate memory for input buffer */
 	sc->sc_isize = le16toh(sc->hid_desc.wMaxInputLength);
@@ -203,15 +199,17 @@ ihidev_attach(device_t parent, device_t self, void *aux)
 		DPRINTF(("%s: repid %d size %d\n", sc->sc_dev.dv_xname, repid,
 		    repsz));
 	}
-	sc->sc_ibuf = kmem_zalloc(sc->sc_isize, KM_NOSLEEP);
+	sc->sc_ibuf = kmem_zalloc(sc->sc_isize, KM_SLEEP);
 #if NACPICA > 0
 	{
 		char buf[100];
 
 		sc->sc_ih = acpi_intr_establish(self, sc->sc_phandle, IPL_TTY,
 		    false, ihidev_intr, sc, device_xname(self));
-		if (sc->sc_ih == NULL)
+		if (sc->sc_ih == NULL) {
 			aprint_error_dev(self, "can't establish interrupt\n");
+			return;
+		}
 		aprint_normal_dev(self, "interrupting at %s\n",
 		    acpi_intr_string(sc->sc_ih, buf, sizeof(buf)));
 	}

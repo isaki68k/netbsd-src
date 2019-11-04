@@ -1,4 +1,4 @@
-/*	$NetBSD: if_gif.c,v 1.148 2019/06/25 12:30:50 msaitoh Exp $	*/
+/*	$NetBSD: if_gif.c,v 1.150 2019/10/30 03:45:59 knakahara Exp $	*/
 /*	$KAME: if_gif.c,v 1.76 2001/08/20 02:01:02 kjc Exp $	*/
 
 /*
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_gif.c,v 1.148 2019/06/25 12:30:50 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_gif.c,v 1.150 2019/10/30 03:45:59 knakahara Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -104,9 +104,6 @@ static struct {
 
 struct psref_class *gv_psref_class __read_mostly;
 
-static void	gif_ro_init_pc(void *, void *, struct cpu_info *);
-static void	gif_ro_fini_pc(void *, void *, struct cpu_info *);
-
 static int	gifattach0(struct gif_softc *);
 static int	gif_output(struct ifnet *, struct mbuf *,
 			   const struct sockaddr *, const struct rtentry *);
@@ -144,6 +141,58 @@ static struct if_clone gif_cloner =
 static int max_gif_nesting = MAX_GIF_NEST;
 
 static struct sysctllog *gif_sysctl;
+
+#ifdef INET6
+static int
+sysctl_gif_pmtu_global(SYSCTLFN_ARGS)
+{
+	int error, pmtu;
+	struct sysctlnode node = *rnode;
+
+	pmtu = ip6_gif_pmtu;
+	node.sysctl_data = &pmtu;
+	error = sysctl_lookup(SYSCTLFN_CALL(&node));
+	if (error || newp == NULL)
+		return error;
+
+	switch (pmtu) {
+	case GIF_PMTU_MINMTU:
+	case GIF_PMTU_OUTERMTU:
+		ip6_gif_pmtu = pmtu;
+		break;
+	default:
+		return EINVAL;
+	}
+
+	return 0;
+}
+
+static int
+sysctl_gif_pmtu_perif(SYSCTLFN_ARGS)
+{
+	int error, pmtu;
+	struct sysctlnode node = *rnode;
+	struct gif_softc *sc = (struct gif_softc *)node.sysctl_data;
+
+	pmtu = sc->gif_pmtu;
+	node.sysctl_data = &pmtu;
+	error = sysctl_lookup(SYSCTLFN_CALL(&node));
+	if (error || newp == NULL)
+		return error;
+
+	switch (pmtu) {
+	case GIF_PMTU_SYSDEFAULT:
+	case GIF_PMTU_MINMTU:
+	case GIF_PMTU_OUTERMTU:
+		sc->gif_pmtu = pmtu;
+		break;
+	default:
+		return EINVAL;
+	}
+
+	return 0;
+}
+#endif
 
 static void
 gif_sysctl_setup(void)
@@ -199,6 +248,52 @@ gif_sysctl_setup(void)
 		       NULL, 0, &ip6_gif_hlim, 0,
 		       CTL_NET, PF_INET6, IPPROTO_IPV6,
 		       IPV6CTL_GIF_HLIM, CTL_EOL);
+
+	sysctl_createv(&gif_sysctl, 0, NULL, NULL,
+		       CTLFLAG_PERMANENT | CTLFLAG_READWRITE,
+		       CTLTYPE_INT, "gifpmtu",
+		       SYSCTL_DESCR("Default Path MTU setting for gif tunnels"),
+		       sysctl_gif_pmtu_global, 0, NULL, 0,
+		       CTL_NET, PF_INET6, IPPROTO_IPV6,
+		       IPV6CTL_GIF_PMTU, CTL_EOL);
+#endif
+}
+
+static void
+gif_perif_sysctl_setup(struct sysctllog **clog, struct gif_softc *sc)
+{
+#ifdef INET6
+	const struct sysctlnode *cnode, *rnode;
+	struct ifnet *ifp = &sc->gif_if;
+	const char *ifname = ifp->if_xname;
+	int rv;
+
+	/*
+	 * Already created in sysctl_sndq_setup().
+	 */
+	sysctl_createv(clog, 0, NULL, &rnode,
+		       CTLFLAG_PERMANENT,
+		       CTLTYPE_NODE, "interfaces",
+		       SYSCTL_DESCR("Per-interface controls"),
+		       NULL, 0, NULL, 0,
+		       CTL_NET, CTL_CREATE, CTL_EOL);
+	sysctl_createv(clog, 0, &rnode, &rnode,
+		       CTLFLAG_PERMANENT,
+		       CTLTYPE_NODE, ifname,
+		       SYSCTL_DESCR("Interface controls"),
+		       NULL, 0, NULL, 0,
+		       CTL_CREATE, CTL_EOL);
+
+	rv = sysctl_createv(clog, 0, &rnode, &cnode,
+			    CTLFLAG_PERMANENT,
+			    CTLTYPE_INT, "pmtu",
+			    SYSCTL_DESCR("Path MTU setting for this gif tunnel"),
+			    sysctl_gif_pmtu_perif, 0, (void *)sc, 0,
+			    CTL_CREATE, CTL_EOL);
+	if (rv != 0)
+		log(LOG_WARNING, "%s: could not attach sysctl node pmtu\n", ifname);
+
+	sc->gif_pmtu = GIF_PMTU_SYSDEFAULT;
 #endif
 }
 
@@ -251,6 +346,7 @@ gif_clone_create(struct if_clone *ifc, int unit)
 {
 	struct gif_softc *sc;
 	struct gif_variant *var;
+	struct ifnet *ifp;
 	int rv;
 
 	sc = kmem_zalloc(sizeof(struct gif_softc), KM_SLEEP);
@@ -263,6 +359,9 @@ gif_clone_create(struct if_clone *ifc, int unit)
 		return rv;
 	}
 
+	ifp = &sc->gif_if;
+	gif_perif_sysctl_setup(&ifp->if_sysctl_log, sc);
+
 	var = kmem_zalloc(sizeof(*var), KM_SLEEP);
 	var->gv_softc = sc;
 	psref_target_init(&var->gv_psref, gv_psref_class);
@@ -271,8 +370,7 @@ gif_clone_create(struct if_clone *ifc, int unit)
 	mutex_init(&sc->gif_lock, MUTEX_DEFAULT, IPL_NONE);
 	sc->gif_psz = pserialize_create();
 
-	sc->gif_ro_percpu = percpu_alloc(sizeof(struct gif_ro));
-	percpu_foreach(sc->gif_ro_percpu, gif_ro_init_pc, NULL);
+	sc->gif_ro_percpu = if_tunnel_alloc_ro_percpu();
 	mutex_enter(&gif_softcs.lock);
 	LIST_INSERT_HEAD(&gif_softcs.list, sc, gif_list);
 	mutex_exit(&gif_softcs.lock);
@@ -309,32 +407,6 @@ gifattach0(struct gif_softc *sc)
 	return 0;
 }
 
-static void
-gif_ro_init_pc(void *p, void *arg __unused, struct cpu_info *ci __unused)
-{
-	struct gif_ro *gro = p;
-
-	gro->gr_lock = mutex_obj_alloc(MUTEX_DEFAULT, IPL_NONE);
-}
-
-static void
-gif_ro_fini_pc(void *p, void *arg __unused, struct cpu_info *ci __unused)
-{
-	struct gif_ro *gro = p;
-
-	rtcache_free(&gro->gr_ro);
-
-	mutex_obj_free(gro->gr_lock);
-}
-
-void
-gif_rtcache_free_pc(void *p, void *arg __unused, struct cpu_info *ci __unused)
-{
-	struct gif_ro *gro = p;
-
-	rtcache_free(&gro->gr_ro);
-}
-
 static int
 gif_clone_destroy(struct ifnet *ifp)
 {
@@ -347,8 +419,7 @@ gif_clone_destroy(struct ifnet *ifp)
 	bpf_detach(ifp);
 	if_detach(ifp);
 
-	percpu_foreach(sc->gif_ro_percpu, gif_ro_fini_pc, NULL);
-	percpu_free(sc->gif_ro_percpu, sizeof(struct gif_ro));
+	if_tunnel_free_ro_percpu(sc->gif_ro_percpu);
 
 	pserialize_destroy(sc->gif_psz);
 	mutex_destroy(&sc->gif_lock);

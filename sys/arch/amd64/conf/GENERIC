@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.534 2019/08/09 08:01:06 rin Exp $
+# $NetBSD: GENERIC,v 1.544 2019/11/01 02:53:23 msaitoh Exp $
 #
 # GENERIC machine description file
 #
@@ -22,7 +22,7 @@ include 	"arch/amd64/conf/std.amd64"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident		"GENERIC-$Revision: 1.534 $"
+#ident		"GENERIC-$Revision: 1.544 $"
 
 maxusers	64		# estimated number of users
 
@@ -437,10 +437,6 @@ ubsec*	at pci? dev ? function ?	# Broadcom 5501/5601/580x/582x
 
 # Trusted Platform Module
 tpm*	at isa? iomem 0xfed40000 irq 7
-#tpm*	at isa? port 0x02e
-#tpm*	at isa? port 0x04e
-#tpm*	at isa? port 0x07e
-#tpm*	at isa? port 0x0ee
 
 # Serial Devices
 
@@ -581,6 +577,9 @@ gpio*		at gpiobus?
 gpioow* 	at gpio?
 onewire*	at gpioow?
 
+# 1-Wire devices
+owtemp* 	at onewire?			# Temperature sensors
+
 # I2C support
 #gpioiic*	at gpio?
 #iic*		at gpioiic?
@@ -593,6 +592,9 @@ onewire*	at gpioow?
 
 # Soekris 6501 GPIO/LED driver (provides gpiobus, needs gpio)
 #soekrisgpio0	at isa? port 0x680
+
+# Nuvoton NCT5104D SuperIO providing GPIO
+nct0		at isa? port ?
 
 # SCSI Controllers and Devices
 
@@ -789,6 +791,7 @@ hme*	at pci? dev ? function ?	# Sun Microelectronics STP2002-STQ
 le*	at pci? dev ? function ?	# PCnet-PCI Ethernet
 lii*	at pci? dev ? function ?	# Atheros L2 Fast-Ethernet
 malo*	at pci? dev ? function ?	# Marvell Libertas Wireless
+mcx*	at pci? dev ? function ?	# Mellanox 5th generation Ethernet
 mskc*	at pci? dev ? function ?	# Marvell Yukon 2 Gigabit Ethernet
 msk*	at mskc?			# Marvell Yukon 2 Gigabit Ethernet
 mtd*	at pci? dev ? function ?	# Myson MTD803 3-in-1 Ethernet
@@ -873,6 +876,8 @@ ihphy*	at mii? phy ?			# Intel 82577 PHYs
 ikphy*	at mii? phy ?			# Intel 82563 PHYs
 inphy*	at mii? phy ?			# Intel 82555 PHYs
 iophy*	at mii? phy ?			# Intel 82553 PHYs
+ipgphy* at mii? phy ?			# IC PLUS IP1000A/IP1001 PHYs
+jmphy*	at mii? phy ?			# Jmicron JMP202/211 PHYs
 lxtphy* at mii? phy ?			# Level One LXT-970 PHYs
 makphy* at mii? phy ?			# Marvell Semiconductor 88E1000 PHYs
 nsphy*	at mii? phy ?			# NS83840 PHYs
@@ -881,6 +886,7 @@ pnaphy* at mii? phy ?			# generic HomePNA PHYs
 qsphy*	at mii? phy ?			# Quality Semiconductor QS6612 PHYs
 rgephy* at mii? phy ?			# Realtek 8169S/8110 internal PHYs
 rlphy*	at mii? phy ?			# Realtek 8139/8201L PHYs
+smscphy* at mii? phy ?			# SMSC LAN87xx PHYs
 sqphy*	at mii? phy ?			# Seeq 80220/80221/80223 PHYs
 tlphy*	at mii? phy ?			# ThunderLAN PHYs
 tqphy*	at mii? phy ?			# TDK Semiconductor PHYs
@@ -889,6 +895,9 @@ urlphy* at mii? phy ?			# Realtek RTL8150L internal PHYs
 
 
 # USB Controller and Devices
+
+# Virtual USB controller
+#pseudo-device	vhci
 
 # PCI USB controllers
 xhci*	at pci?	dev ? function ?	# eXtensible Host Controller
@@ -908,6 +917,7 @@ uhci*	at cardbus? function ?		# Universal Host Controller (Intel)
 slhci*	at pcmcia? function ?		# ScanLogic SL811HS
 
 # USB bus support
+#usb*	at vhci?
 usb*	at xhci?
 usb*	at ehci?
 usb*	at ohci?
@@ -1064,6 +1074,7 @@ ld*	at virtio?			# Virtio disk device
 vioif*	at virtio?			# Virtio network device
 viornd* at virtio?			# Virtio entropy device
 vioscsi* at virtio?			# Virtio SCSI device
+#vio9p*	at virtio?			# Virtio 9P device
 
 # Hyper-V devices
 vmbus*		at acpi?		# Hyper-V VMBus

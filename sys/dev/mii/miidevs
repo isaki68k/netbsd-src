@@ -1,4 +1,4 @@
-$NetBSD: miidevs,v 1.154 2019/08/16 15:19:48 msaitoh Exp $
+$NetBSD: miidevs,v 1.160 2019/10/30 12:01:36 msaitoh Exp $
 
 /*-
  * Copyright (c) 1998, 1999 The NetBSD Foundation, Inc.
@@ -50,10 +50,8 @@ $NetBSD: miidevs,v 1.154 2019/08/16 15:19:48 msaitoh Exp $
  */
 
 oui AMD				0x00001a	Advanced Micro Devices
-oui VITESSE			0x0001c1	Vitesse
 oui TRIDIUM			0x0001f0	Tridium
 oui DATATRACK			0x0002c6	Data Track Technology
-oui CICADA			0x0003f1	Cicada Semiconductor
 oui AGERE			0x00053d	Agere
 oui BANKSPEED			0x0006b8	Bankspeed Pty
 oui NETEXCELL			0x0008bb	NetExcell
@@ -67,7 +65,9 @@ oui ALTIMA			0x0010a9	Altima Communications
 oui ENABLESEMI			0x0010dd	Enable Semiconductor
 oui SUNPLUS			0x001105	Sunplus Technology
 oui ATHEROS			0x001374	Atheros
+oui TERANETICS			0x0014a6	Teranetics
 oui RALINK2			0x0017a5	Ralink Technology
+oui AQUANTIA			0x0017b6	Aquantia Corporation
 oui BROADCOM3			0x001be9	Broadcom Corporation
 oui LEVEL1			0x00207b	Level 1
 oui VIA				0x004063	VIA Technologies
@@ -76,7 +76,6 @@ oui QUALSEMI			0x006051	Quality Semiconductor
 oui AMLOGIC			0x006051	Amlogic
 oui DAVICOM			0x00606e	Davicom Semiconductor
 oui SMSC			0x00800f	SMSC
-oui ICPLUS			0x0090c3	IC Plus Corp.
 oui SEEQ			0x00a07d	Seeq
 oui ICS				0x00a0be	Integrated Circuit Systems
 oui INTEL			0x00aa00	Intel
@@ -93,8 +92,9 @@ oui XAQTI			0x00e0ae	XaQti Corp.
 oui NATSEMI			0x080017	National Semiconductor
 oui TI				0x080028	Texas Instruments
 oui BROADCOM4			0x18c086	Broadcom Corporation
+oui RENESAS			0x749050	Renesas
 
-/* Unregisterd or wrong OUI */
+/* Unregistered or wrong OUI */
 oui yyREALTEK			0x000004	Realtek
 oui yyAMD			0x000058	Advanced Micro Devices
 oui xxMYSON			0x00032d	Myson Technology
@@ -106,11 +106,13 @@ oui xxQUALSEMI			0x00068a	Quality Semiconductor
 oui xxREALTEK			0x000732	Realtek
 oui xxBROADCOM			0x000818	Broadcom Corporation
 oui xxPMCSIERRA			0x0009c0	PMC-Sierra
+oui xxICPLUS			0x0009c3	IC Plus Corp.
 oui xxMARVELL			0x000ac2	Marvell Semiconductor
 oui xxINTEL			0x001f00	Intel
 oui xxBROADCOM_ALT1		0x0050ef	Broadcom Corporation
 oui yyINTEL			0x005500	Intel
 oui yyASIX			0x007063	Asix Semiconductor
+oui xxVITESSE			0x008083	Vitesse Semiconductor
 oui xxPMCSIERRA2		0x009057	PMC-Sierra
 oui xxCICADA			0x00c08f	Cicada Semiconductor
 oui xxNATSEMI			0x1000e8	National Semiconductor
@@ -220,15 +222,17 @@ model BROADCOM3 BCM5720C	0x0036 BCM5720C 1000BASE-T media interface
 model BROADCOM4 BCM5725C	0x0038 BCM5725C 1000BASE-T media interface
 model xxBROADCOM_ALT1 BCM5906	0x0004 BCM5906 10/100baseTX media interface
 
-/* Cicada Semiconductor PHYs (now owned by Vitesse?) */
-model CICADA CS8201		0x0001 Cicada CS8201 10/100/1000TX PHY
-model CICADA CS8204		0x0004 Cicada CS8204 10/100/1000TX PHY
-model CICADA VSC8211		0x000b Cicada VSC8211 10/100/1000TX PHY
-model CICADA CS8201A		0x0020 Cicada CS8201 10/100/1000TX PHY
-model CICADA CS8201B		0x0021 Cicada CS8201 10/100/1000TX PHY
-model CICADA CS8244		0x002c Vitesse VSC8244 Quad 10/100/1000BASE-T PHY
+/* Cicada Semiconductor PHYs (-> Vitesse -> Microsemi) */
+
+model xxCICADA CIS8201		0x0001 Cicada CIS8201 10/100/1000TX PHY
+model xxCICADA CIS8204		0x0004 Cicada CIS8204 10/100/1000TX PHY
+model xxCICADA VSC8211		0x000b Cicada VSC8211 10/100/1000TX PHY
 model xxCICADA VSC8221		0x0015 Vitesse VSC8221 10/100/1000BASE-T PHY
-model xxCICADA CS8201B		0x0021 Cicada CS8201 10/100/1000TX PHY
+model xxCICADA VSC8224		0x0018 Vitesse VSC8224 10/100/1000BASE-T PHY
+model xxCICADA CIS8201A		0x0020 Cicada CIS8201 10/100/1000TX PHY
+model xxCICADA CIS8201B		0x0021 Cicada CIS8201 10/100/1000TX PHY
+model xxCICADA VSC8234		0x0022 Vitesse VSC8234 10/100/1000TX PHY
+model xxCICADA VSC8244		0x002c Vitesse VSC8244 Quad 10/100/1000BASE-T PHY
 
 /* Davicom Semiconductor PHYs */
 /* AMD Am79C873 seems to be a relabeled DM9101 */
@@ -241,10 +245,10 @@ model xxDAVICOM DM9161B		0x000b DM9161[BC] 10/100 media interface
 model xxDAVICOM DM9601		0x000c DM9601 internal 10/100 media interface
 
 /* IC Plus Corp. PHYs */
-model ICPLUS IP100		0x0004 IP100 10/100 PHY
-model ICPLUS IP101		0x0005 IP101 10/100 PHY
-model ICPLUS IP1000A		0x0008 IP1000A 10/100/1000 PHY
-model ICPLUS IP1001		0x0019 IP1001 10/100/1000 PHY
+model xxICPLUS IP100		0x0004 IP100 10/100 PHY
+model xxICPLUS IP101		0x0005 IP101 10/100 PHY
+model xxICPLUS IP1000A		0x0008 IP1000A 10/100/1000 PHY
+model xxICPLUS IP1001		0x0019 IP1001 10/100/1000 PHY
 
 /* Integrated Circuit Systems PHYs */
 model ICS 1889			0x0001 ICS1889 10/100 media interface
@@ -277,8 +281,8 @@ model ATTANSIC I82578		0x0004 Intel 82578 10/100/1000 media interface
 
 
 /* JMicron PHYs */
-model JMICRON JMC250		0x0021 JMC250 10/100/1000 media interface
-model JMICRON JMC260		0x0022 JMC260 10/100 media interface
+model JMICRON JMP211		0x0021 JMP211 10/100/1000 media interface
+model JMICRON JMP202		0x0022 JMP202 10/100 media interface
 
 /* Level 1 PHYs */
 model xxLEVEL1 LXT970		0x0000 LXT970 10/100 media interface
@@ -390,8 +394,10 @@ model xxTSC 78Q2121		0x0015 78Q2121 100BASE-TX media interface
 model VIA VT6103		0x0032	VT6103 10/100 PHY
 model VIA VT6103_2		0x0034	VT6103 10/100 PHY
 
-/* Vitesse PHYs */
-model VITESSE VSC8601		0x0002	VSC8601 10/100/1000 PHY
+/* Vitesse PHYs (Now Microsemi) */
+model xxVITESSE VSC8601		0x0002 VSC8601 10/100/1000 PHY
+model xxVITESSE VSC8641		0x0003 Vitesse VSC8641 10/100/1000TX PHY
+model xxVITESSE VSC8501		0x0013 Vitesse VSC8501 10/100/1000TX PHY
 
 /* XaQti Corp. PHYs */
 model xxXAQTI XMACII		0x0000 XaQti Corp. XMAC II gigabit interface

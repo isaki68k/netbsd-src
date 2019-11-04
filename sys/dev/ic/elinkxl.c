@@ -1,4 +1,4 @@
-/*	$NetBSD: elinkxl.c,v 1.131 2019/05/28 07:41:48 msaitoh Exp $	*/
+/*	$NetBSD: elinkxl.c,v 1.133 2019/10/30 07:26:28 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 1998 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: elinkxl.c,v 1.131 2019/05/28 07:41:48 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: elinkxl.c,v 1.133 2019/10/30 07:26:28 msaitoh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -1436,7 +1436,7 @@ ex_ifflags_cb(struct ethercom *ec)
 {
 	struct ifnet *ifp = &ec->ec_if;
 	struct ex_softc *sc = ifp->if_softc;
-	int change = ifp->if_flags ^ sc->sc_if_flags;
+	u_short change = ifp->if_flags ^ sc->sc_if_flags;
 
 	if ((change & ~(IFF_CANTCHANGE | IFF_DEBUG)) != 0)
 		return ENETRESET;
@@ -1487,8 +1487,6 @@ ex_getstats(struct ex_softc *sc)
 
 	GO_WINDOW(6);
 	upperok = bus_space_read_1(iot, ioh, UPPER_FRAMES_OK);
-	ifp->if_ipackets += bus_space_read_1(iot, ioh, RX_FRAMES_OK);
-	ifp->if_ipackets += (upperok & 0x03) << 8;
 	ifp->if_opackets += bus_space_read_1(iot, ioh, TX_FRAMES_OK);
 	ifp->if_opackets += (upperok & 0x30) << 4;
 	ifp->if_ierrors += bus_space_read_1(iot, ioh, RX_OVERRUNS);

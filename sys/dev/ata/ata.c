@@ -1,4 +1,4 @@
-/*	$NetBSD: ata.c,v 1.150 2019/08/21 04:51:41 msaitoh Exp $	*/
+/*	$NetBSD: ata.c,v 1.153 2019/10/21 18:58:57 christos Exp $	*/
 
 /*
  * Copyright (c) 1998, 2001 Manuel Bouyer.  All rights reserved.
@@ -25,7 +25,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ata.c,v 1.150 2019/08/21 04:51:41 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ata.c,v 1.153 2019/10/21 18:58:57 christos Exp $");
 
 #include "opt_ata.h"
 
@@ -749,15 +749,19 @@ atabus_alloc_drives(struct ata_channel *chp, int ndrives)
 	if (chp->ch_ndrives != ndrives)
 		atabus_free_drives(chp);
 	if (chp->ch_drive == NULL) {
-		chp->ch_drive = kmem_zalloc(
-		    sizeof(struct ata_drive_datas) * ndrives, KM_NOSLEEP);
+		void *drv;
+
+		ata_channel_unlock(chp);
+		drv = kmem_zalloc(sizeof(*chp->ch_drive) * ndrives, KM_SLEEP);
+		ata_channel_lock(chp);
+
+		if (chp->ch_drive != NULL) {
+			/* lost the race */
+			kmem_free(drv, sizeof(*chp->ch_drive) * ndrives);
+			return 0;
+		}
+		chp->ch_drive = drv;
 	}
-	if (chp->ch_drive == NULL) {
-	    aprint_error_dev(chp->ch_atac->atac_dev,
-		"can't alloc drive array\n");
-	    chp->ch_ndrives = 0;
-	    return ENOMEM;
-	};
 	for (i = 0; i < ndrives; i++) {
 		chp->ch_drive[i].chnl_softc = chp;
 		chp->ch_drive[i].drive = i;

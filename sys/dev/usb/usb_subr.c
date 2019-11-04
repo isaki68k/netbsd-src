@@ -1,4 +1,4 @@
-/*	$NetBSD: usb_subr.c,v 1.238 2019/08/21 10:48:37 mrg Exp $	*/
+/*	$NetBSD: usb_subr.c,v 1.241 2019/10/03 05:20:31 maxv Exp $	*/
 /*	$FreeBSD: src/sys/dev/usb/usb_subr.c,v 1.18 1999/11/17 22:33:47 n_hibma Exp $	*/
 
 /*
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: usb_subr.c,v 1.238 2019/08/21 10:48:37 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: usb_subr.c,v 1.241 2019/10/03 05:20:31 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
@@ -122,13 +122,20 @@ usbd_get_string_desc(struct usbd_device *dev, int sindex, int langid,
 	usbd_status err;
 	int actlen;
 
+	/*
+	 * Pass a full-sized buffer to usbd_do_request_len().  At least
+	 * one device has been seen returning additional data beyond the
+	 * provided buffers (2-bytes written shortly after the request
+	 * claims to have completed and returned the 2 byte header,
+	 * corrupting other memory.)
+	 */
 	req.bmRequestType = UT_READ_DEVICE;
 	req.bRequest = UR_GET_DESCRIPTOR;
 	USETW2(req.wValue, UDESC_STRING, sindex);
 	USETW(req.wIndex, langid);
 	USETW(req.wLength, 2);	/* only size byte first */
-	err = usbd_do_request_flags(dev, &req, sdesc, USBD_SHORT_XFER_OK,
-		&actlen, USBD_DEFAULT_TIMEOUT);
+	err = usbd_do_request_len(dev, &req, sizeof(*sdesc), sdesc,
+	    USBD_SHORT_XFER_OK, &actlen, USBD_DEFAULT_TIMEOUT);
 	if (err)
 		return err;
 
@@ -138,8 +145,8 @@ usbd_get_string_desc(struct usbd_device *dev, int sindex, int langid,
 	if (sdesc->bLength > sizeof(*sdesc))
 		return USBD_INVAL;
 	USETW(req.wLength, sdesc->bLength);	/* the whole string */
-	err = usbd_do_request_flags(dev, &req, sdesc, USBD_SHORT_XFER_OK,
-		&actlen, USBD_DEFAULT_TIMEOUT);
+	err = usbd_do_request_len(dev, &req, sizeof(*sdesc), sdesc,
+	    USBD_SHORT_XFER_OK, &actlen, USBD_DEFAULT_TIMEOUT);
 	if (err)
 		return err;
 
@@ -1175,7 +1182,7 @@ usbd_get_initial_ddesc(struct usbd_device *dev, usb_device_descriptor_t *desc)
 	req.bRequest = UR_GET_DESCRIPTOR;
 	USETW2(req.wValue, UDESC_DEVICE, 0);
 	USETW(req.wIndex, 0);
-	USETW(req.wLength, 64);
+	USETW(req.wLength, 8);
 	res = usbd_do_request_flags(dev, &req, buf, USBD_SHORT_XFER_OK,
 		&actlen, USBD_DEFAULT_TIMEOUT);
 	if (res)
@@ -1346,6 +1353,7 @@ usbd_new_device(device_t parent, struct usbd_bus *bus, int depth, int speed,
 
 	/* Re-establish the default pipe with the new MPS. */
 	usbd_kill_pipe(dev->ud_pipe0);
+	dev->ud_pipe0 = NULL;
 	err = usbd_setup_pipe_flags(dev, 0, &dev->ud_ep0, USBD_DEFAULT_INTERVAL,
 	    &dev->ud_pipe0, USBD_MPSAFE);
 	if (err) {
@@ -1371,6 +1379,7 @@ usbd_new_device(device_t parent, struct usbd_bus *bus, int depth, int speed,
 
 	/* Re-establish the default pipe with the new address. */
 	usbd_kill_pipe(dev->ud_pipe0);
+	dev->ud_pipe0 = NULL;
 	err = usbd_setup_pipe_flags(dev, 0, &dev->ud_ep0, USBD_DEFAULT_INTERVAL,
 	    &dev->ud_pipe0, USBD_MPSAFE);
 	if (err) {
@@ -1424,6 +1433,10 @@ usbd_reload_device_desc(struct usbd_device *dev)
 	err = usbd_get_device_desc(dev, udd);
 	if (err)
 		return err;
+	if (udd->bDescriptorType != UDESC_DEVICE)
+		return USBD_INVAL;
+	if (udd->bLength < USB_DEVICE_DESCRIPTOR_SIZE)
+		return USBD_INVAL;
 
 	DPRINTFN(15, "bLength             %5ju", udd->bLength, 0, 0, 0);
 	DPRINTFN(15, "bDescriptorType     %5ju", udd->bDescriptorType, 0, 0, 0);
@@ -1466,6 +1479,15 @@ usbd_remove_device(struct usbd_device *dev, struct usbd_port *up)
 	up->up_dev = NULL;
 	dev->ud_bus->ub_devices[usb_addr2dindex(dev->ud_addr)] = NULL;
 
+	if (dev->ud_vendor != NULL) {
+		kmem_free(dev->ud_vendor, USB_MAX_ENCODED_STRING_LEN);
+	}
+	if (dev->ud_product != NULL) {
+		kmem_free(dev->ud_product, USB_MAX_ENCODED_STRING_LEN);
+	}
+	if (dev->ud_serial != NULL) {
+		kmem_free(dev->ud_serial, USB_MAX_ENCODED_STRING_LEN);
+	}
 	kmem_free(dev, sizeof(*dev));
 }
 

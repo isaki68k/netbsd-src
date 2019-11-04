@@ -1,4 +1,4 @@
-/*	$NetBSD: in6.h,v 1.95 2019/05/28 03:56:46 kamil Exp $	*/
+/*	$NetBSD: in6.h,v 1.98 2019/11/01 04:28:14 knakahara Exp $	*/
 /*	$KAME: in6.h,v 1.83 2001/03/29 02:55:07 jinmei Exp $	*/
 
 /*
@@ -126,7 +126,7 @@ struct in6_addr {
 		__uint16_t  __u6_addr16[8];
 		uint32_t  __u6_addr32[4];
 	} __u6_addr;			/* 128-bit IP6 address */
-} __packed;
+};
 
 #define s6_addr   __u6_addr.__u6_addr8
 #ifdef _KERNEL	/* XXX nonstandard */
@@ -536,6 +536,9 @@ struct ip6_mtuinfo {
 					/* via router advertisement */
 #define IPV6CTL_RTADV_NUMROUTES 44	/* current number of routes */
 					/* via router advertisement */
+#define IPV6CTL_GIF_PMTU	45	/* gif(4) Path MTU setting */
+#define IPV6CTL_IPSEC_HLIM	46	/* default HLIM for ipsecif encap packet */
+#define IPV6CTL_IPSEC_PMTU	47	/* ipsecif(4) Path MTU setting */
 #endif /* _NETBSD_SOURCE */
 
 #ifdef _KERNEL

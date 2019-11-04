@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.S,v 1.39 2019/07/17 08:39:03 skrll Exp $	*/
+/*	$NetBSD: locore.S,v 1.44 2019/10/20 14:03:51 jmcneill Exp $	*/
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -38,7 +38,7 @@
 #include <aarch64/hypervisor.h>
 #include "assym.h"
 
-RCSID("$NetBSD: locore.S,v 1.39 2019/07/17 08:39:03 skrll Exp $")
+RCSID("$NetBSD: locore.S,v 1.44 2019/10/20 14:03:51 jmcneill Exp $")
 
 
 /*#define DEBUG_LOCORE			/* debug print */
@@ -361,28 +361,23 @@ ENTRY_NP(cpu_mpstart)
 	mov	x1, xzr
 1:
 	add	x1, x1, #1
-	cmp	x1, MAXCPUS		/* cpuindex >= MAXCPUS ? */
+	cmp	x1, #MAXCPUS		/* cpuindex >= MAXCPUS ? */
 	bge	toomanycpus
 	ldr	x2, [x0, x1, lsl #3]	/* cpu_mpidr[cpuindex] */
 	cmp	x2, x3			/* == mpidr_el1 & MPIDR_AFF ? */
 	bne	1b
 
 	mov	x27, x1			/* x27 = cpuindex */
-	mov	x0, #1
-	lsl	x28, x0, x27		/* x28 = 1 << cpuindex */
-
 
 	/*
 	 * x27 = cpuindex
-	 * x28 = (1 << cpuindex)
 	 */
 
 	/* set stack pointer for boot */
 	mov	x1, #BOOT_AP_STACKSIZE
 	mul	x1, x1, x27
-	ADDR	x0, bootstk_cpus
-	sub	sp, x0, x1  /* sp = bootstk_cpus-(BOOT_AP_STACKSIZE*cpuindex) */
-
+	ADDR	x0, bootstk
+	add	sp, x0, x1  /* sp = bootstk + (BOOT_AP_STACKSIZE * cpuindex) */
 
 	bl	1f
 1:	CPU_DPRINTREG("PC               = ", lr)
@@ -447,28 +442,39 @@ mp_vstart:
 	mrs	x1, mpidr_el1
 	str	x1, [x0, #CI_MPIDR]	/* curcpu()->ci_mpidr = mpidr_el1 */
 
-	CPU_DPRINTREG("arm_cpu_hatched |= ", x28)
+	mov	x0, #32
+	udiv	x1, x27, x0
+	ADDR	x0, _C_LABEL(aarch64_cpu_hatched)
+	add	x28, x0, x1, lsl #2	/* x28 = &aarch64_cpu_hatched[cpuindex/32] */
+	mov	x0, #1
+	mov	x2, #32
+	msub	x1, x1, x2, x27
+	lsl	x29, x0, x1		/* x29 = 1 << (cpuindex % 32) */
 
 	/*
-	 * atomic_or_32(&arm_cpu_hatched, (1 << cpuindex))
+	 * atomic_or_uint(&aarch64_cpu_hatched[cpuindex/32], 1<<cpuindex%32)
 	 * to tell my activity to primary processor.
 	 */
-	ADDR	x0, _C_LABEL(arm_cpu_hatched)
-	mov	x1, x28
-	bl	_C_LABEL(atomic_or_32)	/* hatched! */
+	mov	x0, x28
+	mov	x1, x29
+	bl	_C_LABEL(atomic_or_uint)	/* hatched! */
+	dsb	sy
 	sev
 
-	/* wait for my bit of arm_cpu_mbox become true */
-	ADDR	x0, _C_LABEL(arm_cpu_mbox)
+	mov	x0, #32
+	udiv	x1, x27, x0
+	ADDR	x0, _C_LABEL(aarch64_cpu_mbox)
+	add	x28, x0, x1, lsl #2	/* x28 = &aarch64_cpu_mbox[cpuindex/32] */
+
+	/* wait for the mailbox start bit to become true */
 1:
 	dmb	sy
-	ldr	x20, [x0]
-	tst	x20, x28
+	ldr	w20, [x28]
+	tst	w20, w29
 	bne	9f
 	wfe
 	b	1b
 9:
-//	CPU_DPRINTREG("got arm_cpu_mbox = ", x20)
 
 	/* fill my cpu_info */
 	mrs	x0, tpidr_el1		/* curcpu() */
@@ -766,6 +772,7 @@ init_mmutable:
 	adr	x6, bootpage_alloc		/* allocator */
 	mov	x5, xzr				/* flags = 0 */
 	mov	x4, #LX_BLKPAG_ATTR_DEVICE_MEM|LX_BLKPAG_AP_RW	/* attr */
+	orr	x4, x4, #LX_BLKPAG_UXN|LX_BLKPAG_PXN
 	mov	x3, #L2_SIZE			/* blocksize */
 	mov	x2, #L2_SIZE			/* size */
 	ldr	x1, =CONSADDR			/* pa */
@@ -779,6 +786,7 @@ init_mmutable:
 	adr	x6, bootpage_alloc		/* allocator */
 	mov	x5, xzr				/* flags = 0 */
 	mov	x4, #LX_BLKPAG_ATTR_DEVICE_MEM|LX_BLKPAG_AP_RW	/* attr */
+	orr	x4, x4, #LX_BLKPAG_UXN|LX_BLKPAG_PXN
 	mov	x3, #L2_SIZE			/* blocksize */
 	mov	x2, #(1024*1024*1024*4)		/* size */
 	mov	x1, xzr				/* pa */
@@ -797,7 +805,7 @@ init_mmutable:
 	adr	x0, start			/* va = start */
 	ADDR	x2, _end
 	sub	x2, x2, x0			/* size = _end - start */
-	add	x2, x2, #BOOTPAGE_ALLOC_MAX	/* for boopage_alloc() */
+	add	x2, x2, #BOOTPAGE_ALLOC_MAX	/* for bootpage_alloc() */
 	mov	x1, x0				/* pa */
 	bl	pmapboot_enter
 	cbnz	x0, init_mmutable_error
@@ -1040,7 +1048,6 @@ bootstk:
 
 #ifdef MULTIPROCESSOR
 	.space	BOOT_AP_STACKSIZE * (MAXCPUS - 1)
-bootstk_cpus:
 #endif
 
 	.section ".init_pagetable", "aw", %nobits

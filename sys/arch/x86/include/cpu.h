@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.h,v 1.108 2019/08/07 06:23:48 maxv Exp $	*/
+/*	$NetBSD: cpu.h,v 1.110 2019/10/12 06:31:03 maxv Exp $	*/
 
 /*
  * Copyright (c) 1990 The Regents of the University of California.
@@ -119,7 +119,6 @@ struct cpu_info {
 	 */
 	struct cpu_info *ci_next;	/* next cpu */
 	struct lwp *ci_curlwp;		/* current owner of the processor */
-	struct lwp *ci_fpcurlwp;	/* current owner of the FPU */
 	cpuid_t ci_cpuid;		/* our CPU ID */
 	uint32_t ci_acpiid;		/* our ACPI/MADT ID */
 	uint32_t ci_initapicid;		/* our initial APIC ID */
@@ -462,7 +461,6 @@ extern uint64_t x86_xsave_features;
 extern size_t x86_xsave_offsets[];
 extern size_t x86_xsave_sizes[];
 extern uint32_t x86_fpu_mxcsr_mask;
-extern bool x86_fpu_eager;
 
 extern void (*x86_cpu_idle)(void);
 #define	cpu_idle() (*x86_cpu_idle)()
