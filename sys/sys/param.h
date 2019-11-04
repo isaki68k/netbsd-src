@@ -1,4 +1,4 @@
-/*	$NetBSD: param.h,v 1.610 2019/08/20 12:33:04 riastradh Exp $	*/
+/*	$NetBSD: param.h,v 1.618 2019/10/12 19:59:57 kamil Exp $	*/
 
 /*-
  * Copyright (c) 1982, 1986, 1989, 1993
@@ -67,7 +67,7 @@
  *	2.99.9		(299000900)
  */
 
-#define	__NetBSD_Version__	999001000	/* NetBSD 9.99.10 */
+#define	__NetBSD_Version__	999001700	/* NetBSD 9.99.17 */
 
 #define __NetBSD_Prereq__(M,m,p) (((((M) * 100000000) + \
     (m) * 1000000) + (p) * 100) <= __NetBSD_Version__)
@@ -486,23 +486,36 @@
 #endif
 
 #ifdef _KERNEL
+extern int hz;
 /*
  * macro to convert from milliseconds to hz without integer overflow
- * Default version using only 32bits arithmetics.
- * 64bit port can define 64bit version in their <machine/param.h>
- * 0x20000 is safe for hz < 20000
+ * The 32 bit version uses only 32bit arithmetic; 0x20000 is safe for hz < 20000
+ * the 64 bit version does the computation directly.
  */
 #ifndef mstohz
-#define mstohz(ms) \
-	(__predict_false((ms) >= 0x20000) ? \
-	    ((ms +0u) / 1000u) * hz : \
-	    ((ms +0u) * hz) / 1000u)
+# ifdef _LP64
+#  define mstohz(ms) ((unsigned int)((ms + 0ul) * hz / 1000ul))
+# else
+static __inline unsigned int
+mstohz(unsigned int ms)
+{
+	return __predict_false(ms >= 0x20000u) ?
+	    (ms / 1000u) * hz : (ms * hz) / 1000u;
+}
+# endif
 #endif
+
 #ifndef hztoms
-#define hztoms(t) \
-	(__predict_false((t) >= 0x20000) ? \
-	    ((t +0u) / hz) * 1000u : \
-	    ((t +0u) * 1000u) / hz)
+# ifdef _LP64
+#  define hztoms(t) ((unsigned int)(((t) + 0ul) * 1000ul / hz))
+# else
+static __inline unsigned int
+hztoms(unsigned int t)
+{
+	return __predict_false(t >= 0x20000u) ?
+	    (t / hz) * 1000u : (t * 1000u) / hz;
+}
+# endif
 #endif
 
 #define	hz2bintime(t)	(ms2bintime(hztoms(t)))

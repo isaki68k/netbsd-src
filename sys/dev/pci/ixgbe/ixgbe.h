@@ -1,4 +1,4 @@
-/* $NetBSD: ixgbe.h,v 1.56 2019/07/17 03:26:24 msaitoh Exp $ */
+/* $NetBSD: ixgbe.h,v 1.59 2019/10/30 07:27:51 msaitoh Exp $ */
 
 /******************************************************************************
   SPDX-License-Identifier: BSD-3-Clause
@@ -436,8 +436,6 @@ struct rx_ring {
 	u64			flm;
 };
 
-#define IXGBE_MAX_VF_MC 30  /* Max number of multicast entries */
-
 struct ixgbe_vf {
 	u_int    pool;
 	u_int    rar_index;
@@ -475,7 +473,7 @@ struct adapter {
 
 	struct ifmedia		media;
 	callout_t		timer;
-	int			if_flags;	/* saved ifp->if_flags */
+	u_short			if_flags;	/* saved ifp->if_flags */
 	int			ec_capenable;	/* saved ec->ec_capenable */
 
 	kmutex_t		core_mtx;
@@ -647,7 +645,6 @@ struct adapter {
 
 /* Stats macros */
 #if __FreeBSD_version >= 1100036
-#define IXGBE_SET_IPACKETS(sc, count)    (sc)->ipackets = (count)
 #define IXGBE_SET_IERRORS(sc, count)     (sc)->ierrors = (count)
 #define IXGBE_SET_OPACKETS(sc, count)    (sc)->opackets = (count)
 #define IXGBE_SET_OERRORS(sc, count)     (sc)->oerrors = (count)
@@ -658,7 +655,6 @@ struct adapter {
 #define IXGBE_SET_OMCASTS(sc, count)     (sc)->omcasts = (count)
 #define IXGBE_SET_IQDROPS(sc, count)     (sc)->iqdrops = (count)
 #else
-#define IXGBE_SET_IPACKETS(sc, count)    (sc)->ifp->if_ipackets = (count)
 #define IXGBE_SET_IERRORS(sc, count)     (sc)->ifp->if_ierrors = (count)
 #define IXGBE_SET_OPACKETS(sc, count)    (sc)->ifp->if_opackets = (count)
 #define IXGBE_SET_OERRORS(sc, count)     (sc)->ifp->if_oerrors = (count)

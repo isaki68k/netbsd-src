@@ -1,4 +1,4 @@
-/* $NetBSD: ix_txrx.c,v 1.54 2019/07/04 08:56:35 msaitoh Exp $ */
+/* $NetBSD: ix_txrx.c,v 1.56 2019/10/16 06:36:00 knakahara Exp $ */
 
 /******************************************************************************
 
@@ -266,8 +266,11 @@ ixgbe_mq_start(struct ifnet *ifp, struct mbuf *m)
 				    &txr->wq_cookie, curcpu());
 			} else
 				percpu_putref(adapter->txr_wq_enqueued);
-		} else
+		} else {
+			kpreempt_disable();
 			softint_schedule(txr->txr_si);
+			kpreempt_enable();
+		}
 	}
 
 	return (0);
@@ -1363,7 +1366,9 @@ ixgbe_refresh_mbufs(struct rx_ring *rxr, int limit)
 			error = bus_dmamap_load_mbuf(rxr->ptag->dt_dmat,
 			    rxbuf->pmap, mp, BUS_DMA_NOWAIT);
 			if (error != 0) {
-				printf("Refresh mbufs: payload dmamap load failure - %d\n", error);
+				device_printf(adapter->dev, "Refresh mbufs: "
+				    "payload dmamap load failure - %d\n",
+				    error);
 				m_free(mp);
 				rxbuf->buf = NULL;
 				goto update;

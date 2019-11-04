@@ -1,4 +1,4 @@
-/*	$NetBSD: netbsd32_compat_50.c,v 1.39 2019/06/27 02:36:27 christos Exp $	*/
+/*	$NetBSD: netbsd32_compat_50.c,v 1.41 2019/10/05 14:19:53 kamil Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -36,7 +36,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: netbsd32_compat_50.c,v 1.39 2019/06/27 02:36:27 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: netbsd32_compat_50.c,v 1.41 2019/10/05 14:19:53 kamil Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_compat_netbsd.h"
@@ -140,6 +140,10 @@ compat_50_netbsd32_select(struct lwp *l,
 		error = copyin(SCARG_P32(uap, tv), &tv32, sizeof(tv32));
 		if (error != 0)
 			return error;
+
+		if (tv32.tv_usec < 0 || tv32.tv_usec >= 1000000)
+			return EINVAL;
+
 		ats.tv_sec = tv32.tv_sec;
 		ats.tv_nsec = tv32.tv_usec * 1000;
 		ts = &ats;
@@ -212,6 +216,10 @@ compat_50_netbsd32_settimeofday(struct lwp *l,
 		return error;
 
 	netbsd32_to_timeval50(&atv32, &atv);
+
+	if (atv.tv_usec < 0 || atv.tv_usec >= 1000000)
+		return EINVAL;
+
 	TIMEVAL_TO_TIMESPEC(&atv, &ats);
 	return settime(p, &ats);
 }

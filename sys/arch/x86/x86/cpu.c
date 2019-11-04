@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.c,v 1.171 2019/05/29 16:54:41 maxv Exp $	*/
+/*	$NetBSD: cpu.c,v 1.173 2019/10/12 06:31:04 maxv Exp $	*/
 
 /*
  * Copyright (c) 2000-2012 NetBSD Foundation, Inc.
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.171 2019/05/29 16:54:41 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.173 2019/10/12 06:31:04 maxv Exp $");
 
 #include "opt_ddb.h"
 #include "opt_mpbios.h"		/* for MPDEBUG */
@@ -979,16 +979,21 @@ cpu_debug_dump(void)
 {
 	struct cpu_info *ci;
 	CPU_INFO_ITERATOR cii;
+	const char sixtyfour64space[] = 
+#ifdef _LP64
+			   "        "
+#endif
+			   "";
 
-	db_printf("addr		dev	id	flags	ipis	curlwp 		fpcurlwp\n");
+	db_printf("addr		%sdev	id	flags	ipis	curlwp 		"
+		  "\n", sixtyfour64space);
 	for (CPU_INFO_FOREACH(cii, ci)) {
-		db_printf("%p	%s	%ld	%x	%x	%10p	%10p\n",
+		db_printf("%p	%s	%ld	%x	%x	%10p\n",
 		    ci,
 		    ci->ci_dev == NULL ? "BOOT" : device_xname(ci->ci_dev),
 		    (long)ci->ci_cpuid,
 		    ci->ci_flags, ci->ci_ipis,
-		    ci->ci_curlwp,
-		    ci->ci_fpcurlwp);
+		    ci->ci_curlwp);
 	}
 }
 #endif
@@ -1153,11 +1158,7 @@ cpu_init_msrs(struct cpu_info *ci, bool full)
 void
 cpu_offline_md(void)
 {
-	int s;
-
-	s = splhigh();
-	fpusave_cpu(true);
-	splx(s);
+	return;
 }
 
 /* XXX joerg restructure and restart CPUs individually */

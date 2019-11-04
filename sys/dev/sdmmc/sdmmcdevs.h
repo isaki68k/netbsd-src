@@ -1,10 +1,10 @@
-/*	$NetBSD: sdmmcdevs.h,v 1.5 2019/08/18 14:32:34 mlelstv Exp $	*/
+/*	$NetBSD: sdmmcdevs.h,v 1.7 2019/10/28 06:32:10 mlelstv Exp $	*/
 
 /*
  * THIS FILE AUTOMATICALLY GENERATED.  DO NOT EDIT.
  *
  * generated from:
- *		NetBSD: sdmmcdevs,v 1.5 2019/08/18 14:32:04 mlelstv Exp 
+ *		NetBSD: sdmmcdevs,v 1.7 2019/10/28 06:31:39 mlelstv Exp 
  */
 /*	$OpenBSD: sdmmcdevs,v 1.8 2007/05/11 17:16:16 mglocker Exp $	*/
 
@@ -31,8 +31,8 @@
 #define	SDMMC_VENDOR_TOSHIBA	0x0098	/* Toshiba */
 #define	SDMMC_VENDOR_SOCKETCOM	0x0104	/* Socket Communications, Inc. */
 #define	SDMMC_VENDOR_REALTEK	0x024c	/* Realtek */
-#define	SDMMC_VENDOR_BROADCOM	0x0270	/* Broadcom */
 #define	SDMMC_VENDOR_ATHEROS	0x0271	/* Atheros */
+#define	SDMMC_VENDOR_BROADCOM	0x02d0	/* Broadcom */
 #define	SDMMC_VENDOR_SYCHIP	0x02db	/* SyChip Inc. */
 #define	SDMMC_VENDOR_SPECTEC	0x02fe	/* Spectec Computer Co., Ltd */
 #define	SDMMC_VENDOR_MEDIATEK	0x037a	/* MediaTek Inc. */
@@ -48,7 +48,7 @@
 #define	SDMMC_CIS_ABOCOM_SDW11G	{ NULL, NULL, NULL, NULL }
 #define	SDMMC_PRODUCT_ABOCOM_SDW11G	0xac02
 
-/* Atheros */ 
+/* Atheros */
 #define	SDMMC_CIS_ATHEROS_AR6001_8	{ NULL, NULL, NULL, NULL }
 #define	SDMMC_PRODUCT_ATHEROS_AR6001_8	0x0108
 #define	SDMMC_CIS_ATHEROS_AR6001_9	{ NULL, NULL, NULL, NULL }
@@ -58,7 +58,7 @@
 #define	SDMMC_CIS_ATHEROS_AR6001_b	{ NULL, NULL, NULL, NULL }
 #define	SDMMC_PRODUCT_ATHEROS_AR6001_b	0x010b
 
-/* Broadcom */ 
+/* Broadcom */
 #define	SDMMC_CIS_BROADCOM_BCM4324	{ NULL, NULL, NULL, NULL }
 #define	SDMMC_PRODUCT_BROADCOM_BCM4324	0x4324
 #define	SDMMC_CIS_BROADCOM_BCM4329	{ NULL, NULL, NULL, NULL }

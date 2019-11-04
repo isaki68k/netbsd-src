@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu_subr.c,v 1.100 2019/08/02 05:08:07 macallan Exp $	*/
+/*	$NetBSD: cpu_subr.c,v 1.102 2019/10/25 17:17:30 macallan Exp $	*/
 
 /*-
  * Copyright (c) 2001 Matt Thomas.
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu_subr.c,v 1.100 2019/08/02 05:08:07 macallan Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu_subr.c,v 1.102 2019/10/25 17:17:30 macallan Exp $");
 
 #include "opt_ppcparam.h"
 #include "opt_ppccache.h"
@@ -452,6 +452,12 @@ cpu_attach_common(device_t self, int id)
 	ci->ci_dev = self;
 	ci->ci_idlespin = cpu_idlespin;
 
+#ifdef MULTIPROCESSOR
+	/* Register IPI Interrupt */
+	if ((ipiops.ppc_establish_ipi) && (id == 0))
+		ipiops.ppc_establish_ipi(IST_LEVEL, IPL_HIGH, NULL);
+#endif
+
 	pvr = mfpvr();
 	vers = (pvr >> 16) & 0xffff;
 
@@ -584,8 +590,11 @@ cpu_setup(device_t self, struct cpu_info *ci)
 			hid0 &= ~HID0_BTIC;
 		/* Select NAP mode. */
 		hid0 &= ~HID0_SLEEP;
-		hid0 |= HID0_NAP | HID0_DPM;
-		powersave = 1;
+		/* XXX my quicksilver hangs if nap is enabled */
+		if (vers != MPC7450) {
+			hid0 |= HID0_NAP | HID0_DPM;
+			powersave = 1;
+		}
 		break;
 #endif
 
@@ -1404,10 +1413,6 @@ cpu_spinup(device_t self, struct cpu_info *ci)
 		Debugger();
 		return -1;
 	}
-
-	/* Register IPI Interrupt */
-	if (ipiops.ppc_establish_ipi)
-		ipiops.ppc_establish_ipi(IST_LEVEL, IPL_HIGH, NULL);
 
 	return 0;
 }

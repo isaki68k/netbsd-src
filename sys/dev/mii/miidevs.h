@@ -1,10 +1,10 @@
-/*	$NetBSD: miidevs.h,v 1.152 2019/08/16 15:20:18 msaitoh Exp $	*/
+/*	$NetBSD: miidevs.h,v 1.158 2019/10/30 12:02:01 msaitoh Exp $	*/
 
 /*
  * THIS FILE AUTOMATICALLY GENERATED.  DO NOT EDIT.
  *
  * generated from:
- *	NetBSD: miidevs,v 1.154 2019/08/16 15:19:48 msaitoh Exp
+ *	NetBSD: miidevs,v 1.160 2019/10/30 12:01:36 msaitoh Exp
  */
 
 /*-
@@ -57,10 +57,8 @@
  */
 
 #define	MII_OUI_AMD	0x00001a	/* Advanced Micro Devices */
-#define	MII_OUI_VITESSE	0x0001c1	/* Vitesse */
 #define	MII_OUI_TRIDIUM	0x0001f0	/* Tridium */
 #define	MII_OUI_DATATRACK	0x0002c6	/* Data Track Technology */
-#define	MII_OUI_CICADA	0x0003f1	/* Cicada Semiconductor */
 #define	MII_OUI_AGERE	0x00053d	/* Agere */
 #define	MII_OUI_BANKSPEED	0x0006b8	/* Bankspeed Pty */
 #define	MII_OUI_NETEXCELL	0x0008bb	/* NetExcell */
@@ -74,7 +72,9 @@
 #define	MII_OUI_ENABLESEMI	0x0010dd	/* Enable Semiconductor */
 #define	MII_OUI_SUNPLUS	0x001105	/* Sunplus Technology */
 #define	MII_OUI_ATHEROS	0x001374	/* Atheros */
+#define	MII_OUI_TERANETICS	0x0014a6	/* Teranetics */
 #define	MII_OUI_RALINK2	0x0017a5	/* Ralink Technology */
+#define	MII_OUI_AQUANTIA	0x0017b6	/* Aquantia Corporation */
 #define	MII_OUI_BROADCOM3	0x001be9	/* Broadcom Corporation */
 #define	MII_OUI_LEVEL1	0x00207b	/* Level 1 */
 #define	MII_OUI_VIA	0x004063	/* VIA Technologies */
@@ -83,7 +83,6 @@
 #define	MII_OUI_AMLOGIC	0x006051	/* Amlogic */
 #define	MII_OUI_DAVICOM	0x00606e	/* Davicom Semiconductor */
 #define	MII_OUI_SMSC	0x00800f	/* SMSC */
-#define	MII_OUI_ICPLUS	0x0090c3	/* IC Plus Corp. */
 #define	MII_OUI_SEEQ	0x00a07d	/* Seeq */
 #define	MII_OUI_ICS	0x00a0be	/* Integrated Circuit Systems */
 #define	MII_OUI_INTEL	0x00aa00	/* Intel */
@@ -100,8 +99,9 @@
 #define	MII_OUI_NATSEMI	0x080017	/* National Semiconductor */
 #define	MII_OUI_TI	0x080028	/* Texas Instruments */
 #define	MII_OUI_BROADCOM4	0x18c086	/* Broadcom Corporation */
+#define	MII_OUI_RENESAS	0x749050	/* Renesas */
 
-/* Unregisterd or wrong OUI */
+/* Unregistered or wrong OUI */
 #define	MII_OUI_yyREALTEK	0x000004	/* Realtek */
 #define	MII_OUI_yyAMD	0x000058	/* Advanced Micro Devices */
 #define	MII_OUI_xxMYSON	0x00032d	/* Myson Technology */
@@ -113,11 +113,13 @@
 #define	MII_OUI_xxREALTEK	0x000732	/* Realtek */
 #define	MII_OUI_xxBROADCOM	0x000818	/* Broadcom Corporation */
 #define	MII_OUI_xxPMCSIERRA	0x0009c0	/* PMC-Sierra */
+#define	MII_OUI_xxICPLUS	0x0009c3	/* IC Plus Corp. */
 #define	MII_OUI_xxMARVELL	0x000ac2	/* Marvell Semiconductor */
 #define	MII_OUI_xxINTEL	0x001f00	/* Intel */
 #define	MII_OUI_xxBROADCOM_ALT1	0x0050ef	/* Broadcom Corporation */
 #define	MII_OUI_yyINTEL	0x005500	/* Intel */
 #define	MII_OUI_yyASIX	0x007063	/* Asix Semiconductor */
+#define	MII_OUI_xxVITESSE	0x008083	/* Vitesse Semiconductor */
 #define	MII_OUI_xxPMCSIERRA2	0x009057	/* PMC-Sierra */
 #define	MII_OUI_xxCICADA	0x00c08f	/* Cicada Semiconductor */
 #define	MII_OUI_xxNATSEMI	0x1000e8	/* National Semiconductor */
@@ -305,23 +307,26 @@
 #define	MII_MODEL_xxBROADCOM_ALT1_BCM5906	0x0004
 #define	MII_STR_xxBROADCOM_ALT1_BCM5906	"BCM5906 10/100baseTX media interface"
 
-/* Cicada Semiconductor PHYs (now owned by Vitesse?) */
-#define	MII_MODEL_CICADA_CS8201	0x0001
-#define	MII_STR_CICADA_CS8201	"Cicada CS8201 10/100/1000TX PHY"
-#define	MII_MODEL_CICADA_CS8204	0x0004
-#define	MII_STR_CICADA_CS8204	"Cicada CS8204 10/100/1000TX PHY"
-#define	MII_MODEL_CICADA_VSC8211	0x000b
-#define	MII_STR_CICADA_VSC8211	"Cicada VSC8211 10/100/1000TX PHY"
-#define	MII_MODEL_CICADA_CS8201A	0x0020
-#define	MII_STR_CICADA_CS8201A	"Cicada CS8201 10/100/1000TX PHY"
-#define	MII_MODEL_CICADA_CS8201B	0x0021
-#define	MII_STR_CICADA_CS8201B	"Cicada CS8201 10/100/1000TX PHY"
-#define	MII_MODEL_CICADA_CS8244	0x002c
-#define	MII_STR_CICADA_CS8244	"Vitesse VSC8244 Quad 10/100/1000BASE-T PHY"
+/* Cicada Semiconductor PHYs (-> Vitesse -> Microsemi) */
+
+#define	MII_MODEL_xxCICADA_CIS8201	0x0001
+#define	MII_STR_xxCICADA_CIS8201	"Cicada CIS8201 10/100/1000TX PHY"
+#define	MII_MODEL_xxCICADA_CIS8204	0x0004
+#define	MII_STR_xxCICADA_CIS8204	"Cicada CIS8204 10/100/1000TX PHY"
+#define	MII_MODEL_xxCICADA_VSC8211	0x000b
+#define	MII_STR_xxCICADA_VSC8211	"Cicada VSC8211 10/100/1000TX PHY"
 #define	MII_MODEL_xxCICADA_VSC8221	0x0015
 #define	MII_STR_xxCICADA_VSC8221	"Vitesse VSC8221 10/100/1000BASE-T PHY"
-#define	MII_MODEL_xxCICADA_CS8201B	0x0021
-#define	MII_STR_xxCICADA_CS8201B	"Cicada CS8201 10/100/1000TX PHY"
+#define	MII_MODEL_xxCICADA_VSC8224	0x0018
+#define	MII_STR_xxCICADA_VSC8224	"Vitesse VSC8224 10/100/1000BASE-T PHY"
+#define	MII_MODEL_xxCICADA_CIS8201A	0x0020
+#define	MII_STR_xxCICADA_CIS8201A	"Cicada CIS8201 10/100/1000TX PHY"
+#define	MII_MODEL_xxCICADA_CIS8201B	0x0021
+#define	MII_STR_xxCICADA_CIS8201B	"Cicada CIS8201 10/100/1000TX PHY"
+#define	MII_MODEL_xxCICADA_VSC8234	0x0022
+#define	MII_STR_xxCICADA_VSC8234	"Vitesse VSC8234 10/100/1000TX PHY"
+#define	MII_MODEL_xxCICADA_VSC8244	0x002c
+#define	MII_STR_xxCICADA_VSC8244	"Vitesse VSC8244 Quad 10/100/1000BASE-T PHY"
 
 /* Davicom Semiconductor PHYs */
 /* AMD Am79C873 seems to be a relabeled DM9101 */
@@ -341,14 +346,14 @@
 #define	MII_STR_xxDAVICOM_DM9601	"DM9601 internal 10/100 media interface"
 
 /* IC Plus Corp. PHYs */
-#define	MII_MODEL_ICPLUS_IP100	0x0004
-#define	MII_STR_ICPLUS_IP100	"IP100 10/100 PHY"
-#define	MII_MODEL_ICPLUS_IP101	0x0005
-#define	MII_STR_ICPLUS_IP101	"IP101 10/100 PHY"
-#define	MII_MODEL_ICPLUS_IP1000A	0x0008
-#define	MII_STR_ICPLUS_IP1000A	"IP1000A 10/100/1000 PHY"
-#define	MII_MODEL_ICPLUS_IP1001	0x0019
-#define	MII_STR_ICPLUS_IP1001	"IP1001 10/100/1000 PHY"
+#define	MII_MODEL_xxICPLUS_IP100	0x0004
+#define	MII_STR_xxICPLUS_IP100	"IP100 10/100 PHY"
+#define	MII_MODEL_xxICPLUS_IP101	0x0005
+#define	MII_STR_xxICPLUS_IP101	"IP101 10/100 PHY"
+#define	MII_MODEL_xxICPLUS_IP1000A	0x0008
+#define	MII_STR_xxICPLUS_IP1000A	"IP1000A 10/100/1000 PHY"
+#define	MII_MODEL_xxICPLUS_IP1001	0x0019
+#define	MII_STR_xxICPLUS_IP1001	"IP1001 10/100/1000 PHY"
 
 /* Integrated Circuit Systems PHYs */
 #define	MII_MODEL_ICS_1889	0x0001
@@ -406,10 +411,10 @@
 
 
 /* JMicron PHYs */
-#define	MII_MODEL_JMICRON_JMC250	0x0021
-#define	MII_STR_JMICRON_JMC250	"JMC250 10/100/1000 media interface"
-#define	MII_MODEL_JMICRON_JMC260	0x0022
-#define	MII_STR_JMICRON_JMC260	"JMC260 10/100 media interface"
+#define	MII_MODEL_JMICRON_JMP211	0x0021
+#define	MII_STR_JMICRON_JMP211	"JMP211 10/100/1000 media interface"
+#define	MII_MODEL_JMICRON_JMP202	0x0022
+#define	MII_STR_JMICRON_JMP202	"JMP202 10/100 media interface"
 
 /* Level 1 PHYs */
 #define	MII_MODEL_xxLEVEL1_LXT970	0x0000
@@ -601,9 +606,13 @@
 #define	MII_MODEL_VIA_VT6103_2	0x0034
 #define	MII_STR_VIA_VT6103_2	"VT6103 10/100 PHY"
 
-/* Vitesse PHYs */
-#define	MII_MODEL_VITESSE_VSC8601	0x0002
-#define	MII_STR_VITESSE_VSC8601	"VSC8601 10/100/1000 PHY"
+/* Vitesse PHYs (Now Microsemi) */
+#define	MII_MODEL_xxVITESSE_VSC8601	0x0002
+#define	MII_STR_xxVITESSE_VSC8601	"VSC8601 10/100/1000 PHY"
+#define	MII_MODEL_xxVITESSE_VSC8641	0x0003
+#define	MII_STR_xxVITESSE_VSC8641	"Vitesse VSC8641 10/100/1000TX PHY"
+#define	MII_MODEL_xxVITESSE_VSC8501	0x0013
+#define	MII_STR_xxVITESSE_VSC8501	"Vitesse VSC8501 10/100/1000TX PHY"
 
 /* XaQti Corp. PHYs */
 #define	MII_MODEL_xxXAQTI_XMACII	0x0000

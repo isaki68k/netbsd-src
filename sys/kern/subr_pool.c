@@ -1,4 +1,4 @@
-/*	$NetBSD: subr_pool.c,v 1.256 2019/08/17 12:37:49 maxv Exp $	*/
+/*	$NetBSD: subr_pool.c,v 1.261 2019/10/16 18:29:49 christos Exp $	*/
 
 /*
  * Copyright (c) 1997, 1999, 2000, 2002, 2007, 2008, 2010, 2014, 2015, 2018
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_pool.c,v 1.256 2019/08/17 12:37:49 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_pool.c,v 1.261 2019/10/16 18:29:49 christos Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddb.h"
@@ -83,7 +83,7 @@ static struct pool phpool[PHPOOL_MAX];
 #define	PHPOOL_FREELIST_NELEM(idx) \
 	(((idx) == 0) ? BITMAP_MIN_SIZE : BITMAP_SIZE * (1 << (idx)))
 
-#if defined(KASAN)
+#if defined(DIAGNOSTIC) || defined(KASAN)
 #define POOL_REDZONE
 #endif
 
@@ -125,15 +125,45 @@ static bool pool_cache_put_quarantine(pool_cache_t, void *, paddr_t);
 #define pool_cache_put_quarantine(a, b, c)	false
 #endif
 
-#define pc_has_ctor(pc) \
-	(pc->pc_ctor != (int (*)(void *, void *, int))nullop)
-#define pc_has_dtor(pc) \
-	(pc->pc_dtor != (void (*)(void *, void *))nullop)
+#define NO_CTOR	__FPTRCAST(int (*)(void *, void *, int), nullop)
+#define NO_DTOR	__FPTRCAST(void (*)(void *, void *), nullop)
+
+#if defined(KASAN) || defined(KLEAK)
+#define pc_has_ctor(pc) ((pc)->pc_ctor != NO_CTOR)
+#define pc_has_dtor(pc) ((pc)->pc_dtor != NO_DTOR)
+#endif
+
+/*
+ * Pool backend allocators.
+ *
+ * Each pool has a backend allocator that handles allocation, deallocation,
+ * and any additional draining that might be needed.
+ *
+ * We provide two standard allocators:
+ *
+ *	pool_allocator_kmem - the default when no allocator is specified
+ *
+ *	pool_allocator_nointr - used for pools that will not be accessed
+ *	in interrupt context.
+ */
+void *pool_page_alloc(struct pool *, int);
+void pool_page_free(struct pool *, void *);
 
 static void *pool_page_alloc_meta(struct pool *, int);
 static void pool_page_free_meta(struct pool *, void *);
 
-/* allocator for pool metadata */
+struct pool_allocator pool_allocator_kmem = {
+	.pa_alloc = pool_page_alloc,
+	.pa_free = pool_page_free,
+	.pa_pagesz = 0
+};
+
+struct pool_allocator pool_allocator_nointr = {
+	.pa_alloc = pool_page_alloc,
+	.pa_free = pool_page_free,
+	.pa_pagesz = 0
+};
+
 struct pool_allocator pool_allocator_meta = {
 	.pa_alloc = pool_page_alloc_meta,
 	.pa_free = pool_page_free_meta,
@@ -141,7 +171,49 @@ struct pool_allocator pool_allocator_meta = {
 };
 
 #define POOL_ALLOCATOR_BIG_BASE 13
-extern struct pool_allocator pool_allocator_big[];
+static struct pool_allocator pool_allocator_big[] = {
+	{
+		.pa_alloc = pool_page_alloc,
+		.pa_free = pool_page_free,
+		.pa_pagesz = 1 << (POOL_ALLOCATOR_BIG_BASE + 0),
+	},
+	{
+		.pa_alloc = pool_page_alloc,
+		.pa_free = pool_page_free,
+		.pa_pagesz = 1 << (POOL_ALLOCATOR_BIG_BASE + 1),
+	},
+	{
+		.pa_alloc = pool_page_alloc,
+		.pa_free = pool_page_free,
+		.pa_pagesz = 1 << (POOL_ALLOCATOR_BIG_BASE + 2),
+	},
+	{
+		.pa_alloc = pool_page_alloc,
+		.pa_free = pool_page_free,
+		.pa_pagesz = 1 << (POOL_ALLOCATOR_BIG_BASE + 3),
+	},
+	{
+		.pa_alloc = pool_page_alloc,
+		.pa_free = pool_page_free,
+		.pa_pagesz = 1 << (POOL_ALLOCATOR_BIG_BASE + 4),
+	},
+	{
+		.pa_alloc = pool_page_alloc,
+		.pa_free = pool_page_free,
+		.pa_pagesz = 1 << (POOL_ALLOCATOR_BIG_BASE + 5),
+	},
+	{
+		.pa_alloc = pool_page_alloc,
+		.pa_free = pool_page_free,
+		.pa_pagesz = 1 << (POOL_ALLOCATOR_BIG_BASE + 6),
+	},
+	{
+		.pa_alloc = pool_page_alloc,
+		.pa_free = pool_page_free,
+		.pa_pagesz = 1 << (POOL_ALLOCATOR_BIG_BASE + 7),
+	}
+};
+
 static int pool_bigidx(size_t);
 
 /* # of seconds to retain page after last use */
@@ -1994,10 +2066,10 @@ pool_cache_bootstrap(pool_cache_t pc, size_t size, u_int align,
 	mutex_init(&pc->pc_lock, MUTEX_DEFAULT, ipl);
 
 	if (ctor == NULL) {
-		ctor = (int (*)(void *, void *, int))nullop;
+		ctor = NO_CTOR;
 	}
 	if (dtor == NULL) {
-		dtor = (void (*)(void *, void *))nullop;
+		dtor = NO_DTOR;
 	}
 
 	pc->pc_emptygroups = NULL;
@@ -2270,8 +2342,8 @@ pool_cache_invalidate(pool_cache_t pc)
 		 * cache back to the global pool then wait for the xcall to
 		 * complete.
 		 */
-		where = xc_broadcast(0, (xcfunc_t)pool_cache_transfer,
-		    pc, NULL);
+		where = xc_broadcast(0,
+		    __FPTRCAST(xcfunc_t, pool_cache_transfer), pc, NULL);
 		xc_wait(where);
 	}
 
@@ -2740,77 +2812,6 @@ pool_cache_transfer(pool_cache_t pc)
 	splx(s);
 }
 
-/*
- * Pool backend allocators.
- *
- * Each pool has a backend allocator that handles allocation, deallocation,
- * and any additional draining that might be needed.
- *
- * We provide two standard allocators:
- *
- *	pool_allocator_kmem - the default when no allocator is specified
- *
- *	pool_allocator_nointr - used for pools that will not be accessed
- *	in interrupt context.
- */
-void	*pool_page_alloc(struct pool *, int);
-void	pool_page_free(struct pool *, void *);
-
-struct pool_allocator pool_allocator_kmem = {
-	.pa_alloc = pool_page_alloc,
-	.pa_free = pool_page_free,
-	.pa_pagesz = 0
-};
-
-struct pool_allocator pool_allocator_nointr = {
-	.pa_alloc = pool_page_alloc,
-	.pa_free = pool_page_free,
-	.pa_pagesz = 0
-};
-
-struct pool_allocator pool_allocator_big[] = {
-	{
-		.pa_alloc = pool_page_alloc,
-		.pa_free = pool_page_free,
-		.pa_pagesz = 1 << (POOL_ALLOCATOR_BIG_BASE + 0),
-	},
-	{
-		.pa_alloc = pool_page_alloc,
-		.pa_free = pool_page_free,
-		.pa_pagesz = 1 << (POOL_ALLOCATOR_BIG_BASE + 1),
-	},
-	{
-		.pa_alloc = pool_page_alloc,
-		.pa_free = pool_page_free,
-		.pa_pagesz = 1 << (POOL_ALLOCATOR_BIG_BASE + 2),
-	},
-	{
-		.pa_alloc = pool_page_alloc,
-		.pa_free = pool_page_free,
-		.pa_pagesz = 1 << (POOL_ALLOCATOR_BIG_BASE + 3),
-	},
-	{
-		.pa_alloc = pool_page_alloc,
-		.pa_free = pool_page_free,
-		.pa_pagesz = 1 << (POOL_ALLOCATOR_BIG_BASE + 4),
-	},
-	{
-		.pa_alloc = pool_page_alloc,
-		.pa_free = pool_page_free,
-		.pa_pagesz = 1 << (POOL_ALLOCATOR_BIG_BASE + 5),
-	},
-	{
-		.pa_alloc = pool_page_alloc,
-		.pa_free = pool_page_free,
-		.pa_pagesz = 1 << (POOL_ALLOCATOR_BIG_BASE + 6),
-	},
-	{
-		.pa_alloc = pool_page_alloc,
-		.pa_free = pool_page_free,
-		.pa_pagesz = 1 << (POOL_ALLOCATOR_BIG_BASE + 7),
-	}
-};
-
 static int
 pool_bigidx(size_t size)
 {
@@ -3104,8 +3105,8 @@ static void
 pool_cache_redzone_check(pool_cache_t pc, void *p)
 {
 #ifdef KASAN
-	/* If there is a ctor+dtor, leave the data as valid. */
-	if (__predict_false(pc_has_ctor(pc) && pc_has_dtor(pc))) {
+	/* If there is a ctor/dtor, leave the data as valid. */
+	if (__predict_false(pc_has_ctor(pc) || pc_has_dtor(pc))) {
 		return;
 	}
 #endif

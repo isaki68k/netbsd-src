@@ -1,4 +1,4 @@
-/*	$NetBSD: uipc_mbuf.c,v 1.232 2019/01/17 02:47:15 knakahara Exp $	*/
+/*	$NetBSD: uipc_mbuf.c,v 1.235 2019/10/19 06:36:47 tnn Exp $	*/
 
 /*
  * Copyright (c) 1999, 2001, 2018 The NetBSD Foundation, Inc.
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uipc_mbuf.c,v 1.232 2019/01/17 02:47:15 knakahara Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uipc_mbuf.c,v 1.235 2019/10/19 06:36:47 tnn Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_mbuftrace.h"
@@ -188,8 +188,8 @@ mbinit(void)
 	    NULL, IPL_VM, mb_ctor, NULL, NULL);
 	KASSERT(mb_cache != NULL);
 
-	mcl_cache = pool_cache_init(mclbytes, 0, 0, 0, "mclpl", NULL,
-	    IPL_VM, NULL, NULL, NULL);
+	mcl_cache = pool_cache_init(mclbytes, COHERENCY_UNIT, 0, 0, "mclpl",
+	    NULL, IPL_VM, NULL, NULL, NULL);
 	KASSERT(mcl_cache != NULL);
 
 	pool_cache_set_drain_hook(mb_cache, mb_drain, NULL);
@@ -402,7 +402,7 @@ mbstat_type_add(int type, int diff)
 }
 
 static void
-mbstat_conver_to_user_cb(void *v1, void *v2, struct cpu_info *ci)
+mbstat_convert_to_user_cb(void *v1, void *v2, struct cpu_info *ci)
 {
 	struct mbstat_cpu *mbsc = v1;
 	struct mbstat *mbs = v2;
@@ -419,7 +419,7 @@ mbstat_convert_to_user(struct mbstat *mbs)
 
 	memset(mbs, 0, sizeof(*mbs));
 	mbs->m_drain = mbstat.m_drain;
-	percpu_foreach(mbstat_percpu, mbstat_conver_to_user_cb, mbs);
+	percpu_foreach(mbstat_percpu, mbstat_convert_to_user_cb, mbs);
 }
 
 static int
@@ -1768,12 +1768,7 @@ m_align(struct mbuf *m, int len)
 	KASSERT(len != M_COPYALL);
 	KASSERT(M_LEADINGSPACE(m) == 0);
 
-	if (m->m_flags & M_EXT)
-		buflen = m->m_ext.ext_size;
-	else if (m->m_flags & M_PKTHDR)
-		buflen = MHLEN;
-	else
-		buflen = MLEN;
+	buflen = M_BUFSIZE(m);
 
 	KASSERT(len <= buflen);
 	adjust = buflen - len;
@@ -2210,20 +2205,12 @@ m_verify_packet(struct mbuf *m)
 
 		dat = n->m_data;
 		len = n->m_len;
-
-		if (n->m_flags & M_EXT) {
-			low = n->m_ext.ext_buf;
-			high = low + n->m_ext.ext_size;
-		} else if (n->m_flags & M_PKTHDR) {
-			low = n->m_pktdat;
-			high = low + MHLEN;
-		} else {
-			low = n->m_dat;
-			high = low + MLEN;
-		}
 		if (__predict_false(dat + len < dat)) {
 			panic("%s: incorrect length (len = %d)", __func__, len);
 		}
+
+		low = M_BUFADDR(n);
+		high = low + M_BUFSIZE(n);
 		if (__predict_false((dat < low) || (dat + len > high))) {
 			panic("%s: m_data not in packet"
 			    "(dat = %p, len = %d, low = %p, high = %p)",

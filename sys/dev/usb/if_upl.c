@@ -1,4 +1,4 @@
-/*	$NetBSD: if_upl.c,v 1.66 2019/08/20 06:37:06 mrg Exp $	*/
+/*	$NetBSD: if_upl.c,v 1.68 2019/09/13 07:47:39 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2000 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_upl.c,v 1.66 2019/08/20 06:37:06 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_upl.c,v 1.68 2019/09/13 07:47:39 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -95,8 +95,7 @@ static struct usb_devno sc_devs[] = {
 	{ USB_VENDOR_PROLIFIC, USB_PRODUCT_PROLIFIC_PL2302 },
 	{ USB_VENDOR_PROLIFIC, USB_PRODUCT_PROLIFIC_PL25A1 },
 	{ USB_VENDOR_BELKIN, USB_PRODUCT_BELKIN_F5U258 },
-	{ USB_VENDOR_NI, USB_PRODUCT_NI_HTOH_7825 },
-	{ 0, 0 }
+	{ USB_VENDOR_NI, USB_PRODUCT_NI_HTOH_7825 }
 };
 
 int	upl_match(device_t, cfdata_t, void *);
@@ -230,8 +229,8 @@ upl_rx_loop(struct usbnet * un, struct usbnet_chain *c, uint32_t total_len)
 {
 	usbnet_isowned_rx(un);
 
-	DPRINTFN(9,("%s: %s: enter status=%d length=%d\n",
-		    device_xname(un->un_dev), __func__, status, total_len));
+	DPRINTFN(9,("%s: %s: enter length=%d\n",
+		    device_xname(un->un_dev), __func__, total_len));
 
 	usbnet_input(un, c->unc_buf, total_len);
 }

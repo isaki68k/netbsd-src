@@ -1,4 +1,4 @@
-/*	$NetBSD: if.c,v 1.459 2019/08/20 10:59:00 roy Exp $	*/
+/*	$NetBSD: if.c,v 1.463 2019/10/06 15:11:17 uwe Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001, 2008 The NetBSD Foundation, Inc.
@@ -90,7 +90,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if.c,v 1.459 2019/08/20 10:59:00 roy Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if.c,v 1.463 2019/10/06 15:11:17 uwe Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_inet.h"
@@ -1307,7 +1307,6 @@ if_detach(struct ifnet *ifp)
 	struct domain *dp;
 	const struct protosw *pr;
 	int s, i, family, purged;
-	uint64_t xc;
 
 #ifdef IFAREF_DEBUG
 	if_build_ifa_list(ifp);
@@ -1513,8 +1512,7 @@ restart:
 	if (in6_present)
 		pktq_barrier(ip6_pktq);
 #endif
-	xc = xc_broadcast(0, (xcfunc_t)nullop, NULL, NULL);
-	xc_wait(xc);
+	xc_barrier(0);
 
 	if (ifp->if_percpuq != NULL) {
 		if_percpuq_destroy(ifp->if_percpuq);
@@ -1807,7 +1805,7 @@ void
 ifafree(struct ifaddr *ifa)
 {
 	KASSERT(ifa != NULL);
-	KASSERT(ifa->ifa_refcnt > 0);
+	KASSERTMSG(ifa->ifa_refcnt > 0, "ifa_refcnt=%d", ifa->ifa_refcnt);
 
 	if (atomic_dec_uint_nv(&ifa->ifa_refcnt) == 0) {
 		free(ifa, M_IFADDR);
@@ -2640,7 +2638,7 @@ int
 ifpromisc_locked(struct ifnet *ifp, int pswitch)
 {
 	int pcount, ret = 0;
-	short nflags;
+	u_short nflags;
 
 	KASSERT(IFNET_LOCKED(ifp));
 
@@ -2905,6 +2903,63 @@ if_tunnel_check_nesting(struct ifnet *ifp, struct mbuf *m, int limit)
 
 	return 0;
 }
+
+static void
+if_tunnel_ro_init_pc(void *p, void *arg __unused, struct cpu_info *ci __unused)
+{
+	struct tunnel_ro *tro = p;
+
+	tro->tr_ro = kmem_zalloc(sizeof(*tro->tr_ro), KM_SLEEP);
+	tro->tr_lock = mutex_obj_alloc(MUTEX_DEFAULT, IPL_NONE);
+}
+
+percpu_t *
+if_tunnel_alloc_ro_percpu(void)
+{
+	percpu_t *ro_percpu;
+
+	ro_percpu = percpu_alloc(sizeof(struct tunnel_ro));
+	percpu_foreach(ro_percpu, if_tunnel_ro_init_pc, NULL);
+
+	return ro_percpu;
+}
+
+static void
+if_tunnel_ro_fini_pc(void *p, void *arg __unused, struct cpu_info *ci __unused)
+{
+	struct tunnel_ro *tro = p;
+
+	rtcache_free(tro->tr_ro);
+	kmem_free(tro->tr_ro, sizeof(*tro->tr_ro));
+
+	mutex_obj_free(tro->tr_lock);
+}
+
+void
+if_tunnel_free_ro_percpu(percpu_t *ro_percpu)
+{
+
+	percpu_foreach(ro_percpu, if_tunnel_ro_fini_pc, NULL);
+	percpu_free(ro_percpu, sizeof(struct tunnel_ro));
+}
+
+
+static void
+if_tunnel_rtcache_free_pc(void *p, void *arg __unused, struct cpu_info *ci __unused)
+{
+	struct tunnel_ro *tro = p;
+
+	mutex_enter(tro->tr_lock);
+	rtcache_free(tro->tr_ro);
+	mutex_exit(tro->tr_lock);
+}
+
+void if_tunnel_ro_percpu_rtcache_free(percpu_t *ro_percpu)
+{
+
+	percpu_foreach(ro_percpu, if_tunnel_rtcache_free_pc, NULL);
+}
+
 
 /* common */
 int
@@ -3206,7 +3261,7 @@ doifioctl(struct socket *so, u_long cmd, void *data, struct lwp *l)
 	struct ifreq *ifr;
 	int error = 0;
 	u_long ocmd = cmd;
-	short oif_flags;
+	u_short oif_flags;
 	struct ifreq ifrb;
 	struct oifreq *oifr = NULL;
 	int r;
@@ -3662,7 +3717,7 @@ if_do_dad(struct ifnet *ifp)
 }
 
 int
-if_flags_set(ifnet_t *ifp, const short flags)
+if_flags_set(ifnet_t *ifp, const u_short flags)
 {
 	int rc;
 
@@ -3671,7 +3726,7 @@ if_flags_set(ifnet_t *ifp, const short flags)
 	if (ifp->if_setflags != NULL)
 		rc = (*ifp->if_setflags)(ifp, flags);
 	else {
-		short cantflags, chgdflags;
+		u_short cantflags, chgdflags;
 		struct ifreq ifr;
 
 		chgdflags = ifp->if_flags ^ flags;

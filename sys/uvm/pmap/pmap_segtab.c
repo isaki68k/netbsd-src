@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap_segtab.c,v 1.7 2019/03/08 08:12:40 msaitoh Exp $	*/
+/*	$NetBSD: pmap_segtab.c,v 1.11 2019/10/20 07:22:51 skrll Exp $	*/
 
 /*-
  * Copyright (c) 1998, 2001 The NetBSD Foundation, Inc.
@@ -67,7 +67,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(0, "$NetBSD: pmap_segtab.c,v 1.7 2019/03/08 08:12:40 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap_segtab.c,v 1.11 2019/10/20 07:22:51 skrll Exp $");
 
 /*
  *	Manages physical address maps.
@@ -139,10 +139,10 @@ pmap_check_stp(pmap_segtab_t *stp, const char *caller, const char *why)
 #ifdef DEBUG_NOISY
 			for (size_t j = i; j < PMAP_SEGTABSIZE; j++)
 				printf("%s: pm_segtab.seg_tab[%zu] = 0x%p\n",
-				       caller, j, stp->seg_tab[j]);
+				    caller, j, stp->seg_tab[j]);
 #endif
 			panic("%s: pm_segtab.seg_tab[%zu] != 0 (0x%p): %s",
-			      caller, i, stp->seg_tab[i], why);
+			    caller, i, stp->seg_tab[i], why);
 		}
 	}
 #endif
@@ -299,7 +299,7 @@ pmap_segtab_alloc(void)
 			/*
 			 * XXX What else can we do?  Could we deadlock here?
 			 */
-			uvm_wait("pmap_create");
+			uvm_wait("segtab");
 			goto again;
 		}
 		SEGTAB_ADD(npage, 1);
@@ -392,7 +392,7 @@ pmap_segtab_activate(struct pmap *pm, struct lwp *l)
  */
 void
 pmap_pte_process(pmap_t pmap, vaddr_t sva, vaddr_t eva,
-	pte_callback_t callback, uintptr_t flags)
+    pte_callback_t callback, uintptr_t flags)
 {
 #if 0
 	printf("%s: %p, %"PRIxVADDR", %"PRIxVADDR", %p, %"PRIxPTR"\n",
@@ -407,12 +407,12 @@ pmap_pte_process(pmap_t pmap, vaddr_t sva, vaddr_t eva,
 		 * If VA belongs to an unallocated segment,
 		 * skip to the next segment boundary.
 		 */
-		pt_entry_t * const pte = pmap_pte_lookup(pmap, sva);
-		if (pte != NULL) {
+		pt_entry_t * const ptep = pmap_pte_lookup(pmap, sva);
+		if (ptep != NULL) {
 			/*
 			 * Callback to deal with the ptes for this segment.
 			 */
-			(*callback)(pmap, sva, lastseg_va, pte, flags);
+			(*callback)(pmap, sva, lastseg_va, ptep, flags);
 		}
 		/*
 		 * In theory we could release pages with no entries,

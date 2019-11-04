@@ -1,4 +1,4 @@
-/*	$NetBSD: audio.c,v 1.29 2019/08/23 09:41:26 maxv Exp $	*/
+/*	$NetBSD: audio.c,v 1.32 2019/10/18 04:09:02 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -142,7 +142,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.29 2019/08/23 09:41:26 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.32 2019/10/18 04:09:02 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "audio.h"
@@ -4621,7 +4621,7 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 		audio_params_t p = format2_to_params(&mixer->hwbuf.fmt);
 		rounded = sc->hw_if->round_blocksize(sc->hw_hdl, blksize,
 		    mode, &p);
-		TRACE(2, "round_blocksize %d -> %d", blksize, rounded);
+		TRACE(1, "round_blocksize %d -> %d", blksize, rounded);
 		if (rounded != blksize) {
 			if ((rounded * NBBY) % (mixer->hwbuf.fmt.stride *
 			    mixer->hwbuf.fmt.channels) != 0) {
@@ -4646,7 +4646,7 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 		size_t rounded;
 		rounded = sc->hw_if->round_buffersize(sc->hw_hdl, mode,
 		    bufsize);
-		TRACE(2, "round_buffersize %zd -> %zd", bufsize, rounded);
+		TRACE(1, "round_buffersize %zd -> %zd", bufsize, rounded);
 		if (rounded < bufsize) {
 			/* buffersize needs NBLKHW blocks at least. */
 			device_printf(sc->sc_dev,
@@ -4669,7 +4669,7 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 			capacity = mixer->frames_per_block * hwblks;
 		}
 	}
-	TRACE(2, "buffersize for %s = %zu",
+	TRACE(1, "buffersize for %s = %zu",
 	    (mode == AUMODE_PLAY) ? "playback" : "recording",
 	    bufsize);
 	mixer->hwbuf.capacity = capacity;
@@ -5730,6 +5730,36 @@ audio_track_drain(struct audio_softc *sc, audio_track_t *track)
 }
 
 /*
+ * Send signal to process.
+ * This is intended to be called only from audio_softintr_{rd,wr}.
+ * Must be called with sc_lock && sc_intr_lock held.
+ */
+static inline void
+audio_psignal(struct audio_softc *sc, pid_t pid, int signum)
+{
+	proc_t *p;
+
+	KASSERT(mutex_owned(sc->sc_lock));
+	KASSERT(mutex_owned(sc->sc_intr_lock));
+	KASSERT(pid != 0);
+
+	/*
+	 * psignal() must be called without spin lock held.
+	 * So leave intr_lock temporarily here.
+	 */
+	mutex_exit(sc->sc_intr_lock);
+
+	mutex_enter(proc_lock);
+	p = proc_find(pid);
+	if (p)
+		psignal(p, signum);
+	mutex_exit(proc_lock);
+
+	/* Enter intr_lock again */
+	mutex_enter(sc->sc_intr_lock);
+}
+
+/*
  * This is software interrupt handler for record.
  * It is called from recording hardware interrupt everytime.
  * It does:
@@ -5747,7 +5777,6 @@ audio_softintr_rd(void *cookie)
 {
 	struct audio_softc *sc = cookie;
 	audio_file_t *f;
-	proc_t *p;
 	pid_t pid;
 
 	mutex_enter(sc->sc_lock);
@@ -5767,10 +5796,7 @@ audio_softintr_rd(void *cookie)
 		pid = f->async_audio;
 		if (pid != 0) {
 			TRACEF(4, f, "sending SIGIO %d", pid);
-			mutex_enter(proc_lock);
-			if ((p = proc_find(pid)) != NULL)
-				psignal(p, SIGIO);
-			mutex_exit(proc_lock);
+			audio_psignal(sc, pid, SIGIO);
 		}
 	}
 	mutex_exit(sc->sc_intr_lock);
@@ -5799,7 +5825,6 @@ audio_softintr_wr(void *cookie)
 	struct audio_softc *sc = cookie;
 	audio_file_t *f;
 	bool found;
-	proc_t *p;
 	pid_t pid;
 
 	TRACE(4, "called");
@@ -5826,14 +5851,13 @@ audio_softintr_wr(void *cookie)
 		 */
 		if (track->usrbuf.used <= track->usrbuf_usedlow &&
 		    !track->is_pause) {
+			/* For selnotify */
 			found = true;
+			/* For SIGIO */
 			pid = f->async_audio;
 			if (pid != 0) {
 				TRACEF(4, f, "sending SIGIO %d", pid);
-				mutex_enter(proc_lock);
-				if ((p = proc_find(pid)) != NULL)
-					psignal(p, SIGIO);
-				mutex_exit(proc_lock);
+				audio_psignal(sc, pid, SIGIO);
 			}
 		}
 	}
@@ -5937,7 +5961,7 @@ audio_check_params(audio_format2_t *p)
 
 /*
  * Initialize playback and record mixers.
- * mode (AUMODE_{PLAY,RECORD}) indicates the mixer to be initalized.
+ * mode (AUMODE_{PLAY,RECORD}) indicates the mixer to be initialized.
  * phwfmt and rhwfmt indicate the hardware format.  pfil and rfil indicate
  * the filter registration information.  These four must not be NULL.
  * If successful returns 0.  Otherwise returns errno.

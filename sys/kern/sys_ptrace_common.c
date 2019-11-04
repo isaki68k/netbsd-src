@@ -1,4 +1,4 @@
-/*	$NetBSD: sys_ptrace_common.c,v 1.58 2019/07/18 20:10:46 kamil Exp $	*/
+/*	$NetBSD: sys_ptrace_common.c,v 1.69 2019/10/16 18:29:49 christos Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2009 The NetBSD Foundation, Inc.
@@ -118,7 +118,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sys_ptrace_common.c,v 1.58 2019/07/18 20:10:46 kamil Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sys_ptrace_common.c,v 1.69 2019/10/16 18:29:49 christos Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ptrace.h"
@@ -286,6 +286,7 @@ ptrace_listener_cb(kauth_cred_t cred, kauth_action_t action, void *cookie,
 	case PT_DUMPCORE:
 	case PT_RESUME:
 	case PT_SUSPEND:
+	case PT_STOP:
 		result = KAUTH_RESULT_ALLOW;
 		break;
 
@@ -493,6 +494,7 @@ ptrace_allowed(struct lwp *l, int req, struct proc *t, struct proc *p,
 	case PT_GET_PROCESS_STATE:
 	case PT_RESUME:
 	case PT_SUSPEND:
+	case PT_STOP:
 		/*
 		 * You can't do what you want to the process if:
 		 *	(1) It's not being traced at all,
@@ -511,8 +513,11 @@ ptrace_allowed(struct lwp *l, int req, struct proc *t, struct proc *p,
 
 		/*
 		 *	(3) it's not currently stopped.
+		 *
+		 *	As an exception allow PT_KILL and PT_STOP here.
 		 */
-		if (t->p_stat != SSTOP || !t->p_waited /* XXXSMP */) {
+		if (req != PT_KILL && req != PT_STOP &&
+		    (t->p_stat != SSTOP || !t->p_waited /* XXXSMP */)) {
 			DPRINTF(("stat %d flag %d\n", t->p_stat,
 			    !t->p_waited));
 			return EBUSY;
@@ -540,6 +545,7 @@ ptrace_needs_hold(int req)
 	case PT_TRACE_ME:
 	case PT_GET_SIGINFO:
 	case PT_SET_SIGINFO:
+	case PT_STOP:
 		return 1;
 	default:
 		return 0;
@@ -688,33 +694,31 @@ ptrace_set_event_mask(struct proc *t, void *addr, size_t data)
 static int
 ptrace_get_process_state(struct proc *t, void *addr, size_t data)
 {
+	struct _ksiginfo *si;
 	struct ptrace_state ps;
 
 	if (data != sizeof(ps)) {
 		DPRINTF(("%s: %zu != %zu\n", __func__, data, sizeof(ps)));
 		return EINVAL;
 	}
-	memset(&ps, 0, sizeof(ps));
 
-	if (t->p_fpid) {
-		ps.pe_report_event = PTRACE_FORK;
-		ps.pe_other_pid = t->p_fpid;
-	} else if (t->p_vfpid) {
-		ps.pe_report_event = PTRACE_VFORK;
-		ps.pe_other_pid = t->p_vfpid;
-	} else if (t->p_vfpid_done) {
-		ps.pe_report_event = PTRACE_VFORK_DONE;
-		ps.pe_other_pid = t->p_vfpid_done;
-	} else if (t->p_lwp_created) {
-		ps.pe_report_event = PTRACE_LWP_CREATE;
-		ps.pe_lwp = t->p_lwp_created;
-	} else if (t->p_lwp_exited) {
-		ps.pe_report_event = PTRACE_LWP_EXIT;
-		ps.pe_lwp = t->p_lwp_exited;
-	} else if (t->p_pspid) {
-		ps.pe_report_event = PTRACE_POSIX_SPAWN;
-		ps.pe_other_pid = t->p_pspid;
+	if (t->p_sigctx.ps_info._signo != SIGTRAP ||
+	    (t->p_sigctx.ps_info._code != TRAP_CHLD &&
+	        t->p_sigctx.ps_info._code != TRAP_LWP)) {
+		memset(&ps, 0, sizeof(ps));
+	} else {
+		si = &t->p_sigctx.ps_info;
+
+		KASSERT(si->_reason._ptrace_state._pe_report_event > 0);
+		KASSERT(si->_reason._ptrace_state._option._pe_other_pid > 0);
+
+		ps.pe_report_event = si->_reason._ptrace_state._pe_report_event;
+
+		CTASSERT(sizeof(ps.pe_other_pid) == sizeof(ps.pe_lwp));
+		ps.pe_other_pid =
+			si->_reason._ptrace_state._option._pe_other_pid;
 	}
+
 	DPRINTF(("%s: lwp=%d event=%#x pid=%d lwp=%d\n", __func__,
 	    t->p_sigctx.ps_lwp, ps.pe_report_event,
 	    ps.pe_other_pid, ps.pe_lwp));
@@ -793,9 +797,12 @@ ptrace_startstop(struct proc *t, struct lwp **lt, int rq, void *addr,
 	DPRINTF(("%s: lwp=%d request=%d\n", __func__, (*lt)->l_lid, rq));
 	lwp_lock(*lt);
 	if (rq == PT_SUSPEND)
-		(*lt)->l_flag |= LW_WSUSPEND;
-	else
-		(*lt)->l_flag &= ~LW_WSUSPEND;
+		(*lt)->l_flag |= LW_DBGSUSPEND;
+	else {
+		(*lt)->l_flag &= ~LW_DBGSUSPEND;
+		if ((*lt)->l_flag != LSSUSPENDED)
+			(*lt)->l_stat = LSSTOP;
+	}
 	lwp_unlock(*lt);
 	return 0;
 }
@@ -890,16 +897,9 @@ ptrace_regs(struct lwp *l, struct lwp **lt, int rq, struct ptrace_methods *ptm,
 #endif
 
 static int
-ptrace_sendsig(struct proc *t, struct lwp *lt, int signo, int resume_all)
+ptrace_sendsig(struct lwp *l, int req, struct proc *t, struct lwp *lt, int signo, int resume_all)
 {
 	ksiginfo_t ksi;
-
-	t->p_fpid = 0;
-	t->p_vfpid = 0;
-	t->p_vfpid_done = 0;
-	t->p_lwp_created = 0;
-	t->p_lwp_exited = 0;
-	t->p_pspid = 0;
 
 	/* Finally, deliver the requested signal (or none). */
 	if (t->p_stat == SSTOP) {
@@ -925,23 +925,20 @@ ptrace_sendsig(struct proc *t, struct lwp *lt, int signo, int resume_all)
 		return 0;
 	}
 
-	KSI_INIT_EMPTY(&ksi);
-	if (t->p_sigctx.ps_faked) {
-		if (signo != t->p_sigctx.ps_info._signo)
-			return EINVAL;
-		t->p_sigctx.ps_faked = false;
-		ksi.ksi_info = t->p_sigctx.ps_info;
-		ksi.ksi_lid = t->p_sigctx.ps_lwp;
-	} else if (signo == 0) {
-		return 0;
-	} else {
-		ksi.ksi_signo = signo;
-	}
-	DPRINTF(("%s: pid=%d.%d signal=%d resume_all=%d\n", __func__, t->p_pid,
-	    t->p_sigctx.ps_lwp, signo, resume_all));
+	KASSERT(req == PT_KILL || req == PT_STOP || req == PT_ATTACH);
 
-	kpsignal2(t, &ksi);
-	return 0;
+	KSI_INIT(&ksi);
+	ksi.ksi_signo = signo;
+	ksi.ksi_code = SI_USER;
+	ksi.ksi_pid = l->l_proc->p_pid;
+	ksi.ksi_uid = kauth_cred_geteuid(l->l_cred);
+
+	t->p_sigctx.ps_faked = false;
+
+	DPRINTF(("%s: pid=%d.%d signal=%d resume_all=%d\n", __func__, t->p_pid,
+	    lt->l_lid, signo, resume_all));
+
+	return kpsignal2(t, &ksi);
 }
 
 static int
@@ -1205,8 +1202,12 @@ do_ptrace(struct ptrace_methods *ptm, struct lwp *l, int req, pid_t pid,
 				signo = tmp;
 				tmp = 0;	/* don't search for LWP */
 			}
-		} else
+		} else if (tmp == INT_MIN) {
+			error = ESRCH;
+			break;
+		} else {
 			tmp = -tmp;
+		}
 
 		if (tmp > 0) {
 			if (req == PT_DETACH) {
@@ -1246,7 +1247,8 @@ do_ptrace(struct ptrace_methods *ptm, struct lwp *l, int req, pid_t pid,
 		if (resume_all) {
 #ifdef PT_STEP
 			if (req == PT_STEP) {
-				if (lt->l_flag & LW_WSUSPEND) {
+				if (lt->l_flag &
+				    (LW_WSUSPEND | LW_DBGSUSPEND)) {
 					error = EDEADLK;
 					break;
 				}
@@ -1255,7 +1257,9 @@ do_ptrace(struct ptrace_methods *ptm, struct lwp *l, int req, pid_t pid,
 			{
 				error = EDEADLK;
 				LIST_FOREACH(lt2, &t->p_lwps, l_sibling) {
-					if ((lt2->l_flag & LW_WSUSPEND) == 0) {
+					if ((lt2->l_flag &
+					    (LW_WSUSPEND | LW_DBGSUSPEND)) == 0
+					    ) {
 						error = 0;
 						break;
 					}
@@ -1264,14 +1268,14 @@ do_ptrace(struct ptrace_methods *ptm, struct lwp *l, int req, pid_t pid,
 					break;
 			}
 		} else {
-			if (lt->l_flag & LW_WSUSPEND) {
+			if (lt->l_flag & (LW_WSUSPEND | LW_DBGSUSPEND)) {
 				error = EDEADLK;
 				break;
 			}
 		}
 
 		/*
-		 * Reject setting program cunter to 0x0 if VA0 is disabled.
+		 * Reject setting program counter to 0x0 if VA0 is disabled.
 		 *
 		 * Not all kernels implement this feature to set Program
 		 * Counter in one go in PT_CONTINUE and similar operations.
@@ -1331,7 +1335,7 @@ do_ptrace(struct ptrace_methods *ptm, struct lwp *l, int req, pid_t pid,
 			CLR(lt->l_pflag, LP_SINGLESTEP);
 		}
 	sendsig:
-		error = ptrace_sendsig(t, lt, signo, resume_all);
+		error = ptrace_sendsig(l, req, t, lt, signo, resume_all);
 		break;
 
 	case PT_SYSCALLEMU:
@@ -1362,6 +1366,11 @@ do_ptrace(struct ptrace_methods *ptm, struct lwp *l, int req, pid_t pid,
 	case PT_KILL:
 		/* just send the process a KILL signal. */
 		signo = SIGKILL;
+		goto sendsig;	/* in PT_CONTINUE, above. */
+
+	case PT_STOP:
+		/* just send the process a STOP signal. */
+		signo = SIGSTOP;
 		goto sendsig;	/* in PT_CONTINUE, above. */
 
 	case PT_ATTACH:
@@ -1496,14 +1505,14 @@ process_doregs(struct lwp *curl /*tracer*/,
 			return EINVAL;
 		}
 		s = sizeof(process_reg32);
-		r = (regrfunc_t)process_read_regs32;
-		w = (regwfunc_t)process_write_regs32;
+		r = __FPTRCAST(regrfunc_t, process_read_regs32);
+		w = __FPTRCAST(regwfunc_t, process_write_regs32);
 	} else
 #endif
 	{
 		s = sizeof(struct reg);
-		r = (regrfunc_t)process_read_regs;
-		w = (regwfunc_t)process_write_regs;
+		r = __FPTRCAST(regrfunc_t, process_read_regs);
+		w = __FPTRCAST(regwfunc_t, process_write_regs);
 	}
 	return proc_regio(l, uio, s, r, w);
 #else
