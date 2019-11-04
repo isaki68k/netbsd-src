@@ -739,6 +739,45 @@ ENTRY(spl7)
 	rts
 
 
+/*
+ * Read specified address as byte.
+ *  If success, return read data
+ *  If bus error, set isbuserr 1
+ */
+	.macro	READX	movX
+	link	%a6,#0
+	moveml	%a2-%a3,%sp@-
+	movc	%vbr,%a3	| %a3: vbr
+	movl	0x0008(%a3),%a2	| %a2: save current handler
+	leal	rw_buserr,%a0	| load new handler
+	movl	%a0,0x0008(%a3)	| and set
+
+	movq	#0,%d0		| clear %d0
+	leal	1f,%a1		| %a1: return addr
+	movl	%a6@(8),%a0	| %a0: target addr
+	\movX	%a0@,%d0	| check!
+1:
+	movl	%a2,0x0008(%a3)	| restore buserr handler
+	moveml	%sp@+,%a2-%a3
+	unlk	%a6
+	rts
+	.endm
+
+ENTRY(read_1)
+	READX	movb
+
+ENTRY(read_2)
+	READX	movw
+
+ENTRY(read_4)
+	READX	movl
+
+ASENTRY_NOPROFILE(rw_buserr)
+	movq	#1,%d0
+	movl	%d0,_C_LABEL(isbuserr)
+	movl	%a1,%sp@(2)	| new return addrress
+	rte
+
 	.data
 
 /*

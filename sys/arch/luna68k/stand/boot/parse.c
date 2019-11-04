@@ -125,6 +125,126 @@ cmd_help(int argc, char *argv[])
 	return ST_NORMAL;
 }
 
+
+#if 1
+/*
+ * read/write test
+ */
+extern uint32_t read_1(uint32_t);
+extern uint32_t read_2(uint32_t);
+extern uint32_t read_4(uint32_t);
+uint32_t hex2bin(const char *, char **);
+int cmd_r(int, char*[]);
+
+uint32_t
+hex2bin(const char *s, char **end)
+{
+	uint32_t rv;
+
+	rv = 0;
+	for (; *s; s++) {
+		char ch = *s;
+		if ('0' <= ch && ch <= '9') {
+			rv = rv * 16 + (ch - '0');
+			continue;
+		}
+		ch |= 0x20;
+		if ('a' <= ch && ch <= 'f') {
+			rv = rv * 16 + (ch - 'a' + 10);
+			continue;
+		}
+		/* If not hex character, so break */
+		break;
+	}
+	if (end) {
+		*end = __UNCONST(s);
+	}
+	return rv;
+}
+
+uint32_t isbuserr;
+
+int
+cmd_r(int argc, char *argv[])
+{
+	char *end;
+	uint32_t addr;
+	uint32_t data;
+	int size;
+	int lines;
+	int i, j;
+
+	if (argc != 2 && argc != 3) {
+		printf("usage: r <hex-address>[.<size>] [<lines>]\n");
+		printf("       <size> := l,w,b (default:l)\n");
+		return ST_NORMAL;
+	}
+
+	addr = hex2bin(argv[1], &end);
+	size = 4;
+	if (*end == '.') {
+		char s = *++end;
+		s |= 0x20;
+		if (s == 'b') {
+			size = 1;
+		} else if (s == 'w') {
+			size = 2;
+		} else if (s == 'l') {
+			size = 4;
+		}
+		/* no error check */
+	}
+
+	lines = 1;
+	if (argc == 3) {
+		lines = atoi(argv[2]);
+	}
+
+	for (j = 0; j < lines; j++) {
+		printf("%08x:", addr);
+		switch (size) {
+		 case 1:
+			for (i = 0; i < 16; i++) {
+				isbuserr = 0;
+				data = read_1(addr + i);
+				if (isbuserr)
+					printf(" --");
+				else
+					printf(" %02x", data);
+
+				if (i == 7)
+					printf(" ");
+			}
+			break;
+		 case 2:
+			for (i = 0; i < 16; i += 2) {
+				isbuserr = 0;
+				data = read_2(addr + i);
+				if (isbuserr)
+					printf(" ----");
+				else
+					printf(" %04x", data);
+			}
+			break;
+		 case 4:
+			for (i = 0; i < 16; i += 4) {
+				isbuserr = 0;
+				data = read_4(addr + i);
+				if (isbuserr)
+					printf(" --------");
+				else
+					printf(" %08x", data);
+			}
+			break;
+		}
+		printf("\n");
+		addr += 16;
+	}
+
+	return ST_NORMAL;
+}
+#endif /* readwrite test */
+
 struct command_entry {
 	char *name;
 	int (*func)(int, char **);
@@ -149,6 +269,9 @@ static const struct command_entry entries[] = {
 #endif
 	{ "scsi",	scsi         },
 	{ "quit",	exit_program },
+
+	{ "r",		cmd_r        },
+//	{ "w",		cmd_w        },
 	{ NULL, NULL }
 };
 
