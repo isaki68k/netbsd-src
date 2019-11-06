@@ -4518,7 +4518,7 @@ audio_track_record(audio_track_t *track)
 		int bytes1;
 		int bytes2;
 
-		bytes1 = auring_get_contig_used(usrbuf);
+		bytes1 = auring_get_contig_free(usrbuf);
 		KASSERT(bytes1 % framesize == 0);
 		memcpy((uint8_t *)usrbuf->mem + auring_tail(usrbuf),
 		    (uint8_t *)outbuf->mem + outbuf->head * framesize,
