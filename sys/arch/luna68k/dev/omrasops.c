@@ -108,7 +108,7 @@ omfb_sixel(struct rasops_info */*ri*/,
 #define	ALIGNMASK	(0x1f)
 #define	BYTESDONE	(4)
 
-// XXX
+// XXX アトリビュートの 8bpp 対応も含めて再設計が必要。
 struct rowattr_t
 {
 	union {
@@ -1612,7 +1612,7 @@ omfb_cursor(void *cookie, int on, int row, int col)
  * <--fg-->  <--bg-->
 #if 0
  * TODO:
- * f8 b8 f7 b7 f6 b6 f5 b5 f4 b4 f3 b3 f2 b2 f1 b1 f0 b0
+ * f7 b7 f6 b6 f5 b5 f4 b4 f3 b3 f2 b2 f1 b1 f0 b0
  * reverse を処理した後の fg, bg  を 1 ビットごとに分解して格納する。
  * プレーン ROP の設定時の演算コストを下げるためにここで分解する。
  * 1bpp の場合は f0, b0 を使用する。
