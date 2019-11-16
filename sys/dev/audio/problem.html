@@ -554,6 +554,10 @@ hdaudio(4) doesn't support mmap
 hdaudio.c の mmap は audio driver の mmap じゃなく
 character device の mmap だという別のオチはあるのだが。
 
+<dt><font color=#555><a href="http://gnats.netbsd.org/50603">port-amd64/50603</a>
+Playing audio with Linux pulseaudio apps fails on NetBSD/amd64</font>
+<dd>Linux エミュレーション側の問題っぽい。
+
 <dt><s><a href="http://gnats.netbsd.org/50613">kern/50613</a></s>
 unpausing audio(4) causes already written data to be dropped
 <dd>pause 解除するとそこまでに書き込んでたデータが消える。
@@ -769,7 +773,7 @@ Jetson TK1 audio playback has clicks since isaki-audio2 merge
 running stress-ng --dev 1 will cause the kernel to panic and reboot
 <dd>詳細不明。nat が N8 の mmap あたりを直したようだ。
 
-<dt><font color=#555><a href="http://gnats.netbsd.org/54614">kern/54614</a>
+<dt><font color=#555><a href="http://gnats.netbsd.org/54614">port-arm/54614</a>
 playing with uaudio panics on rpi</font>
 <dd>DMA あたりの問題?
 
@@ -784,6 +788,14 @@ uaudio sometimes not recognized
 <dt><s><a href="http://gnats.netbsd.org/54667">kern/54667</a></s>
 libossaudio returns incorrect recording sample rate
 <dd>録音再生が分離されたことに libossaudio 側が対応してなかった件。
+
+<dt><font color=#555><a href="http://gnats.netbsd.org/54696">port-evbarm/54696</a>
+Kernel panic in bus_dma.c on Raspberry Pi 3B/3B+</font>
+<dd>DMA あたりの問題。
+
+<dt><a href="http://gnats.netbsd.org/54700">kern/54700</a>
+beeps through audio device stop happening
+<dd>ビープがとまる場合があるらしい?
 
 </dl>
 
