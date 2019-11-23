@@ -775,7 +775,7 @@ running stress-ng --dev 1 will cause the kernel to panic and reboot
 
 <dt><font color=#555><a href="http://gnats.netbsd.org/54614">port-arm/54614</a>
 playing with uaudio panics on rpi</font>
-<dd>DMA あたりの問題?
+<dd>dwc2 の問題。
 
 <dt><font color=#555><s><a href="http://gnats.netbsd.org/54658">kern/54658</a></s>
 zaudio(4) attach failure (after MI i2c(4) changes?)</font>
@@ -791,11 +791,16 @@ libossaudio returns incorrect recording sample rate
 
 <dt><font color=#555><a href="http://gnats.netbsd.org/54696">port-evbarm/54696</a>
 Kernel panic in bus_dma.c on Raspberry Pi 3B/3B+</font>
-<dd>DMA あたりの問題。
+<dd>dwc2 の問題。
 
 <dt><a href="http://gnats.netbsd.org/54700">kern/54700</a>
 beeps through audio device stop happening
 <dd>ビープがとまる場合があるらしい?
+
+<dt><font color=#555><a href="http://gnats.netbsd.org/54705">kern/54705</a>
+uaudio: move computing of the number of input channels under UAUDIO_DEBUG</font>
+<dd>ifdef の問題。
+
 
 </dl>
 
