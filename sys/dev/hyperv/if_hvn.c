@@ -1,4 +1,4 @@
-/*	$NetBSD: if_hvn.c,v 1.5 2019/10/01 18:00:08 chs Exp $	*/
+/*	$NetBSD: if_hvn.c,v 1.11 2019/11/26 01:46:31 nonaka Exp $	*/
 /*	$OpenBSD: if_hvn.c,v 1.39 2018/03/11 14:31:34 mikeb Exp $	*/
 
 /*-
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_hvn.c,v 1.5 2019/10/01 18:00:08 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_hvn.c,v 1.11 2019/11/26 01:46:31 nonaka Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -565,7 +565,7 @@ hvn_encap(struct hvn_softc *sc, struct mbuf *m, struct hvn_tx_desc **txd0)
 	case 0:
 		break;
 	case EFBIG:
-		if (m_defrag(m, M_NOWAIT) == 0 &&
+		if (m_defrag(m, M_NOWAIT) != NULL &&
 		    bus_dmamap_load_mbuf(sc->sc_dmat, txd->txd_dmap, m,
 		      BUS_DMA_READ | BUS_DMA_NOWAIT) == 0)
 			break;
@@ -632,7 +632,8 @@ hvn_decap(struct hvn_softc *sc, struct hvn_tx_desc *txd)
 {
 	struct ifnet *ifp = SC2IFP(sc);
 
-	bus_dmamap_sync(sc->sc_dmat, txd->txd_dmap, 0, 0,
+	bus_dmamap_sync(sc->sc_dmat, txd->txd_dmap,
+	    0, txd->txd_dmap->dm_mapsize,
 	    BUS_DMASYNC_POSTREAD | BUS_DMASYNC_POSTWRITE);
 	bus_dmamap_unload(sc->sc_dmat, txd->txd_dmap);
 	txd->txd_buf = NULL;
@@ -667,7 +668,8 @@ hvn_txeof(struct hvn_softc *sc, uint64_t tid)
 	}
 	txd->txd_buf = NULL;
 
-	bus_dmamap_sync(sc->sc_dmat, txd->txd_dmap, 0, 0,
+	bus_dmamap_sync(sc->sc_dmat, txd->txd_dmap,
+	    0, txd->txd_dmap->dm_mapsize,
 	    BUS_DMASYNC_POSTREAD | BUS_DMASYNC_POSTWRITE);
 	bus_dmamap_unload(sc->sc_dmat, txd->txd_dmap);
 	m_freem(m);
@@ -844,7 +846,8 @@ hvn_tx_ring_destroy(struct hvn_softc *sc)
 		txd = &sc->sc_tx_desc[i];
 		if (txd->txd_dmap == NULL)
 			continue;
-		bus_dmamap_sync(sc->sc_dmat, txd->txd_dmap, 0, 0,
+		bus_dmamap_sync(sc->sc_dmat, txd->txd_dmap,
+		    0, txd->txd_dmap->dm_mapsize,
 		    BUS_DMASYNC_POSTWRITE);
 		bus_dmamap_unload(sc->sc_dmat, txd->txd_dmap);
 		bus_dmamap_destroy(sc->sc_dmat, txd->txd_dmap);
@@ -855,7 +858,8 @@ hvn_tx_ring_destroy(struct hvn_softc *sc)
 		txd->txd_buf = NULL;
 	}
 	if (sc->sc_tx_rmap) {
-		bus_dmamap_sync(sc->sc_dmat, sc->sc_tx_rmap, 0, 0,
+		bus_dmamap_sync(sc->sc_dmat, sc->sc_tx_rmap,
+		    0, txd->txd_dmap->dm_mapsize,
 		    BUS_DMASYNC_POSTWRITE);
 		bus_dmamap_unload(sc->sc_dmat, sc->sc_tx_rmap);
 		bus_dmamap_destroy(sc->sc_dmat, sc->sc_tx_rmap);
@@ -921,12 +925,6 @@ hvn_nvs_attach(struct hvn_softc *sc)
 	    (HVN_TX_FRAGS + 1) * sizeof(struct vmbus_gpa));
 
 	sc->sc_chan->ch_flags &= ~CHF_BATCHED;
-
-	if (vmbus_channel_setdeferred(sc->sc_chan, device_xname(sc->sc_dev))) {
-		aprint_error_dev(sc->sc_dev,
-		    "failed to create the interrupt thread\n");
-		return -1;
-	}
 
 	/* Associate our interrupt handler with the channel */
 	if (vmbus_channel_open(sc->sc_chan, ringsize, NULL, 0,
@@ -1069,7 +1067,7 @@ hvn_nvs_cmd(struct hvn_softc *sc, void *cmd, size_t cmdsize, uint64_t tid,
 			if (cold)
 				delay(1000);
 			else
-				tsleep(cmd, PRIBIO, "nvsout", 1);
+				tsleep(cmd, PRIBIO, "nvsout", mstohz(1));
 		} else if (rv) {
 			DPRINTF("%s: NVSP operation %u send error %d\n",
 			    device_xname(sc->sc_dev), hdr->nvs_type, rv);
@@ -1087,13 +1085,14 @@ hvn_nvs_cmd(struct hvn_softc *sc, void *cmd, size_t cmdsize, uint64_t tid,
 		return 0;
 
 	do {
-		if (cold)
+		if (cold) {
 			delay(1000);
-		else
-			tsleep(sc, PRIBIO | PCATCH, "nvscmd", 1);
-		s = splnet();
-		hvn_nvs_intr(sc);
-		splx(s);
+			s = splnet();
+			hvn_nvs_intr(sc);
+			splx(s);
+		} else
+			tsleep(sc->sc_nvsrsp, PRIBIO | PCATCH, "nvscmd",
+			    mstohz(1));
 	} while (--timo > 0 && sc->sc_nvsdone != 1);
 
 	if (timo == 0 && sc->sc_nvsdone != 1) {
@@ -1391,7 +1390,7 @@ hvn_rndis_cmd(struct hvn_softc *sc, struct rndis_cmd *rc, int timo)
 			if (cold)
 				delay(1000);
 			else
-				tsleep(rc, PRIBIO, "rndisout", 1);
+				tsleep(rc, PRIBIO, "rndisout", mstohz(1));
 		} else if (rv) {
 			DPRINTF("%s: RNDIS operation %u send error %d\n",
 			    device_xname(sc->sc_dev), hdr->rm_type, rv);
@@ -1410,13 +1409,13 @@ hvn_rndis_cmd(struct hvn_softc *sc, struct rndis_cmd *rc, int timo)
 	    BUS_DMASYNC_POSTWRITE);
 
 	do {
-		if (cold)
+		if (cold) {
 			delay(1000);
-		else
-			tsleep(rc, PRIBIO | PCATCH, "rndiscmd", 1);
-		s = splnet();
-		hvn_nvs_intr(sc);
-		splx(s);
+			s = splnet();
+			hvn_nvs_intr(sc);
+			splx(s);
+		} else
+			tsleep(rc, PRIBIO | PCATCH, "rndiscmd", mstohz(1));
 	} while (--timo > 0 && rc->rc_done != 1);
 
 	bus_dmamap_sync(sc->sc_dmat, rc->rc_dmap, 0, PAGE_SIZE,

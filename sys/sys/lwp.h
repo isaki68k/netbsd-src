@@ -1,7 +1,7 @@
-/*	$NetBSD: lwp.h,v 1.187 2019/10/03 22:26:43 kamil Exp $	*/
+/*	$NetBSD: lwp.h,v 1.190 2019/11/23 19:42:52 ad Exp $	*/
 
 /*
- * Copyright (c) 2001, 2006, 2007, 2008, 2009, 2010
+ * Copyright (c) 2001, 2006, 2007, 2008, 2009, 2010, 2019
  *    The NetBSD Foundation, Inc.
  * All rights reserved.
  *
@@ -53,6 +53,9 @@ struct lwp;
 /* forward declare this for <machine/cpu.h> so it can get l_cpu. */
 static __inline struct cpu_info *lwp_getcpu(struct lwp *);
 #include <machine/cpu.h>		/* curcpu() and cpu_info */
+#ifdef _KERNEL_OPT
+#include "opt_kmsan.h"
+#endif
 #endif
 
 #include <machine/proc.h>		/* Machine-dependent proc substruct. */
@@ -204,6 +207,10 @@ struct lwp {
 	uint64_t	*l_syscall_counter; /* !: counter for current process */
 
 	struct kdtrace_thread *l_dtrace; /* (: DTrace-specific data. */
+
+#ifdef KMSAN
+	void		*l_kmsan; /* !: KMSAN private data. */
+#endif
 };
 
 /*
@@ -319,7 +326,7 @@ void	lwp_startup(lwp_t *, lwp_t *);
 void	startlwp(void *);
 
 int	lwp_locked(lwp_t *, kmutex_t *);
-void	lwp_setlock(lwp_t *, kmutex_t *);
+kmutex_t *lwp_setlock(lwp_t *, kmutex_t *);
 void	lwp_unlock_to(lwp_t *, kmutex_t *);
 int	lwp_trylock(lwp_t *);
 void	lwp_addref(lwp_t *);
@@ -337,6 +344,7 @@ void	lwp_exit(lwp_t *);
 void	lwp_exit_switchaway(lwp_t *) __dead;
 int	lwp_suspend(lwp_t *, lwp_t *);
 int	lwp_create1(lwp_t *, const void *, size_t, u_long, lwpid_t *);
+void	lwp_start(lwp_t *, int);
 void	lwp_update_creds(lwp_t *);
 void	lwp_migrate(lwp_t *, struct cpu_info *);
 lwp_t *	lwp_find2(pid_t, lwpid_t);
