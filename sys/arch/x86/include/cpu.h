@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.h,v 1.110 2019/10/12 06:31:03 maxv Exp $	*/
+/*	$NetBSD: cpu.h,v 1.114 2019/11/27 06:24:33 maxv Exp $	*/
 
 /*
  * Copyright (c) 1990 The Regents of the University of California.
@@ -76,6 +76,7 @@
 
 struct intrsource;
 struct pmap;
+struct kcpuset;
 
 #ifdef __x86_64__
 #define	i386tss	x86_64_tss
@@ -135,7 +136,10 @@ struct cpu_info {
 	int ci_curldt;		/* current LDT descriptor */
 	int ci_nintrhand;	/* number of H/W interrupt handlers */
 	uint64_t ci_scratch;
-	uintptr_t ci_pmap_data[128 / sizeof(uintptr_t)];
+	uintptr_t ci_pmap_data[64 / sizeof(uintptr_t)];
+	struct kcpuset *ci_tlb_cpuset;
+
+	int ci_kfpu_spl;
 
 #ifndef XENPV
 	struct intrsource *ci_isources[MAX_INTR_SOURCES];
@@ -371,7 +375,6 @@ extern struct cpu_info *cpu_info_list;
 #if !defined(__GNUC__) || defined(_MODULE)
 /* For non-GCC and modules */
 struct cpu_info	*x86_curcpu(void);
-void	cpu_set_curpri(int);
 # ifdef __GNUC__
 lwp_t	*x86_curlwp(void) __attribute__ ((const));
 # else
@@ -383,11 +386,7 @@ lwp_t   *x86_curlwp(void);
 
 #define CPU_IS_PRIMARY(ci)	((ci)->ci_flags & CPUF_PRIMARY)
 
-#define	X86_AST_GENERIC		0x01
-#define	X86_AST_PREEMPT		0x02
-
-#define aston(l, why)		((l)->l_md.md_astpending |= (why))
-#define	cpu_did_resched(l)	((l)->l_md.md_astpending &= ~X86_AST_PREEMPT)
+#define aston(l)		((l)->l_md.md_astpending = 1)
 
 void cpu_boot_secondary_processors(void);
 void cpu_init_idle_lwps(void);
