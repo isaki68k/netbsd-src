@@ -1538,6 +1538,56 @@ test_write_rept(void)
 	}
 }
 
+// 再生 (open-write-close) を複数回繰り返し。
+// 2回目の再生データが長くてすぐに drain が起きないケース。
+// hdafg, zaudio など(?)一部のドライバは halt_output() で HW に停止の指示は
+// 出すが実際に HW が止まるかどうか分からないものがあり、そのような環境で
+// すぐ上の write_rept テストのように open-write-close, open-write-close を
+// 連続して行うと2回目の close 中の track_drain がタイムアウトする。
+// close や track_drain そのものに問題があるかどうかを切り分けるため、
+// 2回目の write がすぐに帰ってこないようバッファサイズ以上のデータを渡す。
+// 上記のようなドライバだと、この場合は今度は write がタイムアウトすることに
+// なる。というもの。
+// ただし成功するドライバでは無音が10秒続くことになるので普段は外しておく。
+void
+test_write_rept_2(void)
+{
+	TEST("write_rept_2");
+#if 1
+	XP_SKIP("This is only for test.");
+	return;
+#else
+	char buf[72000];	// > 64KB XXX 実際には bufsize 以上であることをチェック
+	int fd;
+	int r;
+
+	memset(buf, 0xff, sizeof(buf));
+	// 1回目
+	fd = OPEN(devaudio, O_WRONLY);
+	if (fd == -1)
+		err(1, "open: %s", devaudio);
+
+	r = WRITE(fd, buf, 8000);	// 1sec
+	XP_SYS_EQ(sizeof(buf), r);
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+
+	// 2回目
+	fd = OPEN(devaudio, O_WRONLY);
+	if (fd == -1)
+		err(1, "open: %s", devaudio);
+
+	// 64KB(厳密にはioctlで調べるべきだが)を超えているので
+	// もし再生がスタックしてしまうと、このwrite中にtimeoutが起きるはず
+	r = WRITE(fd, buf, 72000);	// 9sec
+	XP_SYS_EQ(sizeof(buf), r);
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+#endif
+}
+
 // 通常録音
 void
 test_read(void)
@@ -7376,6 +7426,7 @@ struct testtable testtable[] = {
 	DEF(write_PLAY_ALL),
 	DEF(write_PLAY),
 	DEF(write_rept),
+	DEF(write_rept_2),
 	DEF(read),
 	DEF(rdwr_fallback),
 	DEF(readwrite_2),
