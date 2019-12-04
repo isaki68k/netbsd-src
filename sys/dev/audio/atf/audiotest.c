@@ -1151,7 +1151,9 @@ mode2rec(int mode)
 	void test__ ## name (void); \
 	void test__ ## name (void)
 
-/* Whether it can be open()ed with specified mode */
+/*
+ * Whether it can be open()ed with specified mode.
+ */
 void
 test_open_mode(int mode)
 {
@@ -1177,7 +1179,9 @@ DEF(open_mode_WRONLY)	{ test_open_mode(O_WRONLY); }
 DEF(open_mode_RDWR)	{ test_open_mode(O_RDWR);   }
 
 
-/* The initial parameters are always the same whenever you open /dev/audio */
+/*
+ * The initial parameters are always the same whenever you open /dev/audio.
+ */
 void
 test_open_audio(int mode)
 {
@@ -1547,7 +1551,9 @@ DEF(open_sound_sticky)
 	REQUIRED_SYS_EQ(0, r);
 }
 
-/* Open two descriptors simultaneously */
+/*
+ * Open two descriptors simultaneously.
+ */
 void
 test_open_simul(int mode0, int mode1)
 {
@@ -1654,7 +1660,9 @@ DEF(open_simul_RDWR_RDONLY)	{ test_open_simul(O_RDWR, O_RDONLY);	}
 DEF(open_simul_RDWR_WRONLY)	{ test_open_simul(O_RDWR, O_WRONLY);	}
 DEF(open_simul_RDWR_RDWR)	{ test_open_simul(O_RDWR, O_RDWR);	}
 
-/* Multiuser open */
+/*
+ * Multiuser open.
+ */
 void
 test_open_multiuser(int multiuser)
 {
@@ -1758,7 +1766,7 @@ DEF(open_multiuser_0)	{ test_open_multiuser(0); }
 DEF(open_multiuser_1)	{ test_open_multiuser(1); }
 
 /*
- * Normal playback (with PLAY_ALL)
+ * Normal playback (with PLAY_ALL).
  * It does not verify real playback data.
  */
 DEF(write_PLAY_ALL)
@@ -1787,7 +1795,7 @@ DEF(write_PLAY_ALL)
 }
 
 /*
- * Normal playback (without PLAY_ALL)
+ * Normal playback (without PLAY_ALL).
  * It does not verify real playback data.
  */
 DEF(write_PLAY)
@@ -1834,6 +1842,7 @@ DEF(write_PLAY)
 		totalsize += r;
 	}
 
+	/* XXX What should I test it? */
 	/* Check ai.play.error */
 	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
 	REQUIRED_SYS_EQ(0, r);
@@ -1893,7 +1902,7 @@ DEF(write_rept)
 }
 
 /*
- * Normal recording
+ * Normal recording.
  * It does not verify real recorded data.
  */
 DEF(read)
@@ -1921,7 +1930,7 @@ DEF(read)
 }
 
 /*
- * O_RDWR falls back to O_WRONLY on half-duplex hardware.
+ * Opening with O_RDWR on half-duplex hardware falls back to O_WRONLY.
  * expwrite: expected to be able to play.
  * expread : expected to be able to recored.
  */
@@ -1976,7 +1985,9 @@ DEF(rdwr_fallback_RDWR) {
 	rdwr_fallback(O_RDWR, true, expread);
 }
 
-/* DRAIN should work even on incomplete data left */
+/*
+ * DRAIN should work even on incomplete data left.
+ */
 DEF(drain_incomplete)
 {
 	struct audio_info ai;
@@ -2007,7 +2018,9 @@ DEF(drain_incomplete)
 	XP_SYS_EQ(0, r);
 }
 
-/* DRAIN should work even in pause */
+/*
+ * DRAIN should work even in pause.
+ */
 DEF(drain_pause)
 {
 	struct audio_info ai;
@@ -2036,7 +2049,9 @@ DEF(drain_pause)
 	XP_SYS_EQ(0, r);
 }
 
-/* DRAIN does not affect for record-only descriptor */
+/*
+ * DRAIN does not affect for record-only descriptor.
+ */
 DEF(drain_onrec)
 {
 	int fd;
