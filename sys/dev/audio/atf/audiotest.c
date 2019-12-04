@@ -1054,7 +1054,7 @@ void debug_kev(int line, const char *name, const struct kevent *kev)
 	    filterbuf,
 	    kev->fflags,
 	    kev->data,
-	    (int)kev->udata);
+	    (int)(intptr_t)kev->udata);
 }
 
 /* XXX rump? */
