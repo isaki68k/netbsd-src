@@ -1772,17 +1772,18 @@ DEF(write_PLAY_ALL)
 	fd = OPEN(devaudio, O_WRONLY);
 	if (hw_canplay()) {
 		REQUIRED_SYS_OK(fd);
-
-		/* mulaw 1sec silence */
-		memset(buf, 0xff, sizeof(buf));
-		r = WRITE(fd, buf, sizeof(buf));
-		XP_SYS_EQ(sizeof(buf), r);
-
-		r = CLOSE(fd);
-		XP_SYS_EQ(0, r);
 	} else {
 		XP_SYS_NG(ENXIO, fd);
+		return;
 	}
+
+	/* mulaw 1sec silence */
+	memset(buf, 0xff, sizeof(buf));
+	r = WRITE(fd, buf, sizeof(buf));
+	XP_SYS_EQ(sizeof(buf), r);
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
 }
 
 /*
@@ -1800,13 +1801,13 @@ DEF(write_PLAY)
 
 	TEST("write_PLAY");
 
-	if (hw_canplay() == 0) {
-		XP_SKIP("This test is only for playable device");
+	fd = OPEN(devaudio, O_WRONLY);
+	if (hw_canplay()) {
+		REQUIRED_SYS_OK(fd);
+	} else {
+		XP_SYS_NG(ENXIO, fd);
 		return;
 	}
-
-	fd = OPEN(devaudio, O_WRONLY);
-	REQUIRED_SYS_OK(fd);
 
 	/* Drop PLAY_ALL */
 	AUDIO_INITINFO(&ai);
@@ -1906,15 +1907,17 @@ DEF(read)
 	fd = OPEN(devaudio, O_RDONLY);
 	if (hw_canrec()) {
 		REQUIRED_SYS_OK(fd);
-
-		r = READ(fd, buf, sizeof(buf));
-		XP_SYS_EQ(sizeof(buf), r);
-
-		r = CLOSE(fd);
-		XP_SYS_EQ(0, r);
 	} else {
 		XP_SYS_NG(ENXIO, fd);
+		return;
 	}
+
+	/* mulaw 1sec */
+	r = READ(fd, buf, sizeof(buf));
+	XP_SYS_EQ(sizeof(buf), r);
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
 }
 
 /*
