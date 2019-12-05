@@ -1199,7 +1199,7 @@ void test_open_audio(int);
 void test_open_sound(int);
 void test_open_simul(int, int);
 void test_open_multiuser(int);
-void rdwr_fallback(int, bool, bool);
+void test_rdwr_fallback(int, bool, bool);
 
 #define DEF(name) \
 	void test__ ## name (void); \
@@ -2031,7 +2031,7 @@ DEF(rept_read)
  * expread : expected to be able to recored.
  */
 void
-rdwr_fallback(int openmode, bool expwrite, bool expread)
+test_rdwr_fallback(int openmode, bool expwrite, bool expread)
 {
 	struct audio_info ai;
 	char buf[10];
@@ -2074,11 +2074,11 @@ rdwr_fallback(int openmode, bool expwrite, bool expread)
 	r = CLOSE(fd);
 	REQUIRED_SYS_EQ(0, r);
 }
-DEF(rdwr_fallback_RDONLY) { rdwr_fallback(O_RDONLY, false, true); }
-DEF(rdwr_fallback_WRONLY) { rdwr_fallback(O_WRONLY, true, false); }
+DEF(rdwr_fallback_RDONLY) { test_rdwr_fallback(O_RDONLY, false, true); }
+DEF(rdwr_fallback_WRONLY) { test_rdwr_fallback(O_WRONLY, true, false); }
 DEF(rdwr_fallback_RDWR) {
 	bool expread = hw_fulldup() ? true : false;
-	rdwr_fallback(O_RDWR, true, expread);
+	test_rdwr_fallback(O_RDWR, true, expread);
 }
 
 /*
