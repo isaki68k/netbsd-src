@@ -89,7 +89,7 @@ void *debug_mmap(int, void *, size_t, int, int, int, off_t);
 int debug_munmap(int, void *, int);
 int debug_poll(int, struct pollfd *, int, int);
 int debug_kqueue(int);
-int debug_kevent_set(int, int, struct kevent *, size_t);
+int debug_kevent_set(int, int, const struct kevent *, size_t);
 int debug_kevent_poll(int, int, struct kevent *, size_t,
 	const struct timespec *);
 void debug_kev(int, const char *, const struct kevent *);
@@ -1041,7 +1041,7 @@ int debug_kqueue(int line)
 
 #define KEVENT_SET(kq, kev, nev)	\
 	debug_kevent_set(__LINE__, kq, kev, nev)
-int debug_kevent_set(int line, int kq, struct kevent *kev, size_t nev)
+int debug_kevent_set(int line, int kq, const struct kevent *kev, size_t nev)
 {
 	DPRINTFF(line, "kevent_set(%d, %p, %zd)", kq, kev, nev);
 	int r = rump_or_kevent(kq, kev, nev, NULL, 0, NULL);
