@@ -29,11 +29,8 @@ match($0, /^DEF\([^\)]*\)/) {
 	n++;
 	
 	print "atf_test_case " name
-	print name "_head() {"
-	print "}"
-	print name "_body() {"
-	print "	h_audio " name
-	print "}"
+	print name "_head() { }"
+	print name "_body() { h_audio " name " }"
 	print ""
 }
 END {
