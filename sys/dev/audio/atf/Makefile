@@ -8,7 +8,6 @@ TESTS_SH=	t_audio
 
 PROGS=		audiotest
 CPPFLAGS+=	-g
-CPPFLAGS+=	-Wno-missing-prototypes	# it's too severe to testcode
 LDADD+=	-lpthread
 LDADD+=	-lrump -lrumpdev_audio -lrumpdev_pad -lrumpdev -lrumpvfs
 

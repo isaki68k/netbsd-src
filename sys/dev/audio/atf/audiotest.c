@@ -46,14 +46,62 @@ struct testentry {
 	void (*func)(void);
 };
 
+void usage(void) __dead;
 void xp_err(int, int, const char *, ...) __printflike(3, 4) __dead;
 void xp_errx(int, int, const char *, ...) __printflike(3, 4) __dead;
-void init(int);
 void do_test(int);
+int rump_or_open(const char *, int);
+int rump_or_write(int, const void *, size_t);
+int rump_or_read(int, void *, size_t);
+int rump_or_ioctl(int, u_long, void *);
+int rump_or_close(int);
+int rump_or_fcntl(int, int, ...);
+int rump_or_poll(struct pollfd *, nfds_t, int);
+int rump_or_kqueue(void);
+int rump_or_kevent(int, const struct kevent *, size_t,
+	struct kevent *, size_t, const struct timespec *);
+int hw_canplay(void);
+int hw_canrec(void);
+int hw_bidir(void);
+int hw_fulldup(void);
+void init(int);
+void *consumer_thread(void *);
 void TEST(const char *, ...) __printflike(1, 2);
 bool xp_fail(int, const char *, ...) __printflike(2, 3);
 void xp_skip(int, const char *, ...) __printflike(2, 3);
-void *consumer_thread(void *);
+bool xp_eq(int, int, int, const char *);
+bool xp_eq_str(int, const char *, const char *, const char *);
+bool xp_ne(int, int, int, const char *);
+bool xp_sys_eq(int, int, int, const char *);
+bool xp_sys_ok(int, int, const char *);
+bool xp_sys_ok_ptr(int, void *, const char *);
+bool xp_sys_ng(int, int, int, const char *);
+bool xp_sys_if(int, bool, const char *);
+bool xp_buffsize(int, bool, int, const char *);
+int debug_open(int, const char *, int);
+int debug_write(int, int, const void *, size_t);
+int debug_read(int, int, void *, size_t);
+int debug_ioctl(int, int, u_long, const char *, void *, const char *, ...)
+	__printflike(6, 7);
+int debug_fcntl(int, int, int, const char *, ...) __printflike(4, 5);
+int debug_close(int, int);
+void *debug_mmap(int, void *, size_t, int, int, int, off_t);
+int debug_munmap(int, void *, int);
+int debug_poll(int, struct pollfd *, int, int);
+int debug_kqueue(int);
+int debug_kevent_set(int, int, struct kevent *, size_t);
+int debug_kevent_poll(int, int, struct kevent *, size_t,
+	const struct timespec *);
+void debug_kev(int, const char *, const struct kevent *);
+uid_t debug_getuid(int);
+int debug_seteuid(int, uid_t);
+int debug_sysctlbyname(int, const char *, void *, size_t *, const void *,
+	size_t);
+
+int openable_mode(void);
+int mode2aumode(int);
+int mode2play(int);
+int mode2rec(int);
 
 /* from audio.c */
 static const char *encoding_names[]
@@ -100,7 +148,7 @@ char devaudioctl[16];	/* "/dev/audioctlN" */
 char devmixer[16];	/* "/dev/mixerN" */
 extern struct testentry testtable[];
 
-void __dead
+void
 usage(void)
 {
 	fprintf(stderr, "usage:\t%s [<options>] [<testname>...]\n",
@@ -1146,6 +1194,12 @@ mode2rec(int mode)
  * Tests
  */
 
+void test_open_mode(int);
+void test_open_audio(int);
+void test_open_sound(int);
+void test_open_simul(int, int);
+void test_open_multiuser(int);
+void rdwr_fallback(int, bool, bool);
 
 #define DEF(name) \
 	void test__ ## name (void); \
