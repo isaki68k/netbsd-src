@@ -1942,7 +1942,7 @@ DEF(read)
 
 /*
  * Repeat open-write-close cycle.
- * It may timeout on some (broken?) hardware driver.
+ * XXX It may timeout on some hardware driver.
  */
 DEF(rept_write)
 {
