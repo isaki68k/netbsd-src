@@ -3069,30 +3069,6 @@ audioctl_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 }
 
 /*
- * Reallocate 'memblock' with specified 'bytes' if 'bytes' > 0.
- * Or free 'memblock' and return NULL if 'byte' is zero.
- */
-static void *
-audio_realloc(void *memblock, size_t bytes)
-{
-
-	if (memblock != NULL) {
-		if (bytes != 0) {
-			return kern_realloc(memblock, bytes, M_WAITOK);
-		} else {
-			kern_free(memblock);
-			return NULL;
-		}
-	} else {
-		if (bytes != 0) {
-			return kern_malloc(bytes, M_WAITOK);
-		} else {
-			return NULL;
-		}
-	}
-}
-
-/*
  * Free 'mem' if available, and initialize the pointer.
  * For this reason, this is implemented as macro.
  */
@@ -3102,6 +3078,20 @@ audio_realloc(void *memblock, size_t bytes)
 		mem = NULL;	\
 	}	\
 } while (0)
+
+/*
+ * (Re)allocate 'memblock' with specified 'bytes'.
+ * bytes must not be 0.
+ * This function never returns NULL.
+ */
+static void *
+audio_realloc(void *memblock, size_t bytes)
+{
+
+	KASSERT(bytes != 0);
+	audio_free(memblock);
+	return kern_malloc(bytes, M_WAITOK);
+}
 
 /*
  * (Re)allocate usrbuf with 'newbufsize' bytes.
@@ -3668,7 +3658,6 @@ abort:
 static int
 audio_track_init_codec(audio_track_t *track, audio_ring_t **last_dstp)
 {
-	struct audio_softc *sc;
 	audio_ring_t *last_dst;
 	audio_ring_t *srcbuf;
 	audio_format2_t *srcfmt;
@@ -3679,7 +3668,6 @@ audio_track_init_codec(audio_track_t *track, audio_ring_t **last_dstp)
 
 	KASSERT(track);
 
-	sc = track->mixer->sc;
 	last_dst = *last_dstp;
 	dstfmt = &last_dst->fmt;
 	srcfmt = &track->inputfmt;
@@ -3708,12 +3696,6 @@ audio_track_init_codec(audio_track_t *track, audio_ring_t **last_dstp)
 		srcbuf->capacity = frame_per_block(track->mixer, &srcbuf->fmt);
 		len = auring_bytelen(srcbuf);
 		srcbuf->mem = audio_realloc(srcbuf->mem, len);
-		if (srcbuf->mem == NULL) {
-			device_printf(sc->sc_dev, "%s: malloc(%d) failed\n",
-			    __func__, len);
-			error = ENOMEM;
-			goto abort;
-		}
 
 		arg = &track->codec.arg;
 		arg->srcfmt = &srcbuf->fmt;
@@ -3739,7 +3721,6 @@ abort:
 static int
 audio_track_init_chvol(audio_track_t *track, audio_ring_t **last_dstp)
 {
-	struct audio_softc *sc;
 	audio_ring_t *last_dst;
 	audio_ring_t *srcbuf;
 	audio_format2_t *srcfmt;
@@ -3750,7 +3731,6 @@ audio_track_init_chvol(audio_track_t *track, audio_ring_t **last_dstp)
 
 	KASSERT(track);
 
-	sc = track->mixer->sc;
 	last_dst = *last_dstp;
 	dstfmt = &last_dst->fmt;
 	srcfmt = &track->inputfmt;
@@ -3778,12 +3758,6 @@ audio_track_init_chvol(audio_track_t *track, audio_ring_t **last_dstp)
 		srcbuf->capacity = frame_per_block(track->mixer, &srcbuf->fmt);
 		len = auring_bytelen(srcbuf);
 		srcbuf->mem = audio_realloc(srcbuf->mem, len);
-		if (srcbuf->mem == NULL) {
-			device_printf(sc->sc_dev, "%s: malloc(%d) failed\n",
-			    __func__, len);
-			error = ENOMEM;
-			goto abort;
-		}
 
 		arg = &track->chvol.arg;
 		arg->srcfmt = &srcbuf->fmt;
@@ -3794,7 +3768,6 @@ audio_track_init_chvol(audio_track_t *track, audio_ring_t **last_dstp)
 		return 0;
 	}
 
-abort:
 	track->chvol.filter = NULL;
 	audio_free(srcbuf->mem);
 	return error;
@@ -3809,7 +3782,6 @@ abort:
 static int
 audio_track_init_chmix(audio_track_t *track, audio_ring_t **last_dstp)
 {
-	struct audio_softc *sc;
 	audio_ring_t *last_dst;
 	audio_ring_t *srcbuf;
 	audio_format2_t *srcfmt;
@@ -3822,7 +3794,6 @@ audio_track_init_chmix(audio_track_t *track, audio_ring_t **last_dstp)
 
 	KASSERT(track);
 
-	sc = track->mixer->sc;
 	last_dst = *last_dstp;
 	dstfmt = &last_dst->fmt;
 	srcfmt = &track->inputfmt;
@@ -3853,12 +3824,6 @@ audio_track_init_chmix(audio_track_t *track, audio_ring_t **last_dstp)
 		srcbuf->capacity = frame_per_block(track->mixer, &srcbuf->fmt);
 		len = auring_bytelen(srcbuf);
 		srcbuf->mem = audio_realloc(srcbuf->mem, len);
-		if (srcbuf->mem == NULL) {
-			device_printf(sc->sc_dev, "%s: malloc(%d) failed\n",
-			    __func__, len);
-			error = ENOMEM;
-			goto abort;
-		}
 
 		arg = &track->chmix.arg;
 		arg->srcfmt = &srcbuf->fmt;
@@ -3869,7 +3834,6 @@ audio_track_init_chmix(audio_track_t *track, audio_ring_t **last_dstp)
 		return 0;
 	}
 
-abort:
 	track->chmix.filter = NULL;
 	audio_free(srcbuf->mem);
 	return error;
@@ -3884,7 +3848,6 @@ abort:
 static int
 audio_track_init_freq(audio_track_t *track, audio_ring_t **last_dstp)
 {
-	struct audio_softc *sc;
 	audio_ring_t *last_dst;
 	audio_ring_t *srcbuf;
 	audio_format2_t *srcfmt;
@@ -3899,7 +3862,6 @@ audio_track_init_freq(audio_track_t *track, audio_ring_t **last_dstp)
 
 	KASSERT(track);
 
-	sc = track->mixer->sc;
 	last_dst = *last_dstp;
 	dstfmt = &last_dst->fmt;
 	srcfmt = &track->inputfmt;
@@ -3938,12 +3900,6 @@ audio_track_init_freq(audio_track_t *track, audio_ring_t **last_dstp)
 		srcbuf->capacity = frame_per_block(track->mixer, &srcbuf->fmt);
 		len = auring_bytelen(srcbuf);
 		srcbuf->mem = audio_realloc(srcbuf->mem, len);
-		if (srcbuf->mem == NULL) {
-			device_printf(sc->sc_dev, "%s: malloc(%d) failed\n",
-			    __func__, len);
-			error = ENOMEM;
-			goto abort;
-		}
 
 		arg = &track->freq.arg;
 		arg->srcfmt = &srcbuf->fmt;
@@ -3954,7 +3910,6 @@ audio_track_init_freq(audio_track_t *track, audio_ring_t **last_dstp)
 		return 0;
 	}
 
-abort:
 	track->freq.filter = NULL;
 	audio_free(srcbuf->mem);
 	return error;
@@ -4136,12 +4091,6 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 		    frame_per_block(track->mixer, &track->input->fmt);
 		len = auring_bytelen(track->input);
 		track->input->mem = audio_realloc(track->input->mem, len);
-		if (track->input->mem == NULL) {
-			device_printf(sc->sc_dev, "malloc input(%d) failed\n",
-			    len);
-			error = ENOMEM;
-			goto error;
-		}
 	}
 
 	/*
@@ -4736,13 +4685,6 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 		len = mixer->frames_per_block * mixer->mixfmt.channels *
 		    mixer->mixfmt.stride / NBBY;
 		mixer->mixsample = audio_realloc(mixer->mixsample, len);
-		if (mixer->mixsample == NULL) {
-			device_printf(sc->sc_dev,
-			    "%s: malloc mixsample(%d) failed\n",
-			    __func__, len);
-			error = ENOMEM;
-			goto abort;
-		}
 	} else {
 		/* No mixing buffer for recording */
 	}
