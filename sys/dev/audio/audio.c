@@ -3078,14 +3078,14 @@ audio_realloc(void *memblock, size_t bytes)
 
 	if (memblock != NULL) {
 		if (bytes != 0) {
-			return kern_realloc(memblock, bytes, M_NOWAIT);
+			return kern_realloc(memblock, bytes, M_WAITOK);
 		} else {
 			kern_free(memblock);
 			return NULL;
 		}
 	} else {
 		if (bytes != 0) {
-			return kern_malloc(bytes, M_NOWAIT);
+			return kern_malloc(bytes, M_WAITOK);
 		} else {
 			return NULL;
 		}
