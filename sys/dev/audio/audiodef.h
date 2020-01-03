@@ -292,8 +292,9 @@ static __inline int
 auring_round(const audio_ring_t *ring, int idx)
 {
 	DIAGNOSTIC_ring(ring);
-	KASSERT(idx >= 0);
-	KASSERT(idx < ring->capacity * 2);
+	KASSERTMSG(idx >= 0, "idx=%d", idx);
+	KASSERTMSG(idx < ring->capacity * 2,
+	    "idx=%d ring->capacity=%d", idx, ring->capacity);
 
 	if (idx < ring->capacity) {
 		return idx;
@@ -320,7 +321,9 @@ auring_tail(const audio_ring_t *ring)
 static __inline aint_t *
 auring_headptr_aint(const audio_ring_t *ring)
 {
-	KASSERT(ring->fmt.stride == sizeof(aint_t) * NBBY);
+	KASSERTMSG(ring->fmt.stride == sizeof(aint_t) * NBBY,
+	    "ring->fmt.stride=%d sizeof(aint_t)*NBBY=%zd",
+	    ring->fmt.stride, sizeof(aint_t) * NBBY);
 
 	return (aint_t *)ring->mem + ring->head * ring->fmt.channels;
 }

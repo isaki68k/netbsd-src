@@ -2071,7 +2071,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 		*bellfile = af;
 	} else {
 		error = fd_clone(fp, fd, flags, &audio_fileops, af);
-		KASSERT(error == EMOVEFD);
+		KASSERTMSG(error == EMOVEFD, "error=%d", error);
 	}
 
 	TRACEF(3, af, "done");
@@ -3063,7 +3063,7 @@ audioctl_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	/* Not necessary to insert sc_files. */
 
 	error = fd_clone(fp, fd, flags, &audio_fileops, af);
-	KASSERT(error == EMOVEFD);
+	KASSERTMSG(error == EMOVEFD, "error=%d", error);
 
 	return error;
 }
@@ -3208,9 +3208,12 @@ audio_track_chvol(audio_filter_arg_t *arg)
 	u_int channels;
 
 	DIAGNOSTIC_filter_arg(arg);
-	KASSERT(arg->srcfmt->channels == arg->dstfmt->channels);
+	KASSERTMSG(arg->srcfmt->channels == arg->dstfmt->channels,
+	    "arg->srcfmt->channels=%d, arg->dstfmt->channels=%d",
+	    arg->srcfmt->channels, arg->dstfmt->channels);
 	KASSERT(arg->context != NULL);
-	KASSERT(arg->srcfmt->channels <= AUDIO_MAX_CHANNELS);
+	KASSERTMSG(arg->srcfmt->channels <= AUDIO_MAX_CHANNELS,
+	    "arg->srcfmt->channels=%d", arg->srcfmt->channels);
 
 	s = arg->src;
 	d = arg->dst;
@@ -3368,8 +3371,12 @@ audio_track_freq_up(audio_filter_arg_t *arg)
 	DIAGNOSTIC_ring(dst);
 	DIAGNOSTIC_ring(src);
 	KASSERT(src->used > 0);
-	KASSERT(src->fmt.channels == dst->fmt.channels);
-	KASSERT(src->head % track->mixer->frames_per_block == 0);
+	KASSERTMSG(src->fmt.channels == dst->fmt.channels,
+	    "src->fmt.channels=%d dst->fmt.channels=%d",
+	    src->fmt.channels, dst->fmt.channels);
+	KASSERTMSG(src->head % track->mixer->frames_per_block == 0,
+	    "src->head=%d track->mixer->frames_per_block=%d",
+	    src->head, track->mixer->frames_per_block);
 
 	s = arg->src;
 	d = arg->dst;
@@ -3494,9 +3501,11 @@ audio_track_freq_down(audio_filter_arg_t *arg)
 	DIAGNOSTIC_ring(dst);
 	DIAGNOSTIC_ring(src);
 	KASSERT(src->used > 0);
-	KASSERT(src->fmt.channels == dst->fmt.channels);
+	KASSERTMSG(src->fmt.channels == dst->fmt.channels,
+	    "src->fmt.channels=%d dst->fmt.channels=%d",
+	    src->fmt.channels, dst->fmt.channels);
 	KASSERTMSG(src->head % track->mixer->frames_per_block == 0,
-	    "src->head=%d fpb=%d",
+	    "src->head=%d track->mixer->frames_per_block=%d",
 	    src->head, track->mixer->frames_per_block);
 
 	s0 = arg->src;
@@ -4187,7 +4196,9 @@ audio_append_silence(audio_track_t *track, audio_ring_t *ring)
 
 	n = (ring->capacity - ring->used) % fpb;
 
-	KASSERT(auring_get_contig_free(ring) >= n);
+	KASSERTMSG(auring_get_contig_free(ring) >= n,
+	    "auring_get_contig_free(ring)=%d n=%d",
+	    auring_get_contig_free(ring), n);
 
 	memset(auring_tailptr_aint(ring), 0,
 	    n * ring->fmt.channels * sizeof(aint_t));
@@ -4220,7 +4231,7 @@ audio_apply_stage(audio_track_t *track, audio_stage_t *stage, bool isfreq)
 	dstcount = auring_get_contig_free(stage->dst);
 
 	if (isfreq) {
-		KASSERTMSG(srccount > 0, "freq but srccount == %d", srccount);
+		KASSERTMSG(srccount > 0, "freq but srccount=%d", srccount);
 		count = uimin(dstcount, track->mixer->frames_per_block);
 	} else {
 		count = uimin(srccount, dstcount);
@@ -4305,7 +4316,8 @@ audio_track_play(audio_track_t *track)
 		int bytes2;
 
 		bytes1 = auring_get_contig_used(usrbuf);
-		KASSERT(bytes1 % framesize == 0);
+		KASSERTMSG(bytes1 % framesize == 0,
+		    "bytes1=%d framesize=%d", bytes1, framesize);
 		memcpy((uint8_t *)input->mem + auring_tail(input) * framesize,
 		    (uint8_t *)usrbuf->mem + usrbuf->head,
 		    bytes1);
@@ -4468,7 +4480,8 @@ audio_track_record(audio_track_t *track)
 		int bytes2;
 
 		bytes1 = auring_get_contig_free(usrbuf);
-		KASSERT(bytes1 % framesize == 0);
+		KASSERTMSG(bytes1 % framesize == 0,
+		    "bytes1=%d framesize=%d", bytes1, framesize);
 		memcpy((uint8_t *)usrbuf->mem + auring_tail(usrbuf),
 		    (uint8_t *)outbuf->mem + outbuf->head * framesize,
 		    bytes1);
@@ -4865,7 +4878,9 @@ audio_pmixer_process(struct audio_softc *sc)
 	mixer = sc->sc_pmixer;
 
 	frame_count = mixer->frames_per_block;
-	KASSERT(auring_get_contig_free(&mixer->hwbuf) >= frame_count);
+	KASSERTMSG(auring_get_contig_free(&mixer->hwbuf) >= frame_count,
+	    "auring_get_contig_free()=%d frame_count=%d",
+	    auring_get_contig_free(&mixer->hwbuf), frame_count);
 	sample_count = frame_count * mixer->mixfmt.channels;
 
 	mixer->mixseq++;
@@ -5156,7 +5171,9 @@ audio_pmixer_output(struct audio_softc *sc)
 	TRACE(4, "pbusy=%d hwbuf=%d/%d/%d",
 	    sc->sc_pbusy,
 	    mixer->hwbuf.head, mixer->hwbuf.used, mixer->hwbuf.capacity);
-	KASSERT(mixer->hwbuf.used >= mixer->frames_per_block);
+	KASSERTMSG(mixer->hwbuf.used >= mixer->frames_per_block,
+	    "mixer->hwbuf.used=%d mixer->frames_per_block=%d",
+	    mixer->hwbuf.used, mixer->frames_per_block);
 
 	blksize = frametobyte(&mixer->hwbuf.fmt, mixer->frames_per_block);
 
@@ -5399,7 +5416,9 @@ audio_rmixer_process(struct audio_softc *sc)
 			    input->head, input->used, input->capacity);
 			auring_take(input, drops);
 		}
-		KASSERT(input->used % mixer->frames_per_block == 0);
+		KASSERTMSG(input->used % mixer->frames_per_block == 0,
+		    "input->used=%d mixer->frames_per_block=%d",
+		    input->used, mixer->frames_per_block);
 
 		memcpy(auring_tailptr_aint(input),
 		    auring_headptr_aint(mixersrc),
@@ -6038,8 +6057,7 @@ audio_hw_probe(struct audio_softc *sc, int is_indep, int *modep,
 	KASSERT(mutex_owned(sc->sc_lock));
 
 	mode = *modep;
-	KASSERTMSG((mode & (AUMODE_PLAY | AUMODE_RECORD)) != 0,
-	    "invalid mode = %x", mode);
+	KASSERTMSG((mode & (AUMODE_PLAY | AUMODE_RECORD)) != 0, "mode=0x%x", mode);
 
 	if (is_indep) {
 		int errorp = 0, errorr = 0;
@@ -7534,17 +7552,16 @@ audio_diagnostic_format2(const char *func, const audio_format2_t *fmt)
 	/* XXX MSM6258 vs(4) only has 4bit stride format. */
 	if (fmt->encoding == AUDIO_ENCODING_ADPCM) {
 		KASSERTMSG(fmt->stride == 4 || fmt->stride == 8,
-		    "%s: stride(%d) is invalid", func, fmt->stride);
+		    "%s: fmt->stride=%d", func, fmt->stride);
 	} else {
 		KASSERTMSG(fmt->stride % NBBY == 0,
-		    "%s: stride(%d) is invalid", func, fmt->stride);
+		    "%s: fmt->stride=%d", func, fmt->stride);
 	}
 	KASSERTMSG(fmt->precision <= fmt->stride,
-	    "%s: precision(%d) <= stride(%d)",
+	    "%s: fmt->precision=%d fmt->stride=%d",
 	    func, fmt->precision, fmt->stride);
 	KASSERTMSG(1 <= fmt->channels && fmt->channels <= AUDIO_MAX_CHANNELS,
-	    "%s: channels(%d) is out of range",
-	    func, fmt->channels);
+	    "%s: fmt->channels=%d", func, fmt->channels);
 
 	/* XXX No check for encodings? */
 }
@@ -7558,20 +7575,19 @@ audio_diagnostic_filter_arg(const char *func, const audio_filter_arg_t *arg)
 	KASSERT(arg->dst != NULL);
 	DIAGNOSTIC_format2(arg->srcfmt);
 	DIAGNOSTIC_format2(arg->dstfmt);
-	KASSERTMSG(arg->count > 0,
-	    "%s: count(%d) is out of range", func, arg->count);
+	KASSERT(arg->count > 0);
 }
 
 void
 audio_diagnostic_ring(const char *func, const audio_ring_t *ring)
 {
 
-	KASSERTMSG(ring, "%s: ring == NULL", func);
+	KASSERTMSG(ring, "%s", func);
 	DIAGNOSTIC_format2(&ring->fmt);
 	KASSERTMSG(0 <= ring->capacity && ring->capacity < INT_MAX / 2,
-	    "%s: capacity(%d) is out of range", func, ring->capacity);
+	    "%s: ring->capacity=%d", func, ring->capacity);
 	KASSERTMSG(0 <= ring->used && ring->used <= ring->capacity,
-	    "%s: used(%d) is out of range (capacity:%d)",
+	    "%s: ring->used=%d ring->capacity=%d",
 	    func, ring->used, ring->capacity);
 	if (ring->capacity == 0) {
 		KASSERTMSG(ring->mem == NULL,
@@ -7580,7 +7596,7 @@ audio_diagnostic_ring(const char *func, const audio_ring_t *ring)
 		KASSERTMSG(ring->mem != NULL,
 		    "%s: capacity != 0 but mem == NULL", func);
 		KASSERTMSG(0 <= ring->head && ring->head < ring->capacity,
-		    "%s: head(%d) is out of range (capacity:%d)",
+		    "%s: ring->head=%d ring->capacity=%d",
 		    func, ring->head, ring->capacity);
 	}
 }
