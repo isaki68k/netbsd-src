@@ -7544,30 +7544,30 @@ audio_print_format2(const char *s, const audio_format2_t *fmt)
 
 #ifdef DIAGNOSTIC
 void
-audio_diagnostic_format2(const char *func, const audio_format2_t *fmt)
+audio_diagnostic_format2(const char *where, const audio_format2_t *fmt)
 {
 
-	KASSERTMSG(fmt, "%s: fmt == NULL", func);
+	KASSERTMSG(fmt, "called from %s", where);
 
 	/* XXX MSM6258 vs(4) only has 4bit stride format. */
 	if (fmt->encoding == AUDIO_ENCODING_ADPCM) {
 		KASSERTMSG(fmt->stride == 4 || fmt->stride == 8,
-		    "%s: fmt->stride=%d", func, fmt->stride);
+		    "called from %s: fmt->stride=%d", where, fmt->stride);
 	} else {
 		KASSERTMSG(fmt->stride % NBBY == 0,
-		    "%s: fmt->stride=%d", func, fmt->stride);
+		    "called from %s: fmt->stride=%d", where, fmt->stride);
 	}
 	KASSERTMSG(fmt->precision <= fmt->stride,
-	    "%s: fmt->precision=%d fmt->stride=%d",
-	    func, fmt->precision, fmt->stride);
+	    "called from %s: fmt->precision=%d fmt->stride=%d",
+	    where, fmt->precision, fmt->stride);
 	KASSERTMSG(1 <= fmt->channels && fmt->channels <= AUDIO_MAX_CHANNELS,
-	    "%s: fmt->channels=%d", func, fmt->channels);
+	    "called from %s: fmt->channels=%d", where, fmt->channels);
 
 	/* XXX No check for encodings? */
 }
 
 void
-audio_diagnostic_filter_arg(const char *func, const audio_filter_arg_t *arg)
+audio_diagnostic_filter_arg(const char *where, const audio_filter_arg_t *arg)
 {
 
 	KASSERT(arg != NULL);
@@ -7579,25 +7579,25 @@ audio_diagnostic_filter_arg(const char *func, const audio_filter_arg_t *arg)
 }
 
 void
-audio_diagnostic_ring(const char *func, const audio_ring_t *ring)
+audio_diagnostic_ring(const char *where, const audio_ring_t *ring)
 {
 
-	KASSERTMSG(ring, "%s", func);
+	KASSERTMSG(ring, "called from %s", where);
 	DIAGNOSTIC_format2(&ring->fmt);
 	KASSERTMSG(0 <= ring->capacity && ring->capacity < INT_MAX / 2,
-	    "%s: ring->capacity=%d", func, ring->capacity);
+	    "called from %s: ring->capacity=%d", where, ring->capacity);
 	KASSERTMSG(0 <= ring->used && ring->used <= ring->capacity,
-	    "%s: ring->used=%d ring->capacity=%d",
-	    func, ring->used, ring->capacity);
+	    "called from %s: ring->used=%d ring->capacity=%d",
+	    where, ring->used, ring->capacity);
 	if (ring->capacity == 0) {
 		KASSERTMSG(ring->mem == NULL,
-		    "%s: capacity == 0 but mem != NULL", func);
+		    "called from %s: capacity == 0 but mem != NULL", where);
 	} else {
 		KASSERTMSG(ring->mem != NULL,
-		    "%s: capacity != 0 but mem == NULL", func);
+		    "called from %s: capacity != 0 but mem == NULL", where);
 		KASSERTMSG(0 <= ring->head && ring->head < ring->capacity,
-		    "%s: ring->head=%d ring->capacity=%d",
-		    func, ring->head, ring->capacity);
+		    "called from %s: ring->head=%d ring->capacity=%d",
+		    where, ring->head, ring->capacity);
 	}
 }
 #endif /* DIAGNOSTIC */
