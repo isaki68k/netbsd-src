@@ -333,7 +333,9 @@ auring_headptr_aint(const audio_ring_t *ring)
 static __inline aint_t *
 auring_tailptr_aint(const audio_ring_t *ring)
 {
-	KASSERT(ring->fmt.stride == sizeof(aint_t) * NBBY);
+	KASSERTMSG(ring->fmt.stride == sizeof(aint_t) * NBBY,
+	    "ring->fmt.stride=%d sizeof(aint_t)*NBBY=%zd",
+	    ring->fmt.stride, sizeof(aint_t) * NBBY);
 
 	return (aint_t *)ring->mem + auring_tail(ring) * ring->fmt.channels;
 }
