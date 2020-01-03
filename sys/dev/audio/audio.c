@@ -7573,8 +7573,8 @@ audio_diagnostic_filter_arg(const char *where, const audio_filter_arg_t *arg)
 	KASSERT(arg != NULL);
 	KASSERT(arg->src != NULL);
 	KASSERT(arg->dst != NULL);
-	DIAGNOSTIC_format2(arg->srcfmt);
-	DIAGNOSTIC_format2(arg->dstfmt);
+	audio_diagnostic_format2(where, arg->srcfmt);
+	audio_diagnostic_format2(where, arg->dstfmt);
 	KASSERT(arg->count > 0);
 }
 
@@ -7583,7 +7583,7 @@ audio_diagnostic_ring(const char *where, const audio_ring_t *ring)
 {
 
 	KASSERTMSG(ring, "called from %s", where);
-	DIAGNOSTIC_format2(&ring->fmt);
+	audio_diagnostic_format2(where, &ring->fmt);
 	KASSERTMSG(0 <= ring->capacity && ring->capacity < INT_MAX / 2,
 	    "called from %s: ring->capacity=%d", where, ring->capacity);
 	KASSERTMSG(0 <= ring->used && ring->used <= ring->capacity,
