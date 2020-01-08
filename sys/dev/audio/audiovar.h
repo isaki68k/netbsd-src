@@ -195,12 +195,13 @@ struct audio_softc {
 
 	/*
 	 * processes who want mixer SIGIO.
+	 * sc_am is array of pid and its capacity is sc_am_capacity.
+	 * sc_am_count is the length actually used.
 	 * Must be protected by sc_lock.
 	 */
-	struct	mixer_asyncs {
-		struct mixer_asyncs *next;
-		pid_t	pid;
-	} *sc_async_mixer;
+	pid_t *sc_am;
+	int sc_am_count;
+	int sc_am_capacity;
 
 	/*
 	 * Thread lock and interrupt lock obtained by get_locks().
