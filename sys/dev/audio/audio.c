@@ -1806,11 +1806,6 @@ audiobellclose(audio_file_t *file)
 	device_active(sc->sc_dev, DVA_SYSTEM);
 	error = audio_close(sc, file);
 
-	/*
-	 * Since file has already been destructed,
-	 * audio_file_release() is not necessary.
-	 */
-
 	return error;
 }
 
