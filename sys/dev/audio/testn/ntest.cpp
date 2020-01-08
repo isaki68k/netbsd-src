@@ -6274,6 +6274,82 @@ test_audioctl_kqueue()
 	XP_SYS_EQ(0, r);
 }
 
+// /dev/mixer で SIGIO が飛んでくるか
+void
+test_mixer_FIOASYNC_1(void)
+{
+	mixer_devinfo_t di;
+	mixer_ctrl_t m, oldm;
+	int i;
+	int r;
+	int fd;
+	int val;
+
+	TEST("mixer_FIOASYNC_1");
+	signal(SIGIO, signal_FIOASYNC_4);
+	sigio_caught = 0;
+
+	fd = OPEN(devmixer, O_RDWR);
+	if (fd == -1)
+		err(1, "open");
+
+	// とりあえず最短コースで outputs.master だと思われるやつを拾ってくる
+	// 変化すればなんでもいいので細かいことは気にしない。
+	for (i  = 0; ; i++) {
+		memset(&di, 0, sizeof(di));
+		di.index = i;
+		r = IOCTL(fd, AUDIO_MIXER_DEVINFO, &di, "index=%d", i);
+		XP_SYS_EQ(0, r);
+		if (strcmp(di.label.name, "master") == 0)
+			break;
+	}
+	// (outputs.)master を読み込む
+	memset(&m, 0, sizeof(m));
+	m.dev = i;
+	r = IOCTL(fd, AUDIO_MIXER_READ, &m, "");
+	XP_SYS_EQ(0, r);
+	oldm = m;
+
+	// オン
+	val = 1;
+	r = IOCTL(fd, FIOASYNC, &val, "on");
+	XP_SYS_EQ(0, r);
+
+	// なんでもいいので変更する
+	if (m.un.value.level[0] > 128) {
+		m.un.value.level[0] -= 32;
+	} else {
+		m.un.value.level[0] += 32;
+	}
+	r = IOCTL(fd, AUDIO_MIXER_WRITE, &m, "value=%d", m.un.value.level[0]);
+	XP_SYS_EQ(0, r);
+
+	// SIGIO が飛んできているはず
+	for (int i = 0; i < 10 && sigio_caught == 0; i++) {
+		usleep(10000);
+	}
+	XP_EQ(1, sigio_caught);
+	sigio_caught = 0;
+
+	// オフにして..
+	val = 0;
+	r = IOCTL(fd, FIOASYNC, &val, "off");
+	XP_SYS_EQ(0, r);
+
+	// ボリュームを元に戻す
+	r = IOCTL(fd, AUDIO_MIXER_WRITE, &oldm, "value=%d", oldm.un.value.level[0]);
+	XP_SYS_EQ(0, r);
+
+	// 今度は飛んでこないはず
+	for (int i = 0; i < 10 && sigio_caught == 0; i++) {
+		usleep(10000);
+	}
+	XP_EQ(0, sigio_caught);
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+}
+
 // システムコールの同時実行テスト用
 struct oper_vs_oper {
 	int fd;
@@ -7486,6 +7562,7 @@ struct testtable testtable[] = {
 	DEF(audioctl_rw),
 	DEF(audioctl_poll),
 	DEF(audioctl_kqueue),
+	DEF(mixer_FIOASYNC_1),
 	DEF(oper_read_vs_read),
 	DEF(oper_read_vs_get),
 	DEF(oper_read_vs_set),
