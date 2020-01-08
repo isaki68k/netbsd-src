@@ -7719,12 +7719,12 @@ mixer_ioctl(struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		}
 		mutex_enter(sc->sc_lock);
 		mixer_remove(sc);	/* remove old entry */
-		mutex_exit(sc->sc_lock);
 		if (ma != NULL) {
 			ma->next = sc->sc_async_mixer;
 			ma->pid = curproc->p_pid;
 			sc->sc_async_mixer = ma;
 		}
+		mutex_exit(sc->sc_lock);
 		error = 0;
 		break;
 
