@@ -194,9 +194,9 @@ struct audio_softc {
 	struct selinfo sc_rsel;
 
 	/*
-	 * processes who want mixer SIGIO.
-	 * sc_am is array of pid and its capacity is sc_am_capacity.
-	 * sc_am_count is the length actually used.
+	 * Processes who want mixer SIGIO.
+	 * sc_am is an array of pids and its capacity is sc_am_capacity.
+	 * sc_am_count is the number of elements actually used.
 	 * Must be protected by sc_lock.
 	 */
 	pid_t *sc_am;

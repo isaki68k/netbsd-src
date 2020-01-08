@@ -7634,7 +7634,8 @@ mixer_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 }
 
 /*
- *
+ * Add a process to those to be signalled on mixer activity.
+ * If the process has already been added, do nothing.
  * Must be called with sc_lock held.
  */
 static void
@@ -7644,14 +7645,15 @@ mixer_async_add(struct audio_softc *sc, pid_t pid)
 
 	KASSERT(mutex_owned(sc->sc_lock));
 
+	/* If already exists, returns without doing anything. */
 	for (i = 0; i < sc->sc_am_count; i++) {
-		/* Return if already exists */
 		if (sc->sc_am[i] == pid)
 			return;
 	}
 
+	/* Extend array if necessary. */
 	if (sc->sc_am_count >= sc->sc_am_capacity) {
-		sc->sc_am_capacity += 16;
+		sc->sc_am_capacity += 16;	/* enough to extend at once */
 		sc->sc_am = kern_realloc(sc->sc_am,
 		    sc->sc_am_capacity * sizeof(pid_t), M_WAITOK);
 	}
@@ -7661,6 +7663,7 @@ mixer_async_add(struct audio_softc *sc, pid_t pid)
 
 /*
  * Remove a process from those to be signalled on mixer activity.
+ * If the process has not been added, do nothing.
  * Must be called with sc_lock held.
  */
 static void
@@ -7670,6 +7673,7 @@ mixer_async_remove(struct audio_softc *sc, pid_t pid)
 
 	KASSERT(mutex_owned(sc->sc_lock));
 
+	/* No shrinking are considered for simplify. */
 	for (i = 0; i < sc->sc_am_count; i++) {
 		if (sc->sc_am[i] == pid) {
 			sc->sc_am[i] = sc->sc_am[--sc->sc_am_count];
