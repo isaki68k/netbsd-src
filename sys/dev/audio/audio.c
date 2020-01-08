@@ -530,6 +530,7 @@ static int audio_mmap(struct audio_softc *, off_t *, size_t, int, int *, int *,
 	struct uvm_object **, int *, audio_file_t *);
 
 static int audioctl_open(dev_t, struct audio_softc *, int, int, struct lwp *);
+static int audioctl_close(struct audio_softc *, audio_file_t *);
 
 static void audio_pintr(void *);
 static void audio_rintr(void *);
@@ -1529,7 +1530,7 @@ audioclose(struct file *fp)
 		error = audio_close(sc, file);
 		break;
 	case AUDIOCTL_DEVICE:
-		error = 0;
+		error = audioctl_close(sc, file);
 		break;
 	case MIXER_DEVICE:
 		error = mixer_close(sc, file);
@@ -1538,10 +1539,8 @@ audioclose(struct file *fp)
 		error = ENXIO;
 		break;
 	}
-	if (error == 0) {
-		kmem_free(fp->f_audioctx, sizeof(audio_file_t));
-		fp->f_audioctx = NULL;
-	}
+	/* f_audioctx has already been freed in lower *_close() */
+	fp->f_audioctx = NULL;
 
 	return error;
 }
@@ -2204,6 +2203,8 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
 
 	TRACE(3, "done");
 	audio_exit_exclusive(sc);
+
+	kmem_free(file, sizeof(*file));
 	return 0;
 }
 
@@ -3061,6 +3062,14 @@ audioctl_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	KASSERTMSG(error == EMOVEFD, "error=%d", error);
 
 	return error;
+}
+
+static int
+audioctl_close(struct audio_softc *sc, audio_file_t *file)
+{
+
+	kmem_free(file, sizeof(*file));
+	return 0;
 }
 
 /*
@@ -7680,6 +7689,7 @@ mixer_close(struct audio_softc *sc, audio_file_t *file)
 	mixer_remove(sc);
 	mutex_exit(sc->sc_lock);
 
+	kmem_free(file, sizeof(*file));
 	return 0;
 }
 
