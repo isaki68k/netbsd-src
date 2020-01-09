@@ -30,6 +30,7 @@ int debug;
 int x68k;
 char devaudio[16];
 char devsound[16];
+char devmixer[16];
 extern struct cmdtable cmdtable[];
 
 void __attribute__((__noreturn__))
@@ -100,6 +101,7 @@ init(int unit)
 
 	snprintf(devaudio, sizeof(devaudio), "/dev/audio%d", unit);
 	snprintf(devsound, sizeof(devsound), "/dev/sound%d", unit);
+	snprintf(devmixer, sizeof(devmixer), "/dev/mixer%d", unit);
 	if (debug)
 		printf("unit = %d\n", unit);
 
@@ -635,6 +637,33 @@ cmd_pad_close(int ac, char *av[])
 	return 0;
 }
 
+// mixer async が realloc を起こすあたりを確認するため、
+// 手動で FIOASYNC オンにしたまま入力を待つだけ。
+// hw.audio0.debug=2 にして手動で頑張って起動してね。
+int
+cmd_mixer_async(int ac, char *av[])
+{
+	char buf[10];
+	int fd;
+	int val;
+	int r;
+
+	fd = OPEN(devmixer, O_RDWR);
+	if (fd == -1) {
+		err(1, "open");
+	}
+
+	val = 1;
+	r = IOCTL(fd, FIOASYNC, &val, "on");
+	if (r == -1)
+		err(1, "FIOASYNC");
+
+	fgets(buf, sizeof(buf), stdin);
+
+	CLOSE(fd);
+	return 0;
+}
+
 // コマンド一覧
 #define DEF(x)	{ #x, cmd_ ## x }
 struct cmdtable cmdtable[] = {
@@ -646,6 +675,7 @@ struct cmdtable cmdtable[] = {
 	DEF(poll_1),
 	DEF(playmmap),
 	DEF(pad_close),
+	DEF(mixer_async),
 	{ NULL, NULL },
 };
 #undef DEF
