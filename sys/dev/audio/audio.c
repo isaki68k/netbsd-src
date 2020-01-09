@@ -7656,7 +7656,7 @@ mixer_async_add(struct audio_softc *sc, pid_t pid)
 
 	/* Extend array if necessary. */
 	if (sc->sc_am_count >= sc->sc_am_capacity) {
-		sc->sc_am_capacity += AM_CAPACITY;	/* enough to extend at once */
+		sc->sc_am_capacity += AM_CAPACITY;
 		sc->sc_am = kern_realloc(sc->sc_am,
 		    sc->sc_am_capacity * sizeof(pid_t), M_WAITOK);
 		TRACE(2, "realloc am_capacity=%d", sc->sc_am_capacity);
@@ -7688,7 +7688,7 @@ mixer_async_remove(struct audio_softc *sc, pid_t pid)
 	}
 
 	/*
-	 * Shrinks array but does not make it empty.
+	 * Shrinks array (if necessary) but does not make it empty.
 	 * Don't mind if realloc doesn't shrink actually.
 	 */
 	if (sc->sc_am_capacity > AM_CAPACITY &&
