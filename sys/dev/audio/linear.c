@@ -26,7 +26,6 @@
  * SUCH DAMAGE.
  */
 
-#if defined(_KERNEL)
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD: linear.c,v 1.2 2019/05/08 13:40:17 isaki Exp $");
 
@@ -35,12 +34,6 @@ __KERNEL_RCSID(0, "$NetBSD: linear.c,v 1.2 2019/05/08 13:40:17 isaki Exp $");
 #include <sys/device.h>
 #include <dev/audio/audiovar.h>
 #include <dev/audio/linear.h>
-#else
-#include <stdint.h>
-#include <stdbool.h>
-#include "compat.h"
-#include "audiovar.h"
-#endif /* _KERNEL */
 
 /*
  * audio_linear8_to_internal:
