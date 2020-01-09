@@ -463,6 +463,9 @@ audio_track_bufstat(audio_track_t *track, struct audio_track_debugbuf *buf)
 int audio_idle_timeout = 30;
 #endif
 
+/* Number of elements of async mixer's pid */
+#define AM_CAPACITY	(16)
+
 struct portname {
 	const char *name;
 	int mask;
@@ -896,7 +899,7 @@ audioattach(device_t parent, device_t self, void *aux)
 	sc->sc_blk_ms = AUDIO_BLK_MS;
 	SLIST_INIT(&sc->sc_files);
 	cv_init(&sc->sc_exlockcv, "audiolk");
-	sc->sc_am_capacity = 16;
+	sc->sc_am_capacity = AM_CAPACITY;
 	sc->sc_am_count = 0;
 	sc->sc_am = kern_malloc(sizeof(pid_t) * sc->sc_am_capacity, M_WAITOK);
 
@@ -7653,7 +7656,7 @@ mixer_async_add(struct audio_softc *sc, pid_t pid)
 
 	/* Extend array if necessary. */
 	if (sc->sc_am_count >= sc->sc_am_capacity) {
-		sc->sc_am_capacity += 16;	/* enough to extend at once */
+		sc->sc_am_capacity += AM_CAPACITY;	/* enough to extend at once */
 		sc->sc_am = kern_realloc(sc->sc_am,
 		    sc->sc_am_capacity * sizeof(pid_t), M_WAITOK);
 		TRACE(2, "realloc am_capacity=%d", sc->sc_am_capacity);
@@ -7688,9 +7691,9 @@ mixer_async_remove(struct audio_softc *sc, pid_t pid)
 	 * Shrinks array but does not make it empty.
 	 * Don't mind if realloc doesn't shrink actually.
 	 */
-	if (sc->sc_am_capacity > 16 &&
-	    sc->sc_am_count <= sc->sc_am_capacity - 16) {
-		sc->sc_am_capacity -= 16;
+	if (sc->sc_am_capacity > AM_CAPACITY &&
+	    sc->sc_am_count <= sc->sc_am_capacity - AM_CAPACITY) {
+		sc->sc_am_capacity -= AM_CAPACITY;
 		sc->sc_am = kern_realloc(sc->sc_am,
 		    sc->sc_am_capacity * sizeof(pid_t), M_WAITOK);
 		TRACE(2, "realloc am_capacity=%d", sc->sc_am_capacity);
