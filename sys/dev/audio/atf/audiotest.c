@@ -1612,6 +1612,9 @@ void
 test_open_simul(int mode0, int mode1)
 {
 	struct audio_info ai;
+	struct audio_info aipause;
+	char wbuf[1000];	/* 1/8sec in 8bit-mulaw,1ch,8000Hz */
+	char rbuf[1000];	/* 1/8sec in 8bit-mulaw,1ch,8000Hz */
 	int fd0, fd1;
 	int i;
 	int r;
@@ -1696,6 +1699,40 @@ test_open_simul(int mode0, int mode1)
 			}
 		}
 	}
+
+	/*
+	 * In addition, check whether you can actually read/write.
+	 */
+	/* Pause to make no sound */
+	AUDIO_INITINFO(&aipause);
+	aipause.play.pause = 1;
+	r = IOCTL(fd0, AUDIO_SETINFO, &aipause, "pause");
+	XP_SYS_EQ(0, r);
+	/* Silent data to make no sound */
+	memset(&wbuf, 0xff, sizeof(wbuf));
+
+	/* write(fd0) if possible */
+	if ((exptable[i].mode0 & AUMODE_PLAY)) {
+		r = WRITE(fd0, wbuf, sizeof(wbuf));
+		XP_SYS_EQ(1000, r);
+	}
+	/* read(fd0) if possible */
+	if ((exptable[i].mode0 & AUMODE_RECORD)) {
+		r = READ(fd0, rbuf, sizeof(rbuf));
+		XP_SYS_EQ(1000, r);
+	}
+
+	/* write(fd1) if possible */
+	if (exptable[i].mode1 >= 0 && (exptable[i].mode1 & AUMODE_PLAY)) {
+		r = WRITE(fd1, wbuf, sizeof(wbuf));
+		XP_SYS_EQ(1000, r);
+	}
+	/* read(fd1) if possible */
+	if (exptable[i].mode1 >= 0 && (exptable[i].mode1 & AUMODE_RECORD)) {
+		r = READ(fd1, rbuf, sizeof(rbuf));
+		XP_SYS_EQ(1000, r);
+	}
+
 	if (fd1 >= 0) {
 		r = CLOSE(fd1);
 		XP_SYS_EQ(0, r);
