@@ -1504,7 +1504,7 @@ test_write_PLAY(void)
 
 // 再生 (open-write-close) を複数回繰り返し
 void
-test_write_rept(void)
+test_rept_write(void)
 {
 	struct timeval start, end, result;
 	double res;
@@ -1513,7 +1513,7 @@ test_write_rept(void)
 	int r;
 	int n;
 
-	TEST("write_rept");
+	TEST("rept_write");
 
 	memset(buf, 0xff, sizeof(buf));
 	n = 4;
@@ -1550,9 +1550,9 @@ test_write_rept(void)
 // なる。というもの。
 // ただし成功するドライバでは無音が10秒続くことになるので普段は外しておく。
 void
-test_write_rept_2(void)
+test_rept_write_2(void)
 {
-	TEST("write_rept_2");
+	TEST("rept_write_2");
 #if 1
 	XP_SKIP("This is only for test.");
 	return;
@@ -7501,8 +7501,8 @@ struct testtable testtable[] = {
 	DEF(close_1),
 	DEF(write_PLAY_ALL),
 	DEF(write_PLAY),
-	DEF(write_rept),
-	DEF(write_rept_2),
+	DEF(rept_write),
+	DEF(rept_write_2),
 	DEF(read),
 	DEF(rdwr_fallback),
 	DEF(readwrite_2),
