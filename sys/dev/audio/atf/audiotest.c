@@ -77,8 +77,8 @@ bool xp_ne(int, int, int, const char *);
 bool xp_if(int, bool, const char *);
 bool xp_sys_eq(int, int, int, const char *);
 bool xp_sys_ok(int, int, const char *);
-bool xp_sys_ok_ptr(int, void *, const char *);
 bool xp_sys_ng(int, int, int, const char *);
+bool xp_sys_ptr(int, int, void *, const char *);
 bool xp_buffsize(int, bool, int, const char *);
 int debug_open(int, const char *, int);
 int debug_write(int, int, const void *, size_t);
@@ -791,18 +791,6 @@ bool xp_sys_ok(int line, int act, const char *varname)
 	}
 	return r;
 }
-#define XP_SYS_OK_PTR(act) xp_sys_ok_ptr(__LINE__, act, #act)
-bool xp_sys_ok_ptr(int line, void *act, const char *varname)
-{
-	bool r = true;
-
-	testcount++;
-	if (act == (void *)-1) {
-		r = xp_fail(line, "%s expects success but -1,err#%d(%s)",
-		    varname, errno, strerror(errno));
-	}
-	return r;
-}
 
 /* This expects that the system call fails with 'experrno'. */
 #define XP_SYS_NG(experrno, act) xp_sys_ng(__LINE__, experrno, act, #act)
@@ -821,6 +809,42 @@ bool xp_sys_ng(int line, int experrno, int act, const char *varname)
 		r = xp_fail(line, "%s expects -1,err#%d(%s) but -1,err#%d(%s)",
 		    varname, experrno, strerror(experrno),
 		    acterrno, acterrbuf);
+	}
+	return r;
+}
+
+/*
+ * When exp == 0, this expects that the system call succeeds with returned
+ * pointer is not -1.
+ * When exp != 0, this expects that the system call fails with returned
+ * pointer is -1 and its errno is exp.
+ * It's only for mmap().
+ */
+#define XP_SYS_PTR(exp, act) xp_sys_ptr(__LINE__, exp, act, #act)
+bool xp_sys_ptr(int line, int exp, void *act, const char *varname)
+{
+	bool r = true;
+
+	testcount++;
+	if (exp == 0) {
+		/* expects to succeed */
+		if (act == (void *)-1) {
+			r = xp_fail(line,
+			    "%s expects success but -1,err#%d(%s)",
+			    varname, errno, strerror(errno));
+		}
+	} else {
+		/* expects to fail */
+		if (act != (void *)-1) {
+			r = xp_fail(line,
+			    "%s expects -1,err#%d(%s) but success",
+			    varname, exp, strerror(exp));
+		} else if (exp != errno) {
+			const char *errno_str = strerror(errno);
+			r = xp_fail(line,
+			    "%s expects -1,err#%d(%s) but -1,err#%d(%s)",
+			    varname, exp, strerror(exp), errno, errno_str);
+		}
 	}
 	return r;
 }
