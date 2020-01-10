@@ -15,6 +15,7 @@ __RCSID("$NetBSD$");
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <util.h>
 #include <sys/audioio.h>
 #include <sys/event.h>
 #include <sys/ioctl.h>
@@ -89,6 +90,7 @@ int debug_fcntl(int, int, int, const char *, ...) __printflike(4, 5);
 int debug_close(int, int);
 void *debug_mmap(int, void *, size_t, int, int, int, off_t);
 int debug_munmap(int, void *, int);
+const char *event_tostr(int);
 int debug_poll(int, struct pollfd *, int, int);
 int debug_kqueue(int);
 int debug_kevent_set(int, int, const struct kevent *, size_t);
@@ -1054,6 +1056,20 @@ int debug_munmap(int line, void *ptr, int len)
 	DRESULT(r);
 }
 
+const char *
+event_tostr(int events)
+{
+	static char buf[64];
+
+	snprintb(buf, sizeof(buf),
+	    "\177\020" \
+	    "b\10WRBAND\0" \
+	    "b\7RDBAND\0" "b\6RDNORM\0" "b\5NVAL\0" "b\4HUP\0" \
+	    "b\3ERR\0" "b\2OUT\0" "b\1PRI\0" "b\0IN\0",
+	    events);
+	return buf;
+}
+
 #define POLL(pfd, nfd, timeout)	\
 	debug_poll(__LINE__, pfd, nfd, timeout)
 int debug_poll(int line, struct pollfd *pfd, int nfd, int timeout)
@@ -1062,8 +1078,8 @@ int debug_poll(int line, struct pollfd *pfd, int nfd, int timeout)
 	int n = 0;
 	buf[n] = '\0';
 	for (int i = 0; i < nfd; i++) {
-		n += snprintf(buf + n, sizeof(buf) - n, "{fd=%d,events=%d}",
-		    pfd[i].fd, pfd[i].events);
+		n += snprintf(buf + n, sizeof(buf) - n, "{fd=%d,events=%s}",
+		    pfd[i].fd, event_tostr(pfd[i].events));
 	}
 	DPRINTFF(line, "poll(%s, %d, %d)", buf, nfd, timeout);
 	int r = rump_or_poll(pfd, nfd, timeout);

@@ -8,7 +8,7 @@ TESTS_SH=	t_audio
 
 PROGS=		audiotest
 CPPFLAGS+=	-g
-LDADD+=	-lpthread
+LDADD+=	-lpthread -lutil
 LDADD+=	-lrump -lrumpdev_audio -lrumpdev_pad -lrumpdev -lrumpvfs
 
 WARNS=4
