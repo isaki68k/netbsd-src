@@ -464,7 +464,7 @@ int audio_idle_timeout = 30;
 #endif
 
 /* Number of elements of async mixer's pid */
-#define AM_CAPACITY	(16)
+#define AM_CAPACITY	(8)
 
 struct portname {
 	const char *name;
@@ -899,9 +899,9 @@ audioattach(device_t parent, device_t self, void *aux)
 	sc->sc_blk_ms = AUDIO_BLK_MS;
 	SLIST_INIT(&sc->sc_files);
 	cv_init(&sc->sc_exlockcv, "audiolk");
-	sc->sc_am_capacity = AM_CAPACITY;
+	sc->sc_am_capacity = 0;
 	sc->sc_am_count = 0;
-	sc->sc_am = kern_malloc(sizeof(pid_t) * sc->sc_am_capacity, M_WAITOK);
+	sc->sc_am = NULL;
 
 	/* MMAP is now supported by upper layer.  */
 	sc->sc_props |= AUDIO_PROP_MMAP;
@@ -1298,7 +1298,8 @@ audiodetach(device_t self, int flags)
 		kmem_free(sc->sc_rmixer, sizeof(*sc->sc_rmixer));
 	}
 	mutex_exit(sc->sc_lock);
-	kern_free(sc->sc_am);
+	if (sc->sc_am)
+		kern_free(sc->sc_am);
 
 	seldestroy(&sc->sc_wsel);
 	seldestroy(&sc->sc_rsel);
@@ -7683,20 +7684,16 @@ mixer_async_remove(struct audio_softc *sc, pid_t pid)
 			sc->sc_am[i] = sc->sc_am[--sc->sc_am_count];
 			TRACE(2, "am[%d] removed, count=%d", i,
 			    sc->sc_am_count);
-			break;
-		}
-	}
 
-	/*
-	 * Shrinks array (if necessary) but does not make it empty.
-	 * Don't mind if realloc doesn't shrink actually.
-	 */
-	if (sc->sc_am_capacity > AM_CAPACITY &&
-	    sc->sc_am_count <= sc->sc_am_capacity - AM_CAPACITY) {
-		sc->sc_am_capacity -= AM_CAPACITY;
-		sc->sc_am = kern_realloc(sc->sc_am,
-		    sc->sc_am_capacity * sizeof(pid_t), M_WAITOK);
-		TRACE(2, "realloc am_capacity=%d", sc->sc_am_capacity);
+			/* Empty array if no longer necessary. */
+			if (sc->sc_am_count == 0) {
+				kern_free(sc->sc_am);
+				sc->sc_am = NULL;
+				sc->sc_am_capacity = 0;
+				TRACE(2, "released");
+			}
+			return;
+		}
 	}
 }
 

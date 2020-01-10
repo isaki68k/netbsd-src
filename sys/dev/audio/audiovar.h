@@ -195,7 +195,8 @@ struct audio_softc {
 
 	/*
 	 * Processes who want mixer SIGIO.
-	 * sc_am is an array of pids and its capacity is sc_am_capacity.
+	 * sc_am is an array of pids, or NULL if empty.
+	 * sc_am_capacity is the number of allocated elements.
 	 * sc_am_count is the number of elements actually used.
 	 * Must be protected by sc_lock.
 	 */
