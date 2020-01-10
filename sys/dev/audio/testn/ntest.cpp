@@ -2209,7 +2209,7 @@ test_mmap_twice()
 
 // 別ディスクリプタで mmap
 void
-test_mmap_5()
+test_mmap_multi()
 {
 	struct audio_info ai;
 	int fd0;
@@ -2219,7 +2219,7 @@ test_mmap_5()
 	void *ptr0;
 	void *ptr1;
 
-	TEST("mmap_5");
+	TEST("mmap_multi");
 	// 多重オープンはできない
 	if (netbsd <= 7)
 		return;
@@ -7510,7 +7510,7 @@ struct testtable testtable[] = {
 	DEF(mmap_len),
 	DEF(mmap_3),			// 保留
 	DEF(mmap_twice),
-	DEF(mmap_5),
+	DEF(mmap_multi),
 	DEF(mmap_6),
 	DEF(mmap_7),
 	DEF(mmap_8),

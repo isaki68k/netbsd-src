@@ -2717,6 +2717,64 @@ DEF(mmap_twice)
 	reset_after_mmap();
 }
 
+/*
+ * mmap() different descriptors.
+ */
+DEF(mmap_multi)
+{
+	struct audio_info ai;
+	int fd0;
+	int fd1;
+	int r;
+	int len;
+	void *ptr0;
+	void *ptr1;
+
+	TEST("mmap_multi");
+	if (netbsd < 8) {
+		XP_SKIP("Multiple open is not supported");
+		return;
+	}
+	if ((props & AUDIO_PROP_MMAP) == 0) {
+		XP_SKIP("Operation not allowed on this hardware property");
+		return;
+	}
+
+	fd0 = OPEN(devaudio, O_WRONLY);
+	REQUIRED_SYS_OK(fd0);
+
+	r = IOCTL(fd0, AUDIO_GETBUFINFO, &ai, "get");
+	REQUIRED_SYS_EQ(0, r);
+	len = ai.play.buffer_size;
+
+	fd1 = OPEN(devaudio, O_WRONLY);
+	REQUIRED_SYS_OK(fd1);
+
+	ptr0 = MMAP(NULL, len, PROT_WRITE, MAP_FILE, fd0, 0);
+	XP_SYS_PTR(0, ptr0);
+
+	ptr1 = MMAP(NULL, len,  PROT_WRITE, MAP_FILE, fd1, 0);
+	XP_SYS_PTR(0, ptr1);
+
+	if (ptr0 != MAP_FAILED) {
+		r = MUNMAP(ptr1, len);
+		XP_SYS_EQ(0, r);
+	}
+
+	r = CLOSE(fd1);
+	XP_SYS_EQ(0, r);
+
+	if (ptr1 != MAP_FAILED) {
+		r = MUNMAP(ptr0, len);
+		XP_SYS_EQ(0, r);
+	}
+
+	r = CLOSE(fd0);
+	XP_SYS_EQ(0, r);
+
+	reset_after_mmap();
+}
+
 #define ENT(x) { #x, test__ ## x }
 struct testentry testtable[] = {
 	ENT(open_mode_RDONLY),
@@ -2775,5 +2833,6 @@ struct testentry testtable[] = {
 	ENT(mmap_mode_RDWR_READWRITE),
 	ENT(mmap_len),
 	ENT(mmap_twice),
+	ENT(mmap_multi),
 	{ NULL, NULL },
 };
