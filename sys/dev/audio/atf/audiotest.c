@@ -1200,6 +1200,7 @@ void test_open_sound(int);
 void test_open_simul(int, int);
 void test_open_multiuser(int);
 void test_rdwr_fallback(int, bool, bool);
+void test_rdwr_simul(int, int);
 
 #define DEF(name) \
 	void test__ ## name (void); \
@@ -1612,9 +1613,6 @@ void
 test_open_simul(int mode0, int mode1)
 {
 	struct audio_info ai;
-	struct audio_info aipause;
-	char wbuf[1000];	/* 1/8sec in 8bit-mulaw,1ch,8000Hz */
-	char rbuf[1000];	/* 1/8sec in 8bit-mulaw,1ch,8000Hz */
 	int fd0, fd1;
 	int i;
 	int r;
@@ -1698,39 +1696,6 @@ test_open_simul(int mode0, int mode1)
 				XP_FAIL("expects error but %d", actmode);
 			}
 		}
-	}
-
-	/*
-	 * In addition, check whether you can actually read/write.
-	 */
-	/* Pause to make no sound */
-	AUDIO_INITINFO(&aipause);
-	aipause.play.pause = 1;
-	r = IOCTL(fd0, AUDIO_SETINFO, &aipause, "pause");
-	XP_SYS_EQ(0, r);
-	/* Silent data to make no sound */
-	memset(&wbuf, 0xff, sizeof(wbuf));
-
-	/* write(fd0) if possible */
-	if ((exptable[i].mode0 & AUMODE_PLAY)) {
-		r = WRITE(fd0, wbuf, sizeof(wbuf));
-		XP_SYS_EQ(1000, r);
-	}
-	/* read(fd0) if possible */
-	if ((exptable[i].mode0 & AUMODE_RECORD)) {
-		r = READ(fd0, rbuf, sizeof(rbuf));
-		XP_SYS_EQ(1000, r);
-	}
-
-	/* write(fd1) if possible */
-	if (exptable[i].mode1 >= 0 && (exptable[i].mode1 & AUMODE_PLAY)) {
-		r = WRITE(fd1, wbuf, sizeof(wbuf));
-		XP_SYS_EQ(1000, r);
-	}
-	/* read(fd1) if possible */
-	if (exptable[i].mode1 >= 0 && (exptable[i].mode1 & AUMODE_RECORD)) {
-		r = READ(fd1, rbuf, sizeof(rbuf));
-		XP_SYS_EQ(1000, r);
 	}
 
 	if (fd1 >= 0) {
@@ -2125,6 +2090,112 @@ DEF(rdwr_fallback_RDWR) {
 }
 
 /*
+ * Read/Write the second descriptors.
+ * On full-duplex hardware, the second descriptor's readablity/writability
+ * is not depend on the first descriptor's open mode.
+ * On half-duplex hardware, it depends on the first descriptor's open mode.
+ */
+void
+test_rdwr_simul(int mode0, int mode1)
+{
+	struct audio_info ai;
+	char wbuf[100];	/* 1/80sec in 8bit-mulaw,1ch,8000Hz */
+	char rbuf[100];	/* 1/80sec in 8bit-mulaw,1ch,8000Hz */
+	bool canopen;
+	bool canwrite;
+	bool canread;
+	int fd0;
+	int fd1;
+	int r;
+	struct {
+		bool canopen;
+		bool canwrite;
+		bool canread;
+	} exptable_full[] = {
+	/*	open write read	   1st, 2nd mode */
+		{ 1, 0, 1 },	/* REC, REC */
+		{ 1, 1, 0 },	/* REC, PLAY */
+		{ 1, 1, 1 },	/* REC, BOTH */
+		{ 1, 0, 1 },	/* PLAY, REC */
+		{ 1, 1, 0 },	/* PLAY, PLAY */
+		{ 1, 1, 1 },	/* PLAY, BOTH */
+		{ 1, 0, 1 },	/* BOTH, REC */
+		{ 1, 1, 0 },	/* BOTH, PLAY */
+		{ 1, 1, 1 },	/* BOTH, BOTH */
+	},
+	exptable_half[] = {
+		{ 1, 0, 1 },	/* REC, REC */
+		{ 0, 0, 0 },	/* REC, PLAY */
+		{ 0, 0, 0 },	/* REC, BOTH */
+		{ 0, 0, 0 },	/* PLAY, REC */
+		{ 1, 1, 0 },	/* PLAY, PLAY */
+		{ 1, 1, 0 },	/* PLAY, BOTH */
+		{ 0, 0, 0 },	/* BOTH, REC */
+		{ 1, 1, 0 },	/* BOTH, PLAY */
+		{ 0, 0, 0 },	/* BOTH, BOTH */
+	}, *exptable;
+
+	TEST("rdwr_simul_%s_%s",
+	    openmode_str[mode0] + 2,
+	    openmode_str[mode1] + 2);
+
+	exptable = hw_fulldup() ? exptable_full : exptable_half;
+
+	canopen  = exptable[mode0 * 3 + mode1].canopen;
+	canwrite = exptable[mode0 * 3 + mode1].canwrite;
+	canread  = exptable[mode0 * 3 + mode1].canread;
+
+	if (!canopen) {
+		XP_SKIP("This combination is not openable on half duplex");
+		return;
+	}
+
+	fd0 = OPEN(devaudio, mode0);
+	REQUIRED_SYS_OK(fd0);
+
+	fd1 = OPEN(devaudio, mode1);
+	REQUIRED_SYS_OK(fd1);
+
+	/* Silent data to make no sound */
+	memset(&wbuf, 0xff, sizeof(wbuf));
+	/* Pause to make no sound */
+	AUDIO_INITINFO(&ai);
+	ai.play.pause = 1;
+	r = IOCTL(fd0, AUDIO_SETINFO, &ai, "pause");
+	XP_SYS_EQ(0, r);
+
+	/* write(fd1) */
+	r = WRITE(fd1, wbuf, sizeof(wbuf));
+	if (canwrite) {
+		XP_SYS_EQ(100, r);
+	} else {
+		XP_SYS_NG(EBADF, r);
+	}
+
+	/* read(fd1) */
+	r = READ(fd1, rbuf, sizeof(rbuf));
+	if (canread) {
+		XP_SYS_EQ(100, r);
+	} else {
+		XP_SYS_NG(EBADF, r);
+	}
+
+	r = CLOSE(fd0);
+	XP_SYS_EQ(0, r);
+	r = CLOSE(fd1);
+	XP_SYS_EQ(0, r);
+}
+DEF(rdwr_simul_RDONLY_RDONLY)	{ test_rdwr_simul(O_RDONLY, O_RDONLY);	}
+DEF(rdwr_simul_RDONLY_WRONLY)	{ test_rdwr_simul(O_RDONLY, O_WRONLY);	}
+DEF(rdwr_simul_RDONLY_RDWR)	{ test_rdwr_simul(O_RDONLY, O_RDWR);	}
+DEF(rdwr_simul_WRONLY_RDONLY)	{ test_rdwr_simul(O_WRONLY, O_RDONLY);	}
+DEF(rdwr_simul_WRONLY_WRONLY)	{ test_rdwr_simul(O_WRONLY, O_WRONLY);	}
+DEF(rdwr_simul_WRONLY_RDWR)	{ test_rdwr_simul(O_WRONLY, O_RDWR);	}
+DEF(rdwr_simul_RDWR_RDONLY)	{ test_rdwr_simul(O_RDWR, O_RDONLY);	}
+DEF(rdwr_simul_RDWR_WRONLY)	{ test_rdwr_simul(O_RDWR, O_WRONLY);	}
+DEF(rdwr_simul_RDWR_RDWR)	{ test_rdwr_simul(O_RDWR, O_RDWR);	}
+
+/*
  * DRAIN should work even on incomplete data left.
  */
 DEF(drain_incomplete)
@@ -2245,6 +2316,15 @@ struct testentry testtable[] = {
 	ENT(rdwr_fallback_RDONLY),
 	ENT(rdwr_fallback_WRONLY),
 	ENT(rdwr_fallback_RDWR),
+	ENT(rdwr_simul_RDONLY_RDONLY),
+	ENT(rdwr_simul_RDONLY_WRONLY),
+	ENT(rdwr_simul_RDONLY_RDWR),
+	ENT(rdwr_simul_WRONLY_RDONLY),
+	ENT(rdwr_simul_WRONLY_WRONLY),
+	ENT(rdwr_simul_WRONLY_RDWR),
+	ENT(rdwr_simul_RDWR_RDONLY),
+	ENT(rdwr_simul_RDWR_WRONLY),
+	ENT(rdwr_simul_RDWR_RDWR),
 	ENT(drain_incomplete),
 	ENT(drain_pause),
 	ENT(drain_onrec),

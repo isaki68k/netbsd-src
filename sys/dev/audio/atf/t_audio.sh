@@ -136,6 +136,42 @@ atf_test_case rdwr_fallback_RDWR
 rdwr_fallback_RDWR_head() { }
 rdwr_fallback_RDWR_body() { h_audio rdwr_fallback_RDWR }
 
+atf_test_case rdwr_two_RDONLY_RDONLY
+rdwr_two_RDONLY_RDONLY_head() { }
+rdwr_two_RDONLY_RDONLY_body() { h_audio rdwr_two_RDONLY_RDONLY }
+
+atf_test_case rdwr_two_RDONLY_WRONLY
+rdwr_two_RDONLY_WRONLY_head() { }
+rdwr_two_RDONLY_WRONLY_body() { h_audio rdwr_two_RDONLY_WRONLY }
+
+atf_test_case rdwr_two_RDONLY_RDWR
+rdwr_two_RDONLY_RDWR_head() { }
+rdwr_two_RDONLY_RDWR_body() { h_audio rdwr_two_RDONLY_RDWR }
+
+atf_test_case rdwr_two_WRONLY_RDONLY
+rdwr_two_WRONLY_RDONLY_head() { }
+rdwr_two_WRONLY_RDONLY_body() { h_audio rdwr_two_WRONLY_RDONLY }
+
+atf_test_case rdwr_two_WRONLY_WRONLY
+rdwr_two_WRONLY_WRONLY_head() { }
+rdwr_two_WRONLY_WRONLY_body() { h_audio rdwr_two_WRONLY_WRONLY }
+
+atf_test_case rdwr_two_WRONLY_RDWR
+rdwr_two_WRONLY_RDWR_head() { }
+rdwr_two_WRONLY_RDWR_body() { h_audio rdwr_two_WRONLY_RDWR }
+
+atf_test_case rdwr_two_RDWR_RDONLY
+rdwr_two_RDWR_RDONLY_head() { }
+rdwr_two_RDWR_RDONLY_body() { h_audio rdwr_two_RDWR_RDONLY }
+
+atf_test_case rdwr_two_RDWR_WRONLY
+rdwr_two_RDWR_WRONLY_head() { }
+rdwr_two_RDWR_WRONLY_body() { h_audio rdwr_two_RDWR_WRONLY }
+
+atf_test_case rdwr_two_RDWR_RDWR
+rdwr_two_RDWR_RDWR_head() { }
+rdwr_two_RDWR_RDWR_body() { h_audio rdwr_two_RDWR_RDWR }
+
 atf_test_case drain_incomplete
 drain_incomplete_head() { }
 drain_incomplete_body() { h_audio drain_incomplete }
@@ -178,6 +214,15 @@ atf_init_test_cases() {
 	atf_add_test_case rdwr_fallback_RDONLY
 	atf_add_test_case rdwr_fallback_WRONLY
 	atf_add_test_case rdwr_fallback_RDWR
+	atf_add_test_case rdwr_two_RDONLY_RDONLY
+	atf_add_test_case rdwr_two_RDONLY_WRONLY
+	atf_add_test_case rdwr_two_RDONLY_RDWR
+	atf_add_test_case rdwr_two_WRONLY_RDONLY
+	atf_add_test_case rdwr_two_WRONLY_WRONLY
+	atf_add_test_case rdwr_two_WRONLY_RDWR
+	atf_add_test_case rdwr_two_RDWR_RDONLY
+	atf_add_test_case rdwr_two_RDWR_WRONLY
+	atf_add_test_case rdwr_two_RDWR_RDWR
 	atf_add_test_case drain_incomplete
 	atf_add_test_case drain_pause
 	atf_add_test_case drain_onrec
