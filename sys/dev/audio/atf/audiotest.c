@@ -74,11 +74,11 @@ void xp_skip(int, const char *, ...) __printflike(2, 3);
 bool xp_eq(int, int, int, const char *);
 bool xp_eq_str(int, const char *, const char *, const char *);
 bool xp_ne(int, int, int, const char *);
+bool xp_if(int, bool, const char *);
 bool xp_sys_eq(int, int, int, const char *);
 bool xp_sys_ok(int, int, const char *);
 bool xp_sys_ok_ptr(int, void *, const char *);
 bool xp_sys_ng(int, int, int, const char *);
-bool xp_sys_if(int, bool, const char *);
 bool xp_buffsize(int, bool, int, const char *);
 int debug_open(int, const char *, int);
 int debug_write(int, int, const void *, size_t);
@@ -745,6 +745,19 @@ bool xp_ne(int line, int exp, int act, const char *varname)
 	return r;
 }
 
+/* This expects that result is expressed in expr. */
+/* GCC extension */
+#define XP_IF(expr) xp_if(__LINE__, (expr), #expr)
+bool xp_if(int line, bool expr, const char *exprname)
+{
+	bool r = true;
+	testcount++;
+	if (!expr) {
+		r = xp_fail(__LINE__, "(%s) is expected but not met", exprname);
+	}
+	return r;
+}
+
 /* This expects that the system call returns 'exp'. */
 #define XP_SYS_EQ(exp, act)	xp_sys_eq(__LINE__, exp, act, #act)
 bool xp_sys_eq(int line, int exp, int act, const char *varname)
@@ -812,20 +825,6 @@ bool xp_sys_ng(int line, int experrno, int act, const char *varname)
 	return r;
 }
 
-/* This expects that the system call result is expressed in expr. */
-/* GCC extension */
-#define XP_SYS_IF(expr) xp_sys_if(__LINE__, (expr), #expr)
-bool xp_sys_if(int line, bool expr, const char *exprname)
-{
-	bool r = true;
-	testcount++;
-	if (!expr) {
-		r = xp_fail(__LINE__, "(%s) is expected but err#%d(%s)",
-		    exprname, errno, strerror(errno));
-	}
-	return r;
-}
-
 /*
  * Check ai.*.buffer_size.
  * If exp == true, it expects that buffer_size is non-zero.
@@ -855,9 +854,9 @@ bool xp_buffsize(int line, bool exp, int act, const char *varname)
  */
 #define REQUIRED_EQ(e, a) do { if (!XP_EQ(e, a)) return; } while (0)
 #define REQUIRED_NE(e, a) do { if (!XP_NE(e, a)) return; } while (0)
+#define REQUIRED_IF(expr) do { if (!XP_IF(expr)) return; } while (0)
 #define REQUIRED_SYS_EQ(e, a) do { if (!XP_SYS_EQ(e, a)) return; } while (0)
 #define REQUIRED_SYS_OK(a)    do { if (!XP_SYS_OK(a))    return; } while (0)
-#define REQUIRED_SYS_IF(expr) do { if (!XP_SYS_IF(expr)) return; } while (0)
 
 
 static const char *openmode_str[] = {
@@ -1960,7 +1959,7 @@ DEF(write_PLAY)
 
 	wavsize = ai.blocksize;
 	wav = (char *)malloc(wavsize);
-	REQUIRED_SYS_IF(wav != NULL);
+	REQUIRED_IF(wav != NULL);
 	memset(wav, 0xff, wavsize);
 
 	/* Write blocks until 1sec */
