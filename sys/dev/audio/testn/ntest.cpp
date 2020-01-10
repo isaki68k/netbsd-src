@@ -1704,7 +1704,7 @@ test_rdwr_fallback(void)
 //
 // AUDIO2 では HWHalf なら full duplex 操作になる open を禁止する。
 void
-test_rdwr_simul(void)
+test_rdwr_two(void)
 {
 	struct audio_info ai;
 	char buf[10];
@@ -1739,7 +1739,7 @@ test_rdwr_simul(void)
 
 	// N7 は多重オープンはできない
 	if (netbsd <= 7) {
-		TEST("rdwr_simul");
+		TEST("rdwr_two");
 		XP_SKIP("N7 does not support multi-open");
 		return;
 	}
@@ -1750,7 +1750,7 @@ test_rdwr_simul(void)
 		exptable = exphalftable;
 	}
 
-	TEST("rdwr_simul");
+	TEST("rdwr_two");
 	AUDIO_INITINFO(&ai);
 	ai.play.pause = 1;
 	ai.record.pause = 1;
@@ -7505,7 +7505,7 @@ struct testtable testtable[] = {
 	DEF(rept_write_2),
 	DEF(read),
 	DEF(rdwr_fallback),
-	DEF(rdwr_simul),
+	DEF(rdwr_two),
 	DEF(readwrite_3),
 	DEF(mmap_1),
 	DEF(mmap_2),

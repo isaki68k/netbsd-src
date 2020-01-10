@@ -1215,7 +1215,7 @@ void test_open_sound(int);
 void test_open_simul(int, int);
 void test_open_multiuser(int);
 void test_rdwr_fallback(int, bool, bool);
-void test_rdwr_simul(int, int);
+void test_rdwr_two(int, int);
 
 #define DEF(name) \
 	void test__ ## name (void); \
@@ -2173,13 +2173,12 @@ DEF(rdwr_fallback_RDWR) {
 }
 
 /*
- * Read/Write the second descriptors.
  * On full-duplex hardware, the second descriptor's readablity/writability
- * is not depend on the first descriptor's open mode.
+ * is not depend on the first descriptor('s open mode).
  * On half-duplex hardware, it depends on the first descriptor's open mode.
  */
 void
-test_rdwr_simul(int mode0, int mode1)
+test_rdwr_two(int mode0, int mode1)
 {
 	struct audio_info ai;
 	char wbuf[100];	/* 1/80sec in 8bit-mulaw,1ch,8000Hz */
@@ -2218,7 +2217,7 @@ test_rdwr_simul(int mode0, int mode1)
 		{ 0, 0, 0 },	/* BOTH, BOTH */
 	}, *exptable;
 
-	TEST("rdwr_simul_%s_%s",
+	TEST("rdwr_two_%s_%s",
 	    openmode_str[mode0] + 2,
 	    openmode_str[mode1] + 2);
 
@@ -2273,15 +2272,15 @@ test_rdwr_simul(int mode0, int mode1)
 	r = CLOSE(fd1);
 	XP_SYS_EQ(0, r);
 }
-DEF(rdwr_simul_RDONLY_RDONLY)	{ test_rdwr_simul(O_RDONLY, O_RDONLY);	}
-DEF(rdwr_simul_RDONLY_WRONLY)	{ test_rdwr_simul(O_RDONLY, O_WRONLY);	}
-DEF(rdwr_simul_RDONLY_RDWR)	{ test_rdwr_simul(O_RDONLY, O_RDWR);	}
-DEF(rdwr_simul_WRONLY_RDONLY)	{ test_rdwr_simul(O_WRONLY, O_RDONLY);	}
-DEF(rdwr_simul_WRONLY_WRONLY)	{ test_rdwr_simul(O_WRONLY, O_WRONLY);	}
-DEF(rdwr_simul_WRONLY_RDWR)	{ test_rdwr_simul(O_WRONLY, O_RDWR);	}
-DEF(rdwr_simul_RDWR_RDONLY)	{ test_rdwr_simul(O_RDWR, O_RDONLY);	}
-DEF(rdwr_simul_RDWR_WRONLY)	{ test_rdwr_simul(O_RDWR, O_WRONLY);	}
-DEF(rdwr_simul_RDWR_RDWR)	{ test_rdwr_simul(O_RDWR, O_RDWR);	}
+DEF(rdwr_two_RDONLY_RDONLY)	{ test_rdwr_two(O_RDONLY, O_RDONLY);	}
+DEF(rdwr_two_RDONLY_WRONLY)	{ test_rdwr_two(O_RDONLY, O_WRONLY);	}
+DEF(rdwr_two_RDONLY_RDWR)	{ test_rdwr_two(O_RDONLY, O_RDWR);	}
+DEF(rdwr_two_WRONLY_RDONLY)	{ test_rdwr_two(O_WRONLY, O_RDONLY);	}
+DEF(rdwr_two_WRONLY_WRONLY)	{ test_rdwr_two(O_WRONLY, O_WRONLY);	}
+DEF(rdwr_two_WRONLY_RDWR)	{ test_rdwr_two(O_WRONLY, O_RDWR);	}
+DEF(rdwr_two_RDWR_RDONLY)	{ test_rdwr_two(O_RDWR, O_RDONLY);	}
+DEF(rdwr_two_RDWR_WRONLY)	{ test_rdwr_two(O_RDWR, O_WRONLY);	}
+DEF(rdwr_two_RDWR_RDWR)		{ test_rdwr_two(O_RDWR, O_RDWR);	}
 
 /*
  * DRAIN should work even on incomplete data left.
@@ -2404,15 +2403,15 @@ struct testentry testtable[] = {
 	ENT(rdwr_fallback_RDONLY),
 	ENT(rdwr_fallback_WRONLY),
 	ENT(rdwr_fallback_RDWR),
-	ENT(rdwr_simul_RDONLY_RDONLY),
-	ENT(rdwr_simul_RDONLY_WRONLY),
-	ENT(rdwr_simul_RDONLY_RDWR),
-	ENT(rdwr_simul_WRONLY_RDONLY),
-	ENT(rdwr_simul_WRONLY_WRONLY),
-	ENT(rdwr_simul_WRONLY_RDWR),
-	ENT(rdwr_simul_RDWR_RDONLY),
-	ENT(rdwr_simul_RDWR_WRONLY),
-	ENT(rdwr_simul_RDWR_RDWR),
+	ENT(rdwr_two_RDONLY_RDONLY),
+	ENT(rdwr_two_RDONLY_WRONLY),
+	ENT(rdwr_two_RDONLY_RDWR),
+	ENT(rdwr_two_WRONLY_RDONLY),
+	ENT(rdwr_two_WRONLY_WRONLY),
+	ENT(rdwr_two_WRONLY_RDWR),
+	ENT(rdwr_two_RDWR_RDONLY),
+	ENT(rdwr_two_RDWR_WRONLY),
+	ENT(rdwr_two_RDWR_RDWR),
 	ENT(drain_incomplete),
 	ENT(drain_pause),
 	ENT(drain_onrec),
