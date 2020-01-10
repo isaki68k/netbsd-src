@@ -1291,87 +1291,6 @@ test_encoding_3()
 	}
 }
 
-void
-test_drain_incomplete(void)
-{
-	int r;
-	int fd;
-
-	TEST("drain_incomplete");
-
-	fd = OPEN(devaudio, O_WRONLY);
-	if (fd == -1)
-		err(1, "open");
-
-	struct audio_info ai;
-	AUDIO_INITINFO(&ai);
-	// 1フレーム複数バイト、PLAY に設定
-	ai.play.encoding = AUDIO_ENCODING_SLINEAR_LE;
-	ai.play.precision = 16;
-	ai.play.channels = (netbsd <= 7 && vs0) ? 1 : 2;
-	ai.play.sample_rate = 11050;
-	ai.mode = AUMODE_PLAY;
-	r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
-	if (r == -1)
-		err(1, "AUDIO_SETINFO");
-	// 1バイト書いて close
-	r = WRITE(fd, &r, 1);
-	XP_SYS_EQ(1, r);
-	r = CLOSE(fd);
-	XP_SYS_EQ(0, r);
-}
-
-// pause したまま drain
-void
-test_drain_pause(void)
-{
-	int r;
-	int fd;
-
-	TEST("drain_pause");
-
-	fd = OPEN(devaudio, O_WRONLY);
-	if (fd == -1)
-		err(1, "open");
-
-	struct audio_info ai;
-	AUDIO_INITINFO(&ai);
-	ai.play.encoding = AUDIO_ENCODING_SLINEAR_LE;
-	ai.play.precision = 16;
-	ai.play.channels = (netbsd <= 7 && vs0) ? 1 : 2;
-	ai.play.sample_rate = 11050;
-	ai.mode = AUMODE_PLAY;
-	ai.play.pause = 1;
-	r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
-	if (r == -1)
-		err(1, "AUDIO_SETINFO");
-	// 4バイト書いて close
-	r = WRITE(fd, &r, 4);
-	XP_SYS_EQ(4, r);
-	r = CLOSE(fd);
-	XP_SYS_EQ(0, r);
-}
-
-// 録音専用ディスクリプタに drain してみる
-void
-test_drain_onrec(void)
-{
-	int r;
-	int fd;
-
-	TEST("drain_onrec");
-
-	fd = OPEN(devaudio, O_RDONLY);
-	if (fd == -1)
-		err(1, "open");
-
-	r = IOCTL(fd, AUDIO_DRAIN, NULL, "");
-	XP_SYS_EQ(0, r);
-
-	r = CLOSE(fd);
-	XP_SYS_EQ(0, r);
-}
-
 // close で drain が発生すること
 void
 test_close_1(void)
@@ -1868,6 +1787,87 @@ test_rdwr_simul()
 	CLOSE(fd1);
 	// ここまで来れば自動的に成功とする
 	XP_EQ(0, 0);
+}
+
+void
+test_drain_incomplete(void)
+{
+	int r;
+	int fd;
+
+	TEST("drain_incomplete");
+
+	fd = OPEN(devaudio, O_WRONLY);
+	if (fd == -1)
+		err(1, "open");
+
+	struct audio_info ai;
+	AUDIO_INITINFO(&ai);
+	// 1フレーム複数バイト、PLAY に設定
+	ai.play.encoding = AUDIO_ENCODING_SLINEAR_LE;
+	ai.play.precision = 16;
+	ai.play.channels = (netbsd <= 7 && vs0) ? 1 : 2;
+	ai.play.sample_rate = 11050;
+	ai.mode = AUMODE_PLAY;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
+	if (r == -1)
+		err(1, "AUDIO_SETINFO");
+	// 1バイト書いて close
+	r = WRITE(fd, &r, 1);
+	XP_SYS_EQ(1, r);
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+}
+
+// pause したまま drain
+void
+test_drain_pause(void)
+{
+	int r;
+	int fd;
+
+	TEST("drain_pause");
+
+	fd = OPEN(devaudio, O_WRONLY);
+	if (fd == -1)
+		err(1, "open");
+
+	struct audio_info ai;
+	AUDIO_INITINFO(&ai);
+	ai.play.encoding = AUDIO_ENCODING_SLINEAR_LE;
+	ai.play.precision = 16;
+	ai.play.channels = (netbsd <= 7 && vs0) ? 1 : 2;
+	ai.play.sample_rate = 11050;
+	ai.mode = AUMODE_PLAY;
+	ai.play.pause = 1;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
+	if (r == -1)
+		err(1, "AUDIO_SETINFO");
+	// 4バイト書いて close
+	r = WRITE(fd, &r, 4);
+	XP_SYS_EQ(4, r);
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+}
+
+// 録音専用ディスクリプタに drain してみる
+void
+test_drain_onrec(void)
+{
+	int r;
+	int fd;
+
+	TEST("drain_onrec");
+
+	fd = OPEN(devaudio, O_RDONLY);
+	if (fd == -1)
+		err(1, "open");
+
+	r = IOCTL(fd, AUDIO_DRAIN, NULL, "");
+	XP_SYS_EQ(0, r);
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
 }
 
 // mmap できる mode と prot の組み合わせ
@@ -7493,9 +7493,6 @@ struct testtable testtable[] = {
 	DEF(encoding_1),
 	DEF(encoding_2),
 	DEF(encoding_3),
-	DEF(drain_incomplete),
-	DEF(drain_pause),
-	DEF(drain_onrec),
 	DEF(close_1),
 	DEF(write_PLAY_ALL),
 	DEF(write_PLAY),
@@ -7505,6 +7502,9 @@ struct testtable testtable[] = {
 	DEF(rdwr_fallback),
 	DEF(rdwr_two),
 	DEF(rdwr_simul),
+	DEF(drain_incomplete),
+	DEF(drain_pause),
+	DEF(drain_onrec),
 	DEF(mmap_1),
 	DEF(mmap_2),
 	DEF(mmap_3),
