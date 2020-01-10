@@ -22,6 +22,7 @@ __RCSID("$NetBSD$");
 #include <sys/poll.h>
 #include <sys/sysctl.h>
 #include <sys/time.h>
+#include <sys/wait.h>
 #if !defined(NO_RUMP)
 #include <rump/rump.h>
 #include <rump/rump_syscalls.h>
@@ -2283,6 +2284,68 @@ DEF(rdwr_two_RDWR_WRONLY)	{ test_rdwr_two(O_RDWR, O_WRONLY);	}
 DEF(rdwr_two_RDWR_RDWR)		{ test_rdwr_two(O_RDWR, O_RDWR);	}
 
 /*
+ * Read and write different descriptors simultaneously.
+ * Only on full-duplex.
+ */
+DEF(rdwr_simul)
+{
+	char wbuf[1000];	/* 1/8sec in mulaw,1ch,8kHz */
+	char rbuf[1000];
+	int fd0;
+	int fd1;
+	int r;
+	int status;
+	pid_t pid;
+
+	TEST("rdwr_simul");
+	if (netbsd < 8) {
+		XP_SKIP("Multiple open is not supported");
+		return;
+	}
+	if (!hw_fulldup()) {
+		XP_SKIP("Operation not allowed on this hardware property");
+		return;
+	}
+
+	/* Silence data to make no sound */
+	memset(wbuf, 0xff, sizeof(wbuf));
+
+	fd0 = OPEN(devaudio, O_WRONLY);
+	REQUIRED_SYS_OK(fd0);
+	fd1 = OPEN(devaudio, O_RDONLY);
+	REQUIRED_SYS_OK(fd1);
+
+	fflush(stdout);
+	fflush(stderr);
+	pid = fork();
+	if (pid == -1)
+		xp_err(1, __LINE__, "fork");
+
+	if (pid == 0) {
+		/* child (read) */
+		for (int i = 0; i < 10; i++) {
+			r = READ(fd1, rbuf, sizeof(rbuf));
+			if (r == -1)
+				xp_err(1, __LINE__, "read(i=%d)", i);
+		}
+		exit(0);
+	} else {
+		/* parent (write) */
+		for (int i = 0; i < 10; i++) {
+			r = WRITE(fd0, wbuf, sizeof(wbuf));
+			if (r == -1)
+				xp_err(1, __LINE__, "write(i=%d)", i);
+		}
+		waitpid(pid, &status, 0);
+	}
+
+	CLOSE(fd0);
+	CLOSE(fd1);
+	/* If you reach here, consider as success */
+	XP_EQ(0, 0);
+}
+
+/*
  * DRAIN should work even on incomplete data left.
  */
 DEF(drain_incomplete)
@@ -2412,6 +2475,7 @@ struct testentry testtable[] = {
 	ENT(rdwr_two_RDWR_RDONLY),
 	ENT(rdwr_two_RDWR_WRONLY),
 	ENT(rdwr_two_RDWR_RDWR),
+	ENT(rdwr_simul),
 	ENT(drain_incomplete),
 	ENT(drain_pause),
 	ENT(drain_onrec),

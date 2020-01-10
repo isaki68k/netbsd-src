@@ -172,6 +172,10 @@ atf_test_case rdwr_two_RDWR_RDWR
 rdwr_two_RDWR_RDWR_head() { }
 rdwr_two_RDWR_RDWR_body() { h_audio rdwr_two_RDWR_RDWR }
 
+atf_test_case rdwr_simul
+rdwr_simul_head() { }
+rdwr_simul_body() { h_audio rdwr_simul }
+
 atf_test_case drain_incomplete
 drain_incomplete_head() { }
 drain_incomplete_body() { h_audio drain_incomplete }
@@ -223,6 +227,7 @@ atf_init_test_cases() {
 	atf_add_test_case rdwr_two_RDWR_RDONLY
 	atf_add_test_case rdwr_two_RDWR_WRONLY
 	atf_add_test_case rdwr_two_RDWR_RDWR
+	atf_add_test_case rdwr_simul
 	atf_add_test_case drain_incomplete
 	atf_add_test_case drain_pause
 	atf_add_test_case drain_onrec

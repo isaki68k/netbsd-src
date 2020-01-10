@@ -1807,7 +1807,7 @@ test_rdwr_two(void)
 // 別ディスクリプタを同時に読み書き
 // HW Half ではこの操作は行えない
 void
-test_readwrite_3()
+test_rdwr_simul()
 {
 	char buf[1024];
 	int fd0, fd1;
@@ -7506,7 +7506,7 @@ struct testtable testtable[] = {
 	DEF(read),
 	DEF(rdwr_fallback),
 	DEF(rdwr_two),
-	DEF(readwrite_3),
+	DEF(rdwr_simul),
 	DEF(mmap_1),
 	DEF(mmap_2),
 	DEF(mmap_3),
