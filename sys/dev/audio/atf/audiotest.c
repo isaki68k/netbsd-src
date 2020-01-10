@@ -2485,6 +2485,10 @@ test_mmap_mode(int mode, int prot)
 		xp_errx(1, __LINE__, "unknown prot %x\n", prot);
 	}
 	TEST("mmap_%s_%s", openmode_str[mode] + 2, protstr);
+	if ((props & AUDIO_PROP_MMAP) == 0) {
+		XP_SKIP("Operation not allowed on this hardware property");
+		return;
+	}
 
 	/*
 	 * On NetBSD7 and 8, mmap() always succeeds regardless of open mode.
@@ -2527,7 +2531,8 @@ test_mmap_mode(int mode, int prot)
 				XP_SYS_NG(EPERM, r);
 			}
 		}
-
+	}
+	if (ptr != MAP_FAILED) {
 		r = MUNMAP(ptr, len);
 		XP_SYS_EQ(0, r);
 	}
