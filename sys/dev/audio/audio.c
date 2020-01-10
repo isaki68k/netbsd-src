@@ -900,7 +900,7 @@ audioattach(device_t parent, device_t self, void *aux)
 	SLIST_INIT(&sc->sc_files);
 	cv_init(&sc->sc_exlockcv, "audiolk");
 	sc->sc_am_capacity = 0;
-	sc->sc_am_count = 0;
+	sc->sc_am_used = 0;
 	sc->sc_am = NULL;
 
 	/* MMAP is now supported by upper layer.  */
@@ -7650,21 +7650,21 @@ mixer_async_add(struct audio_softc *sc, pid_t pid)
 	KASSERT(mutex_owned(sc->sc_lock));
 
 	/* If already exists, returns without doing anything. */
-	for (i = 0; i < sc->sc_am_count; i++) {
+	for (i = 0; i < sc->sc_am_used; i++) {
 		if (sc->sc_am[i] == pid)
 			return;
 	}
 
 	/* Extend array if necessary. */
-	if (sc->sc_am_count >= sc->sc_am_capacity) {
+	if (sc->sc_am_used >= sc->sc_am_capacity) {
 		sc->sc_am_capacity += AM_CAPACITY;
 		sc->sc_am = kern_realloc(sc->sc_am,
 		    sc->sc_am_capacity * sizeof(pid_t), M_WAITOK);
 		TRACE(2, "realloc am_capacity=%d", sc->sc_am_capacity);
 	}
 
-	TRACE(2, "am[%d]=%d", sc->sc_am_count, (int)pid);
-	sc->sc_am[sc->sc_am_count++] = pid;
+	TRACE(2, "am[%d]=%d", sc->sc_am_used, (int)pid);
+	sc->sc_am[sc->sc_am_used++] = pid;
 }
 
 /*
@@ -7679,14 +7679,13 @@ mixer_async_remove(struct audio_softc *sc, pid_t pid)
 
 	KASSERT(mutex_owned(sc->sc_lock));
 
-	for (i = 0; i < sc->sc_am_count; i++) {
+	for (i = 0; i < sc->sc_am_used; i++) {
 		if (sc->sc_am[i] == pid) {
-			sc->sc_am[i] = sc->sc_am[--sc->sc_am_count];
-			TRACE(2, "am[%d] removed, count=%d", i,
-			    sc->sc_am_count);
+			sc->sc_am[i] = sc->sc_am[--sc->sc_am_used];
+			TRACE(2, "am[%d] removed, count=%d", i, sc->sc_am_used);
 
 			/* Empty array if no longer necessary. */
-			if (sc->sc_am_count == 0) {
+			if (sc->sc_am_used == 0) {
 				kern_free(sc->sc_am);
 				sc->sc_am = NULL;
 				sc->sc_am_capacity = 0;
@@ -7709,7 +7708,7 @@ mixer_signal(struct audio_softc *sc)
 
 	KASSERT(mutex_owned(sc->sc_lock));
 
-	for (i = 0; i < sc->sc_am_count; i++) {
+	for (i = 0; i < sc->sc_am_used; i++) {
 		mutex_enter(proc_lock);
 		p = proc_find(sc->sc_am[i]);
 		if (p)
