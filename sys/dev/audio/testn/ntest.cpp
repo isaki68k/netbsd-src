@@ -1987,7 +1987,8 @@ test_mmap_mode()
 				else
 					XP_SYS_NG(EPERM, r);
 			}
-
+		}
+		if (ptr != MAP_FAILED) {
 			r = MUNMAP(ptr, len);
 			XP_SYS_EQ(0, r);
 		}
