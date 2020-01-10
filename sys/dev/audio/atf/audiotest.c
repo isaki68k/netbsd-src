@@ -64,6 +64,7 @@ int hw_canplay(void);
 int hw_canrec(void);
 int hw_bidir(void);
 int hw_fulldup(void);
+int netbsd;
 void init(int);
 void *consumer_thread(void *);
 void TEST(const char *, ...) __printflike(1, 2);
@@ -533,6 +534,8 @@ void
 init(int requnit)
 {
 	struct audio_device devinfo;
+	size_t len;
+	int rel;
 	int fd;
 	int r;
 
@@ -548,6 +551,18 @@ init(int requnit)
 	snprintf(devsound, sizeof(devsound), "/dev/sound%d", unit);
 	snprintf(devaudioctl, sizeof(devaudioctl), "/dev/audioctl%d", unit);
 	snprintf(devmixer, sizeof(devmixer), "/dev/mixer%d", unit);
+
+	/*
+	 * version
+	 * audio2 is merged in 8.99.39.
+	 */
+	len = sizeof(rel);
+	r = sysctlbyname("kern.osrevision", &rel, &len, NULL, 0);
+	if (r == -1)
+		xp_err(1, __LINE__, "sysctl kern.osrevision");
+	netbsd = rel / 100000000;
+	if (rel >=  899003900)
+		netbsd = 9;
 
 #if !defined(NO_RUMP)
 	if (use_rump) {
@@ -1246,6 +1261,8 @@ test_open_audio(int mode)
 	int r;
 	int can_play;
 	int can_rec;
+	bool pbuff;
+	bool rbuff;
 
 	TEST("open_audio_%s", openmode_str[mode] + 2);
 
@@ -1254,6 +1271,18 @@ test_open_audio(int mode)
 	if (can_play + can_rec == 0) {
 		XP_SKIP("Operation not allowed on this hardware property");
 		return;
+	}
+
+	/*
+	 * NetBSD7,8 always has both buffers for playback and recording.
+	 * NetBSD9 only has necessary buffers.
+	 */
+	if (netbsd < 9) {
+		pbuff = true;
+		rbuff = true;
+	} else {
+		pbuff = can_play;
+		rbuff = can_rec;
 	}
 
 	/*
@@ -1276,7 +1305,7 @@ test_open_audio(int mode)
 		/* port */
 	XP_EQ(0, ai.play.seek);
 		/* avail_ports */
-	XP_BUFFSIZE(can_play, ai.play.buffer_size);
+	XP_BUFFSIZE(pbuff, ai.play.buffer_size);
 	XP_EQ(0, ai.play.samples);
 	XP_EQ(0, ai.play.eof);
 	XP_EQ(0, ai.play.pause);
@@ -1294,7 +1323,7 @@ test_open_audio(int mode)
 		/* port */
 	XP_EQ(0, ai.record.seek);
 		/* avail_ports */
-	XP_BUFFSIZE(can_rec, ai.record.buffer_size);
+	XP_BUFFSIZE(rbuff, ai.record.buffer_size);
 	XP_EQ(0, ai.record.samples);
 	XP_EQ(0, ai.record.eof);
 	XP_EQ(0, ai.record.pause);
@@ -1302,7 +1331,14 @@ test_open_audio(int mode)
 	XP_EQ(0, ai.record.waiting);
 		/* balance */
 	XP_EQ(can_rec, ai.record.open);
-	XP_EQ(0, ai.record.active);
+	/*
+	 * NetBSD7,8 (may?) be active when opened in recording mode but
+	 * recording has not started yet. (?)
+	 * NetBSD9 is not active at that time.
+	 */
+	if (netbsd == 9) {
+		XP_EQ(0, ai.record.active);
+	}
 	/* Save it */
 	ai0 = ai;
 
@@ -1379,7 +1415,9 @@ test_open_audio(int mode)
 	XP_EQ(0, ai.record.waiting);
 		/* balance */
 	XP_EQ(can_rec, ai.record.open);
-	XP_EQ(0, ai.record.active);
+	if (netbsd == 9) {
+		XP_EQ(0, ai.record.active);
+	}
 
 	r = CLOSE(fd);
 	REQUIRED_SYS_EQ(0, r);
@@ -1400,6 +1438,8 @@ test_open_sound(int mode)
 	int r;
 	int can_play;
 	int can_rec;
+	bool pbuff;
+	bool rbuff;
 
 	TEST("open_sound_%s", openmode_str[mode] + 2);
 
@@ -1408,6 +1448,18 @@ test_open_sound(int mode)
 	if (can_play + can_rec == 0) {
 		XP_SKIP("Operation not allowed on this hardware property");
 		return;
+	}
+
+	/*
+	 * NetBSD7,8 always has both buffers for playback and recording.
+	 * NetBSD9 only has necessary buffers.
+	 */
+	if (netbsd < 9) {
+		pbuff = true;
+		rbuff = true;
+	} else {
+		pbuff = can_play;
+		rbuff = can_rec;
 	}
 
 	/*
@@ -1449,7 +1501,7 @@ test_open_sound(int mode)
 		/* port */
 	XP_EQ(0, ai.play.seek);
 		/* avail_ports */
-	XP_BUFFSIZE(can_play, ai.play.buffer_size);
+	XP_BUFFSIZE(pbuff, ai.play.buffer_size);
 	XP_EQ(0, ai.play.samples);
 	XP_EQ(0, ai.play.eof);
 	XP_EQ(0, ai.play.pause);
@@ -1467,7 +1519,7 @@ test_open_sound(int mode)
 		/* port */
 	XP_EQ(0, ai.record.seek);
 		/* avail_ports */
-	XP_BUFFSIZE(can_rec, ai.record.buffer_size);
+	XP_BUFFSIZE(rbuff, ai.record.buffer_size);
 	XP_EQ(0, ai.record.samples);
 	XP_EQ(0, ai.record.eof);
 	XP_EQ(0, ai.record.pause);
@@ -1475,7 +1527,14 @@ test_open_sound(int mode)
 	XP_EQ(0, ai.record.waiting);
 		/* balance */
 	XP_EQ(can_rec, ai.record.open);
-	XP_EQ(0, ai.record.active);
+	/*
+	 * NetBSD7,8 (may?) be active when opened in recording mode but
+	 * recording has not started yet. (?)
+	 * NetBSD9 is not active at that time.
+	 */
+	if (netbsd == 9) {
+		XP_EQ(0, ai.record.active);
+	}
 	/* Save it */
 	ai0 = ai;
 
@@ -1525,7 +1584,7 @@ test_open_sound(int mode)
 		/* port */
 	XP_EQ(0, ai.play.seek);
 		/* avail_ports */
-	XP_BUFFSIZE(can_play, ai.play.buffer_size);
+	XP_BUFFSIZE(pbuff, ai.play.buffer_size);
 	XP_EQ(0, ai.play.samples);
 	XP_EQ(0, ai.play.eof);
 	XP_EQ(ai0.play.pause, ai.play.pause);			/* sticky */
@@ -1543,7 +1602,7 @@ test_open_sound(int mode)
 		/* port */
 	XP_EQ(0, ai.record.seek);
 		/* avail_ports */
-	XP_BUFFSIZE(can_rec, ai.record.buffer_size);
+	XP_BUFFSIZE(rbuff, ai.record.buffer_size);
 	XP_EQ(0, ai.record.samples);
 	XP_EQ(0, ai.record.eof);
 	XP_EQ(ai0.record.pause, ai.record.pause);		/* stikey */
@@ -1551,7 +1610,9 @@ test_open_sound(int mode)
 	XP_EQ(0, ai.record.waiting);
 		/* balance */
 	XP_EQ(can_rec, ai.record.open);
-	XP_EQ(0, ai.record.active);
+	if (netbsd == 9) {
+		XP_EQ(0, ai.record.active);
+	}
 
 	r = CLOSE(fd);
 	REQUIRED_SYS_EQ(0, r);
@@ -1657,6 +1718,11 @@ test_open_simul(int mode0, int mode1)
 	    openmode_str[mode0] + 2,
 	    openmode_str[mode1] + 2);
 
+	if (netbsd < 8) {
+		XP_SKIP("Multiple open is not supported");
+		return;
+	}
+
 	if (mode2aumode(mode0) == 0 || mode2aumode(mode1) == 0) {
 		XP_SKIP("Operation not allowed on this hardware property");
 		return;
@@ -1732,12 +1798,19 @@ test_open_multiuser(int multiuser)
 	uid_t ouid;
 
 	TEST("open_multiuser_%d", multiuser);
+	if (netbsd < 8) {
+		XP_SKIP("Multiple open is not supported");
+		return;
+	}
 	if (geteuid() != 0) {
 		XP_SKIP("Must be run as a privileged user");
 		return;
 	}
 
-	/* Set multiuser mode (and save the previous one) */
+	/*
+	 * Set multiuser mode (and save the previous one).
+	 * NetBSD8 has no way to determine devicename.
+	 */
 	snprintf(mibname, sizeof(mibname), "hw.%s.multiuser", devicename);
 	newval = multiuser;
 	oldlen = sizeof(oldval);
@@ -2085,7 +2158,17 @@ test_rdwr_fallback(int openmode, bool expwrite, bool expread)
 DEF(rdwr_fallback_RDONLY) { test_rdwr_fallback(O_RDONLY, false, true); }
 DEF(rdwr_fallback_WRONLY) { test_rdwr_fallback(O_WRONLY, true, false); }
 DEF(rdwr_fallback_RDWR) {
-	bool expread = hw_fulldup() ? true : false;
+	bool expread;
+	/*
+	 * On NetBSD7, O_RDWR on half-duplex is accepted. It's possible to
+	 * read and write if they don't occur at the same time.
+	 * On NetBSD9, O_RDWR on half-duplex falls back O_WRONLY.
+	 */
+	if (netbsd < 8) {
+		expread = true;
+	} else {
+		expread = hw_fulldup() ? true : false;
+	}
 	test_rdwr_fallback(O_RDWR, true, expread);
 }
 
@@ -2138,6 +2221,11 @@ test_rdwr_simul(int mode0, int mode1)
 	TEST("rdwr_simul_%s_%s",
 	    openmode_str[mode0] + 2,
 	    openmode_str[mode1] + 2);
+
+	if (netbsd < 8) {
+		XP_SKIP("Multiple open is not supported");
+		return;
+	}
 
 	exptable = hw_fulldup() ? exptable_full : exptable_half;
 
