@@ -7490,10 +7490,10 @@ struct testtable testtable[] = {
 	DEF(open_sound_sticky),
 	DEF(open_simul),
 	DEF(open_multiuser),
-	DEF(encoding_1),
-	DEF(encoding_2),
-	DEF(encoding_3),
-	DEF(close_1),
+	DEF(encoding_1),		// notyet
+	DEF(encoding_2),		// notyet
+	DEF(encoding_3),		// notyet
+	DEF(close_1),			// 保留
 	DEF(write_PLAY_ALL),
 	DEF(write_PLAY),
 	DEF(rept_write),
