@@ -240,6 +240,10 @@ atf_test_case mmap_len
 mmap_len_head() { }
 mmap_len_body() { h_audio mmap_len }
 
+atf_test_case mmap_twice
+mmap_twice_head() { }
+mmap_twice_body() { h_audio mmap_twice }
+
 atf_init_test_cases() {
 	atf_add_test_case open_mode_RDONLY
 	atf_add_test_case open_mode_WRONLY
@@ -296,4 +300,5 @@ atf_init_test_cases() {
 	atf_add_test_case mmap_mode_RDWR_WRITE
 	atf_add_test_case mmap_mode_RDWR_READWRITE
 	atf_add_test_case mmap_len
+	atf_add_test_case mmap_twice
 }

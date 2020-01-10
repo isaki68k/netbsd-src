@@ -2156,7 +2156,7 @@ test_mmap_3()
 
 // 同一ディスクリプタで二重 mmap
 void
-test_mmap_4()
+test_mmap_twice()
 {
 	struct audio_info ai;
 	int fd;
@@ -2165,7 +2165,7 @@ test_mmap_4()
 	void *ptr;
 	void *ptr2;
 
-	TEST("mmap_4");
+	TEST("mmap_twice");
 	if ((props & AUDIO_PROP_MMAP) == 0) {
 		return;
 	}
@@ -7508,8 +7508,8 @@ struct testtable testtable[] = {
 	DEF(drain_onrec),
 	DEF(mmap_mode),
 	DEF(mmap_len),
-	DEF(mmap_3),
-	DEF(mmap_4),
+	DEF(mmap_3),			// 保留
+	DEF(mmap_twice),
 	DEF(mmap_5),
 	DEF(mmap_6),
 	DEF(mmap_7),

@@ -104,6 +104,7 @@ int openable_mode(void);
 int mode2aumode(int);
 int mode2play(int);
 int mode2rec(int);
+void reset_after_mmap(void);
 
 /* from audio.c */
 static const char *encoding_names[]
@@ -1227,6 +1228,23 @@ mode2rec(int mode)
 
 	aumode = mode2aumode(mode);
 	return ((aumode & AUMODE_RECORD)) ? 1 : 0;
+}
+
+/*
+ * On NetBSD7, open() after-closing-mmap fails due to a bug.
+ * It happens once every two times like flip-flop, so the workaround is
+ * to open it again.
+ */
+void
+reset_after_mmap(void)
+{
+	int fd;
+
+	if (netbsd <= 7) {
+		fd = OPEN(devaudio, O_WRONLY);
+		if (fd != -1)
+			CLOSE(fd);
+	}
 }
 
 /*
@@ -2459,7 +2477,7 @@ DEF(drain_onrec)
 }
 
 /*
- * Combination of mode and prot which able to
+ * Whether mmap() succeeds with specified parameter.
  */
 void
 test_mmap_mode(int mode, int prot)
@@ -2546,6 +2564,8 @@ test_mmap_mode(int mode, int prot)
 
 	r = CLOSE(fd);
 	XP_SYS_EQ(0, r);
+
+	reset_after_mmap();
 }
 #define PROT_READWRITE	(PROT_READ | PROT_WRITE)
 DEF(mmap_mode_RDONLY_NONE)	{ test_mmap_mode(O_RDONLY, PROT_NONE); }
@@ -2647,12 +2667,54 @@ DEF(mmap_len)
 	r = CLOSE(fd);
 	XP_SYS_EQ(0, r);
 
-	/* On NetBSD7, open() after closing mmap failes due to bug */
-	if (netbsd <= 7) {
-		fd = OPEN(devaudio, O_WRONLY);
-		if (fd != -1)
-			CLOSE(fd);
+	reset_after_mmap();
+}
+
+/*
+ * mmap() the same descriptor twice.
+ */
+DEF(mmap_twice)
+{
+	struct audio_info ai;
+	int fd;
+	int r;
+	int len;
+	void *ptr1;
+	void *ptr2;
+
+	TEST("mmap_twice");
+	if ((props & AUDIO_PROP_MMAP) == 0) {
+		XP_SKIP("Operation not allowed on this hardware property");
+		return;
 	}
+
+	fd = OPEN(devaudio, O_WRONLY);
+	REQUIRED_SYS_OK(fd);
+
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "get");
+	REQUIRED_SYS_EQ(0, r);
+	len = ai.play.buffer_size;
+
+	ptr1 = MMAP(NULL, len, PROT_WRITE, MAP_FILE, fd, 0);
+	XP_SYS_PTR(0, ptr1);
+
+	/* XXX I'm not sure this sucess is intended.  Anyway I follow it */
+	ptr2 = MMAP(NULL, len, PROT_WRITE, MAP_FILE, fd, 0);
+	XP_SYS_PTR(0, ptr2);
+
+	if (ptr2 != MAP_FAILED) {
+		r = MUNMAP(ptr2, len);
+		XP_SYS_EQ(0, r);
+	}
+	if (ptr1 != MAP_FAILED) {
+		r = MUNMAP(ptr1, len);
+		XP_SYS_EQ(0, r);
+	}
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+
+	reset_after_mmap();
 }
 
 #define ENT(x) { #x, test__ ## x }
@@ -2712,5 +2774,6 @@ struct testentry testtable[] = {
 	ENT(mmap_mode_RDWR_WRITE),
 	ENT(mmap_mode_RDWR_READWRITE),
 	ENT(mmap_len),
+	ENT(mmap_twice),
 	{ NULL, NULL },
 };
