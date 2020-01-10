@@ -1647,7 +1647,6 @@ test_rdwr_fallback(void)
 
 	AUDIO_INITINFO(&ai);
 	ai.play.pause = 1;
-	ai.record.pause = 1;
 
 	for (int i = 0; exptable[i].openmode != 99 ; i++) {
 		int openmode = exptable[i].openmode;
@@ -1686,7 +1685,6 @@ test_rdwr_fallback(void)
 		}
 
 		// read は mode2ropen[] が期待値
-		// N7 は 1バイト以上 read しようとするとブロックする?
 		r = READ(fd, buf, 0);
 		if (canread) {
 			XP_SYS_EQ(0, r);
@@ -7586,4 +7584,4 @@ struct testtable testtable[] = {
 	DEF(concurrent_3),
 	{ NULL, NULL },
 };
-
+// ai.record.pause=1 でN7はreadがブロックするが、N9は0が返るという確認?
