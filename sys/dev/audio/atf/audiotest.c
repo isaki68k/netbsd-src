@@ -1275,6 +1275,7 @@ void test_open_multiuser(int);
 void test_rdwr_fallback(int, bool, bool);
 void test_rdwr_two(int, int);
 void test_mmap_mode(int, int);
+void test_poll_mode(int, int, int);
 
 #define DEF(name) \
 	void test__ ## name (void); \
@@ -2791,6 +2792,73 @@ DEF(mmap_multi)
 	reset_after_mmap();
 }
 
+#define IN	POLLIN
+#define OUT	POLLOUT
+/*
+ * Whether poll() succeeds with specified mode.
+ */
+void
+test_poll_mode(int mode, int events, int expected_revents)
+{
+	struct pollfd pfd;
+	const char *events_str;
+	int fd;
+	int r;
+	int expected_r;
+
+	if (events == IN) {
+		events_str = "IN";
+	} else if (events == OUT) {
+		events_str = "OUT";
+	} else if (events == (IN | OUT)) {
+		events_str = "INOUT";
+	} else {
+		events_str = "?";
+	}
+	TEST("poll_mode_%s_%s", openmode_str[mode] + 2, events_str);
+
+	expected_r = (expected_revents != 0) ? 1 : 0;
+
+	fd = OPEN(devaudio, mode);
+	REQUIRED_SYS_OK(fd);
+
+	memset(&pfd, 0, sizeof(pfd));
+	pfd.fd = fd;
+	pfd.events = events;
+
+	r = POLL(&pfd, 1, 100);
+	/* It's a bit complicated..  */
+	if (r < 0 || r > 1) {
+		/*
+		 * Check these two cases first:
+		 * - system call fails.
+		 * - poll() with one nfds returns >1.  It's strange.
+		 */
+		XP_SYS_EQ(expected_r, r);
+	} else {
+		/*
+		 * Otherwise, poll() returned 0 or 1.
+		 */
+		DPRINTF("  > pfd.revents=%s\n", event_tostr(pfd.revents));
+
+		/* NetBSD7,8 have several strange behavior.  It must be bug. */
+
+		XP_SYS_EQ(expected_r, r);
+		XP_EQ(expected_revents, pfd.revents);
+	}
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+}
+DEF(poll_mode_RDONLY_IN)	{ test_poll_mode(O_RDONLY, IN,     0); }
+DEF(poll_mode_RDONLY_OUT)	{ test_poll_mode(O_RDONLY, OUT,    0); }
+DEF(poll_mode_RDONLY_INOUT)	{ test_poll_mode(O_RDONLY, IN|OUT, 0); }
+DEF(poll_mode_WRONLY_IN)	{ test_poll_mode(O_WRONLY, IN,     0); }
+DEF(poll_mode_WRONLY_OUT)	{ test_poll_mode(O_WRONLY, OUT,	   OUT); }
+DEF(poll_mode_WRONLY_INOUT)	{ test_poll_mode(O_WRONLY, IN|OUT, OUT); }
+DEF(poll_mode_RDWR_IN)		{ test_poll_mode(O_RDWR,   IN,     0); }
+DEF(poll_mode_RDWR_OUT)		{ test_poll_mode(O_RDWR,   OUT,	   OUT); }
+DEF(poll_mode_RDWR_INOUT)	{ test_poll_mode(O_RDWR,   IN|OUT, OUT); }
+
 #define ENT(x) { #x, test__ ## x }
 struct testentry testtable[] = {
 	ENT(open_mode_RDONLY),
@@ -2850,5 +2918,14 @@ struct testentry testtable[] = {
 	ENT(mmap_len),
 	ENT(mmap_twice),
 	ENT(mmap_multi),
+	ENT(poll_mode_RDONLY_IN),
+	ENT(poll_mode_RDONLY_OUT),
+	ENT(poll_mode_RDONLY_INOUT),
+	ENT(poll_mode_WRONLY_IN),
+	ENT(poll_mode_WRONLY_OUT),
+	ENT(poll_mode_WRONLY_INOUT),
+	ENT(poll_mode_RDWR_IN),
+	ENT(poll_mode_RDWR_OUT),
+	ENT(poll_mode_RDWR_INOUT),
 	{ NULL, NULL },
 };

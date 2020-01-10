@@ -248,6 +248,42 @@ atf_test_case mmap_multi
 mmap_multi_head() { }
 mmap_multi_body() { h_audio mmap_multi }
 
+atf_test_case poll_mode_RDONLY_IN
+poll_mode_RDONLY_IN_head() { }
+poll_mode_RDONLY_IN_body() { h_audio poll_mode_RDONLY_IN }
+
+atf_test_case poll_mode_RDONLY_OUT
+poll_mode_RDONLY_OUT_head() { }
+poll_mode_RDONLY_OUT_body() { h_audio poll_mode_RDONLY_OUT }
+
+atf_test_case poll_mode_RDONLY_INOUT
+poll_mode_RDONLY_INOUT_head() { }
+poll_mode_RDONLY_INOUT_body() { h_audio poll_mode_RDONLY_INOUT }
+
+atf_test_case poll_mode_WRONLY_IN
+poll_mode_WRONLY_IN_head() { }
+poll_mode_WRONLY_IN_body() { h_audio poll_mode_WRONLY_IN }
+
+atf_test_case poll_mode_WRONLY_OUT
+poll_mode_WRONLY_OUT_head() { }
+poll_mode_WRONLY_OUT_body() { h_audio poll_mode_WRONLY_OUT }
+
+atf_test_case poll_mode_WRONLY_INOUT
+poll_mode_WRONLY_INOUT_head() { }
+poll_mode_WRONLY_INOUT_body() { h_audio poll_mode_WRONLY_INOUT }
+
+atf_test_case poll_mode_RDWR_IN
+poll_mode_RDWR_IN_head() { }
+poll_mode_RDWR_IN_body() { h_audio poll_mode_RDWR_IN }
+
+atf_test_case poll_mode_RDWR_OUT
+poll_mode_RDWR_OUT_head() { }
+poll_mode_RDWR_OUT_body() { h_audio poll_mode_RDWR_OUT }
+
+atf_test_case poll_mode_RDWR_INOUT
+poll_mode_RDWR_INOUT_head() { }
+poll_mode_RDWR_INOUT_body() { h_audio poll_mode_RDWR_INOUT }
+
 atf_init_test_cases() {
 	atf_add_test_case open_mode_RDONLY
 	atf_add_test_case open_mode_WRONLY
@@ -306,4 +342,13 @@ atf_init_test_cases() {
 	atf_add_test_case mmap_len
 	atf_add_test_case mmap_twice
 	atf_add_test_case mmap_multi
+	atf_add_test_case poll_mode_RDONLY_IN
+	atf_add_test_case poll_mode_RDONLY_OUT
+	atf_add_test_case poll_mode_RDONLY_INOUT
+	atf_add_test_case poll_mode_WRONLY_IN
+	atf_add_test_case poll_mode_WRONLY_OUT
+	atf_add_test_case poll_mode_WRONLY_INOUT
+	atf_add_test_case poll_mode_RDWR_IN
+	atf_add_test_case poll_mode_RDWR_OUT
+	atf_add_test_case poll_mode_RDWR_INOUT
 }

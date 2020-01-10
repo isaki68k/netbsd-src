@@ -2544,7 +2544,7 @@ test_mmap_9()
 
 // openmode と poll の関係
 void
-test_poll_1()
+test_poll_mode()
 {
 	struct pollfd pfd;
 	int fd;
@@ -2591,7 +2591,7 @@ test_poll_1()
 	else
 		table = halftable;
 
-	TEST("poll_1");
+	TEST("poll_mode");
 	for (int i = 0; table[i].openmode != 99; i++) {
 		int openmode = table[i].openmode;
 		int events = table[i].events;
@@ -7511,11 +7511,11 @@ struct testtable testtable[] = {
 	DEF(mmap_3),			// 保留
 	DEF(mmap_twice),
 	DEF(mmap_multi),
-	DEF(mmap_6),
-	DEF(mmap_7),
-	DEF(mmap_8),
-	DEF(mmap_9),
-	DEF(poll_1),
+	DEF(mmap_6),			// 保留
+	DEF(mmap_7),			// 保留
+	DEF(mmap_8),			// 保留
+	DEF(mmap_9),			// 保留
+	DEF(poll_mode),
 	DEF(poll_2),
 	DEF(poll_3),
 	DEF(poll_4),
