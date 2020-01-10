@@ -2561,6 +2561,100 @@ DEF(mmap_mode_RDWR_READ)	{ test_mmap_mode(O_RDWR, PROT_READ); }
 DEF(mmap_mode_RDWR_WRITE)	{ test_mmap_mode(O_RDWR, PROT_WRITE); }
 DEF(mmap_mode_RDWR_READWRITE)	{ test_mmap_mode(O_RDWR, PROT_READWRITE); }
 
+/*
+ * Check mmap()'s length and offset.
+ */
+DEF(mmap_len)
+{
+	struct audio_info ai;
+	int fd;
+	int r;
+	size_t len;
+	off_t offset;
+	void *ptr;
+	int bufsize;
+	int pagesize;
+	int lsize;
+
+	TEST("mmap_len");
+	if ((props & AUDIO_PROP_MMAP) == 0) {
+		XP_SKIP("Operation not allowed on this hardware property");
+		return;
+	}
+
+	len = sizeof(pagesize);
+	r = SYSCTLBYNAME("hw.pagesize", &pagesize, &len, NULL, 0);
+	REQUIRED_SYS_EQ(0, r);
+
+	fd = OPEN(devaudio, O_WRONLY);
+	REQUIRED_SYS_OK(r);
+
+	/* Get buffer_size */
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	REQUIRED_SYS_EQ(0, r);
+	bufsize = ai.play.buffer_size;
+
+	/*
+	 * XXX someone refers bufsize and another one does pagesize.
+	 * I'm not sure.
+	 */
+	lsize = roundup2(bufsize, pagesize);
+	struct {
+		size_t len;
+		off_t offset;
+		int exp;
+	} table[] = {
+		/* len offset	expected */
+
+		{ 0,	0,	0 },		/* len is 0  */
+		{ 1,	0,	0 },		/* len is smaller than lsize */
+		{ lsize, 0,	0 },		/* len is the same as lsize */
+		{ lsize + 1, 0,	EOVERFLOW },	/* len is larger */
+
+		{ 0, -1,	EINVAL },	/* offset is negative */
+		{ 0, lsize,	0 },		/* pointless param but ok */
+		{ 0, lsize + 1,	EOVERFLOW },	/* exceed */
+		{ 1, lsize,	EOVERFLOW },	/* exceed */
+
+		/*
+		 * When you treat offset as 32bit, offset will be 0
+		 * and thus it incorrectly succeeds.
+		 */
+		{ lsize,	1ULL<<32,	EOVERFLOW },
+	};
+
+	for (int i = 0; i < (int)__arraycount(table); i++) {
+		len = table[i].len;
+		offset = table[i].offset;
+		int exp = table[i].exp;
+
+		ptr = MMAP(NULL, len, PROT_WRITE, MAP_FILE, fd, offset);
+		if (exp == 0) {
+			XP_SYS_PTR(0, ptr);
+		} else {
+			/* NetBSD9 introduces EOVERFLOW */
+			if (netbsd < 9 && exp == EOVERFLOW)
+				exp = EINVAL;
+			XP_SYS_PTR(exp, ptr);
+		}
+
+		if (ptr != MAP_FAILED) {
+			r = MUNMAP(ptr, len);
+			XP_SYS_EQ(0, r);
+		}
+	}
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+
+	/* On NetBSD7, open() after closing mmap failes due to bug */
+	if (netbsd <= 7) {
+		fd = OPEN(devaudio, O_WRONLY);
+		if (fd != -1)
+			CLOSE(fd);
+	}
+}
+
 #define ENT(x) { #x, test__ ## x }
 struct testentry testtable[] = {
 	ENT(open_mode_RDONLY),
@@ -2617,5 +2711,6 @@ struct testentry testtable[] = {
 	ENT(mmap_mode_RDWR_READ),
 	ENT(mmap_mode_RDWR_WRITE),
 	ENT(mmap_mode_RDWR_READWRITE),
+	ENT(mmap_len),
 	{ NULL, NULL },
 };

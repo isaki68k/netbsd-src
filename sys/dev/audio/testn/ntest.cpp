@@ -2017,7 +2017,7 @@ test_mmap_mode()
 
 // mmap の len と offset パラメータ
 void
-test_mmap_2()
+test_mmap_len()
 {
 	struct audio_info ai;
 	int fd;
@@ -2028,7 +2028,7 @@ test_mmap_2()
 	int bufsize;
 	int pagesize;
 
-	TEST("mmap_2");
+	TEST("mmap_len");
 	if ((props & AUDIO_PROP_MMAP) == 0) {
 		return;
 	}
@@ -7507,7 +7507,7 @@ struct testtable testtable[] = {
 	DEF(drain_pause),
 	DEF(drain_onrec),
 	DEF(mmap_mode),
-	DEF(mmap_2),
+	DEF(mmap_len),
 	DEF(mmap_3),
 	DEF(mmap_4),
 	DEF(mmap_5),
