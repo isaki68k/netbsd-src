@@ -1873,7 +1873,7 @@ test_drain_onrec(void)
 // mmap できる mode と prot の組み合わせ
 // それと mmap 出来たら read/write は出来ないのテスト
 void
-test_mmap_1()
+test_mmap_mode()
 {
 	struct audio_info ai;
 	int fd;
@@ -1913,7 +1913,7 @@ test_mmap_1()
 		{ -O_RDWR,	PROT_READ | PROT_WRITE,	1 },
 	};
 
-	TEST("mmap_1");
+	TEST("mmap_mode");
 	if ((props & AUDIO_PROP_MMAP) == 0) {
 		return;
 	}
@@ -7505,7 +7505,7 @@ struct testtable testtable[] = {
 	DEF(drain_incomplete),
 	DEF(drain_pause),
 	DEF(drain_onrec),
-	DEF(mmap_1),
+	DEF(mmap_mode),
 	DEF(mmap_2),
 	DEF(mmap_3),
 	DEF(mmap_4),

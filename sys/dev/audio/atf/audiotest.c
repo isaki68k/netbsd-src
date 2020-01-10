@@ -1240,6 +1240,7 @@ void test_open_simul(int, int);
 void test_open_multiuser(int);
 void test_rdwr_fallback(int, bool, bool);
 void test_rdwr_two(int, int);
+void test_mmap_mode(int, int);
 
 #define DEF(name) \
 	void test__ ## name (void); \
@@ -2457,6 +2458,103 @@ DEF(drain_onrec)
 	XP_SYS_EQ(0, r);
 }
 
+/*
+ * Combination of mode and prot which able to
+ */
+void
+test_mmap_mode(int mode, int prot)
+{
+	char buf[10];
+	struct audio_info ai;
+	const char *protstr;
+	int expected;
+	int fd;
+	int r;
+	int len;
+	void *ptr;
+
+	if (prot == PROT_NONE) {
+		protstr = "NONE";
+	} else if (prot == PROT_READ) {
+		protstr = "READ";
+	} else if (prot == PROT_WRITE) {
+		protstr = "WRITE";
+	} else if (prot == (PROT_READ | PROT_WRITE)) {
+		protstr = "READWRITE";
+	} else {
+		xp_errx(1, __LINE__, "unknown prot %x\n", prot);
+	}
+	TEST("mmap_%s_%s", openmode_str[mode] + 2, protstr);
+
+	/*
+	 * On NetBSD7 and 8, mmap() always succeeds regardless of open mode.
+	 * On NetBSD9, mmap() succeeds only for writable descriptor.
+	 */
+	expected = mode2play(mode);
+	if (netbsd < 9) {
+		expected = true;
+	}
+
+	fd = OPEN(devaudio, mode);
+	REQUIRED_SYS_OK(fd);
+
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "get");
+	REQUIRED_SYS_EQ(0, r);
+
+	len = ai.play.buffer_size;
+
+	/* Make it pause */
+	AUDIO_INITINFO(&ai);
+	ai.play.pause = 1;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "pause");
+	REQUIRED_SYS_EQ(0, r);
+
+	ptr = MMAP(NULL, len, prot, MAP_FILE, fd, 0);
+	XP_SYS_PTR(expected ? 0 : EACCES, ptr);
+	if (expected) {
+		/* XXX Doing mmap(2) doesn't inhibit read(2) */
+		if (mode2rec(mode)) {
+			r = READ(fd, buf, 0);
+			XP_SYS_EQ(0, r);
+		}
+		/* Doing mmap(2) inhibits write(2) */
+		if (mode2play(mode)) {
+			/* NetBSD9 changes errno */
+			r = WRITE(fd, buf, 0);
+			if (netbsd < 9) {
+				XP_SYS_NG(EINVAL, r);
+			} else {
+				XP_SYS_NG(EPERM, r);
+			}
+		}
+
+		r = MUNMAP(ptr, len);
+		XP_SYS_EQ(0, r);
+	}
+
+	/* Whether the pause is still valid */
+	if (mode2play(mode)) {
+		r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+		XP_SYS_EQ(0, r);
+		XP_EQ(1, ai.play.pause);
+	}
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+}
+#define PROT_READWRITE	(PROT_READ | PROT_WRITE)
+DEF(mmap_mode_RDONLY_NONE)	{ test_mmap_mode(O_RDONLY, PROT_NONE); }
+DEF(mmap_mode_RDONLY_READ)	{ test_mmap_mode(O_RDONLY, PROT_READ); }
+DEF(mmap_mode_RDONLY_WRITE)	{ test_mmap_mode(O_RDONLY, PROT_WRITE); }
+DEF(mmap_mode_RDONLY_READWRITE)	{ test_mmap_mode(O_RDONLY, PROT_READWRITE); }
+DEF(mmap_mode_WRONLY_NONE)	{ test_mmap_mode(O_WRONLY, PROT_NONE); }
+DEF(mmap_mode_WRONLY_READ)	{ test_mmap_mode(O_WRONLY, PROT_READ); }
+DEF(mmap_mode_WRONLY_WRITE)	{ test_mmap_mode(O_WRONLY, PROT_WRITE); }
+DEF(mmap_mode_WRONLY_READWRITE)	{ test_mmap_mode(O_WRONLY, PROT_READWRITE); }
+DEF(mmap_mode_RDWR_NONE)	{ test_mmap_mode(O_RDWR, PROT_NONE); }
+DEF(mmap_mode_RDWR_READ)	{ test_mmap_mode(O_RDWR, PROT_READ); }
+DEF(mmap_mode_RDWR_WRITE)	{ test_mmap_mode(O_RDWR, PROT_WRITE); }
+DEF(mmap_mode_RDWR_READWRITE)	{ test_mmap_mode(O_RDWR, PROT_READWRITE); }
 
 #define ENT(x) { #x, test__ ## x }
 struct testentry testtable[] = {
@@ -2502,5 +2600,17 @@ struct testentry testtable[] = {
 	ENT(drain_incomplete),
 	ENT(drain_pause),
 	ENT(drain_onrec),
+	ENT(mmap_mode_RDONLY_NONE),
+	ENT(mmap_mode_RDONLY_READ),
+	ENT(mmap_mode_RDONLY_WRITE),
+	ENT(mmap_mode_RDONLY_READWRITE),
+	ENT(mmap_mode_WRONLY_NONE),
+	ENT(mmap_mode_WRONLY_READ),
+	ENT(mmap_mode_WRONLY_WRITE),
+	ENT(mmap_mode_WRONLY_READWRITE),
+	ENT(mmap_mode_RDWR_NONE),
+	ENT(mmap_mode_RDWR_READ),
+	ENT(mmap_mode_RDWR_WRITE),
+	ENT(mmap_mode_RDWR_READWRITE),
 	{ NULL, NULL },
 };

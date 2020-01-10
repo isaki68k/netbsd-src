@@ -188,6 +188,54 @@ atf_test_case drain_onrec
 drain_onrec_head() { }
 drain_onrec_body() { h_audio drain_onrec }
 
+atf_test_case mmap_mode_RDONLY_NONE
+mmap_mode_RDONLY_NONE_head() { }
+mmap_mode_RDONLY_NONE_body() { h_audio mmap_mode_RDONLY_NONE }
+
+atf_test_case mmap_mode_RDONLY_READ
+mmap_mode_RDONLY_READ_head() { }
+mmap_mode_RDONLY_READ_body() { h_audio mmap_mode_RDONLY_READ }
+
+atf_test_case mmap_mode_RDONLY_WRITE
+mmap_mode_RDONLY_WRITE_head() { }
+mmap_mode_RDONLY_WRITE_body() { h_audio mmap_mode_RDONLY_WRITE }
+
+atf_test_case mmap_mode_RDONLY_READWRITE
+mmap_mode_RDONLY_READWRITE_head() { }
+mmap_mode_RDONLY_READWRITE_body() { h_audio mmap_mode_RDONLY_READWRITE }
+
+atf_test_case mmap_mode_WRONLY_NONE
+mmap_mode_WRONLY_NONE_head() { }
+mmap_mode_WRONLY_NONE_body() { h_audio mmap_mode_WRONLY_NONE }
+
+atf_test_case mmap_mode_WRONLY_READ
+mmap_mode_WRONLY_READ_head() { }
+mmap_mode_WRONLY_READ_body() { h_audio mmap_mode_WRONLY_READ }
+
+atf_test_case mmap_mode_WRONLY_WRITE
+mmap_mode_WRONLY_WRITE_head() { }
+mmap_mode_WRONLY_WRITE_body() { h_audio mmap_mode_WRONLY_WRITE }
+
+atf_test_case mmap_mode_WRONLY_READWRITE
+mmap_mode_WRONLY_READWRITE_head() { }
+mmap_mode_WRONLY_READWRITE_body() { h_audio mmap_mode_WRONLY_READWRITE }
+
+atf_test_case mmap_mode_RDWR_NONE
+mmap_mode_RDWR_NONE_head() { }
+mmap_mode_RDWR_NONE_body() { h_audio mmap_mode_RDWR_NONE }
+
+atf_test_case mmap_mode_RDWR_READ
+mmap_mode_RDWR_READ_head() { }
+mmap_mode_RDWR_READ_body() { h_audio mmap_mode_RDWR_READ }
+
+atf_test_case mmap_mode_RDWR_WRITE
+mmap_mode_RDWR_WRITE_head() { }
+mmap_mode_RDWR_WRITE_body() { h_audio mmap_mode_RDWR_WRITE }
+
+atf_test_case mmap_mode_RDWR_READWRITE
+mmap_mode_RDWR_READWRITE_head() { }
+mmap_mode_RDWR_READWRITE_body() { h_audio mmap_mode_RDWR_READWRITE }
+
 atf_init_test_cases() {
 	atf_add_test_case open_mode_RDONLY
 	atf_add_test_case open_mode_WRONLY
@@ -231,4 +279,16 @@ atf_init_test_cases() {
 	atf_add_test_case drain_incomplete
 	atf_add_test_case drain_pause
 	atf_add_test_case drain_onrec
+	atf_add_test_case mmap_mode_RDONLY_NONE
+	atf_add_test_case mmap_mode_RDONLY_READ
+	atf_add_test_case mmap_mode_RDONLY_WRITE
+	atf_add_test_case mmap_mode_RDONLY_READWRITE
+	atf_add_test_case mmap_mode_WRONLY_NONE
+	atf_add_test_case mmap_mode_WRONLY_READ
+	atf_add_test_case mmap_mode_WRONLY_WRITE
+	atf_add_test_case mmap_mode_WRONLY_READWRITE
+	atf_add_test_case mmap_mode_RDWR_NONE
+	atf_add_test_case mmap_mode_RDWR_READ
+	atf_add_test_case mmap_mode_RDWR_WRITE
+	atf_add_test_case mmap_mode_RDWR_READWRITE
 }
