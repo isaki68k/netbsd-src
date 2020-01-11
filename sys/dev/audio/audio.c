@@ -464,7 +464,7 @@ int audio_idle_timeout = 30;
 #endif
 
 /* Number of elements of async mixer's pid */
-#define AM_CAPACITY	(8)
+#define AM_CAPACITY	(4)
 
 struct portname {
 	const char *name;
