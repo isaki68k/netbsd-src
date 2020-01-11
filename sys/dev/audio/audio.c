@@ -7682,7 +7682,8 @@ mixer_async_remove(struct audio_softc *sc, pid_t pid)
 	for (i = 0; i < sc->sc_am_used; i++) {
 		if (sc->sc_am[i] == pid) {
 			sc->sc_am[i] = sc->sc_am[--sc->sc_am_used];
-			TRACE(2, "am[%d] removed, count=%d", i, sc->sc_am_used);
+			TRACE(2, "am[%d](%d) removed, used=%d",
+			    i, (int)pid, sc->sc_am_used);
 
 			/* Empty array if no longer necessary. */
 			if (sc->sc_am_used == 0) {
