@@ -2293,7 +2293,7 @@ test_rdwr_two(int mode0, int mode1)
 	canread  = exptable[mode0 * 3 + mode1].canread;
 
 	if (!canopen) {
-		XP_SKIP("This combination is not openable on half duplex");
+		XP_SKIP("This combination is not openable on half-duplex");
 		return;
 	}
 
@@ -2362,7 +2362,7 @@ DEF(rdwr_simul)
 		return;
 	}
 	if (!hw_fulldup()) {
-		XP_SKIP("Operation not allowed on this hardware property");
+		XP_SKIP("This test is only for full-duplex device");
 		return;
 	}
 
@@ -2521,7 +2521,7 @@ test_mmap_mode(int mode, int prot)
 	}
 	TEST("mmap_%s_%s", openmode_str[mode] + 2, protstr);
 	if ((props & AUDIO_PROP_MMAP) == 0) {
-		XP_SKIP("Operation not allowed on this hardware property");
+		XP_SKIP("This test is only for mmap-able device");
 		return;
 	}
 
@@ -2615,7 +2615,7 @@ DEF(mmap_len)
 
 	TEST("mmap_len");
 	if ((props & AUDIO_PROP_MMAP) == 0) {
-		XP_SKIP("Operation not allowed on this hardware property");
+		XP_SKIP("This test is only for mmap-able device");
 		return;
 	}
 
@@ -2701,7 +2701,7 @@ DEF(mmap_twice)
 
 	TEST("mmap_twice");
 	if ((props & AUDIO_PROP_MMAP) == 0) {
-		XP_SKIP("Operation not allowed on this hardware property");
+		XP_SKIP("This test is only for mmap-able device");
 		return;
 	}
 
@@ -2753,7 +2753,7 @@ DEF(mmap_multi)
 		return;
 	}
 	if ((props & AUDIO_PROP_MMAP) == 0) {
-		XP_SKIP("Operation not allowed on this hardware property");
+		XP_SKIP("This test is only for mmap-able device");
 		return;
 	}
 
