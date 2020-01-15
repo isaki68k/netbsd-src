@@ -2654,13 +2654,13 @@ test_poll_mode()
 
 // poll、空で POLLOUT のテスト
 void
-test_poll_2()
+test_poll_out_empty()
 {
 	struct pollfd pfd;
 	int fd;
 	int r;
 
-	TEST("poll_2");
+	TEST("poll_out_empty");
 
 	fd = OPEN(devaudio, O_WRONLY);
 	if (fd == -1)
@@ -2681,7 +2681,7 @@ test_poll_2()
 
 // poll、バッファフルで POLLOUT のテスト
 void
-test_poll_3()
+test_poll_out_full()
 {
 	struct audio_info ai;
 	struct pollfd pfd;
@@ -2690,7 +2690,7 @@ test_poll_3()
 	char *buf;
 	int buflen;
 
-	TEST("poll_3");
+	TEST("poll_out_full");
 
 	fd = OPEN(devaudio, O_WRONLY | O_NONBLOCK);
 	if (fd == -1)
@@ -2734,7 +2734,7 @@ test_poll_3()
 
 // poll、hiwat 設定してバッファフルで POLLOUT のテスト
 void
-test_poll_4()
+test_poll_out_hiwat()
 {
 	struct audio_info ai;
 	struct pollfd pfd;
@@ -2744,7 +2744,7 @@ test_poll_4()
 	int buflen;
 	int newhiwat;
 
-	TEST("poll_4");
+	TEST("poll_out_hiwat");
 
 	fd = OPEN(devaudio, O_WRONLY | O_NONBLOCK);
 	if (fd == -1)
@@ -2795,7 +2795,7 @@ test_poll_4()
 
 // バッファフルから pause を解除した場合。
 void
-test_poll_5()
+test_poll_out_unpause()
 {
 	struct audio_info ai;
 	struct pollfd pfd;
@@ -2805,7 +2805,7 @@ test_poll_5()
 	int buflen;
 	int zero;
 
-	TEST("poll_5");
+	TEST("poll_out_unpause");
 
 	for (int emul = 0; emul < 2; emul++) {
 		DESC("emul=%d", emul);
@@ -2910,7 +2910,7 @@ test_poll_5()
 
 // 再生が隣のディスクリプタの影響を受けないこと
 void
-test_poll_6()
+test_poll_out_simul()
 {
 	struct audio_info ai;
 	struct pollfd pfd[2];
@@ -2923,7 +2923,7 @@ test_poll_6()
 	int buflen;
 	int time;
 
-	TEST("poll_6");
+	TEST("poll_out_simul");
 
 	// 多重化は N7 では出来ない
 	if (netbsd < 8) {
@@ -3045,7 +3045,7 @@ test_poll_6()
 // 再生ディスクリプタで POLLIN してても(これ自体が普通ではないが)
 // 隣の録音ディスクリプタの影響を受けないこと
 void
-test_poll_writeIN_1()
+test_poll_in_simul()
 {
 	struct audio_info ai;
 	struct pollfd pfd;
@@ -3054,7 +3054,7 @@ test_poll_writeIN_1()
 	char *buf;
 	int blocksize;
 
-	TEST("poll_writeIN_1");
+	TEST("poll_in_simul");
 
 	// 多重化は N7 では出来ない
 	if (netbsd < 8) {
@@ -7516,12 +7516,12 @@ struct testtable testtable[] = {
 	DEF(mmap_8),			// 保留
 	DEF(mmap_9),			// 保留
 	DEF(poll_mode),
-	DEF(poll_2),
-	DEF(poll_3),
-	DEF(poll_4),
-	DEF(poll_5),
-	DEF(poll_6),
-	DEF(poll_writeIN_1),
+	DEF(poll_out_empty),
+	DEF(poll_out_full),
+	DEF(poll_out_hiwat),
+	DEF(poll_out_unpause),
+	DEF(poll_out_simul),
+	DEF(poll_in_simul),
 	DEF(kqueue_1),
 	DEF(kqueue_2),
 	DEF(kqueue_3),

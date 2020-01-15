@@ -2880,6 +2880,484 @@ DEF(poll_mode_RDWR_IN)		{ test_poll_mode(O_RDWR,   IN,     0); }
 DEF(poll_mode_RDWR_OUT)		{ test_poll_mode(O_RDWR,   OUT,	   OUT); }
 DEF(poll_mode_RDWR_INOUT)	{ test_poll_mode(O_RDWR,   IN|OUT, OUT); }
 
+/*
+ * Poll(OUT) when buffer is empty.
+ */
+DEF(poll_out_empty)
+{
+	struct pollfd pfd;
+	int fd;
+	int r;
+
+	TEST("poll_out_empty");
+
+	fd = OPEN(devaudio, O_WRONLY);
+	REQUIRED_SYS_OK(fd);
+
+	memset(&pfd, 0, sizeof(pfd));
+	pfd.fd = fd;
+	pfd.events = POLLOUT;
+
+	/* Check when empty.  It should succeed even if timeout == 0 */
+	r = POLL(&pfd, 1, 0);
+	XP_SYS_EQ(1, r);
+	XP_EQ(POLLOUT, pfd.revents);
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+}
+
+/*
+ * Poll(OUT) when buffer is full.
+ */
+DEF(poll_out_full)
+{
+	struct audio_info ai;
+	struct pollfd pfd;
+	int fd;
+	int r;
+	char *buf;
+	int buflen;
+
+	TEST("poll_out_full");
+
+	fd = OPEN(devaudio, O_WRONLY | O_NONBLOCK);
+	REQUIRED_SYS_OK(fd);
+
+	/* Pause */
+	AUDIO_INITINFO(&ai);
+	ai.play.pause = 1;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+
+	/* Get buffer size */
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+
+	/* Write until full */
+	buflen = ai.play.buffer_size;
+	buf = (char *)malloc(buflen);
+	REQUIRED_IF(buf != NULL);
+	memset(buf, 0xff, buflen);
+	do {
+		r = WRITE(fd, buf, buflen);
+	} while (r == buflen);
+	if (r == -1) {
+		XP_SYS_NG(EAGAIN, r);
+	}
+
+	/* Do poll */
+	memset(&pfd, 0, sizeof(pfd));
+	pfd.fd = fd;
+	pfd.events = POLLOUT;
+	r = POLL(&pfd, 1, 0);
+	XP_SYS_EQ(0, r);
+	XP_EQ(0, pfd.revents);
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+	free(buf);
+}
+
+/*
+ * Poll(OUT) when buffer is full but hiwat sets lower than full.
+ */
+DEF(poll_out_hiwat)
+{
+	struct audio_info ai;
+	struct pollfd pfd;
+	int fd;
+	int r;
+	char *buf;
+	int buflen;
+	int newhiwat;
+
+	TEST("poll_out_hiwat");
+
+	fd = OPEN(devaudio, O_WRONLY | O_NONBLOCK);
+	REQUIRED_SYS_OK(fd);
+
+	/* Get buffer size and hiwat */
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+	/* Change hiwat some different value */
+	newhiwat = ai.lowat;
+
+	/* Set pause and hiwat */
+	AUDIO_INITINFO(&ai);
+	ai.play.pause = 1;
+	ai.hiwat = newhiwat;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+
+	/* Get the set hiwat again */
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+
+	/* Write until full */
+	buflen = ai.blocksize * ai.hiwat;
+	buf = (char *)malloc(buflen);
+	REQUIRED_IF(buf != NULL);
+	memset(buf, 0xff, buflen);
+	do {
+		r = WRITE(fd, buf, buflen);
+	} while (r == buflen);
+	if (r == -1) {
+		XP_SYS_NG(EAGAIN, r);
+	}
+
+	/* Do poll */
+	memset(&pfd, 0, sizeof(pfd));
+	pfd.fd = fd;
+	pfd.events = POLLOUT;
+	r = POLL(&pfd, 1, 0);
+	XP_SYS_EQ(0, r);
+	XP_EQ(0, pfd.revents);
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+	free(buf);
+}
+
+/*
+ * Unpause from buffer full, POLLOUT should occurs.
+ * XXX poll(2) on NetBSD7 is really incomplete and wierd.  I don't test it.
+ */
+DEF(poll_out_unpause)
+{
+	struct audio_info ai;
+	struct pollfd pfd;
+	int fd;
+	int r;
+	char *buf;
+	int buflen;
+	u_int blocksize;
+	int hiwat;
+	int lowat;
+
+	TEST("poll_out_unpause");
+	if (netbsd <= 7) {
+		XP_SKIP("NetBSD7's poll() is too incomplete to test.");
+		return;
+	}
+
+	/* Non-blocking open */
+	fd = OPEN(devaudio, O_WRONLY | O_NONBLOCK);
+	REQUIRED_SYS_OK(fd);
+
+	/* Adjust block size and hiwat/lowat to make the test time 1sec */
+	blocksize = 1000;	/* 1/8 sec in mulaw,1ch,8000Hz */
+	hiwat = 12;		/* 1.5sec */
+	lowat = 4;		/* 0.5sec */
+	AUDIO_INITINFO(&ai);
+	ai.blocksize = blocksize;
+	ai.hiwat = hiwat;
+	ai.lowat = lowat;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "blocksize=1000");
+	XP_SYS_EQ(0, r);
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "read back blocksize");
+	if (ai.blocksize != blocksize) {
+		/*
+		 * NetBSD9 can not change the blocksize.  Then,
+		 * adjust using hiwat/lowat.
+		 */
+		blocksize = ai.blocksize;
+		hiwat = howmany(8000 * 1.5, blocksize);
+		lowat = howmany(8000 * 0.5, blocksize);
+	}
+	/* Anyway, set the parameters */
+	AUDIO_INITINFO(&ai);
+	ai.blocksize = blocksize;
+	ai.hiwat = hiwat;
+	ai.lowat = lowat;
+	ai.play.pause = 1;
+	/* and also set encoding */
+	/*
+	 * XXX NetBSD7 has different results depending on whether the input
+	 * encoding is emulated (AUDIO_ENCODINGFLAG_EMULATED) or not.  It's
+	 * not easy to ensure this situation on all hardware environment.
+	 * On NetBSD9, the result is the same regardless of input encoding.
+	 */
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "pause=1");
+	XP_SYS_EQ(0, r);
+
+	/* Get the set parameters again */
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+
+	/* Write until full */
+	buflen = ai.blocksize * ai.hiwat;
+	buf = (char *)malloc(buflen);
+	REQUIRED_IF(buf != NULL);
+	memset(buf, 0xff, buflen);
+	do {
+		r = WRITE(fd, buf, buflen);
+	} while (r == buflen);
+	if (r == -1) {
+		XP_SYS_NG(EAGAIN, r);
+	}
+
+	/* At this time, POLLOUT should not be set because buffer is full */
+	memset(&pfd, 0, sizeof(pfd));
+	pfd.fd = fd;
+	pfd.events = POLLOUT;
+	r = POLL(&pfd, 1, 0);
+	XP_SYS_EQ(0, r);
+	XP_EQ(0, pfd.revents);
+
+	/* Unpause */
+	AUDIO_INITINFO(&ai);
+	ai.play.pause = 0;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "pause=0");
+	XP_SYS_EQ(0, r);
+
+	/*
+	 * When unpause occurs:
+	 * - NetBSD7 (emul=0) -> the buffer remains.
+	 * - NetBSD7 (emul=1) -> the buffer is cleared.
+	 * - NetBSD8          -> the buffer remains.
+	 * - NetBSD9          -> the buffer remains.
+	 */
+
+	/* Check poll() up to 2sec */
+	pfd.revents = 0;
+	r = POLL(&pfd, 1, 2000);
+	XP_SYS_EQ(1, r);
+	XP_EQ(POLLOUT, pfd.revents);
+
+	/*
+	 * Since POLLOUT is set, it should be writable.
+	 * But at this time, no all buffer may be writable.
+	 */
+	r = WRITE(fd, buf, buflen);
+	XP_SYS_OK(r);
+
+	/* Flush it because there is no need to play it */
+	r = IOCTL(fd, AUDIO_FLUSH, NULL, "");
+	XP_SYS_EQ(0, r);
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+	free(buf);
+}
+
+/*
+ * poll(2) must not be affected by playback of other descriptors.
+ */
+DEF(poll_out_simul)
+{
+	struct audio_info ai;
+	struct pollfd pfd[2];
+	int fd[2];
+	int r;
+	char *buf;
+	u_int blocksize;
+	int hiwat;
+	int lowat;
+	int buflen;
+	int time;
+
+	TEST("poll_out_simul");
+	if (netbsd < 8) {
+		XP_SKIP("Multiple open is not supported");
+		return;
+	}
+
+	/*
+	 * To make sure, we do twice.
+	 * The first is A then B, the second is B then A.
+	 */
+	for (int i = 0; i < 2; i++) {
+		int a = i;
+		int b = 1 - i;
+
+		fd[0] = OPEN(devaudio, O_WRONLY | O_NONBLOCK);
+		REQUIRED_SYS_OK(fd[0]);
+		fd[1] = OPEN(devaudio, O_WRONLY | O_NONBLOCK);
+		REQUIRED_SYS_OK(fd[1]);
+
+		/*
+		 * Adjust block size and hiwat/lowat.
+		 * I want to choice suitable blocksize (if possible).
+		 */
+		blocksize = 1000;	/* 1/8 sec in mulaw,1ch,8000Hz */
+		hiwat = 12;		/* 1.5sec */
+		lowat = 4;		/* 0.5sec */
+		AUDIO_INITINFO(&ai);
+		ai.blocksize = blocksize;
+		ai.hiwat = hiwat;
+		ai.lowat = lowat;
+		r = IOCTL(fd[0], AUDIO_SETINFO, &ai, "blocksize=1000");
+		XP_SYS_EQ(0, r);
+		r = IOCTL(fd[0], AUDIO_GETBUFINFO, &ai, "read back blocksize");
+		if (ai.blocksize != blocksize) {
+			/*
+			 * NetBSD9 can not change the blocksize.  Then,
+			 * adjust using hiwat/lowat.
+			 */
+			blocksize = ai.blocksize;
+			hiwat = howmany(8000 * 1.5, blocksize);
+			lowat = howmany(8000 * 0.5, blocksize);
+		}
+		/* Anyway, set the parameters */
+		AUDIO_INITINFO(&ai);
+		ai.blocksize = blocksize;
+		ai.hiwat = hiwat;
+		ai.lowat = lowat;
+		/* Pause fdA */
+		ai.play.pause = 1;
+		r = IOCTL(fd[a], AUDIO_SETINFO, &ai, "pause=1");
+		XP_SYS_EQ(0, r);
+		/* Unpause fdB */
+		ai.play.pause = 0;
+		r = IOCTL(fd[b], AUDIO_SETINFO, &ai, "pause=0");
+		XP_SYS_EQ(0, r);
+
+		/* Get again. XXX two individual ioctls are correct */
+		r = IOCTL(fd[0], AUDIO_GETBUFINFO, &ai, "");
+		XP_SYS_EQ(0, r);
+		DPRINTF("  > blocksize=%d lowat=%d hiwat=%d\n",
+			ai.blocksize, ai.lowat, ai.hiwat);
+
+		/* Enough long time than the playback time */
+		time = (ai.hiwat - ai.lowat) * blocksize / 8;  /*[msec]*/
+		time *= 2;
+
+		/* Write fdA full */
+		buflen = blocksize * ai.lowat;
+		buf = (char *)malloc(buflen);
+		REQUIRED_IF(buf != NULL);
+		memset(buf, 0xff, buflen);
+		do {
+			r = WRITE(fd[a], buf, buflen);
+		} while (r == buflen);
+		if (r == -1) {
+			XP_SYS_NG(EAGAIN, r);
+		}
+
+		/* POLLOUT should not be set, because fdA is buffer full */
+		memset(pfd, 0, sizeof(pfd));
+		pfd[0].fd = fd[a];
+		pfd[0].events = POLLOUT;
+		r = POLL(pfd, 1, 0);
+		XP_SYS_EQ(0, r);
+		XP_EQ(0, pfd[0].revents);
+
+		/* Write fdB at least lowat */
+		r = WRITE(fd[b], buf, buflen);
+		XP_SYS_EQ(buflen, r);
+		r = WRITE(fd[b], buf, buflen);
+		if (r == -1) {
+			XP_SYS_NG(EAGAIN, r);
+		}
+
+		/* Only fdB should become POLLOUT */
+		memset(pfd, 0, sizeof(pfd));
+		pfd[0].fd = fd[0];
+		pfd[0].events = POLLOUT;
+		pfd[1].fd = fd[1];
+		pfd[1].events = POLLOUT;
+		r = POLL(pfd, 2, time);
+		XP_SYS_EQ(1, r);
+		if (r != -1) {
+			XP_EQ(0, pfd[a].revents);
+			XP_EQ(POLLOUT, pfd[b].revents);
+		}
+
+		/* Drop the rest */
+		r = IOCTL(fd[0], AUDIO_FLUSH, NULL, "");
+		XP_SYS_EQ(0, r);
+		r = IOCTL(fd[1], AUDIO_FLUSH, NULL, "");
+		XP_SYS_EQ(0, r);
+
+		r = CLOSE(fd[0]);
+		XP_SYS_EQ(0, r);
+		r = CLOSE(fd[1]);
+		XP_SYS_EQ(0, r);
+		free(buf);
+
+		xxx_close_wait();
+	}
+}
+
+/*
+ * poll(2) must not be affected by other recording descriptors even if
+ * playback descriptor waits with POLLIN (though it's not normal usage).
+ * In other words, two POLLIN must not interfere.
+ */
+DEF(poll_in_simul)
+{
+	struct audio_info ai;
+	struct pollfd pfd;
+	int fd[2];
+	int r;
+	char *buf;
+	int blocksize;
+
+	TEST("poll_in_simul");
+	if (netbsd < 8) {
+		XP_SKIP("Multiple open is not supported");
+		return;
+	}
+	if (hw_fulldup() == 0) {
+		XP_SKIP("This test is only for full-duplex device");
+		return;
+	}
+
+	int play = 0;
+	int rec = 1;
+
+	fd[play] = OPEN(devaudio, O_WRONLY | O_NONBLOCK);
+	REQUIRED_SYS_OK(fd[play]);
+	fd[rec] = OPEN(devaudio, O_RDONLY);
+	REQUIRED_SYS_OK(fd[rec]);
+
+	/* Get block size */
+	r = IOCTL(fd[rec], AUDIO_GETBUFINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+	blocksize = ai.blocksize;
+
+	buf = (char *)malloc(blocksize);
+	REQUIRED_IF(buf != NULL);
+
+	/*
+	 * At first, make sure the playback one doesn't return POLLIN.
+	 */
+	memset(&pfd, 0, sizeof(pfd));
+	pfd.fd = fd[play];
+	pfd.events = POLLIN;
+	r = POLL(&pfd, 1, 0);
+	if (r == 0 && pfd.revents == 0) {
+		XP_SYS_EQ(0, r);
+		XP_EQ(0, pfd.revents);
+	} else {
+		XP_FAIL("play fd returns POLLIN");
+		goto abort;
+	}
+
+	/* Start recording */
+	r = READ(fd[rec], buf, blocksize);
+	XP_SYS_EQ(blocksize, r);
+
+	/* Poll()ing playback descriptor with POLLIN should not raise */
+	r = POLL(&pfd, 1, 1000);
+	XP_SYS_EQ(0, r);
+	XP_EQ(0, pfd.revents);
+
+	/* Poll()ing recording descriptor with POLLIN should raise */
+	pfd.fd = fd[rec];
+	r = POLL(&pfd, 1, 0);
+	XP_SYS_EQ(1, r);
+	XP_EQ(POLLIN, pfd.revents);
+
+abort:
+	r = CLOSE(fd[play]);
+	XP_SYS_EQ(0, r);
+	r = CLOSE(fd[rec]);
+	XP_SYS_EQ(0, r);
+	free(buf);
+}
+
 #define ENT(x) { #x, test__ ## x }
 struct testentry testtable[] = {
 	ENT(open_mode_RDONLY),
@@ -2948,5 +3426,11 @@ struct testentry testtable[] = {
 	ENT(poll_mode_RDWR_IN),
 	ENT(poll_mode_RDWR_OUT),
 	ENT(poll_mode_RDWR_INOUT),
+	ENT(poll_out_empty),
+	ENT(poll_out_full),
+	ENT(poll_out_hiwat),
+	ENT(poll_out_unpause),
+	ENT(poll_out_simul),
+	ENT(poll_in_simul),
 	{ NULL, NULL },
 };

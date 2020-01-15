@@ -284,6 +284,30 @@ atf_test_case poll_mode_RDWR_INOUT
 poll_mode_RDWR_INOUT_head() { }
 poll_mode_RDWR_INOUT_body() { h_audio poll_mode_RDWR_INOUT }
 
+atf_test_case poll_out_empty
+poll_out_empty_head() { }
+poll_out_empty_body() { h_audio poll_out_empty }
+
+atf_test_case poll_out_full
+poll_out_full_head() { }
+poll_out_full_body() { h_audio poll_out_full }
+
+atf_test_case poll_out_hiwat
+poll_out_hiwat_head() { }
+poll_out_hiwat_body() { h_audio poll_out_hiwat }
+
+atf_test_case poll_out_unpause
+poll_out_unpause_head() { }
+poll_out_unpause_body() { h_audio poll_out_unpause }
+
+atf_test_case poll_out_simul
+poll_out_simul_head() { }
+poll_out_simul_body() { h_audio poll_out_simul }
+
+atf_test_case poll_in_simul
+poll_in_simul_head() { }
+poll_in_simul_body() { h_audio poll_in_simul }
+
 atf_init_test_cases() {
 	atf_add_test_case open_mode_RDONLY
 	atf_add_test_case open_mode_WRONLY
@@ -351,4 +375,10 @@ atf_init_test_cases() {
 	atf_add_test_case poll_mode_RDWR_IN
 	atf_add_test_case poll_mode_RDWR_OUT
 	atf_add_test_case poll_mode_RDWR_INOUT
+	atf_add_test_case poll_out_empty
+	atf_add_test_case poll_out_full
+	atf_add_test_case poll_out_hiwat
+	atf_add_test_case poll_out_unpause
+	atf_add_test_case poll_out_simul
+	atf_add_test_case poll_in_simul
 }
