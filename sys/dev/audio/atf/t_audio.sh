@@ -308,6 +308,50 @@ atf_test_case poll_in_simul
 poll_in_simul_head() { }
 poll_in_simul_body() { h_audio poll_in_simul }
 
+atf_test_case kqueue_mode_RDONLY_READ
+kqueue_mode_RDONLY_READ_head() { }
+kqueue_mode_RDONLY_READ_body() { h_audio kqueue_mode_RDONLY_READ }
+
+atf_test_case kqueue_mode_RDONLY_WRITE
+kqueue_mode_RDONLY_WRITE_head() { }
+kqueue_mode_RDONLY_WRITE_body() { h_audio kqueue_mode_RDONLY_WRITE }
+
+atf_test_case kqueue_mode_WRONLY_READ
+kqueue_mode_WRONLY_READ_head() { }
+kqueue_mode_WRONLY_READ_body() { h_audio kqueue_mode_WRONLY_READ }
+
+atf_test_case kqueue_mode_WRONLY_WRITE
+kqueue_mode_WRONLY_WRITE_head() { }
+kqueue_mode_WRONLY_WRITE_body() { h_audio kqueue_mode_WRONLY_WRITE }
+
+atf_test_case kqueue_mode_RDWR_READ
+kqueue_mode_RDWR_READ_head() { }
+kqueue_mode_RDWR_READ_body() { h_audio kqueue_mode_RDWR_READ }
+
+atf_test_case kqueue_mode_RDWR_WRITE
+kqueue_mode_RDWR_WRITE_head() { }
+kqueue_mode_RDWR_WRITE_body() { h_audio kqueue_mode_RDWR_WRITE }
+
+atf_test_case kqueue_empty
+kqueue_empty_head() { }
+kqueue_empty_body() { h_audio kqueue_empty }
+
+atf_test_case kqueue_full
+kqueue_full_head() { }
+kqueue_full_body() { h_audio kqueue_full }
+
+atf_test_case kqueue_hiwat
+kqueue_hiwat_head() { }
+kqueue_hiwat_body() { h_audio kqueue_hiwat }
+
+atf_test_case kqueue_unpause
+kqueue_unpause_head() { }
+kqueue_unpause_body() { h_audio kqueue_unpause }
+
+atf_test_case kqueue_simul
+kqueue_simul_head() { }
+kqueue_simul_body() { h_audio kqueue_simul }
+
 atf_init_test_cases() {
 	atf_add_test_case open_mode_RDONLY
 	atf_add_test_case open_mode_WRONLY
@@ -381,4 +425,15 @@ atf_init_test_cases() {
 	atf_add_test_case poll_out_unpause
 	atf_add_test_case poll_out_simul
 	atf_add_test_case poll_in_simul
+	atf_add_test_case kqueue_mode_RDONLY_READ
+	atf_add_test_case kqueue_mode_RDONLY_WRITE
+	atf_add_test_case kqueue_mode_WRONLY_READ
+	atf_add_test_case kqueue_mode_WRONLY_WRITE
+	atf_add_test_case kqueue_mode_RDWR_READ
+	atf_add_test_case kqueue_mode_RDWR_WRITE
+	atf_add_test_case kqueue_empty
+	atf_add_test_case kqueue_full
+	atf_add_test_case kqueue_hiwat
+	atf_add_test_case kqueue_unpause
+	atf_add_test_case kqueue_simul
 }

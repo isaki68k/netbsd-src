@@ -1297,6 +1297,7 @@ void test_rdwr_fallback(int, bool, bool);
 void test_rdwr_two(int, int);
 void test_mmap_mode(int, int);
 void test_poll_mode(int, int, int);
+void test_kqueue_mode(int, int, int);
 
 #define DEF(name) \
 	void test__ ## name (void); \
@@ -2991,7 +2992,7 @@ DEF(poll_out_hiwat)
 	AUDIO_INITINFO(&ai);
 	ai.play.pause = 1;
 	ai.hiwat = newhiwat;
-	r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "pause=1;hiwat");
 	XP_SYS_EQ(0, r);
 
 	/* Get the set hiwat again */
@@ -3024,7 +3025,7 @@ DEF(poll_out_hiwat)
 }
 
 /*
- * Unpause from buffer full, POLLOUT should occurs.
+ * Unpause from buffer full, POLLOUT should raise.
  * XXX poll(2) on NetBSD7 is really incomplete and wierd.  I don't test it.
  */
 DEF(poll_out_unpause)
@@ -3057,9 +3058,16 @@ DEF(poll_out_unpause)
 	ai.blocksize = blocksize;
 	ai.hiwat = hiwat;
 	ai.lowat = lowat;
-	r = IOCTL(fd, AUDIO_SETINFO, &ai, "blocksize=1000");
+	/* and also set encoding */
+	/*
+	 * XXX NetBSD7 has different results depending on whether the input
+	 * encoding is emulated (AUDIO_ENCODINGFLAG_EMULATED) or not.  It's
+	 * not easy to ensure this situation on all hardware environment.
+	 * On NetBSD9, the result is the same regardless of input encoding.
+	 */
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "blocksize=%d", blocksize);
 	XP_SYS_EQ(0, r);
-	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "read back blocksize");
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
 	if (ai.blocksize != blocksize) {
 		/*
 		 * NetBSD9 can not change the blocksize.  Then,
@@ -3075,13 +3083,6 @@ DEF(poll_out_unpause)
 	ai.hiwat = hiwat;
 	ai.lowat = lowat;
 	ai.play.pause = 1;
-	/* and also set encoding */
-	/*
-	 * XXX NetBSD7 has different results depending on whether the input
-	 * encoding is emulated (AUDIO_ENCODINGFLAG_EMULATED) or not.  It's
-	 * not easy to ensure this situation on all hardware environment.
-	 * On NetBSD9, the result is the same regardless of input encoding.
-	 */
 	r = IOCTL(fd, AUDIO_SETINFO, &ai, "pause=1");
 	XP_SYS_EQ(0, r);
 
@@ -3167,10 +3168,7 @@ DEF(poll_out_simul)
 		return;
 	}
 
-	/*
-	 * To make sure, we do twice.
-	 * The first is A then B, the second is B then A.
-	 */
+	/* Make sure that it's not affected by descriptor order */
 	for (int i = 0; i < 2; i++) {
 		int a = i;
 		int b = 1 - i;
@@ -3362,6 +3360,528 @@ abort:
 	free(buf);
 }
 
+/*
+ * Whether kqueue() succeeds with specified mode.
+ */
+void
+test_kqueue_mode(int openmode, int filt, int expected)
+{
+	struct kevent kev;
+	struct timespec ts;
+	int fd;
+	int kq;
+	int r;
+
+	TEST("kqueue_mode_%s_%s",
+	    openmode_str[openmode] + 2,
+	    (filt == EVFILT_READ) ? "READ" : "WRITE");
+
+	ts.tv_sec = 0;
+	ts.tv_nsec = 100 * 1000 * 1000;	// 100msec
+
+	kq = KQUEUE();
+	XP_SYS_OK(kq);
+
+	fd = OPEN(devaudio, openmode);
+	REQUIRED_SYS_OK(fd);
+
+	/*
+	 * Check whether the specified filter can be set.
+	 * Any filters can always be set, even if pointless combination.
+	 * For example, EVFILT_READ can be set on O_WRONLY descriptor
+	 * though it will never raise.
+	 * I will not mention about good or bad of this behavior here.
+	 */
+	EV_SET(&kev, fd, filt, EV_ADD, 0, 0, 0);
+	r = KEVENT_SET(kq, &kev, 1);
+	XP_SYS_EQ(0, r);
+
+	if (r == 0) {
+		/* If the filter can be set, try kevent(poll) */
+		r = KEVENT_POLL(kq, &kev, 1, &ts);
+		XP_SYS_EQ(expected, r);
+
+		/* Delete it */
+		EV_SET(&kev, fd, filt, EV_DELETE, 0, 0, 0);
+		r = KEVENT_SET(kq, &kev, 1);
+		XP_SYS_EQ(0, r);
+	}
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+	r = CLOSE(kq);
+	XP_SYS_EQ(0, r);
+}
+DEF(kqueue_mode_RDONLY_READ) {
+	/* Should not raise yet (NetBSD7 has bugs?) */
+	int expected = (netbsd < 8) ? 1 : 0;
+	test_kqueue_mode(O_RDONLY, EVFILT_READ, expected);
+}
+DEF(kqueue_mode_RDONLY_WRITE) {
+	/* Should never raise (NetBSD7 has bugs) */
+	int expected = (netbsd < 8) ? 1 : 0;
+	test_kqueue_mode(O_RDONLY, EVFILT_WRITE, expected);
+}
+DEF(kqueue_mode_WRONLY_READ) {
+	/* Should never raise */
+	test_kqueue_mode(O_WRONLY, EVFILT_READ, 0);
+}
+DEF(kqueue_mode_WRONLY_WRITE) {
+	/* Should raise */
+	test_kqueue_mode(O_WRONLY, EVFILT_WRITE, 1);
+}
+DEF(kqueue_mode_RDWR_READ) {
+	/* Should not raise yet (NetBSD7 is something strange) */
+	int expected = (netbsd < 8 && hw_fulldup()) ? 1 : 0;
+	test_kqueue_mode(O_RDWR, EVFILT_READ, expected);
+}
+DEF(kqueue_mode_RDWR_WRITE) {
+	/* Should raise */
+	test_kqueue_mode(O_RDWR, EVFILT_WRITE, 1);
+}
+
+/*
+ * kqueue(2) when buffer is empty.
+ */
+DEF(kqueue_empty)
+{
+	struct audio_info ai;
+	struct kevent kev;
+	struct timespec ts;
+	int kq;
+	int fd;
+	int r;
+
+	TEST("kqueue_empty");
+
+	fd = OPEN(devaudio, O_WRONLY);
+	REQUIRED_SYS_OK(fd);
+
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+
+	kq = KQUEUE();
+	XP_SYS_OK(kq);
+
+	EV_SET(&kev, fd, EV_ADD, EVFILT_WRITE, 0, 0, 0);
+	r = KEVENT_SET(kq, &kev, 1);
+	XP_SYS_EQ(0, r);
+
+	/* When the buffer is empty, it should succeed even if timeout == 0 */
+	memset(&ts, 0, sizeof(ts));
+	r = KEVENT_POLL(kq, &kev, 1, &ts);
+	XP_SYS_EQ(1, r);
+	XP_EQ(fd, kev.ident);
+	/*
+	 * XXX According to kqueue(2) manpage, returned kev.data contains
+	 * "the amount of space remaining in the write buffer".
+	 * NetBSD7 returns buffer_size.  Shouldn't it be blocksize * hiwat?
+	 */
+	/* XP_EQ(ai.blocksize * ai.hiwat, kev.data); */
+	XP_EQ(ai.play.buffer_size, kev.data);
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+	r = CLOSE(kq);
+	XP_SYS_EQ(0, r);
+}
+
+/*
+ * kqueue(2) when buffer is full.
+ */
+DEF(kqueue_full)
+{
+	struct audio_info ai;
+	struct kevent kev;
+	struct timespec ts;
+	int kq;
+	int fd;
+	int r;
+	char *buf;
+	int buflen;
+
+	TEST("kqueue_full");
+
+	fd = OPEN(devaudio, O_WRONLY | O_NONBLOCK);
+	REQUIRED_SYS_OK(fd);
+
+	/* Pause */
+	AUDIO_INITINFO(&ai);
+	ai.play.pause = 1;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+
+	/* Get buffer size */
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+
+	/* Write until full */
+	buflen = ai.play.buffer_size;
+	buf = (char *)malloc(buflen);
+	REQUIRED_IF(buf != NULL);
+	memset(buf, 0xff, buflen);
+	do {
+		r = WRITE(fd, buf, buflen);
+	} while (r == buflen);
+	if (r == -1) {
+		XP_SYS_NG(EAGAIN, r);
+	}
+
+	kq = KQUEUE();
+	XP_SYS_OK(kq);
+
+	EV_SET(&kev, fd, EV_ADD, EVFILT_WRITE, 0, 0, 0);
+	r = KEVENT_SET(kq, &kev, 1);
+	XP_SYS_EQ(0, r);
+
+	/* kevent() should not raise */
+	ts.tv_sec = 0;
+	ts.tv_nsec = 100L * 1000 * 1000;	/* 100msec */
+	r = KEVENT_POLL(kq, &kev, 1, &ts);
+	XP_SYS_EQ(0, r);
+	if (r > 0) {
+		XP_EQ(fd, kev.ident);
+		XP_EQ(0, kev.data);
+	}
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+	r = CLOSE(kq);
+	XP_SYS_EQ(0, r);
+	free(buf);
+}
+
+/*
+ * kqueue(2) when buffer is full but hiwat sets lower than full.
+ */
+DEF(kqueue_hiwat)
+{
+	struct audio_info ai;
+	struct kevent kev;
+	struct timespec ts;
+	int kq;
+	int fd;
+	int r;
+	char *buf;
+	int buflen;
+	int newhiwat;
+
+	TEST("kqueue_hiwat");
+
+	fd = OPEN(devaudio, O_WRONLY | O_NONBLOCK);
+	REQUIRED_SYS_OK(fd);
+
+	/* Get buffer size and hiwat */
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "hiwat");
+	XP_SYS_EQ(0, r);
+	/* Change hiwat some different value */
+	newhiwat = ai.hiwat - 1;
+
+	/* Set pause and hiwat */
+	AUDIO_INITINFO(&ai);
+	ai.play.pause = 1;
+	ai.hiwat = newhiwat;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "pause=1;hiwat");
+	XP_SYS_EQ(0, r);
+
+	/* Get the set parameters again */
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+	XP_EQ(1, ai.play.pause);
+	XP_EQ(newhiwat, ai.hiwat);
+
+	/* Write until full */
+	buflen = ai.blocksize * ai.hiwat;
+	buf = (char *)malloc(buflen);
+	REQUIRED_IF(buf != NULL);
+	memset(buf, 0xff, buflen);
+	do {
+		r = WRITE(fd, buf, buflen);
+	} while (r == buflen);
+	if (r == -1) {
+		XP_SYS_NG(EAGAIN, r);
+	}
+
+	kq = KQUEUE();
+	XP_SYS_OK(kq);
+
+	EV_SET(&kev, fd, EV_ADD, EVFILT_WRITE, 0, 0, 0);
+	r = KEVENT_SET(kq, &kev, 1);
+	XP_SYS_EQ(0, r);
+
+	/* Should not raise because it's not possible to write */
+	ts.tv_sec = 0;
+	ts.tv_nsec = 100L * 1000 * 1000;	/* 100msec */
+	r = KEVENT_POLL(kq, &kev, 1, &ts);
+	if (r > 0)
+		DEBUG_KEV("kev", &kev);
+	XP_SYS_EQ(0, r);
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+	r = CLOSE(kq);
+	XP_SYS_EQ(0, r);
+	free(buf);
+}
+
+/*
+ * Unpause from buffer full, kevent() should raise.
+ */
+DEF(kqueue_unpause)
+{
+	struct audio_info ai;
+	struct kevent kev;
+	struct timespec ts;
+	int fd;
+	int r;
+	int kq;
+	char *buf;
+	int buflen;
+	u_int blocksize;
+	int hiwat;
+	int lowat;
+
+	TEST("kqueue_unpause");
+
+	/* Non-blocking open */
+	fd = OPEN(devaudio, O_WRONLY | O_NONBLOCK);
+	REQUIRED_SYS_OK(fd);
+
+	/* Adjust block size and hiwat/lowat to make the test time 1sec */
+	blocksize = 1000;	/* 1/8 sec in mulaw,1ch,8000Hz */
+	hiwat = 12;		/* 1.5sec */
+	lowat = 4;		/* 0.5sec */
+	AUDIO_INITINFO(&ai);
+	ai.blocksize = blocksize;
+	ai.hiwat = hiwat;
+	ai.lowat = lowat;
+	/* and also set encoding */
+	/*
+	 * XXX NetBSD7 has different results depending on whether the input
+	 * encoding is emulated (AUDIO_ENCODINGFLAG_EMULATED) or not.  It's
+	 * not easy to ensure this situation on all hardware environment.
+	 * On NetBSD9, the result is the same regardless of input encoding.
+	 */
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "blocksize=%d", blocksize);
+	XP_SYS_EQ(0, r);
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	if (ai.blocksize != blocksize) {
+		/*
+		 * NetBSD9 can not change the blocksize.  Then,
+		 * adjust using hiwat/lowat.
+		 */
+		blocksize = ai.blocksize;
+		hiwat = howmany(8000 * 1.5, blocksize);
+		lowat = howmany(8000 * 0.5, blocksize);
+	}
+	/* Anyway, set the parameters */
+	AUDIO_INITINFO(&ai);
+	ai.blocksize = blocksize;
+	ai.hiwat = hiwat;
+	ai.lowat = lowat;
+	ai.play.pause = 1;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "pause=1");
+	XP_SYS_EQ(0, r);
+
+	/* Get the set parameters again */
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+	DPRINTF("  > blocksize=%d hiwat=%d lowat=%d buffer_size=%d\n",
+	    ai.blocksize, ai.hiwat, ai.lowat, ai.play.buffer_size);
+
+	/* Write until full */
+	buflen = ai.blocksize * ai.hiwat;
+	buf = (char *)malloc(buflen);
+	REQUIRED_IF(buf != NULL);
+	memset(buf, 0xff, buflen);
+	do {
+		r = WRITE(fd, buf, buflen);
+	} while (r == buflen);
+	if (r == -1) {
+		XP_SYS_NG(EAGAIN, r);
+	}
+
+	kq = KQUEUE();
+	XP_SYS_OK(kq);
+
+	EV_SET(&kev, fd, EV_ADD, EVFILT_WRITE, 0, 0, 0);
+	r = KEVENT_SET(kq, &kev, 1);
+	XP_SYS_EQ(0, r);
+
+	/* Unpause */
+	AUDIO_INITINFO(&ai);
+	ai.play.pause = 0;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "pause=0");
+	XP_SYS_EQ(0, r);
+
+	/* Check kevent() up to 2sec */
+	ts.tv_sec = 2;
+	ts.tv_nsec = 0;
+	r = KEVENT_POLL(kq, &kev, 1, &ts);
+	if (r >= 1)
+		DEBUG_KEV("kev", &kev);
+	if (netbsd < 8) {
+		/*
+		 * NetBSD7 with EMULATED_FLAG unset has bugs.  Unpausing
+		 * unintentionally clears buffer (and therefore it becomes
+		 * writable) but it doesn't raise EVFILT_WRITE.
+		 */
+	} else {
+		XP_SYS_EQ(1, r);
+	}
+
+	/* Flush it because there is no need to play it */
+	r = IOCTL(fd, AUDIO_FLUSH, NULL, "");
+	XP_SYS_EQ(0, r);
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+	r = CLOSE(kq);
+	XP_SYS_EQ(0, r);
+	free(buf);
+}
+
+/*
+ * kevent(2) must not be affected by other audio descriptors.
+ */
+DEF(kqueue_simul)
+{
+	struct audio_info ai;
+	struct audio_info ai2;
+	struct kevent kev[2];
+	struct timespec ts;
+	int fd[2];
+	int r;
+	int kq;
+	u_int blocksize;
+	int hiwat;
+	int lowat;
+	char *buf;
+	int buflen;
+
+	TEST("kqueue_simul");
+	if (netbsd < 8) {
+		XP_SKIP("Multiple open is not supported");
+		return;
+	}
+
+	memset(&ts, 0, sizeof(ts));
+
+	/* Make sure that it's not affected by descriptor order */
+	for (int i = 0; i < 2; i++) {
+		int a = i;
+		int b = 1 - i;
+
+		fd[0] = OPEN(devaudio, O_WRONLY | O_NONBLOCK);
+		REQUIRED_SYS_OK(fd[0]);
+		fd[1] = OPEN(devaudio, O_WRONLY | O_NONBLOCK);
+		REQUIRED_SYS_OK(fd[1]);
+
+		/*
+		 * Adjust block size and hiwat/lowat.
+		 * I want to choice suitable blocksize (if possible).
+		 */
+		blocksize = 1000;	/* 1/8 sec in mulaw,1ch,8000Hz */
+		hiwat = 12;		/* 1.5sec */
+		lowat = 4;		/* 0.5sec */
+		AUDIO_INITINFO(&ai);
+		ai.blocksize = blocksize;
+		ai.hiwat = hiwat;
+		ai.lowat = lowat;
+		r = IOCTL(fd[0], AUDIO_SETINFO, &ai, "blocksize=1000");
+		XP_SYS_EQ(0, r);
+		r = IOCTL(fd[0], AUDIO_GETBUFINFO, &ai, "read back blocksize");
+		if (ai.blocksize != blocksize) {
+			/*
+			 * NetBSD9 can not change the blocksize.  Then,
+			 * adjust using hiwat/lowat.
+			 */
+			blocksize = ai.blocksize;
+			hiwat = howmany(8000 * 1.5, blocksize);
+			lowat = howmany(8000 * 0.5, blocksize);
+		}
+		/* Anyway, set the parameters to both */
+		AUDIO_INITINFO(&ai);
+		ai.blocksize = blocksize;
+		ai.hiwat = hiwat;
+		ai.lowat = lowat;
+		ai.play.pause = 1;
+		r = IOCTL(fd[a], AUDIO_SETINFO, &ai, "pause=1");
+		XP_SYS_EQ(0, r);
+		r = IOCTL(fd[b], AUDIO_SETINFO, &ai, "pause=1");
+		XP_SYS_EQ(0, r);
+
+		/* Write both until full */
+		buflen = ai.blocksize * ai.hiwat;
+		buf = (char *)malloc(buflen);
+		REQUIRED_IF(buf != NULL);
+		memset(buf, 0xff, buflen);
+		/* Write fdA */
+		do {
+			r = WRITE(fd[a], buf, buflen);
+		} while (r == buflen);
+		if (r == -1) {
+			XP_SYS_NG(EAGAIN, r);
+		}
+		/* Write fdB */
+		do {
+			r = WRITE(fd[b], buf, buflen);
+		} while (r == buflen);
+		if (r == -1) {
+			XP_SYS_NG(EAGAIN, r);
+		}
+
+		/* Get fdB's initial seek for later */
+		r = IOCTL(fd[b], AUDIO_GETBUFINFO, &ai2, "");
+		XP_SYS_EQ(0, r);
+
+		kq = KQUEUE();
+		XP_SYS_OK(kq);
+
+		/* Both aren't raised at this point */
+		EV_SET(&kev[0], fd[a], EV_ADD, EVFILT_WRITE, 0, 0, 0);
+		EV_SET(&kev[1], fd[b], EV_ADD, EVFILT_WRITE, 0, 0, 0);
+		r = KEVENT_SET(kq, kev, 2);
+		XP_SYS_EQ(0, r);
+
+		/* Unpause only fdA */
+		AUDIO_INITINFO(&ai);
+		ai.play.pause = 0;
+		r = IOCTL(fd[a], AUDIO_SETINFO, &ai, "pause=0");
+		XP_SYS_EQ(0, r);
+
+		/* kevent() up to 2sec */
+		ts.tv_sec = 2;
+		ts.tv_nsec = 0;
+		r = KEVENT_POLL(kq, &kev[0], 1, &ts);
+		if (r >= 1)
+			DEBUG_KEV("kev", &kev[0]);
+		/* fdA should raise */
+		XP_SYS_EQ(1, r);
+		XP_EQ(fd[a], kev[0].ident);
+
+		/* Make sure that fdB keeps whole data */
+		r = IOCTL(fd[b], AUDIO_GETBUFINFO, &ai, "");
+		XP_EQ(ai2.play.seek, ai.play.seek);
+
+		/* Flush it because there is no need to play it */
+		r = IOCTL(fd[0], AUDIO_FLUSH, NULL, "");
+		XP_SYS_EQ(0, r);
+		r = IOCTL(fd[1], AUDIO_FLUSH, NULL, "");
+		XP_SYS_EQ(0, r);
+
+		r = CLOSE(fd[0]);
+		XP_SYS_EQ(0, r);
+		r = CLOSE(fd[1]);
+		XP_SYS_EQ(0, r);
+		r = CLOSE(kq);
+		XP_SYS_EQ(0, r);
+		free(buf);
+
+		xxx_close_wait();
+	}
+}
+
 #define ENT(x) { #x, test__ ## x }
 struct testentry testtable[] = {
 	ENT(open_mode_RDONLY),
@@ -3436,5 +3956,15 @@ struct testentry testtable[] = {
 	ENT(poll_out_unpause),
 	ENT(poll_out_simul),
 	ENT(poll_in_simul),
-	{ NULL, NULL },
+	ENT(kqueue_mode_RDONLY_READ),
+	ENT(kqueue_mode_RDONLY_WRITE),
+	ENT(kqueue_mode_WRONLY_READ),
+	ENT(kqueue_mode_WRONLY_WRITE),
+	ENT(kqueue_mode_RDWR_READ),
+	ENT(kqueue_mode_RDWR_WRITE),
+	ENT(kqueue_empty),
+	ENT(kqueue_full),
+	ENT(kqueue_hiwat),
+	ENT(kqueue_unpause),
+	ENT(kqueue_simul),
 };

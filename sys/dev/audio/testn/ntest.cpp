@@ -3125,7 +3125,7 @@ test_poll_in_simul()
 
 // openmode と kevent との関係
 void
-test_kqueue_1()
+test_kqueue_mode()
 {
 	struct kevent kev;
 	struct timespec ts;
@@ -3157,7 +3157,7 @@ test_kqueue_1()
 	ts.tv_sec = 0;
 	ts.tv_nsec = 100 * 1000 * 1000;	// 100msec
 
-	TEST("kqueue_1");
+	TEST("kqueue_mode");
 
 	kq = KQUEUE();
 	XP_SYS_OK(kq);
@@ -3230,7 +3230,7 @@ test_kqueue_1()
 
 // kqueue、空でテスト
 void
-test_kqueue_2()
+test_kqueue_empty()
 {
 	struct audio_info ai;
 	struct kevent kev;
@@ -3239,7 +3239,7 @@ test_kqueue_2()
 	int fd;
 	int r;
 
-	TEST("kqueue_2");
+	TEST("kqueue_empty");
 
 	fd = OPEN(devaudio, O_WRONLY);
 	if (fd == -1)
@@ -3275,7 +3275,7 @@ test_kqueue_2()
 
 // kqueue、バッファフルでテスト
 void
-test_kqueue_3()
+test_kqueue_full()
 {
 	struct audio_info ai;
 	struct kevent kev;
@@ -3286,7 +3286,7 @@ test_kqueue_3()
 	char *buf;
 	int buflen;
 
-	TEST("kqueue_3");
+	TEST("kqueue_full");
 
 	fd = OPEN(devaudio, O_WRONLY | O_NONBLOCK);
 	if (fd == -1)
@@ -3341,7 +3341,7 @@ test_kqueue_3()
 
 // kqueue、hiwat 設定してバッファフルでテスト
 void
-test_kqueue_4()
+test_kqueue_hiwat()
 {
 	struct audio_info ai;
 	struct kevent kev;
@@ -3353,7 +3353,7 @@ test_kqueue_4()
 	int buflen;
 	int newhiwat;
 
-	TEST("kqueue_4");
+	TEST("kqueue_hiwat");
 
 	fd = OPEN(devaudio, O_WRONLY | O_NONBLOCK);
 	if (fd == -1)
@@ -3425,7 +3425,7 @@ test_kqueue_4()
 
 // バッファフルから pause を解除した場合。
 void
-test_kqueue_5()
+test_kqueue_unpause()
 {
 	struct audio_info ai, ai2;
 	struct kevent kev;
@@ -3441,7 +3441,7 @@ test_kqueue_5()
 	int lowat;
 	int zero;
 
-	TEST("kqueue_5");
+	TEST("kqueue_unpause");
 
 	for (int emul = 0; emul < 2; emul++) {
 		DESC("emul=%d", emul);
@@ -3614,7 +3614,7 @@ test_kqueue_5()
 
 // 隣のディスクリプタの影響を受けないこと
 void
-test_kqueue_6()
+test_kqueue_simul()
 {
 	struct audio_info ai;
 	struct audio_info ai2;
@@ -3627,7 +3627,7 @@ test_kqueue_6()
 	char *buf;
 	int buflen;
 
-	TEST("kqueue_6");
+	TEST("kqueue_simul");
 
 	// 多重化は N7 では出来ない
 	if (netbsd < 8) {
@@ -7522,12 +7522,12 @@ struct testtable testtable[] = {
 	DEF(poll_out_unpause),
 	DEF(poll_out_simul),
 	DEF(poll_in_simul),
-	DEF(kqueue_1),
-	DEF(kqueue_2),
-	DEF(kqueue_3),
-	DEF(kqueue_4),
-	DEF(kqueue_5),
-	DEF(kqueue_6),
+	DEF(kqueue_mode),
+	DEF(kqueue_empty),
+	DEF(kqueue_full),
+	DEF(kqueue_hiwat),
+	DEF(kqueue_unpause),
+	DEF(kqueue_simul),
 	DEF(ioctl_1),
 	DEF(FIOASYNC_1),
 	DEF(FIOASYNC_2),
