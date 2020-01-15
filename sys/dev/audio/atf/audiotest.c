@@ -51,6 +51,7 @@ struct testentry {
 void usage(void) __dead;
 void xp_err(int, int, const char *, ...) __printflike(3, 4) __dead;
 void xp_errx(int, int, const char *, ...) __printflike(3, 4) __dead;
+void xxx_close_wait(void);
 void do_test(int);
 int rump_or_open(const char *, int);
 int rump_or_write(int, const void *, size_t);
@@ -314,6 +315,24 @@ main(int argc, char *argv[])
 	return 0;
 }
 
+/*
+ * XXX
+ * Some hardware drivers (e.g. hdafg(4)) require a little "rest" between
+ * close(2) and re-open(2).
+ * audio(4) uses hw_if->close() to tell the hardware to close.  However,
+ * there is no agreement to wait for completion between MI and MD layer.
+ * audio(4) immediately shifts the "closed" state and, that is, the next
+ * open() is acceptable in audio layer. But the hardware may not have been
+ * closed actually.
+ * It's troublesome issue but should be fixed...
+ */
+void
+xxx_close_wait(void)
+{
+
+	usleep(500 * 1000);
+}
+
 void
 do_test(int testnumber)
 {
@@ -321,6 +340,8 @@ do_test(int testnumber)
 	strlcpy(testname, "<NoName>", sizeof(testname));
 	/* Do test */
 	testtable[testnumber].func();
+
+	xxx_close_wait();
 }
 
 /*
