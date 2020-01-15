@@ -1417,7 +1417,8 @@ test_open_audio(int mode)
 	 * recording has not started yet. (?)
 	 * NetBSD9 is not active at that time.
 	 */
-	if (netbsd == 9) {
+	if (netbsd < 9) {
+	} else {
 		XP_EQ(0, ai.record.active);
 	}
 	/* Save it */
@@ -1496,7 +1497,8 @@ test_open_audio(int mode)
 	XP_EQ(0, ai.record.waiting);
 		/* balance */
 	XP_EQ(can_rec, ai.record.open);
-	if (netbsd == 9) {
+	if (netbsd < 9) {
+	} else {
 		XP_EQ(0, ai.record.active);
 	}
 
@@ -1613,7 +1615,8 @@ test_open_sound(int mode)
 	 * recording has not started yet. (?)
 	 * NetBSD9 is not active at that time.
 	 */
-	if (netbsd == 9) {
+	if (netbsd < 9) {
+	} else {
 		XP_EQ(0, ai.record.active);
 	}
 	/* Save it */
@@ -1691,7 +1694,8 @@ test_open_sound(int mode)
 	XP_EQ(0, ai.record.waiting);
 		/* balance */
 	XP_EQ(can_rec, ai.record.open);
-	if (netbsd == 9) {
+	if (netbsd < 9) {
+	} else {
 		XP_EQ(0, ai.record.active);
 	}
 
@@ -3036,7 +3040,7 @@ DEF(poll_out_unpause)
 	int lowat;
 
 	TEST("poll_out_unpause");
-	if (netbsd <= 7) {
+	if (netbsd < 8) {
 		XP_SKIP("NetBSD7's poll() is too incomplete to test.");
 		return;
 	}
