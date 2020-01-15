@@ -352,6 +352,10 @@ atf_test_case kqueue_simul
 kqueue_simul_head() { }
 kqueue_simul_body() { h_audio kqueue_simul }
 
+atf_test_case ioctl_while_write
+ioctl_while_write_head() { }
+ioctl_while_write_body() { h_audio ioctl_while_write }
+
 atf_init_test_cases() {
 	atf_add_test_case open_mode_RDONLY
 	atf_add_test_case open_mode_WRONLY
@@ -436,4 +440,5 @@ atf_init_test_cases() {
 	atf_add_test_case kqueue_hiwat
 	atf_add_test_case kqueue_unpause
 	atf_add_test_case kqueue_simul
+	atf_add_test_case ioctl_while_write
 }

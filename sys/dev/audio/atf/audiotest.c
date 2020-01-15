@@ -3882,6 +3882,104 @@ DEF(kqueue_simul)
 	}
 }
 
+/* Shared data between threads for ioctl_while_write */
+struct ioctl_while_write_data {
+	int fd;
+	struct timeval start;
+	int terminated;
+};
+
+/* Test thread for ioctl_while_write */
+void *thread_ioctl_while_write(void *);
+void *
+thread_ioctl_while_write(void *arg)
+{
+	struct ioctl_while_write_data *data = arg;
+	struct timeval now, res;
+	struct audio_info ai;
+	int r;
+
+	/* If 0.5 seconds have elapsed since writing, assume it's blocked */
+	do {
+		usleep(100);
+		gettimeofday(&now, NULL);
+		timersub(&now, &data->start, &res);
+	} while (res.tv_usec < 500000);
+
+	/* Then, do ioctl() */
+	r = IOCTL(data->fd, AUDIO_GETBUFINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+
+	/* Terminate */
+	data->terminated = 1;
+
+	/* Resume write() by unpause */
+	AUDIO_INITINFO(&ai);
+	if (netbsd < 8) {
+		/*
+		 * XXX NetBSD7 has bugs and it cannot be unpaused.
+		 * However, it also has another bug and it clears buffer
+		 * when encoding is changed.  I use it. :-P
+		 */
+		ai.play.encoding = AUDIO_ENCODING_SLINEAR_LE;
+	}
+	ai.play.pause = 0;
+	r = IOCTL(data->fd, AUDIO_SETINFO, &ai, "pause=0");
+	XP_SYS_EQ(0, r);
+
+	return NULL;
+}
+
+/*
+ * ioctl(2) can be issued while write(2)-ing.
+ */
+DEF(ioctl_while_write)
+{
+	struct audio_info ai;
+	struct ioctl_while_write_data data0, *data;
+	char buf[8000];	/* 1sec in mulaw,1ch,8000Hz */
+	pthread_t tid;
+	int r;
+
+	TEST("ioctl_while_write");
+
+	data = &data0;
+	memset(data, 0, sizeof(*data));
+	memset(buf, 0xff, sizeof(buf));
+
+	data->fd = OPEN(devaudio, O_WRONLY);
+	REQUIRED_SYS_OK(data->fd);
+
+	/* Pause to block write(2)ing */
+	AUDIO_INITINFO(&ai);
+	ai.play.pause = 1;
+	r = IOCTL(data->fd, AUDIO_SETINFO, &ai, "pause=1");
+	XP_SYS_EQ(0, r);
+
+	gettimeofday(&data->start, NULL);
+
+	pthread_create(&tid, NULL, thread_ioctl_while_write, data);
+
+	/* Write until blocking */
+	for (;;) {
+		r = WRITE(data->fd, buf, sizeof(buf));
+		if (data->terminated)
+			break;
+		XP_SYS_EQ(sizeof(buf), r);
+
+		/* Update written time */
+		gettimeofday(&data->start, NULL);
+	}
+
+	pthread_join(tid, NULL);
+
+	/* Flush */
+	r = IOCTL(data->fd, AUDIO_FLUSH, NULL, "");
+	XP_SYS_EQ(0, r);
+	r = CLOSE(data->fd);
+	XP_SYS_EQ(0, r);
+}
+
 #define ENT(x) { #x, test__ ## x }
 struct testentry testtable[] = {
 	ENT(open_mode_RDONLY),
@@ -3967,4 +4065,5 @@ struct testentry testtable[] = {
 	ENT(kqueue_hiwat),
 	ENT(kqueue_unpause),
 	ENT(kqueue_simul),
+	ENT(ioctl_while_write),
 };

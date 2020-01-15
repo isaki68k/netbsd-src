@@ -3784,18 +3784,18 @@ test_kqueue_simul()
 	}
 }
 
-// ioctl_1 スレッド間共有データ
-struct ioctl_1_data {
+// ioctl_while_write スレッド間共有データ
+struct ioctl_while_write_data {
 	int fd;
 	struct timeval start;	// 書き込み時刻
 	int terminated;
 };
 
-// ioctl_1 のテストスレッド
+// ioctl_while_write のテストスレッド
 void *
-thread_ioctl_1(void *arg)
+thread_ioctl_while_write(void *arg)
 {
-	struct ioctl_1_data *data = (struct ioctl_1_data *)arg;
+	struct ioctl_while_write_data *data = (struct ioctl_while_write_data *)arg;
 	struct timeval now, res;
 	struct audio_info ai;
 	int r;
@@ -3831,15 +3831,15 @@ thread_ioctl_1(void *arg)
 
 // write 中に ioctl が発行できるか
 void
-test_ioctl_1(void)
+test_ioctl_while_write(void)
 {
 	struct audio_info ai;
-	struct ioctl_1_data data0, *data;
+	struct ioctl_while_write_data data0, *data;
 	char buf[8192];
 	pthread_t tid;
 	int r;
 
-	TEST("ioctl_1");
+	TEST("ioctl_while_write");
 
 	data = &data0;
 	memset(data, 0, sizeof(*data));
@@ -3857,7 +3857,7 @@ test_ioctl_1(void)
 
 	gettimeofday(&data->start, NULL);
 
-	pthread_create(&tid, NULL, thread_ioctl_1, data);
+	pthread_create(&tid, NULL, thread_ioctl_while_write, data);
 
 	// ブロックするまで書き込む
 	for (;;) {
@@ -7528,7 +7528,7 @@ struct testtable testtable[] = {
 	DEF(kqueue_hiwat),
 	DEF(kqueue_unpause),
 	DEF(kqueue_simul),
-	DEF(ioctl_1),
+	DEF(ioctl_while_write),
 	DEF(FIOASYNC_1),
 	DEF(FIOASYNC_2),
 	DEF(FIOASYNC_3),
