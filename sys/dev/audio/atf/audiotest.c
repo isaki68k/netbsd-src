@@ -4088,6 +4088,56 @@ DEF(FIOASYNC_rec_signal)
 	sigio_caught = 0;
 }
 
+/*
+ * Check AUDIO_WSEEK behavior.
+ */
+DEF(AUDIO_WSEEK)
+{
+	char buf[4];
+	struct audio_info ai;
+	int r;
+	int fd;
+	int n;
+
+	TEST("AUDIO_WSEEK");
+
+	fd = OPEN(devaudio, O_WRONLY);
+	REQUIRED_SYS_OK(fd);
+
+	/* Pause to count sample data */
+	AUDIO_INITINFO(&ai);
+	ai.play.pause = 1;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "pause=1");
+	REQUIRED_SYS_EQ(0, r);
+
+	/* On the initial state, it should be 0 bytes */
+	n = 0;
+	r = IOCTL(fd, AUDIO_WSEEK, &n, "");
+	XP_SYS_EQ(0, r);
+	XP_EQ(0, n);
+
+	/* When writing 4 bytes, it should be 4 bytes */
+	memset(buf, 0xff, sizeof(buf));
+	r = WRITE(fd, buf, sizeof(buf));
+	REQUIRED_EQ(sizeof(buf), r);
+	r = IOCTL(fd, AUDIO_WSEEK, &n, "");
+	XP_SYS_EQ(0, r);
+	if (netbsd < 9) {
+		/*
+		 * On NetBSD7, it will return 0.
+		 * Perhaps, WSEEK returns the number of pustream bytes but
+		 * data has already advanced...
+		 */
+		XP_EQ(0, n);
+	} else {
+		/* Data less than one block remains here */
+		XP_EQ(4, n);
+	}
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+}
+
 #define ENT(x) { #x, test__ ## x }
 struct testentry testtable[] = {
 	ENT(open_mode_RDONLY),
@@ -4176,4 +4226,5 @@ struct testentry testtable[] = {
 	ENT(ioctl_while_write),
 	ENT(FIOASYNC_play_signal),
 	ENT(FIOASYNC_rec_signal),
+	ENT(AUDIO_WSEEK),
 };

@@ -4108,13 +4108,13 @@ test_FIOASYNC_rec_signal(void)
 
 // AUDIO_WSEEK の動作確認
 void
-test_AUDIO_WSEEK_1(void)
+test_AUDIO_WSEEK(void)
 {
 	int r;
 	int fd;
 	int n;
 
-	TEST("AUDIO_WSEEK_1");
+	TEST("AUDIO_WSEEK");
 
 	fd = OPEN(devaudio, O_WRONLY);
 	if (fd == -1)
@@ -7534,7 +7534,7 @@ struct testtable testtable[] = {
 	DEF(FIOASYNC_3),		// 保留
 	DEF(FIOASYNC_play_signal),
 	DEF(FIOASYNC_rec_signal),
-	DEF(AUDIO_WSEEK_1),
+	DEF(AUDIO_WSEEK),
 	DEF(AUDIO_SETFD_ONLY),
 	DEF(AUDIO_SETFD_RDWR),
 	DEF(AUDIO_GETINFO_seek),

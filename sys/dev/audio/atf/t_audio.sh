@@ -364,6 +364,10 @@ atf_test_case FIOASYNC_rec_signal
 FIOASYNC_rec_signal_head() { }
 FIOASYNC_rec_signal_body() { h_audio FIOASYNC_rec_signal }
 
+atf_test_case AUDIO_WSEEK
+AUDIO_WSEEK_head() { }
+AUDIO_WSEEK_body() { h_audio AUDIO_WSEEK }
+
 atf_init_test_cases() {
 	atf_add_test_case open_mode_RDONLY
 	atf_add_test_case open_mode_WRONLY
@@ -451,4 +455,5 @@ atf_init_test_cases() {
 	atf_add_test_case ioctl_while_write
 	atf_add_test_case FIOASYNC_play_signal
 	atf_add_test_case FIOASYNC_rec_signal
+	atf_add_test_case AUDIO_WSEEK
 }
