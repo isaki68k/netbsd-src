@@ -1300,6 +1300,7 @@ void test_poll_mode(int, int, int);
 void test_kqueue_mode(int, int, int);
 volatile int sigio_caught;
 void signal_FIOASYNC(int);
+void test_AUDIO_SETFD_xxONLY(int);
 
 #define DEF(name) \
 	void test__ ## name (void); \
@@ -4138,6 +4139,234 @@ DEF(AUDIO_WSEEK)
 	XP_SYS_EQ(0, r);
 }
 
+/*
+ * Check AUDIO_SETFD behavior for O_*ONLY descriptor.
+ * On NetBSD7, SETFD modify audio layer's state (and MD driver's state)
+ * regardless of open mode.  GETFD obtains audio layer's duplex.
+ * On NetBSD9, SETFD is obsoleted.  GETFD obtains hardware's duplex. 
+ */
+void
+test_AUDIO_SETFD_xxONLY(int openmode)
+{
+	struct audio_info ai;
+	int r;
+	int fd;
+	int n;
+
+	TEST("AUDIO_SETFD_%s", openmode_str[openmode] + 2);
+	if (openmode == O_RDONLY && hw_canrec() == 0) {
+		XP_SKIP("This test is for recordable device");
+		return;
+	}
+	if (openmode == O_WRONLY && hw_canplay() == 0) {
+		XP_SKIP("This test is for playable device");
+		return;
+	}
+
+	fd = OPEN(devaudio, openmode);
+	REQUIRED_SYS_OK(fd);
+
+	/*
+	 * Just after open(2),
+	 * - On NetBSD7, it's always half-duplex.
+	 * - On NetBSD9, it's the same as hardware one regardless of openmode.
+	 */
+	n = 0;
+	r = IOCTL(fd, AUDIO_GETFD, &n, "");
+	XP_SYS_EQ(0, r);
+	if (netbsd < 9) {
+		XP_EQ(0, n);
+	} else {
+		XP_EQ(hw_fulldup(), n);
+	}
+
+	/*
+	 * When trying to set to full-duplex,
+	 * - On NetBSD7, it will succeed if the hardware is full-duplex, or
+	 *   will fail if the hardware is half-duplex.
+	 * - On NetBSD9, it will always succeed but will not be modified.
+	 */
+	n = 1;
+	r = IOCTL(fd, AUDIO_SETFD, &n, "on");
+	if (netbsd < 8) {
+		if (hw_fulldup()) {
+			XP_SYS_EQ(0, r);
+		} else {
+			XP_SYS_NG(ENOTTY, r);
+		}
+	} else if (netbsd == 8) {
+		XP_FAIL("expected result is unknown");
+	} else {
+		XP_SYS_EQ(0, r);
+	}
+
+	/*
+	 * When obtain it,
+	 * - On NetBSD7, it will be 1 if the hardware is full-duplex or
+	 *   0 if half-duplex.
+	 * - On NetBSD9, it will never be changed because it's the hardware
+	 *   property.
+	 */
+	n = 0;
+	r = IOCTL(fd, AUDIO_GETFD, &n, "");
+	XP_SYS_EQ(0, r);
+	if (netbsd < 8) {
+		XP_EQ(hw_fulldup(), n);
+	} else if (netbsd == 8) {
+		XP_FAIL("expected result is unknown");
+	} else {
+		XP_EQ(hw_fulldup(), n);
+	}
+
+	/* Some track parameters like ai.*.open should not change */
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+	XP_EQ(mode2play(openmode), ai.play.open);
+	XP_EQ(mode2rec(openmode), ai.record.open);
+
+	/*
+	 * When trying to set to half-duplex,
+	 * - On NetBSD7, it will succeed if the hardware is full-duplex, or
+	 *   it will succeed with nothing happens.
+	 * - On NetBSD9, it will always succeed but nothing happens.
+	 */
+	n = 0;
+	r = IOCTL(fd, AUDIO_SETFD, &n, "off");
+	XP_SYS_EQ(0, r);
+
+	/*
+	 * When obtain it again,
+	 * - On NetBSD7, it will be 0 if the hardware is full-duplex, or
+	 *   still 0 if half-duplex.
+	 * - On NetBSD9, it should not change.
+	 */
+	n = 0;
+	r = IOCTL(fd, AUDIO_GETFD, &n, "");
+	XP_SYS_EQ(0, r);
+	if (netbsd < 9) {
+		XP_EQ(0, n);
+	} else {
+		XP_EQ(hw_fulldup(), n);
+	}
+
+	/* Some track parameters like ai.*.open should not change */
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+	XP_EQ(mode2play(openmode), ai.play.open);
+	XP_EQ(mode2rec(openmode), ai.record.open);
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+}
+DEF(AUDIO_SETFD_RDONLY)	{ test_AUDIO_SETFD_xxONLY(O_RDONLY); }
+DEF(AUDIO_SETFD_WRONLY)	{ test_AUDIO_SETFD_xxONLY(O_WRONLY); }
+
+/*
+ * Check AUDIO_SETFD behavior for O_RDWR descriptor.
+ */
+DEF(AUDIO_SETFD_RDWR)
+{
+	struct audio_info ai;
+	int r;
+	int fd;
+	int n;
+
+	TEST("AUDIO_SETFD_RDWR");
+	if (!hw_fulldup()) {
+		XP_SKIP("This test is only for full-duplex device");
+		return;
+	}
+
+	fd = OPEN(devaudio, O_RDWR);
+	REQUIRED_SYS_OK(fd);
+
+	/*
+	 * - audio(4) manpage until NetBSD7 said "If a full-duplex capable
+	 *   audio device is opened for both reading and writing it will
+	 *   start in half-duplex play mode", but implementation doesn't
+	 *   seem to follow it.  It returns full-duplex.
+	 * - On NetBSD9, it should return full-duplex on full-duplex, or
+	 *   half-duplex on half-duplex.
+	 */
+	n = 0;
+	r = IOCTL(fd, AUDIO_GETFD, &n, "");
+	XP_SYS_EQ(0, r);
+	XP_EQ(hw_fulldup(), n);
+
+	/*
+	 * When trying to set to full-duplex,
+	 * - On NetBSD7, it will succeed with nothing happens if full-duplex,
+	 *   or will fail if half-duplex.
+	 * - On NetBSD9, it will always succeed with nothing happens.
+	 */
+	n = 1;
+	r = IOCTL(fd, AUDIO_SETFD, &n, "on");
+	if (netbsd < 9) {
+		if (hw_fulldup()) {
+			XP_SYS_EQ(0, r);
+		} else {
+			XP_SYS_NG(ENOTTY, r);
+		}
+	} else {
+		XP_SYS_EQ(0, r);
+	}
+
+	/* When obtains it, it retuns half/full-duplex as is */
+	n = 0;
+	r = IOCTL(fd, AUDIO_GETFD, &n, "");
+	XP_SYS_EQ(0, r);
+	XP_EQ(hw_fulldup(), n);
+
+	/* Some track parameters like ai.*.open should not change */
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+	XP_EQ(1, ai.play.open);
+	XP_EQ(mode2rec(O_RDWR), ai.record.open);
+
+	/*
+	 * When trying to set to half-duplex,
+	 * - On NetBSD7, it will succeed if the hardware is full-duplex, or
+	 *   it will succeed with nothing happens.
+	 * - On NetBSD9, it will always succeed but nothing happens.
+	 */
+	n = 0;
+	r = IOCTL(fd, AUDIO_SETFD, &n, "off");
+	if (netbsd < 8) {
+		XP_SYS_EQ(0, r);
+	} else if (netbsd == 8) {
+		XP_FAIL("expected result is unknown");
+	} else {
+		XP_SYS_EQ(0, r);
+	}
+
+	/*
+	 * When obtain it again,
+	 * - On NetBSD7, it will be 0 if the hardware is full-duplex, or
+	 *   still 0 if half-duplex.
+	 * - On NetBSD9, it should be 1 if the hardware is full-duplex, or
+	 *   0 if half-duplex.
+	 */
+	n = 0;
+	r = IOCTL(fd, AUDIO_GETFD, &n, "");
+	XP_SYS_EQ(0, r);
+	if (netbsd < 8) {
+		XP_EQ(0, n);
+	} else if (netbsd == 8) {
+		XP_FAIL("expected result is unknown");
+	} else {
+		XP_EQ(hw_fulldup(), n);
+	}
+
+	/* Some track parameters like ai.*.open should not change */
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+	XP_EQ(1, ai.play.open);
+	XP_EQ(mode2rec(O_RDWR), ai.record.open);
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+}
+
 #define ENT(x) { #x, test__ ## x }
 struct testentry testtable[] = {
 	ENT(open_mode_RDONLY),
@@ -4227,4 +4456,7 @@ struct testentry testtable[] = {
 	ENT(FIOASYNC_play_signal),
 	ENT(FIOASYNC_rec_signal),
 	ENT(AUDIO_WSEEK),
+	ENT(AUDIO_SETFD_RDONLY),
+	ENT(AUDIO_SETFD_WRONLY),
+	ENT(AUDIO_SETFD_RDWR),
 };
