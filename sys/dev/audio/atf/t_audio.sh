@@ -380,6 +380,10 @@ atf_test_case AUDIO_SETFD_RDWR
 AUDIO_SETFD_RDWR_head() { }
 AUDIO_SETFD_RDWR_body() { h_audio AUDIO_SETFD_RDWR }
 
+atf_test_case AUDIO_GETINFO_eof
+AUDIO_GETINFO_eof_head() { }
+AUDIO_GETINFO_eof_body() { h_audio AUDIO_GETINFO_eof }
+
 atf_init_test_cases() {
 	atf_add_test_case open_mode_RDONLY
 	atf_add_test_case open_mode_WRONLY
@@ -471,4 +475,5 @@ atf_init_test_cases() {
 	atf_add_test_case AUDIO_SETFD_RDONLY
 	atf_add_test_case AUDIO_SETFD_WRONLY
 	atf_add_test_case AUDIO_SETFD_RDWR
+	atf_add_test_case AUDIO_GETINFO_eof
 }

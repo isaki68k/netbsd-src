@@ -4367,6 +4367,106 @@ DEF(AUDIO_SETFD_RDWR)
 	XP_SYS_EQ(0, r);
 }
 
+/*
+ * Check AUDIO_GETINFO.eof behavior.
+ */
+DEF(AUDIO_GETINFO_eof)
+{
+	struct audio_info ai;
+	char buf[4];
+	int r;
+	int fd, fd1;
+
+	TEST("AUDIO_GETINFO_eof");
+	if (hw_canplay() == 0) {
+		XP_SKIP("This test is for playable device");
+		return;
+	}
+
+	fd = OPEN(devaudio, O_RDWR);
+	REQUIRED_SYS_OK(fd);
+
+	/* Pause to make no sound */
+	AUDIO_INITINFO(&ai);
+	ai.play.pause = 1;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "pause");
+	REQUIRED_SYS_EQ(0, r);
+
+	/* It should be 0 initially */
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+	XP_EQ(0, ai.play.eof);
+	XP_EQ(0, ai.record.eof);
+
+	/* Writing zero bytes should increment it */
+	r = WRITE(fd, &r, 0);
+	REQUIRED_SYS_OK(r);
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+	XP_EQ(1, ai.play.eof);
+	XP_EQ(0, ai.record.eof);
+
+	/* Writing one ore more bytes should noto increment it */ 
+	memset(buf, 0xff, sizeof(buf));
+	r = WRITE(fd, buf, sizeof(buf));
+	REQUIRED_SYS_OK(r);
+	memset(&ai, 0, sizeof(ai));
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+	XP_EQ(1, ai.play.eof);
+	XP_EQ(0, ai.record.eof);
+
+	/* Writing zero bytes again should increment it */
+	r = WRITE(fd, buf, 0);
+	REQUIRED_SYS_OK(r);
+	memset(&ai, 0, sizeof(ai));
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+	XP_EQ(2, ai.play.eof);
+	XP_EQ(0, ai.record.eof);
+
+	/* Reading zero bytes should not increment it */
+	if (hw_fulldup()) {
+		r = READ(fd, buf, 0);
+		REQUIRED_SYS_OK(r);
+		memset(&ai, 0, sizeof(ai));
+		r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+		XP_SYS_EQ(0, r);
+		XP_EQ(2, ai.play.eof);
+		XP_EQ(0, ai.record.eof);
+	}
+
+	/* should not interfere with other descriptor */
+	if (netbsd >= 8) {
+		fd1 = OPEN(devaudio, O_RDWR);
+		REQUIRED_SYS_OK(fd1);
+		memset(&ai, 0, sizeof(ai));
+		r = IOCTL(fd1, AUDIO_GETBUFINFO, &ai, "");
+		XP_SYS_EQ(0, r);
+		XP_EQ(0, ai.play.eof);
+		XP_EQ(0, ai.record.eof);
+		r = CLOSE(fd1);
+		XP_SYS_EQ(0, r);
+	}
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+
+	xxx_close_wait();
+
+	/* When reopen, it should reset the counter */
+	fd = OPEN(devaudio, O_RDWR);
+	REQUIRED_SYS_OK(fd);
+
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+	XP_EQ(0, ai.play.eof);
+	XP_EQ(0, ai.record.eof);
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+}
+
 #define ENT(x) { #x, test__ ## x }
 struct testentry testtable[] = {
 	ENT(open_mode_RDONLY),
@@ -4459,4 +4559,5 @@ struct testentry testtable[] = {
 	ENT(AUDIO_SETFD_RDONLY),
 	ENT(AUDIO_SETFD_WRONLY),
 	ENT(AUDIO_SETFD_RDWR),
+	ENT(AUDIO_GETINFO_eof),
 };
