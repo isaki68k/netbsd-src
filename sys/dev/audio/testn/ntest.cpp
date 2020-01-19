@@ -7537,7 +7537,7 @@ struct testtable testtable[] = {
 	DEF(AUDIO_WSEEK),
 	DEF(AUDIO_SETFD_ONLY),
 	DEF(AUDIO_SETFD_RDWR),
-	DEF(AUDIO_GETINFO_seek),
+	DEF(AUDIO_GETINFO_seek),		// 保留
 	DEF(AUDIO_GETINFO_eof),
 	DEF(AUDIO_SETINFO_mode),
 	DEF(AUDIO_SETINFO_params),
