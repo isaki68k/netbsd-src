@@ -4590,7 +4590,7 @@ struct setinfo_mode_t table_SETINFO_mode_O_RDONLY[] = {
 	/* setmode	expmode7	expmode9 */
 	{     0,	     0,		 R    },
 	{     P,	     P,		 R    },
-	{   A  ,	   A  ,		 R    },
+	{   A  ,	   A|P,		 R    },
 	{   A|P,	   A|P,		 R    },
 	{ R    ,	 R    ,		 R    },
 	{ R|  P,	     P,		 R    },
