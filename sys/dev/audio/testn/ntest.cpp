@@ -3883,13 +3883,13 @@ test_ioctl_while_write(void)
 
 // FIOASYNC が同時に2人設定できるか
 void
-test_FIOASYNC_1(void)
+test_FIOASYNC_multiple(void)
 {
 	int r;
 	int fd0, fd1;
 	int val;
 
-	TEST("FIOASYNC_1");
+	TEST("FIOASYNC_multiple");
 	if (netbsd < 8) {
 		XP_SKIP("NetBSD7 does not support multi-open");
 		return;
@@ -3905,7 +3905,7 @@ test_FIOASYNC_1(void)
 
 	// 続いて2人目が ASYNC on
 	fd1 = OPEN(devaudio, O_WRONLY);
-	if (fd0 == -1)
+	if (fd1 == -1)
 		err(1, "open");
 	val = 1;
 	r = IOCTL(fd1, FIOASYNC, &val, "on");
@@ -3922,13 +3922,13 @@ test_FIOASYNC_1(void)
 
 // FIOASYNC が別トラックに影響を与えないこと
 void
-test_FIOASYNC_2(void)
+test_FIOASYNC_simul(void)
 {
 	int r;
 	int fd0, fd1;
 	int val;
 
-	TEST("FIOASYNC_2");
+	TEST("FIOASYNC_simul");
 	if (netbsd < 8) {
 		XP_SKIP("NetBSD7 does not support multi-open");
 		return;
@@ -4004,7 +4004,7 @@ test_FIOASYNC_3(void)
 
 volatile int sigio_caught;
 void
-signal_FIOASYNC_4(int signo)
+signal_FIOASYNC(int signo)
 {
 	if (signo == SIGIO) {
 		sigio_caught = 1;
@@ -4017,7 +4017,7 @@ signal_FIOASYNC_4(int signo)
 // PLAY_ALL でブロックサイズ書き込んだら飛んでくるようだ。
 // PLAY/PLAY_ALL で 4バイト書き込むとかではだめだった。
 void
-test_FIOASYNC_4(void)
+test_FIOASYNC_play_signal(void)
 {
 	struct audio_info ai;
 	int r;
@@ -4025,8 +4025,8 @@ test_FIOASYNC_4(void)
 	int val;
 	char *data;
 
-	TEST("FIOASYNC_4");
-	signal(SIGIO, signal_FIOASYNC_4);
+	TEST("FIOASYNC_play_signal");
+	signal(SIGIO, signal_FIOASYNC);
 	sigio_caught = 0;
 
 	fd = OPEN(devaudio, O_WRONLY);
@@ -4069,14 +4069,14 @@ test_FIOASYNC_4(void)
 
 // 録音で SIGIO が飛んでくるか
 void
-test_FIOASYNC_5(void)
+test_FIOASYNC_rec_signal(void)
 {
 	int r;
 	int fd;
 	int val;
 
-	TEST("FIOASYNC_5");
-	signal(SIGIO, signal_FIOASYNC_4);
+	TEST("FIOASYNC_rec_signal");
+	signal(SIGIO, signal_FIOASYNC);
 	sigio_caught = 0;
 
 	fd = OPEN(devaudio, O_RDONLY);
@@ -6285,7 +6285,7 @@ test_mixer_FIOASYNC_1(void)
 	int val;
 
 	TEST("mixer_FIOASYNC_1");
-	signal(SIGIO, signal_FIOASYNC_4);
+	signal(SIGIO, signal_FIOASYNC);
 	sigio_caught = 0;
 
 	fd = OPEN(devmixer, O_RDWR);
@@ -7529,11 +7529,11 @@ struct testtable testtable[] = {
 	DEF(kqueue_unpause),
 	DEF(kqueue_simul),
 	DEF(ioctl_while_write),
-	DEF(FIOASYNC_1),
-	DEF(FIOASYNC_2),
-	DEF(FIOASYNC_3),
-	DEF(FIOASYNC_4),
-	DEF(FIOASYNC_5),
+	DEF(FIOASYNC_multiple),	// 保留
+	DEF(FIOASYNC_simul),	// 保留
+	DEF(FIOASYNC_3),		// 保留
+	DEF(FIOASYNC_play_signal),
+	DEF(FIOASYNC_rec_signal),
 	DEF(AUDIO_WSEEK_1),
 	DEF(AUDIO_SETFD_ONLY),
 	DEF(AUDIO_SETFD_RDWR),

@@ -1298,6 +1298,8 @@ void test_rdwr_two(int, int);
 void test_mmap_mode(int, int);
 void test_poll_mode(int, int, int);
 void test_kqueue_mode(int, int, int);
+volatile int sigio_caught;
+void signal_FIOASYNC(int);
 
 #define DEF(name) \
 	void test__ ## name (void); \
@@ -3980,6 +3982,112 @@ DEF(ioctl_while_write)
 	XP_SYS_EQ(0, r);
 }
 
+volatile int sigio_caught;
+void
+signal_FIOASYNC(int signo)
+{
+	if (signo == SIGIO) {
+		sigio_caught = 1;
+		DPRINTF("  > %d: SIGIO caught\n", __LINE__);
+	}
+}
+
+/*
+ * Whether SIGIO is emitted on plyaback.
+ * XXX I don't understand the conditions that NetBSD7 emits signal.
+ */
+DEF(FIOASYNC_play_signal)
+{
+	struct audio_info ai;
+	int r;
+	int fd;
+	int val;
+	char *data;
+	int i;
+
+	TEST("FIOASYNC_play_signal");
+	if (hw_canplay() == 0) {
+		XP_SKIP("This test is only for playable device");
+		return;
+	}
+
+	signal(SIGIO, signal_FIOASYNC);
+	sigio_caught = 0;
+
+	fd = OPEN(devaudio, O_WRONLY);
+	REQUIRED_SYS_OK(fd);
+
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	REQUIRED_SYS_EQ(0, r);
+	REQUIRED_IF(ai.blocksize != 0);
+	data = (char *)malloc(ai.blocksize);
+	REQUIRED_IF(data != NULL);
+	memset(data, 0xff, ai.blocksize);
+
+	val = 1;
+	r = IOCTL(fd, FIOASYNC, &val, "on");
+	XP_SYS_EQ(0, r);
+
+	r = WRITE(fd, data, ai.blocksize);
+	XP_SYS_EQ(ai.blocksize, r);
+
+	/* Waits signal until 1sec */
+	for (i = 0; i < 100 && sigio_caught == 0; i++) {
+		usleep(10000);
+	}
+	XP_EQ(1, sigio_caught);
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+
+	free(data);
+	signal(SIGIO, SIG_IGN);
+	sigio_caught = 0;
+}
+
+/*
+ * Whether SIGIO is emitted on recording.
+ */
+DEF(FIOASYNC_rec_signal)
+{
+	char buf[10];
+	int r;
+	int fd;
+	int val;
+	int i;
+
+	TEST("FIOASYNC_rec_signal");
+	if (hw_canplay() == 0) {
+		XP_SKIP("This test is only for recordable device");
+		return;
+	}
+
+	signal(SIGIO, signal_FIOASYNC);
+	sigio_caught = 0;
+
+	fd = OPEN(devaudio, O_RDONLY);
+	REQUIRED_SYS_OK(fd);
+
+	val = 1;
+	r = IOCTL(fd, FIOASYNC, &val, "on");
+	XP_SYS_EQ(0, r);
+
+	r = READ(fd, buf, sizeof(buf));
+	XP_SYS_EQ(sizeof(buf), r);
+
+	/* Wait signal until 1sec */
+	for (i = 0; i < 100 && sigio_caught == 0; i++) {
+		usleep(10000);
+	}
+	XP_EQ(1, sigio_caught);
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+
+	signal(SIGIO, SIG_IGN);
+	sigio_caught = 0;
+}
+
 #define ENT(x) { #x, test__ ## x }
 struct testentry testtable[] = {
 	ENT(open_mode_RDONLY),
@@ -4066,4 +4174,6 @@ struct testentry testtable[] = {
 	ENT(kqueue_unpause),
 	ENT(kqueue_simul),
 	ENT(ioctl_while_write),
+	ENT(FIOASYNC_play_signal),
+	ENT(FIOASYNC_rec_signal),
 };
