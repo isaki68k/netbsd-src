@@ -384,6 +384,114 @@ atf_test_case AUDIO_GETINFO_eof
 AUDIO_GETINFO_eof_head() { }
 AUDIO_GETINFO_eof_body() { h_audio AUDIO_GETINFO_eof }
 
+atf_test_case AUDIO_SETINFO_mode_RDONLY_0
+AUDIO_SETINFO_mode_RDONLY_0_head() { }
+AUDIO_SETINFO_mode_RDONLY_0_body() { h_audio AUDIO_SETINFO_mode_RDONLY_0 }
+
+atf_test_case AUDIO_SETINFO_mode_RDONLY_1
+AUDIO_SETINFO_mode_RDONLY_1_head() { }
+AUDIO_SETINFO_mode_RDONLY_1_body() { h_audio AUDIO_SETINFO_mode_RDONLY_1 }
+
+atf_test_case AUDIO_SETINFO_mode_RDONLY_2
+AUDIO_SETINFO_mode_RDONLY_2_head() { }
+AUDIO_SETINFO_mode_RDONLY_2_body() { h_audio AUDIO_SETINFO_mode_RDONLY_2 }
+
+atf_test_case AUDIO_SETINFO_mode_RDONLY_3
+AUDIO_SETINFO_mode_RDONLY_3_head() { }
+AUDIO_SETINFO_mode_RDONLY_3_body() { h_audio AUDIO_SETINFO_mode_RDONLY_3 }
+
+atf_test_case AUDIO_SETINFO_mode_RDONLY_4
+AUDIO_SETINFO_mode_RDONLY_4_head() { }
+AUDIO_SETINFO_mode_RDONLY_4_body() { h_audio AUDIO_SETINFO_mode_RDONLY_4 }
+
+atf_test_case AUDIO_SETINFO_mode_RDONLY_5
+AUDIO_SETINFO_mode_RDONLY_5_head() { }
+AUDIO_SETINFO_mode_RDONLY_5_body() { h_audio AUDIO_SETINFO_mode_RDONLY_5 }
+
+atf_test_case AUDIO_SETINFO_mode_RDONLY_6
+AUDIO_SETINFO_mode_RDONLY_6_head() { }
+AUDIO_SETINFO_mode_RDONLY_6_body() { h_audio AUDIO_SETINFO_mode_RDONLY_6 }
+
+atf_test_case AUDIO_SETINFO_mode_RDONLY_7
+AUDIO_SETINFO_mode_RDONLY_7_head() { }
+AUDIO_SETINFO_mode_RDONLY_7_body() { h_audio AUDIO_SETINFO_mode_RDONLY_7 }
+
+atf_test_case AUDIO_SETINFO_mode_RDONLY_8
+AUDIO_SETINFO_mode_RDONLY_8_head() { }
+AUDIO_SETINFO_mode_RDONLY_8_body() { h_audio AUDIO_SETINFO_mode_RDONLY_8 }
+
+atf_test_case AUDIO_SETINFO_mode_WRONLY_0
+AUDIO_SETINFO_mode_WRONLY_0_head() { }
+AUDIO_SETINFO_mode_WRONLY_0_body() { h_audio AUDIO_SETINFO_mode_WRONLY_0 }
+
+atf_test_case AUDIO_SETINFO_mode_WRONLY_1
+AUDIO_SETINFO_mode_WRONLY_1_head() { }
+AUDIO_SETINFO_mode_WRONLY_1_body() { h_audio AUDIO_SETINFO_mode_WRONLY_1 }
+
+atf_test_case AUDIO_SETINFO_mode_WRONLY_2
+AUDIO_SETINFO_mode_WRONLY_2_head() { }
+AUDIO_SETINFO_mode_WRONLY_2_body() { h_audio AUDIO_SETINFO_mode_WRONLY_2 }
+
+atf_test_case AUDIO_SETINFO_mode_WRONLY_3
+AUDIO_SETINFO_mode_WRONLY_3_head() { }
+AUDIO_SETINFO_mode_WRONLY_3_body() { h_audio AUDIO_SETINFO_mode_WRONLY_3 }
+
+atf_test_case AUDIO_SETINFO_mode_WRONLY_4
+AUDIO_SETINFO_mode_WRONLY_4_head() { }
+AUDIO_SETINFO_mode_WRONLY_4_body() { h_audio AUDIO_SETINFO_mode_WRONLY_4 }
+
+atf_test_case AUDIO_SETINFO_mode_WRONLY_5
+AUDIO_SETINFO_mode_WRONLY_5_head() { }
+AUDIO_SETINFO_mode_WRONLY_5_body() { h_audio AUDIO_SETINFO_mode_WRONLY_5 }
+
+atf_test_case AUDIO_SETINFO_mode_WRONLY_6
+AUDIO_SETINFO_mode_WRONLY_6_head() { }
+AUDIO_SETINFO_mode_WRONLY_6_body() { h_audio AUDIO_SETINFO_mode_WRONLY_6 }
+
+atf_test_case AUDIO_SETINFO_mode_WRONLY_7
+AUDIO_SETINFO_mode_WRONLY_7_head() { }
+AUDIO_SETINFO_mode_WRONLY_7_body() { h_audio AUDIO_SETINFO_mode_WRONLY_7 }
+
+atf_test_case AUDIO_SETINFO_mode_WRONLY_8
+AUDIO_SETINFO_mode_WRONLY_8_head() { }
+AUDIO_SETINFO_mode_WRONLY_8_body() { h_audio AUDIO_SETINFO_mode_WRONLY_8 }
+
+atf_test_case AUDIO_SETINFO_mode_RDWR_0
+AUDIO_SETINFO_mode_RDWR_0_head() { }
+AUDIO_SETINFO_mode_RDWR_0_body() { h_audio AUDIO_SETINFO_mode_RDWR_0 }
+
+atf_test_case AUDIO_SETINFO_mode_RDWR_1
+AUDIO_SETINFO_mode_RDWR_1_head() { }
+AUDIO_SETINFO_mode_RDWR_1_body() { h_audio AUDIO_SETINFO_mode_RDWR_1 }
+
+atf_test_case AUDIO_SETINFO_mode_RDWR_2
+AUDIO_SETINFO_mode_RDWR_2_head() { }
+AUDIO_SETINFO_mode_RDWR_2_body() { h_audio AUDIO_SETINFO_mode_RDWR_2 }
+
+atf_test_case AUDIO_SETINFO_mode_RDWR_3
+AUDIO_SETINFO_mode_RDWR_3_head() { }
+AUDIO_SETINFO_mode_RDWR_3_body() { h_audio AUDIO_SETINFO_mode_RDWR_3 }
+
+atf_test_case AUDIO_SETINFO_mode_RDWR_4
+AUDIO_SETINFO_mode_RDWR_4_head() { }
+AUDIO_SETINFO_mode_RDWR_4_body() { h_audio AUDIO_SETINFO_mode_RDWR_4 }
+
+atf_test_case AUDIO_SETINFO_mode_RDWR_5
+AUDIO_SETINFO_mode_RDWR_5_head() { }
+AUDIO_SETINFO_mode_RDWR_5_body() { h_audio AUDIO_SETINFO_mode_RDWR_5 }
+
+atf_test_case AUDIO_SETINFO_mode_RDWR_6
+AUDIO_SETINFO_mode_RDWR_6_head() { }
+AUDIO_SETINFO_mode_RDWR_6_body() { h_audio AUDIO_SETINFO_mode_RDWR_6 }
+
+atf_test_case AUDIO_SETINFO_mode_RDWR_7
+AUDIO_SETINFO_mode_RDWR_7_head() { }
+AUDIO_SETINFO_mode_RDWR_7_body() { h_audio AUDIO_SETINFO_mode_RDWR_7 }
+
+atf_test_case AUDIO_SETINFO_mode_RDWR_8
+AUDIO_SETINFO_mode_RDWR_8_head() { }
+AUDIO_SETINFO_mode_RDWR_8_body() { h_audio AUDIO_SETINFO_mode_RDWR_8 }
+
 atf_init_test_cases() {
 	atf_add_test_case open_mode_RDONLY
 	atf_add_test_case open_mode_WRONLY
@@ -476,4 +584,31 @@ atf_init_test_cases() {
 	atf_add_test_case AUDIO_SETFD_WRONLY
 	atf_add_test_case AUDIO_SETFD_RDWR
 	atf_add_test_case AUDIO_GETINFO_eof
+	atf_add_test_case AUDIO_SETINFO_mode_RDONLY_0
+	atf_add_test_case AUDIO_SETINFO_mode_RDONLY_1
+	atf_add_test_case AUDIO_SETINFO_mode_RDONLY_2
+	atf_add_test_case AUDIO_SETINFO_mode_RDONLY_3
+	atf_add_test_case AUDIO_SETINFO_mode_RDONLY_4
+	atf_add_test_case AUDIO_SETINFO_mode_RDONLY_5
+	atf_add_test_case AUDIO_SETINFO_mode_RDONLY_6
+	atf_add_test_case AUDIO_SETINFO_mode_RDONLY_7
+	atf_add_test_case AUDIO_SETINFO_mode_RDONLY_8
+	atf_add_test_case AUDIO_SETINFO_mode_WRONLY_0
+	atf_add_test_case AUDIO_SETINFO_mode_WRONLY_1
+	atf_add_test_case AUDIO_SETINFO_mode_WRONLY_2
+	atf_add_test_case AUDIO_SETINFO_mode_WRONLY_3
+	atf_add_test_case AUDIO_SETINFO_mode_WRONLY_4
+	atf_add_test_case AUDIO_SETINFO_mode_WRONLY_5
+	atf_add_test_case AUDIO_SETINFO_mode_WRONLY_6
+	atf_add_test_case AUDIO_SETINFO_mode_WRONLY_7
+	atf_add_test_case AUDIO_SETINFO_mode_WRONLY_8
+	atf_add_test_case AUDIO_SETINFO_mode_RDWR_0
+	atf_add_test_case AUDIO_SETINFO_mode_RDWR_1
+	atf_add_test_case AUDIO_SETINFO_mode_RDWR_2
+	atf_add_test_case AUDIO_SETINFO_mode_RDWR_3
+	atf_add_test_case AUDIO_SETINFO_mode_RDWR_4
+	atf_add_test_case AUDIO_SETINFO_mode_RDWR_5
+	atf_add_test_case AUDIO_SETINFO_mode_RDWR_6
+	atf_add_test_case AUDIO_SETINFO_mode_RDWR_7
+	atf_add_test_case AUDIO_SETINFO_mode_RDWR_8
 }

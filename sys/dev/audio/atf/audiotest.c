@@ -1301,6 +1301,7 @@ void test_kqueue_mode(int, int, int);
 volatile int sigio_caught;
 void signal_FIOASYNC(int);
 void test_AUDIO_SETFD_xxONLY(int);
+void test_AUDIO_SETINFO_mode(int, int, int, int);
 
 #define DEF(name) \
 	void test__ ## name (void); \
@@ -4467,6 +4468,228 @@ DEF(AUDIO_GETINFO_eof)
 	XP_SYS_EQ(0, r);
 }
 
+/*
+ * Check relationship between openmode and mode set by AUDIO_SETINFO.
+ */
+void
+test_AUDIO_SETINFO_mode(int openmode, int index, int setmode, int expected)
+{
+	struct audio_info ai;
+	char buf[10];
+	int inimode;
+	int r;
+	int fd;
+	bool canwrite;
+	bool canread;
+
+	/* index was passed only for displaying here */
+	TEST("AUDIO_SETINFO_mode_%s_%d", openmode_str[openmode] + 2, index);
+
+	inimode = mode2aumode(openmode);
+
+	fd = OPEN(devaudio, openmode);
+	REQUIRED_SYS_OK(fd);
+
+	/* When just after opening */
+	memset(&ai, 0, sizeof(ai));
+	r = IOCTL(fd, AUDIO_GETINFO, &ai, "");
+	REQUIRED_SYS_EQ(0, r);
+	XP_EQ(inimode, ai.mode);
+	XP_EQ(mode2play(openmode), ai.play.open);
+	XP_EQ(mode2rec(openmode),  ai.record.open);
+
+	/*
+	 * On NetBSD7 and 8, both playback and recording buffer are always
+	 * allocated.  So I won't check it.
+	 * On NetBSD9, buffer should be allocated only if necessary.
+	 */
+	if (netbsd >= 9) {
+		XP_BUFFSIZE(mode2play(openmode), ai.play.buffer_size);
+		XP_BUFFSIZE(mode2rec(openmode), ai.record.buffer_size);
+	}
+
+	/* Change mode (and pause here) */
+	ai.mode = setmode;
+	ai.play.pause = 1;
+	ai.record.pause = 1;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "mode");
+	XP_SYS_EQ(0, r);
+	if (r == 0) {
+		r = IOCTL(fd, AUDIO_GETINFO, &ai, "");
+		XP_SYS_EQ(0, r);
+		XP_EQ(expected, ai.mode);
+
+		/* It seems to keep the initial openmode regardless of mode */
+		XP_EQ(mode2play(openmode), ai.play.open);
+		XP_EQ(mode2rec(openmode), ai.record.open);
+		/* buffers are always allocated on NetBSD 7 and 8 */
+		if (netbsd >= 9) {
+			XP_BUFFSIZE(mode2play(openmode), ai.play.buffer_size);
+			XP_BUFFSIZE(mode2rec(openmode), ai.record.buffer_size);
+		}
+	}
+
+	/*
+	 * On NetBSD7, whether writable depends openmode when open.
+	 * On NetBSD9, whether writable should depend inimode when open.
+	 * Modifying after open should not affect this mode.
+	 */
+	if (netbsd < 9) {
+		canwrite = (openmode != O_RDONLY);
+	} else {
+		canwrite = ((inimode & AUMODE_PLAY) != 0);
+	}
+	r = WRITE(fd, buf, 0);
+	if (canwrite) {
+		XP_SYS_EQ(0, r);
+	} else {
+		XP_SYS_NG(EBADF, r);
+	}
+
+	/*
+	 * On NetBSD7, whether readable depends openmode when open.
+	 * On NetBSD9, whether readable should depend inimode when open.
+	 * Modifying after open should not affect this mode.
+	 */
+	if (netbsd < 9) {
+		canread = (openmode != O_WRONLY);
+	} else {
+		canread = ((inimode & AUMODE_RECORD) != 0);
+	}
+	r = READ(fd, buf, 0);
+	if (canread) {
+		XP_SYS_EQ(0, r);
+	} else {
+		XP_SYS_NG(EBADF, r);
+	}
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+}
+/*
+ * XXX hmm... it's too complex
+ */
+/* shortcut for table form */
+#define P	AUMODE_PLAY
+#define A	AUMODE_PLAY_ALL
+#define R	AUMODE_RECORD
+struct setinfo_mode_t {
+	int setmode;	/* mode used in SETINFO */
+	int expmode7;	/* expected mode on NetBSD7 */
+	int expmode9;	/* expected mode on NetBSD9 */
+};
+/*
+ * The following tables show this operation on NetBSD7 is almost 'undefined'.
+ * In contrast, NetBSD9 never changes mode by AUDIO_SETINFO except
+ * AUMODE_PLAY_ALL.
+ *
+ * setmode == 0 and 8 are out of range and invalid input samples.
+ * But NetBSD7 seems to accept it as is.
+ */
+struct setinfo_mode_t table_SETINFO_mode_O_RDONLY[] = {
+	/* setmode	expmode7	expmode9 */
+	{     0,	     0,		 R    },
+	{     P,	     P,		 R    },
+	{   A  ,	   A  ,		 R    },
+	{   A|P,	   A|P,		 R    },
+	{ R    ,	 R    ,		 R    },
+	{ R|  P,	     P,		 R    },
+	{ R|A  ,	   A|P,		 R    },
+	{ R|A|P,	   A|P,		 R    },
+	{     8,	     8,		 R    },
+};
+struct setinfo_mode_t table_SETINFO_mode_O_WRONLY[] = {
+	/* setmode	expmode7	expmode9 */
+	{     0,	     0,		     P },
+	{     P,	     P,		     P },
+	{   A  ,	   A|P,		   A|P },
+	{   A|P,	   A|P,		   A|P },
+	{ R    ,	 R    ,		     P },
+	{ R|  P,	     P,		     P },
+	{ R|A  ,	   A|P,		   A|P },
+	{ R|A|P,	   A|P,		   A|P },
+	{     8,	     8,		     P },
+};
+#define f(openmode, index)	do {					\
+	struct setinfo_mode_t *table = table_SETINFO_mode_##openmode;	\
+	int setmode = table[index].setmode;				\
+	int expected = (netbsd < 9)					\
+	    ? table[index].expmode7					\
+	    : table[index].expmode9;					\
+	test_AUDIO_SETINFO_mode(openmode, index, setmode, expected);	\
+} while (0)
+DEF(AUDIO_SETINFO_mode_RDONLY_0) { f(O_RDONLY, 0); }
+DEF(AUDIO_SETINFO_mode_RDONLY_1) { f(O_RDONLY, 1); }
+DEF(AUDIO_SETINFO_mode_RDONLY_2) { f(O_RDONLY, 2); }
+DEF(AUDIO_SETINFO_mode_RDONLY_3) { f(O_RDONLY, 3); }
+DEF(AUDIO_SETINFO_mode_RDONLY_4) { f(O_RDONLY, 4); }
+DEF(AUDIO_SETINFO_mode_RDONLY_5) { f(O_RDONLY, 5); }
+DEF(AUDIO_SETINFO_mode_RDONLY_6) { f(O_RDONLY, 6); }
+DEF(AUDIO_SETINFO_mode_RDONLY_7) { f(O_RDONLY, 7); }
+DEF(AUDIO_SETINFO_mode_RDONLY_8) { f(O_RDONLY, 8); }
+DEF(AUDIO_SETINFO_mode_WRONLY_0) { f(O_WRONLY, 0); }
+DEF(AUDIO_SETINFO_mode_WRONLY_1) { f(O_WRONLY, 1); }
+DEF(AUDIO_SETINFO_mode_WRONLY_2) { f(O_WRONLY, 2); }
+DEF(AUDIO_SETINFO_mode_WRONLY_3) { f(O_WRONLY, 3); }
+DEF(AUDIO_SETINFO_mode_WRONLY_4) { f(O_WRONLY, 4); }
+DEF(AUDIO_SETINFO_mode_WRONLY_5) { f(O_WRONLY, 5); }
+DEF(AUDIO_SETINFO_mode_WRONLY_6) { f(O_WRONLY, 6); }
+DEF(AUDIO_SETINFO_mode_WRONLY_7) { f(O_WRONLY, 7); }
+DEF(AUDIO_SETINFO_mode_WRONLY_8) { f(O_WRONLY, 8); }
+#undef f
+/*
+ * The following tables also show that NetBSD7's behavior is almost
+ * 'undefined'.
+ */
+struct setinfo_mode_t table_SETINFO_mode_O_RDWR_full[] = {
+	/* setmode	expmode7	expmode9 */
+	{     0,	    0,		R|  P },
+	{     P,	    P,		R|  P },
+	{   A  ,	  A|P,		R|A|P },
+	{   A|P,	  A|P,		R|A|P },
+	{ R    ,	R    ,		R|  P },
+	{ R|  P,	R|  P,		R|  P },
+	{ R|A  ,	R|A|P,		R|A|P },
+	{ R|A|P,	R|A|P,		R|A|P },
+	{     8,	    8,		R|  P },
+};
+struct setinfo_mode_t table_SETINFO_mode_O_RDWR_half[] = {
+	/* setmode	expmode7	expmode9 */
+	{     0,	    0,		    P },
+	{     P,	    P,		    P },
+	{   A  ,	  A|P,		  A|P },
+	{   A|P,	  A|P,		  A|P },
+	{ R    ,	R    ,		    P },
+	{ R|  P,	    P,		    P },
+	{ R|A  ,	  A|P,		  A|P },
+	{ R|A|P,	  A|P,		  A|P },
+	{     8,	    8,		    P },
+};
+#define f(index)	do {						\
+	struct setinfo_mode_t *table = (hw_fulldup())			\
+	    ? table_SETINFO_mode_O_RDWR_full				\
+	    : table_SETINFO_mode_O_RDWR_half;				\
+	int setmode = table[index].setmode;				\
+	int expected = (netbsd < 9)					\
+	    ? table[index].expmode7					\
+	    : table[index].expmode9;					\
+	test_AUDIO_SETINFO_mode(O_RDWR, index, setmode, expected);	\
+} while (0)
+DEF(AUDIO_SETINFO_mode_RDWR_0) { f(0); }
+DEF(AUDIO_SETINFO_mode_RDWR_1) { f(1); }
+DEF(AUDIO_SETINFO_mode_RDWR_2) { f(2); }
+DEF(AUDIO_SETINFO_mode_RDWR_3) { f(3); }
+DEF(AUDIO_SETINFO_mode_RDWR_4) { f(4); }
+DEF(AUDIO_SETINFO_mode_RDWR_5) { f(5); }
+DEF(AUDIO_SETINFO_mode_RDWR_6) { f(6); }
+DEF(AUDIO_SETINFO_mode_RDWR_7) { f(7); }
+DEF(AUDIO_SETINFO_mode_RDWR_8) { f(8); }
+#undef f
+#undef P
+#undef A
+#undef R
+
+
 #define ENT(x) { #x, test__ ## x }
 struct testentry testtable[] = {
 	ENT(open_mode_RDONLY),
@@ -4560,4 +4783,31 @@ struct testentry testtable[] = {
 	ENT(AUDIO_SETFD_WRONLY),
 	ENT(AUDIO_SETFD_RDWR),
 	ENT(AUDIO_GETINFO_eof),
+	ENT(AUDIO_SETINFO_mode_RDONLY_0),
+	ENT(AUDIO_SETINFO_mode_RDONLY_1),
+	ENT(AUDIO_SETINFO_mode_RDONLY_2),
+	ENT(AUDIO_SETINFO_mode_RDONLY_3),
+	ENT(AUDIO_SETINFO_mode_RDONLY_4),
+	ENT(AUDIO_SETINFO_mode_RDONLY_5),
+	ENT(AUDIO_SETINFO_mode_RDONLY_6),
+	ENT(AUDIO_SETINFO_mode_RDONLY_7),
+	ENT(AUDIO_SETINFO_mode_RDONLY_8),
+	ENT(AUDIO_SETINFO_mode_WRONLY_0),
+	ENT(AUDIO_SETINFO_mode_WRONLY_1),
+	ENT(AUDIO_SETINFO_mode_WRONLY_2),
+	ENT(AUDIO_SETINFO_mode_WRONLY_3),
+	ENT(AUDIO_SETINFO_mode_WRONLY_4),
+	ENT(AUDIO_SETINFO_mode_WRONLY_5),
+	ENT(AUDIO_SETINFO_mode_WRONLY_6),
+	ENT(AUDIO_SETINFO_mode_WRONLY_7),
+	ENT(AUDIO_SETINFO_mode_WRONLY_8),
+	ENT(AUDIO_SETINFO_mode_RDWR_0),
+	ENT(AUDIO_SETINFO_mode_RDWR_1),
+	ENT(AUDIO_SETINFO_mode_RDWR_2),
+	ENT(AUDIO_SETINFO_mode_RDWR_3),
+	ENT(AUDIO_SETINFO_mode_RDWR_4),
+	ENT(AUDIO_SETINFO_mode_RDWR_5),
+	ENT(AUDIO_SETINFO_mode_RDWR_6),
+	ENT(AUDIO_SETINFO_mode_RDWR_7),
+	ENT(AUDIO_SETINFO_mode_RDWR_8),
 };
