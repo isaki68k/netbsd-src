@@ -1339,6 +1339,7 @@ void test_AUDIO_SETFD_xxONLY(int);
 void test_AUDIO_SETINFO_mode(int, int, int, int);
 void test_AUDIO_SETINFO_params_set(int, int, int);
 void test_AUDIO_SETINFO_pause(int, int, int);
+void test_AUDIO_ERROR(int);
 
 #define DEF(name) \
 	void test__ ## name (void); \
@@ -5057,6 +5058,41 @@ DEF(AUDIO_SETINFO_gain)
 	XP_SYS_EQ(0, r);
 }
 
+/*
+ * AUDIO_[PR]ERROR should be zero on the initial state even on non-existent
+ * track.
+ */
+void
+test_AUDIO_ERROR(int openmode)
+{
+	int fd;
+	int r;
+	int errors;
+
+	TEST("AUDIO_ERROR_%s", openmode_str[openmode] + 2);
+
+	fd = OPEN(devaudio, openmode);
+	REQUIRED_SYS_OK(fd);
+
+	/* Check PERROR */
+	errors = 0xdeadbeef;
+	r = IOCTL(fd, AUDIO_PERROR, &errors, "");
+	XP_SYS_EQ(0, r);
+	XP_EQ(0, errors);
+
+	/* Check RERROR */
+	errors = 0xdeadbeef;
+	r = IOCTL(fd, AUDIO_RERROR, &errors, "");
+	XP_SYS_EQ(0, r);
+	XP_EQ(0, errors);
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+}
+DEF(AUDIO_ERROR_RDONLY)	{ test_AUDIO_ERROR(O_RDONLY); }
+DEF(AUDIO_ERROR_WRONLY)	{ test_AUDIO_ERROR(O_WRONLY); }
+DEF(AUDIO_ERROR_RDWR)	{ test_AUDIO_ERROR(O_RDWR); }
+
 
 #define ENT(x) { #x, test__ ## x }
 struct testentry testtable[] = {
@@ -5200,4 +5236,7 @@ struct testentry testtable[] = {
 	ENT(AUDIO_SETINFO_pause_RDWR_2),
 	ENT(AUDIO_SETINFO_pause_RDWR_3),
 	ENT(AUDIO_SETINFO_gain),
+	ENT(AUDIO_ERROR_RDONLY),
+	ENT(AUDIO_ERROR_WRONLY),
+	ENT(AUDIO_ERROR_RDWR),
 };

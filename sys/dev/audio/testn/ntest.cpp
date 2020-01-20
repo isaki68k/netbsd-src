@@ -5876,16 +5876,16 @@ test_AUDIO_GETENC_2()
 	XP_SYS_EQ(0, r);
 }
 
-// AUDIO_PERROR を取得してみる。ゼロのはず。
-// 特に O_RDONLY の時の PERROR がどうなるか。
+// AUDIO_[PR]ERROR を取得してみる。ゼロのはず。
+// 特に O_RDONLY の時の PERROR、O_WRONLY の時の RERROR がどうなるか。
 void
-test_AUDIO_PERROR()
+test_AUDIO_ERROR()
 {
 	int fd;
 	int r;
 	int errors;
 
-	TEST("AUDIO_PERROR");
+	TEST("AUDIO_ERROR");
 
 	for (int mode = 0; mode <= 2; mode++) {
 		DESC("%s", openmodetable[mode]);
@@ -5897,36 +5897,11 @@ test_AUDIO_PERROR()
 		errors = 0xdeadbeef;
 		r = IOCTL(fd, AUDIO_PERROR, &errors, "");
 		XP_SYS_EQ(0, r);
-
 		XP_EQ(0, errors);
-
-		r = CLOSE(fd);
-		XP_SYS_EQ(0, r);
-	}
-}
-
-// AUDIO_RERROR を取得してみる。ゼロのはず。
-// 特に O_WRONLY の時の RERROR がどうなるか。
-void
-test_AUDIO_RERROR()
-{
-	int fd;
-	int r;
-	int errors;
-
-	TEST("AUDIO_RERROR");
-
-	for (int mode = 0; mode <= 2; mode++) {
-		DESC("%s", openmodetable[mode]);
-
-		fd = OPEN(devaudio, mode);
-		if (fd == -1)
-			err(1, "open");
 
 		errors = 0xdeadbeef;
 		r = IOCTL(fd, AUDIO_RERROR, &errors, "");
 		XP_SYS_EQ(0, r);
-
 		XP_EQ(0, errors);
 
 		r = CLOSE(fd);
@@ -7548,11 +7523,10 @@ struct testtable testtable[] = {
 	DEF(AUDIO_SETINFO_hiwat1),	// 保留
 	DEF(AUDIO_SETINFO_hiwat2),	// 保留
 	DEF(AUDIO_SETINFO_gain),
-	DEF(AUDIO_SETINFO_rollback),
-	DEF(AUDIO_GETENC_1),
-	DEF(AUDIO_GETENC_2),
-	DEF(AUDIO_PERROR),
-	DEF(AUDIO_RERROR),
+	DEF(AUDIO_SETINFO_rollback),	// 保留
+	DEF(AUDIO_GETENC_1),		// 保留 (encoding_* との関係は?)
+	DEF(AUDIO_GETENC_2),		// 保留
+	DEF(AUDIO_ERROR),
 	DEF(audioctl_open_1),
 	DEF(audioctl_open_2),
 	DEF(audioctl_open_3),
