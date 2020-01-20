@@ -1341,6 +1341,7 @@ void test_AUDIO_SETINFO_params_set(int, int, int);
 void test_AUDIO_SETINFO_pause(int, int, int);
 void getenc_make_compatible(int[][5], int, int);
 void xp_getenc(int[][5], int, int, int, struct audio_prinfo *);
+void getenc_check_encodings(int, int[][5]);
 void test_AUDIO_ERROR(int);
 void test_audioctl_open_1(int, int);
 void test_audioctl_open_2(int, int);
@@ -5065,6 +5066,8 @@ DEF(AUDIO_SETINFO_gain)
 	XP_SYS_EQ(0, r);
 }
 
+#define NENC	(AUDIO_ENCODING_AC3 + 1)
+#define NPREC	(5)
 /*
  * This fills compatible result.
  * This function is called from test_AUDIO_GETENC() below.
@@ -5155,20 +5158,59 @@ xp_getenc(int expected[][5], int enc, int j, int r, struct audio_prinfo *pr)
 	}
 }
 
+
+/*
+ * This function is called from test_AUDIO_GETENC below.
+ */
+void
+getenc_check_encodings(int openmode, int expected[][5])
+{
+	struct audio_info ai;
+	int fd;
+	int i, j;
+	int r;
+
+	fd = OPEN(devaudio, openmode);
+	REQUIRED_SYS_OK(fd);
+
+	for (i = 0; i < NENC; i++) {
+		for (j = 0; j < NPREC; j++) {
+			/* precisions are 4 and 8, 16, 24, 32 */
+			int prec = (j == 0) ? 4 : j * 8;
+
+			/*
+			 * AUDIO_GETENC has no way to know range of
+			 * supported channels and sample_rate.
+			 */
+			AUDIO_INITINFO(&ai);
+			ai.play.encoding = i;
+			ai.play.precision = prec;
+			ai.record.encoding = i;
+			ai.record.precision = prec;
+
+			r = IOCTL(fd, AUDIO_SETINFO, &ai, "%s:%d",
+			    encoding_names[i], prec);
+			if (mode2play(openmode))
+				xp_getenc(expected, i, j, r, &ai.play);
+			if (mode2rec(openmode))
+				xp_getenc(expected, i, j, r, &ai.record);
+		}
+	}
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+}
+
 /*
  * Check AUDIO_GETENC in regular range.
  * Check whether encoding parameters can be set.
  */
 DEF(AUDIO_GETENC_range)
 {
-	struct audio_info ai;
 	audio_encoding_t e0, *e = &e0;
 	int fd;
 	int r;
 	int idx;
-	int enccount = AUDIO_ENCODING_AC3 + 1;
-	int preccount = 5;
-	int expected[enccount][preccount];
+	int expected[NENC][NPREC];
 	int i, j;
 
 	TEST("AUDIO_GETENC_range");
@@ -5237,9 +5279,9 @@ DEF(AUDIO_GETENC_range)
 
 	/* For debug */
 	if (debug) {
-		for (i = 0; i < enccount; i++) {
+		for (i = 0; i < NENC; i++) {
 			printf("expected[%2d] %15s", i, encoding_names[i]);
-			for (j = 0; j < preccount; j++) {
+			for (j = 0; j < NPREC; j++) {
 				printf(" %d", expected[i][j]);
 			}
 			printf("\n");
@@ -5252,88 +5294,22 @@ DEF(AUDIO_GETENC_range)
 
 	if (hw_fulldup()) {
 		/* Test both R/W at once using single descriptor */
-		fd = OPEN(devaudio, O_RDWR);
-		REQUIRED_SYS_OK(fd);
-
-		for (i = 0; i < enccount; i++) {
-			for (j = 0; j < preccount; j++) {
-				/* precisions are 4 and 8, 16, 24, 32 */
-				int prec = (j == 0) ? 4 : j * 8;
-
-				AUDIO_INITINFO(&ai);
-				ai.play.encoding = i;
-				ai.play.precision = prec;
-				/*
-				 * AUDIO_GETENC has no way to know range of
-				 * supported channels and sample_rate.
-				 */
-				ai.record = ai.play;
-
-				/* Test both R/W at once */
-				r = IOCTL(fd, AUDIO_SETINFO, &ai, "%s:%d",
-				    encoding_names[i], prec);
-				xp_getenc(expected, i, j, r, &ai.play);
-				xp_getenc(expected, i, j, r, &ai.record);
-			}
-		}
-		r = CLOSE(fd);
-		XP_SYS_EQ(0, r);
+		getenc_check_encodings(O_RDWR, expected);
 	} else {
-		/* Test for recording */
-		if (hw_canrec()) {
-			fd = OPEN(devaudio, O_RDONLY);
-			REQUIRED_SYS_OK(fd);
-
-			for (i = 0; i < enccount; i++) {
-				for (j = 0; j < preccount; j++) {
-					/* precisions are 4 and 8, 16, 24, 32 */
-					int prec = (j == 0) ? 4 : j * 8;
-
-					AUDIO_INITINFO(&ai);
-					ai.record.encoding = i;
-					ai.record.precision = prec;
-					/*
-					 * AUDIO_GETENC has no way to know
-					 * range of supported channels and
-					 * sample_rate.
-					 */
-
-					r = IOCTL(fd, AUDIO_SETINFO, &ai,
-					    "%s:%d", encoding_names[i], prec);
-					xp_getenc(expected, i,j, r, &ai.record);
-				}
-			}
-			r = CLOSE(fd);
-			XP_SYS_EQ(0, r);
-		}
-
-		if (hw_canrec() && hw_canplay())
-			xxx_close_wait();
-
-		/* Test for playback */
+		/* Test playback and recording if available */
 		if (hw_canplay()) {
-			fd = OPEN(devaudio, O_WRONLY);
-			REQUIRED_SYS_OK(fd);
-
-			for (i = 0; i < enccount; i++) {
-				for (j = 0; j < preccount; j++) {
-					/* precisions are 4 and 8, 16, 24, 32 */
-					int prec = (j == 0) ? 4 : j * 8;
-
-					AUDIO_INITINFO(&ai);
-					ai.play.encoding = i;
-					ai.play.precision = prec;
-
-					r = IOCTL(fd, AUDIO_SETINFO, &ai,
-					    "%s:%d", encoding_names[i], prec);
-					xp_getenc(expected, i, j, r, &ai.play);
-				}
-			}
-			r = CLOSE(fd);
-			XP_SYS_EQ(0, r);
+			getenc_check_encodings(O_WRONLY, expected);
+		}
+		if (hw_canplay() && hw_canrec()) {
+			xxx_close_wait();
+		}
+		if (hw_canrec()) {
+			getenc_check_encodings(O_RDONLY, expected);
 		}
 	}
 }
+#undef NENC
+#undef NPREC
 
 /*
  * Check AUDIO_GETENC out of range.
