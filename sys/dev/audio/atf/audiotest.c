@@ -1339,7 +1339,7 @@ void test_AUDIO_SETFD_xxONLY(int);
 void test_AUDIO_SETINFO_mode(int, int, int, int);
 void test_AUDIO_SETINFO_params_set(int, int, int);
 void test_AUDIO_SETINFO_pause(int, int, int);
-void getenc_make_compatible(int[][5], int, int);
+void getenc_make_compatible(int[][5]);
 void xp_getenc(int[][5], int, int, int, struct audio_prinfo *);
 void getenc_check_encodings(int, int[][5]);
 void test_AUDIO_ERROR(int);
@@ -5069,61 +5069,77 @@ DEF(AUDIO_SETINFO_gain)
 #define NENC	(AUDIO_ENCODING_AC3 + 1)
 #define NPREC	(5)
 /*
- * This fills compatible result.
+ * This fills backward compatible result.
  * This function is called from test_AUDIO_GETENC() below.
  */
 void
-getenc_make_compatible(int expected[][5], int encoding, int precision)
+getenc_make_compatible(int e[][5])
 {
+	int p;
+
+#define SET(x) do {	\
+	if ((x) == 0)	\
+		x = 2;	\
+ } while (0)
+#define p4 (0)
+#define p8 (1)
+#define p16 (2)
+#define p24 (3)
+#define p32 (4)
 	/*
-	 * The mark 'XXX' means that encoding name and precision look
-	 * inconsistent (for historical reasons).
+	 * - Some encoding/precision pairs are obviously inconsistent
+	 *   (e.g., encoding=AUDIO_ENCODING_PCM8, precision=16) but
+	 *   it's due to historical reasons.
+	 * - It's incomplete for NetBSD7 and NetBSD8.  I don't really
+	 *   understand thier rule...  This is just memo, not specification.
 	 */
-	switch (precision) {
-	case 8:
-		if (encoding == AUDIO_ENCODING_SLINEAR) {
-			expected[AUDIO_ENCODING_SLINEAR_LE][1] = 2;
-			expected[AUDIO_ENCODING_SLINEAR_BE][1] = 2;
-		}
-		if (encoding == AUDIO_ENCODING_ULINEAR) {
-			expected[AUDIO_ENCODING_ULINEAR_LE][1] = 2;
-			expected[AUDIO_ENCODING_ULINEAR_BE][1] = 2;
-			expected[AUDIO_ENCODING_PCM8][1] = 2;	/* XXX */
-			expected[AUDIO_ENCODING_PCM16][1] = 2;	/* XXX */
-		}
-		break;
-	case 16:
-		if (encoding == AUDIO_ENCODING_SLINEAR_NE) {
-			expected[AUDIO_ENCODING_SLINEAR][2] = 2;
-			expected[AUDIO_ENCODING_PCM16][2] = 2;	/* XXX */
-		}
-		if (encoding == AUDIO_ENCODING_ULINEAR_NE) {
-			expected[AUDIO_ENCODING_ULINEAR][2] = 2;
-		}
-		break;
-#if defined(AUDIO_SUPPORT_LINEAR24)
-	case 24:
-		if (encoding == AUDIO_ENCODING_SLINEAR_NE) {
-			expected[AUDIO_ENCODING_SLINEAR][3] = 2;
-			expected[AUDIO_ENCODING_PCM16][3] = 2;	/* XXX */
-		}
-		if (encoding == AUDIO_ENCODING_ULINEAR_NE) {
-			expected[AUDIO_ENCODING_ULINEAR][3] = 2;
-		}
-		break;
-#endif
-	case 32:
-		if (encoding == AUDIO_ENCODING_SLINEAR_NE) {
-			expected[AUDIO_ENCODING_SLINEAR][4] = 2;
-			expected[AUDIO_ENCODING_PCM16][4] = 2;	/* XXX */
-		}
-		if (encoding == AUDIO_ENCODING_ULINEAR_NE) {
-			expected[AUDIO_ENCODING_ULINEAR][4] = 2;
-		}
-		break;
-	default:
-		XP_FAIL("precision=%d", precision);
+
+	if (e[AUDIO_ENCODING_SLINEAR][p8]) {
+		SET(e[AUDIO_ENCODING_SLINEAR_LE][p8]);
+		SET(e[AUDIO_ENCODING_SLINEAR_BE][p8]);
 	}
+	if (e[AUDIO_ENCODING_ULINEAR][p8]) {
+		SET(e[AUDIO_ENCODING_ULINEAR_LE][p8]);
+		SET(e[AUDIO_ENCODING_ULINEAR_BE][p8]);
+		SET(e[AUDIO_ENCODING_PCM8][p8]);
+		SET(e[AUDIO_ENCODING_PCM16][p8]);
+	}
+	for (p = p16; p <= p32; p++) {
+#if !defined(AUDIO_SUPPORT_LINEAR24)
+		if (p == p24)
+			continue;
+#endif
+		if (e[AUDIO_ENCODING_SLINEAR_NE][p]) {
+			SET(e[AUDIO_ENCODING_SLINEAR][p]);
+			SET(e[AUDIO_ENCODING_PCM16][p]);
+		}
+		if (e[AUDIO_ENCODING_ULINEAR_NE][p]) {
+			SET(e[AUDIO_ENCODING_ULINEAR][p]);
+		}
+	}
+
+	if (netbsd < 9) {
+		if (e[AUDIO_ENCODING_SLINEAR_LE][p16] ||
+		    e[AUDIO_ENCODING_SLINEAR_BE][p16] ||
+		    e[AUDIO_ENCODING_ULINEAR_LE][p16] ||
+		    e[AUDIO_ENCODING_ULINEAR_BE][p16])
+		{
+			SET(e[AUDIO_ENCODING_PCM8][p8]);
+			SET(e[AUDIO_ENCODING_PCM16][p8]);
+			SET(e[AUDIO_ENCODING_SLINEAR_LE][p8]);
+			SET(e[AUDIO_ENCODING_SLINEAR_BE][p8]);
+			SET(e[AUDIO_ENCODING_ULINEAR_LE][p8]);
+			SET(e[AUDIO_ENCODING_ULINEAR_BE][p8]);
+			SET(e[AUDIO_ENCODING_SLINEAR][p8]);
+			SET(e[AUDIO_ENCODING_ULINEAR][p8]);
+		}
+	}
+#undef SET
+#undef p4
+#undef p8
+#undef p16
+#undef p24
+#undef p32
 }
 
 /*
@@ -5142,22 +5158,9 @@ xp_getenc(int expected[][5], int enc, int j, int r, struct audio_prinfo *pr)
 		XP_EQ(prec, pr->precision);
 	} else {
 		/* expect to fail */
-
-		/* NetBSD8 may fail */
-
-		/* These succeeds but are they intended? */
-		if ((prec == 8 && enc == AUDIO_ENCODING_PCM16) ||
-		    (prec == 8 && enc == AUDIO_ENCODING_SLINEAR) ||
-		    (prec == 8 && enc == AUDIO_ENCODING_ULINEAR))
-		{
-			if (r == 0)
-				XP_FAIL("loose compatibility?");
-		} else {
-			XP_SYS_NG(EINVAL, r);
-		}
+		XP_SYS_NG(EINVAL, r);
 	}
 }
-
 
 /*
  * This function is called from test_AUDIO_GETENC below.
@@ -5249,25 +5252,24 @@ DEF(AUDIO_GETENC_range)
 			XP_FAIL("e->encoding %d", e->encoding);
 		}
 
-		switch (e->precision) {
-		case 4:
-		case 8:
-		case 16:
-		case 24:
-		case 32:
-			break;
-		default:
+		if (e->precision != 4 &&
+		    e->precision != 8 &&
+		    e->precision != 16 &&
+		    e->precision != 24 &&
+		    e->precision != 32)
+		{
 			XP_FAIL("e->precision %d", e->precision);
-			break;
 		}
 		/* Other bits should not be set */
 		XP_EQ(0, (e->flags & ~AUDIO_ENCODINGFLAG_EMULATED));
 
 		expected[e->encoding][e->precision / 8] = 1;
-
-		/* Fill compatible cells */
-		getenc_make_compatible(expected, e->encoding, e->precision);
+		DPRINTF("  > encoding=%s precision=%d\n",
+		    encoding_names[e->encoding], e->precision);
 	}
+
+	/* Fill backward compatible cells */
+	getenc_make_compatible(expected);
 
 	/* When error has occured, the next index should also occur error */
 	e->index = idx + 1;
