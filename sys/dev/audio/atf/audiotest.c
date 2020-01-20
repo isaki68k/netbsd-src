@@ -5276,54 +5276,63 @@ DEF(AUDIO_GETENC_range)
 				xp_getenc(expected, i, j, r, &ai.record);
 			}
 		}
-	} else {
-		/* Test for RD at first */
-		fd = OPEN(devaudio, O_RDONLY);
-		REQUIRED_SYS_OK(fd);
-
-		for (i = 0; i < enccount; i++) {
-			for (j = 0; j < preccount; j++) {
-				/* precisions are 4 and 8, 16, 24, 32 */
-				int prec = (j == 0) ? 4 : j * 8;
-
-				AUDIO_INITINFO(&ai);
-				ai.record.encoding = i;
-				ai.record.precision = prec;
-				/*
-				 * AUDIO_GETENC has no way to know range of
-				 * supported channels and sample_rate.
-				 */
-
-				r = IOCTL(fd, AUDIO_SETINFO, &ai, "%s:%d",
-				    encoding_names[i], prec);
-				xp_getenc(expected, i, j, r, &ai.record);
-			}
-		}
 		r = CLOSE(fd);
 		XP_SYS_EQ(0, r);
-		xxx_close_wait();
+	} else {
+		/* Test for recording */
+		if (hw_canrec()) {
+			fd = OPEN(devaudio, O_RDONLY);
+			REQUIRED_SYS_OK(fd);
 
-		/* Then test WR */
-		fd = OPEN(devaudio, O_WRONLY);
-		REQUIRED_SYS_OK(fd);
+			for (i = 0; i < enccount; i++) {
+				for (j = 0; j < preccount; j++) {
+					/* precisions are 4 and 8, 16, 24, 32 */
+					int prec = (j == 0) ? 4 : j * 8;
 
-		for (i = 0; i < enccount; i++) {
-			for (j = 0; j < preccount; j++) {
-				/* precisions are 4 and 8, 16, 24, 32 */
-				int prec = (j == 0) ? 4 : j * 8;
+					AUDIO_INITINFO(&ai);
+					ai.record.encoding = i;
+					ai.record.precision = prec;
+					/*
+					 * AUDIO_GETENC has no way to know
+					 * range of supported channels and
+					 * sample_rate.
+					 */
 
-				AUDIO_INITINFO(&ai);
-				ai.play.encoding = i;
-				ai.play.precision = prec;
-
-				r = IOCTL(fd, AUDIO_SETINFO, &ai, "%s:%d",
-				    encoding_names[i], prec);
-				xp_getenc(expected, i, j, r, &ai.play);
+					r = IOCTL(fd, AUDIO_SETINFO, &ai,
+					    "%s:%d", encoding_names[i], prec);
+					xp_getenc(expected, i,j, r, &ai.record);
+				}
 			}
+			r = CLOSE(fd);
+			XP_SYS_EQ(0, r);
+		}
+
+		if (hw_canrec() && hw_canplay())
+			xxx_close_wait();
+
+		/* Test for playback */
+		if (hw_canplay()) {
+			fd = OPEN(devaudio, O_WRONLY);
+			REQUIRED_SYS_OK(fd);
+
+			for (i = 0; i < enccount; i++) {
+				for (j = 0; j < preccount; j++) {
+					/* precisions are 4 and 8, 16, 24, 32 */
+					int prec = (j == 0) ? 4 : j * 8;
+
+					AUDIO_INITINFO(&ai);
+					ai.play.encoding = i;
+					ai.play.precision = prec;
+
+					r = IOCTL(fd, AUDIO_SETINFO, &ai,
+					    "%s:%d", encoding_names[i], prec);
+					xp_getenc(expected, i, j, r, &ai.play);
+				}
+			}
+			r = CLOSE(fd);
+			XP_SYS_EQ(0, r);
 		}
 	}
-	r = CLOSE(fd);
-	XP_SYS_EQ(0, r);
 }
 
 /*
