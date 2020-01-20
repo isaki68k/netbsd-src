@@ -1340,6 +1340,10 @@ void test_AUDIO_SETINFO_mode(int, int, int, int);
 void test_AUDIO_SETINFO_params_set(int, int, int);
 void test_AUDIO_SETINFO_pause(int, int, int);
 void test_AUDIO_ERROR(int);
+void test_audioctl_open_1(int, int);
+void test_audioctl_open_2(int, int);
+void try_audioctl_open_multiuser(bool, const char *, const char *);
+void test_audioctl_open_multiuser(bool, const char *, const char *);
 
 #define DEF(name) \
 	void test__ ## name (void); \
@@ -1911,7 +1915,7 @@ DEF(open_simul_RDWR_WRONLY)	{ test_open_simul(O_RDWR, O_WRONLY);	}
 DEF(open_simul_RDWR_RDWR)	{ test_open_simul(O_RDWR, O_RDWR);	}
 
 /*
- * Multiuser open.
+ * /dev/audio can be opened by other user who opens /dev/audio.
  */
 void
 test_open_multiuser(int multiuser)
@@ -5093,6 +5097,229 @@ DEF(AUDIO_ERROR_RDONLY)	{ test_AUDIO_ERROR(O_RDONLY); }
 DEF(AUDIO_ERROR_WRONLY)	{ test_AUDIO_ERROR(O_WRONLY); }
 DEF(AUDIO_ERROR_RDWR)	{ test_AUDIO_ERROR(O_RDWR); }
 
+/*
+ * /dev/audioctl can always be opened while /dev/audio is open.
+ */
+void
+test_audioctl_open_1(int fmode, int cmode)
+{
+	int fd;
+	int ctl;
+	int r;
+
+	TEST("audioctl_open_1_%s_%s",
+	    openmode_str[fmode] + 2, openmode_str[cmode] + 2);
+	if (hw_canplay() == 0 && fmode == O_WRONLY) {
+		XP_SKIP("This test is for playable device");
+		return;
+	}
+	if (hw_canrec() == 0 && fmode == O_RDONLY) {
+		XP_SKIP("This test is for recordable device");
+		return;
+	}
+
+	fd = OPEN(devaudio, fmode);
+	REQUIRED_SYS_OK(fd);
+
+	ctl = OPEN(devaudioctl, cmode);
+	XP_SYS_OK(ctl);
+
+	r = CLOSE(ctl);
+	XP_SYS_EQ(0, r);
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+}
+DEF(audioctl_open_1_RDONLY_RDONLY) { test_audioctl_open_1(O_RDONLY, O_RDONLY); }
+DEF(audioctl_open_1_RDONLY_RWONLY) { test_audioctl_open_1(O_RDONLY, O_WRONLY); }
+DEF(audioctl_open_1_RDONLY_RDWR)   { test_audioctl_open_1(O_RDONLY, O_RDWR); }
+DEF(audioctl_open_1_WRONLY_RDONLY) { test_audioctl_open_1(O_WRONLY, O_RDONLY); }
+DEF(audioctl_open_1_WRONLY_RWONLY) { test_audioctl_open_1(O_WRONLY, O_WRONLY); }
+DEF(audioctl_open_1_WRONLY_RDWR)   { test_audioctl_open_1(O_WRONLY, O_RDWR); }
+DEF(audioctl_open_1_RDWR_RDONLY)   { test_audioctl_open_1(O_RDWR, O_RDONLY); }
+DEF(audioctl_open_1_RDWR_RWONLY)   { test_audioctl_open_1(O_RDWR, O_WRONLY); }
+DEF(audioctl_open_1_RDWR_RDWR)     { test_audioctl_open_1(O_RDWR, O_RDWR); }
+
+/*
+ * /dev/audio can always be opened while /dev/audioctl is open.
+ */
+void
+test_audioctl_open_2(int fmode, int cmode)
+{
+	int fd;
+	int ctl;
+	int r;
+
+	TEST("audioctl_open_2_%s_%s",
+	    openmode_str[fmode] + 2, openmode_str[cmode] + 2);
+	if (hw_canplay() == 0 && fmode == O_WRONLY) {
+		XP_SKIP("This test is for playable device");
+		return;
+	}
+	if (hw_canrec() == 0 && fmode == O_RDONLY) {
+		XP_SKIP("This test is for recordable device");
+		return;
+	}
+
+	ctl = OPEN(devaudioctl, cmode);
+	REQUIRED_SYS_OK(ctl);
+
+	fd = OPEN(devaudio, fmode);
+	XP_SYS_OK(fd);
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+
+	r = CLOSE(ctl);
+	XP_SYS_EQ(0, r);
+}
+DEF(audioctl_open_2_RDONLY_RDONLY) { test_audioctl_open_2(O_RDONLY, O_RDONLY); }
+DEF(audioctl_open_2_RDONLY_RWONLY) { test_audioctl_open_2(O_RDONLY, O_WRONLY); }
+DEF(audioctl_open_2_RDONLY_RDWR)   { test_audioctl_open_2(O_RDONLY, O_RDWR); }
+DEF(audioctl_open_2_WRONLY_RDONLY) { test_audioctl_open_2(O_WRONLY, O_RDONLY); }
+DEF(audioctl_open_2_WRONLY_RWONLY) { test_audioctl_open_2(O_WRONLY, O_WRONLY); }
+DEF(audioctl_open_2_WRONLY_RDWR)   { test_audioctl_open_2(O_WRONLY, O_RDWR); }
+DEF(audioctl_open_2_RDWR_RDONLY)   { test_audioctl_open_2(O_RDWR, O_RDONLY); }
+DEF(audioctl_open_2_RDWR_RWONLY)   { test_audioctl_open_2(O_RDWR, O_WRONLY); }
+DEF(audioctl_open_2_RDWR_RDWR)     { test_audioctl_open_2(O_RDWR, O_RDWR); }
+
+/*
+ * Open multiple /dev/audioctl.
+ */
+DEF(audioctl_open_simul)
+{
+	int ctl0;
+	int ctl1;
+	int r;
+
+	TEST("audioctl_open_simul");
+
+	ctl0 = OPEN(devaudioctl, O_RDWR);
+	REQUIRED_SYS_OK(ctl0);
+
+	ctl1 = OPEN(devaudioctl, O_RDWR);
+	XP_SYS_OK(ctl1);
+
+	r = CLOSE(ctl0);
+	XP_SYS_EQ(0, r);
+
+	r = CLOSE(ctl1);
+	XP_SYS_EQ(0, r);
+}
+
+/*
+ * /dev/audioctl can be opened by other user who opens /dev/audioctl.
+ * /dev/audioctl can be opened by other user who opens /dev/audio.
+ * /dev/audio    can be opened by other user who opens /dev/audioct.
+ */
+void
+try_audioctl_open_multiuser(bool multiuser, const char *dev1, const char *dev2)
+{
+	int fd1;
+	int fd2;
+	int r;
+	uid_t ouid;
+
+	/*
+	 * At first, open dev1 as root.
+	 * And then open dev2 as unprivileged user.
+	 */
+
+	fd1 = OPEN(dev1, O_RDWR);
+	REQUIRED_SYS_OK(fd1);
+
+	ouid = GETUID();
+	r = SETEUID(1);
+	REQUIRED_SYS_EQ(0, r);
+
+	fd2 = OPEN(dev2, O_RDWR);
+	XP_SYS_OK(fd2);
+
+	/* Close */
+	r = CLOSE(fd2);
+	XP_SYS_EQ(0, r);
+
+	r = SETEUID(ouid);
+	REQUIRED_SYS_EQ(0, r);
+
+	r = CLOSE(fd1);
+	XP_SYS_EQ(0, r);
+}
+/*
+ * This is a wrapper for audioctl_open_multiuser.
+ * XXX XP_* macros is not compatible with goto-on-error, need try-catch...
+ */
+void
+test_audioctl_open_multiuser(bool multiuser, const char *dev1, const char *dev2)
+{
+	char mibname[32];
+	bool newval;
+	bool oldval;
+	size_t oldlen;
+	int r;
+
+	if (netbsd < 8 && multiuser == 1) {
+		XP_SKIP("multiuser is not supported");
+		return;
+	}
+	if (geteuid() != 0) {
+		XP_SKIP("This test must be priviledged user");
+		return;
+	}
+
+	/* Set multiuser mode (and save the previous one) */
+	if (netbsd > 7) {
+		/* NetBSD8 has no way to determine devicename */
+		snprintf(mibname, sizeof(mibname), "hw.%s.multiuser",
+		    devicename);
+		newval = multiuser;
+		oldlen = sizeof(oldval);
+		r = SYSCTLBYNAME(mibname, &oldval, &oldlen, &newval,
+		    sizeof(newval));
+		REQUIRED_SYS_EQ(0, r);
+
+		/* Check */
+		r = SYSCTLBYNAME(mibname, &newval, &oldlen, NULL, 0);
+		REQUIRED_SYS_EQ(0, r);
+		REQUIRED_EQ(multiuser, newval);
+	}
+
+	/* Do test */
+	try_audioctl_open_multiuser(multiuser, dev1, dev2);
+
+	/* Restore if necessary */
+	if (netbsd > 7) {
+		if (oldval != multiuser) {
+			r = SYSCTLBYNAME(mibname, &oldval, &oldlen, NULL, 0);
+			XP_SYS_EQ(0, r);
+		}
+	}
+}
+DEF(audioctl_open_multiuser0_audio1) {
+	TEST("audioctl_open_multiuser0_audio1");
+	test_audioctl_open_multiuser(0, devaudio, devaudioctl);
+}
+DEF(audioctl_open_multiuser1_audio1) {
+	TEST("audioctl_open_multiuser1_audio1");
+	test_audioctl_open_multiuser(1, devaudio, devaudioctl);
+}
+DEF(audioctl_open_multiuser0_audio2) {
+	TEST("audioctl_open_multiuser0_audio2");
+	test_audioctl_open_multiuser(0, devaudioctl, devaudio);
+}
+DEF(audioctl_open_multiuser1_audio2) {
+	TEST("audioctl_open_multiuser1_audio2");
+	test_audioctl_open_multiuser(1, devaudioctl, devaudio);
+}
+DEF(audioctl_open_multiuser0_audioctl) {
+	TEST("audioctl_open_multiuser0_audioctl");
+	test_audioctl_open_multiuser(0, devaudioctl, devaudioctl);
+}
+DEF(audioctl_open_multiuser1_audioctl) {
+	TEST("audioctl_open_multiuser1_audioctl");
+	test_audioctl_open_multiuser(1, devaudioctl, devaudioctl);
+}
+
 
 #define ENT(x) { #x, test__ ## x }
 struct testentry testtable[] = {
@@ -5239,4 +5466,29 @@ struct testentry testtable[] = {
 	ENT(AUDIO_ERROR_RDONLY),
 	ENT(AUDIO_ERROR_WRONLY),
 	ENT(AUDIO_ERROR_RDWR),
+	ENT(audioctl_open_1_RDONLY_RDONLY),
+	ENT(audioctl_open_1_RDONLY_RWONLY),
+	ENT(audioctl_open_1_RDONLY_RDWR),
+	ENT(audioctl_open_1_WRONLY_RDONLY),
+	ENT(audioctl_open_1_WRONLY_RWONLY),
+	ENT(audioctl_open_1_WRONLY_RDWR),
+	ENT(audioctl_open_1_RDWR_RDONLY),
+	ENT(audioctl_open_1_RDWR_RWONLY),
+	ENT(audioctl_open_1_RDWR_RDWR),
+	ENT(audioctl_open_2_RDONLY_RDONLY),
+	ENT(audioctl_open_2_RDONLY_RWONLY),
+	ENT(audioctl_open_2_RDONLY_RDWR),
+	ENT(audioctl_open_2_WRONLY_RDONLY),
+	ENT(audioctl_open_2_WRONLY_RWONLY),
+	ENT(audioctl_open_2_WRONLY_RDWR),
+	ENT(audioctl_open_2_RDWR_RDONLY),
+	ENT(audioctl_open_2_RDWR_RWONLY),
+	ENT(audioctl_open_2_RDWR_RDWR),
+	ENT(audioctl_open_simul),
+	ENT(audioctl_open_multiuser0_audio1),
+	ENT(audioctl_open_multiuser1_audio1),
+	ENT(audioctl_open_multiuser0_audio2),
+	ENT(audioctl_open_multiuser1_audio2),
+	ENT(audioctl_open_multiuser0_audioctl),
+	ENT(audioctl_open_multiuser1_audioctl),
 };

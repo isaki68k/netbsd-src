@@ -592,6 +592,106 @@ atf_test_case AUDIO_ERROR_RDWR
 AUDIO_ERROR_RDWR_head() { }
 AUDIO_ERROR_RDWR_body() { h_audio AUDIO_ERROR_RDWR }
 
+atf_test_case audioctl_open_1_RDONLY_RDONLY
+audioctl_open_1_RDONLY_RDONLY_head() { }
+audioctl_open_1_RDONLY_RDONLY_body() { h_audio audioctl_open_1_RDONLY_RDONLY }
+
+atf_test_case audioctl_open_1_RDONLY_RWONLY
+audioctl_open_1_RDONLY_RWONLY_head() { }
+audioctl_open_1_RDONLY_RWONLY_body() { h_audio audioctl_open_1_RDONLY_RWONLY }
+
+atf_test_case audioctl_open_1_RDONLY_RDWR
+audioctl_open_1_RDONLY_RDWR_head() { }
+audioctl_open_1_RDONLY_RDWR_body() { h_audio audioctl_open_1_RDONLY_RDWR }
+
+atf_test_case audioctl_open_1_WRONLY_RDONLY
+audioctl_open_1_WRONLY_RDONLY_head() { }
+audioctl_open_1_WRONLY_RDONLY_body() { h_audio audioctl_open_1_WRONLY_RDONLY }
+
+atf_test_case audioctl_open_1_WRONLY_RWONLY
+audioctl_open_1_WRONLY_RWONLY_head() { }
+audioctl_open_1_WRONLY_RWONLY_body() { h_audio audioctl_open_1_WRONLY_RWONLY }
+
+atf_test_case audioctl_open_1_WRONLY_RDWR
+audioctl_open_1_WRONLY_RDWR_head() { }
+audioctl_open_1_WRONLY_RDWR_body() { h_audio audioctl_open_1_WRONLY_RDWR }
+
+atf_test_case audioctl_open_1_RDWR_RDONLY
+audioctl_open_1_RDWR_RDONLY_head() { }
+audioctl_open_1_RDWR_RDONLY_body() { h_audio audioctl_open_1_RDWR_RDONLY }
+
+atf_test_case audioctl_open_1_RDWR_RWONLY
+audioctl_open_1_RDWR_RWONLY_head() { }
+audioctl_open_1_RDWR_RWONLY_body() { h_audio audioctl_open_1_RDWR_RWONLY }
+
+atf_test_case audioctl_open_1_RDWR_RDWR
+audioctl_open_1_RDWR_RDWR_head() { }
+audioctl_open_1_RDWR_RDWR_body() { h_audio audioctl_open_1_RDWR_RDWR }
+
+atf_test_case audioctl_open_2_RDONLY_RDONLY
+audioctl_open_2_RDONLY_RDONLY_head() { }
+audioctl_open_2_RDONLY_RDONLY_body() { h_audio audioctl_open_2_RDONLY_RDONLY }
+
+atf_test_case audioctl_open_2_RDONLY_RWONLY
+audioctl_open_2_RDONLY_RWONLY_head() { }
+audioctl_open_2_RDONLY_RWONLY_body() { h_audio audioctl_open_2_RDONLY_RWONLY }
+
+atf_test_case audioctl_open_2_RDONLY_RDWR
+audioctl_open_2_RDONLY_RDWR_head() { }
+audioctl_open_2_RDONLY_RDWR_body() { h_audio audioctl_open_2_RDONLY_RDWR }
+
+atf_test_case audioctl_open_2_WRONLY_RDONLY
+audioctl_open_2_WRONLY_RDONLY_head() { }
+audioctl_open_2_WRONLY_RDONLY_body() { h_audio audioctl_open_2_WRONLY_RDONLY }
+
+atf_test_case audioctl_open_2_WRONLY_RWONLY
+audioctl_open_2_WRONLY_RWONLY_head() { }
+audioctl_open_2_WRONLY_RWONLY_body() { h_audio audioctl_open_2_WRONLY_RWONLY }
+
+atf_test_case audioctl_open_2_WRONLY_RDWR
+audioctl_open_2_WRONLY_RDWR_head() { }
+audioctl_open_2_WRONLY_RDWR_body() { h_audio audioctl_open_2_WRONLY_RDWR }
+
+atf_test_case audioctl_open_2_RDWR_RDONLY
+audioctl_open_2_RDWR_RDONLY_head() { }
+audioctl_open_2_RDWR_RDONLY_body() { h_audio audioctl_open_2_RDWR_RDONLY }
+
+atf_test_case audioctl_open_2_RDWR_RWONLY
+audioctl_open_2_RDWR_RWONLY_head() { }
+audioctl_open_2_RDWR_RWONLY_body() { h_audio audioctl_open_2_RDWR_RWONLY }
+
+atf_test_case audioctl_open_2_RDWR_RDWR
+audioctl_open_2_RDWR_RDWR_head() { }
+audioctl_open_2_RDWR_RDWR_body() { h_audio audioctl_open_2_RDWR_RDWR }
+
+atf_test_case audioctl_open_simul
+audioctl_open_simul_head() { }
+audioctl_open_simul_body() { h_audio audioctl_open_simul }
+
+atf_test_case audioctl_open_multiuser0_audio1
+audioctl_open_multiuser0_audio1_head() { }
+audioctl_open_multiuser0_audio1_body() { h_audio audioctl_open_multiuser0_audio1 }
+
+atf_test_case audioctl_open_multiuser1_audio1
+audioctl_open_multiuser1_audio1_head() { }
+audioctl_open_multiuser1_audio1_body() { h_audio audioctl_open_multiuser1_audio1 }
+
+atf_test_case audioctl_open_multiuser0_audio2
+audioctl_open_multiuser0_audio2_head() { }
+audioctl_open_multiuser0_audio2_body() { h_audio audioctl_open_multiuser0_audio2 }
+
+atf_test_case audioctl_open_multiuser1_audio2
+audioctl_open_multiuser1_audio2_head() { }
+audioctl_open_multiuser1_audio2_body() { h_audio audioctl_open_multiuser1_audio2 }
+
+atf_test_case audioctl_open_multiuser0_audioctl
+audioctl_open_multiuser0_audioctl_head() { }
+audioctl_open_multiuser0_audioctl_body() { h_audio audioctl_open_multiuser0_audioctl }
+
+atf_test_case audioctl_open_multiuser1_audioctl
+audioctl_open_multiuser1_audioctl_head() { }
+audioctl_open_multiuser1_audioctl_body() { h_audio audioctl_open_multiuser1_audioctl }
+
 atf_init_test_cases() {
 	atf_add_test_case open_mode_RDONLY
 	atf_add_test_case open_mode_WRONLY
@@ -736,4 +836,29 @@ atf_init_test_cases() {
 	atf_add_test_case AUDIO_ERROR_RDONLY
 	atf_add_test_case AUDIO_ERROR_WRONLY
 	atf_add_test_case AUDIO_ERROR_RDWR
+	atf_add_test_case audioctl_open_1_RDONLY_RDONLY
+	atf_add_test_case audioctl_open_1_RDONLY_RWONLY
+	atf_add_test_case audioctl_open_1_RDONLY_RDWR
+	atf_add_test_case audioctl_open_1_WRONLY_RDONLY
+	atf_add_test_case audioctl_open_1_WRONLY_RWONLY
+	atf_add_test_case audioctl_open_1_WRONLY_RDWR
+	atf_add_test_case audioctl_open_1_RDWR_RDONLY
+	atf_add_test_case audioctl_open_1_RDWR_RWONLY
+	atf_add_test_case audioctl_open_1_RDWR_RDWR
+	atf_add_test_case audioctl_open_2_RDONLY_RDONLY
+	atf_add_test_case audioctl_open_2_RDONLY_RWONLY
+	atf_add_test_case audioctl_open_2_RDONLY_RDWR
+	atf_add_test_case audioctl_open_2_WRONLY_RDONLY
+	atf_add_test_case audioctl_open_2_WRONLY_RWONLY
+	atf_add_test_case audioctl_open_2_WRONLY_RDWR
+	atf_add_test_case audioctl_open_2_RDWR_RDONLY
+	atf_add_test_case audioctl_open_2_RDWR_RWONLY
+	atf_add_test_case audioctl_open_2_RDWR_RDWR
+	atf_add_test_case audioctl_open_simul
+	atf_add_test_case audioctl_open_multiuser0_audio1
+	atf_add_test_case audioctl_open_multiuser1_audio1
+	atf_add_test_case audioctl_open_multiuser0_audio2
+	atf_add_test_case audioctl_open_multiuser1_audio2
+	atf_add_test_case audioctl_open_multiuser0_audioctl
+	atf_add_test_case audioctl_open_multiuser1_audioctl
 }

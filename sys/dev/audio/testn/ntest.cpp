@@ -5982,13 +5982,13 @@ test_audioctl_open_2()
 
 // audioctl の多重オープン
 void
-test_audioctl_open_3()
+test_audioctl_open_simul()
 {
 	int ctl0;
 	int ctl1;
 	int r;
 
-	TEST("audioctl_open_3");
+	TEST("audioctl_open_simul");
 
 	ctl0 = OPEN(devaudioctl, O_RDWR);
 	if (ctl0 == -1)
@@ -7529,7 +7529,7 @@ struct testtable testtable[] = {
 	DEF(AUDIO_ERROR),
 	DEF(audioctl_open_1),
 	DEF(audioctl_open_2),
-	DEF(audioctl_open_3),
+	DEF(audioctl_open_simul),
 	DEF(audioctl_open_4),
 	DEF(audioctl_open_5),
 	DEF(audioctl_rw),
