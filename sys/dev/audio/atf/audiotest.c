@@ -1303,6 +1303,7 @@ void signal_FIOASYNC(int);
 void test_AUDIO_SETFD_xxONLY(int);
 void test_AUDIO_SETINFO_mode(int, int, int, int);
 void test_AUDIO_SETINFO_params_set(int, int, int);
+void test_AUDIO_SETINFO_pause(int, int, int);
 
 #define DEF(name) \
 	void test__ ## name (void); \
@@ -4725,7 +4726,7 @@ test_AUDIO_SETINFO_params_set(int openmode, int aimode, int pause)
 	ai.play.sample_rate = 11025;
 	ai.record.sample_rate = 11025;
 	if (aimode)
-		ai.mode = mode2aumode_full[openmode] & ~AUMODE_PLAY_ALL;
+		ai.mode = mode2aumode(openmode) & ~AUMODE_PLAY_ALL;
 	if (pause) {
 		ai.play.pause = 1;
 		ai.record.pause = 1;
@@ -4742,7 +4743,7 @@ test_AUDIO_SETINFO_params_set(int openmode, int aimode, int pause)
 	XP_EQ(expmode, ai.mode);
 
 	if (openmode == O_RDONLY) {
-		/* No playback tracks */
+		/* Playback track doesn't exist */
 		if (netbsd < 9)
 			XP_EQ(pause, ai.play.pause);
 		else
@@ -4754,7 +4755,7 @@ test_AUDIO_SETINFO_params_set(int openmode, int aimode, int pause)
 	}
 
 	if (openmode == O_WRONLY) {
-		/* No recording tracks */
+		/* Recording track doesn't exist */
 		if (netbsd < 9)
 			XP_EQ(pause, ai.record.pause);
 		else
@@ -4771,9 +4772,10 @@ test_AUDIO_SETINFO_params_set(int openmode, int aimode, int pause)
 #define f(a,b,c) test_AUDIO_SETINFO_params_set(a, b, c)
 DEF(AUDIO_SETINFO_params_set_RDONLY_0)	{ f(O_RDONLY, 0, 0); }
 DEF(AUDIO_SETINFO_params_set_RDONLY_1)	{ f(O_RDONLY, 0, 1); }
-/* On RDONLY, ai.mode is not changable */
-/*  AUDIO_SETINFO_params_set_RDONLY_2)	{ f(O_RDONLY, 1, 0); } */
-/*  AUDIO_SETINFO_params_set_RDONLY_3)	{ f(O_RDONLY, 1, 1); } */
+/* On RDONLY, ai.mode is not changable
+ *  AUDIO_SETINFO_params_set_RDONLY_2)	{ f(O_RDONLY, 1, 0); }
+ *  AUDIO_SETINFO_params_set_RDONLY_3)	{ f(O_RDONLY, 1, 1); }
+ */
 DEF(AUDIO_SETINFO_params_set_WRONLY_0)	{ f(O_WRONLY, 0, 0); }
 DEF(AUDIO_SETINFO_params_set_WRONLY_1)	{ f(O_WRONLY, 0, 1); }
 DEF(AUDIO_SETINFO_params_set_WRONLY_2)	{ f(O_WRONLY, 1, 0); }
@@ -4827,6 +4829,119 @@ DEF(AUDIO_SETINFO_params_simul)
 	r = CLOSE(fd1);
 	XP_SYS_EQ(0, r);
 }
+
+/*
+ * Check whether the pause/unpause works.
+ */
+void
+test_AUDIO_SETINFO_pause(int openmode, int aimode, int param)
+{
+	struct audio_info ai;
+	int r;
+	int fd;
+
+	/*
+	 * aimode is bool value that indicates whether to change ai.mode.
+	 * param is bool value that indicates whether to change encoding
+	 * parameters of ai.{play,record}.*.
+	 */
+
+	TEST("AUDIO_SETINFO_pause_%s_%d_%d",
+	    openmode_str[openmode] + 2, aimode, param);
+
+	/* On half-duplex, O_RDWR is the same as O_WRONLY, so skip it */
+	if (!hw_fulldup() && openmode == O_RDWR) {
+		XP_SKIP("This is the same with O_WRONLY on half-duplex");
+		return;
+	}
+
+	fd = OPEN(devaudio, openmode);
+	REQUIRED_SYS_OK(fd);
+
+	/* Set pause */
+	AUDIO_INITINFO(&ai);
+	ai.play.pause = 1;
+	ai.record.pause = 1;
+	if (aimode)
+		ai.mode = mode2aumode(openmode) & ~AUMODE_PLAY_ALL;
+	if (param) {
+		ai.play.sample_rate = 11025;
+		ai.record.sample_rate = 11025;
+	}
+
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+	int expmode = (aimode)
+	    ? (mode2aumode(openmode) & ~AUMODE_PLAY_ALL)
+	    : mode2aumode(openmode);
+	XP_EQ(expmode, ai.mode);
+	if (openmode == O_RDONLY) {
+		/* Playback track doesn't exists */
+		if (netbsd < 9)
+			XP_EQ(1, ai.play.pause);
+		else
+			XP_EQ(0, ai.play.pause);
+	} else {
+		/* Playback track exists */
+		XP_EQ(1, ai.play.pause);
+		XP_EQ(param ? 11025 : 8000, ai.play.sample_rate);
+	}
+	if (openmode == O_WRONLY) {
+		/* Recording track doesn't exist */
+		if (netbsd < 9)
+			XP_EQ(1, ai.record.pause);
+		else
+			XP_EQ(0, ai.record.pause);
+	} else {
+		/* Recording track exists */
+		XP_EQ(1, ai.record.pause);
+		XP_EQ(param ? 11025 : 8000, ai.record.sample_rate);
+	}
+
+	/* Set unpause (?) */
+	AUDIO_INITINFO(&ai);
+	ai.play.pause = 0;
+	ai.record.pause = 0;
+	if (aimode)
+		ai.mode = mode2aumode(openmode);
+	if (param) {
+		ai.play.sample_rate = 16000;
+		ai.record.sample_rate = 16000;
+	}
+
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+	XP_EQ(mode2aumode(openmode), ai.mode);
+	XP_EQ(0, ai.play.pause);
+	XP_EQ(0, ai.record.pause);
+	if (openmode != O_RDONLY)
+		XP_EQ(param ? 16000 : 8000, ai.play.sample_rate);
+	if (openmode != O_WRONLY)
+		XP_EQ(param ? 16000 : 8000, ai.record.sample_rate);
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+}
+DEF(AUDIO_SETINFO_pause_RDONLY_0) { test_AUDIO_SETINFO_pause(O_RDONLY, 0, 0); }
+DEF(AUDIO_SETINFO_pause_RDONLY_1) { test_AUDIO_SETINFO_pause(O_RDONLY, 0, 1); }
+/* On RDONLY, ai.mode is not changable
+ *  AUDIO_SETINFO_pause_RDONLY_2) { test_AUDIO_SETINFO_pause(O_RDONLY, 1, 0); }
+ *  AUDIO_SETINFO_pause_RDONLY_3) { test_AUDIO_SETINFO_pause(O_RDONLY, 1, 1); }
+ */
+DEF(AUDIO_SETINFO_pause_WRONLY_0) { test_AUDIO_SETINFO_pause(O_WRONLY, 0, 0); }
+DEF(AUDIO_SETINFO_pause_WRONLY_1) { test_AUDIO_SETINFO_pause(O_WRONLY, 0, 1); }
+DEF(AUDIO_SETINFO_pause_WRONLY_2) { test_AUDIO_SETINFO_pause(O_WRONLY, 1, 0); }
+DEF(AUDIO_SETINFO_pause_WRONLY_3) { test_AUDIO_SETINFO_pause(O_WRONLY, 1, 1); }
+DEF(AUDIO_SETINFO_pause_RDWR_0)   { test_AUDIO_SETINFO_pause(O_RDWR, 0, 0); }
+DEF(AUDIO_SETINFO_pause_RDWR_1)   { test_AUDIO_SETINFO_pause(O_RDWR, 0, 1); }
+DEF(AUDIO_SETINFO_pause_RDWR_2)   { test_AUDIO_SETINFO_pause(O_RDWR, 1, 0); }
+DEF(AUDIO_SETINFO_pause_RDWR_3)   { test_AUDIO_SETINFO_pause(O_RDWR, 1, 1); }
 
 
 #define ENT(x) { #x, test__ ## x }
@@ -4960,4 +5075,14 @@ struct testentry testtable[] = {
 	ENT(AUDIO_SETINFO_params_set_RDWR_2),
 	ENT(AUDIO_SETINFO_params_set_RDWR_3),
 	ENT(AUDIO_SETINFO_params_simul),
+	ENT(AUDIO_SETINFO_pause_RDONLY_0),
+	ENT(AUDIO_SETINFO_pause_RDONLY_1),
+	ENT(AUDIO_SETINFO_pause_WRONLY_0),
+	ENT(AUDIO_SETINFO_pause_WRONLY_1),
+	ENT(AUDIO_SETINFO_pause_WRONLY_2),
+	ENT(AUDIO_SETINFO_pause_WRONLY_3),
+	ENT(AUDIO_SETINFO_pause_RDWR_0),
+	ENT(AUDIO_SETINFO_pause_RDWR_1),
+	ENT(AUDIO_SETINFO_pause_RDWR_2),
+	ENT(AUDIO_SETINFO_pause_RDWR_3),
 };

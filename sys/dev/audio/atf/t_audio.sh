@@ -536,6 +536,46 @@ atf_test_case AUDIO_SETINFO_params_simul
 AUDIO_SETINFO_params_simul_head() { }
 AUDIO_SETINFO_params_simul_body() { h_audio AUDIO_SETINFO_params_simul }
 
+atf_test_case AUDIO_SETINFO_pause_RDONLY_0
+AUDIO_SETINFO_pause_RDONLY_0_head() { }
+AUDIO_SETINFO_pause_RDONLY_0_body() { h_audio AUDIO_SETINFO_pause_RDONLY_0 }
+
+atf_test_case AUDIO_SETINFO_pause_RDONLY_1
+AUDIO_SETINFO_pause_RDONLY_1_head() { }
+AUDIO_SETINFO_pause_RDONLY_1_body() { h_audio AUDIO_SETINFO_pause_RDONLY_1 }
+
+atf_test_case AUDIO_SETINFO_pause_WRONLY_0
+AUDIO_SETINFO_pause_WRONLY_0_head() { }
+AUDIO_SETINFO_pause_WRONLY_0_body() { h_audio AUDIO_SETINFO_pause_WRONLY_0 }
+
+atf_test_case AUDIO_SETINFO_pause_WRONLY_1
+AUDIO_SETINFO_pause_WRONLY_1_head() { }
+AUDIO_SETINFO_pause_WRONLY_1_body() { h_audio AUDIO_SETINFO_pause_WRONLY_1 }
+
+atf_test_case AUDIO_SETINFO_pause_WRONLY_2
+AUDIO_SETINFO_pause_WRONLY_2_head() { }
+AUDIO_SETINFO_pause_WRONLY_2_body() { h_audio AUDIO_SETINFO_pause_WRONLY_2 }
+
+atf_test_case AUDIO_SETINFO_pause_WRONLY_3
+AUDIO_SETINFO_pause_WRONLY_3_head() { }
+AUDIO_SETINFO_pause_WRONLY_3_body() { h_audio AUDIO_SETINFO_pause_WRONLY_3 }
+
+atf_test_case AUDIO_SETINFO_pause_RDWR_0
+AUDIO_SETINFO_pause_RDWR_0_head() { }
+AUDIO_SETINFO_pause_RDWR_0_body() { h_audio AUDIO_SETINFO_pause_RDWR_0 }
+
+atf_test_case AUDIO_SETINFO_pause_RDWR_1
+AUDIO_SETINFO_pause_RDWR_1_head() { }
+AUDIO_SETINFO_pause_RDWR_1_body() { h_audio AUDIO_SETINFO_pause_RDWR_1 }
+
+atf_test_case AUDIO_SETINFO_pause_RDWR_2
+AUDIO_SETINFO_pause_RDWR_2_head() { }
+AUDIO_SETINFO_pause_RDWR_2_body() { h_audio AUDIO_SETINFO_pause_RDWR_2 }
+
+atf_test_case AUDIO_SETINFO_pause_RDWR_3
+AUDIO_SETINFO_pause_RDWR_3_head() { }
+AUDIO_SETINFO_pause_RDWR_3_body() { h_audio AUDIO_SETINFO_pause_RDWR_3 }
+
 atf_init_test_cases() {
 	atf_add_test_case open_mode_RDONLY
 	atf_add_test_case open_mode_WRONLY
@@ -666,4 +706,14 @@ atf_init_test_cases() {
 	atf_add_test_case AUDIO_SETINFO_params_set_RDWR_2
 	atf_add_test_case AUDIO_SETINFO_params_set_RDWR_3
 	atf_add_test_case AUDIO_SETINFO_params_simul
+	atf_add_test_case AUDIO_SETINFO_pause_RDONLY_0
+	atf_add_test_case AUDIO_SETINFO_pause_RDONLY_1
+	atf_add_test_case AUDIO_SETINFO_pause_WRONLY_0
+	atf_add_test_case AUDIO_SETINFO_pause_WRONLY_1
+	atf_add_test_case AUDIO_SETINFO_pause_WRONLY_2
+	atf_add_test_case AUDIO_SETINFO_pause_WRONLY_3
+	atf_add_test_case AUDIO_SETINFO_pause_RDWR_0
+	atf_add_test_case AUDIO_SETINFO_pause_RDWR_1
+	atf_add_test_case AUDIO_SETINFO_pause_RDWR_2
+	atf_add_test_case AUDIO_SETINFO_pause_RDWR_3
 }
