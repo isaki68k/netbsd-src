@@ -5625,7 +5625,7 @@ test_AUDIO_SETINFO_rollback()
 }
 
 void
-test_AUDIO_GETENC_1()
+test_AUDIO_GETENC_range()
 {
 	char buf[32];
 	struct audio_info ai;
@@ -5647,7 +5647,7 @@ test_AUDIO_GETENC_1()
 	// 2 は GETENC には現れないが互換性でサポートしているもの
 	memset(&result, 0, sizeof(result));
 
-	TEST("AUDIO_GETENC_1");
+	TEST("AUDIO_GETENC_range");
 	for (idx = 0; ; idx++) {
 		DESC("GETENC[%d]", idx);
 
@@ -5850,13 +5850,13 @@ test_AUDIO_GETENC_1()
 
 // 引数が正しくないケース
 void
-test_AUDIO_GETENC_2()
+test_AUDIO_GETENC_error()
 {
 	audio_encoding_t enc;
 	int fd;
 	int r;
 
-	TEST("AUDIO_GETENC_2");
+	TEST("AUDIO_GETENC_error");
 
 	fd = OPEN(devaudio, O_WRONLY);
 	if (fd == -1)
@@ -7524,8 +7524,8 @@ struct testtable testtable[] = {
 	DEF(AUDIO_SETINFO_hiwat2),	// 保留
 	DEF(AUDIO_SETINFO_gain),
 	DEF(AUDIO_SETINFO_rollback),	// 保留
-	DEF(AUDIO_GETENC_1),		// 保留 (encoding_* との関係は?)
-	DEF(AUDIO_GETENC_2),		// 保留
+	DEF(AUDIO_GETENC_range),
+	DEF(AUDIO_GETENC_error),
 	DEF(AUDIO_ERROR),
 	DEF(audioctl_open_1),
 	DEF(audioctl_open_2),

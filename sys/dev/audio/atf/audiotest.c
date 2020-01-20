@@ -1339,6 +1339,8 @@ void test_AUDIO_SETFD_xxONLY(int);
 void test_AUDIO_SETINFO_mode(int, int, int, int);
 void test_AUDIO_SETINFO_params_set(int, int, int);
 void test_AUDIO_SETINFO_pause(int, int, int);
+void getenc_make_compatible(int[][5], int, int);
+void xp_getenc(int[][5], int, int, int, struct audio_prinfo *);
 void test_AUDIO_ERROR(int);
 void test_audioctl_open_1(int, int);
 void test_audioctl_open_2(int, int);
@@ -5064,6 +5066,291 @@ DEF(AUDIO_SETINFO_gain)
 }
 
 /*
+ * This fills compatible result.
+ * This function is called from test_AUDIO_GETENC() below.
+ */
+void
+getenc_make_compatible(int expected[][5], int encoding, int precision)
+{
+	/*
+	 * The mark 'XXX' means that encoding name and precision look
+	 * inconsistent (for historical reasons).
+	 */
+	switch (precision) {
+	case 8:
+		if (encoding == AUDIO_ENCODING_SLINEAR) {
+			expected[AUDIO_ENCODING_SLINEAR_LE][1] = 2;
+			expected[AUDIO_ENCODING_SLINEAR_BE][1] = 2;
+		}
+		if (encoding == AUDIO_ENCODING_ULINEAR) {
+			expected[AUDIO_ENCODING_ULINEAR_LE][1] = 2;
+			expected[AUDIO_ENCODING_ULINEAR_BE][1] = 2;
+			expected[AUDIO_ENCODING_PCM8][1] = 2;	/* XXX */
+			expected[AUDIO_ENCODING_PCM16][1] = 2;	/* XXX */
+		}
+		break;
+	case 16:
+		if (encoding == AUDIO_ENCODING_SLINEAR_NE) {
+			expected[AUDIO_ENCODING_SLINEAR][2] = 2;
+			expected[AUDIO_ENCODING_PCM16][2] = 2;	/* XXX */
+		}
+		if (encoding == AUDIO_ENCODING_ULINEAR_NE) {
+			expected[AUDIO_ENCODING_ULINEAR][2] = 2;
+		}
+		break;
+#if defined(AUDIO_SUPPORT_LINEAR24)
+	case 24:
+		if (encoding == AUDIO_ENCODING_SLINEAR_NE) {
+			expected[AUDIO_ENCODING_SLINEAR][3] = 2;
+			expected[AUDIO_ENCODING_PCM16][3] = 2;	/* XXX */
+		}
+		if (encoding == AUDIO_ENCODING_ULINEAR_NE) {
+			expected[AUDIO_ENCODING_ULINEAR][3] = 2;
+		}
+		break;
+#endif
+	case 32:
+		if (encoding == AUDIO_ENCODING_SLINEAR_NE) {
+			expected[AUDIO_ENCODING_SLINEAR][4] = 2;
+			expected[AUDIO_ENCODING_PCM16][4] = 2;	/* XXX */
+		}
+		if (encoding == AUDIO_ENCODING_ULINEAR_NE) {
+			expected[AUDIO_ENCODING_ULINEAR][4] = 2;
+		}
+		break;
+	default:
+		XP_FAIL("precision=%d", precision);
+	}
+}
+
+/*
+ * This function is called from test_AUDIO_GETENC below.
+ */
+void
+xp_getenc(int expected[][5], int enc, int j, int r, struct audio_prinfo *pr)
+{
+	int prec = (j == 0) ? 4 : j * 8;
+
+	if (expected[enc][j]) {
+		/* expect to succeed */
+		XP_SYS_EQ(0, r);
+
+		XP_EQ(enc, pr->encoding);
+		XP_EQ(prec, pr->precision);
+	} else {
+		/* expect to fail */
+
+		/* NetBSD8 may fail */
+
+		/* These succeeds but are they intended? */
+		if ((prec == 8 && enc == AUDIO_ENCODING_PCM16) ||
+		    (prec == 8 && enc == AUDIO_ENCODING_SLINEAR) ||
+		    (prec == 8 && enc == AUDIO_ENCODING_ULINEAR))
+		{
+			if (r == 0)
+				XP_FAIL("loose compatibility?");
+		} else {
+			XP_SYS_NG(EINVAL, r);
+		}
+	}
+}
+
+/*
+ * Check AUDIO_GETENC in regular range.
+ * Check whether encoding parameters can be set.
+ */
+DEF(AUDIO_GETENC_range)
+{
+	struct audio_info ai;
+	audio_encoding_t e0, *e = &e0;
+	int fd;
+	int r;
+	int idx;
+	int enccount = AUDIO_ENCODING_AC3 + 1;
+	int preccount = 5;
+	int expected[enccount][preccount];
+	int i, j;
+
+	TEST("AUDIO_GETENC_range");
+
+	fd = OPEN(devaudioctl, O_RDONLY);
+	REQUIRED_SYS_OK(fd);
+
+	/*
+	 * expected[][] is two dimensional table.
+	 * encoding \ precision| 4  8  16  24  32
+	 * --------------------+-----------------
+	 * AUDIO_ENCODING_NONE |
+	 * AUDIO_ENCODING_ULAW |
+	 *  :
+	 *
+	 * Each cell has expected behavior.
+	 *  0: the hardware doesn't support this encoding/precision.
+	 *  1: the hardware supports this encoding/precision.
+	 *  2: the hardware doesn't support this encoding/precision but
+	 *     audio layer will respond as supported for compatibility.
+	 */
+	memset(&expected, 0, sizeof(expected));
+	for (idx = 0; ; idx++) {
+		memset(e, 0, sizeof(*e));
+		e->index = idx;
+		r = IOCTL(fd, AUDIO_GETENC, e, "index=%d", idx);
+		if (r != 0) {
+			XP_SYS_NG(EINVAL, r);
+			break;
+		}
+
+		XP_EQ(idx, e->index);
+		if (0 <= e->encoding && e->encoding <= AUDIO_ENCODING_AC3) {
+			XP_EQ_STR(encoding_names[e->encoding], e->name);
+		} else {
+			XP_FAIL("e->encoding %d", e->encoding);
+		}
+
+		switch (e->precision) {
+		case 4:
+		case 8:
+		case 16:
+		case 24:
+		case 32:
+			break;
+		default:
+			XP_FAIL("e->precision %d", e->precision);
+			break;
+		}
+		/* Other bits should not be set */
+		XP_EQ(0, (e->flags & ~AUDIO_ENCODINGFLAG_EMULATED));
+
+		expected[e->encoding][e->precision / 8] = 1;
+
+		/* Fill compatible cells */
+		getenc_make_compatible(expected, e->encoding, e->precision);
+	}
+
+	/* When error has occured, the next index should also occur error */
+	e->index = idx + 1;
+	r = IOCTL(fd, AUDIO_GETENC, e, "index=%d", e->index);
+	XP_SYS_NG(EINVAL, r);
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+
+	/* For debug */
+	if (debug) {
+		for (i = 0; i < enccount; i++) {
+			printf("expected[%2d] %15s", i, encoding_names[i]);
+			for (j = 0; j < preccount; j++) {
+				printf(" %d", expected[i][j]);
+			}
+			printf("\n");
+		}
+	}
+
+	/*
+	 * Whether obtained encodings can be actually set.
+	 */
+
+	if (hw_fulldup()) {
+		/* Test both R/W at once using single descriptor */
+		fd = OPEN(devaudio, O_RDWR);
+		REQUIRED_SYS_OK(fd);
+
+		for (i = 0; i < enccount; i++) {
+			for (j = 0; j < preccount; j++) {
+				/* precisions are 4 and 8, 16, 24, 32 */
+				int prec = (j == 0) ? 4 : j * 8;
+
+				AUDIO_INITINFO(&ai);
+				ai.play.encoding = i;
+				ai.play.precision = prec;
+				/*
+				 * AUDIO_GETENC has no way to know range of
+				 * supported channels and sample_rate.
+				 */
+				ai.record = ai.play;
+
+				/* Test both R/W at once */
+				r = IOCTL(fd, AUDIO_SETINFO, &ai, "%s:%d",
+				    encoding_names[i], prec);
+				xp_getenc(expected, i, j, r, &ai.play);
+				xp_getenc(expected, i, j, r, &ai.record);
+			}
+		}
+	} else {
+		/* Test for RD at first */
+		fd = OPEN(devaudio, O_RDONLY);
+		REQUIRED_SYS_OK(fd);
+
+		for (i = 0; i < enccount; i++) {
+			for (j = 0; j < preccount; j++) {
+				/* precisions are 4 and 8, 16, 24, 32 */
+				int prec = (j == 0) ? 4 : j * 8;
+
+				AUDIO_INITINFO(&ai);
+				ai.record.encoding = i;
+				ai.record.precision = prec;
+				/*
+				 * AUDIO_GETENC has no way to know range of
+				 * supported channels and sample_rate.
+				 */
+
+				r = IOCTL(fd, AUDIO_SETINFO, &ai, "%s:%d",
+				    encoding_names[i], prec);
+				xp_getenc(expected, i, j, r, &ai.record);
+			}
+		}
+		r = CLOSE(fd);
+		XP_SYS_EQ(0, r);
+		xxx_close_wait();
+
+		/* Then test WR */
+		fd = OPEN(devaudio, O_WRONLY);
+		REQUIRED_SYS_OK(fd);
+
+		for (i = 0; i < enccount; i++) {
+			for (j = 0; j < preccount; j++) {
+				/* precisions are 4 and 8, 16, 24, 32 */
+				int prec = (j == 0) ? 4 : j * 8;
+
+				AUDIO_INITINFO(&ai);
+				ai.play.encoding = i;
+				ai.play.precision = prec;
+
+				r = IOCTL(fd, AUDIO_SETINFO, &ai, "%s:%d",
+				    encoding_names[i], prec);
+				xp_getenc(expected, i, j, r, &ai.play);
+			}
+		}
+	}
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+}
+
+/*
+ * Check AUDIO_GETENC out of range.
+ */
+DEF(AUDIO_GETENC_error)
+{
+	audio_encoding_t e;
+	int fd;
+	int r;
+
+	TEST("AUDIO_GETENC_error");
+
+	fd = OPEN(devaudio, openable_mode());
+	REQUIRED_SYS_OK(fd);
+
+	memset(&e, 0, sizeof(e));
+	e.index = -1;
+	r = IOCTL(fd, AUDIO_GETENC, &e, "index=-1");
+	/* NetBSD7 may not fail depending on hardware driver */
+	XP_SYS_NG(EINVAL, r);
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+}
+
+/*
  * AUDIO_[PR]ERROR should be zero on the initial state even on non-existent
  * track.
  */
@@ -5561,6 +5848,8 @@ struct testentry testtable[] = {
 	ENT(AUDIO_SETINFO_pause_RDWR_2),
 	ENT(AUDIO_SETINFO_pause_RDWR_3),
 	ENT(AUDIO_SETINFO_gain),
+	ENT(AUDIO_GETENC_range),
+	ENT(AUDIO_GETENC_error),
 	ENT(AUDIO_ERROR_RDONLY),
 	ENT(AUDIO_ERROR_WRONLY),
 	ENT(AUDIO_ERROR_RDWR),
