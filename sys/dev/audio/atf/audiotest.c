@@ -848,6 +848,8 @@ bool xp_sys_ng(int line, int experrno, int act, const char *varname)
 #define XP_SYS_PTR(exp, act) xp_sys_ptr(__LINE__, exp, act, #act)
 bool xp_sys_ptr(int line, int exp, void *act, const char *varname)
 {
+	char errbuf[256];
+	int actual_errno;
 	bool r = true;
 
 	testcount++;
@@ -865,10 +867,11 @@ bool xp_sys_ptr(int line, int exp, void *act, const char *varname)
 			    "%s expects -1,err#%d(%s) but success",
 			    varname, exp, strerror(exp));
 		} else if (exp != errno) {
-			const char *errno_str = strerror(errno);
+			actual_errno = errno;
+			strerror_r(actual_errno, errbuf, sizeof(errbuf));
 			r = xp_fail(line,
 			    "%s expects -1,err#%d(%s) but -1,err#%d(%s)",
-			    varname, exp, strerror(exp), errno, errno_str);
+			    varname, exp, strerror(exp), actual_errno, errbuf);
 		}
 	}
 	return r;
