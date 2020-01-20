@@ -1344,6 +1344,7 @@ void test_audioctl_open_1(int, int);
 void test_audioctl_open_2(int, int);
 void try_audioctl_open_multiuser(bool, const char *, const char *);
 void test_audioctl_open_multiuser(bool, const char *, const char *);
+void test_audioctl_rw(int);
 
 #define DEF(name) \
 	void test__ ## name (void); \
@@ -5320,6 +5321,103 @@ DEF(audioctl_open_multiuser1_audioctl) {
 	test_audioctl_open_multiuser(1, devaudioctl, devaudioctl);
 }
 
+/*
+ * /dev/audioctl cannot be read/written regardless of its open mode.
+ */
+void
+test_audioctl_rw(int openmode)
+{
+	char buf[1];
+	int fd;
+	int r;
+
+	TEST("audioctl_rw_%s", openmode_str[openmode] + 2);
+
+	fd = OPEN(devaudioctl, openmode);
+	REQUIRED_SYS_OK(fd);
+
+	if (mode2play(openmode)) {
+		r = WRITE(fd, buf, sizeof(buf));
+		XP_SYS_NG(ENODEV, r);
+	}
+
+	if (mode2rec(openmode)) {
+		r = READ(fd, buf, sizeof(buf));
+		XP_SYS_NG(ENODEV, r);
+	}
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+}
+DEF(audioctl_rw_RDONLY)	{ test_audioctl_rw(O_RDONLY); }
+DEF(audioctl_rw_WRONLY)	{ test_audioctl_rw(O_WRONLY); }
+DEF(audioctl_rw_RDWR)	{ test_audioctl_rw(O_RDWR); }
+
+/*
+ * poll(2) for /dev/audioctl should never raise.
+ * I'm not sure about consistency between poll(2) and kqueue(2) but
+ * anyway I follow it.
+ * XXX Omit checking each openmode
+ */
+DEF(audioctl_poll)
+{
+	struct pollfd pfd;
+	int fd;
+	int r;
+
+	TEST("audioctl_poll");
+
+	fd = OPEN(devaudioctl, O_WRONLY);
+	REQUIRED_SYS_OK(fd);
+
+	pfd.fd = fd;
+	pfd.events = POLLOUT;
+	r = POLL(&pfd, 1, 100);
+	XP_SYS_EQ(0, r);
+	XP_EQ(0, pfd.revents);
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+}
+
+/*
+ * kqueue(2) for /dev/audioctl fails.
+ * I'm not sure about consistency between poll(2) and kqueue(2) but
+ * anyway I follow it.
+ * XXX Omit checking each openmode
+ */
+DEF(audioctl_kqueue)
+{
+	struct kevent kev;
+	int fd;
+	int kq;
+	int r;
+
+	TEST("audioctl_kqueue");
+
+	fd = OPEN(devaudioctl, O_WRONLY);
+	REQUIRED_SYS_OK(fd);
+
+	kq = KQUEUE();
+	XP_SYS_OK(kq);
+
+	EV_SET(&kev, fd, EVFILT_WRITE, EV_ADD, 0, 0, 0);
+	r = KEVENT_SET(kq, &kev, 1);
+	/*
+	 * NetBSD7 has a bug.  It looks to wanted to treat it as successful
+	 * but returned 1(== EPERM).
+	 * On NetBSD9, I decided to return ENODEV.
+	 */
+	if (netbsd < 8) {
+		XP_SYS_NG(1/*EPERM*/, r);
+	} else {
+		XP_SYS_NG(ENODEV, r);
+	}
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+}
+
 
 #define ENT(x) { #x, test__ ## x }
 struct testentry testtable[] = {
@@ -5491,4 +5589,9 @@ struct testentry testtable[] = {
 	ENT(audioctl_open_multiuser1_audio2),
 	ENT(audioctl_open_multiuser0_audioctl),
 	ENT(audioctl_open_multiuser1_audioctl),
+	ENT(audioctl_rw_RDONLY),
+	ENT(audioctl_rw_WRONLY),
+	ENT(audioctl_rw_RDWR),
+	ENT(audioctl_poll),
+	ENT(audioctl_kqueue),
 };

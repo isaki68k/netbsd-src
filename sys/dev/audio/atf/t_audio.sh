@@ -692,6 +692,26 @@ atf_test_case audioctl_open_multiuser1_audioctl
 audioctl_open_multiuser1_audioctl_head() { }
 audioctl_open_multiuser1_audioctl_body() { h_audio audioctl_open_multiuser1_audioctl }
 
+atf_test_case audioctl_rw_RDONLY
+audioctl_rw_RDONLY_head() { }
+audioctl_rw_RDONLY_body() { h_audio audioctl_rw_RDONLY }
+
+atf_test_case audioctl_rw_WRONLY
+audioctl_rw_WRONLY_head() { }
+audioctl_rw_WRONLY_body() { h_audio audioctl_rw_WRONLY }
+
+atf_test_case audioctl_rw_RDWR
+audioctl_rw_RDWR_head() { }
+audioctl_rw_RDWR_body() { h_audio audioctl_rw_RDWR }
+
+atf_test_case audioctl_poll
+audioctl_poll_head() { }
+audioctl_poll_body() { h_audio audioctl_poll }
+
+atf_test_case audioctl_kqueue
+audioctl_kqueue_head() { }
+audioctl_kqueue_body() { h_audio audioctl_kqueue }
+
 atf_init_test_cases() {
 	atf_add_test_case open_mode_RDONLY
 	atf_add_test_case open_mode_WRONLY
@@ -861,4 +881,9 @@ atf_init_test_cases() {
 	atf_add_test_case audioctl_open_multiuser1_audio2
 	atf_add_test_case audioctl_open_multiuser0_audioctl
 	atf_add_test_case audioctl_open_multiuser1_audioctl
+	atf_add_test_case audioctl_rw_RDONLY
+	atf_add_test_case audioctl_rw_WRONLY
+	atf_add_test_case audioctl_rw_RDWR
+	atf_add_test_case audioctl_poll
+	atf_add_test_case audioctl_kqueue
 }
