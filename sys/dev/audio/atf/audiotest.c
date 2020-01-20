@@ -2748,8 +2748,8 @@ DEF(mmap_len)
 		if (exp == 0) {
 			XP_SYS_PTR(0, ptr);
 		} else {
-			/* NetBSD9 introduces EOVERFLOW */
-			if (netbsd < 9 && exp == EOVERFLOW)
+			/* NetBSD8 introduces EOVERFLOW */
+			if (netbsd < 8 && exp == EOVERFLOW)
 				exp = EINVAL;
 			XP_SYS_PTR(exp, ptr);
 		}
