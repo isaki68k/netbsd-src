@@ -5322,7 +5322,7 @@ test_AUDIO_SETINFO_hiwat2()
 
 // gain が取得・設定できて外部ミキサーと連動するか。PR kern/52781
 void
-test_AUDIO_SETINFO_gain1()
+test_AUDIO_SETINFO_gain()
 {
 	struct audio_info ai;
 	char buf[32];
@@ -5332,7 +5332,7 @@ test_AUDIO_SETINFO_gain1()
 	int fd;
 	int r;
 
-	TEST("AUDIO_SETINFO_gain1");
+	TEST("AUDIO_SETINFO_gain");
 
 	// 適当に outputs.master を取得
 	// XXX ioctl に分解できればしたほうがいいだろうけど
@@ -6294,7 +6294,7 @@ test_mixer_FIOASYNC_1(void)
 
 	// とりあえず最短コースで outputs.master だと思われるやつを拾ってくる
 	// 変化すればなんでもいいので細かいことは気にしない。
-	for (i  = 0; ; i++) {
+	for (i = 0; ; i++) {
 		memset(&di, 0, sizeof(di));
 		di.index = i;
 		r = IOCTL(fd, AUDIO_MIXER_DEVINFO, &di, "index=%d", i);
@@ -7544,10 +7544,10 @@ struct testtable testtable[] = {
 	DEF(AUDIO_SETINFO_params2),		// これはほぼparams_3と同じなので省略
 	DEF(AUDIO_SETINFO_params3),
 	DEF(AUDIO_SETINFO_pause),
-	DEF(AUDIO_SETINFO_blocksize),
-	DEF(AUDIO_SETINFO_hiwat1),
-	DEF(AUDIO_SETINFO_hiwat2),
-	DEF(AUDIO_SETINFO_gain1),
+	DEF(AUDIO_SETINFO_blocksize),	// 保留
+	DEF(AUDIO_SETINFO_hiwat1),	// 保留
+	DEF(AUDIO_SETINFO_hiwat2),	// 保留
+	DEF(AUDIO_SETINFO_gain),
 	DEF(AUDIO_SETINFO_rollback),
 	DEF(AUDIO_GETENC_1),
 	DEF(AUDIO_GETENC_2),

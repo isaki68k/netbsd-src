@@ -576,6 +576,10 @@ atf_test_case AUDIO_SETINFO_pause_RDWR_3
 AUDIO_SETINFO_pause_RDWR_3_head() { }
 AUDIO_SETINFO_pause_RDWR_3_body() { h_audio AUDIO_SETINFO_pause_RDWR_3 }
 
+atf_test_case AUDIO_SETINFO_gain
+AUDIO_SETINFO_gain_head() { }
+AUDIO_SETINFO_gain_body() { h_audio AUDIO_SETINFO_gain }
+
 atf_init_test_cases() {
 	atf_add_test_case open_mode_RDONLY
 	atf_add_test_case open_mode_WRONLY
@@ -716,4 +720,5 @@ atf_init_test_cases() {
 	atf_add_test_case AUDIO_SETINFO_pause_RDWR_1
 	atf_add_test_case AUDIO_SETINFO_pause_RDWR_2
 	atf_add_test_case AUDIO_SETINFO_pause_RDWR_3
+	atf_add_test_case AUDIO_SETINFO_gain
 }

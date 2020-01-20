@@ -52,6 +52,7 @@ void usage(void) __dead;
 void xp_err(int, int, const char *, ...) __printflike(3, 4) __dead;
 void xp_errx(int, int, const char *, ...) __printflike(3, 4) __dead;
 void xxx_close_wait(void);
+int mixer_get_outputs_master(int);
 void do_test(int);
 int rump_or_open(const char *, int);
 int rump_or_write(int, const void *, size_t);
@@ -1282,6 +1283,40 @@ reset_after_mmap(void)
 		if (fd != -1)
 			CLOSE(fd);
 	}
+}
+
+/*
+ * Lookup "outputs.master" and return its mixer device index.
+ * It may not be strict but I'm not sure.
+ */
+int
+mixer_get_outputs_master(int mixerfd)
+{
+	mixer_devinfo_t di;
+	int class_outputs;
+	int i;
+	int r;
+
+	class_outputs = -1;
+	for (i = 0; ; i++) {
+		memset(&di, 0, sizeof(di));
+		di.index = i;
+		r = IOCTL(mixerfd, AUDIO_MIXER_DEVINFO, &di, "index=%d", i);
+		if (r < 0)
+			break;
+		if (di.type == AUDIO_MIXER_CLASS &&
+		    strcmp(di.label.name, "outputs") == 0) {
+			class_outputs = di.mixer_class;
+			continue;
+		}
+		if (di.type == AUDIO_MIXER_VALUE &&
+		    di.mixer_class == class_outputs &&
+		    strcmp(di.label.name, "master") == 0) {
+			return i;
+		}
+	}
+	/* Not found */
+	return -1;
 }
 
 /*
@@ -4943,6 +4978,85 @@ DEF(AUDIO_SETINFO_pause_RDWR_1)   { test_AUDIO_SETINFO_pause(O_RDWR, 0, 1); }
 DEF(AUDIO_SETINFO_pause_RDWR_2)   { test_AUDIO_SETINFO_pause(O_RDWR, 1, 0); }
 DEF(AUDIO_SETINFO_pause_RDWR_3)   { test_AUDIO_SETINFO_pause(O_RDWR, 1, 1); }
 
+/*
+ * Check whether gain can be obtained/set.
+ * And the gain should work with rich mixer.
+ * PR kern/52781
+ */
+DEF(AUDIO_SETINFO_gain)
+{
+	struct audio_info ai;
+	mixer_ctrl_t m;
+	int index;
+	int master;
+	int master_backup;
+	int gain;
+	int fd;
+	int mixerfd;
+	int r;
+
+	TEST("AUDIO_SETINFO_gain");
+
+	/* Open /dev/mixer */
+	mixerfd = OPEN(devmixer, O_RDWR);
+	REQUIRED_SYS_OK(mixerfd);
+	index = mixer_get_outputs_master(mixerfd);
+	if (index == -1) {
+		XP_SKIP("Hardware has no outputs.master");
+		CLOSE(mixerfd);
+		return;
+	}
+
+	/* Get current outputs.master */
+	memset(&m, 0, sizeof(m));
+	m.dev = index;
+	r = IOCTL(mixerfd, AUDIO_MIXER_READ, &m, "");
+	REQUIRED_SYS_EQ(0, r);
+	master = m.un.value.level[0];
+	DPRINTF("  > outputs.master = %d\n", master);
+	master_backup = master;
+
+	/* Open /dev/audio */
+	fd = OPEN(devaudio, O_WRONLY);
+	REQUIRED_SYS_OK(fd);
+
+	/* Check ai.play.gain */
+	r = IOCTL(fd, AUDIO_GETINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+	XP_EQ(master, ai.play.gain);
+
+	/* Change it some different value */
+	AUDIO_INITINFO(&ai);
+	if (master == 0)
+		gain = 255;
+	else
+		gain = 0;
+	ai.play.gain = gain;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "play.gain=%d", ai.play.gain);
+	XP_SYS_EQ(0, r);
+
+	/* Check gain has changed */
+	r = IOCTL(fd, AUDIO_GETINFO, &ai, "play.gain");
+	XP_SYS_EQ(0, r);
+	XP_NE(master, ai.play.gain);
+
+	/* Check whether outputs.master work with gain */
+	r = IOCTL(mixerfd, AUDIO_MIXER_READ, &m, "");
+	XP_SYS_EQ(0, r);
+	XP_EQ(ai.play.gain, m.un.value.level[0]);
+
+	/* Restore outputs.master */
+	AUDIO_INITINFO(&ai);
+	ai.play.gain = master_backup;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "play.gain=%d", ai.play.gain);
+	XP_SYS_EQ(0, r);
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+	r = CLOSE(mixerfd);
+	XP_SYS_EQ(0, r);
+}
+
 
 #define ENT(x) { #x, test__ ## x }
 struct testentry testtable[] = {
@@ -5085,4 +5199,5 @@ struct testentry testtable[] = {
 	ENT(AUDIO_SETINFO_pause_RDWR_1),
 	ENT(AUDIO_SETINFO_pause_RDWR_2),
 	ENT(AUDIO_SETINFO_pause_RDWR_3),
+	ENT(AUDIO_SETINFO_gain),
 };
