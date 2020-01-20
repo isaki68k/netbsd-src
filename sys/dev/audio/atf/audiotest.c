@@ -1302,6 +1302,7 @@ volatile int sigio_caught;
 void signal_FIOASYNC(int);
 void test_AUDIO_SETFD_xxONLY(int);
 void test_AUDIO_SETINFO_mode(int, int, int, int);
+void test_AUDIO_SETINFO_params_set(int, int, int);
 
 #define DEF(name) \
 	void test__ ## name (void); \
@@ -4689,6 +4690,144 @@ DEF(AUDIO_SETINFO_mode_RDWR_8) { f(8); }
 #undef A
 #undef R
 
+/*
+ * Check whether encoding params can be set.
+ */
+void
+test_AUDIO_SETINFO_params_set(int openmode, int aimode, int pause)
+{
+	struct audio_info ai;
+	int r;
+	int fd;
+
+	/*
+	 * aimode is bool value that indicates whether to change ai.mode.
+	 * pause is bool value that indicates whether to change ai.*.pause.
+	 */
+
+	TEST("AUDIO_SETINFO_params_%s_%d_%d",
+	    openmode_str[openmode] + 2, aimode, pause);
+
+	/* On half-duplex, O_RDWR is the same as O_WRONLY, so skip it */
+	if (!hw_fulldup() && openmode == O_RDWR) {
+		XP_SKIP("This is the same with O_WRONLY on half-duplex");
+		return;
+	}
+
+	fd = OPEN(devaudio, openmode);
+	REQUIRED_SYS_OK(fd);
+
+	AUDIO_INITINFO(&ai);
+	/*
+	 * It takes time and effort to check all parameters independently,
+	 * so that use sample_rate as a representative.
+	 */
+	ai.play.sample_rate = 11025;
+	ai.record.sample_rate = 11025;
+	if (aimode)
+		ai.mode = mode2aumode_full[openmode] & ~AUMODE_PLAY_ALL;
+	if (pause) {
+		ai.play.pause = 1;
+		ai.record.pause = 1;
+	}
+
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+	int expmode = (aimode)
+	    ? (mode2aumode(openmode) & ~AUMODE_PLAY_ALL)
+	    : mode2aumode(openmode);
+	XP_EQ(expmode, ai.mode);
+
+	if (openmode == O_RDONLY) {
+		/* No playback tracks */
+		if (netbsd < 9)
+			XP_EQ(pause, ai.play.pause);
+		else
+			XP_EQ(0, ai.play.pause);
+	} else {
+		/* Playback track exists */
+		XP_EQ(11025, ai.play.sample_rate);
+		XP_EQ(pause, ai.play.pause);
+	}
+
+	if (openmode == O_WRONLY) {
+		/* No recording tracks */
+		if (netbsd < 9)
+			XP_EQ(pause, ai.record.pause);
+		else
+			XP_EQ(0, ai.record.pause);
+	} else {
+		/* Recording track exists */
+		XP_EQ(11025, ai.record.sample_rate);
+		XP_EQ(pause, ai.record.pause);
+	}
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+}
+#define f(a,b,c) test_AUDIO_SETINFO_params_set(a, b, c)
+DEF(AUDIO_SETINFO_params_set_RDONLY_0)	{ f(O_RDONLY, 0, 0); }
+DEF(AUDIO_SETINFO_params_set_RDONLY_1)	{ f(O_RDONLY, 0, 1); }
+/* On RDONLY, ai.mode is not changable */
+/*  AUDIO_SETINFO_params_set_RDONLY_2)	{ f(O_RDONLY, 1, 0); } */
+/*  AUDIO_SETINFO_params_set_RDONLY_3)	{ f(O_RDONLY, 1, 1); } */
+DEF(AUDIO_SETINFO_params_set_WRONLY_0)	{ f(O_WRONLY, 0, 0); }
+DEF(AUDIO_SETINFO_params_set_WRONLY_1)	{ f(O_WRONLY, 0, 1); }
+DEF(AUDIO_SETINFO_params_set_WRONLY_2)	{ f(O_WRONLY, 1, 0); }
+DEF(AUDIO_SETINFO_params_set_WRONLY_3)	{ f(O_WRONLY, 1, 1); }
+DEF(AUDIO_SETINFO_params_set_RDWR_0)	{ f(O_RDWR, 0, 0); }
+DEF(AUDIO_SETINFO_params_set_RDWR_1)	{ f(O_RDWR, 0, 1); }
+DEF(AUDIO_SETINFO_params_set_RDWR_2)	{ f(O_RDWR, 1, 0); }
+DEF(AUDIO_SETINFO_params_set_RDWR_3)	{ f(O_RDWR, 1, 1); }
+#undef f
+
+/*
+ * AUDIO_SETINFO should not be interfere by other descriptor.
+ */
+DEF(AUDIO_SETINFO_params_simul)
+{
+	struct audio_info ai;
+	int fd0;
+	int fd1;
+	int r;
+
+	TEST("AUDIO_SETINFO_params_simul");
+	if (netbsd < 8) {
+		XP_SKIP("Multiple open is not supported");
+		return;
+	}
+
+	/* Open the 1st one as playback only */
+	fd0 = OPEN(devaudio, O_WRONLY);
+	REQUIRED_SYS_OK(fd0);
+
+	/* Open the 2nd one as both of playback and recording */
+	fd1 = OPEN(devaudio, O_RDWR);
+	REQUIRED_SYS_OK(fd1);
+
+	/* Change some parameters of both track on the 2nd one */
+	AUDIO_INITINFO(&ai);
+	ai.play.sample_rate = 11025;
+	ai.record.sample_rate = 11025;
+	r = IOCTL(fd1, AUDIO_SETINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+
+	/* Both track of the 1st one should not be affected */
+	memset(&ai, 0, sizeof(ai));
+	r = IOCTL(fd0, AUDIO_GETINFO, &ai, "");
+	XP_SYS_EQ(0, r);
+	XP_EQ(8000, ai.play.sample_rate);
+	XP_EQ(8000, ai.record.sample_rate);
+
+	r = CLOSE(fd0);
+	XP_SYS_EQ(0, r);
+	r = CLOSE(fd1);
+	XP_SYS_EQ(0, r);
+}
+
 
 #define ENT(x) { #x, test__ ## x }
 struct testentry testtable[] = {
@@ -4810,4 +4949,15 @@ struct testentry testtable[] = {
 	ENT(AUDIO_SETINFO_mode_RDWR_6),
 	ENT(AUDIO_SETINFO_mode_RDWR_7),
 	ENT(AUDIO_SETINFO_mode_RDWR_8),
+	ENT(AUDIO_SETINFO_params_set_RDONLY_0),
+	ENT(AUDIO_SETINFO_params_set_RDONLY_1),
+	ENT(AUDIO_SETINFO_params_set_WRONLY_0),
+	ENT(AUDIO_SETINFO_params_set_WRONLY_1),
+	ENT(AUDIO_SETINFO_params_set_WRONLY_2),
+	ENT(AUDIO_SETINFO_params_set_WRONLY_3),
+	ENT(AUDIO_SETINFO_params_set_RDWR_0),
+	ENT(AUDIO_SETINFO_params_set_RDWR_1),
+	ENT(AUDIO_SETINFO_params_set_RDWR_2),
+	ENT(AUDIO_SETINFO_params_set_RDWR_3),
+	ENT(AUDIO_SETINFO_params_simul),
 };

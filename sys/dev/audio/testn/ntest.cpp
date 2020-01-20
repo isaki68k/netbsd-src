@@ -7541,7 +7541,7 @@ struct testtable testtable[] = {
 	DEF(AUDIO_GETINFO_eof),
 	DEF(AUDIO_SETINFO_mode),
 	DEF(AUDIO_SETINFO_params),
-	DEF(AUDIO_SETINFO_params2),
+	DEF(AUDIO_SETINFO_params2),		// これはほぼparams_3と同じなので省略
 	DEF(AUDIO_SETINFO_params3),
 	DEF(AUDIO_SETINFO_pause),
 	DEF(AUDIO_SETINFO_blocksize),
