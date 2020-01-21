@@ -322,9 +322,9 @@ main(int argc, char *argv[])
  * close(2) and re-open(2).
  * audio(4) uses hw_if->close() to tell the hardware to close.  However,
  * there is no agreement to wait for completion between MI and MD layer.
- * audio(4) immediately shifts the "closed" state and, that is, the next
- * open() is acceptable in audio layer. But the hardware may not have been
- * closed actually.
+ * audio(4) immediately shifts the "closed" state, and that is, the next
+ * open() will be acceptable immediately in audio layer.  But the real
+ * hardware may not have been closed actually at that point.
  * It's troublesome issue but should be fixed...
  */
 void
