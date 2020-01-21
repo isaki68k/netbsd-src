@@ -2364,6 +2364,10 @@ test_rdwr_two(int mode0, int mode1)
 		XP_SKIP("Multiple open is not supported");
 		return;
 	}
+	if (hw_bidir() == 0) {
+		XP_SKIP("This test is only for bi-directional device");
+		return;
+	}
 
 	exptable = hw_fulldup() ? exptable_full : exptable_half;
 
@@ -2601,6 +2605,10 @@ test_mmap_mode(int mode, int prot)
 	TEST("mmap_%s_%s", openmode_str[mode] + 2, protstr);
 	if ((props & AUDIO_PROP_MMAP) == 0) {
 		XP_SKIP("This test is only for mmap-able device");
+		return;
+	}
+	if (mode2aumode(mode) == 0) {
+		XP_SKIP("Operation not allowed on this hardware property");
 		return;
 	}
 
@@ -2895,6 +2903,10 @@ test_poll_mode(int mode, int events, int expected_revents)
 		events_str = "?";
 	}
 	TEST("poll_mode_%s_%s", openmode_str[mode] + 2, events_str);
+	if (mode2aumode(mode) == 0) {
+		XP_SKIP("Operation not allowed on this hardware property");
+		return;
+	}
 
 	expected_r = (expected_revents != 0) ? 1 : 0;
 
@@ -3428,6 +3440,10 @@ test_kqueue_mode(int openmode, int filt, int expected)
 	TEST("kqueue_mode_%s_%s",
 	    openmode_str[openmode] + 2,
 	    (filt == EVFILT_READ) ? "READ" : "WRITE");
+	if (mode2aumode(openmode) == 0) {
+		XP_SKIP("Operation not allowed on this hardware property");
+		return;
+	}
 
 	ts.tv_sec = 0;
 	ts.tv_nsec = 100 * 1000 * 1000;	// 100msec
@@ -4108,7 +4124,7 @@ DEF(FIOASYNC_rec_signal)
 	int i;
 
 	TEST("FIOASYNC_rec_signal");
-	if (hw_canplay() == 0) {
+	if (hw_canrec() == 0) {
 		XP_SKIP("This test is only for recordable device");
 		return;
 	}
@@ -4533,6 +4549,10 @@ test_AUDIO_SETINFO_mode(int openmode, int index, int setmode, int expected)
 
 	/* index was passed only for displaying here */
 	TEST("AUDIO_SETINFO_mode_%s_%d", openmode_str[openmode] + 2, index);
+	if (mode2aumode(openmode) == 0) {
+		XP_SKIP("Operation not allowed on this hardware property");
+		return;
+	}
 
 	inimode = mode2aumode(openmode);
 
@@ -4755,6 +4775,10 @@ test_AUDIO_SETINFO_params_set(int openmode, int aimode, int pause)
 
 	TEST("AUDIO_SETINFO_params_%s_%d_%d",
 	    openmode_str[openmode] + 2, aimode, pause);
+	if (mode2aumode(openmode) == 0) {
+		XP_SKIP("Operation not allowed on this hardware property");
+		return;
+	}
 
 	/* On half-duplex, O_RDWR is the same as O_WRONLY, so skip it */
 	if (!hw_fulldup() && openmode == O_RDWR) {
@@ -4895,6 +4919,10 @@ test_AUDIO_SETINFO_pause(int openmode, int aimode, int param)
 
 	TEST("AUDIO_SETINFO_pause_%s_%d_%d",
 	    openmode_str[openmode] + 2, aimode, param);
+	if (mode2aumode(openmode) == 0) {
+		XP_SKIP("Operation not allowed on this hardware property");
+		return;
+	}
 
 	/* On half-duplex, O_RDWR is the same as O_WRONLY, so skip it */
 	if (!hw_fulldup() && openmode == O_RDWR) {
