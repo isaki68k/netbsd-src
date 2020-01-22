@@ -580,9 +580,13 @@ atf_test_case AUDIO_SETINFO_gain
 AUDIO_SETINFO_gain_head() { }
 AUDIO_SETINFO_gain_body() { h_audio AUDIO_SETINFO_gain }
 
-atf_test_case AUDIO_GETENC
-AUDIO_GETENC_head() { }
-AUDIO_GETENC_body() { h_audio AUDIO_GETENC }
+atf_test_case AUDIO_GETENC_range
+AUDIO_GETENC_range_head() { }
+AUDIO_GETENC_range_body() { h_audio AUDIO_GETENC_range }
+
+atf_test_case AUDIO_GETENC_error
+AUDIO_GETENC_error_head() { }
+AUDIO_GETENC_error_body() { h_audio AUDIO_GETENC_error }
 
 atf_test_case AUDIO_ERROR_RDONLY
 AUDIO_ERROR_RDONLY_head() { }
@@ -857,7 +861,8 @@ atf_init_test_cases() {
 	atf_add_test_case AUDIO_SETINFO_pause_RDWR_2
 	atf_add_test_case AUDIO_SETINFO_pause_RDWR_3
 	atf_add_test_case AUDIO_SETINFO_gain
-	atf_add_test_case AUDIO_GETENC
+	atf_add_test_case AUDIO_GETENC_range
+	atf_add_test_case AUDIO_GETENC_error
 	atf_add_test_case AUDIO_ERROR_RDONLY
 	atf_add_test_case AUDIO_ERROR_WRONLY
 	atf_add_test_case AUDIO_ERROR_RDWR
