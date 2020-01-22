@@ -4067,6 +4067,46 @@ signal_FIOASYNC(int signo)
 }
 
 /*
+ * FIOASYNC between two descriptors should be splitted.
+ */
+DEF(FIOASYNC_reset)
+{
+	int fd0, fd1;
+	int r;
+	int val;
+
+	TEST("FIOASYNC_reset");
+	if (netbsd < 8) {
+		XP_SKIP("Multiple open is not supported");
+		return;
+	}
+
+	/* The first one opens */
+	fd0 = OPEN(devaudio, O_WRONLY);
+	REQUIRED_SYS_OK(fd0);
+
+	/* The second one opens, enables ASYNC, and closes */
+	fd1 = OPEN(devaudio, O_WRONLY);
+	REQUIRED_SYS_OK(fd1);
+	val = 1;
+	r = IOCTL(fd1, FIOASYNC, &val, "on");
+	XP_SYS_EQ(0, r);
+	r = CLOSE(fd1);
+	XP_SYS_EQ(0, r);
+
+	/* Again, the second one opens and enables ASYNC */
+	fd1 = OPEN(devaudio, O_WRONLY);
+	REQUIRED_SYS_OK(fd1);
+	val = 1;
+	r = IOCTL(fd1, FIOASYNC, &val, "on");
+	XP_SYS_EQ(0, r);	/* NetBSD8 fails */
+	r = CLOSE(fd1);
+	XP_SYS_EQ(0, r);
+	r = CLOSE(fd0);
+	XP_SYS_EQ(0, r);
+}
+
+/*
  * Whether SIGIO is emitted on plyaback.
  * XXX I don't understand conditions that NetBSD7 emits signal.
  */
@@ -4182,6 +4222,10 @@ DEF(FIOASYNC_multi)
 	pid_t pid;
 
 	TEST("FIOASYNC_multi");
+	if (netbsd < 8) {
+		XP_SKIP("Multiple open is not supported");
+		return;
+	}
 	if (hw_canplay() == 0) {
 		XP_SKIP("This test is only for playable device");
 		return;
@@ -5940,6 +5984,7 @@ struct testentry testtable[] = {
 	ENT(kqueue_unpause),
 	ENT(kqueue_simul),
 	ENT(ioctl_while_write),
+	ENT(FIOASYNC_reset),
 	ENT(FIOASYNC_play_signal),
 	ENT(FIOASYNC_rec_signal),
 	ENT(FIOASYNC_multi),

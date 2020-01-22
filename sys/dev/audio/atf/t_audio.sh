@@ -356,6 +356,10 @@ atf_test_case ioctl_while_write
 ioctl_while_write_head() { }
 ioctl_while_write_body() { h_audio ioctl_while_write }
 
+atf_test_case FIOASYNC_reset
+FIOASYNC_reset_head() { }
+FIOASYNC_reset_body() { h_audio FIOASYNC_reset }
+
 atf_test_case FIOASYNC_play_signal
 FIOASYNC_play_signal_head() { }
 FIOASYNC_play_signal_body() { h_audio FIOASYNC_play_signal }
@@ -809,6 +813,7 @@ atf_init_test_cases() {
 	atf_add_test_case kqueue_unpause
 	atf_add_test_case kqueue_simul
 	atf_add_test_case ioctl_while_write
+	atf_add_test_case FIOASYNC_reset
 	atf_add_test_case FIOASYNC_play_signal
 	atf_add_test_case FIOASYNC_rec_signal
 	atf_add_test_case FIOASYNC_multi

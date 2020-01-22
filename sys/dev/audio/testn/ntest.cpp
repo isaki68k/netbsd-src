@@ -3960,13 +3960,13 @@ test_FIOASYNC_simul(void)
 
 // FIOASYNC リセットのタイミング
 void
-test_FIOASYNC_3(void)
+test_FIOASYNC_reset(void)
 {
 	int r;
 	int fd0, fd1;
 	int val;
 
-	TEST("FIOASYNC_3");
+	TEST("FIOASYNC_reset");
 	if (netbsd < 8) {
 		XP_SKIP("NetBSD7 does not support multi-open");
 		return;
@@ -7504,9 +7504,9 @@ struct testtable testtable[] = {
 	DEF(kqueue_unpause),
 	DEF(kqueue_simul),
 	DEF(ioctl_while_write),
-	DEF(FIOASYNC_multiple),	// 保留
-	DEF(FIOASYNC_simul),	// 保留
-	DEF(FIOASYNC_3),		// 保留
+	DEF(FIOASYNC_multiple),	// FIOASYNC_multi として再実装済み
+	DEF(FIOASYNC_simul),	// FIOASYNC_multi として再実装済み
+	DEF(FIOASYNC_reset),
 	DEF(FIOASYNC_play_signal),
 	DEF(FIOASYNC_rec_signal),
 	DEF(AUDIO_WSEEK),
