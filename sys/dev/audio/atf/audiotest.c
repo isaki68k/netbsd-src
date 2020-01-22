@@ -4062,13 +4062,13 @@ signal_FIOASYNC(int signo)
 {
 	if (signo == SIGIO) {
 		sigio_caught = 1;
-		DPRINTF("  > %d: SIGIO caught\n", __LINE__);
+		DPRINTF("  > %d: pid %d got SIGIO\n", __LINE__, (int)getpid());
 	}
 }
 
 /*
  * Whether SIGIO is emitted on plyaback.
- * XXX I don't understand the conditions that NetBSD7 emits signal.
+ * XXX I don't understand conditions that NetBSD7 emits signal.
  */
 DEF(FIOASYNC_play_signal)
 {
@@ -4109,6 +4109,7 @@ DEF(FIOASYNC_play_signal)
 	for (i = 0; i < 100 && sigio_caught == 0; i++) {
 		usleep(10000);
 	}
+	signal(SIGIO, SIG_IGN);
 	XP_EQ(1, sigio_caught);
 
 	r = CLOSE(fd);
@@ -4153,6 +4154,7 @@ DEF(FIOASYNC_rec_signal)
 	for (i = 0; i < 100 && sigio_caught == 0; i++) {
 		usleep(10000);
 	}
+	signal(SIGIO, SIG_IGN);
 	XP_EQ(1, sigio_caught);
 
 	r = CLOSE(fd);
@@ -4160,6 +4162,124 @@ DEF(FIOASYNC_rec_signal)
 
 	signal(SIGIO, SIG_IGN);
 	sigio_caught = 0;
+}
+
+/*
+ * FIOASYNC doesn't affect other descriptor.
+ * For simplify, test only for playback...
+ */
+DEF(FIOASYNC_multi)
+{
+	struct audio_info ai;
+	char *buf;
+	char pipebuf[1];
+	int r;
+	int i;
+	int fd1;
+	int fd2;
+	int pd[2];
+	int val;
+	pid_t pid;
+
+	TEST("FIOASYNC_multi");
+	if (hw_canplay() == 0) {
+		XP_SKIP("This test is only for playable device");
+		return;
+	}
+
+	/* Pipe used between parent and child */
+	r = pipe(pd);
+	REQUIRED_SYS_EQ(0, r);
+
+	fd1 = OPEN(devaudio, O_WRONLY);
+	REQUIRED_SYS_OK(fd1);
+	fd2 = OPEN(devaudio, O_WRONLY);
+	REQUIRED_SYS_OK(fd2);
+
+	/* Pause fd2 */
+	AUDIO_INITINFO(&ai);
+	ai.play.pause = 1;
+	r = IOCTL(fd2, AUDIO_SETINFO, &ai, "pause");
+	REQUIRED_SYS_EQ(0, r);
+
+	/* Fill both */
+	r = IOCTL(fd1, AUDIO_GETBUFINFO, &ai, "");
+	REQUIRED_SYS_EQ(0, r);
+	REQUIRED_IF(ai.blocksize != 0);
+	buf = (char *)malloc(ai.blocksize);
+	REQUIRED_IF(buf != NULL);
+	memset(buf, 0xff, ai.blocksize);
+	r = WRITE(fd1, buf, ai.blocksize);
+	XP_SYS_EQ(ai.blocksize, r);
+
+	sigio_caught = 0;
+	val = 1;
+
+	fflush(stdout);
+	fflush(stderr);
+	pid = fork();
+	if (pid == -1) {
+		REQUIRED_SYS_OK(pid);
+	}
+	if (pid == 0) {
+		/* Child */
+		close(fd1);
+
+		/* Child enables ASYNC on fd2 */
+		signal(SIGIO, signal_FIOASYNC);
+		r = IOCTL(fd2, FIOASYNC, &val, "on");
+		/* It cannot count errors because here is a child process */
+		/* XP_SYS_EQ(0, r); */
+
+		/*
+		 * Waits signal until 1sec.
+		 * But fd2 is paused so it should never raise.
+		 */
+		for (i = 0; i < 100 && sigio_caught == 0; i++) {
+			usleep(10000);
+		}
+		signal(SIGIO, SIG_IGN);
+		pipebuf[0] = sigio_caught;
+		/* This is not WRITE() macro here */
+		write(pd[1], pipebuf, sizeof(pipebuf));
+
+		/* XXX? */
+		close(fd2);
+		sleep(1);
+		exit(0);
+	} else {
+		/* Parent */
+		DPRINTF("  > fork() = %d\n", (int)pid);
+
+		/* Parent enables ASYNC on fd1 */
+		signal(SIGIO, signal_FIOASYNC);
+		r = IOCTL(fd1, FIOASYNC, &val, "on");
+		XP_SYS_EQ(0, r);
+
+		/* Waits signal until 1sec */
+		for (i = 0; i < 100 && sigio_caught == 0; i++) {
+			usleep(10000);
+		}
+		signal(SIGIO, SIG_IGN);
+		XP_EQ(1, sigio_caught);
+
+		/* Then read child's result from pipe */
+		r = read(pd[0], pipebuf, sizeof(pipebuf));
+		if (r != 1) {
+			XP_FAIL("reading from child failed");
+		}
+		DPRINTF("  > child's sigio_cauht = %d\n", pipebuf[0]);
+		XP_EQ(0, pipebuf[0]);
+	}
+
+	r = CLOSE(fd1);
+	XP_SYS_EQ(0, r);
+	r = CLOSE(fd2);
+	XP_SYS_EQ(0, r);
+
+	signal(SIGIO, SIG_IGN);
+	sigio_caught = 0;
+	free(buf);
 }
 
 /*
@@ -5822,6 +5942,7 @@ struct testentry testtable[] = {
 	ENT(ioctl_while_write),
 	ENT(FIOASYNC_play_signal),
 	ENT(FIOASYNC_rec_signal),
+	ENT(FIOASYNC_multi),
 	ENT(AUDIO_WSEEK),
 	ENT(AUDIO_SETFD_RDONLY),
 	ENT(AUDIO_SETFD_WRONLY),
