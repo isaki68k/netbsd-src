@@ -1248,6 +1248,13 @@ mode2aumode(int mode)
 		aumode &= ~(AUMODE_PLAY | AUMODE_PLAY_ALL);
 	if (hw_canrec() == 0)
 		aumode &= ~AUMODE_RECORD;
+
+	if (netbsd >= 9) {
+		/* half-duplex treats O_RDWR as O_WRONLY */
+		if (mode == O_RDWR && hw_bidir() && hw_fulldup() == 0)
+			aumode &= ~AUMODE_RECORD;
+	}
+
 	return aumode;
 }
 
