@@ -1,7 +1,7 @@
-/*	$NetBSD: sched_4bsd.c,v 1.37 2019/11/23 22:35:08 ad Exp $	*/
+/*	$NetBSD: sched_4bsd.c,v 1.42 2020/01/09 16:35:03 ad Exp $	*/
 
 /*
- * Copyright (c) 1999, 2000, 2004, 2006, 2007, 2008, 2019
+ * Copyright (c) 1999, 2000, 2004, 2006, 2007, 2008, 2019, 2020
  *     The NetBSD Foundation, Inc.
  * All rights reserved.
  *
@@ -69,7 +69,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sched_4bsd.c,v 1.37 2019/11/23 22:35:08 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sched_4bsd.c,v 1.42 2020/01/09 16:35:03 ad Exp $");
 
 #include "opt_ddb.h"
 #include "opt_lockdebug.h"
@@ -104,16 +104,18 @@ void
 sched_tick(struct cpu_info *ci)
 {
 	struct schedstate_percpu *spc = &ci->ci_schedstate;
+	pri_t pri = PRI_NONE;
 	lwp_t *l;
 
 	spc->spc_ticks = rrticks;
 
 	if (CURCPU_IDLE_P()) {
-		atomic_or_uint(&ci->ci_want_resched,
-		    RESCHED_IDLE | RESCHED_UPREEMPT);
+		spc_lock(ci);
+		sched_resched_cpu(ci, MAXPRI_KTHREAD, true);
+		/* spc now unlocked */
 		return;
 	}
-	l = ci->ci_data.cpu_onproc;
+	l = ci->ci_onproc;
 	if (l == NULL) {
 		return;
 	}
@@ -128,8 +130,7 @@ sched_tick(struct cpu_info *ci)
 		break;
 	case SCHED_RR:
 		/* Force it into mi_switch() to look for other jobs to run. */
-		atomic_or_uint(&l->l_dopreempt, DOPREEMPT_ACTIVE);
-		cpu_need_resched(ci, l, RESCHED_KPREEMPT);
+		pri = MAXPRI_KERNEL_RT;
 		break;
 	default:
 		if (spc->spc_flags & SPCF_SHOULDYIELD) {
@@ -138,20 +139,31 @@ sched_tick(struct cpu_info *ci)
 			 * due to buggy or inefficient code.  Force a
 			 * kernel preemption.
 			 */
-			atomic_or_uint(&l->l_dopreempt, DOPREEMPT_ACTIVE);
-			cpu_need_resched(ci, l, RESCHED_KPREEMPT);
+			pri = MAXPRI_KERNEL_RT;
 		} else if (spc->spc_flags & SPCF_SEENRR) {
 			/*
 			 * The process has already been through a roundrobin
 			 * without switching and may be hogging the CPU.
 			 * Indicate that the process should yield.
 			 */
-			spc->spc_flags |= SPCF_SHOULDYIELD;
-			cpu_need_resched(ci, l, RESCHED_UPREEMPT);
+			pri = MAXPRI_KTHREAD;
+		} else if ((spc->spc_flags & SPCF_1STCLASS) == 0) {
+			/*
+			 * For SMT or assymetric systems push a little
+			 * harder: if this is not a 1st class CPU, try to
+			 * find a better one to run this LWP.
+			 */
+			pri = MAXPRI_KTHREAD;
 		} else {
 			spc->spc_flags |= SPCF_SEENRR;
 		}
 		break;
+	}
+
+	if (pri != PRI_NONE) {
+		spc_lock(ci);
+		sched_resched_cpu(ci, pri, true);
+		/* spc now unlocked */
 	}
 }
 

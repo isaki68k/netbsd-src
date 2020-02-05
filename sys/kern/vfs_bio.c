@@ -1,7 +1,7 @@
-/*	$NetBSD: vfs_bio.c,v 1.279 2019/08/26 10:24:39 msaitoh Exp $	*/
+/*	$NetBSD: vfs_bio.c,v 1.287 2020/01/17 19:33:14 ad Exp $	*/
 
 /*-
- * Copyright (c) 2007, 2008, 2009 The NetBSD Foundation, Inc.
+ * Copyright (c) 2007, 2008, 2009, 2019 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -123,7 +123,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_bio.c,v 1.279 2019/08/26 10:24:39 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_bio.c,v 1.287 2020/01/17 19:33:14 ad Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_bufcache.h"
@@ -184,7 +184,7 @@ struct bqueue {
 	uint64_t bq_bytes;
 	buf_t *bq_marker;
 };
-static struct bqueue bufqueues[BQUEUES];
+static struct bqueue bufqueues[BQUEUES] __cacheline_aligned;
 
 /* Function prototypes */
 static void buf_setwm(void);
@@ -237,8 +237,8 @@ static kcondvar_t needbuffer_cv;
 /*
  * Buffer queue lock.
  */
-kmutex_t bufcache_lock;
-kmutex_t buffer_lock;
+kmutex_t bufcache_lock __cacheline_aligned;
+kmutex_t buffer_lock __cacheline_aligned;
 
 /* Software ISR for completed transfers. */
 static void *biodone_sih;
@@ -614,7 +614,7 @@ buf_canrelease(void)
 
 	ninvalid += bufqueues[BQ_AGE].bq_bytes;
 
-	pagedemand = uvmexp.freetarg - uvmexp.free;
+	pagedemand = uvmexp.freetarg - uvm_availmem();
 	if (pagedemand < 0)
 		return ninvalid;
 	return MAX(ninvalid, MIN(2 * MAXBSIZE,
@@ -896,6 +896,8 @@ bwrite(buf_t *bp)
 		mutex_enter(bp->b_objlock);
 		CLR(bp->b_oflags, BO_DONE | BO_DELWRI);
 		reassignbuf(bp, bp->b_vp);
+		/* Wake anyone trying to busy the buffer via vnode's lists. */
+		cv_broadcast(&bp->b_busy);
 		mutex_exit(&bufcache_lock);
 	} else {
 		curlwp->l_ru.ru_oublock++;
@@ -988,6 +990,8 @@ bdwrite(buf_t *bp)
 		SET(bp->b_oflags, BO_DELWRI);
 		curlwp->l_ru.ru_oublock++;
 		reassignbuf(bp, bp->b_vp);
+		/* Wake anyone trying to busy the buffer via vnode's lists. */
+		cv_broadcast(&bp->b_busy);
 		mutex_exit(&bufcache_lock);
 	} else {
 		mutex_enter(bp->b_objlock);
@@ -1107,7 +1111,8 @@ brelsel(buf_t *bp, int set)
 			KASSERT(bp->b_objlock == &buffer_lock);
 			mutex_exit(bp->b_objlock);
 		}
-
+		/* We want to dispose of the buffer, so wake everybody. */
+		cv_broadcast(&bp->b_busy);
 		if (bp->b_bufsize <= 0)
 			/* no data */
 			goto already_queued;
@@ -1140,7 +1145,17 @@ already_queued:
 	/* Unlock the buffer. */
 	CLR(bp->b_cflags, BC_AGE|BC_BUSY|BC_NOCACHE);
 	CLR(bp->b_flags, B_ASYNC);
-	cv_broadcast(&bp->b_busy);
+
+	/*
+	 * Wake only the highest priority waiter on the lock, in order to
+	 * prevent a thundering herd: many LWPs simultaneously awakening and
+	 * competing for the buffer's lock.  Testing in 2019 revealed this
+	 * to reduce contention on bufcache_lock tenfold during a kernel
+	 * compile.  Elsewhere, when the buffer is changing identity, being
+	 * disposed of, or moving from one list to another, we wake all lock
+	 * requestors.
+	 */
+	cv_signal(&bp->b_busy);
 
 	if (bp->b_bufsize <= 0)
 		brele(bp);
@@ -1410,6 +1425,9 @@ getnewbuf(int slpflag, int slptimeo, int from_bufq)
 
 		/* Buffer is no longer on free lists. */
 		SET(bp->b_cflags, BC_BUSY);
+
+		/* Wake anyone trying to lock the old identity. */
+		cv_broadcast(&bp->b_busy);
 	} else {
 		/*
 		 * XXX: !from_bufq should be removed.
@@ -1648,11 +1666,9 @@ biodone2(buf_t *bp)
 
 		/* Note callout done, then call out. */
 		KASSERT(!cv_has_waiters(&bp->b_done));
-		KERNEL_LOCK(1, NULL);		/* XXXSMP */
 		bp->b_iodone = NULL;
 		mutex_exit(bp->b_objlock);
 		(*callout)(bp);
-		KERNEL_UNLOCK_ONE(NULL);	/* XXXSMP */
 	} else if (ISSET(bp->b_flags, B_ASYNC)) {
 		/* If async, release. */
 		BIOHIST_LOG(biohist, "async", 0, 0, 0, 0);
@@ -2039,7 +2055,7 @@ nestiobuf_iodone(buf_t *bp)
 	if (bp->b_error == 0 &&
 	    (bp->b_bcount < bp->b_bufsize || bp->b_resid > 0)) {
 		/*
-		 * Not all got transfered, raise an error. We have no way to
+		 * Not all got transferred, raise an error. We have no way to
 		 * propagate these conditions to mbp.
 		 */
 		error = EIO;

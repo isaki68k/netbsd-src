@@ -1,4 +1,4 @@
-/*	$NetBSD: types.h,v 1.102 2018/11/06 16:26:44 maya Exp $	*/
+/*	$NetBSD: types.h,v 1.104 2020/01/28 16:40:27 ad Exp $	*/
 
 /*-
  * Copyright (c) 1982, 1986, 1991, 1993, 1994

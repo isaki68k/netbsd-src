@@ -1,4 +1,4 @@
-/* $NetBSD: cpu.h,v 1.15 2019/11/21 19:23:58 ad Exp $ */
+/* $NetBSD: cpu.h,v 1.19 2020/01/15 08:34:04 mrg Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -73,6 +73,7 @@ struct cpu_info {
 	device_t ci_dev;
 	cpuid_t ci_cpuid;
 	struct lwp *ci_curlwp;
+	struct lwp *ci_onproc;
 	struct lwp *ci_softlwps[SOFTINT_COUNT];
 
 	uint64_t ci_lastintr;
@@ -92,6 +93,9 @@ struct cpu_info {
 	struct evcnt ci_vfp_save;
 	struct evcnt ci_vfp_release;
 
+	/* FDT or similar supplied "cpu capacity" */
+	uint32_t ci_capacity_dmips_mhz;
+
 	/* interrupt controller */
 	u_int ci_gic_redist;	/* GICv3 redistributor index */
 	uint64_t ci_gic_sgir;	/* GICv3 SGIR target */
@@ -100,6 +104,7 @@ struct cpu_info {
 	uint64_t ci_acpiid;	/* ACPI Processor Unique ID */
 
 	struct aarch64_sysctl_cpu_id ci_id;
+#define arm_cpu_mpidr(ci)	((ci)->ci_id.ac_mpidr)
 
 	struct aarch64_cache_info *ci_cacheinfo;
 	struct aarch64_cpufuncs ci_cpufuncs;
@@ -154,16 +159,6 @@ cpu_dosoftints(void)
 	if (ci->ci_intr_depth == 0 && (ci->ci_softints >> ci->ci_cpl) > 0)
 		dosoftints();
 #endif
-}
-
-static inline bool
-cpu_intr_p(void)
-{
-#ifdef __HAVE_PIC_FAST_SOFTINTS
-	if (ci->ci_cpl < IPL_VM)
-		return false;
-#endif
-	return curcpu()->ci_intr_depth > 0;
 }
 
 void	cpu_attach(device_t, cpuid_t);

@@ -1,4 +1,4 @@
-/*	$NetBSD: gem.c,v 1.121 2019/09/13 07:55:06 msaitoh Exp $ */
+/*	$NetBSD: gem.c,v 1.127 2020/02/04 05:25:39 thorpej Exp $ */
 
 /*
  *
@@ -37,7 +37,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gem.c,v 1.121 2019/09/13 07:55:06 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gem.c,v 1.127 2020/02/04 05:25:39 thorpej Exp $");
 
 #include "opt_inet.h"
 
@@ -175,7 +175,7 @@ gem_detach(struct gem_softc *sc, int flags)
 		rnd_detach_source(&sc->rnd_source);
 		ether_ifdetach(ifp);
 		if_detach(ifp);
-		ifmedia_delete_instance(&sc->sc_mii.mii_media, IFM_INST_ANY);
+		ifmedia_fini(&sc->sc_mii.mii_media);
 
 		callout_destroy(&sc->sc_tick_ch);
 		callout_destroy(&sc->sc_rx_watchdog);
@@ -246,7 +246,7 @@ gem_attach(struct gem_softc *sc, const uint8_t *enaddr)
 	struct mii_data *mii = &sc->sc_mii;
 	bus_space_tag_t t = sc->sc_bustag;
 	bus_space_handle_t h = sc->sc_h1;
-	struct ifmedia_entry *ifm;
+	struct ifmedia_entry *ife;
 	int i, error, phyaddr;
 	uint32_t v;
 	char *nullbuf;
@@ -559,11 +559,11 @@ gem_attach(struct gem_softc *sc, const uint8_t *enaddr)
 	 * If we support GigE media, we support jumbo frames too.
 	 * Unless we are Apple.
 	 */
-	TAILQ_FOREACH(ifm, &mii->mii_media.ifm_list, ifm_list) {
-		if (IFM_SUBTYPE(ifm->ifm_media) == IFM_1000_T ||
-		    IFM_SUBTYPE(ifm->ifm_media) == IFM_1000_SX ||
-		    IFM_SUBTYPE(ifm->ifm_media) == IFM_1000_LX ||
-		    IFM_SUBTYPE(ifm->ifm_media) == IFM_1000_CX) {
+	TAILQ_FOREACH(ife, &mii->mii_media.ifm_list, ifm_list) {
+		if (IFM_SUBTYPE(ife->ifm_media) == IFM_1000_T ||
+		    IFM_SUBTYPE(ife->ifm_media) == IFM_1000_SX ||
+		    IFM_SUBTYPE(ife->ifm_media) == IFM_1000_LX ||
+		    IFM_SUBTYPE(ife->ifm_media) == IFM_1000_CX) {
 			if (!GEM_IS_APPLE(sc))
 				sc->sc_ethercom.ec_capabilities
 				    |= ETHERCAP_JUMBO_MTU;
@@ -770,7 +770,7 @@ gem_reset_rx(struct gem_softc *sc)
 	bus_space_barrier(t, h, GEM_RX_CONFIG, 4, BUS_SPACE_BARRIER_WRITE);
 	/* Wait till it finishes */
 	if (!gem_bitwait(sc, h, GEM_RX_CONFIG, 1, 0))
-		aprint_error_dev(sc->sc_dev, "cannot disable read dma\n");
+		aprint_error_dev(sc->sc_dev, "cannot disable rx dma\n");
 	/* Wait 5ms extra. */
 	delay(5000);
 
@@ -878,7 +878,7 @@ gem_reset_tx(struct gem_softc *sc)
 	bus_space_barrier(t, h, GEM_TX_CONFIG, 4, BUS_SPACE_BARRIER_WRITE);
 	/* Wait till it finishes */
 	if (!gem_bitwait(sc, h, GEM_TX_CONFIG, 1, 0))
-		aprint_error_dev(sc->sc_dev, "cannot disable read dma\n");
+		aprint_error_dev(sc->sc_dev, "cannot disable tx dma\n"); /* OpenBSD 1.34 */
 	/* Wait 5ms extra. */
 	delay(5000);
 
@@ -887,7 +887,7 @@ gem_reset_tx(struct gem_softc *sc)
 	bus_space_barrier(t, h, GEM_RESET, 4, BUS_SPACE_BARRIER_WRITE);
 	/* Wait till it finishes */
 	if (!gem_bitwait(sc, h2, GEM_RESET, GEM_RESET_TX, 0)) {
-		aprint_error_dev(sc->sc_dev, "cannot reset receiver\n");
+		aprint_error_dev(sc->sc_dev, "cannot reset transmitter\n"); /* OpenBSD 1.34 */
 		return (1);
 	}
 	return (0);
@@ -1213,7 +1213,6 @@ gem_init(struct ifnet *ifp)
 	if (sc->sc_hwinit)
 		(*sc->sc_hwinit)(sc);
 
-
 	/* step 15.  Give the receiver a swift kick */
 	bus_space_write_4(t, h, GEM_RX_KICK, GEM_NRXDESC-4);
 
@@ -1389,6 +1388,9 @@ gem_start(struct ifnet *ifp)
 	 * until we drain the queue, or use up all available transmit
 	 * descriptors.
 	 */
+#ifdef INET
+next:
+#endif
 	while ((txs = SIMPLEQ_FIRST(&sc->sc_txfreeq)) != NULL &&
 	    sc->sc_txfree != 0) {
 		/*
@@ -1498,16 +1500,9 @@ gem_start(struct ifnet *ifp)
 			 * and the checksum stuff if we want the hardware
 			 * to do it.
 			 */
-			sc->sc_txdescs[nexttx].gd_addr =
-			    GEM_DMA_WRITE(sc, dmamap->dm_segs[seg].ds_addr);
 			flags = dmamap->dm_segs[seg].ds_len & GEM_TD_BUFSIZE;
 			if (nexttx == firsttx) {
 				flags |= GEM_TD_START_OF_PACKET;
-				if (++sc->sc_txwin > GEM_NTXSEGS * 2 / 3) {
-					sc->sc_txwin = 0;
-					flags |= GEM_TD_INTERRUPT_ME;
-				}
-
 #ifdef INET
 				/* h/w checksum */
 				if (ifp->if_csum_flags_tx & M_CSUM_TCPv4 &&
@@ -1526,8 +1521,10 @@ gem_start(struct ifnet *ifp)
 						break;
 					default:
 						/* unsupported, drop it */
-						m_free(m0);
-						continue;
+						bus_dmamap_unload(sc->sc_dmatag,
+							dmamap);
+						m_freem(m0);
+						goto next;
 					}
 					start += M_CSUM_DATA_IPv4_IPHL(m0->m_pkthdr.csum_data);
 					offset = M_CSUM_DATA_IPv4_OFFSET(m0->m_pkthdr.csum_data) + start;
@@ -1538,7 +1535,13 @@ gem_start(struct ifnet *ifp)
 						 GEM_TD_CXSUM_ENABLE;
 				}
 #endif
+				if (++sc->sc_txwin > GEM_NTXSEGS * 2 / 3) {
+					sc->sc_txwin = 0;
+					flags |= GEM_TD_INTERRUPT_ME;
+				}
 			}
+			sc->sc_txdescs[nexttx].gd_addr =
+			    GEM_DMA_WRITE(sc, dmamap->dm_segs[seg].ds_addr);
 			if (seg == dmamap->dm_nsegs - 1) {
 				flags |= GEM_TD_END_OF_PACKET;
 			} else {
@@ -1641,15 +1644,17 @@ gem_tint(struct gem_softc *sc)
 	int progress = 0;
 	uint32_t v;
 
+	net_stat_ref_t nsr = IF_STAT_GETREF(ifp);
+
 	DPRINTF(sc, ("%s: gem_tint\n", device_xname(sc->sc_dev)));
 
 	/* Unload collision counters ... */
 	v = bus_space_read_4(t, mac, GEM_MAC_EXCESS_COLL_CNT) +
 	    bus_space_read_4(t, mac, GEM_MAC_LATE_COLL_CNT);
-	ifp->if_collisions += v +
+	if_statadd_ref(nsr, if_collisions, v +
 	    bus_space_read_4(t, mac, GEM_MAC_NORM_COLL_CNT) +
-	    bus_space_read_4(t, mac, GEM_MAC_FIRST_COLL_CNT);
-	ifp->if_oerrors += v;
+	    bus_space_read_4(t, mac, GEM_MAC_FIRST_COLL_CNT));
+	if_statadd_ref(nsr, if_oerrors, v);
 
 	/* ... then clear the hardware counters. */
 	bus_space_write_4(t, mac, GEM_MAC_NORM_COLL_CNT, 0);
@@ -1719,9 +1724,11 @@ gem_tint(struct gem_softc *sc)
 
 		SIMPLEQ_INSERT_TAIL(&sc->sc_txfreeq, txs, txs_q);
 
-		ifp->if_opackets++;
+		if_statinc_ref(nsr, if_opackets);
 		progress = 1;
 	}
+
+	IF_STAT_PUTREF(ifp);
 
 #if 0
 	DPRINTF(sc, ("gem_tint: GEM_TX_STATE_MACHINE %x "
@@ -1809,7 +1816,7 @@ gem_rint(struct gem_softc *sc)
 		progress++;
 
 		if (rxstat & GEM_RD_BAD_CRC) {
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			aprint_error_dev(sc->sc_dev,
 			    "receive error: CRC error\n");
 			GEM_INIT_RXDESC(sc, i);
@@ -1839,7 +1846,7 @@ gem_rint(struct gem_softc *sc)
 		m = rxs->rxs_mbuf;
 		if (gem_add_rxbuf(sc, i) != 0) {
 			GEM_COUNTER_INCR(sc, sc_ev_rxnobuf);
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			aprint_error_dev(sc->sc_dev,
 			    "receive error: RX no buffer space\n");
 			GEM_INIT_RXDESC(sc, i);
@@ -1978,11 +1985,11 @@ swcsum:
 		sc->sc_rxptr, bus_space_read_4(t, h, GEM_RX_COMPLETION)));
 
 	/* Read error counters ... */
-	ifp->if_ierrors +=
+	if_statadd(ifp, if_ierrors,
 	    bus_space_read_4(t, h, GEM_MAC_RX_LEN_ERR_CNT) +
 	    bus_space_read_4(t, h, GEM_MAC_RX_ALIGN_ERR) +
 	    bus_space_read_4(t, h, GEM_MAC_RX_CRC_ERR_CNT) +
-	    bus_space_read_4(t, h, GEM_MAC_RX_CODE_VIOL);
+	    bus_space_read_4(t, h, GEM_MAC_RX_CODE_VIOL));
 
 	/* ... then clear the hardware counters. */
 	bus_space_write_4(t, h, GEM_MAC_RX_LEN_ERR_CNT, 0);
@@ -2221,7 +2228,7 @@ gem_intr(void *v)
 		 * RX FIFO write and read pointers.
 		 */
 		if (rxstat & GEM_MAC_RX_OVERFLOW) {
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			aprint_error_dev(sc->sc_dev,
 			    "receive error: RX overflow sc->rxptr %d, complete %d\n", sc->sc_rxptr, bus_space_read_4(t, h, GEM_RX_COMPLETION));
 			sc->sc_rx_fifo_wr_ptr =
@@ -2323,7 +2330,7 @@ gem_watchdog(struct ifnet *ifp)
 		bus_space_read_4(sc->sc_bustag, sc->sc_h1, GEM_MAC_RX_CONFIG)));
 
 	log(LOG_ERR, "%s: device timeout\n", device_xname(sc->sc_dev));
-	++ifp->if_oerrors;
+	if_statinc(ifp, if_oerrors);
 
 	/* Try to get more packets going. */
 	gem_init(ifp);

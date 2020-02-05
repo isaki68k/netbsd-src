@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_init.c,v 1.49 2018/05/19 11:39:37 jdolecek Exp $	*/
+/*	$NetBSD: uvm_init.c,v 1.52 2019/12/27 12:51:57 ad Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_init.c,v 1.49 2018/05/19 11:39:37 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_init.c,v 1.52 2019/12/27 12:51:57 ad Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -64,10 +64,7 @@ const int * const uvmexp_pagemask = &uvmexp.pagemask;
 const int * const uvmexp_pageshift = &uvmexp.pageshift;
 #endif
 
-kmutex_t uvm_pageqlock;
-kmutex_t uvm_fpageqlock;
-kmutex_t uvm_kentry_lock;
-kmutex_t uvm_swap_data_lock;
+kmutex_t uvm_kentry_lock __cacheline_aligned;
 
 /*
  * uvm_md_init: Init dependant on the MD boot context.

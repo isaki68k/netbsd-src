@@ -1,4 +1,4 @@
-/*	$NetBSD: ulfs_inode.c,v 1.21 2017/10/28 00:37:13 pgoyette Exp $	*/
+/*	$NetBSD: ulfs_inode.c,v 1.24 2020/01/15 17:55:44 ad Exp $	*/
 /*  from NetBSD: ufs_inode.c,v 1.95 2015/06/13 14:56:45 hannken Exp  */
 
 /*
@@ -38,7 +38,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ulfs_inode.c,v 1.21 2017/10/28 00:37:13 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ulfs_inode.c,v 1.24 2020/01/15 17:55:44 ad Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_lfs.h"
@@ -223,18 +223,17 @@ ulfs_balloc_range(struct vnode *vp, off_t off, off_t len, kauth_cred_t cred,
 	genfs_node_unlock(vp);
 
 	/*
-	 * if the allocation succeeded, clear PG_CLEAN on all the pages
-	 * and clear PG_RDONLY on any pages that are now fully backed
-	 * by disk blocks.  if the allocation failed, we do not invalidate
-	 * the pages since they might have already existed and been dirty,
-	 * in which case we need to keep them around.  if we created the pages,
-	 * they will be clean and read-only, and leaving such pages
-	 * in the cache won't cause any problems.
+	 * if the allocation succeeded, mark all pages dirty and clear
+	 * PG_RDONLY on any pages that are now fully backed by disk blocks. 
+	 * if the allocation failed, we do not invalidate the pages since
+	 * they might have already existed and been dirty, in which case we
+	 * need to keep them around.  if we created the pages, they will be
+	 * clean and read-only, and leaving such pages in the cache won't
+	 * cause any problems.
 	 */
 
 	GOP_SIZE(vp, off + len, &eob, 0);
 	mutex_enter(uobj->vmobjlock);
-	mutex_enter(&uvm_pageqlock);
 	for (i = 0; i < npages; i++) {
 		KASSERT((pgs[i]->flags & PG_RELEASED) == 0);
 		if (!error) {
@@ -242,11 +241,12 @@ ulfs_balloc_range(struct vnode *vp, off_t off, off_t len, kauth_cred_t cred,
 			    pagestart + ((i + 1) << PAGE_SHIFT) <= eob) {
 				pgs[i]->flags &= ~PG_RDONLY;
 			}
-			pgs[i]->flags &= ~PG_CLEAN;
+			uvm_pagemarkdirty(pgs[i], UVM_PAGE_STATUS_DIRTY);
 		}
+		uvm_pagelock(pgs[i]);
 		uvm_pageactivate(pgs[i]);
+		uvm_pageunlock(pgs[i]);
 	}
-	mutex_exit(&uvm_pageqlock);
 	uvm_page_unbusy(pgs, npages);
 	mutex_exit(uobj->vmobjlock);
 

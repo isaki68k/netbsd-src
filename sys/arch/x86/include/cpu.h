@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.h,v 1.114 2019/11/27 06:24:33 maxv Exp $	*/
+/*	$NetBSD: cpu.h,v 1.117 2020/01/15 13:22:03 ad Exp $	*/
 
 /*
  * Copyright (c) 1990 The Regents of the University of California.
@@ -116,15 +116,6 @@ struct cpu_info {
 #endif
 
 	/*
-	 * Will be accessed by other CPUs.
-	 */
-	struct cpu_info *ci_next;	/* next cpu */
-	struct lwp *ci_curlwp;		/* current owner of the processor */
-	cpuid_t ci_cpuid;		/* our CPU ID */
-	uint32_t ci_acpiid;		/* our ACPI/MADT ID */
-	uint32_t ci_initapicid;		/* our initial APIC ID */
-
-	/*
 	 * Private members.
 	 */
 	struct pmap *ci_pmap;		/* current pmap */
@@ -136,7 +127,7 @@ struct cpu_info {
 	int ci_curldt;		/* current LDT descriptor */
 	int ci_nintrhand;	/* number of H/W interrupt handlers */
 	uint64_t ci_scratch;
-	uintptr_t ci_pmap_data[64 / sizeof(uintptr_t)];
+	uintptr_t ci_pmap_data[128 / sizeof(uintptr_t)];
 	struct kcpuset *ci_tlb_cpuset;
 
 	int ci_kfpu_spl;
@@ -158,19 +149,18 @@ struct cpu_info {
 	struct {
 		uint32_t	ipending;
 		int		ilevel;
+		uint32_t	imasked;
 	} ci_istate __aligned(8);
 #define ci_ipending	ci_istate.ipending
 #define	ci_ilevel	ci_istate.ilevel
+#define	ci_imasked	ci_istate.imasked
 	int		ci_idepth;
 	void *		ci_intrstack;
 	uint32_t	ci_imask[NIPL];
 	uint32_t	ci_iunmask[NIPL];
 
-	uint32_t ci_flags;		/* flags; see below */
-	uint32_t ci_ipis;		/* interprocessor interrupts pending */
-
-	uint32_t	ci_signature;	 /* X86 cpuid type (cpuid.1.%eax) */
-	uint32_t	ci_vendor[4];	 /* vendor string */
+	uint32_t	ci_signature;	/* X86 cpuid type (cpuid.1.%eax) */
+	uint32_t	ci_vendor[4];	/* vendor string */
 	uint32_t	ci_max_cpuid;	/* cpuid.0:%eax */
 	uint32_t	ci_max_ext_cpuid; /* cpuid.80000000:%eax */
 	volatile uint32_t	ci_lapic_counter;
@@ -226,8 +216,31 @@ struct cpu_info {
 	uintptr_t	ci_suspend_cr4;
 	uintptr_t	ci_suspend_cr8;
 
-	/* The following must be in a single cache line. */
+	/*
+	 * The following must be in their own cache line, as they are
+	 * stored to regularly by remote CPUs; when they were mixed with
+	 * other fields we observed frequent cache misses.
+	 */
 	int		ci_want_resched __aligned(64);
+	uint32_t	ci_ipis; /* interprocessor interrupts pending */
+
+	/*
+	 * These are largely static, and will be frequently fetched by other
+	 * CPUs.  For that reason they get their own cache line, too.
+	 */
+	uint32_t 	ci_flags __aligned(64);/* general flags */
+	uint32_t 	ci_acpiid;	/* our ACPI/MADT ID */
+	uint32_t 	ci_initapicid;	/* our initial APIC ID */
+	cpuid_t		ci_cpuid;	/* our CPU ID */
+	struct cpu_info	*ci_next;	/* next cpu */
+
+	/*
+	 * This is stored frequently, and is fetched by remote CPUs.
+	 */
+	struct lwp	*ci_curlwp __aligned(64);/* general flags */
+	struct lwp	*ci_onproc;	/* current user LWP / kthread */
+
+	/* Here ends the cachline-aligned sections. */
 	int		ci_padout __aligned(64);
 
 #ifndef __HAVE_DIRECT_MAP

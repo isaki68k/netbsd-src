@@ -1,4 +1,4 @@
-/* $NetBSD: efifdt.c,v 1.19 2019/08/30 00:01:33 jmcneill Exp $ */
+/* $NetBSD: efifdt.c,v 1.21 2020/01/03 14:14:56 skrll Exp $ */
 
 /*-
  * Copyright (c) 2019 Jason R. Thorpe
@@ -47,6 +47,13 @@ static EFI_GUID FdtTableGuid = FDT_TABLE_GUID;
 	 (_md)->Type == EfiBootServicesCode || (_md)->Type == EfiBootServicesData || \
 	 (_md)->Type == EfiConventionalMemory)
 
+#ifdef _LP64
+#define PRIdUINTN "ld"
+#define PRIxUINTN "lx"
+#else
+#define PRIdUINTN "d"
+#define PRIxUINTN "x"
+#endif
 static void *fdt_data = NULL;
 
 int
@@ -275,7 +282,7 @@ efi_fdt_gop(void)
 			continue;
 
 #ifdef EFIBOOT_DEBUG
-		printf("GOP: FB @ 0x%lx size 0x%lx\n", mode->FrameBufferBase, mode->FrameBufferSize);
+		printf("GOP: FB @ 0x%" PRIx64 " size 0x%" PRIxUINTN "\n", mode->FrameBufferBase, mode->FrameBufferSize);
 		printf("GOP: Version %d\n", mode->Info->Version);
 		printf("GOP: HRes %d VRes %d\n", mode->Info->HorizontalResolution, mode->Info->VerticalResolution);
 		printf("GOP: PixelFormat %d\n", mode->Info->PixelFormat);
@@ -382,4 +389,26 @@ efi_fdt_initrd(u_long initrd_addr, u_long initrd_size)
 
 	fdt_setprop_u64(fdt_data, chosen, "linux,initrd-start", initrd_addr);
 	fdt_setprop_u64(fdt_data, chosen, "linux,initrd-end", initrd_addr + initrd_size);
+}
+
+void
+efi_fdt_rndseed(u_long rndseed_addr, u_long rndseed_size)
+{
+	int chosen;
+
+	if (rndseed_size == 0)
+		return;
+
+	chosen = fdt_path_offset(fdt_data, FDT_CHOSEN_NODE_PATH);
+	if (chosen < 0)
+		chosen = fdt_add_subnode(fdt_data,
+		    fdt_path_offset(fdt_data, "/"),
+		    FDT_CHOSEN_NODE_NAME);
+	if (chosen < 0)
+		panic("FDT: Failed to create " FDT_CHOSEN_NODE_PATH " node");
+
+	fdt_setprop_u64(fdt_data, chosen, "netbsd,rndseed-start",
+	    rndseed_addr);
+	fdt_setprop_u64(fdt_data, chosen, "netbsd,rndseed-end",
+	    rndseed_addr + rndseed_size);
 }

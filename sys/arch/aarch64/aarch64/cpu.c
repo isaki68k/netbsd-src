@@ -1,4 +1,4 @@
-/* $NetBSD: cpu.c,v 1.26 2019/11/22 05:21:19 mlelstv Exp $ */
+/* $NetBSD: cpu.c,v 1.39 2020/01/28 17:47:50 maxv Exp $ */
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(1, "$NetBSD: cpu.c,v 1.26 2019/11/22 05:21:19 mlelstv Exp $");
+__KERNEL_RCSID(1, "$NetBSD: cpu.c,v 1.39 2020/01/28 17:47:50 maxv Exp $");
 
 #include "locators.h"
 #include "opt_arm_debug.h"
@@ -35,19 +35,20 @@ __KERNEL_RCSID(1, "$NetBSD: cpu.c,v 1.26 2019/11/22 05:21:19 mlelstv Exp $");
 #include "opt_multiprocessor.h"
 
 #include <sys/param.h>
-#include <sys/systm.h>
 #include <sys/atomic.h>
-#include <sys/device.h>
 #include <sys/cpu.h>
+#include <sys/device.h>
 #include <sys/kmem.h>
 #include <sys/reboot.h>
 #include <sys/sysctl.h>
+#include <sys/systm.h>
 
 #include <aarch64/armreg.h>
 #include <aarch64/cpu.h>
 #include <aarch64/cpufunc.h>
 #include <aarch64/machdep.h>
 
+#include <arm/cpu_topology.h>
 #ifdef FDT
 #include <arm/fdt/arm_fdtvar.h>
 #endif
@@ -144,9 +145,9 @@ cpu_attach(device_t dv, cpuid_t id)
 	ci->ci_dev = dv;
 	dv->dv_private = ci;
 
-	aarch64_gettopology(ci, ci->ci_id.ac_mpidr);
-
+	arm_cpu_do_topology(ci);
 	cpu_identify(ci->ci_dev, ci);
+
 #ifdef MULTIPROCESSOR
 	if (unit != 0) {
 		mi_cpu_attach(ci);
@@ -160,7 +161,7 @@ cpu_attach(device_t dv, cpuid_t id)
 	cpu_identify1(dv, ci);
 #if 0
 	/* already done in locore */
-	aarch64_getcacheinfo(unit); 
+	aarch64_getcacheinfo(unit);
 #endif
 	aarch64_printcacheinfo(dv);
 	cpu_identify2(dv, ci);
@@ -189,7 +190,10 @@ const struct cpuidtab cpuids[] = {
 	{ CPU_ID_CORTEXA76R3 & CPU_PARTMASK, "Cortex-A76", "Cortex", "V8.2-A+" },
 	{ CPU_ID_CORTEXA76AER1 & CPU_PARTMASK, "Cortex-A76AE", "Cortex", "V8.2-A+" },
 	{ CPU_ID_CORTEXA77R0 & CPU_PARTMASK, "Cortex-A77", "Cortex", "V8.2-A+" },
+	{ CPU_ID_NVIDIADENVER2 & CPU_PARTMASK, "NVIDIA", "Denver2", "V8-A" },
 	{ CPU_ID_EMAG8180 & CPU_PARTMASK, "Ampere eMAG", "Skylark", "V8-A" },
+	{ CPU_ID_NEOVERSEE1R1 & CPU_PARTMASK, "Neoverse E1", "Neoverse", "V8.2-A+" },
+	{ CPU_ID_NEOVERSEN1R3 & CPU_PARTMASK, "Neoverse N1", "Neoverse", "V8.2-A+" },
 	{ CPU_ID_THUNDERXRX, "Cavium ThunderX", "Cavium", "V8-A" },
 	{ CPU_ID_THUNDERX81XXRX, "Cavium ThunderX CN81XX", "Cavium", "V8-A" },
 	{ CPU_ID_THUNDERX83XXRX, "Cavium ThunderX CN83XX", "Cavium", "V8-A" },
@@ -223,14 +227,18 @@ static void
 cpu_identify(device_t self, struct cpu_info *ci)
 {
 	char model[128];
+	const char *m;
 
 	identify_aarch64_model(ci->ci_id.ac_midr, model, sizeof(model));
-	if (ci->ci_index == 0)
-		cpu_setmodel("%s", model);
+	if (ci->ci_index == 0) {
+		m = cpu_getmodel();
+		if (m == NULL || *m == 0)
+			cpu_setmodel("%s", model);
+	}
 
 	aprint_naive("\n");
 	aprint_normal(": %s\n", model);
-	aprint_normal_dev(ci->ci_dev, "package %lu, core %lu, smt %lu\n",
+	aprint_normal_dev(ci->ci_dev, "package %u, core %u, smt %u\n",
 	    ci->ci_package_id, ci->ci_core_id, ci->ci_smt_id);
 }
 
@@ -302,6 +310,8 @@ cpu_identify2(device_t self, struct cpu_info *ci)
 
 	dfr0 = reg_id_aa64dfr0_el1_read();
 
+	aprint_debug_dev(self, "midr=0x%" PRIx32 " mpidr=0x%" PRIx32 "\n",
+	    (uint32_t)ci->ci_id.ac_midr, (uint32_t)ci->ci_id.ac_mpidr);
 	aprint_normal_dev(self, "revID=0x%" PRIx64, id->ac_revidr);
 
 	/* ID_AA64DFR0_EL1 */
@@ -450,8 +460,7 @@ cpu_setup_id(struct cpu_info *ci)
 
 	id->ac_aa64mmfr0 = reg_id_aa64mmfr0_el1_read();
 	id->ac_aa64mmfr1 = reg_id_aa64mmfr1_el1_read();
-	/* Only in ARMv8.2. */
-	id->ac_aa64mmfr2 = 0 /* reg_id_aa64mmfr2_el1_read() */;
+	id->ac_aa64mmfr2 = reg_id_aa64mmfr2_el1_read();
 
 	id->ac_mvfr0     = reg_mvfr0_el1_read();
 	id->ac_mvfr1     = reg_mvfr1_el1_read();

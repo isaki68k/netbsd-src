@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.c,v 1.177 2019/11/27 06:24:33 maxv Exp $	*/
+/*	$NetBSD: cpu.c,v 1.181 2020/01/14 01:41:37 pgoyette Exp $	*/
 
 /*
  * Copyright (c) 2000-2012 NetBSD Foundation, Inc.
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.177 2019/11/27 06:24:33 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.181 2020/01/14 01:41:37 pgoyette Exp $");
 
 #include "opt_ddb.h"
 #include "opt_mpbios.h"		/* for MPDEBUG */
@@ -72,6 +72,7 @@ __KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.177 2019/11/27 06:24:33 maxv Exp $");
 
 #include "lapic.h"
 #include "ioapic.h"
+#include "acpica.h"
 
 #include <sys/param.h>
 #include <sys/proc.h>
@@ -106,6 +107,10 @@ __KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.177 2019/11/27 06:24:33 maxv Exp $");
 
 #include <x86/fpu.h>
 
+#if NACPICA > 0
+#include <dev/acpi/acpi_srat.h>
+#endif
+
 #if NLAPIC > 0
 #include <machine/apicvar.h>
 #include <machine/i82489reg.h>
@@ -117,6 +122,13 @@ __KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.177 2019/11/27 06:24:33 maxv Exp $");
 #include <dev/isa/isareg.h>
 
 #include "tsc.h"
+
+#ifndef XEN
+#include "hyperv.h"
+#if NHYPERV > 0
+#include <x86/x86/hypervvar.h>
+#endif
+#endif
 
 static int	cpu_match(device_t, cfdata_t, void *);
 static void	cpu_attach(device_t, device_t, void *);
@@ -397,6 +409,10 @@ cpu_attach(device_t parent, device_t self, void *aux)
 		cpu_init_tss(ci);
 	} else {
 		KASSERT(ci->ci_data.cpu_idlelwp != NULL);
+#if NACPICA > 0
+		/* Parse out NUMA info for cpu_identify(). */
+		acpisrat_init();
+#endif
 	}
 
 #ifdef SVS
@@ -523,6 +539,16 @@ cpu_rescan(device_t self, const char *ifattr, const int *locators)
 	struct cpu_softc *sc = device_private(self);
 	struct cpufeature_attach_args cfaa;
 	struct cpu_info *ci = sc->sc_info;
+
+	/*
+	 * If we booted with RB_MD1 to disable multiprocessor, the
+	 * auto-configuration data still contains the additional
+	 * CPUs.   But their initialization was mostly bypassed
+	 * during attach, so we have to make sure we don't look at
+	 * their featurebus info, since it wasn't retrieved.
+	 */
+	if (ci == NULL)
+		return 0;
 
 	memset(&cfaa, 0, sizeof(cfaa));
 	cfaa.ci = ci;
@@ -699,6 +725,11 @@ cpu_boot_secondary_processors(void)
 	x86_patch(false);
 #endif
 
+#if NACPICA > 0
+	/* Finished with NUMA info for now. */
+	acpisrat_exit();
+#endif
+
 	kcpuset_create(&cpus, true);
 	kcpuset_set(cpus, cpu_index(curcpu()));
 	for (i = 0; i < maxcpus; i++) {
@@ -863,6 +894,9 @@ cpu_hatch(void *v)
 	cpu_init_msrs(ci, true);
 	cpu_probe(ci);
 	cpu_speculation_init(ci);
+#if NHYPERV > 0
+	hyperv_init_cpu(ci);
+#endif
 
 	ci->ci_data.cpu_cc_freq = cpu_info_primary.ci_data.cpu_cc_freq;
 	/* cpu_get_tsc_freq(ci); */
@@ -990,14 +1024,14 @@ cpu_debug_dump(void)
 #endif
 			   "";
 
-	db_printf("addr		%sdev	id	flags	ipis	curlwp 		"
+	db_printf("addr		%sdev	id	flags	ipis	spl curlwp 		"
 		  "\n", sixtyfour64space);
 	for (CPU_INFO_FOREACH(cii, ci)) {
-		db_printf("%p	%s	%ld	%x	%x	%10p\n",
+		db_printf("%p	%s	%ld	%x	%x	%d  %10p\n",
 		    ci,
 		    ci->ci_dev == NULL ? "BOOT" : device_xname(ci->ci_dev),
 		    (long)ci->ci_cpuid,
-		    ci->ci_flags, ci->ci_ipis,
+		    ci->ci_flags, ci->ci_ipis, ci->ci_ilevel,
 		    ci->ci_curlwp);
 	}
 }

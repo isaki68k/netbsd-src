@@ -1,4 +1,4 @@
-/*	$NetBSD: bcm2835_intr.c,v 1.25 2019/11/28 01:08:06 thorpej Exp $	*/
+/*	$NetBSD: bcm2835_intr.c,v 1.31 2020/01/20 06:55:35 mrg Exp $	*/
 
 /*-
  * Copyright (c) 2012, 2015, 2019 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bcm2835_intr.c,v 1.25 2019/11/28 01:08:06 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bcm2835_intr.c,v 1.31 2020/01/20 06:55:35 mrg Exp $");
 
 #define _INTR_PRIVATE
 
@@ -97,6 +97,12 @@ static bool bcm2836mp_icu_fdt_intrstr(device_t, u_int *, char *, size_t);
 
 static int  bcm2835_icu_match(device_t, cfdata_t, void *);
 static void bcm2835_icu_attach(device_t, device_t, void *);
+
+static int bcm2835_int_base;
+static int bcm2836mp_int_base[BCM2836_NCPUS];
+
+#define	BCM2835_INT_BASE		bcm2835_int_base
+#define	BCM2836_INT_BASECPUN(n)		bcm2836mp_int_base[(n)]
 
 static void
 bcm2835_set_priority(struct pic_softc *pic, int ipl)
@@ -314,7 +320,7 @@ bcm2835_icu_attach(device_t parent, device_t self, void *aux)
 		bcmicu_sc = sc;
 		sc->sc_ioh = ioh;
 		sc->sc_phandle = phandle;
-		pic_add(&bcm2835_pic, BCM2835_INT_BASE);
+		bcm2835_int_base = pic_add(&bcm2835_pic, PIC_IRQBASE_ALLOC);
 		ifuncs = &bcm2835icu_fdt_funcs;
 	}
 
@@ -331,7 +337,7 @@ bcm2835_irq_handler(void *frame)
 {
 	struct cpu_info * const ci = curcpu();
 	const int oldipl = ci->ci_cpl;
-	const cpuid_t cpuid = ci->ci_core_id;
+	const cpuid_t cpuid = __SHIFTOUT(arm_cpu_mpidr(ci), MPIDR_AFF0);
 	const uint32_t oldipl_mask = __BIT(oldipl);
 	int ipl_mask = 0;
 
@@ -467,13 +473,16 @@ bcm2835_icu_fdt_establish(device_t dev, u_int *specifier, int ipl, int flags,
 	struct bcm2835icu_irq *firq;
 	struct bcm2835icu_irqhandler *firqh;
 	int iflags = (flags & FDT_INTR_MPSAFE) ? IST_MPSAFE : 0;
-	int irq;
+	int irq, irqidx;
 
 	irq = bcm2835_icu_fdt_decode_irq(specifier);
 	if (irq == -1)
 		return NULL;
+	irqidx = irq - BCM2835_INT_BASE;
 
-	firq = sc->sc_irq[irq];
+	KASSERT(irqidx < BCM2835_NIRQ);
+
+	firq = sc->sc_irq[irqidx];
 	if (firq == NULL) {
 		firq = kmem_alloc(sizeof(*firq), KM_SLEEP);
 		firq->intr_sc = sc;
@@ -494,7 +503,7 @@ bcm2835_icu_fdt_establish(device_t dev, u_int *specifier, int ipl, int flags,
 			kmem_free(firq, sizeof(*firq));
 			return NULL;
 		}
-		sc->sc_irq[irq] = firq;
+		sc->sc_irq[irqidx] = firq;
 	} else {
 		if (firq->intr_arg == NULL || arg == NULL) {
 			device_printf(dev,
@@ -517,31 +526,55 @@ bcm2835_icu_fdt_establish(device_t dev, u_int *specifier, int ipl, int flags,
 	firqh->ih_irq = firq;
 	firqh->ih_fn = func;
 	firqh->ih_arg = arg;
+
+	firq->intr_refcnt++;
 	TAILQ_INSERT_TAIL(&firq->intr_handlers, firqh, ih_next);
 
-	return firqh;
+	/*
+	 * XXX interrupt_distribute(9) assumes that any interrupt
+	 * handle can be used as an input to the MD interrupt_distribute
+	 * implementationm, so we are forced to return the handle
+	 * we got back from intr_establish().  Upshot is that the
+	 * input to bcm2835_icu_fdt_disestablish() is ambiguous for
+	 * shared IRQs, rendering them un-disestablishable.
+	 */
+
+	return firq->intr_ih;
 }
 
 static void
 bcm2835_icu_fdt_disestablish(device_t dev, void *ih)
 {
 	struct bcm2835icu_softc * const sc = device_private(dev);
-	struct bcm2835icu_irqhandler *firqh = ih;
-	struct bcm2835icu_irq *firq = firqh->ih_irq;
+	struct bcm2835icu_irqhandler *firqh;
+	struct bcm2835icu_irq *firq;
+	u_int n;
 
-	KASSERT(firq->intr_refcnt > 0);
+	for (n = 0; n < BCM2835_NIRQ; n++) {
+		firq = sc->sc_irq[n];
+		if (firq == NULL || firq->intr_ih != ih)
+			continue;
 
-	/* XXX */
-	if (firq->intr_refcnt > 1)
-		panic("%s: cannot disestablish shared irq", __func__);
+		KASSERT(firq->intr_refcnt > 0);
+		KASSERT(n == (firq->intr_irq - BCM2835_INT_BASE));
 
-	intr_disestablish(firq->intr_ih);
+		/* XXX see above */
+		if (firq->intr_refcnt > 1)
+			panic("%s: cannot disestablish shared irq", __func__);
 
-	TAILQ_REMOVE(&firq->intr_handlers, firqh, ih_next);
-	kmem_free(firqh, sizeof(*firqh));
+		intr_disestablish(firq->intr_ih);
 
-	sc->sc_irq[firq->intr_irq] = NULL;
-	kmem_free(firq, sizeof(*firq));
+		firqh = TAILQ_FIRST(&firq->intr_handlers);
+		TAILQ_REMOVE(&firq->intr_handlers, firqh, ih_next);
+		kmem_free(firqh, sizeof(*firqh));
+
+		sc->sc_irq[n] = NULL;
+		kmem_free(firq, sizeof(*firq));
+
+		return;
+	}
+
+	panic("%s: interrupt not established", __func__);
 }
 
 static int
@@ -667,7 +700,7 @@ static int
 bcm2836mp_pic_find_pending_irqs(struct pic_softc *pic)
 {
 	struct cpu_info * const ci = curcpu();
-	const cpuid_t cpuid = ci->ci_core_id;
+	const cpuid_t cpuid = __SHIFTOUT(arm_cpu_mpidr(ci), MPIDR_AFF0);
 	uint32_t lpending;
 	int ipl = 0;
 
@@ -680,9 +713,9 @@ bcm2836mp_pic_find_pending_irqs(struct pic_softc *pic)
 	    BCM2836_LOCAL_INTC_IRQPENDINGN(cpuid));
 
 	lpending &= ~BCM2836_INTBIT_GPUPENDING;
-	if (lpending & BCM2836MP_ALL_IRQS) {
-		ipl |= pic_mark_pending_sources(pic, 0 /* BCM2836_INT_LOCALBASE */,
-		    lpending & BCM2836MP_ALL_IRQS);
+	const uint32_t allirqs = lpending & BCM2836MP_ALL_IRQS;
+	if (allirqs) {
+		ipl |= pic_mark_pending_sources(pic, 0, allirqs);
 	}
 
 	return ipl;
@@ -708,7 +741,7 @@ bcm2836mp_pic_source_name(struct pic_softc *pic, int irq, char *buf, size_t len)
 #if defined(MULTIPROCESSOR)
 static void bcm2836mp_cpu_init(struct pic_softc *pic, struct cpu_info *ci)
 {
-	const cpuid_t cpuid = ci->ci_core_id;
+	const cpuid_t cpuid = __SHIFTOUT(arm_cpu_mpidr(ci), MPIDR_AFF0);
 
 	KASSERT(cpuid < BCM2836_NCPUS);
 
@@ -735,7 +768,7 @@ int
 bcm2836mp_ipi_handler(void *priv)
 {
 	const struct cpu_info *ci = curcpu();
-	const cpuid_t cpuid = ci->ci_core_id;
+	const cpuid_t cpuid = __SHIFTOUT(arm_cpu_mpidr(ci), MPIDR_AFF0);
 	uint32_t ipimask, bit;
 
 	KASSERT(cpuid < BCM2836_NCPUS);
@@ -784,7 +817,7 @@ bcm2836mp_ipi_handler(void *priv)
 static void
 bcm2836mp_intr_init(void *priv, struct cpu_info *ci)
 {
-	const cpuid_t cpuid = ci->ci_core_id;
+	const cpuid_t cpuid = __SHIFTOUT(arm_cpu_mpidr(ci), MPIDR_AFF0);
 	struct pic_softc * const pic = &bcm2836mp_pic[cpuid];
 
 	KASSERT(cpuid < BCM2836_NCPUS);
@@ -800,7 +833,7 @@ bcm2836mp_intr_init(void *priv, struct cpu_info *ci)
 	snprintf(suffix, sizeof(suffix), "#%lu", cpuid);
 	strlcat(pic->pic_name, suffix, sizeof(pic->pic_name));
 #endif
-	pic_add(pic, BCM2836_INT_BASECPUN(cpuid));
+	bcm2836mp_int_base[cpuid] = pic_add(pic, PIC_IRQBASE_ALLOC);
 
 #if defined(MULTIPROCESSOR)
 	intr_establish(BCM2836_INT_MAILBOX0_CPUN(cpuid), IPL_HIGH,

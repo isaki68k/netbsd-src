@@ -1,4 +1,4 @@
-/* $NetBSD: gicv3_its.c,v 1.21 2019/06/30 17:33:59 jmcneill Exp $ */
+/* $NetBSD: gicv3_its.c,v 1.25 2020/02/01 15:33:48 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -32,7 +32,7 @@
 #define _INTR_PRIVATE
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gicv3_its.c,v 1.21 2019/06/30 17:33:59 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gicv3_its.c,v 1.25 2020/02/01 15:33:48 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/kmem.h>
@@ -297,7 +297,7 @@ gicv3_its_msi_alloc_lpi(struct gicv3_its *its,
 
         return -1;
 }
-         
+
 static void
 gicv3_its_msi_free_lpi(struct gicv3_its *its, int lpi)
 {
@@ -525,7 +525,7 @@ gicv3_its_msix_alloc(struct arm_pci_msi *msi, u_int *table_indexes, int *count,
 		return NULL;
 
 	tbl = pci_conf_read(pa->pa_pc, pa->pa_tag, off + PCI_MSIX_TBLOFFSET);
-	bar = PCI_BAR0 + (4 * (tbl & PCI_MSIX_PBABIR_MASK));
+	bar = PCI_BAR0 + (4 * (tbl & PCI_MSIX_TBLBIR_MASK));
 	table_offset = tbl & PCI_MSIX_TBLOFFSET_MASK;
 	table_size = pci_msix_count(pa->pa_pc, pa->pa_tag) * PCI_MSIX_TABLE_ENTRY_SIZE;
 	if (table_size == 0)
@@ -846,7 +846,7 @@ gicv3_its_init(struct gicv3_softc *sc, bus_space_handle_t bsh,
 	if ((typer & GITS_TYPER_Physical) == 0)
 		return ENXIO;
 
-	its = kmem_alloc(sizeof(*its), KM_SLEEP);
+	its = kmem_zalloc(sizeof(*its), KM_SLEEP);
 	its->its_id = its_id;
 	its->its_bst = sc->sc_bst;
 	its->its_bsh = bsh;
@@ -873,6 +873,7 @@ gicv3_its_init(struct gicv3_softc *sc, bus_space_handle_t bsh,
 	gicv3_its_cpu_init(its, curcpu());
 
 	msi = &its->its_msi;
+	msi->msi_id = its_id;
 	msi->msi_dev = sc->sc_dev;
 	msi->msi_priv = its;
 	msi->msi_alloc = gicv3_its_msi_alloc;

@@ -1,4 +1,4 @@
-/*	$NetBSD: if_mue.c,v 1.55 2019/08/23 04:32:57 mrg Exp $	*/
+/*	$NetBSD: if_mue.c,v 1.57 2020/01/29 06:26:32 thorpej Exp $	*/
 /*	$OpenBSD: if_mue.c,v 1.3 2018/08/04 16:42:46 jsg Exp $	*/
 
 /*
@@ -20,7 +20,7 @@
 /* Driver for Microchip LAN7500/LAN7800 chipsets. */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_mue.c,v 1.55 2019/08/23 04:32:57 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_mue.c,v 1.57 2020/01/29 06:26:32 thorpej Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -60,7 +60,7 @@ struct mue_type {
 #define LAN7850		0x0008	/* LAN7850 */
 };
 
-const struct mue_type mue_devs[] = {
+static const struct mue_type mue_devs[] = {
 	{ { USB_VENDOR_SMSC, USB_PRODUCT_SMSC_LAN7500 }, LAN7500 },
 	{ { USB_VENDOR_SMSC, USB_PRODUCT_SMSC_LAN7505 }, LAN7500 },
 	{ { USB_VENDOR_SMSC, USB_PRODUCT_SMSC_LAN7800 }, LAN7800 },
@@ -107,7 +107,7 @@ static unsigned	mue_tx_prepare(struct usbnet *, struct mbuf *,
 			       struct usbnet_chain *);
 static int	mue_init(struct ifnet *);
 
-static struct usbnet_ops mue_ops = {
+static const struct usbnet_ops mue_ops = {
 	.uno_stop = mue_stop_cb,
 	.uno_ioctl = mue_ioctl_cb,
 	.uno_read_reg = mue_mii_read_reg,
@@ -1153,7 +1153,7 @@ mue_rx_loop(struct usbnet *un, struct usbnet_chain *c, uint32_t total_len)
 	do {
 		if (__predict_false(total_len < sizeof(*hdrp))) {
 			MUE_PRINTF(un, "packet length %u too short\n", total_len);
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			return;
 		}
 
@@ -1167,7 +1167,7 @@ mue_rx_loop(struct usbnet *un, struct usbnet_chain *c, uint32_t total_len)
 			 * checksum errors which we handle below.
 			 */
 			MUE_PRINTF(un, "rx_cmd_a: 0x%x\n", rx_cmd_a);
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			return;
 		}
 
@@ -1179,7 +1179,7 @@ mue_rx_loop(struct usbnet *un, struct usbnet_chain *c, uint32_t total_len)
 		    pktlen > MCLBYTES - ETHER_ALIGN || /* XXX */
 		    pktlen + sizeof(*hdrp) > total_len)) {
 			MUE_PRINTF(un, "invalid packet length %d\n", pktlen);
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			return;
 		}
 

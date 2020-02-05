@@ -1,4 +1,4 @@
-/*	$NetBSD: ptrace.h,v 1.19 2019/11/27 09:16:58 rin Exp $	*/
+/*	$NetBSD: ptrace.h,v 1.21 2020/01/08 17:21:38 mgorny Exp $	*/
 
 /*
  * Copyright (c) 1993 Christopher G. Demetriou
@@ -69,7 +69,9 @@
 	"PT_SETSTEP", \
 	"PT_CLEARSTEP", \
 	"PT_GETXSTATE", \
-	"PT_SETXSTATE"
+	"PT_SETXSTATE", \
+	"PT_GETXMMREGS", \
+	"PT_SETXMMREGS"
 
 #include <machine/reg.h>
 #define PTRACE_REG_PC(r)	(r)->regs[_REG_RIP]
@@ -102,6 +104,22 @@ int process_machdep_validfpu(struct proc *);
 #include <sys/module_hook.h>
 MODULE_HOOK(netbsd32_process_doxmmregs_hook, int,
     (struct lwp *, struct lwp *, void *, bool));
+
+#ifdef EXEC_ELF32
+#include <machine/netbsd32_machdep.h>
+#endif
+#define PT64_GETXSTATE		PT_GETXSTATE
+#define COREDUMP_MACHDEP_LWP_NOTES(l, ns, name)				\
+{									\
+	struct xstate xstate;						\
+	memset(&xstate, 0, sizeof(xstate));				\
+	if (!process_read_xstate(l, &xstate))				\
+	{								\
+		ELFNAMEEND(coredump_savenote)(ns,			\
+		    CONCAT(CONCAT(PT, ELFSIZE), _GETXSTATE), name,	\
+		    &xstate, sizeof(xstate));				\
+	}								\
+}
 
 #endif /* _KERNEL */
 

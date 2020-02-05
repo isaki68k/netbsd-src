@@ -1,7 +1,7 @@
-/*	$NetBSD: kern_sleepq.c,v 1.53 2019/11/23 19:42:52 ad Exp $	*/
+/*	$NetBSD: kern_sleepq.c,v 1.60 2020/02/01 19:29:27 christos Exp $	*/
 
 /*-
- * Copyright (c) 2006, 2007, 2008, 2009, 2019 The NetBSD Foundation, Inc.
+ * Copyright (c) 2006, 2007, 2008, 2009, 2019, 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_sleepq.c,v 1.53 2019/11/23 19:42:52 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_sleepq.c,v 1.60 2020/02/01 19:29:27 christos Exp $");
 
 #include <sys/param.h>
 #include <sys/kernel.h>
@@ -66,7 +66,7 @@ static int	sleepq_sigtoerror(lwp_t *, int);
 
 /* General purpose sleep table, used by mtsleep() and condition variables. */
 sleeptab_t	sleeptab __cacheline_aligned;
-kmutex_t	*sleepq_locks[SLEEPTAB_HASH_SIZE] __read_mostly;
+sleepqlock_t	sleepq_locks[SLEEPTAB_HASH_SIZE] __cacheline_aligned;
 
 /*
  * sleeptab_init:
@@ -76,12 +76,17 @@ kmutex_t	*sleepq_locks[SLEEPTAB_HASH_SIZE] __read_mostly;
 void
 sleeptab_init(sleeptab_t *st)
 {
+	static bool again;
 	int i;
 
 	for (i = 0; i < SLEEPTAB_HASH_SIZE; i++) {
-		sleepq_locks[i] = mutex_obj_alloc(MUTEX_DEFAULT, IPL_SCHED);
+		if (!again) {
+			mutex_init(&sleepq_locks[i].lock, MUTEX_DEFAULT,
+			    IPL_SCHED);
+		}
 		sleepq_init(&st->st_queue[i]);
 	}
+	again = true;
 }
 
 /*
@@ -109,7 +114,13 @@ sleepq_remove(sleepq_t *sq, lwp_t *l)
 
 	KASSERT(lwp_locked(l, NULL));
 
-	TAILQ_REMOVE(sq, l, l_sleepchain);
+	if ((l->l_syncobj->sobj_flag & SOBJ_SLEEPQ_NULL) == 0) {
+		KASSERT(sq != NULL);
+		TAILQ_REMOVE(sq, l, l_sleepchain);
+	} else {
+		KASSERT(sq == NULL);
+	}
+
 	l->l_syncobj = &sched_syncobj;
 	l->l_wchan = NULL;
 	l->l_sleepq = NULL;
@@ -132,7 +143,7 @@ sleepq_remove(sleepq_t *sq, lwp_t *l)
 	 * If the LWP is still on the CPU, mark it as LSONPROC.  It may be
 	 * about to call mi_switch(), in which case it will yield.
 	 */
-	if ((l->l_pflag & LP_RUNNING) != 0) {
+	if ((l->l_flag & LW_RUNNING) != 0) {
 		l->l_stat = LSONPROC;
 		l->l_slptime = 0;
 		lwp_setlock(l, spc->spc_lwplock);
@@ -170,9 +181,15 @@ static void
 sleepq_insert(sleepq_t *sq, lwp_t *l, syncobj_t *sobj)
 {
 
+	if ((sobj->sobj_flag & SOBJ_SLEEPQ_NULL) != 0) {
+		KASSERT(sq == NULL); 
+		return;
+	}
+	KASSERT(sq != NULL);
+
 	if ((sobj->sobj_flag & SOBJ_SLEEPQ_SORTED) != 0) {
 		lwp_t *l2;
-		const int pri = lwp_eprio(l);
+		const pri_t pri = lwp_eprio(l);
 
 		TAILQ_FOREACH(l2, sq, l_sleepchain) {
 			if (lwp_eprio(l2) < pri) {
@@ -210,7 +227,6 @@ sleepq_enqueue(sleepq_t *sq, wchan_t wchan, const char *wmesg, syncobj_t *sobj)
 	l->l_wmesg = wmesg;
 	l->l_slptime = 0;
 	l->l_stat = LSSLEEP;
-	l->l_sleeperr = 0;
 
 	sleepq_insert(sq, l, sobj);
 
@@ -260,6 +276,7 @@ sleepq_block(int timo, bool catch_p)
 		if (timo) {
 			callout_schedule(&l->l_timeout_ch, timo);
 		}
+		spc_lock(l->l_cpu);
 		mi_switch(l);
 
 		/* The LWP and sleep queue are now unlocked. */
@@ -436,7 +453,7 @@ sleepq_reinsert(sleepq_t *sq, lwp_t *l)
 {
 
 	KASSERT(l->l_sleepq == sq);
-	if ((l->l_syncobj->sobj_flag & SOBJ_SLEEPQ_SORTED) == 0) {
+	if ((l->l_syncobj->sobj_flag & SOBJ_SLEEPQ_SORTED) == 0) { 
 		return;
 	}
 

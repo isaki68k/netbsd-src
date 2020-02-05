@@ -1,4 +1,4 @@
-/*	$NetBSD: if_urtwn.c,v 1.75 2019/11/26 10:34:16 gson Exp $	*/
+/*	$NetBSD: if_urtwn.c,v 1.81 2020/01/29 06:39:07 thorpej Exp $	*/
 /*	$OpenBSD: if_urtwn.c,v 1.42 2015/02/10 23:25:46 mpi Exp $	*/
 
 /*-
@@ -25,7 +25,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_urtwn.c,v 1.75 2019/11/26 10:34:16 gson Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_urtwn.c,v 1.81 2020/01/29 06:39:07 thorpej Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -395,6 +395,7 @@ urtwn_attach(device_t parent, device_t self, void *aux)
 
 	(void) usbd_do_request(sc->sc_udev, &req, 0);
 
+	cv_init(&sc->sc_task_cv, "urtwntsk");
 	mutex_init(&sc->sc_task_mtx, MUTEX_DEFAULT, IPL_NET);
 	mutex_init(&sc->sc_tx_mtx, MUTEX_DEFAULT, IPL_NONE);
 	mutex_init(&sc->sc_rx_mtx, MUTEX_DEFAULT, IPL_NONE);
@@ -568,8 +569,6 @@ urtwn_detach(device_t self, int flags)
 	callout_halt(&sc->sc_scan_to, NULL);
 	callout_halt(&sc->sc_calib_to, NULL);
 
-	pmf_device_deregister(self);
-
 	if (ISSET(sc->sc_flags, URTWN_FLAG_ATTACHED)) {
 		urtwn_stop(ifp, 0);
 		usb_rem_task_wait(sc->sc_udev, &sc->sc_task, USB_TASKQ_DRIVER,
@@ -593,6 +592,7 @@ urtwn_detach(device_t self, int flags)
 	callout_destroy(&sc->sc_scan_to);
 	callout_destroy(&sc->sc_calib_to);
 
+	cv_destroy(&sc->sc_task_cv);
 	mutex_destroy(&sc->sc_write_mtx);
 	mutex_destroy(&sc->sc_fwcmd_mtx);
 	mutex_destroy(&sc->sc_tx_mtx);
@@ -858,7 +858,7 @@ urtwn_task(void *arg)
 	int s;
 
 	URTWNHIST_FUNC(); URTWNHIST_CALLED();
-	if (ic->ic_state == IEEE80211_S_RUN && 
+	if (ic->ic_state == IEEE80211_S_RUN &&
 	    (ic->ic_opmode == IEEE80211_M_HOSTAP ||
 	    ic->ic_opmode == IEEE80211_M_IBSS)) {
 
@@ -870,7 +870,6 @@ urtwn_task(void *arg)
 		}
 
 		if (urtwn_tx_beacon(sc, m, ic->ic_bss) != 0) {
-			m_freem(m);
 			aprint_error_dev(sc->sc_dev, "could not send beacon");
 		}
 
@@ -892,8 +891,8 @@ urtwn_task(void *arg)
 		ring->queued--;
 		ring->next = (ring->next + 1) % URTWN_HOST_CMD_RING_COUNT;
 	}
+	cv_broadcast(&sc->sc_task_cv);
 	mutex_spin_exit(&sc->sc_task_mtx);
-	wakeup(&sc->cmdq);
 	splx(s);
 }
 
@@ -933,8 +932,10 @@ urtwn_wait_async(struct urtwn_softc *sc)
 	URTWNHIST_FUNC(); URTWNHIST_CALLED();
 
 	/* Wait for all queued asynchronous commands to complete. */
+	mutex_spin_enter(&sc->sc_task_mtx);
 	while (sc->cmdq.queued > 0)
-		tsleep(&sc->cmdq, 0, "endtask", 0);
+		cv_wait(&sc->sc_task_cv, &sc->sc_task_mtx);
+	mutex_spin_exit(&sc->sc_task_mtx);
 }
 
 static int
@@ -2379,7 +2380,7 @@ urtwn_rx_frame(struct urtwn_softc *sc, uint8_t *buf, int pktlen)
 		 * to not receive these frames.
 		 */
 		DPRINTFN(DBG_RX, "CRC error", 0, 0, 0, 0);
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		return;
 	}
 	/*
@@ -2390,12 +2391,12 @@ urtwn_rx_frame(struct urtwn_softc *sc, uint8_t *buf, int pktlen)
 	if (__predict_false(pktlen < (int)sizeof(struct ieee80211_frame_ack))) {
 		DPRINTFN(DBG_RX, "packet too short %jd", pktlen, 0, 0, 0);
 		ic->ic_stats.is_rx_tooshort++;
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		return;
 	}
 	if (__predict_false(pktlen > MCLBYTES)) {
 		DPRINTFN(DBG_RX, "packet too big %jd", pktlen, 0, 0, 0);
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		return;
 	}
 
@@ -2419,7 +2420,7 @@ urtwn_rx_frame(struct urtwn_softc *sc, uint8_t *buf, int pktlen)
 	if (__predict_false(m == NULL)) {
 		aprint_error_dev(sc->sc_dev, "couldn't allocate rx mbuf\n");
 		ic->ic_stats.is_rx_nobuf++;
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		return;
 	}
 	if (pktlen > (int)MHLEN) {
@@ -2429,7 +2430,7 @@ urtwn_rx_frame(struct urtwn_softc *sc, uint8_t *buf, int pktlen)
 			    "couldn't allocate rx mbuf cluster\n");
 			m_freem(m);
 			ic->ic_stats.is_rx_nobuf++;
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			return;
 		}
 	}
@@ -2597,13 +2598,13 @@ urtwn_txeof(struct usbd_xfer *xfer, void *priv, usbd_status status)
 				usbd_clear_endpoint_stall_async(pipe);
 			}
 			printf("ERROR1\n");
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 		}
 		splx(s);
 		return;
 	}
 
-	ifp->if_opackets++;
+	if_statinc(ifp, if_opackets);
 	urtwn_start(ifp);
 	splx(s);
 
@@ -2890,7 +2891,7 @@ urtwn_start(struct ifnet *ifp)
 		if (m->m_len < (int)sizeof(*eh) &&
 		    (m = m_pullup(m, sizeof(*eh))) == NULL) {
 			printf("ERROR6\n");
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			continue;
 		}
 		eh = mtod(m, struct ether_header *);
@@ -2898,7 +2899,7 @@ urtwn_start(struct ifnet *ifp)
 		if (ni == NULL) {
 			m_freem(m);
 			printf("ERROR5\n");
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			continue;
 		}
 
@@ -2907,7 +2908,7 @@ urtwn_start(struct ifnet *ifp)
 		if ((m = ieee80211_encap(ic, m, ni)) == NULL) {
 			ieee80211_free_node(ni);
 			printf("ERROR4\n");
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			continue;
 		}
  sendit:
@@ -2917,7 +2918,7 @@ urtwn_start(struct ifnet *ifp)
 			m_freem(m);
 			ieee80211_free_node(ni);
 			printf("ERROR3\n");
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			continue;
 		}
 		m_freem(m);
@@ -2941,7 +2942,7 @@ urtwn_watchdog(struct ifnet *ifp)
 			aprint_error_dev(sc->sc_dev, "device timeout\n");
 			/* urtwn_init(ifp); XXX needs a process context! */
 			printf("ERROR2\n");
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			return;
 		}
 		ifp->if_timer = 1;
@@ -3467,6 +3468,8 @@ urtwn_load_firmware(struct urtwn_softc *sc)
 	}
 
 	if (urtwn_read_1(sc, R92C_MCUFWDL) & R92C_MCUFWDL_RAM_DL_SEL) {
+		/* Reset MCU ready status */
+		urtwn_write_1(sc, R92C_MCUFWDL, 0);
 		if (ISSET(sc->chip, URTWN_CHIP_88E) ||
 		    ISSET(sc->chip, URTWN_CHIP_92EU))
 			urtwn_r88e_fw_reset(sc);

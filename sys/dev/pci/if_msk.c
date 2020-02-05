@@ -1,4 +1,4 @@
-/* $NetBSD: if_msk.c,v 1.94 2019/11/15 12:38:09 msaitoh Exp $ */
+/* $NetBSD: if_msk.c,v 1.98 2020/02/04 05:44:14 thorpej Exp $ */
 /*	$OpenBSD: if_msk.c,v 1.79 2009/10/15 17:54:56 deraadt Exp $	*/
 
 /*
@@ -52,7 +52,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_msk.c,v 1.94 2019/11/15 12:38:09 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_msk.c,v 1.98 2020/02/04 05:44:14 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -92,45 +92,45 @@ __KERNEL_RCSID(0, "$NetBSD: if_msk.c,v 1.94 2019/11/15 12:38:09 msaitoh Exp $");
 #include <dev/pci/if_skreg.h>
 #include <dev/pci/if_mskvar.h>
 
-int mskc_probe(device_t, cfdata_t, void *);
-void mskc_attach(device_t, device_t, void *);
-int mskc_detach(device_t, int);
-void mskc_reset(struct sk_softc *);
+static int mskc_probe(device_t, cfdata_t, void *);
+static void mskc_attach(device_t, device_t, void *);
+static int mskc_detach(device_t, int);
+static void mskc_reset(struct sk_softc *);
 static bool mskc_suspend(device_t, const pmf_qual_t *);
 static bool mskc_resume(device_t, const pmf_qual_t *);
-int msk_probe(device_t, cfdata_t, void *);
-void msk_attach(device_t, device_t, void *);
-int msk_detach(device_t, int);
-void msk_reset(struct sk_if_softc *);
-int mskcprint(void *, const char *);
-int msk_intr(void *);
-void msk_intr_yukon(struct sk_if_softc *);
-void msk_rxeof(struct sk_if_softc *, uint16_t, uint32_t);
-void msk_txeof(struct sk_if_softc *);
-int msk_encap(struct sk_if_softc *, struct mbuf *, uint32_t *);
-void msk_start(struct ifnet *);
-int msk_ioctl(struct ifnet *, u_long, void *);
-int msk_init(struct ifnet *);
-void msk_init_yukon(struct sk_if_softc *);
-void msk_stop(struct ifnet *, int);
-void msk_watchdog(struct ifnet *);
-int msk_newbuf(struct sk_if_softc *, bus_dmamap_t);
-int msk_alloc_jumbo_mem(struct sk_if_softc *);
-void *msk_jalloc(struct sk_if_softc *);
-void msk_jfree(struct mbuf *, void *, size_t, void *);
-int msk_init_rx_ring(struct sk_if_softc *);
-int msk_init_tx_ring(struct sk_if_softc *);
-void msk_fill_rx_ring(struct sk_if_softc *);
+static int msk_probe(device_t, cfdata_t, void *);
+static void msk_attach(device_t, device_t, void *);
+static int msk_detach(device_t, int);
+static void msk_reset(struct sk_if_softc *);
+static int mskcprint(void *, const char *);
+static int msk_intr(void *);
+static void msk_intr_yukon(struct sk_if_softc *);
+static void msk_rxeof(struct sk_if_softc *, uint16_t, uint32_t);
+static void msk_txeof(struct sk_if_softc *);
+static int msk_encap(struct sk_if_softc *, struct mbuf *, uint32_t *);
+static void msk_start(struct ifnet *);
+static int msk_ioctl(struct ifnet *, u_long, void *);
+static int msk_init(struct ifnet *);
+static void msk_init_yukon(struct sk_if_softc *);
+static void msk_stop(struct ifnet *, int);
+static void msk_watchdog(struct ifnet *);
+static int msk_newbuf(struct sk_if_softc *, bus_dmamap_t);
+static int msk_alloc_jumbo_mem(struct sk_if_softc *);
+static void *msk_jalloc(struct sk_if_softc *);
+static void msk_jfree(struct mbuf *, void *, size_t, void *);
+static int msk_init_rx_ring(struct sk_if_softc *);
+static int msk_init_tx_ring(struct sk_if_softc *);
+static void msk_fill_rx_ring(struct sk_if_softc *);
 
-void msk_update_int_mod(struct sk_softc *, int);
+static void msk_update_int_mod(struct sk_softc *, int);
 
-int msk_miibus_readreg(device_t, int, int, uint16_t *);
-int msk_miibus_writereg(device_t, int, int, uint16_t);
-void msk_miibus_statchg(struct ifnet *);
+static int msk_miibus_readreg(device_t, int, int, uint16_t *);
+static int msk_miibus_writereg(device_t, int, int, uint16_t);
+static void msk_miibus_statchg(struct ifnet *);
 
-void msk_setmulti(struct sk_if_softc *);
-void msk_setpromisc(struct sk_if_softc *);
-void msk_tick(void *);
+static void msk_setmulti(struct sk_if_softc *);
+static void msk_setpromisc(struct sk_if_softc *);
+static void msk_tick(void *);
 static void msk_fill_rx_tick(void *);
 
 /* #define MSK_DEBUG 1 */
@@ -139,9 +139,9 @@ static void msk_fill_rx_tick(void *);
 #define DPRINTFN(n, x)	if (mskdebug >= (n)) printf x
 int	mskdebug = MSK_DEBUG;
 
-void msk_dump_txdesc(struct msk_tx_desc *, int);
-void msk_dump_mbuf(struct mbuf *);
-void msk_dump_bytes(const char *, int);
+static void msk_dump_txdesc(struct msk_tx_desc *, int);
+static void msk_dump_mbuf(struct mbuf *);
+static void msk_dump_bytes(const char *, int);
 #else
 #define DPRINTF(x)
 #define DPRINTFN(n, x)
@@ -238,7 +238,7 @@ sk_win_write_1(struct sk_softc *sc, uint32_t reg, uint8_t x)
 	CSR_WRITE_1(sc, reg, x);
 }
 
-int
+static int
 msk_miibus_readreg(device_t dev, int phy, int reg, uint16_t *val)
 {
 	struct sk_if_softc *sc_if = device_private(dev);
@@ -270,7 +270,7 @@ msk_miibus_readreg(device_t dev, int phy, int reg, uint16_t *val)
 	return 0;
 }
 
-int
+static int
 msk_miibus_writereg(device_t dev, int phy, int reg, uint16_t val)
 {
 	struct sk_if_softc *sc_if = device_private(dev);
@@ -297,7 +297,7 @@ msk_miibus_writereg(device_t dev, int phy, int reg, uint16_t val)
 	return 0;
 }
 
-void
+static void
 msk_miibus_statchg(struct ifnet *ifp)
 {
 	struct sk_if_softc *sc_if = ifp->if_softc;
@@ -340,7 +340,7 @@ msk_miibus_statchg(struct ifnet *ifp)
 		     SK_YU_READ_2(sc_if, YUKON_GPCR)));
 }
 
-void
+static void
 msk_setmulti(struct sk_if_softc *sc_if)
 {
 	struct ifnet *ifp= &sc_if->sk_ethercom.ec_if;
@@ -400,7 +400,7 @@ allmulti:
 	SK_YU_WRITE_2(sc_if, YUKON_RCR, reg);
 }
 
-void
+static void
 msk_setpromisc(struct sk_if_softc *sc_if)
 {
 	struct ifnet *ifp = &sc_if->sk_ethercom.ec_if;
@@ -413,7 +413,7 @@ msk_setpromisc(struct sk_if_softc *sc_if)
 		    YU_RCR_UFLEN | YU_RCR_MUFLEN);
 }
 
-int
+static int
 msk_init_rx_ring(struct sk_if_softc *sc_if)
 {
 	struct msk_chain_data	*cd = &sc_if->sk_cdata;
@@ -453,7 +453,7 @@ msk_init_rx_ring(struct sk_if_softc *sc_if)
 	return 0;
 }
 
-int
+static int
 msk_init_tx_ring(struct sk_if_softc *sc_if)
 {
 	struct sk_softc		*sc = sc_if->sk_softc;
@@ -508,7 +508,7 @@ msk_init_tx_ring(struct sk_if_softc *sc_if)
 	return 0;
 }
 
-int
+static int
 msk_newbuf(struct sk_if_softc *sc_if, bus_dmamap_t dmamap)
 {
 	struct mbuf		*m_new = NULL;
@@ -582,7 +582,7 @@ msk_newbuf(struct sk_if_softc *sc_if, bus_dmamap_t dmamap)
  * Memory management for jumbo frames.
  */
 
-int
+static int
 msk_alloc_jumbo_mem(struct sk_if_softc *sc_if)
 {
 	struct sk_softc		*sc = sc_if->sk_softc;
@@ -690,7 +690,7 @@ msk_free_jumbo_mem(struct sk_if_softc *sc_if)
 /*
  * Allocate a jumbo buffer.
  */
-void *
+static void *
 msk_jalloc(struct sk_if_softc *sc_if)
 {
 	struct sk_jpool_entry	*entry;
@@ -712,7 +712,7 @@ msk_jalloc(struct sk_if_softc *sc_if)
 /*
  * Release a jumbo buffer.
  */
-void
+static void
 msk_jfree(struct mbuf *m, void *buf, size_t size, void *arg)
 {
 	struct sk_jpool_entry *entry;
@@ -750,7 +750,7 @@ msk_jfree(struct mbuf *m, void *buf, size_t size, void *arg)
 		callout_schedule(&sc->sk_tick_rx, 0);
 }
 
-int
+static int
 msk_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 {
 	struct sk_if_softc *sc = ifp->if_softc;
@@ -802,7 +802,7 @@ msk_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 	return error;
 }
 
-void
+static void
 msk_update_int_mod(struct sk_softc *sc, int verbose)
 {
 	uint32_t imtimer_ticks;
@@ -866,7 +866,7 @@ msk_lookup(const struct pci_attach_args *pa)
  * Probe for a SysKonnect GEnesis chip. Check the PCI vendor and device
  * IDs against our list and return a device name if we find a match.
  */
-int
+static int
 mskc_probe(device_t parent, cfdata_t match, void *aux)
 {
 	struct pci_attach_args *pa = (struct pci_attach_args *)aux;
@@ -877,7 +877,7 @@ mskc_probe(device_t parent, cfdata_t match, void *aux)
 /*
  * Force the GEnesis into reset, then bring it out of reset.
  */
-void
+static void
 mskc_reset(struct sk_softc *sc)
 {
 	uint32_t imtimer_ticks, reg1;
@@ -1078,7 +1078,7 @@ mskc_reset(struct sk_softc *sc)
 	msk_update_int_mod(sc, 0);
 }
 
-int
+static int
 msk_probe(device_t parent, cfdata_t match, void *aux)
 {
 	struct skc_attach_args *sa = aux;
@@ -1104,7 +1104,7 @@ msk_probe(device_t parent, cfdata_t match, void *aux)
 	return 0;
 }
 
-void
+static void
 msk_reset(struct sk_if_softc *sc_if)
 {
 	/* GMAC and GPHY Reset */
@@ -1129,7 +1129,7 @@ msk_resume(device_t dv, const pmf_qual_t *qual)
  * Each XMAC chip is attached as a separate logical IP interface.
  * Single port cards will have only one logical interface of course.
  */
-void
+static void
 msk_attach(device_t parent, device_t self, void *aux)
 {
 	struct sk_if_softc *sc_if = device_private(self);
@@ -1307,7 +1307,7 @@ fail:
 	sc->sk_if[sa->skc_port] = NULL;
 }
 
-int
+static int
 msk_detach(device_t self, int flags)
 {
 	struct sk_if_softc *sc_if = device_private(self);
@@ -1332,13 +1332,13 @@ msk_detach(device_t self, int flags)
 	if (LIST_FIRST(&sc_if->sk_mii.mii_phys) != NULL)
 		mii_detach(&sc_if->sk_mii, MII_PHY_ANY, MII_OFFSET_ANY);
 
-	/* Delete any remaining media. */
-	ifmedia_delete_instance(&sc_if->sk_mii.mii_media, IFM_INST_ANY);
-
 	pmf_device_deregister(self);
 
 	ether_ifdetach(ifp);
 	if_detach(ifp);
+
+	/* Delete any remaining media. */
+	ifmedia_fini(&sc_if->sk_mii.mii_media);
 
 	msk_free_jumbo_mem(sc_if);
 
@@ -1352,7 +1352,7 @@ msk_detach(device_t self, int flags)
 	return 0;
 }
 
-int
+static int
 mskcprint(void *aux, const char *pnp)
 {
 	struct skc_attach_args *sa = aux;
@@ -1370,7 +1370,7 @@ mskcprint(void *aux, const char *pnp)
  * Attach the interface. Allocate softc structures, do ifmedia
  * setup and ethernet/BPF attach.
  */
-void
+static void
 mskc_attach(device_t parent, device_t self, void *aux)
 {
 	struct sk_softc *sc = device_private(self);
@@ -1753,7 +1753,7 @@ fail_1:
 	sc->sk_bsize = 0;
 }
 
-int
+static int
 mskc_detach(device_t self, int flags)
 {
 	struct sk_softc *sc = device_private(self);
@@ -1787,7 +1787,7 @@ mskc_detach(device_t self, int flags)
 	return 0;
 }
 
-int
+static int
 msk_encap(struct sk_if_softc *sc_if, struct mbuf *m_head, uint32_t *txidx)
 {
 	struct sk_softc		*sc = sc_if->sk_softc;
@@ -1925,7 +1925,7 @@ msk_encap(struct sk_if_softc *sc_if, struct mbuf *m_head, uint32_t *txidx)
 	return 0;
 }
 
-void
+static void
 msk_start(struct ifnet *ifp)
 {
 	struct sk_if_softc	*sc_if = ifp->if_softc;
@@ -1973,7 +1973,7 @@ msk_start(struct ifnet *ifp)
 	}
 }
 
-void
+static void
 msk_watchdog(struct ifnet *ifp)
 {
 	struct sk_if_softc *sc_if = ifp->if_softc;
@@ -1986,7 +1986,7 @@ msk_watchdog(struct ifnet *ifp)
 	if (sc_if->sk_cdata.sk_tx_cnt != 0) {
 		aprint_error_dev(sc_if->sk_dev, "watchdog timeout\n");
 
-		ifp->if_oerrors++;
+		if_statinc(ifp, if_oerrors);
 
 		/* XXX Resets both ports; we shouldn't do that. */
 		mskc_reset(sc_if->sk_softc);
@@ -2034,7 +2034,7 @@ msk_rxvalid(struct sk_softc *sc, uint32_t stat, uint32_t len)
 	return 1;
 }
 
-void
+static void
 msk_rxeof(struct sk_if_softc *sc_if, uint16_t len, uint32_t rxstat)
 {
 	struct sk_softc		*sc = sc_if->sk_softc;
@@ -2077,7 +2077,7 @@ msk_rxeof(struct sk_if_softc *sc_if, uint16_t len, uint32_t rxstat)
 	if (total_len < SK_MIN_FRAMELEN ||
 	    total_len > ETHER_MAX_LEN_JUMBO ||
 	    msk_rxvalid(sc, rxstat, total_len) == 0) {
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		m_freem(m);
 		return;
 	}
@@ -2089,7 +2089,7 @@ msk_rxeof(struct sk_if_softc *sc_if, uint16_t len, uint32_t rxstat)
 	if_percpuq_enqueue(ifp->if_percpuq, m);
 }
 
-void
+static void
 msk_txeof(struct sk_if_softc *sc_if)
 {
 	struct sk_softc		*sc = sc_if->sk_softc;
@@ -2121,7 +2121,7 @@ msk_txeof(struct sk_if_softc *sc_if)
 			msk_dump_txdesc(cur_tx, idx);
 #endif
 		if (sk_ctl & SK_Y2_TXCTL_LASTFRAG)
-			ifp->if_opackets++;
+			if_statinc(ifp, if_opackets);
 		if (sc_if->sk_cdata.sk_tx_chain[idx].sk_mbuf != NULL) {
 			entry = sc_if->sk_cdata.sk_tx_map[idx];
 
@@ -2149,7 +2149,7 @@ msk_txeof(struct sk_if_softc *sc_if)
 	sc_if->sk_cdata.sk_tx_cons = idx;
 }
 
-void
+static void
 msk_fill_rx_ring(struct sk_if_softc *sc_if)
 {
 	/* Make sure to not completely wrap around */
@@ -2185,7 +2185,7 @@ msk_fill_rx_tick(void *xsc_if)
 	splx(s);
 }
 
-void
+static void
 msk_tick(void *xsc_if)
 {
 	struct sk_if_softc *sc_if = xsc_if;
@@ -2199,7 +2199,7 @@ msk_tick(void *xsc_if)
 	callout_schedule(&sc_if->sk_tick_ch, hz);
 }
 
-void
+static void
 msk_intr_yukon(struct sk_if_softc *sc_if)
 {
 	uint8_t status;
@@ -2219,7 +2219,7 @@ msk_intr_yukon(struct sk_if_softc *sc_if)
 	DPRINTFN(2, ("msk_intr_yukon status=%#x\n", status));
 }
 
-int
+static int
 msk_intr(void *xsc)
 {
 	struct sk_softc		*sc = xsc;
@@ -2310,7 +2310,7 @@ msk_intr(void *xsc)
 	return claimed;
 }
 
-void
+static void
 msk_init_yukon(struct sk_if_softc *sc_if)
 {
 	uint32_t		v;
@@ -2452,7 +2452,7 @@ msk_init_yukon(struct sk_if_softc *sc_if)
  * Note that to properly initialize any part of the GEnesis chip,
  * you first have to take it out of reset mode.
  */
-int
+static int
 msk_init(struct ifnet *ifp)
 {
 	struct sk_if_softc	*sc_if = ifp->if_softc;
@@ -2615,7 +2615,7 @@ out:
  * Note: the logic of second parameter is inverted compared to OpenBSD
  * code, since this code uses the function as if_stop hook too.
  */
-void
+static void
 msk_stop(struct ifnet *ifp, int disable)
 {
 	struct sk_if_softc	*sc_if = ifp->if_softc;
@@ -2705,7 +2705,7 @@ CFATTACH_DECL3_NEW(msk, sizeof(struct sk_if_softc), msk_probe, msk_attach,
 	msk_detach, NULL, NULL, NULL, DVF_DETACH_SHUTDOWN);
 
 #ifdef MSK_DEBUG
-void
+static void
 msk_dump_txdesc(struct msk_tx_desc *le, int idx)
 {
 #define DESC_PRINT(X)					\
@@ -2720,7 +2720,7 @@ msk_dump_txdesc(struct msk_tx_desc *le, int idx)
 #undef DESC_PRINT
 }
 
-void
+static void
 msk_dump_bytes(const char *data, int len)
 {
 	int c, i, j;
@@ -2752,7 +2752,7 @@ msk_dump_bytes(const char *data, int len)
 	}
 }
 
-void
+static void
 msk_dump_mbuf(struct mbuf *m)
 {
 	int count = m->m_pkthdr.len;

@@ -1,4 +1,4 @@
-/*	$NetBSD: x86_machdep.c,v 1.129 2019/11/23 19:40:37 ad Exp $	*/
+/*	$NetBSD: x86_machdep.c,v 1.135 2020/01/29 01:54:34 manu Exp $	*/
 
 /*-
  * Copyright (c) 2002, 2006, 2007 YAMAMOTO Takashi,
@@ -31,13 +31,14 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: x86_machdep.c,v 1.129 2019/11/23 19:40:37 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: x86_machdep.c,v 1.135 2020/01/29 01:54:34 manu Exp $");
 
 #include "opt_modular.h"
 #include "opt_physmem.h"
 #include "opt_splash.h"
 #include "opt_kaslr.h"
 #include "opt_svs.h"
+#include "opt_xen.h"
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -349,12 +350,23 @@ cpu_need_proftick(struct lwp *l)
 bool
 cpu_intr_p(void)
 {
+	uint64_t ncsw;
 	int idepth;
+	lwp_t *l;
 
-	kpreempt_disable();
-	idepth = curcpu()->ci_idepth;
-	kpreempt_enable();
-	return (idepth >= 0);
+	l = curlwp;
+	if (__predict_false(l->l_cpu == NULL)) {
+		KASSERT(l == &lwp0);
+		return false;
+	}
+	do {
+		ncsw = l->l_ncsw;
+		__insn_barrier();
+		idepth = l->l_cpu->ci_idepth;
+		__insn_barrier();
+	} while (__predict_false(ncsw != l->l_ncsw));
+
+	return idepth >= 0;
 }
 
 #ifdef __HAVE_PREEMPTION
@@ -657,7 +669,7 @@ x86_parse_clusters(struct btinfo_memmap *bim)
 		type = bim->entry[x].type;
 #ifdef DEBUG_MEMLOAD
 		printf("MEMMAP: 0x%016" PRIx64 "-0x%016" PRIx64
-		    ", size=0x%016" PRIx64 ", type=%d(%s)\n",
+		    "\n\tsize=0x%016" PRIx64 ", type=%d(%s)\n",
 		    addr, addr + size - 1, size, type,
 		    (type == BIM_Memory) ?  "Memory" :
 		    (type == BIM_Reserved) ?  "Reserved" :
@@ -897,27 +909,95 @@ init_x86_vm(paddr_t pa_kend)
 		seg_start1 = 0;
 		seg_end1 = 0;
 
+#ifdef DEBUG_MEMLOAD
+		printf("segment %" PRIx64 " - %" PRIx64 "\n",
+		    seg_start, seg_end);
+#endif
+
 		/* Skip memory before our available starting point. */
-		if (seg_end <= lowmem_rsvd)
+		if (seg_end <= lowmem_rsvd) {
+#ifdef DEBUG_MEMLOAD
+			printf("discard segment below starting point "
+			    "%" PRIx64 " - %" PRIx64 "\n", seg_start, seg_end);
+#endif
 			continue;
+		}
 
 		if (seg_start <= lowmem_rsvd && lowmem_rsvd < seg_end) {
 			seg_start = lowmem_rsvd;
-			if (seg_start == seg_end)
+			if (seg_start == seg_end) {
+#ifdef DEBUG_MEMLOAD
+				printf("discard segment below starting point "
+				    "%" PRIx64 " - %" PRIx64 "\n",
+				    seg_start, seg_end);
+
+
+#endif
 				continue;
+			}
 		}
 
 		/*
 		 * If this segment contains the kernel, split it in two, around
 		 * the kernel.
+		 *  [seg_start                       seg_end]
+		 *             [pa_kstart  pa_kend]
 		 */
 		if (seg_start <= pa_kstart && pa_kend <= seg_end) {
+#ifdef DEBUG_MEMLOAD
+			printf("split kernel overlapping to "
+			    "%" PRIx64 " - %lx and %lx - %" PRIx64 "\n",
+			    seg_start, pa_kstart, pa_kend, seg_end);
+#endif
 			seg_start1 = pa_kend;
 			seg_end1 = seg_end;
 			seg_end = pa_kstart;
 			KASSERT(seg_end < seg_end1);
 		}
 
+		/*
+		 * Discard a segment inside the kernel
+		 *  [pa_kstart                       pa_kend]
+		 *             [seg_start  seg_end]
+		 */
+		if (pa_kstart < seg_start && seg_end < pa_kend) {
+#ifdef DEBUG_MEMLOAD
+			printf("discard complete kernel overlap "
+			    "%" PRIx64 " - %" PRIx64 "\n", seg_start, seg_end);
+#endif
+			continue;
+		}
+
+		/*
+		 * Discard leading hunk that overlaps the kernel
+		 *  [pa_kstart             pa_kend]
+		 *            [seg_start            seg_end]
+		 */
+		if (pa_kstart < seg_start &&
+		    seg_start < pa_kend &&
+		    pa_kend < seg_end) {
+#ifdef DEBUG_MEMLOAD
+			printf("discard leading kernel overlap "
+			    "%" PRIx64 " - %lx\n", seg_start, pa_kend);
+#endif
+			seg_start = pa_kend;
+		}
+
+		/*
+		 * Discard trailing hunk that overlaps the kernel
+		 *             [pa_kstart            pa_kend]
+		 *  [seg_start              seg_end]
+		 */
+		if (seg_start < pa_kstart &&
+		    pa_kstart < seg_end &&
+		    seg_end < pa_kend) {
+#ifdef DEBUG_MEMLOAD
+			printf("discard trailing kernel overlap "
+			    "%lx - %" PRIx64 "\n", pa_kstart, seg_end);
+#endif
+			seg_end = pa_kstart;
+		}
+		
 		/* First hunk */
 		if (seg_start != seg_end) {
 			x86_load_region(seg_start, seg_end);

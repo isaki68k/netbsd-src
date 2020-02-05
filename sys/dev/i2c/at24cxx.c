@@ -1,4 +1,4 @@
-/*	$NetBSD: at24cxx.c,v 1.32 2019/10/27 19:10:38 jmcneill Exp $	*/
+/*	$NetBSD: at24cxx.c,v 1.36 2020/01/15 06:09:36 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2003 Wasabi Systems, Inc.
@@ -36,7 +36,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: at24cxx.c,v 1.32 2019/10/27 19:10:38 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: at24cxx.c,v 1.36 2020/01/15 06:09:36 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -67,7 +67,7 @@ __KERNEL_RCSID(0, "$NetBSD: at24cxx.c,v 1.32 2019/10/27 19:10:38 jmcneill Exp $"
 #define	AT24CXX_ADDR		0x50
 
 #define	AT24CXX_WRITE_CYCLE_MS	10
-#define	AT24CXX_ADDR_HI(a)	(((a) >> 8) & 0x1f)
+#define	AT24CXX_ADDR_HI(a)	(((a) >> 8) & 0xff)
 #define	AT24CXX_ADDR_LO(a)	((a) & 0xff)
 
 #include "seeprom.h"
@@ -392,8 +392,8 @@ seeprom_wait_idle(struct seeprom_softc *sc)
 		if (error == 0)
 			break;
 
-		rv = tsleep(sc, PRIBIO | PCATCH, "seepromwr", timeout);
-		if (rv != EWOULDBLOCK)
+		rv = kpause("seepromwr", true, timeout, NULL);
+		if (rv != EWOULDBLOCK && rv != 0)
 			return (rv);
 	}
 
@@ -416,7 +416,7 @@ seeprom_bootstrap_read(i2c_tag_t tag, int i2caddr, int offset, int devsize,
 	/* We are very forgiving about devsize during bootstrap. */
 	cmdlen = (devsize >= 4096) ? 2 : 1;
 
-	if (iic_acquire_bus(tag, I2C_F_POLL) != 0)
+	if (iic_acquire_bus(tag, 0) != 0)
 		return (-1);
 
 	while (len) {
@@ -431,8 +431,8 @@ seeprom_bootstrap_read(i2c_tag_t tag, int i2caddr, int offset, int devsize,
 
 		/* Read a single byte. */
 		if (iic_exec(tag, I2C_OP_READ_WITH_STOP, addr,
-			     cmdbuf, cmdlen, rvp, 1, I2C_F_POLL)) {
-			iic_release_bus(tag, I2C_F_POLL);
+			     cmdbuf, cmdlen, rvp, 1, 0)) {
+			iic_release_bus(tag, 0);
 			return (-1);
 		}
 
@@ -441,6 +441,6 @@ seeprom_bootstrap_read(i2c_tag_t tag, int i2caddr, int offset, int devsize,
 		offset++;
 	}
 
-	iic_release_bus(tag, I2C_F_POLL);
+	iic_release_bus(tag, 0);
 	return (0);
 }

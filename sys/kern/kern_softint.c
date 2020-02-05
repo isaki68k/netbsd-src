@@ -1,7 +1,7 @@
-/*	$NetBSD: kern_softint.c,v 1.51 2019/11/25 17:24:59 ad Exp $	*/
+/*	$NetBSD: kern_softint.c,v 1.59 2020/01/26 18:52:55 ad Exp $	*/
 
 /*-
- * Copyright (c) 2007, 2008, 2019 The NetBSD Foundation, Inc.
+ * Copyright (c) 2007, 2008, 2019, 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -170,7 +170,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_softint.c,v 1.51 2019/11/25 17:24:59 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_softint.c,v 1.59 2020/01/26 18:52:55 ad Exp $");
 
 #include <sys/param.h>
 #include <sys/proc.h>
@@ -182,7 +182,6 @@ __KERNEL_RCSID(0, "$NetBSD: kern_softint.c,v 1.51 2019/11/25 17:24:59 ad Exp $")
 #include <sys/evcnt.h>
 #include <sys/cpu.h>
 #include <sys/xcall.h>
-#include <sys/pserialize.h>
 
 #include <net/netisr.h>
 
@@ -545,7 +544,6 @@ static inline void
 softint_execute(softint_t *si, lwp_t *l, int s)
 {
 	softhand_t *sh;
-	bool havelock;
 
 #ifdef __HAVE_FAST_SOFTINTS
 	KASSERT(si->si_lwp == curlwp);
@@ -555,8 +553,6 @@ softint_execute(softint_t *si, lwp_t *l, int s)
 	KASSERT(si->si_cpu == curcpu());
 	KASSERT(si->si_lwp->l_wchan == NULL);
 	KASSERT(si->si_active);
-
-	havelock = false;
 
 	/*
 	 * Note: due to priority inheritance we may have interrupted a
@@ -578,17 +574,14 @@ softint_execute(softint_t *si, lwp_t *l, int s)
 		splx(s);
 
 		/* Run the handler. */
-		if (sh->sh_flags & SOFTINT_MPSAFE) {
-			if (havelock) {
-				KERNEL_UNLOCK_ONE(l);
-				havelock = false;
-			}
-		} else if (!havelock) {
+		if (__predict_true((sh->sh_flags & SOFTINT_MPSAFE) != 0)) {
+			(*sh->sh_func)(sh->sh_arg);
+		} else {
 			KERNEL_LOCK(1, l);
-			havelock = true;
+			(*sh->sh_func)(sh->sh_arg);
+			KERNEL_UNLOCK_ONE(l);
 		}
-		(*sh->sh_func)(sh->sh_arg);
-
+		
 		/* Diagnostic: check that spin-locks have not leaked. */
 		KASSERTMSG(curcpu()->ci_mtx_count == 0,
 		    "%s: ci_mtx_count (%d) != 0, sh_func %p\n",
@@ -604,15 +597,7 @@ softint_execute(softint_t *si, lwp_t *l, int s)
 
 	PSREF_DEBUG_BARRIER();
 
-	if (havelock) {
-		KERNEL_UNLOCK_ONE(l);
-	}
-
-	/*
-	 * Unlocked, but only for statistics.
-	 * Should be per-CPU to prevent cache ping-pong.
-	 */
-	curcpu()->ci_data.cpu_nsoft++;
+	CPU_COUNT(CPU_COUNT_NSOFT, 1);
 
 	KASSERT(si->si_cpu == curcpu());
 	KASSERT(si->si_lwp->l_wchan == NULL);
@@ -691,9 +676,10 @@ softint_trigger(uintptr_t machdep)
 
 	ci = curcpu();
 	ci->ci_data.cpu_softints |= machdep;
-	l = ci->ci_data.cpu_onproc;
+	l = ci->ci_onproc;
 	if (l == ci->ci_data.cpu_idlelwp) {
-		atomic_or_uint(&ci->ci_want_resched, RESCHED_UPREEMPT);
+		atomic_or_uint(&ci->ci_want_resched,
+		    RESCHED_IDLE | RESCHED_UPREEMPT);
 	} else {
 		/* MI equivalent of aston() */
 		cpu_signotify(l);
@@ -729,6 +715,7 @@ softint_thread(void *cookie)
 
 		lwp_lock(l);
 		l->l_stat = LSIDL;
+		spc_lock(l->l_cpu);
 		mi_switch(l);
 	}
 }
@@ -854,7 +841,24 @@ softint_dispatch(lwp_t *pinned, int s)
 	u_int timing;
 	lwp_t *l;
 
-	KASSERT((pinned->l_pflag & LP_RUNNING) != 0);
+#ifdef DIAGNOSTIC
+	if ((pinned->l_flag & LW_RUNNING) == 0 || curlwp->l_stat != LSIDL) {
+		struct lwp *onproc = curcpu()->ci_onproc;
+		int s2 = splhigh();
+		printf("curcpu=%d, spl=%d curspl=%d\n"
+			"onproc=%p => l_stat=%d l_flag=%08x l_cpu=%d\n"
+			"curlwp=%p => l_stat=%d l_flag=%08x l_cpu=%d\n"
+			"pinned=%p => l_stat=%d l_flag=%08x l_cpu=%d\n",
+			cpu_index(curcpu()), s, s2, onproc, onproc->l_stat,
+			onproc->l_flag, cpu_index(onproc->l_cpu), curlwp,
+			curlwp->l_stat, curlwp->l_flag,
+			cpu_index(curlwp->l_cpu), pinned, pinned->l_stat,
+			pinned->l_flag, cpu_index(pinned->l_cpu));
+		splx(s2);
+		panic("softint screwup");
+	}
+#endif
+
 	l = curlwp;
 	si = l->l_private;
 
@@ -864,7 +868,7 @@ softint_dispatch(lwp_t *pinned, int s)
 	 * the LWP locked, at this point no external agents will want to
 	 * modify the interrupt LWP's state.
 	 */
-	timing = (softint_timing ? LP_TIMEINTR : 0);
+	timing = softint_timing;
 	l->l_switchto = pinned;
 	l->l_stat = LSONPROC;
 
@@ -875,17 +879,15 @@ softint_dispatch(lwp_t *pinned, int s)
 	if (timing) {
 		binuptime(&l->l_stime);
 		membar_producer();	/* for calcru */
+		l->l_pflag |= LP_TIMEINTR;
 	}
-	l->l_pflag |= (LP_RUNNING | timing);
+	l->l_flag |= LW_RUNNING;
 	softint_execute(si, l, s);
 	if (timing) {
 		binuptime(&now);
 		updatertime(l, &now);
 		l->l_pflag &= ~LP_TIMEINTR;
 	}
-
-	/* Indicate a soft-interrupt switch. */
-	pserialize_switchpoint();
 
 	/*
 	 * If we blocked while handling the interrupt, the pinned LWP is
@@ -898,17 +900,18 @@ softint_dispatch(lwp_t *pinned, int s)
 	 * That's not be a problem: we are lowering to level 's' which will
 	 * prevent softint_dispatch() from being reentered at level 's',
 	 * until the priority is finally dropped to IPL_NONE on entry to
-	 * the LWP chosen by lwp_exit_switchaway().
+	 * the LWP chosen by mi_switch().
 	 */
 	l->l_stat = LSIDL;
 	if (l->l_switchto == NULL) {
 		splx(s);
-		pmap_deactivate(l);
-		lwp_exit_switchaway(l);
+		lwp_lock(l);
+		spc_lock(l->l_cpu);
+		mi_switch(l);
 		/* NOTREACHED */
 	}
 	l->l_switchto = NULL;
-	l->l_pflag &= ~LP_RUNNING;
+	l->l_flag &= ~LW_RUNNING;
 }
 
 #endif	/* !__HAVE_FAST_SOFTINTS */

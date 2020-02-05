@@ -1,4 +1,4 @@
-/*	$NetBSD: if_umb.c,v 1.9 2019/06/26 22:58:58 khorben Exp $ */
+/*	$NetBSD: if_umb.c,v 1.12 2020/02/04 05:46:32 thorpej Exp $ */
 /*	$OpenBSD: if_umb.c,v 1.20 2018/09/10 17:00:45 gerhard Exp $ */
 
 /*
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_umb.c,v 1.9 2019/06/26 22:58:58 khorben Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_umb.c,v 1.12 2020/02/04 05:46:32 thorpej Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -601,7 +601,7 @@ umb_detach(device_t self, int flags)
 		sc->sc_resp_buf = NULL;
 	}
 	if (ifp->if_softc) {
-		ifmedia_delete_instance(&sc->sc_im, IFM_INST_ANY);
+		ifmedia_fini(&sc->sc_im);
 	}
 	if (sc->sc_attached) {
 		rnd_detach_source(&sc->sc_rnd_source);
@@ -779,6 +779,12 @@ umb_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 		usb_add_task(sc->sc_udev, &sc->sc_umb_task, USB_TASKQ_DRIVER);
 		break;
 	case SIOCGUMBINFO:
+		error = kauth_authorize_network(curlwp->l_cred,
+		    KAUTH_NETWORK_INTERFACE,
+		    KAUTH_REQ_NETWORK_INTERFACE_SETPRIV, ifp, KAUTH_ARG(cmd),
+		    NULL);
+		if (error)
+			break;
 		error = copyout(&sc->sc_info, ifr->ifr_data,
 		    sizeof(sc->sc_info));
 		break;
@@ -883,7 +889,7 @@ umb_input(struct ifnet *ifp, struct mbuf *m)
 		return;
 	}
 	if (pktlen < sizeof(struct ip)) {
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		DPRINTFN(4, "%s: dropping short packet (len %zd)\n", __func__,
 		    pktlen);
 		m_freem(m);
@@ -891,11 +897,10 @@ umb_input(struct ifnet *ifp, struct mbuf *m)
 	}
 	s = splnet();
 	if (__predict_false(!pktq_enqueue(ip_pktq, m, 0))) {
-		ifp->if_iqdrops++;
+		if_statinc(ifp, if_iqdrops);
 		m_freem(m);
 	} else {
-		ifp->if_ipackets++;
-		ifp->if_ibytes += pktlen;
+		if_statadd2(ifp, if_ipackets, 1, if_ibytes, pktlen);
 	}
 	splx(s);
 }
@@ -933,7 +938,7 @@ umb_watchdog(struct ifnet *ifp)
 	if (sc->sc_dying)
 		return;
 
-	ifp->if_oerrors++;
+	if_statinc(ifp, if_oerrors);
 	printf("%s: watchdog timeout\n", DEVNAM(sc));
 	usbd_abort_pipe(sc->sc_tx_pipe);
 	return;
@@ -1888,7 +1893,7 @@ umb_txeof(struct usbd_xfer *xfer, void *priv, usbd_status status)
 
 	if (status != USBD_NORMAL_COMPLETION) {
 		if (status != USBD_NOT_STARTED && status != USBD_CANCELLED) {
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			DPRINTF("%s: tx error: %s\n", DEVNAM(sc),
 			    usbd_errstr(status));
 			if (status == USBD_STALLED)
@@ -2010,7 +2015,7 @@ umb_decap(struct umb_softc *sc, struct usbd_xfer *xfer)
 			doff = UGETDW(dgram32->dwDatagramIndex);
 			break;
 		default:
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			goto done;
 		}
 
@@ -2028,7 +2033,7 @@ umb_decap(struct umb_softc *sc, struct usbd_xfer *xfer)
 		DPRINTFN(3, "%s: decap %d bytes\n", DEVNAM(sc), dlen);
 		m = m_devget(dp, dlen, 0, ifp);
 		if (m == NULL) {
-			ifp->if_iqdrops++;
+			if_statinc(ifp, if_iqdrops);
 			continue;
 		}
 
@@ -2040,7 +2045,7 @@ done:
 toosmall:
 	DPRINTF("%s: packet too small (%d)\n", DEVNAM(sc), len);
 fail:
-	ifp->if_ierrors++;
+	if_statinc(ifp, if_ierrors);
 	splx(s);
 }
 

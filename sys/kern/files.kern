@@ -1,4 +1,4 @@
-#	$NetBSD: files.kern,v 1.38 2019/11/20 19:37:53 pgoyette Exp $
+#	$NetBSD: files.kern,v 1.42 2020/01/04 03:46:19 kamil Exp $
 
 #
 # kernel sources
@@ -54,6 +54,7 @@ file	kern/kern_lock.c		kern
 file	kern/kern_lwp.c			kern
 file	kern/kern_malloc.c		kern
 file	kern/kern_module.c		kern
+file	kern/kern_module_hook.c		kern
 file	kern/kern_module_vfs.c		kern
 file	kern/kern_mutex.c		kern
 file	kern/kern_mutex_obj.c		kern
@@ -103,6 +104,7 @@ file	kern/subr_blist.c		vmswap
 file	kern/subr_bufq.c		kern
 file	kern/subr_callback.c		kern
 file	kern/subr_cprng.c		kern
+file	kern/subr_cpu.c			kern
 file	kern/subr_cpufreq.c		kern
 file	kern/subr_copy.c		kern
 file	kern/subr_csan.c		kcsan
@@ -159,6 +161,7 @@ file	kern/sys_mqueue.c		mqueue
 file	kern/sys_lwp.c			kern
 file	kern/sys_pipe.c			!pipe_socketpair
 file	kern/sys_process.c		ptrace_hooks | ktrace
+file	kern/sys_process_lwpstatus.c	kern
 file	kern/sys_ptrace.c		ptrace
 file	kern/sys_ptrace_common.c	ptrace
 file	kern/sys_pset.c			kern

@@ -31,7 +31,7 @@
 #if 0
 __FBSDID("$FreeBSD: head/sys/dev/ena/ena.c 333456 2018-05-10 09:37:54Z mw $");
 #endif
-__KERNEL_RCSID(0, "$NetBSD: if_ena.c,v 1.18 2019/11/10 21:16:36 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_ena.c,v 1.21 2020/02/04 05:44:14 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -314,7 +314,7 @@ ena_allocate_pci_resources(struct pci_attach_args *pa,
 		msixtbl = pci_conf_read(pa->pa_pc, pa->pa_tag,
 		    msixoff + PCI_MSIX_TBLOFFSET);
 		table_offset = msixtbl & PCI_MSIX_TBLOFFSET_MASK;
-		bir = msixtbl & PCI_MSIX_PBABIR_MASK;
+		bir = msixtbl & PCI_MSIX_TBLBIR_MASK;
 		if (bir == PCI_MAPREG_NUM(ENA_REG_BAR))
 			mapsize = table_offset;
 	}
@@ -3349,7 +3349,6 @@ static void ena_keep_alive_wd(void *adapter_data,
 {
 	struct ena_adapter *adapter = (struct ena_adapter *)adapter_data;
 	struct ena_admin_aenq_keep_alive_desc *desc;
-	sbintime_t stime;
 	uint64_t rx_drops;
 
 	desc = (struct ena_admin_aenq_keep_alive_desc *)aenq_e;
@@ -3358,8 +3357,7 @@ static void ena_keep_alive_wd(void *adapter_data,
 	counter_u64_zero(adapter->hw_stats.rx_drops);
 	counter_u64_add(adapter->hw_stats.rx_drops, rx_drops);
 
-	stime = getsbinuptime();
-	(void) atomic_swap_64(&adapter->keep_alive_timestamp, stime);
+	atomic_store_release(&adapter->keep_alive_timestamp, getsbinuptime());
 }
 
 /* Check for keep alive expiration */
@@ -3373,9 +3371,7 @@ static void check_for_missing_keep_alive(struct ena_adapter *adapter)
 	if (likely(adapter->keep_alive_timeout == 0))
 		return;
 
-	/* FreeBSD uses atomic_load_acq_64() in place of the membar + read */
-	membar_sync();
-	timestamp = adapter->keep_alive_timestamp;
+	timestamp = atomic_load_acquire(&adapter->keep_alive_timestamp);
 
 	time = getsbinuptime() - timestamp;
 	if (unlikely(time > adapter->keep_alive_timeout)) {
@@ -3884,6 +3880,7 @@ ena_detach(device_t pdev, int flags)
 		ether_ifdetach(adapter->ifp);
 		if_free(adapter->ifp);
 	}
+	ifmedia_fini(&adapter->media);
 
 	ena_free_all_io_rings_resources(adapter);
 

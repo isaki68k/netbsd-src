@@ -1,4 +1,4 @@
-/*	$NetBSD: if_cdce.c,v 1.67 2019/08/20 06:37:06 mrg Exp $ */
+/*	$NetBSD: if_cdce.c,v 1.69 2020/01/29 06:26:32 thorpej Exp $ */
 
 /*
  * Copyright (c) 1997, 1998, 1999, 2000-2003 Bill Paul <wpaul@windriver.com>
@@ -40,7 +40,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_cdce.c,v 1.67 2019/08/20 06:37:06 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_cdce.c,v 1.69 2020/01/29 06:26:32 thorpej Exp $");
 
 #include <sys/param.h>
 
@@ -83,7 +83,7 @@ static unsigned	cdce_tx_prepare(struct usbnet *, struct mbuf *,
 				struct usbnet_chain *);
 static int	cdce_init(struct ifnet *);
 
-static struct usbnet_ops cdce_ops = {
+static const struct usbnet_ops cdce_ops = {
 	.uno_tx_prepare = cdce_tx_prepare,
 	.uno_rx_loop = cdce_rx_loop,
 	.uno_init = cdce_init,
@@ -282,7 +282,7 @@ cdce_rx_loop(struct usbnet * un, struct usbnet_chain *c, uint32_t total_len)
 		total_len -= 4;
 
 	if (total_len < sizeof(struct ether_header)) {
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		return;
 	}
 

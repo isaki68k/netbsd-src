@@ -1,4 +1,4 @@
-/*	$NetBSD: cpufunc.c,v 1.8 2019/11/22 05:21:19 mlelstv Exp $	*/
+/*	$NetBSD: cpufunc.c,v 1.15 2020/01/15 08:34:04 mrg Exp $	*/
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -29,13 +29,13 @@
 #include "opt_multiprocessor.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpufunc.c,v 1.8 2019/11/22 05:21:19 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpufunc.c,v 1.15 2020/01/15 08:34:04 mrg Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
 #include <sys/kmem.h>
+#include <sys/cpu.h>
 
-#include <aarch64/cpu.h>
 #include <aarch64/cpufunc.h>
 
 u_int cputype;			/* compat arm */
@@ -49,7 +49,7 @@ u_int aarch64_cache_prefer_mask;
 /* cache info per cluster. the same cluster has the same cache configuration? */
 #define MAXCPUPACKAGES	MAXCPUS		/* maximum of ci->ci_package_id */
 static struct aarch64_cache_info *aarch64_cacheinfo[MAXCPUPACKAGES];
-static struct aarch64_cache_info aarch64_cacheinfo0;
+static struct aarch64_cache_info aarch64_cacheinfo0[MAX_CACHE_LEVEL];
 
 
 static void
@@ -89,20 +89,6 @@ extract_cacheunit(int level, bool insn, int cachetype,
 }
 
 void
-aarch64_gettopology(struct cpu_info * const ci, uint64_t mpidr)
-{
-
-	if (mpidr & MPIDR_MT) {
-		ci->ci_smt_id = __SHIFTOUT(mpidr, MPIDR_AFF0);
-		ci->ci_core_id = __SHIFTOUT(mpidr, MPIDR_AFF1);
-		ci->ci_package_id = __SHIFTOUT(mpidr, MPIDR_AFF2);
-	} else {
-		ci->ci_core_id = __SHIFTOUT(mpidr, MPIDR_AFF0);
-		ci->ci_package_id = __SHIFTOUT(mpidr, MPIDR_AFF1);
-	}
-}
-
-void
 aarch64_getcacheinfo(int unit)
 {
 	struct cpu_info * const ci = curcpu();
@@ -123,7 +109,7 @@ aarch64_getcacheinfo(int unit)
 
 	/* Need static buffer for the boot CPU */
 	if (unit == 0)
-		cinfo = &aarch64_cacheinfo0;
+		cinfo = aarch64_cacheinfo0;
 	else
 		cinfo = kmem_zalloc(sizeof(struct aarch64_cache_info)
 		    * MAX_CACHE_LEVEL, KM_SLEEP);

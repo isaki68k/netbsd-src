@@ -1,4 +1,4 @@
-/* $NetBSD: trap.c,v 1.21 2019/11/24 04:08:36 rin Exp $ */
+/* $NetBSD: trap.c,v 1.25 2020/01/31 09:23:58 maxv Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -31,10 +31,11 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(1, "$NetBSD: trap.c,v 1.21 2019/11/24 04:08:36 rin Exp $");
+__KERNEL_RCSID(1, "$NetBSD: trap.c,v 1.25 2020/01/31 09:23:58 maxv Exp $");
 
 #include "opt_arm_intr_impl.h"
 #include "opt_compat_netbsd32.h"
+#include "opt_dtrace.h"
 
 #include <sys/param.h>
 #include <sys/kauth.h>
@@ -73,9 +74,18 @@ __KERNEL_RCSID(1, "$NetBSD: trap.c,v 1.21 2019/11/24 04:08:36 rin Exp $");
 #include <ddb/db_output.h>
 #include <machine/db_machdep.h>
 #endif
+#ifdef KDTRACE_HOOKS
+#include <sys/dtrace_bsd.h>
+#endif
 
 #ifdef DDB
 int sigill_debug = 0;
+#endif
+
+#ifdef KDTRACE_HOOKS
+dtrace_doubletrap_func_t	dtrace_doubletrap_func = NULL;
+dtrace_trap_func_t		dtrace_trap_func = NULL;
+int (*dtrace_invop_jump_addr)(struct trapframe *);
 #endif
 
 const char * const trap_names[] = {
@@ -83,6 +93,8 @@ const char * const trap_names[] = {
 	[ESR_EC_SERROR]		= "SError Interrupt",
 	[ESR_EC_WFX]		= "WFI or WFE instruction execution",
 	[ESR_EC_ILL_STATE]	= "Illegal Execution State",
+
+	[ESR_EC_BTE_A64]	= "Branch Target Exception",
 
 	[ESR_EC_SYS_REG]	= "MSR/MRS/SYS instruction",
 	[ESR_EC_SVC_A64]	= "SVC Instruction Execution",
@@ -182,16 +194,29 @@ trap_el1h_sync(struct trapframe *tf)
 	else
 		daif_enable(DAIF_D|DAIF_A);
 
+#ifdef KDTRACE_HOOKS
+	if (dtrace_trap_func != NULL && (*dtrace_trap_func)(tf, eclass))
+		return;
+#endif
+
 	switch (eclass) {
 	case ESR_EC_INSN_ABT_EL1:
 	case ESR_EC_DATA_ABT_EL1:
 		data_abort_handler(tf, eclass);
 		break;
 
+	case ESR_EC_BKPT_INSN_A64:
+#ifdef KDTRACE_HOOKS
+		if (__SHIFTOUT(esr, ESR_ISS) == 0x40d &&
+		    dtrace_invop_jump_addr != 0) {
+			(*dtrace_invop_jump_addr)(tf);
+			break;
+		}
+		/* FALLTHROUGH */
+#endif
 	case ESR_EC_BRKPNT_EL1:
 	case ESR_EC_SW_STEP_EL1:
 	case ESR_EC_WTCHPNT_EL1:
-	case ESR_EC_BKPT_INSN_A64:
 #ifdef DDB
 		if (eclass == ESR_EC_BRKPNT_EL1)
 			kdb_trap(DB_TRAP_BREAKPOINT, tf);
@@ -595,4 +620,32 @@ void do_trapsignal1(
 	sigdebug(tf, &ksi);
 #endif
 	(*l->l_proc->p_emul->e_trapsignal)(l, &ksi);
+}
+
+bool
+cpu_intr_p(void)
+{
+	uint64_t ncsw;
+	int idepth;
+	lwp_t *l;
+
+#ifdef __HAVE_PIC_FAST_SOFTINTS
+	/* XXX Copied from cpu.h.  Looks incomplete - needs fixing. */
+	if (ci->ci_cpl < IPL_VM)
+		return false;
+#endif
+
+	l = curlwp;
+	if (__predict_false(l->l_cpu == NULL)) {
+		KASSERT(l == &lwp0);
+		return false;
+	}
+	do {
+		ncsw = l->l_ncsw;
+		__insn_barrier();
+		idepth = l->l_cpu->ci_intr_depth;
+		__insn_barrier();
+	} while (__predict_false(ncsw != l->l_ncsw));
+
+	return idepth > 0;
 }

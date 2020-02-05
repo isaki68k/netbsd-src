@@ -1,4 +1,4 @@
-/*	$NetBSD: libkern.h,v 1.135 2019/11/22 14:28:46 maxv Exp $	*/
+/*	$NetBSD: libkern.h,v 1.137 2019/12/14 17:23:47 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 1992, 1993
@@ -356,14 +356,6 @@ tolower(int ch)
     ((const TYPE *)(((const char *)(PTR)) - offsetof(TYPE, FIELD))	\
 	+ __validate_const_container_of(PTR, TYPE, FIELD))
 
-#define	MTPRNG_RLEN		624
-struct mtprng_state {
-	unsigned int mt_idx;
-	uint32_t mt_elem[MTPRNG_RLEN];
-	uint32_t mt_count;
-	uint32_t mt_sparse[3];
-};
-
 /* Prototypes for which GCC built-ins exist. */
 void	*memcpy(void *, const void *, size_t);
 int	 memcmp(const void *, const void *, size_t);
@@ -497,10 +489,6 @@ char	*setstate(char *);
 long	 random(void);
 void	 mi_vector_hash(const void * __restrict, size_t, uint32_t,
 	    uint32_t[3]);
-void	 mtprng_init32(struct mtprng_state *, uint32_t);
-void	 mtprng_initarray(struct mtprng_state *, const uint32_t *, size_t);
-uint32_t mtprng_rawrandom(struct mtprng_state *);
-uint32_t mtprng_random(struct mtprng_state *);
 int	 scanc(u_int, const u_char *, const u_char *, int);
 int	 skpc(int, size_t, u_char *);
 int	 strcasecmp(const char *, const char *);
@@ -545,24 +533,5 @@ int	strnvisx(char *, size_t, const char *, size_t, int);
 #define VIS_OCTAL	0x01
 #define VIS_SAFE	0x20
 #define VIS_TRIM	0x40
-
-#ifdef notyet
-/*
- * LZF hashtable/state size: on uncompressible data and on a system with
- * a sufficiently large d-cache, a larger table produces a considerable
- * speed benefit.  On systems with small memory and caches, however...
- */
-#if defined(__vax__) || defined(__m68k__)
-#define LZF_HLOG 14
-#else
-#define LZF_HLOG 15
-#endif
-typedef const uint8_t *LZF_STATE[1 << LZF_HLOG];
-
-unsigned int lzf_compress_r (const void *const, unsigned int, void *,
-			     unsigned int, LZF_STATE);
-unsigned int lzf_decompress (const void *const, unsigned int, void *,
-			     unsigned int);
-#endif
 
 #endif /* !_LIB_LIBKERN_LIBKERN_H_ */

@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_exit.c,v 1.277 2019/10/03 22:48:44 kamil Exp $	*/
+/*	$NetBSD: kern_exit.c,v 1.282 2020/01/29 15:47:52 ad Exp $	*/
 
 /*-
  * Copyright (c) 1998, 1999, 2006, 2007, 2008 The NetBSD Foundation, Inc.
@@ -67,7 +67,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_exit.c,v 1.277 2019/10/03 22:48:44 kamil Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_exit.c,v 1.282 2020/01/29 15:47:52 ad Exp $");
 
 #include "opt_ktrace.h"
 #include "opt_dtrace.h"
@@ -99,6 +99,7 @@ __KERNEL_RCSID(0, "$NetBSD: kern_exit.c,v 1.277 2019/10/03 22:48:44 kamil Exp $"
 #include <sys/syscallargs.h>
 #include <sys/kauth.h>
 #include <sys/sleepq.h>
+#include <sys/lock.h>
 #include <sys/lockdebug.h>
 #include <sys/ktrace.h>
 #include <sys/cpu.h>
@@ -201,9 +202,16 @@ exit1(struct lwp *l, int exitcode, int signo)
 	ksiginfo_t	ksi;
 	ksiginfoq_t	kq;
 	int		wakeinit;
+	struct lwp	*l2 __diagused;
 
 	p = l->l_proc;
 
+	/* XXX Temporary. */
+	kernel_lock_plug_leak();
+
+	/* Verify that we hold no locks other than p->p_lock. */
+	LOCKDEBUG_BARRIER(p->p_lock, 0);
+	KASSERTMSG(curcpu()->ci_biglock_count == 0, "kernel_lock leaked");
 	KASSERT(mutex_owned(p->p_lock));
 	KASSERT(p->p_vmspace != NULL);
 
@@ -245,8 +253,8 @@ exit1(struct lwp *l, int exitcode, int signo)
 		lwp_unlock(l);
 		mutex_exit(p->p_lock);
 		lwp_lock(l);
+		spc_lock(l->l_cpu);
 		mi_switch(l);
-		KERNEL_LOCK(l->l_biglocks, l);
 		mutex_enter(p->p_lock);
 	}
 
@@ -558,6 +566,11 @@ exit1(struct lwp *l, int exitcode, int signo)
 	p->p_nrlwps--;
 	p->p_nzlwps++;
 	p->p_ndlwps = 0;
+	/* Don't bother with p_treelock as no other LWPs remain. */
+	l2 = radix_tree_remove_node(&p->p_lwptree, (uint64_t)(l->l_lid - 1));
+	KASSERT(l2 == l);
+	KASSERT(radix_tree_empty_tree_p(&p->p_lwptree));
+	radix_tree_fini_tree(&p->p_lwptree);
 	mutex_exit(p->p_lock);
 
 	/*
@@ -567,9 +580,6 @@ exit1(struct lwp *l, int exitcode, int signo)
 	cv_broadcast(&p->p_pptr->p_waitcv);
 	rw_exit(&p->p_reflock);
 	mutex_exit(proc_lock);
-
-	/* Verify that we hold no locks other than the kernel lock. */
-	LOCKDEBUG_BARRIER(&kernel_lock, 0);
 
 	/*
 	 * NOTE: WE ARE NO LONGER ALLOWED TO SLEEP!
@@ -582,17 +592,14 @@ exit1(struct lwp *l, int exitcode, int signo)
 	 */
 	cpu_lwp_free(l, 1);
 
-	pmap_deactivate(l);
+	/* For the LW_RUNNING check in lwp_free(). */
+	membar_exit();
 
-	/* This process no longer needs to hold the kernel lock. */
-#ifdef notyet
-	/* XXXSMP hold in lwp_userret() */
-	KERNEL_UNLOCK_LAST(l);
-#else
-	KERNEL_UNLOCK_ALL(l, NULL);
-#endif
-
-	lwp_exit_switchaway(l);
+	/* Switch away into oblivion. */
+	lwp_lock(l);
+	spc_lock(l->l_cpu);
+	mi_switch(l);
+	panic("exit1");
 }
 
 void
@@ -600,9 +607,7 @@ exit_lwps(struct lwp *l)
 {
 	proc_t *p = l->l_proc;
 	lwp_t *l2;
-	int nlocks;
 
-	KERNEL_UNLOCK_ALL(l, &nlocks);
 retry:
 	KASSERT(mutex_owned(p->p_lock));
 
@@ -622,6 +627,7 @@ retry:
 			setrunnable(l2);
 			continue;
 		}
+		lwp_need_userret(l2);
 		lwp_unlock(l2);
 	}
 
@@ -636,7 +642,6 @@ retry:
 		}
 	}
 
-	KERNEL_LOCK(nlocks, l);
 	KASSERT(p->p_nlwps == 1);
 }
 
@@ -1257,6 +1262,7 @@ proc_free(struct proc *p, struct wrusage *wru)
 	cv_destroy(&p->p_waitcv);
 	cv_destroy(&p->p_lwpcv);
 	rw_destroy(&p->p_reflock);
+	rw_destroy(&p->p_treelock);
 
 	proc_free_mem(p);
 }

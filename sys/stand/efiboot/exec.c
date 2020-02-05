@@ -1,4 +1,4 @@
-/* $NetBSD: exec.c,v 1.11 2019/07/24 11:40:36 jmcneill Exp $ */
+/* $NetBSD: exec.c,v 1.13 2020/01/25 10:53:13 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2019 Jason R. Thorpe
@@ -34,13 +34,15 @@
 
 #include <sys/reboot.h>
 
+extern char twiddle_toggle;
+
 u_long load_offset = 0;
 
 #define	FDT_SPACE	(4 * 1024 * 1024)
 #define	FDT_ALIGN	((2 * 1024 * 1024) - 1)
 
-static EFI_PHYSICAL_ADDRESS initrd_addr, dtb_addr;
-static u_long initrd_size = 0, dtb_size = 0;
+static EFI_PHYSICAL_ADDRESS initrd_addr, dtb_addr, rndseed_addr;
+static u_long initrd_size = 0, dtb_size = 0, rndseed_size = 0;
 
 static int
 load_file(const char *path, u_long extra, bool quiet_errors,
@@ -127,6 +129,7 @@ load_efibootplist(bool default_fallback)
 	u_long plist_size = 0;
 	prop_dictionary_t plist = NULL, oplist = NULL;
 	bool load_quietly = false;
+	bool old_twiddle_toggle = twiddle_toggle;
 
 	const char *path = get_efibootplist_path();
 	if (path == NULL || strlen(path) == 0) {
@@ -135,6 +138,8 @@ load_efibootplist(bool default_fallback)
 		path = default_efibootplist_path;
 		load_quietly = true;
 	}
+
+	twiddle_toggle = load_quietly;
 
 	/*
 	 * Fudge the size so we can ensure the resulting buffer
@@ -156,6 +161,8 @@ load_efibootplist(bool default_fallback)
 
 out:
 	oplist = efibootplist;
+
+	twiddle_toggle = old_twiddle_toggle;
 
 	/*
 	 * If we had a failure, create an empty one for
@@ -326,9 +333,19 @@ exec_netbsd(const char *fname, const char *args)
 	}
 
 	if (efi_fdt_size() > 0) {
+		/*
+		 * Load the rndseed as late as possible -- after we
+		 * have committed to using fdt and executing this
+		 * kernel -- so that it doesn't hang around in memory
+		 * if we have to bail or the kernel won't use it.
+		 */
+		load_file(get_rndseed_path(), 0, false,
+		    &rndseed_addr, &rndseed_size);
+
 		efi_fdt_init((marks[MARK_END] + FDT_ALIGN) & ~FDT_ALIGN, FDT_ALIGN + 1);
 		load_fdt_overlays();
 		efi_fdt_initrd(initrd_addr, initrd_size);
+		efi_fdt_rndseed(rndseed_addr, rndseed_size);
 		efi_fdt_bootargs(args);
 #ifdef EFIBOOT_ACPI
 		if (efi_acpi_available())

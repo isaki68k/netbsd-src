@@ -407,6 +407,8 @@ extern int ptrace_pt_get_event_mask;
 extern int ptrace_pt_get_process_state;
 extern int ptrace_pt_set_siginfo;
 extern int ptrace_pt_get_siginfo;
+extern int ptrace_pt_lwpstatus;
+extern int ptrace_pt_lwpnext;
 extern int ptrace_piod_read_d;
 extern int ptrace_piod_write_d;
 extern int ptrace_piod_read_i;
@@ -431,8 +433,17 @@ struct __sanitizer_ptrace_lwpinfo {
   int pl_event;
 };
 
+struct __sanitizer_ptrace_lwpstatus {
+  __sanitizer_lwpid_t pl_lwpid;
+  __sanitizer_sigset_t pl_sigpend;
+  __sanitizer_sigset_t pl_sigmask;
+  char pl_name[20];
+  void *pl_private;
+};
+
 extern unsigned struct_ptrace_ptrace_io_desc_struct_sz;
 extern unsigned struct_ptrace_ptrace_lwpinfo_struct_sz;
+extern unsigned struct_ptrace_ptrace_lwpstatus_struct_sz;
 extern unsigned struct_ptrace_ptrace_event_struct_sz;
 extern unsigned struct_ptrace_ptrace_siginfo_struct_sz;
 
@@ -829,6 +840,7 @@ extern unsigned struct_nvmm_ioc_machine_destroy_sz;
 extern unsigned struct_nvmm_ioc_machine_configure_sz;
 extern unsigned struct_nvmm_ioc_vcpu_create_sz;
 extern unsigned struct_nvmm_ioc_vcpu_destroy_sz;
+extern unsigned struct_nvmm_ioc_vcpu_configure_sz;
 extern unsigned struct_nvmm_ioc_vcpu_setstate_sz;
 extern unsigned struct_nvmm_ioc_vcpu_getstate_sz;
 extern unsigned struct_nvmm_ioc_vcpu_inject_sz;
@@ -1577,6 +1589,7 @@ extern unsigned IOCTL_NVMM_IOC_MACHINE_DESTROY;
 extern unsigned IOCTL_NVMM_IOC_MACHINE_CONFIGURE;
 extern unsigned IOCTL_NVMM_IOC_VCPU_CREATE;
 extern unsigned IOCTL_NVMM_IOC_VCPU_DESTROY;
+extern unsigned IOCTL_NVMM_IOC_VCPU_CONFIGURE;
 extern unsigned IOCTL_NVMM_IOC_VCPU_SETSTATE;
 extern unsigned IOCTL_NVMM_IOC_VCPU_GETSTATE;
 extern unsigned IOCTL_NVMM_IOC_VCPU_INJECT;
@@ -1651,6 +1664,7 @@ extern unsigned IOCTL_IOC_NPF_STATS;
 extern unsigned IOCTL_IOC_NPF_SAVE;
 extern unsigned IOCTL_IOC_NPF_RULE;
 extern unsigned IOCTL_IOC_NPF_CONN_LOOKUP;
+extern unsigned IOCTL_IOC_NPF_TABLE_REPLACE;
 extern unsigned IOCTL_PPPOESETPARMS;
 extern unsigned IOCTL_PPPOEGETPARMS;
 extern unsigned IOCTL_PPPOEGETSESSION;

@@ -1,4 +1,4 @@
-/*	$NetBSD: rtl8169.c,v 1.160 2019/09/22 16:41:19 ryo Exp $	*/
+/*	$NetBSD: rtl8169.c,v 1.163 2020/02/04 05:25:39 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1997, 1998-2003
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rtl8169.c,v 1.160 2019/09/22 16:41:19 ryo Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rtl8169.c,v 1.163 2020/02/04 05:25:39 thorpej Exp $");
 /* $FreeBSD: /repoman/r/ncvs/src/sys/dev/re/if_re.c,v 1.20 2004/04/11 20:34:08 ru Exp $ */
 
 /*
@@ -613,15 +613,18 @@ re_attach(struct rtk_softc *sc)
 			    RTKQ_NOJUMBO;
 			break;
 		case RTK_HWREV_8168H:
+		case RTK_HWREV_8168FP:
 			sc->sc_quirk |= RTKQ_DESCV2 | RTKQ_NOEECMD |
 			    RTKQ_MACSTAT | RTKQ_CMDSTOP | RTKQ_PHYWAKE_PM |
 			    RTKQ_NOJUMBO | RTKQ_RXDV_GATED | RTKQ_TXRXEN_LATER;
 			break;
 		case RTK_HWREV_8168E_VL:
 		case RTK_HWREV_8168F:
+		case RTK_HWREV_8411:
 			sc->sc_quirk |= RTKQ_DESCV2 | RTKQ_NOEECMD |
 			    RTKQ_MACSTAT | RTKQ_CMDSTOP | RTKQ_NOJUMBO;
 			break;
+		case RTK_HWREV_8168EP:
 		case RTK_HWREV_8168G:
 		case RTK_HWREV_8168G_SPIN1:
 		case RTK_HWREV_8168G_SPIN2:
@@ -637,9 +640,26 @@ re_attach(struct rtk_softc *sc)
 			break;
 		case RTK_HWREV_8102E:
 		case RTK_HWREV_8102EL:
-		case RTK_HWREV_8103E:
+		case RTK_HWREV_8102EL_SPIN1:
 			sc->sc_quirk |= RTKQ_DESCV2 | RTKQ_NOEECMD |
 			    RTKQ_MACSTAT | RTKQ_CMDSTOP | RTKQ_NOJUMBO;
+			break;
+		case RTK_HWREV_8103E:
+			sc->sc_quirk |= RTKQ_DESCV2 | RTKQ_NOEECMD |
+			    RTKQ_MACSTAT | RTKQ_CMDSTOP;
+			break;
+		case RTK_HWREV_8401E:
+		case RTK_HWREV_8105E:
+		case RTK_HWREV_8105E_SPIN1:
+		case RTK_HWREV_8106E:
+			sc->sc_quirk |= RTKQ_PHYWAKE_PM |
+			    RTKQ_DESCV2 | RTKQ_NOEECMD | RTKQ_MACSTAT |
+			    RTKQ_CMDSTOP;
+			break;
+		case RTK_HWREV_8402:
+			sc->sc_quirk |= RTKQ_PHYWAKE_PM |
+			    RTKQ_DESCV2 | RTKQ_NOEECMD | RTKQ_MACSTAT |
+			    RTKQ_CMDSTOP; /* CMDSTOP_WAIT_TXQ */
 			break;
 		default:
 			aprint_normal_dev(sc->sc_dev,
@@ -964,12 +984,12 @@ re_detach(struct rtk_softc *sc)
 	/* Detach all PHYs. */
 	mii_detach(&sc->mii, MII_PHY_ANY, MII_OFFSET_ANY);
 
-	/* Delete all remaining media. */
-	ifmedia_delete_instance(&sc->mii.mii_media, IFM_INST_ANY);
-
 	rnd_detach_source(&sc->rnd_source);
 	ether_ifdetach(ifp);
 	if_detach(ifp);
+
+	/* Delete all remaining media. */
+	ifmedia_fini(&sc->mii.mii_media);
 
 	/* Destroy DMA maps for RX buffers. */
 	for (i = 0; i < RE_RX_DESC_CNT; i++)
@@ -1243,7 +1263,7 @@ re_rxeof(struct rtk_softc *sc)
 				printf(", CRC error");
 			printf("\n");
 #endif
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			/*
 			 * If this is part of a multi-fragment packet,
 			 * discard all the pieces.
@@ -1262,7 +1282,7 @@ re_rxeof(struct rtk_softc *sc)
 		 */
 
 		if (__predict_false(re_newbuf(sc, i, NULL) != 0)) {
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			if (sc->re_head != NULL) {
 				m_freem(sc->re_head);
 				sc->re_head = sc->re_tail = NULL;
@@ -1398,12 +1418,14 @@ re_txeof(struct rtk_softc *sc)
 		m_freem(txq->txq_mbuf);
 		txq->txq_mbuf = NULL;
 
+		net_stat_ref_t nsr = IF_STAT_GETREF(ifp);
 		if (txstat & (RE_TDESC_STAT_EXCESSCOL | RE_TDESC_STAT_COLCNT))
-			ifp->if_collisions++;
+			if_statinc_ref(nsr, if_collisions);
 		if (txstat & RE_TDESC_STAT_TXERRSUM)
-			ifp->if_oerrors++;
+			if_statinc_ref(nsr, if_oerrors);
 		else
-			ifp->if_opackets++;
+			if_statinc_ref(nsr, if_opackets);
+		IF_STAT_PUTREF(ifp);
 	}
 
 	sc->re_ldata.re_txq_considx = idx;
@@ -1611,7 +1633,7 @@ re_start(struct ifnet *ifp)
 
 			IFQ_DEQUEUE(&ifp->if_snd, m);
 			m_freem(m);
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			continue;
 		}
 
@@ -2077,7 +2099,7 @@ re_watchdog(struct ifnet *ifp)
 	sc = ifp->if_softc;
 	s = splnet();
 	printf("%s: watchdog timeout\n", device_xname(sc->sc_dev));
-	ifp->if_oerrors++;
+	if_statinc(ifp, if_oerrors);
 
 	re_txeof(sc);
 	re_rxeof(sc);

@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.h,v 1.156 2018/10/18 09:01:52 skrll Exp $	*/
+/*	$NetBSD: pmap.h,v 1.160 2020/01/20 22:13:58 skrll Exp $	*/
 
 /*
  * Copyright (c) 2002, 2003 Wasabi Systems, Inc.
@@ -383,6 +383,10 @@ bool	pmap_extract(pmap_t, vaddr_t, paddr_t *);
 void	pmap_prefer(vaddr_t, vaddr_t *, int);
 #endif
 
+#ifdef ARM_MMU_EXTENDED
+int	pmap_maxproc_set(int);
+#endif
+
 void	pmap_icache_sync_range(pmap_t, vaddr_t, vaddr_t);
 
 /* Functions we use internally. */
@@ -564,13 +568,13 @@ l1pte_set(pt_entry_t *pdep, pt_entry_t pde)
 	*pdep = pde;
 	if (l1pte_page_p(pde)) {
 		KASSERTMSG((((uintptr_t)pdep / sizeof(pde)) & (PAGE_SIZE / L2_T_SIZE - 1)) == 0, "%p", pdep);
-		for (size_t k = 1; k < PAGE_SIZE / L2_T_SIZE; k++) {
+		for (int k = 1; k < PAGE_SIZE / L2_T_SIZE; k++) {
 			pde += L2_T_SIZE;
 			pdep[k] = pde;
 		}
 	} else if (l1pte_supersection_p(pde)) {
 		KASSERTMSG((((uintptr_t)pdep / sizeof(pde)) & (L1_SS_SIZE / L1_S_SIZE - 1)) == 0, "%p", pdep);
-		for (size_t k = 1; k < L1_SS_SIZE / L1_S_SIZE; k++) {
+		for (int k = 1; k < L1_SS_SIZE / L1_S_SIZE; k++) {
 			pdep[k] = pde;
 		}
 	}
@@ -589,12 +593,12 @@ l2pte_set(pt_entry_t *ptep, pt_entry_t pte, pt_entry_t opte)
 {
 	if (l1pte_lpage_p(pte)) {
 		KASSERTMSG((((uintptr_t)ptep / sizeof(pte)) & (L2_L_SIZE / L2_S_SIZE - 1)) == 0, "%p", ptep);
-		for (size_t k = 0; k < L2_L_SIZE / L2_S_SIZE; k++) {
+		for (int k = 0; k < L2_L_SIZE / L2_S_SIZE; k++) {
 			*ptep++ = pte;
 		}
 	} else {
 		KASSERTMSG((((uintptr_t)ptep / sizeof(pte)) & (PAGE_SIZE / L2_S_SIZE - 1)) == 0, "%p", ptep);
-		for (size_t k = 0; k < PAGE_SIZE / L2_S_SIZE; k++) {
+		for (int k = 0; k < PAGE_SIZE / L2_S_SIZE; k++) {
 			KASSERTMSG(*ptep == opte, "%#x [*%p] != %#x", *ptep, ptep, opte);
 			*ptep++ = pte;
 			pte += L2_S_SIZE;
@@ -609,7 +613,7 @@ l2pte_reset(pt_entry_t *ptep)
 {
 	KASSERTMSG((((uintptr_t)ptep / sizeof(*ptep)) & (PAGE_SIZE / L2_S_SIZE - 1)) == 0, "%p", ptep);
 	*ptep = 0;
-	for (vsize_t k = 1; k < PAGE_SIZE / L2_S_SIZE; k++) {
+	for (int k = 1; k < PAGE_SIZE / L2_S_SIZE; k++) {
 		ptep[k] = 0;
 	}
 }
@@ -1158,7 +1162,7 @@ struct vm_page_md {
  */
 #if ARM_MMU_V6 > 0
 #define	VM_MDPAGE_PVH_ATTRS_INIT(pg) \
-	(pg)->mdpage.pvh_attrs = (pg)->phys_addr & arm_cache_prefer_mask
+	(pg)->mdpage.pvh_attrs = VM_PAGE_TO_PHYS(pg) & arm_cache_prefer_mask
 #else
 #define	VM_MDPAGE_PVH_ATTRS_INIT(pg) \
 	(pg)->mdpage.pvh_attrs = 0

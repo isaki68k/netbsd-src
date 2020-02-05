@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu_subr.c,v 1.37 2019/11/24 15:37:39 ad Exp $	*/
+/*	$NetBSD: cpu_subr.c,v 1.45 2020/01/09 16:35:03 ad Exp $	*/
 
 /*-
  * Copyright (c) 2010, 2019 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu_subr.c,v 1.37 2019/11/24 15:37:39 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu_subr.c,v 1.45 2020/01/09 16:35:03 ad Exp $");
 
 #include "opt_cputype.h"
 #include "opt_ddb.h"
@@ -182,15 +182,14 @@ cpu_info_alloc(struct pmap_tlb_info *ti, cpuid_t cpu_id, cpuid_t cpu_package_id,
 	KASSERT(cpu_id != 0);
 	ci->ci_cpuid = cpu_id;
 	ci->ci_pmap_kern_segtab = &pmap_kern_segtab,
-	ci->ci_package_id = cpu_package_id;
-	ci->ci_core_id = cpu_core_id;
-	ci->ci_smt_id = cpu_smt_id;
 	ci->ci_cpu_freq = cpu_info_store.ci_cpu_freq;
 	ci->ci_cctr_freq = cpu_info_store.ci_cctr_freq;
 	ci->ci_cycles_per_hz = cpu_info_store.ci_cycles_per_hz;
 	ci->ci_divisor_delay = cpu_info_store.ci_divisor_delay;
 	ci->ci_divisor_recip = cpu_info_store.ci_divisor_recip;
 	ci->ci_cpuwatch_count = cpu_info_store.ci_cpuwatch_count;
+
+	cpu_topology_set(ci, cpu_package_id, cpu_core_id, cpu_smt_id, 0, false);
 
 	pmap_md_alloc_ephemeral_address_space(ci);
 
@@ -338,7 +337,7 @@ cpu_startup_common(void)
 	 * map those pages.)
 	 */
 
-	format_bytes(pbuf, sizeof(pbuf), ptoa(uvmexp.free));
+	format_bytes(pbuf, sizeof(pbuf), ptoa(uvm_availmem()));
 	printf("avail memory = %s\n", pbuf);
 
 #if defined(__mips_n32)
@@ -604,11 +603,19 @@ cpu_idle(void)
 bool
 cpu_intr_p(void)
 {
-	bool rv;
-	kpreempt_disable();
-	rv = (curcpu()->ci_idepth != 0);
-	kpreempt_enable();
-	return rv;
+	uint64_t ncsw;
+	int idepth;
+	lwp_t *l;
+
+	l = curlwp;
+	do {
+		ncsw = l->l_ncsw;
+		__insn_barrier();
+		idepth = l->l_cpu->ci_idepth;
+		__insn_barrier();
+	} while (__predict_false(ncsw != l->l_ncsw));
+
+	return idepth != 0;
 }
 
 #ifdef MULTIPROCESSOR
@@ -955,7 +962,7 @@ cpu_boot_secondary_processors(void)
 		KASSERT(ci->ci_data.cpu_idlelwp);
 
 		/*
-		 * Skip this CPU if it didn't sucessfully hatch.
+		 * Skip this CPU if it didn't successfully hatch.
 		 */
 		if (!kcpuset_isset(cpus_hatched, cpu_index(ci)))
 			continue;

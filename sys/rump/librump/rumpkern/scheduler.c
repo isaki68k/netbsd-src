@@ -1,4 +1,4 @@
-/*      $NetBSD: scheduler.c,v 1.45 2019/11/23 19:42:52 ad Exp $	*/
+/*      $NetBSD: scheduler.c,v 1.49 2020/01/08 17:38:42 ad Exp $	*/
 
 /*
  * Copyright (c) 2010, 2011 Antti Kantee.  All Rights Reserved.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: scheduler.c,v 1.45 2019/11/23 19:42:52 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: scheduler.c,v 1.49 2020/01/08 17:38:42 ad Exp $");
 
 #include <sys/param.h>
 #include <sys/atomic.h>
@@ -76,11 +76,6 @@ cpuinfo_to_rumpcpu(struct cpu_info *ci)
 }
 
 struct cpu_info rump_bootcpu;
-kcpuset_t *kcpuset_attached = NULL;
-kcpuset_t *kcpuset_running = NULL;
-int ncpu, ncpuonline;
-
-kmutex_t cpu_lock;
 
 #define RCPULWP_BUSY	((void *)-1)
 #define RCPULWP_WANTED	((void *)-2)
@@ -143,10 +138,9 @@ rump_cpus_bootstrap(int *nump)
 		num = MAXCPUS;
 	}
 
-	mutex_init(&cpu_lock, MUTEX_DEFAULT, IPL_NONE);
+	cpu_setmodel("rumpcore (virtual)");
 
-	kcpuset_create(&kcpuset_attached, true);
-	kcpuset_create(&kcpuset_running, true);
+	mi_cpu_init();
 
 	/* attach first cpu for bootstrap */
 	rump_cpu_attach(&rump_bootcpu);
@@ -377,7 +371,7 @@ rump_schedule_cpu_interlock(struct lwp *l, void *interlock)
 	 * in the case that an interrupt is scheduled immediately
 	 * after a user proc, but leave that for later.
 	 */
-	ci->ci_curlwp = ci->ci_data.cpu_onproc = l;
+	ci->ci_curlwp = ci->ci_onproc = l;
 }
 
 void
@@ -415,7 +409,7 @@ rump_unschedule()
 		/* release lwp0 */
 		rump_unschedule_cpu(&lwp0);
 		lwp0.l_mutex = &unruntime_lock;
-		lwp0.l_pflag &= ~LP_RUNNING;
+		lwp0.l_flag &= ~LW_RUNNING;
 		lwp0rele();
 		rump_lwproc_curlwp_clear(&lwp0);
 
@@ -449,7 +443,7 @@ rump_unschedule_cpu1(struct lwp *l, void *interlock)
 	void *old;
 
 	ci = l->l_cpu;
-	ci->ci_curlwp = ci->ci_data.cpu_onproc = NULL;
+	ci->ci_curlwp = ci->ci_onproc = NULL;
 	rcpu = cpuinfo_to_rumpcpu(ci);
 
 	KASSERT(rcpu->rcpu_ci == ci);

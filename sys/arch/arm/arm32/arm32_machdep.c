@@ -1,4 +1,4 @@
-/*	$NetBSD: arm32_machdep.c,v 1.128 2019/05/10 16:43:09 skrll Exp $	*/
+/*	$NetBSD: arm32_machdep.c,v 1.131 2020/02/02 07:59:41 skrll Exp $	*/
 
 /*
  * Copyright (c) 1994-1998 Mark Brinicombe.
@@ -42,7 +42,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: arm32_machdep.c,v 1.128 2019/05/10 16:43:09 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: arm32_machdep.c,v 1.131 2020/02/02 07:59:41 skrll Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_arm_start.h"
@@ -53,24 +53,24 @@ __KERNEL_RCSID(0, "$NetBSD: arm32_machdep.c,v 1.128 2019/05/10 16:43:09 skrll Ex
 #include "opt_pmap_debug.h"
 
 #include <sys/param.h>
+
 #include <sys/atomic.h>
-#include <sys/systm.h>
-#include <sys/reboot.h>
-#include <sys/proc.h>
+#include <sys/buf.h>
+#include <sys/cpu.h>
+#include <sys/device.h>
+#include <sys/intr.h>
+#include <sys/ipi.h>
 #include <sys/kauth.h>
 #include <sys/kernel.h>
 #include <sys/mbuf.h>
-#include <sys/mount.h>
-#include <sys/buf.h>
-#include <sys/msgbuf.h>
-#include <sys/device.h>
-#include <sys/sysctl.h>
-#include <sys/cpu.h>
-#include <sys/intr.h>
 #include <sys/module.h>
-#include <sys/atomic.h>
+#include <sys/mount.h>
+#include <sys/msgbuf.h>
+#include <sys/proc.h>
+#include <sys/reboot.h>
+#include <sys/sysctl.h>
+#include <sys/systm.h>
 #include <sys/xcall.h>
-#include <sys/ipi.h>
 
 #include <uvm/uvm_extern.h>
 
@@ -353,6 +353,14 @@ cpu_startup(void)
 #else
  	tf->tf_spsr = PSR_USR32_MODE;
 #endif
+
+	cpu_startup_hook();
+}
+
+__weak_alias(cpu_startup_hook,cpu_startup_default)
+void
+cpu_startup_default(void)
+{
 }
 
 /*
@@ -726,7 +734,7 @@ cpu_uarea_alloc_idlelwp(struct cpu_info *ci)
 void
 cpu_init_secondary_processor(int cpuindex)
 {
-	// pmap_kernel has been sucessfully built and we can switch to it
+	// pmap_kernel has been successfully built and we can switch to it
 
 	cpu_domains(DOMAIN_DEFAULT);
 	cpu_idcache_wbinv_all();

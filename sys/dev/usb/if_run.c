@@ -1,4 +1,4 @@
-/*	$NetBSD: if_run.c,v 1.33 2019/10/08 07:30:58 mlelstv Exp $	*/
+/*	$NetBSD: if_run.c,v 1.36 2020/01/29 06:35:28 thorpej Exp $	*/
 /*	$OpenBSD: if_run.c,v 1.90 2012/03/24 15:11:04 jsg Exp $	*/
 
 /*-
@@ -23,7 +23,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_run.c,v 1.33 2019/10/08 07:30:58 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_run.c,v 1.36 2020/01/29 06:35:28 thorpej Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -41,6 +41,7 @@ __KERNEL_RCSID(0, "$NetBSD: if_run.c,v 1.33 2019/10/08 07:30:58 mlelstv Exp $");
 #include <sys/module.h>
 #include <sys/conf.h>
 #include <sys/device.h>
+#include <sys/atomic.h>
 
 #include <sys/bus.h>
 #include <machine/endian.h>
@@ -1070,7 +1071,7 @@ run_write_region_1(struct run_softc *sc, uint16_t reg, const uint8_t *buf,
 	USETW(req.wValue, 0);
 	USETW(req.wIndex, reg);
 	USETW(req.wLength, len);
-	return usbd_do_request(sc->sc_udev, &req, buf);
+	return usbd_do_request(sc->sc_udev, &req, __UNCONST(buf));
 #endif
 }
 
@@ -1784,10 +1785,11 @@ run_task(void *arg)
 	while (ring->next != ring->cur) {
 		cmd = &ring->cmd[ring->next];
 		splx(s);
+		membar_consumer();
 		/* callback */
 		cmd->cb(sc, cmd->data);
 		s = splusb();
-		ring->queued--;
+		atomic_dec_uint(&ring->queued);
 		ring->next = (ring->next + 1) % RUN_HOST_CMD_RING_COUNT;
 	}
 	wakeup(ring);
@@ -1810,10 +1812,11 @@ run_do_async(struct run_softc *sc, void (*cb)(struct run_softc *, void *),
 	cmd->cb = cb;
 	KASSERT(len <= sizeof(cmd->data));
 	memcpy(cmd->data, arg, len);
+	membar_producer();
 	ring->cur = (ring->cur + 1) % RUN_HOST_CMD_RING_COUNT;
 
 	/* if there is no pending command already, schedule a task */
-	if (++ring->queued == 1)
+	if (atomic_inc_uint_nv(&ring->queued) == 1)
 		usb_add_task(sc->sc_udev, &sc->sc_task, USB_TASKQ_DRIVER);
 	splx(s);
 }
@@ -2154,7 +2157,7 @@ run_calibrate_cb(struct run_softc *sc, void *arg)
 
 	s = splnet();
 	/* count failed TX as errors */
-	ifp->if_oerrors += le32toh(sta[0]) & 0xffff;
+	if_statadd(ifp, if_oerrors, le32toh(sta[0]) & 0xffff);
 
 	sc->amn.amn_retrycnt =
 	    (le32toh(sta[0]) & 0xffff) +	/* failed TX count */
@@ -2263,7 +2266,7 @@ run_rx_frame(struct run_softc *sc, uint8_t *buf, int dmalen)
 	flags = le32toh(rxd->flags);
 
 	if (__predict_false(flags & (RT2860_RX_CRCERR | RT2860_RX_ICVERR))) {
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		return;
 	}
 
@@ -2272,7 +2275,7 @@ run_rx_frame(struct run_softc *sc, uint8_t *buf, int dmalen)
 	if (__predict_false((flags & RT2860_RX_MICERR))) {
 		/* report MIC failures to net80211 for TKIP */
 		ieee80211_notify_michael_failure(ic, wh, 0/* XXX */);
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		return;
 	}
 	
@@ -2292,13 +2295,13 @@ run_rx_frame(struct run_softc *sc, uint8_t *buf, int dmalen)
 	/* could use m_devget but net80211 wants contig mgmt frames */
 	MGETHDR(m, M_DONTWAIT, MT_DATA);
 	if (__predict_false(m == NULL)) {
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		return;
 	}
 	if (len > MHLEN) {
 		MCLGET(m, M_DONTWAIT);
 		if (__predict_false(!(m->m_flags & M_EXT))) {
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			m_freem(m);
 			return;
 		}
@@ -2461,13 +2464,13 @@ run_txeof(struct usbd_xfer *xfer, void *priv, usbd_status status)
 			device_xname(sc->sc_dev), usbd_errstr(status)));
 		if (status == USBD_STALLED)
 			usbd_clear_endpoint_stall_async(txq->pipeh);
-		ifp->if_oerrors++;
+		if_statinc(ifp, if_oerrors);
 		splx(s);
 		return;
 	}
 
 	sc->sc_tx_timer = 0;
-	ifp->if_opackets++;
+	if_statinc(ifp, if_opackets);
 	ifp->if_flags &= ~IFF_OACTIVE;
 	run_start(ifp);
 	splx(s);
@@ -2668,7 +2671,7 @@ run_start(struct ifnet *ifp)
 			break;
 		if (m->m_len < (int)sizeof(*eh) &&
 		    (m = m_pullup(m, sizeof(*eh))) == NULL) {
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			continue;
 		}
 
@@ -2676,7 +2679,7 @@ run_start(struct ifnet *ifp)
 		ni = ieee80211_find_txnode(ic, eh->ether_dhost);
 		if (ni == NULL) {
 			m_freem(m);
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			continue;
 		}
 
@@ -2684,7 +2687,7 @@ run_start(struct ifnet *ifp)
 
 		if ((m = ieee80211_encap(ic, m, ni)) == NULL) {
 			ieee80211_free_node(ni);
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			continue;
 		}
 sendit:
@@ -2692,7 +2695,7 @@ sendit:
 
 		if (run_tx(sc, m, ni) != 0) {
 			ieee80211_free_node(ni);
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			continue;
 		}
 
@@ -2713,7 +2716,7 @@ run_watchdog(struct ifnet *ifp)
 		if (--sc->sc_tx_timer == 0) {
 			device_printf(sc->sc_dev, "device timeout\n");
 			/* run_init(ifp); XXX needs a process context! */
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			return;
 		}
 		ifp->if_timer = 1;
