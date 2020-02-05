@@ -1814,6 +1814,43 @@ DEF(open_sound_sticky)
 }
 
 /*
+ * /dev/audioctl doesn't have stickiness like /dev/sound.
+ */
+DEF(open_audioctl_sticky)
+{
+	struct audio_info ai;
+	int fd;
+	int r;
+	int openmode;
+
+	TEST("open_audioctl_sticky");
+
+	openmode = openable_mode();
+
+	/* First, open /dev/sound and change encoding as a delegate */
+	fd = OPEN(devsound, openmode);
+	REQUIRED_SYS_OK(fd);
+	AUDIO_INITINFO(&ai);
+	ai.play.encoding = AUDIO_ENCODING_SLINEAR_LE;
+	ai.record.encoding = AUDIO_ENCODING_SLINEAR_LE;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
+	REQUIRED_SYS_EQ(0, r);
+	r = CLOSE(fd);
+	REQUIRED_SYS_EQ(0, r);
+
+	/* Next, open /dev/audioctl.  It should not be affected */
+	fd = OPEN(devaudioctl, openmode);
+	REQUIRED_SYS_OK(fd);
+	memset(&ai, 0, sizeof(ai));
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	REQUIRED_SYS_EQ(0, r);
+	XP_EQ(AUDIO_ENCODING_ULAW, ai.play.encoding);
+	XP_EQ(AUDIO_ENCODING_ULAW, ai.record.encoding);
+	r = CLOSE(fd);
+	REQUIRED_SYS_EQ(0, r);
+}
+
+/*
  * Open two descriptors simultaneously.
  */
 void
@@ -5910,6 +5947,7 @@ struct testentry testtable[] = {
 	ENT(open_sound_WRONLY),
 	ENT(open_sound_RDWR),
 	ENT(open_sound_sticky),
+	ENT(open_audioctl_sticky),
 	ENT(open_simul_RDONLY_RDONLY),
 	ENT(open_simul_RDONLY_WRONLY),
 	ENT(open_simul_RDONLY_RDWR),
