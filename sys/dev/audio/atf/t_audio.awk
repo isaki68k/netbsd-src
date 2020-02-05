@@ -27,7 +27,7 @@ match($0, /^DEF\([^\)]*\)/) {
 	name = substr($0, RSTART + 4, RLENGTH - 5)
 	tests[n] = name
 	n++;
-	
+
 	print "atf_test_case " name
 	print name "_head() { }"
 	print name "_body() { h_audio " name " }"
