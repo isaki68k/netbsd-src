@@ -7120,22 +7120,23 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 		pi->eof = ptrack->eofcounter;
 		pi->pause = ptrack->is_pause;
 		pi->error = (ptrack->dropframes != 0) ? 1 : 0;
-		pi->waiting = 0;		/* open never hangs */
 		pi->open = 1;
-		pi->active = sc->sc_pbusy;
 		pi->buffer_size = ptrack->usrbuf.capacity;
 	}
+	pi->waiting = 0;		/* open never hangs */
+	pi->active = sc->sc_pbusy;
+
 	if (rtrack) {
 		ri->seek = rtrack->usrbuf.used;
 		ri->samples = rtrack->usrbuf_stamp;
 		ri->eof = 0;
 		ri->pause = rtrack->is_pause;
 		ri->error = (rtrack->dropframes != 0) ? 1 : 0;
-		ri->waiting = 0;		/* open never hangs */
 		ri->open = 1;
-		ri->active = sc->sc_rbusy;
 		ri->buffer_size = rtrack->usrbuf.capacity;
 	}
+	ri->waiting = 0;		/* open never hangs */
+	ri->active = sc->sc_rbusy;
 
 	/*
 	 * XXX There may be different number of channels between playback
