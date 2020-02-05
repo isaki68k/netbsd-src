@@ -1,4 +1,4 @@
-/*	$NetBSD: if_urndis.c,v 1.34 2019/10/31 11:59:40 maya Exp $ */
+/*	$NetBSD: if_urndis.c,v 1.37 2020/02/04 07:37:16 skrll Exp $ */
 /*	$OpenBSD: if_urndis.c,v 1.31 2011/07/03 15:47:17 matthew Exp $ */
 
 /*
@@ -21,7 +21,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_urndis.c,v 1.34 2019/10/31 11:59:40 maya Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_urndis.c,v 1.37 2020/02/04 07:37:16 skrll Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -88,7 +88,7 @@ static uint32_t urndis_ctrl_set(struct usbnet *, uint32_t, void *,
 static int urndis_match(device_t, cfdata_t, void *);
 static void urndis_attach(device_t, device_t, void *);
 
-static struct usbnet_ops urndis_ops = {
+static const struct usbnet_ops urndis_ops = {
 	.uno_init = urndis_init,
 	.uno_tx_prepare = urndis_tx_prepare,
 	.uno_rx_loop = urndis_rx_loop,
@@ -820,7 +820,7 @@ urndis_rx_loop(struct usbnet * un, struct usbnet_chain *c, uint32_t total_len)
 		}
 
 		if (le32toh(msg->rm_datalen) < sizeof(struct ether_header)) {
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			printf("%s: urndis_decap invalid ethernet size "
 			    "%d < %zu\n",
 			    DEVNAME(un),
@@ -847,7 +847,7 @@ urndis_watchdog(struct ifnet *ifp)
 	if (un->un_dying)
 		return;
 
-	ifp->if_oerrors++;
+	if_statinc(ifp, if_oerrors);
 	printf("%s: watchdog timeout\n", DEVNAME(un));
 
 	urndis_ctrl_keepalive(un);

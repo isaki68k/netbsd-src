@@ -1,4 +1,4 @@
-/*	$NetBSD: usbnet.c,v 1.30 2019/11/06 07:30:59 mrg Exp $	*/
+/*	$NetBSD: usbnet.c,v 1.35 2020/02/04 05:46:32 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2019 Matthew R. Green
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: usbnet.c,v 1.30 2019/11/06 07:30:59 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: usbnet.c,v 1.35 2020/02/04 05:46:32 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/kernel.h>
@@ -271,7 +271,7 @@ usbnet_enqueue(struct usbnet * const un, uint8_t *buf, size_t buflen,
 	m = usbnet_newbuf(buflen);
 	if (m == NULL) {
 		DPRINTF("%d: no memory", unp->unp_number, 0, 0, 0);
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		return;
 	}
 
@@ -300,7 +300,7 @@ usbnet_input(struct usbnet * const un, uint8_t *buf, size_t buflen)
 
 	m = usbnet_newbuf(buflen);
 	if (m == NULL) {
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		return;
 	}
 
@@ -402,12 +402,12 @@ usbnet_txeof(struct usbd_xfer *xfer, void *priv, usbd_status status)
 		break;
 
 	case USBD_NORMAL_COMPLETION:
-		ifp->if_opackets++;
+		if_statinc(ifp, if_opackets);
 		break;
 
 	default:
 
-		ifp->if_oerrors++;
+		if_statinc(ifp, if_oerrors);
 		if (usbd_ratecheck(&unp->unp_tx_notice))
 			aprint_error_dev(un->un_dev, "usb error on tx: %s\n",
 			    usbd_errstr(status));
@@ -500,13 +500,13 @@ usbnet_start_locked(struct ifnet *ifp)
 		length = uno_tx_prepare(un, m, c);
 		if (length == 0) {
 			DPRINTF("uno_tx_prepare gave zero length", 0, 0, 0, 0);
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			break;
 		}
 
 		if (__predict_false(c->unc_xfer == NULL)) {
 			DPRINTF("unc_xfer is NULL", 0, 0, 0, 0);
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			break;
 		}
 
@@ -518,7 +518,7 @@ usbnet_start_locked(struct ifnet *ifp)
 		if (err != USBD_IN_PROGRESS) {
 			DPRINTF("usbd_transfer on %jx for %ju bytes: %d",
 			    (uintptr_t)c->unc_buf, length, err, 0);
-			ifp->if_oerrors++;
+			if_statinc(ifp, if_oerrors);
 			break;
 		}
 		done_transmit = true;
@@ -1149,7 +1149,7 @@ usbnet_watchdog(struct ifnet *ifp)
 	struct usbnet_cdata * const cd = un_cdata(un);
 	usbd_status err;
 
-	ifp->if_oerrors++;
+	if_statinc(ifp, if_oerrors);
 	aprint_error_dev(un->un_dev, "watchdog timeout\n");
 
 	if (cd->uncd_tx_cnt > 0) {
@@ -1187,16 +1187,17 @@ usbnet_tick_task(void *arg)
 	struct ifnet * const ifp = usbnet_ifp(un);
 	struct mii_data * const mii = usbnet_mii(un);
 
+	KASSERT(ifp != NULL);	/* embedded member */
+
 	unp->unp_refcnt++;
 	mutex_exit(&unp->unp_lock);
 
-	if (ifp && unp->unp_timer != 0 && --unp->unp_timer == 0)
+	if (unp->unp_timer != 0 && --unp->unp_timer == 0)
 		usbnet_watchdog(ifp);
 
-	if (mii && ifp) {
-		DPRINTFN(8, "mii %jx ifp %jx", (uintptr_t)mii, (uintptr_t)ifp, 0, 0);
+	DPRINTFN(8, "mii %jx ifp %jx", (uintptr_t)mii, (uintptr_t)ifp, 0, 0);
+	if (mii) {
 		mii_tick(mii);
-
 		if (!unp->unp_link)
 			(*mii->mii_statchg)(ifp);
 	}
@@ -1519,7 +1520,7 @@ usbnet_detach(device_t self, int flags)
 
 	mutex_enter(&unp->unp_lock);
 	unp->unp_refcnt--;
-	while (unp->unp_refcnt > 0) {
+	while (unp->unp_refcnt >= 0) {
 		/* Wait for processes to go away */
 		cv_wait(&unp->unp_detachcv, &unp->unp_lock);
 	}
@@ -1533,8 +1534,7 @@ usbnet_detach(device_t self, int flags)
 
 	if (mii) {
 		mii_detach(mii, MII_PHY_ANY, MII_OFFSET_ANY);
-		ifmedia_delete_instance(&mii->mii_media, IFM_INST_ANY);
-		usbnet_ec(un)->ec_mii = NULL;
+		ifmedia_fini(&mii->mii_media);
 	}
 	if (ifp->if_softc) {
 		if (!usbnet_empty_eaddr(un))
@@ -1543,6 +1543,7 @@ usbnet_detach(device_t self, int flags)
 			bpf_detach(ifp);
 		if_detach(ifp);
 	}
+	usbnet_ec(un)->ec_mii = NULL;
 
 	cv_destroy(&unp->unp_detachcv);
 	mutex_destroy(&unp->unp_lock);

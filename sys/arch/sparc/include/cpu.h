@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.h,v 1.102 2019/11/23 19:40:36 ad Exp $ */
+/*	$NetBSD: cpu.h,v 1.104 2019/12/30 22:13:47 ad Exp $ */
 
 /*
  * Copyright (c) 1992, 1993
@@ -240,6 +240,7 @@ struct cpu_info {
 	 * etc.
 	 */
 	struct	lwp	*ci_curlwp;		/* CPU owner */
+	struct	lwp	*ci_onproc;		/* current user LWP / kthread */
 	struct	lwp 	*fplwp;			/* FPU owner */
 
 	int		ci_mtx_count;
@@ -373,7 +374,7 @@ struct cpu_info {
 	 * unrecoverable faults end up here.
 	 */
 	void		(*memerr)(unsigned, u_int, u_int, struct trapframe *);
-	void		(*idlespin)(struct cpu_info *);
+	void		(*idlespin)(void);
 	/* Module Control Registers */
 	/*bus_space_handle_t*/ long ci_mbusport;
 	/*bus_space_handle_t*/ long ci_mxccregs;

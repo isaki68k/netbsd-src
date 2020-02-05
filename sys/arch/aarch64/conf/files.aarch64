@@ -1,9 +1,10 @@
-#	$NetBSD: files.aarch64,v 1.14 2019/11/20 19:37:51 pgoyette Exp $
+#	$NetBSD: files.aarch64,v 1.19 2020/02/03 13:37:01 ryo Exp $
 
 defflag opt_cpuoptions.h	AARCH64_ALIGNMENT_CHECK
 defflag opt_cpuoptions.h	AARCH64_EL0_STACK_ALIGNMENT_CHECK
 defflag opt_cpuoptions.h	AARCH64_EL1_STACK_ALIGNMENT_CHECK
 defflag opt_cpuoptions.h	AARCH64_HAVE_L2CTLR
+defflag opt_cpuoptions.h	AARCH64_DEVICE_MEM_STRONGLY_ORDERED
 
 defflag	opt_cputypes.h		CPU_ARMV8
 defflag	opt_cputypes.h		CPU_CORTEX: CPU_ARMV8
@@ -38,9 +39,6 @@ defparam opt_console.h		CONADDR
 # Power State Coordination Interface (PSCI)
 # FP support
 file	arch/aarch64/aarch64/fpu.c
-
-file	arch/arm/arm/arm_generic_dma.c
-file	arch/arm/arm32/bus_dma.c
 
 device	psci
 file	arch/arm/arm/psci.c			psci
@@ -85,7 +83,10 @@ file	arch/aarch64/aarch64/bus_space_asm_generic.S	# bus_space_generic
 file	arch/aarch64/aarch64/bus_space_notimpl.S
 
 # Standard files
+file	arch/arm/arm/arm_cpu_topology.c
+file	arch/arm/arm/arm_generic_dma.c
 file	arch/arm/arm/bootconfig.c
+file	arch/arm/arm32/bus_dma.c
 file	arch/aarch64/aarch64/aarch64_machdep.c
 file	arch/aarch64/aarch64/aarch64_reboot.c
 file	arch/aarch64/aarch64/core_machdep.c		coredump
@@ -113,7 +114,7 @@ file	arch/aarch64/aarch64/vm_machdep.c
 file	arch/aarch64/aarch64/pmap.c
 file	arch/aarch64/aarch64/pmapboot.c
 file	arch/aarch64/aarch64/pmap_page.S
-#file	uvm/pmap/pmap_pvt.c
+file	uvm/pmap/pmap_pvt.c
 
 # EFI runtime (machdep)
 file	arch/aarch64/aarch64/efi_machdep.c		efi_runtime

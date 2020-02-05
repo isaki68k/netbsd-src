@@ -1,7 +1,8 @@
-/*	$NetBSD: vfs_subr.c,v 1.474 2019/11/16 10:05:44 maxv Exp $	*/
+/*	$NetBSD: vfs_subr.c,v 1.479 2020/01/17 20:08:09 ad Exp $	*/
 
 /*-
- * Copyright (c) 1997, 1998, 2004, 2005, 2007, 2008 The NetBSD Foundation, Inc.
+ * Copyright (c) 1997, 1998, 2004, 2005, 2007, 2008, 2019
+ *     The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -68,7 +69,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_subr.c,v 1.474 2019/11/16 10:05:44 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_subr.c,v 1.479 2020/01/17 20:08:09 ad Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddb.h"
@@ -667,13 +668,13 @@ vn_syncer_remove_from_worklist(struct vnode *vp)
 
 	KASSERT(mutex_owned(vp->v_interlock));
 
-	mutex_enter(&syncer_data_lock);
 	if (vp->v_iflag & VI_ONWORKLST) {
+		mutex_enter(&syncer_data_lock);
 		vp->v_iflag &= ~VI_ONWORKLST;
 		slp = &syncer_workitem_pending[vip->vi_synclist_slot];
 		TAILQ_REMOVE(slp, vip, vi_synclist);
+		mutex_exit(&syncer_data_lock);
 	}
-	mutex_exit(&syncer_data_lock);
 }
 
 /*
@@ -685,7 +686,7 @@ vfs_syncer_add_to_worklist(struct mount *mp)
 	static int start, incr, next;
 	int vdelay;
 
-	KASSERT(mutex_owned(&mp->mnt_updating));
+	KASSERT(mutex_owned(mp->mnt_updating));
 	KASSERT((mp->mnt_iflag & IMNT_ONWORKLIST) == 0);
 
 	/*
@@ -716,7 +717,7 @@ void
 vfs_syncer_remove_from_worklist(struct mount *mp)
 {
 
-	KASSERT(mutex_owned(&mp->mnt_updating));
+	KASSERT(mutex_owned(mp->mnt_updating));
 	KASSERT((mp->mnt_iflag & IMNT_ONWORKLIST) != 0);
 
 	mp->mnt_iflag &= ~IMNT_ONWORKLIST;
@@ -1110,7 +1111,7 @@ vprint_common(struct vnode *vp, const char *prefix,
 	    vp->v_usecount, vp->v_writecount, vp->v_holdcnt);
 	(*pr)("%ssize %" PRIx64 " writesize %" PRIx64 " numoutput %d\n",
 	    prefix, vp->v_size, vp->v_writesize, vp->v_numoutput);
-	(*pr)("%sdata %p lock %p\n", prefix, vp->v_data, &vip->vi_lock);
+	(*pr)("%sdata %p lock %p\n", prefix, vp->v_data, vip->vi_lock);
 
 	(*pr)("%sstate %s key(%p %zd)", prefix, vstate_name(vip->vi_state),
 	    vip->vi_key.vk_mount, vip->vi_key.vk_key_len);
@@ -1349,14 +1350,14 @@ VFS_UNMOUNT(struct mount *mp, int a)
 }
 
 int
-VFS_ROOT(struct mount *mp, struct vnode **a)
+VFS_ROOT(struct mount *mp, int lktype, struct vnode **a)
 {
 	int error;
 
 	if ((mp->mnt_iflag & IMNT_MPSAFE) == 0) {
 		KERNEL_LOCK(1, NULL);
 	}
-	error = (*(mp->mnt_op->vfs_root))(mp, a);
+	error = (*(mp->mnt_op->vfs_root))(mp, lktype, a);
 	if ((mp->mnt_iflag & IMNT_MPSAFE) == 0) {
 		KERNEL_UNLOCK_ONE(NULL);
 	}
@@ -1413,14 +1414,14 @@ VFS_SYNC(struct mount *mp, int a, struct kauth_cred *b)
 }
 
 int
-VFS_FHTOVP(struct mount *mp, struct fid *a, struct vnode **b)
+VFS_FHTOVP(struct mount *mp, struct fid *a, int b, struct vnode **c)
 {
 	int error;
 
 	if ((mp->mnt_iflag & IMNT_MPSAFE) == 0) {
 		KERNEL_LOCK(1, NULL);
 	}
-	error = (*(mp->mnt_op->vfs_fhtovp))(mp, a, b);
+	error = (*(mp->mnt_op->vfs_fhtovp))(mp, a, b, c);
 	if ((mp->mnt_iflag & IMNT_MPSAFE) == 0) {
 		KERNEL_UNLOCK_ONE(NULL);
 	}
@@ -1543,11 +1544,19 @@ vfs_vnode_lock_print(void *vlock, int full, void (*pr)(const char *, ...))
 
 	for (mp = _mountlist_next(NULL); mp; mp = _mountlist_next(mp)) {
 		TAILQ_FOREACH(vip, &mp->mnt_vnodelist, vi_mntvnodes) {
-			if (&vip->vi_lock != vlock)
-				continue;
-			vfs_vnode_print(VIMPL_TO_VNODE(vip), full, pr);
+			if (vip->vi_lock == vlock ||
+			    VIMPL_TO_VNODE(vip)->v_interlock == vlock)
+				vfs_vnode_print(VIMPL_TO_VNODE(vip), full, pr);
 		}
 	}
+}
+
+void
+vfs_mount_print_all(int full, void (*pr)(const char *, ...))
+{
+	struct mount *mp;
+	for (mp = _mountlist_next(NULL); mp; mp = _mountlist_next(mp))
+		vfs_mount_print(mp, full, pr);
 }
 
 void
@@ -1567,7 +1576,7 @@ vfs_mount_print(struct mount *mp, int full, void (*pr)(const char *, ...))
 	snprintb(sbuf, sizeof(sbuf), __IMNT_FLAG_BITS, mp->mnt_iflag);
 	(*pr)("iflag = %s\n", sbuf);
 
-	(*pr)("refcnt = %d updating @ %p\n", mp->mnt_refcnt, &mp->mnt_updating);
+	(*pr)("refcnt = %d updating @ %p\n", mp->mnt_refcnt, mp->mnt_updating);
 
 	(*pr)("statvfs cache:\n");
 	(*pr)("\tbsize = %lu\n",mp->mnt_stat.f_bsize);

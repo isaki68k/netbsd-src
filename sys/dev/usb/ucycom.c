@@ -1,4 +1,4 @@
-/*	$NetBSD: ucycom.c,v 1.47 2019/05/05 03:17:54 mrg Exp $	*/
+/*	$NetBSD: ucycom.c,v 1.49 2020/01/01 09:08:28 maxv Exp $	*/
 
 /*
  * Copyright (c) 2005 The NetBSD Foundation, Inc.
@@ -38,7 +38,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ucycom.c,v 1.47 2019/05/05 03:17:54 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ucycom.c,v 1.49 2020/01/01 09:08:28 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -121,11 +121,15 @@ struct ucycom_softc {
 
 	struct tty		*sc_tty;
 
+	enum {
+		UCYCOM_INIT_NONE,
+		UCYCOM_INIT_INITED
+	} sc_init_state;
+
 	kmutex_t sc_lock;	/* protects refcnt, others */
 
 	/* uhidev parameters */
 	size_t			sc_flen; /* feature report length */
-	size_t			sc_ilen; /* input report length */
 	size_t			sc_olen; /* output report length */
 
 	uint8_t			*sc_obuf;
@@ -142,14 +146,14 @@ struct ucycom_softc {
 	char			sc_dying;
 };
 
-dev_type_open(ucycomopen);
-dev_type_close(ucycomclose);
-dev_type_read(ucycomread);
-dev_type_write(ucycomwrite);
-dev_type_ioctl(ucycomioctl);
-dev_type_stop(ucycomstop);
-dev_type_tty(ucycomtty);
-dev_type_poll(ucycompoll);
+static dev_type_open(ucycomopen);
+static dev_type_close(ucycomclose);
+static dev_type_read(ucycomread);
+static dev_type_write(ucycomwrite);
+static dev_type_ioctl(ucycomioctl);
+static dev_type_stop(ucycomstop);
+static dev_type_tty(ucycomtty);
+static dev_type_poll(ucycompoll);
 
 const struct cdevsw ucycom_cdevsw = {
 	.d_open = ucycomopen,
@@ -190,15 +194,15 @@ Static const struct usb_devno ucycom_devs[] = {
 };
 #define ucycom_lookup(v, p) usb_lookup(ucycom_devs, v, p)
 
-int	ucycom_match(device_t, cfdata_t, void *);
-void	ucycom_attach(device_t, device_t, void *);
-int	ucycom_detach(device_t, int);
-int	ucycom_activate(device_t, enum devact);
+static int	ucycom_match(device_t, cfdata_t, void *);
+static void	ucycom_attach(device_t, device_t, void *);
+static int	ucycom_detach(device_t, int);
+static int	ucycom_activate(device_t, enum devact);
 
 CFATTACH_DECL_NEW(ucycom, sizeof(struct ucycom_softc), ucycom_match,
     ucycom_attach, ucycom_detach, ucycom_activate);
 
-int
+static int
 ucycom_match(device_t parent, cfdata_t match, void *aux)
 {
 	struct uhidev_attach_arg *uha = aux;
@@ -207,7 +211,7 @@ ucycom_match(device_t parent, cfdata_t match, void *aux)
 	    != NULL ? UMATCH_VENDOR_PRODUCT : UMATCH_NONE;
 }
 
-void
+static void
 ucycom_attach(device_t parent, device_t self, void *aux)
 {
 	struct ucycom_softc *sc = device_private(self);
@@ -219,12 +223,17 @@ ucycom_attach(device_t parent, device_t self, void *aux)
 	sc->sc_hdev.sc_intr = ucycom_intr;
 	sc->sc_hdev.sc_parent = uha->parent;
 	sc->sc_hdev.sc_report_id = uha->reportid;
+	sc->sc_init_state = UCYCOM_INIT_NONE;
 
 	uhidev_get_report_desc(uha->parent, &desc, &size);
 	repid = uha->reportid;
-	sc->sc_ilen = hid_report_size(desc, size, hid_input, repid);
 	sc->sc_olen = hid_report_size(desc, size, hid_output, repid);
 	sc->sc_flen = hid_report_size(desc, size, hid_feature, repid);
+
+	if (sc->sc_olen != 8 && sc->sc_olen != 32)
+		return;
+	if (sc->sc_flen != 5)
+		return;
 
 	sc->sc_msr = sc->sc_mcr = 0;
 
@@ -238,10 +247,12 @@ ucycom_attach(device_t parent, device_t self, void *aux)
 
 	/* Nothing interesting to report */
 	aprint_normal("\n");
+
+	sc->sc_init_state = UCYCOM_INIT_INITED;
 }
 
 
-int
+static int
 ucycom_detach(device_t self, int flags)
 {
 	struct ucycom_softc *sc = device_private(self);
@@ -287,7 +298,7 @@ ucycom_detach(device_t self, int flags)
 	return 0;
 }
 
-int
+static int
 ucycom_activate(device_t self, enum devact act)
 {
 	struct ucycom_softc *sc = device_private(self);
@@ -321,7 +332,7 @@ ucycom_shutdown(struct ucycom_softc *sc)
 }
 #endif
 
-int
+static int
 ucycomopen(dev_t dev, int flag, int mode, struct lwp *l)
 {
 	struct ucycom_softc *sc =
@@ -334,10 +345,10 @@ ucycomopen(dev_t dev, int flag, int mode, struct lwp *l)
 
 	if (sc == NULL)
 		return ENXIO;
-
 	if (sc->sc_dying)
 		return EIO;
-
+	if (sc->sc_init_state != UCYCOM_INIT_INITED)
+		return ENXIO;
 	if (!device_is_active(sc->sc_hdev.sc_dev))
 		return ENXIO;
 
@@ -436,7 +447,7 @@ bad:
 }
 
 
-int
+static int
 ucycomclose(dev_t dev, int flag, int mode, struct lwp *l)
 {
 	struct ucycom_softc *sc =
@@ -725,13 +736,13 @@ ucycomparam(struct tty *tp, struct termios *t)
 	return err;
 }
 
-void
+static void
 ucycomstop(struct tty *tp, int flag)
 {
 	DPRINTF(("ucycomstop: flag=%d\n", flag));
 }
 
-int
+static int
 ucycomread(dev_t dev, struct uio *uio, int flag)
 {
 	struct ucycom_softc *sc =
@@ -749,7 +760,7 @@ ucycomread(dev_t dev, struct uio *uio, int flag)
 }
 
 
-int
+static int
 ucycomwrite(dev_t dev, struct uio *uio, int flag)
 {
 	struct ucycom_softc *sc =
@@ -766,7 +777,7 @@ ucycomwrite(dev_t dev, struct uio *uio, int flag)
 	return err;
 }
 
-struct tty *
+static struct tty *
 ucycomtty(dev_t dev)
 {
 	struct ucycom_softc *sc =
@@ -778,7 +789,7 @@ ucycomtty(dev_t dev)
 	return tp;
 }
 
-int
+static int
 ucycomioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 {
 	struct ucycom_softc *sc =
@@ -854,7 +865,7 @@ ucycomioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 	return err;
 }
 
-int
+static int
 ucycompoll(dev_t dev, int events, struct lwp *l)
 {
 	struct ucycom_softc *sc =

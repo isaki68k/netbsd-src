@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.293 2019/11/23 19:40:37 ad Exp $ */
+/*	$NetBSD: machdep.c,v 1.297 2019/12/31 13:07:12 ad Exp $ */
 
 /*-
  * Copyright (c) 1996, 1997, 1998, 2019 The NetBSD Foundation, Inc.
@@ -71,7 +71,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.293 2019/11/23 19:40:37 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.297 2019/12/31 13:07:12 ad Exp $");
 
 #include "opt_ddb.h"
 #include "opt_multiprocessor.h"
@@ -195,7 +195,7 @@ cpu_startup(void)
 #ifdef DEBUG
 	pmapdebug = opmapdebug;
 #endif
-	format_bytes(pbuf, sizeof(pbuf), ptoa(uvmexp.free));
+	format_bytes(pbuf, sizeof(pbuf), ptoa(uvm_availmem()));
 	printf("avail memory = %s\n", pbuf);
 
 #if 0
@@ -2654,8 +2654,19 @@ cpu_signotify(struct lwp *l)
 bool
 cpu_intr_p(void)
 {
+	uint64_t ncsw;
+	int idepth;
+	lwp_t *l;
 
-	return curcpu()->ci_idepth >= 0;
+	l = curlwp;
+	do {
+		ncsw = l->l_ncsw;
+		__insn_barrier();
+		idepth = l->l_cpu->ci_idepth;
+		__insn_barrier();
+	} while (__predict_false(ncsw != l->l_ncsw));
+
+	return idepth >= 0;
 }
 
 #ifdef MODULAR

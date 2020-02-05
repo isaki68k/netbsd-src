@@ -1,4 +1,4 @@
-/*	$NetBSD: nvmm_x86_vmx.c,v 1.45 2019/11/20 10:26:56 maxv Exp $	*/
+/*	$NetBSD: nvmm_x86_vmx.c,v 1.48 2020/01/09 16:27:57 maxv Exp $	*/
 
 /*
  * Copyright (c) 2018-2019 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nvmm_x86_vmx.c,v 1.45 2019/11/20 10:26:56 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nvmm_x86_vmx.c,v 1.48 2020/01/09 16:27:57 maxv Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -1688,7 +1688,7 @@ vmx_exit_xsetbv(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
     struct nvmm_vcpu_exit *exit)
 {
 	struct vmx_cpudata *cpudata = vcpu->cpudata;
-	uint16_t val;
+	uint64_t val;
 
 	exit->reason = NVMM_VCPU_EXIT_NONE;
 
@@ -2112,7 +2112,7 @@ vmx_memalloc(paddr_t *pa, vaddr_t *va, size_t npages)
 	    &pglist, 1, 0);
 	if (ret != 0)
 		return ENOMEM;
-	_pa = TAILQ_FIRST(&pglist)->phys_addr;
+	_pa = VM_PAGE_TO_PHYS(TAILQ_FIRST(&pglist));
 	_va = uvm_km_alloc(kernel_map, npages * PAGE_SIZE, 0,
 	    UVM_KMF_VAONLY | UVM_KMF_NOWAIT);
 	if (_va == 0)
@@ -2664,7 +2664,7 @@ vmx_vcpu_init(struct nvmm_machine *mach, struct nvmm_cpu *vcpu)
 	vmx_vmwrite(VMCS_HOST_IDTR_BASE, (uint64_t)idt);
 	vmx_vmwrite(VMCS_HOST_IA32_PAT, rdmsr(MSR_CR_PAT));
 	vmx_vmwrite(VMCS_HOST_IA32_EFER, rdmsr(MSR_EFER));
-	vmx_vmwrite(VMCS_HOST_CR0, rcr0());
+	vmx_vmwrite(VMCS_HOST_CR0, rcr0() & ~CR0_TS);
 
 	/* Generate ASID. */
 	vmx_asid_alloc(vcpu);

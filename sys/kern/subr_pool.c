@@ -1,4 +1,4 @@
-/*	$NetBSD: subr_pool.c,v 1.262 2019/11/14 16:23:53 maxv Exp $	*/
+/*	$NetBSD: subr_pool.c,v 1.265 2020/01/19 23:49:32 chs Exp $	*/
 
 /*
  * Copyright (c) 1997, 1999, 2000, 2002, 2007, 2008, 2010, 2014, 2015, 2018
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_pool.c,v 1.262 2019/11/14 16:23:53 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_pool.c,v 1.265 2020/01/19 23:49:32 chs Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddb.h"
@@ -1145,7 +1145,7 @@ pool_get(struct pool *pp, int flags)
 
 			pp->pr_nfail++;
 			mutex_exit(&pp->pr_lock);
-			KASSERT((flags & (PR_WAITOK|PR_NOWAIT)) == PR_NOWAIT);
+			KASSERT((flags & (PR_NOWAIT|PR_LIMITFAIL)) != 0);
 			return NULL;
 		}
 
@@ -2460,6 +2460,7 @@ pool_cache_get_slow(pool_cache_cpu_t *cc, int s, void **objectp,
 	 */
 	if (__predict_false(!mutex_tryenter(&pc->pc_lock))) {
 		ncsw = curlwp->l_ncsw;
+		__insn_barrier();
 		mutex_enter(&pc->pc_lock);
 		pc->pc_contended++;
 
@@ -2468,6 +2469,7 @@ pool_cache_get_slow(pool_cache_cpu_t *cc, int s, void **objectp,
 		 * our view of the per-CPU data is invalid:
 		 * retry.
 		 */
+		__insn_barrier();
 		if (curlwp->l_ncsw != ncsw) {
 			mutex_exit(&pc->pc_lock);
 			return true;
@@ -2507,7 +2509,7 @@ pool_cache_get_slow(pool_cache_cpu_t *cc, int s, void **objectp,
 	object = pool_get(&pc->pc_pool, flags);
 	*objectp = object;
 	if (__predict_false(object == NULL)) {
-		KASSERT((flags & (PR_WAITOK|PR_NOWAIT)) == PR_NOWAIT);
+		KASSERT((flags & (PR_NOWAIT|PR_LIMITFAIL)) != 0);
 		return false;
 	}
 
@@ -2625,6 +2627,7 @@ pool_cache_put_slow(pool_cache_cpu_t *cc, int s, void *object)
 	pcg = NULL;
 	cc->cc_misses++;
 	ncsw = l->l_ncsw;
+	__insn_barrier();
 
 	/*
 	 * If there are no empty groups in the cache then allocate one
@@ -2638,6 +2641,7 @@ pool_cache_put_slow(pool_cache_cpu_t *cc, int s, void *object)
 		 * If pool_get() blocked, then our view of
 		 * the per-CPU data is invalid: retry.
 		 */
+		__insn_barrier();
 		if (__predict_false(l->l_ncsw != ncsw)) {
 			if (pcg != NULL) {
 				pool_put(pc->pc_pcgpool, pcg);
@@ -2659,6 +2663,7 @@ pool_cache_put_slow(pool_cache_cpu_t *cc, int s, void *object)
 		 * If we context switched while locking, then our view of
 		 * the per-CPU data is invalid: retry.
 		 */
+		__insn_barrier();
 		if (__predict_false(l->l_ncsw != ncsw)) {
 			mutex_exit(&pc->pc_lock);
 			if (pcg != NULL) {
@@ -3129,17 +3134,17 @@ pool_redzone_check(struct pool *pp, void *p)
 
 	pat = pool_pattern_generate(cp);
 	expected = (pat == '\0') ? STATIC_BYTE: pat;
-	if (__predict_false(expected != *cp)) {
-		printf("%s: %p: 0x%02x != 0x%02x\n",
-		   __func__, cp, *cp, expected);
+	if (__predict_false(*cp != expected)) {
+		panic("%s: [%s] 0x%02x != 0x%02x", __func__,
+		    pp->pr_wchan, *cp, expected);
 	}
 	cp++;
 
 	while (cp < ep) {
 		expected = pool_pattern_generate(cp);
 		if (__predict_false(*cp != expected)) {
-			printf("%s: %p: 0x%02x != 0x%02x\n",
-			   __func__, cp, *cp, expected);
+			panic("%s: [%s] 0x%02x != 0x%02x", __func__,
+			    pp->pr_wchan, *cp, expected);
 		}
 		cp++;
 	}

@@ -1,7 +1,7 @@
-/*	$NetBSD: netbsd32_compat_50.c,v 1.41 2019/10/05 14:19:53 kamil Exp $	*/
+/*	$NetBSD: netbsd32_compat_50.c,v 1.45 2020/01/29 15:47:51 ad Exp $	*/
 
 /*-
- * Copyright (c) 2008 The NetBSD Foundation, Inc.
+ * Copyright (c) 2008, 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -15,13 +15,6 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. All advertising materials mentioning features or use of this software
- *    must display the following acknowledgement:
- *        This product includes software developed by the NetBSD
- *        Foundation, Inc. and its contributors.
- * 4. Neither the name of The NetBSD Foundation nor the names of its
- *    contributors may be used to endorse or promote products derived
- *    from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE NETBSD FOUNDATION, INC. AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
@@ -36,7 +29,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: netbsd32_compat_50.c,v 1.41 2019/10/05 14:19:53 kamil Exp $");
+__KERNEL_RCSID(0, "$NetBSD: netbsd32_compat_50.c,v 1.45 2020/01/29 15:47:51 ad Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_compat_netbsd.h"
@@ -571,14 +564,12 @@ compat_50_netbsd32__lwp_park(struct lwp *l,
 	}
 
 	if (SCARG(uap, unpark) != 0) {
-		error = lwp_unpark(SCARG(uap, unpark),
-		    SCARG_P32(uap, unparkhint));
+		error = lwp_unpark(&SCARG(uap, unpark), 1);
 		if (error != 0)
 			return error;
 	}
 
-	return lwp_park(CLOCK_REALTIME, TIMER_ABSTIME, tsp,
-	    SCARG_P32(uap, hint));
+	return lwp_park(CLOCK_REALTIME, TIMER_ABSTIME, tsp);
 }
 
 static int
@@ -810,9 +801,9 @@ compat_50_netbsd32___fhstat40(struct lwp *l, const struct compat_50_netbsd32___f
 	int error;
 
 	error = do_fhstat(l, SCARG_P32(uap, fhp), SCARG(uap, fh_size), &sb);
-	if (error != 0) {
+	if (error == 0) {
 		netbsd32_from___stat50(&sb, &sb32);
-		error = copyout(&sb32, SCARG_P32(uap, sb), sizeof(sb));
+		error = copyout(&sb32, SCARG_P32(uap, sb), sizeof(sb32));
 	}
 	return error;
 }
@@ -1058,7 +1049,7 @@ compat_netbsd32_50_modcmd(modcmd_t cmd, void *arg)
                 ret = syscall_establish(&emul_netbsd32,
 		    compat_netbsd32_50_syscalls);
 		if (ret == 0)
-			MODULE_HOOK_SET(rnd_ioctl32_50_hook, "rnd32_50",
+			MODULE_HOOK_SET(rnd_ioctl32_50_hook,
 			    compat32_50_rnd_ioctl);
 		return ret;
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: subr_kcov.c,v 1.9 2019/11/15 09:44:44 maxv Exp $	*/
+/*	$NetBSD: subr_kcov.c,v 1.11 2019/12/07 19:50:33 kamil Exp $	*/
 
 /*
  * Copyright (c) 2019 The NetBSD Foundation, Inc.

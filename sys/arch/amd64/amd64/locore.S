@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.S,v 1.192 2019/11/22 23:36:25 ad Exp $	*/
+/*	$NetBSD: locore.S,v 1.200 2020/01/15 18:47:23 ad Exp $	*/
 
 /*
  * Copyright-o-rama!
@@ -1062,8 +1062,8 @@ END(dumpsys)
  * struct lwp *cpu_switchto(struct lwp *oldlwp, struct lwp *newlwp,
  *     bool returning)
  *
- *	1. if (oldlwp != NULL), save its context.
- *	2. then, restore context of newlwp.
+ *	1. save context of oldlwp.
+ *	2. restore context of newlwp.
  *
  * Note that the stack frame layout is known to "struct switchframe" in
  * <machine/frame.h> and to the code in cpu_lwp_fork() which initializes
@@ -1079,14 +1079,10 @@ ENTRY(cpu_switchto)
 	movq	%rdi,%r13	/* oldlwp */
 	movq	%rsi,%r12	/* newlwp */
 
-	testq	%r13,%r13	/* oldlwp = NULL ? */
-	jz	.Lskip_save
-
 	/* Save old context. */
 	movq	L_PCB(%r13),%rax
 	movq	%rsp,PCB_RSP(%rax)
 	movq	%rbp,PCB_RBP(%rax)
-.Lskip_save:
 
 	/* Switch to newlwp's stack. */
 	movq	L_PCB(%r12),%r14

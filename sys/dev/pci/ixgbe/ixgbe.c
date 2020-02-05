@@ -1,4 +1,4 @@
-/* $NetBSD: ixgbe.c,v 1.216 2019/11/18 03:17:51 msaitoh Exp $ */
+/* $NetBSD: ixgbe.c,v 1.223 2020/02/04 19:42:55 thorpej Exp $ */
 
 /******************************************************************************
 
@@ -267,9 +267,10 @@ static int	ixgbe_msix_link(void *);
 /* Software interrupts for deferred work */
 static void	ixgbe_handle_que(void *);
 static void	ixgbe_handle_link(void *);
-static void	ixgbe_handle_msf(void *);
 static void	ixgbe_handle_mod(void *);
 static void	ixgbe_handle_phy(void *);
+
+static void	ixgbe_handle_msf(struct work *, void *);
 
 /* Workqueue handler for deferred work */
 static void	ixgbe_handle_que_work(struct work *, void *);
@@ -353,7 +354,7 @@ SYSCTL_INT(_hw_ix, OID_AUTO, enable_msix, CTLFLAG_RDTUN, &ixgbe_enable_msix, 0,
  * Number of Queues, can be set to 0,
  * it then autoconfigures based on the
  * number of cpus with a max of 8. This
- * can be overriden manually here.
+ * can be overridden manually here.
  */
 static int ixgbe_num_queues = 0;
 SYSCTL_INT(_hw_ix, OID_AUTO, num_queues, CTLFLAG_RDTUN, &ixgbe_num_queues, 0,
@@ -410,10 +411,12 @@ static int (*ixgbe_ring_empty)(struct ifnet *, pcq_t *);
 #define IXGBE_CALLOUT_FLAGS	CALLOUT_MPSAFE
 #define IXGBE_SOFTINFT_FLAGS	SOFTINT_MPSAFE
 #define IXGBE_WORKQUEUE_FLAGS	WQ_PERCPU | WQ_MPSAFE
+#define IXGBE_TASKLET_WQ_FLAGS	WQ_MPSAFE
 #else
 #define IXGBE_CALLOUT_FLAGS	0
 #define IXGBE_SOFTINFT_FLAGS	0
 #define IXGBE_WORKQUEUE_FLAGS	WQ_PERCPU
+#define IXGBE_TASKLET_WQ_FLAGS	0
 #endif
 #define IXGBE_WORKQUEUE_PRI PRI_SOFTNET
 
@@ -776,6 +779,7 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 	pcireg_t	id, subid;
 	const ixgbe_vendor_info_t *ent;
 	struct pci_attach_args *pa = aux;
+	bool unsupported_sfp = false;
 	const char *str;
 	char buf[256];
 
@@ -954,8 +958,8 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 		error = IXGBE_SUCCESS;
 	} else if (error == IXGBE_ERR_SFP_NOT_SUPPORTED) {
 		aprint_error_dev(dev, "Unsupported SFP+ module detected!\n");
-		error = EIO;
-		goto err_late;
+		unsupported_sfp = true;
+		error = IXGBE_SUCCESS;
 	} else if (error) {
 		aprint_error_dev(dev, "Hardware initialization failed\n");
 		error = EIO;
@@ -1058,9 +1062,7 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 		error = ixgbe_allocate_msix(adapter, pa);
 		if (error) {
 			/* Free allocated queue structures first */
-			ixgbe_free_transmit_structures(adapter);
-			ixgbe_free_receive_structures(adapter);
-			free(adapter->queues, M_DEVBUF);
+			ixgbe_free_queues(adapter);
 
 			/* Fallback to legacy interrupt */
 			adapter->feat_en &= ~IXGBE_FEATURE_MSIX;
@@ -1100,8 +1102,6 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 	    ixgbe_handle_link, adapter);
 	adapter->mod_si = softint_establish(SOFTINT_NET | IXGBE_SOFTINFT_FLAGS,
 	    ixgbe_handle_mod, adapter);
-	adapter->msf_si = softint_establish(SOFTINT_NET | IXGBE_SOFTINFT_FLAGS,
-	    ixgbe_handle_msf, adapter);
 	adapter->phy_si = softint_establish(SOFTINT_NET | IXGBE_SOFTINFT_FLAGS,
 	    ixgbe_handle_phy, adapter);
 	if (adapter->feat_en & IXGBE_FEATURE_FDIR)
@@ -1109,11 +1109,21 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 		    softint_establish(SOFTINT_NET | IXGBE_SOFTINFT_FLAGS,
 			ixgbe_reinit_fdir, adapter);
 	if ((adapter->link_si == NULL) || (adapter->mod_si == NULL)
-	    || (adapter->msf_si == NULL) || (adapter->phy_si == NULL)
+	    || (adapter->phy_si == NULL)
 	    || ((adapter->feat_en & IXGBE_FEATURE_FDIR)
 		&& (adapter->fdir_si == NULL))) {
 		aprint_error_dev(dev,
 		    "could not establish software interrupts ()\n");
+		goto err_out;
+	}
+	char wqname[MAXCOMLEN];
+	snprintf(wqname, sizeof(wqname), "%s-msf", device_xname(dev));
+	error = workqueue_create(&adapter->msf_wq, wqname,
+	    ixgbe_handle_msf, adapter, IXGBE_WORKQUEUE_PRI, IPL_NET,
+	    IXGBE_TASKLET_WQ_FLAGS);
+	if (error) {
+		aprint_error_dev(dev,
+		    "could not create MSF workqueue (%d)\n", error);
 		goto err_out;
 	}
 
@@ -1126,13 +1136,6 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 		    "please contact your Intel or hardware representative "
 		    "who provided you with this hardware.\n");
 		break;
-	case IXGBE_ERR_SFP_NOT_SUPPORTED:
-		aprint_error_dev(dev, "Unsupported SFP+ Module\n");
-		error = EIO;
-		goto err_late;
-	case IXGBE_ERR_SFP_NOT_PRESENT:
-		aprint_error_dev(dev, "No SFP+ Module found\n");
-		/* falls thru */
 	default:
 		break;
 	}
@@ -1165,16 +1168,22 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 			    oui, model, rev);
 	}
 
-	/* Enable the optics for 82599 SFP+ fiber */
-	ixgbe_enable_tx_laser(hw);
-
 	/* Enable EEE power saving */
 	if (adapter->feat_cap & IXGBE_FEATURE_EEE)
 		hw->mac.ops.setup_eee(hw,
 		    adapter->feat_en & IXGBE_FEATURE_EEE);
 
 	/* Enable power to the phy. */
-	ixgbe_set_phy_power(hw, TRUE);
+	if (!unsupported_sfp) {
+		/* Enable the optics for 82599 SFP+ fiber */
+		ixgbe_enable_tx_laser(hw);
+
+		/*
+		 * XXX Currently, ixgbe_set_phy_power() supports only copper
+		 * PHY, so it's not required to test with !unsupported_sfp.
+		 */
+		ixgbe_set_phy_power(hw, TRUE);
+	}
 
 	/* Initialize statistics */
 	ixgbe_update_stats_counters(adapter);
@@ -1236,9 +1245,7 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 	return;
 
 err_late:
-	ixgbe_free_transmit_structures(adapter);
-	ixgbe_free_receive_structures(adapter);
-	free(adapter->queues, M_DEVBUF);
+	ixgbe_free_queues(adapter);
 err_out:
 	ctrl_ext = IXGBE_READ_REG(&adapter->hw, IXGBE_CTRL_EXT);
 	ctrl_ext &= ~IXGBE_CTRL_EXT_DRV_LOAD;
@@ -1514,7 +1521,9 @@ ixgbe_config_link(struct adapter *adapter)
 		if (hw->phy.multispeed_fiber) {
 			ixgbe_enable_tx_laser(hw);
 			kpreempt_disable();
-			softint_schedule(adapter->msf_si);
+			if (adapter->schedule_wqs_ok)
+				workqueue_enqueue(adapter->msf_wq,
+				    &adapter->msf_wc, NULL);
 			kpreempt_enable();
 		}
 		kpreempt_disable();
@@ -1705,11 +1714,13 @@ ixgbe_update_stats_counters(struct adapter *adapter)
 	 * adapter->stats counters. It's required to make ifconfig -z
 	 * (SOICZIFDATA) work.
 	 */
-	ifp->if_collisions = 0;
+	/* XXX Actually, just fill in the per-cpu stats, please !!! */
 
 	/* Rx Errors */
-	ifp->if_iqdrops += total_missed_rx;
-	ifp->if_ierrors += crcerrs + rlec;
+	net_stat_ref_t nsr = IF_STAT_GETREF(ifp);
+	if_statadd_ref(nsr, if_iqdrops, total_missed_rx);
+	if_statadd_ref(nsr, if_ierrors, crcerrs + rlec);
+	IF_STAT_PUTREF(ifp);
 } /* ixgbe_update_stats_counters */
 
 /************************************************************************
@@ -3090,7 +3101,9 @@ ixgbe_msix_link(void *arg)
 		    (eicr & IXGBE_EICR_GPI_SDP1_BY_MAC(hw))) {
 			IXGBE_WRITE_REG(hw, IXGBE_EICR,
 			    IXGBE_EICR_GPI_SDP1_BY_MAC(hw));
-			softint_schedule(adapter->msf_si);
+			if (adapter->schedule_wqs_ok)
+				workqueue_enqueue(adapter->msf_wq,
+				    &adapter->msf_wc, NULL);
 		}
 	}
 
@@ -3502,9 +3515,9 @@ ixgbe_free_softint(struct adapter *adapter)
 		softint_disestablish(adapter->mod_si);
 		adapter->mod_si = NULL;
 	}
-	if (adapter->msf_si != NULL) {
-		softint_disestablish(adapter->msf_si);
-		adapter->msf_si = NULL;
+	if (adapter->msf_wq != NULL) {
+		workqueue_destroy(adapter->msf_wq);
+		adapter->msf_wq = NULL;
 	}
 	if (adapter->phy_si != NULL) {
 		softint_disestablish(adapter->phy_si);
@@ -3595,6 +3608,7 @@ ixgbe_detach(device_t dev, int flags)
 	bus_generic_detach(dev);
 #endif
 	if_detach(adapter->ifp);
+	ifmedia_fini(&adapter->media);
 	if_percpuq_destroy(adapter->ipq);
 
 	sysctl_teardown(&adapter->sysctllog);
@@ -3712,13 +3726,7 @@ ixgbe_detach(device_t dev, int flags)
 	evcnt_detach(&stats->ptc1023);
 	evcnt_detach(&stats->ptc1522);
 
-	ixgbe_free_transmit_structures(adapter);
-	ixgbe_free_receive_structures(adapter);
-	for (i = 0; i < adapter->num_queues; i++) {
-		struct ix_queue * que = &adapter->queues[i];
-		mutex_destroy(&que->dc_mtx);
-	}
-	free(adapter->queues, M_DEVBUF);
+	ixgbe_free_queues(adapter);
 	free(adapter->mta, M_DEVBUF);
 
 	IXGBE_CORE_LOCK_DESTROY(adapter);
@@ -3901,6 +3909,7 @@ ixgbe_init_locked(struct adapter *adapter)
 	u32		txdctl, mhadd;
 	u32		rxdctl, rxctrl;
 	u32		ctrl_ext;
+	bool		unsupported_sfp = false;
 	int		i, j, err;
 
 	/* XXX check IFF_UP and IFF_RUNNING, power-saving state! */
@@ -3908,6 +3917,7 @@ ixgbe_init_locked(struct adapter *adapter)
 	KASSERT(mutex_owned(&adapter->core_mtx));
 	INIT_DEBUGOUT("ixgbe_init_locked: begin");
 
+	hw->need_unsupported_sfp_recovery = false;
 	hw->adapter_stopped = FALSE;
 	ixgbe_stop_adapter(hw);
 	callout_stop(&adapter->timer);
@@ -4016,7 +4026,7 @@ ixgbe_init_locked(struct adapter *adapter)
 			else
 				msec_delay(1);
 		}
-		wmb();
+		IXGBE_WRITE_BARRIER(hw);
 
 		/*
 		 * In netmap mode, we must preserve the buffers made
@@ -4081,12 +4091,14 @@ ixgbe_init_locked(struct adapter *adapter)
 	 */
 	if (hw->phy.type == ixgbe_phy_none) {
 		err = hw->phy.ops.identify(hw);
-		if (err == IXGBE_ERR_SFP_NOT_SUPPORTED) {
-			device_printf(dev,
-			    "Unsupported SFP+ module type was detected.\n");
-			return;
-		}
-	}
+		if (err == IXGBE_ERR_SFP_NOT_SUPPORTED)
+			unsupported_sfp = true;
+	} else if (hw->phy.type == ixgbe_phy_sfp_unsupported)
+		unsupported_sfp = true;
+
+	if (unsupported_sfp)
+		device_printf(dev,
+		    "Unsupported SFP+ module type was detected.\n");
 
 	/* Set moderation on the Link interrupt */
 	ixgbe_eitr_write(adapter, adapter->vector, IXGBE_LINK_ITR);
@@ -4097,10 +4109,12 @@ ixgbe_init_locked(struct adapter *adapter)
 		    adapter->feat_en & IXGBE_FEATURE_EEE);
 
 	/* Enable power to the phy. */
-	ixgbe_set_phy_power(hw, TRUE);
+	if (!unsupported_sfp) {
+		ixgbe_set_phy_power(hw, TRUE);
 
-	/* Config/Enable Link */
-	ixgbe_config_link(adapter);
+		/* Config/Enable Link */
+		ixgbe_config_link(adapter);
+	}
 
 	/* Hardware Packet Buffer & Flow Control setup */
 	ixgbe_config_delay_values(adapter);
@@ -4130,6 +4144,9 @@ ixgbe_init_locked(struct adapter *adapter)
 
 	/* Now inform the stack we're ready */
 	ifp->if_flags |= IFF_RUNNING;
+
+	/* OK to schedule workqueues. */
+	adapter->schedule_wqs_ok = true;
 
 	return;
 } /* ixgbe_init_locked */
@@ -4608,6 +4625,7 @@ ixgbe_handle_mod(void *context)
 	device_t	dev = adapter->dev;
 	u32		err, cage_full = 0;
 
+	IXGBE_CORE_LOCK(adapter);
 	++adapter->mod_sicount.ev_count;
 	if (adapter->hw.need_crosstalk_fix) {
 		switch (hw->mac.type) {
@@ -4625,27 +4643,43 @@ ixgbe_handle_mod(void *context)
 		}
 
 		if (!cage_full)
-			return;
+			goto out;
 	}
 
 	err = hw->phy.ops.identify_sfp(hw);
 	if (err == IXGBE_ERR_SFP_NOT_SUPPORTED) {
 		device_printf(dev,
 		    "Unsupported SFP+ module type was detected.\n");
-		return;
+		goto out;
 	}
 
-	if (hw->mac.type == ixgbe_mac_82598EB)
-		err = hw->phy.ops.reset(hw);
-	else
-		err = hw->mac.ops.setup_sfp(hw);
-
-	if (err == IXGBE_ERR_SFP_NOT_SUPPORTED) {
-		device_printf(dev,
-		    "Setup failure - unsupported SFP+ module type.\n");
-		return;
+	if (hw->need_unsupported_sfp_recovery) {
+		device_printf(dev, "Recovering from unsupported SFP\n");
+		/*
+		 *  We could recover the status by calling setup_sfp(),
+		 * setup_link() and some others. It's complex and might not
+		 * work correctly on some unknown cases. To avoid such type of
+		 * problem, call ixgbe_init_locked(). It's simple and safe
+		 * approach.
+		 */
+		ixgbe_init_locked(adapter);
+	} else {
+		if (hw->mac.type == ixgbe_mac_82598EB)
+			err = hw->phy.ops.reset(hw);
+		else {
+			err = hw->mac.ops.setup_sfp(hw);
+			hw->phy.sfp_setup_needed = FALSE;
+		}
+		if (err == IXGBE_ERR_SFP_NOT_SUPPORTED) {
+			device_printf(dev,
+			    "Setup failure - unsupported SFP+ module type.\n");
+			goto out;
+		}
 	}
-	softint_schedule(adapter->msf_si);
+	if (adapter->schedule_wqs_ok)
+		workqueue_enqueue(adapter->msf_wq, &adapter->msf_wc, NULL);
+out:
+	IXGBE_CORE_UNLOCK(adapter);
 } /* ixgbe_handle_mod */
 
 
@@ -4653,12 +4687,22 @@ ixgbe_handle_mod(void *context)
  * ixgbe_handle_msf - Tasklet for MSF (multispeed fiber) interrupts
  ************************************************************************/
 static void
-ixgbe_handle_msf(void *context)
+ixgbe_handle_msf(struct work *wk, void *context)
 {
 	struct adapter	*adapter = context;
+	struct ifnet	*ifp = adapter->ifp;
 	struct ixgbe_hw *hw = &adapter->hw;
 	u32		autoneg;
 	bool		negotiate;
+
+	/*
+	 * Hold the IFNET_LOCK across this entire call.  This will
+	 * prevent additional changes to adapter->phy_layer and
+	 * and serialize calls to this tasklet.  We cannot hold the
+	 * CORE_LOCK while calling into the ifmedia functions as
+	 * they may block while allocating memory.
+	 */
+	IFNET_LOCK(ifp);
 
 	IXGBE_CORE_LOCK(adapter);
 	++adapter->msf_sicount.ev_count;
@@ -4672,12 +4716,13 @@ ixgbe_handle_msf(void *context)
 		negotiate = 0;
 	if (hw->mac.ops.setup_link)
 		hw->mac.ops.setup_link(hw, autoneg, TRUE);
+	IXGBE_CORE_UNLOCK(adapter);
 
 	/* Adjust media types shown in ifconfig */
 	ifmedia_removeall(&adapter->media);
 	ixgbe_add_media_types(adapter);
 	ifmedia_set(&adapter->media, IFM_ETHER | IFM_AUTO);
-	IXGBE_CORE_UNLOCK(adapter);
+	IFNET_UNLOCK(ifp);
 } /* ixgbe_handle_msf */
 
 /************************************************************************
@@ -4709,6 +4754,8 @@ ixgbe_ifstop(struct ifnet *ifp, int disable)
 	IXGBE_CORE_LOCK(adapter);
 	ixgbe_stop(adapter);
 	IXGBE_CORE_UNLOCK(adapter);
+
+	workqueue_wait(adapter->msf_wq, &adapter->msf_wc);
 }
 
 /************************************************************************
@@ -4731,6 +4778,9 @@ ixgbe_stop(void *arg)
 	INIT_DEBUGOUT("ixgbe_stop: begin\n");
 	ixgbe_disable_intr(adapter);
 	callout_stop(&adapter->timer);
+
+	/* Don't schedule workqueues. */
+	adapter->schedule_wqs_ok = false;
 
 	/* Let the stack know...*/
 	ifp->if_flags &= ~IFF_RUNNING;
@@ -5074,7 +5124,9 @@ ixgbe_legacy_irq(void *arg)
 		    (eicr & IXGBE_EICR_GPI_SDP1_BY_MAC(hw))) {
 			IXGBE_WRITE_REG(hw, IXGBE_EICR,
 			    IXGBE_EICR_GPI_SDP1_BY_MAC(hw));
-			softint_schedule(adapter->msf_si);
+			if (adapter->schedule_wqs_ok)
+				workqueue_enqueue(adapter->msf_wq,
+				    &adapter->msf_wc, NULL);
 		}
 	}
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: if_aue.c,v 1.161 2019/08/23 04:34:51 mrg Exp $	*/
+/*	$NetBSD: if_aue.c,v 1.163 2020/01/29 06:24:10 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1997, 1998, 1999, 2000
@@ -76,7 +76,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_aue.c,v 1.161 2019/08/23 04:34:51 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_aue.c,v 1.163 2020/01/29 06:24:10 thorpej Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -231,8 +231,8 @@ static const struct aue_type aue_devs[] = {
 };
 #define aue_lookup(v, p) ((const struct aue_type *)usb_lookup(aue_devs, v, p))
 
-int aue_match(device_t, cfdata_t, void *);
-void aue_attach(device_t, device_t, void *);
+static int aue_match(device_t, cfdata_t, void *);
+static void aue_attach(device_t, device_t, void *);
 
 CFATTACH_DECL_NEW(aue, sizeof(struct aue_softc), aue_match, aue_attach,
     usbnet_detach, usbnet_activate);
@@ -250,7 +250,7 @@ static void aue_rx_loop(struct usbnet *, struct usbnet_chain *, uint32_t);
 static int aue_init(struct ifnet *);
 static void aue_intr(struct usbnet *, usbd_status);
 
-static struct usbnet_ops aue_ops = {
+static const struct usbnet_ops aue_ops = {
 	.uno_stop = aue_stop_cb,
 	.uno_ioctl = aue_ioctl_cb,
 	.uno_read_reg = aue_mii_read_reg,
@@ -742,7 +742,7 @@ aue_reset(struct aue_softc *sc)
 /*
  * Probe for a Pegasus chip.
  */
-int
+static int
 aue_match(device_t parent, cfdata_t match, void *aux)
 {
 	struct usb_attach_arg *uaa = aux;
@@ -775,7 +775,7 @@ aue_match(device_t parent, cfdata_t match, void *aux)
  * Attach the interface. Allocate softc structures, do ifmedia
  * setup and ethernet/BPF attach.
  */
-void
+static void
 aue_attach(device_t parent, device_t self, void *aux)
 {
 	USBNET_MII_DECL_DEFAULT(unm);
@@ -888,10 +888,10 @@ aue_intr(struct usbnet *un, usbd_status status)
 	    device_unit(un->un_dev), p->aue_txstat0, 0, 0);
 
 	if (p->aue_txstat0)
-		ifp->if_oerrors++;
+		if_statinc(ifp, if_oerrors);
 
 	if (p->aue_txstat0 & (AUE_TXSTAT0_LATECOLL | AUE_TXSTAT0_EXCESSCOLL))
-		ifp->if_collisions++;
+		if_statinc(ifp, if_collisions);
 }
 
 static void
@@ -909,7 +909,7 @@ aue_rx_loop(struct usbnet *un, struct usbnet_chain *c, uint32_t total_len)
 	usbnet_isowned_rx(un);
 
 	if (total_len <= 4 + ETHER_CRC_LEN) {
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		return;
 	}
 
@@ -918,7 +918,7 @@ aue_rx_loop(struct usbnet *un, struct usbnet_chain *c, uint32_t total_len)
 	/* Turn off all the non-error bits in the rx status word. */
 	r.aue_rxstat &= AUE_RXSTAT_MASK;
 	if (r.aue_rxstat) {
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		return;
 	}
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: vnode.h,v 1.283 2019/11/10 06:47:30 mlelstv Exp $	*/
+/*	$NetBSD: vnode.h,v 1.287 2020/01/23 10:21:14 ad Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -124,6 +124,7 @@ LIST_HEAD(buflists, buf);
  * lock.  Field markings and the corresponding locks:
  *
  *	:	stable, reference to the vnode is required
+ *	e	exec_lock
  *	f	vnode_free_list_lock, or vrele_lock for vrele_list
  *	i	v_interlock
  *	u	locked by underlying filesystem
@@ -159,6 +160,7 @@ struct vnode {
 	enum vtagtype	v_tag;			/* :: type of underlying data */
 	void 		*v_data;		/* :: private data for fs */
 	struct klist	v_klist;		/* i: notes attached to vnode */
+	void		*v_segvguard;		/* e: for PAX_SEGVGUARD */
 };
 #define	v_usecount	v_uobj.uo_refs
 #define	v_interlock	v_uobj.vmobjlock
@@ -206,10 +208,13 @@ typedef struct vnode vnode_t;
 /*
  * vnode lock flags
  */
+#define	LK_NONE		0x00000000	/* no lock - for VOP_ISLOCKED() */
 #define	LK_SHARED	0x00000001	/* shared lock */
 #define	LK_EXCLUSIVE	0x00000002	/* exclusive lock */
-#define	LK_NOWAIT	0x00000010	/* do not sleep to await lock */
-#define	LK_RETRY	0x00020000	/* vn_lock: retry until locked */
+#define	LK_UPGRADE	0x00000010	/* upgrade shared -> exclusive */
+#define	LK_DOWNGRADE	0x00000020	/* downgrade exclusive -> shared */
+#define	LK_NOWAIT	0x00000100	/* do not sleep to await lock */
+#define	LK_RETRY	0x00000200	/* vn_lock: retry until locked */
 
 /*
  * Vnode attributes.  A field value of VNOVAL represents a field whose value
@@ -415,11 +420,6 @@ struct vnodeop_desc {
 #ifdef _KERNEL
 
 /*
- * Interlock for scanning list of vnodes attached to a mountpoint
- */
-extern kmutex_t		mntvnode_lock;
-
-/*
  * Union filesystem hook for vn_readdir().
  */
 extern int (*vn_union_readdir_hook) (struct vnode **, struct file *, struct lwp *);
@@ -592,6 +592,8 @@ void	vfs_vnode_print(struct vnode *, int, void (*)(const char *, ...)
 void	vfs_vnode_lock_print(void *, int, void (*)(const char *, ...)
     __printflike(1, 2));
 void	vfs_mount_print(struct mount *, int, void (*)(const char *, ...)
+    __printflike(1, 2));
+void	vfs_mount_print_all(int, void (*)(const char *, ...)
     __printflike(1, 2));
 #endif /* DDB */
 

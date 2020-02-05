@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_exec.c,v 1.484 2019/11/23 19:42:52 ad Exp $	*/
+/*	$NetBSD: kern_exec.c,v 1.490 2020/01/29 15:47:52 ad Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2019 The NetBSD Foundation, Inc.
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_exec.c,v 1.484 2019/11/23 19:42:52 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_exec.c,v 1.490 2020/01/29 15:47:52 ad Exp $");
 
 #include "opt_exec.h"
 #include "opt_execfmt.h"
@@ -246,9 +246,9 @@ struct emul emul_netbsd = {
  * Exec lock. Used to control access to execsw[] structures.
  * This must not be static so that netbsd32 can access it, too.
  */
-krwlock_t exec_lock;
+krwlock_t exec_lock __cacheline_aligned;
 
-static kmutex_t sigobject_lock;
+static kmutex_t sigobject_lock __cacheline_aligned;
 
 /*
  * Data used between a loadvm and execve part of an "exec" operation
@@ -409,6 +409,7 @@ check_exec(struct lwp *l, struct exec_package *epp, struct pathbuf *pb,
 		goto bad1;
 
 	/* get attributes */
+	/* XXX VOP_GETATTR is the only thing that needs LK_EXCLUSIVE here */
 	if ((error = VOP_GETATTR(vp, epp->ep_vap, l->l_cred)) != 0)
 		goto bad1;
 
@@ -422,6 +423,12 @@ check_exec(struct lwp *l, struct exec_package *epp, struct pathbuf *pb,
 
 	/* try to open it */
 	if ((error = VOP_OPEN(vp, FREAD, l->l_cred)) != 0)
+		goto bad1;
+
+	/* now we have the file, get the exec header */
+	error = vn_rdwr(UIO_READ, vp, epp->ep_hdr, epp->ep_hdrlen, 0,
+			UIO_SYSSPACE, IO_NODELOCKED, l->l_cred, &resid, NULL);
+	if (error)
 		goto bad1;
 
 	/* unlock vp, since we need it unlocked from here on out. */
@@ -442,11 +449,6 @@ check_exec(struct lwp *l, struct exec_package *epp, struct pathbuf *pb,
 		goto bad2;
 #endif /* PAX_SEGVGUARD */
 
-	/* now we have the file, get the exec header */
-	error = vn_rdwr(UIO_READ, vp, epp->ep_hdr, epp->ep_hdrlen, 0,
-			UIO_SYSSPACE, 0, l->l_cred, &resid, NULL);
-	if (error)
-		goto bad2;
 	epp->ep_hdrvalid = epp->ep_hdrlen - resid;
 
 	/*
@@ -543,7 +545,9 @@ check_exec(struct lwp *l, struct exec_package *epp, struct pathbuf *pb,
 	 */
 	kill_vmcmds(&epp->ep_vmcmds);
 
+#if NVERIEXEC > 0 || defined(PAX_SEGVGUARD)
 bad2:
+#endif
 	/*
 	 * close and release the vnode, restore the old one, free the
 	 * pathname buf, and punt.
@@ -1137,13 +1141,31 @@ emulexec(struct lwp *l, struct exec_package *epp)
 		(*p->p_emul->e_proc_exit)(p);
 
 	/*
-	 * This is now LWP 1.
+	 * This is now LWP 1.  Re-number the LWP if needed.  Don't bother
+	 * with p_treelock here as this is the only live LWP in the proc
+	 * right now.
 	 */
-	/* XXX elsewhere */
-	mutex_enter(p->p_lock);
-	p->p_nlwpid = 1;
-	l->l_lid = 1;
-	mutex_exit(p->p_lock);
+	while (__predict_false(l->l_lid != 1)) {
+		lwp_t *l2 __diagused;
+		int error;
+
+		mutex_enter(p->p_lock);
+		error = radix_tree_insert_node(&p->p_lwptree, 1 - 1, l);
+		if (error == 0) {
+			l2 = radix_tree_remove_node(&p->p_lwptree,
+			    (uint64_t)(l->l_lid - 1));
+			KASSERT(l2 == l);
+			p->p_nlwpid = 2;
+			l->l_lid = 1;
+		}
+		mutex_exit(p->p_lock);
+
+		if (error == 0)
+			break;
+
+		KASSERT(error == ENOMEM);
+		radix_tree_await_memory();
+	}
 
 	/*
 	 * Call exec hook. Emulation code may NOT store reference to anything
@@ -1171,6 +1193,7 @@ execve_runproc(struct lwp *l, struct execve_data * restrict data,
 	struct exec_package	* const epp = &data->ed_pack;
 	int error = 0;
 	struct proc		*p;
+	struct vmspace		*vm;
 
 	/*
 	 * In case of a posix_spawn operation, the child doing the exec
@@ -1205,6 +1228,10 @@ execve_runproc(struct lwp *l, struct execve_data * restrict data,
 	 * Do whatever is necessary to prepare the address space
 	 * for remapping.  Note that this might replace the current
 	 * vmspace with another!
+	 *
+	 * vfork(): do not touch any user space data in the new child
+	 * until we have awoken the parent below, or it will defeat
+	 * lazy pmap switching (on x86).
 	 */
 	if (is_spawn)
 		uvmspace_spawn(l, epp->ep_vm_minaddr,
@@ -1214,9 +1241,8 @@ execve_runproc(struct lwp *l, struct execve_data * restrict data,
 		uvmspace_exec(l, epp->ep_vm_minaddr,
 		    epp->ep_vm_maxaddr,
 		    epp->ep_flags & EXEC_TOPDOWN_VM);
-
-	struct vmspace		*vm;
 	vm = p->p_vmspace;
+
 	vm->vm_taddr = (void *)epp->ep_taddr;
 	vm->vm_tsize = btoc(epp->ep_tsize);
 	vm->vm_daddr = (void*)epp->ep_daddr;
@@ -1227,19 +1253,6 @@ execve_runproc(struct lwp *l, struct execve_data * restrict data,
 	vm->vm_minsaddr = (void *)epp->ep_minsaddr;
 
 	pax_aslr_init_vm(l, vm, epp);
-
-	/* Now map address space. */
-	error = execve_dovmcmds(l, data);
-	if (error != 0)
-		goto exec_abort;
-
-	pathexec(p, epp->ep_resolvedname);
-
-	char * const newstack = STACK_GROW(vm->vm_minsaddr, epp->ep_ssize);
-
-	error = copyoutargs(data, l, newstack);
-	if (error != 0)
-		goto exec_abort;
 
 	cwdexec(p);
 	fd_closeexec();		/* handle close on exec */
@@ -1255,6 +1268,17 @@ execve_runproc(struct lwp *l, struct execve_data * restrict data,
 	p->p_flag |= PK_EXEC;
 	mutex_exit(p->p_lock);
 
+	error = credexec(l, &data->ed_attr);
+	if (error)
+		goto exec_abort;
+
+#if defined(__HAVE_RAS)
+	/*
+	 * Remove all RASs from the address space.
+	 */
+	ras_purgeall();
+#endif
+
 	/*
 	 * Stop profiling.
 	 */
@@ -1267,32 +1291,46 @@ execve_runproc(struct lwp *l, struct execve_data * restrict data,
 	/*
 	 * It's OK to test PL_PPWAIT unlocked here, as other LWPs have
 	 * exited and exec()/exit() are the only places it will be cleared.
+	 *
+	 * Once the parent has been awoken, curlwp may teleport to a new CPU
+	 * in sched_vforkexec(), and it's then OK to start messing with user
+	 * data.  See comment above.
 	 */
 	if ((p->p_lflag & PL_PPWAIT) != 0) {
+		bool samecpu;
 		lwp_t *lp;
 
 		mutex_enter(proc_lock);
 		lp = p->p_vforklwp;
 		p->p_vforklwp = NULL;
-
 		l->l_lwpctl = NULL; /* was on loan from blocked parent */
+		cv_broadcast(&lp->l_waitcv);
+
+		/* Clear flags after cv_broadcast() (scheduler needs them). */
 		p->p_lflag &= ~PL_PPWAIT;
 		lp->l_vforkwaiting = false;
 
-		cv_broadcast(&lp->l_waitcv);
+		/* If parent is still on same CPU, teleport curlwp elsewhere. */
+		samecpu = (lp->l_cpu == curlwp->l_cpu);
 		mutex_exit(proc_lock);
+
+		/* Give the parent its CPU back - find a new home. */
+		KASSERT(!is_spawn);
+		sched_vforkexec(l, samecpu);
 	}
 
-	error = credexec(l, &data->ed_attr);
-	if (error)
+	/* Now map address space. */
+	error = execve_dovmcmds(l, data);
+	if (error != 0)
 		goto exec_abort;
 
-#if defined(__HAVE_RAS)
-	/*
-	 * Remove all RASs from the address space.
-	 */
-	ras_purgeall();
-#endif
+	pathexec(p, epp->ep_resolvedname);
+
+	char * const newstack = STACK_GROW(vm->vm_minsaddr, epp->ep_ssize);
+
+	error = copyoutargs(data, l, newstack);
+	if (error != 0)
+		goto exec_abort;
 
 	doexechooks(p);
 
@@ -1363,9 +1401,9 @@ execve_runproc(struct lwp *l, struct execve_data * restrict data,
 		mutex_exit(p->p_lock);
 		mutex_exit(proc_lock);
 		lwp_lock(l);
+		spc_lock(l->l_cpu);
 		mi_switch(l);
 		ksiginfo_queue_drain(&kq);
-		KERNEL_LOCK(l->l_biglocks, l);
 	} else {
 		mutex_exit(proc_lock);
 	}
@@ -1389,8 +1427,10 @@ execve_runproc(struct lwp *l, struct execve_data * restrict data,
 	 * get rid of the (new) address space we have created, if any, get rid
 	 * of our namei data and vnode, and exit noting failure
 	 */
-	uvm_deallocate(&vm->vm_map, VM_MIN_ADDRESS,
-		VM_MAXUSER_ADDRESS - VM_MIN_ADDRESS);
+	if (vm != NULL) {
+		uvm_deallocate(&vm->vm_map, VM_MIN_ADDRESS,
+			VM_MAXUSER_ADDRESS - VM_MIN_ADDRESS);
+	}
 
 	exec_free_emul_arg(epp);
 	pool_put(&exec_pool, data->ed_argp);
@@ -2504,6 +2544,7 @@ do_posix_spawn(struct lwp *l1, pid_t *pid_res, bool *child_ok, const char *path,
 	mutex_init(&p2->p_stmutex, MUTEX_DEFAULT, IPL_HIGH);
 	mutex_init(&p2->p_auxlock, MUTEX_DEFAULT, IPL_NONE);
 	rw_init(&p2->p_reflock);
+	rw_init(&p2->p_treelock);
 	cv_init(&p2->p_waitcv, "wait");
 	cv_init(&p2->p_lwpcv, "lwpwait");
 

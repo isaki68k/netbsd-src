@@ -1,7 +1,8 @@
-/*	$NetBSD: db_command.c,v 1.164 2019/09/29 02:49:59 uwe Exp $	*/
+/*	$NetBSD: db_command.c,v 1.167 2020/01/01 22:57:17 thorpej Exp $	*/
 
 /*
- * Copyright (c) 1996, 1997, 1998, 1999, 2002, 2009 The NetBSD Foundation, Inc.
+ * Copyright (c) 1996, 1997, 1998, 1999, 2002, 2009, 2019
+ *     The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -60,7 +61,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: db_command.c,v 1.164 2019/09/29 02:49:59 uwe Exp $");
+__KERNEL_RCSID(0, "$NetBSD: db_command.c,v 1.167 2020/01/01 22:57:17 thorpej Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_aio.h"
@@ -193,7 +194,9 @@ static void     db_help_print_cmd(db_expr_t, bool, db_expr_t, const char *);
 static void	db_lock_print_cmd(db_expr_t, bool, db_expr_t, const char *);
 static void	db_show_all_locks(db_expr_t, bool, db_expr_t, const char *);
 static void	db_show_lockstats(db_expr_t, bool, db_expr_t, const char *);
+static void	db_show_all_freelists(db_expr_t, bool, db_expr_t, const char *);
 static void	db_mount_print_cmd(db_expr_t, bool, db_expr_t, const char *);
+static void	db_show_all_mount(db_expr_t, bool, db_expr_t, const char *);
 static void	db_mbuf_print_cmd(db_expr_t, bool, db_expr_t, const char *);
 static void	db_map_print_cmd(db_expr_t, bool, db_expr_t, const char *);
 static void	db_namecache_print_cmd(db_expr_t, bool, db_expr_t,
@@ -231,6 +234,10 @@ static const struct db_command db_show_cmds[] = {
 	    0 ,"Show all pools",NULL,NULL) },
 	{ DDB_ADD_CMD("locks",	db_show_all_locks,
 	    0 ,"Show all held locks", "[/t]", NULL) },
+	{ DDB_ADD_CMD("mount",	db_show_all_mount,	0,
+	    "Print all mount structures.", "[/f]", NULL) },
+	{ DDB_ADD_CMD("freelists",	db_show_all_freelists,
+	    0 ,"Show all freelists", NULL, NULL) },
 #ifdef AIO
 	/*added from all sub cmds*/
 	{ DDB_ADD_CMD("aio_jobs",	db_show_aio_jobs,	0,
@@ -1178,6 +1185,19 @@ db_mount_print_cmd(db_expr_t addr, bool have_addr,
 #endif
 }
 
+static void
+db_show_all_mount(db_expr_t addr, bool have_addr, db_expr_t count, const char *modif)
+{
+#ifdef _KERNEL	/* XXX CRASH(8) */
+	bool full = false;
+
+	if (modif[0] == 'f')
+		full = true;
+
+	vfs_mount_print_all(full, db_printf);
+#endif
+}
+
 /*ARGSUSED*/
 static void
 db_mbuf_print_cmd(db_expr_t addr, bool have_addr,
@@ -1265,6 +1285,16 @@ db_show_all_locks(db_expr_t addr, bool have_addr,
 
 #ifdef _KERNEL	/* XXX CRASH(8) */
 	lockdebug_show_all_locks(db_printf, modif);
+#endif
+}
+
+static void
+db_show_all_freelists(db_expr_t addr, bool have_addr,
+    db_expr_t count, const char *modif)
+{
+
+#ifdef _KERNEL	/* XXX CRASH(8) */
+	uvm_page_print_freelists(db_printf);
 #endif
 }
 
@@ -1367,7 +1397,7 @@ db_reboot_cmd(db_expr_t addr, bool have_addr,
 	panicstr = "reboot forced via kernel debugger";
 	/* Make it possible to break into the debugger again */
 	spl0();
-	cpu_reboot((int)bootflags, NULL);
+	kern_reboot((int)bootflags, NULL);
 #else	/* _KERNEL */
 	db_printf("This command can only be used in-kernel.\n");
 #endif	/* _KERNEL */
@@ -1434,7 +1464,7 @@ db_sync_cmd(db_expr_t addr, bool have_addr,
 	 */
 	db_recover = 0;
 	panicstr = "dump forced via kernel debugger";
-	cpu_reboot(RB_DUMP, NULL);
+	kern_reboot(RB_DUMP, NULL);
 #else	/* _KERNEL */
 	db_printf("This command can only be used in-kernel.\n");
 #endif	/* _KERNEL */

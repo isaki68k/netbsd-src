@@ -1,4 +1,4 @@
-/*	$NetBSD: bpf.c,v 1.231 2019/09/13 06:39:29 maxv Exp $	*/
+/*	$NetBSD: bpf.c,v 1.234 2020/02/01 02:54:02 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1990, 1991, 1993
@@ -39,12 +39,11 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bpf.c,v 1.231 2019/09/13 06:39:29 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bpf.c,v 1.234 2020/02/01 02:54:02 riastradh Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_bpf.h"
 #include "sl.h"
-#include "strip.h"
 #include "opt_net_mpsafe.h"
 #endif
 
@@ -302,10 +301,13 @@ const struct cdevsw bpf_cdevsw = {
 bpfjit_func_t
 bpf_jit_generate(bpf_ctx_t *bc, void *code, size_t size)
 {
+	struct bpfjit_ops *ops = &bpfjit_module_ops;
+	bpfjit_func_t (*generate_code)(const bpf_ctx_t *,
+	    const struct bpf_insn *, size_t);
 
-	membar_consumer();
-	if (bpfjit_module_ops.bj_generate_code != NULL) {
-		return bpfjit_module_ops.bj_generate_code(bc, code, size);
+	generate_code = atomic_load_acquire(&ops->bj_generate_code);
+	if (generate_code != NULL) {
+		return generate_code(bc, code, size);
 	}
 	return NULL;
 }
@@ -321,7 +323,7 @@ static int
 bpf_movein(struct uio *uio, int linktype, uint64_t mtu, struct mbuf **mp,
 	   struct sockaddr *sockp)
 {
-	struct mbuf *m;
+	struct mbuf *m, *m0, *n;
 	int error;
 	size_t len;
 	size_t hlen;
@@ -395,15 +397,7 @@ bpf_movein(struct uio *uio, int linktype, uint64_t mtu, struct mbuf **mp,
 	if (len - hlen > mtu)
 		return (EMSGSIZE);
 
-	/*
-	 * XXX Avoid complicated buffer chaining ---
-	 * bail if it won't fit in a single mbuf.
-	 * (Take into account possible alignment bytes)
-	 */
-	if (len + align > MCLBYTES)
-		return (EIO);
-
-	m = m_gethdr(M_WAIT, MT_DATA);
+	m0 = m = m_gethdr(M_WAIT, MT_DATA);
 	m_reset_rcvif(m);
 	m->m_pkthdr.len = (int)(len - hlen);
 	if (len + align > MHLEN) {
@@ -415,25 +409,39 @@ bpf_movein(struct uio *uio, int linktype, uint64_t mtu, struct mbuf **mp,
 	}
 
 	/* Insure the data is properly aligned */
-	if (align > 0) {
+	if (align > 0)
 		m->m_data += align;
-		m->m_len -= (int)align;
+
+	for (;;) {
+		len = M_TRAILINGSPACE(m);
+		if (len > uio->uio_resid)
+			len = uio->uio_resid;
+		error = uiomove(mtod(m, void *), len, uio);
+		if (error)
+			goto bad;
+		m->m_len = len;
+
+		if (uio->uio_resid == 0)
+			break;
+
+		n = m_get(M_WAIT, MT_DATA);
+		m_clget(n, M_WAIT);	/* if fails, there is no problem */
+		m->m_next = n;
+		m = n;
 	}
 
-	error = uiomove(mtod(m, void *), len, uio);
-	if (error)
-		goto bad;
 	if (hlen != 0) {
-		memcpy(sockp->sa_data, mtod(m, void *), hlen);
-		m->m_data += hlen; /* XXX */
-		len -= hlen;
+		/* move link level header in the top of mbuf to sa_data */
+		memcpy(sockp->sa_data, mtod(m0, void *), hlen);
+		m0->m_data += hlen;
+		m0->m_len -= hlen;
 	}
-	m->m_len = (int)len;
-	*mp = m;
+
+	*mp = m0;
 	return (0);
 
 bad:
-	m_freem(m);
+	m_freem(m0);
 	return (error);
 }
 
@@ -1284,7 +1292,6 @@ bpf_setf(struct bpf_d *d, struct bpf_program *fp)
 			kmem_free(fcode, size);
 			return EINVAL;
 		}
-		membar_consumer();
 		if (bpf_jit)
 			jcode = bpf_jit_generate(NULL, fcode, flen);
 	} else {
@@ -1301,8 +1308,7 @@ bpf_setf(struct bpf_d *d, struct bpf_program *fp)
 	mutex_enter(&bpf_mtx);
 	mutex_enter(d->bd_mtx);
 	oldf = d->bd_filter;
-	d->bd_filter = newf;
-	membar_producer();
+	atomic_store_release(&d->bd_filter, newf);
 	reset_d(d);
 	pserialize_perform(bpf_psz);
 	mutex_exit(d->bd_mtx);
@@ -1602,8 +1608,7 @@ bpf_deliver(struct bpf_if *bp, void *(*cpfn)(void *, const void *, size_t),
 		atomic_inc_ulong(&d->bd_rcount);
 		BPF_STATINC(recv);
 
-		filter = d->bd_filter;
-		membar_datadep_consumer();
+		filter = atomic_load_consume(&d->bd_filter);
 		if (filter != NULL) {
 			if (filter->bf_jitcode != NULL)
 				slen = filter->bf_jitcode(NULL, &args);
@@ -2303,13 +2308,6 @@ sysctl_net_bpf_jit(SYSCTLFN_ARGS)
 		return error;
 
 	bpf_jit = newval;
-
-	/*
-	 * Do a full sync to publish new bpf_jit value and
-	 * update bpfjit_module_ops.bj_generate_code variable.
-	 */
-	membar_sync();
-
 	if (newval && bpfjit_module_ops.bj_generate_code == NULL) {
 		printf("JIT compilation is postponed "
 		    "until after bpfjit module is loaded\n");

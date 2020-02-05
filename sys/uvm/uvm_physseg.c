@@ -1,4 +1,4 @@
-/* $NetBSD: uvm_physseg.c,v 1.10 2019/09/20 11:09:43 maxv Exp $ */
+/* $NetBSD: uvm_physseg.c,v 1.13 2019/12/21 14:41:44 ad Exp $ */
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -96,7 +96,6 @@ struct uvm_physseg {
 	struct  extent *ext;		/* extent(9) structure to manage pgs[] */
 	int	free_list;		/* which free list they belong on */
 	u_int	start_hint;		/* start looking for free pages here */
-					/* protected by uvm_fpageqlock */
 #ifdef __HAVE_PMAP_PHYSSEG
 	struct	pmap_physseg pmseg;	/* pmap specific (MD) data */
 #endif
@@ -1015,7 +1014,9 @@ uvm_physseg_set_avail_start(uvm_physseg_t upm, paddr_t avail_start)
 
 	ps->avail_start = avail_start;
 }
-void uvm_physseg_set_avail_end(uvm_physseg_t upm, paddr_t avail_end)
+
+void
+uvm_physseg_set_avail_end(uvm_physseg_t upm, paddr_t avail_end)
 {
 	struct uvm_physseg *ps = HANDLE_TO_PHYSSEG_NODE(upm);
 
@@ -1087,6 +1088,7 @@ uvm_physseg_init_seg(uvm_physseg_t upm, struct vm_page *pgs)
 	psize_t n;
 	paddr_t paddr;
 	struct uvm_physseg *seg;
+	struct vm_page *pg;
 
 	KASSERT(upm != UVM_PHYSSEG_TYPE_INVALID && pgs != NULL);
 
@@ -1100,17 +1102,20 @@ uvm_physseg_init_seg(uvm_physseg_t upm, struct vm_page *pgs)
 	/* init and free vm_pages (we've already zeroed them) */
 	paddr = ctob(seg->start);
 	for (i = 0 ; i < n ; i++, paddr += PAGE_SIZE) {
-		seg->pgs[i].phys_addr = paddr;
+		pg = &seg->pgs[i];
+		pg->phys_addr = paddr;
 #ifdef __HAVE_VM_PAGE_MD
-		VM_MDPAGE_INIT(&seg->pgs[i]);
+		VM_MDPAGE_INIT(pg);
 #endif
 		if (atop(paddr) >= seg->avail_start &&
 		    atop(paddr) < seg->avail_end) {
 			uvmexp.npages++;
-			mutex_enter(&uvm_pageqlock);
 			/* add page to free pool */
-			uvm_pagefree(&seg->pgs[i]);
-			mutex_exit(&uvm_pageqlock);
+			uvm_page_set_freelist(pg,
+			    uvm_page_lookup_freelist(pg));
+			/* Disable LOCKDEBUG: too many and too early. */
+			mutex_init(&pg->interlock, MUTEX_NODEBUG, IPL_NONE);
+			uvm_pagefree(pg);
 		}
 	}
 }

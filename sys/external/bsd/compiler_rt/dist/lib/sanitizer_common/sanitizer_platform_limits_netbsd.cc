@@ -18,6 +18,7 @@
 
 #define _KMEMUSER
 #define RAY_DO_SIGLEV
+#define __LEGACY_PT_LWPINFO
 
 // clang-format off
 #include <sys/param.h>
@@ -72,6 +73,15 @@
 #include <sys/msg.h>
 #include <sys/mtio.h>
 #include <sys/ptrace.h>
+
+// Compat for NetBSD < 9.99.30.
+#ifndef PT_LWPSTATUS
+#define PT_LWPSTATUS 24
+#endif
+#ifndef PT_LWPSTATUS
+#define PT_LWPSTATUS 25
+#endif
+
 #include <sys/resource.h>
 #include <sys/sem.h>
 #include <sys/sha1.h>
@@ -110,7 +120,12 @@
 #include <dev/dmover/dmover_io.h>
 #include <dev/dtv/dtvio_demux.h>
 #include <dev/dtv/dtvio_frontend.h>
+#if !__NetBSD_Prereq__(9,9,26)
 #include <dev/filemon/filemon.h>
+#else
+#define FILEMON_SET_FD          _IOWR('S', 1, int)
+#define FILEMON_SET_PID         _IOWR('S', 2, pid_t)
+#endif
 #include <dev/hdaudio/hdaudioio.h>
 #include <dev/hdmicec/hdmicecio.h>
 #include <dev/hpc/hpcfbio.h>
@@ -176,7 +191,21 @@
 #include <dev/sun/vuid_event.h>
 #include <dev/tc/sticio.h>
 #include <dev/usb/ukyopon.h>
+#if !__NetBSD_Prereq__(9, 99, 44)
 #include <dev/usb/urio.h>
+#else
+struct urio_command {
+  unsigned short length;
+  int request;
+  int requesttype;
+  int value;
+  int index;
+  void *buffer;
+  int timeout;
+};
+#define URIO_SEND_COMMAND      _IOWR('U', 200, struct urio_command)
+#define URIO_RECV_COMMAND      _IOWR('U', 201, struct urio_command)
+#endif
 #include <dev/usb/usb.h>
 #include <dev/usb/utoppy.h>
 #include <dev/vme/xio.h>
@@ -287,6 +316,8 @@ int ptrace_pt_get_event_mask = PT_GET_EVENT_MASK;
 int ptrace_pt_get_process_state = PT_GET_PROCESS_STATE;
 int ptrace_pt_set_siginfo = PT_SET_SIGINFO;
 int ptrace_pt_get_siginfo = PT_GET_SIGINFO;
+int ptrace_pt_lwpstatus = PT_LWPSTATUS;
+int ptrace_pt_lwpnext = PT_LWPNEXT;
 int ptrace_piod_read_d = PIOD_READ_D;
 int ptrace_piod_write_d = PIOD_WRITE_D;
 int ptrace_piod_read_i = PIOD_READ_I;
@@ -319,6 +350,8 @@ int ptrace_pt_getdbregs = -1;
 
 unsigned struct_ptrace_ptrace_io_desc_struct_sz = sizeof(struct ptrace_io_desc);
 unsigned struct_ptrace_ptrace_lwpinfo_struct_sz = sizeof(struct ptrace_lwpinfo);
+unsigned struct_ptrace_ptrace_lwpstatus_struct_sz =
+    sizeof(struct __sanitizer_ptrace_lwpstatus);
 unsigned struct_ptrace_ptrace_event_struct_sz = sizeof(ptrace_event_t);
 unsigned struct_ptrace_ptrace_siginfo_struct_sz = sizeof(ptrace_siginfo_t);
 
@@ -698,6 +731,7 @@ unsigned struct_nvmm_ioc_machine_configure_sz =
     sizeof(nvmm_ioc_machine_configure);
 unsigned struct_nvmm_ioc_vcpu_create_sz = sizeof(nvmm_ioc_vcpu_create);
 unsigned struct_nvmm_ioc_vcpu_destroy_sz = sizeof(nvmm_ioc_vcpu_destroy);
+unsigned struct_nvmm_ioc_vcpu_configure_sz = sizeof(nvmm_ioc_vcpu_configure);
 unsigned struct_nvmm_ioc_vcpu_setstate_sz = sizeof(nvmm_ioc_vcpu_destroy);
 unsigned struct_nvmm_ioc_vcpu_getstate_sz = sizeof(nvmm_ioc_vcpu_getstate);
 unsigned struct_nvmm_ioc_vcpu_inject_sz = sizeof(nvmm_ioc_vcpu_inject);
@@ -1457,6 +1491,7 @@ unsigned IOCTL_NVMM_IOC_MACHINE_DESTROY = NVMM_IOC_MACHINE_DESTROY;
 unsigned IOCTL_NVMM_IOC_MACHINE_CONFIGURE = NVMM_IOC_MACHINE_CONFIGURE;
 unsigned IOCTL_NVMM_IOC_VCPU_CREATE = NVMM_IOC_VCPU_CREATE;
 unsigned IOCTL_NVMM_IOC_VCPU_DESTROY = NVMM_IOC_VCPU_DESTROY;
+unsigned IOCTL_NVMM_IOC_VCPU_CONFIGURE = NVMM_IOC_VCPU_CONFIGURE;
 unsigned IOCTL_NVMM_IOC_VCPU_SETSTATE = NVMM_IOC_VCPU_SETSTATE;
 unsigned IOCTL_NVMM_IOC_VCPU_GETSTATE = NVMM_IOC_VCPU_GETSTATE;
 unsigned IOCTL_NVMM_IOC_VCPU_INJECT = NVMM_IOC_VCPU_INJECT;
@@ -1533,6 +1568,7 @@ unsigned IOCTL_IOC_NPF_STATS = IOC_NPF_STATS;
 unsigned IOCTL_IOC_NPF_SAVE = IOC_NPF_SAVE;
 unsigned IOCTL_IOC_NPF_RULE = IOC_NPF_RULE;
 unsigned IOCTL_IOC_NPF_CONN_LOOKUP = IOC_NPF_CONN_LOOKUP;
+unsigned IOCTL_IOC_NPF_TABLE_REPLACE = IOC_NPF_TABLE_REPLACE;
 unsigned IOCTL_PPPOESETPARMS = PPPOESETPARMS;
 unsigned IOCTL_PPPOEGETPARMS = PPPOEGETPARMS;
 unsigned IOCTL_PPPOEGETSESSION = PPPOEGETSESSION;

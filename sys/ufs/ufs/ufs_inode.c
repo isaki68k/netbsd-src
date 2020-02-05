@@ -1,4 +1,4 @@
-/*	$NetBSD: ufs_inode.c,v 1.105 2018/12/10 20:48:34 jdolecek Exp $	*/
+/*	$NetBSD: ufs_inode.c,v 1.108 2020/01/15 17:55:44 ad Exp $	*/
 
 /*
  * Copyright (c) 1991, 1993
@@ -37,7 +37,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ufs_inode.c,v 1.105 2018/12/10 20:48:34 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ufs_inode.c,v 1.108 2020/01/15 17:55:44 ad Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_ffs.h"
@@ -259,7 +259,7 @@ ufs_balloc_range(struct vnode *vp, off_t off, off_t len, kauth_cred_t cred,
 	genfs_node_unlock(vp);
 
 	/*
-	 * if the allocation succeeded, clear PG_CLEAN on all the pages
+	 * if the allocation succeeded, mark all the pages dirty
 	 * and clear PG_RDONLY on any pages that are now fully backed
 	 * by disk blocks.  if the allocation failed, we do not invalidate
 	 * the pages since they might have already existed and been dirty,
@@ -270,7 +270,6 @@ ufs_balloc_range(struct vnode *vp, off_t off, off_t len, kauth_cred_t cred,
 
 	GOP_SIZE(vp, off + len, &eob, 0);
 	mutex_enter(uobj->vmobjlock);
-	mutex_enter(&uvm_pageqlock);
 	for (i = 0; i < npages; i++) {
 		KASSERT((pgs[i]->flags & PG_RELEASED) == 0);
 		if (!error) {
@@ -278,11 +277,12 @@ ufs_balloc_range(struct vnode *vp, off_t off, off_t len, kauth_cred_t cred,
 			    pagestart + ((i + 1) << PAGE_SHIFT) <= eob) {
 				pgs[i]->flags &= ~PG_RDONLY;
 			}
-			pgs[i]->flags &= ~PG_CLEAN;
+			uvm_pagemarkdirty(pgs[i], UVM_PAGE_STATUS_DIRTY);
 		}
+		uvm_pagelock(pgs[i]);
 		uvm_pageactivate(pgs[i]);
+		uvm_pageunlock(pgs[i]);
 	}
-	mutex_exit(&uvm_pageqlock);
 	uvm_page_unbusy(pgs, npages);
 	mutex_exit(uobj->vmobjlock);
 

@@ -1,4 +1,4 @@
-/* $NetBSD: udf_vnops.c,v 1.106 2017/05/26 14:34:20 riastradh Exp $ */
+/* $NetBSD: udf_vnops.c,v 1.108 2020/01/17 20:08:08 ad Exp $ */
 
 /*
  * Copyright (c) 2006, 2008 Reinoud Zandijk
@@ -32,7 +32,7 @@
 
 #include <sys/cdefs.h>
 #ifndef lint
-__KERNEL_RCSID(0, "$NetBSD: udf_vnops.c,v 1.106 2017/05/26 14:34:20 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: udf_vnops.c,v 1.108 2020/01/17 20:08:08 ad Exp $");
 #endif /* not lint */
 
 
@@ -609,7 +609,7 @@ udf_readdir(void *v)
 			if (uio->uio_resid < _DIRENT_SIZE(dirent))
 				break;
 
-			/* remember the last entry we transfered */
+			/* remember the last entry we transferred */
 			transoffset = diroffset;
 
 			/* skip deleted entries */
@@ -750,7 +750,8 @@ udf_lookup(void *v)
 		if (error == 0) {
 			DPRINTF(LOOKUP, ("\tfound '..'\n"));
 			/* try to create/reuse the node */
-			error = udf_get_node(ump, &icb_loc, &res_node);
+			error = udf_get_node(ump, &icb_loc, &res_node,
+			    LK_EXCLUSIVE);
 
 			if (!error) {
 				DPRINTF(LOOKUP,
@@ -802,7 +803,7 @@ udf_lookup(void *v)
 	 */
 
 	/* try to create/reuse the node */
-	error = udf_get_node(ump, &icb_loc, &res_node);
+	error = udf_get_node(ump, &icb_loc, &res_node, LK_EXCLUSIVE);
 	if (error)
 		goto out;
 

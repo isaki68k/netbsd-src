@@ -1,4 +1,4 @@
-/*	$NetBSD: if_axe.c,v 1.120 2019/08/26 17:26:33 rin Exp $	*/
+/*	$NetBSD: if_axe.c,v 1.122 2020/01/29 06:24:10 thorpej Exp $	*/
 /*	$OpenBSD: if_axe.c,v 1.137 2016/04/13 11:03:37 mpi Exp $ */
 
 /*
@@ -87,7 +87,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_axe.c,v 1.120 2019/08/26 17:26:33 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_axe.c,v 1.122 2020/01/29 06:24:10 thorpej Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -250,8 +250,8 @@ static const struct ax88772b_mfb ax88772b_mfb_table[] = {
 	{ 0x8700, 0x8A3D, 32768 }
 };
 
-int	axe_match(device_t, cfdata_t, void *);
-void	axe_attach(device_t, device_t, void *);
+static int	axe_match(device_t, cfdata_t, void *);
+static void	axe_attach(device_t, device_t, void *);
 
 CFATTACH_DECL_NEW(axe, sizeof(struct axe_softc),
 	axe_match, axe_attach, usbnet_detach, usbnet_activate);
@@ -271,7 +271,7 @@ static void	axe_ax88772_init(struct axe_softc *);
 static void	axe_ax88772a_init(struct axe_softc *);
 static void	axe_ax88772b_init(struct axe_softc *);
 
-static struct usbnet_ops axe_ops = {
+static const struct usbnet_ops axe_ops = {
 	.uno_stop = axe_stop,
 	.uno_ioctl = axe_ioctl,
 	.uno_read_reg = axe_mii_read_reg,
@@ -846,7 +846,7 @@ axe_ax88772b_init(struct axe_softc *sc)
 /*
  * Probe for a AX88172 chip.
  */
-int
+static int
 axe_match(device_t parent, cfdata_t match, void *aux)
 {
 	struct usb_attach_arg *uaa = aux;
@@ -859,7 +859,7 @@ axe_match(device_t parent, cfdata_t match, void *aux)
  * Attach the interface. Allocate softc structures, do ifmedia
  * setup and ethernet/BPF attach.
  */
-void
+static void
 axe_attach(device_t parent, device_t self, void *aux)
 {
 	AXEHIST_FUNC(); AXEHIST_CALLED();
@@ -1034,7 +1034,7 @@ axe_rx_loop(struct usbnet * un, struct usbnet_chain *c, uint32_t total_len)
 			struct axe_sframe_hdr hdr;
 
 			if (total_len < sizeof(hdr)) {
-				ifp->if_ierrors++;
+				if_statinc(ifp, if_ierrors);
 				break;
 			}
 
@@ -1051,7 +1051,7 @@ axe_rx_loop(struct usbnet * un, struct usbnet_chain *c, uint32_t total_len)
 			if (((le16toh(hdr.len) & AXE_RH1M_RXLEN_MASK) ^
 			    (le16toh(hdr.ilen) & AXE_RH1M_RXLEN_MASK)) !=
 			    AXE_RH1M_RXLEN_MASK) {
-				ifp->if_ierrors++;
+				if_statinc(ifp, if_ierrors);
 				break;
 			}
 
@@ -1069,7 +1069,7 @@ axe_rx_loop(struct usbnet * un, struct usbnet_chain *c, uint32_t total_len)
 			struct axe_csum_hdr csum_hdr;
 
 			if (total_len <	sizeof(csum_hdr)) {
-				ifp->if_ierrors++;
+				if_statinc(ifp, if_ierrors);
 				break;
 			}
 
@@ -1087,7 +1087,7 @@ axe_rx_loop(struct usbnet * un, struct usbnet_chain *c, uint32_t total_len)
 			    AXE_CSUM_RXBYTES(csum_hdr.ilen)) !=
 			    sc->sc_lenmask) {
 				/* we lost sync */
-				ifp->if_ierrors++;
+				if_statinc(ifp, if_ierrors);
 				DPRINTFN(20, "len %#jx ilen %#jx lenmask %#jx "
 				    "err",
 				    AXE_CSUM_RXBYTES(csum_hdr.len),
@@ -1107,7 +1107,7 @@ axe_rx_loop(struct usbnet * un, struct usbnet_chain *c, uint32_t total_len)
 				DPRINTFN(20, "total_len %#jx < len %#jx",
 				    total_len, len, 0, 0);
 				/* invalid length */
-				ifp->if_ierrors++;
+				if_statinc(ifp, if_ierrors);
 				break;
 			}
 			buf += sizeof(csum_hdr);

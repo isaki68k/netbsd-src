@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_km.c,v 1.147 2019/11/14 16:23:53 maxv Exp $	*/
+/*	$NetBSD: uvm_km.c,v 1.153 2020/01/20 10:43:48 skrll Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -152,7 +152,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_km.c,v 1.147 2019/11/14 16:23:53 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_km.c,v 1.153 2020/01/20 10:43:48 skrll Exp $");
 
 #include "opt_uvmhist.h"
 
@@ -177,6 +177,7 @@ __KERNEL_RCSID(0, "$NetBSD: uvm_km.c,v 1.147 2019/11/14 16:23:53 maxv Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
+#include <sys/atomic.h>
 #include <sys/proc.h>
 #include <sys/pool.h>
 #include <sys/vmem.h>
@@ -473,18 +474,14 @@ uvm_km_pgremove(vaddr_t startva, vaddr_t endva)
 		}
 		uao_dropswap(uobj, curoff >> PAGE_SHIFT);
 		if (pg != NULL) {
-			mutex_enter(&uvm_pageqlock);
 			uvm_pagefree(pg);
-			mutex_exit(&uvm_pageqlock);
 		}
 	}
 	mutex_exit(uobj->vmobjlock);
 
 	if (swpgonlydelta > 0) {
-		mutex_enter(&uvm_swap_data_lock);
 		KASSERT(uvmexp.swpgonly >= swpgonlydelta);
-		uvmexp.swpgonly -= swpgonlydelta;
-		mutex_exit(&uvm_swap_data_lock);
+		atomic_add_int(&uvmexp.swpgonly, -swpgonlydelta);
 	}
 }
 
@@ -548,9 +545,7 @@ uvm_km_pgremove_intrsafe(struct vm_map *map, vaddr_t start, vaddr_t end)
 void
 uvm_km_check_empty(struct vm_map *map, vaddr_t start, vaddr_t end)
 {
-	struct vm_page *pg;
 	vaddr_t va;
-	paddr_t pa;
 	UVMHIST_FUNC(__func__); UVMHIST_CALLED(maphist);
 
 	KDASSERT(VM_MAP_IS_KERNEL(map));
@@ -559,17 +554,32 @@ uvm_km_check_empty(struct vm_map *map, vaddr_t start, vaddr_t end)
 	KDASSERT(end <= vm_map_max(map));
 
 	for (va = start; va < end; va += PAGE_SIZE) {
+		paddr_t pa;
+
 		if (pmap_extract(pmap_kernel(), va, &pa)) {
 			panic("uvm_km_check_empty: va %p has pa 0x%llx",
 			    (void *)va, (long long)pa);
 		}
-		mutex_enter(uvm_kernel_object->vmobjlock);
-		pg = uvm_pagelookup(uvm_kernel_object,
-		    va - vm_map_min(kernel_map));
-		mutex_exit(uvm_kernel_object->vmobjlock);
-		if (pg) {
-			panic("uvm_km_check_empty: "
-			    "has page hashed at %p", (const void *)va);
+		/*
+		 * kernel_object should not have pages for the corresponding
+		 * region.  check it.
+		 *
+		 * why trylock?  because:
+		 * - caller might not want to block.
+		 * - we can recurse when allocating radix_node for
+		 *   kernel_object.
+		 */
+		if (mutex_tryenter(uvm_kernel_object->vmobjlock)) {
+			struct vm_page *pg;
+
+			pg = uvm_pagelookup(uvm_kernel_object,
+			    va - vm_map_min(kernel_map));
+			mutex_exit(uvm_kernel_object->vmobjlock);
+			if (pg) {
+				panic("uvm_km_check_empty: "
+				    "has page hashed at %p",
+				    (const void *)va);
+			}
 		}
 	}
 }
@@ -763,6 +773,11 @@ uvm_km_free(struct vm_map *map, vaddr_t addr, vsize_t size, uvm_flag_t flags)
 #if (defined(PMAP_MAP_POOLPAGE) || defined(PMAP_UNMAP_POOLPAGE)) && \
     (!defined(PMAP_MAP_POOLPAGE) || !defined(PMAP_UNMAP_POOLPAGE))
 #error Must specify MAP and UNMAP together.
+#endif
+
+#if defined(PMAP_ALLOC_POOLPAGE) && \
+    !defined(PMAP_MAP_POOLPAGE) && !defined(PMAP_UNMAP_POOLPAGE)
+#error Must specify ALLOC with MAP and UNMAP
 #endif
 
 int

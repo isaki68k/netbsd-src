@@ -1,4 +1,4 @@
-/*	$NetBSD: arm_machdep.c,v 1.56 2019/11/23 19:40:34 ad Exp $	*/
+/*	$NetBSD: arm_machdep.c,v 1.62 2020/01/22 10:52:35 skrll Exp $	*/
 
 /*
  * Copyright (c) 2001 Wasabi Systems, Inc.
@@ -80,17 +80,17 @@
 
 #include <sys/param.h>
 
-__KERNEL_RCSID(0, "$NetBSD: arm_machdep.c,v 1.56 2019/11/23 19:40:34 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: arm_machdep.c,v 1.62 2020/01/22 10:52:35 skrll Exp $");
 
+#include <sys/atomic.h>
+#include <sys/cpu.h>
+#include <sys/evcnt.h>
 #include <sys/exec.h>
+#include <sys/kcpuset.h>
+#include <sys/kmem.h>
 #include <sys/proc.h>
 #include <sys/systm.h>
-#include <sys/kmem.h>
 #include <sys/ucontext.h>
-#include <sys/evcnt.h>
-#include <sys/cpu.h>
-#include <sys/atomic.h>
-#include <sys/kcpuset.h>
 
 #ifdef EXEC_AOUT
 #include <sys/exec_aout.h>
@@ -260,12 +260,29 @@ cpu_need_resched(struct cpu_info *ci, struct lwp *l, int flags)
 bool
 cpu_intr_p(void)
 {
-	struct cpu_info * const ci = curcpu();
 #ifdef __HAVE_PIC_FAST_SOFTINTS
-	if (ci->ci_cpl < IPL_VM)
+	int cpl;
+#endif
+	uint64_t ncsw;
+	int idepth;
+	lwp_t *l;
+
+	l = curlwp;
+	do {
+		ncsw = l->l_ncsw;
+		__insn_barrier();
+		idepth = l->l_cpu->ci_intr_depth;
+#ifdef __HAVE_PIC_FAST_SOFTINTS
+		cpl = l->l_cpu->ci_cpl;
+#endif
+		__insn_barrier();
+	} while (__predict_false(ncsw != l->l_ncsw));
+
+#ifdef __HAVE_PIC_FAST_SOFTINTS
+	if (cpl < IPL_VM)
 		return false;
 #endif
-	return ci->ci_intr_depth != 0;
+	return idepth != 0;
 }
 
 #ifdef MODULAR

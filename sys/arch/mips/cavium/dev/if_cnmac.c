@@ -1,8 +1,8 @@
-/*	$NetBSD: if_cnmac.c,v 1.14 2019/06/07 07:41:22 martin Exp $	*/
+/*	$NetBSD: if_cnmac.c,v 1.16 2020/01/29 05:30:14 thorpej Exp $	*/
 
 #include <sys/cdefs.h>
 #if 0
-__KERNEL_RCSID(0, "$NetBSD: if_cnmac.c,v 1.14 2019/06/07 07:41:22 martin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_cnmac.c,v 1.16 2020/01/29 05:30:14 thorpej Exp $");
 #endif
 
 #include "opt_octeon.h"
@@ -20,7 +20,7 @@ __KERNEL_RCSID(0, "$NetBSD: if_cnmac.c,v 1.14 2019/06/07 07:41:22 martin Exp $")
 #endif
 
 /*
- * If no free send buffer is available, free all the sent buffer and bail out.
+ * If no free send buffer is available, free all the sent buffers and bail out.
  */
 #define OCTEON_ETH_SEND_QUEUE_CHECK
 
@@ -1099,7 +1099,7 @@ octeon_eth_start(struct ifnet *ifp)
 
 	/*
 	 * Performance tuning
-	 * presend iobdma request
+	 * pre-send iobdma request
 	 */
 	octeon_eth_send_queue_flush_prefetch(sc);
 
@@ -1131,7 +1131,7 @@ octeon_eth_start(struct ifnet *ifp)
 
 		/*
 		 * If no free send buffer is available, free all the sent
-		 * buffer and bail out.
+		 * buffers and bail out.
 		 */
 		if (octeon_eth_send_queue_is_full(sc)) {
 			SET(ifp->if_flags, IFF_OACTIVE);
@@ -1421,7 +1421,7 @@ octeon_eth_recv_check(struct octeon_eth_softc *sc, uint64_t word2)
 		return 1;
 	}
 
-#if 0 /* XXX Performance tunig (Jumbo-frame is not supported yet!) */
+#if 0 /* XXX Performance tuning (Jumbo-frame is not supported yet!) */
 	if (__predict_false(octeon_eth_recv_check_jumbo(sc, word2)) != 0) {
 		/* XXX jumbo frame */
 		if (ratecheck(&sc->sc_rate_recv_check_jumbo_last,
@@ -1438,10 +1438,10 @@ octeon_eth_recv_check(struct octeon_eth_softc *sc, uint64_t word2)
 		if ((word2 & PIP_WQE_WORD2_NOIP_OPECODE) ==
 				PIP_WQE_WORD2_RE_OPCODE_LENGTH) {
 			/* No logging */
-			/* XXX inclement special error count */
+			/* XXX increment special error count */
 		} else if ((word2 & PIP_WQE_WORD2_NOIP_OPECODE) ==
 				PIP_WQE_WORD2_RE_OPCODE_PARTIAL) {
-			/* Not an erorr. it's because of overload */
+			/* Not an error, it's because of overload */
 		} else {
 
 			if (ratecheck(&sc->sc_rate_recv_check_code_last,
@@ -1469,7 +1469,7 @@ octeon_eth_recv(struct octeon_eth_softc *sc, uint64_t *work)
 	/* XXX XXX XXX */
 	/*
 	 * Performance tuning
-	 * presend iobdma request
+	 * pre-send iobdma request
 	 */
 	if (sc->sc_soft_req_cnt > sc->sc_soft_req_thresh) {
 		octeon_eth_send_queue_flush_prefetch(sc);
@@ -1487,14 +1487,14 @@ octeon_eth_recv(struct octeon_eth_softc *sc, uint64_t *work)
 	OCTEON_ETH_KASSERT(ifp != NULL);
 
 	if (__predict_false(octeon_eth_recv_check(sc, word2) != 0)) {
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		result = 1;
 		octeon_eth_buf_free_work(sc, work, word2);
 		goto drop;
 	}
 
 	if (__predict_false(octeon_eth_recv_mbuf(sc, work, &m) != 0)) {
-		ifp->if_ierrors++;
+		if_statinc(ifp, if_ierrors);
 		result = 1;
 		octeon_eth_buf_free_work(sc, work, word2);
 		goto drop;

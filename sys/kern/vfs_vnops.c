@@ -1,4 +1,4 @@
-/*	$NetBSD: vfs_vnops.c,v 1.202 2019/11/10 06:47:30 mlelstv Exp $	*/
+/*	$NetBSD: vfs_vnops.c,v 1.205 2020/01/12 18:37:10 ad Exp $	*/
 
 /*-
  * Copyright (c) 2009 The NetBSD Foundation, Inc.
@@ -66,7 +66,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_vnops.c,v 1.202 2019/11/10 06:47:30 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_vnops.c,v 1.205 2020/01/12 18:37:10 ad Exp $");
 
 #include "veriexec.h"
 
@@ -341,8 +341,8 @@ vn_markexec(struct vnode *vp)
 
 	mutex_enter(vp->v_interlock);
 	if ((vp->v_iflag & VI_EXECMAP) == 0) {
-		atomic_add_int(&uvmexp.filepages, -vp->v_uobj.uo_npages);
-		atomic_add_int(&uvmexp.execpages, vp->v_uobj.uo_npages);
+		cpu_count(CPU_COUNT_FILEPAGES, -vp->v_uobj.uo_npages);
+		cpu_count(CPU_COUNT_EXECPAGES, vp->v_uobj.uo_npages);
 		vp->v_iflag |= VI_EXECMAP;
 	}
 	mutex_exit(vp->v_interlock);
@@ -368,8 +368,8 @@ vn_marktext(struct vnode *vp)
 		return (ETXTBSY);
 	}
 	if ((vp->v_iflag & VI_EXECMAP) == 0) {
-		atomic_add_int(&uvmexp.filepages, -vp->v_uobj.uo_npages);
-		atomic_add_int(&uvmexp.execpages, vp->v_uobj.uo_npages);
+		cpu_count(CPU_COUNT_FILEPAGES, -vp->v_uobj.uo_npages);
+		cpu_count(CPU_COUNT_EXECPAGES, vp->v_uobj.uo_npages);
 	}
 	vp->v_iflag |= (VI_TEXT | VI_EXECMAP);
 	mutex_exit(vp->v_interlock);
@@ -1030,22 +1030,31 @@ vn_mmap(struct file *fp, off_t *offp, size_t size, int prot, int *flagsp,
 int
 vn_lock(struct vnode *vp, int flags)
 {
+	struct lwp *l;
 	int error;
 
 #if 0
 	KASSERT(vp->v_usecount > 0 || (vp->v_iflag & VI_ONWORKLST) != 0);
 #endif
-	KASSERT((flags & ~(LK_SHARED|LK_EXCLUSIVE|LK_NOWAIT|LK_RETRY)) == 0);
-	KASSERT(!mutex_owned(vp->v_interlock));
+	KASSERT((flags & ~(LK_SHARED|LK_EXCLUSIVE|LK_NOWAIT|LK_RETRY|
+	    LK_UPGRADE|LK_DOWNGRADE)) == 0);
+	KASSERT((flags & LK_NOWAIT) != 0 || !mutex_owned(vp->v_interlock));
 
 #ifdef DIAGNOSTIC
 	if (wapbl_vphaswapbl(vp))
 		WAPBL_JUNLOCK_ASSERT(wapbl_vptomp(vp));
 #endif
 
+	/* Get a more useful report for lockstat. */
+	l = curlwp;
+	KASSERT(l->l_rwcallsite == 0);
+	l->l_rwcallsite = (uintptr_t)__builtin_return_address(0);	
+
 	error = VOP_LOCK(vp, flags);
 	if ((flags & LK_RETRY) != 0 && error == ENOENT)
 		error = VOP_LOCK(vp, flags);
+
+	l->l_rwcallsite = 0;
 
 	KASSERT((flags & LK_RETRY) == 0 || (flags & LK_NOWAIT) != 0 ||
 	    error == 0);

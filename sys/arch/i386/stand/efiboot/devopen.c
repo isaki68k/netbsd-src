@@ -1,4 +1,4 @@
-/*	$NetBSD: devopen.c,v 1.8 2019/09/26 12:21:03 nonaka Exp $	 */
+/*	$NetBSD: devopen.c,v 1.11 2020/01/18 19:25:58 nonaka Exp $	 */
 
 /*-
  * Copyright (c) 2005 The NetBSD Foundation, Inc.
@@ -100,10 +100,10 @@ bios2dev(int biosdev, daddr_t sector, char **devname, int *unit,
 		*devname = "hd";
 
 	(void)biosdisk_findpartition(biosdev, sector, partition, part_name);
-	if (*part_name != NULL) {
+	if (part_name != NULL && *part_name != NULL) {
 		snprintf(savedevname, sizeof(savedevname),
 		    "NAME=%s", *part_name);
-			*devname = savedevname;
+		*devname = savedevname;
 	}
 }
 
@@ -151,6 +151,7 @@ int
 devopen(struct open_file *f, const char *fname, char **file)
 {
 	char *fsname, *devname;
+	const char *xname = NULL;
 	int unit, partition;
 	int biosdev;
 	int i, error;
@@ -172,8 +173,12 @@ devopen(struct open_file *f, const char *fname, char **file)
 	nfsys = nfsys_disk;
 
 	/* Search by GPT label or raidframe name */
-	if ((strstr(devname, "NAME=") == devname) ||
-	    (strstr(devname, "raid") == devname)) {
+	if (strstr(devname, "NAME=") == devname)
+		xname = devname;
+	if (strstr(devname, "raid") == devname)
+		xname = fname;
+
+	if (xname != NULL) {
 		f->f_dev = &devsw[0];		/* must be biosdisk */
 
 		if (!kernel_loaded) {
@@ -181,7 +186,7 @@ devopen(struct open_file *f, const char *fname, char **file)
 			BI_ADD(&bibp, BTINFO_BOOTPATH, sizeof(bibp));
 		}
 
-		error = biosdisk_open_name(f, devname);
+		error = biosdisk_open_name(f, xname);
 		return error;
 	}
 

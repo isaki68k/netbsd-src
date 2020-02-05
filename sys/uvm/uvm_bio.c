@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_bio.c,v 1.100 2019/11/07 07:45:14 skrll Exp $	*/
+/*	$NetBSD: uvm_bio.c,v 1.103 2020/01/15 17:55:45 ad Exp $	*/
 
 /*
  * Copyright (c) 1998 Chuck Silvers.
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_bio.c,v 1.100 2019/11/07 07:45:14 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_bio.c,v 1.103 2020/01/15 17:55:45 ad Exp $");
 
 #include "opt_uvmhist.h"
 #include "opt_ubc.h"
@@ -230,22 +230,18 @@ static inline int
 ubc_fault_page(const struct uvm_faultinfo *ufi, const struct ubc_map *umap,
     struct vm_page *pg, vm_prot_t prot, vm_prot_t access_type, vaddr_t va)
 {
-	struct uvm_object *uobj;
 	vm_prot_t mask;
 	int error;
 	bool rdonly;
 
-	uobj = pg->uobject;
-	KASSERT(mutex_owned(uobj->vmobjlock));
+	KASSERT(mutex_owned(pg->uobject->vmobjlock));
 
 	if (pg->flags & PG_WANTED) {
 		wakeup(pg);
 	}
 	KASSERT((pg->flags & PG_FAKE) == 0);
 	if (pg->flags & PG_RELEASED) {
-		mutex_enter(&uvm_pageqlock);
 		uvm_pagefree(pg);
-		mutex_exit(&uvm_pageqlock);
 		return 0;
 	}
 	if (pg->loan_count != 0) {
@@ -272,6 +268,9 @@ ubc_fault_page(const struct uvm_faultinfo *ufi, const struct ubc_map *umap,
 	/*
 	 * Note that a page whose backing store is partially allocated
 	 * is marked as PG_RDONLY.
+	 *
+	 * it's a responsibility of ubc_alloc's caller to allocate backing
+	 * blocks before writing to the window.
 	 */
 
 	KASSERT((pg->flags & PG_RDONLY) == 0 ||
@@ -279,17 +278,15 @@ ubc_fault_page(const struct uvm_faultinfo *ufi, const struct ubc_map *umap,
 	    pg->offset < umap->writeoff ||
 	    pg->offset + PAGE_SIZE > umap->writeoff + umap->writelen);
 
-	rdonly = ((access_type & VM_PROT_WRITE) == 0 &&
-	    (pg->flags & PG_RDONLY) != 0) ||
-	    UVM_OBJ_NEEDS_WRITEFAULT(uobj);
+	rdonly = uvm_pagereadonly_p(pg);
 	mask = rdonly ? ~VM_PROT_WRITE : VM_PROT_ALL;
 
 	error = pmap_enter(ufi->orig_map->pmap, va, VM_PAGE_TO_PHYS(pg),
 	    prot & mask, PMAP_CANFAIL | (access_type & mask));
 
-	mutex_enter(&uvm_pageqlock);
+	uvm_pagelock(pg);
 	uvm_pageactivate(pg);
-	mutex_exit(&uvm_pageqlock);
+	uvm_pageunlock(pg);
 	pg->flags &= ~(PG_BUSY|PG_WANTED);
 	UVM_PAGE_OWN(pg, NULL);
 
@@ -659,7 +656,6 @@ ubc_release(void *va, int flags)
 		}
 		umap->flags &= ~UMAP_PAGES_LOCKED;
 		mutex_enter(uobj->vmobjlock);
-		mutex_enter(&uvm_pageqlock);
 		for (u_int i = 0; i < npages; i++) {
 			paddr_t pa;
 			bool rv __diagused;
@@ -668,11 +664,15 @@ ubc_release(void *va, int flags)
 			    umapva + slot_offset + (i << PAGE_SHIFT), &pa);
 			KASSERT(rv);
 			pgs[i] = PHYS_TO_VM_PAGE(pa);
-			pgs[i]->flags &= ~(PG_FAKE|PG_CLEAN);
+			pgs[i]->flags &= ~PG_FAKE;
+			KASSERTMSG(uvm_pagegetdirty(pgs[i]) ==
+			    UVM_PAGE_STATUS_DIRTY,
+			    "page %p not dirty", pgs[i]);
 			KASSERT(pgs[i]->loan_count == 0);
+			uvm_pagelock(pgs[i]);
 			uvm_pageactivate(pgs[i]);
+			uvm_pageunlock(pgs[i]);
 		}
-		mutex_exit(&uvm_pageqlock);
 		pmap_kremove(umapva, ubc_winsize);
 		pmap_update(pmap_kernel());
 		uvm_page_unbusy(pgs, npages);
@@ -891,18 +891,26 @@ ubc_direct_release(struct uvm_object *uobj,
 	int flags, struct vm_page **pgs, int npages)
 {
 	mutex_enter(uobj->vmobjlock);
-	mutex_enter(&uvm_pageqlock);
 	for (int i = 0; i < npages; i++) {
 		struct vm_page *pg = pgs[i];
 
+		uvm_pagelock(pg);
 		uvm_pageactivate(pg);
+		uvm_pageunlock(pg);
 
-		/* Page was changed, no longer fake and neither clean */
-		if (flags & UBC_WRITE)
-			pg->flags &= ~(PG_FAKE|PG_CLEAN);
+		/*
+		 * Page was changed, no longer fake and neither clean. 
+		 * There's no managed mapping in the direct case, so 
+		 * mark the page dirty manually.
+		 */
+		if (flags & UBC_WRITE) {
+			pg->flags &= ~PG_FAKE;
+			KASSERTMSG(uvm_pagegetdirty(pg) ==
+			    UVM_PAGE_STATUS_DIRTY,
+			    "page %p not dirty", pg);
+			uvm_pagemarkdirty(pg, UVM_PAGE_STATUS_DIRTY);
+		}
 	}
-	mutex_exit(&uvm_pageqlock);
-
 	uvm_page_unbusy(pgs, npages);
 	mutex_exit(uobj->vmobjlock);
 }

@@ -1,4 +1,4 @@
-# $NetBSD: genassym.cf,v 1.15 2019/11/24 11:23:16 skrll Exp $
+# $NetBSD: genassym.cf,v 1.21 2020/01/29 19:29:23 skrll Exp $
 #-
 # Copyright (c) 2014 The NetBSD Foundation, Inc.
 # All rights reserved.
@@ -148,7 +148,6 @@ define	L_PRIORITY		offsetof(struct lwp, l_priority)
 define	L_WCHAN			offsetof(struct lwp, l_wchan)
 define	L_STAT			offsetof(struct lwp, l_stat)
 define	L_PROC			offsetof(struct lwp, l_proc)
-define	L_CTXSWTCH		offsetof(struct lwp, l_ctxswtch)
 define	L_PRIVATE		offsetof(struct lwp, l_private)
 define	L_MD_FLAGS		offsetof(struct lwp, l_md.md_flags)
 define	L_MD_UTF		offsetof(struct lwp, l_md.md_utf)
@@ -276,7 +275,6 @@ define	FPREG_FPCR		offsetof(struct fpreg, fpcr)
 define	FPREG_FPSR		offsetof(struct fpreg, fpsr)
 
 define	CPU_INFO_SIZE		sizeof(struct cpu_info)
-define	CI_CURPRIORITY		offsetof(struct cpu_info, ci_schedstate.spc_curpriority)
 define	CI_CURLWP		offsetof(struct cpu_info, ci_curlwp)
 define	CI_CPL			offsetof(struct cpu_info, ci_cpl)
 define	CI_CPUID		offsetof(struct cpu_info, ci_cpuid)
@@ -288,9 +286,7 @@ define	CI_INTR_DEPTH		offsetof(struct cpu_info, ci_intr_depth)
 define	CI_MTX_COUNT		offsetof(struct cpu_info, ci_mtx_count)
 define	CI_SOFTINTS		offsetof(struct cpu_info, ci_softints)
 define	CI_IDLELWP		offsetof(struct cpu_info, ci_data.cpu_idlelwp)
-define	CI_CC_NTRAP		offsetof(struct cpu_info, ci_data.cpu_ntrap)
 define	CI_CC_NINTR		offsetof(struct cpu_info, ci_data.cpu_nintr)
-define	CI_CC_NSOFT		offsetof(struct cpu_info, ci_data.cpu_nsoft)
 
 define	V_RESCHED_KPREEMPT	ilog2(RESCHED_KPREEMPT)
 
@@ -335,7 +331,9 @@ define	MAIR_ATTR0		MAIR_ATTR0
 define	MAIR_ATTR1		MAIR_ATTR1
 define	MAIR_ATTR2		MAIR_ATTR2
 define	MAIR_ATTR3		MAIR_ATTR3
+define	MAIR_ATTR4		MAIR_ATTR4
 define	MAIR_DEVICE_nGnRnE	MAIR_DEVICE_nGnRnE
+define	MAIR_DEVICE_nGnRE	MAIR_DEVICE_nGnRE
 define	MAIR_NORMAL_NC		MAIR_NORMAL_NC
 define	MAIR_NORMAL_WT		MAIR_NORMAL_WT
 define	MAIR_NORMAL_WB		MAIR_NORMAL_WB
@@ -347,7 +345,7 @@ define	SCTLR_C			SCTLR_C
 define	SCTLR_SA		SCTLR_SA
 define	SCTLR_SA0		SCTLR_SA0
 define	SCTLR_CP15BEN		SCTLR_CP15BEN
-define	SCTLR_THEE		SCTLR_THEE
+define	SCTLR_nAA		SCTLR_nAA
 define	SCTLR_ITD		SCTLR_ITD
 define	SCTLR_SED		SCTLR_SED
 define	SCTLR_UMA		SCTLR_UMA

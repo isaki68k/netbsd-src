@@ -1,4 +1,4 @@
-/*$NetBSD: ixv.c,v 1.141 2019/11/18 03:17:51 msaitoh Exp $*/
+/*$NetBSD: ixv.c,v 1.145 2020/02/04 05:44:15 thorpej Exp $*/
 
 /******************************************************************************
 
@@ -547,9 +547,7 @@ ixv_attach(device_t parent, device_t dev, void *aux)
 	return;
 
 err_late:
-	ixgbe_free_transmit_structures(adapter);
-	ixgbe_free_receive_structures(adapter);
-	free(adapter->queues, M_DEVBUF);
+	ixgbe_free_queues(adapter);
 err_out:
 	ixv_free_pci_resources(adapter);
 	IXGBE_CORE_LOCK_DESTROY(adapter);
@@ -621,6 +619,7 @@ ixv_detach(device_t dev, int flags)
 	bus_generic_detach(dev);
 #endif
 	if_detach(adapter->ifp);
+	ifmedia_fini(&adapter->media);
 	if_percpuq_destroy(adapter->ipq);
 
 	sysctl_teardown(&adapter->sysctllog);
@@ -674,13 +673,7 @@ ixv_detach(device_t dev, int flags)
 	evcnt_detach(&hw->mbx.stats.reqs);
 	evcnt_detach(&hw->mbx.stats.rsts);
 
-	ixgbe_free_transmit_structures(adapter);
-	ixgbe_free_receive_structures(adapter);
-	for (int i = 0; i < adapter->num_queues; i++) {
-		struct ix_queue *lque = &adapter->queues[i];
-		mutex_destroy(&lque->dc_mtx);
-	}
-	free(adapter->queues, M_DEVBUF);
+	ixgbe_free_queues(adapter);
 
 	IXGBE_CORE_LOCK_DESTROY(adapter);
 
@@ -765,19 +758,6 @@ ixv_init_locked(struct adapter *adapter)
 
 	/* Configure RX settings */
 	ixv_initialize_receive_units(adapter);
-
-#if 0 /* XXX isn't it required? -- msaitoh  */
-	/* Set the various hardware offload abilities */
-	ifp->if_hwassist = 0;
-	if (ifp->if_capenable & IFCAP_TSO4)
-		ifp->if_hwassist |= CSUM_TSO;
-	if (ifp->if_capenable & IFCAP_TXCSUM) {
-		ifp->if_hwassist |= (CSUM_TCP | CSUM_UDP);
-#if __FreeBSD_version >= 800000
-		ifp->if_hwassist |= CSUM_SCTP;
-#endif
-	}
-#endif
 
 	/* Set up VLAN offload and filter */
 	ixv_setup_vlan_support(adapter);
@@ -1857,7 +1837,7 @@ ixv_initialize_receive_units(struct adapter *adapter)
 			else
 				break;
 		}
-		wmb();
+		IXGBE_WRITE_BARRIER(hw);
 		/* Setup the Base and Length of the Rx Descriptor Ring */
 		IXGBE_WRITE_REG(hw, IXGBE_VFRDBAL(j),
 		    (rdba & 0x00000000ffffffffULL));
@@ -1889,7 +1869,7 @@ ixv_initialize_receive_units(struct adapter *adapter)
 				break;
 			msec_delay(1);
 		}
-		wmb();
+		IXGBE_WRITE_BARRIER(hw);
 
 		/* Set the Tail Pointer */
 #ifdef DEV_NETMAP
@@ -2101,7 +2081,7 @@ ixv_setup_vlan_support(struct adapter *adapter)
 		adapter->shadow_vfta[idx] |= (u32)1 << (vlanidp->vid % 32);
 	}
 	ETHER_UNLOCK(ec);
-	
+
 	/*
 	 * A soft reset zero's out the VFTA, so
 	 * we need to repopulate it now.
@@ -2120,7 +2100,7 @@ ixv_setup_vlan_support(struct adapter *adapter)
 			if ((vfta & ((u32)1 << j)) == 0)
 				continue;
 			vid = (i * 32) + j;
-			
+
 			/* Call the shared code mailbox routine */
 			while ((rv = hw->mac.ops.set_vfta(hw, vid, 0, TRUE,
 			    FALSE)) != 0) {
@@ -2209,7 +2189,7 @@ ixv_unregister_vlan(struct adapter *adapter, u16 vtag)
 {
 	struct ixgbe_hw *hw = &adapter->hw;
 	u16		index, bit;
-	int 		error;
+	int		error;
 
 	if ((vtag == 0) || (vtag > 4095))  /* Invalid */
 		return EINVAL;

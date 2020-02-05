@@ -1,4 +1,4 @@
-/*	$NetBSD: if_kse.c,v 1.42 2019/11/26 08:37:05 nisimura Exp $	*/
+/*	$NetBSD: if_kse.c,v 1.48 2020/02/04 07:37:00 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2006 The NetBSD Foundation, Inc.
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_kse.c,v 1.42 2019/11/26 08:37:05 nisimura Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_kse.c,v 1.48 2020/02/04 07:37:00 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -84,11 +84,16 @@ __KERNEL_RCSID(0, "$NetBSD: if_kse.c,v 1.42 2019/11/26 08:37:05 nisimura Exp $")
 #define MTR1	0x024	/* multicast table 63:32 */
 #define INTEN	0x028	/* interrupt enable */
 #define INTST	0x02c	/* interrupt status */
+#define MAAL0	0x080	/* additional MAC address 0 low */
+#define MAAH0	0x084	/* additional MAC address 0 high */
 #define MARL	0x200	/* MAC address low */
 #define MARM	0x202	/* MAC address middle */
 #define MARH	0x204	/* MAC address high */
 #define GRR	0x216	/* global reset */
 #define SIDER	0x400	/* switch ID and function enable */
+#define SGCR3	0x406	/* switch function control 3 */
+#define  CR3_USEHDX	(1U<<6)	/* use half-duplex 8842 host port */
+#define  CR3_USEFC	(1U<<5) /* use flowcontrol 8842 host port */
 #define IACR	0x4a0	/* indirect access control */
 #define IADR1	0x4a2	/* indirect access data 66:63 */
 #define IADR2	0x4a4	/* indirect access data 47:32 */
@@ -132,8 +137,8 @@ __KERNEL_RCSID(0, "$NetBSD: if_kse.c,v 1.42 2019/11/26 08:37:05 nisimura Exp $")
 #define RXC_ICC		(1U<<16)	/* run IP checksum */
 #define RXC_FCE		(1U<<9)		/* accept PAUSE to throttle Tx */
 #define RXC_RB		(1U<<6)		/* receive broadcast frame */
-#define RXC_RM		(1U<<5)		/* receive multicast frame */
-#define RXC_RU		(1U<<4)		/* receive unicast frame */
+#define RXC_RM		(1U<<5)		/* receive all multicast (inc. RB) */
+#define RXC_RU		(1U<<4)		/* receive 16 additional unicasts */
 #define RXC_RE		(1U<<3)		/* accept error frame */
 #define RXC_RA		(1U<<2)		/* receive all frame */
 #define RXC_MHTE	(1U<<1)		/* use multicast hash table */
@@ -143,6 +148,7 @@ __KERNEL_RCSID(0, "$NetBSD: if_kse.c,v 1.42 2019/11/26 08:37:05 nisimura Exp $")
 #define INT_DMTS	(1U<<30)	/* sending desc. has posted Tx done */
 #define INT_DMRS	(1U<<29)	/* frame was received */
 #define INT_DMRBUS	(1U<<27)	/* Rx descriptor pool is full */
+#define INT_DMxPSS	(3U<<25)	/* 26:25 DMA Tx/Rx have stopped */
 
 #define T0_OWN		(1U<<31)	/* desc is ready to Tx */
 
@@ -567,6 +573,7 @@ kse_attach(device_t parent, device_t self, void *aux)
 	    IFCAP_CSUM_UDPv4_Tx | IFCAP_CSUM_UDPv4_Rx;
 
 	if_attach(ifp);
+	if_deferred_start_init(ifp, NULL);
 	ether_ifattach(ifp, enaddr);
 
 #ifdef KSE_EVENT_COUNTERS
@@ -790,11 +797,7 @@ kse_init(struct ifnet *ifp)
 	CSR_WRITE_4(sc, RDLB, KSE_CDRXADDR(sc, 0));
 
 	sc->sc_txc = TXC_TEN | TXC_EP | TXC_AC;
-	sc->sc_rxc = RXC_REN | RXC_RU;
-	if (ifp->if_flags & IFF_PROMISC)
-		sc->sc_rxc |= RXC_RA;
-	if (ifp->if_flags & IFF_BROADCAST)
-		sc->sc_rxc |= RXC_RB;
+	sc->sc_rxc = RXC_REN | RXC_RU | RXC_RB;
 	sc->sc_t1csum = sc->sc_mcsum = 0;
 	if (ifp->if_capenable & IFCAP_CSUM_IPv4_Rx) {
 		sc->sc_rxc |= RXC_ICC;
@@ -826,6 +829,8 @@ kse_init(struct ifnet *ifp)
 	if (sc->sc_chip == 0x8842) {
 		sc->sc_txc |= TXC_FCE;
 		sc->sc_rxc |= RXC_FCE;
+		CSR_WRITE_2(sc, SGCR3,
+		    CSR_READ_2(sc, SGCR3) | CR3_USEFC);
 	}
 
 	/* build multicast hash filter if necessary */
@@ -929,7 +934,7 @@ kse_watchdog(struct ifnet *ifp)
 		aprint_error_dev(sc->sc_dev,
 		    "device timeout (txfree %d txsfree %d txnext %d)\n",
 		    sc->sc_txfree, sc->sc_txsfree, sc->sc_txnext);
-		ifp->if_oerrors++;
+		if_statinc(ifp, if_oerrors);
 
 		/* Reset the interface. */
 		kse_init(ifp);
@@ -1012,7 +1017,8 @@ kse_start(struct ifnet *ifp)
 		bus_dmamap_sync(sc->sc_dmat, dmamap, 0, dmamap->dm_mapsize,
 		    BUS_DMASYNC_PREWRITE);
 
-		lasttx = -1; tdes0 = 0;
+		tdes0 = 0; /* to postpone 1st segment T0_OWN write */
+		lasttx = -1;
 		for (nexttx = sc->sc_txnext, seg = 0;
 		     seg < dmamap->dm_nsegs;
 		     seg++, nexttx = KSE_NEXTTX(nexttx)) {
@@ -1027,10 +1033,9 @@ kse_start(struct ifnet *ifp)
 			tdes->t1 = sc->sc_t1csum
 			     | (dmamap->dm_segs[seg].ds_len & T1_TBS_MASK);
 			tdes->t0 = tdes0;
-			tdes0 |= T0_OWN;
+			tdes0 = T0_OWN; /* 2nd and other segments */
 			lasttx = nexttx;
 		}
-
 		/*
 		 * Outgoing NFS mbuf must be unloaded when Tx completed.
 		 * Without T1_IC NFS mbuf is left unack'ed for excessive
@@ -1047,7 +1052,7 @@ kse_start(struct ifnet *ifp)
 			}
 		} while ((m = m->m_next) != NULL);
 
-		/* Write last T0_OWN bit of the 1st segment */
+		/* Write deferred 1st segment T0_OWN at the final stage */
 		sc->sc_txdescs[lasttx].t1 |= T1_LS;
 		sc->sc_txdescs[sc->sc_txnext].t1 |= T1_FS;
 		sc->sc_txdescs[sc->sc_txnext].t0 = T0_OWN;
@@ -1089,21 +1094,29 @@ kse_set_filter(struct kse_softc *sc)
 	struct ether_multi *enm;
 	struct ethercom *ec = &sc->sc_ethercom;
 	struct ifnet *ifp = &ec->ec_if;
-	uint32_t h, hashes[2];
+	uint32_t crc, mchash[2];
+	int i;
 
-	sc->sc_rxc &= ~(RXC_MHTE | RXC_RM);
+	sc->sc_rxc &= ~(RXC_MHTE | RXC_RM | RXC_RA);
 	ifp->if_flags &= ~IFF_ALLMULTI;
-	if (ifp->if_flags & IFF_PROMISC)
-		return;
 
+	if (ifp->if_flags & IFF_PROMISC) {
+		ifp->if_flags |= IFF_ALLMULTI;
+		goto update;
+	}
+
+	for (i = 0; i < 16; i++)
+		 CSR_WRITE_4(sc, MAAH0 + i*8, 0);
+	crc = mchash[0] = mchash[1] = 0;
 	ETHER_LOCK(ec);
 	ETHER_FIRST_MULTI(step, ec, enm);
-	if (enm == NULL) {
-		ETHER_UNLOCK(ec);
-		return;
-	}
-	hashes[0] = hashes[1] = 0;
-	do {
+	i = 0;
+	while (enm != NULL) {
+#if KSE_MCASTDEBUG == 1
+		printf("%s: addrs %s %s\n", __func__,
+		   ether_sprintf(enm->enm_addrlo),
+		   ether_sprintf(enm->enm_addrhi));
+#endif
 		if (memcmp(enm->enm_addrlo, enm->enm_addrhi, ETHER_ADDR_LEN)) {
 			/*
 			 * We must listen to a range of multicast addresses.
@@ -1114,20 +1127,42 @@ kse_set_filter(struct kse_softc *sc)
 			 * range is big enough to require all bits set.)
 			 */
 			ETHER_UNLOCK(ec);
-			goto allmulti;
+			ifp->if_flags |= IFF_ALLMULTI;
+			goto update;
 		}
-		h = ether_crc32_le(enm->enm_addrlo, ETHER_ADDR_LEN) >> 26;
-		hashes[h >> 5] |= 1 << (h & 0x1f);
+		if (i < 16) {
+			/* use 16 additional MAC addr to accept mcast */
+			uint32_t addr;
+			uint8_t *ep = enm->enm_addrlo;
+			addr = (ep[3] << 24) | (ep[2] << 16)
+			     | (ep[1] << 8)  |  ep[0];
+			CSR_WRITE_4(sc, MAAL0 + i*8, addr);
+			addr = (ep[5] << 8) | ep[4] | (1U<<31);
+			CSR_WRITE_4(sc, MAAH0 + i*8, addr);
+		} else {
+			/* use hash table when too many */
+			crc = ether_crc32_le(enm->enm_addrlo, ETHER_ADDR_LEN);
+			mchash[crc >> 31] |= 1 << ((crc >> 26) & 0x1f);
+		}
 		ETHER_NEXT_MULTI(step, enm);
-	} while (enm != NULL);
+		i++;
+	}
 	ETHER_UNLOCK(ec);
-	sc->sc_rxc |= RXC_MHTE;
-	CSR_WRITE_4(sc, MTR0, hashes[0]);
-	CSR_WRITE_4(sc, MTR1, hashes[1]);
+
+	if (crc) {
+		CSR_WRITE_4(sc, MTR0, mchash[0]);
+		CSR_WRITE_4(sc, MTR1, mchash[1]);
+		sc->sc_rxc |= RXC_MHTE;
+	}
 	return;
- allmulti:
-	sc->sc_rxc |= RXC_RM;
-	ifp->if_flags |= IFF_ALLMULTI;
+
+ update:
+	/* With RA or RM, MHTE/MTR0/MTR1 are never consulted. */
+	if (ifp->if_flags & IFF_PROMISC)
+		sc->sc_rxc |= RXC_RA;
+	else
+		sc->sc_rxc |= RXC_RM;
+	return;
 }
 
 static int
@@ -1188,6 +1223,7 @@ static int
 kse_intr(void *arg)
 {
 	struct kse_softc *sc = arg;
+	struct ifnet *ifp = &sc->sc_ethercom.ec_if;
 	uint32_t isr;
 
 	if ((isr = CSR_READ_4(sc, INTST)) == 0)
@@ -1203,6 +1239,10 @@ kse_intr(void *arg)
 		aprint_error_dev(sc->sc_dev, "Rx descriptor full\n");
 
 	CSR_WRITE_4(sc, INTST, isr);
+
+	if (ifp->if_flags & IFF_RUNNING)
+		if_schedule_deferred_start(ifp);
+
 	return 1;
 }
 
@@ -1229,7 +1269,7 @@ rxintr(struct kse_softc *sc)
 		/* R0_FS | R0_LS must have been marked for this desc */
 
 		if (rxstat & R0_ES) {
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 #define PRINTERR(bit, str)						\
 			if (rxstat & (bit))				\
 				aprint_error_dev(sc->sc_dev,		\
@@ -1252,7 +1292,7 @@ rxintr(struct kse_softc *sc)
 		m = rxs->rxs_mbuf;
 
 		if (add_rxbuf(sc, i) != 0) {
-			ifp->if_ierrors++;
+			if_statinc(ifp, if_ierrors);
 			KSE_INIT_RXDESC(sc, i);
 			bus_dmamap_sync(sc->sc_dmat,
 			    rxs->rxs_dmamap, 0,
@@ -1307,7 +1347,7 @@ txreap(struct kse_softc *sc)
 
 		/* There is no way to tell transmission status per frame */
 
-		ifp->if_opackets++;
+		if_statinc(ifp, if_opackets);
 
 		sc->sc_txfree += txs->txs_ndesc;
 		bus_dmamap_sync(sc->sc_dmat, txs->txs_dmamap,
