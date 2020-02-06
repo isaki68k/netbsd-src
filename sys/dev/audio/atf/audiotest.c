@@ -1844,8 +1844,8 @@ DEF(open_audioctl_sticky)
 	memset(&ai, 0, sizeof(ai));
 	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
 	REQUIRED_SYS_EQ(0, r);
-	XP_EQ(AUDIO_ENCODING_ULAW, ai.play.encoding);
-	XP_EQ(AUDIO_ENCODING_ULAW, ai.record.encoding);
+	XP_EQ(AUDIO_ENCODING_SLINEAR_LE, ai.play.encoding);
+	XP_EQ(AUDIO_ENCODING_SLINEAR_LE, ai.record.encoding);
 	r = CLOSE(fd);
 	REQUIRED_SYS_EQ(0, r);
 }
