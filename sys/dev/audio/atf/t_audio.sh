@@ -56,6 +56,18 @@ atf_test_case open_sound_RDWR
 open_sound_RDWR_head() { }
 open_sound_RDWR_body() { h_audio open_sound_RDWR }
 
+atf_test_case open_audioctl_RDONLY
+open_audioctl_RDONLY_head() { }
+open_audioctl_RDONLY_body() { h_audio open_audioctl_RDONLY }
+
+atf_test_case open_audioctl_WRONLY
+open_audioctl_WRONLY_head() { }
+open_audioctl_WRONLY_body() { h_audio open_audioctl_WRONLY }
+
+atf_test_case open_audioctl_RDWR
+open_audioctl_RDWR_head() { }
+open_audioctl_RDWR_body() { h_audio open_audioctl_RDWR }
+
 atf_test_case open_sound_sticky
 open_sound_sticky_head() { }
 open_sound_sticky_body() { h_audio open_sound_sticky }
@@ -742,6 +754,9 @@ atf_init_test_cases() {
 	atf_add_test_case open_sound_RDONLY
 	atf_add_test_case open_sound_WRONLY
 	atf_add_test_case open_sound_RDWR
+	atf_add_test_case open_audioctl_RDONLY
+	atf_add_test_case open_audioctl_WRONLY
+	atf_add_test_case open_audioctl_RDWR
 	atf_add_test_case open_sound_sticky
 	atf_add_test_case open_audioctl_sticky
 	atf_add_test_case open_simul_RDONLY_RDONLY

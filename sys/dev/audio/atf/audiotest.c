@@ -1336,6 +1336,7 @@ mixer_get_outputs_master(int mixerfd)
 void test_open_mode(int);
 void test_open_audio(int);
 void test_open_sound(int);
+void test_open_audioctl(int);
 void test_open_simul(int, int);
 void test_open_multiuser(int);
 void test_rdwr_fallback(int, bool, bool);
@@ -1766,6 +1767,203 @@ test_open_sound(int mode)
 DEF(open_sound_RDONLY)	{ test_open_sound(O_RDONLY); }
 DEF(open_sound_WRONLY)	{ test_open_sound(O_WRONLY); }
 DEF(open_sound_RDWR)	{ test_open_sound(O_RDWR);   }
+
+/*
+ * The (initial) parameters of /dev/audioctl are affected by sticky like
+ * as /dev/sound.
+ */
+void
+test_open_audioctl(int mode)
+{
+	struct audio_info ai;
+	struct audio_info ai0;
+	int fd;
+	int r;
+	int can_play;
+	int can_rec;
+	bool pbuff;
+	bool rbuff;
+
+	TEST("open_audioctl_%s", openmode_str[mode] + 2);
+
+	can_play = mode2play(mode);
+	can_rec  = mode2rec(mode);
+
+	/*
+	 * NetBSD7,8 always has both buffers for playback and recording.
+	 * NetBSD9 only has necessary buffers.
+	 */
+	if (netbsd < 9) {
+		pbuff = true;
+		rbuff = true;
+	} else {
+		pbuff = can_play;
+		rbuff = can_rec;
+	}
+
+	/* Reset sticky */
+	fd = OPEN(devaudio, mode);
+	REQUIRED_SYS_OK(fd);
+	r = CLOSE(fd);
+	REQUIRED_SYS_EQ(0, r);
+
+	/*
+	 * Open /dev/audioctl and check parameters
+	 */
+	fd = OPEN(devaudioctl, mode);
+	REQUIRED_SYS_OK(fd);
+	memset(&ai, 0, sizeof(ai));
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	REQUIRED_SYS_EQ(0, r);
+
+	if (netbsd < 9) {
+		XP_NE(0, ai.blocksize);
+		XP_NE(0, ai.hiwat);
+		/* lowat */
+	} else {
+		/* NetBSD9 returns dummy non-zero blocksize */
+		XP_NE(0, ai.blocksize);
+		XP_NE(0, ai.hiwat);
+		/* lowat */
+	}
+	XP_EQ(0, ai.mode);
+	/* ai.play */
+	XP_EQ(8000, ai.play.sample_rate);
+	XP_EQ(1, ai.play.channels);
+	XP_EQ(AUDIO_ENCODING_ULAW, ai.play.encoding);
+		/* gain */
+		/* port */
+	XP_EQ(0, ai.play.seek);
+		/* avail_ports */
+	XP_BUFFSIZE(pbuff, ai.play.buffer_size);
+	XP_EQ(0, ai.play.samples);
+	XP_EQ(0, ai.play.eof);
+	XP_EQ(0, ai.play.pause);
+	XP_EQ(0, ai.play.error);
+	XP_EQ(0, ai.play.waiting);
+		/* balance */
+	XP_EQ(0, ai.play.open);
+	XP_EQ(0, ai.play.active);
+	/* ai.record */
+	XP_EQ(8000, ai.record.sample_rate);
+	XP_EQ(1, ai.record.channels);
+	XP_EQ(8, ai.record.precision);
+	XP_EQ(AUDIO_ENCODING_ULAW, ai.record.encoding);
+		/* gain */
+		/* port */
+	XP_EQ(0, ai.record.seek);
+		/* avail_ports */
+	XP_BUFFSIZE(rbuff, ai.record.buffer_size);
+	XP_EQ(0, ai.record.samples);
+	XP_EQ(0, ai.record.eof);
+	XP_EQ(0, ai.record.pause);
+	XP_EQ(0, ai.record.error);
+	XP_EQ(0, ai.record.waiting);
+		/* balance */
+	XP_EQ(0, ai.record.open);
+	/*
+	 * NetBSD7,8 (may?) be active when opened in recording mode but
+	 * recording has not started yet. (?)
+	 * NetBSD9 is not active at that time.
+	 */
+	if (netbsd < 9) {
+		/* ai.record.active */
+	} else {
+		XP_EQ(0, ai.record.active);
+	}
+
+	/*
+	 * Change much as possible
+	 */
+	ai0 = ai;
+	AUDIO_INITINFO(&ai);
+	if (netbsd < 8) {
+		/*
+		 * On NetBSD7, The behavior when changing ai.mode on
+		 * /dev/audioctl can not be explained yet but I won't
+		 * verify it more over.
+		 */
+	} else {
+		/* On NetBSD9, changing mode never affects other tracks */
+		ai0.mode ^= 7;
+		ai.mode = ai0.mode;
+	}
+	ai.play.sample_rate = 11025;
+	ai.play.channels = 2;
+	ai.play.precision = 16;
+	ai.play.encoding = AUDIO_ENCODING_SLINEAR_LE;
+	ai.play.pause = 1;
+	ai.record.sample_rate = 11025;
+	ai.record.channels = 2;
+	ai.record.precision = 16;
+	ai.record.encoding = AUDIO_ENCODING_SLINEAR_LE;
+	ai.record.pause = 1;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "ai");
+	REQUIRED_SYS_EQ(0, r);
+	r = CLOSE(fd);
+	REQUIRED_SYS_EQ(0, r);
+
+	/*
+	 * Open /dev/audioctl again and check
+	 */
+	fd = OPEN(devaudioctl, mode);
+	REQUIRED_SYS_OK(fd);
+	memset(&ai, 0, sizeof(ai));
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	REQUIRED_SYS_EQ(0, r);
+
+	XP_NE(0, ai.blocksize);
+	XP_NE(0, ai.hiwat);		/* hiwat should not be zero */
+		/* lowat */		/* lowat can be zero */
+	XP_EQ(0, ai.mode);
+	/* ai.play */
+	XP_EQ(11025, ai.play.sample_rate);
+	XP_EQ(2, ai.play.channels);
+	XP_EQ(16, ai.play.precision);
+	XP_EQ(AUDIO_ENCODING_SLINEAR_LE, ai.play.encoding);
+		/* gain */
+		/* port */
+	XP_EQ(0, ai.play.seek);
+		/* avail_ports */
+	XP_EQ(ai0.play.buffer_size, ai.play.buffer_size);
+	XP_EQ(0, ai.play.samples);
+	XP_EQ(0, ai.play.eof);
+	XP_EQ(1, ai.play.pause);
+	XP_EQ(0, ai.play.error);
+	XP_EQ(0, ai.play.waiting);
+		/* balance */
+	XP_EQ(0, ai.play.open);
+	XP_EQ(0, ai.play.active);
+	/* ai.record */
+	XP_EQ(11025, ai.record.sample_rate);
+	XP_EQ(2, ai.record.channels);
+	XP_EQ(16, ai.record.precision);
+	XP_EQ(AUDIO_ENCODING_SLINEAR_LE, ai.record.encoding);
+		/* gain */
+		/* port */
+	XP_EQ(0, ai.record.seek);
+		/* avail_ports */
+	XP_EQ(ai0.record.buffer_size, ai.record.buffer_size);
+	XP_EQ(0, ai.record.samples);
+	XP_EQ(0, ai.record.eof);
+	XP_EQ(1, ai.record.pause);
+	XP_EQ(0, ai.record.error);
+	XP_EQ(0, ai.record.waiting);
+		/* balance */
+	XP_EQ(0, ai.record.open);
+	if (netbsd < 9) {
+		/* ai.record.active */
+	} else {
+		XP_EQ(0, ai.record.active);
+	}
+
+	r = CLOSE(fd);
+	REQUIRED_SYS_EQ(0, r);
+}
+DEF(open_audioctl_RDONLY)	{ test_open_audioctl(O_RDONLY); }
+DEF(open_audioctl_WRONLY)	{ test_open_audioctl(O_WRONLY); }
+DEF(open_audioctl_RDWR)		{ test_open_audioctl(O_RDWR);   }
+
 
 /*
  * Open (1) /dev/sound -> (2) /dev/audio -> (3) /dev/sound,
@@ -5946,6 +6144,9 @@ struct testentry testtable[] = {
 	ENT(open_sound_RDONLY),
 	ENT(open_sound_WRONLY),
 	ENT(open_sound_RDWR),
+	ENT(open_audioctl_RDONLY),
+	ENT(open_audioctl_WRONLY),
+	ENT(open_audioctl_RDWR),
 	ENT(open_sound_sticky),
 	ENT(open_audioctl_sticky),
 	ENT(open_simul_RDONLY_RDONLY),
