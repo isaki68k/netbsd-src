@@ -1739,10 +1739,10 @@ test_open_sound(int mode)
 	XP_EQ(can_play, ai.play.open);
 	XP_EQ(0, ai.play.active);
 	/* ai.record */
-	XP_EQ(ai0.record.sample_rate, ai.record.sample_rate);	/* stikey */
-	XP_EQ(ai0.record.channels, ai.record.channels);		/* stikey */
-	XP_EQ(ai0.record.precision, ai.record.precision);	/* stikey */
-	XP_EQ(ai0.record.encoding, ai.record.encoding);		/* stikey */
+	XP_EQ(ai0.record.sample_rate, ai.record.sample_rate);	/* sticky */
+	XP_EQ(ai0.record.channels, ai.record.channels);		/* sticky */
+	XP_EQ(ai0.record.precision, ai.record.precision);	/* sticky */
+	XP_EQ(ai0.record.encoding, ai.record.encoding);		/* sticky */
 		/* gain */
 		/* port */
 	XP_EQ(0, ai.record.seek);
@@ -1750,7 +1750,7 @@ test_open_sound(int mode)
 	XP_BUFFSIZE(rbuff, ai.record.buffer_size);
 	XP_EQ(0, ai.record.samples);
 	XP_EQ(0, ai.record.eof);
-	XP_EQ(ai0.record.pause, ai.record.pause);		/* stikey */
+	XP_EQ(ai0.record.pause, ai.record.pause);		/* sticky */
 	XP_EQ(0, ai.record.error);
 	XP_EQ(0, ai.record.waiting);
 		/* balance */
