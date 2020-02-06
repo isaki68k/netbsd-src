@@ -1302,6 +1302,7 @@ reset_after_mmap(void)
 int
 mixer_get_outputs_master(int mixerfd)
 {
+	const char * const typename[] = { "CLASS", "ENUM", "SET", "VALUE" };
 	mixer_devinfo_t di;
 	int class_outputs;
 	int i;
@@ -1314,9 +1315,13 @@ mixer_get_outputs_master(int mixerfd)
 		r = IOCTL(mixerfd, AUDIO_MIXER_DEVINFO, &di, "index=%d", i);
 		if (r < 0)
 			break;
+		DPRINTF("  > type=%s(%d) mixer_class=%d name=%s\n",
+		    (0 <= di.type && di.type <= 3) ? typename[di.type] : "",
+		    di.type, di.mixer_class, di.label.name);
 		if (di.type == AUDIO_MIXER_CLASS &&
 		    strcmp(di.label.name, "outputs") == 0) {
 			class_outputs = di.mixer_class;
+			DPRINTF("  > class_output=%d\n", class_outputs);
 			continue;
 		}
 		if (di.type == AUDIO_MIXER_VALUE &&
@@ -5453,10 +5458,17 @@ DEF(AUDIO_SETINFO_gain)
 		return;
 	}
 
-	/* Get current outputs.master */
+	/*
+	 * Get current outputs.master.
+	 * auich(4) requires class type (m.type) and number of channels
+	 * (un.value.num_channels) in addition to the index (m.dev)...
+	 * What is the index...?
+	 */
 	memset(&m, 0, sizeof(m));
 	m.dev = index;
-	r = IOCTL(mixerfd, AUDIO_MIXER_READ, &m, "");
+	m.type = AUDIO_MIXER_VALUE;
+	m.un.value.num_channels = 1; /* dummy */
+	r = IOCTL(mixerfd, AUDIO_MIXER_READ, &m, "m.dev=%d", m.dev);
 	REQUIRED_SYS_EQ(0, r);
 	master = m.un.value.level[0];
 	DPRINTF("  > outputs.master = %d\n", master);
