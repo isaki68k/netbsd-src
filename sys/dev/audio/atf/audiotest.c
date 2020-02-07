@@ -5832,6 +5832,10 @@ test_AUDIO_ERROR(int openmode)
 	int errors;
 
 	TEST("AUDIO_ERROR_%s", openmode_str[openmode] + 2);
+	if (mode2aumode(openmode) == 0) {
+		XP_SKIP("Operation not allowed on this hardware property");
+		return;
+	}
 
 	fd = OPEN(devaudio, openmode);
 	REQUIRED_SYS_OK(fd);
