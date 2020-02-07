@@ -71,6 +71,7 @@ int hw_fulldup(void);
 int netbsd;
 void init(int);
 void *consumer_thread(void *);
+void cleanup_audiofd(void);
 void TEST(const char *, ...) __printflike(1, 2);
 bool xp_fail(int, const char *, ...) __printflike(2, 3);
 void xp_skip(int, const char *, ...) __printflike(2, 3);
@@ -147,6 +148,7 @@ int unit;
 bool use_rump;
 bool use_pad;
 int padfd;
+int maxfd;
 pthread_t th;
 char devicename[16];	/* "audioN" */
 char devaudio[16];	/* "/dev/audioN" */
@@ -361,6 +363,9 @@ rump_or_open(const char *filename, int flag)
 	else
 #endif
 		r = open(filename, flag);
+
+	if (r > maxfd)
+		maxfd = r;
 	return r;
 }
 
@@ -421,6 +426,10 @@ rump_or_close(int fd)
 	else
 #endif
 		r = close(fd);
+
+	/* maxfd-1 may not valid fd but no matter */
+	if (fd == maxfd)
+		maxfd--;
 	return r;
 }
 
@@ -565,6 +574,9 @@ init(int requnit)
 	int fd;
 	int r;
 
+	/* XXX */
+	atexit(cleanup_audiofd);
+
 	if (requnit < 0) {
 		xp_errx(1, __LINE__, "requnit < 0 not implemented.");
 	} else {
@@ -665,6 +677,22 @@ consumer_thread(void *arg)
 	}
 
 	return NULL;
+}
+
+/*
+ * XXX
+ * Closing pad descriptor before audio descriptor causes panic (kern/54427).
+ * To avoid this, close non-pad descriptor first using atexit(3) for now.
+ * This is just a workaround and this function should be removed.
+ */
+void cleanup_audiofd()
+{
+	int fd;
+
+	for (fd = 3; fd <= maxfd; fd++) {
+		if (fd != padfd)
+			close(fd);
+	}
 }
 
 /*
