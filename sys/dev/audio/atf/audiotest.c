@@ -112,8 +112,7 @@ int mode2rec(int);
 void reset_after_mmap(void);
 
 /* from audio.c */
-static const char *encoding_names[]
-__unused = {
+static const char *encoding_names[] __unused = {
 	"none",
 	AudioEmulaw,
 	AudioEalaw,
