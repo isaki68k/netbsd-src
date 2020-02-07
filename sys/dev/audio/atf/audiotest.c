@@ -1821,6 +1821,8 @@ test_open_audioctl(int mode)
 	bool rbuff;
 
 	TEST("open_audioctl_%s", openmode_str[mode] + 2);
+	XP_SKIP("not yet");
+	return;
 
 	can_play = mode2play(mode);
 	can_rec  = mode2rec(mode);
@@ -2058,6 +2060,8 @@ DEF(open_audioctl_sticky)
 	int openmode;
 
 	TEST("open_audioctl_sticky");
+	XP_SKIP("not yet");
+	return;
 
 	openmode = openable_mode();
 
