@@ -344,6 +344,7 @@ do_test(int testnumber)
 	/* Do test */
 	testtable[testnumber].func();
 
+	cleanup_audiofd();
 	xxx_close_wait();
 }
 
@@ -692,6 +693,7 @@ void cleanup_audiofd()
 		if (fd != padfd)
 			close(fd);
 	}
+	maxfd = 3;
 }
 
 /*
