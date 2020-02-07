@@ -1445,7 +1445,9 @@ test_open_audio(int mode)
 	can_play = mode2play(mode);
 	can_rec  = mode2rec(mode);
 	if (can_play + can_rec == 0) {
-		XP_SKIP("Operation not allowed on this hardware property");
+		/* Check whether it cannot be opened */
+		fd = OPEN(devaudio, mode);
+		XP_SYS_NG(ENXIO, fd);
 		return;
 	}
 
@@ -1624,7 +1626,9 @@ test_open_sound(int mode)
 	can_play = mode2play(mode);
 	can_rec  = mode2rec(mode);
 	if (can_play + can_rec == 0) {
-		XP_SKIP("Operation not allowed on this hardware property");
+		/* Check whether it cannot be opened */
+		fd = OPEN(devaudio, mode);
+		XP_SYS_NG(ENXIO, fd);
 		return;
 	}
 
