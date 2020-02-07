@@ -613,7 +613,6 @@ init(int requnit)
 	 * Open pad device before all accesses (including /dev/audioctl).
 	 */
 	if (use_pad) {
-
 		padfd = rump_or_open("/dev/pad0", O_RDONLY);
 		if (padfd == -1)
 			xp_err(1, __LINE__, "rump_or_open");
