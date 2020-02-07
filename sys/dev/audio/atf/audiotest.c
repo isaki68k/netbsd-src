@@ -1838,7 +1838,7 @@ test_open_audioctl(int mode)
 	}
 
 	/* Reset sticky */
-	fd = OPEN(devaudio, mode);
+	fd = OPEN(devaudio, openable_mode());
 	REQUIRED_SYS_OK(fd);
 	r = CLOSE(fd);
 	REQUIRED_SYS_EQ(0, r);
