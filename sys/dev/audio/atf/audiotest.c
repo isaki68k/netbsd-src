@@ -142,7 +142,6 @@ bool opt_atf;
 char testname[64];
 int testcount;
 int failcount;
-int expfcount;
 int skipcount;
 int unit;
 bool use_rump;
@@ -300,11 +299,9 @@ main(int argc, char *argv[])
 	if (opt_atf == false) {
 		printf("Result: %d tests, %d success",
 		    testcount,
-		    testcount - failcount - expfcount - skipcount);
+		    testcount - failcount - skipcount);
 		if (failcount > 0)
 			printf(", %d failed", failcount);
-		if (expfcount > 0)
-			printf(", %d expected failure", expfcount);
 		if (skipcount > 0)
 			printf(", %d skipped", skipcount);
 		printf("\n");
