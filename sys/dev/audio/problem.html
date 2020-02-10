@@ -556,7 +556,7 @@ character device の mmap だという別のオチはあるのだが。
 
 <dt><font color=#555><a href="http://gnats.netbsd.org/50603">port-amd64/50603</a>
 Playing audio with Linux pulseaudio apps fails on NetBSD/amd64</font>
-<dd>Linux エミュレーション側の問題っぽい。
+<dd>Linux futex とかの問題のようで、audio 関係ない模様。
 
 <dt><s><a href="http://gnats.netbsd.org/50613">kern/50613</a></s>
 unpausing audio(4) causes already written data to be dropped
@@ -801,9 +801,13 @@ beeps through audio device stop happening
 uaudio: move computing of the number of input channels under UAUDIO_DEBUG</font>
 <dd>ifdef の問題。
 
-<dt><a href="http://gnats.netbsd.org/54796">kern/54796</a>
+<dt><s><a href="http://gnats.netbsd.org/54796">kern/54796</a></s>
 9.0_RC1 audio(4) malloc failed</a>
 <dd>M_NOWAIT の件。
+
+<dt><a href="http://gnats.netbsd.org/54917">kern/54917</a>
+pad(4) has a memory leak
+<dd>pad open が cf を解放してない件。
 
 
 </dl>
