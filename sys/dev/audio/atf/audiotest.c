@@ -1313,7 +1313,7 @@ reset_after_mmap(void)
 {
 	int fd;
 
-	if (netbsd <= 7) {
+	if (netbsd < 8) {
 		fd = OPEN(devaudio, O_WRONLY);
 		if (fd != -1)
 			CLOSE(fd);
@@ -6032,7 +6032,7 @@ test_audioctl_open_multiuser(bool multiuser, const char *dev1, const char *dev2)
 	}
 
 	/* Set multiuser mode (and save the previous one) */
-	if (netbsd > 7) {
+	if (netbsd >= 8) {
 		/* NetBSD8 has no way to determine devicename */
 		snprintf(mibname, sizeof(mibname), "hw.%s.multiuser",
 		    devicename);
@@ -6052,7 +6052,7 @@ test_audioctl_open_multiuser(bool multiuser, const char *dev1, const char *dev2)
 	try_audioctl_open_multiuser(multiuser, dev1, dev2);
 
 	/* Restore if necessary */
-	if (netbsd > 7) {
+	if (netbsd >= 8) {
 		if (oldval != multiuser) {
 			r = SYSCTLBYNAME(mibname, &oldval, &oldlen, NULL, 0);
 			XP_SYS_EQ(0, r);
