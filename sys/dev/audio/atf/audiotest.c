@@ -1063,11 +1063,6 @@ void *debug_mmap(int line, void *ptr, size_t len, int prot, int flags, int fd,
 	char flagbuf[256];
 	int n;
 
-#if !defined(NO_RUMP)
-	if (use_rump)
-		xp_errx(1, __LINE__, "rump doesn't support mmap");
-#endif
-
 #define ADDFLAG(buf, var, name)	do {				\
 	if (((var) & (name)))					\
 		n = strlcat(buf, "|" #name, sizeof(buf));	\
@@ -2911,6 +2906,12 @@ test_mmap_mode(int mode, int prot)
 		XP_SKIP("Operation not allowed on this hardware property");
 		return;
 	}
+#if !defined(NO_RUMP)
+	if (use_rump) {
+		XP_SKIP("rump doesn't support mmap");
+		return;
+	}
+#endif
 
 	/*
 	 * On NetBSD7 and 8, mmap() always succeeds regardless of open mode.
@@ -3005,6 +3006,12 @@ DEF(mmap_len)
 		XP_SKIP("This test is only for mmap-able device");
 		return;
 	}
+#if !defined(NO_RUMP)
+	if (use_rump) {
+		XP_SKIP("rump doesn't support mmap");
+		return;
+	}
+#endif
 
 	len = sizeof(pagesize);
 	r = SYSCTLBYNAME("hw.pagesize", &pagesize, &len, NULL, 0);
@@ -3091,6 +3098,12 @@ DEF(mmap_twice)
 		XP_SKIP("This test is only for mmap-able device");
 		return;
 	}
+#if !defined(NO_RUMP)
+	if (use_rump) {
+		XP_SKIP("rump doesn't support mmap");
+		return;
+	}
+#endif
 
 	fd = OPEN(devaudio, O_WRONLY);
 	REQUIRED_SYS_OK(fd);
@@ -3143,6 +3156,12 @@ DEF(mmap_multi)
 		XP_SKIP("This test is only for mmap-able device");
 		return;
 	}
+#if !defined(NO_RUMP)
+	if (use_rump) {
+		XP_SKIP("rump doesn't support mmap");
+		return;
+	}
+#endif
 
 	fd0 = OPEN(devaudio, O_WRONLY);
 	REQUIRED_SYS_OK(fd0);
