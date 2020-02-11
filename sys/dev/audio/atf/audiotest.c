@@ -4513,6 +4513,7 @@ DEF(FIOASYNC_multi)
 	int pd[2];
 	int val;
 	pid_t pid;
+	int status;
 
 	TEST("FIOASYNC_multi");
 	if (netbsd < 8) {
@@ -4607,6 +4608,8 @@ DEF(FIOASYNC_multi)
 		}
 		DPRINTF("  > child's sigio_cauht = %d\n", pipebuf[0]);
 		XP_EQ(0, pipebuf[0]);
+
+		waitpid(pid, &status, 0);
 	}
 
 	r = CLOSE(fd1);
