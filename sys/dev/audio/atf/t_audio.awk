@@ -25,8 +25,12 @@ BEGIN {
 	print "}"
 	print ""
 }
-match($0, /^DEF\([^\)]*\)/) {
-	name = substr($0, RSTART + 4, RLENGTH - 5)
+# Gather only tab-indented ENT().  I.e.,
+# ^\tENT(testname)     ... Enable in audiotest and add it to atf
+# ^//\tENT(testname)   ... Disable in audiotest and also don't add to atf
+# ^/**/\tENT(testname) ... Enable in audiotest but don't add to atf
+match($0, /^\tENT\([^\)]*\)/) {
+	name = substr($0, RSTART + 5, RLENGTH - 6)
 	tests[n] = name
 	n++;
 

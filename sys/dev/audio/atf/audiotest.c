@@ -6202,6 +6202,10 @@ DEF(audioctl_kqueue)
 }
 
 
+/*
+ * This table is processed by t_audio.awk!
+ * Keep /^\tENT(testname),/ format in order to add to atf.
+ */
 #define ENT(x) { #x, test__ ## x }
 struct testentry testtable[] = {
 	ENT(open_mode_RDONLY),
