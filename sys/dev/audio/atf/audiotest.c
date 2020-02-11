@@ -6273,8 +6273,8 @@ struct testentry testtable[] = {
 	ENT(open_simul_RDWR_RDONLY),
 	ENT(open_simul_RDWR_WRONLY),
 	ENT(open_simul_RDWR_RDWR),
-/**/	ENT(open_multiuser_0),			// XXX TODO sysctl
-/**/	ENT(open_multiuser_1),			// XXX TODO sysctl
+/**/	ENT(open_multiuser_0),		// XXX TODO sysctl
+/**/	ENT(open_multiuser_1),		// XXX TODO sysctl
 	ENT(write_PLAY_ALL),
 	ENT(write_PLAY),
 	ENT(read),
@@ -6323,8 +6323,8 @@ struct testentry testtable[] = {
 	ENT(poll_out_empty),
 	ENT(poll_out_full),
 	ENT(poll_out_hiwat),
-/**/	ENT(poll_out_unpause),	// XXX does not seem to work on rump
-/**/	ENT(poll_out_simul),	// XXX does not seem to work on rump
+/**/	ENT(poll_out_unpause),		// XXX does not seem to work on rump
+/**/	ENT(poll_out_simul),		// XXX does not seem to work on rump
 	ENT(poll_in_simul),
 	ENT(kqueue_mode_RDONLY_READ),
 	ENT(kqueue_mode_RDONLY_WRITE),
@@ -6335,13 +6335,13 @@ struct testentry testtable[] = {
 	ENT(kqueue_empty),
 	ENT(kqueue_full),
 	ENT(kqueue_hiwat),
-/**/	ENT(kqueue_unpause),	// XXX does not seem to work on rump
-/**/	ENT(kqueue_simul),	// XXX does not seem to work on rump
+/**/	ENT(kqueue_unpause),		// XXX does not seem to work on rump
+/**/	ENT(kqueue_simul),		// XXX does not seem to work on rump
 	ENT(ioctl_while_write),
 	ENT(FIOASYNC_reset),
 	ENT(FIOASYNC_play_signal),
 	ENT(FIOASYNC_rec_signal),
-/**/	ENT(FIOASYNC_multi),	// XXX does not seem to work on rump
+/**/	ENT(FIOASYNC_multi),		// XXX does not seem to work on rump
 	ENT(AUDIO_WSEEK),
 	ENT(AUDIO_SETFD_RDONLY),
 	ENT(AUDIO_SETFD_WRONLY),
