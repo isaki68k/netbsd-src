@@ -6273,8 +6273,8 @@ struct testentry testtable[] = {
 	ENT(open_simul_RDWR_RDONLY),
 	ENT(open_simul_RDWR_WRONLY),
 	ENT(open_simul_RDWR_RDWR),
-	ENT(open_multiuser_0),
-	ENT(open_multiuser_1),
+/**/	ENT(open_multiuser_0),			// XXX TODO sysctl
+/**/	ENT(open_multiuser_1),			// XXX TODO sysctl
 	ENT(write_PLAY_ALL),
 	ENT(write_PLAY),
 	ENT(read),
@@ -6420,12 +6420,12 @@ struct testentry testtable[] = {
 	ENT(audioctl_open_2_RDWR_RWONLY),
 	ENT(audioctl_open_2_RDWR_RDWR),
 	ENT(audioctl_open_simul),
-	ENT(audioctl_open_multiuser0_audio1),
-	ENT(audioctl_open_multiuser1_audio1),
-	ENT(audioctl_open_multiuser0_audio2),
-	ENT(audioctl_open_multiuser1_audio2),
-	ENT(audioctl_open_multiuser0_audioctl),
-	ENT(audioctl_open_multiuser1_audioctl),
+/**/	ENT(audioctl_open_multiuser0_audio1),	// XXX TODO sysctl
+/**/	ENT(audioctl_open_multiuser1_audio1),	// XXX TODO sysctl
+/**/	ENT(audioctl_open_multiuser0_audio2),	// XXX TODO sysctl
+/**/	ENT(audioctl_open_multiuser1_audio2),	// XXX TODO sysctl
+/**/	ENT(audioctl_open_multiuser0_audioctl),	// XXX TODO sysctl
+/**/	ENT(audioctl_open_multiuser1_audioctl),	// XXX TODO sysctl
 	ENT(audioctl_rw_RDONLY),
 	ENT(audioctl_rw_WRONLY),
 	ENT(audioctl_rw_RDWR),
