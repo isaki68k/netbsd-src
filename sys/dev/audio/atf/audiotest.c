@@ -204,7 +204,7 @@ xp_err(int code, int line, const char *fmt, ...)
 	int backup_errno;
 
 	backup_errno = errno;
-	printf(" %s %d: ", (opt_atf ? "Line" : "ERROR:"), line);
+	printf("%s %d: ", (opt_atf ? "Line" : " ERROR:"), line);
 	va_start(ap, fmt);
 	vprintf(fmt, ap);
 	va_end(ap);
@@ -219,7 +219,7 @@ xp_errx(int code, int line, const char *fmt, ...)
 {
 	va_list ap;
 
-	printf(" %s %d: ", (opt_atf ? "Line" : "ERROR:"), line);
+	printf("%s %d: ", (opt_atf ? "Line" : " ERROR:"), line);
 	va_start(ap, fmt);
 	vprintf(fmt, ap);
 	va_end(ap);
@@ -747,9 +747,7 @@ bool xp_fail(int line, const char *fmt, ...)
 {
 	va_list ap;
 
-	if (opt_atf == false)
-		printf(" FAIL ");
-	printf("%d: ", line);
+	printf("%s %d: ", (opt_atf ? "Line" : " FAIL:"), line);
 	va_start(ap, fmt);
 	vprintf(fmt, ap);
 	va_end(ap);
@@ -772,9 +770,7 @@ void xp_skip(int line, const char *fmt, ...)
 {
 	va_list ap;
 
-	if (opt_atf == false)
-		printf(" SKIP ");
-	printf("%d: ", line);
+	printf("%s %d: ", (opt_atf ? "Line" : " SKIP:"), line);
 	va_start(ap, fmt);
 	vprintf(fmt, ap);
 	va_end(ap);
