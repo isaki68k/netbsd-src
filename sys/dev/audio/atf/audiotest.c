@@ -1383,6 +1383,7 @@ void test_open_audio(int);
 void test_open_sound(int);
 void test_open_audioctl(int);
 void test_open_simul(int, int);
+void try_open_multiuser(int);
 void test_open_multiuser(int);
 void test_rdwr_fallback(int, bool, bool);
 void test_rdwr_two(int, int);
@@ -1401,8 +1402,8 @@ void getenc_check_encodings(int, int[][5]);
 void test_AUDIO_ERROR(int);
 void test_audioctl_open_1(int, int);
 void test_audioctl_open_2(int, int);
-void try_audioctl_open_multiuser(bool, const char *, const char *);
-void test_audioctl_open_multiuser(bool, const char *, const char *);
+void try_audioctl_open_multiuser(int, const char *, const char *);
+void test_audioctl_open_multiuser(int, const char *, const char *);
 void test_audioctl_rw(int);
 
 #define DEF(name) \
@@ -2220,41 +2221,12 @@ DEF(open_simul_RDWR_RDWR)	{ test_open_simul(O_RDWR, O_RDWR);	}
  * /dev/audio can be opened by other user who opens /dev/audio.
  */
 void
-test_open_multiuser(int multiuser)
+try_open_multiuser(int multiuser)
 {
-	char mibname[32];
 	int fd0;
 	int fd1;
 	int r;
-	bool newval;
-	bool oldval;
-	size_t oldlen;
 	uid_t ouid;
-
-	TEST("open_multiuser_%d", multiuser);
-	if (netbsd < 8) {
-		XP_SKIP("Multiple open is not supported");
-		return;
-	}
-	if (geteuid() != 0) {
-		XP_SKIP("Must be run as a privileged user");
-		return;
-	}
-
-	/*
-	 * Set multiuser mode (and save the previous one).
-	 * NetBSD8 has no way to determine devicename.
-	 */
-	snprintf(mibname, sizeof(mibname), "hw.%s.multiuser", devicename);
-	newval = multiuser;
-	oldlen = sizeof(oldval);
-	r = SYSCTLBYNAME(mibname, &oldval, &oldlen, &newval, sizeof(newval));
-	REQUIRED_SYS_EQ(0, r);
-
-	/* Check */
-	r = SYSCTLBYNAME(mibname, &newval, &oldlen, NULL, 0);
-	REQUIRED_SYS_EQ(0, r);
-	REQUIRED_EQ(multiuser, newval);
 
 	/*
 	 * Test1: Open as root first and then unprivileged user.
@@ -2319,11 +2291,59 @@ test_open_multiuser(int multiuser)
 	XP_SYS_EQ(0, r);
 	r = SETEUID(ouid);
 	REQUIRED_SYS_EQ(0, r);
+}
+/*
+ * This is a wrapper for open_multiuser.
+ * XXX XP_* macros are not compatible with on-error-goto, we need try-catch...
+ */
+void
+test_open_multiuser(int multiuser)
+{
+	char mibname[32];
+	bool newval;
+	bool oldval;
+	size_t oldlen;
+	int r;
+
+	TEST("open_multiuser_%d", multiuser);
+	if (netbsd < 8) {
+		XP_SKIP("Multiple open is not supported");
+		return;
+	}
+	if (netbsd < 9) {
+		/* NetBSD8 has no way (difficult) to determine device name */
+		XP_SKIP("NetBSD8 cannot determine device name");
+		return;
+	}
+	if (geteuid() != 0) {
+		XP_SKIP("Must be run as a privileged user");
+		return;
+	}
+
+	/* Get current multiuser mode (and save it) */
+	snprintf(mibname, sizeof(mibname), "hw.%s.multiuser", devicename);
+	oldlen = sizeof(oldval);
+	r = SYSCTLBYNAME(mibname, &oldval, &oldlen, NULL, 0);
+	REQUIRED_SYS_EQ(0, r);
+	DPRINTF("  > multiuser=%d\n", oldval);
+
+	/* Change if necessary */
+	if (oldval != multiuser) {
+		newval = multiuser;
+		r = SYSCTLBYNAME(mibname, NULL, NULL, &newval, sizeof(newval));
+		REQUIRED_SYS_EQ(0, r);
+		DPRINTF("  > new multiuser=%d\n", multiuser);
+	}
+
+	/* Do test */
+	try_open_multiuser(multiuser);
 
 	/* Restore multiuser mode */
-	newval = oldval;
-	r = SYSCTLBYNAME(mibname, NULL, NULL, &newval, sizeof(newval));
-	REQUIRED_SYS_EQ(0, r);
+	if (oldval != newval) {
+		DPRINTF("  > restore multiuser to %d\n", oldval);
+		r = SYSCTLBYNAME(mibname, NULL, NULL, &oldval, sizeof(oldval));
+		REQUIRED_SYS_EQ(0, r);
+	}
 }
 DEF(open_multiuser_0)	{ test_open_multiuser(0); }
 DEF(open_multiuser_1)	{ test_open_multiuser(1); }
@@ -6019,7 +6039,7 @@ DEF(audioctl_open_simul)
  * /dev/audio    can be opened by other user who opens /dev/audioct.
  */
 void
-try_audioctl_open_multiuser(bool multiuser, const char *dev1, const char *dev2)
+try_audioctl_open_multiuser(int multiuser, const char *dev1, const char *dev2)
 {
 	int fd1;
 	int fd2;
@@ -6053,10 +6073,10 @@ try_audioctl_open_multiuser(bool multiuser, const char *dev1, const char *dev2)
 }
 /*
  * This is a wrapper for audioctl_open_multiuser.
- * XXX XP_* macros is not compatible with goto-on-error, need try-catch...
+ * XXX XP_* macros are not compatible with on-error-goto, we need try-catch...
  */
 void
-test_audioctl_open_multiuser(bool multiuser, const char *dev1, const char *dev2)
+test_audioctl_open_multiuser(int multiuser, const char *dev1, const char *dev2)
 {
 	char mibname[32];
 	bool newval;
@@ -6068,37 +6088,39 @@ test_audioctl_open_multiuser(bool multiuser, const char *dev1, const char *dev2)
 		XP_SKIP("multiuser is not supported");
 		return;
 	}
+	if (netbsd < 9) {
+		/* NetBSD8 has no way (difficult) to determine device name */
+		XP_SKIP("NetBSD8 cannot determine device name");
+		return;
+	}
 	if (geteuid() != 0) {
 		XP_SKIP("This test must be priviledged user");
 		return;
 	}
 
-	/* Set multiuser mode (and save the previous one) */
-	if (netbsd >= 8) {
-		/* NetBSD8 has no way to determine devicename */
-		snprintf(mibname, sizeof(mibname), "hw.%s.multiuser",
-		    devicename);
-		newval = multiuser;
-		oldlen = sizeof(oldval);
-		r = SYSCTLBYNAME(mibname, &oldval, &oldlen, &newval,
-		    sizeof(newval));
-		REQUIRED_SYS_EQ(0, r);
+	/* Get current multiuser mode (and save it) */
+	snprintf(mibname, sizeof(mibname), "hw.%s.multiuser", devicename);
+	oldlen = sizeof(oldval);
+	r = SYSCTLBYNAME(mibname, &oldval, &oldlen, NULL, 0);
+	REQUIRED_SYS_EQ(0, r);
+	DPRINTF("  > multiuser=%d\n", oldval);
 
-		/* Check */
-		r = SYSCTLBYNAME(mibname, &newval, &oldlen, NULL, 0);
+	/* Change if necessary */
+	if (oldval != multiuser) {
+		newval = multiuser;
+		r = SYSCTLBYNAME(mibname, NULL, NULL, &newval, sizeof(newval));
 		REQUIRED_SYS_EQ(0, r);
-		REQUIRED_EQ(multiuser, newval);
+		DPRINTF("  > new multiuser=%d\n", multiuser);
 	}
 
 	/* Do test */
 	try_audioctl_open_multiuser(multiuser, dev1, dev2);
 
-	/* Restore if necessary */
-	if (netbsd >= 8) {
-		if (oldval != multiuser) {
-			r = SYSCTLBYNAME(mibname, &oldval, &oldlen, NULL, 0);
-			XP_SYS_EQ(0, r);
-		}
+	/* Restore multiuser mode */
+	if (oldval != newval) {
+		DPRINTF("  > restore multiuser to %d\n", oldval);
+		r = SYSCTLBYNAME(mibname, NULL, NULL, &oldval, sizeof(oldval));
+		XP_SYS_EQ(0, r);
 	}
 }
 DEF(audioctl_open_multiuser0_audio1) {
