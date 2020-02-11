@@ -298,96 +298,6 @@ drain_onrec_body() {
 	h_audio drain_onrec
 }
 
-atf_test_case mmap_mode_RDONLY_NONE
-mmap_mode_RDONLY_NONE_head() { }
-mmap_mode_RDONLY_NONE_body() {
-	h_audio mmap_mode_RDONLY_NONE
-}
-
-atf_test_case mmap_mode_RDONLY_READ
-mmap_mode_RDONLY_READ_head() { }
-mmap_mode_RDONLY_READ_body() {
-	h_audio mmap_mode_RDONLY_READ
-}
-
-atf_test_case mmap_mode_RDONLY_WRITE
-mmap_mode_RDONLY_WRITE_head() { }
-mmap_mode_RDONLY_WRITE_body() {
-	h_audio mmap_mode_RDONLY_WRITE
-}
-
-atf_test_case mmap_mode_RDONLY_READWRITE
-mmap_mode_RDONLY_READWRITE_head() { }
-mmap_mode_RDONLY_READWRITE_body() {
-	h_audio mmap_mode_RDONLY_READWRITE
-}
-
-atf_test_case mmap_mode_WRONLY_NONE
-mmap_mode_WRONLY_NONE_head() { }
-mmap_mode_WRONLY_NONE_body() {
-	h_audio mmap_mode_WRONLY_NONE
-}
-
-atf_test_case mmap_mode_WRONLY_READ
-mmap_mode_WRONLY_READ_head() { }
-mmap_mode_WRONLY_READ_body() {
-	h_audio mmap_mode_WRONLY_READ
-}
-
-atf_test_case mmap_mode_WRONLY_WRITE
-mmap_mode_WRONLY_WRITE_head() { }
-mmap_mode_WRONLY_WRITE_body() {
-	h_audio mmap_mode_WRONLY_WRITE
-}
-
-atf_test_case mmap_mode_WRONLY_READWRITE
-mmap_mode_WRONLY_READWRITE_head() { }
-mmap_mode_WRONLY_READWRITE_body() {
-	h_audio mmap_mode_WRONLY_READWRITE
-}
-
-atf_test_case mmap_mode_RDWR_NONE
-mmap_mode_RDWR_NONE_head() { }
-mmap_mode_RDWR_NONE_body() {
-	h_audio mmap_mode_RDWR_NONE
-}
-
-atf_test_case mmap_mode_RDWR_READ
-mmap_mode_RDWR_READ_head() { }
-mmap_mode_RDWR_READ_body() {
-	h_audio mmap_mode_RDWR_READ
-}
-
-atf_test_case mmap_mode_RDWR_WRITE
-mmap_mode_RDWR_WRITE_head() { }
-mmap_mode_RDWR_WRITE_body() {
-	h_audio mmap_mode_RDWR_WRITE
-}
-
-atf_test_case mmap_mode_RDWR_READWRITE
-mmap_mode_RDWR_READWRITE_head() { }
-mmap_mode_RDWR_READWRITE_body() {
-	h_audio mmap_mode_RDWR_READWRITE
-}
-
-atf_test_case mmap_len
-mmap_len_head() { }
-mmap_len_body() {
-	h_audio mmap_len
-}
-
-atf_test_case mmap_twice
-mmap_twice_head() { }
-mmap_twice_body() {
-	h_audio mmap_twice
-}
-
-atf_test_case mmap_multi
-mmap_multi_head() { }
-mmap_multi_body() {
-	h_audio mmap_multi
-}
-
 atf_test_case poll_mode_RDONLY_IN
 poll_mode_RDONLY_IN_head() { }
 poll_mode_RDONLY_IN_body() {
@@ -1125,21 +1035,6 @@ atf_init_test_cases() {
 	atf_add_test_case drain_incomplete
 	atf_add_test_case drain_pause
 	atf_add_test_case drain_onrec
-	atf_add_test_case mmap_mode_RDONLY_NONE
-	atf_add_test_case mmap_mode_RDONLY_READ
-	atf_add_test_case mmap_mode_RDONLY_WRITE
-	atf_add_test_case mmap_mode_RDONLY_READWRITE
-	atf_add_test_case mmap_mode_WRONLY_NONE
-	atf_add_test_case mmap_mode_WRONLY_READ
-	atf_add_test_case mmap_mode_WRONLY_WRITE
-	atf_add_test_case mmap_mode_WRONLY_READWRITE
-	atf_add_test_case mmap_mode_RDWR_NONE
-	atf_add_test_case mmap_mode_RDWR_READ
-	atf_add_test_case mmap_mode_RDWR_WRITE
-	atf_add_test_case mmap_mode_RDWR_READWRITE
-	atf_add_test_case mmap_len
-	atf_add_test_case mmap_twice
-	atf_add_test_case mmap_multi
 	atf_add_test_case poll_mode_RDONLY_IN
 	atf_add_test_case poll_mode_RDONLY_OUT
 	atf_add_test_case poll_mode_RDONLY_INOUT

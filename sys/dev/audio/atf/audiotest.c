@@ -6296,21 +6296,21 @@ struct testentry testtable[] = {
 	ENT(drain_incomplete),
 	ENT(drain_pause),
 	ENT(drain_onrec),
-	ENT(mmap_mode_RDONLY_NONE),
-	ENT(mmap_mode_RDONLY_READ),
-	ENT(mmap_mode_RDONLY_WRITE),
-	ENT(mmap_mode_RDONLY_READWRITE),
-	ENT(mmap_mode_WRONLY_NONE),
-	ENT(mmap_mode_WRONLY_READ),
-	ENT(mmap_mode_WRONLY_WRITE),
-	ENT(mmap_mode_WRONLY_READWRITE),
-	ENT(mmap_mode_RDWR_NONE),
-	ENT(mmap_mode_RDWR_READ),
-	ENT(mmap_mode_RDWR_WRITE),
-	ENT(mmap_mode_RDWR_READWRITE),
-	ENT(mmap_len),
-	ENT(mmap_twice),
-	ENT(mmap_multi),
+/**/	ENT(mmap_mode_RDONLY_NONE),	// XXX rump doesn't supprot mmap
+/**/	ENT(mmap_mode_RDONLY_READ),	// XXX rump doesn't supprot mmap
+/**/	ENT(mmap_mode_RDONLY_WRITE),	// XXX rump doesn't supprot mmap
+/**/	ENT(mmap_mode_RDONLY_READWRITE),// XXX rump doesn't supprot mmap
+/**/	ENT(mmap_mode_WRONLY_NONE),	// XXX rump doesn't supprot mmap
+/**/	ENT(mmap_mode_WRONLY_READ),	// XXX rump doesn't supprot mmap
+/**/	ENT(mmap_mode_WRONLY_WRITE),	// XXX rump doesn't supprot mmap
+/**/	ENT(mmap_mode_WRONLY_READWRITE),// XXX rump doesn't supprot mmap
+/**/	ENT(mmap_mode_RDWR_NONE),	// XXX rump doesn't supprot mmap
+/**/	ENT(mmap_mode_RDWR_READ),	// XXX rump doesn't supprot mmap
+/**/	ENT(mmap_mode_RDWR_WRITE),	// XXX rump doesn't supprot mmap
+/**/	ENT(mmap_mode_RDWR_READWRITE),	// XXX rump doesn't supprot mmap
+/**/	ENT(mmap_len),			// XXX rump doesn't supprot mmap
+/**/	ENT(mmap_twice),		// XXX rump doesn't supprot mmap
+/**/	ENT(mmap_multi),		// XXX rump doesn't supprot mmap
 	ENT(poll_mode_RDONLY_IN),
 	ENT(poll_mode_RDONLY_OUT),
 	ENT(poll_mode_RDONLY_INOUT),
