@@ -348,12 +348,16 @@ main(int argc, char *argv[])
  * open() will be acceptable immediately in audio layer.  But the real
  * hardware may not have been closed actually at that point.
  * It's troublesome issue but should be fixed...
+ *
+ * However, the most frequently used pad(4) (for ATF tests) doesn't have
+ * such problem, so avoids it to reduce time.
  */
 void
 xxx_close_wait(void)
 {
 
-	usleep(500 * 1000);
+	if (!use_pad)
+		usleep(500 * 1000);
 }
 
 void
