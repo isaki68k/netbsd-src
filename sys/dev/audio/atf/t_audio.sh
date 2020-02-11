@@ -5,8 +5,12 @@
 # Call real test program, and then dispatch the result for atf.
 h_audio() {
 	local testname=$1
-	outmsg=`$(atf_get_srcdir)/audiotest -AR $testname`
+	local outfile=/tmp/t_audio_$testname.$$
+	$(atf_get_srcdir)/audiotest -AR $testname > $outfile
 	local retval=$?
+	# Discard rump outputs...
+	outmsg=`cat $outfile | grep -v '^\['`
+	rm -f $outfile
 	if [ "$retval" = "0" ]; then
 		atf_pass
 	elif [ "$retval" = "1" ]; then
