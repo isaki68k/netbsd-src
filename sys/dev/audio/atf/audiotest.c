@@ -683,20 +683,14 @@ consumer_thread(void *arg)
 	pthread_setname_np(pthread_self(), "consumer", NULL);
 	pthread_detach(pthread_self());
 
+	/* throw away data anyway */
 	for (;;) {
 		r = read(padfd, buf, sizeof(buf));
-		if (r == 0) {
-			fprintf(stderr, "EOF on pad ?");
-			exit(1);
-		}
-		if (r == -1) {
-			fprintf(stderr, "consumer_thread read: %s\n",
-			    strerror(errno));
-			exit(1);
-		}
+		if (r < 1)
+			break;
 	}
 
-	return NULL;
+	pthread_exit(NULL);
 }
 
 /*
