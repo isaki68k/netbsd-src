@@ -92,7 +92,6 @@ int hw_canplay(void);
 int hw_canrec(void);
 int hw_bidir(void);
 int hw_fulldup(void);
-int netbsd;
 void init(int);
 void *consumer_thread(void *);
 void cleanup_audiofd(void);
@@ -161,6 +160,7 @@ static const char *encoding_names[] __unused = {
 int debug;
 int props;
 int hwfull;
+int netbsd;
 bool opt_atf;
 char testname[64];
 int testcount;
