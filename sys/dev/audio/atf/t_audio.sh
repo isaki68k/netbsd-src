@@ -460,18 +460,6 @@ poll_out_hiwat_body() {
 	h_audio poll_out_hiwat
 }
 
-atf_test_case poll_out_unpause
-poll_out_unpause_head() { }
-poll_out_unpause_body() {
-	h_audio poll_out_unpause
-}
-
-atf_test_case poll_out_simul
-poll_out_simul_head() { }
-poll_out_simul_body() {
-	h_audio poll_out_simul
-}
-
 atf_test_case poll_in_simul
 poll_in_simul_head() { }
 poll_in_simul_body() {
@@ -532,18 +520,6 @@ kqueue_hiwat_body() {
 	h_audio kqueue_hiwat
 }
 
-atf_test_case kqueue_unpause
-kqueue_unpause_head() { }
-kqueue_unpause_body() {
-	h_audio kqueue_unpause
-}
-
-atf_test_case kqueue_simul
-kqueue_simul_head() { }
-kqueue_simul_body() {
-	h_audio kqueue_simul
-}
-
 atf_test_case ioctl_while_write
 ioctl_while_write_head() { }
 ioctl_while_write_body() {
@@ -566,12 +542,6 @@ atf_test_case FIOASYNC_rec_signal
 FIOASYNC_rec_signal_head() { }
 FIOASYNC_rec_signal_body() {
 	h_audio FIOASYNC_rec_signal
-}
-
-atf_test_case FIOASYNC_multi
-FIOASYNC_multi_head() { }
-FIOASYNC_multi_body() {
-	h_audio FIOASYNC_multi
 }
 
 atf_test_case AUDIO_WSEEK
@@ -1182,8 +1152,6 @@ atf_init_test_cases() {
 	atf_add_test_case poll_out_empty
 	atf_add_test_case poll_out_full
 	atf_add_test_case poll_out_hiwat
-	atf_add_test_case poll_out_unpause
-	atf_add_test_case poll_out_simul
 	atf_add_test_case poll_in_simul
 	atf_add_test_case kqueue_mode_RDONLY_READ
 	atf_add_test_case kqueue_mode_RDONLY_WRITE
@@ -1194,13 +1162,10 @@ atf_init_test_cases() {
 	atf_add_test_case kqueue_empty
 	atf_add_test_case kqueue_full
 	atf_add_test_case kqueue_hiwat
-	atf_add_test_case kqueue_unpause
-	atf_add_test_case kqueue_simul
 	atf_add_test_case ioctl_while_write
 	atf_add_test_case FIOASYNC_reset
 	atf_add_test_case FIOASYNC_play_signal
 	atf_add_test_case FIOASYNC_rec_signal
-	atf_add_test_case FIOASYNC_multi
 	atf_add_test_case AUDIO_WSEEK
 	atf_add_test_case AUDIO_SETFD_RDONLY
 	atf_add_test_case AUDIO_SETFD_WRONLY
