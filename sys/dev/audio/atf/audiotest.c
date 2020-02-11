@@ -6302,7 +6302,7 @@ struct testentry testtable[] = {
 	ENT(FIOASYNC_reset),
 	ENT(FIOASYNC_play_signal),
 	ENT(FIOASYNC_rec_signal),
-	ENT(FIOASYNC_multi),
+/**/	ENT(FIOASYNC_multi),	// XXX does not work with rump yet ?
 	ENT(AUDIO_WSEEK),
 	ENT(AUDIO_SETFD_RDONLY),
 	ENT(AUDIO_SETFD_WRONLY),
