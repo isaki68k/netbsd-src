@@ -1371,13 +1371,12 @@ audio_attach_mi(const struct audio_hw_if *ahwp, void *hdlp, device_t dev)
 /*
  * Acquire sc_lock and enter exlock critical section.
  * If successful, it returns 0.  Otherwise returns errno.
+ * Must be called without sc_lock held.
  */
 static int
 audio_enter_exclusive(struct audio_softc *sc)
 {
 	int error;
-
-	KASSERT(!mutex_owned(sc->sc_lock));
 
 	mutex_enter(sc->sc_lock);
 	if (sc->sc_dying) {
@@ -2104,15 +2103,13 @@ bad1:
 }
 
 /*
- * Must NOT called with sc_lock nor sc_exlock held.
+ * Must be called without sc_lock nor sc_exlock held.
  */
 int
 audio_close(struct audio_softc *sc, audio_file_t *file)
 {
 	audio_track_t *oldtrack;
 	int error;
-
-	KASSERT(!mutex_owned(sc->sc_lock));
 
 	TRACEF(1, file, "%spid=%d.%d po=%d ro=%d",
 	    (audiodebug >= 3) ? "start " : "",
@@ -2214,6 +2211,9 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
 	return 0;
 }
 
+/*
+ * Must be called without sc_lock nor sc_exlock held.
+ */
 int
 audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 	audio_file_t *file)
@@ -2222,8 +2222,6 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 	audio_ring_t *usrbuf;
 	audio_ring_t *input;
 	int error;
-
-	KASSERT(!mutex_owned(sc->sc_lock));
 
 	/*
 	 * On half-duplex hardware, O_RDWR is treated as O_WRONLY.
@@ -2341,6 +2339,9 @@ audio_file_clear(struct audio_softc *sc, audio_file_t *file)
 		audio_track_clear(sc, file->rtrack);
 }
 
+/*
+ * Must be called without sc_lock nor sc_exlock held.
+ */
 int
 audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 	audio_file_t *file)
@@ -2349,8 +2350,6 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 	audio_ring_t *usrbuf;
 	audio_ring_t *outbuf;
 	int error;
-
-	KASSERT(!mutex_owned(sc->sc_lock));
 
 	track = file->ptrack;
 	KASSERT(track);
@@ -2463,6 +2462,9 @@ abort:
 	return error;
 }
 
+/*
+ * Must be called without sc_lock nor sc_exlock held.
+ */
 int
 audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 	struct lwp *l, audio_file_t *file)
@@ -2477,8 +2479,6 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 	int fd;
 	int index;
 	int error;
-
-	KASSERT(!mutex_owned(sc->sc_lock));
 
 #if defined(AUDIO_DEBUG)
 	const char *ioctlnames[] = {
@@ -2771,6 +2771,9 @@ audio_track_readablebytes(const audio_track_t *track)
 	return bytes;
 }
 
+/*
+ * Must be called without sc_lock nor sc_exlock held.
+ */
 int
 audio_poll(struct audio_softc *sc, int events, struct lwp *l,
 	audio_file_t *file)
@@ -2779,8 +2782,6 @@ audio_poll(struct audio_softc *sc, int events, struct lwp *l,
 	int revents;
 	bool in_is_valid;
 	bool out_is_valid;
-
-	KASSERT(!mutex_owned(sc->sc_lock));
 
 #if defined(AUDIO_DEBUG)
 #define POLLEV_BITMAP "\177\020" \
@@ -2929,12 +2930,13 @@ filt_audiowrite_event(struct knote *kn, long hint)
 	return (track->usrbuf.used < track->usrbuf_usedlow);
 }
 
+/*
+ * Must be called without sc_lock nor sc_exlock held.
+ */
 int
 audio_kqfilter(struct audio_softc *sc, audio_file_t *file, struct knote *kn)
 {
 	struct klist *klist;
-
-	KASSERT(!mutex_owned(sc->sc_lock));
 
 	TRACEF(3, file, "kn=%p kn_filter=%x", kn, (int)kn->kn_filter);
 
@@ -2962,6 +2964,9 @@ audio_kqfilter(struct audio_softc *sc, audio_file_t *file, struct knote *kn)
 	return 0;
 }
 
+/*
+ * Must be called without sc_lock nor sc_exlock held.
+ */
 int
 audio_mmap(struct audio_softc *sc, off_t *offp, size_t len, int prot,
 	int *flagsp, int *advicep, struct uvm_object **uobjp, int *maxprotp,
@@ -2970,8 +2975,6 @@ audio_mmap(struct audio_softc *sc, off_t *offp, size_t len, int prot,
 	audio_track_t *track;
 	vsize_t vsize;
 	int error;
-
-	KASSERT(!mutex_owned(sc->sc_lock));
 
 	TRACEF(2, file, "off=%lld, prot=%d", (long long)(*offp), prot);
 
@@ -7735,6 +7738,9 @@ mixer_close(struct audio_softc *sc, audio_file_t *file)
 	return 0;
 }
 
+/*
+ * Must be called without sc_lock nor sc_exlock held.
+ */
 int
 mixer_ioctl(struct audio_softc *sc, u_long cmd, void *addr, int flag,
 	struct lwp *l)
@@ -7742,8 +7748,6 @@ mixer_ioctl(struct audio_softc *sc, u_long cmd, void *addr, int flag,
 	mixer_devinfo_t *mi;
 	mixer_ctrl_t *mc;
 	int error;
-
-	KASSERT(!mutex_owned(sc->sc_lock));
 
 	TRACE(2, "(%lu,'%c',%lu)",
 	    IOCPARM_LEN(cmd), (char)IOCGROUP(cmd), cmd & 0xff);
