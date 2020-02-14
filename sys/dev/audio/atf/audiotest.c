@@ -1,4 +1,4 @@
-/*	$NetBSD$	*/
+/*	$NetBSD: audiotest.c,v 1.3 2020/02/13 18:06:26 tnn Exp $	*/
 
 /*
  * Copyright (C) 2019 Tetsuya Isaki. All rights reserved.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD$");
+__RCSID("$NetBSD: audiotest.c,v 1.3 2020/02/13 18:06:26 tnn Exp $");
 
 #include <errno.h>
 #include <fcntl.h>
@@ -2331,6 +2331,8 @@ test_open_multiuser(int multiuser)
 		r = SYSCTLBYNAME(mibname, NULL, NULL, &newval, sizeof(newval));
 		REQUIRED_SYS_EQ(0, r);
 		DPRINTF("  > new multiuser=%d\n", multiuser);
+	} else {
+		newval = oldval;
 	}
 
 	/* Do test */
@@ -6109,6 +6111,8 @@ test_audioctl_open_multiuser(int multiuser, const char *dev1, const char *dev2)
 		r = SYSCTLBYNAME(mibname, NULL, NULL, &newval, sizeof(newval));
 		REQUIRED_SYS_EQ(0, r);
 		DPRINTF("  > new multiuser=%d\n", multiuser);
+	} else {
+		newval = oldval;
 	}
 
 	/* Do test */
@@ -6431,4 +6435,5 @@ struct testentry testtable[] = {
 	ENT(audioctl_rw_RDWR),
 	ENT(audioctl_poll),
 	ENT(audioctl_kqueue),
+	{.name = NULL},
 };
