@@ -1,4 +1,4 @@
-/* $NetBSD: ixgbe.h,v 1.63 2020/02/04 19:42:55 thorpej Exp $ */
+/* $NetBSD: ixgbe.h,v 1.65 2020/02/06 06:28:49 thorpej Exp $ */
 
 /******************************************************************************
   SPDX-License-Identifier: BSD-3-Clause
@@ -515,6 +515,7 @@ struct adapter {
 	void			*mod_si;   /* SFP tasklet */
 	struct workqueue	*msf_wq;   /* Multispeed Fiber */
 	struct work		 msf_wc;
+	bool			 msf_pending;
 	void			*mbx_si;   /* VF -> PF mailbox interrupt */
 
 	/* Flow Director */
@@ -645,29 +646,6 @@ struct adapter {
 #define IXGBE_RX_UNLOCK(_sc)              mutex_exit(&(_sc)->rx_mtx)
 #define IXGBE_CORE_LOCK_ASSERT(_sc)       KASSERT(mutex_owned(&(_sc)->core_mtx))
 #define IXGBE_TX_LOCK_ASSERT(_sc)         KASSERT(mutex_owned(&(_sc)->tx_mtx))
-
-/* Stats macros */
-#if __FreeBSD_version >= 1100036
-#define IXGBE_SET_IERRORS(sc, count)     (sc)->ierrors = (count)
-#define IXGBE_SET_OPACKETS(sc, count)    (sc)->opackets = (count)
-#define IXGBE_SET_OERRORS(sc, count)     (sc)->oerrors = (count)
-#define IXGBE_SET_COLLISIONS(sc, count)
-#define IXGBE_SET_IBYTES(sc, count)      (sc)->ibytes = (count)
-#define IXGBE_SET_OBYTES(sc, count)      (sc)->obytes = (count)
-#define IXGBE_SET_IMCASTS(sc, count)     (sc)->imcasts = (count)
-#define IXGBE_SET_OMCASTS(sc, count)     (sc)->omcasts = (count)
-#define IXGBE_SET_IQDROPS(sc, count)     (sc)->iqdrops = (count)
-#else
-#define IXGBE_SET_IERRORS(sc, count)     (sc)->ifp->if_ierrors = (count)
-#define IXGBE_SET_OPACKETS(sc, count)    (sc)->ifp->if_opackets = (count)
-#define IXGBE_SET_OERRORS(sc, count)     (sc)->ifp->if_oerrors = (count)
-#define IXGBE_SET_COLLISIONS(sc, count)  (sc)->ifp->if_collisions = (count)
-#define IXGBE_SET_IBYTES(sc, count)      (sc)->ifp->if_ibytes = (count)
-#define IXGBE_SET_OBYTES(sc, count)      (sc)->ifp->if_obytes = (count)
-#define IXGBE_SET_IMCASTS(sc, count)     (sc)->ifp->if_imcasts = (count)
-#define IXGBE_SET_OMCASTS(sc, count)     (sc)->ifp->if_omcasts = (count)
-#define IXGBE_SET_IQDROPS(sc, count)     (sc)->ifp->if_iqdrops = (count)
-#endif
 
 /* External PHY register addresses */
 #define IXGBE_PHY_CURRENT_TEMP		0xC820
