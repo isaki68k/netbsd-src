@@ -10,6 +10,5 @@ no radeondrmkmsfb*	at radeonfbbus?
 no nouveau*	at pci?
 no nouveaufb*	at nouveaufbbus?
 
-azalia* at pci? dev ? function ?	# High Definition Audio
 sb0	at isa? port 0x220 irq 5 drq 1 drq2 5	# SoundBlaster
 wsbell* at spkr?		# Bell for wscons display (module by default)
