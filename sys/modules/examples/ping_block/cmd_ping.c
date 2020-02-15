@@ -1,11 +1,8 @@
-/*	$NetBSD: drm_auth_netbsd.h,v 1.2 2014/03/18 18:20:43 riastradh Exp $	*/
+/*	$NetBSD: cmd_ping.c,v 1.1 2020/02/05 13:23:42 kamil Exp $	*/
 
 /*-
- * Copyright (c) 2013 The NetBSD Foundation, Inc.
+ * Copyright (c) 2015 The NetBSD Foundation, Inc.
  * All rights reserved.
- *
- * This code is derived from software contributed to The NetBSD Foundation
- * by Taylor R. Campbell.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -29,16 +26,36 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _DRM_DRM_AUTH_NETBSD_H_
-#define _DRM_DRM_AUTH_NETBSD_H_
+#include <sys/cdefs.h>
+__RCSID("$NetBSD: cmd_ping.c,v 1.1 2020/02/05 13:23:42 kamil Exp $");
 
-#include <sys/kauth.h>
+#include <err.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
 
-static inline bool
-DRM_SUSER(void)
+#include "ping.h"
+
+#define _PATH_DEV_PING "/dev/ping"
+
+int main(int argc, char **argv)
 {
-	return kauth_authorize_generic(kauth_cred_get(), KAUTH_GENERIC_ISSUSER,
-	    NULL) == 0;
-}
+	int devfd;
 
-#endif  /* _DRM_DRM_AUTH_NETBSD_H_ */
+	setprogname(argv[0]);
+
+	if ((devfd = open(_PATH_DEV_PING, O_RDWR)) == -1)
+		err(EXIT_FAILURE, "Cannot open %s", _PATH_DEV_PING);
+
+	if (ioctl(devfd, CMD_PING) == -1)
+		err(EXIT_FAILURE, "ping failed");
+
+	printf("%s: ping sent successfully\n", getprogname());
+    
+	if (close(devfd) == -1)
+		err(EXIT_FAILURE, "Cannot close %s", _PATH_DEV_PING);
+
+	return EXIT_SUCCESS;
+}
