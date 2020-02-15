@@ -796,7 +796,7 @@ hdafg_assoc_count_channels(struct hdafg_softc *sc,
 		if (as->as_dacs[i])
 			dacmap[as->as_dacs[i]] = 1;
 
-	for (i = 1; i < sc->sc_endnode; i++) {
+	for (i = sc->sc_startnode; i < sc->sc_endnode; i++) {
 		if (!dacmap[i])
 			continue;
 		w = hdafg_widget_lookup(sc, i);
