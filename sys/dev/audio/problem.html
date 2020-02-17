@@ -815,6 +815,10 @@ uaudio: move computing of the number of input channels under UAUDIO_DEBUG</font>
 pad(4) has a memory leak
 <dd>pad open が cf を解放してない件。
 
+<dt><a href="http://gnats.netbsd.org/54973">kern/54973</a>
+audio regression with multi channel content and stereo hardware
+<dd>2ch ハードで libossaudio 経由の 5.1ch が 2ch(L,R) にshrink される話。
+
 
 </dl>
 
