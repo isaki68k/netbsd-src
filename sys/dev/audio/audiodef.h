@@ -202,6 +202,9 @@ struct audio_file {
 	/* process who wants audio SIGIO. */
 	pid_t		async_audio;
 
+	/* true when closing */
+	bool		dying;
+
 	SLIST_ENTRY(audio_file) entry;
 };
 

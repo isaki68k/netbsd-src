@@ -69,6 +69,8 @@
 
 #include <sys/condvar.h>
 #include <sys/proc.h>
+#include <sys/pserialize.h>
+#include <sys/psref.h>
 #include <sys/queue.h>
 
 #include <dev/audio/audio_if.h>
@@ -216,6 +218,13 @@ struct audio_softc {
 	 */
 	int sc_exlock;
 	kcondvar_t sc_exlockcv;
+
+	/*
+	 * Passive reference to prevent a race between detach and fileops.
+	 * pserialize_perform(sc_psz) must be protected by sc_lock.
+	 */
+	pserialize_t sc_psz;
+	struct psref_target sc_psref;
 
 	/*
 	 * Must be protected by sc_lock (?)
