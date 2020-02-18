@@ -7466,9 +7466,9 @@ struct testtable testtable[] = {
 	DEF(open_sound_sticky),
 	DEF(open_simul),
 	DEF(open_multiuser),
-	DEF(encoding_1),		// notyet
-	DEF(encoding_2),		// notyet
-	DEF(encoding_3),		// notyet
+	DEF(encoding_1),		// GETENC_range に統合?
+	DEF(encoding_2),		// GETENC_range に統合?
+	DEF(encoding_3),		// GETENC_range に統合?
 	DEF(close_1),			// 保留
 	DEF(write_PLAY_ALL),
 	DEF(write_PLAY),
