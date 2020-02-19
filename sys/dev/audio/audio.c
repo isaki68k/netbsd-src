@@ -5968,8 +5968,9 @@ audio_mixers_init(struct audio_softc *sc, int mode,
 		}
 		error = audio_mixer_init(sc, AUMODE_PLAY, phwfmt, pfil);
 		if (error) {
-			aprint_error_dev(sc->sc_dev,
-			    "configuring playback mode failed\n");
+			device_printf(sc->sc_dev,
+			    "configuring playback mode failed with %d\n",
+			    error);
 			kmem_free(sc->sc_pmixer, sizeof(*sc->sc_pmixer));
 			sc->sc_pmixer = NULL;
 			return error;
@@ -5986,8 +5987,9 @@ audio_mixers_init(struct audio_softc *sc, int mode,
 		}
 		error = audio_mixer_init(sc, AUMODE_RECORD, rhwfmt, rfil);
 		if (error) {
-			aprint_error_dev(sc->sc_dev,
-			    "configuring record mode failed\n");
+			device_printf(sc->sc_dev,
+			    "configuring record mode failed with %d\n",
+			    error);
 			kmem_free(sc->sc_rmixer, sizeof(*sc->sc_rmixer));
 			sc->sc_rmixer = NULL;
 			return error;
