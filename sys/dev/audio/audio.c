@@ -7001,9 +7001,8 @@ abort:
  *   parameters.
  * - pfil and rfil must be zero-filled.
  * If successful,
- * - phwfmt, rhwfmt will be overwritten by hardware format.
  * - pfil, rfil will be filled with filter information specified by the
- *   hardware driver.
+ *   hardware driver if necessary.
  * and then returns 0.  Otherwise returns errno.
  * Must be called with sc_lock held.
  */
