@@ -547,7 +547,7 @@ static void audio_track_setinfo_water(audio_track_t *,
 static int audio_hw_setinfo(struct audio_softc *, const struct audio_info *,
 	struct audio_info *);
 static int audio_hw_set_format(struct audio_softc *, int,
-	audio_format2_t *, audio_format2_t *,
+	const audio_format2_t *, const audio_format2_t *,
 	audio_filter_reg_t *, audio_filter_reg_t *);
 static int audiogetinfo(struct audio_softc *, struct audio_info *, int,
 	audio_file_t *);
@@ -7008,7 +7008,7 @@ abort:
  */
 static int
 audio_hw_set_format(struct audio_softc *sc, int setmode,
-	audio_format2_t *phwfmt, audio_format2_t *rhwfmt,
+	const audio_format2_t *phwfmt, const audio_format2_t *rhwfmt,
 	audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
 {
 	audio_params_t pp, rp;
