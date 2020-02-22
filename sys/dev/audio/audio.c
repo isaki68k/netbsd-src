@@ -5299,7 +5299,7 @@ audio_pintr(void *arg)
 /*
  * Starts record mixer.
  * Must be called only if sc_rbusy is false.
- * Must be called with sc_lock held.
+ * Must be called with sc_lock && sc_exlock held.
  * Must not be called from the interrupt context.
  */
 static void
@@ -5307,6 +5307,7 @@ audio_rmixer_start(struct audio_softc *sc)
 {
 
 	KASSERT(mutex_owned(sc->sc_lock));
+	KASSERT(sc->sc_exlock);
 	KASSERT(sc->sc_rbusy == false);
 
 	mutex_enter(sc->sc_intr_lock);
