@@ -6095,10 +6095,6 @@ audio_check_params(audio_format2_t *p)
 		return EINVAL;
 	}
 
-	/* sanity check # of channels*/
-	if (p->channels < 1 || p->channels > AUDIO_MAX_CHANNELS)
-		return EINVAL;
-
 	return 0;
 }
 
@@ -6910,6 +6906,8 @@ audio_track_setinfo_check(audio_format2_t *fmt, const struct audio_prinfo *info,
 		changes = 1;
 	}
 	if (SPECIFIED(info->channels)) {
+		if (info->channels < 1)
+			return -1;
 		/*
 		 * We can convert between monaural and stereo each other.
 		 * We can reduce than the number of channels that the hardware
