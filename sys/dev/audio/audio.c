@@ -6499,6 +6499,18 @@ audio_mixers_set_format(struct audio_softc *sc, const struct audio_info *ai)
 	if (error)
 		return error;
 
+	/*
+	 * Reinitialize the sticky parameters for /dev/sound.
+	 * If the number of the hardware channels becomes less than the number
+	 * of channels that sticky parameters remember, subsequent /dev/sound
+	 * open will fail.  To prevent this, reinitialize the sticky
+	 * parameters whenever the hardware format is changed.
+	 */
+	sc->sc_sound_pparams = params_to_format2(&audio_default);
+	sc->sc_sound_rparams = params_to_format2(&audio_default);
+	sc->sc_sound_ppause = false;
+	sc->sc_sound_rpause = false;
+
 	return 0;
 }
 
