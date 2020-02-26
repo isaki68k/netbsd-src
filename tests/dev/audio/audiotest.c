@@ -1541,7 +1541,7 @@ test_open_audio(int mode)
 		ai.hiwat = ai0.hiwat - 1;
 	if (ai0.lowat < ai0.hiwat)
 		ai.lowat = ai0.lowat + 1;
-	ai.mode = ai.mode & ~AUMODE_PLAY_ALL;
+	ai.mode = ai0.mode & ~AUMODE_PLAY_ALL;
 	ai.play.sample_rate = 11025;
 	ai.play.channels = 2;
 	ai.play.precision = 16;
