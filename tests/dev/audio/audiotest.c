@@ -5276,7 +5276,7 @@ test_AUDIO_SETINFO_params_set(int openmode, int aimode, int pause)
 	 * pause is bool value that indicates whether to change ai.*.pause.
 	 */
 
-	TEST("AUDIO_SETINFO_params_%s_%d_%d",
+	TEST("AUDIO_SETINFO_params_set_%s_%d_%d",
 	    openmode_str[openmode] + 2, aimode, pause);
 	if (mode2aumode(openmode) == 0) {
 		XP_SKIP("Operation not allowed on this hardware property");
