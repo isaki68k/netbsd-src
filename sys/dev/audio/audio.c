@@ -118,18 +118,14 @@
  *	set_port 		-	x +
  *	get_port 		-	x +
  *	query_devinfo 		-	x
- *	allocm 			-	- +	(*1)
- *	freem 			-	- +	(*1)
+ *	allocm 			-	- +
+ *	freem 			-	- +
  *	round_buffersize 	-	x
  *	get_props 		-	-	Called at attach time
  *	trigger_output 		x	x +
  *	trigger_input 		x	x +
  *	dev_ioctl 		-	x
  *	get_locks 		-	-	Called at attach time
- *
- * *1 Note: Before 8.0, since these have been called only at attach time,
- *   neither lock were necessary.  Currently, on the other hand, since
- *   these may be also called after attach, the thread lock is required.
  *
  * In addition, there is an additional lock.
  *
@@ -4888,10 +4884,8 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 	    bufsize);
 	mixer->hwbuf.capacity = capacity;
 
-	/*
-	 * XXX need to release sc_lock for compatibility?
-	 */
 	if (sc->hw_if->allocm) {
+		/* sc_lock is not necessary for allocm */
 		mixer->hwbuf.mem = sc->hw_if->allocm(sc->hw_hdl, mode, bufsize);
 		if (mixer->hwbuf.mem == NULL) {
 			device_printf(sc->sc_dev, "%s: allocm(%zu) failed\n",
@@ -5010,6 +5004,7 @@ audio_mixer_destroy(struct audio_softc *sc, audio_trackmixer_t *mixer)
 
 	if (mixer->hwbuf.mem != NULL) {
 		if (sc->hw_if->freem) {
+			/* sc_lock is not necessary for freem */
 			sc->hw_if->freem(sc->hw_hdl, mixer->hwbuf.mem, bufsize);
 		} else {
 			kmem_free(mixer->hwbuf.mem, bufsize);
