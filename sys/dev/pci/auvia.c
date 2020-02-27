@@ -749,8 +749,7 @@ auvia_round_blocksize(void *addr, int blk,
 	if (sc->sc_flags & AUVIA_FLAGS_VT8233 && blk < 288)
 		blk = 288;
 
-	/* Avoid too many dma_ops. */
-	return uimin((blk & -32), AUVIA_MINBLKSZ);
+	return (blk & -32);
 }
 
 static int
