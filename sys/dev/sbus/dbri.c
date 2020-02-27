@@ -1636,8 +1636,8 @@ dbri_round_blocksize(void *hdl, int bs, int mode,
 			const audio_params_t *param)
 {
 
-	if (bs > 0x1fff)
-		return 0x1fff;
+	if (bs > 0x1ffc)
+		return 0x1ffc;
 	return bs;
 }
 
