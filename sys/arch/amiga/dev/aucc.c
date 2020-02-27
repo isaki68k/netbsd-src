@@ -404,8 +404,11 @@ aucc_round_blocksize(void *addr, int blk,
 		     int mode, const audio_params_t *param)
 {
 
-	/* round up to even size */
-	return blk > AUDIO_BUF_SIZE ? AUDIO_BUF_SIZE : blk;
+	if (blk > AUDIO_BUF_SIZE)
+		blk = AUDIO_BUF_SIZE;
+
+	blk = rounddown(blk, param->channels * param->precision / NBBY);
+	return blk;
 }
 
 int
