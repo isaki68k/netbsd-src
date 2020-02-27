@@ -422,16 +422,13 @@ static int
 auixp_round_blocksize(void *hdl, int bs, int mode,
     const audio_params_t *param)
 {
-	uint32_t new_bs;
 
-	new_bs = bs;
-	/* Be conservative; align to 32 bytes and maximise it to 64 kb */
 	/* 256 kb possible */
-	if (new_bs > 0x10000)
+	if (bs > 0x10000)
 		bs = 0x10000;			/* 64 kb max */
-	new_bs = (bs & ~0x20);			/* 32 bytes align */
+	bs = rounddown(bs, param->channels * param->precision / NBBY);
 
-	return new_bs;
+	return bs;
 }
 
 
