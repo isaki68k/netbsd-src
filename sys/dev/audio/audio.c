@@ -1956,6 +1956,11 @@ audiobellclose(audio_file_t *file)
 	error = audio_close(sc, file);
 
 	audio_file_exit(sc, &sc_ref);
+
+	KASSERT(file->ptrack);
+	audio_track_destroy(file->ptrack);
+	KASSERT(file->rtrack == NULL);
+	kmem_free(file, sizeof(*file));
 	return error;
 }
 
