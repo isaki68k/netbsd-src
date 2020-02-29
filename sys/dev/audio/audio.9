@@ -324,8 +324,12 @@ or
 and
 .Va param ,
 encoding parameters for the hardware.
+.Va bs
+passed is always non-zero and a multiple of the frame size represented by
+param->channels * param->precision / 8.
 It should return a block size, possibly changed according to the needs
 of the hardware driver.
+The return value also must be non-zero and a multiple of the frame size.
 It is called at Attach or Closed phase.
 .It Dv int commit_settings(void *hdl)
 optional, is called after all calls to
