@@ -9,7 +9,6 @@ sb*		at pnpbios? index ?	# NeoMagic 256AV in sb mode
 wss*		at pnpbios? index ?	# NeoMagic 256AV in wss mode
 ym*		at pnpbios? index ?	# Yamaha OPL3-SA[23] audio
 
-azalia* at pci? dev ? function ?	# High Definition Audio
 aria0	at isa? port 0x290 irq 10 		# Aria
 ess0	at isa? port 0x220 irq 5 drq 1 drq2 5	# ESS 18XX
 cms0	at isa? port 0x220			# Creative Music System
