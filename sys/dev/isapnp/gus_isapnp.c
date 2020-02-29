@@ -66,7 +66,6 @@ static const struct audio_hw_if guspnp_hw_if = {
 	.close			= iwclose,
 	.query_format		= iw_query_format,
 	.set_format		= iw_audio_set_format,
-	.round_blocksize	= iw_round_blocksize,
 	.commit_settings	= iw_commit_settings,
 	.start_output		= iw_start_output,
 	.start_input		= iw_start_input,

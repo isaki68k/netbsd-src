@@ -1280,7 +1280,7 @@ yds_round_blocksize(void *addr, int blk, int mode,
 	if (blk < 1024)
 		blk = 1024;
 
-	return blk & ~3;
+	return blk;
 }
 
 static uint32_t

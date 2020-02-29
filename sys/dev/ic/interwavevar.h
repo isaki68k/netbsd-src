@@ -204,9 +204,6 @@ int	iw_audio_set_format(void *, int,
 	    const audio_params_t *, const audio_params_t *,
 	    audio_filter_reg_t *, audio_filter_reg_t *);
 
-	/* Hardware may have some say in the blocksize to choose */
-int	iw_round_blocksize(void *, int, int, const audio_params_t *);
-
 int	iw_commit_settings(void *);
 
 	/* Start input/output routines. These usually control DMA. */

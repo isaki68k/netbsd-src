@@ -699,15 +699,6 @@ iw_audio_set_format(void *addr, int setmode,
 	return 0;
 }
 
-int
-iw_round_blocksize(void *addr, int blk, int mode,
-    const audio_params_t *param)
-{
-
-	/* Round to a multiple of the biggest sample size. */
-	return blk & -4;
-}
-
 void
 iw_mixer_line_level(struct iw_softc *sc, int line, int levl, int levr)
 {

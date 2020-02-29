@@ -129,7 +129,6 @@ static int cmpci_query_format(void *, audio_format_query_t *);
 static int cmpci_set_format(void *, int,
     const audio_params_t *, const audio_params_t *,
     audio_filter_reg_t *, audio_filter_reg_t *);
-static int cmpci_round_blocksize(void *, int, int, const audio_params_t *);
 static int cmpci_halt_output(void *);
 static int cmpci_halt_input(void *);
 static int cmpci_getdev(void *, struct audio_device *);
@@ -149,7 +148,6 @@ static void cmpci_get_locks(void *, kmutex_t **, kmutex_t **);
 static const struct audio_hw_if cmpci_hw_if = {
 	.query_format		= cmpci_query_format,
 	.set_format		= cmpci_set_format,
-	.round_blocksize	= cmpci_round_blocksize,
 	.halt_output		= cmpci_halt_output,
 	.halt_input		= cmpci_halt_input,
 	.getdev			= cmpci_getdev,
@@ -627,15 +625,6 @@ cmpci_set_format(void *handle, int setmode,
 		cmpci_set_in_ports(sc);
 	}
 	return 0;
-}
-
-/* ARGSUSED */
-static int
-cmpci_round_blocksize(void *handle, int block,
-    int mode, const audio_params_t *param)
-{
-
-	return block & -4;
 }
 
 static int

@@ -261,16 +261,6 @@ sunxi_codec_get_props(void *priv)
 }
 
 static int
-sunxi_codec_round_blocksize(void *priv, int bs, int mode,
-    const audio_params_t *params)
-{
-	bs &= ~3;
-	if (bs == 0)
-		bs = 4;
-	return bs;
-}
-
-static int
 sunxi_codec_trigger_output(void *priv, void *start, void *end, int blksize,
     void (*intr)(void *), void *intrarg, const audio_params_t *params)
 {
@@ -475,7 +465,6 @@ static const struct audio_hw_if sunxi_codec_hw_if = {
 	.get_port = sunxi_codec_get_port,
 	.query_devinfo = sunxi_codec_query_devinfo,
 	.get_props = sunxi_codec_get_props,
-	.round_blocksize = sunxi_codec_round_blocksize,
 	.trigger_output = sunxi_codec_trigger_output,
 	.trigger_input = sunxi_codec_trigger_input,
 	.halt_output = sunxi_codec_halt_output,

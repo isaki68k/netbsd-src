@@ -415,11 +415,10 @@ int
 toccata_round_blocksize(void *addr, int blk,
 			int mode, const audio_params_t *param)
 {
-	int ret;
 
-	ret = blk > 512 ? 512 : (blk & -4);
-
-	return ret;
+	if (blk > 512)
+		blk = 512;
+	return blk;
 }
 
 size_t

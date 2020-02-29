@@ -2332,7 +2332,6 @@ gusmax_round_blocksize(void *addr, int blocksize,
 
 	ac = addr;
 	sc = ac->sc_ad1848.parent;
-/*	blocksize = ad1848_round_blocksize(ac, blocksize, mode, param);*/
 	return gus_round_blocksize(sc, blocksize, mode, param);
 }
 

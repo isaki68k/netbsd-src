@@ -863,15 +863,6 @@ ad1848_get_rec_port(struct ad1848_softc *sc)
 }
 
 int
-ad1848_round_blocksize(void *addr, int blk,
-    int mode, const audio_params_t *param)
-{
-
-	/* Round to a multiple of the biggest sample size. */
-	return blk &= -4;
-}
-
-int
 ad1848_open(void *addr, int flags)
 {
 	struct ad1848_softc *sc;

@@ -76,7 +76,6 @@ __KERNEL_RCSID(0, "$NetBSD: pl041.c,v 1.6 2019/05/08 13:40:18 isaki Exp $");
 #define	AACIDR			0x90
 
 #define	AACI_FIFO_DEPTH		512
-#define	AACI_BLOCK_ALIGN	4
 
 #define	AACI_READ(sc, reg)			\
 	bus_space_read_4((sc)->sc_bst, (sc)->sc_bsh, (reg))
@@ -212,12 +211,6 @@ aaci_halt_output(void *priv)
 	return 0;
 }
 
-static int
-aaci_round_blocksize(void *priv, int bs, int mode, const audio_params_t *params)
-{
-	return roundup(bs, AACI_BLOCK_ALIGN);
-}
-
 static void
 aaci_get_locks(void *priv, kmutex_t **intr, kmutex_t **thread)
 {
@@ -237,7 +230,6 @@ static const struct audio_hw_if aaci_hw_if = {
 	.get_props = aaci_get_props,
 	.trigger_output = aaci_trigger_output,
 	.halt_output = aaci_halt_output,
-	.round_blocksize = aaci_round_blocksize,
 	.get_locks = aaci_get_locks,
 };
 

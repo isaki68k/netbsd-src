@@ -390,16 +390,6 @@ sunxi_i2s_get_props(void *priv)
 }
 
 static int
-sunxi_i2s_round_blocksize(void *priv, int bs, int mode,
-    const audio_params_t *params)
-{
-	bs &= ~3;
-	if (bs == 0)
-		bs = 4;
-	return bs;
-}
-
-static int
 sunxi_i2s_trigger_output(void *priv, void *start, void *end, int blksize,
     void (*intr)(void *), void *intrarg, const audio_params_t *params)
 {
@@ -587,7 +577,6 @@ static const struct audio_hw_if sunxi_i2s_hw_if = {
 	.allocm = sunxi_i2s_allocm,
 	.freem = sunxi_i2s_freem,
 	.get_props = sunxi_i2s_get_props,
-	.round_blocksize = sunxi_i2s_round_blocksize,
 	.trigger_output = sunxi_i2s_trigger_output,
 	.trigger_input = sunxi_i2s_trigger_input,
 	.halt_output = sunxi_i2s_halt_output,
