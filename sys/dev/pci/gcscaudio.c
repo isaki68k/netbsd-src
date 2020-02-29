@@ -549,9 +549,10 @@ static int
 gcscaudio_round_blocksize(void *arg, int blk, int mode,
                           const audio_params_t *param)
 {
-	blk &= -4;
+
 	if (blk > GCSCAUDIO_PRD_SIZE_MAX)
 		blk = GCSCAUDIO_PRD_SIZE_MAX;
+	blk = rounddown(blk, param->channels * param->precision / NBBY);
 
 	return blk;
 }
