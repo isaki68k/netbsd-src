@@ -30,6 +30,7 @@ int debug;
 int x68k;
 char devaudio[16];
 char devsound[16];
+char devaudioctl[16];
 char devmixer[16];
 extern struct cmdtable cmdtable[];
 
@@ -101,11 +102,12 @@ init(int unit)
 
 	snprintf(devaudio, sizeof(devaudio), "/dev/audio%d", unit);
 	snprintf(devsound, sizeof(devsound), "/dev/sound%d", unit);
+	snprintf(devaudioctl, sizeof(devaudioctl), "/dev/audioctl%d", unit);
 	snprintf(devmixer, sizeof(devmixer), "/dev/mixer%d", unit);
 	if (debug)
 		printf("unit = %d\n", unit);
 
-	fd = open(devaudio, O_WRONLY);
+	fd = open(devaudioctl, O_WRONLY);
 	if (fd == -1)
 		err(1, "init: open: %s", devaudio);
 	r = ioctl(fd, AUDIO_GETDEV, &dev);
