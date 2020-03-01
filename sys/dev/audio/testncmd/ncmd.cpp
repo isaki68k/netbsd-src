@@ -666,6 +666,23 @@ cmd_mixer_async(int ac, char *av[])
 	return 0;
 }
 
+// /dev/sound を開いてみるだけ。
+// SETFORMAT によってハードウェアチャンネル数が減った後の sticky を
+// 確認するため。
+int
+cmd_open_sound(int ac, char *av[])
+{
+	int fd;
+
+	fd = OPEN(devsound, O_RDWR);
+	if (fd == -1) {
+		err(1, "open");
+	}
+
+	CLOSE(fd);
+	return 0;
+}
+
 // コマンド一覧
 #define DEF(x)	{ #x, cmd_ ## x }
 struct cmdtable cmdtable[] = {
@@ -678,6 +695,7 @@ struct cmdtable cmdtable[] = {
 	DEF(playmmap),
 	DEF(pad_close),
 	DEF(mixer_async),
+	DEF(open_sound),
 	{ NULL, NULL },
 };
 #undef DEF
