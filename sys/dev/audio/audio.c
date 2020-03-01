@@ -4778,8 +4778,13 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 			if ((rounded * NBBY) % (mixer->hwbuf.fmt.stride *
 			    mixer->hwbuf.fmt.channels) != 0) {
 				device_printf(sc->sc_dev,
-				    "blksize not configured %d -> %d\n",
-				    blksize, rounded);
+				    "round_blocksize must return blocksize "
+				    "divisible by framesize: "
+				    "blksize=%d rounded=%d "
+				    "stride=%ubit channels=%u\n",
+				    blksize, rounded,
+				    mixer->hwbuf.fmt.stride,
+				    mixer->hwbuf.fmt.channels);
 				return EINVAL;
 			}
 			/* Recalculation */
