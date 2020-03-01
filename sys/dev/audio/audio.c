@@ -6774,10 +6774,12 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 		    &sc->sc_pmixer->hwbuf.fmt);
 		if (pchanges == -1) {
 #if defined(AUDIO_DEBUG)
-			char fmtbuf[64];
-			audio_format2_tostr(fmtbuf, sizeof(fmtbuf), &pfmt);
-			TRACET(1, ptrack, "check play.params failed: %s",
-			    fmtbuf);
+			TRACET(1, ptrack, "check play.params failed: "
+			    "%s %ubit %uch %uHz",
+			    audio_encoding_name(pi->encoding),
+			    pi->precision,
+			    pi->channels,
+			    pi->sample_rate);
 #endif
 			return EINVAL;
 		}
@@ -6789,10 +6791,12 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 		    &sc->sc_rmixer->hwbuf.fmt);
 		if (rchanges == -1) {
 #if defined(AUDIO_DEBUG)
-			char fmtbuf[64];
-			audio_format2_tostr(fmtbuf, sizeof(fmtbuf), &rfmt);
-			TRACET(1, rtrack, "check record.params failed: %s",
-			    fmtbuf);
+			TRACET(1, rtrack, "check record.params failed: "
+			    "%s %ubit %uch %uHz",
+			    audio_encoding_name(ri->encoding),
+			    ri->precision,
+			    ri->channels,
+			    ri->sample_rate);
 #endif
 			return EINVAL;
 		}
