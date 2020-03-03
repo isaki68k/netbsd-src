@@ -6301,7 +6301,7 @@ test_audioctl_open_multiuser(bool multiuser,
 	size_t oldlen;
 	int r;
 
-	if (netbsd < 8 && multiuser == 1) {
+	if (netbsd < 8) {
 		XP_SKIP("multiuser is not supported");
 		return;
 	}
