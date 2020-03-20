@@ -6379,7 +6379,7 @@ audio_hw_probe(struct audio_softc *sc, audio_format2_t *cand, int mode)
  * If fmt is included in the result of query_format, returns 0.
  * Otherwise returns EINVAL.
  * Must be called without sc_lock held.
- */ 
+ */
 static int
 audio_hw_validate_format(struct audio_softc *sc, int mode,
 	const audio_format2_t *fmt)
