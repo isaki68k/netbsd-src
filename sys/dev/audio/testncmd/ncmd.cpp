@@ -683,6 +683,65 @@ cmd_open_sound(int ac, char *av[])
 	return 0;
 }
 
+// 指定のデバイスを開いて録音が始まるか調べる
+int
+cmd_recstart(const char *devfile)
+{
+	struct audio_info ai;
+	struct pollfd pfd;
+	char buf[4096];
+	int fd;
+	int r;
+
+	fd = OPEN(devfile, O_RDONLY | O_NONBLOCK);
+	if (fd == -1) {
+		err(1, "open");
+	}
+
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	if (r == -1) {
+		err(1, "AUDIO_GETBUFINFO");
+	}
+	printf("record.active=%d\n", ai.record.active);
+
+	pfd.fd = fd;
+	pfd.events = POLLIN;
+	pfd.revents = 0;
+	r = POLL(&pfd, 1, 3000);
+	if (r == -1) {
+		err(1, "poll");
+	}
+	if (r == 0) {
+		errx(1, "poll timeout (recording doesn't seem to start)\n");
+	}
+	r = READ(fd, buf, sizeof(buf));
+	if (r == -1) {
+		err(1, "read");
+	}
+	if (r == 0) {
+		errx(1, "read 0 bytes\n");
+	}
+
+	CLOSE(fd);
+	return 0;
+}
+
+int
+cmd_recstart_audio(int ac, char *av[])
+{
+	return cmd_recstart(devaudio);
+}
+int
+cmd_recstart_sound(int ac, char *av[])
+{
+	return cmd_recstart(devsound);
+}
+int
+cmd_recstart_audioctl(int ac, char *av[])
+{
+	return cmd_recstart(devaudioctl);
+}
+
 // コマンド一覧
 #define DEF(x)	{ #x, cmd_ ## x }
 struct cmdtable cmdtable[] = {
@@ -696,6 +755,9 @@ struct cmdtable cmdtable[] = {
 	DEF(pad_close),
 	DEF(mixer_async),
 	DEF(open_sound),
+	DEF(recstart_audio),
+	DEF(recstart_sound),
+	DEF(recstart_audioctl),
 	{ NULL, NULL },
 };
 #undef DEF
