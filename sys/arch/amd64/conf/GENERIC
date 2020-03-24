@@ -55,9 +55,6 @@ maxusers	64		# estimated number of users
 
 options 	INSECURE	# disable kernel security levels - X needs this
 
-options		AUDIO_BLK_MS=4	# make software with low latency needs performant
-				# no substantial CPU overhead on this platform
-
 options 	RTC_OFFSET=0	# hardware clock is this many mins. west of GMT
 options 	NTP		# NTP phase/frequency locked loop
 
