@@ -772,6 +772,35 @@ ENTRY(read_2)
 ENTRY(read_4)
 	READX	movl
 
+	.macro	WRITEX	movX
+	link	%a6,#0
+	moveml	%a2-%a3,%sp@-
+	movc	%vbr,%a3	| %a3: vbr
+	movl	0x0008(%a3),%a2	| %a2: save current handler
+	leal	rw_buserr,%a0	| load new handler
+	movl	%a0,0x0008(%a3)	| and set
+
+	movl	%a6@(12),%d0	| %d0: data to write
+	leal	1f,%a1		| %a1: return addr
+	movl	%a6@(8),%a0	| %a0: target addr
+	\movX	%d0,%a0@	| check!
+1:
+	movl	%a2,0x0008(%a3)	| restore buserr handler
+	moveml	%sp@+,%a2-%a3
+	unlk	%a6
+	rts
+	.endm
+
+ENTRY(write_1)
+	WRITEX	movb
+
+ENTRY(write_2)
+	WRITEX	movw
+
+ENTRY(write_4)
+	WRITEX	movl
+
+
 ASENTRY_NOPROFILE(rw_buserr)
 	movq	#1,%d0
 	movl	%d0,_C_LABEL(isbuserr)

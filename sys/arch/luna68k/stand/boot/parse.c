@@ -133,8 +133,12 @@ cmd_help(int argc, char *argv[])
 extern uint32_t read_1(uint32_t);
 extern uint32_t read_2(uint32_t);
 extern uint32_t read_4(uint32_t);
+extern uint32_t write_1(uint32_t, uint32_t);
+extern uint32_t write_2(uint32_t, uint32_t);
+extern uint32_t write_4(uint32_t, uint32_t);
 uint32_t hex2bin(const char *, char **);
 int cmd_r(int, char*[]);
+int cmd_w(int, char*[]);
 
 uint32_t
 hex2bin(const char *s, char **end)
@@ -243,6 +247,53 @@ cmd_r(int argc, char *argv[])
 
 	return ST_NORMAL;
 }
+
+int
+cmd_w(int argc, char *argv[])
+{
+	char *end;
+	uint32_t addr;
+	uint32_t data;
+	int size;
+
+	if (argc != 3) {
+		printf("usage: w <hex-address>[.<size>] <hex-data>\n");
+		printf("       <size> := l,w,b (default:l)\n");
+		return ST_NORMAL;
+	}
+
+	addr = hex2bin(argv[1], &end);
+	size = 4;
+	if (*end == '.') {
+		char s = *++end;
+		s |= 0x20;
+		if (s == 'b') {
+			size = 1;
+		} else if (s == 'w') {
+			size = 2;
+		} else if (s == 'l') {
+			size = 4;
+		}
+		/* no error check */
+	}
+
+	data = hex2bin(argv[2], NULL);
+
+	isbuserr = 0;
+	switch (size) {
+	 case 1:
+		write_1(addr, data);
+	 case 2:
+		write_2(addr, data);
+	 case 4:
+		write_4(addr, data);
+	}
+	if (isbuserr)
+		printf("Bus Error\n");
+
+	return ST_NORMAL;
+}
+
 #endif /* readwrite test */
 
 struct command_entry {
@@ -271,7 +322,7 @@ static const struct command_entry entries[] = {
 	{ "quit",	exit_program },
 
 	{ "r",		cmd_r        },
-//	{ "w",		cmd_w        },
+	{ "w",		cmd_w        },
 	{ NULL, NULL }
 };
 
