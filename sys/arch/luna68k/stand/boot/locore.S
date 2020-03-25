@@ -746,7 +746,9 @@ ENTRY(spl7)
  */
 	.macro	READX	movX
 	link	%a6,#0
-	moveml	%a2-%a3,%sp@-
+	moveml	%a2-%a4,%sp@-
+	move	%sr,%d1		| %d1: sr
+	movl	%sp,%a4		| %a4: sp
 	movc	%vbr,%a3	| %a3: vbr
 	movl	0x0008(%a3),%a2	| %a2: save current handler
 	leal	rw_buserr,%a0	| load new handler
@@ -758,7 +760,7 @@ ENTRY(spl7)
 	\movX	%a0@,%d0	| check!
 1:
 	movl	%a2,0x0008(%a3)	| restore buserr handler
-	moveml	%sp@+,%a2-%a3
+	moveml	%sp@+,%a2-%a4
 	unlk	%a6
 	rts
 	.endm
@@ -774,7 +776,9 @@ ENTRY(read_4)
 
 	.macro	WRITEX	movX
 	link	%a6,#0
-	moveml	%a2-%a3,%sp@-
+	moveml	%a2-%a4,%sp@-
+	move	%sr,%d1		| %d1: sr
+	movl	%sp,%a4		| %a4: sp
 	movc	%vbr,%a3	| %a3: vbr
 	movl	0x0008(%a3),%a2	| %a2: save current handler
 	leal	rw_buserr,%a0	| load new handler
@@ -786,7 +790,7 @@ ENTRY(read_4)
 	\movX	%d0,%a0@	| check!
 1:
 	movl	%a2,0x0008(%a3)	| restore buserr handler
-	moveml	%sp@+,%a2-%a3
+	moveml	%sp@+,%a2-%a4
 	unlk	%a6
 	rts
 	.endm
@@ -804,8 +808,9 @@ ENTRY(write_4)
 ASENTRY_NOPROFILE(rw_buserr)
 	movq	#1,%d0
 	movl	%d0,_C_LABEL(isbuserr)
-	movl	%a1,%sp@(2)	| new return addrress
-	rte
+	movl	%a4,%sp
+	move	%d1,%sr
+	jmp	%a1@		| return
 
 	.data
 
