@@ -63,12 +63,13 @@ P.del {
 <title></title>
 </head>
 <body>
-ベースにしたのは NetBSD 7.1 の audio.4,v 1.72。<br>
+最初にベースにしたのは NetBSD 7.1 の audio.4,v 1.72。<br>
 NetBSD 8 部分は audio.4,v 1.79。<br>
+現状は audio.4.v, 1.89。<br>
 <p>
 凡例:<br>
-<p style="margin-left:8%;"><span class=a2>青太字は AUDIO2 で追加したいところ(案)。</span></p>
-<p class=del style="margin-left:8%;">赤背景は AUDIO2 で削除したいところ(案)。</p>
+<p style="margin-left:8%;"><span class=a2>青太字は AUDIO2 以降の内容。</span></p>
+<p class=del style="margin-left:8%;">赤背景は AUDIO2 以降で削除した内容。</p>
 <p class=comment style="margin-left:8%;">緑太字はその他のコメント</p>
 
 <hr>
@@ -353,18 +354,15 @@ AUDIO2 では <tt>AUMODE_PLAY_ALL</tt> は機能しなくなった
 The audio driver supports track multiplexing.
 All sampling devices can be opened at any time without interference.
 For playback, all tracks opened simultaneously are mixed,
-even if thier specified format is different.
+even if their specified format is different.
 For recording, recorded data is distributed to all opened tracks,
-even if thier specified format is different.
-To achieve this, the audio driver has an
-small efficient
-encoding converter, a channel mixer, and a frequency conveter.
+even if their specified format is different.
+To achieve this, the audio driver has a small efficient encoding converter,
+a channel mixer, and a frequency conveter.
 The frequency conversion adapts the simplest way
-(interpolation method for upward, and
-simple thinning method for downward)
+(interpolation method for upward, and simple thinning method for downward)
 due to restriction in kernel resources and processing time.
-It will work well in most case but
-don't expect excessively for its quality.
+It will work well in most case but don't expect excessive quality.
 </span></p>
 
 <p style="margin-left:8%; margin-top: 1em">The audio device
@@ -404,7 +402,7 @@ be used.
 <span class=del>The playing and recording buffers are distinct and
 must be mapped separately if both are to be used.</span>
 <span class=a2>
-Note that mmap(2) no longer maps hardware buffer directly.
+Note that mmap(2) no longer maps hardware buffers directly.
 Now it is achieved by emulation so
 don't expect any improvements excessively rather than normal write(2).
 </p>
@@ -424,7 +422,7 @@ mapped device.</span>
 <span class=a2>
 XXX For historical reasons,
 only encodings that are not set AUDIO_ENCODINGFLAG_EMULATED
-is able to mmap(2).
+are able to mmap(2).
 </span>
 </p>
 <p class=comment style="margin-left:8%">
@@ -449,23 +447,6 @@ is changed.</p>
 
 <p style="margin-left:8%; margin-top: 1em">The following
 ioctl(2) commands are supported on the sample devices:</p>
-
-<p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_GETCHAN
-(int)</p>
-
-<p class=del style="margin-left:20%;">This command will return the
-audio channel in use.</p>
-
-<p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_SETCHAN
-(int)</p>
-
-<p class=del style="margin-left:20%;">This command will select the
-audio channel for subsequent ioctl calls.</p>
-<p style="margin-left:20%"><span class=a2>
-These two are obsoleted.</span></p>
-<p class=comment style="margin-left:20%">
-AUDIO2 ではこの2つの ioctl は廃止。必要ないしセキュリティ上問題。
-</p>
 
 <p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_FLUSH</p>
 
@@ -553,7 +534,7 @@ command returns an error.</p>
 
 <p style="margin-left:20%;"><span class=del>The command returns the current
 setting of the full duplex mode.</span></p>
-<p style="margin-left:20%;"><span class=a2>The command is obsoleted.</span></p>
+<p style="margin-left:20%;"><span class=a2>The command is obsolete.</span></p>
 
 <p class=comment style="margin-left:20%">
 このコマンドは HW (とミキサー)が full duplex かどうかを返す。
@@ -573,7 +554,7 @@ non-zero value, or into half-duplex operation if it contains
 a zero value. If the device does not support full-duplex
 operation, attempting to set full-duplex mode returns an
 error.</span></p>
-<p style="margin-left:20%;"><span class=a2>This command is obsoleted.</span></p>
+<p style="margin-left:20%;"><span class=a2>This command is obsolete.</span></p>
 <p class=comment style="margin-left:20%">
 本来 open 直後は必ず Half duplex 状態になっており
 その後必要ならこの ioctl で Full duplex に変える
@@ -722,7 +703,8 @@ and playback.</span></p>
 The <i>mode</i> field indicates current operation mode,
 either one of AUMODE_PLAY or AUMODE_RECORD.
 These two flags can not be changed once this descriptor is opened.
-On playback mode, obsoleted AUMODE_PLAY_ALL can be set but has no effect.
+For playback mode, the obsolete AUMODE_PLAY_ALL
+flag can be set but has no effect.
 </span></p>
 <p class=comment style="margin-left:20%">
 AUDIO2 ではオープン後の録音再生方向の変更を認めていない。
@@ -750,19 +732,20 @@ limits.
 blocksize set is returned in this field.</span>
  Normally the
 <i>blocksize</i> is calculated to correspond to <span class=del>50ms</span>
-<span class=a2>40ms (For some hardware, this value may be different
+<span class=a2>40ms (for some hardware, this value may be different
 due to the hardware restrictions) </span> of
-sound and it is recalculated when the encoding parameter
-changes<span class=del>, but if the <i>blocksize</i> is set explicitly this
+sound and it is recalculated
+when the encoding parameters change
+<span class=del>, but if the <i>blocksize</i> is set explicitly this
 value becomes sticky, i.e., it remains even when the
 encoding is changed. The stickiness can be cleared by
 reopening the device or setting the <i>blocksize</i> to
 0</span>.</p>
 <p style="margin-left:20%"><span class=a2>
 If the descriptor is opened for read only,
-<i>blocksize</i> indicates the blocksize on recording track.
+<i>blocksize</i> indicates the blocksize for the recording track.
 Otherwise,
-<i>blocksize</i> indicates the blocksize on playback track.
+<i>blocksize</i> indicates the blocksize for the playback track.
 </span></p>
 <p class=comment style="margin-left:20%">
 AUDIO_SETINFO は実際にセットした blocksize を書き戻すと manpage
@@ -879,10 +862,10 @@ encoding with big endian byte order</p>
 AC3</p>
 
 <p style="margin-left:20%; margin-top: 1em"><span class=a2>
-Regardless of format supported by underlying driver,
-audio driver accepts following formats.
+Regardless of formats supported by underlying driver,
+the audio driver accepts the following formats.
 <i>encoding</i> and <i>precision</i>
-is one of those obtained by <tt>AUDIO_GETENC</tt>.
+are one of the values obtained by <tt>AUDIO_GETENC</tt>.
 <i>channels</i> ranges from 1 to 12.
 <i>frequency</i> ranges from 1000Hz to 192000Hz.
 </span></p>
@@ -1009,8 +992,8 @@ ENODEV を返すにしてみたがどうか。
 >AUDIO_GETFORMAT (audio_info_t)</span></p>
 <p style="margin-left:20%;"><span class=a2>
 This command fetches the current hardware format.
-Only following members in audio_info_t are used.
-Members which is not listed here or belong in invalid direction
+Only the following members in audio_info_t are used.
+Members which are not listed here or belong in invalid direction
 are filled by -1.
 </span></p>
 <ul style="margin-left:20%; margin-top:0; margin-bottom:0;">
@@ -1056,6 +1039,25 @@ independent デバイスであっても、例えば再生中に録音ミキサ�
 <p class=comment style="margin-left:20%">
 stride 情報はないが、ここは内部フォーマットであり、
 precision != stride となるフォーマットはサポートしないので問題はない。
+</p>
+
+<p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_GETCHAN
+(int)</p>
+
+<p class=del style="margin-left:20%;">This command will return the
+audio channel in use.</p>
+<p style="margin-left:20%"><span class=a2>
+This command is obsolete.</span></p>
+
+<p style="margin-left:12%;margin-top: 1em" valign="top">AUDIO_SETCHAN
+(int)</p>
+
+<p class=del style="margin-left:20%;">This command will select the
+audio channel for subsequent ioctl calls.</p>
+<p style="margin-left:20%"><span class=a2>
+This command is obsolete.</span></p>
+<p class=comment style="margin-left:20%">
+AUDIO2 ではこの2つの ioctl は廃止。必要ないしセキュリティ上問題。
 </p>
 
 
