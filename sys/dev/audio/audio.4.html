@@ -869,6 +869,22 @@ are one of the values obtained by <tt>AUDIO_GETENC</tt>.
 <i>channels</i> ranges from 1 to 12.
 <i>frequency</i> ranges from 1000Hz to 192000Hz.
 </span></p>
+<p class=comment style="margin-left:20%; margin-top: 1em">
+The audio driver accepts the following formats.
+<i>encoding</i> and <i>precision</i>
+are one of the values obtained by <tt>AUDIO_GETENC</tt>,
+regardless of formats supported by underlying driver.
+<i>frequency</i> ranges from 1000Hz to 192000Hz,
+regardless of frequency (ranges) supported by underlying driver.
+<i>channels</i> depends your underlying driver.
+If the underlying driver only supports
+monaural (1channel) or stereo (2channels),
+you can specify 1 or 2 regardless of number of channels supported by
+underlying driver.
+If the underlying driver supports three or more channels,
+you can specify the number of channels supported by the underlying
+driver or less.
+</p>
 
 
 <p style="margin-left:20%; margin-top: 1em">The
