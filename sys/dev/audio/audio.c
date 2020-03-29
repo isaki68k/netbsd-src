@@ -879,13 +879,15 @@ audioattach(device_t parent, device_t self, void *aux)
 		return;
 	}
 	if (has_playback) {
-		if ((hw_if->start_output == NULL && hw_if->trigger_output == NULL) ||
+		if ((hw_if->start_output == NULL &&
+		     hw_if->trigger_output == NULL) ||
 		    hw_if->halt_output == NULL) {
 			aprint_error(": missing playback method\n");
 		}
 	}
 	if (has_capture) {
-		if ((hw_if->start_input == NULL && hw_if->trigger_input == NULL) ||
+		if ((hw_if->start_input == NULL &&
+		     hw_if->trigger_input == NULL) ||
 		    hw_if->halt_input == NULL) {
 			aprint_error(": missing capture method\n");
 		}
