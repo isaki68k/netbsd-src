@@ -34,6 +34,29 @@ char devaudioctl[16];
 char devmixer[16];
 extern struct cmdtable cmdtable[];
 
+/* from audio.c */
+static const char *encoding_names[] = {
+	"none",
+	AudioEmulaw,
+	AudioEalaw,
+	"pcm16",
+	"pcm8",
+	AudioEadpcm,
+	AudioEslinear_le,
+	AudioEslinear_be,
+	AudioEulinear_le,
+	AudioEulinear_be,
+	AudioEslinear,
+	AudioEulinear,
+	AudioEmpeg_l1_stream,
+	AudioEmpeg_l1_packets,
+	AudioEmpeg_l1_system,
+	AudioEmpeg_l2_stream,
+	AudioEmpeg_l2_packets,
+	AudioEmpeg_l2_system,
+	AudioEac3,
+};
+
 void __attribute__((__noreturn__))
 usage()
 {
@@ -742,6 +765,40 @@ cmd_recstart_audioctl(int ac, char *av[])
 	return cmd_recstart(devaudioctl);
 }
 
+// AUDIO_ENCODING_PCM16 がどうなるか。kern/55175
+int
+cmd_encoding_pcm16(int ac, char *av[])
+{
+	int fd;
+	int r;
+	struct audio_info ai;
+
+	fd = OPEN(devaudio, O_WRONLY);
+	if (fd == -1) {
+		err(1, "open");
+	}
+
+	AUDIO_INITINFO(&ai);
+	ai.play.encoding = AUDIO_ENCODING_PCM16;
+	ai.play.precision = 8;
+	printf("set encoding=%d:%s precision=%d\n",
+		ai.play.encoding, encoding_names[ai.play.encoding], ai.play.precision);
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
+	if (r == -1) {
+		err(1, "AUDIO_SETINFO");
+	}
+
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	if (r == -1) {
+		err(1, "AUDIO_GETBUFINFO");
+	}
+	printf("get encoding=%d:%s precision=%d\n",
+		ai.play.encoding, encoding_names[ai.play.encoding], ai.play.precision);
+
+	r = CLOSE(fd);
+	return 0;
+}
+
 // コマンド一覧
 #define DEF(x)	{ #x, cmd_ ## x }
 struct cmdtable cmdtable[] = {
@@ -758,6 +815,7 @@ struct cmdtable cmdtable[] = {
 	DEF(recstart_audio),
 	DEF(recstart_sound),
 	DEF(recstart_audioctl),
+	DEF(encoding_pcm16),
 	{ NULL, NULL },
 };
 #undef DEF
