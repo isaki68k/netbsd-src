@@ -769,7 +769,7 @@ audio(4) API fails to detect a capture-only device
 kernel panic when 'sysctl hw.audio0'
 <dd>sysctl_teardown() が原因だったっぽい。
 
-<dt><a href="http://gnats.netbsd.org/54427">kern/54427</a>
+<dt><s><a href="http://gnats.netbsd.org/54427">kern/54427</a></s>
 panic in audio_close
 <dd>pad を先にクローズすると死ぬ問題。
 
@@ -824,6 +824,14 @@ audio regression with multi channel content and stereo hardware
 <dt><a href="http://gnats.netbsd.org/55017">kern/55017</a>
 <dd>auvia(4) の blocksize 制約が厳しすぎる件。
 
+<dt><font color=#555><a href="http://gnats.netbsd.org/55130">kern/55130</a>
+audio sometimes plays a buzz sound for a few seconds when changing volume
+</font>
+<dd>たぶん RealTek hdafg(4) の問題。
+
+<dt><a href="http://gnats.netbsd.org/55175">kern/55175</a>
+Interpreation of AUDIO_FORMAT_LINEAR is wrong for 8-bit samples
+<dd>AUDIO_ENCODING_PCM16 with precision=8 は昔から unsigned。
 
 
 </dl>
