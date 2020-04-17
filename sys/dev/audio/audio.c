@@ -5471,7 +5471,9 @@ audio_pintr(void *arg)
 		return;
 	if (sc->sc_pbusy == false) {
 #if defined(DIAGNOSTIC)
-		device_printf(sc->sc_dev, "stray interrupt\n");
+		device_printf(sc->sc_dev,
+		    "DIAGNOSTIC: %s raised stray interrupt\n",
+		    device_xname(sc->hw_dev));
 #endif
 		return;
 	}
@@ -5740,7 +5742,9 @@ audio_rintr(void *arg)
 		return;
 	if (sc->sc_rbusy == false) {
 #if defined(DIAGNOSTIC)
-		device_printf(sc->sc_dev, "stray interrupt\n");
+		device_printf(sc->sc_dev,
+		    "DIAGNOSTIC: %s raised stray interrupt\n",
+		    device_xname(sc->hw_dev));
 #endif
 		return;
 	}
