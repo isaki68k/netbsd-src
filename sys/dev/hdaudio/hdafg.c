@@ -4015,6 +4015,9 @@ hdafg_halt_output(void *opaque)
 
 	hdaudio_stream_stop(ad->ad_playback);
 
+	/* Disable interrupt notification to upper layer */
+	ad->ad_playbackintr = NULL;
+
 	return 0;
 }
 
@@ -4024,6 +4027,9 @@ hdafg_halt_input(void *opaque)
 	struct hdaudio_audiodev *ad = opaque;
 
 	hdaudio_stream_stop(ad->ad_capture);
+
+	/* Disable interrupt notification to upper layer */
+	ad->ad_captureintr = NULL;
 
 	return 0;
 }
