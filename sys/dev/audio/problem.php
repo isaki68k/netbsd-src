@@ -465,53 +465,105 @@ NetBSD 7 も同様。
 
 </ul>
 
+<?php
+// $num .. PR 番号。負なら closed、
+// 後ろに "/xxx" を付けるとカテゴリ、デフォルトは kern
+// $is_audio .. MI なら true
+// $title
+// $comment
+function item($num, $is_audio, $title, $comment = "")
+{
+	$closed = false;
+	$category = "kern";
+
+	if (preg_match(",([^/]+)/(.*),", $num, $m)) {
+		$num = $m[1];
+		$category = $m[2];
+	}
+
+	if ($num < 0) {
+		$num = -$num;
+		$closed = true;
+	}
+
+	print "<dt>";
+	if ($is_audio)
+		print "<b>";
+	if ($closed)
+		print "<s>";
+	print "<a href=\"http://gnats.netbsd.org/${num}\">{$category}/{$num}</a>";
+	if ($closed)
+		print "</s><font color=#555>";
+	print " {$title}";
+	if ($closed)
+		print "</font>";
+	if ($is_audio)
+		print "</b>";
+
+	print "<dd>";
+	if ($closed)
+		print "<font color=#555>";
+	print "{$comment}";
+	if ($closed)
+		print "</font>";
+	print "\n";
+	print "\n";
+}
+?>
+
 <hr>
 <h4>Related PRs</h4>
 <dl>
-<dt><a href="http://gnats.netbsd.org/3424">kern/3424</a>
-Audio subsystem is writeonly-hostile (and readonly-hostile)
-<dd>単方向デバイスのサポートがいまいちだと言っているようだ。
-ちなみに NetBSD 1.2 時代。
+<?php
+item(3424, true,
+"Audio subsystem is writeonly-hostile (and readonly-hostile)",
+"単方向デバイスのサポートがいまいちだと言っているようだ。
+ちなみに NetBSD 1.2 時代。");
 
-<dt><a href="http://gnats.netbsd.org/6827">kern/6827</a>
-/dev/audio does not support mmap for recording</a>
-<dd>もう仕様にしては…。
+item(6827, true,
+"/dev/audio does not support mmap for recording",
+"もう仕様にしては…。");
 
-<dt><font color=#555><a href="http://gnats.netbsd.org/8479">kern/8479</a>
-ossaudio emulation (mis-)interprets record source MIXER_ENUMS</font>
-<dd>ミキサーか eso(4) の話?
+item(8479, false,
+"ossaudio emulation (mis-)interprets record source MIXER_ENUMS",
+"ミキサーか eso(4) の話?");
 
-<dt><a href="http://gnats.netbsd.org/9087">kern/9087</a>
-audio mmap(2) interface not entirely clear
-<dd>
+item(9087, true,
+"audio mmap(2) interface not entirely clear");
 
-<dt><font color=#555>kern/9196 OPTi93x audio</font>
-<dd>ad1848 系の亜種を足してほしかったようだ
+item(9196, false,
+"",
+"ad1848 系の亜種を足してほしかったようだ");
 
-<dt><font color=#555><a href="http://gnats.netbsd.org/14065">kern/14065</a>
-Record DMA not supported in the audio driver isa/wss_isa.c</font>
-<dd>wss(4) の録音側が不十分な件?
+item(14065, false,
+"Record DMA not supported in the audio driver isa/wss_isa.c",
+"wss(4) の録音側が不十分な件?");
 
-<dt><a href="http://gnats.netbsd.org/23571">kern/23571</a>
-devel/pth is unable to read audio device in various packages
-<dd>詳細未調査。
+item(23571, false,
+"devel/pth is unable to read audio device in various packages",
+"詳細未調査。");
 
-<dt><font color=#555>kern/29245 Fix to make audio work on Alpha PWS</font>
-<dd>ess(4) あたりの混ぜるな危険という話?
+item(29245, false,
+"kern/29245 Fix to make audio work on Alpha PWS",
+"ess(4) あたりの混ぜるな危険という話?");
 
-<dt><font color=#555><a href="http://gnats.netbsd.org/30898">kern/30898</a>
-auvia(4) plays audiofiles to fast and distorted</font>
-<dd>関係なさげ?
+item(30898, false,
+"auvia(4) plays audiofiles to fast and distorted",
+"関係なさげ?");
 
-<dt><font color=#555>kern/32481 audiocs(4) mixer does not label inputs correctly, does not control output ports</font>
+item(32481, false,
+"audiocs(4) mixer does not label inputs correctly, does not control output ports");
 
-<dt><a href="http://gnats.netbsd.org/34821">kern/34821</a>
-[PATCH] Audio drivers use obsolete record gain control
-<dd>
+item(34821, false,
+"[PATCH] Audio drivers use obsolete record gain control");
 
-<dt><font color=#555><s>kern/35060</s> No audio output with azalia</font>
+item(-35060, false,
+"No audio output with azalia");
 
-<dt><font color=#555>kern/35465 GUS PnP audio device's still faulty</font>
+item(35465, false,
+"GUS PnP audio device's still faulty");
+?>
+
 
 <dt><font color=#555><s>kern/36883</s> azalia device doesn't sense plugging of the headphone</font>
 
@@ -702,138 +754,140 @@ audio stutters
 audioctl can't set output gain
 <dd>上述
 
-<dt><s><a href="http://gnats.netbsd.org/52889">kern/52889</a></s>
-amd64 panic during audio tests
-<dd>pad デタッチ中に死ぬ。
-そもそもスレッド駆動してるからなのと、オンデマンドアタッチしてるのも問題なのでは。
+<?php
+item(-52889, false,
+"amd64 panic during audio tests",
+"pad デタッチ中に死ぬ。
+そもそもスレッド駆動してるからなのと、オンデマンドアタッチしてるのも問題なのでは。");
 
-<dt><font color=#555><a href="http://gnats.netbsd.org/52912">kern/52912</a>
-hdafg: no sound from jack port on a laptop</font>
-<dd>ハードウェアドライバ固有の問題?
+item(52912, false,
+"hdafg: no sound from jack port on a laptop",
+"ハードウェアドライバ固有の問題?");
 
-<dt><s><a href="http://gnats.netbsd.org/53028">kern/53028</a></s>
-hdaudio default latency too high, mpv spins at 100% CPU playing audio
-<dd>レイテンシが高すぎるという話と、s32 再生で CPU 100% になるという話。
+item(-53028, false,
+"hdaudio default latency too high, mpv spins at 100% CPU playing audio",
+"レイテンシが高すぎるという話と、s32 再生で CPU 100% になるという話。");
 
-<dt><font color=#555><s><a href="http://gnats.netbsd.org/53029">kern/53029</a></s>
-src/sys/dev/hdaudio/hdafg.c:1267: dead code block ?</font>
-<dd>リファクタリング。
+item(-53029, false,
+"src/sys/dev/hdaudio/hdafg.c:1267: dead code block ?",
+"リファクタリング。");
 
-<dt><font color=#555><a href="http://gnats.netbsd.org/53230">kern/53230</a>
-dwc2 crashes from uaudio</font>
-<dd>録音中にロックで死ぬ話。
+item(53230, false,
+"dwc2 crashes from uaudio",
+"録音中にロックで死ぬ話。");
 
-<dt><font color=#555><s><a href="http://gnats.netbsd.org/53802">kern/53802</a></s>
-audioctl not working for usb audio dev</font>
-<dd>outputs.master を持たないデバイスに対しては audioctl play.gain が効かないという話。
-play.gain は outputs.master につながっているのでどうしたもんか。
+item(-53802, false,
+"audioctl not working for usb audio dev",
+"outputs.master を持たないデバイスに対しては audioctl play.gain が効かないという話。
+play.gain は outputs.master につながっているのでどうしたもんか。");
 
-<dt><a href="http://gnats.netbsd.org/54005">kern/54005</a>
-X server vt switching stops audio
-<dd>Xと仮想コンソールを切り替えると再生が止まることがあるらしい?
+item(54005, false,
+"X server vt switching stops audio",
+"");
 
-<dt><s><a href="http://gnats.netbsd.org/54177">kern/54177</a></s>
-playing audio in firefox doesn't work after kernel update
-<dd>file lock がきつすぎた件。
+print "<hr width=80%>\n";
 
-<dt><s><a href="http://gnats.netbsd.org/54186">kern/54186</a></s>
-pad(4) audio tests fail
-<dd>padのテストが (sparc で) こける。次の PR にマージした。
+item(-54177, true,
+"playing audio in firefox doesn't work after kernel update",
+"file lock がきつすぎた件。");
 
-<dt><s><a href="http://gnats.netbsd.org/54187">kern/54187</a></s>
-dev/audio/t_pad:pad_output test now fails
-<dd>padのテストが (i386/amd64 で) こける。
+item(-54186, true,
+"pad(4) audio tests fail",
+"padのテストが (sparc で) こける。次の PR にマージした。");
 
-<dt><s><a href="http://gnats.netbsd.org/54229">kern/54229</a></s>
-audio in firefox stops playing
-<dd>/dev/sound の pause が他人に影響する話。
+item(-54187, true,
+"dev/audio/t_pad:pad_output test now fails",
+"padのテストが (i386/amd64 で) こける。");
 
-<dt><s><a href="http://gnats.netbsd.org/54230">kern/54230</a></s>
-mpv drops video frames with `--ao=oss' (probably after isaki-audio2 merge)
-<dd>mpv+oss でフレームドロップする話。
+item(-54229, true,
+"audio in firefox stops playing",
+"/dev/sound の pause が他人に影響する話。");
 
-<dt><a href="http://gnats.netbsd.org/54243">kern/54243</a>
-beeping woes with -current
-<dd>beepがうるさい(?)という話?
+item(-54230, false,
+"mpv drops video frames with `--ao=oss' (probably after isaki-audio2 merge)",
+"mpv+oss でフレームドロップする話。");
 
-<dt><s><a href="http://gnats.netbsd.org/54245">xsrc/54245</a></s>
-xset(1): bell duration 0 is infinite
-<dd>xset b * * 0 でビープが無限(実際にはすごく長い値)になるという話。
-wscons 側の問題。
+item(54243, true,
+"beeping woes with -current",
+"beepがうるさい(?)という話?");
 
-<dt><s><a href="http://gnats.netbsd.org/54264">kern/54264</a></s>
-audio(4) API fails to detect a capture-only device
-<dd>uaudio(4) の get_props() が正しくなかった問題。
+item("-54245/xsrc", false,
+"xset(1): bell duration 0 is infinite",
+"xset b * * 0 でビープが無限(実際にはすごく長い値)になるという話。
+wscons 側の問題。");
 
-<dt><s><a href="http://gnats.netbsd.org/54282">kern/54282</a></s>
-kernel panic when 'sysctl hw.audio0'
-<dd>sysctl_teardown() が原因だったっぽい。
+item(-54264, false,
+"audio(4) API fails to detect a capture-only device",
+"uaudio(4) の get_props() が正しくなかった問題。");
 
-<dt><s><a href="http://gnats.netbsd.org/54427">kern/54427</a></s>
-panic in audio_close
-<dd>pad を先にクローズすると死ぬ問題。
+item(-54282, true,
+"kernel panic when 'sysctl hw.audio0'",
+"sysctl_teardown() が原因だったっぽい。");
 
-<dt><a href="http://gnats.netbsd.org/54474">kern/54474</a>
-Jetson TK1 audio playback has clicks since isaki-audio2 merge
-<dd>hdafg の問題だったようだが、追試ないと分からん。
+item(-54427, true,
+"panic in audio_close",
+"pad を先にクローズすると死ぬ問題。");
 
-<dt><a href="http://gnats.netbsd.org/54547">kern/54547</a>
-running stress-ng --dev 1 will cause the kernel to panic and reboot
-<dd>詳細不明。nat が N8 の mmap あたりを直したようだ。
+item(54474, true,
+"Jetson TK1 audio playback has clicks since isaki-audio2 merge",
+"hdafg の問題だったようだが、追試ないと分からん。");
 
-<dt><font color=#555><a href="http://gnats.netbsd.org/54614">port-arm/54614</a>
-playing with uaudio panics on rpi</font>
-<dd>dwc2 の問題。
+item(54547, false,
+"running stress-ng --dev 1 will cause the kernel to panic and reboot",
+"詳細不明。nat が N8 の mmap あたりを直したようだ。");
 
-<dt><font color=#555><s><a href="http://gnats.netbsd.org/54658">kern/54658</a></s>
-zaudio(4) attach failure (after MI i2c(4) changes?)</font>
-<dd>MI i2c 側の問題。
+item("54614/port-arm", false,
+"playing with uaudio panics on rpi",
+"dwc2 の問題。");
 
-<dt><s><a href="http://gnats.netbsd.org/54662">kern/54662</a></s>
-uaudio sometimes not recognized
-<dd>メンバ変数の初期化漏れ。他に同様のドライバはなかった。
+item(-54658, false,
+"zaudio(4) attach failure (after MI i2c(4) changes?)",
+"MI i2c 側の問題。");
 
-<dt><s><a href="http://gnats.netbsd.org/54667">kern/54667</a></s>
-libossaudio returns incorrect recording sample rate
-<dd>録音再生が分離されたことに libossaudio 側が対応してなかった件。
+item(-54662, true,
+"uaudio sometimes not recognized",
+"メンバ変数の初期化漏れ。他に同様のドライバはなかった。");
 
-<dt><font color=#555><a href="http://gnats.netbsd.org/54696">port-evbarm/54696</a>
-Kernel panic in bus_dma.c on Raspberry Pi 3B/3B+</font>
-<dd>dwc2 の問題。
+item(-54667, false,
+"libossaudio returns incorrect recording sample rate",
+"録音再生が分離されたことに libossaudio 側が対応してなかった件。");
 
-<dt><a href="http://gnats.netbsd.org/54700">kern/54700</a>
-beeps through audio device stop happening
-<dd>ビープがとまる場合があるらしい?
+item("54696/port-evbarm", false,
+"Kernel panic in bus_dma.c on Raspberry Pi 3B/3B+",
+"dwc2 の問題。");
 
-<dt><font color=#555><a href="http://gnats.netbsd.org/54705">kern/54705</a>
-uaudio: move computing of the number of input channels under UAUDIO_DEBUG</font>
-<dd>ifdef の問題。
+item(54700, true,
+"beeps through audio device stop happening",
+"ビープがとまる場合があるらしい?");
 
-<dt><s><a href="http://gnats.netbsd.org/54796">kern/54796</a></s>
-9.0_RC1 audio(4) malloc failed</a>
-<dd>M_NOWAIT の件。
+item(54705, false,
+"uaudio: move computing of the number of input channels under UAUDIO_DEBUG",
+"ifdef の問題だが元コードで問題が再現しない。");
 
-<dt><a href="http://gnats.netbsd.org/54917">kern/54917</a>
-pad(4) has a memory leak
-<dd>pad open が cf を解放してない件。
+item(-54796, true,
+"9.0_RC1 audio(4) malloc failed",
+"M_NOWAIT の件。");
 
-<dt><a href="http://gnats.netbsd.org/54973">kern/54973</a>
-audio regression with multi channel content and stereo hardware
-<dd>2ch ハードで libossaudio 経由の 5.1ch が 2ch(L,R) にshrink される話。
+item(54917, false,
+"pad(4) has a memory leak",
+"pad open が cf を解放してない件。");
 
-<dt><s><a href="http://gnats.netbsd.org/55017">kern/55017</a></s>
-audio0 autoconfiguration error on auvia
-<dd>auvia(4) の blocksize 制約が厳しすぎる件。
+item(54973, true,
+"audio regression with multi channel content and stereo hardware",
+"2ch ハードで libossaudio 経由の 5.1ch が 2ch(L,R) にshrink される話。");
 
-<dt><font color=#555><a href="http://gnats.netbsd.org/55130">kern/55130</a>
-audio sometimes plays a buzz sound for a few seconds when changing volume
-</font>
-<dd>たぶん RealTek hdafg(4) の問題。
+item(-55017, false,
+"audio0 autoconfiguration error on auvia",
+"auvia(4) の blocksize 制約が厳しすぎる件。");
 
-<dt><a href="http://gnats.netbsd.org/55175">kern/55175</a>
-Interpreation of AUDIO_FORMAT_LINEAR is wrong for 8-bit samples
-<dd>AUDIO_ENCODING_PCM16 with precision=8 は昔から unsigned。
+item(55130, false,
+"audio sometimes plays a buzz sound for a few seconds when changing volume",
+"たぶん RealTek hdafg(4) の問題。");
 
+item(55175, true,
+"Interpreation of AUDIO_FORMAT_LINEAR is wrong for 8-bit samples",
+"AUDIO_ENCODING_PCM16 with precision=8 は昔から unsigned。");
+?>
 
 </dl>
 
