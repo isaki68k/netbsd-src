@@ -341,9 +341,10 @@ PLAY モード (!PLAY_ALL モード)
 
 <li>emuxki(4) の open が flags の使い方を間違えている (2018/05)
 <p class="p">
-実害はないが emuxki(4) の open は引数 flags を AUOPEN_{READ,WRITE} と
+<s>実害はないが emuxki(4) の open は引数 flags を AUOPEN_{READ,WRITE} と
 間違えている。ここの flags で渡されるのは FREAD | FWRITE である。
-ただし両者は値が同じなので実害はない。一応メモ。
+ただし両者は値が同じなので実害はない。一応メモ。</s>
+<br>(2019/05 修正済み)
 </p>
 
 <li>isa/aria の halt_input と halt_output が逆 (2018/04)
@@ -361,17 +362,21 @@ N8 でどうなるかは追っかけてないのでシラン。
 
 <li>AUDIO_SETINFO.mode の挙動が分かりづらい (2018/03)
 <p class="p">
+<s>
 mode には何がセットされていてもこの ioctl がエラーにはならない。
 ただし次に AUDIO_GETINFO してみて何が取得できるかとはまったく別。
 そしてここで取得できる mode はセット後の何の動作にはまったく影響しないようだ。
 分かりにくすぎというかバグでは。
+</s><br>(audio2 で修正済み)
 </p>
 
 <li>AUDIO_SETINFO.blocksize が manpage と実装が異なる (2018/03)
 <p class="p">
+<s>
 audio(4) には AUDIO_SETINFO では blocksize は実際に選ばれた値が書き戻される
 ように書いてあるが、実装は書き戻しを一切行なっていない。
 もう manpage のほうを書き換えてしまっては…
+</s><br>(audio2 で manpage を修正済み)
 </p>
 
 <li>AUDIO_SETINFO.blocksize の設定値 (と MD ドライバ) によっては panic する (2018/03)
