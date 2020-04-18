@@ -4791,6 +4791,7 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 	const audio_format2_t *hwfmt, const audio_filter_reg_t *reg)
 {
 	char codecbuf[64];
+	char blkdmsbuf[8];
 	audio_trackmixer_t *mixer;
 	void (*softint_handler)(void *);
 	int len;
@@ -4799,6 +4800,7 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 	size_t bufsize;
 	int hwblks;
 	int blkms;
+	int blkdms;
 	int error;
 
 	KASSERT(hwfmt != NULL);
@@ -4978,13 +4980,18 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 		    mixer->hwbuf.fmt.precision);
 	}
 	blkms = mixer->blktime_n * 1000 / mixer->blktime_d;
-	aprint_normal_dev(sc->sc_dev, "%s:%d%s %dch %dHz, blk %dms for %s\n",
+	blkdms = (mixer->blktime_n * 10000 / mixer->blktime_d) % 10;
+	blkdmsbuf[0] = '\0';
+	if (blkdms != 0) {
+		snprintf(blkdmsbuf, sizeof(blkdmsbuf), ".%1d", blkdms);
+	}
+	aprint_normal_dev(sc->sc_dev, "%s:%d%s %dch %dHz, blk %d%sms for %s\n",
 	    audio_encoding_name(mixer->track_fmt.encoding),
 	    mixer->track_fmt.precision,
 	    codecbuf,
 	    mixer->track_fmt.channels,
 	    mixer->track_fmt.sample_rate,
-	    blkms,
+	    blkms, blkdmsbuf,
 	    (mode == AUMODE_PLAY) ? "playback" : "recording");
 
 	return 0;
