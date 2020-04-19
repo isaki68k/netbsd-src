@@ -380,6 +380,8 @@ const audio_params_t *param)
 		blocksize = DIGFILT_BLOCKSIZE_MAX;
 	else
 		blocksize = bs & ~(DIGFILT_BLOCKSIZE_ROUND-1);
+	if (blocksize < DIGFILT_BLOCKSIZE_ROUND)
+		blocksize = DIGFILT_BLOCKSIZE_ROUND;
 
 	return blocksize;
 }

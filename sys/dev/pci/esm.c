@@ -1186,6 +1186,8 @@ esm_round_blocksize(void *sc, int blk, int mode,
 	    ("esm_round_blocksize(%p, 0x%x)", sc, blk));
 
 	blk &= ~0x3f;		/* keep good alignment */
+	if (blk < 0x40)
+		blk = 0x40;
 
 	DPRINTF(ESM_DEBUG_PARAM, (" = 0x%x\n", blk));
 

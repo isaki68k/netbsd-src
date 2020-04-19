@@ -593,7 +593,10 @@ static int
 acu_round_blocksize(void *arg, int blk, int mode, const audio_params_t *param)
 {
 
-	return (blk & ~0x1f);
+	blk = (blk & ~0x1f);
+	if (blk < 0x20)
+		blk = 0x20;
+	return blk;
 }
 
 static int

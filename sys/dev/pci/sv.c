@@ -679,7 +679,10 @@ sv_round_blocksize(void *addr, int blk, int mode,
     const audio_params_t *param)
 {
 
-	return blk & -32;	/* keep good alignment */
+	blk = blk & -32;	/* keep good alignment */
+	if (blk < 32)
+		blk = 32;
+	return blk;
 }
 
 static int
