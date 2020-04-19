@@ -3973,6 +3973,9 @@ hdafg_round_blocksize(void *opaque, int blksize, int mode,
 		return 128;
 	}
 
+	if (blksize > 8192)
+		blksize = 8192;
+
 	/* Make sure there are enough BDL descriptors */
 	bufsize = st->st_data.dma_size;
 	if (bufsize > HDAUDIO_BDL_MAX * blksize) {
@@ -3990,11 +3993,7 @@ hdafg_round_blocksize(void *opaque, int blksize, int mode,
 	 * Also, the audio layer requires that the blocksize must be a
 	 * multiple of the number of channels.
 	 */
-
 	minblksize = lcm(128, param->channels);
-
-	if (blksize > 8192)
-		blksize = 8192;
 	blksize = rounddown(blksize, minblksize);
 	if (blksize < minblksize)
 		blksize = minblksize;
