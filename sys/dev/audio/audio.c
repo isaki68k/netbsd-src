@@ -451,6 +451,41 @@ audio_track_bufstat(audio_track_t *track, struct audio_track_debugbuf *buf)
 #define SPECIFIED(x)	((x) != ~0)
 #define SPECIFIED_CH(x)	((x) != (u_char)~0)
 
+/*
+ * Default hardware blocksize in msec.
+ *
+ * We use 10 msec for most platforms.  This period is good enough to play
+ * audio and video synchronizely.
+ * In contrast, for very old platforms, this is usually too short and too
+ * severe.  Also such platforms usually can not play video confortably, so
+ * it's not so important to make the blocksize shorter.
+ * In either case, you can overwrite AUDIO_BLK_MS by your kernel
+ * configuration file if you wish.
+ *
+ * 40 msec was initially choosen for the following reason:
+ * (1 / 40ms) = 25 = 5^2.  Thus, the frequency is factored by 5.
+ * In this case, the number of frames in a block can be an integer
+ * even if the frequency is a multiple of 100 (44100, 48000, etc),
+ * or even if 15625Hz (vs(4)).
+ */
+#if defined(__hppa__)	|| \
+    defined(__m68k__)	|| \
+    defined(__sh3__)	|| \
+    (defined(__sparc__) && !defined(__sparc64__))	|| \
+    defined(__vax__)
+#define AUDIO_TOO_SLOW_ARCHS 1
+#endif
+
+#if !defined(AUDIO_BLK_MS)
+# if defined(AUDIO_TOO_SLOW_ARCHS)
+#  define AUDIO_BLK_MS 40
+# else
+#  define AUDIO_BLK_MS 10
+# endif
+#endif
+
+#undef AUDIO_TOO_SLOW_ARCHS
+
 /* Device timeout in msec */
 #define AUDIO_TIMEOUT	(3000)
 
