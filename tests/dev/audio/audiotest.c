@@ -3582,9 +3582,8 @@ test_kqueue_mode(int openmode, int filt, int expected)
 	XP_SYS_EQ(0, r);
 }
 DEF(kqueue_mode_RDONLY_READ) {
-	/* Should not raise yet (NetBSD7 has bugs?) */
-	int expected = (netbsd < 8) ? 1 : 0;
-	test_kqueue_mode(O_RDONLY, EVFILT_READ, expected);
+	/* Should raise */
+	test_kqueue_mode(O_RDONLY, EVFILT_READ, 1);
 }
 DEF(kqueue_mode_RDONLY_WRITE) {
 	/* Should never raise (NetBSD7 has bugs) */
@@ -3600,8 +3599,8 @@ DEF(kqueue_mode_WRONLY_WRITE) {
 	test_kqueue_mode(O_WRONLY, EVFILT_WRITE, 1);
 }
 DEF(kqueue_mode_RDWR_READ) {
-	/* Should not raise yet (NetBSD7 is something strange) */
-	int expected = (netbsd < 8 && hw_fulldup()) ? 1 : 0;
+	/* Should raise on fulldup but not on halfdup, on NetBSD9 */
+	int expected = hw_fulldup() ? 1 : 0;
 	test_kqueue_mode(O_RDWR, EVFILT_READ, expected);
 }
 DEF(kqueue_mode_RDWR_WRITE) {
