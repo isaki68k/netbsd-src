@@ -82,6 +82,7 @@ typedef int	__register_t;
 #define	__HAVE_OLD_DISKLABEL
 #ifdef _KERNEL
 #define	__HAVE_RAS
+#define	__AUDIO_BLK_MS (40)	/* See sys/dev/audio/audio.c */
 #endif
 
 #define	__HAVE___LWP_GETPRIVATE_FAST

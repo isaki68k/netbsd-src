@@ -103,4 +103,8 @@ extern const char __CONCAT(name,_ras_start[]), __CONCAT(name,_ras_end[])
 #define	__HAVE_MM_MD_DIRECT_MAPPED_PHYS
 #define	__HAVE_MM_MD_KERNACC
 
+#if defined(_KERNEL)
+#define	__AUDIO_BLK_MS (40)	/* See sys/dev/audio/audio.c */
+#endif
+
 #endif	/* _HPPA_TYPES_H_ */

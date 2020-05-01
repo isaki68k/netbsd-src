@@ -183,6 +183,7 @@ __KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.41 2020/01/11 04:53:10 isaki Exp $");
 #include <dev/audio/mulaw.h>
 
 #include <machine/endian.h>
+#include <machine/types.h>	/* for __AUDIO_BLK_MS */
 
 #include <uvm/uvm.h>
 
@@ -454,37 +455,24 @@ audio_track_bufstat(audio_track_t *track, struct audio_track_debugbuf *buf)
 /*
  * Default hardware blocksize in msec.
  *
- * We use 10 msec for most platforms.  This period is good enough to play
- * audio and video synchronizely.
+ * We use 10 msec for most modern platforms.  This period is good enough to
+ * play audio and video synchronizely.
  * In contrast, for very old platforms, this is usually too short and too
  * severe.  Also such platforms usually can not play video confortably, so
- * it's not so important to make the blocksize shorter.
+ * it's not so important to make the blocksize shorter.  If the platform
+ * defines its own value as __AUDIO_BLK_MS in its <machine/types.h>, it
+ * uses this instead.
+ *
  * In either case, you can overwrite AUDIO_BLK_MS by your kernel
  * configuration file if you wish.
- *
- * 40 msec was initially choosen for the following reason:
- * (1 / 40ms) = 25 = 5^2.  Thus, the frequency is factored by 5.
- * In this case, the number of frames in a block can be an integer
- * even if the frequency is a multiple of 100 (44100, 48000, etc),
- * or even if 15625Hz (vs(4)).
  */
-#if defined(__hppa__)	|| \
-    defined(__m68k__)	|| \
-    defined(__sh3__)	|| \
-    (defined(__sparc__) && !defined(__sparc64__))	|| \
-    defined(__vax__)
-#define AUDIO_TOO_SLOW_ARCHS 1
-#endif
-
 #if !defined(AUDIO_BLK_MS)
-# if defined(AUDIO_TOO_SLOW_ARCHS)
-#  define AUDIO_BLK_MS 40
+# if defined(__AUDIO_BLK_MS)
+#  define AUDIO_BLK_MS __AUDIO_BLK_MS
 # else
-#  define AUDIO_BLK_MS 10
+#  define AUDIO_BLK_MS (10)
 # endif
 #endif
-
-#undef AUDIO_TOO_SLOW_ARCHS
 
 /* Device timeout in msec */
 #define AUDIO_TIMEOUT	(3000)

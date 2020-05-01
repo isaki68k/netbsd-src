@@ -141,4 +141,10 @@ typedef unsigned long int	__register_t;
 #define	__HAVE_TLS_VARIANT_II
 #define	__HAVE_COMMON___TLS_GET_ADDR
 
+#if defined(_KERNEL)
+#if !defined(__arch64__)
+#define	__AUDIO_BLK_MS (40)	/* See sys/dev/audio/audio.c */
+#endif
+#endif
+
 #endif	/* _MACHTYPES_H_ */
