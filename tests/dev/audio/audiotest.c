@@ -5148,16 +5148,16 @@ DEF(AUDIO_SETINFO_params_simul)
 	XP_SYS_EQ(0, r);
 
 	/*
-	 * On bi-directional device, the 2nd one has both track so that
+	 * On full-duplex device, the 2nd one has both track so that
 	 * both track are not affected by sticky parameter.
-	 * On uni-directional device, the 2nd one has only playback track
-	 * so that playback track is not affected by sticky parameter.
+	 * Otherwise, the 2nd one has only playback track so that
+	 * playback track is not affected by sticky parameter.
 	 */
 	memset(&ai, 0, sizeof(ai));
 	r = IOCTL(fd1, AUDIO_GETBUFINFO, &ai, "");
 	XP_SYS_EQ(0, r);
 	XP_EQ(11025, ai.play.sample_rate);
-	if (hw_bidir()) {
+	if (hw_fulldup()) {
 		XP_EQ(11025, ai.record.sample_rate);
 	} else {
 		XP_EQ(16000, ai.record.sample_rate);
