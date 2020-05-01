@@ -91,4 +91,9 @@
 #define	NKMEMPAGES_MIN_DEFAULT	((16 * 1024 * 1024) >> PAGE_SHIFT)
 #define	NKMEMPAGES_MAX_DEFAULT	((128 * 1024 * 1024) >> PAGE_SHIFT)
 
+/* Default audio blocksize in msec.  See sys/dev/audio/audio.c */
+#if defined(_KERNEL)
+#define	__AUDIO_BLK_MS (40)
+#endif
+
 #endif /* !_SH3_PARAM_H_ */

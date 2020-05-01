@@ -79,7 +79,6 @@ typedef	int		__register_t;
 
 #if defined(_KERNEL)
 #define	__HAVE_RAS
-#define	__AUDIO_BLK_MS (40)	/* See sys/dev/audio/audio.c */
 #endif
 
 #define	__HAVE_CPU_LWP_SETPRIVATE

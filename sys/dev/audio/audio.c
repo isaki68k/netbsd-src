@@ -183,7 +183,6 @@ __KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.41 2020/01/11 04:53:10 isaki Exp $");
 #include <dev/audio/mulaw.h>
 
 #include <machine/endian.h>
-#include <machine/types.h>	/* for __AUDIO_BLK_MS */
 
 #include <uvm/uvm.h>
 
@@ -460,7 +459,7 @@ audio_track_bufstat(audio_track_t *track, struct audio_track_debugbuf *buf)
  * In contrast, for very old platforms, this is usually too short and too
  * severe.  Also such platforms usually can not play video confortably, so
  * it's not so important to make the blocksize shorter.  If the platform
- * defines its own value as __AUDIO_BLK_MS in its <machine/types.h>, it
+ * defines its own value as __AUDIO_BLK_MS in its <machine/param.h>, it
  * uses this instead.
  *
  * In either case, you can overwrite AUDIO_BLK_MS by your kernel

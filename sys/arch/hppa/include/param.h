@@ -88,3 +88,8 @@
 
 #define btop(x)		((unsigned long)(x) >> PGSHIFT)
 #define ptob(x)		((unsigned long)(x) << PGSHIFT)
+
+/* Default audio blocksize in msec.  See sys/dev/audio/audio.c */
+#if defined(_KERNEL)
+#define	__AUDIO_BLK_MS (40)
+#endif

@@ -95,4 +95,9 @@
 #define	m68k_btop(x)		((vaddr_t)(x) >> PGSHIFT)
 #define	m68k_ptob(x)		((vaddr_t)(x) << PGSHIFT)
 
+/* Default audio blocksize in msec.  See sys/dev/audio/audio.c */
+#if defined(_KERNEL)
+#define	__AUDIO_BLK_MS (40)
+#endif
+
 #endif	/* !_M68K_PARAM_H_ */

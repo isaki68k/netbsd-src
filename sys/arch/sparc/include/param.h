@@ -155,4 +155,7 @@ extern void	delay(unsigned int);
 #	define PGSHIFT		pgshift
 #endif
 
+/* Default audio blocksize in msec.  See sys/dev/audio/audio.c */
+#define	__AUDIO_BLK_MS (40)
+
 #endif /* _KERNEL || _STANDALONE */

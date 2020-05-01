@@ -118,6 +118,10 @@ void	delay(int);
 
 #define	DELAY(x) delay(x)
 #define	MAXEXEC	1
+
+/* Default audio blocksize in msec.  See sys/dev/audio/audio.c */
+#define	__AUDIO_BLK_MS (40)
+
 #endif /* _KERNEL */
 
 #endif /* _VAX_PARAM_H_ */
