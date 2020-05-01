@@ -833,9 +833,9 @@ item(-54427, true,
 "panic in audio_close",
 "pad を先にクローズすると死ぬ問題。");
 
-item(54474, true,
+item(-54474, true,
 "Jetson TK1 audio playback has clicks since isaki-audio2 merge",
-"hdafg の問題だったようだが、追試ないと分からん。");
+"hdafg_round_blocksize の問題。");
 
 item(54547, false,
 "running stress-ng --dev 1 will cause the kernel to panic and reboot",
@@ -877,7 +877,7 @@ item(54917, false,
 "pad(4) has a memory leak",
 "pad open が cf を解放してない件。");
 
-item(54973, true,
+item(-54973, true,
 "audio regression with multi channel content and stereo hardware",
 "2ch ハードで libossaudio 経由の 5.1ch が 2ch(L,R) にshrink される話。");
 
