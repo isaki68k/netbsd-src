@@ -1,4 +1,4 @@
-/*      $NetBSD: param.h,v 1.62 2019/01/07 22:00:33 jdolecek Exp $    */
+/*      $NetBSD: param.h,v 1.63 2020/05/01 08:21:27 isaki Exp $    */
 /*-
  * Copyright (c) 1990 The Regents of the University of California.
  * All rights reserved.

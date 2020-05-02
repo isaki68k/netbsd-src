@@ -1,8 +1,8 @@
-/*	$NetBSD: if_cnmac.c,v 1.16 2020/01/29 05:30:14 thorpej Exp $	*/
+/*	$NetBSD: if_cnmac.c,v 1.18 2020/04/24 09:29:26 mrg Exp $	*/
 
 #include <sys/cdefs.h>
 #if 0
-__KERNEL_RCSID(0, "$NetBSD: if_cnmac.c,v 1.16 2020/01/29 05:30:14 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_cnmac.c,v 1.18 2020/04/24 09:29:26 mrg Exp $");
 #endif
 
 #include "opt_octeon.h"
@@ -121,7 +121,6 @@ static void	octeon_eth_mii_statchg(struct ifnet *);
 
 static int	octeon_eth_mediainit(struct octeon_eth_softc *);
 static void	octeon_eth_mediastatus(struct ifnet *, struct ifmediareq *);
-static int	octeon_eth_mediachange(struct ifnet *);
 
 static inline void octeon_eth_send_queue_flush_prefetch(struct octeon_eth_softc *);
 static inline void octeon_eth_send_queue_flush_fetch(struct octeon_eth_softc *);
@@ -293,6 +292,8 @@ octeon_eth_attach(device_t parent, device_t self, void *aux)
 	struct octeon_eth_softc *sc = device_private(self);
 	struct octeon_gmx_attach_args *ga = aux;
 	struct ifnet *ifp = &sc->sc_ethercom.ec_if;
+	prop_dictionary_t dict;
+	prop_object_t clk;
 	uint8_t enaddr[ETHER_ADDR_LEN];
 
 	sc->sc_dev = self;
@@ -400,6 +401,15 @@ octeon_eth_attach(device_t parent, device_t self, void *aux)
 
 	OCTEON_EVCNT_ATTACH_EVCNTS(sc, octeon_evcnt_entries,
 	    device_xname(sc->sc_dev));
+
+	dict = device_properties(sc->sc_gmx->sc_dev);
+
+	clk = prop_dictionary_get(dict, "rgmii-tx");
+	KASSERT(clk != NULL);
+	sc->sc_gmx_port->sc_clk_tx_setting = prop_number_integer_value(clk);
+	clk = prop_dictionary_get(dict, "rgmii-rx");
+	KASSERT(clk != NULL);
+	sc->sc_gmx_port->sc_clk_rx_setting = prop_number_integer_value(clk);
 }
 
 /* ---- submodules */
@@ -546,7 +556,7 @@ octeon_eth_mediainit(struct octeon_eth_softc *sc)
 	sc->sc_ethercom.ec_mii = mii;
 
 	/* Initialize ifmedia structures. */
-	ifmedia_init(&mii->mii_media, 0, octeon_eth_mediachange,
+	ifmedia_init(&mii->mii_media, 0, ether_mediachange,
 	    octeon_eth_mediastatus);
 
 	phy = prop_dictionary_get(device_properties(sc->sc_dev), "phy-addr");
@@ -584,16 +594,6 @@ octeon_eth_mediastatus(struct ifnet *ifp, struct ifmediareq *ifmr)
 	ifmr->ifm_active = sc->sc_mii.mii_media_active;
 	ifmr->ifm_active = (sc->sc_mii.mii_media_active & ~IFM_ETH_FMASK) |
 	    sc->sc_gmx_port->sc_port_flowflags;
-}
-
-static int
-octeon_eth_mediachange(struct ifnet *ifp)
-{
-	struct octeon_eth_softc *sc = ifp->if_softc;
-
-	mii_mediachg(&sc->sc_mii);
-
-	return 0;
 }
 
 /* ---- send buffer garbage collection */
@@ -1226,7 +1226,7 @@ octeon_eth_init(struct ifnet *ifp)
 	} else {
 		octeon_gmx_port_enable(sc->sc_gmx_port, 1);
 	}
-	octeon_eth_mediachange(ifp);
+	mii_ifmedia_change(&sc->sc_mii);
 
 	octeon_gmx_set_filter(sc->sc_gmx_port);
 

@@ -1,4 +1,4 @@
-/* $NetBSD: rk_i2s.c,v 1.2 2020/01/04 13:54:04 jmcneill Exp $ */
+/* $NetBSD: rk_i2s.c,v 1.3 2020/02/29 05:51:10 isaki Exp $ */
 
 /*-
  * Copyright (c) 2019 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rk_i2s.c,v 1.2 2020/01/04 13:54:04 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rk_i2s.c,v 1.3 2020/02/29 05:51:10 isaki Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>

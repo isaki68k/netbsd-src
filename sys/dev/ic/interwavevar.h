@@ -1,4 +1,4 @@
-/*	$NetBSD: interwavevar.h,v 1.19 2019/05/08 13:40:18 isaki Exp $	*/
+/*	$NetBSD: interwavevar.h,v 1.20 2020/02/29 05:51:11 isaki Exp $	*/
 
 /*
  * Copyright (c) 1997, 1999, 2008 The NetBSD Foundation, Inc.

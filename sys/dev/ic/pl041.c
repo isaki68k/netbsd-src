@@ -1,4 +1,4 @@
-/* $NetBSD: pl041.c,v 1.6 2019/05/08 13:40:18 isaki Exp $ */
+/* $NetBSD: pl041.c,v 1.8 2020/02/29 05:51:11 isaki Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pl041.c,v 1.6 2019/05/08 13:40:18 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pl041.c,v 1.8 2020/02/29 05:51:11 isaki Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>

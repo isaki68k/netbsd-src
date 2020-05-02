@@ -1,4 +1,4 @@
-/*	$NetBSD: subr_cpu.c,v 1.12 2020/02/09 09:30:22 skrll Exp $	*/
+/*	$NetBSD: subr_cpu.c,v 1.14 2020/03/26 19:23:18 ad Exp $	*/
 
 /*-
  * Copyright (c) 2007, 2008, 2009, 2010, 2012, 2019, 2020
@@ -61,7 +61,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_cpu.c,v 1.12 2020/02/09 09:30:22 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_cpu.c,v 1.14 2020/03/26 19:23:18 ad Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -142,21 +142,30 @@ cpu_softintr_p(void)
  */
 void
 cpu_topology_set(struct cpu_info *ci, u_int package_id, u_int core_id,
-    u_int smt_id, u_int numa_id, bool slow)
+    u_int smt_id, u_int numa_id)
 {
 	enum cpu_rel rel;
 
 	cpu_topology_present = true;
-	cpu_topology_haveslow |= slow;
 	ci->ci_package_id = package_id;
 	ci->ci_core_id = core_id;
 	ci->ci_smt_id = smt_id;
 	ci->ci_numa_id = numa_id;
-	ci->ci_is_slow = slow;
 	for (rel = 0; rel < __arraycount(ci->ci_sibling); rel++) {
 		ci->ci_sibling[rel] = ci;
 		ci->ci_nsibling[rel] = 1;
 	}
+}
+
+/*
+ * Collect CPU relative speed
+ */
+void
+cpu_topology_setspeed(struct cpu_info *ci, bool slow)
+{
+
+	cpu_topology_haveslow |= slow;
+	ci->ci_is_slow = slow;
 }
 
 /*
@@ -236,8 +245,9 @@ cpu_topology_fake1(struct cpu_info *ci)
 	ci->ci_schedstate.spc_flags |=
 	    (SPCF_CORE1ST | SPCF_PACKAGE1ST | SPCF_1STCLASS);
 	ci->ci_package1st = ci;
-	ci->ci_is_slow = false;
-	cpu_topology_haveslow = false;
+	if (!cpu_topology_haveslow) {
+		ci->ci_is_slow = false;
+	}
 }
 
 /*

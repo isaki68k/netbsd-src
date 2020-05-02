@@ -1,4 +1,4 @@
-/*	$NetBSD: nvmm.c,v 1.25 2019/10/28 09:00:08 maxv Exp $	*/
+/*	$NetBSD: nvmm.c,v 1.27 2020/04/30 16:50:17 maxv Exp $	*/
 
 /*
  * Copyright (c) 2018-2019 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nvmm.c,v 1.25 2019/10/28 09:00:08 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nvmm.c,v 1.27 2020/04/30 16:50:17 maxv Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -961,7 +961,7 @@ nvmm_init(void)
 		break;
 	}
 	if (nvmm_impl == NULL) {
-		printf("[!] No implementation found\n");
+		printf("NVMM: CPU not supported\n");
 		return ENOTSUP;
 	}
 
@@ -1040,6 +1040,8 @@ nvmm_open(dev_t dev, int flags, int type, struct lwp *l)
 	struct file *fp;
 	int error, fd;
 
+	if (__predict_false(nvmm_impl == NULL))
+		return ENXIO;
 	if (minor(dev) != 0)
 		return EXDEV;
 	if (!(flags & O_CLOEXEC))

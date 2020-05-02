@@ -1,4 +1,4 @@
-/*	$NetBSD: ubsec.c,v 1.47 2019/11/10 21:16:36 chs Exp $	*/
+/*	$NetBSD: ubsec.c,v 1.50 2020/04/30 03:40:53 riastradh Exp $	*/
 /* $FreeBSD: src/sys/dev/ubsec/ubsec.c,v 1.6.2.6 2003/01/23 21:06:43 sam Exp $ */
 /*	$OpenBSD: ubsec.c,v 1.143 2009/03/27 13:31:30 reyk Exp$	*/
 
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ubsec.c,v 1.47 2019/11/10 21:16:36 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ubsec.c,v 1.50 2020/04/30 03:40:53 riastradh Exp $");
 
 #undef UBSEC_DEBUG
 
@@ -69,7 +69,6 @@ __KERNEL_RCSID(0, "$NetBSD: ubsec.c,v 1.47 2019/11/10 21:16:36 chs Exp $");
 #else
  #include <sys/cprng.h>
  #include <sys/md5.h>
- #include <sys/rndpool.h>
  #include <sys/rndsource.h>
 #endif
 #include <sys/sha1.h>
@@ -87,7 +86,6 @@ __KERNEL_RCSID(0, "$NetBSD: ubsec.c,v 1.47 2019/11/10 21:16:36 chs Exp $");
 static	int  ubsec_probe(device_t, cfdata_t, void *);
 static	void ubsec_attach(device_t, device_t, void *);
 static	int  ubsec_detach(device_t, int);
-static	int  ubsec_sysctl_init(void);
 static	void ubsec_reset_board(struct ubsec_softc *);
 static	void ubsec_init_board(struct ubsec_softc *);
 static	void ubsec_init_pciregs(struct pci_attach_args *pa);
@@ -165,8 +163,6 @@ static	void	ubsec_dump_ctx2(volatile struct ubsec_ctx_keyop *);
 #endif
 
 struct ubsec_stats ubsecstats;
-
-static struct sysctllog *ubsec_sysctllog;
 
 /*
  * ubsec_maxbatch controls the number of crypto ops to voluntarily
@@ -429,7 +425,6 @@ ubsec_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	sc->sc_rng_need = RND_POOLBITS / NBBY;
 	mutex_init(&sc->sc_mtx, MUTEX_DEFAULT, IPL_VM);
 
 	SIMPLEQ_INIT(&sc->sc_freequeue);
@@ -504,11 +499,6 @@ ubsec_attach(device_t parent, device_t self, void *aux)
 			ubsec_dma_free(sc, &sc->sc_rng.rng_q.q_mcr);
 			goto skip_rng;
 		}
-
-		rndsource_setcb(&sc->sc_rnd_source, ubsec_rng_get, sc);
-		rnd_attach_source(&sc->sc_rnd_source, device_xname(sc->sc_dev),
-				  RND_TYPE_RNG,
-				  RND_FLAG_COLLECT_VALUE|RND_FLAG_HASCB);
 		if (hz >= 100)
 			sc->sc_rnghz = hz / 100;
 		else
@@ -519,8 +509,12 @@ ubsec_attach(device_t parent, device_t self, void *aux)
 #else
 		callout_init(&sc->sc_rngto, 0);
 		callout_setfunc(&sc->sc_rngto, ubsec_rng, sc);
-		callout_schedule(&sc->sc_rngto, sc->sc_rnghz);
 #endif
+		rndsource_setcb(&sc->sc_rnd_source, ubsec_rng_get, sc);
+		rnd_attach_source(&sc->sc_rnd_source, device_xname(sc->sc_dev),
+				  RND_TYPE_RNG,
+				  RND_FLAG_COLLECT_VALUE|RND_FLAG_HASCB);
+
  skip_rng:
 		if (sc->sc_rnghz)
 			aprint_normal_dev(self,
@@ -617,12 +611,8 @@ ubsec_modcmd(modcmd_t cmd, void *data)
 		error = config_init_component(cfdriver_ioconf_ubsec,
 		    cfattach_ioconf_ubsec, cfdata_ioconf_ubsec);
 #endif
-		if (error == 0)
-			error = ubsec_sysctl_init();
 		return error;
 	case MODULE_CMD_FINI:
-		if (ubsec_sysctllog != NULL)
-			sysctl_teardown(&ubsec_sysctllog);
 #ifdef _MODULE
 		error = config_fini_component(cfdriver_ioconf_ubsec,
 		    cfattach_ioconf_ubsec, cfdata_ioconf_ubsec);
@@ -633,33 +623,30 @@ ubsec_modcmd(modcmd_t cmd, void *data)
 	}
 }
 
-static int
-ubsec_sysctl_init(void)
+SYSCTL_SETUP(ubsec_sysctl_init, "ubsec sysctl")
 {
 	const struct sysctlnode *node = NULL;
 
-	ubsec_sysctllog = NULL;
-
-	sysctl_createv(&ubsec_sysctllog, 0, NULL, &node,
+	sysctl_createv(clog, 0, NULL, &node,
 		CTLFLAG_PERMANENT,
 		CTLTYPE_NODE, "ubsec", 
 		SYSCTL_DESCR("ubsec opetions"),
 		NULL, 0, NULL, 0,
 		CTL_HW, CTL_CREATE, CTL_EOL);
-	sysctl_createv(&ubsec_sysctllog, 0, &node, NULL,
+	sysctl_createv(clog, 0, &node, NULL,
 		CTLFLAG_PERMANENT | CTLFLAG_READWRITE,
 		CTLTYPE_INT, "maxbatch",
 		SYSCTL_DESCR("max ops to batch w/o interrupt"),
 		NULL, 0, &ubsec_maxbatch, 0,
 		CTL_CREATE, CTL_EOL);
-	sysctl_createv(&ubsec_sysctllog, 0, &node, NULL,
+	sysctl_createv(clog, 0, &node, NULL,
 		CTLFLAG_PERMANENT | CTLFLAG_READWRITE,
 		CTLTYPE_INT, "maxaggr",
 		SYSCTL_DESCR("max ops to aggregate under one interrupt"),
 		NULL, 0, &ubsec_maxaggr, 0,
 		CTL_CREATE, CTL_EOL);
 
-	return 0;
+	return;
 }
 
 /*

@@ -1,4 +1,4 @@
-/*	$NetBSD: ata.c,v 1.153 2019/10/21 18:58:57 christos Exp $	*/
+/*	$NetBSD: ata.c,v 1.156 2020/04/25 00:07:27 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1998, 2001 Manuel Bouyer.  All rights reserved.
@@ -25,7 +25,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ata.c,v 1.153 2019/10/21 18:58:57 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ata.c,v 1.156 2020/04/25 00:07:27 thorpej Exp $");
 
 #include "opt_ata.h"
 
@@ -44,6 +44,7 @@ __KERNEL_RCSID(0, "$NetBSD: ata.c,v 1.153 2019/10/21 18:58:57 christos Exp $");
 #include <sys/bus.h>
 #include <sys/once.h>
 #include <sys/bitops.h>
+#include <sys/cpu.h>
 
 #define ATABUS_PRIVATE
 
@@ -229,9 +230,6 @@ atabusconfig(struct atabus_softc *atabus_sc)
 	int i, error;
 
 	/* we are in the atabus's thread context */
-	ata_channel_lock(chp);
-	chp->ch_flags |= ATACH_TH_RUN;
-	ata_channel_unlock(chp);
 
 	/*
 	 * Probe for the drives attached to controller, unless a PMP
@@ -247,11 +245,6 @@ atabusconfig(struct atabus_softc *atabus_sc)
 		    DEBUG_PROBE);
 	}
 
-	/* next operations will occurs in a separate thread */
-	ata_channel_lock(chp);
-	chp->ch_flags &= ~ATACH_TH_RUN;
-	ata_channel_unlock(chp);
-
 	/* Make sure the devices probe in atabus order to avoid jitter. */
 	mutex_enter(&atabus_qlock);
 	for (;;) {
@@ -263,6 +256,8 @@ atabusconfig(struct atabus_softc *atabus_sc)
 	mutex_exit(&atabus_qlock);
 
 	ata_channel_lock(chp);
+
+	KASSERT(ata_is_thread_run(chp));
 
 	/* If no drives, abort here */
 	if (chp->ch_drive == NULL)
@@ -430,49 +425,60 @@ atabusconfig_thread(void *arg)
 }
 
 /*
- * atabus_thread:
+ * atabus_tp_job:
  *
  *	Worker thread for the ATA bus.
  */
 static void
-atabus_thread(void *arg)
+atabus_tp_job(struct threadpool_job *j)
 {
-	struct atabus_softc *sc = arg;
-	struct ata_channel *chp = sc->sc_chan;
+	struct ata_channel *chp =
+	    container_of(j, struct ata_channel, ch_tp_job);
+	struct atabus_softc *sc = device_private(chp->atabus);
 	struct ata_queue *chq = chp->ch_queue;
 	struct ata_xfer *xfer;
 	int i, rv;
 
-	ata_channel_lock(chp);
-	chp->ch_flags |= ATACH_TH_RUN;
-
-	/*
-	 * Probe the drives.  Reset type to indicate to controllers
-	 * that can re-probe that all drives must be probed..
-	 *
-	 * Note: ch_ndrives may be changed during the probe.
-	 */
-	KASSERT(chp->ch_ndrives == 0 || chp->ch_drive != NULL);
-	for (i = 0; i < chp->ch_ndrives; i++) {
-		chp->ch_drive[i].drive_flags = 0;
-		chp->ch_drive[i].drive_type = ATA_DRIVET_NONE;
-	}
-	ata_channel_unlock(chp);
-
-	atabusconfig(sc);
+	/* XXX MPSAFE?? */
+	KERNEL_LOCK(1, NULL);
 
 	ata_channel_lock(chp);
-	for (;;) {
-		if ((chp->ch_flags & (ATACH_TH_RESET | ATACH_TH_DRIVE_RESET
-		    | ATACH_TH_RECOVERY | ATACH_SHUTDOWN)) == 0 &&
-		    (chq->queue_active == 0 || chq->queue_freeze == 0)) {
-			chp->ch_flags &= ~ATACH_TH_RUN;
-			cv_wait(&chp->ch_thr_idle, &chp->ch_lock);
-			chp->ch_flags |= ATACH_TH_RUN;
+	chp->ch_job_thread = curlwp;	/* XXX gross */
+
+					/* XXX gross */
+	if (__predict_false(!chp->ch_initial_config_done)) {
+		/*
+		 * Probe the drives.  Reset type to indicate to controllers
+		 * that can re-probe that all drives must be probed..
+		 *
+		 * Note: ch_ndrives may be changed during the probe.
+		 */
+		KASSERT(chp->ch_ndrives == 0 || chp->ch_drive != NULL);
+		for (i = 0; i < chp->ch_ndrives; i++) {
+			chp->ch_drive[i].drive_flags = 0;
+			chp->ch_drive[i].drive_type = ATA_DRIVET_NONE;
 		}
+		chp->ch_initial_config_done = true;
+		ata_channel_unlock(chp);
+		atabusconfig(sc);
+		ata_channel_lock(chp);
+	}
+
+#define	WORK_TO_DO							\
+	(ATACH_TH_RESCAN | ATACH_TH_RESET | ATACH_TH_DRIVE_RESET |	\
+	 ATACH_TH_RECOVERY)
+
+	for (;;) {
 		if (chp->ch_flags & ATACH_SHUTDOWN) {
 			break;
 		}
+		if ((chp->ch_flags & WORK_TO_DO) == 0 &&
+		    (chq->queue_active == 0 || chq->queue_freeze == 0)) {
+			break;
+		}
+
+#undef WORK_TO_DO
+
 		if (chp->ch_flags & ATACH_TH_RESCAN) {
 			chp->ch_flags &= ~ATACH_TH_RESCAN;
 			ata_channel_unlock(chp);
@@ -541,10 +547,19 @@ atabus_thread(void *arg)
 			ata_channel_lock(chp);
 		}
 	}
-	chp->ch_thread = NULL;
-	cv_signal(&chp->ch_thr_idle);
+	chp->ch_job_thread = NULL;	/* XXX gross */
+	threadpool_job_done(&chp->ch_tp_job);
 	ata_channel_unlock(chp);
-	kthread_exit(0);
+
+	KERNEL_UNLOCK_ONE(NULL);
+}
+
+bool
+ata_is_thread_run(struct ata_channel *chp)
+{
+	KASSERT(mutex_owned(&chp->ch_lock));
+
+	return (chp->ch_job_thread == curlwp && !cpu_intr_p());
 }
 
 static void
@@ -552,7 +567,7 @@ ata_thread_wake_locked(struct ata_channel *chp)
 {
 	KASSERT(mutex_owned(&chp->ch_lock));
 	ata_channel_freeze_locked(chp);
-	cv_signal(&chp->ch_thr_idle);
+	threadpool_schedule_job(chp->ch_tp, &chp->ch_tp_job);
 }
 
 /*
@@ -586,7 +601,6 @@ atabus_attach(device_t parent, device_t self, void *aux)
 	struct atabus_softc *sc = device_private(self);
 	struct ata_channel *chp = aux;
 	struct atabus_initq *initq;
-	int error;
 
 	sc->sc_chan = chp;
 
@@ -607,11 +621,15 @@ atabus_attach(device_t parent, device_t self, void *aux)
 	mutex_exit(&atabus_qlock);
 	config_pending_incr(sc->sc_dev);
 
-	/* XXX MPSAFE - no KTHREAD_MPSAFE, so protected by KERNEL_LOCK() */
-	if ((error = kthread_create(PRI_NONE, 0, NULL, atabus_thread, sc,
-	    &chp->ch_thread, "%s", device_xname(self))) != 0)
-		aprint_error_dev(self,
-		    "unable to create kernel thread: error %d\n", error);
+	/* Initialize our threadpool job. */
+	threadpool_job_init(&chp->ch_tp_job, atabus_tp_job,
+	    &chp->ch_lock, "%s", device_xname(self));
+
+	/* ...and run it now to scan the bus. */
+	KASSERT(chp->ch_tp != NULL);
+	ata_channel_lock(chp);
+	threadpool_schedule_job(chp->ch_tp, &chp->ch_tp_job);
+	ata_channel_unlock(chp);
 
 	if (!pmf_device_register(self, atabus_suspend, atabus_resume))
 		aprint_error_dev(self, "couldn't establish power handler\n");
@@ -665,13 +683,10 @@ atabus_detach(device_t self, int flags)
 		}
 	}
 
-	/* Shutdown the channel. */
+	/* Cancel any in-progress job and dispose of the threadpool. */
 	ata_channel_lock(chp);
 	chp->ch_flags |= ATACH_SHUTDOWN;
-	while (chp->ch_thread != NULL) {
-		cv_signal(&chp->ch_thr_idle);
-		cv_wait(&chp->ch_thr_idle, &chp->ch_lock);
-	}
+	threadpool_cancel_job(chp->ch_tp, &chp->ch_tp_job);
 	ata_channel_unlock(chp);
 
 	atabus_free_drives(chp);
@@ -846,13 +861,8 @@ ata_get_params(struct ata_drive_datas *drvp, uint8_t flags,
 	xfer->c_ata_c.flags = AT_READ | flags;
 	xfer->c_ata_c.data = tb;
 	xfer->c_ata_c.bcount = ATA_BSIZE;
-	if ((*atac->atac_bustype_ata->ata_exec_command)(drvp,
-						xfer) != ATACMD_COMPLETE) {
-		ATADEBUG_PRINT(("ata_get_parms: wdc_exec_command failed\n"),
-		    DEBUG_FUNCS|DEBUG_PROBE);
-		rv = CMD_AGAIN;
-		goto out;
-	}
+	(*atac->atac_bustype_ata->ata_exec_command)(drvp, xfer);
+	ata_wait_cmd(chp, xfer);
 	if (xfer->c_ata_c.flags & (AT_ERROR | AT_TIMEOU | AT_DF)) {
 		ATADEBUG_PRINT(("ata_get_parms: ata_c.flags=0x%x\n",
 		    xfer->c_ata_c.flags), DEBUG_FUNCS|DEBUG_PROBE);
@@ -936,11 +946,8 @@ ata_set_mode(struct ata_drive_datas *drvp, uint8_t mode, uint8_t flags)
 	xfer->c_ata_c.r_count = mode;
 	xfer->c_ata_c.flags = flags;
 	xfer->c_ata_c.timeout = 1000; /* 1s */
-	if ((*atac->atac_bustype_ata->ata_exec_command)(drvp,
-						xfer) != ATACMD_COMPLETE) {
-		rv = CMD_AGAIN;
-		goto out;
-	}
+	(*atac->atac_bustype_ata->ata_exec_command)(drvp, xfer);
+	ata_wait_cmd(chp, xfer);
 	if (xfer->c_ata_c.flags & (AT_ERROR | AT_TIMEOU | AT_DF)) {
 		rv = CMD_ERR;
 		goto out;
@@ -1595,7 +1602,7 @@ ata_thread_run(struct ata_channel *chp, int flags, int type, int arg)
 		ata_channel_freeze_locked(chp);
 		chp->ch_flags |= type;
 
-		cv_signal(&chp->ch_thr_idle);
+		threadpool_schedule_job(chp->ch_tp, &chp->ch_tp_job);
 		return;
 	}
 
@@ -1661,7 +1668,7 @@ ata_thread_run(struct ata_channel *chp, int flags, int type, int arg)
 	ata_channel_thaw_locked(chp);
 
 	/* Signal the thread in case there is an xfer to run */
-	cv_signal(&chp->ch_thr_idle);
+	threadpool_schedule_job(chp->ch_tp, &chp->ch_tp_job);
 }
 
 int
@@ -1896,7 +1903,7 @@ ata_probe_caps(struct ata_drive_datas *drvp)
 			 */
 			if (atac->atac_set_modes)
 				/*
-				 * It's OK to pool here, it's fast enough
+				 * It's OK to poll here, it's fast enough
 				 * to not bother waiting for interrupt
 				 */
 				if (ata_set_mode(drvp, 0x08 | (i + 3),
@@ -2292,7 +2299,7 @@ atabus_rescan(device_t self, const char *ifattr, const int *locators)
 
 	ata_channel_lock(chp);
 	chp->ch_flags |= ATACH_TH_RESCAN;
-	cv_signal(&chp->ch_thr_idle);
+	threadpool_schedule_job(chp->ch_tp, &chp->ch_tp_job);
 	ata_channel_unlock(chp);
 
 	return 0;

@@ -1,4 +1,4 @@
-/*	$NetBSD: rump.c,v 1.340 2020/02/10 03:23:29 riastradh Exp $	*/
+/*	$NetBSD: rump.c,v 1.347 2020/04/30 03:28:19 riastradh Exp $	*/
 
 /*
  * Copyright (c) 2007-2011 Antti Kantee.  All Rights Reserved.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rump.c,v 1.340 2020/02/10 03:23:29 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rump.c,v 1.347 2020/04/30 03:28:19 riastradh Exp $");
 
 #include <sys/systm.h>
 #define ELFSIZE ARCH_ELFSIZE
@@ -114,16 +114,7 @@ static  char rump_msgbuf[16*1024] __aligned(256);
 
 bool rump_ttycomponent = false;
 
-pool_cache_t pnbuf_cache;
-
-static void
-rump_aiodone_worker(struct work *wk, void *dummy)
-{
-	struct buf *bp = (struct buf *)wk;
-
-	KASSERT(&bp->b_work == wk);
-	bp->b_iodone(bp);
-}
+extern pool_cache_t pnbuf_cache;
 
 static int rump_inited;
 
@@ -138,6 +129,7 @@ rump_proc_vfs_init_fn rump_proc_vfs_init = (void *)nullop;
 rump_proc_vfs_release_fn rump_proc_vfs_release = (void *)nullop;
 
 static void add_linkedin_modules(const struct modinfo *const *, size_t);
+static void add_static_evcnt(struct evcnt *);
 
 static pid_t rspo_wrap_getpid(void) {
 	return rump_sysproxy_hyp_getpid();
@@ -329,10 +321,6 @@ rump_init(void)
 #endif /* RUMP_USE_CTOR */
 
 	rnd_init();
-	cprng_init();
-	kern_cprng = cprng_strong_create("kernel", IPL_VM,
-	    CPRNG_INIT_ANY|CPRNG_REKEY_ANY);
-
 	rump_hyperentropy_init();
 
 	procinit();
@@ -400,6 +388,7 @@ rump_init(void)
 	ncpuonline = ncpu;
 
 	/* Once all CPUs are detected, initialize the per-CPU cprng_fast.  */
+	cprng_init();
 	cprng_fast_init();
 
 	mp_online = true;
@@ -420,6 +409,7 @@ rump_init(void)
 	procinit_sysctl();
 	time_init();
 	time_init2();
+	config_init();
 
 	/* start page baroness */
 	if (rump_threads) {
@@ -431,7 +421,7 @@ rump_init(void)
 
 	/* process dso's */
 	rumpuser_dl_bootstrap(add_linkedin_modules,
-	    rump_kernelfsym_load, rump_component_load);
+	    rump_kernelfsym_load, rump_component_load, add_static_evcnt);
 
 	rump_component_addlocal();
 	rump_component_init(RUMP_COMPONENT_KERN);
@@ -459,13 +449,6 @@ rump_init(void)
 		mutex_init(&tty_lock, MUTEX_DEFAULT, IPL_VM);
 
 	cold = 0;
-
-	/* aieeeedondest */
-	if (rump_threads) {
-		if (workqueue_create(&uvm.aiodone_queue, "aiodoned",
-		    rump_aiodone_worker, NULL, 0, 0, WQ_MPSAFE))
-			panic("aiodoned");
-	}
 
 	sysctl_finalize();
 
@@ -658,6 +641,16 @@ add_linkedin_modules(const struct modinfo * const *mip, size_t nmodinfo)
 {
 
 	module_builtin_add(mip, nmodinfo, false);
+}
+
+/*
+ * Add an evcnt.
+ */
+static void
+add_static_evcnt(struct evcnt *ev)
+{
+
+	evcnt_attach_static(ev);
 }
 
 int

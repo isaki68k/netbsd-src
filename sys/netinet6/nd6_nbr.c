@@ -1,4 +1,4 @@
-/*	$NetBSD: nd6_nbr.c,v 1.176 2020/01/20 18:38:22 thorpej Exp $	*/
+/*	$NetBSD: nd6_nbr.c,v 1.178 2020/04/22 19:32:11 roy Exp $	*/
 /*	$KAME: nd6_nbr.c,v 1.61 2001/02/10 16:06:14 jinmei Exp $	*/
 
 /*
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nd6_nbr.c,v 1.176 2020/01/20 18:38:22 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nd6_nbr.c,v 1.178 2020/04/22 19:32:11 roy Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -735,7 +735,7 @@ nd6_na_input(struct mbuf *m, int off, int icmp6len)
 		goto freeit;
 
 	rt_cmd = 0;
-	if (ln->ln_state == ND6_LLINFO_INCOMPLETE) {
+	if (ln->ln_state <= ND6_LLINFO_INCOMPLETE) {
 		/*
 		 * If the link-layer has address, and no lladdr option came,
 		 * discard the packet.
@@ -887,7 +887,7 @@ nd6_na_input(struct mbuf *m, int off, int icmp6len)
 		struct sockaddr_in6 sin6;
 
 		sockaddr_in6_init(&sin6, &ln->r_l3addr.addr6, 0, 0, 0);
-		rt_clonedmsg(rt_cmd, sin6tosa(&sin6),
+		rt_clonedmsg(rt_cmd, sin6tosa(&ssin6), sin6tosa(&sin6),
 		    (char *)&ln->ll_addr, ln->lle_tbl->llt_ifp);
 	}
 

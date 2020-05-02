@@ -1,7 +1,7 @@
-/*	$NetBSD: vfs_subr.c,v 1.479 2020/01/17 20:08:09 ad Exp $	*/
+/*	$NetBSD: vfs_subr.c,v 1.486 2020/04/21 21:42:47 ad Exp $	*/
 
 /*-
- * Copyright (c) 1997, 1998, 2004, 2005, 2007, 2008, 2019
+ * Copyright (c) 1997, 1998, 2004, 2005, 2007, 2008, 2019, 2020
  *     The NetBSD Foundation, Inc.
  * All rights reserved.
  *
@@ -69,7 +69,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_subr.c,v 1.479 2020/01/17 20:08:09 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_subr.c,v 1.486 2020/04/21 21:42:47 ad Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddb.h"
@@ -155,7 +155,7 @@ vinvalbuf(struct vnode *vp, int flags, kauth_cred_t cred, struct lwp *l,
 	    (flags & V_SAVE ? PGO_CLEANIT | PGO_RECLAIM : 0);
 
 	/* XXXUBC this doesn't look at flags or slp* */
-	mutex_enter(vp->v_interlock);
+	rw_enter(vp->v_uobj.vmobjlock, RW_WRITER);
 	error = VOP_PUTPAGES(vp, 0, 0, flushflags);
 	if (error) {
 		return error;
@@ -234,7 +234,7 @@ vtruncbuf(struct vnode *vp, daddr_t lbn, bool catch_p, int slptimeo)
 	voff_t off;
 
 	off = round_page((voff_t)lbn << vp->v_mount->mnt_fs_bshift);
-	mutex_enter(vp->v_interlock);
+	rw_enter(vp->v_uobj.vmobjlock, RW_WRITER);
 	error = VOP_PUTPAGES(vp, off, 0, PGO_FREE | PGO_SYNCIO);
 	if (error) {
 		return error;
@@ -292,7 +292,7 @@ vflushbuf(struct vnode *vp, int flags)
 	pflags = PGO_CLEANIT | PGO_ALLPAGES |
 		(sync ? PGO_SYNCIO : 0) |
 		((flags & FSYNC_LAZY) ? PGO_LAZY : 0);
-	mutex_enter(vp->v_interlock);
+	rw_enter(vp->v_uobj.vmobjlock, RW_WRITER);
 	(void) VOP_PUTPAGES(vp, 0, 0, pflags);
 
 loop:
@@ -421,11 +421,9 @@ brelvp(struct buf *bp)
 	if (LIST_NEXT(bp, b_vnbufs) != NOLIST)
 		bufremvn(bp);
 
-	if (vp->v_uobj.uo_npages == 0 && (vp->v_iflag & VI_ONWORKLST) &&
-	    LIST_FIRST(&vp->v_dirtyblkhd) == NULL) {
-		vp->v_iflag &= ~VI_WRMAPDIRTY;
+	if ((vp->v_iflag & (VI_ONWORKLST | VI_PAGES)) == VI_ONWORKLST &&
+	    LIST_FIRST(&vp->v_dirtyblkhd) == NULL)
 		vn_syncer_remove_from_worklist(vp);
-	}
 
 	bp->b_objlock = &buffer_lock;
 	bp->b_vp = NULL;
@@ -461,12 +459,10 @@ reassignbuf(struct buf *bp, struct vnode *vp)
 	 */
 	if ((bp->b_oflags & BO_DELWRI) == 0) {
 		listheadp = &vp->v_cleanblkhd;
-		if (vp->v_uobj.uo_npages == 0 &&
-		    (vp->v_iflag & VI_ONWORKLST) &&
-		    LIST_FIRST(&vp->v_dirtyblkhd) == NULL) {
-			vp->v_iflag &= ~VI_WRMAPDIRTY;
+		if ((vp->v_iflag & (VI_ONWORKLST | VI_PAGES)) ==
+		    VI_ONWORKLST &&
+		    LIST_FIRST(&vp->v_dirtyblkhd) == NULL)
 			vn_syncer_remove_from_worklist(vp);
-		}
 	} else {
 		listheadp = &vp->v_dirtyblkhd;
 		if ((vp->v_iflag & VI_ONWORKLST) == 0) {
@@ -1108,10 +1104,10 @@ vprint_common(struct vnode *vp, const char *prefix,
 	    ARRAY_PRINT(vp->v_type, vnode_types), vp->v_type,
 	    vp->v_mount, vp->v_mountedhere);
 	(*pr)("%susecount %d writecount %d holdcount %d\n", prefix,
-	    vp->v_usecount, vp->v_writecount, vp->v_holdcnt);
+	    vrefcnt(vp), vp->v_writecount, vp->v_holdcnt);
 	(*pr)("%ssize %" PRIx64 " writesize %" PRIx64 " numoutput %d\n",
 	    prefix, vp->v_size, vp->v_writesize, vp->v_numoutput);
-	(*pr)("%sdata %p lock %p\n", prefix, vp->v_data, vip->vi_lock);
+	(*pr)("%sdata %p lock %p\n", prefix, vp->v_data, &vip->vi_lock);
 
 	(*pr)("%sstate %s key(%p %zd)", prefix, vstate_name(vip->vi_state),
 	    vip->vi_key.vk_mount, vip->vi_key.vk_key_len);
@@ -1544,7 +1540,7 @@ vfs_vnode_lock_print(void *vlock, int full, void (*pr)(const char *, ...))
 
 	for (mp = _mountlist_next(NULL); mp; mp = _mountlist_next(mp)) {
 		TAILQ_FOREACH(vip, &mp->mnt_vnodelist, vi_mntvnodes) {
-			if (vip->vi_lock == vlock ||
+			if (&vip->vi_lock == vlock ||
 			    VIMPL_TO_VNODE(vip)->v_interlock == vlock)
 				vfs_vnode_print(VIMPL_TO_VNODE(vip), full, pr);
 		}

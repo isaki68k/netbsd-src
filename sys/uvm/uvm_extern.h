@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_extern.h,v 1.219 2020/01/15 17:55:45 ad Exp $	*/
+/*	$NetBSD: uvm_extern.h,v 1.225 2020/04/27 02:47:26 rin Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -226,6 +226,7 @@ b\32UNMAP\0\
 #define UBC_FAULTBUSY	0x004	/* nobody else is using these pages, so busy
 				 * them at alloc and unbusy at release (e.g.,
 				 * for writes extending a file) */
+#define	UBC_ISMAPPED	0x008	/* object may be mapped by a process */
 
 /*
  * flags for ubc_release()
@@ -249,6 +250,7 @@ b\32UNMAP\0\
 #define UFP_NORDONLY	0x08
 #define UFP_DIRTYONLY	0x10
 #define UFP_BACKWARD	0x20
+#define UFP_NOBUSY	0x40
 
 /*
  * lockflags that control the locking behavior of various functions.
@@ -506,6 +508,8 @@ struct uvmexp_sysctl {
 	int64_t fileunknown;
 	int64_t fileclean;
 	int64_t filedirty;
+	int64_t fltup;
+	int64_t fltnoup;
 };
 
 #ifdef _KERNEL
@@ -546,11 +550,13 @@ extern bool vm_page_zero_enable;
  * helpers for calling ubc_release()
  */
 #ifdef PMAP_CACHE_VIVT
-#define UBC_WANT_UNMAP(vp) (((vp)->v_iflag & VI_TEXT) != 0)
+#define UBC_VNODE_FLAGS(vp) \
+    ((((vp)->v_iflag & VI_TEXT) != 0 ? UBC_UNMAP : 0) | \
+    (((vp)->v_vflag & VV_MAPPED) != 0 ? UBC_ISMAPPED : 0))
 #else
-#define UBC_WANT_UNMAP(vp) false
+#define UBC_VNODE_FLAGS(vp) \
+    (((vp)->v_vflag & VV_MAPPED) != 0 ? UBC_ISMAPPED : 0)
 #endif
-#define UBC_UNMAP_FLAG(vp) (UBC_WANT_UNMAP(vp) ? UBC_UNMAP : 0)
 
 #if defined(_KERNEL) || defined(_KMEMUSER)
 /*
@@ -601,6 +607,40 @@ struct uvm_coredump_state {
  */
 extern struct vm_map *kernel_map;
 extern struct vm_map *phys_map;
+
+/*
+ *	uvm_voaddr:
+ *
+ *	This structure encapsulates UVM's unique virtual object address
+ *	for an individual byte inside a pageable page. Pageable pages can
+ *	be owned by either a uvm_object (UVM_VOADDR_TYPE_OBJECT) or a
+ *	vm_anon (UVM_VOADDR_TYPE_ANON).
+ *
+ *	In each case, the byte offset into the owning object
+ *	(uvm_object or vm_anon) is included in the ID, so that
+ *	two different offsets into the same page have distinct
+ *	IDs.
+ *
+ *	Note that the page does not necessarily have to be resident
+ *	in order to know the virtual object address.  However, it
+ *	is required that any pending copy-on-write is resolved.
+ *
+ *	When someone wants a virtual object address, an extra reference
+ *	is taken on the owner while the caller uses the ID.  This
+ *	ensures that the identity is stable for the duration of its
+ *	use.
+ */
+struct uvm_voaddr {
+	enum {
+		UVM_VOADDR_TYPE_OBJECT = 1,
+		UVM_VOADDR_TYPE_ANON = 2,
+	} type;
+	union {
+		struct uvm_object *uobj;
+		struct vm_anon *anon;
+	};
+	voff_t offset;
+};
 
 /*
  * macros
@@ -707,6 +747,12 @@ void			uvmspace_free(struct vmspace *);
 void			uvmspace_share(struct proc *, struct proc *);
 void			uvmspace_unshare(struct lwp *);
 
+bool			uvm_voaddr_acquire(struct vm_map *, vaddr_t,
+			    struct uvm_voaddr *);
+void			uvm_voaddr_release(struct uvm_voaddr *);
+int			uvm_voaddr_compare(const struct uvm_voaddr *,
+			    const struct uvm_voaddr *);
+
 void			uvm_whatis(uintptr_t, void (*)(const char *, ...));
 
 /* uvm_meter.c */
@@ -736,7 +782,7 @@ int			uvm_mremap(struct vm_map *, vaddr_t, vsize_t,
 /* uvm_object.c */
 void			uvm_obj_init(struct uvm_object *,
 			    const struct uvm_pagerops *, bool, u_int);
-void			uvm_obj_setlock(struct uvm_object *, kmutex_t *);
+void			uvm_obj_setlock(struct uvm_object *, krwlock_t *);
 void			uvm_obj_destroy(struct uvm_object *, bool);
 int			uvm_obj_wirepages(struct uvm_object *, off_t, off_t,
 			    struct pglist *);
@@ -757,7 +803,6 @@ void			uvm_pagerealloc(struct vm_page *,
 void			uvm_setpagesize(void);
 
 /* uvm_pager.c */
-void			uvm_aio_biodone(struct buf *);
 void			uvm_aio_aiodone(struct buf *);
 void			uvm_aio_aiodone_pages(struct vm_page **, int, bool,
 			    int);

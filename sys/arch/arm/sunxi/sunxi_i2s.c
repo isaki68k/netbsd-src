@@ -1,4 +1,4 @@
-/* $NetBSD: sunxi_i2s.c,v 1.7 2019/11/17 17:33:34 jmcneill Exp $ */
+/* $NetBSD: sunxi_i2s.c,v 1.8 2020/02/29 05:51:10 isaki Exp $ */
 
 /*-
  * Copyright (c) 2018 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sunxi_i2s.c,v 1.7 2019/11/17 17:33:34 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sunxi_i2s.c,v 1.8 2020/02/29 05:51:10 isaki Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>

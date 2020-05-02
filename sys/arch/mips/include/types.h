@@ -1,4 +1,4 @@
-/*	$NetBSD: types.h,v 1.68 2019/04/06 03:06:26 thorpej Exp $	*/
+/*	$NetBSD: types.h,v 1.70 2020/04/30 20:48:10 skrll Exp $	*/
 
 /*-
  * Copyright (c) 1992, 1993
@@ -147,7 +147,6 @@ typedef __uint32_t tlb_asid_t;
 #define	__SIMPLELOCK_UNLOCKED	0
 
 #define	__HAVE_FAST_SOFTINTS
-#define	__HAVE_AST_PERPROC
 #define	__HAVE_SYSCALL_INTERN
 #define	__HAVE_CPU_LWP_SETPRIVATE
 #define	__HAVE_CPU_DATA_FIRST
@@ -175,5 +174,8 @@ typedef __uint32_t tlb_asid_t;
 #define	__HAVE_MM_MD_DIRECT_MAPPED_PHYS
 #define	__HAVE_MM_MD_KERNACC
 #define	__HAVE_MM_MD_CACHE_ALIASING
+
+/* XXX temporary */
+#define	__HAVE_UNLOCKED_PMAP
 
 #endif	/* _MIPS_TYPES_H_ */

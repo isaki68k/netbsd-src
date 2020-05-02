@@ -1,4 +1,4 @@
-/*	$NetBSD: audiodef.h,v 1.8 2020/01/25 12:15:35 jmcneill Exp $	*/
+/*	$NetBSD: audiodef.h,v 1.14 2020/04/29 03:58:27 isaki Exp $	*/
 
 /*
  * Copyright (C) 2017 Tetsuya Isaki. All rights reserved.

@@ -1,4 +1,4 @@
-/*	$NetBSD: rumpfs.c,v 1.154 2020/01/17 20:08:09 ad Exp $	*/
+/*	$NetBSD: rumpfs.c,v 1.158 2020/04/25 15:42:15 bouyer Exp $	*/
 
 /*
  * Copyright (c) 2009, 2010, 2011 Antti Kantee.  All Rights Reserved.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rumpfs.c,v 1.154 2020/01/17 20:08:09 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rumpfs.c,v 1.158 2020/04/25 15:42:15 bouyer Exp $");
 
 #include <sys/param.h>
 #include <sys/atomic.h>
@@ -977,7 +977,8 @@ rump_vop_setattr(void *v)
 			return ENOSPC;
 
 		copylen = MIN(rn->rn_dlen, newlen);
-		memcpy(newdata, rn->rn_data, copylen);
+		if (copylen > 0)
+			memcpy(newdata, rn->rn_data, copylen);
 		memset((char *)newdata + copylen, 0, newlen - copylen);
 
 		if ((rn->rn_flags & RUMPNODE_EXTSTORAGE) == 0) {
@@ -1402,7 +1403,7 @@ rump_vop_read(void *v)
 		if (chunk == 0)
 			break;
 		error = ubc_uiomove(&vp->v_uobj, uio, chunk, advice,
-		    UBC_READ | UBC_PARTIALOK | UBC_UNMAP_FLAG(vp));
+		    UBC_READ | UBC_PARTIALOK | UBC_VNODE_FLAGS(vp));
 		if (error)
 			break;
 	}
@@ -1492,7 +1493,8 @@ rump_vop_write(void *v)
 			return ENOSPC;
 		rn->rn_dlen = newlen;
 		memset(rn->rn_data, 0, newlen);
-		memcpy(rn->rn_data, olddata, oldlen);
+		if (oldlen > 0)
+			memcpy(rn->rn_data, olddata, oldlen);
 		allocd = true;
 		uvm_vnp_setsize(vp, newlen);
 	}
@@ -1503,7 +1505,7 @@ rump_vop_write(void *v)
 		if (chunk == 0)
 			break;
 		error = ubc_uiomove(&vp->v_uobj, uio, chunk, advice,
-		    UBC_WRITE | UBC_PARTIALOK | UBC_UNMAP_FLAG(vp));
+		    UBC_WRITE | UBC_PARTIALOK | UBC_VNODE_FLAGS(vp));
 		if (error)
 			break;
 	}
@@ -1904,7 +1906,7 @@ rumpfs_unmount(struct mount *mp, int mntflags)
 	if (panicstr || mntflags & MNT_FORCE)
 		flags |= FORCECLOSE;
 
-	if (rfsmp->rfsmp_rvp->v_usecount > 1 && (flags & FORCECLOSE) == 0)
+	if (vrefcnt(rfsmp->rfsmp_rvp) > 1 && (flags & FORCECLOSE) == 0)
 		return EBUSY;
 
 	if ((error = vflush(mp, rfsmp->rfsmp_rvp, flags)) != 0)

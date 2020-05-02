@@ -1,4 +1,4 @@
-/* $NetBSD: hdafg.c,v 1.20 2020/01/30 00:21:23 jmcneill Exp $ */
+/* $NetBSD: hdafg.c,v 1.22 2020/04/19 04:13:09 isaki Exp $ */
 
 /*
  * Copyright (c) 2009 Precedence Technologies Ltd <support@precedence.co.uk>
@@ -60,7 +60,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: hdafg.c,v 1.20 2020/01/30 00:21:23 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: hdafg.c,v 1.22 2020/04/19 04:13:09 isaki Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>

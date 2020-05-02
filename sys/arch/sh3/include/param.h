@@ -1,4 +1,4 @@
-/*	$NetBSD: param.h,v 1.24 2019/01/07 22:00:32 jdolecek Exp $	*/
+/*	$NetBSD: param.h,v 1.25 2020/05/01 08:21:27 isaki Exp $	*/
 
 /*-
  * Copyright (c) 2002 The NetBSD Foundation, Inc. All rights reserved.

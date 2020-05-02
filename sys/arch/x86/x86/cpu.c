@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.c,v 1.181 2020/01/14 01:41:37 pgoyette Exp $	*/
+/*	$NetBSD: cpu.c,v 1.188 2020/04/29 22:03:09 ad Exp $	*/
 
 /*
  * Copyright (c) 2000-2012 NetBSD Foundation, Inc.
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.181 2020/01/14 01:41:37 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.188 2020/04/29 22:03:09 ad Exp $");
 
 #include "opt_ddb.h"
 #include "opt_mpbios.h"		/* for MPDEBUG */
@@ -89,6 +89,7 @@ __KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.181 2020/01/14 01:41:37 pgoyette Exp $");
 
 #include "acpica.h"		/* for NACPICA, for mp_verbose */
 
+#include <x86/machdep.h>
 #include <machine/cpufunc.h>
 #include <machine/cpuvar.h>
 #include <machine/pmap.h>
@@ -123,11 +124,15 @@ __KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.181 2020/01/14 01:41:37 pgoyette Exp $");
 
 #include "tsc.h"
 
-#ifndef XEN
+#ifndef XENPV
 #include "hyperv.h"
 #if NHYPERV > 0
 #include <x86/x86/hypervvar.h>
 #endif
+#endif
+
+#ifdef XEN
+#include <xen/hypervisor.h>
 #endif
 
 static int	cpu_match(device_t, cfdata_t, void *);
@@ -198,9 +203,9 @@ static vaddr_t cmos_data_mapping;
 struct cpu_info *cpu_starting;
 
 #ifdef MULTIPROCESSOR
-void    	cpu_hatch(void *);
-static void    	cpu_boot_secondary(struct cpu_info *ci);
-static void    	cpu_start_secondary(struct cpu_info *ci);
+void		cpu_hatch(void *);
+static void	cpu_boot_secondary(struct cpu_info *ci);
+static void	cpu_start_secondary(struct cpu_info *ci);
 #if NLAPIC > 0
 static void	cpu_copy_trampoline(paddr_t);
 #endif
@@ -276,7 +281,7 @@ cpu_vm_init(struct cpu_info *ci)
 		cai = &ci->ci_cinfo[i];
 
 		tcolors = atop(cai->cai_totalsize);
-		switch(cai->cai_associativity) {
+		switch (cai->cai_associativity) {
 		case 0xff:
 			tcolors = 1; /* fully associative */
 			break;
@@ -300,7 +305,7 @@ cpu_vm_init(struct cpu_info *ci)
 			}
 			if (picked == 1) {
 				panic("desired number of cache colors %d is "
-			      	" > 1, but not even!", ncolors);
+				" > 1, but not even!", ncolors);
 			}
 			ncolors = picked;
 		}
@@ -442,7 +447,8 @@ cpu_attach(device_t parent, device_t self, void *aux)
 			/* Enable lapic. */
 			lapic_enable();
 			lapic_set_lvt();
-			lapic_calibrate_timer(ci);
+			if (vm_guest != VM_GUEST_XENPVHVM)
+				lapic_calibrate_timer(ci);
 		}
 #endif
 		/* Make sure DELAY() is initialized. */
@@ -459,6 +465,10 @@ cpu_attach(device_t parent, device_t self, void *aux)
 		cpu_identify(ci);
 		x86_errata();
 		x86_cpu_idle_init();
+		(*x86_cpu_initclock_func)();
+#ifdef XENPVHVM
+		xen_hvm_init_cpu(ci);
+#endif
 		break;
 
 	case CPU_ROLE_BP:
@@ -466,6 +476,10 @@ cpu_attach(device_t parent, device_t self, void *aux)
 		cpu_identify(ci);
 		x86_errata();
 		x86_cpu_idle_init();
+#ifdef XENPVHVM
+		xen_hvm_init_cpu(ci);
+#endif
+		(*x86_cpu_initclock_func)();
 		break;
 
 #ifdef MULTIPROCESSOR
@@ -720,10 +734,8 @@ cpu_boot_secondary_processors(void)
 	kcpuset_t *cpus;
 	u_long i;
 
-#ifndef XEN
 	/* Now that we know the number of CPUs, patch the text segment. */
 	x86_patch(false);
-#endif
 
 #if NACPICA > 0
 	/* Finished with NUMA info for now. */
@@ -973,7 +985,6 @@ cpu_hatch(void *v)
 #if NLAPIC > 0
 	lapic_enable();
 	lapic_set_lvt();
-	lapic_initclocks();
 #endif
 
 	fpuinit(ci);
@@ -986,6 +997,10 @@ cpu_hatch(void *v)
 	 * above.
 	 */
 	cpu_init(ci);
+#ifdef XENPVHVM
+	xen_hvm_init_cpu(ci);
+#endif
+	(*x86_cpu_initclock_func)();
 	cpu_get_tsc_freq(ci);
 
 	s = splhigh();
@@ -1018,7 +1033,7 @@ cpu_debug_dump(void)
 {
 	struct cpu_info *ci;
 	CPU_INFO_ITERATOR cii;
-	const char sixtyfour64space[] = 
+	const char sixtyfour64space[] =
 #ifdef _LP64
 			   "        "
 #endif
@@ -1291,12 +1306,20 @@ cpu_shutdown(device_t dv, int how)
 	return cpu_stop(dv);
 }
 
+/* Get the TSC frequency and set it to ci->ci_data.cpu_cc_freq. */
 void
 cpu_get_tsc_freq(struct cpu_info *ci)
 {
-	uint64_t last_tsc;
+	uint64_t freq = 0, last_tsc;
 
-	if (cpu_hascounter()) {
+	if (cpu_hascounter())
+		freq = cpu_tsc_freq_cpuid(ci);
+
+	if (freq != 0) {
+		/* Use TSC frequency taken from CPUID. */
+		ci->ci_data.cpu_cc_freq = freq;
+	} else {
+		/* Calibrate TSC frequency. */
 		last_tsc = cpu_counter_serializing();
 		x86_delay(100000);
 		ci->ci_data.cpu_cc_freq =

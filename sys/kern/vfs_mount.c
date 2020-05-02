@@ -1,7 +1,7 @@
-/*	$NetBSD: vfs_mount.c,v 1.74 2020/01/17 20:08:09 ad Exp $	*/
+/*	$NetBSD: vfs_mount.c,v 1.82 2020/05/01 08:45:01 hannken Exp $	*/
 
 /*-
- * Copyright (c) 1997-2019 The NetBSD Foundation, Inc.
+ * Copyright (c) 1997-2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -67,7 +67,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_mount.c,v 1.74 2020/01/17 20:08:09 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_mount.c,v 1.82 2020/05/01 08:45:01 hannken Exp $");
 
 #include <sys/param.h>
 #include <sys/kernel.h>
@@ -394,7 +394,7 @@ vfs_vnode_iterator_destroy(struct vnode_iterator *vni)
 	kmutex_t *lock;
 
 	KASSERT(vnis_marker(mvp));
-	if (mvp->v_usecount != 0) {
+	if (vrefcnt(mvp) != 0) {
 		lock = mvp->v_mount->mnt_vnodelock;
 		mutex_enter(lock);
 		TAILQ_REMOVE(&mvp->v_mount->mnt_vnodelist, mvip, vi_mntvnodes);
@@ -519,9 +519,9 @@ struct ctldebug debug1 = { "busyprt", &busyprt };
 static vnode_t *
 vflushnext(struct vnode_iterator *marker, int *when)
 {
-	if (hardclock_ticks > *when) {
+	if (getticks() > *when) {
 		yield();
-		*when = hardclock_ticks + hz / 10;
+		*when = getticks() + hz / 10;
 	}
 	return vfs_vnode_iterator_next1(marker, NULL, NULL, true);
 }
@@ -580,7 +580,7 @@ vflush_one(vnode_t *vp, vnode_t *skipvp, int flags)
 	 * kill them.
 	 */
 	if (flags & FORCECLOSE) {
-		if (vp->v_usecount > 1 &&
+		if (vrefcnt(vp) > 1 &&
 		    (vp->v_type == VBLK || vp->v_type == VCHR))
 			vcache_make_anon(vp);
 		else
@@ -650,7 +650,7 @@ mount_checkdirs(vnode_t *olddp)
 	struct proc *p;
 	bool retry;
 
-	if (olddp->v_usecount == 1) {
+	if (vrefcnt(olddp) == 1) {
 		return;
 	}
 	if (VFS_ROOT(olddp->v_mountedhere, LK_EXCLUSIVE, &newdp))
@@ -1066,7 +1066,7 @@ vfs_sync_all(struct lwp *l)
 	do_sys_sync(l);
 
 	/* Wait for sync to finish. */
-	if (buf_syncwait() != 0) {
+	if (vfs_syncwait() != 0) {
 #if defined(DDB) && defined(DEBUG_HALT_BUSY)
 		Debugger();
 #endif
@@ -1239,14 +1239,13 @@ done:
 
 		/*
 		 * Get the vnode for '/'.  Set cwdi0.cwdi_cdir to
-		 * reference it.
+		 * reference it, and donate it the reference grabbed
+		 * with VFS_ROOT().
 		 */
-		error = VFS_ROOT(mp, LK_SHARED, &rootvnode);
+		error = VFS_ROOT(mp, LK_NONE, &rootvnode);
 		if (error)
 			panic("cannot find root vnode, error=%d", error);
 		cwdi0.cwdi_cdir = rootvnode;
-		vref(cwdi0.cwdi_cdir);
-		VOP_UNLOCK(rootvnode);
 		cwdi0.cwdi_rdir = NULL;
 
 		/*

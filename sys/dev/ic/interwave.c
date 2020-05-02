@@ -1,4 +1,4 @@
-/*	$NetBSD: interwave.c,v 1.42 2019/06/08 08:02:38 isaki Exp $	*/
+/*	$NetBSD: interwave.c,v 1.43 2020/02/29 05:51:11 isaki Exp $	*/
 
 /*
  * Copyright (c) 1997, 1999, 2008 The NetBSD Foundation, Inc.
@@ -29,7 +29,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: interwave.c,v 1.42 2019/06/08 08:02:38 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: interwave.c,v 1.43 2020/02/29 05:51:11 isaki Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>

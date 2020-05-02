@@ -1,4 +1,4 @@
-/* $NetBSD: auixp.c,v 1.48 2019/10/16 21:52:22 maya Exp $ */
+/* $NetBSD: auixp.c,v 1.49 2020/02/29 06:34:30 isaki Exp $ */
 
 /*
  * Copyright (c) 2004, 2005 Reinoud Zandijk <reinoud@netbsd.org>
@@ -43,7 +43,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: auixp.c,v 1.48 2019/10/16 21:52:22 maya Exp $");
+__KERNEL_RCSID(0, "$NetBSD: auixp.c,v 1.49 2020/02/29 06:34:30 isaki Exp $");
 
 #include <sys/types.h>
 #include <sys/errno.h>

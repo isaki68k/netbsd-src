@@ -1,4 +1,4 @@
-/*	$NetBSD: ym.c,v 1.46 2019/05/08 13:40:18 isaki Exp $	*/
+/*	$NetBSD: ym.c,v 1.47 2020/02/29 05:51:11 isaki Exp $	*/
 
 /*-
  * Copyright (c) 1999-2002, 2008 The NetBSD Foundation, Inc.
@@ -60,7 +60,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ym.c,v 1.46 2019/05/08 13:40:18 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ym.c,v 1.47 2020/02/29 05:51:11 isaki Exp $");
 
 #include "mpu_ym.h"
 #include "opt_ym.h"
