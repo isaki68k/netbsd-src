@@ -1,4 +1,4 @@
-/*	$NetBSD: if_vmx.c,v 1.57 2020/02/02 05:27:21 thorpej Exp $	*/
+/*	$NetBSD: if_vmx.c,v 1.60 2020/04/27 23:40:37 yamaguchi Exp $	*/
 /*	$OpenBSD: if_vmx.c,v 1.16 2014/01/22 06:04:17 brad Exp $	*/
 
 /*
@@ -19,12 +19,13 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_vmx.c,v 1.57 2020/02/02 05:27:21 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_vmx.c,v 1.60 2020/04/27 23:40:37 yamaguchi Exp $");
 
 #include <sys/param.h>
 #include <sys/cpu.h>
 #include <sys/kernel.h>
 #include <sys/kmem.h>
+#include <sys/bitops.h>
 #include <sys/bus.h>
 #include <sys/device.h>
 #include <sys/mbuf.h>
@@ -445,9 +446,10 @@ static int vmxnet3_ifflags_cb(struct ethercom *);
 static int vmxnet3_watchdog(struct vmxnet3_txqueue *);
 static void vmxnet3_refresh_host_stats(struct vmxnet3_softc *);
 static void vmxnet3_tick(void *);
-static void vmxnet3_link_status(struct vmxnet3_softc *);
-static void vmxnet3_media_status(struct ifnet *, struct ifmediareq *);
-static int vmxnet3_media_change(struct ifnet *);
+static void vmxnet3_if_link_status(struct vmxnet3_softc *);
+static bool vmxnet3_cmd_link_status(struct ifnet *);
+static void vmxnet3_ifmedia_status(struct ifnet *, struct ifmediareq *);
+static int vmxnet3_ifmedia_change(struct ifnet *);
 static void vmxnet3_set_lladdr(struct vmxnet3_softc *);
 static void vmxnet3_get_lladdr(struct vmxnet3_softc *);
 
@@ -465,23 +467,11 @@ CFATTACH_DECL3_NEW(vmx, sizeof(struct vmxnet3_softc),
 static int
 vmxnet3_calc_queue_size(int n)
 {
-	int v, q;
 
-	v = n;
-	while (v != 0) {
-		if (powerof2(n) != 0)
-			break;
-		v /= 2;
-		q = rounddown2(n, v);
-		if (q != 0) {
-			n = q;
-			break;
-		}
-	}
-	if (n == 0)
-		n = 1;
+	if (__predict_false(n <= 0))
+		return 1;
 
-	return n;
+	return (1U << (fls32(n) - 1));
 }
 
 static inline void
@@ -1857,8 +1847,8 @@ vmxnet3_setup_interface(struct vmxnet3_softc *sc)
 
 	/* Initialize ifmedia structures. */
 	sc->vmx_ethercom.ec_ifmedia = &sc->vmx_media;
-	ifmedia_init(&sc->vmx_media, IFM_IMASK, vmxnet3_media_change,
-	    vmxnet3_media_status);
+	ifmedia_init_with_lock(&sc->vmx_media, IFM_IMASK, vmxnet3_ifmedia_change,
+	    vmxnet3_ifmedia_status, sc->vmx_mtx);
 	ifmedia_add(&sc->vmx_media, IFM_ETHER | IFM_AUTO, 0, NULL);
 	ifmedia_add(&sc->vmx_media, IFM_ETHER | IFM_10G_T | IFM_FDX, 0, NULL);
 	ifmedia_add(&sc->vmx_media, IFM_ETHER | IFM_10G_T, 0, NULL);
@@ -1870,7 +1860,7 @@ vmxnet3_setup_interface(struct vmxnet3_softc *sc)
 	if_deferred_start_init(ifp, NULL);
 	ether_ifattach(ifp, sc->vmx_lladdr);
 	ether_set_ifflags_cb(&sc->vmx_ethercom, vmxnet3_ifflags_cb);
-	vmxnet3_link_status(sc);
+	vmxnet3_cmd_link_status(ifp);
 
 	/* should set before setting interrupts */
 	sc->vmx_rx_intr_process_limit = VMXNET3_RX_INTR_PROCESS_LIMIT;
@@ -2069,7 +2059,7 @@ vmxnet3_evintr(struct vmxnet3_softc *sc)
 
 	if (event & VMXNET3_EVENT_LINK) {
 		sc->vmx_event_link.ev_count++;
-		vmxnet3_link_status(sc);
+		vmxnet3_if_link_status(sc);
 		if (sc->vmx_link_active != 0)
 			if_schedule_deferred_start(&sc->vmx_ethercom.ec_if);
 	}
@@ -2909,7 +2899,7 @@ vmxnet3_init_locked(struct vmxnet3_softc *sc)
 	}
 
 	ifp->if_flags |= IFF_RUNNING;
-	vmxnet3_link_status(sc);
+	vmxnet3_cmd_link_status(ifp);
 
 	vmxnet3_enable_all_intrs(sc);
 	callout_reset(&sc->vmx_tick, hz, vmxnet3_tick, sc);
@@ -3425,6 +3415,8 @@ vmxnet3_ifflags_cb(struct ethercom *ec)
 	vmxnet3_set_rxfilter(sc);
 	VMXNET3_CORE_UNLOCK(sc);
 
+	vmxnet3_if_link_status(sc);
+
 	return 0;
 }
 
@@ -3481,17 +3473,20 @@ vmxnet3_tick(void *xsc)
 	VMXNET3_CORE_UNLOCK(sc);
 }
 
+/*
+ * update link state of ifnet and softc
+ */
 static void
-vmxnet3_link_status(struct vmxnet3_softc *sc)
+vmxnet3_if_link_status(struct vmxnet3_softc *sc)
 {
 	struct ifnet *ifp = &sc->vmx_ethercom.ec_if;
-	u_int x, link, speed;
+	u_int x, link;
+
+	vmxnet3_cmd_link_status(ifp);
 
 	x = vmxnet3_read_cmd(sc, VMXNET3_CMD_GET_LINK);
-	speed = x >> 16;
 	if (x & 1) {
 		sc->vmx_link_active = 1;
-		ifp->if_baudrate = IF_Mbps(speed);
 		link = LINK_STATE_UP;
 	} else {
 		sc->vmx_link_active = 0;
@@ -3501,31 +3496,47 @@ vmxnet3_link_status(struct vmxnet3_softc *sc)
 	if_link_state_change(ifp, link);
 }
 
-static void
-vmxnet3_media_status(struct ifnet *ifp, struct ifmediareq *ifmr)
+/*
+ * check vmx(4) state by VMXNET3_CMD and update ifp->if_baudrate
+ *   returns
+ *       - true:  link up
+ *       - flase: link down
+ */
+static bool
+vmxnet3_cmd_link_status(struct ifnet *ifp)
 {
 	struct vmxnet3_softc *sc = ifp->if_softc;
+	u_int x, speed;
 
-	vmxnet3_link_status(sc);
+	x = vmxnet3_read_cmd(sc, VMXNET3_CMD_GET_LINK);
+	if ((x & 1) == 0)
+		return false;
+
+	speed = x >> 16;
+	ifp->if_baudrate = IF_Mbps(speed);
+	return true;
+}
+
+static void
+vmxnet3_ifmedia_status(struct ifnet *ifp, struct ifmediareq *ifmr)
+{
+	bool up;
 
 	ifmr->ifm_status = IFM_AVALID;
 	ifmr->ifm_active = IFM_ETHER;
 
-	VMXNET3_CORE_LOCK(sc);
-	if (ifp->if_link_state != LINK_STATE_UP) {
-		VMXNET3_CORE_UNLOCK(sc);
+	up = vmxnet3_cmd_link_status(ifp);
+	if (!up)
 		return;
-	}
 
 	ifmr->ifm_status |= IFM_ACTIVE;
 
 	if (ifp->if_baudrate >= IF_Gbps(10ULL))
 		ifmr->ifm_active |= IFM_10G_T;
-	VMXNET3_CORE_UNLOCK(sc);
 }
 
 static int
-vmxnet3_media_change(struct ifnet *ifp)
+vmxnet3_ifmedia_change(struct ifnet *ifp)
 {
 	return 0;
 }

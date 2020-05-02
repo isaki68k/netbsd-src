@@ -1,4 +1,4 @@
-# $NetBSD: Makefile.efiboot,v 1.10 2020/01/25 11:24:20 jmcneill Exp $
+# $NetBSD: Makefile.efiboot,v 1.12 2020/04/26 06:51:35 rin Exp $
 
 S=		${.CURDIR}/../../..
 
@@ -47,6 +47,7 @@ BINMODE=444
 .PATH:	${.CURDIR} ${.CURDIR}/..
 .PATH:	${.CURDIR}/../../lib
 
+LDFLAGS+= --no-dynamic-linker --noinhibit-exec
 LDFLAGS+= -nostdlib -T${LDSCRIPT} -Bsymbolic -shared
 CPPFLAGS+= -I$S -I${.CURDIR} -I${.CURDIR}/../common -I$S/lib/libsa
 CPPFLAGS+= -I${.OBJDIR}
@@ -86,6 +87,11 @@ CPPFLAGS+= -DLIBSA_ENABLE_LS_OP
 #CPPFLAGS+= -DNFS_DEBUG
 #CPPFLAGS+= -DRARP_DEBUG
 #CPPFLAGS+= -DRPC_DEBUG
+
+# Follow the suit of Makefile.kern.inc; needed for the lfs64 union
+# accessors -- they don't actually dereference the resulting pointer,
+# just use it for type-checking.
+CWARNFLAGS.clang+=	-Wno-error=address-of-packed-member
 
 SAMISCCPPFLAGS+= -DLIBSA_PRINTF_LONGLONG_SUPPORT
 SAMISCCPPFLAGS+= -DLIBSA_PRINTF_WIDTH_SUPPORT

@@ -1,7 +1,7 @@
-/*	$NetBSD: nvmm_x86_svm.c,v 1.55 2019/12/10 18:06:50 ad Exp $	*/
+/*	$NetBSD: nvmm_x86_svm.c,v 1.59 2020/04/30 16:50:17 maxv Exp $	*/
 
 /*
- * Copyright (c) 2018-2019 The NetBSD Foundation, Inc.
+ * Copyright (c) 2018-2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nvmm_x86_svm.c,v 1.55 2019/12/10 18:06:50 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nvmm_x86_svm.c,v 1.59 2020/04/30 16:50:17 maxv Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -1441,10 +1441,7 @@ svm_vcpu_run(struct nvmm_machine *mach, struct nvmm_cpu *vcpu,
 		}
 
 		/* If no reason to return to userland, keep rolling. */
-		if (curcpu()->ci_schedstate.spc_flags & SPCF_SHOULDYIELD) {
-			break;
-		}
-		if (curcpu()->ci_data.cpu_softints != 0) {
+		if (preempt_needed()) {
 			break;
 		}
 		if (curlwp->l_flag & LW_USERRET) {
@@ -2217,7 +2214,7 @@ svm_tlb_flush(struct pmap *pm)
 	atomic_inc_64(&machdata->mach_htlb_gen);
 
 	/* Generates IPIs, which cause #VMEXITs. */
-	pmap_tlb_shootdown(pmap_kernel(), -1, PTE_G, TLBSHOOT_UPDATE);
+	pmap_tlb_shootdown(pmap_kernel(), -1, PTE_G, TLBSHOOT_NVMM);
 }
 
 static void
@@ -2260,21 +2257,25 @@ svm_ident(void)
 		return false;
 	}
 	if (!(cpu_feature[3] & CPUID_SVM)) {
+		printf("NVMM: SVM not supported\n");
 		return false;
 	}
 
 	if (curcpu()->ci_max_ext_cpuid < 0x8000000a) {
+		printf("NVMM: CPUID leaf not available\n");
 		return false;
 	}
 	x86_cpuid(0x8000000a, descs);
 
 	/* Want Nested Paging. */
 	if (!(descs[3] & CPUID_AMD_SVM_NP)) {
+		printf("NVMM: SVM-NP not supported\n");
 		return false;
 	}
 
 	/* Want nRIP. */
 	if (!(descs[3] & CPUID_AMD_SVM_NRIPS)) {
+		printf("NVMM: SVM-NRIPS not supported\n");
 		return false;
 	}
 
@@ -2282,6 +2283,7 @@ svm_ident(void)
 
 	msr = rdmsr(MSR_VMCR);
 	if ((msr & VMCR_SVMED) && (msr & VMCR_LOCK)) {
+		printf("NVMM: SVM disabled in BIOS\n");
 		return false;
 	}
 
@@ -2314,7 +2316,7 @@ svm_init_asid(uint32_t maxasid)
 static void
 svm_change_cpu(void *arg1, void *arg2)
 {
-	bool enable = (bool)arg1;
+	bool enable = arg1 != NULL;
 	uint64_t msr;
 
 	msr = rdmsr(MSR_VMCR);

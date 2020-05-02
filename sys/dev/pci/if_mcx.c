@@ -1,5 +1,5 @@
-/*	$NetBSD: if_mcx.c,v 1.10 2020/01/30 14:02:14 thorpej Exp $ */
-/*	$OpenBSD: if_mcx.c,v 1.33 2019/09/12 04:23:59 jmatthew Exp $ */
+/*	$NetBSD: if_mcx.c,v 1.13 2020/04/24 12:58:42 jmcneill Exp $ */
+/*	$OpenBSD: if_mcx.c,v 1.44 2020/04/24 07:28:37 mestre Exp $ */
 
 /*
  * Copyright (c) 2017 David Gwynne <dlg@openbsd.org>
@@ -52,12 +52,13 @@
 #include <dev/pci/pcivar.h>
 #include <dev/pci/pcidevs.h>
 
-#ifdef NET_MPSAFE
-#define	MCX_MPSAFE	1
-#define	CALLOUT_FLAGS	CALLOUT_MPSAFE
-#else
+/* XXX This driver is not yet MP-safe; don't claim to be! */
+/* #ifdef NET_MPSAFE */
+/* #define	MCX_MPSAFE	1 */
+/* #define	CALLOUT_FLAGS	CALLOUT_MPSAFE */
+/* #else */
 #define	CALLOUT_FLAGS	0
-#endif
+/* #endif */
 
 #define	MCX_MAX_NINTR	1
 
@@ -82,7 +83,7 @@
 
 /* queue sizes */
 #define MCX_LOG_EQ_SIZE		 6		/* one page */
-#define MCX_LOG_CQ_SIZE		 11
+#define MCX_LOG_CQ_SIZE		 12
 #define MCX_LOG_RQ_SIZE		 10
 #define MCX_LOG_SQ_SIZE		 11
 
@@ -154,33 +155,33 @@
 #define MCX_REG_PPCNT		0x5008
 #define MCX_REG_MCIA		0x9014
 
-#define MCX_ETHER_CAP_SGMII	(1 << 0)
-#define MCX_ETHER_CAP_1000_KX	(1 << 1)
-#define MCX_ETHER_CAP_10G_CX4	(1 << 2)
-#define MCX_ETHER_CAP_10G_KX4	(1 << 3)
-#define MCX_ETHER_CAP_10G_KR	(1 << 4)
-#define MCX_ETHER_CAP_20G_KR2	(1 << 5)
-#define MCX_ETHER_CAP_40G_CR4	(1 << 6)
-#define MCX_ETHER_CAP_40G_KR4	(1 << 7)
-#define MCX_ETHER_CAP_56G_R4	(1 << 8)
-#define MCX_ETHER_CAP_10G_CR	(1 << 12)
-#define MCX_ETHER_CAP_10G_SR	(1 << 13)
-#define MCX_ETHER_CAP_10G_LR	(1 << 14)
-#define MCX_ETHER_CAP_40G_SR4	(1 << 15)
-#define MCX_ETHER_CAP_40G_LR4	(1 << 16)
-#define MCX_ETHER_CAP_50G_SR2	(1 << 18)
-#define MCX_ETHER_CAP_100G_CR4	(1 << 20)
-#define MCX_ETHER_CAP_100G_SR4	(1 << 21)
-#define MCX_ETHER_CAP_100G_KR4	(1 << 22)
-#define MCX_ETHER_CAP_100G_LR4	(1 << 23)
-#define MCX_ETHER_CAP_100_TX	(1 << 24)
-#define MCX_ETHER_CAP_1000_T	(1 << 25)
-#define MCX_ETHER_CAP_10G_T	(1 << 26)
-#define MCX_ETHER_CAP_25G_CR	(1 << 27)
-#define MCX_ETHER_CAP_25G_KR	(1 << 28)
-#define MCX_ETHER_CAP_25G_SR	(1 << 29)
-#define MCX_ETHER_CAP_50G_CR2	(1 << 30)
-#define MCX_ETHER_CAP_50G_KR2	(1 << 31)
+#define MCX_ETHER_CAP_SGMII	0
+#define MCX_ETHER_CAP_1000_KX	1
+#define MCX_ETHER_CAP_10G_CX4	2
+#define MCX_ETHER_CAP_10G_KX4	3
+#define MCX_ETHER_CAP_10G_KR	4
+#define MCX_ETHER_CAP_20G_KR2	5
+#define MCX_ETHER_CAP_40G_CR4	6
+#define MCX_ETHER_CAP_40G_KR4	7
+#define MCX_ETHER_CAP_56G_R4	8
+#define MCX_ETHER_CAP_10G_CR	12
+#define MCX_ETHER_CAP_10G_SR	13
+#define MCX_ETHER_CAP_10G_LR	14
+#define MCX_ETHER_CAP_40G_SR4	15
+#define MCX_ETHER_CAP_40G_LR4	16
+#define MCX_ETHER_CAP_50G_SR2	18
+#define MCX_ETHER_CAP_100G_CR4	20
+#define MCX_ETHER_CAP_100G_SR4	21
+#define MCX_ETHER_CAP_100G_KR4	22
+#define MCX_ETHER_CAP_100G_LR4	23
+#define MCX_ETHER_CAP_100_TX	24
+#define MCX_ETHER_CAP_1000_T	25
+#define MCX_ETHER_CAP_10G_T	26
+#define MCX_ETHER_CAP_25G_CR	27
+#define MCX_ETHER_CAP_25G_KR	28
+#define MCX_ETHER_CAP_25G_SR	29
+#define MCX_ETHER_CAP_50G_CR2	30
+#define MCX_ETHER_CAP_50G_KR2	31
 
 #define MCX_PAGE_SHIFT		12
 #define MCX_PAGE_SIZE		(1 << MCX_PAGE_SHIFT)
@@ -1941,6 +1942,7 @@ struct mcx_softc {
 	struct ifmedia		 sc_media;
 	uint64_t		 sc_media_status;
 	uint64_t		 sc_media_active;
+	kmutex_t		 sc_media_mutex;
 
 	pci_chipset_tag_t	 sc_pc;
 	pci_intr_handle_t	*sc_intrs;
@@ -1970,7 +1972,7 @@ struct mcx_softc {
 	struct mcx_dmamem	 sc_doorbell_mem;
 
 	int			 sc_eqn;
-	int			 sc_eq_cons;
+	uint32_t		 sc_eq_cons;
 	struct mcx_dmamem	 sc_eq_mem;
 	int			 sc_hardmtu;
 
@@ -2146,40 +2148,46 @@ static const struct {
 	{ PCI_VENDOR_MELLANOX,	PCI_PRODUCT_MELLANOX_MT28800 },
 };
 
-static const uint64_t mcx_eth_cap_map[] = {
-	IFM_1000_SGMII,
-	IFM_1000_KX,
-	IFM_10G_CX4,
-	IFM_10G_KX4,
-	IFM_10G_KR,
-	IFM_20G_KR2,
-	IFM_40G_CR4,
-	IFM_40G_KR4,
-	IFM_56G_R4,
-	0,
-	0,
-	0,
-	IFM_10G_CR1,
-	IFM_10G_SR,
-	IFM_10G_LR,
-	IFM_40G_SR4,
-	IFM_40G_LR4,
-	0,
-	IFM_50G_SR2,
-	0,
-	IFM_100G_CR4,
-	IFM_100G_SR4,
-	IFM_100G_KR4,
-	IFM_100G_LR4,
-	IFM_100_TX,
-	IFM_1000_T,
-	IFM_10G_T,
-	IFM_25G_CR,
-	IFM_25G_KR,
-	IFM_25G_SR,
-	IFM_50G_CR2,
-	IFM_50G_KR2
+struct mcx_eth_proto_capability {
+	uint64_t	cap_media;
+	uint64_t	cap_baudrate;
 };
+
+static const struct mcx_eth_proto_capability mcx_eth_cap_map[] = {
+	[MCX_ETHER_CAP_SGMII]		= { IFM_1000_SGMII,	IF_Gbps(1) },
+	[MCX_ETHER_CAP_1000_KX]		= { IFM_1000_KX,	IF_Gbps(1) },
+	[MCX_ETHER_CAP_10G_CX4]		= { IFM_10G_CX4,	IF_Gbps(10) },
+	[MCX_ETHER_CAP_10G_KX4]		= { IFM_10G_KX4,	IF_Gbps(10) },
+	[MCX_ETHER_CAP_10G_KR]		= { IFM_10G_KR,		IF_Gbps(10) },
+	[MCX_ETHER_CAP_20G_KR2]		= { IFM_20G_KR2,	IF_Gbps(20) },
+	[MCX_ETHER_CAP_40G_CR4]		= { IFM_40G_CR4,	IF_Gbps(40) },
+	[MCX_ETHER_CAP_40G_KR4]		= { IFM_40G_KR4,	IF_Gbps(40) },
+	[MCX_ETHER_CAP_56G_R4]		= { IFM_56G_R4,		IF_Gbps(56) },
+	[MCX_ETHER_CAP_10G_CR]		= { IFM_10G_CR1,	IF_Gbps(10) },
+	[MCX_ETHER_CAP_10G_SR]		= { IFM_10G_SR,		IF_Gbps(10) },
+	[MCX_ETHER_CAP_10G_LR]		= { IFM_10G_LR,		IF_Gbps(10) },
+	[MCX_ETHER_CAP_40G_SR4]		= { IFM_40G_SR4,	IF_Gbps(40) },
+	[MCX_ETHER_CAP_40G_LR4]		= { IFM_40G_LR4,	IF_Gbps(40) },
+	[MCX_ETHER_CAP_50G_SR2]		= { IFM_50G_SR2,	IF_Gbps(50) },
+	[MCX_ETHER_CAP_100G_CR4]	= { IFM_100G_CR4,	IF_Gbps(100) },
+	[MCX_ETHER_CAP_100G_SR4]	= { IFM_100G_SR4,	IF_Gbps(100) },
+	[MCX_ETHER_CAP_100G_KR4]	= { IFM_100G_KR4,	IF_Gbps(100) },
+	[MCX_ETHER_CAP_100G_LR4]	= { IFM_100G_LR4,	IF_Gbps(100) },
+	[MCX_ETHER_CAP_100_TX]		= { IFM_100_TX,		IF_Mbps(100) },
+	[MCX_ETHER_CAP_1000_T]		= { IFM_1000_T,		IF_Gbps(1) },
+	[MCX_ETHER_CAP_10G_T]		= { IFM_10G_T,		IF_Gbps(10) },
+	[MCX_ETHER_CAP_25G_CR]		= { IFM_25G_CR,		IF_Gbps(25) },
+	[MCX_ETHER_CAP_25G_KR]		= { IFM_25G_KR,		IF_Gbps(25) },
+	[MCX_ETHER_CAP_25G_SR]		= { IFM_25G_SR,		IF_Gbps(25) },
+	[MCX_ETHER_CAP_50G_CR2]		= { IFM_50G_CR2,	IF_Gbps(50) },
+	[MCX_ETHER_CAP_50G_KR2]		= { IFM_50G_KR2,	IF_Gbps(50) },
+};
+
+static int
+mcx_get_id(uint32_t val)
+{
+	return be32toh(val) & 0x00ffffff;
+}
 
 static int
 mcx_match(device_t parent, cfdata_t cf, void *aux)
@@ -2215,7 +2223,10 @@ mcx_attach(device_t parent, device_t self, void *aux)
 	sc->sc_dev = self;
 	sc->sc_pc = pa->pa_pc;
 	sc->sc_tag = pa->pa_tag;
-	sc->sc_dmat = pa->pa_dmat;
+	if (pci_dma64_available(pa))
+		sc->sc_dmat = pa->pa_dmat64;
+	else
+		sc->sc_dmat = pa->pa_dmat;
 
 	/* Map the PCI memory space */
 	memtype = pci_mapreg_type(sc->sc_pc, sc->sc_tag, MCX_HCA_BAR);
@@ -2227,6 +2238,8 @@ mcx_attach(device_t parent, device_t self, void *aux)
 	}
 
 	pci_aprint_devinfo(pa, "Ethernet controller");
+
+	mutex_init(&sc->sc_media_mutex, MUTEX_DEFAULT, IPL_SOFTNET);
 
 	if (mcx_version(sc) != 0) {
 		/* error printed by mcx_version */
@@ -2417,8 +2430,8 @@ mcx_attach(device_t parent, device_t self, void *aux)
 	sc->sc_ec.ec_capabilities = ETHERCAP_VLAN_MTU | ETHERCAP_JUMBO_MTU;
 
 	sc->sc_ec.ec_ifmedia = &sc->sc_media;
-	ifmedia_init(&sc->sc_media, IFM_IMASK, mcx_media_change,
-	    mcx_media_status);
+	ifmedia_init_with_lock(&sc->sc_media, IFM_IMASK, mcx_media_change,
+	    mcx_media_status, &sc->sc_media_mutex);
 	mcx_media_add_types(sc);
 	ifmedia_add(&sc->sc_media, IFM_ETHER | IFM_AUTO, 0, NULL);
 	ifmedia_set(&sc->sc_media, IFM_ETHER | IFM_AUTO);
@@ -2554,11 +2567,8 @@ mcx_cmdq_poll(struct mcx_softc *sc, struct mcx_cmdq_entry *cqe,
 		    0, MCX_DMA_LEN(&sc->sc_cmdq_mem), BUS_DMASYNC_POSTRW);
 
 		if ((cqe->cq_status & MCX_CQ_STATUS_OWN_MASK) ==
-		    MCX_CQ_STATUS_OWN_SW) {
-			if (sc->sc_eqn != 0)
-				mcx_intr(sc);
+		    MCX_CQ_STATUS_OWN_SW)
 			return (0);
-		}
 
 		delay(1000);
 	}
@@ -2866,6 +2876,30 @@ mcx_cmdq_mboxes_copyin(struct mcx_dmamem *mxm, unsigned int nmb,
 		buf += sizeof(mb->mb_data);
 		len -= sizeof(mb->mb_data);
 		mb++;
+	}
+}
+
+static void
+mcx_cmdq_mboxes_pas(struct mcx_dmamem *mxm, int offset, int npages,
+    struct mcx_dmamem *buf)
+{
+	uint64_t *pas;
+	int mbox, mbox_pages, i;
+
+	mbox = offset / MCX_CMDQ_MAILBOX_DATASIZE;
+	offset %= MCX_CMDQ_MAILBOX_DATASIZE;
+
+	pas = mcx_cq_mbox_data(mcx_cq_mbox(mxm, mbox));
+	pas += (offset / sizeof(*pas));
+	mbox_pages = (MCX_CMDQ_MAILBOX_DATASIZE - offset) / sizeof(*pas);
+	for (i = 0; i < npages; i++) {
+		if (i == mbox_pages) {
+			mbox++;
+			pas = mcx_cq_mbox_data(mcx_cq_mbox(mxm, mbox));
+			mbox_pages += MCX_CMDQ_MAILBOX_DATASIZE / sizeof(*pas);
+		}
+		*pas = htobe64(MCX_DMA_DVA(buf) + (i * MCX_PAGE_SIZE));
+		pas++;
 	}
 }
 
@@ -3647,7 +3681,7 @@ mcx_alloc_uar(struct mcx_softc *sc)
 		return (-1);
 	}
 
-	sc->sc_uar = be32toh(out->cmd_uar);
+	sc->sc_uar = mcx_get_id(out->cmd_uar);
 
 	return (0);
 }
@@ -3706,11 +3740,7 @@ mcx_create_eq(struct mcx_softc *sc)
 	    (1ull << MCX_EVENT_TYPE_PAGE_REQUEST));
 
 	/* physical addresses follow the mailbox in data */
-	pas = (uint64_t *)(mbin + 1);
-	for (i = 0; i < npages; i++) {
-		pas[i] = htobe64(MCX_DMA_DVA(&sc->sc_eq_mem) +
-		    (i * MCX_PAGE_SIZE));
-	}
+	mcx_cmdq_mboxes_pas(&mxm, sizeof(*mbin), npages, &sc->sc_eq_mem);
 	mcx_cmdq_mboxes_sign(&mxm, howmany(insize, MCX_CMDQ_MAILBOX_DATASIZE));
 	mcx_cmdq_post(sc, cqe, 0);
 
@@ -3732,7 +3762,7 @@ mcx_create_eq(struct mcx_softc *sc)
 		goto free;
 	}
 
-	sc->sc_eqn = be32toh(out->cmd_eqn);
+	sc->sc_eqn = mcx_get_id(out->cmd_eqn);
 	mcx_arm_eq(sc);
 free:
 	mcx_dmamem_free(sc, &mxm);
@@ -3772,7 +3802,7 @@ mcx_alloc_pd(struct mcx_softc *sc)
 		return (-1);
 	}
 
-	sc->sc_pd = be32toh(out->cmd_pd);
+	sc->sc_pd = mcx_get_id(out->cmd_pd);
 	return (0);
 }
 
@@ -3810,7 +3840,7 @@ mcx_alloc_tdomain(struct mcx_softc *sc)
 		return (-1);
 	}
 
-	sc->sc_tdomain = be32toh(out->cmd_tdomain);
+	sc->sc_tdomain = mcx_get_id(out->cmd_tdomain);
 	return (0);
 }
 
@@ -3999,10 +4029,7 @@ mcx_create_cq(struct mcx_softc *sc, int eqn)
 	    MCX_CQ_DOORBELL_OFFSET + (MCX_CQ_DOORBELL_SIZE * sc->sc_num_cq));
 
 	/* physical addresses follow the mailbox in data */
-	pas = (uint64_t *)(mbin + 1);
-	for (i = 0; i < npages; i++) {
-		pas[i] = htobe64(MCX_DMA_DVA(&cq->cq_mem) + (i * MCX_PAGE_SIZE));
-	}
+	mcx_cmdq_mboxes_pas(&mxm, sizeof(*mbin), npages, &cq->cq_mem);
 	mcx_cmdq_post(sc, cmde, 0);
 
 	error = mcx_cmdq_poll(sc, cmde, 1000);
@@ -4023,7 +4050,7 @@ mcx_create_cq(struct mcx_softc *sc, int eqn)
 		goto free;
 	}
 
-	cq->cq_n = be32toh(out->cmd_cqn);
+	cq->cq_n = mcx_get_id(out->cmd_cqn);
 	cq->cq_cons = 0;
 	cq->cq_count = 0;
 	cq->cq_doorbell = (void *)((uint8_t *)MCX_DMA_KVA(&sc->sc_doorbell_mem) +
@@ -4090,7 +4117,7 @@ mcx_create_rq(struct mcx_softc *sc, int cqn)
 	int error;
 	uint64_t *pas;
 	uint8_t *doorbell;
-	int insize, npages, paslen, i, token;
+	int insize, npages, paslen, token;
 
 	npages = howmany((1 << MCX_LOG_RQ_SIZE) * sizeof(struct mcx_rq_entry),
 	    MCX_PAGE_SIZE);
@@ -4130,11 +4157,7 @@ mcx_create_rq(struct mcx_softc *sc, int cqn)
 	mbin->rq_wq.wq_log_size = MCX_LOG_RQ_SIZE;
 
 	/* physical addresses follow the mailbox in data */
-	pas = (uint64_t *)(mbin + 1);
-	for (i = 0; i < npages; i++) {
-		pas[i] = htobe64(MCX_DMA_DVA(&sc->sc_rq_mem) +
-		    (i * MCX_PAGE_SIZE));
-	}
+	mcx_cmdq_mboxes_pas(&mxm, sizeof(*mbin) + 0x10, npages, &sc->sc_rq_mem);
 	mcx_cmdq_post(sc, cqe, 0);
 
 	error = mcx_cmdq_poll(sc, cqe, 1000);
@@ -4155,7 +4178,7 @@ mcx_create_rq(struct mcx_softc *sc, int cqn)
 		goto free;
 	}
 
-	sc->sc_rqn = be32toh(out->cmd_rqn);
+	sc->sc_rqn = mcx_get_id(out->cmd_rqn);
 
 	doorbell = MCX_DMA_KVA(&sc->sc_doorbell_mem);
 	sc->sc_rx_doorbell = (uint32_t *)(doorbell + MCX_RQ_DOORBELL_OFFSET);
@@ -4306,7 +4329,7 @@ mcx_create_tir(struct mcx_softc *sc)
 		goto free;
 	}
 
-	sc->sc_tirn = be32toh(out->cmd_tirn);
+	sc->sc_tirn = mcx_get_id(out->cmd_tirn);
 free:
 	mcx_dmamem_free(sc, &mxm);
 	return (error);
@@ -4363,7 +4386,7 @@ mcx_create_sq(struct mcx_softc *sc, int cqn)
 	int error;
 	uint64_t *pas;
 	uint8_t *doorbell;
-	int insize, npages, paslen, i, token;
+	int insize, npages, paslen, token;
 
 	npages = howmany((1 << MCX_LOG_SQ_SIZE) * sizeof(struct mcx_sq_entry),
 	    MCX_PAGE_SIZE);
@@ -4406,11 +4429,7 @@ mcx_create_sq(struct mcx_softc *sc, int cqn)
 	mbin->sq_wq.wq_log_size = MCX_LOG_SQ_SIZE;
 
 	/* physical addresses follow the mailbox in data */
-	pas = (uint64_t *)(mbin + 1);
-	for (i = 0; i < npages; i++) {
-		pas[i] = htobe64(MCX_DMA_DVA(&sc->sc_sq_mem) +
-		    (i * MCX_PAGE_SIZE));
-	}
+	mcx_cmdq_mboxes_pas(&mxm, sizeof(*mbin) + 0x10, npages, &sc->sc_sq_mem);
 	mcx_cmdq_post(sc, cqe, 0);
 
 	error = mcx_cmdq_poll(sc, cqe, 1000);
@@ -4431,7 +4450,7 @@ mcx_create_sq(struct mcx_softc *sc, int cqn)
 		goto free;
 	}
 
-	sc->sc_sqn = be32toh(out->cmd_sqn);
+	sc->sc_sqn = mcx_get_id(out->cmd_sqn);
 
 	doorbell = MCX_DMA_KVA(&sc->sc_doorbell_mem);
 	sc->sc_tx_doorbell = (uint32_t *)(doorbell + MCX_SQ_DOORBELL_OFFSET + 4);
@@ -4580,7 +4599,7 @@ mcx_create_tis(struct mcx_softc *sc)
 		goto free;
 	}
 
-	sc->sc_tisn = be32toh(out->cmd_tisn);
+	sc->sc_tisn = mcx_get_id(out->cmd_tisn);
 free:
 	mcx_dmamem_free(sc, &mxm);
 	return (error);
@@ -4716,7 +4735,7 @@ mcx_create_flow_table(struct mcx_softc *sc, int log_size)
 		goto free;
 	}
 
-	sc->sc_flow_table_id = be32toh(out->cmd_table_id);
+	sc->sc_flow_table_id = mcx_get_id(out->cmd_table_id);
 free:
 	mcx_dmamem_free(sc, &mxm);
 	return (error);
@@ -4887,7 +4906,7 @@ mcx_create_flow_group(struct mcx_softc *sc, int group, int start, int size,
 		goto free;
 	}
 
-	sc->sc_flow_group_id[group] = be32toh(out->cmd_group_id);
+	sc->sc_flow_group_id[group] = mcx_get_id(out->cmd_group_id);
 	sc->sc_flow_group_size[group] = size;
 	sc->sc_flow_group_start[group] = start;
 
@@ -6133,7 +6152,7 @@ mcx_init(struct ifnet *ifp)
 	return 0;
 destroy_tx_slots:
 	mcx_free_slots(sc, sc->sc_tx_slots, i, (1 << MCX_LOG_SQ_SIZE));
-	sc->sc_rx_slots = NULL;
+	sc->sc_tx_slots = NULL;
 
 	i = (1 << MCX_LOG_RQ_SIZE);
 destroy_rx_slots:
@@ -6527,9 +6546,15 @@ mcx_media_add_types(struct mcx_softc *sc)
 
 	proto_cap = be32toh(ptys.rp_eth_proto_cap);
 	for (i = 0; i < __arraycount(mcx_eth_cap_map); i++) {
-		if ((proto_cap & (1U << i)) && (mcx_eth_cap_map[i] != 0))
-			ifmedia_add(&sc->sc_media, IFM_ETHER |
-			    mcx_eth_cap_map[i], 0, NULL);
+		const struct mcx_eth_proto_capability *cap;
+		if (!ISSET(proto_cap, 1U << i))
+			continue;
+
+		cap = &mcx_eth_cap_map[i];
+		if (cap->cap_media == 0)
+			continue;
+
+		ifmedia_add(&sc->sc_media, IFM_ETHER | cap->cap_media, 0, NULL);
 	}
 }
 
@@ -6539,7 +6564,7 @@ mcx_media_status(struct ifnet *ifp, struct ifmediareq *ifmr)
 	struct mcx_softc *sc = (struct mcx_softc *)ifp->if_softc;
 	struct mcx_reg_ptys ptys;
 	int i;
-	uint32_t /* proto_cap, */ proto_oper;
+	uint32_t proto_oper;
 	uint64_t media_oper;
 
 	memset(&ptys, 0, sizeof(ptys));
@@ -6552,14 +6577,19 @@ mcx_media_status(struct ifnet *ifp, struct ifmediareq *ifmr)
 		return;
 	}
 
-	/* proto_cap = be32toh(ptys.rp_eth_proto_cap); */
 	proto_oper = be32toh(ptys.rp_eth_proto_oper);
 
 	media_oper = 0;
+
 	for (i = 0; i < __arraycount(mcx_eth_cap_map); i++) {
-		if (proto_oper & (1U << i)) {
-			media_oper = mcx_eth_cap_map[i];
-		}
+		const struct mcx_eth_proto_capability *cap;
+		if (!ISSET(proto_oper, 1U << i))
+			continue;
+
+		cap = &mcx_eth_cap_map[i];
+
+		if (cap->cap_media != 0)
+			media_oper = cap->cap_media;
 	}
 
 	ifmr->ifm_status = IFM_AVALID;
@@ -6602,7 +6632,10 @@ mcx_media_change(struct ifnet *ifp)
 		/* map media type */
 		media = 0;
 		for (i = 0; i < __arraycount(mcx_eth_cap_map); i++) {
-			if (mcx_eth_cap_map[i] ==
+			const struct mcx_eth_proto_capability *cap;
+
+			cap = &mcx_eth_cap_map[i];
+			if (cap->cap_media ==
 			    IFM_SUBTYPE(sc->sc_media.ifm_media)) {
 				media = (1 << i);
 				break;
@@ -6651,18 +6684,41 @@ mcx_port_change(struct work *wk, void *xsc)
 {
 	struct mcx_softc *sc = xsc;
 	struct ifnet *ifp = &sc->sc_ec.ec_if;
-	struct mcx_reg_paos paos;
+	struct mcx_reg_paos paos = {
+		.rp_local_port = 1,
+	};
+	struct mcx_reg_ptys ptys = {
+		.rp_local_port = 1,
+		.rp_proto_mask = MCX_REG_PTYS_PROTO_MASK_ETH,
+	};
 	int link_state = LINK_STATE_DOWN;
-	struct ifmediareq ifmr;
 
-	memset(&paos, 0, sizeof(paos));
-	paos.rp_local_port = 1;
 	if (mcx_access_hca_reg(sc, MCX_REG_PAOS, MCX_REG_OP_READ, &paos,
 	    sizeof(paos)) == 0) {
 		if (paos.rp_oper_status == MCX_REG_PAOS_OPER_STATUS_UP)
 			link_state = LINK_STATE_UP;
-		mcx_media_status(ifp, &ifmr);
-		ifp->if_baudrate = ifmedia_baudrate(ifmr.ifm_active);
+	}
+
+	if (mcx_access_hca_reg(sc, MCX_REG_PTYS, MCX_REG_OP_READ, &ptys,
+	    sizeof(ptys)) == 0) {
+		uint32_t proto_oper = be32toh(ptys.rp_eth_proto_oper);
+		uint64_t baudrate = 0;
+		unsigned int i;
+
+		for (i = 0; i < __arraycount(mcx_eth_cap_map); i++) {
+			const struct mcx_eth_proto_capability *cap;
+			if (!ISSET(proto_oper, 1U << i))
+				continue;
+
+			cap = &mcx_eth_cap_map[i];
+			if (cap->cap_baudrate == 0)
+				continue;
+
+			baudrate = cap->cap_baudrate;
+			break;
+		}
+
+		ifp->if_baudrate = baudrate;
 	}
 
 	if (link_state != ifp->if_link_state) {

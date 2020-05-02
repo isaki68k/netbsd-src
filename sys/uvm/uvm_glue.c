@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_glue.c,v 1.176 2020/01/12 12:55:03 ad Exp $	*/
+/*	$NetBSD: uvm_glue.c,v 1.178 2020/04/23 21:53:01 ad Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_glue.c,v 1.176 2020/01/12 12:55:03 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_glue.c,v 1.178 2020/04/23 21:53:01 ad Exp $");
 
 #include "opt_kgdb.h"
 #include "opt_kstack.h"
@@ -244,7 +244,8 @@ uarea_poolpage_alloc(struct pool *pp, int flags)
 	KASSERT((flags & PR_WAITOK) != 0);
 
 #if defined(PMAP_MAP_POOLPAGE)
-	while (USPACE == PAGE_SIZE && USPACE_ALIGN == 0) {
+	while (USPACE == PAGE_SIZE &&
+	    (USPACE_ALIGN == 0 || USPACE_ALIGN == PAGE_SIZE)) {
 		struct vm_page *pg;
 		vaddr_t va;
 #if defined(PMAP_ALLOC_POOLPAGE)
@@ -274,7 +275,8 @@ static void
 uarea_poolpage_free(struct pool *pp, void *addr)
 {
 #if defined(PMAP_MAP_POOLPAGE)
-	if (USPACE == PAGE_SIZE && USPACE_ALIGN == 0) {
+	if (USPACE == PAGE_SIZE &&
+	    (USPACE_ALIGN == 0 || USPACE_ALIGN == PAGE_SIZE)) {
 		paddr_t pa;
 
 		pa = PMAP_UNMAP_POOLPAGE((vaddr_t) addr);
@@ -501,6 +503,18 @@ uvm_scheduler(void)
 
 	/* Start the freelist cache. */
 	uvm_pgflcache_start();
+
+#ifdef PMAP_DIRECT
+	/*
+	 * XXX Temporary ugly hack.  Just before boot, disable ubc_direct if
+	 * there's more than a couple of CPUs, since it has concurrency
+	 * problems.
+	 */
+	if (ncpu > 2) {
+		extern bool ubc_direct;
+		ubc_direct = false;
+	}
+#endif
 
 	for (;;) {
 		/* Update legacy stats for post-mortem debugging. */

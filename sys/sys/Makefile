@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.171 2019/12/14 15:30:37 ad Exp $
+#	$NetBSD: Makefile,v 1.173 2020/04/26 18:53:33 thorpej Exp $
 
 .include <bsd.own.mk>
 
@@ -21,7 +21,7 @@ INCS=	acct.h agpio.h aio.h ansi.h aout_mids.h ataio.h atomic.h \
 	endian.h envsys.h errno.h evcnt.h event.h exec.h exec_aout.h \
 	exec_coff.h exec_ecoff.h exec_elf.h exec_script.h extattr.h extent.h \
 	fcntl.h fd_set.h fdio.h featuretest.h file.h filedesc.h filio.h \
-	flashio.h float_ieee754.h fstypes.h gcq.h gmon.h gpio.h hash.h \
+	flashio.h float_ieee754.h fstypes.h futex.h gcq.h gmon.h gpio.h hash.h \
 	idtype.h ieee754.h intr.h intrio.h inttypes.h ioccom.h ioctl.h \
 	ioctl_compat.h iostat.h ipc.h ipmi.h \
 	joystick.h \
@@ -45,7 +45,7 @@ INCS=	acct.h agpio.h aio.h ansi.h aout_mids.h ataio.h atomic.h \
 	timex.h tls.h trace.h tree.h tty.h ttychars.h ttycom.h \
 	ttydefaults.h ttydev.h types.h \
 	ucontext.h ucred.h uio.h un.h unistd.h unpcb.h utsname.h uuid.h \
-	verified_exec.h videoio.h vmmeter.h vnode.h vnode_if.h \
+	verified_exec.h videoio.h vmmeter.h vnode.h vnode_if.h vnode_impl.h \
 	wait.h wapbl.h wapbl_replay.h wdog.h xattr.h
 
 INCSYMLINKS=\

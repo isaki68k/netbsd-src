@@ -1,7 +1,7 @@
-/*	$NetBSD: uipc_usrreq.c,v 1.196 2020/02/01 02:23:23 riastradh Exp $	*/
+/*	$NetBSD: uipc_usrreq.c,v 1.198 2020/04/21 21:42:47 ad Exp $	*/
 
 /*-
- * Copyright (c) 1998, 2000, 2004, 2008, 2009 The NetBSD Foundation, Inc.
+ * Copyright (c) 1998, 2000, 2004, 2008, 2009, 2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -96,7 +96,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uipc_usrreq.c,v 1.196 2020/02/01 02:23:23 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uipc_usrreq.c,v 1.198 2020/04/21 21:42:47 ad Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"

@@ -1,4 +1,4 @@
-/*	$NetBSD: if_wm.c,v 1.666 2020/01/31 12:09:13 knakahara Exp $	*/
+/*	$NetBSD: if_wm.c,v 1.676 2020/04/30 03:42:10 riastradh Exp $	*/
 
 /*
  * Copyright (c) 2001, 2002, 2003, 2004 Wasabi Systems, Inc.
@@ -82,7 +82,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.666 2020/01/31 12:09:13 knakahara Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.676 2020/04/30 03:42:10 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_net_mpsafe.h"
@@ -379,6 +379,12 @@ struct wm_txqueue {
 	bool txq_sending;
 	time_t txq_lastsent;
 
+	/* Checksum flags used for previous packet */
+	uint32_t 	txq_last_hw_cmd;
+	uint8_t 	txq_last_hw_fields;
+	uint16_t	txq_last_hw_ipcs;
+	uint16_t	txq_last_hw_tucs;
+
 	uint32_t txq_packets;		/* for AIM */
 	uint32_t txq_bytes;		/* for AIM */
 #ifdef WM_EVENT_COUNTERS
@@ -403,6 +409,7 @@ struct wm_txqueue {
 	WM_Q_EVCNT_DEFINE(txq, toomanyseg)  /* Pkt dropped(toomany DMA segs) */
 	WM_Q_EVCNT_DEFINE(txq, defrag)	    /* m_defrag() */
 	WM_Q_EVCNT_DEFINE(txq, underrun)    /* Tx underrun */
+	WM_Q_EVCNT_DEFINE(txq, skipcontext) /* Tx skip wring cksum context */
 
 	char txq_txseg_evcnt_names[WM_NTXSEGS][sizeof("txqXXtxsegXXX")];
 	struct evcnt txq_ev_txseg[WM_NTXSEGS]; /* Tx packets w/ N segments */
@@ -465,7 +472,6 @@ struct wm_queue {
 	bool wmq_txrx_use_workqueue;
 	struct work wmq_cookie;
 	void *wmq_si;
-	krndsource_t rnd_source;	/* random source */
 };
 
 struct wm_phyop {
@@ -600,6 +606,8 @@ struct wm_softc {
 	int sc_tbi_serdes_ticks;	/* tbi ticks */
 
 	int sc_mchash_type;		/* multicast filter offset */
+
+	krndsource_t rnd_source;	/* random source */
 
 	struct if_percpuq *sc_ipq;	/* softint-based input queues */
 
@@ -759,7 +767,7 @@ static void	wm_init_sysctls(struct wm_softc *);
 static void	wm_unset_stopping_flags(struct wm_softc *);
 static void	wm_set_stopping_flags(struct wm_softc *);
 static void	wm_stop(struct ifnet *, int);
-static void	wm_stop_locked(struct ifnet *, int);
+static void	wm_stop_locked(struct ifnet *, bool, bool);
 static void	wm_dump_mbuf_chain(struct wm_softc *, struct mbuf *);
 static void	wm_82547_txfifo_stall(void *);
 static int	wm_82547_txfifo_bugchk(struct wm_softc *, struct mbuf *);
@@ -788,7 +796,7 @@ static int	wm_alloc_txrx_queues(struct wm_softc *);
 static void	wm_free_txrx_queues(struct wm_softc *);
 static int	wm_init_txrx_queues(struct wm_softc *);
 /* Start */
-static int	wm_tx_offload(struct wm_softc *, struct wm_txqueue *,
+static void	wm_tx_offload(struct wm_softc *, struct wm_txqueue *,
     struct wm_txsoft *, uint32_t *, uint8_t *);
 static inline int	wm_select_txqueue(struct ifnet *, struct mbuf *);
 static void	wm_start(struct ifnet *);
@@ -796,15 +804,15 @@ static void	wm_start_locked(struct ifnet *);
 static int	wm_transmit(struct ifnet *, struct mbuf *);
 static void	wm_transmit_locked(struct ifnet *, struct wm_txqueue *);
 static void	wm_send_common_locked(struct ifnet *, struct wm_txqueue *,
-    bool);
-static int	wm_nq_tx_offload(struct wm_softc *, struct wm_txqueue *,
+		    bool);
+static void	wm_nq_tx_offload(struct wm_softc *, struct wm_txqueue *,
     struct wm_txsoft *, uint32_t *, uint32_t *, bool *);
 static void	wm_nq_start(struct ifnet *);
 static void	wm_nq_start_locked(struct ifnet *);
 static int	wm_nq_transmit(struct ifnet *, struct mbuf *);
 static void	wm_nq_transmit_locked(struct ifnet *, struct wm_txqueue *);
 static void	wm_nq_send_common_locked(struct ifnet *, struct wm_txqueue *,
-    bool);
+		    bool);
 static void	wm_deferred_start_locked(struct wm_txqueue *);
 static void	wm_handle_queue(void *);
 static void	wm_handle_queue_work(struct work *, void *);
@@ -1832,6 +1840,7 @@ wm_attach(device_t parent, device_t self, void *aux)
 
 	sc->sc_dev = self;
 	callout_init(&sc->sc_tick_ch, CALLOUT_FLAGS);
+	callout_setfunc(&sc->sc_tick_ch, wm_tick, sc);
 	sc->sc_core_stopping = false;
 
 	wmp = wm_lookup(pa);
@@ -2880,6 +2889,12 @@ alloc_retry:
 	snprintb(buf, sizeof(buf), WM_FLAGS, sc->sc_flags);
 	aprint_verbose_dev(sc->sc_dev, "%s\n", buf);
 
+#ifdef WM_MPSAFE
+	sc->sc_core_lock = mutex_obj_alloc(MUTEX_DEFAULT, IPL_NET);
+#else
+	sc->sc_core_lock = NULL;
+#endif
+
 	/* Initialize the media structures accordingly. */
 	if (sc->sc_mediatype == WM_MEDIATYPE_COPPER)
 		wm_gmii_mediainit(sc, wmp->wmp_product);
@@ -3016,12 +3031,6 @@ alloc_retry:
 	sc->sc_rx_process_limit = WM_RX_PROCESS_LIMIT_DEFAULT;
 	sc->sc_rx_intr_process_limit = WM_RX_INTR_PROCESS_LIMIT_DEFAULT;
 
-#ifdef WM_MPSAFE
-	sc->sc_core_lock = mutex_obj_alloc(MUTEX_DEFAULT, IPL_NET);
-#else
-	sc->sc_core_lock = NULL;
-#endif
-
 	/* Attach the interface. */
 	error = if_initialize(ifp);
 	if (error != 0) {
@@ -3033,6 +3042,8 @@ alloc_retry:
 	ether_ifattach(ifp, enaddr);
 	ether_set_ifflags_cb(&sc->sc_ethercom, wm_ifflags_cb);
 	if_register(ifp);
+	rnd_attach_source(&sc->rnd_source, xname, RND_TYPE_NET,
+	    RND_FLAG_DEFAULT);
 
 #ifdef WM_EVENT_COUNTERS
 	/* Attach event counters. */
@@ -3093,6 +3104,8 @@ wm_detach(device_t self, int flags __unused)
 	evcnt_detach(&sc->sc_ev_rx_macctl);
 #endif /* WM_EVENT_COUNTERS */
 
+	rnd_detach_source(&sc->rnd_source);
+
 	/* Tell the firmware about the release */
 	WM_CORE_LOCK(sc);
 	wm_release_manageability(sc);
@@ -3102,12 +3115,12 @@ wm_detach(device_t self, int flags __unused)
 
 	mii_detach(&sc->sc_mii, MII_PHY_ANY, MII_OFFSET_ANY);
 
-	/* Delete all remaining media. */
-	ifmedia_delete_instance(&sc->sc_mii.mii_media, IFM_INST_ANY);
-
 	ether_ifdetach(ifp);
 	if_detach(ifp);
 	if_percpuq_destroy(sc->sc_ipq);
+
+	/* Delete all remaining media. */
+	ifmedia_fini(&sc->sc_mii.mii_media);
 
 	/* Unload RX dmamaps and free mbufs */
 	for (i = 0; i < sc->sc_nqueues; i++) {
@@ -3379,7 +3392,7 @@ wm_tick(void *arg)
 
 	wm_watchdog(ifp);
 
-	callout_reset(&sc->sc_tick_ch, hz, wm_tick, sc);
+	callout_schedule(&sc->sc_tick_ch, hz);
 }
 
 static int
@@ -5844,7 +5857,7 @@ wm_init_locked(struct ifnet *ifp)
 #endif /* __NO_STRICT_ALIGNMENT */
 
 	/* Cancel any pending I/O. */
-	wm_stop_locked(ifp, 0);
+	wm_stop_locked(ifp, false, false);
 
 	/* Update statistics before reset */
 	if_statadd2(ifp, if_collisions, CSR_READ(sc, WMREG_COLC),
@@ -6378,11 +6391,10 @@ wm_init_locked(struct ifnet *ifp)
 	wm_unset_stopping_flags(sc);
 
 	/* Start the one second link check clock. */
-	callout_reset(&sc->sc_tick_ch, hz, wm_tick, sc);
+	callout_schedule(&sc->sc_tick_ch, hz);
 
 	/* ...all done! */
 	ifp->if_flags |= IFF_RUNNING;
-	ifp->if_flags &= ~IFF_OACTIVE;
 
  out:
 	/* Save last flags for the callback */
@@ -6404,8 +6416,10 @@ wm_stop(struct ifnet *ifp, int disable)
 {
 	struct wm_softc *sc = ifp->if_softc;
 
+	ASSERT_SLEEPABLE();
+
 	WM_CORE_LOCK(sc);
-	wm_stop_locked(ifp, disable);
+	wm_stop_locked(ifp, disable ? true : false, true);
 	WM_CORE_UNLOCK(sc);
 
 	/*
@@ -6420,7 +6434,7 @@ wm_stop(struct ifnet *ifp, int disable)
 }
 
 static void
-wm_stop_locked(struct ifnet *ifp, int disable)
+wm_stop_locked(struct ifnet *ifp, bool disable, bool wait)
 {
 	struct wm_softc *sc = ifp->if_softc;
 	struct wm_txsoft *txs;
@@ -6431,13 +6445,6 @@ wm_stop_locked(struct ifnet *ifp, int disable)
 	KASSERT(WM_CORE_LOCKED(sc));
 
 	wm_set_stopping_flags(sc);
-
-	/* Stop the one second clock. */
-	callout_stop(&sc->sc_tick_ch);
-
-	/* Stop the 82547 Tx FIFO stall check timer. */
-	if (sc->sc_type == WM_T_82547)
-		callout_stop(&sc->sc_txfifo_ch);
 
 	if (sc->sc_flags & WM_F_HAS_MII) {
 		/* Down the MII. */
@@ -6470,6 +6477,26 @@ wm_stop_locked(struct ifnet *ifp, int disable)
 			CSR_WRITE(sc, WMREG_EIAC_82574, 0);
 	}
 
+	/*
+	 * Stop callouts after interrupts are disabled; if we have
+	 * to wait for them, we will be releasing the CORE_LOCK
+	 * briefly, which will unblock interrupts on the current CPU.
+	 */
+
+	/* Stop the one second clock. */
+	if (wait)
+		callout_halt(&sc->sc_tick_ch, sc->sc_core_lock);
+	else
+		callout_stop(&sc->sc_tick_ch);
+
+	/* Stop the 82547 Tx FIFO stall check timer. */
+	if (sc->sc_type == WM_T_82547) {
+		if (wait)
+			callout_halt(&sc->sc_txfifo_ch, sc->sc_core_lock);
+		else
+			callout_stop(&sc->sc_txfifo_ch);
+	}
+
 	/* Release any queued transmit buffers. */
 	for (qidx = 0; qidx < sc->sc_nqueues; qidx++) {
 		struct wm_queue *wmq = &sc->sc_queue[qidx];
@@ -6488,7 +6515,7 @@ wm_stop_locked(struct ifnet *ifp, int disable)
 	}
 
 	/* Mark the interface as down and cancel the watchdog timer. */
-	ifp->if_flags &= ~(IFF_RUNNING | IFF_OACTIVE);
+	ifp->if_flags &= ~IFF_RUNNING;
 
 	if (disable) {
 		for (i = 0; i < sc->sc_nqueues; i++) {
@@ -6932,6 +6959,7 @@ wm_alloc_txrx_queues(struct wm_softc *sc)
 		WM_Q_MISC_EVCNT_ATTACH(txq, toomanyseg, txq, i, xname);
 		WM_Q_MISC_EVCNT_ATTACH(txq, defrag, txq, i, xname);
 		WM_Q_MISC_EVCNT_ATTACH(txq, underrun, txq, i, xname);
+		WM_Q_MISC_EVCNT_ATTACH(txq, skipcontext, txq, i, xname);
 #endif /* WM_EVENT_COUNTERS */
 
 		tx_done++;
@@ -6975,15 +7003,6 @@ wm_alloc_txrx_queues(struct wm_softc *sc)
 	if (error)
 		goto fail_2;
 
-	for (i = 0; i < sc->sc_nqueues; i++) {
-		char rndname[16];
-
-		snprintf(rndname, sizeof(rndname), "%sTXRX%d",
-		    device_xname(sc->sc_dev), i);
-		rnd_attach_source(&sc->sc_queue[i].rnd_source, rndname,
-		    RND_TYPE_NET, RND_FLAG_DEFAULT);
-	}
-
 	return 0;
 
  fail_2:
@@ -7018,9 +7037,6 @@ static void
 wm_free_txrx_queues(struct wm_softc *sc)
 {
 	int i;
-
-	for (i = 0; i < sc->sc_nqueues; i++)
-		rnd_detach_source(&sc->sc_queue[i].rnd_source);
 
 	for (i = 0; i < sc->sc_nqueues; i++) {
 		struct wm_rxqueue *rxq = &sc->sc_queue[i].wmq_rxq;
@@ -7064,6 +7080,7 @@ wm_free_txrx_queues(struct wm_softc *sc)
 		WM_Q_EVCNT_DETACH(txq, toomanyseg, txq, i);
 		WM_Q_EVCNT_DETACH(txq, defrag, txq, i);
 		WM_Q_EVCNT_DETACH(txq, underrun, txq, i);
+		WM_Q_EVCNT_DETACH(txq, skipcontext, txq, i);
 #endif /* WM_EVENT_COUNTERS */
 
 		/* Drain txq_interq */
@@ -7349,7 +7366,7 @@ wm_init_txrx_queues(struct wm_softc *sc)
  *	Set up TCP/IP checksumming parameters for the
  *	specified packet.
  */
-static int
+static void
 wm_tx_offload(struct wm_softc *sc, struct wm_txqueue *txq,
     struct wm_txsoft *txs, uint32_t *cmdp, uint8_t *fieldsp)
 {
@@ -7379,9 +7396,12 @@ wm_tx_offload(struct wm_softc *sc, struct wm_txqueue *txq,
 
 	default:
 		/* Don't support this protocol or encapsulation. */
+ 		txq->txq_last_hw_cmd = txq->txq_last_hw_fields = 0;
+ 		txq->txq_last_hw_ipcs = 0;
+ 		txq->txq_last_hw_tucs = 0;
 		*fieldsp = 0;
 		*cmdp = 0;
-		return 0;
+		return;
 	}
 
 	if ((m0->m_pkthdr.csum_flags &
@@ -7518,13 +7538,51 @@ wm_tx_offload(struct wm_softc *sc, struct wm_txqueue *txq,
 		    WTX_TCPIP_TUCSE(0) /* Rest of packet */;
 	}
 
+	*cmdp = cmd;
+	*fieldsp = fields;
+
 	/*
 	 * We don't have to write context descriptor for every packet
 	 * except for 82574. For 82574, we must write context descriptor
 	 * for every packet when we use two descriptor queues.
-	 * It would be overhead to write context descriptor for every packet,
-	 * however it does not cause problems.
+	 *
+	 * The 82574L can only remember the *last* context used
+	 * regardless of queue that it was use for.  We cannot reuse
+	 * contexts on this hardware platform and must generate a new
+	 * context every time.  82574L hardware spec, section 7.2.6,
+	 * second note.
 	 */
+	if (sc->sc_nqueues < 2) {
+		/*
+	 	 *
+	  	 * Setting up new checksum offload context for every
+		 * frames takes a lot of processing time for hardware.
+		 * This also reduces performance a lot for small sized
+		 * frames so avoid it if driver can use previously
+		 * configured checksum offload context.
+		 * For TSO, in theory we can use the same TSO context only if
+		 * frame is the same type(IP/TCP) and the same MSS. However
+		 * checking whether a frame has the same IP/TCP structure is
+		 * hard thing so just ignore that and always restablish a
+		 * new TSO context.
+	  	 */
+		if ((m0->m_pkthdr.csum_flags & (M_CSUM_TSOv4 | M_CSUM_TSOv6))
+		    == 0) {
+			if (txq->txq_last_hw_cmd == cmd &&
+			    txq->txq_last_hw_fields == fields &&
+			    txq->txq_last_hw_ipcs == (ipcs & 0xffff) &&
+			    txq->txq_last_hw_tucs == (tucs & 0xffff)) {
+				WM_Q_EVCNT_INCR(txq, skipcontext);
+				return;
+			}
+		}
+
+	 	txq->txq_last_hw_cmd = cmd;
+ 		txq->txq_last_hw_fields = fields;
+ 		txq->txq_last_hw_ipcs = (ipcs & 0xffff);
+		txq->txq_last_hw_tucs = (tucs & 0xffff);
+	}
+
 	/* Fill in the context descriptor. */
 	t = (struct livengood_tcpip_ctxdesc *)
 	    &txq->txq_descs[txq->txq_next];
@@ -7536,11 +7594,6 @@ wm_tx_offload(struct wm_softc *sc, struct wm_txqueue *txq,
 
 	txq->txq_next = WM_NEXTTX(txq, txq->txq_next);
 	txs->txs_ndesc++;
-
-	*cmdp = cmd;
-	*fieldsp = fields;
-
-	return 0;
 }
 
 static inline int
@@ -7646,8 +7699,6 @@ wm_send_common_locked(struct ifnet *ifp, struct wm_txqueue *txq,
 	KASSERT(mutex_owned(txq->txq_lock));
 
 	if ((ifp->if_flags & IFF_RUNNING) == 0)
-		return;
-	if ((ifp->if_flags & IFF_OACTIVE) != 0 && !is_transmit)
 		return;
 	if ((txq->txq_flags & WM_TXQ_NO_SPACE) != 0)
 		return;
@@ -7771,8 +7822,6 @@ retry:
 			    ("%s: TX: need %d (%d) descriptors, have %d\n",
 				device_xname(sc->sc_dev), dmamap->dm_nsegs,
 				segs_needed, txq->txq_free - 1));
-			if (!is_transmit)
-				ifp->if_flags |= IFF_OACTIVE;
 			txq->txq_flags |= WM_TXQ_NO_SPACE;
 			bus_dmamap_unload(sc->sc_dmat, dmamap);
 			WM_Q_EVCNT_INCR(txq, txdstall);
@@ -7789,8 +7838,6 @@ retry:
 			DPRINTF(WM_DEBUG_TX,
 			    ("%s: TX: 82547 Tx FIFO bug detected\n",
 				device_xname(sc->sc_dev)));
-			if (!is_transmit)
-				ifp->if_flags |= IFF_OACTIVE;
 			txq->txq_flags |= WM_TXQ_NO_SPACE;
 			bus_dmamap_unload(sc->sc_dmat, dmamap);
 			WM_Q_EVCNT_INCR(txq, fifo_stall);
@@ -7823,13 +7870,10 @@ retry:
 		    (M_CSUM_TSOv4 | M_CSUM_TSOv6 |
 		    M_CSUM_IPv4 | M_CSUM_TCPv4 | M_CSUM_UDPv4 |
 		    M_CSUM_TCPv6 | M_CSUM_UDPv6)) {
-			if (wm_tx_offload(sc, txq, txs, &cksumcmd,
-					  &cksumfields) != 0) {
-				/* Error message already displayed. */
-				bus_dmamap_unload(sc->sc_dmat, dmamap);
-				continue;
-			}
+			wm_tx_offload(sc, txq, txs, &cksumcmd, &cksumfields);
 		} else {
+ 			txq->txq_last_hw_cmd = txq->txq_last_hw_fields = 0;
+ 			txq->txq_last_hw_ipcs = txq->txq_last_hw_tucs = 0;
 			cksumcmd = 0;
 			cksumfields = 0;
 		}
@@ -7935,8 +7979,6 @@ retry:
 	}
 
 	if (m0 != NULL) {
-		if (!is_transmit)
-			ifp->if_flags |= IFF_OACTIVE;
 		txq->txq_flags |= WM_TXQ_NO_SPACE;
 		WM_Q_EVCNT_INCR(txq, descdrop);
 		DPRINTF(WM_DEBUG_TX, ("%s: TX: error after IFQ_DEQUEUE\n",
@@ -7946,8 +7988,6 @@ retry:
 
 	if (txq->txq_sfree == 0 || txq->txq_free <= 2) {
 		/* No more slots; notify upper layer. */
-		if (!is_transmit)
-			ifp->if_flags |= IFF_OACTIVE;
 		txq->txq_flags |= WM_TXQ_NO_SPACE;
 	}
 
@@ -7964,7 +8004,7 @@ retry:
  *	Set up TCP/IP checksumming parameters for the
  *	specified packet, for NEWQUEUE devices
  */
-static int
+static void
 wm_nq_tx_offload(struct wm_softc *sc, struct wm_txqueue *txq,
     struct wm_txsoft *txs, uint32_t *cmdlenp, uint32_t *fieldsp, bool *do_csum)
 {
@@ -7994,7 +8034,7 @@ wm_nq_tx_offload(struct wm_softc *sc, struct wm_txqueue *txq,
 	default:
 		/* Don't support this protocol or encapsulation. */
 		*do_csum = false;
-		return 0;
+		return;
 	}
 	*do_csum = true;
 	*cmdlenp = NQTX_DTYP_D | NQTX_CMD_DEXT | NQTX_CMD_IFCS;
@@ -8160,7 +8200,6 @@ wm_nq_tx_offload(struct wm_softc *sc, struct wm_txqueue *txq,
 	DPRINTF(WM_DEBUG_TX, ("\t0x%08x%08x\n", mssidx, cmdc));
 	txq->txq_next = WM_NEXTTX(txq, txq->txq_next);
 	txs->txs_ndesc++;
-	return 0;
 }
 
 /*
@@ -8260,8 +8299,6 @@ wm_nq_send_common_locked(struct ifnet *ifp, struct wm_txqueue *txq,
 	KASSERT(mutex_owned(txq->txq_lock));
 
 	if ((ifp->if_flags & IFF_RUNNING) == 0)
-		return;
-	if ((ifp->if_flags & IFF_OACTIVE) != 0 && !is_transmit)
 		return;
 	if ((txq->txq_flags & WM_TXQ_NO_SPACE) != 0)
 		return;
@@ -8363,8 +8400,6 @@ retry:
 			    ("%s: TX: need %d (%d) descriptors, have %d\n",
 				device_xname(sc->sc_dev), dmamap->dm_nsegs,
 				segs_needed, txq->txq_free - 1));
-			if (!is_transmit)
-				ifp->if_flags |= IFF_OACTIVE;
 			txq->txq_flags |= WM_TXQ_NO_SPACE;
 			bus_dmamap_unload(sc->sc_dmat, dmamap);
 			WM_Q_EVCNT_INCR(txq, txdstall);
@@ -8398,12 +8433,8 @@ retry:
 		    (M_CSUM_TSOv4 | M_CSUM_TSOv6 |
 			M_CSUM_IPv4 | M_CSUM_TCPv4 | M_CSUM_UDPv4 |
 			M_CSUM_TCPv6 | M_CSUM_UDPv6)) {
-			if (wm_nq_tx_offload(sc, txq, txs, &cmdlen, &fields,
-			    &do_csum) != 0) {
-				/* Error message already displayed. */
-				bus_dmamap_unload(sc->sc_dmat, dmamap);
-				continue;
-			}
+			wm_nq_tx_offload(sc, txq, txs, &cmdlen, &fields,
+			    &do_csum);
 		} else {
 			do_csum = false;
 			cmdlen = 0;
@@ -8520,8 +8551,6 @@ retry:
 	}
 
 	if (m0 != NULL) {
-		if (!is_transmit)
-			ifp->if_flags |= IFF_OACTIVE;
 		txq->txq_flags |= WM_TXQ_NO_SPACE;
 		WM_Q_EVCNT_INCR(txq, descdrop);
 		DPRINTF(WM_DEBUG_TX, ("%s: TX: error after IFQ_DEQUEUE\n",
@@ -8531,8 +8560,6 @@ retry:
 
 	if (txq->txq_sfree == 0 || txq->txq_free <= 2) {
 		/* No more slots; notify upper layer. */
-		if (!is_transmit)
-			ifp->if_flags |= IFF_OACTIVE;
 		txq->txq_flags |= WM_TXQ_NO_SPACE;
 	}
 
@@ -8587,7 +8614,6 @@ wm_txeof(struct wm_txqueue *txq, u_int limit)
 	int count = 0;
 	int i;
 	uint8_t status;
-	struct wm_queue *wmq = container_of(txq, struct wm_queue, wmq_txq);
 	bool more = false;
 
 	KASSERT(mutex_owned(txq->txq_lock));
@@ -8596,9 +8622,6 @@ wm_txeof(struct wm_txqueue *txq, u_int limit)
 		return false;
 
 	txq->txq_flags &= ~WM_TXQ_NO_SPACE;
-	/* For ALTQ and legacy(not use multiqueue) ethernet controller */
-	if (wmq->wmq_id == 0)
-		ifp->if_flags &= ~IFF_OACTIVE;
 
 	/*
 	 * Go through the Tx list and free mbufs for those
@@ -8666,7 +8689,7 @@ wm_txeof(struct wm_txqueue *txq, u_int limit)
 				log(LOG_WARNING, "%s: late collision\n",
 				    device_xname(sc->sc_dev));
 			else if (status & WTX_ST_EC) {
-				if_statadd(ifp, if_collisions, 
+				if_statadd(ifp, if_collisions,
 				    TX_COLLISION_THRESHOLD + 1);
 				log(LOG_WARNING, "%s: excessive collisions\n",
 				    device_xname(sc->sc_dev));
@@ -8689,6 +8712,9 @@ wm_txeof(struct wm_txqueue *txq, u_int limit)
 	txq->txq_sdirty = i;
 	DPRINTF(WM_DEBUG_TX,
 	    ("%s: TX: txsdirty -> %d\n", device_xname(sc->sc_dev), i));
+
+	if (count != 0)
+		rnd_add_uint32(&sc->rnd_source, count);
 
 	/*
 	 * If there are no more pending transmissions, cancel the watchdog
@@ -9102,6 +9128,9 @@ wm_rxeof(struct wm_rxqueue *rxq, u_int limit)
 		if (rxq->rxq_stopping)
 			break;
 	}
+
+	if (count != 0)
+		rnd_add_uint32(&sc->rnd_source, count);
 
 	DPRINTF(WM_DEBUG_RX,
 	    ("%s: RX: rxptr -> %d\n", device_xname(sc->sc_dev), i));
@@ -9580,8 +9609,6 @@ wm_intr_legacy(void *arg)
 		 * So, we can call wm_rxeof() in interrupt context.
 		 */
 		wm_rxeof(rxq, UINT_MAX);
-		/* Fill lower bits with RX index. See below for the upper. */
-		rndval |= rxq->rxq_ptr & WM_NRXDESC_MASK;
 
 		mutex_exit(rxq->rxq_lock);
 		mutex_enter(txq->txq_lock);
@@ -9600,8 +9627,6 @@ wm_intr_legacy(void *arg)
 		}
 #endif
 		wm_txeof(txq, UINT_MAX);
-		/* Fill upper bits with TX index. See above for the lower. */
-		rndval = txq->txq_next * WM_NRXDESC;
 
 		mutex_exit(txq->txq_lock);
 		WM_CORE_LOCK(sc);
@@ -9628,7 +9653,7 @@ wm_intr_legacy(void *arg)
 		}
 	}
 
-	rnd_add_uint32(&sc->sc_queue[0].rnd_source, rndval);
+	rnd_add_uint32(&sc->rnd_source, rndval);
 
 	if (handled) {
 		/* Try to get more packets going. */
@@ -9686,7 +9711,6 @@ wm_txrxintr_msix(void *arg)
 	struct wm_softc *sc = txq->txq_sc;
 	u_int txlimit = sc->sc_tx_intr_process_limit;
 	u_int rxlimit = sc->sc_rx_intr_process_limit;
-	uint32_t rndval = 0;
 	bool txmore;
 	bool rxmore;
 
@@ -9706,8 +9730,6 @@ wm_txrxintr_msix(void *arg)
 
 	WM_Q_EVCNT_INCR(txq, txdw);
 	txmore = wm_txeof(txq, txlimit);
-	/* Fill upper bits with TX index. See below for the lower. */
-	rndval = txq->txq_next * WM_NRXDESC;
 	/* wm_deferred start() is done in wm_handle_queue(). */
 	mutex_exit(txq->txq_lock);
 
@@ -9722,19 +9744,9 @@ wm_txrxintr_msix(void *arg)
 
 	WM_Q_EVCNT_INCR(rxq, intr);
 	rxmore = wm_rxeof(rxq, rxlimit);
-
-	/* Fill lower bits with RX index. See above for the upper. */
-	rndval |= rxq->rxq_ptr & WM_NRXDESC_MASK;
 	mutex_exit(rxq->rxq_lock);
 
 	wm_itrs_writereg(sc, wmq);
-
-	/*
-	 * This function is called in the hardware interrupt context and
-	 * per-CPU, so it's not required to take a lock.
-	 */
-	if (rndval != 0)
-		rnd_add_uint32(&sc->sc_queue[wmq->wmq_id].rnd_source, rndval);
 
 	if (txmore || rxmore) {
 		wmq->wmq_txrx_use_workqueue = sc->sc_txrx_use_workqueue;
@@ -10423,8 +10435,8 @@ wm_gmii_mediainit(struct wm_softc *sc, pci_product_id_t prodid)
 	wm_gmii_reset(sc);
 
 	sc->sc_ethercom.ec_mii = &sc->sc_mii;
-	ifmedia_init(&mii->mii_media, IFM_IMASK, wm_gmii_mediachange,
-	    wm_gmii_mediastatus);
+	ifmedia_init_with_lock(&mii->mii_media, IFM_IMASK, wm_gmii_mediachange,
+	    wm_gmii_mediastatus, sc->sc_core_lock);
 
 	if ((sc->sc_type == WM_T_82575) || (sc->sc_type == WM_T_82576)
 	    || (sc->sc_type == WM_T_82580)
@@ -11970,12 +11982,14 @@ wm_tbi_mediainit(struct wm_softc *sc)
 	sc->sc_ethercom.ec_mii = &sc->sc_mii;
 
 	if (((sc->sc_type >= WM_T_82575) && (sc->sc_type <= WM_T_I211))
-	    && (sc->sc_mediatype == WM_MEDIATYPE_SERDES))
-		ifmedia_init(&sc->sc_mii.mii_media, IFM_IMASK,
-		    wm_serdes_mediachange, wm_serdes_mediastatus);
-	else
-		ifmedia_init(&sc->sc_mii.mii_media, IFM_IMASK,
-		    wm_tbi_mediachange, wm_tbi_mediastatus);
+	    && (sc->sc_mediatype == WM_MEDIATYPE_SERDES)) {
+		ifmedia_init_with_lock(&sc->sc_mii.mii_media, IFM_IMASK,
+		    wm_serdes_mediachange, wm_serdes_mediastatus,
+		    sc->sc_core_lock);
+	} else {
+		ifmedia_init_with_lock(&sc->sc_mii.mii_media, IFM_IMASK,
+		    wm_tbi_mediachange, wm_tbi_mediastatus, sc->sc_core_lock);
+	}
 
 	/*
 	 * SWD Pins:
@@ -15355,12 +15369,13 @@ wm_enable_wakeup(struct wm_softc *sc)
 pme:
 	/* Request PME */
 	pmode = pci_conf_read(sc->sc_pc, sc->sc_pcitag, pmreg + PCI_PMCSR);
+	pmode |= PCI_PMCSR_PME_STS; /* in case it's already set (W1C) */
 	if ((rv == 0) && (sc->sc_flags & WM_F_WOL) != 0) {
 		/* For WOL */
-		pmode |= PCI_PMCSR_PME_STS | PCI_PMCSR_PME_EN;
+		pmode |= PCI_PMCSR_PME_EN;
 	} else {
 		/* Disable WOL */
-		pmode &= ~(PCI_PMCSR_PME_STS | PCI_PMCSR_PME_EN);
+		pmode &= ~PCI_PMCSR_PME_EN;
 	}
 	pci_conf_write(sc->sc_pc, sc->sc_pcitag, pmreg + PCI_PMCSR, pmode);
 }

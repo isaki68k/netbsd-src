@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.346 2020/01/31 08:21:11 maxv Exp $	*/
+/*	$NetBSD: machdep.c,v 1.350 2020/04/30 03:29:19 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1996, 1997, 1998, 2000, 2006, 2007, 2008, 2011
@@ -110,7 +110,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.346 2020/01/31 08:21:11 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.350 2020/04/30 03:29:19 riastradh Exp $");
 
 #include "opt_modular.h"
 #include "opt_user_ldt.h"
@@ -167,6 +167,7 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.346 2020/01/31 08:21:11 maxv Exp $");
 #include <sys/sysctl.h>
 
 #include <machine/cpu.h>
+#include <machine/cpu_rng.h>
 #include <machine/cpufunc.h>
 #include <machine/gdt.h>
 #include <machine/intr.h>
@@ -278,14 +279,6 @@ extern paddr_t lowmem_rsvd;
 extern paddr_t avail_start, avail_end;
 #ifdef XENPV
 extern paddr_t pmap_pa_start, pmap_pa_end;
-#endif
-
-#ifndef XENPV
-void (*delay_func)(unsigned int) = i8254_delay;
-void (*initclock_func)(void) = i8254_initclocks;
-#else /* XENPV */
-void (*delay_func)(unsigned int) = xen_delay;
-void (*initclock_func)(void) = xen_initclocks;
 #endif
 
 struct nmistore {
@@ -428,10 +421,9 @@ void
 x86_64_switch_context(struct pcb *new)
 {
 	HYPERVISOR_stack_switch(GSEL(GDATA_SEL, SEL_KPL), new->pcb_rsp0);
-	struct physdev_op physop;
-	physop.cmd = PHYSDEVOP_SET_IOPL;
-	physop.u.set_iopl.iopl = new->pcb_iopl;
-	HYPERVISOR_physdev_op(&physop);
+	struct physdev_set_iopl set_iopl;
+	set_iopl.iopl = new->pcb_iopl;
+	HYPERVISOR_physdev_op(PHYSDEVOP_set_iopl, &set_iopl);
 }
 
 void
@@ -489,14 +481,13 @@ x86_64_proc0_pcb_ldt_init(void)
 #if !defined(XENPV)
 	lldt(GSYSSEL(GLDT_SEL, SEL_KPL));
 #else
-	struct physdev_op physop;
 	xen_set_ldt((vaddr_t)ldtstore, LDT_SIZE >> 3);
 	/* Reset TS bit and set kernel stack for interrupt handlers */
 	HYPERVISOR_fpu_taskswitch(1);
 	HYPERVISOR_stack_switch(GSEL(GDATA_SEL, SEL_KPL), pcb->pcb_rsp0);
-	physop.cmd = PHYSDEVOP_SET_IOPL;
-	physop.u.set_iopl.iopl = pcb->pcb_iopl;
-	HYPERVISOR_physdev_op(&physop);
+	struct physdev_set_iopl set_iopl;
+	set_iopl.iopl = pcb->pcb_iopl;
+	HYPERVISOR_physdev_op(PHYSDEVOP_set_iopl, &set_iopl);
 #endif
 }
 
@@ -729,9 +720,12 @@ haltsys:
 
 		acpi_enter_sleep_state(ACPI_STATE_S5);
 #endif
-#ifdef XENPV
-		HYPERVISOR_shutdown();
-#endif /* XENPV */
+#ifdef XEN
+		if (vm_guest == VM_GUEST_XENPV ||
+		    vm_guest == VM_GUEST_XENPVH ||
+		    vm_guest == VM_GUEST_XENPVHVM)
+			HYPERVISOR_shutdown();
+#endif /* XEN */
 	}
 
 	cpu_broadcast_halt();
@@ -1689,11 +1683,12 @@ init_x86_64(paddr_t first_avail)
 	uvm_lwp_setuarea(&lwp0, lwp0uarea);
 
 	cpu_probe(&cpu_info_primary);
+	cpu_rng_init();
 #ifdef SVS
 	svs_init();
 #endif
 	cpu_init_msrs(&cpu_info_primary, true);
-#ifndef XEN
+#ifndef XENPV
 	cpu_speculation_init(&cpu_info_primary);
 #endif
 
@@ -1710,6 +1705,8 @@ init_x86_64(paddr_t first_avail)
 #if NISA > 0 || NPCI > 0
 	x86_bus_space_init();
 #endif
+
+	pat_init(&cpu_info_primary);
 
 	consinit();	/* XXX SHOULD NOT BE DONE HERE */
 
@@ -2124,12 +2121,6 @@ cpu_mcontext_validate(struct lwp *l, const mcontext_t *mcp)
 		return EINVAL;
 
 	return 0;
-}
-
-void
-cpu_initclocks(void)
-{
-	(*initclock_func)();
 }
 
 int

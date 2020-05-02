@@ -1,4 +1,4 @@
-/*	$NetBSD: patch.c,v 1.37 2019/09/18 15:07:08 kamil Exp $	*/
+/*	$NetBSD: patch.c,v 1.46 2020/05/01 09:40:47 maxv Exp $	*/
 
 /*-
  * Copyright (c) 2007, 2008, 2009 The NetBSD Foundation, Inc.
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: patch.c,v 1.37 2019/09/18 15:07:08 kamil Exp $");
+__KERNEL_RCSID(0, "$NetBSD: patch.c,v 1.46 2020/05/01 09:40:47 maxv Exp $");
 
 #include "opt_lockdebug.h"
 #ifdef i386
@@ -57,69 +57,6 @@ struct hotpatch {
 	uint8_t size;
 	void *addr;
 } __packed;
-
-void	spllower(int);
-void	spllower_end(void);
-void	cx8_spllower(int);
-void	cx8_spllower_end(void);
-void	cx8_spllower_patch(void);
-
-void	mutex_spin_exit_end(void);
-void	i686_mutex_spin_exit(int);
-void	i686_mutex_spin_exit_end(void);
-void	i686_mutex_spin_exit_patch(void);
-
-void	membar_consumer(void);
-void	membar_consumer_end(void);
-void	membar_sync(void);
-void	membar_sync_end(void);
-void	sse2_lfence(void);
-void	sse2_lfence_end(void);
-void	sse2_mfence(void);
-void	sse2_mfence_end(void);
-
-void	_atomic_cas_64(void);
-void	_atomic_cas_64_end(void);
-void	_atomic_cas_cx8(void);
-void	_atomic_cas_cx8_end(void);
-
-extern void	*atomic_lockpatch[];
-
-#define	X86_NOP		0x90
-#define	X86_REP		0xf3
-#define	X86_RET		0xc3
-#define	X86_CS		0x2e
-#define	X86_DS		0x3e
-#define	X86_GROUP_0F	0x0f
-
-static void
-adjust_jumpoff(uint8_t *ptr, void *from_s, void *to_s)
-{
-
-	/* Branch hints */
-	if (ptr[0] == X86_CS || ptr[0] == X86_DS)
-		ptr++;
-	/* Conditional jumps */
-	if (ptr[0] == X86_GROUP_0F)
-		ptr++;		
-	/* 4-byte relative jump or call */
-	*(uint32_t *)(ptr + 1 - (uintptr_t)from_s + (uintptr_t)to_s) +=
-	    ((uint32_t)(uintptr_t)from_s - (uint32_t)(uintptr_t)to_s);
-}
-
-static void __unused
-patchfunc(void *from_s, void *from_e, void *to_s, void *to_e,
-	  void *pcrel)
-{
-
-	if ((uintptr_t)from_e - (uintptr_t)from_s !=
-	    (uintptr_t)to_e - (uintptr_t)to_s)
-		panic("patchfunc: sizes do not match (from=%p)", from_s);
-
-	memcpy(to_s, from_s, (uintptr_t)to_e - (uintptr_t)to_s);
-	if (pcrel != NULL)
-		adjust_jumpoff(pcrel, from_s, to_s);
-}
 
 static inline void __unused
 patchbytes(void *addr, const uint8_t *bytes, size_t size)
@@ -185,6 +122,8 @@ void
 x86_patch(bool early)
 {
 	static bool first, second;
+	uint8_t *bytes;
+	size_t size;
 	u_long psl;
 	u_long cr0;
 
@@ -205,14 +144,11 @@ x86_patch(bool early)
 		/*
 		 * Uniprocessor: kill LOCK prefixes.
 		 */
-		const uint8_t bytes[] = {
-			X86_NOP
-		};
+		extern uint8_t hp_nolock, hp_nolock_end;
 
-		/* lock -> nop */
-		x86_hotpatch(HP_NAME_NOLOCK, bytes, sizeof(bytes));
-		for (int i = 0; atomic_lockpatch[i] != 0; i++)
-			patchbytes(atomic_lockpatch[i], bytes, sizeof(bytes));
+		bytes = &hp_nolock;
+		size = (size_t)&hp_nolock_end - (size_t)&hp_nolock;
+		x86_hotpatch(HP_NAME_NOLOCK, bytes, size);
 #endif
 	}
 
@@ -223,16 +159,16 @@ x86_patch(bool early)
 		 * ordinary non-temporal stores are always issued in
 		 * program order to main memory and to other CPUs.
 		 */
-		patchfunc(
-		    sse2_lfence, sse2_lfence_end,
-		    membar_consumer, membar_consumer_end,
-		    NULL
-		);
-		patchfunc(
-		    sse2_mfence, sse2_mfence_end,
-		    membar_sync, membar_sync_end,
-		    NULL
-		);
+		extern uint8_t sse2_lfence, sse2_lfence_end;
+		extern uint8_t sse2_mfence, sse2_mfence_end;
+
+		bytes = &sse2_lfence;
+		size = (size_t)&sse2_lfence_end - (size_t)&sse2_lfence;
+		x86_hotpatch(HP_NAME_SSE2_LFENCE, bytes, size);
+
+		bytes = &sse2_mfence;
+		size = (size_t)&sse2_mfence_end - (size_t)&sse2_mfence;
+		x86_hotpatch(HP_NAME_SSE2_MFENCE, bytes, size);
 	}
 
 #ifdef i386
@@ -241,31 +177,31 @@ x86_patch(bool early)
 	 * may be gone.
 	 */
 	if ((cpu_feature[0] & CPUID_CX8) != 0) {
-		patchfunc(
-		    _atomic_cas_cx8, _atomic_cas_cx8_end,
-		    _atomic_cas_64, _atomic_cas_64_end,
-		    NULL
-		);
+		extern uint8_t _atomic_cas_cx8, _atomic_cas_cx8_end;
+
+		bytes = &_atomic_cas_cx8;
+		size = (size_t)&_atomic_cas_cx8_end - (size_t)&_atomic_cas_cx8;
+		x86_hotpatch(HP_NAME_CAS_64, bytes, size);
 	}
-#endif	/* i386 */
 
 #if !defined(SPLDEBUG)
 	if (!early && (cpu_feature[0] & CPUID_CX8) != 0) {
 		/* Faster splx(), mutex_spin_exit(). */
-		patchfunc(
-		    cx8_spllower, cx8_spllower_end,
-		    spllower, spllower_end,
-		    cx8_spllower_patch
-		);
-#if defined(i386) && !defined(LOCKDEBUG)
-		patchfunc(
-		    i686_mutex_spin_exit, i686_mutex_spin_exit_end,
-		    mutex_spin_exit, mutex_spin_exit_end,
-		    i686_mutex_spin_exit_patch
-		);
-#endif	/* i386 && !LOCKDEBUG */
+		extern uint8_t cx8_spllower, cx8_spllower_end;
+		extern uint8_t i686_mutex_spin_exit, i686_mutex_spin_exit_end;
+
+		bytes = &cx8_spllower;
+		size = (size_t)&cx8_spllower_end - (size_t)&cx8_spllower;
+		x86_hotpatch(HP_NAME_SPLLOWER, bytes, size);
+
+#if !defined(LOCKDEBUG)
+		bytes = &i686_mutex_spin_exit;
+		size = (size_t)&i686_mutex_spin_exit_end - (size_t)&i686_mutex_spin_exit;
+		x86_hotpatch(HP_NAME_MUTEX_EXIT, bytes, size);
+#endif
 	}
 #endif /* !SPLDEBUG */
+#endif	/* i386 */
 
 	/*
 	 * On some Opteron revisions, locked operations erroneously
@@ -276,35 +212,30 @@ x86_patch(bool early)
 	    (CPUID_TO_FAMILY(cpu_info_primary.ci_signature) == 0xe ||
 	    (CPUID_TO_FAMILY(cpu_info_primary.ci_signature) == 0xf &&
 	    CPUID_TO_EXTMODEL(cpu_info_primary.ci_signature) < 0x4))) {
-		const uint8_t bytes[] = {
-			0x0F, 0xAE, 0xE8 /* lfence */
-		};
+		extern uint8_t hp_retfence, hp_retfence_end;
 
-		/* ret,nop,nop -> lfence */
-		x86_hotpatch(HP_NAME_RETFENCE, bytes, sizeof(bytes));
+		bytes = &hp_retfence;
+		size = (size_t)&hp_retfence_end - (size_t)&hp_retfence;
+		x86_hotpatch(HP_NAME_RETFENCE, bytes, size);
 	}
 
 	/*
 	 * If SMAP is present then patch the prepared holes with clac/stac
 	 * instructions.
-	 *
-	 * clac = 0x0f, 0x01, 0xca
-	 * stac = 0x0f, 0x01, 0xcb
 	 */
 	if (!early && cpu_feature[5] & CPUID_SEF_SMAP) {
+		extern uint8_t hp_clac, hp_clac_end;
+		extern uint8_t hp_stac, hp_stac_end;
+
 		KASSERT(rcr4() & CR4_SMAP);
-		const uint8_t clac_bytes[] = {
-			0x0F, 0x01, 0xCA /* clac */
-		};
-		const uint8_t stac_bytes[] = {
-			0x0F, 0x01, 0xCB /* stac */
-		};
 
-		/* nop,nop,nop -> clac */
-		x86_hotpatch(HP_NAME_CLAC, clac_bytes, sizeof(clac_bytes));
+		bytes = &hp_clac;
+		size = (size_t)&hp_clac_end - (size_t)&hp_clac;
+		x86_hotpatch(HP_NAME_CLAC, bytes, size);
 
-		/* nop,nop,nop -> stac */
-		x86_hotpatch(HP_NAME_STAC, stac_bytes, sizeof(stac_bytes));
+		bytes = &hp_stac;
+		size = (size_t)&hp_stac_end - (size_t)&hp_stac;
+		x86_hotpatch(HP_NAME_STAC, bytes, size);
 	}
 
 	x86_patch_window_close(psl, cr0);

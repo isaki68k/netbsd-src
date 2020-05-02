@@ -1,4 +1,4 @@
-/*	$NetBSD: proc.h,v 1.358 2020/01/29 15:47:52 ad Exp $	*/
+/*	$NetBSD: proc.h,v 1.364 2020/04/29 01:52:26 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2006, 2007, 2008, 2020 The NetBSD Foundation, Inc.
@@ -223,8 +223,6 @@ struct emul {
  * l:	proc_lock
  * t:	p_stmutex
  * p:	p_lock
- * r:	p_treelock (only for use by LWPs in the same proc)
- * p,r:	p_lock + p_treelock to modify, either to inspect
  * (:	updated atomically
  * ::	unlocked, stable
  */
@@ -252,7 +250,7 @@ struct proc {
 	int		p_exitsig;	/* l: signal to send to parent on exit */
 	int		p_flag;		/* p: PK_* flags */
 	int		p_sflag;	/* p: PS_* flags */
-	int		p_slflag;	/* s, l: PSL_* flags */
+	int		p_slflag;	/* p, l: PSL_* flags */
 	int		p_lflag;	/* l: PL_* flags */
 	int		p_stflag;	/* t: PST_* flags */
 	char		p_stat;		/* p: S* process status. */
@@ -265,7 +263,6 @@ struct proc {
 	LIST_ENTRY(proc) p_sibling;	/* l: List of sibling processes. */
 	LIST_HEAD(, proc) p_children;	/* l: List of children. */
 	LIST_HEAD(, lwp) p_lwps;	/* p: List of LWPs. */
-	struct radix_tree p_lwptree;	/* p,r: Tree of LWPs. */
 	struct ras	*p_raslist;	/* a: List of RAS entries */
 
 /* The following fields are all zeroed upon creation in fork. */
@@ -276,7 +273,6 @@ struct proc {
 	int		p_nrlwps;	/* p: Number running/sleeping LWPs */
 	int		p_nlwpwait;	/* p: Number of LWPs in lwp_wait1() */
 	int		p_ndlwps;	/* p: Number of detached LWPs */
-	int 		p_nlwpid;	/* p: Next LWP ID */
 	u_int		p_nstopchild;	/* l: Count of stopped/dead children */
 	u_int		p_waited;	/* l: parent has waited on child */
 	struct lwp	*p_zomblwp;	/* p: detached LWP to be reaped */
@@ -311,6 +307,7 @@ struct proc {
 	sigpend_t	p_sigpend;	/* p: pending signals */
 	struct lcproc	*p_lwpctl;	/* p, a: _lwp_ctl() information */
 	pid_t		p_ppid;		/* :: cached parent pid */
+	pid_t		p_oppid;	/* :: cached original parent pid */
 	char		*p_path;	/* :: full pathname of executable */
 
 /*
@@ -349,7 +346,6 @@ struct proc {
 	    __aligned(COHERENCY_UNIT);
 	kmutex_t	p_stmutex;	/* :: mutex on profiling state */
 	krwlock_t	p_reflock;	/* :: lock for debugger, procfs */
-	krwlock_t	p_treelock;	/* :: lock on p_lwptree */
 };
 
 #define	p_rlimit	p_limit->pl_rlimit
@@ -501,6 +497,10 @@ extern struct pool	ptimer_pool;	/* Memory pool for ptimers */
 int		proc_find_locked(struct lwp *, struct proc **, pid_t);
 proc_t *	proc_find_raw(pid_t);
 proc_t *	proc_find(pid_t);		/* Find process by ID */
+proc_t *	proc_find_lwpid(pid_t);		/* Find process by LWP ID */
+struct lwp *	proc_find_lwp(proc_t *, pid_t);	/* Find LWP in proc by ID */
+						/* Find LWP, acquire proc */
+struct lwp *	proc_find_lwp_acquire_proc(pid_t, proc_t **);
 struct pgrp *	pgrp_find(pid_t);		/* Find process group by ID */
 
 void	procinit(void);
@@ -525,6 +525,8 @@ struct proc *proc_alloc(void);
 void	proc0_init(void);
 pid_t	proc_alloc_pid(struct proc *);
 void	proc_free_pid(pid_t);
+pid_t	proc_alloc_lwpid(struct proc *, struct lwp *);
+void	proc_free_lwpid(struct proc *, pid_t);
 void	proc_free_mem(struct proc *);
 void	exit_lwps(struct lwp *l);
 int	fork1(struct lwp *, int, int, void *, size_t,

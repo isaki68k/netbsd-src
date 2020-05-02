@@ -1,4 +1,4 @@
-/*	$NetBSD: xen.h,v 1.44 2019/05/09 17:09:50 bouyer Exp $	*/
+/*	$NetBSD: xen.h,v 1.46 2020/04/25 15:26:17 bouyer Exp $	*/
 
 /*
  *
@@ -69,8 +69,6 @@ void	xen_shm_init(void);
 void	xenevt_event(int);
 void	xenevt_setipending(int, int);
 void	xenevt_notify(void);
-
-void	idle_block(void);
 
 /* xen_machdep.c */
 void	sysctl_xen_suspend_setup(void);
@@ -165,20 +163,6 @@ xen_atomic_xchg(volatile XATOMIC_T *ptr, unsigned long val)
 #endif
 	    :"=r" (result)
 	    :"m" (*ptr), "0" (val)
-	    :"memory");
-
-	return result;
-}
-
-static inline uint16_t
-xen_atomic_cmpxchg16(volatile uint16_t *ptr, uint16_t  val, uint16_t newval)
-{
-	unsigned long result;
-
-        __asm volatile(__LOCK_PREFIX
-	    "cmpxchgw %w1,%2"
-	    :"=a" (result)
-	    :"q"(newval), "m" (*ptr), "0" (val)
 	    :"memory");
 
 	return result;

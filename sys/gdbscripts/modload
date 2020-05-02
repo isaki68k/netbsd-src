@@ -1,0 +1,16 @@
+# $NetBSD: modload,v 1.2 2020/05/01 17:00:42 christos Exp $
+# Load the symbol files for all active modules
+# Note that you need to re-run add-symbol-file netbsd.gdb after you
+# load the modules.
+define modload
+	set $h = module_list
+	set $e = $h.tqh_first
+	while ($e != 0)
+		if ($e->mod_kobj != 0)
+			set $ko = $e->mod_kobj
+			set $n = $e->mod_info.mi_name
+			eval "add-symbol-file %s/%s/%s.kmod -s .text 0x%lx -s .data 0x%lx -s .rodata 0x%lx\n", module_base, $n, $n, $ko->ko_text_address, $ko->ko_data_address, $ko->ko_rodata_address
+		end
+		set $e = $e->mod_chain.tqe_next
+	end
+end

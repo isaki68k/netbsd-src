@@ -103,7 +103,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pintr.c,v 1.10 2019/02/13 06:15:51 cherry Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pintr.c,v 1.13 2020/04/25 15:26:17 bouyer Exp $");
 
 #include "opt_multiprocessor.h"
 #include "opt_xen.h"
@@ -115,7 +115,6 @@ __KERNEL_RCSID(0, "$NetBSD: pintr.c,v 1.10 2019/02/13 06:15:51 cherry Exp $");
 #include <sys/kernel.h>
 #include <sys/syslog.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
 #include <sys/proc.h>
 #include <sys/errno.h>
 #include <sys/cpu.h>
@@ -164,22 +163,21 @@ static int vect2irq[256] = {0};
 int
 xen_vec_alloc(int gsi)
 {
-	physdev_op_t op;
-
 	KASSERT(gsi < 255);
 
 	if (irq2port[gsi] == 0) {
-		op.cmd = PHYSDEVOP_ASSIGN_VECTOR;
-		op.u.irq_op.irq = gsi;
-		if (HYPERVISOR_physdev_op(&op) < 0) {
+		struct physdev_irq irq_op;
+		irq_op.irq = gsi;
+		if (HYPERVISOR_physdev_op(PHYSDEVOP_alloc_irq_vector,
+		    &irq_op) < 0) {
 			panic("PHYSDEVOP_ASSIGN_VECTOR gsi %d", gsi);
 		}
 		KASSERT(irq2vect[gsi] == 0 ||
-			irq2vect[gsi] == op.u.irq_op.vector);
-		irq2vect[gsi] = op.u.irq_op.vector;
-		KASSERT(vect2irq[op.u.irq_op.vector] == 0 ||
-			 vect2irq[op.u.irq_op.vector] == gsi);
-		vect2irq[op.u.irq_op.vector] = gsi;
+			irq2vect[gsi] == irq_op.vector);
+		irq2vect[gsi] = irq_op.vector;
+		KASSERT(vect2irq[irq_op.vector] == 0 ||
+			 vect2irq[irq_op.vector] == gsi);
+		vect2irq[irq_op.vector] = gsi;
 	}
 
 	return (irq2vect[gsi]);

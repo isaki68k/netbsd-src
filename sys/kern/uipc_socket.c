@@ -1,4 +1,4 @@
-/*	$NetBSD: uipc_socket.c,v 1.285 2019/10/14 16:27:03 maxv Exp $	*/
+/*	$NetBSD: uipc_socket.c,v 1.289 2020/04/26 14:21:14 jakllsch Exp $	*/
 
 /*
  * Copyright (c) 2002, 2007, 2008, 2009 The NetBSD Foundation, Inc.
@@ -71,7 +71,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uipc_socket.c,v 1.285 2019/10/14 16:27:03 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uipc_socket.c,v 1.289 2020/04/26 14:21:14 jakllsch Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
@@ -386,7 +386,7 @@ socket_listener_cb(kauth_cred_t cred, kauth_action_t action, void *cookie,
 	enum kauth_network_req req;
 
 	result = KAUTH_RESULT_DEFER;
-	req = (enum kauth_network_req)arg0;
+	req = (enum kauth_network_req)(uintptr_t)arg0;
 
 	if ((action != KAUTH_NETWORK_SOCKET) &&
 	    (action != KAUTH_NETWORK_BIND))
@@ -1180,6 +1180,9 @@ soreceive(struct socket *so, struct mbuf **paddr, struct uio *uio,
 			    MIN(uio->uio_resid, m->m_len), uio);
 			m = m_free(m);
 		} while (uio->uio_resid > 0 && error == 0 && m);
+		/* We consumed the oob data, no more oobmark.  */
+		so->so_oobmark = 0;
+		so->so_state &= ~SS_RCVATMARK;
 bad:
 		if (m != NULL)
 			m_freem(m);
@@ -1333,7 +1336,7 @@ dontblock:
 				m = m->m_next;
 			} else {
 				sbfree(&so->so_rcv, m);
-				/* XXX XXX XXX: should set mbuf_removed? */
+				mbuf_removed = 1;
 				if (paddr) {
 					*paddr = m;
 					so->so_rcv.sb_mb = m->m_next;
@@ -1342,8 +1345,7 @@ dontblock:
 				} else {
 					m = so->so_rcv.sb_mb = m_free(m);
 				}
-				/* XXX XXX XXX: isn't there an sbsync()
-				 * missing here? */
+				sbsync(&so->so_rcv, nextrecord);
 			}
 		}
 	}
@@ -1989,6 +1991,7 @@ sogetopt1(struct socket *so, struct sockopt *sopt)
 		optval = (opt == SO_SNDTIMEO ?
 		     so->so_snd.sb_timeo : so->so_rcv.sb_timeo);
 
+		memset(&tv, 0, sizeof(tv));
 		tv.tv_sec = optval / hz;
 		tv.tv_usec = (optval % hz) * tick;
 

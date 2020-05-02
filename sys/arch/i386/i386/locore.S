@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.S,v 1.178 2020/02/10 22:13:50 skrll Exp $	*/
+/*	$NetBSD: locore.S,v 1.181 2020/04/30 17:17:33 maxv Exp $	*/
 
 /*
  * Copyright-o-rama!
@@ -128,7 +128,7 @@
  */
 
 #include <machine/asm.h>
-__KERNEL_RCSID(0, "$NetBSD: locore.S,v 1.178 2020/02/10 22:13:50 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: locore.S,v 1.181 2020/04/30 17:17:33 maxv Exp $");
 
 #include "opt_copy_symtab.h"
 #include "opt_ddb.h"
@@ -1115,6 +1115,8 @@ begin:
 	cpuid
 	movl	%eax,RELOC(cpuid_level)
 
+	movl    $VM_GUEST_XENPV, RELOC(vm_guest)
+
 	/*
 	 * Use a temporary GDT page. We'll re-add it to uvm(9) once we're done
 	 * using it.
@@ -1301,17 +1303,6 @@ ENTRY(cpu_switchto)
 	pushl	%esi
 	pushl	%edi
 
-#if defined(DIAGNOSTIC) && !defined(XENPV)
-	cmpl	$IPL_SCHED,CPUVAR(ILEVEL)
-	jbe	0f
-	pushl	CPUVAR(ILEVEL)
-	pushl	$.Lstr
-	call	_C_LABEL(panic)
-	addl	$8,%esp
-.Lstr:	.string	"cpu_switchto: switching above IPL_SCHED (%d)\0"
-0:
-#endif
-
 	movl	16(%esp),%esi		/* oldlwp */
 	movl	20(%esp),%edi		/* newlwp */
 	movl	24(%esp),%edx		/* returning */
@@ -1408,10 +1399,6 @@ no_RAS:
 	pushl	%edi
 	call	_C_LABEL(i386_tls_switch)
 	addl	$4,%esp
-#else
-	/* Raise the IPL to IPL_HIGH. Dropping the priority is deferred until
-	 * mi_switch(), when cpu_switchto() returns. XXX Still needed? */
-	movl	$IPL_HIGH,CPUVAR(ILEVEL)
 #endif
 
 switch_return:
@@ -1491,7 +1478,7 @@ IDTVEC(syscall)
 	orl	CPUVAR(WANT_PMAPLOAD), %eax
 	jnz	9f
 
-#ifdef XEN
+#ifdef XENPV
 	STIC(%eax)
 	jz	14f
 	call	_C_LABEL(stipending)
@@ -1503,17 +1490,17 @@ IDTVEC(syscall)
 	movl	$.Lsyscall_resume, %esi /* address to resume loop at */
 .Lsyscall_resume:
 	movl	%ebx,%eax		/* get cpl */
-	movl	CPUVAR(XUNMASK)(,%eax,4),%eax
-	andl	CPUVAR(XPENDING),%eax	/* any non-masked bits left? */
+	movl	CPUVAR(IUNMASK)(,%eax,4),%eax
+	andl	CPUVAR(IPENDING),%eax	/* any non-masked bits left? */
 	jz	17f
 	bsrl	%eax,%eax
-	btrl	%eax,CPUVAR(XPENDING)
-	movl	CPUVAR(XSOURCES)(,%eax,4),%eax
+	btrl	%eax,CPUVAR(IPENDING)
+	movl	CPUVAR(ISOURCES)(,%eax,4),%eax
 	jmp	*IS_RESUME(%eax)
 17:	movl	%ebx, CPUVAR(ILEVEL)	/* restore cpl  */
 	jmp	.Lsyscall_checkast
 14:
-#endif /* XEN */
+#endif /* XENPV */
 
 #ifdef DIAGNOSTIC
 	cmpl	$IPL_NONE,CPUVAR(ILEVEL)
@@ -1625,3 +1612,24 @@ ENTRY(intrfastexit)
 	iret
 END(intrfastexit)
 
+	.section .rodata
+
+	/*
+	 * Hotpatch templates.
+	 */
+
+LABEL(hp_nolock)
+	nop
+LABEL(hp_nolock_end)
+
+LABEL(hp_retfence)
+	lfence
+LABEL(hp_retfence_end)
+
+LABEL(hp_clac)
+	clac
+LABEL(hp_clac_end)
+
+LABEL(hp_stac)
+	stac
+LABEL(hp_stac_end)

@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.S,v 1.200 2020/01/15 18:47:23 ad Exp $	*/
+/*	$NetBSD: locore.S,v 1.204 2020/04/30 17:21:12 maxv Exp $	*/
 
 /*
  * Copyright-o-rama!
@@ -942,6 +942,8 @@ longmode_hi:
 	cpuid
 	movl	%eax,_C_LABEL(cpuid_level)
 
+	movl	$VM_GUEST_XENPV, _C_LABEL(vm_guest)
+
 	movq	$cpu_info_primary,%rdi
 	movq	%rdi,CPU_INFO_SELF(%rdi) /* ci->ci_self = ci */
 	movq	$1,%rsi
@@ -1108,7 +1110,7 @@ ENTRY(cpu_switchto)
 .Lskip_svs:
 #endif
 
-#ifndef XEN
+#ifndef XENPV
 	movq	%r13,%rdi
 	movq	%r12,%rsi
 	callq	_C_LABEL(speculation_barrier)
@@ -1585,12 +1587,29 @@ END(intrfastexit)
 
 	TEXT_USER_END
 
-#ifdef SVS
-	.globl	svs_enter, svs_enter_end
-	.globl	svs_enter_altstack, svs_enter_altstack_end
-	.globl	svs_leave, svs_leave_end
-	.globl	svs_leave_altstack, svs_leave_altstack_end
+	.section .rodata
 
+	/*
+	 * Hotpatch templates.
+	 */
+
+LABEL(hp_nolock)
+	nop
+LABEL(hp_nolock_end)
+
+LABEL(hp_retfence)
+	lfence
+LABEL(hp_retfence_end)
+
+LABEL(hp_clac)
+	clac
+LABEL(hp_clac_end)
+
+LABEL(hp_stac)
+	stac
+LABEL(hp_stac_end)
+
+#ifdef SVS
 LABEL(svs_enter)
 	movabs	SVS_UTLS+UTLS_KPDIRPA,%rax
 	movq	%rax,%cr3
@@ -1632,9 +1651,6 @@ LABEL(svs_leave_nmi)
 LABEL(svs_leave_nmi_end)
 #endif
 
-	.globl	ibrs_enter, ibrs_enter_end
-	.globl	ibrs_leave, ibrs_leave_end
-
 	/* IBRS <- 1 */
 LABEL(ibrs_enter)
 	movl	$MSR_IA32_SPEC_CTRL,%ecx
@@ -1658,8 +1674,6 @@ LABEL(noibrs_enter_end)
 LABEL(noibrs_leave)
 	NOIBRS_LEAVE
 LABEL(noibrs_leave_end)
-
-	.globl	mds_leave, mds_leave_end
 
 LABEL(mds_leave)
 	pushq	$GSEL(GDATA_SEL, SEL_KPL)

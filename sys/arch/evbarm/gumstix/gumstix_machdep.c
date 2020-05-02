@@ -1,4 +1,4 @@
-/*	$NetBSD: gumstix_machdep.c,v 1.64 2020/01/20 22:25:07 skrll Exp $ */
+/*	$NetBSD: gumstix_machdep.c,v 1.66 2020/04/18 11:00:39 skrll Exp $ */
 /*
  * Copyright (C) 2005, 2006, 2007  WIDE Project and SOUM Corporation.
  * All rights reserved.
@@ -145,7 +145,6 @@
 #include "opt_gumstix.h"
 #include "opt_kgdb.h"
 #include "opt_multiprocessor.h"
-#include "opt_pmap_debug.h"
 #if defined(OVERO) || defined(DUOVERO) || defined(PEPPER)
 #include "opt_omap.h"
 
@@ -545,7 +544,7 @@ gumstix_mpstart(void)
 				break;
 	}
 	for (size_t i = 1; i < arm_cpu_max; i++) {
-		if ((arm_cpu_hatched & __BIT(i)) == 0) {
+		if (cpu_hatched_p(i)) {
 			printf("%s: warning: cpu%zu failed to hatch\n",
 			    __func__, i);
 		}
