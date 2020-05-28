@@ -235,6 +235,11 @@ struct audio_softc {
 	bool		sc_dying;
 
 	/*
+	 * Must be protected by sc_lock.
+	 */
+	bool		sc_suspending;
+
+	/*
 	 * If multiuser is false, other users who have different euid
 	 * than the first user cannot open this device.
 	 * Must be protected by sc_exlock.
