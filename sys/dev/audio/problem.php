@@ -889,9 +889,9 @@ item(55130, false,
 "audio sometimes plays a buzz sound for a few seconds when changing volume",
 "たぶん RealTek hdafg(4) の問題。");
 
-item(55175, true,
+item(55175, false,	/* it's not mine */
 "Interpreation of AUDIO_FORMAT_LINEAR is wrong for 8-bit samples",
-"AUDIO_ENCODING_PCM16 with precision=8 は昔から unsigned。");
+"nia が勝手に commit したので放棄。");
 ?>
 
 </dl>
