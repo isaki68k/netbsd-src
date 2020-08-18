@@ -1,4 +1,4 @@
-/*      $NetBSD: if_xennet_xenbus.c,v 1.121 2020/05/01 19:53:17 jdolecek Exp $      */
+/*      $NetBSD: if_xennet_xenbus.c,v 1.127 2020/06/24 14:33:08 jdolecek Exp $      */
 
 /*
  * Copyright (c) 2006 Manuel Bouyer.
@@ -81,10 +81,11 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_xennet_xenbus.c,v 1.121 2020/05/01 19:53:17 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_xennet_xenbus.c,v 1.127 2020/06/24 14:33:08 jdolecek Exp $");
 
 #include "opt_xen.h"
 #include "opt_nfs_boot.h"
+#include "opt_net_mpsafe.h"
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -197,7 +198,8 @@ struct xennet_xenbus_softc {
 	int sc_features;
 #define FEATURE_IPV6CSUM	0x01	/* IPv6 checksum offload */
 #define FEATURE_SG		0x02	/* scatter-gatter */
-#define FEATURE_BITS		"\20\1IPV6-CSUM\2SG"
+#define FEATURE_RX_COPY		0x04	/* RX-copy */
+#define FEATURE_BITS		"\20\1IPV6-CSUM\2SG\3RX-COPY"
 	krndsource_t sc_rnd_source;
 	struct evcnt sc_cnt_tx_defrag;
 	struct evcnt sc_cnt_tx_queue_full;
@@ -217,7 +219,7 @@ static int  xennet_xenbus_detach(device_t, int);
 static void xennet_backend_changed(void *, XenbusState);
 
 static void xennet_alloc_rx_buffer(struct xennet_xenbus_softc *);
-static void xennet_free_rx_buffer(struct xennet_xenbus_softc *);
+static void xennet_free_rx_buffer(struct xennet_xenbus_softc *, bool);
 static void xennet_tx_complete(struct xennet_xenbus_softc *);
 static void xennet_rx_mbuf_free(struct mbuf *, void *, size_t, void *);
 static int  xennet_handler(void *);
@@ -232,7 +234,7 @@ static void xennet_start(struct ifnet *);
 static int  xennet_ioctl(struct ifnet *, u_long, void *);
 
 static bool xennet_xenbus_suspend(device_t dev, const pmf_qual_t *);
-static bool xennet_xenbus_resume (device_t dev, const pmf_qual_t *);
+static bool xennet_xenbus_resume(device_t dev, const pmf_qual_t *);
 
 CFATTACH_DECL3_NEW(xennet, sizeof(struct xennet_xenbus_softc),
    xennet_xenbus_match, xennet_xenbus_attach, xennet_xenbus_detach, NULL,
@@ -278,6 +280,10 @@ xennet_xenbus_attach(device_t parent, device_t self, void *aux)
 	sc->sc_xbusd->xbusd_otherend_changed = xennet_backend_changed;
 
 	/* read feature support flags */
+	err = xenbus_read_ul(NULL, sc->sc_xbusd->xbusd_otherend,
+	    "feature-rx-copy", &uval, 10);
+	if (!err && uval == 1)
+		sc->sc_features |= FEATURE_RX_COPY;
 	err = xenbus_read_ul(NULL, sc->sc_xbusd->xbusd_otherend,
 	    "feature-ipv6-csum-offload", &uval, 10);
 	if (!err && uval == 1)
@@ -377,15 +383,13 @@ xennet_xenbus_attach(device_t parent, device_t self, void *aux)
 	ifp->if_extflags = IFEF_MPSAFE;
 	ifp->if_snd.ifq_maxlen = uimax(ifqmaxlen, NET_TX_RING_SIZE * 2);
 	ifp->if_capabilities =
-		IFCAP_CSUM_IPv4_Rx | IFCAP_CSUM_IPv4_Tx
-		| IFCAP_CSUM_UDPv4_Rx | IFCAP_CSUM_UDPv4_Tx
+		IFCAP_CSUM_UDPv4_Rx | IFCAP_CSUM_UDPv4_Tx
 		| IFCAP_CSUM_TCPv4_Rx | IFCAP_CSUM_TCPv4_Tx
 		| IFCAP_CSUM_UDPv6_Rx
 		| IFCAP_CSUM_TCPv6_Rx;
-#define XN_M_CSUM_SUPPORTED (					\
-		M_CSUM_TCPv4 | M_CSUM_UDPv4 | M_CSUM_IPv4	\
-		| M_CSUM_TCPv6 | M_CSUM_UDPv6			\
-	)
+#define XN_M_CSUM_SUPPORTED 						\
+	(M_CSUM_TCPv4 | M_CSUM_UDPv4 | M_CSUM_TCPv6 | M_CSUM_UDPv6)
+
 	if (sc->sc_features & FEATURE_IPV6CSUM) {
 		/*
 		 * If backend supports IPv6 csum offloading, we can skip
@@ -413,15 +417,6 @@ xennet_xenbus_attach(device_t parent, device_t self, void *aux)
 	sc->sc_tx_ring.sring = tx_ring;
 	sc->sc_rx_ring.sring = rx_ring;
 
-	/* resume shared structures and tell backend that we are ready */
-	if (xennet_xenbus_resume(self, PMF_Q_NONE) == false) {
-		uvm_km_free(kernel_map, (vaddr_t)tx_ring, PAGE_SIZE,
-		    UVM_KMF_WIRED);
-		uvm_km_free(kernel_map, (vaddr_t)rx_ring, PAGE_SIZE,
-		    UVM_KMF_WIRED);
-		return;
-	}
-
 	rnd_attach_source(&sc->sc_rnd_source, device_xname(sc->sc_dev),
 	    RND_TYPE_NET, RND_FLAG_DEFAULT);
 
@@ -445,6 +440,15 @@ xennet_xenbus_attach(device_t parent, device_t self, void *aux)
 		aprint_error_dev(self, "couldn't establish power handler\n");
 	else
 		pmf_class_network_register(self, ifp);
+
+	/* resume shared structures and tell backend that we are ready */
+	if (xennet_xenbus_resume(self, PMF_Q_NONE) == false) {
+		uvm_km_free(kernel_map, (vaddr_t)tx_ring, PAGE_SIZE,
+		    UVM_KMF_WIRED);
+		uvm_km_free(kernel_map, (vaddr_t)rx_ring, PAGE_SIZE,
+		    UVM_KMF_WIRED);
+		return;
+	}
 }
 
 static int
@@ -452,7 +456,6 @@ xennet_xenbus_detach(device_t self, int flags)
 {
 	struct xennet_xenbus_softc *sc = device_private(self);
 	struct ifnet *ifp = &sc->sc_ethercom.ec_if;
-	RING_IDX i;
 
 	if ((flags & (DETACH_SHUTDOWN | DETACH_FORCE)) == DETACH_SHUTDOWN) {
 		/* Trigger state transition with backend */
@@ -481,14 +484,7 @@ xennet_xenbus_detach(device_t self, int flags)
 	mutex_exit(&sc->sc_tx_lock);
 
 	mutex_enter(&sc->sc_rx_lock);
-	xennet_free_rx_buffer(sc);
-	for (i = 0; i < NET_RX_RING_SIZE; i++) {
-		struct xennet_rxreq *rxreq = &sc->sc_rxreqs[i];
-		if (rxreq->rxreq_m != NULL) {
-			m_freem(rxreq->rxreq_m);
-			rxreq->rxreq_m = NULL;
-		}
-	}
+	xennet_free_rx_buffer(sc, true);
 	mutex_exit(&sc->sc_rx_lock);
 
 	ether_ifdetach(ifp);
@@ -538,18 +534,15 @@ xennet_xenbus_resume(device_t dev, const pmf_qual_t *qual)
 	netif_rx_sring_t *rx_ring;
 	paddr_t ma;
 
-	/* invalidate the RX and TX rings */
-	if (sc->sc_backend_status == BEST_SUSPENDED) {
-		/*
-		 * Device was suspended, so ensure that access associated to
-		 * the previous RX and TX rings are revoked.
-		 */
-		xengnt_revoke_access(sc->sc_tx_ring_gntref);
-		xengnt_revoke_access(sc->sc_rx_ring_gntref);
-	}
-
+	/* All grants were removed during suspend */
 	sc->sc_tx_ring_gntref = GRANT_INVALID_REF;
 	sc->sc_rx_ring_gntref = GRANT_INVALID_REF;
+
+	mutex_enter(&sc->sc_rx_lock);
+	/* Free but don't revoke, the grant is gone */
+	xennet_free_rx_buffer(sc, false);
+	KASSERT(sc->sc_free_rxreql == NET_TX_RING_SIZE);
+	mutex_exit(&sc->sc_rx_lock);
 
 	tx_ring = sc->sc_tx_ring.sring;
 	rx_ring = sc->sc_rx_ring.sring;
@@ -571,6 +564,11 @@ xennet_xenbus_resume(device_t dev, const pmf_qual_t *qual)
 	error = xenbus_grant_ring(sc->sc_xbusd, ma, &sc->sc_rx_ring_gntref);
 	if (error)
 		goto abort_resume;
+
+	if (sc->sc_ih != NULL) {
+		xen_intr_disestablish(sc->sc_ih);
+		sc->sc_ih = NULL;
+	}
 	error = xenbus_alloc_evtchn(sc->sc_xbusd, &sc->sc_evtchn);
 	if (error)
 		goto abort_resume;
@@ -579,6 +577,24 @@ xennet_xenbus_resume(device_t dev, const pmf_qual_t *qual)
 	sc->sc_ih = xen_intr_establish_xname(-1, &xen_pic, sc->sc_evtchn,
 	    IST_LEVEL, IPL_NET, &xennet_handler, sc, true, device_xname(dev));
 	KASSERT(sc->sc_ih != NULL);
+
+	/* Re-fill Rx ring */
+	mutex_enter(&sc->sc_rx_lock);
+	xennet_alloc_rx_buffer(sc);
+	KASSERT(sc->sc_free_rxreql == 0);
+	mutex_exit(&sc->sc_rx_lock);
+
+	xenbus_switch_state(sc->sc_xbusd, NULL, XenbusStateInitialised);
+
+	if (sc->sc_backend_status == BEST_SUSPENDED) {
+		if (xennet_talk_to_backend(sc)) {
+			xenbus_device_resume(sc->sc_xbusd);
+			hypervisor_unmask_event(sc->sc_evtchn);
+			xenbus_switch_state(sc->sc_xbusd, NULL,
+			    XenbusStateConnected);
+		}
+	}
+
 	return true;
 
 abort_resume:
@@ -590,18 +606,8 @@ static bool
 xennet_talk_to_backend(struct xennet_xenbus_softc *sc)
 {
 	int error;
-	unsigned long rx_copy;
 	struct xenbus_transaction *xbt;
 	const char *errmsg;
-
-	error = xenbus_read_ul(NULL, sc->sc_xbusd->xbusd_otherend,
-	    "feature-rx-copy", &rx_copy, 10);
-	if (error || !rx_copy) {
-		xenbus_dev_fatal(sc->sc_xbusd, error,
-		    "feature-rx-copy not supported");
-		return false;
-	}
-	aprint_normal_dev(sc->sc_dev, "using RX copy mode\n");
 
 again:
 	xbt = xenbus_transaction_start();
@@ -626,7 +632,7 @@ again:
 		goto abort_transaction;
 	}
 	error = xenbus_printf(xbt, sc->sc_xbusd->xbusd_path,
-	    "request-rx-copy", "%lu", rx_copy);
+	    "request-rx-copy", "%u", 1);
 	if (error) {
 		errmsg = "writing request-rx-copy";
 		goto abort_transaction;
@@ -666,10 +672,6 @@ again:
 	xennet_alloc_rx_buffer(sc);
 	mutex_exit(&sc->sc_rx_lock);
 
-	if (sc->sc_backend_status == BEST_SUSPENDED) {
-		xenbus_device_resume(sc->sc_xbusd);
-	}
-
 	sc->sc_backend_status = BEST_CONNECTED;
 
 	return true;
@@ -690,13 +692,15 @@ xennet_xenbus_suspend(device_t dev, const pmf_qual_t *qual)
 	 * so we do not mask event channel here
 	 */
 
-	/* collect any outstanding TX responses */
 	mutex_enter(&sc->sc_tx_lock);
+
+	/* collect any outstanding TX responses */
 	xennet_tx_complete(sc);
 	while (sc->sc_tx_ring.sring->rsp_prod != sc->sc_tx_ring.rsp_cons) {
 		kpause("xnsuspend", true, hz/2, &sc->sc_tx_lock);
 		xennet_tx_complete(sc);
 	}
+	KASSERT(sc->sc_free_txreql == NET_RX_RING_SIZE);
 	mutex_exit(&sc->sc_tx_lock);
 
 	/*
@@ -705,13 +709,7 @@ xennet_xenbus_suspend(device_t dev, const pmf_qual_t *qual)
 	 * here, as dom0 does not expect the guest domain to suddenly revoke
 	 * access to these grants.
 	 */
-
 	sc->sc_backend_status = BEST_SUSPENDED;
-	if (sc->sc_ih != NULL) {
-		/* event already disabled */
-		xen_intr_disestablish(sc->sc_ih);
-		sc->sc_ih = NULL;
-	}
 
 	xenbus_device_suspend(sc->sc_xbusd);
 	aprint_verbose_dev(dev, "removed event channel %d\n", sc->sc_evtchn);
@@ -735,8 +733,10 @@ static void xennet_backend_changed(void *arg, XenbusState new_state)
 		xenbus_switch_state(sc->sc_xbusd, NULL, XenbusStateClosed);
 		break;
 	case XenbusStateInitWait:
-		if (sc->sc_backend_status == BEST_CONNECTED)
+		if (sc->sc_backend_status == BEST_CONNECTED
+		   || sc->sc_backend_status == BEST_SUSPENDED)
 			break;
+
 		if (xennet_talk_to_backend(sc))
 			xenbus_switch_state(sc->sc_xbusd, NULL,
 			    XenbusStateConnected);
@@ -774,7 +774,7 @@ xennet_alloc_rx_buffer(struct xennet_xenbus_softc *sc)
 		KASSERT(req != NULL);
 		KASSERT(req == &sc->sc_rxreqs[req->rxreq_id]);
 		KASSERT(req->rxreq_m == NULL);
-		KASSERT(req->rxreq_gntref = GRANT_INVALID_REF);
+		KASSERT(req->rxreq_gntref == GRANT_INVALID_REF);
 
 		MGETHDR(m, M_DONTWAIT, MT_DATA);
 		if (__predict_false(m == NULL)) {
@@ -840,7 +840,7 @@ xennet_alloc_rx_buffer(struct xennet_xenbus_softc *sc)
  * Reclaim all RX buffers used by the I/O ring between frontend and backend
  */
 static void
-xennet_free_rx_buffer(struct xennet_xenbus_softc *sc)
+xennet_free_rx_buffer(struct xennet_xenbus_softc *sc, bool revoke)
 {
 	RING_IDX i;
 
@@ -860,7 +860,8 @@ xennet_free_rx_buffer(struct xennet_xenbus_softc *sc)
 			    rxreq_next);
 			sc->sc_free_rxreql++;
 
-			xengnt_revoke_access(rxreq->rxreq_gntref);
+			if (revoke)
+				xengnt_revoke_access(rxreq->rxreq_gntref);
 			rxreq->rxreq_gntref = GRANT_INVALID_REF;
 		}
 
@@ -1226,9 +1227,8 @@ xennet_start(struct ifnet *ifp)
 		}
 
 		DPRINTFN(XEDB_MBUF, ("xennet_start id %d, "
-		    "mbuf %p, buf %p/%p, size %d\n",
-		    req->txreq_id, m, mtod(m, void *), (void *)ma,
-		    m->m_pkthdr.len));
+		    "mbuf %p, buf %p, size %d\n",
+		    req->txreq_id, m, mtod(m, void *), m->m_pkthdr.len));
 
 #ifdef XENNET_DEBUG_DUMP
 		xennet_hex_dump(mtod(m, u_char *), m->m_pkthdr.len, "s",
@@ -1269,7 +1269,13 @@ xennet_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 #endif
 	int error = 0;
 
+#ifdef NET_MPSAFE
+#ifdef notyet
+	/* XXX IFNET_LOCK() is not taken in some cases e.g. multicast ioctls */
 	KASSERT(IFNET_LOCKED(ifp));
+#endif
+#endif
+	int s = splnet();
 
 	DPRINTFN(XEDB_FOLLOW, ("%s: xennet_ioctl()\n",
 	    device_xname(sc->sc_dev)));
@@ -1279,6 +1285,8 @@ xennet_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 
 	DPRINTFN(XEDB_FOLLOW, ("%s: xennet_ioctl() returning %d\n",
 	    device_xname(sc->sc_dev), error));
+
+	splx(s);
 
 	return error;
 }

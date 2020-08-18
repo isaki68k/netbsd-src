@@ -1,4 +1,4 @@
-/* $NetBSD: proc.h,v 1.6 2020/04/12 07:49:58 maxv Exp $ */
+/* $NetBSD: proc.h,v 1.8 2020/08/12 13:19:35 skrll Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -43,12 +43,14 @@ struct mdlwp {
 	struct trapframe *md_utf;
 	uint64_t md_cpacr;
 	uint32_t md_flags;
+	volatile uint32_t md_astpending;
 
-	uint64_t md_ia_kern_lo; /* APIAKeyLo_EL1 */
-	uint64_t md_ia_kern_hi; /* APIAKeyHi_EL1 */
-
-	uint64_t md_ia_user_lo; /* APIAKeyLo_EL1 */
-	uint64_t md_ia_user_hi; /* APIAKeyHi_EL1 */
+	uint64_t md_ia_kern[2]; /* APIAKey{Lo,Hi}_EL1 used in the kernel */
+	uint64_t md_ia_user[2]; /* APIAKey{Lo,Hi}_EL1 used in user-process */
+	uint64_t md_ib_user[2]; /* APIBKey{Lo,Hi}_EL1 only used in user-proc. */
+	uint64_t md_da_user[2]; /* APDAKey{Lo,Hi}_EL1 only used in user-proc. */
+	uint64_t md_db_user[2]; /* APDBKey{Lo,Hi}_EL1 only used in user-proc. */
+	uint64_t md_ga_user[2]; /* APGAKey{Lo,Hi}_EL1 only used in user-proc. */
 };
 
 struct mdproc {

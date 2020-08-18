@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_timeout.c,v 1.61 2020/04/19 20:35:29 ad Exp $	*/
+/*	$NetBSD: kern_timeout.c,v 1.66 2020/06/27 01:26:32 rin Exp $	*/
 
 /*-
  * Copyright (c) 2003, 2006, 2007, 2008, 2009, 2019 The NetBSD Foundation, Inc.
@@ -59,7 +59,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_timeout.c,v 1.61 2020/04/19 20:35:29 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_timeout.c,v 1.66 2020/06/27 01:26:32 rin Exp $");
 
 /*
  * Timeouts are kept in a hierarchical timing wheel.  The c_time is the
@@ -182,8 +182,11 @@ struct callout_cpu {
 	char		cc_name2[12];
 };
 
-#ifndef CRASH
+#ifdef DDB
+static struct callout_cpu ccb;
+#endif
 
+#ifndef CRASH /* _KERNEL */
 static void	callout_softclock(void *);
 static void	callout_wait(callout_impl_t *, void *, kmutex_t *);
 
@@ -798,7 +801,7 @@ callout_softclock(void *v)
 	cc->cc_lwp = NULL;
 	mutex_spin_exit(cc->cc_lock);
 }
-#endif
+#endif /* !CRASH */
 
 #ifdef DDB
 static void
@@ -834,8 +837,8 @@ db_show_callout_bucket(struct callout_cpu *cc, struct callout_circq *kbucket,
 void
 db_show_callout(db_expr_t addr, bool haddr, db_expr_t count, const char *modif)
 {
-	struct callout_cpu *cc, ccb;
-	struct cpu_info *ci, cib;
+	struct callout_cpu *cc;
+	struct cpu_info *ci;
 	int b;
 
 #ifndef CRASH
@@ -849,15 +852,17 @@ db_show_callout(db_expr_t addr, bool haddr, db_expr_t count, const char *modif)
 	 * some other CPU was paused while holding the lock.
 	 */
 	for (ci = db_cpu_first(); ci != NULL; ci = db_cpu_next(ci)) {
-		db_read_bytes((db_addr_t)ci, sizeof(cib), (char *)&cib);
-		cc = cib.ci_data.cpu_callout;
+		db_read_bytes((db_addr_t)ci +
+		    offsetof(struct cpu_info, ci_data.cpu_callout),
+		    sizeof(cc), (char *)&cc);
 		db_read_bytes((db_addr_t)cc, sizeof(ccb), (char *)&ccb);
 		db_show_callout_bucket(&ccb, &cc->cc_todo, &ccb.cc_todo);
 	}
 	for (b = 0; b < BUCKETS; b++) {
 		for (ci = db_cpu_first(); ci != NULL; ci = db_cpu_next(ci)) {
-			db_read_bytes((db_addr_t)ci, sizeof(cib), (char *)&cib);
-			cc = cib.ci_data.cpu_callout;
+			db_read_bytes((db_addr_t)ci +
+			    offsetof(struct cpu_info, ci_data.cpu_callout),
+			    sizeof(cc), (char *)&cc);
 			db_read_bytes((db_addr_t)cc, sizeof(ccb), (char *)&ccb);
 			db_show_callout_bucket(&ccb, &cc->cc_wheel[b],
 			    &ccb.cc_wheel[b]);

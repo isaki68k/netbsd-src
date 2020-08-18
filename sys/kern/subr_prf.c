@@ -1,4 +1,4 @@
-/*	$NetBSD: subr_prf.c,v 1.183 2020/04/30 03:28:18 riastradh Exp $	*/
+/*	$NetBSD: subr_prf.c,v 1.185 2020/07/11 07:14:53 maxv Exp $	*/
 
 /*-
  * Copyright (c) 1986, 1988, 1991, 1993
@@ -37,7 +37,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_prf.c,v 1.183 2020/04/30 03:28:18 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_prf.c,v 1.185 2020/07/11 07:14:53 maxv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddb.h"
@@ -534,7 +534,7 @@ uprintf(const char *fmt, ...)
 	struct proc *p = curproc;
 	va_list ap;
 
-	/* mutex_enter(proc_lock); XXXSMP */
+	/* mutex_enter(&proc_lock); XXXSMP */
 
 	if (p->p_lflag & PL_CONTROLT && p->p_session->s_ttyvp) {
 		/* No mutex needed; going to process TTY. */
@@ -543,7 +543,7 @@ uprintf(const char *fmt, ...)
 		va_end(ap);
 	}
 
-	/* mutex_exit(proc_lock); XXXSMP */
+	/* mutex_exit(&proc_lock); XXXSMP */
 }
 
 void
@@ -582,12 +582,12 @@ tprintf_open(struct proc *p)
 
 	cookie = NULL;
 
-	mutex_enter(proc_lock);
+	mutex_enter(&proc_lock);
 	if (p->p_lflag & PL_CONTROLT && p->p_session->s_ttyvp) {
 		proc_sesshold(p->p_session);
 		cookie = (tpr_t)p->p_session;
 	}
-	mutex_exit(proc_lock);
+	mutex_exit(&proc_lock);
 
 	return cookie;
 }
@@ -601,7 +601,7 @@ tprintf_close(tpr_t sess)
 {
 
 	if (sess) {
-		mutex_enter(proc_lock);
+		mutex_enter(&proc_lock);
 		/* Releases proc_lock. */
 		proc_sessrele((struct session *)sess);
 	}
@@ -621,7 +621,7 @@ tprintf(tpr_t tpr, const char *fmt, ...)
 	int flags = TOLOG;
 	va_list ap;
 
-	/* mutex_enter(proc_lock); XXXSMP */
+	/* mutex_enter(&proc_lock); XXXSMP */
 	if (sess && sess->s_ttyvp && ttycheckoutq(sess->s_ttyp, 0)) {
 		flags |= TOTTY;
 		tp = sess->s_ttyp;
@@ -635,7 +635,7 @@ tprintf(tpr_t tpr, const char *fmt, ...)
 	va_end(ap);
 
 	kprintf_unlock();
-	/* mutex_exit(proc_lock);	XXXSMP */
+	/* mutex_exit(&proc_lock);	XXXSMP */
 
 	logwakeup();
 }
@@ -1373,20 +1373,21 @@ reswitch:	switch (ch) {
 			base = DEC;
 			goto number;
 		case 'n':
+			/* no %n support in the kernel, consume and skip */
 			if (flags & MAXINT)
-				*va_arg(ap, intmax_t *) = ret;
+				(void)va_arg(ap, intmax_t *);
 			else if (flags & PTRINT)
-				*va_arg(ap, intptr_t *) = ret;
+				(void)va_arg(ap, intptr_t *);
 			else if (flags & SIZEINT)
-				*va_arg(ap, ssize_t *) = ret;
+				(void)va_arg(ap, ssize_t *);
 			else if (flags & QUADINT)
-				*va_arg(ap, quad_t *) = ret;
+				(void)va_arg(ap, quad_t *);
 			else if (flags & LONGINT)
-				*va_arg(ap, long *) = ret;
+				(void)va_arg(ap, long *);
 			else if (flags & SHORTINT)
-				*va_arg(ap, short *) = ret;
+				(void)va_arg(ap, short *);
 			else
-				*va_arg(ap, int *) = ret;
+				(void)va_arg(ap, int *);
 			continue;	/* no output */
 		case 'O':
 			flags |= LONGINT;

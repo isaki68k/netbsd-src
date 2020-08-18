@@ -1,7 +1,7 @@
-/*	$NetBSD: asan.h,v 1.6 2019/04/08 21:18:22 ryo Exp $	*/
+/*	$NetBSD: asan.h,v 1.9 2020/08/01 06:35:00 maxv Exp $	*/
 
 /*
- * Copyright (c) 2018 The NetBSD Foundation, Inc.
+ * Copyright (c) 2018-2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -39,7 +39,7 @@
 #include <aarch64/machdep.h>
 
 #define __MD_VIRTUAL_SHIFT	48	/* 49bit address space, cut half */
-#define __MD_CANONICAL_BASE	0xFFFF000000000000
+#define __MD_KERNMEM_BASE	0xFFFF000000000000 /* kern mem base address */
 
 #define __MD_SHADOW_SIZE	(1ULL << (__MD_VIRTUAL_SHIFT - KASAN_SHADOW_SCALE_SHIFT))
 #define KASAN_MD_SHADOW_START	(AARCH64_KSEG_END)
@@ -52,7 +52,7 @@ kasan_md_addr_to_shad(const void *addr)
 {
 	vaddr_t va = (vaddr_t)addr;
 	return (int8_t *)(KASAN_MD_SHADOW_START +
-	    ((va - __MD_CANONICAL_BASE) >> KASAN_SHADOW_SCALE_SHIFT));
+	    ((va - __MD_KERNMEM_BASE) >> KASAN_SHADOW_SCALE_SHIFT));
 }
 
 static inline bool
@@ -68,11 +68,30 @@ __md_palloc(void)
 	paddr_t pa;
 
 	if (__predict_false(__md_early))
-		pa = (paddr_t)bootpage_alloc();
+		pa = (paddr_t)pmapboot_pagealloc();
 	else
 		pa = pmap_alloc_pdp(pmap_kernel(), NULL, 0, false);
 
+	/* The page is zeroed. */
 	return pa;
+}
+
+static inline paddr_t
+__md_palloc_large(void)
+{
+	struct pglist pglist;
+	int ret;
+
+	if (!uvm.page_init_done)
+		return 0;
+
+	ret = uvm_pglistalloc(L2_SIZE, 0, ~0UL, L2_SIZE, 0,
+	    &pglist, 1, 0);
+	if (ret != 0)
+		return 0;
+
+	/* The page may not be zeroed. */
+	return VM_PAGE_TO_PHYS(TAILQ_FIRST(&pglist));
 }
 
 static void
@@ -121,8 +140,20 @@ kasan_md_shadow_map_page(vaddr_t va)
 	idx = l2pde_index(va);
 	pde = l2[idx];
 	if (!l2pde_valid(pde)) {
+		/* If possible, use L2_BLOCK to map it in advance. */
+		if ((pa = __md_palloc_large()) != 0) {
+			atomic_swap_64(&l2[idx], pa | L2_BLOCK |
+			    LX_BLKPAG_UXN | LX_BLKPAG_PXN | LX_BLKPAG_AF |
+			    LX_BLKPAG_SH_IS | LX_BLKPAG_AP_RW);
+			aarch64_tlbi_by_va(va);
+			__builtin_memset((void *)va, 0, L2_SIZE);
+			return;
+		}
 		pa = __md_palloc();
 		atomic_swap_64(&l2[idx], pa | L2_TABLE);
+	} else if (l2pde_is_block(pde)) {
+		/* This VA is already mapped as a block. */
+		return;
 	} else {
 		pa = l2pde_pa(pde);
 	}

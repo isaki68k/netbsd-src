@@ -1,7 +1,7 @@
-/*	$NetBSD: nvmm_x86_svmfunc.S,v 1.3 2019/04/24 18:45:15 maxv Exp $	*/
+/*	$NetBSD: nvmm_x86_svmfunc.S,v 1.5 2020/08/11 15:48:42 maxv Exp $	*/
 
 /*
- * Copyright (c) 2018 The NetBSD Foundation, Inc.
+ * Copyright (c) 2018-2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -75,10 +75,10 @@
 
 #define HOST_SAVE_TR		\
 	strw	%ax		;\
-	pushw	%ax
+	pushq	%rax
 
 #define HOST_RESTORE_TR				\
-	popw	%ax				;\
+	popq	%rax				;\
 	movzwq	%ax,%rdx			;\
 	movq	CPUVAR(GDT),%rax		;\
 	andq	$~0x0200,4(%rax,%rdx, 1)	;\
@@ -86,10 +86,10 @@
 
 #define HOST_SAVE_LDT		\
 	sldtw	%ax		;\
-	pushw	%ax
+	pushq	%rax
 
 #define HOST_RESTORE_LDT	\
-	popw	%ax		;\
+	popq	%rax		;\
 	lldtw	%ax
 
 /*
@@ -135,9 +135,6 @@
 ENTRY(svm_vmrun)
 	/* Save the Host GPRs. */
 	HOST_SAVE_GPRS
-
-	/* Disable Host interrupts. */
-	clgi
 
 	/* Save the Host TR. */
 	HOST_SAVE_TR
@@ -188,9 +185,6 @@ ENTRY(svm_vmrun)
 
 	/* Restore the Host TR. */
 	HOST_RESTORE_TR
-
-	/* Enable Host interrupts. */
-	stgi
 
 	/* Restore the Host GPRs. */
 	HOST_RESTORE_GPRS

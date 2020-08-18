@@ -1,7 +1,7 @@
-/*	$NetBSD: specialreg.h,v 1.164 2020/05/01 04:07:24 msaitoh Exp $	*/
+/*	$NetBSD: specialreg.h,v 1.171 2020/08/05 15:40:46 maxv Exp $	*/
 
 /*
- * Copyright (c) 2014-2019 The NetBSD Foundation, Inc.
+ * Copyright (c) 2014-2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -109,6 +109,7 @@
 #define CR4_OSFXSR	0x00000200 /* enable fxsave/fxrestor and SSE */
 #define CR4_OSXMMEXCPT	0x00000400 /* enable unmasked SSE exceptions */
 #define CR4_UMIP	0x00000800 /* user-mode instruction prevention */
+#define CR4_LA57	0x00001000 /* 57-bit linear addresses */
 #define CR4_VMXE	0x00002000 /* enable VMX operations */
 #define CR4_SMXE	0x00004000 /* enable SMX operations */
 #define CR4_FSGSBASE	0x00010000 /* enable *FSBASE and *GSBASE instructions */
@@ -116,7 +117,9 @@
 #define CR4_OSXSAVE	0x00040000 /* enable xsave and xrestore */
 #define CR4_SMEP	0x00100000 /* enable SMEP support */
 #define CR4_SMAP	0x00200000 /* enable SMAP support */
-#define CR4_PKE		0x00400000 /* protection key enable */
+#define CR4_PKE		0x00400000 /* enable Protection Keys for user pages */
+#define CR4_CET		0x00800000 /* enable CET */
+#define CR4_PKS		0x01000000 /* enable Protection Keys for kern pages */
 
 /*
  * Extended Control Register XCR0
@@ -131,13 +134,17 @@
 #define XCR0_Hi16_ZMM	0x00000080	/* AVX-512 512 bits upper registers */
 #define XCR0_PT		0x00000100	/* Processor Trace state */
 #define XCR0_PKRU	0x00000200	/* Protection Key state */
+#define XCR0_CET_U	0x00000800	/* User CET state */
+#define XCR0_CET_S	0x00001000	/* Kern CET state */
 #define XCR0_HDC	0x00002000	/* Hardware Duty Cycle state */
+#define XCR0_HWP	0x00010000	/* Hardware P-states */
 
 #define XCR0_FLAGS1	"\20" \
 	"\1" "x87"		"\2" "SSE"		"\3" "AVX"	\
 	"\4" "BNDREGS"		"\5" "BNDCSR"		"\6" "Opmask"	\
 	"\7" "ZMM_Hi256"	"\10" "Hi16_ZMM"	"\11" "PT"	\
-	"\12" "PKRU"		"\16" "HDC"
+	"\12" "PKRU"		"\14" "CET_U"		"\15" "CET_S"	\
+	"\16" "HDC"		"\21" "HWP"
 
 /*
  * Known FPU bits, only these get enabled. The save area is sized for all the
@@ -147,7 +154,7 @@
 			 XCR0_Opmask | XCR0_ZMM_Hi256 | XCR0_Hi16_ZMM)
 
 /*
- * XSAVE component indices.
+ * XSAVE component indices, internal to NetBSD.
  */
 #define XSAVE_X87	0
 #define XSAVE_SSE	1
@@ -157,9 +164,6 @@
 #define XSAVE_Opmask	5
 #define XSAVE_ZMM_Hi256	6
 #define XSAVE_Hi16_ZMM	7
-#define XSAVE_PT	8
-#define XSAVE_PKRU	9
-#define XSAVE_HDC	10
 
 /*
  * Highest XSAVE component enabled by XCR0_FPU.
@@ -294,10 +298,10 @@
 		? 0 : (CPUID_TO_EXTMODEL(cpuid) << 4)))
 
 /* CPUID Fn00000001 %ebx */
-#define	CPUID_BRAND_INDEX	__BITS(7,0)
-#define	CPUID_CLFLUSH_SIZE	__BITS(15,8)
-#define	CPUID_HTT_CORES		__BITS(23,16)
-#define	CPUID_LOCAL_APIC_ID	__BITS(31,24)
+#define CPUID_BRAND_INDEX	__BITS(7,0)
+#define CPUID_CLFLUSH_SIZE	__BITS(15,8)
+#define CPUID_HTT_CORES		__BITS(23,16)
+#define CPUID_LOCAL_APIC_ID	__BITS(31,24)
 
 /*
  * Intel Deterministic Cache Parameter Leaf
@@ -367,6 +371,7 @@
 #define CPUID_DSPM_HWP_PECI   __BIT(16)	/* HWP PECI override */
 #define CPUID_DSPM_HWP_FLEX   __BIT(17)	/* Flexible HWP */
 #define CPUID_DSPM_HWP_FAST   __BIT(18)	/* Fast access for IA32_HWP_REQUEST */
+#define CPUID_DSPM_HW_FEEDBACK __BIT(19) /* HW_FEEDBACK*, IA32_PACKAGE_TERM* */
 #define CPUID_DSPM_HWP_IGNIDL __BIT(20)	/* Ignore Idle Logical Processor HWP */
 
 #define CPUID_DSPM_FLAGS	"\20" \
@@ -374,8 +379,8 @@
 	"\5" "PLN"	"\6" "ECMD"	"\7" "PTM"	"\10" "HWP"	\
 	"\11" "HWP_NOTIFY" "\12" "HWP_ACTWIN" "\13" "HWP_EPP" "\14" "HWP_PLR" \
 			"\16" "HDC"	"\17" "TBM3"	"\20" "HWP_CAP" \
-	"\21" "HWP_PECI" "\22" "HWP_FLEX" "\23" "HWP_FAST"		\
-	"25" "HWP_IGNIDL"
+	"\21" "HWP_PECI" "\22" "HWP_FLEX" "\23" "HWP_FAST" "\24HW_FEEDBACK"   \
+	"\25" "HWP_IGNIDL"
 
 /*
  * Intel/AMD Digital Thermal Sensor and
@@ -388,7 +393,7 @@
 
 /*
  * Intel/AMD Structured Extended Feature leaf Fn0000_0007
- * %eax == 0: Subleaf 0
+ * %ecx == 0: Subleaf 0
  *	%eax: The Maximum input value for supported subleaf.
  *	%ebx: Feature bits.
  *	%ecx: Feature bits.
@@ -447,7 +452,7 @@
 #define CPUID_SEF_OSPKE		__BIT(4)  /* OS has set CR4.PKE to ena. protec. keys */
 #define CPUID_SEF_WAITPKG	__BIT(5)  /* TPAUSE,UMONITOR,UMWAIT */
 #define CPUID_SEF_AVX512_VBMI2	__BIT(6)  /* AVX-512 Vector Byte Manipulation 2 */
-#define CPUID_SEF_CET_SS	__BIT(7)  /* CET shadow stack */
+#define CPUID_SEF_CET_SS	__BIT(7)  /* CET Shadow Stack */
 #define CPUID_SEF_GFNI		__BIT(8)
 #define CPUID_SEF_VAES		__BIT(9)
 #define CPUID_SEF_VPCLMULQDQ	__BIT(10)
@@ -460,6 +465,7 @@
 #define CPUID_SEF_MOVDIRI	__BIT(27) /* MOVDIRI instruction */
 #define CPUID_SEF_MOVDIR64B	__BIT(28) /* MOVDIR64B instruction */
 #define CPUID_SEF_SGXLC		__BIT(30) /* SGX Launch Configuration */
+#define CPUID_SEF_PKS		__BIT(31) /* Protection Keys for Kern-mode pages */
 
 #define CPUID_SEF_FLAGS1	"\177\20" \
 	"b\0PREFETCHWT1\0" "b\1AVX512_VBMI\0" "b\2UMIP\0" "b\3PKU\0"	\
@@ -469,16 +475,17 @@
 	"f\21\5MAWAU\0"							\
 					"b\26RDPID\0"			\
 			"b\31CLDEMOTE\0"		"b\33MOVDIRI\0"	\
-	"b\34MOVDIR64B\0"		"b\36SGXLC\0"
+	"b\34MOVDIR64B\0"		"b\36SGXLC\0"	"b\37PKS\0"
 
 /* %edx */
 #define CPUID_SEF_AVX512_4VNNIW	__BIT(2)
 #define CPUID_SEF_AVX512_4FMAPS	__BIT(3)
 #define CPUID_SEF_FSREP_MOV	__BIT(4)  /* Fast Short REP MOV */
 #define CPUID_SEF_AVX512_VP2INTERSECT __BIT(8)
+#define CPUID_SEF_SRBDS_CTRL	__BIT(9)  /* IA32_MCU_OPT_CTRL */
 #define CPUID_SEF_MD_CLEAR	__BIT(10)
 #define CPUID_SEF_TSX_FORCE_ABORT __BIT(13) /* MSR_TSX_FORCE_ABORT bit 0 */
-#define CPUID_SEF_SERIALIZE	__BIT(14)
+#define CPUID_SEF_SERIALIZE	__BIT(14) /* SERIALIZE instruction */
 #define CPUID_SEF_HYBRID	__BIT(15) /* Hybrid part */
 #define CPUID_SEF_TSXLDTRK	__BIT(16) /* TSX suspend load addr tracking */
 #define CPUID_SEF_CET_IBT	__BIT(20) /* CET Indirect Branch Tracking */
@@ -492,7 +499,7 @@
 #define CPUID_SEF_FLAGS2	"\20" \
 				"\3" "AVX512_4VNNIW" "\4" "AVX512_4FMAPS" \
 	"\5" "FSREP_MOV"						\
-	"\11" "VP2INTERSECT"	"\13" "MD_CLEAR"			\
+	"\11VP2INTERSECT" "\12SRBDS_CTRL" "\13MD_CLEAR"			\
 			"\16TSX_FORCE_ABORT" "\17SERIALIZE" "\20HYBRID"	\
 	"\21" "TSXLDTRK"						\
 	"\25" "CET_IBT"							\
@@ -608,6 +615,8 @@
 #define CPUID_DATP_TCTYPE_D	1		/*   Data TLB */
 #define CPUID_DATP_TCTYPE_I	2		/*   Instruction TLB */
 #define CPUID_DATP_TCTYPE_U	3		/*   Unified TLB */
+#define CPUID_DATP_TCTYPE_L	4		/*   Load only TLB */
+#define CPUID_DATP_TCTYPE_S	5		/*   Store only TLB */
 #define CPUID_DATP_TCLEVEL	__BITS(7, 5)	/* TLB level (start at 1) */
 #define CPUID_DATP_FULLASSOC	__BIT(8)	/* Full associative */
 #define CPUID_DATP_SHAREING	__BITS(25, 14)	/* shareing */
@@ -882,6 +891,7 @@
 #define 	IA32_ARCH_SKIP_L1DFL_VMENTRY 0x08
 #define 	IA32_ARCH_SSB_NO	0x10
 #define 	IA32_ARCH_MDS_NO	0x20
+#define 	IA32_ARCH_IF_PSCHANGE_MC_NO 0x40
 #define 	IA32_ARCH_TSX_CTRL	0x80
 #define 	IA32_ARCH_TAA_NO	0x100
 #define MSR_IA32_FLUSH_CMD	0x10b
@@ -1121,6 +1131,7 @@
 
 #define MSR_DE_CFG	0xc0011029
 #define 	DE_CFG_ERRATA_721	0x00000001
+#define 	DE_CFG_LFENCE_SERIALIZE	__BIT(1)
 #define 	DE_CFG_ERRATA_1021	__BIT(13)
 
 #define MSR_BU_CFG2	0xc001102a

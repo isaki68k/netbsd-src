@@ -1,4 +1,4 @@
-/*	$NetBSD: ip6_input.c,v 1.215 2019/11/12 08:11:55 maxv Exp $	*/
+/*	$NetBSD: ip6_input.c,v 1.218 2020/07/27 14:06:58 roy Exp $	*/
 /*	$KAME: ip6_input.c,v 1.188 2001/03/29 05:34:31 itojun Exp $	*/
 
 /*
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ip6_input.c,v 1.215 2019/11/12 08:11:55 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ip6_input.c,v 1.218 2020/07/27 14:06:58 roy Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_gateway.h"
@@ -135,8 +135,13 @@ percpu_t *ip6stat_percpu;
 percpu_t *ip6_forward_rt_percpu __cacheline_aligned;
 
 static void ip6intr(void *);
+static void ip6_input(struct mbuf *, struct ifnet *);
 static bool ip6_badaddr(struct ip6_hdr *);
 static struct m_tag *ip6_setdstifaddr(struct mbuf *, const struct in6_ifaddr *);
+
+static struct m_tag *ip6_addaux(struct mbuf *);
+static struct m_tag *ip6_findaux(struct mbuf *);
+static void ip6_delaux(struct mbuf *);
 
 static int ip6_process_hopopts(struct mbuf *, u_int8_t *, int, u_int32_t *,
     u_int32_t *);
@@ -150,6 +155,20 @@ static void sysctl_net_inet6_ip6_setup(struct sysctllog **);
 #define	SOFTNET_LOCK()		KASSERT(mutex_owned(softnet_lock))
 #define	SOFTNET_UNLOCK()	KASSERT(mutex_owned(softnet_lock))
 #endif
+
+/* Ensure that non packed structures are the desired size. */
+__CTASSERT(sizeof(struct ip6_hdr) == 40);
+__CTASSERT(sizeof(struct ip6_ext) == 2);
+__CTASSERT(sizeof(struct ip6_hbh) == 2);
+__CTASSERT(sizeof(struct ip6_dest) == 2);
+__CTASSERT(sizeof(struct ip6_opt) == 2);
+__CTASSERT(sizeof(struct ip6_opt_jumbo) == 6);
+__CTASSERT(sizeof(struct ip6_opt_nsap) == 4);
+__CTASSERT(sizeof(struct ip6_opt_tunnel) == 3);
+__CTASSERT(sizeof(struct ip6_opt_router) == 4);
+__CTASSERT(sizeof(struct ip6_rthdr) == 4);
+__CTASSERT(sizeof(struct ip6_rthdr0) == 8);
+__CTASSERT(sizeof(struct ip6_frag) == 8);
 
 /*
  * IP6 initialization: fill in IP6 protocol switch table.
@@ -182,9 +201,7 @@ ip6_init(void)
 	addrsel_policy_init();
 	nd6_init();
 	frag6_init();
-	ip6_desync_factor = cprng_fast32() % MAX_TEMP_DESYNC_FACTOR;
 
-	in6_tmpaddrtimer_init();
 #ifdef GATEWAY
 	ip6flow_init(ip6_hashsize);
 #endif
@@ -227,7 +244,7 @@ ip6intr(void *arg __unused)
 	SOFTNET_KERNEL_UNLOCK_UNLESS_NET_MPSAFE();
 }
 
-void
+static void
 ip6_input(struct mbuf *m, struct ifnet *rcvif)
 {
 	struct ip6_hdr *ip6;
@@ -1481,7 +1498,7 @@ ip6_lasthdr(struct mbuf *m, int off, int proto, int *nxtp)
 	}
 }
 
-struct m_tag *
+static struct m_tag *
 ip6_addaux(struct mbuf *m)
 {
 	struct m_tag *mtag;
@@ -1498,7 +1515,7 @@ ip6_addaux(struct mbuf *m)
 	return mtag;
 }
 
-struct m_tag *
+static struct m_tag *
 ip6_findaux(struct mbuf *m)
 {
 	struct m_tag *mtag;
@@ -1507,7 +1524,7 @@ ip6_findaux(struct mbuf *m)
 	return mtag;
 }
 
-void
+static void
 ip6_delaux(struct mbuf *m)
 {
 	struct m_tag *mtag;
@@ -1537,30 +1554,6 @@ sysctl_net_inet6_ip6_stats(SYSCTLFN_ARGS)
 {
 
 	return (NETSTAT_SYSCTL(ip6stat_percpu, IP6_NSTATS));
-}
-
-static int
-sysctl_net_inet6_ip6_temppltime(SYSCTLFN_ARGS)
-{
-	int error;
-	uint32_t pltime;
-	struct sysctlnode node;
-
-	node = *rnode;
-	node.sysctl_data = &pltime;
-	pltime = ip6_temp_preferred_lifetime;
-	error = sysctl_lookup(SYSCTLFN_CALL(&node));
-	if (error || newp == NULL)
-		return error;
-
-	if (pltime <= (MAX_TEMP_DESYNC_FACTOR + TEMPADDR_REGEN_ADVANCE))
-		return EINVAL;
-
-	ip6_temp_preferred_lifetime = pltime;
-
-	in6_tmpaddrtimer_schedule();
-
-	return 0;
 }
 
 static void
@@ -1609,27 +1602,6 @@ sysctl_net_inet6_ip6_setup(struct sysctllog **clog)
 		       NULL, 0, &ip6_maxfragpackets, 0,
 		       CTL_NET, PF_INET6, IPPROTO_IPV6,
 		       IPV6CTL_MAXFRAGPACKETS, CTL_EOL);
-	sysctl_createv(clog, 0, NULL, NULL,
-		       CTLFLAG_PERMANENT|CTLFLAG_READWRITE,
-		       CTLTYPE_INT, "accept_rtadv",
-		       SYSCTL_DESCR("Accept router advertisements"),
-		       NULL, 0, &ip6_accept_rtadv, 0,
-		       CTL_NET, PF_INET6, IPPROTO_IPV6,
-		       IPV6CTL_ACCEPT_RTADV, CTL_EOL);
-	sysctl_createv(clog, 0, NULL, NULL,
-		       CTLFLAG_PERMANENT|CTLFLAG_READWRITE,
-		       CTLTYPE_INT, "rtadv_maxroutes",
-		       SYSCTL_DESCR("Maximum number of routes accepted via router advertisements"),
-		       NULL, 0, &ip6_rtadv_maxroutes, 0,
-		       CTL_NET, PF_INET6, IPPROTO_IPV6,
-		       IPV6CTL_RTADV_MAXROUTES, CTL_EOL);
-	sysctl_createv(clog, 0, NULL, NULL,
-		       CTLFLAG_PERMANENT,
-		       CTLTYPE_INT, "rtadv_numroutes",
-		       SYSCTL_DESCR("Current number of routes accepted via router advertisements"),
-		       NULL, 0, &nd6_numroutes, 0,
-		       CTL_NET, PF_INET6, IPPROTO_IPV6,
-		       IPV6CTL_RTADV_NUMROUTES, CTL_EOL);
 	sysctl_createv(clog, 0, NULL, NULL,
 		       CTLFLAG_PERMANENT|CTLFLAG_READWRITE,
 		       CTLTYPE_INT, "keepfaith",
@@ -1689,12 +1661,6 @@ sysctl_net_inet6_ip6_setup(struct sysctllog **clog)
 		       NULL, 0, &ip6_use_deprecated, 0,
 		       CTL_NET, PF_INET6, IPPROTO_IPV6,
 		       IPV6CTL_USE_DEPRECATED, CTL_EOL);
-	sysctl_createv(clog, 0, NULL, NULL,
-		       CTLFLAG_PERMANENT|CTLFLAG_READWRITE,
-		       CTLTYPE_INT, "rr_prune", NULL,
-		       NULL, 0, &ip6_rr_prune, 0,
-		       CTL_NET, PF_INET6, IPPROTO_IPV6,
-		       IPV6CTL_RR_PRUNE, CTL_EOL);
 	sysctl_createv(clog, 0, NULL, NULL,
 		       CTLFLAG_PERMANENT
 #ifndef INET6_BINDV6ONLY
@@ -1757,31 +1723,10 @@ sysctl_net_inet6_ip6_setup(struct sysctllog **clog)
 		       IPV6CTL_ADDRCTLPOLICY, CTL_EOL);
 	sysctl_createv(clog, 0, NULL, NULL,
 		       CTLFLAG_PERMANENT|CTLFLAG_READWRITE,
-		       CTLTYPE_INT, "use_tempaddr",
-		       SYSCTL_DESCR("Use temporary address"),
-		       NULL, 0, &ip6_use_tempaddr, 0,
-		       CTL_NET, PF_INET6, IPPROTO_IPV6,
-		       CTL_CREATE, CTL_EOL);
-	sysctl_createv(clog, 0, NULL, NULL,
-		       CTLFLAG_PERMANENT|CTLFLAG_READWRITE,
 		       CTLTYPE_INT, "prefer_tempaddr",
 		       SYSCTL_DESCR("Prefer temporary address as source "
 		                    "address"),
 		       NULL, 0, &ip6_prefer_tempaddr, 0,
-		       CTL_NET, PF_INET6, IPPROTO_IPV6,
-		       CTL_CREATE, CTL_EOL);
-	sysctl_createv(clog, 0, NULL, NULL,
-		       CTLFLAG_PERMANENT|CTLFLAG_READWRITE,
-		       CTLTYPE_INT, "temppltime",
-		       SYSCTL_DESCR("preferred lifetime of a temporary address"),
-		       sysctl_net_inet6_ip6_temppltime, 0, NULL, 0,
-		       CTL_NET, PF_INET6, IPPROTO_IPV6,
-		       CTL_CREATE, CTL_EOL);
-	sysctl_createv(clog, 0, NULL, NULL,
-		       CTLFLAG_PERMANENT|CTLFLAG_READWRITE,
-		       CTLTYPE_INT, "tempvltime",
-		       SYSCTL_DESCR("valid lifetime of a temporary address"),
-		       NULL, 0, &ip6_temp_valid_lifetime, 0,
 		       CTL_NET, PF_INET6, IPPROTO_IPV6,
 		       CTL_CREATE, CTL_EOL);
 	sysctl_createv(clog, 0, NULL, NULL,
@@ -1844,22 +1789,6 @@ sysctl_net_inet6_ip6_setup(struct sysctllog **clog)
 		       SYSCTL_DESCR("Maximum number of entries in neighbor"
 			" cache"),
 		       NULL, 1, &ip6_neighborgcthresh, 0,
-		       CTL_NET, PF_INET6, IPPROTO_IPV6,
-		       CTL_CREATE, CTL_EOL);
-	sysctl_createv(clog, 0, NULL, NULL,
-		       CTLFLAG_PERMANENT|CTLFLAG_READWRITE,
-		       CTLTYPE_INT, "maxifprefixes",
-		       SYSCTL_DESCR("Maximum number of prefixes created by"
-			   " route advertisement per interface"),
-		       NULL, 1, &ip6_maxifprefixes, 0,
-		       CTL_NET, PF_INET6, IPPROTO_IPV6,
-		       CTL_CREATE, CTL_EOL);
-	sysctl_createv(clog, 0, NULL, NULL,
-		       CTLFLAG_PERMANENT|CTLFLAG_READWRITE,
-		       CTLTYPE_INT, "maxifdefrouters",
-		       SYSCTL_DESCR("Maximum number of default routers created"
-			   " by route advertisement per interface"),
-		       NULL, 1, &ip6_maxifdefrouters, 0,
 		       CTL_NET, PF_INET6, IPPROTO_IPV6,
 		       CTL_CREATE, CTL_EOL);
 	sysctl_createv(clog, 0, NULL, NULL,

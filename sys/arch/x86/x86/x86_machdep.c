@@ -1,4 +1,4 @@
-/*	$NetBSD: x86_machdep.c,v 1.140 2020/05/01 14:16:15 hannken Exp $	*/
+/*	$NetBSD: x86_machdep.c,v 1.146 2020/08/09 15:32:44 christos Exp $	*/
 
 /*-
  * Copyright (c) 2002, 2006, 2007 YAMAMOTO Takashi,
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: x86_machdep.c,v 1.140 2020/05/01 14:16:15 hannken Exp $");
+__KERNEL_RCSID(0, "$NetBSD: x86_machdep.c,v 1.146 2020/08/09 15:32:44 christos Exp $");
 
 #include "opt_modular.h"
 #include "opt_physmem.h"
@@ -95,19 +95,20 @@ void (*x86_cpu_idle)(void);
 static bool x86_cpu_idle_ipi;
 static char x86_cpu_idle_text[16];
 
-#ifdef XENPV
-char module_machine_amd64_xen[] = "amd64-xen";
-char module_machine_i386pae_xen[] = "i386pae-xen";
+static bool x86_user_ldt_enabled __read_mostly = false;
+
+#ifdef XEN
+
+#include <xen/xen.h>
+#include <xen/hypervisor.h>
 #endif
 
 #ifndef XENPV
 void (*delay_func)(unsigned int) = i8254_delay;
 void (*x86_initclock_func)(void) = i8254_initclocks;
-void (*x86_cpu_initclock_func)(void) = x86_dummy_initclock;
 #else /* XENPV */
 void (*delay_func)(unsigned int) = xen_delay;
 void (*x86_initclock_func)(void) = xen_initclocks;
-void (*x86_cpu_initclock_func)(void) = xen_cpu_initclocks;
 #endif
 
 
@@ -220,15 +221,6 @@ module_init_md(void)
 {
 	struct btinfo_modulelist *biml;
 	struct bi_modulelist_entry *bi, *bimax;
-
-	/* setup module path for XEN kernels */
-#ifdef XENPV
-#ifdef __x86_64__
-	module_machine = module_machine_amd64_xen;
-#else
-	module_machine = module_machine_i386pae_xen;
-#endif
-#endif
 
 	biml = lookup_bootinfo(BTINFO_MODULELIST);
 	if (biml == NULL) {
@@ -841,6 +833,45 @@ x86_load_region(uint64_t seg_start, uint64_t seg_end)
 	}
 }
 
+#ifdef XEN
+static void
+x86_add_xen_clusters(void)
+{
+	if (hvm_start_info->memmap_entries > 0) {
+		struct hvm_memmap_table_entry *map_entry;
+		map_entry = (void *)((uintptr_t)hvm_start_info->memmap_paddr + KERNBASE);
+		for (int i = 0; i < hvm_start_info->memmap_entries; i++) {
+			if (map_entry[i].size < PAGE_SIZE)
+				continue;
+			switch(map_entry[i].type) {
+			case XEN_HVM_MEMMAP_TYPE_RAM:
+				x86_add_cluster(map_entry[i].addr,
+				    map_entry[i].size, BIM_Memory);
+				break;
+			case XEN_HVM_MEMMAP_TYPE_ACPI:
+				x86_add_cluster(map_entry[i].addr,
+				    map_entry[i].size, BIM_ACPI);
+				break;
+			}
+		}
+	} else {
+		struct xen_memory_map memmap;
+		static struct _xen_mmap {
+			struct btinfo_memmap bim;
+			struct bi_memmap_entry map[128]; /* same as FreeBSD */
+		} __packed xen_mmap;
+		int err;
+
+		memmap.nr_entries = 128;
+		set_xen_guest_handle(memmap.buffer, &xen_mmap.bim.entry[0]);
+		if ((err = HYPERVISOR_memory_op(XENMEM_memory_map, &memmap))
+		    < 0)
+			panic("XENMEM_memory_map %d", err);
+		xen_mmap.bim.num = memmap.nr_entries;
+		x86_parse_clusters(&xen_mmap.bim);
+	}
+}
+#endif /* XEN */
 /*
  * init_x86_clusters: retrieve the memory clusters provided by the BIOS, and
  * initialize mem_clusters.
@@ -855,6 +886,12 @@ init_x86_clusters(void)
 	 * Check to see if we have a memory map from the BIOS (passed to us by
 	 * the boot program).
 	 */
+#ifdef XEN
+	if (vm_guest == VM_GUEST_XENPVH) {
+		x86_add_xen_clusters();
+	}
+#endif /* XEN */
+
 #ifdef i386
 	extern int biosmem_implicit;
 	biem = lookup_bootinfo(BTINFO_EFIMEMMAP);
@@ -1143,9 +1180,14 @@ x86_listener_cb(kauth_cred_t cred, kauth_action_t action, void *cookie,
 
 	switch (action) {
 	case KAUTH_MACHDEP_IOPERM_GET:
+		result = KAUTH_RESULT_ALLOW;
+		break;
+
 	case KAUTH_MACHDEP_LDT_GET:
 	case KAUTH_MACHDEP_LDT_SET:
-		result = KAUTH_RESULT_ALLOW;
+		if (x86_user_ldt_enabled) {
+			result = KAUTH_RESULT_ALLOW;
+		}
 		break;
 
 	default:
@@ -1397,6 +1439,13 @@ SYSCTL_SETUP(sysctl_machdep_setup, "sysctl machdep subtree setup")
 		       CTL_CREATE, CTL_EOL);
 #endif
 
+	sysctl_createv(clog, 0, NULL, NULL,
+		       CTLFLAG_READWRITE,
+		       CTLTYPE_BOOL, "user_ldt",
+		       SYSCTL_DESCR("Whether USER_LDT is enabled"),
+		       NULL, 0, &x86_user_ldt_enabled, 0,
+		       CTL_MACHDEP, CTL_CREATE, CTL_EOL);
+
 #ifndef XENPV
 	void sysctl_speculation_init(struct sysctllog **);
 	sysctl_speculation_init(clog);
@@ -1450,10 +1499,35 @@ void
 cpu_initclocks(void)
 {
 
+	/*
+	 * Re-calibrate TSC on boot CPU using most accurate time source,
+	 * thus making accurate TSC available for x86_initclock_func().
+	 */
+	cpu_get_tsc_freq(curcpu());
+
+	/* Now start the clocks on this CPU (the boot CPU). */
 	(*x86_initclock_func)();
 }
 
-void
-x86_dummy_initclock(void)
+int
+x86_cpu_is_lcall(const void *ip)
 {
+        static const uint8_t lcall[] = { 0x9a, 0, 0, 0, 0 };
+	int error;
+        const size_t sz = sizeof(lcall) + 2;
+        uint8_t tmp[sizeof(lcall) + 2];
+
+	if ((error = copyin(ip, tmp, sz)) != 0)
+		return error;
+
+	if (memcmp(tmp, lcall, sizeof(lcall)) != 0 || tmp[sz - 1] != 0)
+		return EINVAL;
+
+	switch (tmp[sz - 2]) {
+        case (uint8_t)0x07: /* NetBSD */
+	case (uint8_t)0x87: /* BSD/OS */
+		return 0;
+	default:
+		return EINVAL;
+        }
 }

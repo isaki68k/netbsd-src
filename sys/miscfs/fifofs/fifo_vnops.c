@@ -1,4 +1,4 @@
-/*	$NetBSD: fifo_vnops.c,v 1.79 2017/10/25 08:12:39 maya Exp $	*/
+/*	$NetBSD: fifo_vnops.c,v 1.81 2020/06/27 17:29:19 christos Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -58,7 +58,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fifo_vnops.c,v 1.79 2017/10/25 08:12:39 maya Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fifo_vnops.c,v 1.81 2020/06/27 17:29:19 christos Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -504,7 +504,7 @@ fifo_pathconf(void *v)
 		*ap->a_retval = 1;
 		return (0);
 	default:
-		return (EINVAL);
+		return genfs_pathconf(ap);
 	}
 	/* NOTREACHED */
 }
@@ -637,6 +637,7 @@ const struct vnodeopv_entry_desc fifo_vnodeop_entries[] = {
 	{ &vop_open_desc, fifo_open },			/* open */
 	{ &vop_close_desc, fifo_close },		/* close */
 	{ &vop_access_desc, genfs_ebadf },		/* access */
+	{ &vop_accessx_desc, genfs_accessx },		/* accessx */
 	{ &vop_getattr_desc, genfs_ebadf },		/* getattr */
 	{ &vop_setattr_desc, genfs_ebadf },		/* setattr */
 	{ &vop_read_desc, fifo_read },			/* read */

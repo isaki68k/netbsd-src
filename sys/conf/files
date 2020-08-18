@@ -1,4 +1,4 @@
-#	$NetBSD: files,v 1.1266 2020/04/22 09:15:40 rin Exp $
+#	$NetBSD: files,v 1.1274 2020/08/01 08:20:52 maxv Exp $
 #	@(#)files.newconf	7.5 (Berkeley) 5/10/93
 
 version 	20171118
@@ -38,6 +38,7 @@ defflag opt_kmsan.h		KMSAN_PANIC
 defflag				KCOV
 defflag opt_pool.h		POOL_QUARANTINE
 defflag opt_pool.h		POOL_NOCACHE
+defflag				FAULT
 
 defparam opt_copy_symtab.h	makeoptions_COPY_SYMTAB
 
@@ -199,10 +200,12 @@ defflag	opt_machdep.h		MACHDEP
 # use it.
 
 # Individual crypto transforms
+include "crypto/adiantum/files.adiantum"
+include "crypto/aes/files.aes"
+include "crypto/chacha/files.chacha"
 include "crypto/des/files.des"
 include "crypto/blowfish/files.blowfish"
 include "crypto/cast128/files.cast128"
-include "crypto/rijndael/files.rijndael"
 include "crypto/skipjack/files.skipjack"
 include "crypto/camellia/files.camellia"
 # General-purpose crypto processing framework.
@@ -275,7 +278,6 @@ obsolete defflag		IPX		# obsolete
 obsolete defparam opt_md.h	MEMORY_RBFLAGS	# superseded by
 						# MEMORY_DISK_RBFLAGS
 
-defflag	opt_bridge_ipf.h	BRIDGE_IPF	# bridge(4) use inet_pfil_hooks
 defflag	opt_ppp.h		PPP_DEFLATE PPP_BSDCOMP PPP_FILTER
 						# Include deflate or bsd
 						# compression, enable pppd
@@ -452,7 +454,7 @@ define	arcnet
 define	ether
 define	ieee1394
 define	sppp
-define	wlan: rijndael
+define	wlan: aes
 define	crypto
 
 # TPM
@@ -1394,7 +1396,7 @@ file	dev/ic/amdccp.c			amdccp
 defpseudodev vnd:	disk
 defflag opt_vnd.h	VND_COMPRESSION
 defpseudo ccd:		disk
-defpseudodev cgd:	disk, des, blowfish, cast128, rijndael
+defpseudodev cgd:	disk, des, blowfish, cast128, aes, adiantum
 defpseudodev md:	disk
 defpseudodev fss:	disk
 
@@ -1472,7 +1474,7 @@ device	ipmi: sysmon_envsys, sysmon_wdog
 attach	ipmi at ipmibus
 
 # Designware HDMI TX
-device	dwhdmi: edid, videomode, drmkms, drmkms_i2c
+device	dwhdmi: edid, videomode, drmkms, drmkms_i2c, ddc_read_edid
 file	dev/ic/dw_hdmi.c		dwhdmi
 file	dev/ic/dw_hdmi_phy.c		dwhdmi
 

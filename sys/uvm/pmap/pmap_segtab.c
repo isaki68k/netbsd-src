@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap_segtab.c,v 1.14 2020/02/24 12:20:30 rin Exp $	*/
+/*	$NetBSD: pmap_segtab.c,v 1.16 2020/08/17 08:56:27 mrg Exp $	*/
 
 /*-
  * Copyright (c) 1998, 2001 The NetBSD Foundation, Inc.
@@ -67,7 +67,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(0, "$NetBSD: pmap_segtab.c,v 1.14 2020/02/24 12:20:30 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap_segtab.c,v 1.16 2020/08/17 08:56:27 mrg Exp $");
 
 /*
  *	Manages physical address maps.
@@ -210,12 +210,18 @@ pmap_segtab_release(pmap_t pmap, pmap_segtab_t **stp_p, bool free_stp,
 {
 	pmap_segtab_t *stp = *stp_p;
 
+	UVMHIST_FUNC(__func__);
+	UVMHIST_CALLARGS(pmaphist, "pm=%#jx stpp=%#jx free=%jd",
+	    (uintptr_t)pmap, (uintptr_t)stp_p, free_stp, 0);
+	UVMHIST_LOG(pmaphist, " callback=%jx flags=%jx va=%jx vinc=%jx",
+	    (uintptr_t)callback, flags, (uintptr_t)va, (uintptr_t)vinc);
 	for (size_t i = (va / vinc) & (PMAP_SEGTABSIZE - 1);
 	     i < PMAP_SEGTABSIZE;
 	     i++, va += vinc) {
 #ifdef _LP64
 		if (vinc > NBSEG) {
 			if (stp->seg_seg[i] != NULL) {
+				UVMHIST_LOG(pmaphist, " recursing", 0, 0, 0, 0);
 				pmap_segtab_release(pmap, &stp->seg_seg[i],
 				    true, callback, flags, va, vinc / NSEGPG);
 				KASSERT(stp->seg_seg[i] == NULL);
@@ -255,6 +261,7 @@ pmap_segtab_release(pmap_t pmap, pmap_segtab_t **stp_p, bool free_stp,
 #endif
 
 		stp->seg_tab[i] = NULL;
+		UVMHIST_LOG(pmaphist, " zeroing tab[%jd]", i, 0, 0, 0);
 	}
 
 	if (free_stp) {
@@ -370,6 +377,7 @@ pmap_segtab_activate(struct pmap *pm, struct lwp *l)
 {
 	if (l == curlwp) {
 		struct cpu_info * const ci = l->l_cpu;
+		pmap_md_xtab_activate(pm, l);
 		KASSERT(pm == l->l_proc->p_vmspace->vm_map.pmap);
 		if (pm == pmap_kernel()) {
 			ci->ci_pmap_user_segtab = PMAP_INVALID_SEGTAB_ADDRESS;
@@ -383,6 +391,20 @@ pmap_segtab_activate(struct pmap *pm, struct lwp *l)
 #endif
 		}
 	}
+}
+
+
+void
+pmap_segtab_deactivate(pmap_t pm)
+{
+
+	pmap_md_xtab_deactivate(pm);
+
+	curcpu()->ci_pmap_user_segtab = PMAP_INVALID_SEGTAB_ADDRESS;
+#ifdef _LP64
+	curcpu()->ci_pmap_user_seg0tab = NULL;
+#endif
+
 }
 
 /*
@@ -432,6 +454,10 @@ pmap_pte_reserve(pmap_t pmap, vaddr_t va, int flags)
 {
 	pmap_segtab_t *stp = pmap->pm_segtab;
 	pt_entry_t *pte;
+
+	UVMHIST_FUNC(__func__);
+	UVMHIST_CALLARGS(pmaphist, "pm=%#jx va=%#jx flags=%jx",
+	    (uintptr_t)pmap, (uintptr_t)va, flags, 0);
 
 	pte = pmap_pte_lookup(pmap, va);
 	if (__predict_false(pte == NULL)) {
@@ -498,6 +524,8 @@ pmap_pte_reserve(pmap_t pmap, vaddr_t va, int flags)
 		*pte_p = pte;
 #endif
 		KASSERT(pte == stp->seg_tab[(va >> SEGSHIFT) & (PMAP_SEGTABSIZE - 1)]);
+		UVMHIST_LOG(pmaphist, " set tab[%jd]=%jx",
+		    (va >> SEGSHIFT) & (PMAP_SEGTABSIZE - 1), pte, 0, 0);
 
 #ifdef DEBUG
 		for (size_t i = 0; i < NPTEPG; i++) {

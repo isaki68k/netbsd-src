@@ -1,4 +1,4 @@
-#	$NetBSD: SMDK2410,v 1.74 2020/04/18 11:00:38 skrll Exp $
+#	$NetBSD: SMDK2410,v 1.76 2020/08/01 08:20:48 maxv Exp $
 #
 #	SMDK2410 -- Samsung's S3C2410 evaluation board.
 #
@@ -309,9 +309,6 @@ ucom*	at ukyopon? portno ?
 # USB scanners that use SCSI emulation, e.g., HP5300
 usscanner* at uhub? port ?
 
-# Y@P firmware loader
-uyap* at uhub? port ?
-
 # D-Link DSB-R100 USB radio
 udsbr*	at uhub? port ?
 radio*	at udsbr?
@@ -343,7 +340,6 @@ pseudo-device	loop			# network loopback
 #pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
 #pseudo-device	vlan			# IEEE 802.1q encapsulation
 #pseudo-device	bridge			# simple inter-network bridging
-#options	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
 
 # miscellaneous pseudo-devices
 pseudo-device	pty			# pseudo-terminals

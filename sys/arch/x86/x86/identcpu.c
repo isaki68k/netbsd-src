@@ -1,4 +1,4 @@
-/*	$NetBSD: identcpu.c,v 1.107 2020/04/25 15:26:18 bouyer Exp $	*/
+/*	$NetBSD: identcpu.c,v 1.116 2020/07/25 22:49:20 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001, 2006, 2007, 2008 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: identcpu.c,v 1.107 2020/04/25 15:26:18 bouyer Exp $");
+__KERNEL_RCSID(0, "$NetBSD: identcpu.c,v 1.116 2020/07/25 22:49:20 riastradh Exp $");
 
 #include "opt_xen.h"
 
@@ -38,6 +38,14 @@ __KERNEL_RCSID(0, "$NetBSD: identcpu.c,v 1.107 2020/04/25 15:26:18 bouyer Exp $"
 #include <sys/systm.h>
 #include <sys/device.h>
 #include <sys/cpu.h>
+
+#include <crypto/aes/aes_impl.h>
+#include <crypto/aes/arch/x86/aes_ni.h>
+#include <crypto/aes/arch/x86/aes_sse2.h>
+#include <crypto/aes/arch/x86/aes_ssse3.h>
+#include <crypto/aes/arch/x86/aes_via.h>
+#include <crypto/chacha/chacha_impl.h>
+#include <crypto/chacha/arch/x86/chacha_sse2.h>
 
 #include <uvm/uvm_extern.h>
 
@@ -995,6 +1003,25 @@ cpu_probe(struct cpu_info *ci)
 		/* Early patch of text segment. */
 		x86_patch(true);
 #endif
+
+		/* AES */
+#ifdef __x86_64__	/* not yet implemented on i386 */
+		if (cpu_feature[1] & CPUID2_AES)
+			aes_md_init(&aes_ni_impl);
+		else
+#endif
+		if (cpu_feature[4] & CPUID_VIA_HAS_ACE)
+			aes_md_init(&aes_via_impl);
+		else if (i386_has_sse && i386_has_sse2 &&
+		    (cpu_feature[1] & CPUID2_SSE3) &&
+		    (cpu_feature[1] & CPUID2_SSSE3))
+			aes_md_init(&aes_ssse3_impl);
+		else if (i386_has_sse && i386_has_sse2)
+			aes_md_init(&aes_sse2_impl);
+
+		/* ChaCha */
+		if (i386_has_sse && i386_has_sse2)
+			chacha_md_init(&chacha_sse2_impl);
 	} else {
 		/*
 		 * If not first. Warn about cpu_feature mismatch for

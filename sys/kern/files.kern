@@ -1,9 +1,9 @@
-#	$NetBSD: files.kern,v 1.47 2020/04/30 03:28:18 riastradh Exp $
+#	$NetBSD: files.kern,v 1.51 2020/08/14 00:53:16 riastradh Exp $
 
 #
 # kernel sources
 #
-define	kern:	machdep, uvm
+define	kern:	cprng_fast, machdep, uvm
 defflag	opt_kern.h			KERN
 defflag	opt_script.h			SETUIDSCRIPTS FDSCRIPTS
 defflag					KASLR
@@ -96,6 +96,8 @@ file	kern/kern_uuid.c		kern
 file	kern/kgdb_stub.c		kgdb
 file	kern/sched_4bsd.c		sched_4bsd
 file	kern/sched_m2.c			sched_m2
+file	kern/subr_acl_posix1e.c		kern
+file	kern/subr_acl_nfs4.c		kern
 file	kern/subr_asan.c		kasan
 file	kern/subr_autoconf.c		kern
 file	kern/subr_blist.c		vmswap
@@ -116,6 +118,7 @@ file	kern/subr_emul.c		kern
 file	kern/subr_evcnt.c		kern
 file	kern/subr_exec_fd.c		kern
 file	kern/subr_extent.c		kern
+file	kern/subr_fault.c		fault
 file	kern/subr_hash.c		kern
 file	kern/subr_humanize.c		kern
 file	kern/subr_interrupt.c		kern
@@ -154,6 +157,7 @@ file	kern/sys_aio.c			aio
 file	kern/sys_descrip.c		kern
 file	kern/sys_futex.c		kern
 file	kern/sys_generic.c		kern
+file	kern/sys_getrandom.c		kern
 file	kern/sys_module.c		kern
 file	kern/sys_mqueue.c		mqueue
 file	kern/sys_lwp.c			kern
@@ -192,6 +196,7 @@ file	kern/uipc_syscalls.c		kern
 file	kern/uipc_usrreq.c		kern
 
 define	vfs: kern
+file	kern/vfs_acl.c			vfs
 file	kern/vfs_bio.c			vfs
 file	kern/vfs_cache.c		vfs
 file	kern/vfs_cwd.c			vfs

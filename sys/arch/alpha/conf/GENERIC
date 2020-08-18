@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.401 2020/03/25 17:06:17 jdolecek Exp $
+# $NetBSD: GENERIC,v 1.404 2020/08/16 10:27:47 jdolecek Exp $
 #
 # This machine description file is used to generate the default NetBSD
 # kernel.
@@ -19,7 +19,7 @@ include 	"arch/alpha/conf/std.alpha"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-ident		"GENERIC-$Revision: 1.401 $"
+ident		"GENERIC-$Revision: 1.404 $"
 
 maxusers 32
 
@@ -129,9 +129,6 @@ options 	PPP_FILTER	# Active filter support for PPP (requires bpf)
 
 # Binary compatibility with previous versions of NetBSD.
 include 	"conf/compat_netbsd09.config"
-
-# Linux binary compatibility
-options 	COMPAT_LINUX
 
 # System V-like message queues
 options 	SYSVMSG
@@ -627,9 +624,6 @@ ucom*	at ukyopon? portno ?
 # USB scanners
 #uscanner* at uhub? port ?
 
-# Y@P firmware loader
-uyap* at uhub? port ?
-
 # D-Link DSB-R100 USB FM radio tuner
 udsbr* at uhub? port ?
 radio* at udsbr?
@@ -737,7 +731,6 @@ pseudo-device	gif			# IPv[46] over IPv[46] tunnel (RFC1933)
 pseudo-device	stf			# 6to4 IPv6 over IPv4 encapsulation
 pseudo-device	vlan			# IEEE 802.1q encapsulation
 pseudo-device	bridge			# simple inter-network bridging
-#options 	BRIDGE_IPF		# bridge uses IP/IPv6 pfil hooks too
 pseudo-device	agr			# IEEE 802.3ad link aggregation
 pseudo-device	sequencer		# MIDI sequencer
 #options 	RND_COM			# use "com" randomness too

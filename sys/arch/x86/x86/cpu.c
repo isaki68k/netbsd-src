@@ -1,7 +1,7 @@
-/*	$NetBSD: cpu.c,v 1.188 2020/04/29 22:03:09 ad Exp $	*/
+/*	$NetBSD: cpu.c,v 1.198 2020/08/09 15:32:44 christos Exp $	*/
 
 /*
- * Copyright (c) 2000-2012 NetBSD Foundation, Inc.
+ * Copyright (c) 2000-2020 NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.188 2020/04/29 22:03:09 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.198 2020/08/09 15:32:44 christos Exp $");
 
 #include "opt_ddb.h"
 #include "opt_mpbios.h"		/* for MPDEBUG */
@@ -73,6 +73,7 @@ __KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.188 2020/04/29 22:03:09 ad Exp $");
 #include "lapic.h"
 #include "ioapic.h"
 #include "acpica.h"
+#include "hpet.h"
 
 #include <sys/param.h>
 #include <sys/proc.h>
@@ -119,6 +120,7 @@ __KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.188 2020/04/29 22:03:09 ad Exp $");
 #endif
 
 #include <dev/ic/mc146818reg.h>
+#include <dev/ic/hpetvar.h>
 #include <i386/isa/nvram.h>
 #include <dev/isa/isareg.h>
 
@@ -433,9 +435,16 @@ cpu_attach(device_t parent, device_t self, void *aux)
 	 * must be done to allow booting other processors.
 	 */
 	if (!again) {
+		/* Make sure DELAY() (likely i8254_delay()) is initialized. */
+		DELAY(1);
+
+		/*
+		 * Basic init.  Compute an approximate frequency for the TSC
+		 * using the i8254.  If there's a HPET we'll redo it later.
+		 */
 		atomic_or_32(&ci->ci_flags, CPUF_PRESENT | CPUF_PRIMARY);
-		/* Basic init. */
 		cpu_intr_init(ci);
+		tsc_setfunc(ci);
 		cpu_get_tsc_freq(ci);
 		cpu_init(ci);
 #ifdef i386
@@ -447,12 +456,10 @@ cpu_attach(device_t parent, device_t self, void *aux)
 			/* Enable lapic. */
 			lapic_enable();
 			lapic_set_lvt();
-			if (vm_guest != VM_GUEST_XENPVHVM)
-				lapic_calibrate_timer(ci);
+			if (!vm_guest_is_xenpvh_or_pvhvm())
+				lapic_calibrate_timer(false);
 		}
 #endif
-		/* Make sure DELAY() is initialized. */
-		DELAY(1);
 		kcsan_cpu_init(ci);
 		again = true;
 	}
@@ -465,7 +472,6 @@ cpu_attach(device_t parent, device_t self, void *aux)
 		cpu_identify(ci);
 		x86_errata();
 		x86_cpu_idle_init();
-		(*x86_cpu_initclock_func)();
 #ifdef XENPVHVM
 		xen_hvm_init_cpu(ci);
 #endif
@@ -479,7 +485,6 @@ cpu_attach(device_t parent, device_t self, void *aux)
 #ifdef XENPVHVM
 		xen_hvm_init_cpu(ci);
 #endif
-		(*x86_cpu_initclock_func)();
 		break;
 
 #ifdef MULTIPROCESSOR
@@ -488,6 +493,7 @@ cpu_attach(device_t parent, device_t self, void *aux)
 		 * report on an AP
 		 */
 		cpu_intr_init(ci);
+		idt_vec_init_cpu_md(&ci->ci_idtvec, cpu_index(ci));
 		gdt_alloc_cpu(ci);
 #ifdef i386
 		cpu_set_tss_gates(ci);
@@ -718,7 +724,6 @@ cpu_init(struct cpu_info *ci)
 
 	if (ci != &cpu_info_primary) {
 		/* Synchronize TSC */
-		wbinvd();
 		atomic_or_32(&ci->ci_flags, CPUF_RUNNING);
 		tsc_sync_ap(ci);
 	} else {
@@ -765,9 +770,6 @@ cpu_boot_secondary_processors(void)
 
 	/* Now that we know about the TSC, attach the timecounter. */
 	tsc_tc_init();
-
-	/* Enable zeroing of pages in the idle loop if we have SSE2. */
-	vm_page_zero_enable = false; /* ((cpu_feature[0] & CPUID_SSE2) != 0); */
 }
 #endif
 
@@ -824,7 +826,7 @@ cpu_start_secondary(struct cpu_info *ci)
 	KASSERT(cpu_starting == NULL);
 	cpu_starting = ci;
 	for (i = 100000; (!(ci->ci_flags & CPUF_PRESENT)) && i > 0; i--) {
-		x86_delay(10);
+		delay_func(10);
 	}
 
 	if ((ci->ci_flags & CPUF_PRESENT) == 0) {
@@ -842,7 +844,6 @@ cpu_start_secondary(struct cpu_info *ci)
 		 */
 		psl = x86_read_psl();
 		x86_disable_intr();
-		wbinvd();
 		tsc_sync_bp(ci);
 		x86_write_psl(psl);
 	}
@@ -860,7 +861,7 @@ cpu_boot_secondary(struct cpu_info *ci)
 
 	atomic_or_32(&ci->ci_flags, CPUF_GO);
 	for (i = 100000; (!(ci->ci_flags & CPUF_RUNNING)) && i > 0; i--) {
-		x86_delay(10);
+		delay_func(10);
 	}
 	if ((ci->ci_flags & CPUF_RUNNING) == 0) {
 		aprint_error_dev(ci->ci_dev, "failed to start\n");
@@ -873,7 +874,6 @@ cpu_boot_secondary(struct cpu_info *ci)
 		drift = ci->ci_data.cpu_cc_skew;
 		psl = x86_read_psl();
 		x86_disable_intr();
-		wbinvd();
 		tsc_sync_bp(ci);
 		x86_write_psl(psl);
 		drift -= ci->ci_data.cpu_cc_skew;
@@ -919,7 +919,6 @@ cpu_hatch(void *v)
 	 * Synchronize the TSC for the first time. Note that interrupts are
 	 * off at this point.
 	 */
-	wbinvd();
 	atomic_or_32(&ci->ci_flags, CPUF_PRESENT);
 	tsc_sync_ap(ci);
 
@@ -980,7 +979,7 @@ cpu_hatch(void *v)
 	pcb = lwp_getpcb(ci->ci_data.cpu_idlelwp);
 	lcr0(pcb->pcb_cr0);
 
-	cpu_init_idt();
+	cpu_init_idt(ci);
 	gdt_init_cpu(ci);
 #if NLAPIC > 0
 	lapic_enable();
@@ -1000,7 +999,7 @@ cpu_hatch(void *v)
 #ifdef XENPVHVM
 	xen_hvm_init_cpu(ci);
 #endif
-	(*x86_cpu_initclock_func)();
+	(*x86_initclock_func)();
 	cpu_get_tsc_freq(ci);
 
 	s = splhigh();
@@ -1143,7 +1142,7 @@ mp_cpu_start(struct cpu_info *ci, paddr_t target)
 			    __func__);
 			return error;
 		}
-		x86_delay(10000);
+		delay_func(10000);
 
 		error = x86_ipi_startup(ci->ci_cpuid, target / PAGE_SIZE);
 		if (error != 0) {
@@ -1151,7 +1150,7 @@ mp_cpu_start(struct cpu_info *ci, paddr_t target)
 			    __func__);
 			return error;
 		}
-		x86_delay(200);
+		delay_func(200);
 
 		error = x86_ipi_startup(ci->ci_cpuid, target / PAGE_SIZE);
 		if (error != 0) {
@@ -1159,7 +1158,7 @@ mp_cpu_start(struct cpu_info *ci, paddr_t target)
 			    __func__);
 			return error;
 		}
-		x86_delay(200);
+		delay_func(200);
 	}
 
 	return 0;
@@ -1225,7 +1224,7 @@ cpu_stop(device_t dv)
 
 	KASSERT((ci->ci_flags & CPUF_PRESENT) != 0);
 
-	if ((ci->ci_flags & CPUF_PRIMARY) != 0)
+	if (CPU_IS_PRIMARY(ci))
 		return true;
 
 	if (ci->ci_data.cpu_idlelwp == NULL)
@@ -1270,7 +1269,7 @@ cpu_resume(device_t dv, const pmf_qual_t *qual)
 	if ((ci->ci_flags & CPUF_PRESENT) == 0)
 		return true;
 
-	if ((ci->ci_flags & CPUF_PRIMARY) != 0)
+	if (CPU_IS_PRIMARY(ci))
 		goto out;
 
 	if (ci->ci_data.cpu_idlelwp == NULL)
@@ -1310,21 +1309,58 @@ cpu_shutdown(device_t dv, int how)
 void
 cpu_get_tsc_freq(struct cpu_info *ci)
 {
-	uint64_t freq = 0, last_tsc;
+	uint64_t freq = 0, freq_from_cpuid, t0, t1;
+	int64_t overhead;
 
-	if (cpu_hascounter())
-		freq = cpu_tsc_freq_cpuid(ci);
+	if (CPU_IS_PRIMARY(ci) && cpu_hascounter()) {
+		/*
+		 * If it's the first call of this function, try to get TSC
+		 * freq from CPUID by calling cpu_tsc_freq_cpuid().
+		 * The function also set lapic_per_second variable if it's
+		 * known. This is required for Intel's Comet Lake and newer
+		 * processors to set LAPIC timer correctly.
+		 */
+		if (ci->ci_data.cpu_cc_freq == 0)
+			freq = freq_from_cpuid = cpu_tsc_freq_cpuid(ci);
+#if NHPET > 0
+		if (freq == 0)
+			freq = hpet_tsc_freq();
+#endif
+		if (freq == 0) {
+			/*
+			 * Work out the approximate overhead involved below. 
+			 * Discard the result of the first go around the
+			 * loop.
+			 */
+			overhead = 0;
+			for (int i = 0; i <= 8; i++) {
+				t0 = cpu_counter();
+				delay_func(0);
+				t1 = cpu_counter();
+				if (i > 0) {
+					overhead += (t1 - t0);
+				}
+			}
+			overhead >>= 3;
 
-	if (freq != 0) {
-		/* Use TSC frequency taken from CPUID. */
-		ci->ci_data.cpu_cc_freq = freq;
+			/* Now do the calibration. */
+			t0 = cpu_counter();
+			delay_func(100000);
+			t1 = cpu_counter();
+			freq = (t1 - t0 - overhead) * 10;
+		}
+		if (ci->ci_data.cpu_cc_freq != 0) {
+			freq_from_cpuid = cpu_tsc_freq_cpuid(ci);
+			if ((freq_from_cpuid != 0)
+			    && (freq != freq_from_cpuid))
+				aprint_verbose_dev(ci->ci_dev, "TSC freq "
+				    "calibrated %" PRIu64 " Hz\n", freq);
+		}
 	} else {
-		/* Calibrate TSC frequency. */
-		last_tsc = cpu_counter_serializing();
-		x86_delay(100000);
-		ci->ci_data.cpu_cc_freq =
-		    (cpu_counter_serializing() - last_tsc) * 10;
+		freq = cpu_info_primary.ci_data.cpu_cc_freq;
 	}
+
+	ci->ci_data.cpu_cc_freq = freq;
 }
 
 void

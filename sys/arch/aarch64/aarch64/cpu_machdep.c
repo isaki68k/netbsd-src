@@ -1,4 +1,4 @@
-/* $NetBSD: cpu_machdep.c,v 1.9 2020/05/01 17:58:48 tnn Exp $ */
+/* $NetBSD: cpu_machdep.c,v 1.11 2020/08/12 13:19:35 skrll Exp $ */
 
 /*-
  * Copyright (c) 2014, 2019 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(1, "$NetBSD: cpu_machdep.c,v 1.9 2020/05/01 17:58:48 tnn Exp $");
+__KERNEL_RCSID(1, "$NetBSD: cpu_machdep.c,v 1.11 2020/08/12 13:19:35 skrll Exp $");
 
 #include "opt_multiprocessor.h"
 
@@ -185,6 +185,7 @@ cpu_getmcontext(struct lwp *l, mcontext_t *mcp, unsigned int *flagsp)
 
 	memcpy(mcp->__gregs, &tf->tf_regs, sizeof(mcp->__gregs));
 	mcp->__gregs[_REG_TPIDR] = (uintptr_t)l->l_private;
+	mcp->__gregs[_REG_SPSR] &= ~SPSR_A64_BTYPE;
 
 	if (fpu_used_p(l)) {
 		const struct pcb * const pcb = lwp_getpcb(l);
@@ -260,7 +261,7 @@ cpu_need_resched(struct cpu_info *ci, struct lwp *l, int flags)
 		intr_ipi_send(ci->ci_kcpuset, IPI_AST);
 #endif
 	} else {
-		setsoftast(ci);	/* force call to ast() */
+		l->l_md.md_astpending = 1;
 	}
 }
 
@@ -271,7 +272,22 @@ cpu_need_proftick(struct lwp *l)
 	KASSERT(l->l_cpu == curcpu());
 
 	l->l_pflag |= LP_OWEUPC;
-	setsoftast(l->l_cpu);
+	l->l_md.md_astpending = 1;
+}
+
+void
+cpu_signotify(struct lwp *l)
+{
+
+	KASSERT(kpreempt_disabled());
+
+	if (l->l_cpu != curcpu()) {
+#ifdef MULTIPROCESSOR
+		intr_ipi_send(l->l_cpu->ci_kcpuset, IPI_AST);
+#endif
+	} else {
+		l->l_md.md_astpending = 1;
+	}
 }
 
 #ifdef __HAVE_PREEMPTION

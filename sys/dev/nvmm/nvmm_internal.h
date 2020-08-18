@@ -1,7 +1,7 @@
-/*	$NetBSD: nvmm_internal.h,v 1.13 2019/10/23 07:01:11 maxv Exp $	*/
+/*	$NetBSD: nvmm_internal.h,v 1.17 2020/08/01 08:18:36 maxv Exp $	*/
 
 /*
- * Copyright (c) 2018-2019 The NetBSD Foundation, Inc.
+ * Copyright (c) 2018-2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -83,6 +83,7 @@ struct nvmm_machine {
 	struct nvmm_hmapping hmap[NVMM_MAX_HMAPPINGS];
 
 	/* CPU */
+	volatile unsigned int ncpus;
 	struct nvmm_cpu cpus[NVMM_MAX_VCPUS];
 
 	/* Implementation-specific */
@@ -90,6 +91,7 @@ struct nvmm_machine {
 };
 
 struct nvmm_impl {
+	const char *name;
 	bool (*ident)(void);
 	void (*init)(void);
 	void (*fini)(void);
@@ -117,7 +119,21 @@ struct nvmm_impl {
 	    struct nvmm_vcpu_exit *);
 };
 
+#if defined(__x86_64__)
 extern const struct nvmm_impl nvmm_x86_svm;
 extern const struct nvmm_impl nvmm_x86_vmx;
+#endif
+
+static inline bool
+nvmm_return_needed(void)
+{
+	if (preempt_needed()) {
+		return true;
+	}
+	if (curlwp->l_flag & LW_USERRET) {
+		return true;
+	}
+	return false;
+}
 
 #endif /* _NVMM_INTERNAL_H_ */

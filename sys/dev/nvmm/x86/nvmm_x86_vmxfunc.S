@@ -1,7 +1,7 @@
-/*	$NetBSD: nvmm_x86_vmxfunc.S,v 1.3 2019/04/27 08:16:19 maxv Exp $	*/
+/*	$NetBSD: nvmm_x86_vmxfunc.S,v 1.5 2020/08/11 15:48:42 maxv Exp $	*/
 
 /*
- * Copyright (c) 2018 The NetBSD Foundation, Inc.
+ * Copyright (c) 2018-2020 The NetBSD Foundation, Inc.
  * All rights reserved.
  *
  * This code is derived from software contributed to The NetBSD Foundation
@@ -100,10 +100,10 @@ END(_vmx_vmxoff)
 
 #define HOST_SAVE_LDT		\
 	sldtw	%ax		;\
-	pushw	%ax
+	pushq	%rax
 
 #define HOST_RESTORE_LDT	\
-	popw	%ax		;\
+	popq	%rax		;\
 	lldtw	%ax
 
 /*
@@ -150,9 +150,6 @@ ENTRY(vmx_vmlaunch)
 	/* Save the Host GPRs. */
 	HOST_SAVE_GPRS
 
-	/* Disable Host interrupts. */
-	cli
-
 	/* Save the Host LDT. */
 	HOST_SAVE_LDT
 
@@ -174,7 +171,6 @@ ENTRY(vmx_vmlaunch)
 	/* Failure. */
 	addq	$8,%rsp
 	HOST_RESTORE_LDT
-	sti
 	HOST_RESTORE_GPRS
 	movq	$-1,%rax
 	retq
@@ -186,9 +182,6 @@ END(vmx_vmlaunch)
 ENTRY(vmx_vmresume)
 	/* Save the Host GPRs. */
 	HOST_SAVE_GPRS
-
-	/* Disable Host interrupts. */
-	cli
 
 	/* Save the Host LDT. */
 	HOST_SAVE_LDT
@@ -211,7 +204,6 @@ ENTRY(vmx_vmresume)
 	/* Failure. */
 	addq	$8,%rsp
 	HOST_RESTORE_LDT
-	sti
 	HOST_RESTORE_GPRS
 	movq	$-1,%rax
 	retq
@@ -231,9 +223,6 @@ ENTRY(vmx_resume_rip)
 
 	/* Restore the Host LDT. */
 	HOST_RESTORE_LDT
-
-	/* Enable Host interrupts. */
-	sti
 
 	/* Restore the Host GPRs. */
 	HOST_RESTORE_GPRS

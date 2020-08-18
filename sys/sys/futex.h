@@ -1,4 +1,4 @@
-/*	$NetBSD: futex.h,v 1.2 2020/04/27 02:54:42 rin Exp $	*/
+/*	$NetBSD: futex.h,v 1.4 2020/05/05 15:25:18 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2018, 2019 The NetBSD Foundation, Inc.
