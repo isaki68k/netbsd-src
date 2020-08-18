@@ -1,4 +1,4 @@
-/* $NetBSD: acpipchb.c,v 1.17 2020/01/21 11:24:47 jmcneill Exp $ */
+/* $NetBSD: acpipchb.c,v 1.20 2020/06/17 06:46:09 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: acpipchb.c,v 1.17 2020/01/21 11:24:47 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: acpipchb.c,v 1.20 2020/06/17 06:46:09 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -38,12 +38,10 @@ __KERNEL_RCSID(0, "$NetBSD: acpipchb.c,v 1.17 2020/01/21 11:24:47 jmcneill Exp $
 #include <sys/intr.h>
 #include <sys/systm.h>
 #include <sys/kernel.h>
-#include <sys/extent.h>
 #include <sys/queue.h>
 #include <sys/mutex.h>
 #include <sys/kmem.h>
-
-#include <machine/cpu.h>
+#include <sys/cpu.h>
 
 #include <arm/cpufunc.h>
 
@@ -123,13 +121,22 @@ acpipchb_attach(device_t parent, device_t self, void *aux)
 	struct acpi_attach_args *aa = aux;
 	struct pcibus_attach_args pba;
 	ACPI_INTEGER seg;
+	uint16_t bus_start;
 
 	sc->sc_dev = self;
 	sc->sc_memt = aa->aa_memt;
 	sc->sc_handle = aa->aa_node->ad_handle;
 
-	if (ACPI_FAILURE(acpi_eval_integer(sc->sc_handle, "_BBN", &sc->sc_bus)))
-		sc->sc_bus = 0;
+	/*
+	 * First try to derive the base bus number from _CRS. If that fails,
+	 * try _BBN. If that fails too, assume bus 0.
+	 */
+	if (ACPI_SUCCESS(acpi_pcidev_pciroot_bus(sc->sc_handle, &bus_start))) {
+		sc->sc_bus = bus_start;
+	} else {
+		if (ACPI_FAILURE(acpi_eval_integer(sc->sc_handle, "_BBN", &sc->sc_bus)))
+			sc->sc_bus = 0;
+	}
 
 	if (ACPI_FAILURE(acpi_eval_integer(sc->sc_handle, "_SEG", &seg)))
 		seg = 0;

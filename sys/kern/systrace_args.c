@@ -1,4 +1,4 @@
-/* $NetBSD: systrace_args.c,v 1.38 2020/04/26 19:16:36 thorpej Exp $ */
+/* $NetBSD: systrace_args.c,v 1.43 2020/08/14 00:55:02 riastradh Exp $ */
 
 /*
  * System call argument to DTrace register array converstion.
@@ -661,6 +661,15 @@ systrace_args(register_t sysnum, const void *params, uintptr_t *uarg, size_t *n_
 		iarg[0] = SCARG(p, from); /* int */
 		iarg[1] = SCARG(p, to); /* int */
 		*n_args = 2;
+		break;
+	}
+	/* sys_getrandom */
+	case 91: {
+		const struct sys_getrandom_args *p = params;
+		uarg[0] = (intptr_t) SCARG(p, buf); /* void * */
+		uarg[1] = SCARG(p, buflen); /* size_t */
+		uarg[2] = SCARG(p, flags); /* unsigned int */
+		*n_args = 3;
 		break;
 	}
 	/* sys_fcntl */
@@ -3731,6 +3740,119 @@ systrace_args(register_t sysnum, const void *params, uintptr_t *uarg, size_t *n_
 		*n_args = 4;
 		break;
 	}
+	/* sys___acl_get_link */
+	case 487: {
+		const struct sys___acl_get_link_args *p = params;
+		uarg[0] = (intptr_t) SCARG(p, path); /* const char * */
+		iarg[1] = SCARG(p, type); /* acl_type_t */
+		uarg[2] = (intptr_t) SCARG(p, aclp); /* struct acl * */
+		*n_args = 3;
+		break;
+	}
+	/* sys___acl_set_link */
+	case 488: {
+		const struct sys___acl_set_link_args *p = params;
+		uarg[0] = (intptr_t) SCARG(p, path); /* const char * */
+		iarg[1] = SCARG(p, type); /* acl_type_t */
+		uarg[2] = (intptr_t) SCARG(p, aclp); /* struct acl * */
+		*n_args = 3;
+		break;
+	}
+	/* sys___acl_delete_link */
+	case 489: {
+		const struct sys___acl_delete_link_args *p = params;
+		uarg[0] = (intptr_t) SCARG(p, path); /* const char * */
+		iarg[1] = SCARG(p, type); /* acl_type_t */
+		*n_args = 2;
+		break;
+	}
+	/* sys___acl_aclcheck_link */
+	case 490: {
+		const struct sys___acl_aclcheck_link_args *p = params;
+		uarg[0] = (intptr_t) SCARG(p, path); /* const char * */
+		iarg[1] = SCARG(p, type); /* acl_type_t */
+		uarg[2] = (intptr_t) SCARG(p, aclp); /* struct acl * */
+		*n_args = 3;
+		break;
+	}
+	/* sys___acl_get_file */
+	case 491: {
+		const struct sys___acl_get_file_args *p = params;
+		uarg[0] = (intptr_t) SCARG(p, path); /* const char * */
+		iarg[1] = SCARG(p, type); /* acl_type_t */
+		uarg[2] = (intptr_t) SCARG(p, aclp); /* struct acl * */
+		*n_args = 3;
+		break;
+	}
+	/* sys___acl_set_file */
+	case 492: {
+		const struct sys___acl_set_file_args *p = params;
+		uarg[0] = (intptr_t) SCARG(p, path); /* const char * */
+		iarg[1] = SCARG(p, type); /* acl_type_t */
+		uarg[2] = (intptr_t) SCARG(p, aclp); /* struct acl * */
+		*n_args = 3;
+		break;
+	}
+	/* sys___acl_get_fd */
+	case 493: {
+		const struct sys___acl_get_fd_args *p = params;
+		iarg[0] = SCARG(p, filedes); /* int */
+		iarg[1] = SCARG(p, type); /* acl_type_t */
+		uarg[2] = (intptr_t) SCARG(p, aclp); /* struct acl * */
+		*n_args = 3;
+		break;
+	}
+	/* sys___acl_set_fd */
+	case 494: {
+		const struct sys___acl_set_fd_args *p = params;
+		iarg[0] = SCARG(p, filedes); /* int */
+		iarg[1] = SCARG(p, type); /* acl_type_t */
+		uarg[2] = (intptr_t) SCARG(p, aclp); /* struct acl * */
+		*n_args = 3;
+		break;
+	}
+	/* sys___acl_delete_file */
+	case 495: {
+		const struct sys___acl_delete_file_args *p = params;
+		uarg[0] = (intptr_t) SCARG(p, path); /* const char * */
+		iarg[1] = SCARG(p, type); /* acl_type_t */
+		*n_args = 2;
+		break;
+	}
+	/* sys___acl_delete_fd */
+	case 496: {
+		const struct sys___acl_delete_fd_args *p = params;
+		iarg[0] = SCARG(p, filedes); /* int */
+		iarg[1] = SCARG(p, type); /* acl_type_t */
+		*n_args = 2;
+		break;
+	}
+	/* sys___acl_aclcheck_file */
+	case 497: {
+		const struct sys___acl_aclcheck_file_args *p = params;
+		uarg[0] = (intptr_t) SCARG(p, path); /* const char * */
+		iarg[1] = SCARG(p, type); /* acl_type_t */
+		uarg[2] = (intptr_t) SCARG(p, aclp); /* struct acl * */
+		*n_args = 3;
+		break;
+	}
+	/* sys___acl_aclcheck_fd */
+	case 498: {
+		const struct sys___acl_aclcheck_fd_args *p = params;
+		iarg[0] = SCARG(p, filedes); /* int */
+		iarg[1] = SCARG(p, type); /* acl_type_t */
+		uarg[2] = (intptr_t) SCARG(p, aclp); /* struct acl * */
+		*n_args = 3;
+		break;
+	}
+	/* sys_lpathconf */
+	case 499: {
+		const struct sys_lpathconf_args *p = params;
+		uarg[0] = (intptr_t) SCARG(p, path); /* const char * */
+		iarg[1] = SCARG(p, name); /* int */
+		*n_args = 2;
+		break;
+	}
 	default:
 		*n_args = 0;
 		break;
@@ -4750,6 +4872,22 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 			break;
 		case 1:
 			p = "int";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* sys_getrandom */
+	case 91:
+		switch(ndx) {
+		case 0:
+			p = "void *";
+			break;
+		case 1:
+			p = "size_t";
+			break;
+		case 2:
+			p = "unsigned int";
 			break;
 		default:
 			break;
@@ -10066,6 +10204,202 @@ systrace_entry_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 			break;
 		};
 		break;
+	/* sys___acl_get_link */
+	case 487:
+		switch(ndx) {
+		case 0:
+			p = "const char *";
+			break;
+		case 1:
+			p = "acl_type_t";
+			break;
+		case 2:
+			p = "struct acl *";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* sys___acl_set_link */
+	case 488:
+		switch(ndx) {
+		case 0:
+			p = "const char *";
+			break;
+		case 1:
+			p = "acl_type_t";
+			break;
+		case 2:
+			p = "struct acl *";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* sys___acl_delete_link */
+	case 489:
+		switch(ndx) {
+		case 0:
+			p = "const char *";
+			break;
+		case 1:
+			p = "acl_type_t";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* sys___acl_aclcheck_link */
+	case 490:
+		switch(ndx) {
+		case 0:
+			p = "const char *";
+			break;
+		case 1:
+			p = "acl_type_t";
+			break;
+		case 2:
+			p = "struct acl *";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* sys___acl_get_file */
+	case 491:
+		switch(ndx) {
+		case 0:
+			p = "const char *";
+			break;
+		case 1:
+			p = "acl_type_t";
+			break;
+		case 2:
+			p = "struct acl *";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* sys___acl_set_file */
+	case 492:
+		switch(ndx) {
+		case 0:
+			p = "const char *";
+			break;
+		case 1:
+			p = "acl_type_t";
+			break;
+		case 2:
+			p = "struct acl *";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* sys___acl_get_fd */
+	case 493:
+		switch(ndx) {
+		case 0:
+			p = "int";
+			break;
+		case 1:
+			p = "acl_type_t";
+			break;
+		case 2:
+			p = "struct acl *";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* sys___acl_set_fd */
+	case 494:
+		switch(ndx) {
+		case 0:
+			p = "int";
+			break;
+		case 1:
+			p = "acl_type_t";
+			break;
+		case 2:
+			p = "struct acl *";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* sys___acl_delete_file */
+	case 495:
+		switch(ndx) {
+		case 0:
+			p = "const char *";
+			break;
+		case 1:
+			p = "acl_type_t";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* sys___acl_delete_fd */
+	case 496:
+		switch(ndx) {
+		case 0:
+			p = "int";
+			break;
+		case 1:
+			p = "acl_type_t";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* sys___acl_aclcheck_file */
+	case 497:
+		switch(ndx) {
+		case 0:
+			p = "const char *";
+			break;
+		case 1:
+			p = "acl_type_t";
+			break;
+		case 2:
+			p = "struct acl *";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* sys___acl_aclcheck_fd */
+	case 498:
+		switch(ndx) {
+		case 0:
+			p = "int";
+			break;
+		case 1:
+			p = "acl_type_t";
+			break;
+		case 2:
+			p = "struct acl *";
+			break;
+		default:
+			break;
+		};
+		break;
+	/* sys_lpathconf */
+	case 499:
+		switch(ndx) {
+		case 0:
+			p = "const char *";
+			break;
+		case 1:
+			p = "int";
+			break;
+		default:
+			break;
+		};
+		break;
 	default:
 		break;
 	};
@@ -10451,6 +10785,11 @@ systrace_return_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 	case 90:
 		if (ndx == 0 || ndx == 1)
 			p = "int";
+		break;
+	/* sys_getrandom */
+	case 91:
+		if (ndx == 0 || ndx == 1)
+			p = "ssize_t";
 		break;
 	/* sys_fcntl */
 	case 92:
@@ -12177,6 +12516,71 @@ systrace_return_setargdesc(int sysnum, int ndx, char *desc, size_t descsz)
 	case 486:
 		if (ndx == 0 || ndx == 1)
 			p = "int";
+		break;
+	/* sys___acl_get_link */
+	case 487:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* sys___acl_set_link */
+	case 488:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* sys___acl_delete_link */
+	case 489:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* sys___acl_aclcheck_link */
+	case 490:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* sys___acl_get_file */
+	case 491:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* sys___acl_set_file */
+	case 492:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* sys___acl_get_fd */
+	case 493:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* sys___acl_set_fd */
+	case 494:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* sys___acl_delete_file */
+	case 495:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* sys___acl_delete_fd */
+	case 496:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* sys___acl_aclcheck_file */
+	case 497:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* sys___acl_aclcheck_fd */
+	case 498:
+		if (ndx == 0 || ndx == 1)
+			p = "int";
+		break;
+	/* sys_lpathconf */
+	case 499:
+		if (ndx == 0 || ndx == 1)
+			p = "long";
 		break;
 	default:
 		break;

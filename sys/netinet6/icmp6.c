@@ -1,4 +1,4 @@
-/*	$NetBSD: icmp6.c,v 1.244 2020/03/09 21:20:56 roy Exp $	*/
+/*	$NetBSD: icmp6.c,v 1.246 2020/07/27 14:52:55 roy Exp $	*/
 /*	$KAME: icmp6.c,v 1.217 2001/06/20 15:03:29 jinmei Exp $	*/
 
 /*
@@ -62,9 +62,10 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: icmp6.c,v 1.244 2020/03/09 21:20:56 roy Exp $");
+__KERNEL_RCSID(0, "$NetBSD: icmp6.c,v 1.246 2020/07/27 14:52:55 roy Exp $");
 
 #ifdef _KERNEL_OPT
+#include "opt_compat_netbsd.h"
 #include "opt_inet.h"
 #include "opt_ipsec.h"
 #endif
@@ -112,6 +113,32 @@ __KERNEL_RCSID(0, "$NetBSD: icmp6.c,v 1.244 2020/03/09 21:20:56 roy Exp $");
 #if defined(NFAITH) && 0 < NFAITH
 #include <net/if_faith.h>
 #endif
+
+/* Ensure that non packed structures are the desired size. */
+__CTASSERT(sizeof(struct icmp6_hdr) == 8);
+__CTASSERT(sizeof(struct icmp6_nodeinfo) == 16);
+__CTASSERT(sizeof(struct icmp6_namelookup) == 20);
+__CTASSERT(sizeof(struct icmp6_router_renum) == 16);
+
+__CTASSERT(sizeof(struct nd_router_solicit) == 8);
+__CTASSERT(sizeof(struct nd_router_advert) == 16);
+__CTASSERT(sizeof(struct nd_neighbor_solicit) == 24);
+__CTASSERT(sizeof(struct nd_neighbor_advert) == 24);
+__CTASSERT(sizeof(struct nd_redirect) == 40);
+__CTASSERT(sizeof(struct nd_opt_hdr) == 2);
+__CTASSERT(sizeof(struct nd_opt_route_info) == 8);
+__CTASSERT(sizeof(struct nd_opt_prefix_info) == 32);
+__CTASSERT(sizeof(struct nd_opt_rd_hdr) == 8);
+__CTASSERT(sizeof(struct nd_opt_mtu) == 8);
+__CTASSERT(sizeof(struct nd_opt_nonce) == 2 + ND_OPT_NONCE_LEN);
+__CTASSERT(sizeof(struct nd_opt_rdnss) == 8);
+__CTASSERT(sizeof(struct nd_opt_dnssl) == 8);
+
+__CTASSERT(sizeof(struct mld_hdr) == 24);
+__CTASSERT(sizeof(struct ni_reply_fqdn) == 8);
+__CTASSERT(sizeof(struct rr_pco_match) == 24);
+__CTASSERT(sizeof(struct rr_pco_use) == 32);
+__CTASSERT(sizeof(struct rr_result) == 24);
 
 extern struct domain inet6domain;
 
@@ -790,33 +817,24 @@ _icmp6_input(struct mbuf *m, int off, int proto)
 
 	case ND_ROUTER_SOLICIT:
 		icmp6_ifstat_inc(rcvif, ifs6_in_routersolicit);
-		if (code != 0)
-			goto badcode;
-		if (icmp6len < sizeof(struct nd_router_solicit))
-			goto badlen;
-		if ((n = m_copypacket(m, M_DONTWAIT)) == NULL) {
-			/* give up local */
-			nd6_rs_input(m, off, icmp6len);
-			m = NULL;
-			goto freeit;
-		}
-		nd6_rs_input(n, off, icmp6len);
-		/* m stays. */
-		break;
-
+		/* FALLTHROUGH */
 	case ND_ROUTER_ADVERT:
-		icmp6_ifstat_inc(rcvif, ifs6_in_routeradvert);
+		if (icmp6->icmp6_type == ND_ROUTER_ADVERT)
+			icmp6_ifstat_inc(rcvif, ifs6_in_routeradvert);
 		if (code != 0)
 			goto badcode;
-		if (icmp6len < sizeof(struct nd_router_advert))
+		if ((icmp6->icmp6_type == ND_ROUTER_SOLICIT &&
+		    icmp6len < sizeof(struct nd_router_solicit)) ||
+		    (icmp6->icmp6_type == ND_ROUTER_ADVERT &&
+		    icmp6len < sizeof(struct nd_router_advert)))
 			goto badlen;
 		if ((n = m_copypacket(m, M_DONTWAIT)) == NULL) {
 			/* give up local */
-			nd6_ra_input(m, off, icmp6len);
+			nd6_rtr_cache(m, off, icmp6len, icmp6->icmp6_type);
 			m = NULL;
 			goto freeit;
 		}
-		nd6_ra_input(n, off, icmp6len);
+		nd6_rtr_cache(n, off, icmp6len, icmp6->icmp6_type);
 		/* m stays. */
 		break;
 
@@ -1160,7 +1178,7 @@ icmp6_mtudisc_update(struct ip6ctlparam *ip6cp, int validated)
 	if (rt && (rt->rt_flags & RTF_HOST) &&
 	    !(rt->rt_rmx.rmx_locks & RTV_MTU) &&
 	    (rt->rt_rmx.rmx_mtu > mtu || rt->rt_rmx.rmx_mtu == 0)) {
-		if (mtu < IN6_LINKMTU(rt->rt_ifp)) {
+		if (mtu < rt->rt_ifp->if_mtu) {
 			ICMP6_STATINC(ICMP6_STAT_PMTUCHG);
 			rt->rt_rmx.rmx_mtu = mtu;
 		}
@@ -2868,6 +2886,7 @@ icmp6_redirect_timeout(struct rtentry *rt, struct rttimer *r)
 	}
 }
 
+#ifdef COMPAT_90
 /*
  * sysctl helper routine for the net.inet6.icmp6.nd6 nodes.  silly?
  */
@@ -2885,6 +2904,7 @@ sysctl_net_inet6_icmp6_nd6(SYSCTLFN_ARGS)
 	    /*XXXUNCONST*/
 	    __UNCONST(newp), newlen));
 }
+#endif
 
 static int
 sysctl_net_inet6_icmp6_stats(SYSCTLFN_ARGS)
@@ -3062,20 +3082,22 @@ sysctl_net_inet6_icmp6_setup(struct sysctllog **clog)
 		       NULL, 0, &nd6_debug, 0,
 		       CTL_NET, PF_INET6, IPPROTO_ICMPV6,
 		       ICMPV6CTL_ND6_DEBUG, CTL_EOL);
+#ifdef COMPAT_90
 	sysctl_createv(clog, 0, NULL, NULL,
 		       CTLFLAG_PERMANENT,
 		       CTLTYPE_STRUCT, "nd6_drlist",
 		       SYSCTL_DESCR("Default router list"),
 		       sysctl_net_inet6_icmp6_nd6, 0, NULL, 0,
 		       CTL_NET, PF_INET6, IPPROTO_ICMPV6,
-		       ICMPV6CTL_ND6_DRLIST, CTL_EOL);
+		       OICMPV6CTL_ND6_DRLIST, CTL_EOL);
 	sysctl_createv(clog, 0, NULL, NULL,
 		       CTLFLAG_PERMANENT,
 		       CTLTYPE_STRUCT, "nd6_prlist",
 		       SYSCTL_DESCR("Prefix list"),
 		       sysctl_net_inet6_icmp6_nd6, 0, NULL, 0,
 		       CTL_NET, PF_INET6, IPPROTO_ICMPV6,
-		       ICMPV6CTL_ND6_PRLIST, CTL_EOL);
+		       OICMPV6CTL_ND6_PRLIST, CTL_EOL);
+#endif
 	sysctl_createv(clog, 0, NULL, NULL,
 		       CTLFLAG_PERMANENT|CTLFLAG_READWRITE,
 		       CTLTYPE_INT, "maxqueuelen",

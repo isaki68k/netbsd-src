@@ -1,4 +1,4 @@
-/*	$NetBSD: vectors.S,v 1.15 2020/04/16 08:59:16 skrll Exp $	*/
+/*	$NetBSD: vectors.S,v 1.18 2020/08/12 13:19:35 skrll Exp $	*/
 
 #include <aarch64/asm.h>
 #include "assym.h"
@@ -81,8 +81,7 @@ ENTRY_NBTI(\func)
 
 	.if \el == 0
 	/* curlwp->l_private = tpidr{,ro}_el0 */
-	mrs	x1, tpidr_el1		/* curcpu() */
-	ldr	x1, [x1, #CI_CURLWP]	/* x1 = curcpu()->ci_curlwp */
+	mrs	x1, tpidr_el1		/* x1 = curlwp */
 	mrs	x0, tpidr\tpidr\()_el0
 	str	x0, [x1, #L_PRIVATE]	/* curlwp->l_private = tpidr{,ro}_el0 */
 
@@ -91,8 +90,7 @@ ENTRY_NBTI(\func)
 	adrl	x4, _C_LABEL(aarch64_pac_enabled)
 	ldr	w4, [x4]
 	cbz	w4, 1f
-	ldr	x5, [x1, #L_MD_IA_KERN_LO]
-	ldr	x6, [x1, #L_MD_IA_KERN_HI]
+	ldp	x5, x6, [x1, #L_MD_IA_KERN]
 	msr	APIAKeyLo_EL1, x5
 	msr	APIAKeyHi_EL1, x6
 1:

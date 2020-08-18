@@ -1,4 +1,4 @@
-/*	$NetBSD: proc.h,v 1.364 2020/04/29 01:52:26 thorpej Exp $	*/
+/*	$NetBSD: proc.h,v 1.367 2020/05/23 23:42:44 ad Exp $	*/
 
 /*-
  * Copyright (c) 2006, 2007, 2008, 2020 The NetBSD Foundation, Inc.
@@ -413,6 +413,7 @@ struct proc {
 			0x00000020 /* traced process wants posix_spawn events */
 
 #define	PSL_TRACED	0x00000800 /* Debugged process being traced */
+#define	PSL_TRACEDCHILD 0x00001000 /* Report process birth */
 #define	PSL_CHTRACED	0x00400000 /* Child has been traced & reparented */
 #define	PSL_SYSCALL	0x04000000 /* process has PT_SYSCALL enabled */
 #define	PSL_SYSCALLEMU	0x08000000 /* cancel in-progress syscall */
@@ -484,7 +485,7 @@ extern u_int		nprocs;		/* Current number of procs */
 extern int		maxproc;	/* Max number of procs */
 #define	vmspace_kernel()	(proc0.p_vmspace)
 
-extern kmutex_t		*proc_lock;
+extern kmutex_t		proc_lock;
 extern struct proclist	allproc;	/* List of all processes */
 extern struct proclist	zombproc;	/* List of zombie processes */
 
@@ -499,6 +500,7 @@ proc_t *	proc_find_raw(pid_t);
 proc_t *	proc_find(pid_t);		/* Find process by ID */
 proc_t *	proc_find_lwpid(pid_t);		/* Find process by LWP ID */
 struct lwp *	proc_find_lwp(proc_t *, pid_t);	/* Find LWP in proc by ID */
+struct lwp *	proc_find_lwp_unlocked(proc_t *, pid_t);
 						/* Find LWP, acquire proc */
 struct lwp *	proc_find_lwp_acquire_proc(pid_t, proc_t **);
 struct pgrp *	pgrp_find(pid_t);		/* Find process group by ID */

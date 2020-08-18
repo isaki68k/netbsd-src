@@ -1,4 +1,4 @@
-/*	$NetBSD: intr.h,v 1.55 2020/04/25 15:26:17 bouyer Exp $	*/
+/*	$NetBSD: intr.h,v 1.58 2020/07/19 14:27:07 jdolecek Exp $	*/
 /*	NetBSD intr.h,v 1.15 2004/10/31 10:39:34 yamt Exp	*/
 
 /*-
@@ -64,15 +64,15 @@ struct evtsource {
 };
 
 extern struct intrstub xenev_stubs[];
-extern int irq2port[NR_EVENT_CHANNELS]; /* actually port + 1, so that 0 is invaid */
+extern short irq2port[NR_EVENT_CHANNELS]; /* actually port + 1, so that 0 is invaid */
 
 #ifdef MULTIPROCESSOR
 int xen_intr_biglock_wrapper(void *);
 #endif
 
 #if defined(DOM0OPS) || NPCI > 0
-int xen_vec_alloc(int);
 int xen_pic_to_gsi(struct pic *, int);
+int xen_pci_msi_probe(struct pic *, int);
 #endif /* defined(DOM0OPS) || NPCI > 0 */
 
 #ifdef MULTIPROCESSOR

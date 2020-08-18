@@ -1,4 +1,4 @@
-/*	$NetBSD: types.h,v 1.67 2020/04/25 15:26:16 bouyer Exp $	*/
+/*	$NetBSD: types.h,v 1.69 2020/08/01 12:14:39 jdolecek Exp $	*/
 
 /*-
  * Copyright (c) 1990 The Regents of the University of California.
@@ -116,9 +116,6 @@ typedef	unsigned char		__cpu_simple_lock_nv_t;
 #define	__HAVE_DIRECT_MAP 1
 #endif
 #define	__HAVE_CPU_UAREA_ROUTINES 1
-#if !defined(NO_PCI_MSI_MSIX)
-#define	__HAVE_PCI_MSI_MSIX
-#endif
 #endif
 #endif
 

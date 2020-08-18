@@ -1,4 +1,4 @@
-/*	$NetBSD: tty_43.c,v 1.35 2019/12/12 02:15:42 pgoyette Exp $	*/
+/*	$NetBSD: tty_43.c,v 1.37 2020/08/08 19:04:58 christos Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tty_43.c,v 1.35 2019/12/12 02:15:42 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tty_43.c,v 1.37 2020/08/08 19:04:58 christos Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_compat_netbsd.h"
@@ -250,8 +250,8 @@ compat_43_ttioctl(struct tty *tp, u_long com, void *data, int flag,
 
 	case OTIOCGETD:
 		mutex_spin_enter(&tty_lock);
-		*(int *)data = (tp->t_linesw == NULL) ?
-		    2 /* XXX old NTTYDISC */ : tp->t_linesw->l_no;
+		*(int *)data = (tp->t_linesw == NULL || tp->t_linesw->l_no == 0)
+		    ? 2 /* XXX old NTTYDISC */ : tp->t_linesw->l_no;
 		mutex_spin_exit(&tty_lock);
 		break;
 
@@ -274,17 +274,17 @@ compat_43_ttioctl(struct tty *tp, u_long com, void *data, int flag,
 		break;
 
 	case TIOCGSID:
-		mutex_enter(proc_lock);
+		mutex_enter(&proc_lock);
 		if (tp->t_session == NULL) {
-			mutex_exit(proc_lock);
+			mutex_exit(&proc_lock);
 			return ENOTTY;
 		}
 		if (tp->t_session->s_leader == NULL) {
-			mutex_exit(proc_lock);
+			mutex_exit(&proc_lock);
 			return ENOTTY;
 		}
 		*(int *) data =  tp->t_session->s_leader->p_pid;
-		mutex_exit(proc_lock);
+		mutex_exit(&proc_lock);
 		break;
 
 	default:

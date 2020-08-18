@@ -1,4 +1,4 @@
-/*	$NetBSD: atavar.h,v 1.106 2020/04/25 00:07:27 thorpej Exp $	*/
+/*	$NetBSD: atavar.h,v 1.108 2020/05/25 18:29:25 jdolecek Exp $	*/
 
 /*
  * Copyright (c) 1998, 2001 Manuel Bouyer.
@@ -28,7 +28,6 @@
 #define	_DEV_ATA_ATAVAR_H_
 
 #include <sys/lock.h>
-#include <sys/threadpool.h>
 #include <sys/queue.h>
 
 #include <dev/ata/ataconf.h>
@@ -437,14 +436,9 @@ struct ata_channel {
 	 */
 	struct ata_queue *ch_queue;
 
-	/*
-	 * Threadpool job scheduled whenever we need special work done in
-	 * thread context.
-	 */
-	struct threadpool *ch_tp;
-	struct threadpool_job ch_tp_job;
-	bool ch_initial_config_done;	/* XXX gross */
-	struct lwp *ch_job_thread;	/* XXX gross */
+	/* The channel kernel thread */
+	struct lwp *ch_thread;
+	kcondvar_t ch_thr_idle;		/* thread waiting for work */
 
 	/* Number of sata PMP ports, if any */
 	int ch_satapmp_nports;
@@ -565,9 +559,6 @@ int	ata_addref(struct ata_channel *);
 void	ata_delref(struct ata_channel *);
 void	atastart(struct ata_channel *);
 void	ata_print_modes(struct ata_channel *);
-#if NATA_DMA
-int	ata_downgrade_mode(struct ata_drive_datas *, int);
-#endif
 void	ata_probe_caps(struct ata_drive_datas *);
 
 #if NATA_DMA

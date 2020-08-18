@@ -1,4 +1,4 @@
-/*	$NetBSD: evtchn.c,v 1.91 2020/04/25 15:26:18 bouyer Exp $	*/
+/*	$NetBSD: evtchn.c,v 1.95 2020/05/13 13:19:38 jdolecek Exp $	*/
 
 /*
  * Copyright (c) 2006 Manuel Bouyer.
@@ -54,7 +54,7 @@
 
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: evtchn.c,v 1.91 2020/04/25 15:26:18 bouyer Exp $");
+__KERNEL_RCSID(0, "$NetBSD: evtchn.c,v 1.95 2020/05/13 13:19:38 jdolecek Exp $");
 
 #include "opt_xen.h"
 #include "isa.h"
@@ -70,6 +70,7 @@ __KERNEL_RCSID(0, "$NetBSD: evtchn.c,v 1.91 2020/04/25 15:26:18 bouyer Exp $");
 #include <sys/reboot.h>
 #include <sys/mutex.h>
 #include <sys/interrupt.h>
+#include <sys/xcall.h>
 
 #include <uvm/uvm.h>
 
@@ -80,6 +81,8 @@ __KERNEL_RCSID(0, "$NetBSD: evtchn.c,v 1.91 2020/04/25 15:26:18 bouyer Exp $");
 #include <xen/evtchn.h>
 #include <xen/xenfunc.h>
 
+#define	NR_PIRQS	NR_EVENT_CHANNELS
+
 /*
  * This lock protects updates to the following mapping and reference-count
  * arrays. The lock does not need to be acquired to read the mapping tables.
@@ -88,9 +91,6 @@ static kmutex_t evtchn_lock;
 
 /* event handlers */
 struct evtsource *evtsource[NR_EVENT_CHANNELS];
-
-/* channel locks */
-static kmutex_t evtlock[NR_EVENT_CHANNELS];
 
 /* Reference counts for bindings to event channels XXX: redo for SMP */
 static uint8_t evtch_bindcount[NR_EVENT_CHANNELS];
@@ -193,7 +193,7 @@ struct pic xen_pic = {
 
 int debug_port = -1;
 
-// #define IRQ_DEBUG 4
+/* #define IRQ_DEBUG 4 */
 
 /* http://mail-index.netbsd.org/port-amd64/2004/02/22/0000.html */
 #ifdef MULTIPROCESSOR
@@ -254,6 +254,13 @@ void
 events_init(void)
 {
 	mutex_init(&evtchn_lock, MUTEX_DEFAULT, IPL_NONE);
+
+	(void)events_resume();
+}
+
+bool
+events_resume(void)
+{
 #ifdef XENPV
 	debug_port = bind_virq_to_evtch(VIRQ_DEBUG);
 
@@ -271,6 +278,8 @@ events_init(void)
 	hypervisor_unmask_event(debug_port);
 #endif /* XENPV */
 	x86_enable_intr();		/* at long last... */
+
+	return true;
 }
 
 bool
@@ -293,15 +302,6 @@ events_suspend(void)
 
 	return true;
 }
-
-bool
-events_resume (void)
-{
-	events_init();
-
-	return true;
-}
-
 
 unsigned int
 evtchn_do_event(int evtch, struct intrframe *regs)
@@ -360,7 +360,6 @@ evtchn_do_event(int evtch, struct intrframe *regs)
 	KASSERT(ci->ci_ilevel >= IPL_VM);
 	KASSERT(cpu_intr_p());
 	x86_enable_intr();
-	mutex_spin_enter(&evtlock[evtch]);
 	ih = evtsource[evtch]->ev_handlers;
 	while (ih != NULL) {
 		KASSERT(ih->ih_cpu == ci);
@@ -381,7 +380,6 @@ evtchn_do_event(int evtch, struct intrframe *regs)
 			hypervisor_set_ipending(iplmask,
 			    evtch >> LONG_SHIFT, evtch & LONG_MASK);
 			/* leave masked */
-			mutex_spin_exit(&evtlock[evtch]);
 			goto splx;
 		}
 		iplmask &= ~(1 << XEN_IPL2SIR(ih->ih_level));
@@ -390,7 +388,6 @@ evtchn_do_event(int evtch, struct intrframe *regs)
 		ih_fun(ih->ih_arg, regs);
 		ih = ih->ih_evt_next;
 	}
-	mutex_spin_exit(&evtlock[evtch]);
 	x86_disable_intr();
 	hypervisor_unmask_event(evtch);
 
@@ -725,7 +722,7 @@ pirq_establish(int pirq, int evtch, int (*func)(void *), void *arg, int level,
 	ih->arg = arg;
 
 	if (event_set_handler(evtch, pirq_interrupt, ih, level, intrname,
-	    xname, known_mpsafe, true) == NULL) {
+	    xname, known_mpsafe, NULL) == NULL) {
 		kmem_free(ih, sizeof(struct pintrhand));
 		return NULL;
 	}
@@ -771,13 +768,10 @@ intr_calculatemasks(struct evtsource *evts, int evtch, struct cpu_info *ci)
 	struct intrhand *ih;
 	int cpu_receive = 0;
 
-#ifdef MULTIPROCESSOR
-	KASSERT(!mutex_owned(&evtlock[evtch]));
-#endif
-	mutex_spin_enter(&evtlock[evtch]);
 	evts->ev_maxlevel = IPL_NONE;
 	evts->ev_imask = 0;
 	for (ih = evts->ev_handlers; ih != NULL; ih = ih->ih_evt_next) {
+		KASSERT(ih->ih_cpu == curcpu());
 		if (ih->ih_level > evts->ev_maxlevel)
 			evts->ev_maxlevel = ih->ih_level;
 		evts->ev_imask |= (1 << XEN_IPL2SIR(ih->ih_level));
@@ -788,18 +782,83 @@ intr_calculatemasks(struct evtsource *evts, int evtch, struct cpu_info *ci)
 		xen_atomic_set_bit(&curcpu()->ci_evtmask[0], evtch);
 	else
 		xen_atomic_clear_bit(&curcpu()->ci_evtmask[0], evtch);
-	mutex_spin_exit(&evtlock[evtch]);
+}
+
+
+struct event_set_handler_args {
+	struct intrhand *ih;
+	struct intrsource *ipls;
+	struct evtsource *evts;
+	int evtch;
+};
+
+/*
+ * Called on bound CPU to handle event_set_handler()
+ * caller (on initiating CPU) holds cpu_lock on our behalf
+ * arg1: struct event_set_handler_args *
+ * arg2: NULL
+ */
+
+static void
+event_set_handler_xcall(void *arg1, void *arg2)
+{
+	struct event_set_handler_args *esh_args = arg1;
+	struct intrhand **ihp, *ih = esh_args->ih;
+	struct evtsource *evts = esh_args->evts;
+
+	const u_long psl = x86_read_psl();
+	x86_disable_intr();
+	/* sort by IPL order, higher first */
+	for (ihp = &evts->ev_handlers; *ihp != NULL;
+	    ihp = &((*ihp)->ih_evt_next)) {
+		if ((*ihp)->ih_level < ih->ih_level)
+			break;
+	}
+	/* insert before *ihp */
+	ih->ih_evt_next = *ihp;
+	*ihp = ih;
+#ifndef XENPV
+	evts->ev_isl->is_handlers = evts->ev_handlers;
+#endif
+	/* register per-cpu handler for spllower() */
+	struct cpu_info *ci = ih->ih_cpu;
+	int sir = XEN_IPL2SIR(ih->ih_level);
+	KASSERT(sir >= SIR_XENIPL_VM && sir <= SIR_XENIPL_HIGH);
+
+	KASSERT(ci == curcpu());
+	if (ci->ci_isources[sir] == NULL) {
+		KASSERT(esh_args->ipls != NULL);
+		ci->ci_isources[sir] = esh_args->ipls;
+	}
+	struct intrsource *ipls = ci->ci_isources[sir];
+	ih->ih_next = ipls->is_handlers;
+	ipls->is_handlers = ih;
+	x86_intr_calculatemasks(ci);
+
+	intr_calculatemasks(evts, esh_args->evtch, ci);
+	x86_write_psl(psl);
 }
 
 struct intrhand *
 event_set_handler(int evtch, int (*func)(void *), void *arg, int level,
-    const char *intrname, const char *xname, bool mpsafe, bool bind)
+    const char *intrname, const char *xname, bool mpsafe, struct cpu_info *ci)
 {
-	struct cpu_info *ci = curcpu(); /* XXX: pass in ci ? */
-	struct evtsource *evts;
-	struct intrhand *ih, **ihp;
-	int s;
+	struct event_set_handler_args esh_args;
 	char intrstr_buf[INTRIDBUF];
+	bool bind = false;
+
+	memset(&esh_args, 0, sizeof(esh_args));
+
+	/*
+	 * if ci is not specified, we bind to the current cpu.
+	 * if ci has been proviced by the called, we assume 
+	 * he will do the EVTCHNOP_bind_vcpu if needed.
+	 */
+	if (ci == NULL) {
+		ci = curcpu();
+		bind = true;
+	}
+		
 
 #ifdef IRQ_DEBUG
 	printf("event_set_handler IRQ %d handler %p\n", evtch, func);
@@ -814,33 +873,47 @@ event_set_handler(int evtch, int (*func)(void *), void *arg, int level,
 	printf("event_set_handler evtch %d handler %p level %d\n", evtch,
 	       handler, level);
 #endif
-	ih = kmem_zalloc(sizeof (struct intrhand), KM_NOSLEEP);
-	if (ih == NULL)
+	esh_args.ih = kmem_zalloc(sizeof (struct intrhand), KM_NOSLEEP);
+	if (esh_args.ih == NULL)
 		panic("can't allocate fixed interrupt source");
 
 
-	ih->ih_pic = &xen_pic;
-	ih->ih_level = level;
-	ih->ih_fun = ih->ih_realfun = func;
-	ih->ih_arg = ih->ih_realarg = arg;
-	ih->ih_evt_next = NULL;
-	ih->ih_next = NULL;
-	ih->ih_cpu = ci;
-	ih->ih_pin = evtch;
+	esh_args.ih->ih_pic = &xen_pic;
+	esh_args.ih->ih_level = level;
+	esh_args.ih->ih_fun = esh_args.ih->ih_realfun = func;
+	esh_args.ih->ih_arg = esh_args.ih->ih_realarg = arg;
+	esh_args.ih->ih_evt_next = NULL;
+	esh_args.ih->ih_next = NULL;
+	esh_args.ih->ih_cpu = ci;
+	esh_args.ih->ih_pin = evtch;
 #ifdef MULTIPROCESSOR
 	if (!mpsafe) {
-		ih->ih_fun = xen_intr_biglock_wrapper;
-		ih->ih_arg = ih;
+		esh_args.ih->ih_fun = xen_intr_biglock_wrapper;
+		esh_args.ih->ih_arg = esh_args.ih;
 	}
 #endif /* MULTIPROCESSOR */
+	KASSERT(mpsafe || level < IPL_HIGH);
 
-	s = splhigh();
-
-	/* register per-cpu handler for spllower() */
-	event_set_iplhandler(ci, ih, level);
-
+	mutex_enter(&cpu_lock);
+	/* allocate IPL source if needed */
+	int sir = XEN_IPL2SIR(level);
+	if (ci->ci_isources[sir] == NULL) {
+		struct intrsource *ipls;
+		ipls = kmem_zalloc(sizeof (struct intrsource), KM_NOSLEEP);
+		if (ipls == NULL)
+			panic("can't allocate fixed interrupt source");
+		ipls->is_recurse = xenev_stubs[level - IPL_VM].ist_recurse;
+		ipls->is_resume = xenev_stubs[level - IPL_VM].ist_resume;
+		ipls->is_pic = &xen_pic;
+		esh_args.ipls = ipls;
+		/*
+		 * note that we can't set ci_isources here, as
+		 * the assembly can't handle is_handlers being NULL
+		 */
+	}
 	/* register handler for event channel */
 	if (evtsource[evtch] == NULL) {
+		struct evtsource *evts;
 		evtchn_op_t op;
 		if (intrname == NULL)
 			intrname = intr_create_intrid(-1, &xen_pic, evtch,
@@ -850,16 +923,7 @@ event_set_handler(int evtch, int (*func)(void *), void *arg, int level,
 		if (evts == NULL)
 			panic("can't allocate fixed interrupt source");
 
-		evts->ev_handlers = ih;
-		/*
-		 * XXX: We're assuming here that ci is the same cpu as
-		 * the one on which this event/port is bound on. The
-		 * api needs to be reshuffled so that this assumption
-		 * is more explicitly implemented.
-		 */
 		evts->ev_cpu = ci;
-		mutex_init(&evtlock[evtch], MUTEX_DEFAULT, IPL_HIGH);
-		evtsource[evtch] = evts;
 		strlcpy(evts->ev_intrname, intrname, sizeof(evts->ev_intrname));
 
 		evcnt_attach_dynamic(&evts->ev_evcnt, EVCNT_TYPE_INTR, NULL,
@@ -874,140 +938,134 @@ event_set_handler(int evtch, int (*func)(void *), void *arg, int level,
 				    ci->ci_vcpuid);
 			}
 		}
-	} else {
-		evts = evtsource[evtch];
-		/* sort by IPL order, higher first */
-		mutex_spin_enter(&evtlock[evtch]);
-		for (ihp = &evts->ev_handlers; ; ihp = &((*ihp)->ih_evt_next)) {
-			if ((*ihp)->ih_level < ih->ih_level) {
-				/* insert before *ihp */
-				ih->ih_evt_next = *ihp;
-				*ihp = ih;
-				break;
-			}
-			if ((*ihp)->ih_evt_next == NULL) {
-				(*ihp)->ih_evt_next = ih;
-				break;
-			}
-		}
-		mutex_spin_exit(&evtlock[evtch]);
 #ifndef XENPV
-		mutex_enter(&cpu_lock);
-		evts->ev_isl->is_handlers = evts->ev_handlers;
-		mutex_exit(&cpu_lock);
-#endif
-	}
-
-
-	// append device name
-	if (evts->ev_xname[0] != '\0')
-		strlcat(evts->ev_xname, ", ", sizeof(evts->ev_xname));
-	strlcat(evts->ev_xname, xname, sizeof(evts->ev_xname));
-
-	intr_calculatemasks(evts, evtch, ci);
-	splx(s);
-#ifndef XENPV
-	mutex_enter(&cpu_lock);
-	if (evts->ev_isl == NULL) {
 		evts->ev_isl = intr_allocate_io_intrsource(intrname);
 		evts->ev_isl->is_pic = &xen_pic;
-	}
-	evts->ev_isl->is_handlers = evts->ev_handlers;
-	mutex_exit(&cpu_lock);
 #endif
-
-
-	return ih;
-}
-
-void
-event_set_iplhandler(struct cpu_info *ci,
-		     struct intrhand *ih,
-		     int level)
-{
-	struct intrsource *ipls;
-	int sir = XEN_IPL2SIR(level);
-	KASSERT(sir >= SIR_XENIPL_VM && sir <= SIR_XENIPL_HIGH);
-
-	KASSERT(ci == ih->ih_cpu);
-	if (ci->ci_isources[sir] == NULL) {
-		ipls = kmem_zalloc(sizeof (struct intrsource),
-		    KM_NOSLEEP);
-		if (ipls == NULL)
-			panic("can't allocate fixed interrupt source");
-		ipls->is_recurse = xenev_stubs[level - IPL_VM].ist_recurse;
-		ipls->is_resume = xenev_stubs[level - IPL_VM].ist_resume;
-		ipls->is_handlers = ih;
-		ipls->is_pic = &xen_pic;
-		ci->ci_isources[sir] = ipls;
-	} else {
-		ipls = ci->ci_isources[sir];
-		ih->ih_next = ipls->is_handlers;
-		ipls->is_handlers = ih;
+		evtsource[evtch] = evts;
 	}
-	x86_intr_calculatemasks(ci);
+	esh_args.evts = evtsource[evtch];
+
+	// append device name
+	if (esh_args.evts->ev_xname[0] != '\0') {
+		strlcat(esh_args.evts->ev_xname, ", ",
+		    sizeof(esh_args.evts->ev_xname));
+	}
+	strlcat(esh_args.evts->ev_xname, xname,
+	    sizeof(esh_args.evts->ev_xname));
+
+	esh_args.evtch = evtch;
+
+	if (ci == curcpu() || !mp_online) {
+		event_set_handler_xcall(&esh_args, NULL);
+	} else {
+		uint64_t where = xc_unicast(0, event_set_handler_xcall,
+		    &esh_args, NULL, ci);
+		xc_wait(where);
+	}
+
+	mutex_exit(&cpu_lock);
+	return esh_args.ih;
 }
 
-int
-event_remove_handler(int evtch, int (*func)(void *), void *arg)
+/*
+ * Called on bound CPU to handle event_remove_handler()
+ * caller (on initiating CPU) holds cpu_lock on our behalf
+ * arg1: evtch
+ * arg2: struct intrhand *ih
+ */
+
+static void
+event_remove_handler_xcall(void *arg1, void *arg2)
 {
 	struct intrsource *ipls;
 	struct evtsource *evts;
-	struct intrhand *ih;
 	struct intrhand **ihp;
 	struct cpu_info *ci;
+	struct intrhand *ih = arg2;
+	int evtch = (intptr_t)(arg1);
 
 	evts = evtsource[evtch];
-	if (evts == NULL)
-		return ENOENT;
+	KASSERT(evts != NULL);
+	KASSERT(ih != NULL);
+	ci = ih->ih_cpu;
+	KASSERT(ci == curcpu());
 
-	mutex_spin_enter(&evtlock[evtch]);
-	for (ihp = &evts->ev_handlers, ih = evts->ev_handlers;
-	    ih != NULL;
-	    ihp = &ih->ih_evt_next, ih = ih->ih_evt_next) {
-		if (ih->ih_realfun == func && ih->ih_realarg == arg)
+	const u_long psl = x86_read_psl();
+	x86_disable_intr();
+	
+	for (ihp = &evts->ev_handlers; *ihp != NULL;
+	    ihp = &(*ihp)->ih_evt_next) {
+		if ((*ihp) == ih)
 			break;
 	}
-	if (ih == NULL) {
-		mutex_spin_exit(&evtlock[evtch]);
-		return ENOENT;
+	if (*(ihp) == NULL) {
+		panic("event_remove_handler_xcall: not in ev_handlers");
 	}
-	ci = ih->ih_cpu;
+
 	*ihp = ih->ih_evt_next;
 
 	int sir = XEN_IPL2SIR(ih->ih_level);
 	KASSERT(sir >= SIR_XENIPL_VM && sir <= SIR_XENIPL_HIGH);
 	ipls = ci->ci_isources[sir];
-	for (ihp = &ipls->is_handlers, ih = ipls->is_handlers;
-	    ih != NULL;
-	    ihp = &ih->ih_next, ih = ih->ih_next) {
+	for (ihp = &ipls->is_handlers; *ihp != NULL; ihp = &(*ihp)->ih_next) {
+		if (*ihp == ih)
+			break;
+	}
+	if (*ihp == NULL)
+		panic("event_remove_handler_xcall: not in is_handlers");
+	*ihp = ih->ih_next;
+	intr_calculatemasks(evts, evtch, ci);
+#ifndef XENPV
+	evts->ev_isl->is_handlers = evts->ev_handlers;
+#endif
+	if (evts->ev_handlers == NULL)
+		xen_atomic_clear_bit(&ci->ci_evtmask[0], evtch);
+
+	x86_write_psl(psl);
+}
+
+int
+event_remove_handler(int evtch, int (*func)(void *), void *arg)
+{
+	struct intrhand *ih;
+	struct cpu_info *ci;
+	struct evtsource *evts;
+
+	mutex_enter(&cpu_lock);
+	evts = evtsource[evtch];
+	if (evts == NULL)
+		return ENOENT;
+
+	for (ih = evts->ev_handlers; ih != NULL; ih = ih->ih_evt_next) {
 		if (ih->ih_realfun == func && ih->ih_realarg == arg)
 			break;
 	}
-	if (ih == NULL)
-		panic("event_remove_handler");
-	*ihp = ih->ih_next;
-	mutex_spin_exit(&evtlock[evtch]);
-#ifndef XENPV
-	mutex_enter(&cpu_lock);
-	evts->ev_isl->is_handlers = evts->ev_handlers;
-	mutex_exit(&cpu_lock);
-#endif
+	if (ih == NULL) {
+		mutex_exit(&cpu_lock);
+		return ENOENT;
+	}
+	ci = ih->ih_cpu;
+
+	if (ci == curcpu() || !mp_online) {
+		event_remove_handler_xcall((void *)(intptr_t)evtch, ih);
+	} else {
+		uint64_t where = xc_unicast(0, event_remove_handler_xcall,
+		    (void *)(intptr_t)evtch, ih, ci);
+		xc_wait(where);
+	}
+
 	kmem_free(ih, sizeof (struct intrhand));
 	if (evts->ev_handlers == NULL) {
 #ifndef XENPV
 		KASSERT(evts->ev_isl->is_handlers == NULL);
-		mutex_enter(&cpu_lock);
 		intr_free_io_intrsource(evts->ev_intrname);
-		mutex_exit(&cpu_lock);
 #endif
-		xen_atomic_clear_bit(&ci->ci_evtmask[0], evtch);
 		evcnt_detach(&evts->ev_evcnt);
 		kmem_free(evts, sizeof (struct evtsource));
 		evtsource[evtch] = NULL;
-	} else {
-		intr_calculatemasks(evts, evtch, ci);
 	}
+	mutex_exit(&cpu_lock);
 	return 0;
 }
 

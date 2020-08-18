@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.h,v 1.119 2020/04/25 15:26:18 bouyer Exp $	*/
+/*	$NetBSD: pmap.h,v 1.125 2020/07/19 07:35:08 maxv Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -198,6 +198,7 @@ extern struct slotspace slotspace;
 struct pcpu_entry {
 	uint8_t gdt[MAXGDTSIZ];
 	uint8_t ldt[MAX_USERLDT_SIZE];
+	uint8_t idt[PAGE_SIZE];
 	uint8_t tss[PAGE_SIZE];
 	uint8_t ist0[PAGE_SIZE];
 	uint8_t ist1[PAGE_SIZE];
@@ -210,7 +211,6 @@ struct pcpu_area {
 #ifdef SVS
 	uint8_t utls[PAGE_SIZE];
 #endif
-	uint8_t idt[PAGE_SIZE];
 	uint8_t ldt[PAGE_SIZE];
 	struct pcpu_entry ent[MAXCPUS];
 } __packed;
@@ -283,7 +283,7 @@ struct pmap {
 	uint64_t pm_ncsw;		/* for assertions */
 	LIST_HEAD(,vm_page) pm_gc_ptp;	/* PTPs queued for free */
 
-	/* Used by NVMM. */
+	/* Used by NVMM and Xen */
 	int (*pm_enter)(struct pmap *, vaddr_t, paddr_t, vm_prot_t, u_int);
 	bool (*pm_extract)(struct pmap *, vaddr_t, paddr_t *);
 	void (*pm_remove)(struct pmap *, vaddr_t, vaddr_t);
@@ -402,7 +402,7 @@ void		pmap_ept_transform(struct pmap *);
 #ifndef __HAVE_DIRECT_MAP
 void		pmap_vpage_cpu_init(struct cpu_info *);
 #endif
-vaddr_t		slotspace_rand(int, size_t, size_t);
+vaddr_t		slotspace_rand(int, size_t, size_t, size_t, vaddr_t);
 
 vaddr_t reserve_dumppages(vaddr_t); /* XXX: not a pmap fn */
 
@@ -429,12 +429,6 @@ void		pmap_tlb_intr(void);
 
 #define PMAP_GROWKERNEL		/* turn on pmap_growkernel interface */
 #define PMAP_FORK		/* turn on pmap_fork interface */
-
-/*
- * Do idle page zero'ing uncached to avoid polluting the cache.
- */
-bool	pmap_pageidlezero(paddr_t);
-#define	PMAP_PAGEIDLEZERO(pa)	pmap_pageidlezero((pa))
 
 /*
  * inline functions
@@ -546,7 +540,6 @@ kvtopte(vaddr_t va)
 paddr_t vtophys(vaddr_t);
 vaddr_t	pmap_map(vaddr_t, paddr_t, paddr_t, vm_prot_t);
 void	pmap_cpu_init_late(struct cpu_info *);
-bool	sse2_idlezero_page(void *);
 
 #ifdef XENPV
 #include <sys/bitops.h>
@@ -617,9 +610,9 @@ extern vaddr_t pmap_direct_end;
 #define PMAP_MAP_POOLPAGE(pa)	PMAP_DIRECT_MAP((pa))
 #define PMAP_UNMAP_POOLPAGE(va)	PMAP_DIRECT_UNMAP((va))
 
-void	pagezero(vaddr_t);
-
 #endif /* __HAVE_DIRECT_MAP */
+
+void	svs_quad_copy(void *, void *, long);
 
 #endif /* _KERNEL */
 

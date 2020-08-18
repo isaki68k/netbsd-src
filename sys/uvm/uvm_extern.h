@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_extern.h,v 1.225 2020/04/27 02:47:26 rin Exp $	*/
+/*	$NetBSD: uvm_extern.h,v 1.231 2020/08/14 09:06:15 chs Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -515,8 +515,6 @@ struct uvmexp_sysctl {
 #ifdef _KERNEL
 /* we need this before including uvm_page.h on some platforms */
 extern struct uvmexp uvmexp;
-/* MD code needs this without including <uvm/uvm.h> */
-extern bool vm_page_zero_enable;
 #endif
 
 /*
@@ -566,8 +564,7 @@ extern bool vm_page_zero_enable;
  */
 struct vmspace {
 	struct	vm_map vm_map;	/* VM address map */
-	int	vm_refcnt;	/* number of references *
-				 * note: protected by vm_map.misc_lock */
+	volatile int vm_refcnt;	/* number of references */
 	void *	vm_shm;		/* SYS5 shared memory private data XXX */
 /* we copy from vm_startcopy to the end of the structure on fork */
 #define vm_startcopy vm_rssize
@@ -613,8 +610,7 @@ extern struct vm_map *phys_map;
  *
  *	This structure encapsulates UVM's unique virtual object address
  *	for an individual byte inside a pageable page. Pageable pages can
- *	be owned by either a uvm_object (UVM_VOADDR_TYPE_OBJECT) or a
- *	vm_anon (UVM_VOADDR_TYPE_ANON).
+ *	be owned by either a uvm_object or a vm_anon.
  *
  *	In each case, the byte offset into the owning object
  *	(uvm_object or vm_anon) is included in the ID, so that
@@ -631,14 +627,7 @@ extern struct vm_map *phys_map;
  *	use.
  */
 struct uvm_voaddr {
-	enum {
-		UVM_VOADDR_TYPE_OBJECT = 1,
-		UVM_VOADDR_TYPE_ANON = 2,
-	} type;
-	union {
-		struct uvm_object *uobj;
-		struct vm_anon *anon;
-	};
+	uintptr_t object;
 	voff_t offset;
 };
 
@@ -787,9 +776,17 @@ void			uvm_obj_destroy(struct uvm_object *, bool);
 int			uvm_obj_wirepages(struct uvm_object *, off_t, off_t,
 			    struct pglist *);
 void			uvm_obj_unwirepages(struct uvm_object *, off_t, off_t);
+bool			uvm_obj_clean_p(struct uvm_object *);
+bool			uvm_obj_nowriteback_p(struct uvm_object *);
+bool			uvm_obj_page_dirty_p(struct vm_page *);
+void			uvm_obj_page_set_dirty(struct vm_page *);
+void			uvm_obj_page_clear_dirty(struct vm_page *);
+bool			uvm_obj_page_writeback_p(struct vm_page *);
+void			uvm_obj_page_set_writeback(struct vm_page *);
+void			uvm_obj_page_clear_writeback(struct vm_page *);
 
 /* uvm_page.c */
-int			uvm_availmem(void);
+int			uvm_availmem(bool);
 void			uvm_page_numa_load(paddr_t, paddr_t, u_int);
 struct vm_page		*uvm_pagealloc_strat(struct uvm_object *,
 			    voff_t, struct vm_anon *, int, int, int);
@@ -798,7 +795,7 @@ struct vm_page		*uvm_pagealloc_strat(struct uvm_object *,
 				UVM_PGA_STRAT_NORMAL, 0)
 void			uvm_pagereplace(struct vm_page *,
 			    struct vm_page *);
-void			uvm_pagerealloc(struct vm_page *,
+int			uvm_pagerealloc(struct vm_page *,
 			    struct uvm_object *, voff_t);
 void			uvm_setpagesize(void);
 
@@ -837,7 +834,6 @@ int			uvn_findpages(struct uvm_object *, voff_t,
 			    unsigned int *, struct vm_page **,
 			    struct uvm_page_array *, unsigned int);
 bool			uvn_text_p(struct uvm_object *);
-bool			uvn_clean_p(struct uvm_object *);
 bool			uvn_needs_writefault_p(struct uvm_object *);
 
 /* kern_malloc.c */

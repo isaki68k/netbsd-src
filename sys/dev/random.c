@@ -1,4 +1,4 @@
-/*	$NetBSD: random.c,v 1.2 2020/04/30 04:26:29 riastradh Exp $	*/
+/*	$NetBSD: random.c,v 1.8 2020/08/14 00:53:16 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2019 The NetBSD Foundation, Inc.
@@ -47,7 +47,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: random.c,v 1.2 2020/04/30 04:26:29 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: random.c,v 1.8 2020/08/14 00:53:16 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -59,15 +59,14 @@ __KERNEL_RCSID(0, "$NetBSD: random.c,v 1.2 2020/04/30 04:26:29 riastradh Exp $")
 #include <sys/event.h>
 #include <sys/fcntl.h>
 #include <sys/kauth.h>
+#include <sys/kmem.h>
 #include <sys/lwp.h>
 #include <sys/poll.h>
-#include <sys/pool.h>
+#include <sys/random.h>
 #include <sys/rnd.h>
 #include <sys/rndsource.h>
 #include <sys/signalvar.h>
 #include <sys/systm.h>
-
-#include <crypto/nist_hash_drbg/nist_hash_drbg.h>
 
 #include "ioconf.h"
 
@@ -95,7 +94,6 @@ const struct cdevsw rnd_cdevsw = {
 };
 
 #define	RANDOM_BUFSIZE	512	/* XXX pulled from arse */
-static pool_cache_t random_buf_pc __read_mostly;
 
 /* Entropy source for writes to /dev/random and /dev/urandom */
 static krndsource_t	user_rndsource;
@@ -104,8 +102,6 @@ void
 rndattach(int num)
 {
 
-	random_buf_pc = pool_cache_init(RANDOM_BUFSIZE, 0, 0, 0,
-	    "randombuf", NULL, IPL_NONE, NULL, NULL, NULL);
 	rnd_attach_source(&user_rndsource, "/dev/random", RND_TYPE_UNKNOWN,
 	    RND_FLAG_COLLECT_VALUE);
 }
@@ -212,161 +208,26 @@ random_kqfilter(dev_t dev, struct knote *kn)
 static int
 random_read(dev_t dev, struct uio *uio, int flags)
 {
-	uint8_t seed[NIST_HASH_DRBG_SEEDLEN_BYTES] = {0};
-	struct nist_hash_drbg drbg;
-	uint8_t *buf;
-	int extractflags;
-	bool interruptible;
-	int error;
+	int gflags;
 
-	/* Get a buffer for transfers.  */
-	buf = pool_cache_get(random_buf_pc, PR_WAITOK);
-
-	/*
-	 * If it's a short read from /dev/urandom, just generate the
-	 * output directly with per-CPU cprng_strong.
-	 */
-	if (minor(dev) == RND_DEV_URANDOM &&
-	    uio->uio_resid <= RANDOM_BUFSIZE) {
-		/* Generate data and transfer it out.  */
-		cprng_strong(user_cprng, buf, uio->uio_resid, 0);
-		error = uiomove(buf, uio->uio_resid, uio);
-		goto out;
+	/* Set the appropriate GRND_* mode.  */
+	switch (minor(dev)) {
+	case RND_DEV_RANDOM:
+		gflags = GRND_RANDOM;
+		break;
+	case RND_DEV_URANDOM:
+		gflags = GRND_INSECURE;
+		break;
+	default:
+		return ENXIO;
 	}
 
-	/*
-	 * If we're doing a blocking read from /dev/random, wait
-	 * interruptibly.  Otherwise, don't wait.
-	 */
-	if (minor(dev) == RND_DEV_RANDOM && !ISSET(flags, FNONBLOCK))
-		extractflags = ENTROPY_WAIT|ENTROPY_SIG;
-	else
-		extractflags = 0;
+	/* Set GRND_NONBLOCK if the user requested FNONBLOCK.  */
+	if (flags & FNONBLOCK)
+		gflags |= GRND_NONBLOCK;
 
-	/*
-	 * Query the entropy pool.  For /dev/random, stop here if this
-	 * fails.  For /dev/urandom, go on either way --
-	 * entropy_extract will always fill the buffer with what we
-	 * have from the global pool.
-	 */
-	error = entropy_extract(seed, sizeof seed, extractflags);
-	if (minor(dev) == RND_DEV_RANDOM && error)
-		goto out;
-
-	/* Instantiate the DRBG.  */
-	if (nist_hash_drbg_instantiate(&drbg, seed, sizeof seed, NULL, 0,
-		NULL, 0))
-		panic("nist_hash_drbg_instantiate");
-
-	/* Promptly zero the seed.  */
-	explicit_memset(seed, 0, sizeof seed);
-
-	/*
-	 * Generate data.  Assume no error until failure.  No
-	 * interruption at this point until we've generated at least
-	 * one block of output.
-	 */
-	error = 0;
-	interruptible = false;
-	while (uio->uio_resid) {
-		size_t n = uio->uio_resid;
-
-		/* No more than one buffer's worth.  */
-		n = MIN(n, RANDOM_BUFSIZE);
-
-		/*
-		 * If we're `depleting' and this is /dev/random, clamp
-		 * to the smaller of the entropy capacity or the seed.
-		 */
-		if (__predict_false(atomic_load_relaxed(&entropy_depletion)) &&
-		    minor(dev) == RND_DEV_RANDOM) {
-			n = MIN(n, ENTROPY_CAPACITY);
-			n = MIN(n, sizeof seed);
-			/*
-			 * Guarantee never to return more than one
-			 * buffer in this case to minimize bookkeeping.
-			 */
-			CTASSERT(ENTROPY_CAPACITY <= RANDOM_BUFSIZE);
-			CTASSERT(sizeof seed <= RANDOM_BUFSIZE);
-		}
-
-		/* Yield if requested.  */
-		if (curcpu()->ci_schedstate.spc_flags & SPCF_SHOULDYIELD)
-			preempt();
-
-		/*
-		 * Allow interruption, but only after providing a
-		 * minimum number of bytes.
-		 */
-		CTASSERT(RANDOM_BUFSIZE >= 256);
-		/* Check for interruption.  */
-		if (__predict_false(curlwp->l_flag & LW_PENDSIG) &&
-		    interruptible && sigispending(curlwp, 0)) {
-			error = EINTR; /* XXX ERESTART? */
-			break;
-		}
-
-		/*
-		 * Try to generate a block of data, but if we've hit
-		 * the DRBG reseed interval, reseed.
-		 */
-		if (nist_hash_drbg_generate(&drbg, buf, n, NULL, 0)) {
-			/*
-			 * Get a fresh seed without blocking -- we have
-			 * already generated some output so it is not
-			 * useful to block.  This can fail only if the
-			 * request is obscenely large, so it is OK for
-			 * either /dev/random or /dev/urandom to fail:
-			 * we make no promises about gigabyte-sized
-			 * reads happening all at once.
-			 */
-			error = entropy_extract(seed, sizeof seed, 0);
-			if (error)
-				break;
-
-			/* Reseed and try again.  */
-			if (nist_hash_drbg_reseed(&drbg, seed, sizeof seed,
-				NULL, 0))
-				panic("nist_hash_drbg_reseed");
-
-			/* Promptly zero the seed.  */
-			explicit_memset(seed, 0, sizeof seed);
-
-			/* If it fails now, that's a bug.  */
-			if (nist_hash_drbg_generate(&drbg, buf, n, NULL, 0))
-				panic("nist_hash_drbg_generate");
-		}
-
-		/* Transfer n bytes out.  */
-		error = uiomove(buf, n, uio);
-		if (error)
-			break;
-
-		/*
-		 * If we're `depleting' and this is /dev/random, stop
-		 * here, return what we have, and force the next read
-		 * to reseed.  Could grab more from the pool if
-		 * possible without blocking, but that's more
-		 * work.
-		 */
-		if (__predict_false(atomic_load_relaxed(&entropy_depletion)) &&
-		    minor(dev) == RND_DEV_RANDOM) {
-			error = 0;
-			break;
-		}
-
-		/*
-		 * We have generated one block of output, so it is
-		 * reasonable to allow interruption after this point.
-		 */
-		interruptible = true;
-	}
-
-out:	/* Zero the buffer and return it to the pool cache.  */
-	explicit_memset(buf, 0, RANDOM_BUFSIZE);
-	pool_cache_put(random_buf_pc, buf);
-
-	return error;
+	/* Defer to getrandom.  */
+	return dogetrandom(uio, gflags);
 }
 
 /*
@@ -384,7 +245,7 @@ random_write(dev_t dev, struct uio *uio, int flags)
 {
 	kauth_cred_t cred = kauth_cred_get();
 	uint8_t *buf;
-	bool privileged = false;
+	bool privileged = false, any = false;
 	int error = 0;
 
 	/* Verify user's authorization to affect the entropy pool.  */
@@ -404,14 +265,18 @@ random_write(dev_t dev, struct uio *uio, int flags)
 		privileged = true;
 
 	/* Get a buffer for transfers.  */
-	buf = pool_cache_get(random_buf_pc, PR_WAITOK);
+	buf = kmem_alloc(RANDOM_BUFSIZE, KM_SLEEP);
 
 	/* Consume data.  */
 	while (uio->uio_resid) {
-		size_t n = uio->uio_resid;
+		size_t n = MIN(uio->uio_resid, RANDOM_BUFSIZE);
 
-		/* No more than one buffer's worth in one step.  */
-		n = MIN(uio->uio_resid, RANDOM_BUFSIZE);
+		/* Transfer n bytes in and enter them into the pool.  */
+		error = uiomove(buf, n, uio);
+		if (error)
+			break;
+		rnd_add_data(&user_rndsource, buf, n, privileged ? n*NBBY : 0);
+		any = true;
 
 		/* Yield if requested.  */
 		if (curcpu()->ci_schedstate.spc_flags & SPCF_SHOULDYIELD)
@@ -420,19 +285,18 @@ random_write(dev_t dev, struct uio *uio, int flags)
 		/* Check for interruption.  */
 		if (__predict_false(curlwp->l_flag & LW_PENDSIG) &&
 		    sigispending(curlwp, 0)) {
-			error = EINTR; /* XXX ERESTART?  */
+			error = EINTR;
 			break;
 		}
-
-		/* Transfer n bytes in and enter them into the pool.  */
-		error = uiomove(buf, n, uio);
-		if (error)
-			break;
-		rnd_add_data(&user_rndsource, buf, n, privileged ? n*NBBY : 0);
 	}
 
-	/* Zero the buffer and return it to the pool cache.  */
+	/* Zero the buffer and free it.  */
 	explicit_memset(buf, 0, RANDOM_BUFSIZE);
-	pool_cache_put(random_buf_pc, buf);
+	kmem_free(buf, RANDOM_BUFSIZE);
+
+	/* If we added anything, consolidate entropy now.  */
+	if (any)
+		entropy_consolidate();
+
 	return error;
 }

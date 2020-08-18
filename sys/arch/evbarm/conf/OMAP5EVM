@@ -1,7 +1,7 @@
 #
-#	$NetBSD: OMAP5EVM,v 1.17 2020/04/18 11:00:38 skrll Exp $
+#	$NetBSD: OMAP5EVM,v 1.19 2020/06/13 16:51:25 ad Exp $
 #
-#	PANDABOARD -- TI OMAP 4430 Eval Board Kernel
+#	OMAP5EVM -- TI OMAP 543x Eval Board Kernel
 #
 
 include	"arch/evbarm/conf/std.beagle"
@@ -19,7 +19,7 @@ options 	RTC_OFFSET=0	# hardware clock is this many mins. west of GMT
 
 options 	CPU_CORTEXA15
 options 	OMAP_5430
-options 	PMAPCOUNTERS
+#options 	PMAPCOUNTERS
 options 	MULTIPROCESSOR
 # no options	__HAVE_MM_MD_DIRECT_MAPPED_PHYS # too much memory to direct map
 

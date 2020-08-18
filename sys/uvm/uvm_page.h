@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_page.h,v 1.102 2020/03/17 18:31:39 ad Exp $	*/
+/*	$NetBSD: uvm_page.h,v 1.105 2020/06/14 21:41:42 ad Exp $	*/
 
 /*
  * Copyright (c) 1997 Charles D. Cranor and Washington University.
@@ -151,20 +151,18 @@
  *
  * On the ordering of fields:
  *
- * The fields most heavily used by the page allocator and uvmpdpol are
- * clustered together at the start of the structure, so that while under
- * global lock it's more likely that only one cache line for each page need
- * be touched.
+ * The fields most heavily used during fault processing are clustered
+ * together at the start of the structure to reduce cache misses.
+ * XXX This entire thing should be shrunk to fit in one cache line.
  */
 
 struct vm_page {
+	/* _LP64: first cache line */
 	union {
 		TAILQ_ENTRY(vm_page) queue;	/* w: wired page queue
 						 * or uvm_pglistalloc output */
 		LIST_ENTRY(vm_page) list;	/* f: global free page queue */
 	} pageq;
-	TAILQ_ENTRY(vm_page)	pdqueue;	/* p: pagedaemon queue */
-	kmutex_t		interlock;	/* s: lock on identity */
 	uint32_t		pqflags;	/* i: pagedaemon flags */
 	uint32_t		flags;		/* o: object flags */
 	paddr_t			phys_addr;	/* o: physical address of pg */
@@ -173,6 +171,10 @@ struct vm_page {
 	struct vm_anon		*uanon;		/* o,i: anon */
 	struct uvm_object	*uobject;	/* o,i: object */
 	voff_t			offset;		/* o: offset into object */
+
+	/* _LP64: second cache line */
+	kmutex_t		interlock;	/* s: lock on identity */
+	TAILQ_ENTRY(vm_page)	pdqueue;	/* p: pagedaemon queue */
 
 #ifdef __HAVE_VM_PAGE_MD
 	struct vm_page_md	mdpage;		/* ?: pmap-specific data */
@@ -231,11 +233,6 @@ struct vm_page {
  * PG_RDONLY:
  *	Indicates that the page must be mapped read-only.
  *
- * PG_ZERO:
- *	Indicates that the page has been pre-zeroed.  This flag is only
- *	set when the page is not in the queues and is cleared when the
- *	page is placed on the free list.
- *
  * PG_MARKER:
  *	Dummy marker page, generally used for list traversal.
  */
@@ -252,7 +249,6 @@ struct vm_page {
 #define	PG_RELEASED	0x00000020	/* page to be freed when unbusied */
 #define	PG_FAKE		0x00000040	/* page is not yet initialized */
 #define	PG_RDONLY	0x00000080	/* page must be mapped read-only */
-#define	PG_ZERO		0x00000100	/* page is pre-zero'd */
 #define	PG_TABLED	0x00000200	/* page is tabled in object */
 #define	PG_AOBJ		0x00000400	/* page is part of an anonymous
 					   uvm_object */
@@ -330,12 +326,6 @@ struct vm_page {
 #ifdef _KERNEL
 
 /*
- * globals
- */
-
-extern bool vm_page_zero_enable;
-
-/*
  * prototypes: the following prototypes define the interface to pages
  */
 
@@ -348,7 +338,6 @@ bool uvm_page_physget(paddr_t *);
 #endif
 void uvm_page_recolor(int);
 void uvm_page_rebucket(void);
-void uvm_pageidlezero(void);
 
 void uvm_pageactivate(struct vm_page *);
 vaddr_t uvm_pageboot_alloc(vsize_t);
@@ -376,6 +365,7 @@ bool uvm_pagecheckdirty(struct vm_page *, bool);
 bool uvm_pagereadonly_p(struct vm_page *);
 bool uvm_page_locked_p(struct vm_page *);
 void uvm_pagewakeup(struct vm_page *);
+bool uvm_pagewanted_p(struct vm_page *);
 void uvm_pagewait(struct vm_page *, krwlock_t *, const char *);
 
 int uvm_page_lookup_freelist(struct vm_page *);

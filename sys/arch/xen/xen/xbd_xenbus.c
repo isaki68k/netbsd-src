@@ -1,4 +1,4 @@
-/*      $NetBSD: xbd_xenbus.c,v 1.123 2020/04/25 15:26:18 bouyer Exp $      */
+/*      $NetBSD: xbd_xenbus.c,v 1.129 2020/07/13 21:21:56 jdolecek Exp $      */
 
 /*
  * Copyright (c) 2006 Manuel Bouyer.
@@ -50,7 +50,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xbd_xenbus.c,v 1.123 2020/04/25 15:26:18 bouyer Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xbd_xenbus.c,v 1.129 2020/07/13 21:21:56 jdolecek Exp $");
 
 #include "opt_xen.h"
 
@@ -157,7 +157,7 @@ struct xbd_xenbus_softc {
 	SLIST_HEAD(,xbd_indirect) sc_indirect_head;
 
 	vmem_addr_t sc_unalign_buffer;
-	struct xbd_req *sc_unalign_used;
+	void *sc_unalign_used;
 
 	int sc_backend_status; /* our status with backend */
 #define BLKIF_STATE_DISCONNECTED 0
@@ -206,7 +206,8 @@ static void xbd_diskstart_submit(struct xbd_xenbus_softc *, int,
 static void xbd_diskstart_submit_indirect(struct xbd_xenbus_softc *,
 	struct xbd_req *, struct buf *bp);
 static int  xbd_map_align(struct xbd_xenbus_softc *, struct xbd_req *);
-static void xbd_unmap_align(struct xbd_xenbus_softc *, struct xbd_req *, bool);
+static void xbd_unmap_align(struct xbd_xenbus_softc *, struct xbd_req *,
+	struct buf *);
 
 static void xbdminphys(struct buf *);
 
@@ -214,14 +215,14 @@ CFATTACH_DECL3_NEW(xbd, sizeof(struct xbd_xenbus_softc),
     xbd_xenbus_match, xbd_xenbus_attach, xbd_xenbus_detach, NULL, NULL, NULL,
     DVF_DETACH_SHUTDOWN);
 
-dev_type_open(xbdopen);
-dev_type_close(xbdclose);
-dev_type_read(xbdread);
-dev_type_write(xbdwrite);
-dev_type_ioctl(xbdioctl);
-dev_type_strategy(xbdstrategy);
-dev_type_dump(xbddump);
-dev_type_size(xbdsize);
+static dev_type_open(xbdopen);
+static dev_type_close(xbdclose);
+static dev_type_read(xbdread);
+static dev_type_write(xbdwrite);
+static dev_type_ioctl(xbdioctl);
+static dev_type_strategy(xbdstrategy);
+static dev_type_dump(xbddump);
+static dev_type_size(xbdsize);
 
 const struct bdevsw xbd_bdevsw = {
 	.d_open = xbdopen,
@@ -436,7 +437,10 @@ xbd_xenbus_detach(device_t dev, int flags)
 	}
 
 	hypervisor_mask_event(sc->sc_evtchn);
-	xen_intr_disestablish(sc->sc_ih);
+	if (sc->sc_ih != NULL) {
+		xen_intr_disestablish(sc->sc_ih);
+		sc->sc_ih = NULL;
+	}
 
 	mutex_enter(&sc->sc_lock);
 	while (xengnt_status(sc->sc_ring_gntref))
@@ -488,7 +492,21 @@ xbd_xenbus_suspend(device_t dev, const pmf_qual_t *qual) {
 
 	hypervisor_mask_event(sc->sc_evtchn);
 	sc->sc_backend_status = BLKIF_STATE_SUSPENDED;
-	xen_intr_disestablish(sc->sc_ih);
+
+#ifdef DIAGNOSTIC
+	/* Check that all requests are finished and device ready for resume */
+	int reqcnt = 0;
+	struct xbd_req *req;
+	SLIST_FOREACH(req, &sc->sc_xbdreq_head, req_next)
+		reqcnt++;
+	KASSERT(reqcnt == __arraycount(sc->sc_reqs));
+
+	int incnt = 0;
+	struct xbd_indirect *in;
+	SLIST_FOREACH(in, &sc->sc_indirect_head, in_next)
+		incnt++;
+	KASSERT(incnt == __arraycount(sc->sc_indirect));
+#endif
 
 	mutex_exit(&sc->sc_lock);
 
@@ -510,13 +528,7 @@ xbd_xenbus_resume(device_t dev, const pmf_qual_t *qual)
 
 	sc = device_private(dev);
 
-	if (sc->sc_backend_status == BLKIF_STATE_SUSPENDED) {
-		/*
-		 * Device was suspended, so ensure that access associated to
-		 * the block I/O ring is revoked.
-		 */
-		xengnt_revoke_access(sc->sc_ring_gntref);
-	}
+	/* All grants were removed during suspend */
 	sc->sc_ring_gntref = GRANT_INVALID_REF;
 
 	/* Initialize ring */
@@ -554,6 +566,10 @@ xbd_xenbus_resume(device_t dev, const pmf_qual_t *qual)
 	if (error)
 		goto abort_resume;
 
+	if (sc->sc_ih != NULL) {
+		xen_intr_disestablish(sc->sc_ih);
+		sc->sc_ih = NULL;
+	}
 	aprint_verbose_dev(dev, "using event channel %d\n",
 	    sc->sc_evtchn);
 	sc->sc_ih = xen_intr_establish_xname(-1, &xen_pic, sc->sc_evtchn,
@@ -676,7 +692,8 @@ xbd_backend_changed(void *arg, XenbusState new_state)
 		sc->sc_backend_status = BLKIF_STATE_CONNECTED;
 		hypervisor_unmask_event(sc->sc_evtchn);
 
-		format_bytes(buf, sizeof(buf), sc->sc_sectors * sc->sc_secsize);
+		format_bytes(buf, uimin(9, sizeof(buf)),
+		    sc->sc_sectors * sc->sc_secsize);
 		aprint_normal_dev(sc->sc_dksc.sc_dev,
 				"%s, %d bytes/sect x %" PRIu64 " sectors\n",
 				buf, (int)dg->dg_secsize, sc->sc_xbdsize);
@@ -816,6 +833,7 @@ again:
 		}
 
 		bp = xbdreq->req_bp;
+		xbdreq->req_bp = NULL;
 		KASSERT(bp != NULL && bp->b_data != NULL);
 		DPRINTF(("%s(%p): b_bcount = %ld\n", __func__,
 		    bp, (long)bp->b_bcount));
@@ -870,8 +888,8 @@ again:
 		bus_dmamap_unload(sc->sc_xbusd->xbusd_dmat, xbdreq->req_dmamap);
 
 		if (__predict_false(bp->b_data != xbdreq->req_data))
-			xbd_unmap_align(sc, xbdreq, true);
-		xbdreq->req_bp = xbdreq->req_data = NULL;
+			xbd_unmap_align(sc, xbdreq, bp);
+		xbdreq->req_data = NULL;
 
 		dk_done(&sc->sc_dksc, bp);
 
@@ -923,7 +941,7 @@ xbd_iosize(device_t dev, int *maxxfer)
 		*maxxfer = XBD_MAX_XFER;
 }
 
-int
+static int
 xbdopen(dev_t dev, int flags, int fmt, struct lwp *l)
 {
 	struct	xbd_xenbus_softc *sc;
@@ -938,7 +956,7 @@ xbdopen(dev_t dev, int flags, int fmt, struct lwp *l)
 	return dk_open(&sc->sc_dksc, dev, flags, fmt, l);
 }
 
-int
+static int
 xbdclose(dev_t dev, int flags, int fmt, struct lwp *l)
 {
 	struct xbd_xenbus_softc *sc;
@@ -949,7 +967,7 @@ xbdclose(dev_t dev, int flags, int fmt, struct lwp *l)
 	return dk_close(&sc->sc_dksc, dev, flags, fmt, l);
 }
 
-void
+static void
 xbdstrategy(struct buf *bp)
 {
 	struct xbd_xenbus_softc *sc;
@@ -975,7 +993,7 @@ xbdstrategy(struct buf *bp)
 	return;
 }
 
-int
+static int
 xbdsize(dev_t dev)
 {
 	struct	xbd_xenbus_softc *sc;
@@ -988,7 +1006,7 @@ xbdsize(dev_t dev)
 	return dk_size(&sc->sc_dksc, dev);
 }
 
-int
+static int
 xbdread(dev_t dev, struct uio *uio, int flags)
 {
 	struct xbd_xenbus_softc *sc = 
@@ -1000,7 +1018,7 @@ xbdread(dev_t dev, struct uio *uio, int flags)
 	return physio(xbdstrategy, NULL, dev, B_READ, xbdminphys, uio);
 }
 
-int
+static int
 xbdwrite(dev_t dev, struct uio *uio, int flags)
 {
 	struct xbd_xenbus_softc *sc =
@@ -1014,7 +1032,7 @@ xbdwrite(dev_t dev, struct uio *uio, int flags)
 	return physio(xbdstrategy, NULL, dev, B_WRITE, xbdminphys, uio);
 }
 
-int
+static int
 xbdioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 {
 	struct xbd_xenbus_softc *sc =
@@ -1086,7 +1104,7 @@ xbdioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 	return error;
 }
 
-int
+static int
 xbddump(dev_t dev, daddr_t blkno, void *va, size_t size)
 {
 	struct xbd_xenbus_softc *sc;
@@ -1170,7 +1188,7 @@ xbd_diskstart(device_t self, struct buf *bp)
 		printf("%s: %s: bus_dmamap_load failed\n",
 		    device_xname(sc->sc_dksc.sc_dev), __func__);
 		if (__predict_false(bp->b_data != xbdreq->req_data))
-			xbd_unmap_align(sc, xbdreq, false);
+			xbd_unmap_align(sc, xbdreq, NULL);
 		error = EINVAL;
 		goto out;
 	}
@@ -1196,7 +1214,7 @@ xbd_diskstart(device_t self, struct buf *bp)
 			bus_dmamap_unload(sc->sc_xbusd->xbusd_dmat,
 			    xbdreq->req_dmamap);
 			if (__predict_false(bp->b_data != xbdreq->req_data))
-				xbd_unmap_align(sc, xbdreq, false);
+				xbd_unmap_align(sc, xbdreq, NULL);
 			error = EAGAIN;
 			goto out;
 		}
@@ -1226,7 +1244,7 @@ xbd_diskstart(device_t self, struct buf *bp)
 		xbdreq->req_parent_done = false;
 		xbdreq2->req_parent = xbdreq;
 		xbdreq2->req_bp = bp;
-		xbdreq2->req_data = NULL;
+		xbdreq2->req_data = xbdreq->req_data;
 		xbd_diskstart_submit(sc, xbdreq2->req_id,
 		    bp, XBD_MAX_CHUNK, xbdreq->req_dmamap,
 		    xbdreq->req_gntref);
@@ -1362,7 +1380,7 @@ xbd_map_align(struct xbd_xenbus_softc *sc, struct xbd_req *req)
 		sc->sc_cnt_unalign_busy.ev_count++;
 		return EAGAIN;
 	}
-	sc->sc_unalign_used = req;
+	sc->sc_unalign_used = req->req_bp;
 
 	KASSERT(req->req_bp->b_bcount <= MAXPHYS);
 	req->req_data = (void *)sc->sc_unalign_buffer;
@@ -1373,11 +1391,11 @@ xbd_map_align(struct xbd_xenbus_softc *sc, struct xbd_req *req)
 }
 
 static void
-xbd_unmap_align(struct xbd_xenbus_softc *sc, struct xbd_req *req, bool sync)
+xbd_unmap_align(struct xbd_xenbus_softc *sc, struct xbd_req *req,
+    struct buf *bp)
 {
-	KASSERT(sc->sc_unalign_used == req);
-	if (sync && req->req_bp->b_flags & B_READ)
-		memcpy(req->req_bp->b_data, req->req_data,
-		    req->req_bp->b_bcount);
+	KASSERT(!bp || sc->sc_unalign_used == bp);
+	if (bp && bp->b_flags & B_READ)
+		memcpy(bp->b_data, req->req_data, bp->b_bcount);
 	sc->sc_unalign_used = NULL;
 }

@@ -1,4 +1,4 @@
-/*	$NetBSD: asan.h,v 1.5 2020/04/25 15:26:16 bouyer Exp $	*/
+/*	$NetBSD: asan.h,v 1.7 2020/06/23 17:21:55 maxv Exp $	*/
 
 /*
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -42,30 +42,22 @@
 #endif
 
 #define __MD_VIRTUAL_SHIFT	47	/* 48bit address space, cut half */
-#define __MD_CANONICAL_BASE	0xFFFF800000000000
+#define __MD_KERNMEM_BASE	0xFFFF800000000000 /* kern mem base address */
 
 #define __MD_SHADOW_SIZE	(1ULL << (__MD_VIRTUAL_SHIFT - KASAN_SHADOW_SCALE_SHIFT))
 #define KASAN_MD_SHADOW_START	(VA_SIGN_NEG((L4_SLOT_KASAN * NBPD_L4)))
 #define KASAN_MD_SHADOW_END	(KASAN_MD_SHADOW_START + __MD_SHADOW_SIZE)
 
+/* -------------------------------------------------------------------------- */
+
+/*
+ * Early mapping, used to map just the stack at boot time. We rely on the fact
+ * that VA = PA + KERNBASE.
+ */
+
 static bool __md_early __read_mostly = true;
 static uint8_t __md_earlypages[8 * PAGE_SIZE] __aligned(PAGE_SIZE);
 static size_t __md_earlytaken = 0;
-
-static inline int8_t *
-kasan_md_addr_to_shad(const void *addr)
-{
-	vaddr_t va = (vaddr_t)addr;
-	return (int8_t *)(KASAN_MD_SHADOW_START +
-	    ((va - __MD_CANONICAL_BASE) >> KASAN_SHADOW_SCALE_SHIFT));
-}
-
-static inline bool
-kasan_md_unsupported(vaddr_t addr)
-{
-	return (addr >= (vaddr_t)PTE_BASE &&
-	    addr < ((vaddr_t)PTE_BASE + NBPD_L4));
-}
 
 static paddr_t
 __md_early_palloc(void)
@@ -82,18 +74,60 @@ __md_early_palloc(void)
 	return ret;
 }
 
+static void
+__md_early_shadow_map_page(vaddr_t va)
+{
+	extern struct bootspace bootspace;
+	const pt_entry_t pteflags = PTE_W | pmap_pg_nx | PTE_P;
+	pt_entry_t *pdir = (pt_entry_t *)bootspace.pdir;
+	paddr_t pa;
+
+	if (!pmap_valid_entry(pdir[pl4_pi(va)])) {
+		pa = __md_early_palloc();
+		pdir[pl4_pi(va)] = pa | pteflags;
+	}
+	pdir = (pt_entry_t *)((pdir[pl4_pi(va)] & PTE_FRAME) + KERNBASE);
+
+	if (!pmap_valid_entry(pdir[pl3_pi(va)])) {
+		pa = __md_early_palloc();
+		pdir[pl3_pi(va)] = pa | pteflags;
+	}
+	pdir = (pt_entry_t *)((pdir[pl3_pi(va)] & PTE_FRAME) + KERNBASE);
+
+	if (!pmap_valid_entry(pdir[pl2_pi(va)])) {
+		pa = __md_early_palloc();
+		pdir[pl2_pi(va)] = pa | pteflags;
+	}
+	pdir = (pt_entry_t *)((pdir[pl2_pi(va)] & PTE_FRAME) + KERNBASE);
+
+	if (!pmap_valid_entry(pdir[pl1_pi(va)])) {
+		pa = __md_early_palloc();
+		pdir[pl1_pi(va)] = pa | pteflags | pmap_pg_g;
+	}
+}
+
+/* -------------------------------------------------------------------------- */
+
+static inline int8_t *
+kasan_md_addr_to_shad(const void *addr)
+{
+	vaddr_t va = (vaddr_t)addr;
+	return (int8_t *)(KASAN_MD_SHADOW_START +
+	    ((va - __MD_KERNMEM_BASE) >> KASAN_SHADOW_SCALE_SHIFT));
+}
+
+static inline bool
+kasan_md_unsupported(vaddr_t addr)
+{
+	return (addr >= (vaddr_t)PTE_BASE &&
+	    addr < ((vaddr_t)PTE_BASE + NBPD_L4));
+}
+
 static paddr_t
 __md_palloc(void)
 {
-	paddr_t pa;
-
-	if (__predict_false(__md_early))
-		pa = __md_early_palloc();
-	else
-		pa = pmap_get_physpage();
-
 	/* The page is zeroed. */
-	return pa;
+	return pmap_get_physpage();
 }
 
 static inline paddr_t
@@ -102,8 +136,6 @@ __md_palloc_large(void)
 	struct pglist pglist;
 	int ret;
 
-	if (__predict_false(__md_early))
-		return 0;
 	if (!uvm.page_init_done)
 		return 0;
 
@@ -121,6 +153,11 @@ kasan_md_shadow_map_page(vaddr_t va)
 {
 	const pt_entry_t pteflags = PTE_W | pmap_pg_nx | PTE_P;
 	paddr_t pa;
+
+	if (__predict_false(__md_early)) {
+		__md_early_shadow_map_page(va);
+		return;
+	}
 
 	if (!pmap_valid_entry(L4_BASE[pl4_i(va)])) {
 		pa = __md_palloc();

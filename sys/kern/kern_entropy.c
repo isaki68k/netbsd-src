@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_entropy.c,v 1.8 2020/05/01 01:31:17 riastradh Exp $	*/
+/*	$NetBSD: kern_entropy.c,v 1.23 2020/08/14 00:53:16 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2019 The NetBSD Foundation, Inc.
@@ -60,9 +60,7 @@
  *	  transition from partial entropy to full entropy, so that
  *	  users can easily determine when to reseed.  This also
  *	  facilitates an operator explicitly causing everything to
- *	  reseed by sysctl -w kern.entropy.consolidate=1, e.g. if they
- *	  just flipped a coin 256 times and wrote `echo tthhhhhthh... >
- *	  /dev/random'.
+ *	  reseed by sysctl -w kern.entropy.consolidate=1.
  *
  *	* No entropy estimation based on the sample values, which is a
  *	  contradiction in terms and a potential source of side
@@ -77,7 +75,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_entropy.c,v 1.8 2020/05/01 01:31:17 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_entropy.c,v 1.23 2020/08/14 00:53:16 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -174,7 +172,7 @@ struct {
 } entropy_global __cacheline_aligned = {
 	/* Fields that must be initialized when the kernel is loaded.  */
 	.needed = ENTROPY_CAPACITY*NBBY,
-	.epoch = (unsigned)-1,	/* -1 means not yet full entropy */
+	.epoch = (unsigned)-1,	/* -1 means entropy never consolidated */
 	.sources = LIST_HEAD_INITIALIZER(entropy_global.sources),
 	.stage = ENTROPY_COLD,
 };
@@ -225,8 +223,8 @@ static struct evcnt entropy_notify_evcnt =
 EVCNT_ATTACH_STATIC(entropy_notify_evcnt);
 
 /* Sysctl knobs */
-bool	entropy_collection = 1;
-bool	entropy_depletion = 0; /* Silly!  */
+static bool	entropy_collection = 1;
+static bool	entropy_depletion = 0; /* Silly!  */
 
 static const struct sysctlnode	*entropy_sysctlroot;
 static struct sysctllog		*entropy_sysctllog;
@@ -241,10 +239,11 @@ static void	entropy_softintr(void *);
 static void	entropy_thread(void *);
 static uint32_t	entropy_pending(void);
 static void	entropy_pending_cpu(void *, void *, struct cpu_info *);
-static void	entropy_consolidate(void);
-static void	entropy_gather_xc(void *, void *);
+static void	entropy_do_consolidate(void);
+static void	entropy_consolidate_xc(void *, void *);
 static void	entropy_notify(void);
 static int	sysctl_entropy_consolidate(SYSCTLFN_ARGS);
+static int	sysctl_entropy_gather(SYSCTLFN_ARGS);
 static void	filt_entropy_read_detach(struct knote *);
 static int	filt_entropy_read_event(struct knote *, long);
 static void	entropy_request(size_t);
@@ -254,19 +253,6 @@ static unsigned	rndsource_entropybits(struct krndsource *);
 static void	rndsource_entropybits_cpu(void *, void *, struct cpu_info *);
 static void	rndsource_to_user(struct krndsource *, rndsource_t *);
 static void	rndsource_to_user_est(struct krndsource *, rndsource_est_t *);
-
-/*
- * curcpu_available()
- *
- *	True if we can inspect the current CPU.  Early on this may not
- *	work.  XXX On most if not all ports, this should work earlier.
- */
-static inline bool
-curcpu_available(void)
-{
-
-	return __predict_true(!cold);
-}
 
 /*
  * entropy_timer()
@@ -279,10 +265,6 @@ entropy_timer(void)
 {
 	struct bintime bt;
 	uint32_t v;
-
-	/* Very early on, cpu_counter32() may not be available.  */
-	if (!curcpu_available())
-		return 0;
 
 	/* If we have a CPU cycle counter, use the low 32 bits.  */
 #ifdef __HAVE_CPU_COUNTER
@@ -362,6 +344,10 @@ entropy_init(void)
 	    CTLFLAG_PERMANENT|CTLFLAG_READWRITE, CTLTYPE_INT, "consolidate",
 	    SYSCTL_DESCR("Trigger entropy consolidation now"),
 	    sysctl_entropy_consolidate, 0, NULL, 0, CTL_CREATE, CTL_EOL);
+	sysctl_createv(&entropy_sysctllog, 0, &entropy_sysctlroot, NULL,
+	    CTLFLAG_PERMANENT|CTLFLAG_READWRITE, CTLTYPE_INT, "gather",
+	    SYSCTL_DESCR("Trigger entropy gathering from sources now"),
+	    sysctl_entropy_gather, 0, NULL, 0, CTL_CREATE, CTL_EOL);
 	/* XXX These should maybe not be readable at securelevel>0.  */
 	sysctl_createv(&entropy_sysctllog, 0, &entropy_sysctlroot, NULL,
 	    CTLFLAG_PERMANENT|CTLFLAG_READONLY|CTLFLAG_PRIVATE, CTLTYPE_INT,
@@ -545,7 +531,7 @@ entropy_seed(rndsave_t *seed)
 	if (E->stage >= ENTROPY_WARM)
 		mutex_enter(&E->lock);
 	seeded = E->seeded;
-	E->seeded = true;
+	E->seeded = (seed->entropy > 0);
 	if (E->stage >= ENTROPY_WARM)
 		mutex_exit(&E->lock);
 
@@ -558,7 +544,8 @@ entropy_seed(rndsave_t *seed)
 		printf("entropy: double-seeded by bootloader\n");
 		seed->entropy = 0;
 	} else {
-		printf("entropy: entering seed from bootloader\n");
+		printf("entropy: entering seed from bootloader"
+		    " with %u bits of entropy\n", (unsigned)seed->entropy);
 	}
 
 	/* Enter it into the pool and promptly zero it.  */
@@ -592,10 +579,10 @@ entropy_bootrequest(void)
  * entropy_epoch()
  *
  *	Returns the current entropy epoch.  If this changes, you should
- *	reseed.  If -1, means the system has not yet reached full
- *	entropy; never reverts back to -1 after full entropy has been
- *	reached.  Never zero, so you can always use zero as an
- *	uninitialized sentinel value meaning `reseed ASAP'.
+ *	reseed.  If -1, means system entropy has not yet reached full
+ *	entropy or been explicitly consolidated; never reverts back to
+ *	-1.  Never zero, so you can always use zero as an uninitialized
+ *	sentinel value meaning `reseed ASAP'.
  *
  *	Usage model:
  *
@@ -622,6 +609,18 @@ entropy_epoch(void)
 	 * make sure we read it afresh each time.
 	 */
 	return atomic_load_relaxed(&E->epoch);
+}
+
+/*
+ * entropy_ready()
+ *
+ *	True if the entropy pool has full entropy.
+ */
+bool
+entropy_ready(void)
+{
+
+	return atomic_load_relaxed(&E->needed) == 0;
 }
 
 /*
@@ -683,7 +682,7 @@ entropy_account_cpu(struct entropy_cpu *ec)
 		/* Notify waiters that we now have full entropy.  */
 		entropy_notify();
 		entropy_immediate_evcnt.ev_count++;
-	} else if (ec->ec_pending) {
+	} else {
 		/* Record how much we can add to the global pool.  */
 		diff = MIN(ec->ec_pending, ENTROPY_CAPACITY*NBBY - E->pending);
 		E->pending += diff;
@@ -773,7 +772,7 @@ entropy_enter(const void *buf, size_t len, unsigned nbits)
 	uint32_t pending;
 	int s;
 
-	KASSERTMSG(!curcpu_available() || !cpu_intr_p(),
+	KASSERTMSG(!cpu_intr_p(),
 	    "use entropy_enter_intr from interrupt context");
 	KASSERTMSG(howmany(nbits, NBBY) <= len,
 	    "impossible entropy rate: %u bits in %zu-byte string", nbits, len);
@@ -953,7 +952,7 @@ entropy_thread(void *cookie)
 
 		if (consolidate) {
 			/* Do it.  */
-			entropy_consolidate();
+			entropy_do_consolidate();
 
 			/* Mitigate abuse.  */
 			kpause("entropy", false, hz, NULL);
@@ -987,21 +986,24 @@ entropy_pending_cpu(void *ptr, void *cookie, struct cpu_info *ci)
 }
 
 /*
- * entropy_consolidate()
+ * entropy_do_consolidate()
  *
  *	Issue a cross-call to gather entropy on all CPUs and advance
  *	the entropy epoch.
  */
 static void
-entropy_consolidate(void)
+entropy_do_consolidate(void)
 {
 	static const struct timeval interval = {.tv_sec = 60, .tv_usec = 0};
 	static struct timeval lasttime; /* serialized by E->lock */
+	struct entpool pool;
+	uint8_t buf[ENTPOOL_CAPACITY];
 	unsigned diff;
 	uint64_t ticket;
 
-	/* Gather entropy on all CPUs.  */
-	ticket = xc_broadcast(0, &entropy_gather_xc, NULL, NULL);
+	/* Gather entropy on all CPUs into a temporary pool.  */
+	memset(&pool, 0, sizeof pool);
+	ticket = xc_broadcast(0, &entropy_consolidate_xc, &pool, NULL);
 	xc_wait(ticket);
 
 	/* Acquire the lock to notify waiters.  */
@@ -1012,6 +1014,11 @@ entropy_consolidate(void)
 
 	/* Note when we last consolidated, i.e. now.  */
 	E->timestamp = time_uptime;
+
+	/* Mix what we gathered into the global pool.  */
+	entpool_extract(&pool, buf, sizeof buf);
+	entpool_enter(&E->pool, buf, sizeof buf);
+	explicit_memset(&pool, 0, sizeof pool);
 
 	/* Count the entropy that was gathered.  */
 	diff = MIN(E->needed, E->pending);
@@ -1031,14 +1038,15 @@ entropy_consolidate(void)
 }
 
 /*
- * entropy_gather_xc(arg1, arg2)
+ * entropy_consolidate_xc(vpool, arg2)
  *
  *	Extract output from the local CPU's input pool and enter it
- *	into the global pool.
+ *	into a temporary pool passed as vpool.
  */
 static void
-entropy_gather_xc(void *arg1 __unused, void *arg2 __unused)
+entropy_consolidate_xc(void *vpool, void *arg2 __unused)
 {
+	struct entpool *pool = vpool;
 	struct entropy_cpu *ec;
 	uint8_t buf[ENTPOOL_CAPACITY];
 	uint32_t extra[7];
@@ -1061,8 +1069,9 @@ entropy_gather_xc(void *arg1 __unused, void *arg2 __unused)
 	__insn_barrier();
 	extra[i++] = entropy_timer();
 
-	/* Extract the data.  */
+	/* Extract the data and count it no longer pending.  */
 	entpool_extract(ec->ec_pool, buf, sizeof buf);
+	atomic_store_relaxed(&ec->ec_pending, 0);
 	extra[i++] = entropy_timer();
 
 	/* Release the per-CPU state.  */
@@ -1075,15 +1084,15 @@ entropy_gather_xc(void *arg1 __unused, void *arg2 __unused)
 
 	/*
 	 * Copy over statistics, and enter the per-CPU extract and the
-	 * extra timing into the global pool, under the global lock.
+	 * extra timing into the temporary pool, under the global lock.
 	 */
 	mutex_enter(&E->lock);
 	extra[i++] = entropy_timer();
-	entpool_enter(&E->pool, buf, sizeof buf);
+	entpool_enter(pool, buf, sizeof buf);
 	explicit_memset(buf, 0, sizeof buf);
 	extra[i++] = entropy_timer();
 	KASSERT(i == __arraycount(extra));
-	entpool_enter(&E->pool, extra, sizeof extra);
+	entpool_enter(pool, extra, sizeof extra);
 	explicit_memset(extra, 0, sizeof extra);
 	mutex_exit(&E->lock);
 }
@@ -1102,6 +1111,8 @@ entropy_gather_xc(void *arg1 __unused, void *arg2 __unused)
 static void
 entropy_notify(void)
 {
+	static const struct timeval interval = {.tv_sec = 60, .tv_usec = 0};
+	static struct timeval lasttime; /* serialized by E->lock */
 	unsigned epoch;
 
 	KASSERT(E->stage == ENTROPY_COLD || mutex_owned(&E->lock));
@@ -1111,15 +1122,19 @@ entropy_notify(void)
 	 * that we're ready so operators can compare it to the timing
 	 * of other events.
 	 */
-	if (E->epoch == (unsigned)-1)
+	if (__predict_false(!rnd_initial_entropy) && E->needed == 0) {
 		printf("entropy: ready\n");
+		rnd_initial_entropy = 1;
+	}
 
 	/* Set the epoch; roll over from UINTMAX-1 to 1.  */
-	rnd_initial_entropy = 1; /* XXX legacy */
-	epoch = E->epoch + 1;
-	if (epoch == 0 || epoch == (unsigned)-1)
-		epoch = 1;
-	atomic_store_relaxed(&E->epoch, epoch);
+	if (__predict_true(!atomic_load_relaxed(&entropy_depletion)) ||
+	    ratecheck(&lasttime, &interval)) {
+		epoch = E->epoch + 1;
+		if (epoch == 0 || epoch == (unsigned)-1)
+			epoch = 1;
+		atomic_store_relaxed(&E->epoch, epoch);
+	}
 
 	/* Notify waiters.  */
 	if (E->stage >= ENTROPY_WARM) {
@@ -1132,19 +1147,75 @@ entropy_notify(void)
 }
 
 /*
+ * entropy_consolidate()
+ *
+ *	Trigger entropy consolidation and wait for it to complete.
+ *
+ *	This should be used sparingly, not periodically -- requiring
+ *	conscious intervention by the operator or a clear policy
+ *	decision.  Otherwise, the kernel will automatically consolidate
+ *	when enough entropy has been gathered into per-CPU pools to
+ *	transition to full entropy.
+ */
+void
+entropy_consolidate(void)
+{
+	uint64_t ticket;
+	int error;
+
+	KASSERT(E->stage == ENTROPY_HOT);
+
+	mutex_enter(&E->lock);
+	ticket = entropy_consolidate_evcnt.ev_count;
+	E->consolidate = true;
+	cv_broadcast(&E->cv);
+	while (ticket == entropy_consolidate_evcnt.ev_count) {
+		error = cv_wait_sig(&E->cv, &E->lock);
+		if (error)
+			break;
+	}
+	mutex_exit(&E->lock);
+}
+
+/*
  * sysctl -w kern.entropy.consolidate=1
  *
  *	Trigger entropy consolidation and wait for it to complete.
- *	Writable only by superuser.  This is the only way for the
- *	system to consolidate entropy if the operator knows something
- *	the kernel doesn't about how unpredictable the pending entropy
- *	pools are.
+ *	Writable only by superuser.  This, writing to /dev/random, and
+ *	ioctl(RNDADDDATA) are the only ways for the system to
+ *	consolidate entropy if the operator knows something the kernel
+ *	doesn't about how unpredictable the pending entropy pools are.
  */
 static int
 sysctl_entropy_consolidate(SYSCTLFN_ARGS)
 {
 	struct sysctlnode node = *rnode;
-	uint64_t ticket;
+	int arg;
+	int error;
+
+	KASSERT(E->stage == ENTROPY_HOT);
+
+	node.sysctl_data = &arg;
+	error = sysctl_lookup(SYSCTLFN_CALL(&node));
+	if (error || newp == NULL)
+		return error;
+	if (arg)
+		entropy_consolidate();
+
+	return error;
+}
+
+/*
+ * sysctl -w kern.entropy.gather=1
+ *
+ *	Trigger gathering entropy from all on-demand sources, and wait
+ *	for synchronous sources (but not asynchronous sources) to
+ *	complete.  Writable only by superuser.
+ */
+static int
+sysctl_entropy_gather(SYSCTLFN_ARGS)
+{
+	struct sysctlnode node = *rnode;
 	int arg;
 	int error;
 
@@ -1156,18 +1227,11 @@ sysctl_entropy_consolidate(SYSCTLFN_ARGS)
 		return error;
 	if (arg) {
 		mutex_enter(&E->lock);
-		ticket = entropy_consolidate_evcnt.ev_count;
-		E->consolidate = true;
-		cv_broadcast(&E->cv);
-		while (ticket == entropy_consolidate_evcnt.ev_count) {
-			error = cv_wait_sig(&E->cv, &E->lock);
-			if (error)
-				break;
-		}
+		entropy_request(ENTROPY_CAPACITY);
 		mutex_exit(&E->lock);
 	}
 
-	return error;
+	return 0;
 }
 
 /*
@@ -1179,6 +1243,8 @@ sysctl_entropy_consolidate(SYSCTLFN_ARGS)
  *
  *		ENTROPY_WAIT	Wait for entropy if not available yet.
  *		ENTROPY_SIG	Allow interruption by a signal during wait.
+ *		ENTROPY_HARDFAIL Either fill the buffer with full entropy,
+ *				or fail without filling it at all.
  *
  *	Return zero on success, or error on failure:
  *
@@ -1208,7 +1274,7 @@ entropy_extract(void *buf, size_t len, int flags)
 		mutex_enter(&E->lock);
 
 	/* Count up request for entropy in interrupt context.  */
-	if (curcpu_available() && cpu_intr_p())
+	if (cpu_intr_p())
 		entropy_extract_intr_evcnt.ev_count++;
 
 	/* Wait until there is enough entropy in the system.  */
@@ -1240,9 +1306,15 @@ entropy_extract(void *buf, size_t len, int flags)
 		}
 	}
 
-	/* Count failure -- but fill the buffer nevertheless.  */
-	if (error)
+	/*
+	 * Count failure -- but fill the buffer nevertheless, unless
+	 * the caller specified ENTROPY_HARDFAIL.
+	 */
+	if (error) {
+		if (ISSET(flags, ENTROPY_HARDFAIL))
+			goto out;
 		entropy_extract_fail_evcnt.ev_count++;
+	}
 
 	/*
 	 * Report a warning if we have never yet reached full entropy.
@@ -1272,7 +1344,7 @@ entropy_extract(void *buf, size_t len, int flags)
 		entropy_deplete_evcnt.ev_count++;
 	}
 
-	/* Release the global lock and return the error.  */
+out:	/* Release the global lock and return the error.  */
 	if (E->stage >= ENTROPY_WARM)
 		mutex_exit(&E->lock);
 	return error;
@@ -1467,6 +1539,7 @@ rnd_attach_source(struct krndsource *rs, const char *name, uint32_t type,
 	/* Initialize the random source.  */
 	memset(rs->name, 0, sizeof(rs->name)); /* paranoia */
 	strlcpy(rs->name, name, sizeof(rs->name));
+	rs->total = 0;
 	rs->type = type;
 	rs->flags = flags;
 	if (E->stage >= ENTROPY_WARM)
@@ -1566,7 +1639,7 @@ rnd_trylock_sources(void)
 
 	if (E->sourcelock)
 		return false;
-	E->sourcelock = (curcpu_available() ? curlwp : (void *)1);
+	E->sourcelock = curlwp;
 	return true;
 }
 
@@ -1582,9 +1655,8 @@ rnd_unlock_sources(void)
 
 	KASSERT(E->stage == ENTROPY_COLD || mutex_owned(&E->lock));
 
-	KASSERTMSG(E->sourcelock == (curcpu_available() ? curlwp : (void *)1),
-	    "lwp %p releasing lock held by %p",
-	    (curcpu_available() ? curlwp : (void *)1), E->sourcelock);
+	KASSERTMSG(E->sourcelock == curlwp, "lwp %p releasing lock held by %p",
+	    curlwp, E->sourcelock);
 	E->sourcelock = NULL;
 	if (E->stage >= ENTROPY_WARM)
 		cv_broadcast(&E->cv);
@@ -1600,7 +1672,7 @@ static bool __diagused
 rnd_sources_locked(void)
 {
 
-	return E->sourcelock == (curcpu_available() ? curlwp : (void *)1);
+	return E->sourcelock == curlwp;
 }
 
 /*
@@ -1633,6 +1705,13 @@ entropy_request(size_t nbytes)
 	LIST_FOREACH(rs, &E->sources, list) {
 		/* Skip sources without callbacks.  */
 		if (!ISSET(rs->flags, RND_FLAG_HASCB))
+			continue;
+
+		/*
+		 * Skip sources that are disabled altogether -- we
+		 * would just ignore their samples anyway.
+		 */
+		if (ISSET(rs->flags, RND_FLAG_NO_COLLECT))
 			continue;
 
 		/* Drop the lock while we call the callback.  */
@@ -1759,7 +1838,7 @@ rnd_add_data_1(struct krndsource *rs, const void *buf, uint32_t len,
 	 * take note of whether it consumed the full sample; if not,
 	 * use entropy_enter, which always consumes the full sample.
 	 */
-	if (curcpu_available() && cpu_intr_p()) {
+	if (curlwp && cpu_intr_p()) {
 		fullyused = entropy_enter_intr(buf, len, entropybits);
 	} else {
 		entropy_enter(buf, len, entropybits);
@@ -1877,6 +1956,40 @@ rndsource_to_user_est(struct krndsource *rs, rndsource_est_t *urse)
 	urse->dt_total = 0;
 	urse->dv_samples = 0;
 	urse->dv_total = 0;
+}
+
+/*
+ * entropy_reset_xc(arg1, arg2)
+ *
+ *	Reset the current CPU's pending entropy to zero.
+ */
+static void
+entropy_reset_xc(void *arg1 __unused, void *arg2 __unused)
+{
+	uint32_t extra = entropy_timer();
+	struct entropy_cpu *ec;
+	int s;
+
+	/*
+	 * Acquire the per-CPU state, blocking soft interrupts and
+	 * causing hard interrupts to drop samples on the floor.
+	 */
+	ec = percpu_getref(entropy_percpu);
+	s = splsoftserial();
+	KASSERT(!ec->ec_locked);
+	ec->ec_locked = true;
+	__insn_barrier();
+
+	/* Zero the pending count and enter a cycle count for fun.  */
+	ec->ec_pending = 0;
+	entpool_enter(ec->ec_pool, &extra, sizeof extra);
+
+	/* Release the per-CPU state.  */
+	KASSERT(ec->ec_locked);
+	__insn_barrier();
+	ec->ec_locked = false;
+	splx(s);
+	percpu_putref(entropy_percpu);
 }
 
 /*
@@ -2113,7 +2226,9 @@ entropy_ioctl(unsigned long cmd, void *data)
 	case RNDCTL: {		/* Modify entropy source flags.  */
 		rndctl_t *rndctl = data;
 		const size_t n = sizeof(rs->name);
+		uint32_t resetflags = RND_FLAG_NO_ESTIMATE|RND_FLAG_NO_COLLECT;
 		uint32_t flags;
+		bool reset = false, request = false;
 
 		CTASSERT(sizeof(rs->name) == sizeof(rndctl->name));
 
@@ -2135,9 +2250,39 @@ entropy_ioctl(unsigned long cmd, void *data)
 			}
 			flags = rs->flags & ~rndctl->mask;
 			flags |= rndctl->flags & rndctl->mask;
+			if ((rs->flags & resetflags) == 0 &&
+			    (flags & resetflags) != 0)
+				reset = true;
+			if ((rs->flags ^ flags) & resetflags)
+				request = true;
 			atomic_store_relaxed(&rs->flags, flags);
 		}
 		mutex_exit(&E->lock);
+
+		/*
+		 * If we disabled estimation or collection, nix all the
+		 * pending entropy and set needed to the maximum.
+		 */
+		if (reset) {
+			xc_broadcast(0, &entropy_reset_xc, NULL, NULL);
+			mutex_enter(&E->lock);
+			E->pending = 0;
+			atomic_store_relaxed(&E->needed,
+			    ENTROPY_CAPACITY*NBBY);
+			mutex_exit(&E->lock);
+		}
+
+		/*
+		 * If we changed any of the estimation or collection
+		 * flags, request new samples from everyone -- either
+		 * to make up for what we just lost, or to get new
+		 * samples from what we just added.
+		 */
+		if (request) {
+			mutex_enter(&E->lock);
+			entropy_request(ENTROPY_CAPACITY);
+			mutex_exit(&E->lock);
+		}
 		break;
 	}
 	case RNDADDDATA: {	/* Enter seed into entropy pool.  */
@@ -2162,7 +2307,7 @@ entropy_ioctl(unsigned long cmd, void *data)
 		 * load a seed from disk that we have already loaded
 		 * from the bootloader, so we don't double-count it.
 		 */
-		if (privileged) {
+		if (privileged && rdata->entropy && rdata->len) {
 			mutex_enter(&E->lock);
 			if (!E->seeded) {
 				entropybits = MIN(rdata->entropy,
@@ -2172,9 +2317,10 @@ entropy_ioctl(unsigned long cmd, void *data)
 			mutex_exit(&E->lock);
 		}
 
-		/* Enter the data.  */
+		/* Enter the data and consolidate entropy.  */
 		rnd_add_data(&seed_rndsource, rdata->data, rdata->len,
 		    entropybits);
+		entropy_consolidate();
 		break;
 	}
 	default:

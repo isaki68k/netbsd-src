@@ -1,4 +1,4 @@
-/*	$NetBSD: scsiconf.c,v 1.286 2020/02/19 16:04:39 riastradh Exp $	*/
+/*	$NetBSD: scsiconf.c,v 1.288 2020/07/11 14:31:46 kim Exp $	*/
 
 /*-
  * Copyright (c) 1998, 1999, 2004 The NetBSD Foundation, Inc.
@@ -48,7 +48,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: scsiconf.c,v 1.286 2020/02/19 16:04:39 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: scsiconf.c,v 1.288 2020/07/11 14:31:46 kim Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -883,6 +883,8 @@ scsi_probe_device(struct scsibus_softc *sc, int target, int lun)
 		break;
 
 	case SID_QUAL_LU_NOTPRESENT:
+		docontinue = 1;
+		/* FALLTHROUGH */
 	case SID_QUAL_reserved:
 	case SID_QUAL_LU_NOT_SUPP:
 		goto bad;
@@ -1018,10 +1020,14 @@ scsi_probe_device(struct scsibus_softc *sc, int target, int lun)
 		scsipi_insert_periph(chan, periph);
 
 		/*
-		 * determine supported opcodes and
-		 * timeouts if available
+		 * Determine supported opcodes and timeouts if available.
+		 * Only do this on peripherals reporting SCSI version 3
+		 * or greater - this command isn't in the SCSI-2 spec. and
+		 * it causes either timeouts or peripherals disappearing
+		 * when sent to some SCSI-1 or SCSI-2 peripherals.
 		 */
-		scsipi_get_opcodeinfo(periph);
+		if (periph->periph_version >= 3)
+			scsipi_get_opcodeinfo(periph);
 
 		/*
 		 * XXX Can't assign periph_dev here, because we'll

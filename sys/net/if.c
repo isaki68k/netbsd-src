@@ -1,4 +1,4 @@
-/*	$NetBSD: if.c,v 1.474 2020/04/18 15:56:26 thorpej Exp $	*/
+/*	$NetBSD: if.c,v 1.479 2020/07/16 15:02:08 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001, 2008 The NetBSD Foundation, Inc.
@@ -90,7 +90,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if.c,v 1.474 2020/04/18 15:56:26 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if.c,v 1.479 2020/07/16 15:02:08 msaitoh Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_inet.h"
@@ -3139,15 +3139,6 @@ ifioctl_common(struct ifnet *ifp, u_long cmd, void *data)
 		if (ifp->if_mtu == ifr->ifr_mtu)
 			break;
 		ifp->if_mtu = ifr->ifr_mtu;
-		/*
-		 * If the link MTU changed, do network layer specific procedure.
-		 */
-#ifdef INET6
-		KERNEL_LOCK_UNLESS_NET_MPSAFE();
-		if (in6_present)
-			nd6_setmtu(ifp);
-		KERNEL_UNLOCK_UNLESS_NET_MPSAFE();
-#endif
 		return ENETRESET;
 	case SIOCSIFDESCR:
 		error = kauth_authorize_network(curlwp->l_cred,
@@ -3493,11 +3484,14 @@ ifconf(u_long cmd, void *data)
 	int bound;
 	struct psref psref;
 
-	memset(&ifr, 0, sizeof(ifr));
 	if (docopy) {
+		if (ifc->ifc_len < 0)
+			return EINVAL;
+
 		space = ifc->ifc_len;
 		ifrp = ifc->ifc_req;
 	}
+	memset(&ifr, 0, sizeof(ifr));
 
 	bound = curlwp_bind();
 	s = pserialize_read_enter();
@@ -3791,12 +3785,13 @@ if_mcast_op(ifnet_t *ifp, const unsigned long cmd, const struct sockaddr *sa)
 	int rc;
 	struct ifreq ifr;
 
-	if (ifp->if_mcastop != NULL)
-		rc = (*ifp->if_mcastop)(ifp, cmd, sa);
-	else {
-		ifreq_setaddr(cmd, &ifr, sa);
-		rc = (*ifp->if_ioctl)(ifp, cmd, &ifr);
-	}
+	/*
+	 * XXX NOMPSAFE - this calls if_ioctl without holding IFNET_LOCK()
+	 * in some cases - e.g. when called from vlan/netinet/netinet6 code
+	 * directly rather than via doifoictl()
+	 */
+	ifreq_setaddr(cmd, &ifr, sa);
+	rc = (*ifp->if_ioctl)(ifp, cmd, &ifr);
 
 	return rc;
 }

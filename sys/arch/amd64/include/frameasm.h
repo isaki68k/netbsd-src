@@ -1,4 +1,4 @@
-/*	$NetBSD: frameasm.h,v 1.49 2020/04/26 14:49:17 maxv Exp $	*/
+/*	$NetBSD: frameasm.h,v 1.52 2020/07/19 07:35:08 maxv Exp $	*/
 
 #ifndef _AMD64_MACHINE_FRAMEASM_H
 #define _AMD64_MACHINE_FRAMEASM_H
@@ -48,7 +48,7 @@
 #define STI(temp_reg) sti
 #define PUSHF(temp_reg) pushf
 #define POPL popl
-#endif	/* XEN */
+#endif	/* XENPV */
 
 #define HP_NAME_CLAC		1
 #define HP_NAME_STAC		2
@@ -222,6 +222,7 @@
 #endif
 
 #ifdef KMSAN
+/* XXX this belongs somewhere else. */
 #define KMSAN_ENTER	\
 	movq	%rsp,%rdi		; \
 	movq	$TF_REGSIZE+16+40,%rsi	; \

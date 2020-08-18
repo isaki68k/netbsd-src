@@ -1,4 +1,4 @@
-/*	$NetBSD: cpufunc.h,v 1.38 2020/04/25 15:26:18 bouyer Exp $	*/
+/*	$NetBSD: cpufunc.h,v 1.41 2020/06/15 09:09:23 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 1998, 2007, 2019 The NetBSD Foundation, Inc.
@@ -89,24 +89,51 @@ invpcid(register_t op, uint64_t pcid, vaddr_t va)
 	);
 }
 
-static inline uint64_t
-rdtsc(void)
-{
-	uint32_t low, high;
+extern uint64_t (*rdtsc)(void);
 
-	__asm volatile (
-		"rdtsc"
-		: "=a" (low), "=d" (high)
-		:
-	);
+#define _SERIALIZE_lfence	__asm volatile ("lfence")
+#define _SERIALIZE_mfence	__asm volatile ("mfence")
+#define _SERIALIZE_cpuid	__asm volatile ("xor %%eax, %%eax;cpuid" ::: \
+	    "eax", "ebx", "ecx", "edx");
 
-	return (low | ((uint64_t)high << 32));
+#define RDTSCFUNC(fence)			\
+static inline uint64_t				\
+rdtsc_##fence(void)				\
+{						\
+	uint32_t low, high;			\
+						\
+	_SERIALIZE_##fence;			\
+	__asm volatile (			\
+		"rdtsc"				\
+		: "=a" (low), "=d" (high)	\
+		:				\
+	);					\
+						\
+	return (low | ((uint64_t)high << 32));	\
 }
 
+RDTSCFUNC(lfence)
+RDTSCFUNC(mfence)
+RDTSCFUNC(cpuid)
+
+#undef _SERIALIZE_LFENCE
+#undef _SERIALIZE_MFENCE
+#undef _SERIALIZE_CPUID
+
+
 #ifndef XENPV
-void	x86_hotpatch(uint32_t, const uint8_t *, size_t);
-void	x86_patch_window_open(u_long *, u_long *);
-void	x86_patch_window_close(u_long, u_long);
+struct x86_hotpatch_source {
+	uint8_t *saddr;
+	uint8_t *eaddr;
+};
+
+struct x86_hotpatch_descriptor {
+	uint8_t name;
+	uint8_t nsrc;
+	const struct x86_hotpatch_source *srcs[];
+};
+
+void	x86_hotpatch(uint8_t, uint8_t);
 void	x86_patch(bool);
 #endif
 
@@ -372,7 +399,7 @@ fnsave(void *addr)
 }
 
 static inline void
-frstor(void *addr)
+frstor(const void *addr)
 {
 	const uint8_t *area = addr;
 
@@ -398,7 +425,7 @@ fxsave(void *addr)
 }
 
 static inline void
-fxrstor(void *addr)
+fxrstor(const void *addr)
 {
 	const uint8_t *area = addr;
 
@@ -443,7 +470,7 @@ xsaveopt(void *addr, uint64_t mask)
 }
 
 static inline void
-xrstor(void *addr, uint64_t mask)
+xrstor(const void *addr, uint64_t mask)
 {
 	const uint8_t *area = addr;
 	uint32_t low, high;

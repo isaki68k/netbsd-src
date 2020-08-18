@@ -1,4 +1,4 @@
-/*	$NetBSD: sys_futex.c,v 1.7 2020/04/28 17:27:03 riastradh Exp $	*/
+/*	$NetBSD: sys_futex.c,v 1.11 2020/05/05 15:25:18 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2018, 2019, 2020 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sys_futex.c,v 1.7 2020/04/28 17:27:03 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sys_futex.c,v 1.11 2020/05/05 15:25:18 riastradh Exp $");
 
 /*
  * Futexes

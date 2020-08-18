@@ -1,4 +1,4 @@
-/* $NetBSD: cpu.c,v 1.43 2020/04/05 22:54:51 jmcneill Exp $ */
+/* $NetBSD: cpu.c,v 1.54 2020/07/25 22:51:57 riastradh Exp $ */
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(1, "$NetBSD: cpu.c,v 1.43 2020/04/05 22:54:51 jmcneill Exp $");
+__KERNEL_RCSID(1, "$NetBSD: cpu.c,v 1.54 2020/07/25 22:51:57 riastradh Exp $");
 
 #include "locators.h"
 #include "opt_arm_debug.h"
@@ -40,8 +40,15 @@ __KERNEL_RCSID(1, "$NetBSD: cpu.c,v 1.43 2020/04/05 22:54:51 jmcneill Exp $");
 #include <sys/device.h>
 #include <sys/kmem.h>
 #include <sys/reboot.h>
+#include <sys/rndsource.h>
 #include <sys/sysctl.h>
 #include <sys/systm.h>
+
+#include <crypto/aes/aes_impl.h>
+#include <crypto/aes/arch/arm/aes_armv8.h>
+#include <crypto/aes/arch/arm/aes_neon.h>
+#include <crypto/chacha/chacha_impl.h>
+#include <crypto/chacha/arch/arm/chacha_neon.h>
 
 #include <aarch64/armreg.h>
 #include <aarch64/cpu.h>
@@ -68,6 +75,9 @@ static void cpu_identify2(device_t self, struct cpu_info *);
 static void cpu_init_counter(struct cpu_info *);
 static void cpu_setup_id(struct cpu_info *);
 static void cpu_setup_sysctl(device_t, struct cpu_info *);
+static void cpu_setup_rng(device_t, struct cpu_info *);
+static void cpu_setup_aes(device_t, struct cpu_info *);
+static void cpu_setup_chacha(device_t, struct cpu_info *);
 
 #ifdef MULTIPROCESSOR
 #define NCPUINFO	MAXCPUS
@@ -131,6 +141,8 @@ cpu_attach(device_t dv, cpuid_t id)
 	ci->ci_dev = dv;
 	dv->dv_private = ci;
 
+	ci->ci_kfpu_spl = -1;
+
 	arm_cpu_do_topology(ci);
 	cpu_identify(ci->ci_dev, ci);
 
@@ -153,6 +165,9 @@ cpu_attach(device_t dv, cpuid_t id)
 	cpu_init_counter(ci);
 
 	cpu_setup_sysctl(dv, ci);
+	cpu_setup_rng(dv, ci);
+	cpu_setup_aes(dv, ci);
+	cpu_setup_chacha(dv, ci);
 }
 
 struct cpuidtab {
@@ -229,7 +244,7 @@ cpu_identify(device_t self, struct cpu_info *ci)
 static void
 cpu_identify1(device_t self, struct cpu_info *ci)
 {
-	uint32_t ctr, sctlr;	/* for cache */
+	uint64_t ctr, clidr, sctlr;	/* for cache */
 
 	/* SCTLR - System Control Register */
 	sctlr = reg_sctlr_el1_read();
@@ -267,14 +282,21 @@ cpu_identify1(device_t self, struct cpu_info *ci)
 	 * CTR - Cache Type Register
 	 */
 	ctr = reg_ctr_el0_read();
+	clidr = reg_clidr_el1_read();
 	aprint_verbose_dev(self, "Cache Writeback Granule %" PRIu64 "B,"
 	    " Exclusives Reservation Granule %" PRIu64 "B\n",
 	    __SHIFTOUT(ctr, CTR_EL0_CWG_LINE) * 4,
 	    __SHIFTOUT(ctr, CTR_EL0_ERG_LINE) * 4);
 
-	aprint_verbose_dev(self, "Dcache line %ld, Icache line %ld\n",
+	aprint_verbose_dev(self, "Dcache line %ld, Icache line %ld"
+	    ", DIC=%lu, IDC=%lu, LoUU=%lu, LoC=%lu, LoUIS=%lu\n",
 	    sizeof(int) << __SHIFTOUT(ctr, CTR_EL0_DMIN_LINE),
-	    sizeof(int) << __SHIFTOUT(ctr, CTR_EL0_IMIN_LINE));
+	    sizeof(int) << __SHIFTOUT(ctr, CTR_EL0_IMIN_LINE),
+	    __SHIFTOUT(ctr, CTR_EL0_DIC),
+	    __SHIFTOUT(ctr, CTR_EL0_IDC),
+	    __SHIFTOUT(clidr, CLIDR_LOUU),
+	    __SHIFTOUT(clidr, CLIDR_LOC),
+	    __SHIFTOUT(clidr, CLIDR_LOUIS));
 }
 
 
@@ -340,6 +362,16 @@ cpu_identify2(device_t self, struct cpu_info *ci)
 	aprint_verbose_dev(self, "auxID=0x%" PRIx64, ci->ci_id.ac_aa64isar0);
 
 	/* PFR0 */
+	switch (__SHIFTOUT(id->ac_aa64pfr0, ID_AA64PFR0_EL1_CSV3)) {
+	case ID_AA64PFR0_EL1_CSV3_IMPL:
+		aprint_verbose(", CSV3");
+		break;
+	}
+	switch (__SHIFTOUT(id->ac_aa64pfr0, ID_AA64PFR0_EL1_CSV2)) {
+	case ID_AA64PFR0_EL1_CSV2_IMPL:
+		aprint_verbose(", CSV2");
+		break;
+	}
 	switch (__SHIFTOUT(id->ac_aa64pfr0, ID_AA64PFR0_EL1_GIC)) {
 	case ID_AA64PFR0_EL1_GIC_CPUIF_EN:
 		aprint_verbose(", GICv3");
@@ -375,7 +407,18 @@ cpu_identify2(device_t self, struct cpu_info *ci)
 		aprint_verbose(", AES+PMULL");
 		break;
 	}
+	switch (__SHIFTOUT(id->ac_aa64isar0, ID_AA64ISAR0_EL1_RNDR)) {
+	case ID_AA64ISAR0_EL1_RNDR_RNDRRS:
+		aprint_verbose(", RNDRRS");
+		break;
+	}
 
+	/* PFR0:DIT -- data-independent timing support */
+	switch (__SHIFTOUT(id->ac_aa64pfr0, ID_AA64PFR0_EL1_DIT)) {
+	case ID_AA64PFR0_EL1_DIT_IMPL:
+		aprint_verbose(", DIT");
+		break;
+	}
 
 	/* PFR0:AdvSIMD */
 	switch (__SHIFTOUT(id->ac_aa64pfr0, ID_AA64PFR0_EL1_ADVSIMD)) {
@@ -465,6 +508,9 @@ cpu_setup_id(struct cpu_info *ci)
 	id->ac_mvfr1     = reg_mvfr1_el1_read();
 	id->ac_mvfr2     = reg_mvfr2_el1_read();
 
+	id->ac_clidr     = reg_clidr_el1_read();
+	id->ac_ctr       = reg_ctr_el0_read();
+
 	/* Only in ARMv8.2. */
 	id->ac_aa64zfr0  = 0 /* reg_id_aa64zfr0_el1_read() */;
 
@@ -495,6 +541,118 @@ cpu_setup_sysctl(device_t dv, struct cpu_info *ci)
 		       CTLTYPE_STRUCT, "cpu_id", NULL,
 		       NULL, 0, &ci->ci_id, sizeof(ci->ci_id),
 		       CTL_CREATE, CTL_EOL);
+}
+
+static struct krndsource rndrrs_source;
+
+static void
+rndrrs_get(size_t nbytes, void *cookie)
+{
+	/* Entropy bits per data byte, wild-arse guess.  */
+	const unsigned bpb = 4;
+	size_t nbits = nbytes*NBBY;
+	uint64_t x;
+	int error;
+
+	while (nbits) {
+		/*
+		 * x := random 64-bit sample
+		 * error := Z bit, set to 1 if sample is bad
+		 *
+		 * XXX This should be done by marking the function
+		 * __attribute__((target("arch=armv8.5-a+rng"))) and
+		 * using `mrs %0, rndrrs', but:
+		 *
+		 * (a) the version of gcc we use doesn't support that,
+		 * and
+		 * (b) clang doesn't seem to like `rndrrs' itself.
+		 *
+		 * So we use the numeric encoding for now.
+		 */
+		__asm __volatile(""
+		    "mrs	%0, s3_3_c2_c4_1\n"
+		    "cset	%w1, eq"
+		    : "=r"(x), "=r"(error));
+		if (error)
+			break;
+		rnd_add_data_sync(&rndrrs_source, &x, sizeof(x),
+		    bpb*sizeof(x));
+		nbits -= MIN(nbits, bpb*sizeof(x));
+	}
+
+	explicit_memset(&x, 0, sizeof x);
+}
+
+/*
+ * setup the RNDRRS entropy source
+ */
+static void
+cpu_setup_rng(device_t dv, struct cpu_info *ci)
+{
+	struct aarch64_sysctl_cpu_id *id = &ci->ci_id;
+
+	/* Probably shared between cores.  */
+	if (!CPU_IS_PRIMARY(ci))
+		return;
+
+	/* Verify that it is supported.  */
+	switch (__SHIFTOUT(id->ac_aa64isar0, ID_AA64ISAR0_EL1_RNDR)) {
+	case ID_AA64ISAR0_EL1_RNDR_RNDRRS:
+		break;
+	default:
+		return;
+	}
+
+	/* Attach it.  */
+	rndsource_setcb(&rndrrs_source, rndrrs_get, NULL);
+	rnd_attach_source(&rndrrs_source, "rndrrs", RND_TYPE_RNG,
+	    RND_FLAG_DEFAULT|RND_FLAG_HASCB);
+}
+
+/*
+ * setup the AES implementation
+ */
+static void
+cpu_setup_aes(device_t dv, struct cpu_info *ci)
+{
+	struct aarch64_sysctl_cpu_id *id = &ci->ci_id;
+
+	/* Check for ARMv8.0-AES support.  */
+	switch (__SHIFTOUT(id->ac_aa64isar0, ID_AA64ISAR0_EL1_AES)) {
+	case ID_AA64ISAR0_EL1_AES_AES:
+	case ID_AA64ISAR0_EL1_AES_PMUL:
+		aes_md_init(&aes_armv8_impl);
+		return;
+	default:
+		break;
+	}
+
+	/* Failing that, check for SIMD support.  */
+	switch (__SHIFTOUT(id->ac_aa64pfr0, ID_AA64PFR0_EL1_ADVSIMD)) {
+	case ID_AA64PFR0_EL1_ADV_SIMD_IMPL:
+		aes_md_init(&aes_neon_impl);
+		return;
+	default:
+		break;
+	}
+}
+
+/*
+ * setup the ChaCha implementation
+ */
+static void
+cpu_setup_chacha(device_t dv, struct cpu_info *ci)
+{
+	struct aarch64_sysctl_cpu_id *id = &ci->ci_id;
+
+	/* Check for SIMD support.  */
+	switch (__SHIFTOUT(id->ac_aa64pfr0, ID_AA64PFR0_EL1_ADVSIMD)) {
+	case ID_AA64PFR0_EL1_ADV_SIMD_IMPL:
+		chacha_md_init(&chacha_neon_impl);
+		return;
+	default:
+		break;
+	}
 }
 
 #ifdef MULTIPROCESSOR

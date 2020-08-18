@@ -1,4 +1,4 @@
-/*      $NetBSD: xbdback_xenbus.c,v 1.92 2020/04/25 20:05:25 jdolecek Exp $      */
+/*      $NetBSD: xbdback_xenbus.c,v 1.96 2020/05/07 19:49:29 bouyer Exp $      */
 
 /*
  * Copyright (c) 2006 Manuel Bouyer.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xbdback_xenbus.c,v 1.92 2020/04/25 20:05:25 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xbdback_xenbus.c,v 1.96 2020/05/07 19:49:29 bouyer Exp $");
 
 #include <sys/buf.h>
 #include <sys/condvar.h>
@@ -46,6 +46,7 @@ __KERNEL_RCSID(0, "$NetBSD: xbdback_xenbus.c,v 1.92 2020/04/25 20:05:25 jdolecek
 #include <sys/types.h>
 #include <sys/vnode.h>
 
+#include <xen/hypervisor.h>
 #include <xen/xen.h>
 #include <xen/xen_shm.h>
 #include <xen/evtchn.h>
@@ -595,8 +596,8 @@ xbdback_connect(struct xbdback_instance *xbdi)
 	XENPRINTF(("xbdback %s: connect evchannel %d\n", xbusd->xbusd_path, xbdi->xbdi_evtchn));
 	xbdi->xbdi_evtchn = evop.u.bind_interdomain.local_port;
 
-	xbdi->xbdi_ih = xen_intr_establish_xname(-1, &xen_pic, xbdi->xbdi_evtchn,
-	    IST_LEVEL, IPL_BIO, xbdback_evthandler, xbdi, false,
+	xbdi->xbdi_ih = intr_establish_xname(-1, &xen_pic, xbdi->xbdi_evtchn,
+	    IST_LEVEL, IPL_BIO, xbdback_evthandler, xbdi, true,
 	    xbdi->xbdi_name);
 	KASSERT(xbdi->xbdi_ih != NULL);
 	aprint_verbose("xbd backend domain %d handle %#x (%d) "
@@ -642,7 +643,6 @@ xbdback_disconnect(struct xbdback_instance *xbdi)
 		return;
 	}
 	hypervisor_mask_event(xbdi->xbdi_evtchn);
-	xen_intr_disestablish(xbdi->xbdi_ih);
 
 	/* signal thread that we want to disconnect, then wait for it */
 	xbdi->xbdi_status = DISCONNECTING;
@@ -652,6 +652,7 @@ xbdback_disconnect(struct xbdback_instance *xbdi)
 		cv_wait(&xbdi->xbdi_cv, &xbdi->xbdi_lock);
 
 	mutex_exit(&xbdi->xbdi_lock);
+	intr_disestablish(xbdi->xbdi_ih);
 
 	xenbus_switch_state(xbdi->xbdi_xbusd, NULL, XenbusStateClosing);
 }
@@ -1386,6 +1387,8 @@ xbdback_co_do_io(struct xbdback_instance *xbdi, void *obj)
 	}
 	case BLKIF_OP_READ:
 	case BLKIF_OP_WRITE:
+		KASSERT(mutex_owned(&xbdi->xbdi_lock));
+		mutex_exit(&xbdi->xbdi_lock);
 		xbd_io->xio_buf.b_data = (void *)
 		    (xbd_io->xio_vaddr + xbd_io->xio_start_offset);
 
@@ -1396,6 +1399,7 @@ xbdback_co_do_io(struct xbdback_instance *xbdi, void *obj)
 		}
 		/* will call xbdback_iodone() asynchronously when done */
 		bdev_strategy(&xbd_io->xio_buf);
+		mutex_enter(&xbdi->xbdi_lock);
 		xbdi->xbdi_cont = xbdback_co_main_incr;
 		return xbdi;
 	default:

@@ -1,4 +1,4 @@
-/*	$NetBSD: lwp.h,v 1.209 2020/04/29 01:52:26 thorpej Exp $	*/
+/*	$NetBSD: lwp.h,v 1.211 2020/08/01 02:04:55 riastradh Exp $	*/
 
 /*
  * Copyright (c) 2001, 2006, 2007, 2008, 2009, 2010, 2019, 2020
@@ -83,14 +83,20 @@ struct lockdebug;
 struct sysent;
 
 struct lwp {
+	/* Must not be zeroed on free. */
+	struct cpu_info *volatile l_cpu;/* s: CPU we're on if LSONPROC */
+	kmutex_t * volatile l_mutex;	/* l: ptr to mutex on sched state */
+	struct turnstile *l_ts;		/* l: current turnstile */
+	int		l_stat;		/* l: overall LWP status */
+	int		l__reserved;	/*  : padding - reuse as needed */	
+
 	/* Scheduling and overall state. */
+#define	l_startzero l_runq
 	TAILQ_ENTRY(lwp) l_runq;	/* s: run queue */
 	union {
 		void *	info;		/* s: scheduler-specific structure */
 		u_int	timeslice;	/* l: time-quantum for SCHED_M2 */
 	} l_sched;
-	struct cpu_info *volatile l_cpu;/* s: CPU we're on if LSONPROC */
-	kmutex_t * volatile l_mutex;	/* l: ptr to mutex on sched state */
 	void		*l_addr;	/* l: PCB address; use lwp_getpcb() */
 	struct mdlwp	l_md;		/* l: machine-dependent fields. */
 	struct bintime 	l_rtime;	/* l: real time */
@@ -102,8 +108,7 @@ struct lwp {
 	u_int		l_slpticks;	/* l: Saved start time of sleep */
 	u_int		l_slpticksum;	/* l: Sum of ticks spent sleeping */
 	int		l_biglocks;	/* l: biglock count before sleep */
-	short		l_stat;		/* l: overall LWP status */
-	short		l_class;	/* l: scheduling class */
+	int		l_class;	/* l: scheduling class */
 	int		l_kpriority;	/* !: has kernel priority boost */
 	pri_t		l_kpribase;	/* !: kernel priority base level */
 	pri_t		l_priority;	/* l: scheduler priority */
@@ -124,7 +129,6 @@ struct lwp {
 	kcpuset_t	*l_affinity;	/* l: CPU set for affinity */
 
 	/* Synchronisation. */
-	struct turnstile *l_ts;		/* l: current turnstile */
 	struct syncobj	*l_syncobj;	/* l: sync object operations set */
 	LIST_ENTRY(lwp) l_sleepchain;	/* l: sleep queue */
 	wchan_t		l_wchan;	/* l: sleep address */
@@ -252,6 +256,7 @@ extern int		maxlwp __read_mostly;	/* max number of lwps */
 #define	LW_STIMO	0x00000040 /* Sleep timed out */
 #define	LW_SINTR	0x00000080 /* Sleep is interruptible. */
 #define	LW_SYSTEM	0x00000200 /* Kernel thread */
+#define	LW_SYSTEM_FPU	0x00000400 /* Kernel thread with vector/FP enabled */
 #define	LW_DBGSUSPEND	0x00010000 /* Suspend by debugger */
 #define	LW_WSUSPEND	0x00020000 /* Suspend before return to user */
 #define	LW_BATCH	0x00040000 /* LWP tends to hog CPU */
@@ -311,7 +316,6 @@ extern int		maxlwp __read_mostly;	/* max number of lwps */
  *
  * These values are set in stone and must not be reused with future changes.
  */
-#define	LSLARVAL	0	/* in pid table, but partially constructed */
 #define	LSIDL		1	/* Process being created by fork. */
 #define	LSRUN		2	/* Currently runnable. */
 #define	LSSLEEP		3	/* Sleeping on an address. */
