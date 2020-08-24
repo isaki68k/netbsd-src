@@ -209,7 +209,7 @@ vsaudio_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 	sc->sc_bt = va->va_memt;
-	sc->sc_am7930.sc_dev = device_private(self);
+	sc->sc_am7930.sc_dev = self;
 	sc->sc_am7930.sc_glue = &vsaudio_glue;
 	am7930_init(&sc->sc_am7930, AUDIOAMD_POLL_MODE);
 	scb_vecalloc(va->va_cvec, vsaudio_hwintr, &sc->sc_am7930, SCB_ISTACK,
