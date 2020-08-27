@@ -96,6 +96,7 @@
 
 struct vsaudio_softc {
 	struct am7930_softc sc_am7930;	/* glue to MI code */
+
 	bus_space_tag_t sc_bt;		/* bus cookie */
 	bus_space_handle_t sc_bh;	/* device registers */
 };
@@ -202,6 +203,7 @@ vsaudio_attach(device_t parent, device_t self, void *aux)
 {
 	struct vsbus_attach_args *va = aux;
 	struct vsaudio_softc *sc = device_private(self);
+	struct am7930_softc *amsc = &sc->sc_am7930;
 
 	if (bus_space_map(va->va_memt, va->va_paddr, AM7930_DREG_SIZE << 2, 0,
 	    &sc->sc_bh) != 0) {
@@ -209,12 +211,12 @@ vsaudio_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 	sc->sc_bt = va->va_memt;
-	sc->sc_am7930.sc_dev = self;
-	sc->sc_am7930.sc_glue = &vsaudio_glue;
-	am7930_init(&sc->sc_am7930, AUDIOAMD_POLL_MODE);
-	scb_vecalloc(va->va_cvec, vsaudio_hwintr, &sc->sc_am7930, SCB_ISTACK,
-	    &sc->sc_am7930.sc_intrcnt);
-	evcnt_attach_dynamic(&sc->sc_am7930.sc_intrcnt, EVCNT_TYPE_INTR, NULL,
+	amsc->sc_dev = self;
+	amsc->sc_glue = &vsaudio_glue;
+	am7930_init(amsc, AUDIOAMD_POLL_MODE);
+	scb_vecalloc(va->va_cvec, vsaudio_hwintr, amsc, SCB_ISTACK,
+	    &amsc->sc_intrcnt);
+	evcnt_attach_dynamic(&amsc->sc_intrcnt, EVCNT_TYPE_INTR, NULL,
 	    device_xname(self), "intr");
 
 	aprint_normal("\n");

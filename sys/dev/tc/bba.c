@@ -196,13 +196,13 @@ bba_attach(device_t parent, device_t self, void *aux)
 {
 	struct ioasicdev_attach_args *ia;
 	struct bba_softc *sc;
-	struct am7930_softc *asc;
+	struct am7930_softc *amsc;
 	struct ioasic_softc *iosc = device_private(parent);
 
 	ia = aux;
 	sc = device_private(self);
-	asc = &sc->sc_am7930;
-	asc->sc_dev = self;
+	amsc = &sc->sc_am7930;
+	amsc->sc_dev = self;
 	sc->sc_bst = iosc->sc_bst;
 	sc->sc_bsh = iosc->sc_bsh;
 	sc->sc_dmat = iosc->sc_dmat;
@@ -216,22 +216,22 @@ bba_attach(device_t parent, device_t self, void *aux)
 
 	printf("\n");
 
-	bba_reset(sc,1);
+	bba_reset(sc, 1);
 
 	/*
 	 * Set up glue for MI code early; we use some of it here.
 	 */
-	asc->sc_glue = &bba_glue;
+	amsc->sc_glue = &bba_glue;
 
 	/*
 	 *  MI initialisation.  We will be doing DMA.
 	 */
-	am7930_init(asc, AUDIOAMD_DMA_MODE);
+	am7930_init(amsc, AUDIOAMD_DMA_MODE);
 
 	ioasic_intr_establish(parent, ia->iada_cookie, TC_IPL_NONE,
 	    bba_intr, sc);
 
-	audio_attach_mi(&sa_hw_if, asc, self);
+	audio_attach_mi(&sa_hw_if, sc, self);
 }
 
 
@@ -259,14 +259,13 @@ bba_reset(struct bba_softc *sc, int reset)
 		ssr |= IOASIC_CSR_ISDN_ENABLE;
 		bus_space_write_4(sc->sc_bst, sc->sc_bsh, IOASIC_CSR, ssr);
 	}
-
 }
 
 
 static void *
 bba_allocm(void *addr, int direction, size_t size)
 {
-	struct am7930_softc *asc;
+	struct am7930_softc *amsc;
 	struct bba_softc *sc;
 	bus_dma_segment_t seg;
 	int rseg;
@@ -275,20 +274,20 @@ bba_allocm(void *addr, int direction, size_t size)
 	int state;
 
 	DPRINTF(("bba_allocm: size = %zu\n", size));
-	asc = addr;
 	sc = addr;
+	amsc = addr;
 	state = 0;
 
 	if (bus_dmamem_alloc(sc->sc_dmat, size, BBA_DMABUF_ALIGN,
 	    BBA_DMABUF_BOUNDARY, &seg, 1, &rseg, BUS_DMA_WAITOK)) {
-		aprint_error_dev(asc->sc_dev, "can't allocate DMA buffer\n");
+		aprint_error_dev(amsc->sc_dev, "can't allocate DMA buffer\n");
 		goto bad;
 	}
 	state |= 1;
 
 	if (bus_dmamem_map(sc->sc_dmat, &seg, rseg, size,
 	    &kva, BUS_DMA_WAITOK | BUS_DMA_COHERENT)) {
-		aprint_error_dev(asc->sc_dev, "can't map DMA buffer\n");
+		aprint_error_dev(amsc->sc_dev, "can't map DMA buffer\n");
 		goto bad;
 	}
 	state |= 2;
@@ -614,11 +613,11 @@ bba_round_blocksize(void *addr, int blk, int mode, const audio_params_t *param)
 
 /* direct write */
 static void
-bba_codec_dwrite(struct am7930_softc *asc, int reg, uint8_t val)
+bba_codec_dwrite(struct am7930_softc *amsc, int reg, uint8_t val)
 {
 	struct bba_softc *sc;
 
-	sc = (struct bba_softc *)asc;
+	sc = (struct bba_softc *)amsc;
 	DPRINTF(("bba_codec_dwrite(): sc=%p, reg=%d, val=%d\n", sc, reg, val));
 
 #if defined(__alpha__)
@@ -632,11 +631,11 @@ bba_codec_dwrite(struct am7930_softc *asc, int reg, uint8_t val)
 
 /* direct read */
 static uint8_t
-bba_codec_dread(struct am7930_softc *asc, int reg)
+bba_codec_dread(struct am7930_softc *amsc, int reg)
 {
 	struct bba_softc *sc;
 
-	sc = (struct bba_softc *)asc;
+	sc = (struct bba_softc *)amsc;
 	DPRINTF(("bba_codec_dread(): sc=%p, reg=%d\n", sc, reg));
 
 #if defined(__alpha__)
