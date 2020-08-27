@@ -82,14 +82,6 @@
 #include <dev/ic/am7930reg.h>
 #include <dev/ic/am7930var.h>
 
-#ifdef AUDIO_DEBUG
-#define DPRINTF(x)	if (am7930debug) printf x
-#define DPRINTFN(n,x)	if (am7930debug>(n)) printf x
-#else
-#define DPRINTF(x)
-#define DPRINTFN(n,x)
-#endif  /* AUDIO_DEBUG */
-
 /* physical addresses of the AM79C30 chip */
 #define VSAUDIO_CSR			0x200d0000
 #define VSAUDIO_CSR_KA49		0x26800000

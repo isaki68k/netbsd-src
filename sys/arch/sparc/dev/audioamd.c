@@ -55,14 +55,6 @@ __KERNEL_RCSID(0, "$NetBSD: audioamd.c,v 1.29 2019/05/08 13:40:16 isaki Exp $");
 
 #define AUDIO_ROM_NAME "audio"
 
-#ifdef AUDIO_DEBUG
-#define DPRINTF(x)      if (am7930debug) printf x
-#define DPRINTFN(n,x)   if (am7930debug>(n)) printf x
-#else
-#define DPRINTF(x)
-#define DPRINTFN(n,x)
-#endif	/* AUDIO_DEBUG */
-
 struct audioamd_softc {
 	struct am7930_softc sc_am7930;	/* glue to MI code */
 
