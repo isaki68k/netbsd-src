@@ -191,7 +191,7 @@ void
 am7930_init(struct am7930_softc *sc, int flag)
 {
 
-	DPRINTF(("am7930_init()\n"));
+	DPRINTF(("%s\n", __func__));
 
 	/* set boot defaults */
 	sc->sc_rlevel = 128;
@@ -283,7 +283,7 @@ am7930_commit_settings(void *addr)
 	uint8_t mmr2, mmr3;
 	int level;
 
-	DPRINTF(("sa_commit.\n"));
+	DPRINTF(("%s\n", __func__));
 	sc = addr;
 	gx = gx_coeff[sc->sc_rlevel];
 	stgr = gx_coeff[sc->sc_mlevel];
@@ -333,7 +333,7 @@ am7930_trigger_output(void *addr, void *start, void *end, int blksize,
 {
 	struct am7930_softc *sc;
 
-	DPRINTF(("sa_trigger_output: blksize=%d %p(%p)\n", blksize, intr, arg));
+	DPRINTF(("%s: blksize=%d %p(%p)\n", __func__, blksize, intr, arg));
 	sc = addr;
 	sc->sc_p.intr = intr;
 	sc->sc_p.arg = arg;
@@ -346,7 +346,7 @@ am7930_trigger_output(void *addr, void *start, void *end, int blksize,
 	/* Start if either play or rec start. */
 	if (sc->sc_r.intr == NULL) {
 		AM7930_IWRITE(sc, AM7930_IREG_INIT, AM7930_INIT_PMS_ACTIVE);
-		DPRINTF(("sa_start_output: started intrs.\n"));
+		DPRINTF(("%s: started intrs.\n", __func__));
 	}
 	return 0;
 }
@@ -357,7 +357,7 @@ am7930_trigger_input(void *addr, void *start, void *end, int blksize,
 {
 	struct am7930_softc *sc;
 
-	DPRINTF(("sa_trigger_input: blksize=%d %p(%p)\n", blksize, intr, arg));
+	DPRINTF(("%s: blksize=%d %p(%p)\n", __func__, blksize, intr, arg));
 	sc = addr;
 	sc->sc_r.intr = intr;
 	sc->sc_r.arg = arg;
@@ -370,7 +370,7 @@ am7930_trigger_input(void *addr, void *start, void *end, int blksize,
 	/* Start if either play or rec start. */
 	if (sc->sc_p.intr == NULL) {
 		AM7930_IWRITE(sc, AM7930_IREG_INIT, AM7930_INIT_PMS_ACTIVE);
-		DPRINTF(("sa_start_input: started intrs.\n"));
+		DPRINTF(("%s: started intrs.\n", __func__));
 	}
 	return 0;
 }
@@ -495,7 +495,7 @@ am7930_set_port(void *addr, mixer_ctrl_t *cp)
 {
 	struct am7930_softc *sc;
 
-	DPRINTF(("am7930_set_port: port=%d", cp->dev));
+	DPRINTF(("%s: port=%d\n", __func__, cp->dev));
 	sc = addr;
 	if (cp->dev == AUDIOAMD_RECORD_SOURCE ||
 		cp->dev == AUDIOAMD_MONITOR_OUTPUT ||
@@ -543,7 +543,7 @@ am7930_get_port(void *addr, mixer_ctrl_t *cp)
 {
 	struct am7930_softc *sc;
 
-	DPRINTF(("am7930_get_port: port=%d\n", cp->dev));
+	DPRINTF(("%s: port=%d\n", __func__, cp->dev));
 	sc = addr;
 	if (cp->dev == AUDIOAMD_RECORD_SOURCE ||
 		cp->dev == AUDIOAMD_MONITOR_OUTPUT ||
@@ -590,7 +590,7 @@ int
 am7930_query_devinfo(void *addr, mixer_devinfo_t *dip)
 {
 
-	DPRINTF(("am7930_query_devinfo()\n"));
+	DPRINTF(("%s\n", __func__));
 
 	switch(dip->index) {
 	case AUDIOAMD_MIC_VOL:
