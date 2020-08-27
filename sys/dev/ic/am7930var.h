@@ -35,7 +35,7 @@ struct am7930_softc {
 	kmutex_t sc_lock;
 	kmutex_t sc_intr_lock;
 	void *sc_sicookie;		/* softint(9) cookie */
-	struct evcnt	sc_intrcnt;	/* statistics */
+	struct evcnt sc_intrcnt;	/* statistics */
 };
 
 extern int     am7930debug;
