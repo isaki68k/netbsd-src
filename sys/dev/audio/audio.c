@@ -1,4 +1,4 @@
-/*	$NetBSD: audio.c,v 1.75 2020/05/29 03:09:14 isaki Exp $	*/
+/*	$NetBSD: audio.c,v 1.78 2020/08/23 04:20:01 isaki Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -138,7 +138,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.75 2020/05/29 03:09:14 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.78 2020/08/23 04:20:01 isaki Exp $");
 
 #ifdef _KERNEL_OPT
 #include "audio.h"
@@ -6132,7 +6132,7 @@ audio_check_params(audio_format2_t *p)
 
 	/*
 	 * Convert obsolete AUDIO_ENCODING_PCM encodings.
-	 * 
+	 *
 	 * AUDIO_ENCODING_PCM16 == AUDIO_ENCODING_LINEAR
 	 * So, it's always signed, as in SunOS.
 	 *

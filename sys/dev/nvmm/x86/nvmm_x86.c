@@ -1,4 +1,4 @@
-/*	$NetBSD: nvmm_x86.c,v 1.12 2020/08/11 15:23:10 maxv Exp $	*/
+/*	$NetBSD: nvmm_x86.c,v 1.15 2020/08/22 11:00:00 maxv Exp $	*/
 
 /*
  * Copyright (c) 2018-2020 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nvmm_x86.c,v 1.12 2020/08/11 15:23:10 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nvmm_x86.c,v 1.15 2020/08/22 11:00:00 maxv Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -363,7 +363,7 @@ const struct nvmm_x86_cpuid_mask nvmm_cpuid_00000007 = {
 	    /* CPUID_SEF_SRBDS_CTRL excluded */
 	    CPUID_SEF_MD_CLEAR |
 	    /* CPUID_SEF_TSX_FORCE_ABORT excluded */
-	    /* CPUID_SEF_SERIALIZE excluded */
+	    CPUID_SEF_SERIALIZE |
 	    /* CPUID_SEF_HYBRID excluded */
 	    /* CPUID_SEF_TSXLDTRK excluded */
 	    /* CPUID_SEF_CET_IBT excluded */
@@ -389,22 +389,22 @@ const struct nvmm_x86_cpuid_mask nvmm_cpuid_80000001 = {
 	    CPUID_MISALIGNSSE |
 	    CPUID_3DNOWPF |
 	    /* CPUID_OSVW excluded */
-	    CPUID_IBS |
+	    /* CPUID_IBS excluded */
 	    CPUID_XOP |
 	    /* CPUID_SKINIT excluded */
-	    CPUID_WDT |
-	    CPUID_LWP |
+	    /* CPUID_WDT excluded */
+	    /* CPUID_LWP excluded */
 	    CPUID_FMA4 |
 	    CPUID_TCE |
-	    CPUID_NODEID |
+	    /* CPUID_NODEID excluded */
 	    CPUID_TBM |
-	    CPUID_TOPOEXT |
-	    CPUID_PCEC |
-	    CPUID_PCENB |
-	    CPUID_SPM |
-	    CPUID_DBE |
-	    CPUID_PTSC |
-	    CPUID_L2IPERFC,
+	    CPUID_TOPOEXT,
+	    /* CPUID_PCEC excluded */
+	    /* CPUID_PCENB excluded */
+	    /* CPUID_SPM excluded */
+	    /* CPUID_DBE excluded */
+	    /* CPUID_PTSC excluded */
+	    /* CPUID_L2IPERFC excluded */
 	    /* CPUID_MWAITX excluded */
 	.edx =
 	    CPUID_SYSCALL |
@@ -419,6 +419,26 @@ const struct nvmm_x86_cpuid_mask nvmm_cpuid_80000001 = {
 	    CPUID_EM64T |
 	    CPUID_3DNOW2 |
 	    CPUID_3DNOW
+};
+
+const struct nvmm_x86_cpuid_mask nvmm_cpuid_80000007 = {
+	.eax = 0,
+	.ebx = 0,
+	.ecx = 0,
+	.edx = CPUID_APM_ITSC
+};
+
+const struct nvmm_x86_cpuid_mask nvmm_cpuid_80000008 = {
+	.eax = ~0,
+	.ebx =
+	    CPUID_CAPEX_CLZERO |
+	    /* CPUID_CAPEX_IRPERF excluded */
+	    CPUID_CAPEX_XSAVEERPTR |
+	    /* CPUID_CAPEX_RDPRU excluded */
+	    /* CPUID_CAPEX_MCOMMIT excluded */
+	    CPUID_CAPEX_WBNOINVD,
+	.ecx = ~0, /* TODO? */
+	.edx = 0
 };
 
 bool

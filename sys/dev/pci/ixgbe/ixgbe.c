@@ -1,4 +1,4 @@
-/* $NetBSD: ixgbe.c,v 1.239 2020/08/17 08:23:30 msaitoh Exp $ */
+/* $NetBSD: ixgbe.c,v 1.244 2020/08/24 19:03:27 msaitoh Exp $ */
 
 /******************************************************************************
 
@@ -1507,11 +1507,10 @@ ixgbe_is_sfp(struct ixgbe_hw *hw)
 static void
 ixgbe_schedule_admin_tasklet(struct adapter *adapter)
 {
-	if (adapter->schedule_wqs_ok) {
-		if (atomic_cas_uint(&adapter->admin_pending, 0, 1) == 0)
-			workqueue_enqueue(adapter->admin_wq,
-			    &adapter->admin_wc, NULL);
-	}
+
+	if (atomic_cas_uint(&adapter->admin_pending, 0, 1) == 0)
+		workqueue_enqueue(adapter->admin_wq,
+		    &adapter->admin_wc, NULL);
 }
 
 /************************************************************************
@@ -3558,13 +3557,6 @@ ixgbe_detach(device_t dev, int flags)
 		return (EBUSY);
 	}
 
-	/*
-	 * Stop the interface. ixgbe_setup_low_power_mode() calls ixgbe_stop(),
-	 * so it's not required to call ixgbe_stop() directly.
-	 */
-	IXGBE_CORE_LOCK(adapter);
-	ixgbe_setup_low_power_mode(adapter);
-	IXGBE_CORE_UNLOCK(adapter);
 #if NVLAN > 0
 	/* Make sure VLANs are not using driver */
 	if (!VLAN_ATTACHED(&adapter->osdep.ec))
@@ -3577,6 +3569,25 @@ ixgbe_detach(device_t dev, int flags)
 	}
 #endif
 
+	/*
+	 * Stop the interface. ixgbe_setup_low_power_mode() calls ixgbe_stop(),
+	 * so it's not required to call ixgbe_stop() directly.
+	 */
+	IXGBE_CORE_LOCK(adapter);
+	ixgbe_setup_low_power_mode(adapter);
+	IXGBE_CORE_UNLOCK(adapter);
+
+	callout_halt(&adapter->timer, NULL);
+	if (adapter->feat_en & IXGBE_FEATURE_RECOVERY_MODE) {
+		callout_stop(&adapter->recovery_mode_timer);
+		callout_halt(&adapter->recovery_mode_timer, NULL);
+	}
+
+	workqueue_wait(adapter->admin_wq, &adapter->admin_wc);
+	atomic_store_relaxed(&adapter->admin_pending, 0);
+	workqueue_wait(adapter->timer_wq, &adapter->timer_wc);
+	atomic_store_relaxed(&adapter->timer_pending, 0);
+
 	pmf_device_deregister(dev);
 
 	ether_ifdetach(adapter->ifp);
@@ -3587,12 +3598,6 @@ ixgbe_detach(device_t dev, int flags)
 	ctrl_ext = IXGBE_READ_REG(&adapter->hw, IXGBE_CTRL_EXT);
 	ctrl_ext &= ~IXGBE_CTRL_EXT_DRV_LOAD;
 	IXGBE_WRITE_REG(&adapter->hw, IXGBE_CTRL_EXT, ctrl_ext);
-
-	callout_halt(&adapter->timer, NULL);
-	if (adapter->feat_en & IXGBE_FEATURE_RECOVERY_MODE) {
-		callout_stop(&adapter->recovery_mode_timer);
-		callout_halt(&adapter->recovery_mode_timer, NULL);
-	}
 
 	if (adapter->feat_en & IXGBE_FEATURE_NETMAP)
 		netmap_detach(adapter->ifp);
@@ -4618,13 +4623,20 @@ static bool
 ixgbe_sfp_cage_full(struct ixgbe_hw *hw)
 {
 	uint32_t mask;
+	int rv;
 
 	if (hw->mac.type >= ixgbe_mac_X540)
 		mask = IXGBE_ESDP_SDP0;
 	else
 		mask = IXGBE_ESDP_SDP2;
 
-	return IXGBE_READ_REG(hw, IXGBE_ESDP) & mask;
+	rv = IXGBE_READ_REG(hw, IXGBE_ESDP) & mask;
+	if (hw->mac.type == ixgbe_mac_X550EM_a) {
+		/* It seems X550EM_a's SDP0 is inverted than others... */
+		return (rv == 0);
+	}
+
+	return rv;
 } /* ixgbe_sfp_cage_full */
 
 /************************************************************************
@@ -4647,6 +4659,10 @@ ixgbe_handle_mod(void *context)
 			break;
 		case ixgbe_mac_X550EM_x:
 		case ixgbe_mac_X550EM_a:
+			/*
+			 * XXX See ixgbe_sfp_cage_full(). It seems the bit is
+			 * inverted on X550EM_a, so I think this is incorrect.
+			 */
 			cage_full = IXGBE_READ_REG(hw, IXGBE_ESDP) &
 			    IXGBE_ESDP_SDP0;
 			break;
@@ -4766,7 +4782,9 @@ ixgbe_handle_admin(struct work *wk, void *context)
 	 */
 	IFNET_LOCK(ifp);
 	IXGBE_CORE_LOCK(adapter);
-	while ((req = adapter->task_requests) != 0) {
+	while ((req =
+		(adapter->task_requests & ~IXGBE_REQUEST_TASK_NEED_ACKINTR))
+	    != 0) {
 		if ((req & IXGBE_REQUEST_TASK_LSC) != 0) {
 			ixgbe_handle_link(adapter);
 			atomic_and_32(&adapter->task_requests,
@@ -4801,7 +4819,9 @@ ixgbe_handle_admin(struct work *wk, void *context)
 #endif
 	}
 	atomic_store_relaxed(&adapter->admin_pending, 0);
-	if ((req & IXGBE_REQUEST_TASK_NEED_ACKINTR) != 0) {
+	if ((adapter->task_requests & IXGBE_REQUEST_TASK_NEED_ACKINTR) != 0) {
+		atomic_and_32(&adapter->task_requests,
+		    ~IXGBE_REQUEST_TASK_NEED_ACKINTR);
 		if ((adapter->feat_en & IXGBE_FEATURE_MSIX) != 0) {
 			/* Re-enable other interrupts */
 			IXGBE_WRITE_REG(hw, IXGBE_EIMS, IXGBE_EIMS_OTHER);
@@ -4822,8 +4842,6 @@ ixgbe_ifstop(struct ifnet *ifp, int disable)
 	ixgbe_stop(adapter);
 	IXGBE_CORE_UNLOCK(adapter);
 
-	workqueue_wait(adapter->admin_wq, &adapter->admin_wc);
-	atomic_store_relaxed(&adapter->admin_pending, 0);
 	workqueue_wait(adapter->timer_wq, &adapter->timer_wc);
 	atomic_store_relaxed(&adapter->timer_pending, 0);
 }
