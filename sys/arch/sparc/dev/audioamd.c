@@ -52,7 +52,6 @@ __KERNEL_RCSID(0, "$NetBSD: audioamd.c,v 1.29 2019/05/08 13:40:16 isaki Exp $");
 
 #include <dev/ic/am7930reg.h>
 #include <dev/ic/am7930var.h>
-#include <sparc/dev/audioamdvar.h>
 
 #define AUDIO_ROM_NAME "audio"
 
