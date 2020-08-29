@@ -44,10 +44,7 @@ void	am7930_init(struct am7930_softc *, int);
 int	am7930_hwintr(void *);
 void	am7930_swintr(void *);
 
-#define AM7930_IWRITE(sc,r,v)	am7930_iwrite(sc,r,v)
-#define AM7930_IREAD(sc,r)	am7930_iread(sc,r)
-#define AM7930_IWRITE16(sc,r,v)	am7930_iwrite16(sc,r,v)
-#define AM7930_IREAD16(sc,r)	am7930_iread16(sc,r)
+/* direct access functions */
 #define AM7930_DWRITE(x,y,z)	(*(x)->sc_glue->codec_dwrite)((x),(y),(z))
 #define AM7930_DREAD(x,y)	(*(x)->sc_glue->codec_dread)((x),(y))
 

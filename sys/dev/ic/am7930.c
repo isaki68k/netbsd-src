@@ -148,6 +148,10 @@ static const struct audio_format am7930_format = {
 	.frequency	= { 8000 },
 };
 
+/*
+ * Indirect access functions.
+ */
+
 static void
 am7930_iwrite(struct am7930_softc *sc, int reg, uint8_t val)
 {
@@ -183,6 +187,11 @@ am7930_iread16(struct am7930_softc *sc, int reg)
 	hi = AM7930_DREAD(sc, AM7930_DREG_DR);
 	return (hi << 8) | lo;
 }
+
+#define AM7930_IWRITE(sc,r,v)	am7930_iwrite(sc,r,v)
+#define AM7930_IREAD(sc,r)	am7930_iread(sc,r)
+#define AM7930_IWRITE16(sc,r,v)	am7930_iwrite16(sc,r,v)
+#define AM7930_IREAD16(sc,r)	am7930_iread16(sc,r)
 
 /*
  * Reset chip and set boot-time softc defaults.
