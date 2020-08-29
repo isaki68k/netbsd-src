@@ -1,4 +1,4 @@
-/*	$NetBSD: audiotest.c,v 1.4 2020/02/14 13:20:48 isaki Exp $	*/
+/*	$NetBSD: audiotest.c,v 1.12 2020/06/26 07:50:12 jruoho Exp $	*/
 
 /*
  * Copyright (C) 2019 Tetsuya Isaki. All rights reserved.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: audiotest.c,v 1.4 2020/02/14 13:20:48 isaki Exp $");
+__RCSID("$NetBSD: audiotest.c,v 1.12 2020/06/26 07:50:12 jruoho Exp $");
 
 #include <errno.h>
 #include <fcntl.h>
@@ -720,7 +720,7 @@ consumer_thread(void *arg)
 
 /*
  * XXX
- * Closing pad descriptor before audio descriptor causes panic (kern/54427).
+ * Closing pad descriptor before audio descriptor causes panic (PR kern/54427).
  * To avoid this, close non-pad descriptor first using atexit(3) for now.
  * This is just a workaround and this function should be removed.
  */
@@ -5028,7 +5028,7 @@ test_AUDIO_SETINFO_params_set(int openmode, int aimode, int pause)
 	 * pause is bool value that indicates whether to change ai.*.pause.
 	 */
 
-	TEST("AUDIO_SETINFO_params_set_%s_%d_%d",
+	TEST("AUDIO_SETINFO_params_%s_%d_%d",
 	    openmode_str[openmode] + 2, aimode, pause);
 	if (mode2aumode(openmode) == 0) {
 		XP_SKIP("Operation not allowed on this hardware property");
@@ -6048,7 +6048,7 @@ test_audioctl_open_multiuser(bool multiuser,
 	size_t oldlen;
 	int r;
 
-	if (netbsd < 8) {
+	if (netbsd < 8 && multiuser == 1) {
 		XP_SKIP("multiuser is not supported");
 		return;
 	}

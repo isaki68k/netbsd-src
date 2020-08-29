@@ -1,4 +1,4 @@
-#	$NetBSD: t_audio.awk,v 1.1 2020/02/11 07:03:16 isaki Exp $
+#	$NetBSD: t_audio.awk,v 1.2 2020/03/25 13:07:04 isaki Exp $
 #
 # Copyright (C) 2019 Tetsuya Isaki. All rights reserved.
 #
