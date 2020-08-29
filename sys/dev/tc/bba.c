@@ -441,7 +441,7 @@ bba_trigger_output(void *addr, void *start, void *end, int blksize,
 
 	if (bus_dmamap_load(sc->sc_dmat, d->dmam, start,
 	    (char *)end - (char *)start, NULL, BUS_DMA_WRITE|BUS_DMA_NOWAIT)) {
-	    printf("bba_trigger_output: can't load DMA map\n");
+		printf("bba_trigger_output: can't load DMA map\n");
 		goto bad;
 	}
 	state |= 2;
