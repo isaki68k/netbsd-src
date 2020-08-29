@@ -1,4 +1,4 @@
-/* $NetBSD: ixgbe.c,v 1.244 2020/08/24 19:03:27 msaitoh Exp $ */
+/* $NetBSD: ixgbe.c,v 1.248 2020/08/27 04:54:43 msaitoh Exp $ */
 
 /******************************************************************************
 
@@ -159,6 +159,7 @@ static const char    *ixgbe_strings[] = {
  * Function prototypes
  ************************************************************************/
 static int	ixgbe_probe(device_t, cfdata_t, void *);
+static void	ixgbe_quirks(struct adapter *);
 static void	ixgbe_attach(device_t, device_t, void *);
 static int	ixgbe_detach(device_t, int);
 #if 0
@@ -257,7 +258,7 @@ static int	ixgbe_sysctl_wol_enable(SYSCTLFN_PROTO);
 static int	ixgbe_sysctl_wufc(SYSCTLFN_PROTO);
 
 /* Support for pluggable optic modules */
-static bool	ixgbe_sfp_cage_full(struct ixgbe_hw *);
+static bool	ixgbe_sfp_cage_full(struct adapter *);
 
 /* Legacy (single vector) interrupt handler */
 static int	ixgbe_legacy_irq(void *);
@@ -763,6 +764,33 @@ ixgbe_initialize_transmit_units(struct adapter *adapter)
 	return;
 } /* ixgbe_initialize_transmit_units */
 
+static void
+ixgbe_quirks(struct adapter *adapter)
+{
+	device_t dev = adapter->dev;
+	struct ixgbe_hw *hw = &adapter->hw;
+	const char *vendor, *product;
+
+	if (hw->device_id == IXGBE_DEV_ID_X550EM_A_SFP_N) {
+		/*
+		 * Quirk for inverted logic of SFP+'s MOD_ABS on GIGABYTE
+		 * MA10-ST0.
+		 */
+		vendor = pmf_get_platform("system-vendor");
+		product = pmf_get_platform("system-product");
+
+		if ((vendor == NULL) || (product == NULL))
+			return;
+
+		if ((strcmp(vendor, "GIGABYTE") == 0) &&
+		    (strcmp(product, "MA10-ST0") == 0)) {
+			aprint_verbose_dev(dev,
+			    "Enable SFP+ MOD_ABS inverse quirk\n");
+			adapter->quirks |= IXGBE_QUIRK_MOD_ABS_INVERT;
+		}
+	}
+}
+
 /************************************************************************
  * ixgbe_attach - Device initialization routine
  *
@@ -836,6 +864,9 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 	hw->subsystem_vendor_id = PCI_SUBSYS_VENDOR(subid);
 	hw->subsystem_device_id = PCI_SUBSYS_ID(subid);
 
+	/* Set quirk flags */
+	ixgbe_quirks(adapter);
+
 	/*
 	 * Make sure BUSMASTER is set
 	 */
@@ -876,7 +907,7 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 		str = "X550";
 		break;
 	case ixgbe_mac_X550EM_x:
-		str = "X550EM";
+		str = "X550EM X";
 		break;
 	case ixgbe_mac_X550EM_a:
 		str = "X550EM A";
@@ -4476,7 +4507,7 @@ ixgbe_handle_timer(struct work *wk, void *context)
 	/* Check for pluggable optics */
 	if (ixgbe_is_sfp(hw)) {
 		bool was_full = hw->phy.sfp_type != ixgbe_sfp_type_not_present;
-		bool is_full = ixgbe_sfp_cage_full(hw);
+		bool is_full = ixgbe_sfp_cage_full(adapter);
 
 		/* do probe if cage state changed */
 		if (was_full ^ is_full) {
@@ -4620,8 +4651,9 @@ ixgbe_handle_recovery_mode_timer(struct work *wk, void *context)
  *   Determine if a port had optics inserted.
  ************************************************************************/
 static bool
-ixgbe_sfp_cage_full(struct ixgbe_hw *hw)
+ixgbe_sfp_cage_full(struct adapter *adapter)
 {
+	struct ixgbe_hw *hw = &adapter->hw;
 	uint32_t mask;
 	int rv;
 
@@ -4631,9 +4663,12 @@ ixgbe_sfp_cage_full(struct ixgbe_hw *hw)
 		mask = IXGBE_ESDP_SDP2;
 
 	rv = IXGBE_READ_REG(hw, IXGBE_ESDP) & mask;
+	if ((adapter->quirks & IXGBE_QUIRK_MOD_ABS_INVERT) != 0)
+		rv = !rv;
+
 	if (hw->mac.type == ixgbe_mac_X550EM_a) {
-		/* It seems X550EM_a's SDP0 is inverted than others... */
-		return (rv == 0);
+		/* X550EM_a's SDP0 is inverted than others. */
+		return !rv;
 	}
 
 	return rv;
