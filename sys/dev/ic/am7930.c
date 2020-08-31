@@ -43,6 +43,7 @@ __KERNEL_RCSID(0, "$NetBSD: am7930.c,v 1.59 2019/06/08 08:02:38 isaki Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
+#include <sys/atomic.h>
 #include <sys/errno.h>
 #include <sys/ioctl.h>
 #include <sys/device.h>
@@ -443,7 +444,7 @@ am7930_hwintr(void *arg)
 				sc->sc_r.blkend = sc->sc_r.start;
 			}
 			sc->sc_r.blkend += sc->sc_r.blksize;
-			sc->sc_r.intr_pending = 1;
+			atomic_store_relaxed(&sc->sc_r.intr_pending, 1);
 			softint_schedule(sc->sc_sicookie);
 		}
 	}
@@ -457,7 +458,7 @@ am7930_hwintr(void *arg)
 				sc->sc_p.blkend = sc->sc_p.start;
 			}
 			sc->sc_p.blkend += sc->sc_p.blksize;
-			sc->sc_p.intr_pending = 1;
+			atomic_store_relaxed(&sc->sc_p.intr_pending, 1);
 			softint_schedule(sc->sc_sicookie);
 		}
 	}
@@ -472,12 +473,10 @@ am7930_swintr(void *cookie)
 	struct am7930_softc *sc = cookie;
 
 	mutex_enter(&sc->sc_intr_lock);
-	if (sc->sc_r.intr_pending) {
-		sc->sc_r.intr_pending = 0;
+	if (atomic_cas_uint(&sc->sc_r.intr_pending, 1, 0) == 1) {
 		(*sc->sc_r.intr)(sc->sc_r.arg);
 	}
-	if (sc->sc_p.intr_pending) {
-		sc->sc_p.intr_pending = 0;
+	if (atomic_cas_uint(&sc->sc_p.intr_pending, 1, 0) == 1) {
 		(*sc->sc_p.intr)(sc->sc_p.arg);
 	}
 	mutex_exit(&sc->sc_intr_lock);

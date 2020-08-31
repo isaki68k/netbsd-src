@@ -16,7 +16,7 @@ struct am7930_buf {
 
 	void (*intr)(void *);
 	void *arg;
-	int intr_pending;
+	uint intr_pending;
 };
 
 struct am7930_softc {
