@@ -703,10 +703,10 @@ test_audio_internal_to_mulaw()
 	// hqmode なら14ビット全部使って期待値を用意する。定義式通り。
 	// そうでなければ上位8ビットだけ使って期待値を用意する。こちらは
 	// NetBSD7 までの256バイトテーブル方式との互換性。
-#if defined(MULAW_HQ_ENC)
-	hqmode = 1;
-#else
+#if defined(MULAW_LQ_ENC)
 	hqmode = 0;
+#else
+	hqmode = 1;
 #endif
 
 	TEST("audio_internal_to_mulaw[%s]", hqmode ? "14bit" : "8bit");
