@@ -445,10 +445,10 @@ test_to_linear(int enc, int prec, void (*func)(audio_filter_arg_t *))
 			}
 		} else {
 			switch (stride) {
-			 case 32: *e++ = (val >> 24) & 0xff;
-			 case 24: *e++ = (val >> 16) & 0xff;
-			 case 16: *e++ = (val >>  8) & 0xff;
-			 case  8: *e++ = (val      ) & 0xff;
+			 case 32: *e++ = (val >> 24) & 0xff; /*FALLTHROUGH*/
+			 case 24: *e++ = (val >> 16) & 0xff; /*FALLTHROUGH*/
+			 case 16: *e++ = (val >>  8) & 0xff; /*FALLTHROUGH*/
+			 case  8: *e++ = (val      ) & 0xff; /*FALLTHROUGH*/
 			}
 		}
 	}
