@@ -247,35 +247,6 @@ audio_internal_to_mulaw32(audio_filter_arg_t *arg)
 		m = slinear8_to_mulaw[val];
 #else
 		/* 14bit (fullspec, slow but small) encoder */
-#if 1
-		int16_t val;
-		int c;
-
-		val = (int16_t)(*s++ >> (AUDIO_INTERNAL_BITS - 16));
-		if (val < 0) {
-			m = 0;
-		} else {
-			val = ~val;
-			m = 0x80;
-		}
-		/* limit */
-		if (val < -8158 * 4)
-			val = -8158 * 4;
-		val -= 33 * 4;	/* bias */
-
-		val <<= 1;
-		for (c = 0; c < 7; c++) {
-			if (val >= 0) {
-				break;
-			}
-
-			m += (1 << 4);	/* exponent */
-			val <<= 1;
-		}
-		val <<= 1;
-
-		m += (val >> 12) & 0x0f; /* mantissa */
-#else
 		uint16_t val;
 		int c;
 
@@ -310,7 +281,6 @@ audio_internal_to_mulaw32(audio_filter_arg_t *arg)
 		// (3)
 		m += (c << 4);
 		m += (val >> 11) & 0x0f;
-#endif
 #endif
 
 #if defined(MULAW32)
