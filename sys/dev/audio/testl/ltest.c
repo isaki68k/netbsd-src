@@ -84,7 +84,6 @@ struct testtable {
 
 int debug;
 char testname[100];
-char descname[100];
 int testcount;
 int failcount;
 int skipcount;
@@ -120,7 +119,6 @@ int main(int ac, char *av[])
 	int opt_test;
 
 	testname[0] = '\0';
-	descname[0] = '\0';
 
 	// global option
 	opt_all = 0;
@@ -168,7 +166,6 @@ int main(int ac, char *av[])
 			for (int j = 0; testtable[j].name != NULL; j++) {
 				testtable[j].func();
 				testname[0] = '\0';
-				descname[0] = '\0';
 			}
 		} else {
 			// -a なしなら、指定されたやつ(前方一致)を順にテスト
@@ -179,7 +176,6 @@ int main(int ac, char *av[])
 						found = true;
 						testtable[j].func();
 						testname[0] = '\0';
-						descname[0] = '\0';
 					}
 				}
 				if (found == false) {
@@ -206,7 +202,6 @@ int main(int ac, char *av[])
 			for (int j = 0; perftable[j].name != NULL; j++) {
 				perftable[j].func();
 				testname[0] = '\0';
-				descname[0] = '\0';
 			}
 		} else {
 			// -a なしなら、指定されたやつ(前方一致)を順に検査
@@ -217,7 +212,6 @@ int main(int ac, char *av[])
 						found = true;
 						perftable[j].func();
 						testname[0] = '\0';
-						descname[0] = '\0';
 					}
 				}
 				if (found == false) {
@@ -244,20 +238,6 @@ TEST(const char *name, ...)
 	va_end(ap);
 	printf("%s\n", testname);
 	fflush(stdout);
-
-	descname[0] = '\0';
-}
-
-// テスト詳細
-static inline void DESC(const char *, ...) __printflike(1, 2);
-static inline void
-DESC(const char *name, ...)
-{
-	va_list ap;
-
-	va_start(ap, name);
-	vsnprintf(descname, sizeof(descname), name, ap);
-	va_end(ap);
 }
 
 // 検査
@@ -266,10 +246,7 @@ void xp_fail(int line, const char *fmt, ...)
 {
 	va_list ap;
 
-	printf(" FAIL %d: %s", line, testname);
-	if (descname[0])
-		printf("(%s)", descname);
-	printf(": ");
+	printf(" FAIL %d: %s: ", line, testname);
 	va_start(ap, fmt);
 	vprintf(fmt, ap);
 	va_end(ap);
@@ -282,10 +259,7 @@ void xp_skip(int line, const char *fmt, ...)
 {
 	va_list ap;
 
-	printf(" SKIP %d: %s", line, testname);
-	if (descname[0])
-		printf("(%s)", descname);
-	printf(": ");
+	printf(" SKIP %d: %s: ", line, testname);
 	va_start(ap, fmt);
 	vprintf(fmt, ap);
 	va_end(ap);
