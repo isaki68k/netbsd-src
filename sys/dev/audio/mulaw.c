@@ -45,7 +45,7 @@ __KERNEL_RCSID(0, "$NetBSD: mulaw.c,v 1.3 2020/01/11 04:06:13 isaki Exp $");
  *
  * 2. Calculation (default)
  *  It calculates mu-law with full spec and its precision is 14bit.
- *  It's about 10 times slower but the size is less than a half (on m68k,
+ *  It's about 3 times slower but the size is less than a half (on m68k,
  *  for example).
  *
  * mu-law is no longer a popular format.  I think size-optimized is better.
