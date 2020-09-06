@@ -1,10 +1,11 @@
+/* vi:set ts=4: */
 /*
  * ローカルテスト。
  * 主にエンコーディング変換とかの実環境では分かりづらいやつ。
  */
 
 #include <inttypes.h>
-#include <setjmp.h>
+#include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -835,6 +836,81 @@ test_audio_internal_to_mulaw()
 	free(exp);
 }
 
+volatile int signaled;
+void
+sigalrm(int signo)
+{
+	signaled = 1;
+}
+
+void
+perf_audio_internal_to_mulaw()
+{
+	audio_filter_arg_t arg;
+	audio_format2_t srcfmt;
+	audio_format2_t dstfmt;
+	struct timeval start, end, result;
+	struct itimerval it;
+	int frames = 2048;
+	char *srcbuf;
+	char *dstbuf;
+
+	signal(SIGALRM, sigalrm);
+	memset(&it, 0, sizeof(it));
+	it.it_value.tv_sec = 3;
+
+	srcfmt.encoding = AUDIO_ENCODING_SLINEAR_NE;
+	srcfmt.precision = 16;
+	srcfmt.stride = 16;
+	srcfmt.channels = 1;
+	srcfmt.sample_rate = 8000;
+	dstfmt.encoding = AUDIO_ENCODING_ULAW;
+	dstfmt.precision = 8;
+	dstfmt.stride = 8;
+	dstfmt.channels = 1;
+	dstfmt.sample_rate = 8000;
+
+	memset(&arg, 0, sizeof(arg));
+	arg.srcfmt = &srcfmt;
+	arg.dstfmt = &dstfmt;
+	srcbuf = malloc(frames * 2);
+	dstbuf = malloc(frames);
+
+	// srcbuf を埋める
+	// とりあえずランダム
+	{
+		int16_t v;
+		int16_t *p = (int16_t *)srcbuf;
+		for (int i = 0; i < arg.count; i++) {
+			v = (int16_t)((uint16_t)(random() >> 3));
+			*p++ = v;
+		}
+	}
+
+	uint64_t count;
+	printf("internal_to_mulaw: ");
+	fflush(stdout);
+
+	setitimer(ITIMER_REAL, &it, NULL);
+	gettimeofday(&start, NULL);
+	for (count = 0, signaled = 0; signaled == 0; count++) {
+		arg.src = srcbuf;
+		arg.dst = dstbuf;
+		arg.count = frames;
+		audio_internal_to_mulaw(&arg);
+	}
+	gettimeofday(&end, NULL);
+	timersub(&end, &start, &result);
+
+	int t;
+	t = count * 1000 / ((int)result.tv_sec * 1000 + (int)result.tv_usec / 1000);
+	printf("%d %d.%03d times/msec\n", (int)count, t / 1000, t % 1000);
+
+	free(srcbuf);
+	free(dstbuf);
+}
+
+
 // テスト一覧
 #define TESTDEF(x)	{ #x, test_ ## x }
 struct testtable testtable[] = {
@@ -852,5 +928,6 @@ struct testtable testtable[] = {
 };
 #define PERFDEF(x)	{ #x, perf_ ## x }
 struct testtable perftable[] = {
+	PERFDEF(audio_internal_to_mulaw),
 	{ NULL, NULL },
 };
