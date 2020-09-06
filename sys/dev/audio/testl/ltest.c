@@ -89,16 +89,24 @@ int testcount;
 int failcount;
 int skipcount;
 extern struct testtable testtable[];
+extern struct testtable perftable[];
 
 void __attribute__((__noreturn__))
 usage()
 {
 	// test は複数列挙できる。
-	printf("usage: %s [<options>] {-a | <testname...>}\n", getprogname());
+	printf("usage: %s (-p|-t) [<options>] -a\n", getprogname());
+	printf("       %s (-p|-t) [<options>] <name...>\n", getprogname());
+	printf("  -p: performance test\n");
+	printf("  -t: test\n");
 	printf("  -d: debug\n");
 	printf(" testname:\n");
 	for (int i = 0; testtable[i].name != NULL; i++) {
 		printf("\t%s\n", testtable[i].name);
+	}
+	printf(" perfname:\n");
+	for (int i = 0; perftable[i].name != NULL; i++) {
+		printf("\t%s\n", perftable[i].name);
 	}
 	exit(1);
 }
@@ -108,19 +116,29 @@ int main(int ac, char *av[])
 	int c;
 	int i;
 	int opt_all;
+	int opt_perf;
+	int opt_test;
 
 	testname[0] = '\0';
 	descname[0] = '\0';
 
 	// global option
 	opt_all = 0;
-	while ((c = getopt(ac, av, "ad")) != -1) {
+	opt_perf = 0;
+	opt_test = 0;
+	while ((c = getopt(ac, av, "adpt")) != -1) {
 		switch (c) {
 		 case 'a':
 			opt_all = 1;
 			break;
 		 case 'd':
 			debug++;
+			break;
+		 case 'p':
+			opt_perf = 1;
+			break;
+		 case 't':
+			opt_test = 1;
 			break;
 		 default:
 			usage();
@@ -129,47 +147,87 @@ int main(int ac, char *av[])
 	ac -= optind;
 	av += optind;
 
+	// -t か -p は指定する必要がある
+	if (opt_test == 0 && opt_perf == 0)
+		usage();
+
+	// -a ありなら name.. なし
+	// -a なしなら name.. 必須
 	if (opt_all) {
-		// -a なら引数なしで、全項目テスト
 		if (ac > 0)
 			usage();
-
-		for (int j = 0; testtable[j].name != NULL; j++) {
-			testtable[j].func();
-			testname[0] = '\0';
-			descname[0] = '\0';
-		}
 	} else {
-		// -a なしなら test
 		if (ac == 0)
 			usage();
+	}
 
-		// そうでなければ指定されたやつ(前方一致)を順にテスト
-		for (i = 0; i < ac; i++) {
-			bool found = false;
+	// 最初にテスト
+	if (opt_test) {
+		if (opt_all) {
+			// -a なら全項目テスト
 			for (int j = 0; testtable[j].name != NULL; j++) {
-				if (strncmp(av[i], testtable[j].name, strlen(av[i])) == 0) {
-					found = true;
-					testtable[j].func();
-					testname[0] = '\0';
-					descname[0] = '\0';
+				testtable[j].func();
+				testname[0] = '\0';
+				descname[0] = '\0';
+			}
+		} else {
+			// -a なしなら、指定されたやつ(前方一致)を順にテスト
+			for (i = 0; i < ac; i++) {
+				bool found = false;
+				for (int j = 0; testtable[j].name != NULL; j++) {
+					if (strncmp(av[i], testtable[j].name, strlen(av[i])) == 0) {
+						found = true;
+						testtable[j].func();
+						testname[0] = '\0';
+						descname[0] = '\0';
+					}
+				}
+				if (found == false) {
+					printf("test not found: %s\n", av[i]);
+					exit(1);
 				}
 			}
-			if (found == false) {
-				printf("test not found: %s\n", av[i]);
-				exit(1);
+		}
+		if (testcount > 0) {
+			printf("Result: %d tests, %d success",
+				testcount, testcount - failcount);
+			if (failcount > 0)
+				printf(", %d failed", failcount);
+			if (skipcount > 0)
+				printf(" (, %d skipped)", skipcount);
+			printf("\n");
+		}
+	}
+
+	// 続いてパフォーマンス
+	if (opt_perf) {
+		if (opt_all) {
+			// -a なら全項目検査
+			for (int j = 0; perftable[j].name != NULL; j++) {
+				perftable[j].func();
+				testname[0] = '\0';
+				descname[0] = '\0';
+			}
+		} else {
+			// -a なしなら、指定されたやつ(前方一致)を順に検査
+			for (i = 0; i < ac; i++) {
+				bool found = false;
+				for (int j = 0; perftable[j].name != NULL; j++) {
+					if (strncmp(av[i], perftable[j].name, strlen(av[i])) == 0) {
+						found = true;
+						perftable[j].func();
+						testname[0] = '\0';
+						descname[0] = '\0';
+					}
+				}
+				if (found == false) {
+					printf("perf not found: %s\n", av[i]);
+					exit(1);
+				}
 			}
 		}
 	}
-	if (testcount > 0) {
-		printf("Result: %d tests, %d success",
-			testcount, testcount - failcount);
-		if (failcount > 0)
-			printf(", %d failed", failcount);
-		if (skipcount > 0)
-			printf(" (, %d skipped)", skipcount);
-		printf("\n");
-	}
+
 	return 0;
 }
 
@@ -804,17 +862,21 @@ test_audio_internal_to_mulaw()
 }
 
 // テスト一覧
-#define DEF(x)	{ #x, test_ ## x }
+#define TESTDEF(x)	{ #x, test_ ## x }
 struct testtable testtable[] = {
-	DEF(audio_linear8_to_internal),
-	DEF(audio_linear16_to_internal),
-	DEF(audio_linear24_to_internal),
-	DEF(audio_linear32_to_internal),
-	DEF(audio_internal_to_linear8),
-	DEF(audio_internal_to_linear16),
-	DEF(audio_internal_to_linear24),
-	DEF(audio_internal_to_linear32),
-	DEF(audio_mulaw_to_internal),
-	DEF(audio_internal_to_mulaw),
+	TESTDEF(audio_linear8_to_internal),
+	TESTDEF(audio_linear16_to_internal),
+	TESTDEF(audio_linear24_to_internal),
+	TESTDEF(audio_linear32_to_internal),
+	TESTDEF(audio_internal_to_linear8),
+	TESTDEF(audio_internal_to_linear16),
+	TESTDEF(audio_internal_to_linear24),
+	TESTDEF(audio_internal_to_linear32),
+	TESTDEF(audio_mulaw_to_internal),
+	TESTDEF(audio_internal_to_mulaw),
+	{ NULL, NULL },
+};
+#define PERFDEF(x)	{ #x, perf_ ## x }
+struct testtable perftable[] = {
 	{ NULL, NULL },
 };
