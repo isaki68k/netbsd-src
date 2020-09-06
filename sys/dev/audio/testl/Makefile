@@ -39,8 +39,8 @@ all:	ltest ltest.x68k
 ltest:	ltest.c inc_linear.c inc_mulaw.c inc_alaw.c
 	$(CC) ${CPPFLAGS} ${CPPFLAGS.amd64} -std=c99 -o $@ ltest.c $(LIBS)
 
-ltest.x68k:	ltest.c
-	$(CC.x68k) ${CPPFLAGS} ${CPPFLAGS.x68k} -std=c99 -o $@ $> $(LIBS)
+ltest.x68k:	ltest.c inc_linear.c inc_mulaw.c inc_alaw.c
+	$(CC.x68k) ${CPPFLAGS} ${CPPFLAGS.x68k} -std=c99 -o $@ ltest.c $(LIBS)
 
 .PHONY: inc_linear.c
 inc_linear.c: linear.c
