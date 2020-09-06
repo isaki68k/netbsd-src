@@ -247,6 +247,7 @@ audio_internal_to_mulaw32(audio_filter_arg_t *arg)
 		m = slinear8_to_mulaw[val];
 #else
 		/* 14bit (fullspec, slow but small) encoder */
+#if 1
 		int16_t val;
 		int c;
 
@@ -274,6 +275,42 @@ audio_internal_to_mulaw32(audio_filter_arg_t *arg)
 		val <<= 1;
 
 		m += (val >> 12) & 0x0f; /* mantissa */
+#else
+		uint16_t val;
+		int c;
+
+		val = *s++ >> (AUDIO_INTERNAL_BITS - 16);
+		if ((int16_t)val < 0) {
+			m = 0;
+		} else {
+			val = ~val;
+			m = 0x80;
+		}
+		/* limit */
+		if ((int16_t)val < -8158 * 4)
+			val = -8158 * 4;
+		val -= 33 * 4;	/* bias */
+
+		// Before(1)         Before(2)         Before(3)
+		// S0MMMMxx_xxxxxxxx 0MMMMxxx_xxxxxxx0 c=0,v=0MMMMxxx_xxxxxxx0
+		// S10MMMMx_xxxxxxxx 10MMMMxx_xxxxxxx0 c=1,v=0MMMMxxx_xxxxxx00
+		// S110MMMM_xxxxxxxx 110MMMMx_xxxxxxx0 c=2,v=0MMMMxxx_xxxxx000
+		// :                 :                 :
+		// S1111110_MMMMxxxx 1111110M_MMMxxxx0 c=6,v=0MMMMxxx_x0000000
+
+		// (1) Push out sign bit
+		val <<= 1;
+
+		// (2) Find first zero (and align val to left)
+		c = 0;
+		if (val >= 0xf000) c += 4, val <<= 4;
+		if (val >= 0xc000) c += 2, val <<= 2;
+		if (val >= 0x8000) c += 1, val <<= 1;
+
+		// (3)
+		m += (c << 4);
+		m += (val >> 11) & 0x0f;
+#endif
 #endif
 
 #if defined(MULAW32)
