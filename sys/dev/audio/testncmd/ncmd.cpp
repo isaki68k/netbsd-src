@@ -799,6 +799,51 @@ cmd_encoding_pcm16(int ac, char *av[])
 	return 0;
 }
 
+// fstat の出力を一気に確認するために、
+// audio, sound, audioctl, mixer の4つのデバイスを各パーミッションで
+// オープンしただけの状態で停止する。
+int
+cmd_fstat(int ac, char *av[])
+{
+	int fd[12];
+	int n;
+
+	n = 0;
+
+	for (int mode = 0; mode <= 2; mode++) {
+		fd[n] = OPEN(devaudio, mode);
+		if (fd[n] == -1)
+			continue;
+		n++;
+	}
+	for (int mode = 0; mode <= 2; mode++) {
+		fd[n] = OPEN(devsound, mode);
+		if (fd[n] == -1)
+			continue;
+		n++;
+	}
+	for (int mode = 0; mode <= 2; mode++) {
+		fd[n] = OPEN(devaudioctl, mode);
+		if (fd[n] == -1)
+			continue;
+		n++;
+	}
+	for (int mode = 0; mode <= 2; mode++) {
+		fd[n] = OPEN(devmixer, mode);
+		if (fd[n] == -1)
+			continue;
+		n++;
+	}
+
+	printf("Hit any key to exit\n");
+	fgetc(stdin);
+
+	for (int i = 0; i < n; i++) {
+		CLOSE(fd[i]);
+	}
+	return 0;
+}
+
 // コマンド一覧
 #define DEF(x)	{ #x, cmd_ ## x }
 struct cmdtable cmdtable[] = {
@@ -816,6 +861,7 @@ struct cmdtable cmdtable[] = {
 	DEF(recstart_sound),
 	DEF(recstart_audioctl),
 	DEF(encoding_pcm16),
+	DEF(fstat),
 	{ NULL, NULL },
 };
 #undef DEF
