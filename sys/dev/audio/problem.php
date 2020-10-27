@@ -791,6 +791,7 @@ item(54005, false,
 "");
 
 print "<hr width=80%>\n";
+print "<dt>太字は MI 関連(か自分担当)\n<dd><p>\n";
 
 item(-54177, true,
 "playing audio in firefox doesn't work after kernel update",
@@ -881,7 +882,7 @@ item(-54973, true,
 "audio regression with multi channel content and stereo hardware",
 "2ch ハードで libossaudio 経由の 5.1ch が 2ch(L,R) にshrink される話。");
 
-item(-55017, false,
+item(-55017, true,
 "audio0 autoconfiguration error on auvia",
 "auvia(4) の blocksize 制約が厳しすぎる件。");
 
@@ -889,9 +890,14 @@ item(55130, false,
 "audio sometimes plays a buzz sound for a few seconds when changing volume",
 "たぶん RealTek hdafg(4) の問題。");
 
-item(55175, false,	/* it's not mine */
+item(-55175, false,	/* it's not mine */
 "Interpreation of AUDIO_FORMAT_LINEAR is wrong for 8-bit samples",
 "nia が勝手に commit したので放棄。");
+
+item(55507, false,
+"sometimes hdaudio panics on attach, possible memory corruption",
+"hdafg(4) が起動中にパニックした?");
+
 ?>
 
 </dl>
