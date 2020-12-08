@@ -2082,6 +2082,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	audio_file_t *af;
 	audio_ring_t *hwbuf;
 	bool fullduplex;
+	bool rmixer_started;
 	int fd;
 	int error;
 
@@ -2091,6 +2092,8 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	    (audiodebug >= 3) ? "start " : "",
 	    ISDEVSOUND(dev) ? "sound" : "audio",
 	    flags, sc->sc_popens, sc->sc_ropens);
+
+	rmixer_started = false;
 
 	af = kmem_zalloc(sizeof(audio_file_t), KM_SLEEP);
 	af->sc = sc;
@@ -2281,6 +2284,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 
 		mutex_enter(sc->sc_lock);
 		audio_rmixer_start(sc);
+		rmixer_started = true;
 		mutex_exit(sc->sc_lock);
 	}
 
@@ -2315,7 +2319,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	return error;
 
 bad4:
-	if (sc->sc_rbusy) {
+	if (rmixer_started) {
 		mutex_enter(sc->sc_lock);
 		audio_rmixer_halt(sc);
 		mutex_exit(sc->sc_lock);
