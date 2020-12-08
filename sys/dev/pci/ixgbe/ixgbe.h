@@ -1,4 +1,4 @@
-/* $NetBSD: ixgbe.h,v 1.70 2020/08/27 00:07:56 msaitoh Exp $ */
+/* $NetBSD: ixgbe.h,v 1.73 2020/11/19 02:23:24 msaitoh Exp $ */
 
 /******************************************************************************
   SPDX-License-Identifier: BSD-3-Clause
@@ -331,8 +331,8 @@ struct ix_queue {
 	struct evcnt     irqs;		/* Hardware interrupt */
 	struct evcnt     handleq;	/* software_interrupt */
 	struct evcnt     req;		/* deferred */
-	char             namebuf[32];
-	char             evnamebuf[32];
+	char             namebuf[32];	/* Name for sysctl */
+	char             evnamebuf[32];	/* Name for evcnt */
 
 	/* Lock for disabled_count and this queue's EIMS/EIMC bit */
 	kmutex_t         dc_mtx;
@@ -523,6 +523,12 @@ struct adapter {
 	struct work		admin_wc;
 	u_int			admin_pending;
 	volatile u32		task_requests;
+	kmutex_t		admin_mtx; /* lock for admin_pending, task_request */
+					   /*
+					    * Don't acquire this mutex while
+					    * holding rx_mtx or tx_mtx, and
+					    * vice versa.
+					    */
 
 	bool			txrx_use_workqueue;
 
@@ -622,9 +628,6 @@ struct adapter {
 	/* Feature capable/enabled flags.  See ixgbe_features.h */
 	u32                     feat_cap;
 	u32                     feat_en;
-
-	/* Quirks */
-	u32			quirks;
 
 	/* Traffic classes */
 	struct ixgbe_tc tcs[IXGBE_DCB_MAX_TRAFFIC_CLASS];
@@ -772,8 +775,6 @@ bool ixgbe_rxeof(struct ix_queue *);
 #define IXGBE_REQUEST_TASK_PHY		0x10
 #define IXGBE_REQUEST_TASK_LSC		0x20
 #define IXGBE_REQUEST_TASK_NEED_ACKINTR	0x80
-
-#define IXGBE_QUIRK_MOD_ABS_INVERT	__BIT(0)
 
 /* For NetBSD */
 const struct sysctlnode *ixgbe_sysctl_instance(struct adapter *);

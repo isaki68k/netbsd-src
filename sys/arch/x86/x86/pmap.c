@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.403 2020/08/04 06:23:46 skrll Exp $	*/
+/*	$NetBSD: pmap.c,v 1.408 2020/11/30 17:06:02 bouyer Exp $	*/
 
 /*
  * Copyright (c) 2008, 2010, 2016, 2017, 2019, 2020 The NetBSD Foundation, Inc.
@@ -130,7 +130,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.403 2020/08/04 06:23:46 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.408 2020/11/30 17:06:02 bouyer Exp $");
 
 #include "opt_user_ldt.h"
 #include "opt_lockdebug.h"
@@ -167,7 +167,6 @@ __KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.403 2020/08/04 06:23:46 skrll Exp $");
 #include <machine/cpuvar.h>
 #include <machine/cputypes.h>
 
-#include <x86/pmap.h>
 #include <x86/pmap_pv.h>
 
 #include <x86/i82489reg.h>
@@ -176,6 +175,7 @@ __KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.403 2020/08/04 06:23:46 skrll Exp $");
 #ifdef XEN
 #include <xen/include/public/xen.h>
 #include <xen/hypervisor.h>
+#include <xen/xenpmap.h>
 #endif
 
 /*
@@ -5082,7 +5082,7 @@ pmap_find_gnt(struct pmap *pmap, vaddr_t sva, vaddr_t eva)
 	headp = pmap->pm_data;
 	KASSERT(headp != NULL);
 	SLIST_FOREACH(pgnt, headp, pd_gnt_list) {
-		if (pgnt->pd_gnt_sva >= sva && pgnt->pd_gnt_sva <= eva)
+		if (pgnt->pd_gnt_sva <= sva && eva <= pgnt->pd_gnt_eva)
 			return pgnt;
 		/* check that we're not overlapping part of a region */
 		KASSERT(pgnt->pd_gnt_sva >= eva || pgnt->pd_gnt_eva <= sva);
@@ -5234,7 +5234,9 @@ pmap_enter_gnt(struct pmap *pmap, vaddr_t va, vaddr_t sva, int nentries,
 	idx = (va - pgnt->pd_gnt_sva) / PAGE_SIZE;
 	op = &pgnt->pd_gnt_ops[idx];
 
+#ifdef XENPV /* XXX */
 	op->host_addr = xpmap_ptetomach(ptep);
+#endif
 	op->dev_bus_addr = 0;
 	op->status = GNTST_general_error;
 	ret = HYPERVISOR_grant_table_op(GNTTABOP_map_grant_ref, op, 1);
@@ -5255,21 +5257,20 @@ pmap_enter_gnt(struct pmap *pmap, vaddr_t va, vaddr_t sva, int nentries,
 	if (__predict_false(op->status != GNTST_okay)) {
 		printf("%s: GNTTABOP_map_grant_ref status: %d\n",
 		    __func__, op->status);
-		if (ptp != NULL) {
-			if (have_oldpa) {
-				ptp->wire_count--;
-			}
+		if (have_oldpa) {
+			ptp->wire_count--;
 		}
 	} else {
 		pgnt->pd_gnt_refs++;
-		if (ptp != NULL) {
-			if (!have_oldpa) {
-				ptp->wire_count++;
-			}
-			/* Remember minimum VA in PTP. */
-			pmap_ptp_range_set(ptp, va);
+		if (!have_oldpa) {
+			ptp->wire_count++;
 		}
+		KASSERT(ptp->wire_count > 1);
+		/* Remember minimum VA in PTP. */
+		pmap_ptp_range_set(ptp, va);
 	}
+	if (ptp->wire_count <= 1)
+		pmap_free_ptp(pmap, ptp, va, ptes, pdes);
 
 	/*
 	 * Done with the PTEs: they can now be unmapped.
@@ -5280,7 +5281,6 @@ pmap_enter_gnt(struct pmap *pmap, vaddr_t va, vaddr_t sva, int nentries,
 	 * Update statistics and PTP's reference count.
 	 */
 	pmap_stats_update_bypte(pmap, 0, opte);
-	KASSERT(ptp == NULL || ptp->wire_count >= 1);
 
 	/*
 	 * If old page is pv-tracked, remove pv_entry from its list.
@@ -5357,7 +5357,9 @@ pmap_remove_gnt(struct pmap *pmap, vaddr_t sva, vaddr_t eva)
 			KASSERT(pmap_valid_entry(ptes[pl1_i(va)]));
 			unmap_op.handle = op->handle;
 			unmap_op.dev_bus_addr = 0;
+#ifdef XENPV /* XXX */
 			unmap_op.host_addr = xpmap_ptetomach(&ptes[pl1_i(va)]);
+#endif
 			ret = HYPERVISOR_grant_table_op(
 			    GNTTABOP_unmap_grant_ref, &unmap_op, 1);
 			if (ret) {
@@ -5376,7 +5378,7 @@ pmap_remove_gnt(struct pmap *pmap, vaddr_t sva, vaddr_t eva)
 		 * being used, free it!
 		 */
 
-		if (ptp && ptp->wire_count <= 1)
+		if (ptp->wire_count <= 1)
 			pmap_free_ptp(pmap, ptp, va, ptes, pdes);
 		pmap_unmap_ptes(pmap, pmap2);
 	}

@@ -1,4 +1,4 @@
-/* $NetBSD: cpu.h,v 1.26 2020/08/12 13:19:35 skrll Exp $ */
+/* $NetBSD: cpu.h,v 1.30 2020/12/07 10:56:12 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2014, 2020 The NetBSD Foundation, Inc.
@@ -112,6 +112,7 @@ struct cpu_info {
 	struct evcnt ci_vfp_save;
 	struct evcnt ci_vfp_release;
 	struct evcnt ci_uct_trap;
+	struct evcnt ci_intr_preempt;
 
 	/* FDT or similar supplied "cpu capacity" */
 	uint32_t ci_capacity_dmips_mhz;
@@ -121,7 +122,7 @@ struct cpu_info {
 	uint64_t ci_gic_sgir;	/* GICv3 SGIR target */
 
 	/* ACPI */
-	uint64_t ci_acpiid;	/* ACPI Processor Unique ID */
+	uint32_t ci_acpiid;	/* ACPI Processor Unique ID */
 
 	struct aarch64_sysctl_cpu_id ci_id;
 
@@ -147,6 +148,7 @@ static __inline struct cpu_info *lwp_getcpu(struct lwp *);
 #undef curlwp
 #define	curlwp			(aarch64_curlwp())
 
+int	cpu_maxproc(void);
 void	cpu_signotify(struct lwp *l);
 void	cpu_need_proftick(struct lwp *l);
 
@@ -155,7 +157,7 @@ void	cpu_hatch(struct cpu_info *);
 extern struct cpu_info *cpu_info[];
 extern struct cpu_info cpu_info_store[];
 
-#define CPU_INFO_ITERATOR	cpuid_t
+#define CPU_INFO_ITERATOR	int
 #if defined(MULTIPROCESSOR) || defined(_MODULE)
 #define cpu_number()		(curcpu()->ci_index)
 #define CPU_IS_PRIMARY(ci)	((ci)->ci_index == 0)

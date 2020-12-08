@@ -1,4 +1,4 @@
-/* $NetBSD: trap.c,v 1.36 2020/08/02 06:58:16 maxv Exp $ */
+/* $NetBSD: trap.c,v 1.40 2020/10/22 07:31:15 skrll Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(1, "$NetBSD: trap.c,v 1.36 2020/08/02 06:58:16 maxv Exp $");
+__KERNEL_RCSID(1, "$NetBSD: trap.c,v 1.40 2020/10/22 07:31:15 skrll Exp $");
 
 #include "opt_arm_intr_impl.h"
 #include "opt_compat_netbsd32.h"
@@ -63,12 +63,13 @@ __KERNEL_RCSID(1, "$NetBSD: trap.c,v 1.36 2020/08/02 06:58:16 maxv Exp $");
 #error ARM_IRQ_HANDLER not defined
 #endif
 
+#include <arm/cpufunc.h>
+
 #include <aarch64/userret.h>
 #include <aarch64/frame.h>
 #include <aarch64/machdep.h>
 #include <aarch64/armreg.h>
 #include <aarch64/locore.h>
-#include <aarch64/cpufunc.h>
 
 #ifdef KDB
 #include <machine/db_machdep.h>
@@ -386,6 +387,7 @@ emul_aarch64_insn(struct trapframe *tf)
 		return EMUL_ARM_FAULT;
 	}
 
+	LE32TOH(insn);
 	if ((insn & 0xffffffe0) == 0xd53b0020) {
 		/* mrs x?,ctr_el0 */
 		unsigned int Xt = insn & 31;
@@ -531,6 +533,12 @@ int
 fetch_arm_insn(uint64_t pc, uint64_t spsr, uint32_t *insn)
 {
 
+	/*
+	 * Instructions are stored in little endian for BE8,
+	 * only a valid binary format for ILP32EB. Therefore,
+	 * we need byte-swapping before decoding on aarch64eb.
+	 */
+
 	/* THUMB? */
 	if (spsr & SPSR_A32_T) {
 		uint16_t *p = (uint16_t *)(pc & ~1UL); /* XXX */
@@ -538,6 +546,7 @@ fetch_arm_insn(uint64_t pc, uint64_t spsr, uint32_t *insn)
 
 		if (ufetch_16(p, &hi))
 			return -1;
+		LE16TOH(hi);
 
 		if (!THUMB_32BIT(hi)) {
 			/* 16-bit Thumb instruction */
@@ -548,6 +557,7 @@ fetch_arm_insn(uint64_t pc, uint64_t spsr, uint32_t *insn)
 		/* 32-bit Thumb instruction */
 		if (ufetch_16(p + 1, &lo))
 			return -1;
+		LE16TOH(lo);
 
 		*insn = ((uint32_t)hi << 16) | lo;
 		return 4;
@@ -555,6 +565,7 @@ fetch_arm_insn(uint64_t pc, uint64_t spsr, uint32_t *insn)
 
 	if (ufetch_32((uint32_t *)pc, insn))
 		return -1;
+	LE32TOH(*insn);
 
 	return 4;
 }
@@ -706,7 +717,7 @@ emul_arm_insn(struct trapframe *tf)
 			 * mcr p15, 0, <Rd>, c7, c5, 4
 			 * (flush prefetch buffer)
 			 */
-			__asm __volatile("isb sy" ::: "memory");
+			isb();
 		}
 		goto emulated;
 	case 0x0e070f9a:
@@ -715,7 +726,7 @@ emul_arm_insn(struct trapframe *tf)
 			 * mcr p15, 0, <Rd>, c7, c10, 4
 			 * (data synchronization barrier)
 			 */
-			__asm __volatile("dsb sy" ::: "memory");
+			dsb(sy);
 		}
 		goto emulated;
 	case 0x0e070fba:
@@ -724,7 +735,7 @@ emul_arm_insn(struct trapframe *tf)
 			 * mcr p15, 0, <Rd>, c7, c10, 5
 			 * (data memory barrier)
 			 */
-			__asm __volatile("dmb sy" ::: "memory");
+			dmb(sy);
 		}
 		goto emulated;
 	default:

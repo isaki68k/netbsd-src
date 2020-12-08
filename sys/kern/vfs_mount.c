@@ -1,4 +1,4 @@
-/*	$NetBSD: vfs_mount.c,v 1.83 2020/05/23 23:42:43 ad Exp $	*/
+/*	$NetBSD: vfs_mount.c,v 1.85 2020/11/19 10:47:47 hannken Exp $	*/
 
 /*-
  * Copyright (c) 1997-2020 The NetBSD Foundation, Inc.
@@ -67,7 +67,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_mount.c,v 1.83 2020/05/23 23:42:43 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_mount.c,v 1.85 2020/11/19 10:47:47 hannken Exp $");
 
 #include <sys/param.h>
 #include <sys/kernel.h>
@@ -730,7 +730,7 @@ mount_domount(struct lwp *l, vnode_t **vpp, struct vfsops *vfsops,
 	struct mount *mp;
 	struct pathbuf *pb;
 	struct nameidata nd;
-	int error;
+	int error, error2;
 
 	error = kauth_authorize_system(l->l_cred, KAUTH_SYSTEM_MOUNT,
 	    KAUTH_REQ_SYSTEM_MOUNT_NEW, vp, KAUTH_ARG(flags), data);
@@ -832,8 +832,16 @@ mount_domount(struct lwp *l, vnode_t **vpp, struct vfsops *vfsops,
 	return error;
 
 err_mounted:
+	do {
+		error2 = vfs_suspend(mp, 0);
+	} while (error2 == EINTR || error2 == ERESTART);
+	KASSERT(error2 == 0 || error2 == EOPNOTSUPP);
+
 	if (VFS_UNMOUNT(mp, MNT_FORCE) != 0)
 		panic("Unmounting fresh file system failed");
+
+	if (error2 == 0)
+		vfs_resume(mp);
 
 err_unmounted:
 	vp->v_mountedhere = NULL;

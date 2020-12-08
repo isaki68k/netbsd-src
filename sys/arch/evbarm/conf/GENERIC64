@@ -1,5 +1,5 @@
 #
-#	$NetBSD: GENERIC64,v 1.161 2020/08/02 06:58:16 maxv Exp $
+#	$NetBSD: GENERIC64,v 1.166 2020/12/07 10:57:41 jmcneill Exp $
 #
 #	GENERIC ARM (aarch64) kernel
 #
@@ -10,8 +10,7 @@ include	"arch/evbarm/conf/GENERIC.common"
 
 maxusers	64
 
-options 	CPU_CORTEXA53
-options 	CPU_CORTEXA57
+options 	CPU_CORTEX
 options 	CPU_THUNDERX
 options 	SOC_BCM2837
 options 	SOC_MESONGXBB
@@ -91,6 +90,8 @@ acpi*		at acpifdt?
 acpiacad*	at acpi?
 acpibat*	at acpi?
 acpibut*	at acpi?
+acpipcd*	at acpi?
+acpicpu*	at acpi?
 acpifan*	at acpi?
 acpiged*	at acpi?
 acpilid*	at acpi?
@@ -100,6 +101,8 @@ acpitz*		at acpi?
 cpus*		at fdt? pass 0
 cpu*		at fdt? pass 0
 cpu*		at acpi?
+
+vmt*		at fdt?			# VMware Tools
 
 # Performance monitors
 armpmu*		at fdt?
@@ -237,6 +240,7 @@ mcx*		at pci? dev ? function ?	# Mellanox 5th generation Ethernet
 mskc*		at pci? dev ? function ?	# Marvell Yukon 2 Gigabit Ethernet
 msk*		at mskc?
 re*		at pci? dev ? function ?	# Realtek RTL8111GS
+vmx*		at pci? dev ? function ?	# VMware VMXNET3
 wm*		at pci? dev ? function ?	# Intel Gigabit Ethernet
 
 # MII/PHY support
@@ -261,6 +265,7 @@ pnaphy*		at mii? phy ?		# generic HomePNA PHYs
 rdcphy*		at mii? phy ?		# RDC R6040 10/100 PHY
 rgephy*		at mii? phy ?		# Realtek 8169S/8110S internal PHYs
 rlphy*		at mii? phy ?		# Realtek 8139/8201L PHYs
+smscphy*	at mii? phy ?		# SMSC LAN87xx PHYs
 sqphy*		at mii? phy ?		# Seeq 80220/80221/80223 PHYs
 tlphy*		at mii? phy ?		# ThunderLAN PHYs
 tqphy*		at mii? phy ?		# TDK Semiconductor PHYs

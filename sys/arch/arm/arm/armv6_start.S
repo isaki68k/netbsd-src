@@ -1,4 +1,4 @@
-/*	$NetBSD: armv6_start.S,v 1.27 2020/08/28 13:36:52 skrll Exp $	*/
+/*	$NetBSD: armv6_start.S,v 1.33 2020/12/01 13:11:55 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2012, 2017, 2018 The NetBSD Foundation, Inc.
@@ -95,8 +95,12 @@
 
 ENTRY_NP(generic_start)
 
-	// ARMv7 only?!?
 #if defined(__ARMEB__)
+	/* Make sure sctlr.u = 1 when cpsr.e = 1. */
+	mrc	p15, 0, R_TMP1, c1, c0, 0
+	orr	R_TMP1, R_TMP1, #CPU_CONTROL_UNAL_ENABLE
+	mcr     p15, 0, R_TMP1, c1, c0, 0
+
 	setend	be			/* force big endian */
 #endif
 
@@ -572,6 +576,13 @@ generic_vstartv6:
 #define CPU_CONTROL_XP_ENABLE_SET	0
 #endif
 
+/* SWP is only usable on uni-processor ARMv7 systems. */
+#ifdef MULTIPROCESSOR
+#define CPU_CONTROL_XP_SWP_ENABLE 0 
+#else
+#define CPU_CONTROL_XP_SWP_ENABLE CPU_CONTROL_SWP_ENABLE  
+#endif
+
 // bits to set in the Control Register
 //
 #define CPU_CONTROL_SET			( 	\
@@ -660,6 +671,7 @@ armv7_init:
 
 #define ARMV7_SCTLR_SET	( 	\
     CPU_CONTROL_UNAL_ENABLE |	\
+    CPU_CONTROL_XP_SWP_ENABLE | \
     0)
 
 	mrc	p15, 0, r0, c1, c0, 0
@@ -713,7 +725,6 @@ armv7_mmuinit:
 	mov	r4, lr
 	mov	r5, r0			// save TTBR
 
-	// XXXNH dsb - Why?
 	XPUTC(#'F')
 	dsb				// Drain the write buffers.
 
@@ -747,7 +758,6 @@ armv7_mmuinit:
 	mov	r1, #0			// get KERNEL_PID
 	mcr	p15, 0, r1, c13, c0, 1	// CONTEXTIDR write
 
-	// XXXNH FreeBSD doesn't do this isb
 	isb
 
 	// Set the Domain Access register.  Very important!
@@ -1080,6 +1090,11 @@ Lcontrol_set:
 #else
 #define	CPU_CONTROL_EXTRA	CPU_CONTROL_SYST_ENABLE
 #endif
+#if defined(__ARMEL__)
+#define	CPU_CONTROL_EX_BEND_SET	0
+#else
+#define	CPU_CONTROL_EX_BEND_SET	CPU_CONTROL_EX_BEND
+#endif
 	.word CPU_CONTROL_MMU_ENABLE  | \
 	      CPU_CONTROL_WBUF_ENABLE |    /* not defined in 1176 (SBO) */ \
 	      CPU_CONTROL_32BP_ENABLE |    /* SBO */ \
@@ -1088,7 +1103,8 @@ Lcontrol_set:
 		(1 << 16) | 	/* SBO - Global enable for data tcm */ \
 		(1 << 18) |	/* SBO - Global enable for insn tcm */ \
 	      CPU_CONTROL_UNAL_ENABLE | \
-	      CPU_CONTROL_EXTRA
+	      CPU_CONTROL_EXTRA | \
+	      CPU_CONTROL_EX_BEND_SET
 
 	/* bits to clear in the Control Register */
 Lcontrol_clr:

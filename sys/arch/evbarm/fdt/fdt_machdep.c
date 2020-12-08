@@ -1,4 +1,4 @@
-/* $NetBSD: fdt_machdep.c,v 1.73 2020/06/27 18:44:02 jmcneill Exp $ */
+/* $NetBSD: fdt_machdep.c,v 1.82 2020/11/28 22:16:23 riastradh Exp $ */
 
 /*-
  * Copyright (c) 2015-2017 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fdt_machdep.c,v 1.73 2020/06/27 18:44:02 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fdt_machdep.c,v 1.82 2020/11/28 22:16:23 riastradh Exp $");
 
 #include "opt_machdep.h"
 #include "opt_bootconfig.h"
@@ -38,6 +38,7 @@ __KERNEL_RCSID(0, "$NetBSD: fdt_machdep.c,v 1.73 2020/06/27 18:44:02 jmcneill Ex
 #include "opt_cpuoptions.h"
 #include "opt_efi.h"
 
+#include "genfb.h"
 #include "ukbd.h"
 #include "wsdisplay.h"
 
@@ -47,6 +48,7 @@ __KERNEL_RCSID(0, "$NetBSD: fdt_machdep.c,v 1.73 2020/06/27 18:44:02 jmcneill Ex
 #include <sys/atomic.h>
 #include <sys/cpu.h>
 #include <sys/device.h>
+#include <sys/endian.h>
 #include <sys/exec.h>
 #include <sys/kernel.h>
 #include <sys/kmem.h>
@@ -96,6 +98,10 @@ __KERNEL_RCSID(0, "$NetBSD: fdt_machdep.c,v 1.73 2020/06/27 18:44:02 jmcneill Ex
 #include <arm/arm/efi_runtime.h>
 #endif
 
+#if NWSDISPLAY > 0 && NGENFB > 0
+#include <arm/fdt/arm_simplefb.h>
+#endif
+
 #if NUKBD > 0
 #include <dev/usb/ukbdvar.h>
 #endif
@@ -137,6 +143,10 @@ static void fdt_device_register_post_config(device_t, void *);
 static void fdt_cpu_rootconf(void);
 static void fdt_reset(void);
 static void fdt_powerdown(void);
+
+#if BYTE_ORDER == BIG_ENDIAN
+static void fdt_update_fb_format(void);
+#endif
 
 static void
 earlyconsputc(dev_t dev, int c)
@@ -482,7 +492,43 @@ fdt_setup_efirng(void)
 
 	rnd_attach_source(&efirng_source, "efirng", RND_TYPE_RNG,
 	    RND_FLAG_DEFAULT);
-	rnd_add_data(&efirng_source, efirng, efirng_size, 0);
+
+	/*
+	 * We don't really have specific information about the physical
+	 * process underlying the data provided by the firmware via the
+	 * EFI RNG API, so the entropy estimate here is heuristic.
+	 * What efiboot provides us is up to 4096 bytes of data from
+	 * the EFI RNG API, although in principle it may return short.
+	 *
+	 * The UEFI Specification (2.8 Errata A, February 2020[1]) says
+	 *
+	 *	When a Deterministic Random Bit Generator (DRBG) is
+	 *	used on the output of a (raw) entropy source, its
+	 *	security level must be at least 256 bits.
+	 *
+	 * It's not entirely clear whether `it' refers to the DRBG or
+	 * the entropy source; if it refers to the DRBG, it's not
+	 * entirely clear how ANSI X9.31 3DES, one of the options for
+	 * DRBG in the UEFI spec, can provide a `256-bit security
+	 * level' because it has only 232 bits of inputs (three 56-bit
+	 * keys and one 64-bit block).  That said, even if it provides
+	 * only 232 bits of entropy, that's enough to prevent all
+	 * attacks and we probably get a few more bits from sampling
+	 * the clock anyway.
+	 *
+	 * In the event we get raw samples, e.g. the bits sampled by a
+	 * ring oscillator, we hope that the samples have at least half
+	 * a bit of entropy per bit of data -- and efiboot tries to
+	 * draw 4096 bytes to provide plenty of slop.  Hence we divide
+	 * the total number of bits by two and clamp at 256.  There are
+	 * ways this could go wrong, but on most machines it should
+	 * behave reasonably.
+	 *
+	 * [1] https://uefi.org/sites/default/files/resources/UEFI_Spec_2_8_A_Feb14.pdf
+	 */
+	rnd_add_data(&efirng_source, efirng, efirng_size,
+	    MIN(256, efirng_size*NBBY/2));
+
 	explicit_memset(efirng, 0, efirng_size);
 	fdt_unmap_range(efirng, efirng_size);
 }
@@ -524,17 +570,17 @@ initarm(void *arg)
 
 	/* Load FDT */
 	int error = fdt_check_header(fdt_addr_r);
-	if (error == 0) {
-		/* If the DTB is too big, try to pack it in place first. */
-		if (fdt_totalsize(fdt_addr_r) > sizeof(fdt_data))
-			(void)fdt_pack(__UNCONST(fdt_addr_r));
-		error = fdt_open_into(fdt_addr_r, fdt_data, sizeof(fdt_data));
-		if (error != 0)
-			panic("fdt_move failed: %s", fdt_strerror(error));
-		fdtbus_init(fdt_data);
-	} else {
+	if (error != 0)
 		panic("fdt_check_header failed: %s", fdt_strerror(error));
-	}
+
+	/* If the DTB is too big, try to pack it in place first. */
+	if (fdt_totalsize(fdt_addr_r) > sizeof(fdt_data))
+		(void)fdt_pack(__UNCONST(fdt_addr_r));
+	error = fdt_open_into(fdt_addr_r, fdt_data, sizeof(fdt_data));
+	if (error != 0)
+		panic("fdt_move failed: %s", fdt_strerror(error));
+
+	fdtbus_init(fdt_data);
 
 	/* Lookup platform specific backend */
 	plat = arm_fdt_platform();
@@ -559,7 +605,7 @@ initarm(void *arg)
 	 * l1pt VA is fine
 	 */
 
-	VPRINTF("devmap\n");
+	VPRINTF("devmap %p\n", plat->ap_devmap());
 	extern char ARM_BOOTSTRAP_LxPT[];
 	pmap_devmap_bootstrap((vaddr_t)ARM_BOOTSTRAP_LxPT, plat->ap_devmap());
 
@@ -572,6 +618,17 @@ initarm(void *arg)
 	 */
 	VPRINTF("stdout\n");
 	fdt_update_stdout_path();
+
+#if BYTE_ORDER == BIG_ENDIAN
+	/*
+	 * Most boards are configured to little-endian mode in initial, and
+	 * switched to big-endian mode after kernel is loaded. In this case,
+	 * framebuffer seems byte-swapped to CPU. Override FDT to let
+	 * drivers know.
+	 */
+	VPRINTF("fb_format\n");
+	fdt_update_fb_format();
+#endif
 
 	/*
 	 * Done making changes to the FDT.
@@ -602,10 +659,10 @@ initarm(void *arg)
 	fdt_get_memory(&memory_start, &memory_end);
 
 #if !defined(_LP64)
-	/* Cannot map memory above 4GB */
-	if (memory_end >= 0x100000000ULL)
-		memory_end = 0x100000000ULL - PAGE_SIZE;
-
+	/* Cannot map memory above 4GB (remove last page as well) */
+	const uint64_t memory_limit = 0x100000000ULL - PAGE_SIZE;
+	if (memory_end > memory_limit)
+		memory_end = memory_limit;
 #endif
 	uint64_t memory_size = memory_end - memory_start;
 
@@ -620,8 +677,7 @@ initarm(void *arg)
 	fdt_probe_efirng(&efirng_start, &efirng_end);
 
 	/*
-	 * Populate bootconfig structure for the benefit of
-	 * dodumpsys
+	 * Populate bootconfig structure for the benefit of dodumpsys
 	 */
 	VPRINTF("%s: fdt_build_bootconfig\n", __func__);
 	fdt_build_bootconfig(memory_start, memory_end);
@@ -657,6 +713,7 @@ initarm(void *arg)
 
 	if (error)
 		return sp;
+
 	/*
 	 * Now we have APs started the pages used for stacks and L1PT can
 	 * be given to uvm
@@ -847,8 +904,24 @@ fdt_device_register(device_t self, void *aux)
 {
 	const struct arm_platform *plat = arm_fdt_platform();
 
-	if (device_is_a(self, "armfdt"))
+	if (device_is_a(self, "armfdt")) {
 		fdt_setup_initrd();
+
+#if NWSDISPLAY > 0 && NGENFB > 0
+		/*
+		 * Setup framebuffer console, if present.
+		 */
+		arm_simplefb_preattach();
+#endif
+	}
+
+#if NWSDISPLAY > 0 && NGENFB > 0
+	if (device_is_a(self, "genfb")) {
+		prop_dictionary_t dict = device_properties(self);
+		prop_dictionary_set_uint64(dict,
+		    "simplefb-physaddr", arm_simplefb_physaddr());
+	}
+#endif
 
 	if (plat && plat->ap_device_register)
 		plat->ap_device_register(self, aux);
@@ -902,3 +975,36 @@ fdt_powerdown(void)
 {
 	fdtbus_power_poweroff();
 }
+
+#if BYTE_ORDER == BIG_ENDIAN
+static void
+fdt_update_fb_format(void)
+{
+	int off, len;
+	const char *format, *replace;
+
+	off = fdt_path_offset(fdt_data, "/chosen");
+	if (off < 0)
+		return;
+
+	for (;;) {
+		off = fdt_node_offset_by_compatible(fdt_data, off,
+		    "simple-framebuffer");
+		if (off < 0)
+			return;
+
+		format = fdt_getprop(fdt_data, off, "format", &len);
+		if (format == NULL)
+			continue;
+
+		replace = NULL;
+		if (strcmp(format, "a8b8g8r8") == 0)
+			replace = "r8g8b8a8";
+		else if (strcmp(format, "x8r8g8b8") == 0)
+			replace = "b8g8r8x8";
+		if (replace != NULL)
+			fdt_setprop(fdt_data, off, "format", replace,
+			    strlen(replace) + 1);
+	}
+}
+#endif

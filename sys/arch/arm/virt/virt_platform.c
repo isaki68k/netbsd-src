@@ -1,4 +1,4 @@
-/* $NetBSD: virt_platform.c,v 1.10 2020/07/10 12:25:10 skrll Exp $ */
+/* $NetBSD: virt_platform.c,v 1.12 2020/10/30 18:54:37 skrll Exp $ */
 
 /*-
  * Copyright (c) 2018 Jared McNeill <jmcneill@invisible.ca>
@@ -30,7 +30,7 @@
 #include "opt_multiprocessor.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: virt_platform.c,v 1.10 2020/07/10 12:25:10 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: virt_platform.c,v 1.12 2020/10/30 18:54:37 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -75,7 +75,7 @@ virt_platform_early_putchar(char c)
 		continue;
 
 	uartaddr[PL01XCOM_DR / 4] = htole32(c);
-	arm_dsb();
+	dsb(sy);
 
 	while ((le32toh(uartaddr[PL01XCOM_FR / 4]) & PL01X_FR_TXFE) == 0)
 		continue;
@@ -99,10 +99,8 @@ virt_platform_init_attach_args(struct fdt_attach_args *faa)
 {
 	extern struct arm32_bus_dma_tag arm_generic_dma_tag;
 	extern struct bus_space arm_generic_bs_tag;
-	extern struct bus_space arm_generic_a4x_bs_tag;
 
 	faa->faa_bst = &arm_generic_bs_tag;
-	faa->faa_a4x_bst = &arm_generic_a4x_bs_tag;
 	faa->faa_dmat = &arm_generic_dma_tag;
 }
 

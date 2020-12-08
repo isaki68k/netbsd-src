@@ -1,4 +1,4 @@
-/*	$NetBSD: arm32_boot.c,v 1.39 2020/07/10 12:25:09 skrll Exp $	*/
+/*	$NetBSD: arm32_boot.c,v 1.41 2020/12/01 02:43:14 rin Exp $	*/
 
 /*
  * Copyright (c) 2002, 2003, 2005  Genetec Corporation.  All rights reserved.
@@ -122,7 +122,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(1, "$NetBSD: arm32_boot.c,v 1.39 2020/07/10 12:25:09 skrll Exp $");
+__KERNEL_RCSID(1, "$NetBSD: arm32_boot.c,v 1.41 2020/12/01 02:43:14 rin Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_cputypes.h"
@@ -191,10 +191,9 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 	memset(tf, 0, sizeof(*tf));
 	lwp_settrapframe(l, tf);
 
-#if defined(__ARMEB__)
-	tf->tf_spsr = PSR_USR32_MODE | (CPU_IS_ARMV7_P() ? PSR_E_BIT : 0);
-#else
  	tf->tf_spsr = PSR_USR32_MODE;
+#ifdef _ARM_ARCH_BE8
+	tf->tf_spsr |= PSR_E_BIT;
 #endif
 
 	VPRINTF("bootstrap done.\n");
@@ -293,7 +292,10 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 		}
 	}
 
-	/* Boot strap pmap telling it where the managed kernel virtual memory is */
+	/*
+	 * Bootstrap pmap telling it where the managed kernel virtual memory
+	 * is.
+	 */
 	VPRINTF("pmap ");
 	pmap_bootstrap(kvm_base, kvm_base + kvm_size);
 
