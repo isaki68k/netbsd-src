@@ -15,8 +15,10 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/param.h>
+#include <sys/resource.h>
 #include <sys/sysctl.h>
 #include <sys/time.h>
+#include <vector>
 #include "../../pad/padio.h"	// PAD_GET_AUDIOUNIT
 
 struct cmdtable {
@@ -844,6 +846,50 @@ cmd_fstat(int ac, char *av[])
 	return 0;
 }
 
+// ENFILE を作り出したいつもりだったけど、未完成かも。
+int
+cmd_enfile(int ac, char *av[])
+{
+	struct rlimit rlim;
+	int r;
+	std::vector<int> fds;
+
+	rlim.rlim_cur = RLIM_INFINITY;
+	rlim.rlim_max = RLIM_INFINITY;
+	r = setrlimit(RLIMIT_NOFILE, &rlim);
+	if (r < 0) {
+		err(1, "setrlimit");
+	}
+	r = getrlimit(RLIMIT_NOFILE, &rlim);
+	printf("RLIMIT = { %d, %d }\n", (int)rlim.rlim_cur, (int)rlim.rlim_max);
+
+	for (;;) {
+		r = OPEN("/dev/zero", O_RDWR);
+		if (r < 0)
+			break;
+		fds.push_back(r);
+		int num = fds.size();
+		if (num % 100 == 0) {
+			printf("%d", num);
+			fflush(stdout);
+		} else if (num % 10 == 0) {
+			printf(".");
+			fflush(stdout);
+		}
+	}
+	printf("\n");
+	printf("%d opened but: %s\n", (int)fds.size(), strerror(errno));
+	for (;;) {
+		printf("Hit any key to close one\n");
+		fgetc(stdin);
+		int fd = fds.back();
+		CLOSE(fd);
+		fds.pop_back();
+	}
+
+	return 0;
+}
+
 // コマンド一覧
 #define DEF(x)	{ #x, cmd_ ## x }
 struct cmdtable cmdtable[] = {
@@ -862,6 +908,7 @@ struct cmdtable cmdtable[] = {
 	DEF(recstart_audioctl),
 	DEF(encoding_pcm16),
 	DEF(fstat),
+	DEF(enfile),
 	{ NULL, NULL },
 };
 #undef DEF

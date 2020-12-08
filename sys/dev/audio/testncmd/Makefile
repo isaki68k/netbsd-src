@@ -3,7 +3,7 @@
 all:	ncmd.${MACHINE} ncmd.x68k
 
 ncmd.$(MACHINE):	ncmd.o
-	$(CC) -g -o $@ $>
+	${CXX} -g -o $@ $>
 
 ncmd.x68k: ncmd.cpp
 	${CXX.x68k} $(CPPFLAGS) -o $@ $> $(LIBS)
