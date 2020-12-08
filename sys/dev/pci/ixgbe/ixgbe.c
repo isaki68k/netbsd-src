@@ -1,4 +1,4 @@
-/* $NetBSD: ixgbe.c,v 1.248 2020/08/27 04:54:43 msaitoh Exp $ */
+/* $NetBSD: ixgbe.c,v 1.261 2020/11/30 07:53:42 msaitoh Exp $ */
 
 /******************************************************************************
 
@@ -70,6 +70,7 @@
 #endif
 
 #include "ixgbe.h"
+#include "ixgbe_phy.h"
 #include "ixgbe_sriov.h"
 #include "vlan.h"
 
@@ -172,7 +173,7 @@ static int	ixgbe_ioctl(struct ifnet *, u_long, void *);
 static int	ixgbe_init(struct ifnet *);
 static void	ixgbe_init_locked(struct adapter *);
 static void	ixgbe_ifstop(struct ifnet *, int);
-static void	ixgbe_stop(void *);
+static void	ixgbe_stop_locked(void *);
 static void	ixgbe_init_device_features(struct adapter *);
 static void	ixgbe_check_fan_failure(struct adapter *, u32, bool);
 static void	ixgbe_add_media_types(struct adapter *);
@@ -180,7 +181,7 @@ static void	ixgbe_media_status(struct ifnet *, struct ifmediareq *);
 static int	ixgbe_media_change(struct ifnet *);
 static int	ixgbe_allocate_pci_resources(struct adapter *,
 		    const struct pci_attach_args *);
-static void	ixgbe_free_workqueue(struct adapter *);
+static void	ixgbe_free_deferred_handlers(struct adapter *);
 static void	ixgbe_get_slot_info(struct adapter *);
 static int	ixgbe_allocate_msix(struct adapter *,
 		    const struct pci_attach_args *);
@@ -256,9 +257,6 @@ static int	ixgbe_sysctl_eee_state(SYSCTLFN_PROTO);
 static int	ixgbe_sysctl_debug(SYSCTLFN_PROTO);
 static int	ixgbe_sysctl_wol_enable(SYSCTLFN_PROTO);
 static int	ixgbe_sysctl_wufc(SYSCTLFN_PROTO);
-
-/* Support for pluggable optic modules */
-static bool	ixgbe_sfp_cage_full(struct adapter *);
 
 /* Legacy (single vector) interrupt handler */
 static int	ixgbe_legacy_irq(void *);
@@ -786,7 +784,7 @@ ixgbe_quirks(struct adapter *adapter)
 		    (strcmp(product, "MA10-ST0") == 0)) {
 			aprint_verbose_dev(dev,
 			    "Enable SFP+ MOD_ABS inverse quirk\n");
-			adapter->quirks |= IXGBE_QUIRK_MOD_ABS_INVERT;
+			adapter->hw.quirks |= IXGBE_QUIRK_MOD_ABS_INVERT;
 		}
 	}
 }
@@ -830,6 +828,7 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 	else
 		adapter->osdep.dmat = pa->pa_dmat;
 	adapter->osdep.attached = false;
+	adapter->osdep.detaching = false;
 
 	ent = ixgbe_lookup(pa);
 
@@ -1137,6 +1136,7 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 		goto err_late;
 
 	/* Tasklets for Link, SFP, Multispeed Fiber and Flow Director */
+	mutex_init(&(adapter)->admin_mtx, MUTEX_DEFAULT, IPL_NET);
 	snprintf(wqname, sizeof(wqname), "%s-admin", device_xname(dev));
 	error = workqueue_create(&adapter->admin_wq, wqname,
 	    ixgbe_handle_admin, adapter, IXGBE_WORKQUEUE_PRI, IPL_NET,
@@ -1231,7 +1231,7 @@ ixgbe_attach(device_t parent, device_t dev, void *aux)
 
 	/* For Netmap */
 	adapter->init_locked = ixgbe_init_locked;
-	adapter->stop_locked = ixgbe_stop;
+	adapter->stop_locked = ixgbe_stop_locked;
 
 	if (adapter->feat_en & IXGBE_FEATURE_NETMAP)
 		ixgbe_netmap_attach(adapter);
@@ -1280,10 +1280,11 @@ err_out:
 	ctrl_ext = IXGBE_READ_REG(&adapter->hw, IXGBE_CTRL_EXT);
 	ctrl_ext &= ~IXGBE_CTRL_EXT_DRV_LOAD;
 	IXGBE_WRITE_REG(&adapter->hw, IXGBE_CTRL_EXT, ctrl_ext);
-	ixgbe_free_workqueue(adapter);
+	ixgbe_free_deferred_handlers(adapter);
 	ixgbe_free_pci_resources(adapter);
 	if (adapter->mta != NULL)
 		free(adapter->mta, M_DEVBUF);
+	mutex_destroy(&(adapter)->admin_mtx); /* XXX appropriate order? */
 	IXGBE_CORE_LOCK_DESTROY(adapter);
 
 	return;
@@ -1539,9 +1540,14 @@ static void
 ixgbe_schedule_admin_tasklet(struct adapter *adapter)
 {
 
-	if (atomic_cas_uint(&adapter->admin_pending, 0, 1) == 0)
-		workqueue_enqueue(adapter->admin_wq,
-		    &adapter->admin_wc, NULL);
+	KASSERT(mutex_owned(&adapter->admin_mtx));
+
+	if (__predict_true(adapter->osdep.detaching == false)) {
+		if (adapter->admin_pending == 0)
+			workqueue_enqueue(adapter->admin_wq,
+			    &adapter->admin_wc, NULL);
+		adapter->admin_pending = 1;
+	}
 }
 
 /************************************************************************
@@ -1563,8 +1569,11 @@ ixgbe_config_link(struct adapter *adapter)
 			task_requests |= IXGBE_REQUEST_TASK_MSF;
 		}
 		task_requests |= IXGBE_REQUEST_TASK_MOD;
-		atomic_or_32(&adapter->task_requests, task_requests);
+
+		mutex_enter(&adapter->admin_mtx);
+		adapter->task_requests |= task_requests;
 		ixgbe_schedule_admin_tasklet(adapter);
+		mutex_exit(&adapter->admin_mtx);
 	} else {
 		struct ifmedia	*ifm = &adapter->media;
 
@@ -3205,8 +3214,11 @@ ixgbe_msix_admin(void *arg)
 	if (task_requests != 0) {
 		/* Re-enabling other interrupts is done in the admin task */
 		task_requests |= IXGBE_REQUEST_TASK_NEED_ACKINTR;
-		atomic_or_32(&adapter->task_requests, task_requests);
+
+		mutex_enter(&adapter->admin_mtx);
+		adapter->task_requests |= task_requests;
 		ixgbe_schedule_admin_tasklet(adapter);
+		mutex_exit(&adapter->admin_mtx);
 	} else {
 		/* Re-enable other interrupts */
 		IXGBE_WRITE_REG(hw, IXGBE_EIMS, IXGBE_EIMS_OTHER);
@@ -3517,7 +3529,7 @@ map_err:
 } /* ixgbe_allocate_pci_resources */
 
 static void
-ixgbe_free_workqueue(struct adapter *adapter)
+ixgbe_free_deferred_handlers(struct adapter *adapter)
 {
 	struct ix_queue *que = adapter->queues;
 	struct tx_ring *txr = adapter->tx_rings;
@@ -3557,7 +3569,7 @@ ixgbe_free_workqueue(struct adapter *adapter)
 		workqueue_destroy(adapter->recovery_mode_timer_wq);
 		adapter->recovery_mode_timer_wq = NULL;
 	}
-} /* ixgbe_free_workqueue */
+} /* ixgbe_free_deferred_handlers */
 
 /************************************************************************
  * ixgbe_detach - Device removal routine
@@ -3600,19 +3612,17 @@ ixgbe_detach(device_t dev, int flags)
 	}
 #endif
 
+	adapter->osdep.detaching = true;
 	/*
-	 * Stop the interface. ixgbe_setup_low_power_mode() calls ixgbe_stop(),
-	 * so it's not required to call ixgbe_stop() directly.
+	 * Stop the interface. ixgbe_setup_low_power_mode() calls
+	 * ixgbe_ifstop(), so it's not required to call ixgbe_ifstop()
+	 * directly.
 	 */
-	IXGBE_CORE_LOCK(adapter);
 	ixgbe_setup_low_power_mode(adapter);
-	IXGBE_CORE_UNLOCK(adapter);
 
 	callout_halt(&adapter->timer, NULL);
-	if (adapter->feat_en & IXGBE_FEATURE_RECOVERY_MODE) {
-		callout_stop(&adapter->recovery_mode_timer);
+	if (adapter->feat_en & IXGBE_FEATURE_RECOVERY_MODE)
 		callout_halt(&adapter->recovery_mode_timer, NULL);
-	}
 
 	workqueue_wait(adapter->admin_wq, &adapter->admin_wc);
 	atomic_store_relaxed(&adapter->admin_pending, 0);
@@ -3623,7 +3633,7 @@ ixgbe_detach(device_t dev, int flags)
 
 	ether_ifdetach(adapter->ifp);
 
-	ixgbe_free_workqueue(adapter);
+	ixgbe_free_deferred_handlers(adapter);
 
 	/* let hardware know driver is unloading */
 	ctrl_ext = IXGBE_READ_REG(&adapter->hw, IXGBE_CTRL_EXT);
@@ -3759,6 +3769,7 @@ ixgbe_detach(device_t dev, int flags)
 	ixgbe_free_queues(adapter);
 	free(adapter->mta, M_DEVBUF);
 
+	mutex_destroy(&adapter->admin_mtx); /* XXX appropriate order? */
 	IXGBE_CORE_LOCK_DESTROY(adapter);
 
 	return (0);
@@ -3774,16 +3785,15 @@ ixgbe_setup_low_power_mode(struct adapter *adapter)
 {
 	struct ixgbe_hw *hw = &adapter->hw;
 	device_t	dev = adapter->dev;
+	struct ifnet	*ifp = adapter->ifp;
 	s32		error = 0;
-
-	KASSERT(mutex_owned(&adapter->core_mtx));
 
 	/* Limit power management flow to X550EM baseT */
 	if (hw->device_id == IXGBE_DEV_ID_X550EM_X_10G_T &&
 	    hw->phy.ops.enter_lplu) {
 		/* X550EM baseT adapters need a special LPLU flow */
 		hw->phy.reset_disable = true;
-		ixgbe_stop(adapter);
+		ixgbe_ifstop(ifp, 1);
 		error = hw->phy.ops.enter_lplu(hw);
 		if (error)
 			device_printf(dev,
@@ -3791,8 +3801,10 @@ ixgbe_setup_low_power_mode(struct adapter *adapter)
 		hw->phy.reset_disable = false;
 	} else {
 		/* Just stop for other adapters */
-		ixgbe_stop(adapter);
+		ixgbe_ifstop(ifp, 1);
 	}
+
+	IXGBE_CORE_LOCK(adapter);
 
 	if (!hw->wol_enabled) {
 		ixgbe_set_phy_power(hw, FALSE);
@@ -3821,6 +3833,8 @@ ixgbe_setup_low_power_mode(struct adapter *adapter)
 
 	}
 
+	IXGBE_CORE_UNLOCK(adapter);
+
 	return error;
 } /* ixgbe_setup_low_power_mode */
 
@@ -3836,9 +3850,7 @@ ixgbe_shutdown(device_t dev)
 
 	INIT_DEBUGOUT("ixgbe_shutdown: begin");
 
-	IXGBE_CORE_LOCK(adapter);
 	error = ixgbe_setup_low_power_mode(adapter);
-	IXGBE_CORE_UNLOCK(adapter);
 
 	return (error);
 } /* ixgbe_shutdown */
@@ -3857,11 +3869,7 @@ ixgbe_suspend(device_t dev, const pmf_qual_t *qual)
 
 	INIT_DEBUGOUT("ixgbe_suspend: begin");
 
-	IXGBE_CORE_LOCK(adapter);
-
 	error = ixgbe_setup_low_power_mode(adapter);
-
-	IXGBE_CORE_UNLOCK(adapter);
 
 	return (error);
 } /* ixgbe_suspend */
@@ -3978,7 +3986,7 @@ ixgbe_init_locked(struct adapter *adapter)
 	/* Prepare transmit descriptors and buffers */
 	if (ixgbe_setup_transmit_structures(adapter)) {
 		device_printf(dev, "Could not setup transmit structures\n");
-		ixgbe_stop(adapter);
+		ixgbe_stop_locked(adapter);
 		return;
 	}
 
@@ -4000,7 +4008,7 @@ ixgbe_init_locked(struct adapter *adapter)
 	/* Prepare receive descriptors and buffers */
 	if (ixgbe_setup_receive_structures(adapter)) {
 		device_printf(dev, "Could not setup receive structures\n");
-		ixgbe_stop(adapter);
+		ixgbe_stop_locked(adapter);
 		return;
 	}
 
@@ -4506,14 +4514,30 @@ ixgbe_handle_timer(struct work *wk, void *context)
 
 	/* Check for pluggable optics */
 	if (ixgbe_is_sfp(hw)) {
-		bool was_full = hw->phy.sfp_type != ixgbe_sfp_type_not_present;
-		bool is_full = ixgbe_sfp_cage_full(adapter);
+		bool sched_mod_task = false;
 
-		/* do probe if cage state changed */
-		if (was_full ^ is_full) {
-			atomic_or_32(&adapter->task_requests,
-			    IXGBE_REQUEST_TASK_MOD);
+		if (hw->mac.type == ixgbe_mac_82598EB) {
+			/*
+			 * On 82598EB, SFP+'s MOD_ABS pin is not connected to
+			 * any GPIO(SDP). So just schedule TASK_MOD.
+			 */
+			sched_mod_task = true;
+		} else {
+			bool was_full, is_full;
+
+			was_full =
+			    hw->phy.sfp_type != ixgbe_sfp_type_not_present;
+			is_full = ixgbe_sfp_cage_full(hw);
+
+			/* Do probe if cage state changed */
+			if (was_full ^ is_full)
+				sched_mod_task = true;
+		}
+		if (sched_mod_task) {
+			mutex_enter(&adapter->admin_mtx);
+			adapter->task_requests |= IXGBE_REQUEST_TASK_MOD;
 			ixgbe_schedule_admin_tasklet(adapter);
+			mutex_exit(&adapter->admin_mtx);
 		}
 	}
 
@@ -4614,10 +4638,12 @@ ixgbe_recovery_mode_timer(void *arg)
 {
 	struct adapter *adapter = arg;
 
-	if (atomic_cas_uint(&adapter->recovery_mode_timer_pending, 0, 1) == 0)
-	{
-		workqueue_enqueue(adapter->recovery_mode_timer_wq,
-		    &adapter->recovery_mode_timer_wc, NULL);
+	if (__predict_true(adapter->osdep.detaching == false)) {
+		if (atomic_cas_uint(&adapter->recovery_mode_timer_pending,
+			0, 1) == 0) {
+			workqueue_enqueue(adapter->recovery_mode_timer_wq,
+			    &adapter->recovery_mode_timer_wc, NULL);
+		}
 	}
 }
 
@@ -4634,7 +4660,7 @@ ixgbe_handle_recovery_mode_timer(struct work *wk, void *context)
 			device_printf(adapter->dev, "Firmware recovery mode detected. Limiting functionality. Refer to the Intel(R) Ethernet Adapters and Devices User Guide for details on firmware recovery mode.\n");
 
 			if (hw->adapter_stopped == FALSE)
-				ixgbe_stop(adapter);
+				ixgbe_stop_locked(adapter);
 		}
 	} else
 		atomic_cas_uint(&adapter->recovery_mode, 1, 0);
@@ -4646,35 +4672,6 @@ ixgbe_handle_recovery_mode_timer(struct work *wk, void *context)
 } /* ixgbe_handle_recovery_mode_timer */
 
 /************************************************************************
- * ixgbe_sfp_cage_full
- *
- *   Determine if a port had optics inserted.
- ************************************************************************/
-static bool
-ixgbe_sfp_cage_full(struct adapter *adapter)
-{
-	struct ixgbe_hw *hw = &adapter->hw;
-	uint32_t mask;
-	int rv;
-
-	if (hw->mac.type >= ixgbe_mac_X540)
-		mask = IXGBE_ESDP_SDP0;
-	else
-		mask = IXGBE_ESDP_SDP2;
-
-	rv = IXGBE_READ_REG(hw, IXGBE_ESDP) & mask;
-	if ((adapter->quirks & IXGBE_QUIRK_MOD_ABS_INVERT) != 0)
-		rv = !rv;
-
-	if (hw->mac.type == ixgbe_mac_X550EM_a) {
-		/* X550EM_a's SDP0 is inverted than others. */
-		return !rv;
-	}
-
-	return rv;
-} /* ixgbe_sfp_cage_full */
-
-/************************************************************************
  * ixgbe_handle_mod - Tasklet for SFP module interrupts
  ************************************************************************/
 static void
@@ -4683,36 +4680,26 @@ ixgbe_handle_mod(void *context)
 	struct adapter	*adapter = context;
 	struct ixgbe_hw *hw = &adapter->hw;
 	device_t	dev = adapter->dev;
-	u32		err, cage_full = 0;
+	enum ixgbe_sfp_type last_sfp_type;
+	u32		err;
+	bool		last_unsupported_sfp_recovery;
 
+	KASSERT(mutex_owned(&adapter->core_mtx));
+
+	last_sfp_type = hw->phy.sfp_type;
+	last_unsupported_sfp_recovery = hw->need_unsupported_sfp_recovery;
 	++adapter->mod_workev.ev_count;
 	if (adapter->hw.need_crosstalk_fix) {
-		switch (hw->mac.type) {
-		case ixgbe_mac_82599EB:
-			cage_full = IXGBE_READ_REG(hw, IXGBE_ESDP) &
-			    IXGBE_ESDP_SDP2;
-			break;
-		case ixgbe_mac_X550EM_x:
-		case ixgbe_mac_X550EM_a:
-			/*
-			 * XXX See ixgbe_sfp_cage_full(). It seems the bit is
-			 * inverted on X550EM_a, so I think this is incorrect.
-			 */
-			cage_full = IXGBE_READ_REG(hw, IXGBE_ESDP) &
-			    IXGBE_ESDP_SDP0;
-			break;
-		default:
-			break;
-		}
-
-		if (!cage_full)
+		if ((hw->mac.type != ixgbe_mac_82598EB) &&
+		    !ixgbe_sfp_cage_full(hw))
 			goto out;
 	}
 
 	err = hw->phy.ops.identify_sfp(hw);
 	if (err == IXGBE_ERR_SFP_NOT_SUPPORTED) {
-		device_printf(dev,
-		    "Unsupported SFP+ module type was detected.\n");
+		if (last_unsupported_sfp_recovery == false)
+			device_printf(dev,
+			    "Unsupported SFP+ module type was detected.\n");
 		goto out;
 	}
 
@@ -4726,7 +4713,10 @@ ixgbe_handle_mod(void *context)
 		 * approach.
 		 */
 		ixgbe_init_locked(adapter);
-	} else {
+	} else if ((hw->phy.sfp_type != ixgbe_sfp_type_not_present) &&
+	    (hw->phy.sfp_type != last_sfp_type)) {
+		/* A module is inserted and changed. */
+
 		if (hw->mac.type == ixgbe_mac_82598EB)
 			err = hw->phy.ops.reset(hw);
 		else {
@@ -4751,7 +4741,17 @@ out:
 	ifmedia_set(&adapter->media, IFM_ETHER | IFM_AUTO);
 	IXGBE_CORE_LOCK(adapter);
 
-	atomic_or_32(&adapter->task_requests, IXGBE_REQUEST_TASK_MSF);
+	/*
+	 * Don't shedule MSF event if the chip is 82598. 82598 doesn't support
+	 * MSF. At least, calling ixgbe_handle_msf on 82598 DA makes the link
+	 * flap because the function calls setup_link().
+	 */
+	if (hw->mac.type != ixgbe_mac_82598EB) {
+		mutex_enter(&adapter->admin_mtx);
+		adapter->task_requests |= IXGBE_REQUEST_TASK_MSF;
+		mutex_exit(&adapter->admin_mtx);
+	}
+
 	/*
 	 * Don't call ixgbe_schedule_admin_tasklet() because we are on
 	 * the workqueue now.
@@ -4769,6 +4769,8 @@ ixgbe_handle_msf(void *context)
 	struct ixgbe_hw *hw = &adapter->hw;
 	u32		autoneg;
 	bool		negotiate;
+
+	KASSERT(mutex_owned(&adapter->core_mtx));
 
 	++adapter->msf_workev.ev_count;
 
@@ -4789,6 +4791,8 @@ ixgbe_handle_phy(void *context)
 	struct ixgbe_hw *hw = &adapter->hw;
 	int error;
 
+	KASSERT(mutex_owned(&adapter->core_mtx));
+
 	++adapter->phy_workev.ev_count;
 	error = hw->phy.ops.handle_lasi(hw);
 	if (error == IXGBE_ERR_OVERTEMP)
@@ -4806,7 +4810,13 @@ ixgbe_handle_admin(struct work *wk, void *context)
 	struct adapter	*adapter = context;
 	struct ifnet	*ifp = adapter->ifp;
 	struct ixgbe_hw	*hw = &adapter->hw;
-	u32		req;
+	u32		task_requests;
+
+	mutex_enter(&adapter->admin_mtx);
+	adapter->admin_pending = 0;
+	task_requests = adapter->task_requests;
+	adapter->task_requests = 0;
+	mutex_exit(&adapter->admin_mtx);
 
 	/*
 	 * Hold the IFNET_LOCK across this entire call.  This will
@@ -4817,46 +4827,27 @@ ixgbe_handle_admin(struct work *wk, void *context)
 	 */
 	IFNET_LOCK(ifp);
 	IXGBE_CORE_LOCK(adapter);
-	while ((req =
-		(adapter->task_requests & ~IXGBE_REQUEST_TASK_NEED_ACKINTR))
-	    != 0) {
-		if ((req & IXGBE_REQUEST_TASK_LSC) != 0) {
-			ixgbe_handle_link(adapter);
-			atomic_and_32(&adapter->task_requests,
-			    ~IXGBE_REQUEST_TASK_LSC);
-		}
-		if ((req & IXGBE_REQUEST_TASK_MOD) != 0) {
-			ixgbe_handle_mod(adapter);
-			atomic_and_32(&adapter->task_requests,
-			    ~IXGBE_REQUEST_TASK_MOD);
-		}
-		if ((req & IXGBE_REQUEST_TASK_MSF) != 0) {
-			ixgbe_handle_msf(adapter);
-			atomic_and_32(&adapter->task_requests,
-			    ~IXGBE_REQUEST_TASK_MSF);
-		}
-		if ((req & IXGBE_REQUEST_TASK_PHY) != 0) {
-			ixgbe_handle_phy(adapter);
-			atomic_and_32(&adapter->task_requests,
-			    ~IXGBE_REQUEST_TASK_PHY);
-		}
-		if ((req & IXGBE_REQUEST_TASK_FDIR) != 0) {
-			ixgbe_reinit_fdir(adapter);
-			atomic_and_32(&adapter->task_requests,
-			    ~IXGBE_REQUEST_TASK_FDIR);
-		}
-#if 0 /* notyet */
-		if ((req & IXGBE_REQUEST_TASK_MBX) != 0) {
-			ixgbe_handle_mbx(adapter);
-			atomic_and_32(&adapter->task_requests,
-			    ~IXGBE_REQUEST_TASK_MBX);
-		}
-#endif
+	if ((task_requests & IXGBE_REQUEST_TASK_LSC) != 0) {
+		ixgbe_handle_link(adapter);
 	}
-	atomic_store_relaxed(&adapter->admin_pending, 0);
-	if ((adapter->task_requests & IXGBE_REQUEST_TASK_NEED_ACKINTR) != 0) {
-		atomic_and_32(&adapter->task_requests,
-		    ~IXGBE_REQUEST_TASK_NEED_ACKINTR);
+	if ((task_requests & IXGBE_REQUEST_TASK_MOD) != 0) {
+		ixgbe_handle_mod(adapter);
+	}
+	if ((task_requests & IXGBE_REQUEST_TASK_MSF) != 0) {
+		ixgbe_handle_msf(adapter);
+	}
+	if ((task_requests & IXGBE_REQUEST_TASK_PHY) != 0) {
+		ixgbe_handle_phy(adapter);
+	}
+	if ((task_requests & IXGBE_REQUEST_TASK_FDIR) != 0) {
+		ixgbe_reinit_fdir(adapter);
+	}
+#if 0 /* notyet */
+	if ((task_requests & IXGBE_REQUEST_TASK_MBX) != 0) {
+		ixgbe_handle_mbx(adapter);
+	}
+#endif
+	if ((task_requests & IXGBE_REQUEST_TASK_NEED_ACKINTR) != 0) {
 		if ((adapter->feat_en & IXGBE_FEATURE_MSIX) != 0) {
 			/* Re-enable other interrupts */
 			IXGBE_WRITE_REG(hw, IXGBE_EIMS, IXGBE_EIMS_OTHER);
@@ -4874,7 +4865,7 @@ ixgbe_ifstop(struct ifnet *ifp, int disable)
 	struct adapter *adapter = ifp->if_softc;
 
 	IXGBE_CORE_LOCK(adapter);
-	ixgbe_stop(adapter);
+	ixgbe_stop_locked(adapter);
 	IXGBE_CORE_UNLOCK(adapter);
 
 	workqueue_wait(adapter->timer_wq, &adapter->timer_wc);
@@ -4882,13 +4873,13 @@ ixgbe_ifstop(struct ifnet *ifp, int disable)
 }
 
 /************************************************************************
- * ixgbe_stop - Stop the hardware
+ * ixgbe_stop_locked - Stop the hardware
  *
  *   Disables all traffic on the adapter by issuing a
  *   global reset on the MAC and deallocates TX/RX buffers.
  ************************************************************************/
 static void
-ixgbe_stop(void *arg)
+ixgbe_stop_locked(void *arg)
 {
 	struct ifnet	*ifp;
 	struct adapter	*adapter = arg;
@@ -4898,7 +4889,7 @@ ixgbe_stop(void *arg)
 
 	KASSERT(mutex_owned(&adapter->core_mtx));
 
-	INIT_DEBUGOUT("ixgbe_stop: begin\n");
+	INIT_DEBUGOUT("ixgbe_stop_locked: begin\n");
 	ixgbe_disable_intr(adapter);
 	callout_stop(&adapter->timer);
 
@@ -4924,7 +4915,7 @@ ixgbe_stop(void *arg)
 	ixgbe_set_rar(&adapter->hw, 0, adapter->hw.mac.addr, 0, IXGBE_RAH_AV);
 
 	return;
-} /* ixgbe_stop */
+} /* ixgbe_stop_locked */
 
 /************************************************************************
  * ixgbe_update_link_status - Update OS on link state
@@ -5229,10 +5220,6 @@ ixgbe_legacy_irq(void *arg)
 		IXGBE_WRITE_REG(hw, IXGBE_EIMS, IXGBE_EICR_GPI_SDP1_BY_MAC(hw));
 	}
 
-	/* Link status change */
-	if (eicr & IXGBE_EICR_LSC)
-		task_requests |= IXGBE_REQUEST_TASK_LSC;
-
 	if (ixgbe_is_sfp(hw)) {
 		/* Pluggable optics-related interrupt */
 		if (hw->mac.type >= ixgbe_mac_X540)
@@ -5240,7 +5227,15 @@ ixgbe_legacy_irq(void *arg)
 		else
 			eicr_mask = IXGBE_EICR_GPI_SDP2_BY_MAC(hw);
 
-		if (eicr & eicr_mask) {
+		/*
+		 *  An interrupt might not arrive when a module is inserted.
+		 * When an link status change interrupt occurred and the driver
+		 * still regard SFP as unplugged, issue the module softint
+		 * and then issue LSC interrupt.
+		 */
+		if ((eicr & eicr_mask)
+		    || ((hw->phy.sfp_type == ixgbe_sfp_type_not_present)
+			&& (eicr & IXGBE_EICR_LSC))) {
 			IXGBE_WRITE_REG(hw, IXGBE_EICR, eicr_mask);
 			task_requests |= IXGBE_REQUEST_TASK_MOD;
 		}
@@ -5252,6 +5247,10 @@ ixgbe_legacy_irq(void *arg)
 			task_requests |= IXGBE_REQUEST_TASK_MSF;
 		}
 	}
+
+	/* Link status change */
+	if (eicr & IXGBE_EICR_LSC)
+		task_requests |= IXGBE_REQUEST_TASK_LSC;
 
 	/* External PHY interrupt */
 	if ((hw->phy.type == ixgbe_phy_x550em_ext_t) &&
@@ -5266,8 +5265,12 @@ ixgbe_legacy_irq(void *arg)
 	if (task_requests != 0) {
 		/* Re-enabling other interrupts is done in the admin task */
 		task_requests |= IXGBE_REQUEST_TASK_NEED_ACKINTR;
-		atomic_or_32(&adapter->task_requests, task_requests);
+
+		mutex_enter(&adapter->admin_mtx);
+		adapter->task_requests |= task_requests;
 		ixgbe_schedule_admin_tasklet(adapter);
+		mutex_exit(&adapter->admin_mtx);
+
 		reenable_intr = false;
 	}
 
@@ -5548,9 +5551,9 @@ ixgbe_set_advertise(struct adapter *adapter, int advertise)
 		return (EINVAL);
 	}
 
-	if (advertise < 0x0 || advertise > 0x2f) {
+	if (advertise < 0x0 || advertise > 0x3f) {
 		device_printf(dev,
-		    "Invalid advertised speed; valid modes are 0x0 through 0x7\n");
+		    "Invalid advertised speed; valid modes are 0x0 through 0x3f\n");
 		return (EINVAL);
 	}
 
@@ -6900,7 +6903,7 @@ ixgbe_allocate_msix(struct adapter *adapter, const struct pci_attach_args *pa)
 
 err_out:
 	kcpuset_destroy(affinity);
-	ixgbe_free_workqueue(adapter);
+	ixgbe_free_deferred_handlers(adapter);
 	ixgbe_free_pciintr_resources(adapter);
 	return (error);
 } /* ixgbe_allocate_msix */
@@ -7023,6 +7026,8 @@ ixgbe_handle_link(void *context)
 {
 	struct adapter	*adapter = context;
 	struct ixgbe_hw *hw = &adapter->hw;
+
+	KASSERT(mutex_owned(&adapter->core_mtx));
 
 	++adapter->link_workev.ev_count;
 	ixgbe_check_link(hw, &adapter->link_speed, &adapter->link_up, 0);

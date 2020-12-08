@@ -1,4 +1,4 @@
-/*	$NetBSD: vsaudio.c,v 1.6 2020/08/26 12:59:28 isaki Exp $	*/
+/*	$NetBSD: vsaudio.c,v 1.7 2020/09/12 05:19:16 isaki Exp $	*/
 /*	$OpenBSD: vsaudio.c,v 1.4 2013/05/15 21:21:11 ratchov Exp $	*/
 
 /*

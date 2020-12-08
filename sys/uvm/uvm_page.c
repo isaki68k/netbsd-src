@@ -1,4 +1,4 @@
-/*	$NetBSD: uvm_page.c,v 1.246 2020/08/15 01:27:22 tnn Exp $	*/
+/*	$NetBSD: uvm_page.c,v 1.249 2020/10/18 18:31:31 chs Exp $	*/
 
 /*-
  * Copyright (c) 2019, 2020 The NetBSD Foundation, Inc.
@@ -95,7 +95,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uvm_page.c,v 1.246 2020/08/15 01:27:22 tnn Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uvm_page.c,v 1.249 2020/10/18 18:31:31 chs Exp $");
 
 #include "opt_ddb.h"
 #include "opt_uvm.h"
@@ -447,14 +447,6 @@ uvm_page_init(vaddr_t *kvm_startp, vaddr_t *kvm_endp)
 
 	*kvm_startp = round_page(virtual_space_start);
 	*kvm_endp = trunc_page(virtual_space_end);
-#ifdef DEBUG
-	/*
-	 * steal kva for uvm_pagezerocheck().
-	 */
-	uvm_zerocheckkva = *kvm_startp;
-	*kvm_startp += PAGE_SIZE;
-	mutex_init(&uvm_zerochecklock, MUTEX_DEFAULT, IPL_VM);
-#endif /* DEBUG */
 
 	/*
 	 * init various thresholds.
@@ -1077,6 +1069,7 @@ uvm_pagealloc_pgb(struct uvm_cpu *ucpu, int f, int b, int *trycolorp, int flags)
 			KASSERT(pg->flags == PG_FREE);
 			pg->flags = PG_BUSY | PG_CLEAN | PG_FAKE;
 			pgb->pgb_nfree--;
+			CPU_COUNT(CPU_COUNT_FREEPAGES, -1);
 
 			/*
 			 * While we have the bucket locked and our data
@@ -1278,7 +1271,6 @@ uvm_pagealloc_strat(struct uvm_object *obj, voff_t off, struct vm_anon *anon,
 	 * while still at IPL_VM, update allocation statistics.
 	 */
 
-    	CPU_COUNT(CPU_COUNT_FREEPAGES, -1);
 	if (anon) {
 		CPU_COUNT(CPU_COUNT_ANONCLEAN, 1);
 	}
@@ -1426,42 +1418,6 @@ uvm_pagerealloc(struct vm_page *pg, struct uvm_object *newobj, voff_t newoff)
 
 	return error;
 }
-
-#ifdef DEBUG
-/*
- * check if page is zero-filled
- */
-void
-uvm_pagezerocheck(struct vm_page *pg)
-{
-	int *p, *ep;
-
-	KASSERT(uvm_zerocheckkva != 0);
-
-	/*
-	 * XXX assuming pmap_kenter_pa and pmap_kremove never call
-	 * uvm page allocator.
-	 *
-	 * it might be better to have "CPU-local temporary map" pmap interface.
-	 */
-	mutex_spin_enter(&uvm_zerochecklock);
-	pmap_kenter_pa(uvm_zerocheckkva, VM_PAGE_TO_PHYS(pg), VM_PROT_READ, 0);
-	p = (int *)uvm_zerocheckkva;
-	ep = (int *)((char *)p + PAGE_SIZE);
-	pmap_update(pmap_kernel());
-	while (p < ep) {
-		if (*p != 0)
-			panic("zero page isn't zero-filled");
-		p++;
-	}
-	pmap_kremove(uvm_zerocheckkva, PAGE_SIZE);
-	mutex_spin_exit(&uvm_zerochecklock);
-	/*
-	 * pmap_update() is not necessary here because no one except us
-	 * uses this VA.
-	 */
-}
-#endif /* DEBUG */
 
 /*
  * uvm_pagefree: free page
@@ -1611,7 +1567,6 @@ uvm_pagefree(struct vm_page *pg)
 
 	/* Try to send the page to the per-CPU cache. */
 	s = splvm();
-    	CPU_COUNT(CPU_COUNT_FREEPAGES, 1);
 	ucpu = curcpu()->ci_data.cpu_uvm;
 	bucket = uvm_page_get_bucket(pg);
 	if (bucket == ucpu->pgflbucket && uvm_pgflcache_free(ucpu, pg)) {
@@ -1629,6 +1584,7 @@ uvm_pagefree(struct vm_page *pg)
 	pg->flags = PG_FREE;
 	LIST_INSERT_HEAD(&pgb->pgb_colors[VM_PGCOLOR(pg)], pg, pageq.list);
 	pgb->pgb_nfree++;
+    	CPU_COUNT(CPU_COUNT_FREEPAGES, 1);
 	mutex_spin_exit(lock);
 	splx(s);
 }
@@ -1646,9 +1602,10 @@ void
 uvm_page_unbusy(struct vm_page **pgs, int npgs)
 {
 	struct vm_page *pg;
-	int i;
+	int i, pageout_done;
 	UVMHIST_FUNC(__func__); UVMHIST_CALLED(ubchist);
 
+	pageout_done = 0;
 	for (i = 0; i < npgs; i++) {
 		pg = pgs[i];
 		if (pg == NULL || pg == PGO_DONTCARE) {
@@ -1657,7 +1614,13 @@ uvm_page_unbusy(struct vm_page **pgs, int npgs)
 
 		KASSERT(uvm_page_owner_locked_p(pg, true));
 		KASSERT(pg->flags & PG_BUSY);
-		KASSERT((pg->flags & PG_PAGEOUT) == 0);
+
+		if (pg->flags & PG_PAGEOUT) {
+			pg->flags &= ~PG_PAGEOUT;
+			pg->flags |= PG_RELEASED;
+			pageout_done++;
+			atomic_inc_uint(&uvmexp.pdfreed);
+		}
 		if (pg->flags & PG_RELEASED) {
 			UVMHIST_LOG(ubchist, "releasing pg %#jx",
 			    (uintptr_t)pg, 0, 0, 0);
@@ -1675,6 +1638,9 @@ uvm_page_unbusy(struct vm_page **pgs, int npgs)
 			uvm_pageunlock(pg);
 			UVM_PAGE_OWN(pg, NULL);
 		}
+	}
+	if (pageout_done != 0) {
+		uvm_pageout_done(pageout_done);
 	}
 }
 

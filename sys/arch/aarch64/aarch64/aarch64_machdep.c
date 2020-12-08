@@ -1,4 +1,4 @@
-/* $NetBSD: aarch64_machdep.c,v 1.46 2020/08/02 06:58:16 maxv Exp $ */
+/* $NetBSD: aarch64_machdep.c,v 1.54 2020/11/10 07:51:19 skrll Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -30,14 +30,14 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(1, "$NetBSD: aarch64_machdep.c,v 1.46 2020/08/02 06:58:16 maxv Exp $");
+__KERNEL_RCSID(1, "$NetBSD: aarch64_machdep.c,v 1.54 2020/11/10 07:51:19 skrll Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_cpuoptions.h"
 #include "opt_ddb.h"
+#include "opt_fdt.h"
 #include "opt_kernhist.h"
 #include "opt_modular.h"
-#include "opt_fdt.h"
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -59,8 +59,9 @@ __KERNEL_RCSID(1, "$NetBSD: aarch64_machdep.c,v 1.46 2020/08/02 06:58:16 maxv Ex
 
 #include <machine/bootconfig.h>
 
+#include <arm/cpufunc.h>
+
 #include <aarch64/armreg.h>
-#include <aarch64/cpufunc.h>
 #ifdef DDB
 #include <aarch64/db_machdep.h>
 #endif
@@ -149,8 +150,8 @@ cpu_kernel_vm_init(uint64_t memory_start __unused, uint64_t memory_size __unused
 	vaddr_t data_start = (vaddr_t)__data_start;
 	vaddr_t rodata_start = (vaddr_t)__rodata_start;
 
-	/* add KSEG mappings of whole memory */
-	const pt_entry_t ksegattr =
+	/* add direct mappings of whole memory */
+	const pt_entry_t dmattr =
 	    LX_BLKPAG_ATTR_NORMAL_WB |
 	    LX_BLKPAG_AP_RW |
 	    LX_BLKPAG_PXN |
@@ -163,14 +164,14 @@ cpu_kernel_vm_init(uint64_t memory_start __unused, uint64_t memory_size __unused
 		    (uint64_t)bootconfig.dram[blk].pages * PAGE_SIZE);
 
 		pmapboot_enter_range(AARCH64_PA_TO_KVA(start), start,
-		    end - start, ksegattr, printf);
+		    end - start, dmattr, printf);
 	}
 	aarch64_dcache_wbinv_all();
 
 	/* Disable translation table walks using TTBR0 */
 	uint64_t tcr = reg_tcr_el1_read();
 	reg_tcr_el1_write(tcr | TCR_EPD0);
-	__asm __volatile("isb" ::: "memory");
+	isb();
 
 	aarch64_tlbi_all();
 
@@ -205,18 +206,17 @@ cpu_kernel_vm_init(uint64_t memory_start __unused, uint64_t memory_size __unused
  *               0xffff_ffff_ffe0_0000  End of KVA
  *                                      = VM_MAX_KERNEL_ADDRESS
  *
- *               0xffff_ffc0_0???_????  End of kernel
+ *               0xffff_c000_0???_????  End of kernel
  *                                      = _end[]
- *               0xffff_ffc0_00??_????  Start of kernel
+ *               0xffff_c000_00??_????  Start of kernel
  *                                      = __kernel_text[]
  *
- *               0xffff_ffc0_0000_0000  Kernel base address & start of KVA
+ *               0xffff_c000_0000_0000  Kernel base address & start of KVA
  *                                      = VM_MIN_KERNEL_ADDRESS
  *
- *               0xffff_ffbf_ffff_ffff  End of direct mapped
+ *               0xffff_bfff_ffff_ffff  End of direct mapped
  *               0xffff_0000_0000_0000  Start of direct mapped
- *                                      = AARCH64_KSEG_START
- *                                      = AARCH64_KMEMORY_BASE
+ *                                      = AARCH64_DIRECTMAP_START
  *
  * Hole:         0xfffe_ffff_ffff_ffff
  *               0x0001_0000_0000_0000
@@ -252,11 +252,10 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 
 #ifdef MODULAR
 	/*
-	 * aarch64 compiler (gcc & llvm) uses R_AARCH_CALL26/R_AARCH_JUMP26
-	 * for function calling/jumping.
-	 * (at this time, both compilers doesn't support -mlong-calls)
-	 * therefore kernel modules should be loaded within maximum 26bit word,
-	 * or +-128MB from kernel.
+	 * The aarch64 compilers (gcc & llvm) use R_AARCH_CALL26/R_AARCH_JUMP26
+	 * for function calls (bl)/jumps(b). At this time, neither compiler
+	 * supports -mlong-calls therefore the kernel modules should be loaded
+	 * within the maximum range of +/-128MB from kernel text.
 	 */
 #define MODULE_RESERVED_MAX	(1024 * 1024 * 128)
 #define MODULE_RESERVED_SIZE	(1024 * 1024 * 32)	/* good enough? */
@@ -368,7 +367,7 @@ initarm_common(vaddr_t kvm_base, vsize_t kvm_size,
 		 * order.
 		 */
 		paddr_t segend = end;
-		for (size_t j = 0; j < nbp; j++ /*, start = segend, segend = end */) {
+		for (size_t j = 0; j < nbp; j++) {
 			paddr_t bp_start = bp[j].bp_start;
 			paddr_t bp_end = bp_start + bp[j].bp_pages;
 
@@ -606,9 +605,9 @@ mm_md_kernacc(void *ptr, vm_prot_t prot, bool *handled)
 		*handled = true;
 		if ((v < data_start) && (prot & VM_PROT_WRITE))
 			return EFAULT;
-	} else if (IN_RANGE(v, AARCH64_KSEG_START, AARCH64_KSEG_END)) {
+	} else if (IN_RANGE(v, AARCH64_DIRECTMAP_START, AARCH64_DIRECTMAP_END)) {
 		/*
-		 * if defined PMAP_MAP_POOLPAGE, direct mapped address (KSEG)
+		 * if defined PMAP_MAP_POOLPAGE, direct mapped address
 		 * will be appeared as kvm(3) address.
 		 */
 		paddr_t pa = AARCH64_KVA_TO_PA(v);

@@ -1,4 +1,4 @@
-/*	$NetBSD: proc.h,v 1.31 2020/08/26 10:51:45 simonb Exp $	*/
+/*	$NetBSD: proc.h,v 1.33 2020/12/06 03:46:23 christos Exp $	*/
 
 /*
  * Copyright (c) 1992, 1993
@@ -38,7 +38,7 @@
 #define	_MIPS_PROC_H_
 
 #include <sys/param.h>
-#include <mips/vmparam.h>
+#include <machine/vmparam.h>
 
 struct lwp;
 
@@ -49,7 +49,7 @@ struct trapframe;
 
 struct mdlwp {
 	struct trapframe *md_utf;	/* trapframe from userspace */
-	vaddr_t	md_ss_addr;		/* single step address for ptrace */
+	__vaddr_t md_ss_addr;		/* single step address for ptrace */
 	int	md_ss_instr;		/* single step instruction for ptrace */
 	volatile int md_astpending;	/* AST pending on return to userland */
 	int	md_upte[UPAGES_MAX];	/* ptes for mapping u page */
@@ -57,7 +57,7 @@ struct mdlwp {
 
 struct mdproc {
 					/* syscall entry for this process */
-	void	(*md_syscall)(struct lwp *, u_int, u_int, vaddr_t);
+	void	(*md_syscall)(struct lwp *, u_int, u_int, __vaddr_t);
 	int	md_abi;			/* which ABI is this process using? */
 };
 

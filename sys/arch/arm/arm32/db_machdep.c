@@ -1,4 +1,4 @@
-/*	$NetBSD: db_machdep.c,v 1.35 2020/08/14 16:18:36 skrll Exp $	*/
+/*	$NetBSD: db_machdep.c,v 1.38 2020/12/03 10:23:45 rin Exp $	*/
 
 /*
  * Copyright (c) 1996 Mark Brinicombe
@@ -34,7 +34,7 @@
 #endif
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: db_machdep.c,v 1.35 2020/08/14 16:18:36 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: db_machdep.c,v 1.38 2020/12/03 10:23:45 rin Exp $");
 
 #include <sys/param.h>
 
@@ -135,7 +135,7 @@ const struct db_command db_machine_command_table[] = {
 	{ DDB_ADD_CMD("reset",	db_reset_cmd,		0,
 			"Reset the system",
 			NULL,NULL) },
-#if defined(CPU_CORTEXA5) || defined(CPU_CORTEXA7)
+#ifdef _ARM_ARCH_7
 	{ DDB_ADD_CMD("tlb",	db_show_tlb_cmd,	0,
 			"Displays the TLB",
 		     	NULL,NULL) },
@@ -220,7 +220,7 @@ db_reset_cmd(db_expr_t addr, bool have_addr, db_expr_t count, const char *modif)
 	cpu_reset_address();
 }
 
-#if defined(CPU_CORTEXA5) || defined(CPU_CORTEXA7)
+#ifdef _ARM_ARCH_7
 static void
 tlb_print_common_header(const char *str)
 {
@@ -257,7 +257,6 @@ struct db_tlbinfo {
 	u_int dti_index;
 };
 
-#if defined(CPU_CORTEXA5)
 static void
 tlb_print_cortex_a5_header(void)
 {
@@ -315,9 +314,7 @@ static const struct db_tlbinfo tlb_cortex_a5_info = {
 	.dti_print_entry = tlb_print_cortex_a5_entry,
 	.dti_index = ARM_A5_TLBDATAOP_INDEX,
 };
-#endif /* CPU_CORTEXA5 */
 
-#if defined(CPU_CORTEXA7)
 static const char tlb_cortex_a7_esizes[8][8] = {
     " 4KB(S)", " 4KB(L)", "64KB(S)", "64KB(L)",
     " 1MB(S)", " 2MB(L)", "16MB(S)", " 1GB(L)",
@@ -394,29 +391,18 @@ static const struct db_tlbinfo tlb_cortex_a7_info = {
 	.dti_print_entry = tlb_print_cortex_a7_entry,
 	.dti_index = ARM_A7_TLBDATAOP_INDEX,
 };
-#endif /* CPU_CORTEXA7 */
 
 static inline const struct db_tlbinfo *
 tlb_lookup_tlbinfo(void)
 {
-#if defined(CPU_CORTEXA5) && defined(CPU_CORTEXA7)
 	const bool cortex_a5_p = CPU_ID_CORTEX_A5_P(curcpu()->ci_arm_cpuid);
 	const bool cortex_a7_p = CPU_ID_CORTEX_A7_P(curcpu()->ci_arm_cpuid);
-#elif defined(CPU_CORTEXA5)
-	const bool cortex_a5_p = true;
-#else
-	const bool cortex_a7_p = true;
-#endif
-#ifdef CPU_CORTEXA5
 	if (cortex_a5_p) {
 		return &tlb_cortex_a5_info;
 	}
-#endif
-#ifdef CPU_CORTEXA7
 	if (cortex_a7_p) {
 		return &tlb_cortex_a7_info;
 	}
-#endif
 	return NULL;
 }
 
@@ -425,6 +411,11 @@ db_show_tlb_cmd(db_expr_t addr, bool have_addr, db_expr_t count, const char *mod
 {
 	const struct db_tlbinfo * const dti = tlb_lookup_tlbinfo();
 
+	if (dti == NULL) {
+		db_printf("not supported on this CPU\n");
+		return;
+	}
+
 	if (have_addr) {
 		const vaddr_t vpn = (vaddr_t)addr >> L2_S_SHIFT;
 		const u_int va_index = vpn & dti->dti_index;
@@ -432,7 +423,7 @@ db_show_tlb_cmd(db_expr_t addr, bool have_addr, db_expr_t count, const char *mod
 			armreg_tlbdataop_write(
 			    __SHIFTIN(va_index, dti->dti_index)
 			    | __SHIFTIN(way, ARM_TLBDATAOP_WAY));
-			arm_isb();
+			isb();
 			const uint32_t d0 = armreg_tlbdata0_read();
 			const uint32_t d1 = armreg_tlbdata1_read();
 			if ((d0 & ARM_TLBDATA_VALID)
@@ -453,7 +444,7 @@ db_show_tlb_cmd(db_expr_t addr, bool have_addr, db_expr_t count, const char *mod
 			armreg_tlbdataop_write(
 			    __SHIFTIN(way, ARM_TLBDATAOP_WAY)
 			    | __SHIFTIN(va_index, dti->dti_index));
-			arm_isb();
+			isb();
 			const uint32_t d0 = armreg_tlbdata0_read();
 			const uint32_t d1 = armreg_tlbdata1_read();
 			if (d0 & ARM_TLBDATA_VALID) {
@@ -468,7 +459,7 @@ db_show_tlb_cmd(db_expr_t addr, bool have_addr, db_expr_t count, const char *mod
 	}
 	db_printf("%zu TLB valid entries found\n", n);
 }
-#endif /* CPU_CORTEXA5 || CPU_CORTEXA7 */
+#endif
 
 #if defined(MULTIPROCESSOR)
 void

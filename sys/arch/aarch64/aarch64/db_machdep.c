@@ -1,4 +1,4 @@
-/* $NetBSD: db_machdep.c,v 1.26 2020/08/12 13:19:35 skrll Exp $ */
+/* $NetBSD: db_machdep.c,v 1.29 2020/12/03 07:45:51 skrll Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: db_machdep.c,v 1.26 2020/08/12 13:19:35 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: db_machdep.c,v 1.29 2020/12/03 07:45:51 skrll Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd32.h"
@@ -45,9 +45,10 @@ __KERNEL_RCSID(0, "$NetBSD: db_machdep.c,v 1.26 2020/08/12 13:19:35 skrll Exp $"
 
 #include <uvm/uvm.h>
 
+#include <arm/cpufunc.h>
+
 #include <aarch64/db_machdep.h>
 #include <aarch64/armreg.h>
-#include <aarch64/cpufunc.h>
 #include <aarch64/locore.h>
 #include <aarch64/pmap.h>
 
@@ -443,13 +444,13 @@ db_md_pte_cmd(db_expr_t addr, bool have_addr, db_expr_t count,
 	}
 
 	reg_s1e0r_write(addr);
-	__asm __volatile ("isb");
+	isb();
 	par = reg_par_el1_read();
 	db_printf("Stage1 EL0 translation %016llx -> PAR_EL1 = ", addr);
 	db_par_print(par, addr);
 
 	reg_s1e1r_write(addr);
-	__asm __volatile ("isb");
+	isb();
 	par = reg_par_el1_read();
 	db_printf("Stage1 EL1 translation %016llx -> PAR_EL1 = ", addr);
 	db_par_print(par, addr);
@@ -1049,8 +1050,8 @@ kdb_trap(int type, struct trapframe *tf)
 		if ((ncpu > 1) && (db_newcpu != NULL)) {
 			db_onproc = db_newcpu;
 			db_newcpu = NULL;
-			membar_producer();
-			__asm __volatile ("sev; sev; sev");
+			dsb(ishst);
+			sev();
 			continue;	/* redo DDB on new cpu */
 		}
 #endif /* MULTIPROCESSOR */
@@ -1061,8 +1062,8 @@ kdb_trap(int type, struct trapframe *tf)
 #ifdef MULTIPROCESSOR
 	if (ncpu > 1) {
 		db_onproc = NULL;
-		membar_producer();
-		__asm __volatile ("sev; sev; sev");
+		dsb(ishst);
+		sev();
 	}
 	db_trigger = NULL;
 	db_readytoswitch[ci->ci_index] = NULL;

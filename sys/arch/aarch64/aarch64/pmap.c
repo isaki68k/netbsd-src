@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.87 2020/08/14 08:19:26 skrll Exp $	*/
+/*	$NetBSD: pmap.c,v 1.96 2020/11/10 07:51:19 skrll Exp $	*/
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -27,10 +27,11 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.87 2020/08/14 08:19:26 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.96 2020/11/10 07:51:19 skrll Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_ddb.h"
+#include "opt_modular.h"
 #include "opt_multiprocessor.h"
 #include "opt_pmap.h"
 #include "opt_uvmhist.h"
@@ -44,6 +45,8 @@ __KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.87 2020/08/14 08:19:26 skrll Exp $");
 
 #include <uvm/uvm.h>
 #include <uvm/pmap/pmap_pvt.h>
+
+#include <arm/cpufunc.h>
 
 #include <aarch64/pmap.h>
 #include <aarch64/pte.h>
@@ -279,8 +282,14 @@ phys_to_pp(paddr_t pa)
 
 #define IN_RANGE(va,sta,end)	(((sta) <= (va)) && ((va) < (end)))
 
-#define IN_KSEG_ADDR(va)	\
-	IN_RANGE((va), AARCH64_KSEG_START, AARCH64_KSEG_END)
+#define IN_DIRECTMAP_ADDR(va)	\
+	IN_RANGE((va), AARCH64_DIRECTMAP_START, AARCH64_DIRECTMAP_END)
+
+#ifdef MODULAR
+#define IN_MODULE_VA(va)	IN_RANGE((va), module_start, module_end)
+#else
+#define IN_MODULE_VA(va)	false
+#endif
 
 #ifdef DIAGNOSTIC
 #define KASSERT_PM_ADDR(pm,va)						\
@@ -339,6 +348,7 @@ pmap_devmap_register(const struct pmap_devmap *table)
 void
 pmap_devmap_bootstrap(vaddr_t l0pt, const struct pmap_devmap *table)
 {
+	bool done = false;
 	vaddr_t va;
 	int i;
 
@@ -366,9 +376,10 @@ pmap_devmap_bootstrap(vaddr_t l0pt, const struct pmap_devmap *table)
 		    table[i].pd_size,
 		    table[i].pd_prot,
 		    table[i].pd_flags);
+		done = true;
 	}
-
-	pmap_devmap_bootstrap_done = true;
+	if (done)
+		pmap_devmap_bootstrap_done = true;
 }
 
 const struct pmap_devmap *
@@ -591,7 +602,7 @@ pmap_reference(struct pmap *pm)
 	atomic_inc_uint(&pm->pm_refcnt);
 }
 
-paddr_t
+static paddr_t
 pmap_alloc_pdp(struct pmap *pm, struct vm_page **pgp, int flags, bool waitok)
 {
 	paddr_t pa;
@@ -620,7 +631,7 @@ pmap_alloc_pdp(struct pmap *pm, struct vm_page **pgp, int flags, bool waitok)
 		PMAP_COUNT(pdp_alloc);
 		PMAP_PAGE_INIT(VM_PAGE_TO_PP(pg));
 	} else {
-		/* uvm_pageboot_alloc() returns AARCH64 KSEG address */
+		/* uvm_pageboot_alloc() returns AARCH64 direct mapping address */
 		pg = NULL;
 		pa = AARCH64_KVA_TO_PA(
 		    uvm_pageboot_alloc(Ln_TABLE_SIZE));
@@ -779,15 +790,15 @@ pmap_extract_coherency(struct pmap *pm, vaddr_t va, paddr_t *pap,
 			/* kernel text/data/bss are definitely linear mapped */
 			pa = KERN_VTOPHYS(va);
 			goto mapped;
-		} else if (IN_KSEG_ADDR(va)) {
+		} else if (IN_DIRECTMAP_ADDR(va)) {
 			/*
-			 * also KSEG is linear mapped, but areas that have no
-			 * physical memory haven't been mapped.
+			 * also direct mapping is linear mapped, but areas that
+			 * have no physical memory haven't been mapped.
 			 * fast lookup by using the S1E1R/PAR_EL1 registers.
 			 */
 			register_t s = daif_disable(DAIF_I|DAIF_F);
 			reg_s1e1r_write(va);
-			__asm __volatile ("isb");
+			isb();
 			uint64_t par = reg_par_el1_read();
 			reg_daif_write(s);
 
@@ -1250,7 +1261,7 @@ pmap_kremove(vaddr_t va, vsize_t size)
 	KDASSERT((va & PGOFSET) == 0);
 	KDASSERT((size & PGOFSET) == 0);
 
-	KDASSERT(!IN_KSEG_ADDR(va));
+	KDASSERT(!IN_DIRECTMAP_ADDR(va));
 	KDASSERT(IN_RANGE(va, VM_MIN_KERNEL_ADDRESS, VM_MAX_KERNEL_ADDRESS));
 
 	_pmap_remove(kpm, va, va + size, true, NULL);
@@ -1308,7 +1319,7 @@ pmap_protect(struct pmap *pm, vaddr_t sva, vaddr_t eva, vm_prot_t prot)
 	    pm, sva, eva, prot);
 
 	KASSERT_PM_ADDR(pm, sva);
-	KASSERT(!IN_KSEG_ADDR(sva));
+	KASSERT(!IN_DIRECTMAP_ADDR(sva));
 
 	/* PROT_EXEC requires implicit PROT_READ */
 	if (prot & VM_PROT_EXECUTE)
@@ -1406,6 +1417,13 @@ pmap_protect(struct pmap *pm, vaddr_t sva, vaddr_t eva, vm_prot_t prot)
 	pm_unlock(pm);
 }
 
+/* XXX: due to the current implementation of pmap depends on 16bit ASID */
+int
+cpu_maxproc(void)
+{
+	return 65535;
+}
+
 void
 pmap_activate(struct lwp *l)
 {
@@ -1424,13 +1442,7 @@ pmap_activate(struct lwp *l)
 
 	UVMHIST_LOG(pmaphist, "lwp=%p (pid=%d)", l, l->l_proc->p_pid, 0, 0);
 
-	/* Disable translation table walks using TTBR0 */
-	tcr = reg_tcr_el1_read();
-	reg_tcr_el1_write(tcr | TCR_EPD0);
-	__asm __volatile("isb" ::: "memory");
-
-	/* XXX */
-	CTASSERT(PID_MAX <= 65535);	/* 16bit ASID */
+	/* XXX: allocate asid, and regenerate if needed */
 	if (pm->pm_asid == -1)
 		pm->pm_asid = l->l_proc->p_pid;
 
@@ -1440,7 +1452,7 @@ pmap_activate(struct lwp *l)
 	/* Re-enable translation table walks using TTBR0 */
 	tcr = reg_tcr_el1_read();
 	reg_tcr_el1_write(tcr & ~TCR_EPD0);
-	__asm __volatile("isb" ::: "memory");
+	isb();
 
 	pm->pm_activated = true;
 
@@ -1464,7 +1476,7 @@ pmap_deactivate(struct lwp *l)
 	/* Disable translation table walks using TTBR0 */
 	tcr = reg_tcr_el1_read();
 	reg_tcr_el1_write(tcr | TCR_EPD0);
-	__asm __volatile("isb" ::: "memory");
+	isb();
 
 	/* XXX */
 	pm->pm_activated = false;
@@ -1671,7 +1683,7 @@ _pmap_get_pdp(struct pmap *pm, vaddr_t va, bool kenter, int flags,
 	idx = l0pde_index(va);
 	pde = l0[idx];
 	if (!l0pde_valid(pde)) {
-		KASSERT(!kenter);
+		KASSERT(!kenter || IN_MODULE_VA(va));
 		/* no need to increment L0 occupancy. L0 page never freed */
 		pdppa = pmap_alloc_pdp(pm, &pdppg, flags, false);  /* L1 pdp */
 		if (pdppa == POOL_PADDR_INVALID) {
@@ -1689,7 +1701,7 @@ _pmap_get_pdp(struct pmap *pm, vaddr_t va, bool kenter, int flags,
 	idx = l1pde_index(va);
 	pde = l1[idx];
 	if (!l1pde_valid(pde)) {
-		KASSERT(!kenter);
+		KASSERT(!kenter || IN_MODULE_VA(va));
 		pdppa0 = pdppa;
 		pdppg0 = pdppg;
 		pdppa = pmap_alloc_pdp(pm, &pdppg, flags, false);  /* L2 pdp */
@@ -1709,7 +1721,7 @@ _pmap_get_pdp(struct pmap *pm, vaddr_t va, bool kenter, int flags,
 	idx = l2pde_index(va);
 	pde = l2[idx];
 	if (!l2pde_valid(pde)) {
-		KASSERT(!kenter);
+		KASSERT(!kenter || IN_MODULE_VA(va));
 		pdppa0 = pdppa;
 		pdppg0 = pdppg;
 		pdppa = pmap_alloc_pdp(pm, &pdppg, flags, false);  /* L3 pdp */
@@ -1754,7 +1766,7 @@ _pmap_enter(struct pmap *pm, vaddr_t va, paddr_t pa, vm_prot_t prot,
 	    va, pa, prot, flags);
 
 	KASSERT_PM_ADDR(pm, va);
-	KASSERT(!IN_KSEG_ADDR(va));
+	KASSERT(!IN_DIRECTMAP_ADDR(va));
 
 #ifdef PMAPCOUNTERS
 	PMAP_COUNT(mappings);
@@ -2103,7 +2115,7 @@ pmap_remove(struct pmap *pm, vaddr_t sva, vaddr_t eva)
 	struct pv_entry *pv, *pvtmp;
 
 	KASSERT_PM_ADDR(pm, sva);
-	KASSERT(!IN_KSEG_ADDR(sva));
+	KASSERT(!IN_DIRECTMAP_ADDR(sva));
 
 	pm_lock(pm);
 	_pmap_remove(pm, sva, eva, false, &pvtofree);
@@ -2251,7 +2263,7 @@ pmap_unwire(struct pmap *pm, vaddr_t va)
 	PMAP_COUNT(unwire);
 
 	KASSERT_PM_ADDR(pm, va);
-	KASSERT(!IN_KSEG_ADDR(va));
+	KASSERT(!IN_DIRECTMAP_ADDR(va));
 
 	pm_lock(pm);
 	ptep = _pmap_pte_lookup_l3(pm, va);

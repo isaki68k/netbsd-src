@@ -1,4 +1,4 @@
-/*	$NetBSD: gic.c,v 1.41 2020/07/27 18:36:23 jmcneill Exp $	*/
+/*	$NetBSD: gic.c,v 1.43 2020/12/03 07:45:52 skrll Exp $	*/
 /*-
  * Copyright (c) 2012 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -34,7 +34,7 @@
 #define _INTR_PRIVATE
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gic.c,v 1.41 2020/07/27 18:36:23 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gic.c,v 1.43 2020/12/03 07:45:52 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -46,7 +46,6 @@ __KERNEL_RCSID(0, "$NetBSD: gic.c,v 1.41 2020/07/27 18:36:23 jmcneill Exp $");
 #include <sys/atomic.h>
 
 #include <arm/armreg.h>
-#include <arm/atomic.h>
 #include <arm/cpufunc.h>
 #include <arm/locore.h>
 
@@ -540,7 +539,7 @@ armgic_ipi_send(struct pic_softc *pic, const kcpuset_t *kcp, u_long ipi)
 
 #if 0
 	if (ipi == IPI_NOP) {
-		__asm __volatile("sev");
+		sev();
 		return;
 	}
 #endif

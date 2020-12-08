@@ -1,4 +1,4 @@
-/*	$NetBSD: boot.c,v 1.27 2020/06/28 11:39:50 jmcneill Exp $	*/
+/*	$NetBSD: boot.c,v 1.29 2020/11/28 14:02:09 jmcneill Exp $	*/
 
 /*-
  * Copyright (c) 2016 Kimihiro Nonaka <nonaka@netbsd.org>
@@ -75,6 +75,7 @@ static const char *efi_memory_type[] = {
 };
 
 static char default_device[32];
+static int default_fstype = FS_UNUSED;
 static char initrd_path[255];
 static char dtb_path[255];
 static char netbsd_path[255];
@@ -127,6 +128,27 @@ const struct boot_command commands[] = {
 	{ "quit",	command_quit,		"quit" },
 	{ NULL,		NULL },
 };
+
+static int
+bootcfg_path(char *pathbuf, size_t pathbuflen)
+{
+	/*
+	 * Special handling of boot.cfg on ISO9660 because fs protocol doesn't
+	 * seem to work.
+	 */
+	if (default_fstype == FS_ISO9660) {
+		snprintf(pathbuf, pathbuflen, "%s:%s", default_device, BOOTCFG_FILENAME);
+		return 0;
+	}
+
+	/*
+	 * Fall back to fs protocol for loading boot.cfg
+	 */
+	if (efi_bootdp == NULL)
+		return ENXIO;
+
+	return efi_file_path(efi_bootdp, BOOTCFG_FILENAME, pathbuf, pathbuflen);
+}
 
 void
 command_help(char *arg)
@@ -318,14 +340,14 @@ command_version(char *arg)
 		    ST->FirmwareRevision);
 		FreePool(ufirmware);
 	}
-	if (efi_bootdp != NULL &&
-	    efi_file_path(efi_bootdp, BOOTCFG_FILENAME, pathbuf, sizeof(pathbuf)) == 0) {
+	if (bootcfg_path(pathbuf, sizeof(pathbuf)) == 0) {
 		printf("Config path: %s\n", pathbuf);
 	}
 
 	efi_fdt_show();
 	efi_acpi_show();
 	efi_rng_show();
+	efi_md_show();
 }
 
 void
@@ -353,6 +375,18 @@ char *
 get_default_device(void)
 {
 	return default_device;
+}
+
+void
+set_default_fstype(int fstype)
+{
+	default_fstype = fstype;
+}
+
+int
+get_default_fstype(void)
+{
+	return default_fstype;
 }
 
 int
@@ -432,7 +466,7 @@ boot(void)
 	char pathbuf[80];
 	int currname, c;
 
-	if (efi_bootdp != NULL && efi_file_path(efi_bootdp, BOOTCFG_FILENAME, pathbuf, sizeof(pathbuf)) == 0) {
+	if (bootcfg_path(pathbuf, sizeof(pathbuf)) == 0) {
 		twiddle_toggle = 1;
 		parsebootconf(pathbuf);
 	}

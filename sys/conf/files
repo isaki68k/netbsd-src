@@ -1,4 +1,4 @@
-#	$NetBSD: files,v 1.1275 2020/08/20 21:21:31 riastradh Exp $
+#	$NetBSD: files,v 1.1277 2020/10/27 08:57:11 ryo Exp $
 #	@(#)files.newconf	7.5 (Berkeley) 5/10/93
 
 version 	20171118
@@ -1420,6 +1420,7 @@ defpseudo pppoe:	ifnet, ether, sppp
 defpseudo tun:		ifnet
 defpseudo vlan:		ifnet, ether
 defpseudo bridge:	ifnet, ether
+defpseudo vether:	ifnet, ether
 defpseudo bpfilter:	ifnet, bpf_filter
 defpseudo strip:	ifnet
 defpseudo gre:		ifnet
@@ -1492,6 +1493,9 @@ file	dev/ic/anx_dp.c			anxdp
 # Broadcom GENET v5 ethernet
 device	genet: arp, ether, ifnet, mii
 file	dev/ic/bcmgenet.c		genet
+
+# VMware Tools driver
+include "dev/vmt/files.vmt"
 
 #
 # File systems

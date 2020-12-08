@@ -1,4 +1,4 @@
-/*	$NetBSD: ehci.c,v 1.281 2020/05/17 08:38:37 skrll Exp $ */
+/*	$NetBSD: ehci.c,v 1.283 2020/11/30 05:33:32 msaitoh Exp $ */
 
 /*
  * Copyright (c) 2004-2012,2016,2020 The NetBSD Foundation, Inc.
@@ -54,7 +54,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ehci.c,v 1.281 2020/05/17 08:38:37 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ehci.c,v 1.283 2020/11/30 05:33:32 msaitoh Exp $");
 
 #include "ohci.h"
 #include "uhci.h"
@@ -3218,7 +3218,7 @@ ehci_close_pipe(struct usbd_pipe *pipe, ehci_soft_qh_t *head)
 }
 
 /*
- * Arrrange for the hardware to tells us that it is not still
+ * Arrange for the hardware to tells us that it is not still
  * processing the TDs by setting the QH halted bit and wait for the ehci
  * door bell
  */
@@ -3770,7 +3770,7 @@ ehci_device_ctrl_close(struct usbd_pipe *pipe)
 /*
  * Some EHCI chips from VIA seem to trigger interrupts before writing back the
  * qTD status, or miss signalling occasionally under heavy load.  If the host
- * machine is too fast, we we can miss transaction completion - when we scan
+ * machine is too fast, we can miss transaction completion - when we scan
  * the active list the transaction still seems to be active.  This generally
  * exhibits itself as a umass stall that never recovers.
  *

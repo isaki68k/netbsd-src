@@ -1,4 +1,4 @@
-/*	$NetBSD: in.c,v 1.237 2020/08/20 21:21:32 riastradh Exp $	*/
+/*	$NetBSD: in.c,v 1.241 2020/09/29 19:33:36 roy Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -91,7 +91,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: in.c,v 1.237 2020/08/20 21:21:32 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: in.c,v 1.241 2020/09/29 19:33:36 roy Exp $");
 
 #include "arp.h"
 
@@ -424,6 +424,24 @@ in_control0(struct socket *so, u_long cmd, void *data, struct ifnet *ifp)
 		if (ifp == NULL)
 			return EINVAL;
 		return ifaddrpref_ioctl(so, cmd, data, ifp);
+#if NARP > 0
+	case SIOCGNBRINFO:
+	{
+		struct in_nbrinfo *nbi = (struct in_nbrinfo *)data;
+		struct llentry *ln;
+		struct in_addr nb_addr = nbi->addr; /* make local for safety */
+
+		ln = arplookup(ifp, &nb_addr, NULL, 0);
+		if (ln == NULL)
+			return EINVAL;
+		nbi->state = ln->ln_state;
+		nbi->asked = ln->ln_asked;
+		nbi->expire = ln->ln_expire ?
+		    time_mono_to_wall(ln->ln_expire) : 0;
+		LLE_RUNLOCK(ln);
+		return 0;
+	}
+#endif
 	}
 
 	bound = curlwp_bind();
@@ -1231,11 +1249,9 @@ in_ifinit(struct ifnet *ifp, struct in_ifaddr *ia,
 		ia->ia_dstaddr = ia->ia_addr;
 		flags |= RTF_HOST;
 	} else if (ifp->if_flags & IFF_POINTOPOINT) {
-		if (in_mask2len(&ia->ia_sockmask.sin_addr) == 32) {
-			if (ia->ia_dstaddr.sin_family != AF_INET)
-				return (0);
-			flags |= RTF_HOST;
-		}
+		if (ia->ia_dstaddr.sin_family != AF_INET)
+			return (0);
+		flags |= RTF_HOST;
 	}
 
 	/* Add the local route to the address */
@@ -1563,14 +1579,15 @@ void
 in_if_link_state_change(struct ifnet *ifp, int link_state)
 {
 
-	switch (link_state) {
-	case LINK_STATE_DOWN:
+	/*
+	 * Treat LINK_STATE_UNKNOWN as UP.
+	 * LINK_STATE_UNKNOWN transitions to LINK_STATE_DOWN when
+	 * if_link_state_change() transitions to LINK_STATE_UP.
+	 */
+	if (link_state == LINK_STATE_DOWN)
 		in_if_link_down(ifp);
-		break;
-	case LINK_STATE_UP:
+	else
 		in_if_link_up(ifp);
-		break;
-	}
 }
 
 /*
@@ -1961,11 +1978,6 @@ in_lltable_new(struct in_addr addr4, u_int flags)
 	if (lle == NULL)		/* NB: caller generates msg */
 		return NULL;
 
-	/*
-	 * For IPv4 this will trigger "arpresolve" to generate
-	 * an ARP request.
-	 */
-	lle->la_expire = time_uptime; /* mark expired */
 	lle->r_l3addr.addr4 = addr4;
 	lle->lle_refcnt = 1;
 	lle->lle_free = in_lltable_destroy_lle;

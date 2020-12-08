@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_clock.c,v 1.141 2020/05/08 22:10:09 ad Exp $	*/
+/*	$NetBSD: kern_clock.c,v 1.143 2020/12/05 18:17:01 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2000, 2004, 2006, 2007, 2008 The NetBSD Foundation, Inc.
@@ -69,7 +69,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_clock.c,v 1.141 2020/05/08 22:10:09 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_clock.c,v 1.143 2020/12/05 18:17:01 thorpej Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_dtrace.h"
@@ -178,13 +178,24 @@ initclocks(void)
 	 * code do its bit.
 	 */
 	psdiv = 1;
+
+	/*
+	 * Call cpu_initclocks() before registering the default
+	 * timecounter, in case it needs to adjust hz.
+	 */
+	const int old_hz = hz;
+	cpu_initclocks();
+	if (old_hz != hz) {
+		tick = 1000000 / hz;
+		tickadj = (240000 / (60 * hz)) ? (240000 / (60 * hz)) : 1;
+	}
+
 	/*
 	 * provide minimum default time counter
 	 * will only run at interrupt resolution
 	 */
 	intr_timecounter.tc_frequency = hz;
 	tc_init(&intr_timecounter);
-	cpu_initclocks();
 
 	/*
 	 * Compute profhz and stathz, fix profhz if needed.
@@ -227,7 +238,7 @@ hardclock(struct clockframe *frame)
 	ci = curcpu();
 	l = ci->ci_onproc;
 
-	timer_tick(l, CLKF_USERMODE(frame));
+	ptimer_tick(l, CLKF_USERMODE(frame));
 
 	/*
 	 * If no separate statistics clock is available, run it from here.
