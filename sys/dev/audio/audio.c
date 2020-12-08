@@ -2287,7 +2287,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	if (bellfile == NULL) {
 		error = fd_allocfile(&fp, &fd);
 		if (error)
-			goto bad3;
+			goto bad4;
 	}
 
 	/*
@@ -2314,10 +2314,12 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	TRACEF(3, af, "done");
 	return error;
 
-	/*
-	 * Since track here is not yet linked to sc_files,
-	 * you can call track_destroy() without sc_intr_lock.
-	 */
+bad4:
+	if (sc->sc_rbusy) {
+		mutex_enter(sc->sc_lock);
+		audio_rmixer_halt(sc);
+		mutex_exit(sc->sc_lock);
+	}
 bad3:
 	if (sc->sc_popens + sc->sc_ropens == 0) {
 		if (sc->hw_if->close) {
@@ -2329,6 +2331,10 @@ bad3:
 		}
 	}
 bad2:
+	/*
+	 * Since track here is not yet linked to sc_files,
+	 * you can call track_destroy() without sc_intr_lock.
+	 */
 	if (af->rtrack) {
 		audio_track_destroy(af->rtrack);
 		af->rtrack = NULL;
