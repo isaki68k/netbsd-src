@@ -2284,8 +2284,8 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 
 		mutex_enter(sc->sc_lock);
 		audio_rmixer_start(sc);
-		rmixer_started = true;
 		mutex_exit(sc->sc_lock);
+		rmixer_started = true;
 	}
 
 	if (bellfile == NULL) {
