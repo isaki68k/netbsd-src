@@ -812,6 +812,40 @@ ASENTRY_NOPROFILE(rw_buserr)
 	move	%d1,%sr
 	jmp	%a1@		| return
 
+ASENTRY_NOPROFILE(perf_sysclk)
+	moveq.l	#0,%d0
+	move	%sr,-(%sp)
+	| di
+	move	#0x2700,%sr
+
+	leal	0x63000000,%a0	| SYSCLK
+	leal	0x71000100,%a1	| XP COUNTER (6kHz)
+
+	| sysclk_reset
+	clr.b	(%a0)
+	| sysclk_wait
+1:
+	tst.b	(%a0)
+	jpl	1b
+	| sysclk_reset
+	clr.b	(%a0)
+	| xp_gettimer
+	move.b	(%a1),%d0
+	| sysclk_wait
+1:
+	tst.b	(%a0)
+	jpl	1b
+	| xp_gettimer
+	| calc diff of time
+	sub.b	(%a1),%d0
+	neg.b	%d0
+
+	| sysclk_reset
+	clr.b	(%a0)
+
+	move	(%sp)+,%sr
+	rts
+
 	.data
 
 /*

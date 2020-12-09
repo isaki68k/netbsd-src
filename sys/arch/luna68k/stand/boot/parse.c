@@ -136,9 +136,11 @@ extern uint32_t read_4(uint32_t);
 extern uint32_t write_1(uint32_t, uint32_t);
 extern uint32_t write_2(uint32_t, uint32_t);
 extern uint32_t write_4(uint32_t, uint32_t);
+extern uint32_t perf_sysclk(void);
 uint32_t hex2bin(const char *, char **);
 int cmd_r(int, char*[]);
 int cmd_w(int, char*[]);
+int cmd_clk(int, char*[]);
 
 uint32_t
 hex2bin(const char *s, char **end)
@@ -297,6 +299,86 @@ cmd_w(int argc, char *argv[])
 	return ST_NORMAL;
 }
 
+static void
+xp_reset(int is_reset)
+{
+#define PIO0_CMD (0x49000003)
+	// port c bit set/reset command
+	*((volatile uint8_t*)PIO0_CMD) = (7 << 1) | is_reset;
+}
+
+static void
+xp_load(uint8_t *firm, size_t len)
+{
+	memcpy((void *)0x71000000, firm, len);
+}
+
+
+static uint8_t xp_clk_firmware[] = {
+// XP の T2FRCH は 6.144MHz / 4 / 256 でカウントアップされる。
+// すなわち 6kHz。42.667ms でラウンドする。
+// RCR を設定しないでメモリに書くと、メモリがゴミだらけになり
+// 最終的に XP が暴走することが判明している。
+// DCNTL はゴミとは関係ないがウェイトを設定する必要がある。
+/*
+	.ORG	0000H
+	DI
+	LD	A,20H
+	OUT0	(32H),A		| DCNTL
+	LD	A,03H
+	OUT0	(36H),A		| RCR
+
+	LD	HL,0100H
+LOOP:
+	IN0	A,(41H)		| T2FRCH
+	LD	(HL),A
+	JR	LOOP
+*/
+	0xf3,
+	0x3e,0x20,
+	0xed,0x39,0x32,
+	0x3e,0x03,
+	0xed,0x39,0x36,
+	0x21,0x00,0x01,
+	0xed,0x38,0x41,
+	0x77,
+	0x18,0xfa,
+};
+
+int
+cmd_clk(int argc, char *argv[])
+{
+	uint32_t t;
+
+	xp_reset(1);
+	xp_load(xp_clk_firmware, sizeof(xp_clk_firmware));
+	xp_reset(0);
+
+#if 0
+	// perf_sysclk の相当コード
+	uint32_t t0, t1;
+
+	di();
+	sysclk_reset();
+	sysclk_wait();
+	t0 = xp_gettimer();
+	sysclk_wait();
+	t1 = xp_gettimer();
+	ei();
+	if (t1 < t0) {
+		t = 256 + t1 - t0;
+	} else {
+		t = t1 - t0;
+	}
+#else
+	// call locore.S
+	t = perf_sysclk();
+#endif
+	printf("sysclk is %d ticks\n", t);
+
+	return ST_NORMAL;
+}
+
 #endif /* readwrite test */
 
 struct command_entry {
@@ -326,6 +408,7 @@ static const struct command_entry entries[] = {
 
 	{ "r",		cmd_r        },
 	{ "w",		cmd_w        },
+	{ "clk",	cmd_clk      },
 	{ NULL, NULL }
 };
 
