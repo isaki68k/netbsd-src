@@ -63,6 +63,50 @@
  */
 
 /*
+ * Terminology: "sample", "channel", "frame", "block", "track":
+ *
+ *  channel       frame
+ *   |           ........
+ *   v           :      :                                    \
+ *        +------:------:------:-  -+------+ : +------+-..   |
+ *  #0(L) |sample|sample|sample| .. |sample| : |sample|      |
+ *        +------:------:------:-  -+------+ : +------+-..   |
+ *  #1(R) |sample|sample|sample| .. |sample| : |sample|      |
+ *        +------:------:------:-  -+------+ : +------+-..   | track
+ *   :           :      :                    :               |
+ *        +------:------:------:-  -+------+ : +------+-..   |
+ *        |sample|sample|sample| .. |sample| : |sample|      |
+ *        +------:------:------:-  -+------+ : +------+-..   |
+ *               :      :                                    /
+ *               ........
+ *
+ *        \--------------------------------/   \--------..
+ *                     block
+ *
+ * - A "sample" is a single data.
+ * - A "frame" is the minimum unit in the time axis direction, and consists
+ *   of samples for the number of channels.
+ * - A "block" is basic length of processing.  The audio layer basically
+ *   handles audio data stream block by block, asks underlying hardware
+ *   to process them block by block, and then the hardware raises
+ *   interrupt by each block.
+ * - A "track" is a single completed audio stream.
+ *
+ * For example, the hardware block is assumed to be 40 msec, and your
+ * audio track consists of 2.1(=3) channels 44.1kHz 16bit PCM,
+ *
+ * "channel" = 3
+ * "sample" = 2 [bytes]
+ * "frame" = 2 [bytes/sample] * 3 [channels] = 6 [bytes]
+ * "block" = 44100 [Hz] * (40/1000) [seconds] * 6 [bytes/frame] = 10584 [bytes]
+ *
+ * The terminology shown here is only for this MI audio layer.  Note that
+ * each manufacturer's datasheet may use different terminology than here,
+ * so that each MD driver may follow it.  For example, what we call a "block"
+ * is called a "frame" in sys/dev/pci/yds.c.
+ */
+
+/*
  * Locking: there are three locks per device.
  *
  * - sc_lock, provided by the underlying driver.  This is an adaptive lock,
