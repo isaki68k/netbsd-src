@@ -283,10 +283,13 @@ cmd_w(int argc, char *argv[])
 	switch (size) {
 	 case 1:
 		write_1(addr, data);
+		break;
 	 case 2:
 		write_2(addr, data);
+		break;
 	 case 4:
 		write_4(addr, data);
+		break;
 	}
 	if (isbuserr)
 		printf("Bus Error\n");
