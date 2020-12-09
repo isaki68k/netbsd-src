@@ -6152,8 +6152,8 @@ audio_softintr_wr(void *cookie)
 
 /*
  * Check (and convert) the format *p came from userland.
- * If successful, it writes back the converted format to *p if necessary
- * and returns 0.  Otherwise returns errno (*p may change even this case).
+ * If successful, it writes back the converted format to *p if necessary and
+ * returns 0.  Otherwise returns errno (*p may be changed even in this case).
  */
 static int
 audio_check_params(audio_format2_t *p)
