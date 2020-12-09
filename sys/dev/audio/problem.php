@@ -898,6 +898,10 @@ item(55507, false,
 "sometimes hdaudio panics on attach, possible memory corruption",
 "hdafg(4) が起動中にパニックした?");
 
+item(55848, true,
+"amd64 9/99.76 panic in audio(4)",
+"audio_open() でエラー時に rmixer を停止してなかった件。");
+
 ?>
 
 </dl>
