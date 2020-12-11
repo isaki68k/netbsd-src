@@ -2459,7 +2459,8 @@ audio_unlink(struct audio_softc *sc, audio_file_t *file)
 
 	/*
 	 * Acquire exlock to protect counters.
-	 * Does not use audio_exlock_enter() due to sc_dying.
+	 * audio_exlock_enter() cannot be used here because we have to go
+	 * forward even if sc_dying is set.
 	 */
 	while (__predict_false(sc->sc_exlock != 0)) {
 		error = cv_timedwait_sig(&sc->sc_exlockcv, sc->sc_lock,
