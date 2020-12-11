@@ -2468,7 +2468,8 @@ audio_unlink(struct audio_softc *sc, audio_file_t *file)
 		if (error == EWOULDBLOCK) {
 			mutex_exit(sc->sc_lock);
 			device_printf(sc->sc_dev,
-			    "%s: cv_timedwait_sig failed %d", __func__, error);
+			    "%s: cv_timedwait_sig failed %d\n",
+			    __func__, error);
 			return error;
 		}
 	}
