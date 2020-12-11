@@ -1375,7 +1375,6 @@ audiodetach(device_t self, int flags)
 	 * that hold sc, and any new calls with files that were for sc will
 	 * fail.  Thus, we now have exclusive access to the softc.
 	 */
-	sc->sc_exlock = 1;
 
 	/*
 	 * Nuke all open instances.
@@ -1401,6 +1400,7 @@ audiodetach(device_t self, int flags)
 	pmf_device_deregister(self);
 
 	/* Free resources */
+	sc->sc_exlock = 1;
 	if (sc->sc_pmixer) {
 		audio_mixer_destroy(sc, sc->sc_pmixer);
 		kmem_free(sc->sc_pmixer, sizeof(*sc->sc_pmixer));
