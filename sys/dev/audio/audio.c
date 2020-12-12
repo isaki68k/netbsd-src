@@ -1917,7 +1917,7 @@ audiopoll(struct file *fp, int events)
 
 	sc = audio_file_enter(file, &sc_ref);
 	if (sc == NULL)
-		return EIO;
+		return POLLERR;
 
 	switch (AUDIODEV(dev)) {
 	case SOUND_DEVICE:
