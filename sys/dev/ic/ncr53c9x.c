@@ -2244,6 +2244,7 @@ again:
 				 * if the DMA counter and TC bit
 				 * appear to be out of sync.
 				 */
+#if 0//QEMU
 				printf("%s: !TC on DATA XFER"
 				    " [intr %x, stat %x, step %d]"
 				    " prevphase %x, resid %x\n",
@@ -2253,6 +2254,7 @@ again:
 				    sc->sc_espstep,
 				    sc->sc_prevphase,
 				    ecb ? ecb->dleft : -1);
+#endif
 			}
 		}
 	}
