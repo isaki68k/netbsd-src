@@ -894,7 +894,7 @@ item(-55175, false,	/* it's not mine */
 "Interpreation of AUDIO_FORMAT_LINEAR is wrong for 8-bit samples",
 "nia が勝手に commit したので放棄。");
 
-item(55507, false,
+item(-55507, false,
 "sometimes hdaudio panics on attach, possible memory corruption",
 "hdafg(4) が起動中にパニックした?");
 
@@ -902,9 +902,18 @@ item(-55848, true,
 "amd64 9/99.76 panic in audio(4)",
 "audio_open() でエラー時に rmixer を停止してなかった件。");
 
-item(55868, false,
+item(55856, false,
 "uaudio(4) device timeout on C-Media USB sound  card",
 "trigger_output で EIO になるデバイスがあるようだ。");
+
+item(55876, false,
+"sparc tests hang at lib/libossaudio/t_ossaudio",
+"dspのほうは GETBUFINFO の戻り値を SET に使えない件。
+それをパスした後 read/write は qemu で audiocs(4) が動いてない問題。");
+
+item(55878, false,
+"Doc error in audioctl(1)",
+"書いてあることが違う?、たぶんドキュメントを直すべき");
 
 ?>
 
