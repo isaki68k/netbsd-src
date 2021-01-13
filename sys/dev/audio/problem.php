@@ -904,7 +904,7 @@ item(-55848, true,
 
 item(55856, false,
 "uaudio(4) device timeout on C-Media USB sound  card",
-"trigger_output で EIO になるデバイスがあるようだ。");
+"trigger_output で EIO になるデバイスがあるようだが xhci(4) の問題らしい。");
 
 item(55876, false,
 "sparc tests hang at lib/libossaudio/t_ossaudio",
