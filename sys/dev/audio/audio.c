@@ -3184,7 +3184,7 @@ filt_audioread_detach(struct knote *kn)
 
 	file = kn->kn_hook;
 	sc = file->sc;
-	TRACEF(3, file, "");
+	TRACEF(3, file, "called");
 
 	mutex_enter(sc->sc_lock);
 	SLIST_REMOVE(&sc->sc_rsel.sel_klist, kn, knote, kn_selnext);
@@ -3231,7 +3231,7 @@ filt_audiowrite_detach(struct knote *kn)
 
 	file = kn->kn_hook;
 	sc = file->sc;
-	TRACEF(3, file, "");
+	TRACEF(3, file, "called");
 
 	mutex_enter(sc->sc_lock);
 	SLIST_REMOVE(&sc->sc_wsel.sel_klist, kn, knote, kn_selnext);
@@ -3389,7 +3389,7 @@ audioctl_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 
 	KASSERT(sc->sc_exlock);
 
-	TRACE(1, "");
+	TRACE(1, "called");
 
 	error = fd_allocfile(&fp, &fd);
 	if (error)
@@ -5901,7 +5901,7 @@ audio_pmixer_halt(struct audio_softc *sc)
 {
 	int error;
 
-	TRACE(2, "");
+	TRACE(2, "called");
 	KASSERT(mutex_owned(sc->sc_lock));
 	KASSERT(sc->sc_exlock);
 
@@ -5931,7 +5931,7 @@ audio_rmixer_halt(struct audio_softc *sc)
 {
 	int error;
 
-	TRACE(2, "");
+	TRACE(2, "called");
 	KASSERT(mutex_owned(sc->sc_lock));
 	KASSERT(sc->sc_exlock);
 
@@ -8114,7 +8114,7 @@ mixer_close(struct audio_softc *sc, audio_file_t *file)
 	error = audio_exlock_enter(sc);
 	if (error)
 		return error;
-	TRACE(1, "");
+	TRACE(1, "called");
 	mixer_async_remove(sc, curproc->p_pid);
 	audio_exlock_exit(sc);
 
