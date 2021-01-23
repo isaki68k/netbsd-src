@@ -1,4 +1,4 @@
-/*	$NetBSD: openfirm.h,v 1.39 2020/07/16 21:32:44 jmcneill Exp $	*/
+/*	$NetBSD: openfirm.h,v 1.41 2021/01/18 02:35:49 thorpej Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996 Wolfgang Solfrank.
@@ -65,11 +65,6 @@ struct ofbus_attach_args {
 	int		oba_unit;
 };
 
-struct of_compat_data {
-	const char *compat;
-	uintptr_t data;
-};
-
 /*
  * Functions and variables provided by machine-dependent code.
  */
@@ -108,11 +103,13 @@ int	openfirmware(void *);
 /*
  * Functions and variables provided by machine-independent code.
  */
+struct device_compatible_entry;
+
 int	of_compatible(int, const char * const *);
 int	of_match_compatible(int, const char * const *);
-int	of_match_compat_data(int, const struct of_compat_data *);
-const struct of_compat_data *
-	of_search_compatible(int, const struct of_compat_data *);
+int	of_match_compat_data(int, const struct device_compatible_entry *);
+const struct device_compatible_entry *
+	of_search_compatible(int, const struct device_compatible_entry *);
 int	of_decode_int(const unsigned char *);
 int	of_packagename(int, char *, int);
 int	of_find_firstchild_byname(int, const char *);
@@ -132,6 +129,7 @@ void	of_enter_spi_devs(prop_dictionary_t, int, size_t);
 bool	of_hasprop(int, const char *);
 #define of_getprop_bool	of_hasprop
 int	of_getprop_uint32(int, const char *, uint32_t *);
+int	of_getprop_uint32_array(int, const char *, uint32_t *, int);
 int	of_getprop_uint64(int, const char *, uint64_t *);
 
 #endif /*_OPENFIRM_H_*/

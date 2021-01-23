@@ -1,4 +1,4 @@
-/* $NetBSD: gicv3.c,v 1.36 2020/12/04 21:39:26 jmcneill Exp $ */
+/* $NetBSD: gicv3.c,v 1.39 2021/01/16 21:05:15 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2018 Jared McNeill <jmcneill@invisible.ca>
@@ -31,7 +31,7 @@
 #define	_INTR_PRIVATE
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gicv3.c,v 1.36 2020/12/04 21:39:26 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gicv3.c,v 1.39 2021/01/16 21:05:15 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/kernel.h>
@@ -41,6 +41,7 @@ __KERNEL_RCSID(0, "$NetBSD: gicv3.c,v 1.36 2020/12/04 21:39:26 jmcneill Exp $");
 #include <sys/systm.h>
 #include <sys/cpu.h>
 #include <sys/vmem.h>
+#include <sys/kmem.h>
 #include <sys/atomic.h>
 
 #include <machine/cpufunc.h>
@@ -514,6 +515,13 @@ static const struct pic_ops gicv3_picops = {
 };
 
 static void
+gicv3_dcache_wb_range(vaddr_t va, vsize_t len)
+{
+	cpu_dcache_wb_range(va, len);
+	dsb(sy);
+}
+
+static void
 gicv3_lpi_unblock_irqs(struct pic_softc *pic, size_t irqbase, uint32_t mask)
 {
 	struct gicv3_softc * const sc = LPITOSOFTC(pic);
@@ -522,7 +530,7 @@ gicv3_lpi_unblock_irqs(struct pic_softc *pic, size_t irqbase, uint32_t mask)
 	while ((bit = ffs(mask)) != 0) {
 		sc->sc_lpiconf.base[irqbase + bit - 1] |= GIC_LPICONF_Enable;
 		if (sc->sc_lpiconf_flush)
-			cpu_dcache_wb_range((vaddr_t)&sc->sc_lpiconf.base[irqbase + bit - 1], 1);
+			gicv3_dcache_wb_range((vaddr_t)&sc->sc_lpiconf.base[irqbase + bit - 1], 1);
 		mask &= ~__BIT(bit - 1);
 	}
 
@@ -539,7 +547,7 @@ gicv3_lpi_block_irqs(struct pic_softc *pic, size_t irqbase, uint32_t mask)
 	while ((bit = ffs(mask)) != 0) {
 		sc->sc_lpiconf.base[irqbase + bit - 1] &= ~GIC_LPICONF_Enable;
 		if (sc->sc_lpiconf_flush)
-			cpu_dcache_wb_range((vaddr_t)&sc->sc_lpiconf.base[irqbase + bit - 1], 1);
+			gicv3_dcache_wb_range((vaddr_t)&sc->sc_lpiconf.base[irqbase + bit - 1], 1);
 		mask &= ~__BIT(bit - 1);
 	}
 
@@ -555,7 +563,7 @@ gicv3_lpi_establish_irq(struct pic_softc *pic, struct intrsource *is)
 	sc->sc_lpiconf.base[is->is_irq] = IPL_TO_PRIORITY(sc, is->is_ipl) | GIC_LPICONF_Res1;
 
 	if (sc->sc_lpiconf_flush)
-		cpu_dcache_wb_range((vaddr_t)&sc->sc_lpiconf.base[is->is_irq], 1);
+		gicv3_dcache_wb_range((vaddr_t)&sc->sc_lpiconf.base[is->is_irq], 1);
 	else
 		dsb(ishst);
 }
@@ -831,13 +839,14 @@ gicv3_init(struct gicv3_softc *sc)
 
 	LIST_INIT(&sc->sc_lpi_callbacks);
 
-	for (n = 0; n < MAXCPUS; n++)
+	sc->sc_irouter = kmem_zalloc(sizeof(*sc->sc_irouter) * ncpu, KM_SLEEP);
+	for (n = 0; n < ncpu; n++)
 		sc->sc_irouter[n] = UINT64_MAX;
 
 	sc->sc_gicd_typer = gicd_read_4(sc, GICD_TYPER);
 
 	/*
-	 * We don't alwayst have a consistent view of priorities between the
+	 * We don't always have a consistent view of priorities between the
 	 * CPU interface (ICC_PMR_EL1) and the GICD/GICR registers. Detect
 	 * if we are making secure or non-secure accesses to each, and adjust
 	 * the values that we write to each accordingly.
@@ -869,6 +878,9 @@ gicv3_init(struct gicv3_softc *sc)
 	pic_add(&sc->sc_pic, 0);
 
 	if ((sc->sc_gicd_typer & GICD_TYPER_LPIS) != 0) {
+		sc->sc_lpipend = kmem_zalloc(sizeof(*sc->sc_lpipend) * ncpu, KM_SLEEP);
+		sc->sc_processor_id = kmem_zalloc(sizeof(*sc->sc_processor_id) * ncpu, KM_SLEEP);
+
 		sc->sc_lpi.pic_ops = &gicv3_lpiops;
 		sc->sc_lpi.pic_maxsources = 8192;	/* Min. required by GICv3 spec */
 		snprintf(sc->sc_lpi.pic_name, sizeof(sc->sc_lpi.pic_name), "gicv3-lpi");

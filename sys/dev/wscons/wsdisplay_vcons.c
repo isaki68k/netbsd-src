@@ -1,4 +1,4 @@
-/*	$NetBSD: wsdisplay_vcons.c,v 1.42 2020/11/21 11:26:55 mlelstv Exp $ */
+/*	$NetBSD: wsdisplay_vcons.c,v 1.48 2021/01/21 21:45:42 macallan Exp $ */
 
 /*-
  * Copyright (c) 2005, 2006 Michael Lorenz
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: wsdisplay_vcons.c,v 1.42 2020/11/21 11:26:55 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: wsdisplay_vcons.c,v 1.48 2021/01/21 21:45:42 macallan Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -103,6 +103,7 @@ static void vcons_eraserows_cached(void *, int, int, long);
 static void vcons_putchar_cached(void *, int, int, u_int, long);
 #endif
 static void vcons_cursor(void *, int, int, int);
+static void vcons_cursor_noread(void *, int, int, int);
 
 /*
  * methods that avoid framebuffer reads
@@ -124,14 +125,15 @@ static void vcons_softintr(void *);
 static void vcons_init_thread(void *);
 #endif
 
-int
-vcons_init(struct vcons_data *vd, void *cookie, struct wsscreen_descr *def,
-    struct wsdisplay_accessops *ao)
+static int
+vcons_init_common(struct vcons_data *vd, void *cookie,
+    struct wsscreen_descr *def, struct wsdisplay_accessops *ao,
+    int enable_intr)
 {
 
 	/* zero out everything so we can rely on untouched fields being 0 */
 	memset(vd, 0, sizeof(struct vcons_data));
-	
+
 	vd->cookie = cookie;
 
 	vd->init_screen = vcons_dummy_init_screen;
@@ -174,19 +176,35 @@ vcons_init(struct vcons_data *vd, void *cookie, struct wsscreen_descr *def,
 	vd->switch_poll_count = 0;
 #endif
 #ifdef VCONS_DRAW_INTR
-	vd->intr_softint = softint_establish(SOFTINT_SERIAL,
-	    vcons_softintr, vd);
-	callout_init(&vd->intr, CALLOUT_MPSAFE);
-	callout_setfunc(&vd->intr, vcons_intr, vd);
-	vd->intr_valid = 1;
+	if (enable_intr) {
+		vd->intr_softint = softint_establish(SOFTINT_SERIAL,
+		    vcons_softintr, vd);
+		callout_init(&vd->intr, CALLOUT_MPSAFE);
+		callout_setfunc(&vd->intr, vcons_intr, vd);
+		vd->intr_valid = 1;
 
-	if (kthread_create(PRI_NONE, 0, NULL, vcons_init_thread, vd, NULL,
-	    "vcons_init") != 0) {
-		printf("%s: unable to create thread.\n", __func__);
-		return -1;
+		if (kthread_create(PRI_NONE, 0, NULL, vcons_init_thread, vd,
+		    NULL, "vcons_init") != 0) {
+			printf("%s: unable to create thread.\n", __func__);
+			return -1;
+		}
 	}
 #endif
 	return 0;
+}
+
+int
+vcons_init(struct vcons_data *vd, void *cookie,
+    struct wsscreen_descr *def, struct wsdisplay_accessops *ao)
+{
+	return vcons_init_common(vd, cookie, def, ao, 1);
+}
+
+int
+vcons_earlyinit(struct vcons_data *vd, void *cookie,
+    struct wsscreen_descr *def, struct wsdisplay_accessops *ao)
+{
+	return vcons_init_common(vd, cookie, def, ao, 0);
 }
 
 static void
@@ -335,7 +353,12 @@ vcons_init_screen(struct vcons_data *vd, struct vcons_screen *scr,
 	ri->ri_ops.eraserows = vcons_eraserows;	
 	ri->ri_ops.erasecols = vcons_erasecols;	
 	ri->ri_ops.putchar   = vcons_putchar;
-	ri->ri_ops.cursor    = vcons_cursor;
+	if (scr->scr_flags & VCONS_NO_CURSOR) {
+		ri->ri_ops.cursor    = vcons_cursor_noread;
+	} else {
+		ri->ri_ops.cursor    = vcons_cursor;
+	}
+
 	ri->ri_ops.copycols  = vcons_copycols;
 	ri->ri_ops.copyrows  = vcons_copyrows;
 
@@ -452,7 +475,10 @@ vcons_load_font(void *v, void *cookie, struct wsdisplay_font *f)
 	ri->ri_ops.eraserows = vcons_eraserows;	
 	ri->ri_ops.erasecols = vcons_erasecols;	
 	ri->ri_ops.putchar   = vcons_putchar;
-	ri->ri_ops.cursor    = vcons_cursor;
+	if (scr->scr_flags & VCONS_NO_CURSOR) {
+		ri->ri_ops.cursor    = vcons_cursor_noread;
+	} else
+		ri->ri_ops.cursor    = vcons_cursor;
 	ri->ri_ops.copycols  = vcons_copycols;
 	ri->ri_ops.copyrows  = vcons_copyrows;
 	vcons_unlock(vd->active);
@@ -592,11 +618,11 @@ vcons_redraw_screen(struct vcons_screen *scr)
 				if (c == ' ') {
 					/*
 					 * if we already erased the background
-					 * and this blank uses the same colour
-					 * and flags we don't need to do
+					 * and if this blank uses the same 
+					 * colour and flags we don't need to do
 					 * anything here
 					 */
-					if (acmp == cmp)
+					if (acmp == cmp && start == -1)
 						goto next;
 					/*
 					 * see if we can optimize things a
@@ -1284,6 +1310,60 @@ vcons_cursor(void *cookie, int on, int row, int col)
 	vcons_unlock(scr);
 }
 
+static void
+vcons_cursor_noread(void *cookie, int on, int row, int col)
+{
+	struct rasops_info *ri = cookie;
+	struct vcons_screen *scr = ri->ri_hw;
+	int offset = 0;	
+
+#if defined(VCONS_DRAW_INTR)
+	if (scr->scr_vd->use_intr) {
+		vcons_lock(scr);
+		if (scr->scr_ri.ri_crow != row || scr->scr_ri.ri_ccol != col) {
+			scr->scr_ri.ri_crow = row;
+			scr->scr_ri.ri_ccol = col;
+			atomic_inc_uint(&scr->scr_dirty);
+		}
+		vcons_unlock(scr);
+		return;
+	}
+#endif
+
+	vcons_lock(scr);
+
+#ifdef WSDISPLAY_SCROLLSUPPORT
+	offset = scr->scr_current_offset;
+#endif
+	if (SCREEN_IS_VISIBLE(scr) && SCREEN_CAN_DRAW(scr)) {
+		int ofs = offset + ri->ri_crow * ri->ri_cols + ri->ri_ccol;
+		if (ri->ri_flg & RI_CURSOR) {
+			scr->putchar(cookie, ri->ri_crow, ri->ri_ccol,
+			    scr->scr_chars[ofs], scr->scr_attrs[ofs]);
+			ri->ri_flg &= ~RI_CURSOR;
+		}
+		ri->ri_crow = row;
+		ri->ri_ccol = col;
+		ofs = offset + ri->ri_crow * ri->ri_cols + ri->ri_ccol;
+		if (on) {
+			scr->putchar(cookie, row, col, scr->scr_chars[ofs],
+#ifdef VCONS_DEBUG_CURSOR_NOREAD
+			/* draw a red cursor so we can tell which cursor() 
+			 * implementation is being used */
+			    ((scr->scr_attrs[ofs] & 0xff00ffff) ^ 0x0f000000) |
+			      0x00010000);
+#else
+			    scr->scr_attrs[ofs] ^ 0x0f0f0000);
+#endif
+			ri->ri_flg |= RI_CURSOR;
+		}
+	} else {
+		scr->scr_ri.ri_crow = row;
+		scr->scr_ri.ri_ccol = col;
+	}
+	vcons_unlock(scr);
+}
+
 /* methods to read/write characters via ioctl() */
 
 static int
@@ -1297,25 +1377,33 @@ vcons_putwschar(struct vcons_screen *scr, struct wsdisplay_char *wsc)
 
 	ri = &scr->scr_ri;
 
-	if (__predict_false((unsigned int)wsc->col > ri->ri_cols ||
-	    (unsigned int)wsc->row > ri->ri_rows))
+	/* allow col as linear index if row == 0 */
+	if (wsc->row == 0) {
+		if (wsc->col < 0 || wsc->col > (ri->ri_cols * ri->ri_rows))
+			return EINVAL;
+	    	int rem;
+	    	rem = wsc->col % ri->ri_cols;
+	    	wsc->row = wsc->col / ri->ri_cols;
+	    	DPRINTF("off %d -> %d, %d\n", wsc->col, rem, wsc->row);
+	    	wsc->col = rem;
+	} else {
+		if (__predict_false(wsc->col < 0 || wsc->col >= ri->ri_cols))
 			return (EINVAL);
 	
-	if ((wsc->row >= 0) && (wsc->row < ri->ri_rows) && (wsc->col >= 0) && 
-	     (wsc->col < ri->ri_cols)) {
+		if (__predict_false(wsc->row < 0 || wsc->row >= ri->ri_rows))
+			return (EINVAL);
+	}
 
-		error = ri->ri_ops.allocattr(ri, wsc->foreground,
-		    wsc->background, wsc->flags, &attr);
-		if (error)
-			return error;
-		vcons_putchar(ri, wsc->row, wsc->col, wsc->letter, attr);
+	error = ri->ri_ops.allocattr(ri, wsc->foreground,
+	    wsc->background, wsc->flags, &attr);
+	if (error)
+		return error;
+	vcons_putchar(ri, wsc->row, wsc->col, wsc->letter, attr);
 #ifdef VCONS_DEBUG
-		printf("vcons_putwschar(%d, %d, %x, %lx\n", wsc->row, wsc->col,
-		    wsc->letter, attr);
+	printf("vcons_putwschar(%d, %d, %x, %lx\n", wsc->row, wsc->col,
+	    wsc->letter, attr);
 #endif
-		return 0;
-	} else
-		return EINVAL;
+	return 0;
 }
 
 static int
@@ -1329,31 +1417,43 @@ vcons_getwschar(struct vcons_screen *scr, struct wsdisplay_char *wsc)
 
 	ri = &scr->scr_ri;
 
-	if ((wsc->row >= 0) && (wsc->row < ri->ri_rows) && (wsc->col >= 0) && 
-	     (wsc->col < ri->ri_cols)) {
+	/* allow col as linear index if row == 0 */
+	if (wsc->row == 0) {
+		if (wsc->col < 0 || wsc->col > (ri->ri_cols * ri->ri_rows))
+			return EINVAL;
+	    	int rem;
+	    	rem = wsc->col % ri->ri_cols;
+	    	wsc->row = wsc->col / ri->ri_cols;
+	    	DPRINTF("off %d -> %d, %d\n", wsc->col, rem, wsc->row);
+	    	wsc->col = rem;
+	} else {
+		if (__predict_false(wsc->col < 0 || wsc->col >= ri->ri_cols))
+			return (EINVAL);
+	
+		if (__predict_false(wsc->row < 0 || wsc->row >= ri->ri_rows))
+			return (EINVAL);
+	}
 
-		offset = ri->ri_cols * wsc->row + wsc->col;
+	offset = ri->ri_cols * wsc->row + wsc->col;
 #ifdef WSDISPLAY_SCROLLSUPPORT
-		offset += scr->scr_offset_to_zero;
+	offset += scr->scr_offset_to_zero;
 #endif
-		wsc->letter = scr->scr_chars[offset];
-		attr = scr->scr_attrs[offset];
+	wsc->letter = scr->scr_chars[offset];
+	attr = scr->scr_attrs[offset];
 
-		/* 
-		 * this is ugly. We need to break up an attribute into colours and
-		 * flags but there's no rasops method to do that so we must rely on
-		 * the 'canonical' encoding.
-		 */
+	/* 
+	 * this is ugly. We need to break up an attribute into colours and
+	 * flags but there's no rasops method to do that so we must rely on
+	 * the 'canonical' encoding.
+	 */
 #ifdef VCONS_DEBUG
-		printf("vcons_getwschar: %d, %d, %x, %lx\n", wsc->row,
-		    wsc->col, wsc->letter, attr);
+	printf("vcons_getwschar: %d, %d, %x, %lx\n", wsc->row,
+	    wsc->col, wsc->letter, attr);
 #endif
-		wsc->foreground = (attr >> 24) & 0xff;
-		wsc->background = (attr >> 16) & 0xff;
-		wsc->flags      = attr & 0xff;
-		return 0;
-	} else
-		return EINVAL;
+	wsc->foreground = (attr >> 24) & 0xff;
+	wsc->background = (attr >> 16) & 0xff;
+	wsc->flags      = attr & 0xff;
+	return 0;
 }
 
 #ifdef WSDISPLAY_SCROLLSUPPORT
@@ -1541,7 +1641,7 @@ vcons_invalidate_cache(struct vcons_data *vd)
 	if (vd->cells == 0)
 		return;
 
-	for (i = 0; i > vd->cells; i++) {
+	for (i = 0; i < vd->cells; i++) {
 		vd->chars[i] = -1;
 		vd->attrs[i] = -1;
 	}

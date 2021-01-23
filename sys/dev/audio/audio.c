@@ -1,4 +1,4 @@
-/*	$NetBSD: audio.c,v 1.79 2020/09/07 03:36:11 isaki Exp $	*/
+/*	$NetBSD: audio.c,v 1.88 2021/01/15 05:34:49 isaki Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -182,7 +182,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.79 2020/09/07 03:36:11 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.88 2021/01/15 05:34:49 isaki Exp $");
 
 #ifdef _KERNEL_OPT
 #include "audio.h"
@@ -3206,7 +3206,7 @@ filt_audioread_detach(struct knote *kn)
 	TRACEF(3, file, "called");
 
 	mutex_enter(sc->sc_lock);
-	SLIST_REMOVE(&sc->sc_rsel.sel_klist, kn, knote, kn_selnext);
+	selremove_knote(&sc->sc_rsel, kn);
 	mutex_exit(sc->sc_lock);
 }
 
@@ -3253,7 +3253,7 @@ filt_audiowrite_detach(struct knote *kn)
 	TRACEF(3, file, "called");
 
 	mutex_enter(sc->sc_lock);
-	SLIST_REMOVE(&sc->sc_wsel.sel_klist, kn, knote, kn_selnext);
+	selremove_knote(&sc->sc_wsel, kn);
 	mutex_exit(sc->sc_lock);
 }
 
@@ -3288,30 +3288,29 @@ filt_audiowrite_event(struct knote *kn, long hint)
 int
 audio_kqfilter(struct audio_softc *sc, audio_file_t *file, struct knote *kn)
 {
-	struct klist *klist;
+	struct selinfo *sip;
 
 	TRACEF(3, file, "kn=%p kn_filter=%x", kn, (int)kn->kn_filter);
 
-	mutex_enter(sc->sc_lock);
 	switch (kn->kn_filter) {
 	case EVFILT_READ:
-		klist = &sc->sc_rsel.sel_klist;
+		sip = &sc->sc_rsel;
 		kn->kn_fop = &audioread_filtops;
 		break;
 
 	case EVFILT_WRITE:
-		klist = &sc->sc_wsel.sel_klist;
+		sip = &sc->sc_wsel;
 		kn->kn_fop = &audiowrite_filtops;
 		break;
 
 	default:
-		mutex_exit(sc->sc_lock);
 		return EINVAL;
 	}
 
 	kn->kn_hook = file;
 
-	SLIST_INSERT_HEAD(klist, kn, kn_selnext);
+	mutex_enter(sc->sc_lock);
+	selrecord_knote(sip, kn);
 	mutex_exit(sc->sc_lock);
 
 	return 0;
@@ -6140,7 +6139,6 @@ audio_softintr_rd(void *cookie)
 
 	/* Notify that data has arrived. */
 	selnotify(&sc->sc_rsel, 0, NOTE_SUBMIT);
-	KNOTE(&sc->sc_rsel.sel_klist, 0);
 	cv_broadcast(&sc->sc_rmixer->outcv);
 
 	mutex_exit(sc->sc_lock);
@@ -6205,7 +6203,6 @@ audio_softintr_wr(void *cookie)
 	if (found) {
 		TRACE(4, "selnotify");
 		selnotify(&sc->sc_wsel, 0, NOTE_SUBMIT);
-		KNOTE(&sc->sc_wsel.sel_klist, 0);
 	}
 
 	/* Notify to audio_write() that outbuf available. */
