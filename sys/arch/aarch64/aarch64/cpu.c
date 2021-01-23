@@ -1,4 +1,4 @@
-/* $NetBSD: cpu.c,v 1.56 2020/10/10 08:22:57 jmcneill Exp $ */
+/* $NetBSD: cpu.c,v 1.58 2021/01/11 21:58:31 skrll Exp $ */
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(1, "$NetBSD: cpu.c,v 1.56 2020/10/10 08:22:57 jmcneill Exp $");
+__KERNEL_RCSID(1, "$NetBSD: cpu.c,v 1.58 2021/01/11 21:58:31 skrll Exp $");
 
 #include "locators.h"
 #include "opt_arm_debug.h"
@@ -52,10 +52,10 @@ __KERNEL_RCSID(1, "$NetBSD: cpu.c,v 1.56 2020/10/10 08:22:57 jmcneill Exp $");
 
 #include <aarch64/armreg.h>
 #include <aarch64/cpu.h>
-#include <aarch64/cpufunc.h>
 #include <aarch64/cpu_counter.h>
 #include <aarch64/machdep.h>
 
+#include <arm/cpufunc.h>
 #include <arm/cpu_topology.h>
 #ifdef FDT
 #include <arm/fdt/arm_fdtvar.h>
@@ -86,8 +86,8 @@ static void cpu_setup_chacha(device_t, struct cpu_info *);
 #endif /* MULTIPROCESSOR */
 
 /*
- * Our exported CPU info;
- * these will be refered from secondary cpus in the middle of hatching.
+ * Our exported cpu_info structs; these will be first used by the
+ * secondary cpus as part of cpu_mpstart and the hatching process.
  */
 struct cpu_info cpu_info_store[NCPUINFO] = {
 	[0] = {

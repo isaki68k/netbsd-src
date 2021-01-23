@@ -1,4 +1,4 @@
-/* $NetBSD: gicv3_its.c,v 1.28 2020/09/24 08:50:09 ryo Exp $ */
+/* $NetBSD: gicv3_its.c,v 1.32 2021/01/16 21:05:15 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -32,7 +32,7 @@
 #define _INTR_PRIVATE
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gicv3_its.c,v 1.28 2020/09/24 08:50:09 ryo Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gicv3_its.c,v 1.32 2021/01/16 21:05:15 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/kmem.h>
@@ -118,13 +118,9 @@ gits_command(struct gicv3_its *its, const struct gicv3_its_command *cmd)
 	cwriter = gits_read_8(its, GITS_CWRITER);
 	woff = cwriter & GITS_CWRITER_Offset;
 
-#if _BYTE_ORDER == _BIG_ENDIAN
 	uint64_t *dw = (uint64_t *)(its->its_cmd.base + woff);
 	for (int i = 0; i < __arraycount(cmd->dw); i++)
 		dw[i] = htole64(cmd->dw[i]);
-#else
-	memcpy(its->its_cmd.base + woff, cmd->dw, sizeof(cmd->dw));
-#endif
 	bus_dmamap_sync(its->its_dmat, its->its_cmd.map, woff, sizeof(cmd->dw), BUS_DMASYNC_PREWRITE);
 
 	woff += sizeof(cmd->dw);
@@ -296,7 +292,7 @@ gicv3_its_msi_alloc_lpi(struct gicv3_its *its,
 
 	if (vmem_alloc(its->its_gic->sc_lpi_pool, 1, VM_INSTANTFIT|VM_SLEEP, &n) != 0)
 		return -1;
-	
+
 	KASSERT(its->its_pa[n] == NULL);
 
 	new_pa = kmem_alloc(sizeof(*new_pa), KM_SLEEP);
@@ -429,6 +425,7 @@ gicv3_its_msix_enable(struct gicv3_its *its, int lpi, int msix_vec,
 	pci_chipset_tag_t pc = pa->pa_pc;
 	pcitag_t tag = pa->pa_tag;
 	pcireg_t ctl;
+	uint32_t val;
 	int off;
 
 	if (!pci_get_capability(pc, tag, PCI_CAP_MSIX, &off, NULL))
@@ -439,7 +436,9 @@ gicv3_its_msix_enable(struct gicv3_its *its, int lpi, int msix_vec,
 	bus_space_write_4(bst, bsh, entry_base + PCI_MSIX_TABLE_ENTRY_ADDR_LO, (uint32_t)addr);
 	bus_space_write_4(bst, bsh, entry_base + PCI_MSIX_TABLE_ENTRY_ADDR_HI, (uint32_t)(addr >> 32));
 	bus_space_write_4(bst, bsh, entry_base + PCI_MSIX_TABLE_ENTRY_DATA, lpi - its->its_pic->pic_irqbase);
-	bus_space_write_4(bst, bsh, entry_base + PCI_MSIX_TABLE_ENTRY_VECTCTL, 0);
+	val = bus_space_read_4(bst, bsh, entry_base + PCI_MSIX_TABLE_ENTRY_VECTCTL);
+	val &= ~PCI_MSIX_VECTCTL_MASK;
+	bus_space_write_4(bst, bsh, entry_base + PCI_MSIX_TABLE_ENTRY_VECTCTL, val);
 
 	ctl = pci_conf_read(pc, tag, off + PCI_MSIX_CTL);
 	ctl |= PCI_MSIX_CTL_ENABLE;
@@ -713,7 +712,7 @@ gicv3_its_table_init(struct gicv3_softc *sc, struct gicv3_its *its)
 			/*
 			 * Allocate space for one interrupt collection per CPU.
 			 */
-			table_size = roundup(entry_size * MAXCPUS, page_size);
+			table_size = roundup(entry_size * ncpu, page_size);
 			table_type = "Collections";
 			break;
 		default:
@@ -867,6 +866,8 @@ gicv3_its_init(struct gicv3_softc *sc, bus_space_handle_t bsh,
 	its->its_pa = kmem_zalloc(sizeof(struct pci_attach_args *) * its->its_pic->pic_maxsources, KM_SLEEP);
 	its->its_targets = kmem_zalloc(sizeof(struct cpu_info *) * its->its_pic->pic_maxsources, KM_SLEEP);
 	its->its_gic = sc;
+	its->its_rdbase = kmem_zalloc(sizeof(*its->its_rdbase) * ncpu, KM_SLEEP);
+	its->its_cpuonline = kmem_zalloc(sizeof(*its->its_cpuonline) * ncpu, KM_SLEEP);
 	its->its_cb.cpu_init = gicv3_its_cpu_init;
 	its->its_cb.get_affinity = gicv3_its_get_affinity;
 	its->its_cb.set_affinity = gicv3_its_set_affinity;

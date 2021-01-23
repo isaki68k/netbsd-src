@@ -1,4 +1,4 @@
-/*	$NetBSD: ofw_subr.c,v 1.40 2020/07/16 21:32:44 jmcneill Exp $	*/
+/*	$NetBSD: ofw_subr.c,v 1.43 2021/01/20 00:41:15 jmcneill Exp $	*/
 
 /*
  * Copyright 1998
@@ -34,9 +34,10 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ofw_subr.c,v 1.40 2020/07/16 21:32:44 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ofw_subr.c,v 1.43 2021/01/20 00:41:15 jmcneill Exp $");
 
 #include <sys/param.h>
+#include <sys/device.h>
 #include <sys/systm.h>
 #include <sys/malloc.h>
 #include <dev/ofw/openfirm.h>
@@ -211,7 +212,8 @@ of_match_compatible(int phandle, const char * const *strings)
  *	None.
  */
 int
-of_match_compat_data(int phandle, const struct of_compat_data *compat_data)
+of_match_compat_data(int phandle,
+    const struct device_compatible_entry *compat_data)
 {
 	for (; compat_data->compat != NULL; compat_data++) {
 		const char *compat[] = { compat_data->compat, NULL };
@@ -223,7 +225,8 @@ of_match_compat_data(int phandle, const struct of_compat_data *compat_data)
 }
 
 /*
- * const struct of_compat_data *of_search_compatible(phandle, compat_data)
+ * const struct device_compatible_entry *of_search_compatible(phandle,
+ *							      compat_data)
  *
  * This routine searches an array of compat_data structures for a
  * matching "compatible" entry matching the supplied OFW node.
@@ -243,8 +246,9 @@ of_match_compat_data(int phandle, const struct of_compat_data *compat_data)
  * Side Effects:
  *	None.
  */
-const struct of_compat_data *
-of_search_compatible(int phandle, const struct of_compat_data *compat_data)
+const struct device_compatible_entry *
+of_search_compatible(int phandle,
+    const struct device_compatible_entry *compat_data)
 {
 	for (; compat_data->compat != NULL; compat_data++) {
 		const char *compat[] = { compat_data->compat, NULL };
@@ -603,6 +607,23 @@ of_getprop_uint32(int node, const char *prop, uint32_t *val)
 	return 0;
 }
 
+int
+of_getprop_uint32_array(int node, const char *prop, uint32_t *array, int n)
+{
+	uint32_t *v = array;
+	int len;
+
+	len = OF_getprop(node, prop, array, n * sizeof(*v));
+	if (len < (int)(n * sizeof(*v)))
+		return -1;
+
+	for (; n > 0; n--) {
+		BE32TOH(*v);
+		v++;
+	}
+
+	return 0;
+}
 /*
  * Get the value of a uint64 property, compensating for host byte order.
  * Returns 0 on success, non-zero on failure.
