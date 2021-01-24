@@ -333,22 +333,6 @@ void xp_sys_ng(int line, int experrno, void *act, const char *varname)
 	}
 }
 
-// ai.*.buffer_size が期待通りか調べる
-// bool exp が true なら buffer_size の期待値は非ゼロ、
-// exp が false なら buffer_size の期待値はゼロ。
-#define XP_BUFFSIZE(exp, act)	xp_buffsize(__LINE__, exp, act, #act)
-void xp_buffsize(int line, bool exp, int act, const char *varname)
-{
-	testcount++;
-	if (exp) {
-		if (act == 0)
-			xp_fail(line, "%s expects non-zero but %d", varname, act);
-	} else {
-		if (act != 0)
-			xp_fail(line, "%s expects zero but %d", varname, act);
-	}
-}
-
 #define DPRINTF(fmt...)	do {	\
 	if (debug)	\
 		printf(fmt);	\

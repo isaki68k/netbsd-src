@@ -42,6 +42,12 @@
 #endif
 #endif
 
+// NetBSD7 バイナリを作るので AUDIO_{GET,SET}FORMAT は見付からない
+#if !defined(AUDIO_GETFORMAT)
+#define AUDIO_GETFORMAT _IOR('A', 39, struct audio_info)
+#define AUDIO_SETFORMAT _IOW('A', 40, struct audio_info)
+#endif
+
 struct testtable {
 	const char *name;
 	void (*func)(void);
@@ -296,15 +302,11 @@ test_open_mode(void)
 			XP_EQ(mode2ropen(mode), ai.record.open);
 			// ai.mode は open_simul で調べている
 
-			if (netbsd <= 8) {
-				// N7、N8 では使わないほうのトラックのバッファも常にある
-				XP_NE(0, ai.play.buffer_size);
-				XP_NE(0, ai.record.buffer_size);
-			} else {
-				// AUDIO2 では使わないほうのバッファは確保してない
-				XP_BUFFSIZE(mode2popen(mode), ai.play.buffer_size);
-				XP_BUFFSIZE(mode2ropen(mode), ai.record.buffer_size);
-			}
+			// N7、N8 では使わないほうのトラックのバッファも常にある
+			// AUDIO2 では使わないほうは確保しないが互換性のため 0 でない
+			// ダミー値を返す
+			XP_NE(0, ai.play.buffer_size);
+			XP_NE(0, ai.record.buffer_size);
 		} else {
 			// オープンできないケース (再生専用デバイスに O_RDONLY など)
 			XP_SYS_NG(ENXIO, fd);
@@ -326,22 +328,11 @@ test_open_audio(void)
 	int channels;
 	int fd;
 	int r;
-	bool pbuff, rbuff;
 	int buff_size;
 
 	TEST("open_audio");
 	for (int mode = 0; mode <= 2; mode++) {
 		DESC("%s", openmodetable[mode]);
-
-		// N7、N8 では常に両方のバッファが存在する
-		// AUDIO2 では mode による
-		if (netbsd <= 8) {
-			pbuff = true;
-			rbuff = true;
-		} else {
-			pbuff = mode2popen(mode);
-			rbuff = mode2ropen(mode);
-		}
 
 		// オープンして初期値をチェック
 		fd = OPEN(devaudio, mode);
@@ -376,7 +367,7 @@ test_open_audio(void)
 		// port
 		XP_EQ(0, ai.play.seek);
 		// avail_ports
-		XP_BUFFSIZE(pbuff, ai.play.buffer_size);
+		XP_NE(0, ai.play.buffer_size);
 		XP_EQ(0, ai.play.samples);
 		XP_EQ(0, ai.play.eof);
 		XP_EQ(0, ai.play.pause);
@@ -392,17 +383,20 @@ test_open_audio(void)
 		XP_EQ(AUDIO_ENCODING_ULAW, ai.record.encoding);
 		// gain
 		// port
+
+		// 録音は即始まるが、一瞬で seek に値が乗るかはまた別??
 		if (netbsd == 8 && ai.record.seek != 0) {
 			// N8 では録音オープンしただけで録音が始まる(場合がある?)
-			XP_EXPFAIL("recording was started on open");
+			XP_EXPFAIL("record.seek advanced just after open");
 		} else {
 			XP_EQ(0, ai.record.seek);
 		}
 		// avail_ports
-		XP_BUFFSIZE(rbuff, ai.record.buffer_size);
+		XP_NE(0, ai.record.buffer_size);
+		// 録音は即始まるが、一瞬で samples に値が乗るかはまた別?
 		if (netbsd == 8 && ai.record.samples != 0) {
 			// N8 では録音オープンしただけで録音が始まる(場合がある?)
-			XP_EXPFAIL("recording was started on open");
+			XP_EXPFAIL("record.samples advanced just after open");
 		} else {
 			XP_EQ(0, ai.record.samples);
 		}
@@ -412,15 +406,13 @@ test_open_audio(void)
 		XP_EQ(0, ai.record.waiting);
 		// balance
 		XP_EQ(mode2ropen(mode), ai.record.open);
-		if (netbsd <= 7) {
-			// N7 は録音が有効ならオープン直後から active になるらしい。
-			XP_EQ(mode2ropen(mode), ai.record.active);
-		} else if (netbsd == 8 && ai.record.active) {
-			// N8 は録音オープンしただけで録音が始まる(場合がある?)
-			XP_EXPFAIL("recording was started on open");
+
+		// 録音が有効なら、録音はオープンで即開始される。
+		if (netbsd == 8 && ai.record.active == 0) {
+			// N8 では始まらない場合がある?
+			XP_EXPFAIL("recording was not started on open");
 		} else {
-			// AUDIO2 はオープンしただけではまだアクティブにならない。
-			XP_EQ(0, ai.record.active);
+			XP_EQ(mode2ropen(mode), ai.record.active);
 		}
 		// これを保存しておく
 		ai0 = ai;
@@ -487,17 +479,20 @@ test_open_audio(void)
 		XP_EQ(AUDIO_ENCODING_ULAW, ai.record.encoding);
 		// gain
 		// port
+
+		// 録音は即始まるが、一瞬で seek に値が乗るかはまた別??
 		if (netbsd == 8 && ai.record.seek != 0) {
 			// N8 では録音オープンしただけで録音が始まる(場合がある?)
-			XP_EXPFAIL("recording was started on open");
+			XP_EXPFAIL("record.seek advanced just after open");
 		} else {
 			XP_EQ(0, ai.record.seek);
 		}
 		// avail_ports
 		XP_EQ(ai0.record.buffer_size, ai.record.buffer_size);
+		// 録音は即始まるが、一瞬で samples に値が乗るかはまた別?
 		if (netbsd == 8 && ai.record.samples != 0) {
 			// N8 では録音オープンしただけで録音が始まる(場合がある?)
-			XP_EXPFAIL("recording was started on open");
+			XP_EXPFAIL("record.samples advanced just after open");
 		} else {
 			XP_EQ(0, ai.record.samples);
 		}
@@ -507,15 +502,13 @@ test_open_audio(void)
 		XP_EQ(0, ai.record.waiting);
 		// balance
 		XP_EQ(mode2ropen(mode), ai.record.open);
-		if (netbsd <= 7) {
-			// N7 は録音が有効ならオープン直後から active になるらしい。
-			XP_EQ(mode2ropen(mode), ai.record.active);
-		} else if (netbsd == 8 && ai.record.active) {
-			// N8 は録音オープンしただけで録音が始まる(場合がある?)
-			XP_EXPFAIL("recording was started on open");
+
+		// 録音が有効なら、録音はオープンで即開始される。
+		if (netbsd == 8 && ai.record.active == 0) {
+			// N8 では始まらない場合がある?
+			XP_EXPFAIL("recording was not started on open");
 		} else {
-			// オープンしただけではまだアクティブにならない。
-			XP_EQ(0, ai.record.active);
+			XP_EQ(mode2ropen(mode), ai.record.active);
 		}
 
 		r = CLOSE(fd);
@@ -535,7 +528,6 @@ test_open_sound(void)
 	int fd;
 	int r;
 	int aimode;
-	bool pbuff, rbuff;
 	int buff_size;
 
 	TEST("open_sound");
@@ -549,16 +541,6 @@ test_open_sound(void)
 
 	for (int mode = 0; mode <= 2; mode++) {
 		DESC("%s", openmodetable[mode]);
-
-		// N7、N8 では常に両方のバッファが存在する
-		// AUDIO2 では mode による
-		if (netbsd <= 8) {
-			pbuff = true;
-			rbuff = true;
-		} else {
-			pbuff = mode2popen(mode);
-			rbuff = mode2ropen(mode);
-		}
 
 		// まず /dev/audio を RDWR で開いて両方初期化させておく。
 		// ただし NetBSD8 は audio と sound が分離されてるので別コード。
@@ -626,7 +608,7 @@ test_open_sound(void)
 		// port
 		XP_EQ(0, ai.play.seek);
 		// avail_ports
-		XP_BUFFSIZE(pbuff, ai.play.buffer_size);
+		XP_NE(0, ai.play.buffer_size);
 		XP_EQ(0, ai.play.samples);
 		XP_EQ(0, ai.play.eof);
 		XP_EQ(0, ai.play.pause);
@@ -642,17 +624,20 @@ test_open_sound(void)
 		XP_EQ(AUDIO_ENCODING_ULAW, ai.record.encoding);
 		// gain
 		// port
+
+		// 録音は即始まるが、一瞬で seek に値が乗るかはまた別??
 		if (netbsd == 8 && ai.record.seek != 0) {
 			// N8 では録音オープンしただけで録音が始まる(場合がある?)
-			XP_EXPFAIL("recording was started on open");
+			XP_EXPFAIL("record.seek advanced just after open");
 		} else {
 			XP_EQ(0, ai.record.seek);
 		}
 		// avail_ports
-		XP_BUFFSIZE(rbuff, ai.record.buffer_size);
+		XP_NE(0, ai.record.buffer_size);
+		// 録音は即始まるが、一瞬で samples に値が乗るかはまた別?
 		if (netbsd == 8 && ai.record.samples != 0) {
 			// N8 では録音オープンしただけで録音が始まる(場合がある?)
-			XP_EXPFAIL("recording was started on open");
+			XP_EXPFAIL("record.samples advanced just after open");
 		} else {
 			XP_EQ(0, ai.record.samples);
 		}
@@ -662,12 +647,16 @@ test_open_sound(void)
 		XP_EQ(0, ai.record.waiting);
 		// balance
 		XP_EQ(mode2ropen(mode), ai.record.open);
-		if (netbsd == 8 && ai.record.active) {
-			// N8 では再生モードによらずオープンしただけで録音アクティブが
-			// 立つ(場合がある?)
-			XP_EXPFAIL("recording was started on open");
-		} else {
+
+		// 録音が有効なら、録音はオープンで即開始される。
+		if (netbsd == 7) {
+			// N7 は /dev/sound だと録音開始しないバグがある
 			XP_EQ(0, ai.record.active);
+		} else if (netbsd == 8 && ai.record.active == 0) {
+			// N8 では始まらない場合がある?
+			XP_EXPFAIL("recording was not started on open");
+		} else {
+			XP_EQ(mode2ropen(mode), ai.record.active);
 		}
 
 		// できるだけ変更
@@ -732,7 +721,7 @@ test_open_sound(void)
 		// port
 		XP_EQ(0, ai.play.seek);
 		// avail_ports
-		XP_BUFFSIZE(pbuff, ai.play.buffer_size);
+		XP_NE(0, ai.play.buffer_size);
 		XP_EQ(0, ai.play.samples);
 		XP_EQ(0, ai.play.eof);
 		XP_EQ(ai0.play.pause, ai.play.pause);
@@ -750,7 +739,7 @@ test_open_sound(void)
 		// port
 		XP_EQ(0, ai.record.seek);
 		// avail_ports
-		XP_BUFFSIZE(rbuff, ai.record.buffer_size);
+		XP_NE(0, ai.record.buffer_size);
 		XP_EQ(0, ai.record.samples);
 		XP_EQ(0, ai.record.eof);
 		XP_EQ(ai0.record.pause, ai.record.pause);
@@ -758,7 +747,7 @@ test_open_sound(void)
 		XP_EQ(0, ai.record.waiting);
 		// balance
 		XP_EQ(mode2ropen(mode), ai.record.open);
-		XP_EQ(0, ai.record.active);
+		XP_EQ(ai0.record.active, ai.record.active);
 
 		r = CLOSE(fd);
 		XP_SYS_EQ(0, r);
@@ -935,15 +924,13 @@ test_open_multiuser()
 	}
 
 	for (int i = 0; i <= 1; i++) {
+		multiuser = (i == 0);
+		DESC("multiuser%d", (int)multiuser);
 		// N7 には multiuser の概念がない
 		if (netbsd == 7) {
-			if (i == 1)
-				break;
-			multiuser = false;
+			if (multiuser == true)
+				continue;
 		} else {
-			multiuser = (i == 0);
-			DESC("multiuser%d", (int)multiuser);
-
 			snprintf(name, sizeof(name), "hw.%s.multiuser", hwconfigname());
 			snprintf(cmd, sizeof(cmd),
 				"sysctl -w %s=%d > /dev/null", name, (int)multiuser);
@@ -1000,7 +987,9 @@ test_open_multiuser()
 		r = CLOSE(fd0);
 		XP_SYS_EQ(0, r);
 
+		//
 		// テスト2
+		//
 		// 先に一般ユーザでオープン
 		ouid = GETUID();
 		r = SETEUID(1);
@@ -1011,14 +1000,19 @@ test_open_multiuser()
 		if (fd0 == -1)
 			err(1, "open");
 
-		// 特権ユーザでオープン
 		r = SETEUID(ouid);
 		if (r == -1)
 			err(1, "setuid");
 
-		// このケースは常にオープン可
+		// 特権ユーザでオープン
 		fd1 = OPEN(devaudio, O_WRONLY);
-		XP_SYS_OK(fd1);
+		if (netbsd == 7) {
+			// N7 はどちらにしても同時オープンはサポートしていない。
+			XP_SYS_NG(EBUSY, fd1);
+		} else {
+			// このケースは常にオープン可
+			XP_SYS_OK(fd1);
+		}
 		if (fd1 != -1) {
 			r = CLOSE(fd1);
 			XP_SYS_EQ(0, r);
@@ -1043,6 +1037,7 @@ test_encoding_1(void)
 {
 	int fd;
 	int r;
+	int maxch;
 
 	// リニア、正常系
 	int enctable[] = {
@@ -1062,6 +1057,32 @@ test_encoding_1(void)
 	};
 
 	TEST("encoding_1");
+
+	// HW のチャンネル数
+	// N7 は取得方法はない
+	// N8 は常に 12 チャンネルサポートしているように見える
+	// N9 は 2チャンネルまではサポート、それ以上は HW 依存
+	if (netbsd == 7) {
+		// 実際には HW 依存だが確認方法がない
+		maxch = 1;
+	} else if (netbsd == 8) {
+		maxch = 12;
+	} else {
+		struct audio_info ai;
+
+		fd = OPEN(devaudio, O_WRONLY);
+		if (fd == -1)
+			err(1, "open");
+		r = IOCTL(fd, AUDIO_GETFORMAT, &ai, "");
+		XP_SYS_EQ(0, r);
+		r = CLOSE(fd);
+		XP_SYS_EQ(0, r);
+
+		maxch = ai.play.channels;
+		if (maxch < 2)
+			maxch = 2;
+	}
+
 	for (int i = 0; i < __arraycount(enctable); i++) {
 		int enc = enctable[i];
 		for (int j = 0; j < __arraycount(prectable); j++) {
@@ -1075,17 +1096,11 @@ test_encoding_1(void)
 			for (int k = 0; k < __arraycount(chtable); k++) {
 				int ch = chtable[k];
 
-				// 実際には HW 依存だが確認方法がないので
-				if (ch > 1 && netbsd <= 7)
-					continue;
-
 				for (int m = 0; m < __arraycount(freqtable); m++) {
 					int freq = freqtable[m];
 
 					// AUDIO2/x68k ではメモリ足りなくてこける可能性
 					if (netbsd >= 9 && x68k) {
-						if (ch == 12)
-							continue;
 						if (freq == 192000)
 							continue;
 					}
@@ -1120,8 +1135,13 @@ test_encoding_1(void)
 							XP_EXPFAIL("ch > 2 not supported?");
 						}
 					} else {
-						// AUDIO2 は全部パスする
-						XP_SYS_EQ(0, r);
+						// AUDIO2 は ch 1,2 はすべてパス。
+						// ch3 以上はデバイス依存。
+						if (ch <= maxch) {
+							XP_SYS_EQ(0, r);
+						} else {
+							XP_SYS_NG(EINVAL, r);
+						}
 					}
 
 					CLOSE(fd);
@@ -1239,10 +1259,9 @@ test_encoding_3()
 		/* PCM16:prec16 -> SLINEAR_NE:16 */
 		{ AUDIO_ENCODING_PCM8,	8,		AUDIO_ENCODING_ULINEAR_NE,	8 },
 		{ AUDIO_ENCODING_PCM16,	16,		AUDIO_ENCODING_SLINEAR_NE,	16 },
-		/*
-		 * なぜか分からんけど今の NetBSD7 はこうなっている。
-		 */
+		/* なぜか分からんけど NetBSD7 はこうなっている */
 		{ AUDIO_ENCODING_PCM8,	16,		-1 },
+		/* NetBSD9 以降 nia@ が変更した。コード内で対応 */
 		{ AUDIO_ENCODING_PCM16,	 8,		AUDIO_ENCODING_ULINEAR_NE,  8 },
 
 		/* [US]LINEAR without endianness suffix -> [US]LINEAR_NE */
@@ -1259,6 +1278,15 @@ test_encoding_3()
 		int exp_enc = table[i].exp_enc;
 		int exp_prec = table[i].exp_prec;
 		DESC("%s:%d", encoding_names[encoding], precision);
+
+		/*
+		 * pcm16:8 は N7, N8 では ulinear_ne:8 にエイリアスされていたが
+		 * nia@ が勝手に slinear_ne:8 に変更したので、互換性がない。
+		 */
+		if (netbsd == 9) {
+			if (encoding == AUDIO_ENCODING_PCM16 && precision == 8) 
+				exp_enc = AUDIO_ENCODING_SLINEAR_NE;
+		}
 
 		fd = OPEN(devaudio, O_RDWR);
 		XP_SYS_OK(fd);
@@ -4636,14 +4664,10 @@ test_AUDIO_SETINFO_mode()
 		XP_EQ(inimode, ai.mode);
 		XP_EQ(mode2popen(openmode), ai.play.open);
 		XP_EQ(mode2ropen(openmode), ai.record.open);
-		// N7、N8 では buffer_size は常に非ゼロなので調べない
-		// A2: バッファは O_RDWR なら HWHalf でも両方確保される。
-		// Half なのを判定するほうが後なのでやむをえないか。
-		// 確保されてたらいけないわけでもないだろうし(無駄ではあるけど)。
-		if (netbsd >= 9) {
-			XP_BUFFSIZE(mode2popen(openmode), ai.play.buffer_size);
-			XP_BUFFSIZE(mode2ropen(openmode), ai.record.buffer_size);
-		}
+		// N7、N8 では buffer_size は play, rec とも常に非ゼロ。
+		// AUDIO2 でも互換性のため常に非ゼロを返す。
+		XP_NE(0, ai.play.buffer_size);
+		XP_NE(0, ai.record.buffer_size);
 
 		// mode を変える
 		// ついでに pause にしとく
@@ -4659,11 +4683,10 @@ test_AUDIO_SETINFO_mode()
 			// mode に関係なく当初のオープンモードを維持するようだ
 			XP_EQ(mode2popen(openmode), ai.play.open);
 			XP_EQ(mode2ropen(openmode), ai.record.open);
-			// N7、N8 では buffer_size は常に非ゼロなので調べない
-			if (netbsd >= 9) {
-				XP_BUFFSIZE(mode2popen(openmode), ai.play.buffer_size);
-				XP_BUFFSIZE(mode2ropen(openmode), ai.record.buffer_size);
-			}
+			// N7、N8 では buffer_size は play, rec とも常に非ゼロ。
+			// AUDIO2 でも互換性のため常に非ゼロを返す。
+			XP_NE(0, ai.play.buffer_size);
+			XP_NE(0, ai.record.buffer_size);
 		}
 
 		// 書き込みが出来るかどうかは
@@ -4749,28 +4772,10 @@ test_AUDIO_SETINFO_params()
 					? mode2aumode_full[openmode] & ~AUMODE_PLAY_ALL
 					: mode2aumode_full[openmode];
 				XP_EQ(expmode, ai.mode);
-				if (openmode == O_RDONLY) {
-					// play なし
-					if (netbsd <= 8)
-						XP_EQ(pause, ai.play.pause);
-					else
-						XP_EQ(0, ai.play.pause);
-				} else {
-					// play あり
-					XP_EQ(11025, ai.play.sample_rate);
-					XP_EQ(pause, ai.play.pause);
-				}
-				if (openmode == O_WRONLY) {
-					// rec なし
-					if (netbsd <= 8)
-						XP_EQ(pause, ai.record.pause);
-					else
-						XP_EQ(0, ai.record.pause);
-				} else {
-					// rec あり
-					XP_EQ(11025, ai.record.sample_rate);
-					XP_EQ(pause, ai.record.pause);
-				}
+				XP_EQ(11025, ai.play.sample_rate);
+				XP_EQ(pause, ai.play.pause);
+				XP_EQ(11025, ai.record.sample_rate);
+				XP_EQ(pause, ai.record.pause);
 
 				r = CLOSE(fd);
 				XP_SYS_EQ(0, r);
@@ -4860,12 +4865,18 @@ test_AUDIO_SETINFO_params3()
 	r = IOCTL(fd1, AUDIO_SETINFO, &ai, "");
 	XP_SYS_EQ(0, r);
 
-	// 1本目で GETINFO しても両トラックとも影響を受けていないこと
+	// 1本目で GETINFO
 	memset(&ai, 0, sizeof(ai));
 	r = IOCTL(fd0, AUDIO_GETINFO, &ai, "");
 	XP_SYS_EQ(0, r);
 	XP_EQ(8000, ai.play.sample_rate);
-	XP_EQ(8000, ai.record.sample_rate);
+	if (netbsd <= 8) {
+		// N8 では両トラックとも影響を受けない
+		XP_EQ(8000, ai.record.sample_rate);
+	} else {
+		// AUDIO2 では存在しないトラックの情報は sticky を参照することになった
+		XP_EQ(11025, ai.record.sample_rate);
+	}
 
 	r = CLOSE(fd0);
 	XP_SYS_EQ(0, r);
