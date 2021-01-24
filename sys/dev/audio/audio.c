@@ -1351,6 +1351,7 @@ audiodetach(device_t self, int flags)
 
 	mutex_enter(sc->sc_lock);
 	sc->sc_dying = true;
+printf("%d.%d broadcast exlockcv\n", (int)curproc->p_pid, (int)curlwp->l_lid);
 	cv_broadcast(&sc->sc_exlockcv);
 	if (sc->sc_pmixer)
 		cv_broadcast(&sc->sc_pmixer->outcv);
@@ -1378,6 +1379,7 @@ audiodetach(device_t self, int flags)
 	 * that hold sc, and any new calls with files that were for sc will
 	 * fail.  Thus, we now have exclusive access to the softc.
 	 */
+	sc->sc_exlock = 1;
 
 	/*
 	 * Nuke all open instances.
@@ -1403,7 +1405,6 @@ audiodetach(device_t self, int flags)
 	pmf_device_deregister(self);
 
 	/* Free resources */
-	sc->sc_exlock = 1;
 	if (sc->sc_pmixer) {
 		audio_mixer_destroy(sc, sc->sc_pmixer);
 		kmem_free(sc->sc_pmixer, sizeof(*sc->sc_pmixer));
@@ -1639,6 +1640,7 @@ audio_track_waitio(struct audio_softc *sc, audio_track_t *track)
 		}
 	}
 	if (sc->sc_dying) {
+printf("%s error=%d\n", __func__, error);
 		error = EIO;
 	}
 	if (error) {
@@ -2440,6 +2442,7 @@ bad:
 int
 audio_close(struct audio_softc *sc, audio_file_t *file)
 {
+	int error;
 
 	/* Protect entering new fileops to this file */
 	atomic_store_relaxed(&file->dying, true);
@@ -2454,12 +2457,18 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
 		mutex_exit(sc->sc_lock);
 	}
 
-	return audio_unlink(sc, file);
+	error = audio_exlock_enter(sc);
+	if (error)
+		return error;
+	error = audio_unlink(sc, file);
+	audio_exlock_exit(sc);
+
+	return error;
 }
 
 /*
  * Unlink this file, but not freeing memory here.
- * Must be called without sc_lock nor sc_exlock held.
+ * Must be called with sc_exlock held and without sc_lock held.
  */
 int
 audio_unlink(struct audio_softc *sc, audio_file_t *file)
@@ -2475,25 +2484,6 @@ audio_unlink(struct audio_softc *sc, audio_file_t *file)
 	KASSERTMSG(sc->sc_popens + sc->sc_ropens > 0,
 	    "sc->sc_popens=%d, sc->sc_ropens=%d",
 	    sc->sc_popens, sc->sc_ropens);
-
-	/*
-	 * Acquire exlock to protect counters.
-	 * audio_exlock_enter() cannot be used here because we have to go
-	 * forward even if sc_dying is set.
-	 */
-	while (__predict_false(sc->sc_exlock != 0)) {
-		error = cv_timedwait_sig(&sc->sc_exlockcv, sc->sc_lock,
-		    mstohz(AUDIO_TIMEOUT));
-		/* XXX what should I do on error? */
-		if (error == EWOULDBLOCK) {
-			mutex_exit(sc->sc_lock);
-			audio_printf(sc,
-			    "%s: cv_timedwait_sig failed: errno=%d\n",
-			    __func__, error);
-			return error;
-		}
-	}
-	sc->sc_exlock = 1;
 
 	device_active(sc->sc_dev, DVA_SYSTEM);
 
@@ -2561,7 +2551,6 @@ audio_unlink(struct audio_softc *sc, audio_file_t *file)
 		kauth_cred_free(sc->sc_cred);
 
 	TRACE(3, "done");
-	audio_exlock_exit(sc);
 
 	return 0;
 }
