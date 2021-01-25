@@ -196,6 +196,9 @@ void xp_fail(int line, const char *fmt, ...)
 	failcount++;
 }
 
+// XP_SUCCESS は XP_FAIL の else 側で呼ぶ。通常は不要。
+#define XP_SUCCESS() do { testcount++; } while (0)
+
 #define XP_EXPFAIL(fmt...)	do { \
 	testcount++;	\
 	xp_expfail(__LINE__, fmt);	\

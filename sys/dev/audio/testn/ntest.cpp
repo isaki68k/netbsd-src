@@ -714,6 +714,8 @@ test_open_sound(void)
 				// 些細なことなので通しておくか。
 				if (ai.lowat < explo - 1 || ai.lowat > explo + 1) {
 					XP_FAIL("ai.lowat expects %d but %d", explo, ai.lowat);
+				} else {
+					XP_SUCCESS();
 				}
 			} else {
 				XP_EQ(buff_size / ai.blocksize * 3 / 4, ai.lowat);
@@ -903,6 +905,8 @@ test_open_simul()
 						if (r == 0) {
 							actmode = ai.mode & (AUMODE_PLAY | AUMODE_RECORD);
 							XP_FAIL("expects error but %d", actmode);
+						} else {
+							XP_SUCCESS();
 						}
 					}
 				}
@@ -1368,10 +1372,16 @@ test_close_1(void)
 		msec / 1000, msec % 1000);
 	// VirtualBox だと 0.8秒台、VMware だと 1.2 秒台が出たりするので
 	// 厳密な検査は無理げだけど。
-	if (msec < 800)
+	if (msec < 800) {
 		XP_FAIL("%d.%03d: too early?", msec / 1000, msec % 1000);
-	if (msec > 1500)
+	} else {
+		XP_SUCCESS();
+	}
+	if (msec > 1500) {
 		XP_FAIL("%d.%03d: too late?", msec / 1000, msec % 1000);
+	} else {
+		XP_SUCCESS();
+	}
 }
 
 // 通常再生 (PLAY_ALL)
@@ -1502,6 +1512,8 @@ test_rept_write(void)
 	// 適当な閾値
 	if (res >= n * 1.25) {
 		XP_FAIL("expects %d sec but %4.1f sec\n", n, res);
+	} else {
+		XP_SUCCESS();
 	}
 }
 
@@ -3623,6 +3635,8 @@ test_kqueue_unpause()
 				if (ai.play.seek > ai.blocksize * ai.lowat) {
 					XP_FAIL("seek=%d blksize=%d lowat=%d",
 						ai.play.seek, ai.blocksize, ai.lowat);
+				} else {
+					XP_SUCCESS();
 				}
 
 				// イベントが起きるまでの時間がだいたい正しそうか
@@ -3639,6 +3653,8 @@ test_kqueue_unpause()
 				double margin = 0.2;
 				if (res < sec * (1.0 - margin) || res > sec * (1.0 + margin)) {
 					XP_FAIL("result time expects %f sec but %f sec", sec, res);
+				} else {
+					XP_SUCCESS();
 				}
 			}
 		}
@@ -3728,6 +3744,8 @@ test_kqueue_simul()
 			CLOSE(fd[0]);
 			CLOSE(fd[1]);
 			continue;
+		} else {
+			XP_SUCCESS();
 		}
 
 		// lowat に到達するまでの見込み時間
@@ -5613,9 +5631,12 @@ test_AUDIO_SETINFO_rollback()
 		XP_EQ(ai0.play.port, ai.play.port);
 		XP_EQ(ai0.play.gain, ai.play.gain);
 		if (ai.play.balance < ai0.play.balance - 1 ||
-		    ai.play.balance > ai0.play.balance + 1)
+		    ai.play.balance > ai0.play.balance + 1) {
 			XP_FAIL("ai.play.balance expects (%d..%d) but %d",
 				ai0.play.balance - 1, ai0.play.balance + 1, ai.play.balance);
+		} else {
+			XP_SUCCESS();
+		}
 		XP_EQ(ai0.record.encoding, ai.record.encoding);
 		XP_EQ(ai0.record.precision, ai.record.precision);
 		XP_EQ(ai0.record.sample_rate, ai.record.sample_rate);
@@ -5624,9 +5645,12 @@ test_AUDIO_SETINFO_rollback()
 		XP_EQ(ai0.record.port, ai.record.port);
 		XP_EQ(ai0.record.gain, ai.record.gain);
 		if (ai.record.balance < ai0.record.balance - 1 ||
-		    ai.record.balance > ai0.record.balance + 1)
+		    ai.record.balance > ai0.record.balance + 1) {
 			XP_FAIL("ai.record.balance expects (%d..%d) but %d",
 				ai0.record.balance-1, ai0.record.balance+1, ai.record.balance);
+		} else {
+			XP_SUCCESS();
+		}
 		XP_EQ(ai0.hiwat, ai.hiwat);
 		XP_EQ(ai0.lowat, ai.lowat);
 		// このテストでは params, port も必ず変更しようとするため、常に
@@ -6570,6 +6594,8 @@ test_oper(int op1, int op2)
 	int t2usec = data.t2.tv_sec * 1000000 + data.t2.tv_usec;
 	if (t2usec > thres) {
 		XP_FAIL("2nd op expected non-block but blocked");
+	} else {
+		XP_SUCCESS();
 	}
 }
 
@@ -6669,8 +6695,11 @@ test_pad_ioctl(const char *pad1filename, const char *pad2filename)
 	unit1 = -1;
 	r = IOCTL(fdpad1, PAD_GET_AUDIOUNIT, &unit1, "");
 	XP_SYS_EQ(0, r);
-	if (unit1 < 0)
+	if (unit1 < 0) {
 		XP_FAIL("unit1 expects >=0 but %d", unit1);
+	} else {
+		XP_SUCCESS();
+	}
 
 	snprintf(devname, sizeof(devname), "/dev/audio%d", unit1);
 	fdaudio1 = OPEN(devname, O_WRONLY);
@@ -6683,8 +6712,11 @@ test_pad_ioctl(const char *pad1filename, const char *pad2filename)
 	unit2 = -1;
 	r = IOCTL(fdpad2, PAD_GET_AUDIOUNIT, &unit2, "");
 	XP_SYS_EQ(0, r);
-	if (unit2 < 0)
+	if (unit2 < 0) {
 		XP_FAIL("unit2 expects >=0 but %d", unit2);
+	} else {
+		XP_SUCCESS();
+	}
 	// たぶん1つ上のはず?
 	XP_EQ(unit1 + 1, unit2);
 
