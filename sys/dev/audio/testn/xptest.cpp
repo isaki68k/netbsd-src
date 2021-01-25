@@ -463,7 +463,7 @@ int debug_close(int line, int fd)
 	int r = close(fd);
 
 	// ちょっと待つ必要がある
-	if (strcmp(hwconfig, "hdafg0") == 0) {
+	if (strcmp(hwconfig, "pad0") != 0) {
 		usleep(100);
 	}
 

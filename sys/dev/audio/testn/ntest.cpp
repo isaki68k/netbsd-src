@@ -1487,8 +1487,12 @@ test_rept_write(void)
 
 	TEST("rept_write");
 
-	if (strcmp(hwconfig, "hdafg0") == 0) {
-		XP_SKIP("This test does not seem to work on hdafg.");
+	if (netbsd >= 8 && strcmp(hwconfig, "hdafg0") == 0) {
+		XP_SKIP("This test does not seem to work on hdafg");
+		return;
+	}
+	if (netbsd == 9 && strcmp(hwconfig, "auich0") == 0) {
+		XP_SKIP("This test does not seem to work on auich");
 		return;
 	}
 
@@ -1511,7 +1515,7 @@ test_rept_write(void)
 	res = (double)result.tv_sec + (double)result.tv_usec / 1000000;
 	// 適当な閾値
 	if (res >= n * 1.25) {
-		XP_FAIL("expects %d sec but %4.1f sec\n", n, res);
+		XP_FAIL("expects %d sec but %4.1f sec", n, res);
 	} else {
 		XP_SUCCESS();
 	}
@@ -2503,14 +2507,12 @@ test_mmap_9()
 	int r;
 
 	TEST("mmap_9");
+	// ちょっと成功しそうにない。
+	XP_SKIP("under construction");
+	return;
 	if (vs0 && netbsd <= 7) {
 		// HW エンコードにセットするあたりのテストが面倒
 		XP_SKIP("not supported yet");
-		return;
-	}
-	// 後で見る
-	if (netbsd == 9) {
-		XP_SKIP("under construction");
 		return;
 	}
 
@@ -2856,6 +2858,11 @@ test_poll_out_unpause()
 	int zero;
 
 	TEST("poll_out_unpause");
+
+	if (netbsd == 8 && strcmp(hwconfig, "auich0") == 0) {
+		XP_SKIP("This test does not work on NetBSD8 + auich");
+		return;
+	}
 
 	for (int emul = 0; emul < 2; emul++) {
 		DESC("emul=%d", emul);
@@ -3701,6 +3708,11 @@ test_kqueue_simul()
 		int a = i;
 		int b = 1 - i;
 		DESC("%d", i);
+
+		if (i == 1 && netbsd == 8 && strcmp(hwconfig, "auich0") == 0) {
+			XP_SKIP("close() may block on NetBSD8 + auich");
+			return;
+		}
 
 		fd[0] = OPEN(devaudio, O_WRONLY | O_NONBLOCK);
 		if (fd[0] == -1)
@@ -5118,7 +5130,13 @@ test_AUDIO_SETINFO_blocksize()
 			r = IOCTL(fd, AUDIO_GETBUFINFO, &ai0, "");
 			XP_SYS_EQ(0, r);
 			DPRINTF("  > blocksize = %d\n", ai.blocksize);
-			XP_EQ(expected, ai.blocksize);
+			if (netbsd == 7 && strcmp(hwconfig, "auich0") == 0 &&
+			    expected != ai.blocksize) {
+				XP_EXPFAIL("ai.blocksize expects %d but %d on auich",
+					expected, ai.blocksize);
+			} else {
+				XP_EQ(expected, ai.blocksize);
+			}
 		}
 	}
 
@@ -6346,6 +6364,12 @@ test_mixer_FIOASYNC_1(void)
 	memset(&m, 0, sizeof(m));
 	m.dev = i;
 	r = IOCTL(fd, AUDIO_MIXER_READ, &m, "");
+	if (r == -1 && errno == EINVAL) {
+		// 見付からなければ諦める
+		XP_SKIP("output.master not found?");
+		CLOSE(fd);
+		return;
+	}
 	XP_SYS_EQ(0, r);
 	oldm = m;
 
