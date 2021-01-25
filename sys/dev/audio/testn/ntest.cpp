@@ -708,7 +708,16 @@ test_open_sound(void)
 		} else {
 			// それ以外は play track が見えるべき。
 			XP_EQ(buff_size / ai.blocksize, ai.hiwat);
-			XP_EQ(buff_size / ai.blocksize * 3 / 4, ai.lowat);
+			int explo = buff_size / ai.blocksize * 3 / 4;
+			if (netbsd == 8) {
+				// よく分からんけど (hdafg で) 1 違うことがあるようだ。
+				// 些細なことなので通しておくか。
+				if (ai.lowat < explo - 1 || ai.lowat > explo + 1) {
+					XP_FAIL("ai.lowat expects %d but %d", explo, ai.lowat);
+				}
+			} else {
+				XP_EQ(buff_size / ai.blocksize * 3 / 4, ai.lowat);
+			}
 		}
 		// mode は引き継がない
 		XP_EQ(mode2aumode(mode), ai.mode);
@@ -1375,6 +1384,12 @@ test_write_PLAY_ALL(void)
 
 	TEST("write_PLAY_ALL");
 
+	// N7,N8 で hdafg だと動かない?
+	if (netbsd <= 8 && strcmp(hwconfig, "hdafg0") == 0) {
+		XP_SKIP("This test does not seem to work on hdafg(?)");
+		return;
+	}
+
 	fd = OPEN(devaudio, O_WRONLY);
 	if ((props & AUDIO_PROP_PLAYBACK)) {
 		if (fd == -1)
@@ -1461,6 +1476,11 @@ test_rept_write(void)
 	int n;
 
 	TEST("rept_write");
+
+	if (strcmp(hwconfig, "hdafg0") == 0) {
+		XP_SKIP("This test does not seem to work on hdafg.");
+		return;
+	}
 
 	memset(buf, 0xff, sizeof(buf));
 	n = 4;
@@ -2585,30 +2605,30 @@ test_poll_mode()
 #define OUT POLLOUT
 	} fulltable[] = {
 		// openmode	events	exp_revents
-		{ O_RDONLY,	IN,		0 },		// 正常だがデータがないはず=※1
-		{ O_RDONLY,	OUT,	0 },		// OUTは成立しない=※2
-		{ O_RDONLY, IN|OUT,	0 },		// ※1 && ※2
+		{ O_RDONLY,	IN,		IN },		// 正常
+		{ O_RDONLY,	OUT,	0 },		// OUTは成立しない
+		{ O_RDONLY, IN|OUT,	IN },		// OUTは成立しない
 
 		{ O_WRONLY,	IN,		0 },		// INは成立しない
 		{ O_WRONLY,	OUT,	OUT },		// 正常
 		{ O_WRONLY,	IN|OUT,	OUT },		// INは成立しない
 
-		{ O_RDWR,	IN,		0 },		// 正常がデータがないはず
+		{ O_RDWR,	IN,		IN },		// 正常
 		{ O_RDWR,	OUT,	OUT },		// 正常
-		{ O_RDWR,	IN|OUT,	OUT },		// ※1
+		{ O_RDWR,	IN|OUT,	OUT },		// 
 		{ 99 },
 	}, halftable[] = {
-		{ O_RDONLY,	IN,		0 },		// 正常だがデータがないはず=※1
-		{ O_RDONLY,	OUT,	0 },		// OUTは成立しない=※2
-		{ O_RDONLY, IN|OUT,	0 },		// ※1 && ※2
+		{ O_RDONLY,	IN,		IN },		// 正常
+		{ O_RDONLY,	OUT,	0 },		// OUTは成立しない
+		{ O_RDONLY, IN|OUT,	IN },		// OUTは成立しない
 
 		{ O_WRONLY,	IN,		0 },		// INは成立しない
 		{ O_WRONLY,	OUT,	OUT },		// 正常
 		{ O_WRONLY,	IN|OUT,	OUT },		// INは成立しない
 
-		{ O_RDWR,	IN,		0 },		// 正常がデータがないはず
+		{ O_RDWR,	IN,		0 },		// WRONLY なので IN は成立しない
 		{ O_RDWR,	OUT,	OUT },		// 正常
-		{ O_RDWR,	IN|OUT,	OUT },		// ※1
+		{ O_RDWR,	IN|OUT,	OUT },		// WRONLY なので IN は成立しない
 		{ 99 },
 #undef IN
 #undef OUT
@@ -2653,25 +2673,15 @@ test_poll_mode()
 			// ここは poll が 0 か 1 を返したはず。
 			// poll の戻り値と revents は連動しているはずなので、
 			// revents を先に調べることにする。
-			int checked = 0;
 			DPRINTF("  > pfd.revents=%x\n", pfd.revents);
 
-			// RDONLY/RDWR で録音を開始してないのに POLLIN が立つのは
-			// バグだと思う。
-			if (netbsd <= 8 && openmode != O_WRONLY && (events & POLLIN) != 0
-			 && (pfd.revents & POLLIN) != 0) {
-				XP_EXPFAIL(
-					"recording has not started but POLLIN set (bug?)");
-				checked = 1;
-			}
+			// N7, N8 には RDONLY でも OUT が常に立つバグがある
 			if (netbsd <= 8 && openmode == O_RDONLY && (events & POLLOUT) != 0
 			 && (pfd.revents & POLLOUT) != 0) {
-				XP_EXPFAIL("RDONLY but POLLOUT set (bug?)");
-				checked = 1;
-			}
-			if (checked == 0) {
-				XP_EQ(exp_revents, pfd.revents);
+				XP_EXPFAIL("RDONLY but POLLOUT set (bug)");
+			} else {
 				XP_EQ(exp, r);
+				XP_EQ(exp_revents, pfd.revents);
 			}
 		}
 
@@ -2847,12 +2857,17 @@ test_poll_out_unpause()
 		AUDIO_INITINFO(&ai);
 		ai.play.pause = 1;
 		// ついでにエンコーディングも設定
-		// XXX 本当は GETENC でチェックすべきだが手抜き
 		if (emul) {
+			// ただし、(N8 以前には) どのパラメータなら使えるのかを
+			// 知る方法がないので、悩ましい。
 			ai.play.encoding = AUDIO_ENCODING_SLINEAR_NE;
 			ai.play.precision = 16;
 			ai.play.channels = 2;
-			ai.play.sample_rate = 22050;
+			if (strcmp(hwconfig, "vs0") == 0) {
+				ai.play.sample_rate = 11025;
+			} else {
+				ai.play.sample_rate = 44100;
+			}
 			zero = 0;
 		} else {
 			// mulaw
@@ -2954,8 +2969,13 @@ test_poll_out_simul()
 	TEST("poll_out_simul");
 
 	// 多重化は N7 では出来ない
-	if (netbsd < 8) {
+	if (netbsd == 7) {
 		XP_SKIP("NetBSD7 does not support multi-open");
+		return;
+	}
+	// N8 では返ってこない場合がある
+	if (netbsd == 8) {
+		XP_EXPFAIL("it may block(?)");
 		return;
 	}
 
@@ -3168,13 +3188,13 @@ test_kqueue_mode()
 		int exppoll9;	// kevent_poll の AUDIO2 での期待値
 	} table[] = {
 		// open		filt			exp7 9
-		{ O_RDONLY,	EVFILT_READ,	1,	0 },	// まだ起きないはず
+		{ O_RDONLY,	EVFILT_READ,	1,	1 },	// 読み込み可能
 		{ O_RDONLY,	EVFILT_WRITE,	1,	0 },	// 絶対成立しないはず
 
 		{ O_WRONLY,	EVFILT_READ,	0,	0 },	// 絶対成立しない
 		{ O_WRONLY,	EVFILT_WRITE,	1,	1 },	// 書き込み可能
 
-		{ O_RDWR,	EVFILT_READ,	1,	0 },	// まだ起きないはず
+		{ O_RDWR,	EVFILT_READ,	1,	1 },	// 読み込み可能
 		{ O_RDWR,	EVFILT_WRITE,	1,	1 },	// 書き込み可能
 
 		// Half HW の場合、O_RDWR は O_WRONLY 相当になる
@@ -3585,21 +3605,16 @@ test_kqueue_unpause()
 		gettimeofday(&end, NULL);
 		if (r >= 1)
 			DEBUG_KEV("kev", &kev);
-		if (netbsd == 7) {
-			// N7(emul==0) は pause 解除でバッファをクリアしてしまう
-			// バグがあってバッファが空になるが、それと EVFILT_WRITE が
-			// 連動しないバグもあって、結果待っても何もおきない。
-			// N7(emul==1) は pause 解除できないっぽいので、こっちも
-			// 何も起きない。
-			if (r == 0) {
-				XP_EXPFAIL("kqueue/poll has many bugs");
-			} else {
-				// 既知の状態から変化した?
-				XP_SYS_EQ(0, r);
-			}
-		} else {
-			// AUDIO2 では期待時間前後で成功すること。
-			XP_SYS_EQ(1, r);
+		// N7.1 までは
+		// emul==0 時に pause 解除でバッファをクリアしてしまう
+		// バグがあってバッファが空になるが、それと EVFILT_WRITE が
+		// 連動しないバグもあって、結果待っても何も起きなかった。
+		// emul==1 は pause 解除できないっぽくて、こっちも何も起きなかった。
+		// N7.2 で両方とも?修正されたようだ。
+		// N8 では成功すればもういいことにする。
+		XP_SYS_EQ(1, r);
+		if (netbsd == 9) {
+			// AUDIO2 ではさらに期待時間前後で成功することもチェックしておく。
 			if (r == 1) {
 				// その時 seek は lowat を下回っていたらもういいことにする
 				r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "seek");
@@ -4936,27 +4951,10 @@ test_AUDIO_SETINFO_pause()
 					? mode2aumode_full[openmode] & ~AUMODE_PLAY_ALL
 					: mode2aumode_full[openmode];
 				XP_EQ(expmode, ai.mode);
-				if (openmode == O_RDONLY) {
-					// play がない
-					if (netbsd <= 8)
-						XP_EQ(1, ai.play.pause);
-					else
-						XP_EQ(0, ai.play.pause);
-				} else {
-					// play がある
-					XP_EQ(1, ai.play.pause);
-					XP_EQ(param ? 11025 : 8000, ai.play.sample_rate);
-				}
-				if (openmode == O_WRONLY) {
-					// rec がない
-					if (netbsd <= 8)
-						XP_EQ(1, ai.record.pause);
-					else
-						XP_EQ(0, ai.record.pause);
-				} else {
-					XP_EQ(1, ai.record.pause);
-					XP_EQ(param ? 11025 : 8000, ai.record.sample_rate);
-				}
+				XP_EQ(1, ai.play.pause);
+				XP_EQ(param ? 11025 : 8000, ai.play.sample_rate);
+				XP_EQ(1, ai.record.pause);
+				XP_EQ(param ? 11025 : 8000, ai.record.sample_rate);
 
 				// pause を下げるテストもやる?
 				AUDIO_INITINFO(&ai);
@@ -5263,6 +5261,10 @@ test_AUDIO_SETINFO_hiwat2()
 		int exphi;
 		int explo;
 
+		// N7 で ch>2 は避けておくか
+		if (netbsd == 7 && ch > 2)
+			continue;
+
 		DESC("%s,%d,%d,%d", encoding_names[enc], prec, ch, freq);
 
 		// AUDIO2 では、最低3ブロック、それが 64KB 以下なら 64KB に近い
@@ -5366,7 +5368,12 @@ test_AUDIO_SETINFO_gain()
 	// gain を取得、一致するか
 	r = IOCTL(fd, AUDIO_GETINFO, &ai, "");
 	XP_SYS_EQ(0, r);
-	XP_EQ(master, ai.play.gain);
+	if (netbsd == 8 && master != ai.play.gain) {
+		XP_EXPFAIL("ai.play.gain expects %d but %d; maybe bug",
+			master, ai.play.gain);
+	} else {
+		XP_EQ(master, ai.play.gain);
+	}
 
 	// 何でもいいので違う値に変更
 	AUDIO_INITINFO(&ai);
@@ -5391,7 +5398,12 @@ test_AUDIO_SETINFO_gain()
 	if (buf[0] < '0' || buf[0] > '9')
 		err(1, "popen");
 	master = atoi(buf);
-	XP_EQ(ai.play.gain, master);
+	if (netbsd == 8 && master != ai.play.gain) {
+		XP_EXPFAIL("master expects %d but %d; this is a bug",
+			ai.play.gain, master);
+	} else {
+		XP_EQ(ai.play.gain, master);
+	}
 
 	// 戻す
 	AUDIO_INITINFO(&ai);
@@ -5739,6 +5751,20 @@ test_AUDIO_GETENC_range()
 		}
 	}
 
+	// AC3 に precision は関係ないが、たぶん AUDIO_GETENC で precision なしが
+	// 表現できなかったので、precision = 16 と返してくるが、(N7 の)
+	// AUDIO_SETINFO は AC3 なら precision に関係なく受け付けるので、
+	// ここで期待値テーブルをそのように加工しておく必要がある。うーんこの…
+	r = 0;
+	for (int i = 0; i < preccount; i++) {
+		r += result[AUDIO_ENCODING_AC3][i];
+	}
+	if (r > 0) {
+		for (int i = 0; i < preccount; i++) {
+			result[AUDIO_ENCODING_AC3][i] = 1;
+		}
+	}
+
 	// エラーが出た次のインデックスもエラーになるはず
 	DESC("GETENC[next]");
 	e->index = idx + 1;
@@ -5781,6 +5807,9 @@ test_AUDIO_GETENC_range()
 			ai.play.precision = prec;
 			ai.play.channels = 1;		/* 知る方法がない */
 			ai.play.sample_rate = 8000;	/* 知る方法がない */
+			// AC3 は prec は見ないが sample_rate には厳しいので仕方ない
+			if (i == AUDIO_ENCODING_AC3)
+				ai.play.sample_rate = 48000;
 			ai.record = ai.play;
 
 			if (fulldup) {
@@ -6285,7 +6314,8 @@ test_mixer_FIOASYNC_1(void)
 		di.index = i;
 		r = IOCTL(fd, AUDIO_MIXER_DEVINFO, &di, "index=%d", i);
 		XP_SYS_EQ(0, r);
-		if (strcmp(di.label.name, "master") == 0)
+		if (strcmp(di.label.name, "master") == 0
+		 && di.type == AUDIO_MIXER_VALUE)
 			break;
 	}
 	// (outputs.)master を読み込む

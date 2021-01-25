@@ -458,6 +458,12 @@ int debug_close(int line, int fd)
 {
 	DPRINTFF(line, "close(%d)", fd);
 	int r = close(fd);
+
+	// ちょっと待つ必要がある
+	if (strcmp(hwconfig, "hdafg0") == 0) {
+		usleep(100);
+	}
+
 	DRESULT(r);
 }
 
