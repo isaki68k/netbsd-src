@@ -673,9 +673,10 @@ int debug_popen_gets(int line, char *buf, size_t bufsize, const char *cmd, ...)
 		DPRINTF(" = NULL, popen failed\n");
 		return -1;
 	}
-	if (fgets(buf, bufsize, fp) == NULL) {
+	p = fgets(buf, bufsize, fp);
+	pclose(fp);
+	if (p == NULL) {
 		DPRINTF(" = NULL, fgets failed\n");
-		pclose(fp);
 		return -1;
 	}
 
