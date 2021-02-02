@@ -140,7 +140,6 @@ struct dbri_softc {
 
 	int		sc_waitseen;
 
-	int		sc_refcount;
 	int		sc_playing;
 	int		sc_recording;
 
