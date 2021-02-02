@@ -98,7 +98,6 @@ struct vs_softc {
 		struct dmac_dma_xfer *xfer;
 		int rate;
 	} sc_current;
-	int sc_active;
 
 	const struct audio_hw_if *sc_hw_if;
 
