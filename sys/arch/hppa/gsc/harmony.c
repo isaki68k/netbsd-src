@@ -1004,8 +1004,6 @@ harmony_trigger_output(void *vsc, void *start, void *end, int blksize,
 		return EINVAL;
 	}
 
-	mutex_spin_enter(&sc->sc_intr_lock);
-
 	c->c_intr = intr;
 	c->c_intrarg = intrarg;
 	c->c_blksz = blksize;
@@ -1019,8 +1017,6 @@ harmony_trigger_output(void *vsc, void *start, void *end, int blksize,
 	harmony_start_pp(sc, 1);
 	harmony_start_cp(sc, 0);
 	harmony_intr_enable(sc);
-
-	mutex_spin_exit(&sc->sc_intr_lock);
 
 	return 0;
 }
