@@ -111,7 +111,6 @@ struct mercury_softc {
 	uint8_t sc_cmd;
 	void (*sc_intr)(void *);
 	void *sc_arg;
-	int sc_active;
 
 	bus_dma_tag_t sc_dmat;
 	struct dmac_channel_stat *sc_dma_ch;
@@ -133,8 +132,6 @@ static int  mercury_dmamem_alloc(struct mercury_softc *, size_t, size_t,
 static void mercury_dmamem_free(struct vs_dma *);
 
 /* MI audio layer interface */
-static int  mercury_open(void *, int);
-static void mercury_close(void *);
 static int  mercury_query_format(void *, audio_format_query_t *);
 static int  mercury_set_format(void *, int,
 	const audio_params_t *, const audio_params_t *,
@@ -162,8 +159,6 @@ CFATTACH_DECL_NEW(mercury, sizeof(struct mercury_softc),
 static int mercury_matched;
 
 static const struct audio_hw_if mercury_hw_if = {
-	.open			= mercury_open,
-	.close			= mercury_close,
 	.query_format		= mercury_query_format,
 	.set_format		= mercury_set_format,
 	.start_output		= mercury_start_output,
@@ -301,24 +296,6 @@ mercury_dmaerrintr(void *hdl)
 }
 
 static int
-mercury_open(void *hdl, int flags)
-{
-	struct mercury_softc *sc;
-
-	DPRINTF("%s: flags=0x%x\n", __func__, flags);
-	sc = hdl;
-	sc->sc_active = 0;
-
-	return 0;
-}
-
-static void
-mercury_close(void *hdl)
-{
-	DPRINTF("%s\n", __func__);
-}
-
-static int
 mercury_query_format(void *hdl, audio_format_query_t *afp)
 {
 
@@ -388,9 +365,6 @@ mercury_start_output(void *hdl, void *block, int blksize,
 
 	sc = hdl;
 
-	sc->sc_intr = intr;
-	sc->sc_arg = intrarg;
-
 #if defined(MERCURY_AS_LE)
 	/* Emulates little endian device */
 	{
@@ -437,11 +411,13 @@ mercury_start_output(void *hdl, void *block, int blksize,
 	dmac_start_xfer_offset(chan->ch_softc, sc->sc_xfer,
 	    (int)block - (int)KVADDR(vd), count);
 
-	if (sc->sc_active == 0) {
+	if (sc->sc_intr == NULL) {
+		sc->sc_intr = intr;
+		sc->sc_arg = intrarg;
+
 		cmd = sc->sc_cmd
 		    | MERC_CMD_OUT | MERC_CMD_PAN_L | MERC_CMD_PAN_R;
 		bus_space_write_1(sc->sc_iot, sc->sc_ioh, MERC_CMD, cmd);
-		sc->sc_active = 1;
 	}
 
 	return 0;
@@ -458,9 +434,6 @@ mercury_start_input(void *hdl, void *block, int blksize,
 	uint8_t cmd;
 
 	sc = hdl;
-
-	sc->sc_intr = intr;
-	sc->sc_arg = intrarg;
 
 	/* Find DMA buffer. */
 	for (vd = sc->sc_dmas; vd != NULL; vd = vd->vd_next) {
@@ -485,10 +458,12 @@ mercury_start_input(void *hdl, void *block, int blksize,
 	dmac_start_xfer_offset(chan->ch_softc, sc->sc_xfer,
 	    (int)block - (int)KVADDR(vd), count);
 
-	if (sc->sc_active == 0) {
+	if (sc->sc_intr == NULL) {
+		sc->sc_intr = intr;
+		sc->sc_arg = intrarg;
+
 		cmd = sc->sc_cmd;
 		bus_space_write_1(sc->sc_iot, sc->sc_ioh, MERC_CMD, cmd);
-		sc->sc_active = 1;
 	}
 
 	return 0;
@@ -501,11 +476,10 @@ mercury_halt_output(void *hdl)
 
 	DPRINTF("%s\n", __func__);
 	sc = hdl;
-	if (sc->sc_active) {
-		bus_space_write_1(sc->sc_iot, sc->sc_ioh, MERC_CMD, sc->sc_cmd);
-		dmac_abort_xfer(sc->sc_dma_ch->ch_softc, sc->sc_xfer);
-		sc->sc_active = 0;
-	}
+
+	bus_space_write_1(sc->sc_iot, sc->sc_ioh, MERC_CMD, sc->sc_cmd);
+	dmac_abort_xfer(sc->sc_dma_ch->ch_softc, sc->sc_xfer);
+	sc->sc_intr = NULL;
 	return 0;
 }
 
@@ -516,10 +490,9 @@ mercury_halt_input(void *hdl)
 
 	DPRINTF("%s\n", __func__);
 	sc = hdl;
-	if (sc->sc_active) {
-		dmac_abort_xfer(sc->sc_dma_ch->ch_softc, sc->sc_xfer);
-		sc->sc_active = 0;
-	}
+
+	dmac_abort_xfer(sc->sc_dma_ch->ch_softc, sc->sc_xfer);
+	sc->sc_intr = NULL;
 	return 0;
 }
 
