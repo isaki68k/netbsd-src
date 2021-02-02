@@ -293,11 +293,6 @@ vidcaudio_close(void *addr)
 
 	DPRINTF(("DEBUG: vidcaudio_close called\n"));
 	sc = addr;
-	/*
-	 * We do this here rather than in vidcaudio_halt_output()
-	 * because the latter can be called from interrupt context
-	 * (audio_pint()->audio_clear()->vidcaudio_halt_output()).
-	 */
 	if (sc->sc_ppages != NULL) {
 		free(sc->sc_ppages, M_DEVBUF);
 		sc->sc_ppages = NULL;
