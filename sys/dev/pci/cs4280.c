@@ -346,8 +346,6 @@ cs4280_attach(device_t parent, device_t self, void *aux)
 	}
 
 	sc->type = TYPE_CS4280;
-	sc->halt_input  = cs4280_halt_input;
-	sc->halt_output = cs4280_halt_output;
 
 	/* setup buffer related parameters */
 	sc->dma_size     = CS4280_DCHUNK;

@@ -272,8 +272,6 @@ cs4281_attach(device_t parent, device_t self, void *aux)
 	}
 
 	sc->type = TYPE_CS4281;
-	sc->halt_input  = cs4281_halt_input;
-	sc->halt_output = cs4281_halt_output;
 
 	sc->dma_size     = CS4281_BUFFER_SIZE / MAX_CHANNELS;
 	sc->dma_align    = 0x10;
