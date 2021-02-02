@@ -110,7 +110,6 @@ static void awacs_attach(device_t, device_t, void *);
 static int awacs_intr(void *);
 static int awacs_status_intr(void *);
 
-static void awacs_close(void *);
 static int awacs_query_format(void *, audio_format_query_t *);
 static int awacs_set_format(void *, int,
 		     const audio_params_t *, const audio_params_t *,
@@ -154,7 +153,6 @@ CFATTACH_DECL_NEW(awacs, sizeof(struct awacs_softc),
     awacs_match, awacs_attach, NULL, NULL);
 
 const struct audio_hw_if awacs_hw_if = {
-	.close			= awacs_close,
 	.query_format		= awacs_query_format,
 	.set_format		= awacs_set_format,
 	.round_blocksize	= awacs_round_blocksize,
@@ -622,22 +620,6 @@ awacs_intr(void *v)
 	return 1;
 }
 
-/*
- * Close function is called at splaudio().
- */
-static void
-awacs_close(void *h)
-{
-	struct awacs_softc *sc;
-
-	sc = h;
-	awacs_halt_output(sc);
-	awacs_halt_input(sc);
-
-	sc->sc_ointr = 0;
-	sc->sc_iintr = 0;
-}
-
 static int
 awacs_query_format(void *h, audio_format_query_t *afp)
 {
@@ -680,6 +662,7 @@ awacs_halt_output(void *h)
 	sc = h;
 	dbdma_stop(sc->sc_odma);
 	dbdma_reset(sc->sc_odma);
+	sc->sc_ointr = NULL;
 	return 0;
 }
 
@@ -691,6 +674,7 @@ awacs_halt_input(void *h)
 	sc = h;
 	dbdma_stop(sc->sc_idma);
 	dbdma_reset(sc->sc_idma);
+	sc->sc_iintr = NULL;
 	return 0;
 }
 

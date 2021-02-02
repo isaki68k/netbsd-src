@@ -545,8 +545,6 @@ acu_close(void *arg)
 	/*
 	 * Make sure the hardware is quiescent
 	 */
-	acu_halt_output(sc);
-	acu_halt_input(sc);
 	delay(100);
 
 	/* Assert Cold Reset */
