@@ -437,7 +437,7 @@ harmony_query_format(void *vsc, audio_format_query_t *afp)
 int
 harmony_set_format(void *vsc, int setmode,
     const audio_params_t *play, const audio_params_t *rec,
-	audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
+    audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
 {
 	struct harmony_softc *sc;
 	uint32_t bits;
@@ -467,7 +467,8 @@ harmony_set_format(void *vsc, int setmode,
 
 	/* XXX modify harmony_speed_bits() not to rewrite rate */
 	rate = play->sample_rate;
-	sc->sc_cntlbits |= harmony_speed_bits(sc, &rate);
+	bits |= harmony_speed_bits(sc, &rate);
+	sc->sc_cntlbits = bits;
 	sc->sc_need_commit = 1;
 
 	return 0;
