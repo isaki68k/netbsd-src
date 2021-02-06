@@ -1065,7 +1065,6 @@ mmcodec_setcontrol(struct dbri_softc *sc)
 		if (error == EINTR) {
 			DPRINTF("%s: interrupted\n", device_xname(sc->sc_dev));
 			ret = -1;
-			mutex_spin_exit(&sc->sc_intr_lock);
 			goto fail;
 		}
 		bail++;
