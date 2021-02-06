@@ -212,7 +212,6 @@ vs_attach(device_t parent, device_t self, void *aux)
 	/* Initialize sc */
 	sc->sc_iot = iot;
 	sc->sc_ioh = ioh;
-	sc->sc_hw_if = &vs_hw_if;
 	sc->sc_addr = (void *) ia->ia_addr;
 	sc->sc_dmas = NULL;
 	sc->sc_prev_vd = NULL;

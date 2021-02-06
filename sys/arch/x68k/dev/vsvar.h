@@ -99,8 +99,6 @@ struct vs_softc {
 		int rate;
 	} sc_current;
 
-	const struct audio_hw_if *sc_hw_if;
-
 	void (*sc_pintr)(void *);
 	void (*sc_rintr)(void *);
 	void *sc_parg;
