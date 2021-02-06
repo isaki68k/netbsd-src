@@ -1236,6 +1236,7 @@ sv_mixer_get_port(void *addr, mixer_ctrl_t *cp)
 			}
 		}
 
+		mutex_spin_exit(&sc->sc_intr_lock);
 		return error;
 	}
 
