@@ -725,7 +725,6 @@ yds_resume(device_t dv, const pmf_qual_t *qual)
 
 	pci_conf_write(pc, tag, YDS_PCI_DSCTRL, sc->sc_dsctrl);
 	sc->sc_enabled = 1;
-	mutex_spin_exit(&sc->sc_intr_lock);
 	sc->sc_codec[0].codec_if->vtbl->restore_ports(sc->sc_codec[0].codec_if);
 	mutex_exit(&sc->sc_lock);
 
