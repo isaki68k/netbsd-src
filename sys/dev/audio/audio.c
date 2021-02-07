@@ -1351,7 +1351,6 @@ audiodetach(device_t self, int flags)
 
 	mutex_enter(sc->sc_lock);
 	sc->sc_dying = true;
-printf("%d.%d broadcast exlockcv\n", (int)curproc->p_pid, (int)curlwp->l_lid);
 	cv_broadcast(&sc->sc_exlockcv);
 	if (sc->sc_pmixer)
 		cv_broadcast(&sc->sc_pmixer->outcv);
@@ -1640,7 +1639,6 @@ audio_track_waitio(struct audio_softc *sc, audio_track_t *track)
 		}
 	}
 	if (sc->sc_dying) {
-printf("%s error=%d\n", __func__, error);
 		error = EIO;
 	}
 	if (error) {
@@ -2458,8 +2456,17 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
 	}
 
 	error = audio_exlock_enter(sc);
-	if (error)
-		return error;
+	if (error) {
+		/*
+		 * If EIO, this sc is about to detach.  In this case, even if
+		 * we don't do subsequent _unlink(), audiodetach() will do it.
+		 */
+		if (error == EIO)
+			return error;
+
+		/* XXX Otherwise, what should I do ? */
+		panic("%s: can't acquire exlock: errno=%d", __func__, error);
+	}
 	error = audio_unlink(sc, file);
 	audio_exlock_exit(sc);
 
