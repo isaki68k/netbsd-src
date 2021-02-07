@@ -530,7 +530,7 @@ aica_intr(void *arg)
 
 	aica_fillbuffer(sc);
 
-	/* call audio interrupt handler (audio_pint()) */
+	/* call audio interrupt handler (audio_pintr()) */
 	if (sc->sc_intr != NULL) {
 		(*(sc->sc_intr))(sc->sc_intr_arg);
 	}
