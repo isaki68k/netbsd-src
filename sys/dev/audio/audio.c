@@ -1381,7 +1381,7 @@ audiodetach(device_t self, int flags)
 	sc->sc_exlock = 1;
 
 	/*
-	 * Nuke all open instances.
+	 * Clean up all open instances.
 	 * Here, we no longer need any locks to traverse sc_files.
 	 */
 	while ((file = SLIST_FIRST(&sc->sc_files)) != NULL) {
@@ -2464,7 +2464,7 @@ audio_close(struct audio_softc *sc, audio_file_t *file)
 		if (error == EIO)
 			return error;
 
-		/* XXX Otherwise, what should I do ? */
+		/* XXX This should not happen but what should I do ? */
 		panic("%s: can't acquire exlock: errno=%d", __func__, error);
 	}
 	error = audio_unlink(sc, file);
