@@ -565,8 +565,10 @@ static int audio_exlock_mutex_enter(struct audio_softc *);
 static void audio_exlock_mutex_exit(struct audio_softc *);
 static int audio_exlock_enter(struct audio_softc *);
 static void audio_exlock_exit(struct audio_softc *);
-static struct audio_softc *audio_file_enter(audio_file_t *, struct psref *);
-static void audio_file_exit(struct audio_softc *, struct psref *);
+static void audio_sc_acquire_foropen(struct audio_softc *, struct psref *);
+static struct audio_softc *audio_sc_acquire_fromfile(audio_file_t *,
+	struct psref *);
+static void audio_sc_release(struct audio_softc *, struct psref *);
 static int audio_track_waitio(struct audio_softc *, audio_track_t *);
 
 static int audioclose(struct file *);
@@ -1575,11 +1577,40 @@ audio_exlock_exit(struct audio_softc *sc)
 }
 
 /*
- * Acquire sc from file, and increment the psref count.
+ * Increment reference counter for this sc.
+ * This is intended to be used for open.
+ */
+void
+audio_sc_acquire_foropen(struct audio_softc *sc, struct psref *refp)
+{
+	int s;
+
+	/* psref(9) forbids to migrate CPUs */
+	curlwp_bind();
+
+	/* Block audiodetach while we acquire a reference */
+	s = pserialize_read_enter();
+
+	/*
+	 * We don't examine sc_dying here.  However, all open methods call
+	 * audio_exlock_enter() right after this, and audio_exlock_enter()
+	 * examines sc_dying.
+	 */
+
+	/* Acquire a reference */
+	psref_acquire(refp, &sc->sc_psref, audio_psref_class);
+
+	/* Now sc won't go away until we drop the reference count */
+	pserialize_read_exit(s);
+}
+
+/*
+ * Get sc from file, and increment reference counter for this sc.
+ * This is intended to be used for methods other than open.
  * If successful, returns sc.  Otherwise returns NULL.
  */
 struct audio_softc *
-audio_file_enter(audio_file_t *file, struct psref *refp)
+audio_sc_acquire_fromfile(audio_file_t *file, struct psref *refp)
 {
 	int s;
 	bool dying;
@@ -1607,10 +1638,10 @@ audio_file_enter(audio_file_t *file, struct psref *refp)
 }
 
 /*
- * Decrement the psref count.
+ * Decrement reference counter for this sc.
  */
 void
-audio_file_exit(struct audio_softc *sc, struct psref *refp)
+audio_sc_release(struct audio_softc *sc, struct psref *refp)
 {
 
 	psref_release(refp, &sc->sc_psref, audio_psref_class);
@@ -1688,6 +1719,7 @@ static int
 audioopen(dev_t dev, int flags, int ifmt, struct lwp *l)
 {
 	struct audio_softc *sc;
+	struct psref sc_ref;
 	int error;
 
 	/* Find the device */
@@ -1695,9 +1727,11 @@ audioopen(dev_t dev, int flags, int ifmt, struct lwp *l)
 	if (sc == NULL || sc->hw_if == NULL)
 		return ENXIO;
 
+	audio_sc_acquire_foropen(sc, &sc_ref);
+
 	error = audio_exlock_enter(sc);
 	if (error)
-		return error;
+		goto done;
 
 	device_active(sc->sc_dev, DVA_SYSTEM);
 	switch (AUDIODEV(dev)) {
@@ -1717,6 +1751,8 @@ audioopen(dev_t dev, int flags, int ifmt, struct lwp *l)
 	}
 	audio_exlock_exit(sc);
 
+done:
+	audio_sc_release(sc, &sc_ref);
 	return error;
 }
 
@@ -1741,7 +1777,7 @@ audioclose(struct file *fp)
 	 * - free all memory objects, regardless of sc.
 	 */
 
-	sc = audio_file_enter(file, &sc_ref);
+	sc = audio_sc_acquire_fromfile(file, &sc_ref);
 	if (sc) {
 		switch (AUDIODEV(dev)) {
 		case SOUND_DEVICE:
@@ -1759,7 +1795,7 @@ audioclose(struct file *fp)
 			break;
 		}
 
-		audio_file_exit(sc, &sc_ref);
+		audio_sc_release(sc, &sc_ref);
 	}
 
 	/* Free memory objects anyway */
@@ -1788,7 +1824,7 @@ audioread(struct file *fp, off_t *offp, struct uio *uio, kauth_cred_t cred,
 	file = fp->f_audioctx;
 	dev = file->dev;
 
-	sc = audio_file_enter(file, &sc_ref);
+	sc = audio_sc_acquire_fromfile(file, &sc_ref);
 	if (sc == NULL)
 		return EIO;
 
@@ -1809,7 +1845,7 @@ audioread(struct file *fp, off_t *offp, struct uio *uio, kauth_cred_t cred,
 		break;
 	}
 
-	audio_file_exit(sc, &sc_ref);
+	audio_sc_release(sc, &sc_ref);
 	return error;
 }
 
@@ -1827,7 +1863,7 @@ audiowrite(struct file *fp, off_t *offp, struct uio *uio, kauth_cred_t cred,
 	file = fp->f_audioctx;
 	dev = file->dev;
 
-	sc = audio_file_enter(file, &sc_ref);
+	sc = audio_sc_acquire_fromfile(file, &sc_ref);
 	if (sc == NULL)
 		return EIO;
 
@@ -1848,7 +1884,7 @@ audiowrite(struct file *fp, off_t *offp, struct uio *uio, kauth_cred_t cred,
 		break;
 	}
 
-	audio_file_exit(sc, &sc_ref);
+	audio_sc_release(sc, &sc_ref);
 	return error;
 }
 
@@ -1866,7 +1902,7 @@ audioioctl(struct file *fp, u_long cmd, void *addr)
 	file = fp->f_audioctx;
 	dev = file->dev;
 
-	sc = audio_file_enter(file, &sc_ref);
+	sc = audio_sc_acquire_fromfile(file, &sc_ref);
 	if (sc == NULL)
 		return EIO;
 
@@ -1891,7 +1927,7 @@ audioioctl(struct file *fp, u_long cmd, void *addr)
 		break;
 	}
 
-	audio_file_exit(sc, &sc_ref);
+	audio_sc_release(sc, &sc_ref);
 	return error;
 }
 
@@ -1905,7 +1941,7 @@ audiostat(struct file *fp, struct stat *st)
 	KASSERT(fp->f_audioctx);
 	file = fp->f_audioctx;
 
-	sc = audio_file_enter(file, &sc_ref);
+	sc = audio_sc_acquire_fromfile(file, &sc_ref);
 	if (sc == NULL)
 		return EIO;
 
@@ -1916,7 +1952,7 @@ audiostat(struct file *fp, struct stat *st)
 	st->st_gid = kauth_cred_getegid(fp->f_cred);
 	st->st_mode = S_IFCHR;
 
-	audio_file_exit(sc, &sc_ref);
+	audio_sc_release(sc, &sc_ref);
 	return 0;
 }
 
@@ -1934,7 +1970,7 @@ audiopoll(struct file *fp, int events)
 	file = fp->f_audioctx;
 	dev = file->dev;
 
-	sc = audio_file_enter(file, &sc_ref);
+	sc = audio_sc_acquire_fromfile(file, &sc_ref);
 	if (sc == NULL)
 		return POLLERR;
 
@@ -1952,7 +1988,7 @@ audiopoll(struct file *fp, int events)
 		break;
 	}
 
-	audio_file_exit(sc, &sc_ref);
+	audio_sc_release(sc, &sc_ref);
 	return revents;
 }
 
@@ -1969,7 +2005,7 @@ audiokqfilter(struct file *fp, struct knote *kn)
 	file = fp->f_audioctx;
 	dev = file->dev;
 
-	sc = audio_file_enter(file, &sc_ref);
+	sc = audio_sc_acquire_fromfile(file, &sc_ref);
 	if (sc == NULL)
 		return EIO;
 
@@ -1987,7 +2023,7 @@ audiokqfilter(struct file *fp, struct knote *kn)
 		break;
 	}
 
-	audio_file_exit(sc, &sc_ref);
+	audio_sc_release(sc, &sc_ref);
 	return error;
 }
 
@@ -2005,7 +2041,7 @@ audiommap(struct file *fp, off_t *offp, size_t len, int prot, int *flagsp,
 	file = fp->f_audioctx;
 	dev = file->dev;
 
-	sc = audio_file_enter(file, &sc_ref);
+	sc = audio_sc_acquire_fromfile(file, &sc_ref);
 	if (sc == NULL)
 		return EIO;
 
@@ -2026,7 +2062,7 @@ audiommap(struct file *fp, off_t *offp, size_t len, int prot, int *flagsp,
 		break;
 	}
 
-	audio_file_exit(sc, &sc_ref);
+	audio_sc_release(sc, &sc_ref);
 	return error;
 }
 
@@ -2042,6 +2078,7 @@ int
 audiobellopen(dev_t dev, audio_file_t **filep)
 {
 	struct audio_softc *sc;
+	struct psref sc_ref;
 	int error;
 
 	/* Find the device */
@@ -2049,14 +2086,18 @@ audiobellopen(dev_t dev, audio_file_t **filep)
 	if (sc == NULL || sc->hw_if == NULL)
 		return ENXIO;
 
+	audio_sc_acquire_foropen(sc, &sc_ref);
+
 	error = audio_exlock_enter(sc);
 	if (error)
-		return error;
+		goto done;
 
 	device_active(sc->sc_dev, DVA_SYSTEM);
 	error = audio_open(dev, sc, FWRITE, 0, curlwp, filep);
 
 	audio_exlock_exit(sc);
+done:
+	audio_sc_release(sc, &sc_ref);
 	return error;
 }
 
@@ -2068,14 +2109,19 @@ audiobellclose(audio_file_t *file)
 	struct psref sc_ref;
 	int error;
 
-	sc = audio_file_enter(file, &sc_ref);
-	if (sc == NULL)
-		return EIO;
+	error = 0;
+	/*
+	 * audiobellclose() must
+	 * - unplug track from the trackmixer if sc exist.
+	 * - free all memory objects, regardless of sc.
+	 */
+	sc = audio_sc_acquire_fromfile(file, &sc_ref);
+	if (sc) {
+		error = audio_close(sc, file);
+		audio_sc_release(sc, &sc_ref);
+	}
 
-	error = audio_close(sc, file);
-
-	audio_file_exit(sc, &sc_ref);
-
+	/* Free memory objects anyway */
 	KASSERT(file->ptrack);
 	audio_track_destroy(file->ptrack);
 	KASSERT(file->rtrack == NULL);
@@ -2092,7 +2138,7 @@ audiobellsetrate(audio_file_t *file, u_int sample_rate)
 	struct audio_info ai;
 	int error;
 
-	sc = audio_file_enter(file, &sc_ref);
+	sc = audio_sc_acquire_fromfile(file, &sc_ref);
 	if (sc == NULL)
 		return EIO;
 
@@ -2106,7 +2152,7 @@ audiobellsetrate(audio_file_t *file, u_int sample_rate)
 	audio_exlock_exit(sc);
 
 done:
-	audio_file_exit(sc, &sc_ref);
+	audio_sc_release(sc, &sc_ref);
 	return error;
 }
 
@@ -2118,13 +2164,13 @@ audiobellwrite(audio_file_t *file, struct uio *uio)
 	struct psref sc_ref;
 	int error;
 
-	sc = audio_file_enter(file, &sc_ref);
+	sc = audio_sc_acquire_fromfile(file, &sc_ref);
 	if (sc == NULL)
 		return EIO;
 
 	error = audio_write(sc, uio, 0, file);
 
-	audio_file_exit(sc, &sc_ref);
+	audio_sc_release(sc, &sc_ref);
 	return error;
 }
 
@@ -2148,6 +2194,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	bool cred_held;
 	bool hw_opened;
 	bool rmixer_started;
+	bool inserted;
 	int fd;
 	int error;
 
@@ -2162,6 +2209,7 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 	cred_held = false;
 	hw_opened = false;
 	rmixer_started = false;
+	inserted = false;
 
 	af = kmem_zalloc(sizeof(audio_file_t), KM_SLEEP);
 	af->sc = sc;
@@ -2365,6 +2413,32 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 		rmixer_started = true;
 	}
 
+	/*
+	 * This is the last sc_lock section in the function, so we have to
+	 * examine sc_dying again before starting the rest tasks.  Because
+	 * audiodeatch() may have been invoked (and it would set sc_dying)
+	 * from the time audioopen() was executed until now.  If it happens,
+	 * audiodetach() may already have set file->dying for all sc_files
+	 * that exist at that point, so that audioopen() must abort without
+	 * inserting af to sc_files, in order to keep consistency.
+	 */
+	mutex_enter(sc->sc_lock);
+	if (sc->sc_dying) {
+		mutex_exit(sc->sc_lock);
+		goto bad;
+	}
+
+	/* Count up finally */
+	if (af->ptrack)
+		sc->sc_popens++;
+	if (af->rtrack)
+		sc->sc_ropens++;
+	mutex_enter(sc->sc_intr_lock);
+	SLIST_INSERT_HEAD(&sc->sc_files, af, entry);
+	mutex_exit(sc->sc_intr_lock);
+	mutex_exit(sc->sc_lock);
+	inserted = true;
+
 	if (bellfile) {
 		*bellfile = af;
 	} else {
@@ -2376,26 +2450,22 @@ audio_open(dev_t dev, struct audio_softc *sc, int flags, int ifmt,
 		KASSERTMSG(error == EMOVEFD, "error=%d", error);
 	}
 
-	/*
-	 * Count up finally.
-	 * Don't fail from here.
-	 */
-	mutex_enter(sc->sc_lock);
-	if (af->ptrack)
-		sc->sc_popens++;
-	if (af->rtrack)
-		sc->sc_ropens++;
-	mutex_enter(sc->sc_intr_lock);
-	SLIST_INSERT_HEAD(&sc->sc_files, af, entry);
-	mutex_exit(sc->sc_intr_lock);
-	mutex_exit(sc->sc_lock);
+	/* Be nothing else after fd_clone */
 
 	TRACEF(3, af, "done");
 	return error;
 
 bad:
-	if (fp) {
-		fd_abort(curproc, fp, fd);
+	if (inserted) {
+		mutex_enter(sc->sc_lock);
+		mutex_enter(sc->sc_intr_lock);
+		SLIST_REMOVE(&sc->sc_files, af, audio_file, entry);
+		mutex_exit(sc->sc_intr_lock);
+		if (af->ptrack)
+			sc->sc_popens--;
+		if (af->rtrack)
+			sc->sc_ropens--;
+		mutex_exit(sc->sc_lock);
 	}
 
 	if (rmixer_started) {
