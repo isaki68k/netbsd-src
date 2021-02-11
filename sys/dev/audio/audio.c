@@ -1348,7 +1348,10 @@ audiodetach(device_t self, int flags)
 	if (error)
 		return error;
 
-	/* delete sysctl nodes */
+	/*
+	 * This waits currently running sysctls to finish if exists.
+	 * After this, no more new sysctls will come.
+	 */
 	sysctl_teardown(&sc->sc_log);
 
 	mutex_enter(sc->sc_lock);
@@ -1592,9 +1595,9 @@ audio_sc_acquire_foropen(struct audio_softc *sc, struct psref *refp)
 	s = pserialize_read_enter();
 
 	/*
-	 * We don't examine sc_dying here.  However, all open methods call
-	 * audio_exlock_enter() right after this, and audio_exlock_enter()
-	 * examines sc_dying.
+	 * We don't examine sc_dying here.  However, all open methods
+	 * call audio_exlock_enter() right after this, so we can examine
+	 * sc_dying in it.
 	 */
 
 	/* Acquire a reference */
