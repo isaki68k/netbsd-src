@@ -621,6 +621,14 @@ void debug_kev(int line, const char *name, const struct kevent *kev)
 		(int)kev->udata);
 }
 
+#define FSTAT(fd, st) debug_fstat(__LINE__, fd, st)
+int debug_fstat(int line, int fd, struct stat *st)
+{
+	DPRINTFF(line, "fstat(%d, %p)", fd, st);
+	int r = fstat(fd, st);
+	DRESULT(r);
+}
+
 #define GETUID()	debug_getuid(__LINE__)
 uid_t debug_getuid(int line)
 {

@@ -3857,6 +3857,54 @@ test_kqueue_simul()
 	}
 }
 
+void
+test_stat()
+{
+	struct stat st;
+	uid_t ouid;
+	int fd;
+	int r;
+
+	TEST("stat");
+
+	// 一般ユーザでオープン
+	ouid = GETUID();
+	r = SETEUID(1);
+	if (r == -1)
+		err(1, "setuid");
+
+	fd = OPEN(devaudio, O_WRONLY/*XXX*/);
+	if (fd == -1)
+		err(1, "open");
+
+	// /dev/audioN のデバイスファイル自体に対して stat(2) すると、
+	// 当然このデバイスファイルの uid, gid が取得できる。
+	r = stat(devaudio, &st);
+	XP_EQ(0, r);
+	XP_EQ(0, st.st_uid);
+	XP_EQ(0, st.st_gid);
+	XP_EQ(1, S_ISCHR(st.st_mode));	// パーミッション(666とか)はテストしない
+
+	// 一方ディスクリプタに対して fstat(2) すると audiostat() が呼ばれて、
+	// UID(,GID) はこのオーディオデバイスの現在の所有者 (最初にオープンした人) 
+	// になる。これは元からの仕様。
+	// st_mode がパーミッションを持たずに S_IFCHR しか立ててないが
+	// これはどうなのか。
+	r = FSTAT(fd, &st);
+	XP_EQ(0, r);
+	XP_EQ(1, st.st_uid);
+	XP_EQ(0, st.st_gid);
+	XP_EQ(1, S_ISCHR(st.st_mode));
+	XP_EQ(S_IFCHR, st.st_mode);
+
+	r = CLOSE(fd);
+	XP_EQ(0, r);
+
+	r = SETEUID(ouid);
+	if (r == -1)
+		err(1, "setuid");
+}
+
 // ioctl_while_write スレッド間共有データ
 struct ioctl_while_write_data {
 	int fd;
@@ -7596,6 +7644,7 @@ struct testtable testtable[] = {
 	DEF(kqueue_hiwat),
 	DEF(kqueue_unpause),
 	DEF(kqueue_simul),
+	DEF(stat),
 	DEF(ioctl_while_write),
 	DEF(FIOASYNC_multiple),	// FIOASYNC_multi として再実装済み
 	DEF(FIOASYNC_simul),	// FIOASYNC_multi として再実装済み
