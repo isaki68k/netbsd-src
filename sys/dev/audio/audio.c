@@ -1588,9 +1588,6 @@ audio_sc_acquire_foropen(struct audio_softc *sc, struct psref *refp)
 {
 	int s;
 
-	/* psref(9) forbids to migrate CPUs */
-	curlwp_bind();
-
 	/* Block audiodetach while we acquire a reference */
 	s = pserialize_read_enter();
 
@@ -1617,9 +1614,6 @@ audio_sc_acquire_fromfile(audio_file_t *file, struct psref *refp)
 {
 	int s;
 	bool dying;
-
-	/* psref(9) forbids to migrate CPUs */
-	curlwp_bind();
 
 	/* Block audiodetach while we acquire a reference */
 	s = pserialize_read_enter();
@@ -1723,6 +1717,7 @@ audioopen(dev_t dev, int flags, int ifmt, struct lwp *l)
 {
 	struct audio_softc *sc;
 	struct psref sc_ref;
+	int bound;
 	int error;
 
 	/* Find the device */
@@ -1730,6 +1725,7 @@ audioopen(dev_t dev, int flags, int ifmt, struct lwp *l)
 	if (sc == NULL || sc->hw_if == NULL)
 		return ENXIO;
 
+	bound = curlwp_bind();
 	audio_sc_acquire_foropen(sc, &sc_ref);
 
 	error = audio_exlock_enter(sc);
@@ -1756,6 +1752,7 @@ audioopen(dev_t dev, int flags, int ifmt, struct lwp *l)
 
 done:
 	audio_sc_release(sc, &sc_ref);
+	curlwp_bindx(bound);
 	return error;
 }
 
@@ -1765,6 +1762,7 @@ audioclose(struct file *fp)
 	struct audio_softc *sc;
 	struct psref sc_ref;
 	audio_file_t *file;
+	int bound;
 	int error;
 	dev_t dev;
 
@@ -1780,6 +1778,7 @@ audioclose(struct file *fp)
 	 * - free all memory objects, regardless of sc.
 	 */
 
+	bound = curlwp_bind();
 	sc = audio_sc_acquire_fromfile(file, &sc_ref);
 	if (sc) {
 		switch (AUDIODEV(dev)) {
@@ -1800,6 +1799,7 @@ audioclose(struct file *fp)
 
 		audio_sc_release(sc, &sc_ref);
 	}
+	curlwp_bindx(bound);
 
 	/* Free memory objects anyway */
 	TRACEF(2, file, "free memory");
@@ -1820,6 +1820,7 @@ audioread(struct file *fp, off_t *offp, struct uio *uio, kauth_cred_t cred,
 	struct audio_softc *sc;
 	struct psref sc_ref;
 	audio_file_t *file;
+	int bound;
 	int error;
 	dev_t dev;
 
@@ -1827,9 +1828,12 @@ audioread(struct file *fp, off_t *offp, struct uio *uio, kauth_cred_t cred,
 	file = fp->f_audioctx;
 	dev = file->dev;
 
+	bound = curlwp_bind();
 	sc = audio_sc_acquire_fromfile(file, &sc_ref);
-	if (sc == NULL)
-		return EIO;
+	if (sc == NULL) {
+		error = EIO;
+		goto done;
+	}
 
 	if (fp->f_flag & O_NONBLOCK)
 		ioflag |= IO_NDELAY;
@@ -1849,6 +1853,8 @@ audioread(struct file *fp, off_t *offp, struct uio *uio, kauth_cred_t cred,
 	}
 
 	audio_sc_release(sc, &sc_ref);
+done:
+	curlwp_bindx(bound);
 	return error;
 }
 
@@ -1859,6 +1865,7 @@ audiowrite(struct file *fp, off_t *offp, struct uio *uio, kauth_cred_t cred,
 	struct audio_softc *sc;
 	struct psref sc_ref;
 	audio_file_t *file;
+	int bound;
 	int error;
 	dev_t dev;
 
@@ -1866,9 +1873,12 @@ audiowrite(struct file *fp, off_t *offp, struct uio *uio, kauth_cred_t cred,
 	file = fp->f_audioctx;
 	dev = file->dev;
 
+	bound = curlwp_bind();
 	sc = audio_sc_acquire_fromfile(file, &sc_ref);
-	if (sc == NULL)
-		return EIO;
+	if (sc == NULL) {
+		error = EIO;
+		goto done;
+	}
 
 	if (fp->f_flag & O_NONBLOCK)
 		ioflag |= IO_NDELAY;
@@ -1888,6 +1898,8 @@ audiowrite(struct file *fp, off_t *offp, struct uio *uio, kauth_cred_t cred,
 	}
 
 	audio_sc_release(sc, &sc_ref);
+done:
+	curlwp_bindx(bound);
 	return error;
 }
 
@@ -1898,6 +1910,7 @@ audioioctl(struct file *fp, u_long cmd, void *addr)
 	struct psref sc_ref;
 	audio_file_t *file;
 	struct lwp *l = curlwp;
+	int bound;
 	int error;
 	dev_t dev;
 
@@ -1905,9 +1918,12 @@ audioioctl(struct file *fp, u_long cmd, void *addr)
 	file = fp->f_audioctx;
 	dev = file->dev;
 
+	bound = curlwp_bind();
 	sc = audio_sc_acquire_fromfile(file, &sc_ref);
-	if (sc == NULL)
-		return EIO;
+	if (sc == NULL) {
+		error = EIO;
+		goto done;
+	}
 
 	switch (AUDIODEV(dev)) {
 	case SOUND_DEVICE:
@@ -1931,6 +1947,8 @@ audioioctl(struct file *fp, u_long cmd, void *addr)
 	}
 
 	audio_sc_release(sc, &sc_ref);
+done:
+	curlwp_bindx(bound);
 	return error;
 }
 
@@ -1940,14 +1958,20 @@ audiostat(struct file *fp, struct stat *st)
 	struct audio_softc *sc;
 	struct psref sc_ref;
 	audio_file_t *file;
+	int bound;
+	int error;
 
 	KASSERT(fp->f_audioctx);
 	file = fp->f_audioctx;
 
+	bound = curlwp_bind();
 	sc = audio_sc_acquire_fromfile(file, &sc_ref);
-	if (sc == NULL)
-		return EIO;
+	if (sc == NULL) {
+		error = EIO;
+		goto done;
+	}
 
+	error = 0;
 	memset(st, 0, sizeof(*st));
 
 	st->st_dev = file->dev;
@@ -1956,7 +1980,9 @@ audiostat(struct file *fp, struct stat *st)
 	st->st_mode = S_IFCHR;
 
 	audio_sc_release(sc, &sc_ref);
-	return 0;
+done:
+	curlwp_bindx(bound);
+	return error;
 }
 
 static int
@@ -1966,6 +1992,7 @@ audiopoll(struct file *fp, int events)
 	struct psref sc_ref;
 	audio_file_t *file;
 	struct lwp *l = curlwp;
+	int bound;
 	int revents;
 	dev_t dev;
 
@@ -1973,9 +2000,12 @@ audiopoll(struct file *fp, int events)
 	file = fp->f_audioctx;
 	dev = file->dev;
 
+	bound = curlwp_bind();
 	sc = audio_sc_acquire_fromfile(file, &sc_ref);
-	if (sc == NULL)
-		return POLLERR;
+	if (sc == NULL) {
+		revents = POLLERR;
+		goto done;
+	}
 
 	switch (AUDIODEV(dev)) {
 	case SOUND_DEVICE:
@@ -1992,6 +2022,8 @@ audiopoll(struct file *fp, int events)
 	}
 
 	audio_sc_release(sc, &sc_ref);
+done:
+	curlwp_bindx(bound);
 	return revents;
 }
 
@@ -2002,15 +2034,19 @@ audiokqfilter(struct file *fp, struct knote *kn)
 	struct psref sc_ref;
 	audio_file_t *file;
 	dev_t dev;
+	int bound;
 	int error;
 
 	KASSERT(fp->f_audioctx);
 	file = fp->f_audioctx;
 	dev = file->dev;
 
+	bound = curlwp_bind();
 	sc = audio_sc_acquire_fromfile(file, &sc_ref);
-	if (sc == NULL)
-		return EIO;
+	if (sc == NULL) {
+		error = EIO;
+		goto done;
+	}
 
 	switch (AUDIODEV(dev)) {
 	case SOUND_DEVICE:
@@ -2027,6 +2063,8 @@ audiokqfilter(struct file *fp, struct knote *kn)
 	}
 
 	audio_sc_release(sc, &sc_ref);
+done:
+	curlwp_bindx(bound);
 	return error;
 }
 
@@ -2038,15 +2076,19 @@ audiommap(struct file *fp, off_t *offp, size_t len, int prot, int *flagsp,
 	struct psref sc_ref;
 	audio_file_t *file;
 	dev_t dev;
+	int bound;
 	int error;
 
 	KASSERT(fp->f_audioctx);
 	file = fp->f_audioctx;
 	dev = file->dev;
 
+	bound = curlwp_bind();
 	sc = audio_sc_acquire_fromfile(file, &sc_ref);
-	if (sc == NULL)
-		return EIO;
+	if (sc == NULL) {
+		error = EIO;
+		goto done;
+	}
 
 	mutex_enter(sc->sc_lock);
 	device_active(sc->sc_dev, DVA_SYSTEM); /* XXXJDM */
@@ -2066,6 +2108,8 @@ audiommap(struct file *fp, off_t *offp, size_t len, int prot, int *flagsp,
 	}
 
 	audio_sc_release(sc, &sc_ref);
+done:
+	curlwp_bindx(bound);
 	return error;
 }
 
@@ -2082,6 +2126,7 @@ audiobellopen(dev_t dev, audio_file_t **filep)
 {
 	struct audio_softc *sc;
 	struct psref sc_ref;
+	int bound;
 	int error;
 
 	/* Find the device */
@@ -2089,6 +2134,7 @@ audiobellopen(dev_t dev, audio_file_t **filep)
 	if (sc == NULL || sc->hw_if == NULL)
 		return ENXIO;
 
+	bound = curlwp_bind();
 	audio_sc_acquire_foropen(sc, &sc_ref);
 
 	error = audio_exlock_enter(sc);
@@ -2101,6 +2147,7 @@ audiobellopen(dev_t dev, audio_file_t **filep)
 	audio_exlock_exit(sc);
 done:
 	audio_sc_release(sc, &sc_ref);
+	curlwp_bindx(bound);
 	return error;
 }
 
@@ -2110,6 +2157,7 @@ audiobellclose(audio_file_t *file)
 {
 	struct audio_softc *sc;
 	struct psref sc_ref;
+	int bound;
 	int error;
 
 	error = 0;
@@ -2118,11 +2166,13 @@ audiobellclose(audio_file_t *file)
 	 * - unplug track from the trackmixer if sc exist.
 	 * - free all memory objects, regardless of sc.
 	 */
+	bound = curlwp_bind();
 	sc = audio_sc_acquire_fromfile(file, &sc_ref);
 	if (sc) {
 		error = audio_close(sc, file);
 		audio_sc_release(sc, &sc_ref);
 	}
+	curlwp_bindx(bound);
 
 	/* Free memory objects anyway */
 	KASSERT(file->ptrack);
@@ -2139,23 +2189,29 @@ audiobellsetrate(audio_file_t *file, u_int sample_rate)
 	struct audio_softc *sc;
 	struct psref sc_ref;
 	struct audio_info ai;
+	int bound;
 	int error;
 
+	bound = curlwp_bind();
 	sc = audio_sc_acquire_fromfile(file, &sc_ref);
-	if (sc == NULL)
-		return EIO;
+	if (sc == NULL) {
+		error = EIO;
+		goto done1;
+	}
 
 	AUDIO_INITINFO(&ai);
 	ai.play.sample_rate = sample_rate;
 
 	error = audio_exlock_enter(sc);
 	if (error)
-		goto done;
+		goto done2;
 	error = audio_file_setinfo(sc, file, &ai);
 	audio_exlock_exit(sc);
 
-done:
+done2:
 	audio_sc_release(sc, &sc_ref);
+done1:
+	curlwp_bindx(bound);
 	return error;
 }
 
@@ -2165,15 +2221,21 @@ audiobellwrite(audio_file_t *file, struct uio *uio)
 {
 	struct audio_softc *sc;
 	struct psref sc_ref;
+	int bound;
 	int error;
 
+	bound = curlwp_bind();
 	sc = audio_sc_acquire_fromfile(file, &sc_ref);
-	if (sc == NULL)
-		return EIO;
+	if (sc == NULL) {
+		error = EIO;
+		goto done;
+	}
 
 	error = audio_write(sc, uio, 0, file);
 
 	audio_sc_release(sc, &sc_ref);
+done:
+	curlwp_bindx(bound);
 	return error;
 }
 
