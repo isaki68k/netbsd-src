@@ -6550,7 +6550,8 @@ audio_hw_probe(struct audio_softc *sc, audio_format2_t *cand, int mode)
 	 *
 	 *                 +---- priority(0-3)
 	 *                 |+--- encoding/precision
-	 *                 ||+-- channels
+	 *                 ||    (2=SLINEAR_NE:16, 1=SLINEAR_OE:16, 0=others)
+	 *                 ||+-- number of channels
 	 * score = 0x000000PEC
 	 */
 
