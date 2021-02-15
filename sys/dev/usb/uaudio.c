@@ -3011,7 +3011,8 @@ uaudio_set_format(void *addr, int setmode,
 		raltidx = audio_indexof_format(sc->sc_formats, sc->sc_nformats,
 		    AUMODE_RECORD, rec);
 		/* Transfer should have halted */
-		uaudio_chan_init(&sc->sc_recchan, raltidx, rec, 0);
+		uaudio_chan_init(&sc->sc_recchan, raltidx, rec,
+		    UGETW(sc->sc_alts[raltidx].edesc->wMaxPacketSize));
 	}
 
 	if ((setmode & AUMODE_PLAY) && sc->sc_playchan.altidx != -1) {
