@@ -31,6 +31,7 @@ __KERNEL_RCSID(0, "$NetBSD: spkr_audio.c,v 1.8 2019/06/21 09:34:30 isaki Exp $")
 
 #include <sys/param.h>
 #include <sys/systm.h>
+#include <sys/audioio.h>
 #include <sys/kernel.h>
 #include <sys/errno.h>
 #include <sys/device.h>
@@ -41,7 +42,7 @@ __KERNEL_RCSID(0, "$NetBSD: spkr_audio.c,v 1.8 2019/06/21 09:34:30 isaki Exp $")
 #include <sys/conf.h>
 #include <sys/sysctl.h>
 
-#include <dev/audio/audio_if.h>
+#include <dev/audio/audiovar.h>
 #include <dev/audio/audiobellvar.h>
 
 #include <dev/spkrvar.h>
@@ -80,8 +81,12 @@ spkr_audio_tone(device_t self, u_int xhz, u_int ticks)
 static int
 spkr_audio_probe(device_t parent, cfdata_t cf, void *aux)
 {
+	struct audio_softc *asc = device_private(parent);
 
-	return 1;
+	if ((asc->sc_props & AUDIO_PROP_PLAYBACK))
+		return 1;
+
+	return 0;
 }
 
 static void
