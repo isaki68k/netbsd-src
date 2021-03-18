@@ -81,6 +81,12 @@ static const int32_t sinewave[] = {
 #undef A
 
 /*
+ * Minimum buffer size.
+ * A multiple of 32(=countof(sinewave) * sizeof(uint16)) are preferred.
+ */
+#define MINBUFSIZE	(512)
+
+/*
  * dev is a device_t for the audio device to use.
  * pitch is the pitch of the bell in Hz,
  * period is the length in ms,
@@ -159,8 +165,29 @@ audiobell(void *dev, u_int pitch, u_int period, u_int volume, int poll)
 	wave1bytes = wave1count * sizeof(int16_t);
 
 	blkbytes = ptrack->usrbuf_blksize;
+printf("usrbuf_blksize=%u ", blkbytes);
+	if (blkbytes < MINBUFSIZE)
+		blkbytes = MINBUFSIZE;
+printf("blkbytes=%u ", blkbytes);
 	blkbytes = rounddown(blkbytes, wave1bytes);
+printf("rounded=%u ", blkbytes);
 	blkbytes = uimin(blkbytes, remainbytes);
+printf("min=%u\n", blkbytes);
+printf("play_sample_rate=%u period=%u", play_sample_rate, period);
+printf(" pitch=%u remain=%u blkbytes=%u count=%u%s\n",
+ pitch, remainbytes, blkbytes, remainbytes / blkbytes,
+ (remainbytes % blkbytes) != 0 ? "+" : "");
+	if (__predict_false(blkbytes == 0)) {
+#if 1//defined(DIAGNOSTIC)
+		printf("%s blkbytes=0!\n", device_xname(file->sc->sc_dev));
+#endif
+		/*
+		 * Originally, we should panic() here, but it's too trivial
+		 * to panic for the most cases.
+		 */
+		goto out;
+	}
+goto out;
 	buf = malloc(blkbytes, M_TEMP, M_WAITOK);
 	if (buf == NULL)
 		goto out;
