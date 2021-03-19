@@ -1,4 +1,4 @@
-/*	$NetBSD: joy_ofisa.c,v 1.17 2021/01/19 14:39:20 thorpej Exp $	*/
+/*	$NetBSD: joy_ofisa.c,v 1.20 2021/01/27 03:10:21 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 1996, 1998, 2008 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: joy_ofisa.c,v 1.17 2021/01/19 14:39:20 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: joy_ofisa.c,v 1.20 2021/01/27 03:10:21 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -60,7 +60,7 @@ CFATTACH_DECL_NEW(joy_ofisa, sizeof(struct joy_ofisa_softc),
 
 static const struct device_compatible_entry compat_data[] = {
 	{ .compat = "pnpPNP,b02f" },	/* generic joystick */
-	{ 0 }
+	DEVICE_COMPAT_EOL
 };
 
 static int
@@ -68,7 +68,7 @@ joy_ofisa_match(device_t parent, cfdata_t match, void *aux)
 {
 	struct ofisa_attach_args *aa = aux;
 
-	return of_match_compat_data(aa->oba.oba_phandle, compat_data);
+	return of_compatible_match(aa->oba.oba_phandle, compat_data);
 }
 
 static void

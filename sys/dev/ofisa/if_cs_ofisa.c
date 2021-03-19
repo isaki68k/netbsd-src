@@ -1,4 +1,4 @@
-/*	$NetBSD: if_cs_ofisa.c,v 1.28 2021/01/19 14:39:20 thorpej Exp $	*/
+/*	$NetBSD: if_cs_ofisa.c,v 1.31 2021/01/27 03:10:21 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 1998 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_cs_ofisa.c,v 1.28 2021/01/19 14:39:20 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_cs_ofisa.c,v 1.31 2021/01/27 03:10:21 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -70,7 +70,7 @@ static const struct device_compatible_entry compat_data[] = {
 	{ .compat = "CRUS,CS8900" },
 	/* XXX CS8920, CS8920M? */
 	/* XXX PNP names? */
-	{ 0 }
+	DEVICE_COMPAT_EOL
 };
 
 int
@@ -79,7 +79,7 @@ cs_ofisa_match(device_t parent, cfdata_t cf, void *aux)
 	struct ofisa_attach_args *aa = aux;
 	int rv;
 
-	rv = of_match_compat_data(aa->oba.oba_phandle, compat_data) ? 5 : 0;
+	rv = of_compatible_match(aa->oba.oba_phandle, compat_data) ? 5 : 0;
 #ifdef _CS_OFISA_MD_MATCH
 	if (rv == 0)
 		rv = cs_ofisa_md_match(parent, cf, aux);

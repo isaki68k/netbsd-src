@@ -1,4 +1,4 @@
-/*	$NetBSD: bcm2835_intr.c,v 1.35 2021/01/19 00:38:52 thorpej Exp $	*/
+/*	$NetBSD: bcm2835_intr.c,v 1.38 2021/03/08 14:22:42 mlelstv Exp $	*/
 
 /*-
  * Copyright (c) 2012, 2015, 2019 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bcm2835_intr.c,v 1.35 2021/01/19 00:38:52 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bcm2835_intr.c,v 1.38 2021/03/08 14:22:42 mlelstv Exp $");
 
 #define _INTR_PRIVATE
 
@@ -103,6 +103,49 @@ static int bcm2836mp_int_base[BCM2836_NCPUS];
 
 #define	BCM2835_INT_BASE		bcm2835_int_base
 #define	BCM2836_INT_BASECPUN(n)		bcm2836mp_int_base[(n)]
+
+#define BCM2836_INT_CNTPSIRQ_CPUN(n)	(BCM2836_INT_BASECPUN(n) + BCM2836_INT_CNTPSIRQ)
+#define BCM2836_INT_CNTPNSIRQ_CPUN(n)	(BCM2836_INT_BASECPUN(n) + BCM2836_INT_CNTPNSIRQ)
+#define BCM2836_INT_CNTVIRQ_CPUN(n)	(BCM2836_INT_BASECPUN(n) + BCM2836_INT_CNTVIRQ)
+#define BCM2836_INT_CNTHPIRQ_CPUN(n)	(BCM2836_INT_BASECPUN(n) + BCM2836_INT_CNTHPIRQ)
+#define BCM2836_INT_MAILBOX0_CPUN(n)	(BCM2836_INT_BASECPUN(n) + BCM2836_INT_MAILBOX0)
+
+/* Periperal Interrupt sources */
+#define	BCM2835_NIRQ			96
+
+#define BCM2835_INT_GPU0BASE		(BCM2835_INT_BASE + 0)
+#define BCM2835_INT_TIMER0		(BCM2835_INT_GPU0BASE + 0)
+#define BCM2835_INT_TIMER1		(BCM2835_INT_GPU0BASE + 1)
+#define BCM2835_INT_TIMER2		(BCM2835_INT_GPU0BASE + 2)
+#define BCM2835_INT_TIMER3		(BCM2835_INT_GPU0BASE + 3)
+#define BCM2835_INT_USB			(BCM2835_INT_GPU0BASE + 9)
+#define BCM2835_INT_DMA0		(BCM2835_INT_GPU0BASE + 16)
+#define BCM2835_INT_DMA2		(BCM2835_INT_GPU0BASE + 18)
+#define BCM2835_INT_DMA3		(BCM2835_INT_GPU0BASE + 19)
+#define BCM2835_INT_AUX			(BCM2835_INT_GPU0BASE + 29)
+#define BCM2835_INT_ARM			(BCM2835_INT_GPU0BASE + 30)
+
+#define BCM2835_INT_GPU1BASE		(BCM2835_INT_BASE + 32)
+#define BCM2835_INT_GPIO0		(BCM2835_INT_GPU1BASE + 17)
+#define BCM2835_INT_GPIO1		(BCM2835_INT_GPU1BASE + 18)
+#define BCM2835_INT_GPIO2		(BCM2835_INT_GPU1BASE + 19)
+#define BCM2835_INT_GPIO3		(BCM2835_INT_GPU1BASE + 20)
+#define BCM2835_INT_BSC			(BCM2835_INT_GPU1BASE + 21)
+#define BCM2835_INT_SPI0		(BCM2835_INT_GPU1BASE + 22)
+#define BCM2835_INT_PCM			(BCM2835_INT_GPU1BASE + 23)
+#define BCM2835_INT_SDHOST		(BCM2835_INT_GPU1BASE + 24)
+#define BCM2835_INT_UART0		(BCM2835_INT_GPU1BASE + 25)
+#define BCM2835_INT_EMMC		(BCM2835_INT_GPU1BASE + 30)
+
+#define BCM2835_INT_BASICBASE		(BCM2835_INT_BASE + 64)
+#define BCM2835_INT_ARMTIMER		(BCM2835_INT_BASICBASE + 0)
+#define BCM2835_INT_ARMMAILBOX		(BCM2835_INT_BASICBASE + 1)
+#define BCM2835_INT_ARMDOORBELL0	(BCM2835_INT_BASICBASE + 2)
+#define BCM2835_INT_ARMDOORBELL1	(BCM2835_INT_BASICBASE + 3)
+#define BCM2835_INT_GPU0HALTED		(BCM2835_INT_BASICBASE + 4)
+#define BCM2835_INT_GPU1HALTED		(BCM2835_INT_BASICBASE + 5)
+#define BCM2835_INT_ILLEGALTYPE0	(BCM2835_INT_BASICBASE + 6)
+#define BCM2835_INT_ILLEGALTYPE1	(BCM2835_INT_BASICBASE + 7)
 
 static void
 bcm2835_set_priority(struct pic_softc *pic, int ipl)
@@ -260,7 +303,7 @@ static const struct device_compatible_entry compat_data[] = {
 	{ .compat = "brcm,bcm2835-armctrl-ic",	.value = 0 },
 	{ .compat = "brcm,bcm2836-armctrl-ic",	.value = 0 },
 	{ .compat = "brcm,bcm2836-l1-intc",	.value = 1 },
-	{ 0 }
+	DEVICE_COMPAT_EOL
 };
 
 static int
@@ -268,7 +311,7 @@ bcm2835_icu_match(device_t parent, cfdata_t cf, void *aux)
 {
 	struct fdt_attach_args * const faa = aux;
 
-	return of_match_compat_data(faa->faa_phandle, compat_data);
+	return of_compatible_match(faa->faa_phandle, compat_data);
 }
 
 static void
@@ -300,7 +343,7 @@ bcm2835_icu_attach(device_t parent, device_t self, void *aux)
 	sc->sc_ioh = ioh;
 	sc->sc_phandle = phandle;
 
-	dce = of_search_compatible(faa->faa_phandle, compat_data);
+	dce = of_compatible_lookup(faa->faa_phandle, compat_data);
 	KASSERT(dce != NULL);
 
 	if (dce->value != 0) {
