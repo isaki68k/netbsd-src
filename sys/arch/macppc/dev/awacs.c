@@ -1,4 +1,4 @@
-/*	$NetBSD: awacs.c,v 1.48 2019/06/08 08:02:37 isaki Exp $	*/
+/*	$NetBSD: awacs.c,v 1.51 2021/03/05 07:15:53 rin Exp $	*/
 
 /*-
  * Copyright (c) 2000 Tsubai Masanari.  All rights reserved.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: awacs.c,v 1.48 2019/06/08 08:02:37 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: awacs.c,v 1.51 2021/03/05 07:15:53 rin Exp $");
 
 #include <sys/param.h>
 #include <sys/audioio.h>
@@ -307,7 +307,7 @@ awacs_attach(device_t parent, device_t self, void *aux)
 	int cirq, oirq, iirq, cirq_type, oirq_type, iirq_type;
 	int len = -1, perch;
 	int root_node;
-	char compat[256];
+	char compat[256], intr_xname[INTRDEVNAMEBUF];
 
 	sc = device_private(self);
 	sc->sc_dev = self;
@@ -361,9 +361,18 @@ awacs_attach(device_t parent, device_t self, void *aux)
 		cirq_type = oirq_type = iirq_type = IST_EDGE;
 	}
 
-	intr_establish(cirq, cirq_type, IPL_BIO, awacs_status_intr, sc);
-	intr_establish(oirq, oirq_type, IPL_AUDIO, awacs_intr, sc);
-	intr_establish(iirq, iirq_type, IPL_AUDIO, awacs_intr, sc);
+	snprintf(intr_xname, sizeof(intr_xname), "%s status",
+	    device_xname(self));
+	intr_establish_xname(cirq, cirq_type, IPL_BIO, awacs_status_intr, sc,
+	    intr_xname);
+
+	snprintf(intr_xname, sizeof(intr_xname), "%s out", device_xname(self));
+	intr_establish_xname(oirq, oirq_type, IPL_AUDIO, awacs_intr, sc,
+	    intr_xname);
+
+	snprintf(intr_xname, sizeof(intr_xname), "%s in", device_xname(self));
+	intr_establish_xname(iirq, iirq_type, IPL_AUDIO, awacs_intr, sc,
+	    intr_xname);
 
 	mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_NONE);
 	mutex_init(&sc->sc_intr_lock, MUTEX_DEFAULT, IPL_AUDIO);
@@ -371,7 +380,7 @@ awacs_attach(device_t parent, device_t self, void *aux)
 	cv_init(&sc->sc_event, "awacs_wait");
 
 	/* check if the chip is a screamer */
-	sc->sc_screamer = (of_compatible(ca->ca_node, screamer) != -1);
+	sc->sc_screamer = of_compatible(ca->ca_node, screamer);
 	if (!sc->sc_screamer) {
 		/* look for 'sound' child node */
 		int sound_node;
@@ -379,8 +388,7 @@ awacs_attach(device_t parent, device_t self, void *aux)
 		sound_node = OF_child(ca->ca_node);
 		while ((sound_node != 0) && (!sc->sc_screamer)) {
 
-			sc->sc_screamer = 
-			    (of_compatible(sound_node, screamer) != -1);
+			sc->sc_screamer = of_compatible(sound_node, screamer);
 			sound_node = OF_peer(sound_node);
 		}
 	}
@@ -424,7 +432,7 @@ awacs_attach(device_t parent, device_t self, void *aux)
 	 */
 	perch = OF_finddevice("/perch");
 	root_node = OF_finddevice("/");
-	if (of_compatible(root_node, detect_reversed) != -1) {
+	if (of_compatible(root_node, detect_reversed)) {
 
 		/* 0x02 is for the microphone jack, high active */
 		/*
@@ -433,8 +441,7 @@ awacs_attach(device_t parent, device_t self, void *aux)
 		 */
 		sc->sc_headphones_mask = 0x8;
 		sc->sc_headphones_in = 0x0;
-	} else if ((perch != -1) ||
-	    (of_compatible(root_node, use_gpio4) != -1)) {
+	} else if ((perch != -1) || of_compatible(root_node, use_gpio4)) {
 		/*
 		 * this is for the beige G3's 'personality card' which uses
 		 * yet another wiring of the headphone detect GPIOs
@@ -448,7 +455,7 @@ awacs_attach(device_t parent, device_t self, void *aux)
 		sc->sc_headphones_in = 0x8;
 	}
 
-	if (of_compatible(root_node, no_parallel_output) != -1)
+	if (of_compatible(root_node, no_parallel_output))
 		sc->sc_need_parallel_output = 0;
 	else {
 		sc->sc_need_parallel_output = 1;

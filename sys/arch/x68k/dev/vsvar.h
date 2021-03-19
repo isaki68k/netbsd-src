@@ -1,4 +1,4 @@
-/*	$NetBSD: vsvar.h,v 1.17 2019/05/08 13:40:17 isaki Exp $	*/
+/*	$NetBSD: vsvar.h,v 1.19 2021/02/06 12:50:04 isaki Exp $	*/
 
 /*
  * Copyright (c) 2001 Tetsuya Isaki. All rights reserved.

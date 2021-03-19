@@ -1,4 +1,4 @@
-/*	$NetBSD: gus.c,v 1.118 2020/02/29 05:51:11 isaki Exp $	*/
+/*	$NetBSD: gus.c,v 1.119 2021/02/06 07:16:18 isaki Exp $	*/
 
 /*-
  * Copyright (c) 1996, 1999, 2008 The NetBSD Foundation, Inc.
@@ -88,7 +88,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gus.c,v 1.118 2020/02/29 05:51:11 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gus.c,v 1.119 2021/02/06 07:16:18 isaki Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>

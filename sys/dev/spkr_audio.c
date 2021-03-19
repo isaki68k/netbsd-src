@@ -1,4 +1,4 @@
-/*	$NetBSD: spkr_audio.c,v 1.8 2019/06/21 09:34:30 isaki Exp $	*/
+/*	$NetBSD: spkr_audio.c,v 1.9 2021/02/17 12:37:33 isaki Exp $	*/
 
 /*-
  * Copyright (c) 2016 Nathanial Sloss <nathanialsloss@yahoo.com.au>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: spkr_audio.c,v 1.8 2019/06/21 09:34:30 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: spkr_audio.c,v 1.9 2021/02/17 12:37:33 isaki Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>

@@ -1,4 +1,4 @@
-/* $NetBSD: gicv3.c,v 1.39 2021/01/16 21:05:15 jmcneill Exp $ */
+/* $NetBSD: gicv3.c,v 1.43 2021/02/23 10:03:04 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2018 Jared McNeill <jmcneill@invisible.ca>
@@ -31,7 +31,7 @@
 #define	_INTR_PRIVATE
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gicv3.c,v 1.39 2021/01/16 21:05:15 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gicv3.c,v 1.43 2021/02/23 10:03:04 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/kernel.h>
@@ -79,11 +79,13 @@ gicd_write_4(struct gicv3_softc *sc, bus_size_t reg, uint32_t val)
 	bus_space_write_4(sc->sc_bst, sc->sc_bsh_d, reg, val);
 }
 
+#ifdef MULTIPROCESSOR
 static inline uint64_t
 gicd_read_8(struct gicv3_softc *sc, bus_size_t reg)
 {
 	return bus_space_read_8(sc->sc_bst, sc->sc_bsh_d, reg);
 }
+#endif
 
 static inline void
 gicd_write_8(struct gicv3_softc *sc, bus_size_t reg, uint64_t val)
@@ -220,8 +222,14 @@ static void
 gicv3_set_priority(struct pic_softc *pic, int ipl)
 {
 	struct gicv3_softc * const sc = PICTOSOFTC(pic);
+	struct cpu_info * const ci = curcpu();
+	const uint8_t newpmr = IPL_TO_PMR(sc, ipl);
 
-	icc_pmr_write(IPL_TO_PMR(sc, ipl));
+	if (newpmr > ci->ci_hwpl) {
+		/* Lowering priority mask */
+		ci->ci_hwpl = newpmr;
+		icc_pmr_write(newpmr);
+	}
 }
 
 static void
@@ -407,7 +415,8 @@ gicv3_cpu_init(struct pic_softc *pic, struct cpu_info *ci)
 		;
 
 	/* Set initial priority mask */
-	gicv3_set_priority(pic, IPL_HIGH);
+	ci->ci_hwpl = IPL_TO_PMR(sc, IPL_HIGH);
+	icc_pmr_write(ci->ci_hwpl);
 
 	/* Set the binary point field to the minimum value */
 	icc_bpr1_write(0);
@@ -424,7 +433,7 @@ gicv3_cpu_init(struct pic_softc *pic, struct cpu_info *ci)
 	gicv3_redist_enable(sc, ci);
 
 	/* Allow IRQ exceptions */
-	cpsie(I32_bit);
+	ENABLE_INTERRUPT();
 }
 
 #ifdef MULTIPROCESSOR
@@ -722,8 +731,17 @@ gicv3_irq_handler(void *frame)
 	struct gicv3_softc * const sc = gicv3_softc;
 	struct pic_softc *pic;
 	const int oldipl = ci->ci_cpl;
+	const uint8_t pmr = IPL_TO_PMR(sc, oldipl);
 
 	ci->ci_data.cpu_nintr++;
+
+	if (ci->ci_hwpl != pmr) {
+		ci->ci_hwpl = pmr;
+		icc_pmr_write(pmr);
+		if (oldipl == IPL_HIGH) {
+			return;
+		}
+	}
 
 	for (;;) {
 		const uint32_t iar = icc_iar1_read();
@@ -745,8 +763,8 @@ gicv3_irq_handler(void *frame)
 		if (__predict_false(ipl < ci->ci_cpl)) {
 			pic_do_pending_ints(I32_bit, ipl, frame);
 		} else if (ci->ci_cpl != ipl) {
-			gicv3_set_priority(pic, ipl);
-			ci->ci_cpl = ipl;
+			icc_pmr_write(IPL_TO_PMR(sc, ipl));
+			ci->ci_hwpl = ci->ci_cpl = ipl;
 		}
 
 		if (early_eoi) {
@@ -756,9 +774,9 @@ gicv3_irq_handler(void *frame)
 
 		const int64_t nintr = ci->ci_data.cpu_nintr;
 
-		cpsie(I32_bit);
+		ENABLE_INTERRUPT();
 		pic_dispatch(is, frame);
-		cpsid(I32_bit);
+		DISABLE_INTERRUPT();
 
 		if (nintr != ci->ci_data.cpu_nintr)
 			ci->ci_intr_preempt.ev_count++;

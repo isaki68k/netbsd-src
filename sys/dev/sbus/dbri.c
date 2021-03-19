@@ -1,4 +1,4 @@
-/*	$NetBSD: dbri.c,v 1.43 2020/08/25 13:36:41 skrll Exp $	*/
+/*	$NetBSD: dbri.c,v 1.45 2021/02/06 13:02:28 isaki Exp $	*/
 
 /*
  * Copyright (C) 1997 Rudolf Koenig (rfkoenig@immd4.informatik.uni-erlangen.de)
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: dbri.c,v 1.43 2020/08/25 13:36:41 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: dbri.c,v 1.45 2021/02/06 13:02:28 isaki Exp $");
 
 #include "audio.h"
 #if NAUDIO > 0

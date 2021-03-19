@@ -1,4 +1,4 @@
-/*	$NetBSD: com_ofisa.c,v 1.17 2021/01/19 14:39:20 thorpej Exp $	*/
+/*	$NetBSD: com_ofisa.c,v 1.20 2021/01/27 03:10:21 thorpej Exp $	*/
 
 /*
  * Copyright 1997, 1998
@@ -38,7 +38,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: com_ofisa.c,v 1.17 2021/01/19 14:39:20 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: com_ofisa.c,v 1.20 2021/01/27 03:10:21 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -70,7 +70,7 @@ CFATTACH_DECL_NEW(com_ofisa, sizeof(struct com_ofisa_softc),
 
 static const struct device_compatible_entry compat_data[] = {
 	{ .compat = "pnpPNP,501" },
-	{ 0 }
+	DEVICE_COMPAT_EOL
 };
 
 int
@@ -79,7 +79,7 @@ com_ofisa_probe(device_t parent, cfdata_t cf, void *aux)
 	struct ofisa_attach_args *aa = aux;
 	int rv;
 
-	rv = of_match_compat_data(aa->oba.oba_phandle, compat_data) ? 5 : 0;
+	rv = of_compatible_match(aa->oba.oba_phandle, compat_data) ? 5 : 0;
 #ifdef _COM_OFISA_MD_MATCH
 	if (!rv)
 		rv = com_ofisa_md_match(parent, cf, aux);

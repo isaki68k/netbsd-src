@@ -1,4 +1,4 @@
-/*	$NetBSD: pxa2x0_ac97.c,v 1.18 2020/04/19 08:18:19 isaki Exp $	*/
+/*	$NetBSD: pxa2x0_ac97.c,v 1.20 2021/02/06 12:53:36 isaki Exp $	*/
 
 /*
  * Copyright (c) 2003, 2005 Wasabi Systems, Inc.

@@ -1,4 +1,4 @@
-/*	$NetBSD: aica.c,v 1.28 2020/02/23 04:02:45 isaki Exp $	*/
+/*	$NetBSD: aica.c,v 1.30 2021/02/09 12:39:28 isaki Exp $	*/
 
 /*
  * Copyright (c) 2003 SHIMIZU Ryo <ryo@misakimix.org>
@@ -29,7 +29,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: aica.c,v 1.28 2020/02/23 04:02:45 isaki Exp $");
+__KERNEL_RCSID(0, "$NetBSD: aica.c,v 1.30 2021/02/09 12:39:28 isaki Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
