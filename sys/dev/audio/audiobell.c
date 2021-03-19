@@ -81,10 +81,11 @@ static const int32_t sinewave[] = {
 #undef A
 
 /*
- * Minimum buffer size.
- * A multiple of 32(=countof(sinewave) * sizeof(uint16)) are preferred.
+ * The minimum and the maximum buffer sizes must be a multiple of 32
+ * (32 = countof(sinewave) * sizeof(uint16_t)).
  */
-#define MINBUFSIZE	(512)
+#define MINBUFSIZE	(1024)
+#define MAXBUFSIZE	(4096)
 
 /*
  * dev is a device_t for the audio device to use.
@@ -108,7 +109,7 @@ audiobell(void *dev, u_int pitch, u_int period, u_int volume, int poll)
 	u_int remainbytes;
 	u_int wave1count;
 	u_int wave1bytes;
-	u_int blkbytes;
+	u_int bufbytes;
 	u_int len;
 	u_int step;
 	u_int offset;
@@ -116,6 +117,10 @@ audiobell(void *dev, u_int pitch, u_int period, u_int volume, int poll)
 	u_int mixer_sample_rate;
 
 	KASSERT(volume <= 100);
+
+	/* Playing for 0msec does nothing. */
+	if (period == 0)
+		return;
 
 	/* The audio system isn't built for polling. */
 	if (poll)
@@ -164,37 +169,23 @@ audiobell(void *dev, u_int pitch, u_int period, u_int volume, int poll)
 	remainbytes = remaincount * sizeof(int16_t);
 	wave1bytes = wave1count * sizeof(int16_t);
 
-	blkbytes = ptrack->usrbuf_blksize;
-printf("usrbuf_blksize=%u ", blkbytes);
-	if (blkbytes < MINBUFSIZE)
-		blkbytes = MINBUFSIZE;
-printf("blkbytes=%u ", blkbytes);
-	blkbytes = rounddown(blkbytes, wave1bytes);
-printf("rounded=%u ", blkbytes);
-	blkbytes = uimin(blkbytes, remainbytes);
-printf("min=%u\n", blkbytes);
-printf("play_sample_rate=%u period=%u", play_sample_rate, period);
-printf(" pitch=%u remain=%u blkbytes=%u count=%u%s\n",
- pitch, remainbytes, blkbytes, remainbytes / blkbytes,
- (remainbytes % blkbytes) != 0 ? "+" : "");
-	if (__predict_false(blkbytes == 0)) {
-#if 1//defined(DIAGNOSTIC)
-		printf("%s blkbytes=0!\n", device_xname(file->sc->sc_dev));
-#endif
-		/*
-		 * Originally, we should panic() here, but it's too trivial
-		 * to panic for the most cases.
-		 */
-		goto out;
-	}
-goto out;
-	buf = malloc(blkbytes, M_TEMP, M_WAITOK);
+	/* Based on 3*usrbuf_blksize, but not too small or too large */
+	bufbytes = ptrack->usrbuf_blksize * NBLKHW;
+	if (bufbytes < MINBUFSIZE)
+		bufbytes = MINBUFSIZE;
+	else if (bufbytes > MAXBUFSIZE)
+		bufbytes = MAXBUFSIZE;
+	else
+		bufbytes = roundup(bufbytes, wave1bytes);
+	bufbytes = uimin(bufbytes, remainbytes);
+	KASSERT(bufbytes != 0);
+	buf = malloc(bufbytes, M_TEMP, M_WAITOK);
 	if (buf == NULL)
 		goto out;
 
 	/* Generate sinewave with specified volume */
 	j = offset;
-	for (i = 0; i < blkbytes / sizeof(int16_t); i++) {
+	for (i = 0; i < bufbytes / sizeof(int16_t); i++) {
 		/* XXX audio already has track volume feature though #if 0 */
 		buf[i] = AUDIO_SCALEDOWN(sinewave[j] * (int)volume, 16);
 		j += step;
@@ -204,7 +195,7 @@ goto out;
 	/* Write while paused to avoid inserting silence. */
 	ptrack->is_pause = true;
 	for (; remainbytes > 0; remainbytes -= len) {
-		len = uimin(remainbytes, blkbytes);
+		len = uimin(remainbytes, bufbytes);
 		aiov.iov_base = (void *)buf;
 		aiov.iov_len = len;
 		auio.uio_iov = &aiov;
