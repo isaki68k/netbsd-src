@@ -62,6 +62,8 @@ DEL.a2 {
 <title></title>
 </head>
 <body>
+最初にベースにしたのは NetBSD7.1 (?)。<br>
+現状は audio.9,v 1.60。<br>
 <p>
 凡例:<br>
 <span class=a2 style="margin-left:8%;">青太字は AUDIO2 での仕様(案)。</span><br>
@@ -206,7 +208,7 @@ audio_attach_mi(const struct audio_hw_if *ahwp, void *hdl, device_t dev);
 		Every successful call to open
 	     is matched by a call to close.  Return 0 on success, otherwise an
 	     error code.
-		<span class=a2>It is called at Closed phase.</span>
+		<span class=a2>It is called at the Closed phase.</span>
 </dd>
 
 <dt class=p1>void close(void *hdl)
@@ -215,8 +217,13 @@ audio_attach_mi(const struct audio_hw_if *ahwp, void *hdl, device_t dev);
 	     optional,
 		<span class=del>is called when the audio device is closed.</span>
 		<span class=a2>is called when the last audio device combining
-		playback and recording is closed.</span>
-		<span class=a2>It is called at Opened phase.</span>
+		playback and recording is closed.
+		Before call to this,
+		<i>halt_input</i>
+		and
+		<i>halt_output</i>
+		are called if necessary.</span>
+		<span class=a2>It is called in the Opened phase.</span>
 </dd>
 
 <dt class=p1><span class=del>int drain(void *hdl)</span>
@@ -246,8 +253,8 @@ It never called on NetBSD8.
 <dt class=p1><span class=a2>int query_format(void *hdl, audio_format_query_t *afp)
 <dd class=p1><span class=a2>
 	is called to enumerate formats supported by the hardware.
-	It should fill the audio_format_t structure according to
-	given number afp->index.
+	It should fill the <i>audio_format_t</i> structure according to
+	given number <i>afp->index</i>.
 	If there is no format with given number, return <tt>EINVAL</tt>.
 	It is called at any time.
 <pre style="margin-left: -8%">
@@ -256,27 +263,32 @@ It never called on NetBSD8.
 			struct audio_format fmt;
 		} audio_format_query_t;
 </pre>
-	It is also used to determine the default format.
-	The upper layer chooses the most preferred one as default format
-	by following:<br>
+	It is also used by the upper layer to determine the default format,
+	as follows:<br>
 	1. Higher priority is preferred (normally 0, the highest is 3, the lowest is 0).<br>
-	2. AUDIO_ENCODING_SLINEAR_NE:16 is preferred if exists.<br>
-	3. AUDIO_ENCODING_SLINEAR_OE:16 is preferred if exists.<br>
-	4. More channels is preferred.<br>
+	2. <tt>AUDIO_ENCODING_SLINEAR_NE:16</tt> is preferred if exists.<br>
+	3. <tt>AUDIO_ENCODING_SLINEAR_OE:16</tt> is preferred if exists.<br>
+	4. The format with more channels is preferred.<br>
 </span>
 <br>
 <span class=a2>
-	If the driver supports SLINEAR_NE:16 and the upper layer chooses it,
-	the driver does not need to provide conversion function in set_format.
-	Similarly, if the driver supports SLINEAR_OE:16 and the upper layer
-	chooses it, the driver does not need to provide conversion function.
-	Because the upper layer only supports conversion between SLINEAR_NE:16 and
-	SLINEAR_OE:16 for convenience.
-	If the upper layer chooses other format,
-	the driver needs to provide conversion function in set_format.
+	If the driver supports <tt>SLINEAR_NE:16</tt>
+	and the upper layer chooses it,
+	the driver does not need to provide a conversion function in
+	<i>set_format</i>.
+	Similarly, if the driver supports <tt>SLINEAR_OE:16</tt>
+	and the upper layer chooses it,
+	the driver does not need to provide a conversion function,
+	because the upper layer supports conversion between
+	<i>SLINEAR_NE:16</i> and
+	<i>SLINEAR_OE:16</i> for convenience.
+	If the upper layer chooses another format,
+	the driver needs to provide a conversion function in
+	<i>set_format</i>.
 
-	See also set_format.
-	If the driver can not provide the conversion from/to SLINEAR_NE:16,
+	See also <i>set_format</i>.
+	If the driver can not provide the conversion from/to
+	<i>SLINEAR_NE:16</i>,
 	set priority to -1.
 	It means that the hardware supports this format but
 	the driver does not (e.g. AC3), and it will never be chosen.
@@ -379,7 +391,7 @@ It never called on NetBSD8.
 AUDIO2 ではこれを廃止する。代わりに set_format を新設。
 </span></dd>
 
-<dt class=p1><span class=a2>int set_foramt(void *hdl,
+<dt class=p1><span class=a2>int set_format(void *hdl,
 	int setmode,
 	const audio_params_t *play, const audio_params_t *rec,
 	audio_filter_reg_t *pfil, audio_filter_reg_t *rfil)
@@ -392,11 +404,11 @@ AUDIO2 ではこれを廃止する。代わりに set_format を新設。
 <br><br>
 	     The <i>play</i> and <i>rec</i> structures contain
 	the encoding parameters that should be set to the hardware.
-	If the driver has query_format interface, all parameters on
+	If the driver has query_format, all parameters on
 	<i>play</i> and/or <i>rec</i> are
 	chosen from formats returned by query_format.
 	Therefore <i>play</i> and/or <i>rec</i> are always settable.
-	If the driver does not have query_format interface,
+	If the driver does not have query_format,
 	the driver has to validate the format.
 </span>
 <br><br>
@@ -409,8 +421,10 @@ AUDIO2 ではこれを廃止する。代わりに set_format を新設。
 	     If the hardware does not support
 		<tt>AUDIO_ENCODING_SLINEAR_{NE,OE}:16</tt>,
 	     conversion information should be filled the
-	     pfil for playing or rfil for recording.
-	The definition of audio_filter_reg_t and related structure follow:
+	     <i>pfil</i> for playing or
+		<i>rfil</i> for recording.
+	The definition of <i>audio_filter_reg_t</i>
+	and a related structure follow:
 <br><br>
 <pre style="margin-left: 8%">
 typedef struct {
@@ -429,19 +443,19 @@ typedef struct {
 	void *context;
 } audio_filter_reg_t;
 </pre>
-	<i>codec</i> is conversion function and
-	<i>context</i> is optional opaque pointer passed to <i>codec</i>.
+	<i>codec</i> is a conversion function and
+	<i>context</i> is an optional opaque pointer passed to <i>codec</i>.
 <br><br>
 	When <i>codec</i> is called,
 	all parameters required by <i>codec</i> is contained in <i>arg</i>.
-	<i>src</i> points input buffer block,
-	<i>srcfmt</i> contains input encoding parameter,
-	<i>dst</i> points output buffer block and
-	<i>dstfmt</i> contains output encoding parameter.
+	<i>src</i> points to the input buffer block,
+	<i>srcfmt</i> contains the input encoding parameter,
+	<i>dst</i> points to the output buffer block and
+	<i>dstfmt</i> contains the output encoding parameter.
 	<i>count</i> represents the number of frames to process on this call.
 	<i>src</i> and <i>dst</i> are guaranteed to be able to consecutively access
 	number of frames specified by <i>count</i>.
-	<i>codec</i> must fill entire <i>dst</i>.
+	<i>codec</i> must fill the entire of <i>dst</i>.
 	For example, let count = 100, srcfmt is { precision = 16, channels = 3 },
 	dstfmt is { precision = 8, channels = 4 } ,
 	in this case,
@@ -454,9 +468,9 @@ typedef struct {
 <br><br>
 	     If the device does not have the <tt>AUDIO_PROP_INDEPENDENT</tt> property
 	     the same value is passed in both play and rec.
-	     Return 0 on success, otherwise an error code.
+	     Returns 0 on success, otherwise an error code.
 </span>
-	<span class=a2>It is called at Attach or Closed phase.</span>
+	<span class=a2>It is called in the Attach or Closed phases.</span>
 </dd>
 
 <dt class=p1>
@@ -466,10 +480,18 @@ typedef struct {
 <dd class=p1>
 	     optional, is called with the block size, bs, that has been
 	     computed by the upper layer, mode, <tt>AUMODE_PLAY</tt> or <tt>AUMODE_RECORD</tt>,
-	     and param, encoding parameters for the hardware.  It should
+	     and param, encoding parameters for the hardware.
+		<span class=a2>
+		<i>bs</i>
+		passed is always non-zero and a multiple of the frame size represented
+		by param->channels * param->precision / 8.
+		</span>
+		It should
 	     return a block size, possibly changed according to the needs of
 	     the hardware driver.
-		<span class=a2>It is called at Attach or Closed phase.</span>
+		<span class=a2>The return value also must be non-zero and
+		a multiple of the frame size.</span>
+		<span class=a2>It is called in the Attach or Closed phases.</span>
 <br>
 </dd>
 
@@ -480,9 +502,9 @@ typedef struct {
 	     optional, is called after all calls to set_params, and set_port,
 	     are done.	A hardware driver that needs to get the hardware in
 	     and out of command mode for each change can save all the changes
-	     during previous calls and do them all here.  Return 0 on success,
+	     during previous calls and do them all here.  Returns 0 on success,
 	     otherwise an error code.
-		<span class=a2>It is called at Attach or Closed phase.</span>
+		<span class=a2>It is called in the Attach or Closed phases.</span>
 </dd>
 
 <dt class=p1>
@@ -491,9 +513,9 @@ typedef struct {
 <dd class=p1>
 	     optional, is called before any output starts, but when the total
 	     size of the output buffer has been determined.  It can be used to
-	     initialize looping DMA for hardware that needs that.  Return 0 on
+	     initialize looping DMA for hardware that needs that.  Returns 0 on
 	     success, otherwise an error code.
-		<span class=a2>It is called at Attach or Closed phase.</span>
+		<span class=a2>It is called in the Attach or Closed phases.</span>
 </dd>
 
 <dt class=p1>
@@ -517,9 +539,11 @@ typedef struct {
 	     transfer has been initiated (normally with DMA).  When the
 	     hardware is ready to accept more samples the function intr should
 	     be called with the argument intrarg.  Calling intr will normally
-	     initiate another call to start_output.  Return 0 on success,
+	     initiate another call to start_output.  Returns 0 on success,
 	     otherwise an error code.
-		<span class=a2>It is called at Opened phase.</span>
+		<span class=a2>This field is optional
+		only if the driver doesn't support playback.</span>
+		<span class=a2>It is called in the Opened phase.</span>
 </dd>
 
 <dt class=p1>
@@ -532,9 +556,11 @@ typedef struct {
 	     transfer has been initiated (normally with DMA).  When the
 	     hardware is ready to deliver more samples the function intr
 	     should be called with the argument intrarg.  Calling intr will
-	     normally initiate another call to start_input.  Return 0 on
+	     normally initiate another call to start_input.  Returns 0 on
 	     success, otherwise an error code.
-		<span class=a2>It is called at Opened phase.</span>
+		<span class=a2>This field is optional
+		only if the driver doesn't support recording.</span>
+		<span class=a2>It is called in the Opened phase.</span>
 </dd>
 
 <dt class=p1>
@@ -542,8 +568,8 @@ typedef struct {
 </dt>
 <dd class=p1>
 	     is called to abort the output transfer (started by start_output)
-	     in progress.  Return 0 on success, otherwise an error code.
-		<span class=a2>It is called at Opened phase.</span>
+	     in progress.  Returns 0 on success, otherwise an error code.
+		<span class=a2>It is called in the Opened phase.</span>
 </dd>
 
 <dt class=p1>
@@ -551,8 +577,8 @@ typedef struct {
 </dt>
 <dd class=p1>
 	     is called to abort the input transfer (started by start_input) in
-	     progress.	Return 0 on success, otherwise an error code.
-		<span class=a2>It is called at Opened phase.</span>
+	     progress.	Returns 0 on success, otherwise an error code.
+		<span class=a2>It is called in the Opened phase.</span>
 </dd>
 
 <dt class=p1>
@@ -561,8 +587,8 @@ typedef struct {
 <dd class=p1>
 	     optional, is called when a half duplex device changes between
 	     playing and recording.  It can, e.g., be used to turn on and off
-	     the speaker.  Return 0 on success, otherwise an error code.
-		<span class=a2>It is called at Opened phase.</span>
+	     the speaker.  Returns 0 on success, otherwise an error code.
+		<span class=a2>It is called in the Opened phase.</span>
 </dd>
 
 <dt class=p1>
@@ -570,8 +596,8 @@ typedef struct {
 </dt>
 <dd class=p1>
 	     Should fill the audio_device struct with relevant information
-	     about the driver.	Return 0 on success, otherwise an error code.
-		<span class=a2>It is called at Opened phase.</span>
+	     about the driver.	Returns 0 on success, otherwise an error code.
+		<span class=a2>It is called in the Opened phase.</span>
 </dd>
 
 <dt class=p1><span class=del>
@@ -591,9 +617,9 @@ No drivers implement this function.
 </dt>
 <dd class=p1>
 	     is called in when <tt>AUDIO_MIXER_WRITE</tt> is used.  It should take data
-	     from the mixer_ctrl_t struct at set the corresponding mixer
-	     values.  Return 0 on success, otherwise an error code.
-		<span class=a2>It is called at Opened or Closed phase.</span>
+	     from the mixer_ctrl_t struct and set the corresponding mixer
+	     values.  Returns 0 on success, otherwise an error code.
+		<span class=a2>It is called in the Opened or Closed phases.</span>
 </dd>
 
 <dt class=p1>
@@ -601,9 +627,9 @@ No drivers implement this function.
 </dt>
 <dd class=p1>
 	     is called in when <tt>AUDIO_MIXER_READ</tt> is used.  It should fill the
-	     mixer_ctrl_t struct.  Return 0 on success, otherwise an error
+	     mixer_ctrl_t struct.  Returns 0 on success, otherwise an error
 	     code.
-		<span class=a2>It is called at Opened or Closed phase.</span>
+		<span class=a2>It is called in the Opened or Closed phases.</span>
 </dd>
 
 <dt class=p1>
@@ -625,7 +651,7 @@ No drivers implement this function.
 	     the first two).  The reason for using a device dependent routine
 	     instead of malloc(9) is that some buses need special allocation
 	     to do DMA.	 Returns the address of the buffer, or NULL on failure.
-		<span class=a2>It is called at Attached or Closed phase.</span>
+		<span class=a2>It is called in the Attached or Closed phases.</span>
 </dd>
 
 <dt class=p1>
@@ -634,7 +660,7 @@ No drivers implement this function.
 <dd class=p1>
 	     optional, is called to free memory allocated by allocm.  If not
 	     supplied free(9) is used.
-		<span class=a2>It is called at Attached or Closed phase.</span>
+		<span class=a2>It is called in the Attached or Closed phases.</span>
 </dd>
 
 <dt class=p1>
@@ -645,7 +671,7 @@ No drivers implement this function.
 	     size.  The upper layer supplies the suggested size in bufsize,
 	     which the hardware driver can then change if needed.  E.g., DMA
 	     on the ISA bus cannot exceed 65536 bytes.
-		<span class=a2>It is called at Attached or Closed phase.</span>
+		<span class=a2>It is called in the Attached or Closed phases.</span>
 <br>
 <span class=comment>
 buffersize は blocksize の (3以上の) 整数倍である必要がある。
@@ -669,14 +695,31 @@ Now mmap is done by audio layer.
 <dt class=p1>
      int get_props(void *hdl)
 </dt>
-<dd class=p1>
+<dd class=p1><span class=del>
 	     Should return the device properties; i.e., a combination of
 	     <tt>AUDIO_PROP_xxx</tt>.
+		</span>
 		<span class=a2>
-		It is called at any time.
-		<br><br>
-		<tt>AUDIO_PROP_MMAP</tt> is acceptable but obsoleted, so
-		new drivers should not return this property.
+		Should return the device properties in a combination of following
+		flags:<br>
+		<table>
+		<tr><td valign=top><tt>AUDIO_PROP_PLAYBACK</tt><td valign=top>
+		the device is capable of audio playback.
+		<tr><td valign=top><tt>AUDIO_PROP_CAPTURE</tt><td valign=top>
+		the device is capable of audio capture.
+		<tr><td valign=top><tt>AUDIO_PROP_FULLDUPLEX</tt><td valign=top>
+		the device admits full duplex operation.
+		Don't set it if the device is unidirectional.
+		<tr><td valign=top><tt>AUDIO_PROP_INDEPENDENT</tt><td valign=top>
+		the device can set the playing and recording encoding parameters
+		independently.
+		Don't set it if the device is unidirectional.
+		<tr><td valign=top><tt>AUDIO_PROP_MMAP</tt><td valign=top>
+		is handled in the upper layer,
+		so new drivers should not return this property.
+		</table>
+		<br>
+		It is called in the Attach phase.
 		</span>
 </dd>
 
@@ -695,7 +738,9 @@ Now mmap is done by audio layer.
 	     (typically from the audio hardware interrupt service routine).
 	     Once started the transfer may be stopped using halt_output.
 	     Return 0 on success, otherwise an error code.
-		<span class=a2>It is called at Opened phase.</span>
+		<span class=a2>This field is optional
+		only if the driver doesn't support playback.</span>
+		<span class=a2>It is called in the Opened phase.</span>
 </dd>
 
 <dt class=p1>
@@ -713,7 +758,9 @@ Now mmap is done by audio layer.
 	     (typically from the audio hardware interrupt service routine).
 	     Once started the transfer may be stopped using halt_input.
 	     Return 0 on success, otherwise an error code.
-		<span class=a2>It is called at Opened phase.</span>
+		<span class=a2>This field is optional
+		only if the driver doesn't support recording,</span>
+		<span class=a2>It is called in the Opened phase.</span>
 </dd>
 
 <dt class=p1>
@@ -724,7 +771,7 @@ Now mmap is done by audio layer.
 	     optional, is called when an ioctl(2) is not recognized by the
 	     generic audio driver.  Return 0 on success, otherwise an error
 	     code.
-		<span class=a2>It is called at Opened phase.</span>
+		<span class=a2>It is called in the Opened phase.</span>
 </dd>
 
 <dt class=p1>
@@ -732,7 +779,7 @@ Now mmap is done by audio layer.
 </dt>
 <dd class=p1>
 	     Returns the interrupt and thread locks to the common audio layer.
-		<span class=a2>It is called at Attach phase.</span>
+		<span class=a2>It is called in the Attach phase.</span>
 </dd>
 
 </dl>
