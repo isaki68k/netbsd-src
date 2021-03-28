@@ -1,4 +1,4 @@
-.\"	$NetBSD: audio.4,v 1.87 2019/02/16 06:50:14 isaki Exp $
+.\"	$NetBSD: audio.4,v 1.104 2020/12/09 05:48:56 isaki Exp $
 .\"
 .\" Copyright (c) 1996 The NetBSD Foundation, Inc.
 .\" All rights reserved.
@@ -27,7 +27,7 @@
 .\" ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 .\" POSSIBILITY OF SUCH DAMAGE.
 .\"
-.Dd May 15, 2018
+.Dd March 28, 2020
 .Dt AUDIO 4
 .Os
 .Sh NAME
@@ -68,7 +68,6 @@ operations as
 but no other operations.
 It can be opened at any time and can be used to manipulate the
 audio device while it is in use.
-.Pp
 .Sh SAMPLING DEVICES
 When
 .Pa /dev/audio
@@ -86,8 +85,6 @@ are identical.
 .Pp
 On a full-duplex device, reads and writes may operate concurrently
 without interference.
-If a full-duplex capable audio device is opened for both reading and writing
-it will start in play mode but not start in record mode.
 .Pp
 On a half-duplex device, if there are any recording descriptors already,
 opening with write mode will fail.
@@ -116,15 +113,15 @@ frequently enough, it will simply miss samples.
 The audio driver supports track multiplexing.
 All sampling devices can be opened at any time without interference.
 For playback, all tracks opened simultaneously are mixed,
-even if thier specified format is different.
+even if their specified format is different.
 For recording, recorded data is distributed to all opened tracks,
-even if thier specified format is different.
-To achieve this, the audio driver has an small efficient encoding converter,
-a channel mixer, and a frequency conveter.
+even if their specified format is different.
+To achieve this, the audio driver has a small efficient encoding converter,
+a channel mixer, and a frequency converter.
 The frequency conversion adapts the simplest way
 (interpolation method for upward, and simple thinning method for downward)
 due to restriction in kernel resources and processing time.
-It will work well in most case but don't expect excessively for its quality.
+It will work well in most case but don't expect excessive quality.
 .Pp
 The audio device is normally accessed with
 .Xr read 2
@@ -150,13 +147,13 @@ and
 calls can be used.
 Note that
 .Xr mmap 2
-no longer maps hardware buffer directly.
+no longer maps hardware buffers directly.
 Now it is achieved by emulation so don't expect any improvements excessively
 rather than normal
 .Xr write 2 .
 For historical reasons, only encodings that are not set
 .Dv AUDIO_ENCODINGFLAG_EMULATED
-is able to
+are able to
 .Xr mmap 2 .
 .Pp
 The audio device, like most devices, can be used in
@@ -223,9 +220,9 @@ all the supported encodings, start with an index field of 0 and
 continue with successive encodings (1, 2, ...) until the command returns
 an error.
 .It Dv AUDIO_GETFD (int)
-This command is obsoleted.
+This command is obsolete.
 .It Dv AUDIO_SETFD (int)
-This command is obsoleted.
+This command is obsolete.
 .It Dv AUDIO_GETPROPS (int)
 This command gets a bit set of hardware properties.
 If the hardware
@@ -306,9 +303,9 @@ field indicates current operation mode, either one of
 or
 .Dv AUMODE_RECORD .
 These two flags can not be changed once this descriptor is opened.
-On playback mode, obsoleted
+For playback mode, the obsolete
 .Dv AUMODE_PLAY_ALL
-can be set but has no effect.
+flag can be set but has no effect.
 .Pp
 .Va hiwat
 and
@@ -335,17 +332,15 @@ opportunity to adjust this block size to get it within
 implementation-required limits.
 Normally the
 .Va blocksize
-is calculated to correspond to 40ms
-(For some hardware, this value may be different due to
-the hardware restrictions)
-of sound and it is recalculated
-when the encoding parameter changes.
+is calculated to correspond to the value of the
+.Em hw.audioX.blk_ms
+sysctl and is recalculated when the encoding parameters change.
 If the descriptor is opened for read only,
 .Va blocksize
-indicates the blocksize on recording track.
+indicates the blocksize for the recording track.
 Otherwise,
 .Va blocksize
-indicates the blocksize on playback track.
+indicates the blocksize for the playback track.
 .Bd -literal
 struct audio_prinfo {
 	u_int	sample_rate;	/* sample rate in samples/s [track] */
@@ -370,7 +365,7 @@ struct audio_prinfo {
 };
 .Ed
 .Pp
-Note:  many hardware audio drivers require identical playback and
+Note: many hardware audio drivers require identical playback and
 recording sample rates, sample encodings, and channel counts.
 The playing information is always set last and will prevail on such hardware.
 If the hardware can handle different settings the
@@ -403,12 +398,25 @@ unsigned linear encoding with big endian byte order
 Dolby Digital AC3
 .El
 .Pp
-Regardless of format supported by underlying driver,
-audio driver accepts following formats.
-encoding and precision is one of those obtained by
-.Dv AUDIO_GETENC .
-channels ranges from 1 to 12.
-frequency ranges from 1000Hz to 192000Hz.
+The
+.Nm
+driver accepts the following formats.
+.Va encoding
+and
+.Va precision
+are one of the values obtained by
+.Dv AUDIO_GETENC ,
+regardless of formats supported by underlying driver.
+.Va frequency
+ranges from 1000Hz to 192000Hz,
+regardless of frequency (ranges) supported by underlying driver.
+.Va channels
+depends your underlying driver.
+If the underlying driver only supports monaural (1channel)
+or stereo (2channels), you can specify 1 or 2 regardless of
+number of channels supported by underlying driver.
+If the underlying driver supports three or more channels, you can specify
+the number of channels supported by the underlying driver or less.
 .Pp
 The
 .Va gain ,
@@ -498,21 +506,29 @@ typedef struct audio_format_query {
 .Ed
 .It Dv AUDIO_GETFORMAT (audio_info_t)
 This command fetches the current hardware format.
-Only following members in audio_info_t are used.
-Members which is not listed here or belong in invalid direction are
-filled by -1.
-.\" XXX I want something like <ul> on HTML...
-.Bd -literal
- mode
- play.encoding
- play.precision
- play.channels
- play.sample_rate
- record.encoding
- record.precision
- record.channels
- record.sample_rate
-.Ed
+Only the following members in audio_info_t are used.
+Members which are not listed here or belong in invalid direction are
+filled by \-1.
+.Bl -bullet
+.It
+mode
+.It
+play.encoding
+.It
+play.precision
+.It
+play.channels
+.It
+play.sample_rate
+.It
+record.encoding
+.It
+record.precision
+.It
+record.channels
+.It
+record.sample_rate
+.El
 .Pp
 .Va mode
 indicates which direction is valid.
@@ -528,9 +544,9 @@ Members which is not listed or belong in invalid direction are ignored.
 The parameters can be chosen from the choices obtained by
 .Dv AUDIO_QUERYFORMAT .
 .It Dv AUDIO_GETCHAN (int)
-This command is obsoleted.
+This command is obsolete.
 .It Dv AUDIO_SETCHAN (int)
-This command is obsoleted.
+This command is obsolete.
 .El
 .Sh MIXER DEVICE
 The mixer device,
@@ -739,45 +755,72 @@ string values.
 .Sh SEE ALSO
 .Xr audiocfg 1 ,
 .Xr audioctl 1 ,
+.Xr audioplay 1 ,
+.Xr audiorecord 1 ,
 .Xr mixerctl 1 ,
 .Xr ioctl 2 ,
 .Xr ossaudio 3 ,
-.Xr midi 4 ,
-.Xr radio 4 ,
-.Ss ISA bus
+.Xr acorn32/vidcaudio 4 ,
+.\" .Xr amiga/aucc 4 ,
+.\" .Xr amiga/melody 4 ,
+.Xr arcofi 4 ,
 .Xr aria 4 ,
-.Xr ess 4 ,
-.Xr gus 4 ,
-.Xr guspnp 4 ,
-.Xr pas 4 ,
-.Xr sb 4 ,
-.Xr wss 4 ,
-.Xr ym 4
-.Ss PCI bus
 .Xr auacer 4 ,
+.Xr audiocs 4 ,
 .Xr auich 4 ,
 .Xr auixp 4 ,
+.\" .Xr ausoc 4 ,
 .Xr autri 4 ,
 .Xr auvia 4 ,
-.Xr azalia 4 ,
+.Xr bba 4 ,
+.Xr btsco 4 ,
 .Xr clcs 4 ,
 .Xr clct 4 ,
 .Xr cmpci 4 ,
+.Xr dreamcast/aica 4 ,
 .Xr eap 4 ,
 .Xr emuxki 4 ,
 .Xr esa 4 ,
 .Xr esm 4 ,
 .Xr eso 4 ,
+.Xr ess 4 ,
+.\" .Xr evbarm/aaci 4 ,
+.\" .Xr evbarm/digfilt 4 ,
+.\" .Xr evbarm/pxaacu 4 ,
+.\" .Xr evbarm/udassio 4 ,
 .Xr fms 4 ,
+.Xr gcscaudio 4 ,
+.Xr gus 4 ,
+.Xr guspnp 4 ,
+.Xr hdafg 4 ,
+.Xr hdaudio 4 ,
+.Xr hppa/harmony 4 ,
+.Xr macppc/awacs 4 ,
+.Xr macppc/snapper 4 ,
+.Xr midi 4 ,
 .Xr neo 4 ,
+.Xr pad 4 ,
+.Xr pas 4 ,
+.\" .Xr paud 4 ,
+.Xr radio 4 ,
+.\" .Xr repluse 4 ,
+.Xr sb 4 ,
+.Xr sgimips/haltwo 4 ,
+.Xr sgimips/mavb 4 ,
+.Xr sparc/audioamd 4 ,
+.Xr sparc/dbri 4 ,
 .Xr sv 4 ,
-.Xr yds 4
-.Ss TURBOchannel
-.Xr bba 4
-.Ss USB
-.Xr uaudio 4
-.Ss The NetBSD audio specification
-.Xr audio_system 9
+.\" .Xr toccata 4 ,
+.Xr uaudio 4 ,
+.\" .Xr vaudio 4 ,
+.\" .Xr vcaudio 4 ,
+.\" .Xr vraiu 4 ,
+.\" .Xr vsaudio 4 ,
+.Xr wss 4 ,
+.Xr x68k/vs 4 ,
+.Xr yds 4 ,
+.Xr ym 4
+.\" .Xr zaudio 4
 .Sh HISTORY
 Support for virtual channels and mixing first appeared in
 .Nx 8.0 .
