@@ -164,10 +164,9 @@ rest(struct spkr_softc *sc, int ticks)
 #ifdef SPKRDEBUG
 	device_printf(sc->sc_dev, "%s: rest for %d ticks\n", __func__, ticks);
 #endif /* SPKRDEBUG */
-	if (ticks > 0) {
-		tsleep(sc->sc_dev, SPKRPRI | PCATCH, device_xname(sc->sc_dev),
-		    ticks);
-	}
+	KASSERT(ticks > 0);
+
+	tsleep(sc->sc_dev, SPKRPRI | PCATCH, device_xname(sc->sc_dev), ticks);
 }
 
 /*
@@ -201,7 +200,8 @@ playtone(struct spkr_softc *sc, int note, int val, int sustain)
 		device_printf(sc->sc_dev, "%s: rest for %d ticks\n",
 		    __func__, total);
 #endif /* SPKRDEBUG */
-		rest(sc, total);
+		if (total != 0)
+			rest(sc, total);
 		return;
 	}
 
@@ -539,11 +539,14 @@ spkrclose(dev_t dev, int flags, int mode, struct lwp *l)
 /*
  * Play tone specified by tp.
  * tp->frequency is the frequency (0 means a rest).
- * tp->duration is the length in tick(9).
+ * tp->duration is the length in tick (returns immediately if 0).
  */
 static void
 playonetone(struct spkr_softc *sc, tone_t *tp)
 {
+	if (tp->duration <= 0)
+		return;
+
 	if (tp->frequency == 0)
 		rest(sc, tp->duration);
 	else
