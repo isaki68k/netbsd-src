@@ -71,21 +71,11 @@ spkr_audio_tone(device_t self, u_int xhz, u_int ticks)
 #ifdef SPKRDEBUG
 	device_printf(self, "%s: %u %u\n", __func__, xhz, ticks);
 #endif /* SPKRDEBUG */
-	audiobell(sc->sc_audiodev, xhz, hztoms(ticks),
-	    sc->sc_spkr.sc_vol, 0);
-}
 
-static void
-spkr_audio_rest(device_t self, int ticks)
-{
-	struct spkr_audio_softc *sc = device_private(self);
-	
-#ifdef SPKRDEBUG
-	aprint_debug_dev(self, "%s: %d\n", __func__, ticks);
-#endif /* SPKRDEBUG */
-	if (ticks > 0)
-		audiobell(sc->sc_audiodev, 0, hztoms(ticks),
-		    sc->sc_spkr.sc_vol, 0);
+	if (xhz == 0 || ticks == 0)
+		return;
+
+	audiobell(sc->sc_audiodev, xhz, hztoms(ticks), sc->sc_spkr.sc_vol, 0);
 }
 
 static int
@@ -113,7 +103,7 @@ spkr_audio_attach(device_t parent, device_t self, void *aux)
 	if (!pmf_device_register(self, NULL, NULL))
 		aprint_error_dev(self, "couldn't establish power handler\n"); 
 
-	spkr_attach(self, spkr_audio_tone, spkr_audio_rest);
+	spkr_attach(self, spkr_audio_tone);
 }
 
 static int
