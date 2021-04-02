@@ -86,7 +86,7 @@ static void
 spkr_pcppi_tone(device_t self, u_int xhz, u_int ticks)
 {
 #ifdef SPKRDEBUG
-	aprint_debug_dev(self, "%s: %u %u\n", __func__, xhz, ticks);
+	device_printf(self, "%s: %u %u\n", __func__, xhz, ticks);
 #endif /* SPKRDEBUG */
 	struct spkr_pcppi_softc *sc = device_private(self);
 	(*sc->sc_bell_func)(sc->sc_pcppicookie, xhz, ticks, PCPPI_BELL_SLEEP);
