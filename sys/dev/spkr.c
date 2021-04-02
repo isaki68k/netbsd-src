@@ -42,25 +42,6 @@
  *      use hz value from param.c
  */
 
-/*
- * New spkr(9).
- *
- * void
- * spkr_attach(device_t self, void (*tone)(device_t, u_int, u_int))
- *	attaches spkr.  tone must be specified.  tone's specification is
- *	as follows.
- *
- * void
- * tone(device_t self, u_int pitch, u_int tick)
- *	plays a beep with specified parameters.
- *	'pitch' specifies a pitch of beep in Hz.  'tick' specifies a period
- *	of beep in tick(9).  The function waits to finish to output beep and
- *	stop it.
- *	If pitch == 0, it stops any sound and returns immediately.
- *	If tick == 0, it also returns immediately.  Therefore you cannot
- *	use this as a rest.
- */
-
 #include <sys/cdefs.h>
 __KERNEL_RCSID(0, "$NetBSD: spkr.c,v 1.17 2019/04/18 13:01:38 isaki Exp $");
 
@@ -122,6 +103,8 @@ static void playstring(struct spkr_softc *, const char *, size_t);
  * except possibly at physical block boundaries.
  */
 
+#define dtoi(c)		((c) - '0')
+
 /*
  * Magic number avoidance...
  */
@@ -173,67 +156,38 @@ playinit(struct spkr_softc *sc)
 	sc->sc_octprefix = true;/* act as though there was an initial O(n) */
 }
 
-/* XXX It is taken from spkr_pcppi.c.  PZERO is for backward compatibility. */
-#define SPKRPRI (PZERO - 1)
+/* play tone of proper duration for current rhythm signature */
 static void
-rest(struct spkr_softc *sc, int ticks)
+playtone(struct spkr_softc *sc, int pitch, int val, int sustain)
 {
-
-#ifdef SPKRDEBUG
-	aprint_debug_dev(sc->sc_dev, "%s: %d\n", __func__, ticks);
-#endif /* SPKRDEBUG */
-	if (ticks > 0) {
-		tsleep(sc->sc_dev, SPKRPRI | PCATCH, device_xname(sc->sc_dev),
-		    ticks);
-	}
-}
-
-/*
- * Play tone of proper duration for current rhythm signature.
- * note indicates "O0C" = 0, "O0C#" = 1, "O0D" = 2, ... , and
- * -1 indiacates a rest.
- * val indicates a length, "L4" = 4, "L8" = 8.
- * sustain indicates a subsequent dot that lengthen the sound a half.
- */
-static void
-playtone(struct spkr_softc *sc, int note, int val, int sustain)
-{
-	int whole;
-	int total;
-	int sound;
-	int silence;
+	int sound, silence, snum = 1, sdenom = 1;
 
 	/* this weirdness avoids floating-point arithmetic */
-	whole = sc->sc_whole;
 	for (; sustain; sustain--) {
-		whole *= NUM_MULT;
-		val *= DENOM_MULT;
+		snum *= NUM_MULT;
+		sdenom *= DENOM_MULT;
 	}
 
-	/* Original total length [tick] */
-	total = whole / val;
-
-	if (note == -1) {
-		rest(sc, total);
+	if (pitch == -1) {
+		(*sc->sc_rest)(sc->sc_dev, sc->sc_whole
+		    * snum / (val * sdenom));
 		return;
 	}
 
-	/*
-	 * Rest 1/8 (if NORMAL) or 3/8 (if STACCATO) in tick.
-	 * silence should be rounded down.
-	 */
-	silence = total * (FILLTIME - sc->sc_fill) / FILLTIME;
-	sound = total - silence;
+	int fac = sc->sc_whole * (FILLTIME - sc->sc_fill);
+	int fval = FILLTIME * val;
+	sound = (sc->sc_whole * snum) / (val * sdenom) -  fac / fval;
+	silence = fac * snum / (fval * sdenom);
 
 #ifdef SPKRDEBUG
 	aprint_debug_dev(sc->sc_dev,
-	    "%s: note %d for %d ticks, rest for %d ticks\n", __func__,
-	    note, sound, silence);
+	    "%s: pitch %d for %d ticks, rest for %d ticks\n", __func__,
+	    pitch, sound, silence);
 #endif /* SPKRDEBUG */
 
-	(*sc->sc_tone)(sc->sc_dev, pitchtab[note], sound);
-	if (silence != 0)
-		rest(sc, silence);
+	(*sc->sc_tone)(sc->sc_dev, pitchtab[pitch], sound);
+	if (sc->sc_fill != LEGATO)
+		(*sc->sc_rest)(sc->sc_dev, silence);
 }
 
 /* interpret and play an item from a notation string */
@@ -407,7 +361,8 @@ playstring(struct spkr_softc *sc, const char *cp, size_t slen)
 #define spkrenter(d)	device_lookup_private(&spkr_cd, d)
 
 void
-spkr_attach(device_t self, void (*tone)(device_t, u_int, u_int))
+spkr_attach(device_t self, void (*tone)(device_t, u_int, u_int),
+    void (*rest)(device_t, int))
 {
 	struct spkr_softc *sc = device_private(self);
 
@@ -416,6 +371,7 @@ spkr_attach(device_t self, void (*tone)(device_t, u_int, u_int))
 #endif /* SPKRDEBUG */
 	sc->sc_dev = self;
 	sc->sc_tone = tone;
+	sc->sc_rest = rest;
 	sc->sc_inbuf = NULL;
 	sc->sc_wsbelldev = NULL;
 
@@ -532,18 +488,13 @@ spkrclose(dev_t dev, int flags, int mode, struct lwp *l)
 	return 0;
 }
 
-/*
- * Play tone specified by tp.
- * tp->frequency is a frequency (0 means a rest).  tp->duration is a
- * length in tick(9).
- */
 static void
 playonetone(struct spkr_softc *sc, tone_t *tp)
 {
-	if (tp->frequency == 0)
-		rest(sc, tp->duration);
-	else
-		(*sc->sc_tone)(sc->sc_dev, tp->frequency, tp->duration);
+    if (tp->frequency == 0)
+	    (*sc->sc_rest)(sc->sc_dev, tp->duration);
+    else
+	    (*sc->sc_tone)(sc->sc_dev, tp->frequency, tp->duration);
 }
 
 int

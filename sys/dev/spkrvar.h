@@ -18,10 +18,12 @@ struct spkr_softc {
 
 	/* attachment-specific hooks */
 	void (*sc_tone)(device_t, u_int, u_int);
+	void (*sc_rest)(device_t, int);
 	u_int sc_vol;	/* volume - only for audio skpr */
 };
 
-void spkr_attach(device_t, void (*)(device_t, u_int, u_int));
+void spkr_attach(device_t,
+    void (*)(device_t, u_int, u_int), void (*)(device_t, int));
 
 int spkr_detach(device_t, int);
 
