@@ -69,7 +69,7 @@ spkr_audio_tone(device_t self, u_int xhz, u_int ticks)
 	struct spkr_audio_softc *sc = device_private(self);
 
 #ifdef SPKRDEBUG
-	aprint_debug_dev(self, "%s: %u %d\n", __func__, xhz, ticks);
+	device_printf(self, "%s: %u %u\n", __func__, xhz, ticks);
 #endif /* SPKRDEBUG */
 	audiobell(sc->sc_audiodev, xhz, hztoms(ticks),
 	    sc->sc_spkr.sc_vol, 0);
