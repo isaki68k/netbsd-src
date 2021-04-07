@@ -160,7 +160,8 @@ Every successful call to
 is matched by a call to
 .Va close .
 Return 0 on success, otherwise an error code.
-It is called in the Closed phase.
+This callback will be called with the interrupt and thread locks held,
+in the Closed phase.
 .\" ----------
 .It Dv void close(void *hdl)
 optional, is called when the last audio device combining
@@ -170,7 +171,8 @@ Before call to this,
 and
 .Va halt_output
 are called if necessary.
-It is called in the Opened phase.
+This callback will be called with the interrupt and thread locks held,
+in the Opened phase.
 .\" ----------
 .It Dv int query_format(void *hdl, audio_format_query_t *afp)
 is called to enumerate formats supported by the hardware.
@@ -180,7 +182,8 @@ structure according to given number
 .Va afp->index .
 If there is no format with the given number, return
 .Er EINVAL .
-It can be called at any time.
+This callback will be called with the thread lock held,
+and may be called in all of three phases.
 .Bd -literal
 typedef struct audio_format_query {
 	u_int	index;
@@ -336,7 +339,8 @@ property the same value is passed in both
 and
 .Va rec .
 Returns 0 on success, otherwise an error code.
-It is called in the Attach or Closed phases.
+This callback will be called with the thread lock held,
+in the Attach or Closed phases.
 .\" ----------
 .It Dv int round_blocksize(void *hdl, int bs, int mode,
 .Dv "const audio_params_t *param)"
@@ -357,7 +361,8 @@ param->channels * param->precision / 8.
 It should return a block size, possibly changed according to the needs
 of the hardware driver.
 The return value also must be non-zero and a multiple of the frame size.
-It is called in the Attach or Closed phases.
+This callback will be called with the thread lock held,
+in the Attach or Closed phases.
 .\" ----------
 .It Dv int commit_settings(void *hdl)
 optional, is called after all calls to
@@ -369,7 +374,8 @@ A hardware driver that needs to get the hardware in and out of command
 mode for each change can save all the changes during previous calls and
 do them all here.
 Returns 0 on success, otherwise an error code.
-It is called in the Attach or Closed phases.
+This callback will be called with the thread lock held,
+in the Attach or Closed phases.
 .\" ----------
 .It Dv int init_output(void *hdl, void *buffer, int size)
 optional, is called before any output starts, but when the total
@@ -379,7 +385,8 @@ of the output
 has been determined.
 It can be used to initialize looping DMA for hardware that needs that.
 Return 0 on success, otherwise an error code.
-It is called in the Attach or Closed phases.
+This callback will be called with the interrupt and thread locks held,
+in the Attach or Closed phases.
 .\" ----------
 .It Dv int init_input(void *hdl, void *buffer, int size)
 optional, is called before any input starts, but when the total
@@ -389,7 +396,8 @@ of the input
 has been determined.
 It can be used to initialize looping DMA for hardware that needs that.
 Returns 0 on success, otherwise an error code.
-It is called in the Attach or Closed phases.
+This callback will be called with the interrupt and thread locks held,
+in the Attach or Closed phases.
 .\" ----------
 .It Dv int start_output(void *hdl, void *block, int blksize,
 .Dv "void (*intr)(void*), void *intrarg)"
@@ -411,7 +419,8 @@ will normally initiate another call to
 .Va start_output .
 Returns 0 on success, otherwise an error code.
 This field is optional only if the driver doesn't support playback.
-It is called in the Opened phase.
+This callback will be called with the interrupt and thread locks held,
+in the Opened phase.
 .\" ----------
 .It Dv int start_input(void *hdl, void *block, int blksize,
 .Dv "void (*intr)(void*), void *intrarg)"
@@ -433,7 +442,8 @@ will normally initiate another call to
 .Va start_input .
 Returns 0 on success, otherwise an error code.
 This field is optional only if the driver doesn't support recording.
-It is called in the Opened phase.
+This callback will be called with the interrupt and thread locks held,
+in the Opened phase.
 .\" ----------
 .It Dv int halt_output(void *hdl)
 is called to abort the output transfer (started by
@@ -441,7 +451,8 @@ is called to abort the output transfer (started by
 in progress.
 Returns 0 on success, otherwise an error code.
 This field is optional only if the driver doesn't support playback.
-It is called in the Opened phase.
+This callback will be called with the interrupt and thread locks held,
+in the Opened phase.
 .\" ----------
 .It Dv int halt_input(void *hdl)
 is called to abort the input transfer (started by
@@ -449,7 +460,8 @@ is called to abort the input transfer (started by
 in progress.
 Returns 0 on success, otherwise an error code.
 This field is optional only if the driver doesn't support recording,
-It is called in the Opened phase.
+This callback will be called with the interrupt and thread locks held,
+in the Opened phase.
 .\" ----------
 .It Dv int speaker_ctl(void *hdl, int on)
 optional, is called when a half duplex device changes between
@@ -457,14 +469,16 @@ playing and recording.
 It can, e.g., be used to turn on
 and off the speaker.
 Returns 0 on success, otherwise an error code.
-It is called in the Opened phase.
+This callback will be called with the interrupt and thread locks held,
+in the Opened phase.
 .\" ----------
 .It Dv int getdev(void *hdl, struct audio_device *ret)
 Should fill the
 .Va audio_device
 struct with relevant information about the driver.
 Returns 0 on success, otherwise an error code.
-It is called in the Opened phase.
+This callback will be called with the thread lock held,
+in the Opened or Closed phases.
 .\" ----------
 .It Dv int set_port(void *hdl, mixer_ctrl_t *mc)
 is called in when
@@ -474,7 +488,8 @@ It should take data from the
 .Va mixer_ctrl_t
 struct and set the corresponding mixer values.
 Returns 0 on success, otherwise an error code.
-It is called in the Opened or Closed phases.
+This callback will be called with the thread lock held,
+in the Opened or Closed phases.
 .\" ----------
 .It Dv int get_port(void *hdl, mixer_ctrl_t *mc)
 is called in when
@@ -484,7 +499,8 @@ It should fill the
 .Va mixer_ctrl_t
 struct.
 Returns 0 on success, otherwise an error code.
-It is called in the Opened or Closed phases.
+This callback will be called with the thread lock held,
+in the Opened or Closed phases.
 .\" ----------
 .It Dv int query_devinfo(void *hdl, mixer_devinfo_t *di)
 is called in when
@@ -494,7 +510,8 @@ It should fill the
 .Va mixer_devinfo_t
 struct.
 Return 0 on success, otherwise an error code.
-It is called at any time.
+This callback will be called with the thread lock held,
+and may be called in all of three phases.
 .\" ----------
 .It Dv "void *allocm(void *hdl, int direction, size_t size)"
 optional, is called to allocate the device buffers.
@@ -507,7 +524,8 @@ is that some buses need special allocation to do DMA.
 Returns the address of the buffer, or
 .Dv NULL
 on failure.
-It is called in the Attached or Closed phases.
+This callback will be called without any locks held,
+in the Attach or Closed phases.
 .\" ----------
 .It Dv void freem(void *hdl, void *addr, size_t size)
 optional, is called to free memory allocated by
@@ -515,7 +533,8 @@ optional, is called to free memory allocated by
 If not supplied
 .Xr free 9
 is used.
-It is called in the Attached or Closed phases.
+This callback will be called without any locks held,
+in the Attach or Closed phases.
 .\" ----------
 .It Dv size_t round_buffersize(void *hdl, int direction, size_t bufsize)
 optional, is called at startup to determine the audio
@@ -524,7 +543,8 @@ The upper layer supplies the suggested size in
 .Va bufsize ,
 which the hardware driver can then change if needed.
 E.g., DMA on the ISA bus cannot exceed 65536 bytes.
-It is called in the Attached or Closed phases.
+This callback will be called with the thread lock held,
+in the Attach or Closed phases.
 .\" ----------
 .It Dv int get_props(void *hdl)
 Should return the device properties in a combination of following flags:
@@ -544,7 +564,8 @@ Don't set it if the device is unidirectional.
 .It Dv AUDIO_PROP_MMAP
 is handled in the upper layer, so new drivers should not return this property.
 .El
-It is called in the Attach phase.
+This callback will be called without any locks held,
+in the Attach phase.
 .\" ----------
 .It Dv int trigger_output(void *hdl, void *start, void *end,
 .Dv "int blksize, void (*intr)(void*), void *intrarg,"
@@ -570,7 +591,8 @@ should be called with the argument
 Once started the transfer may be stopped using
 .Va halt_output .
 Return 0 on success, otherwise an error code.
-It is called in the Opened phase.
+This callback will be called with the interrupt and thread locks held,
+in the Opened phase.
 .\" ----------
 .It Dv int trigger_input(void *hdl, void *start, void *end,
 .Dv "int blksize, void (*intr)(void*), void *intrarg,"
@@ -596,7 +618,8 @@ should be called with the argument
 Once started the transfer may be stopped using
 .Va halt_input .
 Return 0 on success, otherwise an error code.
-It is called in the Opened phase.
+This callback will be called with the interrupt and thread locks held,
+in the Opened phase.
 .\" ----------
 .It Dv int dev_ioctl(void *hdl, u_long cmd, void *addr,
 .Pp
@@ -606,11 +629,12 @@ optional, is called when an
 .Xr ioctl 2
 is not recognized by the generic audio driver.
 Return 0 on success, otherwise an error code.
-It is called in the Opened phase.
+This callback will be called with the thread lock held,
+in the Opened phase.
 .\" ----------
 .It Dv void get_locks(void *hdl, kmutex_t **intr, kmutex_t **thread)
 Returns the interrupt and thread locks to the common audio layer.
-It is called in the Attach phase.
+This callback will be called in the Attach phase.
 .\" ----------
 .El
 .Pp
