@@ -842,7 +842,7 @@ item(54547, false,
 "running stress-ng --dev 1 will cause the kernel to panic and reboot",
 "詳細不明。nat が N8 の mmap あたりを直したようだ。");
 
-item("54614/port-arm", false,
+item("-54614/port-arm", false,
 "playing with uaudio panics on rpi",
 "dwc2 の問題。");
 
@@ -858,7 +858,7 @@ item(-54667, false,
 "libossaudio returns incorrect recording sample rate",
 "録音再生が分離されたことに libossaudio 側が対応してなかった件。");
 
-item("54696/port-evbarm", false,
+item("-54696/port-evbarm", false,
 "Kernel panic in bus_dma.c on Raspberry Pi 3B/3B+",
 "dwc2 の問題。");
 
@@ -914,6 +914,18 @@ item(55876, false,
 item(55878, false,
 "Doc error in audioctl(1)",
 "書いてあることが違う?、たぶんドキュメントを直すべき");
+
+item(-56059, true,
+"speaker(4): system hangs if tone < 100 Hz (_SC_CLK_TCK) is played",
+"audiobell のバッファ長計算の問題。");
+
+item(-56060, true,
+"speaker(4) does not produce silence with 'P'",
+"spkr まわりのパッチが未 commit のまま残ってた問題。");
+
+item(56073, false,
+"-",
+"ちょっと何言ってるか分からない。");
 
 ?>
 
