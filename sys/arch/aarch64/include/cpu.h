@@ -1,4 +1,4 @@
-/* $NetBSD: cpu.h,v 1.33 2021/02/21 17:07:06 jmcneill Exp $ */
+/* $NetBSD: cpu.h,v 1.36 2021/05/29 06:54:20 skrll Exp $ */
 
 /*-
  * Copyright (c) 2014, 2020 The NetBSD Foundation, Inc.
@@ -45,8 +45,8 @@
 #if defined(_KERNEL) || defined(_KMEMUSER)
 #include <sys/evcnt.h>
 
-#include <aarch64/frame.h>
 #include <aarch64/armreg.h>
+#include <aarch64/frame.h>
 
 struct clockframe {
 	struct trapframe cf_tf;
@@ -104,9 +104,6 @@ struct cpu_info {
 	int ci_hwpl;		/* current hardware priority */
 	volatile u_int ci_softints;
 	volatile u_int ci_intr_depth;
-	volatile uint32_t ci_blocked_pics;
-	volatile uint32_t ci_pending_pics;
-	volatile uint32_t ci_pending_ipls;
 
 	int ci_kfpu_spl;
 
@@ -152,7 +149,22 @@ static __inline struct cpu_info *lwp_getcpu(struct lwp *);
 #undef curlwp
 #define	curlwp			(aarch64_curlwp())
 
-int	cpu_maxproc(void);
+static inline int
+cpu_maxproc(void)
+{
+	/*
+	 * the pmap uses PID for ASID.
+	 */
+	switch (__SHIFTOUT(reg_id_aa64mmfr0_el1_read(), ID_AA64MMFR0_EL1_ASIDBITS)) {
+	case ID_AA64MMFR0_EL1_ASIDBITS_8BIT:
+		return (1U << 8) - 1;
+	case ID_AA64MMFR0_EL1_ASIDBITS_16BIT:
+		return (1U << 16) - 1;
+	default:
+		return 0;
+	}
+}
+
 void	cpu_signotify(struct lwp *l);
 void	cpu_need_proftick(struct lwp *l);
 

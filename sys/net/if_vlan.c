@@ -1,4 +1,4 @@
-/*	$NetBSD: if_vlan.c,v 1.153 2020/09/26 18:38:09 roy Exp $	*/
+/*	$NetBSD: if_vlan.c,v 1.160 2021/07/15 04:05:47 yamaguchi Exp $	*/
 
 /*
  * Copyright (c) 2000, 2001 The NetBSD Foundation, Inc.
@@ -78,7 +78,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_vlan.c,v 1.153 2020/09/26 18:38:09 roy Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_vlan.c,v 1.160 2021/07/15 04:05:47 yamaguchi Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -333,7 +333,6 @@ vlan_clone_create(struct if_clone *ifc, int unit)
 	struct ifvlan *ifv;
 	struct ifnet *ifp;
 	struct ifvlan_linkmib *mib;
-	int rv;
 
 	ifv = malloc(sizeof(struct ifvlan), M_DEVBUF, M_WAITOK | M_ZERO);
 	mib = kmem_zalloc(sizeof(struct ifvlan_linkmib), KM_SLEEP);
@@ -362,36 +361,18 @@ vlan_clone_create(struct if_clone *ifc, int unit)
 	ifp->if_transmit = vlan_transmit;
 	ifp->if_ioctl = vlan_ioctl;
 	IFQ_SET_READY(&ifp->if_snd);
-
-	rv = if_initialize(ifp);
-	if (rv != 0) {
-		aprint_error("%s: if_initialize failed(%d)\n", ifp->if_xname,
-		    rv);
-		goto fail;
-	}
-
+	if_initialize(ifp);
 	/*
 	 * Set the link state to down.
 	 * When the parent interface attaches we will use that link state.
 	 * When the parent interface link state changes, so will ours.
+	 * When the parent interface detaches, set the link state to down.
 	 */
 	ifp->if_link_state = LINK_STATE_DOWN;
 
 	vlan_reset_linkname(ifp);
 	if_register(ifp);
 	return 0;
-
-fail:
-	mutex_enter(&ifv_list.lock);
-	LIST_REMOVE(ifv, ifv_list);
-	mutex_exit(&ifv_list.lock);
-
-	mutex_destroy(&ifv->ifv_lock);
-	psref_target_destroy(&ifv->ifv_mib->ifvm_psref, ifvm_psref_class);
-	kmem_free(ifv->ifv_mib, sizeof(struct ifvlan_linkmib));
-	free(ifv, M_DEVBUF);
-
-	return rv;
 }
 
 static int
@@ -705,6 +686,7 @@ vlan_unconfig_locked(struct ifvlan *ifv, struct ifvlan_linkmib *nmib)
 	PSLIST_ENTRY_DESTROY(ifv, ifv_hash);
 
 	vlan_linkmib_update(ifv, nmib);
+	if_link_state_change(ifp, LINK_STATE_DOWN);
 
 	mutex_exit(&ifv->ifv_lock);
 
@@ -719,8 +701,6 @@ vlan_unconfig_locked(struct ifvlan *ifv, struct ifvlan_linkmib *nmib)
 	KERNEL_UNLOCK_UNLESS_NET_MPSAFE();
 #endif
 
-	if ((ifp->if_flags & IFF_PROMISC) != 0)
-		vlan_safe_ifpromisc_locked(ifp, 0);
 	if_down_locked(ifp);
 	ifp->if_capabilities = 0;
 	mutex_enter(&ifv->ifv_lock);
@@ -1341,11 +1321,18 @@ vlan_start(struct ifnet *ifp)
 	struct mbuf *m;
 	struct ifvlan_linkmib *mib;
 	struct psref psref;
+	struct ether_header *eh;
 	int error;
 
 	mib = vlan_getref_linkmib(ifv, &psref);
 	if (mib == NULL)
 		return;
+
+	if (__predict_false(mib->ifvm_p == NULL)) {
+		vlan_putref_linkmib(mib, &psref);
+		return;
+	}
+
 	p = mib->ifvm_p;
 	ec = (void *)mib->ifvm_p;
 
@@ -1355,6 +1342,21 @@ vlan_start(struct ifnet *ifp)
 		IFQ_DEQUEUE(&ifp->if_snd, m);
 		if (m == NULL)
 			break;
+
+		if (m->m_len < sizeof(*eh)) {
+			m = m_pullup(m, sizeof(*eh));
+			if (m == NULL) {
+				if_statinc(ifp, if_oerrors);
+				continue;
+			}
+		}
+
+		eh = mtod(m, struct ether_header *);
+		if (ntohs(eh->ether_type) == ETHERTYPE_VLAN) {
+			m_freem(m);
+			if_statinc(ifp, if_noproto);
+			continue;
+		}
 
 #ifdef ALTQ
 		/*
@@ -1479,12 +1481,34 @@ vlan_transmit(struct ifnet *ifp, struct mbuf *m)
 	struct ethercom *ec;
 	struct ifvlan_linkmib *mib;
 	struct psref psref;
+	struct ether_header *eh;
 	int error;
 	size_t pktlen = m->m_pkthdr.len;
 	bool mcast = (m->m_flags & M_MCAST) != 0;
 
+	if (m->m_len < sizeof(*eh)) {
+		m = m_pullup(m, sizeof(*eh));
+		if (m == NULL) {
+			if_statinc(ifp, if_oerrors);
+			return ENOBUFS;
+		}
+	}
+
+	eh = mtod(m, struct ether_header *);
+	if (ntohs(eh->ether_type) == ETHERTYPE_VLAN) {
+		m_freem(m);
+		if_statinc(ifp, if_noproto);
+		return EPROTONOSUPPORT;
+	}
+
 	mib = vlan_getref_linkmib(ifv, &psref);
 	if (mib == NULL) {
+		m_freem(m);
+		return ENETDOWN;
+	}
+
+	if (__predict_false(mib->ifvm_p == NULL)) {
+		vlan_putref_linkmib(mib, &psref);
 		m_freem(m);
 		return ENETDOWN;
 	}
@@ -1628,6 +1652,14 @@ vlan_input(struct ifnet *ifp, struct mbuf *m)
 			    "dropping packet.\n", ifp->if_xname);
 			return;
 		}
+
+		if (m_makewritable(&m, 0,
+		    sizeof(struct ether_vlan_header), M_DONTWAIT)) {
+			m_freem(m);
+			if_statinc(ifp, if_ierrors);
+			return;
+		}
+
 		evl = mtod(m, struct ether_vlan_header *);
 		KASSERT(ntohs(evl->evl_encap_proto) == ETHERTYPE_VLAN);
 
@@ -1665,6 +1697,24 @@ vlan_input(struct ifnet *ifp, struct mbuf *m)
 		memmove(mtod(m, char *) + mib->ifvm_encaplen,
 		    mtod(m, void *), sizeof(struct ether_header));
 		m_adj(m, mib->ifvm_encaplen);
+	}
+
+	/*
+	 * Drop promiscuously received packets if we are not in
+	 * promiscuous mode
+	 */
+	if ((m->m_flags & (M_BCAST | M_MCAST)) == 0 &&
+	    (ifp->if_flags & IFF_PROMISC) &&
+	    (ifv->ifv_if.if_flags & IFF_PROMISC) == 0) {
+		struct ether_header *eh;
+
+		eh = mtod(m, struct ether_header *);
+		if (memcmp(CLLADDR(ifv->ifv_if.if_sadl),
+		    eh->ether_dhost, ETHER_ADDR_LEN) != 0) {
+			m_freem(m);
+			if_statinc(&ifv->ifv_if, if_ierrors);
+			goto out;
+		}
 	}
 
 	m_set_rcvif(m, &ifv->ifv_if);

@@ -1,4 +1,5 @@
-// vim: noet ts=8 sts=8 sw=8
+/*	$NetBSD: xmm7360.c,v 1.8 2021/07/16 12:20:01 andvar Exp $	*/
+
 /*
  * Device driver for Intel XMM7360 LTE modems, eg. Fibocom L850-GL.
  * Written by James Wah
@@ -6,8 +7,8 @@
  *
  * Development of this driver was supported by genua GmbH
  *
- * Copyright (c) 2020 genua GmbH <info@genua.de>
- * Copyright (c) 2020 James Wah <james@laird-wah.net>
+ * Copyright (c) 2020 genua GmbH <info@genua.de>
+ * Copyright (c) 2020 James Wah <james@laird-wah.net>
  *
  * The OpenBSD and NetBSD support was written by Jaromir Dolecek for
  * Moritz Systems Technology Company Sp. z o.o.
@@ -74,7 +75,7 @@ MODULE_DEVICE_TABLE(pci, xmm7360_ids);
 #include "opt_gateway.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xmm7360.c,v 1.6 2020/07/29 13:03:36 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xmm7360.c,v 1.8 2021/07/16 12:20:01 andvar Exp $");
 #endif
 
 #include <sys/param.h>
@@ -2138,7 +2139,7 @@ wwanc_attach_finish(struct device *self)
 	struct wwanc_attach_args wa;
 	memset(&wa, 0, sizeof(wa));
 	wa.aa_type = WWMC_TYPE_NET;
-	sc->sc_net = config_found(self, &wa, wwancprint);
+	sc->sc_net = config_found(self, &wa, wwancprint, CFARG_EOL);
 }
 
 static void

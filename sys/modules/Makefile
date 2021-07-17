@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.248 2020/11/01 18:51:02 pgoyette Exp $
+#	$NetBSD: Makefile,v 1.250 2021/05/17 04:07:43 yamaguchi Exp $
 
 .include <bsd.own.mk>
 
@@ -81,6 +81,7 @@ SUBDIR+=	if_gif
 SUBDIR+=	if_gre
 SUBDIR+=	if_kue
 SUBDIR+=	if_l2tp
+SUBDIR+=	if_lagg
 SUBDIR+=	if_loop
 SUBDIR+=	if_mpls
 SUBDIR+=	if_mue
@@ -129,6 +130,7 @@ SUBDIR+=	null
 SUBDIR+=	onewire
 SUBDIR+=	opencrypto
 SUBDIR+=	overlay
+SUBDIR+=	pad
 SUBDIR+=	pciverbose
 SUBDIR+=	pf
 SUBDIR+=	ppp_bsdcomp
@@ -342,7 +344,6 @@ SUBDIR+=	drmkms_linux
 SUBDIR+=	drmkms_pci
 SUBDIR+=	i915drm
 SUBDIR+=	i915drmkms
-SUBDIR+=	pad
 #
 # ISA modules
 #

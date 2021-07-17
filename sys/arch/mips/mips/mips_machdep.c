@@ -1,4 +1,4 @@
-/*	$NetBSD: mips_machdep.c,v 1.300 2020/09/02 01:33:27 simonb Exp $	*/
+/*	$NetBSD: mips_machdep.c,v 1.302 2021/06/02 00:00:39 simonb Exp $	*/
 
 /*
  * Copyright 2002 Wasabi Systems, Inc.
@@ -111,7 +111,7 @@
  */
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
-__KERNEL_RCSID(0, "$NetBSD: mips_machdep.c,v 1.300 2020/09/02 01:33:27 simonb Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mips_machdep.c,v 1.302 2021/06/02 00:00:39 simonb Exp $");
 
 #define __INTR_PRIVATE
 #include "opt_cputype.h"
@@ -124,6 +124,7 @@ __KERNEL_RCSID(0, "$NetBSD: mips_machdep.c,v 1.300 2020/09/02 01:33:27 simonb Ex
 #include <sys/intr.h>
 #include <sys/exec.h>
 #include <sys/reboot.h>
+#include <sys/module.h>
 #include <sys/mount.h>			/* fsid_t for syscallargs */
 #include <sys/lwp.h>
 #include <sys/sysctl.h>
@@ -1784,9 +1785,9 @@ SYSCTL_SETUP(sysctl_machdep_setup, "sysctl machdep subtree setup")
 		       CTL_MACHDEP, CPU_ROOT_DEVICE, CTL_EOL);
 	sysctl_createv(clog, 0, NULL, NULL,
 		       CTLFLAG_PERMANENT|CTLFLAG_IMMEDIATE,
-                       CTLTYPE_INT, "llsc", NULL,
-                       NULL, MIPS_HAS_LLSC, NULL, 0,
-                       CTL_MACHDEP, CPU_LLSC, CTL_EOL);
+		       CTLTYPE_INT, "llsc", NULL,
+		       NULL, MIPS_HAS_LLSC, NULL, 0,
+		       CTL_MACHDEP, CPU_LLSC, CTL_EOL);
 #ifdef MIPS3_LOONGSON2
 	sysctl_createv(clog, 0, NULL, NULL,
 		       CTLFLAG_PERMANENT|CTLFLAG_IMMEDIATE,
@@ -1796,8 +1797,8 @@ SYSCTL_SETUP(sysctl_machdep_setup, "sysctl machdep subtree setup")
 #endif
 	sysctl_createv(clog, 0, NULL, NULL,
 		       CTLFLAG_PERMANENT|CTLFLAG_IMMEDIATE,
-                       CTLTYPE_INT, "fpu_present", NULL,
-                       NULL,
+		       CTLTYPE_INT, "fpu_present", NULL,
+		       NULL,
 #ifdef NOFPU
 		       0,
 #else
@@ -2454,6 +2455,18 @@ std_splsw_test(void)
 }
 
 #endif /* PARANOIA */
+
+#ifdef MODULAR
+/*
+ * Push any modules loaded by the boot loader.
+ */
+void
+module_init_md(void)
+{
+
+	/* XXX Do something board/machine specific here one day... */
+}
+#endif /* MODULAR */
 
 bool
 mm_md_direct_mapped_phys(paddr_t pa, vaddr_t *vap)
