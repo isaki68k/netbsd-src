@@ -5591,54 +5591,131 @@ DEF(AUDIO_SETINFO_gain)
 }
 
 /*
- * If any value can be set, it is set to var[0].
- * If another value can be set, it is set to var[1], otherwise var[1] = -1.
+ * If any gain can be set, it is set to gain[0].
+ * If another gain can be set, it is set to gain[1], otherwise gain[1] = -1.
+ * This is for AUDIO_SETINFO_gain_balance.
  */
-#define CHECK_CHANGEABLE(var, dir, member, initial_value) do { \
-	struct audio_info ai_; \
-	\
-	/* Try to set initial value */ \
-	AUDIO_INITINFO(&ai_); \
-	ai_.dir.member = (initial_value); \
-	r = IOCTL(fd, AUDIO_SETINFO, &ai_, \
-	    #dir "." #member "=%d", ai_.dir.member); \
-	XP_SYS_EQ(0, r); \
-	/* Get again (Some devices cann't set the specified value as is) */ \
-	AUDIO_INITINFO(&ai_); \
-	r = IOCTL(fd, AUDIO_GETINFO, &ai_, "&ai_"); \
-	XP_SYS_EQ(0, r); \
-	/* Let this value var[0] */ \
-	(var)[0] = ai_.dir.member; \
-	\
-	/* Look for next value */ \
-	for ((var)[1] = (var)[0] - 1; (var)[1] >= 0; ((var)[1])--) { \
-		AUDIO_INITINFO(&ai_); \
-		ai_.dir.member = (var)[1]; \
-		r = IOCTL(fd, AUDIO_SETINFO, &ai_, \
-		    #dir "." #member "=%d", ai_.dir.member); \
-		XP_SYS_EQ(0, r); \
-		/* Get again */ \
-		r = IOCTL(fd, AUDIO_GETINFO, &ai_, "&ai_"); \
-		XP_SYS_EQ(0, r); \
-		if ((int)ai_.dir.member != (int)((var)[0])) { \
-			(var)[1] = ai_.dir.member; \
-			break; \
-		} \
-	} \
-	/* Restore to the var[0] */ \
-	AUDIO_INITINFO(&ai_); \
-	ai_.dir.member = (var)[0]; \
-	r = IOCTL(fd, AUDIO_SETINFO, &ai_, "restore " #dir "." #member); \
-	XP_SYS_EQ(0, r); \
-	\
-	if ((var)[1] >= 0) { \
-		DPRINTF("  > can set %d, %d for " #dir "." #member "\n", \
-		    (var)[1], (var)[0]); \
-	} else { \
-		DPRINTF("  > can set only %d for " #dir "." #member "\n", \
-		    (var)[1]); \
-	} \
-} while (0)
+static void
+check_gain_changeable(int fd, int *gain, const char *dir, int offset)
+{
+	struct audio_info ai;
+	int *ai_gain;
+	int r;
+
+	/* A hack to handle ai.{play,record}.gain in the same code.. */
+	ai_gain = (int *)(((char *)&ai) + offset);
+
+	/* Try to set the maximum gain */
+	AUDIO_INITINFO(&ai);
+	*ai_gain = AUDIO_MAX_GAIN;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "%s.gain=%d", dir, *ai_gain);
+	XP_SYS_EQ(0, r);
+
+	/* Get again (Some devices can't set the specified value as is). */
+	AUDIO_INITINFO(&ai);
+	r = IOCTL(fd, AUDIO_GETINFO, &ai, "&ai");
+	XP_SYS_EQ(0, r);
+	/* Let this value gain[0] */
+	gain[0] = *ai_gain;
+
+	/* Look for next settable value. */
+	for (gain[1] = gain[0] - 1; gain[1] >= 0; gain[1]--) {
+		AUDIO_INITINFO(&ai);
+		*ai_gain = gain[1];
+		r = IOCTL(fd, AUDIO_SETINFO, &ai, "%s.gain=%d", dir, *ai_gain);
+		XP_SYS_EQ(0, r);
+		/* Get again */
+		r = IOCTL(fd, AUDIO_GETINFO, &ai, "&ai");
+		XP_SYS_EQ(0, r);
+		if (*ai_gain != gain[0]) {
+			gain[1] = *ai_gain;
+			break;
+		}
+	}
+
+	/* Initialize to the gain[0] */
+	AUDIO_INITINFO(&ai);
+	*ai_gain = gain[0];
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "init %s.gain=%d", dir, *ai_gain);
+	XP_SYS_EQ(0, r);
+
+	if (gain[1] >= 0) {
+		DPRINTF("  > %s.gain can be set %d, %d\n",
+		    dir, gain[1], gain[0]);
+	} else {
+		DPRINTF("  > %s.gain can only be set %d\n",
+		    dir, gain[0]);
+	}
+}
+
+/*
+ * If any balance value can be set, it is set to balance[0].
+ * If another balance value can be set, it is set to balance[1],
+ * otherwise balance[1] = -1.
+ * This is for AUDIO_SETINFO_gain_balance.
+ */
+static void
+check_balance_changeable(int fd, int *balance, const char *dir, int offset)
+{
+	struct audio_info ai;
+	u_char *ai_balance;
+	int r;
+	int delta;
+	u_char v;
+
+	/* A hack to handle ai.{play,record}.balance in the same code.. */
+	ai_balance = ((u_char *)&ai) + offset;
+
+	/* Try to set right */
+	AUDIO_INITINFO(&ai);
+	*ai_balance = AUDIO_RIGHT_BALANCE;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "%s.balance=%d", dir, *ai_balance);
+	XP_SYS_EQ(0, r);
+
+	/* Get again (Some devices can't set the specified value as is) */
+	AUDIO_INITINFO(&ai);
+	r = IOCTL(fd, AUDIO_GETINFO, &ai, "&ai");
+	XP_SYS_EQ(0, r);
+	/* Let this value balance[0] */
+	balance[0] = *ai_balance;
+
+	/* Look for the different settable value. */
+	v = balance[0];
+	delta = AUDIO_LEFT_BALANCE - balance[0];
+	while (delta != 0) {
+		v += delta;
+
+		AUDIO_INITINFO(&ai);
+		*ai_balance = v;
+		r = IOCTL(fd, AUDIO_SETINFO, &ai, "%s.balance=%d",
+		    dir, *ai_balance);
+		XP_SYS_EQ(0, r);
+		/* Get again */
+		r = IOCTL(fd, AUDIO_GETINFO, &ai, "&ai");
+		XP_SYS_EQ(0, r);
+		if (*ai_balance != balance[0])
+			break;
+
+		delta = (delta > 0) ? -(delta - 1) : -(delta + 1);
+	}
+	if (delta != 0)
+		balance[1] = v;
+
+	/* Initialize to the balance[0] */
+	AUDIO_INITINFO(&ai);
+	*ai_balance = balance[0];
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "init %s.balance=%d",
+	    dir, *ai_balance);
+	XP_SYS_EQ(0, r);
+
+	if (balance[1] >= 0) {
+		DPRINTF("  > %s.balance can be set %d, %d\n",
+		    dir, balance[1], balance[0]);
+	} else {
+		DPRINTF("  > %s.balance can only be set %d\n",
+		    dir, balance[0]);
+	}
+}
 
 /*
  * Check whether gain and balance can be set at the same time.
@@ -5661,13 +5738,6 @@ DEF(AUDIO_SETINFO_gain_balance)
 
 	TEST("AUDIO_SETINFO_gain_balance");
 
-	for (i = 0; i < 2; i++) {
-		pgain[i]    = -1;
-		pbalance[i] = -1;
-		rgain[i]    = -1;
-		rbalance[i] = -1;
-	}
-
 	mode = openable_mode();
 	fd = OPEN(devaudio, mode);
 	REQUIRED_SYS_OK(fd);
@@ -5683,24 +5753,41 @@ DEF(AUDIO_SETINFO_gain_balance)
 		printf("  > old record.balance = %d\n", oai.record.balance);
 	}
 
+	for (i = 0; i < 2; i++) {
+		pgain[i]    = -1;
+		pbalance[i] = -1;
+		rgain[i]    = -1;
+		rbalance[i] = -1;
+	}
+
 	/*
 	 * First, check each one separately can be changed.
+	 *
+	 * The simplest two different gain values are zero and non-zero.
+	 * But some device drivers seem to process balance differently
+	 * when the gain is non-zero and when the gain is zero.
+	 * At least I've observed it on my auich(4).
+	 * So I need to select two different "non-zero" values for gain.
 	 */
 	if (hw_canplay()) {
-		CHECK_CHANGEABLE(pgain,    play, gain, 255);
-		CHECK_CHANGEABLE(pbalance, play, balance, AUDIO_RIGHT_BALANCE);
+		check_gain_changeable(fd, pgain, "play",
+		    offsetof(struct audio_info, play.gain));
+		check_balance_changeable(fd, pbalance, "play",
+		    offsetof(struct audio_info, play.balance));
 	}
 	if (hw_canrec()) {
-		CHECK_CHANGEABLE(rgain,    record, gain, 255);
-		CHECK_CHANGEABLE(rbalance, record, balance,
-		    AUDIO_RIGHT_BALANCE);
+		check_gain_changeable(fd, rgain, "record",
+		    offsetof(struct audio_info, record.gain));
+		check_balance_changeable(fd, rbalance, "record",
+		    offsetof(struct audio_info, record.balance));
 	}
 
 	/*
 	 * [0] [1]
+	 * --- ---
 	 *  -1  *  : not available.
 	 * >=0  -1 : available but not changeable.
-	 * >=0 >=0 : available and changeable.
+	 * >=0 >=0 : available and changeable.  It can be tested.
 	 */
 	ptest = (pgain[0] >= 0 && pbalance[0] >= 0 &&
 	         pgain[1] >= 0 && pbalance[1] >= 0);
@@ -5727,8 +5814,9 @@ DEF(AUDIO_SETINFO_gain_balance)
 		r = IOCTL(fd, AUDIO_GETINFO, &ai, "&ai");
 		XP_SYS_EQ(0, r);
 
-		DPRINTF("  > play.gain = %d, play.balance = %d\n",
-		    ai.play.gain, ai.play.balance);
+		DPRINTF("  > setting play.gain=%d/balance=%d: "
+		    " result gain=%d/balance=%d\n",
+		    pgain[1], pbalance[1], ai.play.gain, ai.play.balance);
 		XP_EQ(ai.play.gain,    pgain[1]);
 		XP_EQ(ai.play.balance, pbalance[1]);
 	}
@@ -5748,8 +5836,9 @@ DEF(AUDIO_SETINFO_gain_balance)
 		r = IOCTL(fd, AUDIO_GETINFO, &ai, "&ai");
 		XP_SYS_EQ(0, r);
 
-		DPRINTF("  > record.gain = %d, record.balance = %d\n",
-		    ai.record.gain, ai.record.balance);
+		DPRINTF("  > setting record.gain=%d/balance=%d: "
+		    " result gain=%d/balance=%d\n",
+		    pgain[1], pbalance[1], ai.record.gain, ai.record.balance);
 		XP_EQ(ai.record.gain,    rgain[1]);
 		XP_EQ(ai.record.balance, rbalance[1]);
 	}
