@@ -64,6 +64,8 @@ __KERNEL_RCSID(0, "$NetBSD: pad.c,v 1.75 2021/06/14 18:44:53 riastradh Exp $");
 #define DPRINTF(fmt...) /**/
 #endif
 
+#define PADUNIT(x)	minor(x)
+
 #define PADFREQ		44100
 #define PADCHAN		2
 #define PADPREC		16
@@ -153,6 +155,7 @@ static int	pad_add_block(struct pad_softc *, uint8_t *, int);
 static int	pad_get_block(struct pad_softc *, pad_block_t *, int);
 
 static dev_type_open(pad_open);
+static dev_type_ioctl(cdev_pad_ioctl);
 
 const struct cdevsw pad_cdevsw = {
 	.d_open		= pad_open,
