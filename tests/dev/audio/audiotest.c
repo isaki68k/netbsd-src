@@ -77,6 +77,8 @@ void xp_err(int, int, const char *, ...) __printflike(3, 4) __dead;
 void xp_errx(int, int, const char *, ...) __printflike(3, 4) __dead;
 bool match(const char *, const char *);
 void xxx_close_wait(void);
+int different_gain(int);
+u_char different_balance(u_char);
 int mixer_get_outputs_master(int);
 void do_test(int);
 int rump_or_open(const char *, int);
@@ -1329,6 +1331,26 @@ reset_after_mmap(void)
 		if (fd != -1)
 			CLOSE(fd);
 	}
+}
+
+/* Return a different value from given gain (as possible) */
+int
+different_gain(int gain)
+{
+	if (gain < 128)
+		return 255;
+	else
+		return 127;
+}
+
+/* Return a different value from given balance (as possible) */
+u_char
+different_balance(u_char balance)
+{
+	if (balance < AUDIO_MID_BALANCE)
+		return AUDIO_RIGHT_BALANCE;
+	else
+		return AUDIO_LEFT_BALANCE;
 }
 
 /*
@@ -5499,7 +5521,6 @@ DEF(AUDIO_SETINFO_gain)
 	int index;
 	int master;
 	int master_backup;
-	int gain;
 	int fd;
 	int mixerfd;
 	int r;
@@ -5543,11 +5564,7 @@ DEF(AUDIO_SETINFO_gain)
 
 	/* Change it some different value */
 	AUDIO_INITINFO(&ai);
-	if (master == 0)
-		gain = 255;
-	else
-		gain = 0;
-	ai.play.gain = gain;
+	ai.play.gain = different_gain(master);
 	r = IOCTL(fd, AUDIO_SETINFO, &ai, "play.gain=%d", ai.play.gain);
 	XP_SYS_EQ(0, r);
 
@@ -5570,6 +5587,145 @@ DEF(AUDIO_SETINFO_gain)
 	r = CLOSE(fd);
 	XP_SYS_EQ(0, r);
 	r = CLOSE(mixerfd);
+	XP_SYS_EQ(0, r);
+}
+
+#define CHECK_CHANGEABLE(expected, oai, dir, member) do { \
+	struct audio_info ai_; \
+	AUDIO_INITINFO(&ai_); \
+	/* try to set */ \
+	ai_.dir.member = __CONCAT(different_,member)(oai.dir.member); \
+	r = IOCTL(fd, AUDIO_SETINFO, &ai_, \
+	    #dir "." #member "=%d", ai_.dir.member); \
+	XP_SYS_EQ(0, r); \
+	/* try to get */ \
+	AUDIO_INITINFO(&ai_); \
+	r = IOCTL(fd, AUDIO_GETINFO, &ai_, "&ai_"); \
+	XP_SYS_EQ(0, r); \
+	/* changeable or not */ \
+	if (ai_.dir.member != oai.dir.member) \
+		expected = ai_.dir.member; \
+	/* restore */ \
+	AUDIO_INITINFO(&ai_); \
+	ai_.dir.member = oai.dir.member; \
+	r = IOCTL(fd, AUDIO_SETINFO, &ai_, "restore " #dir "." #member); \
+	XP_SYS_EQ(0, r); \
+	\
+	DPRINTF("  > changeable " #dir "." #member " = %d\n", expected); \
+} while (0)
+
+/*
+ * Check whether gain and balance can be set at the same time.
+ * PR kern/
+ */
+DEF(AUDIO_SETINFO_gain_balance)
+{
+	struct audio_info oai;
+	struct audio_info ai;
+	int mode;
+	int fd;
+	int r;
+	int pgain;
+	int pbalance;
+	int rgain;
+	int rbalance;
+
+	TEST("AUDIO_SETINFO_gain_balance");
+
+	mode = openable_mode();
+	fd = OPEN(devaudio, mode);
+	REQUIRED_SYS_OK(fd);
+
+	/* Backup current gain and balance */
+	r = IOCTL(fd, AUDIO_GETINFO, &oai, "&oai");
+	XP_SYS_EQ(0, r);
+
+	if (debug) {
+		printf("  > old play.gain      = %d\n", oai.play.gain);
+		printf("  > old play.balance   = %d\n", oai.play.balance);
+		printf("  > old record.gain    = %d\n", oai.record.gain);
+		printf("  > old record.balance = %d\n", oai.record.balance);
+	}
+
+	pgain    = -1;
+	pbalance = -1;
+	rgain    = -1;
+	rbalance = -1;
+
+	/* First, check each one separately can be set */
+	if (hw_canplay()) {
+		CHECK_CHANGEABLE(pgain,    oai, play, gain);
+		CHECK_CHANGEABLE(pbalance, oai, play, balance);
+	}
+	if (hw_canrec()) {
+		CHECK_CHANGEABLE(rgain,    oai, record, gain);
+		CHECK_CHANGEABLE(rbalance, oai, record, balance);
+	}
+
+	/*
+	 * If both play.gain and play.balance are changeable,
+	 * check whether the both can be set at the same time.
+	 */
+	if (pgain != -1 && pbalance != -1) {
+		AUDIO_INITINFO(&ai);
+		ai.play.gain    = pgain;
+		ai.play.balance = pbalance;
+		r = IOCTL(fd, AUDIO_SETINFO, &ai, "play.gain=%d/balance=%d",
+		    ai.play.gain, ai.play.balance);
+		XP_SYS_EQ(0, r);
+
+		AUDIO_INITINFO(&ai);
+		r = IOCTL(fd, AUDIO_GETINFO, &ai, "&ai");
+		XP_SYS_EQ(0, r);
+
+		DPRINTF("  > play.gain = %d, play.balance = %d\n",
+		    ai.play.gain, ai.play.balance);
+		XP_EQ(ai.play.gain,    pgain);
+		XP_EQ(ai.play.balance, pbalance);
+	}
+	/*
+	 * If both record.gain and record.balance are changeable,
+	 * check whether the both can be set at the same time.
+	 */
+	if (rgain != -1 && rbalance != -1) {
+		AUDIO_INITINFO(&ai);
+		ai.record.gain    = rgain;
+		ai.record.balance = rbalance;
+		r = IOCTL(fd, AUDIO_SETINFO, &ai, "record.gain=%d/balance=%d",
+		    ai.record.gain, ai.record.balance);
+		XP_SYS_EQ(0, r);
+
+		AUDIO_INITINFO(&ai);
+		r = IOCTL(fd, AUDIO_GETINFO, &ai, "&ai");
+		XP_SYS_EQ(0, r);
+
+		DPRINTF("  > record.gain = %d, record.balance = %d\n",
+		    ai.record.gain, ai.record.balance);
+		XP_EQ(ai.record.gain,    rgain);
+		XP_EQ(ai.record.balance, rbalance);
+	}
+
+	/*
+	 * Restore all values as possible at the same time.
+	 * This restore is also a test.
+	 */
+	AUDIO_INITINFO(&ai);
+	ai.play.gain      = oai.play.gain;
+	ai.play.balance   = oai.play.balance;
+	ai.record.gain    = oai.record.gain;
+	ai.record.balance = oai.record.balance;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "restore all");
+	XP_SYS_EQ(0, r);
+
+	AUDIO_INITINFO(&ai);
+	r = IOCTL(fd, AUDIO_GETINFO, &ai, "&ai");
+	XP_SYS_EQ(0, r);
+	XP_EQ(oai.play.gain,      ai.play.gain);
+	XP_EQ(oai.play.balance,   ai.play.balance);
+	XP_EQ(oai.record.gain,    ai.record.gain);
+	XP_EQ(oai.record.balance, ai.record.balance);
+
+	r = CLOSE(fd);
 	XP_SYS_EQ(0, r);
 }
 
@@ -6368,6 +6524,7 @@ struct testentry testtable[] = {
 	ENT(AUDIO_SETINFO_pause_RDWR_2),
 	ENT(AUDIO_SETINFO_pause_RDWR_3),
 	ENT(AUDIO_SETINFO_gain),
+	ENT(AUDIO_SETINFO_gain_balance),
 	ENT(AUDIO_GETENC_range),
 	ENT(AUDIO_GETENC_error),
 	ENT(AUDIO_ERROR_RDONLY),
