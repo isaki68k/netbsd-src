@@ -77,8 +77,6 @@ void xp_err(int, int, const char *, ...) __printflike(3, 4) __dead;
 void xp_errx(int, int, const char *, ...) __printflike(3, 4) __dead;
 bool match(const char *, const char *);
 void xxx_close_wait(void);
-int different_gain(int);
-u_char different_balance(u_char);
 int mixer_get_outputs_master(int);
 void do_test(int);
 int rump_or_open(const char *, int);
@@ -1331,26 +1329,6 @@ reset_after_mmap(void)
 		if (fd != -1)
 			CLOSE(fd);
 	}
-}
-
-/* Return a different value from given gain (as possible) */
-int
-different_gain(int gain)
-{
-	if (gain < 128)
-		return 255;
-	else
-		return 127;
-}
-
-/* Return a different value from given balance (as possible) */
-u_char
-different_balance(u_char balance)
-{
-	if (balance < AUDIO_MID_BALANCE)
-		return AUDIO_RIGHT_BALANCE;
-	else
-		return AUDIO_LEFT_BALANCE;
 }
 
 /*
@@ -5521,6 +5499,7 @@ DEF(AUDIO_SETINFO_gain)
 	int index;
 	int master;
 	int master_backup;
+	int gain;
 	int fd;
 	int mixerfd;
 	int r;
@@ -5564,7 +5543,11 @@ DEF(AUDIO_SETINFO_gain)
 
 	/* Change it some different value */
 	AUDIO_INITINFO(&ai);
-	ai.play.gain = different_gain(master);
+	if (master == 0)
+		gain = 255;
+	else
+		gain = 0;
+	ai.play.gain = gain;
 	r = IOCTL(fd, AUDIO_SETINFO, &ai, "play.gain=%d", ai.play.gain);
 	XP_SYS_EQ(0, r);
 
