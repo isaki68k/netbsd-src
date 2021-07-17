@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile.rump,v 1.130 2021/03/14 13:11:59 rin Exp $
+#	$NetBSD: Makefile.rump,v 1.133 2021/07/07 11:51:45 martin Exp $
 #
 
 .if !defined(_RUMP_MK)
@@ -24,6 +24,11 @@ CPPFLAGS+=	-D_RUMPKERNEL -I${RUMPTOP}/librump/rumpkern
 # aborts after kern_assert on NULL pointer checks.
 CFLAGS+=    ${${ACTIVE_CC} == "gcc":? -fno-delete-null-pointer-checks :}
 
+.if ${RUMP_SANITIZE:Uno} != "no"
+CFLAGS+=	-fsanitize=${RUMP_SANITIZE}
+LDFLAGS+=	-fsanitize=${RUMP_SANITIZE}
+.endif
+
 # NULL + 0 arithmetic raises LLVM UBSan warnings, specially in sys/pslist.h
 # in the type-safe macros _PSLIST_VALIDATE_PTRS and _PSLIST_VALIDATE_CONTAINER.
 .if ${MKSANITIZER:Uno} == "yes" || ${MKLIBCSANITIZER:Uno} == "yes"
@@ -33,7 +38,7 @@ CFLAGS+=    ${${ACTIVE_CC} == "clang":? -fno-delete-null-pointer-checks :}
 # Define baseline cpu for mips ports, required for
 # rumpcomp_sync_icache() hypercall.
 .if !empty(MACHINE_ARCH:Mmips*)
-.if !empty(MACHINE_ARCH:Mmips64*)
+.if ${MACHINE_MIPS64}
 CPPFLAGS+=	-DMIPS64=1
 .else
 CPPFLAGS+=	-DMIPS1=1
@@ -56,9 +61,9 @@ CFLAGS+=	-ffreestanding -fno-strict-aliasing
 
 CWARNFLAGS+=	-Wno-format-zero-length -Wno-pointer-sign
 
-CPPFLAGS+=	-imacros ${RUMPTOP}/include/opt/opt_rumpkernel.h
+CPPIFLAGS+=	-imacros ${RUMPTOP}/include/opt/opt_rumpkernel.h
 .ifdef BUILDRUMP_IMACROS
-CPPFLAGS+=	-imacros ${BUILDRUMP_IMACROS}
+CPPIFLAGS+=	-imacros ${BUILDRUMP_IMACROS}
 .endif
 
 CPPFLAGS+=	-I${.CURDIR} -I.
@@ -70,8 +75,8 @@ SHLIB_MAJOR?=	0
 SHLIB_MINOR?=	0
 
 .ifdef NEED_ISYSTEM
-CPPFLAGS+=	-isystem ${RUMPTOP}/../arch
-CPPFLAGS+=	-isystem ${RUMPTOP}/..
+CPPIFLAGS+=	-isystem ${RUMPTOP}/../arch
+CPPIFLAGS+=	-isystem ${RUMPTOP}/..
 .else
 CPPFLAGS+=	-I${RUMPTOP}/../arch
 CPPFLAGS+=	-I${RUMPTOP}/..
@@ -260,6 +265,9 @@ __archivebuild: .USE
 COMMENT?=	(no description)
 rumpdescribe: .PHONY
 	@printf '%-24s %s\n' '${LIB}' '${COMMENT}'
+
+CPPFLAGS+=	${CPPIFLAGS}
+LINTFLAGS+=	${CPPIFLAGS:S/^/-Z /}
 
 _BSD_IOCONF_MK_USER_=1
 .include <bsd.ioconf.mk>

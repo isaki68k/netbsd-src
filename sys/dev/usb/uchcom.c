@@ -1,4 +1,4 @@
-/*	$NetBSD: uchcom.c,v 1.36 2020/03/14 02:35:33 christos Exp $	*/
+/*	$NetBSD: uchcom.c,v 1.39 2021/07/15 03:25:50 nisimura Exp $	*/
 
 /*
  * Copyright (c) 2007 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uchcom.c,v 1.36 2020/03/14 02:35:33 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uchcom.c,v 1.39 2021/07/15 03:25:50 nisimura Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -118,9 +118,6 @@ int	uchcomdebug = 0;
 #define UCHCOMIBUFSIZE 256
 #define UCHCOMOBUFSIZE 256
 
-#define UCHCOM_RESET_VALUE	0x501F
-#define UCHCOM_RESET_INDEX	0xD90A
-
 struct uchcom_softc
 {
 	device_t		sc_dev;
@@ -155,6 +152,7 @@ struct uchcom_divider
 	uint8_t		dv_div;
 };
 
+/* 0,1,2,3,7 are prescale factors for given 4x 12000000 clock formula */
 static const uint32_t rates4x[8] = {
 	[0] = 4 * 12000000 / 1024,
 	[1] = 4 * 12000000 / 128,
@@ -273,8 +271,9 @@ uchcom_attach(device_t parent, device_t self, void *aux)
 
 	usbd_add_drv_event(USB_EVENT_DRIVER_ATTACH, sc->sc_udev, sc->sc_dev);
 
-	sc->sc_subdev = config_found_sm_loc(self, "ucombus", NULL, &ucaa,
-					    ucomprint, ucomsubmatch);
+	sc->sc_subdev = config_found(self, &ucaa, ucomprint,
+				     CFARG_SUBMATCH, ucomsubmatch,
+				     CFARG_EOL);
 
 	return;
 
@@ -617,6 +616,24 @@ set_break(struct uchcom_softc *sc, int onoff)
 static int
 calc_divider_settings(struct uchcom_divider *dp, uint32_t rate)
 {
+/*
+ * combined with rates4x[] defined above, this routine generates,
+ *   1200: prescale = 1/0x1, divisor = 178/0xb2
+ *   2400: prescale = 1/0x1, divisor = 217/0xd9
+ *   4800: prescale = 2/0x2, divisor = 100/0x64
+ *   9600: prescale = 2/0x2, divisor = 178/0xb2
+ *  19200: prescale = 2/0x2, divisor = 217/0xd9
+ *  38400: prescale = 3/0x3, divisor = 100/0x64
+ *  57600: prescale = 2/0x2, divisor = 243/0xf3
+ * 115200: prescale = 3/0x3, divisor = 204/0xcc
+ * 921600: prescale = 7/0x7, divisor = 243/0xf3
+ * 500000: prescale = 3/0x3, divisor = 244/0xf4
+ * 1000000: prescale = 3/0x3, divisor = 250/0xfa
+ * 1500000: prescale = 3/0x3, divisor = 252/0xfc
+ * 2000000: prescale = 3/0x3, divisor = 253/0xfd
+ * 2500000: unsupported
+ * 3000000: prescale = 3/0x3, divisor = 254/0xfe
+ */
 	size_t i;
 	uint32_t best, div, pre;
 	const uint32_t rate4x = rate * 4U;
@@ -651,7 +668,7 @@ calc_divider_settings(struct uchcom_divider *dp, uint32_t rate)
 		return -1;
 
 	dp->dv_prescaler = pre;
-	dp->dv_div = (uint8_t)-div;
+	dp->dv_div = 256 - div;
 
 	return 0;
 }
@@ -739,26 +756,12 @@ clear_chip(struct uchcom_softc *sc)
 		    usbd_errstr(err));
 		return EIO;
 	}
-
+	/*
+	 * this REQ_RESET call ends up with
+	 * LCR=0xc0 (8N1)
+	 * PRE=0x02, DIV=0xd9 (19200)
+	 */
 	return 0;
-}
-
-static int
-reset_chip(struct uchcom_softc *sc)
-{
-	usbd_status err;
-
-	err = generic_control_out(sc, UCHCOM_REQ_RESET,
-	    UCHCOM_RESET_VALUE, UCHCOM_RESET_INDEX);
-	if (err)
-		goto failed;
-
-	return 0;
-
-failed:
-	printf("%s: cannot reset: %s\n",
-	       device_xname(sc->sc_dev), usbd_errstr(err));
-	return EIO;
 }
 
 static int
@@ -783,14 +786,6 @@ setup_comm(struct uchcom_softc *sc)
 		return ret;
 
 	ret = update_status(sc);
-	if (ret)
-		return ret;
-
-	ret = reset_chip(sc);
-	if (ret)
-		return ret;
-
-	ret = set_dte_rate(sc, TTYDEF_SPEED); /* XXX */
 	if (ret)
 		return ret;
 

@@ -1,4 +1,4 @@
-/* $NetBSD: machdep.c,v 1.369 2020/10/15 01:00:01 thorpej Exp $ */
+/* $NetBSD: machdep.c,v 1.374 2021/07/11 01:58:41 thorpej Exp $ */
 
 /*-
  * Copyright (c) 1998, 1999, 2000, 2019, 2020 The NetBSD Foundation, Inc.
@@ -65,9 +65,11 @@
 #include "opt_dec_3000_500.h"
 #include "opt_execfmt.h"
 
+#define	__RWLOCK_PRIVATE 
+
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.369 2020/10/15 01:00:01 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.374 2021/07/11 01:58:41 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -79,7 +81,6 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.369 2020/10/15 01:00:01 thorpej Exp $"
 #include <sys/sched.h>
 #include <sys/reboot.h>
 #include <sys/device.h>
-#include <sys/malloc.h>
 #include <sys/module.h>
 #include <sys/mman.h>
 #include <sys/msgbuf.h>
@@ -96,6 +97,7 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.369 2020/10/15 01:00:01 thorpej Exp $"
 #include <sys/kauth.h>
 #include <sys/atomic.h>
 #include <sys/cpu.h>
+#include <sys/rwlock.h>
 
 #include <machine/kcore.h>
 #include <machine/fpu.h>
@@ -133,6 +135,10 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.369 2020/10/15 01:00:01 thorpej Exp $"
 int sigdebug = 0x0;
 int sigpid = 0;
 #endif
+
+/* Assert some assumptions made in lock_stubs.s */
+__CTASSERT(RW_READER == 0);
+__CTASSERT(RW_HAS_WAITERS == 1);
 
 #include <machine/alpha.h>
 
@@ -1525,6 +1531,8 @@ sendsig_siginfo(const ksiginfo_t *ksi, const sigset_t *mask)
 	frame.sf_uc.uc_flags = _UC_SIGMASK;
 	frame.sf_uc.uc_sigmask = *mask;
 	frame.sf_uc.uc_link = l->l_ctxlink;
+	frame.sf_uc.uc_flags |= (l->l_sigstk.ss_flags & SS_ONSTACK)
+	    ? _UC_SETSTACK : _UC_CLRSTACK;
 	sendsig_reset(l, sig);
 	mutex_exit(p->p_lock);
 	cpu_getmcontext(l, &frame.sf_uc.uc_mcontext, &frame.sf_uc.uc_flags);
@@ -1706,6 +1714,9 @@ delay(unsigned long n)
 		return;
 	}
 
+	lwp_t * const l = curlwp;
+	KPREEMPT_DISABLE(l);
+
 	pcc0 = alpha_rpcc() & 0xffffffffUL;
 	cycles = 0;
 	usec = 0;
@@ -1734,6 +1745,8 @@ delay(unsigned long n)
 		}
 		pcc0 = pcc1;
 	}
+
+	KPREEMPT_ENABLE(l);
 }
 
 #ifdef EXEC_ECOFF
@@ -1803,27 +1816,6 @@ mm_md_direct_mapped_phys(paddr_t paddr, vaddr_t *vaddr)
 
 	*vaddr = ALPHA_PHYS_TO_K0SEG(paddr);
 	return true;
-}
-
-char *
-dot_conv(unsigned long x)
-{
-	int i;
-	char *xc;
-	static int next;
-	static char space[2][20];
-
-	xc = space[next ^= 1] + sizeof space[0];
-	*--xc = '\0';
-	for (i = 0;; ++i) {
-		if (i && (i & 3) == 0)
-			*--xc = '.';
-		*--xc = hexdigits[x & 0xf];
-		x >>= 4;
-		if (x == 0)
-			break;
-	}
-	return xc;
 }
 
 void
@@ -1901,8 +1893,10 @@ cpu_setmcontext(struct lwp *l, const mcontext_t *mcp, unsigned int flags)
 		frame->tf_regs[FRAME_PC] = gr[_REG_PC];
 		frame->tf_regs[FRAME_PS] = gr[_REG_PS];
 	}
+
 	if (flags & _UC_TLSBASE)
 		lwp_setprivate(l, (void *)(uintptr_t)gr[_REG_UNIQUE]);
+
 	/* Restore floating point register context, if any. */
 	if (flags & _UC_FPU) {
 		/* If we have an FP register context, get rid of it. */
@@ -1911,6 +1905,13 @@ cpu_setmcontext(struct lwp *l, const mcontext_t *mcp, unsigned int flags)
 		    sizeof (pcb->pcb_fp));
 		l->l_md.md_flags = mcp->__fpregs.__fp_fpcr & MDLWP_FP_C;
 	}
+
+	mutex_enter(l->l_proc->p_lock);
+	if (flags & _UC_SETSTACK)
+		l->l_sigstk.ss_flags |= SS_ONSTACK;
+	if (flags & _UC_CLRSTACK)
+		l->l_sigstk.ss_flags &= ~SS_ONSTACK;
+	mutex_exit(l->l_proc->p_lock);
 
 	return (0);
 }
