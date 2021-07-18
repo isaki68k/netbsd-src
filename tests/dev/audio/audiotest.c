@@ -5746,10 +5746,11 @@ DEF(AUDIO_SETINFO_gain_balance)
 	 *
 	 * The simplest two different gain values are zero and non-zero.
 	 * But some device drivers seem to process balance differently
-	 * when the gain is non-zero and when the gain is zero.
-	 * So I needed to select two different "non-zero" gains.
-	 * (I observed it on my auich(4) at least.  This is a bit strange
-	 * but not the essential matter on this test.  I didn't look into.)
+	 * when the gain is high enough and when the gain is zero or near.
+	 * So I needed to select two different "non-zero (and high if
+	 * possible)" gains.
+	 * (I observed it on my auich(4) at least.  But this is not the
+	 * essential matter on this test.  I didn't look into more.)
 	 */
 	if (hw_canplay()) {
 		get_changeable_gain(fd, pgain, "play",
