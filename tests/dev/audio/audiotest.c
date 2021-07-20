@@ -5622,24 +5622,23 @@ get_changeable_gain(int fd, int *gain, const char *dir, int offset)
 	/*
 	 * hi  lo
 	 * --- ---
-	 * >=0 >=0 hi!=lo : available and changeable.
-	 * >=0 >=0 hi==lo : available but not changeable.
-	 * >=0  <0        : available but not changeable.
-	 *  <0  <0        : not available.
+	 *  <0  <0          : not available.
+	 * >=0  <0          : available but not changeable.
+	 * >=0 >=0 (hi!=lo) : available and changeable.
 	 */
-	if (hi >= 0 && lo >= 0 && hi != lo) {
-		gain[0] = lo;
-		gain[1] = hi;
-		DPRINTF("  > %s.gain can be set %d, %d\n",
-		    dir, gain[0], gain[1]);
-	} else if (hi >= 0) {
+	if (hi < 0) {
+		gain[0] = -1;
+		gain[1] = -1;
+		DPRINTF("  > %s.gain cannot be set\n", dir);
+	} else if (lo < 0) {
 		gain[0] = hi;
 		gain[1] = -1;
 		DPRINTF("  > %s.gain can only be set %d\n", dir, gain[0]);
 	} else {
-		gain[0] = -1;
-		gain[1] = -1;
-		DPRINTF("  > %s.gain cannot be set\n", dir);
+		gain[0] = lo;
+		gain[1] = hi;
+		DPRINTF("  > %s.gain can be set %d, %d\n",
+		    dir, gain[0], gain[1]);
 	}
 }
 
