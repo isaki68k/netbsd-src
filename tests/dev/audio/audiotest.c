@@ -5683,17 +5683,17 @@ get_changeable_balance(int fd, int *balance, const char *dir, int offset)
 
 	/* Now balance is the left(=balance[0]). */
 
-	if (left != right) {
-		balance[0] = left;
-		balance[1] = right;
-		DPRINTF("  > %s.balance can be set %d, %d\n",
-		    dir, balance[0], balance[1]);
-	} else {
+	if (left == right) {
 		/* The driver has no balance feature. */
 		balance[0] = left;
 		balance[1] = -1;
 		DPRINTF("  > %s.balance can only be set %d\n",
 		    dir, balance[0]);
+	} else {
+		balance[0] = left;
+		balance[1] = right;
+		DPRINTF("  > %s.balance can be set %d, %d\n",
+		    dir, balance[0], balance[1]);
 	}
 }
 
@@ -5748,8 +5748,6 @@ DEF(AUDIO_SETINFO_gain_balance)
 	 * when the gain is high enough and when the gain is zero or near.
 	 * So I needed to select two different "non-zero (and high if
 	 * possible)" gains.
-	 * (I observed it on my auich(4) at least.  But this is not the
-	 * essential matter on this test.  I didn't look into more.)
 	 */
 	if (hw_canplay()) {
 		get_changeable_gain(fd, pgain, "play",
@@ -5771,13 +5769,26 @@ DEF(AUDIO_SETINFO_gain_balance)
 	 * >=0  -1 : available but not changeable.
 	 * >=0 >=0 : available and changeable.  It can be tested.
 	 */
-	ptest = (pgain[0] >= 0 && pbalance[0] >= 0 &&
-	         pgain[1] >= 0 && pbalance[1] >= 0);
-	rtest = (rgain[0] >= 0 && rbalance[0] >= 0 &&
-	         rgain[1] >= 0 && rbalance[1] >= 0);
+	ptest = (pgain[0]    >= 0 && pgain[1]    >= 0 &&
+	         pbalance[0] >= 0 && pbalance[1] >= 0);
+	rtest = (rgain[0]    >= 0 && rgain[1]    >= 0 &&
+	         rbalance[0] >= 0 && rbalance[1] >= 0);
+
 	if (ptest == false && rtest == false) {
-		XP_SKIP("The test requires"
-		    " changeable gain and changeable balance\n");
+		XP_SKIP(
+		    "The test requires changeable gain and changeable balance");
+
+		/* Restore as possible */
+		AUDIO_INITINFO(&ai);
+		ai.play.gain      = oai.play.gain;
+		ai.play.balance   = oai.play.balance;
+		ai.record.gain    = oai.record.gain;
+		ai.record.balance = oai.record.balance;
+		r = IOCTL(fd, AUDIO_SETINFO, &ai, "restore all");
+		XP_SYS_EQ(0, r);
+
+		r = CLOSE(fd);
+		XP_SYS_EQ(0, r);
 		return;
 	}
 
