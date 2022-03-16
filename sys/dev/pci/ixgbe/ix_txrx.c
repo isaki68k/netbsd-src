@@ -1,4 +1,4 @@
-/* $NetBSD: ix_txrx.c,v 1.81 2021/07/07 08:58:19 msaitoh Exp $ */
+/* $NetBSD: ix_txrx.c,v 1.95 2022/01/25 01:56:22 msaitoh Exp $ */
 
 /******************************************************************************
 
@@ -64,7 +64,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ix_txrx.c,v 1.81 2021/07/07 08:58:19 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ix_txrx.c,v 1.95 2022/01/25 01:56:22 msaitoh Exp $");
 
 #include "opt_inet.h"
 #include "opt_inet6.h"
@@ -95,6 +95,10 @@ static bool ixgbe_rsc_enable = FALSE;
  * setting this to 0.
  */
 static int atr_sample_rate = 20;
+
+#define IXGBE_M_ADJ(adapter, rxr, mp)					\
+	if (adapter->max_frame_size <= (rxr->mbuf_sz - ETHER_ALIGN))	\
+		m_adj(mp, ETHER_ALIGN)
 
 /************************************************************************
  *  Local Function prototypes
@@ -243,7 +247,7 @@ ixgbe_mq_start(struct ifnet *ifp, struct mbuf *m)
 
 	if (__predict_false(!pcq_put(txr->txr_interq, m))) {
 		m_freem(m);
-		txr->pcq_drops.ev_count++;
+		IXGBE_EVC_ADD(&txr->pcq_drops, 1);
 		return ENOBUFS;
 	}
 	if (IXGBE_TX_TRYLOCK(txr)) {
@@ -471,7 +475,7 @@ retry:
 	/* Make certain there are enough descriptors */
 	if (txr->tx_avail < (map->dm_nsegs + 2)) {
 		txr->txr_no_space = true;
-		txr->no_desc_avail.ev_count++;
+		IXGBE_EVC_ADD(&txr->no_desc_avail, 1);
 		ixgbe_dmamap_unload(txr->txtag, txbuf->map);
 		return EAGAIN;
 	}
@@ -542,7 +546,7 @@ retry:
 	 * Advance the Transmit Descriptor Tail (Tdt), this tells the
 	 * hardware that this frame is available to transmit.
 	 */
-	++txr->total_packets.ev_count;
+	IXGBE_EVC_ADD(&txr->total_packets, 1);
 	IXGBE_WRITE_REG(&adapter->hw, txr->tail, i);
 
 	net_stat_ref_t nsr = IF_STAT_GETREF(ifp);
@@ -578,7 +582,7 @@ ixgbe_drain(struct ifnet *ifp, struct tx_ring *txr)
 
 	while ((m = pcq_get(txr->txr_interq)) != NULL) {
 		m_freem(m);
-		txr->pcq_drops.ev_count++;
+		IXGBE_EVC_ADD(&txr->pcq_drops, 1);
 	}
 }
 
@@ -835,7 +839,7 @@ ixgbe_tx_ctx_setup(struct tx_ring *txr, struct mbuf *mp,
 		int rv = ixgbe_tso_setup(txr, mp, cmd_type_len, olinfo_status);
 
 		if (rv != 0)
-			++adapter->tso_err.ev_count;
+			IXGBE_EVC_ADD(&adapter->tso_err, 1);
 		return rv;
 	}
 
@@ -1077,7 +1081,7 @@ ixgbe_tso_setup(struct tx_ring *txr, struct mbuf *mp, u32 *cmd_type_len,
 	*cmd_type_len |= IXGBE_ADVTXD_DCMD_TSE;
 	*olinfo_status |= IXGBE_TXD_POPTS_TXSM << 8;
 	*olinfo_status |= paylen << IXGBE_ADVTXD_PAYLEN_SHIFT;
-	++txr->tso_tx.ev_count;
+	IXGBE_EVC_ADD(&txr->tso_tx, 1);
 
 	return (0);
 } /* ixgbe_tso_setup */
@@ -1326,7 +1330,7 @@ ixgbe_setup_hw_rsc(struct rx_ring *rxr)
  *      be recalled to try again.
  *
  *   XXX NetBSD TODO:
- *    - The ixgbe_rxeof() function always preallocates mbuf cluster (jcl),
+ *    - The ixgbe_rxeof() function always preallocates mbuf cluster,
  *      so the ixgbe_refresh_mbufs() function can be simplified.
  *
  ************************************************************************/
@@ -1336,29 +1340,26 @@ ixgbe_refresh_mbufs(struct rx_ring *rxr, int limit)
 	struct adapter      *adapter = rxr->adapter;
 	struct ixgbe_rx_buf *rxbuf;
 	struct mbuf         *mp;
-	int                 i, j, error;
+	int                 i, error;
 	bool                refreshed = false;
 
-	i = j = rxr->next_to_refresh;
-	/* Control the loop with one beyond */
-	if (++j == rxr->num_desc)
-		j = 0;
+	i = rxr->next_to_refresh;
+	/* next_to_refresh points to the previous one */
+	if (++i == rxr->num_desc)
+		i = 0;
 
-	while (j != limit) {
+	while (i != limit) {
 		rxbuf = &rxr->rx_buffers[i];
-		if (rxbuf->buf == NULL) {
-			mp = ixgbe_getjcl(&rxr->jcl_head, M_NOWAIT,
-			    MT_DATA, M_PKTHDR, rxr->mbuf_sz);
+		if (__predict_false(rxbuf->buf == NULL)) {
+			mp = ixgbe_getcl();
 			if (mp == NULL) {
-				rxr->no_jmbuf.ev_count++;
+				IXGBE_EVC_ADD(&rxr->no_mbuf, 1);
 				goto update;
 			}
-			if (adapter->max_frame_size <= (MCLBYTES - ETHER_ALIGN))
-				m_adj(mp, ETHER_ALIGN);
+			mp->m_pkthdr.len = mp->m_len = rxr->mbuf_sz;
+			IXGBE_M_ADJ(adapter, rxr, mp);
 		} else
 			mp = rxbuf->buf;
-
-		mp->m_pkthdr.len = mp->m_len = rxr->mbuf_sz;
 
 		/* If we're dealing with an mbuf that was copied rather
 		 * than replaced, there's no need to go through busdma.
@@ -1368,7 +1369,7 @@ ixgbe_refresh_mbufs(struct rx_ring *rxr, int limit)
 			ixgbe_dmamap_unload(rxr->ptag, rxbuf->pmap);
 			error = bus_dmamap_load_mbuf(rxr->ptag->dt_dmat,
 			    rxbuf->pmap, mp, BUS_DMA_NOWAIT);
-			if (error != 0) {
+			if (__predict_false(error != 0)) {
 				device_printf(adapter->dev, "Refresh mbufs: "
 				    "payload dmamap load failure - %d\n",
 				    error);
@@ -1387,11 +1388,10 @@ ixgbe_refresh_mbufs(struct rx_ring *rxr, int limit)
 		}
 
 		refreshed = true;
-		/* Next is precalculated */
-		i = j;
+		/* next_to_refresh points to the previous one */
 		rxr->next_to_refresh = i;
-		if (++j == rxr->num_desc)
-			j = 0;
+		if (++i == rxr->num_desc)
+			i = 0;
 	}
 
 update:
@@ -1505,17 +1505,6 @@ ixgbe_setup_receive_ring(struct rx_ring *rxr)
 	/* Free current RX buffer structs and their mbufs */
 	ixgbe_free_receive_ring(rxr);
 
-	IXGBE_RX_UNLOCK(rxr);
-	/*
-	 * Now reinitialize our supply of jumbo mbufs.  The number
-	 * or size of jumbo mbufs may have changed.
-	 * Assume all of rxr->ptag are the same.
-	 */
-	ixgbe_jcl_reinit(adapter, rxr->ptag->dt_dmat, rxr,
-	    adapter->num_jcl, adapter->rx_mbuf_sz);
-
-	IXGBE_RX_LOCK(rxr);
-
 	/* Now replenish the mbufs */
 	for (int j = 0; j != rxr->num_desc; ++j) {
 		struct mbuf *mp;
@@ -1545,15 +1534,15 @@ ixgbe_setup_receive_ring(struct rx_ring *rxr)
 #endif /* DEV_NETMAP */
 
 		rxbuf->flags = 0;
-		rxbuf->buf = ixgbe_getjcl(&rxr->jcl_head, M_NOWAIT,
-		    MT_DATA, M_PKTHDR, adapter->rx_mbuf_sz);
+		rxbuf->buf = ixgbe_getcl();
 		if (rxbuf->buf == NULL) {
-			rxr->no_jmbuf.ev_count++;
+			IXGBE_EVC_ADD(&rxr->no_mbuf, 1);
 			error = ENOBUFS;
 			goto fail;
 		}
 		mp = rxbuf->buf;
 		mp->m_pkthdr.len = mp->m_len = rxr->mbuf_sz;
+		IXGBE_M_ADJ(adapter, rxr, mp);
 		/* Get the memory mapping */
 		error = bus_dmamap_load_mbuf(rxr->ptag->dt_dmat, rxbuf->pmap,
 		    mp, BUS_DMA_NOWAIT);
@@ -1565,10 +1554,10 @@ ixgbe_setup_receive_ring(struct rx_ring *rxr)
 			 */
 			m_freem(mp);
 			rxbuf->buf = NULL;
-                        goto fail;
+			goto fail;
 		}
 		bus_dmamap_sync(rxr->ptag->dt_dmat, rxbuf->pmap,
-		    0, adapter->rx_mbuf_sz, BUS_DMASYNC_PREREAD);
+		    0, mp->m_pkthdr.len, BUS_DMASYNC_PREREAD);
 		/* Update the descriptor and the cached value */
 		rxr->rx_base[j].read.pkt_addr =
 		    htole64(rxbuf->pmap->dm_segs[0].ds_addr);
@@ -1579,11 +1568,12 @@ ixgbe_setup_receive_ring(struct rx_ring *rxr)
 	rxr->next_to_check = 0;
 	rxr->next_to_refresh = adapter->num_rx_desc - 1; /* Fully allocated */
 	rxr->lro_enabled = FALSE;
-	rxr->rx_copies.ev_count = 0;
+	rxr->discard_multidesc = false;
+	IXGBE_EVC_STORE(&rxr->rx_copies, 0);
 #if 0 /* NetBSD */
-	rxr->rx_bytes.ev_count = 0;
+	IXGBE_EVC_STORE(&rxr->rx_bytes, 0);
 #if 1	/* Fix inconsistency */
-	rxr->rx_packets.ev_count = 0;
+	IXGBE_EVC_STORE(&rxr->rx_packets, 0);
 #endif
 #endif
 	rxr->vtag_strip = FALSE;
@@ -1700,9 +1690,6 @@ ixgbe_free_receive_buffers(struct rx_ring *rxr)
 			}
 		}
 
-		/* NetBSD specific. See ixgbe_netbsd.c */
-		ixgbe_jcl_destroy(adapter, rxr);
-
 		if (rxr->rx_buffers != NULL) {
 			free(rxr->rx_buffers, M_DEVBUF);
 			rxr->rx_buffers = NULL;
@@ -1817,9 +1804,11 @@ ixgbe_rxeof(struct ix_queue *que)
 	struct ixgbe_rx_buf	*rbuf, *nbuf;
 	int			i, nextp, processed = 0;
 	u32			staterr = 0;
-	u32			count = 0;
+	u32			loopcount = 0, numdesc;
 	u32			limit = adapter->rx_process_limit;
-	bool			discard_multidesc = false;
+	bool			discard_multidesc = rxr->discard_multidesc;
+	bool			wraparound = false;
+	unsigned int		syncremain;
 #ifdef RSS
 	u16			pkt_info;
 #endif
@@ -1836,13 +1825,31 @@ ixgbe_rxeof(struct ix_queue *que)
 	}
 #endif /* DEV_NETMAP */
 
+	/* Sync the ring. The size is rx_process_limit or the first half */
+	if ((rxr->next_to_check + limit) <= rxr->num_desc) {
+		/* Non-wraparound */
+		numdesc = limit;
+		syncremain = 0;
+	} else {
+		/* Wraparound. Sync the first half. */
+		numdesc = rxr->num_desc - rxr->next_to_check;
+
+		/* Set the size of the last half */
+		syncremain = limit - numdesc;
+	}
+	bus_dmamap_sync(rxr->rxdma.dma_tag->dt_dmat,
+	    rxr->rxdma.dma_map,
+	    sizeof(union ixgbe_adv_rx_desc) * rxr->next_to_check,
+	    sizeof(union ixgbe_adv_rx_desc) * numdesc,
+	    BUS_DMASYNC_POSTREAD | BUS_DMASYNC_POSTWRITE);
+
 	/*
 	 * The max number of loop is rx_process_limit. If discard_multidesc is
 	 * true, continue processing to not to send broken packet to the upper
 	 * layer.
 	 */
 	for (i = rxr->next_to_check;
-	     (count < limit) || (discard_multidesc == true);) {
+	     (loopcount < limit) || (discard_multidesc == true);) {
 
 		struct mbuf *sendmp, *mp;
 		struct mbuf *newmp;
@@ -1850,10 +1857,24 @@ ixgbe_rxeof(struct ix_queue *que)
 		u16         len;
 		u16         vtag = 0;
 		bool        eop;
+		bool        discard = false;
 
-		/* Sync the ring. */
-		ixgbe_dmamap_sync(rxr->rxdma.dma_tag, rxr->rxdma.dma_map,
-		    BUS_DMASYNC_POSTREAD | BUS_DMASYNC_POSTWRITE);
+		if (wraparound) {
+			/* Sync the last half. */
+			KASSERT(syncremain != 0);
+			numdesc = syncremain;
+			wraparound = false;
+		} else if (__predict_false(loopcount >= limit)) {
+			KASSERT(discard_multidesc == true);
+			numdesc = 1;
+		} else
+			numdesc = 0;
+
+		if (numdesc != 0)
+			bus_dmamap_sync(rxr->rxdma.dma_tag->dt_dmat,
+			    rxr->rxdma.dma_map, 0,
+			    sizeof(union ixgbe_adv_rx_desc) * numdesc,
+			    BUS_DMASYNC_POSTREAD | BUS_DMASYNC_POSTWRITE);
 
 		cur = &rxr->rx_base[i];
 		staterr = le32toh(cur->wb.upper.status_error);
@@ -1864,8 +1885,8 @@ ixgbe_rxeof(struct ix_queue *que)
 		if ((staterr & IXGBE_RXD_STAT_DD) == 0)
 			break;
 
-		count++;
-		sendmp = NULL;
+		loopcount++;
+		sendmp = newmp = NULL;
 		nbuf = NULL;
 		rsc = 0;
 		cur->wb.upper.status_error = 0;
@@ -1883,20 +1904,36 @@ ixgbe_rxeof(struct ix_queue *que)
 			if (adapter->feat_en & IXGBE_FEATURE_VF)
 				if_inc_counter(ifp, IFCOUNTER_IERRORS, 1);
 #endif
-			rxr->rx_discarded.ev_count++;
+			IXGBE_EVC_ADD(&rxr->rx_discarded, 1);
 			ixgbe_rx_discard(rxr, i);
 			discard_multidesc = false;
 			goto next_desc;
 		}
 
-		/* pre-alloc new mbuf */
-		if (!discard_multidesc)
-			newmp = ixgbe_getjcl(&rxr->jcl_head, M_NOWAIT, MT_DATA,
-			    M_PKTHDR, rxr->mbuf_sz);
-		else
-			newmp = NULL;
-		if (newmp == NULL) {
-			rxr->no_jmbuf.ev_count++;
+		if (__predict_false(discard_multidesc))
+			discard = true;
+		else {
+			/* Pre-alloc new mbuf. */
+
+			if ((rbuf->fmp == NULL) &&
+			    eop && (len <= adapter->rx_copy_len)) {
+				/* For short packet. See below. */
+				sendmp = m_gethdr(M_NOWAIT, MT_DATA);
+				if (__predict_false(sendmp == NULL)) {
+					IXGBE_EVC_ADD(&rxr->no_mbuf, 1);
+					discard = true;
+				}
+			} else {
+				/* For long packet. */
+				newmp = ixgbe_getcl();
+				if (__predict_false(newmp == NULL)) {
+					IXGBE_EVC_ADD(&rxr->no_mbuf, 1);
+					discard = true;
+				}
+			}
+		}
+
+		if (__predict_false(discard)) {
 			/*
 			 * Descriptor initialization is already done by the
 			 * above code (cur->wb.upper.status_error = 0).
@@ -1962,43 +1999,56 @@ ixgbe_rxeof(struct ix_queue *que)
 		 * See if there is a stored head
 		 * that determines what we are
 		 */
-		sendmp = rbuf->fmp;
-		if (sendmp != NULL) {  /* secondary frag */
+		if (rbuf->fmp != NULL) {
+			/* Secondary frag */
+			sendmp = rbuf->fmp;
+
+			/* Update new (used in future) mbuf */
+			newmp->m_pkthdr.len = newmp->m_len = rxr->mbuf_sz;
+			IXGBE_M_ADJ(adapter, rxr, newmp);
 			rbuf->buf = newmp;
 			rbuf->fmp = NULL;
+
+			/* For secondary frag */
 			mp->m_len = len;
 			mp->m_flags &= ~M_PKTHDR;
+
+			/* For sendmp */
 			sendmp->m_pkthdr.len += mp->m_len;
 		} else {
 			/*
-			 * Optimize.  This might be a small packet,
-			 * maybe just a TCP ACK.  Do a fast copy that
-			 * is cache aligned into a new mbuf, and
-			 * leave the old mbuf+cluster for re-use.
+			 * It's the first segment of a multi descriptor
+			 * packet or a single segment which contains a full
+			 * packet.
 			 */
-			if (eop && len <= adapter->rx_copy_len) {
-				sendmp = m_gethdr(M_NOWAIT, MT_DATA);
-				if (sendmp != NULL) {
-					sendmp->m_data += IXGBE_RX_COPY_ALIGN;
-					ixgbe_bcopy(mp->m_data, sendmp->m_data,
-					    len);
-					sendmp->m_len = len;
-					rxr->rx_copies.ev_count++;
-					rbuf->flags |= IXGBE_RX_COPY;
 
-					m_freem(newmp);
-				}
-			}
-			if (sendmp == NULL) {
+			if (eop && (len <= adapter->rx_copy_len)) {
+				/*
+				 * Optimize.  This might be a small packet, may
+				 * be just a TCP ACK. Copy into a new mbuf, and
+				 * Leave the old mbuf+cluster for re-use.
+				 */
+				sendmp->m_data += ETHER_ALIGN;
+				memcpy(mtod(sendmp, void *),
+				    mtod(mp, void *), len);
+				IXGBE_EVC_ADD(&rxr->rx_copies, 1);
+				rbuf->flags |= IXGBE_RX_COPY;
+			} else {
+				/* Non short packet */
+
+				/* Update new (used in future) mbuf */
+				newmp->m_pkthdr.len = newmp->m_len
+				    = rxr->mbuf_sz;
+				IXGBE_M_ADJ(adapter, rxr, newmp);
 				rbuf->buf = newmp;
 				rbuf->fmp = NULL;
-				mp->m_len = len;
+
+				/* For sendmp */
 				sendmp = mp;
 			}
 
 			/* first desc of a non-ps chain */
-			sendmp->m_flags |= M_PKTHDR;
-			sendmp->m_pkthdr.len = len;
+			sendmp->m_pkthdr.len = sendmp->m_len = len;
 		}
 		++processed;
 
@@ -2010,10 +2060,10 @@ ixgbe_rxeof(struct ix_queue *que)
 		} else { /* Sending this frame */
 			m_set_rcvif(sendmp, ifp);
 			++rxr->packets;
-			rxr->rx_packets.ev_count++;
+			IXGBE_EVC_ADD(&rxr->rx_packets, 1);
 			/* capture data for AIM */
 			rxr->bytes += sendmp->m_pkthdr.len;
-			rxr->rx_bytes.ev_count += sendmp->m_pkthdr.len;
+			IXGBE_EVC_ADD(&rxr->rx_bytes, sendmp->m_pkthdr.len);
 			/* Process vlan info */
 			if ((rxr->vtag_strip) && (staterr & IXGBE_RXD_STAT_VP))
 				vtag = le16toh(cur->wb.upper.vlan);
@@ -2088,13 +2138,15 @@ next_desc:
 		    BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE);
 
 		/* Advance our pointers to the next descriptor. */
-		if (++i == rxr->num_desc)
+		if (++i == rxr->num_desc) {
+			wraparound = true;
 			i = 0;
+		}
+		rxr->next_to_check = i;
 
 		/* Now send to the stack or do LRO */
-		if (sendmp != NULL) {
+		if (sendmp != NULL)
 			ixgbe_rx_input(rxr, ifp, sendmp, ptype);
-		}
 
 		/* Every 8 descriptors we go to refresh mbufs */
 		if (processed == 8) {
@@ -2103,11 +2155,12 @@ next_desc:
 		}
 	}
 
+	/* Save the current status */
+	rxr->discard_multidesc = discard_multidesc;
+
 	/* Refresh any remaining buf structs */
 	if (ixgbe_rx_unrefreshed(rxr))
 		ixgbe_refresh_mbufs(rxr, i);
-
-	rxr->next_to_check = i;
 
 	IXGBE_RX_UNLOCK(rxr);
 
@@ -2151,23 +2204,23 @@ ixgbe_rx_checksum(u32 staterr, struct mbuf * mp, u32 ptype,
 
 	/* IPv4 checksum */
 	if (status & IXGBE_RXD_STAT_IPCS) {
-		stats->ipcs.ev_count++;
+		IXGBE_EVC_ADD(&stats->ipcs, 1);
 		if (!(errors & IXGBE_RXD_ERR_IPE)) {
 			/* IP Checksum Good */
 			mp->m_pkthdr.csum_flags = M_CSUM_IPv4;
 		} else {
-			stats->ipcs_bad.ev_count++;
+			IXGBE_EVC_ADD(&stats->ipcs_bad, 1);
 			mp->m_pkthdr.csum_flags = M_CSUM_IPv4|M_CSUM_IPv4_BAD;
 		}
 	}
 	/* TCP/UDP/SCTP checksum */
 	if (status & IXGBE_RXD_STAT_L4CS) {
-		stats->l4cs.ev_count++;
+		IXGBE_EVC_ADD(&stats->l4cs, 1);
 		int type = M_CSUM_TCPv4|M_CSUM_TCPv6|M_CSUM_UDPv4|M_CSUM_UDPv6;
 		if (!(errors & IXGBE_RXD_ERR_TCPE)) {
 			mp->m_pkthdr.csum_flags |= type;
 		} else {
-			stats->l4cs_bad.ev_count++;
+			IXGBE_EVC_ADD(&stats->l4cs_bad, 1);
 			mp->m_pkthdr.csum_flags |= type | M_CSUM_TCP_UDP_BAD;
 		}
 	}

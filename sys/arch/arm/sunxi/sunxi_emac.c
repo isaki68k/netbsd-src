@@ -1,4 +1,4 @@
-/* $NetBSD: sunxi_emac.c,v 1.33 2021/01/27 03:10:20 thorpej Exp $ */
+/* $NetBSD: sunxi_emac.c,v 1.35 2021/12/31 14:25:22 riastradh Exp $ */
 
 /*-
  * Copyright (c) 2016-2017 Jared McNeill <jmcneill@invisible.ca>
@@ -33,7 +33,7 @@
 #include "opt_net_mpsafe.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sunxi_emac.c,v 1.33 2021/01/27 03:10:20 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sunxi_emac.c,v 1.35 2021/12/31 14:25:22 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -932,7 +932,7 @@ sunxi_emac_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 		error = 0;
 
 		if (cmd == SIOCSIFCAP)
-			error = (*ifp->if_init)(ifp);
+			error = if_init(ifp);
 		else if (cmd != SIOCADDMULTI && cmd != SIOCDELMULTI)
 			;
 		else if ((ifp->if_flags & IFF_RUNNING) != 0) {
@@ -987,7 +987,7 @@ sunxi_emac_setup_phy(struct sunxi_emac_softc *sc)
 	reg = syscon_read_4(sc->syscon, EMAC_CLK_REG);
 
 	reg &= ~(EMAC_CLK_PIT | EMAC_CLK_SRC | EMAC_CLK_RMII_EN);
-	if (strcmp(phy_type, "rgmii") == 0)
+	if (strncmp(phy_type, "rgmii", 5) == 0)
 		reg |= EMAC_CLK_PIT_RGMII | EMAC_CLK_SRC_RGMII;
 	else if (strcmp(phy_type, "rmii") == 0)
 		reg |= EMAC_CLK_RMII_EN;

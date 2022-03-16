@@ -1,4 +1,4 @@
-/*	$NetBSD: barrier.h,v 1.5 2020/10/16 22:39:21 jmcneill Exp $	*/
+/*	$NetBSD: barrier.h,v 1.12 2021/12/27 10:41:57 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2013 The NetBSD Foundation, Inc.
@@ -34,6 +34,8 @@
 
 #include <sys/atomic.h>
 
+#include <linux/compiler.h>
+
 #ifdef _KERNEL_OPT
 #include "opt_multiprocessor.h"
 #else
@@ -44,28 +46,33 @@
 #define	mb()	__asm __volatile ("dsb sy" ::: "memory")
 #define	wmb()	__asm __volatile ("dsb st" ::: "memory")
 #define	rmb()	__asm __volatile ("dsb ld" ::: "memory")
+#elif defined(__i386__) || defined(__x86_64__)
+#include <x86/cpufunc.h>
+#define	mb()	x86_mfence()
+#define	wmb()	x86_sfence()
+#define	rmb()	x86_lfence()
 #else
 #define	mb	membar_sync
 #define	wmb	membar_producer
 #define	rmb	membar_consumer
 #endif
 
-#ifdef __alpha__		/* XXX As if...  */
-#  define	read_barrier_depends	membar_sync
-#else
-#  define	read_barrier_depends()	do {} while (0)
-#endif
-
 #ifdef MULTIPROCESSOR
 #  define	smp_mb				membar_sync
 #  define	smp_wmb				membar_producer
 #  define	smp_rmb				membar_consumer
-#  define	smp_read_barrier_depends	read_barrier_depends
 #else
-#  define	smp_mb()			do {} while (0)
-#  define	smp_wmb()			do {} while (0)
-#  define	smp_rmb()			do {} while (0)
-#  define	smp_read_barrier_depends()	do {} while (0)
+#  define	smp_mb()			__insn_barrier()
+#  define	smp_wmb()			__insn_barrier()
+#  define	smp_rmb()			__insn_barrier()
+#endif
+
+#if defined(MULTIPROCESSOR) && !defined(__HAVE_ATOMIC_AS_MEMBAR)
+#  define	smp_mb__before_atomic()		membar_exit()
+#  define	smp_mb__after_atomic()		membar_sync() /* XXX acquire */
+#else
+#  define	smp_mb__before_atomic()		__insn_barrier()
+#  define	smp_mb__after_atomic()		__insn_barrier()
 #endif
 
 #endif  /* _ASM_BARRIER_H_ */

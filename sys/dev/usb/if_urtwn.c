@@ -1,4 +1,4 @@
-/*	$NetBSD: if_urtwn.c,v 1.96 2021/03/02 22:21:38 nat Exp $	*/
+/*	$NetBSD: if_urtwn.c,v 1.101 2021/10/21 20:18:16 jnemeth Exp $	*/
 /*	$OpenBSD: if_urtwn.c,v 1.42 2015/02/10 23:25:46 mpi Exp $	*/
 
 /*-
@@ -25,7 +25,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_urtwn.c,v 1.96 2021/03/02 22:21:38 nat Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_urtwn.c,v 1.101 2021/10/21 20:18:16 jnemeth Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -213,6 +213,7 @@ static const struct urtwn_dev {
 	URTWN_RTL8188E_DEV(ABOCOM, RTL8188EU),
 	URTWN_RTL8188E_DEV(TPLINK, RTL8188EU),
 	URTWN_RTL8188E_DEV(DLINK, DWA121B1),
+	URTWN_RTL8188E_DEV(EDIMAX, EW7811UNV2),
 
 	/* URTWN_RTL8192EU */
 	URTWN_RTL8192EU_DEV(DLINK,	DWA131E),
@@ -1106,17 +1107,17 @@ urtwn_fw_cmd(struct urtwn_softc *sc, uint8_t id, const void *buf, int len)
 	mutex_enter(&sc->sc_fwcmd_mtx);
 	fwcur = sc->fwcur;
 	sc->fwcur = (sc->fwcur + 1) % R92C_H2C_NBOX;
-	mutex_exit(&sc->sc_fwcmd_mtx);
 
 	/* Wait for current FW box to be empty. */
 	for (ntries = 0; ntries < 100; ntries++) {
 		if (!(urtwn_read_1(sc, R92C_HMETFR) & (1 << fwcur)))
 			break;
-		DELAY(2000);
+		urtwn_delay_ms(sc, 2);
 	}
 	if (ntries == 100) {
 		aprint_error_dev(sc->sc_dev,
 		    "could not send firmware command %d\n", id);
+		mutex_exit(&sc->sc_fwcmd_mtx);
 		return ETIMEDOUT;
 	}
 
@@ -1145,6 +1146,7 @@ urtwn_fw_cmd(struct urtwn_softc *sc, uint8_t id, const void *buf, int len)
 	} else {
 		urtwn_write_region(sc, R92C_HMEBOX(fwcur), cp, len);
 	}
+	mutex_exit(&sc->sc_fwcmd_mtx);
 
 	return 0;
 }
@@ -1195,16 +1197,16 @@ urtwn_rf_read(struct urtwn_softc *sc, int chain, uint8_t addr)
 
 	urtwn_bb_write(sc, R92C_HSSI_PARAM2(0),
 	    reg[0] & ~R92C_HSSI_PARAM2_READ_EDGE);
-	DELAY(1000);
+	urtwn_delay_ms(sc, 1);
 
 	urtwn_bb_write(sc, R92C_HSSI_PARAM2(chain),
 	    RW(reg[chain], R92C_HSSI_PARAM2_READ_ADDR, addr) |
 	    R92C_HSSI_PARAM2_READ_EDGE);
-	DELAY(1000);
+	urtwn_delay_ms(sc, 1);
 
 	urtwn_bb_write(sc, R92C_HSSI_PARAM2(0),
 	    reg[0] | R92C_HSSI_PARAM2_READ_EDGE);
-	DELAY(1000);
+	urtwn_delay_ms(sc, 1);
 
 	if (urtwn_bb_read(sc, R92C_HSSI_PARAM1(chain)) & R92C_HSSI_PARAM1_PI) {
 		val = urtwn_bb_read(sc, R92C_HSPI_READBACK(chain));
@@ -3087,6 +3089,7 @@ urtwn_r92c_power_on(struct urtwn_softc *sc)
 
 	/* Unlock ISO/CLK/Power control register. */
 	urtwn_write_1(sc, R92C_RSV_CTRL, 0);
+	DELAY(5);
 	/* Move SPS into PWM mode. */
 	urtwn_write_1(sc, R92C_SPS0_CTRL, 0x2b);
 	DELAY(5);
@@ -3152,6 +3155,9 @@ urtwn_r92c_power_on(struct urtwn_softc *sc)
 	urtwn_write_2(sc, R92C_CR, reg);
 
 	urtwn_write_1(sc, 0xfe10, 0x19);
+
+	urtwn_delay_ms(sc, 1);
+
 	return 0;
 }
 
@@ -3361,7 +3367,10 @@ urtwn_fw_reset(struct urtwn_softc *sc)
 	KASSERT(mutex_owned(&sc->sc_write_mtx));
 
 	/* Tell 8051 to reset itself. */
+	mutex_enter(&sc->sc_fwcmd_mtx);
 	urtwn_write_1(sc, R92C_HMETFR + 3, 0x20);
+	sc->fwcur = 0;
+	mutex_exit(&sc->sc_fwcmd_mtx);
 
 	/* Wait until 8051 resets by itself. */
 	for (ntries = 0; ntries < 100; ntries++) {
@@ -3402,6 +3411,11 @@ urtwn_r88e_fw_reset(struct urtwn_softc *sc)
 		urtwn_write_2(sc,R92C_RSV_CTRL, reg);
 	}
 	DELAY(50);
+
+	mutex_enter(&sc->sc_fwcmd_mtx);
+	/* Init firmware commands ring. */
+	sc->fwcur = 0;
+	mutex_exit(&sc->sc_fwcmd_mtx);
 
 }
 

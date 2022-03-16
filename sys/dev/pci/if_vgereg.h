@@ -1,3 +1,5 @@
+/* $NetBSD: if_vgereg.h,v 1.7 2021/08/26 21:33:36 andvar Exp $ */
+
 /*-
  * Copyright (c) 2004
  *	Bill Paul <wpaul@windriver.com>.  All rights reserved.
@@ -463,7 +465,7 @@
 #define VGE_CHIPCFG1_MBA	0x02
 #define VGE_CHIPCFG1_CAP	0x04
 #define VGE_CHIPCFG1_CRANDOM	0x08
-#define VGE_CHIPCFG1_OFSET	0x10
+#define VGE_CHIPCFG1_OFFSET	0x10
 #define VGE_CHIPCFG1_SLOTTIME	0x20	/* slot time 512/500 in giga mode */
 #define VGE_CHIPCFG1_MIIOPT	0x40
 #define VGE_CHIPCFG1_GTCKOPT	0x80

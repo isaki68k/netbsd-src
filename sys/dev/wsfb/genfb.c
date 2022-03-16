@@ -1,4 +1,4 @@
-/*	$NetBSD: genfb.c,v 1.82 2021/04/24 23:37:00 thorpej Exp $ */
+/*	$NetBSD: genfb.c,v 1.85 2021/12/24 18:12:58 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2007 Michael Lorenz
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: genfb.c,v 1.82 2021/04/24 23:37:00 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: genfb.c,v 1.85 2021/12/24 18:12:58 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -81,7 +81,7 @@ static void	genfb_pollc(void *, int);
 
 static void	genfb_init_screen(void *, struct vcons_screen *, int, long *);
 static int	genfb_calc_hsize(struct genfb_softc *);
-static int	genfb_calc_cols(struct genfb_softc *);
+static int	genfb_calc_cols(struct genfb_softc *, struct rasops_info *);
 
 static int	genfb_putcmap(struct genfb_softc *, struct wsdisplay_cmap *);
 static int 	genfb_getcmap(struct genfb_softc *, struct wsdisplay_cmap *);
@@ -378,8 +378,7 @@ genfb_attach(struct genfb_softc *sc, struct genfb_ops *ops)
 #endif
 
 	config_found(sc->sc_dev, &aa, wsemuldisplaydevprint,
-	    CFARG_IATTR, "wsemuldisplaydev",
-	    CFARG_EOL);
+	    CFARGS(.iattr = "wsemuldisplaydev"));
 
 	return 0;
 }
@@ -559,7 +558,7 @@ genfb_init_screen(void *cookie, struct vcons_screen *scr,
 	struct genfb_softc *sc = cookie;
 	struct rasops_info *ri = &scr->scr_ri;
 	int wantcols;
-	bool is_bgr, is_swapped;
+	bool is_bgr, is_swapped, is_10bit;
 
 	ri->ri_depth = sc->sc_depth;
 	ri->ri_width = sc->sc_width;
@@ -585,7 +584,6 @@ genfb_init_screen(void *cookie, struct vcons_screen *scr,
 	switch (ri->ri_depth) {
 	case 32:
 	case 24:
-		ri->ri_rnum = ri->ri_gnum = ri->ri_bnum = 8;
 		ri->ri_flg |= RI_ENABLE_ALPHA;
 
 		is_bgr = false;
@@ -596,22 +594,29 @@ genfb_init_screen(void *cookie, struct vcons_screen *scr,
 		prop_dictionary_get_bool(device_properties(sc->sc_dev),
 		    "is_swapped", &is_swapped);
 
+		is_10bit = false;
+		prop_dictionary_get_bool(device_properties(sc->sc_dev),
+		    "is_10bit", &is_10bit);
+
+		const int bits = is_10bit ? 10 : 8;
+		ri->ri_rnum = ri->ri_gnum = ri->ri_bnum = bits;
+
 		if (is_bgr) {
 			/* someone requested BGR */
-			ri->ri_rpos = 0;
-			ri->ri_gpos = 8;
-			ri->ri_bpos = 16;
+			ri->ri_rpos = bits * 0;
+			ri->ri_gpos = bits * 1;
+			ri->ri_bpos = bits * 2;
 		} else if (is_swapped) {
 			/* byte-swapped, must be 32 bpp */
-			KASSERT(ri->ri_depth == 32);
+			KASSERT(ri->ri_depth == 32 && bits == 8);
 			ri->ri_rpos = 8;
 			ri->ri_gpos = 16;
 			ri->ri_bpos = 24;
 		} else {
 			/* assume RGB */
-			ri->ri_rpos = 16;
-			ri->ri_gpos = 8;
-			ri->ri_bpos = 0;
+			ri->ri_rpos = bits * 2;
+			ri->ri_gpos = bits * 1;
+			ri->ri_bpos = bits * 0;
 		}
 		break;
 
@@ -633,7 +638,7 @@ genfb_init_screen(void *cookie, struct vcons_screen *scr,
 		break;
 	}
 
-	wantcols = genfb_calc_cols(sc);
+	wantcols = genfb_calc_cols(sc, ri);
 
 	rasops_init(ri, 0, wantcols);
 	ri->ri_caps = WSSCREEN_WSCOLORS | WSSCREEN_HILIT | WSSCREEN_UNDERLINE |
@@ -682,9 +687,13 @@ genfb_calc_hsize(struct genfb_softc *sc)
 
 /* Return the minimum number of character columns based on DPI */
 static int
-genfb_calc_cols(struct genfb_softc *sc)
+genfb_calc_cols(struct genfb_softc *sc, struct rasops_info *ri)
 {
 	const int hsize = genfb_calc_hsize(sc);
+
+	if (hsize != 0) {
+		ri->ri_flg |= RI_PREFER_WIDEFONT;
+	}
 
 	return MAX(RASOPS_DEFAULT_WIDTH, hsize / GENFB_CHAR_WIDTH_MM);
 }

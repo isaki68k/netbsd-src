@@ -1,4 +1,4 @@
-/*	$NetBSD: pcivar.h,v 1.115 2021/05/12 23:22:33 thorpej Exp $	*/
+/*	$NetBSD: pcivar.h,v 1.117 2022/02/27 14:18:52 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1996, 1997 Christopher G. Demetriou.  All rights reserved.
@@ -136,6 +136,14 @@ pcibus_attach_args_pc(struct pcibus_attach_args *pba)
 {
 	return pba->pba_pc;
 }
+
+#ifndef __HAVE_PCI_GET_SEGMENT
+static __inline u_int
+pci_get_segment(pci_chipset_tag_t pc)
+{
+	return 0;
+}
+#endif
 
 /*
  * PCI device attach arguments.
@@ -275,31 +283,6 @@ struct pci_softc {
 	/* accounting of child devices */
 	struct pci_child sc_devices[32*8];
 #define PCI_SC_DEVICESC(d, f) sc_devices[(d) * 8 + (f)]
-};
-
-/*
- * pci-bus-get-child-devhandle device call
- *
- *	Called to get the device handle for a device, represented
- *	by the pcitag_t with the PCI segment represented by the
- *	pci_chipset_tag_t.  The PCI bus's device_t is the one
- *	passed to device_call(), and the device whose handle is
- *	being requested must be a direct child of that bus,
- *	otherwise the behavior is undefined.
- *
- *	Call returns 0 if successful, or an error code upon failure:
- *
- *	ENOTSUP		The device handle implementation for the
- *			PCI bus does not support this device call.
- *
- *	ENODEV		The PCI device represented by the pcitag_t
- *			was not found in a bus-scoped search of the
- *			platform device tree.
- */
-struct pci_bus_get_child_devhandle_args {
-	pci_chipset_tag_t pc;		/* IN */
-	pcitag_t tag;			/* IN */
-	devhandle_t devhandle;		/* OUT */
 };
 
 extern struct cfdriver pci_cd;

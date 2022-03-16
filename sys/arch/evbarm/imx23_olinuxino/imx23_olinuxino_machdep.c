@@ -1,4 +1,4 @@
-/* $Id: imx23_olinuxino_machdep.c,v 1.11 2020/11/28 14:02:30 skrll Exp $ */
+/* $Id: imx23_olinuxino_machdep.c,v 1.13 2021/12/03 13:27:38 andvar Exp $ */
 
 /*
  * Copyright (c) 2012 The NetBSD Foundation, Inc.
@@ -178,7 +178,7 @@ initarm(void *arg)
 	bootconfig.dramblocks = 1;
 	bootconfig.dram[0].address = DRAM_BASE;
 	bootconfig.dram[0].pages = ram_size / PAGE_SIZE;
-	bootconfig.dram[0].flags = BOOT_DRAM_CAN_DMA | BOOT_DRAM_PREFER;
+	bootconfig.dram[0].flags = BOOT_DRAM_CAN_DMA;
 
         arm32_bootmem_init(bootconfig.dram[0].address, ram_size,
             ((vsize_t)&KERNEL_BASE_phys));
@@ -320,7 +320,7 @@ power_vddio_from_dcdc(int target, int brownout)
 {
         uint32_t tmp_r;
 
-        /* BO_OFFSET must be withing 2700mV - 3475mV */
+        /* BO_OFFSET must be within 2700mV - 3475mV */
         if (brownout > 3475)
                 brownout = 3475;
         else if (brownout < 2700)

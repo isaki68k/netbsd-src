@@ -1,4 +1,4 @@
-/*	 $NetBSD: rasops.c,v 1.123 2020/07/02 07:49:44 rin Exp $	*/
+/*	 $NetBSD: rasops.c,v 1.125 2021/12/24 18:12:58 jmcneill Exp $	*/
 
 /*-
  * Copyright (c) 1999 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rasops.c,v 1.123 2020/07/02 07:49:44 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rasops.c,v 1.125 2021/12/24 18:12:58 jmcneill Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_rasops.h"
@@ -264,6 +264,8 @@ rasops_init(struct rasops_info *ri, int wantrows, int wantcols)
 			flags |= WSFONT_FIND_ALPHA;
 		if ((ri->ri_flg & RI_PREFER_ALPHA) != 0)
 			flags |= WSFONT_PREFER_ALPHA;
+		if ((ri->ri_flg & RI_PREFER_WIDEFONT) != 0)
+			flags |= WSFONT_PREFER_WIDE;
 		cookie = wsfont_find(NULL,
 			ri->ri_width / wantcols,
 			0,
@@ -376,11 +378,12 @@ rasops_reconfig(struct rasops_info *ri, int wantrows, int wantcols)
 				rasops_make_box_chars_32(ri);
 				break;
 			default:
-				aprint_error(
+				kmem_free(ri->ri_optfont.data, len);
+				ri->ri_optfont.data = NULL;
+				aprint_verbose(
 				    "%s: font stride assumptions botched",
 				    __func__);
-				splx(s);
-				return -1;
+				break;
 			}
 		}
 	} else

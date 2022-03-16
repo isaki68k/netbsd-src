@@ -1,4 +1,4 @@
-/* $NetBSD: ixgbe_netbsd.h,v 1.13 2021/05/19 08:19:20 msaitoh Exp $ */
+/* $NetBSD: ixgbe_netbsd.h,v 1.16 2022/01/25 03:40:29 msaitoh Exp $ */
 /*
  * Copyright (c) 2011 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -40,20 +40,6 @@
 #define	MJUM16BYTES	(16 * 1024)
 #define	MJUMPAGESIZE	PAGE_SIZE
 
-/*
- * Number of jcl per queue is calculated by
- * adapter->num_rx_desc * IXGBE_JCLNUM_MULTI. The lower limit is 2.
- */
-#define	IXGBE_JCLNUM_MULTI_LOWLIM	2
-#define	IXGBE_JCLNUM_MULTI_DEFAULT	3
-#if !defined(IXGBE_JCLNUM_MULTI)
-# define IXGBE_JCLNUM_MULTI IXGBE_JCLNUM_MULTI_DEFAULT
-#else
-# if (IXGBE_JCLNUM_MULTI < IXGBE_JCLNUM_MULTI_LOWLIM)
-#  error IXGBE_JCLNUM_MULTI is too low.
-# endif
-#endif
-
 #define IFCAP_RXCSUM	\
 	(IFCAP_CSUM_IPv4_Rx|IFCAP_CSUM_TCPv4_Rx|IFCAP_CSUM_UDPv4_Rx|\
 	IFCAP_CSUM_TCPv6_Rx|IFCAP_CSUM_UDPv6_Rx)
@@ -63,6 +49,35 @@
 	IFCAP_CSUM_TCPv6_Tx|IFCAP_CSUM_UDPv6_Tx)
 
 #define IFCAP_HWCSUM	(IFCAP_RXCSUM|IFCAP_TXCSUM)
+
+
+/* Helper macros for evcnt(9) .*/
+#ifdef __HAVE_ATOMIC64_LOADSTORE
+#define IXGBE_EVC_LOAD(evp)				\
+	atomic_load_relaxed(&((evp)->ev_count))
+#define IXGBE_EVC_STORE(evp, val)			\
+	atomic_store_relaxed(&((evp)->ev_count), (val))
+#define IXGBE_EVC_ADD(evp, val)					\
+	atomic_store_relaxed(&((evp)->ev_count),		\
+	    atomic_load_relaxed(&((evp)->ev_count)) + (val))
+#else
+#define IXGBE_EVC_LOAD(evp)		((evp)->ev_count))
+#define IXGBE_EVC_STORE(evp, val)	((evp)->ev_count = (val))
+#define IXGBE_EVC_ADD(evp, val)		((evp)->ev_count += (val))
+#endif
+
+#define IXGBE_EVC_REGADD(hw, stats, regname, evname)			\
+	IXGBE_EVC_ADD(&(stats)->evname, IXGBE_READ_REG((hw), (regname)))
+
+/*
+ * Copy a register value to variable "evname" for later use.
+ * "evname" is also the name of the evcnt.
+ */
+#define IXGBE_EVC_REGADD2(hw, stats, regname, evname)		\
+	do {							\
+		(evname) = IXGBE_READ_REG((hw), (regname));	\
+		IXGBE_EVC_ADD(&(stats)->evname, (evname));	\
+	} while (/*CONSTCOND*/0)
 
 struct ixgbe_dma_tag {
 	bus_dma_tag_t	dt_dmat;
@@ -76,26 +91,6 @@ struct ixgbe_dma_tag {
 
 typedef struct ixgbe_dma_tag ixgbe_dma_tag_t;
 
-struct ixgbe_extmem_head;
-typedef struct ixgbe_extmem_head ixgbe_extmem_head_t;
-
-struct ixgbe_extmem {
-	ixgbe_extmem_head_t		*em_head;
-	bus_dma_tag_t			em_dmat;
-	bus_size_t			em_size;
-	bus_dma_segment_t		em_seg;
-	void				*em_vaddr;
-	TAILQ_ENTRY(ixgbe_extmem)	em_link;
-};
-
-typedef struct ixgbe_extmem ixgbe_extmem_t;
-
-struct ixgbe_extmem_head {
-	TAILQ_HEAD(, ixgbe_extmem)	eh_freelist;
-	kmutex_t			eh_mtx;
-	bool				eh_initialized;
-};
-
 int ixgbe_dma_tag_create(bus_dma_tag_t, bus_size_t, bus_size_t, bus_size_t,
     int, bus_size_t, int, ixgbe_dma_tag_t **);
 void ixgbe_dma_tag_destroy(ixgbe_dma_tag_t *);
@@ -104,7 +99,7 @@ void ixgbe_dmamap_destroy(ixgbe_dma_tag_t *, bus_dmamap_t);
 void ixgbe_dmamap_sync(ixgbe_dma_tag_t *, bus_dmamap_t, int);
 void ixgbe_dmamap_unload(ixgbe_dma_tag_t *, bus_dmamap_t);
 
-struct mbuf *ixgbe_getjcl(ixgbe_extmem_head_t *, int, int, int, size_t);
+struct mbuf *ixgbe_getcl(void);
 void ixgbe_pci_enable_busmaster(pci_chipset_tag_t, pcitag_t);
 
 u_int atomic_load_acq_uint(volatile u_int *);

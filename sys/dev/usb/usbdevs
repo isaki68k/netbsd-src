@@ -1,4 +1,4 @@
-$NetBSD: usbdevs,v 1.794 2021/06/13 09:23:42 mlelstv Exp $
+$NetBSD: usbdevs,v 1.801 2022/01/17 11:09:57 bouyer Exp $
 
 /*-
  * Copyright (c) 1998-2004 The NetBSD Foundation, Inc.
@@ -368,6 +368,7 @@ vendor GARMIN		0x091e	Garmin International
 vendor GOHUBS		0x0921	GoHubs
 vendor BIOMETRIC	0x0929	American Biometric Company
 vendor TOSHIBA		0x0930	Toshiba
+vendor PIXART		0x093a	PixArt
 vendor PLEXTOR		0x093b	Plextor
 vendor INTREPIDCS	0x093c	Intrepid
 vendor YANO		0x094f	Yano
@@ -823,6 +824,7 @@ product ALTEC ASC495		0xff05	ASC495 Speakers
 
 /* American Power Conversion products */
 product APC UPS			0x0002	Uninterruptible Power Supply
+product APC UPS3		0x0003	Uninterruptible Power Supply
 
 /* Ambit Microsystems products */
 product AMBIT NTL_250		0x6098	NTL 250 cable modem
@@ -1299,7 +1301,9 @@ product CMEDIA USBAUDIO		0x013c	USB Pnp Sound
 product CTX EX1300		0x9999	Ex1300 hub
 
 /* CyberPower Systems, Inc. products */
+product CYBERPOWER UPS0		0x0005	Uninterruptible Power Supply
 product CYBERPOWER UPS		0x0501	Uninterruptible Power Supply
+product CYBERPOWER UPS2		0x0601	Uninterruptible Power Supply
 
 /* CyberTAN Technology products */
 product CYBERTAN TG54USB	0x1666	TG54USB
@@ -1506,6 +1510,7 @@ product EDIMAX RTL8192CU	0x7822	RTL8192CU
 product EDIMAX EW7811UTC_1	0xa811	EW-7811UTC
 product EDIMAX EW7811UTC_2	0xa812	EW-7811UTC
 product EDIMAX ELECOM_WDC433SU2M 0xb711	ELECOM WDC-433SU2M
+product EDIMAX EW7811UNV2	0xb811	EW-7811Un V2
 
 /* eGalax Products */
 product EGALAX TPANEL		0x0001	Touch Panel
@@ -2189,6 +2194,7 @@ product LOGITECH BD58		0xc00c	BD58 mouse
 product LOGITECH USBPS2MOUSE	0xc00e	USB-PS/2 Optical Mouse
 product LOGITECH MUV55A		0xc016	M-UV55a
 product LOGITECH UN58A		0xc030	iFeel Mouse
+product LOGITECH B100		0xc077	B100 Optical Mouse
 product LOGITECH WMPAD		0xc208	WingMan GamePad Extreme
 product LOGITECH WMRPAD		0xc20a	WingMan RumblePad
 product LOGITECH WMJOY		0xc281	WingMan Force joystick
@@ -2324,8 +2330,9 @@ product MSI BLUETOOTH_3		0xa97a	Bluetooth
 /* Microchip Technology products */
 product MICROCHIP PICKIT1	0x0032	PICkit(TM) 1 FLASH Starter Kit
 product MICROCHIP PICKIT2	0x0033	PICkit 2 Microcontroller Programmer
+product MICROCHIP PICKIT3	0x900a	PICkit 3 Microcontroller Programmer
 
-/* Microdia / Sonix Techonology Co., Ltd. products */
+/* Microdia / Sonix Technology Co., Ltd. products */
 product MICRODIA YUREX		0x1010	YUREX
 
 /* Micronet Communications products */
@@ -2714,6 +2721,9 @@ product PINNACLE PCTV800E	0x0227	PCTV 800e
 product PINNACLE PCTVDVBTFLASH	0x0228	Pinnacle PCTV DVB-T Flash
 product PINNACLE PCTV72E	0x0236	Pinnacle PCTV 72e
 product PINNACLE PCTV73E	0x0237	Pinnacle PCTV 73e
+
+/* PixArt */
+product PIXART RPIMOUSE		0x2510	Raspberry Pi Mouse
 
 /* Planex Communications products */
 product PLANEX  GW_US11H	0x14ea	GW-US11H WLAN

@@ -1,4 +1,4 @@
-/*	$NetBSD: autoconf.c,v 1.266 2021/05/10 23:53:44 thorpej Exp $ */
+/*	$NetBSD: autoconf.c,v 1.270 2022/01/22 11:49:16 thorpej Exp $ */
 
 /*
  * Copyright (c) 1996
@@ -48,7 +48,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: autoconf.c,v 1.266 2021/05/10 23:53:44 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: autoconf.c,v 1.270 2022/01/22 11:49:16 thorpej Exp $");
 
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
@@ -1114,7 +1114,7 @@ mainbus_attach(device_t parent, device_t dev, void *aux)
 		const char *const dev;
 #define BS_EARLY	1	/* attach device early */
 #define	BS_IGNORE	2	/* ignore root device */
-#define	BS_OPTIONAL	4	/* device not alwas present */
+#define	BS_OPTIONAL	4	/* device not always present */
 		unsigned int flags;
 	};
 
@@ -1222,19 +1222,19 @@ mainbus_attach(device_t parent, device_t dev, void *aux)
 		ma.ma_bustag = &mainbus_space_tag;
 		ma.ma_dmatag = &mainbus_dma_tag;
 		ma.ma_name = "cpu";
-		if (config_found(dev, (void *)&ma, mbprint, CFARG_EOL) == NULL)
+		if (config_found(dev, (void *)&ma, mbprint, CFARGS_NONE) == NULL)
 			panic("cpu missing");
 
 		ma.ma_bustag = &mainbus_space_tag;
 		ma.ma_dmatag = &mainbus_dma_tag;
 		ma.ma_name = "obio";
-		if (config_found(dev, (void *)&ma, mbprint, CFARG_EOL) == NULL)
+		if (config_found(dev, (void *)&ma, mbprint, CFARGS_NONE) == NULL)
 			panic("obio missing");
 
 		ma.ma_bustag = &mainbus_space_tag;
 		ma.ma_dmatag = &mainbus_dma_tag;
 		ma.ma_name = "vme";
-		(void)config_found(dev, (void *)&ma, mbprint, CFARG_EOL);
+		(void)config_found(dev, (void *)&ma, mbprint, CFARGS_NONE);
 		return;
 	}
 #endif
@@ -1243,6 +1243,7 @@ mainbus_attach(device_t parent, device_t dev, void *aux)
  * The rest of this routine is for OBP machines exclusively.
  */
 #if defined(SUN4C) || defined(SUN4M) || defined(SUN4D)
+	devhandle_t selfh = device_handle(dev);
 
 	if (CPU_ISSUN4D)
 		openboot_special = openboot_special4d;
@@ -1286,8 +1287,8 @@ mainbus_attach(device_t parent, device_t dev, void *aux)
 			ma.ma_node = node;
 			ma.ma_name = "cpu";
 			config_found(dev, (void *)&ma, mbprint,
-			    CFARG_DEVHANDLE, prom_node_to_devhandle(node),
-			    CFARG_EOL);
+			    CFARGS(.devhandle = prom_node_to_devhandle(selfh,
+								       node)));
 			if (node == bootnode && bootmid != 0) {
 				/* Re-enter loop to find all remaining CPUs */
 				goto rescan;
@@ -1300,8 +1301,8 @@ mainbus_attach(device_t parent, device_t dev, void *aux)
 		ma.ma_node = findroot();
 		ma.ma_name = "cpu";
 		config_found(dev, (void *)&ma, mbprint,
-		    CFARG_DEVHANDLE, prom_node_to_devhandle(ma.ma_node),
-		    CFARG_EOL);
+		    CFARGS(.devhandle = prom_node_to_devhandle(selfh,
+							       ma.ma_node)));
 	}
 
 	for (ssp = openboot_special; (sp = ssp->dev) != NULL; ssp++) {
@@ -1332,8 +1333,9 @@ mainbus_attach(device_t parent, device_t dev, void *aux)
 			continue;
 
 		if (config_found(dev, (void *)&ma, mbprint,
-				 CFARG_DEVHANDLE, prom_node_to_devhandle(node),
-				 CFARG_EOL) == NULL) {
+				 CFARGS(.devhandle =
+				     prom_node_to_devhandle(selfh,
+				 			    node))) == NULL) {
 			if (ssp->flags & BS_OPTIONAL) continue;
 			panic("%s", sp);
 		}
@@ -1393,8 +1395,8 @@ mainbus_attach(device_t parent, device_t dev, void *aux)
 			ma.ma_promvaddr = 0;
 
 			config_found(dev, (void *)&ma, mbprint,
-			    CFARG_DEVHANDLE, prom_node_to_devhandle(node),
-			    CFARG_EOL);
+			    CFARGS(.devhandle = prom_node_to_devhandle(selfh,
+								       node)));
 			continue;
 		}
 #endif /* SUN4M */
@@ -1412,8 +1414,7 @@ mainbus_attach(device_t parent, device_t dev, void *aux)
 			continue;
 
 		config_found(dev, (void *)&ma, mbprint,
-		    CFARG_DEVHANDLE, prom_node_to_devhandle(node),
-		    CFARG_EOL);
+		    CFARGS(.devhandle = prom_node_to_devhandle(selfh, node)));
 	}
 #endif /* SUN4C || SUN4M || SUN4D */
 }
@@ -2009,7 +2010,7 @@ bootinfo_relocate(void *newloc)
 		(size_t)cp < (size_t)bootinfo + BOOTINFO_SIZE);
 
 	/*
-	 * Check propective gains.
+	 * Check prospective gains.
 	 */
 	if ((int)bootinfo - (int)newloc < bi_size)
 		/* Don't bother */

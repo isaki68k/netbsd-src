@@ -1,4 +1,4 @@
-/* $NetBSD: sio.c,v 1.14 2021/04/24 23:36:40 thorpej Exp $ */
+/* $NetBSD: sio.c,v 1.16 2021/09/25 15:18:38 tsutsui Exp $ */
 
 /*-
  * Copyright (c) 2000 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: sio.c,v 1.14 2021/04/24 23:36:40 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sio.c,v 1.16 2021/09/25 15:18:38 tsutsui Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -41,6 +41,7 @@ __KERNEL_RCSID(0, "$NetBSD: sio.c,v 1.14 2021/04/24 23:36:40 thorpej Exp $");
 #include <machine/autoconf.h>
 
 #include <luna68k/luna68k/isr.h>
+#include <luna68k/dev/sioreg.h>
 #include <luna68k/dev/siovar.h>
 
 #include "ioconf.h"
@@ -84,7 +85,7 @@ sio_attach(device_t parent, device_t self, void *aux)
 		sc->sc_intrhand[channel].ih_func = nullintr;
 		sio_args.channel = channel;
 		sio_args.hwflags = (channel == sysconsole);
-		config_found(self, (void *)&sio_args, sio_print, CFARG_EOL);
+		config_found(self, (void *)&sio_args, sio_print, CFARGS_NONE);
 	}
 
 	isrlink_autovec(xsiointr, sc, ma->ma_ilvl, ISRPRI_TTYNOBUF);

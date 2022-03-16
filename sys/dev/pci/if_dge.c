@@ -1,4 +1,4 @@
-/*	$NetBSD: if_dge.c,v 1.59 2021/05/08 00:27:02 thorpej Exp $ */
+/*	$NetBSD: if_dge.c,v 1.63 2021/12/31 14:25:23 riastradh Exp $ */
 
 /*
  * Copyright (c) 2004, SUNET, Swedish University Computer Network.
@@ -80,7 +80,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_dge.c,v 1.59 2021/05/08 00:27:02 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_dge.c,v 1.63 2021/12/31 14:25:23 riastradh Exp $");
 
 
 
@@ -177,7 +177,7 @@ int	dge_debug = 0;
 #define DGE_RXSPACE		10
 #define DGE_PREVRX(x)		(((x) - DGE_RXSPACE) & DGE_NRXDESC_MASK)
 /*
- * Receive descriptor fetch threshholds. These are values recommended
+ * Receive descriptor fetch thresholds. These are values recommended
  * by Intel, do not touch them unless you know what you are doing.
  */
 #define RXDCTL_PTHRESH_VAL	128
@@ -929,7 +929,7 @@ dge_attach(device_t parent, device_t self, void *aux)
 	    ETHERCAP_JUMBO_MTU | ETHERCAP_VLAN_MTU;
 
 	/*
-	 * We can perform TCPv4 and UDPv4 checkums in-bound.
+	 * We can perform TCPv4 and UDPv4 checksums in-bound.
 	 */
 	ifp->if_capabilities |=
 	    IFCAP_CSUM_IPv4_Tx | IFCAP_CSUM_IPv4_Rx |
@@ -1453,7 +1453,7 @@ dge_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 		else if ((error = ifioctl_common(ifp, cmd, data)) != ENETRESET)
 			break;
 		else if (ifp->if_flags & IFF_UP)
-			error = (*ifp->if_init)(ifp);
+			error = if_init(ifp);
 		else
 			error = 0;
 		break;
@@ -1488,7 +1488,7 @@ dge_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 		error = 0;
 
 		if (cmd == SIOCSIFCAP)
-			error = (*ifp->if_init)(ifp);
+			error = if_init(ifp);
 		else if (cmd != SIOCADDMULTI && cmd != SIOCDELMULTI)
 			;
 		else if (ifp->if_flags & IFF_RUNNING) {
@@ -1885,7 +1885,7 @@ dge_init(struct ifnet *ifp)
 	uint32_t reg;
 
 	/*
-	 * *_HDR_ALIGNED_P is constant 1 if __NO_STRICT_ALIGMENT is set.
+	 * *_HDR_ALIGNED_P is constant 1 if __NO_STRICT_ALIGNMENT is set.
 	 * There is a small but measurable benefit to avoiding the adjusment
 	 * of the descriptor so that the headers are aligned, for normal mtu,
 	 * on such platforms.  One possibility is that the DMA itself is

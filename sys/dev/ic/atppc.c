@@ -1,4 +1,4 @@
-/* $NetBSD: atppc.c,v 1.38 2021/04/24 23:36:55 thorpej Exp $ */
+/* $NetBSD: atppc.c,v 1.40 2021/12/03 13:27:38 andvar Exp $ */
 
 /*
  * Copyright (c) 2001 Alcove - Nicolas Souchu
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: atppc.c,v 1.38 2021/04/24 23:36:55 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: atppc.c,v 1.40 2021/12/03 13:27:38 andvar Exp $");
 
 #include "opt_atppc.h"
 
@@ -185,7 +185,7 @@ atppc_sc_attach(struct atppc_softc *lsc)
 
 	/* Set up parport_adapter structure */
 
-	/* Set capabilites */
+	/* Set capabilities */
 	sc_parport_adapter.capabilities = 0;
 	if (lsc->sc_has & ATPPC_HAS_INTR) {
 		sc_parport_adapter.capabilities |= PPBUS_HAS_INTR;
@@ -235,7 +235,7 @@ atppc_sc_attach(struct atppc_softc *lsc)
 
 	/* Configure child of the device. */
 	lsc->child = config_found(lsc->sc_dev, &(sc_parport_adapter),
-		atppc_print, CFARG_EOL);
+		atppc_print, CFARGS_NONE);
 
 	return;
 }

@@ -1,4 +1,4 @@
-/* $NetBSD: if_skreg.h,v 1.29 2020/05/08 16:43:17 jakllsch Exp $ */
+/* $NetBSD: if_skreg.h,v 1.31 2022/02/23 21:54:41 andvar Exp $ */
 
 /*-
  * Copyright (c) 2003 The NetBSD Foundation, Inc.
@@ -1916,7 +1916,7 @@ struct msk_status_desc {
 /* SMI Data Register (SMIDR) */
 #define YUKON_SMIDR		0x0084
 
-/* PHY Addres Register (PAR) */
+/* PHY Address Register (PAR) */
 #define YUKON_PAR		0x0088
 
 #define YU_PAR_MIB_CLR		0x0020	/* MIB Counters Clear Mode */
@@ -1930,7 +1930,7 @@ struct msk_status_desc {
 #define YU_RXSTAT_MIIERR        0x00000020      /* MII error */
 #define YU_RXSTAT_BADFC         0x00000040      /* bad flow-control packet */
 #define YU_RXSTAT_GOODFC        0x00000080      /* good flow-control packet */
-#define YU_RXSTAT_RXOK          0x00000100      /* receice OK (Good packet) */
+#define YU_RXSTAT_RXOK          0x00000100      /* receive OK (Good packet) */
 #define YU_RXSTAT_BROADCAST     0x00000200      /* broadcast packet */
 #define YU_RXSTAT_MULTICAST     0x00000400      /* multicast packet */
 #define YU_RXSTAT_RUNT          0x00000800      /* undersize packet */

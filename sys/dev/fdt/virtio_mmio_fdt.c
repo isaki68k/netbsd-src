@@ -1,4 +1,4 @@
-/* $NetBSD: virtio_mmio_fdt.c,v 1.8 2021/04/24 23:36:53 thorpej Exp $ */
+/* $NetBSD: virtio_mmio_fdt.c,v 1.10 2021/10/22 02:57:23 yamaguchi Exp $ */
 
 /*
  * Copyright (c) 2018 Jonathan A. Kollasch
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: virtio_mmio_fdt.c,v 1.8 2021/04/24 23:36:53 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: virtio_mmio_fdt.c,v 1.10 2021/10/22 02:57:23 yamaguchi Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -44,7 +44,7 @@ static void	virtio_mmio_fdt_attach(device_t, device_t, void *);
 static int	virtio_mmio_fdt_rescan(device_t, const char *, const int *);
 static int	virtio_mmio_fdt_detach(device_t, int);
 
-static int	virtio_mmio_fdt_setup_interrupts(struct virtio_mmio_softc *);
+static int	virtio_mmio_fdt_alloc_interrupts(struct virtio_mmio_softc *);
 static void	virtio_mmio_fdt_free_interrupts(struct virtio_mmio_softc *);
 
 struct virtio_mmio_fdt_softc {
@@ -101,7 +101,7 @@ virtio_mmio_fdt_attach(device_t parent, device_t self, void *aux)
 	}
 	msc->sc_iosize = size;
 
-	msc->sc_setup_interrupts = virtio_mmio_fdt_setup_interrupts;
+	msc->sc_alloc_interrupts = virtio_mmio_fdt_alloc_interrupts;
 	msc->sc_free_interrupts = virtio_mmio_fdt_free_interrupts;
 
 	virtio_mmio_common_attach(msc);
@@ -123,7 +123,7 @@ virtio_mmio_fdt_rescan(device_t self, const char *attr, const int *scan_flags)
 	memset(&va, 0, sizeof(va));
 	va.sc_childdevid = vsc->sc_childdevid;
 
-	config_found(self, &va, NULL, CFARG_EOL);
+	config_found(self, &va, NULL, CFARGS_NONE);
 
 	if (virtio_attach_failed(vsc))
 		return 0;
@@ -141,7 +141,7 @@ virtio_mmio_fdt_detach(device_t self, int flags)
 }
 
 static int
-virtio_mmio_fdt_setup_interrupts(struct virtio_mmio_softc *msc)
+virtio_mmio_fdt_alloc_interrupts(struct virtio_mmio_softc *msc)
 {
 	struct virtio_mmio_fdt_softc * const fsc = (void *)msc;
 	struct virtio_softc * const vsc = &msc->sc_sc;

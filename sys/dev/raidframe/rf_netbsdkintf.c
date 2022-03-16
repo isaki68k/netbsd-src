@@ -1,4 +1,4 @@
-/*	$NetBSD: rf_netbsdkintf.c,v 1.394 2021/05/26 06:11:50 mrg Exp $	*/
+/*	$NetBSD: rf_netbsdkintf.c,v 1.403 2022/03/11 01:59:33 mrg Exp $	*/
 
 /*-
  * Copyright (c) 1996, 1997, 1998, 2008-2011 The NetBSD Foundation, Inc.
@@ -101,7 +101,7 @@
  ***********************************************************/
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: rf_netbsdkintf.c,v 1.394 2021/05/26 06:11:50 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: rf_netbsdkintf.c,v 1.403 2022/03/11 01:59:33 mrg Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_raid_autoconfig.h"
@@ -157,12 +157,6 @@ int     rf_kdebug_level = 0;
 #else				/* DEBUG */
 #define db1_printf(a) { }
 #endif				/* DEBUG */
-
-#ifdef DEBUG_ROOT
-#define DPRINTF(a, ...) printf(a, __VA_ARGS__)
-#else
-#define DPRINTF(a, ...)
-#endif
 
 #if (RF_INCLUDE_PARITY_DECLUSTERING_DS > 0)
 static rf_declare_mutex2(rf_sparet_wait_mutex);
@@ -305,6 +299,7 @@ static void rf_RewriteParityThread(RF_Raid_t *raidPtr);
 static void rf_CopybackThread(RF_Raid_t *raidPtr);
 static void rf_ReconstructInPlaceThread(struct rf_recon_req_internal *);
 static int rf_autoconfig(device_t);
+static int rf_rescan(void);
 static void rf_buildroothack(RF_ConfigSet_t *);
 
 static RF_AutoConfig_t *rf_find_raid_components(void);
@@ -331,7 +326,7 @@ int raidautoconfig = 0;
 #endif
 static bool raidautoconfigdone = false;
 
-struct RF_Pools_s rf_pools;
+struct pool rf_alloclist_pool;   /* AllocList */
 
 static LIST_HEAD(, raid_softc) raids = LIST_HEAD_INITIALIZER(raids);
 static kmutex_t raid_lock;
@@ -480,50 +475,114 @@ rf_containsboot(RF_Raid_t *r, device_t bdv) {
 	return 0;
 }
 
+static int
+rf_rescan(void)
+{
+	RF_AutoConfig_t *ac_list;
+	RF_ConfigSet_t *config_sets, *cset, *next_cset;
+	struct raid_softc *sc;
+	int raid_added;
+	
+	ac_list = rf_find_raid_components();
+	config_sets = rf_create_auto_sets(ac_list);
+
+	raid_added = 1;
+	while (raid_added > 0) {
+		raid_added = 0;
+		cset = config_sets;
+		while (cset != NULL) {
+			next_cset = cset->next;
+			if (rf_have_enough_components(cset) &&
+			    cset->ac->clabel->autoconfigure == 1) {
+				sc = rf_auto_config_set(cset);
+				if (sc != NULL) {
+					aprint_debug("raid%d: configured ok, rootable %d\n",
+						     sc->sc_unit, cset->rootable);
+					/* We added one RAID set */
+					raid_added++;
+				} else {
+					/* The autoconfig didn't work :( */
+					aprint_debug("Autoconfig failed\n");
+					rf_release_all_vps(cset);
+				}
+			} else {
+				/* we're not autoconfiguring this set...
+				   release the associated resources */
+				rf_release_all_vps(cset);
+			}
+			/* cleanup */
+			rf_cleanup_config_set(cset);
+			cset = next_cset;
+		}
+		if (raid_added > 0) {
+			/* We added at least one RAID set, so re-scan for recursive RAID */
+			ac_list = rf_find_raid_components();
+			config_sets = rf_create_auto_sets(ac_list);
+		}
+	}
+	
+	return 0;
+}
+
+
 static void
 rf_buildroothack(RF_ConfigSet_t *config_sets)
 {
+	RF_AutoConfig_t *ac_list;
 	RF_ConfigSet_t *cset;
 	RF_ConfigSet_t *next_cset;
 	int num_root;
+	int raid_added;
 	struct raid_softc *sc, *rsc;
 	struct dk_softc *dksc = NULL;	/* XXX gcc -Os: may be used uninit. */
 
 	sc = rsc = NULL;
 	num_root = 0;
-	cset = config_sets;
-	while (cset != NULL) {
-		next_cset = cset->next;
-		if (rf_have_enough_components(cset) &&
-		    cset->ac->clabel->autoconfigure == 1) {
-			sc = rf_auto_config_set(cset);
-			if (sc != NULL) {
-				aprint_debug("raid%d: configured ok, rootable %d\n",
-				    sc->sc_unit, cset->rootable);
-				if (cset->rootable) {
-					rsc = sc;
-					num_root++;
+
+	raid_added = 1;
+	while (raid_added > 0) {
+		raid_added = 0;
+		cset = config_sets;
+		while (cset != NULL) {
+			next_cset = cset->next;
+			if (rf_have_enough_components(cset) &&
+			    cset->ac->clabel->autoconfigure == 1) {
+				sc = rf_auto_config_set(cset);
+				if (sc != NULL) {
+					aprint_debug("raid%d: configured ok, rootable %d\n",
+						     sc->sc_unit, cset->rootable);
+					/* We added one RAID set */
+					raid_added++;
+					if (cset->rootable) {
+						rsc = sc;
+						num_root++;
+					}
+				} else {
+					/* The autoconfig didn't work :( */
+					aprint_debug("Autoconfig failed\n");
+					rf_release_all_vps(cset);
 				}
 			} else {
-				/* The autoconfig didn't work :( */
-				aprint_debug("Autoconfig failed\n");
+				/* we're not autoconfiguring this set...
+				   release the associated resources */
 				rf_release_all_vps(cset);
 			}
-		} else {
-			/* we're not autoconfiguring this set...
-			   release the associated resources */
-			rf_release_all_vps(cset);
+			/* cleanup */
+			rf_cleanup_config_set(cset);
+			cset = next_cset;
 		}
-		/* cleanup */
-		rf_cleanup_config_set(cset);
-		cset = next_cset;
+		if (raid_added > 0) {
+			/* We added at least one RAID set, so re-scan for recursive RAID */
+			ac_list = rf_find_raid_components();
+			config_sets = rf_create_auto_sets(ac_list);
+		}
 	}
-
+	
 	/* if the user has specified what the root device should be
 	   then we don't touch booted_device or boothowto... */
 
 	if (rootspec != NULL) {
-		DPRINTF("%s: rootspec %s\n", __func__, rootspec);
+		aprint_debug("%s: rootspec %s\n", __func__, rootspec);
 		return;
 	}
 
@@ -549,7 +608,7 @@ rf_buildroothack(RF_ConfigSet_t *config_sets)
 			snprintf(cname, sizeof(cname), "%s%c",
 			    device_xname(dksc->sc_dev), 'a');
 			candidate_root = dkwedge_find_by_wname(cname);
-			DPRINTF("%s: candidate wedge root=%s\n", __func__,
+			aprint_debug("%s: candidate wedge root=%s\n", __func__,
 			    cname);
 			if (candidate_root == NULL) {
 				/*
@@ -562,15 +621,15 @@ rf_buildroothack(RF_ConfigSet_t *config_sets)
 				candidate_root = dkwedge_find_by_parent(
 				    device_xname(dksc->sc_dev), &i);
 			}
-			DPRINTF("%s: candidate wedge root=%p\n", __func__,
+			aprint_debug("%s: candidate wedge root=%p\n", __func__,
 			    candidate_root);
 		} else
 			candidate_root = dksc->sc_dev;
-		DPRINTF("%s: candidate root=%p\n", __func__, candidate_root);
-		DPRINTF("%s: booted_device=%p root_partition=%d "
-			"contains_boot=%d",
-		    __func__, booted_device, rsc->sc_r.root_partition,
-			   rf_containsboot(&rsc->sc_r, booted_device));
+		aprint_debug("%s: candidate root=%p booted_device=%p "
+			     "root_partition=%d contains_boot=%d\n",
+		    __func__, candidate_root, booted_device,
+		    rsc->sc_r.root_partition,
+		    rf_containsboot(&rsc->sc_r, booted_device));
 		/* XXX the check for booted_device == NULL can probably be
 		 * dropped, now that rf_containsboot handles that case.
 		 */
@@ -580,11 +639,11 @@ rf_buildroothack(RF_ConfigSet_t *config_sets)
 			booted_device = candidate_root;
 			booted_method = "raidframe/single";
 			booted_partition = 0;	/* XXX assume 'a' */
-			DPRINTF("%s: set booted_device=%s(%p)\n", __func__,
+			aprint_debug("%s: set booted_device=%s(%p)\n", __func__,
 			    device_xname(booted_device), booted_device);
 		}
 	} else if (num_root > 1) {
-		DPRINTF("%s: many roots=%d, %p\n", __func__, num_root,
+		aprint_debug("%s: many roots=%d, %p\n", __func__, num_root,
 		    booted_device);
 
 		/*
@@ -1515,7 +1574,7 @@ raidioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 
 	case RAIDFRAME_REBUILD_IN_PLACE:
 		return rf_rebuild_in_place(raidPtr, data);
-
+		
 	case RAIDFRAME_GET_INFO:
 		ucfgp = *(RF_DeviceConfig_t **)data;
 		d_cfg = RF_Malloc(sizeof(*d_cfg));
@@ -1559,6 +1618,9 @@ raidioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 		rf_paritymap_set_disable(raidPtr, *(int *)data);
 		/* XXX should errors be passed up? */
 		return 0;
+
+	case RAIDFRAME_RESCAN:
+		return rf_rescan();
 
 	case RAIDFRAME_RESET_ACCTOTALS:
 		memset(&raidPtr->acc_totals, 0, sizeof(raidPtr->acc_totals));
@@ -1904,7 +1966,6 @@ raiddoaccess(RF_Raid_t *raidPtr, struct buf *bp)
 	RF_SectorCount_t num_blocks, pb, sum;
 	RF_RaidAddr_t raid_addr;
 	daddr_t blocknum;
-	int     do_async;
 	int rc;
 
 	rf_lock_mutex2(raidPtr->mutex);
@@ -1954,17 +2015,12 @@ raiddoaccess(RF_Raid_t *raidPtr, struct buf *bp)
 	raidPtr->openings--;
 	rf_unlock_mutex2(raidPtr->mutex);
 
-	/*
-	 * Everything is async.
-	 */
-	do_async = 1;
-
 	/* don't ever condition on bp->b_flags & B_WRITE.
 	 * always condition on B_READ instead */
 
 	rc = rf_DoAccess(raidPtr, (bp->b_flags & B_READ) ?
 			 RF_IO_TYPE_READ : RF_IO_TYPE_WRITE,
-			 do_async, raid_addr, num_blocks,
+			 raid_addr, num_blocks,
 			 bp->b_data, bp, RF_DAG_NONBLOCKING_IO);
 
 done:
@@ -2672,8 +2728,16 @@ rf_ReconThread(struct rf_recon_req_internal *req)
 	raidPtr = (RF_Raid_t *) req->raidPtr;
 	raidPtr->recon_in_progress = 1;
 
+	if (req->flags & RF_FDFLAGS_RECON_FORCE) {
+		raidPtr->forceRecon = 1;
+	}
+	
 	rf_FailDisk((RF_Raid_t *) req->raidPtr, req->col,
 		    ((req->flags & RF_FDFLAGS_RECON) ? 1 : 0));
+
+	if (req->flags & RF_FDFLAGS_RECON_FORCE) {
+		raidPtr->forceRecon = 0;
+	}
 
 	RF_Free(req, sizeof(*req));
 
@@ -2743,7 +2807,17 @@ rf_ReconstructInPlaceThread(struct rf_recon_req_internal *req)
 	s = splbio();
 	raidPtr = req->raidPtr;
 	raidPtr->recon_in_progress = 1;
+
+	if (req->flags & RF_FDFLAGS_RECON_FORCE) {
+		raidPtr->forceRecon = 1;
+	}
+
 	rf_ReconstructInPlace(raidPtr, req->col);
+
+	if (req->flags & RF_FDFLAGS_RECON_FORCE) {
+		raidPtr->forceRecon = 0;
+	}
+
 	RF_Free(req, sizeof(*req));
 	raidPtr->recon_in_progress = 0;
 	splx(s);
@@ -2960,7 +3034,19 @@ rf_find_raid_components(void)
 				vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
 				error = VOP_OPEN(vp, FREAD, NOCRED);
 				if (error) {
-					/* Whatever... */
+					/* Not quite a 'whatever'.  In
+					 * this situation we know 
+					 * there is a FS_RAID
+					 * partition, but we can't
+					 * open it.  The most likely
+					 * reason is that the
+					 * partition is already in
+					 * use by another RAID set.
+					 * So note that we've already
+					 * found a partition on this
+					 * disk so we don't attempt
+					 * to use the raw disk later. */
+					rf_part_found = 1;
 					vput(vp);
 					continue;
 				}
@@ -3558,14 +3644,18 @@ rf_auto_config_set(RF_ConfigSet_t *cset)
 }
 
 void
-rf_pool_init(struct pool *p, size_t size, const char *w_chan,
+rf_pool_init(RF_Raid_t *raidPtr, char *w_chan, struct pool *p, size_t size, const char *pool_name,
 	     size_t xmin, size_t xmax)
 {
 
+	/* Format: raid%d_foo */
+	snprintf(w_chan, RF_MAX_POOLNAMELEN, "raid%d_%s", raidPtr->raidid, pool_name);
+	
 	pool_init(p, size, 0, 0, 0, w_chan, NULL, IPL_BIO);
 	pool_sethiwat(p, xmax);
 	pool_prime(p, xmin);
 }
+
 
 /*
  * rf_buf_queue_check(RF_Raid_t raidPtr) -- looks into the buffer queue
@@ -3763,6 +3853,8 @@ void
 rf_check_recon_status_ext(RF_Raid_t *raidPtr, RF_ProgressInfo_t *info)
 {
 
+	memset(info, 0, sizeof(*info));
+
 	if (raidPtr->status != rf_rs_reconstructing) {
 		info->total = 100;
 		info->completed = 100;
@@ -3778,6 +3870,8 @@ void
 rf_check_parityrewrite_status_ext(RF_Raid_t *raidPtr, RF_ProgressInfo_t *info)
 {
 
+	memset(info, 0, sizeof(*info));
+
 	if (raidPtr->parity_rewrite_in_progress == 1) {
 		info->total = raidPtr->Layout.numStripe;
 		info->completed = raidPtr->parity_rewrite_stripes_done;
@@ -3792,6 +3886,8 @@ rf_check_parityrewrite_status_ext(RF_Raid_t *raidPtr, RF_ProgressInfo_t *info)
 void
 rf_check_copyback_status_ext(RF_Raid_t *raidPtr, RF_ProgressInfo_t *info)
 {
+
+	memset(info, 0, sizeof(*info));
 
 	if (raidPtr->copyback_in_progress == 1) {
 		info->total = raidPtr->Layout.numStripe;

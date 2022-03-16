@@ -1,4 +1,4 @@
-#	$NetBSD: files,v 1.1286 2021/06/01 03:51:33 yamaguchi Exp $
+#	$NetBSD: files,v 1.1295 2022/02/16 20:14:30 riastradh Exp $
 #	@(#)files.newconf	7.5 (Berkeley) 5/10/93
 
 version 	20171118
@@ -301,6 +301,7 @@ defparam opt_sppp.h		SPPP_KEEPALIVE_INTERVAL
 #
 defflag				GATEWAY
 defparam opt_nmbclusters.h	NMBCLUSTERS
+	 			NMBCLUSTERS_MAX
 defparam			SB_MAX
 
 # file system options
@@ -378,6 +379,7 @@ define 	pckbport	{[slot = -1]}
 define	pckbport_machdep_cnattach
 define	firmload
 define	ipmibus		{ }
+define	smbios
 
 # speaker devices, attaches to audio or pcppi drivers
 device	spkr: wsbelldev
@@ -418,9 +420,17 @@ file	dev/ic/nslm7x.c			lm			needs-flag
 device	spdmem
 file	dev/ic/spdmem.c			spdmem
 
+# Microchip MCP23x08 / MCP23x17 general purpose input/output
+device	mcpgpio: gpiobus
+file	dev/ic/mcp23xxxgpio.c		mcpgpio
+
 # SSD1306 or SH1106 OLED/PLED display (attaches via I2C or SPI)
 device	ssdfb:	wsemuldisplaydev
 file	dev/ic/ssdfb.c	ssdfb
+
+# Sparkfun Serial motor controller (attaches via I2C or SPI)
+device  scmd
+file	dev/ic/scmd.c	scmd
 
 # Generic HID support (used by USB, bluetooth and i2c)
 include "dev/hid/files.hid"
@@ -770,10 +780,14 @@ file	dev/ic/hme.c			hme
 device	gem: arp, ether, ifnet, mii
 file	dev/ic/gem.c			gem
 
-# Synopsis Designware GMAC core, as found on allwinner a20
+# Synopsys DesignWare GMAC core, as found on allwinner a20
 # and other SoCs
 device	awge: arp, ether, ifnet, mii
 file	dev/ic/dwc_gmac.c		awge
+
+# Synopsys DesignWare Ethernet Quality-of-Service controller
+device	eqos: arp, ether, ifnet, mii
+file	dev/ic/dwc_eqos.c		eqos
 
 # 8390-family Ethernet controllers
 #
@@ -1033,6 +1047,8 @@ device	njata: ata, ata_piobm, wdc_common
 file	dev/ic/ninjaata32.c		njata
 
 # AHCI-compatible SATA controllers
+defflag	opt_ahcisata.h	AHCISATA_EXTRA_DELAY
+defparam opt_ahcisata.h	AHCISATA_EXTRA_DELAY_MS
 define ahcisata_core
 file dev/ic/ahcisata_core.c ahcisata_core
 device ahcisata: ata, ata_dma, ata_udma, sata, sata_fis, sata_pmp, ahcisata_core
@@ -1594,12 +1610,12 @@ include "dev/altmem/files.altmem"
 include "dev/flash/files.flash"
 
 #
-# NAND subsytem
+# NAND subsystem
 #
 include "dev/nand/files.nand"
 
 #
-# NOR subsytem
+# NOR subsystem
 #
 include "dev/nor/files.nor"
 
@@ -1623,6 +1639,13 @@ include "dev/clk/files.clk"
 #
 include "dev/ofw/files.ofw"
 include "dev/fdt/files.fdt"
+
+
+## ACPI -- this should be dev/acpi/files.acpi, but that currently has
+# some MD parts.  Having this here allows conditionals on NACPICA in
+# acpica.h, at least.
+#
+include "dev/acpi/acpica/files.acpica"
 
 #
 # Name value library

@@ -1,4 +1,4 @@
-/*	$NetBSD: if.c,v 1.487 2021/07/01 22:08:13 blymn Exp $	*/
+/*	$NetBSD: if.c,v 1.502 2022/03/12 15:32:32 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001, 2008 The NetBSD Foundation, Inc.
@@ -90,7 +90,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if.c,v 1.487 2021/07/01 22:08:13 blymn Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if.c,v 1.502 2022/03/12 15:32:32 riastradh Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_inet.h"
@@ -122,6 +122,7 @@ __KERNEL_RCSID(0, "$NetBSD: if.c,v 1.487 2021/07/01 22:08:13 blymn Exp $");
 #include <sys/module_hook.h>
 #include <sys/compat_stub.h>
 #include <sys/msan.h>
+#include <sys/hook.h>
 
 #include <net/if.h>
 #include <net/if_dl.h>
@@ -158,11 +159,6 @@ __KERNEL_RCSID(0, "$NetBSD: if.c,v 1.487 2021/07/01 22:08:13 blymn Exp $");
 #include "carp.h"
 #if NCARP > 0
 #include <netinet/ip_carp.h>
-#endif
-
-#include "lagg.h"
-#if NLAGG > 0
-#include <net/lagg/if_laggvar.h>
 #endif
 
 #include <compat/sys/sockio.h>
@@ -631,8 +627,13 @@ static void
 if_getindex(ifnet_t *ifp)
 {
 	bool hitlimit = false;
+	char xnamebuf[HOOKNAMSIZ];
 
 	ifp->if_index_gen = index_gen++;
+	snprintf(xnamebuf, sizeof(xnamebuf),
+	    "%s-lshk", ifp->if_xname);
+	ifp->if_linkstate_hooks = simplehook_create(IPL_NET,
+	    xnamebuf);
 
 	ifp->if_index = if_index;
 	if (ifindex2ifnet == NULL) {
@@ -1198,8 +1199,6 @@ if_deactivate(struct ifnet *ifp)
 	ifp->if_slowtimo = if_nullslowtimo;
 	ifp->if_drain	 = if_nulldrain;
 
-	ifp->if_link_state_changed = NULL;
-
 	/* No more packets may be enqueued. */
 	ifp->if_snd.ifq_maxlen = 0;
 
@@ -1326,7 +1325,7 @@ if_detach(struct ifnet *ifp)
 	/*
 	 * Unset all queued link states and pretend a
 	 * link state change is scheduled.
-	 * This stops any more link state changes occuring for this
+	 * This stops any more link state changes occurring for this
 	 * interface while it's being detached so it's safe
 	 * to drain the workqueue.
 	 */
@@ -1533,6 +1532,8 @@ restart:
 	ifp->if_ioctl_lock = NULL;
 	mutex_obj_free(ifp->if_snd.ifq_lock);
 	if_stats_fini(ifp);
+	KASSERT(!simplehook_has_hooks(ifp->if_linkstate_hooks));
+	simplehook_destroy(ifp->if_linkstate_hooks);
 
 	splx(s);
 
@@ -1621,7 +1622,7 @@ if_clone_destroy(const char *name)
 	struct ifnet *ifp;
 	struct psref psref;
 	int error;
-	int (*if_ioctl)(struct ifnet *, u_long, void *);
+	int (*if_ioctlfn)(struct ifnet *, u_long, void *);
 
 	KASSERT(mutex_owned(&if_clone_mtx));
 
@@ -1638,7 +1639,7 @@ if_clone_destroy(const char *name)
 
 	/* We have to disable ioctls here */
 	IFNET_LOCK(ifp);
-	if_ioctl = ifp->if_ioctl;
+	if_ioctlfn = ifp->if_ioctl;
 	ifp->if_ioctl = if_nullioctl;
 	IFNET_UNLOCK(ifp);
 
@@ -1653,7 +1654,7 @@ if_clone_destroy(const char *name)
 	if (error != 0) {
 		/* We have to restore if_ioctl on error */
 		IFNET_LOCK(ifp);
-		ifp->if_ioctl = if_ioctl;
+		ifp->if_ioctl = if_ioctlfn;
 		IFNET_UNLOCK(ifp);
 	}
 
@@ -1818,9 +1819,15 @@ ifafree(struct ifaddr *ifa)
 	KASSERT(ifa != NULL);
 	KASSERTMSG(ifa->ifa_refcnt > 0, "ifa_refcnt=%d", ifa->ifa_refcnt);
 
-	if (atomic_dec_uint_nv(&ifa->ifa_refcnt) == 0) {
-		free(ifa, M_IFADDR);
-	}
+#ifndef __HAVE_ATOMIC_AS_MEMBAR
+	membar_exit();
+#endif
+	if (atomic_dec_uint_nv(&ifa->ifa_refcnt) != 0)
+		return;
+#ifndef __HAVE_ATOMIC_AS_MEMBAR
+	membar_enter();
+#endif
+	free(ifa, M_IFADDR);
 }
 
 bool
@@ -2394,23 +2401,7 @@ if_link_state_change_process(struct ifnet *ifp, int link_state)
 	/* Notify that the link state has changed. */
 	rt_ifmsg(ifp);
 
-#if NCARP > 0
-	if (ifp->if_carp)
-		carp_carpdev_state(ifp);
-#endif
-
-	if (ifp->if_link_state_changed != NULL)
-		ifp->if_link_state_changed(ifp, link_state);
-
-#if NBRIDGE > 0
-	if (ifp->if_bridge != NULL)
-		bridge_calc_link_state(ifp->if_bridge);
-#endif
-
-#if NLAGG > 0
-	if (ifp->if_lagg != NULL)
-		lagg_linkstate_changed(ifp);
-#endif
+	simplehook_dohooks(ifp->if_linkstate_hooks);
 
 	DOMAIN_FOREACH(dp) {
 		if (dp->dom_if_link_state_change != NULL)
@@ -2457,6 +2448,23 @@ if_link_state_change_work(struct work *work, void *arg)
 out:
 	splx(s);
 	KERNEL_UNLOCK_UNLESS_NET_MPSAFE();
+}
+
+void *
+if_linkstate_change_establish(struct ifnet *ifp, void (*fn)(void *), void *arg)
+{
+	khook_t *hk;
+
+	hk = simplehook_establish(ifp->if_linkstate_hooks, fn, arg);
+
+	return (void *)hk;
+}
+
+void
+if_linkstate_change_disestablish(struct ifnet *ifp, void *vhook, kmutex_t *lock)
+{
+
+	simplehook_disestablish(ifp->if_linkstate_hooks, vhook, lock);
 }
 
 /*
@@ -2723,6 +2731,73 @@ ifpromisc(struct ifnet *ifp, int pswitch)
 	IFNET_UNLOCK(ifp);
 
 	return e;
+}
+
+/*
+ * if_ioctl(ifp, cmd, data)
+ *
+ *	Apply an ioctl command to the interface.  Returns 0 on success,
+ *	nonzero errno(3) number on failure.
+ *
+ *	For SIOCADDMULTI/SIOCDELMULTI, caller need not hold locks -- it
+ *	is the driver's responsibility to take any internal locks.
+ *	(Kernel logic should generally invoke these only through
+ *	if_mcast_op.)
+ *
+ *	For all other ioctls, caller must hold ifp->if_ioctl_lock,
+ *	a.k.a. IFNET_LOCK.  May sleep.
+ */
+int
+if_ioctl(struct ifnet *ifp, u_long cmd, void *data)
+{
+
+	switch (cmd) {
+	case SIOCADDMULTI:
+	case SIOCDELMULTI:
+		break;
+	default:
+		KASSERTMSG(IFNET_LOCKED(ifp), "%s", ifp->if_xname);
+	}
+
+	return (*ifp->if_ioctl)(ifp, cmd, data);
+}
+
+/*
+ * if_init(ifp)
+ *
+ *	Prepare the hardware underlying ifp to process packets
+ *	according to its current configuration.  Returns 0 on success,
+ *	nonzero errno(3) number on failure.
+ *
+ *	May sleep.  Caller must hold ifp->if_ioctl_lock, a.k.a
+ *	IFNET_LOCK.
+ */
+int
+if_init(struct ifnet *ifp)
+{
+
+	KASSERTMSG(IFNET_LOCKED(ifp), "%s", ifp->if_xname);
+
+	return (*ifp->if_init)(ifp);
+}
+
+/*
+ * if_stop(ifp, disable)
+ *
+ *	Stop the hardware underlying ifp from processing packets.
+ *
+ *	If disable is true, ... XXX(?)
+ *
+ *	May sleep.  Caller must hold ifp->if_ioctl_lock, a.k.a
+ *	IFNET_LOCK.
+ */
+void
+if_stop(struct ifnet *ifp, int disable)
+{
+
+	KASSERTMSG(IFNET_LOCKED(ifp), "%s", ifp->if_xname);
+
+	(*ifp->if_stop)(ifp, disable);
 }
 
 /*
@@ -3163,7 +3238,7 @@ ifioctl_common(struct ifnet *ifp, u_long cmd, void *data)
 		ifp->if_mtu = ifr->ifr_mtu;
 		return ENETRESET;
 	case SIOCSIFDESCR:
-		error = kauth_authorize_network(curlwp->l_cred,
+		error = kauth_authorize_network(kauth_cred_get(),
 		    KAUTH_NETWORK_INTERFACE,
 		    KAUTH_REQ_NETWORK_INTERFACE_SETPRIV, ifp, KAUTH_ARG(cmd),
 		    NULL);
@@ -3232,7 +3307,7 @@ ifaddrpref_ioctl(struct socket *so, u_long cmd, void *data, struct ifnet *ifp)
 
 	switch (cmd) {
 	case SIOCSIFADDRPREF:
-		error = kauth_authorize_network(curlwp->l_cred,
+		error = kauth_authorize_network(kauth_cred_get(),
 		    KAUTH_NETWORK_INTERFACE,
 		    KAUTH_REQ_NETWORK_INTERFACE_SETPRIV, ifp, KAUTH_ARG(cmd),
 		    NULL);
@@ -3425,7 +3500,7 @@ doifioctl(struct socket *so, u_long cmd, void *data, struct lwp *l)
 	KERNEL_LOCK_UNLESS_IFP_MPSAFE(ifp);
 	IFNET_LOCK(ifp);
 
-	error = (*ifp->if_ioctl)(ifp, cmd, data);
+	error = if_ioctl(ifp, cmd, data);
 	if (error != ENOTTY)
 		;
 	else if (so->so_proto == NULL)
@@ -3724,8 +3799,8 @@ if_addr_init(ifnet_t *ifp, struct ifaddr *ifa, const bool src)
 	if (ifp->if_initaddr != NULL)
 		rc = (*ifp->if_initaddr)(ifp, ifa, src);
 	else if (src ||
-	         (rc = (*ifp->if_ioctl)(ifp, SIOCSIFDSTADDR, ifa)) == ENOTTY)
-		rc = (*ifp->if_ioctl)(ifp, SIOCINITIFADDR, ifa);
+	         (rc = if_ioctl(ifp, SIOCSIFDSTADDR, ifa)) == ENOTTY)
+		rc = if_ioctl(ifp, SIOCINITIFADDR, ifa);
 
 	return rc;
 }
@@ -3763,6 +3838,15 @@ if_do_dad(struct ifnet *ifp)
 	}
 }
 
+/*
+ * if_flags_set(ifp, flags)
+ *
+ *	Ask ifp to change ifp->if_flags to flags, as if with the
+ *	SIOCSIFFLAGS ioctl command.
+ *
+ *	May sleep.  Caller must hold ifp->if_ioctl_lock, a.k.a
+ *	IFNET_LOCK.
+ */
 int
 if_flags_set(ifnet_t *ifp, const u_short flags)
 {
@@ -3792,7 +3876,7 @@ if_flags_set(ifnet_t *ifp, const u_short flags)
 		memset(&ifr, 0, sizeof(ifr));
 
 		ifr.ifr_flags = flags & ~IFF_CANTCHANGE;
-		rc = (*ifp->if_ioctl)(ifp, SIOCSIFFLAGS, &ifr);
+		rc = if_ioctl(ifp, SIOCSIFFLAGS, &ifr);
 
 		if (rc != 0 && cantflags != 0)
 			ifp->if_flags ^= cantflags;
@@ -3801,19 +3885,33 @@ if_flags_set(ifnet_t *ifp, const u_short flags)
 	return rc;
 }
 
+/*
+ * if_mcast_op(ifp, cmd, sa)
+ *
+ *	Apply a multicast command, SIOCADDMULTI/SIOCDELMULTI, to the
+ *	interface.  Returns 0 on success, nonzero errno(3) number on
+ *	failure.
+ *
+ *	May sleep.
+ *
+ *	Use this, not if_ioctl, for the multicast commands.
+ */
 int
 if_mcast_op(ifnet_t *ifp, const unsigned long cmd, const struct sockaddr *sa)
 {
 	int rc;
 	struct ifreq ifr;
 
-	/*
-	 * XXX NOMPSAFE - this calls if_ioctl without holding IFNET_LOCK()
-	 * in some cases - e.g. when called from vlan/netinet/netinet6 code
-	 * directly rather than via doifoictl()
-	 */
+	switch (cmd) {
+	case SIOCADDMULTI:
+	case SIOCDELMULTI:
+		break;
+	default:
+		panic("invalid ifnet multicast command: 0x%lx", cmd);
+	}
+
 	ifreq_setaddr(cmd, &ifr, sa);
-	rc = (*ifp->if_ioctl)(ifp, cmd, &ifr);
+	rc = if_ioctl(ifp, cmd, &ifr);
 
 	return rc;
 }

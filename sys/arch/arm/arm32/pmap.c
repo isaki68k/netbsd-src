@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.428 2021/03/23 10:21:49 skrll Exp $	*/
+/*	$NetBSD: pmap.c,v 1.433 2022/03/12 15:32:31 riastradh Exp $	*/
 
 /*
  * Copyright 2003 Wasabi Systems, Inc.
@@ -192,7 +192,7 @@
 #endif
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.428 2021/03/23 10:21:49 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.433 2022/03/12 15:32:31 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -529,13 +529,11 @@ pmap_release_page_lock(struct vm_page_md *md)
 	mutex_exit(&pmap_lock);
 }
 
-#ifdef DIAGNOSTIC
 static inline int
 pmap_page_locked_p(struct vm_page_md *md)
 {
 	return mutex_owned(&pmap_lock);
 }
-#endif
 
 
 /*
@@ -3749,9 +3747,7 @@ pmap_kenter_pa(vaddr_t va, paddr_t pa, vm_prot_t prot, u_int flags)
 		PMAPCOUNT(kenter_remappings);
 #ifdef PMAP_CACHE_VIPT
 		opg = PHYS_TO_VM_PAGE(l2pte_pa(opte));
-#if !defined(ARM_MMU_EXTENDED) || defined(DIAGNOSTIC)
-		struct vm_page_md *omd __diagused = VM_PAGE_TO_MD(opg);
-#endif
+		struct vm_page_md *omd = VM_PAGE_TO_MD(opg);
 		if (opg && arm_cache_prefer_mask != 0) {
 			KASSERT(opg != pg);
 			KASSERT((omd->pvh_attrs & PVF_KMPAGE) == 0);
@@ -5279,6 +5275,7 @@ pmap_destroy(pmap_t pm)
 	/*
 	 * Drop reference count
 	 */
+	membar_exit();
 	if (atomic_dec_uint_nv(&pm->pm_refs) > 0) {
 #ifndef ARM_MMU_EXTENDED
 		if (pmap_is_current(pm)) {
@@ -5289,6 +5286,7 @@ pmap_destroy(pmap_t pm)
 #endif
 		return;
 	}
+	membar_enter();
 
 	/*
 	 * reference count is zero, free pmap resources and then free pmap.
@@ -5979,7 +5977,7 @@ vaddr_t
 pmap_growkernel(vaddr_t maxkvaddr)
 {
 	UVMHIST_FUNC(__func__);
-	UVMHIST_CALLARGS(maphist, "growing kernel from %#jx to %#jx\n",
+	UVMHIST_CALLARGS(maphist, "growing kernel from %#jx to %#jx",
 	    pmap_curmaxkvaddr, maxkvaddr, 0, 0);
 
 	pmap_t kpm = pmap_kernel();
@@ -6023,7 +6021,7 @@ pmap_growkernel(vaddr_t maxkvaddr)
 		KASSERT(*pdep == 0);
 		l1pte_setone(pdep, npde);
 #else
-		/* Distribute new L1 entry to all other L1s */
+		/* Distribute new L1 entry to all L1s */
 		SLIST_FOREACH(l1, &l1_list, l1_link) {
 			pd_entry_t * const pdep = &l1->l1_kva[l1slot];
 			l1pte_setone(pdep, npde);

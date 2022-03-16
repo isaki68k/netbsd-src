@@ -1,4 +1,4 @@
-/*	$NetBSD: dm9000.c,v 1.29 2020/06/27 13:34:20 jmcneill Exp $	*/
+/*	$NetBSD: dm9000.c,v 1.33 2021/12/31 14:25:22 riastradh Exp $	*/
 
 /*
  * Copyright (c) 2009 Paul Fleischer
@@ -219,7 +219,7 @@ dme_attach(struct dme_softc *sc, const uint8_t *notusedanymore)
 	ea = (dict) ? prop_dictionary_get(dict, "mac-address") : NULL;
 	if (ea != NULL) {
 	       /*
-		 * If the MAC address is overriden by a device property,
+		 * If the MAC address is overridden by a device property,
 		 * use that.
 		 */
 		KASSERT(prop_object_type(ea) == PROP_TYPE_DATA);
@@ -737,7 +737,7 @@ dme_receive(struct ifnet *ifp)
 			break;
 		}
 	} while (avail == 01);
-	/* frame receieved successfully */
+	/* frame received successfully */
 }
 
 int
@@ -833,7 +833,7 @@ dme_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 			break;
 		error = 0;
 		if (cmd == SIOCSIFCAP)
-			error = (*ifp->if_init)(ifp);
+			error = if_init(ifp);
 		else if (cmd != SIOCADDMULTI && cmd != SIOCDELMULTI)
 			;
 		else if (ifp->if_flags && IFF_RUNNING) {
@@ -918,7 +918,7 @@ pkt_write_2(struct dme_softc *sc, struct mbuf *bufChain)
 					length++;
 				}
 
-				/* Does shift direction depend on endianess? */
+				/* Does shift direction depend on endianness? */
 				left_over_buf = left_over_buf | (b << 8);
 
 				bus_space_write_2(sc->sc_iot, sc->sc_ioh,
@@ -956,7 +956,7 @@ pkt_write_2(struct dme_softc *sc, struct mbuf *bufChain)
 						 to_write % 2));
 					left_over_count = 1;
 					/* XXX: Does this depend on
-					 * the endianess?
+					 * the endianness?
 					 */
 					left_over_buf = *write_ptr;
 

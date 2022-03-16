@@ -1,4 +1,4 @@
-/*	$NetBSD: hilkbd.c,v 1.5 2021/04/24 23:36:54 thorpej Exp $	*/
+/*	$NetBSD: hilkbd.c,v 1.7 2021/09/19 04:55:58 tsutsui Exp $	*/
 /*	$OpenBSD: hilkbd.c,v 1.14 2009/01/21 21:53:59 grange Exp $	*/
 /*
  * Copyright (c) 2003, Miodrag Vallat.
@@ -79,9 +79,9 @@ static void	hilkbd_set_leds(void *, int);
 static int	hilkbd_ioctl(void *, u_long, void *, int, struct lwp *);
 
 static const struct wskbd_accessops hilkbd_accessops = {
-	hilkbd_enable,
-	hilkbd_set_leds,
-	hilkbd_ioctl,
+	.enable   = hilkbd_enable,
+	.set_leds = hilkbd_set_leds,
+	.ioctl    = hilkbd_ioctl,
 };
 
 static void	hilkbd_cngetc(void *, u_int *, int *);
@@ -89,26 +89,28 @@ static void	hilkbd_cnpollc(void *, int);
 static void	hilkbd_cnbell(void *, u_int, u_int, u_int);
 
 static const struct wskbd_consops hilkbd_consops = {
-	hilkbd_cngetc,
-	hilkbd_cnpollc,
-	hilkbd_cnbell,
+	.getc  = hilkbd_cngetc,
+	.pollc = hilkbd_cnpollc,
+	.bell  = hilkbd_cnbell,
 };
 
 static struct wskbd_mapdata hilkbd_keymapdata = {
-	hilkbd_keydesctab,
+	.keydesc = hilkbd_keydesctab,
+	.layout  =
 #ifdef HILKBD_LAYOUT
-	HILKBD_LAYOUT,
+	    HILKBD_LAYOUT,
 #else
-	KB_US,
+	    KB_US,
 #endif
 };
 
 static struct wskbd_mapdata hilkbd_keymapdata_ps2 = {
-	hilkbd_keydesctab_ps2,
+	.keydesc = hilkbd_keydesctab_ps2,
+	.layout = 
 #ifdef HILKBD_LAYOUT
-	HILKBD_LAYOUT,
+	    HILKBD_LAYOUT,
 #else
-	KB_US,
+	    KB_US,
 #endif
 };
 
@@ -203,7 +205,7 @@ hilkbdattach(device_t parent, device_t self, void *aux)
 		sc->sc_console = sc->sc_enabled = 0;
 	}
 
-	sc->sc_wskbddev = config_found(self, &a, wskbddevprint, CFARG_EOL);
+	sc->sc_wskbddev = config_found(self, &a, wskbddevprint, CFARGS_NONE);
 
 	/*
 	 * If this is an old keyboard with a numeric pad but no ``num lock''

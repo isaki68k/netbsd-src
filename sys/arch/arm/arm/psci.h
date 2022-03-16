@@ -1,4 +1,4 @@
-/* $NetBSD: psci.h,v 1.2 2018/10/13 00:07:55 jmcneill Exp $ */
+/* $NetBSD: psci.h,v 1.4 2021/08/07 21:20:14 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared McNeill <jmcneill@invisible.ca>
@@ -37,7 +37,17 @@ enum psci_function {
 	PSCI_FUNC_CPU_ON,
 	PSCI_FUNC_SYSTEM_OFF,
 	PSCI_FUNC_SYSTEM_RESET,
+	PSCI_FUNC_FEATURES,
 	PSCI_FUNC_MAX
+};
+
+/*
+ * Possible PSCI conduits.
+ */
+enum psci_conduit {
+	PSCI_CONDUIT_NONE,
+	PSCI_CONDUIT_SMC,
+	PSCI_CONDUIT_HVC,
 };
 
 /*
@@ -68,6 +78,11 @@ void	psci_init(psci_fn);
  * Return true if PSCI is available (psci_init has been called).
  */
 bool	psci_available(void);
+
+/*
+ * Return the PSCI conduit type.
+ */
+enum psci_conduit psci_conduit(void);
 
 /*
  * PSCI call methods, implemented in psci.S
@@ -108,4 +123,13 @@ void	psci_system_off(void);
  */
 void	psci_system_reset(void);
 
+/*
+ * Discover supported features.
+ */
+int	psci_features(uint32_t);
+
+/*
+ * Generic PSCI call.
+ */
+int	psci_call(register_t, register_t, register_t, register_t);
 #endif /* _ARM_PSCI_H */

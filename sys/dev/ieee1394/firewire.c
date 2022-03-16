@@ -1,4 +1,4 @@
-/*	$NetBSD: firewire.c,v 1.51 2021/04/24 23:36:55 thorpej Exp $	*/
+/*	$NetBSD: firewire.c,v 1.54 2021/12/20 19:56:42 riastradh Exp $	*/
 /*-
  * Copyright (c) 2003 Hidetoshi Shimokawa
  * Copyright (c) 1998-2002 Katsushi Kobayashi and Hidetoshi Shimokawa
@@ -37,7 +37,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: firewire.c,v 1.51 2021/04/24 23:36:55 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: firewire.c,v 1.54 2021/12/20 19:56:42 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -246,7 +246,7 @@ firewireattach(device_t parent, device_t self, void *aux)
 	faa.name = "fwip";
 	faa.fc = fc;
 	faa.fwdev = NULL;
-	devlist->dev = config_found(sc->dev, &faa, firewire_print, CFARG_EOL);
+	devlist->dev = config_found(sc->dev, &faa, firewire_print, CFARGS_NONE);
 	if (devlist->dev == NULL)
 		free(devlist, M_DEVBUF);
 	else
@@ -1202,7 +1202,7 @@ fw_rcv(struct fw_rcv_buf *rb)
 		return;
 
 	default:
-		aprint_error_dev(rb->fc->bdev, "unknow tcode %d\n", tcode);
+		aprint_error_dev(rb->fc->bdev, "unknown tcode %d\n", tcode);
 		break;
 	}
 }
@@ -2041,10 +2041,11 @@ fw_attach_dev(struct firewire_comm *fc)
 
 			fwa.name = fw_get_devclass(fwdev);
 			fwa.fwdev = fwdev;
+			KERNEL_LOCK(1, NULL);
 			fwdev->dev = config_found(sc->dev, &fwa, firewire_print,
-			    CFARG_SUBMATCH, config_stdsubmatch,
-			    CFARG_LOCATORS, locs,
-			    CFARG_EOL);
+			    CFARGS(.submatch = config_stdsubmatch,
+				   .locators = locs));
+			KERNEL_UNLOCK_ONE(NULL);
 			if (fwdev->dev == NULL) {
 				free(devlist, M_DEVBUF);
 				break;

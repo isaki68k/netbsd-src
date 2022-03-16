@@ -1,4 +1,4 @@
-/*	$NetBSD: if_ether.h,v 1.86 2021/02/14 19:35:37 roy Exp $	*/
+/*	$NetBSD: if_ether.h,v 1.88 2021/11/15 07:07:05 yamaguchi Exp $	*/
 
 /*
  * Copyright (c) 1982, 1986, 1993
@@ -198,6 +198,8 @@ struct ethercom {
 	 * being added or removed.
 	 */
 	ether_vlancb_t				ec_vlan_cb;
+	/* Hooks called at the beginning of detach of this interface */
+	khook_list_t				*ec_ifdetach_hooks;
 	kmutex_t				*ec_lock;
 	/* Flags used only by the kernel */
 	int					ec_flags;
@@ -385,6 +387,10 @@ void	ether_ifattach(struct ifnet *, const uint8_t *);
 void	ether_ifdetach(struct ifnet *);
 int	ether_mediachange(struct ifnet *);
 void	ether_mediastatus(struct ifnet *, struct ifmediareq *);
+void *	ether_ifdetachhook_establish(struct ifnet *,
+	    void (*)(void *), void *arg);
+void	ether_ifdetachhook_disestablish(struct ifnet *,
+	    void *, kmutex_t *);
 
 char	*ether_sprintf(const uint8_t *);
 char	*ether_snprintf(char *, size_t, const uint8_t *);
@@ -395,6 +401,8 @@ uint32_t ether_crc32_be(const uint8_t *, size_t);
 int	ether_aton_r(u_char *, size_t, const char *);
 int	ether_enable_vlan_mtu(struct ifnet *);
 int	ether_disable_vlan_mtu(struct ifnet *);
+int	ether_add_vlantag(struct ifnet *, uint16_t, bool *);
+int	ether_del_vlantag(struct ifnet *, uint16_t);
 #else
 /*
  * Prototype ethers(3) functions.

@@ -1,4 +1,4 @@
-/*	$NetBSD: intr.c,v 1.154 2021/02/19 05:34:37 knakahara Exp $	*/
+/*	$NetBSD: intr.c,v 1.160 2022/03/12 15:50:45 riastradh Exp $	*/
 
 /*
  * Copyright (c) 2007, 2008, 2009, 2019 The NetBSD Foundation, Inc.
@@ -133,7 +133,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: intr.c,v 1.154 2021/02/19 05:34:37 knakahara Exp $");
+__KERNEL_RCSID(0, "$NetBSD: intr.c,v 1.160 2022/03/12 15:50:45 riastradh Exp $");
 
 #include "opt_intrdebug.h"
 #include "opt_multiprocessor.h"
@@ -317,7 +317,7 @@ intr_create_intrid(int legacy_irq, struct pic *pic, int pin, char *buf,
 	}
 
 	/*
-	 * If the device is pci, "legacy_irq" is alway -1. Least 8 bit of "ih"
+	 * If the device is pci, "legacy_irq" is always -1. Least 8 bit of "ih"
 	 * is only used in intr_string() to show the irq number.
 	 * If the device is "legacy"(such as floppy), it should not use
 	 * intr_string().
@@ -458,7 +458,7 @@ intr_allocate_slot_cpu(struct cpu_info *ci, struct pic *pic, int pin,
 			start = NUM_LEGACY_IRQS;
 		/* don't step over Xen's slots */
 		if (vm_guest == VM_GUEST_XENPVH)
-			max = SIR_XENIPL_VM; 
+			max = SIR_XENIPL_VM;
 		/*
 		 * intr_allocate_slot has checked for an existing mapping.
 		 * Now look for a free slot.
@@ -508,7 +508,6 @@ intr_allocate_slot(struct pic *pic, int pin, int level,
 	struct cpu_info *ci, *lci;
 	struct intrsource *isp;
 	int slot = 0, idtvec, error;
-	struct idt_vec *iv;
 
 	KASSERT(mutex_owned(&cpu_lock));
 
@@ -555,7 +554,7 @@ intr_allocate_slot(struct pic *pic, int pin, int level,
 #if 0
 			if (ci == NULL ||
 			    ci->ci_nintrhand > lci->ci_nintrhand) {
-			    	ci = lci;
+				ci = lci;
 			}
 #else
 			ci = &cpu_info_primary;
@@ -606,10 +605,12 @@ intr_allocate_slot(struct pic *pic, int pin, int level,
 		 * are used by a device using MSI multiple vectors must be
 		 * continuous.
 		 */
+		struct idt_vec *iv;
+
 		iv = idt_vec_ref(&ci->ci_idtvec);
 		idtvec = idt_vec_alloc(iv, APIC_LEVEL(level), IDT_INTR_HIGH);
 	}
-	if (idtvec == 0) {
+	if (idtvec < 0) {
 		evcnt_detach(&ci->ci_isources[slot]->is_evcnt);
 		ci->ci_isources[slot]->is_evname[0] = '\0';
 		ci->ci_isources[slot] = NULL;
@@ -652,11 +653,16 @@ static int
 intr_biglock_wrapper(void *vp)
 {
 	struct intrhand *ih = vp;
+	int locks;
 	int ret;
 
 	KERNEL_LOCK(1, NULL);
 
+	locks = curcpu()->ci_biglock_count;
 	ret = (*ih->ih_realfun)(ih->ih_realarg);
+	KASSERTMSG(locks == curcpu()->ci_biglock_count,
+	    "%s @ %p slipped locks %d -> %d",
+	    ih->ih_xname, ih->ih_realfun, locks, curcpu()->ci_biglock_count);
 
 	KERNEL_UNLOCK_ONE(NULL);
 
@@ -903,6 +909,7 @@ intr_establish_xname(int legacy_irq, struct pic *pic, int pin, int type,
 	ih->ih_pin = pin;
 	ih->ih_cpu = ci;
 	ih->ih_slot = slot;
+	strlcpy(ih->ih_xname, xname, sizeof(ih->ih_xname));
 #ifdef MULTIPROCESSOR
 	if (!mpsafe) {
 		ih->ih_fun = intr_biglock_wrapper;
@@ -938,7 +945,7 @@ intr_establish_xname(int legacy_irq, struct pic *pic, int pin, int type,
 		    pic->pic_name, type == IST_EDGE ? "edge" : "level", pin,
 		    level, device_xname(ci->ci_dev), slot, idt_vec);
 
-	return (ih);
+	return ih;
 }
 
 void *
@@ -1799,9 +1806,9 @@ intr_deactivate_xcall(void *arg1, void *arg2)
 
 	x86_intr_calculatemasks(ci);
 
-	if (idt_vec > 0 && idt_vec_is_pcpu()) {
+	if (idt_vec_is_pcpu()) {
 		idt_vec_free(&ci->ci_idtvec, idt_vec);
-	} else  {
+	} else {
 		/*
 		 * Skip unsetgate(), because the same idt[] entry is
 		 * overwritten in intr_activate_xcall().
@@ -1898,13 +1905,14 @@ intr_set_affinity(struct intrsource *isp, const kcpuset_t *cpuset)
 
 	old_idtvec = isp->is_idtvec;
 
-	if (isp->is_idtvec > 0 && idt_vec_is_pcpu()) {
+	if (idt_vec_is_pcpu()) {
 		new_idtvec = idt_vec_alloc(&newci->ci_idtvec,
 		    APIC_LEVEL(ih->ih_level), IDT_INTR_HIGH);
 		if (new_idtvec == 0)
 			return EBUSY;
 		DPRINTF(("interrupt from cpu%d vec %d to cpu%d vec %d\n",
-		    cpu_index(oldci), old_idtvec, cpu_index(newci), new_idtvec));
+		    cpu_index(oldci), old_idtvec, cpu_index(newci),
+			new_idtvec));
 	} else {
 		new_idtvec = isp->is_idtvec;
 	}
@@ -2104,7 +2112,7 @@ interrupt_get_assigned(const char *intrid, kcpuset_t *cpuset)
 
 	mutex_enter(&cpu_lock);
 	isp = intr_get_io_intrsource(intrid);
-	if (isp != NULL) 
+	if (isp != NULL)
 		isp->is_pic->pic_intr_get_assigned(intrid, cpuset);
 	mutex_exit(&cpu_lock);
 }

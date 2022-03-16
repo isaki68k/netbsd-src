@@ -1,4 +1,4 @@
-/*	$NetBSD: atapi_wdc.c,v 1.139 2021/04/24 23:36:58 thorpej Exp $	*/
+/*	$NetBSD: atapi_wdc.c,v 1.141 2021/10/05 08:01:05 rin Exp $	*/
 
 /*
  * Copyright (c) 1998, 2001 Manuel Bouyer.
@@ -25,7 +25,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: atapi_wdc.c,v 1.139 2021/04/24 23:36:58 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: atapi_wdc.c,v 1.141 2021/10/05 08:01:05 rin Exp $");
 
 #ifndef ATADEBUG
 #define ATADEBUG
@@ -90,7 +90,7 @@ static int	wdc_atapi_intr(struct ata_channel *, struct ata_xfer *, int);
 static void	wdc_atapi_kill_xfer(struct ata_channel *,
 				    struct ata_xfer *, int);
 static void	wdc_atapi_phase_complete(struct ata_xfer *, int);
-static void	wdc_atapi_poll(struct ata_channel *, struct ata_xfer *);
+static int	wdc_atapi_poll(struct ata_channel *, struct ata_xfer *);
 static void	wdc_atapi_done(struct ata_channel *, struct ata_xfer *);
 static void	wdc_atapi_reset(struct ata_channel *, struct ata_xfer *);
 static void	wdc_atapi_scsipi_request(struct scsipi_channel *,
@@ -142,8 +142,7 @@ wdc_atapibus_attach(struct atabus_softc *ata_sc)
 	chan->chan_nluns = 1;
 
 	chp->atapibus = config_found(ata_sc->sc_dev, chan, atapiprint,
-	    CFARG_IATTR, "atapi",
-	    CFARG_EOL);
+	    CFARGS(.iattr = "atapi"));
 }
 
 static void
@@ -697,7 +696,7 @@ error:
 	return ATASTART_ABORT;
 }
 
-static void
+static int
 wdc_atapi_poll(struct ata_channel *chp, struct ata_xfer *xfer)
 {
 	/*
@@ -712,7 +711,7 @@ wdc_atapi_poll(struct ata_channel *chp, struct ata_xfer *xfer)
 	wdc_atapi_intr(chp, xfer, 0);
 
 	if (!poll)
-		return;
+		return ATAPOLL_DONE;
 
 #if NATA_DMA
 	if (chp->ch_flags & ATACH_DMA_WAIT) {
@@ -725,6 +724,8 @@ wdc_atapi_poll(struct ata_channel *chp, struct ata_xfer *xfer)
 		DELAY(1);
 		wdc_atapi_intr(chp, xfer, 0);
 	}
+
+	return ATAPOLL_DONE;
 }
 
 static int

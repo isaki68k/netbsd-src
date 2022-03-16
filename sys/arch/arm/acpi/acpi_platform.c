@@ -1,4 +1,4 @@
-/* $NetBSD: acpi_platform.c,v 1.26 2021/05/12 23:22:32 thorpej Exp $ */
+/* $NetBSD: acpi_platform.c,v 1.32 2021/10/24 11:58:23 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
 #include "opt_multiprocessor.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: acpi_platform.c,v 1.26 2021/05/12 23:22:32 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: acpi_platform.c,v 1.32 2021/10/24 11:58:23 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -55,6 +55,7 @@ __KERNEL_RCSID(0, "$NetBSD: acpi_platform.c,v 1.26 2021/05/12 23:22:32 thorpej E
 
 #include <arm/cortex/gtmr_var.h>
 
+#include <arm/arm/smccc.h>
 #include <arm/arm/psci.h>
 #include <arm/fdt/psci_fdtvar.h>
 
@@ -82,6 +83,8 @@ __KERNEL_RCSID(0, "$NetBSD: acpi_platform.c,v 1.26 2021/05/12 23:22:32 thorpej E
 
 #include <libfdt.h>
 
+#define	ACPI_DBG2_16550_GAS			0x0012
+
 #define	SPCR_BAUD_DEFAULT			0
 #define	SPCR_BAUD_9600				3
 #define	SPCR_BAUD_19200				4
@@ -90,9 +93,22 @@ __KERNEL_RCSID(0, "$NetBSD: acpi_platform.c,v 1.26 2021/05/12 23:22:32 thorpej E
 
 static const struct acpi_spcr_baud_rate {
 	uint8_t		id;
-	uint32_t	baud_rate;
+	int		baud_rate;
 } acpi_spcr_baud_rates[] = {
-	{ SPCR_BAUD_DEFAULT,	0 },
+	/*
+	 * SPCR_BAUD_DEFAULT means:
+	 *   "As is, operating system relies on the current configuration
+	 *    of serial port until the full featured driver will be
+	 *    initialized."
+	 *
+	 * We don't currently have a good way of telling the UART driver
+	 * to detect the currently configured baud rate, so just pick
+	 * something sensible here.
+	 *
+	 * In the past we have tried baud_rate values of 0 and -1, but
+	 * these cause problems with the com(4) driver.
+	 */
+	{ SPCR_BAUD_DEFAULT,	115200 },
 	{ SPCR_BAUD_9600,	9600 },
 	{ SPCR_BAUD_19200,	19200 },
 	{ SPCR_BAUD_57600,	57600 },
@@ -187,11 +203,29 @@ acpi_platform_attach_uart(ACPI_TABLE_SPCR *spcr)
 #if NCOM > 0
 	case ACPI_DBG2_16550_COMPATIBLE:
 	case ACPI_DBG2_16550_SUBSET:
+	case ACPI_DBG2_16550_GAS:
 		memset(&dummy_bsh, 0, sizeof(dummy_bsh));
-		if (ACPI_ACCESS_BIT_WIDTH(spcr->SerialPort.AccessWidth) == 8) {
+		switch (spcr->SerialPort.BitWidth) {
+		case 8:
 			reg_shift = 0;
-		} else {
+			break;
+		case 16:
+			reg_shift = 1;
+			break;
+		case 32:
 			reg_shift = 2;
+			break;
+		default:
+			/*
+			 * Bit width 0 is possible for types 0 and 1. Otherwise,
+			 * possibly buggy firmware.
+			 */
+			if (spcr->InterfaceType == ACPI_DBG2_16550_COMPATIBLE) {
+				reg_shift = 0;
+			} else {
+				reg_shift = 2;
+			}
+			break;
 		}
 		com_init_regs_stride(&regs, &arm_generic_bs_tag, dummy_bsh,
 		    le64toh(spcr->SerialPort.Address), reg_shift);
@@ -252,6 +286,7 @@ acpi_platform_startup(void)
 			} else {
 				psci_init(psci_call_smc);
 			}
+			smccc_probe();
 		}
 		acpi_table_unmap((ACPI_TABLE_HEADER *)fadt);
 	}

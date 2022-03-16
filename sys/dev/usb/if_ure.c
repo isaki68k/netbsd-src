@@ -1,4 +1,4 @@
-/*	$NetBSD: if_ure.c,v 1.40 2020/03/27 18:04:45 nisimura Exp $	*/
+/*	$NetBSD: if_ure.c,v 1.56 2022/03/03 05:56:28 riastradh Exp $	*/
 /*	$OpenBSD: if_ure.c,v 1.10 2018/11/02 21:32:30 jcs Exp $	*/
 
 /*-
@@ -30,7 +30,7 @@
 /* RealTek RTL8152/RTL8153 10/100/Gigabit USB Ethernet device */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_ure.c,v 1.40 2020/03/27 18:04:45 nisimura Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_ure.c,v 1.56 2022/03/03 05:56:28 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -86,7 +86,7 @@ static void	ure_disable_teredo(struct usbnet *);
 static void	ure_init_fifo(struct usbnet *);
 
 static void	ure_uno_stop(struct ifnet *, int);
-static int	ure_uno_ioctl(struct ifnet *, u_long, void *);
+static void	ure_uno_mcast(struct ifnet *);
 static int	ure_uno_mii_read_reg(struct usbnet *, int, int, uint16_t *);
 static int	ure_uno_mii_write_reg(struct usbnet *, int, int, uint16_t);
 static void	ure_uno_miibus_statchg(struct ifnet *);
@@ -104,7 +104,7 @@ CFATTACH_DECL_NEW(ure, sizeof(struct usbnet), ure_match, ure_attach,
 
 static const struct usbnet_ops ure_ops = {
 	.uno_stop = ure_uno_stop,
-	.uno_ioctl = ure_uno_ioctl,
+	.uno_mcast = ure_uno_mcast,
 	.uno_read_reg = ure_uno_mii_read_reg,
 	.uno_write_reg = ure_uno_mii_write_reg,
 	.uno_statchg = ure_uno_miibus_statchg,
@@ -137,6 +137,8 @@ ure_ctl(struct usbnet *un, uint8_t rw, uint16_t val, uint16_t index,
 	err = usbd_do_request(un->un_udev, &req, buf);
 	if (err) {
 		DPRINTF(("ure_ctl: error %d\n", err));
+		if (rw == URE_CTL_READ)
+			memset(buf, 0, len);
 		return -1;
 	}
 
@@ -277,8 +279,10 @@ static int
 ure_uno_mii_read_reg(struct usbnet *un, int phy, int reg, uint16_t *val)
 {
 
-	if (un->un_phyno != phy)
+	if (un->un_phyno != phy) {
+		*val = 0;
 		return EINVAL;
+	}
 
 	/* Let the rgephy driver read the URE_PLA_PHYSTATUS register. */
 	if (reg == RTK_GMEDIASTAT) {
@@ -331,16 +335,14 @@ ure_uno_miibus_statchg(struct ifnet *ifp)
 }
 
 static void
-ure_rcvfilt_locked(struct usbnet *un)
+ure_uno_mcast(struct ifnet *ifp)
 {
+	struct usbnet *un = ifp->if_softc;
 	struct ethercom *ec = usbnet_ec(un);
-	struct ifnet *ifp = usbnet_ifp(un);
 	struct ether_multi *enm;
 	struct ether_multistep step;
 	uint32_t mchash[2] = { 0, 0 };
 	uint32_t h = 0, rxmode;
-
-	usbnet_isowned_core(un);
 
 	if (usbnet_isdying(un))
 		return;
@@ -391,11 +393,11 @@ ure_reset(struct usbnet *un)
 {
 	int i;
 
-	usbnet_isowned_core(un);
-
 	ure_write_1(un, URE_PLA_CR, URE_MCU_TYPE_PLA, URE_CR_RST);
 
 	for (i = 0; i < URE_TIMEOUT; i++) {
+		if (usbnet_isdying(un))
+			return;
 		if (!(ure_read_1(un, URE_PLA_CR, URE_MCU_TYPE_PLA) &
 		    URE_CR_RST))
 			break;
@@ -406,19 +408,10 @@ ure_reset(struct usbnet *un)
 }
 
 static int
-ure_init_locked(struct ifnet *ifp)
+ure_uno_init(struct ifnet *ifp)
 {
 	struct usbnet * const un = ifp->if_softc;
 	uint8_t eaddr[8];
-
-	usbnet_isowned_core(un);
-
-	if (usbnet_isdying(un))
-		return EIO;
-
-	/* Cancel pending I/O. */
-	if (ifp->if_flags & IFF_RUNNING)
-		usbnet_stop(un, ifp, 1);
 
 	/* Set MAC address. */
 	memset(eaddr, 0, sizeof(eaddr));
@@ -445,24 +438,7 @@ ure_init_locked(struct ifnet *ifp)
 	    ure_read_2(un, URE_PLA_MISC_1, URE_MCU_TYPE_PLA) &
 	    ~URE_RXDY_GATED_EN);
 
-	/* Accept multicast frame or run promisc. mode. */
-	ure_rcvfilt_locked(un);
-
-	return usbnet_init_rx_tx(un);
-}
-
-static int
-ure_uno_init(struct ifnet *ifp)
-{
-	struct usbnet * const un = ifp->if_softc;
-
-	usbnet_lock_core(un);
-	usbnet_busy(un);
-	int ret = ure_init_locked(ifp);
-	usbnet_unbusy(un);
-	usbnet_unlock_core(un);
-
-	return ret;
+	return 0;
 }
 
 static void
@@ -543,6 +519,8 @@ ure_rtl8153_init(struct usbnet *un)
 	    URE_MCU_TYPE_USB | URE_BYTE_EN_SIX_BYTES, u1u2, sizeof(u1u2));
 
 	for (i = 0; i < URE_TIMEOUT; i++) {
+		if (usbnet_isdying(un))
+			return;
 		if (ure_read_2(un, URE_PLA_BOOT_CTRL, URE_MCU_TYPE_PLA) &
 		    URE_AUTOLOAD_DONE)
 			break;
@@ -552,6 +530,8 @@ ure_rtl8153_init(struct usbnet *un)
 		URE_PRINTF(un, "timeout waiting for chip autoload\n");
 
 	for (i = 0; i < URE_TIMEOUT; i++) {
+		if (usbnet_isdying(un))
+			return;
 		val = ure_ocp_reg_read(un, URE_OCP_PHY_STATUS) &
 		    URE_PHY_STAT_MASK;
 		if (val == URE_PHY_STAT_LAN_ON || val == URE_PHY_STAT_PWRDN)
@@ -750,6 +730,8 @@ ure_init_fifo(struct usbnet *un)
 	    ure_read_2(un, URE_PLA_SFF_STS_7, URE_MCU_TYPE_PLA) &
 	    ~URE_MCU_BORW_EN);
 	for (i = 0; i < URE_TIMEOUT; i++) {
+		if (usbnet_isdying(un))
+			return;
 		if (ure_read_1(un, URE_PLA_OOB_CTRL, URE_MCU_TYPE_PLA) &
 		    URE_LINK_LIST_READY)
 			break;
@@ -761,6 +743,8 @@ ure_init_fifo(struct usbnet *un)
 	    ure_read_2(un, URE_PLA_SFF_STS_7, URE_MCU_TYPE_PLA) |
 	    URE_RE_INIT_LL);
 	for (i = 0; i < URE_TIMEOUT; i++) {
+		if (usbnet_isdying(un))
+			return;
 		if (ure_read_1(un, URE_PLA_OOB_CTRL, URE_MCU_TYPE_PLA) &
 		    URE_LINK_LIST_READY)
 			break;
@@ -792,29 +776,6 @@ ure_init_fifo(struct usbnet *un)
 	/* Configure Tx FIFO threshold. */
 	ure_write_4(un, URE_PLA_TXFIFO_CTRL, URE_MCU_TYPE_PLA,
 	    URE_TXFIFO_THR_NORMAL);
-}
-
-static int
-ure_uno_ioctl(struct ifnet *ifp, u_long cmd, void *data)
-{
-	struct usbnet * const un = ifp->if_softc;
-
-	usbnet_lock_core(un);
-	usbnet_busy(un);
-
-	switch (cmd) {
-	case SIOCADDMULTI:
-	case SIOCDELMULTI:
-		ure_rcvfilt_locked(un);
-		break;
-	default:
-		break;
-	}
-
-	usbnet_unbusy(un);
-	usbnet_unlock_core(un);
-
-	return 0;
 }
 
 static int
@@ -894,7 +855,7 @@ ure_attach(device_t parent, device_t self, void *aux)
 	}
 
 	/* Set these up now for ure_ctl().  */
-	usbnet_attach(un, "uredet");
+	usbnet_attach(un);
 
 	un->un_phyno = 0;
 
@@ -927,7 +888,6 @@ ure_attach(device_t parent, device_t self, void *aux)
 	    (un->un_flags != 0) ? "" : "unknown ",
 	    ver);
 
-	usbnet_lock_core(un);
 	if (un->un_flags & URE_FLAG_8152)
 		ure_rtl8152_init(un);
 	else
@@ -940,7 +900,6 @@ ure_attach(device_t parent, device_t self, void *aux)
 	else
 		ure_read_mem(un, URE_PLA_BACKUP, URE_MCU_TYPE_PLA, eaddr,
 		    sizeof(eaddr));
-	usbnet_unlock_core(un);
 	if (ETHER_IS_ZERO(eaddr)) {
 		maclo = 0x00f2 | (cprng_strong32() & 0xffff0000);
 		machi = cprng_strong32() & 0xffff;

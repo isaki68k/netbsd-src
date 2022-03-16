@@ -1,4 +1,4 @@
-/*	$NetBSD: spd.c,v 1.14 2021/04/24 23:36:45 thorpej Exp $	*/
+/*	$NetBSD: spd.c,v 1.16 2022/02/11 17:30:48 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2001 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: spd.c,v 1.14 2021/04/24 23:36:45 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: spd.c,v 1.16 2022/02/11 17:30:48 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -63,7 +63,7 @@ STATIC struct {
 	const char *name;
 } __spd_table[2];
 
-CFATTACH_DECL_NEW(spd, sizeof(struct device),
+CFATTACH_DECL_NEW(spd, 0,
     spd_match, spd_attach, NULL, NULL);
 
 #ifdef DEBUG
@@ -109,11 +109,11 @@ spd_attach(device_t parent, device_t self, void *aux)
 
 	spa.spa_slot = SPD_HDD;
 	spa.spa_product_name = __spd_table[SPD_HDD].name;
-	config_found(self, &spa, spd_print, CFARG_EOL);
+	config_found(self, &spa, spd_print, CFARGS_NONE);
 
 	spa.spa_slot = SPD_NIC;
 	spa.spa_product_name = __spd_table[SPD_NIC].name;
-	config_found(self, &spa, spd_print, CFARG_EOL);
+	config_found(self, &spa, spd_print, CFARGS_NONE);
 
 	sbus_intr_establish(SBUS_IRQ_PCMCIA, spd_intr, 0);
 }

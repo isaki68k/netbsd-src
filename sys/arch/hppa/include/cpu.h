@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.h,v 1.10 2020/04/16 09:28:52 skrll Exp $	*/
+/*	$NetBSD: cpu.h,v 1.12 2021/11/02 11:26:04 ryo Exp $	*/
 
 /*	$OpenBSD: cpu.h,v 1.55 2008/07/23 17:39:35 kettenis Exp $	*/
 
@@ -55,6 +55,7 @@
 
 #ifdef _KERNEL_OPT
 #include "opt_cputype.h"
+#include "opt_gprof.h"
 #include "opt_multiprocessor.h"
 #endif
 
@@ -300,7 +301,9 @@ struct cpu_info {
 
 	struct cpu_softc *ci_softc;
 #endif
-
+#if defined(GPROF) && defined(MULTIPROCESSOR)
+	struct gmonparam *ci_gmon;	/* MI per-cpu GPROF */
+#endif
 #endif /* !_KMEMUSER */
 } __aligned(64);
 
@@ -339,7 +342,7 @@ extern int hppa_ncpu;
 void	cpu_boot_secondary_processors(void);
 
 #if !defined(_MODULE)
-static __inline struct cpu_info *
+static __inline __always_inline struct cpu_info *
 _hppa_curcpu(void)
 {
 	struct cpu_info *ci;

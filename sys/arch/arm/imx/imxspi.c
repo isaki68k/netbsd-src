@@ -1,4 +1,4 @@
-/*	$NetBSD: imxspi.c,v 1.8 2021/04/24 23:36:27 thorpej Exp $	*/
+/*	$NetBSD: imxspi.c,v 1.10 2021/08/17 22:00:27 andvar Exp $	*/
 
 /*-
  * Copyright (c) 2014  Genetec Corporation.  All rights reserved.
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: imxspi.c,v 1.8 2021/04/24 23:36:27 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: imxspi.c,v 1.10 2021/08/17 22:00:27 andvar Exp $");
 
 #include "opt_imxspi.h"
 #include "opt_fdt.h"
@@ -148,7 +148,7 @@ imxspi_attach_common(device_t self)
 	sba.sba_controller = &sc->sc_spi;
 
 	/* attach slave devices */
-	config_found(sc->sc_dev, &sba, spibus_print, CFARG_EOL);
+	config_found(sc->sc_dev, &sba, spibus_print, CFARGS_NONE);
 #endif
 
 	return 0;
@@ -332,12 +332,12 @@ imxspi_sched(struct imxspi_softc *sc)
 		/* note that we are working on it */
 		sc->sc_transfer = st;
 
-		/* chip slect */
+		/* chip select */
 		if (sc->sc_tag->spi_cs_enable != NULL)
 			sc->sc_tag->spi_cs_enable(sc->sc_tag->cookie,
 			    st->st_slave);
 
-		/* chip slect */
+		/* chip select */
 		chipselect = READ_REG(sc, CONREG);
 		chipselect &= ~IMXSPI_TYPE(CON_CS);
 		chipselect |= __SHIFTIN(st->st_slave, IMXSPI_TYPE(CON_CS));

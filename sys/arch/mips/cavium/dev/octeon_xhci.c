@@ -1,4 +1,4 @@
-/*	$NetBSD: octeon_xhci.c,v 1.5 2021/04/24 23:36:42 thorpej Exp $ */
+/*	$NetBSD: octeon_xhci.c,v 1.7 2021/11/10 17:19:29 msaitoh Exp $ */
 /*	$OpenBSD: octxhci.c,v 1.4 2019/09/29 04:32:23 visa Exp $	*/
 
 /*
@@ -180,9 +180,9 @@ octxhci_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	sc->sc_child = config_found(self, &sc->sc_bus, usbctlprint, CFARG_EOL);
+	sc->sc_child = config_found(self, &sc->sc_bus, usbctlprint, CFARGS_NONE);
 	sc->sc_child2 = config_found(self, &sc->sc_bus2, usbctlprint,
-	    CFARG_EOL);
+	    CFARGS_NONE);
 }
 
 void
@@ -327,7 +327,7 @@ octxhci_uctl_init(struct octxhci_softc *sc, uint64_t clock_freq,
 	XCTL_WR_8(sc, XCTL_CTL, val);
 	(void)XCTL_RD_8(sc, XCTL_CTL);
 
-	/* Fix endianess. */
+	/* Fix endianness. */
 	val = XCTL_RD_8(sc, XCTL_SHIM_CFG);
 	val &= ~XCTL_SHIM_CFG_CSR_BYTE_SWAP;
 	val &= ~XCTL_SHIM_CFG_DMA_BYTE_SWAP;

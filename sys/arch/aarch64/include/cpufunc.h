@@ -1,4 +1,4 @@
-/*	$NetBSD: cpufunc.h,v 1.20 2021/05/27 06:11:20 ryo Exp $	*/
+/*	$NetBSD: cpufunc.h,v 1.23 2022/01/31 09:16:09 ryo Exp $	*/
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -34,45 +34,25 @@
 #include <arm/armreg.h>
 #include <sys/device_if.h>
 
-struct aarch64_cache_unit {
-	u_int cache_type;
-#define CACHE_TYPE_VPIPT	0	/* VMID-aware PIPT */
-#define CACHE_TYPE_VIVT		1	/* ASID-tagged VIVT */
-#define CACHE_TYPE_VIPT		2
-#define CACHE_TYPE_PIPT		3
-	u_int cache_line_size;
-	u_int cache_ways;
-	u_int cache_sets;
-	u_int cache_way_size;
-	u_int cache_size;
-};
 
-struct aarch64_cache_info {
-	u_int cacheable;
-#define CACHE_CACHEABLE_NONE	0
-#define CACHE_CACHEABLE_ICACHE	1	/* instruction cache only */
-#define CACHE_CACHEABLE_DCACHE	2	/* data cache only */
-#define CACHE_CACHEABLE_IDCACHE	3	/* instruction and data caches */
-#define CACHE_CACHEABLE_UNIFIED	4	/* unified cache */
-	struct aarch64_cache_unit icache;
-	struct aarch64_cache_unit dcache;
-};
-
-#define MAX_CACHE_LEVEL	8		/* ARMv8 has maximum 8 level cache */
 extern u_int aarch64_cache_vindexsize;	/* cachesize/way (VIVT/VIPT) */
 extern u_int aarch64_cache_prefer_mask;
 extern u_int cputype;			/* compat arm */
 
 extern int aarch64_bti_enabled;
+extern int aarch64_hafdbs_enabled;
 extern int aarch64_pan_enabled;
 extern int aarch64_pac_enabled;
 
+void aarch64_hafdbs_init(int);
 void aarch64_pan_init(int);
 int aarch64_pac_init(int);
 
 int set_cpufuncs(void);
-void aarch64_getcacheinfo(int);
-void aarch64_printcacheinfo(device_t);
+int aarch64_setcpufuncs(struct cpu_info *);
+void aarch64_getcacheinfo(struct cpu_info *);
+void aarch64_parsecacheinfo(struct cpu_info *);
+void aarch64_printcacheinfo(device_t, struct cpu_info *);
 
 void aarch64_dcache_wbinv_all(void);
 void aarch64_dcache_inv_all(void);
@@ -103,12 +83,10 @@ void aarch64_tlbi_by_va_ll(vaddr_t);		/* all ASID, a VA, lastlevel */
 void aarch64_tlbi_by_asid_va(int, vaddr_t);	/*  an ASID, a VA */
 void aarch64_tlbi_by_asid_va_ll(int, vaddr_t);	/*  an ASID, a VA, lastlevel */
 
-
 /* misc */
 #define cpu_idnum()			aarch64_cpuid()
 
 /* cache op */
-
 #define cpu_dcache_wbinv_all()		aarch64_dcache_wbinv_all()
 #define cpu_dcache_inv_all()		aarch64_dcache_inv_all()
 #define cpu_dcache_wb_all()		aarch64_dcache_wb_all()

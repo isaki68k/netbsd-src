@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.S,v 1.210 2020/06/21 16:57:18 bouyer Exp $	*/
+/*	$NetBSD: locore.S,v 1.212 2021/11/10 15:59:07 msaitoh Exp $	*/
 
 /*
  * Copyright-o-rama!
@@ -1050,7 +1050,7 @@ ENTRY(start_xen32)
 	movl	$RELOC(HYPERVISOR_shared_info_pa),%ebp
 	movl	%ebx,(%ebp)
 	movl	$0,4(%ebp)
-	/* XXX assume hvm_start_info+dependant struture fits in a single page */
+	/* XXX assume hvm_start_info+dependant structure fits in a single page */
 	addl	$PAGE_SIZE, %ebx
 	addl	$PGOFSET,%ebx
 	andl	$~PGOFSET,%ebx
@@ -1059,7 +1059,7 @@ ENTRY(start_xen32)
 	movl	%ebx,(%ebp)
 	movl	$KERNBASE_HI,4(%ebp)
 
-	/* annouce ourself */
+	/* announce ourself */
 	movl	$VM_GUEST_XENPVH, RELOC(vm_guest)
 	jmp .Lbiosbasemem_finished
 END(start_xen32)

@@ -1,4 +1,4 @@
-/*	$NetBSD: mb89352.c,v 1.59 2021/04/24 23:36:55 thorpej Exp $	*/
+/*	$NetBSD: mb89352.c,v 1.61 2022/01/01 21:07:14 andvar Exp $	*/
 /*	NecBSD: mb89352.c,v 1.4 1998/03/14 07:31:20 kmatsuda Exp	*/
 
 /*-
@@ -77,7 +77,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mb89352.c,v 1.59 2021/04/24 23:36:55 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mb89352.c,v 1.61 2022/01/01 21:07:14 andvar Exp $");
 
 #ifdef DDB
 #define	integrate
@@ -305,7 +305,7 @@ spc_attach(struct spc_softc *sc)
 	/*
 	 * ask the adapter what subunits are present
 	 */
-	sc->sc_child = config_found(sc->sc_dev, chan, scsiprint, CFARG_EOL);
+	sc->sc_child = config_found(sc->sc_dev, chan, scsiprint, CFARGS_NONE);
 	scsipi_adapter_delref(adapt);
 }
 
@@ -1441,7 +1441,7 @@ out:
  * and ACK deasserted (i.e. waiting for a data byte)
  *
  * This new revision has been optimized (I tried) to make the common case fast,
- * and the rarer cases (as a result) somewhat more comlex
+ * and the rarer cases (as a result) somewhat more complex
  */
 int
 spc_dataout_pio(struct spc_softc *sc, uint8_t *p, int n)

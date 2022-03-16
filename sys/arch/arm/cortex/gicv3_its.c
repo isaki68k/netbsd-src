@@ -1,4 +1,4 @@
-/* $NetBSD: gicv3_its.c,v 1.32 2021/01/16 21:05:15 jmcneill Exp $ */
+/* $NetBSD: gicv3_its.c,v 1.34 2021/10/31 17:24:11 skrll Exp $ */
 
 /*-
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -32,7 +32,7 @@
 #define _INTR_PRIVATE
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gicv3_its.c,v 1.32 2021/01/16 21:05:15 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gicv3_its.c,v 1.34 2021/10/31 17:24:11 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/kmem.h>
@@ -496,8 +496,9 @@ gicv3_its_msi_alloc(struct arm_pci_msi *msi, int *count,
 			gicv3_its_msi_enable(its, lpi, *count);
 
 		/*
-		 * Record target PE
+		 * Record devid and target PE
 		 */
+		its->its_devid[lpi - its->its_pic->pic_irqbase] = devid;
 		its->its_targets[lpi - its->its_pic->pic_irqbase] = ci;
 
 		/*
@@ -565,8 +566,9 @@ gicv3_its_msix_alloc(struct arm_pci_msi *msi, u_int *table_indexes, int *count,
 		gicv3_its_msix_enable(its, lpi, msix_vec, bst, bsh);
 
 		/*
-		 * Record target PE
+		 * Record devid and target PE
 		 */
+		its->its_devid[lpi - its->its_pic->pic_irqbase] = devid;
 		its->its_targets[lpi - its->its_pic->pic_irqbase] = ci;
 
 		/*
@@ -587,7 +589,6 @@ gicv3_its_msi_intr_establish(struct arm_pci_msi *msi,
     pci_intr_handle_t ih, int ipl, int (*func)(void *), void *arg, const char *xname)
 {
 	struct gicv3_its * const its = msi->msi_priv;
-	const struct pci_attach_args *pa;
 	void *intrh;
 
 	const int lpi = __SHIFTOUT(ih, ARM_PCI_INTR_IRQ);
@@ -599,9 +600,8 @@ gicv3_its_msi_intr_establish(struct arm_pci_msi *msi,
 		return NULL;
 
 	/* Invalidate LPI configuration tables */
-	pa = its->its_pa[lpi - its->its_pic->pic_irqbase];
-	KASSERT(pa != NULL);
-	const uint32_t devid = gicv3_its_devid(pa->pa_pc, pa->pa_tag);
+	KASSERT(its->its_pa[lpi - its->its_pic->pic_irqbase] != NULL);
+	const uint32_t devid = its->its_devid[lpi - its->its_pic->pic_irqbase];
 	gits_command_inv(its, devid, lpi - its->its_pic->pic_irqbase);
 
 	return intrh;
@@ -623,6 +623,7 @@ gicv3_its_msi_intr_release(struct arm_pci_msi *msi, pci_intr_handle_t *pih,
 			gicv3_its_msi_disable(its, lpi);
 		gicv3_its_msi_free_lpi(its, lpi);
 		its->its_targets[lpi - its->its_pic->pic_irqbase] = NULL;
+		its->its_devid[lpi - its->its_pic->pic_irqbase] = 0;
 		struct intrsource * const is =
 		    its->its_pic->pic_sources[lpi - its->its_pic->pic_irqbase];
 		if (is != NULL)
@@ -768,7 +769,6 @@ gicv3_its_cpu_init(void *priv, struct cpu_info *ci)
 {
 	struct gicv3_its * const its = priv;
 	struct gicv3_softc * const sc = its->its_gic;
-	const struct pci_attach_args *pa;
 	uint64_t rdbase;
 	size_t irq;
 
@@ -784,6 +784,7 @@ gicv3_its_cpu_init(void *priv, struct cpu_info *ci)
 	/*
 	 * Map collection ID of this CPU's index to this CPU's redistributor.
 	 */
+	mutex_enter(its->its_lock);
 	gits_command_mapc(its, cpu_index(ci), rdbase, true);
 	gits_command_invall(its, cpu_index(ci));
 	gits_wait(its);
@@ -794,13 +795,14 @@ gicv3_its_cpu_init(void *priv, struct cpu_info *ci)
 	for (irq = 0; irq < its->its_pic->pic_maxsources; irq++) {
 		if (its->its_targets[irq] != ci)
 			continue;
-		pa = its->its_pa[irq];
-		KASSERT(pa != NULL);
+		KASSERT(its->its_pa[irq] != NULL);
 
-		const uint32_t devid = gicv3_its_devid(pa->pa_pc, pa->pa_tag);
+		const uint32_t devid = its->its_devid[irq];
 		gits_command_movi(its, devid, irq, cpu_index(ci));
 		gits_command_sync(its, its->its_rdbase[cpu_index(ci)]);
 	}
+	gits_wait(its);
+	mutex_exit(its->its_lock);
 
 	its->its_cpuonline[cpu_index(ci)] = true;
 }
@@ -865,6 +867,7 @@ gicv3_its_init(struct gicv3_softc *sc, bus_space_handle_t bsh,
 	KASSERT(its->its_pic->pic_maxsources > 0);
 	its->its_pa = kmem_zalloc(sizeof(struct pci_attach_args *) * its->its_pic->pic_maxsources, KM_SLEEP);
 	its->its_targets = kmem_zalloc(sizeof(struct cpu_info *) * its->its_pic->pic_maxsources, KM_SLEEP);
+	its->its_devid = kmem_zalloc(sizeof(uint32_t) * its->its_pic->pic_maxsources, KM_SLEEP);
 	its->its_gic = sc;
 	its->its_rdbase = kmem_zalloc(sizeof(*its->its_rdbase) * ncpu, KM_SLEEP);
 	its->its_cpuonline = kmem_zalloc(sizeof(*its->its_cpuonline) * ncpu, KM_SLEEP);
@@ -874,6 +877,7 @@ gicv3_its_init(struct gicv3_softc *sc, bus_space_handle_t bsh,
 	its->its_cb.priv = its;
 	LIST_INIT(&its->its_devices);
 	LIST_INSERT_HEAD(&sc->sc_lpi_callbacks, &its->its_cb, list);
+	its->its_lock = mutex_obj_alloc(MUTEX_SPIN, IPL_NONE);
 
 	gicv3_its_command_init(sc, its);
 	gicv3_its_table_init(sc, its);

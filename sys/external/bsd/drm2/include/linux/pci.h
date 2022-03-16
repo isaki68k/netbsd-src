@@ -1,4 +1,4 @@
-/*	$NetBSD: pci.h,v 1.39 2020/02/14 14:34:59 maya Exp $	*/
+/*	$NetBSD: pci.h,v 1.53 2022/02/27 14:23:08 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2013 The NetBSD Foundation, Inc.
@@ -33,11 +33,7 @@
 #define _LINUX_PCI_H_
 
 #ifdef _KERNEL_OPT
-#if defined(i386) || defined(amd64) || defined(__aarch64__)
 #include "acpica.h"
-#else	/* !(i386 || amd64) */
-#define NACPICA	0
-#endif	/* i386 || amd64 */
 #endif
 
 #include <sys/types.h>
@@ -54,20 +50,15 @@
 #include <dev/pci/pcivar.h>
 #include <dev/pci/agpvar.h>
 
-#if NACPICA > 0
-#include <dev/acpi/acpivar.h>
-#include <dev/acpi/acpi_pci.h>
-#else
-struct acpi_devnode;
-#endif
-
 #include <linux/device.h>
 #include <linux/dma-mapping.h>
 #include <linux/errno.h>
 #include <linux/io.h>
+#include <linux/interrupt.h>
 #include <linux/ioport.h>
 #include <linux/kernel.h>
 
+struct acpi_devnode;
 struct pci_driver;
 
 struct pci_bus {
@@ -89,12 +80,22 @@ struct pci_device_id {
 	unsigned long	driver_data;
 };
 
+#define	PCI_DEVICE(VENDOR, DEVICE)					      \
+	.vendor = (VENDOR),						      \
+	.device = (DEVICE)
+
 #define	PCI_ANY_ID		(~0)
 
 #define	PCI_BASE_CLASS_DISPLAY	PCI_CLASS_DISPLAY
 
 #define	PCI_CLASS_DISPLAY_VGA						\
 	((PCI_CLASS_DISPLAY << 8) | PCI_SUBCLASS_DISPLAY_VGA)
+CTASSERT(PCI_CLASS_DISPLAY_VGA == 0x0300);
+
+#define	PCI_CLASS_DISPLAY_OTHER						\
+	((PCI_CLASS_DISPLAY << 8) | PCI_SUBCLASS_DISPLAY_MISC)
+CTASSERT(PCI_CLASS_DISPLAY_OTHER == 0x0380);
+
 #define	PCI_CLASS_BRIDGE_ISA						\
 	((PCI_CLASS_BRIDGE << 8) | PCI_SUBCLASS_BRIDGE_ISA)
 CTASSERT(PCI_CLASS_BRIDGE_ISA == 0x0601);
@@ -112,12 +113,20 @@ CTASSERT(PCI_CLASS_BRIDGE_ISA == 0x0601);
 #define	PCI_VENDOR_ID_SONY	PCI_VENDOR_SONY
 #define	PCI_VENDOR_ID_VIA	PCI_VENDOR_VIATECH
 
+#define	PCI_SUBVENDOR_ID_REDHAT_QUMRANET	0x1af4
+
 #define	PCI_DEVICE_ID_ATI_RADEON_QY	PCI_PRODUCT_ATI_RADEON_RV100_QY
+
+#define	PCI_SUBDEVICE_ID_QEMU		0x1100
 
 #define	PCI_DEVFN(DEV, FN)						\
 	(__SHIFTIN((DEV), __BITS(3, 7)) | __SHIFTIN((FN), __BITS(0, 2)))
-#define	PCI_SLOT(DEVFN)		__SHIFTOUT((DEVFN), __BITS(3, 7))
-#define	PCI_FUNC(DEVFN)		__SHIFTOUT((DEVFN), __BITS(0, 2))
+#define	PCI_SLOT(DEVFN)		((int)__SHIFTOUT((DEVFN), __BITS(3, 7)))
+#define	PCI_FUNC(DEVFN)		((int)__SHIFTOUT((DEVFN), __BITS(0, 2)))
+
+#define	PCI_DEVID(BUS, DEVFN)						      \
+	(__SHIFTIN((BUS), __BITS(15, 8)) | __SHIFTIN((DEVFN), __BITS(7, 0)))
+#define	PCI_BUS_NUM(DEVID)	((int)__SHIFTOUT((DEVID), __BITS(15,8)))
 
 #define	PCI_NUM_RESOURCES	((PCI_MAPREG_END - PCI_MAPREG_START) / 4)
 #define	DEVICE_COUNT_RESOURCE	PCI_NUM_RESOURCES
@@ -146,7 +155,7 @@ struct pci_dev {
 	bus_size_t		pd_rom_found_size;
 	void			*pd_rom_vaddr;
 	device_t		pd_dev;
-	struct drm_device	*pd_drm_dev; /* XXX Nouveau kludge!  */
+	void			*pd_drvdata;
 	struct {
 		pcireg_t		type;
 		bus_addr_t		addr;
@@ -175,6 +184,14 @@ struct pci_dev {
 	bool			no_64bit_msi;
 };
 
+enum pci_bus_speed {
+	PCI_SPEED_UNKNOWN,
+	PCIE_SPEED_2_5GT,
+	PCIE_SPEED_5_0GT,
+	PCIE_SPEED_8_0GT,
+	PCIE_SPEED_16_0GT,
+};
+
 #define	PCIBIOS_MIN_MEM	0x100000	/* XXX bogus x86 kludge bollocks */
 
 #define	__pci_rom_iomem
@@ -189,6 +206,7 @@ struct pci_dev {
 #define	pci_bus_write_config_word	linux_pci_bus_write_config_word
 #define	pci_clear_master		linux_pci_clear_master
 #define	pci_dev_dev			linux_pci_dev_dev
+#define	pci_dev_present			linux_pci_dev_present
 #define	pci_dev_put			linux_pci_dev_put
 #define	pci_disable_msi			linux_pci_disable_msi
 #define	pci_disable_rom			linux_pci_disable_rom
@@ -197,14 +215,16 @@ struct pci_dev {
 #define	pci_enable_msi			linux_pci_enable_msi
 #define	pci_enable_rom			linux_pci_enable_rom
 #define	pci_find_capability		linux_pci_find_capability
-#define	pci_get_bus_and_slot		linux_pci_get_bus_and_slot
 #define	pci_get_class			linux_pci_get_class
+#define	pci_get_domain_bus_and_slot	linux_pci_get_domain_bus_and_slot
 #define	pci_get_drvdata			linux_pci_get_drvdata
 #define	pci_iomap			linux_pci_iomap
 #define	pci_iounmap			linux_pci_iounmap
 #define	pci_is_pcie			linux_pci_is_pcie
 #define	pci_is_root_bus			linux_pci_is_root_bus
+#define	pci_is_thunderbolt_attached	linux_pci_is_thunderbolt_attached
 #define	pci_map_rom			linux_pci_map_rom
+#define	pci_name			linux_pci_name
 #define	pci_platform_rom		linux_pci_platform_rom
 #define	pci_read_config_byte		linux_pci_read_config_byte
 #define	pci_read_config_dword		linux_pci_read_config_dword
@@ -215,6 +235,7 @@ struct pci_dev {
 #define	pci_resource_start		linux_pci_resource_start
 #define	pci_restore_state		linux_pci_restore_state
 #define	pci_save_state			linux_pci_save_state
+#define	pci_set_drvdata			linux_pci_set_drvdata
 #define	pci_set_master			linux_pci_set_master
 #define	pci_unmap_rom			linux_pci_unmap_rom
 #define	pci_write_config_byte		linux_pci_write_config_byte
@@ -235,12 +256,14 @@ bool		pci_is_root_bus(struct pci_bus *);
 int		pci_domain_nr(struct pci_bus *);
 
 device_t	pci_dev_dev(struct pci_dev *);
-struct drm_device *		/* XXX Nouveau kludge!  */
-		pci_get_drvdata(struct pci_dev *);
+void		pci_set_drvdata(struct pci_dev *, void *);
+void *		pci_get_drvdata(struct pci_dev *);
+const char *	pci_name(struct pci_dev *);
 
 int		pci_find_capability(struct pci_dev *, int);
 bool		pci_is_pcie(struct pci_dev *);
 bool		pci_dma_supported(struct pci_dev *, uintmax_t);
+bool		pci_is_thunderbolt_attached(struct pci_dev *);
 
 int		pci_read_config_dword(struct pci_dev *, int, uint32_t *);
 int		pci_read_config_word(struct pci_dev *, int, uint16_t *);
@@ -275,8 +298,9 @@ int		pci_bus_alloc_resource(struct pci_bus *, struct resource *,
 			bus_size_t), struct pci_dev *);
 
 /* XXX Kludges only -- do not use without checking the implementation!  */
-struct pci_dev *pci_get_bus_and_slot(int, int);
+struct pci_dev *pci_get_domain_bus_and_slot(int, int, int);
 struct pci_dev *pci_get_class(uint32_t, struct pci_dev *); /* i915 kludge */
+int		pci_dev_present(const struct pci_device_id *);
 void		pci_dev_put(struct pci_dev *);
 
 void __pci_rom_iomem *
@@ -298,5 +322,13 @@ void		pci_iounmap(struct pci_dev *, void __pci_iomem *);
 
 void		pci_save_state(struct pci_dev *);
 void		pci_restore_state(struct pci_dev *);
+
+static inline bool
+dev_is_pci(struct device *dev)
+{
+	struct device *parent = device_parent(dev);
+
+	return parent && device_is_a(parent, "pci");
+}
 
 #endif  /* _LINUX_PCI_H_ */

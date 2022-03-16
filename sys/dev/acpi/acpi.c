@@ -1,4 +1,4 @@
-/*	$NetBSD: acpi.c,v 1.292 2021/05/12 23:22:33 thorpej Exp $	*/
+/*	$NetBSD: acpi.c,v 1.297 2022/02/27 21:22:09 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2003, 2007 The NetBSD Foundation, Inc.
@@ -100,13 +100,14 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: acpi.c,v 1.292 2021/05/12 23:22:33 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: acpi.c,v 1.297 2022/02/27 21:22:09 riastradh Exp $");
 
 #include "pci.h"
 #include "opt_acpi.h"
 #include "opt_pcifixup.h"
 
 #include <sys/param.h>
+#include <sys/atomic.h>
 #include <sys/device.h>
 #include <sys/kernel.h>
 #include <sys/kmem.h>
@@ -361,9 +362,8 @@ int
 acpi_check(device_t parent, const char *ifattr)
 {
 	return config_search(parent, NULL,
-			     CFARG_SUBMATCH, acpi_submatch,
-			     CFARG_IATTR, ifattr,
-			     CFARG_EOL) != NULL;
+			     CFARGS(.submatch = acpi_submatch,
+				    .iattr = ifattr)) != NULL;
 }
 
 int
@@ -472,7 +472,7 @@ acpi_attach(device_t parent, device_t self, void *aux)
 	sc->sc_dmat = aa->aa_dmat;
 	sc->sc_dmat64 = aa->aa_dmat64;
 
-	SIMPLEQ_INIT(&sc->ad_head);
+	SIMPLEQ_INIT(&sc->sc_head);
 
 	acpi_softc = sc;
 
@@ -492,8 +492,7 @@ acpi_attach(device_t parent, device_t self, void *aux)
 	 * Early initialization of acpiec(4) via ECDT.
 	 */
 	config_found(self, aa, NULL,
-	    CFARG_IATTR, "acpiecdtbus",
-	    CFARG_EOL);
+	    CFARGS(.iattr = "acpiecdtbus"));
 
 	rv = AcpiInitializeObjects(ACPI_FULL_INITIALIZATION);
 
@@ -558,8 +557,7 @@ acpi_attach(device_t parent, device_t self, void *aux)
 			continue;
 		}
 		config_found(sc->sc_dev, hdr, NULL,
-		    CFARG_IATTR, "acpisdtbus",
-		    CFARG_EOL);
+		    CFARGS(.iattr = "acpisdtbus"));
 		AcpiPutTable(hdr);
 	}
 
@@ -638,7 +636,7 @@ acpi_childdet(device_t self, device_t child)
 	if (sc->sc_wdrt == child)
 		sc->sc_wdrt = NULL;
 
-	SIMPLEQ_FOREACH(ad, &sc->ad_head, ad_list) {
+	SIMPLEQ_FOREACH(ad, &sc->sc_head, ad_list) {
 
 		if (ad->ad_device == child)
 			ad->ad_device = NULL;
@@ -733,12 +731,13 @@ acpi_config_tree(struct acpi_softc *sc)
 	(void)config_defer(sc->sc_dev, acpi_rescan_capabilities);
 }
 
+// XXXNH?
 static void
 acpi_config_dma(struct acpi_softc *sc)
 {
 	struct acpi_devnode *ad;
 
-	SIMPLEQ_FOREACH(ad, &sc->ad_head, ad_list) {
+	SIMPLEQ_FOREACH(ad, &sc->sc_head, ad_list) {
 
 		if (ad->ad_device != NULL)
 			continue;
@@ -804,7 +803,7 @@ acpi_make_devnode(ACPI_HANDLE handle, uint32_t level,
 			acpi_wakedev_init(ad);
 
 		SIMPLEQ_INIT(&ad->ad_child_head);
-		SIMPLEQ_INSERT_TAIL(&sc->ad_head, ad, ad_list);
+		SIMPLEQ_INSERT_TAIL(&sc->sc_head, ad, ad_list);
 
 		if (ad->ad_parent != NULL) {
 
@@ -898,8 +897,7 @@ acpi_rescan(device_t self, const char *ifattr, const int *locators)
 
 	if (ifattr_match(ifattr, "acpihpetbus") && sc->sc_hpet == NULL) {
 		sc->sc_hpet = config_found(sc->sc_dev, &aa, NULL,
-					   CFARG_IATTR, "acpihpetbus",
-					   CFARG_EOL);
+					   CFARGS(.iattr = "acpihpetbus"));
 	}
 
 	/*
@@ -915,14 +913,12 @@ acpi_rescan(device_t self, const char *ifattr, const int *locators)
 	 */
 	if (ifattr_match(ifattr, "acpiapmbus") && sc->sc_apmbus == NULL) {
 		sc->sc_apmbus = config_found(sc->sc_dev, NULL, NULL,
-					     CFARG_IATTR, "acpiapmbus",
-					     CFARG_EOL);
+					     CFARGS(.iattr = "acpiapmbus"));
 	}
 
 	if (ifattr_match(ifattr, "acpiwdrtbus") && sc->sc_wdrt == NULL) {
 		sc->sc_wdrt = config_found(sc->sc_dev, NULL, NULL,
-					   CFARG_IATTR, "acpiwdrtbus",
-					   CFARG_EOL);
+					   CFARGS(.iattr = "acpiwdrtbus"));
 	}
 
 	return 0;
@@ -940,7 +936,7 @@ acpi_rescan_early(struct acpi_softc *sc)
 	 * We want these devices to attach regardless of
 	 * the device status and other restrictions.
 	 */
-	SIMPLEQ_FOREACH(ad, &sc->ad_head, ad_list) {
+	SIMPLEQ_FOREACH(ad, &sc->sc_head, ad_list) {
 
 		if (ad->ad_device != NULL)
 			continue;
@@ -965,9 +961,9 @@ acpi_rescan_early(struct acpi_softc *sc)
 		aa.aa_dmat64 = ad->ad_dmat64;
 
 		ad->ad_device = config_found(sc->sc_dev, &aa, acpi_print,
-		    CFARG_IATTR, "acpinodebus",
-		    CFARG_DEVHANDLE, devhandle_from_acpi(ad->ad_handle),
-		    CFARG_EOL);
+		    CFARGS(.iattr = "acpinodebus",
+			   .devhandle = devhandle_from_acpi(devhandle_invalid(),
+							    ad->ad_handle)));
 	}
 }
 
@@ -979,7 +975,7 @@ acpi_rescan_nodes(struct acpi_softc *sc)
 	struct acpi_devnode *ad;
 	ACPI_DEVICE_INFO *di;
 
-	SIMPLEQ_FOREACH(ad, &sc->ad_head, ad_list) {
+	SIMPLEQ_FOREACH(ad, &sc->sc_head, ad_list) {
 
 		if (ad->ad_device != NULL)
 			continue;
@@ -1033,9 +1029,9 @@ acpi_rescan_nodes(struct acpi_softc *sc)
 		aa.aa_dmat64 = ad->ad_dmat64;
 
 		ad->ad_device = config_found(sc->sc_dev, &aa, acpi_print,
-		    CFARG_IATTR, "acpinodebus",
-		    CFARG_DEVHANDLE, devhandle_from_acpi(ad->ad_handle),
-		    CFARG_EOL);
+		    CFARGS(.iattr = "acpinodebus",
+			   .devhandle = devhandle_from_acpi(devhandle_invalid(),
+							    ad->ad_handle)));
 	}
 }
 
@@ -1047,7 +1043,7 @@ acpi_rescan_capabilities(device_t self)
 	ACPI_HANDLE tmp;
 	ACPI_STATUS rv;
 
-	SIMPLEQ_FOREACH(ad, &sc->ad_head, ad_list) {
+	SIMPLEQ_FOREACH(ad, &sc->sc_head, ad_list) {
 
 		if (ad->ad_devinfo->Type != ACPI_TYPE_DEVICE)
 			continue;
@@ -1153,6 +1149,7 @@ acpi_notify_handler(ACPI_HANDLE handle, uint32_t event, void *aux)
 {
 	struct acpi_softc *sc = acpi_softc;
 	struct acpi_devnode *ad;
+	ACPI_NOTIFY_HANDLER notify;
 
 	KASSERT(sc != NULL);
 	KASSERT(aux == NULL);
@@ -1191,18 +1188,18 @@ acpi_notify_handler(ACPI_HANDLE handle, uint32_t event, void *aux)
 	 * that have registered a handler with us.
 	 * The opaque pointer is always the device_t.
 	 */
-	SIMPLEQ_FOREACH(ad, &sc->ad_head, ad_list) {
+	SIMPLEQ_FOREACH(ad, &sc->sc_head, ad_list) {
 
 		if (ad->ad_device == NULL)
 			continue;
 
-		if (ad->ad_notify == NULL)
+		if ((notify = atomic_load_acquire(&ad->ad_notify)) == NULL)
 			continue;
 
 		if (ad->ad_handle != handle)
 			continue;
 
-		(*ad->ad_notify)(ad->ad_handle, event, ad->ad_device);
+		(*notify)(ad->ad_handle, event, ad->ad_device);
 
 		return;
 	}
@@ -1225,7 +1222,12 @@ acpi_register_notify(struct acpi_devnode *ad, ACPI_NOTIFY_HANDLER notify)
 	if (ad == NULL || notify == NULL)
 		goto fail;
 
-	ad->ad_notify = notify;
+	KASSERTMSG(ad->ad_notify == NULL,
+	    "%s: ACPI node %s already has notify handler: %p",
+	    ad->ad_device ? device_xname(ad->ad_device) : "(unknown)",
+	    ad->ad_name,
+	    ad->ad_notify);
+	atomic_store_release(&ad->ad_notify, notify);
 
 	return true;
 
@@ -1240,7 +1242,10 @@ void
 acpi_deregister_notify(struct acpi_devnode *ad)
 {
 
-	ad->ad_notify = NULL;
+	atomic_store_relaxed(&ad->ad_notify, NULL);
+
+	/* Wait for any in-flight calls to the notifier to complete.  */
+	AcpiOsWaitEventsComplete();
 }
 
 /*

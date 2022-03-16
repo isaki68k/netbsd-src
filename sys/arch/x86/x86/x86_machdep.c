@@ -1,4 +1,4 @@
-/*	$NetBSD: x86_machdep.c,v 1.148 2021/02/19 03:28:53 christos Exp $	*/
+/*	$NetBSD: x86_machdep.c,v 1.150 2021/10/28 10:45:49 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2002, 2006, 2007 YAMAMOTO Takashi,
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: x86_machdep.c,v 1.148 2021/02/19 03:28:53 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: x86_machdep.c,v 1.150 2021/10/28 10:45:49 riastradh Exp $");
 
 #include "opt_modular.h"
 #include "opt_physmem.h"
@@ -259,16 +259,7 @@ module_init_md(void)
 #endif
 			break;
 		case BI_MODULE_RND:
-			aprint_debug("Random seed data path=%s len=%d pa=%x\n",
-				     bi->path, bi->len, bi->base);
-			KASSERT(trunc_page(bi->base) == bi->base);
-			rnd_seed(
-#ifdef KASLR
-			    (void *)PMAP_DIRECT_MAP((uintptr_t)bi->base),
-#else
-			    (void *)((uintptr_t)bi->base + KERNBASE),
-#endif
-			     bi->len);
+			/* handled in x86_rndseed */
 			break;
 		case BI_MODULE_FS:
 			aprint_debug("File-system image path=%s len=%d pa=%x\n",
@@ -283,7 +274,7 @@ module_init_md(void)
 #endif
 			    bi->len);
 #endif
-			break;	
+			break;
 		default:
 			aprint_debug("Skipping non-ELF module\n");
 			break;
@@ -291,6 +282,37 @@ module_init_md(void)
 	}
 }
 #endif	/* MODULAR */
+
+void
+x86_rndseed(void)
+{
+	struct btinfo_modulelist *biml;
+	struct bi_modulelist_entry *bi, *bimax;
+
+	biml = lookup_bootinfo(BTINFO_MODULELIST);
+	if (biml == NULL) {
+		aprint_debug("No module info at boot\n");
+		return;
+	}
+
+	bi = (struct bi_modulelist_entry *)((uint8_t *)biml + sizeof(*biml));
+	bimax = bi + biml->num;
+	for (; bi < bimax; bi++) {
+		switch (bi->type) {
+		case BI_MODULE_RND:
+			aprint_debug("Random seed data path=%s len=%d pa=%x\n",
+				     bi->path, bi->len, bi->base);
+			KASSERT(trunc_page(bi->base) == bi->base);
+			rnd_seed(
+#ifdef KASLR
+			    (void *)PMAP_DIRECT_MAP((uintptr_t)bi->base),
+#else
+			    (void *)((uintptr_t)bi->base + KERNBASE),
+#endif
+			     bi->len);
+		}
+	}
+}
 
 void
 cpu_need_resched(struct cpu_info *ci, struct lwp *l, int flags)
@@ -704,7 +726,7 @@ x86_parse_clusters(struct btinfo_memmap *bim)
 
 		/*
 		 * XXX XXX: Avoid the ISA I/O MEM.
-		 * 
+		 *
 		 * Some laptops (for example, Toshiba Satellite2550X) report
 		 * this area as valid.
 		 */
@@ -843,7 +865,7 @@ x86_add_xen_clusters(void)
 		for (int i = 0; i < hvm_start_info->memmap_entries; i++) {
 			if (map_entry[i].size < PAGE_SIZE)
 				continue;
-			switch(map_entry[i].type) {
+			switch (map_entry[i].type) {
 			case XEN_HVM_MEMMAP_TYPE_RAM:
 				x86_add_cluster(map_entry[i].addr,
 				    map_entry[i].size, BIM_Memory);
@@ -1050,7 +1072,7 @@ init_x86_vm(paddr_t pa_kend)
 #endif
 			seg_end = pa_kstart;
 		}
-		
+
 		/* First hunk */
 		if (seg_start != seg_end) {
 			x86_load_region(seg_start, seg_end);
@@ -1074,9 +1096,9 @@ init_x86_msgbuf(void)
 	psize_t sz = round_page(MSGBUFSIZE);
 	psize_t reqsz = sz;
 	uvm_physseg_t x;
-		
- search_again:
-        for (x = uvm_physseg_get_first();
+
+search_again:
+	for (x = uvm_physseg_get_first();
 	     uvm_physseg_valid_p(x);
 	     x = uvm_physseg_get_next(x)) {
 
@@ -1226,7 +1248,7 @@ get_booted_kernel(void)
 	return bibp ? bibp->bootpath : NULL;
 }
 
-/* 
+/*
  * machine dependent system variables.
  */
 static int
@@ -1236,7 +1258,7 @@ sysctl_machdep_booted_kernel(SYSCTLFN_ARGS)
 	struct sysctlnode node;
 
 	bibp = lookup_bootinfo(BTINFO_BOOTPATH);
-	if(!bibp)
+	if (!bibp)
 		return ENOENT; /* ??? */
 
 	node = *rnode;
@@ -1513,10 +1535,10 @@ cpu_initclocks(void)
 int
 x86_cpu_is_lcall(const void *ip)
 {
-        static const uint8_t lcall[] = { 0x9a, 0, 0, 0, 0 };
+	static const uint8_t lcall[] = { 0x9a, 0, 0, 0, 0 };
 	int error;
-        const size_t sz = sizeof(lcall) + 2;
-        uint8_t tmp[sizeof(lcall) + 2];
+	const size_t sz = sizeof(lcall) + 2;
+	uint8_t tmp[sizeof(lcall) + 2];
 
 	if ((error = copyin(ip, tmp, sz)) != 0)
 		return error;
@@ -1525,10 +1547,10 @@ x86_cpu_is_lcall(const void *ip)
 		return EINVAL;
 
 	switch (tmp[sz - 2]) {
-        case (uint8_t)0x07: /* NetBSD */
+	case (uint8_t)0x07: /* NetBSD */
 	case (uint8_t)0x87: /* BSD/OS */
 		return 0;
 	default:
 		return EINVAL;
-        }
+	}
 }

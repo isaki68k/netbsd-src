@@ -1,3 +1,5 @@
+/* $NetBSD: pm3fb.c,v 1.8 2021/08/25 21:50:29 andvar Exp $ */
+
 /*
  * Copyright (c) 2015 Naruaki Etomi
  * All rights reserved.
@@ -28,6 +30,9 @@
  * most of the following was adapted from the xf86-video-glint driver's
  * pm3_accel.c, pm3_dac.c and pm2fb framebuffer console driver
  */
+
+#include <sys/cdefs.h>
+__KERNEL_RCSID(0, "$NetBSD: pm3fb.c,v 1.8 2021/08/25 21:50:29 andvar Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -332,7 +337,7 @@ pm3fb_attach(device_t parent, device_t self, void *aux)
 	aa.accessops = &pm3fb_accessops;
 	aa.accesscookie = &sc->vd;
 
-	config_found(sc->sc_dev, &aa, wsemuldisplaydevprint, CFARG_EOL);
+	config_found(sc->sc_dev, &aa, wsemuldisplaydevprint, CFARGS_NONE);
 }
 
 static int

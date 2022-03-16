@@ -1,4 +1,4 @@
-/*	$NetBSD: obio.c,v 1.49 2021/04/24 23:36:41 thorpej Exp $	*/
+/*	$NetBSD: obio.c,v 1.51 2022/01/22 11:49:16 thorpej Exp $	*/
 
 /*-
  * Copyright (C) 1998	Internet Research Institute, Inc.
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: obio.c,v 1.49 2021/04/24 23:36:41 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: obio.c,v 1.51 2022/01/22 11:49:16 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -236,6 +236,7 @@ obio_attach(device_t parent, device_t self, void *aux)
 			bus_space_write_1(ca.ca_tag, bsh, 0x37, 0x03);
 	}
 
+	devhandle_t selfh = device_handle(self);
 	for (child = OF_child(node); child; child = OF_peer(child)) {
 		namelen = OF_getprop(child, "name", name, sizeof(name));
 		if (namelen < 0)
@@ -272,8 +273,7 @@ obio_attach(device_t parent, device_t self, void *aux)
 		ca.ca_intr = intr;
 
 		config_found(self, &ca, obio_print,
-		    CFARG_DEVHANDLE, devhandle_from_of(child),
-		    CFARG_EOL);
+		    CFARGS(.devhandle = devhandle_from_of(selfh, child)));
 	}
 }
 

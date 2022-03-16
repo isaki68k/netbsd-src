@@ -1,4 +1,4 @@
-/*	$NetBSD: vioscsi.c,v 1.26 2021/04/24 23:36:57 thorpej Exp $	*/
+/*	$NetBSD: vioscsi.c,v 1.29 2022/01/27 18:38:07 jakllsch Exp $	*/
 /*	$OpenBSD: vioscsi.c,v 1.3 2015/03/14 03:38:49 jsg Exp $	*/
 
 /*
@@ -18,7 +18,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vioscsi.c,v 1.26 2021/04/24 23:36:57 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vioscsi.c,v 1.29 2022/01/27 18:38:07 jakllsch Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -67,7 +67,7 @@ struct vioscsi_softc {
 	kmutex_t		 sc_mutex;
 };
 
-/*      
+/*
  * Each block request uses at least two segments - one for the header
  * and one for the status.
 */
@@ -192,27 +192,12 @@ vioscsi_attach(device_t parent, device_t self, void *aux)
 	chan->chan_adapter = adapt;
 	chan->chan_bustype = &scsi_bustype;
 	chan->chan_channel = 0;
-	chan->chan_ntargets = MIN(max_target, 16);	/* cap reasonably */
-	chan->chan_nluns = MIN(max_lun, 1024);		/* cap reasonably */
-	chan->chan_id = max_target;
+	chan->chan_ntargets = MIN(1 + max_target, 256);	/* cap reasonably */
+	chan->chan_nluns = MIN(1 + max_lun, 16384);	/* cap reasonably */
+	chan->chan_id = max_target + 1;
 	chan->chan_flags = SCSIPI_CHAN_NOSETTLE;
-	/*
-	 * XXX Remove this when scsipi is REPORT LUNS-aware.
-	 * scsipi(4) insists that LUNs must be contiguous starting from 0.
-	 * This is not true on Linode (circa 2020).
-	 *
-	 * Also if explicitly selecting the 'Virtio SCSI Single'
-	 * controller (which is not the default SCSI controller) on
-	 * Proxmox hosts, each disk will be on its own scsi bus at
-	 * target 0 but unexpectedly on a LUN matching the drive number
-	 * on the system (i.e. drive 0 will be bus 0, target 0, lun
-	 * 0; drive 1 will be bus 1, target 0, lun 1, drive 2 will be
-	 * bus 2, target 0, lun 2 -- which is where the gaps start
-	 * happening). https://bugzilla.proxmox.com/show_bug.cgi?id=2985
-	 */
-	chan->chan_defquirks = PQUIRK_FORCELUNS;
 
-	config_found(self, &sc->sc_channel, scsiprint, CFARG_EOL);
+	config_found(self, &sc->sc_channel, scsiprint, CFARGS_NONE);
 	return;
 
 err:
@@ -279,7 +264,7 @@ vioscsi_scsipi_request(struct scsipi_channel *chan, scsipi_adapter_req_t
 	struct vioscsi_softc *sc =
 	    device_private(chan->chan_adapter->adapt_dev);
 	struct virtio_softc *vsc = device_private(device_parent(sc->sc_dev));
-	struct scsipi_xfer *xs; 
+	struct scsipi_xfer *xs;
 	struct scsipi_periph *periph;
 	struct vioscsi_req *vr;
 	struct virtio_scsi_req_hdr *req;
@@ -305,7 +290,7 @@ vioscsi_scsipi_request(struct scsipi_channel *chan, scsipi_adapter_req_t
 		DPRINTF(("%s: unhandled %d\n", __func__, request));
 		return;
 	}
-	
+
 	xs = arg;
 	periph = xs->xs_periph;
 
@@ -619,7 +604,7 @@ vioscsi_alloc_reqs(struct vioscsi_softc *sc, struct virtio_softc *vsc,
 	sc->sc_reqs = vaddr;
 	sc->sc_nreqs = qsize;
 
-	/* Prepare maps for the requests */ 
+	/* Prepare maps for the requests */
 	for (slot=0; slot < qsize; slot++) {
 		vr = &sc->sc_reqs[slot];
 
@@ -689,7 +674,7 @@ vioscsi_free_reqs(struct vioscsi_softc *sc, struct virtio_softc *vsc)
 		return;
 	}
 
-	/* Free request maps */ 
+	/* Free request maps */
 	for (slot=0; slot < sc->sc_nreqs; slot++) {
 		vr = &sc->sc_reqs[slot];
 

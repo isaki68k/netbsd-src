@@ -1,4 +1,4 @@
-/* $NetBSD: spivar.h,v 1.10 2020/08/04 13:20:45 kardel Exp $ */
+/* $NetBSD: spivar.h,v 1.12 2022/01/19 13:33:11 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2006 Urbana-Champaign Independent Media Center.
@@ -142,7 +142,10 @@ SIMPLEQ_HEAD(spi_transq, spi_transfer);
 
 int spi_compatible_match(const struct spi_attach_args *, const cfdata_t,
 			  const struct device_compatible_entry *);
-int spi_configure(struct spi_handle *, int, int);
+const struct device_compatible_entry *
+    spi_compatible_lookup(const struct spi_attach_args *,
+			  const struct device_compatible_entry *);
+int spi_configure(device_t, struct spi_handle *, int, int);
 int spi_transfer(struct spi_handle *, struct spi_transfer *);
 void spi_transfer_init(struct spi_transfer *);
 void spi_chunk_init(struct spi_chunk *, int, const uint8_t *, uint8_t *);

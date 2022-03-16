@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.191 2020/05/23 23:42:41 ad Exp $	   */
+/*	$NetBSD: pmap.c,v 1.194 2022/02/11 17:26:55 riastradh Exp $	   */
 /*
  * Copyright (c) 1994, 1998, 1999, 2003 Ludd, University of Lule}, Sweden.
  * All rights reserved.
@@ -25,7 +25,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.191 2020/05/23 23:42:41 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.194 2022/02/11 17:26:55 riastradh Exp $");
 
 #include "opt_ddb.h"
 #include "opt_cputype.h"
@@ -397,8 +397,7 @@ pmap_bootstrap(void)
 	ci = (struct cpu_info *) scratch;
 	lwp0.l_cpu = ci;
 	ci->ci_istack = istack;
-	memset(ci, 0, sizeof(struct cpu_info) + sizeof(struct device));
-	ci->ci_dev = (void *)(ci + 1);
+	memset(ci, 0, sizeof(*ci));
 #if defined(MULTIPROCESSOR)
 	ci->ci_curlwp = &lwp0;
 	ci->ci_flags = CI_MASTERCPU|CI_RUNNING;
@@ -859,7 +858,7 @@ pmap_pinit(pmap_t pmap)
 
 	/*
 	 * Do not allocate any pte's here, we don't know the size and 
-	 * we'll get a page pault anyway when some page is referenced,
+	 * we'll get a page fault anyway when some page is referenced,
 	 * so do it then.
 	 */
 	pmap->pm_p0br = (struct pte *)KERNBASE;
@@ -935,8 +934,8 @@ pmap_release(struct pmap *pmap)
 
 /*
  * pmap_destroy(pmap): Remove a reference from the pmap. 
- * If the pmap is NULL then just return else decrese pm_count.
- * If this was the last reference we call's pmap_relaese to release this pmap.
+ * If the pmap is NULL then just return else decrease pm_count.
+ * If this was the last reference we call's pmap_release to release this pmap.
  */
 
 void
@@ -1370,7 +1369,7 @@ pmap_simulref(int bits, int addr)
 	if (bits & 1)
 		panic("pte trans len");
 #endif
-	/* Set addess on logical page boundary */
+	/* Set address on logical page boundary */
 	addr &= ~PGOFSET;
 	/* First decode userspace addr */
 	if (addr >= 0) {

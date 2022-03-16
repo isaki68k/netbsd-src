@@ -1,4 +1,4 @@
-/* $NetBSD: drm_gem_cma_helper.c,v 1.10 2020/02/22 19:46:48 chs Exp $ */
+/* $NetBSD: drm_gem_cma_helper.c,v 1.13 2021/12/19 09:52:00 riastradh Exp $ */
 
 /*-
  * Copyright (c) 2015-2017 Jared McNeill <jmcneill@invisible.ca>
@@ -27,9 +27,12 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: drm_gem_cma_helper.c,v 1.10 2020/02/22 19:46:48 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: drm_gem_cma_helper.c,v 1.13 2021/12/19 09:52:00 riastradh Exp $");
 
-#include <drm/drmP.h>
+#include <linux/err.h>
+
+#include <drm/drm_drv.h>
+#include <drm/drm_print.h>
 #include <drm/drm_gem_cma_helper.h>
 #include <drm/bus_dma_hacks.h>
 
@@ -160,7 +163,7 @@ drm_gem_cma_dumb_create(struct drm_file *file_priv, struct drm_device *ddev,
 		return -ENOMEM;
 
 	error = drm_gem_handle_create(file_priv, &obj->base, &handle);
-	drm_gem_object_unreference_unlocked(&obj->base);
+	drm_gem_object_put_unlocked(&obj->base);
 	if (error) {
 		drm_gem_cma_obj_free(obj);
 		return error;
@@ -169,36 +172,6 @@ drm_gem_cma_dumb_create(struct drm_file *file_priv, struct drm_device *ddev,
 	args->handle = handle;
 
 	return 0;
-}
-
-int
-drm_gem_cma_dumb_map_offset(struct drm_file *file_priv, struct drm_device *ddev,
-    uint32_t handle, uint64_t *offset)
-{
-	struct drm_gem_object *gem_obj;
-	struct drm_gem_cma_object *obj;
-	int error;
-
-	gem_obj = drm_gem_object_lookup(ddev, file_priv, handle);
-	if (gem_obj == NULL)
-		return -ENOENT;
-
-	obj = to_drm_gem_cma_obj(gem_obj);
-
-	if (drm_vma_node_has_offset(&obj->base.vma_node) == 0) {
-		error = drm_gem_create_mmap_offset(&obj->base);
-		if (error)
-			goto done;
-	} else {
-		error = 0;
-	}
-
-	*offset = drm_vma_node_offset_addr(&obj->base.vma_node);
-
-done:
-	drm_gem_object_unreference_unlocked(&obj->base);
-
-	return error;
 }
 
 static int

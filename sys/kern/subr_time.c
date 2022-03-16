@@ -1,4 +1,4 @@
-/*	$NetBSD: subr_time.c,v 1.30 2021/03/18 14:05:37 nia Exp $	*/
+/*	$NetBSD: subr_time.c,v 1.32 2022/03/13 17:52:45 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1982, 1986, 1989, 1993
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_time.c,v 1.30 2021/03/18 14:05:37 nia Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_time.c,v 1.32 2022/03/13 17:52:45 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/kernel.h>
@@ -278,7 +278,7 @@ clock_gettime1(clockid_t clock_id, struct timespec *ts)
 		mutex_exit(&proc_lock);
 
 		// XXX: Perhaps create a special kauth type
-		error = kauth_authorize_process(curlwp->l_cred,
+		error = kauth_authorize_process(kauth_cred_get(),
 		    KAUTH_PROCESS_PTRACE, p,
 		    KAUTH_ARG(KAUTH_REQ_PROCESS_CANSEE_ENTRY), NULL, NULL);
 		if (error)
@@ -341,8 +341,13 @@ ts2timo(clockid_t clock_id, int flags, struct timespec *ts,
 	}
 
 	if ((flags & TIMER_ABSTIME) != 0) {
-		if ((tsd.tv_sec > 0 && ts->tv_sec < LLONG_MIN + tsd.tv_sec) ||
-		    (tsd.tv_sec < 0 && ts->tv_sec > LLONG_MAX + tsd.tv_sec))
+		/*
+		 * Add one to the bound to account for possible carry
+		 * from tv_nsec in timespecsub.
+		 */
+		if (tsd.tv_sec > 0 && ts->tv_sec < LLONG_MIN + tsd.tv_sec + 1)
+			return EINVAL;
+		if (tsd.tv_sec < 0 && ts->tv_sec > LLONG_MAX + tsd.tv_sec - 1)
 			return EINVAL;
 		timespecsub(ts, &tsd, ts);
 	}

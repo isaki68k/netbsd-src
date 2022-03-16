@@ -1,4 +1,4 @@
-/* $NetBSD: acpi_pci.c,v 1.31 2021/05/12 23:22:33 thorpej Exp $ */
+/* $NetBSD: acpi_pci.c,v 1.36 2022/02/27 14:19:07 riastradh Exp $ */
 
 /*
  * Copyright (c) 2009, 2010 The NetBSD Foundation, Inc.
@@ -29,7 +29,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: acpi_pci.c,v 1.31 2021/05/12 23:22:33 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: acpi_pci.c,v 1.36 2022/02/27 14:19:07 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -40,6 +40,8 @@ __KERNEL_RCSID(0, "$NetBSD: acpi_pci.c,v 1.31 2021/05/12 23:22:33 thorpej Exp $"
 #include <dev/pci/pcivar.h>
 #include <dev/pci/pcidevs.h>
 #include <dev/pci/ppbreg.h>
+
+#include <dev/pci/pci_calls.h>
 
 #include <dev/acpi/acpireg.h>
 #include <dev/acpi/acpivar.h>
@@ -377,7 +379,7 @@ acpi_pcidev_find(uint16_t segment, uint16_t bus,
 	if (sc == NULL)
 		return NULL;
 
-	SIMPLEQ_FOREACH(ad, &sc->ad_head, ad_list) {
+	SIMPLEQ_FOREACH(ad, &sc->sc_head, ad_list) {
 
 		if (ad->ad_pciinfo != NULL &&
 		    (ad->ad_pciinfo->ap_flags & ACPI_PCI_INFO_DEVICE) &&
@@ -425,7 +427,7 @@ acpi_pciroot_find(uint16_t segment, uint16_t bus)
 	if (sc == NULL)
 		return NULL;
 
-	SIMPLEQ_FOREACH(ad, &sc->ad_head, ad_list) {
+	SIMPLEQ_FOREACH(ad, &sc->sc_head, ad_list) {
 
 		if (ad->ad_pciinfo != NULL &&
 		    (ad->ad_pciinfo->ap_flags & ACPI_PCI_INFO_BRIDGE) &&
@@ -468,9 +470,6 @@ acpi_pcidev_find_dev(struct acpi_devnode *ad)
 		pr = device_parent(dv);
 
 		if (pr == NULL || device_is_a(pr, "pci") != true)
-			continue;
-
-		if (dv->dv_locators == NULL)	/* This should not happen. */
 			continue;
 
 		pci = device_private(pr);
@@ -558,11 +557,7 @@ acpi_pci_bus_get_child_devhandle(device_t dev, devhandle_t call_handle, void *v)
 	int b, d, f;
 	u_int segment;
 
-#ifdef __HAVE_PCI_GET_SEGMENT
 	segment = pci_get_segment(args->pc);
-#else
-	segment = 0;
-#endif /* __HAVE_PCI_GET_SEGMENT */
 
 	pci_decompose_tag(args->pc, args->tag, &b, &d, &f);
 
@@ -570,11 +565,11 @@ acpi_pci_bus_get_child_devhandle(device_t dev, devhandle_t call_handle, void *v)
 
 	if (ad != NULL && (hdl = ad->ad_handle) != NULL) {
 		/* Found it! */
-		args->devhandle = devhandle_from_acpi(hdl);
+		args->devhandle = devhandle_from_acpi(call_handle, hdl);
 		return 0;
 	}
 
 	return ENODEV;
 }
-ACPI_DEVICE_CALL_REGISTER("pci-bus-get-child-devhandle",
+ACPI_DEVICE_CALL_REGISTER(PCI_BUS_GET_CHILD_DEVHANDLE_STR,
 			  acpi_pci_bus_get_child_devhandle)

@@ -1,4 +1,4 @@
-/* $NetBSD: virtio_pci.c,v 1.29 2021/04/24 23:36:57 thorpej Exp $ */
+/* $NetBSD: virtio_pci.c,v 1.34 2022/03/14 12:22:02 uwe Exp $ */
 
 /*
  * Copyright (c) 2020 The NetBSD Foundation, Inc.
@@ -28,7 +28,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: virtio_pci.c,v 1.29 2021/04/24 23:36:57 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: virtio_pci.c,v 1.34 2022/03/14 12:22:02 uwe Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -36,6 +36,7 @@ __KERNEL_RCSID(0, "$NetBSD: virtio_pci.c,v 1.29 2021/04/24 23:36:57 thorpej Exp 
 #include <sys/module.h>
 #include <sys/endian.h>
 #include <sys/interrupt.h>
+#include <sys/syslog.h>
 
 #include <sys/device.h>
 
@@ -49,6 +50,18 @@ __KERNEL_RCSID(0, "$NetBSD: virtio_pci.c,v 1.29 2021/04/24 23:36:57 thorpej Exp 
 #define VIRTIO_PRIVATE
 #include <dev/pci/virtiovar.h> /* XXX: move to non-pci */
 
+
+#define VIRTIO_PCI_LOG(_sc, _use_log, _fmt, _args...)	\
+do {							\
+	if ((_use_log)) {				\
+		log(LOG_DEBUG, "%s: " _fmt,		\
+		    device_xname((_sc)->sc_dev),	\
+		    ##_args);				\
+	} else {					\
+		aprint_error_dev((_sc)->sc_dev,		\
+		    _fmt, ##_args);			\
+	}						\
+} while(0)
 
 static int	virtio_pci_match(device_t, cfdata_t, void *);
 static void	virtio_pci_attach(device_t, device_t, void *);
@@ -106,18 +119,19 @@ static void	virtio_pci_set_status_10(struct virtio_softc *, int);
 static void	virtio_pci_negotiate_features_10(struct virtio_softc *, uint64_t);
 static int	virtio_pci_find_cap(struct virtio_pci_softc *psc, int cfg_type, void *buf, int buflen);
 
-static int	virtio_pci_setup_interrupts(struct virtio_softc *);
+static int	virtio_pci_alloc_interrupts(struct virtio_softc *);
 static void	virtio_pci_free_interrupts(struct virtio_softc *);
 static int	virtio_pci_adjust_config_region(struct virtio_pci_softc *psc);
 static int	virtio_pci_intr(void *arg);
 static int	virtio_pci_msix_queue_intr(void *);
 static int	virtio_pci_msix_config_intr(void *);
-static int	virtio_pci_setup_msix_vectors_09(struct virtio_softc *);
-static int	virtio_pci_setup_msix_vectors_10(struct virtio_softc *);
-static int	virtio_pci_setup_msix_interrupts(struct virtio_softc *,
+static int	virtio_pci_setup_interrupts_09(struct virtio_softc *, int);
+static int	virtio_pci_setup_interrupts_10(struct virtio_softc *, int);
+static int	virtio_pci_establish_msix_interrupts(struct virtio_softc *,
 		    struct pci_attach_args *);
-static int	virtio_pci_setup_intx_interrupt(struct virtio_softc *,
+static int	virtio_pci_establish_intx_interrupt(struct virtio_softc *,
 		    struct pci_attach_args *);
+static bool	virtio_pci_msix_enabled(struct virtio_pci_softc *);
 
 #define VIRTIO_MSIX_CONFIG_VECTOR_INDEX	0
 #define VIRTIO_MSIX_QUEUE_VECTOR_INDEX	1
@@ -158,8 +172,9 @@ static const struct virtio_ops virtio_pci_ops_09 = {
 	.setup_queue = virtio_pci_setup_queue_09,
 	.set_status = virtio_pci_set_status_09,
 	.neg_features = virtio_pci_negotiate_features_09,
-	.setup_interrupts = virtio_pci_setup_interrupts,
+	.alloc_interrupts = virtio_pci_alloc_interrupts,
 	.free_interrupts = virtio_pci_free_interrupts,
+	.setup_interrupts = virtio_pci_setup_interrupts_09,
 };
 
 static const struct virtio_ops virtio_pci_ops_10 = {
@@ -168,8 +183,9 @@ static const struct virtio_ops virtio_pci_ops_10 = {
 	.setup_queue = virtio_pci_setup_queue_10,
 	.set_status = virtio_pci_set_status_10,
 	.neg_features = virtio_pci_negotiate_features_10,
-	.setup_interrupts = virtio_pci_setup_interrupts,
+	.alloc_interrupts = virtio_pci_alloc_interrupts,
 	.free_interrupts = virtio_pci_free_interrupts,
+	.setup_interrupts = virtio_pci_setup_interrupts_10,
 };
 
 static int
@@ -180,16 +196,23 @@ virtio_pci_match(device_t parent, cfdata_t match, void *aux)
 	pa = (struct pci_attach_args *)aux;
 	switch (PCI_VENDOR(pa->pa_id)) {
 	case PCI_VENDOR_QUMRANET:
+		/* Transitional devices MUST have a PCI Revision ID of 0. */
 		if (((PCI_PRODUCT_QUMRANET_VIRTIO_1000 <=
 		      PCI_PRODUCT(pa->pa_id)) &&
 		     (PCI_PRODUCT(pa->pa_id) <=
 		      PCI_PRODUCT_QUMRANET_VIRTIO_103F)) &&
 	              PCI_REVISION(pa->pa_class) == 0)
 			return 1;
+		/*
+		 * Non-transitional devices SHOULD have a PCI Revision
+		 * ID of 1 or higher.  Drivers MUST match any PCI
+		 * Revision ID value.
+		 */
 		if (((PCI_PRODUCT_QUMRANET_VIRTIO_1040 <=
 		      PCI_PRODUCT(pa->pa_id)) &&
 		     (PCI_PRODUCT(pa->pa_id) <=
 		      PCI_PRODUCT_QUMRANET_VIRTIO_107F)) &&
+		      /* XXX: TODO */
 		      PCI_REVISION(pa->pa_class) == 1)
 			return 1;
 		break;
@@ -289,7 +312,7 @@ virtio_pci_rescan(device_t self, const char *ifattr, const int *locs)
 	memset(&va, 0, sizeof(va));
 	va.sc_childdevid = sc->sc_childdevid;
 
-	config_found(self, &va, NULL, CFARG_EOL);
+	config_found(self, &va, NULL, CFARGS_NONE);
 
 	if (virtio_attach_failed(sc))
 		return 0;
@@ -802,20 +825,23 @@ virtio_pci_negotiate_features_10(struct virtio_softc *sc, uint64_t guest_feature
  * -------------------------------------*/
 
 static int
-virtio_pci_setup_msix_vectors_10(struct virtio_softc *sc)
+virtio_pci_setup_interrupts_10(struct virtio_softc *sc, int reinit)
 {
 	struct virtio_pci_softc * const psc = (struct virtio_pci_softc *)sc;
-	device_t self          =  sc->sc_dev;
 	bus_space_tag_t	   iot = psc->sc_iot;
 	bus_space_handle_t ioh = psc->sc_ioh;
 	int vector, ret, qid;
+
+	if (!virtio_pci_msix_enabled(psc))
+		return 0;
 
 	vector = VIRTIO_MSIX_CONFIG_VECTOR_INDEX;
 	bus_space_write_2(iot, ioh,
 		VIRTIO_CONFIG1_CONFIG_MSIX_VECTOR, vector);
 	ret = bus_space_read_2(iot, ioh, VIRTIO_CONFIG1_CONFIG_MSIX_VECTOR);
 	if (ret != vector) {
-		aprint_error_dev(self, "can't set config msix vector\n");
+		VIRTIO_PCI_LOG(sc, reinit,
+		    "can't set config msix vector\n");
 		return -1;
 	}
 
@@ -830,8 +856,8 @@ virtio_pci_setup_msix_vectors_10(struct virtio_softc *sc)
 		ret = bus_space_read_2(iot, ioh,
 			VIRTIO_CONFIG1_QUEUE_MSIX_VECTOR);
 		if (ret != vector) {
-			aprint_error_dev(self, "can't set queue %d "
-				"msix vector\n", qid);
+			VIRTIO_PCI_LOG(sc, reinit, "can't set queue %d "
+			    "msix vector\n", qid);
 			return -1;
 		}
 	}
@@ -840,11 +866,13 @@ virtio_pci_setup_msix_vectors_10(struct virtio_softc *sc)
 }
 
 static int
-virtio_pci_setup_msix_vectors_09(struct virtio_softc *sc)
+virtio_pci_setup_interrupts_09(struct virtio_softc *sc, int reinit)
 {
 	struct virtio_pci_softc * const psc = (struct virtio_pci_softc *)sc;
-	device_t self = sc->sc_dev;
 	int offset, vector, ret, qid;
+
+	if (!virtio_pci_msix_enabled(psc))
+		return 0;
 
 	offset = VIRTIO_CONFIG_MSI_CONFIG_VECTOR;
 	vector = VIRTIO_MSIX_CONFIG_VECTOR_INDEX;
@@ -854,7 +882,8 @@ virtio_pci_setup_msix_vectors_09(struct virtio_softc *sc)
 	aprint_debug_dev(sc->sc_dev, "expected=%d, actual=%d\n",
 	    vector, ret);
 	if (ret != vector) {
-		aprint_error_dev(self, "can't set config msix vector\n");
+		VIRTIO_PCI_LOG(sc, reinit,
+		    "can't set config msix vector\n");
 		return -1;
 	}
 
@@ -873,8 +902,8 @@ virtio_pci_setup_msix_vectors_09(struct virtio_softc *sc)
 		aprint_debug_dev(sc->sc_dev, "expected=%d, actual=%d\n",
 		    vector, ret);
 		if (ret != vector) {
-			aprint_error_dev(self, "can't set queue %d "
-				"msix vector\n", qid);
+			VIRTIO_PCI_LOG(sc, reinit, "can't set queue %d "
+			    "msix vector\n", qid);
 			return -1;
 		}
 	}
@@ -883,7 +912,7 @@ virtio_pci_setup_msix_vectors_09(struct virtio_softc *sc)
 }
 
 static int
-virtio_pci_setup_msix_interrupts(struct virtio_softc *sc,
+virtio_pci_establish_msix_interrupts(struct virtio_softc *sc,
     struct pci_attach_args *pa)
 {
 	struct virtio_pci_softc * const psc = (struct virtio_pci_softc *)sc;
@@ -894,7 +923,6 @@ virtio_pci_setup_msix_interrupts(struct virtio_softc *sc,
 	char intr_xname[INTRDEVNAMEBUF];
 	char const *intrstr;
 	int idx, qid, n;
-	int ret;
 
 	idx = VIRTIO_MSIX_CONFIG_VECTOR_INDEX;
 	if (sc->sc_flags & VIRTIO_F_INTR_MPSAFE)
@@ -943,16 +971,6 @@ virtio_pci_setup_msix_interrupts(struct virtio_softc *sc,
 			aprint_error_dev(self, "couldn't establish MSI-X for queues\n");
 			goto error;
 		}
-	}
-
-	if (sc->sc_version_1) {
-		ret = virtio_pci_setup_msix_vectors_10(sc);
-	} else {
-		ret = virtio_pci_setup_msix_vectors_09(sc);
-	}
-	if (ret) {
-		aprint_error_dev(self, "couldn't setup MSI-X vectors\n");
-		goto error;
 	}
 
 	idx = VIRTIO_MSIX_CONFIG_VECTOR_INDEX;
@@ -1016,7 +1034,7 @@ error:
 }
 
 static int
-virtio_pci_setup_intx_interrupt(struct virtio_softc *sc,
+virtio_pci_establish_intx_interrupt(struct virtio_softc *sc,
     struct pci_attach_args *pa)
 {
 	struct virtio_pci_softc * const psc = (struct virtio_pci_softc *)sc;
@@ -1042,7 +1060,7 @@ virtio_pci_setup_intx_interrupt(struct virtio_softc *sc,
 }
 
 static int
-virtio_pci_setup_interrupts(struct virtio_softc *sc)
+virtio_pci_alloc_interrupts(struct virtio_softc *sc)
 {
 	struct virtio_pci_softc * const psc = (struct virtio_pci_softc *)sc;
 	device_t self = sc->sc_dev;
@@ -1092,7 +1110,7 @@ retry:
 		psc->sc_ihs = kmem_zalloc(sizeof(*psc->sc_ihs) * nmsix,
 		    KM_SLEEP);
 
-		error = virtio_pci_setup_msix_interrupts(sc, &psc->sc_pa);
+		error = virtio_pci_establish_msix_interrupts(sc, &psc->sc_pa);
 		if (error != 0) {
 			kmem_free(psc->sc_ihs, sizeof(*psc->sc_ihs) * nmsix);
 			pci_intr_release(pc, psc->sc_ihp, nmsix);
@@ -1110,7 +1128,7 @@ retry:
 		psc->sc_ihs = kmem_zalloc(sizeof(*psc->sc_ihs) * 1,
 		    KM_SLEEP);
 
-		error = virtio_pci_setup_intx_interrupt(sc, &psc->sc_pa);
+		error = virtio_pci_establish_intx_interrupt(sc, &psc->sc_pa);
 		if (error != 0) {
 			kmem_free(psc->sc_ihs, sizeof(*psc->sc_ihs) * 1);
 			pci_intr_release(pc, psc->sc_ihp, 1);
@@ -1152,6 +1170,17 @@ virtio_pci_free_interrupts(struct virtio_softc *sc)
 		psc->sc_ihs = NULL;
 	}
 	psc->sc_ihs_num = 0;
+}
+
+static bool
+virtio_pci_msix_enabled(struct virtio_pci_softc *psc)
+{
+	pci_chipset_tag_t pc = psc->sc_pa.pa_pc;
+
+	if (pci_intr_type(pc, psc->sc_ihp[0]) == PCI_INTR_TYPE_MSIX)
+		return true;
+
+	return false;
 }
 
 /*

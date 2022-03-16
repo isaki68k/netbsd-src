@@ -1,4 +1,4 @@
-/*	$NetBSD: vfs_vnops.c,v 1.220 2021/07/01 15:53:20 martin Exp $	*/
+/*	$NetBSD: vfs_vnops.c,v 1.225 2022/03/13 13:52:53 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2009 The NetBSD Foundation, Inc.
@@ -66,7 +66,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_vnops.c,v 1.220 2021/07/01 15:53:20 martin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_vnops.c,v 1.225 2022/03/13 13:52:53 riastradh Exp $");
 
 #include "veriexec.h"
 
@@ -121,6 +121,7 @@ static int vn_statfile(file_t *fp, struct stat *sb);
 static int vn_ioctl(file_t *fp, u_long com, void *data);
 static int vn_mmap(struct file *, off_t *, size_t, int, int *, int *,
 		   struct uvm_object **, int *);
+static int vn_seek(struct file *, off_t, int, off_t *, int);
 
 const struct fileops vnops = {
 	.fo_name = "vn",
@@ -134,6 +135,7 @@ const struct fileops vnops = {
 	.fo_kqfilter = vn_kqfilter,
 	.fo_restart = fnullop_restart,
 	.fo_mmap = vn_mmap,
+	.fo_seek = vn_seek,
 };
 
 /*
@@ -155,8 +157,9 @@ const struct fileops vnops = {
  * EOPNOTSUPP will be produced in the cases that would otherwise return
  * a file descriptor.
  *
- * Note that callers that want NOFOLLOW should pass O_NOFOLLOW in fmode,
- * not NOFOLLOW in nmode.
+ * Note that callers that want no-follow behavior should pass
+ * O_NOFOLLOW in fmode. Neither FOLLOW nor NOFOLLOW in nmode is
+ * honored.
  */
 int
 vn_open(struct vnode *at_dvp, struct pathbuf *pb,
@@ -179,7 +182,7 @@ vn_open(struct vnode *at_dvp, struct pathbuf *pb,
 	if ((fmode & (O_CREAT | O_DIRECTORY)) == (O_CREAT | O_DIRECTORY))
 		return EINVAL;
 
-	NDINIT(&nd, LOOKUP, FOLLOW | nmode, pb);
+	NDINIT(&nd, LOOKUP, nmode, pb);
 	if (at_dvp != NULL)
 		NDAT(&nd, at_dvp);
 
@@ -814,10 +817,11 @@ vn_ioctl(file_t *fp, u_long com, void *data)
 		if (com == FIONREAD) {
 			vn_lock(vp, LK_SHARED | LK_RETRY);
 			error = VOP_GETATTR(vp, &vattr, kauth_cred_get());
+			if (error == 0)
+				*(int *)data = vattr.va_size - fp->f_offset;
 			VOP_UNLOCK(vp);
 			if (error)
 				return (error);
-			*(int *)data = vattr.va_size - fp->f_offset;
 			return (0);
 		}
 		if ((com == FIONWRITE) || (com == FIONSPACE)) {
@@ -1109,7 +1113,74 @@ vn_mmap(struct file *fp, off_t *offp, size_t size, int prot, int *flagsp,
 	return 0;
 }
 
+static int
+vn_seek(struct file *fp, off_t delta, int whence, off_t *newoffp,
+    int flags)
+{
+	const off_t OFF_MIN = __type_min(off_t);
+	const off_t OFF_MAX = __type_max(off_t);
+	kauth_cred_t cred = fp->f_cred;
+	off_t oldoff, newoff;
+	struct vnode *vp = fp->f_vnode;
+	struct vattr vattr;
+	int error;
 
+	if (vp->v_type == VFIFO)
+		return ESPIPE;
+
+	vn_lock(vp, LK_SHARED | LK_RETRY);
+
+	/* Compute the old and new offsets.  */
+	oldoff = fp->f_offset;
+	switch (whence) {
+	case SEEK_CUR:
+		if (delta > 0) {
+			if (oldoff > 0 && delta > OFF_MAX - oldoff) {
+				newoff = OFF_MAX;
+				break;
+			}
+		} else {
+			if (oldoff < 0 && delta < OFF_MIN - oldoff) {
+				newoff = OFF_MIN;
+				break;
+			}
+		}
+		newoff = oldoff + delta;
+		break;
+	case SEEK_END:
+		error = VOP_GETATTR(vp, &vattr, cred);
+		if (error)
+			goto out;
+		if (vattr.va_size > OFF_MAX ||
+		    delta > OFF_MAX - (off_t)vattr.va_size) {
+			newoff = OFF_MAX;
+			break;
+		}
+		newoff = delta + vattr.va_size;
+		break;
+	case SEEK_SET:
+		newoff = delta;
+		break;
+	default:
+		error = EINVAL;
+		goto out;
+	}
+
+	/* Pass the proposed change to the file system to audit.  */
+	error = VOP_SEEK(vp, oldoff, newoff, cred);
+	if (error)
+		goto out;
+
+	/* Success!  */
+	if (newoffp)
+		*newoffp = newoff;
+	if (flags & FOF_UPDATE_OFFSET)
+		fp->f_offset = newoff;
+	error = 0;
+
+out:	VOP_UNLOCK(vp);
+	return error;
+}
 
 /*
  * Check that the vnode is still valid, and if so
@@ -1311,4 +1382,92 @@ vn_bdev_openpath(struct pathbuf *pb, struct vnode **vpp, struct lwp *l)
 		return ENOTBLK;
 
 	return vn_bdev_open(dev, vpp, l);
+}
+
+static long
+vn_knote_to_interest(const struct knote *kn)
+{
+	switch (kn->kn_filter) {
+	case EVFILT_READ:
+		/*
+		 * Writing to the file or changing its attributes can
+		 * set the file size, which impacts the readability
+		 * filter.
+		 *
+		 * (No need to set NOTE_EXTEND here; it's only ever
+		 * send with other hints; see vnode_if.c.)
+		 */
+		return NOTE_WRITE | NOTE_ATTRIB;
+
+	case EVFILT_VNODE:
+		return kn->kn_sfflags;
+
+	case EVFILT_WRITE:
+	default:
+		return 0;
+	}
+}
+
+void
+vn_knote_attach(struct vnode *vp, struct knote *kn)
+{
+	long interest = 0;
+
+	/*
+	 * We maintain a bitmask of the kevents that there is interest in,
+	 * to minimize the impact of having watchers.  It's silly to have
+	 * to traverse vn_klist every time a read or write happens simply
+	 * because there is someone interested in knowing when the file
+	 * is deleted, for example.
+	 */
+
+	mutex_enter(vp->v_interlock);
+	SLIST_INSERT_HEAD(&vp->v_klist, kn, kn_selnext);
+	SLIST_FOREACH(kn, &vp->v_klist, kn_selnext) {
+		interest |= vn_knote_to_interest(kn);
+	}
+	vp->v_klist_interest = interest;
+	mutex_exit(vp->v_interlock);
+}
+
+void
+vn_knote_detach(struct vnode *vp, struct knote *kn)
+{
+	int interest = 0;
+
+	/*
+	 * We special case removing the head of the list, beacuse:
+	 *
+	 * 1. It's extremely likely that we're detaching the only
+	 *    knote.
+	 *
+	 * 2. We're already traversing the whole list, so we don't
+	 *    want to use the generic SLIST_REMOVE() which would
+	 *    traverse it *again*.
+	 */
+
+	mutex_enter(vp->v_interlock);
+	if (__predict_true(kn == SLIST_FIRST(&vp->v_klist))) {
+		SLIST_REMOVE_HEAD(&vp->v_klist, kn_selnext);
+		SLIST_FOREACH(kn, &vp->v_klist, kn_selnext) {
+			interest |= vn_knote_to_interest(kn);
+		}
+		vp->v_klist_interest = interest;
+	} else {
+		struct knote *thiskn, *nextkn, *prevkn = NULL;
+
+		SLIST_FOREACH_SAFE(thiskn, &vp->v_klist, kn_selnext, nextkn) {
+			if (thiskn == kn) {
+				KASSERT(kn != NULL);
+				KASSERT(prevkn != NULL);
+				SLIST_REMOVE_AFTER(prevkn, kn_selnext);
+				kn = NULL;
+			} else {
+				interest |= vn_knote_to_interest(thiskn);
+				prevkn = thiskn;
+			}
+		}
+		vp->v_klist_interest = interest;
+	}
+	mutex_exit(vp->v_interlock);
 }

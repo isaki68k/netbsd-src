@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.h,v 1.170 2021/05/04 09:02:21 skrll Exp $	*/
+/*	$NetBSD: pmap.h,v 1.172 2022/01/15 08:14:37 skrll Exp $	*/
 
 /*
  * Copyright (c) 2002, 2003 Wasabi Systems, Inc.
@@ -89,7 +89,7 @@
 #if PMAP_TLB_MAX > 1
 #define	PMAP_TLB_NEED_SHOOTDOWN		1
 #endif
-#define	PMAP_TLB_FLUSH_ASID_ON_RESET	(arm_has_tlbiasid_p)
+#define	PMAP_TLB_FLUSH_ASID_ON_RESET	arm_has_tlbiasid_p
 #define	PMAP_TLB_NUM_PIDS		256
 #define	cpu_set_tlb_info(ci, ti)        ((void)((ci)->ci_tlb_info = (ti)))
 #if PMAP_TLB_MAX > 1
@@ -238,10 +238,10 @@ struct pmap {
 	struct l2_dtable	*pm_l2[L2_SIZE];
 	struct pmap_statistics	pm_stats;
 	LIST_ENTRY(pmap)	pm_list;
+	bool			pm_remove_all;
 #ifdef ARM_MMU_EXTENDED
 	pd_entry_t		*pm_l1;
 	paddr_t			pm_l1_pa;
-	bool			pm_remove_all;
 #ifdef MULTIPROCESSOR
 	kcpuset_t		*pm_onproc;
 	kcpuset_t		*pm_active;
@@ -255,7 +255,6 @@ struct pmap {
 	union pmap_cache_state	pm_cstate;
 	uint8_t			pm_domain;
 	bool			pm_activated;
-	bool			pm_remove_all;
 #endif
 };
 

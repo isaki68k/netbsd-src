@@ -1,4 +1,4 @@
-/*	$NetBSD: dk.c,v 1.105 2021/06/02 17:56:40 mlelstv Exp $	*/
+/*	$NetBSD: dk.c,v 1.110 2022/01/15 19:34:11 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2004, 2005, 2006, 2007 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: dk.c,v 1.105 2021/06/02 17:56:40 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: dk.c,v 1.110 2022/01/15 19:34:11 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_dkwedge.h"
@@ -89,11 +89,8 @@ struct dkwedge_softc {
 	kmutex_t	sc_iolock;
 	kcondvar_t	sc_dkdrn;
 	u_int		sc_iopend;	/* I/Os pending */
-	int		sc_flags;	/* flags (sc_iolock) */
 	int		sc_mode;	/* parent open mode */
 };
-
-#define	DK_F_WAIT_DRAIN		0x0001	/* waiting for I/O to drain */
 
 static void	dkstart(struct dkwedge_softc *);
 static void	dkiodone(struct buf *);
@@ -194,10 +191,8 @@ dkwedge_wait_drain(struct dkwedge_softc *sc)
 {
 
 	mutex_enter(&sc->sc_iolock);
-	while (sc->sc_iopend != 0) {
-		sc->sc_flags |= DK_F_WAIT_DRAIN;
+	while (sc->sc_iopend != 0)
 		cv_wait(&sc->sc_dkdrn, &sc->sc_iolock);
-	}
 	mutex_exit(&sc->sc_iolock);
 }
 
@@ -362,7 +357,7 @@ dkwedge_add(struct dkwedge_info *dkw)
 
 	/*
 	 * Wedge will be added; increment the wedge count for the parent.
-	 * Only allow this to happend if RAW_PART is the only thing open.
+	 * Only allow this to happen if RAW_PART is the only thing open.
 	 */
 	mutex_enter(&pdk->dk_openlock);
 	if (pdk->dk_openmask & ~(1 << RAW_PART))
@@ -1339,14 +1334,10 @@ dkstart(struct dkwedge_softc *sc)
 
 	/* Do as much work as has been enqueued. */
 	while ((bp = bufq_peek(sc->sc_bufq)) != NULL) {
-
 		if (sc->sc_state != DKW_STATE_RUNNING) {
 			(void) bufq_get(sc->sc_bufq);
-			if (sc->sc_iopend-- == 1 &&
-			    (sc->sc_flags & DK_F_WAIT_DRAIN) != 0) {
-				sc->sc_flags &= ~DK_F_WAIT_DRAIN;
+			if (--sc->sc_iopend == 0)
 				cv_broadcast(&sc->sc_dkdrn);
-			}
 			mutex_exit(&sc->sc_iolock);
 			bp->b_error = ENXIO;
 			bp->b_resid = bp->b_bcount;
@@ -1431,10 +1422,8 @@ dkiodone(struct buf *bp)
 	putiobuf(bp);
 
 	mutex_enter(&sc->sc_iolock);
-	if (sc->sc_iopend-- == 1 && (sc->sc_flags & DK_F_WAIT_DRAIN) != 0) {
-		sc->sc_flags &= ~DK_F_WAIT_DRAIN;
+	if (--sc->sc_iopend == 0)
 		cv_broadcast(&sc->sc_dkdrn);
-	}
 
 	disk_unbusy(&sc->sc_dk, obp->b_bcount - obp->b_resid,
 	    obp->b_flags & B_READ);
@@ -1543,7 +1532,7 @@ dkioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 		return (error);
 
 	error = 0;
-	
+
 	switch (cmd) {
 	case DIOCGSTRATEGY:
 	case DIOCGCACHE:
@@ -1639,6 +1628,7 @@ static int
 dksize(dev_t dev)
 {
 	struct dkwedge_softc *sc = dkwedge_lookup(dev);
+	uint64_t p_size;
 	int rv = -1;
 
 	if (sc == NULL)
@@ -1651,12 +1641,13 @@ dksize(dev_t dev)
 
 	/* Our content type is static, no need to open the device. */
 
+	p_size   = sc->sc_size << sc->sc_parent->dk_blkshift;
 	if (strcmp(sc->sc_ptype, DKW_PTYPE_SWAP) == 0) {
 		/* Saturate if we are larger than INT_MAX. */
-		if (sc->sc_size > INT_MAX)
+		if (p_size > INT_MAX)
 			rv = INT_MAX;
 		else
-			rv = (int) sc->sc_size;
+			rv = (int) p_size;
 	}
 
 	mutex_exit(&sc->sc_parent->dk_rawlock);
@@ -1675,6 +1666,7 @@ dkdump(dev_t dev, daddr_t blkno, void *va, size_t size)
 {
 	struct dkwedge_softc *sc = dkwedge_lookup(dev);
 	const struct bdevsw *bdev;
+	uint64_t p_size, p_offset;
 	int rv = 0;
 
 	if (sc == NULL)
@@ -1697,16 +1689,20 @@ dkdump(dev_t dev, daddr_t blkno, void *va, size_t size)
 		rv = EINVAL;
 		goto out;
 	}
-	if (blkno < 0 || blkno + size / DEV_BSIZE > sc->sc_size) {
+
+	p_offset = sc->sc_offset << sc->sc_parent->dk_blkshift;
+	p_size   = sc->sc_size << sc->sc_parent->dk_blkshift;
+
+	if (blkno < 0 || blkno + size / DEV_BSIZE > p_size) {
 		printf("%s: blkno (%" PRIu64 ") + size / DEV_BSIZE (%zu) > "
-		    "sc->sc_size (%" PRIu64 ")\n", __func__, blkno,
-		    size / DEV_BSIZE, sc->sc_size);
+		    "p_size (%" PRIu64 ")\n", __func__, blkno,
+		    size / DEV_BSIZE, p_size);
 		rv = EINVAL;
 		goto out;
 	}
 
 	bdev = bdevsw_lookup(sc->sc_pdev);
-	rv = (*bdev->d_dump)(sc->sc_pdev, blkno + sc->sc_offset, va, size);
+	rv = (*bdev->d_dump)(sc->sc_pdev, blkno + p_offset, va, size);
 
 out:
 	mutex_exit(&sc->sc_parent->dk_rawlock);
@@ -1767,4 +1763,3 @@ dkwedge_get_parent_name(dev_t dev)
 		return NULL;
 	return sc->sc_parent->dk_name;
 }
-

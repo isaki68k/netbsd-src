@@ -1,4 +1,4 @@
-/*	$NetBSD: audio.c,v 1.104 2021/06/08 09:46:04 riastradh Exp $	*/
+/*	$NetBSD: audio.c,v 1.115 2022/03/14 21:38:04 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -158,7 +158,7 @@
  *	halt_output 		x	x +
  *	halt_input 		x	x +
  *	speaker_ctl 		x	x
- *	getdev 			-	x
+ *	getdev 			-	-
  *	set_port 		-	x +
  *	get_port 		-	x +
  *	query_devinfo 		-	x
@@ -182,7 +182,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.104 2021/06/08 09:46:04 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.115 2022/03/14 21:38:04 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "audio.h"
@@ -206,6 +206,7 @@ __KERNEL_RCSID(0, "$NetBSD: audio.c,v 1.104 2021/06/08 09:46:04 riastradh Exp $"
 #include <sys/kauth.h>
 #include <sys/kernel.h>
 #include <sys/kmem.h>
+#include <sys/lock.h>
 #include <sys/malloc.h>
 #include <sys/mman.h>
 #include <sys/module.h>
@@ -316,13 +317,14 @@ audio_mlog_flush(void)
 	/* Nothing to do if already in use ? */
 	if (atomic_swap_32(&mlog_inuse, 1) == 1)
 		return;
+	membar_enter();
 
 	int rpage = mlog_wpage;
 	mlog_wpage ^= 1;
 	mlog_buf[mlog_wpage][0] = '\0';
 	mlog_used = 0;
 
-	atomic_swap_32(&mlog_inuse, 0);
+	atomic_store_release(&mlog_inuse, 0);
 
 	if (mlog_buf[rpage][0] != '\0') {
 		printf("%s", mlog_buf[rpage]);
@@ -352,6 +354,7 @@ audio_mlog_printf(const char *fmt, ...)
 		mlog_drop++;
 		return;
 	}
+	membar_enter();
 
 	va_start(ap, fmt);
 	len = vsnprintf(
@@ -365,7 +368,7 @@ audio_mlog_printf(const char *fmt, ...)
 		mlog_full++;
 	}
 
-	atomic_swap_32(&mlog_inuse, 0);
+	atomic_store_release(&mlog_inuse, 0);
 
 	if (mlog_sih)
 		softint_schedule(mlog_sih);
@@ -1366,6 +1369,7 @@ audiodetach(device_t self, int flags)
 	SLIST_FOREACH(file, &sc->sc_files, entry) {
 		atomic_store_relaxed(&file->dying, true);
 	}
+	mutex_exit(sc->sc_lock);
 
 	/*
 	 * Wait for existing users to drain.
@@ -1375,7 +1379,6 @@ audiodetach(device_t self, int flags)
 	 *   be psref_released.
 	 */
 	pserialize_perform(sc->sc_psz);
-	mutex_exit(sc->sc_lock);
 	psref_target_destroy(&sc->sc_psref, audio_psref_class);
 
 	/*
@@ -1457,7 +1460,7 @@ audiosearch(device_t parent, cfdata_t cf, const int *locs, void *aux)
 
 	if (config_probe(parent, cf, aux))
 		config_attach(parent, cf, aux, NULL,
-		    CFARG_EOL);
+		    CFARGS_NONE);
 
 	return 0;
 }
@@ -1468,8 +1471,7 @@ audiorescan(device_t self, const char *ifattr, const int *locators)
 	struct audio_softc *sc = device_private(self);
 
 	config_search(sc->sc_dev, NULL,
-	    CFARG_SEARCH, audiosearch,
-	    CFARG_EOL);
+	    CFARGS(.search = audiosearch));
 
 	return 0;
 }
@@ -1493,8 +1495,7 @@ audio_attach_mi(const struct audio_hw_if *ahwp, void *hdlp, device_t dev)
 	arg.hwif = ahwp;
 	arg.hdl = hdlp;
 	return config_found(dev, &arg, audioprint,
-	    CFARG_IATTR, "audiobus",
-	    CFARG_EOL);
+	    CFARGS(.iattr = "audiobus"));
 }
 
 /*
@@ -1691,14 +1692,18 @@ audio_track_waitio(struct audio_softc *sc, audio_track_t *track)
 
 /*
  * Try to acquire track lock.
- * It doesn't block if the track lock is already aquired.
+ * It doesn't block if the track lock is already acquired.
  * Returns true if the track lock was acquired, or false if the track
  * lock was already acquired.
  */
 static __inline bool
 audio_track_lock_tryenter(audio_track_t *track)
 {
-	return (atomic_cas_uint(&track->lock, 0, 1) == 0);
+
+	if (atomic_swap_uint(&track->lock, 1) != 0)
+		return false;
+	membar_enter();
+	return true;
 }
 
 /*
@@ -1707,9 +1712,10 @@ audio_track_lock_tryenter(audio_track_t *track)
 static __inline void
 audio_track_lock_enter(audio_track_t *track)
 {
+
 	/* Don't sleep here. */
 	while (audio_track_lock_tryenter(track) == false)
-		;
+		SPINLOCK_BACKOFF_HOOK;
 }
 
 /*
@@ -1718,7 +1724,8 @@ audio_track_lock_enter(audio_track_t *track)
 static __inline void
 audio_track_lock_exit(audio_track_t *track)
 {
-	atomic_swap_uint(&track->lock, 0);
+
+	atomic_store_release(&track->lock, 0);
 }
 
 
@@ -3159,9 +3166,7 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		break;
 
 	case AUDIO_GETDEV:
-		mutex_enter(sc->sc_lock);
 		error = sc->hw_if->getdev(sc->hw_hdl, (audio_device_t *)addr);
-		mutex_exit(sc->sc_lock);
 		break;
 
 	case AUDIO_GETENC:
@@ -3342,7 +3347,7 @@ audio_poll(struct audio_softc *sc, int events, struct lwp *l,
 }
 
 static const struct filterops audioread_filtops = {
-	.f_isfd = 1,
+	.f_flags = FILTEROP_ISFD,
 	.f_attach = NULL,
 	.f_detach = filt_audioread_detach,
 	.f_event = filt_audioread_event,
@@ -3389,7 +3394,7 @@ filt_audioread_event(struct knote *kn, long hint)
 }
 
 static const struct filterops audiowrite_filtops = {
-	.f_isfd = 1,
+	.f_flags = FILTEROP_ISFD,
 	.f_attach = NULL,
 	.f_detach = filt_audiowrite_detach,
 	.f_event = filt_audiowrite_event,
@@ -3902,7 +3907,7 @@ audio_track_freq_up(audio_filter_arg_t *arg)
 	d = arg->dst;
 
 	/*
-	 * In order to faciliate interpolation for each block, slide (delay)
+	 * In order to facilitate interpolation for each block, slide (delay)
 	 * input by one sample.  As a result, strictly speaking, the output
 	 * phase is delayed by 1/dstfreq.  However, I believe there is no
 	 * observable impact.
@@ -6962,7 +6967,7 @@ audio_mixers_get_format(struct audio_softc *sc, struct audio_info *ai)
  *	It indicates the number of times reached EOF(?).
  *
  * ai.{play,record}.error		(R/-)
- *	Non-zero indicates overflow/underflow has occured.
+ *	Non-zero indicates overflow/underflow has occurred.
  *
  * ai.{play,record}.waiting		(R/-)
  *	Non-zero indicates that other process waits to open.
@@ -7361,7 +7366,7 @@ audio_track_setinfo_check(audio_track_t *track,
 }
 
 /*
- * Change water marks for playback track if specfied.
+ * Change water marks for playback track if specified.
  */
 static void
 audio_track_setinfo_water(audio_track_t *track, const struct audio_info *ai)
@@ -8336,9 +8341,7 @@ mixer_ioctl(struct audio_softc *sc, u_long cmd, void *addr, int flag,
 
 	case AUDIO_GETDEV:
 		TRACE(2, "AUDIO_GETDEV");
-		mutex_enter(sc->sc_lock);
 		error = sc->hw_if->getdev(sc->hw_hdl, (audio_device_t *)addr);
-		mutex_exit(sc->sc_lock);
 		break;
 
 	case AUDIO_MIXER_DEVINFO:

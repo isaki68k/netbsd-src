@@ -1,4 +1,4 @@
-/*	$NetBSD: if_spppsubr.c,v 1.258 2021/06/02 00:47:59 yamaguchi Exp $	 */
+/*	$NetBSD: if_spppsubr.c,v 1.262 2022/03/07 04:06:20 knakahara Exp $	 */
 
 /*
  * Synchronous PPP/Cisco link level subroutines.
@@ -41,7 +41,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_spppsubr.c,v 1.258 2021/06/02 00:47:59 yamaguchi Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_spppsubr.c,v 1.262 2022/03/07 04:06:20 knakahara Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_inet.h"
@@ -303,6 +303,8 @@ static struct sppp *spppq;
 static kmutex_t *spppq_lock = NULL;
 static callout_t keepalive_ch;
 static unsigned int sppp_keepalive_cnt = 0;
+
+pktq_rps_hash_func_t sppp_pktq_rps_hash_p;
 
 #define SPPPQ_LOCK()	if (spppq_lock) \
 				mutex_enter(spppq_lock);
@@ -779,7 +781,9 @@ sppp_input(struct ifnet *ifp, struct mbuf *m)
 
 	/* Check queue. */
 	if (__predict_true(pktq)) {
-		if (__predict_false(!pktq_enqueue(pktq, m, 0))) {
+		uint32_t hash = pktq_rps_hash(&sppp_pktq_rps_hash_p, m);
+
+		if (__predict_false(!pktq_enqueue(pktq, m, hash))) {
 			goto drop;
 		}
 		SPPP_UNLOCK(sp);
@@ -1099,7 +1103,7 @@ sppp_attach(struct ifnet *ifp)
 	if_alloc_sadl(ifp);
 
 	/* Lets not beat about the bush, we know we're down. */
-	ifp->if_link_state = LINK_STATE_DOWN;
+	if_link_state_change(ifp, LINK_STATE_DOWN);
 
 	snprintf(xnamebuf, sizeof(xnamebuf), "%s.wq_cp", ifp->if_xname);
 	sp->wq_cp = sppp_wq_create(sp, xnamebuf,
@@ -3409,9 +3413,7 @@ sppp_ipcp_open(struct sppp *sp, void *xcp)
 	memset(&sp->dns_addrs, 0, sizeof sp->dns_addrs);
 
 #ifdef INET
-	kpreempt_disable();
 	sppp_get_ip_addrs(sp, &myaddr, &hisaddr, 0);
-	kpreempt_enable();
 #else
 	myaddr = hisaddr = 0;
 #endif
@@ -3963,9 +3965,7 @@ sppp_ipcp_scr(struct sppp *sp)
 		if (sp->ipcp.flags & IPCP_MYADDR_SEEN) {
 			ouraddr = sp->ipcp.req_myaddr;	/* not sure if this can ever happen */
 		} else {
-			kpreempt_disable();
 			sppp_get_ip_addrs(sp, &ouraddr, 0, 0);
-			kpreempt_enable();
 		}
 		opt[i++] = IPCP_OPT_ADDRESS;
 		opt[i++] = 6;
@@ -4035,9 +4035,7 @@ sppp_ipv6cp_open(struct sppp *sp, void *xcp)
 	sp->ipv6cp.flags &= ~IPV6CP_MYIFID_SEEN;
 #endif
 
-	kpreempt_disable();
 	sppp_get_ip6_addrs(sp, &myaddr, &hisaddr, 0);
-	kpreempt_enable();
 	/*
 	 * If we don't have our address, this probably means our
 	 * interface doesn't want to talk IPv6 at all.  (This could
@@ -4504,9 +4502,7 @@ sppp_ipv6cp_scr(struct sppp *sp)
 	KASSERT(SPPP_WLOCKED(sp));
 
 	if (ISSET(sp->ipv6cp.opts, SPPP_IPV6CP_OPT_IFID)) {
-		kpreempt_disable();
 		sppp_get_ip6_addrs(sp, &ouraddr, 0, 0);
-		kpreempt_enable();
 
 		opt[i++] = IPV6CP_OPT_IFID;
 		opt[i++] = 10;
@@ -5587,7 +5583,7 @@ sppp_get_ip_addrs(struct sppp *sp, uint32_t *src, uint32_t *dst, uint32_t *srcma
 	struct ifaddr *ifa;
 	struct sockaddr_in *si, *sm;
 	uint32_t ssrc, ddst;
-	int s;
+	int bound, s;
 	struct psref psref;
 
 	sm = NULL;
@@ -5597,6 +5593,7 @@ sppp_get_ip_addrs(struct sppp *sp, uint32_t *src, uint32_t *dst, uint32_t *srcma
 	 * aliases don't make any sense on a p2p link anyway.
 	 */
 	si = 0;
+	bound = curlwp_bind();
 	s = pserialize_read_enter();
 	IFADDR_READER_FOREACH(ifa, ifp) {
 		if (ifa->ifa_addr->sa_family == AF_INET) {
@@ -5621,6 +5618,7 @@ sppp_get_ip_addrs(struct sppp *sp, uint32_t *src, uint32_t *dst, uint32_t *srcma
 			ddst = si->sin_addr.s_addr;
 		ifa_release(ifa, &psref);
 	}
+	curlwp_bindx(bound);
 
 	if (dst) *dst = ntohl(ddst);
 	if (src) *src = ntohl(ssrc);
@@ -5779,7 +5777,7 @@ sppp_get_ip6_addrs(struct sppp *sp, struct in6_addr *src, struct in6_addr *dst,
 	struct ifaddr *ifa;
 	struct sockaddr_in6 *si, *sm;
 	struct in6_addr ssrc, ddst;
-	int s;
+	int bound, s;
 	struct psref psref;
 
 	sm = NULL;
@@ -5790,6 +5788,7 @@ sppp_get_ip6_addrs(struct sppp *sp, struct in6_addr *src, struct in6_addr *dst,
 	 * aliases don't make any sense on a p2p link anyway.
 	 */
 	si = 0;
+	bound = curlwp_bind();
 	s = pserialize_read_enter();
 	IFADDR_READER_FOREACH(ifa, ifp) {
 		if (ifa->ifa_addr->sa_family == AF_INET6) {
@@ -5817,6 +5816,7 @@ sppp_get_ip6_addrs(struct sppp *sp, struct in6_addr *src, struct in6_addr *dst,
 			memcpy(&ddst, &si->sin6_addr, sizeof(ddst));
 		ifa_release(ifa, &psref);
 	}
+	curlwp_bindx(bound);
 
 	if (dst)
 		memcpy(dst, &ddst, sizeof(*dst));
@@ -6260,9 +6260,7 @@ sppp_params(struct sppp *sp, u_long cmd, void *data)
 		status->state = sp->scp[IDX_IPCP].state;
 		status->opts = sp->ipcp.opts;
 #ifdef INET
-		kpreempt_disable();
 		sppp_get_ip_addrs(sp, &myaddr, 0, 0);
-		kpreempt_enable();
 #else
 		myaddr = 0;
 #endif

@@ -1,4 +1,4 @@
-/* $NetBSD: device.h,v 1.171 2021/06/12 12:13:51 riastradh Exp $ */
+/* $NetBSD: device.h,v 1.179 2022/03/03 06:25:46 riastradh Exp $ */
 
 /*
  * Copyright (c) 2021 The NetBSD Foundation, Inc.
@@ -168,7 +168,7 @@ struct devhandle {
 		void *			pointer;
 		const void *		const_pointer;
 		uintptr_t		uintptr;
-		int			integer;
+		intptr_t		integer;
 	};
 };
 typedef struct devhandle devhandle_t;
@@ -252,6 +252,9 @@ struct devhandle_impl {
 					    const char *, devhandle_t *);
 };
 
+/* Max size of a device external name (including terminating NUL) */
+#define	DEVICE_XNAME_SIZE	16
+
 struct device {
 	devhandle_t	dv_handle;	/* this device's handle;
 					   new device_t's get INVALID */
@@ -262,7 +265,8 @@ struct device {
 	cfdriver_t	dv_cfdriver;	/* our cfdriver */
 	cfattach_t	dv_cfattach;	/* our cfattach */
 	int		dv_unit;	/* device unit number */
-	char		dv_xname[16];	/* external name (name + unit) */
+					/* external name (name + unit) */
+	char		dv_xname[DEVICE_XNAME_SIZE];
 	device_t	dv_parent;	/* pointer to parent device
 					   (NULL if pseudo- or root node) */
 	int		dv_depth;	/* number of parents until root */
@@ -412,6 +416,7 @@ TAILQ_HEAD(cftablelist, cftable);
 #endif
 
 typedef int (*cfsubmatch_t)(device_t, cfdata_t, const int *, void *);
+typedef int (*cfsearch_t)(device_t, cfdata_t, const int *, void *);
 
 /*
  * `configuration' attachment and driver (what the machine-independent
@@ -529,20 +534,42 @@ struct pdevinit {
 /* This allows us to wildcard a device unit. */
 #define	DVUNIT_ANY	-1
 
+#if defined(_KERNEL) || defined(_KMEMUSER) || defined(_STANDALONE)
 /*
- * Tags for tag-value argument pairs passed to config_search() and
- * config_found().
+ * Arguments passed to config_search() and config_found().
  */
-typedef enum {
-	CFARG_SUBMATCH		= 0,	/* submatch function (direct config) */
-	CFARG_SEARCH		= 1,	/* search function (indirect config) */
-	CFARG_IATTR		= 2,	/* interface attribute */
-	CFARG_LOCATORS		= 3,	/* locators array */
-	CFARG_DEVHANDLE		= 4,	/* devhandle_t (by value) */
+struct cfargs {
+	uintptr_t	cfargs_version;	/* version field */
 
-	/* ...a value not likely to occur randomly in the wild. */
-	CFARG_EOL		= 0xeeeeeeee
-} cfarg_t;
+	/* version 1 fields */
+	cfsubmatch_t	submatch;	/* submatch function (direct config) */
+	cfsearch_t	search;		/* search function (indirect config) */
+	const char *	iattr;		/* interface attribute */
+	const int *	locators;	/* locators array */
+	devhandle_t	devhandle;	/* devhandle_t (by value) */
+
+	/* version 2 fields below here */
+};
+
+#define	CFARGS_VERSION		1	/* current cfargs version */
+
+#define	CFARGS_NONE		NULL	/* no cfargs to pass */
+
+/*
+ * Construct a cfargs with this macro, like so:
+ *
+ *	CFARGS(.submatch = config_stdsubmatch,
+ *	       .devhandle = my_devhandle)
+ *
+ * You must supply at least one field.  If you don't need any, use the
+ * CFARGS_NONE macro.
+ */
+#define	CFARGS(...)							\
+	&((const struct cfargs){					\
+		.cfargs_version = CFARGS_VERSION,			\
+		__VA_ARGS__						\
+	})
+#endif /* _KERNEL || _KMEMUSER || _STANDALONE */
 
 #ifdef _KERNEL
 
@@ -587,24 +614,14 @@ const struct cfiattrdata *cfiattr_lookup(const char *, const struct cfdriver *);
 const char *cfdata_ifattr(const struct cfdata *);
 
 int	config_stdsubmatch(device_t, cfdata_t, const int *, void *);
-cfdata_t config_search(device_t, void *, cfarg_t, ...);
+cfdata_t config_search(device_t, void *, const struct cfargs *);
 cfdata_t config_rootsearch(cfsubmatch_t, const char *, void *);
-device_t config_found(device_t, void *, cfprint_t, cfarg_t, ...);
+device_t config_found(device_t, void *, cfprint_t, const struct cfargs *);
 device_t config_rootfound(const char *, void *);
-device_t config_attach(device_t, cfdata_t, void *, cfprint_t, cfarg_t, ...);
+device_t config_attach(device_t, cfdata_t, void *, cfprint_t,
+	    const struct cfargs *);
 int	config_match(device_t, cfdata_t, void *);
 int	config_probe(device_t, cfdata_t, void *);
-
-#if defined(__SUBR_AUTOCONF_PRIVATE)
-/*
- * XXX Some ports abuse the internals of autoconfiguration, so we need
- * XXX provide these symbols to them for the time being.
- */
-cfdata_t config_vsearch(device_t, void *, cfarg_t, va_list);
-device_t config_vfound(device_t, void *, cfprint_t, cfarg_t, va_list);
-device_t config_vattach(device_t, cfdata_t, void *, cfprint_t, cfarg_t,
-			va_list);
-#endif /* __SUBR_AUTOCONF_PRIVATE */
 
 bool	ifattr_match(const char *, const char *);
 
@@ -650,14 +667,18 @@ bool		device_is_enabled(device_t);
 bool		device_has_power(device_t);
 int		device_locator(device_t, u_int);
 void		*device_private(device_t);
+void		device_set_private(device_t, void *);
 prop_dictionary_t device_properties(device_t);
 void		device_set_handle(device_t, devhandle_t);
 devhandle_t	device_handle(device_t);
 
 bool		devhandle_is_valid(devhandle_t);
-void		devhandle_invalidate(devhandle_t *);
+devhandle_t	devhandle_invalid(void);
 devhandle_type_t devhandle_type(devhandle_t);
+int		devhandle_compare(devhandle_t, devhandle_t);
 
+device_call_t	devhandle_lookup_device_call(devhandle_t, const char *,
+		    devhandle_t *);
 void		devhandle_impl_inherit(struct devhandle_impl *,
 		    const struct devhandle_impl *);
 
@@ -772,21 +793,20 @@ device_t	shutdown_next(struct shutdown_state *);
  * the device autoconfiguration subsystem.  It is the responsibility
  * of each device tree back end to implement these calls.
  *
- * device-enumerate-children
- *
- *	Enumerates the direct children of a device, invoking the
- *	callback for each one.  The callback is passed the devhandle_t
- *	corresponding to the child device, as well as a user-supplied
- *	argument.  If the callback returns true, then enumeration
- *	continues.  If the callback returns false, enumeration is stopped.
+ * We define a generic interface; individual device calls feature
+ * type checking of the argument structure.  The argument structures
+ * and the call binding data are automatically generated from device
+ * call interface descriptions by gendevcalls.awk.
  */
-
-struct device_enumerate_children_args {
-	bool	(*callback)(device_t, devhandle_t, void *);
-	void *	callback_arg;
+struct device_call_generic {
+	const char *name;
+	void *args;
 };
 
-int		device_call(device_t, const char *, void *);
+int	device_call_generic(device_t, const struct device_call_generic *);
+
+#define	device_call(dev, call)						\
+	device_call_generic((dev), &(call)->generic)
 
 #endif /* _KERNEL */
 

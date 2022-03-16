@@ -1,4 +1,4 @@
-/*	$NetBSD: autoconf.c,v 1.233 2021/07/03 19:39:07 palle Exp $ */
+/*	$NetBSD: autoconf.c,v 1.238 2022/01/22 11:49:17 thorpej Exp $ */
 
 /*
  * Copyright (c) 1996
@@ -48,7 +48,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: autoconf.c,v 1.233 2021/07/03 19:39:07 palle Exp $");
+__KERNEL_RCSID(0, "$NetBSD: autoconf.c,v 1.238 2022/01/22 11:49:17 thorpej Exp $");
 
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
@@ -289,7 +289,7 @@ bootstrap(void *o0, void *bootargs, void *bootsize, void *o3, void *ofw)
 	extern void OF_sym2val32(void *);
 	extern struct consdev consdev_prom;
 
-	/* Save OpenFrimware entry point */
+	/* Save OpenFirmware entry point */
 	romp   = ofw;
 	romtba = get_romtba();
 
@@ -701,6 +701,8 @@ extern struct sparc_bus_space_tag mainbus_space_tag;
 		aprint_normal(": %s: hostid %lx\n", machine_model, hostid);
 	aprint_naive("\n");
 
+	devhandle_t selfh = device_handle(dev);
+
 	/*
 	 * Locate and configure the ``early'' devices.  These must be
 	 * configured before we can do the rest.  For instance, the
@@ -730,8 +732,7 @@ extern struct sparc_bus_space_tag mainbus_space_tag;
 		ma.ma_node = node;
 		ma.ma_name = "cpu";
 		config_found(dev, &ma, mbprint,
-		    CFARG_DEVHANDLE, devhandle_from_of(ma.ma_node),
-		    CFARG_EOL);
+		    CFARGS(.devhandle = devhandle_from_of(selfh, ma.ma_node)));
 	}
 
 	node = findroot();	/* re-init root node */
@@ -815,8 +816,8 @@ extern struct sparc_bus_space_tag mainbus_space_tag;
 		}
 #endif
 		(void) config_found(dev, (void *)&ma, mbprint,
-		    CFARG_DEVHANDLE, prom_node_to_devhandle(ma.ma_node),
-		    CFARG_EOL);
+		    CFARGS(.devhandle = prom_node_to_devhandle(selfh,
+							       ma.ma_node)));
 		free(ma.ma_reg, M_DEVBUF);
 		if (ma.ma_ninterrupts)
 			free(ma.ma_interrupts, M_DEVBUF);
@@ -826,7 +827,7 @@ extern struct sparc_bus_space_tag mainbus_space_tag;
 	/* Try to attach PROM console */
 	memset(&ma, 0, sizeof ma);
 	ma.ma_name = "pcons";
-	(void) config_found(dev, (void *)&ma, mbprint, CFARG_EOL);
+	(void) config_found(dev, (void *)&ma, mbprint, CFARGS_NONE);
 }
 
 CFATTACH_DECL_NEW(mainbus, 0,
@@ -926,7 +927,7 @@ dev_path_drive_match(device_t dev, int ctrlnode, int target,
 		/*
 		 * Note: "child" here is == ofbootpackage (s.a.), which
 		 * may be completely wrong for the device we are checking,
-		 * what we realy do here is to match "target" and "lun".
+		 * what we really do here is to match "target" and "lun".
 		 */
 		if (wwn)
 			snprintf(buf, sizeof(buf), "%s@w%016" PRIx64 ",%d",
@@ -1168,7 +1169,7 @@ device_register(device_t dev, void *aux)
 		 * busdev now points to the direct descendent of the
 		 * controller ("atabus" or "scsibus").  Get the
 		 * controller's devhandle.  Hoist it up one more so
-		 * that busdev points at the the controller.
+		 * that busdev points at the controller.
 		 */
 		busdev = device_parent(busdev);
 		devhandle = device_handle(busdev);
@@ -1459,7 +1460,7 @@ device_register_post_config(device_t dev, void *aux)
 
 		/*
 		 * If this is a FC-AL drive it will have
-		 * aquired its WWN device property by now,
+		 * acquired its WWN device property by now,
 		 * so we can properly match it.
 		 */
 		if (prop_dictionary_get_uint64(device_properties(dev),

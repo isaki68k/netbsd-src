@@ -1,4 +1,4 @@
-/*	$NetBSD: footbridge.c,v 1.27 2021/04/24 23:36:26 thorpej Exp $	*/
+/*	$NetBSD: footbridge.c,v 1.29 2021/08/13 11:40:43 skrll Exp $	*/
 
 /*
  * Copyright (c) 1997,1998 Mark Brinicombe.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: footbridge.c,v 1.27 2021/04/24 23:36:26 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: footbridge.c,v 1.29 2021/08/13 11:40:43 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -58,7 +58,7 @@ __KERNEL_RCSID(0, "$NetBSD: footbridge.c,v 1.27 2021/04/24 23:36:26 thorpej Exp 
 #include <arm/footbridge/dc21285reg.h>
 #include <arm/footbridge/dc21285mem.h>
 #include <arm/footbridge/footbridge.h>
- 
+
 /*
  * DC21285 'Footbridge' device
  *
@@ -126,8 +126,8 @@ footbridge_print(void *aux, const char *pnp)
  * int footbridge_match(device_t parent, cfdata_t cf, void *aux)
  *
  * Just return ok for this if it is device 0
- */ 
- 
+ */
+
 static int
 footbridge_match(device_t parent, cfdata_t cf, void *aux)
 {
@@ -141,7 +141,7 @@ footbridge_match(device_t parent, cfdata_t cf, void *aux)
  * void footbridge_attach(device_t parent, device_t dev, void *aux)
  *
  */
-  
+
 static void
 footbridge_attach(device_t parent, device_t self, void *aux)
 {
@@ -188,7 +188,7 @@ footbridge_attach(device_t parent, device_t self, void *aux)
 	    "targ abt", footbridge_intr, sc);
 	sc->sc_parity_ih = footbridge_intr_claim(IRQ_PARITY, IPL_HIGH,
 	    "parity", footbridge_intr, sc);
-	
+
 	/* Set up the PCI bus tags */
 	footbridge_create_io_bs_tag(&footbridge_pci_io_bs_tag,
 	    (void *)DC21285_PCI_IO_VBASE);
@@ -220,7 +220,7 @@ footbridge_attach(device_t parent, device_t self, void *aux)
 				break;
 		mask--;
 		mask &= SDRAM_MASK_256MB;
-		
+
 		/*
 		 * configure the mask, the offset into SDRAM and the address
 		 * SDRAM is exposed on the PCI bus.
@@ -245,8 +245,7 @@ footbridge_attach(device_t parent, device_t self, void *aux)
 	fba.fba_pba.pba_bus = 0;
 	fba.fba_pba.pba_bridgetag = NULL;
 	config_found(self, &fba.fba_pba, pcibusprint,
-	    CFARG_IATTR, "pcibus",
-	    CFARG_EOL);
+	    CFARGS(.iattr = "pcibus"));
 
 	/* Attach uart device */
 	fba.fba_fca.fca_name = "fcom";
@@ -255,9 +254,8 @@ footbridge_attach(device_t parent, device_t self, void *aux)
 	fba.fba_fca.fca_rx_irq = IRQ_SERIAL_RX;
 	fba.fba_fca.fca_tx_irq = IRQ_SERIAL_TX;
 	config_found(self, &fba.fba_fca, footbridge_print,
-	    CFARG_IATTR, "footbridge",
-	    CFARG_EOL); 
-	
+	    CFARGS(.iattr = "footbridge"));
+
 	/* Setup fast SA110 cache clean area */
 #ifdef CPU_SA110
 	if (cputype == CPU_ID_SA110)

@@ -1,4 +1,4 @@
-/*	$NetBSD: genfs_vnops.c,v 1.211 2021/06/29 22:34:08 dholland Exp $	*/
+/*	$NetBSD: genfs_vnops.c,v 1.216 2021/10/20 03:08:18 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -57,7 +57,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: genfs_vnops.c,v 1.211 2021/06/29 22:34:08 dholland Exp $");
+__KERNEL_RCSID(0, "$NetBSD: genfs_vnops.c,v 1.216 2021/10/20 03:08:18 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -507,9 +507,7 @@ filt_genfsdetach(struct knote *kn)
 {
 	struct vnode *vp = (struct vnode *)kn->kn_hook;
 
-	mutex_enter(vp->v_interlock);
-	SLIST_REMOVE(&vp->v_klist, kn, knote, kn_selnext);
-	mutex_exit(vp->v_interlock);
+	vn_knote_detach(vp, kn);
 }
 
 static int
@@ -525,7 +523,7 @@ filt_genfsread(struct knote *kn, long hint)
 	switch (hint) {
 	case NOTE_REVOKE:
 		KASSERT(mutex_owned(vp->v_interlock));
-		kn->kn_flags |= (EV_EOF | EV_ONESHOT);
+		knote_set_eof(kn, EV_ONESHOT);
 		return (1);
 	case 0:
 		mutex_enter(vp->v_interlock);
@@ -552,7 +550,7 @@ filt_genfswrite(struct knote *kn, long hint)
 	switch (hint) {
 	case NOTE_REVOKE:
 		KASSERT(mutex_owned(vp->v_interlock));
-		kn->kn_flags |= (EV_EOF | EV_ONESHOT);
+		knote_set_eof(kn, EV_ONESHOT);
 		return (1);
 	case 0:
 		mutex_enter(vp->v_interlock);
@@ -575,7 +573,7 @@ filt_genfsvnode(struct knote *kn, long hint)
 	switch (hint) {
 	case NOTE_REVOKE:
 		KASSERT(mutex_owned(vp->v_interlock));
-		kn->kn_flags |= EV_EOF;
+		knote_set_eof(kn, 0);
 		if ((kn->kn_sfflags & hint) != 0)
 			kn->kn_fflags |= hint;
 		return (1);
@@ -596,21 +594,21 @@ filt_genfsvnode(struct knote *kn, long hint)
 }
 
 static const struct filterops genfsread_filtops = {
-	.f_isfd = 1,
+	.f_flags = FILTEROP_ISFD | FILTEROP_MPSAFE,
 	.f_attach = NULL,
 	.f_detach = filt_genfsdetach,
 	.f_event = filt_genfsread,
 };
 
 static const struct filterops genfswrite_filtops = {
-	.f_isfd = 1,
+	.f_flags = FILTEROP_ISFD | FILTEROP_MPSAFE,
 	.f_attach = NULL,
 	.f_detach = filt_genfsdetach,
 	.f_event = filt_genfswrite,
 };
 
 static const struct filterops genfsvnode_filtops = {
-	.f_isfd = 1,
+	.f_flags = FILTEROP_ISFD | FILTEROP_MPSAFE,
 	.f_attach = NULL,
 	.f_detach = filt_genfsdetach,
 	.f_event = filt_genfsvnode,
@@ -644,9 +642,7 @@ genfs_kqfilter(void *v)
 
 	kn->kn_hook = vp;
 
-	mutex_enter(vp->v_interlock);
-	SLIST_INSERT_HEAD(&vp->v_klist, kn, kn_selnext);
-	mutex_exit(vp->v_interlock);
+	vn_knote_attach(vp, kn);
 
 	return (0);
 }

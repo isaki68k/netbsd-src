@@ -1,4 +1,4 @@
-/*	$NetBSD: dino.c,v 1.11 2021/04/24 23:36:39 thorpej Exp $ */
+/*	$NetBSD: dino.c,v 1.13 2021/09/18 23:54:13 macallan Exp $ */
 
 /*	$OpenBSD: dino.c,v 1.5 2004/02/13 20:39:31 mickey Exp $	*/
 
@@ -29,7 +29,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: dino.c,v 1.11 2021/04/24 23:36:39 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: dino.c,v 1.13 2021/09/18 23:54:13 macallan Exp $");
 
 /* #include "cardbus.h" */
 
@@ -347,8 +347,18 @@ dino_conf_read(void *v, pcitag_t tag, int reg)
 
 	/*
 	 * XXX
-	 * accessing dev 1f / func 7 on the 2nd Dino causes a machine check
-	 * exception on my C200
+	 * thus sayeth the Dino manual:
+	 * 7.7.1 Generating PCI Special Cycles thru PA I/O Space
+	 * When the PCI_CONFIG_ADDR registers BUS_NUM is the equal to the
+	 * DINO’s bus number, 8’h00, DEV_NUM and Function fields are all ones,
+	 * and the REG_NUM field is all zeros the next write to PCI_CONFIG_DATA
+	 * register will generate a special cycle on DINO’s PCI bus. If the
+	 * BUS_NUM field does not equal DINO bus number then a type 1
+	 * transaction will be forwarded to PCI as described above.
+	 * Note: Dino is using a legal PCI configuration address to generate a
+	 * PCI special cycle. System firmware and software should not attempt
+	 * to read or write to this configuration address when walking the
+	 * PCI bus through configuration address space.
 	 */
 	if ((tag & 0xff00) == 0xff00)
 		return -1;
@@ -377,9 +387,7 @@ dino_conf_write(void *v, pcitag_t tag, int reg, pcireg_t data)
 		return;
 
 	/*
-	 * XXX
-	 * accessing dev 1f / func 7 on the 2nd Dino causes a machine check
-	 * exception on my C200
+	 * don't try to access dev 1f / func 7, see comment in dino_conf_read()
 	 */
 	if ((tag & 0xff00) == 0xff00) return;
 
@@ -1644,7 +1652,7 @@ dinoattach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
-	sc->sc_regs = r = (volatile struct dino_regs *)sc->sc_bh;
+	sc->sc_regs = r = (volatile struct dino_regs *)sc->sc_bh;	
 #ifdef trust_the_firmware_to_proper_initialize_everything
 	r->io_addr_en = 0;
 	r->io_control = 0x80;
@@ -1652,7 +1660,7 @@ dinoattach(device_t parent, device_t self, void *aux)
 	r->papr = 0;
 	r->io_fbb_en |= 1;
 	r->damode = 0;
-	r->gmask &= ~1;	/* allow GSC bus req */
+	r->gmask &= ~1; /* allow GSC bus req */
 	r->pciror = 0;
 	r->pciwor = 0;
 	r->brdg_feat = 0xc0000000;
@@ -1744,15 +1752,13 @@ dinoattach(device_t parent, device_t self, void *aux)
 	pba.pba_bus = 0;
 	pba.pba_flags = PCI_FLAGS_IO_OKAY | PCI_FLAGS_MEM_OKAY;
 	config_found(self, &pba, pcibusprint,
-	    CFARG_IATTR, "pcibus",
-	    CFARG_EOL);
+	    CFARGS(.iattr = "pcibus"));
 }
 
 static device_t
 dino_callback(device_t self, struct confargs *ca)
 {
 	return config_found(self, ca, mbprint,
-	    CFARG_SUBMATCH, mbsubmatch,
-	    CFARG_IATTR, "gedoens",
-	    CFARG_EOL);
+	    CFARGS(.submatch = mbsubmatch,
+		   .iattr = "gedoens"));
 }

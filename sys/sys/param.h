@@ -1,4 +1,4 @@
-/*	$NetBSD: param.h,v 1.697 2021/06/29 21:03:37 pgoyette Exp $	*/
+/*	$NetBSD: param.h,v 1.707 2022/03/03 07:31:24 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 1982, 1986, 1989, 1993
@@ -67,7 +67,7 @@
  *	2.99.9		(299000900)
  */
 
-#define	__NetBSD_Version__	999008600	/* NetBSD 9.99.86 */
+#define	__NetBSD_Version__	999009400	/* NetBSD 9.99.94 */
 
 #define __NetBSD_Prereq__(M,m,p) (((((M) * 100000000) + \
     (m) * 1000000) + (p) * 100) <= __NetBSD_Version__)
@@ -88,8 +88,8 @@
 
 /*
  * These macros determine if we are running in protected mode or not.
- *   _HARDKERNEL: code uses kernel namespace and runs in hw priviledged mode
- *   _SOFTKERNEL: code uses kernel namespace but runs without hw priviledges
+ *   _HARDKERNEL: code uses kernel namespace and runs in hw privileged mode
+ *   _SOFTKERNEL: code uses kernel namespace but runs without hw privileges
  */
 #if defined(_KERNEL) && !defined(_RUMPKERNEL)
 #define _HARDKERNEL
@@ -138,6 +138,22 @@
 #define	MIN(a,b)	((/*CONSTCOND*/(a)<(b))?(a):(b))
 #define	MAX(a,b)	((/*CONSTCOND*/(a)>(b))?(a):(b))
 
+/* Machine type dependent parameters. */
+#include <machine/param.h>
+#include <machine/limits.h>
+
+/*
+ * Coherency unit: assumed cache line size.  See also MIN_LWP_ALIGNMENT.
+ * The MD code depends on the current values of these constants. Don't
+ * change them without coordinating.
+ */
+#ifndef COHERENCY_UNIT
+#define	COHERENCY_UNIT		64
+#endif
+#ifndef CACHE_LINE_SIZE
+#define	CACHE_LINE_SIZE		64
+#endif
+
 /* More types and definitions used throughout the kernel. */
 #ifdef _KERNEL
 #include <sys/cdefs.h>
@@ -173,10 +189,6 @@
 /* Signals. */
 #include <sys/signal.h>
 
-/* Machine type dependent parameters. */
-#include <machine/param.h>
-#include <machine/limits.h>
-
 #define	DEV_BSHIFT	9			/* log2(DEV_BSIZE) */
 #define	DEV_BSIZE	(1 << DEV_BSHIFT)	/* 512 */
 
@@ -200,13 +212,6 @@
 #define	dbtob(x)	((x) << DEV_BSHIFT)
 #define	btodb(x)	((x) >> DEV_BSHIFT)
 
-/* Coherency unit: assumed cache line size.  See also MIN_LWP_ALIGNMENT. */
-#ifndef COHERENCY_UNIT
-#define	COHERENCY_UNIT		64
-#endif
-#ifndef CACHE_LINE_SIZE
-#define	CACHE_LINE_SIZE		64
-#endif
 #ifndef MAXCPUS
 #define	MAXCPUS			32
 #endif

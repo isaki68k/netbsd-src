@@ -1,5 +1,5 @@
 #
-#	$NetBSD: GENERIC,v 1.99 2021/06/26 09:29:14 nia Exp $
+#	$NetBSD: GENERIC,v 1.105 2022/01/28 16:38:56 jakllsch Exp $
 #
 #	GENERIC ARM (aarch32) kernel
 #
@@ -19,6 +19,7 @@ options 	SOC_IMX6QDL
 options 	SOC_IMX7D
 options 	SOC_MESON8B
 options 	SOC_OMAP3
+options 	SOC_RK3288
 options 	SOC_SUN4I_A10
 options 	SOC_SUN5I_A13
 options 	SOC_SUN6I_A31
@@ -79,6 +80,7 @@ options 	MSGBUFSIZE=32768
 #options 	EARLYCONS=vexpress, CONSADDR=0x1c090000
 #options 	EARLYCONS=virt, CONSADDR=0x09000000
 #options 	EARLYCONS=zynq, CONSADDR=0xe0001000
+#options 	EARLYCONS=rk3288, CONSADDR=0xff690000
 
 # Kernel Undefined Behavior Sanitizer (kUBSan). Use UBSAN_ALWAYS_FATAL
 # if you want panics instead of warnings.
@@ -134,6 +136,7 @@ meson8bclkc* 	at fdt? pass 2		# Amlogic Meson8b clock controller
 mesonresets* 	at fdt? pass 2		# Amlogic Meson misc. clock resets
 omap3cm* 	at fdt? pass 1		# TI OMAP3 CM
 omap3prm* 	at fdt? pass 1		# TI OMAP3 PRM
+rkcru*		at fdt? pass 2		# Rockchip RK3288 CRU
 sun4ia10ccu* 	at fdt? pass 2		# Allwinner A10/A20 CCU
 sun5ia13ccu* 	at fdt? pass 2		# Allwinner A13 CCU
 sun6ia31ccu* 	at fdt? pass 2		# Allwinner A31 CCU
@@ -258,6 +261,7 @@ imxgpio* 	at fdt? pass 3		# i.MX GPIO
 mesonpinctrl* 	at fdt? pass 2		# Amlogic Meson GPIO
 plgpio* 	at fdt?			# ARM PrimeCell GPIO
 sunxigpio* 	at fdt? pass 3		# Allwinner GPIO
+rkgpio*		at rkiomux?		# Rockchip GPIO
 tegragpio* 	at fdt? pass 2		# NVIDIA Tegra GPIO
 tigpio* 	at fdt? pass 2		# TI GPIO
 gpio* 		at gpiobus?
@@ -265,11 +269,13 @@ gpio* 		at gpiobus?
 # IOMUX / MPIO / Pinmux
 pinctrl* 	at fdt? pass 2		# Generic pinctrl driver
 imxiomux* 	at fdt? pass 2		# i.MX IOMUX
+rkiomux*	at fdt? pass 3		# Rockchip IOMUX
 tegrapinmux* 	at fdt?			# NVIDIA Tegra MPIO
 
 # PWM controller
 expwm* 		at fdt? pass 4		# PWM
 imxpwm* 	at fdt?			# i.MX PWM
+rkpwm*		at fdt? pass 3		# Rockchip PWM
 sunxipwm* 	at fdt? pass 3		# Allwinner PWM
 
 # Backlight
@@ -349,6 +355,7 @@ options 	I2C_MAX_ADDR=0xfff
 bsciic* 	at fdt?			# Broadcom BCM283x Serial Control
 exyoi2c* 	at fdt?			# Samsung Exynos I2C
 imxi2c* 	at fdt? pass 4		# i.MX I2C
+rkiic*		at fdt? pass 4		# Rockchip I2C
 sunxirsb* 	at fdt? pass 4		# Allwinner RSB
 sunxitwi* 	at fdt?			# Allwinner TWI
 tegrai2c* 	at fdt? pass 4		# NVIDIA Tegra I2C
@@ -365,10 +372,12 @@ axp20xreg* 	at axp20x?
 axp22x* 	at iic?			# AXP221 Power Management IC
 axppmic* 	at iic?			# X-Powers AXP Power Management IC
 axpreg* 	at axppmic?
+dsrtc*		at iic?			# Dallas Semiconductor RTCs
 em3027rtc* 	at iic?
 max77620pmic* 	at iic?
 pcaiicmux*	at iic?			# PCA954x / PCA984x I2C switch / mux
 pcf8563rtc* 	at iic?			# PCF8563 RTC
+rkpmic*		at iic?			# Rockchip Power Management IC
 seeprom* 	at iic?			# AT24Cxx Serial EEPROM
 sy8106a* 	at iic?			# Silergy SY81061 regulator
 tcakp* 		at iic?			# TI TCA8418 Keypad Scan IC
@@ -387,6 +396,7 @@ sunxican* 	at fdt?			# A10/A20 CAN controller
 
 # SPI
 imxspi* 	at fdt?			# i.MX SPI
+rkspi*		at fdt?			# Rockchip SPI
 sun4ispi* 	at fdt?
 sun6ispi* 	at fdt?
 spi* 		at spibus?
@@ -400,6 +410,7 @@ m25p* 		at spi? slave ?
 bcmrng* 	at fdt?			# Broadcom BCM283x RNG
 mesonrng* 	at fdt?			# Amlogic Meson RNG
 tirng* 		at fdt?			# TI RNG
+rkv1crypto*	at fdt?			# Rockchip Crypto v1
 sun8icrypto* 	at fdt?			# Allwinner Crypto Engine
 
 # Security ID EFUSE
@@ -510,6 +521,7 @@ tifb* 		at tilcdc?
 
 options 	VCONS_DRAW_INTR
 options 	WSEMUL_VT100
+options 	WSDISPLAY_CUSTOM_OUTPUT
 options 	WS_DEFAULT_FG=WSCOL_WHITE
 options 	WS_DEFAULT_BG=WSCOL_BLACK
 options 	WS_KERNEL_FG=WSCOL_GREEN
@@ -548,6 +560,8 @@ exusbphy* 	at fdt? pass 9		# Samsung Exynos USB2 PHY
 exusbdrdphy* 	at fdt? pass 9		# Samsung Exynos USB3 DRD PHY
 imxusbphy* 	at fdt? pass 9		# i.MX USB PHY
 mesonusbphy* 	at fdt? pass 9		# Amlogic Meson USB2 PHY
+rk3288usb*	at fdt? pass 9		# Rockchip USB PHY
+rk3288usbphy*	at rk3288usb?
 sun9iusbphy* 	at fdt? pass 9		# Allwinner A80 USB PHY
 sunxiusbphy* 	at fdt? pass 9		# Allwinner USB PHY
 sunxiusb3phy* 	at fdt? pass 9		# Allwinner USB3 PHY

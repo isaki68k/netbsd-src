@@ -1,4 +1,4 @@
-/*	$NetBSD: mpacpi.c,v 1.106 2021/05/12 22:17:40 thorpej Exp $	*/
+/*	$NetBSD: mpacpi.c,v 1.109 2022/01/22 11:49:17 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2003 Wasabi Systems, Inc.
@@ -36,7 +36,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mpacpi.c,v 1.106 2021/05/12 22:17:40 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mpacpi.c,v 1.109 2022/01/22 11:49:17 thorpej Exp $");
 
 #include "acpica.h"
 #include "opt_acpi.h"
@@ -152,7 +152,7 @@ mpacpi_cpuprint(void *aux, const char *pnp)
 	if (pnp)
 		aprint_normal("cpu at %s", pnp);
 	aprint_normal(" apid %d", caa->cpu_number);
-	return (UNCONF);
+	return UNCONF;
 }
 
 static int
@@ -163,7 +163,7 @@ mpacpi_ioapicprint(void *aux, const char *pnp)
 	if (pnp)
 		aprint_normal("ioapic at %s", pnp);
 	aprint_normal(" apid %d", aaa->apic_id);
-	return (UNCONF);
+	return UNCONF;
 }
 
 /*
@@ -384,10 +384,9 @@ mpacpi_config_cpu(ACPI_SUBTABLE_HEADER *hdrp, void *aux)
 			caa.cpu_func = &mp_cpu_funcs;
 			locs[CPUBUSCF_APID] = caa.cpu_number;
 			config_found(parent, &caa, mpacpi_cpuprint,
-			    CFARG_SUBMATCH, config_stdsubmatch,
-			    CFARG_IATTR, "cpubus",
-			    CFARG_LOCATORS, locs,
-			    CFARG_EOL);
+			    CFARGS(.submatch = config_stdsubmatch,
+				   .iattr = "cpubus",
+				   .locators = locs));
 		}
 		break;
 
@@ -414,10 +413,9 @@ mpacpi_config_cpu(ACPI_SUBTABLE_HEADER *hdrp, void *aux)
 			caa.cpu_func = &mp_cpu_funcs;
 			locs[CPUBUSCF_APID] = caa.cpu_number;
 			config_found(parent, &caa, mpacpi_cpuprint,
-			    CFARG_SUBMATCH, config_stdsubmatch,
-			    CFARG_IATTR, "cpubus",
-			    CFARG_LOCATORS, locs,
-			    CFARG_EOL);
+			    CFARGS(.submatch = config_stdsubmatch,
+				   .iattr = "cpubus",
+				   .locators = locs));
 		}
 		break;
 
@@ -442,10 +440,9 @@ mpacpi_config_ioapic(ACPI_SUBTABLE_HEADER *hdrp, void *aux)
 		aaa.apic_vecbase = p->GlobalIrqBase;
 		locs[IOAPICBUSCF_APID] = aaa.apic_id;
 		config_found(parent, &aaa, mpacpi_ioapicprint,
-		    CFARG_SUBMATCH, config_stdsubmatch,
-		    CFARG_IATTR, "ioapicbus",
-		    CFARG_LOCATORS, locs,
-		    CFARG_EOL);
+		    CFARGS(.submatch = config_stdsubmatch,
+			   .iattr = "ioapicbus",
+			   .locators = locs));
 	}
 	return AE_OK;
 }
@@ -509,7 +506,8 @@ mpacpi_pci_foundbus(struct acpi_devnode *ad)
 	}
 
 	mpr = kmem_zalloc(sizeof(struct mpacpi_pcibus), KM_SLEEP);
-	mpr->mpr_devhandle = devhandle_from_acpi(ad->ad_handle);
+	mpr->mpr_devhandle =
+	    devhandle_from_acpi(devhandle_invalid(), ad->ad_handle);
 	mpr->mpr_buf = buf;
 	mpr->mpr_seg = ad->ad_pciinfo->ap_segment;
 	mpr->mpr_bus = ad->ad_pciinfo->ap_downbus;
@@ -567,7 +565,7 @@ static int
 mpacpi_pciroute(struct mpacpi_pcibus *mpr)
 {
 	ACPI_PCI_ROUTING_TABLE *ptrp;
-        ACPI_HANDLE linkdev;
+	ACPI_HANDLE linkdev;
 	char *p;
 	struct mp_intr_map *mpi, *iter;
 	struct mp_bus *mpb;
@@ -893,7 +891,7 @@ mpacpi_print_intr(struct mp_intr_map *mpi)
 	}
 	snprintb(buf, sizeof(buf), inttype_fmt, mpi->type);
 	printf(" (type %s", buf);
-	    
+
 	snprintb(buf, sizeof(buf), flagtype_fmt, mpi->flags);
 	printf(" flags %s)\n", buf);
 
@@ -1063,14 +1061,14 @@ mpacpi_findintr_linkdev(struct mp_intr_map *mip)
 	 */
 	if (pol == ACPI_ACTIVE_LOW)
 		pol = MPS_INTPO_ACTLO;
-	else 
+	else
 		pol = MPS_INTPO_ACTHI;
- 
+
 	if (trig == ACPI_EDGE_SENSITIVE)
 		trig = MPS_INTTR_EDGE;
 	else
 		trig = MPS_INTTR_LEVEL;
- 
+
 	mip->flags = pol | (trig << 2);
 	mip->global_int = irq;
 	pic = intr_findpic(irq);

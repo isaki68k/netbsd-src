@@ -1,4 +1,4 @@
-/*	$NetBSD: hpcfb.c,v 1.62 2021/06/05 02:27:08 rin Exp $	*/
+/*	$NetBSD: hpcfb.c,v 1.65 2021/12/19 21:15:28 andvar Exp $	*/
 
 /*-
  * Copyright (c) 1999
@@ -43,7 +43,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: hpcfb.c,v 1.62 2021/06/05 02:27:08 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: hpcfb.c,v 1.65 2021/12/19 21:15:28 andvar Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_hpcfb.h"
@@ -325,7 +325,7 @@ hpcfbattach(device_t parent, device_t self, void *aux)
 	wa.accesscookie = sc;
 
 	sc->sc_wsdisplay = config_found(self, &wa, wsemuldisplaydevprint,
-	    CFARG_EOL);
+	    CFARGS_NONE);
 
 #ifdef HPCFB_JUMP
 	/*
@@ -516,7 +516,7 @@ hpcfb_cmap_reorder(struct hpcfb_fbconf *fbconf, struct hpcfb_devconfig *dc)
 	int i, j, bg, fg, tmp;
 
 	/*
-	 * Set forground and background so that the screen
+	 * Set foreground and background so that the screen
 	 * looks black on white.
 	 * Normally, black = 00 and white = ff.
 	 * HPCFB_ACCESS_REVERSE means black = ff and white = 00.
@@ -563,10 +563,6 @@ hpcfb_ioctl(void *v, void *vs, u_long cmd, void *data, int flag,
 
 	DPRINTF(("hpcfb_ioctl(cmd=0x%lx)\n", cmd));
 	switch (cmd) {
-	case WSKBDIO_BELL:
-		return (0);
-		break;
-
 	case WSDISPLAYIO_GTYPE:
 		*(u_int *)data = WSDISPLAY_TYPE_HPCFB;
 		return (0);

@@ -1,4 +1,4 @@
-/*	$NetBSD: fd.c,v 1.98 2021/04/24 23:36:24 thorpej Exp $ */
+/*	$NetBSD: fd.c,v 1.101 2022/01/17 20:38:49 andvar Exp $ */
 
 /*
  * Copyright (c) 1994 Christian E. Hopps
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fd.c,v 1.98 2021/04/24 23:36:24 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fd.c,v 1.101 2022/01/17 20:38:49 andvar Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -84,7 +84,7 @@ bunghole :-) */
 #define FDSECLWORDS	(128)
 
 #define FDSETTLEDELAY	(18000)	/* usec delay after seeking after switch dir */
-#define FDSTEPDELAY	(3500)	/* usec delay after steping */
+#define FDSTEPDELAY	(3500)	/* usec delay after stepping */
 #define FDPRESIDEDELAY	(1000)	/* usec delay before writing can occur */
 #define FDWRITEDELAY	(1300)	/* usec delay after write */
 
@@ -152,9 +152,9 @@ struct fd_softc {
 	struct callout motor_ch;
 	struct fdtype *type;
 	void *cachep;		/* cached track data (write through) */
-	int cachetrk;		/* cahced track -1 for none */
+	int cachetrk;		/* cached track -1 for none */
 	int hwunit;		/* unit for amiga controlling hw */
-	int unitmask;		/* mask for cia select deslect */
+	int unitmask;		/* mask for cia select deselect */
 	int pstepdir;		/* previous step direction */
 	int curcyl;		/* current curcyl head positioned on */
 	int flags;		/* misc flags */
@@ -230,7 +230,7 @@ u_short	*msblkencode(u_short *, u_char *, int, u_short *);
  * read size is (nsectors + 1) * mfm secsize + gap bytes + 2 shorts
  * write size is nsectors * mfm secsize + gap bytes + 3 shorts
  * the extra shorts are to deal with a DMA hw bug in the controller
- * they are probably too much (I belive the bug is 1 short on write and
+ * they are probably too much (I believe the bug is 1 short on write and
  * 3 bits on read) but there is no need to be cheap here.
  */
 #define MAXTRKSZ (22 * FDSECSIZE)
@@ -371,11 +371,11 @@ fdcattach(device_t parent, device_t self, void *aux)
 	args.type = fdcgetfdtype(args.unit);
 
 	fdc_side = -1;
-	config_found(self, &args, fdcprint, CFARG_EOL);
+	config_found(self, &args, fdcprint, CFARGS_NONE);
 	for (args.unit++; args.unit < FDMAXUNITS; args.unit++) {
 		if ((args.type = fdcgetfdtype(args.unit)) == NULL)
 			continue;
-		config_found(self, &args, fdcprint, CFARG_EOL);
+		config_found(self, &args, fdcprint, CFARGS_NONE);
 	}
 }
 
@@ -877,7 +877,7 @@ fdsetdisklabel(struct fd_softc *sc, struct disklabel *lp)
 	/*
 	 * make sure selected partition is within bounds
 	 * XXX on the second check, its to handle a bug in
-	 * XXX the cluster routines as they require mutliples
+	 * XXX the cluster routines as they require multiples
 	 * XXX of PAGE_SIZE currently
 	 */
 	if ((pp->p_offset + pp->p_size >= lp->d_secperunit) ||
@@ -1162,7 +1162,7 @@ fdselunit(struct fd_softc *sc)
 
 /*
  * process next buf on device queue.
- * normall sequence of events:
+ * normal sequence of events:
  * fdstart() -> fddmastart();
  * fdidxintr();
  * fdintr() -> fddmadone() -> fddone();

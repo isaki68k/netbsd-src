@@ -1,4 +1,4 @@
-/*	$NetBSD: umidi.c,v 1.83 2021/01/20 22:46:33 jdolecek Exp $	*/
+/*	$NetBSD: umidi.c,v 1.85 2022/03/14 16:14:11 riastradh Exp $	*/
 
 /*
  * Copyright (c) 2001, 2012, 2014 The NetBSD Foundation, Inc.
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: umidi.c,v 1.83 2021/01/20 22:46:33 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: umidi.c,v 1.85 2022/03/14 16:14:11 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -778,6 +778,8 @@ alloc_all_endpoints_fixed_ep(struct umidi_softc *sc)
 
 	fp = umidi_get_quirk_data_from_type(sc->sc_quirk,
 					    UMQ_TYPE_FIXED_EP);
+	if (fp->num_in_ep == 0 && fp->num_out_ep == 0)
+		return USBD_INVAL;
 	sc->sc_out_num_jacks = 0;
 	sc->sc_in_num_jacks = 0;
 	sc->sc_out_num_endpoints = fp->num_out_ep;
@@ -934,6 +936,8 @@ alloc_all_endpoints_yamaha(struct umidi_softc *sc)
 		sc->sc_in_num_jacks = 0;
 	}
 	sc->sc_endpoints_len = UMIDI_ENDPOINT_SIZE(sc);
+	if (sc->sc_endpoints_len == 0)
+		return USBD_INVAL;
 	sc->sc_endpoints = kmem_zalloc(sc->sc_endpoints_len, KM_SLEEP);
 	if (sc->sc_out_num_endpoints) {
 		sc->sc_out_ep = sc->sc_endpoints;
@@ -1388,7 +1392,7 @@ close_in_jack(struct umidi_jack *jack)
 			 * We have to drop the (interrupt) lock so that
 			 * the USB thread lock can be safely taken by
 			 * the abort operation.  This is safe as this
-			 * either closing or dying will be set proerly.
+			 * either closing or dying will be set properly.
 			 */
 			mutex_exit(&sc->sc_lock);
 			usbd_abort_pipe(jack->endpoint->pipe);
@@ -1525,7 +1529,7 @@ deactivate_all_mididevs(struct umidi_softc *sc)
  *  Otherwise:
  *  - support a DISPLAY_BASE_CN quirk (add the value to each internal cable
  *    number for display)
- *  - support an array quirk explictly giving a char * for each jack.
+ *  - support an array quirk explicitly giving a char * for each jack.
  * For now, you get 0-based cable numbers. If there are multiple endpoints and
  * the CNs are not globally unique, each is shown with its associated endpoint
  * address in hex also. That should not be necessary when using iJack values

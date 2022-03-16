@@ -1,4 +1,4 @@
-/*	$NetBSD: uipc_socket.c,v 1.294 2020/12/11 03:00:09 thorpej Exp $	*/
+/*	$NetBSD: uipc_socket.c,v 1.301 2022/03/12 16:06:15 riastradh Exp $	*/
 
 /*
  * Copyright (c) 2002, 2007, 2008, 2009 The NetBSD Foundation, Inc.
@@ -71,7 +71,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uipc_socket.c,v 1.294 2020/12/11 03:00:09 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uipc_socket.c,v 1.301 2022/03/12 16:06:15 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
@@ -1367,7 +1367,8 @@ dontblock:
 			if (flags & MSG_PEEK) {
 				if (controlp != NULL) {
 					*controlp = m_copym(m, 0, m->m_len, M_DONTWAIT);
-					controlp = &(*controlp)->m_next;
+					controlp = (*controlp == NULL ? NULL :
+					    &(*controlp)->m_next);
 				}
 				m = m->m_next;
 			} else {
@@ -2225,9 +2226,8 @@ filt_sordetach(struct knote *kn)
 
 	so = ((file_t *)kn->kn_obj)->f_socket;
 	solock(so);
-	selremove_knote(&so->so_rcv.sb_sel, kn);
-	if (SLIST_EMPTY(&so->so_rcv.sb_sel.sel_klist))	/* XXX select/kqueue */
-		so->so_rcv.sb_flags &= ~SB_KNOTE;	/* XXX internals */
+	if (selremove_knote(&so->so_rcv.sb_sel, kn))
+		so->so_rcv.sb_flags &= ~SB_KNOTE;
 	sounlock(so);
 }
 
@@ -2243,7 +2243,7 @@ filt_soread(struct knote *kn, long hint)
 		solock(so);
 	kn->kn_data = so->so_rcv.sb_cc;
 	if (so->so_state & SS_CANTRCVMORE) {
-		kn->kn_flags |= EV_EOF;
+		knote_set_eof(kn, 0);
 		kn->kn_fflags = so->so_error;
 		rv = 1;
 	} else if (so->so_error || so->so_rerror)
@@ -2264,9 +2264,8 @@ filt_sowdetach(struct knote *kn)
 
 	so = ((file_t *)kn->kn_obj)->f_socket;
 	solock(so);
-	selremove_knote(&so->so_snd.sb_sel, kn);
-	if (SLIST_EMPTY(&so->so_snd.sb_sel.sel_klist))	/* XXX select/kqueue */
-		so->so_snd.sb_flags &= ~SB_KNOTE;	/* XXX internals */
+	if (selremove_knote(&so->so_snd.sb_sel, kn))
+		so->so_snd.sb_flags &= ~SB_KNOTE;
 	sounlock(so);
 }
 
@@ -2282,7 +2281,7 @@ filt_sowrite(struct knote *kn, long hint)
 		solock(so);
 	kn->kn_data = sbspace(&so->so_snd);
 	if (so->so_state & SS_CANTSENDMORE) {
-		kn->kn_flags |= EV_EOF;
+		knote_set_eof(kn, 0);
 		kn->kn_fflags = so->so_error;
 		rv = 1;
 	} else if (so->so_error)
@@ -2294,6 +2293,22 @@ filt_sowrite(struct knote *kn, long hint)
 		rv = (kn->kn_data >= kn->kn_sdata);
 	else
 		rv = (kn->kn_data >= so->so_snd.sb_lowat);
+	if (hint != NOTE_SUBMIT)
+		sounlock(so);
+	return rv;
+}
+
+static int
+filt_soempty(struct knote *kn, long hint)
+{
+	struct socket *so;
+	int rv;
+
+	so = ((file_t *)kn->kn_obj)->f_socket;
+	if (hint != NOTE_SUBMIT)
+		solock(so);
+	rv = (kn->kn_data = sbused(&so->so_snd)) == 0 ||
+	     (so->so_options & SO_ACCEPTCONN) != 0;
 	if (hint != NOTE_SUBMIT)
 		sounlock(so);
 	return rv;
@@ -2322,24 +2337,31 @@ filt_solisten(struct knote *kn, long hint)
 }
 
 static const struct filterops solisten_filtops = {
-	.f_isfd = 1,
+	.f_flags = FILTEROP_ISFD | FILTEROP_MPSAFE,
 	.f_attach = NULL,
 	.f_detach = filt_sordetach,
 	.f_event = filt_solisten,
 };
 
 static const struct filterops soread_filtops = {
-	.f_isfd = 1,
+	.f_flags = FILTEROP_ISFD | FILTEROP_MPSAFE,
 	.f_attach = NULL,
 	.f_detach = filt_sordetach,
 	.f_event = filt_soread,
 };
 
 static const struct filterops sowrite_filtops = {
-	.f_isfd = 1,
+	.f_flags = FILTEROP_ISFD | FILTEROP_MPSAFE,
 	.f_attach = NULL,
 	.f_detach = filt_sowdetach,
 	.f_event = filt_sowrite,
+};
+
+static const struct filterops soempty_filtops = {
+	.f_flags = FILTEROP_ISFD | FILTEROP_MPSAFE,
+	.f_attach = NULL,
+	.f_detach = filt_sowdetach,
+	.f_event = filt_soempty,
 };
 
 int
@@ -2360,6 +2382,10 @@ soo_kqfilter(struct file *fp, struct knote *kn)
 		break;
 	case EVFILT_WRITE:
 		kn->kn_fop = &sowrite_filtops;
+		sb = &so->so_snd;
+		break;
+	case EVFILT_EMPTY:
+		kn->kn_fop = &soempty_filtops;
 		sb = &so->so_snd;
 		break;
 	default:
@@ -2432,6 +2458,7 @@ sbsavetimestamp(int opt, struct mbuf **mp)
 	struct timeval tv;
 	int error;
 
+	memset(&tv, 0, sizeof(tv));
 	microtime(&tv);
 
 	MODULE_HOOK_CALL(uipc_socket_50_sbts_hook, (opt, &mp), enosys(), error);

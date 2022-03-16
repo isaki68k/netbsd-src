@@ -1,4 +1,4 @@
-/*	$NetBSD: akbd.c,v 1.25 2021/04/24 23:36:40 thorpej Exp $	*/
+/*	$NetBSD: akbd.c,v 1.27 2021/09/18 15:14:40 tsutsui Exp $	*/
 
 /*
  * Copyright (C) 1998	Colin Wood
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: akbd.c,v 1.25 2021/04/24 23:36:40 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: akbd.c,v 1.27 2021/09/18 15:14:40 tsutsui Exp $");
 
 #include "opt_adb.h"
 
@@ -262,7 +262,7 @@ akbdattach(device_t parent, device_t self, void *aux)
 	a.accessops = &akbd_accessops;
 	a.accesscookie = sc;
 
-	sc->sc_wskbddev = config_found(self, &a, wskbddevprint, CFARG_EOL);
+	sc->sc_wskbddev = config_found(self, &a, wskbddevprint, CFARGS_NONE);
 #endif
 }
 
@@ -471,7 +471,6 @@ akbd_ioctl(void *v, u_long cmd, void *data, int flag, struct lwp *l)
 	case WSKBDIO_GETLEDS:
 		*(int *)data = 0;
 		return 0;
-	case WSKBDIO_BELL:
 	case WSKBDIO_COMPLEXBELL:
 #define d ((struct wskbd_bell_data *)data)
 		mac68k_ring_bell(d->pitch, d->period * hz / 1000, 100);

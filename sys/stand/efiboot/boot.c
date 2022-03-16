@@ -1,4 +1,4 @@
-/*	$NetBSD: boot.c,v 1.34 2021/06/23 21:43:38 jmcneill Exp $	*/
+/*	$NetBSD: boot.c,v 1.42 2021/11/04 07:28:34 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2016 Kimihiro Nonaka <nonaka@netbsd.org>
@@ -30,12 +30,18 @@
 #include "efiboot.h"
 #include "efiblock.h"
 #include "efifile.h"
-#include "efifdt.h"
-#include "efiacpi.h"
 #include "efirng.h"
 #include "module.h"
-#include "overlay.h"
 #include "bootmenu.h"
+
+#ifdef EFIBOOT_FDT
+#include "efifdt.h"
+#include "overlay.h"
+#endif
+
+#ifdef EFIBOOT_ACPI
+#include "efiacpi.h"
+#endif
 
 #include <sys/bootblock.h>
 #include <sys/boot_flag.h>
@@ -82,45 +88,59 @@ static char netbsd_path[255];
 static char netbsd_args[255];
 static char rndseed_path[255];
 
-#define	DEFTIMEOUT	5
 #define DEFFILENAME	names[0]
 
 int	set_bootfile(const char *);
 int	set_bootargs(const char *);
 
+#ifdef EFIBOOT_ACPI
+void	command_acpi(char *);
+#endif
 void	command_boot(char *);
 void	command_dev(char *);
-void	command_dtb(char *);
 void	command_initrd(char *);
 void	command_rndseed(char *);
+#ifdef EFIBOOT_FDT
+void	command_dtb(char *);
 void	command_dtoverlay(char *);
 void	command_dtoverlays(char *);
+#endif
 void	command_modules(char *);
 void	command_load(char *);
 void	command_unload(char *);
 void	command_ls(char *);
+void	command_gop(char *);
 void	command_mem(char *);
 void	command_menu(char *);
 void	command_reset(char *);
+void	command_setup(char *);
 void	command_version(char *);
 void	command_quit(char *);
 
 const struct boot_command commands[] = {
+#ifdef EFIBOOT_ACPI
+	{ "acpi",	command_acpi,		"acpi [{on|off}]" },
+#endif
 	{ "boot",	command_boot,		"boot [dev:][filename] [args]\n     (ex. \"hd0a:\\netbsd.old -s\"" },
 	{ "dev",	command_dev,		"dev" },
+#ifdef EFIBOOT_FDT
 	{ "dtb",	command_dtb,		"dtb [dev:][filename]" },
-	{ "initrd",	command_initrd,		"initrd [dev:][filename]" },
-	{ "rndseed",	command_rndseed,	"rndseed [dev:][filename]" },
 	{ "dtoverlay",	command_dtoverlay,	"dtoverlay [dev:][filename]" },
 	{ "dtoverlays",	command_dtoverlays,	"dtoverlays [{on|off|reset}]" },
+#endif
+	{ "initrd",	command_initrd,		"initrd [dev:][filename]" },
+	{ "fs",		command_initrd,		NULL },
+	{ "rndseed",	command_rndseed,	"rndseed [dev:][filename]" },
 	{ "modules",	command_modules,	"modules [{on|off|reset}]" },
 	{ "load",	command_load,		"load <module_name>" },
 	{ "unload",	command_unload,		"unload <module_name>" },
 	{ "ls",		command_ls,		"ls [hdNn:/path]" },
+	{ "gop",	command_gop,		"gop [mode]" },
 	{ "mem",	command_mem,		"mem" },
 	{ "menu",	command_menu,		"menu" },
 	{ "reboot",	command_reset,		"reboot|reset" },
 	{ "reset",	command_reset,		NULL },
+	{ "setup",	command_setup,		"setup" },
 	{ "version",	command_version,	"version" },
 	{ "ver",	command_version,	NULL },
 	{ "help",	command_help,		"help|?" },
@@ -158,6 +178,26 @@ command_help(char *arg)
 	}
 }
 
+#ifdef EFIBOOT_ACPI
+void
+command_acpi(char *arg)
+{
+	if (arg && *arg) {
+		if (strcmp(arg, "on") == 0)
+			efi_acpi_enable(1);
+		else if (strcmp(arg, "off") == 0)
+			efi_acpi_enable(0);
+		else {
+			command_help("");
+			return;
+		}
+	} else {
+		printf("ACPI support is %sabled\n",
+		    efi_acpi_enabled() ? "en" : "dis");
+	}
+}
+#endif
+
 void
 command_boot(char *arg)
 {
@@ -193,12 +233,6 @@ command_dev(char *arg)
 }
 
 void
-command_dtb(char *arg)
-{
-	set_dtb_path(arg);
-}
-
-void
 command_initrd(char *arg)
 {
 	set_initrd_path(arg);
@@ -208,6 +242,13 @@ void
 command_rndseed(char *arg)
 {
 	set_rndseed_path(arg);
+}
+
+#ifdef EFIBOOT_FDT
+void
+command_dtb(char *arg)
+{
+	set_dtb_path(arg);
 }
 
 void
@@ -240,6 +281,7 @@ command_dtoverlay(char *arg)
 
 	dtoverlay_add(arg);
 }
+#endif
 
 void
 command_modules(char *arg)
@@ -289,6 +331,20 @@ command_ls(char *arg)
 }
 
 void
+command_gop(char *arg)
+{
+	UINT32 mode;
+
+	if (!arg || !*arg) {
+		efi_gop_dump();
+		return;
+	}
+
+	mode = atoi(arg);
+	efi_gop_setmode(mode);
+}
+
+void
 command_mem(char *arg)
 {
 	EFI_MEMORY_DESCRIPTOR *md, *memmap;
@@ -326,6 +382,7 @@ command_version(char *arg)
 {
 	char pathbuf[80];
 	char *ufirmware;
+	const UINT64 *osindsup;
 	int rv;
 
 	printf("Version: %s (%s)\n", bootprog_rev, bootprog_kernrev);
@@ -342,10 +399,20 @@ command_version(char *arg)
 		printf("Config path: %s\n", pathbuf);
 	}
 
+	osindsup = LibGetVariable(L"OsIndicationsSupported", &EfiGlobalVariable);
+	if (osindsup != NULL) {
+		printf("UEFI OS indications supported: 0x%" PRIx64 "\n", *osindsup);
+	}
+
+#ifdef EFIBOOT_FDT
 	efi_fdt_show();
+#endif
+#ifdef EFIBOOT_ACPI
 	efi_acpi_show();
+#endif
 	efi_rng_show();
 	efi_md_show();
+	efi_gop_show();
 }
 
 void
@@ -357,6 +424,29 @@ command_quit(char *arg)
 void
 command_reset(char *arg)
 {
+	efi_reboot();
+}
+
+void
+command_setup(char *arg)
+{
+	EFI_STATUS status;
+	const UINT64 *osindsup;
+	UINT64 osind;
+
+	osindsup = LibGetVariable(L"OsIndicationsSupported", &EfiGlobalVariable);
+	if (osindsup == NULL || (*osindsup & EFI_OS_INDICATIONS_BOOT_TO_FW_UI) == 0) {
+		printf("Not supported by firmware\n");
+		return;
+	}
+
+	osind = EFI_OS_INDICATIONS_BOOT_TO_FW_UI;
+	status = LibSetNVVariable(L"OsIndications", &EfiGlobalVariable, sizeof(osind), &osind);
+	if (EFI_ERROR(status)) {
+		printf("Failed to set OsIndications variable: %lu\n", (u_long)status);
+		return;
+	}
+
 	efi_reboot();
 }
 
@@ -450,61 +540,6 @@ set_bootargs(const char *arg)
 	return 0;
 }
 
-static void
-get_memory_info(uint64_t *ptotal)
-{
-	EFI_MEMORY_DESCRIPTOR *md, *memmap;
-	UINTN nentries, mapkey, descsize;
-	UINT32 descver;
-	uint64_t totalpg = 0;
-	int n;
-
-	memmap = LibMemoryMap(&nentries, &mapkey, &descsize, &descver);
-	for (n = 0, md = memmap; n < nentries; n++, md = NextMemoryDescriptor(md, descsize)) {
-		if ((md->Attribute & EFI_MEMORY_WB) == 0) {
-			continue;
-		}
-		totalpg += md->NumberOfPages;
-	}
-
-	*ptotal = totalpg * EFI_PAGE_SIZE;
-}
-
-static void
-format_bytes(uint64_t val, uint64_t *pdiv, const char **punit)
-{
-	static const char *units[] = { "KB", "MB", "GB" };
-	unsigned n;
-
-	*punit = "bytes";
-	*pdiv = 1;
-
-	for (n = 0; n < __arraycount(units) && val >= 1024 * 10; n++) {
-		*punit = units[n];
-		*pdiv *= 1024;
-		val /= 1024;
-	}
-}
-
-void
-print_banner(void)
-{
-	const char *total_unit;
-	uint64_t total, total_div;
-
-	get_memory_info(&total);
-	format_bytes(total, &total_div, &total_unit);
-
-	printf("  \\-__,------,___.\n");
-	printf("   \\        __,---`  %s\n", bootprog_name);
-	printf("    \\       `---,_.  Revision %s\n", bootprog_rev);
-	printf("     \\-,_____,.---`  Memory: %" PRIu64 " %s\n",
-	    total / total_div, total_unit);
-	printf("      \\\n");
-	printf("       \\\n");
-	printf("        \\\n\n");
-}
-
 void
 boot(void)
 {
@@ -519,7 +554,7 @@ boot(void)
 	if (bootcfg_info.clear)
 		uefi_call_wrapper(ST->ConOut->ClearScreen, 1, ST->ConOut);
 
-	print_banner();
+	print_bootcfg_banner(bootprog_name, bootprog_rev);
 
 	/* Display menu if configured */
 	if (bootcfg_info.nummenu > 0) {
@@ -539,7 +574,7 @@ boot(void)
 		printf("booting %s%s%s - starting in ", netbsd_path,
 		    netbsd_args[0] != '\0' ? " " : "", netbsd_args);
 
-		c = awaitkey(DEFTIMEOUT, 1);
+		c = awaitkey(bootcfg_info.timeout, 1);
 		if (c != '\r' && c != '\n' && c != '\0')
 			bootprompt(); /* does not return */
 

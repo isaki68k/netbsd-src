@@ -1,4 +1,4 @@
-/*	$NetBSD: linux_misc.c,v 1.251 2020/06/11 22:21:05 ad Exp $	*/
+/*	$NetBSD: linux_misc.c,v 1.256 2021/12/02 04:29:48 ryo Exp $	*/
 
 /*-
  * Copyright (c) 1995, 1998, 1999, 2008 The NetBSD Foundation, Inc.
@@ -57,13 +57,14 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: linux_misc.c,v 1.251 2020/06/11 22:21:05 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: linux_misc.c,v 1.256 2021/12/02 04:29:48 ryo Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/namei.h>
 #include <sys/proc.h>
 #include <sys/dirent.h>
+#include <sys/eventfd.h>
 #include <sys/file.h>
 #include <sys/stat.h>
 #include <sys/filedesc.h>
@@ -629,6 +630,8 @@ linux_sys_times(struct lwp *l, const struct linux_sys_times_args *uap, register_
 		struct linux_tms ltms;
 		struct rusage ru;
 
+		memset(&ltms, 0, sizeof(ltms));
+
 		mutex_enter(p->p_lock);
 		calcru(p, &ru.ru_utime, &ru.ru_stime, NULL, NULL);
 		ltms.ltms_utime = CONVTCK(ru.ru_utime);
@@ -649,6 +652,7 @@ linux_sys_times(struct lwp *l, const struct linux_sys_times_args *uap, register_
 
 #undef CONVTCK
 
+#if !defined(__aarch64__)
 /*
  * Linux 'readdir' call. This code is mostly taken from the
  * SunOS getdents call (see compat/sunos/sunos_misc.c), though
@@ -832,7 +836,9 @@ out1:
 	fd_putfile(SCARG(uap, fd));
 	return error;
 }
+#endif
 
+#if !defined(__aarch64__)
 /*
  * Even when just using registers to pass arguments to syscalls you can
  * have 5 of them on the i386. So this newer version of select() does
@@ -930,6 +936,7 @@ linux_select1(struct lwp *l, register_t *retval, int nfds, fd_set *readfds,
 
 	return 0;
 }
+#endif
 
 /*
  * Derived from FreeBSD's sys/compat/linux/linux_misc.c:linux_pselect6()
@@ -1399,6 +1406,7 @@ linux_sys_getrlimit(struct lwp *l, const struct linux_sys_getrlimit_args *uap, r
 	if (which < 0)
 		return -which;
 
+	memset(&orl, 0, sizeof(orl));
 	bsd_to_linux_rlimit(&orl, &l->l_proc->p_rlimit[which]);
 
 	return copyout(&orl, SCARG(uap, rlp), sizeof(orl));
@@ -1435,7 +1443,7 @@ linux_sys_setrlimit(struct lwp *l, const struct linux_sys_setrlimit_args *uap, r
 	return dosetrlimit(l, l->l_proc, which, &rl);
 }
 
-# if !defined(__mips__) && !defined(__amd64__)
+# if !defined(__aarch64__) && !defined(__mips__) && !defined(__amd64__)
 /* XXX: this doesn't look 100% common, at least mips doesn't have it */
 int
 linux_sys_ugetrlimit(struct lwp *l, const struct linux_sys_ugetrlimit_args *uap, register_t *retval)
@@ -1443,6 +1451,48 @@ linux_sys_ugetrlimit(struct lwp *l, const struct linux_sys_ugetrlimit_args *uap,
 	return linux_sys_getrlimit(l, (const void *)uap, retval);
 }
 # endif
+
+int
+linux_sys_prlimit64(struct lwp *l, const struct linux_sys_prlimit64_args *uap, register_t *retval)
+{
+	/* {
+		syscallarg(pid_t) pid;
+		syscallarg(int) witch;
+		syscallarg(struct rlimit *) new_rlp;
+		syscallarg(struct rlimit *) old_rlp;
+	}; */
+	struct rlimit rl, nrl, orl;
+	struct rlimit *p;
+	int which;
+	int error;
+
+	/* XXX: Cannot operate any process other than its own */
+	if (SCARG(uap, pid) != 0)
+		return EPERM;
+
+	which = linux_to_bsd_limit(SCARG(uap, which));
+	if (which < 0)
+		return -which;
+
+	p = SCARG(uap, old_rlp);
+	if (p != NULL) {
+		memset(&orl, 0, sizeof(orl));
+		bsd_to_linux_rlimit64(&orl, &l->l_proc->p_rlimit[which]);
+		if ((error = copyout(&orl, p, sizeof(orl))) != 0)
+			return error;
+	}
+
+	p = SCARG(uap, new_rlp);
+	if (p != NULL) {
+		if ((error = copyin(p, &nrl, sizeof(nrl))) != 0)
+			return error;
+
+		linux_to_bsd_rlimit(&rl, &nrl);
+		return dosetrlimit(l, l->l_proc, which, &rl);
+	}
+
+	return 0;
+}
 
 /*
  * This gets called for unsupported syscalls. The difference to sys_nosys()
@@ -1579,4 +1629,55 @@ linux_do_futex(int *uaddr, int op, int val, struct timespec *timeout,
 	 */
 	return do_futex(uaddr, op & ~FUTEX_PRIVATE_FLAG,
 			val, timeout, uaddr2, val2, val3, retval);
+}
+
+#define	LINUX_EFD_SEMAPHORE	0x0001
+#define	LINUX_EFD_CLOEXEC	LINUX_O_CLOEXEC
+#define	LINUX_EFD_NONBLOCK	LINUX_O_NONBLOCK
+
+static int
+linux_do_eventfd2(struct lwp *l, unsigned int initval, int flags,
+    register_t *retval)
+{
+	int nflags = 0;
+
+	if (flags & ~(LINUX_EFD_SEMAPHORE | LINUX_EFD_CLOEXEC |
+		      LINUX_EFD_NONBLOCK)) {
+		return EINVAL;
+	}
+	if (flags & LINUX_EFD_SEMAPHORE) {
+		nflags |= EFD_SEMAPHORE;
+	}
+	if (flags & LINUX_EFD_CLOEXEC) {
+		nflags |= EFD_CLOEXEC;
+	}
+	if (flags & LINUX_EFD_NONBLOCK) {
+		nflags |= EFD_NONBLOCK;
+	}
+
+	return do_eventfd(l, initval, nflags, retval);
+}
+
+int
+linux_sys_eventfd(struct lwp *l, const struct linux_sys_eventfd_args *uap,
+    register_t *retval)
+{
+	/* {
+		syscallarg(unsigned int) initval;
+	} */
+
+	return linux_do_eventfd2(l, SCARG(uap, initval), 0, retval);
+}
+
+int
+linux_sys_eventfd2(struct lwp *l, const struct linux_sys_eventfd2_args *uap,
+    register_t *retval)
+{
+	/* {
+		syscallarg(unsigned int) initval;
+		syscallarg(int) flags;
+	} */
+
+	return linux_do_eventfd2(l, SCARG(uap, initval), SCARG(uap, flags),
+				 retval);
 }

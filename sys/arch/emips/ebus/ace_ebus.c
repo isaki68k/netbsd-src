@@ -1,4 +1,4 @@
-/*	$NetBSD: ace_ebus.c,v 1.23 2020/02/24 12:20:29 rin Exp $	*/
+/*	$NetBSD: ace_ebus.c,v 1.25 2021/09/03 22:33:17 andvar Exp $	*/
 
 /*-
  * Copyright (c) 2010 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ace_ebus.c,v 1.23 2020/02/24 12:20:29 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ace_ebus.c,v 1.25 2021/09/03 22:33:17 andvar Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -155,7 +155,7 @@ struct ace_softc {
 	struct callout sc_restart_ch;
 
 	/* IDE disk soft states */
-	struct buf *sc_bp; /* buf being transfered */
+	struct buf *sc_bp; /* buf being transferred */
 	struct buf *active_xfer; /* buf handoff to thread  */
 	/* current transfer data */
 	struct ace_bio sc_bio; /* current transfer */
@@ -1313,7 +1313,7 @@ sysace_write_at(struct ace_softc *sc, daddr_t start_sector, char *buffer,
 				SysaceDumpRegisters(sc->sc_dr);
 				/*
 				 * Ignore, we'll handle it the next time around
-				 * BUGBUG To be revised along with non-existant
+				 * BUGBUG To be revised along with non-existent
 				 * error handling
 				 */
 			}

@@ -1,5 +1,5 @@
 /*	$KAME: sctputil.c,v 1.39 2005/06/16 20:54:06 jinmei Exp $	*/
-/*	$NetBSD: sctputil.c,v 1.16 2020/01/19 20:51:13 riastradh Exp $	*/
+/*	$NetBSD: sctputil.c,v 1.18 2021/12/05 03:08:19 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 2001, 2002, 2003, 2004 Cisco Systems, Inc.
@@ -34,7 +34,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sctputil.c,v 1.16 2020/01/19 20:51:13 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sctputil.c,v 1.18 2021/12/05 03:08:19 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -1268,7 +1268,7 @@ sctp_timer_start(int t_type, struct sctp_inpcb *inp, struct sctp_tcb *stcb,
 	case SCTP_TIMER_TYPE_INPKILL:
 		/*
 		 * The inp is setup to die. We re-use the
-		 * signature_chage timer since that has
+		 * signature_change timer since that has
 		 * stopped and we are in the GONE state.
 		 */
 		tmr = &inp->sctp_ep.signature_change;
@@ -1456,7 +1456,7 @@ sctp_timer_stop(int t_type, struct sctp_inpcb *inp, struct sctp_tcb *stcb,
 	case SCTP_TIMER_TYPE_INPKILL:
 		/*
 		 * The inp is setup to die. We re-use the
-		 * signature_chage timer since that has
+		 * signature_change timer since that has
 		 * stopped and we are in the GONE state.
 		 */
 		tmr = &inp->sctp_ep.signature_change;
@@ -1719,7 +1719,7 @@ sctp_calculate_rto(struct sctp_tcb *stcb,
 			net->lastsv = SCTP_CLOCK_GRANULARITY;
 		}
 	} else {
-		/* First RTO measurment */
+		/* First RTO measurement */
 		net->lastsa = calc_time;
 		net->lastsv = calc_time >> 1;
 		first_measure = 1;

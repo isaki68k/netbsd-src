@@ -1,4 +1,4 @@
-/* $NetBSD: ixgbe.h,v 1.76 2021/07/07 08:58:19 msaitoh Exp $ */
+/* $NetBSD: ixgbe.h,v 1.85 2022/03/10 04:14:34 msaitoh Exp $ */
 
 /******************************************************************************
   SPDX-License-Identifier: BSD-3-Clause
@@ -183,10 +183,24 @@
  * modern Intel CPUs, results in 40 bytes wasted and a significant drop
  * in observed efficiency of the optimization, 97.9% -> 81.8%.
  */
-#define	MPKTHSIZE		(offsetof(struct _mbuf_dummy, m_pktdat))
-#define IXGBE_RX_COPY_HDR_PADDED  ((((MPKTHSIZE - 1) / 32) + 1) * 32)
-#define IXGBE_RX_COPY_LEN_MAX     (MSIZE - IXGBE_RX_COPY_HDR_PADDED)
-#define IXGBE_RX_COPY_ALIGN       (IXGBE_RX_COPY_HDR_PADDED - MPKTHSIZE)
+#define IXGBE_RX_COPY_LEN_MAX     (MHLEN - ETHER_ALIGN)
+
+/*
+ * Default TX WTHRESH value.
+ * Currently, we don't use the Tx Head Pointer Write Back function.
+ */
+#define IXGBE_TX_WTHRESH	5
+
+/*
+ * The max number of descriptors that one packet can use is 40 - WTHRESH - 2.
+ * Though 82598 does not have this limit, we don't want long TX chain.
+ * 33 should be large enough even for 64K TSO
+ * (32 * 2K mbuf cluster and 1 x mbuf header).
+ *
+ * Reference: 82599-X550 datasheet 7.2.1.1 "Transmit Storage in System Memory".
+ */
+#define IXGBE_82599_SCATTER_MAX	(40 - IXGBE_TX_WTHRESH - 2)
+#define IXGBE_SCATTER_DEFAULT	33
 
 /* Keep older OS drivers building... */
 #if !defined(SYSCTL_ADD_UQUAD)
@@ -209,8 +223,6 @@
 #define HW_DEBUGOUT2(S, A, B)       if (DEBUG_HW) printf(S "\n", A, B)
 
 #define MAX_NUM_MULTICAST_ADDRESSES     128
-#define IXGBE_82598_SCATTER             100
-#define IXGBE_82599_SCATTER             32
 #define MSIX_82598_BAR                  3
 #define MSIX_82599_BAR                  4
 #define IXGBE_TSO_SIZE                  262140
@@ -410,6 +422,7 @@ struct rx_ring {
 	bool			lro_enabled;
 	bool			hw_rsc;
 	bool			vtag_strip;
+	bool			discard_multidesc;
 	u16			next_to_refresh;
 	u16			next_to_check;
 	u16			num_desc;
@@ -419,9 +432,6 @@ struct rx_ring {
 #endif
 	struct ixgbe_rx_buf	*rx_buffers;
 	ixgbe_dma_tag_t		*ptag;
-	u16			last_rx_mbuf_sz;
-	u32			last_num_rx_desc;
-	ixgbe_extmem_head_t	jcl_head;
 
 	u64			bytes; /* Used for AIM calc */
 	u64			packets;
@@ -431,7 +441,7 @@ struct rx_ring {
 	struct evcnt		rx_packets;
 	struct evcnt		rx_bytes;
 	struct evcnt		rx_discarded;
-	struct evcnt		no_jmbuf;
+	struct evcnt		no_mbuf;
 	u64			rsc_num;
 
 	/* Flow Director */
@@ -569,7 +579,6 @@ struct adapter {
 	u32			num_rx_desc;
 	u32			rx_process_limit;
 	u32			rx_copy_len;
-	int			num_jcl;
 
 	/* Multicast array memory */
 	struct ixgbe_mc_addr	*mta;
@@ -636,6 +645,7 @@ struct adapter {
 
 	struct sysctllog	*sysctllog;
 	const struct sysctlnode *sysctltop;
+	struct timeval		lasterr_time;
 };
 
 /* Precision Time Sync (IEEE 1588) defines */
@@ -667,10 +677,10 @@ struct adapter {
 /* Sysctl help messages; displayed with sysctl -d */
 #define IXGBE_SYSCTL_DESC_ADV_SPEED \
 	"\nControl advertised link speed using these flags:\n" \
-	"\t0x01 - advertise 100M\n" \
-	"\t0x02 - advertise 1G\n" \
-	"\t0x04 - advertise 10G\n" \
-	"\t0x08 - advertise 10M\n" \
+	"\t0x1  - advertise 100M\n" \
+	"\t0x2  - advertise 1G\n" \
+	"\t0x4  - advertise 10G\n" \
+	"\t0x8  - advertise 10M\n" \
 	"\t0x10 - advertise 2.5G\n" \
 	"\t0x20 - advertise 5G\n\n" \
 	"\t5G, 2.5G, 100M and 10M are only supported on certain adapters."
@@ -781,9 +791,6 @@ bool ixgbe_rxeof(struct ix_queue *);
 
 /* For NetBSD */
 const struct sysctlnode *ixgbe_sysctl_instance(struct adapter *);
-void ixgbe_jcl_reinit(struct adapter *, bus_dma_tag_t, struct rx_ring *,
-    int, size_t);
-void ixgbe_jcl_destroy(struct adapter *,  struct rx_ring *);
 
 #include "ixgbe_bypass.h"
 #include "ixgbe_fdir.h"

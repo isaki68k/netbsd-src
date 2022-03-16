@@ -1,4 +1,4 @@
-/*	$NetBSD: wd33c93.c,v 1.29 2021/04/24 23:36:55 thorpej Exp $	*/
+/*	$NetBSD: wd33c93.c,v 1.32 2022/02/09 22:30:27 andvar Exp $	*/
 
 /*
  * Copyright (c) 1990 The Regents of the University of California.
@@ -79,7 +79,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: wd33c93.c,v 1.29 2021/04/24 23:36:55 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: wd33c93.c,v 1.32 2022/02/09 22:30:27 andvar Exp $");
 
 #include "opt_ddb.h"
 
@@ -233,7 +233,7 @@ wd33c93_attach(struct wd33c93_softc *sc)
 	}
 
 	sc->sc_child = config_found(sc->sc_dev, &sc->sc_channel,
-				     scsiprint, CFARG_EOL);
+				     scsiprint, CFARGS_NONE);
 	scsipi_adapter_delref(&sc->sc_adapter);
 }
 
@@ -1084,12 +1084,12 @@ wd33c93_selectbus(struct wd33c93_softc *sc, struct wd33c93_acb *acb)
 	 * We only really need to do anything when the target goes to MSG out
 	 * If the device ignored ATN, it's probably old and brain-dead,
 	 * but we'll try to support it anyhow.
-	 * If it doesn't support message out, it definately doesn't
+	 * If it doesn't support message out, it definitely doesn't
 	 * support synchronous transfers, so no point in even asking...
 	 */
 	if (csr == (SBIC_CSR_MIS_2 | MESG_OUT_PHASE)) {
 		if (ti->flags & T_NEGOTIATE) {
-			/* Inititae a SDTR message */
+			/* Initiate a SDTR message */
 			SBIC_DEBUG(SYNC, ("Sending SDTR to target %d\n", id));
 			if (ti->flags & T_WANTSYNC) {
 				ti->period = sc->sc_minsyncperiod;
@@ -2093,7 +2093,7 @@ wd33c93_nextstate(struct wd33c93_softc *sc, struct wd33c93_acb	*acb, u_char csr,
 				DELAY(10);
 			}
 
-			/* If we didn't get an interrupt, somethink's up */
+			/* If we didn't get an interrupt, something's up */
 			if ((asr & SBIC_ASR_INT) == 0) {
 				printf("%s: Reselect without identify? asr %x\n",
 				    device_xname(sc->sc_dev), asr);
@@ -2140,7 +2140,7 @@ wd33c93_nextstate(struct wd33c93_softc *sc, struct wd33c93_acb	*acb, u_char csr,
 
 	default:
 	abort:
-		/* Something unexpected happend -- deal with it. */
+		/* Something unexpected happened -- deal with it. */
 		printf("next: aborting asr 0x%02x csr 0x%02x\n", asr, csr);
 
 #ifdef DDB

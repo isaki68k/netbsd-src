@@ -1,4 +1,4 @@
-/*	$NetBSD: zs.c,v 1.45 2021/04/24 23:36:51 thorpej Exp $	*/
+/*	$NetBSD: zs.c,v 1.47 2021/09/11 20:28:05 andvar Exp $	*/
 
 /*-
  * Copyright (c) 1998 Minoura Makoto
@@ -40,7 +40,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: zs.c,v 1.45 2021/04/24 23:36:51 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: zs.c,v 1.47 2021/09/11 20:28:05 andvar Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -251,7 +251,7 @@ zs_attach(device_t parent, device_t self, void *aux)
 		 * The child attach will setup the hardware.
 		 */
 		child = config_found(self, (void *)&zsc_args, zs_print,
-		    CFARG_EOL);
+		    CFARGS_NONE);
 #if ZSTTY > 0
 		if (zc == conschan &&
 		    ((child && strcmp(device_xname(child), "zstty0")) ||
@@ -397,7 +397,7 @@ zs_set_modes(struct zs_chanstate *cs, int cflag	/* bits per second */)
 	/*
 	 * Output hardware flow control on the chip is horrendous:
 	 * if carrier detect drops, the receiver is disabled, and if
-	 * CTS drops, the transmitter is stoped IN MID CHARACTER!
+	 * CTS drops, the transmitter is stopped IN MID CHARACTER!
 	 * Therefore, NEVER set the HFC bit, and instead use the
 	 * status interrupt to detect CTS changes.
 	 */

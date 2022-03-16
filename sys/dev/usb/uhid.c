@@ -1,4 +1,4 @@
-/*	$NetBSD: uhid.c,v 1.117 2020/12/18 01:40:20 thorpej Exp $	*/
+/*	$NetBSD: uhid.c,v 1.119 2021/09/26 15:07:17 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1998, 2004, 2008, 2012 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uhid.c,v 1.117 2020/12/18 01:40:20 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uhid.c,v 1.119 2021/09/26 15:07:17 thorpej Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
@@ -856,17 +856,10 @@ filt_uhidread(struct knote *kn, long hint)
 }
 
 static const struct filterops uhidread_filtops = {
-	.f_isfd = 1,
+	.f_flags = FILTEROP_ISFD,
 	.f_attach = NULL,
 	.f_detach = filt_uhidrdetach,
 	.f_event = filt_uhidread,
-};
-
-static const struct filterops uhid_seltrue_filtops = {
-	.f_isfd = 1,
-	.f_attach = NULL,
-	.f_detach = filt_uhidrdetach,
-	.f_event = filt_seltrue,
 };
 
 static int
@@ -882,20 +875,20 @@ uhidkqfilter(dev_t dev, struct knote *kn)
 	switch (kn->kn_filter) {
 	case EVFILT_READ:
 		kn->kn_fop = &uhidread_filtops;
+		kn->kn_hook = sc;
+		mutex_enter(&sc->sc_lock);
+		selrecord_knote(&sc->sc_rsel, kn);
+		mutex_exit(&sc->sc_lock);
 		break;
+
 	case EVFILT_WRITE:
-		kn->kn_fop = &uhid_seltrue_filtops;
+		kn->kn_fop = &seltrue_filtops;
 		break;
+
 	default:
 		error = EINVAL;
 		goto out;
 	}
-
-	kn->kn_hook = sc;
-
-	mutex_enter(&sc->sc_lock);
-	selrecord_knote(&sc->sc_rsel, kn);
-	mutex_exit(&sc->sc_lock);
 
 out:	uhid_exit(sc);
 	return error;

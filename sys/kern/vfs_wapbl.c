@@ -1,4 +1,4 @@
-/*	$NetBSD: vfs_wapbl.c,v 1.108 2020/04/12 17:02:52 jdolecek Exp $	*/
+/*	$NetBSD: vfs_wapbl.c,v 1.110 2022/03/12 15:32:32 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2003, 2008, 2009 The NetBSD Foundation, Inc.
@@ -36,7 +36,7 @@
 #define WAPBL_INTERNAL
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_wapbl.c,v 1.108 2020/04/12 17:02:52 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_wapbl.c,v 1.110 2022/03/12 15:32:32 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/bitops.h>
@@ -2273,7 +2273,9 @@ wapbl_inodetrk_free(struct wapbl *wl)
 	/* XXX this KASSERT needs locking/mutex analysis */
 	KASSERT(wl->wl_inohashcnt == 0);
 	hashdone(wl->wl_inohash, HASH_LIST, wl->wl_inohashmask);
+	membar_exit();
 	if (atomic_dec_uint_nv(&wapbl_ino_pool_refcount) == 0) {
+		membar_enter();
 		pool_destroy(&wapbl_ino_pool);
 	}
 }
@@ -2559,6 +2561,7 @@ wapbl_write_blocks(struct wapbl *wl, off_t *offp)
 		wc->wc_type = WAPBL_WC_BLOCKS;
 		wc->wc_len = blocklen;
 		wc->wc_blkcount = 0;
+		wc->wc_unused = 0;
 		while (bp && (wc->wc_blkcount < wl->wl_brperjblock)) {
 			/*
 			 * Make sure all the physical block numbers are up to
@@ -2647,6 +2650,7 @@ wapbl_write_revocations(struct wapbl *wl, off_t *offp)
 		wc->wc_type = WAPBL_WC_REVOCATIONS;
 		wc->wc_len = blocklen;
 		wc->wc_blkcount = 0;
+		wc->wc_unused = 0;
 		while (wd && (wc->wc_blkcount < wl->wl_brperjblock)) {
 			wc->wc_blocks[wc->wc_blkcount].wc_daddr =
 			    wd->wd_blkno;

@@ -1,4 +1,4 @@
-/* $NetBSD: ssdfb_i2c.c,v 1.9 2021/01/28 14:42:45 thorpej Exp $ */
+/* $NetBSD: ssdfb_i2c.c,v 1.11 2021/08/05 22:31:20 tnn Exp $ */
 
 /*
  * Copyright (c) 2019 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ssdfb_i2c.c,v 1.9 2021/01/28 14:42:45 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ssdfb_i2c.c,v 1.11 2021/08/05 22:31:20 tnn Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>

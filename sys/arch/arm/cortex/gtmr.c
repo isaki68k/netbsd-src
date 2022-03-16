@@ -1,4 +1,4 @@
-/*	$NetBSD: gtmr.c,v 1.43 2021/01/18 23:43:34 jmcneill Exp $	*/
+/*	$NetBSD: gtmr.c,v 1.49 2022/03/03 06:26:28 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2012 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: gtmr.c,v 1.43 2021/01/18 23:43:34 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: gtmr.c,v 1.49 2022/03/03 06:26:28 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -41,6 +41,7 @@ __KERNEL_RCSID(0, "$NetBSD: gtmr.c,v 1.43 2021/01/18 23:43:34 jmcneill Exp $");
 #include <sys/proc.h>
 #include <sys/systm.h>
 #include <sys/timetc.h>
+#include <sys/cpu.h>
 
 #include <prop/proplib.h>
 
@@ -126,12 +127,19 @@ gtmr_attach(device_t parent, device_t self, void *aux)
 	aprint_normal(": Generic Timer (%s, %s)\n", freqbuf,
 	    sc->sc_physical ? "physical" : "virtual");
 
+#if defined(__arm__)
+	if (prop_dictionary_get_bool(dict, "arm,cpu-registers-not-fw-configured", &flag) && flag) {
+		sc->sc_flags |= GTMR_FLAG_CPU_REGISTERS_NOT_FW_CONFIGURED;
+		aprint_debug_dev(self, "CPU registers not initialized by firmware\n");
+	}
+#endif
+
 	if (prop_dictionary_get_bool(dict, "sun50i-a64-unstable-timer", &flag) && flag) {
 		sc->sc_flags |= GTMR_FLAG_SUN50I_A64_UNSTABLE_TIMER;
 		aprint_debug_dev(self, "enabling Allwinner A64 timer workaround\n");
 	}
 
-	self->dv_private = sc;
+	device_set_private(self, sc);
 	sc->sc_dev = self;
 
 #ifdef DIAGNOSTIC
@@ -195,6 +203,8 @@ gtmr_read_cntct(struct gtmr_softc *sc)
 static uint32_t
 gtmr_read_ctl(struct gtmr_softc *sc)
 {
+	isb();
+
 	if (sc->sc_physical)
 		return gtmr_cntp_ctl_read();
 	else
@@ -239,39 +249,52 @@ void
 gtmr_init_cpu_clock(struct cpu_info *ci)
 {
 	struct gtmr_softc * const sc = &gtmr_sc;
-	uint32_t val;
+	uint32_t cntk;
+	uint64_t ctl;
 
 	KASSERT(ci == curcpu());
 
+	/* XXX hmm... called from cpu_hatch which hasn't lowered ipl yet */
 	int s = splsched();
+
+#if defined(__arm__)
+	if ((sc->sc_flags & GTMR_FLAG_CPU_REGISTERS_NOT_FW_CONFIGURED) != 0) {
+		armreg_cnt_frq_write(sc->sc_freq);
+	}
+#endif
 
 	/*
 	 * Allow the virtual and physical counters to be accessed from
 	 * usermode. (PL0)
 	 */
-	val = gtmr_cntk_ctl_read();
-	val &= ~(CNTKCTL_PL0PTEN | CNTKCTL_PL0VTEN | CNTKCTL_EVNTEN);
+	cntk = gtmr_cntk_ctl_read();
+	cntk &= ~(CNTKCTL_PL0PTEN | CNTKCTL_PL0VTEN | CNTKCTL_EVNTEN);
 	if (sc->sc_physical) {
-		val |= CNTKCTL_PL0PCTEN;
-		val &= ~CNTKCTL_PL0VCTEN;
+		cntk |= CNTKCTL_PL0PCTEN;
+		cntk &= ~CNTKCTL_PL0VCTEN;
 	} else {
-		val |= CNTKCTL_PL0VCTEN;
-		val &= ~CNTKCTL_PL0PCTEN;
+		cntk |= CNTKCTL_PL0VCTEN;
+		cntk &= ~CNTKCTL_PL0PCTEN;
 	}
-	gtmr_cntk_ctl_write(val);
+	gtmr_cntk_ctl_write(cntk);
 	isb();
 
 	/*
 	 * enable timer and stop masking the timer.
 	 */
-	gtmr_write_ctl(sc, CNTCTL_ENABLE);
+	ctl = gtmr_read_ctl(sc);
+	ctl &= ~CNTCTL_IMASK;
+	ctl |= CNTCTL_ENABLE;
+	gtmr_write_ctl(sc, ctl);
 
 	/*
 	 * Get now and update the compare timer.
 	 */
 	ci->ci_lastintr = gtmr_read_cntct(sc);
 	gtmr_write_tval(sc, sc->sc_autoinc);
+
 	splx(s);
+
 	KASSERT(gtmr_read_cntct(sc) != 0);
 }
 
@@ -324,14 +347,12 @@ gtmr_intr(void *arg)
 	struct cpu_info * const ci = curcpu();
 	struct clockframe * const cf = arg;
 	struct gtmr_softc * const sc = &gtmr_sc;
-	uint32_t ctl;
 
-	ctl = gtmr_read_ctl(sc);
-	if ((ctl & CNTCTL_ISTATUS) == 0)
+	const uint32_t ctl = gtmr_read_ctl(sc);
+	if ((ctl & (CNTCTL_ENABLE|CNTCTL_ISTATUS)) != (CNTCTL_ENABLE|CNTCTL_ISTATUS)) {
+		aprint_debug_dev(ci->ci_dev, "spurious timer interrupt (ctl=%#x)\n", ctl);
 		return 0;
-
-	ctl |= CNTCTL_IMASK;
-	gtmr_write_ctl(sc, ctl);
+	}
 
 	const uint64_t now = gtmr_read_cntct(sc);
 	uint64_t delta = now - ci->ci_lastintr;
@@ -370,11 +391,6 @@ gtmr_intr(void *arg)
 	} else {
 		gtmr_write_tval(sc, sc->sc_autoinc - delta);
 	}
-
-	ctl = gtmr_read_ctl(sc);
-	ctl &= ~CNTCTL_IMASK;
-	ctl |= CNTCTL_ENABLE;
-	gtmr_write_ctl(sc, ctl);
 
 	ci->ci_lastintr = now;
 

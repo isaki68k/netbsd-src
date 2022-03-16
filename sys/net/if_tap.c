@@ -1,4 +1,4 @@
-/*	$NetBSD: if_tap.c,v 1.122 2021/06/16 00:21:19 riastradh Exp $	*/
+/*	$NetBSD: if_tap.c,v 1.124 2021/09/26 15:58:33 thorpej Exp $	*/
 
 /*
  *  Copyright (c) 2003, 2004, 2008, 2009 The NetBSD Foundation.
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_tap.c,v 1.122 2021/06/16 00:21:19 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_tap.c,v 1.124 2021/09/26 15:58:33 thorpej Exp $");
 
 #if defined(_KERNEL_OPT)
 
@@ -1169,17 +1169,10 @@ tap_dev_poll(int unit, int events, struct lwp *l)
 }
 
 static struct filterops tap_read_filterops = {
-	.f_isfd = 1,
+	.f_flags = FILTEROP_ISFD,
 	.f_attach = NULL,
 	.f_detach = tap_kqdetach,
 	.f_event = tap_kqread,
-};
-
-static struct filterops tap_seltrue_filterops = {
-	.f_isfd = 1,
-	.f_attach = NULL,
-	.f_detach = tap_kqdetach,
-	.f_event = filt_seltrue,
 };
 
 static int
@@ -1204,24 +1197,25 @@ tap_dev_kqfilter(int unit, struct knote *kn)
 	if (sc == NULL)
 		return ENXIO;
 
-	KERNEL_LOCK(1, NULL);
 	switch(kn->kn_filter) {
 	case EVFILT_READ:
 		kn->kn_fop = &tap_read_filterops;
-		break;
-	case EVFILT_WRITE:
-		kn->kn_fop = &tap_seltrue_filterops;
-		break;
-	default:
+		kn->kn_hook = sc;
+		KERNEL_LOCK(1, NULL);
+		mutex_spin_enter(&sc->sc_lock);
+		selrecord_knote(&sc->sc_rsel, kn);
+		mutex_spin_exit(&sc->sc_lock);
 		KERNEL_UNLOCK_ONE(NULL);
+		break;
+
+	case EVFILT_WRITE:
+		kn->kn_fop = &seltrue_filtops;
+		break;
+
+	default:
 		return EINVAL;
 	}
 
-	kn->kn_hook = sc;
-	mutex_spin_enter(&sc->sc_lock);
-	selrecord_knote(&sc->sc_rsel, kn);
-	mutex_spin_exit(&sc->sc_lock);
-	KERNEL_UNLOCK_ONE(NULL);
 	return 0;
 }
 

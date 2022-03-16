@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.358 2021/01/24 14:17:10 simonb Exp $	*/
+/*	$NetBSD: machdep.c,v 1.361 2021/12/26 21:33:48 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1996, 1997, 1998, 2000, 2006, 2007, 2008, 2011
@@ -110,7 +110,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.358 2021/01/24 14:17:10 simonb Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.361 2021/12/26 21:33:48 riastradh Exp $");
 
 #include "opt_modular.h"
 #include "opt_user_ldt.h"
@@ -700,8 +700,15 @@ cpu_reboot(int howto, char *bootstr)
 		       config_detach_all(boothowto) ||
 		       vfs_unmount_forceone(curlwp))
 			;	/* do nothing */
-	} else
-		suspendsched();
+	} else {
+		int ddb = 0;
+#ifdef DDB
+		extern int db_active; /* XXX */
+		ddb = db_active;
+#endif
+		if (!ddb)
+			suspendsched();
+	}
 
 	pmf_system_shutdown(boothowto);
 
@@ -1718,7 +1725,6 @@ init_x86_64(paddr_t first_avail)
 	svs_init();
 #endif
 	cpu_init_msrs(&cpu_info_primary, true);
-	cpu_rng_init();
 #ifndef XENPV
 	cpu_speculation_init(&cpu_info_primary);
 #endif
@@ -1740,6 +1746,15 @@ init_x86_64(paddr_t first_avail)
 	pat_init(&cpu_info_primary);
 
 	consinit();	/* XXX SHOULD NOT BE DONE HERE */
+
+	/*
+	 * Initialize RNG to get entropy ASAP either from CPU
+	 * RDRAND/RDSEED or from seed on disk.  Must happen after
+	 * cpu_init_msrs.  Prefer to happen after consinit so we have
+	 * the opportunity to print useful feedback.
+	 */
+	cpu_rng_init();
+	x86_rndseed();
 
 	/*
 	 * Initialize PAGE_SIZE-dependent variables.

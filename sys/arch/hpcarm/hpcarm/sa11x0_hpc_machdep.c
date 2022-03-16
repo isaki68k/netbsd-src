@@ -1,4 +1,4 @@
-/*	$NetBSD: sa11x0_hpc_machdep.c,v 1.17 2020/04/18 11:00:41 skrll Exp $	*/
+/*	$NetBSD: sa11x0_hpc_machdep.c,v 1.21 2021/10/11 14:36:05 rin Exp $	*/
 
 /*
  * Copyright (c) 1994-1998 Mark Brinicombe.
@@ -40,7 +40,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sa11x0_hpc_machdep.c,v 1.17 2020/04/18 11:00:41 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sa11x0_hpc_machdep.c,v 1.21 2021/10/11 14:36:05 rin Exp $");
 
 #include "opt_ddb.h"
 #include "opt_dram_pages.h"
@@ -136,6 +136,10 @@ vaddr_t init_sa11x0(int, char **, struct bootinfo *);
 void    dumppages(char *, int);
 #endif
 
+#ifdef DEBUG_BEFOREMMU
+static void fakecninit(void);
+#endif
+
 /* Mode dependent sleep function holder */
 extern void (*__sleep_func)(void *);
 extern void *__sleep_ctx;
@@ -223,7 +227,7 @@ init_sa11x0(int argc, char **argv, struct bootinfo *bi)
 	 */
 
 	/*
-	 * Set up the variables that define the availability of physcial
+	 * Set up the variables that define the availability of physical
 	 * memory.
 	 */
 	physical_start = bootconfig.dram[0].address;
@@ -273,12 +277,18 @@ init_sa11x0(int argc, char **argv, struct bootinfo *bi)
 #endif
 
 	/* Define a macro to simplify memory allocation */
-#define	valloc_pages(var, np)			\
-	alloc_pages((var).pv_pa, (np));		\
-	(var).pv_va = KERNEL_BASE + (var).pv_pa - physical_start;
-#define	alloc_pages(var, np)			\
-	(var) = freemempos;			\
-	freemempos += (np) * PAGE_SIZE;
+#define	valloc_pages(var, np)						\
+    do {								\
+	alloc_pages((var).pv_pa, (np));					\
+	(var).pv_va = KERNEL_BASE + (var).pv_pa - physical_start;	\
+    } while (0)
+#define	alloc_pages(var, np)						\
+    do {								\
+	(var) = freemempos;						\
+	freemempos += (np) * PAGE_SIZE;					\
+	if (freemempos > KERNEL_TEXT_BASE)				\
+		panic("%s: out of memory", __func__);			\
+    } while (0)
 
 	valloc_pages(kernel_l1pt, L1_TABLE_SIZE / PAGE_SIZE);
 	for (loop = 0; loop < NUM_KERNEL_PTS; ++loop) {

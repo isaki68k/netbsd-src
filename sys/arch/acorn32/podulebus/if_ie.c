@@ -1,4 +1,4 @@
-/* $NetBSD: if_ie.c,v 1.48 2020/02/05 08:33:19 skrll Exp $ */
+/* $NetBSD: if_ie.c,v 1.51 2021/11/10 16:44:42 msaitoh Exp $ */
 
 /*
  * Copyright (c) 1995 Melvin Tang-Richardson.
@@ -53,7 +53,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_ie.c,v 1.48 2020/02/05 08:33:19 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_ie.c,v 1.51 2021/11/10 16:44:42 msaitoh Exp $");
 
 #define IGNORE_ETHER1_IDROM_CHECKSUM
 
@@ -94,7 +94,7 @@ __KERNEL_RCSID(0, "$NetBSD: if_ie.c,v 1.48 2020/02/05 08:33:19 skrll Exp $");
 #include <netinet/if_inarp.h>
 #endif
 
-/* Import our data structres */
+/* Import our data structures */
 
 #include "if_iereg.h"
 
@@ -115,7 +115,7 @@ __KERNEL_RCSID(0, "$NetBSD: if_ie.c,v 1.48 2020/02/05 08:33:19 skrll Exp $");
 
 #define	xoffsetof(type, member)	(offsetof(type, member) << 1)
 
-/* Some data structres local to this file */
+/* Some data structures local to this file */
 
 struct ie_softc {
 	device_t	sc_dev;
@@ -456,7 +456,7 @@ ieattach(device_t parent, device_t self, void *aux)
 
 	/* "Hmm," said nuts, "what if the attach fails" */
 
-	/* Write some pretty things on the annoucement line */
+	/* Write some pretty things on the announcement line */
 	printf ( ": %s using %dk card ram",
 	    ether_sprintf(hwaddr),
 	    ((NRXBUF*IE_RXBUF_SIZE)+(NTXBUF*IE_TXBUF_SIZE))/1024 );

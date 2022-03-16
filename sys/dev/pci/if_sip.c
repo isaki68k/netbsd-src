@@ -1,4 +1,4 @@
-/*	$NetBSD: if_sip.c,v 1.182 2020/03/16 01:54:23 thorpej Exp $	*/
+/*	$NetBSD: if_sip.c,v 1.185 2022/02/16 22:00:56 andvar Exp $	*/
 
 /*-
  * Copyright (c) 2001, 2002 The NetBSD Foundation, Inc.
@@ -73,7 +73,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_sip.c,v 1.182 2020/03/16 01:54:23 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_sip.c,v 1.185 2022/02/16 22:00:56 andvar Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -888,7 +888,7 @@ sipcom_dp83820_attach(struct sip_softc *sc, struct pci_attach_args *pa)
 		} else {
 			using64 = "disabled in EEPROM";
 		}
-		printf("%s: 64-bit slot detected, 64-bit tranfers %s\n",
+		printf("%s: 64-bit slot detected, 64-bit transfers %s\n",
 		    device_xname(sc->sc_dev), using64);
 	}
 	
@@ -1702,7 +1702,7 @@ sipcom_start(struct ifnet *ifp)
 		    BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE);
 
 		/*
-		 * The entire packet is set up.  Give the first descrptor
+		 * The entire packet is set up.  Give the first descriptor
 		 * to the chip now.
 		 */
 		sc->sc_txdescs[sc->sc_txnext].sipd_words[sc->sc_cmdsts_idx] |=
@@ -1869,7 +1869,7 @@ sipcom_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 		error = 0;
 
 		if (cmd == SIOCSIFCAP)
-			error = (*ifp->if_init)(ifp);
+			error = if_init(ifp);
 		else if (cmd != SIOCADDMULTI && cmd != SIOCDELMULTI)
 			;
 		else if (ifp->if_flags & IFF_RUNNING) {

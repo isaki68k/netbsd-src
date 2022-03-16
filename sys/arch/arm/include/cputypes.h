@@ -1,4 +1,4 @@
-/*	$NetBSD: cputypes.h,v 1.13 2020/07/01 08:02:13 ryo Exp $	*/
+/*	$NetBSD: cputypes.h,v 1.16 2021/11/13 01:09:51 simonb Exp $	*/
 
 /*
  * Copyright (c) 1998, 2001 Ben Harris
@@ -207,6 +207,25 @@
 #define CPU_ID_THUNDERX81XXRX	0x43000a20
 #define CPU_ID_THUNDERX83XXRX	0x43000a30
 #define CPU_ID_THUNDERX2RX	0x43000af0
+
+/*
+ * Chip-specific errata. These defines are intended to be
+ * booleans used within if statements. When an appropriate
+ * kernel option is disabled, these defines must be defined
+ * as 0 to allow the compiler to remove a dead code thus
+ * produce better optimized kernel image.
+ */
+/*
+ * Vendor:	Cavium
+ * Chip:	ThunderX
+ * Revision(s):	Pass 1.0, Pass 1.1
+ */
+#define	CPU_ID_ERRATA_CAVIUM_THUNDERX_1_1_P(n)		\
+    (((n) & 0xfff0ffff) == CPU_ID_THUNDERXP1d0 ||	\
+     ((n) & 0xfff0ffff) == CPU_ID_THUNDERXP1d1)
+
+#define CPU_ID_APPLE_M1_ICESTORM	0x61000220
+#define CPU_ID_APPLE_M1_FIRESTORM	0x61000230
 
 #define CPU_ID_SA110		0x4401a100
 #define CPU_ID_SA1100		0x4401a110

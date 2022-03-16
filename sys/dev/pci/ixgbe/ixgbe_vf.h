@@ -1,9 +1,9 @@
-/* $NetBSD: ixgbe_vf.h,v 1.14 2019/09/12 06:19:47 msaitoh Exp $ */
+/* $NetBSD: ixgbe_vf.h,v 1.17 2022/01/24 01:50:19 msaitoh Exp $ */
 
 /******************************************************************************
   SPDX-License-Identifier: BSD-3-Clause
 
-  Copyright (c) 2001-2017, Intel Corporation
+  Copyright (c) 2001-2020, Intel Corporation
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -101,29 +101,17 @@ struct ixgbevf_hw_stats {
 	struct evcnt l4cs;
 	struct evcnt l4cs_bad;
 
-	u64 base_vfgprc;
-	u64 base_vfgptc;
-	u64 base_vfgorc;
-	u64 base_vfgotc;
-	u64 base_vfmprc;
-
-	u64 last_vfgprc;
-	u64 last_vfgptc;
+	u32 last_vfgprc;
+	u32 last_vfgptc;
 	u64 last_vfgorc;
 	u64 last_vfgotc;
-	u64 last_vfmprc;
+	u32 last_vfmprc;
 
 	struct evcnt vfgprc;
 	struct evcnt vfgptc;
 	struct evcnt vfgorc;
 	struct evcnt vfgotc;
 	struct evcnt vfmprc;
-
-	u64 saved_reset_vfgprc;
-	u64 saved_reset_vfgptc;
-	u64 saved_reset_vfgorc;
-	u64 saved_reset_vfgotc;
-	u64 saved_reset_vfmprc;
 };
 
 s32 ixgbe_init_ops_vf(struct ixgbe_hw *hw);

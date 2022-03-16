@@ -1,4 +1,4 @@
-/* $NetBSD: pmap.c,v 1.298 2021/07/16 19:02:22 thorpej Exp $ */
+/* $NetBSD: pmap.c,v 1.305 2022/03/12 15:32:31 riastradh Exp $ */
 
 /*-
  * Copyright (c) 1998, 1999, 2000, 2001, 2007, 2008, 2020
@@ -106,8 +106,8 @@
  *
  *	All user page table access is done via K0SEG.  Kernel
  *	page table access is done via the recursive Virtual Page
- *	Table becase kernel PT pages are pre-allocated and never
- *	freed, so no VPT fault handling is requiried.
+ *	Table because kernel PT pages are pre-allocated and never
+ *	freed, so no VPT fault handling is required.
  */
 
 /*
@@ -135,7 +135,7 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.298 2021/07/16 19:02:22 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.305 2022/03/12 15:32:31 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -544,7 +544,7 @@ pmap_pvlist_free(struct pmap_pvlist * const list)
  * Some things that add complexity:
  *
  * ==> ASNs. A CPU may have valid TLB entries for other than the current
- *     address spaace.  We can only invalidate TLB entries for the current
+ *     address space.  We can only invalidate TLB entries for the current
  *     address space, so when asked to invalidate a VA for the non-current
  *     pmap on a given CPU, we simply invalidate the ASN for that pmap,CPU
  *     tuple so that new one is allocated on the next activation on that
@@ -578,26 +578,26 @@ pmap_pvlist_free(struct pmap_pvlist * const list)
  * that includes room for 8 VAs, the pmap the VAs belong to, a bitmap of
  * CPUs to be notified, and a list for PT pages that are freed during
  * removal off mappings.  The number of valid addresses in the list as
- * well as flags are sqeezed into the lower bits of the first two VAs.
+ * well as flags are squeezed into the lower bits of the first two VAs.
  * Storage for this structure is allocated on the stack.  We need to be
- * careful to keep the size of this struture under control.
+ * careful to keep the size of this structure under control.
  *
  * When notifying remote CPUs, we acquire the tlb_lock (which also
  * blocks IPIs), record the pointer to our context structure, set a
  * global bitmap off CPUs to be notified, and then send the IPIs to
  * each victim.  While the other CPUs are in-flight, we then perform
  * any invalidations necessary on the local CPU.  Once that is done,
- * we then wait the the global context pointer to be cleared, which
+ * we then wait the global context pointer to be cleared, which
  * will be done by the final remote CPU to complete their work. This
- * method reduces cache line contention during pocessing.
+ * method reduces cache line contention during processing.
  *
- * When removing mappings in user pmaps, this implemention frees page
+ * When removing mappings in user pmaps, this implementation frees page
  * table pages back to the VM system once they contain no valid mappings.
  * As we do this, we must ensure to invalidate TLB entries that the
  * CPU might hold for the respective recursive VPT mappings.  This must
  * be done whenever an L1 or L2 PTE is invalidated.  Until these VPT
  * translations are invalidated, the PT pages must not be reused.  For
- * this reason, we keep a list of freed PT pages in the context stucture
+ * this reason, we keep a list of freed PT pages in the context structure
  * and drain them off once all invalidations are complete.
  *
  * NOTE: The value of TLB_CTX_MAXVA is tuned to accommodate the UBC
@@ -1038,7 +1038,7 @@ pmap_tlb_shootnow(const struct pmap_tlb_context * const tlbctx)
 
 	/*
 	 * Figure out who to notify.  If it's for the kernel or
-	 * multiple aaddress spaces, we notify everybody.  If
+	 * multiple address spaces, we notify everybody.  If
 	 * it's a single user pmap, then we try to acquire the
 	 * activation lock so we can get an accurate accounting
 	 * of who needs to be notified.  If we can't acquire
@@ -1663,6 +1663,7 @@ pmap_destroy(pmap_t pmap)
 	KASSERT(atomic_load_relaxed(&pmap->pm_count) > 0);
 	if (atomic_dec_uint_nv(&pmap->pm_count) > 0)
 		return;
+	PMAP_MP(membar_enter());
 
 	pt_entry_t *lev1map = pmap_lev1map(pmap);
 
@@ -2094,7 +2095,7 @@ pmap_enter_tlb_shootdown(pmap_t const pmap, vaddr_t const va,
  * pmap_enter_l2pt_delref:
  *
  *	Release a reference on an L2 PT page for pmap_enter().
- *	This is factored out separately becacause we expect it
+ *	This is factored out separately because we expect it
  *	to be a rare case.
  */
 static void __noinline
@@ -2105,8 +2106,8 @@ pmap_enter_l2pt_delref(pmap_t const pmap, pt_entry_t * const l1pte,
 
 	/*
 	 * PALcode may have tried to service a TLB miss with
-	 * this L2 PTE, so we need to make sure we don't actully
-	 * free the PT page untl we've shot down any TLB entries
+	 * this L2 PTE, so we need to make sure we don't actually
+	 * free the PT page until we've shot down any TLB entries
 	 * for this VPT index.
 	 */
 
@@ -2122,7 +2123,7 @@ pmap_enter_l2pt_delref(pmap_t const pmap, pt_entry_t * const l1pte,
  * pmap_enter_l3pt_delref:
  *
  *	Release a reference on an L3 PT page for pmap_enter().
- *	This is factored out separately becacause we expect it
+ *	This is factored out separately because we expect it
  *	to be a rare case.
  */
 static void __noinline
@@ -2133,8 +2134,8 @@ pmap_enter_l3pt_delref(pmap_t const pmap, vaddr_t const va,
 
 	/*
 	 * PALcode may have tried to service a TLB miss with
-	 * this PTE, so we need to make sure we don't actully
-	 * free the PT page untl we've shot down any TLB entries
+	 * this PTE, so we need to make sure we don't actually
+	 * free the PT page until we've shot down any TLB entries
 	 * for this VPT index.
 	 */
 
@@ -2256,7 +2257,7 @@ pmap_enter(pmap_t pmap, vaddr_t va, paddr_t pa, vm_prot_t prot, u_int flags)
 	 * new one immediately.
 	 */
 	if ((opte & PG_V) == 0) {
-		/* No TLB invalidatons needed for new mappings. */
+		/* No TLB invalidations needed for new mappings. */
 
 		if (pmap != pmap_kernel()) {
 			/*
@@ -2578,18 +2579,19 @@ pmap_extract(pmap_t pmap, vaddr_t va, paddr_t *pap)
 	 * handles K0SEG.
 	 */
 	if (__predict_true(pmap == pmap_kernel())) {
-		if (__predict_true(vtophys_internal(va, pap))) {
 #ifdef DEBUG
-			if (pmapdebug & PDB_FOLLOW)
+		bool address_is_valid = vtophys_internal(va, pap);
+		if (pmapdebug & PDB_FOLLOW) {
+			if (address_is_valid) {
 				printf("0x%lx (kernel vtophys)\n", *pap);
-#endif
-			return true;
+			} else {
+				printf("failed (kernel vtophys)\n");
+			}
 		}
-#ifdef DEBUG
-		if (pmapdebug & PDB_FOLLOW)
-			printf("failed (kernel vtophys)\n");
+		return address_is_valid;
+#else
+		return vtophys_internal(va, pap);
 #endif
-		return false;
 	}
 
 	pt_entry_t * const lev1map = pmap_lev1map(pmap);
@@ -2948,7 +2950,7 @@ alpha_protection_init(void)
  *	If (pte != NULL), it is the already computed PTE for the page.
  *
  *	Note: locking in this function is complicated by the fact
- *	that we can be called when the PV list is already locked.
+ *	that it can be called when the PV list is already locked.
  *	(pmap_page_protect()).  In this case, the caller must be
  *	careful to get the next PV entry while we remove this entry
  *	from beneath it.  We assume that the pmap itself is already
@@ -3634,7 +3636,7 @@ pmap_l1pt_ctor(void *arg, void *object, int flags)
 /*
  * pmap_l1pt_alloc:
  *
- *	Page alloctaor for L1 PT pages.
+ *	Page allocator for L1 PT pages.
  */
 static void *
 pmap_l1pt_alloc(struct pool *pp, int flags)
@@ -3758,7 +3760,7 @@ pmap_l3pt_delref(pmap_t pmap, vaddr_t va, pt_entry_t *l3pte,
 			    "0x%lx\n", pmap_pte_pa(l2pte));
 #endif
 		/*
-		 * You can pass NULL if you know the last refrence won't
+		 * You can pass NULL if you know the last reference won't
 		 * be dropped.
 		 */
 		KASSERT(tlbctx != NULL);
@@ -3809,7 +3811,7 @@ pmap_l2pt_delref(pmap_t pmap, pt_entry_t *l1pte, pt_entry_t *l2pte,
 			    "0x%lx\n", pmap_pte_pa(l1pte));
 #endif
 		/*
-		 * You can pass NULL if you know the last refrence won't
+		 * You can pass NULL if you know the last reference won't
 		 * be dropped.
 		 */
 		KASSERT(tlbctx != NULL);
@@ -3869,7 +3871,7 @@ pmap_asn_alloc(pmap_t const pmap, struct cpu_info * const ci)
 	KASSERT(pmap->pm_percpu[ci->ci_cpuid].pmc_lev1map != kernel_lev1map);
 	KASSERT(kpreempt_disabled());
 
-	/* No work to do if the the CPU does not implement ASNs. */
+	/* No work to do if the CPU does not implement ASNs. */
 	if (pmap_max_asn == 0)
 		return 0;
 

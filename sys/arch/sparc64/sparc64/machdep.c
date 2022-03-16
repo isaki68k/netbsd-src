@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.299 2021/01/04 14:48:52 thorpej Exp $ */
+/*	$NetBSD: machdep.c,v 1.304 2021/12/26 21:33:48 riastradh Exp $ */
 
 /*-
  * Copyright (c) 1996, 1997, 1998, 2019 The NetBSD Foundation, Inc.
@@ -71,7 +71,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.299 2021/01/04 14:48:52 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.304 2021/12/26 21:33:48 riastradh Exp $");
 
 #include "opt_ddb.h"
 #include "opt_multiprocessor.h"
@@ -102,6 +102,7 @@ __KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.299 2021/01/04 14:48:52 thorpej Exp $"
 #include <sys/cpu.h>
 #include <sys/module.h>
 #include <sys/ksyms.h>
+#include <sys/pserialize.h>
 
 #include <sys/exec_aout.h>
 
@@ -572,8 +573,15 @@ cpu_reboot(int howto, char *user_boot_string)
 		       config_detach_all(boothowto) ||
 		       vfs_unmount_forceone(l))
 			;	/* do nothing */
-	} else
-		suspendsched();
+	} else {
+		int ddb = 0;
+#ifdef DDB
+		extern int db_active; /* XXX */
+		ddb = db_active;
+#endif
+		if (!ddb)
+			suspendsched();
+	}
 
 	pmf_system_shutdown(boothowto);
 
@@ -836,17 +844,22 @@ get_symbol_and_offset(const char **mod, const char **sym, vaddr_t *offset, vaddr
 {
 	static char symbuf[256];
 	unsigned long symaddr;
+	int s, error;
 
 #if NKSYMS || defined(DDB) || defined(MODULAR)
+	s = pserialize_read_enter();
 	if (ksyms_getname(mod, sym, pc,
 			  KSYMS_CLOSEST|KSYMS_PROC|KSYMS_ANY) == 0) {
-		if (ksyms_getval(*mod, *sym, &symaddr,
-				 KSYMS_CLOSEST|KSYMS_PROC|KSYMS_ANY) != 0)
+		error = ksyms_getval(*mod, *sym, &symaddr,
+		    KSYMS_CLOSEST|KSYMS_PROC|KSYMS_ANY);
+		pserialize_read_exit(s);
+		if (error)
 			goto failed;
 
 		*offset = (vaddr_t)(pc - symaddr);
 		return;
 	}
+	pserialize_read_exit(s);
 #endif
  failed:
 	snprintf(symbuf, sizeof symbuf, "%llx", (unsigned long long)pc);
@@ -1461,7 +1474,7 @@ _bus_dmamem_map(bus_dma_tag_t t, bus_dma_segment_t *segs, int nsegs,
 
 	/*
 	 * Find a region of kernel virtual addresses that can accommodate
-	 * our aligment requirements.
+	 * our alignment requirements.
 	 */
 	oversize = size + align - PAGE_SIZE;
 	r = uvm_map(kernel_map, &sva, oversize, NULL, UVM_UNKNOWN_OFFSET, 0,

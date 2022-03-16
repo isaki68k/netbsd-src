@@ -1,4 +1,4 @@
-/* $NetBSD: armreg.h,v 1.57 2021/06/19 13:40:00 jmcneill Exp $ */
+/* $NetBSD: armreg.h,v 1.60 2022/01/05 19:53:32 ryo Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -74,8 +74,8 @@ reg_##regname##_write(uint64_t __val)				\
 	AARCH64REG_WRITE_INLINE3(regname, regdesc, )
 
 #define AARCH64REG_WRITEIMM_INLINE2(regname, regdesc)		\
-static __inline void						\
-reg_##regname##_write(uint64_t __val)				\
+static __inline void __always_inline				\
+reg_##regname##_write(const uint64_t __val)			\
 {								\
 	__asm __volatile(					\
 	    "msr " #regdesc ", %0" :: "n"(__val) : "memory"	\
@@ -290,7 +290,7 @@ AARCH64REG_READ_INLINE(id_aa64isar0_el1)
 #define	 ID_AA64ISAR0_EL1_RDM_SQRDML	 1
 #define	ID_AA64ISAR0_EL1_ATOMIC		__BITS(23,20)
 #define	 ID_AA64ISAR0_EL1_ATOMIC_NONE	 0
-#define	 ID_AA64ISAR0_EL1_ATOMIC_SWP	 1
+#define	 ID_AA64ISAR0_EL1_ATOMIC_SWP	 2
 #define	ID_AA64ISAR0_EL1_CRC32		__BITS(19,16)
 #define	 ID_AA64ISAR0_EL1_CRC32_NONE	 0
 #define	 ID_AA64ISAR0_EL1_CRC32_CRC32X	 1
@@ -1636,7 +1636,7 @@ struct aarch64_sysctl_cpu_id {
 	uint32_t ac_mvfr2;	/* Media and VFP Feature Register 2 */
 	uint32_t ac_pad;
 
-	uint64_t ac_clidr;	/* Cacle Level ID Register */
+	uint64_t ac_clidr;	/* Cache Level ID Register */
 	uint64_t ac_ctr;	/* Cache Type Register */
 };
 

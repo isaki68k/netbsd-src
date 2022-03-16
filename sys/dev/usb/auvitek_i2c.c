@@ -1,4 +1,4 @@
-/* $NetBSD: auvitek_i2c.c,v 1.6 2021/04/24 23:36:59 thorpej Exp $ */
+/* $NetBSD: auvitek_i2c.c,v 1.8 2022/03/13 12:49:36 riastradh Exp $ */
 
 /*-
  * Copyright (c) 2010 Jared D. McNeill <jmcneill@invisible.ca>
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: auvitek_i2c.c,v 1.6 2021/04/24 23:36:59 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: auvitek_i2c.c,v 1.8 2022/03/13 12:49:36 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -71,11 +71,14 @@ static bool	auvitek_i2c_wait_wrdone(struct auvitek_softc *);
 int
 auvitek_i2c_attach(struct auvitek_softc *sc)
 {
+
 	iic_tag_init(&sc->sc_i2c);
 	sc->sc_i2c.ic_cookie = sc;
 	sc->sc_i2c.ic_exec = auvitek_i2c_exec;
 
 	auvitek_i2c_rescan(sc, NULL, NULL);
+
+	sc->sc_i2c_attached = true;
 
 	return 0;
 }
@@ -83,10 +86,11 @@ auvitek_i2c_attach(struct auvitek_softc *sc)
 int
 auvitek_i2c_detach(struct auvitek_softc *sc, int flags)
 {
-	iic_tag_fini(&sc->sc_i2c);
 
-	if (sc->sc_i2cdev)
-		config_detach(sc->sc_i2cdev, flags);
+	if (!sc->sc_i2c_attached)
+		return 0;
+
+	iic_tag_fini(&sc->sc_i2c);
 
 	return 0;
 }
@@ -102,8 +106,7 @@ auvitek_i2c_rescan(struct auvitek_softc *sc, const char *ifattr,
 		memset(&iba, 0, sizeof(iba));
 		iba.iba_tag = &sc->sc_i2c;
 		sc->sc_i2cdev = config_found(sc->sc_dev, &iba, iicbus_print,
-		    CFARG_IATTR, "i2cbus",
-		    CFARG_EOL);
+		    CFARGS(.iattr = "i2cbus"));
 	}
 #endif
 }

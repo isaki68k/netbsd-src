@@ -1,4 +1,4 @@
-/*	$NetBSD: tsarm_machdep.c,v 1.31 2020/04/18 11:00:41 skrll Exp $ */
+/*	$NetBSD: tsarm_machdep.c,v 1.33 2021/11/21 08:44:28 skrll Exp $ */
 
 /*
  * Copyright (c) 2001, 2002, 2003 Wasabi Systems, Inc.
@@ -73,7 +73,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tsarm_machdep.c,v 1.31 2020/04/18 11:00:41 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tsarm_machdep.c,v 1.33 2021/11/21 08:44:28 skrll Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_console.h"
@@ -435,7 +435,7 @@ initarm(void *arg)
 	bootconfig.dram[3].pages = 0x800000UL / PAGE_SIZE;
 
 	/*
-	 * Set up the variables that define the availablilty of
+	 * Set up the variables that define the availability of
 	 * physical memory.  For now, we're going to set
 	 * physical_freestart to 0x00200000 (where the kernel
 	 * was loaded), and allocate the memory we need downwards.
@@ -829,8 +829,8 @@ consinit(void)
 #if KGDB
 #if NEPCOM > 0
 	if (strcmp(kgdb_devname, "epcom") == 0) {
-		com_kgdb_attach(&ep93xx_bs_tag, kgdb_devaddr, kgdb_devrate,
-			kgdb_devmode);
+		epcom_kgdb_attach(&ep93xx_bs_tag, kgdb_devaddr, kgdb_devrate,
+				  kgdb_devmode);
 	}
 #endif	/* NEPCOM > 0 */
 #endif	/* KGDB */

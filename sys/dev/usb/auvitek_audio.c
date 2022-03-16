@@ -1,4 +1,4 @@
-/* $NetBSD: auvitek_audio.c,v 1.4 2021/04/24 23:36:59 thorpej Exp $ */
+/* $NetBSD: auvitek_audio.c,v 1.6 2022/03/13 12:49:36 riastradh Exp $ */
 
 /*-
  * Copyright (c) 2010 Jared D. McNeill <jmcneill@invisible.ca>
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: auvitek_audio.c,v 1.4 2021/04/24 23:36:59 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: auvitek_audio.c,v 1.6 2022/03/13 12:49:36 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -97,10 +97,9 @@ auvitek_audio_attach(struct auvitek_softc *sc)
 		ilocs[USBIFIFCF_INTERFACE] = uiaa.uiaa_ifaceno;
 		sc->sc_audiodev =
 		    config_found(sc->sc_dev, &uiaa, auvitek_ifprint,
-				 CFARG_SUBMATCH, config_stdsubmatch,
-				 CFARG_IATTR, "usbifif",
-				 CFARG_LOCATORS, ilocs,
-				 CFARG_EOL);
+				 CFARGS(.submatch = config_stdsubmatch,
+					.iattr = "usbifif",
+					.locators = ilocs));
 		if (sc->sc_audiodev)
 			break;
 	}
@@ -113,10 +112,6 @@ auvitek_audio_attach(struct auvitek_softc *sc)
 int
 auvitek_audio_detach(struct auvitek_softc *sc, int flags)
 {
-	if (sc->sc_audiodev != NULL) {
-		config_detach(sc->sc_audiodev, flags);
-		sc->sc_audiodev = NULL;
-	}
 
 	return 0;
 }

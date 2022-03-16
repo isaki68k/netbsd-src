@@ -1,10 +1,10 @@
-#	$NetBSD: Makefile,v 1.250 2021/05/17 04:07:43 yamaguchi Exp $
+#	$NetBSD: Makefile,v 1.262 2021/12/07 17:39:54 brad Exp $
 
 .include <bsd.own.mk>
 
 # For all platforms
 
-# Modules for compatability with earlier versions of NetBSD
+# Modules for compatibility with earlier versions of NetBSD
 
 SUBDIR+=	compat_util
 SUBDIR+=	compat_43   compat_sysctl_09_43
@@ -27,6 +27,7 @@ SUBDIR+=	adosfs
 SUBDIR+=	aio
 SUBDIR+=	audio
 SUBDIR+=	autofs
+SUBDIR+=	blake2s
 SUBDIR+=	blowfish
 SUBDIR+=	bpf
 SUBDIR+=	bpf_filter
@@ -66,7 +67,6 @@ SUBDIR+=	gpioirq
 SUBDIR+=	gpiopps
 SUBDIR+=	hfs
 SUBDIR+=	hythygtemp
-SUBDIR+=	si70xxtemp
 SUBDIR+=	am2315temp
 SUBDIR+=	i2cexec
 SUBDIR+=	i2c_bitbang
@@ -88,6 +88,7 @@ SUBDIR+=	if_mue
 SUBDIR+=	if_npflog
 SUBDIR+=	if_ppp
 SUBDIR+=	if_pppoe
+SUBDIR+=	if_run
 SUBDIR+=	if_sl
 SUBDIR+=	if_smsc
 SUBDIR+=	if_srt srt
@@ -100,6 +101,7 @@ SUBDIR+=	if_ure
 SUBDIR+=	if_url
 SUBDIR+=	if_urndis
 SUBDIR+=	if_vlan
+SUBDIR+=	if_wg
 SUBDIR+=	iic
 SUBDIR+=	ip_ecn
 SUBDIR+=	ipl
@@ -143,12 +145,18 @@ SUBDIR+=	puffs
 SUBDIR+=	putter
 SUBDIR+=	raid
 SUBDIR+=	scsiverbose
+SUBDIR+=	scmd
+SUBDIR+=	scmdi2c
 SUBDIR+=	sdtemp
 SUBDIR+=	secmodel_bsd44
 SUBDIR+=	secmodel_extensions
 SUBDIR+=	secmodel_overlay
 SUBDIR+=	securelevel
 SUBDIR+=	sequencer
+SUBDIR+=	sgp40mox
+SUBDIR+=	sht3xtemp
+SUBDIR+=	sht4xtemp
+SUBDIR+=	si70xxtemp
 SUBDIR+=	skipjack
 SUBDIR+=	slcompress
 SUBDIR+=	spdmem
@@ -338,12 +346,12 @@ SUBDIR+=	viadrmums
     ${MACHINE_ARCH} == "x86_64"
 SUBDIR+=	compat_linux
 SUBDIR+=	drm
-SUBDIR+=	drmkms
-SUBDIR+=	drmkms_agp
-SUBDIR+=	drmkms_linux
-SUBDIR+=	drmkms_pci
+#SUBDIR+=	drmkms
+#SUBDIR+=	drmkms_agp
+#SUBDIR+=	drmkms_linux
+#SUBDIR+=	drmkms_pci
 SUBDIR+=	i915drm
-SUBDIR+=	i915drmkms
+#SUBDIR+=	i915drmkms
 #
 # ISA modules
 #
@@ -355,6 +363,11 @@ SUBDIR+=	lm_isa
 SUBDIR+=	lm_isa_common
 SUBDIR+=	lm_wbsio
 SUBDIR+=	wbsio
+.endif
+
+.if ${MACHINE_CPU} == "aarch64"
+SUBDIR+=	compat_linux
+SUBDIR+=	compat_linux32
 .endif
 
 .if ${MACHINE_CPU} == "m68k"
@@ -388,6 +401,8 @@ SUBDIR+= 	dm
 SUBDIR+=	cyclic
 SUBDIR+=	dtrace
 .endif
+
+SUBDIR+=        sodium
 
 # we need solaris for the dtrace and zfs modules
 .if (${MKDTRACE} != "no" || ${MKZFS} != "no")

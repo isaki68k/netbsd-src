@@ -1,6 +1,4 @@
-#	$NetBSD: files.acpi,v 1.120 2021/01/24 18:02:51 jmcneill Exp $
-
-include "dev/acpi/acpica/files.acpica"
+#	$NetBSD: files.acpi,v 1.124 2022/02/16 20:14:30 riastradh Exp $
 
 defflag	opt_acpi.h	ACPIVERBOSE ACPI_DEBUG ACPI_ACTIVATE_DEV
 			ACPI_DSDT_OVERRIDE ACPI_SCANPCI ACPI_BREAKPOINT
@@ -277,6 +275,10 @@ file	dev/acpi/amdccp_acpi.c		amdccp_acpi
 attach	virtio at acpinodebus with virtio_acpi
 file	dev/acpi/virtio_acpi.c		virtio_acpi
 
+# OHCI-compliant USB controller
+attach	ohci at acpinodebus with ohci_acpi
+file	dev/acpi/ohci_acpi.c		ohci_acpi
+
 # EHCI-compliant USB controller
 attach	ehci at acpinodebus with ehci_acpi
 file	dev/acpi/ehci_acpi.c		ehci_acpi
@@ -293,5 +295,13 @@ file	dev/acpi/ipmi_acpi.c		ipmi_acpi
 # Broadcom GENETv5
 attach	genet at acpinodebus with genet_acpi
 file	dev/acpi/genet_acpi.c		genet_acpi
+
+# DesignWare Ethernet Quality-of-Service controller
+attach	eqos at acpinodebus with eqos_acpi
+file	dev/acpi/eqos_acpi.c		eqos_acpi
+
+# DesignWare Mobile Storage Host Controller
+attach	dwcmmc at acpinodebus with dwcmmc_acpi
+file	dev/acpi/dwcmmc_acpi.c		dwcmmc_acpi
 
 include	"dev/acpi/wmi/files.wmi"

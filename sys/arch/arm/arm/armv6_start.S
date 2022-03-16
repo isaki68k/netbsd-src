@@ -1,4 +1,4 @@
-/*	$NetBSD: armv6_start.S,v 1.34 2021/01/27 13:50:17 skrll Exp $	*/
+/*	$NetBSD: armv6_start.S,v 1.37 2021/11/14 16:56:32 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2012, 2017, 2018 The NetBSD Foundation, Inc.
@@ -462,7 +462,7 @@ generic_startv7:
 	movt	r0, #:upper16:TEMP_L1_TABLE
 	sub	r0, R_VTOPDIFF
 
-	// Return to virtual addess after the call to armv7_mmuinit
+	// Return to virtual address after the call to armv7_mmuinit
 	movw	lr, #:lower16:generic_vstartv7
 	movt	lr, #:upper16:generic_vstartv7
 	b	armv7_mmuinit
@@ -472,6 +472,14 @@ generic_vstartv7:
 	add	sp, sp, R_VTOPDIFF
 
 	VPRINTF("virtual\n\r")
+
+	VPRINTF("prrr  : ")
+	mrc	p15, 0, r0, c10, c2, 0	// Primary Region Remap Register (PRRR)
+	VPRINTX(r0)
+	VPRINTF("\n\rnmrr  : ")
+	mrc	p15, 0, r0, c10, c2, 1	// Normal Memory Remap Register (NMRR)
+	VPRINTX(r0)
+	VPRINTF("\n\r")
 
 #if defined(KASAN)
 	ldr	r0, =start_stacks_bottom
@@ -916,8 +924,8 @@ armv7_mpcontinuation:
 	lsl	r5, R_INDEX			// ... for our cpu
 
 	/* wait for the mailbox start bit to become true */
-1:	dmb					// data memory barrier
-	ldr	r2, [r6]			// load mbox
+1:	ldr	r2, [r6]			// load mbox
+	dmb					//    make it a load-acquire
 	tst	r2, r5				// is our bit set?
 	wfeeq					//    no, back to waiting
 	beq	1b				//    no, and try again

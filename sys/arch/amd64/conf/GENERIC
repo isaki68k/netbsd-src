@@ -1,4 +1,4 @@
-# $NetBSD: GENERIC,v 1.589 2021/05/17 04:07:42 yamaguchi Exp $
+# $NetBSD: GENERIC,v 1.593 2021/10/31 00:31:48 simonb Exp $
 #
 # GENERIC machine description file
 #
@@ -22,7 +22,7 @@ include 	"arch/amd64/conf/std.amd64"
 
 options 	INCLUDE_CONFIG_FILE	# embed config file in kernel binary
 
-#ident		"GENERIC-$Revision: 1.589 $"
+#ident		"GENERIC-$Revision: 1.593 $"
 
 maxusers	64		# estimated number of users
 
@@ -138,7 +138,7 @@ options 	KDTRACE_HOOKS	# kernel DTrace hooks
 # Use KASAN_PANIC if you want panics instead of warnings.
 #makeoptions 	KASAN=1		# mandatory
 #options 	KASAN		# mandatory
-#no options	SVS		# mandatory
+#no options 	SVS		# mandatory
 #options 	POOL_QUARANTINE	# optional
 #options 	KASAN_PANIC	# optional
 
@@ -152,7 +152,7 @@ options 	KDTRACE_HOOKS	# kernel DTrace hooks
 # memory in pool caches. Note that KMSAN requires at least 4GB of RAM.
 #makeoptions 	KMSAN=1		# mandatory
 #options 	KMSAN		# mandatory
-#no options	SVS		# mandatory
+#no options 	SVS		# mandatory
 #no options 	MODULAR		# mandatory
 #no options 	MODULAR_DEFAULT_AUTOLOAD	# mandatory
 #options 	POOL_NOCACHE	# optional
@@ -201,7 +201,7 @@ options 	WAPBL		# File system journaling support
 # Note that UFS_DIRHASH is suspected of causing kernel memory corruption.
 # It is not recommended for general use.
 #options 	UFS_DIRHASH	# UFS Large Directory Hashing - Experimental
-options		UFS_ACL		# UFS Access Control Lists
+options 	UFS_ACL		# UFS Access Control Lists
 #options 	FFS_NO_SNAPSHOT	# No FFS snapshot support
 options 	UFS_EXTATTR	# Extended attribute support for UFS1
 # ext2fs
@@ -262,8 +262,11 @@ options 	WSEMUL_VT100		# VT100 / VT220 emulation
 #options 	WSEMUL_SUN		# sun terminal emulation
 #options 	WSEMUL_DEFAULT="\"vt100\""  # NB: default is "sun" if enabled
 # different kernel output - see dev/wscons/wsdisplayvar.h
+options 	WSDISPLAY_CUSTOM_OUTPUT	# color customization from wsconsctl(8)
 options 	WS_KERNEL_FG=WSCOL_GREEN
 #options 	WS_KERNEL_BG=WSCOL_BLACK
+# customization of console border color
+options 	WSDISPLAY_CUSTOM_BORDER	# custom border colors via wsconsctl(8)
 # compatibility to other console drivers
 options 	WSDISPLAY_COMPAT_PCVT		# emulate some ioctls
 options 	WSDISPLAY_COMPAT_SYSCONS	# emulate some ioctls
@@ -334,8 +337,11 @@ acpiwmi*	at acpi?		# ACPI WMI Mapper
 aibs*		at acpi?		# ASUSTeK AI Booster hardware monitor
 asus*		at acpi?		# ASUS hotkeys
 attimer*	at acpi?		# AT Timer
-#com*		at acpi?		# Serial communications interface
-#fdc*		at acpi?		# Floppy disk controller
+com0		at acpi?		# Serial communications interface
+com1		at acpi?		# Serial communications interface
+com*		at acpi?		# Serial communications interface
+fdc*		at acpi?		# Floppy disk controller
+fd*		at fdc? drive ?		# the drives themselves
 fujbp*		at acpi?		# Fujitsu Brightness & Pointer
 fujhk*		at acpi?		# Fujitsu Hotkeys
 #hpacel* 	at acpi?		# HP 3D DriveGuard accelerometer
@@ -343,7 +349,9 @@ fujhk*		at acpi?		# Fujitsu Hotkeys
 hpet*		at acpihpetbus?		# High Precision Event Timer (table)
 hpet*		at acpinodebus?		# High Precision Event Timer (device)
 joy*		at acpi?		# Joystick/Game port
-#lpt*		at acpi?		# Parallel port
+lpt0		at acpi?		# Parallel port
+lpt1		at acpi?		# Parallel port
+lpt*		at acpi?		# Parallel port
 mpu*		at acpi?		# Roland MPU-401 MIDI UART
 pckbc*		at acpi?		# PC keyboard controller
 pcppi*		at acpi?		# AT-style speaker sound
@@ -781,11 +789,8 @@ ld*	at nvme? nsid ?
 # Miscellaneous mass storage devices
 
 # ISA floppy
-fdc0	at isa? port 0x3f0 irq 6 drq 2	# standard PC floppy controllers
+#fdc0	at isa? port 0x3f0 irq 6 drq 2	# standard PC floppy controllers
 #fdc1	at isa? port 0x370 irq ? drq ?
-fd*	at fdc? drive ?			# the drives themselves
-# some machines need you to do this instead of fd*
-#fd0	at fdc0 drive 0
 
 # Network Interfaces
 
@@ -1148,7 +1153,7 @@ options 	RAID_AUTOCONFIG		# auto-configuration of RAID components
 pseudo-device	fss			# file system snapshot device
 
 pseudo-device	md			# memory disk device (ramdisk)
-options		MEMORY_DISK_HOOKS	# enable md specific hooks
+options 	MEMORY_DISK_HOOKS	# enable md specific hooks
 options 	MEMORY_DISK_DYNAMIC	# enable dynamic resizing
 
 pseudo-device	vnd			# disk-like interface to files

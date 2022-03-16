@@ -1,4 +1,4 @@
-/* $NetBSD: cpu_fdt.c,v 1.39 2021/04/24 23:36:26 thorpej Exp $ */
+/* $NetBSD: cpu_fdt.c,v 1.42 2022/03/03 06:26:05 riastradh Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared McNeill <jmcneill@invisible.ca>
@@ -30,7 +30,7 @@
 #include "psci_fdt.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu_fdt.c,v 1.39 2021/04/24 23:36:26 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu_fdt.c,v 1.42 2022/03/03 06:26:05 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/atomic.h>
@@ -57,12 +57,7 @@ __KERNEL_RCSID(0, "$NetBSD: cpu_fdt.c,v 1.39 2021/04/24 23:36:26 thorpej Exp $")
 static int	cpu_fdt_match(device_t, cfdata_t, void *);
 static void	cpu_fdt_attach(device_t, device_t, void *);
 
-struct cpu_fdt_softc {
-	device_t		sc_dev;
-	int			sc_phandle;
-};
-
-CFATTACH_DECL_NEW(cpu_fdt, sizeof(struct cpu_fdt_softc),
+CFATTACH_DECL_NEW(cpu_fdt, 0,
 	cpu_fdt_match, cpu_fdt_attach, NULL, NULL);
 
 static int
@@ -80,15 +75,11 @@ cpu_fdt_match(device_t parent, cfdata_t cf, void *aux)
 static void
 cpu_fdt_attach(device_t parent, device_t self, void *aux)
 {
-	struct cpu_fdt_softc * const sc = device_private(self);
 	struct fdt_attach_args * const faa = aux;
 	const int phandle = faa->faa_phandle;
 	bus_addr_t cpuid;
 	const uint32_t *cap_ptr;
 	int len;
-
-	sc->sc_dev = self;
-	sc->sc_phandle = phandle;
 
  	cap_ptr = fdtbus_get_prop(phandle, "capacity-dmips-mhz", &len);
 	if (cap_ptr && len == 4) {
@@ -106,7 +97,7 @@ cpu_fdt_attach(device_t parent, device_t self, void *aux)
 	cpu_attach(self, cpuid);
 
 	/* Attach CPU frequency scaling provider */
-	config_found(self, faa, NULL, CFARG_EOL);
+	config_found(self, faa, NULL, CFARGS_NONE);
 }
 
 #if defined(MULTIPROCESSOR) && (NPSCI_FDT > 0 || defined(__aarch64__))
@@ -332,7 +323,8 @@ ARM_CPU_METHOD(psci, "psci", cpu_enable_psci);
 
 #if defined(MULTIPROCESSOR) && defined(__aarch64__)
 static int
-spintable_cpu_on(u_int cpuindex, paddr_t entry_point_address, paddr_t cpu_release_addr)
+spintable_cpu_on(const int phandle, u_int cpuindex,
+    paddr_t entry_point_address, paddr_t cpu_release_addr)
 {
 	/*
 	 * we need devmap for cpu-release-addr in advance.
@@ -346,10 +338,18 @@ spintable_cpu_on(u_int cpuindex, paddr_t entry_point_address, paddr_t cpu_releas
 		extern struct bus_space arm_generic_bs_tag;
 		bus_space_handle_t ioh;
 
+		const int parent = OF_parent(phandle);
+		const int addr_cells = fdtbus_get_addr_cells(parent);
+
 		bus_space_map(&arm_generic_bs_tag, cpu_release_addr,
 		    sizeof(paddr_t), 0, &ioh);
-		bus_space_write_4(&arm_generic_bs_tag, ioh, 0,
-		    entry_point_address);
+		if (addr_cells == 1) {
+			bus_space_write_4(&arm_generic_bs_tag, ioh, 0,
+			    entry_point_address);
+		} else {
+			bus_space_write_8(&arm_generic_bs_tag, ioh, 0,
+			    entry_point_address);
+		}
 		bus_space_unmap(&arm_generic_bs_tag, ioh, sizeof(paddr_t));
 	}
 
@@ -367,7 +367,8 @@ cpu_enable_spin_table(int phandle)
 	if (of_getprop_uint64(phandle, "cpu-release-addr", &addr) != 0)
 		return ENXIO;
 
-	ret = spintable_cpu_on(mpidr, cpu_fdt_mpstart_pa(), (paddr_t)addr);
+	ret = spintable_cpu_on(phandle, mpidr, cpu_fdt_mpstart_pa(),
+	    (paddr_t)addr);
 	if (ret != 0)
 		return EIO;
 

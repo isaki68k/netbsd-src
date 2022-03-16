@@ -1,4 +1,4 @@
-/*	$NetBSD: usbdi.h,v 1.103 2021/06/13 14:48:10 riastradh Exp $	*/
+/*	$NetBSD: usbdi.h,v 1.107 2022/03/03 06:09:33 riastradh Exp $	*/
 /*	$FreeBSD: src/sys/dev/usb/usbdi.h,v 1.18 1999/11/17 22:33:49 n_hibma Exp $	*/
 
 /*
@@ -33,6 +33,10 @@
 
 #ifndef _USBDI_H_
 #define _USBDI_H_
+
+#include <sys/types.h>
+
+#include <dev/usb/usb.h>
 
 struct usbd_bus;
 struct usbd_device;
@@ -91,7 +95,7 @@ usbd_status usbd_open_pipe_intr(struct usbd_interface *, uint8_t, uint8_t,
     struct usbd_pipe **, void *, void *, uint32_t, usbd_callback, int);
 usbd_status usbd_open_pipe(struct usbd_interface *, uint8_t, uint8_t,
      struct usbd_pipe **);
-usbd_status usbd_close_pipe(struct usbd_pipe *);
+void usbd_close_pipe(struct usbd_pipe *);
 
 usbd_status usbd_transfer(struct usbd_xfer *);
 
@@ -118,8 +122,11 @@ void usbd_get_xfer_status(struct usbd_xfer *, void **,
 usb_endpoint_descriptor_t *usbd_interface2endpoint_descriptor
     (struct usbd_interface *, uint8_t);
 
-usbd_status usbd_abort_pipe(struct usbd_pipe *);
-usbd_status usbd_abort_default_pipe(struct usbd_device *);
+void usbd_abort_pipe(struct usbd_pipe *);
+void usbd_abort_default_pipe(struct usbd_device *);
+
+void usbd_suspend_pipe(struct usbd_pipe *);
+void usbd_resume_pipe(struct usbd_pipe *);
 
 usbd_status usbd_clear_endpoint_stall(struct usbd_pipe *);
 void usbd_clear_endpoint_stall_async(struct usbd_pipe *);

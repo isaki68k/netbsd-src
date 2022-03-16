@@ -1,4 +1,4 @@
-/*	$NetBSD: nfsmb.c,v 1.26 2021/04/24 23:36:57 thorpej Exp $	*/
+/*	$NetBSD: nfsmb.c,v 1.28 2021/09/03 21:55:00 andvar Exp $	*/
 /*
  * Copyright (c) 2007 KIYOHARA Takashi
  * All rights reserved.
@@ -26,7 +26,7 @@
  *
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nfsmb.c,v 1.26 2021/04/24 23:36:57 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nfsmb.c,v 1.28 2021/09/03 21:55:00 andvar Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -168,17 +168,17 @@ nfsmbc_attach(device_t parent, device_t self, void *aux)
 	nfsmbca.nfsmb_num = 1;
 	nfsmbca.nfsmb_addr = NFORCE_SMBBASE(reg);
 	sc->sc_nfsmb[0] = config_found(sc->sc_dev, &nfsmbca, nfsmbc_print,
-	    CFARG_EOL);
+	    CFARGS_NONE);
 
 	reg = pci_conf_read(pa->pa_pc, pa->pa_tag, baseregs[1]);
 	nfsmbca.nfsmb_num = 2;
 	nfsmbca.nfsmb_addr = NFORCE_SMBBASE(reg);
 	sc->sc_nfsmb[1] = config_found(sc->sc_dev, &nfsmbca, nfsmbc_print,
-	    CFARG_EOL);
+	    CFARGS_NONE);
 
 	/* This driver is similar to an ISA bridge that doesn't
 	 * need any special handling. So registering NULL handlers
-	 * are sufficent. */
+	 * are sufficient. */
 	if (!pmf_device_register(self, NULL, NULL))
 		aprint_error_dev(self, "couldn't establish power handler\n");
 }
@@ -238,11 +238,11 @@ nfsmb_attach(device_t parent, device_t self, void *aux)
 
 	memset(&iba, 0, sizeof(iba));
 	iba.iba_tag = &sc->sc_i2c;
-	config_found(sc->sc_dev, &iba, iicbus_print, CFARG_EOL);
+	config_found(sc->sc_dev, &iba, iicbus_print, CFARGS_NONE);
 
 	/* This driver is similar to an ISA bridge that doesn't
 	 * need any special handling. So registering NULL handlers
-	 * are sufficent. */
+	 * are sufficient. */
 	if (!pmf_device_register(self, NULL, NULL))
 		aprint_error_dev(self, "couldn't establish power handler\n");
 }

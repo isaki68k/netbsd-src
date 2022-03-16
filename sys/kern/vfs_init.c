@@ -1,4 +1,4 @@
-/*	$NetBSD: vfs_init.c,v 1.52 2021/02/04 21:07:06 jdolecek Exp $	*/
+/*	$NetBSD: vfs_init.c,v 1.54 2022/02/12 15:51:29 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 1998, 2000, 2008 The NetBSD Foundation, Inc.
@@ -67,7 +67,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_init.c,v 1.52 2021/02/04 21:07:06 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_init.c,v 1.54 2022/02/12 15:51:29 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/mount.h>
@@ -455,6 +455,11 @@ vfsinit(void)
 	 * included in the kernel.
 	 */
 	module_init_class(MODULE_CLASS_VFS);
+
+	/*
+	 * Initialize EVFILT_FS for kqueue.
+	 */
+	vfs_evfilt_fs_init();
 }
 
 /*

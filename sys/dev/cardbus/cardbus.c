@@ -1,4 +1,4 @@
-/*	$NetBSD: cardbus.c,v 1.111 2021/04/24 23:36:53 thorpej Exp $	*/
+/*	$NetBSD: cardbus.c,v 1.113 2021/11/01 21:28:03 andvar Exp $	*/
 
 /*
  * Copyright (c) 1997, 1998, 1999 and 2000
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cardbus.c,v 1.111 2021/04/24 23:36:53 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cardbus.c,v 1.113 2021/11/01 21:28:03 andvar Exp $");
 
 #include "opt_cardbus.h"
 
@@ -448,7 +448,7 @@ cardbus_rescan(device_t self, const char *ifattr,
 	tag = cardbus_make_tag(cc, cf, sc->sc_bus, function);
 
 	/*
-	 * Wait until power comes up.  Maxmum 500 ms.
+	 * Wait until power comes up.  Maximum 500 ms.
 	 *
 	 * XXX What is this for?  The bridge driver ought to have waited
 	 * XXX already.
@@ -605,9 +605,8 @@ cardbus_rescan(device_t self, const char *ifattr,
 		locs[CARDBUSCF_FUNCTION] = function;
 
 		if ((csc = config_found(sc->sc_dev, &ca, cardbusprint,
-					CFARG_SUBMATCH, config_stdsubmatch,
-					CFARG_LOCATORS, locs,
-					CFARG_EOL)) == NULL) {
+					CFARGS(.submatch = config_stdsubmatch,
+					       .locators = locs))) == NULL) {
 			/* do not match */
 			disable_function(sc, function);
 			sc->sc_funcs[function] = NULL;

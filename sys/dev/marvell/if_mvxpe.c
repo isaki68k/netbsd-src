@@ -1,4 +1,4 @@
-/*	$NetBSD: if_mvxpe.c,v 1.33 2020/02/05 08:34:48 skrll Exp $	*/
+/*	$NetBSD: if_mvxpe.c,v 1.39 2022/02/16 22:00:56 andvar Exp $	*/
 /*
  * Copyright (c) 2015 Internet Initiative Japan Inc.
  * All rights reserved.
@@ -25,7 +25,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_mvxpe.c,v 1.33 2020/02/05 08:34:48 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_mvxpe.c,v 1.39 2022/02/16 22:00:56 andvar Exp $");
 
 #include "opt_multiprocessor.h"
 
@@ -88,7 +88,7 @@ STATIC int mvxpe_miibus_readreg(device_t, int, int, uint16_t *);
 STATIC int mvxpe_miibus_writereg(device_t, int, int, uint16_t);
 STATIC void mvxpe_miibus_statchg(struct ifnet *);
 
-/* Addres Decoding Window */
+/* Address Decoding Window */
 STATIC void mvxpe_wininit(struct mvxpe_softc *, enum marvell_tags *);
 
 /* Device Register Initialization */
@@ -218,7 +218,7 @@ STATIC struct mvxpe_mib_def {
 	    "Frame Size  256 -  511"},
 	{MVXPE_MIB_RX_FRAME1023_OCT, 0,	"rx_frame_512_1023",
 	    "Frame Size  512 - 1023", 0},
-	{MVXPE_MIB_RX_FRAMEMAX_OCT, 0,	"rx_fame_1024_max",
+	{MVXPE_MIB_RX_FRAMEMAX_OCT, 0,	"rx_frame_1024_max",
 	    "Frame Size 1024 -  Max", 0},
 	{MVXPE_MIB_TX_GOOD_OCT, 1,	"tx_good_oct",
 	    "Good Octets Tx", 0},
@@ -482,7 +482,8 @@ mvxpe_attach(device_t parent, device_t self, void *aux)
 	 * we assume phyaddress == MAC unit number here,
 	 * but some boards may not.
 	 */
-	mii_attach(self, mii, 0xffffffff, MII_PHY_ANY, sc->sc_dev->dv_unit, 0);
+	mii_attach(self, mii, 0xffffffff, MII_PHY_ANY, device_unit(sc->sc_dev),
+	    0);
 	child = LIST_FIRST(&mii->mii_phys);
 	if (child == NULL) {
 		aprint_error_dev(self, "no PHY found!\n");
@@ -875,7 +876,7 @@ mvxpe_initreg(struct ifnet *ifp)
 	/* Tx MTU Limit */
 	MVXPE_WRITE(sc, MVXPE_TXMTU, MVXPE_MTU);
 
-	/* Check SGMII or SERDES(asume IPL/U-BOOT initialize this) */
+	/* Check SGMII or SERDES(assume IPL/U-BOOT initialize this) */
 	reg = MVXPE_READ(sc, MVXPE_PMACC0);
 	if ((reg & MVXPE_PMACC0_PORTTYPE) != 0)
 		serdes = 1;
@@ -1600,15 +1601,15 @@ mvxpe_rxtx_intr(void *arg)
 			MVXPE_EVCNT_INCR(&sc->sc_ev.ev_rxtx_tbrq);
 		}
 		if (prxtxic & MVXPE_PRXTXI_PRXTXTHICSUMMARY) {
-			DPRINTIFNET(ifp, 1, "PRXTXTHIC Sumary\n");
+			DPRINTIFNET(ifp, 1, "PRXTXTHIC Summary\n");
 			MVXPE_EVCNT_INCR(&sc->sc_ev.ev_rxtx_rxtxth);
 		}
 		if (prxtxic & MVXPE_PRXTXI_PTXERRORSUMMARY) {
-			DPRINTIFNET(ifp, 1, "PTXERROR Sumary\n");
+			DPRINTIFNET(ifp, 1, "PTXERROR Summary\n");
 			MVXPE_EVCNT_INCR(&sc->sc_ev.ev_rxtx_txerr);
 		}
 		if (prxtxic & MVXPE_PRXTXI_PMISCICSUMMARY) {
-			DPRINTIFNET(ifp, 1, "PMISCIC Sumary\n");
+			DPRINTIFNET(ifp, 1, "PMISCIC Summary\n");
 			MVXPE_EVCNT_INCR(&sc->sc_ev.ev_rxtx_misc);
 		}
 	}
@@ -2610,7 +2611,7 @@ mvxpe_rx_queue_add(struct mvxpe_softc *sc, int q)
 		return ENOBUFS;
 	}
 
-	/* Add the packet to descritor */
+	/* Add the packet to descriptor */
 	KASSERT(MVXPE_RX_PKTBUF(sc, q, rx->rx_cpu) == NULL);
 	MVXPE_RX_PKTBUF(sc, q, rx->rx_cpu) = chunk;
 	mvxpbm_dmamap_sync(chunk, BM_SYNC_ALL, BUS_DMASYNC_PREREAD);

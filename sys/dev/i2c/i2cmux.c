@@ -1,4 +1,4 @@
-/*	$NetBSD: i2cmux.c,v 1.5 2021/04/24 23:36:54 thorpej Exp $	*/
+/*	$NetBSD: i2cmux.c,v 1.7 2021/11/10 15:39:03 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 2020 The NetBSD Foundation, Inc.
@@ -34,7 +34,7 @@
 #endif
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: i2cmux.c,v 1.5 2021/04/24 23:36:54 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: i2cmux.c,v 1.7 2021/11/10 15:39:03 msaitoh Exp $");
 
 #include <sys/types.h>
 #include <sys/device.h>
@@ -134,7 +134,7 @@ iicmux_count_children(struct iicmux_softc * const sc)
 		}
 		if (strcmp(name, "i2c-mux") == 0) {
 			/*
-			 * The node we encountered is the acutal parent
+			 * The node we encountered is the actual parent
 			 * of the i2c bus children.  Stash its phandle
 			 * and restart the enumeration.
 			 */
@@ -201,7 +201,7 @@ iicmux_attach_bus(struct iicmux_softc * const sc,
 			.iba_tag = &bus->controller,
 			.iba_child_devices = acpi_enter_i2c_devs(NULL, ad)
 		};
-		config_found(sc->sc_dev, &iba, iicbus_print, CFARG_EOL);
+		config_found(sc->sc_dev, &iba, iicbus_print, CFARGS_NONE);
 	}	break;
 #endif
 	default:

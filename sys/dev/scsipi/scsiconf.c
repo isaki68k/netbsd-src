@@ -1,4 +1,4 @@
-/*	$NetBSD: scsiconf.c,v 1.291 2021/04/24 23:36:58 thorpej Exp $	*/
+/*	$NetBSD: scsiconf.c,v 1.300 2022/03/12 16:57:15 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 1998, 1999, 2004 The NetBSD Foundation, Inc.
@@ -48,7 +48,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: scsiconf.c,v 1.291 2021/04/24 23:36:58 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: scsiconf.c,v 1.300 2022/03/12 16:57:15 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -64,6 +64,7 @@ __KERNEL_RCSID(0, "$NetBSD: scsiconf.c,v 1.291 2021/04/24 23:36:58 thorpej Exp $
 #include <sys/scsiio.h>
 #include <sys/queue.h>
 #include <sys/atomic.h>
+#include <sys/kmem.h>
 
 #include <dev/scsipi/scsi_all.h>
 #include <dev/scsipi/scsipi_all.h>
@@ -364,10 +365,146 @@ scsibusdetach(device_t self, int flags)
 	cv_destroy(&chan->chan_cv_comp);
 	cv_destroy(&chan->chan_cv_thr);
 
-	if (atomic_dec_uint_nv(&chan_running(chan)) == 0)
+	membar_exit();
+	if (atomic_dec_uint_nv(&chan_running(chan)) == 0) {
+		membar_enter();
 		mutex_destroy(chan_mtx(chan));
+	}
 
 	return 0;
+}
+
+static int
+lun_compar(const void *a, const void *b)
+{
+	const uint16_t * const la = a, * const lb = b;
+
+	if (*la < *lb)
+		return -1;
+	if (*la > *lb)
+		return 1;
+	return 0;
+}
+
+static int
+scsi_report_luns(struct scsibus_softc *sc, int target,
+    uint16_t ** const luns, size_t *nluns)
+{
+	struct scsi_report_luns replun;
+	struct scsi_report_luns_header *rlr;
+	struct scsi_report_luns_lun *lunp;
+
+	struct scsipi_channel *chan = sc->sc_channel;
+	struct scsipi_inquiry_data inqbuf;
+	struct scsipi_periph *periph;
+	uint16_t tmp;
+
+	int error;
+	size_t i, rlrlen, rlrlenmin;
+
+	memset(&replun, 0, sizeof(replun));
+
+	periph = scsipi_alloc_periph(M_WAITOK);
+	periph->periph_channel = chan;
+	periph->periph_switch = &scsi_probe_dev;
+
+	periph->periph_target = target;
+	periph->periph_lun = 0;
+	periph->periph_quirks = chan->chan_defquirks;
+
+	if ((error = scsipi_inquire(periph, &inqbuf,
+	    XS_CTL_DISCOVERY | XS_CTL_SILENT)))
+		goto end2;
+	periph->periph_version = inqbuf.version & SID_ANSII;
+	if (periph->periph_version < 3) {
+		error = ENOTSUP;
+		goto end2;
+	}
+
+	rlrlen = rlrlenmin = sizeof(*rlr) + sizeof(*lunp) * 1;
+
+again:
+	rlr = kmem_zalloc(rlrlen, KM_SLEEP);
+
+	replun.opcode = SCSI_REPORT_LUNS;
+	replun.selectreport = SELECTREPORT_NORMAL;
+	_lto4b(rlrlen, replun.alloclen);
+
+	error = scsipi_command(periph, (void *)&replun, sizeof(replun),
+	    (void *)rlr, rlrlen, SCSIPIRETRIES, 10000, NULL,
+	    XS_CTL_DATA_IN | XS_CTL_DISCOVERY | XS_CTL_SILENT);
+	if (error)
+		goto end;
+
+	if (sizeof(*rlr) + _4btol(rlr->length) > rlrlen &&
+	    sizeof(*rlr) + _4btol(rlr->length) <= 32) {
+	    	const size_t old_rlrlen = rlrlen;
+		rlrlen = sizeof(*rlr) + uimin(_4btol(rlr->length),
+		    16383 * sizeof(*lunp));
+		kmem_free(rlr, old_rlrlen);
+		rlr = NULL;
+		if (rlrlen < rlrlenmin) {
+			error = EIO;
+			goto end;
+		}
+		goto again;
+	}
+
+	KASSERT(nluns != NULL);
+	*nluns = (rlrlen - sizeof(*rlr)) / sizeof(*lunp);
+
+	KASSERT(luns != NULL);
+	*luns = kmem_alloc(*nluns * sizeof(**luns), KM_SLEEP);
+
+	for (i = 0; i < *nluns; i++) {
+		lunp = &((struct scsi_report_luns_lun *)&rlr[1])[i];
+		switch (lunp->lun[0] & 0xC0) {
+		default:
+			scsi_print_addr(periph);
+			printf("LUN %016"PRIx64" ignored\n", _8btol(lunp->lun));
+			(*luns)[i] = 0;
+			break;
+		case 0x40:
+			(*luns)[i] = _2btol(&lunp->lun[0]) & 0x3FFF;
+			break;
+		case 0x00:
+			(*luns)[i] = _2btol(&lunp->lun[0]) & 0x00FF;
+			break;
+		}
+	}
+
+	kheapsort(*luns, *nluns, sizeof(**luns), lun_compar, &tmp);
+
+end:
+	if (rlr)
+		kmem_free(rlr, rlrlen);
+end2:
+	scsipi_free_periph(periph);
+	return error;
+}
+
+static void
+scsi_discover_luns(struct scsibus_softc *sc, int target, int minlun, int maxlun)
+{
+	uint16_t *luns = NULL;	/* XXX gcc */
+	size_t nluns = 0;	/* XXX gcc */
+
+	if (scsi_report_luns(sc, target, &luns, &nluns) == 0) {
+		for (size_t i = 0; i < nluns; i++)
+			if (luns[i] >= minlun && luns[i] <= maxlun)
+				scsi_probe_device(sc, target, luns[i]);
+		kmem_free(luns, sizeof(*luns) * nluns);
+		return;
+	}
+
+	for (int lun = minlun; lun <= maxlun; lun++) {
+		/*
+		 * See if there's a device present, and configure it.
+		 */
+		if (scsi_probe_device(sc, target, lun) == 0)
+			break;
+		/* otherwise something says we should look further */
+	}
 }
 
 /*
@@ -410,14 +547,8 @@ scsi_probe_bus(struct scsibus_softc *sc, int target, int lun)
 	for (target = mintarget; target <= maxtarget; target++) {
 		if (target == chan->chan_id)
 			continue;
-		for (lun = minlun; lun <= maxlun; lun++) {
-			/*
-			 * See if there's a device present, and configure it.
-			 */
-			if (scsi_probe_device(sc, target, lun) == 0)
-				break;
-			/* otherwise something says we should look further */
-		}
+
+		scsi_discover_luns(sc, target, minlun, maxlun);
 
 		/*
 		 * Now that we've discovered all of the LUNs on this
@@ -1012,10 +1143,10 @@ scsi_probe_device(struct scsibus_softc *sc, int target, int lun)
 	locs[SCSIBUSCF_TARGET] = target;
 	locs[SCSIBUSCF_LUN] = lun;
 
+	KERNEL_LOCK(1, NULL);
 	if ((cf = config_search(sc->sc_dev, &sa,
-				CFARG_SUBMATCH, config_stdsubmatch,
-				CFARG_LOCATORS, locs,
-				CFARG_EOL)) != NULL) {
+				CFARGS(.submatch = config_stdsubmatch,
+				       .locators = locs))) != NULL) {
 		scsipi_insert_periph(chan, periph);
 
 		/*
@@ -1034,11 +1165,12 @@ scsi_probe_device(struct scsibus_softc *sc, int target, int lun)
 		 * XXX assign it in periph driver.
 		 */
 		config_attach(sc->sc_dev, cf, &sa, scsibusprint,
-		    CFARG_LOCATORS, locs,
-		    CFARG_EOL);
+		    CFARGS(.locators = locs));
+		KERNEL_UNLOCK_ONE(NULL);
 	} else {
 		scsibusprint(&sa, device_xname(sc->sc_dev));
 		aprint_normal(" not configured\n");
+		KERNEL_UNLOCK_ONE(NULL);
 		goto bad;
 	}
 

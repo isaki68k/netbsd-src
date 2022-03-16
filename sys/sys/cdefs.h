@@ -1,4 +1,4 @@
-/*	$NetBSD: cdefs.h,v 1.157 2021/04/23 05:56:43 skrll Exp $	*/
+/*	$NetBSD: cdefs.h,v 1.159 2022/01/22 08:58:48 skrll Exp $	*/
 
 /* * Copyright (c) 1991, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -469,11 +469,9 @@
  * C99 defines the restrict type qualifier keyword, which was made available
  * in GCC 2.92.
  */
-#if defined(__lint__)
-#define	__restrict	/* delete __restrict when not supported */
-#elif __STDC_VERSION__ >= 199901L
+#if __STDC_VERSION__ >= 199901L
 #define	__restrict	restrict
-#elif __GNUC_PREREQ__(2, 92) || defined(__lint__)
+#elif __GNUC_PREREQ__(2, 92)
 #define	__restrict	__restrict__
 #else
 #define	__restrict	/* delete __restrict when not supported */
@@ -650,6 +648,9 @@
 #define	__BIT(__n)	\
     (((uintmax_t)(__n) >= NBBY * sizeof(uintmax_t)) ? 0 : \
     ((uintmax_t)1 << (uintmax_t)((__n) & (NBBY * sizeof(uintmax_t) - 1))))
+
+/* __MASK(n): first n bits all set, where __MASK(4) == 0b1111. */
+#define	__MASK(__n)	(__BIT(__n) - 1)
 
 /* Macros for min/max. */
 #define	__MIN(a,b)	((/*CONSTCOND*/(a)<=(b))?(a):(b))

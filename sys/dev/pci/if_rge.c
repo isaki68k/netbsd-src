@@ -1,4 +1,4 @@
-/*	$NetBSD: if_rge.c,v 1.19 2021/05/08 00:27:02 thorpej Exp $	*/
+/*	$NetBSD: if_rge.c,v 1.22 2021/10/11 15:11:49 msaitoh Exp $	*/
 /*	$OpenBSD: if_rge.c,v 1.9 2020/12/12 11:48:53 jan Exp $	*/
 
 /*
@@ -18,7 +18,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_rge.c,v 1.19 2021/05/08 00:27:02 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_rge.c,v 1.22 2021/10/11 15:11:49 msaitoh Exp $");
 
 #include <sys/types.h>
 
@@ -352,6 +352,11 @@ rge_attach(device_t parent, device_t self, void *aux)
 
 	if_attach(ifp);
 	ether_ifattach(ifp, eaddr);
+
+	if (pmf_device_register(self, NULL, NULL))
+		pmf_class_network_register(self, ifp);
+	else
+		aprint_error_dev(self, "couldn't establish power handler\n");
 }
 
 int
@@ -1498,9 +1503,9 @@ rge_iff(struct rge_softc *sc)
 			    ETHER_ADDR_LEN) >> 26;
 
 			if (h < 32)
-				hashes[0] |= (1 << h);
+				hashes[0] |= (1U << h);
 			else
-				hashes[1] |= (1 << (h - 32));
+				hashes[1] |= (1U << (h - 32));
 
 			ETHER_NEXT_MULTI(step, enm);
 		}
@@ -2063,7 +2068,7 @@ rge_set_macaddr(struct rge_softc *sc, const uint8_t *addr)
 {
 	RGE_SETBIT_1(sc, RGE_EECMD, RGE_EECMD_WRITECFG);
 	RGE_WRITE_4(sc, RGE_MAC0,
-	    addr[3] << 24 | addr[2] << 16 | addr[1] << 8 | addr[0]);
+	    (uint32_t)addr[3] << 24 | addr[2] << 16 | addr[1] << 8 | addr[0]);
 	RGE_WRITE_4(sc, RGE_MAC4,
 	    addr[5] <<  8 | addr[4]);
 	RGE_CLRBIT_1(sc, RGE_EECMD, RGE_EECMD_WRITECFG);
@@ -2072,8 +2077,10 @@ rge_set_macaddr(struct rge_softc *sc, const uint8_t *addr)
 void
 rge_get_macaddr(struct rge_softc *sc, uint8_t *addr)
 {
-	*(uint32_t *)&addr[0] = RGE_READ_4(sc, RGE_ADDR0);
-	*(uint16_t *)&addr[4] = RGE_READ_2(sc, RGE_ADDR1);
+	int i;
+
+	for (i = 0; i < ETHER_ADDR_LEN; i++)
+		addr[i] = RGE_READ_1(sc, RGE_ADDR0 + i);
 }
 
 void

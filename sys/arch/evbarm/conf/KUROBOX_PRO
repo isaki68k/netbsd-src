@@ -1,4 +1,4 @@
-#	$NetBSD: KUROBOX_PRO,v 1.12 2020/04/18 11:00:38 skrll Exp $
+#	$NetBSD: KUROBOX_PRO,v 1.15 2021/08/30 01:29:41 rin Exp $
 #
 #  KUROBOX_PRO -- KUROUTOSHIKOU. KURO-BOX/PRO platform kernel
 #
@@ -9,7 +9,7 @@ include 	"arch/evbarm/conf/MARVELL_NAS"
 makeoptions	BOARDTYPE="kurobox_pro"
 options 	EVBARM_BOARDTYPE=kurobox_pro
 
-makeoptions	CPUFLAGS="-mcpu=xscale"	# Xscale instruction set support
+makeoptions	CPUFLAGS="-mcpu=arm926ej-s"
 no options	CPU_SHEEVA
 no options	KIRKWOOD
 
@@ -30,6 +30,8 @@ makeoptions	DEBUG="-g"	# compile full symbol table
 makeoptions	COPY_SYMTAB=1
 #options 	AUDIO_DEBUG=2
 
+# XXX PR port-arm/56380
+no options 	PAX_ASLR
 
 # On-chip PCI Interface doesn't use.
 no gtpci* at mvsoc?
@@ -40,3 +42,7 @@ rs5c372rtc* at iic? addr 0x32		# RICOH RS5C372 RTC
 # PCI network interfaces
 #mskc*	at pci? dev ? function ?	# Marvell Yukon 2 Gigabit Ethernet
 #msk*	at mskc?
+
+# NVM Express controllers and devices
+nvme*		at pci? dev ? function ?
+ld*		at nvme? nsid ?

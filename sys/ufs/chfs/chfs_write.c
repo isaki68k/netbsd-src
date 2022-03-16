@@ -1,4 +1,4 @@
-/*	$NetBSD: chfs_write.c,v 1.5 2012/10/19 12:44:39 ttoth Exp $	*/
+/*	$NetBSD: chfs_write.c,v 1.7 2021/12/07 21:37:37 andvar Exp $	*/
 
 /*-
  * Copyright (c) 2010 Department of Software Engineering,
@@ -110,7 +110,7 @@ retry:
 
 	mutex_enter(&chmp->chm_lock_sizes);
 
-	/* caculating offset and sizes  */
+	/* calculating offset and sizes  */
 	nref->nref_offset = chmp->chm_ebh->eb_size - chmp->chm_nextblock->free_size;
 	chfs_change_size_free(chmp, chmp->chm_nextblock, -CHFS_PAD(size));
 	vec.iov_base = fvnode;
@@ -438,8 +438,10 @@ chfs_do_link(struct chfs_inode *ip, struct chfs_inode *parent, const char *name,
 
 	/* update vnode information */
 	error = chfs_write_flash_vnode(chmp, ip, ALLOC_NORMAL);
-	if (error)
+	if (error) {
+		mutex_exit(&chmp->chm_lock_mountfields);
 		return error;
+	}
 
 	/* write out the new dirent */
 	error = chfs_write_flash_dirent(chmp,

@@ -1,4 +1,4 @@
-/*	$NetBSD: bus_defs.h,v 1.16 2021/04/23 06:02:48 skrll Exp $	*/
+/*	$NetBSD: bus_defs.h,v 1.18 2022/01/22 15:10:30 skrll Exp $	*/
 
 /*-
  * Copyright (c) 1996, 1997, 1998, 2001 The NetBSD Foundation, Inc.
@@ -377,6 +377,7 @@ struct arm32_bus_dma_segment {
 	 * PRIVATE MEMBERS:
 	 */
 	uint32_t	_ds_flags;	/* _BUS_DMAMAP_COHERENT */
+	paddr_t		_ds_paddr;	/* CPU address */
 };
 typedef struct arm32_bus_dma_segment	bus_dma_segment_t;
 
@@ -481,6 +482,7 @@ struct arm32_bus_dmamap {
 	struct vmspace	*_dm_vmspace;	/* vmspace that owns the mapping */
 
 	void		*_dm_cookie;	/* cookie for bus-specific functions */
+	void		*_dm_iommu;	/* cookie for iommu functions */
 
 	/*
 	 * PUBLIC MEMBERS: these are used by machine-independent code.
@@ -504,7 +506,7 @@ struct arm32_bus_dmamap {
 #define	_BUS_DMA_BUFTYPE_RAW		4
 
 #ifdef _ARM32_BUS_DMA_PRIVATE
-#define	_BUS_AVAIL_END	physical_end
+#define	_BUS_AVAIL_END	(physical_end - 1)
 /*
  * Cookie used for bounce buffers. A pointer to one of these it stashed in
  * the DMA map.

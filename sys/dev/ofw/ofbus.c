@@ -1,4 +1,4 @@
-/*	$NetBSD: ofbus.c,v 1.29 2021/04/30 02:34:12 thorpej Exp $	*/
+/*	$NetBSD: ofbus.c,v 1.31 2022/01/22 11:49:18 thorpej Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996 Wolfgang Solfrank.
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ofbus.c,v 1.29 2021/04/30 02:34:12 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ofbus.c,v 1.31 2022/01/22 11:49:18 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -159,6 +159,8 @@ ofbus_attach(device_t parent, device_t dev, void *aux)
 			units = 2;
 	}
 
+	devhandle_t selfh = device_handle(dev);
+
 	/* attach displays first */
 	for (child = OF_child(oba->oba_phandle); child != 0;
 	     child = OF_peer(child)) {
@@ -181,8 +183,8 @@ ofbus_attach(device_t parent, device_t dev, void *aux)
 				    sizeof(oba2.oba_ofname));
 			}
 			config_found(dev, &oba2, ofbus_print,
-			    CFARG_DEVHANDLE, devhandle_from_of(child),
-			    CFARG_EOL);
+			    CFARGS(.devhandle = devhandle_from_of(selfh,
+								  child)));
 		}
 	}
 
@@ -212,8 +214,8 @@ ofbus_attach(device_t parent, device_t dev, void *aux)
 				    sizeof(oba2.oba_ofname));
 			}
 			config_found(dev, &oba2, ofbus_print,
-			    CFARG_DEVHANDLE, devhandle_from_of(child),
-			    CFARG_EOL);
+			    CFARGS(.devhandle = devhandle_from_of(selfh,
+								  child)));
 		}
 	}
 }

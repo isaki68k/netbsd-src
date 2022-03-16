@@ -1,4 +1,4 @@
-/*	$NetBSD: syscall.c,v 1.18 2019/04/06 11:54:21 kamil Exp $	*/
+/*	$NetBSD: syscall.c,v 1.20 2022/03/12 15:50:53 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 1998, 2000, 2009 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: syscall.c,v 1.18 2019/04/06 11:54:21 kamil Exp $");
+__KERNEL_RCSID(0, "$NetBSD: syscall.c,v 1.20 2022/03/12 15:50:53 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -76,7 +76,7 @@ cpu_spawn_return(struct lwp *l)
 
 	userret(l);
 }
-	
+
 /*
  * syscall(frame):
  *	System call request from POSIX system call gate interface to kernel.
@@ -136,6 +136,13 @@ syscall(struct trapframe *frame)
 	}
 #endif
 	error = sy_invoke(callp, l, args, rval, code);
+#ifdef DIAGNOSTIC
+	kpreempt_disable();	/* make curcpu() stable */
+	KASSERTMSG(curcpu()->ci_biglock_count == 0,
+	    "syscall %ld of emul %s leaked %d kernel locks",
+	    (long)code, p->p_emul->e_name, curcpu()->ci_biglock_count);
+	kpreempt_enable();
+#endif
 
 	if (__predict_true(error == 0)) {
 		X86_TF_RAX(frame) = rval[0];

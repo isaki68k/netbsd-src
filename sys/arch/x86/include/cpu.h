@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.h,v 1.130 2021/02/19 02:15:24 christos Exp $	*/
+/*	$NetBSD: cpu.h,v 1.132 2021/10/07 13:04:18 msaitoh Exp $	*/
 
 /*
  * Copyright (c) 1990 The Regents of the University of California.
@@ -321,6 +321,10 @@ struct cpu_info {
 	struct evcnt	ci_xen_systime_backwards_hardclock_evcnt;
 	struct evcnt	ci_xen_missed_hardclock_evcnt;
 #endif	/* XEN */
+
+#if defined(GPROF) && defined(MULTIPROCESSOR)
+	struct gmonparam *ci_gmon;	/* MI per-cpu GPROF */
+#endif
 };
 
 #if defined(XEN) && !defined(XENPV)
@@ -492,6 +496,7 @@ void	identify_hypervisor(void);
 
 /* identcpu_subr.c */
 uint64_t cpu_tsc_freq_cpuid(struct cpu_info *);
+void	cpu_dcp_cacheinfo(struct cpu_info *, uint32_t);
 
 typedef enum vm_guest {
 	VM_GUEST_NO = 0,

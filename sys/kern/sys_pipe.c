@@ -1,4 +1,4 @@
-/*	$NetBSD: sys_pipe.c,v 1.152 2021/01/25 19:21:11 dholland Exp $	*/
+/*	$NetBSD: sys_pipe.c,v 1.158 2021/10/11 01:07:36 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2003, 2007, 2008, 2009 The NetBSD Foundation, Inc.
@@ -68,7 +68,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sys_pipe.c,v 1.152 2021/01/25 19:21:11 dholland Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sys_pipe.c,v 1.158 2021/10/11 01:07:36 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -584,7 +584,7 @@ pipe_write(file_t *fp, off_t *offset, struct uio *uio, kauth_cred_t cred,
 	}
 	++wpipe->pipe_busy;
 
-	/* Aquire the long-term pipe lock */
+	/* Acquire the long-term pipe lock */
 	if ((error = pipelock(wpipe, true)) != 0) {
 		--wpipe->pipe_busy;
 		if (wpipe->pipe_busy == 0) {
@@ -694,11 +694,6 @@ pipe_write(file_t *fp, off_t *offset, struct uio *uio, kauth_cred_t cred,
 				break;
 			}
 
-			pipeunlock(wpipe);
-			error = cv_wait_sig(&wpipe->pipe_wcv, lock);
-			(void)pipelock(wpipe, false);
-			if (error != 0)
-				break;
 			/*
 			 * If read side wants to go away, we just issue a signal
 			 * to ourselves.
@@ -707,6 +702,12 @@ pipe_write(file_t *fp, off_t *offset, struct uio *uio, kauth_cred_t cred,
 				error = EPIPE;
 				break;
 			}
+
+			pipeunlock(wpipe);
+			error = cv_wait_sig(&wpipe->pipe_wcv, lock);
+			(void)pipelock(wpipe, false);
+			if (error != 0)
+				break;
 			wakeup_state = wpipe->pipe_state;
 		}
 	}
@@ -1045,6 +1046,7 @@ filt_piperead(struct knote *kn, long hint)
 {
 	struct pipe *rpipe = ((file_t *)kn->kn_obj)->f_pipe;
 	struct pipe *wpipe;
+	int rv;
 
 	if ((hint & NOTE_SUBMIT) == 0) {
 		mutex_enter(rpipe->pipe_lock);
@@ -1054,17 +1056,16 @@ filt_piperead(struct knote *kn, long hint)
 
 	if ((rpipe->pipe_state & PIPE_EOF) ||
 	    (wpipe == NULL) || (wpipe->pipe_state & PIPE_EOF)) {
-		kn->kn_flags |= EV_EOF;
-		if ((hint & NOTE_SUBMIT) == 0) {
-			mutex_exit(rpipe->pipe_lock);
-		}
-		return (1);
+		knote_set_eof(kn, 0);
+		rv = 1;
+	} else {
+		rv = kn->kn_data > 0;
 	}
 
 	if ((hint & NOTE_SUBMIT) == 0) {
 		mutex_exit(rpipe->pipe_lock);
 	}
-	return (kn->kn_data > 0);
+	return rv;
 }
 
 static int
@@ -1072,6 +1073,7 @@ filt_pipewrite(struct knote *kn, long hint)
 {
 	struct pipe *rpipe = ((file_t *)kn->kn_obj)->f_pipe;
 	struct pipe *wpipe;
+	int rv;
 
 	if ((hint & NOTE_SUBMIT) == 0) {
 		mutex_enter(rpipe->pipe_lock);
@@ -1080,29 +1082,28 @@ filt_pipewrite(struct knote *kn, long hint)
 
 	if ((wpipe == NULL) || (wpipe->pipe_state & PIPE_EOF)) {
 		kn->kn_data = 0;
-		kn->kn_flags |= EV_EOF;
-		if ((hint & NOTE_SUBMIT) == 0) {
-			mutex_exit(rpipe->pipe_lock);
-		}
-		return (1);
+		knote_set_eof(kn, 0);
+		rv = 1;
+	} else {
+		kn->kn_data = wpipe->pipe_buffer.size - wpipe->pipe_buffer.cnt;
+		rv = kn->kn_data >= PIPE_BUF;
 	}
-	kn->kn_data = wpipe->pipe_buffer.size - wpipe->pipe_buffer.cnt;
 
 	if ((hint & NOTE_SUBMIT) == 0) {
 		mutex_exit(rpipe->pipe_lock);
 	}
-	return (kn->kn_data >= PIPE_BUF);
+	return rv;
 }
 
 static const struct filterops pipe_rfiltops = {
-	.f_isfd = 1,
+	.f_flags = FILTEROP_ISFD | FILTEROP_MPSAFE,
 	.f_attach = NULL,
 	.f_detach = filt_pipedetach,
 	.f_event = filt_piperead,
 };
 
 static const struct filterops pipe_wfiltops = {
-	.f_isfd = 1,
+	.f_flags = FILTEROP_ISFD | FILTEROP_MPSAFE,
 	.f_attach = NULL,
 	.f_detach = filt_pipedetach,
 	.f_event = filt_pipewrite,

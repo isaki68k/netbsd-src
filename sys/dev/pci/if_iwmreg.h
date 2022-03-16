@@ -1,4 +1,4 @@
-/*	$NetBSD: if_iwmreg.h,v 1.8 2021/06/02 11:32:24 nia Exp $	*/
+/*	$NetBSD: if_iwmreg.h,v 1.12 2021/12/05 04:37:12 msaitoh Exp $	*/
 /*	OpenBSD: if_iwmreg.h,v 1.19 2016/09/20 11:46:09 stsp Exp 	*/
 
 /*-
@@ -2590,7 +2590,7 @@ enum {
  * notification the status is always success. There is no start/end fragment
  * notification for monolithic events.
  *
- * @IWM_TE_V2_DEFAULT_POLICY: independent, social, present, unoticable
+ * @IWM_TE_V2_DEFAULT_POLICY: independent, social, present, unnoticeable
  * @IWM_TE_V2_NOTIF_HOST_EVENT_START: request/receive notification on event start
  * @IWM_TE_V2_NOTIF_HOST_EVENT_END:request/receive notification on event end
  * @IWM_TE_V2_NOTIF_INTERNAL_EVENT_START: internal FW use
@@ -3380,7 +3380,7 @@ enum iwm_sf_scenario {
 /**
  * Smart Fifo configuration command.
  * @state: smart fifo state, types listed in enum %iwm_sf_state.
- * @watermark: Minimum allowed availabe free space in RXF for transient state.
+ * @watermark: Minimum allowed available free space in RXF for transient state.
  * @long_delay_timeouts: aging and idle timer values for each scenario
  * in long delay state.
  * @full_on_timeouts: timer values for each scenario in full on state.
@@ -4782,7 +4782,7 @@ struct iwm_ba_notif {
 /*
  * struct iwm_mac_beacon_cmd - beacon template command
  * @tx: the tx commands associated with the beacon frame
- * @template_id: currently equal to the mac context id of the coresponding
+ * @template_id: currently equal to the mac context id of the corresponding
  *  mac.
  * @tim_idx: the offset of the tim IE in the beacon
  * @tim_size: the length of the tim IE
@@ -5136,7 +5136,7 @@ enum iwm_scan_priority {
  * @fragmented-dwell: dwell time for fragmented passive scan
  * @extended_dwell: dwell time for channels 1, 6 and 11 (in certain cases)
  * @reserved2: for alignment and future use
- * @rx_chain_selct: PHY_RX_CHAIN_* flags
+ * @rx_chain_select: PHY_RX_CHAIN_* flags
  * @scan_flags: &enum iwm_lmac_scan_flags
  * @max_out_time: max time (in TU) to be out of associated channel
  * @suspend_time: pause scan this long (TUs) when returning to service channel

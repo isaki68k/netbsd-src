@@ -1,4 +1,4 @@
-/*	$NetBSD: bpf.c,v 1.241 2021/07/14 06:50:22 yamaguchi Exp $	*/
+/*	$NetBSD: bpf.c,v 1.245 2022/03/12 17:23:32 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1990, 1991, 1993
@@ -39,7 +39,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bpf.c,v 1.241 2021/07/14 06:50:22 yamaguchi Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bpf.c,v 1.245 2022/03/12 17:23:32 riastradh Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_bpf.h"
@@ -1152,7 +1152,12 @@ bpf_ioctl(struct file *fp, u_long cmd, void *addr)
 			struct timeval *tv = addr;
 
 			/* Compute number of ticks. */
-			d->bd_rtout = tv->tv_sec * hz + tv->tv_usec / tick;
+			if (tv->tv_sec > INT_MAX/hz - 1) {
+				d->bd_rtout = INT_MAX;
+			} else {
+				d->bd_rtout = tv->tv_sec * hz
+				    + tv->tv_usec / tick;
+			}
 			if ((d->bd_rtout == 0) && (tv->tv_usec != 0))
 				d->bd_rtout = 1;
 			break;
@@ -1181,7 +1186,12 @@ bpf_ioctl(struct file *fp, u_long cmd, void *addr)
 			struct timeval50 *tv = addr;
 
 			/* Compute number of ticks. */
-			d->bd_rtout = tv->tv_sec * hz + tv->tv_usec / tick;
+			if (tv->tv_sec > INT_MAX/hz - 1) {
+				d->bd_rtout = INT_MAX;
+			} else {
+				d->bd_rtout = tv->tv_sec * hz
+				    + tv->tv_usec / tick;
+			}
 			if ((d->bd_rtout == 0) && (tv->tv_usec != 0))
 				d->bd_rtout = 1;
 			break;
@@ -1561,7 +1571,7 @@ filt_bpfread(struct knote *kn, long hint)
 }
 
 static const struct filterops bpfread_filtops = {
-	.f_isfd = 1,
+	.f_flags = FILTEROP_ISFD,
 	.f_attach = NULL,
 	.f_detach = filt_bpfrdetach,
 	.f_event = filt_bpfread,
@@ -2126,9 +2136,8 @@ static void
 _bpfattach(struct ifnet *ifp, u_int dlt, u_int hdrlen, struct bpf_if **driverp)
 {
 	struct bpf_if *bp;
-	bp = kmem_alloc(sizeof(*bp), KM_NOSLEEP);
-	if (bp == NULL)
-		panic("%s: out of memory", __func__);
+
+	bp = kmem_alloc(sizeof(*bp), KM_SLEEP);
 
 	mutex_enter(&bpf_mtx);
 	bp->bif_driverp = driverp;
@@ -2661,7 +2670,7 @@ bpf_modcmd(modcmd_t cmd, void *arg)
 		 *
 		 * NOTE: change won't be atomic to the outside.  some
 		 * packets may be not captured even if unload is
-		 * not succesful.  I think packet capture not working
+		 * not successful.  I think packet capture not working
 		 * is a perfectly logical consequence of trying to
 		 * disable packet capture.
 		 */
