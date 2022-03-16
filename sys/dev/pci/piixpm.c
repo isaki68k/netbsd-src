@@ -1,4 +1,4 @@
-/* $NetBSD: piixpm.c,v 1.64 2021/04/24 23:36:57 thorpej Exp $ */
+/* $NetBSD: piixpm.c,v 1.66 2021/10/12 08:36:29 andvar Exp $ */
 /*	$OpenBSD: piixpm.c,v 1.39 2013/10/01 20:06:02 sf Exp $	*/
 
 /*
@@ -22,7 +22,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: piixpm.c,v 1.64 2021/04/24 23:36:57 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: piixpm.c,v 1.66 2021/10/12 08:36:29 andvar Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -351,7 +351,7 @@ piixpm_rescan(device_t self, const char *ifattr, const int *locators)
 		memset(&iba, 0, sizeof(iba));
 		iba.iba_tag = tag;
 		sc->sc_i2c_device[i] =
-		    config_found(self, &iba, piixpm_iicbus_print, CFARG_EOL);
+		    config_found(self, &iba, piixpm_iicbus_print, CFARGS_NONE);
 	}
 
 	return 0;
@@ -581,7 +581,7 @@ piixpm_i2c_sb800_release_bus(void *cookie, int flags)
 		    SB800_INDIRECTIO_DATA, reg);
 	}
 
-	/* Relase the host semaphore */
+	/* Release the host semaphore */
 	sctl = bus_space_read_1(sc->sc_smb_iot, sc->sc_smb_ioh, PIIX_SMB_SC);
 	sctl &= ~PIIX_SMB_SC_SEMMASK;
 	bus_space_write_1(sc->sc_smb_iot, sc->sc_smb_ioh, PIIX_SMB_SC,

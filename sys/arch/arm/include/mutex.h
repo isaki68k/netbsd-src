@@ -1,4 +1,4 @@
-/*	$NetBSD: mutex.h,v 1.25 2020/12/01 14:53:47 skrll Exp $	*/
+/*	$NetBSD: mutex.h,v 1.27 2021/12/26 08:41:29 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2002, 2007 The NetBSD Foundation, Inc.
@@ -80,9 +80,8 @@ struct kmutex {
 #endif
 #define	__HAVE_SIMPLE_MUTEXES		1
 
-#define	MUTEX_CAS(p, o, n)		\
-    (atomic_cas_ulong((volatile unsigned long *)(p), (o), (n)) == (o))
-
 #endif	/* __MUTEX_PRIVATE */
+
+__CTASSERT(sizeof(struct kmutex) == sizeof(uintptr_t));
 
 #endif /* _ARM_MUTEX_H_ */

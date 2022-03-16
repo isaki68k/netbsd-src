@@ -1,4 +1,4 @@
-/*	$NetBSD: subr.S,v 1.38 2020/06/30 16:20:02 maxv Exp $	   */
+/*	$NetBSD: subr.S,v 1.40 2021/12/05 03:01:59 msaitoh Exp $	   */
 
 /*
  * Copyright (c) 1994 Ludd, University of Lule}, Sweden.
@@ -319,7 +319,7 @@ softint_process:
 #endif
 
 	mtpr	PCB_PADDR(%r3),$PR_PCBB	/* restore PA of interrupted pcb */
-	ldpctx				/* implictily updates curlwp */
+	ldpctx				/* implicitly updates curlwp */
 	rei
 
 
@@ -505,7 +505,7 @@ ENTRY(copyoutstr, 0)
 	.align	2
 
 #define	UFETCHSTORE_PROLOGUE						 \
-	tstl	4(%ap)			/* uaddr in userpsace? */	;\
+	tstl	4(%ap)			/* uaddr in userspace? */	;\
 	blss	1f			/* nope, fault */		;\
 	mfpr	$PR_ESP,%r1		/* &pcb_onfault is in ESP */	;\
 	movab	2f,(%r1)		/* set pcb_onfault */

@@ -1,4 +1,4 @@
-/*	$NetBSD: netbsd32.h,v 1.137 2021/01/19 03:41:22 simonb Exp $	*/
+/*	$NetBSD: netbsd32.h,v 1.139 2021/11/11 17:32:46 martin Exp $	*/
 
 /*
  * Copyright (c) 1998, 2001, 2008, 2015 Matthew R. Green
@@ -1152,7 +1152,8 @@ struct netbsd32_null_args {
 };
 
 struct netbsd32_posix_spawn_file_actions_entry {
-	enum { FAE32_OPEN, FAE32_DUP2, FAE32_CLOSE } fae_action;
+	enum { FAE32_OPEN, FAE32_DUP2, FAE32_CLOSE,
+	    FAE32_CHDIR, FAE32_FCHDIR } fae_action;
 
 	int fae_fildes;
 	union {
@@ -1164,6 +1165,9 @@ struct netbsd32_posix_spawn_file_actions_entry {
 		struct {
 			int newfildes;
 		} dup2;
+		struct {
+			netbsd32_charp path;
+		} chdir;
 	} fae_data;
 };
 
@@ -1250,8 +1254,10 @@ struct iovec *netbsd32_get_iov(struct netbsd32_iovec *, int, struct iovec *,
 SYSCTL_SETUP_PROTO(netbsd32_sysctl_emul_setup);
 #endif /* SYSCTL_SETUP_PROTO */
 
-MODULE_HOOK(netbsd32_sendsig_hook, void,
-    (const ksiginfo_t *, const sigset_t *));
+#ifdef __HAVE_STRUCT_SIGCONTEXT
+MODULE_HOOK(netbsd32_sendsig_sigcontext_16_hook, void,
+    (const struct ksiginfo *, const sigset_t *));
+#endif
 
 extern struct sysent netbsd32_sysent[];
 extern const uint32_t netbsd32_sysent_nomodbits[]; 

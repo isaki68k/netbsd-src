@@ -1,4 +1,4 @@
-/*	$NetBSD: radeondrmkmsfb.c,v 1.13 2019/11/06 07:31:20 mrg Exp $	*/
+/*	$NetBSD: radeondrmkmsfb.c,v 1.15 2021/12/19 10:33:00 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -31,12 +31,11 @@
 
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: radeondrmkmsfb.c,v 1.13 2019/11/06 07:31:20 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: radeondrmkmsfb.c,v 1.15 2021/12/19 10:33:00 riastradh Exp $");
 
 #include <sys/types.h>
 #include <sys/device.h>
 
-#include <drm/drmP.h>
 #include <drm/drm_fb_helper.h>
 #include <drm/drmfb.h>
 #include <drm/drmfb_pci.h>
@@ -182,9 +181,7 @@ radeonfb_drmfb_mmapfb(struct drmfb_softc *drmfb, off_t offset, int prot)
 	    struct radeonfb_softc, sc_drmfb);
 	struct drm_fb_helper *const helper = sc->sc_rfa.rfa_fb_helper;
 	struct drm_framebuffer *const fb = helper->fb;
-	struct radeon_framebuffer *const rfb = container_of(fb,
-	    struct radeon_framebuffer, base);
-	struct drm_gem_object *const gobj = rfb->obj;
+	struct drm_gem_object *const gobj = fb->obj[0];
 	struct radeon_bo *const rbo = gem_to_radeon_bo(gobj);
 	int flags = 0;
 

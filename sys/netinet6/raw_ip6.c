@@ -1,4 +1,4 @@
-/*	$NetBSD: raw_ip6.c,v 1.175 2019/02/25 06:49:44 maxv Exp $	*/
+/*	$NetBSD: raw_ip6.c,v 1.177 2022/02/23 21:54:41 andvar Exp $	*/
 /*	$KAME: raw_ip6.c,v 1.82 2001/07/23 18:57:56 jinmei Exp $	*/
 
 /*
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: raw_ip6.c,v 1.175 2019/02/25 06:49:44 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: raw_ip6.c,v 1.177 2022/02/23 21:54:41 andvar Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ipsec.h"
@@ -586,7 +586,7 @@ rip6_attach(struct socket *so, int proto)
 	KASSERT(sotoin6pcb(so) == NULL);
 	sosetlock(so);
 
-	error = kauth_authorize_network(curlwp->l_cred,
+	error = kauth_authorize_network(kauth_cred_get(),
 	    KAUTH_NETWORK_SOCKET, KAUTH_REQ_NETWORK_SOCKET_RAWSOCK,
 	    KAUTH_ARG(AF_INET6),
 	    KAUTH_ARG(SOCK_RAW),
@@ -783,7 +783,7 @@ rip6_shutdown(struct socket *so)
 	KASSERT(solocked(so));
 
 	/*
-	 * Mark the connection as being incapable of futther input.
+	 * Mark the connection as being incapable of futher input.
 	 */
 	socantsendmore(so);
 	return 0;

@@ -1,4 +1,4 @@
-/*	$NetBSD: ebus.c,v 1.67 2021/05/10 23:53:44 thorpej Exp $	*/
+/*	$NetBSD: ebus.c,v 1.69 2022/01/22 11:49:17 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1999, 2000, 2001 Matthew R. Green
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ebus.c,v 1.67 2021/05/10 23:53:44 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ebus.c,v 1.69 2022/01/22 11:49:17 thorpej Exp $");
 
 #include "opt_ddb.h"
 
@@ -204,6 +204,7 @@ ebus_attach(device_t parent, device_t self, void *aux)
 	 * now attach all our children
 	 */
 	DPRINTF(EDB_CHILD, ("ebus node %08x, searching children...\n", node));
+	devhandle_t selfh = device_handle(self);
 	for (node = firstchild(node); node; node = nextsibling(node)) {
 		char *name = prom_getpropstring(node, "name");
 
@@ -214,8 +215,8 @@ ebus_attach(device_t parent, device_t self, void *aux)
 			DPRINTF(EDB_CHILD, ("- found child `%s', attaching\n",
 			    eba.ea_name));
 			(void)config_found(self, &eba, ebus_print,
-			    CFARG_DEVHANDLE, prom_node_to_devhandle(node),
-			    CFARG_EOL);
+			    CFARGS(.devhandle = prom_node_to_devhandle(selfh,
+								       node)));
 		}
 		ebus_destroy_attach_args(&eba);
 	}

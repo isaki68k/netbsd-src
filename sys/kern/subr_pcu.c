@@ -1,4 +1,4 @@
-/*	$NetBSD: subr_pcu.c,v 1.24 2020/08/07 18:46:00 christos Exp $	*/
+/*	$NetBSD: subr_pcu.c,v 1.26 2022/02/08 12:59:16 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2011, 2014 The NetBSD Foundation, Inc.
@@ -52,7 +52,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_pcu.c,v 1.24 2020/08/07 18:46:00 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_pcu.c,v 1.26 2022/02/08 12:59:16 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/cpu.h>
@@ -88,18 +88,16 @@ typedef struct {
 /* PCU operations structure provided by the MD code. */
 extern const pcu_ops_t * const pcu_ops_md_defs[];
 
-#ifdef DIAGNOSTIC
 /*
  * pcu_available_p: true if lwp is allowed to use PCU state.
  */
-static inline bool
+static inline bool __diagused
 pcu_available_p(struct lwp *l)
 {
 
 	/* XXX Not sure this is safe unless l is locked!  */
 	return (l->l_flag & (LW_SYSTEM|LW_SYSTEM_FPU)) != LW_SYSTEM;
 }
-#endif
 
 /*
  * pcu_switchpoint: release PCU state if the LWP is being run on another CPU.

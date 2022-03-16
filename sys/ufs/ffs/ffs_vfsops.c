@@ -1,4 +1,4 @@
-/*	$NetBSD: ffs_vfsops.c,v 1.372 2020/08/20 20:28:13 christos Exp $	*/
+/*	$NetBSD: ffs_vfsops.c,v 1.374 2022/03/12 15:36:53 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2009 The NetBSD Foundation, Inc.
@@ -61,7 +61,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ffs_vfsops.c,v 1.372 2020/08/20 20:28:13 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ffs_vfsops.c,v 1.374 2022/03/12 15:36:53 riastradh Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_ffs.h"
@@ -190,7 +190,7 @@ static const struct ufs_ops ffs_ufsops = {
 };
 
 static int
-ffs_checkrange(struct mount *mp, uint32_t ino)
+ffs_checkrange(struct mount *mp, ino_t ino)
 {
 	struct fs *fs = VFSTOUFS(mp)->um_fs;
 
@@ -398,14 +398,14 @@ ffs_mountroot(void)
 static void
 ffs_acls(struct mount *mp, int fs_flags)
 {
-	if ((fs_flags & FS_ACLS) != 0) {
+	if ((fs_flags & FS_NFS4ACLS) != 0) {
 #ifdef UFS_ACL
 		if (mp->mnt_flag & MNT_POSIX1EACLS)
 			printf("WARNING: %s: ACLs flag on fs conflicts with "
 			    "\"posix1eacls\" mount option; option ignored\n",
 			    mp->mnt_stat.f_mntonname);
 		mp->mnt_flag &= ~MNT_POSIX1EACLS;
-		mp->mnt_flag |= MNT_ACLS;
+		mp->mnt_flag |= MNT_NFS4ACLS;
 
 #else
 		printf("WARNING: %s: ACLs flag on fs but no ACLs support\n",
@@ -414,11 +414,11 @@ ffs_acls(struct mount *mp, int fs_flags)
 	}
 	if ((fs_flags & FS_POSIX1EACLS) != 0) {
 #ifdef UFS_ACL
-		if (mp->mnt_flag & MNT_ACLS)
+		if (mp->mnt_flag & MNT_NFS4ACLS)
 			printf("WARNING: %s: NFSv4 ACLs flag on fs conflicts "
 			    "with \"acls\" mount option; option ignored\n",
 			    mp->mnt_stat.f_mntonname);
-		mp->mnt_flag &= ~MNT_ACLS;
+		mp->mnt_flag &= ~MNT_NFS4ACLS;
 		mp->mnt_flag |= MNT_POSIX1EACLS;
 #else
 		printf("WARNING: %s: POSIX.1e ACLs flag on fs but no "
@@ -426,8 +426,8 @@ ffs_acls(struct mount *mp, int fs_flags)
 #endif
 	}
 
-	if ((mp->mnt_flag & (MNT_ACLS | MNT_POSIX1EACLS))
-	    == (MNT_ACLS | MNT_POSIX1EACLS))
+	if ((mp->mnt_flag & (MNT_NFS4ACLS | MNT_POSIX1EACLS))
+	    == (MNT_NFS4ACLS | MNT_POSIX1EACLS))
 	{
 		printf("WARNING: %s: posix1eacl conflicts "
 		    "with \"acls\" mount option; option ignored\n",
@@ -435,7 +435,7 @@ ffs_acls(struct mount *mp, int fs_flags)
 		mp->mnt_flag &= ~MNT_POSIX1EACLS;
 	}
 
-	if (mp->mnt_flag & (MNT_ACLS | MNT_POSIX1EACLS))
+	if (mp->mnt_flag & (MNT_NFS4ACLS | MNT_POSIX1EACLS))
 		mp->mnt_iflag &= ~(IMNT_SHRLOOKUP|IMNT_NCLOOKUP);
 	else
 		mp->mnt_iflag |= IMNT_SHRLOOKUP|IMNT_NCLOOKUP;

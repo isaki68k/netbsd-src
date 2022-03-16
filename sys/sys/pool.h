@@ -1,4 +1,4 @@
-/*	$NetBSD: pool.h,v 1.93 2021/02/24 06:11:38 simonb Exp $	*/
+/*	$NetBSD: pool.h,v 1.96 2021/12/22 16:57:28 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 1997, 1998, 1999, 2000, 2007, 2020
@@ -162,6 +162,7 @@ struct pool {
 #define PR_GROWINGNOWAIT 0x4000	/* pool_grow in progress by PR_NOWAIT alloc */
 #define PR_ZERO		0x8000	/* zero data before returning */
 #define PR_USEBMAP	0x10000	/* use a bitmap to manage freed items */
+#define PR_PSERIALIZE	0x20000	/* needs pserialize sync point before free */
 
 	/*
 	 * `pr_lock' protects the pool's data structures when removing
@@ -265,8 +266,9 @@ struct pool_cache {
 	int		pc_ncpu;	/* number cpus set up */
 	int		(*pc_ctor)(void *, void *, int);
 	void		(*pc_dtor)(void *, void *);
-	void		*pc_arg;	/* for ctor/ctor */
+	void		*pc_arg;	/* for ctor/dtor */
 	unsigned int	pc_refcnt;	/* ref count for pagedaemon, etc */
+	unsigned int	pc_roflags;	/* r/o cache flags */
 	void		*pc_cpus[MAXCPUS];
 
 	/* Diagnostic aides. */
@@ -319,6 +321,9 @@ bool		pool_drain(struct pool **);
 int		pool_totalpages(void);
 int		pool_totalpages_locked(void);
 
+unsigned int	pool_nget(struct pool *);
+unsigned int	pool_nput(struct pool *);
+
 /*
  * Debugging and diagnostic aides.
  */
@@ -352,6 +357,9 @@ void		pool_cache_sethiwat(pool_cache_t, int);
 void		pool_cache_sethardlimit(pool_cache_t, int, const char *, int);
 void		pool_cache_prime(pool_cache_t, int);
 void		pool_cache_cpu_init(struct cpu_info *);
+
+unsigned int	pool_cache_nget(pool_cache_t);
+unsigned int	pool_cache_nput(pool_cache_t);
 
 #define		pool_cache_get(pc, f) pool_cache_get_paddr((pc), (f), NULL)
 #define		pool_cache_put(pc, o) pool_cache_put_paddr((pc), (o), \

@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_time.c,v 1.211 2021/04/03 12:57:21 simonb Exp $	*/
+/*	$NetBSD: kern_time.c,v 1.213 2022/03/13 12:21:28 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2000, 2004, 2005, 2007, 2008, 2009, 2020
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_time.c,v 1.211 2021/04/03 12:57:21 simonb Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_time.c,v 1.213 2022/03/13 12:21:28 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/resourcevar.h>
@@ -435,8 +435,14 @@ again:
 		if (flags & TIMER_ABSTIME) {
 			timespecsub(rqt, &rmtend, t);
 		} else {
-			timespecsub(&rmtend, &rmtstart, t);
-			timespecsub(rqt, t, t);
+			if (timespeccmp(&rmtend, &rmtstart, <))
+				timespecclear(t); /* clock wound back */
+			else
+				timespecsub(&rmtend, &rmtstart, t);
+			if (timespeccmp(rqt, t, <))
+				timespecclear(t);
+			else
+				timespecsub(rqt, t, t);
 		}
 		if (t->tv_sec < 0)
 			timespecclear(t);
@@ -610,10 +616,19 @@ adjtime1(const struct timeval *delta, struct timeval *olddelta, struct proc *p)
 		}
 		mutex_spin_exit(&timecounter_lock);
 	}
-	
+
 	if (delta) {
 		mutex_spin_enter(&timecounter_lock);
-		time_adjtime = delta->tv_sec * 1000000 + delta->tv_usec;
+		/*
+		 * XXX This should maybe just report failure to
+		 * userland for nonsense deltas.
+		 */
+		if (delta->tv_sec > INT64_MAX/1000000 - 1) {
+			time_adjtime = INT64_MAX;
+		} else {
+			time_adjtime = MAX(0, delta->tv_sec) * 1000000
+			    + MAX(0, MIN(999999, delta->tv_usec));
+		}
 
 		if (time_adjtime) {
 			/* We need to save the system time during shutdown */

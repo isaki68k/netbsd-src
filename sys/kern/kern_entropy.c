@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_entropy.c,v 1.30 2021/02/12 19:48:26 jmcneill Exp $	*/
+/*	$NetBSD: kern_entropy.c,v 1.34 2022/03/04 21:12:03 andvar Exp $	*/
 
 /*-
  * Copyright (c) 2019 The NetBSD Foundation, Inc.
@@ -75,7 +75,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_entropy.c,v 1.30 2021/02/12 19:48:26 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_entropy.c,v 1.34 2022/03/04 21:12:03 andvar Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -126,7 +126,7 @@ __KERNEL_RCSID(0, "$NetBSD: kern_entropy.c,v 1.30 2021/02/12 19:48:26 jmcneill E
  *	Per-CPU entropy state.  The pool is allocated separately
  *	because percpu(9) sometimes moves per-CPU objects around
  *	without zeroing them, which would lead to unwanted copies of
- *	sensitive secrets.  The evcnt is allocated separately becuase
+ *	sensitive secrets.  The evcnt is allocated separately because
  *	evcnt(9) assumes it stays put in memory.
  */
 struct entropy_cpu {
@@ -1465,8 +1465,9 @@ filt_entropy_read_event(struct knote *kn, long hint)
 	return ret;
 }
 
+/* XXX Makes sense only for /dev/u?random.  */
 static const struct filterops entropy_read_filtops = {
-	.f_isfd = 1,		/* XXX Makes sense only for /dev/u?random.  */
+	.f_flags = FILTEROP_ISFD | FILTEROP_MPSAFE,
 	.f_attach = NULL,
 	.f_detach = filt_entropy_read_detach,
 	.f_event = filt_entropy_read_event,
@@ -2070,18 +2071,18 @@ entropy_ioctl(unsigned long cmd, void *data)
 	case RNDGETSRCNAME:
 	case RNDGETESTNUM:
 	case RNDGETESTNAME:
-		error = kauth_authorize_device(curlwp->l_cred,
+		error = kauth_authorize_device(kauth_cred_get(),
 		    KAUTH_DEVICE_RND_GETPRIV, NULL, NULL, NULL, NULL);
 		break;
 	case RNDCTL:
-		error = kauth_authorize_device(curlwp->l_cred,
+		error = kauth_authorize_device(kauth_cred_get(),
 		    KAUTH_DEVICE_RND_SETPRIV, NULL, NULL, NULL, NULL);
 		break;
 	case RNDADDDATA:
-		error = kauth_authorize_device(curlwp->l_cred,
+		error = kauth_authorize_device(kauth_cred_get(),
 		    KAUTH_DEVICE_RND_ADDDATA, NULL, NULL, NULL, NULL);
 		/* Ascertain whether the user's inputs should be counted.  */
-		if (kauth_authorize_device(curlwp->l_cred,
+		if (kauth_authorize_device(kauth_cred_get(),
 			KAUTH_DEVICE_RND_ADDDATA_ESTIMATE,
 			NULL, NULL, NULL, NULL) == 0)
 			privileged = true;

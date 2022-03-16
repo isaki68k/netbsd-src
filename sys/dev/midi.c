@@ -1,4 +1,4 @@
-/*	$NetBSD: midi.c,v 1.93 2021/04/26 21:54:56 thorpej Exp $	*/
+/*	$NetBSD: midi.c,v 1.95 2021/09/26 01:16:08 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1998, 2008 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: midi.c,v 1.93 2021/04/26 21:54:56 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: midi.c,v 1.95 2021/09/26 01:16:08 thorpej Exp $");
 
 #ifdef _KERNEL_OPT
 #include "midi.h"
@@ -1764,7 +1764,7 @@ filt_midiread(struct knote *kn, long hint)
 }
 
 static const struct filterops midiread_filtops = {
-	.f_isfd = 1,
+	.f_flags = FILTEROP_ISFD,
 	.f_attach = NULL,
 	.f_detach = filt_midirdetach,
 	.f_event = filt_midiread,
@@ -1812,7 +1812,7 @@ filt_midiwrite(struct knote *kn, long hint)
 }
 
 static const struct filterops midiwrite_filtops = {
-	.f_isfd = 1,
+	.f_flags = FILTEROP_ISFD,
 	.f_attach = NULL,
 	.f_detach = filt_midiwdetach,
 	.f_event = filt_midiwrite,
@@ -1896,8 +1896,7 @@ midi_attach_mi(const struct midi_hw_if *mhwp, void *hdlp, device_t dev)
 	arg.hwif = mhwp;
 	arg.hdl = hdlp;
 	return (config_found(dev, &arg, audioprint,
-			     CFARG_IATTR, "midibus",
-			     CFARG_EOL));
+			     CFARGS(.iattr = "midibus")));
 }
 
 #endif /* NMIDI > 0 || NMIDIBUS > 0 */

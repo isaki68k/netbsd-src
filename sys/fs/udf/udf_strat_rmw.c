@@ -1,4 +1,4 @@
-/* $NetBSD: udf_strat_rmw.c,v 1.28 2016/05/24 09:55:57 reinoud Exp $ */
+/* $NetBSD: udf_strat_rmw.c,v 1.30 2022/01/15 10:55:53 msaitoh Exp $ */
 
 /*
  * Copyright (c) 2006, 2008 Reinoud Zandijk
@@ -28,7 +28,7 @@
 
 #include <sys/cdefs.h>
 #ifndef lint
-__KERNEL_RCSID(0, "$NetBSD: udf_strat_rmw.c,v 1.28 2016/05/24 09:55:57 reinoud Exp $");
+__KERNEL_RCSID(0, "$NetBSD: udf_strat_rmw.c,v 1.30 2022/01/15 10:55:53 msaitoh Exp $");
 #endif /* not lint */
 
 
@@ -171,7 +171,7 @@ udf_lock_eccline(struct udf_eccline *eccline, const char *fname, int sline)
 		ret = cv_timedwait(&priv->discstrat_cv, &priv->discstrat_mutex,
 			hz/8);
 		if (ret == EWOULDBLOCK)
-			DPRINTF(LOCKING, ("eccline lock helt, waiting for "
+			DPRINTF(LOCKING, ("eccline lock held, waiting for "
 				"release"));
 	}
 	eccline->flags |= ECC_LOCKED;
@@ -956,7 +956,7 @@ udf_queuebuf_rmw(struct udf_strat_args *args)
 
 	/*
 	 * Translate new mappings in lmapping to pmappings.
-	 * pmapping to contain lb_nums as used for disc adressing.
+	 * pmapping to contain lb_nums as used for disc addressing.
 	 */
 	pmapping = ump->la_pmapping;
 	sectors  = (buf->b_bcount + sector_size -1) / sector_size;

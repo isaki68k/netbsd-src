@@ -1,4 +1,4 @@
-/*	$NetBSD: plumiobus.c,v 1.17 2021/04/24 23:36:38 thorpej Exp $ */
+/*	$NetBSD: plumiobus.c,v 1.19 2022/01/24 09:14:37 andvar Exp $ */
 
 /*-
  * Copyright (c) 1999, 2000 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: plumiobus.c,v 1.17 2021/04/24 23:36:38 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: plumiobus.c,v 1.19 2022/01/24 09:14:37 andvar Exp $");
 
 #define PLUMIOBUSDEBUG
 
@@ -164,8 +164,7 @@ plumiobus_attach(device_t parent, device_t self, void *aux)
 #endif
 
 	config_search(self, NULL,
-	    CFARG_SEARCH, plumiobus_search,
-	    CFARG_EOL);
+	    CFARGS(.search = plumiobus_search));
 }
 
 /* XXX something kludge */
@@ -203,7 +202,7 @@ plumiobus_search(device_t parent, cfdata_t cf, const int *ldesc, void *aux)
 	
 	if (!(sc->sc_isa[slot].pr_enabled) && /* not attached slot */
 	    config_probe(parent, cf, &pba)) {
-		config_attach(parent, cf, &pba, plumiobus_print, CFARG_EOL);
+		config_attach(parent, cf, &pba, plumiobus_print, CFARGS_NONE);
 		sc->sc_isa[slot].pr_enabled = 1;
 	}
 
@@ -237,7 +236,7 @@ plumiobus_dump(struct plumiobus_softc *sc)
 
 	reg = PLUM_IOBUS_IOXCCNT_MASK &
 	    plum_conf_read(regt, regh, PLUM_IOBUS_IOXCCNT_REG);
-	printf(" # of wait to become from the access begining: %d clock\n",
+	printf(" # of wait to become from the access beginning: %d clock\n",
 	    reg + 1);
 	reg = plum_conf_read(regt, regh, PLUM_IOBUS_IOXACNT_REG);
 	printf(" # of wait in access clock: ");

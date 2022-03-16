@@ -1,4 +1,4 @@
-/*	$NetBSD: tcp_input.c,v 1.428 2021/03/08 18:17:27 christos Exp $	*/
+/*	$NetBSD: tcp_input.c,v 1.431 2021/08/09 19:57:58 andvar Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -148,7 +148,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tcp_input.c,v 1.428 2021/03/08 18:17:27 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tcp_input.c,v 1.431 2021/08/09 19:57:58 andvar Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -2535,7 +2535,7 @@ after_listen:
 				 * duplicate ack (ie, window info didn't
 				 * change), the ack is the biggest we've
 				 * seen and we've seen exactly our rexmt
-				 * threshhold of them, assume a packet
+				 * threshold of them, assume a packet
 				 * has been dropped and retransmit it.
 				 * Kludge snd_nxt & the congestion
 				 * window so we send only this one
@@ -4044,7 +4044,7 @@ syn_cache_get(struct sockaddr *src, struct sockaddr *dst,
 	tp->rcv_up = sc->sc_irs + 1;
 
 	/*
-	 * This is what whould have happened in tcp_output() when
+	 * This is what would have happened in tcp_output() when
 	 * the SYN,ACK was sent.
 	 */
 	tp->snd_up = tp->snd_una;
@@ -4302,7 +4302,7 @@ syn_cache_add(struct sockaddr *src, struct sockaddr *dst, struct tcphdr *th,
 		 * With the default sbmax of 256K, a scale factor
 		 * of 3 will be chosen by this algorithm.  Those who
 		 * choose a larger sbmax should watch out
-		 * for the compatiblity problems mentioned above.
+		 * for the compatibility problems mentioned above.
 		 *
 		 * RFC1323: The Window field in a SYN (i.e., a <SYN>
 		 * or <SYN,ACK>) segment itself is never scaled.
@@ -4392,7 +4392,7 @@ syn_cache_respond(struct syn_cache *sc)
 		return EAFNOSUPPORT;
 	}
 
-	/* Worst case scanario, since we don't know the option size yet. */
+	/* Worst case scenario, since we don't know the option size yet. */
 	tlen = hlen + sizeof(struct tcphdr) + MAX_TCPOPTLEN;
 	KASSERT(max_linkhdr + tlen <= MCLBYTES);
 
@@ -4539,7 +4539,7 @@ syn_cache_respond(struct syn_cache *sc)
 
 	/*
 	 * Send ECN SYN-ACK setup packet.
-	 * Routes can be asymetric, so, even if we receive a packet
+	 * Routes can be asymmetric, so, even if we receive a packet
 	 * with ECE and CWR set, we must not assume no one will block
 	 * the ECE packet we are about to send.
 	 */

@@ -1,4 +1,4 @@
-/*	$NetBSD: sys_select.c,v 1.55 2020/12/11 01:25:29 thorpej Exp $	*/
+/*	$NetBSD: sys_select.c,v 1.58 2022/02/12 15:51:29 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2007, 2008, 2009, 2010, 2019, 2020 The NetBSD Foundation, Inc.
@@ -84,7 +84,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sys_select.c,v 1.55 2020/12/11 01:25:29 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sys_select.c,v 1.58 2022/02/12 15:51:29 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -295,7 +295,7 @@ sel_do_scan(const char *opname, void *fds, const int nf, const size_t ni,
 			break;
 		/*
 		 * Acquire the lock and perform the (re)checks.  Note, if
-		 * collision has occured, then our state does not matter,
+		 * collision has occurred, then our state does not matter,
 		 * as we must perform re-scan.  Therefore, check it first.
 		 */
 state_check:
@@ -307,12 +307,12 @@ state_check:
 			continue;
 		}
 		if (__predict_true(l->l_selflag == SEL_EVENT)) {
-			/* Events occured, they are set directly. */
+			/* Events occurred, they are set directly. */
 			mutex_spin_exit(lock);
 			break;
 		}
 		if (__predict_true(l->l_selflag == SEL_RESET)) {
-			/* Events occured, but re-scan is requested. */
+			/* Events occurred, but re-scan is requested. */
 			mutex_spin_exit(lock);
 			selclear();
 			continue;
@@ -675,18 +675,21 @@ selrecord(lwp_t *selector, struct selinfo *sip)
 void
 selrecord_knote(struct selinfo *sip, struct knote *kn)
 {
-	SLIST_INSERT_HEAD(&sip->sel_klist, kn, kn_selnext);
+	klist_insert(&sip->sel_klist, kn);
 }
 
 /*
  * Remove a knote.
  *
  * The caller holds the same lock as for selrecord().
+ *
+ * Returns true if the last knote was removed and the list
+ * is now empty.
  */
-void
+bool
 selremove_knote(struct selinfo *sip, struct knote *kn)
 {
-	SLIST_REMOVE(&sip->sel_klist, kn, knote, kn_selnext);
+	return klist_remove(&sip->sel_klist, kn);
 }
 
 /*
@@ -910,6 +913,7 @@ selinit(struct selinfo *sip)
 {
 
 	memset(sip, 0, sizeof(*sip));
+	klist_init(&sip->sel_klist);
 }
 
 /*
@@ -928,6 +932,8 @@ seldestroy(struct selinfo *sip)
 	selcluster_t *sc;
 	kmutex_t *lock;
 	lwp_t *l;
+
+	klist_fini(&sip->sel_klist);
 
 	if (sip->sel_lwp == NULL)
 		return;

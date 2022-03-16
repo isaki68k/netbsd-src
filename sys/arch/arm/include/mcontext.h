@@ -1,4 +1,4 @@
-/*	$NetBSD: mcontext.h,v 1.21 2018/10/12 01:28:58 ryo Exp $	*/
+/*	$NetBSD: mcontext.h,v 1.23 2021/10/06 05:33:15 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2001, 2002 The NetBSD Foundation, Inc.
@@ -38,7 +38,7 @@
  * General register state
  */
 #if defined(__aarch64__)
-#define _NGREG		35	/* GR0-30, SP, PC, APSR, TPIDR */
+#define _NGREG		35	/* GR0-30, SP, PC, SPSR, TPIDR */
 #define _NGREG32	17
 typedef __uint64_t	__greg_t;
 typedef unsigned int	__greg32_t;
@@ -277,7 +277,7 @@ __END_DECLS
 #if defined(_KERNEL)
 __BEGIN_DECLS
 void vfp_getcontext(struct lwp *, mcontext_t *, int *);
-void vfp_setcontext(struct lwp *, const mcontext_t *); 
+void vfp_setcontext(struct lwp *, const mcontext_t *);
 __END_DECLS
 #endif
 

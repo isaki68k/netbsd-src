@@ -1,4 +1,4 @@
-/*	$NetBSD: udsir.c,v 1.13 2021/04/24 23:36:59 thorpej Exp $	*/
+/*	$NetBSD: udsir.c,v 1.15 2021/09/26 01:16:09 thorpej Exp $	*/
 
 /*
  * Copyright (c) 2001 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: udsir.c,v 1.13 2021/04/24 23:36:59 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: udsir.c,v 1.15 2021/09/26 01:16:09 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -230,7 +230,7 @@ udsir_attach(device_t parent, device_t self, void *aux)
 	ia.ia_methods = &udsir_methods;
 	ia.ia_handle = sc;
 
-	sc->sc_child = config_found(self, &ia, ir_print, CFARG_EOL);
+	sc->sc_child = config_found(self, &ia, ir_print, CFARGS_NONE);
 	selinit(&sc->sc_rd_sel);
 	selinit(&sc->sc_wr_sel);
 
@@ -663,14 +663,14 @@ udsir_poll(void *h, int events, struct lwp *l)
 }
 
 static const struct filterops udsirread_filtops = {
-	.f_isfd = 1,
+	.f_flags = FILTEROP_ISFD,
 	.f_attach = NULL,
 	.f_detach = filt_udsirrdetach,
 	.f_event = filt_udsirread,
 };
 
 static const struct filterops udsirwrite_filtops = {
-	.f_isfd = 1,
+	.f_flags = FILTEROP_ISFD,
 	.f_attach = NULL,
 	.f_detach = filt_udsirwdetach,
 	.f_event = filt_udsirwrite,

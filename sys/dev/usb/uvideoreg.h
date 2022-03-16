@@ -1,4 +1,4 @@
-/*	$NetBSD: uvideoreg.h,v 1.4 2011/12/23 00:51:49 jakllsch Exp $	*/
+/*	$NetBSD: uvideoreg.h,v 1.6 2021/11/14 08:32:07 andvar Exp $	*/
 
 /*
  * Copyright (c) 2008 Patrick Mahoney

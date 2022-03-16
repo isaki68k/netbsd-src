@@ -1,4 +1,4 @@
-/*	$NetBSD: crypto.c,v 1.114 2020/04/08 15:27:18 pgoyette Exp $ */
+/*	$NetBSD: crypto.c,v 1.116 2021/08/14 20:43:05 andvar Exp $ */
 /*	$FreeBSD: src/sys/opencrypto/crypto.c,v 1.4.2.5 2003/02/26 00:14:05 sam Exp $	*/
 /*	$OpenBSD: crypto.c,v 1.41 2002/07/17 23:52:38 art Exp $	*/
 
@@ -53,7 +53,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: crypto.c,v 1.114 2020/04/08 15:27:18 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: crypto.c,v 1.116 2021/08/14 20:43:05 andvar Exp $");
 
 #include <sys/param.h>
 #include <sys/reboot.h>
@@ -1047,7 +1047,7 @@ crypto_kregister(u_int32_t driverid, int kalg, u_int32_t flags,
 
 	cap = crypto_checkdriver_lock(driverid);
 	if (cap != NULL &&
-	    (CRK_ALGORITM_MIN <= kalg && kalg <= CRK_ALGORITHM_MAX)) {
+	    (CRK_ALGORITHM_MIN <= kalg && kalg <= CRK_ALGORITHM_MAX)) {
 		/*
 		 * XXX Do some performance testing to determine placing.
 		 * XXX We probably need an auxiliary data structure that
@@ -1361,7 +1361,7 @@ out:
 }
 
 /*
- * Add an asymetric crypto request to a queue,
+ * Add an asymmetric crypto request to a queue,
  * to be processed by the kernel thread.
  */
 int
@@ -1429,7 +1429,7 @@ out:
 }
 
 /*
- * Dispatch an assymetric crypto request to the appropriate crypto devices.
+ * Dispatch an asymmetric crypto request to the appropriate crypto devices.
  */
 static int
 crypto_kinvoke(struct cryptkop *krp, int hint)

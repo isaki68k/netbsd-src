@@ -1,4 +1,4 @@
-/* $NetBSD: psci.c,v 1.5 2021/01/16 23:51:50 chs Exp $ */
+/* $NetBSD: psci.c,v 1.7 2021/08/07 21:20:14 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: psci.c,v 1.5 2021/01/16 23:51:50 chs Exp $");
+__KERNEL_RCSID(0, "$NetBSD: psci.c,v 1.7 2021/08/07 21:20:14 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -45,6 +45,7 @@ __KERNEL_RCSID(0, "$NetBSD: psci.c,v 1.5 2021/01/16 23:51:50 chs Exp $");
 #else
 #define	PSCI_CPU_ON		0x84000003
 #endif
+#define	PSCI_FEATURES		0x8400000a
 
 static psci_fn psci_call_fn;
 
@@ -53,9 +54,10 @@ static uint32_t psci_functions[PSCI_FUNC_MAX] = {
         [PSCI_FUNC_SYSTEM_OFF] = PSCI_SYSTEM_OFF,
 	[PSCI_FUNC_SYSTEM_RESET] = PSCI_SYSTEM_RESET,
 	[PSCI_FUNC_CPU_ON] = PSCI_CPU_ON,
+	[PSCI_FUNC_FEATURES] = PSCI_FEATURES,
 };
 
-static int
+int
 psci_call(register_t fid, register_t arg1, register_t arg2, register_t arg3)
 {
 	KASSERT(psci_call_fn != NULL);
@@ -64,6 +66,18 @@ psci_call(register_t fid, register_t arg1, register_t arg2, register_t arg3)
 		return PSCI_NOT_SUPPORTED;
 
 	return psci_call_fn(fid, arg1, arg2, arg3);
+}
+
+enum psci_conduit
+psci_conduit(void)
+{
+	if (psci_call_fn == psci_call_smc) {
+		return PSCI_CONDUIT_SMC;
+	} else if (psci_call_fn == psci_call_hvc) {
+		return PSCI_CONDUIT_HVC;
+	} else {
+		return PSCI_CONDUIT_NONE;
+	}
 }
 
 uint32_t
@@ -96,6 +110,15 @@ void
 psci_system_reset(void)
 {
 	psci_call(psci_functions[PSCI_FUNC_SYSTEM_RESET], 0, 0, 0);
+}
+
+int
+psci_features(uint32_t fid)
+{
+	if (psci_functions[PSCI_FUNC_FEATURES] == 0) {
+		return PSCI_NOT_SUPPORTED;
+	}
+	return psci_call(psci_functions[PSCI_FUNC_FEATURES], fid, 0, 0);
 }
 
 void

@@ -1,4 +1,4 @@
-/*	$NetBSD: sig_machdep.c,v 1.52 2020/07/06 09:34:18 rin Exp $	*/
+/*	$NetBSD: sig_machdep.c,v 1.54 2021/11/01 05:07:15 thorpej Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996 Wolfgang Solfrank.
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sig_machdep.c,v 1.52 2020/07/06 09:34:18 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sig_machdep.c,v 1.54 2021/11/01 05:07:15 thorpej Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_altivec.h"
@@ -63,7 +63,7 @@ sendsig_siginfo(const ksiginfo_t *ksi, const sigset_t *mask)
 	struct lwp * const l = curlwp;
 	struct proc * const p = l->l_proc;
 	struct trapframe * const tf = l->l_md.md_utf;
-	struct sigaltstack * const ss = &l->l_sigstk;
+	stack_t * const ss = &l->l_sigstk;
 	const struct sigact_sigdesc * const sd =
 	    &p->p_sigacts->sa_sigdesc[ksi->ksi_signo];
 	/* save handler before sendsig_reset trashes it! */
@@ -122,7 +122,7 @@ sendsig_siginfo(const ksiginfo_t *ksi, const sigset_t *mask)
 	 * numbers are coordinated with machine-dependent code in libc.
 	 */
 	switch (sd->sd_vers) {
-	case 2:		/* siginfo sigtramp */
+	case __SIGTRAMP_SIGINFO_VERSION:	/* siginfo sigtramp */
 		tf->tf_fixreg[1]  = (register_t)sp - CALLFRAMELEN;
 		tf->tf_fixreg[3]  = (register_t)ksi->ksi_signo;
 		tf->tf_fixreg[4]  = (register_t)sip;

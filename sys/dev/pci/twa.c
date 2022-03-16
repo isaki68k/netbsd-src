@@ -1,4 +1,4 @@
-/*	$NetBSD: twa.c,v 1.59 2021/04/24 23:36:57 thorpej Exp $ */
+/*	$NetBSD: twa.c,v 1.61 2021/12/10 20:36:04 andvar Exp $ */
 /*	$wasabi: twa.c,v 1.27 2006/07/28 18:17:21 wrstuden Exp $	*/
 
 /*-
@@ -67,7 +67,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: twa.c,v 1.59 2021/04/24 23:36:57 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: twa.c,v 1.61 2021/12/10 20:36:04 andvar Exp $");
 
 //#define TWA_DEBUG
 
@@ -153,7 +153,7 @@ static const struct twa_message	twa_aen_table[] = {
 	{0x0000, "AEN queue empty"},
 	{0x0001, "Controller reset occurred"},
 	{0x0002, "Degraded unit detected"},
-	{0x0003, "Controller error occured"},
+	{0x0003, "Controller error occurred"},
 	{0x0004, "Background rebuild failed"},
 	{0x0005, "Background rebuild done"},
 	{0x0006, "Incomplete unit detected"},
@@ -1010,10 +1010,9 @@ twa_request_bus_scan(device_t self, const char *attr, const int *flags)
 
 				sc->sc_units[unit].td_dev =
 				    config_found(sc->twa_dv, &twaa, twa_print,
-				    CFARG_SUBMATCH, config_stdsubmatch,
-				    CFARG_IATTR, attr,
-				    CFARG_LOCATORS, locs,
-				    CFARG_EOL);
+				    CFARGS(.submatch = config_stdsubmatch,
+					   .iattr = attr,
+					   .locators = locs));
 			}
 		} else {
 			if (td->td_dev != NULL) {

@@ -1,4 +1,4 @@
-/*	$NetBSD: cryptodev.h,v 1.40 2019/11/29 07:20:03 hikaru Exp $ */
+/*	$NetBSD: cryptodev.h,v 1.42 2021/08/14 20:43:05 andvar Exp $ */
 /*	$FreeBSD: src/sys/opencrypto/cryptodev.h,v 1.2.2.6 2003/07/02 17:04:50 sam Exp $	*/
 /*	$OpenBSD: cryptodev.h,v 1.33 2002/07/17 23:52:39 art Exp $	*/
 
@@ -324,8 +324,8 @@ struct cryptret {
 };
 
 
-/* Assymetric key operations */
-#define	CRK_ALGORITM_MIN	0
+/* Asymmetric key operations */
+#define	CRK_ALGORITHM_MIN	0
 #define CRK_MOD_EXP		0
 #define CRK_MOD_EXP_CRT		1
 #define CRK_DSA_SIGN		2
@@ -390,8 +390,8 @@ struct cryptotstat {
 struct cryptostats {
 	u_int32_t	cs_ops;		/* symmetric crypto ops submitted */
 	u_int32_t	cs_errs;	/* symmetric crypto ops that failed */
-	u_int32_t	cs_kops;	/* asymetric/key ops submitted */
-	u_int32_t	cs_kerrs;	/* asymetric/key ops that failed */
+	u_int32_t	cs_kops;	/* asymmetric/key ops submitted */
+	u_int32_t	cs_kerrs;	/* asymmetric/key ops that failed */
 	u_int32_t	cs_intrs;	/* crypto swi thread activations */
 	u_int32_t	cs_rets;	/* crypto return thread activations */
 	u_int32_t	cs_blocks;	/* symmetric op driver block */
@@ -402,7 +402,7 @@ struct cryptostats {
 	 * accumulate statistics about how long it takes to process
 	 * crypto requests at various points during processing.
 	 */
-	struct cryptotstat cs_invoke;	/* crypto_dipsatch -> crypto_invoke */
+	struct cryptotstat cs_invoke;	/* crypto_dispatch -> crypto_invoke */
 	struct cryptotstat cs_done;	/* crypto_invoke -> crypto_done */
 	struct cryptotstat cs_cb;	/* crypto_done -> callback */
 	struct cryptotstat cs_finis;	/* callback -> callback return */
@@ -636,8 +636,8 @@ extern	int crypto_devallowsoft;	/* only use hardware crypto */
 /*
  * initialize the crypto framework subsystem (not the pseudo-device).
  * This must be called very early in boot, so the framework is ready
- * to handle registration requests when crpto hardware is autoconfigured.
- * (This declaration doesnt really belong here but there's no header
+ * to handle registration requests when crypto hardware is autoconfigured.
+ * (This declaration doesn't really belong here but there's no header
  * for the raw framework.)
  */
 int	crypto_init(void);

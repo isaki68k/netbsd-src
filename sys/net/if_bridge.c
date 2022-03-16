@@ -1,4 +1,4 @@
-/*	$NetBSD: if_bridge.c,v 1.181 2021/07/02 03:30:46 yamaguchi Exp $	*/
+/*	$NetBSD: if_bridge.c,v 1.186 2021/12/31 14:25:24 riastradh Exp $	*/
 
 /*
  * Copyright 2001 Wasabi Systems, Inc.
@@ -80,7 +80,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_bridge.c,v 1.181 2021/07/02 03:30:46 yamaguchi Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_bridge.c,v 1.186 2021/12/31 14:25:24 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -243,6 +243,7 @@ static int	bridge_ioctl(struct ifnet *, u_long, void *);
 static int	bridge_init(struct ifnet *);
 static void	bridge_stop(struct ifnet *, int);
 static void	bridge_start(struct ifnet *);
+static void	bridge_ifdetach(void *);
 
 static void	bridge_input(struct ifnet *, struct mbuf *);
 static void	bridge_forward(struct bridge_softc *, struct mbuf *);
@@ -610,14 +611,14 @@ bridge_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 			 * If interface is marked down and it is running,
 			 * then stop and disable it.
 			 */
-			(*ifp->if_stop)(ifp, 1);
+			if_stop(ifp, 1);
 			break;
 		case IFF_UP:
 			/*
 			 * If interface is marked up and it is stopped, then
 			 * start it.
 			 */
-			error = (*ifp->if_init)(ifp);
+			error = if_init(ifp);
 			break;
 		default:
 			break;
@@ -738,6 +739,12 @@ bridge_delete_member(struct bridge_softc *sc, struct bridge_iflist *bif)
 
 	PSLIST_WRITER_REMOVE(bif, bif_next);
 	BRIDGE_PSZ_PERFORM(sc);
+
+	if_linkstate_change_disestablish(ifs,
+	    bif->bif_linkstate_hook, BRIDGE_LOCK_OBJ(sc));
+	ether_ifdetachhook_disestablish(ifs,
+	    bif->bif_ifdetach_hook, BRIDGE_LOCK_OBJ(sc));
+
 	BRIDGE_UNLOCK(sc);
 
 	switch (ifs->if_type) {
@@ -796,9 +803,10 @@ bridge_calc_csum_flags(struct bridge_softc *sc)
  *
  *	Calculate the link state based on each member interface.
  */
-void
-bridge_calc_link_state(struct bridge_softc *sc)
+static void
+bridge_calc_link_state(void *xsc)
 {
+	struct bridge_softc *sc = xsc;
 	struct bridge_iflist *bif;
 	struct ifnet *ifs;
 	int link_state = LINK_STATE_DOWN;
@@ -861,7 +869,7 @@ bridge_ioctl_add(struct bridge_softc *sc, void *arg)
 			memset(&ifr, 0, sizeof(ifr));
 			ifr.ifr_mtu = sc->sc_if.if_mtu;
 			IFNET_LOCK(ifs);
-			error = ifs->if_ioctl(ifs, SIOCSIFMTU, &ifr);
+			error = if_ioctl(ifs, SIOCSIFMTU, &ifr);
 			IFNET_UNLOCK(ifs);
 			if (error != 0)
 				goto out;
@@ -889,6 +897,8 @@ bridge_ioctl_add(struct bridge_softc *sc, void *arg)
 	bif->bif_flags = IFBIF_LEARNING | IFBIF_DISCOVER;
 	bif->bif_priority = BSTP_DEFAULT_PORT_PRIORITY;
 	bif->bif_path_cost = BSTP_DEFAULT_PATH_COST;
+	bif->bif_linkstate_hook = if_linkstate_change_establish(ifs,
+	    bridge_calc_link_state, sc);
 	PSLIST_ENTRY_INIT(bif, bif_next);
 	psref_target_init(&bif->bif_psref, bridge_psref_class);
 
@@ -900,6 +910,9 @@ bridge_ioctl_add(struct bridge_softc *sc, void *arg)
 	ifs->_if_input = bridge_input;
 
 	BRIDGE_UNLOCK(sc);
+
+	bif->bif_ifdetach_hook = ether_ifdetachhook_establish(ifs,
+	    bridge_ifdetach, (void *)ifs);
 
 	bridge_calc_csum_flags(sc);
 	bridge_calc_link_state(sc);
@@ -1393,17 +1406,21 @@ bridge_ioctl_sifcost(struct bridge_softc *sc, void *arg)
  *	Detach an interface from a bridge.  Called when a member
  *	interface is detaching.
  */
-void
-bridge_ifdetach(struct ifnet *ifp)
+static void
+bridge_ifdetach(void *xifs)
 {
-	struct bridge_softc *sc = ifp->if_bridge;
+	struct ifnet *ifs;
+	struct bridge_softc *sc;
 	struct ifbreq breq;
+
+	ifs = (struct ifnet *)xifs;
+	sc = ifs->if_bridge;
 
 	/* ioctl_lock should prevent this from happening */
 	KASSERT(sc != NULL);
 
 	memset(&breq, 0, sizeof(breq));
-	strlcpy(breq.ifbr_ifsname, ifp->if_xname, sizeof(breq.ifbr_ifsname));
+	strlcpy(breq.ifbr_ifsname, ifs->if_xname, sizeof(breq.ifbr_ifsname));
 
 	(void) bridge_ioctl_del(sc, &breq);
 }

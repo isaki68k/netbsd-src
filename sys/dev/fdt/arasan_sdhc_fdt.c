@@ -1,4 +1,4 @@
-/* $NetBSD: arasan_sdhc_fdt.c,v 1.6 2021/01/27 03:10:21 thorpej Exp $ */
+/* $NetBSD: arasan_sdhc_fdt.c,v 1.9 2022/02/06 15:52:20 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2019 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: arasan_sdhc_fdt.c,v 1.6 2021/01/27 03:10:21 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: arasan_sdhc_fdt.c,v 1.9 2022/02/06 15:52:20 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -272,7 +272,7 @@ arasan_sdhc_attach(device_t parent, device_t self, void *aux)
 
 	const uint32_t caps = bus_space_read_4(sc->sc_bst, sc->sc_bsh, SDHC_CAPABILITIES);
 	if ((caps & (SDHC_ADMA2_SUPP|SDHC_64BIT_SYS_BUS)) == SDHC_ADMA2_SUPP) {
-		error = bus_dmatag_subregion(faa->faa_dmat, 0, 0xffffffff,
+		error = bus_dmatag_subregion(faa->faa_dmat, 0, __MASK(32),
 		    &sc->sc_base.sc_dmat, BUS_DMA_WAITOK);
 		if (error != 0) {
 			aprint_error(": couldn't create DMA tag: %d\n", error);
@@ -288,7 +288,6 @@ arasan_sdhc_attach(device_t parent, device_t self, void *aux)
 			       SDHC_FLAG_SINGLE_POWER_WRITE |
 			       SDHC_FLAG_32BIT_ACCESS |
 			       SDHC_FLAG_USE_DMA |
-			       SDHC_FLAG_USE_ADMA2 |
 			       SDHC_FLAG_STOP_WITH_TC;
 	if (bus_width == 8)
 		sc->sc_base.sc_flags |= SDHC_FLAG_8BIT_MODE;

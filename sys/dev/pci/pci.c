@@ -1,4 +1,4 @@
-/*	$NetBSD: pci.c,v 1.160 2021/05/12 23:22:33 thorpej Exp $	*/
+/*	$NetBSD: pci.c,v 1.164 2022/01/21 15:55:36 thorpej Exp $	*/
 
 /*
  * Copyright (c) 1995, 1996, 1997, 1998
@@ -36,7 +36,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pci.c,v 1.160 2021/05/12 23:22:33 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pci.c,v 1.164 2022/01/21 15:55:36 thorpej Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_pci.h"
@@ -52,6 +52,8 @@ __KERNEL_RCSID(0, "$NetBSD: pci.c,v 1.160 2021/05/12 23:22:33 thorpej Exp $");
 #include <dev/pci/pcivar.h>
 #include <dev/pci/pcidevs.h>
 #include <dev/pci/ppbvar.h>
+
+#include <dev/pci/pci_calls.h>
 
 #include <net/if.h>
 
@@ -275,14 +277,13 @@ pci_bus_get_child_devhandle(struct pci_softc *sc, pcitag_t tag)
 		.tag = tag,
 	};
 
-	if (device_call(sc->sc_dev, "pci-bus-get-child-devhandle",
-			&args) != 0) {
+	if (device_call(sc->sc_dev, PCI_BUS_GET_CHILD_DEVHANDLE(&args)) != 0) {
 		/*
 		 * The call is either not supported or the requested
 		 * device was not found in the platform device tree.
 		 * Return an invalid handle.
 		 */
-		devhandle_invalidate(&args.devhandle);
+		return devhandle_invalid();
 	}
 
 	return args.devhandle;
@@ -485,10 +486,9 @@ pci_probe_device(struct pci_softc *sc, pcitag_t tag,
 			c->c_psok = false;
 
 		c->c_dev = config_found(sc->sc_dev, &pa, pciprint,
-		    CFARG_SUBMATCH, config_stdsubmatch,
-		    CFARG_LOCATORS, locs,
-		    CFARG_DEVHANDLE, devhandle,
-		    CFARG_EOL);
+		    CFARGS(.submatch = config_stdsubmatch,
+			   .locators = locs,
+			   .devhandle = devhandle));
 
 		ret = (c->c_dev != NULL);
 	}
@@ -735,7 +735,7 @@ pci_enumerate_bus(struct pci_softc *sc, const int *locators,
 		if (pci_get_capability(ppbpc, ppbtag, PCI_CAP_PCIEXPRESS,
 		    &pciecap, &capreg) != 0) {
 			switch (PCIE_XCAP_TYPE(capreg)) {
-			case PCIE_XCAP_TYPE_ROOT:
+			case PCIE_XCAP_TYPE_RP:
 			case PCIE_XCAP_TYPE_DOWN:
 			case PCIE_XCAP_TYPE_PCI2PCIE:
 				downstream_port = true;

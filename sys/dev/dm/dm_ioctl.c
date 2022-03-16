@@ -1,4 +1,4 @@
-/* $NetBSD: dm_ioctl.c,v 1.52 2021/06/21 03:16:43 christos Exp $      */
+/* $NetBSD: dm_ioctl.c,v 1.55 2021/08/21 22:23:33 andvar Exp $      */
 
 /*
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -29,7 +29,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: dm_ioctl.c,v 1.52 2021/06/21 03:16:43 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: dm_ioctl.c,v 1.55 2021/08/21 22:23:33 andvar Exp $");
 
 /*
  * Locking is used to synchronise between ioctl calls and between dm_table's
@@ -53,10 +53,10 @@ __KERNEL_RCSID(0, "$NetBSD: dm_ioctl.c,v 1.52 2021/06/21 03:16:43 christos Exp $
  * on uint8_t argument.
  *
  * dm_table_release must be called for every table_entry from
- * dm_table_get_entry. Between these to calls tables can'tbe switched
+ * dm_table_get_entry. Between these two calls tables can't be switched
  * or destroyed.
  *
- * dm_table_head_init initialize talbe_entries SLISTS and io_cv.
+ * dm_table_head_init initialize table_entries SLISTS and io_cv.
  *
  * dm_table_head_destroy destroy cv.
  *
@@ -265,7 +265,7 @@ dm_dev_create_ioctl(prop_dictionary_t dm_dict)
 }
 
 /*
- * Get list of created device-mapper devices fromglobal list and
+ * Get list of created device-mapper devices from global list and
  * send it to kernel.
  *
  * Output dictionary:
@@ -387,7 +387,7 @@ dm_dev_remove_ioctl(prop_dictionary_t dm_dict)
 
 	/*
 	 * This seems as hack to me, probably use routine dm_dev_get_devt to
-	 * atomicaly get devt from device.
+	 * atomically get devt from device.
 	 */
 	if ((dmv = dm_dev_lookup(name, uuid, minor)) == NULL) {
 		DM_REMOVE_FLAG(flags, DM_EXISTS_FLAG);
@@ -557,7 +557,7 @@ dm_dev_resume_ioctl(prop_dictionary_t dm_dict)
 
 /*
  * Table management routines
- * lvm2tools doens't send name/uuid to kernel with table
+ * lvm2tools doesn't send name/uuid to kernel with table
  * for lookup I have to use minor number.
  */
 
@@ -695,7 +695,7 @@ dm_table_deps(dm_table_entry_t *table_en, prop_array_t array)
 
 /*
  * Load new table/tables to device.
- * Call apropriate target init routine open all physical pdev's and
+ * Call appropriate target init routine to open all physical pdev's and
  * link them to device. For other targets mirror, strip, snapshot
  * etc. also add dependency devices to upcalls list.
  *

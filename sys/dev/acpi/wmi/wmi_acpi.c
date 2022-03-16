@@ -1,4 +1,4 @@
-/*	$NetBSD: wmi_acpi.c,v 1.18 2021/04/24 23:36:52 thorpej Exp $	*/
+/*	$NetBSD: wmi_acpi.c,v 1.20 2021/12/12 22:20:52 andvar Exp $	*/
 
 /*-
  * Copyright (c) 2009, 2010 Jukka Ruohonen <jruohonen@iki.fi>
@@ -27,7 +27,7 @@
  * SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: wmi_acpi.c,v 1.18 2021/04/24 23:36:52 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: wmi_acpi.c,v 1.20 2021/12/12 22:20:52 andvar Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -46,7 +46,7 @@ ACPI_MODULE_NAME            ("wmi_acpi")
 
 /*
  * This implements something called "Microsoft Windows Management
- * Instrumentation" (WMI). This subset of ACPI is desribed in:
+ * Instrumentation" (WMI). This subset of ACPI is described in:
  *
  * http://www.microsoft.com/whdc/system/pnppwr/wmi/wmi-acpi.mspx
  *
@@ -151,7 +151,7 @@ acpi_wmi_rescan(device_t self, const char *ifattr, const int *locators)
 
 	if (sc->sc_child == NULL) {
 		sc->sc_child =
-		    config_found(self, NULL, acpi_wmi_print, CFARG_EOL);
+		    config_found(self, NULL, acpi_wmi_print, CFARGS_NONE);
 	}
 
 	return 0;

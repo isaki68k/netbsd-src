@@ -1,4 +1,4 @@
-/*	$NetBSD: mainbus.c,v 1.8 2021/05/10 23:58:52 thorpej Exp $	*/
+/*	$NetBSD: mainbus.c,v 1.10 2021/09/06 14:03:18 jmcneill Exp $	*/
 
 /*
  * Copyright (c) 2007
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mainbus.c,v 1.8 2021/05/10 23:58:52 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mainbus.c,v 1.10 2021/09/06 14:03:18 jmcneill Exp $");
 
 #define	_MIPS_BUS_DMA_PRIVATE
 
@@ -98,9 +98,8 @@ mainbus_attach_static(device_t self)
 	for (i = 0; i < (int)mainbus_ndevs; i++) {
 		aa.aa_name = mainbus_devs[i];
 		config_found(self, &aa, mainbus_print,
-		    CFARG_SUBMATCH, mainbus_submatch,
-			CFARG_IATTR, "mainbus",
-			CFARG_EOL);
+		    CFARGS(.submatch = mainbus_submatch,
+			   .iattr = "mainbus"));
 	}
 }
 
@@ -118,15 +117,13 @@ mainbus_attach_devicetree(device_t self)
 
 	aa.aa_name = "cpunode";
 	config_found(self, &aa, mainbus_print,
-	    CFARG_SUBMATCH, mainbus_submatch,
-	    CFARG_IATTR, "mainbus",
-	    CFARG_EOL);
+	    CFARGS(.submatch = mainbus_submatch,
+		   .iattr = "mainbus"));
 
 	aa.aa_name = "iobus";
 	config_found(self, &aa, mainbus_print,
-	    CFARG_SUBMATCH, mainbus_submatch,
-	    CFARG_IATTR, "mainbus",
-	    CFARG_EOL);
+	    CFARGS(.submatch = mainbus_submatch,
+		   .iattr = "mainbus"));
 
 	simplebus_bus_io_init(&simplebus_bus_tag, NULL);
 
@@ -150,8 +147,7 @@ mainbus_attach_devicetree(device_t self)
 
 	faa.faa_phandle = OF_peer(0);
 	config_found(self, &faa, NULL,
-	    CFARG_IATTR, "fdt",
-	    CFARG_EOL);
+	    CFARGS(.iattr = "fdt"));
 }
 
 static int
@@ -190,3 +186,9 @@ mainbus_print(void *aux, const char *pnp)
 #define	CHIP_W1_SYS_END(v)	0xffffffffffffffffULL
 
 #include <mips/mips/bus_space_alignstride_chipdep.c>
+
+bus_space_tag_t
+fdtbus_bus_tag_create(int phandle, uint32_t flags)
+{
+	return &simplebus_bus_tag;
+}

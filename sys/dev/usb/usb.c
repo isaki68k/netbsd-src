@@ -1,4 +1,4 @@
-/*	$NetBSD: usb.c,v 1.196 2021/06/13 14:48:10 riastradh Exp $	*/
+/*	$NetBSD: usb.c,v 1.200 2022/03/13 11:28:52 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1998, 2002, 2008, 2012 The NetBSD Foundation, Inc.
@@ -37,7 +37,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: usb.c,v 1.196 2021/06/13 14:48:10 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: usb.c,v 1.200 2022/03/13 11:28:52 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -296,6 +296,7 @@ usb_attach(device_t parent, device_t self, void *aux)
 	usbrev = sc->sc_bus->ub_revision;
 
 	cv_init(&sc->sc_bus->ub_needsexplore_cv, "usbevt");
+	cv_init(&sc->sc_bus->ub_rhxfercv, "usbrhxfer");
 	sc->sc_pmf_registered = false;
 
 	aprint_naive("\n");
@@ -724,7 +725,9 @@ usb_event_thread(void *arg)
 	 * know how to synchronize the creation of the threads so it
 	 * will work.
 	 */
-	usb_delay_ms(bus, 500);
+	if (bus->ub_revision < USBREV_2_0) {
+		usb_delay_ms(bus, 500);
+	}
 
 	/* Make sure first discover does something. */
 	mutex_enter(bus->ub_lock);
@@ -831,7 +834,7 @@ usbopen(dev_t dev, int flag, int mode, struct lwp *l)
 			return EBUSY;
 		usb_dev_open = 1;
 		mutex_enter(&proc_lock);
-		usb_async_proc = NULL;
+		atomic_store_relaxed(&usb_async_proc, NULL);
 		mutex_exit(&proc_lock);
 		return 0;
 	}
@@ -911,7 +914,7 @@ usbclose(dev_t dev, int flag, int mode,
 
 	if (unit == USB_DEV_MINOR) {
 		mutex_enter(&proc_lock);
-		usb_async_proc = NULL;
+		atomic_store_relaxed(&usb_async_proc, NULL);
 		mutex_exit(&proc_lock);
 		usb_dev_open = 0;
 	}
@@ -935,10 +938,8 @@ usbioctl(dev_t devt, u_long cmd, void *data, int flag, struct lwp *l)
 
 		case FIOASYNC:
 			mutex_enter(&proc_lock);
-			if (*(int *)data)
-				usb_async_proc = l->l_proc;
-			else
-				usb_async_proc = NULL;
+			atomic_store_relaxed(&usb_async_proc,
+			    *(int *)data ? l->l_proc : NULL);
 			mutex_exit(&proc_lock);
 			return 0;
 
@@ -1134,7 +1135,7 @@ filt_usbread(struct knote *kn, long hint)
 }
 
 static const struct filterops usbread_filtops = {
-	.f_isfd = 1,
+	.f_flags = FILTEROP_ISFD,
 	.f_attach = NULL,
 	.f_detach = filt_usbrdetach,
 	.f_event = filt_usbread,
@@ -1315,7 +1316,7 @@ usb_add_event(int type, struct usb_event *uep)
 	SIMPLEQ_INSERT_TAIL(&usb_events, ueq, next);
 	cv_signal(&usb_event_cv);
 	selnotify(&usb_selevent, 0, 0);
-	if (usb_async_proc != NULL) {
+	if (atomic_load_relaxed(&usb_async_proc) != NULL) {
 		kpreempt_disable();
 		softint_schedule(usb_async_sih);
 		kpreempt_enable();
@@ -1329,7 +1330,7 @@ usb_async_intr(void *cookie)
 	proc_t *proc;
 
 	mutex_enter(&proc_lock);
-	if ((proc = usb_async_proc) != NULL)
+	if ((proc = atomic_load_relaxed(&usb_async_proc)) != NULL)
 		psignal(proc, SIGIO);
 	mutex_exit(&proc_lock);
 }
@@ -1430,6 +1431,7 @@ usb_detach(device_t self, int flags)
 	usb_add_event(USB_EVENT_CTRLR_DETACH, ue);
 
 	cv_destroy(&sc->sc_bus->ub_needsexplore_cv);
+	cv_destroy(&sc->sc_bus->ub_rhxfercv);
 
 	return 0;
 }

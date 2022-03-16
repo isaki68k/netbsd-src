@@ -1,4 +1,4 @@
-/*	$NetBSD: biosdisk.c,v 1.55 2021/05/30 05:59:23 mlelstv Exp $	*/
+/*	$NetBSD: biosdisk.c,v 1.57 2021/12/28 00:37:16 simonb Exp $	*/
 
 /*
  * Copyright (c) 1996, 1998
@@ -1028,7 +1028,8 @@ biosdisk_findpartition(int biosdev, daddr_t sector,
 {
 #if defined(NO_DISKLABEL) && defined(NO_GPT)
 	*partition = 0;
-	*part_name = NULL;
+	if (part_name)
+		*part_name = NULL;
 	return 0;
 #else
 	int i;
@@ -1045,9 +1046,10 @@ biosdisk_findpartition(int biosdev, daddr_t sector,
 	printf("looking for partition device %x, sector %"PRId64"\n", biosdev, sector);
 #endif
 
-	/* default ot first partition */
+	/* default to first partition */
 	*partition = 0;
-	*part_name = NULL;
+	if (part_name)
+		*part_name = NULL;
 
 	/* Look for netbsd partition that is the dos boot one */
 	d = alloc_biosdisk(biosdev);

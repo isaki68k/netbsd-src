@@ -1,4 +1,4 @@
-/*	$NetBSD: scr.c,v 1.31 2016/07/07 06:55:38 msaitoh Exp $	*/
+/*	$NetBSD: scr.c,v 1.34 2021/12/05 08:03:07 msaitoh Exp $	*/
 
 /*
  * Copyright 1997
@@ -102,7 +102,7 @@
 */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: scr.c,v 1.31 2016/07/07 06:55:38 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: scr.c,v 1.34 2021/12/05 08:03:07 msaitoh Exp $");
 
 #include "opt_ddb.h"
 
@@ -663,7 +663,7 @@ const struct cdevsw scr_cdevsw = {
 **     
 **     This is the probe routine for the Smart Card.  Because the 
 **     Smart Card is hard wired, there is no probing to peform.  The
-**     function ensures that a succesfull problem occurs only once.
+**     function ensures that a successfull problem occurs only once.
 **
 **  FORMAL PARAMETERS:
 **
@@ -1386,7 +1386,7 @@ scrioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 **      requirement that the scrioctl disables interrupts before calling this function.
 **
 **      NB:- there is no way for the machine to get from msIdleOn to msIdleOff.  Since
-**      this is just a mater of turning all signals off and resetting state machines,
+**      this is just a matter of turning all signals off and resetting state machines,
 **      scrioctl takes a shortcut and resets everything itself.   Ie it hits everything
 **      with a big hammer!!
 **
@@ -2914,7 +2914,7 @@ static void   t0RecvByteSM(struct scr_softc* sc,int cmd)
                             sc->clkCountDataSend    = sc->clkCountDataSend  *2;
 
 
-                            /* adjust this so that we have clocked in only fist bit of TS */
+                            /* adjust this so that we have clocked in only first bit of TS */
                             sc->shiftParity = 0;
                             sc->shiftByte   = 0;
                             sc->shiftBits   = 1;

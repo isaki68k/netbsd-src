@@ -1,4 +1,4 @@
-/*	$NetBSD: cgfourteen.c,v 1.89 2021/04/24 23:36:49 thorpej Exp $ */
+/*	$NetBSD: cgfourteen.c,v 1.92 2021/12/17 19:27:57 macallan Exp $ */
 
 /*
  * Copyright (c) 1996
@@ -776,7 +776,7 @@ cg14_setup_wsdisplay(struct cgfourteen_softc *sc, int is_cons)
 	aa.accessops = &cg14_accessops;
 	aa.accesscookie = &sc->sc_vd;
 
-	config_found(sc->sc_dev, &aa, wsemuldisplaydevprint, CFARG_EOL);
+	config_found(sc->sc_dev, &aa, wsemuldisplaydevprint, CFARGS_NONE);
 }
 
 static void
@@ -1042,6 +1042,12 @@ cg14_set_depth(struct cgfourteen_softc *sc, int depth)
 {
 	int i;
 
+	/* init mask */
+	if (sc->sc_sx != NULL) {
+		sc->sc_mask = 0xffffffff;
+		sx_write(sc->sc_sx, SX_QUEUED(R_MASK), sc->sc_mask);
+	}
+
 	if (sc->sc_depth == depth)
 		return;
 
@@ -1226,50 +1232,71 @@ cg14_rectfill_a(void *cookie, int dstx, int dsty,
 	    sc->sc_vd.active->scr_ri.ri_devcmap[(attr >> 24 & 0xf)]);
 }
 
+static inline void
+cg14_set_mask(struct cgfourteen_softc *sc, uint32_t mask)
+{
+	if (mask == sc->sc_mask) return;
+	sc->sc_mask = mask;
+	sx_write(sc->sc_sx, SX_QUEUED(R_MASK), mask);
+}
+/*
+ * invert a rectangle, used only to (un)draw the cursor.
+ * - does a scanline at a time
+ * - does not handle wi > 64 or wi < 4, not that we need it for our fonts
+ * - uses all 32bit accesses
+ */ 
 static void
 cg14_invert(struct cgfourteen_softc *sc, int x, int y, int wi, int he)
 {
-	uint32_t addr, pptr;
-	int line, cnt, pre, words;
+	uint32_t addr, pptr, lmask, rmask;
+	int line, cnt, pre, words, pwrds = 0, post, reg;
 	int stride = sc->sc_fb.fb_type.fb_width;
 
-	addr = sc->sc_fb_paddr + x + stride * y;
-	sx_write(sc->sc_sx, SX_ROP_CONTROL, 0x33); /* ~src a */
+	addr = (sc->sc_fb_paddr + x + stride * y) & ~3;
+	sx_write(sc->sc_sx, SX_ROP_CONTROL, 0x3C); /* ~src a / src a */
 	/*
-	 * Calculate the number of pixels we need to do one by one
-	 * until we're 32bit aligned, then do the rest in 32bit
-	 * mode. Assumes that stride is always a multiple of 4. 
-	 */ 
-	/* TODO: use 32bit writes with byte mask instead */
-	pre = addr & 3;
-	if (pre != 0) pre = 4 - pre;
+	 * Calculate the number of pixels we need to mask on each end of the
+	 * scanline and how many we can do without mask, if any
+	 */
+	pre = x & 3;
+	if (pre != 0) {
+		lmask = 0xffffffff >> pre;
+		pre = 4 - pre;
+		pwrds++;
+	}
+	post = (x + wi) & 3;
+	if (post != 0) {
+		rmask = ~(0xffffffff >> post);
+		pwrds++;
+	}
+	words = (wi + pre + 3) >> 2;
+	cnt = words - pwrds;
+
 	for (line = 0; line < he; line++) {
 		pptr = addr;
-		cnt = wi;
+		/* load a whole scanline */
+		sta(pptr & ~7, ASI_SX, SX_LD(8, words - 1, pptr & 7));
+		reg = 8;
 		if (pre) {
-			sta(pptr & ~7, ASI_SX, SX_LDB(8, pre - 1, pptr & 7));
+			cg14_set_mask(sc, lmask);
 			sx_write(sc->sc_sx, SX_INSTRUCTIONS,
-			    SX_ROP(8, 8, 32, pre - 1));
-			sta(pptr & ~7, ASI_SX, SX_STB(32, pre - 1, pptr & 7));
-			pptr += pre;
-			cnt -= pre;
+			    SX_ROPB(8, 8, 40, 0));
+			reg++;
 		}
-		/* now do the aligned pixels in 32bit chunks */
-		while(cnt > 15) {
-			words = uimin(16, cnt >> 2);
-			sta(pptr & ~7, ASI_SX, SX_LD(8, words - 1, pptr & 7));
+		if (cnt > 0) {
+			cg14_set_mask(sc, 0xffffffff);
+			/* XXX handle cnt > 16 */
 			sx_write(sc->sc_sx, SX_INSTRUCTIONS,
-			    SX_ROP(8, 8, 32, words - 1));
-			sta(pptr & ~7, ASI_SX, SX_ST(32, words - 1, pptr & 7));
-			pptr += words << 2;
-			cnt -= words << 2;
+			    SX_ROP(reg, reg, reg + 32, cnt - 1));
+			reg += cnt;
 		}
-		/* do any remaining pixels byte-wise again */
-		if (cnt > 0)
-			sta(pptr & ~7, ASI_SX, SX_LDB(8, cnt - 1, pptr & 7));
+		if (post) {
+			cg14_set_mask(sc, rmask);
 			sx_write(sc->sc_sx, SX_INSTRUCTIONS,
-			    SX_ROP(8, 8, 32, cnt - 1));
-			sta(pptr & ~7, ASI_SX, SX_STB(32, cnt - 1, pptr & 7));
+			    SX_ROPB(reg, 7, reg + 32, 0));
+			reg++;
+		}
+		sta(pptr & ~7, ASI_SX, SX_ST(40, words - 1, pptr & 7));		
 		addr += stride;
 	}
 }
@@ -1486,8 +1513,7 @@ cg14_putchar(void *cookie, int row, int col, u_int c, long attr)
 			uint32_t reg;
 			for (i = 0; i < he; i++) {
 				reg = *data8;
-				sx_write(sc->sc_sx, SX_QUEUED(R_MASK),
-				    reg << 24);
+				cg14_set_mask(sc, reg << 24);
 				sta(addr & ~7, ASI_SX, SX_STBS(8, wi - 1, addr & 7));
 				data8++;
 				addr += stride;
@@ -1499,8 +1525,7 @@ cg14_putchar(void *cookie, int row, int col, u_int c, long attr)
 			uint32_t reg;
 			for (i = 0; i < he; i++) {
 				reg = *data16;
-				sx_write(sc->sc_sx, SX_QUEUED(R_MASK),
-				    reg << 16);
+				cg14_set_mask(sc, reg << 16);
 				sta(addr & ~7, ASI_SX, SX_STBS(8, wi - 1, addr & 7));
 				data16++;
 				addr += stride;

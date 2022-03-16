@@ -1,4 +1,4 @@
-/* $NetBSD: mfi.c,v 1.64 2021/04/24 23:36:55 thorpej Exp $ */
+/* $NetBSD: mfi.c,v 1.67 2021/12/05 02:47:01 msaitoh Exp $ */
 /* $OpenBSD: mfi.c,v 1.66 2006/11/28 23:59:45 dlg Exp $ */
 
 /*
@@ -73,7 +73,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mfi.c,v 1.64 2021/04/24 23:36:55 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mfi.c,v 1.67 2021/12/05 02:47:01 msaitoh Exp $");
 
 #include "bio.h"
 
@@ -909,7 +909,7 @@ mfi_rescan(device_t self, const char *ifattr, const int *locators)
 	if (sc->sc_child != NULL)
 		return 0;
 
-	sc->sc_child = config_found(self, &sc->sc_chan, scsiprint, CFARG_EOL);
+	sc->sc_child = config_found(self, &sc->sc_chan, scsiprint, CFARGS_NONE);
 
 	return 0;
 }
@@ -1065,7 +1065,7 @@ mfi_attach(struct mfi_softc *sc, enum mfi_iop iop)
 	if (sc->sc_ioptype == MFI_IOP_TBOLT) {
 		uint32_t tb_mem_size;
 		/* for Alignment */
-		tb_mem_size = MEGASAS_THUNDERBOLT_MSG_ALLIGNMENT;
+		tb_mem_size = MEGASAS_THUNDERBOLT_MSG_ALIGNMENT;
 
 		tb_mem_size +=
 		    MEGASAS_THUNDERBOLT_NEW_MSG_SIZE * (sc->sc_max_cmds + 1);
@@ -2924,7 +2924,7 @@ mfi_tbolt_init_desc_pool(struct mfi_softc *sc)
 	uint32_t     offset = 0;
 	uint8_t      *addr = MFIMEM_KVA(sc->sc_tbolt_reqmsgpool);
 
-	/* Request Decriptors alignment restrictions */
+	/* Request Descriptors alignment restrictions */
 	KASSERT(((uintptr_t)addr & 0xFF) == 0);
 
 	/* Skip request message pool */

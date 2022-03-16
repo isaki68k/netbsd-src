@@ -1,4 +1,4 @@
-/*	$NetBSD: stic.c,v 1.55 2021/04/24 23:36:59 thorpej Exp $	*/
+/*	$NetBSD: stic.c,v 1.57 2021/08/17 22:00:32 andvar Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001 The NetBSD Foundation, Inc.
@@ -36,7 +36,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: stic.c,v 1.55 2021/04/24 23:36:59 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: stic.c,v 1.57 2021/08/17 22:00:32 andvar Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -433,7 +433,7 @@ stic_attach(device_t self, struct stic_info *si, int console)
 	waa.accessops = &stic_accessops;
 	waa.accesscookie = si;
 
-	config_found(self, &waa, wsemuldisplaydevprint, CFARG_EOL);
+	config_found(self, &waa, wsemuldisplaydevprint, CFARGS_NONE);
 }
 
 void
@@ -1422,7 +1422,7 @@ stic_set_hwcurpos(struct stic_info *si)
 }
 
 /*
- * STIC control inteface.  We have a separate device for mapping the board,
+ * STIC control interface.  We have a separate device for mapping the board,
  * because access to the DMA engine means that it's possible to circumvent
  * the securelevel mechanism.
  */

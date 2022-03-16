@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.373 2021/01/24 07:36:54 mrg Exp $ */
+/*	$NetBSD: pmap.c,v 1.376 2022/03/12 15:32:31 riastradh Exp $ */
 
 /*
  * Copyright (c) 1996
@@ -56,7 +56,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.373 2021/01/24 07:36:54 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.376 2022/03/12 15:32:31 riastradh Exp $");
 
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
@@ -310,7 +310,7 @@ struct mmuentry region_freelist, region_lru, region_locked;
 #endif
 /*
  * We use a double linked list looping through its static head (which
- * alway remains on the list), so we can remove any other member from
+ * always remains on the list), so we can remove any other member from
  * a list without knowing which list it is on.
  */
 static void inline
@@ -663,13 +663,13 @@ sp_tlb_flush(int va, int ctx, int lvl)
 	opsr = getpsr();	/* KDASSERT(opsr & PSR_ET); */
 	__asm volatile ("wr %0, %1, %%psr"
 			:: "r"(opsr), "n"(PSR_ET) : "memory");
-	__asm volatile ("nop; nop;nop");
+	__asm volatile ("nop; nop; nop");
 
 	octx = getcontext4m();	/* save context */
 
 	/* Do the TLB flush in "ctx" */
 	setcontext4m(ctx);
-	__asm volatile("sta %%g0, [%0]%1" :: "r"(va), "n"(ASI_SRMMUFP));
+	__asm volatile ("sta %%g0, [%0]%1" :: "r"(va), "n"(ASI_SRMMUFP));
 
 	setcontext4m(octx);	/* restore context */
 	setpsr(opsr);		/* turn traps on again */
@@ -3636,7 +3636,7 @@ pmap_bootstrap4m(void *top)
 
 	/*
 	 * Allocate context table.
-	 * To keep supersparc happy, minimum aligment is on a 4K boundary.
+	 * To keep supersparc happy, minimum alignment is on a 4K boundary.
 	 */
 	ctxtblsize = uimax(ncontext,1024) * sizeof(int);
 	cpuinfo.ctx_tbl = (int *)roundup((u_int)p, ctxtblsize);
@@ -4465,7 +4465,9 @@ pmap_destroy(struct pmap *pm)
 {
 
 	DPRINTF(PDB_DESTROY, "pmap_destroy[%d](%p)", cpu_number(), pm);
+	membar_exit();
 	if (atomic_dec_uint_nv(&pm->pm_refcount) == 0) {
+		membar_enter();
 		pmap_quiet_check(pm);
 		pool_cache_put(&pmap_cache, pm);
 	}

@@ -1,4 +1,4 @@
-#	$NetBSD: files.i2c,v 1.115 2021/01/04 22:09:35 thorpej Exp $
+#	$NetBSD: files.i2c,v 1.122 2022/01/17 16:31:23 thorpej Exp $
 
 obsolete defflag	opt_i2cbus.h		I2C_SCAN
 define	i2cbus { }
@@ -106,7 +106,7 @@ device	lmtemp: sysmon_envsys
 attach	lmtemp at iic
 file	dev/i2c/lm75.c				lmtemp
 
-# IST-AG Humidity and Teperature sensor (P14)
+# IST-AG Humidity and Temperature sensor (P14)
 device	hythygtemp: sysmon_envsys
 attach	hythygtemp at iic
 file	dev/i2c/hytp14.c			hythygtemp
@@ -203,6 +203,10 @@ device	tps65217reg: tps65217pmic
 attach	tps65217pmic at iic
 attach	tps65217reg at tps65217pmic
 file	dev/i2c/tps65217pmic.c 		tps65217pmic	needs-flag
+
+# Microchip MCP23008 / MCP23017 I/O Expander
+attach	mcpgpio at iic with mcpgpio_i2c
+file	dev/i2c/mcp23xxxgpio_i2c.c	mcpgpio_i2c
 
 # Microchip MCP980x
 device	mcp980x: sysmon_envsys
@@ -305,11 +309,6 @@ device	em3027rtc: sysmon_envsys
 attach	em3027rtc at iic
 file	dev/i2c/em3027.c			em3027rtc
 
-# Apple Fan Control Unit found in some G5
-device	fcu: sysmon_envsys
-attach	fcu at iic
-file	dev/i2c/fcu.c				fcu	needs-flag
-
 # Analog Devices AD7417 thermometer and ADC
 device	adadc: sysmon_envsys
 attach	adadc at iic
@@ -400,6 +399,22 @@ device	cwfg: sysmon_envsys
 attach	cwfg at iic
 file	dev/i2c/cwfg.c				cwfg
 
+# Sensirion SHT30/SHT31/SHT35 Temperature and Humidity sensor
+device sht3xtemp
+attach sht3xtemp at iic
+file dev/i2c/sht3x.c				sht3xtemp
+
+# Sensirion SHT40/SHT41/SHT45 Temperature and Humidity sensor
+device sht4xtemp
+attach sht4xtemp at iic
+file dev/i2c/sht4x.c				sht4xtemp
+
+# Sensirion SGP40 MOx gas sensor
+device sgp40mox
+attach sgp40mox at iic
+file dev/i2c/sgp40.c				sgp40mox
+file dev/i2c/sensirion_voc_algorithm.c		sgp40mox
+
 # Philips PCA955x GPIO
 device	pcagpio: leds
 attach	pcagpio at iic
@@ -409,3 +424,7 @@ file	dev/i2c/pcagpio.c			pcagpio
 device	pcf8574io: leds, sysmon_envsys
 attach	pcf8574io at iic
 file	dev/i2c/pcf8574.c			pcf8574io
+
+# Sparkfun Serial motor controller
+attach  scmd at iic with scmdi2c
+file	dev/i2c/scmdi2c.c			scmdi2c

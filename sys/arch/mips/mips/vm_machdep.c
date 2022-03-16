@@ -1,4 +1,4 @@
-/*	$NetBSD: vm_machdep.c,v 1.162 2020/08/23 10:23:38 simonb Exp $	*/
+/*	$NetBSD: vm_machdep.c,v 1.164 2021/10/19 03:47:33 rin Exp $	*/
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -39,7 +39,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vm_machdep.c,v 1.162 2020/08/23 10:23:38 simonb Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vm_machdep.c,v 1.164 2021/10/19 03:47:33 rin Exp $");
 
 #include "opt_ddb.h"
 #include "opt_cputype.h"

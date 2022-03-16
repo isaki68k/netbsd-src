@@ -1,4 +1,4 @@
-/*	$NetBSD: if.h,v 1.291 2021/06/29 21:19:58 riastradh Exp $	*/
+/*	$NetBSD: if.h,v 1.296 2021/12/31 14:24:26 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001 The NetBSD Foundation, Inc.
@@ -85,6 +85,7 @@
 #include <sys/socket.h>
 #include <sys/queue.h>
 #include <sys/mutex.h>
+#include <sys/hook.h>
 
 #include <net/dlt.h>
 #include <net/pfil.h>
@@ -380,8 +381,7 @@ typedef struct ifnet {
 					/* a: */
 	struct mowner	*if_mowner;	/* ?: who owns mbufs for this interface */
 
-	void		*if_agrprivate;	/* ?: used only when #if NAGR > 0 */
-	void		*if_lagg;	/* ?: used only when #if NLAGG > 0 */
+	void		*if_lagg;	/* :: lagg or agr structure */
 	void		*if_npf_private;/* ?: associated NPF context */
 
 	/*
@@ -420,7 +420,6 @@ typedef struct ifnet {
 	uint16_t	if_link_queue;	/* q: masked link state change queue */
 					/* q: is link state work scheduled? */
 	bool		if_link_scheduled;
-	void		(*if_link_state_changed)(struct ifnet *, int);
 	struct pslist_entry
 			if_pslist_entry;/* i: */
 	struct psref_target
@@ -433,6 +432,7 @@ typedef struct ifnet {
 	/* XXX should be protocol independent */
 	LIST_HEAD(, in6_multi)
 			if_multiaddrs;	/* 6: */
+	khook_list_t	*if_linkstate_hooks;	/* :: */
 #endif
 } ifnet_t;
 
@@ -762,7 +762,7 @@ struct ifaddr {
 /*
  * Message format for use in obtaining information about interfaces from
  * sysctl and the routing socket.  We need to force 64-bit alignment if we
- * aren't using compatiblity definitons.
+ * aren't using compatibility definitions.
  */
 #if !defined(_KERNEL) || !defined(COMPAT_RTSOCK)
 #define	__align64	__aligned(sizeof(uint64_t))
@@ -1143,6 +1143,10 @@ int	if_mcast_op(ifnet_t *, const unsigned long, const struct sockaddr *);
 int	if_flags_set(struct ifnet *, const u_short);
 int	if_clone_list(int, char *, int *);
 
+int	if_ioctl(struct ifnet *, u_long, void *);
+int	if_init(struct ifnet *);
+void	if_stop(struct ifnet *, int);
+
 struct	ifnet *ifunit(const char *);
 struct	ifnet *if_get(const char *, struct psref *);
 ifnet_t *if_byindex(u_int);
@@ -1243,6 +1247,11 @@ void	loopattach(int);
 void	loopinit(void);
 int	looutput(struct ifnet *,
 	   struct mbuf *, const struct sockaddr *, const struct rtentry *);
+
+void *	if_linkstate_change_establish(struct ifnet *,
+	    void (*)(void *), void *);
+void	if_linkstate_change_disestablish(struct ifnet *,
+	    void *, kmutex_t *);
 
 /*
  * These are exported because they're an easy way to tell if

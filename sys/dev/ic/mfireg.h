@@ -1,4 +1,4 @@
-/* $NetBSD: mfireg.h,v 1.10 2019/10/05 23:27:20 mrg Exp $ */
+/* $NetBSD: mfireg.h,v 1.12 2021/11/06 06:52:48 msaitoh Exp $ */
 /* $OpenBSD: mfireg.h,v 1.24 2006/06/19 19:05:45 marco Exp $ */
 /*
  * Copyright (c) 2006 Marco Peereboom <marco@peereboom.us>
@@ -159,7 +159,7 @@
  */
 #define MR_COMMAND_SIZE (MFI_FRAME_SIZE*20) /* 1280 bytes */
 
-#define MEGASAS_THUNDERBOLT_MSG_ALLIGNMENT	256
+#define MEGASAS_THUNDERBOLT_MSG_ALIGNMENT	256
 /*
  * We are defining only 128 byte message to reduce memory move over head
  * and also it will reduce the SRB extension size by 128byte compared with
@@ -985,7 +985,7 @@ struct mfi_ld_list {
 	} mll_list[MFI_MAX_LD];
 } __packed;
 
-/* logicl disk details from MR_DCMD_LD_GET_INFO */
+/* logical disk details from MR_DCMD_LD_GET_INFO */
 struct mfi_ld_prop {
 	struct mfi_ld		mlp_ld;
 	char			mlp_name[16];

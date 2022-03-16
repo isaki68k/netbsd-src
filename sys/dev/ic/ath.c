@@ -1,4 +1,4 @@
-/*	$NetBSD: ath.c,v 1.135 2021/06/12 12:15:54 riastradh Exp $	*/
+/*	$NetBSD: ath.c,v 1.138 2021/11/06 06:44:41 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 2002-2005 Sam Leffler, Errno Consulting
@@ -41,7 +41,7 @@
 __FBSDID("$FreeBSD: src/sys/dev/ath/if_ath.c,v 1.104 2005/09/16 10:09:23 ru Exp $");
 #endif
 #ifdef __NetBSD__
-__KERNEL_RCSID(0, "$NetBSD: ath.c,v 1.135 2021/06/12 12:15:54 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ath.c,v 1.138 2021/11/06 06:44:41 msaitoh Exp $");
 #endif
 
 /*
@@ -3150,7 +3150,7 @@ ath_rx_proc(void *arg, int npending)
 				sc->sc_stats.ast_rx_badmic++;
 				/*
 				 * Do minimal work required to hand off
-				 * the 802.11 header for notifcation.
+				 * the 802.11 header for notification.
 				 */
 				/* XXX frag's and qos frames */
 				len = ds->ds_rxstat.rs_datalen;
@@ -5307,7 +5307,7 @@ ath_watchdog(struct ifnet *ifp)
  * Diagnostic interface to the HAL.  This is used by various
  * tools to do things like retrieve register contents for
  * debugging.  The mechanism is intentionally opaque so that
- * it can change frequently w/o concern for compatiblity.
+ * it can change frequently w/o concern for compatibility.
  */
 static int
 ath_ioctl_diag(struct ath_softc *sc, struct ath_diag *ad)
@@ -5426,7 +5426,7 @@ ath_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 	    }
 
 	case SIOCGATHDIAG:
-		error = kauth_authorize_network(curlwp->l_cred,
+		error = kauth_authorize_network(kauth_cred_get(),
 		    KAUTH_NETWORK_INTERFACE,
 		    KAUTH_REQ_NETWORK_INTERFACE_SETPRIV, ifp, KAUTH_ARG(cmd),
 		    NULL);

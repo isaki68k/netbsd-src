@@ -1,4 +1,4 @@
-# $NetBSD: Makefile.sun2,v 1.27 2020/10/05 10:42:53 rin Exp $
+# $NetBSD: Makefile.sun2,v 1.29 2021/08/30 19:01:05 christos Exp $
 
 # Makefile for NetBSD
 #

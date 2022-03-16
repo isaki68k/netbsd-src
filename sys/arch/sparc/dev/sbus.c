@@ -1,4 +1,4 @@
-/*	$NetBSD: sbus.c,v 1.82 2021/05/10 23:53:44 thorpej Exp $ */
+/*	$NetBSD: sbus.c,v 1.84 2022/01/22 11:49:16 thorpej Exp $ */
 
 /*-
  * Copyright (c) 1998 The NetBSD Foundation, Inc.
@@ -74,7 +74,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sbus.c,v 1.82 2021/05/10 23:53:44 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sbus.c,v 1.84 2022/01/22 11:49:16 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/malloc.h>
@@ -352,6 +352,7 @@ sbus_attach_common(struct sbus_softc *sc, const char *busname, int busnode,
 	const char *const *ssp;
 	bus_space_tag_t sbt;
 	struct sbus_attach_args sa;
+	devhandle_t selfh = device_handle(sc->sc_dev);
 
 	if ((sbt = bus_space_tag_alloc(sc->sc_bustag, sc)) == NULL) {
 		printf("%s: attach: out of memory\n",
@@ -413,8 +414,7 @@ sbus_attach_common(struct sbus_softc *sc, const char *busname, int busnode,
 			panic("sbus_attach: %s: incomplete", sp);
 		}
 		(void) config_found(sc->sc_dev, (void *)&sa, sbus_print,
-		    CFARG_DEVHANDLE, prom_node_to_devhandle(node),
-		    CFARG_EOL);
+		    CFARGS(.devhandle = prom_node_to_devhandle(selfh, node)));
 		sbus_destroy_attach_args(&sa);
 	}
 
@@ -436,8 +436,7 @@ sbus_attach_common(struct sbus_softc *sc, const char *busname, int busnode,
 			continue;
 		}
 		(void) config_found(sc->sc_dev, (void *)&sa, sbus_print,
-		    CFARG_DEVHANDLE, prom_node_to_devhandle(node),
-		    CFARG_EOL);
+		    CFARGS(.devhandle = prom_node_to_devhandle(selfh, node)));
 		sbus_destroy_attach_args(&sa);
 	}
 }

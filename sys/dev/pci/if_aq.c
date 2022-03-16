@@ -1,4 +1,4 @@
-/*	$NetBSD: if_aq.c,v 1.27 2021/06/16 00:21:18 riastradh Exp $	*/
+/*	$NetBSD: if_aq.c,v 1.31 2021/11/13 21:38:48 ryo Exp $	*/
 
 /**
  * aQuantia Corporation Network Driver
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_aq.c,v 1.27 2021/06/16 00:21:18 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_aq.c,v 1.31 2021/11/13 21:38:48 ryo Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_if_aq.h"
@@ -877,6 +877,9 @@ struct aq_rxring {
 	int rxr_index;
 	kmutex_t rxr_mutex;
 	bool rxr_active;
+	bool rxr_discarding;
+	struct mbuf *rxr_receiving_m;		/* receiving jumboframe */
+	struct mbuf *rxr_receiving_m_last;	/* last mbuf of jumboframe */
 
 	aq_rx_desc_t *rxr_rxdesc;	/* aq_rx_desc_t[AQ_RXD_NUM] */
 	bus_dmamap_t rxr_rxdesc_dmamap;
@@ -1281,6 +1284,10 @@ aq_attach(device_t parent, device_t self, void *aux)
 		return;
 	}
 
+	error = aq_fw_reset(sc);
+	if (error != 0)
+		goto attach_failure;
+
 	sc->sc_nqueues = MIN(ncpu, AQ_RSSQUEUE_MAX);
 
 	/* max queue num is 8, and must be 2^n */
@@ -1322,8 +1329,9 @@ aq_attach(device_t parent, device_t self, void *aux)
 		sc->sc_msix = false;
 	}
 
-	/* XXX: on FIBRE, linkstat interrupt does not occur on boot? */
-	if (aqp->aq_media_type == AQ_MEDIA_TYPE_FIBRE)
+	/* on FW Ver1 or FIBRE, linkstat interrupt does not occur on boot? */
+	if (aqp->aq_media_type == AQ_MEDIA_TYPE_FIBRE ||
+	    FW_VERSION_MAJOR(sc) == 1)
 		sc->sc_poll_linkstat = true;
 
 #ifdef AQ_FORCE_POLL_LINKSTAT
@@ -1360,7 +1368,7 @@ aq_attach(device_t parent, device_t self, void *aux)
 		error = aq_setup_legacy(sc, pa, PCI_INTR_TYPE_INTX);
 	}
 	if (error != 0)
-		return;
+		goto attach_failure;
 
 	callout_init(&sc->sc_tick_ch, 0);
 	callout_setfunc(&sc->sc_tick_ch, aq_tick, sc);
@@ -1373,10 +1381,6 @@ aq_attach(device_t parent, device_t self, void *aux)
 		sc->sc_rss_enable = false;
 
 	error = aq_txrx_rings_alloc(sc);
-	if (error != 0)
-		goto attach_failure;
-
-	error = aq_fw_reset(sc);
 	if (error != 0)
 		goto attach_failure;
 
@@ -1526,6 +1530,11 @@ aq_attach(device_t parent, device_t self, void *aux)
 	AQ_EVCNT_ATTACH_MISC(sc, dpc, "DMA drop packet");
 	AQ_EVCNT_ATTACH_MISC(sc, cprc, "RX coalesced packet");
 #endif
+
+	if (pmf_device_register(self, NULL, NULL))
+		pmf_class_network_register(self, ifp);
+	else
+		aprint_error_dev(self, "couldn't establish power handler\n");
 
 	return;
 
@@ -2060,21 +2069,21 @@ aq_hw_init_ucp(struct aq_softc *sc)
 	int timo;
 
 	if (FW_VERSION_MAJOR(sc) == 1) {
-		if (AQ_READ_REG(sc, FW1X_MPI_INIT2_REG) == 0) {
-			uint32_t data;
-			cprng_fast(&data, sizeof(data));
-			data &= 0xfefefefe;
-			data |= 0x02020202;
-			AQ_WRITE_REG(sc, FW1X_MPI_INIT2_REG, data);
-		}
+		if (AQ_READ_REG(sc, FW1X_MPI_INIT2_REG) == 0)
+			AQ_WRITE_REG(sc, FW1X_MPI_INIT2_REG, 0xfefefefe);
 		AQ_WRITE_REG(sc, FW1X_MPI_INIT1_REG, 0);
 	}
 
-	for (timo = 100; timo > 0; timo--) {
+	/* Wait a maximum of 10sec. It usually takes about 5sec. */
+	for (timo = 10000; timo > 0; timo--) {
 		sc->sc_mbox_addr = AQ_READ_REG(sc, FW_MPI_MBOX_ADDR_REG);
 		if (sc->sc_mbox_addr != 0)
 			break;
 		delay(1000);
+	}
+	if (sc->sc_mbox_addr == 0) {
+		aprint_error_dev(sc->sc_dev, "cannot get mbox addr\n");
+		return ETIMEDOUT;
 	}
 
 #define AQ_FW_MIN_VERSION	0x01050006
@@ -4009,6 +4018,12 @@ aq_rxring_reset(struct aq_softc *sc, struct aq_rxring *rxring, bool start)
 
 	mutex_enter(&rxring->rxr_mutex);
 	rxring->rxr_active = false;
+	rxring->rxr_discarding = false;
+	if (rxring->rxr_receiving_m != NULL) {
+		m_freem(rxring->rxr_receiving_m);
+		rxring->rxr_receiving_m = NULL;
+		rxring->rxr_receiving_m_last = NULL;
+	}
 
 	/* disable DMA */
 	AQ_WRITE_REG_BIT(sc, RX_DMA_DESC_REG(ringidx), RX_DMA_DESC_EN, 0);
@@ -4268,6 +4283,7 @@ aq_rx_intr(void *arg)
 	uint16_t rxd_status, rxd_pktlen;
 	uint16_t rxd_nextdescptr __unused, rxd_vlan __unused;
 	unsigned int idx, n = 0;
+	bool discarding;
 
 	mutex_enter(&rxring->rxr_mutex);
 
@@ -4281,7 +4297,11 @@ aq_rx_intr(void *arg)
 
 	net_stat_ref_t nsr = IF_STAT_GETREF(ifp);
 
-	m0 = mprev = NULL;
+	/* restore ring context */
+	discarding = rxring->rxr_discarding;
+	m0 = rxring->rxr_receiving_m;
+	mprev = rxring->rxr_receiving_m_last;
+
 	for (idx = rxring->rxr_readidx;
 	    idx != AQ_READ_REG_BIT(sc, RX_DMA_DESC_HEAD_PTR_REG(ringidx),
 	    RX_DMA_DESC_HEAD_PTR); idx = RXRING_NEXTIDX(idx), n++) {
@@ -4302,9 +4322,21 @@ aq_rx_intr(void *arg)
 		rxd_hash = le32toh(rxd->wb.rss_hash);
 		rxd_vlan = le16toh(rxd->wb.vlan);
 
+		/*
+		 * Some segments are being dropped while receiving jumboframe.
+		 * Discard until EOP.
+		 */
+		if (discarding)
+			goto rx_next;
+
 		if ((rxd_status & RXDESC_STATUS_MACERR) ||
 		    (rxd_type & RXDESC_TYPE_MAC_DMA_ERR)) {
 			if_statinc_ref(nsr, if_ierrors);
+			if (m0 != NULL) {
+				m_freem(m0);
+				m0 = mprev = NULL;
+			}
+			discarding = true;
 			goto rx_next;
 		}
 
@@ -4320,6 +4352,11 @@ aq_rx_intr(void *arg)
 			 * discard this packet, and reuse mbuf for next.
 			 */
 			if_statinc_ref(nsr, if_iqdrops);
+			if (m0 != NULL) {
+				m_freem(m0);
+				m0 = mprev = NULL;
+			}
+			discarding = true;
 			goto rx_next;
 		}
 		rxring->rxr_mbufs[idx].m = NULL;
@@ -4335,9 +4372,10 @@ aq_rx_intr(void *arg)
 		mprev = m;
 
 		if ((rxd_status & RXDESC_STATUS_EOP) == 0) {
+			/* to be continued in the next segment */
 			m->m_len = MCLBYTES;
 		} else {
-			/* last buffer */
+			/* the last segment */
 			int mlen = rxd_pktlen % MCLBYTES;
 			if (mlen == 0)
 				mlen = MCLBYTES;
@@ -4431,10 +4469,17 @@ aq_rx_intr(void *arg)
 		}
 
  rx_next:
+		if (discarding && (rxd_status & RXDESC_STATUS_EOP) != 0)
+			discarding = false;
+
 		aq_rxring_reset_desc(sc, rxring, idx);
 		AQ_WRITE_REG(sc, RX_DMA_DESC_TAIL_PTR_REG(ringidx), idx);
 	}
+	/* save ring context */
 	rxring->rxr_readidx = idx;
+	rxring->rxr_discarding = discarding;
+	rxring->rxr_receiving_m = m0;
+	rxring->rxr_receiving_m_last = mprev;
 
 	IF_STAT_PUTREF(ifp);
 

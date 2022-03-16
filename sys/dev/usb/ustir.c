@@ -1,4 +1,4 @@
-/*	$NetBSD: ustir.c,v 1.48 2021/04/24 23:36:59 thorpej Exp $	*/
+/*	$NetBSD: ustir.c,v 1.51 2022/03/12 21:15:25 riastradh Exp $	*/
 
 /*
  * Copyright (c) 2001 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ustir.c,v 1.48 2021/04/24 23:36:59 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ustir.c,v 1.51 2022/03/12 21:15:25 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -303,7 +303,7 @@ ustir_attach(device_t parent, device_t self, void *aux)
 	ia.ia_methods = &ustir_methods;
 	ia.ia_handle = sc;
 
-	sc->sc_child = config_found(self, &ia, ir_print, CFARG_EOL);
+	sc->sc_child = config_found(self, &ia, ir_print, CFARGS_NONE);
 	selinit(&sc->sc_rd_sel);
 	selinit(&sc->sc_wr_sel);
 	sc->sc_init_state = USTIR_INIT_INITED;
@@ -1095,14 +1095,14 @@ filt_ustirwrite(struct knote *kn, long hint)
 }
 
 static const struct filterops ustirread_filtops = {
-	.f_isfd = 1,
+	.f_flags = FILTEROP_ISFD,
 	.f_attach = NULL,
 	.f_detach = filt_ustirrdetach,
 	.f_event = filt_ustirread,
 };
 
 static const struct filterops ustirwrite_filtops = {
-	.f_isfd = 1,
+	.f_flags = FILTEROP_ISFD,
 	.f_attach = NULL,
 	.f_detach = filt_ustirwdetach,
 	.f_event = filt_ustirwrite,
@@ -1144,7 +1144,7 @@ Static int ustir_ioctl(void *h, u_long cmd, void *addr, int flag, struct lwp *l)
 	int error;
 	unsigned int regnum;
 	usbd_status err;
-	uint8_t regdata;
+	uint8_t regdata = 0;
 
 	if (sc->sc_dying)
 		return EIO;

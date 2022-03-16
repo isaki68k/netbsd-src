@@ -1,4 +1,4 @@
-/* $NetBSD: arm_fdt.c,v 1.16 2021/04/24 23:36:26 thorpej Exp $ */
+/* $NetBSD: arm_fdt.c,v 1.20 2021/10/10 13:03:09 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2017 Jared D. McNeill <jmcneill@invisible.ca>
@@ -31,7 +31,7 @@
 #include "opt_modular.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: arm_fdt.c,v 1.16 2021/04/24 23:36:26 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: arm_fdt.c,v 1.20 2021/10/10 13:03:09 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -48,6 +48,8 @@ __KERNEL_RCSID(0, "$NetBSD: arm_fdt.c,v 1.16 2021/04/24 23:36:26 thorpej Exp $")
 
 #include <arm/fdt/arm_fdtvar.h>
 
+#include <arm/locore.h>
+
 #ifdef EFI_RUNTIME
 #include <arm/arm/efi_runtime.h>
 #include <dev/clock_subr.h>
@@ -57,6 +59,7 @@ static int	arm_fdt_match(device_t, cfdata_t, void *);
 static void	arm_fdt_attach(device_t, device_t, void *);
 
 static void	arm_fdt_irq_default_handler(void *);
+static void	arm_fdt_fiq_default_handler(void *);
 
 #ifdef EFI_RUNTIME
 static void	arm_fdt_efi_init(device_t);
@@ -79,6 +82,7 @@ static TAILQ_HEAD(, arm_fdt_cpu_hatch_cb) arm_fdt_cpu_hatch_cbs =
     TAILQ_HEAD_INITIALIZER(arm_fdt_cpu_hatch_cbs);
 
 static void (*_arm_fdt_irq_handler)(void *) = arm_fdt_irq_default_handler;
+static void (*_arm_fdt_fiq_handler)(void *) = arm_fdt_fiq_default_handler;
 static void (*_arm_fdt_timer_init)(void) = NULL;
 
 int
@@ -96,6 +100,8 @@ arm_fdt_attach(device_t parent, device_t self, void *aux)
 	aprint_naive("\n");
 	aprint_normal("\n");
 
+	DISABLE_INTERRUPT();
+
 #ifdef EFI_RUNTIME
 	arm_fdt_efi_init(self);
 #endif
@@ -104,7 +110,7 @@ arm_fdt_attach(device_t parent, device_t self, void *aux)
 	faa.faa_name = "";
 	faa.faa_phandle = OF_peer(0);
 
-	config_found(self, &faa, NULL, CFARG_EOL);
+	config_found(self, &faa, NULL, CFARGS_NONE);
 }
 
 const struct arm_platform *
@@ -174,7 +180,13 @@ arm_fdt_cpu_hatch(struct cpu_info *ci)
 static void
 arm_fdt_irq_default_handler(void *frame)
 {
-	panic("missing interrupt controller driver");
+	panic("No IRQ handler installed");
+}
+
+static void
+arm_fdt_fiq_default_handler(void *frame)
+{
+	panic("No FIQ handler installed");
 }
 
 void
@@ -185,9 +197,22 @@ arm_fdt_irq_set_handler(void (*irq_handler)(void *))
 }
 
 void
+arm_fdt_fiq_set_handler(void (*fiq_handler)(void *))
+{
+	KASSERT(_arm_fdt_fiq_handler == arm_fdt_fiq_default_handler);
+	_arm_fdt_fiq_handler = fiq_handler;
+}
+
+void
 arm_fdt_irq_handler(void *tf)
 {
 	_arm_fdt_irq_handler(tf);
+}
+
+void
+arm_fdt_fiq_handler(void *tf)
+{
+	_arm_fdt_fiq_handler(tf);
 }
 
 void
@@ -202,29 +227,6 @@ arm_fdt_timer_register(void (*timerfn)(void))
 	_arm_fdt_timer_init = timerfn;
 }
 
-void
-arm_fdt_memory_dump(paddr_t pa)
-{
-	const struct arm_platform *plat = arm_fdt_platform();
-	struct fdt_attach_args faa;
-	bus_space_tag_t bst;
-	bus_space_handle_t bsh;
-
-	plat->ap_init_attach_args(&faa);
-
-	bst = faa.faa_bst;
-	bus_space_map(bst, pa, 0x100, 0, &bsh);
-
-	for (int i = 0; i < 0x100; i += 0x10) {
-		printf("%" PRIxPTR ": %08x %08x %08x %08x\n",
-		    (uintptr_t)(pa + i),
-		    bus_space_read_4(bst, bsh, i + 0),
-		    bus_space_read_4(bst, bsh, i + 4),
-		    bus_space_read_4(bst, bsh, i + 8),
-		    bus_space_read_4(bst, bsh, i + 12));
-	}
-}
-
 #ifdef __HAVE_GENERIC_CPU_INITCLOCKS
 void
 cpu_initclocks(void)
@@ -232,6 +234,7 @@ cpu_initclocks(void)
 	if (_arm_fdt_timer_init == NULL)
 		panic("cpu_initclocks: no timer registered");
 	_arm_fdt_timer_init();
+	ENABLE_INTERRUPT();
 }
 #endif
 
@@ -305,7 +308,7 @@ arm_fdt_efi_init(device_t dev)
 
 	aprint_debug_dev(dev, "EFI system table at %#" PRIx64 "\n", efi_system_table);
 
-	if (arm_efirt_gettime(&tm) == 0) {
+	if (arm_efirt_gettime(&tm, NULL) == 0) {
 		aprint_normal_dev(dev, "using EFI runtime services for RTC\n");
 		efi_todr.cookie = NULL;
 		efi_todr.todr_gettime_ymdhms = arm_fdt_efi_rtc_gettime;
@@ -318,11 +321,11 @@ static int
 arm_fdt_efi_rtc_gettime(todr_chip_handle_t tch, struct clock_ymdhms *dt)
 {
 	struct efi_tm tm;
-	int error;
+	efi_status status;
 
-	error = arm_efirt_gettime(&tm);
-	if (error)
-		return error;
+	status = arm_efirt_gettime(&tm, NULL);
+	if (status != 0)
+		return EIO;
 
 	dt->dt_year = tm.tm_year;
 	dt->dt_mon = tm.tm_mon;
@@ -339,6 +342,7 @@ static int
 arm_fdt_efi_rtc_settime(todr_chip_handle_t tch, struct clock_ymdhms *dt)
 {
 	struct efi_tm tm;
+	efi_status status;
 
 	memset(&tm, 0, sizeof(tm));
 	tm.tm_year = dt->dt_year;
@@ -348,6 +352,10 @@ arm_fdt_efi_rtc_settime(todr_chip_handle_t tch, struct clock_ymdhms *dt)
 	tm.tm_min = dt->dt_min;
 	tm.tm_sec = dt->dt_sec;
 
-	return arm_efirt_settime(&tm);
+	status = arm_efirt_settime(&tm);
+	if (status != 0)
+		return EIO;
+
+	return 0;
 }
 #endif

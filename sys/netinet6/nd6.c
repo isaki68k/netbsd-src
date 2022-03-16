@@ -1,4 +1,4 @@
-/*	$NetBSD: nd6.c,v 1.276 2020/12/28 20:19:50 nia Exp $	*/
+/*	$NetBSD: nd6.c,v 1.278 2021/12/31 12:41:50 andvar Exp $	*/
 /*	$KAME: nd6.c,v 1.279 2002/06/08 11:16:51 itojun Exp $	*/
 
 /*
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nd6.c,v 1.276 2020/12/28 20:19:50 nia Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nd6.c,v 1.278 2021/12/31 12:41:50 andvar Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
@@ -1305,6 +1305,7 @@ nd6_llinfo_release_pkts(struct llentry *ln, struct ifnet *ifp)
 
 	m_hold = ln->la_hold, ln->la_hold = NULL, ln->la_numheld = 0;
 
+	LLE_ADDREF(ln);
 	LLE_WUNLOCK(ln);
 	for (; m_hold != NULL; m_hold = m_hold_next) {
 		m_hold_next = m_hold->m_nextpkt;
@@ -1318,6 +1319,7 @@ nd6_llinfo_release_pkts(struct llentry *ln, struct ifnet *ifp)
 		ip6_if_output(ifp, ifp, m_hold, &sin6, NULL);
 	}
 	LLE_WLOCK(ln);
+	LLE_REMREF(ln);
 }
 
 /*
@@ -1456,7 +1458,7 @@ nd6_cache_lladdr(
 	 * - If lladdr exist, set IsRouter.  This means (1-5).
 	 * - If it is old entry (!newentry), set IsRouter.  This means (7).
 	 * So, based on the spec, in (1-5) and (7) cases we must set IsRouter.
-	 * A quetion arises for (1) case.  (1) case has no lladdr in the
+	 * A question arises for (1) case.  (1) case has no lladdr in the
 	 * neighbor cache, this is similar to (6).
 	 * This case is rare but we figured that we MUST NOT set IsRouter.
 	 *

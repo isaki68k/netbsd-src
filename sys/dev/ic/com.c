@@ -1,4 +1,4 @@
-/* $NetBSD: com.c,v 1.363 2021/03/25 05:34:49 rin Exp $ */
+/* $NetBSD: com.c,v 1.373 2021/11/12 21:57:13 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 1998, 1999, 2004, 2008 The NetBSD Foundation, Inc.
@@ -66,7 +66,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: com.c,v 1.363 2021/03/25 05:34:49 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: com.c,v 1.373 2021/11/12 21:57:13 jmcneill Exp $");
 
 #include "opt_com.h"
 #include "opt_ddb.h"
@@ -128,17 +128,20 @@ __KERNEL_RCSID(0, "$NetBSD: com.c,v 1.363 2021/03/25 05:34:49 rin Exp $");
 
 #include "ioconf.h"
 
-#define	CSR_WRITE_1(r, o, v)	\
-	bus_space_write_1((r)->cr_iot, (r)->cr_ioh, (r)->cr_map[o], v)
 #define	CSR_READ_1(r, o)	\
-	bus_space_read_1((r)->cr_iot, (r)->cr_ioh, (r)->cr_map[o])
+	(r)->cr_read((r), (r)->cr_map[o])
+#define	CSR_WRITE_1(r, o, v)	\
+	(r)->cr_write((r), (r)->cr_map[o], (v))
+#define	CSR_WRITE_MULTI(r, o, p, n)	\
+	(r)->cr_write_multi((r), (r)->cr_map[o], (p), (n))
+
+/*
+ * XXX COM_TYPE_AU1x00 specific
+ */
 #define	CSR_WRITE_2(r, o, v)	\
 	bus_space_write_2((r)->cr_iot, (r)->cr_ioh, (r)->cr_map[o], v)
 #define	CSR_READ_2(r, o)	\
 	bus_space_read_2((r)->cr_iot, (r)->cr_ioh, (r)->cr_map[o])
-#define	CSR_WRITE_MULTI(r, o, p, n)	\
-	bus_space_write_multi_1((r)->cr_iot, (r)->cr_ioh, (r)->cr_map[o], p, n)
-
 
 static void com_enable_debugport(struct com_softc *);
 
@@ -275,6 +278,70 @@ static const bus_size_t com_std_map[COM_REGMAP_NENTRIES] = {
 	bus_space_barrier((r)->cr_iot, (r)->cr_ioh, 0, (r)->cr_nports, (f))
 
 /*
+ * com_read_1 --
+ *	Default register read callback using single byte accesses.
+ */
+static uint8_t
+com_read_1(struct com_regs *regs, u_int reg)
+{
+	return bus_space_read_1(regs->cr_iot, regs->cr_ioh, reg);
+}
+
+/*
+ * com_write_1 --
+ *	Default register write callback using single byte accesses.
+ */
+static void
+com_write_1(struct com_regs *regs, u_int reg, uint8_t val)
+{
+	bus_space_write_1(regs->cr_iot, regs->cr_ioh, reg, val);
+}
+
+/*
+ * com_write_multi_1 --
+ *	Default register multi write callback using single byte accesses.
+ */
+static void
+com_write_multi_1(struct com_regs *regs, u_int reg, const uint8_t *datap,
+    bus_size_t count)
+{
+	bus_space_write_multi_1(regs->cr_iot, regs->cr_ioh, reg, datap, count);
+}
+
+/*
+ * com_read_4 --
+ *	Default register read callback using dword accesses.
+ */
+static uint8_t
+com_read_4(struct com_regs *regs, u_int reg)
+{
+	return bus_space_read_4(regs->cr_iot, regs->cr_ioh, reg) & 0xff;
+}
+
+/*
+ * com_write_4 --
+ *	Default register write callback using dword accesses.
+ */
+static void
+com_write_4(struct com_regs *regs, u_int reg, uint8_t val)
+{
+	bus_space_write_4(regs->cr_iot, regs->cr_ioh, reg, val);
+}
+
+/*
+ * com_write_multi_4 --
+ *	Default register multi write callback using dword accesses.
+ */
+static void
+com_write_multi_4(struct com_regs *regs, u_int reg, const uint8_t *datap,
+    bus_size_t count)
+{
+	while (count-- > 0) {
+		bus_space_write_4(regs->cr_iot, regs->cr_ioh, reg, *datap++);
+	}
+}
+
+/*
  * com_init_regs --
  *	Driver front-ends use this to initialize our register map
  *	in the standard fashion.  They may then tailor the map to
@@ -290,6 +357,9 @@ com_init_regs(struct com_regs *regs, bus_space_tag_t st, bus_space_handle_t sh,
 	regs->cr_ioh = sh;
 	regs->cr_iobase = addr;
 	regs->cr_nports = COM_NPORTS;
+	regs->cr_read = com_read_1;
+	regs->cr_write = com_write_1;
+	regs->cr_write_multi = com_write_multi_1;
 	memcpy(regs->cr_map, com_std_map, sizeof(regs->cr_map));
 }
 
@@ -308,6 +378,37 @@ com_init_regs_stride(struct com_regs *regs, bus_space_tag_t st,
 		regs->cr_map[i] <<= regshift;
 	}
 	regs->cr_nports <<= regshift;
+}
+
+/*
+ * com_init_regs_stride_width --
+ *	Convenience function for front-ends that have a stride between
+ *	registers and specific I/O width requirements.
+ */
+void
+com_init_regs_stride_width(struct com_regs *regs, bus_space_tag_t st,
+			   bus_space_handle_t sh, bus_addr_t addr,
+			   u_int regshift, u_int width)
+{
+
+	com_init_regs(regs, st, sh, addr);
+	for (size_t i = 0; i < __arraycount(regs->cr_map); i++) {
+		regs->cr_map[i] <<= regshift;
+	}
+	regs->cr_nports <<= regshift;
+
+	switch (width) {
+	case 1:
+		/* Already set by com_init_regs */
+		break;
+	case 4:
+		regs->cr_read = com_read_4;
+		regs->cr_write = com_write_4;
+		regs->cr_write_multi = com_write_multi_4;
+		break;
+	default:
+		panic("com: unsupported I/O width %d", width);
+	}
 }
 
 /*ARGSUSED*/
@@ -539,9 +640,11 @@ com_attach_subr(struct com_softc *sc)
 		goto fifodelay;
 
 	case COM_TYPE_DW_APB:
-		cpr = bus_space_read_4(sc->sc_regs.cr_iot, sc->sc_regs.cr_ioh,
-		    DW_APB_UART_CPR);
-		sc->sc_fifolen = __SHIFTOUT(cpr, UART_CPR_FIFO_MODE) * 16;
+		if (!prop_dictionary_get_uint(dict, "fifolen", &sc->sc_fifolen)) {
+			cpr = bus_space_read_4(sc->sc_regs.cr_iot,
+			    sc->sc_regs.cr_ioh, DW_APB_UART_CPR);
+			sc->sc_fifolen = __SHIFTOUT(cpr, UART_CPR_FIFO_MODE) * 16;
+		}
 		if (sc->sc_fifolen == 0) {
 			sc->sc_fifolen = 1;
 			fifo_msg = "DesignWare APB UART, no fifo";
@@ -572,6 +675,7 @@ com_attach_subr(struct com_softc *sc)
 			SET(sc->sc_hwflags, COM_HW_FIFO);
 
 			fifo_msg = "ns16550a";
+			sc->sc_fifolen = 16;
 
 			/*
 			 * IIR changes into the EFR if LCR is set to LCR_EERS
@@ -889,10 +993,8 @@ com_shutdown(struct com_softc *sc)
 	 */
 	if (ISSET(tp->t_cflag, HUPCL)) {
 		com_modem(sc, 0);
-		mutex_spin_exit(&sc->sc_lock);
-		/* XXX will only timeout */
-		(void) kpause(ttclos, false, hz, NULL);
-		mutex_spin_enter(&sc->sc_lock);
+		microuptime(&sc->sc_hup_pending);
+		sc->sc_hup_pending.tv_sec++;
 	}
 
 	/* Turn off interrupts. */
@@ -965,6 +1067,7 @@ comopen(dev_t dev, int flag, int mode, struct lwp *l)
 	 */
 	if (!ISSET(tp->t_state, TS_ISOPEN) && tp->t_wopen == 0) {
 		struct termios t;
+		struct timeval now, diff;
 
 		tp->t_dev = dev;
 
@@ -980,6 +1083,19 @@ comopen(dev_t dev, int flag, int mode, struct lwp *l)
 			com_config(sc);
 		} else {
 			mutex_spin_enter(&sc->sc_lock);
+		}
+
+		if (timerisset(&sc->sc_hup_pending)) {
+			microuptime(&now);
+			while (timercmp(&now, &sc->sc_hup_pending, <)) {
+				timersub(&sc->sc_hup_pending, &now, &diff);
+				const int ms = diff.tv_sec * 1000 +
+				    diff.tv_usec / 1000;
+				kpause(ttclos, false, uimax(mstohz(ms), 1),
+				    &sc->sc_lock);
+				microuptime(&now);
+			}
+			timerclear(&sc->sc_hup_pending);
 		}
 
 		/* Turn on interrupts. */
@@ -2132,7 +2248,9 @@ comintr(void *arg)
 	/* DesignWare APB UART BUSY interrupt */
 	if (sc->sc_type == COM_TYPE_DW_APB &&
 	    (iir & IIR_BUSY) == IIR_BUSY) {
-		if ((CSR_READ_1(regsp, COM_REG_USR) & 0x1) != 0) {
+		if (ISSET(sc->sc_hwflags, COM_HW_CONSOLE)) {
+			(void)CSR_READ_1(regsp, COM_REG_USR);
+		} else if ((CSR_READ_1(regsp, COM_REG_USR) & 0x1) != 0) {
 			CSR_WRITE_1(regsp, COM_REG_HALT, HALT_CHCFG_EN);
 			CSR_WRITE_1(regsp, COM_REG_LCR, sc->sc_lcr | LCR_DLAB);
 			CSR_WRITE_1(regsp, COM_REG_DLBL, sc->sc_dlbl);

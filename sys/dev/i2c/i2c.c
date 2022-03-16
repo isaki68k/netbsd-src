@@ -1,4 +1,4 @@
-/*	$NetBSD: i2c.c,v 1.79 2021/06/21 03:12:54 christos Exp $	*/
+/*	$NetBSD: i2c.c,v 1.84 2022/01/24 09:42:14 andvar Exp $	*/
 
 /*
  * Copyright (c) 2003 Wasabi Systems, Inc.
@@ -37,10 +37,23 @@
 
 #ifdef _KERNEL_OPT
 #include "opt_i2c.h"
-#endif
+
+#include "opt_fdt.h"
+#ifdef FDT
+#define	I2C_USE_FDT
+#endif /* FDT */
+
+#if defined(__aarch64__) || defined(__amd64__)
+#include "acpica.h"
+#if NACPICA > 0
+#define	I2C_USE_ACPI
+#endif /* NACPICA > 0 */
+#endif /* __aarch64__ || __amd64__ */
+
+#endif /* _KERNEL_OPT */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: i2c.c,v 1.79 2021/06/21 03:12:54 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: i2c.c,v 1.84 2022/01/24 09:42:14 andvar Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -56,6 +69,14 @@ __KERNEL_RCSID(0, "$NetBSD: i2c.c,v 1.79 2021/06/21 03:12:54 christos Exp $");
 #include <sys/module.h>
 #include <sys/once.h>
 #include <sys/mutex.h>
+
+#ifdef I2C_USE_ACPI
+#include <dev/acpi/acpivar.h>
+#endif /* I2C_USE_ACPI */
+
+#ifdef I2C_USE_FDT
+#include <dev/fdt/fdtvar.h>
+#endif /* I2C_USE_FDT */
 
 #include <dev/i2c/i2cvar.h>
 
@@ -358,7 +379,7 @@ iic_search(device_t parent, cfdata_t cf, const int *ldesc, void *aux)
 			continue;
 
 		sc->sc_devices[ia.ia_addr] =
-		    config_attach(parent, cf, &ia, iic_print, CFARG_EOL);
+		    config_attach(parent, cf, &ia, iic_print, CFARGS_NONE);
 	}
 
 	return 0;
@@ -381,9 +402,8 @@ static int
 iic_rescan(device_t self, const char *ifattr, const int *locators)
 {
 	config_search(self, NULL,
-	    CFARG_SEARCH, iic_search,
-	    CFARG_LOCATORS, locators,
-	    CFARG_EOL);
+	    CFARGS(.search = iic_search,
+		   .locators = locators));
 	return 0;
 }
 
@@ -445,6 +465,7 @@ iic_attach(device_t parent, device_t self, void *aux)
 		uint32_t cookietype;
 		const char *name;
 		struct i2c_attach_args ia;
+		devhandle_t devhandle;
 		int loc[IICCF_NLOCS];
 
 		memset(loc, 0, sizeof loc);
@@ -474,6 +495,21 @@ iic_attach(device_t parent, device_t self, void *aux)
 			ia.ia_cookietype = cookietype;
 			ia.ia_prop = dev;
 
+			devhandle = devhandle_invalid();
+#ifdef I2C_USE_FDT
+			if (cookietype == I2C_COOKIE_OF) {
+				devhandle = devhandle_from_of(devhandle,
+							      (int)cookie);
+			}
+#endif /* I2C_USE_FDT */
+#ifdef I2C_USE_ACPI
+			if (cookietype == I2C_COOKIE_ACPI) {
+				devhandle =
+				    devhandle_from_acpi(devhandle,
+							(ACPI_HANDLE)cookie);
+			}
+#endif /* I2C_USE_ACPI */
+
 			buf = NULL;
 			cdata = prop_dictionary_get(dev, "compatible");
 			if (cdata)
@@ -494,8 +530,8 @@ iic_attach(device_t parent, device_t self, void *aux)
 					sc->sc_devices[addr] =
 					    config_found(self, &ia,
 					    iic_print_direct,
-					    CFARG_LOCATORS, loc,
-					    CFARG_EOL);
+					    CFARGS(.locators = loc,
+						   .devhandle = devhandle));
 				}
 			}
 
@@ -727,7 +763,7 @@ iic_compatible_lookup(const struct i2c_attach_args *ia,
 /*
  * iic_use_direct_match --
  *	Helper for direct-config of i2c.  Returns true if this is
- *	a direct-config situation, along with with match result.
+ *	a direct-config situation, along with match result.
  *	Returns false if the driver should use indirect-config
  *	matching logic.
  */

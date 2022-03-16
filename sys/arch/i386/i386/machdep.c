@@ -1,4 +1,4 @@
-/*	$NetBSD: machdep.c,v 1.831 2020/07/14 00:45:52 yamaguchi Exp $	*/
+/*	$NetBSD: machdep.c,v 1.834 2021/12/26 21:33:48 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1996, 1997, 1998, 2000, 2004, 2006, 2008, 2009, 2017
@@ -67,7 +67,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.831 2020/07/14 00:45:52 yamaguchi Exp $");
+__KERNEL_RCSID(0, "$NetBSD: machdep.c,v 1.834 2021/12/26 21:33:48 riastradh Exp $");
 
 #include "opt_beep.h"
 #include "opt_compat_freebsd.h"
@@ -766,8 +766,15 @@ cpu_reboot(int howto, char *bootstr)
 		       config_detach_all(boothowto) ||
 		       vfs_unmount_forceone(curlwp))
 			;	/* do nothing */
-	} else
-		suspendsched();
+	} else {
+		int ddb = 0;
+#ifdef DDB
+		extern int db_active; /* XXX */
+		ddb = db_active;
+#endif
+		if (!ddb)
+			suspendsched();
+	}
 
 	pmf_system_shutdown(boothowto);
 
@@ -1161,7 +1168,6 @@ init386(paddr_t first_avail)
 
 	cpu_probe(&cpu_info_primary);
 	cpu_init_msrs(&cpu_info_primary, true);
-	cpu_rng_init();
 #ifndef XENPV
 	cpu_speculation_init(&cpu_info_primary);
 #endif
@@ -1241,6 +1247,15 @@ init386(paddr_t first_avail)
 #endif
 
 	consinit();	/* XXX SHOULD NOT BE DONE HERE */
+
+	/*
+	 * Initialize RNG to get entropy ASAP either from CPU
+	 * RDRAND/RDSEED or from seed on disk.  Must happen after
+	 * cpu_init_msrs.  Prefer to happen after consinit so we have
+	 * the opportunity to print useful feedback.
+	 */
+	cpu_rng_init();
+	x86_rndseed();
 
 #ifdef DEBUG_MEMLOAD
 	printf("mem_cluster_count: %d\n", mem_cluster_cnt);

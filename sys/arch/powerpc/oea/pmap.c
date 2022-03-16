@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.106 2021/06/27 12:26:33 martin Exp $	*/
+/*	$NetBSD: pmap.c,v 1.112 2022/03/12 15:32:31 riastradh Exp $	*/
 /*-
  * Copyright (c) 2001 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -63,7 +63,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.106 2021/06/27 12:26:33 martin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.112 2022/03/12 15:32:31 riastradh Exp $");
 
 #define	PMAP_NOOPNAMES
 
@@ -162,6 +162,7 @@ static u_int mem_cnt, avail_cnt;
 #define pmap_protect		PMAPNAME(protect)
 #define pmap_unwire		PMAPNAME(unwire)
 #define pmap_page_protect	PMAPNAME(page_protect)
+#define	pmap_pv_protect		PMAPNAME(pv_protect)
 #define pmap_query_bit		PMAPNAME(query_bit)
 #define pmap_clear_bit		PMAPNAME(clear_bit)
 
@@ -214,6 +215,7 @@ STATIC bool pmap_extract(pmap_t, vaddr_t, paddr_t *);
 STATIC void pmap_protect(pmap_t, vaddr_t, vaddr_t, vm_prot_t);
 STATIC void pmap_unwire(pmap_t, vaddr_t);
 STATIC void pmap_page_protect(struct vm_page *, vm_prot_t);
+STATIC void pmap_pv_protect(paddr_t, vm_prot_t);
 STATIC bool pmap_query_bit(struct vm_page *, int);
 STATIC bool pmap_clear_bit(struct vm_page *, int);
 
@@ -257,6 +259,7 @@ const struct pmap_ops PMAPNAME(ops) = {
 	.pmapop_protect = pmap_protect,
 	.pmapop_unwire = pmap_unwire,
 	.pmapop_page_protect = pmap_page_protect,
+	.pmapop_pv_protect = pmap_pv_protect,
 	.pmapop_query_bit = pmap_query_bit,
 	.pmapop_clear_bit = pmap_clear_bit,
 	.pmapop_activate = pmap_activate,
@@ -328,8 +331,6 @@ struct pvo_entry {
 
 TAILQ_HEAD(pvo_tqhead, pvo_entry);
 struct pvo_tqhead *pmap_pvo_table;	/* pvo entries by ptegroup index */
-static struct pvo_head pmap_pvo_kunmanaged = LIST_HEAD_INITIALIZER(pmap_pvo_kunmanaged);	/* list of unmanaged pages */
-static struct pvo_head pmap_pvo_unmanaged = LIST_HEAD_INITIALIZER(pmap_pvo_unmanaged);	/* list of unmanaged pages */
 
 struct pool pmap_pool;		/* pool for pmap structures */
 struct pool pmap_pvo_pool;	/* pool for pvo entries */
@@ -480,19 +481,19 @@ extern struct evcnt pmap_evcnt_idlezeroed_pages;
 #define	PMAPCOUNT2(ev)	((void) 0)
 #endif
 
-#define	TLBIE(va)	__asm volatile("tlbie %0" :: "r"(va))
+#define	TLBIE(va)	__asm volatile("tlbie %0" :: "r"(va) : "memory")
 
 /* XXXSL: this needs to be moved to assembler */
-#define	TLBIEL(va)	__asm __volatile("tlbie %0" :: "r"(va))
+#define	TLBIEL(va)	__asm volatile("tlbie %0" :: "r"(va) : "memory")
 
 #ifdef MD_TLBSYNC
 #define TLBSYNC()	MD_TLBSYNC()
 #else
-#define	TLBSYNC()	__asm volatile("tlbsync")
+#define	TLBSYNC()	__asm volatile("tlbsync" ::: "memory")
 #endif
-#define	SYNC()		__asm volatile("sync")
-#define	EIEIO()		__asm volatile("eieio")
-#define	DCBST(va)	__asm __volatile("dcbst 0,%0" :: "r"(va))
+#define	SYNC()		__asm volatile("sync" ::: "memory")
+#define	EIEIO()		__asm volatile("eieio" ::: "memory")
+#define	DCBST(va)	__asm volatile("dcbst 0,%0" :: "r"(va) : "memory")
 #define	MFMSR()		mfmsr()
 #define	MTMSR(psl)	mtmsr(psl)
 #define	MFPVR()		mfpvr()
@@ -647,12 +648,16 @@ pa_to_pvoh(paddr_t pa, struct vm_page **pg_p)
 {
 	struct vm_page *pg;
 	struct vm_page_md *md;
+	struct pmap_page *pp;
 
 	pg = PHYS_TO_VM_PAGE(pa);
 	if (pg_p != NULL)
 		*pg_p = pg;
-	if (pg == NULL)
-		return &pmap_pvo_unmanaged;
+	if (pg == NULL) {
+		if ((pp = pmap_pv_tracked(pa)) != NULL)
+			return &pp->pp_pvoh;
+		return NULL;
+	}
 	md = VM_PAGE_TO_MD(pg);
 	return &md->mdpg_pvoh;
 }
@@ -665,13 +670,26 @@ vm_page_to_pvoh(struct vm_page *pg)
 	return &md->mdpg_pvoh;
 }
 
+static inline void
+pmap_pp_attr_clear(struct pmap_page *pp, int ptebit)
+{
+
+	pp->pp_attrs &= ptebit;
+}
 
 static inline void
 pmap_attr_clear(struct vm_page *pg, int ptebit)
 {
 	struct vm_page_md * const md = VM_PAGE_TO_MD(pg);
 
-	md->mdpg_attrs &= ~ptebit;
+	pmap_pp_attr_clear(&md->mdpg_pp, ptebit);
+}
+
+static inline int
+pmap_pp_attr_fetch(struct pmap_page *pp)
+{
+
+	return pp->pp_attrs;
 }
 
 static inline int
@@ -679,7 +697,7 @@ pmap_attr_fetch(struct vm_page *pg)
 {
 	struct vm_page_md * const md = VM_PAGE_TO_MD(pg);
 
-	return md->mdpg_attrs;
+	return pmap_pp_attr_fetch(&md->mdpg_pp);
 }
 
 static inline void
@@ -1212,7 +1230,9 @@ pmap_reference(pmap_t pm)
 void
 pmap_destroy(pmap_t pm)
 {
+	membar_exit();
 	if (atomic_dec_uint_nv(&pm->pm_refs) == 0) {
+		membar_enter();
 		pmap_release(pm);
 		pool_put(&pmap_pool, pm);
 	}
@@ -1410,22 +1430,19 @@ pmap_pvo_check(const struct pvo_entry *pvo)
 
 	if (PVO_MANAGED_P(pvo)) {
 		pvo_head = pa_to_pvoh(pvo->pvo_pte.pte_lo & PTE_RPGN, NULL);
-	} else {
-		if (pvo->pvo_vaddr < VM_MIN_KERNEL_ADDRESS) {
-			printf("pmap_pvo_check: pvo %p: non kernel address "
-			    "on kernel unmanaged list\n", pvo);
+		LIST_FOREACH(pvo0, pvo_head, pvo_vlink) {
+			if (pvo0 == pvo)
+				break;
+		}
+		if (pvo0 == NULL) {
+			printf("pmap_pvo_check: pvo %p: not present "
+			       "on its vlist head %p\n", pvo, pvo_head);
 			failed = 1;
 		}
-		pvo_head = &pmap_pvo_kunmanaged;
-	}
-	LIST_FOREACH(pvo0, pvo_head, pvo_vlink) {
-		if (pvo0 == pvo)
-			break;
-	}
-	if (pvo0 == NULL) {
-		printf("pmap_pvo_check: pvo %p: not present "
-		    "on its vlist head %p\n", pvo, pvo_head);
-		failed = 1;
+	} else {
+		KASSERT(pvo->pvo_vaddr >= VM_MIN_KERNEL_ADDRESS);
+		if (__predict_false(pvo->pvo_vaddr < VM_MIN_KERNEL_ADDRESS))
+			failed = 1;
 	}
 	if (pvo != pmap_pvo_find_va(pvo->pvo_pmap, pvo->pvo_vaddr, NULL)) {
 		printf("pmap_pvo_check: pvo %p: not present "
@@ -1620,7 +1637,7 @@ pmap_pvo_enter(pmap_t pm, struct pool *pl, struct pvo_head *pvo_head,
 	}
 	if (flags & PMAP_WIRED)
 		pvo->pvo_vaddr |= PVO_WIRED;
-	if (pvo_head != &pmap_pvo_kunmanaged) {
+	if (pvo_head != NULL) {
 		pvo->pvo_vaddr |= PVO_MANAGED; 
 		PMAPCOUNT(mappings);
 	} else {
@@ -1628,7 +1645,8 @@ pmap_pvo_enter(pmap_t pm, struct pool *pl, struct pvo_head *pvo_head,
 	}
 	pmap_pte_create(&pvo->pvo_pte, pm, va, pa | pte_lo);
 
-	LIST_INSERT_HEAD(pvo_head, pvo, pvo_vlink);
+	if (pvo_head != NULL)
+		LIST_INSERT_HEAD(pvo_head, pvo, pvo_vlink);
 	if (PVO_WIRED_P(pvo))
 		pvo->pvo_pmap->pm_stats.wired_count++;
 	pvo->pvo_pmap->pm_stats.resident_count++;
@@ -1728,7 +1746,9 @@ pmap_pvo_remove(struct pvo_entry *pvo, int pteidx, struct pvo_head *pvol)
 		pvo->pvo_pmap->pm_stats.wired_count--;
 
 	/*
-	 * Save the REF/CHG bits into their cache if the page is managed.
+	 * If the page is managed:
+	 * Save the REF/CHG bits into their cache.
+	 * Remove the PVO from the P/V list.
 	 */
 	if (PVO_MANAGED_P(pvo)) {
 		register_t ptelo = pvo->pvo_pte.pte_lo;
@@ -1760,15 +1780,15 @@ pmap_pvo_remove(struct pvo_entry *pvo, int pteidx, struct pvo_head *pvol)
 
 			pmap_attr_save(pg, ptelo & (PTE_REF|PTE_CHG));
 		}
+		LIST_REMOVE(pvo, pvo_vlink);
 		PMAPCOUNT(unmappings);
 	} else {
 		PMAPCOUNT(kernel_unmappings);
 	}
 
 	/*
-	 * Remove the PVO from its lists and return it to the pool.
+	 * Remove the PVO from its list and return it to the pool.
 	 */
-	LIST_REMOVE(pvo, pvo_vlink);
 	TAILQ_REMOVE(&pmap_pvo_table[ptegidx], pvo, pvo_olink);
 	if (pvol) {
 		LIST_INSERT_HEAD(pvol, pvo, pvo_vlink);
@@ -1861,9 +1881,10 @@ pmap_enter(pmap_t pm, vaddr_t va, paddr_t pa, vm_prot_t prot, u_int flags)
 	PMAP_LOCK();
 
 	if (__predict_false(!pmap_initialized)) {
-		pvo_head = &pmap_pvo_kunmanaged;
+		pvo_head = NULL;
 		pg = NULL;
 		was_exec = PTE_EXEC;
+
 	} else {
 		pvo_head = pa_to_pvoh(pa, &pg);
 	}
@@ -1952,7 +1973,6 @@ pmap_enter(pmap_t pm, vaddr_t va, paddr_t pa, vm_prot_t prot, u_int flags)
 			else if (pmapdebug & PMAPDEBUG_EXEC)
 				printf("[pmap_enter: %#" _PRIxpa ": marked-as-exec]\n",
 				    VM_PAGE_TO_PHYS(pg));
-				
 #endif
 		}
 	}
@@ -2010,7 +2030,7 @@ pmap_kenter_pa(vaddr_t va, paddr_t pa, vm_prot_t prot, u_int flags)
 	 * We don't care about REF/CHG on PVOs on the unmanaged list.
 	 */
 	error = pmap_pvo_enter(pmap_kernel(), &pmap_pvo_pool,
-	    &pmap_pvo_kunmanaged, va, pa, pte_lo, prot|PMAP_WIRED);
+	    NULL, va, pa, pte_lo, prot|PMAP_WIRED);
 
 	if (error != 0)
 		panic("pmap_kenter_pa: failed to enter va %#" _PRIxva " pa %#" _PRIxpa ": %d",
@@ -2276,11 +2296,8 @@ pmap_unwire(pmap_t pm, vaddr_t va)
 	PMAP_UNLOCK();
 }
 
-/*
- * Lower the protection on the specified physical page.
- */
-void
-pmap_page_protect(struct vm_page *pg, vm_prot_t prot)
+static void
+pmap_pp_protect(struct pmap_page *pp, paddr_t pa, vm_prot_t prot)
 {
 	struct pvo_head *pvo_head, pvol;
 	struct pvo_entry *pvo, *next_pvo;
@@ -2300,14 +2317,14 @@ pmap_page_protect(struct vm_page *pg, vm_prot_t prot)
 	 */
 	if ((prot & VM_PROT_READ) == 0) {
 		DPRINTFN(EXEC, "[pmap_page_protect: %#" _PRIxpa ": clear-exec]\n",
-		    VM_PAGE_TO_PHYS(pg));
-		if (pmap_attr_fetch(pg) & PTE_EXEC) {
+		    pa);
+		if (pmap_pp_attr_fetch(pp) & PTE_EXEC) {
 			PMAPCOUNT(exec_uncached_page_protect);
-			pmap_attr_clear(pg, PTE_EXEC);
+			pmap_pp_attr_clear(pp, PTE_EXEC);
 		}
 	}
 
-	pvo_head = vm_page_to_pvoh(pg);
+	pvo_head = &pp->pp_pvoh;
 	for (pvo = LIST_FIRST(pvo_head); pvo != NULL; pvo = next_pvo) {
 		next_pvo = LIST_NEXT(pvo, pvo_vlink);
 		PMAP_PVO_CHECK(pvo);		/* sanity check */
@@ -2355,6 +2372,32 @@ pmap_page_protect(struct vm_page *pg, vm_prot_t prot)
 	pmap_pvo_free_list(&pvol);
 
 	PMAP_UNLOCK();
+}
+
+/*
+ * Lower the protection on the specified physical page.
+ */
+void
+pmap_page_protect(struct vm_page *pg, vm_prot_t prot)
+{
+	struct vm_page_md *md = VM_PAGE_TO_MD(pg);
+
+	pmap_pp_protect(&md->mdpg_pp, VM_PAGE_TO_PHYS(pg), prot);
+}
+
+/*
+ * Lower the protection on the physical page at the specified physical
+ * address, which may not be managed and so may not have a struct
+ * vm_page.
+ */
+void
+pmap_pv_protect(paddr_t pa, vm_prot_t prot)
+{
+	struct pmap_page *pp;
+
+	if ((pp = pmap_pv_tracked(pa)) == NULL)
+		return;
+	pmap_pp_protect(pp, pa, prot);
 }
 
 /*
@@ -3487,12 +3530,16 @@ pmap_bootstrap2(void)
 #endif /* PMAP_OEA || PMAP_OEA64_BRIDGE */
 
 #if defined(PMAP_OEA)
-	 __asm volatile("sync; mtsdr1 %0; isync"
-		:: "r"((uintptr_t)pmap_pteg_table | (pmap_pteg_mask >> 10)));
+	__asm volatile("sync; mtsdr1 %0; isync"
+	    :
+	    : "r"((uintptr_t)pmap_pteg_table | (pmap_pteg_mask >> 10))
+	    : "memory");
 #elif defined(PMAP_OEA64) || defined(PMAP_OEA64_BRIDGE)
-	__asm __volatile("sync; mtsdr1 %0; isync"
-		:: "r"((uintptr_t)pmap_pteg_table |
-		       (32 - __builtin_clz(pmap_pteg_mask >> 11))));
+	__asm volatile("sync; mtsdr1 %0; isync"
+	    :
+	    : "r"((uintptr_t)pmap_pteg_table |
+		(32 - __builtin_clz(pmap_pteg_mask >> 11)))
+	    : "memory");
 #endif
 	tlbia();
 

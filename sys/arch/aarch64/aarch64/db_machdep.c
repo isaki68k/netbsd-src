@@ -1,4 +1,4 @@
-/* $NetBSD: db_machdep.c,v 1.40 2021/04/30 20:07:22 skrll Exp $ */
+/* $NetBSD: db_machdep.c,v 1.42 2021/10/31 16:23:47 skrll Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: db_machdep.c,v 1.40 2021/04/30 20:07:22 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: db_machdep.c,v 1.42 2021/10/31 16:23:47 skrll Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd32.h"
@@ -819,7 +819,7 @@ db_md_breakwatchpoints_reload(void)
 }
 
 void
-db_machdep_init(void)
+db_machdep_cpu_init(void)
 {
 	uint64_t dfr, mdscr;
 	int i, cpu_max_breakpoint, cpu_max_watchpoint;
@@ -842,15 +842,26 @@ db_machdep_init(void)
 	mdscr |= MDSCR_MDE | MDSCR_KDE;
 	reg_mdscr_el1_write(mdscr);
 	reg_oslar_el1_write(0);
+}
 
-	/* num of {watch,break}point may be different depending on the core */
-	membar_consumer();
+void
+db_machdep_init(struct cpu_info * const ci)
+{
+	struct aarch64_sysctl_cpu_id * const id = &ci->ci_id;
+	const uint64_t dfr = id->ac_aa64dfr0;
+	const u_int cpu_max_breakpoint = __SHIFTOUT(dfr, ID_AA64DFR0_EL1_BRPS);
+	const u_int cpu_max_watchpoint = __SHIFTOUT(dfr, ID_AA64DFR0_EL1_WRPS);
+
+	/*
+	 * num of {watch,break}point may be different depending on the
+	 * core.
+	 */
 	if (max_breakpoint > cpu_max_breakpoint)
 		max_breakpoint = cpu_max_breakpoint;
 	if (max_watchpoint > cpu_max_watchpoint)
 		max_watchpoint = cpu_max_watchpoint;
-	membar_producer();
 }
+
 
 static void
 show_breakpoints(void)
@@ -1145,25 +1156,26 @@ kdb_trap(int type, struct trapframe *tf)
 	}
 
 #ifdef MULTIPROCESSOR
-	/*
-	 * Try to take ownership of DDB.
-	 * If we do, tell all other CPUs to enter DDB too.
-	 */
-	if ((ncpu > 1) &&
-	    (atomic_cas_ptr(&db_onproc, NULL, ci) == NULL)) {
-		intr_ipi_send(NULL, IPI_DDB);
-		db_trigger = ci;
-	} else {
+	if (ncpu > 1) {
 		/*
-		 * If multiple CPUs catch kdb_trap() that is not IPI_DDB derived
-		 * at the same time, only the CPU that was able to get db_onproc
-		 * first will execute db_trap.
-		 * The CPU that could not get db_onproc will be set to type = -1
-		 * once, and kdb_trap will be called again with the correct type
-		 * after kdb_trap returns.
+		 * Try to take ownership of DDB.
+		 * If we do, tell all other CPUs to enter DDB too.
 		 */
-		type = -1;
-		restore_hw_watchpoints = true;
+		if (atomic_cas_ptr(&db_onproc, NULL, ci) == NULL) {
+			intr_ipi_send(NULL, IPI_DDB);
+			db_trigger = ci;
+		} else {
+			/*
+			 * If multiple CPUs catch kdb_trap() that is not IPI_DDB
+			 * derived at the same time, only the CPU that was able
+			 * to get db_onproc first will execute db_trap.
+			 * The CPU that could not get db_onproc will be set to
+			 * type = -1 once, and kdb_trap will be called again
+			 * with the correct type after kdb_trap returns.
+			 */
+			type = -1;
+			restore_hw_watchpoints = true;
+		}
 	}
 	db_readytoswitch[ci->ci_index] = tf;
 #endif

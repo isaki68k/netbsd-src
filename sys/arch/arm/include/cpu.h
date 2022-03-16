@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.h,v 1.117 2021/03/27 12:15:08 jmcneill Exp $	*/
+/*	$NetBSD: cpu.h,v 1.122 2021/12/18 16:41:37 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1994-1996 Mark Brinicombe.
@@ -56,8 +56,8 @@ typedef unsigned long mpidr_t;
 #ifdef MULTIPROCESSOR
 extern u_int arm_cpu_max;
 extern mpidr_t cpu_mpidr[];
-extern kmutex_t cpu_hatch_lock;
 
+void cpu_init_secondary_processor(int);
 void cpu_boot_secondary_processors(void);
 void cpu_mpstart(void);
 bool cpu_hatched_p(u_int);
@@ -66,6 +66,8 @@ void cpu_clr_mbox(int);
 void cpu_set_hatched(int);
 
 #endif
+
+struct proc;
 
 void	cpu_proc_fork(struct proc *, struct proc *);
 
@@ -92,6 +94,7 @@ void	cpu_proc_fork(struct proc *, struct proc *);
  */
 
 #if !defined(_MODULE) && defined(_KERNEL_OPT)
+#include "opt_gprof.h"
 #include "opt_multiprocessor.h"
 #include "opt_cpuoptions.h"
 #include "opt_lockdebug.h"
@@ -154,7 +157,37 @@ static inline void cpu_dosoftints(void);
 #include <sys/cpu_data.h>
 #include <sys/device_if.h>
 #include <sys/evcnt.h>
+
 #include <machine/param.h>
+
+/*
+ * Cache info variables.
+ */
+#define	CACHE_TYPE_VIVT		0
+#define	CACHE_TYPE_xxPT		1
+#define	CACHE_TYPE_VIPT		1
+#define	CACHE_TYPE_PIxx		2
+#define	CACHE_TYPE_PIPT		3
+
+/* PRIMARY CACHE VARIABLES */
+struct arm_cache_info {
+	u_int icache_size;
+	u_int icache_line_size;
+	u_int icache_ways;
+	u_int icache_way_size;
+	u_int icache_sets;
+
+	u_int dcache_size;
+	u_int dcache_line_size;
+	u_int dcache_ways;
+	u_int dcache_way_size;
+	u_int dcache_sets;
+
+	uint8_t cache_type;
+	bool cache_unified;
+	uint8_t icache_type;
+	uint8_t dcache_type;
+};
 
 struct cpu_info {
 	struct cpu_data	ci_data;	/* MI per-cpu data */
@@ -190,6 +223,9 @@ struct cpu_info {
 
 	volatile u_int	ci_intr_depth;	/* */
 	volatile u_int	ci_softints;
+	volatile uint32_t ci_blocked_pics;
+	volatile uint32_t ci_pending_pics;
+	volatile uint32_t ci_pending_ipls;
 
 	lwp_t *		ci_lastlwp;	/* last lwp */
 
@@ -215,11 +251,19 @@ struct cpu_info {
 	struct evcnt	ci_vfp_evs[3];
 
 	uint32_t	ci_midr;
+	uint32_t	ci_actlr;
+	uint32_t	ci_revidr;
 	uint32_t	ci_mpidr;
+	uint32_t	ci_mvfr[2];
+
 	uint32_t	ci_capacity_dmips_mhz;
 
-	struct arm_cache_info *
+	struct arm_cache_info
 			ci_cacheinfo;
+
+#if defined(GPROF) && defined(MULTIPROCESSOR)
+	struct gmonparam *ci_gmon;	/* MI per-cpu GPROF */
+#endif
 };
 
 extern struct cpu_info cpu_info_store[];
@@ -287,10 +331,6 @@ extern struct cpu_info *cpu_info[];
 #define CPU_IS_PRIMARY(ci)	true
 #define CPU_INFO_FOREACH(cii, ci)			\
 	cii = 0, __USE(cii), ci = curcpu(); ci != NULL; ci = NULL
-#endif
-
-#if defined(MULTIPROCESSOR)
-void cpu_init_secondary_processor(int);
 #endif
 
 #define	LWP0_CPU_INFO	(&cpu_info_store[0])

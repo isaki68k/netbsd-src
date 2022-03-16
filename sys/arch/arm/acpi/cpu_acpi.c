@@ -1,4 +1,4 @@
-/* $NetBSD: cpu_acpi.c,v 1.10 2021/01/23 12:34:19 jmcneill Exp $ */
+/* $NetBSD: cpu_acpi.c,v 1.13 2021/11/25 09:36:20 skrll Exp $ */
 
 /*-
  * Copyright (c) 2018 The NetBSD Foundation, Inc.
@@ -33,7 +33,7 @@
 #include "opt_multiprocessor.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu_acpi.c,v 1.10 2021/01/23 12:34:19 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu_acpi.c,v 1.13 2021/11/25 09:36:20 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -93,6 +93,7 @@ cpu_acpi_match(device_t parent, cfdata_t cf, void *aux)
 static void
 cpu_acpi_attach(device_t parent, device_t self, void *aux)
 {
+	prop_dictionary_t dict = device_properties(self);
 	ACPI_MADT_GENERIC_INTERRUPT *gicc = aux;
 	const uint64_t mpidr = gicc->ArmMpidr;
 	const int unit = device_unit(self);
@@ -122,6 +123,10 @@ cpu_acpi_attach(device_t parent, device_t self, void *aux)
 		}
 	}
 #endif /* MULTIPROCESSOR */
+
+	/* Assume that less efficient processors are faster. */
+	prop_dictionary_set_uint32(dict, "capacity_dmips_mhz",
+	    gicc->EfficiencyClass);
 
 	/* Store the ACPI Processor UID in cpu_info */
 	ci->ci_acpiid = gicc->Uid;
@@ -168,7 +173,7 @@ cpu_acpi_tprof_intr_establish(ACPI_SUBTABLE_HEADER *hdrp, void *aux)
 	if ((gicc->Flags & ACPI_MADT_ENABLED) == 0)
 		return AE_OK;
 
-	const bool cpu_primary_p = cpu_mpidr_aff_read() == gicc->ArmMpidr;
+	const bool cpu_primary_p = cpu_info_store[0].ci_cpuid == gicc->ArmMpidr;
 	const bool intr_ppi_p = gicc->PerformanceInterrupt < 32;
 	const int type = (gicc->Flags & ACPI_MADT_PERFORMANCE_IRQ_MODE) ?
 	    IST_EDGE : IST_LEVEL;
@@ -220,7 +225,12 @@ cpu_acpi_tprof_intr_establish(ACPI_SUBTABLE_HEADER *hdrp, void *aux)
 static void
 cpu_acpi_tprof_init(device_t self)
 {
-	armv8_pmu_init();
+	int err = armv8_pmu_init();
+	if (err) {
+		aprint_error_dev(self,
+		    "failed to initialize PMU event counter\n");
+		return;
+	}
 
 	if (acpi_madt_map() != AE_OK) {
 		aprint_error_dev(self,

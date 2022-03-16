@@ -1,4 +1,4 @@
-/*	$NetBSD: vectors.S,v 1.22 2021/03/09 16:44:27 ryo Exp $	*/
+/*	$NetBSD: vectors.S,v 1.24 2021/09/18 12:25:06 jmcneill Exp $	*/
 
 #include <aarch64/asm.h>
 #include <aarch64/locore.h>
@@ -9,8 +9,9 @@
 #include "opt_cpuoptions.h"
 #include "opt_ddb.h"
 #include "opt_dtrace.h"
+#include "opt_gic.h"
 
-RCSID("$NetBSD: vectors.S,v 1.22 2021/03/09 16:44:27 ryo Exp $")
+RCSID("$NetBSD: vectors.S,v 1.24 2021/09/18 12:25:06 jmcneill Exp $")
 
 	ARMV8_DEFINE_OPTIONS
 
@@ -130,18 +131,18 @@ vector_func	el1t_fiq_handler,   1, trap_el1t_fiq
 vector_func	el1t_error_handler, 1, trap_el1t_error
 
 vector_func	el1h_sync_handler,  1, trap_el1h_sync
-vector_func	el1h_intr_handler,  1, interrupt
-vector_func	el1h_fiq_handler,   1, trap_el1h_fiq
+vector_func	el1h_intr_handler,  1, cpu_irq
+vector_func	el1h_fiq_handler,   1, cpu_fiq
 vector_func	el1h_error_handler, 1, trap_el1h_error
 
 vector_func	el0_sync_handler,  0, trap_el0_sync
-vector_func	el0_intr_handler,  0, interrupt
-vector_func	el0_fiq_handler,   0, trap_el0_fiq
+vector_func	el0_intr_handler,  0, cpu_irq
+vector_func	el0_fiq_handler,   0, cpu_fiq
 vector_func	el0_error_handler, 0, trap_el0_error
 
 vector_func	el0_32sync_handler,  0, trap_el0_32sync, ro
-vector_func	el0_32intr_handler,  0, interrupt, ro
-vector_func	el0_32fiq_handler,   0, trap_el0_32fiq, ro
+vector_func	el0_32intr_handler,  0, cpu_irq, ro
+vector_func	el0_32fiq_handler,   0, cpu_fiq, ro
 vector_func	el0_32error_handler, 0, trap_el0_32error, ro
 
 /*
@@ -220,7 +221,23 @@ ENTRY_NP(el1_trap_exit)
 
 	unwind_x3_x30
 
-#if TF_PC + 8 == TF_SPSR
+#ifdef GIC_SPLFUNCS
+	mrs	x0, tpidr_el1		/* get curlwp */
+	ldr	x0, [x0, #L_CPU]	/* get curcpu */
+
+	/*
+	 * If ci_intr_depth == 0 and ci_splx_restart != 0, return
+	 * to splx restart. Otherwise return to exception pc.
+	 */
+	ldr	w1, [x0, #CI_INTR_DEPTH]
+	cbnz	w1, 1f
+	ldr	x0, [x0, #CI_SPLX_RESTART]
+	cbnz	x0, 2f
+1:
+	ldr	x0, [sp, #TF_PC]
+2:
+	ldr	x1, [sp, #TF_SPSR]
+#elif TF_PC + 8 == TF_SPSR
 	ldp	x0, x1, [sp, #TF_PC]
 #else
 	ldr	x0, [sp, #TF_PC]

@@ -1,4 +1,4 @@
-/* $NetBSD: if_msk.c,v 1.116 2021/05/08 00:27:02 thorpej Exp $ */
+/* $NetBSD: if_msk.c,v 1.118 2021/09/20 11:27:30 jmcneill Exp $ */
 /*	$OpenBSD: if_msk.c,v 1.79 2009/10/15 17:54:56 deraadt Exp $	*/
 
 /*
@@ -52,7 +52,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_msk.c,v 1.116 2021/05/08 00:27:02 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_msk.c,v 1.118 2021/09/20 11:27:30 jmcneill Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -661,7 +661,7 @@ msk_alloc_jumbo_mem(struct sk_if_softc *sc_if)
 	state = 1;
 	if (bus_dmamem_map(sc->sc_dmatag, &sc_if->sk_cdata.sk_jumbo_seg,
 	    sc_if->sk_cdata.sk_jumbo_nseg, MSK_JMEM, (void **)&kva,
-	    BUS_DMA_NOWAIT)) {
+	    BUS_DMA_NOWAIT | BUS_DMA_COHERENT)) {
 		aprint_error(": can't map dma buffers (%d bytes)", MSK_JMEM);
 		error = ENOBUFS;
 		goto out;
@@ -1240,7 +1240,8 @@ msk_attach(device_t parent, device_t self, void *aux)
 	}
 	if (bus_dmamem_map(sc->sc_dmatag, &sc_if->sk_ring_seg,
 	    sc_if->sk_ring_nseg,
-	    sizeof(struct msk_ring_data), &kva, BUS_DMA_NOWAIT)) {
+	    sizeof(struct msk_ring_data), &kva,
+	    BUS_DMA_NOWAIT | BUS_DMA_COHERENT)) {
 		aprint_error(": can't map dma buffers (%zu bytes)\n",
 		       sizeof(struct msk_ring_data));
 		goto fail_1;
@@ -1561,7 +1562,7 @@ mskc_attach(device_t parent, device_t self, void *aux)
 	if (bus_dmamem_map(sc->sc_dmatag,
 	    &sc->sk_status_seg, sc->sk_status_nseg,
 	    MSK_STATUS_RING_CNT * sizeof(struct msk_status_desc),
-	    &kva, BUS_DMA_NOWAIT)) {
+	    &kva, BUS_DMA_NOWAIT | BUS_DMA_COHERENT)) {
 		aprint_error(": can't map dma buffers (%zu bytes)\n",
 		    MSK_STATUS_RING_CNT * sizeof(struct msk_status_desc));
 		goto fail_3;
@@ -1777,13 +1778,13 @@ mskc_attach(device_t parent, device_t self, void *aux)
 	skca.skc_port = SK_PORT_A;
 	skca.skc_type = sc->sk_type;
 	skca.skc_rev = sc->sk_rev;
-	(void)config_found(sc->sk_dev, &skca, mskcprint, CFARG_EOL);
+	(void)config_found(sc->sk_dev, &skca, mskcprint, CFARGS_NONE);
 
 	if (sc->sk_macs > 1) {
 		skca.skc_port = SK_PORT_B;
 		skca.skc_type = sc->sk_type;
 		skca.skc_rev = sc->sk_rev;
-		(void)config_found(sc->sk_dev, &skca, mskcprint, CFARG_EOL);
+		(void)config_found(sc->sk_dev, &skca, mskcprint, CFARGS_NONE);
 	}
 
 	/* Turn on the 'driver is loaded' LED. */

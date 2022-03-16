@@ -1,4 +1,4 @@
-/*	$NetBSD: io.h,v 1.6 2020/01/18 02:42:23 jmcneill Exp $	*/
+/*	$NetBSD: io.h,v 1.9 2022/02/14 00:28:33 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2013 The NetBSD Foundation, Inc.
@@ -37,31 +37,22 @@
 
 #include <linux/string.h>
 
-/*
- * XXX This is bollocks, and is wrong on various architectures (should
- * work for x86; who knows what else), but bus_space_barrier won't work
- * because we have no bus space tag or handle or offset or anything.
- */
-#define	mmiowb()	membar_sync()
-
-#define	memcpy_fromio	memcpy
-#define	memcpy_toio	memcpy
+#define	memcpy_fromio(d,s,n)	memcpy((d),__UNVOLATILE(s),(n))
+#define	memcpy_toio(d,s,n)	memcpy(__UNVOLATILE(d),(s),(n))
 
 #if defined(__NetBSD__) && defined(__aarch64__)
-static inline void *
-memset_io(void *b, int c, size_t len)
+static inline void
+memset_io(volatile void *b, int c, size_t len)
 {
-	uint8_t *ptr = b;
+	volatile uint8_t *ptr = b;
 
 	while (len > 0) {
 		*ptr++ = c;
 		len--;
 	}
-
-	return b;
 }
 #else
-#define	memset_io	memset
+#define	memset_io(b,c,n)	memset(__UNVOLATILE(b),(c),(n))
 #endif
 
 /* XXX wrong place */

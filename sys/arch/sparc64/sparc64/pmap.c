@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap.c,v 1.312 2020/03/14 14:05:43 ad Exp $	*/
+/*	$NetBSD: pmap.c,v 1.314 2022/03/12 15:32:31 riastradh Exp $	*/
 /*
  *
  * Copyright (C) 1996-1999 Eduardo Horvath.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.312 2020/03/14 14:05:43 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap.c,v 1.314 2022/03/12 15:32:31 riastradh Exp $");
 
 #undef	NO_VCACHE /* Don't forget the locked TLB in dostart */
 #define	HWREF
@@ -1510,9 +1510,11 @@ pmap_destroy(struct pmap *pm)
 #endif
 	struct vm_page *pg;
 
+	membar_exit();
 	if ((int)atomic_dec_uint_nv(&pm->pm_refs) > 0) {
 		return;
 	}
+	membar_enter();
 	DPRINTF(PDB_DESTROY, ("pmap_destroy: freeing pmap %p\n", pm));
 #ifdef MULTIPROCESSOR
 	CPUSET_CLEAR(pmap_cpus_active);
@@ -1537,9 +1539,7 @@ pmap_destroy(struct pmap *pm)
 
 	/* we could be a little smarter and leave pages zeroed */
 	while ((pg = TAILQ_FIRST(&pm->pm_ptps)) != NULL) {
-#ifdef DIAGNOSTIC
 		struct vm_page_md *md = VM_PAGE_TO_MD(pg);
-#endif
 
 		TAILQ_REMOVE(&pm->pm_ptps, pg, pageq.queue);
 		KASSERT(md->mdpg_pvh.pv_pmap == NULL);

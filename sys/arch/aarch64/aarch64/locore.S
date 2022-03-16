@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.S,v 1.78 2021/03/21 09:08:40 skrll Exp $	*/
+/*	$NetBSD: locore.S,v 1.85 2022/01/31 09:16:09 ryo Exp $	*/
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -38,7 +38,7 @@
 #include <aarch64/hypervisor.h>
 #include "assym.h"
 
-RCSID("$NetBSD: locore.S,v 1.78 2021/03/21 09:08:40 skrll Exp $")
+RCSID("$NetBSD: locore.S,v 1.85 2022/01/31 09:16:09 ryo Exp $")
 
 #ifdef AARCH64_DEVICE_MEM_STRONGLY_ORDERED
 #define	MAIR_DEVICE_MEM		MAIR_DEVICE_nGnRnE
@@ -148,7 +148,7 @@ ASENTRY_NP(aarch64_start)
 	br	x20		/* jump to the kernel virtual address */
 
 aarch64_fatal:
-	PRINT("fatal error occured while booting\n")
+	PRINT("fatal error occurred while booting\n")
 	/* return to bootloader. if switched from EL2 to EL1, It might fail */
 	mov	lr, x27
 	mov	sp, x28
@@ -180,6 +180,10 @@ vstart:
 	msr	tpidr_el1, x0
 	DPRINTREG("curlwp           = ", x0);
 
+	/* init HAFDBS if supported */
+	mov	x0, #1
+	bl	aarch64_hafdbs_init
+
 	/* init PAN if supported */
 	mov	x0, #1
 	bl	aarch64_pan_init
@@ -194,15 +198,22 @@ vstart:
 	msr	sctlr_el1, x0
 1:
 
+	adrl	x19, cpu_info_store	/* curcpu (&cpu_info_store[0] */
+
+	mov	x0, x19
+	bl	cpu_setup_id
+
 	/* set topology information */
-	adrl	x0, cpu_info_store	/* curcpu */
+	mov	x0, x19
 	mrs	x1, mpidr_el1
 	mov	x2, #0
 	bl	arm_cpu_topology_set
 
-	/* get cache configuration */
-	mov	x0, xzr
+	/* get and parse the cache configuration */
+	mov	x0, x19
 	bl	aarch64_getcacheinfo
+	mov	x0, x19
+	bl	aarch64_parsecacheinfo
 
 #ifdef KASAN
 	adrl	x0, lwp0uspace
@@ -453,7 +464,6 @@ ENTRY_NP(cpu_mpstart)
 	CPU_DPRINTREG("CurrentEL        = ", x20)
 #endif /* LOCORE_EL2 */
 
-
 	bl	mmu_disable
 	bl	init_sysregs
 
@@ -468,7 +478,27 @@ ENTRY_NP(cpu_mpstart)
 
 mp_vstart:
 	hint	0x24		/* bti j */
+
 	CPU_DPRINTREG("PC               = ", x20)
+	CPU_DPRINTREG("SP               = ", sp)
+
+	CPU_DPRINTSREG("TTBR0            = ", ttbr0_el1)
+	CPU_DPRINTSREG("TTBR1            = ", ttbr1_el1)
+
+	/* Set SP to VA */
+	adrl	x0, kern_vtopdiff
+	ldr	x0, [x0]
+	add	sp, sp, x0
+
+	/* disable TTBR0 - CPU_DPRINT{,REG,SREG} no longer work after this */
+	mrs	x0, tcr_el1
+	orr	x0, x0, #TCR_EPD0
+	msr	tcr_el1, x0
+	isb
+
+	tlbi	vmalle1is
+	dsb	ish
+	isb
 
 	/* set exception vector */
 	adrl	x0, _C_LABEL(el1_vectors)
@@ -478,45 +508,13 @@ mp_vstart:
 	msr	tpidr_el0, xzr
 	msr	tpidrro_el0, xzr
 
-	mov	x0, #CPU_INFO_SIZE
-	mul	x0, x27, x0
-	adrl	x1, _C_LABEL(cpu_info_store)
-	add	x0, x0, x1		/* x0 = &cpu_info_store[cpuindex] */
-
-	/* temporarily set tpidr_el1 to curcpu until the idle lwp is setup */
-	msr	tpidr_el1, x0		/* tpidr_el1 = curcpu = x0 */
-
-	/* fill curcpu()->ci_{midr,mpidr} */
-	mrs	x1, midr_el1
-	str	x1, [x0, #CI_MIDR]	/* curcpu()->ci_cpuid = midr_el1 */
-	mrs	x1, mpidr_el1
-	str	x1, [x0, #CI_MPIDR]	/* curcpu()->ci_mpidr = mpidr_el1 */
-
-	/* set topology information */
-	mov	x2, #0
-	bl	arm_cpu_topology_set
-
-	/* x28 = &arm_cpu_hatched[cpuindex / (sizeof(u_long) * NBBY)] */
-	adrl	x0, _C_LABEL(arm_cpu_hatched)
-	// Appease clang - mov	x1, x27, lsr #6
-	orr	x1, xzr, x27, lsr #6
-	add	x28, x0, x1, lsl #3
+	mov	x0, x27
+	bl	cpu_init_secondary_processor
 
 	/* x29 = __BIT(cpuindex % (sizeof(u_long) * NBBY)) */
 	mov	x0, #1
 	and	x2, x27, #63
 	lsl	x29, x0, x2
-
-	/*
-	 * atomic_or_ulong(&arm_cpu_hatched[cpuindex / (sizeof(u_long)  * NBBY)],
-	 *   _BIT(cpuindex % ((sizeof(u_long) * NBBY)
-	 * to inform the boot processor.
-	 */
-	mov	x0, x28
-	mov	x1, x29
-	bl	_C_LABEL(atomic_or_ulong)	/* hatched! */
-	dsb	sy
-	sev
 
 	/* x28 = &arm_cpu_mbox[cpuindex / (sizeof(u_long) * NBBY)] */
 	adrl	x0, _C_LABEL(arm_cpu_mbox)
@@ -526,19 +524,22 @@ mp_vstart:
 
 	/* wait for the mailbox start bit to become true */
 1:
-	dmb	sy
-	ldr	x20, [x28]
+	ldar	x20, [x28]	/* matches cpu_boot_secondary_processors */
 	tst	x20, x29
 	bne	9f
 	wfe
 	b	1b
 9:
 
+	mov	x0, #CPU_INFO_SIZE
+	mul	x0, x27, x0
+	adrl	x1, _C_LABEL(cpu_info_store)
+	add	x0, x0, x1		/* x0 = &cpu_info_store[cpuindex] */
+
 	/*
 	 * set curlwp (tpidr_el1 and curcpu()->ci_curlwp) now we know the
 	 * idle lwp from curcpu()->ci_idlelwp
 	 */
-	mrs	x0, tpidr_el1		/* curcpu (temporarily) */
 	ldr	x1, [x0, #CI_IDLELWP]	/* x0 = curcpu()->ci_idlelwp */
 	msr	tpidr_el1, x1		/* tpidr_el1 = curlwp = x1 */
 	str	x1, [x0, #CI_CURLWP]	/* curlwp is idlelwp */
@@ -547,6 +548,10 @@ mp_vstart:
 	ldr	x2, [x1, #L_PCB]	/* x2 = lwp_getpcb(idlelwp) */
 	add	x2, x2, #(UPAGES * PAGE_SIZE)
 	sub	sp, x2, #TF_SIZE	/* sp = pcb + USPACE - TF_SIZE */
+
+	/* init HAFDBS if supported */
+	mov	x0, #0
+	bl	aarch64_hafdbs_init
 
 	/* init PAN if supported */
 	mov	x0, #0
@@ -927,7 +932,7 @@ mmu_enable:
 
 	ldr	x0, mair_setting
 	msr	mair_el1, x0
-
+	isb
 
 	/* TCR_EL1:IPS[34:32] = AA64MMFR0:PARange[3:0] */
 	ldr	x0, tcr_setting

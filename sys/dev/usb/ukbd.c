@@ -1,4 +1,4 @@
-/*      $NetBSD: ukbd.c,v 1.151 2021/06/27 22:41:55 pgoyette Exp $        */
+/*      $NetBSD: ukbd.c,v 1.157 2022/01/08 17:34:14 riastradh Exp $        */
 
 /*
  * Copyright (c) 1998 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ukbd.c,v 1.151 2021/06/27 22:41:55 pgoyette Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ukbd.c,v 1.157 2022/01/08 17:34:14 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddb.h"
@@ -270,6 +270,8 @@ struct ukbd_softc {
 	struct hid_location sc_compose;
 	int sc_leds;
 	struct usb_task sc_ledtask;
+	struct callout sc_ledreset;
+	int sc_leds_set;
 	device_t sc_wskbddev;
 
 #if defined(WSDISPLAY_COMPAT_RAWKBD)
@@ -343,6 +345,7 @@ Static void	ukbd_delayed_decode(void *);
 Static int	ukbd_enable(void *, int);
 Static void	ukbd_set_leds(void *, int);
 Static void	ukbd_set_leds_task(void *);
+Static void	ukbd_delayed_leds_off(void *);
 
 Static int	ukbd_ioctl(void *, u_long, void *, int, struct lwp *);
 #if  defined(WSDISPLAY_COMPAT_RAWKBD) && defined(UKBD_REPEAT)
@@ -482,14 +485,16 @@ ukbd_attach(device_t parent, device_t self, void *aux)
 	sc->sc_data_r = 0;
 
 	usb_init_task(&sc->sc_ledtask, ukbd_set_leds_task, sc, 0);
+	callout_init(&sc->sc_ledreset, 0);
 
 	/* Flash the leds; no real purpose, just shows we're alive. */
 	ukbd_set_leds(sc, WSKBD_LED_SCROLL | WSKBD_LED_NUM | WSKBD_LED_CAPS
 			| WSKBD_LED_COMPOSE);
-	usbd_delay_ms(uha->parent->sc_udev, 400);
-	ukbd_set_leds(sc, 0);
+	sc->sc_leds_set = 0;	/* not explicitly set by wskbd yet */
+	callout_reset(&sc->sc_ledreset, mstohz(400), ukbd_delayed_leds_off,
+	    sc);
 
-	sc->sc_wskbddev = config_found(self, &a, wskbddevprint, CFARG_EOL);
+	sc->sc_wskbddev = config_found(self, &a, wskbddevprint, CFARGS_NONE);
 
 	return;
 }
@@ -571,6 +576,11 @@ ukbd_detach(device_t self, int flags)
 	/* No need to do reference counting of ukbd, wskbd has all the goo. */
 	if (sc->sc_wskbddev != NULL)
 		rv = config_detach(sc->sc_wskbddev, flags);
+
+	callout_halt(&sc->sc_delay, NULL);
+	callout_halt(&sc->sc_ledreset, NULL);
+	usb_rem_task_wait(sc->sc_hdev.sc_parent->sc_udev, &sc->sc_ledtask,
+	    USB_TASKQ_DRIVER, NULL);
 
 	/* The console keyboard does not get a disable call, so check pipe. */
 	if (sc->sc_hdev.sc_state & UHIDEV_OPEN)
@@ -704,6 +714,21 @@ ukbd_intr(struct uhidev *addr, void *ibuf, u_int len)
 	} else {
 		ukbd_decode(sc, ud);
 	}
+}
+
+Static void
+ukbd_delayed_leds_off(void *addr)
+{
+	struct ukbd_softc *sc = addr;
+
+	/*
+	 * If the LEDs have already been set after attach, other than
+	 * by our initial flashing of them, leave them be.
+	 */
+	if (sc->sc_leds_set)
+		return;
+
+	ukbd_set_leds(sc, 0);
 }
 
 void
@@ -868,6 +893,8 @@ ukbd_set_leds(void *v, int leds)
 	if (sc->sc_dying)
 		return;
 
+	sc->sc_leds_set = 1;
+
 	if (sc->sc_leds == leds)
 		return;
 
@@ -1012,7 +1039,7 @@ ukbd_cnattach(void)
 	/*
 	 * XXX USB requires too many parts of the kernel to be running
 	 * XXX in order to work, so we can't do much for the console
-	 * XXX keyboard until autconfiguration has run its course.
+	 * XXX keyboard until autoconfiguration has run its course.
 	 */
 	ukbd_is_console = 1;
 	return 0;

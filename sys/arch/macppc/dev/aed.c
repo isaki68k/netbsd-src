@@ -1,4 +1,4 @@
-/*	$NetBSD: aed.c,v 1.31 2020/12/19 21:54:42 thorpej Exp $	*/
+/*	$NetBSD: aed.c,v 1.34 2021/09/26 16:36:19 thorpej Exp $	*/
 
 /*
  * Copyright (C) 1994	Bradley A. Grantham
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: aed.c,v 1.31 2020/12/19 21:54:42 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: aed.c,v 1.34 2021/09/26 16:36:19 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -603,17 +603,10 @@ filt_aedread(struct knote *kn, long hint)
 }
 
 static const struct filterops aedread_filtops = {
-	.f_isfd = 1,
+	.f_flags = FILTEROP_ISFD,
 	.f_attach = NULL,
 	.f_detach = filt_aedrdetach,
 	.f_event = filt_aedread
-};
-
-static const struct filterops aed_seltrue_filtops = {
-	.f_isfd = 1,
-	.f_attach = NULL,
-	.f_detach = filt_aedrdetach,
-	.f_event = filt_seltrue
 };
 
 int
@@ -624,21 +617,18 @@ aedkqfilter(dev_t dev, struct knote *kn)
 	switch (kn->kn_filter) {
 	case EVFILT_READ:
 		kn->kn_fop = &aedread_filtops;
+		s = spladb();
+		selrecord_knote(&aed_sc->sc_selinfo, kn);
+		splx(s);
 		break;
 
 	case EVFILT_WRITE:
-		kn->kn_fop = &aed_seltrue_filtops;
+		kn->kn_fop = &seltrue_filtops;
 		break;
 
 	default:
-		return (1);
+		return (EINVAL);
 	}
-
-	kn->kn_hook = NULL;
-
-	s = spladb();
-	selrecord_knote(&aed_sc->sc_selinfo, kn);
-	splx(s);
 
 	return (0);
 }

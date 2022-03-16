@@ -1,3 +1,5 @@
+/*      $NetBSD: octeon_cpunode.c,v 1.22 2022/03/03 06:27:41 riastradh Exp $   */
+
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -29,7 +31,7 @@
 #define __INTR_PRIVATE
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(0, "$NetBSD: octeon_cpunode.c,v 1.19 2021/04/24 23:36:42 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: octeon_cpunode.c,v 1.22 2022/03/03 06:27:41 riastradh Exp $");
 
 #include "locators.h"
 #include "cpunode.h"
@@ -137,14 +139,14 @@ cpunode_mainbus_attach(device_t parent, device_t self, void *aux)
 			.cnaa_name = "cpu",
 			.cnaa_cpunum = cpunum,
 		};
-		config_found(self, &cnaa, cpunode_mainbus_print, CFARG_EOL);
+		config_found(self, &cnaa, cpunode_mainbus_print, CFARGS_NONE);
 	}
 #if NWDOG > 0
 	struct cpunode_attach_args cnaa = {
 		.cnaa_name = "wdog",
 		.cnaa_cpunum = CPUNODECF_CORE_DEFAULT,
 	};
-	config_found(self, &cnaa, cpunode_mainbus_print, CFARG_EOL);
+	config_found(self, &cnaa, cpunode_mainbus_print, CFARGS_NONE);
 #endif
 }
 
@@ -214,7 +216,7 @@ octeon_cpu_init(struct cpu_info *ci)
 	(*mips64r2_locore_vec.ljv_tlb_invalidate_all)();
 	mips3_cp0_wired_write(pmap_tlb0_info.ti_wired);
 
-	// First thing is setup the execption vectors for this cpu.
+	// First thing is setup the exception vectors for this cpu.
 	mips64r2_vector_init(&mips_splsw);
 
 	// Next rewrite those exceptions to use this cpu's cpu_info.
@@ -250,7 +252,7 @@ cpu_cpunode_attach_common(device_t self, struct cpu_info *ci)
 	struct cpu_softc * const cpu __diagused = ci->ci_softc;
 
 	ci->ci_dev = self;
-	self->dv_private = ci;
+	device_set_private(self, ci);
 
 	KASSERTMSG(cpu != NULL, "ci %p index %d", ci, cpu_index(ci));
 

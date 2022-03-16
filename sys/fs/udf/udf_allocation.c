@@ -1,4 +1,4 @@
-/* $NetBSD: udf_allocation.c,v 1.41 2020/04/23 21:47:08 ad Exp $ */
+/* $NetBSD: udf_allocation.c,v 1.46 2022/02/03 09:46:26 reinoud Exp $ */
 
 /*
  * Copyright (c) 2006, 2008 Reinoud Zandijk
@@ -28,7 +28,7 @@
 
 #include <sys/cdefs.h>
 #ifndef lint
-__KERNEL_RCSID(0, "$NetBSD: udf_allocation.c,v 1.41 2020/04/23 21:47:08 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: udf_allocation.c,v 1.46 2022/02/03 09:46:26 reinoud Exp $");
 #endif /* not lint */
 
 
@@ -371,7 +371,7 @@ udf_calc_freespace(struct udf_mount *ump, uint64_t *sizeblks, uint64_t *freeblks
 	*freeblks = *sizeblks = 0;
 
 	/*
-	 * Sequentials media report free space directly (CD/DVD/BD-R), for the
+	 * Sequential media reports free space directly (CD/DVD/BD-R), for the
 	 * other media we need the logical volume integrity.
 	 *
 	 * We sum all free space up here regardless of type.
@@ -420,7 +420,7 @@ udf_calc_vpart_freespace(struct udf_mount *ump, uint16_t vpart_num, uint64_t *fr
 	*freeblks = 0;
 
 	/*
-	 * Sequentials media report free space directly (CD/DVD/BD-R), for the
+	 * Sequential media reports free space directly (CD/DVD/BD-R), for the
 	 * other media we need the logical volume integrity.
 	 *
 	 * We sum all free space up here regardless of type.
@@ -638,7 +638,7 @@ udf_translate_vtop_list(struct udf_mount *ump, uint32_t sectors,
 
 /*
  * Translate an extent (in logical_blocks) into logical block numbers; used
- * for read and write operations. DOESNT't check extents.
+ * for read and write operations. DOESN'T check extents.
  */
 
 int
@@ -755,8 +755,8 @@ udf_translate_file_extent(struct udf_node *udf_node,
 		ext_offset = 0;
 
 		/*
-		 * note that the while(){} is nessisary for the extent that
-		 * the udf_translate_vtop() returns doens't have to span the
+		 * note that the while(){} is necessary for the extent that
+		 * the udf_translate_vtop() returns doesn't have to span the
 		 * whole extent.
 		 */
 	
@@ -863,7 +863,7 @@ udf_search_free_vatloc(struct udf_mount *ump, uint32_t *lbnumres)
 		ump->vat_entries++;
 	}
 
-	/* mark entry with initialiser just in case */
+	/* mark entry with non free-space initialiser just in case */
 	lb_map = udf_rw32(0xfffffffe);
 	udf_vat_write(ump->vat_node, (uint8_t *) &lb_map, 4,
 		ump->vat_offset + lb_num *4);
@@ -1479,7 +1479,7 @@ udf_trunc_metadatapart(struct udf_mount *ump, uint32_t num_lb)
 	/* XXX
 	 *
 	 * the following checks will fail for BD-R UDF 2.60! but they are
-	 * read-only for now anyway! Its even doubtfull if it is to be allowed
+	 * read-only for now anyway! Its even doubtful if it is to be allowed
 	 * for these discs.
 	 */
 
@@ -1550,7 +1550,7 @@ udf_trunc_metadatapart(struct udf_mount *ump, uint32_t num_lb)
 
 	/*
 	 * The truncated space is secured now and can't be allocated anymore.
-	 * Release the allocate mutex so we can shrink the nodes the normal
+	 * Release the allocated mutex so we can shrink the nodes the normal
 	 * way.
 	 */
 	mutex_exit(&ump->allocate_mutex);
@@ -1593,7 +1593,7 @@ static void
 udf_collect_free_space_for_vpart(struct udf_mount *ump,
 	uint16_t vpart_num, uint32_t num_lb)
 {
-	/* allocate mutex is helt */
+	/* allocated mutex is held */
 
 	/* only defined for metadata partitions */
 	if (ump->vtop_tp[ump->node_part] != UDF_VTOP_TYPE_META) {
@@ -1621,7 +1621,7 @@ udf_collect_free_space_for_vpart(struct udf_mount *ump,
 			udf_sparsify_metadatapart(ump, num_lb);
 	}
 
-	/* allocate mutex should still be helt */
+	/* allocated mutex should still be held */
 }
 
 /* --------------------------------------------------------------------- */
@@ -1672,7 +1672,7 @@ udf_late_allocate_buf(struct udf_mount *ump, struct buf *buf,
 	if (error) {
 		/*
 		 * ARGH! we haven't done our accounting right! it should
-		 * allways succeed.
+		 * always succeed.
 		 */
 		panic("UDF disc allocation accounting gone wrong");
 	}
@@ -2222,7 +2222,7 @@ udf_count_alloc_exts(struct udf_node *udf_node)
  * take note that we might glue to existing allocation descriptors.
  *
  * XXX Note there can only be one allocation being recorded/mount; maybe
- * explicit allocation in shedule thread?
+ * explicit allocation in schedule thread?
  */
 
 static void
@@ -2782,7 +2782,7 @@ udf_grow_node(struct udf_node *udf_node, uint64_t new_size)
 		len += lastblock_grow;
 		c_ad.len = udf_rw32(len | flags);
 
-		/* TODO zero appened space in buffer! */
+		/* TODO zero appended space in buffer! */
 		/* using ubc_zerorange(&vp->v_uobj, old_size, */
 		/*    new_size - old_size, UBC_VNODE_FLAGS(vp)); ? */
 	}
@@ -2953,7 +2953,7 @@ udf_shrink_node(struct udf_node *udf_node, uint64_t new_size)
 		KASSERT(old_size >= new_size);
 		memset(data_pos + new_size, 0, old_size - new_size);
 
-		/* TODO zero appened space in buffer! */
+		/* TODO zero appended space in buffer! */
 		/* using ubc_zerorange(&vp->v_uobj, old_size, */
 		/*    old_size - new_size, UBC_VNODE_FLAGS(vp)); ? */
 
@@ -3088,7 +3088,7 @@ udf_shrink_node(struct udf_node *udf_node, uint64_t new_size)
 	/* 4) if it will fit into the descriptor then convert */
 	if (new_size < max_l_ad) {
 		/*
-		 * resque/evacuate old piece by reading it in, and convert it
+		 * rescue/evacuate old piece by reading it in, and convert it
 		 * to internal alloc.
 		 */
 		if (new_size == 0) {

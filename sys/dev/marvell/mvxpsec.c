@@ -1,4 +1,4 @@
-/*	$NetBSD: mvxpsec.c,v 1.7 2020/07/25 22:37:48 riastradh Exp $	*/
+/*	$NetBSD: mvxpsec.c,v 1.11 2022/03/12 15:32:32 riastradh Exp $	*/
 /*
  * Copyright (c) 2015 Internet Initiative Japan Inc.
  * All rights reserved.
@@ -1036,7 +1036,7 @@ mvxpsec_init_sram(struct mvxpsec_softc *sc)
 	vaddr_t va;
 	int window;
 
-	switch (sc->sc_dev->dv_unit) {
+	switch (device_unit(sc->sc_dev)) {
 	case 0:
 		tag = ARMADAXP_TAG_CRYPT0;
 		break;
@@ -1280,7 +1280,7 @@ mvxpsec_eintr_ack(struct mvxpsec_softc *sc)
 /*
  * Interrupt statistics
  *
- * this is NOT a statistics of how may times the events 'occured'.
+ * this is NOT a statistics of how many times the events 'occurred'.
  * this ONLY means how many times the events 'handled'.
  */
 INLINE void
@@ -1487,7 +1487,7 @@ mvxpsec_packet_dtor(void *arg, void *obj)
 }
 
 /*
- * allocate new session struture.
+ * allocate new session structure.
  */
 STATIC struct mvxpsec_session *
 mvxpsec_session_alloc(struct mvxpsec_softc *sc)
@@ -1552,9 +1552,12 @@ mvxpsec_session_unref(struct mvxpsec_session *mv_s)
 {
 	uint32_t refs;
 
+	membar_exit();
 	refs = atomic_dec_32_nv(&mv_s->refs);
-	if (refs == 0)
+	if (refs == 0) {
+		membar_enter();
 		pool_cache_put(mv_s->sc->sc_session_pool, mv_s);
+	}
 }
 
 /*

@@ -1,4 +1,4 @@
-/*	$NetBSD: ehcivar.h,v 1.48 2020/03/15 07:56:19 skrll Exp $ */
+/*	$NetBSD: ehcivar.h,v 1.51 2022/03/13 11:29:21 riastradh Exp $ */
 
 /*
  * Copyright (c) 2001 The NetBSD Foundation, Inc.
@@ -162,15 +162,18 @@ struct ehci_soft_islot {
 
 typedef struct ehci_softc {
 	device_t sc_dev;
+	kmutex_t sc_rhlock;
 	kmutex_t sc_lock;
 	kmutex_t sc_intr_lock;
 	kcondvar_t sc_doorbell;
 	void *sc_doorbell_si;
+	struct lwp *sc_doorbelllwp;
 	void *sc_pcd_si;
 	struct usbd_bus sc_bus;
 	bus_space_tag_t iot;
 	bus_space_handle_t ioh;
 	bus_size_t sc_size;
+	bus_dma_tag_t sc_dmatag;	/* for control data structures */
 	u_int sc_offs;			/* offset to operational regs */
 	int sc_flags;			/* misc flags */
 #define EHCIF_DROPPED_INTR_WORKAROUND	0x01

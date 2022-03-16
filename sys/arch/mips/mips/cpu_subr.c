@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu_subr.c,v 1.58 2020/08/17 15:22:51 skrll Exp $	*/
+/*	$NetBSD: cpu_subr.c,v 1.60 2022/03/03 06:27:41 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2010, 2019 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: cpu_subr.c,v 1.58 2020/08/17 15:22:51 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu_subr.c,v 1.60 2022/03/03 06:27:41 riastradh Exp $");
 
 #include "opt_cputype.h"
 #include "opt_ddb.h"
@@ -217,7 +217,7 @@ cpu_hwrena_setup(void)
 
 	if (CPUISMIPSNNR2) {
 		mipsNN_cp0_hwrena_write(
-		    (MIPS_HAS_USERLOCAL ? MIPS_HWRENA_UL : 0)
+		    (MIPS_HAS_USERLOCAL ? MIPS_HWRENA_ULR : 0)
 		    | MIPS_HWRENA_CCRES
 		    | MIPS_HWRENA_CC
 		    | MIPS_HWRENA_SYNCI_STEP
@@ -236,6 +236,11 @@ cpu_attach_common(device_t self, struct cpu_info *ci)
 
 	/*
 	 * Cross link cpu_info and its device together
+	 *
+	 * XXX autoconf abuse: Can't use device_set_private here
+	 * because some callers already do so -- and some callers
+	 * (sbmips cpu_attach) already have a softc allocated by
+	 * autoconf.
 	 */
 	ci->ci_dev = self;
 	self->dv_private = ci;

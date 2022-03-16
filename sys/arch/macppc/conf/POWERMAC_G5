@@ -79,7 +79,7 @@ file-system	PTYFS		# /dev/pts/N support
 # File system options
 options 	QUOTA		# legacy UFS quotas
 options 	QUOTA2		# new, in-filesystem UFS quotas
-#options 	FFS_EI		# FFS Endian Independant support
+#options 	FFS_EI		# FFS Endian Independent support
 options 	WAPBL		# File system journaling support
 #options 	UFS_DIRHASH	# UFS Large Directory Hashing - Experimental
 #options 	NFSSERVER	# Network File System server
@@ -245,3 +245,5 @@ pseudo-device	bpfilter		# packet filter
 #options 	MEMORY_DISK_IS_ROOT		# Force root on ram-disk
 #options 	MEMORY_DISK_ROOT_SIZE=4096	# 2 Megabytes
 #options 	MEMORY_DISK_RBFLAGS=RB_SINGLE	# boot in single-user mode
+
+cinclude	"arch/macppc/conf/POWERMAC_G5.local"

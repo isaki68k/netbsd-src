@@ -1,4 +1,4 @@
-/*	$NetBSD: tty.c,v 1.295 2020/12/11 03:00:09 thorpej Exp $	*/
+/*	$NetBSD: tty.c,v 1.299 2021/12/05 07:44:53 msaitoh Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2020 The NetBSD Foundation, Inc.
@@ -63,7 +63,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tty.c,v 1.295 2020/12/11 03:00:09 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tty.c,v 1.299 2021/12/05 07:44:53 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
@@ -1477,14 +1477,16 @@ static int
 filt_ttyread(struct knote *kn, long hint)
 {
 	struct tty	*tp;
+	int rv;
 
 	tp = kn->kn_hook;
 	if ((hint & NOTE_SUBMIT) == 0)
 		mutex_spin_enter(&tty_lock);
 	kn->kn_data = ttnread(tp);
+	rv = kn->kn_data > 0;
 	if ((hint & NOTE_SUBMIT) == 0)
 		mutex_spin_exit(&tty_lock);
-	return (kn->kn_data > 0);
+	return rv;
 }
 
 static void
@@ -1515,14 +1517,14 @@ filt_ttywrite(struct knote *kn, long hint)
 }
 
 static const struct filterops ttyread_filtops = {
-	.f_isfd = 1,
+	.f_flags = FILTEROP_ISFD | FILTEROP_MPSAFE,
 	.f_attach = NULL,
 	.f_detach = filt_ttyrdetach,
 	.f_event = filt_ttyread,
 };
 
 static const struct filterops ttywrite_filtops = {
-	.f_isfd = 1,
+	.f_flags = FILTEROP_ISFD | FILTEROP_MPSAFE,
 	.f_attach = NULL,
 	.f_detach = filt_ttywdetach,
 	.f_event = filt_ttywrite,
@@ -2616,11 +2618,11 @@ ttygetinfo(struct tty *tp, int fromsig, char *buf, size_t bufsz)
 #ifdef LWP_PC
 #define FMT_RUN "%#"PRIxVADDR
 #define VAL_RUNNING (vaddr_t)LWP_PC(l)
-#define VAL_RUNABLE (vaddr_t)LWP_PC(l)
+#define VAL_RUNNABLE (vaddr_t)LWP_PC(l)
 #else
 #define FMT_RUN "%s"
 #define VAL_RUNNING "running"
-#define VAL_RUNABLE "runnable"
+#define VAL_RUNNABLE "runnable"
 #endif
 		switch (l->l_stat) {
 		case LSONPROC:
@@ -2629,7 +2631,7 @@ ttygetinfo(struct tty *tp, int fromsig, char *buf, size_t bufsz)
 			lp = lmsg;
 			break;
 		case LSRUN:
-			snprintf(lmsg, sizeof(lmsg), FMT_RUN, VAL_RUNABLE);
+			snprintf(lmsg, sizeof(lmsg), FMT_RUN, VAL_RUNNABLE);
 			lp = lmsg;
 			break;
 		default:

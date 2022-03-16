@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_sig.c,v 1.397 2021/04/03 11:19:11 simonb Exp $	*/
+/*	$NetBSD: kern_sig.c,v 1.403 2022/03/12 15:32:32 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2006, 2007, 2008, 2019 The NetBSD Foundation, Inc.
@@ -70,7 +70,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_sig.c,v 1.397 2021/04/03 11:19:11 simonb Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_sig.c,v 1.403 2022/03/12 15:32:32 riastradh Exp $");
 
 #include "opt_execfmt.h"
 #include "opt_ptrace.h"
@@ -311,7 +311,9 @@ void
 sigactsfree(struct sigacts *ps)
 {
 
+	membar_exit();
 	if (atomic_dec_uint_nv(&ps->sa_refcnt) == 0) {
+		membar_enter();
 		mutex_destroy(&ps->sa_mutex);
 		pool_cache_put(sigacts_cache, ps);
 	}
@@ -2169,14 +2171,17 @@ sendsig(const struct ksiginfo *ksi, const sigset_t *mask)
 	sa = curproc->p_sigacts;
 
 	switch (sa->sa_sigdesc[sig].sd_vers)  {
-	case 0:
-	case 1:
+	case __SIGTRAMP_SIGCODE_VERSION:
+#ifdef __HAVE_STRUCT_SIGCONTEXT
+	case __SIGTRAMP_SIGCONTEXT_VERSION_MIN ...
+	     __SIGTRAMP_SIGCONTEXT_VERSION_MAX:
 		/* Compat for 1.6 and earlier. */
 		MODULE_HOOK_CALL_VOID(sendsig_sigcontext_16_hook, (ksi, mask),
 		    break);
 		return;
-	case 2:
-	case 3:
+#endif /* __HAVE_STRUCT_SIGCONTEXT */
+	case __SIGTRAMP_SIGINFO_VERSION_MIN ...
+	     __SIGTRAMP_SIGINFO_VERSION_MAX:
 		sendsig_siginfo(ksi, mask);
 		return;
 	default:
@@ -2431,7 +2436,7 @@ proc_stop(struct proc *p, int signo)
 }
 
 /*
- * When stopping a process, we do not immediatly set sleeping LWPs stopped,
+ * When stopping a process, we do not immediately set sleeping LWPs stopped,
  * but wait for them to come to a halt at the kernel-user boundary.  This is
  * to allow LWPs to release any locks that they may hold before stopping.
  *
@@ -2657,7 +2662,7 @@ filt_sigattach(struct knote *kn)
 	kn->kn_flags |= EV_CLEAR;	/* automatically set */
 
 	mutex_enter(p->p_lock);
-	SLIST_INSERT_HEAD(&p->p_klist, kn, kn_selnext);
+	klist_insert(&p->p_klist, kn);
 	mutex_exit(p->p_lock);
 
 	return 0;
@@ -2669,7 +2674,7 @@ filt_sigdetach(struct knote *kn)
 	struct proc *p = kn->kn_obj;
 
 	mutex_enter(p->p_lock);
-	SLIST_REMOVE(&p->p_klist, kn, knote, kn_selnext);
+	klist_remove(&p->p_klist, kn);
 	mutex_exit(p->p_lock);
 }
 
@@ -2693,7 +2698,7 @@ filt_signal(struct knote *kn, long hint)
 }
 
 const struct filterops sig_filtops = {
-	.f_isfd = 0,
+	.f_flags = FILTEROP_MPSAFE,
 	.f_attach = filt_sigattach,
 	.f_detach = filt_sigdetach,
 	.f_event = filt_signal,

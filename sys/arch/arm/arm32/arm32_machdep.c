@@ -1,4 +1,4 @@
-/*	$NetBSD: arm32_machdep.c,v 1.139 2020/12/01 02:43:14 rin Exp $	*/
+/*	$NetBSD: arm32_machdep.c,v 1.143 2022/03/12 09:16:05 skrll Exp $	*/
 
 /*
  * Copyright (c) 1994-1998 Mark Brinicombe.
@@ -42,7 +42,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: arm32_machdep.c,v 1.139 2020/12/01 02:43:14 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: arm32_machdep.c,v 1.143 2022/03/12 09:16:05 skrll Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_arm_start.h"
@@ -301,8 +301,9 @@ cpu_startup(void)
 	pmap_postinit();
 
 #ifdef FDT
-	if (arm_fdt_platform()->ap_startup != NULL)
-		arm_fdt_platform()->ap_startup();
+	const struct arm_platform * const plat = arm_fdt_platform();
+	if (plat->ap_startup != NULL)
+		plat->ap_startup();
 #endif
 
 	/*
@@ -558,6 +559,9 @@ parse_mi_bootargs(char *args)
 {
 	int integer;
 
+	if (get_bootconf_option(args, "-1", BOOTOPT_TYPE_BOOLEAN, &integer))
+		if (integer)
+			boothowto |= RB_MD1;
 	if (get_bootconf_option(args, "single", BOOTOPT_TYPE_BOOLEAN, &integer)
 	    || get_bootconf_option(args, "-s", BOOTOPT_TYPE_BOOLEAN, &integer))
 		if (integer)
@@ -727,7 +731,7 @@ cpu_uarea_alloc_idlelwp(struct cpu_info *ci)
  * printf isn't available to us for a number of reasons.
  *
  * -  kprint_init has been called and printf will try to take locks which we
- *    can't  do just yet because bootstrap translation tables do not allowing
+ *    can't do just yet because bootstrap translation tables do not allowing
  *    caching.
  *
  * -  kmutex(9) relies on curcpu which isn't setup yet.
@@ -783,12 +787,22 @@ cpu_init_secondary_processor(int cpuindex)
 	VPRINTS(" ci = ");
 	VPRINTX((int)ci);
 
+	ci->ci_ctrl = armreg_sctlr_read();
+	ci->ci_arm_cpuid = cpu_idnum();
+	ci->ci_arm_cputype = ci->ci_arm_cpuid & CPU_ID_CPU_MASK;
+	ci->ci_arm_cpurev = ci->ci_arm_cpuid & CPU_ID_REVISION_MASK;
+
 	ci->ci_midr = armreg_midr_read();
+	ci->ci_actlr = armreg_auxctl_read();
+	ci->ci_revidr = armreg_revidr_read();
 	ci->ci_mpidr = armreg_mpidr_read();
 
 	arm_cpu_topology_set(ci, ci->ci_mpidr);
 
-	VPRINTS(" hatched|=");
+	VPRINTS(" vfp");
+	vfp_detect(ci);
+
+	VPRINTS(" hatched |=");
 	VPRINTX(__BIT(cpuindex));
 	VPRINTS("\n\r");
 

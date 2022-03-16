@@ -1,4 +1,4 @@
-/* $NetBSD: umcs.c,v 1.16 2021/04/24 23:36:59 thorpej Exp $ */
+/* $NetBSD: umcs.c,v 1.18 2022/02/09 07:32:33 mrg Exp $ */
 /* $FreeBSD: head/sys/dev/usb/serial/umcs.c 260559 2014-01-12 11:44:28Z hselasky $ */
 
 /*-
@@ -41,7 +41,7 @@
  *
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: umcs.c,v 1.16 2021/04/24 23:36:59 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: umcs.c,v 1.18 2022/02/09 07:32:33 mrg Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -283,7 +283,7 @@ umcs7840_attach(device_t parent, device_t self, void *aux)
 		    sc->sc_intr_buflen, umcs7840_intr, 100);
 	if (error) {
 		aprint_error_dev(self, "cannot open interrupt pipe "
-		    "(addr %d)\n", intr_addr);
+		    "(addr %d): error %d\n", intr_addr, error);
 		sc->sc_dying = true;
 		return;
 	}
@@ -341,8 +341,7 @@ umcs7840_attach(device_t parent, device_t self, void *aux)
 		sc->sc_ports[i].sc_port_phys = phyport;
 		sc->sc_ports[i].sc_port_ucom =
 		    config_found(self, &ucaa, ucomprint,
-				 CFARG_SUBMATCH, ucomsubmatch,
-				 CFARG_EOL);
+				 CFARGS(.submatch = ucomsubmatch));
 	}
 }
 

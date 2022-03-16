@@ -1,4 +1,4 @@
-/*	$NetBSD: spkr.c,v 1.20 2021/04/24 23:36:52 thorpej Exp $	*/
+/*	$NetBSD: spkr.c,v 1.22 2022/02/12 03:24:36 riastradh Exp $	*/
 
 /*
  * Copyright (c) 1990 Eric S. Raymond (esr@snark.thyrsus.com)
@@ -43,7 +43,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: spkr.c,v 1.20 2021/04/24 23:36:52 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: spkr.c,v 1.22 2022/02/12 03:24:36 riastradh Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "wsmux.h"
@@ -416,7 +416,8 @@ spkr_attach(device_t self, void (*tone)(device_t, u_int, u_int))
 	struct spkr_softc *sc = device_private(self);
 
 #ifdef SPKRDEBUG
-	aprint_debug("%s: entering for unit %d\n", __func__, self->dv_unit);
+	aprint_debug("%s: entering for unit %d\n", __func__,
+	    device_unit(self));
 #endif /* SPKRDEBUG */
 	sc->sc_dev = self;
 	sc->sc_tone = tone;
@@ -433,7 +434,8 @@ spkr_detach(device_t self, int flags)
 	int rc;
 
 #ifdef SPKRDEBUG
-	aprint_debug("%s: entering for unit %d\n", __func__, self->dv_unit);
+	aprint_debug("%s: entering for unit %d\n", __func__,
+	    device_unit(self));
 #endif /* SPKRDEBUG */
 	if (sc == NULL)
 		return ENXIO;
@@ -460,7 +462,7 @@ spkr_rescan(device_t self, const char *iattr, const int *locators)
 	if (sc->sc_wsbelldev == NULL) {
 		a.accesscookie = sc;
 		sc->sc_wsbelldev = config_found(self, &a, wsbelldevprint,
-		    CFARG_EOL);
+		    CFARGS_NONE);
 	}
 #endif
 	return 0;

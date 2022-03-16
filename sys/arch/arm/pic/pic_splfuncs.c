@@ -1,4 +1,4 @@
-/*	$NetBSD: pic_splfuncs.c,v 1.20 2021/03/27 12:15:09 jmcneill Exp $	*/
+/*	$NetBSD: pic_splfuncs.c,v 1.22 2021/09/20 21:05:15 jmcneill Exp $	*/
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -27,8 +27,11 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
+
+#include "opt_modular.h"
+
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pic_splfuncs.c,v 1.20 2021/03/27 12:15:09 jmcneill Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pic_splfuncs.c,v 1.22 2021/09/20 21:05:15 jmcneill Exp $");
 
 #define _INTR_PRIVATE
 #include <sys/param.h>
@@ -46,9 +49,16 @@ __KERNEL_RCSID(0, "$NetBSD: pic_splfuncs.c,v 1.20 2021/03/27 12:15:09 jmcneill E
 
 #include <arm/pic/picvar.h>
 
+static int	pic_default_splraise(int);
+static int	pic_default_spllower(int);
+static void	pic_default_splx(int);
 
-int
-_splraise(int newipl)
+int (*pic_splraise)(int) = pic_default_splraise;
+int (*pic_spllower)(int) = pic_default_spllower;
+void (*pic_splx)(int) = pic_default_splx;
+
+static int
+pic_default_splraise(int newipl)
 {
 	struct cpu_info * const ci = curcpu();
 	const int oldipl = ci->ci_cpl;
@@ -58,8 +68,9 @@ _splraise(int newipl)
 	}
 	return oldipl;
 }
-int
-_spllower(int newipl)
+
+static int
+pic_default_spllower(int newipl)
 {
 	struct cpu_info * const ci = curcpu();
 	const int oldipl = ci->ci_cpl;
@@ -76,8 +87,8 @@ _spllower(int newipl)
 	return oldipl;
 }
 
-void
-splx(int savedipl)
+static void
+pic_default_splx(int savedipl)
 {
 	struct cpu_info * const ci = curcpu();
 	KASSERT(savedipl < NIPL);
@@ -101,3 +112,38 @@ splx(int savedipl)
 	KASSERTMSG(ci->ci_cpl == savedipl, "cpl %d savedipl %d",
 	    ci->ci_cpl, savedipl);
 }
+
+#ifdef MODULAR
+#ifdef _spllower
+#undef _spllower
+#endif
+int _spllower(int);
+
+#ifdef _splraise
+#undef _splraise
+#endif
+int _splraise(int);
+
+#ifdef splx
+#undef splx
+#endif
+void splx(int);
+
+int
+_spllower(int newipl)
+{
+	return pic_spllower(newipl);
+}
+
+int
+_splraise(int newipl)
+{
+	return pic_splraise(newipl);
+}
+
+void
+splx(int savedipl)
+{
+	pic_splx(savedipl);
+}
+#endif /* !MODULAR */

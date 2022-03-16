@@ -34,7 +34,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(1, "$NetBSD: bcm53xx_ccb.c,v 1.7 2021/04/24 23:36:26 thorpej Exp $");
+__KERNEL_RCSID(1, "$NetBSD: bcm53xx_ccb.c,v 1.9 2022/03/03 06:26:28 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -168,7 +168,7 @@ bcmccb_mainbus_attach(device_t parent, device_t self, void *aux)
 	struct bcmccb_softc * const sc = &bcmccb_sc;
 
 	sc->sc_dev = self;
-	self->dv_private = sc;
+	device_set_private(self, sc);
 
 	sc->sc_bst = bcm53xx_ioreg_bst;
 
@@ -202,10 +202,9 @@ bcmccb_mainbus_attach(device_t parent, device_t self, void *aux)
 			continue;
 
 		cfdata_t cf = config_search(self, &ccbaa,
-					    CFARG_SUBMATCH, bcmccb_find,
-					    CFARG_EOL);
+		    CFARGS(.submatch = bcmccb_find));
 		if (cf != NULL)
 			config_attach(self, cf, &ccbaa, bcmccb_print,
-			    CFARG_EOL);
+			    CFARGS_NONE);
 	}
 }

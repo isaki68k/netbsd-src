@@ -1,4 +1,4 @@
-/* $NetBSD: vidcvideo.c,v 1.46 2021/04/24 23:36:27 thorpej Exp $ */
+/* $NetBSD: vidcvideo.c,v 1.49 2021/12/26 16:08:20 andvar Exp $ */
 
 /*
  * Copyright (c) 2001 Reinoud Zandijk
@@ -30,7 +30,7 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: vidcvideo.c,v 1.46 2021/04/24 23:36:27 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vidcvideo.c,v 1.49 2021/12/26 16:08:20 andvar Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -56,7 +56,7 @@ __KERNEL_RCSID(0, "$NetBSD: vidcvideo.c,v 1.46 2021/04/24 23:36:27 thorpej Exp $
 #include <arm/arm32/pmap.h>
 #include <arm/cpufunc.h>
 
-/* for vidc_mode ... needs to be MI indepenent one day */
+/* for vidc_mode ... needs to be MI independent one day */
 #include <arm/iomd/vidc.h>
 #include <arm/iomd/vidc20config.h>
 #include <arm/iomd/vidcvideo.h>
@@ -350,7 +350,7 @@ vidcvideo_attach(device_t parent, device_t self, void *aux)
 	waa.accessops = &vidcvideo_accessops;
 	waa.accesscookie = &dc->dc_vd;
 
-	config_found(self, &waa, wsemuldisplaydevprint, CFARG_EOL);
+	config_found(self, &waa, wsemuldisplaydevprint, CFARGS_NONE);
 }
 
 
@@ -804,7 +804,7 @@ static void vv_copyrows(void *id, int srcrow, int dstrow, int nrows)
 		ri->ri_bits = vidcvideo_hwscroll(offset);
 		vidcvideo_progr_scroll();	/* sadistic ; shouldnt this be on vsync? */
 
-		/* wipe out remains of the screen if nessisary */
+		/* wipe out remains of the screen if necessary */
 		if (ri->ri_emuheight != ri->ri_height)
 			vv_eraserows(id, ri->ri_rows, 1, 0);
 		return;

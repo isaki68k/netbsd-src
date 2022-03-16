@@ -1,4 +1,4 @@
-/*	$NetBSD: sys_futex.c,v 1.11 2020/05/05 15:25:18 riastradh Exp $	*/
+/*	$NetBSD: sys_futex.c,v 1.16 2022/03/12 15:32:32 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2018, 2019, 2020 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sys_futex.c,v 1.11 2020/05/05 15:25:18 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sys_futex.c,v 1.16 2022/03/12 15:32:32 riastradh Exp $");
 
 /*
  * Futexes
@@ -114,6 +114,7 @@ __KERNEL_RCSID(0, "$NetBSD: sys_futex.c,v 1.11 2020/05/05 15:25:18 riastradh Exp
  *	This implementation does not support priority inheritance.
  */
 
+#include <sys/param.h>
 #include <sys/types.h>
 #include <sys/atomic.h>
 #include <sys/condvar.h>
@@ -235,7 +236,7 @@ compare_futex_key(void *cookie, const void *n, const void *k)
 	if (fka->fk_private.va < fkb->fk_private.va)
 		return -1;
 	if (fka->fk_private.va > fkb->fk_private.va)
-		return -1;
+		return +1;
 	return 0;
 }
 
@@ -536,12 +537,18 @@ futex_rele(struct futex *f)
 		refcnt = atomic_load_relaxed(&f->fx_refcnt);
 		if (refcnt == 1)
 			goto trylast;
+#ifndef __HAVE_ATOMIC_AS_MEMBAR
+		membar_exit();
+#endif
 	} while (atomic_cas_ulong(&f->fx_refcnt, refcnt, refcnt - 1) != refcnt);
 	return;
 
 trylast:
 	mutex_enter(&futex_tab.lock);
 	if (atomic_dec_ulong_nv(&f->fx_refcnt) == 0) {
+#ifndef __HAVE_ATOMIC_AS_MEMBAR
+		membar_enter();
+#endif
 		if (f->fx_on_tree) {
 			if (__predict_false(f->fx_shared))
 				rb_tree_remove_node(&futex_tab.oa, f);
@@ -744,7 +751,7 @@ futex_lookup_create(int *uaddr, bool shared, struct futex **fp)
 	}
 
 	/*
-	 * Create a futex recoard.  This tranfers ownership of the key
+	 * Create a futex record.  This transfers ownership of the key
 	 * in all cases.
 	 */
 	f = futex_create(&fk, shared);
@@ -1965,7 +1972,7 @@ futex_fetch_robust_entry(uintptr_t const uaddr, uintptr_t * const valp,
  *	the i's and cross the t's.
  */
 void
-futex_release_all_lwp(struct lwp * const l, lwpid_t const tid)
+futex_release_all_lwp(struct lwp * const l)
 {
 	u_long rhead[_FUTEX_ROBUST_HEAD_NWORDS];
 	int limit = 1000000;
@@ -1975,13 +1982,15 @@ futex_release_all_lwp(struct lwp * const l, lwpid_t const tid)
 	if (l->l_robust_head == 0)
 		return;
 
+	KASSERT((l->l_lid & FUTEX_TID_MASK) == l->l_lid);
+
 	/* Read the final snapshot of the robust list head. */
 	error = futex_fetch_robust_head(l->l_robust_head, rhead);
 	if (error) {
-		printf("WARNING: pid %jd (%s) lwp %jd tid %jd:"
+		printf("WARNING: pid %jd (%s) lwp %jd:"
 		    " unmapped robust futex list head\n",
 		    (uintmax_t)l->l_proc->p_pid, l->l_proc->p_comm,
-		    (uintmax_t)l->l_lid, (uintmax_t)tid);
+		    (uintmax_t)l->l_lid);
 		return;
 	}
 
@@ -2003,21 +2012,21 @@ futex_release_all_lwp(struct lwp * const l, lwpid_t const tid)
 	while (next != l->l_robust_head && limit-- > 0) {
 		/* pending handled below. */
 		if (next != pending)
-			release_futex(next + offset, tid, is_pi, false);
+			release_futex(next + offset, l->l_lid, is_pi, false);
 		error = futex_fetch_robust_entry(next, &next, &is_pi);
 		if (error)
 			break;
 		preempt_point();
 	}
 	if (limit <= 0) {
-		printf("WARNING: pid %jd (%s) lwp %jd tid %jd:"
+		printf("WARNING: pid %jd (%s) lwp %jd:"
 		    " exhausted robust futex limit\n",
 		    (uintmax_t)l->l_proc->p_pid, l->l_proc->p_comm,
-		    (uintmax_t)l->l_lid, (uintmax_t)tid);
+		    (uintmax_t)l->l_lid);
 	}
 
 	/* If there's a pending futex, it may need to be released too. */
 	if (pending != 0) {
-		release_futex(pending + offset, tid, pending_is_pi, true);
+		release_futex(pending + offset, l->l_lid, pending_is_pi, true);
 	}
 }

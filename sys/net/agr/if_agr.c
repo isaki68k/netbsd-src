@@ -1,4 +1,4 @@
-/*	$NetBSD: if_agr.c,v 1.51 2020/01/29 04:30:41 thorpej Exp $	*/
+/*	$NetBSD: if_agr.c,v 1.54 2021/12/31 14:25:24 riastradh Exp $	*/
 
 /*-
  * Copyright (c)2005 YAMAMOTO Takashi,
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_agr.c,v 1.51 2020/01/29 04:30:41 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_agr.c,v 1.54 2021/12/31 14:25:24 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -151,7 +151,7 @@ agr_input(struct ifnet *ifp_port, struct mbuf *m)
 	struct agr_port *port;
 	struct ifnet *ifp;
 
-	port = ifp_port->if_agrprivate;
+	port = ifp_port->if_lagg;
 	KASSERT(port);
 	ifp = port->port_agrifp;
 	if ((port->port_flags & AGRPORT_COLLECTING) == 0) {
@@ -234,7 +234,7 @@ agrport_ioctl(struct agr_port *port, u_long cmd, void *arg)
 {
 	struct ifnet *ifp = port->port_ifp;
 
-	KASSERT(ifp->if_agrprivate == (void *)port);
+	KASSERT(ifp->if_lagg == (void *)port);
 	KASSERT(ifp->if_ioctl == agr_ioctl_filter);
 
 	return (*port->port_ioctl)(ifp, cmd, arg);
@@ -542,7 +542,7 @@ agr_addport(struct ifnet *ifp, struct ifnet *ifp_port)
 		goto out;
 	}
 
-	if (ifp_port->if_agrprivate) {
+	if (ifp_port->if_lagg) {
 		error = EBUSY;
 		goto out;
 	}
@@ -623,7 +623,7 @@ agr_addport(struct ifnet *ifp, struct ifnet *ifp_port)
 	AGR_LOCK(sc);
 
 	port->port_ifp = ifp_port;
-	ifp_port->if_agrprivate = port;
+	ifp_port->if_lagg = port;
 	port->port_agrifp = ifp;
 	TAILQ_INSERT_TAIL(&sc->sc_ports, port, port_q);
 	sc->sc_nports++;
@@ -686,12 +686,12 @@ agr_remport(struct ifnet *ifp, struct ifnet *ifp_port)
 	struct agr_port *port;
 	int error = 0;
 
-	if (ifp_port->if_agrprivate == NULL) {
+	if (ifp_port->if_lagg == NULL) {
 		error = ENOENT;
 		return error;
 	}
 
-	port = ifp_port->if_agrprivate;
+	port = ifp_port->if_lagg;
 	if (port->port_agrifp != ifp) {
 		error = EINVAL;
 		return error;
@@ -759,7 +759,7 @@ agrport_cleanup(struct agr_softc *sc, struct agr_port *port)
 		memcpy(LLADDR(ifp_port->if_sadl), port->port_origlladdr,
 		    ifp_port->if_addrlen);
 		if (ifp_port->if_init != NULL) {
-			error = (*ifp_port->if_init)(ifp_port);
+			error = if_init(ifp_port);
 		}
 #else
 		union {
@@ -786,7 +786,7 @@ agrport_cleanup(struct agr_softc *sc, struct agr_port *port)
 
 	AGR_LOCK(sc);
 	if ((port->port_flags & AGRPORT_ATTACHED)) {
-		ifp_port->if_agrprivate = NULL;
+		ifp_port->if_lagg = NULL;
 
 		TAILQ_REMOVE(&sc->sc_ports, port, port_q);
 		sc->sc_nports--;
@@ -823,7 +823,7 @@ agr_ioctl_multi(struct ifnet *ifp, u_long cmd, struct ifreq *ifr)
 static int
 agr_ioctl_filter(struct ifnet *ifp, u_long cmd, void *arg)
 {
-	struct agr_port *port = ifp->if_agrprivate;
+	struct agr_port *port = ifp->if_lagg;
 	int error;
 
 	KASSERT(port);
@@ -846,7 +846,7 @@ agr_ioctl_filter(struct ifnet *ifp, u_long cmd, void *arg)
 	case SIOCSIFMETRIC: /* set IF metric */
 	case SIOCSIFMTU: /* set ifnet mtu */
 	case SIOCSIFNETMASK: /* set net addr mask */
-	case SIOCSIFPHYADDR: /* set gif addres */
+	case SIOCSIFPHYADDR: /* set gif address */
 	case SIOCSLIFPHYADDR: /* set gif addrs */
 	case SIOCSVH: /* set carp param */
 		error = EBUSY;

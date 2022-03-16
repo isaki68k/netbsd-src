@@ -1,4 +1,4 @@
-/* $NetBSD: sunxi_tcon.c,v 1.11 2021/01/27 03:10:20 thorpej Exp $ */
+/* $NetBSD: sunxi_tcon.c,v 1.13 2021/08/20 20:25:27 andvar Exp $ */
 
 /*-
  * Copyright (c) 2018 Manuel Bouyer <bouyer@antioche.eu.org>
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sunxi_tcon.c,v 1.11 2021/01/27 03:10:20 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sunxi_tcon.c,v 1.13 2021/08/20 20:25:27 andvar Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -268,7 +268,7 @@ sunxi_tcon_ep_connect(device_t self, struct fdt_endpoint *ep, bool connect)
 		 */
 		if (sc->sc_unit != -1 && rep_idx != -1 &&
 		    sc->sc_unit != rep_idx) {
-			aprint_error_dev(self, ": remote id %d doens't match"
+			aprint_error_dev(self, ": remote id %d doesn't match"
 			    " discovered unit number %d\n",
 			    rep_idx, sc->sc_unit);
 			return;
@@ -363,7 +363,7 @@ sunxi_tcon_ep_activate(device_t dev, struct fdt_endpoint *ep, bool activate)
 		if (fdt_endpoint_is_active(in_ep))
 			return EBUSY;
 	}
-	/* try output 0 (RGB/LVDS) first, then ouput 1 (HDMI) if it fails */
+	/* try output 0 (RGB/LVDS) first, then output 1 (HDMI) if it fails */
 	for (outi = 0; outi < 2; outi++) {
 		out_ep = fdt_endpoint_get_from_index(&sc->sc_ports,
 		    SUNXI_PORT_OUTPUT, outi);
@@ -829,7 +829,7 @@ sunxi_tcon1_set_videomode(device_t dev, const struct videomode *mode)
 	}
 }
 
-/* check if this tcon is the console chosen by firmare */
+/* check if this tcon is the console chosen by firmware */
 bool
 sunxi_tcon_is_console(device_t dev, const char *pipeline)
 {

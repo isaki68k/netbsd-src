@@ -1,4 +1,4 @@
-/*	$NetBSD: chfs_vnops.c,v 1.44 2021/07/05 21:43:56 dholland Exp $	*/
+/*	$NetBSD: chfs_vnops.c,v 1.47 2021/12/07 21:37:37 andvar Exp $	*/
 
 /*-
  * Copyright (c) 2010 Department of Software Engineering,
@@ -158,7 +158,7 @@ chfs_lookup(void *v)
 	}
 	/* Store the result of this lookup in the cache.  Avoid this if the
 	 * request was for creation, as it does not improve timings on
-	 * emprical tests. */
+	 * empirical tests. */
 	if (cnp->cn_nameiop != CREATE && (cnp->cn_flags & ISDOTDOT) == 0) {
 		cache_enter(dvp, *vpp, cnp->cn_nameptr, cnp->cn_namelen,
 			    cnp->cn_flags);
@@ -206,7 +206,6 @@ chfs_create(void *v)
 		return error;
 	}
 
-	VN_KNOTE(ap->a_dvp, NOTE_WRITE);
 	return 0;
 }
 /* --------------------------------------------------------------------- */
@@ -773,7 +772,6 @@ chfs_write(void *v)
 	off_t osize, origoff, oldoff, preallocoff, endallocoff, nsize;
 	int blkoffset, error, flags, ioflag, resid;
 	int aflag;
-	int extended=0;
 	vsize_t bytelen;
 	bool async;
 	struct ufsmount *ump;
@@ -946,7 +944,6 @@ chfs_write(void *v)
 
 		if (vp->v_size < newoff) {
 			uvm_vnp_setsize(vp, newoff);
-			extended = 1;
 		}
 
 		if (error)
@@ -988,8 +985,6 @@ out:
 				ip->mode &= ~ISGID;
 		}
 	}
-	if (resid > uio->uio_resid)
-		VN_KNOTE(vp, NOTE_WRITE | (extended ? NOTE_EXTEND : 0));
 	if (error) {
 		(void) UFS_TRUNCATE(vp, osize, ioflag & IO_SYNC, ap->a_cred);
 		uio->uio_offset -= resid - uio->uio_resid;
@@ -1038,9 +1033,15 @@ chfs_fsync(void *v)
 int
 chfs_remove(void *v)
 {
-	struct vnode *dvp = ((struct vop_remove_v2_args *) v)->a_dvp;
-	struct vnode *vp = ((struct vop_remove_v2_args *) v)->a_vp;
-	struct componentname *cnp = (((struct vop_remove_v2_args *) v)->a_cnp);
+	struct vop_remove_v3_args /* {
+		struct vnode *a_dvp;
+		struct vnode *a_vp;
+		struct componentname *a_cnp;
+		nlink_t ctx_vp_new_nlink;
+	} */ *ap = v;
+	struct vnode *dvp = ap->a_dvp;
+	struct vnode *vp = ap->a_vp;
+	struct componentname *cnp = ap->a_cnp;
 	dbg("remove\n");
 
 	KASSERT(VOP_ISLOCKED(dvp));
@@ -1060,6 +1061,9 @@ chfs_remove(void *v)
 
 	error = chfs_do_unlink(ip,
 	    parent, cnp->cn_nameptr, cnp->cn_namelen);
+	if (error == 0) {
+		ap->ctx_vp_new_nlink = ip->chvc->nlink;
+	}
 
 out:
 	vput(vp);
@@ -1111,12 +1115,21 @@ out:
 int
 chfs_rename(void *v)
 {
-	struct vnode *fdvp = ((struct vop_rename_args *) v)->a_fdvp;
-	struct vnode *fvp = ((struct vop_rename_args *) v)->a_fvp;
-	struct componentname *fcnp = ((struct vop_rename_args *) v)->a_fcnp;
-	struct vnode *tdvp = ((struct vop_rename_args *) v)->a_tdvp;
-	struct vnode *tvp = ((struct vop_rename_args *) v)->a_tvp;
-	struct componentname *tcnp = ((struct vop_rename_args *) v)->a_tcnp;
+	struct vop_rename_args /* {
+		const struct vnodeop_desc *a_desc;
+		struct vnode *a_fdvp;
+		struct vnode *a_fvp;
+		struct componentname *a_fcnp;
+		struct vnode *a_tdvp;
+		struct vnode *a_tvp;
+		struct componentname *a_tcnp;
+	} */ *ap = v;
+	struct vnode *fdvp = ap->a_fdvp;
+	struct vnode *fvp = ap->a_fvp;
+	struct componentname *fcnp = ap->a_fcnp;
+	struct vnode *tdvp = ap->a_tdvp;
+	struct vnode *tvp = ap->a_tvp;
+	struct componentname *tcnp = ap->a_tcnp;
 
 	struct chfs_inode *oldparent, *old;
 	struct chfs_inode *newparent;
@@ -1262,7 +1275,6 @@ chfs_symlink(void *v)
 	err = chfs_makeinode(IFLNK | vap->va_mode, dvp, vpp, cnp, VLNK);
 	if (err)
 		return (err);
-	VN_KNOTE(dvp, NOTE_WRITE);
 	vp = *vpp;
 	len = strlen(target);
 	ip = VTOI(vp);
@@ -1658,11 +1670,7 @@ int
 const struct vnodeopv_entry_desc chfs_specop_entries[] =
 	{
 		{ &vop_default_desc, vn_default_error },
-		{ &vop_parsepath_desc, genfs_parsepath },
-		{ &vop_lookup_desc, spec_lookup },
-		{ &vop_create_desc, spec_create },
-		{ &vop_mknod_desc, spec_mknod },
-		{ &vop_open_desc, spec_open },
+		GENFS_SPECOP_ENTRIES,
 		{ &vop_close_desc, ufsspec_close },
 		{ &vop_access_desc, chfs_access },
 		{ &vop_accessx_desc, genfs_accessx },
@@ -1670,38 +1678,15 @@ const struct vnodeopv_entry_desc chfs_specop_entries[] =
 		{ &vop_setattr_desc, chfs_setattr },
 		{ &vop_read_desc, chfs_read },
 		{ &vop_write_desc, chfs_write },
-		{ &vop_fallocate_desc, spec_fallocate },
-		{ &vop_fdiscard_desc, spec_fdiscard },
-		{ &vop_ioctl_desc, spec_ioctl },
 		{ &vop_fcntl_desc, genfs_fcntl },
-		{ &vop_poll_desc, spec_poll },
-		{ &vop_kqfilter_desc, spec_kqfilter },
-		{ &vop_revoke_desc, spec_revoke },
-		{ &vop_mmap_desc, spec_mmap },
 		{ &vop_fsync_desc, spec_fsync },
-		{ &vop_seek_desc, spec_seek },
-		{ &vop_remove_desc, spec_remove },
-		{ &vop_link_desc, spec_link },
-		{ &vop_rename_desc, spec_rename },
-		{ &vop_mkdir_desc, spec_mkdir },
-		{ &vop_rmdir_desc, spec_rmdir },
-		{ &vop_symlink_desc, spec_symlink },
-		{ &vop_readdir_desc, spec_readdir },
-		{ &vop_readlink_desc, spec_readlink },
-		{ &vop_abortop_desc, spec_abortop },
 		{ &vop_inactive_desc, chfs_inactive },
 		{ &vop_reclaim_desc, chfs_reclaim },
 		{ &vop_lock_desc, genfs_lock },
 		{ &vop_unlock_desc, genfs_unlock },
-		{ &vop_bmap_desc, spec_bmap },
-		{ &vop_strategy_desc, spec_strategy },
 		{ &vop_print_desc, ufs_print },
-		{ &vop_pathconf_desc, spec_pathconf },
 		{ &vop_islocked_desc, genfs_islocked },
-		{ &vop_advlock_desc, spec_advlock },
 		{ &vop_bwrite_desc, vn_bwrite },
-		{ &vop_getpages_desc, spec_getpages },
-		{ &vop_putpages_desc, spec_putpages },
 		{ NULL, NULL } };
 
 const struct vnodeopv_desc chfs_specop_opv_desc =
@@ -1716,11 +1701,7 @@ int
 const struct vnodeopv_entry_desc chfs_fifoop_entries[] =
 	{
 		{ &vop_default_desc, vn_default_error },
-		{ &vop_parsepath_desc, genfs_parsepath },
-		{ &vop_lookup_desc, vn_fifo_bypass },
-		{ &vop_create_desc, vn_fifo_bypass },
-		{ &vop_mknod_desc, vn_fifo_bypass },
-		{ &vop_open_desc, vn_fifo_bypass },
+		GENFS_FIFOOP_ENTRIES,
 		{ &vop_close_desc, ufsfifo_close },
 		{ &vop_access_desc, chfs_access },
 		{ &vop_accessx_desc, genfs_accessx },
@@ -1728,38 +1709,16 @@ const struct vnodeopv_entry_desc chfs_fifoop_entries[] =
 		{ &vop_setattr_desc, chfs_setattr },
 		{ &vop_read_desc, ufsfifo_read },
 		{ &vop_write_desc, ufsfifo_write },
-		{ &vop_fallocate_desc, vn_fifo_bypass },
-		{ &vop_fdiscard_desc, vn_fifo_bypass },
-		{ &vop_ioctl_desc, vn_fifo_bypass },
 		{ &vop_fcntl_desc, genfs_fcntl },
-		{ &vop_poll_desc, vn_fifo_bypass },
-		{ &vop_kqfilter_desc, vn_fifo_bypass },
-		{ &vop_revoke_desc, vn_fifo_bypass },
-		{ &vop_mmap_desc, vn_fifo_bypass },
 		{ &vop_fsync_desc, vn_fifo_bypass },
-		{ &vop_seek_desc, vn_fifo_bypass },
-		{ &vop_remove_desc, vn_fifo_bypass },
-		{ &vop_link_desc, vn_fifo_bypass },
-		{ &vop_rename_desc, vn_fifo_bypass },
-		{ &vop_mkdir_desc, vn_fifo_bypass },
-		{ &vop_rmdir_desc, vn_fifo_bypass },
-		{ &vop_symlink_desc, vn_fifo_bypass },
-		{ &vop_readdir_desc, vn_fifo_bypass },
-		{ &vop_readlink_desc, vn_fifo_bypass },
-		{ &vop_abortop_desc, vn_fifo_bypass },
 		{ &vop_inactive_desc, chfs_inactive },
 		{ &vop_reclaim_desc, chfs_reclaim },
 		{ &vop_lock_desc, genfs_lock },
 		{ &vop_unlock_desc, genfs_unlock },
-		{ &vop_bmap_desc, vn_fifo_bypass },
 		{ &vop_strategy_desc, vn_fifo_bypass },
 		{ &vop_print_desc, ufs_print },
-		{ &vop_pathconf_desc, vn_fifo_bypass },
 		{ &vop_islocked_desc, genfs_islocked },
-		{ &vop_advlock_desc, vn_fifo_bypass },
 		{ &vop_bwrite_desc, genfs_nullop },
-		{ &vop_getpages_desc, genfs_badop },
-		{ &vop_putpages_desc, vn_fifo_bypass },
 		{ NULL, NULL } };
 
 const struct vnodeopv_desc chfs_fifoop_opv_desc =

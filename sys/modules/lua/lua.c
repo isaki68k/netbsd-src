@@ -1,4 +1,4 @@
-/*	$NetBSD: lua.c,v 1.25 2021/06/29 22:40:53 dholland Exp $ */
+/*	$NetBSD: lua.c,v 1.27 2021/08/08 22:26:32 rin Exp $ */
 
 /*
  * Copyright (c) 2011 - 2017 by Marc Balmer <mbalmer@NetBSD.org>.
@@ -74,8 +74,10 @@ static bool	lua_bytecode_on = false;
 static int	lua_verbose;
 static int	lua_max_instr;
 
-static LIST_HEAD(, lua_state)	lua_states;
-static LIST_HEAD(, lua_module)	lua_modules;
+static LIST_HEAD(, lua_state)	lua_states =
+    LIST_HEAD_INITIALIZER(lua_states);
+static LIST_HEAD(, lua_module)	lua_modules =
+    LIST_HEAD_INITIALIZER(lua_modules);
 
 static int lua_match(device_t, cfdata_t, void *);
 static void lua_attach(device_t, device_t, void *);
@@ -547,14 +549,18 @@ lua_require(lua_State *L)
 
 typedef struct {
 	size_t size;
-} __packed alloc_header_t;
+} alloc_header_t;
 
 static void *
 lua_alloc(void *ud, void *ptr, size_t osize, size_t nsize)
 {
 	void *nptr = NULL;
 
-	const size_t hdr_size = sizeof(alloc_header_t);
+	/*
+	 * Make sure that buffers allocated by lua_alloc() are aligned to
+	 * 8-byte boundaries as done by kmem_alloc(9).
+	 */
+	const size_t hdr_size = roundup(sizeof(alloc_header_t), 8);
 	alloc_header_t *hdr = (alloc_header_t *) ((char *) ptr - hdr_size);
 
 	if (nsize == 0) { /* freeing */
@@ -719,7 +725,7 @@ kluaL_newstate(const char *name, const char *desc, int ipl)
 void
 klua_close(klua_State *K)
 {
-	struct lua_state *s;
+	struct lua_state *s, *ns;
 	struct lua_softc *sc;
 	struct lua_module *m;
 	int error = 0;
@@ -743,7 +749,7 @@ klua_close(klua_State *K)
 	if (error)
 		return;		/* Nothing we can do... */
 
-	LIST_FOREACH(s, &lua_states, lua_next)
+	LIST_FOREACH_SAFE(s, &lua_states, lua_next, ns)
 		if (s->K == K) {
 			LIST_REMOVE(s, lua_next);
 			LIST_FOREACH(m, &s->lua_modules, mod_next)

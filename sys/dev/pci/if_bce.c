@@ -1,4 +1,4 @@
-/* $NetBSD: if_bce.c,v 1.58 2020/02/07 00:04:28 thorpej Exp $	 */
+/* $NetBSD: if_bce.c,v 1.60 2022/01/22 15:10:32 skrll Exp $	 */
 
 /*
  * Copyright (c) 2003 Clifford Wright. All rights reserved.
@@ -35,9 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_bce.c,v 1.58 2020/02/07 00:04:28 thorpej Exp $");
-
-#include "vlan.h"
+__KERNEL_RCSID(0, "$NetBSD: if_bce.c,v 1.60 2022/01/22 15:10:32 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -266,7 +264,7 @@ bce_attach(device_t parent, device_t self, void *aux)
 	sc->bce_pa = *pa;
 
 	/* BCM440x can only address 30 bits (1GB) */
-	if (bus_dmatag_subregion(pa->pa_dmat, 0, (1 << 30),
+	if (bus_dmatag_subregion(pa->pa_dmat, 0, __MASK(30),
 	    &(sc->bce_dmatag), BUS_DMA_NOWAIT) != 0) {
 		aprint_error_dev(self,
 		    "WARNING: failed to restrict dma range,"

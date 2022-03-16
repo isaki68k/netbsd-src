@@ -1,4 +1,4 @@
-/*	$NetBSD: acpivar.h,v 1.86 2021/05/12 23:22:33 thorpej Exp $	*/
+/*	$NetBSD: acpivar.h,v 1.89 2021/12/26 14:34:39 jmcneill Exp $	*/
 
 /*
  * Copyright 2001 Wasabi Systems, Inc.
@@ -176,7 +176,7 @@ struct acpi_softc {
 	struct sysmon_pswitch	 sc_smpsw_power;
 	struct sysmon_pswitch	 sc_smpsw_sleep;
 
-	SIMPLEQ_HEAD(, acpi_devnode)	ad_head;
+	SIMPLEQ_HEAD(, acpi_devnode)	sc_head;
 };
 
 /*
@@ -198,7 +198,9 @@ struct acpi_attach_args {
 /* ACPI driver matching scores. */
 #define	ACPI_MATCHSCORE_HID		100	/* matched _HID */
 #define	ACPI_MATCHSCORE_CID_MAX		49
-#define	ACPI_MATCHSCORE_CID		10	/* matched _CID */
+#define	ACPI_MATCHSCORE_CID		10	/* matched _CID or _DSD
+						 * "compatible"
+						 */
 #define	ACPI_MATCHSCORE_CLS		1	/* matched _CLS */
 
 /*
@@ -329,6 +331,8 @@ bool		acpi_register_notify(struct acpi_devnode *,
 void		acpi_deregister_notify(struct acpi_devnode *);
 
 ACPI_STATUS	acpi_resource_parse(device_t, ACPI_HANDLE, const char *,
+		    void *, const struct acpi_resource_parse_ops *);
+ACPI_STATUS	acpi_resource_parse_any(device_t, ACPI_HANDLE, const char *,
 		    void *, const struct acpi_resource_parse_ops *);
 void		acpi_resource_print(device_t, struct acpi_resources *);
 void		acpi_resource_cleanup(struct acpi_resources *);

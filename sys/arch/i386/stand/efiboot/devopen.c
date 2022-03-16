@@ -1,4 +1,4 @@
-/*	$NetBSD: devopen.c,v 1.11 2020/01/18 19:25:58 nonaka Exp $	 */
+/*	$NetBSD: devopen.c,v 1.13 2021/12/27 12:19:27 simonb Exp $	 */
 
 /*-
  * Copyright (c) 2005 The NetBSD Foundation, Inc.

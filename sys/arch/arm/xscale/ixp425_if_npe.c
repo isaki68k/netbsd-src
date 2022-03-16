@@ -1,4 +1,4 @@
-/*	$NetBSD: ixp425_if_npe.c,v 1.47 2020/02/18 14:49:32 thorpej Exp $ */
+/*	$NetBSD: ixp425_if_npe.c,v 1.50 2021/12/31 14:25:22 riastradh Exp $ */
 
 /*-
  * Copyright (c) 2006 Sam Leffler.  All rights reserved.
@@ -28,7 +28,7 @@
 #if 0
 __FBSDID("$FreeBSD: src/sys/arm/xscale/ixp425/if_npe.c,v 1.1 2006/11/19 23:55:23 sam Exp $");
 #endif
-__KERNEL_RCSID(0, "$NetBSD: ixp425_if_npe.c,v 1.47 2020/02/18 14:49:32 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ixp425_if_npe.c,v 1.50 2021/12/31 14:25:22 riastradh Exp $");
 
 /*
  * Intel XScale NPE Ethernet driver.
@@ -616,7 +616,7 @@ npe_activate(struct npe_softc *sc)
 	 * frames to process or tx'd frames to reap.  These callbacks
 	 * are controlled by the q configurations; e.g. we get a
 	 * callback when tx_done has 2 or more frames to process and
-	 * when the rx q has at least one frame.  These setings can
+	 * when the rx q has at least one frame.  These settings can
 	 * changed at the time the q is configured.
 	 */
 	sc->rx_qid = npeconfig[unit].rx_qid;
@@ -1429,13 +1429,13 @@ npeioctl(struct ifnet *ifp, u_long cmd, void *data)
 			 * If interface is marked down and it is running,
 			 * then stop and disable it.
 			 */
-			(*ifp->if_stop)(ifp, 1);
+			if_stop(ifp, 1);
 		} else if ((ifp->if_flags & (IFF_UP |IFF_RUNNING)) == IFF_UP) {
 			/*
 			 * If interface is marked up and it is stopped, then
 			 * start it.
 			 */
-			error = (*ifp->if_init)(ifp);
+			error = if_init(ifp);
 		} else if ((ifp->if_flags & IFF_UP) != 0) {
 			u_short diff;
 
@@ -1457,7 +1457,7 @@ npeioctl(struct ifnet *ifp, u_long cmd, void *data)
 				 * any other flags that affect the hardware
 				 * state.
 				 */
-				error = (*ifp->if_init)(ifp);
+				error = if_init(ifp);
 			}
 		}
 		sc->sc_if_flags = ifp->if_flags;

@@ -1,4 +1,4 @@
-/* $Id: pbms.c,v 1.17 2021/04/24 23:36:41 thorpej Exp $ */
+/* $Id: pbms.c,v 1.19 2021/08/07 16:18:57 thorpej Exp $ */
 
 /*
  * Copyright (c) 2005, Johan Wallén
@@ -139,7 +139,7 @@
  */
 
 
-/* The amount of data transfered by the USB device. */
+/* The amount of data transferred by the USB device. */
 #define PBMS_DATA_LEN 81
 
 /* The maximum number of sensors. */
@@ -373,7 +373,7 @@ pbms_attach(device_t parent, device_t self, void *aux)
 	a.accessops = &pbms_accessops;
 	a.accesscookie = sc;
 
-	sc->sc_wsmousedev = config_found(self, &a, wsmousedevprint, CFARG_EOL);
+	sc->sc_wsmousedev = config_found(self, &a, wsmousedevprint, CFARGS_NONE);
 
 	return;
 }

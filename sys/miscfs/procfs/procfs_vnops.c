@@ -1,4 +1,4 @@
-/*	$NetBSD: procfs_vnops.c,v 1.217 2021/06/29 22:34:09 dholland Exp $	*/
+/*	$NetBSD: procfs_vnops.c,v 1.227 2022/01/17 11:20:00 bouyer Exp $	*/
 
 /*-
  * Copyright (c) 2006, 2007, 2008, 2020 The NetBSD Foundation, Inc.
@@ -105,7 +105,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: procfs_vnops.c,v 1.217 2021/06/29 22:34:09 dholland Exp $");
+__KERNEL_RCSID(0, "$NetBSD: procfs_vnops.c,v 1.227 2022/01/17 11:20:00 bouyer Exp $");
 
 #include <sys/param.h>
 #include <sys/atomic.h>
@@ -162,12 +162,12 @@ static const struct proc_target {
 	{ DT_DIR, N("fd"),	PFSfd,		NULL },
 	{ DT_DIR, N("task"),	PFStask,	procfs_validfile_linux },
 	{ DT_LNK, N("cwd"),	PFScwd,		NULL },
-	{ DT_LNK, N("emul"),	PFSemul,	NULL },
+	{ DT_REG, N("emul"),	PFSemul,	NULL },
 	{ DT_LNK, N("root"),	PFSchroot,	NULL },
 	{ DT_REG, N("auxv"),	PFSauxv,	procfs_validauxv },
 	{ DT_REG, N("cmdline"), PFScmdline,	NULL },
 	{ DT_REG, N("environ"), PFSenviron,	NULL },
-	{ DT_REG, N("exe"),	PFSexe,		procfs_validfile },
+	{ DT_LNK, N("exe"),	PFSexe,		procfs_validfile },
 	{ DT_REG, N("file"),	PFSfile,	procfs_validfile },
 	{ DT_REG, N("fpregs"),	PFSfpregs,	procfs_validfpregs },
 	{ DT_REG, N("limit"),	PFSlimit,	NULL },
@@ -208,45 +208,22 @@ static const int nproc_root_targets =
     sizeof(proc_root_targets) / sizeof(proc_root_targets[0]);
 
 int	procfs_lookup(void *);
-#define	procfs_create	genfs_eopnotsupp
-#define	procfs_mknod	genfs_eopnotsupp
 int	procfs_open(void *);
 int	procfs_close(void *);
 int	procfs_access(void *);
 int	procfs_getattr(void *);
 int	procfs_setattr(void *);
-#define	procfs_read	procfs_rw
-#define	procfs_write	procfs_rw
-#define	procfs_fcntl	genfs_fcntl
-#define	procfs_ioctl	genfs_enoioctl
-#define	procfs_poll	genfs_poll
-#define	procfs_kqfilter	genfs_kqfilter
-#define	procfs_revoke	genfs_revoke
-#define	procfs_fsync	genfs_nullop
-#define	procfs_seek	genfs_nullop
-#define	procfs_remove	genfs_eopnotsupp
 int	procfs_link(void *);
-#define	procfs_rename	genfs_eopnotsupp
-#define	procfs_mkdir	genfs_eopnotsupp
-#define	procfs_rmdir	genfs_eopnotsupp
 int	procfs_symlink(void *);
 int	procfs_readdir(void *);
 int	procfs_readlink(void *);
-#define	procfs_abortop	genfs_abortop
 int	procfs_inactive(void *);
 int	procfs_reclaim(void *);
-#define	procfs_lock	genfs_lock
-#define	procfs_unlock	genfs_unlock
-#define	procfs_bmap	genfs_eopnotsupp
-#define	procfs_strategy	genfs_badop
 int	procfs_print(void *);
 int	procfs_pathconf(void *);
-#define	procfs_islocked	genfs_islocked
-#define	procfs_advlock	genfs_einval
-#define	procfs_bwrite	genfs_eopnotsupp
 int	procfs_getpages(void *);
-#define procfs_putpages	genfs_null_putpages
 
+static uint8_t fttodt(file_t *);
 static int atoi(const char *, size_t);
 
 /*
@@ -257,46 +234,46 @@ const struct vnodeopv_entry_desc procfs_vnodeop_entries[] = {
 	{ &vop_default_desc, vn_default_error },
 	{ &vop_parsepath_desc, genfs_parsepath },	/* parsepath */
 	{ &vop_lookup_desc, procfs_lookup },		/* lookup */
-	{ &vop_create_desc, procfs_create },		/* create */
-	{ &vop_mknod_desc, procfs_mknod },		/* mknod */
+	{ &vop_create_desc, genfs_eopnotsupp },		/* create */
+	{ &vop_mknod_desc, genfs_eopnotsupp },		/* mknod */
 	{ &vop_open_desc, procfs_open },		/* open */
 	{ &vop_close_desc, procfs_close },		/* close */
 	{ &vop_access_desc, procfs_access },		/* access */
 	{ &vop_accessx_desc, genfs_accessx },		/* accessx */
 	{ &vop_getattr_desc, procfs_getattr },		/* getattr */
 	{ &vop_setattr_desc, procfs_setattr },		/* setattr */
-	{ &vop_read_desc, procfs_read },		/* read */
-	{ &vop_write_desc, procfs_write },		/* write */
+	{ &vop_read_desc, procfs_rw },			/* read */
+	{ &vop_write_desc, procfs_rw },			/* write */
 	{ &vop_fallocate_desc, genfs_eopnotsupp },	/* fallocate */
 	{ &vop_fdiscard_desc, genfs_eopnotsupp },	/* fdiscard */
-	{ &vop_fcntl_desc, procfs_fcntl },		/* fcntl */
-	{ &vop_ioctl_desc, procfs_ioctl },		/* ioctl */
-	{ &vop_poll_desc, procfs_poll },		/* poll */
-	{ &vop_kqfilter_desc, procfs_kqfilter },	/* kqfilter */
-	{ &vop_revoke_desc, procfs_revoke },		/* revoke */
-	{ &vop_fsync_desc, procfs_fsync },		/* fsync */
-	{ &vop_seek_desc, procfs_seek },		/* seek */
-	{ &vop_remove_desc, procfs_remove },		/* remove */
+	{ &vop_fcntl_desc, genfs_fcntl },		/* fcntl */
+	{ &vop_ioctl_desc, genfs_enoioctl },		/* ioctl */
+	{ &vop_poll_desc, genfs_poll },			/* poll */
+	{ &vop_kqfilter_desc, genfs_kqfilter },		/* kqfilter */
+	{ &vop_revoke_desc, genfs_revoke },		/* revoke */
+	{ &vop_fsync_desc, genfs_nullop },		/* fsync */
+	{ &vop_seek_desc, genfs_nullop },		/* seek */
+	{ &vop_remove_desc, genfs_eopnotsupp },		/* remove */
 	{ &vop_link_desc, procfs_link },		/* link */
-	{ &vop_rename_desc, procfs_rename },		/* rename */
-	{ &vop_mkdir_desc, procfs_mkdir },		/* mkdir */
-	{ &vop_rmdir_desc, procfs_rmdir },		/* rmdir */
+	{ &vop_rename_desc, genfs_eopnotsupp },		/* rename */
+	{ &vop_mkdir_desc, genfs_eopnotsupp },		/* mkdir */
+	{ &vop_rmdir_desc, genfs_eopnotsupp },		/* rmdir */
 	{ &vop_symlink_desc, procfs_symlink },		/* symlink */
 	{ &vop_readdir_desc, procfs_readdir },		/* readdir */
 	{ &vop_readlink_desc, procfs_readlink },	/* readlink */
-	{ &vop_abortop_desc, procfs_abortop },		/* abortop */
+	{ &vop_abortop_desc, genfs_abortop },		/* abortop */
 	{ &vop_inactive_desc, procfs_inactive },	/* inactive */
 	{ &vop_reclaim_desc, procfs_reclaim },		/* reclaim */
-	{ &vop_lock_desc, procfs_lock },		/* lock */
-	{ &vop_unlock_desc, procfs_unlock },		/* unlock */
-	{ &vop_bmap_desc, procfs_bmap },		/* bmap */
-	{ &vop_strategy_desc, procfs_strategy },	/* strategy */
+	{ &vop_lock_desc, genfs_lock },			/* lock */
+	{ &vop_unlock_desc, genfs_unlock },		/* unlock */
+	{ &vop_bmap_desc, genfs_eopnotsupp },		/* bmap */
+	{ &vop_strategy_desc, genfs_badop },		/* strategy */
 	{ &vop_print_desc, procfs_print },		/* print */
-	{ &vop_islocked_desc, procfs_islocked },	/* islocked */
+	{ &vop_islocked_desc, genfs_islocked },		/* islocked */
 	{ &vop_pathconf_desc, procfs_pathconf },	/* pathconf */
-	{ &vop_advlock_desc, procfs_advlock },		/* advlock */
+	{ &vop_advlock_desc, genfs_einval },		/* advlock */
 	{ &vop_getpages_desc, procfs_getpages },	/* getpages */
-	{ &vop_putpages_desc, procfs_putpages },	/* putpages */
+	{ &vop_putpages_desc, genfs_null_putpages },	/* putpages */
 	{ NULL, NULL }
 };
 const struct vnodeopv_desc procfs_vnodeop_opv_desc =
@@ -1166,7 +1143,8 @@ procfs_lookup(void *v)
 		fvp = fp->f_vnode;
 
 		/* Don't show directories */
-		if (fp->f_type == DTYPE_VNODE && fvp->v_type != VDIR) {
+		if (fp->f_type == DTYPE_VNODE && fvp->v_type != VDIR &&
+		    !procfs_proc_is_linux_compat()) {
 			vref(fvp);
 			closef(fp);
 			procfs_proc_unlock(p);
@@ -1245,15 +1223,15 @@ procfs_root_readdir_callback(struct proc *p, void *arg)
 	if (uiop->uio_resid < UIO_MX)
 		return -1; /* no space */
 
-	if (ctxp->off < ctxp->startoff) {
-		ctxp->off++;
-		return 0;
-	}
-
 	if (kauth_authorize_process(kauth_cred_get(),
 	    KAUTH_PROCESS_CANSEE, p,
 	    KAUTH_ARG(KAUTH_REQ_PROCESS_CANSEE_ENTRY), NULL, NULL) != 0)
 		return 0;
+
+	if (ctxp->off < ctxp->startoff) {
+		ctxp->off++;
+		return 0;
+	}
 
 	memset(&d, 0, UIO_MX);
 	d.d_reclen = UIO_MX;
@@ -1283,7 +1261,7 @@ procfs_root_readdir_callback(struct proc *p, void *arg)
  *
  * the strategy here with procfs is to generate a single
  * directory entry at a time (struct dirent) and then
- * copy that out to userland using uiomove.  a more efficent
+ * copy that out to userland using uiomove.  a more efficient
  * though more complex implementation, would try to minimize
  * the number of calls to uiomove().  for procfs, this is
  * hardly worth the added code complexity.
@@ -1311,8 +1289,10 @@ procfs_readdir(void *v)
 	struct vnode *vp;
 	const struct proc_target *pt;
 	struct procfs_root_readdir_ctx ctx;
+	struct proc *p = NULL;
 	struct lwp *l;
 	int nfd;
+	int nc = 0;
 
 	vp = ap->a_vp;
 	pfs = VTOPFS(vp);
@@ -1335,7 +1315,6 @@ procfs_readdir(void *v)
 	 * from the procent[] table (top of this file).
 	 */
 	case PFSproc: {
-		struct proc *p;
 
 		if (i >= nproc_targets)
 			return 0;
@@ -1378,9 +1357,8 @@ procfs_readdir(void *v)
 	    	break;
 	}
 	case PFSfd: {
-		struct proc *p;
 		file_t *fp;
-		int lim, nc = 0;
+		int lim;
 
 		if ((error = procfs_proc_lock(vp->v_mount, pfs->pfs_pid, &p,
 					      ESRCH)) != 0)
@@ -1423,10 +1401,8 @@ procfs_readdir(void *v)
 				*cookies++ = i + 1;
 			nc++;
 		}
-		if (error) {
-			ncookies = nc;
-			break;
-		}
+		if (error)
+			goto out;
 		for (; uio->uio_resid >= UIO_MX && i < nfd; i++) {
 			/* check the descriptor exists */
 			if ((fp = fd_getfile2(p, i - 2)) == NULL)
@@ -1436,20 +1412,16 @@ procfs_readdir(void *v)
 			d.d_fileno = PROCFS_FILENO(pfs->pfs_pid, PFSfd, i - 2);
 			d.d_namlen = snprintf(d.d_name, sizeof(d.d_name),
 			    "%lld", (long long)(i - 2));
-			d.d_type = VREG;
+			d.d_type = fttodt(fp);
 			if ((error = uiomove(&d, UIO_MX, uio)) != 0)
 				break;
 			if (cookies)
 				*cookies++ = i + 1;
 			nc++;
 		}
-		ncookies = nc;
-		procfs_proc_unlock(p);
-		break;
+		goto out;
 	}
 	case PFStask: {
-		struct proc *p;
-		int nc = 0;
 
 		if ((error = procfs_proc_lock(vp->v_mount, pfs->pfs_pid, &p,
 					      ESRCH)) != 0)
@@ -1477,10 +1449,8 @@ procfs_readdir(void *v)
 				*cookies++ = i + 1;
 			nc++;
 		}
-		if (error) {
-			ncookies = nc;
-			break;
-		}
+		if (error)
+			goto out;
 		for (; uio->uio_resid >= UIO_MX && i < nfd; i++) {
 			/* check the descriptor exists */
 			d.d_fileno = PROCFS_FILENO(pfs->pfs_pid, PFStask,
@@ -1494,9 +1464,7 @@ procfs_readdir(void *v)
 				*cookies++ = i + 1;
 			nc++;
 		}
-		ncookies = nc;
-		procfs_proc_unlock(p);
-		break;
+		goto out;
 	}
 
 	/*
@@ -1507,7 +1475,6 @@ procfs_readdir(void *v)
 	 */
 
 	case PFSroot: {
-		int nc = 0;
 
 		if (ap->a_ncookies) {
 			/*
@@ -1518,7 +1485,7 @@ procfs_readdir(void *v)
 			    M_TEMP, M_WAITOK);
 			*ap->a_cookies = cookies;
 		}
-		error = 0;
+
 		/* 0 ... 3 are static entries. */
 		for (; i <= 3 && uio->uio_resid >= UIO_MX; i++) {
 			switch (i) {
@@ -1552,6 +1519,8 @@ procfs_readdir(void *v)
 			if (cookies)
 				*cookies++ = i + 1;
 		}
+		if (error)
+			break;
 		/* 4 ... are process entries. */
 		ctx.uiop = uio;
 		ctx.error = 0;
@@ -1572,12 +1541,20 @@ procfs_readdir(void *v)
 			i = ctx.off;
 		if (i >= ctx.off + nproc_root_targets)
 			break;
+		error = procfs_proc_lock(vp->v_mount, pfs->pfs_pid, &p, ESRCH);
+		if (error)
+			break;
 		for (pt = &proc_root_targets[i - ctx.off];
 		    uio->uio_resid >= UIO_MX &&
 		    pt < &proc_root_targets[nproc_root_targets];
 		    pt++, i++) {
 			if (pt->pt_valid &&
 			    (*pt->pt_valid)(NULL, vp->v_mount) == 0)
+				continue;
+			if (kauth_authorize_process(kauth_cred_get(),
+			    KAUTH_PROCESS_CANSEE, p,
+			    KAUTH_ARG(KAUTH_REQ_PROCESS_CANSEE_ENTRY),
+			    NULL, NULL) != 0)
 				continue;
 			d.d_fileno = PROCFS_FILENO(0, pt->pt_pfstype, -1);
 			d.d_namlen = pt->pt_namlen;
@@ -1590,8 +1567,10 @@ procfs_readdir(void *v)
 			if (cookies)
 				*cookies++ = i + 1;
 		}
-
+out:
+		KASSERT(p != NULL);
 		ncookies = nc;
+		procfs_proc_unlock(p);
 		break;
 	}
 
@@ -1673,7 +1652,8 @@ procfs_readlink(void *v)
 		switch (fp->f_type) {
 		case DTYPE_VNODE:
 			vxp = fp->f_vnode;
-			if (vxp->v_type != VDIR) {
+			if (vxp->v_type != VDIR &&
+			    !procfs_proc_is_linux_compat()) {
 				error = EINVAL;
 				break;
 			}
@@ -1770,4 +1750,32 @@ atoi(const char *b, size_t len)
 	}
 
 	return p;
+}
+
+/**
+ * convert DTYPE_XXX to corresponding DT_XXX
+ * matching what procfs_loadvnode() does.
+ */
+static uint8_t
+fttodt(file_t *fp)
+{
+	switch (fp->f_type) {
+	case DTYPE_VNODE:
+		switch (fp->f_vnode->v_type) {
+		case VREG:	return DT_REG;
+		case VDIR:	return DT_LNK;	/* symlink */
+		case VBLK:	return DT_BLK;
+		case VCHR:	return DT_CHR;
+		case VLNK:	return DT_LNK;
+		case VSOCK:	return DT_SOCK;
+		case VFIFO:	return DT_FIFO;
+		default:	return DT_UNKNOWN;
+		}
+	case DTYPE_PIPE:	return DT_FIFO;
+	case DTYPE_SOCKET:	return DT_SOCK;
+	case DTYPE_KQUEUE:	/*FALLTHROUGH*/
+	case DTYPE_MISC:	/*FALLTHROUGH*/
+	case DTYPE_SEM:		return DT_LNK;	/* symlinks */
+	default:		return DT_UNKNOWN;
+	}
 }

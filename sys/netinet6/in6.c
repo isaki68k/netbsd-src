@@ -1,4 +1,4 @@
-/*	$NetBSD: in6.c,v 1.282 2020/09/29 19:33:36 roy Exp $	*/
+/*	$NetBSD: in6.c,v 1.285 2021/12/05 04:42:55 msaitoh Exp $	*/
 /*	$KAME: in6.c,v 1.198 2001/07/18 09:12:38 itojun Exp $	*/
 
 /*
@@ -62,7 +62,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: in6.c,v 1.282 2020/09/29 19:33:36 roy Exp $");
+__KERNEL_RCSID(0, "$NetBSD: in6.c,v 1.285 2021/12/05 04:42:55 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -208,7 +208,7 @@ in6_ifremlocal(struct ifaddr *ifa)
 	 * from an interface direct route, when removing the direct route
 	 * (see comments in net/net_osdep.h).  Even for variants that do remove
 	 * cloned routes, they could fail to remove the cloned routes when
-	 * we handle multple addresses that share a common prefix.
+	 * we handle multiple addresses that share a common prefix.
 	 * So, we should remove the route corresponding to the deleted address.
 	 */
 
@@ -273,7 +273,7 @@ in6_ifaddprefix(struct in6_ifaddr *ia)
 	if ((error = rtinit(&ia->ia_ifa, RTM_ADD, RTF_UP | flags)) == 0)
 		ia->ia_flags |= IFA_ROUTE;
 	else if (error == EEXIST)
-		/* Existance of the route is not an error. */
+		/* Existence of the route is not an error. */
 		error = 0;
 
 	return error;
@@ -757,7 +757,7 @@ in6_control(struct socket *so, u_long cmd, void *data, struct ifnet *ifp)
 	case SIOCAADDRCTL_POLICY:
 	case SIOCDADDRCTL_POLICY:
 
-		if (kauth_authorize_network(curlwp->l_cred,
+		if (kauth_authorize_network(kauth_cred_get(),
 		    KAUTH_NETWORK_SOCKET,
 		    KAUTH_REQ_NETWORK_SOCKET_SETPRIV,
 		    so, NULL, NULL))

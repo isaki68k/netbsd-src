@@ -1,4 +1,4 @@
-/*	$NetBSD: vme_machdep.c,v 1.73 2021/05/10 23:53:44 thorpej Exp $	*/
+/*	$NetBSD: vme_machdep.c,v 1.76 2022/01/21 19:22:56 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 1997, 1998 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vme_machdep.c,v 1.73 2021/05/10 23:53:44 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vme_machdep.c,v 1.76 2022/01/21 19:22:56 thorpej Exp $");
 
 #include <sys/param.h>
 #include <sys/extent.h>
@@ -318,7 +318,7 @@ vmeattach_mainbus(device_t parent, device_t self, void *aux)
 				    0, 0, EX_WAITOK);
 
 	printf("\n");
-	(void)config_found(self, &vba, 0, CFARG_EOL);
+	(void)config_found(self, &vba, 0, CFARGS_NONE);
 
 #endif /* SUN4 */
 	return;
@@ -432,8 +432,7 @@ vmeattach_iommu(device_t parent, device_t self, void *aux)
 	       sc->sc_reg->vmebus_cr & VMEBUS_CR_IMPL);
 
 	(void)config_found(self, &vba, 0,
-	    CFARG_DEVHANDLE, prom_node_to_devhandle(node),
-	    CFARG_EOL);
+	    CFARGS(.devhandle = device_handle(self)));
 #endif /* SUN4M */
 }
 
@@ -964,7 +963,7 @@ sparc_vct_iommu_dmamap_create(void *cookie, vme_size_t size, vme_am_t am,
 
 	/*
 	 * Each I/O cache line maps to a 8K section of VME DVMA space, so
-	 * we must ensure that DVMA alloctions are always 8K aligned.
+	 * we must ensure that DVMA allocations are always 8K aligned.
 	 */
 	map->_dm_align = VME_IOC_PAGESZ;
 

@@ -1,4 +1,4 @@
-/* $NetBSD: udf_vfsops.c,v 1.80 2020/04/14 12:47:44 reinoud Exp $ */
+/* $NetBSD: udf_vfsops.c,v 1.83 2021/12/16 21:39:53 reinoud Exp $ */
 
 /*
  * Copyright (c) 2006, 2008 Reinoud Zandijk
@@ -28,7 +28,7 @@
 
 #include <sys/cdefs.h>
 #ifndef lint
-__KERNEL_RCSID(0, "$NetBSD: udf_vfsops.c,v 1.80 2020/04/14 12:47:44 reinoud Exp $");
+__KERNEL_RCSID(0, "$NetBSD: udf_vfsops.c,v 1.83 2021/12/16 21:39:53 reinoud Exp $");
 #endif /* not lint */
 
 
@@ -182,7 +182,7 @@ SYSCTL_SETUP(udf_sysctl_setup, "udf sysctl")
 		       SYSCTL_DESCR("OSTA Universal File System"),
 		       NULL, 0, NULL, 0,
 		       CTL_VFS, 24, CTL_EOL);
-#ifdef DEBUG
+#ifdef UDF_DEBUG
 	sysctl_createv(clog, 0, NULL, &node,
 		       CTLFLAG_PERMANENT|CTLFLAG_READWRITE,
 		       CTLTYPE_INT, "verbose",
@@ -411,7 +411,7 @@ udf_mount(struct mount *mp, const char *path,
 	spec_node_setmountedfs(devvp, mp);
 
 	/* successfully mounted */
-	DPRINTF(VOLUMES, ("udf_mount() successfull\n"));
+	DPRINTF(VOLUMES, ("udf_mount() successful\n"));
 
 	error = set_statvfs_info(path, UIO_USERSPACE, args->fspec, UIO_USERSPACE,
 			mp->mnt_op->vfs_name, mp, l);
@@ -702,7 +702,7 @@ udf_mountfs(struct vnode *devvp, struct mount *mp,
 	/* setup rest of mount information */
 	mp->mnt_data = ump;
 
-	/* bshift is allways equal to disc sector size */
+	/* bshift is always equal to disc sector size */
 	mp->mnt_dev_bshift = bshift;
 	mp->mnt_fs_bshift  = bshift;
 

@@ -1361,6 +1361,415 @@ NextSubtable:
 
 /*******************************************************************************
  *
+ * FUNCTION:    AcpiDmDumpNhlt
+ *
+ * PARAMETERS:  Table               - A NHLT table
+ *
+ * RETURN:      None
+ *
+ * DESCRIPTION: Format the contents of an NHLT.
+ *
+ ******************************************************************************/
+
+void
+AcpiDmDumpNhlt (
+    ACPI_TABLE_HEADER       *Table)
+{
+    ACPI_STATUS             Status;
+    UINT32                  Offset;
+    UINT32                  TableLength = Table->Length;
+    UINT32                  EndpointCount;
+    UINT8                   FormatsCount;
+    ACPI_NHLT_ENDPOINT      *Subtable;
+    ACPI_NHLT_FORMAT_CONFIG *FormatSubtable;
+    ACPI_TABLE_NHLT         *InfoTable;
+    UINT32                  CapabilitiesSize;
+    UINT32                  i;
+    UINT32                  j;
+    UINT32                  EndpointEndOffset;
+    UINT8                   ConfigType = 0;
+    UINT8                   ArrayType;
+    UINT8                   MicrophoneCount;
+    ACPI_NHLT_VENDOR_MIC_COUNT          *MicCount;
+    ACPI_NHLT_DEVICE_SPECIFIC_CONFIG_A  *DevSpecific;
+    ACPI_NHLT_FORMATS_CONFIG            *FormatsConfig;
+    ACPI_NHLT_LINUX_SPECIFIC_COUNT      *Count;
+    ACPI_NHLT_LINUX_SPECIFIC_DATA       *LinuxData;
+    ACPI_NHLT_LINUX_SPECIFIC_DATA_B     *LinuxDataB;
+
+
+    /* Main table */
+
+    AcpiOsPrintf ("    /* Main table */\n");
+
+    Status = AcpiDmDumpTable (TableLength, 0, Table, 0, AcpiDmTableInfoNhlt);
+    if (ACPI_FAILURE (Status))
+    {
+        return;
+    }
+
+    /* Get the Endpoint Descriptor Count */
+
+    InfoTable = ACPI_ADD_PTR (ACPI_TABLE_NHLT, Table, 0);
+    EndpointCount = InfoTable->EndpointCount;
+
+    /* Subtables */
+
+    Offset = sizeof (ACPI_TABLE_NHLT);
+
+    while (Offset < TableLength)
+    {
+        /* A variable number of Endpoint Descriptors - process each */
+
+        for (i = 0; i < EndpointCount; i++)
+        {
+            /* Do the Endpoint Descriptor table */
+
+            Subtable = ACPI_ADD_PTR (ACPI_NHLT_ENDPOINT, Table, Offset);
+
+            /* Check for endpoint descriptor length beyond end-of-table */
+
+            if (Subtable->DescriptorLength > TableLength)
+            {
+                Offset += 1;
+                AcpiOsPrintf ("\n    /* Endpoint Descriptor Length larger than"
+                    " table size: %X, table %X, adjusting table offset (+1) */\n",
+                    Subtable->DescriptorLength, TableLength);
+
+                Subtable = ACPI_ADD_PTR (ACPI_NHLT_ENDPOINT, Table, Offset);
+            }
+
+            AcpiOsPrintf ("\n    /* Endpoint Descriptor #%u */\n", i+1);
+            Status = AcpiDmDumpTable (TableLength, Offset, Subtable,
+                Subtable->DescriptorLength, AcpiDmTableInfoNhlt0);
+            if (ACPI_FAILURE (Status))
+            {
+                return;
+            }
+
+            EndpointEndOffset = Subtable->DescriptorLength + Offset;
+
+            /* Check for endpoint descriptor beyond end-of-table */
+
+            if (Subtable->DescriptorLength > TableLength)
+            {
+                AcpiOsPrintf ("\n    /* Endpoint Descriptor Length larger than table size: %X, table %X */\n",
+                    Subtable->DescriptorLength, TableLength);
+            }
+
+            Offset += sizeof (ACPI_NHLT_ENDPOINT);
+            Subtable = ACPI_ADD_PTR (ACPI_NHLT_ENDPOINT, Table, Offset);
+
+            /* Do the Device Specific table */
+
+            AcpiOsPrintf ("\n    /* Endpoint Device_Specific_Config table */\n");
+            DevSpecific = ACPI_CAST_PTR (ACPI_NHLT_DEVICE_SPECIFIC_CONFIG_A, Subtable);
+            CapabilitiesSize = DevSpecific->CapabilitiesSize;
+            Status = AcpiDmDumpTable (TableLength, Offset, DevSpecific,
+                sizeof (ACPI_NHLT_DEVICE_SPECIFIC_CONFIG_B), AcpiDmTableInfoNhlt5b);
+            if (ACPI_FAILURE (Status))
+            {
+                return;
+            }
+
+            ArrayType = 0;
+
+            /* Different subtables based upon capabilities_size */
+
+            switch (CapabilitiesSize)
+            {
+            case 0:
+                Offset += sizeof (ACPI_NHLT_DEVICE_SPECIFIC_CONFIG_B);
+                break;
+
+            case 1:
+                Status = AcpiDmDumpTable (TableLength, Offset, DevSpecific,
+                    sizeof (ACPI_NHLT_DEVICE_SPECIFIC_CONFIG_C), AcpiDmTableInfoNhlt5c);
+                if (ACPI_FAILURE (Status))
+                {
+                    return;
+                }
+                Offset += sizeof (ACPI_NHLT_DEVICE_SPECIFIC_CONFIG_C);
+                break;
+
+            case 2:
+                Status = AcpiDmDumpTable (TableLength, Offset, DevSpecific,
+                    sizeof (ACPI_NHLT_DEVICE_SPECIFIC_CONFIG), AcpiDmTableInfoNhlt5);
+                if (ACPI_FAILURE (Status))
+                {
+                    return;
+                }
+                Offset += sizeof (ACPI_NHLT_DEVICE_SPECIFIC_CONFIG);
+                break;
+
+            case 3:
+            default:
+                /* Extract the ConfigType and ArrayType */
+
+                ConfigType = DevSpecific->ConfigType;
+                ArrayType = DevSpecific->ArrayType;
+
+                Status = AcpiDmDumpTable (TableLength, Offset, DevSpecific,
+                    sizeof (ACPI_NHLT_DEVICE_SPECIFIC_CONFIG_A), AcpiDmTableInfoNhlt5a);
+                if (ACPI_FAILURE (Status))
+                {
+                    return;
+                }
+
+                /* Capabilities Size == 3 */
+                Offset += sizeof (ACPI_NHLT_DEVICE_SPECIFIC_CONFIG_A);
+                break;
+
+            case 7:
+                ConfigType = DevSpecific->ConfigType;
+                Subtable = ACPI_ADD_PTR (ACPI_NHLT_ENDPOINT, Table, Offset);
+                DevSpecific = ACPI_CAST_PTR (ACPI_NHLT_DEVICE_SPECIFIC_CONFIG_A, Subtable);
+
+                AcpiOsPrintf ("\n    /* Render Feedback Device-Specific table */\n");
+                Status = AcpiDmDumpTable (TableLength, Offset, DevSpecific,
+                    sizeof (ACPI_NHLT_DEVICE_SPECIFIC_CONFIG), AcpiDmTableInfoNhlt5);
+                if (ACPI_FAILURE (Status))
+                {
+                    return;
+                }
+
+                /* Capabilities Size = 7 */
+                Offset += sizeof (ACPI_NHLT_DEVICE_SPECIFIC_CONFIG);
+
+                if (ConfigType == ACPI_NHLT_CONFIG_TYPE_RENDER_FEEDBACK)
+                {
+                    Subtable = ACPI_ADD_PTR (ACPI_NHLT_ENDPOINT, Table, Offset);
+                    DevSpecific = ACPI_CAST_PTR (ACPI_NHLT_DEVICE_SPECIFIC_CONFIG_A, Subtable);
+
+                    Status = AcpiDmDumpTable (TableLength, Offset, DevSpecific,
+                        sizeof (ACPI_NHLT_RENDER_FEEDBACK_DEVICE_SPECIFIC_CONFIG), AcpiDmTableInfoNhlt6b);
+                    if (ACPI_FAILURE (Status))
+                    {
+                        return;
+                    }
+                    Offset += sizeof (ACPI_NHLT_RENDER_FEEDBACK_DEVICE_SPECIFIC_CONFIG);
+                }
+                break;
+           }
+
+            /* Check for a vendor-defined mic array */
+
+            if (ConfigType == ACPI_NHLT_CONFIG_TYPE_MIC_ARRAY)
+            {
+                if ((ArrayType & ACPI_NHLT_ARRAY_TYPE_MASK) == ACPI_NHLT_VENDOR_DEFINED)
+                {
+                    /* Vendor-defined microphone array; get the microphone count first */
+
+                    AcpiOsPrintf ("\n    /* Vendor-defined microphone count */\n");
+                    MicCount = ACPI_ADD_PTR (ACPI_NHLT_VENDOR_MIC_COUNT, Table, Offset);
+                    MicrophoneCount = MicCount->MicrophoneCount;
+
+                    Status = AcpiDmDumpTable (TableLength, Offset, MicCount,
+                        sizeof (ACPI_NHLT_VENDOR_MIC_COUNT), AcpiDmTableInfoNhlt6a);
+                    Offset += sizeof (ACPI_NHLT_VENDOR_MIC_COUNT);
+                    if (ACPI_FAILURE (Status))
+                    {
+                        return;
+                    }
+
+                    /* Get the vendor microphone config structure(s) */
+
+                    for (j = 0; j < MicrophoneCount; j++)
+                    {
+                        AcpiOsPrintf ("\n    /* Vendor-defined microphone array #%u*/\n", j+1);
+                        DevSpecific = ACPI_ADD_PTR (ACPI_NHLT_DEVICE_SPECIFIC_CONFIG_A, Table, Offset);
+
+                        Status = AcpiDmDumpTable (TableLength, Offset, DevSpecific,
+                            sizeof (ACPI_NHLT_VENDOR_MIC_CONFIG), AcpiDmTableInfoNhlt6);
+                        if (ACPI_FAILURE (Status))
+                        {
+                            return;
+                        }
+
+                        Offset += sizeof (ACPI_NHLT_VENDOR_MIC_CONFIG);
+                    }
+
+                    /* Check for Microphone SNR and sensitivity extension */
+
+                    if ((ArrayType & ACPI_NHLT_ARRAY_TYPE_EXT_MASK) == ACPI_NHLT_MIC_SNR_SENSITIVITY_EXT)
+                    {
+                        AcpiOsPrintf ("\n    /* Microphone SNR and sensitivity array */\n");
+                        DevSpecific = ACPI_ADD_PTR (ACPI_NHLT_DEVICE_SPECIFIC_CONFIG_A, Table, Offset);
+
+                        Status = AcpiDmDumpTable (TableLength, Offset, DevSpecific,
+                            sizeof (ACPI_NHLT_MIC_SNR_SENSITIVITY_EXTENSION), AcpiDmTableInfoNhlt9);
+                        if (ACPI_FAILURE (Status))
+                        {
+                            return;
+                        }
+
+                        Offset += sizeof (ACPI_NHLT_MIC_SNR_SENSITIVITY_EXTENSION);
+                    }
+                }
+            }
+
+            /* Do the Formats_Config table - starts with the FormatsCount field */
+
+            FormatsConfig = ACPI_ADD_PTR (ACPI_NHLT_FORMATS_CONFIG, Table, Offset);
+            FormatsCount = FormatsConfig->FormatsCount;
+
+            AcpiOsPrintf ("\n    /* Formats_Config table */\n");
+
+            /* Dump the FormatsCount value */
+
+            if (FormatsCount > 0)
+            {
+                Status = AcpiDmDumpTable (TableLength, Offset, FormatsConfig,
+                    sizeof (ACPI_NHLT_FORMATS_CONFIG), AcpiDmTableInfoNhlt4);
+                if (ACPI_FAILURE (Status))
+                {
+                    return;
+                }
+            }
+            Offset += sizeof (ACPI_NHLT_FORMATS_CONFIG);
+
+            /* A variable number of Format_Config Descriptors - process each */
+
+            for (j = 0; j < FormatsCount; j++)
+            {
+                FormatSubtable = ACPI_ADD_PTR (ACPI_NHLT_FORMAT_CONFIG, Table, Offset);
+                CapabilitiesSize = FormatSubtable->CapabilitySize;
+
+                /* Do the Wave_extensible struct */
+
+                AcpiOsPrintf ("\n    /* Wave_Format_Extensible table #%u */\n", j+1);
+                Status = AcpiDmDumpTable (TableLength, Offset, FormatSubtable,
+                    sizeof (ACPI_NHLT_FORMAT_CONFIG), AcpiDmTableInfoNhlt3);
+                if (ACPI_FAILURE (Status))
+                {
+                    return;
+                }
+
+                Offset += sizeof (ACPI_NHLT_FORMAT_CONFIG);
+
+                if (CapabilitiesSize > 0)
+                {
+                    FormatSubtable = ACPI_ADD_PTR (ACPI_NHLT_FORMAT_CONFIG, Table, Offset);
+                    /* Do the Capabilities array (of bytes) */
+
+                    AcpiOsPrintf ("\n    /* Specific_Config table #%u */\n", j+1);
+                    FormatSubtable = ACPI_ADD_PTR (ACPI_NHLT_FORMAT_CONFIG, Table, Offset);
+                    Status = AcpiDmDumpTable (TableLength, Offset, FormatSubtable,
+                        CapabilitiesSize, AcpiDmTableInfoNhlt3a);
+                    if (ACPI_FAILURE (Status))
+                    {
+                        return;
+                    }
+
+                    Offset += CapabilitiesSize; // + sizeof (ACPI_NHLT_DEVICE_SPECIFIC_CONFIG_B);
+                }
+
+            } /* for (j = 0; j < FormatsCount; j++) */
+
+            /*
+             * If we are not done with the current Endpoint yet, then there must be
+             * some Linux-specific structure(s) yet to be processed. First, get
+             * the count of such structure(s).
+             */
+            if (Offset < EndpointEndOffset)
+            {
+                AcpiOsPrintf ("\n    /* Linux-specific structures (not part of NHLT spec) */\n");
+                Count = ACPI_ADD_PTR (ACPI_NHLT_LINUX_SPECIFIC_COUNT, Table, Offset);
+                Status = AcpiDmDumpTable (TableLength, Offset, Count,
+                    sizeof (ACPI_NHLT_LINUX_SPECIFIC_COUNT), AcpiDmTableInfoNhlt7);
+                if (ACPI_FAILURE (Status))
+                {
+                    return;
+                }
+                Offset += sizeof (ACPI_NHLT_LINUX_SPECIFIC_COUNT);
+
+                if (Count->StructureCount > 1)
+                {
+                    /*
+                     * We currently cannot disassemble more than one
+                     * Linux-Specific section, because we have no way of
+                     * knowing whether the "Specific Data" part is present.
+                     */
+                    Count->StructureCount = 1;
+                    fprintf (stderr, "%s %s\n", "Feature not supported:",
+                        "Cannot disassemble more than one Linux-Specific structure");
+                    return;
+                }
+
+                /* Variable number of linux-specific structures */
+
+                for (j = 0; j < Count->StructureCount; j++)
+                {
+                    LinuxData = ACPI_ADD_PTR (ACPI_NHLT_LINUX_SPECIFIC_DATA, Table, Offset);
+                    AcpiOsPrintf ("\n    /* Linux-specific structure #%u (not part of NHLT spec) */\n", j+1);
+
+                    /*
+                     * Dump the following Linux-specific fields:
+                     *  1) Device ID
+                     *  2) Device Instance ID
+                     *  3) Device Port ID
+                     */
+                    Status = AcpiDmDumpTable (TableLength, Offset, LinuxData,
+                        sizeof (ACPI_NHLT_LINUX_SPECIFIC_DATA), AcpiDmTableInfoNhlt7a);
+                    if (ACPI_FAILURE (Status))
+                    {
+                        return;
+                    }
+
+                    Offset += sizeof (ACPI_NHLT_LINUX_SPECIFIC_DATA);
+
+                    /*
+                     * Check that the current offset is not beyond the end of
+                     * this endpoint descriptor. If it is not, we assume that
+                     * the "Specific Data" field is present and valid. Note:
+                     * This does not seem to be documented anywhere.
+                     */
+                    if (Offset < EndpointEndOffset)
+                    {
+                        /* Dump the linux-specific "Specific Data" field */
+
+                        LinuxDataB = ACPI_ADD_PTR (ACPI_NHLT_LINUX_SPECIFIC_DATA_B, Table, Offset);
+                        Status = AcpiDmDumpTable (TableLength, Offset, LinuxDataB,
+                            sizeof (ACPI_NHLT_LINUX_SPECIFIC_DATA_B), AcpiDmTableInfoNhlt7b);
+                        if (ACPI_FAILURE (Status))
+                        {
+                            return;
+                        }
+
+                        Offset += sizeof (ACPI_NHLT_LINUX_SPECIFIC_DATA_B);
+                    }
+                }
+
+                /* Should be at the end of the Endpoint structure. */
+            }
+
+        } /* for (i = 0; i < EndpointCount; i++) */
+
+
+        /*
+         * Done with all of the Endpoint Descriptors, Emit the table terminator
+         * (if such a legacy structure is present -- not in NHLT specification)
+         */
+        if (Offset == TableLength - sizeof (ACPI_NHLT_TABLE_TERMINATOR))
+        {
+            LinuxData = ACPI_ADD_PTR (ACPI_NHLT_LINUX_SPECIFIC_DATA, Table, Offset);
+            AcpiOsPrintf ("\n    /* Table terminator structure (not part of NHLT spec) */\n");
+
+            Status = AcpiDmDumpTable (TableLength, Offset, LinuxData,
+                sizeof (ACPI_NHLT_TABLE_TERMINATOR), AcpiDmTableInfoNhlt8);
+            if (ACPI_FAILURE (Status))
+            {
+                return;
+            }
+        }
+
+        return;
+    }
+}
+
+
+/*******************************************************************************
+ *
  * FUNCTION:    AcpiDmDumpPcct
  *
  * PARAMETERS:  Table               - A PCCT table

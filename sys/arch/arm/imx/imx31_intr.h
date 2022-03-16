@@ -1,4 +1,4 @@
-/*	$NetBSD: imx31_intr.h,v 1.3 2008/04/28 20:23:14 martin Exp $	*/
+/*	$NetBSD: imx31_intr.h,v 1.5 2021/12/27 23:04:19 andvar Exp $	*/
 /*-
  * Copyright (c) 2007 The NetBSD Foundation, Inc.
  * All rights reserved.
@@ -88,8 +88,8 @@
 #define	IRQ_WDOG	55	/* Watchdog Timer */
 #define	IRQ_GPIO3	56	/* General Purpose I/O 3 */
 #define	IRQ__RSVD57	57
-#define	IRQ_EXT_PWRMGT	58	/* External (power managerment) */
-#define	IRQ_EXT_TEMP	59	/* External (Temperture) */
+#define	IRQ_EXT_PWRMGT	58	/* External (power management) */
+#define	IRQ_EXT_TEMP	59	/* External (Temperature) */
 #define	IRQ_EXT_SENS2	60	/* External (sensor) */
 #define	IRQ_EXT_SENS1	61	/* External (sensor) */
 #define	IRQ_EXT_WDOG	62	/* External (WDOG) */
@@ -121,11 +121,12 @@
 
 #define	PIC_MAXMAXSOURCES	(64+3*32+128)
 
+#define	_splraise	pic_splraise
+#define	_spllower	pic_spllower
+#define	splx		pic_splx
+
 #include <arm/pic/picvar.h>
 
-int	_splraise(int);
-int	_spllower(int);
-void	splx(int);
 const char *
 	intr_typename(int);
 

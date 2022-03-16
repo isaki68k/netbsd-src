@@ -1,4 +1,4 @@
-/*	$NetBSD: grf_cv3d.c,v 1.35 2021/04/27 14:48:28 thorpej Exp $ */
+/*	$NetBSD: grf_cv3d.c,v 1.38 2022/01/01 11:45:37 msaitoh Exp $ */
 
 /*
  * Copyright (c) 1995 Michael Teske
@@ -33,7 +33,7 @@
 #include "opt_amigacons.h"
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: grf_cv3d.c,v 1.35 2021/04/27 14:48:28 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: grf_cv3d.c,v 1.38 2022/01/01 11:45:37 msaitoh Exp $");
 
 #include "grfcv3d.h"
 #include "ite.h"
@@ -345,7 +345,7 @@ static struct cfdata *cfdata;
 #define CV3D_ULCURSOR	1	/* Underlined Cursor in textmode */
 
 /*
- * Get frambuffer memory size.
+ * Get framebuffer memory size.
  * phase5 didn't provide the bit in CR36,
  * so we have to do it this way.
  * Return 0 for 2MB, 1 for 4MB
@@ -505,7 +505,7 @@ grfcv3dattach(device_t parent, device_t self, void *aux)
 	 * attach grf
 	 */
 	if (amiga_config_found(cfdata, gp->g_device, gp, grfcv3dprint,
-			       CFARG_EOL)) {
+			       CFARGS_NONE)) {
 		if (self != NULL)
 			printf("%s: CyberVision64/3D with %dMB being used\n",
 			    device_xname(self), cv3d_fbsize / 0x100000);
@@ -2365,7 +2365,7 @@ cv3d_wsioctl(void *v, void *vs, u_long cmd, void *data, int flag, struct lwp *l)
 		return cv3d_get_fbinfo(gp, data);
 	}
 
-	/* handle this command hw-independant in grf(4) */
+	/* handle this command hw-independent in grf(4) */
 	return grf_wsioctl(v, vs, cmd, data, flag, l);
 }
 

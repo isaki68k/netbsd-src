@@ -1,4 +1,4 @@
-/* $NetBSD: fdt_i2c.c,v 1.10 2021/04/24 23:36:53 thorpej Exp $ */
+/* $NetBSD: fdt_i2c.c,v 1.12 2022/02/23 07:55:55 skrll Exp $ */
 
 /*-
  * Copyright (c) 2015 Jared D. McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fdt_i2c.c,v 1.10 2021/04/24 23:36:53 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fdt_i2c.c,v 1.12 2022/02/23 07:55:55 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/bus.h>
@@ -75,7 +75,7 @@ fdtbus_get_i2c_controller(int phandle)
 }
 
 i2c_tag_t
-fdtbus_get_i2c_tag(int phandle)
+fdtbus_i2c_get_tag(int phandle)
 {
 	struct fdtbus_i2c_controller *i2c;
 
@@ -95,7 +95,7 @@ fdtbus_i2c_acquire(int phandle, const char *prop)
 	if (i2c_phandle == -1)
 		return NULL;
 
-	return fdtbus_get_i2c_tag(i2c_phandle);
+	return fdtbus_i2c_get_tag(i2c_phandle);
 }
 
 device_t
@@ -123,8 +123,7 @@ fdtbus_attach_i2cbus(device_t dev, int phandle, i2c_tag_t tag, cfprint_t print)
 	prop_dictionary_set_bool(props, "i2c-no-indirect-config", true);
 
 	ret = config_found(dev, &iba, print,
-	    CFARG_IATTR, "i2cbus",
-	    CFARG_EOL);
+	    CFARGS(.iattr = "i2cbus"));
 	if (iba.iba_child_devices)
 		prop_object_release(iba.iba_child_devices);
 

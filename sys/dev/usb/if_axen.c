@@ -1,4 +1,4 @@
-/*	$NetBSD: if_axen.c,v 1.73 2020/03/15 23:04:50 thorpej Exp $	*/
+/*	$NetBSD: if_axen.c,v 1.93 2022/03/03 05:56:28 riastradh Exp $	*/
 /*	$OpenBSD: if_axen.c,v 1.3 2013/10/21 10:10:22 yuo Exp $	*/
 
 /*
@@ -23,7 +23,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_axen.c,v 1.73 2020/03/15 23:04:50 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_axen.c,v 1.93 2022/03/03 05:56:28 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -80,6 +80,7 @@ static void	axen_ax88179_init(struct usbnet *);
 
 static void	axen_uno_stop(struct ifnet *, int);
 static int	axen_uno_ioctl(struct ifnet *, u_long, void *);
+static void	axen_uno_mcast(struct ifnet *);
 static int	axen_uno_mii_read_reg(struct usbnet *, int, int, uint16_t *);
 static int	axen_uno_mii_write_reg(struct usbnet *, int, int, uint16_t);
 static void	axen_uno_mii_statchg(struct ifnet *);
@@ -92,6 +93,7 @@ static int	axen_uno_init(struct ifnet *);
 static const struct usbnet_ops axen_ops = {
 	.uno_stop = axen_uno_stop,
 	.uno_ioctl = axen_uno_ioctl,
+	.uno_mcast = axen_uno_mcast,
 	.uno_read_reg = axen_uno_mii_read_reg,
 	.uno_write_reg = axen_uno_mii_write_reg,
 	.uno_statchg = axen_uno_mii_statchg,
@@ -105,8 +107,6 @@ axen_cmd(struct usbnet *un, int cmd, int index, int val, void *buf)
 {
 	usb_device_request_t req;
 	usbd_status err;
-
-	usbnet_isowned_core(un);
 
 	if (usbnet_isdying(un))
 		return 0;
@@ -137,12 +137,16 @@ axen_uno_mii_read_reg(struct usbnet *un, int phy, int reg, uint16_t *val)
 {
 	uint16_t data;
 
-	if (un->un_phyno != phy)
+	if (un->un_phyno != phy) {
+		*val = 0;
 		return EINVAL;
+	}
 
 	usbd_status err = axen_cmd(un, AXEN_CMD_MII_READ_REG, reg, phy, &data);
-	if (err)
+	if (err) {
+		*val = 0;
 		return EIO;
+	}
 
 	*val = le16toh(data);
 	if (reg == MII_BMSR)
@@ -223,9 +227,9 @@ axen_uno_mii_statchg(struct ifnet *ifp)
 }
 
 static void
-axen_setiff_locked(struct usbnet *un)
+axen_uno_mcast(struct ifnet *ifp)
 {
-	struct ifnet * const ifp = usbnet_ifp(un);
+	struct usbnet * const un = ifp->if_softc;
 	struct ethercom *ec = usbnet_ec(un);
 	struct ether_multi *enm;
 	struct ether_multistep step;
@@ -236,8 +240,6 @@ axen_setiff_locked(struct usbnet *un)
 
 	if (usbnet_isdying(un))
 		return;
-
-	usbnet_isowned_core(un);
 
 	rxmode = 0;
 
@@ -293,7 +295,6 @@ allmulti:
 static void
 axen_reset(struct usbnet *un)
 {
-	usbnet_isowned_core(un);
 	if (usbnet_isdying(un))
 		return;
 	/* XXX What to reset? */
@@ -364,9 +365,6 @@ axen_ax88179_init(struct usbnet *un)
 	uint16_t ctl, temp;
 	uint16_t wval;
 	uint8_t val;
-
-	usbnet_lock_core(un);
-	usbnet_busy(un);
 
 	/* XXX: ? */
 	axen_cmd(un, AXEN_CMD_MAC_READ, 1, AXEN_UNK_05, &val);
@@ -450,8 +448,6 @@ axen_ax88179_init(struct usbnet *un)
 	default:
 		aprint_error_dev(un->un_dev, "unknown uplink bus:0x%02x\n",
 		    val);
-		usbnet_unbusy(un);
-		usbnet_unlock_core(un);
 		return;
 	}
 	axen_cmd(un, AXEN_CMD_MAC_SET_RXSR, 5, AXEN_RX_BULKIN_QCTRL, &qctrl);
@@ -496,22 +492,19 @@ axen_ax88179_init(struct usbnet *un)
 #define GMII_PHY_PAGE_SEL	0x1e
 #define GMII_PHY_PAGE_SEL	0x1f
 #define GMII_PAGE_EXT		0x0007
-	usbnet_mii_writereg(un->un_dev, un->un_phyno, GMII_PHY_PAGE_SEL,
+	axen_uno_mii_write_reg(un, un->un_phyno, GMII_PHY_PAGE_SEL,
 	    GMII_PAGE_EXT);
-	usbnet_mii_writereg(un->un_dev, un->un_phyno, GMII_PHY_PAGE,
+	axen_uno_mii_write_reg(un, un->un_phyno, GMII_PHY_PAGE,
 	    0x002c);
 #endif
 
 #if 1 /* XXX: phy hack ? */
-	usbnet_mii_writereg(un->un_dev, un->un_phyno, 0x1F, 0x0005);
-	usbnet_mii_writereg(un->un_dev, un->un_phyno, 0x0C, 0x0000);
-	usbnet_mii_readreg(un->un_dev, un->un_phyno, 0x0001, &wval);
-	usbnet_mii_writereg(un->un_dev, un->un_phyno, 0x01, wval | 0x0080);
-	usbnet_mii_writereg(un->un_dev, un->un_phyno, 0x1F, 0x0000);
+	axen_uno_mii_write_reg(un, un->un_phyno, 0x1F, 0x0005);
+	axen_uno_mii_write_reg(un, un->un_phyno, 0x0C, 0x0000);
+	axen_uno_mii_read_reg(un, un->un_phyno, 0x0001, &wval);
+	axen_uno_mii_write_reg(un, un->un_phyno, 0x01, wval | 0x0080);
+	axen_uno_mii_write_reg(un, un->un_phyno, 0x1F, 0x0000);
 #endif
-
-	usbnet_unbusy(un);
-	usbnet_unlock_core(un);
 }
 
 static void
@@ -521,7 +514,7 @@ axen_setoe_locked(struct usbnet *un)
 	uint64_t enabled = ifp->if_capenable;
 	uint8_t val;
 
-	usbnet_isowned_core(un);
+	KASSERT(IFNET_LOCKED(ifp));
 
 	val = AXEN_RXCOE_OFF;
 	if (enabled & IFCAP_CSUM_IPv4_Rx)
@@ -555,25 +548,13 @@ axen_uno_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 {
 	struct usbnet * const un = ifp->if_softc;
 
-	usbnet_lock_core(un);
-	usbnet_busy(un);
-
 	switch (cmd) {
-	case SIOCSIFFLAGS:
-	case SIOCSETHERCAP:
-	case SIOCADDMULTI:
-	case SIOCDELMULTI:
-		axen_setiff_locked(un);
-		break;
 	case SIOCSIFCAP:
 		axen_setoe_locked(un);
 		break;
 	default:
 		break;
 	}
-
-	usbnet_unbusy(un);
-	usbnet_unlock_core(un);
 
 	return 0;
 }
@@ -669,22 +650,16 @@ axen_attach(device_t parent, device_t self, void *aux)
 	}
 
 	/* Set these up now for axen_cmd().  */
-	usbnet_attach(un, "axendet");
+	usbnet_attach(un);
 
 	un->un_phyno = AXEN_PHY_ID;
 	DPRINTF(("%s: phyno %d\n", device_xname(self), un->un_phyno));
 
 	/* Get station address.  */
-	usbnet_lock_core(un);
-	usbnet_busy(un);
 	if (axen_get_eaddr(un, &un->un_eaddr)) {
-		usbnet_unbusy(un);
-		usbnet_unlock_core(un);
 		printf("EEPROM checksum error\n");
 		return;
 	}
-	usbnet_unbusy(un);
-	usbnet_unlock_core(un);
 
 	axen_ax88179_init(un);
 
@@ -894,20 +869,15 @@ axen_uno_tx_prepare(struct usbnet *un, struct mbuf *m, struct usbnet_chain *c)
 }
 
 static int
-axen_init_locked(struct ifnet *ifp)
+axen_uno_init(struct ifnet *ifp)
 {
 	struct usbnet * const un = ifp->if_softc;
 	uint16_t rxmode;
 	uint16_t wval;
 	uint8_t bval;
 
-	usbnet_isowned_core(un);
-
-	if (usbnet_isdying(un))
-		return EIO;
-
 	/* Cancel pending I/O */
-	usbnet_stop(un, ifp, 1);
+	axen_uno_stop(ifp, 1);
 
 	/* Reset the ethernet interface. */
 	axen_reset(un);
@@ -919,9 +889,6 @@ axen_init_locked(struct ifnet *ifp)
 	/* Configure offloading engine. */
 	axen_setoe_locked(un);
 
-	/* Program promiscuous mode and multicast filters. */
-	axen_setiff_locked(un);
-
 	/* Enable receiver, set RX mode */
 	axen_cmd(un, AXEN_CMD_MAC_READ2, 2, AXEN_MAC_RXCTL, &wval);
 	rxmode = le16toh(wval);
@@ -929,21 +896,7 @@ axen_init_locked(struct ifnet *ifp)
 	wval = htole16(rxmode);
 	axen_cmd(un, AXEN_CMD_MAC_WRITE2, 2, AXEN_MAC_RXCTL, &wval);
 
-	return usbnet_init_rx_tx(un);
-}
-
-static int
-axen_uno_init(struct ifnet *ifp)
-{
-	struct usbnet * const un = ifp->if_softc;
-
-	usbnet_lock_core(un);
-	usbnet_busy(un);
-	int ret = axen_init_locked(ifp);
-	usbnet_unbusy(un);
-	usbnet_unlock_core(un);
-
-	return ret;
+	return 0;
 }
 
 static void

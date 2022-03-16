@@ -1,4 +1,4 @@
-/*	$NetBSD: tx3912video.c,v 1.46 2021/04/24 23:36:38 thorpej Exp $ */
+/*	$NetBSD: tx3912video.c,v 1.48 2021/08/09 19:24:33 andvar Exp $ */
 
 /*-
  * Copyright (c) 1999-2002 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tx3912video.c,v 1.46 2021/04/24 23:36:38 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tx3912video.c,v 1.48 2021/08/09 19:24:33 andvar Exp $");
 
 #define TX3912VIDEO_DEBUG
 
@@ -195,7 +195,7 @@ tx3912video_attach(device_t parent, device_t self, void *aux)
 	ha.ha_ndspconf = 1;
 	ha.ha_dspconflist = &sc->sc_dspconf;
 
-	config_found(self, &ha, hpcfbprint, CFARG_EOL);
+	config_found(self, &ha, hpcfbprint, CFARGS_NONE);
 #if NBIVIDEO > 0
 	/* bivideo is no longer need */
 	bivideo_dont_attach = 1;
@@ -344,7 +344,7 @@ tx3912video_init(paddr_t fb_start, paddr_t *fb_end)
 	/* Set DMA transfer address to VID module */
 	tx3912video_framebuffer_init(chip);
 	
-	/* Syncronize framebuffer addr to frame signal */
+	/* Synchronize framebuffer addr to frame signal */
 	tx3912video_reset(chip);
 
 	bootinfo->fb_line_bytes = (chip->vc_fbwidth * fbdepth) / NBBY;

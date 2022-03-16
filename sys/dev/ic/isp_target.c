@@ -1,4 +1,4 @@
--/* $NetBSD: isp_target.c,v 1.35 2018/09/03 16:29:31 riastradh Exp $ */
+-/* $NetBSD: isp_target.c,v 1.37 2021/12/12 13:05:14 andvar Exp $ */
 /*-
  *  Copyright (c) 1997-2008 by Matthew Jacob
  *  All rights reserved.
@@ -65,7 +65,7 @@
 
 #ifdef	__NetBSD__
 #include <sys/cdefs.h> 
-__KERNEL_RCSID(0, "$NetBSD: isp_target.c,v 1.35 2018/09/03 16:29:31 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: isp_target.c,v 1.37 2021/12/12 13:05:14 andvar Exp $");
 #include <dev/ic/isp_netbsd.h>
 #endif
 #ifdef	__FreeBSD__
@@ -97,7 +97,7 @@ static void isp_handle_24xx_inotify(ispsoftc_t *, in_fcentry_24xx_t *);
 
 /*
  * The Qlogic driver gets an interrupt to look at response queue entries.
- * Some of these are status completions for initiatior mode commands, but
+ * Some of these are status completions for initiator mode commands, but
  * if target mode is enabled, we get a whole wad of response queue entries
  * to be handled here.
  *
@@ -123,7 +123,7 @@ static void isp_handle_24xx_inotify(ispsoftc_t *, in_fcentry_24xx_t *);
  * The third group that can show up in the response queue are Immediate
  * Notification events. These include things like notifications of SCSI bus
  * resets, or Bus Device Reset messages or other messages received. This
- * a classic oddbins area. It can get  a little weird because you then turn
+ * a classic oddbins area. It can get a little weird because you then turn
  * around and acknowledge the Immediate Notify by writing an entry onto the
  * request queue and then the f/w turns around and gives you an acknowledgement
  * to *your* acknowledgement on the response queue (the idea being to let
@@ -138,7 +138,7 @@ static void isp_handle_24xx_inotify(ispsoftc_t *, in_fcentry_24xx_t *);
  *
  * Because of the way this driver is designed, unfortunately most of the
  * actual synchronization work has to be done in the platform specific
- * code- we have no synchroniation primitives in the common code.
+ * code- we have no synchronization primitives in the common code.
  */
 
 int
@@ -1256,7 +1256,7 @@ isp_handle_atio(ispsoftc_t *isp, at_entry_t *aep)
 	 * The firmware status (except for the QLTM_SVALID bit) indicates
 	 * why this ATIO was sent to us.
 	 *
-	 * If QLTM_SVALID is set, the firware has recommended Sense Data.
+	 * If QLTM_SVALID is set, the firmware has recommended Sense Data.
 	 *
 	 * If the DISCONNECTS DISABLED bit is set in the flags field,
 	 * we're still connected on the SCSI bus - i.e. the initiator
@@ -1342,7 +1342,7 @@ isp_handle_atio2(ispsoftc_t *isp, at2_entry_t *aep)
 	 * The firmware status (except for the QLTM_SVALID bit) indicates
 	 * why this ATIO was sent to us.
 	 *
-	 * If QLTM_SVALID is set, the firware has recommended Sense Data.
+	 * If QLTM_SVALID is set, the firmware has recommended Sense Data.
 	 *
 	 * If the DISCONNECTS DISABLED bit is set in the flags field,
 	 * we're still connected on the SCSI bus - i.e. the initiator

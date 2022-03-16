@@ -1,4 +1,4 @@
-/*	$NetBSD: vfs_syscalls.c,v 1.551 2021/07/03 09:39:26 mlelstv Exp $	*/
+/*	$NetBSD: vfs_syscalls.c,v 1.555 2022/02/12 15:51:29 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2009, 2019, 2020 The NetBSD Foundation, Inc.
@@ -70,7 +70,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_syscalls.c,v 1.551 2021/07/03 09:39:26 mlelstv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_syscalls.c,v 1.555 2022/02/12 15:51:29 thorpej Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_fileassoc.h"
@@ -164,6 +164,70 @@ const char * const mountcompatnames[] = {
 };
 
 const u_int nmountcompatnames = __arraycount(mountcompatnames);
+
+/*
+ * Filter event method for EVFILT_FS.
+ */
+static struct klist fs_klist;
+static kmutex_t fs_klist_lock;
+
+CTASSERT((NOTE_SUBMIT & VQ_MOUNT) == 0);
+CTASSERT((NOTE_SUBMIT & VQ_UNMOUNT) == 0);
+
+void
+vfs_evfilt_fs_init(void)
+{
+	klist_init(&fs_klist);
+	mutex_init(&fs_klist_lock, MUTEX_DEFAULT, IPL_NONE);
+}
+
+static int
+filt_fsattach(struct knote *kn)
+{
+	mutex_enter(&fs_klist_lock);
+	kn->kn_flags |= EV_CLEAR;
+	klist_insert(&fs_klist, kn);
+	mutex_exit(&fs_klist_lock);
+
+	return 0;
+}
+
+static void
+filt_fsdetach(struct knote *kn)
+{
+	mutex_enter(&fs_klist_lock);
+	klist_remove(&fs_klist, kn);
+	mutex_exit(&fs_klist_lock);
+}
+
+static int
+filt_fs(struct knote *kn, long hint)
+{
+	int rv;
+
+	if (hint & NOTE_SUBMIT) {
+		KASSERT(mutex_owned(&fs_klist_lock));
+		kn->kn_fflags |= hint & ~NOTE_SUBMIT;
+	} else {
+		mutex_enter(&fs_klist_lock);
+	}
+
+	rv = (kn->kn_fflags != 0);
+
+	if ((hint & NOTE_SUBMIT) == 0) {
+		mutex_exit(&fs_klist_lock);
+	}
+
+	return rv;
+}
+
+/* referenced in kern_event.c */
+const struct filterops fs_filtops = {
+	.f_flags = FILTEROP_MPSAFE,
+	.f_attach = filt_fsattach,
+	.f_detach = filt_fsdetach,
+	.f_event = filt_fs,
+};
 
 static int 
 fd_nameiat(struct lwp *l, int fdat, struct nameidata *ndp)
@@ -553,8 +617,11 @@ do_sys_mount(struct lwp *l, const char *type, enum uio_seg type_seg,
 		    &data_len);
 		vfsopsrele = false;
 	}
-	if (!error)
-		KNOTE(&fs_klist, VQ_MOUNT);
+	if (!error) {
+		mutex_enter(&fs_klist_lock);
+		KNOTE(&fs_klist, NOTE_SUBMIT | VQ_MOUNT);
+		mutex_exit(&fs_klist_lock);
+	}
 
     done:
 	if (vfsopsrele)
@@ -633,8 +700,11 @@ sys_unmount(struct lwp *l, const struct sys_unmount_args *uap, register_t *retva
 	vrele(vp);
 	error = dounmount(mp, SCARG(uap, flags), l);
 	vfs_rele(mp);
-	if (!error)
-		KNOTE(&fs_klist, VQ_UNMOUNT);
+	if (!error) {
+		mutex_enter(&fs_klist_lock);
+		KNOTE(&fs_klist, NOTE_SUBMIT | VQ_UNMOUNT);
+		mutex_exit(&fs_klist_lock);
+	}
 	return error;
 }
 
@@ -1396,24 +1466,19 @@ sys___getvfsstat90(struct lwp *l, const struct sys___getvfsstat90_args *uap,
 /*
  * Change current working directory to a given file descriptor.
  */
-/* ARGSUSED */
 int
-sys_fchdir(struct lwp *l, const struct sys_fchdir_args *uap, register_t *retval)
+do_sys_fchdir(struct lwp *l, int fd, register_t *retval)
 {
-	/* {
-		syscallarg(int) fd;
-	} */
 	struct proc *p = l->l_proc;
 	struct cwdinfo *cwdi;
 	struct vnode *vp, *tdp;
 	struct mount *mp;
 	file_t *fp;
-	int error, fd;
+	int error;
 
 	/* fd_getvnode() will use the descriptor for us */
-	fd = SCARG(uap, fd);
 	if ((error = fd_getvnode(fd, &fp)) != 0)
-		return (error);
+		return error;
 	vp = fp->f_vnode;
 
 	vref(vp);
@@ -1454,9 +1519,22 @@ sys_fchdir(struct lwp *l, const struct sys_fchdir_args *uap, register_t *retval)
 	}
 	rw_exit(&cwdi->cwdi_lock);
 
- out:
+out:
 	fd_putfile(fd);
-	return (error);
+	return error;
+}
+
+/*
+ * Change current working directory to a given file descriptor.
+ */
+/* ARGSUSED */
+int
+sys_fchdir(struct lwp *l, const struct sys_fchdir_args *uap, register_t *retval)
+{
+	/* {
+		syscallarg(int) fd;
+	} */
+	return do_sys_fchdir(l, SCARG(uap, fd), retval);
 }
 
 /*
@@ -1496,6 +1574,28 @@ sys_fchroot(struct lwp *l, const struct sys_fchroot_args *uap, register_t *retva
 /*
  * Change current working directory (``.'').
  */
+int
+do_sys_chdir(struct lwp *l, const char *path, enum uio_seg seg,
+    register_t *retval)
+{
+	struct proc *p = l->l_proc;
+	struct cwdinfo * cwdi;
+	int error;
+	struct vnode *vp;
+
+	if ((error = chdir_lookup(path, seg, &vp, l)) != 0)
+		return error;
+	cwdi = p->p_cwdi;
+	rw_enter(&cwdi->cwdi_lock, RW_WRITER);
+	vrele(cwdi->cwdi_cdir);
+	cwdi->cwdi_cdir = vp;
+	rw_exit(&cwdi->cwdi_lock);
+	return 0;
+}
+
+/*
+ * Change current working directory (``.'').
+ */
 /* ARGSUSED */
 int
 sys_chdir(struct lwp *l, const struct sys_chdir_args *uap, register_t *retval)
@@ -1503,20 +1603,7 @@ sys_chdir(struct lwp *l, const struct sys_chdir_args *uap, register_t *retval)
 	/* {
 		syscallarg(const char *) path;
 	} */
-	struct proc *p = l->l_proc;
-	struct cwdinfo *cwdi;
-	int error;
-	struct vnode *vp;
-
-	if ((error = chdir_lookup(SCARG(uap, path), UIO_USERSPACE,
-				  &vp, l)) != 0)
-		return (error);
-	cwdi = p->p_cwdi;
-	rw_enter(&cwdi->cwdi_lock, RW_WRITER);
-	vrele(cwdi->cwdi_cdir);
-	cwdi->cwdi_cdir = vp;
-	rw_exit(&cwdi->cwdi_lock);
-	return (0);
+	return do_sys_chdir(l, SCARG(uap, path), UIO_USERSPACE, retval);
 }
 
 /*
@@ -2856,50 +2943,30 @@ sys_lseek(struct lwp *l, const struct sys_lseek_args *uap, register_t *retval)
 		syscallarg(off_t) offset;
 		syscallarg(int) whence;
 	} */
-	kauth_cred_t cred = l->l_cred;
 	file_t *fp;
-	struct vnode *vp;
-	struct vattr vattr;
-	off_t newoff;
 	int error, fd;
+
+	switch (SCARG(uap, whence)) {
+	case SEEK_CUR:
+	case SEEK_END:
+	case SEEK_SET:
+		break;
+	default:
+		return EINVAL;
+	}
 
 	fd = SCARG(uap, fd);
 
 	if ((fp = fd_getfile(fd)) == NULL)
 		return (EBADF);
 
-	vp = fp->f_vnode;
-	if (fp->f_type != DTYPE_VNODE || vp->v_type == VFIFO) {
+	if (fp->f_ops->fo_seek == NULL) {
 		error = ESPIPE;
 		goto out;
 	}
 
-	vn_lock(vp, LK_SHARED | LK_RETRY);
-
-	switch (SCARG(uap, whence)) {
-	case SEEK_CUR:
-		newoff = fp->f_offset + SCARG(uap, offset);
-		break;
-	case SEEK_END:
-		error = VOP_GETATTR(vp, &vattr, cred);
-		if (error) {
-			VOP_UNLOCK(vp);
-			goto out;
-		}
-		newoff = SCARG(uap, offset) + vattr.va_size;
-		break;
-	case SEEK_SET:
-		newoff = SCARG(uap, offset);
-		break;
-	default:
-		error = EINVAL;
-		VOP_UNLOCK(vp);
-		goto out;
-	}
-	VOP_UNLOCK(vp);
-	if ((error = VOP_SEEK(vp, fp->f_offset, newoff, cred)) == 0) {
-		*(off_t *)retval = fp->f_offset = newoff;
-	}
+	error = (*fp->f_ops->fo_seek)(fp, SCARG(uap, offset),
+	    SCARG(uap, whence), (off_t *)retval, FOF_UPDATE_OFFSET);
  out:
  	fd_putfile(fd);
 	return (error);
@@ -2918,7 +2985,6 @@ sys_pread(struct lwp *l, const struct sys_pread_args *uap, register_t *retval)
 		syscallarg(off_t) offset;
 	} */
 	file_t *fp;
-	struct vnode *vp;
 	off_t offset;
 	int error, fd = SCARG(uap, fd);
 
@@ -2930,19 +2996,14 @@ sys_pread(struct lwp *l, const struct sys_pread_args *uap, register_t *retval)
 		return (EBADF);
 	}
 
-	vp = fp->f_vnode;
-	if (fp->f_type != DTYPE_VNODE || vp->v_type == VFIFO) {
+	if (fp->f_ops->fo_seek == NULL) {
 		error = ESPIPE;
 		goto out;
 	}
 
 	offset = SCARG(uap, offset);
-
-	/*
-	 * XXX This works because no file systems actually
-	 * XXX take any action on the seek operation.
-	 */
-	if ((error = VOP_SEEK(vp, fp->f_offset, offset, fp->f_cred)) != 0)
+	error = (*fp->f_ops->fo_seek)(fp, offset, SEEK_SET, &offset, 0);
+	if (error)
 		goto out;
 
 	/* dofileread() will unuse the descriptor for us */
@@ -2985,7 +3046,6 @@ sys_pwrite(struct lwp *l, const struct sys_pwrite_args *uap, register_t *retval)
 		syscallarg(off_t) offset;
 	} */
 	file_t *fp;
-	struct vnode *vp;
 	off_t offset;
 	int error, fd = SCARG(uap, fd);
 
@@ -2997,19 +3057,14 @@ sys_pwrite(struct lwp *l, const struct sys_pwrite_args *uap, register_t *retval)
 		return (EBADF);
 	}
 
-	vp = fp->f_vnode;
-	if (fp->f_type != DTYPE_VNODE || vp->v_type == VFIFO) {
+	if (fp->f_ops->fo_seek == NULL) {
 		error = ESPIPE;
 		goto out;
 	}
 
 	offset = SCARG(uap, offset);
-
-	/*
-	 * XXX This works because no file systems actually
-	 * XXX take any action on the seek operation.
-	 */
-	if ((error = VOP_SEEK(vp, fp->f_offset, offset, fp->f_cred)) != 0)
+	error = (*fp->f_ops->fo_seek)(fp, offset, SEEK_SET, &offset, 0);
+	if (error)
 		goto out;
 
 	/* dofilewrite() will unuse the descriptor for us */

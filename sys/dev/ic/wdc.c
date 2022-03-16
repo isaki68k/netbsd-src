@@ -1,4 +1,4 @@
-/*	$NetBSD: wdc.c,v 1.306 2021/01/04 15:14:32 skrll Exp $ */
+/*	$NetBSD: wdc.c,v 1.308 2021/10/05 08:01:05 rin Exp $ */
 
 /*
  * Copyright (c) 1998, 2001, 2003 Manuel Bouyer.  All rights reserved.
@@ -58,7 +58,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: wdc.c,v 1.306 2021/01/04 15:14:32 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: wdc.c,v 1.308 2021/10/05 08:01:05 rin Exp $");
 
 #include "opt_ata.h"
 #include "opt_wdc.h"
@@ -149,7 +149,7 @@ static int	wdcreset(struct ata_channel *, int);
 static void	__wdcerror(struct ata_channel *, const char *);
 static int	__wdcwait_reset(struct ata_channel *, int, int);
 static void	__wdccommand_done(struct ata_channel *, struct ata_xfer *);
-static void	__wdccommand_poll(struct ata_channel *, struct ata_xfer *);
+static int	__wdccommand_poll(struct ata_channel *, struct ata_xfer *);
 static void	__wdccommand_done_end(struct ata_channel *, struct ata_xfer *);
 static void	__wdccommand_kill_xfer(struct ata_channel *,
 			               struct ata_xfer *, int);
@@ -245,8 +245,10 @@ wdc_sataprobe(struct ata_channel *chp)
 		    "cl=0x%x ch=0x%x\n",
 		    device_xname(chp->ch_atac->atac_dev), chp->ch_channel,
 		    sc, sn, cl, ch), DEBUG_PROBE);
-		if (atabus_alloc_drives(chp, wdc->wdc_maxdrives) != 0)
+		if (atabus_alloc_drives(chp, wdc->wdc_maxdrives) != 0) {
+			ata_channel_unlock(chp);
 			return;
+		}
 		/*
 		 * sc and sn are supposed to be 0x1 for ATAPI, but in some
 		 * cases we get wrong values here, so ignore it.
@@ -1485,10 +1487,11 @@ __wdccommand_start(struct ata_channel *chp, struct ata_xfer *xfer)
 	return ATASTART_POLL;
 }
 
-static void
+static int
 __wdccommand_poll(struct ata_channel *chp, struct ata_xfer *xfer)
 {
 	__wdccommand_intr(chp, xfer, 0);
+	return ATAPOLL_DONE;
 }
 
 static int

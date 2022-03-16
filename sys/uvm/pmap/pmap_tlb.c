@@ -1,4 +1,4 @@
-/*	$NetBSD: pmap_tlb.c,v 1.44 2021/05/04 09:05:34 skrll Exp $	*/
+/*	$NetBSD: pmap_tlb.c,v 1.52 2022/03/04 08:11:48 skrll Exp $	*/
 
 /*-
  * Copyright (c) 2010 The NetBSD Foundation, Inc.
@@ -31,7 +31,7 @@
 
 #include <sys/cdefs.h>
 
-__KERNEL_RCSID(0, "$NetBSD: pmap_tlb.c,v 1.44 2021/05/04 09:05:34 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pmap_tlb.c,v 1.52 2022/03/04 08:11:48 skrll Exp $");
 
 /*
  * Manages address spaces in a TLB.
@@ -73,7 +73,7 @@ __KERNEL_RCSID(0, "$NetBSD: pmap_tlb.c,v 1.44 2021/05/04 09:05:34 skrll Exp $");
  * "current ASID" field, e.g. the ASID field of the COP 0 register EntryHi for
  * MIPS, or the ASID field of TTBR0 for AA64.  The bit number used in these
  * bitmaps comes from the CPU's cpu_index().  Even though these bitmaps contain
- * the bits for all CPUs, the bits that  correspond to the bits belonging to
+ * the bits for all CPUs, the bits that correspond to the bits belonging to
  * the CPUs sharing a TLB can only be manipulated while holding that TLB's
  * lock.  Atomic ops must be used to update them since multiple CPUs may be
  * changing different sets of bits at same time but these sets never overlap.
@@ -378,8 +378,9 @@ pmap_tlb_info_init(struct pmap_tlb_info *ti)
 	kcpuset_set(ti->ti_kcpuset, cpu_index(curcpu()));
 #endif
 
-	if (ti->ti_asid_max == 0) {
-		ti->ti_asid_max = pmap_md_tlb_asid_max();
+	const tlb_asid_t asid_max = pmap_md_tlb_asid_max();
+	if (ti->ti_asid_max == 0 || asid_max < ti->ti_asid_max) {
+		ti->ti_asid_max = asid_max;
 		ti->ti_asids_free = TLBINFO_ASID_INITIAL_FREE(ti->ti_asid_max);
 	}
 
@@ -470,9 +471,9 @@ pmap_tlb_asid_reinitialize(struct pmap_tlb_info *ti, enum tlb_invalidate_op op)
 		pmap_tlb_asid_check();
 #ifdef DIAGNOSTIC
 		const u_int asids_count = pmap_tlb_asid_count(ti);
-#endif
 		KASSERTMSG(asids_found == asids_count,
 		    "found %u != count %u", asids_found, asids_count);
+#endif
 		if (__predict_false(asids_found >= ti->ti_asid_max / 2)) {
 			tlb_invalidate_asids(KERNEL_PID + 1, ti->ti_asid_max);
 #else /* MULTIPROCESSOR && !PMAP_TLB_NEED_SHOOTDOWN */
@@ -546,9 +547,6 @@ pmap_tlb_shootdown_process(void)
 {
 	struct cpu_info * const ci = curcpu();
 	struct pmap_tlb_info * const ti = cpu_tlb_info(ci);
-#ifdef DIAGNOSTIC
-	struct pmap * const pm = curlwp->l_proc->p_vmspace->vm_map.pmap;
-#endif
 
 	KASSERT(cpu_intr_p());
 	KASSERTMSG(ci->ci_cpl >= IPL_SCHED, "%s: cpl (%d) < IPL_SCHED (%d)",
@@ -579,7 +577,6 @@ pmap_tlb_shootdown_process(void)
 			 * next called for this pmap, it will allocate a new
 			 * ASID.
 			 */
-			KASSERT(!pmap_tlb_intersecting_onproc_p(pm, ti));
 			pmap_tlb_pai_reset(ti, pai, PAI_PMAP(pai, ti));
 		}
 		break;
@@ -865,7 +862,6 @@ pmap_tlb_asid_alloc(struct pmap_tlb_info *ti, pmap_t pm,
 	 * Mark it as used and insert the pai into the list of active asids.
 	 * There is also one less asid free in this TLB.
 	 */
-	KASSERT(ti->ti_asid_hint > KERNEL_PID);
 	pai->pai_asid = ti->ti_asid_hint++;
 #ifdef MULTIPROCESSOR
 	if (PMAP_TLB_FLUSH_ASID_ON_RESET) {
@@ -958,7 +954,7 @@ pmap_tlb_asid_acquire(pmap_t pm, struct lwp *l)
 		ci->ci_pmap_asid_cur = pai->pai_asid;
 		UVMHIST_LOG(maphist, "setting asid to %#jx", pai->pai_asid,
 		    0, 0, 0);
-		tlb_set_asid(pai->pai_asid);
+		tlb_set_asid(pai->pai_asid, pm);
 		pmap_tlb_asid_check();
 	} else {
 		printf("%s: l (%p) != curlwp %p\n", __func__, l, curlwp);
@@ -996,7 +992,7 @@ pmap_tlb_asid_deactivate(pmap_t pm)
 	}
 #endif
 	curcpu()->ci_pmap_asid_cur = KERNEL_PID;
-	tlb_set_asid(KERNEL_PID);
+	tlb_set_asid(KERNEL_PID, pmap_kernel());
 
 	pmap_tlb_pai_check(cpu_tlb_info(curcpu()), false);
 #if defined(DEBUG)
@@ -1083,11 +1079,11 @@ pmap_tlb_asid_check(void)
 void
 pmap_tlb_check(pmap_t pm, bool (*func)(void *, vaddr_t, tlb_asid_t, pt_entry_t))
 {
-        struct pmap_tlb_info * const ti = cpu_tlb_info(curcpu());
-        struct pmap_asid_info * const pai = PMAP_PAI(pm, ti);
-        TLBINFO_LOCK(ti);
-        if (pm == pmap_kernel() || pai->pai_asid > KERNEL_PID)
+	struct pmap_tlb_info * const ti = cpu_tlb_info(curcpu());
+	struct pmap_asid_info * const pai = PMAP_PAI(pm, ti);
+	TLBINFO_LOCK(ti);
+	if (pm == pmap_kernel() || pai->pai_asid > KERNEL_PID)
 		tlb_walk(pm, func);
-        TLBINFO_UNLOCK(ti);
+	TLBINFO_UNLOCK(ti);
 }
 #endif /* DEBUG */

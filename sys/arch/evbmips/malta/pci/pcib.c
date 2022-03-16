@@ -1,4 +1,4 @@
-/*	$NetBSD: pcib.c,v 1.21 2021/04/24 23:36:35 thorpej Exp $	*/
+/*	$NetBSD: pcib.c,v 1.24 2022/01/22 15:10:31 skrll Exp $	*/
 
 /*
  * Copyright 2002 Wasabi Systems, Inc.
@@ -36,7 +36,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: pcib.c,v 1.21 2021/04/24 23:36:35 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: pcib.c,v 1.24 2022/01/22 15:10:31 skrll Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -196,7 +196,7 @@ pcib_attach(device_t parent, device_t self, void *aux)
 	 * Initialize the DMA tag used for ISA DMA.
 	 */
 	error = bus_dmatag_subregion(pa->pa_dmat, MALTA_DMA_ISA_PHYSBASE,
-	    MALTA_DMA_ISA_PHYSBASE + MALTA_DMA_ISA_SIZE, &sc->sc_dmat, 0);
+	    MALTA_DMA_ISA_PHYSBASE + MALTA_DMA_ISA_SIZE - 1, &sc->sc_dmat, 0);
 	if (error)
 		panic("malta_dma_init: failed to create ISA dma tag: %d",
 		    error);
@@ -352,7 +352,7 @@ pcib_bridge_callback(device_t self)
 	iba.iba_ic->ic_attach_hook = pcib_isa_attach_hook;
 	iba.iba_ic->ic_detach_hook = pcib_isa_detach_hook;
 
-	config_found(self, &iba, isabusprint, CFARG_EOL);
+	config_found(self, &iba, isabusprint, CFARGS_NONE);
 }
 
 static void
@@ -426,7 +426,7 @@ pcib_intr(void *v)
 		 * From YAMON source code:
 		 *
 		 * IRQ7 is used to detect spurious interrupts.
-		 * The interrupt acknowledge cycle returns IRQ7, if no 
+		 * The interrupt acknowledge cycle returns IRQ7, if no
 		 * interrupts is requested.
 		 * We can differentiate between this situation and a
 		 * "Normal" IRQ7 by reading the ISR.

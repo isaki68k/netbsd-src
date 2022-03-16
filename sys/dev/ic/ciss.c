@@ -1,4 +1,4 @@
-/*	$NetBSD: ciss.c,v 1.51 2021/04/24 23:36:55 thorpej Exp $	*/
+/*	$NetBSD: ciss.c,v 1.53 2022/01/01 09:53:32 msaitoh Exp $	*/
 /*	$OpenBSD: ciss.c,v 1.68 2013/05/30 16:15:02 deraadt Exp $	*/
 
 /*
@@ -19,7 +19,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ciss.c,v 1.51 2021/04/24 23:36:55 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ciss.c,v 1.53 2022/01/01 09:53:32 msaitoh Exp $");
 
 #include "bio.h"
 
@@ -472,7 +472,7 @@ ciss_attach(struct ciss_softc *sc)
 	sc->sc_adapter.adapt_minphys = cissminphys;
 	sc->sc_adapter.adapt_ioctl = ciss_scsi_ioctl;
 	sc->sc_adapter.adapt_nchannels = 1;
-	config_found(sc->sc_dev, &sc->sc_channel, scsiprint, CFARG_EOL);
+	config_found(sc->sc_dev, &sc->sc_channel, scsiprint, CFARGS_NONE);
 
 #if 0
 	sc->sc_link_raw.adapter_softc = sc;
@@ -480,7 +480,7 @@ ciss_attach(struct ciss_softc *sc)
 	sc->sc_link_raw.adapter = &ciss_raw_switch;
 	sc->sc_link_raw.adapter_target = sc->ndrives;
 	sc->sc_link_raw.adapter_buswidth = sc->ndrives;
-	config_found(sc->sc_dev, &sc->sc_channel, scsiprint, CFARG_EOL);
+	config_found(sc->sc_dev, &sc->sc_channel, scsiprint, CFARGS_NONE);
 #endif
 
 #if NBIO > 0
@@ -1405,7 +1405,7 @@ ciss_ioctl(device_t dev, u_long cmd, void *addr)
  * XXX since we don't know how to associate physical drives with logical drives
  * yet, BIOCDISK_NOVOL is equivalent to BIOCDISK to the volume that we've
  * associated all physical drives to.
- * Maybe assoicate all physical drives to all logical volumes, but only return
+ * Maybe associate all physical drives to all logical volumes, but only return
  * physical drives on one logical volume.  Which one?  Either 1st volume that
  * is degraded, rebuilding, or failed?
  */

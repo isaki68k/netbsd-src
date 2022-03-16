@@ -1,5 +1,5 @@
 /* $KAME: sctp_pcb.c,v 1.39 2005/06/16 18:29:25 jinmei Exp $ */
-/* $NetBSD: sctp_pcb.c,v 1.21 2020/04/30 03:30:10 riastradh Exp $ */
+/* $NetBSD: sctp_pcb.c,v 1.23 2021/12/10 20:36:04 andvar Exp $ */
 
 /*
  * Copyright (c) 2001, 2002, 2003, 2004 Cisco Systems, Inc.
@@ -33,7 +33,7 @@
  * SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sctp_pcb.c,v 1.21 2020/04/30 03:30:10 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sctp_pcb.c,v 1.23 2021/12/10 20:36:04 andvar Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -742,7 +742,7 @@ sctp_endpoint_probe(struct sockaddr *nam, struct sctppcbhead *head,
 		}
 #ifdef SCTP_DEBUG
 		if (sctp_debug_on & SCTP_DEBUG_PCB1) {
-			printf("Ok, found maching local port\n");
+			printf("Ok, found matching local port\n");
 		}
 #endif
 		LIST_FOREACH(laddr, &inp->sctp_addr_list, sctp_nxt_addr) {
@@ -4016,7 +4016,7 @@ sctp_load_addresses_from_init(struct sctp_tcb *stcb, struct mbuf *m,
 			return (-1);
 		}
 	}
-	/* since a unlock occured we must check the
+	/* since a unlock occurred we must check the
 	 * TCB's state and the pcb's gone flags.
 	 */
 	if (l_inp->sctp_flags & (SCTP_PCB_FLAGS_SOCKET_GONE|SCTP_PCB_FLAGS_SOCKET_ALLGONE)) {

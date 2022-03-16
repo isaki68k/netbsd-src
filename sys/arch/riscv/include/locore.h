@@ -1,4 +1,4 @@
-/* $NetBSD: locore.h,v 1.8 2021/05/01 06:53:08 skrll Exp $ */
+/* $NetBSD: locore.h,v 1.10 2021/10/05 11:01:49 jmcneill Exp $ */
 
 /*-
  * Copyright (c) 2014 The NetBSD Foundation, Inc.
@@ -78,6 +78,7 @@ struct trapframe {
 #define tf_t6		tf_reg[_X_T6]
 };
 
+#ifdef _LP64
 // For COMPAT_NETBSD32 coredumps
 struct trapframe32 {
 	struct reg32 tf_regs;
@@ -85,8 +86,9 @@ struct trapframe32 {
 	register32_t tf_cause;
 	register32_t tf_sr;
 };
+#endif
 
-#define FB_A0	0
+#define	FB_A0	0
 #define	FB_RA	1
 #define	FB_SP	2
 #define	FB_GP	3
@@ -102,7 +104,7 @@ struct trapframe32 {
 #define	FB_S9	13
 #define	FB_S10	14
 #define	FB_S11	15
-#define FB_MAX	16
+#define	FB_MAX	16
 
 struct faultbuf {
 	register_t fb_reg[FB_MAX];

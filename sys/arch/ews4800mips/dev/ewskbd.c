@@ -1,4 +1,4 @@
-/*	$NetBSD: ewskbd.c,v 1.12 2021/04/24 23:36:37 thorpej Exp $	*/
+/*	$NetBSD: ewskbd.c,v 1.14 2021/09/18 15:14:40 tsutsui Exp $	*/
 
 /*-
  * Copyright (c) 2005 Izumi Tsutsui.  All rights reserved.
@@ -59,7 +59,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ewskbd.c,v 1.12 2021/04/24 23:36:37 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ewskbd.c,v 1.14 2021/09/18 15:14:40 tsutsui Exp $");
 
 #include <sys/param.h>
 #include <sys/kmem.h>
@@ -251,7 +251,7 @@ ewskbd_zsc_attach(device_t parent, device_t self, void *aux)
 	wskaa.accessops = &ewskbd_wskbd_accessops;
 	wskaa.accesscookie = cs;
 	sc->sc_dc->wskbddev = config_found(self, &wskaa, wskbddevprint,
-	    CFARG_EOL);
+	    CFARGS_NONE);
 }
 
 static int
@@ -494,12 +494,7 @@ ewskbd_wskbd_ioctl(void *cookie, u_long cmd, void *data, int flag,
 		break;
 
 #ifdef notyet
-	case WSKBDIO_BELL:
 	case WSKBDIO_COMPLEXBELL:
-	case WSKBDIO_SETBELL:
-	case WSKBDIO_GETBELL:
-	case WSKBDIO_SETDEFAULTBELL:
-	case WSKBDIO_GETDEFAULTBELL:
 	case WSKBDIO_SETKEYREPEAT:
 	case WSKBDIO_GETKEYREPEAT:
 	case WSKBDIO_SETDEFAULTKEYREPEAT:

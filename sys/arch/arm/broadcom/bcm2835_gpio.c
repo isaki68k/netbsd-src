@@ -1,4 +1,4 @@
-/*	$NetBSD: bcm2835_gpio.c,v 1.20 2021/04/24 23:36:26 thorpej Exp $	*/
+/*	$NetBSD: bcm2835_gpio.c,v 1.24 2022/01/17 19:38:14 thorpej Exp $	*/
 
 /*-
  * Copyright (c) 2013, 2014, 2017 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: bcm2835_gpio.c,v 1.20 2021/04/24 23:36:26 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: bcm2835_gpio.c,v 1.24 2022/01/17 19:38:14 thorpej Exp $");
 
 /*
  * Driver for BCM2835 GPIO
@@ -196,7 +196,7 @@ bcm283x_pinctrl_set_config(device_t dev, const void *data, size_t len)
 	const u_int *func = fdtbus_get_prop(phandle, "brcm,function", &func_len);
 
 	if (!pull && !func) {
-		aprint_error_dev(dev, "one of brcm,pull or brcm,funcion must "
+		aprint_error_dev(dev, "one of brcm,pull or brcm,function must "
 		    "be specified");
 		return -1;
 	}
@@ -383,7 +383,8 @@ bcmgpio_attach(device_t parent, device_t self, void *aux)
 	gba.gba_gc = &sc->sc_gpio_gc;
 	gba.gba_pins = &sc->sc_gpio_pins[0];
 	gba.gba_npins = sc->sc_maxpins;
-	config_found(self, &gba, gpiobus_print, CFARG_EOL);
+	config_found(self, &gba, gpiobus_print,
+	    CFARGS(.devhandle = device_handle(self)));
 }
 
 /* GPIO interrupt support functions */
@@ -873,7 +874,7 @@ bcm2835gpio_gpio_pin_ctl(void *arg, int pin, int flags)
 	mutex_enter(&sc->sc_lock);
 	if (flags & (GPIO_PIN_OUTPUT|GPIO_PIN_INPUT)) {
 		if ((flags & GPIO_PIN_INPUT) != 0) {
-			/* for safety INPUT will overide output */
+			/* for safety INPUT will override output */
 			bcm283x_pin_setfunc(sc, pin, BCM2835_GPIO_IN);
 		} else {
 			bcm283x_pin_setfunc(sc, pin, BCM2835_GPIO_OUT);

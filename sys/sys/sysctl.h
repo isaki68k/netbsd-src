@@ -1,4 +1,4 @@
-/*	$NetBSD: sysctl.h,v 1.233 2021/04/13 01:10:24 mrg Exp $	*/
+/*	$NetBSD: sysctl.h,v 1.236 2021/09/16 22:47:29 christos Exp $	*/
 
 /*
  * Copyright (c) 1989, 1993
@@ -548,6 +548,34 @@ struct kinfo_proc2 {
  */
 #define	L_DETACHED		0x00800000
 
+#define	__SYSCTL_PROC_FLAG_BITS \
+	"\20" \
+	"\1ADVLOCK" \
+	"\2CONTROLT" \
+	"\3INMEM" \
+	"\4NOCLDSTOP" \
+	"\5PPWAIT" \
+	"\6PROFIL" \
+	"\7SELECT" \
+	"\10SINTR" \
+	"\11SUGID" \
+	"\12SYSTEM" \
+	"\13SA" \
+	"\14TRACED" \
+	"\15WAITED" \
+	"\16WEXIT" \
+	"\17EXEC" \
+	"\20OWEUPC" \
+	"\22NOCLDWAIT" \
+	"\23P32" \
+	"\24CLDSIGIGN" \
+	"\26SYSTRACE" \
+	"\27CHTRACED" \
+	"\30STOPFORK" \
+	"\31STOPEXEC" \
+	"\32STOPEXIT" \
+	"\33SYSCALL"
+
 /*
  * KERN_LWP structure. See notes on KERN_PROC2 about adding elements.
  */
@@ -661,6 +689,8 @@ struct buf_sysctl {
 	uint64_t b_saveaddr;	/* PTR: Original b_addr for physio */
 	uint64_t b_lblkno;	/* DADDR_T: Logical block number */
 };
+
+#define	KERN_BUFSLOP	20
 
 /*
  * kern.file2 returns an array of these structures, which are designed

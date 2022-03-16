@@ -1,4 +1,4 @@
-/* $NetBSD: podulebus.c,v 1.31 2021/04/24 23:36:23 thorpej Exp $ */
+/* $NetBSD: podulebus.c,v 1.33 2021/09/11 20:28:03 andvar Exp $ */
 
 /*
  * Copyright (c) 1994-1996 Mark Brinicombe.
@@ -43,7 +43,7 @@
 
 #include <sys/param.h>
 
-__KERNEL_RCSID(0, "$NetBSD: podulebus.c,v 1.31 2021/04/24 23:36:23 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: podulebus.c,v 1.33 2021/09/11 20:28:03 andvar Exp $");
 
 #include <sys/systm.h>
 #include <sys/kernel.h>
@@ -484,7 +484,7 @@ podulebusattach(device_t parent, device_t self, void *aux)
 			/* Any old description is now wrong */
 			podules[loop].description[0] = 0;
 			if (value != 0xffff) {
-				printf("podule%d: ID overriden man=%04x prod=%04x\n",
+				printf("podule%d: ID overridden man=%04x prod=%04x\n",
 				    loop, podules[loop].manufacturer,
 				    podules[loop].product);
 				podules[loop].slottype = SLOT_POD;
@@ -493,8 +493,7 @@ podulebusattach(device_t parent, device_t self, void *aux)
 				pa.pa_podule = &podules[loop];
 				pa.pa_iot = &podulebus_bs_tag;
 				config_found(self, &pa, podulebusprint,
-				    CFARG_SUBMATCH, podulebussubmatch,
-				    CFARG_EOL);
+				    CFARGS(.submatch = podulebussubmatch));
 				continue;
 			}
 			if (value == 0xffff) {
@@ -509,8 +508,7 @@ podulebusattach(device_t parent, device_t self, void *aux)
 			pa.pa_podule = &podules[loop];
 			pa.pa_iot = &podulebus_bs_tag;
 			config_found(self, &pa, podulebusprint,
-			    CFARG_SUBMATCH, podulebussubmatch,
-			    CFARG_EOL);
+			    CFARGS(.submatch = podulebussubmatch));
 		}
 	}
 }

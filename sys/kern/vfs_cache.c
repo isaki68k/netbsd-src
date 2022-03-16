@@ -1,4 +1,4 @@
-/*	$NetBSD: vfs_cache.c,v 1.149 2020/12/12 18:41:13 christos Exp $	*/
+/*	$NetBSD: vfs_cache.c,v 1.152 2021/11/01 21:28:03 andvar Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2019, 2020 The NetBSD Foundation, Inc.
@@ -172,7 +172,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_cache.c,v 1.149 2020/12/12 18:41:13 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_cache.c,v 1.152 2021/11/01 21:28:03 andvar Exp $");
 
 #define __NAMECACHE_PRIVATE
 #ifdef _KERNEL_OPT
@@ -180,6 +180,7 @@ __KERNEL_RCSID(0, "$NetBSD: vfs_cache.c,v 1.149 2020/12/12 18:41:13 christos Exp
 #include "opt_dtrace.h"
 #endif
 
+#include <sys/param.h>
 #include <sys/types.h>
 #include <sys/atomic.h>
 #include <sys/callout.h>
@@ -700,7 +701,8 @@ cache_lookup_linked(struct vnode *dvp, const char *name, size_t namelen,
 			return false;
 		}
 		KASSERT(dvi->vi_nc_uid != VNOVAL && dvi->vi_nc_gid != VNOVAL);
-		error = kauth_authorize_vnode(cred, KAUTH_ACCESS_ACTION(VEXEC,
+		error = kauth_authorize_vnode(cred,
+		    KAUTH_ACCESS_ACTION(VEXEC,
 		    dvp->v_type, dvi->vi_nc_mode & ALLPERMS), dvp, NULL,
 		    genfs_can_access(dvp, cred, dvi->vi_nc_uid, dvi->vi_nc_gid,
 		    dvi->vi_nc_mode & ALLPERMS, NULL, VEXEC));
@@ -795,7 +797,7 @@ cache_revlookup(struct vnode *vp, struct vnode **dvpp, char **bpp, char *bufp,
 			return -1;
 		}
 		KASSERT(vi->vi_nc_uid != VNOVAL && vi->vi_nc_gid != VNOVAL);
-		error = kauth_authorize_vnode(curlwp->l_cred,
+		error = kauth_authorize_vnode(kauth_cred_get(),
 		    KAUTH_ACCESS_ACTION(VEXEC, vp->v_type, vi->vi_nc_mode &
 		    ALLPERMS), vp, NULL, genfs_can_access(vp, curlwp->l_cred,
 		    vi->vi_nc_uid, vi->vi_nc_gid, vi->vi_nc_mode & ALLPERMS,
@@ -1370,7 +1372,7 @@ cache_reclaim(void)
 	int toscan;
 
 	/*
-	 * Scan up to a preset maxium number of entries, but no more than
+	 * Scan up to a preset maximum number of entries, but no more than
 	 * 0.8% of the total at once (to allow for very small systems).
 	 *
 	 * On bigger systems, do a larger chunk of work to reduce the number

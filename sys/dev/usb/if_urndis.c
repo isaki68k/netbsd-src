@@ -1,4 +1,4 @@
-/*	$NetBSD: if_urndis.c,v 1.39 2020/03/15 23:04:51 thorpej Exp $ */
+/*	$NetBSD: if_urndis.c,v 1.47 2022/03/03 05:56:58 riastradh Exp $ */
 /*	$OpenBSD: if_urndis.c,v 1.31 2011/07/03 15:47:17 matthew Exp $ */
 
 /*
@@ -21,7 +21,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_urndis.c,v 1.39 2020/03/15 23:04:51 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_urndis.c,v 1.47 2022/03/03 05:56:58 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -71,8 +71,6 @@ static void urndis_uno_rx_loop(struct usbnet *, struct usbnet_chain *,
 			       uint32_t);
 static unsigned urndis_uno_tx_prepare(struct usbnet *, struct mbuf *,
 				      struct usbnet_chain *);
-
-static int urndis_init_un(struct ifnet *, struct usbnet *);
 
 static uint32_t urndis_ctrl_handle_init(struct usbnet *,
     const struct rndis_comp_hdr *);
@@ -855,36 +853,16 @@ urndis_watchdog(struct ifnet *ifp)
 #endif
 
 static int
-urndis_init_un(struct ifnet *ifp, struct usbnet *un)
-{
-	int 			 err;
-
-	if (ifp->if_flags & IFF_RUNNING)
-		return 0;
-
-	err = urndis_ctrl_init(un);
-	if (err != RNDIS_STATUS_SUCCESS)
-		return EIO;
-
-	usbnet_lock_core(un);
-	if (usbnet_isdying(un))
-		err = EIO;
-	else {
-		usbnet_stop(un, ifp, 1);
-		err = usbnet_init_rx_tx(un);
-		usbnet_set_link(un, err == 0);
-	}
-	usbnet_unlock_core(un);
-
-	return err;
-}
-
-static int
 urndis_uno_init(struct ifnet *ifp)
 {
 	struct usbnet *un = ifp->if_softc;
 
-	return urndis_init_un(ifp, un);
+	KASSERT(IFNET_LOCKED(ifp));
+
+	if (urndis_ctrl_init(un) != RNDIS_STATUS_SUCCESS)
+		return EIO;
+
+	return 0;
 }
 
 static int
@@ -1048,18 +1026,18 @@ urndis_attach(device_t parent, device_t self, void *aux)
 	ifp->if_watchdog = urndis_watchdog;
 #endif
 
-	usbnet_attach(un, "urndisdet");
+	usbnet_attach(un);
 
-	struct ifnet *ifp = usbnet_ifp(un);
-	urndis_init_un(ifp, un);
+	if (urndis_ctrl_init(un) != RNDIS_STATUS_SUCCESS) {
+		aprint_error("%s: unable to initialize hardware\n",
+		    DEVNAME(un));
+		return;
+	}
 
 	if (urndis_ctrl_query(un, OID_802_3_PERMANENT_ADDRESS, NULL, 0,
 	    &buf, &bufsz) != RNDIS_STATUS_SUCCESS) {
 		aprint_error("%s: unable to get hardware address\n",
 		    DEVNAME(un));
-		usbnet_lock_core(un);
-		usbnet_stop(un, ifp, 1);
-		usbnet_unlock_core(un);
 		return;
 	}
 
@@ -1070,9 +1048,6 @@ urndis_attach(device_t parent, device_t self, void *aux)
 		aprint_error("%s: invalid address\n", DEVNAME(un));
 		if (buf && bufsz)
 			kmem_free(buf, bufsz);
-		usbnet_lock_core(un);
-		usbnet_stop(un, ifp, 1);
-		usbnet_unlock_core(un);
 		return;
 	}
 
@@ -1083,16 +1058,8 @@ urndis_attach(device_t parent, device_t self, void *aux)
 	if (urndis_ctrl_set(un, OID_GEN_CURRENT_PACKET_FILTER, &filter,
 	    sizeof(filter)) != RNDIS_STATUS_SUCCESS) {
 		aprint_error("%s: unable to set data filters\n", DEVNAME(un));
-		usbnet_lock_core(un);
-		usbnet_stop(un, ifp, 1);
-		usbnet_unlock_core(un);
 		return;
 	}
-
-	/* Turn off again now it has been identified. */
-	usbnet_lock_core(un);
-	usbnet_stop(un, ifp, 1);
-	usbnet_unlock_core(un);
 
 	usbnet_attach_ifp(un, IFF_SIMPLEX | IFF_BROADCAST | IFF_MULTICAST,
             0, NULL);

@@ -1,4 +1,4 @@
-/*	$NetBSD: sctp_output.c,v 1.22 2020/06/13 01:41:59 roy Exp $ */
+/*	$NetBSD: sctp_output.c,v 1.28 2021/12/05 04:56:40 msaitoh Exp $ */
 /*	$KAME: sctp_output.c,v 1.48 2005/06/16 18:29:24 jinmei Exp $	*/
 
 /*
@@ -30,7 +30,7 @@
  * SUCH DAMAGE.
  */
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sctp_output.c,v 1.22 2020/06/13 01:41:59 roy Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sctp_output.c,v 1.28 2021/12/05 04:56:40 msaitoh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ipsec.h"
@@ -2187,7 +2187,7 @@ sctp_lowlevel_chunk_output(struct sctp_inpcb *inp,
 #endif
 		/*
 		 * If source address selection fails and we find no route then
-		 * the ip_ouput should fail as well with a NO_ROUTE_TO_HOST
+		 * the ip_output should fail as well with a NO_ROUTE_TO_HOST
 		 * type error. We probably should catch that somewhere and
 		 * abort the association right away (assuming this is an INIT
 		 * being sent).
@@ -3161,7 +3161,7 @@ sctp_are_there_new_addresses(struct sctp_association *asoc,
 		}
 	}
 	if (fnd == 0) {
-		/* New address added! no need to look futher. */
+		/* New address added! no need to look further. */
 		return (1);
 	}
 	/* Ok so far lets munge through the rest of the packet */
@@ -3356,7 +3356,7 @@ sctp_send_initiate_ack(struct sctp_inpcb *inp, struct sctp_tcb *stcb,
 	stc.peerport = sh->src_port;
 
 	/*
-	 * If we wanted to honor cookie life extentions, we would add
+	 * If we wanted to honor cookie life extensions, we would add
 	 * to stc.cookie_life. For now we should NOT honor any extension
 	 */
 	stc.site_scope = stc.local_scope = stc.loopback_scope = 0;
@@ -3958,7 +3958,7 @@ sctp_prune_prsctp(struct sctp_tcb *stcb,
 							return;
 						}
 					} /* if chunk was present */
-				} /* if of sufficent priority */
+				} /* if of sufficient priority */
 			} /* if chunk has enabled */
 		} /* tailqforeach */
 
@@ -4360,7 +4360,7 @@ sctp_msg_append(struct sctp_tcb *stcb,
 		chk->send_size = dataout;
 		chk->book_size = chk->send_size;
 		chk->mbcnt = mbcnt;
-		/* ok, we are commited */
+		/* ok, we are committed */
 		if ((srcv->sinfo_flags & SCTP_UNORDERED) == 0) {
 			/* bump the ssn if we are unordered. */
 			strq->next_sequence_sent++;
@@ -4475,7 +4475,7 @@ sctp_msg_append(struct sctp_tcb *stcb,
 		 * chain of mbufs by going through our temp array
 		 * and breaking the pointers.
 		 */
-		/* ok, we are commited */
+		/* ok, we are committed */
 		if ((srcv->sinfo_flags & SCTP_UNORDERED) == 0) {
 			/* bump the ssn if we are unordered. */
 			strq->next_sequence_sent++;
@@ -4900,7 +4900,7 @@ sctp_clean_up_datalist(struct sctp_tcb *stcb,
 		if (i) {
 			/* Any chunk NOT 0 you zap the time
 			 * chunk 0 gets zapped or set based on
-			 * if a RTO measurment is needed.
+			 * if a RTO measurement is needed.
 			 */
 			data_list[i]->do_rtt = 0;
 		}
@@ -8166,7 +8166,7 @@ static struct sctp_nets *
 sctp_select_hb_destination(struct sctp_tcb *stcb, struct timeval *now)
 {
 	struct sctp_nets *net, *hnet;
-	int ms_goneby, highest_ms, state_overide=0;
+	int ms_goneby, highest_ms, state_override=0;
 
 	SCTP_GETTIME_TIMEVAL(now);
 	highest_ms = 0;
@@ -8209,15 +8209,15 @@ sctp_select_hb_destination(struct sctp_tcb *stcb, struct timeval *now)
 #endif
 		/* When the address state is unconfirmed but still considered reachable, we
 		 * HB at a higher rate. Once it goes confirmed OR reaches the "unreachable"
-		 * state, thenw we cut it back to HB at a more normal pace.
+		 * state, then we cut it back to HB at a more normal pace.
 		 */
 		if ((net->dest_state & (SCTP_ADDR_UNCONFIRMED|SCTP_ADDR_NOT_REACHABLE)) == SCTP_ADDR_UNCONFIRMED) {
-			state_overide = 1;
+			state_override = 1;
 		} else {
-			state_overide = 0;
+			state_override = 0;
 		}
 
-		if ((((unsigned int)ms_goneby >= net->RTO) || (state_overide)) &&
+		if ((((unsigned int)ms_goneby >= net->RTO) || (state_override)) &&
 		    (ms_goneby > highest_ms)) {
 			highest_ms = ms_goneby;
 			hnet = net;
@@ -8231,12 +8231,12 @@ sctp_select_hb_destination(struct sctp_tcb *stcb, struct timeval *now)
 	}
 	if (hnet &&
 	   ((hnet->dest_state & (SCTP_ADDR_UNCONFIRMED|SCTP_ADDR_NOT_REACHABLE)) == SCTP_ADDR_UNCONFIRMED)) {
-		state_overide = 1;
+		state_override = 1;
 	} else {
-		state_overide = 0;
+		state_override = 0;
 	}
 
-	if (highest_ms && (((unsigned int)highest_ms >= hnet->RTO) || state_overide)) {
+	if (highest_ms && (((unsigned int)highest_ms >= hnet->RTO) || state_override)) {
 		/* Found the one with longest delay bounds
 		 * OR it is unconfirmed and still not marked
 		 * unreachable.
@@ -9413,7 +9413,7 @@ sctp_copy_it_in(struct sctp_inpcb *inp,
 			}
 			error = sblock(&so->so_snd, M_WAITOK);
 			if (error) {
-				/* Can't aquire the lock */
+				/* Can't acquire the lock */
 				goto out_locked;
 			}
 #if defined(__FreeBSD__) && __FreeBSD_version >= 502115
@@ -9577,7 +9577,7 @@ sctp_copy_it_in(struct sctp_inpcb *inp,
 		/* fix up the send_size if it is not present */
 		chk->send_size = tot_out;
 		chk->book_size = chk->send_size;
-		/* ok, we are commited */
+		/* ok, we are committed */
 		if ((srcv->sinfo_flags & SCTP_UNORDERED) == 0) {
 			/* bump the ssn if we are unordered. */
 			strq->next_sequence_sent++;
@@ -9949,7 +9949,7 @@ sctp_sosend(struct socket *so, struct sockaddr *addr, struct uio *uio,
 		/* UDP style, we must go ahead and start the INIT process */
 		if ((use_rcvinfo) &&
 		    (srcv.sinfo_flags & SCTP_ABORT)) {
-			/* User asks to abort a non-existant asoc */
+			/* User asks to abort a non-existent asoc */
 			error = ENOENT;
 			sounlock(so);
 			goto out;

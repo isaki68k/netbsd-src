@@ -1,4 +1,4 @@
-/* $NetBSD: zs_ioasic.c,v 1.42 2021/04/24 23:36:59 thorpej Exp $ */
+/* $NetBSD: zs_ioasic.c,v 1.44 2021/09/11 20:28:06 andvar Exp $ */
 
 /*-
  * Copyright (c) 1996, 1998 The NetBSD Foundation, Inc.
@@ -41,7 +41,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: zs_ioasic.c,v 1.42 2021/04/24 23:36:59 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: zs_ioasic.c,v 1.44 2021/09/11 20:28:06 andvar Exp $");
 
 #include "opt_ddb.h"
 #include "opt_kgdb.h"
@@ -309,9 +309,8 @@ zs_ioasic_attach(device_t parent, device_t self, void *aux)
 		 * The child attach will setup the hardware.
 		 */
 		if (config_found(self, (void *)&zs_args, zs_ioasic_print,
-				 CFARG_SUBMATCH, zs_ioasic_submatch,
-				 CFARG_LOCATORS, locs,
-				 CFARG_EOL) == NULL) {
+				 CFARGS(.submatch = zs_ioasic_submatch,
+					.locators = locs)) == NULL) {
 			/* No sub-driver.  Just reset it. */
 			uint8_t reset = (channel == 0) ?
 			    ZSWR9_A_RESET : ZSWR9_B_RESET;
@@ -488,7 +487,7 @@ zs_set_modes(struct zs_chanstate *cs, int cflag)
 	/*
 	 * Output hardware flow control on the chip is horrendous:
 	 * if carrier detect drops, the receiver is disabled, and if
-	 * CTS drops, the transmitter is stoped IN MID CHARACTER!
+	 * CTS drops, the transmitter is stopped IN MID CHARACTER!
 	 * Therefore, NEVER set the HFC bit, and instead use the
 	 * status interrupt to detect CTS changes.
 	 */

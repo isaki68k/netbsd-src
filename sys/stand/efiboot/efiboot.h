@@ -1,4 +1,4 @@
-/*	$NetBSD: efiboot.h,v 1.15 2021/06/20 19:10:47 jmcneill Exp $	*/
+/*	$NetBSD: efiboot.h,v 1.18 2021/10/06 10:13:19 jmcneill Exp $	*/
 
 /*-
  * Copyright (c) 2016 Kimihiro Nonaka <nonaka@netbsd.org>
@@ -43,6 +43,11 @@ struct boot_command {
 	const char *c_help;
 };
 
+int arch_prepare_boot(const char *, const char *, u_long *);
+void arch_cleanup_boot(void);
+size_t arch_alloc_size(void);
+void arch_set_virtual_address_map(EFI_MEMORY_DESCRIPTOR *, UINTN, UINTN, UINTN, UINT32);
+
 /* conf.c */
 extern struct fs_ops null_fs_ops;
 extern struct fs_ops tftp_fs_ops;
@@ -51,7 +56,6 @@ extern struct fs_ops nfs_fs_ops;
 /* boot.c */
 void boot(void);
 void clearit(void);
-void print_banner(void);
 extern const struct boot_command commands[];
 void command_help(char *);
 int set_default_device(const char *);
@@ -76,6 +80,7 @@ void efi_cleanup(void);
 void efi_exit(void);
 void efi_delay(int);
 void efi_reboot(void);
+void efi_progress(const char *, ...);
 extern int howto;
 
 /* efichar.c */
@@ -107,7 +112,14 @@ bool efi_pxe_match_booted_interface(const EFI_MAC_ADDRESS *, UINT32);
 /* efiwatchdog.c */
 void efi_set_watchdog(uint32_t, uint64_t);
 
+/* efigop.c */
+void efi_gop_probe(void);
+void efi_gop_show(void);
+void efi_gop_dump(void);
+void efi_gop_setmode(UINT32);
+
 /* exec.c */
+int load_file(const char *, u_long, bool, EFI_PHYSICAL_ADDRESS *, u_long *);
 int exec_netbsd(const char *, const char *);
 
 /* panic.c */

@@ -1,4 +1,4 @@
-/* $NetBSD: acpi_i2c.h,v 1.2 2021/01/26 00:19:53 jmcneill Exp $ */
+/* $NetBSD: acpi_i2c.h,v 1.4 2021/08/09 04:06:21 thorpej Exp $ */
 
 /*-
  * Copyright (c) 2017 The NetBSD Foundation, Inc.

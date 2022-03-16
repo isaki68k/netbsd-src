@@ -1,4 +1,4 @@
-/*	$NetBSD: altq_hfsc.c,v 1.28 2018/11/15 10:23:55 maxv Exp $	*/
+/*	$NetBSD: altq_hfsc.c,v 1.30 2021/09/21 14:30:15 christos Exp $	*/
 /*	$KAME: altq_hfsc.c,v 1.26 2005/04/13 03:44:24 suz Exp $	*/
 
 /*
@@ -43,7 +43,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: altq_hfsc.c,v 1.28 2018/11/15 10:23:55 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: altq_hfsc.c,v 1.30 2021/09/21 14:30:15 christos Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_altq.h"
@@ -1916,15 +1916,10 @@ hfscioctl(dev_t dev, ioctlcmd_t cmd, void *addr, int flag,
 	case HFSC_GETSTATS:
 		break;
 	default:
-#if (__FreeBSD_version > 400000)
-		if ((error = suser(p)) != 0)
-			return (error);
-#else
 		if ((error = kauth_authorize_network(l->l_cred,
 		    KAUTH_NETWORK_ALTQ, KAUTH_REQ_NETWORK_ALTQ_HFSC, NULL,
 		    NULL, NULL)) != 0)
 			return (error);
-#endif
 		break;
 	}
 
@@ -2182,6 +2177,7 @@ hfsccmd_class_stats(struct hfsc_class_stats *ap)
 	usp = ap->stats;
 	for (n = 0; cl != NULL && n < nclasses; cl = hfsc_nextclass(cl), n++) {
 
+		memset(&stats, 0, sizeof(stats));
 		get_class_stats(&stats, cl);
 
 		if ((error = copyout((void *)&stats, (void *)usp++,

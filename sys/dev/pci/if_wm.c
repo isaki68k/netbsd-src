@@ -1,4 +1,4 @@
-/*	$NetBSD: if_wm.c,v 1.705 2021/06/16 00:21:18 riastradh Exp $	*/
+/*	$NetBSD: if_wm.c,v 1.729 2022/02/26 15:04:39 rillig Exp $	*/
 
 /*
  * Copyright (c) 2001, 2002, 2003, 2004 Wasabi Systems, Inc.
@@ -39,21 +39,21 @@
 
   Copyright (c) 2001-2005, Intel Corporation
   All rights reserved.
- 
+
   Redistribution and use in source and binary forms, with or without
   modification, are permitted provided that the following conditions are met:
- 
+
    1. Redistributions of source code must retain the above copyright notice,
       this list of conditions and the following disclaimer.
- 
+
    2. Redistributions in binary form must reproduce the above copyright
       notice, this list of conditions and the following disclaimer in the
       documentation and/or other materials provided with the distribution.
- 
+
    3. Neither the name of the Intel Corporation nor the names of its
       contributors may be used to endorse or promote products derived from
       this software without specific prior written permission.
- 
+
   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
   AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -82,7 +82,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.705 2021/06/16 00:21:18 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_wm.c,v 1.729 2022/02/26 15:04:39 rillig Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_net_mpsafe.h"
@@ -471,11 +471,11 @@ struct wm_rxqueue {
 	uint32_t rxq_bytes;		/* for AIM */
 #ifdef WM_EVENT_COUNTERS
 	/* RX event counters */
-	WM_Q_EVCNT_DEFINE(rxq, intr);	/* Interrupts */
-	WM_Q_EVCNT_DEFINE(rxq, defer);	/* Rx deferred processing */
+	WM_Q_EVCNT_DEFINE(rxq, intr)	/* Interrupts */
+	WM_Q_EVCNT_DEFINE(rxq, defer)	/* Rx deferred processing */
 
-	WM_Q_EVCNT_DEFINE(rxq, ipsum);	/* IP checksums checked */
-	WM_Q_EVCNT_DEFINE(rxq, tusum);	/* TCP/UDP cksums checked */
+	WM_Q_EVCNT_DEFINE(rxq, ipsum)	/* IP checksums checked */
+	WM_Q_EVCNT_DEFINE(rxq, tusum)	/* TCP/UDP cksums checked */
 #endif
 };
 
@@ -1068,6 +1068,8 @@ static bool	wm_phy_need_linkdown_discard(struct wm_softc *);
 static void	wm_set_linkdown_discard(struct wm_softc *);
 static void	wm_clear_linkdown_discard(struct wm_softc *);
 
+static int	wm_sysctl_tdh_handler(SYSCTLFN_PROTO);
+static int	wm_sysctl_tdt_handler(SYSCTLFN_PROTO);
 #ifdef WM_DEBUG
 static int	wm_sysctl_debug(SYSCTLFN_PROTO);
 #endif
@@ -1599,85 +1601,112 @@ static const struct wm_product {
 	  "I219 LM Ethernet Connection",
 	  WM_T_PCH_SPT,		WMP_F_COPPER },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM2,
-	  "I219 LM Ethernet Connection",
+	  "I219 LM (2) Ethernet Connection",
 	  WM_T_PCH_SPT,		WMP_F_COPPER },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM3,
-	  "I219 LM Ethernet Connection",
+	  "I219 LM (3) Ethernet Connection",
 	  WM_T_PCH_SPT,		WMP_F_COPPER },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM4,
-	  "I219 LM Ethernet Connection",
+	  "I219 LM (4) Ethernet Connection",
 	  WM_T_PCH_SPT,		WMP_F_COPPER },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM5,
-	  "I219 LM Ethernet Connection",
+	  "I219 LM (5) Ethernet Connection",
 	  WM_T_PCH_SPT,		WMP_F_COPPER },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM6,
-	  "I219 LM Ethernet Connection",
+	  "I219 LM (6) Ethernet Connection",
 	  WM_T_PCH_CNP,		WMP_F_COPPER },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM7,
-	  "I219 LM Ethernet Connection",
+	  "I219 LM (7) Ethernet Connection",
 	  WM_T_PCH_CNP,		WMP_F_COPPER },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM8,
-	  "I219 LM Ethernet Connection",
+	  "I219 LM (8) Ethernet Connection",
 	  WM_T_PCH_CNP,		WMP_F_COPPER },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM9,
-	  "I219 LM Ethernet Connection",
+	  "I219 LM (9) Ethernet Connection",
 	  WM_T_PCH_CNP,		WMP_F_COPPER },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM10,
-	  "I219 LM Ethernet Connection",
+	  "I219 LM (10) Ethernet Connection",
 	  WM_T_PCH_CNP,		WMP_F_COPPER },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM11,
-	  "I219 LM Ethernet Connection",
+	  "I219 LM (11) Ethernet Connection",
 	  WM_T_PCH_CNP,		WMP_F_COPPER },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM12,
-	  "I219 LM Ethernet Connection",
+	  "I219 LM (12) Ethernet Connection",
 	  WM_T_PCH_SPT,		WMP_F_COPPER },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM13,
-	  "I219 LM Ethernet Connection",
+	  "I219 LM (13) Ethernet Connection",
 	  WM_T_PCH_CNP,		WMP_F_COPPER },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM14,
-	  "I219 LM Ethernet Connection",
+	  "I219 LM (14) Ethernet Connection",
 	  WM_T_PCH_CNP,		WMP_F_COPPER },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM15,
-	  "I219 LM Ethernet Connection",
+	  "I219 LM (15) Ethernet Connection",
+	  WM_T_PCH_CNP,		WMP_F_COPPER },
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM16,
+	  "I219 LM (16) Ethernet Connection",
+	  WM_T_PCH_CNP,		WMP_F_COPPER },
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM17,
+	  "I219 LM (17) Ethernet Connection",
+	  WM_T_PCH_CNP,		WMP_F_COPPER },
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM18,
+	  "I219 LM (18) Ethernet Connection",
+	  WM_T_PCH_CNP,		WMP_F_COPPER },
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_LM19,
+	  "I219 LM (19) Ethernet Connection",
 	  WM_T_PCH_CNP,		WMP_F_COPPER },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V,
 	  "I219 V Ethernet Connection",
 	  WM_T_PCH_SPT,		WMP_F_COPPER },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V2,
-	  "I219 V Ethernet Connection",
+	  "I219 V (2) Ethernet Connection",
 	  WM_T_PCH_SPT,		WMP_F_COPPER },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V4,
-	  "I219 V Ethernet Connection",
+	  "I219 V (4) Ethernet Connection",
 	  WM_T_PCH_SPT,		WMP_F_COPPER },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V5,
-	  "I219 V Ethernet Connection",
+	  "I219 V (5) Ethernet Connection",
 	  WM_T_PCH_SPT,		WMP_F_COPPER },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V6,
-	  "I219 V Ethernet Connection",
+	  "I219 V (6) Ethernet Connection",
 	  WM_T_PCH_CNP,		WMP_F_COPPER },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V7,
-	  "I219 V Ethernet Connection",
+	  "I219 V (7) Ethernet Connection",
 	  WM_T_PCH_CNP,		WMP_F_COPPER },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V8,
-	  "I219 V Ethernet Connection",
+	  "I219 V (8) Ethernet Connection",
 	  WM_T_PCH_CNP,		WMP_F_COPPER },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V9,
-	  "I219 V Ethernet Connection",
+	  "I219 V (9) Ethernet Connection",
 	  WM_T_PCH_CNP,		WMP_F_COPPER },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V10,
-	  "I219 V Ethernet Connection",
+	  "I219 V (10) Ethernet Connection",
 	  WM_T_PCH_CNP,		WMP_F_COPPER },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V11,
-	  "I219 V Ethernet Connection",
+	  "I219 V (11) Ethernet Connection",
 	  WM_T_PCH_CNP,		WMP_F_COPPER },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V12,
-	  "I219 V Ethernet Connection",
+	  "I219 V (12) Ethernet Connection",
 	  WM_T_PCH_SPT,		WMP_F_COPPER },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V13,
-	  "I219 V Ethernet Connection",
+	  "I219 V (13) Ethernet Connection",
 	  WM_T_PCH_CNP,		WMP_F_COPPER },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V14,
-	  "I219 V Ethernet Connection",
+	  "I219 V (14) Ethernet Connection",
+	  WM_T_PCH_CNP,		WMP_F_COPPER },
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V15,
+	  "I219 V (15) Ethernet Connection",
+	  WM_T_PCH_CNP,		WMP_F_COPPER },
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V16,
+	  "I219 V (16) Ethernet Connection",
+	  WM_T_PCH_CNP,		WMP_F_COPPER },
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V17,
+	  "I219 V (17) Ethernet Connection",
+	  WM_T_PCH_CNP,		WMP_F_COPPER },
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V18,
+	  "I219 V (18) Ethernet Connection",
+	  WM_T_PCH_CNP,		WMP_F_COPPER },
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_I219_V19,
+	  "I219 V (19) Ethernet Connection",
 	  WM_T_PCH_CNP,		WMP_F_COPPER },
 	{ 0,			0,
 	  NULL,
@@ -1733,11 +1762,8 @@ wm_82575_write_8bit_ctlr_reg(struct wm_softc *sc, uint32_t reg, uint32_t off,
 static inline void
 wm_set_dma_addr(volatile wiseman_addr_t *wa, bus_addr_t v)
 {
-	wa->wa_low = htole32(v & 0xffffffffU);
-	if (sizeof(bus_addr_t) == 8)
-		wa->wa_high = htole32((uint64_t) v >> 32);
-	else
-		wa->wa_high = 0;
+	wa->wa_low = htole32(BUS_ADDR_LO32(v));
+	wa->wa_high = htole32(BUS_ADDR_HI32(v));
 }
 
 /*
@@ -1903,10 +1929,13 @@ wm_attach(device_t parent, device_t self, void *aux)
 	sc->sc_pc = pa->pa_pc;
 	sc->sc_pcitag = pa->pa_tag;
 
-	if (pci_dma64_available(pa))
+	if (pci_dma64_available(pa)) {
+		aprint_verbose(", 64-bit DMA");
 		sc->sc_dmat = pa->pa_dmat64;
-	else
+	} else {
+		aprint_verbose(", 32-bit DMA");
 		sc->sc_dmat = pa->pa_dmat;
+	}
 
 	sc->sc_pcidevid = PCI_PRODUCT(pa->pa_id);
 	sc->sc_rev = PCI_REVISION(pci_conf_read(pc, pa->pa_tag,PCI_CLASS_REG));
@@ -1989,7 +2018,12 @@ wm_attach(device_t parent, device_t self, void *aux)
 	 * this driver) to use it for normal operation, though it is
 	 * required to work around bugs in some chip versions.
 	 */
-	if (sc->sc_type >= WM_T_82544) {
+	switch (sc->sc_type) {
+	case WM_T_82544:
+	case WM_T_82541:
+	case WM_T_82541_2:
+	case WM_T_82547:
+	case WM_T_82547_2:
 		/* First we have to find the I/O BAR. */
 		for (i = PCI_MAPREG_START; i < PCI_MAPREG_END; i += 4) {
 			memtype = pci_mapreg_type(pa->pa_pc, pa->pa_tag, i);
@@ -2022,7 +2056,9 @@ wm_attach(device_t parent, device_t self, void *aux)
 				aprint_error_dev(sc->sc_dev,
 				    "WARNING: unable to map I/O space\n");
 		}
-
+		break;
+	default:
+		break;
 	}
 
 	/* Enable bus mastering.  Disable MWI on the i82542 2.0. */
@@ -3050,7 +3086,7 @@ alloc_retry:
 		sc->sc_ethercom.ec_capabilities |= ETHERCAP_EEE;
 
 	/*
-	 * We can perform TCPv4 and UDPv4 checkums in-bound.  Only
+	 * We can perform TCPv4 and UDPv4 checksums in-bound.  Only
 	 * on i82543 and later.
 	 */
 	if (sc->sc_type >= WM_T_82543) {
@@ -3118,8 +3154,12 @@ alloc_retry:
 
 	sc->sc_txrx_use_workqueue = false;
 
-	if (wm_phy_need_linkdown_discard(sc))
+	if (wm_phy_need_linkdown_discard(sc)) {
+		DPRINTF(sc, WM_DEBUG_LINK,
+		    ("%s: %s: Set linkdown discard flag\n",
+			device_xname(sc->sc_dev), __func__));
 		wm_set_linkdown_discard(sc);
+	}
 
 	wm_init_sysctls(sc);
 
@@ -3259,6 +3299,10 @@ wm_resume(device_t self, const pmf_qual_t *qual)
 	if (sc->sc_type >= WM_T_PCH2)
 		wm_resume_workarounds_pchlan(sc);
 	if ((ifp->if_flags & IFF_UP) == 0) {
+		/* >= PCH_SPT hardware workaround before reset. */
+		if (sc->sc_type >= WM_T_PCH_SPT)
+			wm_flush_desc_rings(sc);
+
 		wm_reset(sc);
 		/* Non-AMT based hardware can now take control from firmware */
 		if ((sc->sc_flags & WM_F_HAS_AMT) == 0)
@@ -3585,10 +3629,12 @@ wm_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 		WM_CORE_UNLOCK(sc);
 		error = ifmedia_ioctl(ifp, ifr, &sc->sc_mii.mii_media, cmd);
 		if (error == 0 && wm_phy_need_linkdown_discard(sc)) {
-			if (IFM_SUBTYPE(ifr->ifr_media) == IFM_NONE)
+			if (IFM_SUBTYPE(ifr->ifr_media) == IFM_NONE) {
+				DPRINTF(sc, WM_DEBUG_LINK,
+				    ("%s: %s: Set linkdown discard flag\n",
+					device_xname(sc->sc_dev), __func__));
 				wm_set_linkdown_discard(sc);
-			else
-				wm_clear_linkdown_discard(sc);
+			}
 		}
 		break;
 	case SIOCINITIFADDR:
@@ -3604,14 +3650,14 @@ wm_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 			break;
 		}
 		WM_CORE_UNLOCK(sc);
-		if (((ifp->if_flags & IFF_UP) == 0) && wm_phy_need_linkdown_discard(sc))
-			wm_clear_linkdown_discard(sc);
 		/*FALLTHROUGH*/
 	default:
 		if (cmd == SIOCSIFFLAGS && wm_phy_need_linkdown_discard(sc)) {
-			if (((ifp->if_flags & IFF_UP) == 0) && ((ifr->ifr_flags & IFF_UP) != 0)) {
-				wm_clear_linkdown_discard(sc);
-			} else if (((ifp->if_flags & IFF_UP) != 0) && ((ifr->ifr_flags & IFF_UP) == 0)) {
+			if (((ifp->if_flags & IFF_UP) != 0) &&
+			    ((ifr->ifr_flags & IFF_UP) == 0)) {
+				DPRINTF(sc, WM_DEBUG_LINK,
+				    ("%s: %s: Set linkdown discard flag\n",
+					device_xname(sc->sc_dev), __func__));
 				wm_set_linkdown_discard(sc);
 			}
 		}
@@ -3629,7 +3675,7 @@ wm_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 		error = 0;
 
 		if (cmd == SIOCSIFCAP)
-			error = (*ifp->if_init)(ifp);
+			error = if_init(ifp);
 		else if (cmd != SIOCADDMULTI && cmd != SIOCDELMULTI)
 			;
 		else if (ifp->if_flags & IFF_RUNNING) {
@@ -4818,8 +4864,15 @@ wm_reset_phy(struct wm_softc *sc)
 }
 
 /*
- * Only used by WM_T_PCH_SPT which does not use multiqueue,
- * so it is enough to check sc->sc_queue[0] only.
+ * wm_flush_desc_rings - remove all descriptors from the descriptor rings.
+ *
+ * In i219, the descriptor rings must be emptied before resetting the HW
+ * or before changing the device state to D3 during runtime (runtime PM).
+ *
+ * Failure to do this will cause the HW to enter a unit hang state which can
+ * only be released by PCI reset on the device.
+ *
+ * I219 does not use multiqueue, so it is enough to check sc->sc_queue[0] only.
  */
 static void
 wm_flush_desc_rings(struct wm_softc *sc)
@@ -4841,16 +4894,24 @@ wm_flush_desc_rings(struct wm_softc *sc)
 	if (((preg & DESCRING_STATUS_FLUSH_REQ) == 0) || (reg == 0))
 		return;
 
-	/* TX */
-	device_printf(sc->sc_dev, "Need TX flush (reg = %08x, len = %u)\n",
-	    preg, reg);
+	/*
+	 * Remove all descriptors from the tx_ring.
+	 *
+	 * We want to clear all pending descriptors from the TX ring. Zeroing
+	 * happens when the HW reads the regs. We assign the ring itself as
+	 * the data of the next descriptor. We don't care about the data we are
+	 * about to reset the HW.
+	 */
+#ifdef WM_DEBUG
+	device_printf(sc->sc_dev, "Need TX flush (reg = %08x)\n", preg);
+#endif
 	reg = CSR_READ(sc, WMREG_TCTL);
 	CSR_WRITE(sc, WMREG_TCTL, reg | TCTL_EN);
 
 	txq = &sc->sc_queue[0].wmq_txq;
 	nexttx = txq->txq_next;
 	txd = &txq->txq_descs[nexttx];
-	wm_set_dma_addr(&txd->wtx_addr, WM_CDTXADDR(txq, nexttx));
+	wm_set_dma_addr(&txd->wtx_addr, txq->txq_desc_dma);
 	txd->wtx_cmdlen = htole32(WTX_CMD_IFCS | 512);
 	txd->wtx_fields.wtxu_status = 0;
 	txd->wtx_fields.wtxu_options = 0;
@@ -4869,8 +4930,13 @@ wm_flush_desc_rings(struct wm_softc *sc)
 	if ((preg & DESCRING_STATUS_FLUSH_REQ) == 0)
 		return;
 
-	/* RX */
+	/*
+	 * Mark all descriptors in the RX ring as consumed and disable the
+	 * rx ring.
+	 */
+#ifdef WM_DEBUG
 	device_printf(sc->sc_dev, "Need RX flush (reg = %08x)\n", preg);
+#endif
 	rctl = CSR_READ(sc, WMREG_RCTL);
 	CSR_WRITE(sc, WMREG_RCTL, rctl & ~RCTL_EN);
 	CSR_WRITE_FLUSH(sc);
@@ -5933,6 +5999,7 @@ wm_init_sysctls(struct wm_softc *sc)
 		    sc->sc_queue[i].sysctlname, SYSCTL_DESCR("Queue Name"),
 		    NULL, 0, NULL, 0, CTL_CREATE, CTL_EOL) != 0)
 			break;
+
 		if (sysctl_createv(log, 0, &qnode, &cnode,
 		    CTLFLAG_READONLY, CTLTYPE_INT,
 		    "txq_free", SYSCTL_DESCR("TX queue free"),
@@ -5941,8 +6008,56 @@ wm_init_sysctls(struct wm_softc *sc)
 			break;
 		if (sysctl_createv(log, 0, &qnode, &cnode,
 		    CTLFLAG_READONLY, CTLTYPE_INT,
+		    "txd_head", SYSCTL_DESCR("TX descriptor head"),
+		    wm_sysctl_tdh_handler, 0, (void *)txq,
+		    0, CTL_CREATE, CTL_EOL) != 0)
+			break;
+		if (sysctl_createv(log, 0, &qnode, &cnode,
+		    CTLFLAG_READONLY, CTLTYPE_INT,
+		    "txd_tail", SYSCTL_DESCR("TX descriptor tail"),
+		    wm_sysctl_tdt_handler, 0, (void *)txq,
+		    0, CTL_CREATE, CTL_EOL) != 0)
+			break;
+		if (sysctl_createv(log, 0, &qnode, &cnode,
+		    CTLFLAG_READONLY, CTLTYPE_INT,
 		    "txq_next", SYSCTL_DESCR("TX queue next"),
 		    NULL, 0, &txq->txq_next,
+		    0, CTL_CREATE, CTL_EOL) != 0)
+			break;
+		if (sysctl_createv(log, 0, &qnode, &cnode,
+		    CTLFLAG_READONLY, CTLTYPE_INT,
+		    "txq_sfree", SYSCTL_DESCR("TX queue sfree"),
+		    NULL, 0, &txq->txq_sfree,
+		    0, CTL_CREATE, CTL_EOL) != 0)
+			break;
+		if (sysctl_createv(log, 0, &qnode, &cnode,
+		    CTLFLAG_READONLY, CTLTYPE_INT,
+		    "txq_snext", SYSCTL_DESCR("TX queue snext"),
+		    NULL, 0, &txq->txq_snext,
+		    0, CTL_CREATE, CTL_EOL) != 0)
+			break;
+		if (sysctl_createv(log, 0, &qnode, &cnode,
+		    CTLFLAG_READONLY, CTLTYPE_INT,
+		    "txq_sdirty", SYSCTL_DESCR("TX queue sdirty"),
+		    NULL, 0, &txq->txq_sdirty,
+		    0, CTL_CREATE, CTL_EOL) != 0)
+			break;
+		if (sysctl_createv(log, 0, &qnode, &cnode,
+		    CTLFLAG_READONLY, CTLTYPE_INT,
+		    "txq_flags", SYSCTL_DESCR("TX queue flags"),
+		    NULL, 0, &txq->txq_flags,
+		    0, CTL_CREATE, CTL_EOL) != 0)
+			break;
+		if (sysctl_createv(log, 0, &qnode, &cnode,
+		    CTLFLAG_READONLY, CTLTYPE_BOOL,
+		    "txq_stopping", SYSCTL_DESCR("TX queue stopping"),
+		    NULL, 0, &txq->txq_stopping,
+		    0, CTL_CREATE, CTL_EOL) != 0)
+			break;
+		if (sysctl_createv(log, 0, &qnode, &cnode,
+		    CTLFLAG_READONLY, CTLTYPE_BOOL,
+		    "txq_sending", SYSCTL_DESCR("TX queue sending"),
+		    NULL, 0, &txq->txq_sending,
 		    0, CTL_CREATE, CTL_EOL) != 0)
 			break;
 
@@ -6039,8 +6154,8 @@ wm_init_locked(struct ifnet *ifp)
 	if_statadd2(ifp, if_collisions, CSR_READ(sc, WMREG_COLC),
 	    if_ierrors, CSR_READ(sc, WMREG_RXERRC));
 
-	/* PCH_SPT hardware workaround */
-	if (sc->sc_type == WM_T_PCH_SPT)
+	/* >= PCH_SPT hardware workaround before reset. */
+	if (sc->sc_type >= WM_T_PCH_SPT)
 		wm_flush_desc_rings(sc);
 
 	/* Reset the chip to a known state. */
@@ -6097,7 +6212,7 @@ wm_init_locked(struct ifnet *ifp)
 		 * 82574's EITR should be set same throttling value as ITR.
 		 *
 		 * For N interrupts/sec, set this value to:
-		 * 1,000,000 / N in contrast to ITR throttoling value.
+		 * 1,000,000 / N in contrast to ITR throttling value.
 		 */
 		sc->sc_itr_init = 450;
 	} else if (sc->sc_type >= WM_T_82543) {
@@ -7370,7 +7485,9 @@ wm_init_tx_queue(struct wm_softc *sc, struct wm_queue *wmq,
 	wm_init_tx_regs(sc, wmq, txq);
 	wm_init_tx_buffer(sc, txq);
 
-	txq->txq_flags = 0; /* Clear WM_TXQ_NO_SPACE */
+	/* Clear other than WM_TXQ_LINKDOWN_DISCARD */
+	txq->txq_flags &= WM_TXQ_LINKDOWN_DISCARD;
+
 	txq->txq_sending = false;
 }
 
@@ -9381,13 +9498,21 @@ wm_linkintr_gmii(struct wm_softc *sc, uint32_t icr)
 		DPRINTF(sc, WM_DEBUG_LINK, ("%s: LINK: LSC -> up %s\n",
 			device_xname(dev),
 			(status & STATUS_FD) ? "FDX" : "HDX"));
-		if (wm_phy_need_linkdown_discard(sc))
+		if (wm_phy_need_linkdown_discard(sc)) {
+			DPRINTF(sc, WM_DEBUG_LINK,
+			    ("%s: linkintr: Clear linkdown discard flag\n",
+				device_xname(dev)));
 			wm_clear_linkdown_discard(sc);
+		}
 	} else {
 		DPRINTF(sc, WM_DEBUG_LINK, ("%s: LINK: LSC -> down\n",
 			device_xname(dev)));
-		if (wm_phy_need_linkdown_discard(sc))
+		if (wm_phy_need_linkdown_discard(sc)) {
+			DPRINTF(sc, WM_DEBUG_LINK,
+			    ("%s: linkintr: Set linkdown discard flag\n",
+				device_xname(dev)));
 			wm_set_linkdown_discard(sc);
+		}
 	}
 	if ((sc->sc_type == WM_T_ICH8) && (link == false))
 		wm_gig_downshift_workaround_ich8lan(sc);
@@ -9774,6 +9899,20 @@ wm_sched_handle_queue(struct wm_softc *sc, struct wm_queue *wmq)
 		softint_schedule(wmq->wmq_si);
 }
 
+static inline void
+wm_legacy_intr_disable(struct wm_softc *sc)
+{
+
+	CSR_WRITE(sc, WMREG_IMC, 0xffffffffU);
+}
+
+static inline void
+wm_legacy_intr_enable(struct wm_softc *sc)
+{
+
+	CSR_WRITE(sc, WMREG_IMS, sc->sc_icr);
+}
+
 /*
  * wm_intr_legacy:
  *
@@ -9783,105 +9922,112 @@ static int
 wm_intr_legacy(void *arg)
 {
 	struct wm_softc *sc = arg;
+	struct ifnet *ifp = &sc->sc_ethercom.ec_if;
 	struct wm_queue *wmq = &sc->sc_queue[0];
 	struct wm_txqueue *txq = &wmq->wmq_txq;
 	struct wm_rxqueue *rxq = &wmq->wmq_rxq;
+	u_int txlimit = sc->sc_tx_intr_process_limit;
+	u_int rxlimit = sc->sc_rx_intr_process_limit;
 	uint32_t icr, rndval = 0;
-	int handled = 0;
+	bool more = false;
 
-	while (1 /* CONSTCOND */) {
-		icr = CSR_READ(sc, WMREG_ICR);
-		if ((icr & sc->sc_icr) == 0)
-			break;
-		if (handled == 0)
-			DPRINTF(sc, WM_DEBUG_TX,
-			    ("%s: INTx: got intr\n",device_xname(sc->sc_dev)));
-		if (rndval == 0)
-			rndval = icr;
+	icr = CSR_READ(sc, WMREG_ICR);
+	if ((icr & sc->sc_icr) == 0)
+		return 0;
 
-		mutex_enter(rxq->rxq_lock);
+	DPRINTF(sc, WM_DEBUG_TX,
+	    ("%s: INTx: got intr\n",device_xname(sc->sc_dev)));
+	if (rndval == 0)
+		rndval = icr;
 
-		if (rxq->rxq_stopping) {
-			mutex_exit(rxq->rxq_lock);
-			break;
-		}
+	mutex_enter(rxq->rxq_lock);
 
-		handled = 1;
-
-#if defined(WM_DEBUG) || defined(WM_EVENT_COUNTERS)
-		if (icr & (ICR_RXDMT0 | ICR_RXT0)) {
-			DPRINTF(sc, WM_DEBUG_RX,
-			    ("%s: RX: got Rx intr 0x%08x\n",
-				device_xname(sc->sc_dev),
-				icr & (ICR_RXDMT0 | ICR_RXT0)));
-			WM_Q_EVCNT_INCR(rxq, intr);
-		}
-#endif
-		/*
-		 * wm_rxeof() does *not* call upper layer functions directly,
-		 * as if_percpuq_enqueue() just call softint_schedule().
-		 * So, we can call wm_rxeof() in interrupt context.
-		 */
-		wm_rxeof(rxq, UINT_MAX);
-
+	if (rxq->rxq_stopping) {
 		mutex_exit(rxq->rxq_lock);
-		mutex_enter(txq->txq_lock);
-
-		if (txq->txq_stopping) {
-			mutex_exit(txq->txq_lock);
-			break;
-		}
+		return 1;
+	}
 
 #if defined(WM_DEBUG) || defined(WM_EVENT_COUNTERS)
-		if (icr & ICR_TXDW) {
-			DPRINTF(sc, WM_DEBUG_TX,
-			    ("%s: TX: got TXDW interrupt\n",
-				device_xname(sc->sc_dev)));
-			WM_Q_EVCNT_INCR(txq, txdw);
-		}
+	if (icr & (ICR_RXDMT0 | ICR_RXT0)) {
+		DPRINTF(sc, WM_DEBUG_RX,
+		    ("%s: RX: got Rx intr 0x%08x\n",
+			device_xname(sc->sc_dev),
+			icr & (uint32_t)(ICR_RXDMT0 | ICR_RXT0)));
+		WM_Q_EVCNT_INCR(rxq, intr);
+	}
 #endif
-		wm_txeof(txq, UINT_MAX);
+	/*
+	 * wm_rxeof() does *not* call upper layer functions directly,
+	 * as if_percpuq_enqueue() just call softint_schedule().
+	 * So, we can call wm_rxeof() in interrupt context.
+	 */
+	more = wm_rxeof(rxq, rxlimit);
 
+	mutex_exit(rxq->rxq_lock);
+	mutex_enter(txq->txq_lock);
+
+	if (txq->txq_stopping) {
 		mutex_exit(txq->txq_lock);
-		WM_CORE_LOCK(sc);
+		return 1;
+	}
 
-		if (sc->sc_core_stopping) {
-			WM_CORE_UNLOCK(sc);
-			break;
-		}
+#if defined(WM_DEBUG) || defined(WM_EVENT_COUNTERS)
+	if (icr & ICR_TXDW) {
+		DPRINTF(sc, WM_DEBUG_TX,
+		    ("%s: TX: got TXDW interrupt\n",
+			device_xname(sc->sc_dev)));
+		WM_Q_EVCNT_INCR(txq, txdw);
+	}
+#endif
+	more |= wm_txeof(txq, txlimit);
+	if (!IF_IS_EMPTY(&ifp->if_snd))
+		more = true;
 
-		if (icr & (ICR_LSC | ICR_RXSEQ)) {
-			WM_EVCNT_INCR(&sc->sc_ev_linkintr);
-			wm_linkintr(sc, icr);
-		}
-		if ((icr & ICR_GPI(0)) != 0)
-			device_printf(sc->sc_dev, "got module interrupt\n");
+	mutex_exit(txq->txq_lock);
+	WM_CORE_LOCK(sc);
 
+	if (sc->sc_core_stopping) {
 		WM_CORE_UNLOCK(sc);
+		return 1;
+	}
 
-		if (icr & ICR_RXO) {
+	if (icr & (ICR_LSC | ICR_RXSEQ)) {
+		WM_EVCNT_INCR(&sc->sc_ev_linkintr);
+		wm_linkintr(sc, icr);
+	}
+	if ((icr & ICR_GPI(0)) != 0)
+		device_printf(sc->sc_dev, "got module interrupt\n");
+
+	WM_CORE_UNLOCK(sc);
+
+	if (icr & ICR_RXO) {
 #if defined(WM_DEBUG)
-			log(LOG_WARNING, "%s: Receive overrun\n",
-			    device_xname(sc->sc_dev));
+		log(LOG_WARNING, "%s: Receive overrun\n",
+		    device_xname(sc->sc_dev));
 #endif /* defined(WM_DEBUG) */
-		}
 	}
 
 	rnd_add_uint32(&sc->rnd_source, rndval);
 
-	if (handled) {
+	if (more) {
 		/* Try to get more packets going. */
+		wm_legacy_intr_disable(sc);
 		wmq->wmq_txrx_use_workqueue = sc->sc_txrx_use_workqueue;
 		wm_sched_handle_queue(sc, wmq);
 	}
 
-	return handled;
+	return 1;
 }
 
 static inline void
 wm_txrxintr_disable(struct wm_queue *wmq)
 {
 	struct wm_softc *sc = wmq->wmq_txq.txq_sc;
+
+	if (__predict_false(!wm_is_using_msix(sc))) {
+		wm_legacy_intr_disable(sc);
+		return;
+	}
 
 	if (sc->sc_type == WM_T_82574)
 		CSR_WRITE(sc, WMREG_IMC,
@@ -9899,6 +10045,11 @@ wm_txrxintr_enable(struct wm_queue *wmq)
 	struct wm_softc *sc = wmq->wmq_txq.txq_sc;
 
 	wm_itrs_calculate(sc, wmq);
+
+	if (__predict_false(!wm_is_using_msix(sc))) {
+		wm_legacy_intr_enable(sc);
+		return;
+	}
 
 	/*
 	 * ICR_OTHER which is disabled in wm_linkintr_msix() is enabled here.
@@ -9939,7 +10090,7 @@ wm_txrxintr_msix(void *arg)
 
 	if (txq->txq_stopping) {
 		mutex_exit(txq->txq_lock);
-		return 0;
+		return 1;
 	}
 
 	WM_Q_EVCNT_INCR(txq, txdw);
@@ -9953,7 +10104,7 @@ wm_txrxintr_msix(void *arg)
 
 	if (rxq->rxq_stopping) {
 		mutex_exit(rxq->rxq_lock);
-		return 0;
+		return 1;
 	}
 
 	WM_Q_EVCNT_INCR(rxq, intr);
@@ -10369,9 +10520,9 @@ wm_gmii_setup_phytype(struct wm_softc *sc, uint32_t phy_oui,
 	} else {
 		/* It's not the first call. Use PHY OUI and model */
 		switch (phy_oui) {
-		case MII_OUI_ATTANSIC: /* XXX ??? */
+		case MII_OUI_ATTANSIC: /* atphy(4) */
 			switch (phy_model) {
-			case 0x0004: /* XXX */
+			case MII_MODEL_ATTANSIC_AR8021:
 				new_phytype = WMPHY_82578;
 				break;
 			default:
@@ -10422,7 +10573,6 @@ wm_gmii_setup_phytype(struct wm_softc *sc, uint32_t phy_oui,
 				break;
 			case MII_MODEL_INTEL_I350:
 				new_phytype = WMPHY_I350;
-				break;
 				break;
 			default:
 				break;
@@ -12389,7 +12539,7 @@ wm_tbi_mediachange(struct ifnet *ifp)
 		status = CSR_READ(sc, WMREG_STATUS);
 		DPRINTF(sc, WM_DEBUG_LINK,
 		    ("%s: status after final read = 0x%x, STATUS_LU = 0x%x\n",
-			device_xname(sc->sc_dev), status, STATUS_LU));
+			device_xname(sc->sc_dev), status, (uint32_t)STATUS_LU));
 		if (status & STATUS_LU) {
 			/* Link is up. */
 			DPRINTF(sc, WM_DEBUG_LINK,
@@ -17002,7 +17152,35 @@ wm_legacy_irq_quirk_spt(struct wm_softc *sc)
 	CSR_WRITE(sc, WMREG_FEXTNVM9, reg);
 }
 
-/* Sysctl function */
+/* Sysctl functions */
+static int
+wm_sysctl_tdh_handler(SYSCTLFN_ARGS)
+{
+	struct sysctlnode node = *rnode;
+	struct wm_txqueue *txq = (struct wm_txqueue *)node.sysctl_data;
+	struct wm_queue *wmq = container_of(txq, struct wm_queue, wmq_txq);
+	struct wm_softc *sc = txq->txq_sc;
+	uint32_t reg;
+
+	reg = CSR_READ(sc, WMREG_TDH(wmq->wmq_id));
+	node.sysctl_data = &reg;
+	return sysctl_lookup(SYSCTLFN_CALL(&node));
+}
+
+static int
+wm_sysctl_tdt_handler(SYSCTLFN_ARGS)
+{
+	struct sysctlnode node = *rnode;
+	struct wm_txqueue *txq = (struct wm_txqueue *)node.sysctl_data;
+	struct wm_queue *wmq = container_of(txq, struct wm_queue, wmq_txq);
+	struct wm_softc *sc = txq->txq_sc;
+	uint32_t reg;
+
+	reg = CSR_READ(sc, WMREG_TDT(wmq->wmq_id));
+	node.sysctl_data = &reg;
+	return sysctl_lookup(SYSCTLFN_CALL(&node));
+}
+
 #ifdef WM_DEBUG
 static int
 wm_sysctl_debug(SYSCTLFN_ARGS)
@@ -17020,6 +17198,8 @@ wm_sysctl_debug(SYSCTLFN_ARGS)
 		return error;
 
 	sc->sc_debug = dflags;
+	device_printf(sc->sc_dev, "TARC0: %08x\n", CSR_READ(sc, WMREG_TARC0));
+	device_printf(sc->sc_dev, "TDT0: %08x\n", CSR_READ(sc, WMREG_TDT(0)));
 
 	return 0;
 }

@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.h,v 1.118 2021/03/07 14:42:53 rin Exp $	*/
+/*	$NetBSD: cpu.h,v 1.120 2021/11/02 11:26:04 ryo Exp $	*/
 
 /*
  * Copyright (C) 1999 Wolfgang Solfrank.
@@ -45,6 +45,7 @@ struct cache_info {
 
 #if defined(_KERNEL) || defined(_KMEMUSER)
 #if defined(_KERNEL_OPT)
+#include "opt_gprof.h"
 #include "opt_modular.h"
 #include "opt_multiprocessor.h"
 #include "opt_ppcarch.h"
@@ -159,6 +160,9 @@ struct cpu_info {
 	struct evcnt ci_ev_tlbmiss_soft; /* tlb miss (no trap) */
 	struct evcnt ci_ev_dtlbmiss_hard; /* data tlb miss (trap) */
 	struct evcnt ci_ev_itlbmiss_hard; /* instruction tlb miss (trap) */
+#if defined(GPROF) && defined(MULTIPROCESSOR)
+	struct gmonparam *ci_gmon;	/* MI per-cpu GPROF */
+#endif
 #endif /* _KERNEL */
 };
 #endif /* _KERNEL || _KMEMUSER */
@@ -226,7 +230,7 @@ extern struct cpuset_info cpuset_info;
 extern struct cpu_info cpu_info[];
 
 static __inline struct cpu_info * curcpu(void) __pure;
-static __inline struct cpu_info *
+static __inline __always_inline struct cpu_info *
 curcpu(void)
 {
 	struct cpu_info *ci;

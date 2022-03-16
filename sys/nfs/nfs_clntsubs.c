@@ -1,4 +1,4 @@
-/*	$NetBSD: nfs_clntsubs.c,v 1.4 2020/02/23 15:46:41 ad Exp $	*/
+/*	$NetBSD: nfs_clntsubs.c,v 1.6 2022/02/28 08:45:36 hannken Exp $	*/
 
 /*
  * Copyright (c) 1989, 1993
@@ -70,7 +70,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: nfs_clntsubs.c,v 1.4 2020/02/23 15:46:41 ad Exp $");
+__KERNEL_RCSID(0, "$NetBSD: nfs_clntsubs.c,v 1.6 2022/02/28 08:45:36 hannken Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_nfs.h"

@@ -1,4 +1,4 @@
-/*	$NetBSD: virtio.c,v 1.49 2021/02/07 09:29:53 skrll Exp $	*/
+/*	$NetBSD: virtio.c,v 1.53 2021/10/28 01:36:43 yamaguchi Exp $	*/
 
 /*
  * Copyright (c) 2020 The NetBSD Foundation, Inc.
@@ -28,7 +28,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: virtio.c,v 1.49 2021/02/07 09:29:53 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: virtio.c,v 1.53 2021/10/28 01:36:43 yamaguchi Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -90,10 +90,10 @@ virtio_reset(struct virtio_softc *sc)
 	virtio_device_reset(sc);
 }
 
-void
+int
 virtio_reinit_start(struct virtio_softc *sc)
 {
-	int i;
+	int i, r;
 
 	virtio_set_status(sc, VIRTIO_CONFIG_DEVICE_STATUS_ACK);
 	virtio_set_status(sc, VIRTIO_CONFIG_DEVICE_STATUS_DRIVER);
@@ -112,6 +112,17 @@ virtio_reinit_start(struct virtio_softc *sc)
 		sc->sc_ops->setup_queue(sc, vq->vq_index,
 		    vq->vq_dmamap->dm_segs[0].ds_addr);
 	}
+
+	r = sc->sc_ops->setup_interrupts(sc, 1);
+	if (r != 0)
+		goto fail;
+
+	return 0;
+
+fail:
+	virtio_set_status(sc, VIRTIO_CONFIG_DEVICE_STATUS_FAILED);
+
+	return 1;
 }
 
 void
@@ -1199,7 +1210,13 @@ virtio_child_attach_finish(struct virtio_softc *sc)
 	int r;
 
 	sc->sc_finished_called = true;
-	r = sc->sc_ops->setup_interrupts(sc);
+	r = sc->sc_ops->alloc_interrupts(sc);
+	if (r != 0) {
+		aprint_error_dev(sc->sc_dev, "failed to allocate interrupts\n");
+		goto fail;
+	}
+
+	r = sc->sc_ops->setup_interrupts(sc, 0);
 	if (r != 0) {
 		aprint_error_dev(sc->sc_dev, "failed to setup interrupts\n");
 		goto fail;
@@ -1228,6 +1245,8 @@ fail:
 		softint_disestablish(sc->sc_soft_ih);
 		sc->sc_soft_ih = NULL;
 	}
+
+	sc->sc_ops->free_interrupts(sc);
 
 	virtio_set_status(sc, VIRTIO_CONFIG_DEVICE_STATUS_FAILED);
 	return 1;

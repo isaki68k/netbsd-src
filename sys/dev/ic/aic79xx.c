@@ -1,4 +1,4 @@
-/*	$NetBSD: aic79xx.c,v 1.56 2020/06/27 17:07:49 jdolecek Exp $	*/
+/*	$NetBSD: aic79xx.c,v 1.64 2022/03/08 20:45:56 andvar Exp $	*/
 
 /*
  * Core routines and tables shareable across OS platforms.
@@ -49,7 +49,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: aic79xx.c,v 1.56 2020/06/27 17:07:49 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: aic79xx.c,v 1.64 2022/03/08 20:45:56 andvar Exp $");
 
 #include <dev/ic/aic79xx_osm.h>
 #include <dev/ic/aic79xx_inline.h>
@@ -404,7 +404,7 @@ ahd_flush_qoutfifo(struct ahd_softc *ahd)
 	ahd_run_qoutfifo(ahd);
 
 	/*
-	 * Flush the good status FIFO for compelted packetized commands.
+	 * Flush the good status FIFO for completed packetized commands.
 	 */
 	ahd_set_modes(ahd, AHD_MODE_SCSI, AHD_MODE_SCSI);
 	saved_scbptr = ahd_get_scbptr(ahd);
@@ -1837,7 +1837,7 @@ ahd_handle_transmission_error(struct ahd_softc *ahd)
 		 * through any phases that occur after we release
 		 * this last ack until the LQI manager sees a
 		 * packet phase.  This implies we may have to
-		 * ignore a perfectly valid "unexected busfree"
+		 * ignore a perfectly valid "unexpected busfree"
 		 * after our "initiator detected error" message is
 		 * sent.  A busfree is the expected response after
 		 * we tell the target that its L_Q was corrupted.
@@ -1963,7 +1963,7 @@ ahd_handle_lqiphase_error(struct ahd_softc *ahd, u_int lqistat1)
 		ahd_outb(ahd, CLRINT, CLRSCSIINT);
 		ahd_unpause(ahd);
 	} else {
-		printf("Reseting Channel for LQI Phase error\n");
+		printf("Resetting Channel for LQI Phase error\n");
 		ahd_dump_card_state(ahd);
 		ahd_reset_channel(ahd, 'A', /*Initiate Reset*/TRUE);
 	}
@@ -4798,7 +4798,7 @@ ahd_handle_ign_wide_residue(struct ahd_softc *ahd,
 				/*
 				 * The residual data count is not updated
 				 * for the command run to completion case.
-				 * Explcitly zero the count.
+				 * Explicitly zero the count.
 				 */
 				data_cnt &= ~AHD_SG_LEN_MASK;
 			}
@@ -5243,7 +5243,7 @@ ahd_shutdown(void *arg)
  * that is only available just after a reset.  If "reinit" is
  * non-zero, this reset occurred after initial configuration
  * and the caller requests that the chip be fully reinitialized
- * to a runable state.  Chip interrupts are *not* enabled after
+ * to a runnable state.  Chip interrupts are *not* enabled after
  * a reinitialization.  The caller must enable interrupts via
  * ahd_intr_enable().
  */
@@ -5446,7 +5446,7 @@ ahd_init_scbdata(struct ahd_softc *ahd)
 	}
 
 	/*
-	 * Note that we were successfull
+	 * Note that we were successful
 	 */
 	return (0);
 
@@ -6908,7 +6908,7 @@ ahd_resume(struct ahd_softc *ahd)
  * table entry for TCL.  Return the offset into
  * the SCB that contains the entry for TCL.
  * saved_scbid is dereferenced and set to the
- * scbid that should be restored once manipualtion
+ * scbid that should be restored once manipulation
  * of the TCL entry is complete.
  */
 static inline u_int
@@ -8255,9 +8255,9 @@ ahd_dumpseq(struct ahd_softc* ahd)
 static void __noinline
 ahd_loadseq(struct ahd_softc *ahd)
 {
-	struct	cs cs_table[num_critical_sections];
-	u_int	begin_set[num_critical_sections];
-	u_int	end_set[num_critical_sections];
+	struct	cs cs_table[NUM_CRITICAL_SECTIONS];
+	u_int	begin_set[NUM_CRITICAL_SECTIONS];
+	u_int	end_set[NUM_CRITICAL_SECTIONS];
 	const struct patch *cur_patch;
 	u_int	cs_count;
 	u_int	cur_cs;
@@ -8429,7 +8429,7 @@ ahd_check_patch(struct ahd_softc *ahd, const struct patch **start_patch,
 			cur_patch += cur_patch->skip_patch;
 		} else {
 			/* Accepted this patch.  Advance to the next
-			 * one and wait for our intruction pointer to
+			 * one and wait for our instruction pointer to
 			 * hit this point.
 			 */
 			cur_patch++;
@@ -9090,7 +9090,7 @@ ahd_acquire_seeprom(struct ahd_softc *ahd)
 	 * We should be able to determine the SEEPROM type
 	 * from the flexport logic, but unfortunately not
 	 * all implementations have this logic and there is
-	 * no programatic method for determining if the logic
+	 * no programmatic method for determining if the logic
 	 * is present.
 	 */
 

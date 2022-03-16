@@ -1,4 +1,4 @@
-/*	$NetBSD: subr_thmap.c,v 1.7 2020/08/31 20:22:57 riastradh Exp $	*/
+/*	$NetBSD: subr_thmap.c,v 1.10 2022/02/13 19:20:33 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2018 Mindaugas Rasiukevicius <rmind at noxt eu>
@@ -112,7 +112,7 @@
 #include "utils.h"
 #endif
 
-THMAP_RCSID("$NetBSD: subr_thmap.c,v 1.7 2020/08/31 20:22:57 riastradh Exp $");
+THMAP_RCSID("$NetBSD: subr_thmap.c,v 1.10 2022/02/13 19:20:33 riastradh Exp $");
 
 #include <crypto/blake2/blake2s.h>
 
@@ -121,7 +121,7 @@ THMAP_RCSID("$NetBSD: subr_thmap.c,v 1.7 2020/08/31 20:22:57 riastradh Exp $");
  */
 #ifdef _KERNEL
 #define	ASSERT KASSERT
-#define	atomic_thread_fence(x) membar_sync()
+#define	atomic_thread_fence(x) membar_exit() /* only used for release order */
 #define	atomic_compare_exchange_weak_explicit_32(p, e, n, m1, m2) \
     (atomic_cas_32((p), *(e), (n)) == *(e))
 #define	atomic_compare_exchange_weak_explicit_ptr(p, e, n, m1, m2) \
@@ -256,13 +256,11 @@ static const thmap_ops_t thmap_default_ops = {
  * NODE LOCKING.
  */
 
-#ifdef DIAGNOSTIC
-static inline bool
+static inline bool __diagused
 node_locked_p(thmap_inode_t *node)
 {
 	return (atomic_load_relaxed(&node->state) & NODE_LOCKED) != 0;
 }
-#endif
 
 static void
 lock_node(thmap_inode_t *node)
@@ -988,7 +986,6 @@ thmap_create(uintptr_t baseptr, const thmap_ops_t *ops, unsigned flags)
 			return NULL;
 		}
 		memset(thmap->root, 0, THMAP_ROOT_LEN);
-		atomic_thread_fence(memory_order_release); /* XXX */
 	}
 
 	cprng_strong(kern_cprng, thmap->seed, sizeof thmap->seed, 0);
@@ -1003,7 +1000,6 @@ thmap_setroot(thmap_t *thmap, uintptr_t root_off)
 		return -1;
 	}
 	thmap->root = THMAP_GETPTR(thmap, root_off);
-	atomic_thread_fence(memory_order_release); /* XXX */
 	return 0;
 }
 
