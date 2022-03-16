@@ -927,6 +927,24 @@ item(56073, false,
 "-",
 "ちょっと何言ってるか分からない。");
 
+/*...*/
+
+item(56518, false,
+"USB panic when using uaudio",
+"たぶん uaudio 側");
+
+item(56581, false,
+"audiocfg: Kernel panic on USB audio test use",
+"たぶん usb 側");
+
+item(56659, false,
+"Focusrite Scarlett 2i4 USB audio autoconfiguration error",
+"たぶん uaudio 側");
+
+item(56660, false,
+"Douk Audio U2 PRO USB (XMOS HIFI DSD) audio autoconfiguration error",
+"たぶん uaudio 側");
+
 ?>
 
 </dl>
