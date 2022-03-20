@@ -2804,7 +2804,12 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 		mutex_exit(sc->sc_lock);
 
 		audio_track_lock_enter(track);
-		audio_track_record(track);
+		/* Convert as many blocks as possible. */
+		while (usrbuf->used <=
+		            track->usrbuf_usedhigh - track->usrbuf_blksize &&
+		    input->used > 0) {
+			audio_track_record(track);
+		}
 
 		/* uiomove from usrbuf as much as possible. */
 		bytes = uimin(usrbuf->used, uio->uio_resid);
@@ -4979,6 +4984,8 @@ audio_track_record(audio_track_t *track)
 	/* Copy outbuf to usrbuf */
 	outbuf = &track->outbuf;
 	usrbuf = &track->usrbuf;
+	/* usrbuf must have at least one free block. */
+	KASSERT(usrbuf->used <= track->usrbuf_usedhigh - track->usrbuf_blksize);
 	/*
 	 * framesize is always 1 byte or more since all formats supported
 	 * as usrfmt(=output) have 8bit or more stride.
@@ -4990,8 +4997,7 @@ audio_track_record(audio_track_t *track)
 	 * bytes is the number of bytes to copy to usrbuf.
 	 */
 	count = outbuf->used;
-	count = uimin(count,
-	    (track->usrbuf_usedhigh - usrbuf->used) / framesize);
+	count = uimin(count, track->usrbuf_blksize / framesize);
 	bytes = count * framesize;
 	if (auring_tail(usrbuf) + bytes < usrbuf->capacity) {
 		memcpy((uint8_t *)usrbuf->mem + auring_tail(usrbuf),
