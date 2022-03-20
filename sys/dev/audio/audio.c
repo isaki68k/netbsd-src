@@ -4951,11 +4951,8 @@ audio_track_record(audio_track_t *track)
 	KASSERT(track);
 	KASSERT(track->lock);
 
-	/* Number of frames to process */
-	count = auring_get_contig_used(track->input);
-	count = uimin(count, track->mixer->frames_per_block);
-	if (count == 0) {
-		TRACET(4, track, "count == 0");
+	if (auring_get_contig_used(track->input) == 0) {
+		TRACET(4, track, "input->used == 0");
 		return;
 	}
 
