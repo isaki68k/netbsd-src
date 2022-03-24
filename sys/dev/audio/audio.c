@@ -5949,31 +5949,20 @@ audio_rmixer_process(struct audio_softc *sc)
 			continue;
 		}
 
+		/* If the track buffer is full, discard the oldest one? */
 		input = track->input;
-		if (input->used == input->capacity) {
-			/*
-			 * If the track buffer is full,
-			 * discard the oldest one block.
-			 */
-			int drops = mixer->frames_per_block;
+		if (input->capacity - input->used < mixer->frames_per_block) {
+			int drops = mixer->frames_per_block -
+			    (input->capacity - input->used);
 			track->dropframes += drops;
-			auring_take(input, drops);
 			TRACET(4, track, "drop %d frames: inp=%d/%d/%d",
 			    drops,
 			    input->head, input->used, input->capacity);
-		} else if (input->used % mixer->frames_per_block != 0) {
-			/*
-			 * If the track buffer is unaligned in block (it
-			 * should not happen though), discard this block.
-			 */
-			int drops = input->used % mixer->frames_per_block;
-			track->dropframes += drops;
 			auring_take(input, drops);
-			TRACET(4, track,
-			    "drop unaligned %d frames: inp=%d/%d/%d",
-			    drops,
-			    input->head, input->used, input->capacity);
 		}
+		KASSERTMSG(input->used % mixer->frames_per_block == 0,
+		    "input->used=%d mixer->frames_per_block=%d",
+		    input->used, mixer->frames_per_block);
 
 		memcpy(auring_tailptr_aint(input),
 		    auring_headptr_aint(mixersrc),
