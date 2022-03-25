@@ -5961,10 +5961,6 @@ audio_rmixer_process(struct audio_softc *sc)
 			auring_take(input, drops);
 		}
 
-		/*
-		 * This ring buffer cannot be wrapped for simplicity, so
-		 * the tail must be aligned.
-		 */
 		KASSERTMSG(auring_tail(input) % mixer->frames_per_block == 0,
 		    "inputtail=%d mixer->frames_per_block=%d",
 		    auring_tail(input), mixer->frames_per_block);
