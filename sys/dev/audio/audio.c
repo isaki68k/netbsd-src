@@ -83,27 +83,26 @@
  *        \--------------------------------/   \--------..
  *                     block
  *
- * - A "sample" is a single data.
  * - A "frame" is the minimum unit in the time axis direction, and consists
  *   of samples for the number of channels.
  * - A "block" is basic length of processing.  The audio layer basically
- *   handles audio data stream block by block, asks underlying hardware
- *   to process them block by block, and then the hardware raises
- *   interrupt by each block.
- * - A "track" is a single completed audio stream.
+ *   handles audio data stream block by block, asks underlying hardware to
+ *   process them block by block, and then the hardware raises interrupt by
+ *   each block.
+ * - A "track" is single completed audio stream.
  *
- * For example, the hardware block is assumed to be 40 msec, and your
- * audio track consists of 2.1(=3) channels 44.1kHz 16bit PCM,
+ * For example, the hardware block is assumed to be 10 msec, and your audio
+ * track consists of 2.1(=3) channels 44.1kHz 16bit PCM,
  *
  * "channel" = 3
  * "sample" = 2 [bytes]
  * "frame" = 2 [bytes/sample] * 3 [channels] = 6 [bytes]
- * "block" = 44100 [Hz] * (40/1000) [seconds] * 6 [bytes/frame] = 10584 [bytes]
+ * "block" = 44100 [Hz] * (10/1000) [seconds] * 6 [bytes/frame] = 2646 [bytes]
  *
- * The terminology shown here is only for this MI audio layer.  Note that
- * each manufacturer's datasheet may use different terminology than here,
- * so that each MD driver may follow it.  For example, what we call a "block"
- * is called a "frame" in sys/dev/pci/yds.c.
+ * The terminologies shown here are only for this MI audio layer.  Note that
+ * different terminologies may be used in each manufacturer's datasheet, and
+ * each MD driver may follow it.  For example, what we call a "block" is
+ * called a "frame" in sys/dev/pci/yds.c.
  */
 
 /*
