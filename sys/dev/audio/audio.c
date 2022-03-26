@@ -5949,7 +5949,10 @@ audio_rmixer_process(struct audio_softc *sc)
 			continue;
 		}
 
-		/* If the track buffer is full, discard the oldest one? */
+		/*
+		 * If the track buffer has less than one block of free space,
+		 * make one block free.
+		 */
 		input = track->input;
 		if (input->capacity - input->used < mixer->frames_per_block) {
 			int drops = mixer->frames_per_block -
