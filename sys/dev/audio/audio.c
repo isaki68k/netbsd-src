@@ -2811,7 +2811,7 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 			audio_track_record(track);
 		}
 
-		/* uiomove from usrbuf as much as possible. */
+		/* uiomove from usrbuf as many bytes as possible. */
 		bytes = uimin(usrbuf->used, uio->uio_resid);
 		while (bytes > 0) {
 			int head = usrbuf->head;
@@ -2940,7 +2940,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 
 		audio_track_lock_enter(track);
 
-		/* uiomove to usrbuf as much as possible. */
+		/* uiomove to usrbuf as many bytes as possible. */
 		bytes = uimin(track->usrbuf_usedhigh - usrbuf->used,
 		    uio->uio_resid);
 		while (bytes > 0) {
@@ -2963,7 +2963,7 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 			bytes -= len;
 		}
 
-		/* Convert them as much as possible. */
+		/* Convert them as many blocks as possible. */
 		while (usrbuf->used >= track->usrbuf_blksize &&
 		    outbuf->used < outbuf->capacity) {
 			audio_track_play(track);
