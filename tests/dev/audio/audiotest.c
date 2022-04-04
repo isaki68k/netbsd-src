@@ -2928,7 +2928,7 @@ test_poll_mode(int mode, int events, int expected_revents)
 	REQUIRED_SYS_OK(fd);
 
 	/* Wait a bit to be recorded. */
-	usleep(100 * 1000);
+	usleep(500 * 1000);
 
 	memset(&pfd, 0, sizeof(pfd));
 	pfd.fd = fd;
