@@ -7289,7 +7289,7 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	if (pchanges == -1) {
 #if defined(AUDIO_DEBUG)
 		TRACEF(1, file, "check play.params failed: "
-		    "%s %ubit %uch %uHz",
+		    "%s %dbit %dch %dHz",
 		    audio_encoding_name(pi->encoding),
 		    pi->precision,
 		    pi->channels,
@@ -7302,7 +7302,7 @@ audio_file_setinfo(struct audio_softc *sc, audio_file_t *file,
 	if (rchanges == -1) {
 #if defined(AUDIO_DEBUG)
 		TRACEF(1, file, "check record.params failed: "
-		    "%s %ubit %uch %uHz",
+		    "%s %dbit %dch %dHz",
 		    audio_encoding_name(ri->encoding),
 		    ri->precision,
 		    ri->channels,
