@@ -21,7 +21,13 @@ BINDIR=		${TESTSDIR}
 MKMAN=no
 
 CPPFLAGS+=	-D_KERNTYPES
+.if 0
 LDADD+=	-lrumpdev_pad -lrumpdev_audio -lrumpdev ${LIBRUMPBASE}
+.else
+# 野良ビルド用
+CPPFLAGS+=-DNO_RUMP
+LDADD+=		-lpthread
+.endif
 
 WARNS=	4
 NOMAN=
