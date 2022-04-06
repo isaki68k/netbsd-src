@@ -890,6 +890,106 @@ cmd_enfile(int ac, char *av[])
 	return 0;
 }
 
+// GETOOFFS の挙動を観測する
+int
+cmd_GETOOFFS(int ac, char *av[])
+{
+	struct audio_info ai;
+	audio_offset_t off, old;
+	struct timeval tv0, tv1;
+	char buf[100];
+	int fd;
+
+	fd = OPEN(devaudio, O_WRONLY);
+	if (fd == -1) {
+		err(1, "open");
+	}
+
+	AUDIO_INITINFO(&ai);
+	ai.play.encoding = AUDIO_ENCODING_ULAW;
+	ai.play.precision = 8;
+	ai.play.channels = 2;
+	ai.play.sample_rate = 8000;
+
+	memset(&buf, 0xff, sizeof(buf));
+	memset(&old, 0xff, sizeof(old));
+
+	gettimeofday(&tv0, NULL);
+	for (;;) {
+		int r;
+
+		gettimeofday(&tv1, NULL);
+		struct timeval t;
+		timersub(&tv1, &tv0, &t);
+		if (t.tv_sec >= 2) {
+			WRITE(fd, buf, 11);
+			tv0 = tv1;
+		}
+
+		memset(&off, 0, sizeof(off));
+		r = ioctl(fd, AUDIO_GETOOFFS, &off);
+		if (r < 0) {
+			err(1, "AUDIO_GETOOFFS");
+		}
+
+		if (memcmp(&off, &old, sizeof(old)) != 0) {
+			printf("samples=%u delta=%u offset=%u\n",
+				off.samples, off.deltablks, off.offset);
+			memcpy(&old, &off, sizeof(off));
+		}
+	}
+}
+
+// GETIOFFS の挙動を観測する
+int
+cmd_GETIOFFS(int ac, char *av[])
+{
+	struct audio_info ai;
+	audio_offset_t off, old;
+	struct timeval tv0, tv1;
+	char buf[100];
+	int fd;
+
+	fd = OPEN(devaudio, O_RDONLY);
+	if (fd == -1) {
+		err(1, "open");
+	}
+
+	AUDIO_INITINFO(&ai);
+	ai.record.encoding = AUDIO_ENCODING_ULAW;
+	ai.record.precision = 8;
+	ai.record.channels = 2;
+	ai.record.sample_rate = 8000;
+
+	memset(&buf, 0xff, sizeof(buf));
+	memset(&old, 0xff, sizeof(old));
+
+	gettimeofday(&tv0, NULL);
+	for (;;) {
+		int r;
+
+		gettimeofday(&tv1, NULL);
+		struct timeval t;
+		timersub(&tv1, &tv0, &t);
+		if (t.tv_sec >= 2) {
+			//READ(fd, buf, 11);
+			tv0 = tv1;
+		}
+
+		memset(&off, 0, sizeof(off));
+		r = ioctl(fd, AUDIO_GETIOFFS, &off);
+		if (r < 0) {
+			err(1, "AUDIO_GETIOFFS");
+		}
+
+		if (memcmp(&off, &old, sizeof(old)) != 0) {
+			printf("samples=%u delta=%u offset=%u\n",
+				off.samples, off.deltablks, off.offset);
+			memcpy(&old, &off, sizeof(off));
+		}
+	}
+}
+
 // コマンド一覧
 #define DEF(x)	{ #x, cmd_ ## x }
 struct cmdtable cmdtable[] = {
@@ -909,6 +1009,8 @@ struct cmdtable cmdtable[] = {
 	DEF(encoding_pcm16),
 	DEF(fstat),
 	DEF(enfile),
+	DEF(GETOOFFS),
+	DEF(GETIOFFS),
 	{ NULL, NULL },
 };
 #undef DEF
