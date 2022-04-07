@@ -4497,7 +4497,7 @@ audio_track_init_freq(audio_track_t *track, audio_ring_t **last_dstp)
 
 		arg = &track->freq.arg;
 		arg->srcfmt = &srcbuf->fmt;
-		arg->dstfmt = dstfmt;/*&last_dst->fmt;*/
+		arg->dstfmt = dstfmt;
 		arg->context = track;
 
 		*last_dstp = srcbuf;
