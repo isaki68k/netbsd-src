@@ -4773,11 +4773,6 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 		track->outbuf.capacity *= NBLKOUT;
 	len = auring_bytelen(&track->outbuf);
 	track->outbuf.mem = audio_realloc(track->outbuf.mem, len);
-	if (track->outbuf.mem == NULL) {
-		device_printf(sc->sc_dev, "malloc outbuf(%d) failed\n", len);
-		error = ENOMEM;
-		goto error;
-	}
 
 	/*
 	 * On the recording track, expand the input stage buffer, which is
@@ -5393,12 +5388,6 @@ audio_mixer_init(struct audio_softc *sc, int mode,
 		mixer->codecbuf.capacity = mixer->frames_per_block;
 		len = auring_bytelen(&mixer->codecbuf);
 		mixer->codecbuf.mem = audio_realloc(mixer->codecbuf.mem, len);
-		if (mixer->codecbuf.mem == NULL) {
-			device_printf(sc->sc_dev,
-			    "malloc codecbuf(%d) failed\n", len);
-			error = ENOMEM;
-			goto abort;
-		}
 	}
 
 	/* Succeeded so display it. */
