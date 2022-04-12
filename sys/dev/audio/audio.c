@@ -3686,7 +3686,8 @@ audio_realloc(void *memblock, size_t bytes)
 {
 
 	KASSERT(bytes != 0);
-	audio_free(memblock);
+	if (memblock)
+		kern_free(memblock);
 	return kern_malloc(bytes, M_WAITOK);
 }
 
