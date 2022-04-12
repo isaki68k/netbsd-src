@@ -4768,23 +4768,14 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 
 	/*
 	 * On the recording track, expand the input stage buffer, which is
-	 * closest buffer to rmixer.  The capacity is less than or equal to
-	 * 64KB (for historical reason) and must be a multiple of a block
-	 * (constraint in this implementation).  But at least NBLKOUT blocks.
-	 * input buffer may point to outbuf.
+	 * the closest buffer to rmixer, to NBLKOUT blocks.
+	 * Note that input buffer may point to outbuf.
 	 */
 	if (!is_playback) {
 		int input_fpb;
-		int input_blksz;
 
 		input_fpb = frame_per_block(track->mixer, &track->input->fmt);
-		input_blksz = frametobyte(&track->input->fmt, input_fpb);
-		if (input_blksz * NBLKOUT > 65536) {
-			track->input->capacity = input_fpb * NBLKOUT;
-		} else {
-			track->input->capacity = input_fpb *
-			    (65536 / input_blksz);
-		}
+		track->input->capacity = input_fpb * NBLKIN;
 		len = auring_bytelen(track->input);
 		track->input->mem = audio_realloc(track->input->mem, len);
 	}
