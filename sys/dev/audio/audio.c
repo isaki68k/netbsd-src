@@ -2983,7 +2983,7 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 	audio_encoding_t *ae;
 	audio_format_query_t *query;
 	u_int stamp;
-	u_int offs;
+	u_int offset;
 	int val;
 	int index;
 	int error;
@@ -3102,24 +3102,20 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		}
 		mutex_enter(sc->sc_lock);
 		mutex_enter(sc->sc_intr_lock);
-		/* figure out where next DMA will start */
-		stamp = track->usrbuf_stamp;
-		offs = track->usrbuf.head;
+		/* figure out where next transfer will start */
+		stamp = track->stamp;
+		offset = auring_tail(&track->usrbuf);
 		mutex_exit(sc->sc_intr_lock);
 		mutex_exit(sc->sc_lock);
 
-		ao->samples = stamp;
-		ao->deltablks = (stamp / track->usrbuf_blksize) -
-		    (track->usrbuf_stamp_last / track->usrbuf_blksize);
-		track->usrbuf_stamp_last = stamp;
-		offs = rounddown(offs, track->usrbuf_blksize)
-		    + track->usrbuf_blksize;
-		if (offs >= track->usrbuf.capacity)
-			offs -= track->usrbuf.capacity;
-		ao->offset = offs;
-
+		/* samples will overflow soon but is as per spec. */
+		ao->samples = stamp * track->usrbuf_blksize;
+		ao->deltablks = stamp - track->last_stamp;
+		ao->offset = offset;
 		TRACET(2, track, "%s samples=%u deltablks=%u offset=%u",
 		    pre, ao->samples, ao->deltablks, ao->offset);
+
+		track->last_stamp = stamp;
 		break;
 
 	case AUDIO_WSEEK:
@@ -4961,8 +4957,6 @@ audio_track_play(audio_track_t *track)
 	count = uimin(usrbuf->used, track->usrbuf_blksize) / framesize;
 	bytes = count * framesize;
 
-	track->usrbuf_stamp += bytes;
-
 	if (usrbuf->head + bytes < usrbuf->capacity) {
 		memcpy((uint8_t *)input->mem + auring_tail(input) * framesize,
 		    (uint8_t *)usrbuf->mem + usrbuf->head,
@@ -5056,6 +5050,8 @@ audio_track_play(audio_track_t *track)
 	} else {
 		track->outputcounter += track->outbuf.used - track_count_0;
 	}
+
+	track->stamp++;
 
 #if defined(AUDIO_DEBUG)
 	if (audiodebug >= 3) {
@@ -7769,7 +7765,7 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 
 	if (ptrack) {
 		pi->seek = ptrack->usrbuf.used;
-		pi->samples = ptrack->usrbuf_stamp;
+		pi->samples = ptrack->stamp * ptrack->usrbuf_blksize;
 		pi->eof = ptrack->eofcounter;
 		pi->error = (ptrack->dropframes != 0) ? 1 : 0;
 		pi->open = 1;
@@ -7780,7 +7776,7 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 
 	if (rtrack) {
 		ri->seek = audio_track_readablebytes(rtrack);
-		ri->samples = rtrack->usrbuf_stamp;
+		ri->samples = rtrack->stamp * rtrack->usrbuf_blksize;
 		ri->eof = 0;
 		ri->error = (rtrack->dropframes != 0) ? 1 : 0;
 		ri->open = 1;

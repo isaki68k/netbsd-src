@@ -121,8 +121,6 @@ struct audio_track {
 	u_int		usrbuf_blksize;	/* usrbuf block size in bytes */
 	struct uvm_object *uobj;
 	bool		mmapped;	/* device is mmap()-ed */
-	u_int		usrbuf_stamp;	/* transferred bytes from/to stage */
-	u_int		usrbuf_stamp_last; /* last stamp */
 	u_int		usrbuf_usedhigh;/* high water mark in bytes */
 	u_int		usrbuf_usedlow;	/* low water mark in bytes */
 
@@ -161,6 +159,10 @@ struct audio_track {
 	/* Track volume (0..256) */
 	u_int		volume;
 #endif
+
+	/* No locks are required for these two. */
+	u_int		stamp;		/* number of transferred blocks */
+	u_int		last_stamp;
 
 	audio_trackmixer_t *mixer;	/* connected track mixer */
 
