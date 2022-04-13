@@ -990,6 +990,48 @@ cmd_GETIOFFS(int ac, char *av[])
 	}
 }
 
+// 録音バッファの長さ (あふれるまでの時間) を測定する。
+int
+cmd_reclen(int ac, char *av[])
+{
+	struct timeval start, tv, res;
+	struct audio_info ai;
+	int fd;
+	int r;
+
+	fd = OPEN(devaudio, O_RDONLY);
+	if (fd < 0) {
+		err(1, "open");
+	}
+	gettimeofday(&start, NULL);
+
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	if (r < 0) {
+		err(1, "AUDIO_GETBUFINFO");
+	}
+	printf("blocksize=%u\n", ai.blocksize);
+	printf("record.buffer_size=%u\n", ai.record.buffer_size);
+	printf("blk_ms=%d\n", (int)((float)ai.blocksize / 8000) * 1000);
+
+	// sleep は粒度が荒すぎるので、ビジーループしながら観測
+	for (;;) {
+		r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+		if (r < 0) {
+			err(1, "AUDIO_GETBUFINFO");
+		}
+		gettimeofday(&tv, NULL);
+		timersub(&tv, &start, &res);
+
+		if (ai.record.error > 0) {
+			printf("%d msec\n", res.tv_usec / 1000);
+			break;
+		}
+	}
+
+	CLOSE(fd);
+	return 0;
+}
+
 // コマンド一覧
 #define DEF(x)	{ #x, cmd_ ## x }
 struct cmdtable cmdtable[] = {
@@ -1011,6 +1053,7 @@ struct cmdtable cmdtable[] = {
 	DEF(enfile),
 	DEF(GETOOFFS),
 	DEF(GETIOFFS),
+	DEF(reclen),
 	{ NULL, NULL },
 };
 #undef DEF
