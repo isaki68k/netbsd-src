@@ -4946,9 +4946,6 @@ audio_track_play(audio_track_t *track)
 	    "count=%d fpb=%d",
 	    count, frame_per_block(track->mixer, &track->outbuf.fmt));
 
-	/* XXX TODO: is this necessary for now? */
-	int track_count_0 = track->outbuf.used;
-
 	usrbuf = &track->usrbuf;
 	input = track->input;
 
@@ -5057,12 +5054,6 @@ audio_track_play(audio_track_t *track)
 			KASSERT(track->freq.srcbuf.used == 0);
 			track->freq.srcbuf.head = 0;
 		}
-	}
-
-	if (track->input == &track->outbuf) {
-		track->outputcounter = track->inputcounter;
-	} else {
-		track->outputcounter += track->outbuf.used - track_count_0;
 	}
 
 	track->stamp++;
@@ -6373,8 +6364,7 @@ audio_track_drain(struct audio_softc *sc, audio_track_t *track)
 	}
 
 	track->pstate = AUDIO_STATE_CLEAR;
-	TRACET(3, track, "done trk_inp=%d trk_out=%d",
-		(int)track->inputcounter, (int)track->outputcounter);
+	TRACET(3, track, "done");
 	return 0;
 }
 

@@ -176,8 +176,6 @@ struct audio_track {
 	bool		is_pause;
 
 	/* Statistic counters. */
-	uint64_t	inputcounter;	/* # of frames input to track */
-	uint64_t	outputcounter;	/* # of frames output from track */
 	uint64_t	useriobytes;	/* # of bytes xfer to/from userland */
 	uint64_t	dropframes;	/* # of frames dropped */
 	int		eofcounter;	/* count of zero-sized write */
