@@ -2821,7 +2821,6 @@ audio_read(struct audio_softc *sc, struct uio *uio, int ioflag,
 			goto abort;
 		}
 		auring_take(usrbuf, bytes);
-		track->useriobytes += bytes;
 		TRACET(3, track, "uiomove(len=%d) usrbuf=%d/%d/C%d",
 		    bytes,
 		    usrbuf->head, usrbuf->used, usrbuf->capacity);
@@ -2949,7 +2948,6 @@ audio_write(struct audio_softc *sc, struct uio *uio, int ioflag,
 				goto abort;
 			}
 			auring_push(usrbuf, len);
-			track->useriobytes += len;
 			TRACET(3, track, "uiomove(len=%d) usrbuf=%d/%d/C%d",
 			    len,
 			    usrbuf->head, usrbuf->used, usrbuf->capacity);

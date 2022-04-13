@@ -175,9 +175,7 @@ struct audio_track {
 	audio_state_t	pstate;		/* playback state */
 	bool		is_pause;
 
-	/* Statistic counters. */
-	uint64_t	useriobytes;	/* # of bytes xfer to/from userland */
-	uint64_t	dropframes;	/* # of frames dropped */
+	uint64_t	dropframes;	/* number of dropped frames */
 	int		eofcounter;	/* count of zero-sized write */
 
 	/*
