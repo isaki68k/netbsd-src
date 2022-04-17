@@ -1395,7 +1395,6 @@ int getenc_make_table(int, int[][5]);
 void xp_getenc(int[][5], int, int, int, struct audio_prinfo *);
 void getenc_check_encodings(int, int[][5]);
 void test_AUDIO_ERROR(int);
-void test_AUDIO_GETOOFFS_fragment(int);
 void test_AUDIO_GETOOFFS_one(int);
 void test_AUDIO_GETOOFFS_wrap(int);
 void test_AUDIO_GETOOFFS_flush(int);
@@ -6302,185 +6301,6 @@ DEF(AUDIO_GETOOFFS_one_WRONLY) { test_AUDIO_GETOOFFS_one(O_WRONLY); }
 DEF(AUDIO_GETOOFFS_one_RDWR)   { test_AUDIO_GETOOFFS_one(O_RDWR); }
 
 /*
- * AUDIO_GETOOFFS for fragment samples.
- * It's hard mode.
- */
-void
-test_AUDIO_GETOOFFS_fragment(int openmode)
-{
-	struct audio_info ai;
-	audio_offset_t o;
-	char *buf;
-	int fd;
-	int r;
-	u_int blocksize;
-	u_int initial_offset;
-	u_int blk_ms;
-
-	TEST("AUDIO_GETOOFFS_fragment_%s", openmode_str[openmode] + 2);
-	if (mode2aumode(openmode) == 0) {
-		XP_SKIP("Operation not allowed on this hardware property");
-		return;
-	}
-
-	fd = OPEN(devaudio, openmode);
-	REQUIRED_SYS_OK(fd);
-
-	/* Use mulaw,*2ch*,8000Hz to represent an incomplete sample. */
-	AUDIO_INITINFO(&ai);
-	ai.play.channels = 2;
-#if 0
-	/*
-	 * Native encodings and emulated encodings behave differently on
-	 * NetBSD7/8, and it's hard to identify which encoding is native.
-	 */
-	ai.play.encoding = AUDIO_ENCODING_SLINEAR_NE;
-	ai.play.precision = 16;
-	ai.play.sample_rate = 48000;
-#endif
-	r = IOCTL(fd, AUDIO_SETINFO, &ai, "ch=2");
-	REQUIRED_SYS_EQ(0, r);
-
-	/* Get blocksize to calc blk_ms. */
-	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
-	REQUIRED_SYS_EQ(0, r);
-	REQUIRED_EQ(2, ai.play.channels);
-	blocksize = ai.blocksize;
-	if (netbsd < 9) {
-		blk_ms = 0;
-	} else {
-		/* On NetBSD9, blocktime can always be calculated. */
-		blk_ms = ai.blocksize * 1000 /
-		    (ai.play.precision / 8 * ai.play.channels *
-		     ai.play.sample_rate);
-	}
-	if (blk_ms == 0)
-		blk_ms = 50;
-	DPRINTF("  > blocksize=%u, estimated blk_ms=%u\n", blocksize, blk_ms);
-
-	buf = (char *)malloc(blocksize);
-	REQUIRED_IF(buf != NULL);
-	memset(buf, 0xff, blocksize);
-
-	/*
-	 * On NetBSD7, .offset starts from one block.  What is the block??
-	 * On NetBSD9, .offset starts from zero.
-	 */
-	if (netbsd < 9) {
-		initial_offset = blocksize;
-	} else {
-		initial_offset = 0;
-	}
-
-	/* When just opened, all are zero. */
-	r = IOCTL(fd, AUDIO_GETOOFFS, &o, "");
-	XP_SYS_EQ(0, r);
-	XP_EQ(0, o.samples);
-	XP_EQ(0, o.deltablks);
-	XP_EQ(initial_offset, o.offset);
-
-	/* Even if wait (at least) one block, these remain unchanged. */
-	usleep(blk_ms * 1000);
-	r = IOCTL(fd, AUDIO_GETOOFFS, &o, "");
-	XP_SYS_EQ(0, r);
-	XP_EQ(0, o.samples);
-	XP_EQ(0, o.deltablks);
-	XP_EQ(initial_offset, o.offset);
-
-	/* Write some incomplete frames. (A complete frame here is 2bytes) */
-	r = WRITE(fd, buf, 3);
-	if (openmode == O_RDONLY) {
-		XP_SYS_NG(EBADF, r);
-	} else {
-		XP_SYS_EQ(3, r);
-	}
-	/* Wait a moment to settle(?). */
-	usleep(2 * blk_ms * 1000);
-
-	/*
-	 * .samples/.deltablks remains unchanged, because the block is not
-	 * transferred(played) yet.
-	 * .offset advances, because it points byte offset in buffer.
-	 */
-	r = IOCTL(fd, AUDIO_GETOOFFS, &o, "");
-	XP_SYS_EQ(0, r);
-	if (openmode == O_RDONLY) {
-		/*
-		 * All are zero on recording track.
-		 * On NetBSD7, the rec track has play buffer, too.
-		 */
-		XP_EQ(0, o.samples);
-		XP_EQ(0, o.deltablks);
-		XP_EQ(initial_offset, o.offset);
-	} else {
-		if (netbsd < 9) {
-			/*
-			 * On NetBSD7/8, the buffer behaves differently in
-			 * native encoding and emulated encoding.  And
-			 * I cannot explain this behaviors...
-			 */
-			if (o.samples != 0) {
-				DPRINTF("  > %d: unpredictable samples=%u\n",
-				    __LINE__, o.samples);
-			}
-			XP_EQ(0, o.deltablks);
-			if (o.offset != initial_offset + 3) {
-				DPRINTF("  > %d: unpredictable offset=%u\n",
-				    __LINE__, o.offset);
-			}
-		} else {
-			/*
-			 * On NetBSD9,
-			 * .samples counts only transferred bytes.
-			 */
-			XP_EQ(2, o.samples);
-			XP_EQ(0, o.deltablks);
-			XP_EQ(3, o.offset);
-		}
-	}
-
-	/* Write one more block. */
-	r = WRITE(fd, buf, blocksize);
-	if (openmode == O_RDONLY) {
-		XP_SYS_NG(EBADF, r);
-	} else {
-		XP_SYS_EQ(blocksize, r);
-	}
-
-	/* .samples/.deltablks advances one block. */
-	r = IOCTL(fd, AUDIO_GETOOFFS, &o, "");
-	XP_SYS_EQ(0, r);
-	if (openmode == O_RDONLY) {
-		/* all remains zero on recording track. */
-		XP_EQ(0, o.samples);
-		XP_EQ(0, o.deltablks);
-		XP_EQ(initial_offset, o.offset);
-	} else {
-		if (netbsd < 9) {
-			DPRINTF("  > unpredictable "
-			    "samples=%u deltablks=%u offset=%u\n",
-			    o.samples, o.deltablks, o.offset);
-		} else {
-			XP_EQ(blocksize + 2, o.samples);
-			XP_EQ(1, o.deltablks);
-			XP_EQ(blocksize + 3, o.offset);
-		}
-	}
-
-	/* Playback data is no longer necessary. */
-	r = IOCTL(fd, AUDIO_FLUSH, NULL, "");
-	XP_SYS_EQ(0, r);
-
-	r = CLOSE(fd);
-	XP_SYS_EQ(0, r);
-
-	free(buf);
-}
-DEF(AUDIO_GETOOFFS_fragment_RDONLY) { test_AUDIO_GETOOFFS_fragment(O_RDONLY); }
-DEF(AUDIO_GETOOFFS_fragment_WRONLY) { test_AUDIO_GETOOFFS_fragment(O_WRONLY); }
-DEF(AUDIO_GETOOFFS_fragment_RDWR)   { test_AUDIO_GETOOFFS_fragment(O_RDWR); }
-
-/*
  * AUDIO_GETOOFFS when wrap around buffer.
  */
 void
@@ -7306,9 +7126,6 @@ struct testentry testtable[] = {
 	ENT(AUDIO_ERROR_RDONLY),
 	ENT(AUDIO_ERROR_WRONLY),
 	ENT(AUDIO_ERROR_RDWR),
-	ENT(AUDIO_GETOOFFS_fragment_RDONLY),
-	ENT(AUDIO_GETOOFFS_fragment_WRONLY),
-	ENT(AUDIO_GETOOFFS_fragment_RDWR),
 	ENT(AUDIO_GETOOFFS_one_RDONLY),
 	ENT(AUDIO_GETOOFFS_one_WRONLY),
 	ENT(AUDIO_GETOOFFS_one_RDWR),
