@@ -6310,6 +6310,9 @@ audio_track_clear(struct audio_softc *sc, audio_track_t *track)
 	track->outbuf.used = 0;
 
 	/* Clear counters. */
+	track->transferred_bytes = 0;
+	track->stamp = 0;
+	track->last_stamp = 0;
 	track->dropframes = 0;
 
 	audio_track_lock_exit(track);
