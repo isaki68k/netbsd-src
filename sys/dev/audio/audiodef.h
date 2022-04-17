@@ -160,8 +160,12 @@ struct audio_track {
 	u_int		volume;
 #endif
 
-	/* No locks are required for these two. */
-	u_int		stamp;		/* number of transferred blocks */
+	/*
+	 * For AUDIO_GET[IO]OFFS.
+	 * No locks are required for these.
+	 */
+	u_int		transferred_bytes;	/* # of transferred bytes */
+	u_int		stamp;			/* # of transferred blocks */
 	u_int		last_stamp;
 
 	audio_trackmixer_t *mixer;	/* connected track mixer */

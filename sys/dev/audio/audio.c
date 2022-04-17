@@ -2982,6 +2982,7 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 	audio_track_t *track;
 	audio_encoding_t *ae;
 	audio_format_query_t *query;
+	u_int samples;
 	u_int stamp;
 	u_int offset;
 	int val;
@@ -3103,13 +3104,13 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		mutex_enter(sc->sc_lock);
 		mutex_enter(sc->sc_intr_lock);
 		/* figure out where next transfer will start */
+		samples = track->transferred_bytes;
 		stamp = track->stamp;
 		offset = auring_tail(&track->usrbuf);
 		mutex_exit(sc->sc_intr_lock);
 		mutex_exit(sc->sc_lock);
 
-		/* samples will overflow soon but is as per spec. */
-		ao->samples = stamp * track->usrbuf_blksize;
+		ao->samples = samples;
 		ao->deltablks = stamp - track->last_stamp;
 		ao->offset = offset;
 		TRACET(2, track, "%s samples=%u deltablks=%u offset=%u",
@@ -5051,6 +5052,11 @@ audio_track_play(audio_track_t *track)
 		track->outputcounter += track->outbuf.used - track_count_0;
 	}
 
+	/*
+	 * Counters for AUDIO_GETOOFFS.
+	 * transferred_bytes will overflow soon but is as per spec.
+	 */
+	track->transferred_bytes += bytes;
 	track->stamp++;
 
 #if defined(AUDIO_DEBUG)
@@ -7765,7 +7771,7 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 
 	if (ptrack) {
 		pi->seek = ptrack->usrbuf.used;
-		pi->samples = ptrack->stamp * ptrack->usrbuf_blksize;
+		pi->samples = ptrack->transferred_bytes;
 		pi->eof = ptrack->eofcounter;
 		pi->error = (ptrack->dropframes != 0) ? 1 : 0;
 		pi->open = 1;
@@ -7776,7 +7782,7 @@ audiogetinfo(struct audio_softc *sc, struct audio_info *ai, int need_mixerinfo,
 
 	if (rtrack) {
 		ri->seek = audio_track_readablebytes(rtrack);
-		ri->samples = rtrack->stamp * rtrack->usrbuf_blksize;
+		ri->samples = rtrack->transferred_bytes;
 		ri->eof = 0;
 		ri->error = (rtrack->dropframes != 0) ? 1 : 0;
 		ri->open = 1;
