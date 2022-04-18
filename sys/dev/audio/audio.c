@@ -3106,7 +3106,7 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		/* figure out where next transfer will start */
 		samples = track->transferred_bytes;
 		stamp = track->stamp;
-		offset = auring_tail(&track->usrbuf);
+		offset = track->usrbuf.head;
 		mutex_exit(sc->sc_intr_lock);
 		mutex_exit(sc->sc_lock);
 
