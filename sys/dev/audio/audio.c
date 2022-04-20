@@ -3119,7 +3119,6 @@ audio_ioctl(dev_t dev, struct audio_softc *sc, u_long cmd, void *addr, int flag,
 		break;
 
 	case AUDIO_WSEEK:
-		/* XXX return value does not include outbuf one. */
 		track = file->ptrack;
 		if (track) {
 			val = track->usrbuf.used;
