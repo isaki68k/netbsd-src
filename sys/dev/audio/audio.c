@@ -6271,8 +6271,9 @@ audio_track_clear(struct audio_softc *sc, audio_track_t *track)
 
 	audio_track_lock_enter(track);
 
-	track->usrbuf.used = 0;
 	/* Clear all internal parameters. */
+	track->usrbuf.used = 0;
+	track->usrbuf.head = 0;
 	if (track->codec.filter) {
 		track->codec.srcbuf.used = 0;
 		track->codec.srcbuf.head = 0;
