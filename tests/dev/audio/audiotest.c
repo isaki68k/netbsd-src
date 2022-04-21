@@ -1395,7 +1395,10 @@ int getenc_make_table(int, int[][5]);
 void xp_getenc(int[][5], int, int, int, struct audio_prinfo *);
 void getenc_check_encodings(int, int[][5]);
 void test_AUDIO_ERROR(int);
+u_int calc_blk_ms(const struct audio_info *);
 void test_AUDIO_GETIOFFS_one(int);
+void test_AUDIO_GETIOFFS_flush(int);
+void test_AUDIO_GETIOFFS_set(int);
 void test_AUDIO_GETOOFFS_one(int);
 void test_AUDIO_GETOOFFS_wrap(int);
 void test_AUDIO_GETOOFFS_flush(int);
@@ -6180,6 +6183,36 @@ DEF(AUDIO_ERROR_WRONLY)	{ test_AUDIO_ERROR(O_WRONLY); }
 DEF(AUDIO_ERROR_RDWR)	{ test_AUDIO_ERROR(O_RDWR); }
 
 /*
+ * Calculate blk_ms from audio_info.
+ */
+u_int
+calc_blk_ms(const struct audio_info *ai)
+{
+	const struct audio_prinfo *info;
+	u_int blk_ms;
+
+	if (netbsd < 9) {
+		/* Use default value. */
+		blk_ms = 50;
+	} else {
+		/*
+		 * On NetBSD9, blocktime can always be calculated.
+		 * If playback track is available, ai.blocksize is playback
+		 * blocksize.  If playback track is not available and
+		 * recording track is available, ai.blocksize is recording
+		 * blocksize.
+		 */
+		info = (ai->mode & AUMODE_PLAY) ? &ai->play : &ai->record;
+		blk_ms = ai->blocksize * 1000 /
+		    (info->precision / 8 * info->channels * info->sample_rate);
+	}
+
+	DPRINTF("  > blocksize=%u, estimated blk_ms=%u\n",
+	    ai->blocksize, blk_ms);
+	return blk_ms;
+}
+
+/*
  * AUDIO_GETIOFFS at least one block.
  */
 void
@@ -6189,7 +6222,6 @@ test_AUDIO_GETIOFFS_one(int openmode)
 	audio_offset_t o;
 	int fd;
 	int r;
-	u_int blocksize;
 	u_int blk_ms;
 
 	TEST("AUDIO_GETIOFFS_one_%s", openmode_str[openmode] + 2);
@@ -6218,21 +6250,10 @@ test_AUDIO_GETIOFFS_one(int openmode)
 	REQUIRED_SYS_EQ(0, r);
 #endif
 
-	/* Get blocksize to calc blk_ms. */
+	/* Get blk_ms. */
 	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
 	REQUIRED_SYS_EQ(0, r);
-	blocksize = ai.blocksize;
-	if (netbsd < 9) {
-		blk_ms = 0;
-	} else {
-		/* On NetBSD9, blocktime can always be calculated. */
-		blk_ms = blocksize * 1000 /
-		    (ai.play.precision / 8 * ai.play.channels *
-		     ai.play.sample_rate);
-	}
-	if (blk_ms == 0)
-		blk_ms = 50;
-	DPRINTF("  > blocksize=%u, estimated blk_ms=%u\n", blocksize, blk_ms);
+	blk_ms = calc_blk_ms(&ai);
 
 	/*
 	 * Even when just opened, recording counters will start.
@@ -6265,6 +6286,116 @@ test_AUDIO_GETIOFFS_one(int openmode)
 DEF(AUDIO_GETIOFFS_one_RDONLY) { test_AUDIO_GETIOFFS_one(O_RDONLY); }
 DEF(AUDIO_GETIOFFS_one_WRONLY) { test_AUDIO_GETIOFFS_one(O_WRONLY); }
 DEF(AUDIO_GETIOFFS_one_RDWR)   { test_AUDIO_GETIOFFS_one(O_RDWR); }
+
+/*
+ * Check whether AUDIO_FLUSH clears AUDIO_GETIOFFS.
+ */
+void
+test_AUDIO_GETIOFFS_flush(int openmode)
+{
+	struct audio_info ai;
+	audio_offset_t o;
+	int fd;
+	int r;
+	u_int blk_ms;
+	u_int initial_offset;
+	u_int last_offset;
+
+	TEST("AUDIO_GETIOFFS_flush_%s", openmode_str[openmode] + 2);
+	if (mode2aumode(openmode) == 0) {
+		XP_SKIP("Operation not allowed on this hardware property");
+		return;
+	}
+
+	fd = OPEN(devaudio, openmode);
+	REQUIRED_SYS_OK(fd);
+
+#if 0
+	/* On NetBSD7/8, native encoding changes buffer behavior. */
+	AUDIO_INITINFO(&ai);
+	ai.record.encoding = AUDIO_ENCODING_SLINEAR_NE;
+	ai.record.precision = 16;
+	ai.record.channels = 2;
+	ai.record.sample_rate = 48000;
+	/* To simplify, make play and record the same. */
+	*ai.play = *ai.record;
+	r = IOCTL(fd, AUDIO_SETINFO, &ai, "");
+	REQUIRED_SYS_EQ(0, r);
+#endif
+
+	/* Get blks_ms. */
+	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
+	REQUIRED_SYS_EQ(0, r);
+	blk_ms = calc_blk_ms(&ai);
+
+	/*
+	 * On NetBSD7, .offset starts from one block.  What is the block??
+	 * On NetBSD9, .offset starts from zero.
+	 */
+	if (netbsd < 9) {
+		initial_offset = ai.blocksize;
+	} else {
+		initial_offset = 0;
+	}
+
+	/* Wait one block time. */
+	usleep(blk_ms * 1000);
+
+	/* Obtaine once. */
+	r = IOCTL(fd, AUDIO_GETIOFFS, &o, "");
+	XP_SYS_EQ(0, r);
+	if (openmode == O_WRONLY) {
+		/*
+		 * On playback track, it silently succeeds with zero.
+		 * But on NetBSD7, WRONLY descriptor also has rec buffer.
+		 */
+		XP_EQ(0, o.samples);
+		XP_EQ(0, o.deltablks);
+		XP_EQ(initial_offset, o.offset);
+	} else {
+		XP_EQ(ai.blocksize, o.samples);
+		XP_EQ(1, o.deltablks);
+		XP_EQ(initial_offset + ai.blocksize, o.offset);
+	}
+
+	/* Wait one more block time to advance .offset. */
+	usleep(blk_ms * 1000);
+
+	/* If offset remains unchanged, this is expected offset. */
+	last_offset = initial_offset + ai.blocksize * 2;
+
+	/* Then, flush. */
+	r = IOCTL(fd, AUDIO_FLUSH, NULL, "");
+	REQUIRED_SYS_EQ(0, r);
+
+	/* All should be cleared. */
+	r = IOCTL(fd, AUDIO_GETIOFFS, &o, "");
+	XP_SYS_EQ(0, r);
+	XP_EQ(0, o.samples);
+	XP_EQ(0, o.deltablks);
+	if (openmode == O_WRONLY) {
+		XP_EQ(initial_offset, o.offset);
+	} else {
+		/*
+		 * On NetBSD7,
+		 * offset is cleared if native encodings(?), but remains
+		 * unchanged if emulated encodings(?).  Looks a bug.
+		 * On NetBSD9, it should always be cleared.
+		 */
+		if (netbsd < 9 && o.offset == last_offset) {
+			DPRINTF("  > %d: offset(%u) == last_offset\n",
+			    __LINE__, o.offset);
+		} else {
+			XP_EQ(initial_offset, o.offset);
+		}
+	}
+
+	r = CLOSE(fd);
+	XP_SYS_EQ(0, r);
+}
+DEF(AUDIO_GETIOFFS_flush_RDONLY) { test_AUDIO_GETIOFFS_flush(O_RDONLY); }
+DEF(AUDIO_GETIOFFS_flush_WRONLY) { test_AUDIO_GETIOFFS_flush(O_WRONLY); }
+DEF(AUDIO_GETIOFFS_flush_RDWR)   { test_AUDIO_GETIOFFS_flush(O_RDWR); }
 
 /*
  * AUDIO_GETOOFFS for one block.
@@ -6307,21 +6438,11 @@ test_AUDIO_GETOOFFS_one(int openmode)
 	REQUIRED_SYS_EQ(0, r);
 #endif
 
-	/* Get blocksize to calc blk_ms. */
+	/* Get blocksize and blk_ms. */
 	r = IOCTL(fd, AUDIO_GETBUFINFO, &ai, "");
 	REQUIRED_SYS_EQ(0, r);
 	blocksize = ai.blocksize;
-	if (netbsd < 9) {
-		blk_ms = 0;
-	} else {
-		/* On NetBSD9, blocktime can always be calculated. */
-		blk_ms = blocksize * 1000 /
-		    (ai.play.precision / 8 * ai.play.channels *
-		     ai.play.sample_rate);
-	}
-	if (blk_ms == 0)
-		blk_ms = 50;
-	DPRINTF("  > blocksize=%u, estimated blk_ms=%u\n", blocksize, blk_ms);
+	blk_ms = calc_blk_ms(&ai);
 
 	buf = (char *)malloc(blocksize);
 	REQUIRED_IF(buf != NULL);
@@ -7217,6 +7338,9 @@ struct testentry testtable[] = {
 	ENT(AUDIO_GETIOFFS_one_RDONLY),
 	ENT(AUDIO_GETIOFFS_one_WRONLY),
 	ENT(AUDIO_GETIOFFS_one_RDWR),
+	ENT(AUDIO_GETIOFFS_flush_RDONLY),
+	ENT(AUDIO_GETIOFFS_flush_WRONLY),
+	ENT(AUDIO_GETIOFFS_flush_RDWR),
 	ENT(AUDIO_GETOOFFS_one_RDONLY),
 	ENT(AUDIO_GETOOFFS_one_WRONLY),
 	ENT(AUDIO_GETOOFFS_one_RDWR),
