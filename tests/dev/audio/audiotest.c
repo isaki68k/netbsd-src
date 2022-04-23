@@ -6242,12 +6242,7 @@ test_AUDIO_GETIOFFS_one(int openmode)
 
 	r = IOCTL(fd, AUDIO_GETIOFFS, &o, "");
 	XP_SYS_EQ(0, r);
-	if (openmode == O_WRONLY) {
-		/* All are zero on playback track. */
-		XP_EQ(0, o.samples);
-		XP_EQ(0, o.deltablks);
-		XP_EQ(0, o.offset);
-	} else {
+	if (mode2rec(openmode)) {
 		/*
 		 * It's difficult to know exact values.
 		 * But at least these should not be zero.
@@ -6257,6 +6252,11 @@ test_AUDIO_GETIOFFS_one(int openmode)
 		XP_NE(0, o.samples);
 		XP_NE(0, o.deltablks);
 		XP_NE(0, o.offset);
+	} else {
+		/* All are zero on playback track. */
+		XP_EQ(0, o.samples);
+		XP_EQ(0, o.deltablks);
+		XP_EQ(0, o.offset);
 	}
 
 	r = CLOSE(fd);
@@ -6354,29 +6354,29 @@ test_AUDIO_GETOOFFS_one(int openmode)
 
 	/* Write one block. */
 	r = WRITE(fd, buf, blocksize);
-	if (openmode == O_RDONLY) {
-		XP_SYS_NG(EBADF, r);
-	} else {
+	if (mode2play(openmode)) {
 		XP_SYS_EQ(blocksize, r);
+	} else {
+		XP_SYS_NG(EBADF, r);
 	}
 	r = IOCTL(fd, AUDIO_DRAIN, NULL, "");
 	REQUIRED_SYS_EQ(0, r);
 
 	r = IOCTL(fd, AUDIO_GETOOFFS, &o, "");
 	XP_SYS_EQ(0, r);
-	if (openmode == O_RDONLY) {
+	if (mode2play(openmode)) {
+		/* All advance one block. */
+		XP_EQ(blocksize, o.samples);
+		XP_EQ(1, o.deltablks);
+		XP_EQ(initial_offset + blocksize, o.offset);
+	} else {
 		/*
-		 * All are zero on recording track.
+		 * All are zero on non-play track.
 		 * On NetBSD7, the rec track has play buffer, too.
 		 */
 		XP_EQ(0, o.samples);
 		XP_EQ(0, o.deltablks);
 		XP_EQ(initial_offset, o.offset);
-	} else {
-		/* All advance one block. */
-		XP_EQ(blocksize, o.samples);
-		XP_EQ(1, o.deltablks);
-		XP_EQ(initial_offset + blocksize, o.offset);
 	}
 
 	r = CLOSE(fd);
@@ -6462,14 +6462,14 @@ test_AUDIO_GETOOFFS_wrap(int openmode)
 
 	/* Write full buffer. */
 	r = WRITE(fd, buf, buffer_size);
-	if (openmode == O_RDONLY) {
-		XP_SYS_NG(EBADF, r);
-	} else {
+	if (mode2play(openmode)) {
 		XP_SYS_EQ(buffer_size, r);
 
 		/* Then, wait. */
 		r = IOCTL(fd, AUDIO_DRAIN, NULL, "");
 		REQUIRED_SYS_EQ(0, r);
+	} else {
+		XP_SYS_NG(EBADF, r);
 	}
 
 	/*
@@ -6478,15 +6478,7 @@ test_AUDIO_GETOOFFS_wrap(int openmode)
 	 */
 	r = IOCTL(fd, AUDIO_GETOOFFS, &o, "");
 	XP_SYS_EQ(0, r);
-	if (openmode == O_RDONLY) {
-		/*
-		 * On recording track, it silently succeeds with zero.
-		 * But on NetBSD7, RDONLY descriptor also has play buffer.
-		 */
-		XP_EQ(0, o.samples);
-		XP_EQ(0, o.deltablks);
-		XP_EQ(initial_offset, o.offset);
-	} else {
+	if (mode2play(openmode)) {
 		/*
 		 * On NetBSD7, samples may be blocksize * nblks or buffer_size
 		 * depending on native/emulated encoding.
@@ -6500,6 +6492,14 @@ test_AUDIO_GETOOFFS_wrap(int openmode)
 			XP_EQ(buffer_size, o.samples);
 		}
 		XP_EQ(nblks, o.deltablks);
+		XP_EQ(initial_offset, o.offset);
+	} else {
+		/*
+		 * On non-play track, it silently succeeds with zero.
+		 * But on NetBSD7, RDONLY descriptor also has play buffer.
+		 */
+		XP_EQ(0, o.samples);
+		XP_EQ(0, o.deltablks);
 		XP_EQ(initial_offset, o.offset);
 	}
 
@@ -6566,10 +6566,10 @@ test_AUDIO_GETOOFFS_flush(int openmode)
 
 	/* Write one block. */
 	r = WRITE(fd, buf, ai.blocksize);
-	if (openmode == O_RDONLY) {
-		XP_SYS_NG(EBADF, r);
-	} else {
+	if (mode2play(openmode)) {
 		XP_SYS_EQ(ai.blocksize, r);
+	} else {
+		XP_SYS_NG(EBADF, r);
 	}
 	r = IOCTL(fd, AUDIO_DRAIN, NULL, "");
 	XP_SYS_EQ(0, r);
@@ -6577,26 +6577,26 @@ test_AUDIO_GETOOFFS_flush(int openmode)
 	/* Obtain once. */
 	r = IOCTL(fd, AUDIO_GETOOFFS, &o, "");
 	XP_SYS_EQ(0, r);
-	if (openmode == O_RDONLY) {
+	if (mode2play(openmode)) {
+		XP_EQ(ai.blocksize, o.samples);
+		XP_EQ(1, o.deltablks);
+		XP_EQ(initial_offset + ai.blocksize, o.offset);
+	} else {
 		/*
-		 * On recording track, it silently succeeds with zero.
+		 * On non-play track, it silently succeeds with zero.
 		 * But on NetBSD7, RDONLY descriptor also has play buffer.
 		 */
 		XP_EQ(0, o.samples);
 		XP_EQ(0, o.deltablks);
 		XP_EQ(initial_offset, o.offset);
-	} else {
-		XP_EQ(ai.blocksize, o.samples);
-		XP_EQ(1, o.deltablks);
-		XP_EQ(initial_offset + ai.blocksize, o.offset);
 	}
 
 	/* Write one more block to advance .offset. */
 	r = WRITE(fd, buf, ai.blocksize);
-	if (openmode == O_RDONLY) {
-		XP_SYS_NG(EBADF, r);
-	} else {
+	if (mode2play(openmode)) {
 		XP_SYS_EQ(ai.blocksize, r);
+	} else {
+		XP_SYS_NG(EBADF, r);
 	}
 	r = IOCTL(fd, AUDIO_DRAIN, NULL, "");
 	XP_SYS_EQ(0, r);
@@ -6613,9 +6613,7 @@ test_AUDIO_GETOOFFS_flush(int openmode)
 	XP_SYS_EQ(0, r);
 	XP_EQ(0, o.samples);
 	XP_EQ(0, o.deltablks);
-	if (openmode == O_RDONLY) {
-		XP_EQ(initial_offset, o.offset);
-	} else {
+	if (mode2play(openmode)) {
 		/*
 		 * On NetBSD7,
 		 * offset is cleared if native encodings(?), but remains
@@ -6628,6 +6626,8 @@ test_AUDIO_GETOOFFS_flush(int openmode)
 		} else {
 			XP_EQ(initial_offset, o.offset);
 		}
+	} else {
+		XP_EQ(initial_offset, o.offset);
 	}
 
 	r = CLOSE(fd);
@@ -6681,10 +6681,10 @@ test_AUDIO_GETOOFFS_set(int openmode)
 
 	/* Write one block. */
 	r = WRITE(fd, buf, ai.blocksize);
-	if (openmode == O_RDONLY) {
-		XP_SYS_NG(EBADF, r);
-	} else {
+	if (mode2play(openmode)) {
 		XP_SYS_EQ(ai.blocksize, r);
+	} else {
+		XP_SYS_NG(EBADF, r);
 	}
 	r = IOCTL(fd, AUDIO_DRAIN, NULL, "");
 	XP_SYS_EQ(0, r);
