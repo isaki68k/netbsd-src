@@ -4775,7 +4775,7 @@ audio_track_set_format(audio_track_t *track, audio_format2_t *usrfmt)
 
 	/*
 	 * On the recording track, expand the input stage buffer, which is
-	 * the closest buffer to rmixer, to NBLKOUT blocks.
+	 * the closest buffer to rmixer, to NBLKIN blocks.
 	 * Note that input buffer may point to outbuf.
 	 */
 	if (!is_playback) {
