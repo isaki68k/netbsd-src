@@ -52,6 +52,7 @@ device xpbus {}
 attach xpbus at mainbus
 file arch/luna68k/dev/xpbus.c		xpbus
 file arch/luna68k/dev/xpcmd.c		xpbus
+file arch/luna68k/dev/xplxfirm.c	xpbus
 
 device xp
 attach xp at xpbus
@@ -61,6 +62,7 @@ device psgpam: audiobus
 attach psgpam at xpbus
 file arch/luna68k/dev/psgpam.c		psgpam
 file arch/luna68k/dev/psgpam_enc.c	psgpam
+file arch/luna68k/dev/psgpam_table.c	psgpam
 
 device ws: wskbddev,wsmousedev
 attach ws at sio

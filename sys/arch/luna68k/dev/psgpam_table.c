@@ -1,11 +1,19 @@
+/* 
+ * XXX TODO:
+ * - add copyright notice (moveccr?)
+ */
+
+#if defined(_KERNEL)
+#include <sys/types.h>
+#endif
+
 /*
-All PT_count=16
-Limited (0,134217728) PT_count=14
-Unique PT_count=14
-min=0 step=434334
-Used 13
-*/
-#define PCM1_TABLE_BITS 8
+ * All PT_count=16
+ * Limited (0,134217728) PT_count=14
+ * Unique PT_count=14
+ * min=0 step=434334
+ * Used 13
+ */
 const uint8_t PCM1_TABLE[] = {
 	      /* u  v : out v */
 	0x00, /* [0]0 : [0]0 */
@@ -266,13 +274,12 @@ const uint8_t PCM1_TABLE[] = {
 	0x0c, /* [255]110755170 : [12]94906266 */
 };
 /*
-All PT_count=256
-Limited (2097152,134217728) PT_count=139
-Unique PT_count=75
-min=0 step=434334
-Used 71
-*/
-#define PCM2_TABLE_BITS 8
+ * All PT_count=256
+ * Limited (2097152,134217728) PT_count=139
+ * Unique PT_count=75
+ * min=0 step=434334
+ * Used 71
+ */
 const uint8_t PCM2_TABLE[] = {
 	        /* u  v : out v */
 	0x11, /* [0]0 : [0]4194304 */
@@ -533,13 +540,12 @@ const uint8_t PCM2_TABLE[] = {
 	0xc7, /* [255]110755170 : [70]111683482 */
 };
 /*
-All PT_count=4096
-Limited (2097152,134217728) PT_count=1485
-Unique PT_count=265
-min=0 step=217167
-Used 229
-*/
-#define PCM3_TABLE_BITS 9
+ * All PT_count=4096
+ * Limited (2097152,134217728) PT_count=1485
+ * Unique PT_count=265
+ * min=0 step=217167
+ * Used 229
+ */
 const uint16_t PCM3_TABLE[] = {
 	            /* u  v : out v */
 	0x1111, /* [0]0 : [0]6291456 */
@@ -1056,13 +1062,12 @@ const uint16_t PCM3_TABLE[] = {
 	0x6c33, /* [511]110972337 : [232]110963853 */
 };
 /*
-All PT_count=256
-Limited (2097152,134217728) PT_count=169
-Unique PT_count=114
-min=0 step=434334
-Used 100
-*/
-#define PAM2A_TABLE_BITS 8
+ * All PT_count=256
+ * Limited (2097152,134217728) PT_count=169
+ * Unique PT_count=114
+ * min=0 step=434334
+ * Used 100
+ */
 const uint8_t PAM2A_TABLE[] = {
 	        /* u  v : out v */
 	0x11, /* [0]0 : [0]2097152 */
@@ -1323,13 +1328,12 @@ const uint8_t PAM2A_TABLE[] = {
 	0xbd, /* [255]110755170 : [111]111848106 */
 };
 /*
-All PT_count=256
-Limited (2097152,134217728) PT_count=169
-Unique PT_count=91
-min=0 step=434334
-Used 84
-*/
-#define PAM2B_TABLE_BITS 8
+ * All PT_count=256
+ * Limited (2097152,134217728) PT_count=169
+ * Unique PT_count=91
+ * min=0 step=434334
+ * Used 84
+ */
 const uint8_t PAM2B_TABLE[] = {
 	        /* u  v : out v */
 	0x11, /* [0]0 : [0]2097152 */
@@ -1590,13 +1594,12 @@ const uint8_t PAM2B_TABLE[] = {
 	0xcd, /* [255]110755170 : [89]114561997 */
 };
 /*
-All PT_count=4096
-Limited (2097152,134217728) PT_count=2197
-Unique PT_count=1351
-min=0 step=54291
-Used 1091
-*/
-#define PAM3A_TABLE_BITS 11
+ * All PT_count=4096
+ * Limited (2097152,134217728) PT_count=2197
+ * Unique PT_count=1351
+ * min=0 step=54291
+ * Used 1091
+ */
 const uint16_t PAM3A_TABLE[] = {
 	            /* u  v : out v */
 	0x1111, /* [0]0 : [0]2097152 */
@@ -3649,13 +3652,12 @@ const uint16_t PAM3A_TABLE[] = {
 	0x9ddd, /* [2047]111133677 : [1342]110532246 */
 };
 /*
-All PT_count=4096
-Limited (2097152,134217728) PT_count=2197
-Unique PT_count=400
-min=0 step=217167
-Used 307
-*/
-#define PAM3B_TABLE_BITS 9
+ * All PT_count=4096
+ * Limited (2097152,134217728) PT_count=2197
+ * Unique PT_count=400
+ * min=0 step=217167
+ * Used 307
+ */
 const uint16_t PAM3B_TABLE[] = {
 	            /* u  v : out v */
 	0x1111, /* [0]0 : [0]2097152 */
