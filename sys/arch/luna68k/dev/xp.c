@@ -1,4 +1,4 @@
-/* $NetBSD: xp.c,v 1.6 2020/12/29 17:17:14 tsutsui Exp $ */
+/* $NetBSD: xp.c,v 1.7 2022/06/10 21:42:23 tsutsui Exp $ */
 
 /*-
  * Copyright (c) 2016 Izumi Tsutsui.  All rights reserved.
@@ -29,7 +29,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: xp.c,v 1.6 2020/12/29 17:17:14 tsutsui Exp $");
+__KERNEL_RCSID(0, "$NetBSD: xp.c,v 1.7 2022/06/10 21:42:23 tsutsui Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>

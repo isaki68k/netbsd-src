@@ -1,4 +1,4 @@
-/* $NetBSD: udf_vnops.c,v 1.119 2022/02/16 22:00:56 andvar Exp $ */
+/* $NetBSD: udf_vnops.c,v 1.126 2022/05/28 21:14:57 andvar Exp $ */
 
 /*
  * Copyright (c) 2006, 2008 Reinoud Zandijk
@@ -32,7 +32,7 @@
 
 #include <sys/cdefs.h>
 #ifndef lint
-__KERNEL_RCSID(0, "$NetBSD: udf_vnops.c,v 1.119 2022/02/16 22:00:56 andvar Exp $");
+__KERNEL_RCSID(0, "$NetBSD: udf_vnops.c,v 1.126 2022/05/28 21:14:57 andvar Exp $");
 #endif /* not lint */
 
 
@@ -419,7 +419,7 @@ udf_write(void *v)
 /* --------------------------------------------------------------------- */
 
 /*
- * `Special' bmap functionality that translates all incomming requests to
+ * `Special' bmap functionality that translates all incoming requests to
  * translate to vop_strategy() calls with the same blocknumbers effectively
  * not translating at all.
  */
@@ -437,7 +437,7 @@ udf_trivial_bmap(void *v)
 	struct vnode  *vp  = ap->a_vp;	/* our node	*/
 	struct vnode **vpp = ap->a_vpp;	/* return node	*/
 	daddr_t *bnp  = ap->a_bnp;	/* translated	*/
-	daddr_t  bn   = ap->a_bn;	/* origional	*/
+	daddr_t  bn   = ap->a_bn;	/* original	*/
 	int     *runp = ap->a_runp;
 	struct udf_node *udf_node = VTOI(vp);
 	uint32_t lb_size;
@@ -815,7 +815,7 @@ udf_lookup(void *v)
 		/*
 		 * Check if the directory has its sticky bit set. If so, ask
 		 * for clearance since only the owner of a file or directory
-		 * can remove/rename from taht directory.
+		 * can remove/rename from that directory.
 		 */
 		mode = udf_getaccessmode(dir_node);
 		if ((mode & S_ISTXT) != 0) {
@@ -847,7 +847,7 @@ done:
 out:
 	if (error == 0 && *vpp != dvp)
 		VOP_UNLOCK(*vpp);
-	DPRINTFIF(LOOKUP, error, ("udf_lookup returing error %d\n", error));
+	DPRINTFIF(LOOKUP, error, ("udf_lookup returning error %d\n", error));
 
 	return error;
 }
@@ -1343,7 +1343,7 @@ udf_open(void *v)
 
 	/*
 	 * Files marked append-only must be opened for appending.
-	 * TODO: get chflags(2) flags from extened attribute.
+	 * TODO: get chflags(2) flags from extended attribute.
 	 */
 	flags = 0;
 	if ((flags & APPEND) && (ap->a_mode & (FWRITE | O_APPEND)) == FWRITE)
@@ -1422,7 +1422,7 @@ udf_check_possible(struct vnode *vp, struct vattr *vap, mode_t mode)
 	}
 
 	/* noone may write immutable files */
-	/* TODO: get chflags(2) flags from extened attribute. */
+	/* TODO: get chflags(2) flags from extended attribute. */
 	flags = 0;
 	if ((mode & VWRITE) && (flags & IMMUTABLE))
 		return EPERM;
@@ -1542,40 +1542,6 @@ udf_mkdir(void *v)
 
 /* --------------------------------------------------------------------- */
 
-static int
-udf_do_link(struct vnode *dvp, struct vnode *vp, struct componentname *cnp)
-{
-	struct udf_node *udf_node, *dir_node;
-	struct vattr vap;
-	int error;
-
-	DPRINTF(CALL, ("udf_link called\n"));
-	KASSERT(dvp != vp);
-	KASSERT(vp->v_type != VDIR);
-	KASSERT(dvp->v_mount == vp->v_mount);
-
-	/* get attributes */
-	dir_node = VTOI(dvp);
-	udf_node = VTOI(vp);
-
-	error = VOP_GETATTR(vp, &vap, FSCRED);
-	if (error) {
-		VOP_UNLOCK(vp);
-		return error;
-	}
-
-	/* check link count overflow */
-	if (vap.va_nlink >= (1<<16)-1) {	/* uint16_t */
-		VOP_UNLOCK(vp);
-		return EMLINK;
-	}
-
-	error = udf_dir_attach(dir_node->ump, dir_node, udf_node, &vap, cnp);
-	if (error)
-		VOP_UNLOCK(vp);
-	return error;
-}
-
 int
 udf_link(void *v)
 {
@@ -1587,12 +1553,44 @@ udf_link(void *v)
 	struct vnode *dvp = ap->a_dvp;
 	struct vnode *vp  = ap->a_vp;
 	struct componentname *cnp = ap->a_cnp;
-	int error;
+	struct udf_node *udf_node, *dir_node;
+	struct vattr vap;
+	int error, abrt = 1;
 
-	error = udf_do_link(dvp, vp, cnp);
+	DPRINTF(CALL, ("udf_link called\n"));
+	KASSERT(dvp != vp);
+	KASSERT(vp->v_type != VDIR);
+	KASSERT(dvp->v_mount == vp->v_mount);
+
+	/* get attributes */
+	dir_node = VTOI(dvp);
+	udf_node = VTOI(vp);
+
+	if ((error = vn_lock(vp, LK_EXCLUSIVE))) {
+		DPRINTF(LOCKING, ("exclusive lock failed for vnode %p\n", vp));
+		goto out;
+	}
+
+	error = VOP_GETATTR(vp, &vap, FSCRED);
 	if (error)
-		VOP_ABORTOP(dvp, cnp);
+		goto out1;
 
+	/* check link count overflow */
+	if (vap.va_nlink >= (1<<16)-1) {	/* uint16_t */
+		error = EMLINK;
+		goto out1;
+	}
+	error = kauth_authorize_vnode(cnp->cn_cred, KAUTH_VNODE_ADD_LINK, vp,
+	    dvp, 0);
+	if (error)
+		goto out1;
+	abrt = 0;
+	error = udf_dir_attach(dir_node->ump, dir_node, udf_node, &vap, cnp);
+out1:
+	VOP_UNLOCK(vp);
+out:
+	if (abrt)
+		VOP_ABORTOP(dvp, cnp);
 	return error;
 }
 
@@ -1703,7 +1701,7 @@ udf_do_symlink(struct udf_node *udf_node, char *target)
 	/* write out structure on the new file */
 	error = vn_rdwr(UIO_WRITE, udf_node->vnode,
 		pathbuf, pathlen, 0,
-		UIO_SYSSPACE, IO_NODELOCKED | IO_ALTSEMANTICS,
+		UIO_SYSSPACE, IO_ALTSEMANTICS,
 		FSCRED, NULL, NULL);
 
 	/* return status of symlink contents writeout */
@@ -2023,7 +2021,7 @@ udf_rmdir(void *v)
 		 * Bug alert: we need to remove '..' from the detaching
 		 * udf_node so further lookups of this are not possible. This
 		 * prevents a process in a deleted directory from going to its
-		 * deleted parent. Since `udf_node' is garanteed to be empty
+		 * deleted parent. Since `udf_node' is guaranteed to be empty
 		 * here, trunc it so no fids are there.
 		 */
 		dirhash_purge(&udf_node->dir_hash);

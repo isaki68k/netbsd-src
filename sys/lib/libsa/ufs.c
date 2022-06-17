@@ -1,4 +1,4 @@
-/*	$NetBSD: ufs.c,v 1.80 2021/05/27 06:54:44 mrg Exp $	*/
+/*	$NetBSD: ufs.c,v 1.86 2022/04/29 07:42:07 rin Exp $	*/
 
 /*-
  * Copyright (c) 1993
@@ -597,10 +597,12 @@ ffs_find_superblock(struct open_file *f, FS *fs)
 #ifdef LIBSA_FFSv2
 	static daddr_t sblock_try[] = SBLOCKSEARCH;
 	int i;
+#endif
 
+#ifdef LIBSA_FFSv2
 	for (i = 0; sblock_try[i] != -1; i++) {
 		rc = DEV_STRATEGY(f->f_dev)(f->f_devdata, F_READ,
-		    sblock_try[i] / DEV_BSIZE, SBLOCKSIZE, fs, &buf_size);
+		    sblock_try[i] / GETSECSIZE(f), SBLOCKSIZE, fs, &buf_size);
 		if (rc)
 			return rc;
 		if (buf_size != SBLOCKSIZE)
@@ -615,7 +617,7 @@ ffs_find_superblock(struct open_file *f, FS *fs)
 	return EINVAL;
 #else /* LIBSA_FFSv2 */
 	rc = DEV_STRATEGY(f->f_dev)(f->f_devdata, F_READ,
-		SBLOCKOFFSET / DEV_BSIZE, SBLOCKSIZE, fs, &buf_size);
+		SBLOCKOFFSET / GETSECSIZE(f), SBLOCKSIZE, fs, &buf_size);
 	if (rc)
 		return rc;
 	if (buf_size != SBLOCKSIZE)
@@ -701,7 +703,7 @@ ufs_open(const char *path, struct open_file *f)
 		/*
 		 * We note that the number of indirect blocks is always
 		 * a power of 2.  This lets us use shifts and masks instead
-		 * of divide and remainder and avoinds pulling in the
+		 * of divide and remainder and avoids pulling in the
 		 * 64bit division routine into the boot code.
 		 */
 		mult = UFS_NINDIR(fs);
@@ -849,9 +851,11 @@ ufs_open(const char *path, struct open_file *f)
 out:
 	if (rc)
 		ufs_close(f);
-#ifdef FSMOD		/* Only defined for lfs */
 	else
+#ifdef FSMOD
 		fsmod = FSMOD;
+#else
+		fsmod = NULL;
 #endif
 	return rc;
 }

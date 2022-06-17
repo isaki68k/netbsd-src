@@ -1,4 +1,4 @@
-/* $NetBSD: spi.c,v 1.23 2022/01/19 13:33:11 thorpej Exp $ */
+/* $NetBSD: spi.c,v 1.26 2022/05/17 05:05:20 andvar Exp $ */
 
 /*-
  * Copyright (c) 2006 Urbana-Champaign Independent Media Center.
@@ -42,7 +42,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: spi.c,v 1.23 2022/01/19 13:33:11 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: spi.c,v 1.26 2022/05/17 05:05:20 andvar Exp $");
 
 #include "locators.h"
 
@@ -380,7 +380,7 @@ spi_ioctl(dev_t dev, u_long cmd, void *data, int flag, lwp_t *l)
 			break;
 		}
 		if ((sit->sit_send && sit->sit_sendlen == 0)
-		    || (sit->sit_recv && sit->sit_recv == 0)) {
+		    || (sit->sit_recv && sit->sit_recvlen == 0)) {
 			error = EINVAL;
 			break;
 		}
@@ -544,7 +544,7 @@ spi_transfer(struct spi_handle *sh, struct spi_transfer *st)
 	spi_acquire(sh);
 
 	st->st_spiprivate = (void *)sh;
-	
+
 	/*
 	 * Reconfigure controller
 	 *
@@ -615,7 +615,7 @@ spi_done(struct spi_transfer *st, int err)
  *
  * spi_send_recv - sends data to the bus, and then receives.  Note that this is
  * done synchronously, i.e. send a command and get the response.  This is
- * not full duplex.  If you wnat full duplex, you can't use these convenience
+ * not full duplex.  If you want full duplex, you can't use these convenience
  * wrappers.
  */
 int

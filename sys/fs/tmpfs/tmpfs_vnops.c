@@ -1,4 +1,4 @@
-/*	$NetBSD: tmpfs_vnops.c,v 1.148 2021/10/20 03:08:17 thorpej Exp $	*/
+/*	$NetBSD: tmpfs_vnops.c,v 1.150 2022/06/01 08:42:38 hannken Exp $	*/
 
 /*
  * Copyright (c) 2005, 2006, 2007, 2020 The NetBSD Foundation, Inc.
@@ -35,7 +35,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tmpfs_vnops.c,v 1.148 2021/10/20 03:08:17 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tmpfs_vnops.c,v 1.150 2022/06/01 08:42:38 hannken Exp $");
 
 #include <sys/param.h>
 #include <sys/dirent.h>
@@ -555,7 +555,9 @@ tmpfs_read(void *v)
 		    UBC_READ | UBC_PARTIALOK | UBC_VNODE_FLAGS(vp));
 	}
 
-	tmpfs_update(vp, TMPFS_UPDATE_ATIME);
+	if ((vp->v_mount->mnt_flag & MNT_NOATIME) == 0)
+		tmpfs_update(vp, TMPFS_UPDATE_ATIME);
+
 	return error;
 }
 
@@ -800,6 +802,11 @@ tmpfs_link(void *v)
 		error = EPERM;
 		goto out;
 	}
+
+	error = kauth_authorize_vnode(cnp->cn_cred, KAUTH_VNODE_ADD_LINK, vp,
+	    dvp, 0);
+	if (error)
+		goto out;
 
 	/* Allocate a new directory entry to represent the inode. */
 	error = tmpfs_alloc_dirent(VFS_TO_TMPFS(vp->v_mount),

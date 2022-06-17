@@ -1,4 +1,4 @@
-/*	$NetBSD: if_ixl.c,v 1.77 2021/06/16 00:21:18 riastradh Exp $	*/
+/*	$NetBSD: if_ixl.c,v 1.83 2022/05/23 13:53:37 rin Exp $	*/
 
 /*
  * Copyright (c) 2013-2015, Intel Corporation
@@ -74,7 +74,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_ixl.c,v 1.77 2021/06/16 00:21:18 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_ixl.c,v 1.83 2022/05/23 13:53:37 rin Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_net_mpsafe.h"
@@ -95,6 +95,7 @@ __KERNEL_RCSID(0, "$NetBSD: if_ixl.c,v 1.77 2021/06/16 00:21:18 riastradh Exp $"
 #include <sys/pcq.h>
 #include <sys/syslog.h>
 #include <sys/workqueue.h>
+#include <sys/xcall.h>
 
 #include <sys/bus.h>
 
@@ -899,12 +900,18 @@ static const struct ixl_phy_type ixl_phy_type_map[] = {
 	{ 1ULL << IXL_PHY_TYPE_25GBASE_LR,	IFM_25G_LR },
 	{ 1ULL << IXL_PHY_TYPE_25GBASE_AOC,	IFM_25G_AOC },
 	{ 1ULL << IXL_PHY_TYPE_25GBASE_ACC,	IFM_25G_ACC },
+	{ 1ULL << IXL_PHY_TYPE_2500BASE_T_1,	IFM_2500_T },
+	{ 1ULL << IXL_PHY_TYPE_5000BASE_T_1,	IFM_5000_T },
+	{ 1ULL << IXL_PHY_TYPE_2500BASE_T_2,	IFM_2500_T },
+	{ 1ULL << IXL_PHY_TYPE_5000BASE_T_2,	IFM_5000_T },
 };
 
 static const struct ixl_speed_type ixl_speed_type_map[] = {
 	{ IXL_AQ_LINK_SPEED_40GB,		IF_Gbps(40) },
 	{ IXL_AQ_LINK_SPEED_25GB,		IF_Gbps(25) },
 	{ IXL_AQ_LINK_SPEED_10GB,		IF_Gbps(10) },
+	{ IXL_AQ_LINK_SPEED_5000MB,		IF_Mbps(5000) },
+	{ IXL_AQ_LINK_SPEED_2500MB,		IF_Mbps(2500) },
 	{ IXL_AQ_LINK_SPEED_1000MB,		IF_Mbps(1000) },
 	{ IXL_AQ_LINK_SPEED_100MB,		IF_Mbps(100)},
 };
@@ -949,7 +956,8 @@ static const struct ixl_product ixl_products[] = {
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_XL710_QSFP_A },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_XL710_QSFP_B },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_XL710_QSFP_C },
-	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_X710_10G_T },
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_X710_10G_T_1 },
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_X710_10G_T_2 },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_XL710_20G_BP_1 },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_XL710_20G_BP_2 },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_X710_T4_10G },
@@ -961,6 +969,9 @@ static const struct ixl_product ixl_products[] = {
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_X722_1G_BASET },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_X722_10G_BASET },
 	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_X722_I_SFP },
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_X710_10G_SFP },
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_X710_10G_BP },
+	{ PCI_VENDOR_INTEL,	PCI_PRODUCT_INTEL_V710_5G_T},
 	/* required last entry */
 	{0, 0}
 };
@@ -977,6 +988,14 @@ ixl_lookup(const struct pci_attach_args *pa)
 	}
 
 	return NULL;
+}
+
+static void
+ixl_intr_barrier(void)
+{
+
+	/* wait for finish of all handler */
+	xc_barrier(0);
 }
 
 static int
@@ -1436,15 +1455,17 @@ ixl_detach(device_t self, int flags)
 
 	ixl_stop(ifp, 1);
 
-	ixl_disable_other_intr(sc);
-
 	callout_halt(&sc->sc_stats_callout, NULL);
 	ixl_work_wait(sc->sc_workq, &sc->sc_stats_task);
 
-	/* wait for ATQ handler */
-	mutex_enter(&sc->sc_atq_lock);
-	mutex_exit(&sc->sc_atq_lock);
+	/* detach the I/F before stop adminq due to callbacks */
+	ether_ifdetach(ifp);
+	if_detach(ifp);
+	ifmedia_fini(&sc->sc_media);
+	if_percpuq_destroy(sc->sc_ipq);
 
+	ixl_disable_other_intr(sc);
+	ixl_intr_barrier();
 	ixl_work_wait(sc->sc_workq, &sc->sc_arq_task);
 	ixl_work_wait(sc->sc_workq, &sc->sc_link_state_task);
 
@@ -1457,11 +1478,6 @@ ixl_detach(device_t self, int flags)
 		workqueue_destroy(sc->sc_workq_txrx);
 		sc->sc_workq_txrx = NULL;
 	}
-
-	if_percpuq_destroy(sc->sc_ipq);
-	ether_ifdetach(ifp);
-	if_detach(ifp);
-	ifmedia_fini(&sc->sc_media);
 
 	ixl_teardown_interrupts(sc);
 	ixl_teardown_stats(sc);
@@ -1836,12 +1852,15 @@ ixl_mactype(pci_product_id_t id)
 	case PCI_PRODUCT_INTEL_XL710_QSFP_A:
 	case PCI_PRODUCT_INTEL_XL710_QSFP_B:
 	case PCI_PRODUCT_INTEL_XL710_QSFP_C:
-	case PCI_PRODUCT_INTEL_X710_10G_T:
+	case PCI_PRODUCT_INTEL_X710_10G_T_1:
+	case PCI_PRODUCT_INTEL_X710_10G_T_2:
 	case PCI_PRODUCT_INTEL_XL710_20G_BP_1:
 	case PCI_PRODUCT_INTEL_XL710_20G_BP_2:
 	case PCI_PRODUCT_INTEL_X710_T4_10G:
 	case PCI_PRODUCT_INTEL_XXV710_25G_BP:
 	case PCI_PRODUCT_INTEL_XXV710_25G_SFP28:
+	case PCI_PRODUCT_INTEL_X710_10G_SFP:
+	case PCI_PRODUCT_INTEL_X710_10G_BP:
 		return I40E_MAC_XL710;
 
 	case PCI_PRODUCT_INTEL_X722_KX:
@@ -2143,29 +2162,6 @@ ixl_iff(struct ixl_softc *sc)
 }
 
 static void
-ixl_stop_rendezvous(struct ixl_softc *sc)
-{
-	struct ixl_tx_ring *txr;
-	struct ixl_rx_ring *rxr;
-	unsigned int i;
-
-	for (i = 0; i < sc->sc_nqueue_pairs; i++) {
-		txr = sc->sc_qps[i].qp_txr;
-		rxr = sc->sc_qps[i].qp_rxr;
-
-		mutex_enter(&txr->txr_lock);
-		mutex_exit(&txr->txr_lock);
-
-		mutex_enter(&rxr->rxr_lock);
-		mutex_exit(&rxr->rxr_lock);
-
-		sc->sc_qps[i].qp_workqueue = false;
-		workqueue_wait(sc->sc_workq_txrx,
-		    &sc->sc_qps[i].qp_work);
-	}
-}
-
-static void
 ixl_stop_locked(struct ixl_softc *sc)
 {
 	struct ifnet *ifp = &sc->sc_ec.ec_if;
@@ -2234,7 +2230,11 @@ ixl_stop_locked(struct ixl_softc *sc)
 		mutex_exit(&rxr->rxr_lock);
 	}
 
-	ixl_stop_rendezvous(sc);
+	for (i = 0; i < sc->sc_nqueue_pairs; i++) {
+		sc->sc_qps[i].qp_workqueue = false;
+		workqueue_wait(sc->sc_workq_txrx,
+		    &sc->sc_qps[i].qp_work);
+	}
 
 	for (i = 0; i < sc->sc_nqueue_pairs; i++) {
 		txr = sc->sc_qps[i].qp_txr;
@@ -2532,9 +2532,6 @@ ixl_txr_free(struct ixl_softc *sc, struct ixl_tx_ring *txr)
 	unsigned int i;
 
 	softint_disestablish(txr->txr_si);
-	while ((m = pcq_get(txr->txr_intrq)) != NULL)
-		m_freem(m);
-	pcq_destroy(txr->txr_intrq);
 
 	maps = txr->txr_maps;
 	for (i = 0; i < sc->sc_tx_ring_ndescs; i++) {
@@ -2542,6 +2539,10 @@ ixl_txr_free(struct ixl_softc *sc, struct ixl_tx_ring *txr)
 
 		bus_dmamap_destroy(sc->sc_dmat, txm->txm_map);
 	}
+
+	while ((m = pcq_get(txr->txr_intrq)) != NULL)
+		m_freem(m);
+	pcq_destroy(txr->txr_intrq);
 
 	ixl_dmamem_free(sc, &txr->txr_mem);
 	mutex_destroy(&txr->txr_lock);

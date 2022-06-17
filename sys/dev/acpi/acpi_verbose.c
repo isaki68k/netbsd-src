@@ -1,4 +1,4 @@
-/*	$NetBSD: acpi_verbose.c,v 1.20 2021/12/20 11:17:40 skrll Exp $ */
+/*	$NetBSD: acpi_verbose.c,v 1.22 2022/06/02 00:12:20 rin Exp $ */
 
 /*-
  * Copyright (c) 2003, 2007, 2010 The NetBSD Foundation, Inc.
@@ -65,7 +65,9 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: acpi_verbose.c,v 1.20 2021/12/20 11:17:40 skrll Exp $");
+__KERNEL_RCSID(0, "$NetBSD: acpi_verbose.c,v 1.22 2022/06/02 00:12:20 rin Exp $");
+
+#include "pci.h"
 
 #include <sys/param.h>
 #include <sys/device.h>
@@ -492,7 +494,6 @@ static void
 acpi_print_tree(struct acpi_devnode *ad, uint32_t level)
 {
 	struct acpi_devnode *child;
-	device_t dev;
 	char buf[5];
 	uint32_t i;
 
@@ -515,6 +516,7 @@ acpi_print_tree(struct acpi_devnode *ad, uint32_t level)
 	if (ad->ad_device != NULL)
 		aprint_normal(" <%s>", device_xname(ad->ad_device));
 
+#if NPCI > 0
 	if (ad->ad_pciinfo != NULL) {
 
 		aprint_normal(" (PCI)");
@@ -534,11 +536,12 @@ acpi_print_tree(struct acpi_devnode *ad, uint32_t level)
 			    ad->ad_pciinfo->ap_segment,
 			    ad->ad_pciinfo->ap_downbus);
 
-		dev = acpi_pcidev_find_dev(ad);
+		device_t dev = acpi_pcidev_find_dev(ad);
 
 		if (dev != NULL)
 			aprint_normal(" <%s>", device_xname(dev));
 	}
+#endif
 
 	aprint_normal("\n");
 

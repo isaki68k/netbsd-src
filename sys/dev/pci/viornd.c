@@ -1,4 +1,4 @@
-/* 	$NetBSD: viornd.c,v 1.14 2021/01/20 19:46:48 reinoud Exp $ */
+/* 	$NetBSD: viornd.c,v 1.18 2022/04/14 19:47:14 riastradh Exp $ */
 /*	$OpenBSD: viornd.c,v 1.1 2014/01/21 21:14:58 sf Exp $	*/
 
 /*
@@ -141,7 +141,7 @@ viornd_attach(device_t parent, device_t self, void *aux)
 
 	mutex_init(&sc->sc_mutex, MUTEX_DEFAULT, IPL_VM);
 
-	error = bus_dmamem_alloc(virtio_dmat(vsc), 
+	error = bus_dmamem_alloc(virtio_dmat(vsc),
 				 VIRTIO_PAGE_SIZE, 0, 0, segs, 1, &nsegs,
 				 BUS_DMA_NOWAIT|BUS_DMA_ALLOCNOW);
 	if (error) {
@@ -247,6 +247,6 @@ viornd_vq_done(struct virtqueue *vq)
 out:
 	virtio_dequeue_commit(vsc, vq, slot);
 	mutex_exit(&sc->sc_mutex);
-	
+
 	return 1;
 }

@@ -1,4 +1,4 @@
-/*	$NetBSD: coda_psdev.c,v 1.60 2021/09/26 01:16:08 thorpej Exp $	*/
+/*	$NetBSD: coda_psdev.c,v 1.62 2022/05/03 20:52:31 andvar Exp $	*/
 
 /*
  *
@@ -54,7 +54,7 @@
 /* These routines are the device entry points for Venus. */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: coda_psdev.c,v 1.60 2021/09/26 01:16:08 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: coda_psdev.c,v 1.62 2022/05/03 20:52:31 andvar Exp $");
 
 extern int coda_nc_initialized;    /* Set if cache has been initialized */
 
@@ -313,7 +313,7 @@ vc_nb_write(dev_t dev, struct uio *uiop, int flag)
 
     vcp = &coda_mnttbl[minor(dev)].mi_vcomm;
 
-    /* Peek at the opcode, unique without transfering the data. */
+    /* Peek at the opcode, unique without transferring the data. */
     uiop->uio_rw = UIO_WRITE;
     error = uiomove(tbuf, sizeof(int) * 2, uiop);
     if (error) {
@@ -758,7 +758,7 @@ vcoda_modcmd(modcmd_t cmd, void *arg)
 				if (VC_OPEN(vcp))
 					return EBUSY;
 			}
-			return devsw_detach(NULL, &vcoda_cdevsw);
+			devsw_detach(NULL, &vcoda_cdevsw);
 		}
 #endif
 		break;

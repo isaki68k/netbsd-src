@@ -1,4 +1,4 @@
-/*	$NetBSD: bootmenu.c,v 1.3 2021/10/06 10:13:19 jmcneill Exp $	*/
+/*	$NetBSD: bootmenu.c,v 1.5 2022/06/08 21:55:51 wiz Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -60,10 +60,8 @@ do_bootcfg_command(const char *cmd, char *arg)
 {
 	if (strcmp(cmd, BOOTCFG_CMD_LOAD) == 0)
 		module_add(arg);
-#if notyet
 	else if (strcmp(cmd, BOOTCFG_CMD_USERCONF) == 0)
 		userconf_add(arg);
-#endif
 #ifdef EFIBOOT_FDT
 	else if (strcmp(cmd, "dtoverlay") == 0)
 		dtoverlay_add(arg);
@@ -133,24 +131,6 @@ docommandchoice(int choice)
 		/* Skip leading spaces */
 		for (; *ic == ' '; ic++);
 	} while (*ic);
-}
-
-void
-bootdefault(void)
-{
-	int choice;
-	static int entered;
-
-	if (bootcfg_info.nummenu > 0) {
-		if (entered) {
-			printf("default boot twice, skipping...\n");
-			return;
-		}
-		entered = 1;
-		choice = bootcfg_info.def;
-		printf("command(s): %s\n", bootcfg_info.command[choice]);
-		docommandchoice(choice);
-	}
 }
 
 __dead void

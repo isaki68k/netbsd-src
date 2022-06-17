@@ -1,4 +1,4 @@
-/*	$NetBSD: audiotest.c,v 1.18 2021/12/10 20:36:05 andvar Exp $	*/
+/*	$NetBSD: audiotest.c,v 1.22 2022/05/31 08:43:16 andvar Exp $	*/
 
 /*
  * Copyright (C) 2019 Tetsuya Isaki. All rights reserved.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__RCSID("$NetBSD: audiotest.c,v 1.18 2021/12/10 20:36:05 andvar Exp $");
+__RCSID("$NetBSD: audiotest.c,v 1.22 2022/05/31 08:43:16 andvar Exp $");
 
 #include <errno.h>
 #include <fcntl.h>
@@ -3121,7 +3121,7 @@ DEF(poll_out_hiwat)
 
 /*
  * Unpause from buffer full, POLLOUT should raise.
- * XXX poll(2) on NetBSD7 is really incomplete and wierd.  I don't test it.
+ * XXX poll(2) on NetBSD7 is really incomplete and weird.  I don't test it.
  */
 DEF(poll_out_unpause)
 {
@@ -5083,7 +5083,7 @@ test_AUDIO_SETINFO_params_set(int openmode, int aimode, int pause)
 #define f(a,b,c) test_AUDIO_SETINFO_params_set(a, b, c)
 DEF(AUDIO_SETINFO_params_set_RDONLY_0)	{ f(O_RDONLY, 0, 0); }
 DEF(AUDIO_SETINFO_params_set_RDONLY_1)	{ f(O_RDONLY, 0, 1); }
-/* On RDONLY, ai.mode is not changable
+/* On RDONLY, ai.mode is not changeable
  *  AUDIO_SETINFO_params_set_RDONLY_2)	{ f(O_RDONLY, 1, 0); }
  *  AUDIO_SETINFO_params_set_RDONLY_3)	{ f(O_RDONLY, 1, 1); }
  */
@@ -5374,7 +5374,7 @@ DEF(AUDIO_SETINFO_sample_rate_0)
 		 * On NetBSD7,8 this will block system call and you will not
 		 * even be able to shutdown...
 		 */
-		XP_SKIP("This will cause an infinate loop in the kernel");
+		XP_SKIP("This will cause an infinite loop in the kernel");
 		return;
 	}
 
@@ -5479,7 +5479,7 @@ test_AUDIO_SETINFO_pause(int openmode, int aimode, int param)
 }
 DEF(AUDIO_SETINFO_pause_RDONLY_0) { test_AUDIO_SETINFO_pause(O_RDONLY, 0, 0); }
 DEF(AUDIO_SETINFO_pause_RDONLY_1) { test_AUDIO_SETINFO_pause(O_RDONLY, 0, 1); }
-/* On RDONLY, ai.mode is not changable
+/* On RDONLY, ai.mode is not changeable
  *  AUDIO_SETINFO_pause_RDONLY_2) { test_AUDIO_SETINFO_pause(O_RDONLY, 1, 0); }
  *  AUDIO_SETINFO_pause_RDONLY_3) { test_AUDIO_SETINFO_pause(O_RDONLY, 1, 1); }
  */

@@ -1,4 +1,4 @@
-/* $NetBSD: ix_txrx.c,v 1.95 2022/01/25 01:56:22 msaitoh Exp $ */
+/* $NetBSD: ix_txrx.c,v 1.98 2022/05/11 17:22:20 bouyer Exp $ */
 
 /******************************************************************************
 
@@ -64,7 +64,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ix_txrx.c,v 1.95 2022/01/25 01:56:22 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ix_txrx.c,v 1.98 2022/05/11 17:22:20 bouyer Exp $");
 
 #include "opt_inet.h"
 #include "opt_inet6.h"
@@ -1806,6 +1806,7 @@ ixgbe_rxeof(struct ix_queue *que)
 	u32			staterr = 0;
 	u32			loopcount = 0, numdesc;
 	u32			limit = adapter->rx_process_limit;
+	u32			rx_copy_len = adapter->rx_copy_len;
 	bool			discard_multidesc = rxr->discard_multidesc;
 	bool			wraparound = false;
 	unsigned int		syncremain;
@@ -1916,7 +1917,7 @@ ixgbe_rxeof(struct ix_queue *que)
 			/* Pre-alloc new mbuf. */
 
 			if ((rbuf->fmp == NULL) &&
-			    eop && (len <= adapter->rx_copy_len)) {
+			    eop && (len <= rx_copy_len)) {
 				/* For short packet. See below. */
 				sendmp = m_gethdr(M_NOWAIT, MT_DATA);
 				if (__predict_false(sendmp == NULL)) {
@@ -2022,7 +2023,7 @@ ixgbe_rxeof(struct ix_queue *que)
 			 * packet.
 			 */
 
-			if (eop && (len <= adapter->rx_copy_len)) {
+			if (eop && (len <= rx_copy_len)) {
 				/*
 				 * Optimize.  This might be a small packet, may
 				 * be just a TCP ACK. Copy into a new mbuf, and
@@ -2034,7 +2035,7 @@ ixgbe_rxeof(struct ix_queue *que)
 				IXGBE_EVC_ADD(&rxr->rx_copies, 1);
 				rbuf->flags |= IXGBE_RX_COPY;
 			} else {
-				/* Non short packet */
+				/* For long packet */
 
 				/* Update new (used in future) mbuf */
 				newmp->m_pkthdr.len = newmp->m_len
@@ -2308,6 +2309,7 @@ ixgbe_dma_free(struct adapter *adapter, struct ixgbe_dma_alloc *dma)
 	bus_dmamap_sync(dma->dma_tag->dt_dmat, dma->dma_map, 0, dma->dma_size,
 	    BUS_DMASYNC_POSTREAD | BUS_DMASYNC_POSTWRITE);
 	ixgbe_dmamap_unload(dma->dma_tag, dma->dma_map);
+	bus_dmamem_unmap(dma->dma_tag->dt_dmat, dma->dma_vaddr, dma->dma_size);
 	bus_dmamem_free(dma->dma_tag->dt_dmat, &dma->dma_seg, 1);
 	ixgbe_dma_tag_destroy(dma->dma_tag);
 } /* ixgbe_dma_free */

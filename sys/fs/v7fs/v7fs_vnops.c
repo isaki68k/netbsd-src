@@ -1,4 +1,4 @@
-/*	$NetBSD: v7fs_vnops.c,v 1.34 2022/02/11 10:55:15 hannken Exp $	*/
+/*	$NetBSD: v7fs_vnops.c,v 1.37 2022/05/22 11:27:36 andvar Exp $	*/
 
 /*-
  * Copyright (c) 2004, 2011 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: v7fs_vnops.c,v 1.34 2022/02/11 10:55:15 hannken Exp $");
+__KERNEL_RCSID(0, "$NetBSD: v7fs_vnops.c,v 1.37 2022/05/22 11:27:36 andvar Exp $");
 #if defined _KERNEL_OPT
 #include "opt_v7fs.h"
 #endif
@@ -430,7 +430,7 @@ v7fs_getattr(void *v)
 	vap->va_fileid = inode->inode_number;
 	vap->va_size = vp->v_size;
 	if (vp->v_type == VLNK) {
-		/* Ajust for trailing NUL. */
+		/* Adjust for trailing NUL. */
 		KASSERT(vap->va_size > 0);
 		vap->va_size -= 1;
 	}
@@ -745,21 +745,27 @@ v7fs_link(void *v)
 	struct v7fs_inode *p = &node->inode;
 	struct v7fs_self *fs = node->v7fsmount->core;
 	struct componentname *cnp = a->a_cnp;
-	int error = 0;
+	int error, abrt = 1;
 
 	DPRINTF("%p\n", vp);
-	/* Lock soruce file */
+	/* Lock source file */
 	if ((error = vn_lock(vp, LK_EXCLUSIVE))) {
 		DPRINTF("lock failed. %p\n", vp);
-		VOP_ABORTOP(dvp, cnp);
 		goto unlock;
 	}
+	error = kauth_authorize_vnode(cnp->cn_cred, KAUTH_VNODE_ADD_LINK, vp,
+	    dvp, 0);
+	if (error)
+		goto unlock;
+	abrt = 0;
 	error = v7fs_file_link(fs, parent, p, cnp->cn_nameptr, cnp->cn_namelen);
 	/* Sync dirent size change. */
 	uvm_vnp_setsize(dvp, v7fs_inode_filesize(&parent_node->inode));
 
-	VOP_UNLOCK(vp);
 unlock:
+	VOP_UNLOCK(vp);
+	if (abrt)
+		VOP_ABORTOP(dvp, cnp);
 	return error;
 }
 

@@ -1,4 +1,4 @@
-/*	$NetBSD$	*/
+/*	$NetBSD: xplxfirm.c,v 1.1 2022/06/10 21:42:23 tsutsui Exp $	*/
 
 /*
  * Copyright (c) 2018 Yosuke Sugahara. All rights reserved.

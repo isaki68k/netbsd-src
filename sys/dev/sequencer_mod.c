@@ -1,8 +1,11 @@
-/*	$NetBSD: if_laggvar.h,v 1.4 2021/09/30 04:29:17 yamaguchi Exp $	*/
+/*	$NetBSD: sequencer_mod.c,v 1.1 2022/06/04 03:31:10 pgoyette Exp $ */
 
 /*
- * Copyright (c) 2021 Internet Initiative Japan Inc.
+ * Copyright (c) 2022 The NetBSD Foundation, Inc.
  * All rights reserved.
+ *
+ * This code is derived from software contributed to The NetBSD Foundation
+ * by Paul Goyette
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -26,11 +29,35 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef	_NET_LAGG_IF_LAGGVAR_H_
-#define _NET_LAGG_IF_LAGGVAR_H_
+#include <sys/cdefs.h>
+__KERNEL_RCSID(0, "$NetBSD: sequencer_mod.c,v 1.1 2022/06/04 03:31:10 pgoyette Exp $");
 
-extern struct mbuf *
-		(*lagg_input_ethernet_p)(struct ifnet *,
-		    struct mbuf *);
+#include <sys/param.h>
+#include <sys/systm.h>
+#include <sys/kernel.h>
+#include <sys/module.h>
 
-#endif
+/*
+ * The sequencer module itself doesn't do anything.  It exists only to
+ * ensure that the combo-module for midi-plus-sequencer is loaded.  This
+ * allows us to have both midi and sequencer code to refer to each other,
+ * avoiding a circular module dependency.
+ */
+
+MODULE(MODULE_CLASS_DRIVER, sequencer, "midi_seq");
+
+static int
+sequencer_modcmd(modcmd_t cmd, void *arg)
+{
+	int error = 0;
+
+	switch (cmd) {
+	case MODULE_CMD_INIT:
+	case MODULE_CMD_FINI:
+		break;
+	default:
+		error = ENOTTY;
+		break;
+	}
+	return error;
+}

@@ -1,4 +1,4 @@
-/*	$NetBSD: vio9p.c,v 1.4 2021/09/26 01:16:09 thorpej Exp $	*/
+/*	$NetBSD: vio9p.c,v 1.9 2022/04/20 22:08:10 uwe Exp $	*/
 
 /*
  * Copyright (c) 2019 Internet Initiative Japan, Inc.
@@ -26,7 +26,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vio9p.c,v 1.4 2021/09/26 01:16:09 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vio9p.c,v 1.9 2022/04/20 22:08:10 uwe Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -60,18 +60,29 @@ __KERNEL_RCSID(0, "$NetBSD: vio9p.c,v 1.4 2021/09/26 01:16:09 thorpej Exp $");
 #define DLOG(fmt, args...) __nothing
 #endif
 
+/* Device-specific feature bits */
+#define VIO9P_F_MOUNT_TAG	(UINT64_C(1) << 0) /* mount tag specified */
+
 /* Configuration registers */
 #define VIO9P_CONFIG_TAG_LEN	0 /* 16bit */
 #define VIO9P_CONFIG_TAG	2
 
-#define VIO9P_FLAG_BITS		VIRTIO_COMMON_FLAG_BITS
+#define VIO9P_FLAG_BITS				\
+	VIRTIO_COMMON_FLAG_BITS			\
+	"b\x00" "MOUNT_TAG\0"
+
 
 // Must be the same as P9P_DEFREQLEN of usr.sbin/puffs/mount_9p/ninepuffs.h
 #define VIO9P_MAX_REQLEN	(16 * 1024)
 #define VIO9P_SEGSIZE		PAGE_SIZE
 #define VIO9P_N_SEGMENTS	(VIO9P_MAX_REQLEN / VIO9P_SEGSIZE)
 
-#define P9_MAX_TAG_LEN		16
+/*
+ * QEMU defines this as 32 but includes the final zero byte into the
+ * limit.  The code below counts the final zero byte separately, so
+ * adjust this define to match.
+ */
+#define P9_MAX_TAG_LEN		31
 
 CTASSERT((PAGE_SIZE) == (VIRTIO_PAGE_SIZE)); /* XXX */
 
@@ -489,13 +500,14 @@ vio9p_attach(device_t parent, device_t self, void *aux)
 	sc->sc_dev = self;
 	sc->sc_virtio = vsc;
 
-	virtio_child_attach_start(vsc, self, IPL_VM, NULL,
+	virtio_child_attach_start(vsc, self, IPL_VM, sc->sc_vq,
 	    NULL, virtio_vq_intr,
-	    VIRTIO_F_INTR_MPSAFE | VIRTIO_F_INTR_SOFTINT, 0,
+	    VIRTIO_F_INTR_MPSAFE | VIRTIO_F_INTR_SOFTINT,
+	    VIO9P_F_MOUNT_TAG,
 	    VIO9P_FLAG_BITS);
 
 	features = virtio_features(vsc);
-	if (features == 0)
+	if ((features & VIO9P_F_MOUNT_TAG) == 0)
 		goto err_none;
 
 	error = virtio_alloc_vq(vsc, &sc->sc_vq[0], 0, VIO9P_MAX_REQLEN,
@@ -625,14 +637,15 @@ vio9p_modcmd(modcmd_t cmd, void *opaque)
 #ifdef _MODULE
 	switch (cmd) {
 	case MODULE_CMD_INIT:
-		error = config_init_component(cfdriver_ioconf_vio9p,
-		    cfattach_ioconf_vio9p, cfdata_ioconf_vio9p);
 		devsw_attach(vio9p_cd.cd_name, NULL, &bmajor,
 		    &vio9p_cdevsw, &cmajor);
+		error = config_init_component(cfdriver_ioconf_vio9p,
+		    cfattach_ioconf_vio9p, cfdata_ioconf_vio9p);
 		break;
 	case MODULE_CMD_FINI:
 		error = config_fini_component(cfdriver_ioconf_vio9p,
 		    cfattach_ioconf_vio9p, cfdata_ioconf_vio9p);
+		devsw_detach(NULL, &vio9p_cdevsw);
 		break;
 	default:
 		error = ENOTTY;

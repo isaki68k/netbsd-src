@@ -1,4 +1,4 @@
-/*	$NetBSD: vnd.c,v 1.283 2021/07/24 21:31:36 andvar Exp $	*/
+/*	$NetBSD: vnd.c,v 1.286 2022/05/31 14:13:31 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 1996, 1997, 1998, 2008, 2020 The NetBSD Foundation, Inc.
@@ -91,7 +91,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vnd.c,v 1.283 2021/07/24 21:31:36 andvar Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vnd.c,v 1.286 2022/05/31 14:13:31 riastradh Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_vnd.h"
@@ -1226,41 +1226,27 @@ vndioctl(dev_t dev, u_long cmd, void *data, int flag, struct lwp *l)
 			return EBADF;
 	}
 
-	/* Must be initialized for these... */
 	switch (cmd) {
-	case VNDIOCCLR:
-	case VNDIOCCLR50:
-	case DIOCGDINFO:
-	case DIOCSDINFO:
-	case DIOCWDINFO:
-	case DIOCGPARTINFO:
-	case DIOCKLABEL:
-	case DIOCWLABEL:
-	case DIOCGDEFLABEL:
-	case DIOCGCACHE:
-	case DIOCGSTRATEGY:
-	case DIOCCACHESYNC:
-#ifdef __HAVE_OLD_DISKLABEL
-	case ODIOCGDINFO:
-	case ODIOCSDINFO:
-	case ODIOCWDINFO:
-	case ODIOCGDEFLABEL:
-#endif
+	case VNDIOCSET50:
+	case VNDIOCSET:
+		/* Must not be initialized */
+		if (vnd->sc_flags & VNF_INITED)
+			return EBUSY;
+		break;
+	default:
+		/* Must be initialized */
 		if ((vnd->sc_flags & VNF_INITED) == 0)
 			return ENXIO;
+		break;
 	}
 
 	error = disk_ioctl(&vnd->sc_dkdev, dev, cmd, data, flag, l);
 	if (error != EPASSTHROUGH)
 		return error;
 
-
 	switch (cmd) {
 	case VNDIOCSET50:
 	case VNDIOCSET:
-		if (vnd->sc_flags & VNF_INITED)
-			return EBUSY;
-
 		if ((error = vndlock(vnd)) != 0)
 			return error;
 
@@ -1781,9 +1767,10 @@ vndclear(struct vnd_softc *vnd, int myminor)
 	/* Nuke the vnodes for any open instances */
 	for (i = 0; i < MAXPARTITIONS; i++) {
 		mn = DISKMINOR(device_unit(vnd->sc_dev), i);
-		vdevgone(bmaj, mn, mn, VBLK);
-		if (mn != myminor) /* XXX avoid to kill own vnode */
+		if (mn != myminor) { /* XXX avoid to kill own vnode */
+			vdevgone(bmaj, mn, mn, VBLK);
 			vdevgone(cmaj, mn, mn, VCHR);
+		}
 	}
 
 	if ((vnd->sc_flags & VNF_READONLY) == 0)
@@ -2155,34 +2142,32 @@ vnd_modcmd(modcmd_t cmd, void *arg)
 	switch (cmd) {
 	case MODULE_CMD_INIT:
 #ifdef _MODULE
-		error = config_cfdriver_attach(&vnd_cd);
-		if (error)
-			break;
-
-		error = config_cfattach_attach(vnd_cd.cd_name, &vnd_ca);
-	        if (error) {
-			config_cfdriver_detach(&vnd_cd);
-#ifdef DIAGNOSTIC
-			aprint_error("%s: unable to register cfattach for \n"
-			    "%s, error %d", __func__, vnd_cd.cd_name, error);
-#endif
-			break;
-		}
-
                 /*
                  * Attach the {b,c}devsw's
                  */
 		error = devsw_attach("vnd", &vnd_bdevsw, &vnd_bmajor,
 		    &vnd_cdevsw, &vnd_cmajor);
-                /*
-                 * If devsw_attach fails, remove from autoconf database
-                 */
 		if (error) {
-			config_cfattach_detach(vnd_cd.cd_name, &vnd_ca);
-			config_cfdriver_detach(&vnd_cd);
 #ifdef DIAGNOSTIC
                         aprint_error("%s: unable to attach %s devsw, "
                             "error %d", __func__, vnd_cd.cd_name, error);
+#endif
+			break;
+		}
+
+		error = config_cfdriver_attach(&vnd_cd);
+		if (error) {
+			devsw_detach(&vnd_bdevsw, &vnd_cdevsw);
+			break;
+		}
+
+		error = config_cfattach_attach(vnd_cd.cd_name, &vnd_ca);
+	        if (error) {
+			config_cfdriver_detach(&vnd_cd);
+			devsw_detach(&vnd_bdevsw, &vnd_cdevsw);
+#ifdef DIAGNOSTIC
+			aprint_error("%s: unable to register cfattach for \n"
+			    "%s, error %d", __func__, vnd_cd.cd_name, error);
 #endif
 			break;
 		}
@@ -2192,17 +2177,10 @@ vnd_modcmd(modcmd_t cmd, void *arg)
 	case MODULE_CMD_FINI:
 #ifdef _MODULE
                 /*
-                 * Remove {b,c}devsw's
-                 */
-		devsw_detach(&vnd_bdevsw, &vnd_cdevsw);
-
-                /*
-                 * Now remove device from autoconf database
+                 * Remove device from autoconf database
                  */
 		error = config_cfattach_detach(vnd_cd.cd_name, &vnd_ca);
                 if (error) { 
-                        (void)devsw_attach("vnd", &vnd_bdevsw, &vnd_bmajor,
-                            &vnd_cdevsw, &vnd_cmajor);
 #ifdef DIAGNOSTIC
                         aprint_error("%s: failed to detach %s cfattach, "
                             "error %d\n", __func__, vnd_cd.cd_name, error);
@@ -2212,14 +2190,17 @@ vnd_modcmd(modcmd_t cmd, void *arg)
                 error = config_cfdriver_detach(&vnd_cd);
                 if (error) {
                         (void)config_cfattach_attach(vnd_cd.cd_name, &vnd_ca); 
-                        (void)devsw_attach("vnd", &vnd_bdevsw, &vnd_bmajor,
-                            &vnd_cdevsw, &vnd_cmajor);
 #ifdef DIAGNOSTIC
                         aprint_error("%s: failed to detach %s cfdriver, "
                             "error %d\n", __func__, vnd_cd.cd_name, error);
                         break;
 #endif
                 }
+                /*
+                 * Remove {b,c}devsw's
+                 */
+		devsw_detach(&vnd_bdevsw, &vnd_cdevsw);
+
 #endif
 		break;
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: uipc_usrreq.c,v 1.201 2021/08/08 20:54:48 nia Exp $	*/
+/*	$NetBSD: uipc_usrreq.c,v 1.203 2022/05/28 22:08:46 andvar Exp $	*/
 
 /*-
  * Copyright (c) 1998, 2000, 2004, 2008, 2009, 2020 The NetBSD Foundation, Inc.
@@ -96,7 +96,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: uipc_usrreq.c,v 1.201 2021/08/08 20:54:48 nia Exp $");
+__KERNEL_RCSID(0, "$NetBSD: uipc_usrreq.c,v 1.203 2022/05/28 22:08:46 andvar Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_compat_netbsd.h"
@@ -291,7 +291,12 @@ unp_setpeerlocks(struct socket *so, struct socket *so2)
 	lock = unp->unp_streamlock;
 	unp->unp_streamlock = NULL;
 	mutex_obj_hold(lock);
-	membar_exit();
+	/*
+	 * Ensure lock is initialized before publishing it with
+	 * solockreset.  Pairs with atomic_load_consume in solock and
+	 * various loops to reacquire lock after wakeup.
+	 */
+	membar_release();
 	/*
 	 * possible race if lock is not held - see comment in
 	 * uipc_usrreq(PRU_ACCEPT).
@@ -846,7 +851,7 @@ unp_accept(struct socket *so, struct sockaddr *nam)
 	 * this should be harmless, except that this makes
 	 * solocked2() and solocked() unreliable.
 	 * Another problem is that unp_setaddr() expects the
-	 * the socket locked. Grabing sotounpcb(so2)->unp_streamlock
+	 * the socket locked. Grabbing sotounpcb(so2)->unp_streamlock
 	 * fixes both issues.
 	 */
 	mutex_enter(sotounpcb(so2)->unp_streamlock);

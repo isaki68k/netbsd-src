@@ -1,4 +1,4 @@
-/*	$NetBSD: union_subr.c,v 1.79 2020/08/18 09:44:07 hannken Exp $	*/
+/*	$NetBSD: union_subr.c,v 1.81 2022/03/19 13:53:32 hannken Exp $	*/
 
 /*
  * Copyright (c) 1994
@@ -72,7 +72,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: union_subr.c,v 1.79 2020/08/18 09:44:07 hannken Exp $");
+__KERNEL_RCSID(0, "$NetBSD: union_subr.c,v 1.81 2022/03/19 13:53:32 hannken Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>

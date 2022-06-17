@@ -1,4 +1,4 @@
-#	$NetBSD: majors.luna68k,v 1.24 2020/04/04 16:06:14 jdolecek Exp $
+#	$NetBSD: majors.luna68k,v 1.25 2022/06/10 21:42:23 tsutsui Exp $
 #
 # Device majors for luna68k
 #

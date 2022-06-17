@@ -1,4 +1,4 @@
-/*	$NetBSD: if_vmx.c,v 1.6 2022/02/13 19:07:38 riastradh Exp $	*/
+/*	$NetBSD: if_vmx.c,v 1.8 2022/05/24 02:22:47 msaitoh Exp $	*/
 /*	$OpenBSD: if_vmx.c,v 1.16 2014/01/22 06:04:17 brad Exp $	*/
 
 /*
@@ -19,7 +19,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_vmx.c,v 1.6 2022/02/13 19:07:38 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_vmx.c,v 1.8 2022/05/24 02:22:47 msaitoh Exp $");
 
 #include <sys/param.h>
 #include <sys/cpu.h>
@@ -2499,14 +2499,16 @@ static int
 vmxnet3_legacy_intr(void *xsc)
 {
 	struct vmxnet3_softc *sc;
-	struct vmxnet3_rxqueue *rxq;
+	struct vmxnet3_queue *vmxq;
 	struct vmxnet3_txqueue *txq;
+	struct vmxnet3_rxqueue *rxq;
 	u_int txlimit, rxlimit;
 	bool txmore, rxmore;
 
 	sc = xsc;
-	rxq = &sc->vmx_queue[0].vxq_rxqueue;
-	txq = &sc->vmx_queue[0].vxq_txqueue;
+	vmxq = &sc->vmx_queue[0];
+	txq = &vmxq->vxq_txqueue;
+	rxq = &vmxq->vxq_rxqueue;
 	txlimit = sc->vmx_tx_intr_process_limit;
 	rxlimit = sc->vmx_rx_intr_process_limit;
 
@@ -2528,12 +2530,13 @@ vmxnet3_legacy_intr(void *xsc)
 	txmore = vmxnet3_txq_eof(txq, txlimit);
 	VMXNET3_TXQ_UNLOCK(txq);
 
-	if (txmore || rxmore) {
-		vmxnet3_sched_handle_queue(sc, &sc->vmx_queue[0]);
-	} else {
+	if (txmore || rxmore)
+		vmxnet3_sched_handle_queue(sc, vmxq);
+	else {
 		if_schedule_deferred_start(&sc->vmx_ethercom.ec_if);
 		vmxnet3_enable_all_intrs(sc);
 	}
+
 	return (1);
 }
 
@@ -2568,9 +2571,9 @@ vmxnet3_txrxq_intr(void *xvmxq)
 	rxmore = vmxnet3_rxq_eof(rxq, rxlimit);
 	VMXNET3_RXQ_UNLOCK(rxq);
 
-	if (txmore || rxmore) {
+	if (txmore || rxmore)
 		vmxnet3_sched_handle_queue(sc, vmxq);
-	} else {
+	else {
 		/* for ALTQ */
 		if (vmxq->vxq_id == 0)
 			if_schedule_deferred_start(&sc->vmx_ethercom.ec_if);
@@ -2714,6 +2717,7 @@ vmxnet3_stop_rendezvous(struct vmxnet3_softc *sc)
 {
 	struct vmxnet3_rxqueue *rxq;
 	struct vmxnet3_txqueue *txq;
+	struct vmxnet3_queue *vmxq;
 	int i;
 
 	for (i = 0; i < sc->vmx_nrxqueues; i++) {
@@ -2725,6 +2729,10 @@ vmxnet3_stop_rendezvous(struct vmxnet3_softc *sc)
 		txq = &sc->vmx_queue[i].vxq_txqueue;
 		VMXNET3_TXQ_LOCK(txq);
 		VMXNET3_TXQ_UNLOCK(txq);
+	}
+	for (i = 0; i < sc->vmx_nrxqueues; i++) {
+		vmxq = &sc->vmx_queue[i];
+		workqueue_wait(sc->vmx_queue_wq, &vmxq->vxq_wq_cookie);
 	}
 }
 

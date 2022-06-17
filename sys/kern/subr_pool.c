@@ -1,4 +1,4 @@
-/*	$NetBSD: subr_pool.c,v 1.281 2022/02/27 14:16:43 riastradh Exp $	*/
+/*	$NetBSD: subr_pool.c,v 1.284 2022/05/29 10:47:40 andvar Exp $	*/
 
 /*
  * Copyright (c) 1997, 1999, 2000, 2002, 2007, 2008, 2010, 2014, 2015, 2018,
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_pool.c,v 1.281 2022/02/27 14:16:43 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_pool.c,v 1.284 2022/05/29 10:47:40 andvar Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddb.h"
@@ -353,7 +353,7 @@ struct pool_item {
  * cache is drained, the most idle cache group is freed to the pool in
  * its entirety.
  *
- * Pool caches are layed on top of pools.  By layering them, we can avoid
+ * Pool caches are laid on top of pools.  By layering them, we can avoid
  * the complexity of cache management for pools which would not benefit
  * from it.
  */
@@ -1004,7 +1004,7 @@ pool_init(struct pool *pp, size_t size, u_int align, u_int ioff, int flags,
 }
 
 /*
- * De-commision a pool resource.
+ * De-commission a pool resource.
  */
 void
 pool_destroy(struct pool *pp)
@@ -2621,7 +2621,7 @@ pool_pcg_put(pcg_t *volatile *head, pcg_t *pcg)
 		}
 		pcg->pcg_next = o;
 #ifndef __HAVE_ATOMIC_AS_MEMBAR
-		membar_exit();
+		membar_release();
 #endif
 		n = atomic_cas_ptr(head, o, pcg);
 		if (o == n) {

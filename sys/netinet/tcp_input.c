@@ -1,4 +1,4 @@
-/*	$NetBSD: tcp_input.c,v 1.431 2021/08/09 19:57:58 andvar Exp $	*/
+/*	$NetBSD: tcp_input.c,v 1.433 2022/05/24 20:50:20 andvar Exp $	*/
 
 /*
  * Copyright (C) 1995, 1996, 1997, and 1998 WIDE Project.
@@ -148,7 +148,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: tcp_input.c,v 1.431 2021/08/09 19:57:58 andvar Exp $");
+__KERNEL_RCSID(0, "$NetBSD: tcp_input.c,v 1.433 2022/05/24 20:50:20 andvar Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"
@@ -2549,7 +2549,7 @@ after_listen:
 				     TCP_FACK_FASTRECOV(tp))) {
 					/*
 					 * Do the fast retransmit, and adjust
-					 * congestion control paramenters.
+					 * congestion control parameters.
 					 */
 					if (tp->t_congctl->fast_retransmit(tp, th)) {
 						/* False fast retransmit */
@@ -3379,7 +3379,7 @@ tcp_xmit_timer(struct tcpcb *tp, uint32_t rtt)
 		 * *alpha, or 2^(-TCP_RTT_SHIFT).  Because
 		 * srtt is stored in 1/32 slow ticks, we conceptually
 		 * shift left 5 bits, subtract srtt to get the
-		 * diference, and then shift right by TCP_RTT_SHIFT
+		 * difference, and then shift right by TCP_RTT_SHIFT
 		 * (3) to obtain 1/8 of the difference.
 		 */
 		delta = (rtt << 2) - (tp->t_srtt >> TCP_RTT_SHIFT);

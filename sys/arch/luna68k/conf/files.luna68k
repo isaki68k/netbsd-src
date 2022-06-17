@@ -1,5 +1,5 @@
 #
-#	$NetBSD: files.luna68k,v 1.29 2021/12/26 16:08:20 andvar Exp $
+#	$NetBSD: files.luna68k,v 1.30 2022/06/10 21:42:23 tsutsui Exp $
 #
 maxpartitions 8
 maxusers 2 8 64

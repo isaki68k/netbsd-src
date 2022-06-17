@@ -1,4 +1,4 @@
-/*	$NetBSD: ehci.c,v 1.309 2022/03/13 11:29:21 riastradh Exp $ */
+/*	$NetBSD: ehci.c,v 1.311 2022/04/06 22:01:45 mlelstv Exp $ */
 
 /*
  * Copyright (c) 2004-2012,2016,2020 The NetBSD Foundation, Inc.
@@ -54,7 +54,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ehci.c,v 1.309 2022/03/13 11:29:21 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ehci.c,v 1.311 2022/04/06 22:01:45 mlelstv Exp $");
 
 #include "ohci.h"
 #include "uhci.h"

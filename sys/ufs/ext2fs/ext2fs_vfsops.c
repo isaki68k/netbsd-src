@@ -1,4 +1,4 @@
-/*	$NetBSD: ext2fs_vfsops.c,v 1.219 2020/05/16 18:31:53 christos Exp $	*/
+/*	$NetBSD: ext2fs_vfsops.c,v 1.221 2022/05/22 11:27:36 andvar Exp $	*/
 
 /*
  * Copyright (c) 1989, 1991, 1993, 1994
@@ -60,7 +60,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ext2fs_vfsops.c,v 1.219 2020/05/16 18:31:53 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ext2fs_vfsops.c,v 1.221 2022/05/22 11:27:36 andvar Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_compat_netbsd.h"
@@ -518,7 +518,7 @@ ext2fs_loadvnode_content(struct m_ext2fs *fs, ino_t ino, struct buf *bp, struct 
 		goto bad;
 	}
 
-	/* everything allright, proceed with copy */
+	/* everything alright, proceed with copy */
 	if (ip->i_din.e2fs_din == NULL)
 		ip->i_din.e2fs_din = kmem_alloc(EXT2_DINODE_SIZE(fs), KM_SLEEP);
 
@@ -1016,7 +1016,6 @@ ext2fs_init_vnode(struct ufsmount *ump, struct vnode *vp, ino_t ino)
 	/* Initialise vnode with this inode. */
 	vp->v_tag = VT_EXT2FS;
 	vp->v_op = ext2fs_vnodeop_p;
-	vp->v_vflag |= VV_LOCKSWORK;
 	vp->v_data = ip;
 
 	/* Initialize genfs node. */

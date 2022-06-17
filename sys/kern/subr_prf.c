@@ -1,4 +1,4 @@
-/*	$NetBSD: subr_prf.c,v 1.186 2021/03/10 13:27:51 simonb Exp $	*/
+/*	$NetBSD: subr_prf.c,v 1.188 2022/04/17 09:09:13 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 1986, 1988, 1991, 1993
@@ -37,7 +37,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: subr_prf.c,v 1.186 2021/03/10 13:27:51 simonb Exp $");
+__KERNEL_RCSID(0, "$NetBSD: subr_prf.c,v 1.188 2022/04/17 09:09:13 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ddb.h"
@@ -96,6 +96,7 @@ static bool kprintf_inited = false;
  */
 
 static void	 putchar(int, int, struct tty *);
+static void	 kprintf_internal(const char *, int, void *, char *, ...);
 
 
 /*
@@ -106,7 +107,7 @@ extern	struct tty *constty;	/* pointer to console "window" tty */
 extern	int log_open;	/* subr_log: is /dev/klog open? */
 const	char *panicstr; /* arg to first call to panic (used as a flag
 			   to indicate that panic has already been called). */
-struct cpu_info *paniccpu;	/* cpu that first paniced */
+struct cpu_info *paniccpu;	/* cpu that first panicked */
 long	panicstart, panicend;	/* position in the msgbuf of the start and
 				   end of the formatted panicstr. */
 int	doing_shutdown;	/* set to indicate shutdown in progress */
@@ -224,7 +225,7 @@ vpanic(const char *fmt, va_list ap)
 		/*
 		 * Disable preemption.  If already panicing on another CPU, sit
 		 * here and spin until the system is rebooted.  Allow the CPU that
-		 * first paniced to panic again.
+		 * first panicked to panic again.
 		 */
 		kpreempt_disable();
 		ci = curcpu();
@@ -261,18 +262,20 @@ vpanic(const char *fmt, va_list ap)
 	if (logenabled(msgbufp))
 		panicstart = msgbufp->msg_bufx;
 
-	printf("panic: ");
+	kprintf_lock();
+	kprintf_internal("panic: ", TOLOG|TOCONS, NULL, NULL);
 	if (panicstr == NULL) {
 		/* first time in panic - store fmt first for precaution */
 		panicstr = fmt;
 
 		vsnprintf(scratchstr, sizeof(scratchstr), fmt, ap);
-		printf("%s", scratchstr);
+		kprintf_internal("%s", TOLOG|TOCONS, NULL, NULL, scratchstr);
 		panicstr = scratchstr;
 	} else {
-		vprintf(fmt, ap);
+		kprintf(fmt, TOLOG|TOCONS, NULL, NULL, ap);
 	}
-	printf("\n");
+	kprintf_internal("\n", TOLOG|TOCONS, NULL, NULL);
+	kprintf_unlock();
 
 	if (logenabled(msgbufp))
 		panicend = msgbufp->msg_bufx;

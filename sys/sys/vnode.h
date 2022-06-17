@@ -1,4 +1,4 @@
-/*	$NetBSD: vnode.h,v 1.299 2022/01/17 19:12:31 christos Exp $	*/
+/*	$NetBSD: vnode.h,v 1.301 2022/03/25 08:56:36 hannken Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2020 The NetBSD Foundation, Inc.
@@ -202,7 +202,6 @@ typedef struct vnode vnode_t;
 #define	VV_ISTTY	0x00000004	/* vnode represents a tty */
 #define	VV_MAPPED	0x00000008	/* vnode might have user mappings */
 #define	VV_MPSAFE	0x00000010	/* file system code is MP safe */
-#define	VV_LOCKSWORK	0x00000020	/* FS supports locking discipline */
 
 /*
  * The second set are locked by vp->v_interlock.  VI_TEXT and VI_EXECMAP are
@@ -222,8 +221,8 @@ typedef struct vnode vnode_t;
 #define	VU_DIROP	0x01000000	/* LFS: involved in a directory op */
 
 #define	VNODE_FLAGBITS \
-    "\20\1ROOT\2SYSTEM\3ISTTY\4MAPPED\5MPSAFE\6LOCKSWORK\11TEXT\12EXECMAP" \
-    "\13WRMAP\14PAGES\17ONWORKLST\18DEADCHECK\31DIROP"
+    "\20\1ROOT\2SYSTEM\3ISTTY\4MAPPED\5MPSAFE\11TEXT\12EXECMAP" \
+    "\13WRMAP\14PAGES\17ONWORKLST\20DEADCHECK\31DIROP"
 
 #define	VSIZENOTSET	((voff_t)-1)
 
@@ -630,23 +629,6 @@ int	vn_fifo_bypass(void *);
 int	vn_bdev_open(dev_t, struct vnode **, struct lwp *);
 int	vn_bdev_openpath(struct pathbuf *pb, struct vnode **, struct lwp *);
 
-
-#ifdef DIAGNOSTIC
-static __inline bool
-vn_locked(struct vnode *_vp)
-{
-
-	return (_vp->v_vflag & VV_LOCKSWORK) == 0 ||
-	    VOP_ISLOCKED(_vp) == LK_EXCLUSIVE;
-}
-
-static __inline bool
-vn_anylocked(struct vnode *_vp)
-{
-
-	return (_vp->v_vflag & VV_LOCKSWORK) == 0 || VOP_ISLOCKED(_vp);
-}
-#endif
 
 /* initialise global vnode management */
 void	vntblinit(void);

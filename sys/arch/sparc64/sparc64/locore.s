@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.s,v 1.427 2021/04/03 17:01:24 palle Exp $	*/
+/*	$NetBSD: locore.s,v 1.429 2022/05/22 11:27:34 andvar Exp $	*/
 
 /*
  * Copyright (c) 2006-2010 Matthew R. Green
@@ -4438,7 +4438,7 @@ sun4v_dev_mondo:
 	add	%g2, 64, %g2			 ! each element is 64 bytes 		
 	and	%g2, 0x7ff, %g2			 ! assume 32 elements
 	mov	0x3d0, %g1			 ! Dev Mondo Queue Head
-	stxa	%g2, [%g1] ASI_QUEUE		 ! ajust head index value
+	stxa	%g2, [%g1] ASI_QUEUE		 ! adjust head index value
 	membar	#Sync
 
 	cmp	%g5, MAXINTNUM			! Handle both sun4v legacy (sysino) and cookies.
@@ -6193,8 +6193,10 @@ ENTRY(sp_tlb_flush_all_usiii)
 
 /*
  * sp_blast_dcache(int dcache_size, int dcache_line_size)
+ * sp_blast_dcache_disabled(int dcache_size, int dcache_line_size)
  *
- * Clear out all of D$ regardless of contents
+ * Clear out all of D$ regardless of contents.  The latter one also
+ * disables the D$ while doing so.
  */
 	.align 8
 ENTRY(sp_blast_dcache)
@@ -6218,6 +6220,46 @@ ENTRY(sp_blast_dcache)
 	sethi	%hi(KERNBASE), %o2
 	flush	%o2
 	membar	#Sync
+#ifdef PROF
+	wrpr	%o3, %pstate
+	ret
+	 restore
+#else
+	retl
+	 wrpr	%o3, %pstate
+#endif
+
+	.align 8
+ENTRY(sp_blast_dcache_disabled)
+/*
+ * We turn off interrupts for the duration to prevent RED exceptions.
+ */
+#ifdef PROF
+	save	%sp, -CC64FSZ, %sp
+#endif
+
+	rdpr	%pstate, %o3
+	sub	%o0, %o1, %o0
+	andn	%o3, PSTATE_IE, %o4			! Turn off PSTATE_IE bit
+	wrpr	%o4, 0, %pstate
+
+	ldxa    [%g0] ASI_MCCR, %o5
+	andn	%o5, MCCR_DCACHE_EN, %o4		! Turn off the D$
+	stxa	%o4, [%g0] ASI_MCCR
+	flush 	%g0
+
+1:
+	stxa	%g0, [%o0] ASI_DCACHE_TAG
+	membar	#Sync
+	brnz,pt	%o0, 1b
+	 sub	%o0, %o1, %o0
+
+	sethi	%hi(KERNBASE), %o2
+	flush	%o2
+	membar	#Sync
+
+	stxa	%o5, [%g0] ASI_MCCR			! Restore the D$
+	flush 	%g0
 #ifdef PROF
 	wrpr	%o3, %pstate
 	ret

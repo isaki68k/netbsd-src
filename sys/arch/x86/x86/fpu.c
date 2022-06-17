@@ -1,4 +1,4 @@
-/*	$NetBSD: fpu.c,v 1.76 2020/10/24 07:14:30 mgorny Exp $	*/
+/*	$NetBSD: fpu.c,v 1.78 2022/05/24 06:28:00 andvar Exp $	*/
 
 /*
  * Copyright (c) 2008, 2019 The NetBSD Foundation, Inc.  All
@@ -96,7 +96,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fpu.c,v 1.76 2020/10/24 07:14:30 mgorny Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fpu.c,v 1.78 2022/05/24 06:28:00 andvar Exp $");
 
 #include "opt_multiprocessor.h"
 
@@ -380,7 +380,8 @@ fpu_kern_enter(void)
 	s = splvm();
 
 	ci = curcpu();
-	KASSERTMSG(ci->ci_ilevel <= IPL_VM, "ilevel=%d", ci->ci_ilevel);
+	KASSERTMSG(ci->ci_ilevel <= IPL_VM || cold, "ilevel=%d",
+	    ci->ci_ilevel);
 	KASSERT(ci->ci_kfpu_spl == -1);
 	ci->ci_kfpu_spl = s;
 
@@ -413,7 +414,7 @@ fpu_kern_leave(void)
 	struct cpu_info *ci = curcpu();
 	int s;
 
-	KASSERT(ci->ci_ilevel == IPL_VM);
+	KASSERT(ci->ci_ilevel == IPL_VM || cold);
 	KASSERT(ci->ci_kfpu_spl != -1);
 
 	/*
@@ -445,7 +446,7 @@ fpu_kern_leave(void)
  * on more than one value or if the user process modifies the control
  * word while a status word bit is already set (which this is a sign
  * of bad coding).
- * We have no choise than to narrow them down to one bit, since we must
+ * We have no choice than to narrow them down to one bit, since we must
  * not send a trapcode that is not exactly one of the FPE_ macros.
  *
  * The mechanism has a static table with 127 entries.  Each combination

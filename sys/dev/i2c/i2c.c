@@ -1,4 +1,4 @@
-/*	$NetBSD: i2c.c,v 1.84 2022/01/24 09:42:14 andvar Exp $	*/
+/*	$NetBSD: i2c.c,v 1.86 2022/04/01 15:49:12 pgoyette Exp $	*/
 
 /*
  * Copyright (c) 2003 Wasabi Systems, Inc.
@@ -53,7 +53,7 @@
 #endif /* _KERNEL_OPT */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: i2c.c,v 1.84 2022/01/24 09:42:14 andvar Exp $");
+__KERNEL_RCSID(0, "$NetBSD: i2c.c,v 1.86 2022/04/01 15:49:12 pgoyette Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -900,7 +900,7 @@ CFATTACH_DECL3_NEW(iic, sizeof(struct iic_softc),
     iic_match, iic_attach, iic_detach, NULL, iic_rescan, iic_child_detach,
     DVF_DETACH_SHUTDOWN);
 
-MODULE(MODULE_CLASS_DRIVER, iic, "i2cexec,i2c_bitbang");
+MODULE(MODULE_CLASS_DRIVER, iic, "i2cexec,i2c_bitbang,i2c_subr");
 
 #ifdef _MODULE
 #include "ioconf.c"
@@ -942,7 +942,7 @@ iic_modcmd(modcmd_t cmd, void *opaque)
 		if (error) {
 			aprint_error("%s: unable to init component\n",
 			    iic_cd.cd_name);
-			(void)devsw_detach(NULL, &iic_cdevsw);
+			devsw_detach(NULL, &iic_cdevsw);
 		}
 		mutex_exit(&iic_mtx);
 #endif
@@ -960,10 +960,7 @@ iic_modcmd(modcmd_t cmd, void *opaque)
 			mutex_exit(&iic_mtx);
 			break;
 		}
-		error = devsw_detach(NULL, &iic_cdevsw);
-		if (error != 0)
-			config_init_component(cfdriver_ioconf_iic,
-			    cfattach_ioconf_iic, cfdata_ioconf_iic);
+		devsw_detach(NULL, &iic_cdevsw);
 #endif
 		mutex_exit(&iic_mtx);
 		break;

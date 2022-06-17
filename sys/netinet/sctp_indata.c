@@ -1,4 +1,4 @@
-/*	$NetBSD: sctp_indata.c,v 1.8 2018/12/22 13:11:38 maxv Exp $ */
+/*	$NetBSD: sctp_indata.c,v 1.12 2022/05/28 22:16:44 andvar Exp $ */
 /*	$KAME: sctp_indata.c,v 1.36 2005/03/06 16:04:17 itojun Exp $	*/
 
 /*
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sctp_indata.c,v 1.8 2018/12/22 13:11:38 maxv Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sctp_indata.c,v 1.12 2022/05/28 22:16:44 andvar Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_ipsec.h"
@@ -2263,7 +2263,7 @@ sctp_sack_check(struct sctp_tcb *stcb, int ok_to_sack, int was_a_gap, int *abort
 	if (all_ones ||
 	    (asoc->cumulative_tsn == asoc->highest_tsn_inside_map && at >= 8)) {
 		/* The complete array was completed by a single FR */
-		/* higest becomes the cum-ack */
+		/* highest becomes the cum-ack */
 		int clr;
 		asoc->cumulative_tsn = asoc->highest_tsn_inside_map;
 		/* clear the array */
@@ -2289,7 +2289,7 @@ sctp_sack_check(struct sctp_tcb *stcb, int ok_to_sack, int was_a_gap, int *abort
 #endif
 	} else if (at >= 8) {
 		/* we can slide the mapping array down */
-		/* Calculate the new byte postion we can move down */
+		/* Calculate the new byte position we can move down */
 		slide_from = at >> 3;
 		/* now calculate the ceiling of the move using our highest TSN value */
 		if (asoc->highest_tsn_inside_map >= asoc->mapping_array_base_tsn) {
@@ -3265,7 +3265,7 @@ sctp_try_advance_peer_ack_point(struct sctp_tcb *stcb,
 			/*
 			 * we don't want to de-queue it here. Just wait for the
 			 * next peer SACK to come with a new cumTSN and then
-			 * the chunk will be droped in the normal fashion.
+			 * the chunk will be dropped in the normal fashion.
 			 */
 			if (tp1->data) {
 				sctp_free_bufspace(stcb, asoc, tp1);
@@ -4503,7 +4503,7 @@ sctp_handle_forward_tsn(struct sctp_tcb *stcb,
 	if (cumack_set_flag) {
 		/*
 		 * fwd-tsn went outside my gap array - not a
-		 * common occurance. Do the same thing we
+		 * common occurrence. Do the same thing we
 		 * do when a cookie-echo arrives.
 		 */
 		asoc->highest_tsn_inside_map =  new_cum_tsn - 1;

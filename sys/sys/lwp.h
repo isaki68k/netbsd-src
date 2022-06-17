@@ -1,4 +1,4 @@
-/*	$NetBSD: lwp.h,v 1.213 2022/02/27 01:03:14 gutteridge Exp $	*/
+/*	$NetBSD: lwp.h,v 1.216 2022/05/07 19:44:40 mrg Exp $	*/
 
 /*
  * Copyright (c) 2001, 2006, 2007, 2008, 2009, 2010, 2019, 2020
@@ -53,6 +53,7 @@ struct lwp;
 /* forward declare this for <machine/cpu.h> so it can get l_cpu. */
 static __inline struct cpu_info *lwp_getcpu(struct lwp *);
 #include <machine/cpu.h>		/* curcpu() and cpu_info */
+#include <sys/atomic.h>
 #ifdef _KERNEL_OPT
 #include "opt_kcov.h"
 #include "opt_kmsan.h"
@@ -88,7 +89,7 @@ struct lwp {
 	kmutex_t * volatile l_mutex;	/* l: ptr to mutex on sched state */
 	struct turnstile *l_ts;		/* l: current turnstile */
 	int		l_stat;		/* l: overall LWP status */
-	int		l__reserved;	/*  : padding - reuse as needed */	
+	int		l__reserved;	/*  : padding - reuse as needed */
 
 	/* Scheduling and overall state. */
 #define	l_startzero l_runq
@@ -238,10 +239,10 @@ extern struct lwplist	alllwp;		/* List of all LWPs. */
 extern lwp_t		lwp0;		/* LWP for proc0. */
 extern int		maxlwp __read_mostly;	/* max number of lwps */
 #ifndef MAXLWP
-#define	MAXLWP		2048
+#define	MAXLWP		4096		/* default max */
 #endif
-#ifndef	__HAVE_CPU_MAXLWP
-#define	cpu_maxlwp()	MAXLWP
+#ifndef MAXMAXLWP
+#define MAXMAXLWP	65535		/* absolute max */
 #endif
 #endif
 
@@ -272,7 +273,7 @@ extern int		maxlwp __read_mostly;	/* max number of lwps */
 
 /*
  * The second set of flags is kept in l_pflag, and they are modified only by
- * the LWP itself, or modified when it's known the LWP cannot be running. 
+ * the LWP itself, or modified when it's known the LWP cannot be running.
  * LP_RUNNING is typically updated with the LWP locked, but not always in
  * the case of soft interrupt handlers.
  */
@@ -407,16 +408,16 @@ void	lwp_whatis(uintptr_t, void (*)(const char *, ...) __printflike(1, 2));
 static __inline void
 lwp_lock(lwp_t *l)
 {
-	kmutex_t *old = l->l_mutex;
+	kmutex_t *old = atomic_load_consume(&l->l_mutex);
 
 	/*
 	 * Note: mutex_spin_enter() will have posted a read barrier.
 	 * Re-test l->l_mutex.  If it has changed, we need to try again.
 	 */
 	mutex_spin_enter(old);
-	while (__predict_false(l->l_mutex != old)) {
+	while (__predict_false(atomic_load_relaxed(&l->l_mutex) != old)) {
 		mutex_spin_exit(old);
-		old = l->l_mutex;
+		old = atomic_load_consume(&l->l_mutex);
 		mutex_spin_enter(old);
 	}
 }

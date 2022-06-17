@@ -1,4 +1,4 @@
-/*	$NetBSD: siop.c,v 1.8 2022/01/01 13:47:19 andvar Exp $	*/
+/*	$NetBSD: siop.c,v 1.11 2022/06/03 12:10:50 andvar Exp $	*/
 /*
  * Copyright (c) 2010 KIYOHARA Takashi
  * All rights reserved.
@@ -183,12 +183,12 @@ siop_sdp(struct siop_adapter *adp, struct siop_xfer *xfer, struct scsi_xfer *xs,
 		return;
 	/*
 	 * Save data pointer. We do this by adjusting the tables to point
-	 * at the begginning of the data not yet transferred.
+	 * at the beginning of the data not yet transferred.
 	 * offset points to the first table with untransferred data.
 	 */
 
 	/*
-	 * before doing that we decrease resid from the ammount of data which
+	 * before doing that we decrease resid from the amount of data which
 	 * has been transferred.
 	 */
 	siop_update_resid(adp, xfer, xs, offset);
@@ -213,7 +213,7 @@ siop_sdp(struct siop_adapter *adp, struct siop_xfer *xfer, struct scsi_xfer *xs,
 
 	/*
 	 * now we can remove entries which have been transferred.
-	 * We just move the entries with data left at the beggining of the
+	 * We just move the entries with data left at the beginning of the
 	 * tables
 	 */
 	memmove(xfer->siop_tables.data, &xfer->siop_tables.data[offset],
@@ -238,7 +238,7 @@ siop_update_resid(struct siop_adapter *adp, struct siop_xfer *xfer,
 #if 0
 	/*
 	 * if CMDFL_RESID is set, the last table (pointed by offset) is a
-	 * partial transfers. If not, offset points to the entry folloing
+	 * partial transfers. If not, offset points to the entry following
 	 * the last full transfer.
 	 */
 	if (siop_cmd->flags & CMDFL_RESID) {

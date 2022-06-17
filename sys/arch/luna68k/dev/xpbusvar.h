@@ -1,4 +1,4 @@
-/*	$NetBSD$	*/
+/*	$NetBSD: xpbusvar.h,v 2.1 2022/06/10 21:42:23 tsutsui Exp $	*/
 
 /*-
  * Copyright (c) 2016 Izumi Tsutsui.  All rights reserved.

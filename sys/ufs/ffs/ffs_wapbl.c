@@ -1,4 +1,4 @@
-/*	$NetBSD: ffs_wapbl.c,v 1.46 2020/04/11 17:43:54 jdolecek Exp $	*/
+/*	$NetBSD: ffs_wapbl.c,v 1.48 2022/05/22 11:27:36 andvar Exp $	*/
 
 /*-
  * Copyright (c) 2003,2006,2008 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ffs_wapbl.c,v 1.46 2020/04/11 17:43:54 jdolecek Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ffs_wapbl.c,v 1.48 2022/05/22 11:27:36 andvar Exp $");
 
 #define WAPBL_INTERNAL
 
@@ -144,9 +144,9 @@ ffs_wapbl_replay_finish(struct mount *mp)
 
 		/*
 		 * The journal may have left partially allocated inodes in mode
-		 * zero.  This may occur if a crash occurs betweeen the node
+		 * zero.  This may occur if a crash occurs between the node
 		 * allocation in ffs_nodeallocg and when the node is properly
-		 * initialized in ufs_makeinode.  If so, just dallocate them.
+		 * initialized in ufs_makeinode.  If so, just deallocate them.
 		 */
 		if (ip->i_mode == 0) {
 			error = UFS_WAPBL_BEGIN(mp);

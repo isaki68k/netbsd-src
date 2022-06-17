@@ -1,4 +1,4 @@
-/*	$NetBSD: fault.c,v 1.22 2022/01/31 09:16:09 ryo Exp $	*/
+/*	$NetBSD: fault.c,v 1.24 2022/05/11 14:58:00 andvar Exp $	*/
 
 /*
  * Copyright (c) 2017 Ryo Shimizu <ryo@nerv.org>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fault.c,v 1.22 2022/01/31 09:16:09 ryo Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fault.c,v 1.24 2022/05/11 14:58:00 andvar Exp $");
 
 #include "opt_compat_netbsd32.h"
 #include "opt_cpuoptions.h"
@@ -161,7 +161,7 @@ data_abort_handler(struct trapframe *tf, uint32_t eclass)
 	p = l->l_proc;
 	va = trunc_page((vaddr_t)tf->tf_far);
 
-	/* eliminate addresss tag if ECR_EL1.TBI[01] is enabled */
+	/* eliminate address tag if ECR_EL1.TBI[01] is enabled */
 	va = aarch64_untag_address(va);
 
 	if ((VM_MIN_KERNEL_ADDRESS <= va) && (va < VM_MAX_KERNEL_ADDRESS)) {
@@ -223,7 +223,6 @@ data_abort_handler(struct trapframe *tf, uint32_t eclass)
 		    tf->tf_far, va, 0, 0);
 		return;
 	}
-
 
  do_fault:
 	/* faultbail path? */

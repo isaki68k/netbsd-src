@@ -1,4 +1,4 @@
-/* $NetBSD: device.h,v 1.179 2022/03/03 06:25:46 riastradh Exp $ */
+/* $NetBSD: device.h,v 1.182 2022/03/28 12:38:59 riastradh Exp $ */
 
 /*
  * Copyright (c) 2021 The NetBSD Foundation, Inc.
@@ -255,69 +255,13 @@ struct devhandle_impl {
 /* Max size of a device external name (including terminating NUL) */
 #define	DEVICE_XNAME_SIZE	16
 
-struct device {
-	devhandle_t	dv_handle;	/* this device's handle;
-					   new device_t's get INVALID */
-	devclass_t	dv_class;	/* this device's classification */
-	TAILQ_ENTRY(device) dv_list;	/* entry on list of all devices */
-	cfdata_t	dv_cfdata;	/* config data that found us
-					   (NULL if pseudo-device) */
-	cfdriver_t	dv_cfdriver;	/* our cfdriver */
-	cfattach_t	dv_cfattach;	/* our cfattach */
-	int		dv_unit;	/* device unit number */
-					/* external name (name + unit) */
-	char		dv_xname[DEVICE_XNAME_SIZE];
-	device_t	dv_parent;	/* pointer to parent device
-					   (NULL if pseudo- or root node) */
-	int		dv_depth;	/* number of parents until root */
-	int		dv_flags;	/* misc. flags; see below */
-	void		*dv_private;	/* this device's private storage */
-	int		*dv_locators;	/* our actual locators (optional) */
-	prop_dictionary_t dv_properties;/* properties dictionary */
+struct device;
 
-	int		dv_pending;	/* config_pending count */
-	TAILQ_ENTRY(device) dv_pending_list;
-
-	struct lwp	*dv_detaching;	/* detach lock (config_misc_lock/cv) */
-
-	size_t		dv_activity_count;
-	void		(**dv_activity_handlers)(device_t, devactive_t);
-
-	bool		(*dv_driver_suspend)(device_t, const pmf_qual_t *);
-	bool		(*dv_driver_resume)(device_t, const pmf_qual_t *);
-	bool		(*dv_driver_shutdown)(device_t, int);
-	bool		(*dv_driver_child_register)(device_t);
-
-	void		*dv_bus_private;
-	bool		(*dv_bus_suspend)(device_t, const pmf_qual_t *);
-	bool		(*dv_bus_resume)(device_t, const pmf_qual_t *);
-	bool		(*dv_bus_shutdown)(device_t, int);
-	void		(*dv_bus_deregister)(device_t);
-
-	void		*dv_class_private;
-	bool		(*dv_class_suspend)(device_t, const pmf_qual_t *);
-	bool		(*dv_class_resume)(device_t, const pmf_qual_t *);
-	void		(*dv_class_deregister)(device_t);
-
-	devgen_t		dv_add_gen,
-				dv_del_gen;
-
-	struct device_lock	dv_lock;
-	const device_suspensor_t
-	    *dv_bus_suspensors[DEVICE_SUSPENSORS_MAX],
-	    *dv_driver_suspensors[DEVICE_SUSPENSORS_MAX],
-	    *dv_class_suspensors[DEVICE_SUSPENSORS_MAX];
-	struct device_garbage dv_garbage;
-};
-
-/* dv_flags */
-#define	DVF_ACTIVE		0x0001	/* device is activated */
+/*
+ * struct cfattach::ca_flags (must not overlap with device_impl.h
+ * struct device::dv_flags for now)
+ */
 #define	DVF_PRIV_ALLOC		0x0002	/* device private storage != device */
-#define	DVF_POWER_HANDLERS	0x0004	/* device has suspend/resume support */
-#define	DVF_CLASS_SUSPENDED	0x0008	/* device class suspend was called */
-#define	DVF_DRIVER_SUSPENDED	0x0010	/* device driver suspend was called */
-#define	DVF_BUS_SUSPENDED	0x0020	/* device bus suspend was called */
-#define	DVF_ATTACH_INPROGRESS	0x0040	/* device attach is in progress */
 #define	DVF_DETACH_SHUTDOWN	0x0080	/* device detaches safely at shutdown */
 
 #ifdef _KERNEL
@@ -629,6 +573,7 @@ device_t config_attach_pseudo(cfdata_t);
 
 int	config_detach(device_t, int);
 int	config_detach_children(device_t, int flags);
+void	config_detach_commit(device_t);
 bool	config_detach_all(int);
 int	config_deactivate(device_t);
 void	config_defer(device_t, void (*)(device_t));
@@ -651,6 +596,10 @@ void	null_childdetached(device_t, device_t);
 
 device_t	device_lookup(cfdriver_t, int);
 void		*device_lookup_private(cfdriver_t, int);
+
+device_t	device_lookup_acquire(cfdriver_t, int);
+void		device_release(device_t);
+
 void		device_register(device_t, void *);
 void		device_register_post_config(device_t, void *);
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: if_tap.c,v 1.124 2021/09/26 15:58:33 thorpej Exp $	*/
+/*	$NetBSD: if_tap.c,v 1.127 2022/04/10 09:50:46 andvar Exp $	*/
 
 /*
  *  Copyright (c) 2003, 2004, 2008, 2009 The NetBSD Foundation.
@@ -33,7 +33,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_tap.c,v 1.124 2021/09/26 15:58:33 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_tap.c,v 1.127 2022/04/10 09:50:46 andvar Exp $");
 
 #if defined(_KERNEL_OPT)
 
@@ -233,7 +233,12 @@ tapattach(int n)
 static void
 tapinit(void)
 {
-	int error = config_cfattach_attach(tap_cd.cd_name, &tap_ca);
+	int error;
+
+#ifdef _MODULE
+	devsw_attach("tap", NULL, &tap_bmajor, &tap_cdevsw, &tap_cmajor);
+#endif
+	error = config_cfattach_attach(tap_cd.cd_name, &tap_ca);
 
 	if (error) {
 		aprint_error("%s: unable to register cfattach\n",
@@ -244,9 +249,6 @@ tapinit(void)
 
 	if_clone_attach(&tap_cloners);
 	sysctl_tap_setup(&tap_sysctl_clog);
-#ifdef _MODULE
-	devsw_attach("tap", NULL, &tap_bmajor, &tap_cdevsw, &tap_cmajor);
-#endif
 }
 
 static int
@@ -255,31 +257,20 @@ tapdetach(void)
 	int error = 0;
 
 	if_clone_detach(&tap_cloners);
-#ifdef _MODULE
-	error = devsw_detach(NULL, &tap_cdevsw);
-	if (error != 0)
-		goto out2;
-#endif
 
 	if (tap_count != 0) {
-		error = EBUSY;
-		goto out1;
+		if_clone_attach(&tap_cloners);
+		return EBUSY;
 	}
 
 	error = config_cfattach_detach(tap_cd.cd_name, &tap_ca);
-	if (error != 0)
-		goto out1;
-
-	sysctl_teardown(&tap_sysctl_clog);
-
-	return 0;
-
- out1:
+	if (error == 0) {
 #ifdef _MODULE
-	devsw_attach("tap", NULL, &tap_bmajor, &tap_cdevsw, &tap_cmajor);
- out2:
+		devsw_detach(NULL, &tap_cdevsw);
 #endif
-	if_clone_attach(&tap_cloners);
+		sysctl_teardown(&tap_sysctl_clog);
+	} else
+		if_clone_attach(&tap_cloners);
 
 	return error;
 }
@@ -564,7 +555,7 @@ tap_init(struct ifnet *ifp)
 
 /*
  * _stop() is called when an interface goes down.  It is our
- * responsability to validate that state by clearing the
+ * responsibility to validate that state by clearing the
  * IFF_RUNNING flag.
  *
  * We have to wake up all the sleeping processes to have the pending
