@@ -666,14 +666,6 @@ ENTRY_NOPROFILE(lev5intr)
 	/*	jbsr	_C_LABEL(xp_intr5) */
 	jbsr	_C_LABEL(isrdispatch_autovec_lev5)
 2:
-
-					| VSYNC?
-	moveb	#31,BMAP_CRTC
-	btst	#1,BMAP_CRTC+1
-	beq	3f
-	addql	#1,_C_LABEL(intrcnt_lev5)
-
-3:
 	INTERRUPT_RESTOREREG
 	subql	#1,_C_LABEL(idepth)
 	jra	_ASM_LABEL(rei)
@@ -998,11 +990,10 @@ GLOBAL(intrnames)
 	.asciz	"scsi"
 	.asciz	"network,ext"
 	.asciz	"extPC98"
-	.asciz	"lev5"
-	.asciz	"serial"
-	.asciz	"nmi"
 	.asciz	"sysclock"
 	.asciz	"xp-lev5"
+	.asciz	"serial"
+	.asciz	"nmi"
 GLOBAL(eintrnames)
 	.even
 GLOBAL(intrcnt)
@@ -1016,14 +1007,12 @@ intrcnt_lev3:	/* network */
 	.long	0
 intrcnt_lev4:
 	.long	0
-intrcnt_lev5:	/* sysclock, xp */
+intrcnt_sysclock:
+	.long	0
+intrcnt_xp_intr5:
 	.long	0
 intrcnt_lev6:	/* serial */
 	.long	0
 intrcnt_lev7:	/* nmi */
-	.long	0
-intrcnt_sysclock:
-	.long	0
-intrcnt_xp_intr5:
 	.long	0
 GLOBAL(eintrcnt)
