@@ -1,4 +1,4 @@
-/*	$NetBSD: vfs_mount.c,v 1.88 2022/03/12 15:32:32 riastradh Exp $	*/
+/*	$NetBSD: vfs_mount.c,v 1.93 2022/04/09 23:38:33 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 1997-2020 The NetBSD Foundation, Inc.
@@ -67,7 +67,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_mount.c,v 1.88 2022/03/12 15:32:32 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_mount.c,v 1.93 2022/04/09 23:38:33 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/kernel.h>
@@ -284,13 +284,13 @@ vfs_rele(struct mount *mp)
 {
 
 #ifndef __HAVE_ATOMIC_AS_MEMBAR
-	membar_exit();
+	membar_release();
 #endif
 	if (__predict_true((int)atomic_dec_uint_nv(&mp->mnt_refcnt) > 0)) {
 		return;
 	}
 #ifndef __HAVE_ATOMIC_AS_MEMBAR
-	membar_enter();
+	membar_acquire();
 #endif
 
 	/*
@@ -1110,7 +1110,7 @@ vfs_shutdown(void)
 	vfs_sync_all(l);
 
 	/*
-	 * If we have paniced - do not make the situation potentially
+	 * If we have panicked - do not make the situation potentially
 	 * worse by unmounting the file systems.
 	 */
 	if (panicstr != NULL) {
@@ -1178,7 +1178,9 @@ vfs_mountroot(void)
 			panic("vfs_mountroot: rootdev not set for DV_DISK");
 	        if (bdevvp(rootdev, &rootvp))
 	                panic("vfs_mountroot: can't get vnode for rootdev");
+		vn_lock(rootvp, LK_EXCLUSIVE | LK_RETRY);
 		error = VOP_OPEN(rootvp, FREAD, FSCRED);
+		VOP_UNLOCK(rootvp);
 		if (error) {
 			printf("vfs_mountroot: can't open root device\n");
 			return (error);
@@ -1244,7 +1246,9 @@ vfs_mountroot(void)
 
 done:
 	if (error && device_class(root_device) == DV_DISK) {
+		vn_lock(rootvp, LK_EXCLUSIVE | LK_RETRY);
 		VOP_CLOSE(rootvp, FREAD, FSCRED);
+		VOP_UNLOCK(rootvp);
 		vrele(rootvp);
 	}
 	if (error == 0) {
@@ -1372,7 +1376,8 @@ vfs_mountedon(vnode_t *vp)
 		return ENOTBLK;
 	if (spec_node_getmountedfs(vp) != NULL)
 		return EBUSY;
-	if (spec_node_lookup_by_dev(vp->v_type, vp->v_rdev, &vq) == 0) {
+	if (spec_node_lookup_by_dev(vp->v_type, vp->v_rdev, VDEAD_NOWAIT, &vq)
+	    == 0) {
 		if (spec_node_getmountedfs(vq) != NULL)
 			error = EBUSY;
 		vrele(vq);

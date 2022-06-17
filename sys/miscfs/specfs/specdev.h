@@ -1,4 +1,4 @@
-/*	$NetBSD: specdev.h,v 1.46 2021/07/18 23:57:15 dholland Exp $	*/
+/*	$NetBSD: specdev.h,v 1.52 2022/03/28 12:38:04 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2008 The NetBSD Foundation, Inc.
@@ -66,8 +66,8 @@
 typedef struct specnode {
 	vnode_t		*sn_next;
 	struct specdev	*sn_dev;
-	u_int		sn_opencnt;
 	dev_t		sn_rdev;
+	u_int		sn_opencnt;	/* # of opens, share of sd_opencnt */
 	bool		sn_gone;
 } specnode_t;
 
@@ -75,9 +75,12 @@ typedef struct specdev {
 	struct mount	*sd_mountpoint;
 	struct lockf	*sd_lockf;
 	vnode_t		*sd_bdevvp;
-	u_int		sd_opencnt;
-	u_int		sd_refcnt;
+	u_int		sd_opencnt;	/* # of opens; close when ->0 */
+	u_int		sd_refcnt;	/* # of specnodes referencing this */
 	dev_t		sd_rdev;
+	volatile u_int	sd_iocnt;	/* # bdev/cdev_* operations active */
+	bool		sd_opened;	/* true if successfully opened */
+	bool		sd_closing;	/* true when bdev/cdev_close ongoing */
 } specdev_t;
 
 /*
@@ -92,7 +95,7 @@ typedef struct specdev {
  */
 void	spec_node_init(vnode_t *, dev_t);
 void	spec_node_destroy(vnode_t *);
-int	spec_node_lookup_by_dev(enum vtype, dev_t, vnode_t **);
+int	spec_node_lookup_by_dev(enum vtype, dev_t, int, vnode_t **);
 int	spec_node_lookup_by_mount(struct mount *, vnode_t **);
 struct mount *spec_node_getmountedfs(vnode_t *);
 void	spec_node_setmountedfs(vnode_t *, struct mount *);

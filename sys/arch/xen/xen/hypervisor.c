@@ -1,4 +1,4 @@
-/* $NetBSD: hypervisor.c,v 1.93 2021/12/05 02:59:50 msaitoh Exp $ */
+/* $NetBSD: hypervisor.c,v 1.95 2022/05/25 15:52:25 bouyer Exp $ */
 
 /*
  * Copyright (c) 2005 Manuel Bouyer.
@@ -53,7 +53,7 @@
 
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: hypervisor.c,v 1.93 2021/12/05 02:59:50 msaitoh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: hypervisor.c,v 1.95 2022/05/25 15:52:25 bouyer Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -74,6 +74,7 @@ __KERNEL_RCSID(0, "$NetBSD: hypervisor.c,v 1.93 2021/12/05 02:59:50 msaitoh Exp 
 #include <xen/hypervisor.h>
 #include <xen/evtchn.h>
 #include <xen/include/public/version.h>
+#include <xen/include/public/vcpu.h>
 #include <x86/pio.h>
 #include <x86/machdep.h>
 
@@ -169,7 +170,6 @@ struct  x86_isa_chipset x86_isa_chipset;
 #include <xen/include/public/arch-x86/hvm/start_info.h>
 #include <xen/include/public/hvm/hvm_op.h>
 #include <xen/include/public/hvm/params.h>
-#include <xen/include/public/vcpu.h>
 
 #include <x86/bootinfo.h>
 
@@ -476,7 +476,7 @@ xen_hvm_init_cpu(struct cpu_info *ci)
 		ci->ci_vcpuid = ci->ci_acpiid;
 	}
 
-	ci->ci_vcpu = &HYPERVISOR_shared_info->vcpu_info[ci->ci_vcpuid];
+	xen_map_vcpu(ci);
 
 	/* Register event callback handler. */
 
@@ -813,4 +813,50 @@ xenkernfs_init(void)
 	kernfs_addentry(NULL, dkt);
 	kernxen_pkt = KERNFS_ENTOPARENTDIR(dkt);
 #endif
+}
+
+/*
+ * setup Xen's vcpu_info. requires ci_vcpuid to be initialized.
+ */
+void
+xen_map_vcpu(struct cpu_info *ci)
+{
+	int size;
+	uintptr_t ptr;
+	struct vcpu_register_vcpu_info vcpu_info_op;
+	paddr_t ma;
+	int ret;
+
+	if (ci->ci_vcpuid < XEN_LEGACY_MAX_VCPUS) {
+		ci->ci_vcpu = &HYPERVISOR_shared_info->vcpu_info[ci->ci_vcpuid];
+		return;
+	}
+
+	/*
+	 * need to map it via VCPUOP_register_vcpu_info
+	 * aligning to the smallest power-of-2 size which can contain
+	 * vcpu_info ensures this. Also make sure it's cache-line aligned,
+	 * for performances.
+	 */
+	size = CACHE_LINE_SIZE;
+	while (size < sizeof(struct vcpu_info)) {
+		size = size << 1;
+	}
+	ptr = (uintptr_t)uvm_km_alloc(kernel_map,
+		    sizeof(struct vcpu_info) + size - 1, 0,
+		    UVM_KMF_WIRED|UVM_KMF_ZERO);
+	ptr = roundup2(ptr, size);
+	ci->ci_vcpu = (struct vcpu_info *)ptr;
+
+	pmap_extract_ma(pmap_kernel(), (ptr & ~PAGE_MASK), &ma);
+	vcpu_info_op.mfn = ma >> PAGE_SHIFT;
+	vcpu_info_op.offset = (ptr & PAGE_MASK);
+	vcpu_info_op.rsvd = 0;
+
+	ret = HYPERVISOR_vcpu_op(VCPUOP_register_vcpu_info,
+	    ci->ci_vcpuid, &vcpu_info_op);
+	if (ret) {
+		panic("VCPUOP_register_vcpu_info for %d failed: %d",
+		    ci->ci_vcpuid, ret);
+	}
 }

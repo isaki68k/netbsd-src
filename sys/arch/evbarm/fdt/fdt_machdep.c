@@ -1,4 +1,4 @@
-/* $NetBSD: fdt_machdep.c,v 1.88 2022/03/09 10:06:36 mrg Exp $ */
+/* $NetBSD: fdt_machdep.c,v 1.91 2022/04/02 11:16:07 skrll Exp $ */
 
 /*-
  * Copyright (c) 2015-2017 Jared McNeill <jmcneill@invisible.ca>
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fdt_machdep.c,v 1.88 2022/03/09 10:06:36 mrg Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fdt_machdep.c,v 1.91 2022/04/02 11:16:07 skrll Exp $");
 
 #include "opt_arm_debug.h"
 #include "opt_bootconfig.h"
@@ -475,8 +475,8 @@ fdt_map_efi_runtime(const char *prop, enum arm_efirt_mem_type type)
 		const paddr_t pa = be64toh(map[0]);
 		const vaddr_t va = be64toh(map[1]);
 		const size_t sz = be64toh(map[2]);
-		VPRINTF("%s: %s %" PRIxPADDR "-%" PRIxVADDR "(%" PRIxVADDR
-		    "-%" PRIxVSIZE "\n", __func__, prop, pa, pa + sz - 1,
+		VPRINTF("%s: %s %#" PRIxPADDR "-%#" PRIxVADDR " (%#" PRIxVADDR
+		    "-%#" PRIxVSIZE ")\n", __func__, prop, pa, pa + sz - 1,
 		    va, va + sz - 1);
 		arm_efirt_md_map_range(va, pa, sz, type);
 		map += 3;
@@ -613,12 +613,6 @@ initarm(void *arg)
 	VPRINTF("%s: fdt_build_bootconfig\n", __func__);
 	fdt_build_bootconfig(memory_start, memory_end);
 
-#ifdef EFI_RUNTIME
-	fdt_map_efi_runtime("netbsd,uefi-runtime-code", ARM_EFIRT_MEM_CODE);
-	fdt_map_efi_runtime("netbsd,uefi-runtime-data", ARM_EFIRT_MEM_DATA);
-	fdt_map_efi_runtime("netbsd,uefi-runtime-mmio", ARM_EFIRT_MEM_MMIO);
-#endif
-
 	/* Perform PT build and VM init */
 	cpu_kernel_vm_init(memory_start, memory_size);
 
@@ -722,6 +716,11 @@ consinit(void)
 void
 cpu_startup_hook(void)
 {
+#ifdef EFI_RUNTIME
+	fdt_map_efi_runtime("netbsd,uefi-runtime-code", ARM_EFIRT_MEM_CODE);
+	fdt_map_efi_runtime("netbsd,uefi-runtime-data", ARM_EFIRT_MEM_DATA);
+	fdt_map_efi_runtime("netbsd,uefi-runtime-mmio", ARM_EFIRT_MEM_MMIO);
+#endif
 
 	fdtbus_intr_init();
 
@@ -774,7 +773,7 @@ fdt_detect_root_device(device_t dev)
 		if (!vp)
 			return;
 		error = vn_rdwr(UIO_READ, vp, buf, sizeof(buf), 0, UIO_SYSSPACE,
-		    0, NOCRED, &resid, NULL);
+		    IO_NODELOCKED, NOCRED, &resid, NULL);
 		VOP_CLOSE(vp, FREAD, NOCRED);
 		vput(vp);
 

@@ -1,4 +1,4 @@
-/*	$NetBSD: vfs_vnode.c,v 1.136 2022/03/12 15:32:32 riastradh Exp $	*/
+/*	$NetBSD: vfs_vnode.c,v 1.143 2022/04/09 23:45:45 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 1997-2011, 2019, 2020 The NetBSD Foundation, Inc.
@@ -148,7 +148,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_vnode.c,v 1.136 2022/03/12 15:32:32 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_vnode.c,v 1.143 2022/04/09 23:45:45 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_pax.h"
@@ -273,6 +273,8 @@ _vstate_assert(vnode_t *vp, enum vnode_state state, const char *func, int line,
 		/*
 		 * Prevent predictive loads from the CPU, but check the state
 		 * without loooking first.
+		 *
+		 * XXX what does this pair with?
 		 */
 		membar_enter();
 		if (state == VS_ACTIVE && refcnt > 0 &&
@@ -355,7 +357,7 @@ vstate_assert_change(vnode_t *vp, enum vnode_state from, enum vnode_state to,
 	/* Open/close the gate for vcache_tryvget(). */
 	if (to == VS_LOADED) {
 #ifndef __HAVE_ATOMIC_AS_MEMBAR
-		membar_exit();
+		membar_release();
 #endif
 		atomic_or_uint(&vp->v_usecount, VUSECOUNT_GATE);
 	} else {
@@ -398,10 +400,10 @@ vstate_change(vnode_t *vp, enum vnode_state from, enum vnode_state to)
 {
 	vnode_impl_t *vip = VNODE_TO_VIMPL(vp);
 
-	/* Open/close the gate for vcache_tryvget(). */	
+	/* Open/close the gate for vcache_tryvget(). */
 	if (to == VS_LOADED) {
 #ifndef __HAVE_ATOMIC_AS_MEMBAR
-		membar_exit();
+		membar_release();
 #endif
 		atomic_or_uint(&vp->v_usecount, VUSECOUNT_GATE);
 	} else {
@@ -736,7 +738,7 @@ vtryrele(vnode_t *vp)
 	u_int use, next;
 
 #ifndef __HAVE_ATOMIC_AS_MEMBAR
-	membar_exit();
+	membar_release();
 #endif
 	for (use = atomic_load_relaxed(&vp->v_usecount);; use = next) {
 		if (__predict_false((use & VUSECOUNT_MASK) == 1)) {
@@ -770,9 +772,6 @@ vput(vnode_t *vp)
 		if (vtryrele(vp)) {
 			return;
 		}
-		lktype = LK_NONE;
-	} else if ((vp->v_vflag & VV_LOCKSWORK) == 0) {
-		VOP_UNLOCK(vp);
 		lktype = LK_NONE;
 	} else {
 		lktype = VOP_ISLOCKED(vp);
@@ -839,7 +838,7 @@ retry:
 		}
 	}
 #ifndef __HAVE_ATOMIC_AS_MEMBAR
-	membar_enter();
+	membar_acquire();
 #endif
 	if (vrefcnt(vp) <= 0 || vp->v_writecount != 0) {
 		vnpanic(vp, "%s: bad ref count", __func__);
@@ -914,9 +913,10 @@ retry:
 
 	/* If the node gained another reference, retry. */
 	use = atomic_load_relaxed(&vp->v_usecount);
-	if ((use & VUSECOUNT_VGET) != 0 || (use & VUSECOUNT_MASK) != 1) {
+	if ((use & VUSECOUNT_VGET) != 0) {
 		goto retry;
 	}
+	KASSERT((use & VUSECOUNT_MASK) == 1);
 
 	if ((vp->v_iflag & (VI_TEXT|VI_EXECMAP|VI_WRMAP)) != 0 ||
 	    (vp->v_vflag & VV_MAPPED) != 0) {
@@ -967,11 +967,11 @@ retry:
 	if (recycle) {
 		VSTATE_CHANGE(vp, VS_LOADED, VS_BLOCKED);
 		use = atomic_load_relaxed(&vp->v_usecount);
-		if ((use & VUSECOUNT_VGET) != 0 ||
-		    (use & VUSECOUNT_MASK) != 1) {
+		if ((use & VUSECOUNT_VGET) != 0) {
 			VSTATE_CHANGE(vp, VS_BLOCKED, VS_LOADED);
 			goto retry;
 		}
+		KASSERT((use & VUSECOUNT_MASK) == 1);
 	}
 
 	/*
@@ -1005,7 +1005,7 @@ out:
 		}
 	}
 #ifndef __HAVE_ATOMIC_AS_MEMBAR
-	membar_enter();
+	membar_acquire();
 #endif
 
 	if (VSTATE_GET(vp) == VS_RECLAIMED && vp->v_holdcnt == 0) {
@@ -1233,7 +1233,8 @@ vrevoke(vnode_t *vp)
 		type = vp->v_type;
 		mutex_exit(vp->v_interlock);
 
-		while (spec_node_lookup_by_dev(type, dev, &vq) == 0) {
+		while (spec_node_lookup_by_dev(type, dev, VDEAD_NOWAIT, &vq)
+		    == 0) {
 			mp = vrevoke_suspend_next(mp, vq->v_mount);
 			vgone(vq);
 		}
@@ -1477,7 +1478,7 @@ vcache_tryvget(vnode_t *vp)
 		    use, (use + 1) | VUSECOUNT_VGET);
 		if (__predict_true(next == use)) {
 #ifndef __HAVE_ATOMIC_AS_MEMBAR
-			membar_enter();
+			membar_acquire();
 #endif
 			return 0;
 		}
@@ -1812,15 +1813,13 @@ vcache_reclaim(vnode_t *vp)
 	uint32_t hash;
 	uint8_t temp_buf[64], *temp_key;
 	size_t temp_key_len;
-	bool recycle, active;
+	bool recycle;
 	int error;
 
-	KASSERT((vp->v_vflag & VV_LOCKSWORK) == 0 ||
-	    VOP_ISLOCKED(vp) == LK_EXCLUSIVE);
+	KASSERT(VOP_ISLOCKED(vp) == LK_EXCLUSIVE);
 	KASSERT(mutex_owned(vp->v_interlock));
 	KASSERT(vrefcnt(vp) != 0);
 
-	active = (vrefcnt(vp) > 1);
 	temp_key_len = vip->vi_key.vk_key_len;
 	/*
 	 * Prevent the vnode from being recycled or brought into use
@@ -1863,8 +1862,6 @@ vcache_reclaim(vnode_t *vp)
 
 	/*
 	 * Clean out any cached data associated with the vnode.
-	 * If purging an active vnode, it must be closed and
-	 * deactivated before being reclaimed.
 	 */
 	error = vinvalbuf(vp, V_SAVE, NOCRED, l, 0, 0);
 	if (error != 0) {
@@ -1874,7 +1871,7 @@ vcache_reclaim(vnode_t *vp)
 	}
 	KASSERTMSG((error == 0), "vinvalbuf failed: %d", error);
 	KASSERT((vp->v_iflag & VI_ONWORKLST) == 0);
-	if (active && (vp->v_type == VBLK || vp->v_type == VCHR)) {
+	if (vp->v_type == VBLK || vp->v_type == VCHR) {
 		 spec_node_revoke(vp);
 	}
 
@@ -1885,8 +1882,7 @@ vcache_reclaim(vnode_t *vp)
 	 * would no longer function.
 	 */
 	VOP_INACTIVE(vp, &recycle);
-	KASSERT((vp->v_vflag & VV_LOCKSWORK) == 0 ||
-	    VOP_ISLOCKED(vp) == LK_EXCLUSIVE);
+	KASSERT(VOP_ISLOCKED(vp) == LK_EXCLUSIVE);
 	if (VOP_RECLAIM(vp)) {
 		vnpanic(vp, "%s: cannot reclaim", __func__);
 	}
@@ -1914,7 +1910,6 @@ vcache_reclaim(vnode_t *vp)
 	/* Done with purge, notify sleepers of the grim news. */
 	mutex_enter(vp->v_interlock);
 	vp->v_op = dead_vnodeop_p;
-	vp->v_vflag |= VV_LOCKSWORK;
 	VSTATE_CHANGE(vp, VS_RECLAIMING, VS_RECLAIMED);
 	vp->v_tag = VT_NON;
 	/*
@@ -1980,8 +1975,7 @@ vcache_make_anon(vnode_t *vp)
 		vnpanic(vp, "%s: cannot lock", __func__);
 	}
 	VOP_INACTIVE(vp, &recycle);
-	KASSERT((vp->v_vflag & VV_LOCKSWORK) == 0 ||
-	    VOP_ISLOCKED(vp) == LK_EXCLUSIVE);
+	KASSERT(VOP_ISLOCKED(vp) == LK_EXCLUSIVE);
 	if (VOP_RECLAIM(vp)) {
 		vnpanic(vp, "%s: cannot reclaim", __func__);
 	}
@@ -1993,7 +1987,6 @@ vcache_make_anon(vnode_t *vp)
 	mutex_enter(vp->v_interlock);
 	vp->v_op = spec_vnodeop_p;
 	vp->v_vflag |= VV_MPSAFE;
-	vp->v_vflag &= ~VV_LOCKSWORK;
 	mutex_exit(vp->v_interlock);
 
 	/*

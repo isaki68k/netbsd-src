@@ -1,4 +1,4 @@
-/*	$NetBSD: if_smscreg.h,v 1.6 2019/08/12 08:40:09 skrll Exp $	*/
+/*	$NetBSD: if_smscreg.h,v 1.8 2022/04/06 22:01:45 mlelstv Exp $	*/
 
 /*	$OpenBSD: if_smscreg.h,v 1.2 2012/09/27 12:38:11 jsg Exp $	*/
 /*-

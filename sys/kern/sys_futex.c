@@ -1,4 +1,4 @@
-/*	$NetBSD: sys_futex.c,v 1.16 2022/03/12 15:32:32 riastradh Exp $	*/
+/*	$NetBSD: sys_futex.c,v 1.18 2022/04/21 12:05:13 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2018, 2019, 2020 The NetBSD Foundation, Inc.
@@ -30,7 +30,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sys_futex.c,v 1.16 2022/03/12 15:32:32 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sys_futex.c,v 1.18 2022/04/21 12:05:13 riastradh Exp $");
 
 /*
  * Futexes
@@ -63,13 +63,13 @@ __KERNEL_RCSID(0, "$NetBSD: sys_futex.c,v 1.16 2022/03/12 15:32:32 riastradh Exp
  *				continue;
  *			}
  *		} while (atomic_cas_uint(&lock, v, v & ~1) != v);
- *		membar_enter();
+ *		membar_acquire();
  *
  *		...
  *
  *		// Release the lock.  Optimistically assume there are
  *		// no waiters first until demonstrated otherwise.
- *		membar_exit();
+ *		membar_release();
  *		if (atomic_cas_uint(&lock, 1, 0) != 1) {
  *			// There may be waiters.
  *			v = atomic_swap_uint(&lock, 0);
@@ -538,7 +538,7 @@ futex_rele(struct futex *f)
 		if (refcnt == 1)
 			goto trylast;
 #ifndef __HAVE_ATOMIC_AS_MEMBAR
-		membar_exit();
+		membar_release();
 #endif
 	} while (atomic_cas_ulong(&f->fx_refcnt, refcnt, refcnt - 1) != refcnt);
 	return;
@@ -547,7 +547,7 @@ trylast:
 	mutex_enter(&futex_tab.lock);
 	if (atomic_dec_ulong_nv(&f->fx_refcnt) == 0) {
 #ifndef __HAVE_ATOMIC_AS_MEMBAR
-		membar_enter();
+		membar_acquire();
 #endif
 		if (f->fx_on_tree) {
 			if (__predict_false(f->fx_shared))

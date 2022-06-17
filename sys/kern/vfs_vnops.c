@@ -1,4 +1,4 @@
-/*	$NetBSD: vfs_vnops.c,v 1.225 2022/03/13 13:52:53 riastradh Exp $	*/
+/*	$NetBSD: vfs_vnops.c,v 1.228 2022/05/22 11:27:36 andvar Exp $	*/
 
 /*-
  * Copyright (c) 2009 The NetBSD Foundation, Inc.
@@ -66,7 +66,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_vnops.c,v 1.225 2022/03/13 13:52:53 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_vnops.c,v 1.228 2022/05/22 11:27:36 andvar Exp $");
 
 #include "veriexec.h"
 
@@ -1192,9 +1192,7 @@ vn_lock(struct vnode *vp, int flags)
 	struct lwp *l;
 	int error;
 
-#if 0
-	KASSERT(vrefcnt(vp) > 0 || (vp->v_iflag & VI_ONWORKLST) != 0);
-#endif
+	KASSERT(vrefcnt(vp) > 0);
 	KASSERT((flags & ~(LK_SHARED|LK_EXCLUSIVE|LK_NOWAIT|LK_RETRY|
 	    LK_UPGRADE|LK_DOWNGRADE)) == 0);
 	KASSERT((flags & LK_NOWAIT) != 0 || !mutex_owned(vp->v_interlock));
@@ -1210,13 +1208,23 @@ vn_lock(struct vnode *vp, int flags)
 	l->l_rwcallsite = (uintptr_t)__builtin_return_address(0);	
 
 	error = VOP_LOCK(vp, flags);
-	if ((flags & LK_RETRY) != 0 && error == ENOENT)
-		error = VOP_LOCK(vp, flags);
 
 	l->l_rwcallsite = 0;
 
-	KASSERT((flags & LK_RETRY) == 0 || (flags & LK_NOWAIT) != 0 ||
-	    error == 0);
+	switch (flags & (LK_RETRY | LK_NOWAIT)) {
+	case 0:
+		KASSERT(error == 0 || error == ENOENT);
+		break;
+	case LK_RETRY:
+		KASSERT(error == 0);
+		break;
+	case LK_NOWAIT:
+		KASSERT(error == 0 || error == EBUSY || error == ENOENT);
+		break;
+	case LK_RETRY | LK_NOWAIT:
+		KASSERT(error == 0 || error == EBUSY);
+		break;
+	}
 
 	return error;
 }
@@ -1344,13 +1352,15 @@ vn_bdev_open(dev_t dev, struct vnode **vpp, struct lwp *l)
 	if ((error = bdevvp(dev, vpp)) != 0)
 		return error;
 
+	vn_lock(*vpp, LK_EXCLUSIVE | LK_RETRY);
 	if ((error = VOP_OPEN(*vpp, FREAD | FWRITE, l->l_cred)) != 0) {
-		vrele(*vpp);
+		vput(*vpp);
 		return error;
 	}
 	mutex_enter((*vpp)->v_interlock);
 	(*vpp)->v_writecount++;
 	mutex_exit((*vpp)->v_interlock);
+	VOP_UNLOCK(*vpp);
 
 	return 0;
 }
@@ -1436,7 +1446,7 @@ vn_knote_detach(struct vnode *vp, struct knote *kn)
 	int interest = 0;
 
 	/*
-	 * We special case removing the head of the list, beacuse:
+	 * We special case removing the head of the list, because:
 	 *
 	 * 1. It's extremely likely that we're detaching the only
 	 *    knote.

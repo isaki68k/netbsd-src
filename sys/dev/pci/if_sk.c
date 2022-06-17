@@ -1,4 +1,4 @@
-/*	$NetBSD: if_sk.c,v 1.109 2021/08/07 16:19:14 thorpej Exp $	*/
+/*	$NetBSD: if_sk.c,v 1.111 2022/05/23 13:53:37 rin Exp $	*/
 
 /*-
  * Copyright (c) 2003 The NetBSD Foundation, Inc.
@@ -115,7 +115,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_sk.c,v 1.109 2021/08/07 16:19:14 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_sk.c,v 1.111 2022/05/23 13:53:37 rin Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -2152,9 +2152,6 @@ sk_txeof(struct sk_if_softc *sc_if)
 		if (sc_if->sk_cdata.sk_tx_chain[idx].sk_mbuf != NULL) {
 			entry = sc_if->sk_cdata.sk_tx_map[idx];
 
-			m_freem(sc_if->sk_cdata.sk_tx_chain[idx].sk_mbuf);
-			sc_if->sk_cdata.sk_tx_chain[idx].sk_mbuf = NULL;
-
 			bus_dmamap_sync(sc->sc_dmatag, entry->dmamap, 0,
 			    entry->dmamap->dm_mapsize, BUS_DMASYNC_POSTWRITE);
 
@@ -2162,6 +2159,9 @@ sk_txeof(struct sk_if_softc *sc_if)
 			SIMPLEQ_INSERT_TAIL(&sc_if->sk_txmap_head, entry,
 					  link);
 			sc_if->sk_cdata.sk_tx_map[idx] = NULL;
+
+			m_freem(sc_if->sk_cdata.sk_tx_chain[idx].sk_mbuf);
+			sc_if->sk_cdata.sk_tx_chain[idx].sk_mbuf = NULL;
 		}
 		sc_if->sk_cdata.sk_tx_cnt--;
 		SK_INC(idx, SK_TX_RING_CNT);
@@ -2519,7 +2519,7 @@ sk_init_xmac(struct sk_if_softc *sc_if)
 	 * that jumbo frames larger than 8192 bytes will be
 	 * truncated. Disabling all bad frame filtering causes
 	 * the RX FIFO to operate in streaming mode, in which
-	 * case the XMAC will start transfering frames out of the
+	 * case the XMAC will start transferring frames out of the
 	 * RX FIFO as soon as the FIFO threshold is reached.
 	 */
 	SK_XM_SETBIT_4(sc_if, XM_MODE, XM_MODE_RX_BADFRAMES |

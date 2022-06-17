@@ -1,4 +1,4 @@
-/*	$NetBSD: mha.c,v 1.56 2021/08/07 16:19:07 thorpej Exp $	*/
+/*	$NetBSD: mha.c,v 1.58 2022/05/26 14:33:29 tsutsui Exp $	*/
 
 /*-
  * Copyright (c) 1996-1999 The NetBSD Foundation, Inc.
@@ -59,7 +59,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: mha.c,v 1.56 2021/08/07 16:19:07 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: mha.c,v 1.58 2022/05/26 14:33:29 tsutsui Exp $");
 
 #include "opt_ddb.h"
 
@@ -117,6 +117,8 @@ __KERNEL_RCSID(0, "$NetBSD: mha.c,v 1.56 2021/08/07 16:19:07 thorpej Exp $");
 #include <x68k/dev/mhavar.h>
 #include <x68k/dev/intiovar.h>
 #include <x68k/dev/scsiromvar.h>
+
+#include "ioconf.h"
 
 #if 0
 #define WAIT {if (sc->sc_pc[2]) {printf("[W_%d", __LINE__); while (sc->sc_pc[2] & 0x40);printf("]");}}
@@ -266,8 +268,6 @@ static int mha_dataio_dma(int, int, struct mha_softc *, u_char *, int);
 
 CFATTACH_DECL_NEW(mha, sizeof(struct mha_softc),
     mhamatch, mhaattach, NULL, NULL);
-
-extern struct cfdriver mha_cd;
 
 /*
  * returns non-zero value if a controller is found.
@@ -812,7 +812,7 @@ mha_setsync(struct mha_softc *sc, struct spc_tinfo *ti)
 /*
  * Schedule a SCSI operation.  This has now been pulled out of the interrupt
  * handler so that we may call it from mha_scsi_cmd and mha_done.  This may
- * save us an unecessary interrupt just to get things going.  Should only be
+ * save us an unnecessary interrupt just to get things going.  Should only be
  * called when state == SPC_IDLE and at bio pl.
  */
 void

@@ -1,4 +1,4 @@
-/*	$NetBSD: ccd.c,v 1.187 2022/03/12 17:27:50 riastradh Exp $	*/
+/*	$NetBSD: ccd.c,v 1.189 2022/03/28 12:48:35 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 1996, 1997, 1998, 1999, 2007, 2009 The NetBSD Foundation, Inc.
@@ -88,7 +88,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ccd.c,v 1.187 2022/03/12 17:27:50 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ccd.c,v 1.189 2022/03/28 12:48:35 riastradh Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -1710,7 +1710,7 @@ ccd_modcmd(modcmd_t cmd, void *arg)
 			error = EBUSY;
 		} else {
 			mutex_exit(&ccd_lock);
-			error = devsw_detach(&ccd_bdevsw, &ccd_cdevsw);
+			devsw_detach(&ccd_bdevsw, &ccd_cdevsw);
 			ccddetach();
 		}
 #endif

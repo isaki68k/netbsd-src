@@ -1,4 +1,4 @@
-/*	$NetBSD: if_vioif.c,v 1.71 2021/10/28 01:36:43 yamaguchi Exp $	*/
+/*	$NetBSD: if_vioif.c,v 1.81 2022/05/04 02:38:27 simonb Exp $	*/
 
 /*
  * Copyright (c) 2020 The NetBSD Foundation, Inc.
@@ -27,7 +27,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_vioif.c,v 1.71 2021/10/28 01:36:43 yamaguchi Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_vioif.c,v 1.81 2022/05/04 02:38:27 simonb Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_net_mpsafe.h"
@@ -56,6 +56,7 @@ __KERNEL_RCSID(0, "$NetBSD: if_vioif.c,v 1.71 2021/10/28 01:36:43 yamaguchi Exp 
 #include <dev/pci/virtiovar.h>
 
 #include <net/if.h>
+#include <net/if_dl.h>
 #include <net/if_media.h>
 #include <net/if_ether.h>
 
@@ -98,29 +99,31 @@ __KERNEL_RCSID(0, "$NetBSD: if_vioif.c,v 1.71 2021/10/28 01:36:43 yamaguchi Exp 
 #define VIRTIO_NET_F_CTRL_RX_EXTRA	__BIT(20)
 #define VIRTIO_NET_F_GUEST_ANNOUNCE	__BIT(21)
 #define VIRTIO_NET_F_MQ			__BIT(22)
+#define VIRTIO_NET_F_CTRL_MAC_ADDR 	__BIT(23)
 
-#define VIRTIO_NET_FLAG_BITS \
-	VIRTIO_COMMON_FLAG_BITS \
-	"\x17""MQ" \
-	"\x16""GUEST_ANNOUNCE" \
-	"\x15""CTRL_RX_EXTRA" \
-	"\x14""CTRL_VLAN" \
-	"\x13""CTRL_RX" \
-	"\x12""CTRL_VQ" \
-	"\x11""STATUS" \
-	"\x10""MRG_RXBUF" \
-	"\x0f""HOST_UFO" \
-	"\x0e""HOST_ECN" \
-	"\x0d""HOST_TSO6" \
-	"\x0c""HOST_TSO4" \
-	"\x0b""GUEST_UFO" \
-	"\x0a""GUEST_ECN" \
-	"\x09""GUEST_TSO6" \
-	"\x08""GUEST_TSO4" \
-	"\x07""GSO" \
-	"\x06""MAC" \
-	"\x02""GUEST_CSUM" \
-	"\x01""CSUM"
+#define VIRTIO_NET_FLAG_BITS			\
+	VIRTIO_COMMON_FLAG_BITS			\
+	"b\x17" "CTRL_MAC\0"			\
+	"b\x16" "MQ\0"				\
+	"b\x15" "GUEST_ANNOUNCE\0"		\
+	"b\x14" "CTRL_RX_EXTRA\0"		\
+	"b\x13" "CTRL_VLAN\0"			\
+	"b\x12" "CTRL_RX\0"			\
+	"b\x11" "CTRL_VQ\0"			\
+	"b\x10" "STATUS\0"			\
+	"b\x0f" "MRG_RXBUF\0"			\
+	"b\x0e" "HOST_UFO\0"			\
+	"b\x0d" "HOST_ECN\0"			\
+	"b\x0c" "HOST_TSO6\0"			\
+	"b\x0b" "HOST_TSO4\0"			\
+	"b\x0a" "GUEST_UFO\0"			\
+	"b\x09" "GUEST_ECN\0"			\
+	"b\x08" "GUEST_TSO6\0"			\
+	"b\x07" "GUEST_TSO4\0"			\
+	"b\x06" "GSO\0"				\
+	"b\x05" "MAC\0"				\
+	"b\x01" "GUEST_CSUM\0"			\
+	"b\x00" "CSUM\0"
 
 /* Status */
 #define VIRTIO_NET_S_LINK_UP	1
@@ -157,6 +160,7 @@ struct virtio_net_ctrl_cmd {
 
 #define VIRTIO_NET_CTRL_MAC		1
 # define VIRTIO_NET_CTRL_MAC_TABLE_SET	0
+# define  VIRTIO_NET_CTRL_MAC_ADDR_SET	1
 
 #define VIRTIO_NET_CTRL_VLAN		2
 # define VIRTIO_NET_CTRL_VLAN_ADD	0
@@ -180,6 +184,10 @@ struct virtio_net_ctrl_rx {
 struct virtio_net_ctrl_mac_tbl {
 	uint32_t nentries;
 	uint8_t macs[][ETHER_ADDR_LEN];
+} __packed;
+
+struct virtio_net_ctrl_mac_addr {
+	uint8_t mac[ETHER_ADDR_LEN];
 } __packed;
 
 struct virtio_net_ctrl_vlan {
@@ -281,6 +289,7 @@ struct vioif_ctrlqueue {
 	struct virtio_net_ctrl_rx	*ctrlq_rx;
 	struct virtio_net_ctrl_mac_tbl	*ctrlq_mac_tbl_uc;
 	struct virtio_net_ctrl_mac_tbl	*ctrlq_mac_tbl_mc;
+	struct virtio_net_ctrl_mac_addr	*ctrlq_mac_addr;
 	struct virtio_net_ctrl_mq	*ctrlq_mq;
 
 	bus_dmamap_t			ctrlq_cmd_dmamap;
@@ -288,6 +297,7 @@ struct vioif_ctrlqueue {
 	bus_dmamap_t			ctrlq_rx_dmamap;
 	bus_dmamap_t			ctrlq_tbl_uc_dmamap;
 	bus_dmamap_t			ctrlq_tbl_mc_dmamap;
+	bus_dmamap_t			ctrlq_mac_addr_dmamap;
 	bus_dmamap_t			ctrlq_mq_dmamap;
 
 	struct evcnt			ctrlq_cmd_load_failed;
@@ -309,7 +319,6 @@ struct vioif_softc {
 
 	uint8_t			sc_mac[ETHER_ADDR_LEN];
 	struct ethercom		sc_ethercom;
-	short			sc_deferred_init_done;
 	bool			sc_link_active;
 
 	struct vioif_txqueue	*sc_txq;
@@ -344,7 +353,6 @@ struct vioif_softc {
 /* cfattach interface functions */
 static int	vioif_match(device_t, cfdata_t, void *);
 static void	vioif_attach(device_t, device_t, void *);
-static void	vioif_deferred_init(device_t);
 static int	vioif_finalize_teardown(device_t);
 
 /* ifnet interface functions */
@@ -356,6 +364,7 @@ static int	vioif_transmit(struct ifnet *, struct mbuf *);
 static void	vioif_transmit_locked(struct ifnet *, struct vioif_txqueue *);
 static int	vioif_ioctl(struct ifnet *, u_long, void *);
 static void	vioif_watchdog(struct ifnet *);
+static int	vioif_ifflags_cb(struct ethercom *);
 
 /* rx */
 static int	vioif_add_rx_mbuf(struct vioif_rxqueue *, int);
@@ -399,6 +408,7 @@ static int	vioif_set_promisc(struct vioif_softc *, bool);
 static int	vioif_set_allmulti(struct vioif_softc *, bool);
 static int	vioif_set_rx_filter(struct vioif_softc *);
 static int	vioif_rx_filter(struct vioif_softc *);
+static int	vioif_set_mac_addr(struct vioif_softc *);
 static int	vioif_ctrl_intr(void *);
 static int	vioif_config_change(struct virtio_softc *);
 static void	vioif_ctl_softint(void *);
@@ -407,6 +417,7 @@ static void	vioif_enable_interrupt_vqpairs(struct vioif_softc *);
 static void	vioif_disable_interrupt_vqpairs(struct vioif_softc *);
 static int	vioif_setup_sysctl(struct vioif_softc *);
 static void	vioif_setup_stats(struct vioif_softc *);
+static int	vioif_ifflags(struct vioif_softc *);
 
 CFATTACH_DECL_NEW(vioif, sizeof(struct vioif_softc),
 		  vioif_match, vioif_attach, NULL, NULL);
@@ -579,13 +590,15 @@ vioif_alloc_mems(struct vioif_softc *sc)
 			(rxq->rxq_vq->vq_num + txq->txq_vq->vq_num);
 	}
 	if (sc->sc_has_ctrl) {
-		allocsize += sizeof(struct virtio_net_ctrl_cmd) * 1;
-		allocsize += sizeof(struct virtio_net_ctrl_status) * 1;
-		allocsize += sizeof(struct virtio_net_ctrl_rx) * 1;
+		allocsize += sizeof(struct virtio_net_ctrl_cmd);
+		allocsize += sizeof(struct virtio_net_ctrl_status);
+		allocsize += sizeof(struct virtio_net_ctrl_rx);
 		allocsize += sizeof(struct virtio_net_ctrl_mac_tbl)
-		    + sizeof(struct virtio_net_ctrl_mac_tbl)
+		    + ETHER_ADDR_LEN;
+		allocsize += sizeof(struct virtio_net_ctrl_mac_tbl)
 		    + ETHER_ADDR_LEN * VIRTIO_NET_CTRL_MAC_MAXENTRIES;
-		allocsize += sizeof(struct virtio_net_ctrl_mq) * 1;
+		allocsize += sizeof(struct virtio_net_ctrl_mac_addr);
+		allocsize += sizeof(struct virtio_net_ctrl_mq);
 	}
 	r = bus_dmamem_alloc(virtio_dmat(vsc), allocsize, 0, 0,
 	    &sc->sc_hdr_segs[0], 1, &rsegs, BUS_DMA_NOWAIT);
@@ -624,10 +637,13 @@ vioif_alloc_mems(struct vioif_softc *sc)
 		ctrlq->ctrlq_rx = vioif_assign_mem(&p,
 		    sizeof(*ctrlq->ctrlq_rx));
 		ctrlq->ctrlq_mac_tbl_uc = vioif_assign_mem(&p,
-		    sizeof(*ctrlq->ctrlq_mac_tbl_uc));
+		    sizeof(*ctrlq->ctrlq_mac_tbl_uc)
+		    + ETHER_ADDR_LEN);
 		ctrlq->ctrlq_mac_tbl_mc = vioif_assign_mem(&p,
 		    sizeof(*ctrlq->ctrlq_mac_tbl_mc)
 		    + ETHER_ADDR_LEN * VIRTIO_NET_CTRL_MAC_MAXENTRIES);
+		ctrlq->ctrlq_mac_addr = vioif_assign_mem(&p,
+		    sizeof(*ctrlq->ctrlq_mac_addr));
 		ctrlq->ctrlq_mq = vioif_assign_mem(&p, sizeof(*ctrlq->ctrlq_mq));
 	}
 
@@ -735,7 +751,8 @@ vioif_alloc_mems(struct vioif_softc *sc)
 		/* control vq MAC filter table for unicast */
 		/* do not load now since its length is variable */
 		r = vioif_dmamap_create(sc, &ctrlq->ctrlq_tbl_uc_dmamap,
-		    sizeof(*ctrlq->ctrlq_mac_tbl_uc) + 0, 1,
+		    sizeof(*ctrlq->ctrlq_mac_tbl_uc)
+		    + ETHER_ADDR_LEN, 1,
 		    "unicast MAC address filter command");
 		if (r != 0)
 			goto err_reqs;
@@ -745,6 +762,17 @@ vioif_alloc_mems(struct vioif_softc *sc)
 		    sizeof(*ctrlq->ctrlq_mac_tbl_mc)
 		    + ETHER_ADDR_LEN * VIRTIO_NET_CTRL_MAC_MAXENTRIES, 1,
 		    "multicast MAC address filter command");
+		if (r != 0)
+			goto err_reqs;
+
+		/* control vq MAC address set command */
+		r = vioif_dmamap_create_load(sc,
+		    &ctrlq->ctrlq_mac_addr_dmamap,
+		    ctrlq->ctrlq_mac_addr,
+		    sizeof(*ctrlq->ctrlq_mac_addr), 1,
+		    BUS_DMA_WRITE, "mac addr set command");
+		if (r != 0)
+			goto err_reqs;
 	}
 
 	return 0;
@@ -755,6 +783,7 @@ err_reqs:
 	vioif_dmamap_destroy(sc, &ctrlq->ctrlq_rx_dmamap);
 	vioif_dmamap_destroy(sc, &ctrlq->ctrlq_status_dmamap);
 	vioif_dmamap_destroy(sc, &ctrlq->ctrlq_cmd_dmamap);
+	vioif_dmamap_destroy(sc, &ctrlq->ctrlq_mac_addr_dmamap);
 	for (qid = 0; qid < sc->sc_max_nvq_pairs; qid++) {
 		rxq = &sc->sc_rxq[qid];
 		txq = &sc->sc_txq[qid];
@@ -790,7 +819,7 @@ vioif_attach(device_t parent, device_t self, void *aux)
 	uint64_t features, req_features;
 	struct ifnet *ifp = &sc->sc_ethercom.ec_if;
 	u_int softint_flags;
-	int r, i, nvqs=0, req_flags;
+	int r, i, nvqs = 0, req_flags;
 	char xnamebuf[MAXCOMLEN];
 
 	if (virtio_child(vsc) != NULL) {
@@ -831,6 +860,7 @@ vioif_attach(device_t parent, device_t self, void *aux)
 	    VIRTIO_NET_F_MAC | VIRTIO_NET_F_STATUS | VIRTIO_NET_F_CTRL_VQ |
 	    VIRTIO_NET_F_CTRL_RX | VIRTIO_F_NOTIFY_ON_EMPTY;
 	req_features |= VIRTIO_F_RING_EVENT_IDX;
+	req_features |= VIRTIO_NET_F_CTRL_MAC_ADDR;
 #ifdef VIOIF_MULTIQ
 	req_features |= VIRTIO_NET_F_MQ;
 #endif
@@ -1023,6 +1053,7 @@ vioif_attach(device_t parent, device_t self, void *aux)
 	if_attach(ifp);
 	if_deferred_start_init(ifp, NULL);
 	ether_ifattach(ifp, sc->sc_mac);
+	ether_set_ifflags_cb(&sc->sc_ethercom, vioif_ifflags_cb);
 
 	return;
 
@@ -1089,23 +1120,6 @@ vioif_finalize_teardown(device_t self)
 	}
 
 	return 0;
-}
-
-/* we need interrupts to make promiscuous mode off */
-static void
-vioif_deferred_init(device_t self)
-{
-	struct vioif_softc *sc = device_private(self);
-	struct ifnet *ifp = &sc->sc_ethercom.ec_if;
-	int r;
-
-	if (ifp->if_flags & IFF_PROMISC)
-		return;
-
-	r =  vioif_set_promisc(sc, false);
-	if (r != 0)
-		aprint_error_dev(self, "resetting promisc mode failed, "
-		    "error code %d\n", r);
 }
 
 static void
@@ -1191,18 +1205,12 @@ vioif_init(struct ifnet *ifp)
 
 	vioif_enable_interrupt_vqpairs(sc);
 
-	if (!sc->sc_deferred_init_done) {
-		sc->sc_deferred_init_done = 1;
-		if (sc->sc_has_ctrl)
-			vioif_deferred_init(sc->sc_dev);
-	}
-
 	vioif_update_link_status(sc);
 	ifp->if_flags |= IFF_RUNNING;
 	ifp->if_flags &= ~IFF_OACTIVE;
-	vioif_rx_filter(sc);
+	r = vioif_rx_filter(sc);
 
-	return 0;
+	return r;
 }
 
 static void
@@ -1215,7 +1223,16 @@ vioif_stop(struct ifnet *ifp, int disable)
 	struct vioif_ctrlqueue *ctrlq = &sc->sc_ctrlq;
 	int i;
 
-	/* Take the locks to ensure that ongoing TX/RX finish */
+	/* disable interrupts */
+	vioif_disable_interrupt_vqpairs(sc);
+	if (sc->sc_has_ctrl)
+		virtio_stop_vq_intr(vsc, ctrlq->ctrlq_vq);
+
+	/*
+	 * stop all packet processing:
+	 * 1. stop interrupt handlers by rxq_stopping and txq_stopping
+	 * 2. wait for stopping workqueue for packet processing
+	 */
 	for (i = 0; i < sc->sc_act_nvq_pairs; i++) {
 		txq = &sc->sc_txq[i];
 		rxq = &sc->sc_rxq[i];
@@ -1223,34 +1240,16 @@ vioif_stop(struct ifnet *ifp, int disable)
 		mutex_enter(rxq->rxq_lock);
 		rxq->rxq_stopping = true;
 		mutex_exit(rxq->rxq_lock);
+		vioif_work_wait(sc->sc_txrx_workqueue, &rxq->rxq_work);
 
 		mutex_enter(txq->txq_lock);
 		txq->txq_stopping = true;
 		mutex_exit(txq->txq_lock);
+		vioif_work_wait(sc->sc_txrx_workqueue, &txq->txq_work);
 	}
-
-	/* disable interrupts */
-	vioif_disable_interrupt_vqpairs(sc);
-
-	if (sc->sc_has_ctrl)
-		virtio_stop_vq_intr(vsc, ctrlq->ctrlq_vq);
 
 	/* only way to stop I/O and DMA is resetting... */
 	virtio_reset(vsc);
-
-	/* rendezvous for finish of handlers */
-	for (i = 0; i < sc->sc_act_nvq_pairs; i++) {
-		txq = &sc->sc_txq[i];
-		rxq = &sc->sc_rxq[i];
-
-		mutex_enter(rxq->rxq_lock);
-		mutex_exit(rxq->rxq_lock);
-		vioif_work_wait(sc->sc_txrx_workqueue, &rxq->rxq_work);
-
-		mutex_enter(txq->txq_lock);
-		mutex_exit(txq->txq_lock);
-		vioif_work_wait(sc->sc_txrx_workqueue, &txq->txq_work);
-	}
 
 	for (i = 0; i < sc->sc_act_nvq_pairs; i++) {
 		vioif_rx_queue_clear(&sc->sc_rxq[i]);
@@ -1468,12 +1467,12 @@ vioif_ioctl(struct ifnet *ifp, u_long cmd, void *data)
 	s = splnet();
 
 	r = ether_ioctl(ifp, cmd, data);
-	if ((r == 0 && cmd == SIOCSIFFLAGS) ||
-	    (r == ENETRESET && (cmd == SIOCADDMULTI || cmd == SIOCDELMULTI))) {
-		if (ifp->if_flags & IFF_RUNNING)
+	if (r == ENETRESET && (cmd == SIOCADDMULTI || cmd == SIOCDELMULTI)) {
+		if (ifp->if_flags & IFF_RUNNING) {
 			r = vioif_rx_filter(ifp->if_softc);
-		else
+		} else {
 			r = 0;
+		}
 	}
 
 	splx(s);
@@ -1736,6 +1735,11 @@ static void
 vioif_rx_sched_handle(struct vioif_softc *sc, struct vioif_rxqueue *rxq)
 {
 
+	KASSERT(mutex_owned(rxq->rxq_lock));
+
+	if (rxq->rxq_stopping)
+		return;
+
 	if (rxq->rxq_workqueue)
 		vioif_work_add(sc->sc_txrx_workqueue, &rxq->rxq_work);
 	else
@@ -1852,6 +1856,11 @@ vioif_tx_handle(void *xtxq)
 static void
 vioif_tx_sched_handle(struct vioif_softc *sc, struct vioif_txqueue *txq)
 {
+
+	KASSERT(mutex_owned(txq->txq_lock));
+
+	if (txq->txq_stopping)
+		return;
 
 	if (txq->txq_workqueue)
 		vioif_work_add(sc->sc_txrx_workqueue, &txq->txq_work);
@@ -2157,6 +2166,53 @@ out:
 }
 
 static int
+vioif_set_mac_addr(struct vioif_softc *sc)
+{
+	struct virtio_net_ctrl_mac_addr *ma =
+	    sc->sc_ctrlq.ctrlq_mac_addr;
+	struct vioif_ctrl_cmdspec specs[1];
+	struct ifnet *ifp = &sc->sc_ethercom.ec_if;
+	int nspecs = __arraycount(specs);
+	uint64_t features;
+	int r;
+	size_t i;
+
+	if (!sc->sc_has_ctrl)
+		return ENOTSUP;
+
+	if (memcmp(CLLADDR(ifp->if_sadl), sc->sc_mac,
+	    ETHER_ADDR_LEN) == 0) {
+		return 0;
+	}
+
+	memcpy(sc->sc_mac, CLLADDR(ifp->if_sadl), ETHER_ADDR_LEN);
+
+	features = virtio_features(sc->sc_virtio);
+	if (features & VIRTIO_NET_F_CTRL_MAC_ADDR) {
+		vioif_ctrl_acquire(sc);
+
+		memcpy(ma->mac, sc->sc_mac, ETHER_ADDR_LEN);
+		specs[0].dmamap = sc->sc_ctrlq.ctrlq_mac_addr_dmamap;
+		specs[0].buf = ma;
+		specs[0].bufsize = sizeof(*ma);
+
+		r = vioif_ctrl_send_command(sc,
+		    VIRTIO_NET_CTRL_MAC, VIRTIO_NET_CTRL_MAC_ADDR_SET,
+		    specs, nspecs);
+
+		vioif_ctrl_release(sc);
+	} else {
+		for (i = 0; i < __arraycount(sc->sc_mac); i++) {
+			virtio_write_device_config_1(sc->sc_virtio,
+			    VIRTIO_NET_CONFIG_MAC + i, sc->sc_mac[i]);
+		}
+		r = 0;
+	}
+
+	return r;
+}
+
+static int
 vioif_ctrl_mq_vq_pairs_set(struct vioif_softc *sc, int nvq_pairs)
 {
 	struct virtio_net_ctrl_mq *mq = sc->sc_ctrlq.ctrlq_mq;
@@ -2210,14 +2266,57 @@ vioif_ctrl_intr(void *arg)
 	return 1;
 }
 
+static int
+vioif_ifflags(struct vioif_softc *sc)
+{
+	struct ifnet *ifp = &sc->sc_ethercom.ec_if;
+	bool onoff;
+	int r;
+
+	if (!sc->sc_has_ctrl) {
+		/* no ctrl vq; always promisc and allmulti */
+		ifp->if_flags |= (IFF_PROMISC | IFF_ALLMULTI);
+		return 0;
+	}
+
+	onoff = ifp->if_flags & IFF_ALLMULTI ? true : false;
+	r = vioif_set_allmulti(sc, onoff);
+	if (r != 0) {
+		log(LOG_WARNING,
+		    "%s: couldn't %sable ALLMULTI\n",
+		    ifp->if_xname, onoff ? "en" : "dis");
+		if (onoff == false) {
+			ifp->if_flags |= IFF_ALLMULTI;
+		}
+	}
+
+	onoff = ifp->if_flags & IFF_PROMISC ? true : false;
+	r = vioif_set_promisc(sc, onoff);
+	if (r != 0) {
+		log(LOG_WARNING,
+		    "%s: couldn't %sable PROMISC\n",
+		    ifp->if_xname, onoff ? "en" : "dis");
+		if (onoff == false) {
+			ifp->if_flags |= IFF_PROMISC;
+		}
+	}
+
+	return 0;
+}
+
+static int
+vioif_ifflags_cb(struct ethercom *ec)
+{
+	struct ifnet *ifp = &ec->ec_if;
+	struct vioif_softc *sc = ifp->if_softc;
+
+	return vioif_ifflags(sc);
+}
+
 /*
- * If IFF_PROMISC requested,  set promiscuous
  * If multicast filter small enough (<=MAXENTRIES) set rx filter
  * If large multicast filter exist use ALLMULTI
- */
-/*
  * If setting rx filter fails fall back to ALLMULTI
- * If ALLMULTI fails fall back to PROMISC
  */
 static int
 vioif_rx_filter(struct vioif_softc *sc)
@@ -2229,71 +2328,67 @@ vioif_rx_filter(struct vioif_softc *sc)
 	struct ether_multistep step;
 	struct vioif_ctrlqueue *ctrlq = &sc->sc_ctrlq;
 	int nentries;
-	int promisc = 0, allmulti = 0, rxfilter = 0;
+	bool allmulti = 0;
 	int r;
 
-	if (!sc->sc_has_ctrl) {	/* no ctrl vq; always promisc */
-		ifp->if_flags |= IFF_PROMISC;
-		return 0;
+	if (!sc->sc_has_ctrl) {
+		goto set_ifflags;
 	}
 
-	if (ifp->if_flags & IFF_PROMISC) {
-		promisc = 1;
-		goto set;
-	}
+	memcpy(ctrlq->ctrlq_mac_tbl_uc->macs[0],
+	    CLLADDR(ifp->if_sadl), ETHER_ADDR_LEN);
 
-	nentries = -1;
+	nentries = 0;
+	allmulti = false;
+
 	ETHER_LOCK(ec);
-	ETHER_FIRST_MULTI(step, ec, enm);
-	while (nentries++, enm != NULL) {
+	for (ETHER_FIRST_MULTI(step, ec, enm); enm != NULL;
+	    ETHER_NEXT_MULTI(step, enm)) {
 		if (nentries >= VIRTIO_NET_CTRL_MAC_MAXENTRIES) {
-			allmulti = 1;
-			goto set_unlock;
+			allmulti = true;
+			break;
 		}
 		if (memcmp(enm->enm_addrlo, enm->enm_addrhi, ETHER_ADDR_LEN)) {
-			allmulti = 1;
-			goto set_unlock;
+			allmulti = true;
+			break;
 		}
+
 		memcpy(ctrlq->ctrlq_mac_tbl_mc->macs[nentries],
 		    enm->enm_addrlo, ETHER_ADDR_LEN);
-		ETHER_NEXT_MULTI(step, enm);
+		nentries++;
 	}
-	rxfilter = 1;
-
-set_unlock:
 	ETHER_UNLOCK(ec);
 
-set:
-	if (rxfilter) {
-		ctrlq->ctrlq_mac_tbl_uc->nentries = virtio_rw32(vsc, 0);
+	r = vioif_set_mac_addr(sc);
+	if (r != 0) {
+		log(LOG_WARNING, "%s: couldn't set MAC address\n",
+		    ifp->if_xname);
+	}
+
+	if (!allmulti) {
+		ctrlq->ctrlq_mac_tbl_uc->nentries = virtio_rw32(vsc, 1);
 		ctrlq->ctrlq_mac_tbl_mc->nentries = virtio_rw32(vsc, nentries);
 		r = vioif_set_rx_filter(sc);
 		if (r != 0) {
-			rxfilter = 0;
-			allmulti = 1; /* fallback */
+			allmulti = true; /* fallback */
 		}
-	} else {
-		/* remove rx filter */
+	}
+
+	if (allmulti) {
 		ctrlq->ctrlq_mac_tbl_uc->nentries = virtio_rw32(vsc, 0);
 		ctrlq->ctrlq_mac_tbl_mc->nentries = virtio_rw32(vsc, 0);
 		r = vioif_set_rx_filter(sc);
-		/* what to do on failure? */
-	}
-	if (allmulti) {
-		r = vioif_set_allmulti(sc, true);
 		if (r != 0) {
-			allmulti = 0;
-			promisc = 1; /* fallback */
+			log(LOG_DEBUG, "%s: couldn't clear RX filter\n",
+			    ifp->if_xname);
+			/* what to do on failure? */
 		}
-	} else {
-		r = vioif_set_allmulti(sc, false);
-		/* what to do on failure? */
+
+		ifp->if_flags |= IFF_ALLMULTI;
 	}
-	if (promisc) {
-		r = vioif_set_promisc(sc, true);
-	} else {
-		r = vioif_set_promisc(sc, false);
-	}
+
+set_ifflags:
+	r = vioif_ifflags(sc);
 
 	return r;
 }

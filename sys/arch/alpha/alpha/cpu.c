@@ -1,4 +1,4 @@
-/* $NetBSD: cpu.c,v 1.105 2022/02/27 14:17:10 riastradh Exp $ */
+/* $NetBSD: cpu.c,v 1.107 2022/05/22 11:27:33 andvar Exp $ */
 
 /*-
  * Copyright (c) 1998, 1999, 2000, 2001, 2020 The NetBSD Foundation, Inc.
@@ -59,7 +59,7 @@
 
 #include <sys/cdefs.h>			/* RCS ID & Copyright macro defns */
 
-__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.105 2022/02/27 14:17:10 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: cpu.c,v 1.107 2022/05/22 11:27:33 andvar Exp $");
 
 #include "opt_ddb.h"
 #include "opt_multiprocessor.h"
@@ -850,7 +850,7 @@ cpu_hatch(struct cpu_info *ci)
 	/*
 	 * Invalidate the TLB and sync the I-stream before we
 	 * jump into the kernel proper.  We have to do this
-	 * beacause we haven't been getting IPIs while we've
+	 * because we haven't been getting IPIs while we've
 	 * been spinning.
 	 */
 	ALPHA_TBIA();
@@ -887,7 +887,7 @@ cpu_iccb_send(long cpu_id, const char *msg)
 	 */
 	strcpy(pcsp->pcs_iccb.iccb_rxbuf, msg);
 	pcsp->pcs_iccb.iccb_rxlen = strlen(msg);
-	membar_exit();
+	membar_release();
 	atomic_or_ulong(&hwrpb->rpb_rxrdy, cpumask);
 
 	/* Wait for the message to be received. */

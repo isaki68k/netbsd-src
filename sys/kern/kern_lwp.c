@@ -1,4 +1,4 @@
-/*	$NetBSD: kern_lwp.c,v 1.247 2022/03/10 12:21:25 riastradh Exp $	*/
+/*	$NetBSD: kern_lwp.c,v 1.250 2022/05/22 11:27:36 andvar Exp $	*/
 
 /*-
  * Copyright (c) 2001, 2006, 2007, 2008, 2009, 2019, 2020
@@ -217,7 +217,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_lwp.c,v 1.247 2022/03/10 12:21:25 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_lwp.c,v 1.250 2022/05/22 11:27:36 andvar Exp $");
 
 #include "opt_ddb.h"
 #include "opt_lockdebug.h"
@@ -294,6 +294,15 @@ struct lwp lwp0 __aligned(MIN_LWP_ALIGNMENT) = {
 	.l_fd = &filedesc0,
 };
 
+static int
+lwp_maxlwp(void)
+{
+	/* Assume 1 LWP per 1MiB. */
+	uint64_t lwps_per = ctob(physmem) / (1024 * 1024);
+
+	return MAX(MIN(MAXMAXLWP, lwps_per), MAXLWP);
+}
+
 static int sysctl_kern_maxlwp(SYSCTLFN_PROTO);
 
 /*
@@ -313,9 +322,9 @@ sysctl_kern_maxlwp(SYSCTLFN_ARGS)
 	if (error || newp == NULL)
 		return error;
 
-	if (nmaxlwp < 0 || nmaxlwp >= 65536)
+	if (nmaxlwp < 0 || nmaxlwp >= MAXMAXLWP)
 		return EINVAL;
-	if (nmaxlwp > cpu_maxlwp())
+	if (nmaxlwp > lwp_maxlwp())
 		return EINVAL;
 	maxlwp = nmaxlwp;
 
@@ -350,7 +359,7 @@ lwpinit(void)
 	lwp_cache = pool_cache_init(sizeof(lwp_t), MIN_LWP_ALIGNMENT, 0,
 	    PR_PSERIALIZE, "lwppl", NULL, IPL_NONE, lwp_ctor, lwp_dtor, NULL);
 
-	maxlwp = cpu_maxlwp();
+	maxlwp = lwp_maxlwp();
 	sysctl_kern_lwp_setup();
 }
 
@@ -828,7 +837,7 @@ lwp_create(lwp_t *l1, proc_t *p2, vaddr_t uaddr, int flags,
 
 	/*
 	 * Allocate a process ID for this LWP.  We need to do this now
-	 * while we can still unwind if it fails.  Beacuse we're marked
+	 * while we can still unwind if it fails.  Because we're marked
 	 * as LSIDL, no lookups by the ID will succeed.
 	 *
 	 * N.B. this will always succeed for the first LWP in a process,
@@ -1565,8 +1574,7 @@ lwp_setlock(struct lwp *l, kmutex_t *mtx)
 
 	KASSERT(mutex_owned(oldmtx));
 
-	membar_exit();
-	l->l_mutex = mtx;
+	atomic_store_release(&l->l_mutex, mtx);
 	return oldmtx;
 }
 
@@ -1582,8 +1590,7 @@ lwp_unlock_to(struct lwp *l, kmutex_t *mtx)
 	KASSERT(lwp_locked(l, NULL));
 
 	old = l->l_mutex;
-	membar_exit();
-	l->l_mutex = mtx;
+	atomic_store_release(&l->l_mutex, mtx);
 	mutex_spin_exit(old);
 }
 
@@ -1593,9 +1600,9 @@ lwp_trylock(struct lwp *l)
 	kmutex_t *old;
 
 	for (;;) {
-		if (!mutex_tryenter(old = l->l_mutex))
+		if (!mutex_tryenter(old = atomic_load_consume(&l->l_mutex)))
 			return 0;
-		if (__predict_true(l->l_mutex == old))
+		if (__predict_true(atomic_load_relaxed(&l->l_mutex) == old))
 			return 1;
 		mutex_spin_exit(old);
 	}

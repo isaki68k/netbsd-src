@@ -1,4 +1,4 @@
-/*	$NetBSD: vfs_bio.c,v 1.301 2021/07/25 06:06:40 simonb Exp $	*/
+/*	$NetBSD: vfs_bio.c,v 1.303 2022/03/30 14:54:29 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2007, 2008, 2009, 2019, 2020 The NetBSD Foundation, Inc.
@@ -123,7 +123,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: vfs_bio.c,v 1.301 2021/07/25 06:06:40 simonb Exp $");
+__KERNEL_RCSID(0, "$NetBSD: vfs_bio.c,v 1.303 2022/03/30 14:54:29 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_bufcache.h"

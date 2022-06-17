@@ -1,4 +1,4 @@
-/*	$NetBSD: locore.s,v 1.281 2021/08/09 21:08:06 andvar Exp $	*/
+/*	$NetBSD: locore.s,v 1.283 2022/05/15 02:14:15 mrg Exp $	*/
 
 /*
  * Copyright (c) 1996 Paul Kranenburg
@@ -4225,7 +4225,7 @@ no_3mmu:
 
 	/*
 	 * Ok, we have a non-Mbus TI Viking, a MicroSparc.
-	 * In this scenerio, in order to play with the MMU
+	 * In this scenario, in order to play with the MMU
 	 * passthrough safely, we need turn off traps, flip
 	 * the AC bit on in the mmu status register, do our
 	 * passthroughs, then restore the mmu reg and %psr
@@ -5621,10 +5621,6 @@ Lkcerr:
  *
  * The IPI version just deals with updating event counters first.
  */
-Lpanic_savefpstate:
-	.asciz	"cpu%d: NULL fpstate"
-	_ALIGN
-
 ENTRY(ipi_savefpstate)
 	sethi	%hi(CPUINFO_VA+CPUINFO_SAVEFPSTATE), %o5
 	ldd	[%o5 + %lo(CPUINFO_VA+CPUINFO_SAVEFPSTATE)], %o2

@@ -1,4 +1,4 @@
-/*	$NetBSD: cpu.h,v 1.120 2021/11/02 11:26:04 ryo Exp $	*/
+/*	$NetBSD: cpu.h,v 1.122 2022/05/30 14:48:08 rin Exp $	*/
 
 /*
  * Copyright (C) 1999 Wolfgang Solfrank.
@@ -49,6 +49,7 @@ struct cache_info {
 #include "opt_modular.h"
 #include "opt_multiprocessor.h"
 #include "opt_ppcarch.h"
+#include "opt_ppcopts.h"
 #endif
 
 #ifdef _KERNEL
@@ -471,6 +472,10 @@ extern paddr_t msgbuf_paddr;
 extern int cpu_altivec;
 #endif
 
+#ifdef PPC_NO_UNALIGNED
+bool	fix_unaligned(struct trapframe *, ksiginfo_t *);
+#endif
+
 #endif /* _KERNEL */
 
 /* XXX The below breaks unified pmap on ppc32 */
@@ -506,5 +511,6 @@ void	__syncicache(void *, size_t);
 #define	CPU_BOOTED_KERNEL	10	/* string: kernel we booted */
 #define	CPU_EXECPROT		11	/* bool: PROT_EXEC works */
 #define	CPU_FPU			12
+#define	CPU_NO_UNALIGNED	13	/* No HW support for unaligned access */
 
 #endif	/* _POWERPC_CPU_H_ */

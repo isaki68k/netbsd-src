@@ -1,4 +1,4 @@
-/*	$NetBSD: wdc.c,v 1.308 2021/10/05 08:01:05 rin Exp $ */
+/*	$NetBSD: wdc.c,v 1.310 2022/05/31 08:43:15 andvar Exp $ */
 
 /*
  * Copyright (c) 1998, 2001, 2003 Manuel Bouyer.  All rights reserved.
@@ -58,7 +58,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: wdc.c,v 1.308 2021/10/05 08:01:05 rin Exp $");
+__KERNEL_RCSID(0, "$NetBSD: wdc.c,v 1.310 2022/05/31 08:43:15 andvar Exp $");
 
 #include "opt_ata.h"
 #include "opt_wdc.h"
@@ -997,8 +997,8 @@ wdc_reset_channel(struct ata_channel *chp, int flags)
 	/*
 	 * Look for pending xfers. If we have a shared queue, we'll also reset
 	 * the other channel if the current xfer is running on it.
-	 * Then we'll kill the eventual active transfer explicitely, so that
-	 * it is queued for retry immediatelly without waiting for I/O timeout.
+	 * Then we'll kill the eventual active transfer explicitly, so that
+	 * it is queued for retry immediately without waiting for I/O timeout.
 	 */
 	if (xfer) {
 		if (xfer->c_chp != chp) {

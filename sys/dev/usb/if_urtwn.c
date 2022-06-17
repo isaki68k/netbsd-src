@@ -1,4 +1,4 @@
-/*	$NetBSD: if_urtwn.c,v 1.101 2021/10/21 20:18:16 jnemeth Exp $	*/
+/*	$NetBSD: if_urtwn.c,v 1.103 2022/04/06 22:01:45 mlelstv Exp $	*/
 /*	$OpenBSD: if_urtwn.c,v 1.42 2015/02/10 23:25:46 mpi Exp $	*/
 
 /*-
@@ -25,7 +25,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_urtwn.c,v 1.101 2021/10/21 20:18:16 jnemeth Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_urtwn.c,v 1.103 2022/04/06 22:01:45 mlelstv Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_inet.h"

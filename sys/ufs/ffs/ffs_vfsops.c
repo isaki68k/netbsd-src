@@ -1,4 +1,4 @@
-/*	$NetBSD: ffs_vfsops.c,v 1.374 2022/03/12 15:36:53 riastradh Exp $	*/
+/*	$NetBSD: ffs_vfsops.c,v 1.376 2022/04/16 08:00:55 hannken Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2009 The NetBSD Foundation, Inc.
@@ -61,7 +61,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: ffs_vfsops.c,v 1.374 2022/03/12 15:36:53 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: ffs_vfsops.c,v 1.376 2022/04/16 08:00:55 hannken Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_ffs.h"
@@ -2064,7 +2064,6 @@ ffs_init_vnode(struct ufsmount *ump, struct vnode *vp, ino_t ino)
 	/* Initialise vnode with this inode. */
 	vp->v_tag = VT_UFS;
 	vp->v_op = ffs_vnodeop_p;
-	vp->v_vflag |= VV_LOCKSWORK;
 	vp->v_data = ip;
 
 	/* Initialize genfs node. */
@@ -2481,7 +2480,9 @@ ffs_vfs_fsync(vnode_t *vp, int flags)
 		 * contains no dirty buffers that could be in the log.
 		 */
 		if (!LIST_EMPTY(&vp->v_dirtyblkhd)) {
+			VOP_UNLOCK(vp);
 			error = wapbl_flush(mp->mnt_wapbl, 0);
+			vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
 			if (error)
 				return error;
 		}
@@ -2500,8 +2501,10 @@ ffs_vfs_fsync(vnode_t *vp, int flags)
 	error = vflushbuf(vp, flags);
 	if (error == 0 && (flags & FSYNC_CACHE) != 0) {
 		i = 1;
+		VOP_UNLOCK(vp);
 		(void)VOP_IOCTL(vp, DIOCCACHESYNC, &i, FWRITE,
 		    kauth_cred_get());
+		vn_lock(vp, LK_EXCLUSIVE | LK_RETRY);
 	}
 
 	return error;

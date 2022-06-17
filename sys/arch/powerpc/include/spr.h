@@ -1,4 +1,4 @@
-/*	$NetBSD: spr.h,v 1.54 2021/11/02 11:21:24 ryo Exp $	*/
+/*	$NetBSD: spr.h,v 1.56 2022/05/07 09:02:19 rin Exp $	*/
 
 /*
  * Copyright (c) 2001, The NetBSD Foundation, Inc.

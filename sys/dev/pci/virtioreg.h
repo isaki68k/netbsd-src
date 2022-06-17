@@ -1,4 +1,4 @@
-/*	$NetBSD: virtioreg.h,v 1.7 2021/01/20 19:46:48 reinoud Exp $	*/
+/*	$NetBSD: virtioreg.h,v 1.10 2022/04/13 10:56:11 uwe Exp $	*/
 
 /*
  * Copyright (c) 2010 Minoura Makoto.
@@ -83,7 +83,7 @@
 #define  VIRTIO_F_RING_INDIRECT_DESC		(1<<28)
 #define  VIRTIO_F_RING_EVENT_IDX		(1<<29)
 #define  VIRTIO_F_BAD_FEATURE			(1<<30)
-#define  VIRTIO_F_VERSION_1			(1ULL<<32)
+#define  VIRTIO_F_VERSION_1			(UINT64_C(1) << 32)
 
 /* common device status flags */
 #define  VIRTIO_CONFIG_DEVICE_STATUS_RESET		  0
@@ -99,12 +99,13 @@
 #define  VIRTIO_CONFIG_ISR_CONFIG_CHANGE	2
 
 /* common device/guest features */
-#define VIRTIO_COMMON_FLAG_BITS \
-        "\20" \
-	"\x1f""BAD_FEATURE" \
-	"\x1e""EVENT_IDX" \
-	"\x1d""INDIRECT_DESC" \
-	"\x19""NOTIFY_ON_EMPTY"
+#define VIRTIO_COMMON_FLAG_BITS			\
+        "\177\020"				\
+	"b\x20" "V1\0"				\
+	"b\x1e" "BAD_FEATURE\0"			\
+	"b\x1d" "EVENT_IDX\0"			\
+	"b\x1c" "INDIRECT_DESC\0"		\
+	"b\x18" "NOTIFY_ON_EMPTY\0"
 
 
 /*

@@ -1,4 +1,4 @@
-/*	$NetBSD: if_laggproto.c,v 1.2 2021/05/24 13:43:21 thorpej Exp $	*/
+/*	$NetBSD: if_laggproto.c,v 1.6 2022/03/31 07:59:05 yamaguchi Exp $	*/
 
 /*-
  * SPDX-License-Identifier: BSD-2-Clause-NetBSD
@@ -29,7 +29,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_laggproto.c,v 1.2 2021/05/24 13:43:21 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_laggproto.c,v 1.6 2022/03/31 07:59:05 yamaguchi Exp $");
 
 #include <sys/param.h>
 #include <sys/types.h>
@@ -324,8 +324,8 @@ lagg_common_stopport(struct lagg_proto_softc *psc, struct lagg_port *lp)
 	lagg_proto_remove_port(psc, pport);
 
 	if (pport->lpp_active) {
-		if (psc->psc_nactports > 0)
-			psc->psc_nactports--;
+		KASSERT(psc->psc_nactports > 0);
+		psc->psc_nactports--;
 
 		if (psc->psc_nactports == 0) {
 			ifp = &psc->psc_softc->sc_if;
@@ -355,8 +355,8 @@ lagg_common_linkstate(struct lagg_proto_softc *psc, struct lagg_port *lp)
 		if (psc->psc_nactports == 1)
 			if_link_state_change(ifp, LINK_STATE_UP);
 	} else {
-		if (psc->psc_nactports > 0)
-			psc->psc_nactports--;
+		KASSERT(psc->psc_nactports > 0);
+		psc->psc_nactports--;
 
 		if (psc->psc_nactports == 0)
 			if_link_state_change(ifp, LINK_STATE_DOWN);
@@ -378,13 +378,6 @@ lagg_none_attach(struct lagg_softc *sc, struct lagg_proto_softc **pscp)
 
 	*pscp = NULL;
 	return 0;
-}
-
-int
-lagg_none_up(struct lagg_proto_softc *psc __unused)
-{
-
-	return EBUSY;
 }
 
 int
@@ -419,7 +412,7 @@ lagg_fail_transmit(struct lagg_proto_softc *psc, struct mbuf *m)
 		return ENOENT;
 	}
 
-	lagg_enqueue(psc->psc_softc, lp, m);
+	lagg_output(psc->psc_softc, lp, m);
 	lagg_port_putref(lp, &psref);
 	return 0;
 }
@@ -470,16 +463,19 @@ lagg_fail_portstat(struct lagg_proto_softc *psc, struct lagg_port *lp,
 	pport = lp->lp_proto_ctx;
 
 	if (pport->lpp_active) {
-		SET(resp->rp_flags, LAGG_PORT_ACTIVE);
-		if (fovr->fo_rx_all) {
-			SET(resp->rp_flags, LAGG_PORT_COLLECTING);
-		}
-
 		lp0 = lagg_link_active(psc, NULL, &psref);
 		if (lp0 == lp) {
 			SET(resp->rp_flags,
-			    LAGG_PORT_COLLECTING | LAGG_PORT_DISTRIBUTING);
+			    (LAGG_PORT_ACTIVE |
+			    LAGG_PORT_COLLECTING |
+			    LAGG_PORT_DISTRIBUTING));
+		} else {
+			if (fovr->fo_rx_all) {
+				SET(resp->rp_flags,
+				    LAGG_PORT_COLLECTING);
+			}
 		}
+
 		if (lp0 != NULL)
 			lagg_port_putref(lp0, &psref);
 	}
@@ -617,7 +613,7 @@ lagg_lb_transmit(struct lagg_proto_softc *psc, struct mbuf *m)
 		return ENOENT;
 	}
 
-	lagg_enqueue(psc->psc_softc, lp, m);
+	lagg_output(psc->psc_softc, lp, m);
 	lagg_port_putref(lp, &psref);
 
 	return 0;

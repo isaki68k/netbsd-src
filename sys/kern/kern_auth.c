@@ -1,4 +1,4 @@
-/* $NetBSD: kern_auth.c,v 1.79 2022/03/12 15:32:32 riastradh Exp $ */
+/* $NetBSD: kern_auth.c,v 1.81 2022/04/09 23:38:33 riastradh Exp $ */
 
 /*-
  * Copyright (c) 2005, 2006 Elad Efrat <elad@NetBSD.org>
@@ -28,7 +28,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: kern_auth.c,v 1.79 2022/03/12 15:32:32 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: kern_auth.c,v 1.81 2022/04/09 23:38:33 riastradh Exp $");
 
 #include <sys/types.h>
 #include <sys/param.h>
@@ -145,12 +145,12 @@ kauth_cred_free(kauth_cred_t cred)
 	ASSERT_SLEEPABLE();
 
 #ifndef __HAVE_ATOMIC_AS_MEMBAR
-	membar_exit();
+	membar_release();
 #endif
 	if (atomic_dec_uint_nv(&cred->cr_refcnt) > 0)
 		return;
 #ifndef __HAVE_ATOMIC_AS_MEMBAR
-	membar_enter();
+	membar_acquire();
 #endif
 
 	kauth_cred_hook(cred, KAUTH_CRED_FREE, NULL, NULL);
@@ -402,6 +402,25 @@ kauth_cred_ismember_gid(kauth_cred_t cred, gid_t gid, int *resultp)
 		}
 
 	return (0);
+}
+
+int
+kauth_cred_groupmember(kauth_cred_t cred, gid_t gid)
+{
+	int ismember, error;
+
+	KASSERT(cred != NULL);
+	KASSERT(cred != NOCRED);
+	KASSERT(cred != FSCRED);
+
+	error = kauth_cred_ismember_gid(cred, gid, &ismember);
+	if (error)
+		return error;
+
+	if (kauth_cred_getegid(cred) == gid || ismember)
+		return 0;
+
+	return -1;
 }
 
 u_int

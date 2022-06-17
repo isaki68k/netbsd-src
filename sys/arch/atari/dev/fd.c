@@ -1,4 +1,4 @@
-/*	$NetBSD: fd.c,v 1.89 2021/08/07 16:18:46 thorpej Exp $	*/
+/*	$NetBSD: fd.c,v 1.92 2022/05/15 20:37:51 andvar Exp $	*/
 
 /*
  * Copyright (c) 1995 Leo Weppelman.
@@ -44,7 +44,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: fd.c,v 1.89 2021/08/07 16:18:46 thorpej Exp $");
+__KERNEL_RCSID(0, "$NetBSD: fd.c,v 1.92 2022/05/15 20:37:51 andvar Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -184,7 +184,7 @@ struct fd_types {
 /*
  * This is set only once at attach time. The value is determined by reading
  * the configuration switches and is one of the FLP_TYPE_*'s. 
- * This is simular to the way Atari handles the _FLP cookie.
+ * This is similar to the way Atari handles the _FLP cookie.
  */
 static short	def_type = 0;		/* Reflects config-switches	*/
 
@@ -555,7 +555,7 @@ fdopen(dev_t dev, int flags, int devtype, struct lwp *l)
 		 * floppy (eq. the same partition).
 		 */
 		if (sc->density != fdtypes[DISKPART(dev)].density)
-			return ENXIO;	/* XXX temporarely out of business */
+			return ENXIO;	/* XXX temporarily out of business */
 	}
 	fdgetdisklabel(sc, dev);
 #ifdef FLP_DEBUG
@@ -1255,7 +1255,7 @@ fdmoff(struct fd_softc *fdsoftc)
 }
 
 /*
- * Used to find out wich drives are actually connected. We do this by issuing
+ * Used to find out which drives are actually connected. We do this by issuing
  * is 'RESTORE' command and check if the 'track-0' bit is set. This also works
  * if the drive is present but no floppy is inserted.
  */

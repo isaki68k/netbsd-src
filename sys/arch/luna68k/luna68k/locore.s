@@ -1,4 +1,4 @@
-/* $NetBSD: locore.s,v 1.66 2021/03/31 09:48:14 simonb Exp $ */
+/* $NetBSD: locore.s,v 1.68 2022/06/10 21:42:24 tsutsui Exp $ */
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -646,7 +646,7 @@ ENTRY_NOPROFILE(intrhand_vectored)
 ENTRY_NOPROFILE(lev5intr)
 	addql	#1,_C_LABEL(idepth)
 	btst	#7,OBIO_CLOCK		| check whether system clock
-	beq	1f
+	beq	2f
 	movb	#1,OBIO_CLOCK		| clear the interrupt
 	tstl	_C_LABEL(clock_enable)	| is hardclock() available?
 	jeq	1f
@@ -660,6 +660,11 @@ ENTRY_NOPROFILE(lev5intr)
 1:
 	subql	#1,_C_LABEL(idepth)
 	jra	_ASM_LABEL(rei)		| all done
+2:
+					| XP device has also lev5 intr,
+					| routing to autovec
+	subql	#1,_C_LABEL(idepth)
+	jbra	_ASM_LABEL(intrhand_autovec)
 #endif
 
 /*
@@ -669,7 +674,7 @@ ENTRY_NOPROFILE(lev5intr)
  * (profiling, scheduling) and software interrupts (network, softclock).
  * We check for ASTs first, just like the VAX.  To avoid excess overhead
  * the T_ASTFLT handling code will also check for software interrupts so we
- * do not have to do it here.  After identifing that we need an AST we
+ * do not have to do it here.  After identifying that we need an AST we
  * drop the IPL to allow device interrupts.
  *
  * This code is complicated by the fact that sendsig may have been called

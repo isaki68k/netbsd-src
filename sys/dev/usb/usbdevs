@@ -1,4 +1,4 @@
-$NetBSD: usbdevs,v 1.801 2022/01/17 11:09:57 bouyer Exp $
+$NetBSD: usbdevs,v 1.804 2022/05/22 00:47:00 charlotte Exp $
 
 /*-
  * Copyright (c) 1998-2004 The NetBSD Foundation, Inc.
@@ -2356,6 +2356,7 @@ product MICROSOFT XBOX_DVD_PLAYBACK	0x0284	Xbox DVD Movie Playback Kit
 product MICROSOFT XBOX_CONTROLLER_S10	0x0285	Xbox Controller S (1.0)
 product MICROSOFT XBOX_CONTROLLER_HUB	0x0288	Xbox Controller Hub
 product MICROSOFT XBOX_CONTROLLER_S12	0x0289	Xbox Controller S (1.2)
+product MICROSOFT XBOX_360_CONTROLLER	0x028e	Xbox 360 Controller
 product MICROSOFT XBOX_360_WIRELESS_RECEIVER 0x0291 Xbox 360 Wireless Receiver
 product MICROSOFT 24GHZ_XCVR10		0x071d	2.4GHz Transceiver V1.0
 product MICROSOFT 24GHZ_XCVR20		0x071f	2.4GHz Transceiver V2.0
@@ -2805,6 +2806,12 @@ product PROLIFIC RSAQ2		0x04bb	PL2303 Serial adapter (IODATA USB-RSAQ2)
 product PROLIFIC PL2303		0x2303	PL2303 Serial adapter (ATEN/IOGEAR UC232A)
 product PROLIFIC PL2305		0x2305	Parallel printer adapter
 product PROLIFIC ATAPI4		0x2307	ATAPI-4 Bridge Controller
+product PROLIFIC PL2303GC	0x23a3	PL2303 Serial adapter
+product PROLIFIC PL2303GB	0x23b3	PL2303 Serial adapter
+product PROLIFIC PL2303GT	0x23c3	PL2303 Serial adapter
+product PROLIFIC PL2303GL	0x23d3	PL2303 Serial adapter
+product PROLIFIC PL2303GE	0x23e3	PL2303 Serial adapter
+product PROLIFIC PL2303GS	0x23f3	PL2303 Serial adapter
 product PROLIFIC PL2501		0x2501	PL2501 Host-Host interface
 product PROLIFIC PL25A1		0x25a1	PL25A1 Host-Host interface
 product PROLIFIC PL2303X	0xaaa0	PL2303 Serial adapter (Pharos GPS)
@@ -3543,6 +3550,7 @@ product WACOM GRAPHIRE4_4X5	0x0015	Graphire4 4x5
 product WACOM INTUOSA5		0x0021	Intuos A5
 product WACOM GD0912U		0x0022	Intuos 9x12 Graphics Tablet
 product WACOM XD0912U		0x0043	Intuos2 A4 i-920 XD-0912-U
+product WACOM CTL671		0x0301	CTL-671 Tablet
 product WACOM CTH690K0		0x033e	Intuos Art CTH-690/K0
 
 /* Weltrend Semiconductor */

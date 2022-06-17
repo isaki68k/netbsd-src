@@ -1,4 +1,4 @@
-/*	$NetBSD: rk_v1crypto.c,v 1.7 2021/01/27 03:10:19 thorpej Exp $	*/
+/*	$NetBSD: rk_v1crypto.c,v 1.10 2022/05/13 09:49:44 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2020 The NetBSD Foundation, Inc.
@@ -36,7 +36,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(1, "$NetBSD: rk_v1crypto.c,v 1.7 2021/01/27 03:10:19 thorpej Exp $");
+__KERNEL_RCSID(1, "$NetBSD: rk_v1crypto.c,v 1.10 2022/05/13 09:49:44 riastradh Exp $");
 
 #include <sys/types.h>
 
@@ -128,7 +128,7 @@ rk_v1crypto_attach(device_t parent, device_t self, void *aux)
 
 	sc->sc_dev = self;
 	sc->sc_bst = faa->faa_bst;
-	mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_VM);
+	mutex_init(&sc->sc_lock, MUTEX_DEFAULT, IPL_SOFTSERIAL);
 
 	/* Get and map device registers.  */
 	if (fdtbus_get_reg(phandle, 0, &addr, &size) != 0) {
@@ -268,7 +268,7 @@ rk_v1crypto_rng_get(size_t nbytes, void *cookie)
 			device_printf(self, "timed out\n");
 			break;
 		}
-		if (consttime_memequal(buf, buf + n/2, n/2)) {
+		if (consttime_memequal(buf, buf + n/2, sizeof(buf[0]) * n/2)) {
 			device_printf(self, "failed repeated output test\n");
 			break;
 		}
@@ -300,7 +300,7 @@ rk_v1crypto_sysctl_attach(struct rk_v1crypto_softc *sc)
 	}
 
 	/* hw.rkv1cryptoN.rng (`struct', 32-byte array) */
-	sysctl_createv(&cy->cy_log, 0, &cy->cy_root_node, NULL,
+	error = sysctl_createv(&cy->cy_log, 0, &cy->cy_root_node, NULL,
 	    CTLFLAG_PERMANENT|CTLFLAG_READONLY|CTLFLAG_PRIVATE, CTLTYPE_STRUCT,
 	    "rng", SYSCTL_DESCR("Read up to 32 bytes out of the TRNG"),
 	    &rk_v1crypto_sysctl_rng, 0, sc, 0, CTL_CREATE, CTL_EOL);

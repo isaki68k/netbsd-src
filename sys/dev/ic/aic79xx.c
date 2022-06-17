@@ -1,4 +1,4 @@
-/*	$NetBSD: aic79xx.c,v 1.64 2022/03/08 20:45:56 andvar Exp $	*/
+/*	$NetBSD: aic79xx.c,v 1.68 2022/05/23 19:52:35 andvar Exp $	*/
 
 /*
  * Core routines and tables shareable across OS platforms.
@@ -49,7 +49,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: aic79xx.c,v 1.64 2022/03/08 20:45:56 andvar Exp $");
+__KERNEL_RCSID(0, "$NetBSD: aic79xx.c,v 1.68 2022/05/23 19:52:35 andvar Exp $");
 
 #include <dev/ic/aic79xx_osm.h>
 #include <dev/ic/aic79xx_inline.h>
@@ -104,7 +104,7 @@ static struct ahd_phase_table_entry ahd_phase_table[] =
 };
 
 /*
- * In most cases we only wish to itterate over real phases, so
+ * In most cases we only wish to iterate over real phases, so
  * exclude the last element from the count.
  */
 static const u_int num_phases = NUM_ELEMENTS(ahd_phase_table) - 1;
@@ -653,7 +653,7 @@ ahd_run_data_fifo(struct ahd_softc *ahd, struct scb *scb)
 			ahd_outb(ahd, SG_STATE, 0);
 
 			/*
-			 * Flush the data FIFO.  Strickly only
+			 * Flush the data FIFO.  Strictly only
 			 * necessary for Rev A parts.
 			 */
 			ahd_outb(ahd, DFCNTRL,
@@ -2579,7 +2579,7 @@ ahd_clear_critical_section(struct ahd_softc *ahd)
 		ahd_outb(ahd, SEQCTL0, ahd_inb(ahd, SEQCTL0) & ~STEP);
 		ahd_outb(ahd, SIMODE1, simode1);
 		/*
-		 * SCSIINT seems to glitch occassionally when
+		 * SCSIINT seems to glitch occasionally when
 		 * the interrupt masks are restored.  Clear SCSIINT
 		 * one more time so that only persistent errors
 		 * are seen as a real interrupt.
@@ -5276,7 +5276,7 @@ ahd_reset(struct ahd_softc *ahd, int reinit)
 		 * does not disable its parity logic prior to
 		 * the start of the reset.  This may cause a
 		 * parity error to be detected and thus a
-		 * spurious SERR or PERR assertion.  Disble
+		 * spurious SERR or PERR assertion.  Disable
 		 * PERR and SERR responses during the CHIPRST.
 		 */
 		mod_cmd = cmd &
@@ -6019,7 +6019,7 @@ ahd_init(struct ahd_softc *ahd)
 				  M_DEVBUF, M_WAITOK | M_ZERO);
 
 	/*
-	 * Verify that the compiler hasn't over-agressively
+	 * Verify that the compiler hasn't over-aggressively
 	 * padded important structures.
 	 */
 	if (sizeof(struct hardware_scb) != 64)

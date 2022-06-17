@@ -1,4 +1,4 @@
-/*	$NetBSD: if_lagg_lacp.c,v 1.13 2022/01/16 10:45:17 rillig Exp $	*/
+/*	$NetBSD: if_lagg_lacp.c,v 1.25 2022/04/10 09:50:46 andvar Exp $	*/
 
 /*-
  * SPDX-License-Identifier: BSD-2-Clause-NetBSD
@@ -31,7 +31,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if_lagg_lacp.c,v 1.13 2022/01/16 10:45:17 rillig Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if_lagg_lacp.c,v 1.25 2022/04/10 09:50:46 andvar Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_lagg.h"
@@ -42,6 +42,7 @@ __KERNEL_RCSID(0, "$NetBSD: if_lagg_lacp.c,v 1.13 2022/01/16 10:45:17 rillig Exp
 
 #include <sys/evcnt.h>
 #include <sys/kmem.h>
+#include <sys/pcq.h>
 #include <sys/pslist.h>
 #include <sys/sysctl.h>
 #include <sys/syslog.h>
@@ -163,13 +164,18 @@ struct lacp_softc {
 				 lsc_aggregators;
 	struct workqueue	*lsc_workq;
 	struct lagg_work	 lsc_work_tick;
+	struct lagg_work	 lsc_work_rcvdu;
 	callout_t		 lsc_tick;
+	pcq_t			*lsc_du_q;
 
 	char			 lsc_evgroup[32];
 	struct evcnt		 lsc_mgethdr_failed;
 	struct evcnt		 lsc_mpullup_failed;
 	struct evcnt		 lsc_badlacpdu;
 	struct evcnt		 lsc_badmarkerdu;
+	struct evcnt		 lsc_norcvif;
+	struct evcnt		 lsc_nolaggport;
+	struct evcnt		 lsc_duq_nospc;
 
 	bool			 lsc_optimistic;
 	bool			 lsc_stop_lacpdu;
@@ -277,6 +283,7 @@ static void	lacp_sm_ptx_timer(struct lacp_softc *, struct lacp_port *);
 static void	lacp_sm_ptx_schedule(struct lacp_port *);
 static void	lacp_sm_ptx_update_timeout(struct lacp_port *, uint8_t);
 
+static void	lacp_rcvdu_work(struct lagg_work *, void *);
 static void	lacp_marker_work(struct lagg_work *, void *);
 static void	lacp_dump_lacpdutlv(const struct lacpdu_peerinfo *,
 		    const struct lacpdu_peerinfo *,
@@ -430,6 +437,9 @@ tlv_parse(void *vp, size_t len, struct tlv *list)
 		if (th->tlv_type == TLV_TYPE_TERMINATE)
 			break;
 
+		if (th->tlv_length <= 0)
+			break;
+
 		for (i = 0; list[i].tlv_t != TLV_TYPE_TERMINATE; i++) {
 			if (th->tlv_type != list[i].tlv_t)
 				continue;
@@ -460,6 +470,12 @@ lacp_attach(struct lagg_softc *sc, struct lagg_proto_softc **lscp)
 	if (lsc == NULL)
 		return ENOMEM;
 
+	lsc->lsc_du_q = pcq_create(LACP_RCVDU_LIMIT, KM_NOSLEEP);
+	if (lsc->lsc_du_q == NULL) {
+		error = ENOMEM;
+		goto free_lsc;
+	}
+
 	mutex_init(&lsc->lsc_lock, MUTEX_DEFAULT, IPL_SOFTNET);
 	lsc->lsc_softc = sc;
 	lsc->lsc_key = htons(if_get_index(&sc->sc_if));
@@ -470,12 +486,14 @@ lacp_attach(struct lagg_softc *sc, struct lagg_proto_softc **lscp)
 	TAILQ_INIT(&lsc->lsc_aggregators);
 
 	lagg_work_set(&lsc->lsc_work_tick, lacp_tick_work, lsc);
+	lagg_work_set(&lsc->lsc_work_rcvdu, lacp_rcvdu_work, lsc);
+
 	snprintf(xnamebuf, sizeof(xnamebuf), "%s.lacp",
 	    sc->sc_if.if_xname);
 	lsc->lsc_workq = lagg_workq_create(xnamebuf,
 	    PRI_SOFTNET, IPL_SOFTNET, WQ_MPSAFE);
 	if (lsc->lsc_workq == NULL) {
-		lagg_log(sc, LOG_ERR, "workqueue create failed\n");
+		LAGG_LOG(sc, LOG_ERR, "workqueue create failed\n");
 		error = ENOMEM;
 		goto destroy_lock;
 	}
@@ -489,16 +507,21 @@ lacp_attach(struct lagg_softc *sc, struct lagg_proto_softc **lscp)
 	    "%s-lacp", sc->sc_if.if_xname);
 	lacp_evcnt_attach(lsc, &lsc->lsc_mgethdr_failed, "MGETHDR failed");
 	lacp_evcnt_attach(lsc, &lsc->lsc_mpullup_failed, "m_pullup failed");
-	lacp_evcnt_attach(lsc, &lsc->lsc_badlacpdu, "Bad LACPDU recieved");
-	lacp_evcnt_attach(lsc, &lsc->lsc_badmarkerdu, "Bad MarkerDU recieved");
+	lacp_evcnt_attach(lsc, &lsc->lsc_badlacpdu, "Bad LACPDU received");
+	lacp_evcnt_attach(lsc, &lsc->lsc_badmarkerdu, "Bad MarkerDU received");
+	lacp_evcnt_attach(lsc, &lsc->lsc_norcvif, "No received interface");
+	lacp_evcnt_attach(lsc, &lsc->lsc_nolaggport, "No lagg context");
+	lacp_evcnt_attach(lsc, &lsc->lsc_duq_nospc, "No space left on queues");
 
 	if_link_state_change(&sc->sc_if, LINK_STATE_DOWN);
 
 	*lscp = (struct lagg_proto_softc *)lsc;
 	return 0;
-
 destroy_lock:
 	mutex_destroy(&lsc->lsc_lock);
+	pcq_destroy(lsc->lsc_du_q);
+free_lsc:
+	kmem_free(lsc, sizeof(*lsc));
 
 	return error;
 }
@@ -515,13 +538,18 @@ lacp_detach(struct lagg_proto_softc *xlsc)
 
 	lacp_down(xlsc);
 
+	lagg_workq_wait(lsc->lsc_workq, &lsc->lsc_work_rcvdu);
 	evcnt_detach(&lsc->lsc_mgethdr_failed);
 	evcnt_detach(&lsc->lsc_mpullup_failed);
 	evcnt_detach(&lsc->lsc_badlacpdu);
 	evcnt_detach(&lsc->lsc_badmarkerdu);
+	evcnt_detach(&lsc->lsc_norcvif);
+	evcnt_detach(&lsc->lsc_nolaggport);
+	evcnt_detach(&lsc->lsc_duq_nospc);
 	lagg_workq_destroy(lsc->lsc_workq);
 	pserialize_destroy(lsc->lsc_psz);
 	mutex_destroy(&lsc->lsc_lock);
+	pcq_destroy(lsc->lsc_du_q);
 	kmem_free(lsc, sizeof(*lsc));
 }
 
@@ -619,7 +647,7 @@ lacp_transmit(struct lagg_proto_softc *xlsc, struct mbuf *m)
 		return ENOENT;
 	}
 
-	lagg_enqueue(lsc->lsc_softc, lp, m);
+	lagg_output(lsc->lsc_softc, lp, m);
 	lagg_port_putref(lp, &psref);
 
 	return 0;
@@ -639,11 +667,10 @@ lacp_allocport(struct lagg_proto_softc *xlsc, struct lagg_port *lp)
 	sc = lsc->lsc_softc;
 
 	KASSERT(LAGG_LOCKED(sc));
+	KASSERT(IFNET_LOCKED(lp->lp_ifp));
 
-	IFNET_LOCK(lp->lp_ifp);
 	lacp_mcastaddr(&ifr, lp->lp_ifp->if_xname);
 	error = lp->lp_ioctl(lp->lp_ifp, SIOCADDMULTI, (void *)&ifr);
-	IFNET_UNLOCK(lp->lp_ifp);
 
 	switch (error) {
 	case 0:
@@ -653,7 +680,7 @@ lacp_allocport(struct lagg_proto_softc *xlsc, struct lagg_port *lp)
 		added_multi = false;
 		break;
 	default:
-		lagg_log(sc, LOG_ERR, "SIOCADDMULTI failed on %s\n",
+		LAGG_LOG(sc, LOG_ERR, "SIOCADDMULTI failed on %s\n",
 		    lp->lp_ifp->if_xname);
 		return error;
 	}
@@ -672,7 +699,6 @@ lacp_allocport(struct lagg_proto_softc *xlsc, struct lagg_port *lp)
 
 	lp->lp_proto_ctx = (void *)lacpp;
 	lp->lp_prio = ntohs(lacpp->lp_actor.lpi_portprio);
-	lacp_linkstate(xlsc, lp);
 
 	return 0;
 }
@@ -723,6 +749,7 @@ lacp_freeport(struct lagg_proto_softc *xlsc, struct lagg_port *lp)
 	lacpp = lp->lp_proto_ctx;
 
 	KASSERT(LAGG_LOCKED(lsc->lsc_softc));
+	KASSERT(IFNET_LOCKED(lp->lp_ifp));
 
 	lagg_workq_wait(lsc->lsc_workq, &lacpp->lp_work_smtx);
 	lagg_workq_wait(lsc->lsc_workq, &lacpp->lp_work_marker);
@@ -730,9 +757,7 @@ lacp_freeport(struct lagg_proto_softc *xlsc, struct lagg_port *lp)
 	if (lacpp->lp_added_multi) {
 		lacp_mcastaddr(&ifr, LACP_PORT_XNAME(lacpp));
 
-		IFNET_LOCK(lp->lp_ifp);
 		(void)lp->lp_ioctl(lp->lp_ifp, SIOCDELMULTI, (void *)&ifr);
-		IFNET_UNLOCK(lp->lp_ifp);
 	}
 
 	lp->lp_proto_ctx = NULL;
@@ -867,7 +892,9 @@ lacp_linkstate_ifnet_locked(struct lagg_proto_softc *xlsc, struct lagg_port *lp)
 		}
 
 		if (ISSET(media, LACP_MEDIA_ETHER) &&
+#ifndef LACP_NOFDX
 		    ISSET(media, LACP_MEDIA_FDX) &&
+#endif
 		    ifp_port->if_link_state != LINK_STATE_DOWN &&
 		    ISSET(ifp_port->if_flags, IFF_RUNNING)) {
 			lacp_port_enable(lsc, lacpp);
@@ -917,8 +944,14 @@ lacp_ioctl(struct lagg_proto_softc *xlsc, struct laggreqproto *lreq)
 			lsc->lsc_dump_du = set;
 		if (ISSET(rplacp->flags, LAGGREQLACP_STOPDU))
 			lsc->lsc_stop_lacpdu = set;
-		if (ISSET(rplacp->flags, LAGGREQLACP_MULTILS))
+
+		if (ISSET(rplacp->flags, LAGGREQLACP_MULTILS) &&
+		    lsc->lsc_multi_linkspeed != set) {
 			lsc->lsc_multi_linkspeed = set;
+			TAILQ_FOREACH(la, &lsc->lsc_aggregators, la_q) {
+				lacp_selected_update(lsc, la);
+			}
+		}
 
 		LACP_UNLOCK(lsc);
 		break;
@@ -977,9 +1010,6 @@ lacp_pdu_input(struct lacp_softc *lsc, struct lacp_port *lacpp, struct mbuf *m)
 	};
 
 	if (m->m_pkthdr.len != sizeof(*du))
-		goto bad;
-
-	if ((m->m_flags & M_MCAST) == 0)
 		goto bad;
 
 	if (m->m_len < (int)sizeof(*du)) {
@@ -1058,7 +1088,8 @@ lacp_marker_reply(struct lacp_softc *lsc, struct lacp_port *lacpp,
 	mdu = mtod(m_info, struct markerdu *);
 
 	mdu->mdu_tlv_info.tlv_type = MARKER_TYPE_RESPONSE;
-	/* ether_dhost is already equals to multicast address */
+	/* ether_dhost is already ethermulticastaddr_slowprotocols */
+	m_info->m_flags |= M_MCAST;
 	memcpy(mdu->mdu_eh.ether_shost,
 	    CLLADDR(ifp_port->if_sadl), ETHER_ADDR_LEN);
 
@@ -1145,9 +1176,6 @@ lacp_marker_input(struct lacp_softc *lsc, struct lacp_port *lacpp,
 	if (m->m_pkthdr.len != sizeof(*mdu))
 		goto bad;
 
-	if ((m->m_flags & M_MCAST) == 0)
-		goto bad;
-
 	if (m->m_len < (int)sizeof(*mdu)) {
 		m = m_pullup(m, sizeof(*mdu));
 		if (m == NULL) {
@@ -1217,12 +1245,17 @@ lacp_input(struct lagg_proto_softc *xlsc, struct lagg_port *lp, struct mbuf *m)
 
 		m_copydata(m, sizeof(struct ether_header),
 		    sizeof(subtype), &subtype);
+
 		switch (subtype) {
 		case SLOWPROTOCOLS_SUBTYPE_LACP:
-			(void)lacp_pdu_input(lsc, lacpp, m);
-			return NULL;
 		case SLOWPROTOCOLS_SUBTYPE_MARKER:
-			(void)lacp_marker_input(lsc, lacpp, m);
+			if (pcq_put(lsc->lsc_du_q, (void *)m)) {
+				lagg_workq_add(lsc->lsc_workq,
+				    &lsc->lsc_work_rcvdu);
+			} else {
+				m_freem(m);
+				lsc->lsc_duq_nospc.ev_count++;
+			}
 			return NULL;
 		}
 	}
@@ -1234,6 +1267,62 @@ lacp_input(struct lagg_proto_softc *xlsc, struct lagg_port *lp, struct mbuf *m)
 	}
 
 	return m;
+}
+
+static void
+lacp_rcvdu_work(struct lagg_work *lw __unused, void *xlsc)
+{
+	struct lacp_softc *lsc = (struct lacp_softc *)xlsc;
+	struct ifnet *ifp;
+	struct psref psref_lp;
+	struct lagg_port *lp;
+	struct mbuf *m;
+	uint8_t subtype;
+	int bound, s;
+
+	bound = curlwp_bind();
+
+	for (;;) {
+		m = pcq_get(lsc->lsc_du_q);
+		if (m == NULL)
+			break;
+
+		ifp = m_get_rcvif(m, &s);
+		if (ifp == NULL) {
+			m_freem(m);
+			lsc->lsc_norcvif.ev_count++;
+			continue;
+		}
+
+		lp = atomic_load_consume(&ifp->if_lagg);
+		if (lp == NULL) {
+			m_put_rcvif(ifp, &s);
+			m_freem(m);
+			lsc->lsc_norcvif.ev_count++;
+			continue;
+		}
+
+		lagg_port_getref(lp, &psref_lp);
+		m_put_rcvif(ifp, &s);
+
+		m_copydata(m, sizeof(struct ether_header),
+		    sizeof(subtype), &subtype);
+
+		switch (subtype) {
+		case SLOWPROTOCOLS_SUBTYPE_LACP:
+			(void)lacp_pdu_input(lsc,
+			    lp->lp_proto_ctx, m);
+			break;
+		case SLOWPROTOCOLS_SUBTYPE_MARKER:
+			(void)lacp_marker_input(lsc,
+			    lp->lp_proto_ctx, m);
+			break;
+		}
+
+		lagg_port_putref(lp, &psref_lp);
+	}
+
+	curlwp_bindx(bound);
 }
 
 static bool
@@ -1256,7 +1345,7 @@ lacp_port_need_to_tell(struct lacp_port *lacpp)
 		return false;
 
 	if (ppsratecheck(&lacpp->lp_last_lacpdu, &lacpp->lp_lacpdu_sent,
-	    (3 / LACP_FAST_PERIODIC_TIME)) == 0)
+	    (LACP_SENDDU_PPS / LACP_FAST_PERIODIC_TIME)) == 0)
 		return false;
 
 	return true;
@@ -1294,6 +1383,7 @@ lacp_lacpdu_mbuf(struct lacp_softc *lsc, struct lacp_port *lacpp)
 	}
 
 	m->m_pkthdr.len = m->m_len = sizeof(*du);
+	m_reset_rcvif(m);
 
 	du = mtod(m, struct lacpdu *);
 	memset(du, 0, sizeof(*du));
@@ -2099,9 +2189,8 @@ lacp_set_mux(struct lacp_softc *lsc, struct lacp_port *lacpp,
 	sc = lacpp->lp_laggport->lp_softc;
 	ifp = &sc->sc_if;
 
-	if (lacpp->lp_mux_state == new_state) {
+	if (lacpp->lp_mux_state == new_state)
 		return -1;
-	}
 
 	switch (new_state) {
 	case LACP_MUX_DETACHED:
@@ -2298,7 +2387,6 @@ lacp_select(struct lacp_softc *lsc, struct lacp_port *lacpp)
 	struct lacp_aggregator_systemid *sid;
 	struct lacp_port *lacpp0;
 	char buf[LACP_SYSTEMIDSTR_LEN] __LACPDEBUGUSED;
-	bool insert_after;
 
 	if (lacpp->lp_aggregator != NULL)
 		return;
@@ -2340,25 +2428,20 @@ lacp_select(struct lacp_softc *lsc, struct lacp_port *lacpp)
 	lacpp->lp_aggregator = la;
 	lacpp->lp_selected = LACP_STANDBY;
 
-	insert_after = false;
-
 	LIST_FOREACH(lacpp0, &la->la_ports, lp_entry_la) {
-		if (lacp_port_priority_max(lacpp0, lacpp) == lacpp)
+		if (lacp_port_priority_max(lacpp0, lacpp) == lacpp) {
+			LIST_INSERT_BEFORE(lacpp0, lacpp, lp_entry_la);
 			break;
+		}
 
 		if (LIST_NEXT(lacpp0, lp_entry_la) == NULL) {
-			insert_after = true;
+			LIST_INSERT_AFTER(lacpp0, lacpp, lp_entry_la);
 			break;
 		}
 	}
 
-	if (lacpp0 == NULL) {
+	if (lacpp0 == NULL)
 		LIST_INSERT_HEAD(&la->la_ports, lacpp, lp_entry_la);
-	} else if (insert_after) {
-		LIST_INSERT_AFTER(lacpp0, lacpp, lp_entry_la);
-	} else {
-		LIST_INSERT_BEFORE(lacpp0, lacpp, lp_entry_la);
-	}
 
 	lacp_selected_update(lsc, la);
 }
@@ -2399,9 +2482,8 @@ lacp_unselect(struct lacp_softc *lsc, struct lacp_port *lacpp)
 		TAILQ_REMOVE(&lsc->lsc_aggregators, la, la_q);
 		kmem_free(la, sizeof(*la));
 
-		if (remove_actaggr) {
+		if (remove_actaggr)
 			lacp_select_active_aggregator(lsc);
-		}
 	} else {
 		lacp_selected_update(lsc, la);
 	}
@@ -2461,6 +2543,7 @@ lacp_markerdu_mbuf(struct lacp_softc *lsc, struct lacp_port *lacpp)
 	}
 
 	m->m_pkthdr.len = m->m_len = sizeof(*mdu);
+	m_reset_rcvif(m);
 
 	mdu = mtod(m, struct markerdu *);
 
@@ -2584,7 +2667,6 @@ lacp_dump_markertlv(const struct markerdu_info *mi_info,
 		    ntohs(mi_res->mi_rq_port),
 		    ether_sprintf(mi_res->mi_rq_system),
 		    ntohl(mi_res->mi_rq_xid));
-
 	}
 }
 

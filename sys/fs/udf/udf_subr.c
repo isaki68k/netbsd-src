@@ -1,4 +1,4 @@
-/* $NetBSD: udf_subr.c,v 1.167 2022/03/08 18:30:43 reinoud Exp $ */
+/* $NetBSD: udf_subr.c,v 1.171 2022/05/28 21:14:57 andvar Exp $ */
 
 /*
  * Copyright (c) 2006, 2008 Reinoud Zandijk
@@ -29,7 +29,7 @@
 
 #include <sys/cdefs.h>
 #ifndef lint
-__KERNEL_RCSID(0, "$NetBSD: udf_subr.c,v 1.167 2022/03/08 18:30:43 reinoud Exp $");
+__KERNEL_RCSID(0, "$NetBSD: udf_subr.c,v 1.171 2022/05/28 21:14:57 andvar Exp $");
 #endif /* not lint */
 
 
@@ -2161,7 +2161,7 @@ udf_update_logvolname(struct udf_mount *ump, char *logvol_id)
 	if (ump->implementation)
 		lvi = &ump->implementation->_impl_use.lv_info;
 
-	/* logvol's id might be specified as origional so use memmove here */
+	/* logvol's id might be specified as original so use memmove here */
 	memmove(lvd->logvol_id, logvol_id, 128);
 	if (fsd)
 		memmove(fsd->logvol_id, logvol_id, 128);
@@ -2439,11 +2439,11 @@ udf_extattr_search_intern(struct udf_node *node,
 		if ((a_l == 0) || (a_l > l_ea))
 			return EINVAL;
 
-		if (attrhdr->type != sattr)
+		if (udf_rw32(attrhdr->type) != sattr)
 			goto next_attribute;
 
 		/* we might have found it! */
-		if (attrhdr->type < 2048) {	/* Ecma-167 attribute */
+		if (udf_rw32(attrhdr->type) < 2048) {	/* Ecma-167 attribute */
 			*offsetp = offset;
 			*lengthp = a_l;
 			return 0;		/* success */
@@ -4683,7 +4683,7 @@ udf_create_new_fe(struct udf_mount *ump, struct file_entry *fe, int file_type,
 	icb = &fe->icbtag;
 
 	/*
-	 * Always use strategy type 4 unless on WORM wich we don't support
+	 * Always use strategy type 4 unless on WORM which we don't support
 	 * (yet). Fill in defaults and set for internal allocation of data.
 	 */
 	icb->strat_type      = udf_rw16(4);
@@ -4765,7 +4765,7 @@ udf_create_new_efe(struct udf_mount *ump, struct extfile_entry *efe,
 	icb = &efe->icbtag;
 
 	/*
-	 * Always use strategy type 4 unless on WORM wich we don't support
+	 * Always use strategy type 4 unless on WORM which we don't support
 	 * (yet). Fill in defaults and set for internal allocation of data.
 	 */
 	icb->strat_type      = udf_rw16(4);
@@ -5921,7 +5921,7 @@ udf_newvnode(struct mount *mp, struct vnode *dvp, struct vnode *vp,
 	/* initialise genfs */
 	genfs_node_init(vp, &udf_genfsops);
 
-	/* get parent's unique ID for refering '..' if its a directory */
+	/* get parent's unique ID for referring '..' if its a directory */
 	if (dir_node->fe) {
 		parent_unique_id = udf_rw64(dir_node->fe->unique_id);
 		parent_gid       = (gid_t) udf_rw32(dir_node->fe->gid);

@@ -1,4 +1,4 @@
-/*	$NetBSD: umidi.c,v 1.85 2022/03/14 16:14:11 riastradh Exp $	*/
+/*	$NetBSD: umidi.c,v 1.87 2022/04/17 13:15:15 riastradh Exp $	*/
 
 /*
  * Copyright (c) 2001, 2012, 2014 The NetBSD Foundation, Inc.
@@ -32,7 +32,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: umidi.c,v 1.85 2022/03/14 16:14:11 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: umidi.c,v 1.87 2022/04/17 13:15:15 riastradh Exp $");
 
 #ifdef _KERNEL_OPT
 #include "opt_usb.h"
@@ -870,58 +870,79 @@ static usbd_status
 alloc_all_endpoints_yamaha(struct umidi_softc *sc)
 {
 	/* This driver currently supports max 1in/1out bulk endpoints */
+	char *end;
+	usb_config_descriptor_t *cdesc;
 	usb_descriptor_t *desc;
-	umidi_cs_descriptor_t *udesc;
+	umidi_cs_descriptor_t *csdesc;
+	usb_interface_descriptor_t *idesc;
+	umidi_cs_interface_descriptor_t *udesc;
 	usb_endpoint_descriptor_t *epd;
 	int out_addr, in_addr, i;
 	int dir;
-	size_t remain, descsize;
 
 	sc->sc_out_num_jacks = sc->sc_in_num_jacks = 0;
 	out_addr = in_addr = 0;
 
 	/* detect endpoints */
-	desc = TO_D(usbd_get_interface_descriptor(sc->sc_iface));
-	for (i=(int)TO_IFD(desc)->bNumEndpoints-1; i>=0; i--) {
+	cdesc = usbd_get_config_descriptor(sc->sc_udev);
+	end = (char *)cdesc + UGETW(cdesc->wTotalLength);
+	idesc = usbd_get_interface_descriptor(sc->sc_iface);
+	KASSERT((char *)cdesc <= (char *)idesc);
+	KASSERT((char *)idesc < end);
+	KASSERT(end - (char *)idesc >= sizeof(*idesc));
+	KASSERT(idesc->bLength >= sizeof(*idesc));
+	KASSERT(idesc->bLength <= end - (char *)idesc);
+	for (i = idesc->bNumEndpoints; i --> 0;) {
 		epd = usbd_interface2endpoint_descriptor(sc->sc_iface, i);
 		KASSERT(epd != NULL);
 		if (UE_GET_XFERTYPE(epd->bmAttributes) == UE_BULK) {
 			dir = UE_GET_DIR(epd->bEndpointAddress);
-			if (dir==UE_DIR_OUT && !out_addr)
+			if (dir == UE_DIR_OUT && !out_addr)
 				out_addr = epd->bEndpointAddress;
-			else if (dir==UE_DIR_IN && !in_addr)
+			else if (dir == UE_DIR_IN && !in_addr)
 				in_addr = epd->bEndpointAddress;
 		}
 	}
-	udesc = (umidi_cs_descriptor_t *)NEXT_D(desc);
+	desc = NEXT_D(idesc);
+	if ((char *)desc > end || end - (char *)desc < sizeof(*desc) ||
+	    desc->bLength < sizeof(*desc) ||
+	    desc->bLength > end - (char *)desc)
+		return USBD_INVAL;
 
 	/* count jacks */
-	if (!(udesc->bDescriptorType==UDESC_CS_INTERFACE &&
-	      udesc->bDescriptorSubtype==UMIDI_MS_HEADER))
+	if (desc->bDescriptorType != UDESC_CS_INTERFACE ||
+	    desc->bLength < sizeof(*csdesc))
 		return USBD_INVAL;
-	remain = (size_t)UGETW(TO_CSIFD(udesc)->wTotalLength) -
-		(size_t)udesc->bLength;
-	udesc = (umidi_cs_descriptor_t *)NEXT_D(udesc);
+	csdesc = (umidi_cs_descriptor_t *)desc;
+	if (csdesc->bDescriptorSubtype != UMIDI_MS_HEADER)
+		return USBD_INVAL;
+	udesc = TO_CSIFD(csdesc);
+	if (UGETW(udesc->wTotalLength) > end - (char *)udesc)
+		return USBD_INVAL;
+	if (UGETW(udesc->wTotalLength) < udesc->bLength)
+		return USBD_INVAL;
+	end = (char *)udesc + UGETW(udesc->wTotalLength);
+	desc = NEXT_D(udesc);
 
-	while (remain >= sizeof(usb_descriptor_t)) {
-		descsize = udesc->bLength;
-		if (descsize>remain || descsize==0)
+	for (; end - (char *)desc >= sizeof(*desc); desc = NEXT_D(desc)) {
+		if (desc->bLength < sizeof(*desc) ||
+		    desc->bLength > end - (char *)desc)
 			break;
-		if (udesc->bDescriptorType == UDESC_CS_INTERFACE &&
-		    remain >= UMIDI_JACK_DESCRIPTOR_SIZE) {
-			if (udesc->bDescriptorSubtype == UMIDI_OUT_JACK)
-				sc->sc_out_num_jacks++;
-			else if (udesc->bDescriptorSubtype == UMIDI_IN_JACK)
-				sc->sc_in_num_jacks++;
-		}
-		udesc = (umidi_cs_descriptor_t *)NEXT_D(udesc);
-		remain -= descsize;
+		if (desc->bDescriptorType != UDESC_CS_INTERFACE ||
+		    desc->bLength < sizeof(*csdesc) ||
+		    desc->bLength < UMIDI_JACK_DESCRIPTOR_SIZE)
+			continue;
+		csdesc = (umidi_cs_descriptor_t *)desc;
+		if (csdesc->bDescriptorSubtype == UMIDI_OUT_JACK)
+			sc->sc_out_num_jacks++;
+		else if (csdesc->bDescriptorSubtype == UMIDI_IN_JACK)
+			sc->sc_in_num_jacks++;
 	}
 
 	/* validate some parameters */
-	if (sc->sc_out_num_jacks>UMIDI_MAX_EPJACKS)
+	if (sc->sc_out_num_jacks > UMIDI_MAX_EPJACKS)
 		sc->sc_out_num_jacks = UMIDI_MAX_EPJACKS;
-	if (sc->sc_in_num_jacks>UMIDI_MAX_EPJACKS)
+	if (sc->sc_in_num_jacks > UMIDI_MAX_EPJACKS)
 		sc->sc_in_num_jacks = UMIDI_MAX_EPJACKS;
 	if (sc->sc_out_num_jacks && out_addr) {
 		sc->sc_out_num_endpoints = 1;
@@ -949,7 +970,7 @@ alloc_all_endpoints_yamaha(struct umidi_softc *sc)
 		sc->sc_out_ep = NULL;
 
 	if (sc->sc_in_num_endpoints) {
-		sc->sc_in_ep = sc->sc_endpoints+sc->sc_out_num_endpoints;
+		sc->sc_in_ep = sc->sc_endpoints + sc->sc_out_num_endpoints;
 		sc->sc_in_ep->sc = sc;
 		sc->sc_in_ep->addr = in_addr;
 		sc->sc_in_ep->num_jacks = sc->sc_in_num_jacks;
@@ -966,8 +987,8 @@ alloc_all_endpoints_genuine(struct umidi_softc *sc)
 	usb_interface_descriptor_t *interface_desc;
 	usb_config_descriptor_t *config_desc;
 	usb_descriptor_t *desc;
+	char *end;
 	int num_ep;
-	size_t remain, descsize;
 	struct umidi_endpoint *p, *q, *lowest, *endep, tmpep;
 	int epaddr;
 
@@ -983,25 +1004,25 @@ alloc_all_endpoints_genuine(struct umidi_softc *sc)
 
 	/* get the list of endpoints for midi stream */
 	config_desc = usbd_get_config_descriptor(sc->sc_udev);
-	desc = (usb_descriptor_t *) config_desc;
-	remain = (size_t)UGETW(config_desc->wTotalLength);
-	while (remain>=sizeof(usb_descriptor_t)) {
-		descsize = desc->bLength;
-		if (descsize>remain || descsize==0)
+	end = (char *)config_desc + UGETW(config_desc->wTotalLength);
+	desc = TO_D(config_desc);
+	for (; end - (char *)desc >= sizeof(*desc); desc = NEXT_D(desc)) {
+		if (desc->bLength < sizeof(*desc) ||
+		    desc->bLength > end - (char *)desc)
 			break;
-		if (desc->bDescriptorType==UDESC_ENDPOINT &&
-		    remain>=USB_ENDPOINT_DESCRIPTOR_SIZE &&
+		if (desc->bDescriptorType == UDESC_ENDPOINT &&
+		    desc->bLength >= sizeof(*TO_EPD(desc)) &&
 		    UE_GET_XFERTYPE(TO_EPD(desc)->bmAttributes) == UE_BULK) {
 			epaddr = TO_EPD(desc)->bEndpointAddress;
-		} else if (desc->bDescriptorType==UDESC_CS_ENDPOINT &&
-			   remain>=UMIDI_CS_ENDPOINT_DESCRIPTOR_SIZE &&
-			   epaddr!=-1) {
-			if (num_ep>0) {
+		} else if (desc->bDescriptorType == UDESC_CS_ENDPOINT &&
+		    desc->bLength >= sizeof(*TO_CSEPD(desc)) &&
+		    epaddr != -1) {
+			if (num_ep > 0) {
 				num_ep--;
 				p->sc = sc;
 				p->addr = epaddr;
 				p->num_jacks = TO_CSEPD(desc)->bNumEmbMIDIJack;
-				if (UE_GET_DIR(epaddr)==UE_DIR_OUT) {
+				if (UE_GET_DIR(epaddr) == UE_DIR_OUT) {
 					sc->sc_out_num_endpoints++;
 					sc->sc_out_num_jacks += p->num_jacks;
 				} else {
@@ -1012,8 +1033,6 @@ alloc_all_endpoints_genuine(struct umidi_softc *sc)
 			}
 		} else
 			epaddr = -1;
-		desc = NEXT_D(desc);
-		remain-=descsize;
 	}
 
 	/* sort endpoints */

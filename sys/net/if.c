@@ -1,4 +1,4 @@
-/*	$NetBSD: if.c,v 1.502 2022/03/12 15:32:32 riastradh Exp $	*/
+/*	$NetBSD: if.c,v 1.505 2022/05/22 11:27:36 andvar Exp $	*/
 
 /*-
  * Copyright (c) 1999, 2000, 2001, 2008 The NetBSD Foundation, Inc.
@@ -90,7 +90,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: if.c,v 1.502 2022/03/12 15:32:32 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: if.c,v 1.505 2022/05/22 11:27:36 andvar Exp $");
 
 #if defined(_KERNEL_OPT)
 #include "opt_inet.h"
@@ -1820,12 +1820,12 @@ ifafree(struct ifaddr *ifa)
 	KASSERTMSG(ifa->ifa_refcnt > 0, "ifa_refcnt=%d", ifa->ifa_refcnt);
 
 #ifndef __HAVE_ATOMIC_AS_MEMBAR
-	membar_exit();
+	membar_release();
 #endif
 	if (atomic_dec_uint_nv(&ifa->ifa_refcnt) != 0)
 		return;
 #ifndef __HAVE_ATOMIC_AS_MEMBAR
-	membar_enter();
+	membar_acquire();
 #endif
 	free(ifa, M_IFADDR);
 }
@@ -2090,7 +2090,7 @@ ifa_ifwithnet_psref(const struct sockaddr *addr, struct psref *psref)
 }
 
 /*
- * Find the interface of the addresss.
+ * Find the interface of the address.
  */
 struct ifaddr *
 ifa_ifwithladdr(const struct sockaddr *addr)
@@ -3824,7 +3824,7 @@ if_do_dad(struct ifnet *ifp)
 		/*
 		 * Our DAD routine requires the interface up and running.
 		 * However, some interfaces can be up before the RUNNING
-		 * status.  Additionaly, users may try to assign addresses
+		 * status.  Additionally, users may try to assign addresses
 		 * before the interface becomes up (or running).
 		 * We simply skip DAD in such a case as a work around.
 		 * XXX: we should rather mark "tentative" on such addresses,

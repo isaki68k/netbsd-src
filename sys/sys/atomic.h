@@ -1,4 +1,4 @@
-/*	$NetBSD: atomic.h,v 1.22 2021/12/18 16:31:40 riastradh Exp $	*/
+/*	$NetBSD: atomic.h,v 1.24 2022/04/09 23:34:30 riastradh Exp $	*/
 
 /*-
  * Copyright (c) 2007, 2008 The NetBSD Foundation, Inc.
@@ -181,11 +181,17 @@ uint8_t 	atomic_cas_8(volatile uint8_t *, uint8_t, uint8_t);
 /*
  * Memory barrier operations
  */
-void		membar_enter(void);
-void		membar_exit(void);
+void		membar_acquire(void);
+void		membar_release(void);
 void		membar_producer(void);
 void		membar_consumer(void);
 void		membar_sync(void);
+
+/*
+ * Deprecated memory barriers
+ */
+void		membar_enter(void);
+void		membar_exit(void);
 
 #ifdef	__HAVE_MEMBAR_DATADEP_CONSUMER
 void		membar_datadep_consumer(void);
@@ -448,18 +454,12 @@ void kcsan_atomic_store(volatile void *, const void *, int);
 	__END_ATOMIC_LOAD(__al_val);					      \
 })
 
-/*
- * We want {loads}-before-{loads,stores}.  It is tempting to use
- * membar_enter, but that provides {stores}-before-{loads,stores},
- * which may not help.  So we must use membar_sync, which does the
- * slightly stronger {loads,stores}-before-{loads,stores}.
- */
 #define	atomic_load_acquire(p)						      \
 ({									      \
 	const volatile __typeof__(*(p)) *__al_ptr = (p);		      \
 	__ATOMIC_PTR_CHECK(__al_ptr);					      \
 	__BEGIN_ATOMIC_LOAD(__al_ptr, __al_val);			      \
-	membar_sync();							      \
+	membar_acquire();						      \
 	__END_ATOMIC_LOAD(__al_val);					      \
 })
 
@@ -476,7 +476,7 @@ void kcsan_atomic_store(volatile void *, const void *, int);
 	volatile __typeof__(*(p)) *__as_ptr = (p);			      \
 	__typeof__(*(p)) __as_val = (v);				      \
 	__ATOMIC_PTR_CHECK(__as_ptr);					      \
-	membar_exit();							      \
+	membar_release();						      \
 	__DO_ATOMIC_STORE(__as_ptr, __as_val);				      \
 })
 

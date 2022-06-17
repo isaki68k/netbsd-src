@@ -1,4 +1,4 @@
-/*	$NetBSD: sys_descrip.c,v 1.38 2021/09/11 10:09:13 riastradh Exp $	*/
+/*	$NetBSD: sys_descrip.c,v 1.40 2022/04/16 07:59:02 hannken Exp $	*/
 
 /*-
  * Copyright (c) 2008, 2020 The NetBSD Foundation, Inc.
@@ -67,7 +67,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sys_descrip.c,v 1.38 2021/09/11 10:09:13 riastradh Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sys_descrip.c,v 1.40 2022/04/16 07:59:02 hannken Exp $");
 
 #include <sys/param.h>
 #include <sys/systm.h>
@@ -595,7 +595,9 @@ sys_fpathconf(struct lwp *l, const struct sys_fpathconf_args *uap,
 		break;
 
 	case DTYPE_VNODE:
+		vn_lock(fp->f_vnode, LK_SHARED | LK_RETRY);
 		error = VOP_PATHCONF(fp->f_vnode, SCARG(uap, name), retval);
+		VOP_UNLOCK(fp->f_vnode);
 		break;
 
 	case DTYPE_KQUEUE:
@@ -672,6 +674,7 @@ sys_flock(struct lwp *l, const struct sys_flock_args *uap, register_t *retval)
 int
 do_posix_fadvise(int fd, off_t offset, off_t len, int advice)
 {
+	const off_t OFF_MAX = __type_max(off_t);
 	file_t *fp;
 	vnode_t *vp;
 	off_t endoffset;
@@ -685,8 +688,8 @@ do_posix_fadvise(int fd, off_t offset, off_t len, int advice)
 		return EINVAL;
 	}
 	if (len == 0) {
-		endoffset = INT64_MAX;
-	} else if (len > 0 && (INT64_MAX - offset) >= len) {
+		endoffset = OFF_MAX;
+	} else if (len > 0 && (OFF_MAX - offset) >= len) {
 		endoffset = offset + len;
 	} else {
 		return EINVAL;
@@ -743,8 +746,8 @@ do_posix_fadvise(int fd, off_t offset, off_t len, int advice)
 		 * region.  It means that if the specified region is smaller
 		 * than PAGE_SIZE, we do nothing.
 		 */
-		if (round_page(offset) < trunc_page(endoffset) &&
-		    offset <= round_page(offset)) {
+		if (offset <= trunc_page(OFF_MAX) &&
+		    round_page(offset) < trunc_page(endoffset)) {
 			rw_enter(vp->v_uobj.vmobjlock, RW_WRITER);
 			error = VOP_PUTPAGES(vp,
 			    round_page(offset), trunc_page(endoffset),

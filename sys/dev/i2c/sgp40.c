@@ -1,4 +1,4 @@
-/*	$NetBSD: sgp40.c,v 1.2 2021/10/20 17:52:44 christos Exp $	*/
+/*	$NetBSD: sgp40.c,v 1.5 2022/05/24 06:28:01 andvar Exp $	*/
 
 /*
  * Copyright (c) 2021 Brad Spencer <brad@anduin.eldar.org>
@@ -17,7 +17,7 @@
  */
 
 #include <sys/cdefs.h>
-__KERNEL_RCSID(0, "$NetBSD: sgp40.c,v 1.2 2021/10/20 17:52:44 christos Exp $");
+__KERNEL_RCSID(0, "$NetBSD: sgp40.c,v 1.5 2022/05/24 06:28:01 andvar Exp $");
 
 /*
   Driver for the Sensirion SGP40 MOx gas sensor for air quality
@@ -159,16 +159,16 @@ sgp40_compute_temp_comp(int unconverted)
 {
 	/*
 	 * The published algorithm for this conversion is:
-	 * (temp_in_celcius + 45) * 65535 / 175
+	 * (temp_in_celsius + 45) * 65535 / 175
 	 *
 	 * However, this did not exactly yield the results that
 	 * the example in the data sheet, so something a little
 	 * different was done.
 	 *
-	 * (temp_in_celcius + 45) * 65536 / 175
+	 * (temp_in_celsius + 45) * 65536 / 175
 	 *
 	 * This was also scaled up by 10^2 and then scaled back to
-	 * preserve some percision.  37449 is simply (65536 * 100) / 175
+	 * preserve some precision.  37449 is simply (65536 * 100) / 175
 	 * and rounded.
 	 */
 
@@ -191,7 +191,7 @@ sgp40_compute_rh_comp(int unconverted)
 	 * %rh * 65536 / 100
 	 *
 	 * This was also scaled up by 10^2 and then scaled back to
-	 * preserve some percision.  The value is also latched to 65535
+	 * preserve some precision.  The value is also latched to 65535
 	 * as an upper limit.
 	 */
 
@@ -229,7 +229,7 @@ sgp40_take_measurement(void *aux, VocAlgorithmParams* params)
 	args[5] = sgp40_crc(&args[3], 2);
 
 	/*
-	 * The VOC algoritm has a black out time when it first starts to run
+	 * The VOC algorithm has a black out time when it first starts to run
 	 * and does not return any indicator that is going on, so voc_index
 	 * in that case would be 0..  however, that is also a valid response
 	 * otherwise, although an unlikely one.
@@ -800,7 +800,7 @@ sgp40_detach(device_t self, int flags)
 	return 0;
 }
 
-MODULE(MODULE_CLASS_DRIVER, sgp40mox, "i2cexec,sysmon_envsys");
+MODULE(MODULE_CLASS_DRIVER, sgp40mox, "iic,sysmon_envsys");
 
 #ifdef _MODULE
 #include "ioconf.c"

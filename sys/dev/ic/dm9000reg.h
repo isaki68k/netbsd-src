@@ -1,4 +1,4 @@
-/*	$NetBSD: dm9000reg.h,v 1.7 2021/10/21 13:21:54 andvar Exp $	*/
+/*	$NetBSD: dm9000reg.h,v 1.10 2022/05/31 12:59:00 andvar Exp $	*/
 
 /*
  * Copyright (c) 2009 Paul Fleischer
@@ -68,10 +68,10 @@
 #define DM9000_TCR		0x02	/* Tx control */
 #define  DM9000_TCR_TXREQ	(1<<0)	/* request to start Tx, self clear */
 #define  DM9000_TCR_CRC_DIS1	(1<<1)	/* disable PAD op on Tx1 */
-#define  DM9000_TCR_PAD_DIS1	(1<<2)	/* disbale CRC append on Tx1 */
+#define  DM9000_TCR_PAD_DIS1	(1<<2)	/* disable CRC append on Tx1 */
 #define  DM9000_TCR_CRC_DIS2	(1<<3)	/* disable PAD op on Tx2 */
-#define  DM9000_TCR_PAD_DIS2	(1<<4)	/* disbale CRC append on Tx2 */
-#define  DM9000_TCR_EXCECM	(1<<5)	/* allow infinate colli. retries */
+#define  DM9000_TCR_PAD_DIS2	(1<<4)	/* disable CRC append on Tx2 */
+#define  DM9000_TCR_EXCECM	(1<<5)	/* allow infinite colli. retries */
 #define  DM9000_TCR_TJDIS	(1<<6)	/* disable xmit jabber, otherwise on */
 #define DM9000_TSR1		0x03	/* transmit completion status 1 */
 #define DM9000_TSR2		0x04	/* transmit completion status 2 */
@@ -171,8 +171,8 @@
 #define DM9000_OTCR	0x2E	/* operation test control */
 #define DM9000_SMCR	0x2F	/* special mode control */
 #define  DM9000_FB0	(1<<0)	/* force shortest back-off time */
-#define  DM9000_FB1	(1<<1)	/* force longeset back-off time */
-#define  DM9000_FLC	(1<<2)	/* force late collsion */
+#define  DM9000_FB1	(1<<1)	/* force longest back-off time */
+#define  DM9000_FLC	(1<<2)	/* force late collision */
 #define  DM9000_SM_EN	(1<<7)	/* serial mode enable */
 #define DM9000_ETXCSR	0x30	/* early xmit control and status */
 #define DM9000_TCSCR	0x31	/* xmit checksum control */

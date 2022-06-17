@@ -1,4 +1,4 @@
-#	$NetBSD: Makefile,v 1.262 2021/12/07 17:39:54 brad Exp $
+#	$NetBSD: Makefile,v 1.266 2022/06/04 03:31:10 pgoyette Exp $
 
 .include <bsd.own.mk>
 
@@ -24,6 +24,7 @@ SUBDIR+=	compat_crypto_50
 SUBDIR+=	accf_dataready
 SUBDIR+=	accf_httpready
 SUBDIR+=	adosfs
+SUBDIR+=	adiantum
 SUBDIR+=	aio
 SUBDIR+=	audio
 SUBDIR+=	autofs
@@ -70,6 +71,7 @@ SUBDIR+=	hythygtemp
 SUBDIR+=	am2315temp
 SUBDIR+=	i2cexec
 SUBDIR+=	i2c_bitbang
+SUBDIR+=	i2c_subr
 SUBDIR+=	if_agr
 SUBDIR+=	if_aue
 SUBDIR+=	if_axe
@@ -113,6 +115,7 @@ SUBDIR+=	luasystm
 SUBDIR+=	luapmf
 SUBDIR+=	mfs
 SUBDIR+=	midi
+SUBDIR+=	midi_seq
 SUBDIR+=	miiverbose
 SUBDIR+=	miniroot
 SUBDIR+=	mqueue
@@ -144,9 +147,10 @@ SUBDIR+=	ptyfs
 SUBDIR+=	puffs
 SUBDIR+=	putter
 SUBDIR+=	raid
-SUBDIR+=	scsiverbose
 SUBDIR+=	scmd
 SUBDIR+=	scmdi2c
+SUBDIR+=	scsi_subr
+SUBDIR+=	scsiverbose
 SUBDIR+=	sdtemp
 SUBDIR+=	secmodel_bsd44
 SUBDIR+=	secmodel_extensions
