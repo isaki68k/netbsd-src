@@ -602,70 +602,103 @@ Lbrkpt3:
  */
 
 ENTRY_NOPROFILE(spurintr)		/* Level 0 */
-	addql	#1,_C_LABEL(intrcnt)+0
+	addql	#1,_C_LABEL(intrcnt_spur)
 	INTERRUPT_SAVEREG
 	CPUINFO_INCREMENT(CI_NINTR)
 	INTERRUPT_RESTOREREG
 	jra	_ASM_LABEL(rei)
 
-ENTRY_NOPROFILE(intrhand_autovec)	/* Levels 1 through 6 */
+ENTRY_NOPROFILE(lev1intr)
+	addql	#1,_C_LABEL(intrcnt_lev1)
 	INTERRUPT_SAVEREG
-	movw	%sp@(22),%sp@-		| push exception vector
-	clrw	%sp@-
-	jbsr	_C_LABEL(isrdispatch_autovec)	| call dispatcher
-	addql	#4,%sp
+	CPUINFO_INCREMENT(CI_NINTR)
+	jbsr	_C_LABEL(isrdispatch_autovec_lev1)
 	INTERRUPT_RESTOREREG
-	jra	_ASM_LABEL(rei)		| all done
+	jra	_ASM_LABEL(rei)
+
+ENTRY_NOPROFILE(lev2intr)
+	addql	#1,_C_LABEL(intrcnt_lev2)
+	INTERRUPT_SAVEREG
+	CPUINFO_INCREMENT(CI_NINTR)
+	jbsr	_C_LABEL(isrdispatch_autovec_lev2)
+	INTERRUPT_RESTOREREG
+	jra	_ASM_LABEL(rei)
+
+ENTRY_NOPROFILE(lev3intr)
+	addql	#1,_C_LABEL(intrcnt_lev3)
+	INTERRUPT_SAVEREG
+	CPUINFO_INCREMENT(CI_NINTR)
+	jbsr	_C_LABEL(isrdispatch_autovec_lev3)
+	INTERRUPT_RESTOREREG
+	jra	_ASM_LABEL(rei)
+
+ENTRY_NOPROFILE(lev4intr)
+	addql	#1,_C_LABEL(intrcnt_lev4)
+	INTERRUPT_SAVEREG
+	CPUINFO_INCREMENT(CI_NINTR)
+	jbsr	_C_LABEL(isrdispatch_autovec_lev4)
+	INTERRUPT_RESTOREREG
+	jra	_ASM_LABEL(rei)
+
+ENTRY_NOPROFILE(lev5intr)
+	INTERRUPT_SAVEREG
+	CPUINFO_INCREMENT(CI_NINTR)
+
+	addql	#1,_C_LABEL(idepth)
+	/* XXX wild timer -- how can I disable/enable the interrupt? */
+	btst	#7,OBIO_CLOCK		| check whether system clock
+	beq	1f
+	movb	#1,OBIO_CLOCK		| clear the interrupt
+	tstl	_C_LABEL(clock_enable)	| is hardclock() available?
+	jeq	1f
+	lea	%sp@(16),%a1		| %a1 = &clockframe
+	movl	%a1,%sp@-
+	jbsr	_C_LABEL(hardclock)	| hardclock(&frame)
+	addql	#4,%sp
+	addql	#1,_C_LABEL(intrcnt_sysclock)
+1:
+					| XP device has also lev5 intr,
+
+	btst	#XP_INT5_REQ,OBIO_PIO0C | XP lev5 intrrupt?
+	beq	2f
+	tstb	OBIO_PIO0A		| clear the interrupt
+	addql	#1,_C_LABEL(intrcnt_xp_intr5)
+	/*	jbsr	_C_LABEL(xp_intr5) */
+	jbsr	_C_LABEL(isrdispatch_autovec_lev5)
+2:
+
+					| VSYNC?
+	moveb	#31,BMAP_CRTC
+	btst	#1,BMAP_CRTC+1
+	beq	3f
+	addql	#1,_C_LABEL(intrcnt_lev5)
+
+3:
+	INTERRUPT_RESTOREREG
+	subql	#1,_C_LABEL(idepth)
+	jra	_ASM_LABEL(rei)
+
+ENTRY_NOPROFILE(lev6intr)
+	addql	#1,_C_LABEL(intrcnt_lev6)
+	INTERRUPT_SAVEREG
+	CPUINFO_INCREMENT(CI_NINTR)
+	jbsr	_C_LABEL(isrdispatch_autovec_lev6)
+	INTERRUPT_RESTOREREG
+	jra	_ASM_LABEL(rei)
 
 ENTRY_NOPROFILE(lev7intr)		/* Level 7: NMI */
-	addql	#1,_C_LABEL(intrcnt)+32
+	addql	#1,_C_LABEL(intrcnt_lev7)
 	clrl	%sp@-
 	moveml	#0xFFFF,%sp@-		| save registers
 	movl	%usp,%a0		| and save
 	movl	%a0,%sp@(FR_SP)		|   the user stack pointer
+	CPUINFO_INCREMENT(CI_NINTR)
 	jbsr	_C_LABEL(nmihand)	| call handler
 	movl	%sp@(FR_SP),%a0		| restore
 	movl	%a0,%usp		|   user SP
 	moveml	%sp@+,#0x7FFF		| and remaining registers
 	addql	#8,%sp			| pop SP and stack adjust
 	jra	_ASM_LABEL(rei)		| all done
-
-ENTRY_NOPROFILE(intrhand_vectored)
-	INTERRUPT_SAVEREG
-	lea	%sp@(16),%a1		| get pointer to frame
-	movl	%a1,%sp@-
-	movw	%sp@(26),%d0
-	movl	%d0,%sp@-		| push exception vector info
-	movl	%sp@(26),%sp@-		| and PC
-	jbsr	_C_LABEL(isrdispatch_vectored)	| call dispatcher
-	lea	%sp@(12),%sp		| pop value args
-	INTERRUPT_RESTOREREG
-	jra	_ASM_LABEL(rei)		| all done
-
-#if 1	/* XXX wild timer -- how can I disable/enable the interrupt? */
-ENTRY_NOPROFILE(lev5intr)
-	addql	#1,_C_LABEL(idepth)
-	btst	#7,OBIO_CLOCK		| check whether system clock
-	beq	2f
-	movb	#1,OBIO_CLOCK		| clear the interrupt
-	tstl	_C_LABEL(clock_enable)	| is hardclock() available?
-	jeq	1f
-	INTERRUPT_SAVEREG
-	lea	%sp@(16),%a1		| %a1 = &clockframe
-	movl	%a1,%sp@-
-	jbsr	_C_LABEL(hardclock)	| hardclock(&frame)
-	addql	#4,%sp
-	addql	#1,_C_LABEL(intrcnt)+20
-	INTERRUPT_RESTOREREG
-1:
-	subql	#1,_C_LABEL(idepth)
-	jra	_ASM_LABEL(rei)		| all done
-2:
-					| XP device has also lev5 intr,
-					| routing to autovec
-	subql	#1,_C_LABEL(idepth)
-	jbra	_ASM_LABEL(intrhand_autovec)
-#endif
 
 /*
  * Emulation of VAX REI instruction.
@@ -961,16 +994,36 @@ GLOBAL(intiotop_phys)
 
 GLOBAL(intrnames)
 	.asciz	"spur"
-	.asciz	"lev1"
+	.asciz	"xp-lev1"
 	.asciz	"scsi"
-	.asciz	"network"
-	.asciz	"lev4"
-	.asciz	"clock"
+	.asciz	"network,ext"
+	.asciz	"extPC98"
+	.asciz	"lev5"
 	.asciz	"serial"
 	.asciz	"nmi"
-	.asciz	"statclock"
+	.asciz	"sysclock"
+	.asciz	"xp-lev5"
 GLOBAL(eintrnames)
 	.even
 GLOBAL(intrcnt)
-	.long	0,0,0,0,0,0,0,0,0
+intrcnt_spur:
+	.long	0
+intrcnt_lev1:
+	.long	0
+intrcnt_lev2:	/* scsi */
+	.long	0
+intrcnt_lev3:	/* network */
+	.long	0
+intrcnt_lev4:
+	.long	0
+intrcnt_lev5:	/* sysclock, xp */
+	.long	0
+intrcnt_lev6:	/* serial */
+	.long	0
+intrcnt_lev7:	/* nmi */
+	.long	0
+intrcnt_sysclock:
+	.long	0
+intrcnt_xp_intr5:
+	.long	0
 GLOBAL(eintrcnt)
