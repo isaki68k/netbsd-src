@@ -89,12 +89,6 @@ struct wsdisplay_emulops {
 #define WSATTR_PRIVATE2  8192
 #define WSATTR_PRIVATE3 16384
 #define WSATTR_PRIVATE4 32768
-
-#if defined(VT100_SIXEL)
-/* WSATTR_SIXEL also means sixel repeat count */
-#define WSATTR_SIXEL	(1 << 16)
-#endif
-
 	/* XXX need a free_attr() ??? */
 	void	(*replaceattr)(void *, long, long);
 };

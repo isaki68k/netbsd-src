@@ -112,7 +112,6 @@ extern int hwplanecount;
 /*
  * internal attributes. see allocattr
  */
-#define OMFB_ATTR_SIXEL			(1U << 31)
 #define OMFB_ATTR_MULTICOLOR		(1U << 30)
 #define OMFB_ATTR_UNDERLINE		(1U << 17)
 #define OMFB_ATTR_BOLD			(1U << 16)

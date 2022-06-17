@@ -67,11 +67,6 @@ struct vt100base_data {
 	int dcspos;
 #define DCS_MAXLEN 256 /* ??? */
 #define DCSTYPE_TABRESTORE 1 /* DCS2$t */
-
-#if defined(VT100_SIXEL)
-#define DCSTYPE_SIXEL	2
-#endif
-
 };
 
 /* some useful utility macros */

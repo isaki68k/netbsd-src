@@ -91,13 +91,6 @@ om_fill_color(int,
 	uint8_t *, int, int,
 	int, int);
 
-#if defined(VT100_SIXEL)
-static void
-omfb_sixel(struct rasops_info */*ri*/,
-	int /*y*/, int /*x*/,
-	u_int /*uc*/, long /*attr*/);
-#endif
-
 #define	ALL1BITS	(~0U)
 #define	ALL0BITS	(0U)
 #define	BLITWIDTH	(32)
@@ -525,13 +518,6 @@ omfb_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 	int fontstride;
 	int heightscale;
 	uint8_t *fb;
-
-#if defined(VT100_SIXEL)
-	if ((attr & OMFB_ATTR_SIXEL)) {
-		omfb_sixel(ri, row, startcol, uc, attr);
-		return;
-	}
-#endif
 
 	y = ri->ri_font->fontheight * row;
 	x = ri->ri_font->fontwidth * startcol;
@@ -1522,8 +1508,7 @@ omfb_cursor(void *cookie, int on, int row, int col)
 /*
  * attr bitmap:
  * 31 30 29 ............ 18 17 16
- * SI MC <--- reserved ---> UL BO
- *  SI: SIXEL mode (VT100_SIXEL で使用)
+ *  0 MC <--- reserved ---> UL BO
  *  MC: multi-color row attribute (copyrows で利用)
  *   SI or MC が立っている行は複数カラー使用されていると判定する
  *  UL: Underline (現在未サポート)
@@ -1581,12 +1566,6 @@ omfb_allocattr(void *id, int fg, int bg, int flags, long *attrp)
 		return EINVAL;
 #endif
 	}
-
-#if defined(VT100_SIXEL)
-	if ((flags & WSATTR_SIXEL)) {
-		a |= OMFB_ATTR_SIXEL;
-	}
-#endif
 
 	fg &= omfb_planemask;
 	bg &= omfb_planemask;
@@ -1740,155 +1719,3 @@ omrasops_init(struct rasops_info *ri, int wantrows, int wantcols)
 
 	return 0;
 }
-
-#if defined(VT100_SIXEL)
-/*
- * rendering SIXEL graphics
- * y: (row-relative-y [pixel]) << 16 | row
- * x: (col-relative-x [pixel]) << 16 | col
- * uc: sixel char
- *  uc:0:16 = repeat width
- *  uc:16:16 = sixel pattern
- * attr: (attr:fg) = color
- */
-static void
-omfb_sixel(struct rasops_info *ri, int yrow, int xcol, u_int uc, long attr)
-{
-	uint32_t ptn;
-	int xh, xl;
-	int fg, bg;
-	int dw;
-	int i;
-	uint8_t *dst;
-	uint32_t mask;
-	int16_t ormode;
-	int16_t width;
-	int col;
-	int x;
-	int row;
-	int y;
-
-	width = (uc >> 16) & 2047;
-	uc &= 0xffff;
-	if ('?' <= uc && uc <= '~') {
-		ptn = uc - '?';
-	} else {
-		return;
-	}
-
-	col = xcol & 0xffff;
-	x = (xcol >> 16) & 0xffff;
-	x += col * ri->ri_font->fontwidth;
-	row = yrow & 0xffff;
-	y = (yrow >> 16) & 0xffff;
-
-	rowattr[row].ismulti = 1;
-	if (y + 5 > ri->ri_font->fontheight) {
-		// 行をまたぐ書き込み
-		// rowattr は余裕を見て確保されている
-		rowattr[row + 1].ismulti = 1;
-	}
-
-	y += row * ri->ri_font->fontheight;
-
-	xh = x >> 5;
-	xl = x & 0x1f;
-
-	omfb_unpack_attr(attr, &fg, &bg, NULL);
-
-	dst = (uint8_t *)ri->ri_bits + y * ri->ri_stride + xh * 4;
-	ormode = attr & 0x2;
-
-	/*
-	ormode
-		fg D  result
-		0  0  M
-		0  1  M   planemasked
-		1  0  M
-		1  1  1   D+M = OR1
-	not ormode (overwrite mode)
-		fg D  result
-		0  0  M
-		0  1  0   ~D*M = AND2
-		1  0  M
-		1  1  1   D+M = OR1
-	*/
-
-	if (width == 1) {
-		// ほとんどのケースで width == 1 なのでファストパスする
-		// 左からのビット位置に変換
-		xl = 31 - xl;
-		if (ormode) {
-			omfb_setplanemask(fg);
-			omfb_setROP_curplane(ROP_OR1, 1 << xl);
-		} else {
-			omfb_setplanemask(omfb_planemask);
-			omfb_setROP_curplane(ROP_AND2, 1 << xl);
-			omfb_setplanemask(fg);
-			omfb_setROP_curplane(ROP_OR1, 1 << xl);
-			omfb_setplanemask(omfb_planemask);
-		}
-
-		// 左ローテート命令にコンパイルされてほしい
-		// rol.l	%[xl],%[ptn]
-		ptn = (ptn << xl) | (ptn >> (32 - xl));
-
-		for (i = 0; i < 6; i++) {
-			// ROP masked xl bit
-			*W(dst) = ptn;
-			dst += ri->ri_stride;
-			// 右ローテート命令にコンパイルされてほしい
-			// ror.l	#1,%[ptn]
-			ptn = (ptn >> 1) | (ptn << 31);
-		}
-		return;
-	}
-
-	/* fill のアルゴリズム */
-
-	uint32_t v[6];
-	v[0] = (ptn & 0x01) ? ALL1BITS : ALL0BITS;
-	v[1] = (ptn & 0x02) ? ALL1BITS : ALL0BITS;
-	v[2] = (ptn & 0x04) ? ALL1BITS : ALL0BITS;
-	v[3] = (ptn & 0x08) ? ALL1BITS : ALL0BITS;
-	v[4] = (ptn & 0x10) ? ALL1BITS : ALL0BITS;
-	v[5] = (ptn & 0x20) ? ALL1BITS : ALL0BITS;
-
-
-	mask = ALL1BITS >> xl;
-	dw = 32 - xl;
-
-	do {
-		width -= dw;
-		if (width < 0) {
-			width = -width;
-			MASK_CLEAR_RIGHT(mask, width);
-
-			width = 0;
-		}
-
-		if (ormode) {
-			omfb_setplanemask(fg);
-			omfb_setROP_curplane(ROP_OR1, mask);
-		} else {
-			omfb_setplanemask(omfb_planemask);
-			omfb_setROP_curplane(ROP_AND2, mask);
-			omfb_setplanemask(fg);
-			omfb_setROP_curplane(ROP_OR1, mask);
-			omfb_setplanemask(omfb_planemask);
-		}
-
-		{
-			uint8_t *d = dst;
-			for (i = 0; i < 6; i++) {
-				// ROP masked
-				*W(d) = v[i];
-				d += ri->ri_stride;
-			}
-		}
-		dst += 4;
-		mask = ALL1BITS;
-		dw = 32;
-	} while (width > 0);
-}
-#endif
