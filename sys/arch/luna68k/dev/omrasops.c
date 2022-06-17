@@ -52,10 +52,6 @@ __KERNEL_RCSID(0, "$NetBSD: omrasops.c,v 1.21 2019/07/31 02:09:02 rin Exp $");
 
 #include <arch/luna68k/dev/omrasopsvar.h>
 
-// フォントビットマップは VRAM x=1280 の位置に置かれる
-// [バイトオフセット]
-#define FONTOFFSET		(1280 / 8)
-
 #define USE_M68K_ASM	1
 
 // gcc でコンパイラに最適化の条件を与える。
@@ -525,7 +521,7 @@ omfb_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 	int height;
 	int fg, bg;
 	int x, y;
-	int fontx, fonty;
+	int fontx;
 	int fontstride;
 	int heightscale;
 	uint8_t *fb;
@@ -550,83 +546,8 @@ omfb_putchar(void *cookie, int row, int startcol, u_int uc, long attr)
 		    (uc - ri->ri_font->firstchar) * ri->ri_fontscale;
 		fontstride = ri->ri_font->stride;
 	} else {
-		uint8_t fonttype = *(uint8_t *)(OMFB_PLANE_0 + OMFB_PLANEOFS - 1);
-		if (omfb_planecount == 1 || fonttype == 1) {
-			height = 10;
-			heightscale = 1;
-			if (uc >= 0xcfd4) {
-				// 1bpp support only JIS-1
-				return;
-			}
-		} else if (fonttype == 4) {
-			height = 20;
-		} else {
-			// font file not loaded
-			return;
-		}
-
-		if (0x8ea1 <= uc && uc <= 0x8edf) {
-			// 半角カナ
-			int fontstep;
-			int idx;
-
-			x += 1;
-			width = 10;
-			idx = (uc - 0x8ea1);
-			// 定数除算になることを期待している
-			fontstep = 768 / width;
-			fontx = idx % fontstep;
-			fontx = fontx * width;
-			// 半角カナは y=0 位置
-			fonty = 0;
-		} else {
-			// 全角
-			uint8_t H, L;
-			int fontstep;
-			int idx;
-
-			x += 2;
-			width = 20;
-
-			H = uc >> 8;
-			L = uc;
-			if (L < 0xa1 || L == 0xff) {
-				return;
-			}
-			L -= 0xa1;
-
-			if (H < 0xa1) {
-				return;
-			}
-			if (H <= 0xa8) {
-				H = H - 0xa1;
-			} else if (H < 0xad) {
-				return;
-			} else if (H <= 0xad) {
-				H = H - 0xad + (0xa8 - 0xa1 + 1);
-			} else if (H < 0xb0) {
-				return;
-			} else if (H <= 0xfc) {
-				H = H - 0xb0 + (1 /* ad */) + (0xa8 - 0xa1 + 1);
-			} else {
-				return;
-			}
-			idx = (u_int)H * (0xfe - 0xa1 + 1) + L;
-			// 定数除算になることを期待している
-			// 1行に記録されている文字数
-			fontstep = 768 / width;
-			fontx = idx % fontstep;
-			fonty = idx / fontstep;
-			// ドット位置に変換
-			fontx = fontx * width;
-			// 半角カナのエリアが1行ある
-			fonty += 1;
-		}
-		// m68k ではビットフィールド命令により、fontx をバイト位置に
-		// 分離してポインタに加算する必要がない。
-		fb = (uint8_t *)OMFB_PLANE_0 + FONTOFFSET
-			+ fonty * height * OMFB_STRIDE;
-		fontstride = OMFB_STRIDE;
+		/* XXX 全角跡地。どうする? */
+		return;
 	}
 	omfb_unpack_attr(attr, &fg, &bg, NULL);
 
